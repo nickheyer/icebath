@@ -391,7 +391,7 @@ func heldOpenProc(path, root string, anyGit bool) LockHold {
 			for _, fd := range fds {
 				link, err := os.Readlink(filepath.Join(pidDir, "fd", fd.Name()))
 				if err != nil {
-					break
+					continue
 				}
 				if link == target {
 					args, _ := procCmdline(pidDir)
