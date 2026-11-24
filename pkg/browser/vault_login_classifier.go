@@ -347,7 +347,7 @@ func otpBoxesAdjacent(boxes []ClassifiedLoginControl) bool {
 }
 
 func jsonText(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

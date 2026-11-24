@@ -511,7 +511,7 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 		cfg := jsonutil.ObjectOf("browser_model_lock", jsonutil.ObjectOf(
 			"provider", r.requestedProvider, "model", r.requestedModel, "model_options", r.modelOptions,
 			"route_source", r.routeSource, "confirmed", r.requireModelLock, "updated_at", apiNow()))
-		encoded, err := jsonutil.Encode(cfg)
+		encoded, err := jsonutil.Encode(cfg, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

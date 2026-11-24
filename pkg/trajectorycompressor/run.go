@@ -76,7 +76,7 @@ func loadJSONL(path string, onError func(int, error), start int) ([]jsonlEntry, 
 func writeJSONL(path string, entries []any) error {
 	var b strings.Builder
 	for _, e := range entries {
-		s, err := jsonutil.Encode(e)
+		s, err := jsonutil.Encode(e, jsonutil.Spaced())
 		if err != nil {
 			return err
 		}
@@ -285,7 +285,7 @@ func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir s
 	c.printSummary()
 	if c.Config.MetricsEnabled {
 		metricsPath := joinPath(outputDir, c.Config.MetricsOutputFile)
-		text, err := jsonutil.Encode(c.Aggregate.ToDict(), jsonutil.Indent(2))
+		text, err := jsonutil.Encode(c.Aggregate.ToDict(), jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

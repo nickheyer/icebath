@@ -18,7 +18,7 @@ func TestATurnQueuedWithBrowserControlRecoversAndRunsWithoutIt(t *testing.T) {
 	stored := jsonutil.Clone(admitted.Row.ValueOr("payload", nil)).(*jsonutil.Object)
 	stored.ValueOr("api_turn_v1", nil).(*jsonutil.Object).Set("browser_control",
 		jsonutil.ObjectOf("principal", "principal:default:abc", "transport_family", "local-api"))
-	encoded, err := jsonutil.Encode(stored)
+	encoded, err := jsonutil.Encode(stored, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

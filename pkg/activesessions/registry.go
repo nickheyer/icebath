@@ -287,7 +287,7 @@ var writeEntries = func(path string, entries []*jsonutil.Object) error {
 	for i, entry := range entries {
 		list[i] = entry
 	}
-	return config.AtomicJSONWriteWith(context.Background(), path, jsonutil.ObjectOf("entries", list), jsonutil.SortKeys())
+	return config.AtomicJSONWriteWith(context.Background(), path, jsonutil.ObjectOf("entries", list), jsonutil.SortKeys(), jsonutil.Spaced())
 }
 
 // Creation time of a process in epoch seconds, false when it cannot be read

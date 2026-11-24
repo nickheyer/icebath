@@ -450,7 +450,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 	headers := videoXAIHeaders(apiKey)
 	client := xaiVideoHTTPClient()
 	defer client.CloseIdleConnections()
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

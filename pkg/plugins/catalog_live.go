@@ -132,7 +132,7 @@ func downloadLiveCatalog(ctx context.Context, cache string) (map[string]any, err
 	if _, err := home.Mkdir(ctx, filepath.Dir(cache)); err != nil {
 		return nil, err
 	}
-	dumped, err := jsonutil.Encode(doc)
+	dumped, err := jsonutil.Encode(doc, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

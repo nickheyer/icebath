@@ -184,7 +184,7 @@ func (f *migrateFleet) serviceOp(ctx context.Context, _ io.Writer, kind string, 
 }
 
 func (f *migrateFleet) writeJSON(path string, v any) {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		f.t.Fatal(err)
 	}

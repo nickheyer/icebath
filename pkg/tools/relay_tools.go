@@ -121,7 +121,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 	if s, ok := result.Result.(string); ok {
 		return s, final, nil
 	}
-	out, err := jsonutil.Encode(relayToolJSONable(result.Result))
+	out, err := jsonutil.Encode(relayToolJSONable(result.Result), jsonutil.Spaced())
 	if err != nil {
 		return nil, nil, err
 	}

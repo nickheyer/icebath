@@ -39,7 +39,7 @@ func TestDiscoveryAuthorizesBeforeScanning(t *testing.T) {
 			}
 			refusal, _ := reply.ValueOr("error", nil).(*jsonutil.Object)
 			if refusal == nil || refusal.ValueOr("message", nil) != "permission_denied" {
-				text, _ := jsonutil.Encode(reply)
+				text, _ := jsonutil.Encode(reply, jsonutil.Spaced(), jsonutil.ASCII())
 				t.Fatalf("%v %s = %s", identity, method, text)
 			}
 		}

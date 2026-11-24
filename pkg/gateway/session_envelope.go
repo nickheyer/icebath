@@ -92,7 +92,7 @@ func nativeMetadata(event *MessageEvent) (*jsonutil.Object, bool) {
 		}
 	}
 	if native != nil {
-		encoded, err := jsonutil.Encode(native)
+		encoded, err := jsonutil.Encode(native, jsonutil.Spaced())
 		if err != nil {
 			return nil, false
 		}

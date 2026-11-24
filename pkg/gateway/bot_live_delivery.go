@@ -353,7 +353,7 @@ func ticketShapeError(path string, record map[string]any) string {
 }
 
 func writeTicket(ctx context.Context, path string, record map[string]any) error {
-	return config.AtomicJSONWriteMode(ctx, path, record, 0o600, jsonutil.SortKeys())
+	return config.AtomicJSONWriteMode(ctx, path, record, 0o600, jsonutil.SortKeys(), jsonutil.Spaced())
 }
 
 // Durable admission answered at once without waiting for the owner

@@ -275,7 +275,7 @@ func orZero(v any) any {
 // Writes one JSON line with a timestamp and flushes, a closed consumer pipe ending the write silently
 func (e *StreamJSONEmitter) emit(obj *jsonutil.Object) {
 	obj.Set("timestamp", nowMS())
-	line, err := jsonutil.Encode(obj)
+	line, err := jsonutil.Encode(obj, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

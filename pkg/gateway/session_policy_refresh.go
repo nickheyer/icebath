@@ -44,7 +44,7 @@ func loadsPolicyMap(text string) (map[string]any, error) {
 
 // Deep copy through a JSON dump and load, the json.loads(json.dumps(value)) of the Python
 func jsonRoundTrip(value any) (any, error) {
-	text, err := jsonutil.Encode(value)
+	text, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, &PyError{Kind: "TypeError", Msg: err.Error()}
 	}
@@ -152,11 +152,11 @@ func refreshedPolicy(ctx context.Context, policy *LocalSessionPolicy, live, term
 			return policy, &RecoveredSecrets{}, nil, nil
 		}
 	}
-	configJSON, err := jsonutil.Encode(cfg)
+	configJSON, err := jsonutil.Encode(cfg, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	terminalJSON, err := jsonutil.Encode(terminal)
+	terminalJSON, err := jsonutil.Encode(terminal, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, nil, err
 	}

@@ -12,7 +12,7 @@ func TestTheHomeModuleReadsTheSnapshotWhenImportedDirectly(t *testing.T) {
 		jsonutil.ObjectOf("id", "1", "content", "write the fix", "status", "completed"),
 		jsonutil.ObjectOf("id", "2", "content", "ship it", "status", "in_progress"),
 	}
-	content, err := jsonutil.Encode(jsonutil.ObjectOf("todos", todos, "revision", int64(2)))
+	content, err := jsonutil.Encode(jsonutil.ObjectOf("todos", todos, "revision", int64(2)), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

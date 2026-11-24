@@ -145,7 +145,7 @@ func TestSessionGatewayRuntimePrecedence(t *testing.T) {
 		{nil, `{}`},
 	}
 	for i, c := range cases {
-		got, err := jsonutil.Encode(SessionGatewayRuntime(c.row))
+		got, err := jsonutil.Encode(SessionGatewayRuntime(c.row), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil || got != c.want {
 			t.Fatalf("case %d got %s %v want %s", i, got, err, c.want)
 		}

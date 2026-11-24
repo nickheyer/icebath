@@ -84,7 +84,7 @@ func TestTryAcquireLocksRegistryAndRefusalsSurviveCopy(t *testing.T) {
 	if !ok || copied == full || *copied != *full {
 		t.Fatalf("copied refusal %+v of %+v", copied, full)
 	}
-	if text, err := jsonutil.Encode(jsonutil.Clone(payload)); err != nil || !strings.Contains(text, `"text": "Icebath is at the active session limit (1/1).`) {
+	if text, err := jsonutil.Encode(jsonutil.Clone(payload), jsonutil.Spaced(), jsonutil.ASCII()); err != nil || !strings.Contains(text, `"text": "Icebath is at the active session limit (1/1).`) {
 		t.Fatalf("copied payload encodes as %s err %v", text, err)
 	}
 

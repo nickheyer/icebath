@@ -143,7 +143,7 @@ func oneshotWriteUsageFile(path string, result *jsonutil.Object, failure any) {
 		if err := os.MkdirAll(filepath.Dir(out), 0o777); err != nil {
 			return
 		}
-		text, err := jsonutil.Encode(report, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return
 		}

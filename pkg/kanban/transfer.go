@@ -402,7 +402,7 @@ func relocateImportedRows(ctx context.Context, conn state.SQLiteConn, slug strin
 		}
 		for _, r := range all {
 			id := anyutil.String(r.Get("id"))
-			body, err := jsonutil.Encode(jsonutil.ObjectOf("board", slug, "parked", parked[id]))
+			body, err := jsonutil.Encode(jsonutil.ObjectOf("board", slug, "parked", parked[id]), jsonutil.Spaced())
 			if err != nil {
 				return err
 			}

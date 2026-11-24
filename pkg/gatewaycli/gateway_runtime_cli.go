@@ -74,7 +74,7 @@ func CmdGatewayEnsure(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		payload.Set("endpoint", nil)
 		payload.Set("reason_code", "invalid_invocation")
 		payload.Set("state", "inaccessible")
-		text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
+		text, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}
@@ -99,7 +99,7 @@ func CmdGatewayEnsure(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		return 1, err
 	}
 	payload.Set("client_code_sha", identity.ValueOr("sha", nil))
-	text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return 1, err
 	}

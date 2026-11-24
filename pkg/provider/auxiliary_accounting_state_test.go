@@ -36,7 +36,7 @@ func TestStateDBRecordsAuxiliaryUsageThroughTheRecorder(t *testing.T) {
 		t.Fatalf("by task %v %v", byTask, err)
 	}
 	row, _ := byTask.Get("vision")
-	text, _ := jsonutil.Encode(row)
+	text, _ := jsonutil.Encode(row, jsonutil.Spaced(), jsonutil.ASCII())
 	if !strings.Contains(text, "7") || !strings.Contains(text, "3") {
 		t.Fatalf("vision row %s", text)
 	}

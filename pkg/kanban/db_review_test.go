@@ -263,7 +263,7 @@ func TestShowJsonSurvivesBlobCellsInSiblingTables(t *testing.T) {
 		t.Fatal("events", err)
 	}
 	for _, e := range events {
-		if _, err := jsonutil.Encode(e.Payload); err != nil {
+		if _, err := jsonutil.Encode(e.Payload, jsonutil.Spaced()); err != nil {
 			t.Fatal("event payload not serializable", err)
 		}
 	}

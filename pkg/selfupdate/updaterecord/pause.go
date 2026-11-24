@@ -140,7 +140,7 @@ func pauseAtomicWrite(path string, body any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	text, err := jsonutil.Encode(body, jsonutil.Indent(1), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(body, jsonutil.Indent(1), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -341,7 +341,7 @@ func MarkStopAccepted(path string, marker *jsonutil.Object) error {
 			return err
 		}
 		defer f.Close()
-		text, err := jsonutil.Encode(stamped)
+		text, err := jsonutil.Encode(stamped, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

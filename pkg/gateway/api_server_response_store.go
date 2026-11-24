@@ -183,7 +183,7 @@ func (s *ResponseStore) Get(ctx context.Context, responseID string) (any, error)
 // Stores a response, an idem record never overwritten, evicting past capacity
 func (s *ResponseStore) Put(ctx context.Context, responseID string, data any) error {
 	defer s.lock(ctx)()
-	encoded, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	encoded, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -392,7 +392,7 @@ func (s *ResponseStore) evict(ctx context.Context) error {
 // Reserves one immutable request digest, false when the key is bound to another fingerprint
 func (s *ResponseStore) BindRequestKey(ctx context.Context, key, fingerprint string, model any) (bool, error) {
 	defer s.lock(ctx)()
-	modelJSON, err := jsonutil.Encode(model)
+	modelJSON, err := jsonutil.Encode(model, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}
@@ -410,7 +410,7 @@ func (s *ResponseStore) BindRequestKey(ctx context.Context, key, fingerprint str
 // Accepted wire model label of a request key, upgrading an older binding to the fallback
 func (s *ResponseStore) RequestModel(ctx context.Context, key string, fallback any) (any, error) {
 	defer s.lock(ctx)()
-	encoded, err := jsonutil.Encode(fallback)
+	encoded, err := jsonutil.Encode(fallback, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

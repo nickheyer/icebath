@@ -296,7 +296,7 @@ func TestOutboundStaleVisionEviction(t *testing.T) {
 		}
 		outbound := sanitizeForSend(history)
 		size := func() int {
-			s, err := jsonutil.Encode(outbound)
+			s, err := jsonutil.Encode(outbound, jsonutil.Spaced())
 			if err != nil {
 				t.Fatal(err)
 			}

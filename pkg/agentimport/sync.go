@@ -132,7 +132,7 @@ func LoadSyncManifest(targetRoot string) *jsonutil.Object {
 
 // SaveSyncManifest writes the manifest as sorted indented JSON
 func SaveSyncManifest(ctx context.Context, targetRoot string, manifest *jsonutil.Object) error {
-	text, err := jsonutil.Encode(manifest, jsonutil.Indent(2), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(manifest, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

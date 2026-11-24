@@ -355,7 +355,7 @@ func runRemoteCell(ctx context.Context, kernel *remoteKernel, code string, timeo
 	request := jsonutil.NewObject()
 	request.Set("id", seq)
 	request.Set("code", code)
-	body, err := jsonutil.Encode(request)
+	body, err := jsonutil.Encode(request, jsonutil.Spaced())
 	if err != nil {
 		return nil, nil, err
 	}

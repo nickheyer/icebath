@@ -83,7 +83,7 @@ func TestWebsitePolicyBlockCarriesItsRule(t *testing.T) {
 		return &tools.WebsiteBlock{Host: "evil.com", Rule: "evil.com", Source: "config", Message: "Blocked by website policy"}
 	})
 	res := evaluateURLSafety(env, "https://evil.com/", false)
-	got, _ := jsonutil.Encode(res)
+	got, _ := jsonutil.Encode(res, jsonutil.Spaced(), jsonutil.ASCII())
 	want := `{"success": false, "error": "Blocked by website policy", "blocked_by_policy": {"host": "evil.com", "rule": "evil.com", "source": "config"}}`
 	if got != want {
 		t.Fatalf("got %s", got)

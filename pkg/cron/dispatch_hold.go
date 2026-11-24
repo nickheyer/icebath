@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -120,14 +119,10 @@ func readDispatchHeld(cronDir string) (*dispatchHeld, error) {
 	return &dispatchHeld{Since: *since, Last: *last}, nil
 }
 
-// Python float of a stamp value, nil when float rejects it and an error when it overflows
+// Number of a stamp value, nil when it is no number, text past the float range reading as the infinity on its side
 func heldFloat(v any) (*float64, error) {
 	f, err := anyutil.ToFloat(v)
-	if err != nil {
-		var pe *errorutil.Error
-		if errors.As(err, &pe) && pe.Kind == "OverflowError" {
-			return nil, err
-		}
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return nil, nil
 	}
 	return &f, nil

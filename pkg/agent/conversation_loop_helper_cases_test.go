@@ -181,7 +181,7 @@ func canonicalizePassOld(apiMessages []any) {
 				newTCs = append(newTCs, tc)
 				continue
 			}
-			canonical, _ := jsonutil.Encode(parsed, jsonutil.SortKeys())
+			canonical, _ := jsonutil.Encode(parsed, jsonutil.SortKeys(), jsonutil.ASCII())
 			newFn := map[string]any{}
 			for k, v := range fn {
 				newFn[k] = v
@@ -286,7 +286,7 @@ func TestMemoSemantics(t *testing.T) {
 		again, _ := canonicalizeToolCallArguments(raw)
 		twice, _ := canonicalizeToolCallArguments(canon)
 		parsed, _ := jsonutil.Decode(raw)
-		want, _ := jsonutil.Encode(parsed, jsonutil.SortKeys())
+		want, _ := jsonutil.Encode(parsed, jsonutil.SortKeys(), jsonutil.ASCII())
 		if canon != again || twice != canon || canon != want {
 			t.Fatalf("canonical form unstable %q %q %q %q", canon, again, twice, want)
 		}

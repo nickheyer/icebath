@@ -21,7 +21,7 @@ func dumpUpdates(t *testing.T, updates []acputil.SessionUpdate) []string {
 	t.Helper()
 	var out []string
 	for _, u := range updates {
-		text, err := jsonutil.Encode(u)
+		text, err := jsonutil.Encode(u, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -33,7 +33,7 @@ func dumpUpdates(t *testing.T, updates []acputil.SessionUpdate) []string {
 func TestLiveToolEventsProjectExactlyLikeReplay(t *testing.T) {
 	a, _, editor := mappingAgent(t, `{}`)
 	projectEvent(t, a, "tool.start", `{"tool_call_id": "call_1", "tool_name": "read_file", "args": {"path": "/tmp/owned/notes.txt"}}`, "a")
-	result, _ := jsonutil.Encode(toolResult)
+	result, _ := jsonutil.Encode(toolResult, jsonutil.Spaced(), jsonutil.ASCII())
 	projectEvent(t, a, "tool.complete", `{"tool_call_id": "call_1", "tool_name": "read_file", "is_error": false, "args": {"path": "/tmp/owned/notes.txt"}, "result": `+result+`}`, "a")
 	live := updatesOf(editor)
 	if len(live) != 2 {

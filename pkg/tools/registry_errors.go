@@ -40,7 +40,7 @@ func boundJSONErrorResult(env *Env, result string) string {
 		return result
 	}
 	payload.Set("error", boundModelErrorText(env, errText))
-	out, err := jsonutil.Encode(payload)
+	out, err := jsonutil.Encode(payload, jsonutil.Spaced())
 	if err != nil {
 		return result
 	}

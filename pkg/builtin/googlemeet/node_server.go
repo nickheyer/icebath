@@ -146,7 +146,7 @@ func appendSay(queue string, text any) error {
 	if err := os.MkdirAll(filepath.Dir(queue), 0o777); err != nil {
 		return err
 	}
-	line, err := jsonutil.Encode(jsonutil.ObjectOf("text", text, "ts", nowSeconds()))
+	line, err := jsonutil.Encode(jsonutil.ObjectOf("text", text, "ts", nowSeconds()), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

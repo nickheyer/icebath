@@ -119,7 +119,7 @@ func writeJSONExcl(path string, record *jsonutil.Object) error {
 	if err != nil {
 		return err
 	}
-	text, err := jsonutil.Encode(record)
+	text, err := jsonutil.Encode(record, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		_, err = f.WriteString(text)
 	}

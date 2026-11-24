@@ -169,7 +169,7 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 	if len(fileIDs) > 0 {
 		payload.Set("file_ids", fileIDs)
 	}
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

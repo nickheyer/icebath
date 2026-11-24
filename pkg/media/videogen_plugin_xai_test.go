@@ -60,7 +60,7 @@ func (c *fakeXAIVideoClient) RoundTrip(r *http.Request) (*http.Response, error) 
 		c.posts = append(c.posts, orCall{url: r.URL.String(), headers: r.Header.Clone(), json: m})
 		return reply(`{"request_id": "req-123"}`), nil
 	}
-	model, _ := jsonutil.Encode(c.posts[len(c.posts)-1].json["model"])
+	model, _ := jsonutil.Encode(c.posts[len(c.posts)-1].json["model"], jsonutil.Spaced(), jsonutil.ASCII())
 	return reply(`{"status": "done", "video": {"url": "https://xai-cdn/out.mp4", "duration": 8}, "model": ` + model + `}`), nil
 }
 

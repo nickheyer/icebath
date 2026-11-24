@@ -178,7 +178,7 @@ func toolErr(message string, extra ...any) string {
 
 // json.dumps with ensure_ascii off
 func dumpsUnicode(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		return tools.ErrorResult(err)
 	}
@@ -496,7 +496,7 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 		nextID++
 		payload := jsonutil.ObjectOf("id", callID)
 		payload.Merge(req)
-		text, err := jsonutil.Encode(payload)
+		text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

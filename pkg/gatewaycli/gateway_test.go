@@ -131,7 +131,7 @@ func writePreviousGatewayPidFile(t *testing.T, home string, pid int) {
 	}
 	record.Set("pid", int64(pid))
 	record.Set("start_time", max(int64(1), start-500))
-	text, _ := jsonutil.Encode(record)
+	text, _ := jsonutil.Encode(record, jsonutil.Spaced(), jsonutil.ASCII())
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}

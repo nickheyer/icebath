@@ -125,7 +125,7 @@ func FallbackCheckCommand(ctx context.Context, h string, ns map[string]any, w io
 			rows = append(rows, fallbackCheckObject(r))
 		}
 		text, err := jsonutil.Encode(jsonutil.ObjectOf("profile", profiles.GetActiveProfileName(ctx), "live", live, "ready", ready,
-			"checked_at", time.Now().UTC().Format(timeutil.RFC3339Micro), "results", rows), jsonutil.Indent(2))
+			"checked_at", time.Now().UTC().Format(timeutil.RFC3339Micro), "results", rows), jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

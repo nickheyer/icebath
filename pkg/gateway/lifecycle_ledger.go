@@ -139,7 +139,7 @@ func writeSentinel(ctx context.Context, payload *jsonutil.Object, h string) {
 		pkgLog().Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
 		return
 	}
-	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to write lifecycle sentinel: %v", err))
 	}
 }
@@ -147,7 +147,7 @@ func writeSentinel(ctx context.Context, payload *jsonutil.Object, h string) {
 // Appends one JSON line to logs/gateway-exit-diag.log, unknown values rendered through str
 func appendExitDiag(ctx context.Context, record *jsonutil.Object, h string) {
 	path := ledgerHomePath(ctx, h, "logs", "gateway-exit-diag.log")
-	text, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to append unclean-exit record: %v", err))
 		return

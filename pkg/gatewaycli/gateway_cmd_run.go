@@ -255,7 +255,7 @@ func makeExitDiag(ctx context.Context) func(tag string, extra ...[2]any) {
 		for _, kv := range extra {
 			line.Set(kv[0].(string), kv[1])
 		}
-		text, err := jsonutil.Encode(line, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		text, err := jsonutil.Encode(line, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return
 		}

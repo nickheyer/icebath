@@ -27,7 +27,7 @@ func (e *CronExecutionUnknown) ErrorKind() string { return "CronExecutionUnknown
 
 // Admission journal of one fire keyed by the sha256 of the JSON pair of job and request ids
 func (s *Store) journalPath(jobID, requestID string) string {
-	key, err := jsonutil.Encode([]any{jobID, requestID})
+	key, err := jsonutil.Encode([]any{jobID, requestID}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

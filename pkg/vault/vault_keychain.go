@@ -121,7 +121,7 @@ func vaultReadRef(path string) (*jsonutil.Object, error) {
 
 // Saves a pointer atomically with a durable directory entry, swapped by tests for a failing writer
 var vaultWriteRef = func(ctx context.Context, path string, ref *jsonutil.Object) error {
-	text, err := jsonutil.Encode(ref, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(ref, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

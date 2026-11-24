@@ -208,7 +208,7 @@ func takeoverAcknowledge(result string, receiptHandled bool) error {
 	body := jsonutil.NewObject()
 	body.Set("receipt_handled", receiptHandled)
 	body.Set("resume_handled", false)
-	text, err := jsonutil.Encode(body)
+	text, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -282,7 +282,7 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 		}
 		request.Set("receipt", data)
 		var encoded string
-		if encoded, err = jsonutil.Encode(request); err == nil {
+		if encoded, err = jsonutil.Encode(request, jsonutil.Spaced(), jsonutil.ASCII()); err == nil {
 			err = os.WriteFile(contextPath, []byte(encoded), 0o666)
 		}
 	}

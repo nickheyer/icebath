@@ -107,7 +107,7 @@ func TestColdEditorRebindRequiresExactBorrowedConfig(t *testing.T) {
 	cwd := t.TempDir()
 	spec := ownedServerSpec(t)
 	original := editorPolicy(t, ctx, editorOwner(), "cold", spec, cwd)
-	text, err := jsonutil.Encode(original.asDict())
+	text, err := jsonutil.Encode(original.asDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

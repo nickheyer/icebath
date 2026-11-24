@@ -1297,7 +1297,7 @@ func writeStartAttestation(ctx context.Context, pids []int, via string) {
 	payload.Set("ts", time.Now().UTC().Format(timeutil.RFC3339Micro))
 	payload.Set("generation", strings.ReplaceAll(uuid.NewString(), "-", ""))
 	payload.Set("create_times", createTimes)
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		tmp := winWithSuffix(path, ".json.tmp")
 		if err = os.WriteFile(tmp, []byte(text), 0o666); err == nil {

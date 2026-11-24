@@ -276,7 +276,7 @@ func openStore(ctx context.Context, ns map[string]any) (*TeamsPipelineStore, err
 
 // Prints the payload as sorted two space indented JSON
 func printJSON(payload any) error {
-	s, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys())
+	s, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

@@ -21,7 +21,7 @@ func sendWire(t *testing.T, messages []map[string]any) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := jsonutil.Encode(converted, jsonutil.SortKeys())
+	raw, err := jsonutil.Encode(converted, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

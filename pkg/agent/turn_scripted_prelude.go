@@ -25,7 +25,7 @@ type Prelude interface {
 
 // Call id seeded by the session, the call and its place in history, byte stable on replay
 func preludeCallID(sessionID, name string, args any, index int) (string, error) {
-	encoded, err := jsonutil.Encode(args, jsonutil.SortKeys())
+	encoded, err := jsonutil.Encode(args, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}
@@ -38,7 +38,7 @@ func buildPreludeToolCall(id, name string, args any) (state.ToolCall, error) {
 	switch v := args.(type) {
 	case map[string]any, *jsonutil.Object:
 		var err error
-		if argsText, err = jsonutil.Encode(v); err != nil {
+		if argsText, err = jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 			return state.ToolCall{}, err
 		}
 	default:

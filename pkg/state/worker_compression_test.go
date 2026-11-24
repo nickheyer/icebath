@@ -15,7 +15,7 @@ type jsonAutomationState struct{ obj *jsonutil.Object }
 func (s *jsonAutomationState) Status() any             { v, _ := s.obj.Get("status"); return v }
 func (s *jsonAutomationState) SetStatus(status string) { s.obj.Set("status", status) }
 func (s *jsonAutomationState) ToJSON() (string, error) {
-	return jsonutil.Encode(s.obj)
+	return jsonutil.Encode(s.obj, jsonutil.Spaced())
 }
 
 // Installs the JSON codec double for every automation family the agent wiring would decode
@@ -815,7 +815,7 @@ func TestPublicationMovesAutomationOnceAndPreservesClearedControls(t *testing.T)
 		"heartbeat": jsonutil.ObjectOf("status", "active", "interval_seconds", int64(120)),
 	}
 	for family, value := range values {
-		text, _ := jsonutil.Encode(value)
+		text, _ := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 		if err := db.SetMeta(ctx, family+":owned", text); err != nil {
 			t.Fatal(err)
 		}

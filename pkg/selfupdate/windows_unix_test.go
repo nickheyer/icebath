@@ -110,7 +110,7 @@ func TestPauseARequestOnDiskIsOwedEvenBeforeItIsRecordedSent(t *testing.T) {
 	user := jsonutil.NewObject()
 	user.Set("target_pid", gw.cmd.Process.Pid)
 	user.Set("stopper_pid", 1)
-	text, _ := jsonutil.Encode(user)
+	text, _ := jsonutil.Encode(user, jsonutil.Spaced(), jsonutil.ASCII())
 	if err := os.WriteFile(marker, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}

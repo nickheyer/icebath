@@ -229,7 +229,7 @@ func TestStatusNeverPrintsTheHoldersRawViewerID(t *testing.T) {
 	if _, err := botdesktop.LeaseAcquire(secret, key, "typing a password"); err != nil {
 		t.Fatal(err)
 	}
-	rpcView, err := jsonutil.Encode(botdesktop.LeasePublicView(botdesktop.LeaseGet(key)), jsonutil.SortKeys())
+	rpcView, err := jsonutil.Encode(botdesktop.LeasePublicView(botdesktop.LeaseGet(key)), jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil || strings.Contains(rpcView, secret) {
 		t.Fatalf("rpc view %q err %v", rpcView, err)
 	}
@@ -242,7 +242,7 @@ func TestStatusNeverPrintsTheHoldersRawViewerID(t *testing.T) {
 		t.Fatal(err)
 	}
 	lease := cuGet(payload.(*jsonutil.Object), "lease")
-	got, _ := jsonutil.Encode(lease, jsonutil.SortKeys())
+	got, _ := jsonutil.Encode(lease, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	sum := sha256.Sum256([]byte(secret))
 	if got != rpcView || cuGet(lease.(*jsonutil.Object), "viewer_hash") != hex.EncodeToString(sum[:])[:12] {
 		t.Fatalf("lease %s rpc %s", got, rpcView)

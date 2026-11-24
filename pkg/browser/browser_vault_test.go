@@ -609,7 +609,7 @@ func TestBrowserVaultToolsVaultCanaryRedactedFromBrowserCdpResults(t *testing.T)
 		t.Fatalf("fill %s", text)
 	}
 	cdpResult := jsonutil.ObjectOf("result", jsonutil.ObjectOf("type", "string", "value", canary), "description", "input value is "+canary)
-	scrubbed, err := jsonutil.Encode(redactCDPOutput(env, cdpResult, nil, nil, 0))
+	scrubbed, err := jsonutil.Encode(redactCDPOutput(env, cdpResult, nil, nil, 0), jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}

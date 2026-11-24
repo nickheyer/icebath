@@ -248,7 +248,7 @@ func saveExtractIndex(ctx context.Context, env *Env, index *jsonutil.Object) {
 		}
 		index = trimmed
 	}
-	if err := config.AtomicJSONWriteWith(WithEnvHome(ctx, env), filepath.Join(dir, extractIndexFilename), index); err != nil {
+	if err := config.AtomicJSONWriteWith(WithEnvHome(ctx, env), filepath.Join(dir, extractIndexFilename), index, jsonutil.Spaced()); err != nil {
 		envLog(env).Debug("Failed to save web extract cache index", "error", err)
 	}
 }

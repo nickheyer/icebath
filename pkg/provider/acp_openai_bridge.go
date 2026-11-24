@@ -238,14 +238,14 @@ func RenderToolBridgeSections(tools []any, toolChoice any, allowlist []string) (
 	specs := ToolSpecsFromOpenAITools(tools, allowlist)
 	sections := []string{}
 	if len(specs) > 0 {
-		payload, err := jsonutil.Encode(specs)
+		payload, err := jsonutil.Encode(specs, jsonutil.Spaced())
 		if err != nil {
 			return nil, err
 		}
 		sections = append(sections, ToolCallContract+"\n"+payload)
 	}
 	if toolChoice != nil {
-		hint, err := jsonutil.Encode(toolChoice)
+		hint, err := jsonutil.Encode(toolChoice, jsonutil.Spaced())
 		if err != nil {
 			return nil, err
 		}
@@ -267,7 +267,7 @@ func parseBridgeToolCall(rawJSON string, ordinal int) (state.ToolCall, bool, err
 	fnArgs := bridgeAttrOr(fn, "arguments", "{}")
 	args, isStr := fnArgs.(string)
 	if !isStr {
-		if args, err = jsonutil.Encode(fnArgs); err != nil {
+		if args, err = jsonutil.Encode(fnArgs, jsonutil.Spaced()); err != nil {
 			return state.ToolCall{}, false, err
 		}
 	}

@@ -39,7 +39,7 @@ func DivertSessionTranscriptJSONL(ctx context.Context, sessionID string, message
 			o.Set("content", anyutil.String(msg))
 			record = o
 		}
-		line, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		line, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 		if err != nil {
 			return "", err
 		}

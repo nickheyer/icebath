@@ -109,7 +109,7 @@ func TestInvalidCoalesceConfigRejectedAtConnect(t *testing.T) {
 			t.Fatalf("%s: %v", c.match, err)
 		}
 		dynamic := makeCoalesceAdapter(t, nil)
-		encoded, _ := jsonutil.Encode(map[string]any{"dyn": c.route})
+		encoded, _ := jsonutil.Encode(map[string]any{"dyn": c.route}, jsonutil.Spaced(), jsonutil.ASCII())
 		if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "webhook_subscriptions.json"), []byte(encoded), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func mcpEventHome(t *testing.T) (*WebhookAdapter, string) {
 	h := os.Getenv("ICEBATH_HOME")
 	route := map[string]any{"secret": mcpTestSecret, "prompt": "Event {eventId}: {data.feed_id}", "deliver": "log", "profile": "default",
 		"mcp_event": map[string]any{"server": "ambush", "name": "feed.emission.created", "arguments": map[string]any{}}}
-	encoded, _ := jsonutil.Encode(map[string]any{mcpTestRoute: route})
+	encoded, _ := jsonutil.Encode(map[string]any{mcpTestRoute: route}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err := os.WriteFile(filepath.Join(h, "webhook_subscriptions.json"), []byte(encoded), 0o600); err != nil {
 		t.Fatal(err)
 	}

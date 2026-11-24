@@ -221,7 +221,7 @@ func TestSessionEntryRoundTripAndLegacyKeys(t *testing.T) {
 	if v, _ := d.Get("created_at"); v != "2026-01-02T03:04:05.000006" {
 		t.Fatalf("created_at %v", v)
 	}
-	text, _ := jsonutil.Encode(d)
+	text, _ := jsonutil.Encode(d, jsonutil.Spaced(), jsonutil.ASCII())
 	parsed, _ := jsonutil.Decode(text)
 	back, err := SessionEntryFromDict(ctx, parsed.(*jsonutil.Object))
 	if err != nil || back.Yolo == nil || *back.Yolo || !back.CreatedAt.T.Equal(created.T) {

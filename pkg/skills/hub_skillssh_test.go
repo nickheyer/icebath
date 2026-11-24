@@ -171,6 +171,6 @@ func bundleHas(b *SkillBundle, path, text string) bool {
 }
 
 func installsIs(v any, want string) bool {
-	s, err := jsonutil.Encode(v)
+	s, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	return err == nil && s == want
 }

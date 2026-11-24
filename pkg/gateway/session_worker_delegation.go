@@ -147,7 +147,7 @@ func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID st
 		return nil, runtimeRefusal("permission_denied")
 	}
 	ownerStarted := GetProcessStartTime(workerPID)
-	taskJSON, err := jsonutil.Encode(task)
+	taskJSON, err := jsonutil.Encode(task, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -201,11 +201,11 @@ func delegationComplete(ctx context.Context, conn state.SQLiteConn, sessionID st
 	if row["state"] != "running" {
 		return nil, runtimeRefusal("admission_conflict")
 	}
-	eventJSON, err := jsonutil.Encode(event)
+	eventJSON, err := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
-	resultJSON, err := jsonutil.Encode(payload.Value("result"))
+	resultJSON, err := jsonutil.Encode(payload.Value("result"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func delegationChild(ctx context.Context, conn state.SQLiteConn, sessionID strin
 		}
 	}
 	results = append(results, entry)
-	encoded, err := jsonutil.Encode(jsonutil.ObjectOf("results", results, "partial", true))
+	encoded, err := jsonutil.Encode(jsonutil.ObjectOf("results", results, "partial", true), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

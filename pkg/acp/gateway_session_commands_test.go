@@ -411,7 +411,7 @@ func TestResetEmptiesTheEditorsContextIndicator(t *testing.T) {
 func TestCompressShowsTheCompressedTranscriptsOccupancy(t *testing.T) {
 	content := strings.Repeat("summary of the earlier turns ", 40)
 	kept := []map[string]any{{"role": "user", "content": content}}
-	dumped, _ := jsonutil.Encode([]any{jsonutil.ObjectOf("role", "user", "content", content)})
+	dumped, _ := jsonutil.Encode([]any{jsonutil.ObjectOf("role", "user", "content", content)}, jsonutil.Spaced(), jsonutil.ASCII())
 	a, editor := boundaryAgent(t, dumped)
 	if _, err := promptWithin(t, a, "/compress"); err != nil {
 		t.Fatal(err)

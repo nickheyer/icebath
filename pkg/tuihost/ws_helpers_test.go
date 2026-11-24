@@ -65,7 +65,7 @@ func wsEvent(kind string) *jsonutil.Object {
 // Text of a frame as every transport serializes it
 func frameText(t *testing.T, frame *jsonutil.Object) string {
 	t.Helper()
-	text, err := jsonutil.Encode(frame)
+	text, err := jsonutil.Encode(frame, jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -79,7 +79,7 @@ func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[stri
 		snapshot.Set(kv[0].(string), kv[1])
 	}
 	snapshot.Set("subagents", tuigateway.Plain(request.Subagents))
-	encoded, err := jsonutil.Encode(snapshot)
+	encoded, err := jsonutil.Encode(snapshot, jsonutil.Spaced())
 	panicIf(err)
 	_, statErr := os.Stat(path)
 	listed := statErr == nil
@@ -101,7 +101,7 @@ func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[stri
 // Appends an ordered entry line to the session index
 func appendSpawnTreeIndexObject(sessionDir string, entry *jsonutil.Object) {
 	plain, _ := jsonutil.Plain(entry).(map[string]any)
-	line, err := jsonutil.Encode(entry)
+	line, err := jsonutil.Encode(entry, jsonutil.Spaced())
 	if err != nil {
 		appendSpawnTreeIndex(sessionDir, plain)
 		return

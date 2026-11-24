@@ -150,7 +150,7 @@ func ShellHookDirective(result *ShellHookResult) (string, error) {
 	if len(result.Parsed) == 0 {
 		return "", nil
 	}
-	return jsonutil.Encode(result.Parsed)
+	return jsonutil.Encode(result.Parsed, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // What checking one hook finds: whether its script can run, whether it is allowed and unchanged, and how a run on a sample event of an allowed, runnable hook ends

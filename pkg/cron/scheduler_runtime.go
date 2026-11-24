@@ -33,7 +33,7 @@ func (s *Store) writeUsageAudit(record *jsonutil.Object) {
 		if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 			return err
 		}
-		line, err := jsonutil.Encode(record)
+		line, err := jsonutil.Encode(record, jsonutil.Spaced())
 		if err != nil {
 			return err
 		}

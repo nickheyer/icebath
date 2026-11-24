@@ -132,7 +132,7 @@ func classifyPrompt(items []*jsonutil.Object, criteria string) (string, error) {
 		if view.Len() == 0 {
 			view = item
 		}
-		text, err := jsonutil.Encode(view)
+		text, err := jsonutil.Encode(view, jsonutil.Spaced())
 		if err != nil {
 			return "", err
 		}

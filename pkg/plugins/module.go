@@ -211,7 +211,7 @@ func persistPluginToolsetKeys(ctx context.Context) {
 	payload := jsonutil.NewObject()
 	payload.Set("toolset_keys", keys)
 	payload.Set("portable_mcp", portable)
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced())
 	data := []byte(text)
 	if err == nil {
 		path := pluginToolsetKeysCachePath(ctx)

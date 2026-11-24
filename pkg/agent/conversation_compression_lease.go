@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
@@ -87,16 +86,12 @@ func newCompressionActivityHeartbeat(a *AIAgent, intervalSeconds any, emitClient
 		emitClientStatus: emitClientStatus, stopCh: make(chan struct{}), done: make(chan struct{})}
 }
 
-// float(interval or 60.0) with the non finite and unparsable values read as 60
+// Heartbeat interval in seconds of a setting, 60 when it is unset, no number or not finite
 func heartbeatSeconds(v any) float64 {
 	if !anyutil.IsTrue(v) {
 		return 60
 	}
 	f, err := anyutil.ToFloat(v)
-	var pyErr *errorutil.Error
-	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
-		panic(err)
-	}
 	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
 		return 60
 	}
@@ -597,17 +592,13 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 	return lease, "", nil
 }
 
-// float(ttl or 300.0) with TypeError and ValueError keeping 300 and OverflowError raised
+// Lock lifetime in seconds of a setting, 300 when it is unset or no number, text past the float range reading as the infinity on its side
 func compressionLockTTL(v any) float64 {
 	if !anyutil.IsTrue(v) {
 		return 300
 	}
 	f, err := anyutil.ToFloat(v)
-	var pyErr *errorutil.Error
-	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
-		panic(err)
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return 300
 	}
 	return f

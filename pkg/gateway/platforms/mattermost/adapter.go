@@ -242,7 +242,7 @@ func (a *MattermostAdapter) api(ctx context.Context, method, path string, payloa
 	}
 	var body []byte
 	if payload != nil {
-		encoded, err := jsonutil.Encode(payload)
+		encoded, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -924,7 +924,7 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 	a.ws = ws
 	a.mu.Unlock()
 	challenge, err := jsonutil.Encode(jsonutil.ObjectOf("seq", 1, "action", "authentication_challenge", "data",
-		jsonutil.ObjectOf("token", a.token)))
+		jsonutil.ObjectOf("token", a.token)), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

@@ -888,7 +888,7 @@ func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int)
 
 // VerboseToolArgsText renders the typed ordered args as json.dumps does, capped at maxLen, code blocked with real line breaks
 func VerboseToolArgsText(args *jsonutil.Object, maxLen int, codeBlock bool) string {
-	text := pyDumps(args, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text := pyDumps(args, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if maxLen > 0 && len([]rune(text)) > maxLen {
 		text = textutil.First(text, maxLen-3) + "..."
 	}

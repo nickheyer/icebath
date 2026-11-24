@@ -158,8 +158,8 @@ func TestBuildChannelDirectoryWritesFailedWritePreservesPreviousCache(t *testing
 	if _, err := BuildChannelDirectory(context.Background(), adapterTable()); err != nil {
 		t.Fatal(err)
 	}
-	want, _ := jsonutil.Encode(previous)
-	got, _ := jsonutil.Encode(loadChannelDirectory(context.Background()))
+	want, _ := jsonutil.Encode(previous, jsonutil.Spaced(), jsonutil.ASCII())
+	got, _ := jsonutil.Encode(loadChannelDirectory(context.Background()), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != want {
 		t.Fatalf("directory changed: %s want %s", got, want)
 	}
@@ -180,7 +180,7 @@ func TestBuildChannelDirectoryWritesUsesAdapterListChannelsWhenAvailable(t *test
 	}
 	platforms, _ := directory.Get("platforms")
 	telegram, _ := platforms.(*jsonutil.Object).Get("telegram")
-	got, _ := jsonutil.Encode(telegram)
+	got, _ := jsonutil.Encode(telegram, jsonutil.Spaced())
 	want := `[{"id": "default", "name": "主对话", "type": "dm"}, {"id": "family_1", "name": "达拉崩吧", "type": "group"}]`
 	if got != want {
 		t.Fatalf("telegram %s", got)

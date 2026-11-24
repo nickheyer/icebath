@@ -681,7 +681,7 @@ func (a *FeishuAdapter) handleCardActionEvent(ctx context.Context, e cardActionE
 	}
 	text := "/card " + tag
 	if anyutil.IsTrue(e.Value) {
-		if dumped, err := jsonutil.Encode(e.Value); err == nil {
+		if dumped, err := jsonutil.Encode(e.Value, jsonutil.Spaced()); err == nil {
 			text += " " + dumped
 		}
 	}

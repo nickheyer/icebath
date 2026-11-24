@@ -412,7 +412,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *jsonutil.Object, r
 		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 		return
 	}
-	text, err := jsonutil.Encode(entry)
+	text, err := jsonutil.Encode(entry, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		var f *os.File
 		f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)

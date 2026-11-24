@@ -35,7 +35,7 @@ func plantRetained(t *testing.T, ctx context.Context, index int, name string) (s
 // Writes one admission row holding the payload in the given status
 func admitRow(t *testing.T, ctx context.Context, db *state.SessionDB, id, requestID, status string, payload *jsonutil.Object) {
 	t.Helper()
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

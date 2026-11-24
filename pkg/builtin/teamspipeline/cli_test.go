@@ -312,7 +312,7 @@ func TestTeamsPipelineSubscriptionCommands(t *testing.T) {
 		"client_state", "secret")); err != nil {
 		t.Fatal(err)
 	}
-	body, _ := jsonutil.Encode(g.bodies[0])
+	body, _ := jsonutil.Encode(g.bodies[0], jsonutil.Spaced(), jsonutil.ASCII())
 	if body != `{"changeType": "created", "notificationUrl": "https://hook", "resource": "Communications/CallRecords", "expirationDateTime": "2030-01-01T00:00:00Z", "latestSupportedTlsVersion": "v1_2", "clientState": "secret"}` {
 		t.Fatal(body)
 	}

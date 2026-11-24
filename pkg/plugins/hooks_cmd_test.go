@@ -151,7 +151,7 @@ func TestFlagsMtimeDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc, err := jsonutil.Encode(map[string]any{"approvals": []any{map[string]any{"event": "on_session_start", "command": script,
-		"approved_at": "2000-01-01T00:00:00Z", "script_mtime_at_approval": "2000-01-01T00:00:00Z"}}})
+		"approved_at": "2000-01-01T00:00:00Z", "script_mtime_at_approval": "2000-01-01T00:00:00Z"}}}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

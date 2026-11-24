@@ -86,7 +86,7 @@ func updatePreflightHandled(ctx context.Context, w io.Writer, args map[string]an
 	}
 	if anyutil.IsTrue(args["list_venv_holders"]) {
 		holders := listVenvHolders(ctx)
-		text, err := jsonutil.Encode(holders, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(holders, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return true, err
 		}

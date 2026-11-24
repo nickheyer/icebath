@@ -122,7 +122,7 @@ func webhookRouteDigest(ctx context.Context, adapter PlatformAdapter, chatID str
 	if !found || route == nil {
 		return "", runtimeRefusal("not_found")
 	}
-	encoded, err := jsonutil.Encode(route, jsonutil.SortKeys())
+	encoded, err := jsonutil.Encode(route, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

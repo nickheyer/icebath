@@ -27,7 +27,7 @@ func WritePlannedRestartMarker(ctx context.Context, viaService, detached bool) {
 	payload.Set("requested_at", float64(time.Now().UnixNano())/1e9)
 	payload.Set("via_service", viaService)
 	payload.Set("detached", detached)
-	if err := config.AtomicJSONWriteWith(ctx, PlannedRestartMarkerPath(""), payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, PlannedRestartMarkerPath(""), payload, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug("Could not record the planned restart; home channels get no online notice", "error", err)
 	}
 }

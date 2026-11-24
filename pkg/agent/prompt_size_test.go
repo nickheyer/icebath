@@ -174,7 +174,7 @@ func TestComputeSkillsBreakdownParsesRowsAndSharedLines(t *testing.T) {
 	for _, e := range entries {
 		rows = append(rows, e.Object())
 	}
-	got, err := jsonutil.Encode(rows)
+	got, err := jsonutil.Encode(rows, jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestComputeToolsetsBreakdownGroupsLargestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	knownJSON, _ := jsonutil.Encode(list[1])
+	knownJSON, _ := jsonutil.Encode(list[1], jsonutil.Spaced())
 	unknown := ToolsetBreakdownEntry{Toolset: "(unknown)", ToolCount: 3, JSONBytes: 20 + 5 + 20}
 	knownRow := ToolsetBreakdownEntry{Toolset: m[known], ToolCount: 1, JSONBytes: len(knownJSON)}
 	want := []ToolsetBreakdownEntry{unknown, knownRow}

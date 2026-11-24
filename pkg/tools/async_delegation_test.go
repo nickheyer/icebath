@@ -547,8 +547,8 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 		event[k] = v
 	}
 	event["type"], event["status"], event["summary"], event["error"] = "async_delegation", "failed", delegationSecret, delegationSecret
-	eventJSON, _ := jsonutil.Encode(event)
-	resultJSON, _ := jsonutil.Encode(map[string]any{"status": "failed", "summary": delegationSecret, "error": delegationSecret})
+	eventJSON, _ := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
+	resultJSON, _ := jsonutil.Encode(map[string]any{"status": "failed", "summary": delegationSecret, "error": delegationSecret}, jsonutil.Spaced(), jsonutil.ASCII())
 	err := AsyncTransaction(env, func(ctx context.Context, conn state.SQLiteConn) error {
 		_, err := asyncExec(ctx, conn, "UPDATE async_delegations SET state='failed',completed_at=?,event_json=?,result_json=?", asyncTimeNow(), eventJSON, resultJSON)
 		return err
@@ -560,7 +560,7 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if err != nil || stored == nil {
 		t.Fatalf("stored %v %v", stored, err)
 	}
-	if text, _ := jsonutil.Encode(stored["result"]); strings.Contains(text, delegationSecret) {
+	if text, _ := jsonutil.Encode(stored["result"], jsonutil.Spaced(), jsonutil.ASCII()); strings.Contains(text, delegationSecret) {
 		t.Fatalf("stored result %s", text)
 	}
 	target := newEventQueue()
@@ -571,14 +571,14 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if replay["restored"] != true || replay["session_key"] != record["session_key"] {
 		t.Fatalf("replay %v", replay)
 	}
-	if text, _ := jsonutil.Encode(replay); strings.Contains(text, delegationSecret) {
+	if text, _ := jsonutil.Encode(replay, jsonutil.Spaced(), jsonutil.ASCII()); strings.Contains(text, delegationSecret) {
 		t.Fatalf("replay %s", text)
 	}
 	failures, err := FailedDelegationsForSession(env, "", "parent-session", 20, nil)
 	if err != nil || len(failures) != 1 || failures[0]["goal"] != record["goal"] {
 		t.Fatalf("failures %v %v", failures, err)
 	}
-	if text, _ := jsonutil.Encode(failures); strings.Contains(text, delegationSecret) {
+	if text, _ := jsonutil.Encode(failures, jsonutil.Spaced(), jsonutil.ASCII()); strings.Contains(text, delegationSecret) {
 		t.Fatalf("failures %s", text)
 	}
 }

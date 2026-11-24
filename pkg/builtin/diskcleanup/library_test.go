@@ -336,7 +336,7 @@ func writeTrackedJSON(t *testing.T, h string, items ...Entry) string {
 	for i, e := range items {
 		list[i] = e
 	}
-	text, err := jsonutil.Encode(list)
+	text, err := jsonutil.Encode(list, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

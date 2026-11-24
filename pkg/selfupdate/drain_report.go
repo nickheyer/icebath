@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -39,10 +40,7 @@ func init() {
 // Elapsed seconds as XmYYs from one minute up, Ns below, a question mark when not a number
 func fmtElapsed(seconds any) string {
 	f, err := anyutil.ToFloat(seconds)
-	if err != nil {
-		if pe, ok := err.(*errorutil.Error); ok && pe.Kind == "OverflowError" {
-			panic(err)
-		}
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return "?"
 	}
 	if math.IsNaN(f) {

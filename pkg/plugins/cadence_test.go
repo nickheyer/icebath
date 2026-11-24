@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Temp home holding the cadence markers with the package logger captured
@@ -185,7 +186,7 @@ func TestCachedGitUpdatesFollowTheCheckedInstall(t *testing.T) {
 		return out
 	}
 	writeMeta := func(rows map[string]any) {
-		if err := config.AtomicJSONWriteMode(ctx, filepath.Join(dir, ".install-metadata.json"), rows, 0o644); err != nil {
+		if err := config.AtomicJSONWriteMode(ctx, filepath.Join(dir, ".install-metadata.json"), rows, 0o644, jsonutil.Spaced()); err != nil {
 			t.Fatal(err)
 		}
 	}

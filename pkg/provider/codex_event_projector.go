@@ -101,7 +101,7 @@ func cxList(v any) []any {
 
 // json.dumps with ensure_ascii False, the text form the codex projections record
 func cxDumps(v any) (string, error) {
-	return jsonutil.Encode(v)
+	return jsonutil.Encode(v, jsonutil.Spaced())
 }
 
 // Stable tool call id from the codex item id, else a hash of the item type
@@ -115,7 +115,7 @@ func codexDeterministicCallID(itemType, itemID string) string {
 
 // Tool arguments as sorted key JSON so replays keep prefix caches valid
 func codexFormatToolArgs(d any) string {
-	out, err := jsonutil.Encode(d, jsonutil.SortKeys())
+	out, err := jsonutil.Encode(d, jsonutil.SortKeys(), jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

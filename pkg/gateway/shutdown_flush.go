@@ -162,7 +162,7 @@ func FlushOverflowToFile(ctx context.Context, overflowBySession map[string][]any
 
 // Whether json.dumps accepts the value
 func flushJSONSafe(value any) bool {
-	_, err := jsonutil.Encode(value)
+	_, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 	return err == nil
 }
 

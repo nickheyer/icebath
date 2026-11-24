@@ -307,7 +307,7 @@ func buildMarkdownPostPayload(content string) string {
 	locale.Set("content", rows)
 	root := jsonutil.NewObject()
 	root.Set("zh_cn", locale)
-	out, _ := jsonutil.Encode(root)
+	out, _ := jsonutil.Encode(root, jsonutil.Spaced())
 	return out
 }
 

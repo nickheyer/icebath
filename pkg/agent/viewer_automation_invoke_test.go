@@ -19,7 +19,7 @@ func automationReply(t *testing.T, kind, call string, args []any, kwargs *jsonut
 	if err != nil {
 		t.Fatalf("%s.%s failed %v", kind, call, err)
 	}
-	text, err := jsonutil.Encode(reply)
+	text, err := jsonutil.Encode(reply, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatalf("%s.%s reply does not serialise %v", kind, call, err)
 	}

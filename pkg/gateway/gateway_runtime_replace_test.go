@@ -89,7 +89,7 @@ func TestARefusedReplacementIsReportedWithItsReason(t *testing.T) {
 // Identify payload of an older owner without runtime_protocol
 func ownerPayload(t *testing.T, h string, pid int, startTime any) *jsonutil.Object {
 	t.Helper()
-	start, err := jsonutil.Encode(startTime)
+	start, err := jsonutil.Encode(startTime, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

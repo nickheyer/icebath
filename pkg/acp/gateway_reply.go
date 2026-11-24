@@ -132,7 +132,7 @@ func (a *GatewayACPAgent) projectSideUpdate(ctx context.Context, kind, sid, edit
 	} else if todos, ok := dget(payload, "todos").([]any); ok {
 		wrapped := jsonutil.NewObject()
 		wrapped.Set("todos", todos)
-		text, err := jsonutil.Encode(wrapped)
+		text, err := jsonutil.Encode(wrapped, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

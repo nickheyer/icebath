@@ -247,7 +247,7 @@ func (d *SessionDB) publishChildSessionRow(ctx context.Context, conn SQLiteConn,
 	}
 	var configText any
 	if modelConfig.Len() > 0 {
-		text, err := jsonutil.Encode(modelConfig)
+		text, err := jsonutil.Encode(modelConfig, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

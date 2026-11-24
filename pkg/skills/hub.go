@@ -321,7 +321,7 @@ func (h *Hub) writeIndexCache(key string, data any) error {
 	if _, err := os.Stat(ignore); err != nil {
 		_ = os.WriteFile(ignore, []byte("# Exclude hub internals from search tools\n*\n"), 0o666)
 	}
-	text, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if err != nil {
 		return err
 	}

@@ -38,7 +38,7 @@ func (s *scriptedOwner) Send(raw string) error {
 		return err
 	}
 	if frame := s.reply(jsonutil.Plain(decoded).(map[string]any)); frame != nil {
-		text, err := jsonutil.Encode(frame)
+		text, err := jsonutil.Encode(frame, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

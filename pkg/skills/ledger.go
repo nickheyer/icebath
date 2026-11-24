@@ -715,7 +715,7 @@ func (s *Scope) ledgerAppendEntry(ctx context.Context, action string, skill any,
 	entry.Set("evidence", evidence)
 	entry.Set("before", before)
 	entry.Set("after", after)
-	line, err := jsonutil.Encode(entry)
+	line, err := jsonutil.Encode(entry, jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}
@@ -913,7 +913,7 @@ func (s *Scope) LedgerCompact(ctx context.Context) (int, int, int, error) {
 			}
 			obj.Set("before", b)
 			obj.Set("after", a)
-			if line, err = jsonutil.Encode(obj); err != nil {
+			if line, err = jsonutil.Encode(obj, jsonutil.Spaced()); err != nil {
 				return 0, 0, 0, err
 			}
 		}

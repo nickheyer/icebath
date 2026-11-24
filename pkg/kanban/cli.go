@@ -2207,7 +2207,7 @@ func (c *kanbanCLI) runTriageSweep(verb, jsonKey string, listIDs func(*string) (
 		}
 		if len(ids) == 0 {
 			if wantJSON {
-				text, err := jsonutil.Encode(jsonutil.ObjectOf(jsonKey, 0, "total", 0))
+				text, err := jsonutil.Encode(jsonutil.ObjectOf(jsonKey, 0, "total", 0), jsonutil.Spaced(), jsonutil.ASCII())
 				if err != nil {
 					return 0, err
 				}
@@ -2237,7 +2237,7 @@ func (c *kanbanCLI) runTriageSweep(verb, jsonKey string, listIDs func(*string) (
 		}
 		switch {
 		case wantJSON:
-			text, err := jsonutil.Encode(outcome.fields)
+			text, err := jsonutil.Encode(outcome.fields, jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return 0, err
 			}

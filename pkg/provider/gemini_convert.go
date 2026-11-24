@@ -881,7 +881,7 @@ func geminiDumpCallArgsWith(fc map[string]any, sortKeys bool) string {
 	if !pyTruthy(args) {
 		args = map[string]any{}
 	}
-	var opts []jsonutil.Option
+	opts := []jsonutil.Option{jsonutil.Spaced()}
 	if sortKeys {
 		opts = append(opts, jsonutil.SortKeys())
 	}

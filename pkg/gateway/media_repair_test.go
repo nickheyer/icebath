@@ -93,7 +93,7 @@ func TestCompressionFallbackSlicesFromLastUserMessage(t *testing.T) {
 
 func pyDumps(t *testing.T, v any) string {
 	t.Helper()
-	s, err := jsonutil.Encode(v)
+	s, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -60,7 +60,7 @@ func TestCardSpecToCardsV2WireShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := jsonutil.Encode(card)
+	got, err := jsonutil.Encode(card, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

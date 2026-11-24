@@ -65,7 +65,7 @@ func (d CapabilityDescriptor) ToJSON() (string, error) {
 		"len_unit", d.LenUnit, "emoji", d.Emoji, "platform_hint", d.PlatformHint, "pii_safe", d.PIISafe,
 		"supports_context", d.SupportsContext, "supports_inchannel_continuable", d.SupportsInchannelContinuable,
 		"supports_block_formatting", d.SupportsBlockFormatting, "supported_ops", ops)
-	return jsonutil.Encode(obj, jsonutil.SortKeys())
+	return jsonutil.Encode(obj, jsonutil.SortKeys(), jsonutil.Spaced())
 }
 
 var relayDescriptorRequired = []string{"contract_version", "platform", "label", "max_message_length",

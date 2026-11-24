@@ -205,7 +205,9 @@ func asyncExec(ctx context.Context, conn state.SQLiteConn, query string, args ..
 }
 
 // json.dumps of a ledger value
-func asyncDumps(v any) (string, error) { return jsonutil.Encode(v) }
+func asyncDumps(v any) (string, error) {
+	return jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
+}
 
 // json.loads of a ledger payload into plain maps, slices and ints
 func asyncLoads(raw string) (any, error) {

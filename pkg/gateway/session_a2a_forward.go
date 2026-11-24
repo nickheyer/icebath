@@ -79,7 +79,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 		identity = append(identity, text)
 		identityList = append(identityList, text)
 	}
-	encoded, err := jsonutil.Encode(identityList)
+	encoded, err := jsonutil.Encode(identityList, jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

@@ -124,7 +124,7 @@ func fakeMCPEndpoint(t *testing.T, target *string, reply func() string) {
 // JSON-RPC result whose single text content is text
 func mcpTextResult(t *testing.T, text string) string {
 	t.Helper()
-	encoded, err := jsonutil.Encode(text)
+	encoded, err := jsonutil.Encode(text, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

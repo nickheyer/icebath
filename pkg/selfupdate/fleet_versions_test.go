@@ -45,7 +45,7 @@ func fvFleetWith(t *testing.T, record *jsonutil.Object, expectedSHA string) []*j
 	gatewayRecord := jsonutil.ObjectOf("gateway_state", "running", "kind", "icebath-gateway",
 		"argv", []any{"icebath", "gateway", "run"})
 	gatewayRecord.Merge(record)
-	text, err := jsonutil.Encode(gatewayRecord)
+	text, err := jsonutil.Encode(gatewayRecord, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

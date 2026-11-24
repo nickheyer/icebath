@@ -18,7 +18,7 @@ var editorMCPPrivateKey = secretPath{"editor_mcp"}
 
 // Sorted compact JSON every editor MCP fingerprint and size bound reads
 func editorMCPJSON(value any) (string, error) {
-	return jsonutil.Encode(value, jsonutil.SortKeys())
+	return jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.ASCII())
 }
 
 // Hex sha256 of the sorted compact JSON of a server list

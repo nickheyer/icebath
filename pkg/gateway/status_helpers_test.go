@@ -35,7 +35,7 @@ func strs(items ...string) []any {
 
 func writeRecord(t *testing.T, path string, r *jsonutil.Object) {
 	t.Helper()
-	text, err := jsonutil.Encode(r)
+	text, err := jsonutil.Encode(r, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,7 @@ const maxToolEventChars = 64 * 1024
 
 // ASCII JSON text of a value with unknown objects rendered by their str text
 func toolEventJSON(value any) string {
-	text, err := jsonutil.Encode(value, jsonutil.ASCII(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, err := jsonutil.Encode(value, jsonutil.ASCII(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if err != nil {
 		return anyutil.String(value)
 	}

@@ -14,7 +14,7 @@ import (
 // Rewrites the profile config.yaml as the JSON of the mapping
 func writeJSONConfig(t *testing.T, h string, cfg map[string]any) {
 	t.Helper()
-	text, err := jsonutil.Encode(cfg)
+	text, err := jsonutil.Encode(cfg, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -144,7 +144,7 @@ func TestMintedLauncherReadsCurrentSelectionAndEditableMembers(t *testing.T) {
 	editable := filepath.Join(tmp, "editable")
 	writeFile(t, filepath.Join(editable, "editable_probe.py"), []byte("VALUE = 'editable'\n"), 0o666)
 	writeFile(t, filepath.Join(site, "member.pth"), []byte(editable+"\n"), 0o666)
-	facts, err := jsonutil.Encode(map[string]any{"packages": map[string]any{"venv": map[string]any{"environment": selected}}})
+	facts, err := jsonutil.Encode(map[string]any{"packages": map[string]any{"venv": map[string]any{"environment": selected}}}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

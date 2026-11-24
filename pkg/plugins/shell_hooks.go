@@ -239,7 +239,7 @@ func shellHookPayloadFields(ctx context.Context, kwargs map[string]any) *jsonuti
 func serializeShellHookPayload(ctx context.Context, event string, kwargs map[string]any) (string, error) {
 	payload := jsonutil.ObjectOf("hook_event_name", event)
 	payload.Merge(shellHookPayloadFields(ctx, kwargs))
-	return jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	return jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 }
 
 // Registers every consented configured hook once per home and returns the newly wired specs

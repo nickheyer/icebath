@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestOrderedArgsObjectKeepsTheModelIntsAndFloats(t *testing.T) {
@@ -46,7 +48,7 @@ func TestGuardrailCanonicalArgsAndResultHashKeepIntsAndFloats(t *testing.T) {
 func TestPromotedNoteKeepsTheSpawnResultNumbers(t *testing.T) {
 	spawn := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false}`
 	note := strings.ReplaceAll(strings.ReplaceAll(promotedNotePollOnly, "{requested}", "900"), "{cap}", strconv.Itoa(foregroundMaxTimeout()))
-	want := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false, "promoted_from_foreground": ` + pyDumps(note) + `}`
+	want := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false, "promoted_from_foreground": ` + pyDumps(note, jsonutil.Spaced()) + `}`
 	if got := withPromotedNote(spawn, 900); got != want {
 		t.Fatalf("promoted %s", got)
 	}

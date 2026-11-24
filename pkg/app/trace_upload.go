@@ -101,7 +101,9 @@ func traceList(v any) ([]any, bool) {
 }
 
 // json.dumps with default options
-func traceDumps(v any) (string, error) { return jsonutil.Encode(v) }
+func traceDumps(v any) (string, error) {
+	return jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
+}
 
 // Text block with its body redacted
 func traceTextBlock(text any, redact bool) (*jsonutil.Object, error) {
@@ -341,7 +343,7 @@ func buildTraceJSONL(ctx context.Context, messages []map[string]any, sessionID, 
 		entry := jsonutil.ObjectOf("parentUuid", parent, "isSidechain", false, "userType", "external", "cwd", lineCwd,
 			"sessionId", sessionID, "version", traceVersion, "gitBranch", gitBranch, "uuid", turnUUID,
 			"timestamp", baseTS, "type", lineType, "message", rendered)
-		text, err := jsonutil.Encode(entry)
+		text, err := jsonutil.Encode(entry, jsonutil.Spaced())
 		if err != nil {
 			return "", err
 		}

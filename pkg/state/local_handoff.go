@@ -203,7 +203,7 @@ func handOffConversations(ctx context.Context, conn SQLiteConn, moved []movedRec
 		for i, sid := range segments {
 			encoded[i] = sid
 		}
-		text, err := jsonutil.Encode(encoded)
+		text, err := jsonutil.Encode(encoded, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

@@ -106,7 +106,7 @@ func (q *a2aRequest) handleError(rec any) {
 
 // JSON body with its content type and length
 func (q *a2aRequest) json(code int, payload any) {
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}
@@ -397,7 +397,7 @@ func pushRedirect(req *http.Request, via []*http.Request) error {
 
 // POSTs a JSON payload to a push callback and returns the final status, the HTTPError for a non success one
 func pushPost(ctx context.Context, rawURL string, payload any, headers map[string]string, timeout time.Duration) (int, error) {
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return 0, err
 	}

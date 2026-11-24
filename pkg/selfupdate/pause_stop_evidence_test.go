@@ -94,7 +94,7 @@ func seAcceptedThenOrphaned(t *testing.T, homeWritable, consume, markSent bool) 
 	}
 	body := loaded.(*jsonutil.Object)
 	body.Set("written_at", time.Now().UTC().Add(-120*time.Second).Format("2006-01-02T15:04:05.000000-07:00"))
-	text, err := jsonutil.Encode(body)
+	text, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

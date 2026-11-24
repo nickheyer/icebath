@@ -105,7 +105,7 @@ var cloudTransport = sync.OnceValue(func() *http.Transport {
 func cloudRequest(method, url string, headers map[string]string, body any, timeout int) (*httputil.Response, error) {
 	var payload []byte
 	if body != nil {
-		text, err := jsonutil.Encode(body)
+		text, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

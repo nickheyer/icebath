@@ -158,7 +158,7 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 			applied = append(applied, proposals[i].Pattern)
 		}
 		if asJSON {
-			fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("applied", applied, "allowlist_size", len(merged))))
+			fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("applied", applied, "allowlist_size", len(merged)), jsonutil.Spaced(), jsonutil.ASCII()))
 		} else {
 			fmt.Fprintln(w, "Added to command_allowlist:")
 			for _, pattern := range applied {
@@ -174,7 +174,7 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 			rows = append(rows, jsonutil.ObjectOf("n", i+1, "pattern", p.Pattern, "kind", p.Kind, "count", p.Count,
 				"classes", jsonStringList(proposalClasses(p)), "examples", jsonStringList(p.Examples)))
 		}
-		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("db", dbPath, "days", days, "proposals", rows), jsonutil.Indent(2)))
+		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("db", dbPath, "days", days, "proposals", rows), jsonutil.Indent(2), jsonutil.ASCII()))
 		return 0, nil
 	}
 	renderProposals(w, proposals, days)
@@ -214,7 +214,7 @@ func approvalsTestCommand(env *Env, ns map[string]any, w io.Writer) (int, error)
 			detail = verdict.Detail
 		}
 		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("command", verdict.Command, "env_type", verdict.EnvType, "verdict", verdict.Verdict,
-			"exit_code", verdict.ExitCode, "rule", rule, "detail", detail, "normalized_variants", jsonStringList(verdict.NormalizedVariants)), jsonutil.Indent(2)))
+			"exit_code", verdict.ExitCode, "rule", rule, "detail", detail, "normalized_variants", jsonStringList(verdict.NormalizedVariants)), jsonutil.Indent(2), jsonutil.ASCII()))
 	} else {
 		fmt.Fprint(w, RenderVerdict(verdict))
 	}

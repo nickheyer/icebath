@@ -119,7 +119,7 @@ func (b *ContextEngineBase) GetToolSchemas() []map[string]any { return []map[str
 func (b *ContextEngineBase) HandleToolCall(name string, args map[string]any, kwargs map[string]any) string {
 	obj := jsonutil.NewObject()
 	obj.Set("error", "Unknown context engine tool: "+name)
-	out, _ := jsonutil.Encode(obj)
+	out, _ := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 	return out
 }
 

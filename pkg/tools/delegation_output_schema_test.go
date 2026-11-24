@@ -136,7 +136,7 @@ func TestStructuredSummaryIsRedactedPerValueAndStaysValidJSON(t *testing.T) {
 func TestRedactedSchemaVerdictDescribesDeliveredSummary(t *testing.T) {
 	schema, _ := jsonutil.Decode(`{"type": "object", "properties": {"value": {"const": "` + delegationSecret + `"}}, "required": ["value"]}`)
 	entry := RedactChildResult(nil, map[string]any{"status": "completed", "summary": `{"value": "` + delegationSecret + `"}`, "schema_valid": true}, schema, true).(map[string]any)
-	text, _ := jsonutil.Encode(entry)
+	text, _ := jsonutil.Encode(entry, jsonutil.Spaced(), jsonutil.ASCII())
 	if entry["status"] != "completed" || entry["schema_valid"] != false || strings.Contains(text, delegationSecret) {
 		t.Fatalf("entry %s", text)
 	}
@@ -200,7 +200,7 @@ func TestParentCopyHonoursOptOutWhilePersistedCopiesStayForced(t *testing.T) {
 	if event["goal"] != delegationSecret || event["summary"] != forced || event["status"] != "completed" {
 		t.Fatalf("event %v", event)
 	}
-	text, _ := jsonutil.Encode(map[string]any{"summary": carrier})
+	text, _ := jsonutil.Encode(map[string]any{"summary": carrier}, jsonutil.Spaced(), jsonutil.ASCII())
 	if !strings.Contains(text, delegationSecret) {
 		t.Fatalf("carrier serialized %s", text)
 	}

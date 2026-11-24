@@ -1190,7 +1190,7 @@ func connNoCardResult(ctx context.Context, r *connRunner, names []string, action
 	}
 	payload.Set("status", status)
 	payload.Set("note", connectorNoCardNote)
-	out, err := jsonutil.Encode(payload)
+	out, err := jsonutil.Encode(payload, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

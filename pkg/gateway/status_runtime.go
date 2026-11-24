@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -589,11 +589,12 @@ func RuntimeStatusPidIsLive(record *jsonutil.Object) bool {
 
 // Non negative active_agents of a persisted value, zero when int raises TypeError or ValueError
 func ParseActiveAgents(raw any) (any, error) {
+	// A whole number past what an int64 holds reads as the bound on its side, an infinite one is refused
 	n, err := anyutil.ToInt(raw)
-	if err != nil {
-		if pe, ok := err.(*errorutil.Error); ok && pe.Kind == "OverflowError" {
-			return nil, err
-		}
+	if f, isFloat := raw.(float64); isFloat && math.IsInf(f, 0) {
+		return nil, err
+	}
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return int64(0), nil
 	}
 	if n < 0 {

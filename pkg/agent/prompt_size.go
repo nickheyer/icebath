@@ -265,7 +265,7 @@ func computeToolsetsBreakdown(ctx context.Context, toolList []any) ([]ToolsetBre
 			groups[toolset] = group
 		}
 		group.ToolCount++
-		text, err := jsonutil.Encode(tool)
+		text, err := jsonutil.Encode(tool, jsonutil.Spaced())
 		if err != nil {
 			return nil, err
 		}
@@ -330,7 +330,7 @@ func ComputePromptBreakdown(ctx context.Context, env *tools.Env, platform string
 	}
 	out.SystemPrompt, out.SkillsIndex = promptSize(full), promptSize(skillsIndex)
 	out.Memory, out.UserProfile = promptSize(memoryBlock), promptSize(userBlock)
-	toolsJSON, err := jsonutil.Encode(toolList)
+	toolsJSON, err := jsonutil.Encode(toolList, jsonutil.Spaced())
 	if err != nil {
 		return nil, err
 	}

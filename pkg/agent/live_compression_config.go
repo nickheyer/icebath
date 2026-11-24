@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
@@ -16,8 +18,11 @@ func liveConfigErrorKind(err error) string {
 	return plugins.ErrorTypeName(err)
 }
 
-// True when the error is a TypeError or ValueError, the two a suppress block swallows
+// True when the error is a value that is no number or a TypeError or ValueError a hosted attribute raised, the failures a reload skips
 func liveConfigSuppressed(err error) bool {
+	if errors.Is(err, anyutil.ErrNotNumber) {
+		return true
+	}
 	kind := liveConfigErrorKind(err)
 	return kind == "TypeError" || kind == "ValueError"
 }

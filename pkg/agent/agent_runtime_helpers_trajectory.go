@@ -133,7 +133,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		payload := jsonutil.NewObject()
 		payload.Set("name", name)
 		payload.Set("arguments", arguments)
-		encoded, err := jsonutil.Encode(payload)
+		encoded, err := jsonutil.Encode(payload, jsonutil.Spaced())
 		if err != nil {
 			return "", err
 		}
@@ -193,7 +193,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 		payload.Set("tool_call_id", toolCallID)
 		payload.Set("name", name)
 		payload.Set("content", toolContent)
-		encoded, err := jsonutil.Encode(payload)
+		encoded, err := jsonutil.Encode(payload, jsonutil.Spaced())
 		if err != nil {
 			return nil, 0, err
 		}

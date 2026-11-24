@@ -37,7 +37,7 @@ func displayObj(kv ...any) *jsonutil.Object {
 // json.dumps text of an ordered dict built from alternating keys and values
 func displayDumps(t *testing.T, kv ...any) string {
 	t.Helper()
-	out, err := jsonutil.Encode(displayObj(kv...))
+	out, err := jsonutil.Encode(displayObj(kv...), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestDetectToolFailureStructuredSuccessfulResultNotFlagged(t *testing.T) {
 
 func TestDetectToolFailureStructuredEmptyErrorAndFailedValuesAreNotFailures(t *testing.T) {
 	ctx := cuteTestHome(t)
-	indented, err := jsonutil.Encode(displayObj("results", []any{displayObj("url", "https://example.com/", "content", "hi", "error", nil)}), jsonutil.Indent(2))
+	indented, err := jsonutil.Encode(displayObj("results", []any{displayObj("url", "https://example.com/", "content", "hi", "error", nil)}), jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

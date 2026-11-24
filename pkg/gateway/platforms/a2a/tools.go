@@ -225,7 +225,7 @@ var httpPostJSON = func(ctx context.Context, url string, body *jsonutil.Object, 
 	for k, v := range headers {
 		hdrs[k] = v
 	}
-	data, err := jsonutil.Encode(body)
+	data, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

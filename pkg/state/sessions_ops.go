@@ -91,7 +91,7 @@ func keepSessionOwnedConfig(next string, stored any) (string, error) {
 	if !changed {
 		return next, nil
 	}
-	return jsonutil.Encode(incoming)
+	return jsonutil.Encode(incoming, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Browser or API client runtime lock fields, nil strings meaning unset

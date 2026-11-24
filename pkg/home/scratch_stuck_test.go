@@ -147,7 +147,7 @@ func TestFixedExpiredOrOtherUIDEntryIsJudgedAgain(t *testing.T) {
 	}
 	rec := v.(*jsonutil.Object).Value("other").(*jsonutil.Object)
 	rec.Set("uid", rec.Value("uid").(int64)+1)
-	text, _ := jsonutil.Encode(v)
+	text, _ := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	writeText(t, stateFile, text)
 	*walked = nil
 	mustPruneIdle(t, root, logFile, 0)

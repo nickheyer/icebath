@@ -917,7 +917,7 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 		return "{}"
 	}
 	if parsed, err := jsonutil.DecodeWith(stripped, jsonutil.ControlChars()); err == nil {
-		if reserialised, err := jsonutil.Encode(parsed); err == nil {
+		if reserialised, err := jsonutil.Encode(parsed, jsonutil.ASCII()); err == nil {
 			if reserialised != stripped {
 				pkgLog().Warn(fmt.Sprintf("Repaired unescaped control chars in tool_call arguments for %s", toolName))
 			}

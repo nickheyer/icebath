@@ -23,7 +23,7 @@ func TestStickerMapShape(t *testing.T) {
 		t.Fatalf("catalogue = %d keys %q", StickerMap.Len(), StickerMap.Keys())
 	}
 	s := StickerMap.Value("ok").(*jsonutil.Object)
-	got, err := jsonutil.Encode(s)
+	got, err := jsonutil.Encode(s, jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestBuildStickerMsgBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := jsonutil.Encode(body)
+	got, _ := jsonutil.Encode(body, jsonutil.Spaced())
 	want := `[{"msg_type": "TIMFaceElem", "msg_content": {"index": 0, "data": "{\"sticker_id\":\"278\",\"package_id\":\"1003\",\"width\":128,\"height\":128,\"formats\":\"png\",\"name\":\"六六六\"}"}}]`
 	if got != want {
 		t.Fatalf("got %s", got)
@@ -155,7 +155,7 @@ func TestBuildStickerMsgBody(t *testing.T) {
 	if _, err = BuildStickerMsgBody(bare); !errors.As(err, &ke) || err.Error() != "the sticker has no sticker_id" {
 		t.Fatalf("missing key = %v", err)
 	}
-	face, _ := jsonutil.Encode(BuildFaceMsgBody(5, nil))
+	face, _ := jsonutil.Encode(BuildFaceMsgBody(5, nil), jsonutil.Spaced(), jsonutil.ASCII())
 	if face != `[{"msg_type": "TIMFaceElem", "msg_content": {"index": 5}}]` {
 		t.Fatalf("face = %s", face)
 	}

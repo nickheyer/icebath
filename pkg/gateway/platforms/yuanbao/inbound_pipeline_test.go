@@ -220,7 +220,7 @@ func TestContentPlaceholderAndGroupGuardMiddlewares(t *testing.T) {
 	owner := NewInboundContext(adapter, nil)
 	command := "/new"
 	owner.ChatType, owner.OwnerCommand = "group", &command
-	mention, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"))
+	mention, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestGroupDispatchesRunOneAtATimePerSession(t *testing.T) {
 		}
 		return nil
 	})
-	mention, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"))
+	mention, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestGroupDispatchesRunOneAtATimePerSession(t *testing.T) {
 		push := jsonutil.ObjectOf("From_Account", "alice", "GroupId", "grp-1", "MsgKey", "msg-"+text, "MsgBody", []any{
 			jsonutil.ObjectOf("MsgType", "TIMCustomElem", "MsgContent", jsonutil.ObjectOf("data", mention)),
 			jsonutil.ObjectOf("MsgType", "TIMTextElem", "MsgContent", jsonutil.ObjectOf("text", text))})
-		encoded, err := jsonutil.Encode(push)
+		encoded, err := jsonutil.Encode(push, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}

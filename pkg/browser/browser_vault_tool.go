@@ -54,7 +54,7 @@ const pageFillFailedKey = "icebath_vault_eval_failed"
 func vaultDumps(v any) string { return jsonText(v) }
 
 func vaultDumpsUnicode(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

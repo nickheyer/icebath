@@ -98,7 +98,7 @@ func toolCompletedPreview(result any) string {
 	}
 	text, ok := result.(string)
 	if !ok {
-		encoded, err := jsonutil.Encode(result, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		encoded, err := jsonutil.Encode(result, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 		if err != nil {
 			text = anyutil.String(result)
 		} else {

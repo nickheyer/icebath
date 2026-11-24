@@ -81,7 +81,7 @@ func TestSyncFailureRealRunToSpinnerThreeModes(t *testing.T) {
 		restore := parent.NotificationPolicySnapshot("cli")
 		result := runSingleChild(context.Background(), 0, "actual failing child", child, parent, "", nil, nil)
 		restore()
-		text, err := jsonutil.Encode(result)
+		text, err := jsonutil.Encode(result, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}

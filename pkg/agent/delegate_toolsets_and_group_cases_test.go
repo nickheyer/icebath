@@ -162,7 +162,7 @@ func writeDelegationBlock(t *testing.T, h string, block string) {
 
 func sortedJSON(t *testing.T, v any) string {
 	t.Helper()
-	s, err := jsonutil.Encode(v, jsonutil.SortKeys())
+	s, err := jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

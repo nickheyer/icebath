@@ -411,7 +411,7 @@ func cmdPinned(r *sessionsRun, db *state.SessionDB) (int, error) {
 			}
 			out = append(out, entry)
 		}
-		text, err := jsonutil.Encode(out, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(out, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

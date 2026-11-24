@@ -45,7 +45,7 @@ func screenStatusCmd(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 	if ns.JSON {
 		payload := st.AsDict()
 		payload.Set("lease", botdesktop.LeasePublicView(botdesktop.LeaseGet(key)))
-		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys())
+		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 		if err != nil {
 			return 0, err
 		}

@@ -485,7 +485,7 @@ func pyIterate(v any) ([]any, error) {
 
 // json.dumps with sorted keys and str for values JSON cannot hold
 func dumpsSorted(v any) (string, error) {
-	return jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Convert(func(x any) (any, error) { return anyutil.String(x), nil }))
+	return jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Convert(func(x any) (any, error) { return anyutil.String(x), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Config axes of the capability surface, stopping at the first failure as the Python try block does
@@ -598,7 +598,7 @@ func CapabilityFingerprint(h string) string {
 		peerNames = []string{}
 	}
 	surface["peers"] = peerNames
-	text, err := jsonutil.Encode(surface, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(surface, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "unavailable"
 	}

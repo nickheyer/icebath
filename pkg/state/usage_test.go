@@ -484,7 +484,7 @@ func TestFindSessionByOriginPrefersExactSender(t *testing.T) {
 }
 
 func dumpRows(rows []*jsonutil.Object) string {
-	text, err := jsonutil.Encode(rows)
+	text, err := jsonutil.Encode(rows, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

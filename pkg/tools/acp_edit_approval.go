@@ -285,7 +285,7 @@ func ShouldAutoApproveEdit(proposal *EditProposal, policy, cwd string) bool {
 
 // Tool error JSON of a refused edit
 func editDenied(message string) string {
-	text, _ := jsonutil.Encode(map[string]any{"error": message})
+	text, _ := jsonutil.Encode(map[string]any{"error": message}, jsonutil.Spaced())
 	return text
 }
 

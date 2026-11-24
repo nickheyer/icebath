@@ -252,7 +252,7 @@ func rrSystemctlPath(t *testing.T, present bool) {
 // Bucket lists and covered map of a child result in a comparable form
 func rrBuckets(t *testing.T, result *jsonutil.Object) string {
 	t.Helper()
-	text, err := jsonutil.Encode(result, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(result, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

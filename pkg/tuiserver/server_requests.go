@@ -115,7 +115,7 @@ func ask(ctx context.Context, method, sid string, params map[string]any, timeout
 	if text, isText := value.(string); isText {
 		return text
 	}
-	encoded, err := jsonutil.Encode(value)
+	encoded, err := jsonutil.Encode(value, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

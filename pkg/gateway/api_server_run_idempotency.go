@@ -37,7 +37,7 @@ var apiRunMigrations = [][2]string{{"owner_pid", "INTEGER NOT NULL DEFAULT 0"}, 
 
 // Canonical JSON of a public run status
 func apiEncodeRunStatus(status any) (string, error) {
-	return jsonutil.Encode(status, jsonutil.SortKeys())
+	return jsonutil.Encode(status, jsonutil.SortKeys(), jsonutil.ASCII())
 }
 
 // RunIdempotencyRecord is the stored public run status of one reservation with its owner

@@ -79,7 +79,7 @@ func lease(holderPID int64, holderStart, startTime any, ns any) *jsonutil.Object
 
 func writeJSON(t *testing.T, path string, o *jsonutil.Object) {
 	t.Helper()
-	text, _ := jsonutil.Encode(o)
+	text, _ := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}

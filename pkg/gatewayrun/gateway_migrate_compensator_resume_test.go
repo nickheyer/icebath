@@ -29,7 +29,7 @@ func writeLiveGateway(t *testing.T, h string, pid int, served []any) {
 		record.Set("served_profiles", served)
 	}
 	for name, v := range map[string]any{"gateway.pid": jsonutil.ObjectOf("pid", int64(pid), "icebath_home", h), "gateway_state.json": record} {
-		text, err := jsonutil.Encode(v)
+		text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +60,7 @@ func newStrandedHost(t *testing.T) *strandedHost {
 	}
 	manifest, _ := jsonutil.Encode(jsonutil.ObjectOf("version", int64(1), "flag_was", false,
 		"default", jsonutil.ObjectOf("profile", "default", "home", root, "pid", nil, "services", []any{}),
-		"secondaries", []any{secondary("coder", 4101), secondary("ops", 4102)}))
+		"secondaries", []any{secondary("coder", 4101), secondary("ops", 4102)}), jsonutil.Spaced(), jsonutil.ASCII())
 	fleetWrite(t, filepath.Join(root, MigrationManifestName), manifest)
 	exe, err := os.Executable()
 	if err != nil {

@@ -503,7 +503,7 @@ func controlText(name string, v any) (string, error) {
 // Runs the list, steer or stop control action over the parent's own spawn tree
 func handleDelegateControlAction(action string, subagentID, message any, parent *AIAgent) (string, error) {
 	if action == "list" {
-		return jsonutil.Encode(listSubagentsPayload(parent))
+		return jsonutil.Encode(listSubagentsPayload(parent), jsonutil.Spaced())
 	}
 	rawID, err := controlText("subagent_id", subagentID)
 	if err != nil {
@@ -551,7 +551,7 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 		payload.Set("subagent_id", sid)
 		payload.Set("status", outcome[0])
 		payload.Set("note", outcome[1])
-		return jsonutil.Encode(payload)
+		return jsonutil.Encode(payload, jsonutil.Spaced())
 	}
 	return delegateToolError(fmt.Sprintf(outcome[2], sid)), nil
 }

@@ -304,7 +304,7 @@ func TestPatchSessionModelConfigMergeAndDelete(t *testing.T) {
 	session, _ := s.db.GetSession(s.ctx, s.sid)
 	raw, _ := session.Get("model_config")
 	got, err := jsonutil.Decode(fmt.Sprint(raw))
-	dumped, _ := jsonutil.Encode(got)
+	dumped, _ := jsonutil.Encode(got, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil || dumped != `{"keep": "value", "added": 7}` {
 		t.Fatalf("model config %v %v", raw, err)
 	}

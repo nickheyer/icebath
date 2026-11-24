@@ -124,7 +124,7 @@ func makeJSONPush(t *testing.T, fromAccount, groupCode, text, msgID string) []by
 		push.Set("CallbackCommand", "Group.CallbackAfterSendMsg")
 		push.Set("GroupId", groupCode)
 	}
-	encoded, err := jsonutil.Encode(push)
+	encoded, err := jsonutil.Encode(push, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

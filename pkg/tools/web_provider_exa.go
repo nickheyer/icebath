@@ -48,7 +48,7 @@ func getExaClient(ctx context.Context, env *Env) (*exaClient, error) {
 
 // Posts a payload and returns the decoded body, a failed status or non JSON body raised verbatim
 func (c *exaClient) request(ctx context.Context, env *Env, endpoint string, data *jsonutil.Object) (any, error) {
-	body, err := jsonutil.Encode(data)
+	body, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

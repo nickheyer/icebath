@@ -30,7 +30,7 @@ func apiSSEFrame(data any, event string, ensureASCII bool, id *int) ([]byte, err
 	if event != "" {
 		prefix += "event: " + event + "\n"
 	}
-	var opts []jsonutil.Option
+	opts := []jsonutil.Option{jsonutil.Spaced()}
 	if ensureASCII {
 		opts = append(opts, jsonutil.ASCII())
 	}

@@ -462,7 +462,7 @@ func recordRepairOutcome(dbPath string, repaired bool) {
 		out.Set("fingerprint", fp)
 		out.Set("failed_attempts", int(attempts))
 		out.Set("last_attempt", time.Now().Format("2006-01-02T15:04:05"))
-		text, err := jsonutil.Encode(out)
+		text, err := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

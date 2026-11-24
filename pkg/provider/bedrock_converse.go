@@ -274,7 +274,7 @@ func bedrockConverseResponse(r *bedrockConverseResult, model, provider string) *
 		}
 	}
 	if len(details) > 0 {
-		text, _ := jsonutil.Encode(details)
+		text, _ := jsonutil.Encode(details, jsonutil.Spaced(), jsonutil.ASCII())
 		msg.ReasoningDetails = json.RawMessage(text)
 	}
 	if len(r.ContentBlocks) > 0 {

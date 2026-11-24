@@ -78,7 +78,7 @@ func asyncChildMain(mode, home, delegationID string) int {
 			fmt.Println("nothing restored")
 			return 3
 		}
-		text, err := jsonutil.Encode(evt, jsonutil.SortKeys())
+		text, err := jsonutil.Encode(evt, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			fmt.Println(err)
 			return 1

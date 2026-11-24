@@ -34,7 +34,7 @@ func callTool(t *testing.T, name string, args map[string]any) *jsonutil.Object {
 // Compact JSON of a decoded tool result
 func compact(t *testing.T, value any) string {
 	t.Helper()
-	encoded, err := jsonutil.Encode(value)
+	encoded, err := jsonutil.Encode(value, jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}

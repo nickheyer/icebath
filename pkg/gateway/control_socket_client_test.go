@@ -166,7 +166,7 @@ func TestReloadPluginsDefaultsProfileHomeToHome(t *testing.T) {
 	if r := ReloadGatewayPlugins(h, "", time.Second); r == nil || r.Len() != 0 {
 		t.Fatalf("answer %#v", r)
 	}
-	want, _ := jsonutil.Encode(h)
+	want, _ := jsonutil.Encode(h, jsonutil.Spaced(), jsonutil.ASCII())
 	if !strings.Contains(got, `"params": {"home": `+want+`}`) {
 		t.Fatalf("request %q", got)
 	}

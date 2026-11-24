@@ -920,7 +920,7 @@ func (t *WebSocketRelayTransport) send(frame *jsonutil.Object) error {
 	if conn == nil {
 		return &PyError{"RuntimeError", "relay transport not connected"}
 	}
-	text, err := jsonutil.Encode(frame)
+	text, err := jsonutil.Encode(frame, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -1274,7 +1274,7 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 
 // Records a negotiated descriptor per platform and resolves the first handshake
 func (t *WebSocketRelayTransport) onDescriptor(frame *jsonutil.Object) error {
-	text, err := jsonutil.Encode(frame.ValueOr("descriptor", jsonutil.NewObject()))
+	text, err := jsonutil.Encode(frame.ValueOr("descriptor", jsonutil.NewObject()), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

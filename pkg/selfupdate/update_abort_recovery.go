@@ -55,7 +55,7 @@ func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates 
 	for _, profile := range profiles {
 		supervisors.Set(profile, candidates[profile])
 	}
-	payload, err := jsonutil.Encode(jsonutil.ObjectOf("profiles", stringsAny(profiles), "supervisors", supervisors))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("profiles", stringsAny(profiles), "supervisors", supervisors), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil
 	}

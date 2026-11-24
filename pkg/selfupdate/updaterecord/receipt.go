@@ -456,7 +456,7 @@ func LoadReceiptFile(path string) (any, error) { return loadJSONFile(path) }
 
 // Indented receipt payload with a trailing newline, str for anything JSON cannot encode
 func receiptPayload(data any, indent bool) ([]byte, error) {
-	opts := []jsonutil.Option{jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil })}
+	opts := []jsonutil.Option{jsonutil.Spaced(), jsonutil.ASCII(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil })}
 	if indent {
 		opts = append(opts, jsonutil.Indent(2))
 	}

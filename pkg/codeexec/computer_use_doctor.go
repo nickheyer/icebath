@@ -267,7 +267,7 @@ func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*jsonutil.Objec
 	if params != nil {
 		payload.Set("params", params)
 	}
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -974,7 +974,7 @@ func printTextReport(w io.Writer, report *jsonutil.Object, color bool, identity,
 				s := anyutil.String(v)
 				switch v.(type) {
 				case *jsonutil.Object, []any:
-					s, _ = jsonutil.Encode(v)
+					s, _ = jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 				}
 				lines = append(lines, fmt.Sprintf("      %s%s=%s%s", dim, k, s, reset))
 			}
@@ -1051,7 +1051,7 @@ func runComputerUseDoctor(ctx context.Context, env *tools.Env, stdout, stderr io
 		if environment != nil {
 			payload.Set("icebath_environment", environment)
 		}
-		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys())
+		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 		if err != nil {
 			return 0, err
 		}

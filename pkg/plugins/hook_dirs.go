@@ -58,7 +58,7 @@ func RunDirectoryHook(ctx context.Context, eventType, hookDir string, argv []str
 	}
 	payload, err := jsonutil.Encode(jsonutil.ObjectOf("hook_event_name", eventType, "context", hookContext, "cwd", cwd,
 		"profile", profiles.GetActiveProfileName(ctx)),
-		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 
 	if err != nil {
 		return nil, err

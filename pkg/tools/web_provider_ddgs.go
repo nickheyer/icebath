@@ -230,7 +230,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		request.Set("test_hook", ddgsTestHook)
 		childEnv["ICEBATH_DDGS_ALLOW_TEST_HOOKS"] = "1"
 	}
-	payload, err := jsonutil.Encode(request)
+	payload, err := jsonutil.Encode(request, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (p *ddgsProvider) SetupSchema() map[string]any {
 // Worker entrypoint reading one request from stdin and writing one envelope to stdout
 func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv func(string) string) int {
 	write := func(envelope *jsonutil.Object) {
-		text, _ := jsonutil.Encode(envelope)
+		text, _ := jsonutil.Encode(envelope, jsonutil.Spaced(), jsonutil.ASCII())
 		_, _ = io.WriteString(out, text)
 	}
 	fail := func(msg string, code int) int {

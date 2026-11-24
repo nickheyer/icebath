@@ -37,7 +37,7 @@ func producerIdentity(ctx context.Context, runner any, event map[string]any) (st
 	if identity == nil {
 		return "", runtimeRefusal("invalid_params")
 	}
-	return jsonutil.Encode(identity)
+	return jsonutil.Encode(identity, jsonutil.ASCII())
 }
 
 // Text of an event field with a falsy value as empty
@@ -503,7 +503,7 @@ func processCompleted(ctx context.Context, runner any, a *SessionAuthority, owne
 	if completion == nil {
 		return false, nil
 	}
-	identity, err := jsonutil.Encode(completion)
+	identity, err := jsonutil.Encode(completion, jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}

@@ -55,7 +55,7 @@ func ownerRequest(ctx context.Context, ownerHome, verb string, params map[string
 	if time.Until(deadline) <= 0 {
 		return nil, runtimeRefusal("runtime_draining")
 	}
-	text, err := jsonutil.Encode(jsonutil.ObjectOf("protocol", 1, "id", 1, "verb", verb, "params", sent))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("protocol", 1, "id", 1, "verb", verb, "params", sent), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func hostedPrincipal(a *SessionAuthority, binding *jsonutil.Object) (Principal, 
 	if err != nil {
 		return Principal{}, err
 	}
-	identity, err := jsonutil.Encode([]any{sourceHome, owner})
+	identity, err := jsonutil.Encode([]any{sourceHome, owner}, jsonutil.ASCII())
 	if err != nil {
 		return Principal{}, err
 	}

@@ -37,7 +37,7 @@ func defaultDispatch(env *tools.Env, taskID string) dispatchFunc {
 	return func(ctx context.Context, toolName string, args any) string {
 		call := &tools.Call{Name: toolName, TaskID: taskID, Env: env}
 		call.Args, _ = jsonutil.Plain(args).(map[string]any)
-		raw, err := jsonutil.Encode(args)
+		raw, err := jsonutil.Encode(args, jsonutil.Spaced())
 		if err != nil {
 			return toolError(err.Error())
 		}

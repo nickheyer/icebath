@@ -83,7 +83,7 @@ func liveTurnReplayKey(event *MessageEvent) (string, bool, error) {
 	if event.Source.Profile != nil {
 		profile = *event.Source.Profile
 	}
-	key, err := jsonutil.Encode([]any{profile, string(event.Source.Platform), event.Source.ChatID, *event.MessageID})
+	key, err := jsonutil.Encode([]any{profile, string(event.Source.Platform), event.Source.ChatID, *event.MessageID}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", false, err
 	}

@@ -337,7 +337,7 @@ func (c *PeerRunsHTTPClient) request(path, method string, body any, headers map[
 	deadline, ambiguous := timeutil.Monotonic()+c.TimeoutSeconds, method == "POST"
 	var reader io.Reader
 	if body != nil {
-		encoded, err := jsonutil.Encode(body)
+		encoded, err := jsonutil.Encode(body, jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

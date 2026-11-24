@@ -54,7 +54,7 @@ func (s *Store) updateRawJobs(ctx context.Context, update func(jobs []any) (bool
 		kept := map[string]bool{}
 		next := make([]*Job, 0, len(raw))
 		for _, item := range raw {
-			text, err := jsonutil.Encode(item)
+			text, err := jsonutil.Encode(item, jsonutil.Spaced())
 			if err != nil {
 				return err
 			}

@@ -80,7 +80,7 @@ func encodeNotifyDeliveryMetadata(metadata any) *string {
 	if clean.Len() == 0 {
 		return nil
 	}
-	text, err := jsonutil.Encode(clean, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(clean, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return nil
 	}

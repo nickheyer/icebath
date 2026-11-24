@@ -96,7 +96,7 @@ func pyISONowUTC() string {
 
 // Writes a JSON document to a mkstemp sibling in dir and renames it over target
 func writeJSONViaTemp(dir, prefix, target string, payload *jsonutil.Object) error {
-	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

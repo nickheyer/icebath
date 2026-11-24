@@ -788,7 +788,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 
 // One JSON POST on an httpx style client with a per phase timeout
 func postJSON(ctx context.Context, client *http.Client, target string, payload *jsonutil.Object, timeout time.Duration) (*httputil.Response, error) {
-	encoded, err := jsonutil.Encode(payload)
+	encoded, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

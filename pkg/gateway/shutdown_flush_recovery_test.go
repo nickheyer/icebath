@@ -30,7 +30,7 @@ func (f funcAppender) AppendMessage(_ context.Context, sessionID string, fields 
 
 func writeCapDropSpool(t *testing.T, dir, name, sessionID string, message map[string]any, tsJSON, seqJSON string) string {
 	t.Helper()
-	msg, err := jsonutil.Encode(message)
+	msg, err := jsonutil.Encode(message, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,10 +432,10 @@ func TestAReplayedRowIsTheRowTheLiveWriterWrites(t *testing.T) {
 		for _, c := range calls {
 			fields := maps.Clone(c.fields)
 			fields["session_id"] = c.sessionID
-			stamp, _ := jsonutil.Encode(fields["timestamp"])
+			stamp, _ := jsonutil.Encode(fields["timestamp"], jsonutil.Spaced(), jsonutil.ASCII())
 			stamps = append(stamps, stamp)
 			delete(fields, "timestamp")
-			row, err := jsonutil.Encode(fields, jsonutil.SortKeys())
+			row, err := jsonutil.Encode(fields, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				t.Fatal(err)
 			}

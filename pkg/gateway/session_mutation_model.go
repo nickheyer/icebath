@@ -234,7 +234,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	} else if _, has := model["api_key"]; !has {
 		delete(model, "api_key_from")
 	}
-	configJSON, err := jsonutil.Encode(frozen)
+	configJSON, err := jsonutil.Encode(frozen, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -628,7 +628,7 @@ func selectionGuardRefusal(ctx context.Context, a *SessionAuthority, live *LiveS
 		"current": []any{current.Model, current.Provider, provider.NormalizeRouteBaseURL(current.BaseURL)},
 		"session": []any{target, revision}, "guards": guards,
 	}
-	text, err := jsonutil.Encode(binding, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(binding, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

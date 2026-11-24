@@ -115,7 +115,7 @@ var (
 
 // Python json.dumps with ensure_ascii off over an ordered object
 func ttsDumps(v any) string {
-	s, err := jsonutil.Encode(v)
+	s, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		return tools.ErrorResult(err)
 	}

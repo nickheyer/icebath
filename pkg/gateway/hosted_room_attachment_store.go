@@ -727,7 +727,7 @@ func (s *HostedRoomAttachmentStore) CommitMessageWithReceipt(c AttachmentCommit)
 	}
 	sorted := append([]string(nil), recipients...)
 	sort.Strings(sorted)
-	recipientsJSON, err := jsonutil.Encode(sorted)
+	recipientsJSON, err := jsonutil.Encode(sorted, jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, err
 	}

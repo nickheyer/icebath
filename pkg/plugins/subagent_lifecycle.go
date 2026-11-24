@@ -766,7 +766,7 @@ func subagentResultHash(r *SubagentResult) string {
 	text, err := jsonutil.Encode(map[string]any{"handle": handle, "terminal_state": string(r.TerminalState), "ready": r.Ready, "summary": optStrValue(r.Summary),
 		"structured_payload": payload, "started_at": floatOrNil(r.StartedAt), "completed_at": floatOrNil(r.CompletedAt),
 		"error_classification": optStrValue(r.ErrorClassification), "error_message": optStrValue(r.ErrorMessage), "usage_metadata": r.UsageMetadata,
-		"tool_execution_summary": r.ToolExecutionSummary}, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		"tool_execution_summary": r.ToolExecutionSummary}, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}
@@ -803,7 +803,7 @@ func validateSubagentRequest(ctx context.Context, d SubagentDelegation, r *Subag
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return lifecycleErr("metadata must be JSON-serializable.")
 	}

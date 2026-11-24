@@ -445,7 +445,7 @@ func cmdRepairPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	apply, asJSON := nsTruthy(r.ns, "apply"), nsTruthy(r.ns, "json")
 	printPayload := func(cleared []any) error {
-		text, err := jsonutil.Encode(jsonutil.ObjectOf("findings", findings, "unverifiable", unverifiable, "apply", apply, "cleared", cleared), jsonutil.Indent(2))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("findings", findings, "unverifiable", unverifiable, "apply", apply, "cleared", cleared), jsonutil.Indent(2), jsonutil.ASCII())
 		if err == nil {
 			r.print(text)
 		}
@@ -557,7 +557,7 @@ func cmdRefreshPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 		if sessionID != nil {
 			id = *sessionID
 		}
-		text, err := jsonutil.Encode(jsonutil.ObjectOf("epoch", epoch, "session_id", id, "sessions", count))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("epoch", epoch, "session_id", id, "sessions", count), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

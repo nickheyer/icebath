@@ -259,13 +259,13 @@ func TestEndToEndSendRecvC2C(t *testing.T) {
 func TestGroupInfoAndMemberListDecoders(t *testing.T) {
 	gi := append(EncodeField(1, WTLen, EncodeMessage([]byte("g"))), EncodeField(4, WTVarint, EncodeVarint(9))...)
 	rsp := append(EncodeField(2, WTLen, EncodeMessage([]byte("ok"))), EncodeField(3, WTLen, EncodeMessage(gi))...)
-	got, _ := jsonutil.Encode(DecodeQueryGroupInfoRsp(rsp))
+	got, _ := jsonutil.Encode(DecodeQueryGroupInfoRsp(rsp), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != `{"code": 0, "message": "ok", "group_name": "g", "owner_id": "", "owner_nickname": "", "member_count": 9}` {
 		t.Fatalf("group info %s", got)
 	}
 	mem := EncodeField(1, WTLen, EncodeMessage([]byte("u1")))
 	list := append(EncodeField(3, WTLen, EncodeMessage(mem)), EncodeField(5, WTVarint, []byte{1})...)
-	got, _ = jsonutil.Encode(DecodeGetGroupMemberListRsp(list))
+	got, _ = jsonutil.Encode(DecodeGetGroupMemberListRsp(list), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != `{"code": 0, "message": "", "members": [{"user_id": "u1", "role": 0}], "next_offset": 0, "is_complete": true}` {
 		t.Fatalf("member list %s", got)
 	}

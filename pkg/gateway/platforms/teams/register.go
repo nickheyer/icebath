@@ -120,7 +120,7 @@ func standalonePost(ctx context.Context, tenantID, clientID, clientSecret, activ
 	if accessToken == "" {
 		return gateway.SendError("Teams standalone send: token response missing access_token"), nil
 	}
-	payload, err := jsonutil.Encode(jsonutil.ObjectOf("type", "message", "text", message, "textFormat", "markdown"))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("type", "message", "text", message, "textFormat", "markdown"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

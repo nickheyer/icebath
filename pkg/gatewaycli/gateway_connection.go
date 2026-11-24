@@ -703,7 +703,7 @@ func (c *GatewayConnection) Reply(requestID any, result any) bool {
 	if client == nil || !looping {
 		return false
 	}
-	frame, err := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "result", result))
+	frame, err := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "result", result), jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		sent := make(chan error, 1)
 		go func() { sent <- client.SendFrame(frame) }()

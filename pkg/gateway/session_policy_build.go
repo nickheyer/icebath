@@ -136,7 +136,7 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 	if _, err := launchSkills(params); err != nil {
 		return nil, err
 	}
-	text, err := jsonutil.Encode(cfg)
+	text, err := jsonutil.Encode(cfg, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -191,11 +191,11 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 			}
 			return nil, err
 		}
-		envText, err := jsonutil.Encode(env, jsonutil.SortKeys())
+		envText, err := jsonutil.Encode(env, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
-		rulesText, err := jsonutil.Encode(rules.Object(), jsonutil.SortKeys())
+		rulesText, err := jsonutil.Encode(rules.Object(), jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -224,15 +224,15 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 		toolsets = append(toolsets, name)
 	}
 	sort.Strings(toolsets)
-	configJSON, err := jsonutil.Encode(config)
+	configJSON, err := jsonutil.Encode(config, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
-	requestJSON, err := jsonutil.Encode(request, jsonutil.SortKeys())
+	requestJSON, err := jsonutil.Encode(request, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
-	terminalJSON, err := jsonutil.Encode(terminal)
+	terminalJSON, err := jsonutil.Encode(terminal, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

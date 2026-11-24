@@ -71,7 +71,7 @@ func canonCacheLen() int {
 
 func mustDumps(t *testing.T, v any) string {
 	t.Helper()
-	s, err := jsonutil.Encode(v)
+	s, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestCanonMemoSemantics(t *testing.T) {
 	again, _ := canonicalizeToolCallArguments(raw)
 	twice, _ := canonicalizeToolCallArguments(canon)
 	parsed, _ := jsonutil.Decode(raw)
-	want, _ := jsonutil.Encode(parsed, jsonutil.SortKeys())
+	want, _ := jsonutil.Encode(parsed, jsonutil.SortKeys(), jsonutil.ASCII())
 	if canon != again || twice != canon || canon != want {
 		t.Fatalf("canonical form unstable %q %q %q %q", canon, again, twice, want)
 	}
@@ -176,7 +176,7 @@ func TestCanonicalizeAPIToolCallsParity(t *testing.T) {
 		raw := firstArgs(history[i]).(string)
 		want := provider.RepairToolCallArguments(raw, "write_file")
 		if parsed, err := jsonutil.Decode(raw); err == nil {
-			want, _ = jsonutil.Encode(parsed, jsonutil.SortKeys())
+			want, _ = jsonutil.Encode(parsed, jsonutil.SortKeys(), jsonutil.ASCII())
 		}
 		if got := firstArgs(row); got != want {
 			t.Fatalf("row %d: %q want %q", i, got, want)

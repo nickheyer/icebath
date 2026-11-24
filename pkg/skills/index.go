@@ -212,13 +212,13 @@ func buildSnapshotEntry(skillFile, skillsDir string, fm map[string]any, descript
 	if err != nil {
 		return nil, err
 	}
+	extracted := extractSkillConditions(fm)
 	conditions := jsonutil.NewObject()
-	for k, v := range extractSkillConditions(fm) {
-		conditions.Set(k, toAnyList(v))
+	for _, k := range conditionKeys {
+		if v, ok := extracted[k]; ok {
+			conditions.Set(k, toAnyList(v))
+		}
 	}
-	sort.SliceStable(conditions.Keys, func(i, j int) bool {
-		return slices.Index(conditionKeys, conditions.Keys()[i]) < slices.Index(conditionKeys, conditions.Keys()[j])
-	})
 	entry := jsonutil.NewObject()
 	entry.Set("skill_name", skillName)
 	entry.Set("category", category)
@@ -460,7 +460,7 @@ func jsonToFrontmatter(v any) any {
 
 // Cache key text of every input the rendered index depends on
 func skillsPromptCacheKey(parts ...any) string {
-	text, err := jsonutil.Encode(parts, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(parts, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return fmt.Sprint(parts...)
 	}

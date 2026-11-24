@@ -546,7 +546,7 @@ func (c *GatewayClient) RPCTimeout(ctx context.Context, method string, params ma
 		params = map[string]any{}
 	}
 	request := jsonutil.ObjectOf("jsonrpc", "2.0", "id", rid, "method", method, "params", params)
-	text, err := jsonutil.Encode(request)
+	text, err := jsonutil.Encode(request, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -589,7 +589,7 @@ func refusesRestartWait(ctx context.Context) bool {
 
 // Request line for one session ticket mint over the control socket
 func sessionTicketRequest(params *jsonutil.Object) ([]byte, error) {
-	text, err := jsonutil.Encode(jsonutil.ObjectOf("protocol", 1, "id", 1, "verb", "session-ticket", "params", params))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("protocol", 1, "id", 1, "verb", "session-ticket", "params", params), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

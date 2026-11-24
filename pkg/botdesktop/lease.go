@@ -181,7 +181,7 @@ func leaseWrite(path string, l BotDesktopLease) error {
 	if err := leasePrivateDir(path); err != nil {
 		return err
 	}
-	text, err := jsonutil.Encode(l.AsDict())
+	text, err := jsonutil.Encode(l.AsDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

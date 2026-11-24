@@ -16,7 +16,7 @@ import (
 
 func objText(t *testing.T, o *jsonutil.Object) string {
 	t.Helper()
-	s, err := jsonutil.Encode(o)
+	s, err := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

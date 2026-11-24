@@ -115,7 +115,7 @@ func (a *ackMessage) toDict() (*jsonutil.Object, error) {
 	if a.messageID != nil {
 		headers.Set("messageId", a.messageID)
 	}
-	data, err := jsonutil.Encode(a.data)
+	data, err := jsonutil.Encode(a.data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +363,7 @@ func (c *streamClient) routeMessage(ctx context.Context, jsonMessage any, ws *we
 		if err != nil {
 			return "", err
 		}
-		encoded, err := jsonutil.Encode(wire)
+		encoded, err := jsonutil.Encode(wire, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}
@@ -422,7 +422,7 @@ func (c *streamClient) openConnection(ctx context.Context) (*jsonutil.Object, er
 	}
 	c.mu.Unlock()
 	body, err := jsonutil.Encode(jsonutil.ObjectOf("clientId", c.clientID, "clientSecret", c.clientSecret, "subscriptions", topics,
-		"ua", "dingtalk-sdk-python/v"+streamSDKVersion+"-union", "localIp", hostIP()))
+		"ua", "dingtalk-sdk-python/v"+streamSDKVersion+"-union", "localIp", hostIP()), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func (c *streamClient) getAccessToken(ctx context.Context) (any, error) {
 			return cached.Value("accessToken"), nil
 		}
 	}
-	values, err := jsonutil.Encode(jsonutil.ObjectOf("appKey", c.clientID, "appSecret", c.clientSecret))
+	values, err := jsonutil.Encode(jsonutil.ObjectOf("appKey", c.clientID, "appSecret", c.clientSecret), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

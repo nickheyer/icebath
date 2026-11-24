@@ -39,7 +39,7 @@ var (
 
 // JSON text of a tool result with ASCII escapes as json.dumps writes it
 func dumpsResult(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return tools.ErrorResult(err)
 	}

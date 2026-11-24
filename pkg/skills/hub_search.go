@@ -112,7 +112,7 @@ func (h *Hub) loadIndex(ctx context.Context) any {
 	if _, has := obj.Get("skills"); !has {
 		return h.loadStaleIndexCache()
 	}
-	if text, err := jsonutil.Encode(obj); err == nil {
+	if text, err := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII()); err == nil {
 		file := h.indexCacheFile()
 		if os.MkdirAll(filepath.Dir(file), 0o755) == nil {
 			os.WriteFile(file, []byte(text), 0o644)

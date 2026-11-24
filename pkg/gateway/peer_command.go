@@ -199,7 +199,7 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 	}
 	var data io.Reader
 	if o.body != nil {
-		text, err := jsonutil.Encode(o.body)
+		text, err := jsonutil.Encode(o.body, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -665,7 +665,7 @@ func peerFailure(c *peerCLI, peerName string, err error) int {
 // Prints the JSON payload under --json, the text lines otherwise
 func peerEmit(c *peerCLI, ns map[string]any, payload *jsonutil.Object, lines []string) (int, error) {
 	if anyutil.IsTrue(ns["json"]) {
-		text, err := jsonutil.Encode(payload)
+		text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}
@@ -824,7 +824,7 @@ func peerRunCtl(c *peerCLI, ns map[string]any, action, peerName, profile, base, 
 	if anyutil.IsTrue(ns["json"]) {
 		merged := jsonutil.ObjectOf("peer", peerName, "profile", peerProfileValue(profile))
 		merged.Merge(result)
-		text, err := jsonutil.Encode(merged)
+		text, err := jsonutil.Encode(merged, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

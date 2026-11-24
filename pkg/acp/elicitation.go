@@ -102,7 +102,7 @@ func ElicitedAnswer(response any) (string, bool) {
 				return "", false
 			}
 		}
-		text, err := jsonutil.Encode(items)
+		text, err := jsonutil.Encode(items, jsonutil.Spaced())
 		return text, err == nil
 	}
 	s, ok := value.(string)

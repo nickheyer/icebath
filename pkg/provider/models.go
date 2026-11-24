@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // CatalogRows is one provider catalog answer, Fallback marks a curated outage placeholder, Native a local server listing
@@ -1330,7 +1331,7 @@ func loadProviderModelsCache(ctx context.Context) map[string]any {
 
 // Persists the cache document, silent on any error
 func saveProviderModelsCache(ctx context.Context, data map[string]any) {
-	if err := modelsWriteJSONCache(ctx, providerModelsCachePath(ctx), data); err != nil {
+	if err := modelsWriteJSONCache(ctx, providerModelsCachePath(ctx), data, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug("provider models cache save failed", "error", err)
 	}
 }

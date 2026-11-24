@@ -284,7 +284,7 @@ func discoverMCP(ctx context.Context) ([]auditComponent, error) {
 func osvHTTPJSON(ctx context.Context, url string, payload any) (any, error) {
 	method, body := http.MethodGet, io.Reader(nil)
 	if payload != nil {
-		text, err := jsonutil.Encode(payload)
+		text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -562,7 +562,7 @@ func renderJSON(findings []auditFinding, total int) (string, error) {
 			"ecosystem", f.Component.Ecosystem, "source", f.Component.Source, "vuln_id", f.Vuln.OSVID,
 			"severity", f.Vuln.Severity, "summary", f.Vuln.Summary, "fixed_versions", fixed))
 	}
-	return jsonutil.Encode(jsonutil.ObjectOf("total_components_scanned", total, "finding_count", len(findings), "findings", rows), jsonutil.Indent(2))
+	return jsonutil.Encode(jsonutil.ObjectOf("total_components_scanned", total, "finding_count", len(findings), "findings", rows), jsonutil.Indent(2), jsonutil.ASCII())
 }
 
 // Audits the venv, plugin and MCP pins against OSV, exit 1 when a finding meets the fail on tier

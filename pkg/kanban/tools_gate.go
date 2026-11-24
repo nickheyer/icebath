@@ -505,7 +505,7 @@ func okPayload(fields ...any) (string, error) {
 	for i := 0; i+1 < len(fields); i += 2 {
 		o.Set(fields[i].(string), fields[i+1])
 	}
-	return jsonutil.Encode(o)
+	return jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Success payload reporting the run and the status the task actually landed in
@@ -544,7 +544,7 @@ func redactOpt(env *tools.Env, value any) any {
 
 // Metadata redacted through a JSON round trip, nil when the redacted text no longer parses as a dict
 func redactMetadata(env *tools.Env, metadata *jsonutil.Object) (*jsonutil.Object, error) {
-	text, err := jsonutil.Encode(metadata)
+	text, err := jsonutil.Encode(metadata, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

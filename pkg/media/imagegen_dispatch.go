@@ -129,7 +129,7 @@ func postprocessImageGenerateResult(env *tools.Env, raw, taskID string) (string,
 	if _, has := payload.Get("agent_visible_image"); !has {
 		payload.Set("agent_visible_image", agentPath)
 	}
-	out, err := jsonutil.Encode(payload)
+	out, err := jsonutil.Encode(payload, jsonutil.Spaced())
 	if err != nil {
 		return raw, nil
 	}
@@ -219,7 +219,7 @@ func imagePromptParam() *jsonutil.Object {
 // JSON error envelope shared by every provider dispatch failure path
 func providerError(errText, errorType string) string {
 	return dumpOrdered([]string{"success", "image", "error", "error_type"},
-		map[string]any{"success": false, "image": nil, "error": errText, "error_type": errorType})
+		map[string]any{"success": false, "image": nil, "error": errText, "error_type": errorType}, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // JSON of a provider result map, a contract error for a nil result
@@ -227,7 +227,7 @@ func providerResult(result map[string]any, contractError string) string {
 	if result == nil {
 		return providerError(contractError, "provider_contract")
 	}
-	out, err := jsonutil.Encode(result)
+	out, err := jsonutil.Encode(result, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return providerError(contractError, "provider_contract")
 	}

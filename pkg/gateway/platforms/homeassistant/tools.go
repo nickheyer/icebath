@@ -725,7 +725,7 @@ func receiveJSON(ctx context.Context, conn *websocketutil.Conn) (any, error) {
 
 // Sends a value as a JSON text message
 func sendJSON(conn *websocketutil.Conn, v any) error {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

@@ -217,7 +217,7 @@ func routeToTaskRoute(ctx context.Context, route map[string]any, parent *AIAgent
 	route = withInheritedFallback(route, cfg)
 	keyed := maps.Clone(route)
 	delete(keyed, "label")
-	key, err := jsonutil.Encode(keyed, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	key, err := jsonutil.Encode(keyed, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

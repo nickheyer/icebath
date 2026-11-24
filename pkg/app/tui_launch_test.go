@@ -503,7 +503,7 @@ func tuiCronJob(t *testing.T, bound, cwd string) {
 	} else {
 		job.Set("origin", jsonutil.ObjectOf("platform", "local", "chat_id", "local-chat"))
 	}
-	text, err := jsonutil.Encode(jsonutil.ObjectOf("jobs", []any{job}), jsonutil.Indent(2))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("jobs", []any{job}), jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

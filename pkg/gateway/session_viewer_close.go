@@ -38,7 +38,7 @@ type pendingClose struct {
 
 // Close with a fresh operation id record
 func newPendingClose(reason string) *pendingClose {
-	record, _ := jsonutil.Encode(map[string]any{"op": uuid4HexString(), "reason": reason}, jsonutil.SortKeys())
+	record, _ := jsonutil.Encode(map[string]any{"op": uuid4HexString(), "reason": reason}, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	return &pendingClose{reason: reason, record: record}
 }
 

@@ -386,8 +386,8 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 	repo, number := match[1], match[2]
 	receipt.Set("pr_url", prRef)
 	owner, name, _ := cutString(repo, "/")
-	ownerJSON, _ := jsonutil.Encode(owner)
-	nameJSON, _ := jsonutil.Encode(name)
+	ownerJSON, _ := jsonutil.Encode(owner, jsonutil.Spaced(), jsonutil.ASCII())
+	nameJSON, _ := jsonutil.Encode(name, jsonutil.Spaced(), jsonutil.ASCII())
 	query := "{repository(owner:" + ownerJSON + ",name:" + nameJSON + "){pullRequest(number:" + number + "){headRefOid baseRefName state\n" +
 		"            baseRef{branchProtectionRule{requiredStatusChecks{context app{databaseId}}}}}}}"
 	repository := jget(jget(ghAPI(ctx, "graphql", &query, false, profileHome), "data"), "repository")

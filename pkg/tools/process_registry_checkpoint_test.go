@@ -331,7 +331,7 @@ func TestCheckpointRewriteKeepsForeignEntryOrderAndNumberTypes(t *testing.T) {
 	log := filepath.Join(logs, "proc_w.log")
 	os.WriteFile(log, []byte("done\n"), 0o644)
 	os.WriteFile(exitPathOf(log), []byte("0"), 0o644)
-	quoted, err := jsonutil.Encode(log)
+	quoted, err := jsonutil.Encode(log, jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -573,7 +573,7 @@ func (s *session) request(ctx context.Context, method string, params any, textPa
 	msg.Set("id", requestID)
 	msg.Set("method", method)
 	msg.Set("params", params)
-	line, err := jsonutil.Encode(msg)
+	line, err := jsonutil.Encode(msg, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -811,7 +811,7 @@ func (c *Client) handleServerMessage(msg any, stdin io.Writer, cwd string, textP
 	default:
 		response = jsonrpcError(messageID, -32601, fmt.Sprintf("ACP client method '%s' is not supported by Icebath yet.", method))
 	}
-	line, err := jsonutil.Encode(response)
+	line, err := jsonutil.Encode(response, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}

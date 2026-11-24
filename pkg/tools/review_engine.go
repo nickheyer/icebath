@@ -286,7 +286,7 @@ func FormatDispatchNote(result *jsonutil.Object, userPrompt string) string {
 	if results, present := result.Get("results"); present {
 		body = results
 	}
-	dumped, err := jsonutil.Encode(body)
+	dumped, err := jsonutil.Encode(body, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

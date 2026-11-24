@@ -126,7 +126,7 @@ func (o *restartOwner) serve(sock *pipeSocket) {
 			admission = fmt.Sprintf("%s-%s", o.epoch, anyutil.String(params.ValueOr("input_id", nil)))
 			result.Set("admission_id", admission)
 		}
-		reply, _ := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", frame.ValueOr("id", nil), "result", result))
+		reply, _ := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", frame.ValueOr("id", nil), "result", result), jsonutil.Spaced(), jsonutil.ASCII())
 		sock.toClient <- reply
 		if method == "prompt.submit" && o.dieOnSubmit == "after_ack" {
 			time.Sleep(20 * time.Millisecond)
@@ -137,7 +137,7 @@ func (o *restartOwner) serve(sock *pipeSocket) {
 			event := jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params", jsonutil.ObjectOf(
 				"session_id", params.ValueOr("session_id", nil), "type", "message.complete", "replay_epoch", o.epoch, "seq", int64(1),
 				"admission_id", admission, "payload", jsonutil.ObjectOf("outcome", "completed", "text", "AFTER-RESTART")))
-			text, _ := jsonutil.Encode(event)
+			text, _ := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
 			sock.toClient <- text
 		}
 	}

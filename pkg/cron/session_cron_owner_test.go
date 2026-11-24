@@ -58,7 +58,7 @@ func claimedCronFire(t *testing.T, s *Store, requestID string) (*gateway.Session
 // Frozen cron policy of a fire
 func cronFirePolicy(t *testing.T, requestID string, job *jsonutil.Object) *gateway.LocalSessionPolicy {
 	t.Helper()
-	text, err := jsonutil.Encode(jsonutil.ObjectOf("extra_prompt", nil, "request_id", requestID, "cron_job", job))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("extra_prompt", nil, "request_id", requestID, "cron_job", job), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

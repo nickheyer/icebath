@@ -122,14 +122,14 @@ func olderGatewayReference(t *testing.T, policy *LocalSessionPolicy) string {
 	for _, name := range append([]string{"credential_ref", "config_secret_ref"}, secretScopeLaterFields...) {
 		delete(data, name)
 	}
-	text, err := jsonutil.Encode(data, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(data, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256([]byte(text))
 	source["policy"] = hex.EncodeToString(digest[:])
 	delete(source, "bound")
-	ref, err := jsonutil.Encode(source, jsonutil.SortKeys())
+	ref, err := jsonutil.Encode(source, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

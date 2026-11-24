@@ -46,7 +46,7 @@ func BrowserDialogSchema() *jsonutil.Object {
 }
 
 func dumpsASCII(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return tools.ErrorResult(err)
 	}

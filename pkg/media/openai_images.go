@@ -210,7 +210,7 @@ func (c *openAIClient) ImagesGenerate(ctx context.Context, req map[string]any) (
 	for _, k := range keys {
 		obj.Set(k, req[k])
 	}
-	body, err := jsonutil.Encode(obj)
+	body, err := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

@@ -259,7 +259,7 @@ func (c *wsConn) sendText(text string) error {
 }
 
 func (c *wsConn) sendJSON(v any) error {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

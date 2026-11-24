@@ -194,7 +194,7 @@ func frFinishRequest(t *testing.T, root, updateID string) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	request := filepath.Join(dir, "request.json")
-	text, err := jsonutil.Encode(jsonutil.ObjectOf("root", root, "update_id", updateID, "assume_yes", true, "gateway_mode", false))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("root", root, "update_id", updateID, "assume_yes", true, "gateway_mode", false), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -124,7 +124,7 @@ func ctxMetadataLine(metadata any) *string {
 	if !pyTruthy(metadata) {
 		return nil
 	}
-	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys(), jsonutil.Spaced())
 	if err != nil {
 		return nil
 	}

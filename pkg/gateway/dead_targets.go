@@ -75,7 +75,7 @@ func NewDeadTargetRegistry(ctx context.Context, path string) *DeadTargetRegistry
 
 // Writes the set through a temp file, keeping memory state when the disk refuses
 func (r *DeadTargetRegistry) flushLocked() {
-	text, err := jsonutil.Encode(r.dead, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(r.dead, jsonutil.Indent(2), jsonutil.ASCII())
 	if err == nil {
 		if err = os.MkdirAll(filepath.Dir(r.path), 0o755); err == nil {
 			tmp := r.path + ".tmp"

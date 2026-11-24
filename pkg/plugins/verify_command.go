@@ -211,7 +211,7 @@ func printVerifyHumanReport(w io.Writer, recipe *verify.Recipe, source string, r
 
 // JSON text of a payload, indented by two spaces when pretty
 func mustDumps(v any, pretty bool) string {
-	opts := []jsonutil.Option{}
+	opts := []jsonutil.Option{jsonutil.Spaced(), jsonutil.ASCII()}
 	if pretty {
 		opts = append(opts, jsonutil.Indent(2))
 	}

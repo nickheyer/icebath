@@ -149,7 +149,7 @@ func (a *DiscordAdapter) desiredCommandSyncFingerprint(ctx context.Context) stri
 		}
 		return x["name"].(string) < y["name"].(string)
 	})
-	payload, _ := jsonutil.Encode(map[string]any{"language": i18n.GetLanguage(ctx), "commands": desired}, jsonutil.SortKeys())
+	payload, _ := jsonutil.Encode(map[string]any{"language": i18n.GetLanguage(ctx), "commands": desired}, jsonutil.SortKeys(), jsonutil.ASCII())
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }

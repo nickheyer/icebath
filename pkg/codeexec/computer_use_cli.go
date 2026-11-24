@@ -264,7 +264,7 @@ func cuPermsStatus(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 		exit = 0
 	}
 	if ns.JSON {
-		text, err := jsonutil.Encode(st, jsonutil.Indent(2), jsonutil.SortKeys())
+		text, err := jsonutil.Encode(st, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 		if err != nil {
 			return 0, err
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -226,7 +227,7 @@ func (r *GatewayRunner) handleRestartCommand(ctx context.Context, event *gateway
 	}
 	icebathHome := home.Dir(ctx)
 	writeMarker := func(name string, build func() map[string]any, label string) {
-		if err := config.AtomicJSONWriteWith(ctx, filepath.Join(icebathHome, name), build()); err != nil {
+		if err := config.AtomicJSONWriteWith(ctx, filepath.Join(icebathHome, name), build(), jsonutil.Spaced()); err != nil {
 			pkgLog().Debug(fmt.Sprintf("Failed to write restart %s: %s", label, err.Error()))
 		}
 	}

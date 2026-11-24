@@ -73,7 +73,7 @@ func (f *forwardedOutput) Unwrap() io.Writer { return f.stream }
 
 // Writes JSON through a sibling with a tmp suffix and replaces the target
 func writeCompletionJSON(path string, data any) error {
-	text, err := jsonutil.Encode(data)
+	text, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

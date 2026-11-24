@@ -87,7 +87,7 @@ func TestCuaDriverCLIFallbackReadsTheBoundCallersScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("driver CLI call under the caller's served scope failed: %v", err)
 	}
-	if dumped, _ := jsonutil.Encode(out); !strings.Contains(dumped, "seen=served-skill") {
+	if dumped, _ := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII()); !strings.Contains(dumped, "seen=served-skill") {
 		t.Fatalf("driver CLI call saw %s, want the caller's served-skill", dumped)
 	}
 }

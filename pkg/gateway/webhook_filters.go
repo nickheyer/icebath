@@ -42,7 +42,7 @@ func webhookStringifyFilterValue(value any) (string, error) {
 	}
 	switch value.(type) {
 	case *jsonutil.Object, map[string]any, []any:
-		return jsonutil.Encode(value, jsonutil.SortKeys())
+		return jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	return anyutil.String(value), nil
 }
@@ -458,7 +458,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		log.Warn("[webhook] script execution failed: " + err.Error())
 		return false, nil, nil
 	}
-	input, err := jsonutil.Encode(payload)
+	input, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		log.Warn("[webhook] script execution failed: " + err.Error())
 		return false, nil, nil

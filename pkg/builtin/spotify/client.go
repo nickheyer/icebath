@@ -187,7 +187,7 @@ func (c *spotifyClient) Request(method, path string, params, jsonBody *jsonutil.
 	var body io.Reader
 	headers := map[string]string{"Authorization": "Bearer " + anyutil.String(c.runtime["access_token"]), "Content-Type": "application/json"}
 	if jsonBody != nil {
-		encoded, err := jsonutil.Encode(stripNone(jsonBody))
+		encoded, err := jsonutil.Encode(stripNone(jsonBody), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

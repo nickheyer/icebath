@@ -95,7 +95,7 @@ func frontmatterLine(key string, value any) (string, error) {
 		default:
 			dumped = anyutil.String(value)
 		}
-		text, err := jsonutil.Encode(dumped)
+		text, err := jsonutil.Encode(dumped, jsonutil.Spaced())
 		if err != nil {
 			return "", err
 		}
@@ -457,7 +457,7 @@ func AppendManifestEntry(outputDir string, session *jsonutil.Object, path, forma
 	}
 	entry := map[string]any{"session_id": sessionID, "lineage_session_ids": state.ExportJSONValue(lineage), "path": filepath.Clean(path),
 		"format": format, "message_count": exportedMessageCount(session), "sha256": digest, "exported_at": float64(time.Now().UnixNano()) / 1e9}
-	line, err := jsonutil.Encode(entry, jsonutil.SortKeys())
+	line, err := jsonutil.Encode(entry, jsonutil.SortKeys(), jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}

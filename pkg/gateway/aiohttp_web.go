@@ -65,7 +65,7 @@ func WebTextResponse(status int, text, contentType string, headers map[string]st
 
 // JSON response of json.dumps with its default separators under application/json
 func WebJSONResponse(data any, status int, headers map[string]string) (*WebResponse, error) {
-	text, err := jsonutil.Encode(data)
+	text, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

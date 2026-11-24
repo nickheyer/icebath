@@ -691,7 +691,7 @@ func (a *QQAdapter) readEvents(ctx context.Context) error {
 
 // Sends one payload over the websocket as a compact JSON text frame
 func sendJSON(ws *websocketutil.Conn, payload any) error {
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

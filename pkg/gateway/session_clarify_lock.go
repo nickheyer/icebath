@@ -16,7 +16,7 @@ func clarifyLock(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	}
 	answer := params.ValueOr("answer", "")
 	if _, isStr := answer.(string); answer != nil && !isStr {
-		text, err := jsonutil.Encode(answer)
+		text, err := jsonutil.Encode(answer, jsonutil.Spaced())
 		if err != nil {
 			return nil, err
 		}

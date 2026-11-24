@@ -113,7 +113,7 @@ func discordSaveCapsToDisk(env *Env, token string, caps *jsonutil.Object) {
 		}
 		data := discordReadCapsFile(path)
 		data.Set(discordTokenCacheKey(token), jsonutil.ObjectOf("caps", caps, "ts", epochSeconds()))
-		text, err := jsonutil.Encode(data)
+		text, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -255,7 +255,7 @@ func discordListing(key string, items []any) string {
 
 // json.dumps with the default separators and ASCII escaping
 func dumpsDefault(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

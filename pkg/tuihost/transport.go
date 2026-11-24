@@ -26,7 +26,7 @@ type batchTransport interface {
 
 // JSON text of a frame, an internal error frame carrying the original id when it cannot be serialized
 func SerializeFrame(obj *jsonutil.Object, peer string, log *slog.Logger) string {
-	text, err := jsonutil.Encode(obj)
+	text, err := jsonutil.Encode(obj, jsonutil.Spaced())
 	if err == nil {
 		return text
 	}
@@ -34,7 +34,7 @@ func SerializeFrame(obj *jsonutil.Object, peer string, log *slog.Logger) string 
 	log.Error(fmt.Sprintf("frame serialization failed peer=%s id=%v error_type=%T error=%v", peer, rid, err, err))
 	fallback := jsonutil.ObjectOf("jsonrpc", "2.0", "id", rid,
 		"error", jsonutil.ObjectOf("code", -32603, "message", "response serialization error: "+err.Error()))
-	text, err = jsonutil.Encode(fallback)
+	text, err = jsonutil.Encode(fallback, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

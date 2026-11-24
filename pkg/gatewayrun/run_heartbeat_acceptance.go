@@ -108,7 +108,7 @@ func admitHeartbeat(ctx context.Context, r *GatewayRunner, adapter gateway.Platf
 		return nil
 	}
 	state := manager.State()
-	identity, err := jsonutil.Encode([]any{"heartbeat", sessionID, state.CreatedAt, state.FireCount})
+	identity, err := jsonutil.Encode([]any{"heartbeat", sessionID, state.CreatedAt, state.FireCount}, jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

@@ -111,7 +111,7 @@ func repairProfilesCommand(r *sessionsRun, liveHomes func(context.Context, []rep
 		return 1, err
 	}
 	dump := func(v any) error {
-		text, err := jsonutil.Encode(v, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(v, jsonutil.Indent(2), jsonutil.ASCII())
 		if err == nil {
 			r.print(text)
 		}

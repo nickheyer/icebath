@@ -163,7 +163,7 @@ func (s *SessionStore) StripRetiredMirrorRoutes(ctx context.Context, sessionIDs 
 func sessionIDJSON(sessionID string) string {
 	o := jsonutil.NewObject()
 	o.Set("session_id", sessionID)
-	text, _ := jsonutil.Encode(o)
+	text, _ := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 	return text
 }
 
@@ -400,7 +400,7 @@ func (s *SessionStore) RecordChatLabels(ctx context.Context, source *SessionSour
 	if db == nil {
 		return false, nil
 	}
-	labels, err := jsonutil.Encode([]any{optStr(source.ChatName), optStr(source.ChatTopic)})
+	labels, err := jsonutil.Encode([]any{optStr(source.ChatName), optStr(source.ChatTopic)}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}
@@ -776,7 +776,7 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *jsonutil.Ob
 	if replacer, ok := s.routingDB(ctx).(gatewayRoutingReplacer); ok && replacer != nil {
 		encoded := map[string]string{}
 		for _, k := range data.Keys() {
-			text, err := jsonutil.Encode(data.Value(k))
+			text, err := jsonutil.Encode(data.Value(k), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return err
 			}
@@ -846,7 +846,7 @@ func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryDa
 	if serialized == nil {
 		serialized = entry.ToDict()
 	}
-	entryJSON, err := jsonutil.Encode(serialized)
+	entryJSON, err := jsonutil.Encode(serialized, jsonutil.Spaced(), jsonutil.ASCII())
 	revision := s.nextRoutingGenerationLocked()
 	if !lockHeld {
 		s.mu.Unlock()

@@ -62,7 +62,7 @@ func UsageCommand(ctx context.Context, env PoolEnv, ns map[string]any, w io.Writ
 		return 1, nil
 	}
 	if truthy(ns["json"]) {
-		doc, err := jsonutil.Encode(UsageSnapshotDocument(snapshot), jsonutil.Indent(2))
+		doc, err := jsonutil.Encode(UsageSnapshotDocument(snapshot), jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

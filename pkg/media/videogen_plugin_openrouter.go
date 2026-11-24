@@ -623,7 +623,7 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 
 // Submit, poll and download, a failure text for rejected or failed jobs and an error for exceptions
 func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, client *http.Client, base string, headers map[string]string, payload *jsonutil.Object) (jobID string, job *jsonutil.Object, videoPath, failure, failureKind string, err error) {
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", nil, "", "", "", err
 	}

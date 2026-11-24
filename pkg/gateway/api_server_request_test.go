@@ -12,7 +12,7 @@ import (
 
 // Historical inline SSE encoder, an event line then the ASCII JSON data line
 func inlineSSEFrame(t *testing.T, data any, event string) []byte {
-	encoded, err := jsonutil.Encode(data, jsonutil.ASCII())
+	encoded, err := jsonutil.Encode(data, jsonutil.ASCII(), jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestSSEFrameEnsureASCIIFalseReproducesSessionEventStream(t *testing.T) {
 		payload *jsonutil.Object
 	}{{"session.update", jsonutil.ObjectOf("text", "café — Münchner \U0001F3D4", "id", int64(1))},
 		{"thread.message.delta", jsonutil.ObjectOf("content", "héllo wörld ✓", "seq", int64(3))}} {
-		data, _ := jsonutil.Encode(c.payload)
+		data, _ := jsonutil.Encode(c.payload, jsonutil.Spaced())
 		want := "event: " + c.name + "\ndata: " + data + "\n\n"
 		if got := mustSSEFrame(t, c.payload, c.name, false); string(got) != want {
 			t.Fatalf("%q", got)
@@ -71,7 +71,7 @@ func TestSSEFrameTypedObjectRoundtrip(t *testing.T) {
 	line := strings.TrimSpace(strings.SplitN(out, "data: ", 2)[1])
 	var decoded, want any
 	json.Unmarshal([]byte(line), &decoded)
-	wantText, _ := jsonutil.Encode(obj)
+	wantText, _ := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 	json.Unmarshal([]byte(wantText), &want)
 	if !reflect.DeepEqual(decoded, want) {
 		t.Fatalf("%v", decoded)

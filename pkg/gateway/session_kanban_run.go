@@ -34,7 +34,7 @@ func kanbanClaimKeys(params *jsonutil.Object) bool {
 
 // Durable request identity of one dispatcher attempt
 func kanbanRequestID(board, taskID, runID any) (string, error) {
-	text, err := jsonutil.Encode([]any{board, taskID, runID})
+	text, err := jsonutil.Encode([]any{board, taskID, runID}, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}
@@ -265,11 +265,11 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *json
 	request.Set("board", claim.board)
 	request.Set("task_id", task.ID)
 	request.Set("run_id", *task.CurrentRunID)
-	requestJSON, err := jsonutil.Encode(request, jsonutil.SortKeys())
+	requestJSON, err := jsonutil.Encode(request, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, err
 	}
-	kanbanJSON, err := jsonutil.Encode(worker)
+	kanbanJSON, err := jsonutil.Encode(worker, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, err
 	}

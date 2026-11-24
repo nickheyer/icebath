@@ -1007,7 +1007,7 @@ func (s *cdpSupervisor) sendCDP(method string, params any, sessionID string, tim
 		delete(s.pendingCalls, id)
 		s.wsMu.Unlock()
 	}()
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -1235,7 +1235,7 @@ func (s *cdpSupervisor) respond(dialog PendingDialog, accept bool, promptText *s
 		if dialog.Type == "prompt" && promptText != nil {
 			text = *promptText
 		}
-		body, err := jsonutil.Encode(jsonutil.ObjectOf("accept", accept, "dialog_id", dialog.ID, "prompt_text", text))
+		body, err := jsonutil.Encode(jsonutil.ObjectOf("accept", accept, "dialog_id", dialog.ID, "prompt_text", text), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

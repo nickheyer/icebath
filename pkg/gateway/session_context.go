@@ -164,7 +164,7 @@ func formatUntrustedPromptValue(value any, maxChars int) string {
 	text := strings.ReplaceAll(strings.ReplaceAll(anyutil.String(value), "\r\n", "\n"), "\r", "\n")
 	text = blankControlChars(strings.TrimSpace(text), "\n\t")
 	text = truncatePromptChars(text, maxChars)
-	out, _ := jsonutil.Encode(text)
+	out, _ := jsonutil.Encode(text, jsonutil.Spaced())
 	return out
 }
 

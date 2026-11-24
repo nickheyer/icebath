@@ -326,7 +326,7 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 		return AdmissionReceipt{}, err
 	}
 	identity, err := jsonutil.Encode([]any{optStrAny(source.Profile), string(source.Platform), source.ChatID,
-		optStrAny(source.ThreadID), optStrAny(source.UserID)})
+		optStrAny(source.ThreadID), optStrAny(source.UserID)}, jsonutil.ASCII())
 
 	if err != nil {
 		return AdmissionReceipt{}, err

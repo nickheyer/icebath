@@ -349,7 +349,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	result := jsonutil.ObjectOf(
 		"resume_handled", attempted || len(token) == 0 || !anyutil.IsTrue(token["resume_needed"]),
 		"receipt_handled", handled || written != "")
-	text, err := jsonutil.Encode(result)
+	text, err := jsonutil.Encode(result, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return 0, err
 	}

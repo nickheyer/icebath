@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -577,9 +576,8 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *jsonutil.Object) err
 	timestamp := time.Now().UTC()
 	if unixTS, _ := event.Get("time"); anyutil.IsTrue(unixTS) {
 		seconds, err := anyutil.ToInt(unixTS)
-		pe, isPy := err.(*errorutil.Error)
 		switch {
-		case isPy && (pe.Kind == "TypeError" || pe.Kind == "ValueError"):
+		case errors.Is(err, anyutil.ErrNotNumber):
 		case err != nil:
 			return err
 		default:

@@ -438,7 +438,7 @@ func unionIdent(item any) string {
 	if s, ok := item.(string); ok {
 		return strings.TrimSpace(s)
 	}
-	text, err := jsonutil.Encode(item, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(item, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return anyutil.Quote(item)
 	}
@@ -590,7 +590,7 @@ func skillMarkdown(skill *jsonutil.Object, name string) string {
 	if rs := []rune(description); len(rs) > 300 {
 		description = string(rs[:300])
 	}
-	quoted, _ := jsonutil.Encode(description)
+	quoted, _ := jsonutil.Encode(description, jsonutil.Spaced(), jsonutil.ASCII())
 	body := ""
 	if truthy(skill.Value("instructions")) {
 		body = strings.TrimSpace(pyStr(skill.Value("instructions")))

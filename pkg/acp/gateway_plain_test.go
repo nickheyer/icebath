@@ -273,7 +273,7 @@ func TestGatewayAcpAdvertisesEverySessionCapabilityItImplements(t *testing.T) {
 		t.Fatal(err)
 	}
 	dump := func(c *acputil.SessionCapabilities) string {
-		text, _ := jsonutil.Encode(c, jsonutil.SortKeys())
+		text, _ := jsonutil.Encode(c, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		return text
 	}
 	got := dump(advertised.AgentCapabilities.SessionCapabilities)

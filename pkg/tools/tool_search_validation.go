@@ -114,7 +114,7 @@ func validationPath(absolutePath []any) string {
 			if validationIdentifierRe.MatchString(p) {
 				path += "." + p
 			} else {
-				path += "[" + pyDumps(p) + "]"
+				path += "[" + pyDumps(p, jsonutil.Spaced()) + "]"
 			}
 		case int:
 			path += "[" + strconv.Itoa(p) + "]"
@@ -385,7 +385,7 @@ func localBatchError(name, arguments any, count int) string {
 	if utf8.RuneCountInString(args) > toolSearchEchoArgsMaxChars {
 		args = "{...}"
 	}
-	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name), args)
+	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name, jsonutil.Spaced()), args)
 	remaining := ""
 	if count > 1 {
 		remaining = fmt.Sprintf(" then issue the remaining %d call(s) as separate tool_call invocations", count-1)

@@ -41,7 +41,7 @@ func TestReceiptArchiveBytesFollowDumpsIndentTwoInsertionOrder(t *testing.T) {
 		!reflect.DeepEqual(stage.Keys(), []string{"name", "outcome", "at", "mode", "attempt"}) {
 		t.Fatalf("step %v stage %v", step.Keys(), stage.Keys())
 	}
-	again, err := jsonutil.Encode(doc, jsonutil.Indent(2))
+	again, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil || again+"\n" != text {
 		t.Fatalf("bytes differ from json.dumps(record, indent=2) + newline: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestReceiptEmbeddedPMSectionsKeepPMInsertionOrder(t *testing.T) {
 	if !reflect.DeepEqual(pmKeys, []string{"pm_venv_rebuild", "pm_steps", "pm_exit_code", "pm_sync_outcome", "pm_warnings", "pm_refusal"}) {
 		t.Fatalf("pm keys %v", pmKeys)
 	}
-	again, err := jsonutil.Encode(doc, jsonutil.Indent(2))
+	again, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil || again+"\n" != text {
 		t.Fatalf("bytes differ from json.dumps(record, indent=2) + newline: %v", err)
 	}

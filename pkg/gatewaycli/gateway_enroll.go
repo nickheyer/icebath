@@ -79,7 +79,7 @@ func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentTo
 	body := jsonutil.NewObject()
 	body.Set("enrollmentToken", enrollmentToken)
 	body.Set("gatewayId", gatewayID)
-	data, err := jsonutil.Encode(body)
+	data, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

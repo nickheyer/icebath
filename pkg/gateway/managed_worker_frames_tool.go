@@ -38,7 +38,7 @@ func ToolFrame(ctx context.Context, callID, name any, args any, result ...any) (
 	if len(result) > 0 {
 		frame.Set("result", BoundedToolResult(result[0], isError))
 	}
-	text, err := jsonutil.Encode(frame, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, err := jsonutil.Encode(frame, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

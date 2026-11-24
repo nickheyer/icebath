@@ -44,7 +44,7 @@ func estimateToolTokens(ctx context.Context) (map[string]int, error) {
 		wire := jsonutil.NewObject()
 		wire.Set("type", "function")
 		wire.Set("function", schema)
-		text, err := jsonutil.Encode(wire)
+		text, err := jsonutil.Encode(wire, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

@@ -9,7 +9,7 @@ import (
 
 func TestLoadTerminalResultExportUnwrapsTheEncodedEnvelope(t *testing.T) {
 	result := jsonutil.ObjectOf("result", jsonutil.ObjectOf("cron_result", []any{true, "doc", "answer", nil}), "usage", jsonutil.NewObject())
-	text, err := jsonutil.Encode(encodeTerminalResult(result))
+	text, err := jsonutil.Encode(encodeTerminalResult(result), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

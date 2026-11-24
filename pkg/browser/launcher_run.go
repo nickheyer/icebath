@@ -915,7 +915,7 @@ func writeRecord(ctx context.Context, b *LaunchedBrowser) {
 	record.Set("ns", nsValue())
 	record.Set("devtools", devtoolsIDValue(b))
 	if path := recordPath(b); path != "" {
-		if err := config.AtomicJSONWriteWith(ctx, path, record); err != nil {
+		if err := config.AtomicJSONWriteWith(ctx, path, record, jsonutil.Spaced()); err != nil {
 			pkgLog().Debug(fmt.Sprintf("browser: could not write launch record for pid %s: %s", pidText(b.PID), err))
 		}
 	}
@@ -1021,7 +1021,7 @@ func adoptRecord(ctx context.Context, b *LaunchedBrowser) error {
 	adopted := record.Clone()
 	adopted.Set("owner_pid", int64(me))
 	adopted.Set("owner_start_time", optStartTime(launcherStartTime(me)))
-	return config.AtomicJSONWriteWith(ctx, path, adopted)
+	return config.AtomicJSONWriteWith(ctx, path, adopted, jsonutil.Spaced())
 }
 
 // Reaps one record, caller holding the records lock

@@ -37,7 +37,7 @@ func goalsTestHome(t *testing.T) string {
 
 func TestGoalStateSubgoalsBackcompatOldStateMetaRowLoadsWithoutSubgoals(t *testing.T) {
 	legacy, err := jsonutil.Encode(jsonutil.ObjectOf("goal", "do a thing", "status", "active", "turns_used", int64(2),
-		"max_turns", int64(20), "created_at", 1.0, "last_turn_at", 2.0, "consecutive_parse_failures", int64(0)))
+		"max_turns", int64(20), "created_at", 1.0, "last_turn_at", 2.0, "consecutive_parse_failures", int64(0)), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +406,7 @@ func TestGateFromDictDefaultsAndGarbage(t *testing.T) {
 }
 
 func TestOldStateRowsWithoutGatesLoadClean(t *testing.T) {
-	raw, err := jsonutil.Encode(jsonutil.ObjectOf("goal", "legacy", "status", "active"))
+	raw, err := jsonutil.Encode(jsonutil.ObjectOf("goal", "legacy", "status", "active"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

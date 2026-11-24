@@ -29,7 +29,7 @@ func sessionReasoningConfig(t *testing.T, db *state.SessionDB, sessionID string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := jsonutil.Encode(v, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

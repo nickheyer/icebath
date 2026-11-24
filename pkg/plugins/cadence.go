@@ -46,7 +46,7 @@ func recordCheckResults(ctx context.Context, results []*CheckResult, checked map
 	if err != nil {
 		return
 	}
-	text, err := jsonutil.Encode(rows, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(rows, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return
 	}

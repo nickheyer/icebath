@@ -175,13 +175,13 @@ func (o *lostOwner) serve(sock *pipeSocket) {
 		case "prompt.submit":
 			result.Set("admission_id", "next")
 		}
-		reply, _ := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", frame.ValueOr("id", nil), "result", result))
+		reply, _ := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", frame.ValueOr("id", nil), "result", result), jsonutil.Spaced(), jsonutil.ASCII())
 		sock.toClient <- reply
 		if method == "prompt.submit" {
 			event := jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params", jsonutil.ObjectOf(
 				"session_id", params.ValueOr("session_id", nil), "type", "message.complete", "seq", int64(1), "replay_epoch", o.epoch,
 				"admission_id", "next", "payload", jsonutil.ObjectOf("outcome", "completed")))
-			text, _ := jsonutil.Encode(event)
+			text, _ := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
 			sock.toClient <- text
 		}
 	}

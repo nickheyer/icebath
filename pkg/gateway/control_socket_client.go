@@ -134,7 +134,7 @@ func QueryGatewayControl(home, verb string, params *jsonutil.Object, timeout tim
 	if params != nil && params.Len() > 0 {
 		payload.Set("params", params)
 	}
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil
 	}

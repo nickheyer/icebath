@@ -663,7 +663,7 @@ func startupSyntaxError(ctx context.Context, sources []sourceFile, pyproject []b
 		for _, source := range present {
 			pairs = append(pairs, source.Rel, base64.StdEncoding.EncodeToString(source.Data))
 		}
-		payload, err := jsonutil.Encode(jsonutil.ObjectOf(pairs...))
+		payload, err := jsonutil.Encode(jsonutil.ObjectOf(pairs...), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

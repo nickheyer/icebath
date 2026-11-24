@@ -33,7 +33,7 @@ func originJSON(source *SessionSource) string {
 	if source == nil {
 		return ""
 	}
-	text, err := jsonutil.Encode(source.ToDict())
+	text, err := jsonutil.Encode(source.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return ""
 	}

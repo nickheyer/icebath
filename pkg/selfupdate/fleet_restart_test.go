@@ -46,7 +46,7 @@ func fleetObject(pairs ...any) *jsonutil.Object { return jsonutil.ObjectOf(pairs
 
 func fleetJSON(t *testing.T, value any) string {
 	t.Helper()
-	text, err := jsonutil.Encode(value)
+	text, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

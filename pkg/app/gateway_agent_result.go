@@ -374,7 +374,7 @@ func clarifyReply(callback func(questions []any) map[string]any, params map[stri
 		case string, nil:
 			answers[qid] = value
 		default:
-			dumped, err := jsonutil.Encode(value)
+			dumped, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				panic(err)
 			}

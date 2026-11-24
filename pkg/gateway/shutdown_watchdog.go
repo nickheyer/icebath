@@ -326,7 +326,7 @@ func WriteLoopHeartbeat(ctx context.Context, pid *int, startTime *float64, h str
 			payload.Set(k, extra.Value(k))
 		}
 	}
-	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to write gateway loop heartbeat: %v", err))
 	}
 	return path
@@ -357,7 +357,7 @@ func writeWatchdogDump(dumpPath string, delayS float64, snapshot any, event stri
 		header.Set("snapshot", jsonutil.NewObject())
 	}
 	os.MkdirAll(filepath.Dir(dumpPath), 0o777)
-	if text, err := jsonutil.Encode(header, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil })); err == nil {
+	if text, err := jsonutil.Encode(header, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII()); err == nil {
 		if f, err := os.OpenFile(dumpPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666); err == nil {
 			f.WriteString(text + "\n--- faulthandler dump (all threads) ---\n")
 			f.Write(allGoroutineStacks())

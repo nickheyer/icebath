@@ -75,7 +75,7 @@ func pyStrOf(v any) string {
 		return pyFloatStr(f)
 	}
 	if _, ok := v.(*jsonutil.Object); ok {
-		text, _ := jsonutil.Encode(v)
+		text, _ := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 		return text
 	}
 	return fmt.Sprint(v)

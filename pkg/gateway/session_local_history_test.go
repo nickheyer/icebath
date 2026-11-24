@@ -228,7 +228,7 @@ func recoverShape(rows []map[string]any) [][2]any {
 
 func recoverDumpLen(t *testing.T, rows []map[string]any) int {
 	t.Helper()
-	text, err := jsonutil.Encode(rows)
+	text, err := jsonutil.Encode(rows, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

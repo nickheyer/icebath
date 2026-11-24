@@ -103,7 +103,7 @@ func cuDumps(m map[string]any, keys ...string) string {
 	for _, k := range keys {
 		o.Set(k, m[k])
 	}
-	out, err := jsonutil.Encode(o)
+	out, err := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}
@@ -647,7 +647,7 @@ func actionPayload(res *ActionResult) *jsonutil.Object {
 
 // JSON text of the action payload
 func textResponse(res *ActionResult) string {
-	out, err := jsonutil.Encode(actionPayload(res))
+	out, err := jsonutil.Encode(actionPayload(res), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

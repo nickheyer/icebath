@@ -393,7 +393,7 @@ func Audit(ctx context.Context, direction, peer, taskID, summary string) {
 	h := home.Dir(ctx)
 	rec := jsonutil.ObjectOf("ts", float64(time.Now().UnixNano())/1e9, "direction", direction, "peer", peer,
 		"task_id", taskID, "summary", textutil.First(summary, 500))
-	line, err := jsonutil.Encode(rec)
+	line, err := jsonutil.Encode(rec, jsonutil.Spaced())
 	if err == nil {
 		err = os.MkdirAll(h, 0o777)
 	}

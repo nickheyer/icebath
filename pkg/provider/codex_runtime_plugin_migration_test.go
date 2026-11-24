@@ -71,7 +71,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 		if err != nil || len(skipped) != 0 {
 			t.Fatalf("skipped %v err %v", skipped, err)
 		}
-		got, _ := jsonutil.Encode(out)
+		got, _ := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII())
 		if got != `{"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], "env": {"FOO": "bar"}}` {
 			t.Fatalf("entry %s", got)
 		}
@@ -98,7 +98,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, _ := jsonutil.Encode(out)
+		got, _ := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII())
 		if got != `{"url": "https://h/mcp", "http_headers": {"Authorization": "Bearer x", "N": "1"}, "tool_timeout_sec": 12.0, "enabled": false}` {
 			t.Fatalf("entry %s", got)
 		}
@@ -109,7 +109,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 	})
 	t.Run("command wins over url and odd shapes", func(t *testing.T) {
 		out, skipped, _ := codexTranslateOneServer("s", map[string]any{"command": "c", "url": "u", "args": "ab", "cwd": "/w", "timeout": nil})
-		got, _ := jsonutil.Encode(out)
+		got, _ := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII())
 		if got != `{"command": "c", "args": ["a", "b"], "cwd": "/w"}` || !slices.Equal(skipped, []string{"url (both command and url set; preferring stdio)", "timeout (not numeric)"}) {
 			t.Fatalf("entry %s skipped %q", got, skipped)
 		}
@@ -459,7 +459,7 @@ func TestCodexMigrationPluginQuery(t *testing.T) {
 	if err != nil || reason != "" || opened.CodexBin != "/bin/codex" || opened.CodexHome != "/ch" || fake.requests[0].method != "plugin/list" || !fake.closed {
 		t.Fatalf("query %v %q %v %+v %v", plugins, reason, err, opened, fake.closed)
 	}
-	got, _ := jsonutil.Encode(plugins, jsonutil.SortKeys())
+	got, _ := jsonutil.Encode(plugins, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != `[{"enabled": true, "marketplace": "openai-curated", "name": "tasks"}, {"enabled": false, "marketplace": "openai-curated", "name": "ok"}, {"enabled": true, "marketplace": "team", "name": "tasks"}]` {
 		t.Fatalf("plugins %s", got)
 	}
@@ -501,10 +501,10 @@ func TestCodexMigrationIcebathHomeLeakGuard(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", "/tmp/pytest-of-nick/pytest-3/home")
 		t.Setenv("PYTHONPATH", "/wt")
 		exe, _ := os.Executable()
-		got, _ := jsonutil.Encode(codexBuildToolsMCPEntry())
+		got, _ := jsonutil.Encode(codexBuildToolsMCPEntry(), jsonutil.Spaced(), jsonutil.ASCII())
 		want, _ := jsonutil.Encode(codexMigrationEntry("command", exe, "args", []any{CodexToolsMCPServerEntry},
 			"env", codexMigrationEntry("PYTHONPATH", "/wt", "ICEBATH_QUIET", "1", "ICEBATH_REDACT_SECRETS", "true"),
-			"startup_timeout_sec", 30.0, "tool_timeout_sec", 600.0))
+			"startup_timeout_sec", 30.0, "tool_timeout_sec", 600.0), jsonutil.Spaced(), jsonutil.ASCII())
 		if got != want {
 			t.Fatalf("entry %s", got)
 		}

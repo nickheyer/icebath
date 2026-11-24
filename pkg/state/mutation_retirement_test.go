@@ -270,7 +270,7 @@ func TestDeletionTombstoneKeepsOnlyTheClosingWorkerResult(t *testing.T) {
 	read := scope
 	read.Sequence, read.Operation, read.Payload = 1, "compression.history", historyRead("gone")
 	history := mustReceipt(t, db, read)
-	historyText, _ := jsonutil.Encode(history)
+	historyText, _ := jsonutil.Encode(history, jsonutil.Spaced(), jsonutil.ASCII())
 	if !strings.Contains(historyText, "SECRET_HISTORY_LINE") {
 		t.Fatal("history read without the line")
 	}
@@ -409,7 +409,7 @@ func TestDeletedHistoryIsNotRecoverableFromWorkerOrMutationReceipts(t *testing.T
 	rewind := mutationAt(db, "gone", "rewind", "rw", jsonutil.ObjectOf("target_message_id", rewound))
 	rewind.Epoch = epoch
 	receipt := mustMutate(t, db, rewind)
-	if text, _ := jsonutil.Encode(receipt); !strings.Contains(text, "SECRET_REWOUND") {
+	if text, _ := jsonutil.Encode(receipt, jsonutil.Spaced(), jsonutil.ASCII()); !strings.Contains(text, "SECRET_REWOUND") {
 		t.Fatal("rewind receipt without the turn")
 	}
 	appendText("gone", "user", "SECRET_HISTORY_LINE")
@@ -464,7 +464,7 @@ func TestMutationReceiptsNamingADeletedPhysicalTargetDropItsText(t *testing.T) {
 	appendText("assistant", "a2")
 	rewind := mutationAt(db, sid, "rewind", "rw", jsonutil.ObjectOf("target_message_id", target))
 	rewind.Epoch = epoch
-	if text, _ := jsonutil.Encode(mustMutate(t, db, rewind)); !strings.Contains(text, "SECRET_CHILD_TURN") {
+	if text, _ := jsonutil.Encode(mustMutate(t, db, rewind), jsonutil.Spaced(), jsonutil.ASCII()); !strings.Contains(text, "SECRET_CHILD_TURN") {
 		t.Fatal("rewind receipt without the turn")
 	}
 	rename := mutationAt(db, sid, "rename", "rn", jsonutil.ObjectOf("title", "SECRET_TITLE"))
@@ -1576,7 +1576,7 @@ func TestAPermanentMarkerAnEarlierReleaseWroteForASweptAPISessionStays(t *testin
 	ctx := context.Background()
 	db := mustSessionDB(t, t.TempDir()+"/state.db", false)
 	defer db.Close()
-	marker, _ := jsonutil.Encode(jsonutil.ObjectOf("retired_at", now()-30*86400))
+	marker, _ := jsonutil.Encode(jsonutil.ObjectOf("retired_at", now()-30*86400), jsonutil.Spaced(), jsonutil.ASCII())
 	if err := db.SetMeta(ctx, RetiredPrefix+"user-42", marker); err != nil {
 		t.Fatal(err)
 	}

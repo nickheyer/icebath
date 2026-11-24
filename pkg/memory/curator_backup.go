@@ -193,7 +193,7 @@ func curatorWriteManifest(dest, reason, archive string, skillsCounted int, cronI
 	}
 	manifest := curatorEntry("id", filepath.Base(dest), "reason", reason, "created_at", time.Now().UTC().Format(timeutil.RFC3339Micro), "archive", filepath.Base(archive),
 		"archive_bytes", st.Size(), "skill_files", skillsCounted, "cron_jobs", cron)
-	text, err := jsonutil.Encode(manifest, jsonutil.Indent(2), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(manifest, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

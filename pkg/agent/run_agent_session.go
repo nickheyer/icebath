@@ -58,7 +58,7 @@ func gatewayOriginJSON(ctx context.Context, a *AIAgent) string {
 	if profile != "" {
 		origin.Set("profile", profile)
 	}
-	out, err := jsonutil.Encode(origin)
+	out, err := jsonutil.Encode(origin, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return ""
 	}

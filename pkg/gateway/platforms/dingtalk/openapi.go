@@ -45,7 +45,7 @@ func newOpenAPIClient() *openAPIClient {
 
 // Sends one ROA request with a JSON body and returns the decoded JSON answer, a 4xx or 5xx raised as the Tea error
 func (c *openAPIClient) call(ctx context.Context, method, pathname string, body *jsonutil.Object, token any) (*jsonutil.Object, error) {
-	encoded, err := jsonutil.Encode(body)
+	encoded, err := jsonutil.Encode(body, jsonutil.Spaced())
 	if err != nil {
 		return nil, err
 	}

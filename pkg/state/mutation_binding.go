@@ -134,7 +134,7 @@ func bindingsAgree(first, second any) bool {
 }
 
 func actorBinding(actor HistoryActor) (string, error) {
-	return jsonutil.Encode([]any{actor.ProfileID, actor.Subject})
+	return jsonutil.Encode([]any{actor.ProfileID, actor.Subject}, jsonutil.ASCII())
 }
 
 // Binds each session id the import is about to create to the importing actor

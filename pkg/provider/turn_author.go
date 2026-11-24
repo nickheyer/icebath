@@ -166,7 +166,7 @@ func TakeTurnAuthorFromEnv(environ map[string]string) *jsonutil.Object {
 
 // Environment entry a dispatcher merges into a child env with the compact JSON author
 func TurnAuthorEnv(author *jsonutil.Object) (map[string]string, error) {
-	text, err := jsonutil.Encode(author)
+	text, err := jsonutil.Encode(author, jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

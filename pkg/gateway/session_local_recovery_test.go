@@ -27,7 +27,7 @@ func seedGatewayLocalSession(t *testing.T, scope string) string {
 	receipt := jsonutil.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
 		"route", route, "entry", entry, "policy", policy)
 	dump := func(v any) string {
-		text, err := jsonutil.Encode(v)
+		text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}

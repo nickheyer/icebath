@@ -341,7 +341,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 			return SessionRef{}, &PyError{Kind: "TypeError", Msg: "the legacy session record is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		model.Set("api_mode", apiMode)
-		text, err := jsonutil.Encode(frozen)
+		text, err := jsonutil.Encode(frozen, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return SessionRef{}, err
 		}

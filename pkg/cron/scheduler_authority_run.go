@@ -387,7 +387,7 @@ func jobFromState(v any) (*Job, error) {
 	if j, ok := v.(*Job); ok {
 		return j.Clone(), nil
 	}
-	raw, err := jsonutil.Encode(v)
+	raw, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

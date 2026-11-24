@@ -45,8 +45,8 @@ func committedPolicy(t *testing.T, sent map[string]string, config any, local boo
 	if err != nil {
 		t.Fatal(err)
 	}
-	envText, _ := jsonutil.Encode(clientEnvObject(kept))
-	rulesText, _ := jsonutil.Encode(rules.Object())
+	envText, _ := jsonutil.Encode(clientEnvObject(kept), jsonutil.Spaced(), jsonutil.ASCII())
+	rulesText, _ := jsonutil.Encode(rules.Object(), jsonutil.Spaced(), jsonutil.ASCII())
 	policy := jsonutil.NewObject()
 	policy.Set("client_env_json", envText)
 	policy.Set("client_env_rules_json", rulesText)
@@ -269,7 +269,7 @@ func TestHostValuesApplyOnlyOverAGatewayProvenLocalAttach(t *testing.T) {
 	if len(rules.Names) != 0 || len(rules.Prefixes) != 0 || !reflect.DeepEqual(rules.Behaviour, []string{"ICEBATH_EPHEMERAL_SYSTEM_PROMPT", "ICEBATH_INFERENCE_PROVIDER"}) {
 		t.Fatalf("remote rules %+v", rules)
 	}
-	text, _ := jsonutil.Encode(rules.Object())
+	text, _ := jsonutil.Encode(rules.Object(), jsonutil.Spaced(), jsonutil.ASCII())
 	parsed, err := ParseClientEnvRules(mustLoads(t, text))
 	if err != nil || !reflect.DeepEqual(parsed.Behaviour, rules.Behaviour) || len(parsed.Secret) != len(clientEnvTestSubstrings) {
 		t.Fatalf("rules round trip %+v %v", parsed, err)

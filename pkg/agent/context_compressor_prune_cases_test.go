@@ -91,8 +91,8 @@ func TestClarifyAnswersSurviveRepeatedPruning(t *testing.T) {
 			if len(requests) == 0 {
 				t.Fatalf("%d %v: compression dispatched no summary request", size, answer)
 			}
-			dispatched, _ := jsonutil.Encode(requests[0])
-			quoted, _ := jsonutil.Encode(want)
+			dispatched, _ := jsonutil.Encode(requests[0], jsonutil.Spaced(), jsonutil.ASCII())
+			quoted, _ := jsonutil.Encode(want, jsonutil.Spaced(), jsonutil.ASCII())
 			if !strings.Contains(dispatched, quoted[1:len(quoted)-1]) {
 				t.Fatalf("%d %v: the summary request lacks %s", size, answer, quoted)
 			}

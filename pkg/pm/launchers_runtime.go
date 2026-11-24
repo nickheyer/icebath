@@ -115,7 +115,7 @@ func printRuntimeCommand(repoRoot string, argv []string, stdout, stderr io.Write
 	for i, part := range command {
 		values[i] = part
 	}
-	text, err := jsonutil.Encode(values)
+	text, err := jsonutil.Encode(values, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

@@ -296,7 +296,7 @@ func printHookRunResult(w io.Writer, r *ShellHookResult) error {
 		}
 	}
 	if len(r.Parsed) > 0 {
-		encoded, err := jsonutil.Encode(r.Parsed)
+		encoded, err := jsonutil.Encode(r.Parsed, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

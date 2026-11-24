@@ -133,7 +133,7 @@ func worktreeMetaText(meta *jsonutil.Object, key, fallback string) string {
 
 // Writes the two space indented JSON of an ordered object followed by a newline
 func worktreePrintJSON(w io.Writer, o *jsonutil.Object) error {
-	text, err := jsonutil.Encode(o, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(o, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

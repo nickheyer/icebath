@@ -298,7 +298,7 @@ func (s *UpdateAdmission) flushReceipts(ctx context.Context) {
 		payload.Set("update_ids", ids)
 		_, err := home.Mkdir(ctx, filepath.Dir(path))
 		if err == nil {
-			err = config.AtomicJSONWriteWith(ctx, path, payload)
+			err = config.AtomicJSONWriteWith(ctx, path, payload, jsonutil.Spaced())
 		}
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to persist update receipts to %s", path), "error", err)

@@ -24,7 +24,7 @@ func optionalValue[T any](v *T) any {
 
 // Writes a JSON document durably through a mkstemp sibling, the directory synced after the rename
 func writeDurableJSON(root, prefix, target string, payload *jsonutil.Object) error {
-	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func refreshBootstrapReceipt(root string, stamp *jsonutil.Object) error {
 	receipt.Set("pinnedCommit", commit)
 	receipt.Set("pinnedBranch", branch)
 	receipt.Set("completedAt", now.Format("2006-01-02T15:04:05.000")+"Z")
-	text, err := jsonutil.Encode(receipt, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(receipt, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

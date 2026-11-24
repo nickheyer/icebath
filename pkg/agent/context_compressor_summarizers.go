@@ -234,7 +234,7 @@ func sumClarify(name string, args *jsonutil.Object, content string, contentLen, 
 	if len(kept) == 1 {
 		subject = kept[0]
 	}
-	serialized, err := jsonutil.Encode(subject)
+	serialized, err := jsonutil.Encode(subject, jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}
@@ -444,7 +444,7 @@ func memoryProviderSection(env *tools.Env, memoryContext string) string {
 	if sanitized == "" {
 		return ""
 	}
-	serialized, _ := jsonutil.Encode(sanitized)
+	serialized, _ := jsonutil.Encode(sanitized, jsonutil.Spaced())
 	serialized = strings.NewReplacer("&", "\\u0026", "<", "\\u003c", ">", "\\u003e").Replace(serialized)
 	return "\n\nMEMORY PROVIDER CONTEXT:\n" +
 		"The block contains one JSON string supplied by a memory provider. " +

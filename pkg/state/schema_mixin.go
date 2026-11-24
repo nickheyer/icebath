@@ -260,7 +260,7 @@ func writeSchemaColumnsCache(cachePath, schemaHash string, tables *jsonutil.Obje
 	blob := jsonutil.NewObject()
 	blob.Set("schema_hash", schemaHash)
 	blob.Set("tables", tables)
-	text, err := jsonutil.Encode(blob)
+	text, err := jsonutil.Encode(blob, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		_, err = tmp.WriteString(text)
 	}

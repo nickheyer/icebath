@@ -387,11 +387,11 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 		}
 	}
 	if err != nil {
-		body, _ := jsonutil.Encode(jsonutil.ObjectOf("error", err.Error(), "verified", []any{}, "relaunch_attempted", []any{}, "failed", []any{}))
+		body, _ := jsonutil.Encode(jsonutil.ObjectOf("error", err.Error(), "verified", []any{}, "relaunch_attempted", []any{}, "failed", []any{}), jsonutil.Spaced(), jsonutil.ASCII())
 		fmt.Fprintln(stdout, body)
 		return 2
 	}
-	body, _ := jsonutil.Encode(result, jsonutil.SortKeys())
+	body, _ := jsonutil.Encode(result, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	fmt.Fprintln(stdout, body)
 	if anyutil.IsTrue(result.ValueOr("failed", nil)) {
 		return 1

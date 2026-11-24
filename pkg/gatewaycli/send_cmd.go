@@ -123,7 +123,7 @@ func emitResult(resultJSON string, jsonMode, quiet bool, w, errw io.Writer) (int
 			return sendFailureExit, &errorutil.Error{Kind: "AttributeError", Msg: "send result must be an object, got " + anyutil.Kind(decoded)}
 		}
 		if !ok {
-			text, err := jsonutil.Encode(decoded, jsonutil.Indent(2))
+			text, err := jsonutil.Encode(decoded, jsonutil.Indent(2), jsonutil.ASCII())
 			if err != nil {
 				return sendFailureExit, err
 			}
@@ -133,7 +133,7 @@ func emitResult(resultJSON string, jsonMode, quiet bool, w, errw io.Writer) (int
 		payload = obj
 	}
 	dump := func() error {
-		text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -205,7 +205,7 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 	}
 	if jsonMode {
 		text, err := jsonutil.Encode(jsonutil.ObjectOf("platforms", platforms), jsonutil.Indent(2),
-			jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+			jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.ASCII())
 		if err != nil {
 			return sendFailureExit, err
 		}

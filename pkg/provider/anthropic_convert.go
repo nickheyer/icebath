@@ -843,7 +843,7 @@ func toolResultContent(m map[string]any) any {
 		} else if cm, ok := asMap(c); ok && len(cm) == 0 {
 			text = ""
 		} else {
-			text, _ = jsonutil.Encode(c)
+			text, _ = jsonutil.Encode(c, jsonutil.Spaced(), jsonutil.ASCII())
 		}
 	}
 	if text == "" {

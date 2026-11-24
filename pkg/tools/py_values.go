@@ -21,7 +21,7 @@ func pyObject(kv ...any) *jsonutil.Object {
 
 // json.dumps with ensure_ascii false and the default separators
 func dumpsUnicode(v any) string {
-	out, err := jsonutil.Encode(v)
+	out, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		return ErrorResult(err)
 	}

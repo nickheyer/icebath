@@ -259,7 +259,7 @@ func pendingSkillRecords(t *testing.T, s *Scope) []map[string]any {
 	t.Helper()
 	var out []map[string]any
 	for _, rec := range tools.ListPending(s.Env, tools.WriteApprovalSkills) {
-		text, err := jsonutil.Encode(rec)
+		text, err := jsonutil.Encode(rec, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -95,7 +95,7 @@ func TestFullUploadTwoPartsSuccess(t *testing.T) {
 		!strings.HasSuffix(apiCalls[3].path, "/files") {
 		t.Fatalf("api calls = %+v", apiCalls)
 	}
-	if body, _ := jsonutil.Encode(apiCalls[3].body); body != `{"upload_id": "uid-xyz"}` {
+	if body, _ := jsonutil.Encode(apiCalls[3].body, jsonutil.Spaced(), jsonutil.ASCII()); body != `{"upload_id": "uid-xyz"}` {
 		t.Fatalf("complete body = %s", body)
 	}
 }
@@ -179,7 +179,7 @@ func TestBuildApprovalKeyboardEmbedsSessionKey(t *testing.T) {
 	if !reflect.DeepEqual(datas, want) {
 		t.Fatalf("datas = %v", datas)
 	}
-	got, _ := jsonutil.Encode(BuildUpdatePromptKeyboard().ToDict())
+	got, _ := jsonutil.Encode(BuildUpdatePromptKeyboard().ToDict(), jsonutil.Spaced())
 	if !strings.HasPrefix(got, `{"content": {"rows": [{"buttons": [{"id": "yes", "render_data": {"label": "✓ 确认", "visited_label": "已确认", "style": 1}, "action": {"type": 1, "data": "update_prompt:y", "permission": {"type": 2}, "click_limit": 1}, "group_id": "update_prompt"}`) {
 		t.Fatalf("dict = %s", got)
 	}

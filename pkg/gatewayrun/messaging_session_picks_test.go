@@ -62,7 +62,7 @@ func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
 	if entry, err := runner.sessionStore.AdvanceCompressionSession(ctx, route, root, "seg-1"); err != nil || entry == nil {
 		t.Fatalf("advance %v %v", entry, err)
 	}
-	origin, err := jsonutil.Encode(source.ToDict())
+	origin, err := jsonutil.Encode(source.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestAReasoningPickOnACompressedMessagingChatIsTheChatsNextTurnLevel(t *test
 
 // JSON text of a response with sorted keys, equal for equal mappings in any order
 func picksDump(v any) string {
-	text, err := jsonutil.Encode(v, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return anyutil.Quote(v)
 	}

@@ -814,7 +814,7 @@ func canonicalizeToolCallArguments(argStr string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	canonical, err := jsonutil.Encode(parsed, jsonutil.SortKeys())
+	canonical, err := jsonutil.Encode(parsed, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

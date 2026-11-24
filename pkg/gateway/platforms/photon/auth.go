@@ -263,7 +263,7 @@ func saveAuth(ctx context.Context, data any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	text, err := jsonutil.Encode(data, jsonutil.Indent(2), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(data, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -697,7 +697,7 @@ func responseErrorDetail(resp photonResponse) string {
 				return anyutil.String(v)
 			}
 		}
-		text, _ := jsonutil.Encode(o, jsonutil.SortKeys())
+		text, _ := jsonutil.Encode(o, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		return cutRunes(text, 500)
 	}
 	if text := resp.Text(); text != "" {

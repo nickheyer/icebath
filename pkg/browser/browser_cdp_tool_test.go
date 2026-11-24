@@ -56,7 +56,7 @@ func newCDPMock(t *testing.T) *cdpMock {
 			if sid != "" {
 				reply.Set("sessionId", sid)
 			}
-			text, _ := jsonutil.Encode(reply)
+			text, _ := jsonutil.Encode(reply, jsonutil.Spaced(), jsonutil.ASCII())
 			if s.writeText(text) != nil {
 				return
 			}
@@ -519,7 +519,7 @@ func nest(leaf any, levels int, asDict bool) any {
 
 func TestHostileDeepPageValueIsCutOffNotRaised(t *testing.T) {
 	for _, asDict := range []bool{false, true} {
-		blob, err := jsonutil.Encode(redactCDPOutput(nil, nest(redactDepthSecret, 2000, asDict), nil, nil, 0))
+		blob, err := jsonutil.Encode(redactCDPOutput(nil, nest(redactDepthSecret, 2000, asDict), nil, nil, 0), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil || strings.Contains(blob, redactDepthSecret) {
 			t.Fatalf("as_dict=%v: err %v leaked=%v", asDict, err, strings.Contains(blob, redactDepthSecret))
 		}
@@ -531,8 +531,8 @@ func TestDeepestDomChromeReturnsIsNotTruncated(t *testing.T) {
 	for i := range 150 {
 		node = obj("nodeId", i+2, "nodeName", "DIV", "children", []any{node})
 	}
-	want, _ := jsonutil.Encode(node)
-	got, _ := jsonutil.Encode(redactCDPOutput(nil, node, nil, nil, 0))
+	want, _ := jsonutil.Encode(node, jsonutil.Spaced(), jsonutil.ASCII())
+	got, _ := jsonutil.Encode(redactCDPOutput(nil, node, nil, nil, 0), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != want {
 		t.Fatal("deep DOM tree was altered")
 	}

@@ -60,7 +60,7 @@ func RenderSessionsExport(sessions []*jsonutil.Object, format string, only any) 
 		}
 		var lines []string
 		for _, row := range rows {
-			text, err := jsonutil.Encode(exportJSONValue(row))
+			text, err := jsonutil.Encode(exportJSONValue(row), jsonutil.Spaced())
 			if err != nil {
 				return "", err
 			}
@@ -281,7 +281,7 @@ func exportContentPartText(part any) (string, error) {
 			return value, nil
 		}
 	}
-	return jsonutil.Encode(obj, jsonutil.SortKeys())
+	return jsonutil.Encode(obj, jsonutil.SortKeys(), jsonutil.Spaced())
 }
 
 // UTC ISO second of a stored timestamp, the raw text of a corrupt cell, false for None
@@ -535,7 +535,7 @@ func exportJSONValue(v any) any {
 
 // One exported session as a JSON line, non ASCII text kept as written
 func DumpsExportedSession(session *jsonutil.Object) (string, error) {
-	return jsonutil.Encode(exportJSONValue(session))
+	return jsonutil.Encode(exportJSONValue(session), jsonutil.Spaced())
 }
 
 // Decoded store JSON as pyjson values for callers outside this package

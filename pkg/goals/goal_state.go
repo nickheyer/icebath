@@ -196,7 +196,7 @@ func (s *GoalState) ToJSON() (string, error) {
 		"waiting_on_delegations", s.WaitingOnDelegations, "waiting_reason", s.WaitingReason,
 		"waiting_since", s.WaitingSince, "contract", s.Contract.ToDict(), "gates", gates,
 	)
-	return jsonutil.Encode(o)
+	return jsonutil.Encode(o, jsonutil.Spaced())
 }
 
 // Goal state of a stored row with the Python coercions, legacy rows filling defaults

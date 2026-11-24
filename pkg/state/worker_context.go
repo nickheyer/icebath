@@ -170,7 +170,7 @@ func workerToolNames(d *SessionDB, ctx context.Context, conn SQLiteConn, session
 	}
 	var encoded any
 	if pin != nil {
-		text, err := jsonutil.Encode(pin)
+		text, err := jsonutil.Encode(pin, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

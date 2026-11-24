@@ -64,7 +64,7 @@ func listingStoreFacts(ctx context.Context, db *state.SessionDB, sessionIDs []st
 	for i, id := range sessionIDs {
 		idList[i] = id
 	}
-	ids, err := jsonutil.Encode(idList)
+	ids, err := jsonutil.Encode(idList, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, err
 	}

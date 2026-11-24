@@ -349,7 +349,7 @@ func cmdRecover(r *sessionsRun) (int, error) {
 		return 1, nil
 	}
 	if !hasReport {
-		text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.SortKeys())
+		text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

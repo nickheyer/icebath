@@ -622,7 +622,7 @@ func codexSpillToolOutput(ctx context.Context, content, toolUseID string) string
 
 // UTF-8 size of the input items as json.dumps writes them with unknown values stringified
 func codexSerializedInputBytes(items any) int {
-	text, _ := jsonutil.Encode(items, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, _ := jsonutil.Encode(items, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	return len(text)
 }
 

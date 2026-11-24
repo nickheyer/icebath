@@ -301,7 +301,7 @@ func (s *RuntimeSessionStore) apply(ctx context.Context, operation string, paylo
 	if err != nil {
 		return nil, err
 	}
-	journalText, err := jsonutil.Encode(s.journal)
+	journalText, err := jsonutil.Encode(s.journal, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func (s *RuntimeSessionStore) apply(ctx context.Context, operation string, paylo
 	if err != nil {
 		return nil, err
 	}
-	entryText, err := jsonutil.Encode(jsonutil.ObjectOf("sequence", next, "operation", operation, "payload", payload))
+	entryText, err := jsonutil.Encode(jsonutil.ObjectOf("sequence", next, "operation", operation, "payload", payload), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

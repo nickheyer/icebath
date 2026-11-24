@@ -140,7 +140,7 @@ func (r *GatewayRunner) admitPluginInjection(ctx context.Context, adapter gatewa
 	if err != nil || authority == nil {
 		return nil, err
 	}
-	identity, err := jsonutil.Encode([]any{"plugin", pluginID, sessionKey, strings.ReplaceAll(uuid.NewString(), "-", "")})
+	identity, err := jsonutil.Encode([]any{"plugin", pluginID, sessionKey, strings.ReplaceAll(uuid.NewString(), "-", "")}, jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

@@ -338,7 +338,7 @@ func TestLedgerAutoCompactTriggersAtThreshold(t *testing.T) {
 		row.Set("id", "legacy"+itoa(i))
 		row.Set("before", fat)
 		row.Set("after", append([]any{}, fat...))
-		line, _ := jsonutil.Encode(row)
+		line, _ := jsonutil.Encode(row, jsonutil.Spaced(), jsonutil.ASCII())
 		f.WriteString(line + "\n")
 	}
 	f.Close()
@@ -585,7 +585,7 @@ func TestLedgerCompactRewritesLegacyFullManifests(t *testing.T) {
 		o.Set("evidence", jsonutil.NewObject())
 		o.Set("before", b)
 		o.Set("after", a)
-		line, _ := jsonutil.Encode(o)
+		line, _ := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 		return line
 	}
 	os.WriteFile(s.LedgerPath(), []byte(row("abc123", "patch", changedBefore, changedAfter)+"\n"+row("def456", "pre-rollback", full, full)+"\nnot json\n"), 0o644)

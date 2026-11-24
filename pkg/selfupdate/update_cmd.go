@@ -253,7 +253,7 @@ func gatewayPrompt(ctx context.Context, w io.Writer, promptText, def string, tim
 	if err := unlinkMissingOK(responsePath); err != nil {
 		return "", err
 	}
-	payload, err := jsonutil.Encode(jsonutil.ObjectOf("prompt", promptText, "default", def, "id", uuid.NewString()))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("prompt", promptText, "default", def, "id", uuid.NewString()), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

@@ -82,7 +82,7 @@ func sameAttemptID(a, b any) bool {
 
 // Writes the one attempt log line the micro compaction report parses
 func logAttemptRecord(payload *jsonutil.Object) {
-	text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

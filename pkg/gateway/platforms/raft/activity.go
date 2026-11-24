@@ -88,7 +88,7 @@ func contentString(value any) (string, bool, bool) {
 	}
 	text, isStr := value.(string)
 	if !isStr {
-		encoded, err := jsonutil.Encode(value, jsonutil.SortKeys())
+		encoded, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Spaced())
 		if err != nil {
 			return "", false, false
 		}

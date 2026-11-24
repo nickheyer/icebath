@@ -31,7 +31,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
@@ -348,7 +347,7 @@ func (a *WebhookAdapter) Token() (string, error) {
 		perRoute.Set(name, obj.ValueOr("secret", a.globalSecret))
 	}
 	a.stateMu.Unlock()
-	return jsonutil.Encode([]any{a.globalSecret, perRoute}, jsonutil.SortKeys())
+	return jsonutil.Encode([]any{a.globalSecret, perRoute}, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Python attribute of the adapter by name, the signing credentials as its token
@@ -1395,7 +1394,7 @@ func (a *WebhookAdapter) ValidateSignature(request *WebRequest, body []byte, sec
 // Renders a prompt template with dotted payload fields, the raw payload JSON for an empty template
 func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, routeName string) (string, error) {
 	if !anyutil.IsTrue(template) {
-		dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+		dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}
@@ -1414,7 +1413,7 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 		literal := "{" + key + "}"
 		switch key {
 		case "__raw__":
-			dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+			dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 			if err != nil {
 				failure = err
 				return match
@@ -1438,7 +1437,7 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 		}
 		switch value.(type) {
 		case *jsonutil.Object, []any:
-			dumped, err := jsonutil.Encode(value, jsonutil.Indent(2))
+			dumped, err := jsonutil.Encode(value, jsonutil.Indent(2), jsonutil.ASCII())
 			if err != nil {
 				failure = err
 				return match
@@ -1511,13 +1510,8 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		err = &PyError{Kind: "ValueError", Msg: "non-positive"}
 	}
 	if err != nil {
-		var pyErr *errorutil.Error
-		var gwErr *PyError
-		if errors.As(err, &pyErr) && (pyErr.Kind == "ValueError" || pyErr.Kind == "TypeError") || errors.As(err, &gwErr) {
-			pkgLog().Error("[webhook] invalid pr_number: " + anyutil.Quote(prNumber))
-			return SendResult{Success: false, Error: "Invalid pr_number"}, nil
-		}
-		return SendResult{}, err
+		pkgLog().Error("[webhook] invalid pr_number: " + anyutil.Quote(prNumber))
+		return SendResult{Success: false, Error: "Invalid pr_number"}, nil
 	}
 	repoText, ok := repo.(string)
 	if !ok {

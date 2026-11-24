@@ -1166,7 +1166,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 		parentID := state.CoalesceToolCallID(call)
 		var children []state.ToolCall
 		for index, entry := range entries {
-			arguments := pyDumps(jsonutil.ObjectOf("calls", []any{jsonutil.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}))
+			arguments := pyDumps(jsonutil.ObjectOf("calls", []any{jsonutil.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}), jsonutil.Spaced())
 			var child state.ToolCall
 			if index == 0 {
 				child = call

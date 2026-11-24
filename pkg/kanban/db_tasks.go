@@ -209,7 +209,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 		for i, s := range skills {
 			items[i] = s
 		}
-		text, err := jsonutil.Encode(items)
+		text, err := jsonutil.Encode(items, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}
@@ -1112,7 +1112,7 @@ func jsonOrNull(obj any) (any, error) {
 			return nil, nil
 		}
 	}
-	text, err := jsonutil.Encode(obj)
+	text, err := jsonutil.Encode(obj, jsonutil.Spaced())
 	if err != nil {
 		return nil, err
 	}

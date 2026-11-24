@@ -86,7 +86,7 @@ func restartLoopSaveBoots(ctx context.Context, boots []float64) {
 	}
 	obj := jsonutil.NewObject()
 	obj.Set("boots", items)
-	text, err := jsonutil.Encode(obj)
+	text, err := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return
 	}

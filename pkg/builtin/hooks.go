@@ -93,7 +93,7 @@ func withFindings(result, key, text string) string {
 	parsed, _ := jsonutil.Decode(result)
 	if obj, ok := jsonutil.AsObject(parsed); ok {
 		obj.Set(key, text)
-		if out, err := jsonutil.Encode(obj); err == nil {
+		if out, err := jsonutil.Encode(obj, jsonutil.Spaced()); err == nil {
 			return out
 		}
 	}
@@ -117,7 +117,7 @@ func additionalContext(output *jsonutil.Object) string {
 
 // Runs a hook command with the event on stdin and returns its stdout parsed as an object, nil when silent
 func runHookCommand(ctx context.Context, cmd *exec.Cmd, event *jsonutil.Object) (*jsonutil.Object, error) {
-	payload, err := jsonutil.Encode(event)
+	payload, err := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

@@ -139,7 +139,7 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 			return nil
 		}
 		cfg.Set("gateway_runtime", runtime)
-		text, err := jsonutil.Encode(cfg)
+		text, err := jsonutil.Encode(cfg, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

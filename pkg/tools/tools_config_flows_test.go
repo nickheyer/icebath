@@ -359,7 +359,7 @@ func TestEstimateToolTokensCountsTheWireSchemaOncePerGeneration(t *testing.T) {
 	wire := jsonutil.NewObject()
 	wire.Set("type", "function")
 	wire.Set("function", Default.Schema(s.ctx(), "", name))
-	text, _ := jsonutil.Encode(wire)
+	text, _ := jsonutil.Encode(wire, jsonutil.Spaced(), jsonutil.ASCII())
 	if counts[name] != len(text) {
 		t.Fatalf("%s %d want %d", name, counts[name], len(text))
 	}

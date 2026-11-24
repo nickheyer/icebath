@@ -84,7 +84,7 @@ func acpRenderMessageContent(content any) (string, error) {
 				return strings.TrimSpace(s), nil
 			}
 		}
-		return jsonutil.Encode(content, jsonutil.ASCII())
+		return jsonutil.Encode(content, jsonutil.ASCII(), jsonutil.Spaced())
 	}
 	if items, ok := bridgeList(content); ok {
 		var parts []string

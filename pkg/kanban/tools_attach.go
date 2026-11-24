@@ -253,6 +253,6 @@ func handleAttachments(k *kanbanCall) (string, error) {
 		for _, a := range stored {
 			attachments = append(attachments, fieldsOf(a, attachmentFields))
 		}
-		return jsonutil.Encode(jsonutil.ObjectOf("ok", true, "task_id", tid, "attachments", attachments))
+		return jsonutil.Encode(jsonutil.ObjectOf("ok", true, "task_id", tid, "attachments", attachments), jsonutil.Spaced(), jsonutil.ASCII())
 	})
 }

@@ -107,7 +107,7 @@ func botDMList(names []string) []any {
 
 // JSON text of an answer whose values are text, numbers, booleans and lists of text
 func botDMDumps(payload *jsonutil.Object) string {
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}
@@ -234,7 +234,7 @@ func deliveryCommand(argv []string, dmFile string, stdinFile bool, profileHome s
 		}
 	}
 	if author != nil && author.Len() > 0 {
-		text, err := jsonutil.Encode(author)
+		text, err := jsonutil.Encode(author, jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}
@@ -285,7 +285,7 @@ func startDelivery(ctx context.Context, argv []string, content, label string, st
 					result.Set("detail", "Durably queued for the live Bot Chat owner. Do NOT resend. "+anyutil.String(notification.ValueOr("detail", "")))
 				}
 			}
-			return jsonutil.Encode(result)
+			return jsonutil.Encode(result, jsonutil.Spaced(), jsonutil.ASCII())
 		}
 	}
 	command, err := deliveryCommand(argv, dmFile, stdinFile, profileHome, author)

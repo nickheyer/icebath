@@ -104,7 +104,7 @@ func hfSend(ctx context.Context, r hfRequest) (*httputil.Response, error) {
 		headers[k] = v
 	}
 	if r.json != nil {
-		text, err := jsonutil.Encode(r.json)
+		text, err := jsonutil.Encode(r.json, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -915,7 +915,7 @@ func hfUploadFile(ctx context.Context, token, repoID, pathInRepo string, content
 	}
 	var body bytes.Buffer
 	for _, line := range lines {
-		text, err := jsonutil.Encode(line)
+		text, err := jsonutil.Encode(line, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

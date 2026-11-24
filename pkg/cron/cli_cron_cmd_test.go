@@ -37,7 +37,7 @@ func editFirstStoredJob(t *testing.T, s *Store, edit func(*jsonutil.Object)) {
 	}
 	jobs, _ := doc.(*jsonutil.Object).Get("jobs")
 	edit(jobs.([]any)[0].(*jsonutil.Object))
-	out, err := jsonutil.Encode(doc)
+	out, err := jsonutil.Encode(doc, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

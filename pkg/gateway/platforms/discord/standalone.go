@@ -187,7 +187,7 @@ func multipartBody(payload any, files map[string]string, order []string) (string
 	buf := &bytes.Buffer{}
 	w := multipart.NewWriter(buf)
 	if payload != nil {
-		text, err := jsonutil.Encode(payload)
+		text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return "", nil, err
 		}

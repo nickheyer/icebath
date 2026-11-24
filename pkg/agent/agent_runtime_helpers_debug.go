@@ -156,7 +156,7 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 	if err != nil {
 		return "", err
 	}
-	if err := config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, a.env), dumpFile, redacted, jsonutil.Convert(str)); err != nil {
+	if err := config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, a.env), dumpFile, redacted, jsonutil.Convert(str), jsonutil.Spaced()); err != nil {
 		return "", err
 	}
 	a.vprint(a.logPrefix+"🧾 Request debug dump written to: "+dumpFile, false, false)

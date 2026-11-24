@@ -34,7 +34,7 @@ func writeFile(t *testing.T, root, name, text string) {
 
 func writePkg(t *testing.T, root string, data *jsonutil.Object) {
 	t.Helper()
-	text, err := jsonutil.Encode(data)
+	text, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,8 +300,8 @@ func recipeEqual(t *testing.T, got, want *Recipe) {
 	if got == nil || want == nil {
 		t.Fatalf("recipe %v want %v", got, want)
 	}
-	a, _ := jsonutil.Encode(got.ToDict())
-	b, _ := jsonutil.Encode(want.ToDict())
+	a, _ := jsonutil.Encode(got.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
+	b, _ := jsonutil.Encode(want.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if a != b {
 		t.Fatalf("recipe %s\nwant %s", a, b)
 	}
@@ -342,7 +342,7 @@ func TestRecipeFromDict(t *testing.T) {
 		eq(t, "port", ptrInt(fromDict(t, jsonutil.ObjectOf("name", "x", "port", int64(99999999))).Port), nil)
 		eq(t, "float port", ptrInt(fromDict(t, jsonutil.ObjectOf("name", "x", "port", 3000.0)).Port), nil)
 		r := fromDict(t, jsonutil.ObjectOf("name", "x", "port", true))
-		text, _ := jsonutil.Encode(r.ToDict().Value("port"))
+		text, _ := jsonutil.Encode(r.ToDict().Value("port"), jsonutil.Spaced(), jsonutil.ASCII())
 		eq(t, "bool port", text+r.portText(), "trueTrue")
 	})
 	t.Run("bad_readiness_path_normalized", func(t *testing.T) {

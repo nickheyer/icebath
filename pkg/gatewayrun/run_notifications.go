@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -637,7 +638,7 @@ func (r *GatewayRunner) replayPlannedRestartMarker(ctx context.Context, path str
 		targets = append(targets, key.list())
 	}
 	data.Set("delivered_targets", targets)
-	return config.AtomicJSONWriteWith(ctx, path, data)
+	return config.AtomicJSONWriteWith(ctx, path, data, jsonutil.Spaced())
 }
 
 // Optional text as a Python value, nil for an absent one

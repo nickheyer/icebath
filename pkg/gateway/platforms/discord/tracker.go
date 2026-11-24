@@ -85,7 +85,7 @@ func (t *nonConversationalTracker) snapshot() []string {
 
 // Writes the ids as a compact JSON list, logging a failure
 func (t *nonConversationalTracker) save(ctx context.Context, ids []string) {
-	if err := config.AtomicJSONWriteWith(ctx, t.path, ids); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, t.path, ids, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug(fmt.Sprintf("[%s] Failed to save non-conversational Discord IDs", "Discord"), "err", err)
 	}
 }

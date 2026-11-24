@@ -17,7 +17,7 @@ import (
 
 func dumps(t *testing.T, v any) string {
 	t.Helper()
-	out, err := jsonutil.Encode(v)
+	out, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func clarifyResultContent(t *testing.T, size int, status string, answer any) str
 
 // Summary line of an answered clarify entry
 func clarifyAnswerSummary(answer any) string {
-	s, _ := jsonutil.Encode(answer)
+	s, _ := jsonutil.Encode(answer, jsonutil.Spaced())
 	return tools.Elide("[clarify] user responded: "+s, pruneMinChars-1)
 }
 

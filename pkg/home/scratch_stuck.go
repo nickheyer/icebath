@@ -78,7 +78,7 @@ func writeStuck(root string, state *stuckState) {
 	for _, k := range state.keys {
 		obj.Set(k, state.recs[k])
 	}
-	text, err := jsonutil.Encode(obj, jsonutil.Indent(1), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(obj, jsonutil.Indent(1), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return
 	}

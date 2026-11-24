@@ -215,7 +215,7 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 	if len(body) > scaleToZeroRejectedBodyMaxBytes {
 		body = body[:scaleToZeroRejectedBodyMaxBytes]
 	}
-	dumped, _ := jsonutil.Encode(strings.ToValidUTF8(string(body), "\uFFFD"))
+	dumped, _ := jsonutil.Encode(strings.ToValidUTF8(string(body), "\uFFFD"), jsonutil.Spaced(), jsonutil.ASCII())
 	pkgLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend rejected: %s %s", statusLine, textutil.First(dumped, scaleToZeroRejectedBodyMaxBytes)))
 	return false
 }

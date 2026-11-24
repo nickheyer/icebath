@@ -887,7 +887,7 @@ func renderToolCalls(toolCalls any) string {
 		case string:
 			argsText = args
 		default:
-			if dumped, err := jsonutil.Encode(args); err == nil {
+			if dumped, err := jsonutil.Encode(args, jsonutil.Spaced()); err == nil {
 				argsText = dumped
 			} else {
 				argsText = anyutil.String(args)

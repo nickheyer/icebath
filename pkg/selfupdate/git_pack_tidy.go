@@ -371,7 +371,7 @@ func saveState(packDir string, state *tidyState) {
 	data.Set("kept", kept)
 	data.Set("seen", seen)
 	data.Set("merge_bytes", state.mergeBytes)
-	text, err := jsonutil.Encode(data)
+	text, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		err = os.WriteFile(filepath.Join(filepath.Dir(filepath.Dir(packDir)), tidyStateFile), []byte(text), 0o644)
 	}

@@ -117,7 +117,7 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 			o.Set("removed", r.removed)
 			list = append(list, o)
 		}
-		text, err := jsonutil.Encode(list, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(list, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

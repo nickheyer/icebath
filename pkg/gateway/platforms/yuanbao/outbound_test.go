@@ -222,7 +222,7 @@ func (b *cosBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unexpected request", http.StatusBadRequest)
 		return
 	}
-	reply, _ := jsonutil.Encode(jsonutil.ObjectOf("code", int64(0), "data", b.credentials))
+	reply, _ := jsonutil.Encode(jsonutil.ObjectOf("code", int64(0), "data", b.credentials), jsonutil.Spaced(), jsonutil.ASCII())
 	fmt.Fprint(w, reply)
 }
 

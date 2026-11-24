@@ -358,7 +358,7 @@ func CmdCheckUpdates(ctx context.Context, asJSON bool, out io.Writer) error {
 		for _, r := range results {
 			list = append(list, checkResultObject(r))
 		}
-		text, err := jsonutil.Encode(list, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(list, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

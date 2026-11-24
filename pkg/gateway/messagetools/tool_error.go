@@ -9,7 +9,7 @@ import (
 func toolError(message string) string {
 	out := jsonutil.NewObject()
 	out.Set("error", tools.BoundErrorText(message))
-	text, err := jsonutil.Encode(out)
+	text, err := jsonutil.Encode(out, jsonutil.Spaced())
 	if err != nil {
 		return tools.ErrorResult(err)
 	}

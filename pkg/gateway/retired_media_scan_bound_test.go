@@ -64,7 +64,7 @@ func TestCandidatesShareOneMessagesPass(t *testing.T) {
 	}
 	err = db.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		for index, reference := range references {
-			text, err := jsonutil.Encode(reference)
+			text, err := jsonutil.Encode(reference, jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return err
 			}

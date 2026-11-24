@@ -272,7 +272,7 @@ func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, langua
 	payload := jsonutil.NewObject()
 	payload.Set("platform", target)
 	payload.Set("phrase", phrase)
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

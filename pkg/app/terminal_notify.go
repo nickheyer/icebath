@@ -78,7 +78,7 @@ func warpOSC777(event, detail, sessionID string) (string, error) {
 		key = "summary"
 	}
 	payload.Set(key, runesHead(detail, 200))
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

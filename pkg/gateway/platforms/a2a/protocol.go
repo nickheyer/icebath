@@ -325,7 +325,7 @@ func fileNote(fname any, body string, mtype any) string {
 }
 
 func jsonOrStr(data any) string {
-	text, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if err != nil {
 		return anyutil.String(data)
 	}
@@ -424,7 +424,7 @@ func SSEData(payload, reqID any) (string, error) {
 	if reqID != nil {
 		envelope = JsonrpcResult(reqID, payload)
 	}
-	text, err := jsonutil.Encode(envelope)
+	text, err := jsonutil.Encode(envelope, jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}
@@ -895,7 +895,7 @@ func PersistMessage(ctx context.Context, contextID, role, text, taskID, inputID 
 	if inputID != "" {
 		entry.Set("input_id", inputID)
 	}
-	line, err := jsonutil.Encode(entry)
+	line, err := jsonutil.Encode(entry, jsonutil.Spaced())
 	if err != nil {
 		return
 	}

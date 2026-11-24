@@ -203,11 +203,11 @@ func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *jsonutil.Object) 
 	if keyID != "" {
 		header.Set("kid", keyID)
 	}
-	hb, err := jsonutil.Encode(header)
+	hb, err := jsonutil.Encode(header, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}
-	pb, err := jsonutil.Encode(payload)
+	pb, err := jsonutil.Encode(payload, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

@@ -231,8 +231,8 @@ func TestTimestampsHaveMillisecondPrecision(t *testing.T) {
 }
 
 func TestJsonrpcResultAndError(t *testing.T) {
-	r, _ := jsonutil.Encode(JsonrpcResult(1, "ok"))
-	e, _ := jsonutil.Encode(JsonrpcError("x", ErrMethodNotFound, "nope"))
+	r, _ := jsonutil.Encode(JsonrpcResult(1, "ok"), jsonutil.Spaced(), jsonutil.ASCII())
+	e, _ := jsonutil.Encode(JsonrpcError("x", ErrMethodNotFound, "nope"), jsonutil.Spaced(), jsonutil.ASCII())
 	if r != `{"jsonrpc":"2.0","id":1,"result":"ok"}` || e != `{"jsonrpc":"2.0","id":"x","error":{"code":-32601,"message":"nope"}}` {
 		t.Fatalf("%s %s", r, e)
 	}

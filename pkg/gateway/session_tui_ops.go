@@ -521,7 +521,7 @@ func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) tuigateway.R
 
 // Bytes text takes inside a frame, JSON escaped without ASCII escaping and then UTF-8
 func wireBytes(text string) int {
-	encoded, err := jsonutil.Encode(text)
+	encoded, err := jsonutil.Encode(text, jsonutil.Spaced())
 	if err != nil {
 		return len(text)
 	}

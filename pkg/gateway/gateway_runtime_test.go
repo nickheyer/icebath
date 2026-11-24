@@ -52,7 +52,7 @@ func serveIdentify(t *testing.T, h string, payload func() *jsonutil.Object) func
 				return
 			}
 			bufio.NewReader(conn).ReadString('\n')
-			body, _ := jsonutil.Encode(payload())
+			body, _ := jsonutil.Encode(payload(), jsonutil.Spaced(), jsonutil.ASCII())
 			fmt.Fprintf(conn, "{\"ok\": true, \"protocol\": 1, \"id\": 1, \"result\": %s}\n", body)
 			conn.Close()
 		}
@@ -510,7 +510,7 @@ func refusalRecord(h string, pid int) *jsonutil.Object {
 }
 
 func writeRefusalRecord(t *testing.T, path string, r *jsonutil.Object) {
-	body, err := jsonutil.Encode(r)
+	body, err := jsonutil.Encode(r, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

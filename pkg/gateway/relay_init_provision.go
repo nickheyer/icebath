@@ -44,7 +44,7 @@ func (e *RelayRuntimeError) Error() string { return e.Msg }
 
 // Bearer authenticated JSON POST returning the open 2xx response
 func relayJSONPost(url, token string, body *jsonutil.Object, timeout time.Duration) (*http.Response, error) {
-	data, err := jsonutil.Encode(body)
+	data, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

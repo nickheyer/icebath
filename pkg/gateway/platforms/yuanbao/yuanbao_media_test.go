@@ -35,11 +35,11 @@ func TestImageHelpersAndMsgBodies(t *testing.T) {
 	if GuessMIMEType("A.JPG") != "image/jpeg" || !IsImage("x.png", "") || GetImageFormat("IMAGE/PNG") != 3 || GetImageFormat("x") != 255 {
 		t.Fatal("mime helpers")
 	}
-	got, _ := jsonutil.Encode(BuildImageMsgBody("https://h/p/pic.png?x=1", "", "", 5, 2, 3, "image/png"))
+	got, _ := jsonutil.Encode(BuildImageMsgBody("https://h/p/pic.png?x=1", "", "", 5, 2, 3, "image/png"), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != `[{"msg_type": "TIMImageElem", "msg_content": {"uuid": "pic.png", "image_format": 3, "image_info_array": [{"type": 1, "size": 5, "width": 2, "height": 3, "url": "https://h/p/pic.png?x=1"}]}}]` {
 		t.Fatalf("image body %s", got)
 	}
-	got, _ = jsonutil.Encode(BuildFileMsgBody("u", "f.pdf", "", 7))
+	got, _ = jsonutil.Encode(BuildFileMsgBody("u", "f.pdf", "", 7), jsonutil.Spaced(), jsonutil.ASCII())
 	if got != `[{"msg_type": "TIMFileElem", "msg_content": {"uuid": "f.pdf", "file_name": "f.pdf", "file_size": 7, "url": "u"}}]` {
 		t.Fatalf("file body %s", got)
 	}

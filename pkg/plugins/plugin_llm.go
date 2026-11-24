@@ -332,7 +332,7 @@ func buildStructuredMessages(spec PluginLlmStructuredRequest) ([]any, error) {
 		header += "\n\nSchema name: " + spec.SchemaName
 	}
 	if spec.JSONSchema != nil {
-		schemaText, err := jsonutil.Encode(spec.JSONSchema, jsonutil.SortKeys())
+		schemaText, err := jsonutil.Encode(spec.JSONSchema, jsonutil.SortKeys(), jsonutil.Spaced())
 		if err != nil {
 			schemaText = anyutil.String(spec.JSONSchema)
 		}

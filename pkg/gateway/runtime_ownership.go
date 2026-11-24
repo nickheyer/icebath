@@ -206,7 +206,7 @@ func (o *ProfileOwnership) reserveOne(ctx context.Context, h, purpose string) er
 	if purpose != "" {
 		record.Set("purpose", purpose)
 	}
-	text, err := jsonutil.Encode(record)
+	text, err := jsonutil.Encode(record, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		err = rewriteLockRecord(f, text)
 	}

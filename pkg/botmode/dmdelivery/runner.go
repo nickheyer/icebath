@@ -124,7 +124,7 @@ func runDelivery(ctx context.Context, argv []string, dmFile string, stdinFile bo
 				return waitAdmitted(ctx, stdout, record, dmFile)
 			}
 		}
-		text, err := jsonutil.Encode(jsonutil.ObjectOf("reason", "runtime_unavailable", "error", "No canonical Bot Chat authority; payload retained."))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("reason", "runtime_unavailable", "error", "No canonical Bot Chat authority; payload retained."), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return 0, err
 		}
@@ -251,7 +251,7 @@ func DeliveryMain(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	case *fs.PathError, *os.LinkError:
 		reasonErr = errors.New(excText(err))
 	}
-	payload, dumpErr := jsonutil.Encode(jsonutil.ObjectOf("error", excText(err), "reason", tools.DeliveryFailureReason(reasonErr)))
+	payload, dumpErr := jsonutil.Encode(jsonutil.ObjectOf("error", excText(err), "reason", tools.DeliveryFailureReason(reasonErr)), jsonutil.Spaced(), jsonutil.ASCII())
 	if dumpErr != nil {
 		fmt.Fprintf(stderr, "DM delivery failed (%s) and its failure report could not be encoded: %s\n", err, dumpErr)
 		pkgLog().Error("DM delivery failure report could not be encoded: "+dumpErr.Error(), "delivery_error_chain", errchain.Text(err), "error_chain", errchain.Text(dumpErr))

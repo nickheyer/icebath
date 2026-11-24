@@ -316,7 +316,7 @@ func (m *videoMatrix) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	body, _ := jsonutil.Encode(map[string]any{"status": "done", "model": model, "video": map[string]any{"url": "https://xai-cdn/out.mp4", "duration": 8,
 		"file_output": map[string]any{"file_id": "file-123", "filename": filename, "public_url": "https://xai-files.example/out.mp4",
-			"public_url_expires_at": 1234567890}}})
+			"public_url_expires_at": 1234567890}}}, jsonutil.Spaced(), jsonutil.ASCII())
 	return reply(body), nil
 }
 

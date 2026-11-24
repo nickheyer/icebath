@@ -181,7 +181,7 @@ func (d *SessionDB) excludeSupersededSegments(ctx context.Context, whereClauses 
 			ids = append(ids, id)
 		}
 		sort.Strings(ids)
-		encoded, err := jsonutil.Encode(stringsToAny(ids))
+		encoded, err := jsonutil.Encode(stringsToAny(ids), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

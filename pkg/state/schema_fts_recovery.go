@@ -165,7 +165,7 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 	diagnostic.Set("holders_since", holdersSince)
 	diagnostic.Set("holders_attempts", holdersAttempts)
 	diagnostic.Set("futile", futile)
-	text, err := jsonutil.Encode(diagnostic, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(diagnostic, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}

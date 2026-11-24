@@ -116,7 +116,7 @@ func recoverReceipt(t *testing.T, ctx context.Context, db *state.SessionDB, sid 
 
 func recoverPlain(t *testing.T, v any) any {
 	t.Helper()
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestACompactedReceiptWithAForeignOriginStaysRefused(t *testing.T) {
 	compactLike0222(t, ctx, first.DB, ref.SessionID, "classic-child", true)
 	receipt := recoverReceipt(t, ctx, first.DB, ref.SessionID)
 	recoverNested(t, receipt, "entry", "origin").(*jsonutil.Object).Set("profile", "other-profile")
-	text, err := jsonutil.Encode(receipt)
+	text, err := jsonutil.Encode(receipt, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func recoverWithField(t *testing.T, value any, path ...string) func(string) stri
 			node = next.(*jsonutil.Object)
 		}
 		node.Set(path[len(path)-1], value)
-		text, err := jsonutil.Encode(receipt)
+		text, err := jsonutil.Encode(receipt, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -459,7 +459,7 @@ func TestLiveSessionRebuildsARouteEntryMissingFromTheStore(t *testing.T) {
 }
 
 func TestARefusedReceiptNamesItsFailingCheckInTheLog(t *testing.T) {
-	terminal, err := jsonutil.Encode(jsonutil.ObjectOf("TERMINAL_ENV", "local", "TERMINAL_CWD", "/elsewhere"))
+	terminal, err := jsonutil.Encode(jsonutil.ObjectOf("TERMINAL_ENV", "local", "TERMINAL_CWD", "/elsewhere"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +570,7 @@ func servedAlphaSession(t *testing.T) (context.Context, *SessionAuthority, Sessi
 
 func servedAlphaStore(t *testing.T, ctx context.Context, db *state.SessionDB, sid string, receipt *jsonutil.Object) {
 	t.Helper()
-	text, err := jsonutil.Encode(receipt)
+	text, err := jsonutil.Encode(receipt, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

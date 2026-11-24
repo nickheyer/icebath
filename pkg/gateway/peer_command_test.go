@@ -75,7 +75,7 @@ func peerJSON(t *testing.T, text string) *jsonutil.Object {
 
 // Writes payload as a JSON response with its length like the test handlers
 func writePeerJSON(w http.ResponseWriter, status int, payload any) {
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}
@@ -579,7 +579,7 @@ func peerSpark(t *testing.T, fake *fakePeer, authorEnv *jsonutil.Object) {
 		os.Unsetenv(provider.TurnAuthorEnvName)
 		return
 	}
-	text, err := jsonutil.Encode(authorEnv)
+	text, err := jsonutil.Encode(authorEnv, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

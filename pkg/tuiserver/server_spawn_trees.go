@@ -40,7 +40,7 @@ func spawnTreeSessionDir(sessionID string) string {
 
 // Appends one entry line to the session index, a failed write never blocking the save
 func appendSpawnTreeIndex(sessionDir string, entry map[string]any) {
-	line, err := jsonutil.Encode(entry)
+	line, err := jsonutil.Encode(entry, jsonutil.Spaced())
 	if err == nil {
 		var f *os.File
 		if f, err = os.OpenFile(filepath.Join(sessionDir, spawnTreeIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {

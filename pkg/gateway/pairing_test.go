@@ -204,7 +204,7 @@ func TestLegacyPendingFileCompatCleanupExpiredHandlesMalformedEntries(t *testing
 func TestLegacyPendingFileCompatApproveCodeSkipsMalformedEntries(t *testing.T) {
 	dir := t.TempDir()
 	entry := jsonutil.ObjectOf("broken", jsonutil.ObjectOf("user_id", "x", "created_at", pairingNow(), "salt", "not-hex", "hash", "doesntmatter"))
-	text, err := jsonutil.Encode(entry)
+	text, err := jsonutil.Encode(entry, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

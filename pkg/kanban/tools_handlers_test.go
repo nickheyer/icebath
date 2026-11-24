@@ -58,7 +58,7 @@ func errText(d map[string]any) string {
 // JSON text of a value for comparison with a Python literal
 func jsonText(t *testing.T, v any) string {
 	t.Helper()
-	s, err := jsonutil.Encode(v)
+	s, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

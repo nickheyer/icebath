@@ -49,7 +49,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 	defer client.CloseIdleConnections()
 	postAPI := func(method string, payload *jsonutil.Object) (*jsonutil.Object, error) {
-		body, err := jsonutil.Encode(payload)
+		body, err := jsonutil.Encode(payload, jsonutil.Spaced())
 		if err != nil {
 			return nil, err
 		}

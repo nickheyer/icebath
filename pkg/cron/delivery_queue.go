@@ -178,7 +178,7 @@ func deliveryJobJSON(job *Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return jsonutil.Encode(decoded, jsonutil.SortKeys())
+	return jsonutil.Encode(decoded, jsonutil.SortKeys(), jsonutil.Spaced())
 }
 
 // Tombstone of a pruned terminal row as a status record

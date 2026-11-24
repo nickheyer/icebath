@@ -150,7 +150,7 @@ func sameInt(a, b any) bool {
 
 // Compact JSON with non ASCII kept, the json.dumps ensure_ascii False every shape returns
 func sessionSearchDumps(v any) string {
-	out, err := jsonutil.Encode(v)
+	out, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -1301,7 +1301,7 @@ func sessionSearchInlineExecutor(ctx context.Context, host ExecutorHost, args ma
 		out := jsonutil.NewObject()
 		out.Set("success", false)
 		out.Set("error", state.FormatSessionDBUnavailable(ctx, state.SessionDBUnavailablePrefix, false))
-		text, err := jsonutil.Encode(out)
+		text, err := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}

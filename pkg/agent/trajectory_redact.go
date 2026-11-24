@@ -78,7 +78,7 @@ func redactTrajectoryText(text string) string {
 		if err != nil {
 			continue
 		}
-		body, err := jsonutil.Encode(redactTrajectoryJSON(decoded))
+		body, err := jsonutil.Encode(redactTrajectoryJSON(decoded), jsonutil.Spaced())
 		if err != nil {
 			continue
 		}
@@ -131,7 +131,7 @@ func redactTrajectoryField(key, value string) any {
 	if cleaned := redactTrajectoryText(value); cleaned != value {
 		return cleaned
 	}
-	doc, err := jsonutil.Encode(jsonutil.ObjectOf(key, value))
+	doc, err := jsonutil.Encode(jsonutil.ObjectOf(key, value), jsonutil.Spaced())
 	if err != nil {
 		return "***"
 	}

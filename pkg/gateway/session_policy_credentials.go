@@ -145,7 +145,7 @@ func pathEqual(a, b []any) bool {
 
 // Hashable form of a path for set membership
 func pathKey(path []any) string {
-	text, _ := jsonutil.Encode([]any(path))
+	text, _ := jsonutil.Encode([]any(path), jsonutil.Spaced(), jsonutil.ASCII())
 	return text
 }
 
@@ -260,7 +260,7 @@ func (p *LocalSessionPolicy) asDict() map[string]any {
 
 // Hex sha256 of sorted key JSON
 func sortedDigest(value any) string {
-	text, _ := jsonutil.Encode(value, jsonutil.SortKeys())
+	text, _ := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
@@ -326,7 +326,7 @@ func legacyIdentities(policy *LocalSessionPolicy) map[string]bool {
 func secretFingerprint(value any) any {
 	text, isStr := value.(string)
 	if !isStr {
-		text, _ = jsonutil.Encode(value, jsonutil.SortKeys())
+		text, _ = jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	if fp := provider.FingerprintSecretValue(text); fp != "" {
 		return fp
@@ -483,7 +483,7 @@ func configReference(ctx context.Context, owner launchSecretOwner, sessionID str
 		entries = append(entries, []any{[]any(path), secretFingerprint(secrets.values[i])})
 	}
 	text, err := jsonutil.Encode(map[string]any{"home": home, "profile": owner.launchOwnerProfileID(), "session": sessionID,
-		"policy": policyIdentity(policy, nil), "bound": bound, "entries": entries}, jsonutil.SortKeys())
+		"policy": policyIdentity(policy, nil), "bound": bound, "entries": entries}, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

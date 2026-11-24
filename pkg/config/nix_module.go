@@ -20,7 +20,7 @@ func NixRenderSettings(settingsJSON string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("the Nix settings are %s, expected a mapping", errchain.Kind(v))
 	}
-	return jsonutil.Encode(obj)
+	return jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Deep merges the Nix settings JSON into config.yaml, Nix keys replacing those on disk and every other key kept

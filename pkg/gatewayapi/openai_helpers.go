@@ -231,7 +231,7 @@ func capHistoryToolOutputs(history []any, maxChars int) []any {
 								args.Set(k, capTextKeep(v, maxChars))
 							}
 						}
-						encoded, _ := jsonutil.Encode(args)
+						encoded, _ := jsonutil.Encode(args, jsonutil.Spaced(), jsonutil.ASCII())
 						newFn := fn.Clone()
 						newFn.Set("arguments", encoded)
 						newCall := call.Clone()
@@ -312,7 +312,7 @@ func trimToolItems(items []*jsonutil.Object) []*jsonutil.Object {
 						obj.Set(k, "["+strconv.Itoa(len([]rune(v)))+" chars — truncated for response.completed]")
 					}
 				}
-				encoded, err := jsonutil.Encode(obj)
+				encoded, err := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 				if err != nil {
 					return
 				}

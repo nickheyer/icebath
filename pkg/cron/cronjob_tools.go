@@ -69,7 +69,7 @@ type cronjobArgs struct {
 
 // JSON with two space indent and ASCII escapes like json dumps indent 2
 func cronDumps(payload *jsonutil.Object) string {
-	out, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+	out, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return fmt.Sprintf(`{"error": %q}`, err.Error())
 	}
@@ -86,7 +86,7 @@ func cronToolError(message string, extra *jsonutil.Object) string {
 			out.Set(k, extra.Value(k))
 		}
 	}
-	text, err := jsonutil.Encode(out)
+	text, err := jsonutil.Encode(out, jsonutil.Spaced())
 	if err != nil {
 		return fmt.Sprintf(`{"error": %q, "success": false}`, message)
 	}

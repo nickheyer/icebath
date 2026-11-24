@@ -1083,7 +1083,7 @@ func runCell(ctx context.Context, env *tools.Env, kernel *sessionKernel, key ker
 		request := jsonutil.NewObject()
 		request.Set("id", uuid4Hex())
 		request.Set("code", code)
-		line, err := jsonutil.Encode(request)
+		line, err := jsonutil.Encode(request, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}
@@ -1105,7 +1105,7 @@ func runCell(ctx context.Context, env *tools.Env, kernel *sessionKernel, key ker
 		if err != nil {
 			return "", err
 		}
-		return jsonutil.Encode(res)
+		return jsonutil.Encode(res, jsonutil.Spaced())
 	}()
 	if err == nil {
 		return result

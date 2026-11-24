@@ -206,7 +206,7 @@ func (s *realtimeSession) cancelResponse() bool {
 
 // Serializes one JSON frame under the send lock
 func (s *realtimeSession) sendJSON(payload *jsonutil.Object) error {
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -313,7 +313,7 @@ func (s *realtimeSpeaker) readQueueFile() ([]*jsonutil.Object, error) {
 func (s *realtimeSpeaker) rewriteQueue(remaining []*jsonutil.Object) error {
 	var b strings.Builder
 	for _, e := range remaining {
-		text, err := jsonutil.Encode(e)
+		text, err := jsonutil.Encode(e, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -335,7 +335,7 @@ func (s *realtimeSpeaker) appendProcessed(entry, result *jsonutil.Object) error 
 	if !ok {
 		text = ""
 	}
-	line, err := jsonutil.Encode(jsonutil.ObjectOf("id", id, "text", text, "result", result))
+	line, err := jsonutil.Encode(jsonutil.ObjectOf("id", id, "text", text, "result", result), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

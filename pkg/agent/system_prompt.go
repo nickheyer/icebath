@@ -1052,5 +1052,5 @@ func FormatToolsForSystemMessage(a *AIAgent) (string, error) {
 		row.Set("required", nil)
 		out = append(out, row)
 	}
-	return jsonutil.Encode(out)
+	return jsonutil.Encode(out, jsonutil.Spaced())
 }

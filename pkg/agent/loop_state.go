@@ -78,7 +78,7 @@ func (s *SessionLoopState) ToJSON() (string, error) {
 		"next_due_at", s.NextDueAt, "awaiting_response", s.AwaitingResponse,
 		"last_response_digest", s.LastResponseDigest, "paused_reason", s.PausedReason,
 		"last_stop_reason", s.LastStopReason, "route", route,
-	))
+	), jsonutil.Spaced())
 
 }
 

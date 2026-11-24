@@ -465,7 +465,7 @@ func syncLocalState(src, dst, sourceProfile string) {
 			prof.Set("last_used", "Default")
 			prof.Set("last_active_profiles", []any{"Default"})
 		}
-		out, err := jsonutil.Encode(stateObj)
+		out, err := jsonutil.Encode(stateObj, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

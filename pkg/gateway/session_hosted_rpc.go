@@ -75,7 +75,7 @@ func (r *HostedRoomAuthorityRPC) init(authority *SessionAuthority, loop context.
 	r.Authority, r.loop, r.RoomID, r.MemberID, r.Profile = authority, loop, roomID, memberID, profile
 	r.Principal, r.Authorizer, r.AuthorizeWrite, r.Timeout = principal, authorize, authorizeWrite, 30*time.Second
 	r.callbacks = map[string]func(map[string]any) error{}
-	binding, err := jsonutil.Encode([]any{roomID, memberID, profile})
+	binding, err := jsonutil.Encode([]any{roomID, memberID, profile}, jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -406,7 +406,7 @@ func (r *HostedRoomAuthorityRPC) terminal(ctx context.Context, admission hostedA
 
 // Admits one fenced member turn under a capture lease, its terminal receipt delivered through the callback
 func (r *HostedRoomAuthorityRPC) submit(ctx context.Context, params map[string]any, task TaskIdentity, generation int64) (any, error) {
-	requestJSON, err := jsonutil.Encode([]any{task.AsDict(), generation}, jsonutil.SortKeys())
+	requestJSON, err := jsonutil.Encode([]any{task.AsDict(), generation}, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +583,7 @@ func (r *HostedRoomAuthorityRPC) results(ctx context.Context, params map[string]
 		if len(text) > MaxTerminalTextBytes {
 			receipt["text"] = strings.ToValidUTF8(text[:MaxTerminalTextBytes+4], "")
 		}
-		encoded, err := jsonutil.Encode(receipt)
+		encoded, err := jsonutil.Encode(receipt, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

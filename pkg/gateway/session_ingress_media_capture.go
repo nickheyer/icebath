@@ -313,7 +313,7 @@ func ingressFingerprint(payload *jsonutil.Object, raw any) (string, error) {
 		value = jsonutil.ObjectOf("payload", received, "raw_message", raw)
 	}
 	canonical, err := jsonutil.Encode(value, jsonutil.SortKeys(),
-		jsonutil.Convert(func(v any) (any, error) { return anyutil.Quote(v), nil }))
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.Quote(v), nil }), jsonutil.ASCII())
 
 	if err != nil {
 		return "", err

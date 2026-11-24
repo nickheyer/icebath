@@ -192,7 +192,7 @@ func finishRemoteKernelResult(env *tools.Env, kernelResult *jsonutil.Object, tim
 	} else if cellErr := objGet(kernelResult, "error", nil); isStatus(status, "error") && anyutil.IsTrue(cellErr) {
 		result.Set("error", cellErr)
 	}
-	return jsonutil.Encode(result)
+	return jsonutil.Encode(result, jsonutil.Spaced())
 }
 
 // Backend timeout in whole seconds, a fractional limit rounded up so it never reads as no limit
@@ -295,7 +295,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 		result.Set("status", "error")
 		result.Set("error", fmt.Sprintf("Script exited with code %d", exitCode))
 	}
-	out, err := jsonutil.Encode(result)
+	out, err := jsonutil.Encode(result, jsonutil.Spaced())
 	if err != nil {
 		return toolError(err.Error())
 	}

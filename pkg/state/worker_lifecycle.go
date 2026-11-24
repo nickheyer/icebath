@@ -36,7 +36,7 @@ func (d *SessionDB) insertSessionRowInTransaction(ctx context.Context, conn SQLi
 	}
 	var modelConfig any
 	if len(n.ModelConfig) > 0 {
-		text, err := jsonutil.Encode(n.ModelConfig)
+		text, err := jsonutil.Encode(n.ModelConfig, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

@@ -67,7 +67,7 @@ func TestHubLockFileLoadCorruptJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := jsonutil.Encode(data); got != `{"version": 1, "installed": {}}` {
+	if got, _ := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII()); got != `{"version": 1, "installed": {}}` {
 		t.Fatalf("load gave %s", got)
 	}
 }
@@ -188,7 +188,7 @@ func writeDemoLock(t *testing.T, path string, installPath any, extra map[string]
 	inst.Set("demo-skill", e)
 	doc := jsonutil.NewObject()
 	doc.Set("installed", inst)
-	text, _ := jsonutil.Encode(doc)
+	text, _ := jsonutil.Encode(doc, jsonutil.Spaced(), jsonutil.ASCII())
 	writeTestFile(t, path, text)
 }
 

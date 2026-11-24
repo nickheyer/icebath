@@ -719,8 +719,8 @@ func jsonEqual(a, b any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	da, errA := jsonutil.Encode(a, jsonutil.SortKeys())
-	db, errB := jsonutil.Encode(b, jsonutil.SortKeys())
+	da, errA := jsonutil.Encode(a, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
+	db, errB := jsonutil.Encode(b, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	return errA == nil && errB == nil && da == db
 }
 

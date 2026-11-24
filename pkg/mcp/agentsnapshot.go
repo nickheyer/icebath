@@ -159,7 +159,7 @@ func resolveRefreshToolsets(agent AgentToolSnapshot, enabledOverride, disabledOv
 
 func dumpToolDefs(defs []map[string]any) (string, error) {
 	return jsonutil.Encode(defsAsAny(defs), jsonutil.SortKeys(),
-		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.ASCII())
 
 }
 
@@ -666,7 +666,7 @@ func pyListsEqual(a, b []any) bool {
 
 // Value in the decoded JSON model so typed Go slices and maps compare like their Python counterparts
 func pyJSONValue(v any) any {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return v
 	}

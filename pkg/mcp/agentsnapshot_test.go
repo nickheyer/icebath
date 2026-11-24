@@ -197,7 +197,7 @@ func registeredNames(t *testing.T, names ...string) *tools.Registry {
 
 func mustDump(t *testing.T, v any) string {
 	t.Helper()
-	s, err := jsonutil.Encode(v, jsonutil.SortKeys())
+	s, err := jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ type memPinStore struct {
 }
 
 func (s *memPinStore) UpdateSessionToolNames(sessionID string, pin any) error {
-	text, err := jsonutil.Encode(pin)
+	text, err := jsonutil.Encode(pin, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

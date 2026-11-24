@@ -516,7 +516,7 @@ func (x *HubCLI) DoSearch(ctx context.Context, query, source string, limit int, 
 			rows[i] = objOf("name", r.Name, "identifier", r.Identifier, "source", r.Source,
 				"trust_level", r.TrustLevel, "description", r.Description)
 		}
-		text, err := jsonutil.Encode(rows, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(rows, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

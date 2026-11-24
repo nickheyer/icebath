@@ -350,7 +350,7 @@ func coerceArguments(arguments any) string {
 	var s string
 	switch t := arguments.(type) {
 	case map[string]any, *jsonutil.Object:
-		s, _ = jsonutil.Encode(t)
+		s, _ = jsonutil.Encode(t, jsonutil.Spaced())
 	case string:
 		s = t
 	default:

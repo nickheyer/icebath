@@ -225,7 +225,7 @@ func logicalErrorText(result *jsonutil.Object) string {
 			chunks = append(chunks, s)
 			continue
 		}
-		if s, err := jsonutil.Encode(value, jsonutil.SortKeys()); err == nil {
+		if s, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII()); err == nil {
 			chunks = append(chunks, s)
 		} else {
 			chunks = append(chunks, anyutil.String(value))
@@ -873,7 +873,7 @@ func (s *cuaDriverSession) callToolViaCLI(name string, args *jsonutil.Object, ti
 		driverCommand, childEnv = command, s.embeddedDaemon.childEnv()
 		socketArgs = []string{"--socket", s.embeddedDaemon.socketPath}
 	}
-	encoded, err := jsonutil.Encode(callArgs)
+	encoded, err := jsonutil.Encode(callArgs, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

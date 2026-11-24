@@ -126,7 +126,7 @@ func (d *SessionDB) UpdateSessionModelConfig(ctx context.Context, sessionID stri
 		}
 		var text any
 		if len(cfg) > 0 {
-			dumped, err := jsonutil.Encode(cfg, jsonutil.SortKeys())
+			dumped, err := jsonutil.Encode(cfg, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return err
 			}

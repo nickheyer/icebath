@@ -24,13 +24,13 @@ func ledgerNudgeWorkspace(t *testing.T, scripts map[string]any, manifestRecipe m
 	if len(scripts) > 0 {
 		pkg = map[string]any{"scripts": scripts}
 	}
-	body, err := jsonutil.Encode(pkg)
+	body, err := jsonutil.Encode(pkg, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(project, "package.json"), body)
 	if manifestRecipe != nil {
-		manifest, err := jsonutil.Encode(map[string]any{"version": 1, "recipe": manifestRecipe})
+		manifest, err := jsonutil.Encode(map[string]any{"version": 1, "recipe": manifestRecipe}, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}

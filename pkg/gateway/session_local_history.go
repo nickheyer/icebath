@@ -52,7 +52,7 @@ func historyRowIDs(rows []map[string]any) (map[int64]bool, error) {
 
 // Length of a row as the JSON text a resume reply carries it in
 func historyRowSize(row map[string]any) (int, error) {
-	text, err := jsonutil.Encode(row, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	text, err := jsonutil.Encode(row, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return 0, err
 	}

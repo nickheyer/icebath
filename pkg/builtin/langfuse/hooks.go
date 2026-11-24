@@ -86,7 +86,7 @@ func emitMoAReferenceGenerations(state *traceState, references any) {
 		}
 		rows = append(rows, []any{dget(r, "label"), dget(r, "model"), outputTokens})
 	}
-	fingerprint, err := jsonutil.Encode(rows, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	fingerprint, err := jsonutil.Encode(rows, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		panic(err)
 	}

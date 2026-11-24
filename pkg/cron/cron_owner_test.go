@@ -52,7 +52,7 @@ func installCronOwner(t *testing.T) {
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		request, err := jsonutil.Encode(jsonutil.ObjectOf("cron_job", cronJob, "extra_prompt", extraValue, "request_id", requestID))
+		request, err := jsonutil.Encode(jsonutil.ObjectOf("cron_job", cronJob, "extra_prompt", extraValue, "request_id", requestID), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return jobRunOutcome{}, err
 		}

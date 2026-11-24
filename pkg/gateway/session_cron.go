@@ -323,7 +323,7 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 	if params["extra_prompt"] != nil {
 		extraValue = extra
 	}
-	requestJSON, err := jsonutil.Encode(jsonutil.ObjectOf("cron_job", job, "extra_prompt", extraValue, "request_id", requestID))
+	requestJSON, err := jsonutil.Encode(jsonutil.ObjectOf("cron_job", job, "extra_prompt", extraValue, "request_id", requestID), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, "", err
 	}

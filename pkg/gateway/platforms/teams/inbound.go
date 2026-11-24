@@ -48,7 +48,7 @@ func str(m map[string]any, key string) string {
 
 // Pyjson object of a JSON answer body
 func jsonBody(status int, body any) (*gateway.WebResponse, error) {
-	text, err := jsonutil.Encode(body)
+	text, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

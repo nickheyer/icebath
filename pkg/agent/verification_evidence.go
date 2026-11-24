@@ -971,7 +971,7 @@ func markWorkspaceEdited(ctx context.Context, env *tools.Env, sessionID, cwd str
 		if err != nil {
 			return err
 		}
-		encoded, err := jsonutil.Encode(merged)
+		encoded, err := jsonutil.Encode(merged, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

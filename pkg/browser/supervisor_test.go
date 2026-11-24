@@ -184,7 +184,7 @@ func decodeObj(t *testing.T, text string) *jsonutil.Object {
 func TestEvaluateRuntimeResponseShapingPrimitiveValue(t *testing.T) {
 	reply := decodeObj(t, `{"id": 1, "result": {"result": {"type": "number", "value": 42}}}`)
 	sup := evalSupervisor(t, "test-session-id", func(string, any) (*jsonutil.Object, error) { return reply, nil })
-	if got, _ := jsonutil.Encode(sup.evaluateRuntime("1 + 41", true, true, 10)); got != `{"ok": true, "result": 42, "result_type": "number"}` {
+	if got, _ := jsonutil.Encode(sup.evaluateRuntime("1 + 41", true, true, 10), jsonutil.Spaced(), jsonutil.ASCII()); got != `{"ok": true, "result": 42, "result_type": "number"}` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -193,7 +193,7 @@ func TestEvaluateRuntimeResponseShapingObjectValueReturnedByValue(t *testing.T) 
 	reply := decodeObj(t, `{"id": 1, "result": {"result": {"type": "object", "value": {"foo": "bar", "n": 7}}}}`)
 	sup := evalSupervisor(t, "test-session-id", func(string, any) (*jsonutil.Object, error) { return reply, nil })
 	out := sup.evaluateRuntime(`({foo:"bar", n:7})`, true, true, 10)
-	if got, _ := jsonutil.Encode(anyGet(out, "result")); anyGet(out, "ok") != true || got != `{"foo": "bar", "n": 7}` || anyGet(out, "result_type") != "object" {
+	if got, _ := jsonutil.Encode(anyGet(out, "result"), jsonutil.Spaced(), jsonutil.ASCII()); anyGet(out, "ok") != true || got != `{"foo": "bar", "n": 7}` || anyGet(out, "result_type") != "object" {
 		t.Fatalf("got %v", out)
 	}
 }

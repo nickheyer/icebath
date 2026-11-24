@@ -117,7 +117,7 @@ func resolveAuthTag(ctx context.Context, extra map[string]any) (string, error) {
 	for i, s := range parsed {
 		items[i] = s
 	}
-	return jsonutil.Encode(items)
+	return jsonutil.Encode(items, jsonutil.ASCII())
 }
 
 // Extra of the buzz section in the scoped profile's config, empty when unscoped or unreadable

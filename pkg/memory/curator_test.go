@@ -292,7 +292,7 @@ func TestCuratorParseStructuredSummary(t *testing.T) {
 		"  - from: openai-api\n    into: llm-providers\n    reason: same — merged with sibling\nprunings:\n" +
 		"  - name: random-old-notes\n    reason: pre-curator garbage, no overlap\n```\n"
 	cons, prunes := curatorParseStructuredSummary(text)
-	got, _ := jsonutil.Encode(cons[0])
+	got, _ := jsonutil.Encode(cons[0], jsonutil.Spaced(), jsonutil.ASCII())
 	if len(cons) != 2 || got != `{"from": "anthropic-api", "into": "llm-providers", "reason": "duplicate of the generic llm-providers skill"}` {
 		t.Fatalf("consolidations %v %s", len(cons), got)
 	}

@@ -377,7 +377,7 @@ func TestMicroEmitsContentFreeTokenTelemetry(t *testing.T) {
 	p := payloads[0]
 	event, _ := p.Get("event")
 	outcome, _ := p.Get("outcome")
-	blob, _ := jsonutil.Encode(p)
+	blob, _ := jsonutil.Encode(p, jsonutil.Spaced(), jsonutil.ASCII())
 	if event != "micro_compaction" || outcome != "absorbed" || objInt(p, "tokens_saved_total") != -objInt(p, "tokens_delta") ||
 		objInt(p, "passes_total") != 1 || objInt(p, "messages_after") != len(result) || objInt(p, "exchange_tokens") <= 0 ||
 		strings.Contains(blob, "answer 0") || strings.Contains(blob, "question 0") {

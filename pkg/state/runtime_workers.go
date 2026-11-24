@@ -115,7 +115,7 @@ func workerStates(ctx context.Context, conn SQLiteConn, sessionID string) (map[s
 		ids = append(ids, sid)
 	}
 	slices.Sort(ids)
-	encoded, err := jsonutil.Encode(stringsToAny(ids))
+	encoded, err := jsonutil.Encode(stringsToAny(ids), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

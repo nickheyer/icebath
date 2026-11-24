@@ -43,7 +43,7 @@ func (s *Store) recordForcedRelease(jobID, name string, ageSeconds, allowanceSec
 		if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 			return err
 		}
-		line, err := jsonutil.Encode(entry)
+		line, err := jsonutil.Encode(entry, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

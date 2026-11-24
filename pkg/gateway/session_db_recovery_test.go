@@ -322,7 +322,7 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range []*SessionEntry{durable, deleted, changed} {
-		raw, _ := jsonutil.Encode(e.ToDict())
+		raw, _ := jsonutil.Encode(e.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err := seed.SaveGatewayRoutingEntry(ctx, e.SessionKey, raw, scope); err != nil {
 			t.Fatal(err)
 		}
@@ -334,7 +334,7 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 	legacy := jsonutil.NewObject()
 	legacy.Set(deleted.SessionKey, deleted.ToDict())
 	legacy.Set(changed.SessionKey, changed.ToDict())
-	raw, _ := jsonutil.Encode(legacy)
+	raw, _ := jsonutil.Encode(legacy, jsonutil.Spaced(), jsonutil.ASCII())
 	if err := os.WriteFile(filepath.Join(sessionsDir, "sessions.json"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -102,7 +102,7 @@ func TestAnUnreadyRelaunchStallsOneLaunchPerBackoffWindowAndStaysOwed(t *testing
 	}
 	plain := jsonutil.Plain(loaded).(map[string]any)
 	mapOf(mapOf(mapOf(plain["token"])["relaunch_retry"])["profile:alpha"])["next_at"] = 0
-	text, err := jsonutil.Encode(plain)
+	text, err := jsonutil.Encode(plain, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

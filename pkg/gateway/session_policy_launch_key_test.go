@@ -59,7 +59,7 @@ func TestExplicitKeyIsPrivateAndMissingAfterRestartFailsClosed(t *testing.T) {
 	if key := policyModelKey(t, ctx, policy, authority); key != raw {
 		t.Fatalf("effective model key %v", key)
 	}
-	encoded, err := jsonutil.Encode(policy.asDict())
+	encoded, err := jsonutil.Encode(policy.asDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestConfigCredentialsRecoverOnlyExactSource(t *testing.T) {
 	if key := policyModelKey(t, ctx, policy, owner(profileHome, "owned")); key != "owned-config-token" {
 		t.Fatalf("recovered key %v", key)
 	}
-	encoded, err := jsonutil.Encode(policy.asDict())
+	encoded, err := jsonutil.Encode(policy.asDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func frozenConfigObject(t *testing.T, policy *LocalSessionPolicy) *jsonutil.Obje
 // Policy copy whose frozen config is replaced by the given object
 func withFrozenConfig(t *testing.T, policy *LocalSessionPolicy, config *jsonutil.Object) *LocalSessionPolicy {
 	t.Helper()
-	text, err := jsonutil.Encode(config)
+	text, err := jsonutil.Encode(config, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestDroppedTopLevelSettingDoesNotWedgeTheSession(t *testing.T) {
 	if !slices.Equal(frozen, []string{`["API_SERVER_KEY"]`, `["model", "api_key"]`}) {
 		t.Fatalf("frozen secret paths %v", frozen)
 	}
-	encoded, err := jsonutil.Encode(policy.asDict())
+	encoded, err := jsonutil.Encode(policy.asDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,14 +698,14 @@ func legacyReferenced(t *testing.T, policy *LocalSessionPolicy) *LocalSessionPol
 		"editor_mcp_json", "coding_posture", "client_env_json", "client_env_remote", "client_env_rules_json", "edit_approval_policy"} {
 		delete(data, later)
 	}
-	hashed, err := jsonutil.Encode(data, jsonutil.SortKeys())
+	hashed, err := jsonutil.Encode(data, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(hashed))
 	source.Set("policy", hex.EncodeToString(sum[:]))
 	source.Delete("bound")
-	text, err := jsonutil.Encode(source, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(source, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

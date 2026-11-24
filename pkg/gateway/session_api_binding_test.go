@@ -73,7 +73,7 @@ func mintOnRoute(t *testing.T, ctx context.Context, a *SessionAuthority, caller 
 	now := sessionNow()
 	minted := NewSessionEntry(route, "minted", now, now)
 	minted.Platform = PlatformAPIServer
-	text, err := jsonutil.Encode(minted.ToDict())
+	text, err := jsonutil.Encode(minted.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

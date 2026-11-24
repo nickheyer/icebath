@@ -185,7 +185,7 @@ func writeLease(ctx context.Context, record string, b *LaunchedBrowser) error {
 	lease.Set("start_time", optInt(b.StartTime))
 	lease.Set("user_data_dir", b.UserDataDir)
 	lease.Set("ns", nsValue())
-	return config.AtomicJSONWriteWith(ctx, leasePath(record, me), lease)
+	return config.AtomicJSONWriteWith(ctx, leasePath(record, me), lease, jsonutil.Spaced())
 }
 
 func dropLease(record string) { os.Remove(leasePath(record, os.Getpid())) }
@@ -255,7 +255,7 @@ func handOver(ctx context.Context, record string, data, holder *jsonutil.Object)
 	}
 	out.Set("owner_pid", objGet(holder, "holder_pid"))
 	out.Set("owner_start_time", objGet(holder, "holder_start_time"))
-	if err := config.AtomicJSONWriteWith(ctx, record, out); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, record, out, jsonutil.Spaced()); err != nil {
 		return err
 	}
 	pkgLog().Info(fmt.Sprintf("browser: Chromium pid %v is still used by Icebath pid %v; handed it over instead of stopping it",

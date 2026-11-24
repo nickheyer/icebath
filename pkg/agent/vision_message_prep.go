@@ -359,7 +359,7 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 			"vision-capable model for desktop computer use, or use browser "+
 			"tools for browser tasks.")
 		payload.Set("text_summary", summary)
-		text, _ := jsonutil.Encode(payload)
+		text, _ := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		return text
 	}
 	pkgLog().Warn(fmt.Sprintf("Tool %s returned image content for non-vision model %s/%s; falling back to text summary", toolName, a.provider, a.model))

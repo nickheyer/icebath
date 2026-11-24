@@ -426,7 +426,7 @@ func TestDeleteOfCompressedLogicalRootRetiresEveryPhysicalContinuation(t *testin
 	if _, err := db.AppendMessage(ctx, "child", map[string]any{"role": "user", "content": "after compression"}, AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
-	entry, _ := jsonutil.Encode(jsonutil.ObjectOf("session_id", "child", "session_key", "agent:telegram:dm:1"))
+	entry, _ := jsonutil.Encode(jsonutil.ObjectOf("session_id", "child", "session_key", "agent:telegram:dm:1"), jsonutil.Spaced(), jsonutil.ASCII())
 	if err := db.SaveGatewayRoutingEntry(ctx, "agent:telegram:dm:1", entry, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -751,8 +751,8 @@ func TestATurnARotatingCompressionLeftOnTheParentCarriesTheMarker(t *testing.T) 
 
 // Legacy prompt admissions row as the pre runtime store wrote it
 func legacyRow(seq int64, target, status string) []any {
-	lineage, _ := jsonutil.Encode([]any{"s", target})
-	payload, _ := jsonutil.Encode(jsonutil.ObjectOf("text", "input-"+pyStr(seq), "intent", "queue"))
+	lineage, _ := jsonutil.Encode([]any{"s", target}, jsonutil.Spaced(), jsonutil.ASCII())
+	payload, _ := jsonutil.Encode(jsonutil.ObjectOf("text", "input-"+pyStr(seq), "intent", "queue"), jsonutil.Spaced(), jsonutil.ASCII())
 	var outcome, generation any
 	if status == "terminal" {
 		outcome = "completed"

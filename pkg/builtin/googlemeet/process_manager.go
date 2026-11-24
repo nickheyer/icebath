@@ -338,7 +338,7 @@ func pmEnqueueSay(ctx context.Context, text string) (*jsonutil.Object, error) {
 	queuePath := filepath.Join(outDir, "say_queue.jsonl")
 	id := uuid.New()
 	entryID := hex.EncodeToString(id[:])[:12]
-	line, err := jsonutil.Encode(jsonutil.ObjectOf("id", entryID, "text", text))
+	line, err := jsonutil.Encode(jsonutil.ObjectOf("id", entryID, "text", text), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

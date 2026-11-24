@@ -1998,7 +1998,7 @@ func writeRecoveryReport(path string, report *jsonutil.Object) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

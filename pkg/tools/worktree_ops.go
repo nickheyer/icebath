@@ -440,7 +440,7 @@ func saveWorktreeMergeCache(ctx context.Context, verdicts *mergeVerdicts) {
 	path := worktreeMergeCachePath()
 	err := os.MkdirAll(filepath.Dir(path), 0o777)
 	if err == nil {
-		err = config.AtomicJSONWriteWith(ctx, path, payload)
+		err = config.AtomicJSONWriteWith(ctx, path, payload, jsonutil.Spaced())
 	}
 	if err != nil {
 		envLog(nil).Debug(fmt.Sprintf("Could not persist worktree merge cache: %s", err))

@@ -324,7 +324,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *jsonutil.Object,
 	if err != nil {
 		return err
 	}
-	chainJSON, err := jsonutil.Encode(anyStrings(chain))
+	chainJSON, err := jsonutil.Encode(anyStrings(chain), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

@@ -51,7 +51,7 @@ func IncrementRestartFailureCounts(ctx context.Context, path string, activeSessi
 		}
 		next.Set(key, n)
 	}
-	if err := config.AtomicJSONWriteWith(ctx, path, next); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, next, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug("Could not write restart-failure counters to "+path, "exc_info", err)
 	}
 }
@@ -87,7 +87,7 @@ func ClearRestartFailureCount(ctx context.Context, path, sessionKey string) {
 	counts.Delete(sessionKey)
 	var err error
 	if counts.Len() > 0 {
-		err = config.AtomicJSONWriteWith(ctx, path, counts)
+		err = config.AtomicJSONWriteWith(ctx, path, counts, jsonutil.Spaced())
 	} else if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 		err = rmErr
 	}

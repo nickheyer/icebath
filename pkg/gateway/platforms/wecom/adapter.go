@@ -697,7 +697,7 @@ func (a *WeComAdapter) SendJSON(ctx context.Context, payload *jsonutil.Object) e
 	if err := a.RequireWS(); err != nil {
 		return err
 	}
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

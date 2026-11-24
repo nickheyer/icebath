@@ -88,7 +88,7 @@ func TestBlockedRecordNeverCarriesTheCooldownSeconds(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("%d records", len(got))
 	}
-	text, _ := jsonutil.Encode(got[0])
+	text, _ := jsonutil.Encode(got[0], jsonutil.Spaced(), jsonutil.ASCII())
 	if class, _ := got[0].Get("failure_class"); class != "blocked:structural_backoff" || strings.Contains(text, "917") {
 		t.Fatalf("record %s", text)
 	}

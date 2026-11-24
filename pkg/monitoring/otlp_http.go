@@ -192,7 +192,7 @@ func NewOTLPHTTPSpanExporter(endpoint string, headers map[string]string) *OTLPHT
 
 // Export posts one ExportTraceServiceRequest, a non 2xx status an error
 func (e *OTLPHTTPSpanExporter) Export(spans []*Span) error {
-	body, err := jsonutil.Encode(exportTraceRequest(e.Resource, spans))
+	body, err := jsonutil.Encode(exportTraceRequest(e.Resource, spans), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

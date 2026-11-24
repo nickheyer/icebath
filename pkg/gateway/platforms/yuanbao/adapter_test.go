@@ -160,7 +160,7 @@ func TestMentionsResolveAgainstTheFreshMemberCacheOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		encoded, err := jsonutil.Encode(body)
+		encoded, err := jsonutil.Encode(body, jsonutil.Spaced())
 		if err != nil {
 			t.Fatal(err)
 		}

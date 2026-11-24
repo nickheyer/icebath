@@ -162,7 +162,7 @@ func TestInterimAfterTheGapShowsTheReplyOnce(t *testing.T) {
 					text = completion
 				}
 				payload := jsonutil.ObjectOf("text", text, "already_streamed", false, "outcome", "completed")
-				dumped, _ := jsonutil.Encode(payload)
+				dumped, _ := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 				r.link.put(eventFrame(t, kind, dumped, "s", "a", i+1))
 			}
 			resp, err := task.wait(t, 2*time.Second)

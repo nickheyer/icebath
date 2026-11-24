@@ -74,7 +74,7 @@ func redactDelegationField(env *Env, key, value string, force bool) string {
 	if cleaned != value || !IsSecretFieldName(key) {
 		return cleaned
 	}
-	raw, err := jsonutil.Encode(map[string]any{key: value})
+	raw, err := jsonutil.Encode(map[string]any{key: value}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return RedactionUnavailable
 	}
@@ -191,7 +191,7 @@ func redactDelegationSummary(env *Env, summary any, structured, force bool) any 
 			cleaned := RedactChildValue(env, parsed, force)
 			body := candidate
 			if !anyutil.Equal(cleaned, parsed) {
-				if text, err := jsonutil.Encode(cleaned); err == nil {
+				if text, err := jsonutil.Encode(cleaned, jsonutil.Spaced()); err == nil {
 					body = text
 				}
 			}

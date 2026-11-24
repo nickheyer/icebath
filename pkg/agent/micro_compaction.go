@@ -404,7 +404,7 @@ func (c *ContextCompressor) emitMicroCompactionTelemetry(t microTelemetry) {
 		"threshold_tokens", optInt(threshold), "context_limit", optInt(c.resolvedContextLength),
 		"occupancy_pct", occupancy, "main_model", c.model, "aux_model", c.summaryModel,
 	)
-	line, err := jsonutil.Encode(payload, jsonutil.SortKeys())
+	line, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		pkgLog().Debug("failed to emit micro-compaction telemetry: " + err.Error())
 		return

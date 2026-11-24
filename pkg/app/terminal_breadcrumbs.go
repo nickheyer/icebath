@@ -85,7 +85,7 @@ func WriteBreadcrumb(ctx context.Context, sessionID, cwd string) {
 	}
 	now := breadcrumbNow()
 	payload := jsonutil.ObjectOf("session_id", sessionID, "cwd", cwd, "ts", now)
-	if err := config.AtomicJSONWriteWith(ctx, filepath.Join(dir, terminalID), payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, filepath.Join(dir, terminalID), payload, jsonutil.Spaced()); err != nil {
 		return
 	}
 	fsutil.RemoveOlderThan(dir, "*", timeutil.FromEpoch(now-staleBreadcrumbAfter))

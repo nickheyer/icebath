@@ -99,7 +99,7 @@ func TestNotepadListSortedAndJobsIsolated(t *testing.T) {
 		t.Fatalf("sorted keys %s", got)
 	}
 	notes, _ := n.List("job-1")
-	if text, _ := jsonutil.Encode(notes[0]); !strings.HasPrefix(text, `{"job_id": "job-1", "key": "alpha", "value": "2", "updated_at": `) {
+	if text, _ := jsonutil.Encode(notes[0], jsonutil.Spaced(), jsonutil.ASCII()); !strings.HasPrefix(text, `{"job_id": "job-1", "key": "alpha", "value": "2", "updated_at": `) {
 		t.Fatalf("row shape %s", text)
 	}
 	if v := noteValue(t, n, "job-2", "alpha"); *v != "other" {

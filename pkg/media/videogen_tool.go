@@ -130,7 +130,7 @@ func encodeVideoResult(m map[string]any) (string, error) {
 	for _, k := range rest {
 		o.Set(k, m[k])
 	}
-	return jsonutil.Encode(o)
+	return jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Error JSON naming the unregistered configured provider or pointing at the picker
@@ -555,7 +555,7 @@ func runXAIVideoTool(ctx context.Context, env *tools.Env, args map[string]any, o
 	if !configuredForXAIVideo(envContext(ctx, env)) {
 		return dumpOrdered([]string{"success", "error", "error_type", "provider"}, map[string]any{"success": false,
 			"error":      "xAI video edit/extend tools require `video_gen.provider` to be configured as `xai` via `icebath tools` -> Video Generation.",
-			"error_type": "provider_not_configured", "provider": "xai"})
+			"error_type": "provider_not_configured", "provider": "xai"}, jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	out, err := encodeVideoResult(run(prompt, videoURL))
 	if err != nil {

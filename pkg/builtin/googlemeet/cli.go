@@ -394,7 +394,7 @@ var authSession = func(ctx context.Context, path string) error {
 
 // Prints the result as indented JSON, exit code zero when ok
 func printResult(res *jsonutil.Object) int {
-	out, err := jsonutil.Encode(res, jsonutil.Indent(2))
+	out, err := jsonutil.Encode(res, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return uncaught(err)
 	}

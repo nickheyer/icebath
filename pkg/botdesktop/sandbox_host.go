@@ -494,7 +494,7 @@ func recordMarker(env *tools.Env, e tools.Environment, rdir, profile string, liv
 		v, _ := ident.Get(k)
 		m.Set(k, v)
 	}
-	text, err := jsonutil.Encode(m)
+	text, err := jsonutil.Encode(m, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

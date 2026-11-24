@@ -137,7 +137,7 @@ func ArmHostObligation(ctx context.Context, marker, expectedSHA string, runtimes
 		lines = append(lines, "expected_sha="+expectedSHA)
 	}
 	if runtimes != nil {
-		inventory, err := jsonutil.Encode(jsonutil.ObjectOf("version", 1, "runtimes", runtimes))
+		inventory, err := jsonutil.Encode(jsonutil.ObjectOf("version", 1, "runtimes", runtimes), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return false, err
 		}
@@ -460,7 +460,7 @@ func ObligationFields() map[string]string {
 		fields["expected_sha"] = anyutil.String(sha)
 	}
 	if inventory, present := record.Get("inventory"); present && inventory != nil {
-		fields["inventory"], _ = jsonutil.Encode(inventory)
+		fields["inventory"], _ = jsonutil.Encode(inventory, jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	return fields
 }

@@ -75,7 +75,7 @@ func richSentUpdate(ctx context.Context, chatID, messageID any, fields map[strin
 			data.Delete(k)
 		}
 	}
-	_ = config.AtomicJSONWriteWith(ctx, path, data)
+	_ = config.AtomicJSONWriteWith(ctx, path, data, jsonutil.Spaced())
 }
 
 // Timestamp of one entry, zero when it has none

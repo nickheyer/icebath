@@ -181,7 +181,7 @@ func RelayCanonicalJSON(value any, encode func(any) any) (string, error) {
 	if encode == nil {
 		encode = RelayJSONable
 	}
-	return jsonutil.Encode(encode(value), jsonutil.SortKeys())
+	return jsonutil.Encode(encode(value), jsonutil.SortKeys(), jsonutil.ASCII())
 }
 
 // Waits up to timeout seconds for every operation lease to be released

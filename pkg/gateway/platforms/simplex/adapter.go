@@ -195,7 +195,7 @@ func sendCmd(chatID string, items []any) (string, error) {
 	if strings.HasPrefix(chatID, "group:") {
 		target = "#" + chatID[6:]
 	}
-	encoded, err := jsonutil.Encode(items)
+	encoded, err := jsonutil.Encode(items, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}
@@ -913,7 +913,7 @@ func (a *SimplexAdapter) socket() *websocketutil.Conn {
 
 // JSON of a command frame with its correlation id first
 func commandFrame(corrID, command string) (string, error) {
-	return jsonutil.Encode(jsonutil.ObjectOf("corrId", corrID, "cmd", command))
+	return jsonutil.Encode(jsonutil.ObjectOf("corrId", corrID, "cmd", command), jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Writes one command frame without waiting for a reply, dropped while disconnected and a write failure logged
@@ -1005,7 +1005,7 @@ func (a *SimplexAdapter) AddReaction(ctx context.Context, chatID, messageID, emo
 	if strings.HasPrefix(chatID, "group:") {
 		target = "#" + chatID[6:]
 	}
-	reaction, err := jsonutil.Encode(jsonutil.ObjectOf("type", "emoji", "emoji", emoji))
+	reaction, err := jsonutil.Encode(jsonutil.ObjectOf("type", "emoji", "emoji", emoji), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -1018,7 +1018,7 @@ func (a *SimplexAdapter) AddReaction(ctx context.Context, chatID, messageID, emo
 		return errors.New("SimpleX gave no answer to the reaction")
 	}
 	if kind := anyutil.String(answer["type"]); strings.Contains(kind, "Error") || strings.Contains(kind, "error") {
-		detail, _ := jsonutil.Encode(answer)
+		detail, _ := jsonutil.Encode(answer, jsonutil.Spaced(), jsonutil.ASCII())
 		return fmt.Errorf("SimpleX refused the reaction: %s", detail)
 	}
 	return nil

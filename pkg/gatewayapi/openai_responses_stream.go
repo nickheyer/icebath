@@ -395,7 +395,7 @@ func (s *responsesStream) emitToolStarted(payload *jsonutil.Object) error {
 	args := payload.ValueOr("arguments", jsonutil.NewObject())
 	argumentsStr := ""
 	if obj, isObj := args.(*jsonutil.Object); isObj {
-		encoded, err := jsonutil.Encode(obj)
+		encoded, err := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -443,7 +443,7 @@ func (s *responsesStream) emitToolCompleted(payload *jsonutil.Object) error {
 	result := payload.ValueOr("result", "")
 	resultStr, isStr := result.(string)
 	if !isStr {
-		encoded, err := jsonutil.Encode(result)
+		encoded, err := jsonutil.Encode(result, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

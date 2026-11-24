@@ -402,7 +402,7 @@ func VenvSyncMain(ctx context.Context, argv []string, stdout, stderr io.Writer) 
 		return 1
 	}
 	if args.json {
-		text, err := jsonutil.Encode(result.object())
+		text, err := jsonutil.Encode(result.object(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

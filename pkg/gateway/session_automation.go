@@ -682,7 +682,7 @@ func admitRouteWake(ctx context.Context, runner AuthorityRunner, adapter Platfor
 	if entry == nil {
 		return false, nil
 	}
-	encoded, err := jsonutil.Encode([]any{kind, key, uuid4HexString()})
+	encoded, err := jsonutil.Encode([]any{kind, key, uuid4HexString()}, jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}

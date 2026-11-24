@@ -154,7 +154,7 @@ func RewriteMemoryQuery(ctx context.Context, userMessage string) (rewritten stri
 			rewritten = ""
 		}
 	}()
-	quoted, err := jsonutil.Encode(bounded)
+	quoted, err := jsonutil.Encode(bounded, jsonutil.Spaced())
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Memory query rewrite failed: %v", err))
 		return ""

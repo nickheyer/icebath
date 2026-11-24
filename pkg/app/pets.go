@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -167,8 +168,8 @@ func (r *petsRun) interactivePick(pets []*pet.InstalledPet) string {
 	if raw == "" {
 		raw = "1"
 	}
-	n, err := textutil.ParseInt(raw)
-	if err != nil || err != nil {
+	n, parseErr := textutil.ParseInt(raw)
+	if err != nil || (parseErr != nil && !errors.Is(parseErr, strconv.ErrRange)) {
 		r.errf("✗ cancelled")
 		return ""
 	}

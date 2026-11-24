@@ -233,7 +233,7 @@ func retireMedia(ctx context.Context, conn SQLiteConn, payload *jsonutil.Object,
 			return fmt.Errorf("media reference without a str path: %s", pyReprValue(path))
 		}
 		sum := sha256.Sum256([]byte(ps))
-		text, err := jsonutil.Encode(ref)
+		text, err := jsonutil.Encode(ref, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -263,7 +263,7 @@ func retireSpillover(ctx context.Context, conn SQLiteConn, sessionIDs []string) 
 			}
 			slices.Sort(sorted)
 			for _, n := range sorted {
-				text, err := jsonutil.Encode(n)
+				text, err := jsonutil.Encode(n, jsonutil.Spaced(), jsonutil.ASCII())
 				if err != nil {
 					return err
 				}
@@ -503,7 +503,7 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			if err != nil {
 				return err
 			}
-			idText, err := jsonutil.Encode(rowValue(row, "admission_id"))
+			idText, err := jsonutil.Encode(rowValue(row, "admission_id"), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return err
 			}
@@ -577,7 +577,7 @@ func retireMutationReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 	for i, p := range receiptSessionPaths {
 		named[i] = "json_extract(value,'" + p + "') IN (SELECT value FROM json_each(?1))"
 	}
-	ids, err := jsonutil.Encode(stringsToAny(sessionIDs))
+	ids, err := jsonutil.Encode(stringsToAny(sessionIDs), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -629,7 +629,7 @@ func markRetired(ctx context.Context, conn SQLiteConn, key string, expires, own 
 	}
 	if expires {
 		value.Set("expires", true)
-		text, err := jsonutil.Encode(value)
+		text, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -638,7 +638,7 @@ func markRetired(ctx context.Context, conn SQLiteConn, key string, expires, own 
 			"AND json_extract(state_meta.value, '$.expires')", key, text)
 		return err
 	}
-	text, err := jsonutil.Encode(value)
+	text, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -899,7 +899,7 @@ func localConversationsIndex(ctx context.Context, conn SQLiteConn) (map[string][
 
 // Ids among the sessions of derived API sessions
 func derivedAPISessions(ctx context.Context, conn SQLiteConn, sessionIDs []string) (map[string]bool, error) {
-	ids, err := jsonutil.Encode(stringsToAny(sessionIDs))
+	ids, err := jsonutil.Encode(stringsToAny(sessionIDs), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -1174,7 +1174,7 @@ func (d *SessionDB) ExpiringRetirements(ctx context.Context, sessionIDs []string
 	for i, sid := range sessionIDs {
 		ids[i] = sid
 	}
-	list, err := jsonutil.Encode(ids)
+	list, err := jsonutil.Encode(ids, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

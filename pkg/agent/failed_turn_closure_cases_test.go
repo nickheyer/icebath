@@ -59,7 +59,7 @@ func closureStored(t *testing.T, db *state.SessionDB) []map[string]any {
 }
 
 func closureSurfaceCode(row map[string]any) any {
-	raw, err := jsonutil.Encode(row["display_metadata"])
+	raw, err := jsonutil.Encode(row["display_metadata"], jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

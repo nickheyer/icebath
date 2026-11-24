@@ -70,7 +70,7 @@ func Engage(ctx context.Context, reason string) string {
 		reasonValue = reason
 	}
 	payload := jsonutil.ObjectOf("engaged_at", time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00"), "reason", reasonValue)
-	body, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+	body, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		body = "{}"
 	}

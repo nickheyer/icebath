@@ -203,7 +203,7 @@ func TestDownloadRecordingArtifactReportsPathSizeAndType(t *testing.T) {
 		t.Fatal(err, g.calls)
 	}
 	want := `{"artifact": {"artifact_type": "recording", "artifact_id": "r 1", "content_type": "video/mp4", "size_bytes": 12, "metadata": {"id": "r 1", "size": "12", "fileMimeType": "video/mp4"}}, "path": "out/rec.mp4", "size_bytes": 12, "content_type": "video/mp4"}`
-	if got, _ := jsonutil.Encode(out); got != want {
+	if got, _ := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII()); got != want {
 		t.Fatal(got)
 	}
 }
@@ -222,7 +222,7 @@ func TestEnrichMeetingWithCallRecordSoftensDenialAndCollectsMetrics(t *testing.T
 	if err != nil || a.ArtifactType != "call_record" || a.DisplayName != "call_record" || g.calls[1] != "/communications/callRecords/cr-1" {
 		t.Fatal(a, err)
 	}
-	if got, _ := jsonutil.Encode(get(a.Metadata, "metrics")); got != `{"version": 2, "modalities": ["audio"], "participant_count": 2, "organizer": "org", "session_count": 1}` {
+	if got, _ := jsonutil.Encode(get(a.Metadata, "metrics"), jsonutil.Spaced(), jsonutil.ASCII()); got != `{"version": 2, "modalities": ["audio"], "participant_count": 2, "organizer": "org", "session_count": 1}` {
 		t.Fatal(got)
 	}
 	empty, _ := newMeetingRef("m-1", nil, nil, nil, nil, nil, jsonutil.NewObject())

@@ -582,7 +582,7 @@ func TestSyncPipelinePlaysTheArtifactTheToolReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	swap(t, &speakerTextToSpeechTool, func(context.Context, string, string) (string, error) {
-		return jsonutil.Encode(map[string]any{"success": true, "file_path": ogg, "file_paths": []any{ogg}})
+		return jsonutil.Encode(map[string]any{"success": true, "file_path": ogg, "file_paths": []any{ogg}}, jsonutil.Spaced(), jsonutil.ASCII())
 	})
 	var mu sync.Mutex
 	var played []string
@@ -605,7 +605,7 @@ func TestSyncPipelineFallsBackToRequestedPathWhenReportedMissing(t *testing.T) {
 		if err := os.WriteFile(outputPath, bytes.Repeat([]byte("x"), 100), 0o600); err != nil {
 			return "", err
 		}
-		return jsonutil.Encode(map[string]any{"success": false, "error": "shape without paths"})
+		return jsonutil.Encode(map[string]any{"success": false, "error": "shape without paths"}, jsonutil.Spaced(), jsonutil.ASCII())
 	})
 	var mu sync.Mutex
 	var sizes []int64
@@ -811,7 +811,7 @@ func TestFirstWrittenArtifactPrefersTheReportedFileWithContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	dump := func(v any) string {
-		s, err := jsonutil.Encode(v)
+		s, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			t.Fatal(err)
 		}

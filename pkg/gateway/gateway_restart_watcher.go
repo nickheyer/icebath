@@ -179,11 +179,11 @@ func SpawnGatewayRestartWatcher(ctx context.Context, oldPid int, runArgv []strin
 	if serviceGOOS == "windows" {
 		runArgv, respawnCwd, overlay = windowlessGatewayRestartSpec(ctx, slices.Clone(runArgv), profileHome)
 	}
-	cwdLiteral, err := jsonutil.Encode(respawnCwd)
+	cwdLiteral, err := jsonutil.Encode(respawnCwd, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}
-	envLiteral, err := jsonutil.Encode(overlay, jsonutil.SortKeys())
+	envLiteral, err := jsonutil.Encode(overlay, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return false, err
 	}

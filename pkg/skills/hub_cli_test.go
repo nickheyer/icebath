@@ -316,7 +316,7 @@ func providerCatalog(t *testing.T, x *HubCLI, param string) (SkillSource, []Skil
 		for _, m := range append(append([]SkillMeta{}, others...), wanted...) {
 			skills = append(skills, skillMetaToDict(m))
 		}
-		text, _ := jsonutil.Encode(objOf("skills", skills))
+		text, _ := jsonutil.Encode(objOf("skills", skills), jsonutil.Spaced(), jsonutil.ASCII())
 		writeTestFile(t, x.Hub.indexCacheFile(), text)
 		src = NewIndexSource(x.Hub, auth)
 	} else {

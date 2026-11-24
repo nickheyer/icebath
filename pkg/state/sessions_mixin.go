@@ -291,7 +291,7 @@ func (d *SessionDB) UpdateSystemPrompt(ctx context.Context, sessionID string, sy
 func (d *SessionDB) UpdateSessionToolNames(sessionID string, pin any) error {
 	var payload any
 	if pin != nil {
-		text, err := jsonutil.Encode(pin)
+		text, err := jsonutil.Encode(pin, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -373,7 +373,7 @@ func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string
 	if config.Len() == 0 {
 		return nil, false, nil
 	}
-	text, err := jsonutil.Encode(config)
+	text, err := jsonutil.Encode(config, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, false, err
 	}

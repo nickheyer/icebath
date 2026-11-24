@@ -386,7 +386,7 @@ func decline(rid string, transport Transport) bool {
 		return true
 	}
 	popOpenLocked(req)
-	value, _ := jsonutil.Encode(jsonutil.ObjectOf("success", false, "error", NotShownMessage))
+	value, _ := jsonutil.Encode(jsonutil.ObjectOf("success", false, "error", NotShownMessage), jsonutil.Spaced(), jsonutil.ASCII())
 	req.result = jsonutil.ObjectOf("value", value)
 	req.answered = true
 	result := req.result

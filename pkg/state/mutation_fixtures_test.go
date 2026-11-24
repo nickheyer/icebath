@@ -58,8 +58,8 @@ func localOriginFixture(chatID, userID string) *jsonutil.Object {
 
 // Frozen policy dict in the shape asdict(build_policy) publishes for a cli create of cwd with model m
 func localPolicyFixture(cwd string) *jsonutil.Object {
-	request, _ := jsonutil.Encode(jsonutil.ObjectOf("source", "cli", "cwd", cwd, "model", "m", "toolsets", []any{}))
-	config, _ := jsonutil.Encode(jsonutil.ObjectOf("platform_toolsets", jsonutil.ObjectOf("cli", []any{})))
+	request, _ := jsonutil.Encode(jsonutil.ObjectOf("source", "cli", "cwd", cwd, "model", "m", "toolsets", []any{}), jsonutil.Spaced(), jsonutil.ASCII())
+	config, _ := jsonutil.Encode(jsonutil.ObjectOf("platform_toolsets", jsonutil.ObjectOf("cli", []any{})), jsonutil.Spaced(), jsonutil.ASCII())
 	return jsonutil.ObjectOf("source", "cli", "platform", "cli", "cwd", cwd, "model", "m", "toolsets", []any{},
 		"config_json", config, "request_json", request, "terminal_json", "{}", "credential_ref", nil, "config_secret_ref", nil,
 		"editor_mcp_json", nil, "kanban_json", nil, "safe_mode", false, "ignore_user_config", false, "skills_prompt", nil,

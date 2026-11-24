@@ -81,7 +81,7 @@ func TestLateEnvRepointScopesStorePublicIoAfterLateEnvRepointLeavesOldFileUntouc
 
 func jobFromMap(m map[string]any) (*Job, error) {
 	var j Job
-	text, err := jsonutil.Encode(m)
+	text, err := jsonutil.Encode(m, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

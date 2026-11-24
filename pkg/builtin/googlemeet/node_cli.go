@@ -149,13 +149,13 @@ func nodePing(reg *nodeRegistry, name string) int {
 		result, err = client.ping()
 	}
 	if err != nil {
-		text, _ := jsonutil.Encode(jsonutil.ObjectOf("ok", false, "error", err.Error()))
+		text, _ := jsonutil.Encode(jsonutil.ObjectOf("ok", false, "error", err.Error()), jsonutil.Spaced(), jsonutil.ASCII())
 		fmt.Fprintln(cliOut, text)
 		return 1
 	}
 	out := jsonutil.ObjectOf("ok", true, "node", name)
 	out.Merge(result)
-	text, _ := jsonutil.Encode(out)
+	text, _ := jsonutil.Encode(out, jsonutil.Spaced(), jsonutil.ASCII())
 	fmt.Fprintln(cliOut, text)
 	return 0
 }

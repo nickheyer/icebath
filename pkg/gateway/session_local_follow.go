@@ -86,7 +86,7 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 	}
 	adopted := config.Clone()
 	adopted.Set(FollowAdopted, true)
-	text, err := jsonutil.Encode(adopted)
+	text, err := jsonutil.Encode(adopted, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

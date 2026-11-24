@@ -224,7 +224,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 			}
 			request.Set("model_requested", rawModel)
 			request.Set("route_derived", derived)
-			text, err := jsonutil.Encode(request, jsonutil.SortKeys())
+			text, err := jsonutil.Encode(request, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return nil, nil, err
 			}
@@ -253,7 +253,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 				value, _ := marks.Get(key)
 				frozen.Set(key, value)
 			}
-			text, err := jsonutil.Encode(frozen)
+			text, err := jsonutil.Encode(frozen, jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return nil, nil, err
 			}

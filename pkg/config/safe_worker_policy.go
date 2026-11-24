@@ -82,7 +82,7 @@ func bindWorkerPolicy(safeMode, ignoreUserConfig bool, cfg map[string]any) (*Saf
 	if f, bad := nonFiniteFloat(tree); bad {
 		return nil, &WorkerPolicyError{"ValueError", "worker config holds a non-finite number " + strconv.FormatFloat(f, 'g', -1, 64)}
 	}
-	serialized, err := jsonutil.Encode(tree)
+	serialized, err := jsonutil.Encode(tree, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

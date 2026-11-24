@@ -445,7 +445,7 @@ func requestWithBackoff[T any](fn func() (T, error)) (T, error) {
 
 // JSON call to the Langfuse public API with the SDK authentication and headers
 func (m *mediaManager) api(method, path string, body any) ([]byte, error) {
-	payload, err := jsonutil.Encode(body)
+	payload, err := jsonutil.Encode(body, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

@@ -37,7 +37,7 @@ func TestExecutionProjectionIsOpaqueBoundedAndContentFree(t *testing.T) {
 	if _, ok := event.Get("error"); ok {
 		t.Fatal("error exported")
 	}
-	raw, _ := jsonutil.Encode(event)
+	raw, _ := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
 	if strings.Contains(raw, "alice@example.com") || strings.Contains(raw, "top-secret-token") {
 		t.Fatalf("content leaked %s", raw)
 	}

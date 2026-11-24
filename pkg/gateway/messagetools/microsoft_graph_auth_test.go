@@ -120,7 +120,7 @@ func TestTokenProviderReusesCachedTokenUntilExpiry(t *testing.T) {
 	}
 	provider.ClearCache()
 	health = provider.InspectTokenHealth()
-	text, _ := jsonutil.Encode(health)
+	text, _ := jsonutil.Encode(health, jsonutil.Spaced(), jsonutil.ASCII())
 	if text != `{"configured": true, "tenant_id": "tenant", "client_id": "client", "scope": "https://graph.microsoft.com/.default", `+
 		`"authority_url": "https://login.microsoftonline.com", "token_url": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token", `+
 		`"cached": false, "expires_in_seconds": null, "is_expired": null, "refresh_skew_seconds": 120}` {

@@ -57,7 +57,7 @@ func UniqueSlug(h, name string) (string, error) {
 
 // Writes the pet.json of a pet directory indented two spaces with ASCII escapes
 func writePetJSON(directory string, meta *jsonutil.Object) error {
-	text, err := jsonutil.Encode(meta, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(meta, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

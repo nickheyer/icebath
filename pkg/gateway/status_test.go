@@ -219,7 +219,7 @@ func TestClearProfilePlatformsPreservesPrimaryEntries(t *testing.T) {
 	dir := statusHome(t)
 	os.WriteFile(filepath.Join(dir, "gateway_state.json"), []byte(`{"platforms": {"telegram": {"state": "connected"}, "reviewer:discord": {"state": "fatal", "error_code": "duplicate_credential"}}}`), 0o644)
 	mustWrite(t, RuntimeStatusUpdate{ClearProfilePlatforms: true})
-	if got, _ := jsonutil.Encode(platformsOf(t)); got != `{"telegram": {"state": "connected"}}` {
+	if got, _ := jsonutil.Encode(platformsOf(t), jsonutil.Spaced(), jsonutil.ASCII()); got != `{"telegram": {"state": "connected"}}` {
 		t.Fatalf("platforms %s", got)
 	}
 }
@@ -232,7 +232,7 @@ func TestClearProfilePlatformsAndWriteAreOneAtomicUpdate(t *testing.T) {
 	if strings.Join(p.Keys(), ",") != "telegram,reviewer:slack" {
 		t.Fatalf("keys %v", p.Keys())
 	}
-	if got, _ := jsonutil.Encode(recGet(p, "telegram")); got != `{"state": "connected"}` {
+	if got, _ := jsonutil.Encode(recGet(p, "telegram"), jsonutil.Spaced(), jsonutil.ASCII()); got != `{"state": "connected"}` {
 		t.Fatal(got)
 	}
 	if recGet(recGet(p, "reviewer:slack").(*jsonutil.Object), "state") != "connected" {
@@ -404,7 +404,7 @@ func TestBlockedWriteDoesNotBlockPublishAndBurstCoalesces(t *testing.T) {
 	final := writes[1]
 	plats := recGet(final, "platforms").(*jsonutil.Object)
 	telegram := recGet(plats, "telegram").(*jsonutil.Object)
-	work, _ := jsonutil.Encode(recGet(final, "active_work"))
+	work, _ := jsonutil.Encode(recGet(final, "active_work"), jsonutil.Spaced(), jsonutil.ASCII())
 	if recGet(final, "gateway_state") != "running" || !pyEq(recGet(final, "active_agents"), 49) || work != `["telegram:dm:1"]` ||
 		recGet(final, "multiplex_standalone_reason") != "single-profile" || recGet(plats, "reviewer:slack") != nil ||
 		!strings.HasSuffix(recGet(telegram, "ingress_url").(string), "/telegram") || recGet(telegram, "listener_base") != "http://127.0.0.1:8080" {
@@ -445,7 +445,7 @@ func TestWriteRuntimeStatusRecordsPlatformMetricsAndActiveAgents(t *testing.T) {
 	metrics := rec("last_heartbeat", "2026-06-25T00:00:00+00:00", "metrics_today", rec("requests", int64(3), "tokens", int64(42)))
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"platform": "api_server", "platform_state": "connected", "platform_metrics": metrics}})
 	api := recGet(platformsOf(t), "api_server").(*jsonutil.Object)
-	if got, _ := jsonutil.Encode(recGet(api, "metrics")); got != `{"last_heartbeat": "2026-06-25T00:00:00+00:00", "metrics_today": {"requests": 3, "tokens": 42}}` {
+	if got, _ := jsonutil.Encode(recGet(api, "metrics"), jsonutil.Spaced(), jsonutil.ASCII()); got != `{"last_heartbeat": "2026-06-25T00:00:00+00:00", "metrics_today": {"requests": 3, "tokens": 42}}` {
 		t.Fatal(got)
 	}
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running", "active_agents": 0}})

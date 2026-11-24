@@ -118,7 +118,7 @@ func errorResult(msg string, toolCallsMade int, duration any, userSummary string
 	if userSummary != "" {
 		body.Set("user_summary", userSummary)
 	}
-	out, err := jsonutil.Encode(body)
+	out, err := jsonutil.Encode(body, jsonutil.Spaced())
 	if err != nil {
 		return toolError(err.Error())
 	}

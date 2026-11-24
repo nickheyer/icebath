@@ -321,7 +321,7 @@ func TestChildResultEventsMemoryHooksAndSpillUseRedactedOutput(t *testing.T) {
 // test_delegated_output_redaction.py test_redacted_schema_verdict_describes_delivered_summary_without_rerunning_child
 func TestRedactedSchemaVerdictDescribesDeliveredSummaryWithoutRerunningChild(t *testing.T) {
 	env := delegationTestEnv(t, 0, false)
-	answer, _ := jsonutil.Encode(map[string]any{"value": delegatedSecret})
+	answer, _ := jsonutil.Encode(map[string]any{"value": delegatedSecret}, jsonutil.Spaced(), jsonutil.ASCII())
 	child, canned := cannedDelegateChild(t, env, answer)
 	child.delegateOutputSchema = map[string]any{
 		"type": "object", "properties": map[string]any{"value": map[string]any{"const": delegatedSecret}}, "required": []any{"value"},
@@ -330,7 +330,7 @@ func TestRedactedSchemaVerdictDescribesDeliveredSummaryWithoutRerunningChild(t *
 
 	entry := runSingleChild(context.Background(), 0, "produce structured output", child, parent, "", nil, nil)
 
-	text, _ := jsonutil.Encode(entry)
+	text, _ := jsonutil.Encode(entry, jsonutil.Spaced(), jsonutil.ASCII())
 	if v, _ := entry.Get("schema_valid"); entryText(entry, "status") != "completed" || v != false || strings.Contains(text, delegatedSecret) {
 		t.Fatalf("entry %s", text)
 	}
@@ -355,7 +355,7 @@ func TestStructuredScalarSummaryStaysValidJSON(t *testing.T) {
 	for i, tc := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			env := delegationTestEnv(t, 0, false)
-			summary, _ := jsonutil.Encode(tc.answer)
+			summary, _ := jsonutil.Encode(tc.answer, jsonutil.Spaced(), jsonutil.ASCII())
 			child, canned := cannedDelegateChild(t, env, summary)
 			child.delegateOutputSchema = tc.schema
 			parent, _ := redactionParent(t, env)
@@ -465,7 +465,7 @@ func TestForcedCopiesAreProjectedFromCompleteOutputBeforeTheParentBudget(t *test
 	cut := strings.Index(pem, "KEY-----\n")
 	tail := pem[cut:] + strings.Repeat("ordinary ending\n", 10)
 	tail += strings.Repeat("x", 500-len(tail))
-	structured, _ := jsonutil.Encode(jsonutil.ObjectOf("env", "OPENAI_API_KEY="+delegatedSecret, "pad", strings.Repeat("z", 3000), "n", 2))
+	structured, _ := jsonutil.Encode(jsonutil.ObjectOf("env", "OPENAI_API_KEY="+delegatedSecret, "pad", strings.Repeat("z", 3000), "n", 2), jsonutil.Spaced(), jsonutil.ASCII())
 	summaries := []string{strings.Repeat("ordinary explanation\n", 200) + pem[:cut] + tail, structured}
 	parent, rec := redactionParent(t, env)
 	entries := make([]*jsonutil.Object, len(summaries))
@@ -533,12 +533,12 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 	}
 	args := `{"url": "https://user:pw@Example.com:8443/p?q=1#f", "path": "/tmp/x", "content": "raw payload", "urls": ["http://a.test/x?k=v", 3]}`
 	summary := summarizeToolArguments(env, args)
-	text, _ := jsonutil.Encode(summary)
+	text, _ := jsonutil.Encode(summary, jsonutil.Spaced(), jsonutil.ASCII())
 	want := `{"argument_keys":["content","path","url","urls"],"targets":{"url":"https://example.com:8443/p","path":"/tmp/x","urls":["http://a.test/x"]}}`
 	if text != want {
 		t.Fatalf("argument summary %s", text)
 	}
-	if text, _ := jsonutil.Encode(summarizeToolArguments(env, "not json")); text != `{"argument_keys":[],"targets":{}}` {
+	if text, _ := jsonutil.Encode(summarizeToolArguments(env, "not json"), jsonutil.Spaced(), jsonutil.ASCII()); text != `{"argument_keys":[],"targets":{}}` {
 		t.Fatalf("malformed arguments %s", text)
 	}
 	result := map[string]any{"messages": []any{
@@ -546,7 +546,7 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 		map[string]any{"role": "tool", "tool_call_id": "c1", "content": "line one\nline two"},
 		map[string]any{"role": "tool", "tool_call_id": "zz", "content": []any{map[string]any{"text": "Error: wrapped"}}},
 	}}
-	tail, _ := jsonutil.Encode(extractOutputTail(env, result, 8, 600))
+	tail, _ := jsonutil.Encode(extractOutputTail(env, result, 8, 600), jsonutil.Spaced(), jsonutil.ASCII())
 	if tail != `[{"tool":"terminal","preview":"line one\nline two","is_error":false},{"tool":"tool","preview":"Error: wrapped","is_error":true}]` {
 		t.Fatalf("output tail %s", tail)
 	}
@@ -555,7 +555,7 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 	}
 	trace := []any{jsonutil.ObjectOf("tool", "terminal", "status", "ERROR", "args_bytes", 12.7, "result_bytes", true, "input_summary", summary)}
 	history, err := subagentStopToolCallHistory(env, trace)
-	row, _ := jsonutil.Encode(history)
+	row, _ := jsonutil.Encode(history, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil || row != `[{"tool_name":"terminal","tool_input":{"argument_keys":["content","path","url","urls"],"targets":{"url":"https://example.com:8443/p","path":"/tmp/x","urls":["http://a.test/x"]}},"input_bytes":12,"output_bytes":0,"status":"error"}]` {
 		t.Fatalf("stop history %s %v", row, err)
 	}
@@ -583,8 +583,8 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 		event[k] = v
 	}
 	event["type"], event["status"], event["summary"], event["error"] = "async_delegation", "failed", delegatedSecret, delegatedSecret
-	eventJSON, _ := jsonutil.Encode(event)
-	resultJSON, _ := jsonutil.Encode(map[string]any{"status": "failed", "summary": delegatedSecret, "error": delegatedSecret})
+	eventJSON, _ := jsonutil.Encode(event, jsonutil.Spaced(), jsonutil.ASCII())
+	resultJSON, _ := jsonutil.Encode(map[string]any{"status": "failed", "summary": delegatedSecret, "error": delegatedSecret}, jsonutil.Spaced(), jsonutil.ASCII())
 	err := tools.AsyncTransaction(env, func(ctx context.Context, conn state.SQLiteConn) error {
 		_, err := conn.ExecContext(ctx, "UPDATE async_delegations SET state='failed',completed_at=?,event_json=?,result_json=?",
 			float64(time.Now().UnixNano())/1e9, eventJSON, resultJSON)
@@ -597,7 +597,7 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if err != nil || stored == nil {
 		t.Fatalf("stored %v %v", stored, err)
 	}
-	if text, _ := jsonutil.Encode(stored["result"]); strings.Contains(text, delegatedSecret) {
+	if text, _ := jsonutil.Encode(stored["result"], jsonutil.Spaced(), jsonutil.ASCII()); strings.Contains(text, delegatedSecret) {
 		t.Fatalf("stored result %s", text)
 	}
 	lastCompletionEvent()
@@ -609,14 +609,14 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if replay["restored"] != true || replay["session_key"] != record["session_key"] {
 		t.Fatalf("replay %v", replay)
 	}
-	if text, _ := jsonutil.Encode(replay); strings.Contains(text, delegatedSecret) {
+	if text, _ := jsonutil.Encode(replay, jsonutil.Spaced(), jsonutil.ASCII()); strings.Contains(text, delegatedSecret) {
 		t.Fatalf("replay %s", text)
 	}
 	failures, err := tools.FailedDelegationsForSession(env, "", "parent-session", 20, nil)
 	if err != nil || len(failures) != 1 || failures[0]["goal"] != record["goal"] {
 		t.Fatalf("failures %v %v", failures, err)
 	}
-	if text, _ := jsonutil.Encode(failures); strings.Contains(text, delegatedSecret) {
+	if text, _ := jsonutil.Encode(failures, jsonutil.Spaced(), jsonutil.ASCII()); strings.Contains(text, delegatedSecret) {
 		t.Fatalf("failures %s", text)
 	}
 }
@@ -631,7 +631,7 @@ func TestStructuredSummaryIsRedactedPerValueAndStaysValidJSON(t *testing.T) {
 	for name, wrap := range wraps {
 		t.Run(name, func(t *testing.T) {
 			key := "sk-proj-" + strings.Repeat("a", 40)
-			answer, _ := jsonutil.Encode(jsonutil.ObjectOf("env", "OPENAI_API_KEY="+key, "n", 2))
+			answer, _ := jsonutil.Encode(jsonutil.ObjectOf("env", "OPENAI_API_KEY="+key, "n", 2), jsonutil.Spaced(), jsonutil.ASCII())
 			entry := tools.RedactChildResult(nil, map[string]any{"summary": wrap(answer), "schema_valid": true}, map[string]any{"type": "object"}, true).(map[string]any)
 			parsed, err := jsonutil.Decode(tools.ExtractJSONCandidate(anyutil.String(entry["summary"])))
 			if err != nil {

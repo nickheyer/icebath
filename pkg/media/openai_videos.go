@@ -107,7 +107,7 @@ func (c *openAIClient) VideosCreate(ctx context.Context, req map[string]any, ext
 			obj.Set(k, v)
 		}
 	}
-	body, err := jsonutil.Encode(obj)
+	body, err := jsonutil.Encode(obj, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

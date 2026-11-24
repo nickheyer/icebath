@@ -28,12 +28,12 @@ type batchResult struct {
 
 // One row as a JSON line, raw UTF-8 unless the row holds text that is not valid UTF-8
 func jsonLine(row *jsonutil.Object) (string, error) {
-	text, err := jsonutil.Encode(row)
+	text, err := jsonutil.Encode(row, jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}
 	if !utf8.ValidString(text) {
-		if text, err = jsonutil.Encode(row, jsonutil.ASCII()); err != nil {
+		if text, err = jsonutil.Encode(row, jsonutil.ASCII(), jsonutil.Spaced()); err != nil {
 			return "", err
 		}
 	}

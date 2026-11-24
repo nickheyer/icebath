@@ -42,7 +42,7 @@ func coerceContentText(raw any) (any, error) {
 		if content, ok := c["content"]; ok && anyutil.IsTrue(content) {
 			return content, nil
 		}
-		text, err := jsonutil.Encode(c)
+		text, err := jsonutil.Encode(c, jsonutil.Spaced(), jsonutil.ASCII())
 		return text, err
 	case []map[string]any:
 		items := make([]any, len(c))

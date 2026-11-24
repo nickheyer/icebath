@@ -233,7 +233,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	meta.Set("files", manifest)
 	meta.Set("failed_dbs", stringsAny(failedDBs))
 	meta.Set("oversized_skipped", stringsAny(oversizedSkipped))
-	text, err := jsonutil.Encode(meta, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(meta, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

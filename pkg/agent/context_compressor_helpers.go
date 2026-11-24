@@ -1022,7 +1022,7 @@ func serializedLengthForBudget(value any) int {
 	if s, ok := value.(string); ok {
 		return utf8.RuneCountInString(s)
 	}
-	out, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return pyStrOf(v), nil }))
+	out, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return pyStrOf(v), nil }), jsonutil.Spaced())
 	if err != nil {
 		return utf8.RuneCountInString(pyStrOf(value))
 	}

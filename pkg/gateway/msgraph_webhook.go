@@ -165,7 +165,7 @@ func msgraphRenderTemplate(template string, payload *jsonutil.Object) (string, e
 		}
 		switch value.(type) {
 		case *jsonutil.Object, []any:
-			text, err := jsonutil.Encode(value, jsonutil.SortKeys())
+			text, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				failure = err
 				return match
@@ -608,7 +608,7 @@ func (a *MSGraphWebhookAdapter) buildMessageEvent(ctx context.Context, notificat
 	if receiptKey != nil && *receiptKey != "" {
 		messageID = *receiptKey
 	} else {
-		encoded, err := jsonutil.Encode(notification, jsonutil.SortKeys())
+		encoded, err := jsonutil.Encode(notification, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -646,7 +646,7 @@ func (a *MSGraphWebhookAdapter) renderPrompt(notification *jsonutil.Object) (str
 			"resource", notification.ValueOr("resource", ""), "change_type", notification.ValueOr("changeType", ""),
 			"subscription_id", notification.ValueOr("subscriptionId", "")))
 	}
-	rendered, err := jsonutil.Encode(notification, jsonutil.Indent(2), jsonutil.SortKeys())
+	rendered, err := jsonutil.Encode(notification, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

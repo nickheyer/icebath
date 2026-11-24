@@ -117,7 +117,7 @@ func finalizeSendResult(r *larkResp, defaultMessage string) gateway.SendResult {
 }
 
 func dumpsNoASCII(v any) string {
-	out, _ := jsonutil.Encode(v)
+	out, _ := jsonutil.Encode(v, jsonutil.Spaced())
 	return out
 }
 

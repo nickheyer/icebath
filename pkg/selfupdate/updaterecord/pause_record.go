@@ -185,7 +185,7 @@ func pyDictUpdate(target map[string]any, v any) error {
 		case []any, map[string]any:
 			return fmt.Errorf("pause record key is %s where text was expected", errchain.Kind(key))
 		default:
-			spelled, err := jsonutil.Encode(key)
+			spelled, err := jsonutil.Encode(key, jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return err
 			}

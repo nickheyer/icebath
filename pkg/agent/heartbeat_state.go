@@ -31,7 +31,7 @@ func NewHeartbeatState(prompt string, intervalSeconds int64) *HeartbeatState {
 // JSON of every field in declaration order with non ASCII kept
 func (s *HeartbeatState) ToJSON() (string, error) {
 	return jsonutil.Encode(jsonutil.ObjectOf("prompt", s.Prompt, "interval_seconds", s.IntervalSeconds, "status", s.Status,
-		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount))
+		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount), jsonutil.Spaced())
 }
 
 // Heartbeat of a stored row with each field coerced and a falsy value taking its default

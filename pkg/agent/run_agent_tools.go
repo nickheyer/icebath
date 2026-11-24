@@ -262,7 +262,7 @@ func deduplicateToolCalls(toolCalls []state.ToolCall) []state.ToolCall {
 	for _, tc := range toolCalls {
 		args := tc.Function.Arguments
 		if v, err := jsonutil.Decode(args); err == nil {
-			if canon, err := jsonutil.Encode(v, jsonutil.SortKeys()); err == nil {
+			if canon, err := jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.ASCII()); err == nil {
 				args = canon
 			}
 		}

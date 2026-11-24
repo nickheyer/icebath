@@ -311,7 +311,7 @@ func (r *WorkerRPC) Call(ctx context.Context, method string, params *jsonutil.Ob
 	if params == nil {
 		params = jsonutil.NewObject()
 	}
-	message, err := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "method", method, "params", params))
+	message, err := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "method", method, "params", params), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

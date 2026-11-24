@@ -359,7 +359,7 @@ func deliveryTurn(ctx context.Context, profileID, principal, requestID string, b
 	if requestID == "" {
 		return body(ctx)
 	}
-	key, err := jsonutil.Encode([]any{profileID, principal, requestID})
+	key, err := jsonutil.Encode([]any{profileID, principal, requestID}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -405,7 +405,7 @@ func preparedDelivery(ctx context.Context, authority *SessionAuthority, event *M
 		return *v
 	}
 	identity, err := jsonutil.Encode([]any{opt(source.Profile), string(source.Platform), source.ChatID, opt(source.ThreadID),
-		opt(source.UserID)})
+		opt(source.UserID)}, jsonutil.ASCII())
 
 	if err != nil {
 		return nil, "", err

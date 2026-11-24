@@ -77,7 +77,7 @@ func WriteZipSwapJournal(root, phase string, entries []any, gen string, temps ma
 	for _, k := range keys {
 		tempObj.Set(k, temps[k])
 	}
-	text, err := jsonutil.Encode(jsonutil.ObjectOf("pid", os.Getpid(), "gen", gen, "phase", phase, "entries", entries, "temps", tempObj))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("pid", os.Getpid(), "gen", gen, "phase", phase, "entries", entries, "temps", tempObj), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

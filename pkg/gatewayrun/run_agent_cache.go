@@ -49,7 +49,7 @@ func agentConfigSignature(model string, runtime map[string]any, enabledToolsets 
 		sortedItems(cacheKeys),
 		userID, userIDAlt,
 		skipContextFiles,
-	}, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	}, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	sum := sha256.Sum256([]byte(blob))
 	return hex.EncodeToString(sum[:])[:16]
 }

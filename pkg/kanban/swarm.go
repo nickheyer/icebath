@@ -294,7 +294,7 @@ func PostBlackboardUpdate(ctx context.Context, conn state.SQLiteConn, rootID, au
 	if key, err = swarmRequireText(key, "key"); err != nil {
 		return 0, err
 	}
-	body, err := jsonutil.Encode(jsonutil.ObjectOf("key", key, "value", value), jsonutil.SortKeys())
+	body, err := jsonutil.Encode(jsonutil.ObjectOf("key", key, "value", value), jsonutil.SortKeys(), jsonutil.Spaced())
 	if err != nil {
 		return 0, err
 	}

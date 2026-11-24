@@ -69,7 +69,7 @@ func pcChild(mode string, args []string) int {
 			pcPrint("null")
 			return 0
 		}
-		text, err := jsonutil.Encode(mapOf(found[0].Body["token"])["profiles"])
+		text, err := jsonutil.Encode(mapOf(found[0].Body["token"])["profiles"], jsonutil.Spaced(), jsonutil.ASCII())
 		must(err)
 		pcPrint(text)
 	case "recover":
@@ -110,7 +110,7 @@ func pcChild(mode string, args []string) int {
 		if !ok {
 			pcPrint("null")
 		} else {
-			text, _ := jsonutil.Encode(won)
+			text, _ := jsonutil.Encode(won, jsonutil.Spaced(), jsonutil.ASCII())
 			pcPrint(text)
 		}
 	case "claim_kill":
@@ -162,7 +162,7 @@ func pcChild(mode string, args []string) int {
 		must(err)
 		body, err := ReadPauseRecord(PauseRecordPath())
 		must(err)
-		text, err := jsonutil.Encode([]any{len(found), body})
+		text, err := jsonutil.Encode([]any{len(found), body}, jsonutil.Spaced(), jsonutil.ASCII())
 		must(err)
 		pcPrint(text)
 	default:

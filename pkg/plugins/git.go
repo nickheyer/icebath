@@ -53,7 +53,7 @@ func installMetadataPath(h string) string {
 
 // Replaces the profile local plugin install metadata atomically with sorted two space JSON
 var writeInstallMetadata = func(ctx context.Context, h string, metadata map[string]any) error {
-	text, err := jsonutil.Encode(metadata, jsonutil.Indent(2), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(metadata, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

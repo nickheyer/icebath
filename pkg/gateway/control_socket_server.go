@@ -161,7 +161,7 @@ func (s *GatewayControlServer) HandleRequestLine(raw []byte, peerSubject string)
 	if requestID != nil {
 		response.Set("id", requestID)
 	}
-	encoded, err := jsonutil.Encode(response, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	encoded, err := jsonutil.Encode(response, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		encoded = `{"ok":false,"error":"response serialization failed"}`
 	}
@@ -171,7 +171,7 @@ func (s *GatewayControlServer) HandleRequestLine(raw []byte, peerSubject string)
 		if controlIDEchoable(requestID) {
 			tooLarge.Set("id", requestID)
 		}
-		encoded, _ = jsonutil.Encode(tooLarge)
+		encoded, _ = jsonutil.Encode(tooLarge, jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	return append([]byte(encoded), '\n')
 }

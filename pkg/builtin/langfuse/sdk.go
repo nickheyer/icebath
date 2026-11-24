@@ -92,7 +92,7 @@ func serializeAttr(v any) (any, bool) {
 
 // JSON text of a value as the Langfuse event serializer writes it
 func eventJSON(v any) string {
-	out, err := jsonutil.Encode(eventDefault(v, 1))
+	out, err := jsonutil.Encode(eventDefault(v, 1), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return fmt.Sprintf(`"<not serializable object of type: %s>"`, anyutil.Kind(v))
 	}

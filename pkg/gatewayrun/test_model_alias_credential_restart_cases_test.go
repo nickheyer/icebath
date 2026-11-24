@@ -79,7 +79,7 @@ func TestLiteralAliasKeySurvivesOwnerRestartAndStaysInProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	committed, _ := result.Get("policy")
-	text, err := jsonutil.Encode(committed)
+	text, err := jsonutil.Encode(committed, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

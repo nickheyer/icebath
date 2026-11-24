@@ -35,7 +35,7 @@ func keenableSend(ctx context.Context, method, target string, payload *jsonutil.
 	h.Set("Accept", "*/*")
 	var body []byte
 	if payload != nil {
-		text, err := jsonutil.Encode(payload)
+		text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

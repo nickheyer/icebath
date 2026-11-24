@@ -184,7 +184,7 @@ func TestDeleteRetiresTerminalReceiptsAndRoutes(t *testing.T) {
 func TestTerminalResultEncodingRoundTrips(t *testing.T) {
 	raw, _ := jsonutil.Decode(`{"status": "ok", "result": {"final_response": "hi", "messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "hi"}]}}`)
 	enc := encodeTerminalResult(raw)
-	text, _ := jsonutil.Encode(enc)
+	text, _ := jsonutil.Encode(enc, jsonutil.Spaced(), jsonutil.ASCII())
 	if !strings.Contains(text, `"_stored": {"v": 1, "reply_ref": 1}`) || !strings.Contains(text, `{"role": "assistant", "content": null}`) {
 		t.Fatalf("encoded %s", text)
 	}
@@ -193,7 +193,7 @@ func TestTerminalResultEncodingRoundTrips(t *testing.T) {
 		t.Fatalf("decoded %v, %v", back, err)
 	}
 	escaped, _ := jsonutil.Decode(`{"_stored": 5}`)
-	etext, _ := jsonutil.Encode(encodeTerminalResult(escaped))
+	etext, _ := jsonutil.Encode(encodeTerminalResult(escaped), jsonutil.Spaced(), jsonutil.ASCII())
 	if back, _ := loadTerminalResult(etext); !anyutil.Equal(back, escaped) {
 		t.Fatalf("raw envelope %v", back)
 	}

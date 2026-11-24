@@ -33,7 +33,7 @@ func (r *recordingAppender) AppendMessage(ctx context.Context, sessionID string,
 
 func writeFlushJSON(t *testing.T, path string, payload any) {
 	t.Helper()
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -128,7 +128,7 @@ func EditTask(ctx context.Context, conn state.SQLiteConn, taskID string, o EditT
 				return err
 			}
 			if o.Metadata != nil {
-				text, err := jsonutil.Encode(o.Metadata)
+				text, err := jsonutil.Encode(o.Metadata, jsonutil.Spaced())
 				if err != nil {
 					return err
 				}

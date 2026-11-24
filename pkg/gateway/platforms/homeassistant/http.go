@@ -163,7 +163,7 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 // One JSON POST with the JSON content type
 func postJSON(ctx context.Context, client *http.Client, rawURL string, headers map[string]string, payload any,
 	total time.Duration) (*httpResponse, error) {
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

@@ -397,7 +397,7 @@ func copilotWithJWTStore(ctx context.Context, verb string, op func(path string, 
 
 // Writes the JWT store compactly with owner only permissions
 func copilotWriteJWTStore(ctx context.Context, path string, store *jsonutil.Object) error {
-	return config.AtomicJSONWriteMode(ctx, path, store, 0o600)
+	return config.AtomicJSONWriteMode(ctx, path, store, 0o600, jsonutil.Spaced())
 }
 
 // Drops the cached exchange of a raw token in process and on disk and its failure memo

@@ -122,7 +122,7 @@ func writeBootRecord(path, identity string, results map[string]map[string]any) e
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (l *RecordLock) tryCreate() bool {
 		return false
 	}
 	defer f.Close()
-	body, _ := jsonutil.Encode(jsonutil.ObjectOf("pid", os.Getpid(), "startedAt", float64(time.Now().UnixNano())/1e9))
+	body, _ := jsonutil.Encode(jsonutil.ObjectOf("pid", os.Getpid(), "startedAt", float64(time.Now().UnixNano())/1e9), jsonutil.Spaced(), jsonutil.ASCII())
 	f.WriteString(body)
 	return true
 }

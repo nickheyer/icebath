@@ -118,7 +118,7 @@ func writeCatalogSidecarRecord(target string, catalog map[string]any, sha string
 	doc.Set("sha", sha)
 	doc.Set("tier", tier)
 	doc.Set("installed_at", time.Now().UTC().Format("2006-01-02T15:04:05Z"))
-	text, err := jsonutil.Encode(doc, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.ASCII())
 	if err == nil {
 		err = os.WriteFile(filepath.Join(target, CatalogSidecar), []byte(text+"\n"), 0o666)
 	}
@@ -1099,7 +1099,7 @@ func CmdSearch(ctx context.Context, term string, jsonOutput bool, out io.Writer)
 		doc := jsonutil.NewObject()
 		doc.Set("query", term)
 		doc.Set("results", results)
-		text, err := jsonutil.Encode(doc, jsonutil.Indent(2))
+		text, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}
@@ -1247,7 +1247,7 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 		return err
 	}
 	if asJSON {
-		text, err := jsonutil.Encode(report.ToDict(), jsonutil.Indent(2))
+		text, err := jsonutil.Encode(report.ToDict(), jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

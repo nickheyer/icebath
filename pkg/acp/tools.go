@@ -225,7 +225,7 @@ func CoerceToolArgs(raw any) *jsonutil.Object {
 func strDefault(v any) (any, error) { return anyutil.String(v), nil }
 
 func argsJSON(arguments any) string {
-	s, err := jsonutil.Encode(arguments, jsonutil.Indent(2), jsonutil.Convert(strDefault))
+	s, err := jsonutil.Encode(arguments, jsonutil.Indent(2), jsonutil.Convert(strDefault), jsonutil.ASCII())
 	if err != nil {
 		return anyutil.String(arguments)
 	}
@@ -898,7 +898,7 @@ func emptyish(v any) bool {
 }
 
 func dumpsLoose(v any) string {
-	s, err := jsonutil.Encode(v, jsonutil.Convert(strDefault))
+	s, err := jsonutil.Encode(v, jsonutil.Convert(strDefault), jsonutil.Spaced())
 	if err != nil {
 		return anyutil.String(v)
 	}

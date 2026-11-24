@@ -47,7 +47,7 @@ func TestRawJobsUpdateKeepsAbsentSkillKeysAbsent(t *testing.T) {
 	if _, ok := two.Get("skills"); ok {
 		t.Fatalf("restore wrote a skills key on job-2: %s", raw)
 	}
-	if got, _ := jsonutil.Encode(field(one, "skills", nil)); got != `["narrow-a", "narrow-b"]` || field(two, "skill", nil) != "legacy-single" {
+	if got, _ := jsonutil.Encode(field(one, "skills", nil), jsonutil.Spaced(), jsonutil.ASCII()); got != `["narrow-a", "narrow-b"]` || field(two, "skill", nil) != "legacy-single" {
 		t.Fatalf("restored records %s", raw)
 	}
 }

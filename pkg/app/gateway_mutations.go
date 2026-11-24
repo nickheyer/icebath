@@ -58,7 +58,7 @@ func mutationKeyOf(sessionID, operation string, payload any) (mutationKey, error
 	if _, derived := payload.(mutationDerive); derived {
 		return mutationKey{session: sessionID, operation: operation, derived: true}, nil
 	}
-	text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return mutationKey{}, err
 	}

@@ -295,7 +295,7 @@ func writeLightpandaRecord(ctx context.Context, env *tools.Env, server *Lightpan
 		"start_time", start, "started_at", float64(time.Now().UnixNano())/1e9)
 	dir, err := lightpandaStateDir(env)
 	if err == nil {
-		err = config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, env), filepath.Join(dir, server.SessionName+".json"), record)
+		err = config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, env), filepath.Join(dir, server.SessionName+".json"), record, jsonutil.Spaced())
 	}
 	if err != nil {
 		lightpandaLogger(env).Debug(fmt.Sprintf("could not write lightpanda record for %s: %s", server.SessionName, err.Error()))

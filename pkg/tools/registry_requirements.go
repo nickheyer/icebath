@@ -77,7 +77,7 @@ func ToolResult(data any) string {
 	if data == nil {
 		data = jsonutil.NewObject()
 	}
-	s, err := jsonutil.Encode(data)
+	s, err := jsonutil.Encode(data, jsonutil.Spaced())
 	if err != nil {
 		return ErrorResult(err)
 	}

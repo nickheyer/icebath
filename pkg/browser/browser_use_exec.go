@@ -163,7 +163,7 @@ func nativeScreenshotResult(ctx context.Context, env *tools.Env, result *jsonuti
 		pkgLog().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
 		return ""
 	}
-	text, err := jsonutil.Encode(result)
+	text, err := jsonutil.Encode(result, jsonutil.Spaced())
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
 		return ""

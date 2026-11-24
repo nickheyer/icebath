@@ -341,7 +341,7 @@ var threadTrackerStatePath = func(ctx context.Context, platform string) string {
 }
 
 var helpersAtomicJSONWrite = func(ctx context.Context, path string, data any) error {
-	return config.AtomicJSONWriteWith(ctx, path, data)
+	return config.AtomicJSONWriteWith(ctx, path, data, jsonutil.Spaced())
 }
 
 // Tracker seeded in file order from the platform state file, keeping at most maxTracked ids on persist

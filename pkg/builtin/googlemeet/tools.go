@@ -153,7 +153,7 @@ var meetSaySchema = meetSchema("meet_say",
 
 // JSON text of a tool result with non ASCII kept
 func toolJSON(obj any) string {
-	out, err := jsonutil.Encode(obj)
+	out, err := jsonutil.Encode(obj, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

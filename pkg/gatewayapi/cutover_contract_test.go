@@ -66,7 +66,7 @@ func TestPersistedOwnerScopeIsPrivateStrictAndLegacySafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := jsonutil.Encode(projection)
+	encoded, err := jsonutil.Encode(projection, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

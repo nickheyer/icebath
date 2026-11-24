@@ -90,7 +90,7 @@ func handleShow(k *kanbanCall) (string, error) {
 		return jsonutil.Encode(jsonutil.ObjectOf("current_task", nil,
 			"hint", "No dispatcher-assigned task in this session, so there is no "+
 				"task to show by default. Call kanban_list to see task ids on "+
-				"the board, then kanban_show(task_id=<id>) for full state."))
+				"the board, then kanban_show(task_id=<id>) for full state."), jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	return withBoard(k.ctx, k.get("board"), false, func(conn state.SQLiteConn) (string, error) {
 		task, err := existingTask(k.ctx, conn, tid)
@@ -146,7 +146,7 @@ func handleShow(k *kanbanCall) (string, error) {
 		}
 		return jsonutil.Encode(jsonutil.ObjectOf("task", fieldsOf(task, taskFields), "parents", idList(parents),
 			"unsatisfied_parents", unsatisfied, "children", idList(children), "comments", comments,
-			"events", events, "runs", runs, "worker_context", workerContext))
+			"events", events, "runs", runs, "worker_context", workerContext), jsonutil.Spaced(), jsonutil.ASCII())
 	})
 }
 
@@ -230,7 +230,7 @@ func handleList(k *kanbanCall) (string, error) {
 			nextLimit = min(limit*2, int64(KanbanListMaxLimit))
 		}
 		return jsonutil.Encode(jsonutil.ObjectOf("tasks", tasks, "count", int64(len(tasks)), "limit", limit,
-			"truncated", truncated, "next_limit", nextLimit, "promoted", int64(promoted)))
+			"truncated", truncated, "next_limit", nextLimit, "promoted", int64(promoted)), jsonutil.Spaced(), jsonutil.ASCII())
 	})
 }
 

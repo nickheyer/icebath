@@ -159,7 +159,7 @@ func bindableText(value any) any {
 			return v
 		}
 	}
-	text, err := jsonutil.Encode(value, jsonutil.Convert(func(o any) (any, error) { return anyutil.String(o), nil }))
+	text, err := jsonutil.Encode(value, jsonutil.Convert(func(o any) (any, error) { return anyutil.String(o), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return anyutil.String(value)
 	}

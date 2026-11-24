@@ -2265,7 +2265,7 @@ func (e *Executor) ExecuteToolCallsSegmented(ctx context.Context, toolCalls []st
 
 // json.dumps with its default ensure_ascii and separators
 func dumpsASCII(v any) string {
-	out, err := jsonutil.Encode(v)
+	out, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return ErrorResult(err)
 	}

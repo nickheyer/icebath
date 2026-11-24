@@ -57,7 +57,7 @@ func CodexRuntimeCommand(ctx context.Context, h string, ns map[string]any, w io.
 			"errors":                    codexReportList(report.Errors),
 			"written":                   report.Written,
 			"dry_run":                   report.DryRun,
-		}, jsonutil.Indent(2), jsonutil.SortKeys())
+		}, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 		if err != nil {
 			return 1, err
 		}

@@ -141,7 +141,7 @@ func spawnRouteFields(t *testing.T, routes []map[string]any, opts routeFieldsOpt
 		if len(batch.Refused) > 0 {
 			payload.Set("refused", batch.Refused)
 		}
-		return jsonutil.Encode(payload)
+		return jsonutil.Encode(payload, jsonutil.Spaced())
 	}
 	t.Cleanup(func() { newChildAIAgentFn, runDelegateBatchFn = prevNew, prevRun })
 	parent := opts.parent

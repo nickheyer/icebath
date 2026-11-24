@@ -165,7 +165,7 @@ func seedGatewayRunState(ctx context.Context, rootHome string, containerArgv []s
 	}
 	if !dryRun {
 		text, err := jsonutil.Encode(jsonutil.ObjectOf("gateway_state", "running", "desired_state", "running",
-			"timestamp", time.Now().Unix()))
+			"timestamp", time.Now().Unix()), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

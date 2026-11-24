@@ -145,7 +145,7 @@ func (r *GatewayRunner) hmwaPrepareTurn(ctx context.Context, event *gateway.Mess
 	var owner string
 	if event.MessageID != nil && *event.MessageID != "" {
 		namespace, err := jsonutil.Encode([]any{string(source.Platform), optJSON(source.Profile), optJSON(source.ScopeID),
-			source.ChatID, optJSON(source.ThreadID), *event.MessageID})
+			source.ChatID, optJSON(source.ThreadID), *event.MessageID}, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, nil, sessionEnv, err
 		}

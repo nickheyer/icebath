@@ -163,7 +163,7 @@ func writeMoATurn(base string, sessionID any, turn MoATurn) error {
 	record.Set("preset", turn.PresetName)
 	record.Set("references", refs)
 	record.Set("aggregator", aggregator)
-	line, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+	line, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if err != nil {
 		return err
 	}

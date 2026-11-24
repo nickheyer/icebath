@@ -128,7 +128,7 @@ func UnavailablePayload(dmFile string, exc LiveTargetError) (string, error) {
 		return "", err
 	}
 	return jsonutil.Encode(jsonutil.ObjectOf("reason", exc.Reason(), "delivery_id", id,
-		"error", exc.Error()+" — the message was NOT sent; it is safe to resend "+exc.Resend()+"."))
+		"error", exc.Error()+" — the message was NOT sent; it is safe to resend "+exc.Resend()+"."), jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Drops the intent and payload of a definite no send, the unknown outcome when either file stays
@@ -153,7 +153,7 @@ func LiveOutcomeUnknown(dmFile, cause string) (string, error) {
 		return "", err
 	}
 	return jsonutil.Encode(jsonutil.ObjectOf("status", "ambiguous", "delivery_id", id,
-		"error", "Live admission outcome unknown: "+cause+". Do not resend.", "evidence_file", dmFile))
+		"error", "Live admission outcome unknown: "+cause+". Do not resend.", "evidence_file", dmFile), jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Owner's terminal not sent receipt for a delivery refused while another writer held the chat
@@ -296,7 +296,7 @@ func jsonKey(k any) (string, error) {
 	if _, ok := jsonutil.AsMap(k); ok {
 		return "", &pyError{"TypeError", "unhashable type: 'dict'"}
 	}
-	return jsonutil.Encode(k)
+	return jsonutil.Encode(k, jsonutil.Spaced(), jsonutil.ASCII())
 }
 
 // Pins the intent beside a DM file before admission, a retry inspecting the pinned owner and message only
@@ -356,7 +356,7 @@ func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *jsonut
 
 // Writes the intent JSON, syncs it to disk and closes the descriptor
 func writeIntent(f *os.File, intent *jsonutil.Object) error {
-	text, err := jsonutil.Encode(intent)
+	text, err := jsonutil.Encode(intent, jsonutil.Spaced(), jsonutil.ASCII())
 	if err == nil {
 		_, err = io.WriteString(f, text)
 	}
@@ -541,7 +541,7 @@ func WaitLiveDM(ctx context.Context, stdout io.Writer, home, deliveryID, dmFile 
 		UnlinkDMFile(LiveIntentFile(dmFile))
 		UnlinkDMFile(dmFile)
 	}
-	text, err := jsonutil.Encode(payload)
+	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return 0, err
 	}

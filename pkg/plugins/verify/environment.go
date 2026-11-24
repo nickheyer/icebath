@@ -51,7 +51,7 @@ func SaveManifest(root string, recipe *Recipe) (string, error) {
 	}
 	payload := jsonutil.ObjectOf("version", int64(ManifestVersion), "recipe", recipe.ToDict(),
 		"updatedAt", time.Now().UTC().Format(timeutil.RFC3339Micro))
-	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

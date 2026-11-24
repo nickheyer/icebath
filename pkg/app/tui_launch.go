@@ -279,7 +279,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}
-	clientEnvJSON, err := jsonutil.Encode(clientEnv)
+	clientEnvJSON, err := jsonutil.Encode(clientEnv, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}

@@ -83,7 +83,7 @@ func DriveOperation(ctx context.Context, env *Env, op *ConnectionOperation, kind
 
 // Python json.dumps with ensure_ascii off of an operation payload
 func connDumps(v any) string {
-	out, err := jsonutil.Encode(v)
+	out, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		panic(err)
 	}

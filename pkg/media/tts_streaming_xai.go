@@ -336,7 +336,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *s
 		wsCloseGracefully(conn, peerClosed)
 	}()
 	for _, frame := range []*jsonutil.Object{jsonObject("type", "text.delta", "delta", text), jsonObject("type", "text.done")} {
-		raw, err := jsonutil.Encode(frame)
+		raw, err := jsonutil.Encode(frame, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

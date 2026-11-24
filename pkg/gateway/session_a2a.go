@@ -295,7 +295,7 @@ func buildForwardPolicy(ctx context.Context, params, cfg map[string]any, private
 		peer[i] = part
 	}
 	request["source"], request["a2a_identity"] = "a2a", peer
-	text, err := jsonutil.Encode(request, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(request, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

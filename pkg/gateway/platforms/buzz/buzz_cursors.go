@@ -173,7 +173,7 @@ func (s *CursorStore) SaveCursors(ctx context.Context) {
 
 // Atomic compact JSON write of the payload, a failure only logged
 func writeCursors(ctx context.Context, path string, payload *jsonutil.Object) {
-	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload, jsonutil.Spaced()); err != nil {
 		pkgLog().Debug("Buzz: could not persist channel cursors", "error", err)
 	}
 }

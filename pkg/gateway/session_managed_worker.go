@@ -83,13 +83,13 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		return nil, err
 	}
 	hydrated := *policy
-	if hydrated.ConfigJSON, err = jsonutil.Encode(config); err != nil {
+	if hydrated.ConfigJSON, err = jsonutil.Encode(config, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 		return nil, err
 	}
-	if hydrated.RequestJSON, err = jsonutil.Encode(request); err != nil {
+	if hydrated.RequestJSON, err = jsonutil.Encode(request, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 		return nil, err
 	}
-	if hydrated.TerminalJSON, err = jsonutil.Encode(terminal); err != nil {
+	if hydrated.TerminalJSON, err = jsonutil.Encode(terminal, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 		return nil, err
 	}
 	hydrated.CredentialRef, hydrated.ConfigSecretRef = nil, nil

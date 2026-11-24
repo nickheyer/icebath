@@ -59,7 +59,7 @@ func SaveTrajectory(trajectory []any, model string, completed bool, filename str
 }
 
 func appendTrajectoryLine(entry *jsonutil.Object, filename string) (err error) {
-	line, err := jsonutil.Encode(entry)
+	line, err := jsonutil.Encode(entry, jsonutil.Spaced())
 	if err != nil {
 		return err
 	}

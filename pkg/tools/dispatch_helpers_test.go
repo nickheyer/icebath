@@ -356,7 +356,7 @@ func TestExpandLocalToolBatches(t *testing.T) {
 		t.Fatalf("blocks %v", blocks)
 	}
 	for i, block := range blocks {
-		input, err := jsonutil.Encode(block.(map[string]any)["input"])
+		input, err := jsonutil.Encode(block.(map[string]any)["input"], jsonutil.Spaced())
 		if err != nil || input != expanded[i].Function.Arguments {
 			t.Fatalf("block %d input %q %v, want the child arguments %q", i, input, err, expanded[i].Function.Arguments)
 		}

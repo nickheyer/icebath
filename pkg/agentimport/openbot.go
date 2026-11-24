@@ -683,7 +683,7 @@ func openbotRoutine(r map[string]any) *jsonutil.Object {
 	details := ""
 	if !hasCron {
 		if truthy(schedule) {
-			text, _ := jsonutil.Encode(schedule)
+			text, _ := jsonutil.Encode(schedule, jsonutil.Spaced(), jsonutil.ASCII())
 			details = "OpenBot schedule " + text
 		} else {
 			details = "No schedule: run by hand, a script or a webhook in OpenBot"

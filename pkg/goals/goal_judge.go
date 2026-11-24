@@ -402,12 +402,10 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 			if value == nil {
 				continue
 			}
+			// A value past what an int64 holds reads as the bound on its side
 			iv, convErr := anyutil.ToInt(value)
-			if convErr != nil {
-				if kind := convErr.(*errorutil.Error).Kind; kind == "TypeError" || kind == "ValueError" {
-					continue
-				}
-				panic(convErr)
+			if convErr != nil && !errors.Is(convErr, anyutil.ErrRange) {
+				continue
 			}
 			if iv > 0 {
 				return iv

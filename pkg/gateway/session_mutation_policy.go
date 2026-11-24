@@ -116,7 +116,7 @@ func prepareReasoning(ctx context.Context, a *SessionAuthority, live *LiveSessio
 			return nil, err
 		}
 	}
-	text, err := jsonutil.Encode(frozen)
+	text, err := jsonutil.Encode(frozen, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 		return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	ordered.Set("TERMINAL_CWD", cwd)
-	text, err := jsonutil.Encode(ordered)
+	text, err := jsonutil.Encode(ordered, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -296,10 +296,10 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 			return nil, err
 		}
 	}
-	if policy.ConfigJSON, err = jsonutil.Encode(frozen); err != nil {
+	if policy.ConfigJSON, err = jsonutil.Encode(frozen, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 		return nil, err
 	}
-	if policy.RequestJSON, err = jsonutil.Encode(request, jsonutil.SortKeys()); err != nil {
+	if policy.RequestJSON, err = jsonutil.Encode(request, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 		return nil, err
 	}
 	secrets := &RecoveredSecrets{}
@@ -379,7 +379,7 @@ func bindRelaunched(ctx context.Context, a *SessionAuthority, prepared *jsonutil
 			return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 		}
 		ordered.Set("TERMINAL_CWD", cwd)
-		if policy.TerminalJSON, err = jsonutil.Encode(ordered); err != nil {
+		if policy.TerminalJSON, err = jsonutil.Encode(ordered, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 			return nil, err
 		}
 		policy.Cwd = cwd

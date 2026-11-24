@@ -115,7 +115,7 @@ func TestQueuedPolicyOnlyAdmissionFromAnOlderBuildIsNotRecovered(t *testing.T) {
 	stored := jsonutil.Clone(admitted.Row.ValueOr("payload", nil)).(*jsonutil.Object)
 	turn := stored.ValueOr("api_turn_v1", nil).(*jsonutil.Object)
 	turn.ValueOr("settings", nil).(*jsonutil.Object).Set("room_execution_policy", apiRoomPolicy(t))
-	encoded, err := jsonutil.Encode(stored)
+	encoded, err := jsonutil.Encode(stored, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

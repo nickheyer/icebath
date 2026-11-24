@@ -182,7 +182,7 @@ func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]strin
 	if ownedTask {
 		for _, key := range append(tools.KanbanEnvKeys(), "ICEBATH_KANBAN_DB", "ICEBATH_KANBAN_BOARD") {
 			if val, ok := os.LookupEnv(key); ok {
-				quoted, _ := jsonutil.Encode(val)
+				quoted, _ := jsonutil.Encode(val, jsonutil.Spaced(), jsonutil.ASCII())
 				argv = append(argv, "-c", fmt.Sprintf("mcp_servers.%s.env.%s=%s", CodexToolsMCPServerName, key, quoted))
 			}
 		}

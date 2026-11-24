@@ -852,7 +852,7 @@ func (s *sessionSchema) backfillGatewayMetadataFromSessionsJSON(ctx context.Cont
 		if isDict {
 			chatID, _ = origin.Get("chat_id")
 			threadID, _ = origin.Get("thread_id")
-			if originJSON, err = jsonutil.Encode(origin); err != nil {
+			if originJSON, err = jsonutil.Encode(origin, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {
 				return err
 			}
 		}

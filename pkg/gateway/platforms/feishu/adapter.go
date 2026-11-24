@@ -1005,7 +1005,7 @@ func (a *FeishuAdapter) persistSeenMessageIDs(ctx context.Context) {
 	a.dedupMu.Unlock()
 	payload := jsonutil.NewObject()
 	payload.Set("message_ids", ids)
-	if err := config.AtomicJSONWriteWith(ctx, a.dedupStatePath, payload); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, a.dedupStatePath, payload, jsonutil.Spaced()); err != nil {
 		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to persist dedup state to %s", a.dedupStatePath))
 	}
 }

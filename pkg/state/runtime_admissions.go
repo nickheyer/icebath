@@ -236,7 +236,7 @@ func (d *SessionDB) AdmitSessionInput(ctx context.Context, in SessionInput) (*js
 	if err != nil {
 		return nil, err
 	}
-	lineage, err := jsonutil.Encode([]any{in.SessionID})
+	lineage, err := jsonutil.Encode([]any{in.SessionID}, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

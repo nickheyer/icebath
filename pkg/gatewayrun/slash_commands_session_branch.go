@@ -128,7 +128,7 @@ func (r *GatewayRunner) handleBranchCommand(ctx context.Context, event *gateway.
 				origin = current.Origin
 			}
 		}
-		text, err := jsonutil.Encode(origin.ToDict())
+		text, err := jsonutil.Encode(origin.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return ""
 		}

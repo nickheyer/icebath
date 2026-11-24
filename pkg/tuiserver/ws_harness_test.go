@@ -105,7 +105,7 @@ func (s *wsTestSocket) ReceiveText(ctx context.Context) (string, error) {
 		if text, isText := item.(string); isText {
 			return text, nil
 		}
-		text, err := jsonutil.Encode(item)
+		text, err := jsonutil.Encode(item, jsonutil.Spaced(), jsonutil.ASCII())
 		return text, err
 	case <-ctx.Done():
 		return "", ctx.Err()

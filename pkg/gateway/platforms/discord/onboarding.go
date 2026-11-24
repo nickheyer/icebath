@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
@@ -136,9 +135,8 @@ func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) 
 	var flags int64
 	if raw := app.Value("flags"); anyutil.IsTrue(raw) {
 		n, err := anyutil.ToInt(raw)
-		var intErr *errorutil.Error
-		if errors.As(err, &intErr) && intErr.Kind == "ValueError" {
-			return nil, &tools.DiscordValueError{Msg: intErr.Error()}
+		if _, isText := raw.(string); isText && err != nil {
+			return nil, &tools.DiscordValueError{Msg: err.Error()}
 		}
 		if err != nil {
 			return nil, err

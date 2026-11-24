@@ -236,7 +236,7 @@ func SaveTracked(ctx context.Context, tracked []Entry) error {
 	for i, e := range tracked {
 		list[i] = e
 	}
-	text, err := jsonutil.Encode(list, jsonutil.Indent(2))
+	text, err := jsonutil.Encode(list, jsonutil.Indent(2), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}

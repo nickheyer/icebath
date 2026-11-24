@@ -474,7 +474,7 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 		return nil, err
 	}
 	payload := actionPayload(res)
-	head, err := jsonutil.Encode(payload)
+	head, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -501,7 +501,7 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 	for _, k := range payload.Keys() {
 		merged.Set(k, payload.Value(k))
 	}
-	out, err := jsonutil.Encode(merged)
+	out, err := jsonutil.Encode(merged, jsonutil.Spaced(), jsonutil.ASCII())
 	return out, err
 }
 

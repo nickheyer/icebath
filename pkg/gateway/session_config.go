@@ -93,7 +93,7 @@ func mcpRevision(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	for _, key := range []string{"mcp", "mcp_servers", "tools"} {
 		sections[key] = source[key]
 	}
-	text, err := jsonutil.Encode(sections, jsonutil.SortKeys())
+	text, err := jsonutil.Encode(sections, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

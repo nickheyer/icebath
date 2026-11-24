@@ -362,7 +362,7 @@ func TestXSearchPassesProviderNumbersAndKeyOrderThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := jsonutil.Encode(decoded)
+	got, err := jsonutil.Encode(decoded, jsonutil.Spaced())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -268,7 +268,7 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 			return nil, err
 		}
 		key := hostedTransportBinding + rpc.Ref.SessionID
-		encoded, err := jsonutil.Encode(binding, jsonutil.SortKeys())
+		encoded, err := jsonutil.Encode(binding, jsonutil.SortKeys(), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

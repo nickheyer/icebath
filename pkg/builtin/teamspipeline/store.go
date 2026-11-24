@@ -122,7 +122,7 @@ func (s *TeamsPipelineStore) persist() error {
 	for _, b := range storeBuckets {
 		doc.Set(b, s.state[b])
 	}
-	text, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.SortKeys())
+	text, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
@@ -266,7 +266,7 @@ func BuildNotificationReceiptKey(notification *jsonutil.Object) (string, error) 
 	if id := get(notification, "id"); anyutil.IsTrue(id) {
 		return "id:" + anyutil.String(id), nil
 	}
-	canonical, err := jsonutil.Encode(notification, jsonutil.SortKeys())
+	canonical, err := jsonutil.Encode(notification, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

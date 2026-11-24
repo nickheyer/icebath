@@ -706,7 +706,7 @@ func ScanSkillCached(skillPath string, source string, sourceURL string, cacheDir
 	prov["summary"] = result.Summary
 	prov["fresh"] = true
 	if os.MkdirAll(cacheDir, 0o755) == nil {
-		if text, err := jsonutil.Encode(scanProvenanceObject(prov), jsonutil.Indent(2)); err == nil {
+		if text, err := jsonutil.Encode(scanProvenanceObject(prov), jsonutil.Indent(2), jsonutil.ASCII()); err == nil {
 			os.WriteFile(cacheFile, []byte(text+"\n"), 0o644)
 		}
 	}

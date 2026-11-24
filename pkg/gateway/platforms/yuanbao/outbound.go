@@ -650,7 +650,7 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 		}
 		nickname := match.GroupByNumber(1).String()
 		if member, known := byNick[strings.ToLower(nickname)]; known {
-			data, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@"+member.nick, "user_id", member.uid))
+			data, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@"+member.nick, "user_id", member.uid), jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return nil, err
 			}

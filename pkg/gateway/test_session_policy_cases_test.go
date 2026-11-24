@@ -112,7 +112,7 @@ func TestLaunchOptionsReachTheOwnerFrozenAndHooksConsented(t *testing.T) {
 		{"skills": []any{"missing-typo"}}, {"skills": "launch-fixture"}, {"checkpoints": "yes"},
 		{"model": "m", "safe_mode": true, "skills": []any{"launch-fixture"}},
 	} {
-		text, _ := jsonutil.Encode(params)
+		text, _ := jsonutil.Encode(params, jsonutil.Spaced(), jsonutil.ASCII())
 		if got := create("refused-"+text, params); got != "unknown_skill" && got != "invalid_params" {
 			t.Fatalf("params %v gave %q", params, got)
 		}

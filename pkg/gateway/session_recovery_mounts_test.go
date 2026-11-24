@@ -295,7 +295,7 @@ func TestRestoreRoutedSessionMountsAMessagingRowAndDetachesASupersededOne(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin, err := jsonutil.Encode(source.ToDict())
+	origin, err := jsonutil.Encode(source.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

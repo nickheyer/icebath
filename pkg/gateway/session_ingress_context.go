@@ -210,7 +210,7 @@ func relayConnector(adapter PlatformAdapter, source *SessionSource) (relayTransp
 		return nil, "", runtimeRefusal("permission_denied")
 	}
 	identity, err := jsonutil.Encode([]any{transport.RelayURL(), transport.RelayGatewayID(), transport.RelayIdentities()},
-		jsonutil.SortKeys())
+		jsonutil.SortKeys(), jsonutil.ASCII())
 
 	if err != nil {
 		return nil, "", err
@@ -227,7 +227,7 @@ func relayHMAC(secret, text string) string {
 
 // Seal binding a provenance to the exact source and bot flag it was captured for
 func relaySeal(transport relayTransport, source *SessionSource, provenance *jsonutil.Object) (string, error) {
-	binding, err := jsonutil.Encode([]any{provenance, source.ToDict(), source.IsBot}, jsonutil.SortKeys())
+	binding, err := jsonutil.Encode([]any{provenance, source.ToDict(), source.IsBot}, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

@@ -194,7 +194,7 @@ func TestLoadIndexFetchDoesNotRequestBrotli(t *testing.T) {
 		accept = o.Headers["Accept-Encoding"]
 		return jsonResp(t, `{"skills": [{"name": "x"}]}`)
 	})
-	data, err := jsonutil.Encode(h.loadIndex(context.Background()))
+	data, err := jsonutil.Encode(h.loadIndex(context.Background()), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil || data != `{"skills": [{"name": "x"}]}` {
 		t.Fatalf("%s %v", data, err)
 	}
@@ -219,7 +219,7 @@ func TestLoadIndexPersistentDecodingErrorFallsBackToStaleCache(t *testing.T) {
 		hd.Set("Content-Encoding", "br")
 		return &httputil.Response{StatusCode: 200, Header: hd, Content: []byte("brotli boom")}
 	})
-	data, err := jsonutil.Encode(h.loadIndex(context.Background()))
+	data, err := jsonutil.Encode(h.loadIndex(context.Background()), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil || data != `{"skills": [{"name": "stale"}]}` || !slices.Equal(encodings, []string{"gzip, deflate", "identity"}) {
 		t.Fatalf("%s %v %v", data, err, encodings)
 	}

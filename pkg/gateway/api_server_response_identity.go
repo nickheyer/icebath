@@ -33,7 +33,7 @@ func apiNextItemID(responseID string, counters map[apiItemCounterKey]int, kind s
 	key := apiItemCounterKey{Kind: kind, CallID: callID, Commentary: commentary}
 	occurrence := counters[key]
 	counters[key] = occurrence + 1
-	encoded, err := jsonutil.Encode([]any{responseID, kind, callID, commentary, occurrence})
+	encoded, err := jsonutil.Encode([]any{responseID, kind, callID, commentary, occurrence}, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

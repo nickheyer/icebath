@@ -348,7 +348,7 @@ func historyMentions(ctx context.Context, conn state.SQLiteConn, references []me
 		name := pathutil.Name(filepath.Clean(reference.path))
 		for _, sep := range []string{"/", `\`} {
 			tail := reference.sha256 + sep + name
-			escaped, err := jsonutil.Encode(tail)
+			escaped, err := jsonutil.Encode(tail, jsonutil.Spaced(), jsonutil.ASCII())
 			if err != nil {
 				return nil, err
 			}
@@ -361,7 +361,7 @@ func historyMentions(ctx context.Context, conn state.SQLiteConn, references []me
 	for _, d := range slices.Sorted(maps.Keys(digests)) {
 		prefixes = append(prefixes, d)
 	}
-	bound, err := jsonutil.Encode(prefixes)
+	bound, err := jsonutil.Encode(prefixes, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}

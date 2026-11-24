@@ -74,7 +74,7 @@ func stringifyContentBlock(item any) string {
 
 // JSON text with non ASCII kept and values JSON cannot carry written as their text
 func dumpsDefaultStr(v any) string {
-	text, _ := jsonutil.Encode(v, jsonutil.Convert(func(x any) (any, error) { return anyutil.String(x), nil }))
+	text, _ := jsonutil.Encode(v, jsonutil.Convert(func(x any) (any, error) { return anyutil.String(x), nil }), jsonutil.Spaced())
 	return text
 }
 

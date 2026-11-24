@@ -82,7 +82,7 @@ func prependCorruptionMarker(toolMsg *state.Message, marker string) {
 		}
 		existing = c
 	default:
-		if s, err := jsonutil.Encode(c); err == nil {
+		if s, err := jsonutil.Encode(c, jsonutil.Spaced(), jsonutil.ASCII()); err == nil {
 			existing = s
 		} else {
 			existing = anyutil.String(c)

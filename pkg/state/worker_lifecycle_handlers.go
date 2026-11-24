@@ -96,7 +96,7 @@ func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 		return nil, err
 	}
 	if config != nil && config.Len() > 0 {
-		text, err := jsonutil.Encode(config)
+		text, err := jsonutil.Encode(config, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}

@@ -108,7 +108,7 @@ func appendStartupWatchdogDump(write func(f *os.File) error, failureMsg string) 
 // Appends one JSON metadata line beside the stack dump
 func writeStartupWatchdogDumpRecord(record *jsonutil.Object) {
 	appendStartupWatchdogDump(func(f *os.File) error {
-		text, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+		text, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

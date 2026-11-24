@@ -344,7 +344,7 @@ func (a *DiscordAdapter) recordRecoveryScanStart(ctx context.Context, channels s
 	now := utcNowISO()
 	sorted := keysOf(channels)
 	sort.Strings(sorted)
-	channelsJSON, _ := jsonutil.Encode(sorted)
+	channelsJSON, _ := jsonutil.Encode(sorted, jsonutil.Spaced(), jsonutil.ASCII())
 	a.withDiscordRecoveryDB(ctx, func(conn state.SQLiteConn) (any, error) {
 		_, err := conn.ExecContext(ctx, "INSERT OR REPLACE INTO discord_recovery_scans (scan_id, started_at, status, channels, window_seconds, limit_count) VALUES (?, ?, ?, ?, ?, ?)",
 			scanID, now, "running", channelsJSON, a.missedMessageBackfillWindowSeconds(ctx), a.missedMessageBackfillLimit(ctx))

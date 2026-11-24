@@ -131,7 +131,7 @@ func newFakeOpenAIVideos(t *testing.T) *fakeOpenAIVideos {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		job := func(id string) {
-			body, _ := jsonutil.Encode(map[string]any{"id": id, "status": f.status, "error": nil, "data": f.data})
+			body, _ := jsonutil.Encode(map[string]any{"id": id, "status": f.status, "error": nil, "data": f.data}, jsonutil.Spaced(), jsonutil.ASCII())
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, body)
 		}

@@ -117,7 +117,7 @@ func turnMarkerStore(path string, entries *jsonutil.Object) error {
 		}
 		return nil
 	}
-	return config.AtomicJSONWriteMode(context.Background(), path, entries, 0o600)
+	return config.AtomicJSONWriteMode(context.Background(), path, entries, 0o600, jsonutil.Spaced())
 }
 
 // Loads, mutates and stores the journal under both locks, a nil mutation result skipping the write

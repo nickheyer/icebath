@@ -39,7 +39,7 @@ func TestToolCallsColumnKeepsBuildOrder(t *testing.T) {
 		t.Fatalf("replayed %#v", calls)
 	}
 	again := MessageToDict(MessageFromDict(history[0]))["tool_calls"].([]any)[0].(*jsonutil.Object)
-	if text, _ := jsonutil.Encode(again); text != want[1:len(want)-1] {
+	if text, _ := jsonutil.Encode(again, jsonutil.Spaced(), jsonutil.ASCII()); text != want[1:len(want)-1] {
 		t.Fatalf("round trip %s", text)
 	}
 }

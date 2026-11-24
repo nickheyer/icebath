@@ -33,7 +33,7 @@ func stripOrigin(ctx context.Context, t *testing.T, db *state.SessionDB, store *
 	data := store.LookupBySessionKey(ctx, key).ToDict()
 	data.Set("origin", nil)
 	data.Delete("platform")
-	text, _ := jsonutil.Encode(data)
+	text, _ := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
 	if err := db.SaveGatewayRoutingEntry(ctx, key, text, store.routingScope()); err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +110,11 @@ func TestRoutingEntryOriginHeal(t *testing.T) {
 			t.Fatalf("session %v %v", got, err)
 		}
 		persisted := healStore(ctx, t, dir, db, false).LookupBySessionKey(ctx, entry.SessionKey)
-		want, _ := jsonutil.Encode(source.ToDict())
+		want, _ := jsonutil.Encode(source.ToDict(), jsonutil.Spaced(), jsonutil.ASCII())
 		if persisted.Origin == nil {
 			t.Fatal("origin not persisted")
 		}
-		if got, _ := jsonutil.Encode(persisted.Origin.ToDict()); got != want {
+		if got, _ := jsonutil.Encode(persisted.Origin.ToDict(), jsonutil.Spaced(), jsonutil.ASCII()); got != want {
 			t.Fatalf("origin %s want %s", got, want)
 		}
 	})
@@ -144,14 +144,14 @@ func TestRoutingEntryOriginHeal(t *testing.T) {
 		stale.Set("origin", nil)
 		mirror := jsonutil.NewObject()
 		mirror.Set(key, stale)
-		text, _ := jsonutil.Encode(mirror)
+		text, _ := jsonutil.Encode(mirror, jsonutil.Spaced(), jsonutil.ASCII())
 		if err := os.WriteFile(filepath.Join(dir, "sessions", "sessions.json"), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		durable := entry.ToDict()
 		durable.Set("suspended", true)
 		durable.Set("origin", nil)
-		durableText, _ := jsonutil.Encode(durable)
+		durableText, _ := jsonutil.Encode(durable, jsonutil.Spaced(), jsonutil.ASCII())
 		if err := db.SaveGatewayRoutingEntry(ctx, key, durableText, healStore(ctx, t, dir, db, false).routingScope()); err != nil {
 			t.Fatal(err)
 		}

@@ -308,7 +308,7 @@ func WriteCacheEntry(ctx context.Context, serverName, fingerprint string, tools,
 
 // Value as it reads back after a JSON write, schema payloads keeping their order
 func jsonRoundTrip(v any) (any, error) {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced())
 	if err != nil {
 		return nil, err
 	}

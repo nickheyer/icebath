@@ -887,7 +887,7 @@ func TestRepairDecodeOfDurableSentinelRowDoesNotReappend(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "test-key")
 	parts := []any{map[string]any{"type": "text", "text": "look"},
 		map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64," + strings.Repeat("A", 2000)}}}
-	body, err := jsonutil.Encode(parts)
+	body, err := jsonutil.Encode(parts, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}

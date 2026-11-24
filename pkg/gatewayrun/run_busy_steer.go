@@ -200,7 +200,7 @@ func (r *GatewayRunner) steerTextWithOrigin(ctx context.Context, text string, ev
 			origin.Set(key, steerOriginHasher(key)(anyutil.String(value)))
 		}
 	}
-	encoded, err := jsonutil.Encode(origin, jsonutil.ASCII())
+	encoded, err := jsonutil.Encode(origin, jsonutil.ASCII(), jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}

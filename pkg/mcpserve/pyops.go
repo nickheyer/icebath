@@ -170,9 +170,9 @@ func dumps(v any, indent bool) string {
 	var text string
 	var err error
 	if indent {
-		text, err = jsonutil.Encode(v, jsonutil.Indent(2))
+		text, err = jsonutil.Encode(v, jsonutil.Indent(2), jsonutil.ASCII())
 	} else {
-		text, err = jsonutil.Encode(v)
+		text, err = jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	}
 	if err != nil {
 		panic(err)

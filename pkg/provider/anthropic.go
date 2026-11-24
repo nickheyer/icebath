@@ -1907,7 +1907,7 @@ func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, r
 		}
 	}
 	if len(reasoningDetails) > 0 {
-		text, _ := jsonutil.Encode(reasoningDetails)
+		text, _ := jsonutil.Encode(reasoningDetails, jsonutil.Spaced(), jsonutil.ASCII())
 		msg.ReasoningDetails = json.RawMessage(text)
 	}
 	if signed && hasToolUse {

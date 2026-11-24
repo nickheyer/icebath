@@ -211,7 +211,7 @@ func (r *GatewayRunner) handleUpdateCommand(ctx context.Context, event *gateway.
 			pending.Set(kv.key, *kv.value)
 		}
 	}
-	text, err := jsonutil.Encode(pending)
+	text, err := jsonutil.Encode(pending, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

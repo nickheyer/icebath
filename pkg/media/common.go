@@ -186,7 +186,7 @@ func postJSON(ctx context.Context, rawURL string, headers map[string]string, pay
 		}
 		return nil, &httpFailure{Kind: "request", Error: fmt.Sprintf("%s request failed: %v", label, err), ErrorType: "api_error"}, nil
 	}
-	body, err := jsonutil.Encode(payload)
+	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return nil, nil, err
 	}

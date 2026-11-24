@@ -362,7 +362,7 @@ func (x *HubCLI) DoListModified(ctx context.Context, c *consoleutil.Console, asJ
 		for i, m := range modified {
 			names[i] = m["name"]
 		}
-		text, err := jsonutil.Encode(names)
+		text, err := jsonutil.Encode(names, jsonutil.Spaced(), jsonutil.ASCII())
 		if err != nil {
 			return err
 		}

@@ -799,7 +799,7 @@ func convertMessagesToConverse(messages []map[string]any, resolve func(string) s
 
 // Python json.dumps text with default separators and ASCII escapes, dicts in their own order
 func bedrockPyDumps(v any) string {
-	text, err := jsonutil.Encode(v)
+	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return pyStr(v)
 	}

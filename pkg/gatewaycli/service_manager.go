@@ -274,7 +274,7 @@ func writeGatewayDesiredState(name, desired string) error {
 	}
 	data.Set("desired_state", desired)
 	data.Set("updated_at", time.Now().Unix())
-	text, err := jsonutil.Encode(data)
+	text, err := jsonutil.Encode(data, jsonutil.ASCII())
 	if err != nil {
 		return nil
 	}

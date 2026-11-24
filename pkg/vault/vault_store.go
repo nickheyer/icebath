@@ -711,7 +711,7 @@ func (s *VaultStore) writeAll(items []any) error {
 	if items == nil {
 		items = []any{}
 	}
-	payload, err := jsonutil.Encode(jsonutil.ObjectOf("version", 1, "items", items))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("version", 1, "items", items), jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return err
 	}
