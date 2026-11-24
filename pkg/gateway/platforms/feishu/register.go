@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +41,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		metadata = map[string]any{"thread_id": threadID}
 	}
 	var last *gateway.SendResult
-	if pystr.Strip(message) != "" {
+	if strings.TrimSpace(message) != "" {
 		r, err := adapter.Send(ctx, chatID, message, "", metadata)
 		if err != nil {
 			return gateway.SendError("Feishu send failed: " + proxySafeErrorText(err, onboardOpenURLs["feishu"], onboardOpenURLs["lark"])), nil

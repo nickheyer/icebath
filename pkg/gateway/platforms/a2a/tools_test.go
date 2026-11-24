@@ -16,14 +16,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Swaps the config loader and both HTTP seams for one test, restoring them afterwards
+// Writes cfg as config.yaml of a fresh home and swaps both HTTP seams for one test, restoring them afterwards
 func swapToolSeams(t *testing.T, cfg map[string]any, get func(string) (any, error), post func(string, *pyjson.Object) (any, error)) {
 	t.Helper()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	prevCfg, prevGet, prevPost := loadToolsConfig, httpGetJSON, httpPostJSON
-	t.Cleanup(func() { loadToolsConfig, httpGetJSON, httpPostJSON = prevCfg, prevGet, prevPost })
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	prevGet, prevPost := httpGetJSON, httpPostJSON
+	t.Cleanup(func() { httpGetJSON, httpPostJSON = prevGet, prevPost })
 	if cfg != nil {
-		loadToolsConfig = func(context.Context) (map[string]any, error) { return cfg, nil }
+		if err := config.SaveUser(context.Background(), h, cfg); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if get != nil {
 		httpGetJSON = func(_ context.Context, url string, _ map[string]string, _ int) (any, error) { return get(url) }
@@ -64,7 +67,7 @@ func TestA2AHistoryToolRecallsConversation(t *testing.T) {
 }
 
 func TestDiscoverSummarizesV1Card(t *testing.T) {
-	card := BuildAgentCard(AgentCardOptions{Name: "researcher", URL: "http://localhost:9999/", Description: "finds things",
+	card := BuildAgentCard(context.Background(), AgentCardOptions{Name: "researcher", URL: "http://localhost:9999/", Description: "finds things",
 		Skills: []any{pyjson.ObjectOf("id", "s", "name", "search", "description", "web search")}})
 	swapToolSeams(t, nil, func(string) (any, error) { return card, nil }, nil)
 	out := A2ADiscover(context.Background(), map[string]any{"url": "http://localhost:9999"})
@@ -164,7 +167,7 @@ func devCard(t *testing.T) func(string) (any, error) {
 		if !strings.HasSuffix(url, "/.well-known/agent-card.json") {
 			t.Fatalf("card url %q", url)
 		}
-		return BuildAgentCard(AgentCardOptions{Name: "dev", URL: "http://peer.example/dev/", Description: "dev", Tenant: "dev-team"}), nil
+		return BuildAgentCard(context.Background(), AgentCardOptions{Name: "dev", URL: "http://peer.example/dev/", Description: "dev", Tenant: "dev-team"}), nil
 	}
 }
 
@@ -189,7 +192,7 @@ func TestDiscoveryFallsBackToLegacyAgentJSON(t *testing.T) {
 		if strings.HasSuffix(url, "agent-card.json") {
 			return nil, &HTTPError{Code: 404, Reason: "not found"}
 		}
-		return BuildAgentCard(AgentCardOptions{Name: "legacy", URL: "http://legacy/", Description: "legacy"}), nil
+		return BuildAgentCard(context.Background(), AgentCardOptions{Name: "legacy", URL: "http://legacy/", Description: "legacy"}), nil
 	}, nil)
 	out := A2ADiscover(context.Background(), map[string]any{"url": "http://legacy"})
 	if !strings.Contains(out, "Agent: legacy") || !strings.HasSuffix(calls[0], "/.well-known/agent-card.json") ||
@@ -355,18 +358,20 @@ func TestFirstModeReturnsASuccess(t *testing.T) {
 	}
 }
 
-// Availability verdict of the gate with the config loader returning cfg or failing
-func gateWith(t *testing.T, cfg map[string]any, fail bool) bool {
+// Availability verdict of the gate for a home whose config.yaml holds cfg, or text that is not YAML when broken
+func gateWith(t *testing.T, cfg map[string]any, broken bool) bool {
 	t.Helper()
-	prev := loadToolsConfig
-	t.Cleanup(func() { loadToolsConfig = prev })
-	loadToolsConfig = func(context.Context) (map[string]any, error) {
-		if fail {
-			return nil, errors.New("boom")
-		}
-		return cfg, nil
-	}
 	dir := t.TempDir()
+	switch {
+	case broken:
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("a2a_agents: [unclosed\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	case cfg != nil:
+		if err := config.SaveUser(context.Background(), dir, cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return a2aToolsAvailable(&tools.Env{Home: dir, Secrets: config.NewSecrets(dir)})
 }
 
@@ -421,9 +426,7 @@ func TestAllFiveToolsCarryTheGate(t *testing.T) {
 
 func TestSecondaryProfileToolsGateFollowsItsOwnScope(t *testing.T) {
 	t.Setenv("A2A_PORT", "9902")
-	prev := loadToolsConfig
-	t.Cleanup(func() { loadToolsConfig = prev; tools.SetMultiplexActive(false) })
-	loadToolsConfig = func(context.Context) (map[string]any, error) { return map[string]any{}, nil }
+	t.Cleanup(func() { tools.SetMultiplexActive(false) })
 	root := t.TempDir()
 	homeA, homeB := filepath.Join(root, "s6probe-a"), filepath.Join(root, "s6probe-b")
 	for dir, env := range map[string]string{homeA: "A2A_PORT=9911\n", homeB: "OTHER=1\n"} {

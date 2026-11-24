@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"fmt"
 	"reflect"
 	"strings"
@@ -9,7 +11,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -20,18 +21,18 @@ var (
 
 // Summary body without the current, legacy or any historical prefix and without the end marker
 func stripSummaryPrefix(summary string) string {
-	text := pystr.Strip(summary)
+	text := strings.TrimSpace(summary)
 	if _, after, found := strings.Cut(text, state.MergedSummaryDelimiter); found {
-		text = pystr.Strip(after)
+		text = strings.TrimSpace(after)
 	}
 	for _, prefix := range append([]string{state.SummaryPrefix, state.LegacySummaryPrefix}, state.HistoricalSummaryPrefixes()...) {
 		if strings.HasPrefix(text, prefix) {
-			text = pystr.Lstrip(text[len(prefix):])
+			text = strings.TrimLeftFunc(text[len(prefix):], unicode.IsSpace)
 			break
 		}
 	}
 	if idx := strings.Index(text, state.SummaryEndMarker); idx >= 0 {
-		text = pystr.Rstrip(text[:idx])
+		text = strings.TrimRightFunc(text[:idx], unicode.IsSpace)
 	}
 	return text
 }
@@ -62,7 +63,7 @@ func validateSummaryUserProvenance(summary string, hasUserTurn bool) error {
 	snapshot := ""
 	if m, err := historicalTaskSectionRE.FindStringMatch(summary); err == nil && m != nil {
 		parts := strings.SplitN(m.String(), "\n", 2)
-		snapshot = pystr.Strip(parts[len(parts)-1])
+		snapshot = strings.TrimSpace(parts[len(parts)-1])
 	}
 	attributed, _ := userAskedAttributionRE.MatchString(summary)
 	if snapshot != noUserTaskSentinel || attributed {
@@ -97,7 +98,7 @@ func latestUserTaskSnapshot(messages []map[string]any) string {
 		if msg["role"] != "user" || !isRealUserMessage(msg) {
 			continue
 		}
-		text := redactCompactionText(pystr.Strip(typedUserText(state.ContentTextForContains(msg["content"]))))
+		text := redactCompactionText(strings.TrimSpace(typedUserText(state.ContentTextForContains(msg["content"]))))
 		if text == "" {
 			continue
 		}
@@ -135,9 +136,9 @@ func groundHistoricalTaskSnapshot(summary string, messages []map[string]any) str
 			seen = true
 			return replacement
 		}, -1, -1)
-		return pystr.Strip(out)
+		return strings.TrimSpace(out)
 	}
-	return pystr.Strip(replacement + body)
+	return strings.TrimSpace(replacement + body)
 }
 
 type contextSummaryRef struct {
@@ -168,7 +169,7 @@ func getToolCallID(tc any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyStrOf(v))
+	return strings.TrimSpace(pyStrOf(v))
 }
 
 // Every id variant a result might reference the call by, the sanitizer's own expansion
@@ -233,7 +234,7 @@ func (c *ContextCompressor) sanitizeToolPairs(messages []map[string]any) []map[s
 		} else {
 			delete(msg, "tool_calls")
 			content := msg["content"]
-			if s, isStr := content.(string); !pyTruthy(content) || (isStr && pystr.Strip(s) == "") {
+			if s, isStr := content.(string); !pyTruthy(content) || (isStr && strings.TrimSpace(s) == "") {
 				msg["content"] = "(tool call removed)"
 			}
 		}

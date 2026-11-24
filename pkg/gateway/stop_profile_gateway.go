@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -246,7 +245,7 @@ func reaperCandidateIsSupervisorOwned(pid int) bool {
 		if err != nil || !ok {
 			break
 		}
-		if name, nerr := reapProcessName(parent); nerr == nil && pystr.Lower(name) == "services.exe" {
+		if name, nerr := reapProcessName(parent); nerr == nil && strings.ToLower(name) == "services.exe" {
 			return true
 		}
 		parent, ok, err = reapParent(parent)
@@ -286,7 +285,7 @@ func windowsScheduledTaskState(ctx context.Context, taskName string) (string, bo
 	if err != nil || res.ReturnCode != 0 {
 		return "", false
 	}
-	state := pystr.Strip(res.Stdout)
+	state := strings.TrimSpace(res.Stdout)
 	return state, state != ""
 }
 

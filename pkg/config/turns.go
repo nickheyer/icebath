@@ -1,11 +1,12 @@
 package config
 
 import (
+	"strings"
+
 	"math"
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Iteration cap meaning no limit
@@ -52,7 +53,7 @@ func ResolveTurnLimit(raw any, fallback int) int {
 	case float32:
 		return turnCapOfFloat(float64(v), fallback)
 	case string:
-		s := pystr.Lower(pystr.Strip(v))
+		s := strings.ToLower(strings.TrimSpace(v))
 		if s == "" {
 			return fallback
 		}

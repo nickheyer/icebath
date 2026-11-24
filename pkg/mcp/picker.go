@@ -7,9 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -36,14 +35,11 @@ func (r PickerRow) IsCustom() bool { return r.Entry == nil }
 
 // Catalog rows with install status followed by custom configured servers sorted by name
 func BuildPickerRows(ctx context.Context) ([]PickerRow, error) {
-	entries, err := ListCatalog()
+	entries, err := ListCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
+	servers := StoredServers(ctx)
 	catalogNames := map[string]bool{}
 	var rows []PickerRow
 	for _, e := range entries {
@@ -97,16 +93,7 @@ func formatPickerRow(row PickerRow) string {
 
 // Sets the enabled flag of an installed server, reporting a missing server instead of writing
 func pickerEnableDisable(ctx context.Context, ui TerminalUI, name string, enable bool) error {
-	h := home.Dir(ctx)
-	cfg, err := config.ReadUser(h)
-	if err != nil {
-		return err
-	}
-	servers, _, ok := yDict(yOr(cfg["mcp_servers"], map[string]any{}))
-	if !ok {
-		return fmt.Errorf("config mcp_servers is %s where a mapping was expected", errchain.Kind(cfg["mcp_servers"]))
-	}
-	server := servers[name]
+	server := StoredServers(ctx)[name]
 	if !yTruthy(server) {
 		say(ui, fmt.Sprintf("  '%s' is not installed.", name), ansiRed)
 		return nil
@@ -116,9 +103,7 @@ func pickerEnableDisable(ctx context.Context, ui TerminalUI, name string, enable
 		return fmt.Errorf("config mcp_servers.%s is %s where a mapping was expected", name, errchain.Kind(server))
 	}
 	block["enabled"] = enable
-	servers[name] = block
-	cfg["mcp_servers"] = servers
-	if err := config.SaveUser(ctx, h, cfg); err != nil {
+	if _, err := settings.McpServers.SetEntry(ctx, name, block); err != nil {
 		return err
 	}
 	state := "disabled"
@@ -319,7 +304,7 @@ func RunPicker(ctx context.Context, env *tools.Env, ui TerminalUI) error {
 
 // Non interactive install of a catalog entry by name, exit code 0 on success and 1 otherwise
 func InstallByName(ctx context.Context, env *tools.Env, ui TerminalUI, identifier string) (int, error) {
-	entry, err := GetEntry(identifier)
+	entry, err := GetEntry(ctx, identifier)
 	if err != nil {
 		return 1, err
 	}

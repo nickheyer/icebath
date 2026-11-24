@@ -1,11 +1,12 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Platform value of a source for logs and stores, unknown when unset
@@ -96,7 +97,7 @@ func (r *GatewayRunner) hmSendUnauthorizedDecline(ctx context.Context, source *g
 	}
 	text := ""
 	if r.config != nil {
-		text = pystr.Strip(r.config.UnauthorizedDMDeclineMessage)
+		text = strings.TrimSpace(r.config.UnauthorizedDMDeclineMessage)
 	}
 	if text == "" {
 		text = gateway.DefaultUnauthorizedDMDeclineMessage

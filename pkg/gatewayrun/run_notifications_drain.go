@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -79,11 +78,7 @@ func (r *GatewayRunner) deliverWatchEvent(ctx context.Context, evt map[string]an
 	if err != nil {
 		return nil, false, err
 	}
-	cfg, err := config.Load(home.Dir(scoped), nil)
-	if err != nil {
-		cfg = config.Defaults()
-	}
-	if !tools.ShouldSurfaceNotification(cfg, evt) || loadBackgroundNotificationsMode(scoped) == "off" {
+	if !tools.ShouldSurfaceNotification(scoped, evt) || loadBackgroundNotificationsMode(scoped) == "off" {
 		return nil, true, nil
 	}
 	if evt["type"] == "heartbeat" {

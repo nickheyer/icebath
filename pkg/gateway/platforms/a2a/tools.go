@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -50,12 +52,6 @@ type HTTPError struct {
 
 func (e *HTTPError) Error() string      { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Reason) }
 func (e *HTTPError) PyTypeName() string { return "HTTPError" }
-
-// Read only config view the tools read their peers from, swapped by tests
-var loadToolsConfig = func(ctx context.Context) (map[string]any, error) {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	return map[string]any(tree), err
-}
 
 // Python dict.get on a mapping value, the AttributeError for any other value
 func pyGet(v any, key string, def any) any {
@@ -146,13 +142,9 @@ func pyIn(needle string, container any) bool {
 	panic(&PyError{"TypeError", fmt.Sprintf("argument of type '%s' is not a container or iterable", pyrepr.TypeName(container))})
 }
 
-// Configured a2a_agents mapping of the config, an empty mapping when unset
-func configuredPeers(ctx context.Context) (any, error) {
-	cfg, err := loadToolsConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return pyOr(pyGet(pyOr(cfg, map[string]any{}), "a2a_agents", nil), map[string]any{}), nil
+// Configured a2a_agents peers keyed by name, an empty mapping when unset
+func configuredPeers(ctx context.Context) map[string]any {
+	return settings.A2aAgents.Get(gateway.SettingsContext(ctx))
 }
 
 type peerSpec struct {
@@ -182,10 +174,7 @@ func resolvePeer(ctx context.Context, agent string) (peerSpec, bool) {
 	if strings.HasPrefix(agent, "http://") || strings.HasPrefix(agent, "https://") {
 		return peerSpec{URL: agent, Auth: map[string]any{}, Timeout: defaultToolTimeout, Capabilities: []any{}}, true
 	}
-	peers, err := configuredPeers(ctx)
-	if err != nil {
-		panic(err)
-	}
+	peers := configuredPeers(ctx)
 	entry := pyGet(peers, agent, nil)
 	if !pyrepr.Truthy(entry) {
 		return peerSpec{}, false
@@ -423,7 +412,7 @@ func argText(args map[string]any, names ...string) string {
 			break
 		}
 	}
-	return pystr.Strip(pyrepr.Str(pyOr(v, "")))
+	return strings.TrimSpace(pyrepr.Str(pyOr(v, "")))
 }
 
 // Agent Card of a URL summarized as name, protocol, capabilities and skills
@@ -526,10 +515,7 @@ func joinStrings(v any, sep string) string {
 
 // Configured peers, persisted conversations and the metrics line
 func A2AList(ctx context.Context, _ map[string]any) string {
-	peers, err := configuredPeers(ctx)
-	if err != nil {
-		panic(err)
-	}
+	peers := configuredPeers(ctx)
 	var lines []string
 	if pyrepr.Truthy(peers) {
 		names := mappingKeys(peers)
@@ -579,7 +565,7 @@ func A2AHistory(ctx context.Context, args map[string]any) string {
 	lines := []string{fmt.Sprintf("Conversation %s (last %d messages):", contextID, len(messages))}
 	for _, m := range messages {
 		raw, _ := m.Get("text")
-		text := pystr.Strip(pyrepr.Str(pyOr(raw, "")))
+		text := strings.TrimSpace(pyrepr.Str(pyOr(raw, "")))
 		if pystr.Len(text) > 1000 {
 			text = pystr.Slice(text, 0, 1000) + " …[truncated]"
 		}
@@ -599,10 +585,7 @@ type peerMatch struct {
 
 // Configured peers advertising the capability, the star matching every peer
 func matchPeersByCapability(ctx context.Context, capability string) []peerMatch {
-	peers, err := configuredPeers(ctx)
-	if err != nil {
-		panic(err)
-	}
+	peers := configuredPeers(ctx)
 	if !isMapping(peers) {
 		panic(attributeError(peers, "items"))
 	}
@@ -641,7 +624,7 @@ var callPeerSync = func(ctx context.Context, agentName string, peerEntry any, me
 func A2AOrchestrate(ctx context.Context, args map[string]any) string {
 	capability := argText(args, "capability")
 	message := argText(args, "message", "task")
-	mode := pystr.Lower(argText(args, "mode"))
+	mode := strings.ToLower(argText(args, "mode"))
 	if mode == "" {
 		mode = "all"
 	}
@@ -778,47 +761,23 @@ var a2aTools = []a2aTool{
 		[]string{"capability", "message"}},
 }
 
-// Serves the client tools only when peers are configured, the inbound platform is enabled or A2A_PORT is set
-func a2aToolsAvailable(env *tools.Env) (available bool) {
+// Serves the client tools only when peers are configured, the inbound platform is enabled or the inbound port is set for the tool env's profile
+func a2aToolsAvailable(env *tools.Env) bool {
 	ctx := context.Background()
 	if env != nil && env.Home != "" {
 		ctx = home.WithOverride(ctx, env.Home)
-	}
-	var cfg any = map[string]any{}
-	if loaded, ok := func() (got any, ok bool) {
-		defer func() {
-			if recover() != nil {
-				ok = false
-			}
-		}()
-		c, err := loadToolsConfig(ctx)
-		if err != nil {
-			return nil, false
-		}
-		return c, true
-	}(); ok {
-		cfg = loaded
-		if func() (hit bool) {
-			defer func() {
-				if recover() != nil {
-					hit = false
-				}
-			}()
-			return pyrepr.Truthy(pyGet(cfg, "a2a_agents", nil))
-		}() {
-			return true
+		if env.Secrets != nil && tools.MultiplexActiveFor(ctx, env) {
+			ctx = provider.WithMultiplexContext(provider.WithSecretScope(ctx, env.Secrets.File(), env.Home), true)
 		}
 	}
-	defer func() {
-		if recover() != nil {
-			available = false
-		}
-	}()
-	if tools.ScopedCredential(env, "A2A_PORT") != "" {
+	if len(settings.A2aAgents.Get(ctx)) > 0 {
 		return true
 	}
-	a2aCfg := pyOr(pyGet(pyOr(pyGet(cfg, "platforms", nil), map[string]any{}), "a2a", nil), map[string]any{})
-	return isMapping(a2aCfg) && pyrepr.Truthy(pyGet(a2aCfg, "enabled", nil))
+	if isSet(ctx, settings.A2aPort) {
+		return true
+	}
+	block, _ := settings.Platforms.Get(ctx)["a2a"].(map[string]any)
+	return pyrepr.Truthy(block["enabled"])
 }
 
 // Tool specs of the a2a toolset, each gated on the opt in check

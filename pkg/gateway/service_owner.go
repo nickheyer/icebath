@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Final component suffix the way pathlib computes it, empty for dot files and trailing dots
@@ -45,5 +44,5 @@ func ServicePinnedHome(definition string) (string, error) {
 	if !present || value == nil {
 		return "", nil
 	}
-	return pystr.Strip(pyplist.Str(value)), nil
+	return strings.TrimSpace(pyplist.Str(value)), nil
 }

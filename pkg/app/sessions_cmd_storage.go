@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -366,7 +365,7 @@ func repairPromptsPinNames(row *pyjson.Object) ([]string, bool) {
 
 // Whether a stored prompt carries neither the skill_manage guidance nor the skill safety heading
 func repairPromptsLacksSkillSafety(row *pyjson.Object) bool {
-	prompt := pystr.Strip(rowText(row, "system_prompt"))
+	prompt := strings.TrimSpace(rowText(row, "system_prompt"))
 	return prompt != "" && !strings.Contains(prompt, agent.SkillsGuidance) && !strings.Contains(prompt, agent.SkillSafetyHeading)
 }
 

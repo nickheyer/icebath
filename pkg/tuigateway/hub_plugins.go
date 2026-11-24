@@ -37,6 +37,10 @@ type PluginsHubRunParams struct {
 	// Pack export only: the name written into the pack and whether only enabled plugins go in
 	PackName    string `json:"pack_name,omitzero"`
 	EnabledOnly bool   `json:"enabled_only,omitzero"`
+	// Pack export only: full path of a file the pack is written to besides being answered
+	Output string `json:"output,omitzero"`
+	// Validate only: installs the plugin's declared Python dependencies before the capability probe
+	InstallDeps bool `json:"install_deps,omitzero"`
 }
 
 // What a plugins command printed and whether it reported success

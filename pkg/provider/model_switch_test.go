@@ -125,11 +125,11 @@ func TestResolvePersistBehavior(t *testing.T) {
 	})
 	t.Run("test_first_pick_persists_then_session_only", func(t *testing.T) {
 		codex := "model:\n  default: gpt-5.6\n  provider: openai-codex\n"
-		if !persist(t, "model: {}\n", false, false, false, "anthropic") || !persist(t, "model: \"\"\n", false, false, false, "") {
+		if !persist(t, "model: {}\n", false, false, false, "anthropic") || !persist(t, "{}\n", false, false, false, "") {
 			t.Fatal("first pick did not persist")
 		}
 		if persist(t, codex, false, false, false, "openai-api") || persist(t, codex, false, false, false, "") || !persist(t, codex, true, false, false, "openai-api") ||
-			persist(t, "model: gpt-5.6\n", false, false, false, "") {
+			persist(t, "model:\n  default: gpt-5.6\n", false, false, false, "") {
 			t.Fatal("later pick persisted")
 		}
 	})

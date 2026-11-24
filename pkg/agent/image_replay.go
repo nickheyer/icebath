@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/mediacache"
@@ -239,12 +238,8 @@ func (a *AIAgent) turnReplayWindow(ctx context.Context) int {
 	if w := a.imageReplayWindow; w != nil && w.turnTimestamp == a.currentTurnTimestamp && w.provider == provider && w.model == model {
 		return w.keep
 	}
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		panic(err)
-	}
 	keep := ResolveReplayRecentImages(ctx)
-	if keep > 0 && tools.DecideImageInputModeWithConfig(ctx, a.env, provider, model, map[string]any(tree), "") != "native" {
+	if keep > 0 && tools.DecideImageInputMode(ctx, a.env, provider, model, "") != "native" {
 		keep = 0
 	}
 	a.imageReplayWindow = &imageReplayWindow{turnTimestamp: a.currentTurnTimestamp, provider: provider, model: model, keep: keep}

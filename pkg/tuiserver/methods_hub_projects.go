@@ -7,7 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubProjectsRegistry = &handlerRegistry{}
@@ -54,7 +53,7 @@ func projectRows(db *tools.ProjectsDB) ([]tuigateway.ProjectRow, error) {
 }
 
 // Projects of the profile for the projects screen
-func projectsList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func projectsList(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.ProjectsList.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -155,7 +154,7 @@ func projectChange(ctx context.Context, db *tools.ProjectsDB, p tuigateway.Proje
 }
 
 // One change to the projects of the profile, answered with the projects after it
-func projectsChange(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func projectsChange(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ProjectsChange.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

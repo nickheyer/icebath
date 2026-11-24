@@ -116,10 +116,9 @@ func promptPluginEnvVars(ctx context.Context, h string, manifest map[string]any,
 			return nil
 		}
 		if value = strings.TrimSpace(value); value != "" {
-			if err := config.SaveEnvValue(h, name, value); err != nil {
+			if err := config.SaveEnvValueContext(ctx, h, name, value); err != nil {
 				return err
 			}
-			os.Setenv(name, value)
 			console.Print(fmt.Sprintf("  [green]✓[/green] Saved to %s/.env", shownHome))
 		} else {
 			console.Print(fmt.Sprintf("  [dim]  Skipped (set %s in %s/.env later)[/dim]", name, shownHome))

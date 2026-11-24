@@ -31,15 +31,14 @@ import (
 )
 
 var (
-	completeRegistry         = &handlerRegistry{}
-	pasteMu                  sync.Mutex
-	pasteCounter             int
-	builtinAtPrefixes        = map[string]bool{"file": true, "folder": true, "url": true, "git": true, "diff": true, "staged": true}
-	atDirectiveHints         = [][2]string{{"@diff", "git diff"}, {"@staged", "staged diff"}, {"@file:", "attach file"}, {"@folder:", "attach folder"}, {"@url:", "fetch url"}, {"@git:", "git log"}}
-	terminalTool             = tools.TerminalTool
-	detectCodeSkew           = gateway.DetectCodeSkew
-	buildModelOptionsPayload = provider.BuildModelOptionsPayload
-	backendListingCode       = `d=$1; case $d in "~") d=$HOME;; "~/"*) d=$HOME${d#?};; esac; [ -d "$d" ] || exit 0; ` +
+	completeRegistry   = &handlerRegistry{}
+	pasteMu            sync.Mutex
+	pasteCounter       int
+	builtinAtPrefixes  = map[string]bool{"file": true, "folder": true, "url": true, "git": true, "diff": true, "staged": true}
+	atDirectiveHints   = [][2]string{{"@diff", "git diff"}, {"@staged", "staged diff"}, {"@file:", "attach file"}, {"@folder:", "attach folder"}, {"@url:", "fetch url"}, {"@git:", "git log"}}
+	terminalTool       = tools.TerminalTool
+	detectCodeSkew     = gateway.DetectCodeSkew
+	backendListingCode = `d=$1; case $d in "~") d=$HOME;; "~/"*) d=$HOME${d#?};; esac; [ -d "$d" ] || exit 0; ` +
 		`for p in "$d"/* "$d"/.[!.]* "$d"/..?*; do [ -e "$p" ] || [ -L "$p" ] || continue; ` +
 		`if [ -d "$p" ]; then printf "%s/\n" "${p##*/}"; else printf "%s\n" "${p##*/}"; fi; done`
 )
@@ -107,13 +106,13 @@ func profileMentionItems(ctx context.Context, prefix string) ([]map[string]any, 
 	out := []map[string]any{}
 	seen := map[string]bool{}
 	for _, p := range profiles {
-		name := pystr.Strip(p.Name)
+		name := strings.TrimSpace(p.Name)
 		if name == "" {
 			continue
 		}
 		seen[strings.ToLower(name)] = true
 		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
-			meta := pystr.Strip(p.Description)
+			meta := strings.TrimSpace(p.Description)
 			if meta == "" {
 				meta = "agent profile"
 			}
@@ -435,7 +434,7 @@ func pathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 	}
 	bareWord := isContext && pathPart != "" && !strings.Contains(pathPart, "/")
 	var items []map[string]any
-	if local && bareWord && utf8.RuneCountInString(pystr.Strip(pathPart)) >= 2 && prefixTag != "folder" {
+	if local && bareWord && utf8.RuneCountInString(strings.TrimSpace(pathPart)) >= 2 && prefixTag != "folder" {
 		items = fuzzyBasenameItems(root, pathPart, prefixTag)
 	} else {
 		listed, err := dirListingItems(ctx, root, word, pathPart, prefixTag, isContext, sessionKey, local)
@@ -454,15 +453,6 @@ func pathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 	return items, nil
 }
 
-// Live agent of the session the params name, nil when none
-func paramsSessionAgent(params map[string]any) *agent.AIAgent {
-	session := tuihost.SessionRecord(strOr(params["session_id"]))
-	if session == nil {
-		return nil
-	}
-	return sessionAgent(session)
-}
-
 // Refusal of model serving calls while this process runs code older than the install on disk
 func modelSkewErr(ctx context.Context, rid any) map[string]any {
 	bootRev, diskRev, skewed := detectCodeSkew()
@@ -478,7 +468,7 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 	if skew := modelSkewErr(ctx, rid); skew != nil {
 		return skew, nil
 	}
-	slug, apiKey := pystr.Strip(strOr(params["slug"])), pystr.Strip(strOr(params["api_key"]))
+	slug, apiKey := strings.TrimSpace(strOr(params["slug"])), strings.TrimSpace(strOr(params["api_key"]))
 	if slug == "" || apiKey == "" {
 		return rpcErr(rid, tuihost.LoginCodeMissing, "slug and api_key are required", nil), nil
 	}
@@ -487,10 +477,10 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 		return rpcErr(rid, tuihost.LoginCodeUnknownProvider, "unknown provider: "+slug, map[string]any{"reason": "unknown_provider"}), nil
 	}
 	if _, err := tuihost.AddKeyLogin(ctx, nil, tuigateway.LoginAddKeyParams{Provider: slug, APIKey: apiKey,
-		Name: pystr.Strip(strOr(params["name"])), MakeDefault: true}); err != nil {
+		Name: strings.TrimSpace(strOr(params["name"])), MakeDefault: true}); err != nil {
 		return loginRefusalFrame(rid, err), nil
 	}
-	pc, err := modelPickerContext(ctx, paramsSessionAgent(params))
+	pc, err := modelPickerContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -516,14 +506,14 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 
 // Removes the provider's default or named login, or with all every env key and OAuth or pool credential, refusing before any removal when one is locked
 func modelDisconnect(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	slug := pystr.Strip(strOr(params["slug"]))
+	slug := strings.TrimSpace(strOr(params["slug"]))
 	if slug == "" {
 		return rpcErr(rid, 4001, "slug is required", nil), nil
 	}
 	h := home.Dir(ctx)
 	pconfig := provider.RegistryRow(ctx, slug)
 	if !truthy(params["all"]) {
-		if resp, handled, err := disconnectOneLogin(ctx, rid, slug, pystr.Strip(strOr(params["login"])), pconfig); handled || err != nil {
+		if resp, handled, err := disconnectOneLogin(ctx, rid, slug, strings.TrimSpace(strOr(params["login"])), pconfig); handled || err != nil {
 			return resp, err
 		}
 	}

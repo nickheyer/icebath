@@ -2,6 +2,7 @@ package provider
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Home of one config case with the given config.yaml text and every facade stream captured
@@ -78,7 +80,7 @@ func TestCustomProviderCompatibilityProvidersDictResolvesAtRuntime(t *testing.T)
 			"name": "OpenAI Direct", "api_mode": "codex_responses",
 		}},
 	})
-	compatible := ProviderEntries(configModuleLoad(t, h))
+	compatible := CustomProviderEntries(home.WithOverride(context.Background(), h))
 	if len(compatible) != 1 {
 		t.Fatalf("compatible %v", compatible)
 	}

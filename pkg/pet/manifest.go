@@ -1,6 +1,8 @@
 package pet
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"net/http"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -39,7 +40,7 @@ func ManifestEntryFromDict(d *pyjson.Object) ManifestEntry {
 		}
 		return pyrepr.Str(v)
 	}
-	return ManifestEntry{Slug: pystr.Strip(text("slug")), DisplayName: orText("displayName", d.GetOr("slug", "")),
+	return ManifestEntry{Slug: strings.TrimSpace(text("slug")), DisplayName: orText("displayName", d.GetOr("slug", "")),
 		Kind: orText("kind", "pet"), SubmittedBy: orText("submittedBy", ""), SpritesheetURL: orText("spritesheetUrl", ""),
 		PetJSONURL: orText("petJsonUrl", ""), ZipURL: orText("zipUrl", "")}
 }
@@ -159,13 +160,13 @@ func FetchManifest(ctx context.Context, env *tools.Env, force bool) ([]ManifestE
 
 // Manifest entry of a slug compared case insensitively, nil when not listed
 func FindEntry(ctx context.Context, env *tools.Env, slug string) (*ManifestEntry, error) {
-	slug = pystr.Lower(pystr.Strip(slug))
+	slug = strings.ToLower(strings.TrimSpace(slug))
 	entries, err := FetchManifest(ctx, env, false)
 	if err != nil {
 		return nil, err
 	}
 	for i := range entries {
-		if pystr.Lower(entries[i].Slug) == slug {
+		if strings.ToLower(entries[i].Slug) == slug {
 			return &entries[i], nil
 		}
 	}

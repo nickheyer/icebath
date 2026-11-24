@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -28,9 +27,9 @@ var deepInfraCatalogCache = struct {
 
 const deepInfraCatalogNegTTL = 60 * time.Second
 
-// DeepInfra base URL from a config section, then the env, then the default
-func deepInfraBaseURL(env *tools.Env, sec config.Tree) string {
-	if v := cfgString(sec, "base_url"); v != "" {
+// DeepInfra base URL: the configured one, then the env, then the default
+func deepInfraBaseURL(env *tools.Env, configured string) string {
+	if v := strings.TrimSpace(configured); v != "" {
 		return strings.TrimRight(v, "/")
 	}
 	if v := secret(env, "DEEPINFRA_BASE_URL"); v != "" {
@@ -41,7 +40,7 @@ func deepInfraBaseURL(env *tools.Env, sec config.Tree) string {
 
 // Raw tagged DeepInfra catalog, cached per base URL and key, nil on failure
 func fetchDeepInfraCatalog(ctx context.Context, env *tools.Env) []map[string]any {
-	base := deepInfraBaseURL(env, nil)
+	base := deepInfraBaseURL(env, "")
 	key := base + "#" + secret(env, "DEEPINFRA_API_KEY")
 	deepInfraCatalogCache.Lock()
 	if entries, ok := deepInfraCatalogCache.entries[key]; ok {

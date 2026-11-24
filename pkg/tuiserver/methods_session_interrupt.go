@@ -1,10 +1,11 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -28,7 +29,7 @@ func strParam(params map[string]any, key, def string) string {
 	if !truthy(raw) {
 		raw = ""
 	}
-	if text := pystr.Strip(pyrepr.Str(raw)); text != "" {
+	if text := strings.TrimSpace(pyrepr.Str(raw)); text != "" {
 		return text
 	}
 	return def

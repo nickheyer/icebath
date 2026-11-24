@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -20,8 +18,20 @@ import (
 const (
 	ownershipLostInterrupted = "Interrupted by shutdown before terminal completion."
 	deliveryDrainLimit       = 20
-	externalWorkerEnv        = "_ICEBATH_CRON_EXTERNAL_WORKER"
 )
+
+type externalWorkerCtxKey struct{}
+
+// Context of the run an external cron worker process performs for one execution it adopted
+func withExternalWorker(ctx context.Context, executionID string) context.Context {
+	return context.WithValue(ctx, externalWorkerCtxKey{}, executionID)
+}
+
+// Execution the run of ctx performs as an external cron worker, empty for any other run
+func externalWorkerOf(ctx context.Context) string {
+	id, _ := ctx.Value(externalWorkerCtxKey{}).(string)
+	return id
+}
 
 var blockedConfigTagRE = regexp.MustCompile(`\[blocked_config[^\]]*\]\s*`)
 
@@ -99,7 +109,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 		job.ExecutionID = strPtr(pyStrOrEmpty(execution["id"]))
 	}
 	executionID := *job.ExecutionID
-	if os.Getenv(externalWorkerEnv) != executionID {
+	if externalWorkerOf(ctx) != executionID {
 		handedOff, handoffErr := launchExternalCronWorkerSeam(s, withWorkerExtraPrompt(ctx, o.ExtraPrompt), job)
 		if handoffErr != nil {
 			var postErr *externalWorkerPostHandoffError
@@ -236,7 +246,7 @@ func (s *Store) composeRunDelivery(job *Job, success bool, errText *string, fina
 	}
 	switch {
 	case out.blockedConfig && !success:
-		out.content = blockedConfigNotice(name, pystr.Strip(blockedConfigTagRE.ReplaceAllString(err, "")))
+		out.content = blockedConfigNotice(name, strings.TrimSpace(blockedConfigTagRE.ReplaceAllString(err, "")))
 	case success:
 		out.content = finalResponse
 		s.resolveIncidentsForRecoveredJob(job)
@@ -246,7 +256,7 @@ func (s *Store) composeRunDelivery(job *Job, success bool, errText *string, fina
 		case out.incidentAcked:
 			out.content = ""
 		case agentDeclared:
-			out.content = genericFailureNotice(s.home, name, job.ID, strings.TrimRight(pystr.Strip(err), ".")) + s.failureStreakNudge(job)
+			out.content = genericFailureNotice(s.home, name, job.ID, strings.TrimRight(strings.TrimSpace(err), ".")) + s.failureStreakNudge(job)
 		default:
 			out.content = s.summarizeCronFailureForDelivery(job, errText) + s.failureStreakNudge(job) + quotaHoldNotice(s, job, job.run.quotaHoldSeconds)
 		}
@@ -385,7 +395,7 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 	}
 	composed := s.composeRunDelivery(job, d.success, d.err, finalResponse, outputFile, d.agentDeclared)
 	d.blockedConfig, d.incidentAcked, d.failureIncidentID = composed.blockedConfig, composed.incidentAcked, composed.failureIncidentID
-	d.shouldDeliver = pystr.Strip(composed.content) != "" && !composed.silentAlert
+	d.shouldDeliver = strings.TrimSpace(composed.content) != "" && !composed.silentAlert
 	if d.shouldDeliver && !d.success && job.run.modelUnreachable {
 		willRetry, err := unreachableRetryWillRetry(s, job)
 		if err != nil {
@@ -509,7 +519,7 @@ func (s *Store) startOwnedRun(ctx context.Context, job *Job, executionID string)
 	ledger := openExecutionsLedger(s)
 	var record map[string]any
 	var err error
-	if os.Getenv(externalWorkerEnv) == executionID {
+	if externalWorkerOf(ctx) == executionID {
 		record, err = ledger.Get(ctx, executionID)
 	} else {
 		record, err = ledger.MarkRunning(ctx, executionID)

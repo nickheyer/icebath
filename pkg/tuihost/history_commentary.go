@@ -27,7 +27,7 @@ const CommentaryWithheld = "commentary_withheld"
 
 // Commentary with think blocks stripped and secrets redacted under the context profile policy like live delivery
 func VisibleCommentary(ctx context.Context, text string) string {
-	visible := pystr.Strip(provider.StripThinkBlocks(text))
+	visible := strings.TrimSpace(provider.StripThinkBlocks(text))
 	if visible == "" {
 		return visible
 	}
@@ -70,7 +70,7 @@ func phaseMessageItems(message map[string]any, phases map[string]bool, unphased 
 			continue
 		}
 		parts, isList := content.([]any)
-		if isStr && !phases[strings.ToLower(pystr.Strip(phaseStr))] || !isStr && !unphased || !isList {
+		if isStr && !phases[strings.ToLower(strings.TrimSpace(phaseStr))] || !isStr && !unphased || !isList {
 			continue
 		}
 		var b strings.Builder
@@ -79,11 +79,11 @@ func phaseMessageItems(message map[string]any, phases map[string]bool, unphased 
 			if !ok || part["type"] != "output_text" {
 				continue
 			}
-			if text, ok := part["text"].(string); ok && pystr.Strip(text) != "" {
+			if text, ok := part["text"].(string); ok && strings.TrimSpace(text) != "" {
 				b.WriteString(text)
 			}
 		}
-		if text := pystr.Strip(b.String()); text != "" {
+		if text := strings.TrimSpace(b.String()); text != "" {
 			result = append(result, text)
 		}
 	}
@@ -183,7 +183,7 @@ func projectOne(ctx context.Context, message map[string]any, enabled bool) (map[
 	}
 	if s, isStr := content.(string); isStr && slices.ContainsFunc(raw, func(t string) bool { return strings.Contains(s, t) }) {
 		finals := finalItems(message)
-		if !(len(finals) > 0 && pystr.Strip(s) == strings.Join(finals, "\n")) {
+		if !(len(finals) > 0 && strings.TrimSpace(s) == strings.Join(finals, "\n")) {
 			projected["display_content"] = VisibleCommentary(ctx, s)
 			if slices.ContainsFunc(raw, func(t string) bool { return strings.HasPrefix(s, t) }) {
 				projected["display_commentary"] = []any{}

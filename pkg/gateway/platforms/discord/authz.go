@@ -1,17 +1,17 @@
 package discord
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -110,7 +110,7 @@ func (a *DiscordAdapter) discordChannelIDsAllowed(ctx context.Context, channelID
 
 // Whether the Discord user holds an explicit pairing grant
 func (a *DiscordAdapter) isPairingApprovedUser(ctx context.Context, userID string) bool {
-	userID = pystr.Strip(userID)
+	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return false
 	}
@@ -177,7 +177,7 @@ func (a *DiscordAdapter) isAllowedUser(ctx context.Context, userID string, autho
 
 // Whether the user, looked up as a member of this guild only, holds an allowed role
 func (a *DiscordAdapter) guildMemberHasRole(guildID, userID string, allowedRoles strSet) bool {
-	uid, err := strconv.ParseUint(pystr.Strip(userID), 10, 64)
+	uid, err := strconv.ParseUint(strings.TrimSpace(userID), 10, 64)
 	if err != nil {
 		return false
 	}
@@ -290,8 +290,7 @@ func (a *DiscordAdapter) discordMessageAdmission(ctx context.Context, m *inbound
 		if otherBotsMentioned && !rawSelfMention {
 			return false, false
 		}
-		switch strings.ToLower(gateway.PlatformGateEnv(ctx, "DISCORD_IGNORE_NO_MENTION", "true")) {
-		case "true", "1", "yes":
+		if settings.DiscordIgnoreNoMention.Get(gateway.SettingsContext(a.sctx(ctx))) {
 			if !rawSelfMention && !otherBotsMentioned && !a.inBotThread(ctx, m) {
 				parentID := ""
 				if m.channel != nil {

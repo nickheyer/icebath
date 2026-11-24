@@ -39,36 +39,32 @@ import (
 )
 
 const (
-	defaultEdgeVoice                  = "en-US-AriaNeural"
-	defaultElevenLabsVoiceID          = "pNInz6obpgDQGcFmaJgB"
-	defaultElevenLabsModelID          = "eleven_multilingual_v2"
-	defaultElevenLabsStreamingModelID = "eleven_flash_v2_5"
-	defaultMiniMaxModel               = "speech-02-hd"
-	defaultMiniMaxVoiceID             = "English_expressive_narrator"
-	defaultMiniMaxBaseURL             = "https://api.minimax.io/v1/t2a_v2"
-	defaultMiniMaxCNBaseURL           = "https://api.minimaxi.com/v1/t2a_v2"
-	defaultMistralTTSModel            = "voxtral-mini-tts-2603"
-	defaultMistralTTSVoiceID          = "c69964a6-ab8b-4f8a-9465-ec0925096ec8"
-	defaultXAIVoiceID                 = "eve"
-	defaultXAILanguage                = "en"
-	defaultXAISampleRate              = 24000
-	defaultXAIBitRate                 = 128000
-	defaultXAIAutoSpeechTags          = false
-	defaultXAIBaseURL                 = "https://api.x.ai/v1"
-	defaultXAISpeedMin                = 0.7
-	defaultXAISpeedMax                = 1.5
-	defaultXAISpeedDefault            = 1.0
-	defaultXAIOptimizeLatencyDefault  = 0
-	defaultXAITextNormalization       = false
-	defaultGeminiTTSModel             = "gemini-2.5-flash-preview-tts"
-	defaultGeminiTTSVoice             = "Kore"
-	defaultGeminiTTSBaseURL           = "https://generativelanguage.googleapis.com/v1beta"
-	defaultGeminiAudioTags            = false
-	geminiAudioTagRewriteTask         = "tts_audio_tags"
-	ttsResponseBodyLimitBytes         = 16 * 1024 * 1024
-	ttsResponseBodyChunkBytes         = 64 * 1024
-	defaultElevenLabsBaseURL          = "https://api.elevenlabs.io"
-	defaultMistralServerURL           = "https://api.mistral.ai"
+	defaultEdgeVoice                 = "en-US-AriaNeural"
+	defaultElevenLabsVoiceID         = "pNInz6obpgDQGcFmaJgB"
+	defaultElevenLabsModelID         = "eleven_multilingual_v2"
+	defaultMiniMaxModel              = "speech-02-hd"
+	defaultMiniMaxVoiceID            = "English_expressive_narrator"
+	defaultMiniMaxBaseURL            = "https://api.minimax.io/v1/t2a_v2"
+	defaultMiniMaxCNBaseURL          = "https://api.minimaxi.com/v1/t2a_v2"
+	defaultMistralTTSModel           = "voxtral-mini-tts-2603"
+	defaultMistralTTSVoiceID         = "c69964a6-ab8b-4f8a-9465-ec0925096ec8"
+	defaultXAIVoiceID                = "eve"
+	defaultXAILanguage               = "en"
+	defaultXAISampleRate             = 24000
+	defaultXAIBitRate                = 128000
+	defaultXAIBaseURL                = "https://api.x.ai/v1"
+	defaultXAISpeedMin               = 0.7
+	defaultXAISpeedMax               = 1.5
+	defaultXAISpeedDefault           = 1.0
+	defaultXAIOptimizeLatencyDefault = 0
+	defaultGeminiTTSModel            = "gemini-2.5-flash-preview-tts"
+	defaultGeminiTTSVoice            = "Kore"
+	defaultGeminiTTSBaseURL          = "https://generativelanguage.googleapis.com/v1beta"
+	geminiAudioTagRewriteTask        = "tts_audio_tags"
+	ttsResponseBodyLimitBytes        = 16 * 1024 * 1024
+	ttsResponseBodyChunkBytes        = 64 * 1024
+	defaultElevenLabsBaseURL         = "https://api.elevenlabs.io"
+	defaultMistralServerURL          = "https://api.mistral.ai"
 )
 
 // Python dict.get with a default for a present key holding any value including None
@@ -136,8 +132,8 @@ func pyInt(v any) (int, error) {
 		}
 		return int(n), nil
 	case string:
-		s := strings.ReplaceAll(pystr.Strip(n), "_", "")
-		if i, err := strconv.Atoi(s); err == nil && pystr.Strip(n) != "" {
+		s := strings.ReplaceAll(strings.TrimSpace(n), "_", "")
+		if i, err := strconv.Atoi(s); err == nil && strings.TrimSpace(n) != "" {
 			return i, nil
 		}
 		return 0, &ttsValueError{msg: fmt.Sprintf("%s is not a whole number", errchain.Show(n))}
@@ -340,9 +336,9 @@ func auxiliaryReplyText(resp any) string {
 	if !pyTruthy(content) {
 		content = ""
 	}
-	clean := pystr.Strip(pyrepr.Str(content))
+	clean := strings.TrimSpace(pyrepr.Str(content))
 	if match, _ := auxFenceRe.FindStringMatch(clean); match != nil {
-		return pystr.Strip(match.GroupByNumber(1).String())
+		return strings.TrimSpace(match.GroupByNumber(1).String())
 	}
 	return clean
 }
@@ -387,16 +383,9 @@ var edgeSynthesize = func(ctx context.Context, text string, opts edgetts.Options
 }
 
 // Free Edge neural speech as MP3 within the sixty second synthesis deadline
-func generateEdgeTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
-	edgeConfig, err := orEmptyDict(ttsConfig, "edge")
-	if err != nil {
-		return "", err
-	}
-	speed, err := ttsFloat(dictGetDefault(edgeConfig, "speed", dictGetDefault(ttsConfig, "speed", 1.0)))
-	if err != nil {
-		return "", err
-	}
-	opts := edgetts.Options{Voice: pyrepr.Str(dictGetDefault(edgeConfig, "voice", defaultEdgeVoice))}
+func generateEdgeTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
+	speed, _ := req.speedFor(req.Edge.Speed)
+	opts := edgetts.Options{Voice: textOr(req.Edge.Voice, defaultEdgeVoice)}
 	if speed != 1.0 {
 		opts.Rate = edgeRate(speed)
 	}
@@ -412,26 +401,18 @@ func generateEdgeTTS(ctx context.Context, env *tools.Env, text, outputPath strin
 }
 
 // ElevenLabs text to speech convert, Opus 48k for ogg paths and MP3 44.1k otherwise
-func generateElevenLabs(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
+func generateElevenLabs(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
 	apiKey, err := requireTTSKey(env, "ELEVENLABS_API_KEY", "elevenlabs", "Get one at https://elevenlabs.io/")
 	if err != nil {
 		return "", err
-	}
-	elConfig, err := orEmptyDict(ttsConfig, "elevenlabs")
-	if err != nil {
-		return "", err
-	}
-	base := defaultElevenLabsBaseURL
-	if b := strings.TrimRight(pyrepr.Str(orEmptyString(elConfig["base_url"])), "/"); b != "" {
-		base = b
 	}
 	format := "mp3_44100_128"
 	if strings.HasSuffix(outputPath, ".ogg") {
 		format = "opus_48000_64"
 	}
-	voiceID := pyrepr.Str(dictGetDefault(elConfig, "voice_id", defaultElevenLabsVoiceID))
-	endpoint := base + "/v1/text-to-speech/" + url.PathEscape(voiceID) + "?output_format=" + url.QueryEscape(format)
-	payload := map[string]any{"text": text, "model_id": dictGetDefault(elConfig, "model_id", defaultElevenLabsModelID)}
+	voiceID := textOr(req.ElevenLabs.VoiceID, defaultElevenLabsVoiceID)
+	endpoint := elevenLabsBase(req) + "/v1/text-to-speech/" + url.PathEscape(voiceID) + "?output_format=" + url.QueryEscape(format)
+	payload := map[string]any{"text": text, "model_id": textOr(req.ElevenLabs.ModelID, defaultElevenLabsModelID)}
 	resp, err := ttsElevenLabsPost(ctx, endpoint, apiKey, payload)
 	if err != nil {
 		return "", err
@@ -460,12 +441,17 @@ func generateElevenLabs(ctx context.Context, env *tools.Env, text, outputPath st
 	return outputPath, nil
 }
 
-// The value or an empty string for a falsy value, the Python x or "" idiom
-func orEmptyString(v any) any {
-	if !pyTruthy(v) {
-		return ""
+// Trimmed text, or the fallback when it is empty
+func textOr(text, fallback string) string {
+	if t := strings.TrimSpace(text); t != "" {
+		return t
 	}
-	return v
+	return fallback
+}
+
+// ElevenLabs API base without a trailing slash, the configured endpoint first
+func elevenLabsBase(req *ttsRequest) string {
+	return strings.TrimRight(textOr(req.ElevenLabs.BaseURL, defaultElevenLabsBaseURL), "/")
 }
 
 // ElevenLabs convert request with the xi-api-key header and the SDK 240 second timeout
@@ -504,7 +490,7 @@ var (
 
 // Local xAI pause tags then an auxiliary rewrite when the text carried no explicit tags
 func applyXAIAutoSpeechTags(ctx context.Context, text string) string {
-	clean := pystr.Strip(text)
+	clean := strings.TrimSpace(text)
 	if clean == "" {
 		return text
 	}
@@ -514,7 +500,7 @@ func applyXAIAutoSpeechTags(ctx context.Context, text string) string {
 		local, _ = xaiFirstSentenceRe.Replace(local, "$1 [pause] ", -1, 1)
 	}
 	local, _ = multiSpaceRe.Replace(local, " ", -1, -1)
-	local = pystr.Strip(local)
+	local = strings.TrimSpace(local)
 	if m, _ := xaiSpeechTagRe.MatchString(clean); m {
 		return local
 	}
@@ -527,28 +513,6 @@ func applyXAIAutoSpeechTags(ctx context.Context, text string) string {
 		"- Do not use angle-bracket tags like `<tag>...</tag>` — xAI uses BBCode-style closing tags with `[/tag]`.\n" +
 		"- Do not use SSML.\n" + tagRewriteTail
 	return rewriteWithAuxiliaryModel(ctx, systemPrompt, "TRANSCRIPT TO TAG:\n"+local, local, "xAI TTS", "locally-tagged text", slog.LevelDebug)
-}
-
-// Optional numeric knob parsed and clamped, nil when absent or unparseable, an empty string failing on compare
-func clampedNumber(raw any, asInt bool, lo, hi float64) (any, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	if s, ok := raw.(string); ok && s == "" {
-		return nil, &ttsTypeError{msg: "expected a number, got empty text"}
-	}
-	if asInt {
-		i, err := pyInt(raw)
-		if err != nil {
-			return nil, nil
-		}
-		return int(math.Max(lo, math.Min(hi, float64(i)))), nil
-	}
-	f, err := ttsFloat(raw)
-	if err != nil {
-		return nil, nil
-	}
-	return math.Max(lo, math.Min(hi, f)), nil
 }
 
 // Env value through the scoped process env then the home dotenv
@@ -574,58 +538,37 @@ var ttsResolveXAICredentials = func(env *tools.Env) (string, string, string) {
 }
 
 // xAI speech through the dedicated tts endpoint with clamped knobs and optional speech tags
-func generateXAITTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
+func generateXAITTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
 	credProvider, apiKey, credBase := ttsResolveXAICredentials(env)
-	apiKey = pystr.Strip(apiKey)
+	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return "", &ttsValueError{msg: "No xAI credentials found. Configure xAI OAuth in `icebath model` or set XAI_API_KEY."}
 	}
-	xaiConfig, err := orEmptyDict(ttsConfig, "xai")
-	if err != nil {
-		return "", err
-	}
-	voiceID := pystr.Strip(pyrepr.Str(dictGetDefault(xaiConfig, "voice_id", defaultXAIVoiceID)))
-	if voiceID == "" {
-		voiceID = defaultXAIVoiceID
-	}
-	language := pystr.Strip(pyrepr.Str(dictGetDefault(xaiConfig, "language", defaultXAILanguage)))
-	if language == "" {
-		language = defaultXAILanguage
-	}
-	sampleRate, err := pyInt(dictGetDefault(xaiConfig, "sample_rate", defaultXAISampleRate))
-	if err != nil {
-		return "", err
-	}
-	bitRate, err := pyInt(dictGetDefault(xaiConfig, "bit_rate", defaultXAIBitRate))
-	if err != nil {
-		return "", err
-	}
-	if configBool(dictGetDefault(xaiConfig, "auto_speech_tags", xaiConfig["speech_tags"]), defaultXAIAutoSpeechTags) {
+	x := req.XAI
+	voiceID := textOr(x.VoiceID, defaultXAIVoiceID)
+	language := textOr(x.Language, defaultXAILanguage)
+	sampleRate, bitRate := x.SampleRate, x.BitRate
+	if x.AutoSpeechTags {
 		text = applyXAIAutoSpeechTags(ctx, text)
 	}
-	speed, err := clampedNumber(dictGetDefault(xaiConfig, "speed", ttsConfig["speed"]), false, defaultXAISpeedMin, defaultXAISpeedMax)
-	if err != nil {
-		return "", err
+	speed, speedSet := req.speedFor(x.Speed)
+	speed = math.Max(defaultXAISpeedMin, math.Min(defaultXAISpeedMax, speed))
+	latency := x.Latency
+	if latency == nil {
+		latency = req.Latency
 	}
-	latency, err := clampedNumber(dictGetDefault(xaiConfig, "optimize_streaming_latency", ttsConfig["optimize_streaming_latency"]), true, 0, 2)
-	if err != nil {
-		return "", err
-	}
-	textNormalization := configBool(xaiConfig["text_normalization"], defaultXAITextNormalization)
-	var baseURL any
-	if credProvider == "xai-oauth" {
+	baseURL := ""
+	switch {
+	case credProvider == "xai-oauth":
 		baseURL = credBase
-	} else if pyTruthy(xaiConfig["base_url"]) {
-		baseURL = xaiConfig["base_url"]
-	} else if credBase != "" {
+	case strings.TrimSpace(x.BaseURL) != "":
+		baseURL = x.BaseURL
+	case credBase != "":
 		baseURL = credBase
-	} else {
+	default:
 		baseURL = ttsEnvValue(ctx, env, "XAI_BASE_URL")
 	}
-	if !pyTruthy(baseURL) {
-		baseURL = defaultXAIBaseURL
-	}
-	base := strings.TrimRight(pystr.Strip(pyrepr.Str(baseURL)), "/")
+	base := strings.TrimRight(textOr(baseURL, defaultXAIBaseURL), "/")
 	codec := "mp3"
 	if strings.HasSuffix(outputPath, ".wav") {
 		codec = "wav"
@@ -641,13 +584,15 @@ func generateXAITTS(ctx context.Context, env *tools.Env, text, outputPath string
 		}
 		payload["output_format"] = outputFormat
 	}
-	if f, ok := speed.(float64); ok && f != defaultXAISpeedDefault {
-		payload["speed"] = f
+	if speedSet && speed != defaultXAISpeedDefault {
+		payload["speed"] = speed
 	}
-	if i, ok := latency.(int); ok && i != defaultXAIOptimizeLatencyDefault {
-		payload["optimize_streaming_latency"] = i
+	if latency != nil {
+		if i := max(0, min(2, *latency)); i != defaultXAIOptimizeLatencyDefault {
+			payload["optimize_streaming_latency"] = i
+		}
 	}
-	if textNormalization {
+	if x.TextNormalization {
 		payload["text_normalization"] = true
 	}
 	resp, err := ttsPostJSON(ctx, base+"/tts", payload, map[string]string{
@@ -681,16 +626,12 @@ var miniMaxOfficialHosts = map[string]map[string]bool{
 }
 
 // MiniMax region, endpoint and credential chosen together, cn only when it is the sole credential
-func resolveMiniMaxTTSRuntime(env *tools.Env, ttsConfig map[string]any) (*miniMaxTTSRuntime, error) {
-	mmConfig := ttsSection(ttsConfig, "minimax")
+func resolveMiniMaxTTSRuntime(env *tools.Env, req *ttsRequest) (*miniMaxTTSRuntime, error) {
 	creds := map[string][2]string{
-		"global": {"MINIMAX_API_KEY", pystr.Strip(ttsResolveProviderKey(env, "MINIMAX_API_KEY", "minimax"))},
-		"cn":     {"MINIMAX_CN_API_KEY", pystr.Strip(ttsResolveProviderKey(env, "MINIMAX_CN_API_KEY", "minimax"))},
+		"global": {"MINIMAX_API_KEY", strings.TrimSpace(ttsResolveProviderKey(env, "MINIMAX_API_KEY", "minimax"))},
+		"cn":     {"MINIMAX_CN_API_KEY", strings.TrimSpace(ttsResolveProviderKey(env, "MINIMAX_CN_API_KEY", "minimax"))},
 	}
-	region := pystr.Lower(pystr.Strip(pyrepr.Str(orEmptyString(mmConfig["region"]))))
-	if _, ok := miniMaxEndpoints[region]; region != "" && !ok {
-		return nil, &ttsValueError{msg: "tts.minimax.region must be 'global' or 'cn'"}
-	}
+	region := strings.ToLower(strings.TrimSpace(req.MiniMax.Region))
 	if region == "" {
 		region = "global"
 		if creds["cn"][1] != "" && creds["global"][1] == "" {
@@ -701,11 +642,7 @@ func resolveMiniMaxTTSRuntime(env *tools.Env, ttsConfig map[string]any) (*miniMa
 	if apiKey == "" {
 		return nil, &ttsValueError{msg: fmt.Sprintf("%s not set for MiniMax TTS region %s", source, errchain.Show(region))}
 	}
-	endpoint := miniMaxEndpoints[region]
-	if pyTruthy(mmConfig["base_url"]) {
-		endpoint = pyrepr.Str(mmConfig["base_url"])
-	}
-	endpoint = pystr.Strip(endpoint)
+	endpoint := textOr(req.MiniMax.BaseURL, miniMaxEndpoints[region])
 	other := "global"
 	if region == "global" {
 		other = "cn"
@@ -731,18 +668,19 @@ func raiseMiniMaxAPIError(result map[string]any) error {
 }
 
 // MiniMax speech via t2a_v2 hex audio JSON or the legacy raw audio endpoint, detected from the URL
-func generateMiniMaxTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
-	runtime, err := resolveMiniMaxTTSRuntime(env, ttsConfig)
+func generateMiniMaxTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
+	runtime, err := resolveMiniMaxTTSRuntime(env, req)
 	if err != nil {
 		return "", err
 	}
-	mm := ttsSection(ttsConfig, "minimax")
-	model := dictGetDefault(mm, "model", defaultMiniMaxModel)
-	voiceID := dictGetDefault(mm, "voice_id", defaultMiniMaxVoiceID)
+	mm := req.MiniMax
+	model := textOr(mm.Model, defaultMiniMaxModel)
+	voiceID := textOr(mm.VoiceID, defaultMiniMaxVoiceID)
+	speed, _ := req.speedFor(mm.Speed)
 	baseURL := runtime.Endpoint
-	groupID := pystr.Strip(pyrepr.Str(orEmptyString(mm["group_id"])))
+	groupID := strings.TrimSpace(mm.GroupID)
 	if groupID == "" {
-		groupID = pystr.Strip(ttsEnvValue(ctx, env, "MINIMAX_GROUP_ID"))
+		groupID = strings.TrimSpace(ttsEnvValue(ctx, env, "MINIMAX_GROUP_ID"))
 	}
 	if groupID != "" && !strings.Contains(baseURL, "GroupId=") {
 		sep := "?"
@@ -755,9 +693,8 @@ func generateMiniMaxTTS(ctx context.Context, env *tools.Env, text, outputPath st
 	var payload map[string]any
 	if isT2AV2 {
 		payload = map[string]any{"model": model, "text": text,
-			"voice_setting": map[string]any{"voice_id": voiceID, "speed": dictGetDefault(mm, "speed", 1.0), "vol": dictGetDefault(mm, "vol", 1.0),
-				"pitch": dictGetDefault(mm, "pitch", 0), "emotion": dictGetDefault(mm, "emotion", "neutral")},
-			"audio_setting": map[string]any{"sample_rate": dictGetDefault(mm, "sample_rate", 32000), "bitrate": dictGetDefault(mm, "bitrate", 128000), "format": "mp3", "channel": 1}}
+			"voice_setting": map[string]any{"voice_id": voiceID, "speed": speed, "vol": mm.Vol, "pitch": mm.Pitch, "emotion": textOr(mm.Emotion, "neutral")},
+			"audio_setting": map[string]any{"sample_rate": mm.SampleRate, "bitrate": mm.Bitrate, "format": "mp3", "channel": 1}}
 	} else {
 		payload = map[string]any{"model": model, "text": text, "voice_id": voiceID}
 	}
@@ -834,24 +771,13 @@ func pyBytesFromHex(s string) ([]byte, error) {
 }
 
 // Mistral Voxtral speech decoded from base64 audio, client failures wrapped by error class
-func generateMistralTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
+func generateMistralTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
 	apiKey, err := requireTTSKey(env, "MISTRAL_API_KEY", "mistral", "Get one at https://console.mistral.ai/")
 	if err != nil {
 		return "", err
 	}
-	miConfig, err := orEmptyDict(ttsConfig, "mistral")
-	if err != nil {
-		return "", err
-	}
-	server := defaultMistralServerURL
-	if pyTruthy(miConfig["base_url"]) {
-		server = pyrepr.Str(miConfig["base_url"])
-	}
-	voiceID := miConfig["voice_id"]
-	if !pyTruthy(voiceID) {
-		voiceID = defaultMistralTTSVoiceID
-	}
-	payload := map[string]any{"model": dictGetDefault(miConfig, "model", defaultMistralTTSModel), "input": text, "voice_id": voiceID,
+	server := textOr(req.Mistral.BaseURL, defaultMistralServerURL)
+	payload := map[string]any{"model": textOr(req.Mistral.Model, defaultMistralTTSModel), "input": text, "voice_id": textOr(req.Mistral.VoiceID, defaultMistralTTSVoiceID),
 		"response_format": ttsResponseFormatFromPath(outputPath)}
 	audioData, className, err := ttsMistralSpeech(ctx, server, apiKey, payload)
 	if err != nil {
@@ -923,12 +849,11 @@ var ttsMistralSpeech = func(ctx context.Context, server, apiKey string, payload 
 }
 
 // Persona prompt file text with relative paths under the home, empty with a warning when unreadable
-func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, geminiConfig map[string]any) string {
-	raw, ok := geminiConfig["persona_prompt_file"].(string)
-	if !ok || pystr.Strip(raw) == "" {
+func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, raw string) string {
+	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
-	path := pypath.Expanduser(pypath.Expandvars(pystr.Strip(raw)))
+	path := pypath.Expanduser(pypath.Expandvars(strings.TrimSpace(raw)))
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(ttsHome(ctx, env), path)
 	}
@@ -936,7 +861,7 @@ func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, geminiConfig m
 	if err == nil {
 		text, derr := pystr.DecodeUTF8Sig(data)
 		if derr == nil {
-			return pystr.Strip(text)
+			return strings.TrimSpace(text)
 		}
 		err = derr
 	}
@@ -945,15 +870,11 @@ func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, geminiConfig m
 }
 
 // Whether audio tags are opted in and the model is a Gemini 3.1 TTS model
-func geminiAudioTagsEnabled(geminiConfig map[string]any, model string) bool {
-	raw := geminiConfig["audio_tags"]
-	if m, ok := asStrMap(raw); ok {
-		raw = m["enabled"]
-	}
-	if !configBool(raw, defaultGeminiAudioTags) {
+func geminiAudioTagsEnabled(enabled bool, model string) bool {
+	if !enabled {
 		return false
 	}
-	normalized := pystr.Lower(pystr.Strip(model))
+	normalized := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.LastIndex(normalized, "/"); i >= 0 {
 		normalized = normalized[i+1:]
 	}
@@ -966,7 +887,7 @@ func geminiAudioTagsEnabled(geminiConfig map[string]any, model string) bool {
 
 // Auxiliary model insertion of Gemini audio tags, the text unchanged on failure
 func rewriteGeminiTTSAudioTags(ctx context.Context, text, personaPrompt string) string {
-	transcript := pystr.Strip(text)
+	transcript := strings.TrimSpace(text)
 	if transcript == "" {
 		return text
 	}
@@ -975,7 +896,7 @@ func rewriteGeminiTTSAudioTags(ctx context.Context, text, personaPrompt string) 
 		"There is no fixed allowlist. Use creative freeform tags generously but naturally to control tone, pace, emotional vibe, emphasis, section-level " +
 		"delivery, and non-verbal sounds. Use English audio tags even when the spoken transcript is not English.\n\n" +
 		tagRewriteRules + "- Use square brackets for every audio tag.\n- Do not use SSML or XML tags.\n" + tagRewriteTail
-	persona := pystr.Strip(personaPrompt)
+	persona := strings.TrimSpace(personaPrompt)
 	if persona == "" {
 		persona = "(none)"
 	}
@@ -987,7 +908,7 @@ var geminiTranscriptSlotPatterns = []string{`\{\{\s*transcript\s*\}\}`, `\{\s*tr
 
 // Gemini prompt of persona direction and transcript, the transcript slot filled in place
 func composeGeminiTTSPrompt(text, personaPrompt string) string {
-	transcript := pystr.Strip(text)
+	transcript := strings.TrimSpace(text)
 	if personaPrompt == "" {
 		return transcript
 	}
@@ -996,10 +917,10 @@ func composeGeminiTTSPrompt(text, personaPrompt string) string {
 		re := mustPyre(pyre.CompileIgnoreCase(pattern))
 		if m, _ := re.MatchString(personaPrompt); m {
 			replaced, _ := re.ReplaceFunc(personaPrompt, func(regexp2.Match) string { return transcript }, -1, -1)
-			return pystr.Strip(preamble + "\n\n" + replaced)
+			return strings.TrimSpace(preamble + "\n\n" + replaced)
 		}
 	}
-	return pystr.Strip(preamble + "\n\n" + personaPrompt + "\n\n#### TRANSCRIPT\n" + transcript)
+	return strings.TrimSpace(preamble + "\n\n" + personaPrompt + "\n\n#### TRANSCRIPT\n" + transcript)
 }
 
 // Error message of a failed Gemini reply, else the first 300 body characters
@@ -1022,11 +943,19 @@ func geminiErrorDetail(resp *http.Response) (string, error) {
 	return string(runes), nil
 }
 
+// Gemini endpoint before normalizing: the configured one, then GEMINI_BASE_URL, then the public API
+func geminiRawBase(ctx context.Context, env *tools.Env, configured string) string {
+	if strings.TrimSpace(configured) != "" {
+		return configured
+	}
+	return textOr(ttsEnvValue(ctx, env, "GEMINI_BASE_URL"), defaultGeminiTTSBaseURL)
+}
+
 // Gemini base URL normalizer of the native adapter, the seam tests replace
 var ttsNormalizeGeminiBaseURL = provider.NormalizeGeminiBaseURL
 
 // Gemini generateContent speech, base64 24kHz mono PCM wrapped as WAV then converted to the container
-func generateGeminiTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
+func generateGeminiTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
 	apiKey := ttsResolveProviderKey(env, "GEMINI_API_KEY", "gemini")
 	if apiKey == "" {
 		apiKey = ttsResolveProviderKey(env, "GOOGLE_API_KEY", "gemini")
@@ -1034,31 +963,17 @@ func generateGeminiTTS(ctx context.Context, env *tools.Env, text, outputPath str
 	if apiKey == "" {
 		return "", &ttsValueError{msg: "GEMINI_API_KEY not set. Get one at https://aistudio.google.com/app/apikey"}
 	}
-	gc := ttsSection(ttsConfig, "gemini")
-	model := pystr.Strip(pyrepr.Str(dictGetDefault(gc, "model", defaultGeminiTTSModel)))
-	if model == "" {
-		model = defaultGeminiTTSModel
-	}
-	voice := pystr.Strip(pyrepr.Str(dictGetDefault(gc, "voice", defaultGeminiTTSVoice)))
-	if voice == "" {
-		voice = defaultGeminiTTSVoice
-	}
-	rawBase := ""
-	if pyTruthy(gc["base_url"]) {
-		rawBase = pyrepr.Str(gc["base_url"])
-	} else if v := ttsEnvValue(ctx, env, "GEMINI_BASE_URL"); v != "" {
-		rawBase = v
-	} else {
-		rawBase = defaultGeminiTTSBaseURL
-	}
-	baseURL := ttsNormalizeGeminiBaseURL(rawBase)
-	persona := readGeminiPersonaPrompt(ctx, env, gc)
+	gc := req.Gemini
+	model := textOr(gc.Model, defaultGeminiTTSModel)
+	voice := textOr(gc.Voice, defaultGeminiTTSVoice)
+	baseURL := ttsNormalizeGeminiBaseURL(geminiRawBase(ctx, env, gc.BaseURL))
+	persona := readGeminiPersonaPrompt(ctx, env, gc.PersonaPromptFile)
 	script := text
-	if geminiAudioTagsEnabled(gc, model) {
+	if geminiAudioTagsEnabled(gc.AudioTags, model) {
 		script = rewriteGeminiTTSAudioTags(ctx, text, persona)
 	}
 	prompt := composeGeminiTTSPrompt(script, persona)
-	maxLen := resolveMaxTextLength("gemini", ttsConfig)
+	maxLen := resolveMaxTextLength("gemini", req)
 	if n := utf8.RuneCountInString(prompt); n > maxLen {
 		return "", &ttsValueError{msg: fmt.Sprintf("Gemini TTS composed prompt exceeds the provider request limit (%d > %d chars). Reduce the persona/audio-tag prompt or lower tts.gemini.max_text_length so long-form text is split with enough prompt headroom.", n, maxLen)}
 	}

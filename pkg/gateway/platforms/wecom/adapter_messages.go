@@ -55,7 +55,7 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 	a.rememberChatReqID(chatID, reqID)
 	text, replyText := extractText(body)
 	if isGroup && text != "" {
-		text = pystr.Strip(reSub(groupMentionRE, text, ""))
+		text = strings.TrimSpace(reSub(groupMentionRE, text, ""))
 	}
 	mediaURLs, mediaTypes, err := a.extractMedia(ctx, body)
 	if err != nil {
@@ -91,7 +91,7 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 		return err
 	}
 	hasPendingBatch := a.PendingTextBatch(key) != nil
-	isAttachmentOnly := len(mediaURLs) > 0 && pystr.Strip(text) == ""
+	isAttachmentOnly := len(mediaURLs) > 0 && strings.TrimSpace(text) == ""
 	delay, _ := a.TextBatchDelays()
 	if (messageType == gateway.MessageTypeText && (delay > 0 || hasPendingBatch)) || (isAttachmentOnly && a.attachmentTextMergeDelaySeconds > 0) {
 		return a.EnqueueTextEvent(ctx, event)
@@ -136,7 +136,7 @@ func (a *WeComAdapter) EnqueueTextEvent(ctx context.Context, event *gateway.Mess
 		if err := a.BasePlatformAdapter.EnqueueTextEvent(ctx, event); err != nil {
 			return err
 		}
-		if existing != nil && pystr.Strip(event.Text) != "" {
+		if existing != nil && strings.TrimSpace(event.Text) != "" {
 			existing.MessageType = gateway.MessageTypeText
 			if event.ReplyToText != nil && *event.ReplyToText != "" && (existing.ReplyToText == nil || *existing.ReplyToText == "") {
 				existing.ReplyToText = event.ReplyToText
@@ -149,7 +149,7 @@ func (a *WeComAdapter) EnqueueTextEvent(ctx context.Context, event *gateway.Mess
 
 // Quiet period of a pending batch, an attachment only batch waiting for its text frame
 func (a *WeComAdapter) TextBatchDelayFor(pending *gateway.MessageEvent) float64 {
-	if pending != nil && len(pending.MediaURLs) > 0 && pystr.Strip(pending.Text) == "" {
+	if pending != nil && len(pending.MediaURLs) > 0 && strings.TrimSpace(pending.Text) == "" {
 		return a.attachmentTextMergeDelaySeconds
 	}
 	lastLen := 0
@@ -194,7 +194,7 @@ func extractText(body *pyjson.Object) (string, string) {
 			parts = append(parts, part)
 		}
 	}
-	return pystr.Strip(strings.Join(parts, "\n")), replyText
+	return strings.TrimSpace(strings.Join(parts, "\n")), replyText
 }
 
 // Message type from the cached media types, the text and the declared msgtype
@@ -237,14 +237,14 @@ func (a *WeComAdapter) resolveGroupCfg(chatID string) map[string]any {
 	if cfg, ok := a.groups[chatID].(map[string]any); ok {
 		return cfg
 	}
-	lowered := pystr.Lower(chatID)
+	lowered := strings.ToLower(chatID)
 	keys := make([]string, 0, len(a.groups))
 	for k := range a.groups {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if cfg, ok := a.groups[k].(map[string]any); ok && pystr.Lower(k) == lowered {
+		if cfg, ok := a.groups[k].(map[string]any); ok && strings.ToLower(k) == lowered {
 			return cfg
 		}
 	}
@@ -256,7 +256,7 @@ func (a *WeComAdapter) resolveGroupCfg(chatID string) map[string]any {
 
 // Caches the latest inbound req id of a chat, a fresh one reviving its stream channel
 func (a *WeComAdapter) rememberChatReqID(chatID, reqID string) {
-	chatID, reqID = pystr.Strip(chatID), pystr.Strip(reqID)
+	chatID, reqID = strings.TrimSpace(chatID), strings.TrimSpace(reqID)
 	if chatID == "" || reqID == "" {
 		return
 	}
@@ -268,7 +268,7 @@ func (a *WeComAdapter) rememberChatReqID(chatID, reqID string) {
 
 // Inbound req id recorded for a replied message id, empty for a blank or quote reference
 func (a *WeComAdapter) ReplyReqIDForMessage(replyTo string) string {
-	normalized := pystr.Strip(replyTo)
+	normalized := strings.TrimSpace(replyTo)
 	if normalized == "" || strings.HasPrefix(normalized, "quote:") {
 		return ""
 	}
@@ -432,7 +432,7 @@ func (a *WeComAdapter) sendFailure(failure string, subscriptionLost bool) gatewa
 // Name and type of a chat, a group for an id starting with group
 func (a *WeComAdapter) GetChatInfo(ctx context.Context, chatID string) (map[string]any, error) {
 	chatType := "dm"
-	if chatID != "" && strings.HasPrefix(pystr.Lower(chatID), "group") {
+	if chatID != "" && strings.HasPrefix(strings.ToLower(chatID), "group") {
 		chatType = "group"
 	}
 	return map[string]any{"name": chatID, "type": chatType}, nil

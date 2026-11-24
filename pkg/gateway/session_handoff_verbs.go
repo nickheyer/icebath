@@ -86,7 +86,7 @@ func requestHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if err := handoffSession(ctx, c, ref, params, "session:control", "platform"); err != nil {
 		return nil, err
 	}
-	platformName := pystr.Lower(pystr.Strip(raw))
+	platformName := strings.ToLower(strings.TrimSpace(raw))
 	if platformName == "" {
 		return nil, handoffRefusal(ctx, "invalid_params", "usage", nil, "usage_detail_1")
 	}
@@ -152,7 +152,7 @@ func failHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	}
 	reason := "handoff failed"
 	if raw := params.GetOr("error", nil); pyrepr.Truthy(raw) {
-		reason = pystr.Strip(pyrepr.Str(raw))
+		reason = strings.TrimSpace(pyrepr.Str(raw))
 	}
 	if utf8.RuneCountInString(reason) > 500 {
 		reason = string([]rune(reason)[:500])

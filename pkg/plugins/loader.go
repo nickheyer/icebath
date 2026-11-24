@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -18,13 +17,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
 	nsParent              = "icebath_plugins"
-	loadTimeoutDefault    = 10.0
-	maxLoadTimeout        = 600.0
 	maxAbandonedLoaders   = 8
 	loaderGoroutinePrefix = "plugin-load:"
 )
@@ -83,30 +81,9 @@ func InPluginLoadWorker(ctx context.Context) bool {
 	return inPluginLoadWorker(ctx)
 }
 
-// Per plugin load deadline from plugins.load_timeout_seconds, zero meaning inline loads
+// Per plugin load deadline in seconds from plugins.load_timeout_seconds of the home's profile, zero meaning inline loads
 func resolvePluginLoadTimeout(h string) float64 {
-	cfg, err := loadConfig(h)
-	if err != nil {
-		return loadTimeoutDefault
-	}
-	section, ok := cfg["plugins"].(map[string]any)
-	if !ok || section["load_timeout_seconds"] == nil {
-		return loadTimeoutDefault
-	}
-	timeout, ok := pyFloat(section["load_timeout_seconds"])
-	if !ok || math.IsNaN(timeout) {
-		pkgLog().Warn(fmt.Sprintf("plugins.load_timeout_seconds is not a number; using default %gs", loadTimeoutDefault))
-		return loadTimeoutDefault
-	}
-	if timeout < 0 {
-		pkgLog().Warn(fmt.Sprintf("plugins.load_timeout_seconds=%g is negative; using default %gs", timeout, loadTimeoutDefault))
-		return loadTimeoutDefault
-	}
-	if timeout > maxLoadTimeout {
-		pkgLog().Warn(fmt.Sprintf("plugins.load_timeout_seconds=%g exceeds max %gs; clamping", timeout, maxLoadTimeout))
-		return maxLoadTimeout
-	}
-	return timeout
+	return settings.PluginsLoadTimeoutSeconds.Get(homeContext(h)).Seconds()
 }
 
 // Drops finished abandoned loaders and refuses the load once the live cap is reached
@@ -234,18 +211,11 @@ func (m *Manager) validatePluginConfigSchema(mf *Manifest) {
 		return
 	}
 	pluginID := mf.ID()
-	settings := map[string]any{}
-	if cfg, err := loadConfig(m.home); err == nil {
-		entry := pluginSettingsEntry(cfg, pluginID)
-		raw, ok := entry["settings"].(map[string]any)
-		if !ok {
-			raw, ok = entry["config"].(map[string]any)
-		}
-		if ok {
-			settings = raw
-		}
+	values, _ := pluginEntry(homeContext(m.home), pluginID)["settings"].(map[string]any)
+	if values == nil {
+		values = map[string]any{}
 	}
-	for _, warning := range ValidateConfigSchema(pluginID, mf.ConfigSchema, settings) {
+	for _, warning := range ValidateConfigSchema(pluginID, mf.ConfigSchema, values) {
 		pkgLog().Warn(fmt.Sprintf("Plugin %s config: %s", pluginID, warning))
 	}
 }
@@ -687,9 +657,7 @@ func (m *Manager) RearmFailedPlatform(ctx context.Context, platformName string) 
 	if failed == nil || icebathFitError(failed) != "" {
 		return false
 	}
-	cfg := loadConfigOrEmpty(m.home)
-	enabled, present := enabledPlugins(cfg)
-	if action := GateManifest(m.home, failed, DisabledPlugins(m.home), enabled, present).Action; action != "defer" && action != "load" {
+	if action := GateManifest(m.home, failed, getDisabledSet(m.home), getEnabledSet(m.home)).Action; action != "defer" && action != "load" {
 		return false
 	}
 	abandonedMu.Lock()

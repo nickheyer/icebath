@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const openAINativeUnsupportedMsg = "openai-native declares OpenAI's server-side web_search tool; it cannot run as a " +
@@ -30,7 +29,7 @@ func pyStrOrEmptyStripped(v any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Test seam for the codex credential probe

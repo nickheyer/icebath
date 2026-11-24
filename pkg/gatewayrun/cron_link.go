@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -85,7 +84,7 @@ func cronJobsBusy(ctx context.Context, homes []string) (string, error) {
 
 // Runs suggestions through the shared handler with the event source as job origin
 func (r *GatewayRunner) runSuggestionsCommand(ctx context.Context, event *gateway.MessageEvent) (any, error) {
-	reply, err := cron.HandleSuggestionsCommand(ctx, pystr.Strip(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
+	reply, err := cron.HandleSuggestionsCommand(ctx, strings.TrimSpace(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("suggestions command failed: %s", err))
 		return i18n.T(ctx, "gateway.suggestions.failed", "", map[string]any{"error": err.Error()}), nil
@@ -95,7 +94,7 @@ func (r *GatewayRunner) runSuggestionsCommand(ctx context.Context, event *gatewa
 
 // Runs blueprint through the shared handler with the event source as job origin
 func (r *GatewayRunner) runBlueprintCommand(ctx context.Context, event *gateway.MessageEvent) blueprintReply {
-	result, err := cron.HandleBlueprintCommand(ctx, home.Dir(ctx), pystr.Strip(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
+	result, err := cron.HandleBlueprintCommand(ctx, home.Dir(ctx), strings.TrimSpace(event.GetCommandArgs()), commandOriginForSource(event.Source), "gateway")
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("blueprint command failed: %s", err))
 		return blueprintReply{Text: i18n.T(ctx, "gateway.blueprint.failed", "", map[string]any{"error": err.Error()})}
@@ -126,7 +125,7 @@ func (r *GatewayRunner) noticeInterruptedCronJobs(ctx context.Context, jobIDs []
 		}
 		msg := i18n.T(ctx, "gateway.shutdown.cron_interrupted", "", map[string]any{"job": jobName, "action": action})
 		for _, target := range targets {
-			platform, err := gateway.ParsePlatform(ctx, pystr.Lower(target.Platform))
+			platform, err := gateway.ParsePlatform(ctx, strings.ToLower(target.Platform))
 			if err != nil {
 				continue
 			}

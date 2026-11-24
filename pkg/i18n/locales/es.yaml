@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (solo el próximo turno: se restaura tras una respuesta)"
     switch_cancelled: "🟡 Cambio de modelo cancelado. El modelo actual no cambia ({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_Alternativa en texto: responde `{prefix}approve` para cambiar o `{prefix}cancel` para conservar el modelo actual._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "`--once` no está disponible en esta sesión; usa `/model <name>` y vuelve a cambiar después del turno."
+    local_next_turn: "Se aplica a partir de tu próximo mensaje."
   agents:
 
     header: "🤖 **Agentes y tareas activos**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast solo está disponible para modelos de OpenAI que admiten Priority Processing."
-    status: "⚡ Priority Processing\n\nModo actual: `{mode}`\n\n_Uso:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ Argumento desconocido: `{arg}`\n\n**Opciones válidas:** normal, fast, status"
+    not_supported: "⚡ /fast necesita un modelo cuyo proveedor ofrezca un nivel rápido, como Priority Processing de OpenAI o el modo rápido de Anthropic. Cambia con /model a uno que lo tenga."
+    status: "⚡ Priority Processing\n\nModo actual: `{mode}`\n\n_Uso:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ Argumento desconocido: `{arg}`\n\n**Opciones válidas:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (guardado en la configuración)\n_(se aplica en el próximo mensaje)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (solo esta sesión)"
     label_fast: "RÁPIDO"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — rápido solo en el primer turno de una sesión"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, precio x6"
     ultrafast_not_supported: "⚡ Ultrafast no está disponible para `{model}` en esta cuenta o ruta."
+  setup_wizard:
+
+    configure_in_config: "  Configura {platform} en config.yaml bajo platforms.{key}"
   footer:
 
     status: "📎 Pie de ejecución: **{state}**\nCampos: `{fields}`\nPlataforma: `{platform}`"
@@ -244,20 +247,20 @@ gateway:
     no_output: "(sin salida)"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
+      completed: "completada"
+      gave_up: "abandonada (reintentos agotados)"
+      crashed: "falló (el worker terminó); el dispatcher la reintentará"
+      timed_out: "agotó el tiempo; el dispatcher la reintentará"
+      blocked: "bloqueada; necesita atención"
+      review_requested: "entregada para revisión; la implementación está terminada"
+      changes_requested: "la revisión pidió cambios (BLOCK); la implementación no está aprobada"
+      block_loop_detected: "enviada a triaje tras bloqueos repetidos; requiere atención de orquestación"
+      status_default: "cambió de estado"
       status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
-      handoff: "Result: {summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      message: "[kanban] Tarea {task_id} {status}.\nTítulo: {title}\nAsignada a: @{assignee}\nTablero: {board}\n\nRevisa el resultado o decide el siguiente paso."
+      handoff: "Resultado: {summary}"
+      review_detail: "Comentarios de la revisión: {reason}\nExamina la tarjeta existente y su ejecución de revisión actual; devuelve el trabajo a la misma tarea de implementación. No tomes este BLOCK como una aprobación y no crees una tarea duplicada."
+      guidance: "Esta es una notificación automática del estado de una tarea, no una petición para volver a descomponerla. Examina el tablero actual antes de crear tareas de seguimiento; no vuelvas a crear tareas o grafos que ya existen."
     ping:
 
       completed: "✔ {head} terminada — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "Mostrar los comandos disponibles (/help skills lista los comandos de skills, /help <text> filtra)"
   palette:
 
-    description: "Abrir la paleta de comandos con búsqueda difusa (también Ctrl+P)"
+    description: "Abrir la paleta de comandos con búsqueda difusa"
   restart:
 
     description: "Reiniciar el gateway de forma ordenada tras terminar las ejecuciones activas"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "archivado + eliminado → {ref}"
     sweep_archived_kept: "archivado, conservado ({reason}) → {ref}"
     discarded: "Worktree eliminado y cambios descartados: {path}"
+  update:
+
+    held_icebath: "{mark} Otros procesos de icebath se ejecutan desde esta instalación ({count}):"
+    held_venv: "{mark} Hay procesos ejecutándose desde el entorno de Python de esta instalación ({count}):"
+    held_forced: "  → Actualizando de todos modos por {flag}."
+    held_refused: "  Ciérralos y vuelve a ejecutar `icebath update`, o pasa {flag} para actualizar de todos modos."
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "la ventana de contexto del modelo local era demasiado pequeña para terminar. Aumenta el tamaño del contexto o usa un modelo más grande."
     pending_tool_result: "el turno se detuvo con un resultado de herramienta aún pendiente y el modelo no produjo texto de seguimiento. Envía `continue` para que lo resuma."
     interrupted_during_api_call: "la solicitud se interrumpió a mitad de la llamada, antes de recibir una respuesta. Envía `continue` para reintentar."
-    max_iterations_reached: "se alcanzó el límite máximo de iteraciones de herramientas antes de una respuesta final. Envía `continue` para seguir, o aumenta `max_iterations`."
+    max_iterations_reached: "se alcanzó el límite máximo de iteraciones de herramientas antes de una respuesta final. Envía `continue` para seguir, o aumenta `agent.max_turns`."
     error_near_max_iterations: "ocurrió un error cerca del límite de iteraciones antes de una respuesta final. Revisa la salida de la herramienta arriba y luego envía `continue`."
     repeated_outer_errors: "el turno siguió fallando con errores repetidos y se detuvo antes de tiempo en lugar de reintentar indefinidamente. Revisa los errores arriba y luego envía `continue` para reintentar."
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath carga el contexto del proyecto desde .icebath.md, AGENTS.md, CLAUDE.md o .cursorrules (la primera coincidencia)."
   t178: "Los archivos AGENTS.md de subdirectorios se descubren progresivamente a medida que el agente entra en las carpetas."
   t179: "Los archivos de contexto se limitan a 20 000 caracteres con truncado inteligente de inicio/final."
-  t180: "Backends de navegador: Chromium local, Lightpanda, Browserbase, Browser Use y Firecrawl, además de Camofox integrado."
-  t181: "Camofox (Firefox antidetección) viene integrado: configúralo con icebath camofox setup."
+  t180: "Backends de navegador: Chromium local, Lightpanda, Browserbase, Browser Use y Firecrawl, además de Camofox como plugin."
+  t181: "Camofox (Firefox antidetección) es un plugin: instálalo con icebath plugins install camofox y luego ejecuta icebath camofox setup."
   t182: "browser_exec ejecuta varios pasos del navegador en una sola llamada de Python: navegar, extraer y hacer clic a la vez."
   t183: "browser.dialog_policy define cómo se gestionan los diálogos nativos de la página: must_respond (el agente responde con browser_dialog), auto_dismiss o auto_accept."
   t184: "icebath mcp abre un selector interactivo de los MCPs del catálogo integrado de icebath que puedes instalar con una sola tecla."

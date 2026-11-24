@@ -166,16 +166,16 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 		a.botID = botID
 	}
 	a.wsURL, a.apiDomain, a.routeEnv = settings.YuanbaoWsURL.Get(gateway.SettingsContext(ctx)), settings.YuanbaoAPIDomain.Get(gateway.SettingsContext(ctx)), settings.YuanbaoRouteEnv.Get(gateway.SettingsContext(ctx))
-	a.appKey, a.appSecret, a.wsURL, a.routeEnv = pystr.Strip(a.appKey), pystr.Strip(a.appSecret), pystr.Strip(a.wsURL), pystr.Strip(a.routeEnv)
-	a.apiDomain = pystr.RstripChars(a.apiDomain, "/")
+	a.appKey, a.appSecret, a.wsURL, a.routeEnv = strings.TrimSpace(a.appKey), strings.TrimSpace(a.appSecret), strings.TrimSpace(a.wsURL), strings.TrimSpace(a.routeEnv)
+	a.apiDomain = strings.TrimRight(a.apiDomain, "/")
 	if a.MediaResolveConcurrency, err = resolveConcurrency(extra); err != nil {
 		return nil, err
 	}
 	a.connection = newConnectionManager(a)
 	a.outbound = newOutboundManager(a)
 	sctx := gateway.SettingsContext(ctx)
-	if a.accessPolicy, err = NewAccessPolicy(pystr.Lower(settings.YuanbaoDmPolicy.Get(sctx)), gateway.SettingList(ctx, settings.YuanbaoDmAllowFrom),
-		pystr.Lower(settings.YuanbaoGroupPolicy.Get(sctx)), gateway.SettingList(ctx, settings.YuanbaoGroupAllowFrom)); err != nil {
+	if a.accessPolicy, err = NewAccessPolicy(strings.ToLower(settings.YuanbaoDmPolicy.Get(sctx)), gateway.SettingList(ctx, settings.YuanbaoDmAllowFrom),
+		strings.ToLower(settings.YuanbaoGroupPolicy.Get(sctx)), gateway.SettingList(ctx, settings.YuanbaoGroupAllowFrom)); err != nil {
 		return nil, err
 	}
 	a.inboundPipeline = BuildInboundPipeline()

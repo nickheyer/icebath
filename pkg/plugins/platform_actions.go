@@ -1,12 +1,13 @@
 package plugins
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -201,14 +202,9 @@ func NewPlatformActions(pluginID string) *PlatformActions {
 	return &PlatformActions{pluginID: pluginID}
 }
 
-// Whether the plugin holds the platform action capability, unreadable consent state denying
+// Whether the plugin holds the platform action capability in the profile of ctx
 func (p *PlatformActions) capabilityGranted(ctx context.Context) bool {
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("platform_actions capability check failed for %s", p.pluginID), "error", err)
-		return false
-	}
-	return CapabilityGranted(cfg, p.pluginID, PlatformActionCapability)
+	return CapabilityGranted(ctx, p.pluginID, PlatformActionCapability)
 }
 
 // Connected adapter of the active profile for a platform, or the refusal naming why none answers
@@ -220,7 +216,7 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 	if runner == nil {
 		return nil, actionErr("gateway_unavailable", "no gateway runner is active in this process")
 	}
-	value, err := runner.ParsePlatform(ctx, pystr.Lower(pystr.Strip(pyrepr.Str(platform))))
+	value, err := runner.ParsePlatform(ctx, strings.ToLower(strings.TrimSpace(pyrepr.Str(platform))))
 	if err != nil {
 		return nil, actionErr("unknown_platform", fmt.Sprintf("unknown platform %s", errchain.Show(platform)))
 	}
@@ -266,7 +262,7 @@ func (p *PlatformActions) gate(ctx context.Context, platform any, names []string
 			errchain.Show(p.pluginID), errchain.Show(PlatformActionCapability), p.pluginID))
 	}
 	for i, name := range names {
-		if s, ok := values[i].(string); !ok || pystr.Strip(s) == "" {
+		if s, ok := values[i].(string); !ok || strings.TrimSpace(s) == "" {
 			return nil, actionErr("invalid_argument", name+" must be a non-empty string")
 		}
 	}

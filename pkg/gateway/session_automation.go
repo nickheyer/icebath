@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"slices"
@@ -291,7 +293,7 @@ func AutomationDisplayMetadata(get func(key string) (any, bool)) (*pyjson.Object
 	}
 	kindText, isKind := kind.(string)
 	body, isBody := text.(string)
-	if !isKind || !ProducerCardKinds[kindText] || !isBody || pystr.Strip(body) == "" || pystr.Len(body) > automationDisplayTextLimit {
+	if !isKind || !ProducerCardKinds[kindText] || !isBody || strings.TrimSpace(body) == "" || pystr.Len(body) > automationDisplayTextLimit {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	out.Set("display_kind", kindText)
@@ -726,7 +728,7 @@ func AutomationAdmissionDisplay(payload *pyjson.Object) *pyjson.Object {
 	kind, _ := descriptor.Get("display_kind")
 	text, _ := descriptor.Get("display_text")
 	body, isText := text.(string)
-	if !pyTruthy(kind) || !isText || pystr.Strip(body) == "" {
+	if !pyTruthy(kind) || !isText || strings.TrimSpace(body) == "" {
 		return pyjson.NewObject()
 	}
 	said := ""

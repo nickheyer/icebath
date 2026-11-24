@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -92,7 +91,7 @@ func (r *GatewayRunner) hmRewriteTurnToPrompt(ctx context.Context, event *gatewa
 
 // Rewrites the turn to the learn prompt for the described or recent work
 func (r *GatewayRunner) hmCmdLearn(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, any, error) {
-	req := pystr.Strip(event.GetCommandArgs())
+	req := strings.TrimSpace(event.GetCommandArgs())
 	ack := i18n.T(ctx, "gateway.learn.ack_conversation", "", nil)
 	if req != "" {
 		ack = i18n.T(ctx, "gateway.learn.ack_described", "", nil)
@@ -102,7 +101,7 @@ func (r *GatewayRunner) hmCmdLearn(ctx context.Context, event *gateway.MessageEv
 
 // Rewrites the turn to the plan prompt for the given task or the conversation
 func (r *GatewayRunner) hmCmdPlan(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, any, error) {
-	task := pystr.Strip(event.GetCommandArgs())
+	task := strings.TrimSpace(event.GetCommandArgs())
 	ack := i18n.T(ctx, "gateway.plan.ack_conversation", "", nil)
 	if task != "" {
 		shown := task
@@ -130,7 +129,7 @@ func (r *GatewayRunner) hmCmdInit(ctx context.Context, event *gateway.MessageEve
 				failed = true
 			}
 		}()
-		return BuildInitPromptForCwd(tools.ToolEnvFrom(ctx), "", pystr.Strip(event.GetCommandArgs()), &sessionKey), false
+		return BuildInitPromptForCwd(tools.ToolEnvFrom(ctx), "", strings.TrimSpace(event.GetCommandArgs()), &sessionKey), false
 	}()
 	if failed {
 		return true, i18n.T(ctx, "gateway.init.start_failed", "", nil), nil
@@ -172,7 +171,7 @@ func (r *GatewayRunner) hmCmdSteer(ctx context.Context, event *gateway.MessageEv
 
 // Strips the command prefix so the payload runs as a user turn, the usage hint for an empty payload
 func hmSendPayloadAsTurn(event *gateway.MessageEvent, usage string) (bool, any, error) {
-	payload := pystr.Strip(event.GetCommandArgs())
+	payload := strings.TrimSpace(event.GetCommandArgs())
 	if payload == "" {
 		return true, usage, nil
 	}
@@ -182,7 +181,7 @@ func hmSendPayloadAsTurn(event *gateway.MessageEvent, usage string) (bool, any, 
 
 // Runs one prompt through the default mixture of agents preset with the prior model restored after the turn
 func (r *GatewayRunner) hmCmdMoa(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, any, error) {
-	payload := pystr.Strip(event.GetCommandArgs())
+	payload := strings.TrimSpace(event.GetCommandArgs())
 	if payload == "" {
 		return true, provider.MoAUsage(), nil
 	}

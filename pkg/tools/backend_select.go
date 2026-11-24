@@ -6,22 +6,26 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const defaultBrowserProvider = "local"
 
 // Setting holding the provider choice of each section the tools picker writes
-var selectionKeys = map[string]string{
-	"browser": settings.BrowserCloudProvider.Key, "web": settings.WebSearch.Key, "image_gen": settings.ImageGenProvider.Key,
-	"video_gen": settings.VideoGenProvider.Key, "tts": settings.SpeechVoice.Key, "stt": settings.RecognitionService.Key,
+var selectionKeys = map[string]selectionSetting{
+	"browser": settings.BrowserCloudProvider, "web": settings.WebSearch, "image_gen": settings.ImageGenProvider,
+	"video_gen": settings.VideoGenProvider, "tts": settings.SpeechVoice, "stt": settings.RecognitionService,
 }
 
 // Settings pinning one web capability to its own backend
-var webCapabilityKeys = map[string]string{"search": settings.WebSearchBackend.Key, "extract": settings.WebExtractBackend.Key}
+var webCapabilityKeys = map[string]selectionSetting{"search": settings.WebSearchBackend, "extract": settings.WebExtractBackend}
+
+// Text setting that names a chosen service
+type selectionSetting interface {
+	Info() *settings.Meta
+	Get(ctx context.Context) string
+}
 
 // PoolKeySource answers the credential pool reads of the provider key resolver, installed by the provider wiring
 type PoolKeySource interface {
@@ -36,7 +40,7 @@ var PoolKeys PoolKeySource
 
 // NormalizeBrowserCloudProvider returns the normalized browser provider key
 func NormalizeBrowserCloudProvider(value string) string {
-	provider := pystr.Lower(pystr.Strip(value))
+	provider := strings.ToLower(strings.TrimSpace(value))
 	if provider == "" {
 		return defaultBrowserProvider
 	}
@@ -52,12 +56,12 @@ func scopedCredential(env *Env, name string) string {
 		if env == nil || env.Secrets == nil {
 			return ""
 		}
-		return pystr.Strip(env.Secrets.File()[name])
+		return strings.TrimSpace(env.Secrets.File()[name])
 	}
 	if env != nil && env.Secrets != nil {
-		return pystr.Strip(env.Secrets.String(name))
+		return strings.TrimSpace(env.Secrets.String(name))
 	}
-	return pystr.Strip(os.Getenv(name))
+	return strings.TrimSpace(os.Getenv(name))
 }
 
 // Credential through the profile secret scope for availability checks outside the package
@@ -68,18 +72,18 @@ func dotenvValue(env *Env, name string) string {
 	if isMultiplexActive(env) && !IsGlobalEnv(name) {
 		if env != nil && env.Secrets != nil {
 			if v, ok := env.Secrets.File()[name]; ok {
-				return pystr.Strip(v)
+				return strings.TrimSpace(v)
 			}
 		}
 		return ""
 	}
 	if v, ok := os.LookupEnv(name); ok {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
 	if env == nil || env.Secrets == nil {
 		return ""
 	}
-	return pystr.Strip(env.Secrets.File()[name])
+	return strings.TrimSpace(env.Secrets.File()[name])
 }
 
 // Bool coercion over the shared truthy string set, default for a missing value
@@ -88,7 +92,7 @@ func isTruthyValue(v any, def bool) bool {
 	case nil:
 		return def
 	case string:
-		switch pystr.Lower(pystr.Strip(x)) {
+		switch strings.ToLower(strings.TrimSpace(x)) {
 		case "1", "true", "yes", "on":
 			return true
 		}
@@ -119,7 +123,7 @@ func envSourceSuppressed(env *Env, providerID, envVar string) bool {
 
 // ResolveProviderSecret resolves a voice provider key through config, scope, .env, then the profile default login of the credential pool
 func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, envGetter func(string) string) string {
-	if key := pystr.Strip(configValue); key != "" {
+	if key := strings.TrimSpace(configValue); key != "" {
 		return key
 	}
 	suppressed := envSourceSuppressed(env, providerID, envVar)
@@ -134,7 +138,7 @@ func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, env
 	key := ""
 	if !suppressed {
 		if envGetter != nil {
-			key = pystr.Strip(envGetter(envVar))
+			key = strings.TrimSpace(envGetter(envVar))
 		} else {
 			key = dotenvValue(env, envVar)
 		}
@@ -144,7 +148,7 @@ func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, env
 	}
 	if PoolKeys != nil {
 		for _, poolKey := range []string{providerID, "custom:" + providerID} {
-			if k := pystr.Strip(PoolKeys.PoolAPIKey(env, poolKey)); k != "" {
+			if k := strings.TrimSpace(PoolKeys.PoolAPIKey(env, poolKey)); k != "" {
 				return k
 			}
 		}
@@ -160,41 +164,31 @@ func ResolveOpenAIAudioAPIKey(env *Env) string {
 	return ResolveProviderSecret(env, "OPENAI_API_KEY", "openai-api", "", nil)
 }
 
-// Reads the raw unmerged user config document as a tree
-func readRawConfig(env *Env) (config.Tree, error) {
-	if env == nil || env.Home == "" {
-		return nil, os.ErrNotExist
-	}
-	doc, err := config.ReadUser(env.Home)
-	if err != nil {
-		return nil, err
-	}
-	return config.Tree(doc), nil
-}
-
-// Value of a setting the user stored, stripped and spelled as written, empty when it holds only its default
-func storedSetting(env *Env, key string) string {
-	v, err := settings.Resolve(envHomeCtx(context.Background(), env), key)
-	if err != nil || v.Source == settings.SourceDefault {
+// Value of a service choice the user made, stripped and spelled as written, empty when it holds only its default
+func storedSetting(env *Env, s selectionSetting) string {
+	ctx := envHomeCtx(context.Background(), env)
+	if v, err := settings.Resolve(ctx, s.Info().Key); err != nil || v.Source == settings.SourceDefault {
 		return ""
 	}
-	return pystr.Strip(pyOrStr(v.Value))
+	return strings.TrimSpace(s.Get(ctx))
 }
 
-// Lowercased value of a setting the user stored, empty when it holds only its default
-func storedChoice(env *Env, key string) string { return pystr.Lower(storedSetting(env, key)) }
+// Lowercased service choice the user made, empty when it holds only its default
+func storedChoice(env *Env, s selectionSetting) string { return strings.ToLower(storedSetting(env, s)) }
 
 // StoredProvider returns the provider name stored for a section spelled as the user wrote it, empty when none was chosen
 func StoredProvider(env *Env, section string) string {
-	key, ok := selectionKeys[section]
+	s, ok := selectionKeys[section]
 	if !ok {
 		return ""
 	}
-	return storedSetting(env, key)
+	return storedSetting(env, s)
 }
 
 // ReadSelection returns the provider choice stored for a section in lower case, empty when none was chosen
-func ReadSelection(env *Env, section string) string { return pystr.Lower(StoredProvider(env, section)) }
+func ReadSelection(env *Env, section string) string {
+	return strings.ToLower(StoredProvider(env, section))
+}
 
 // ReadWebCapabilitySelection returns the selection deciding one web capability
 func ReadWebCapabilitySelection(env *Env, capability string) string {
@@ -227,7 +221,7 @@ var RemovedBackends = map[string]map[string]string{}
 
 // RemovedBackendNote explains a removed backend or returns empty
 func RemovedBackendNote(section, name string) string {
-	key := pystr.Lower(strings.Trim(pystr.Strip(name), "'\""))
+	key := strings.ToLower(strings.Trim(strings.TrimSpace(name), "'\""))
 	return RemovedBackends[section][key]
 }
 

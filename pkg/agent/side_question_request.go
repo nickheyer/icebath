@@ -15,7 +15,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -67,7 +66,7 @@ func agentProviderRefusal(ctx context.Context, a *AIAgent) string {
 	if a.provider == "moa" {
 		return "moa"
 	}
-	base := pystr.Lower(a.baseURL)
+	base := strings.ToLower(a.baseURL)
 	if strings.HasPrefix(base, "acp://") || strings.HasPrefix(base, "acp+tcp://") || a.apiMode == "codex_app_server" ||
 		provider.IsExternalProcessProvider(ctx, a.provider) || !parentCanEmitToolCalls(a) {
 		return "agent_provider"
@@ -233,7 +232,7 @@ func sideQuestionAnswerText(fork *AIAgent, reply *provider.Response) string {
 	if !ok {
 		text = state.FlattenMessageText(content, "\n")
 	}
-	return pystr.Strip(fork.stripThinkBlocks(text))
+	return strings.TrimSpace(fork.stripThinkBlocks(text))
 }
 
 // Logs one side question outcome with its usage buckets and latency

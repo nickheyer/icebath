@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ReasoningFloorEffort is the lowest effort every reasoning wire accepts
@@ -38,7 +37,7 @@ func auxDisabledEffort(v any, present bool) bool {
 	if !present {
 		v = ""
 	}
-	return auxDisabledEfforts[pystr.Lower(pystr.Strip(pyrepr.Str(v)))]
+	return auxDisabledEfforts[strings.ToLower(strings.TrimSpace(pyrepr.Str(v)))]
 }
 
 // FloorReasoningConfig lifts a disabled reasoning config to the floor and returns anything else unchanged
@@ -125,7 +124,7 @@ var (
 
 // True when the cached route catalog flags the model reasoning mandatory, warming a cold catalog
 func auxCatalogMarksMandatory(ctx context.Context, provider, baseURL, model string) (bool, error) {
-	providerNorm := pystr.Lower(pystr.Strip(provider))
+	providerNorm := strings.ToLower(strings.TrimSpace(provider))
 	parts, err := pyURLParse(baseURL, "")
 	if err != nil {
 		return false, err

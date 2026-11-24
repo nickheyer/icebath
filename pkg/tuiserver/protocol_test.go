@@ -9,9 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 func TestUnknownMethod(t *testing.T) {
@@ -33,7 +30,7 @@ func TestDispatchRunsShortHandlersInline(t *testing.T) {
 }
 
 func TestSlowHandlersRunOffTheReaderThread(t *testing.T) {
-	for _, slowMethod := range []string{"complete.path", "complete.slash", "voice.toggle", "voice.record", "wake.start", "wake.status"} {
+	for _, slowMethod := range []string{"browser.manage", "plugins.manage", "voice.toggle", "voice.record", "wake.start", "wake.status"} {
 		t.Run(slowMethod, func(t *testing.T) {
 			release := make(chan struct{})
 			ran := make(chan struct{}, 1)
@@ -114,24 +111,6 @@ func (c *stdoutCapture) frames(t *testing.T) []map[string]any {
 	return out
 }
 
-// Frames a silent WebSocket client received
-func socketFrames(sock *wsTestSocket) []map[string]any {
-	sock.mu.Lock()
-	defer sock.mu.Unlock()
-	return append([]map[string]any(nil), sock.sent...)
-}
-
-// Not shown refusal frame for a request
-func notShown(req map[string]any) map[string]any {
-	return map[string]any{"jsonrpc": "2.0", "id": req["id"], "error": map[string]any{"code": tuihost.NotShownCode, "message": "not here"}}
-}
-
-// clarify.lock of one question of an open batch
-func lockClarify(rid, requestID any, questionID, answer string) map[string]any {
-	return handleRequest(context.Background(), map[string]any{"id": rid, "method": "clarify.lock",
-		"params": map[string]any{"request_id": requestID, "question_id": questionID, "answer": answer}})
-}
-
 // Stop doubles of the three agent shapes the explicit stop compatibility case drives
 type legacyStopAgent struct{ calls *[]string }
 
@@ -140,21 +119,3 @@ func (a legacyStopAgent) Interrupt(string) { *a.calls = append(*a.calls, "legacy
 type hardOnlyStopAgent struct{ calls *[]string }
 
 func (a hardOnlyStopAgent) HardInterrupt(string) { *a.calls = append(*a.calls, "hard") }
-
-// Live record whose payload a reattaching client receives
-func payloadSession() *tuihost.Session {
-	return tuihost.NewSession(map[string]any{"agent": nil, "cols": 80, "created_at": 1.0, "history": []any{},
-		"running": true, "session_key": "stored-session"})
-}
-
-// Waits until a queued approval entry settles and returns its choice
-func settledChoice(t *testing.T, entry *tools.ApprovalEntry) string {
-	t.Helper()
-	select {
-	case <-entry.Done():
-		return entry.Result
-	case <-time.After(2 * time.Second):
-		t.Fatal("approval entry never settled")
-		return ""
-	}
-}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
@@ -128,16 +129,30 @@ func lcsOpcodes(a, b []string) []Opcode {
 	return merged
 }
 
+// Writes lsp settings into the runtime's profile config.yaml, returning a context that reads that profile
+func lspSettings(t *testing.T, rt *Runtime, section map[string]any) context.Context {
+	t.Helper()
+	if err := os.MkdirAll(rt.Home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := config.SafeDump(map[string]any{"lsp": section})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rt.Home, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return rt.settingsCtx()
+}
+
 // Test runtime with captured logs, a recording ledger and an empty managed package store
 func testRuntime(t *testing.T) (*Runtime, *captureHandler, *ledger) {
 	t.Helper()
 	h := &captureHandler{}
 	led := &ledger{}
-	cfg := map[string]any{}
 	rt := &Runtime{
-		Home:   filepath.Join(t.TempDir(), "home"),
-		Log:    slog.New(h),
-		Config: func() map[string]any { return cfg },
+		Home: filepath.Join(t.TempDir(), "home"),
+		Log:  slog.New(h),
 		EnvFor: func(_ []string, base map[string]string) map[string]string {
 			if base == nil {
 				return map[string]string{}

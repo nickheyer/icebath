@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Stored private policy of a bootstrap frame, the storage_unavailable refusal of an incomplete one
@@ -56,9 +57,10 @@ func RegisterWorkerHooks(ctx context.Context, policy *LocalSessionPolicy) error 
 	if err != nil {
 		return err
 	}
-	if _, err := plugins.RegisterShellHooksFromConfig(ctx, cfg, accept, false); err != nil {
+	frozen := settings.WithFrozen(ctx, cfg)
+	if _, err := plugins.RegisterShellHooksFromConfig(frozen, accept, false); err != nil {
 		return err
 	}
-	_, err = plugins.RegisterOutboundWebhooksFromConfig(ctx, cfg)
+	_, err = plugins.RegisterOutboundWebhooksFromConfig(frozen)
 	return err
 }

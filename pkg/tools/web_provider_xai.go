@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -10,29 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-const (
-	xaiWebDefaultModel   = "grok-build-0.1"
-	xaiWebDefaultTimeout = 90
-	xaiMaxDomainFilters  = 5
-)
+// Most domains one xAI search filter may name
+const xaiMaxDomainFilters = 5
 
 // Tolerates prose around the JSON block reasoning models sometimes narrate
 var xaiJSONBlockRe = regexp.MustCompile(`\{[\s\S]*\}`)
-
-// The web.xai mapping of the config, empty on a miss
-func loadXAIWebConfig(env *Env) map[string]any {
-	m, _ := webCfg(env).Get("xai").(map[string]any)
-	if m == nil {
-		return map[string]any{}
-	}
-	return m
-}
 
 // Stripped non empty string entries of a list capped at the xAI filter limit
 func coerceDomainList(value any) []any {
@@ -42,8 +31,8 @@ func coerceDomainList(value any) []any {
 	}
 	out := []any{}
 	for _, item := range list {
-		if s, ok := item.(string); ok && pystr.Strip(s) != "" {
-			out = append(out, pystr.Strip(s))
+		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, strings.TrimSpace(s))
 		}
 	}
 	if len(out) > xaiMaxDomainFilters {
@@ -52,25 +41,15 @@ func coerceDomainList(value any) []any {
 	return out
 }
 
-// float(value) or the default on its TypeError or ValueError, an OverflowError raised
-func coerceFloat(value any, def float64) (float64, error) {
-	f, err := pyint.Float(value)
-	if err == nil {
-		return f, nil
-	}
-	var pe *pyint.Error
-	if errors.As(err, &pe) && pe.Kind == "OverflowError" {
-		return 0, err
-	}
-	return def, nil
-}
-
 // web_search tool spec with optional domain filters, nil when both filter kinds are set
-func xaiWebSearchTool(cfg map[string]any) *pyjson.Object {
+func xaiWebSearchTool(ctx context.Context) *pyjson.Object {
 	filters := pyjson.NewObject()
-	for _, k := range []string{"allowed_domains", "excluded_domains"} {
-		if v := coerceDomainList(cfg[k]); len(v) > 0 {
-			filters.Set(k, v)
+	for _, f := range []struct {
+		name    string
+		setting *settings.List
+	}{{"allowed_domains", settings.WebXaiAllowedDomains}, {"excluded_domains", settings.WebXaiExcludedDomains}} {
+		if v := coerceDomainList(f.setting.Get(ctx)); len(v) > 0 {
+			filters.Set(f.name, v)
 		}
 	}
 	if filters.Len() == 2 {
@@ -118,7 +97,7 @@ func xaiPostResponses(ctx context.Context, env *Env, baseURL string, payload *py
 		}
 		if resp.StatusCode == 401 && attempt == 0 && isOAuthPath {
 			envLog(env).Info("xAI web search got 401 on first attempt; forcing OAuth refresh and retrying once.")
-			newKey := pystr.Strip(resolveXAIHTTPCredentialsRefreshed(env, apiKey).APIKey)
+			newKey := strings.TrimSpace(resolveXAIHTTPCredentialsRefreshed(env, apiKey).APIKey)
 			if newKey != "" && newKey != apiKey {
 				apiKey, headers[0][1] = newKey, "Bearer "+newKey
 				continue
@@ -126,7 +105,7 @@ func xaiPostResponses(ctx context.Context, env *Env, baseURL string, payload *py
 		}
 		body := runePrefix(resp.Text(), 300)
 		envLog(env).Warn("xAI web search HTTP error", "status", resp.StatusCode, "body", body)
-		return nil, searchFail(pystr.Rstrip(fmt.Sprintf("xAI web search returned HTTP %d: %s", resp.StatusCode, body))), nil
+		return nil, searchFail(strings.TrimRightFunc(fmt.Sprintf("xAI web search returned HTTP %d: %s", resp.StatusCode, body), unicode.IsSpace)), nil
 	}
 	return nil, searchFail("xAI web search produced no response"), nil
 }
@@ -162,7 +141,7 @@ func xaiCollectOutputText(data any) ([]string, []*pyjson.Object, error) {
 	var annotations []*pyjson.Object
 	for _, c := range chunks {
 		if t, ok := c.Get("text"); ok {
-			if s, isStr := t.(string); isStr && pystr.Strip(s) != "" {
+			if s, isStr := t.(string); isStr && strings.TrimSpace(s) != "" {
 				texts = append(texts, s)
 			}
 		}
@@ -187,7 +166,7 @@ func xaiRowField(row *pyjson.Object, key string) string {
 	if !ok {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Rows of a JSON object with a results array in the text or its braced block, nil when absent
@@ -267,9 +246,9 @@ func xaiResultsFromAnnotations(annotations []*pyjson.Object, joined string, limi
 		end, okE := pyBigIntValue(endV)
 		if okS && okE && start.Sign() >= 0 && start.Cmp(end) < 0 && end.Cmp(big.NewInt(int64(len(runes)))) <= 0 {
 			s := int(start.Int64())
-			description = pystr.Strip(string(runes[max(0, s-200):s]))
+			description = strings.TrimSpace(string(runes[max(0, s-200):s]))
 			if r := []rune(description); len(r) > 200 {
-				description = pystr.Strip(string(r[len(r)-200:]))
+				description = strings.TrimSpace(string(r[len(r)-200:]))
 			}
 		}
 		results = append(results, titleHit("", u, description, len(results)+1))
@@ -304,7 +283,7 @@ func xaiExtractResults(data any, limit int) ([]WebSearchHit, error) {
 	head, _ := pySeqHead(citations, limit)
 	out := []WebSearchHit{}
 	for i, u := range head.([]any) {
-		if s, isStr := u.(string); isStr && pystr.Strip(s) != "" {
+		if s, isStr := u.(string); isStr && strings.TrimSpace(s) != "" {
 			out = append(out, titleHit("", s, "", i+1))
 		}
 	}
@@ -322,25 +301,22 @@ func (p *xaiWebProvider) Search(ctx context.Context, env *Env, query string, lim
 		return searchFail("Interrupted"), nil
 	}
 	creds := resolveXAIHTTPCredentials(env, false)
-	apiKey := pystr.Strip(creds.APIKey)
+	apiKey := strings.TrimSpace(creds.APIKey)
 	baseURL := creds.BaseURL
 	if baseURL == "" {
 		baseURL = "https://api.x.ai/v1"
 	}
-	baseURL = strings.TrimRight(pystr.Strip(baseURL), "/")
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if apiKey == "" {
 		return searchFail("No xAI credentials found. Run `icebath auth` to sign in with xAI Grok OAuth, or set XAI_API_KEY."), nil
 	}
 	limit = max(1, min(limit, 100))
-	cfg := loadXAIWebConfig(env)
-	model := ""
-	if s, ok := cfg["model"].(string); ok {
-		model = pystr.Strip(s)
-	}
+	wctx := webCtx(env)
+	model := strings.TrimSpace(settings.WebXaiModel.Get(wctx))
 	if model == "" {
-		model = xaiWebDefaultModel
+		model = settings.WebXaiModel.Default
 	}
-	tool := xaiWebSearchTool(cfg)
+	tool := xaiWebSearchTool(wctx)
 	if tool == nil {
 		return searchFail("web.xai.allowed_domains and web.xai.excluded_domains cannot both be set (xAI restriction)."), nil
 	}
@@ -353,14 +329,7 @@ func (p *xaiWebProvider) Search(ctx context.Context, env *Env, query string, lim
 	payload.Set("tools", []any{tool})
 	payload.Set("include", []any{"no_inline_citations"})
 	envLog(env).Info("xAI web search", "base_url", baseURL, "query", query, "limit", limit, "model", model)
-	timeoutValue, ok := cfg["timeout"]
-	if !ok {
-		timeoutValue = xaiWebDefaultTimeout
-	}
-	timeout, err := coerceFloat(timeoutValue, xaiWebDefaultTimeout)
-	if err != nil {
-		return nil, err
-	}
+	timeout := settings.WebXaiTimeout.Get(wctx).Seconds()
 	data, failure, err := xaiPostResponses(ctx, env, baseURL, payload, apiKey, timeout, creds.Provider == "xai-oauth")
 	if err != nil {
 		return nil, err

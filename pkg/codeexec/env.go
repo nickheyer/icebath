@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -146,7 +145,7 @@ func scrubChildEnv(ctx context.Context, env *tools.Env, source map[string]string
 				break
 			}
 		}
-		if safe || opts.toolchain[k] || icebathChildAllowed[k] || (windows && windowsEssentialEnvVars[pystr.Upper(k)]) {
+		if safe || opts.toolchain[k] || icebathChildAllowed[k] || (windows && windowsEssentialEnvVars[strings.ToUpper(k)]) {
 			scrubbed[k] = v
 		} else if strings.HasPrefix(k, "ICEBATH_") {
 			dropped = append(dropped, k)
@@ -343,7 +342,7 @@ func resolveChildPython(ctx context.Context, env *tools.Env, mode string) (strin
 		subdir, exeNames = "Scripts", []string{"python.exe", "python3.exe"}
 	}
 	for _, name := range []string{"VIRTUAL_ENV", "CONDA_PREFIX"} {
-		root := pystr.Strip(environ[name])
+		root := strings.TrimSpace(environ[name])
 		if root == "" {
 			continue
 		}
@@ -385,7 +384,7 @@ func resolveChildCwd(env *tools.Env, mode, stagingDir, taskID string) (string, e
 	if err != nil {
 		return "", err
 	}
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	candidates := []string{""}
 	if raw != "" {
 		candidates[0] = pypath.Expanduser(raw)

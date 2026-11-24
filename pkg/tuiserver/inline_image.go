@@ -25,7 +25,6 @@ import (
 	"golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -61,7 +60,7 @@ func resolveInlineMode(configured any, graphics bool, detected string) string {
 	}
 	mode := "auto"
 	if _, isBool := configured.(bool); configured != nil && !isBool {
-		mode = strings.ToLower(pystr.Strip(pyrepr.Str(configured)))
+		mode = strings.ToLower(strings.TrimSpace(pyrepr.Str(configured)))
 	}
 	switch mode {
 	case "off":

@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"slices"
@@ -11,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -43,111 +41,6 @@ func scriptedSetupConsole(t *testing.T, answers ...string) (context.Context, *by
 	var out bytes.Buffer
 	t.Cleanup(WithSetupConsole(&cliui.Console{In: strings.NewReader(in.String()), Out: &out}))
 	return home.WithOverride(context.Background(), h), &out
-}
-
-// Swaps the provider picker the model section runs
-func swapSetupPicker(t *testing.T, fn func(ctx context.Context, ns map[string]any) error) {
-	t.Helper()
-	prev := setupSelectProviderAndModel
-	setupSelectProviderAndModel = fn
-	t.Cleanup(func() { setupSelectProviderAndModel = prev })
-}
-
-// Writes what a model flow writes, the provider, base url and default model of the home config
-func writeModelConfig(t *testing.T, ctx context.Context, providerName, baseURL, modelName string) {
-	t.Helper()
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, ok := cfg["model"].(map[string]any)
-	if !ok {
-		m = map[string]any{}
-		if cfg["model"] != nil && cfg["model"] != "" {
-			m["default"] = cfg["model"]
-		}
-		cfg["model"] = m
-	}
-	m["provider"] = providerName
-	if baseURL != "" {
-		m["base_url"] = baseURL
-	}
-	if modelName != "" {
-		m["default"] = modelName
-	}
-	if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestSetupDelegatesToSelectProviderAndModel(t *testing.T) {
-	ctx, _ := scriptedSetupConsole(t)
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := 0
-	swapSetupPicker(t, func(ctx context.Context, ns map[string]any) error {
-		calls++
-		if ns != nil {
-			t.Fatalf("picker namespace %v", ns)
-		}
-		writeModelConfig(t, ctx, "custom", "http://localhost:11434/v1", "qwen3.5:32b")
-		return nil
-	})
-	if err := SetupModelProvider(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	reloaded, err := config.LoadContext(ctx, h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	model, ok := reloaded["model"].(map[string]any)
-	if !ok || calls != 1 || model["provider"] != "custom" || model["base_url"] != "http://localhost:11434/v1" || model["default"] != "qwen3.5:32b" {
-		t.Fatalf("calls %d model %v", calls, reloaded["model"])
-	}
-}
-
-func TestSetupModelProviderPreservesAuxiliaryChoicesWrittenByPicker(t *testing.T) {
-	ctx, _ := scriptedSetupConsole(t)
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v, _ := config.CfgGet(cfg, "auxiliary", "compression", "provider"); v != "auto" {
-		t.Fatalf("default aux provider %v", v)
-	}
-	swapSetupPicker(t, func(ctx context.Context, _ map[string]any) error {
-		fresh, err := config.LoadContext(ctx, h, nil)
-		if err != nil {
-			return err
-		}
-		aux, _ := SetdefaultDict(fresh, "auxiliary")
-		entry, _ := SetdefaultDict(aux, "compression")
-		entry["provider"], entry["model"] = "gemini", "gemini-2.5-flash"
-		return config.SaveConfig(ctx, h, fresh, config.SaveOptions{})
-	})
-	if err := SetupModelProvider(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	reloaded, err := config.LoadContext(ctx, h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, _ := config.CfgGet(reloaded, "auxiliary", "compression", "provider")
-	m, _ := config.CfgGet(reloaded, "auxiliary", "compression", "model")
-	if p != "gemini" || m != "gemini-2.5-flash" {
-		t.Fatalf("aux compression %v %v", p, m)
-	}
 }
 
 func TestPromptChoiceEscapeKeepsDefaultWithoutNumberedFallback(t *testing.T) {
@@ -274,45 +167,6 @@ func TestPromptStripsBracketedPasteMarkers(t *testing.T) {
 	_, _ = scriptedSetupConsole(t, "\x1b[200~sk-ant-api-key\x1b[201~")
 	if got := SetupPrompt("API key", "", false); got != "sk-ant-api-key" {
 		t.Fatalf("value %q", got)
-	}
-}
-
-func TestSetdefaultDictMirrorsDictSetdefault(t *testing.T) {
-	cfg := map[string]any{"a": map[string]any{"x": 1}, "t": config.Tree{"y": 2}, "n": nil, "s": "text"}
-	if m, err := SetdefaultDict(cfg, "a"); err != nil || m["x"] != 1 {
-		t.Fatalf("existing %v %v", m, err)
-	}
-	if m, err := SetdefaultDict(cfg, "t"); err != nil || m["y"] != 2 {
-		t.Fatalf("tree %v %v", m, err)
-	}
-	if m, err := SetdefaultDict(cfg, "new"); err != nil || m == nil || cfg["new"] == nil {
-		t.Fatalf("missing %v %v", m, err)
-	}
-	for key, typ := range map[string]string{"n": "nothing", "s": "text"} {
-		if _, err := SetdefaultDict(cfg, key); err == nil || err.Error() != key+" in config is "+typ+", expected a mapping" {
-			t.Fatalf("%s %v", key, err)
-		}
-	}
-}
-
-func TestSetupSystemExitReadsEveryExitShape(t *testing.T) {
-	for _, c := range []struct {
-		err  error
-		code int
-		msg  string
-		ok   bool
-	}{
-		{SetupExit{Code: 3}, 3, "", true},
-		{&AuthExitError{Code: 1, Message: "denied"}, 1, "denied", true},
-		{&OAuthLoginExitError{Code: 1}, 1, "", true},
-		{&MoAExitError{Message: "nope"}, 1, "nope", true},
-		{errors.New("other"), 0, "", false},
-		{nil, 0, "", false},
-	} {
-		code, msg, ok := SetupSystemExit(c.err)
-		if code != c.code || msg != c.msg || ok != c.ok {
-			t.Fatalf("%v -> %d %q %v", c.err, code, msg, ok)
-		}
 	}
 }
 

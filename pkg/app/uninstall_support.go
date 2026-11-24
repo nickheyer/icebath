@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"fmt"
 	"io"
 	"os"
@@ -8,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python sys.platform of the running OS
@@ -57,7 +58,7 @@ func uninstallConfirmYes(w io.Writer, text string) bool {
 		fmt.Fprintln(w, "Cancelled.")
 		return false
 	}
-	confirm := pystr.Lower(pystr.Strip(answer))
+	confirm := strings.ToLower(strings.TrimSpace(answer))
 	if confirm != "yes" {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "Uninstall cancelled.")

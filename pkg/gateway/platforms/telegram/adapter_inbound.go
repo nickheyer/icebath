@@ -22,7 +22,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -148,11 +147,8 @@ func (a *TelegramAdapter) ignoredThreads(ctx context.Context) map[int64]bool {
 // Mention word patterns of the adapter's profile as set right now, compiled again only when the setting changed
 func (a *TelegramAdapter) currentMentionPatterns() []*regexp2.Regexp {
 	var raw any
-	if v, err := settings.Resolve(a.settingsCtx, settings.TelegramMentionPatterns.Key); err == nil {
-		raw = v.Value
-	}
-	if text, isText := raw.(string); isText && pystr.Strip(text) == "" {
-		raw = nil
+	if patterns := settings.TelegramMentionPatterns.Get(a.settingsCtx); len(patterns) > 0 {
+		raw = patterns
 	}
 	source := pyrepr.Repr(raw)
 	a.mentionPatterns.mu.Lock()
@@ -171,7 +167,7 @@ func chatTypeStr(chat *models.Chat) string {
 		return ""
 	}
 	parts := strings.Split(string(chat.Type), ".")
-	return pystr.Lower(parts[len(parts)-1])
+	return strings.ToLower(parts[len(parts)-1])
 }
 
 // Chat id text of a message
@@ -220,12 +216,12 @@ func (a *TelegramAdapter) currentBotUsername() string {
 	if observed != "" {
 		return observed
 	}
-	return pystr.Lower(strings.TrimLeft(a.cachedBotUsername(), "@"))
+	return strings.ToLower(strings.TrimLeft(a.cachedBotUsername(), "@"))
 }
 
 // Records the bot's current username, logging real renames
 func (a *TelegramAdapter) noteBotUsername(username string) {
-	handle := pystr.Lower(strings.TrimLeft(username, "@"))
+	handle := strings.ToLower(strings.TrimLeft(username, "@"))
 	if handle == "" {
 		return
 	}
@@ -350,7 +346,7 @@ var rawMentionRE = regexp2.MustCompile(`(?i)(?<![A-Za-z0-9_\x60/])@([A-Za-z0-9_]
 // Explicit bot usernames mentioned, foreign handles only when bot shaped and our own handle always
 func extractBotMentionUsernames(m *models.Message, selfUsername string) map[string]bool {
 	out := map[string]bool{}
-	own := pystr.Lower(strings.TrimLeft(selfUsername, "@"))
+	own := strings.ToLower(strings.TrimLeft(selfUsername, "@"))
 	isBotHandle := func(handle string) bool {
 		if handle == "" {
 			return false
@@ -363,7 +359,7 @@ func extractBotMentionUsernames(m *models.Message, selfUsername string) map[stri
 	}
 	for _, src := range entitySourcesOf(m) {
 		for _, e := range src.entities {
-			entityType := pystr.Lower(string(e.Type))
+			entityType := strings.ToLower(string(e.Type))
 			if entityType != "mention" && entityType != "bot_command" {
 				continue
 			}
@@ -371,9 +367,9 @@ func extractBotMentionUsernames(m *models.Message, selfUsername string) map[stri
 			if !ok {
 				continue
 			}
-			text = pystr.Strip(text)
+			text = strings.TrimSpace(text)
 			if entityType == "mention" {
-				if handle := pystr.Lower(strings.TrimLeft(text, "@")); isBotHandle(handle) {
+				if handle := strings.ToLower(strings.TrimLeft(text, "@")); isBotHandle(handle) {
 					out[handle] = true
 				}
 				continue
@@ -382,7 +378,7 @@ func extractBotMentionUsernames(m *models.Message, selfUsername string) map[stri
 			if at < 0 {
 				continue
 			}
-			if target := pystr.Lower(pystr.Strip(text[at+1:])); isBotHandle(target) {
+			if target := strings.ToLower(strings.TrimSpace(text[at+1:])); isBotHandle(target) {
 				out[target] = true
 			}
 		}
@@ -392,7 +388,7 @@ func extractBotMentionUsernames(m *models.Message, selfUsername string) map[stri
 			continue
 		}
 		for match, _ := rawMentionRE.FindStringMatch(src.text); match != nil; match, _ = rawMentionRE.FindNextMatch(match) {
-			if handle := pystr.Lower(match.GroupByNumber(1).String()); isBotHandle(handle) {
+			if handle := strings.ToLower(match.GroupByNumber(1).String()); isBotHandle(handle) {
 				out[handle] = true
 			}
 		}
@@ -413,12 +409,12 @@ func (a *TelegramAdapter) messageMentionsBot(m *models.Message) bool {
 	}
 	for _, src := range entitySourcesOf(m) {
 		for _, e := range src.entities {
-			switch pystr.Lower(string(e.Type)) {
+			switch strings.ToLower(string(e.Type)) {
 			case "mention":
 				if expected == "" {
 					continue
 				}
-				if span, ok := entitySpan(src.text, e); ok && pystr.Lower(pystr.Strip(span)) == expected {
+				if span, ok := entitySpan(src.text, e); ok && strings.ToLower(strings.TrimSpace(span)) == expected {
 					return true
 				}
 			case "text_mention":
@@ -433,7 +429,7 @@ func (a *TelegramAdapter) messageMentionsBot(m *models.Message) bool {
 				if !ok {
 					continue
 				}
-				if at := strings.Index(command, "@"); at >= 0 && pystr.Lower(pystr.Strip(command[at:])) == expected {
+				if at := strings.Index(command, "@"); at >= 0 && strings.ToLower(strings.TrimSpace(command[at:])) == expected {
 					return true
 				}
 			}
@@ -512,7 +508,7 @@ func (a *TelegramAdapter) cleanBotTriggerText(text *string) *string {
 	if err != nil {
 		return text
 	}
-	if cleaned = pystr.Strip(cleaned); cleaned != "" {
+	if cleaned = strings.TrimSpace(cleaned); cleaned != "" {
 		return &cleaned
 	}
 	return text
@@ -527,7 +523,7 @@ func (a *TelegramAdapter) topicGatesPass(ctx context.Context, chatID string, thr
 		}
 	}
 	if threadID != nil {
-		n, err := strconv.ParseInt(pystr.Strip(*threadID), 10, 64)
+		n, err := strconv.ParseInt(strings.TrimSpace(*threadID), 10, 64)
 		if err != nil {
 			if !warnNonNumeric {
 				return &blocked
@@ -690,7 +686,7 @@ func observedMediaSource(m *models.Message) *mediaSource {
 	case m.Audio != nil:
 		return &mediaSource{fileID: m.Audio.FileID, fileSize: m.Audio.FileSize, filename: m.Audio.FileName, kind: "audio"}
 	case m.Document != nil:
-		return &mediaSource{fileID: m.Document.FileID, fileSize: m.Document.FileSize, filename: m.Document.FileName, mime: pystr.Lower(m.Document.MimeType)}
+		return &mediaSource{fileID: m.Document.FileID, fileSize: m.Document.FileSize, filename: m.Document.FileName, mime: strings.ToLower(m.Document.MimeType)}
 	}
 	return nil
 }
@@ -1281,7 +1277,7 @@ func (a *TelegramAdapter) routePhotoEvent(ctx context.Context, m *models.Message
 // First candidate extension the path ends with, else the default
 func extFromPath(filePath string, candidates []string, def string) string {
 	if filePath != "" {
-		lowered := pystr.Lower(filePath)
+		lowered := strings.ToLower(filePath)
 		for _, c := range candidates {
 			if strings.HasSuffix(lowered, c) {
 				return c
@@ -1374,9 +1370,9 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 		original := doc.FileName
 		ext := ""
 		if original != "" {
-			ext = pystr.Lower(filepath.Ext(original))
+			ext = strings.ToLower(filepath.Ext(original))
 		}
-		docMime := pystr.Lower(doc.MimeType)
+		docMime := strings.ToLower(doc.MimeType)
 		if ext == "" && docMime != "" {
 			ext = telegramImageMimeToExt[docMime]
 			if ext == "" {
@@ -1948,7 +1944,7 @@ func (a *TelegramAdapter) EntitySources(cm *ContextMessage) []EntitySource {
 // Bare lowercase entity type
 func (a *TelegramAdapter) EntityType(entity MessageEntity) string {
 	parts := strings.Split(pyrepr.Str(entity.Type), ".")
-	return pystr.Lower(parts[len(parts)-1])
+	return strings.ToLower(parts[len(parts)-1])
 }
 
 // Entity span of a helper module entity, empty when its offsets are unusable

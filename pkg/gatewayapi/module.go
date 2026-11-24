@@ -127,8 +127,8 @@ func icebathVersion() string {
 }
 
 // Host and port the adapter binds, config winning over the env fallbacks
-func ListenAddress(extra map[string]any) (any, int) {
-	return gateway.APIServerListenAddress(extra)
+func ListenAddress(ctx context.Context, extra map[string]any) (any, int) {
+	return gateway.APIServerListenAddress(ctx, extra)
 }
 
 // Runtime agent keywords for an explicit provider and model resolved from the authenticated catalog

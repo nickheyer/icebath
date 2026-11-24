@@ -882,7 +882,7 @@ func (s *Scope) LedgerCompact(ctx context.Context) (int, int, int, error) {
 	var out []string
 	kept := 0
 	for _, line := range pystr.Splitlines(string(raw), false) {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		row, err := pyjson.Loads(line)
@@ -958,7 +958,7 @@ func (s *Scope) LedgerGCBlobs(ctx context.Context) (int, int64, error) {
 	}
 	referenced := map[string]bool{}
 	for _, line := range pystr.Splitlines(string(raw), false) {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		row, err := pyjson.Loads(line)
@@ -1108,7 +1108,7 @@ func (s *Scope) LedgerListEntries(skill string, limit int) ([]*pyjson.Object, er
 		return rows, nil
 	}
 	for _, line := range pystr.Splitlines(string(raw), false) {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		row, err := pyjson.Loads(line)

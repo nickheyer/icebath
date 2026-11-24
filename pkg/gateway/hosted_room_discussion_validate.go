@@ -214,10 +214,10 @@ func ValidateUserPayload(value any) (map[string]any, error) {
 	if !ok || len(text) > maxUserTextBytes {
 		return nil, discussionInvalid("user payload text must be a bounded string")
 	}
-	if pystr.Strip(text) == "" && !pyrepr.Truthy(normalized["attachments"]) {
+	if strings.TrimSpace(text) == "" && !pyrepr.Truthy(normalized["attachments"]) {
 		return nil, discussionInvalid("user payload must contain text or attachments")
 	}
-	normalized["text"] = pystr.Strip(text)
+	normalized["text"] = strings.TrimSpace(text)
 	return normalized, nil
 }
 
@@ -326,7 +326,7 @@ func discussionMember(raw any, index int, known map[string]bool) (DiscussionMemb
 	if !ok {
 		return DiscussionMember{}, discussionInvalid(fmt.Sprintf("member %d display_name must be a string", index))
 	}
-	if display = pystr.Strip(display); utf8.RuneCountInString(display) > maxActorLabelChars {
+	if display = strings.TrimSpace(display); utf8.RuneCountInString(display) > maxActorLabelChars {
 		return DiscussionMember{}, discussionInvalid(fmt.Sprintf("member %d display_name is too long", index))
 	}
 	out.DisplayName = display
@@ -396,10 +396,10 @@ func ValidateDiscussionRoom(value any, localProfiles []string) (DiscussionRoom, 
 		return DiscussionRoom{}, err
 	}
 	name, ok := fields["name"].(string)
-	if !ok || pystr.Strip(name) == "" {
+	if !ok || strings.TrimSpace(name) == "" {
 		return DiscussionRoom{}, discussionInvalid("room name must be a non-empty string")
 	}
-	if name = pystr.Strip(name); utf8.RuneCountInString(name) > maxRoomNameChars {
+	if name = strings.TrimSpace(name); utf8.RuneCountInString(name) > maxRoomNameChars {
 		return DiscussionRoom{}, discussionInvalid("room name is too long")
 	}
 	gatewayID, err := discussionIdentifier(fields["authority_gateway_id"], "authority_gateway_id")
@@ -419,7 +419,7 @@ func ValidateDiscussionRoom(value any, localProfiles []string) (DiscussionRoom, 
 
 // Whether a settled member result is Discussion silence
 func IsPassText(value any) bool {
-	text := pystr.Strip(roomLinkText(value))
+	text := strings.TrimSpace(roomLinkText(value))
 	return text == "" || discussionPassRE.MatchString(text)
 }
 
@@ -586,7 +586,7 @@ func discussionValidateMemberMessage(payload, actor map[string]any, room Discuss
 	if err := discussionTurnCoordinates(out, room); err != nil {
 		return nil, err
 	}
-	if text, ok := out["text"].(string); !ok || (out["attachments"] == nil && (pystr.Strip(text) == "" || IsPassText(text))) {
+	if text, ok := out["text"].(string); !ok || (out["attachments"] == nil && (strings.TrimSpace(text) == "" || IsPassText(text))) {
 		return nil, discussionInvalid("message.member text must be a non-pass string")
 	}
 	member, err := discussionMemberByID(room, out["member_id"])
@@ -648,7 +648,7 @@ func discussionValidateTerminal(kind string, payload, actor map[string]any, room
 	if kind == "turn.failed" {
 		field = "error"
 	}
-	if text, ok := payload[field].(string); !ok || pystr.Strip(text) == "" {
+	if text, ok := payload[field].(string); !ok || strings.TrimSpace(text) == "" {
 		return nil, discussionInvalid(kind + " " + field + " must be non-empty")
 	}
 	if kind == "turn.deferred" {

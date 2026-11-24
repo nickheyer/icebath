@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -30,11 +29,11 @@ func gatewayListingSelection(ctx context.Context, args map[string]any) ([]string
 		}
 		requested = strings.Join(parts, ",")
 	}
-	if text, ok := requested.(string); ok && pystr.Strip(text) != "" {
+	if text, ok := requested.(string); ok && strings.TrimSpace(text) != "" {
 		seen := map[string]bool{}
 		names := []string{}
 		for _, name := range strings.Split(text, ",") {
-			if name = pystr.Strip(name); name != "" && !seen[name] {
+			if name = strings.TrimSpace(name); name != "" && !seen[name] {
 				seen[name] = true
 				names = append(names, name)
 			}

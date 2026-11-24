@@ -15,18 +15,14 @@ import (
 
 const bootWriteDelay = 400 * time.Millisecond
 
-// Version of the boot theme file this build reads and writes, an older file dropped for the default theme
-const bootThemeVersion = 2
-
 // File of the last session's resolved theme that paints the first frame
 func bootFilePath() string { return filepath.Join(home.Process(), "tui-theme-boot.json") }
 
-// On disk boot theme, version 2 since a theme names its skin
+// On disk boot theme
 type bootThemeFile struct {
 	Background string `json:"background,omitempty"`
 	Mode       string `json:"mode,omitempty"`
 	Theme      *theme `json:"theme,omitempty"`
-	Version    int    `json:"version"`
 }
 
 // Boot theme read at startup and whether it seeded the theme pin
@@ -36,11 +32,13 @@ type bootState struct {
 }
 
 var (
-	bootOnce         sync.Once
-	boot             bootState
-	seededBackground string
-	bootWriteMu      sync.Mutex
-	bootWriteTimer   *time.Timer
+	bootOnce sync.Once
+	boot     bootState
+	// Mode and background hint the boot file seeded under the terminal's own environment, each dropped once something contradicts it
+	seededMode, seededBackground string
+	seedMu                       sync.Mutex
+	bootWriteMu                  sync.Mutex
+	bootWriteTimer               *time.Timer
 )
 
 // Whether a decoded theme carries the color and brand fields the TUI needs
@@ -71,16 +69,15 @@ func readBootTheme() (bootThemeFile, bool) {
 		Background any             `json:"background"`
 		Mode       any             `json:"mode"`
 		Theme      json.RawMessage `json:"theme"`
-		Version    any             `json:"version"`
 	}
-	if json.Unmarshal(data, &raw) != nil || raw.Version != float64(bootThemeVersion) || !looksLikeTheme(raw.Theme) {
+	if json.Unmarshal(data, &raw) != nil || !looksLikeTheme(raw.Theme) {
 		return bootThemeFile{}, false
 	}
 	var t theme
 	if json.Unmarshal(raw.Theme, &t) != nil {
 		return bootThemeFile{}, false
 	}
-	out := bootThemeFile{Theme: &t, Version: bootThemeVersion}
+	out := bootThemeFile{Theme: &t}
 	out.Background, _ = raw.Background.(string)
 	if mode, _ := raw.Mode.(string); mode == "light" || mode == "dark" {
 		out.Mode = mode
@@ -88,22 +85,50 @@ func readBootTheme() (bootThemeFile, bool) {
 	return out, true
 }
 
-// Seeds the theme pin and background hint from the boot file unless the environment already pins a mode
+// Seeds the theme pin: the light or dark theme the launch resolved, else the boot file's mode and background hint
 func seedBootEnvironment(b bootThemeFile, found bool) bool {
-	seededBackground = ""
-	if !found || os.Getenv("ICEBATH_TUI_THEME") != "" || os.Getenv("ICEBATH_TUI_LIGHT") != "" {
+	seedMu.Lock()
+	defer seedMu.Unlock()
+	seededMode, seededBackground = "", ""
+	if pin := prefs.Theme; pin == "light" || pin == "dark" {
+		seededMode = pin
+		return true
+	}
+	if !found {
 		return false
 	}
-	seededPin := false
-	if b.Mode != "" {
-		_ = os.Setenv("ICEBATH_TUI_THEME", b.Mode)
-		seededPin = true
-	}
+	seededMode = b.Mode
 	if b.Background != "" && strings.ToLower(b.Background) != "#000000" && os.Getenv("ICEBATH_TUI_BACKGROUND") == "" {
-		_ = os.Setenv("ICEBATH_TUI_BACKGROUND", b.Background)
 		seededBackground = b.Background
 	}
-	return seededPin
+	return seededMode != ""
+}
+
+// Value of a theme detection input before the window worked anything out itself: the mode pin seeded at boot, the terminal's background
+// hint from its environment or the boot file, and the terminal's other variables
+func bootThemeEnv(name string) string {
+	loadBootTheme()
+	switch name {
+	case "ICEBATH_TUI_THEME":
+		seedMu.Lock()
+		defer seedMu.Unlock()
+		return seededMode
+	case "ICEBATH_TUI_BACKGROUND":
+		if v := os.Getenv(name); v != "" {
+			return v
+		}
+		seedMu.Lock()
+		defer seedMu.Unlock()
+		return seededBackground
+	}
+	return os.Getenv(name)
+}
+
+// Drops the mode seeded at boot, once the configured theme no longer pins one
+func dropBootMode() {
+	seedMu.Lock()
+	seededMode = ""
+	seedMu.Unlock()
 }
 
 // Boot theme and seeded pin, read and seeded once when the TUI starts
@@ -115,12 +140,13 @@ func loadBootTheme() bootState {
 	return boot
 }
 
-// Drops a boot seeded background the terminal contradicted, true when it was the seeded one
-func invalidateBootBackground() bool {
-	if seededBackground == "" || os.Getenv("ICEBATH_TUI_BACKGROUND") != seededBackground {
+// Drops a boot seeded background the terminal contradicted, true when current, the background the detection reads, was the seeded one
+func invalidateBootBackground(current string) bool {
+	seedMu.Lock()
+	defer seedMu.Unlock()
+	if seededBackground == "" || current != seededBackground {
 		return false
 	}
-	_ = os.Unsetenv("ICEBATH_TUI_BACKGROUND")
 	seededBackground = ""
 	return true
 }
@@ -139,7 +165,7 @@ func writeBootTheme(t theme, background, mode string) {
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
 		enc.SetEscapeHTML(false)
-		if enc.Encode(bootThemeFile{Background: background, Mode: mode, Theme: &t, Version: bootThemeVersion}) != nil {
+		if enc.Encode(bootThemeFile{Background: background, Mode: mode, Theme: &t}) != nil {
 			return
 		}
 		path := bootFilePath()

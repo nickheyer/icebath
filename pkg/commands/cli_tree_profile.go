@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/gatewaycreate"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
@@ -193,7 +192,7 @@ func (p *profileIO) confirm(prompt string) bool {
 	if err != nil && line == "" {
 		return false
 	}
-	answer := pystr.Lower(pystr.Strip(strings.TrimSuffix(line, "\n")))
+	answer := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(line, "\n")))
 	return answer == "y" || answer == "yes"
 }
 
@@ -514,7 +513,7 @@ func printMirrored(p *profileIO, mirrored map[string]tuigateway.MirroredValue, l
 
 // Refuses the flag combinations no create takes, here or through a gateway
 func refuseCreateArgs(p *profileIO, a ProfileArgs, cloned bool) error {
-	if a.CloneFrom != nil && pystr.Strip(*a.CloneFrom) == "" {
+	if a.CloneFrom != nil && strings.TrimSpace(*a.CloneFrom) == "" {
 		return p.die("Error: profile name cannot be empty", 1, false)
 	}
 	if cloned && a.NoCredentials {

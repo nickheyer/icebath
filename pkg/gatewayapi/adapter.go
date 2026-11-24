@@ -109,7 +109,7 @@ func NewAPIServerAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*API
 	if extra == nil {
 		extra = map[string]any{}
 	}
-	a.host, a.port = ListenAddress(extra)
+	a.host, a.port = ListenAddress(ctx, extra)
 	if v, ok := extra["key"]; ok {
 		a.apiKey = pyrepr.Str(v)
 	} else {

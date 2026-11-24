@@ -121,7 +121,7 @@ func readHead(path string, size int) ([]byte, bool) {
 
 // Interpreter path and flags of a shebang line
 func shebangTokens(shebang string) []string {
-	return pystr.SplitWhitespace(pystr.Strip(shebang[2:]), -1)
+	return pystr.SplitWhitespace(strings.TrimSpace(shebang[2:]), -1)
 }
 
 // Whether a python shebang resolves outside the directory of the running executable
@@ -157,7 +157,7 @@ func needsInterpreter(binPath string) bool {
 		return false
 	}
 	lines := pystr.Splitlines(strings.ToValidUTF8(string(head), "�"), false)
-	shebang := pystr.Strip(lines[0])
+	shebang := strings.TrimSpace(lines[0])
 	if !strings.Contains(strings.ToLower(shebang), "python") {
 		return false
 	}
@@ -226,9 +226,10 @@ func buildRelaunchArgv(extraArgs []string, preserveInherited bool, originalArgv 
 	return append(argv, extraArgs...), nil
 }
 
-// Runs a command to completion on the inherited streams, 130 when an interrupt arrived while it ran
-func runAndWait(argv []string) (int, error) {
+// Runs a command to completion on the inherited streams with env as its environment (this process's when nil), 130 when an interrupt arrived while it ran
+func runAndWait(argv, env []string) (int, error) {
 	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
@@ -249,14 +250,14 @@ func runAndWait(argv []string) (int, error) {
 	return 0, nil
 }
 
-// Replaces the current process with a fresh icebath invocation, spawning and exiting on Windows
-func relaunch(args []string, preserveInherited bool) {
+// Replaces the current process with a fresh icebath invocation with env as its environment (this process's when nil), spawning and exiting on Windows
+func relaunch(args []string, preserveInherited bool, env []string) {
 	newArgv, err := buildRelaunchArgv(args, preserveInherited, nil)
 	if err != nil {
 		panic(err)
 	}
 	if runtime.GOOS == "windows" {
-		code, err := relaunchRun(newArgv)
+		code, err := relaunchRun(newArgv, env)
 		if err != nil {
 			fmt.Fprintf(stderrWriter(), "\nIcebath relaunch failed: %s\nCommand: %s\nFix: open a new terminal so PATH picks up, then re-run icebath.\n",
 				sessionsExcText(err), strings.Join(newArgv, " "))
@@ -266,7 +267,7 @@ func relaunch(args []string, preserveInherited bool) {
 		relaunchExit(code)
 		return
 	}
-	if err := relaunchExecvp(newArgv[0], newArgv); err != nil {
+	if err := relaunchExecvp(newArgv[0], newArgv, env); err != nil {
 		panic(err)
 	}
 }

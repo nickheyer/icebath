@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Launch secret owner of the active authority, a nil owner when the runner has none
@@ -50,7 +50,7 @@ func (p *LocalSessionPolicy) CurrentReasoningConfig(ctx context.Context, runner 
 	if model != nil {
 		name = *model
 	}
-	return config.ResolveReasoningConfig(cfg, name), nil
+	return settings.ReasoningConfig(settings.WithFrozen(ctx, cfg), name), nil
 }
 
 // Next turn tier, a typed session /fast, else the policy tier frozen or followed from the profile

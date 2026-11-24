@@ -1,6 +1,8 @@
 package mattermost
 
 import (
+	"strings"
+
 	"cmp"
 	"context"
 	"errors"
@@ -82,7 +84,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if !ok {
 		return nil, attributeError(tokenValue, "strip")
 	}
-	baseURL, token := pystr.RstripChars(urlText, "/"), pystr.Strip(tokenText)
+	baseURL, token := strings.TrimRight(urlText, "/"), strings.TrimSpace(tokenText)
 	if baseURL == "" || token == "" {
 		return gateway.SendError("Mattermost standalone send: the server address and MATTERMOST_TOKEN must both be set"), nil
 	}

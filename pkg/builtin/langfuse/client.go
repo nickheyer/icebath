@@ -45,7 +45,7 @@ func secret(ctx context.Context, name string) string {
 	if err != nil {
 		panic(err)
 	}
-	return pystr.Strip(v)
+	return strings.TrimSpace(v)
 }
 
 // Settled slot of the active profile, nil when its client was never built
@@ -127,7 +127,7 @@ func validateLangfuseKey(envName, value string, requirePrefix bool) string {
 	if requirePrefix && !strings.HasPrefix(value, expected) {
 		return fmt.Sprintf("%s=%s (expected %s prefix)", envName, preview, pyrepr.StrRepr(expected))
 	}
-	remainder := pystr.Lower(strings.TrimPrefix(value, expected))
+	remainder := strings.ToLower(strings.TrimPrefix(value, expected))
 	template := placeholderRemainders[remainder]
 	for _, f := range placeholderFragments {
 		template = template || strings.Contains(remainder, f)

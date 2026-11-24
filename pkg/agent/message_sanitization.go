@@ -58,7 +58,7 @@ func closeInterruptedToolSequence(messages *[]map[string]any, finalResponse any,
 		return false
 	}
 	text, _ := finalResponse.(string)
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	var row map[string]any
 	if stripped == "" || stripped == InterruptedPlaceholder {
 		row = HiddenInterruptPlaceholderRow()
@@ -147,12 +147,12 @@ func (a *AIAgent) stripImagesForRejectingModel(apiMessages *[]any) bool {
 
 // True when a provider error says image or multimodal input is unsupported
 func looksLikeImageContentRejection(errorBody any) bool {
-	return containsAnyPhrase(pystr.Lower(pyStrOr(errorBody, "")), imageRejectionPhrases)
+	return containsAnyPhrase(strings.ToLower(pyStrOr(errorBody, "")), imageRejectionPhrases)
 }
 
 // True when the rejection is about a bad image payload rather than the model capability
 func looksLikeCorruptImageRejection(errorBody any) bool {
-	return containsAnyPhrase(pystr.Lower(pyStrOr(errorBody, "")), imageCorruptPhrases)
+	return containsAnyPhrase(strings.ToLower(pyStrOr(errorBody, "")), imageCorruptPhrases)
 }
 
 // True when body contains any of the phrases
@@ -202,7 +202,7 @@ func staleThinkingReachesWire(apiMode, providerName, model, baseURL string) bool
 // Non blank reasoning_content, else non blank reasoning, of a turn
 func replayableReasoningText(msg map[string]any) (string, bool) {
 	for _, key := range []string{carrierRC, carrierR} {
-		if value, ok := msg[key].(string); ok && pystr.Strip(value) != "" {
+		if value, ok := msg[key].(string); ok && strings.TrimSpace(value) != "" {
 			return value, true
 		}
 	}
@@ -302,7 +302,7 @@ func reapplyReasoningEcho(apiMessages []any, needsThinkingPad bool, carriers map
 
 // Provider, base URL host and model a reasoning rejection is learned for
 func (a *AIAgent) reasoningRouteKey() [3]string {
-	return [3]string{pystr.Lower(pystr.Strip(a.provider)), provider.Hostname(a.baseURL), pystr.Strip(a.model)}
+	return [3]string{strings.ToLower(strings.TrimSpace(a.provider)), provider.Hostname(a.baseURL), strings.TrimSpace(a.model)}
 }
 
 // Reasoning keys the active route rejected this session, loading the persisted record once per session

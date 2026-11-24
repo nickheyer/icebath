@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -42,7 +41,7 @@ func (r *GatewayRunner) handleApproveCommand(ctx context.Context, event *gateway
 	if stale != "" {
 		return &stale, nil
 	}
-	args := strings.Fields(strings.ToLower(pystr.Strip(event.GetCommandArgs())))
+	args := strings.Fields(strings.ToLower(strings.TrimSpace(event.GetCommandArgs())))
 	choices := map[string]bool{}
 	resolveAll := false
 	for _, a := range args {
@@ -82,14 +81,14 @@ func (r *GatewayRunner) handleDenyCommand(ctx context.Context, event *gateway.Me
 	if stale != "" {
 		return &stale, nil
 	}
-	rawArgs := pystr.Strip(event.GetCommandArgs())
+	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	tokens := strings.Fields(rawArgs)
 	resolveAll := len(tokens) > 0 && strings.ToLower(tokens[0]) == "all"
 	reason := rawArgs
 	if resolveAll {
-		reason = pystr.Strip(rawArgs[len(tokens[0]):])
+		reason = strings.TrimSpace(rawArgs[len(tokens[0]):])
 	}
-	reason = pystr.Strip(headRunes(reason, 280))
+	reason = strings.TrimSpace(headRunes(reason, 280))
 	count := tools.ResolveGatewayApproval(sessionKey, "deny", resolveAll, reason, "")
 	if count == 0 {
 		reply := i18n.T(ctx, "gateway.deny.no_pending", "", nil)

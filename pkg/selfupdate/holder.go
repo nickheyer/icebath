@@ -61,7 +61,7 @@ func icebathHolderSubcommand(cmdline string) (string, bool) {
 	}
 	normalized := make([]string, len(tokens))
 	for i, token := range tokens {
-		normalized[i] = strings.ReplaceAll(pystr.StripChars(token, "\"'"), `\`, "/")
+		normalized[i] = strings.ReplaceAll(strings.Trim(token, "\"'"), `\`, "/")
 	}
 	if gateway.CommandLineRunsInlineSource(normalized) {
 		argv, ok := gateway.InlineBootstrapArgv(normalized)
@@ -72,7 +72,7 @@ func icebathHolderSubcommand(cmdline string) (string, bool) {
 	}
 	entry := -1
 	for i, token := range tokens {
-		low := strings.ReplaceAll(pystr.StripChars(pystr.Lower(token), "\"'"), `\`, "/")
+		low := strings.ReplaceAll(strings.Trim(strings.ToLower(token), "\"'"), `\`, "/")
 		base := low[strings.LastIndex(low, "/")+1:]
 		if (strings.HasSuffix(low, "icebath_cli.main") && i > 0 && tokens[i-1] == "-m") ||
 			base == "icebath" || base == "icebath.exe" || strings.HasSuffix(low, "icebath_cli/main.py") {
@@ -97,7 +97,7 @@ func icebathHolderSubcommand(cmdline string) (string, bool) {
 		case strings.HasPrefix(token, "-"):
 			i++
 		default:
-			return pystr.Lower(token), true
+			return strings.ToLower(token), true
 		}
 	}
 	return "", false

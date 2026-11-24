@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -32,9 +31,6 @@ var fleetProbeSettleTimeoutSeconds = 120.0
 
 // Calls of the verification pass the tests replace
 var (
-	fleetPrintLegacyUnits     = printLegacyUnitsWarning
-	fleetHasLegacyUnits       = gateway.HasLegacyIcebathUnits
-	fleetFindLegacyUnits      = gateway.FindLegacyIcebathUnits
 	fleetCollectSnapshot      = collectFleetSnapshot
 	fleetProbeExpected        = fleetProbeExpectedRuntimes
 	fleetPrintMatrix          = printFleetVersionMatrixTo
@@ -53,30 +49,6 @@ func printFleetVersionMatrixTo(w io.Writer, fleet []*pyjson.Object) bool {
 	fleetStdout = w
 	defer func() { fleetStdout = saved }()
 	return PrintFleetVersionMatrix(fleet)
-}
-
-// Warns on every update about pre rename gateway units that fight the current unit for the bot token
-func printLegacyUnitsWarning(ctx context.Context, w io.Writer) {
-	if !(fleetSupportsSystemd(ctx) && fleetHasLegacyUnits(ctx)) {
-		return
-	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "⚠ Legacy Icebath gateway unit(s) detected:")
-	for _, unit := range fleetFindLegacyUnits(ctx) {
-		scope := "user"
-		if unit.System {
-			scope = "system"
-		}
-		fmt.Fprintf(w, "    %s  (%s scope)\n", unit.Path, scope)
-	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  These pre-rename units (icebath.service) fight the current")
-	fmt.Fprintln(w, "  icebath-gateway.service for the bot token and cause SIGTERM")
-	fmt.Fprintln(w, "  flap loops. Remove them with:")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "    icebath gateway migrate-legacy")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  (add `sudo` if any are in system scope)")
 }
 
 // Fleet version rows, polled over a bounded settle window when runtimes are expected
@@ -235,7 +207,7 @@ func gatewayUnitRunsOneOf(ctx context.Context, unit string, pids map[int]bool) (
 		loaded = true
 		mainPID := 0
 		if text := props["MainPID"]; text != "" {
-			parsed, ok := pyint.Parse(pystr.Strip(text))
+			parsed, ok := pyint.Parse(strings.TrimSpace(text))
 			if !ok || !parsed.IsInt64() {
 				return false, nil
 			}
@@ -345,7 +317,7 @@ func recordOwedGatewayInventory(ctx context.Context, plan *UpdatePlan, stoppedUn
 	rows := []any{}
 	if plan != nil {
 		for _, runtime := range plan.Runtimes {
-			if runtime != nil && runtime.Kind == "gateway" && pystr.Strip(runtime.Profile) != "" && runtime.Profile != "unknown" {
+			if runtime != nil && runtime.Kind == "gateway" && strings.TrimSpace(runtime.Profile) != "" && runtime.Profile != "unknown" {
 				rows = append(rows, runtime.ToDict())
 			}
 		}
@@ -409,12 +381,6 @@ func owedRestartReason(stopped []int) string {
 
 // Verifies the fleet after the restart phase, keeping the restart owed as a follow-up or clearing the obligation
 func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRestartOutcome, plan *UpdatePlan, windowsGatewayResume any, updateComplete bool) error {
-	if err := bestEffort(ctx, "Legacy unit check during update failed: %s", func() error {
-		fleetPrintLegacyUnits(ctx, w)
-		return nil
-	}); err != nil {
-		return err
-	}
 
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Tip: You can now select a provider and model:")

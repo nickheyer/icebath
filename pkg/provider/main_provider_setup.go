@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"io"
@@ -104,7 +106,7 @@ func clearStaleOpenAIBaseURL(r *ModelFlowRun) error {
 		if err != nil {
 			return err
 		}
-		provider = pystr.Lower(pystr.Strip(raw))
+		provider = strings.ToLower(strings.TrimSpace(raw))
 	}
 	if provider == "custom" || provider == "" {
 		return nil
@@ -151,15 +153,15 @@ func formatAuxCurrent(taskCfg any) string {
 	if !ok {
 		return "auto"
 	}
-	baseURL := pystr.Strip(pyOrStr(cfg["base_url"]))
+	baseURL := strings.TrimSpace(pyOrStr(cfg["base_url"]))
 	provider := "auto"
 	if pyTruthy(cfg["provider"]) {
 		provider = pyStr(cfg["provider"])
 	}
-	if provider = pystr.Strip(provider); provider == "" {
+	if provider = strings.TrimSpace(provider); provider == "" {
 		provider = "auto"
 	}
-	model := pystr.Strip(pyOrStr(cfg["model"]))
+	model := strings.TrimSpace(pyOrStr(cfg["model"]))
 	effort := auxEffortWord(cfg)
 	suffix := ""
 	if model != "" {
@@ -186,7 +188,7 @@ func auxEffortWord(taskCfg any) string {
 	if raw == false {
 		return "none"
 	}
-	return pystr.Lower(pystr.Strip(pyOrStr(raw)))
+	return strings.ToLower(strings.TrimSpace(pyOrStr(raw)))
 }
 
 // Top level delegation section in aux task shape, an empty provider meaning inherit the parent
@@ -197,7 +199,7 @@ func delegationCfgAsTask(cfg map[string]any) map[string]any {
 	}
 	out := map[string]any{}
 	for _, k := range []string{"provider", "model", "base_url", "api_key"} {
-		out[k] = pystr.Strip(pyOrStr(d[k]))
+		out[k] = strings.TrimSpace(pyOrStr(d[k]))
 	}
 	effort, has := d["reasoning_effort"]
 	if !has {
@@ -458,11 +460,11 @@ func auxSelectForTask(r *ModelFlowRun, task string) error {
 	if pyTruthy(taskCfg["provider"]) {
 		currentProvider = pyStr(taskCfg["provider"])
 	}
-	if currentProvider = pystr.Strip(currentProvider); currentProvider == "" {
+	if currentProvider = strings.TrimSpace(currentProvider); currentProvider == "" {
 		currentProvider = "auto"
 	}
-	currentModel := pystr.Strip(pyOrStr(taskCfg["model"]))
-	currentBaseURL := pystr.Strip(pyOrStr(taskCfg["base_url"]))
+	currentModel := strings.TrimSpace(pyOrStr(taskCfg["model"]))
+	currentBaseURL := strings.TrimSpace(pyOrStr(taskCfg["base_url"]))
 	displayName := auxTaskDisplayName(r.ctx(), task)
 	providers, perr := auxPickerRows(r, currentProvider, currentModel, currentBaseURL)
 	if perr != nil {
@@ -569,8 +571,8 @@ func auxFlowProviderModel(r *ModelFlowRun, task, providerSlug string, curatedMod
 // Direct OpenAI compatible base URL with an optional key and model for one aux task
 func auxFlowCustomEndpoint(r *ModelFlowRun, task string, taskCfg map[string]any) error {
 	displayName := auxTaskDisplayName(r.ctx(), task)
-	currentBaseURL := pystr.Strip(pyOrStr(taskCfg["base_url"]))
-	currentModel := pystr.Strip(pyOrStr(taskCfg["model"]))
+	currentBaseURL := strings.TrimSpace(pyOrStr(taskCfg["base_url"]))
+	currentModel := strings.TrimSpace(pyOrStr(taskCfg["model"]))
 	flowSay(r.Out, "", "  Custom endpoint for "+displayName,
 		"  Provide an OpenAI-compatible base URL (e.g. http://localhost:11434/v1)", "")
 	urlPrompt := "Base URL: "
@@ -659,7 +661,7 @@ func removeCustomProvider(r *ModelFlowRun) error {
 		}
 		fmt.Fprintln(r.Out)
 		if val, rerr := flowRawInputFn(r.Out, fmt.Sprintf("Choice [1-%d]: ", len(choices))); rerr == nil {
-			if val = pystr.Strip(val); val != "" {
+			if val = strings.TrimSpace(val); val != "" {
 				if n, ok := numberedIndex(val); ok {
 					idx = n
 				}
@@ -683,11 +685,11 @@ func promptReasoningEffortSelection(out io.Writer, efforts []string, currentEffo
 	deduped := []string{}
 	seen := map[string]bool{}
 	for _, effort := range efforts {
-		stripped := pystr.Strip(effort)
+		stripped := strings.TrimSpace(effort)
 		if stripped == "" {
 			continue
 		}
-		v := pystr.Lower(stripped)
+		v := strings.ToLower(stripped)
 		if !seen[v] {
 			seen[v] = true
 			deduped = append(deduped, v)
@@ -805,7 +807,7 @@ func offerReasoningAfterPick(r *ModelFlowRun, modelBefore string, savesBefore in
 	if !ok {
 		return nil
 	}
-	model := pystr.Strip(pyOrStr(modelCfg["default"]))
+	model := strings.TrimSpace(pyOrStr(modelCfg["default"]))
 	if model == "" || (model == modelBefore && modelChoiceSaveCount() == savesBefore) {
 		return nil
 	}
@@ -844,7 +846,7 @@ func promptMainReasoningEffort(r *ModelFlowRun, model, provider string) error {
 
 // Levels offered for a model on a provider, false when the route has no reasoning control
 func mainModelReasoningEfforts(ctx context.Context, model, provider string) ([]string, bool, error) {
-	slug := pystr.Lower(pystr.Strip(provider))
+	slug := strings.ToLower(strings.TrimSpace(provider))
 	var profile *Profile
 	if slug != "" {
 		profile = getProviderProfile(ctx, slug)

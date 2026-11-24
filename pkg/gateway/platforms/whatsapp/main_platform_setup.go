@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Terminal, profile, package manager and process the WhatsApp wizard works through
@@ -60,7 +59,7 @@ func (wz *whatsAppWizard) yesNo(prompt string) (bool, error) {
 		}
 		response = "n"
 	}
-	response = pystr.Lower(pystr.Strip(response))
+	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes", nil
 }
 
@@ -103,7 +102,7 @@ func (wz *whatsAppWizard) whatsappChooseMode() (string, error) {
 		}
 		return "", err
 	}
-	if pystr.Strip(choice) == "1" {
+	if strings.TrimSpace(choice) == "1" {
 		if err := wz.saveEnv("WHATSAPP_MODE", "bot"); err != nil {
 			return "", err
 		}
@@ -156,7 +155,7 @@ func (wz *whatsAppWizard) whatsappAllowedUsers(mode string) error {
 		if err != nil {
 			return err
 		}
-		if phone = pystr.Strip(phone); phone != "" {
+		if phone = strings.TrimSpace(phone); phone != "" {
 			return save(phone, "Updated to")
 		}
 		return nil
@@ -172,7 +171,7 @@ func (wz *whatsAppWizard) whatsappAllowedUsers(mode string) error {
 	if err != nil {
 		return err
 	}
-	if phone = pystr.Strip(phone); phone != "" {
+	if phone = strings.TrimSpace(phone); phone != "" {
 		return save(phone, "Allowed users set")
 	}
 	fmt.Fprintln(wz.out, "  ⚠ No allowlist — the agent will respond to ALL incoming messages")
@@ -197,7 +196,7 @@ func (wz *whatsAppWizard) setup() error {
 	if err != nil {
 		return err
 	}
-	if pystr.Lower(enabled) == "true" {
+	if strings.ToLower(enabled) == "true" {
 		fmt.Fprintln(wz.out, "✓ WhatsApp is already enabled")
 	}
 	if err := wz.whatsappAllowedUsers(mode); err != nil {
@@ -224,7 +223,7 @@ func (wz *whatsAppWizard) setup() error {
 			if enabled, err = wz.envValue("WHATSAPP_ENABLED"); err != nil {
 				return err
 			}
-			if pystr.Lower(enabled) != "true" {
+			if strings.ToLower(enabled) != "true" {
 				if err := wz.saveEnv("WHATSAPP_ENABLED", "true"); err != nil {
 					return err
 				}

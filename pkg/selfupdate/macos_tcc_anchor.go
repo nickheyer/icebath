@@ -181,7 +181,7 @@ func tccInterpreterSource(venvDir, minor string) string {
 	for _, l := range pystr.Splitlines(text, false) {
 		if strings.HasPrefix(strings.ToLower(l), "home") {
 			_, after, _ := strings.Cut(l, "=")
-			home = pystr.Strip(after)
+			home = strings.TrimSpace(after)
 			break
 		}
 	}
@@ -219,7 +219,7 @@ func tccMarkerMatches(venvBin, expected string) bool {
 		return false
 	}
 	text, err := pystr.DecodeUTF8Sig(raw)
-	return err == nil && pystr.Strip(text) == expected
+	return err == nil && strings.TrimSpace(text) == expected
 }
 
 // Writes the marker atomically so a concurrent ensure never reads a torn one
@@ -390,7 +390,7 @@ var tccPassesBootGate = func(staged, venvDir string) bool {
 	if code != 0 {
 		return false
 	}
-	printed := pystr.Splitlines(pystr.Strip(stdout), false)
+	printed := pystr.Splitlines(strings.TrimSpace(stdout), false)
 	if len(printed) == 0 {
 		return false
 	}

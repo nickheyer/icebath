@@ -363,10 +363,6 @@ func (c *CLI) addGateway(root *cobra.Command) {
 	systemFlag(uninstall)
 	c.newCmd(gw, "list", "List all profiles and their gateway status", "")
 	c.newCmd(gw, "setup", "Configure messaging platforms", "")
-	legacy := c.newCmd(gw, "migrate-legacy", "Remove legacy icebath.service units from pre-rename installs",
-		"Stop, disable, and remove legacy Icebath gateway unit files (e.g. icebath.service) left over from older installs. Profile units (icebath-gateway-<profile>.service) and unrelated third-party services are never touched.")
-	bf(legacy, "dry-run", "", "List what would be removed without doing it")
-	bf(legacy, "yes", "y", "Skip the confirmation prompt")
 	gmigrate := c.newCmd(gw, "migrate", "Converge every per-profile gateway onto the ONE host gateway",
 		"Converge this host onto the one-gateway-per-host model: stop and uninstall each secondary profile's gateway and its supervisor unit (systemd, launchd, Windows Scheduled Task), then restart the default profile's gateway so it serves every profile. Runs a preflight first (duplicate bot tokens, port-binding platforms without a /p/<profile>/ ingress) and changes nothing when blocked. Safe to re-run: a half-migrated host converges on the next run. Per-profile gateways are not a supported topology any more, so there is no rollback command.")
 	bf(gmigrate, "multiplex", "", "Converge onto the one host gateway (default)")

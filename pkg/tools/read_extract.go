@@ -23,10 +23,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
 	_ "modernc.org/sqlite"
 )
@@ -186,13 +186,7 @@ func rawSecret(env *Env, name string) string {
 // Hosted OCR enablement and key, a direct Firecrawl key being the only route
 func hostedOCRConfig(env *Env) (bool, string) {
 	apiKey := rawSecret(env, "FIRECRAWL_API_KEY")
-	enabled := apiKey != ""
-	if section := config.AsMap(cfgTree(env).Get("file_tools")); section != nil {
-		if v, ok := section["hosted_ocr"].(bool); ok && !v {
-			enabled = false
-		}
-	}
-	return enabled, apiKey
+	return apiKey != "" && settings.FileToolsHostedOcr.Get(envHomeCtx(context.Background(), env)), apiKey
 }
 
 // HostedOCRAvailable reports whether scanned PDF pages can go to Firecrawl Parse

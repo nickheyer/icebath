@@ -34,7 +34,7 @@ func readMarkerAttempts(marker string) *big.Int {
 	if err != nil {
 		return new(big.Int)
 	}
-	raw := pystr.Strip(strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff"))
+	raw := strings.TrimSpace(strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff"))
 	if raw == "" {
 		return new(big.Int)
 	}
@@ -55,7 +55,7 @@ func readMarkerAttempts(marker string) *big.Int {
 	lines := pystr.Splitlines(raw, false)
 	for i := len(lines) - 1; i >= 0; i-- {
 		key, value, found := strings.Cut(lines[i], "=")
-		if found && pystr.Strip(key) == "attempts" {
+		if found && strings.TrimSpace(key) == "attempts" {
 			n, ok := pyint.Parse(value)
 			if !ok {
 				return new(big.Int)
@@ -99,8 +99,8 @@ func markerOwnerIsLive(marker string) (bool, error) {
 	body := strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff")
 	for _, line := range pystr.Splitlines(body, false) {
 		key, value, found := strings.Cut(line, "=")
-		if found && pystr.Strip(key) == "pid" {
-			pid, ok := pyint.Parse(pystr.Strip(value))
+		if found && strings.TrimSpace(key) == "pid" {
+			pid, ok := pyint.Parse(strings.TrimSpace(value))
 			if !ok {
 				return false, nil
 			}

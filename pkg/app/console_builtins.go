@@ -1,6 +1,8 @@
 package app
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -53,7 +55,7 @@ func consoleCaptured(fn func(e *ConsoleEngine, args []string) (int, error)) cons
 
 // Whether a line is a rule of eight or more dashes or box drawing dashes
 func consoleIsStatusFooterRule(line string) bool {
-	stripped := pystr.Strip(tools.StripANSI(line))
+	stripped := strings.TrimSpace(tools.StripANSI(line))
 	if pystr.Len(stripped) < 8 {
 		return false
 	}
@@ -62,7 +64,7 @@ func consoleIsStatusFooterRule(line string) bool {
 
 // Drops trailing lines that are blank once ANSI codes are removed
 func consoleDropTrailingBlank(lines []string) []string {
-	for len(lines) > 0 && pystr.Strip(tools.StripANSI(lines[len(lines)-1])) == "" {
+	for len(lines) > 0 && strings.TrimSpace(tools.StripANSI(lines[len(lines)-1])) == "" {
 		lines = lines[:len(lines)-1]
 	}
 	return lines
@@ -72,18 +74,18 @@ func consoleDropTrailingBlank(lines []string) []string {
 func consoleStripStatusFooter(text string) string {
 	lines := consoleDropTrailingBlank(pystr.Splitlines(text, false))
 	if len(lines) < 2 {
-		return pystr.Rstrip(text)
+		return strings.TrimRightFunc(text, unicode.IsSpace)
 	}
-	last := pystr.Strip(tools.StripANSI(lines[len(lines)-1]))
-	prev := pystr.Strip(tools.StripANSI(lines[len(lines)-2]))
+	last := strings.TrimSpace(tools.StripANSI(lines[len(lines)-1]))
+	prev := strings.TrimSpace(tools.StripANSI(lines[len(lines)-2]))
 	if !strings.HasPrefix(prev, "Run 'icebath doctor'") || !strings.HasPrefix(last, "Start 'icebath' and type '/setup'") {
-		return pystr.Rstrip(text)
+		return strings.TrimRightFunc(text, unicode.IsSpace)
 	}
 	lines = consoleDropTrailingBlank(lines[:len(lines)-2])
 	if len(lines) > 0 && consoleIsStatusFooterRule(lines[len(lines)-1]) {
 		lines = lines[:len(lines)-1]
 	}
-	return pystr.Rstrip(strings.Join(lines, "\n"))
+	return strings.TrimRightFunc(strings.Join(lines, "\n"), unicode.IsSpace)
 }
 
 // Session rows as the fixed width id source count and title table

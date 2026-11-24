@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One entry point an installed distribution declares, with the distribution it came from
@@ -28,7 +26,7 @@ var (
 
 // Distribution name a requirement string starts with
 func RequirementDistName(req string) string {
-	return pystr.Strip(requirementNameEnd.Split(req, 2)[0])
+	return strings.TrimSpace(requirementNameEnd.Split(req, 2)[0])
 }
 
 // Version of the distribution of a name inside a site directory, found false when none is installed there
@@ -165,7 +163,7 @@ func SelectedEntryPoints(ctx context.Context) ([]EntryPoint, error) {
 			DistSummary: distMetadataHeader(metaPath, "Summary")}
 		group := ""
 		for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
-			line = pystr.Strip(line)
+			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
@@ -178,7 +176,7 @@ func SelectedEntryPoints(ctx context.Context) ([]EntryPoint, error) {
 				continue
 			}
 			ep := dist
-			ep.Name, ep.Value, ep.Group = pystr.Strip(name), pystr.Strip(value), group
+			ep.Name, ep.Value, ep.Group = strings.TrimSpace(name), strings.TrimSpace(value), group
 			out = append(out, ep)
 		}
 	}

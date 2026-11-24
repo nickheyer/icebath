@@ -35,6 +35,9 @@ func registerSettingsKeys(km *keys.Map) {
 	}
 	km.Register(keys.Action{ID: "tui.settings.advanced", Context: settingsRowsContext, Label: "advanced", Doc: "show or hide the advanced settings", Default: []string{"tab"}})
 	km.Register(keys.Action{ID: "tui.settings.search", Context: settingsGroupsContext, Label: "search", Doc: "search every setting by its words", Default: []string{"/"}})
+	km.Register(keys.Action{ID: "tui.settings.files", Context: settingsGroupsContext, Label: "files", Doc: "show where settings and keys are kept and open them in your editor", Default: []string{"f"}})
+	km.Register(keys.Action{ID: "tui.settings.suggest", Context: settingsRowsContext, Label: "suggest", Doc: "propose allowed commands from the risky commands you approved before", Default: []string{"s"}})
+	km.Register(keys.Action{ID: "tui.settings.check", Context: settingsRowsContext, Label: "check a command", Doc: "show what the approval rules do with a command, without running it", Default: []string{"c"}})
 }
 
 func init() {
@@ -79,13 +82,14 @@ func (a *app) openSettings(arg string) tea.Cmd {
 		Empty: func() string { return tr(txt.HubsLoading) },
 		Help:  func(int) []string { return []string{tr(txt.HubsSettingsHelp)} },
 		Hints: func(*cards.List, int) []wm.Hint {
-			return []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelOpen)}, {Action: "tui.settings.search"}}
+			return []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelOpen)}, {Action: "tui.settings.search"}, {Action: "tui.settings.files"}}
 		},
 		Quick: open,
-		Free:  map[string]bool{"tui.settings.search": true},
+		Free:  map[string]bool{"tui.settings.search": true, "tui.settings.files": true},
 		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 			"hub.use":             open,
 			"tui.settings.search": func(*cards.List, int) tea.Cmd { return search("") },
+			"tui.settings.files":  func(*cards.List, int) tea.Cmd { return a.settingsFiles(h, sid) },
 		},
 	})
 	h = a.newHub("tui:settings", list)
@@ -103,6 +107,87 @@ func (a *app) openSettings(arg string) tea.Cmd {
 		}
 		return search(arg)
 	}))
+}
+
+// Files the settings and keys are kept in: where they are and whether they exist, each opened in the editor, the settings file checked
+// after an edit and the keys read again by the background service, and their paths copied
+func (a *app) settingsFiles(h *cards.Hub, sid string) tea.Cmd {
+	var files tuigateway.ConfigFilesResult
+	read := func(seed bool, then func() tea.Cmd) tea.Cmd {
+		return hubCall(a, h, tr(txt.HubsLoading), tuigateway.ConfigFiles, tuigateway.ConfigFilesParams{Seed: seed}, func(r *tuigateway.ConfigFilesResult) tea.Cmd {
+			files = *r
+			return then()
+		})
+	}
+	where := func(path string, exists bool) string {
+		if exists {
+			return path
+		}
+		return path + " (" + tr(txt.HubsSettingsFilesMissing) + ")"
+	}
+	detail := func() []string {
+		out := []string{tr(txt.HubsSettingsFilesAbout), "", tr(txt.HubsSettingsFilesConfig, where(files.Config, files.ConfigExists)),
+			tr(txt.HubsSettingsFilesEnv, where(files.Env, files.EnvExists))}
+		switch files.Locked {
+		case "managed":
+			out = append(out, "", tr(txt.HubsSettingsFilesManaged, files.Manager))
+		case "no_file":
+			out = append(out, "", tr(txt.HubsSettingsFilesNoFile))
+		}
+		return out
+	}
+	check := func() tea.Cmd {
+		return a.hubRunCLI(h, tr(txt.HubsSettingsFilesCheck), []string{"config", "check"}, func(*cliRun) tea.Cmd { return nil })
+	}
+	// The editor on one file, then the settings file checked or the keys read again into the background service
+	edit := func(path string, after func() tea.Cmd) tea.Cmd {
+		return editFile(path, func(err error) tea.Msg {
+			return asyncDoneMsg{run: func() tea.Cmd {
+				if err != nil {
+					return h.Fail(tr(txt.SessionInputFailedToOpenEditorWith, err.Error()))
+				}
+				return after()
+			}}
+		})
+	}
+	reloadKeys := func() tea.Cmd {
+		return hubCall(a, h, "", tuigateway.ReloadEnv, tuigateway.ReloadEnvParams{SessionID: sid}, func(r *tuigateway.ReloadEnvResult) tea.Cmd {
+			key := txt.SlashCmdOpsReloadEnvReloadedOther
+			if r.Updated == 1 {
+				key = txt.SlashCmdOpsReloadEnvReloadedOne
+			}
+			return h.Done(tr(key, r.Updated))
+		})
+	}
+	actions := func() []hubAction {
+		var out []hubAction
+		if files.Locked == "" {
+			out = append(out, hubAction{label: tr(txt.HubsSettingsFilesEdit), does: tr(txt.HubsSettingsFilesEditDoes), run: func() tea.Cmd {
+				return read(true, func() tea.Cmd {
+					if files.Seeded {
+						return tea.Batch(h.Done(tr(txt.HubsSettingsFilesSeeded, files.Config)), edit(files.Config, check))
+					}
+					return edit(files.Config, check)
+				})
+			}})
+			if files.EnvExists {
+				out = append(out, hubAction{label: tr(txt.HubsSettingsFilesEditEnv), does: tr(txt.HubsSettingsFilesEditEnvDoes), run: func() tea.Cmd {
+					return edit(files.Env, reloadKeys)
+				}})
+			}
+		}
+		if files.ConfigExists {
+			out = append(out, hubAction{label: tr(txt.HubsSettingsFilesCheck), does: tr(txt.HubsSettingsFilesCheckDoes), run: check})
+		}
+		return append(out,
+			hubAction{label: tr(txt.HubsSettingsFilesCopy), does: tr(txt.HubsSettingsFilesCopyDoes), run: func() tea.Cmd {
+				return a.hubCopy(h, files.Config, tr(txt.HubsSettingsFilesPathWord))
+			}},
+			hubAction{label: tr(txt.HubsSettingsFilesCopyEnv), does: tr(txt.HubsSettingsFilesCopyEnvDoes), run: func() tea.Cmd {
+				return a.hubCopy(h, files.Env, tr(txt.HubsSettingsFilesPathWord))
+			}})
+	}
+	return read(false, func() tea.Cmd { return a.hubActions(h, tr(txt.HubsSettingsFilesTitle), detail, actions) })
 }
 
 // Settings of one group, the everyday ones first and the advanced ones on tab; with no group every setting, narrowed by the words typed
@@ -203,13 +288,28 @@ func (a *app) settingsRows(h *cards.Hub, group, label, query, sid string, groupL
 			if !searching {
 				out = append(out, wm.Hint{Action: "tui.settings.advanced"})
 			}
+			if group == safetyGroup {
+				out = append(out, wm.Hint{Action: "tui.settings.suggest"}, wm.Hint{Action: "tui.settings.check"})
+			}
 			return out
 		},
-		Free: map[string]bool{"tui.settings.advanced": true, "hub.refresh": true},
+		Free: map[string]bool{"tui.settings.advanced": true, "hub.refresh": true, "tui.settings.suggest": group == safetyGroup, "tui.settings.check": group == safetyGroup},
 		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 			"hub.use":     edit,
 			"hub.edit":    edit,
 			"hub.refresh": func(*cards.List, int) tea.Cmd { return reload() },
+			"tui.settings.suggest": func(*cards.List, int) tea.Cmd {
+				if group != safetyGroup {
+					return nil
+				}
+				return a.approvalProposals(h, reload)
+			},
+			"tui.settings.check": func(*cards.List, int) tea.Cmd {
+				if group != safetyGroup {
+					return nil
+				}
+				return a.approvalCheck(h)
+			},
 			"hub.remove": func(l *cards.List, i int) tea.Cmd {
 				row, ok := at(i)
 				if !ok || row.Locked || row.Source == "default" {

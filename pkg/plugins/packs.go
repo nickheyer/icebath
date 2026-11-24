@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -227,8 +228,8 @@ func entryLabel(item any, index int) string {
 		if !pyrepr.Truthy(label) {
 			label = m["repo"]
 		}
-		if s, ok := label.(string); ok && pystr.Strip(s) != "" {
-			return "'" + pystr.Strip(s) + "'"
+		if s, ok := label.(string); ok && strings.TrimSpace(s) != "" {
+			return "'" + strings.TrimSpace(s) + "'"
 		}
 	}
 	return fmt.Sprintf("#%d", index+1)
@@ -318,7 +319,7 @@ func validateConfigSeed(pluginID string, seed any, keys packKeys) (map[string]an
 	order := config.MappingKeys(m)
 	for _, key := range order {
 		typed, isStr := keys.typed(m, key)
-		if !isStr || pystr.Strip(key) == "" {
+		if !isStr || strings.TrimSpace(key) == "" {
 			return nil, packErrorf("Pack config for plugin '%s' has an invalid key: %s.", pluginID, errchain.Show(typed))
 		}
 	}
@@ -363,14 +364,14 @@ func ParsePack(text, source string) (*PluginPack, error) {
 		meta = nested
 	}
 	name, ok := meta["name"].(string)
-	if !ok || pystr.Strip(name) == "" {
+	if !ok || strings.TrimSpace(name) == "" {
 		return nil, packErrorf("Pack %s is missing a 'name'.", source)
 	}
 	pluginsRaw, ok := raw["plugins"].([]any)
 	if !ok || len(pluginsRaw) == 0 {
 		return nil, packErrorf("Pack %s must declare a non-empty 'plugins' list.", source)
 	}
-	pack := &PluginPack{Name: pystr.Strip(name), Description: packStrOr(meta["description"]), Author: packStrOr(meta["author"]), Version: packStrOr(meta["version"])}
+	pack := &PluginPack{Name: strings.TrimSpace(name), Description: packStrOr(meta["description"]), Author: packStrOr(meta["author"]), Version: packStrOr(meta["version"])}
 	for i, item := range pluginsRaw {
 		entry, err := parsePackEntry(item, entryLabel(item, i))
 		if err != nil {
@@ -403,7 +404,7 @@ func ParsePack(text, source string) (*PluginPack, error) {
 		return nil, packErrorf("Pack %s 'skills' must be a list of skill ids.", source)
 	}
 	for _, s := range skills {
-		if text := pystr.Strip(pyrepr.Str(s)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(s)); text != "" {
 			pack.Skills = append(pack.Skills, text)
 		}
 	}
@@ -441,7 +442,7 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 	}
 	repo := ""
 	if s, ok := repoRaw.(string); ok {
-		repo = pystr.Strip(strings.TrimPrefix(s, "github:"))
+		repo = strings.TrimSpace(strings.TrimPrefix(s, "github:"))
 	} else if pyrepr.Truthy(repoRaw) {
 		repo = pyrepr.Str(repoRaw)
 	}
@@ -449,10 +450,10 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 	name := ""
 	if hasName && nameRaw != nil {
 		s, ok := nameRaw.(string)
-		if !ok || pystr.Strip(s) == "" {
+		if !ok || strings.TrimSpace(s) == "" {
 			return PackPluginEntry{}, packErrorf("Pack plugin entry %s has an invalid 'name'.", label)
 		}
-		name = pystr.Strip(s)
+		name = strings.TrimSpace(s)
 	}
 	if name == "" && repo == "" {
 		return PackPluginEntry{}, packErrorf("Pack plugin entry %s needs either 'name' (community index) or 'repo' (owner/repo or git URL).", label)
@@ -462,7 +463,7 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 		refRaw = m["version"]
 	}
 	ref, ok := refRaw.(string)
-	if !ok || !exactSHARe.MatchString(pystr.Strip(ref)) {
+	if !ok || !exactSHARe.MatchString(strings.TrimSpace(ref)) {
 		return PackPluginEntry{}, packErrorf("Pack plugin entry %s has ref %s: refs must be exact 40-character commit SHAs (tags and branch names are rejected — pin the commit for reproducible installs).", label, errchain.Show(refRaw))
 	}
 	subdir := ""
@@ -473,7 +474,7 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 		}
 		subdir = strings.Trim(s, "/")
 	}
-	return PackPluginEntry{Ref: strings.ToLower(pystr.Strip(ref)), Name: name, Repo: repo, Subdir: subdir}, nil
+	return PackPluginEntry{Ref: strings.ToLower(strings.TrimSpace(ref)), Name: name, Repo: repo, Subdir: subdir}, nil
 }
 
 // Client the https pack fetch uses, a seam for tests
@@ -627,30 +628,10 @@ func seedPluginConfig(ctx context.Context, h, pluginID string, seed map[string]a
 	if err != nil {
 		return err
 	}
-	configWriteMu.Lock()
-	defer configWriteMu.Unlock()
-	doc, err := readUserConfig(h)
-	if err != nil {
-		return err
-	}
-	parent := doc
-	for _, key := range []string{"plugins", "entries"} {
-		if _, set := parent[key]; !set {
-			parent[key] = map[string]any{}
-			config.AppendMappingKey(parent, key)
-		}
-		child, ok := parent[key].(map[string]any)
-		if !ok {
-			return fmt.Errorf("config %s is %s where a mapping was expected", key, errchain.Kind(parent[key]))
-		}
-		parent = child
-	}
-	if _, set := parent[pluginID]; !set {
-		parent[pluginID] = map[string]any{}
-		config.AppendMappingKey(parent, pluginID)
-	}
-	entry, ok := parent[pluginID].(map[string]any)
-	if !ok {
+	hctx := home.WithOverride(ctx, h)
+	held, present := settings.PluginsEntries.Get(hctx)[pluginID]
+	entry := asMap(held)
+	if present && entry == nil {
 		console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] plugins.entries.%s is not a mapping; skipping pack config seed.", pluginID))
 		return nil
 	}
@@ -660,15 +641,13 @@ func seedPluginConfig(ctx context.Context, h, pluginID string, seed map[string]a
 			console.Print(fmt.Sprintf("[dim]  plugins.entries.%s.%s already set — keeping your value.[/dim]", pluginID, key))
 			continue
 		}
-		entry[key] = seed[key]
-		config.AppendMappingKey(entry, key)
+		if err := setPluginEntryField(hctx, pluginID, strings.ReplaceAll(key, ".", `\.`), seed[key]); err != nil {
+			return err
+		}
 		wrote = true
 	}
 	if !wrote {
 		return nil
-	}
-	if err := saveUserConfig(ctx, h, doc); err != nil {
-		return err
 	}
 	console.Print(fmt.Sprintf("[dim]  Seeded plugins.entries.%s from pack.[/dim]", pluginID))
 	return nil
@@ -747,25 +726,15 @@ func sourceToRepoSubdir(source string) (string, string) {
 	}
 	base, subdir, _ := strings.Cut(source, "#")
 	subdir = strings.Trim(subdir, "/")
-	if m := packGithubHTTPSRe.FindStringSubmatch(pystr.Strip(base)); m != nil {
+	if m := packGithubHTTPSRe.FindStringSubmatch(strings.TrimSpace(base)); m != nil {
 		return m[1] + "/" + m[2], subdir
 	}
-	return pystr.Strip(base), subdir
+	return strings.TrimSpace(base), subdir
 }
 
 // Exportable plugins.entries keys of a plugin with reserved and secret shaped keys stripped at every depth
 var sanitizedEntryConfig = func(h, pluginID string) map[string]any {
-	cfg, err := loadConfig(h)
-	if err != nil {
-		return map[string]any{}
-	}
-	plugins, _ := cfg["plugins"].(map[string]any)
-	entries, _ := plugins["entries"].(map[string]any)
-	entry, ok := entries[pluginID].(map[string]any)
-	if !ok {
-		return map[string]any{}
-	}
-	return stripForbiddenKeys(entry).(map[string]any)
+	return stripForbiddenKeys(pluginEntry(homeContext(h), pluginID)).(map[string]any)
 }
 
 // Pack YAML of the current install and the warnings for plugins without Git provenance

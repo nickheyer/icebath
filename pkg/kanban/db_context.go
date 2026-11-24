@@ -3,13 +3,13 @@ package kanban
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -38,7 +38,7 @@ func workerTerminalTimeoutEnv(maxRuntimeSeconds *int64, currentTimeout *string) 
 	}
 	existing := int64(0)
 	if currentTimeout != nil && *currentTimeout != "" {
-		if n, err := pyIntOf(pystr.Strip(*currentTimeout)); err == nil {
+		if n, err := pyIntOf(strings.TrimSpace(*currentTimeout)); err == nil {
 			existing = n
 		}
 	}
@@ -47,6 +47,18 @@ func workerTerminalTimeoutEnv(maxRuntimeSeconds *int64, currentTimeout *string) 
 	}
 	s := fmt.Sprintf("%d", desired)
 	return &s
+}
+
+// Terminal timeouts a worker of the task needs raised over what the profile of ctx allows, by the env name the worker reads them from, empty when none
+func workerTerminalTimeouts(ctx context.Context, maxRuntimeSeconds *int64) map[string]string {
+	out := map[string]string{}
+	for _, h := range []*settings.Duration{settings.TerminalTimeout, settings.TerminalMaxForegroundTimeout} {
+		current := strconv.FormatInt(int64(h.Get(ctx)/time.Second), 10)
+		if raised := workerTerminalTimeoutEnv(maxRuntimeSeconds, &current); raised != nil {
+			out[h.Env] = *raised
+		}
+	}
+	return out
 }
 
 // Python truthiness of any decoded value including ordered objects and lists
@@ -90,7 +102,7 @@ func ctxCap(s *string, limit int) string {
 	if !truthyStr(s) {
 		return ""
 	}
-	text := pystr.Strip(*s)
+	text := strings.TrimSpace(*s)
 	rs := []rune(text)
 	if len(rs) <= limit {
 		return text
@@ -136,7 +148,7 @@ func ctxTail[T any](items []T, limit int, noun string) ([]T, *string) {
 }
 
 // Header lines of the worker context with assignee, status, workspace, runtime and body
-func ctxHeader(lines *[]string, task *Task) {
+func ctxHeader(ctx context.Context, lines *[]string, task *Task) {
 	add := func(s string) { *lines = append(*lines, s) }
 	add(fmt.Sprintf("# Kanban task %s: %s", task.ID, task.Title))
 	add("")
@@ -155,24 +167,18 @@ func ctxHeader(lines *[]string, task *Task) {
 	}
 	add(fmt.Sprintf("Workspace: %s @ %s", task.WorkspaceKind, workspace))
 	if task.MaxRuntimeSeconds != nil {
-		var current *string
-		if v, ok := os.LookupEnv("TERMINAL_TIMEOUT"); ok {
-			current = &v
-		}
-		effective := workerTerminalTimeoutEnv(task.MaxRuntimeSeconds, current)
-		if !truthyStr(effective) {
-			effective = current
+		effective := strconv.FormatInt(int64(settings.TerminalTimeout.Get(ctx)/time.Second), 10)
+		if raised, ok := workerTerminalTimeouts(ctx, task.MaxRuntimeSeconds)[settings.TerminalTimeout.Env]; ok {
+			effective = raised
 		}
 		add(fmt.Sprintf("Max runtime: %ds", *task.MaxRuntimeSeconds))
-		if truthyStr(effective) {
-			add(fmt.Sprintf("Terminal timeout: %ss", *effective))
-		}
+		add(fmt.Sprintf("Terminal timeout: %ss", effective))
 	}
 	if truthyStr(task.BranchName) {
 		add("Branch:   " + *task.BranchName)
 	}
 	add("")
-	if truthyStr(task.Body) && pystr.Strip(*task.Body) != "" {
+	if truthyStr(task.Body) && strings.TrimSpace(*task.Body) != "" {
 		add("## Body")
 		add(ctxCap(task.Body, ctxMaxBodyBytes))
 		add("")
@@ -239,10 +245,10 @@ func ctxPriorAttempts(ctx context.Context, lines *[]string, conn state.SQLiteCon
 			outcome = *run.Outcome
 		}
 		*lines = append(*lines, fmt.Sprintf("### Attempt %d — %s (%s, %s)", firstShownIdx+offset, outcome, profile, ctxStamp(run.StartedAt, now)))
-		if truthyStr(run.Summary) && pystr.Strip(*run.Summary) != "" {
+		if truthyStr(run.Summary) && strings.TrimSpace(*run.Summary) != "" {
 			*lines = append(*lines, ctxCap(run.Summary, ctxMaxFieldBytes))
 		}
-		if truthyStr(run.Error) && pystr.Strip(*run.Error) != "" {
+		if truthyStr(run.Error) && strings.TrimSpace(*run.Error) != "" {
 			*lines = append(*lines, "_error_: "+ctxCap(run.Error, ctxMaxFieldBytes))
 		}
 		if metaLine := ctxMetadataLine(run.Metadata); metaLine != nil {
@@ -305,7 +311,7 @@ func ctxParentResults(ctx context.Context, lines *[]string, conn state.SQLiteCon
 		}
 		*lines = append(*lines, heading)
 		switch {
-		case run != nil && truthyStr(run.Summary) && pystr.Strip(*run.Summary) != "":
+		case run != nil && truthyStr(run.Summary) && strings.TrimSpace(*run.Summary) != "":
 			*lines = append(*lines, ctxCap(run.Summary, ctxMaxFieldBytes))
 		case truthyStr(pt.Result):
 			*lines = append(*lines, ctxCap(pt.Result, ctxMaxFieldBytes))

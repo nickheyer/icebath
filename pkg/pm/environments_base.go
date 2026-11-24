@@ -461,10 +461,10 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 		}
 		for _, line := range pystr.Splitlines(string(data), false) {
 			key, value, _ := strings.Cut(line, "=")
-			if k := pystr.Strip(key); k != "version" && k != "version_info" {
+			if k := strings.TrimSpace(key); k != "version" && k != "version_info" {
 				continue
 			}
-			if a, b, found, err := parse(pystr.Strip(value)); err != nil || found {
+			if a, b, found, err := parse(strings.TrimSpace(value)); err != nil || found {
 				return a, b, found, err
 			}
 		}

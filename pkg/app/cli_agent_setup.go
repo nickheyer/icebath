@@ -206,7 +206,7 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 
 // Re-resolves the CLI level reasoning config for the current model through the shared chokepoint
 func (c *CLI) resolveCLIReasoning() {
-	c.reasoningConfig = config.ResolveReasoningConfig(c.config, c.model)
+	c.reasoningConfig = configuredReasoning(c.ctx, c.model)
 }
 
 // Normalizes provider specific model ids and routing, true when the model or api mode changed

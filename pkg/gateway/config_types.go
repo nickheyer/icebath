@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Python exception class and message a gateway config read raises
@@ -83,7 +84,7 @@ func coerceOptionalPositiveInt(value any, key string) *big.Int {
 	default:
 		if s, ok := value.(string); ok {
 			var good bool
-			if parsed, good = pyint.Parse(pystr.Strip(s)); !good {
+			if parsed, good = pyint.Parse(strings.TrimSpace(s)); !good {
 				err = &PyError{"ValueError", s}
 			}
 		} else {
@@ -115,7 +116,7 @@ func CoerceSystemdWatchdogSeconds(value any, key string) int {
 	if n, ok := pyrepr.Int(value); ok {
 		parsed = n
 	} else if s, ok := value.(string); ok {
-		t := pystr.Strip(s)
+		t := strings.TrimSpace(s)
 		if t != "" && pystr.All(t, func(r rune) bool { return r < utf8.RuneSelf && pystr.IsDecimal(r) }) {
 			parsed, _ = pyint.Parse(t)
 		}
@@ -222,7 +223,7 @@ func PlatformMemberMap() []Platform {
 
 // Member name, the value upper cased with dashes and spaces as underscores
 func (p Platform) Name() string {
-	return strings.NewReplacer("-", "_", " ", "_").Replace(pystr.Upper(string(p)))
+	return strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToUpper(string(p)))
 }
 
 // Member registered under an exact value, built in or pseudo
@@ -279,10 +280,10 @@ func ParsePlatform(ctx context.Context, value any) (Platform, error) {
 	if p, ok := platformMember(s); ok {
 		return p, nil
 	}
-	if pystr.Strip(s) == "" {
+	if strings.TrimSpace(s) == "" {
 		return "", invalid
 	}
-	s = pystr.Lower(pystr.Strip(s))
+	s = strings.ToLower(strings.TrimSpace(s))
 	if p, ok := platformMember(s); ok {
 		return p, nil
 	}
@@ -347,7 +348,7 @@ func NewHomeChannel(platform Platform, chatID string, name any) *HomeChannel {
 // Normalizes a pasted Discord channel link to the bare channel id
 func (h *HomeChannel) PostInit() {
 	if h.Platform == PlatformDiscord {
-		if id, ok := DiscordChannelIDFromLink(pystr.Strip(h.ChatID)); ok && id != "" {
+		if id, ok := DiscordChannelIDFromLink(strings.TrimSpace(h.ChatID)); ok && id != "" {
 			h.ChatID = id
 		}
 	}
@@ -393,22 +394,19 @@ func HomeChannelFromDict(ctx context.Context, data map[string]any) (*HomeChannel
 	return h, nil
 }
 
-// Writes the home channel into config.yaml, enabling the platform only when asked and not yet set
+// Writes the home channel into the platform's block of the profile ctx serves, enabling the platform only when asked and not yet set
 func PersistHomeChannel(ctx context.Context, h *HomeChannel, enabledIfNew bool) error {
-	dir := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, dir, config.EnvRefLookup)
-	if err != nil {
-		return err
-	}
-	doc := map[string]any(cfg)
-	platformConfig := dictSlot(dictSlot(doc, "platforms"), string(h.Platform))
+	sctx := SettingsContext(ctx)
+	block := settings.Platforms.EntryKey(string(h.Platform))
 	if enabledIfNew {
-		if _, ok := platformConfig["enabled"]; !ok {
-			platformConfig["enabled"] = true
+		if _, set := config.AsMap(settings.Platforms.Get(sctx)[string(h.Platform)])["enabled"]; !set {
+			if _, err := settings.Set(sctx, block+".enabled", true, settings.Global); err != nil {
+				return err
+			}
 		}
 	}
-	platformConfig["home_channel"] = h.ToDict()
-	return config.SaveConfig(ctx, dir, doc, config.SaveOptions{})
+	_, err := settings.Set(sctx, block+".home_channel", h.ToDict(), settings.Global)
+	return err
 }
 
 // Per channel reply policy, model, provider or system prompt override
@@ -642,7 +640,7 @@ var platformConnectedCheckers = map[Platform]func(cfg *PlatformConfig) bool{
 		if !pyrepr.Truthy(v) {
 			v = ""
 		}
-		return pystr.Strip(pyrepr.Str(v)) != ""
+		return strings.TrimSpace(pyrepr.Str(v)) != ""
 	},
 	PlatformRelay: func(cfg *PlatformConfig) bool {
 		return pyrepr.Truthy(cfg.Extra["relay_url"]) || pyrepr.Truthy(cfg.Extra["url"])
@@ -668,7 +666,6 @@ var toplevelBoolDefaults = []struct {
 type GatewayConfig struct {
 	Platforms                    map[Platform]*PlatformConfig
 	platformOrder                []Platform
-	ResetTriggers                any
 	QuickCommands                map[string]any
 	SessionsDir                  string
 	WriteSessionsJSON            bool
@@ -698,7 +695,7 @@ type GatewayConfig struct {
 // Gateway config with the dataclass defaults for the home in ctx
 func DefaultGatewayConfig(ctx context.Context) *GatewayConfig {
 	return &GatewayConfig{
-		Platforms: map[Platform]*PlatformConfig{}, ResetTriggers: []any{"/new", "/reset"}, QuickCommands: map[string]any{},
+		Platforms: map[Platform]*PlatformConfig{}, QuickCommands: map[string]any{},
 		SessionsDir: filepath.Join(home.Dir(ctx), "sessions"), WriteSessionsJSON: true, AlwaysLogLocal: true,
 		FilterSilenceNarration: true, STTEnabled: true, STTEchoTranscripts: true, GroupSessionsPerUser: true,
 		LoopWatchdog: true, LoopWatchdogProbeIntervalS: DefaultLoopWatchdogIntervalS,
@@ -792,7 +789,7 @@ func (c *GatewayConfig) ToDict() map[string]any {
 		return *p
 	}
 	return map[string]any{
-		"platforms": platforms, "reset_triggers": c.ResetTriggers, "quick_commands": c.QuickCommands,
+		"platforms": platforms, "quick_commands": c.QuickCommands,
 		"sessions_dir": c.SessionsDir, "write_sessions_json": c.WriteSessionsJSON, "always_log_local": c.AlwaysLogLocal,
 		"filter_silence_narration": c.FilterSilenceNarration, "stt_enabled": c.STTEnabled,
 		"stt_echo_transcripts": c.STTEchoTranscripts, "group_sessions_per_user": c.GroupSessionsPerUser,
@@ -899,10 +896,6 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		}
 		sessionsDir = pypath.PosixPath(s)
 	}
-	resetTriggers, ok := data["reset_triggers"]
-	if !ok {
-		resetTriggers = []any{"/new", "/reset"}
-	}
 	quickRaw, ok := data["quick_commands"]
 	if !ok {
 		quickRaw = map[string]any{}
@@ -928,7 +921,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		return nil, err
 	}
 	cfg := &GatewayConfig{
-		Platforms: platforms, platformOrder: platformOrder, ResetTriggers: resetTriggers, QuickCommands: coerceDict(quickRaw), SessionsDir: sessionsDir,
+		Platforms: platforms, platformOrder: platformOrder, QuickCommands: coerceDict(quickRaw), SessionsDir: sessionsDir,
 		STTEnabled:                   coerceBool(sttSetting("stt_enabled", "enabled"), true),
 		STTEchoTranscripts:           coerceBool(sttSetting("stt_echo_transcripts", "echo_transcripts"), true),
 		MultiplexProfiles:            multiplex,
@@ -941,7 +934,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		OnAllAdaptersDown:            onDown,
 		MaxConcurrentSessions:        maxConcurrent,
 		UnauthorizedDMBehavior:       normalizeChoice(data["unauthorized_dm_behavior"], UnauthorizedDMBehaviors, "pair"),
-		UnauthorizedDMDeclineMessage: pystr.Strip(pyrepr.Str(declineRaw)),
+		UnauthorizedDMDeclineMessage: strings.TrimSpace(pyrepr.Str(declineRaw)),
 		Streaming:                    StreamingConfigFromDict(streamingRaw),
 		SessionStoreMaxAgeDays:       maxAge,
 		ProfileRoutes:                routes,
@@ -1041,12 +1034,12 @@ func validateGatewayConfig(cfg *GatewayConfig) error {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].platform < rows[j].platform })
 	for _, r := range rows {
-		if pystr.Strip(r.token) == "" {
+		if strings.TrimSpace(r.token) == "" {
 			pkgLog().Warn(fmt.Sprintf("%s is enabled but %s is empty. The adapter will likely fail to connect.", r.platform, r.env))
 		}
 	}
 	for _, r := range rows {
-		stripped := pystr.Strip(r.token)
+		stripped := strings.TrimSpace(r.token)
 		if stripped != "" && !provider.HasUsableSecret(r.token, 4) {
 			head := []rune(stripped)
 			if len(head) > 6 {

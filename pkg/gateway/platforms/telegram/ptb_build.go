@@ -4,43 +4,20 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// Validated fallback IPs from config extra, a comma separated string or a list
-func fallbackIPsFromExtra(extra map[string]any) []string {
-	var parts []string
-	switch v := extra["fallback_ips"].(type) {
-	case nil:
-	case string:
-		if v != "" {
-			parts = strings.Split(v, ",")
-		}
-	case []string:
-		parts = v
-	case []any:
-		for _, item := range v {
-			parts = append(parts, pyrepr.Str(item))
-		}
-	default:
-		parts = []string{pyrepr.Str(v)}
-	}
-	return ParseFallbackIPEnv(strings.Join(parts, ","))
-}
 
 // Hosts of a custom Bot API server named by base_url and base_file_url, none for the public Telegram API
 func customAPIHosts(extra map[string]any) []string {
 	var hosts []string
 	for _, key := range []string{"base_url", "base_file_url"} {
-		raw := pystr.Strip(pyrepr.Str(extra[key]))
+		raw := strings.TrimSpace(pyrepr.Str(extra[key]))
 		if extra[key] == nil || raw == "" {
 			continue
 		}
@@ -65,28 +42,24 @@ func apiProxyTargets(extra map[string]any) []string {
 
 // Builds the general and getUpdates request pair over fallback IPs, an explicit proxy or direct DNS
 func buildPTBRequests(ctx context.Context, name string, extra map[string]any, lifecycle *pollingLifecycle) (*ptbRequest, *ptbRequest, error) {
-	poolSize := int(config.EnvInt("ICEBATH_TELEGRAM_HTTP_POOL_SIZE", 512))
-	settings := requestSettings{poolTimeout: config.EnvFloat("ICEBATH_TELEGRAM_HTTP_POOL_TIMEOUT", 8.0),
-		connectTimeout: config.EnvFloat("ICEBATH_TELEGRAM_HTTP_CONNECT_TIMEOUT", 10.0),
-		readTimeout:    config.EnvFloat("ICEBATH_TELEGRAM_HTTP_READ_TIMEOUT", 20.0),
-		writeTimeout:   config.EnvFloat("ICEBATH_TELEGRAM_HTTP_WRITE_TIMEOUT", 20.0), mediaWriteTimeout: 60.0, pollTimeout: 10}
-	base := gateway.PlatformHTTPXLimits()
+	sctx := gateway.SettingsContext(ctx)
+	poolSize := settings.TelegramHTTPPoolSize.Get(sctx)
+	limits := requestSettings{poolTimeout: settings.TelegramHTTPPoolTimeout.Get(sctx).Seconds(),
+		connectTimeout: settings.TelegramHTTPConnectTimeout.Get(sctx).Seconds(),
+		readTimeout:    settings.TelegramHTTPReadTimeout.Get(sctx).Seconds(),
+		writeTimeout:   settings.TelegramHTTPWriteTimeout.Get(sctx).Seconds(), mediaWriteTimeout: 60.0, pollTimeout: 10}
+	base := gateway.PlatformHTTPXLimits(ctx)
 	poolLimits := PoolLimits{MaxConnections: poolSize, MaxKeepaliveConnections: *base.MaxKeepaliveConnections,
 		KeepaliveExpiry: seconds(*base.KeepaliveExpiry)}
 	updatesLimits := PoolLimits{MaxConnections: poolSize, MaxKeepaliveConnections: 0, KeepaliveExpiry: seconds(*base.KeepaliveExpiry)}
-	disableFallback := false
-	switch pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_TELEGRAM_DISABLE_FALLBACK_IPS"))) {
-	case "1", "true", "yes", "on":
-		disableFallback = true
-	}
+	disableFallback := settings.TelegramDisableFallbackIPs.Get(sctx)
 	var fallbackIPs []string
 	if !disableFallback {
-		fallbackIPs = fallbackIPsFromExtra(extra)
+		fallbackIPs = ParseFallbackIPEnv(strings.Join(settings.TelegramFallbackIPs.Strings(sctx), ","))
 	}
 	customHosts := customAPIHosts(extra)
 	if len(fallbackIPs) == 0 && !disableFallback && len(customHosts) == 0 {
-		zero := 0.0
-		discoveryTimeout := envFloatClamped("ICEBATH_TELEGRAM_FALLBACK_DISCOVERY_TIMEOUT", 5.0, &zero, nil)
+		discoveryTimeout := settings.TelegramFallbackDiscoveryTimeout.Get(sctx).Seconds()
 		pkgLog().Warn(fmt.Sprintf("[%s] Discovering Telegram API fallback IPs via DNS-over-HTTPS…", name))
 		discovered, err := awaitWithThreadDeadline(ctx, func(ctx context.Context) (any, error) { return DiscoverFallbackIPs(ctx), nil },
 			discoveryTimeout, nil, "telegram", true)
@@ -115,7 +88,7 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	lifecycle.ptbProxyURL = proxyURL
 	lifecycle.mu.Unlock()
 	tlsConfig := provider.PlatformTLSConfig()
-	general, updates := settings, settings
+	general, updates := limits, limits
 	switch {
 	case len(fallbackIPs) > 0 && proxyURL == "" && !disableFallback:
 		pkgLog().Info(fmt.Sprintf("[%s] Telegram fallback IPs active: %s", name, strings.Join(fallbackIPs, ", ")))
@@ -129,7 +102,7 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 		updates.transport = TransportOptions{Proxy: &proxyURL, Limits: &updatesLimits, TLSConfig: tlsConfig}
 	default:
 		if disableFallback {
-			pkgLog().Info(fmt.Sprintf("[%s] Telegram fallback-IP transport disabled via env", name))
+			pkgLog().Info(fmt.Sprintf("[%s] Telegram fallback-IP transport disabled by telegram.disable_fallback_ips", name))
 		}
 		general.transport = TransportOptions{Limits: &poolLimits, TLSConfig: tlsConfig}
 		updates.transport = TransportOptions{Limits: &updatesLimits, TLSConfig: tlsConfig}

@@ -40,7 +40,7 @@ var (
 
 // Python int of trimmed text when it parses
 func pyIntText(s string) (int, bool) {
-	n, ok := pyint.Parse(pystr.Strip(s))
+	n, ok := pyint.Parse(strings.TrimSpace(s))
 	if !ok || !n.IsInt64() {
 		return 0, false
 	}
@@ -133,9 +133,9 @@ func LaunchdGatewayLabelsForInstall(ctx context.Context) ([]string, error) {
 // Pid of a launchctl list record, false when absent or not positive
 func ParseLaunchdPIDFromListOutput(output string) (int, bool) {
 	for _, line := range pystr.Splitlines(output, false) {
-		s := pystr.Strip(line)
+		s := strings.TrimSpace(line)
 		if (strings.HasPrefix(s, `"PID"`) || strings.HasPrefix(s, "PID")) && strings.Contains(s, "=") {
-			v := pystr.Strip(strings.SplitN(s, "=", 2)[1])
+			v := strings.TrimSpace(strings.SplitN(s, "=", 2)[1])
 			return positivePID(strings.Trim(strings.TrimRight(v, ";"), `"`))
 		}
 	}
@@ -145,9 +145,9 @@ func ParseLaunchdPIDFromListOutput(output string) (int, bool) {
 // Live pid of a launchctl print record, the first pid line wins
 func ParseLaunchdPIDFromPrintOutput(output string) (int, bool) {
 	for _, line := range pystr.Splitlines(output, false) {
-		s := pystr.Strip(line)
+		s := strings.TrimSpace(line)
 		if strings.HasPrefix(s, "pid = ") {
-			return positivePID(pystr.Strip(s[len("pid = "):]))
+			return positivePID(strings.TrimSpace(s[len("pid = "):]))
 		}
 	}
 	return 0, false
@@ -240,7 +240,7 @@ func collectSystemdScopePIDs(ctx context.Context, scope []string, pattern string
 		}
 		return err
 	}
-	for _, line := range pystr.Splitlines(pystr.Strip(res.Stdout), false) {
+	for _, line := range pystr.Splitlines(strings.TrimSpace(res.Stdout), false) {
 		parts := pystr.SplitWhitespace(line, -1)
 		if len(parts) == 0 || !strings.HasSuffix(parts[0], ".service") {
 			continue
@@ -309,7 +309,7 @@ func collectLaunchdPIDs(ctx context.Context, allProfiles bool, pids map[int]bool
 	if res.ReturnCode != 0 {
 		return nil
 	}
-	for _, line := range pystr.Splitlines(pystr.Strip(res.Stdout), false) {
+	for _, line := range pystr.Splitlines(strings.TrimSpace(res.Stdout), false) {
 		parts := pystr.SplitWhitespace(line, -1)
 		if len(parts) >= 3 && isGatewayLaunchdLabel(parts[len(parts)-1]) {
 			if pid, ok := pyIntText(parts[0]); ok && pid > 0 {
@@ -392,7 +392,7 @@ func iterProcCmdlines(exclude map[int]bool) ([]pidCommand, error) {
 
 // Pid and command of one ps line, also accepting ps aux rows
 func parsePSLine(line string) (int, string, bool) {
-	stripped := pystr.Strip(line)
+	stripped := strings.TrimSpace(line)
 	if stripped == "" || strings.Contains(stripped, "grep") {
 		return 0, "", false
 	}
@@ -415,7 +415,7 @@ func iterWindowsListProcesses(listing string) []pidCommand {
 	var out []pidCommand
 	current := ""
 	for _, line := range strings.Split(listing, "\n") {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "CommandLine=") {
 			current = line[len("CommandLine="):]
 		} else if strings.HasPrefix(line, "ProcessId=") {
@@ -486,7 +486,7 @@ func pidUID(ctx context.Context, pid int) (int, bool) {
 		return 0, false
 	}
 	res, err := RunServiceCommand(ctx, 2*time.Second, "ps", "-o", "uid=", "-p", strconv.Itoa(pid))
-	if err != nil || res.ReturnCode != 0 || pystr.Strip(res.Stdout) == "" {
+	if err != nil || res.ReturnCode != 0 || strings.TrimSpace(res.Stdout) == "" {
 		return 0, false
 	}
 	return pyIntText(res.Stdout)
@@ -528,7 +528,7 @@ func cmdlineForPID(ctx context.Context, pid int) ([]string, bool) {
 	if err != nil || res.ReturnCode != 0 {
 		return nil, false
 	}
-	command := pystr.Strip(res.Stdout)
+	command := strings.TrimSpace(res.Stdout)
 	if command == "" {
 		return nil, false
 	}
@@ -583,7 +583,7 @@ func IcebathHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool)
 	if requireLaunchIdentity && len(argv) == 0 {
 		return "", false, nil
 	}
-	envHome := pystr.Strip(env["ICEBATH_HOME"])
+	envHome := strings.TrimSpace(env["ICEBATH_HOME"])
 	profile, hasProfile := argvProfileFlagValue(argv)
 	if requireLaunchIdentity {
 		anchor := env["HOME"]
@@ -604,7 +604,7 @@ func IcebathHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool)
 	}
 	var defaultHome string
 	if IsWindows() {
-		base := pystr.Strip(env["LOCALAPPDATA"])
+		base := strings.TrimSpace(env["LOCALAPPDATA"])
 		if base == "" {
 			up := env["USERPROFILE"]
 			if up == "" {
@@ -733,7 +733,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 	if err != nil {
 		return nil, err
 	}
-	currentHomeLC := strings.TrimRight(strings.ReplaceAll(pystr.Lower(currentHome), `\`, "/"), "/")
+	currentHomeLC := strings.TrimRight(strings.ReplaceAll(strings.ToLower(currentHome), `\`, "/"), "/")
 	profileArgText, err := profileArg(ctx, currentHome, "")
 	if err != nil {
 		return nil, err
@@ -742,7 +742,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 	if fields := pystr.SplitWhitespace(profileArgText, -1); profileArgText != "" && len(fields) > 0 {
 		currentProfile = fields[len(fields)-1]
 	}
-	currentProfileLC := pystr.Lower(currentProfile)
+	currentProfileLC := strings.ToLower(currentProfile)
 	native := false
 	if currentProfile == "" {
 		if native, err = homeOwnsBareServiceName(ctx, currentHome); err != nil {
@@ -750,7 +750,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 		}
 	}
 	matchesCurrent := func(pid int, command string) (bool, error) {
-		commandLC := strings.ReplaceAll(pystr.Lower(command), `\`, "/")
+		commandLC := strings.ReplaceAll(strings.ToLower(command), `\`, "/")
 		flag, hasFlag := ProfileFlagValue(command)
 		if currentProfile != "" {
 			if hasFlag && flag == currentProfileLC {

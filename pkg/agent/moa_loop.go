@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,7 +11,6 @@ import (
 	"io"
 	"math"
 	"math/big"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -22,8 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -36,7 +37,6 @@ var (
 // Seams over the provider, config and clock calls the fan out makes, swapped by tests
 var (
 	moaCallLLM     = provider.CallLLM
-	moaLoadConfig  = func(ctx context.Context) (map[string]any, error) { return loadMoAFullConfig(ctx) }
 	moaNow         = time.Now
 	moaResolveSlot = func(ctx context.Context, requested, model string) (*provider.Runtime, error) {
 		return provider.ResolveRuntimeProvider(ctx, home.Dir(ctx), requested, model, "", "")
@@ -57,13 +57,10 @@ var (
 	moaReferenceInterruptSettle = 50 * time.Millisecond
 )
 
-// Whole profile config as load_config returns it, the safe worker snapshot included
-func loadMoAFullConfig(ctx context.Context) (map[string]any, error) {
-	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any(cfg), nil
+// The mixture settings in effect for ctx in the moa block shape the provider's preset resolver takes
+func moaBlock(ctx context.Context) map[string]any {
+	return map[string]any{"presets": settings.MoaPresets.Get(ctx), "default_preset": settings.MoaDefaultPreset.Get(ctx),
+		"active_preset": settings.MoaActivePreset.Get(ctx), "privacy_filter": settings.MoaPrivacyFilter.Get(ctx)}
 }
 
 const (
@@ -247,14 +244,7 @@ func resolvePresetCached(ctx context.Context, presetName string) (map[string]any
 		}
 		stamp = v
 	}
-	cfg, err := moaLoadConfig(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	moaRaw := cfg["moa"]
-	if !pyTruthy(moaRaw) {
-		moaRaw = map[string]any{}
-	}
+	moaRaw := moaBlock(ctx)
 	key := pyrepr.Repr(stamp) + "\x00" + presetName
 	var preset map[string]any
 	if stamp != nil {
@@ -290,8 +280,8 @@ var (
 
 // Display label of a slot as provider:model with its reasoning effort suffix
 func moaSlotLabel(slot map[string]any) string {
-	label := pystr.Strip(moaStr(slot["provider"])) + ":" + pystr.Strip(moaStr(slot["model"]))
-	if effort := pystr.Strip(moaStr(slot["reasoning_effort"])); effort != "" {
+	label := strings.TrimSpace(moaStr(slot["provider"])) + ":" + strings.TrimSpace(moaStr(slot["model"]))
+	if effort := strings.TrimSpace(moaStr(slot["reasoning_effort"])); effort != "" {
 		return label + "[reasoning=" + effort + "]"
 	}
 	return label
@@ -317,20 +307,13 @@ func aggregatorReasoningConfig(ctx context.Context, aggregator map[string]any) (
 			out = nil
 		}
 	}()
-	cfg, err := moaLoadConfig(ctx)
-	if err != nil {
-		return nil
-	}
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	return config.ResolveReasoningConfig(cfg, moaStr(aggregator["model"]))
+	return settings.ReasoningConfig(ctx, moaStr(aggregator["model"]))
 }
 
 // Call kwargs of a slot with the provider's real api_mode, base_url and api_key, cached per profile with a TTL
 func slotRuntime(ctx context.Context, slot map[string]any) map[string]any {
-	prov := pystr.Strip(moaStr(slot["provider"]))
-	model := pystr.Strip(moaStr(slot["model"]))
+	prov := strings.TrimSpace(moaStr(slot["provider"]))
+	model := strings.TrimSpace(moaStr(slot["model"]))
 	key := [3]string{home.Key(home.Dir(ctx)), prov, model}
 	now := moaNow()
 	moaRuntimeCacheMu.Lock()
@@ -944,10 +927,10 @@ func referenceMessages(messages []map[string]any) []map[string]any {
 		text := state.FlattenMessageText(content, "\n")
 		switch role {
 		case "user":
-			if pystr.Strip(text) == "" && len(moaListItems(content)) > 0 {
+			if strings.TrimSpace(text) == "" && len(moaListItems(content)) > 0 {
 				text = moaImageOnlyUserNote
 			}
-			if pystr.Strip(text) == "" {
+			if strings.TrimSpace(text) == "" {
 				continue
 			}
 			t := text
@@ -955,7 +938,7 @@ func referenceMessages(messages []map[string]any) []map[string]any {
 			rendered = append(rendered, map[string]any{"role": "user", "content": text})
 		case "assistant":
 			var parts []string
-			if stripped := pystr.Strip(text); stripped != "" {
+			if stripped := strings.TrimSpace(text); stripped != "" {
 				parts = append(parts, stripped)
 			}
 			if calls := renderToolCalls(msg["tool_calls"]); calls != "" {
@@ -985,7 +968,7 @@ func referenceMessages(messages []map[string]any) []map[string]any {
 			if messages[i]["role"] == "user" {
 				fallback = state.FlattenMessageText(messages[i]["content"], "\n")
 			}
-			if pystr.Strip(fallback) != "" {
+			if strings.TrimSpace(fallback) != "" {
 				return []map[string]any{{"role": "user", "content": fallback}}
 			}
 		}
@@ -1006,7 +989,7 @@ func extractMoaText(response any) string {
 			return ""
 		}
 		s, _ := norm.Message.Content.(string)
-		return pystr.Strip(s)
+		return strings.TrimSpace(s)
 	}()
 	if text != "" {
 		return text
@@ -1026,7 +1009,7 @@ func extractMoaText(response any) string {
 	if !ok {
 		s = moaStr(content)
 	}
-	return pystr.Strip(s)
+	return strings.TrimSpace(s)
 }
 
 // Optional preset temperature, nil for absent, blank, null or non numeric values
@@ -1035,7 +1018,7 @@ func presetTemperature(preset map[string]any, key string) *float64 {
 	if value == nil {
 		return nil
 	}
-	if s, ok := value.(string); ok && pystr.Strip(s) == "" {
+	if s, ok := value.(string); ok && strings.TrimSpace(s) == "" {
 		return nil
 	}
 	f, err := pyint.Float(value)
@@ -1058,7 +1041,7 @@ func hashMessages(msgs []map[string]any) string {
 
 // True for a failed or skipped reference sentinel
 func isFailedReference(text string) bool {
-	lowered := pystr.Lower(pystr.Lstrip(text))
+	lowered := strings.ToLower(strings.TrimLeftFunc(text, unicode.IsSpace))
 	return strings.HasPrefix(lowered, "[failed:") || strings.HasPrefix(lowered, "[skipped:")
 }
 
@@ -1099,7 +1082,7 @@ func sumReferenceAccounting(outputs []moaRefOutput) (provider.CanonicalUsage, *b
 
 // Notice naming unavailable references, empty under the silent policy
 func degradedNotice(failedLabels []string, policy string) string {
-	if len(failedLabels) == 0 || pystr.Lower(pystr.Strip(policy)) == "silent" {
+	if len(failedLabels) == 0 || strings.ToLower(strings.TrimSpace(policy)) == "silent" {
 		return ""
 	}
 	return "[Reference models unavailable: " + strings.Join(failedLabels, ", ") + "]"
@@ -1159,12 +1142,7 @@ func aggregateMoaContext(ctx context.Context, a *AIAgent, userPrompt string, api
 				pkgLog().Debug(fmt.Sprintf("MoA privacy filter check failed: %v", r))
 			}
 		}()
-		cfg, err := moaLoadConfig(ctx)
-		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("MoA privacy filter check failed: %v", err))
-			return
-		}
-		privacyFull = moaPrivacyMode(cfg["moa"]) == "full"
+		privacyFull = provider.CoercePrivacyFilter(settings.MoaPrivacyFilter.Get(ctx)) == "full"
 	}()
 	aggRefs, degraded, allFailed := guidanceInputs(outputs, privacyFull, degradedReferencePolicy)
 	joined := joinReferenceOutputs(aggRefs, degraded)
@@ -1195,7 +1173,7 @@ func aggregateMoaContext(ctx context.Context, a *AIAgent, userPrompt string, api
 	if body == "" {
 		body = joined
 	}
-	return moaAggregateContextHeader + "Aggregator: " + aggLabel + "\n" + "References: " + slotLabels(slots) + "\n\n" + pystr.Strip(body), nil
+	return moaAggregateContextHeader + "Aggregator: " + aggLabel + "\n" + "References: " + slotLabels(slots) + "\n\n" + strings.TrimSpace(body), nil
 }
 
 // Completed response adapted into one delta stream chunk at the facade boundary
@@ -1604,7 +1582,7 @@ func (c *MoAChatCompletions) fanoutCacheKey(preset map[string]any, refMessages, 
 	if pyTruthy(preset["fanout"]) {
 		fanoutMode = pyrepr.Str(preset["fanout"])
 	}
-	fanoutMode = pystr.Lower(pystr.Strip(fanoutMode))
+	fanoutMode = strings.ToLower(strings.TrimSpace(fanoutMode))
 	everyN := 0
 	if strings.HasPrefix(fanoutMode, "every_n:") {
 		if n, ok := pyint.Parse(strings.SplitN(fanoutMode, ":", 2)[1]); ok {
@@ -1938,16 +1916,7 @@ func buildMoaFacade(ctx context.Context, a *AIAgent, presetName any) *MoAClient 
 				name = "default"
 			}
 		}()
-		cfg, err := moaLoadConfig(ctx)
-		if err != nil {
-			name = "default"
-			return
-		}
-		raw := cfg["moa"]
-		if !pyTruthy(raw) {
-			raw = map[string]any{}
-		}
-		normalized := provider.NormalizeMoAConfig(raw)
+		normalized := provider.NormalizeMoAConfig(moaBlock(ctx))
 		presets, _ := moaMapOf(normalized["presets"])
 		if _, ok := presets[name]; !ok {
 			name = "default"

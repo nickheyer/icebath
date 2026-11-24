@@ -3,13 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // NeutralPersonalityNames are the names that mean no personality overlay
@@ -162,66 +161,82 @@ func personalityGet(cfg map[string]any, def any, keys ...string) any {
 	return node
 }
 
-// Selected display.personality name when it names a known personality, empty otherwise
+// Selected display.personality name of a config document when it names a known personality, empty otherwise
 func ActivePersonalityName(cfg map[string]any) string {
-	tree := config.Tree(cfg)
-	name := NormalizePersonalityName(personalityGet(cfg, "", "display", "personality"))
+	return knownPersonality(personalityGet(cfg, "", "display", "personality"), AvailablePersonalities(config.Tree(cfg)))
+}
+
+// Personality setting of ctx when it names a known personality, empty otherwise
+func ActivePersonality(ctx context.Context) string {
+	return knownPersonality(settings.Personality.Get(ctx), ConfiguredPersonalities(ctx))
+}
+
+// Canonical name of a selected personality when the merged personalities carry it, empty otherwise
+func knownPersonality(selected any, personalities map[string]any) string {
+	name := NormalizePersonalityName(selected)
 	if name == "" {
 		return ""
 	}
-	if _, ok := AvailablePersonalities(tree)[name]; ok {
+	if _, ok := personalities[name]; ok {
 		return name
 	}
 	return ""
 }
 
-// Session overlay prompt, the active personality render or else the user owned agent.system_prompt
+// Session overlay prompt of a config document, the active personality render or else agent.system_prompt
 func ResolveEphemeralSystemPrompt(cfg map[string]any) string {
-	tree := config.Tree(cfg)
-	if name := ActivePersonalityName(cfg); name != "" {
-		return RenderPersonalityPrompt(AvailablePersonalities(tree)[name])
-	}
-	return PromptText(personalityGet(cfg, "", "agent", "system_prompt"))
+	return overlayPrompt(personalityGet(cfg, "", "display", "personality"), AvailablePersonalities(config.Tree(cfg)), personalityGet(cfg, "", "agent", "system_prompt"))
 }
 
-// Writes the canonical name to display.personality of the home config, false on any failure
+// Session overlay prompt for ctx, the active personality render or else the own instructions setting
+func EphemeralSystemPrompt(ctx context.Context) string {
+	return overlayPrompt(settings.Personality.Get(ctx), ConfiguredPersonalities(ctx), settings.AgentSystemPrompt.Get(ctx))
+}
+
+// Render of the selected personality when known, else the own instructions as prompt text
+func overlayPrompt(selected any, personalities map[string]any, own any) string {
+	if name := knownPersonality(selected, personalities); name != "" {
+		return RenderPersonalityPrompt(personalities[name])
+	}
+	return PromptText(own)
+}
+
+// Writes the canonical name to the personality setting of the profile of ctx, false on any failure
 func PersistPersonality(ctx context.Context, value any) bool {
-	name := NormalizePersonalityName(value)
-	h := home.Dir(ctx)
-	configPath := home.ConfigPath(h)
-	if _, err := home.Mkdir(ctx, h); err != nil {
+	if _, err := settings.Set(ctx, settings.Personality.Key, NormalizePersonalityName(value), settings.Global); err != nil {
+		pkgLog().Warn("saving the personality failed", "err", err)
 		return false
 	}
-	if err := config.WriteConfigKey(ctx, configPath, "display.personality", name); err != nil {
-		return false
-	}
-	_ = os.Chmod(configPath, 0o600)
 	return true
 }
 
-// Built in personalities overlaid by root then agent level user definitions, later wins
+// Built in personalities overlaid by the personalities block of a config document
 func AvailablePersonalities(cfg config.Tree) map[string]any {
+	return mergePersonalities(config.AsMap(personalityGet(cfg, map[string]any{}, "personalities")))
+}
+
+// Built in personalities overlaid by the personalities setting of ctx
+func ConfiguredPersonalities(ctx context.Context) map[string]any {
+	return mergePersonalities(settings.Personalities.Get(ctx))
+}
+
+// Built in personalities overlaid by user definitions by lower case name, a user entry winning
+func mergePersonalities(user map[string]any) map[string]any {
 	merged := map[string]any{}
 	order := make([]string, 0, len(builtinPersonalityOrder))
 	for _, name := range builtinPersonalityOrder {
 		merged[name] = BuiltinPersonalities[name]
 		order = append(order, name)
 	}
-	for _, path := range [][]string{{"personalities"}, {"agent", "personalities"}} {
-		user := config.AsMap(personalityGet(cfg, map[string]any{}, path...))
-		if user == nil {
+	for _, name := range config.MappingKeys(user) {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" || NeutralPersonalityNames[key] {
 			continue
 		}
-		for _, name := range config.MappingKeys(user) {
-			key := strings.ToLower(strings.TrimSpace(name))
-			if key == "" || NeutralPersonalityNames[key] {
-				continue
-			}
-			if _, present := merged[key]; !present {
-				order = append(order, key)
-			}
-			merged[key] = user[name]
+		if _, present := merged[key]; !present {
+			order = append(order, key)
 		}
+		merged[key] = user[name]
 	}
 	config.SetMappingKeys(merged, order)
 	return merged

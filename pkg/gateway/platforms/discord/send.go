@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -120,7 +119,7 @@ func snowflakeInt(raw string) (string, error) {
 
 // Cached channel first then a REST fetch, accepting a pasted channel link
 func (a *DiscordAdapter) resolveChannel(ctx context.Context, channelID string) (*discordgo.Channel, error) {
-	if id, ok := gateway.DiscordChannelIDFromLink(pystr.Strip(channelID)); ok && id != "" {
+	if id, ok := gateway.DiscordChannelIDFromLink(strings.TrimSpace(channelID)); ok && id != "" {
 		channelID = id
 	}
 	id, err := snowflakeInt(channelID)
@@ -206,7 +205,7 @@ func (a *DiscordAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 		return gateway.SendResult{Success: false, Error: "send_path_degraded", Retryable: true}, nil
 	}
 	notify := metadata != nil && pyrepr.Truthy(metadata["notify"])
-	if pystr.Strip(content) == "" {
+	if strings.TrimSpace(content) == "" {
 		pkgLog().Warn(fmt.Sprintf("[%s] Dropped empty message to chat=%s (caller bug). Call site:\n%s", a.Name(), chatID, debug.Stack()))
 		return a.recordResponseAsync(ctx, replyTo, gateway.SendResult{Success: false, Error: "Refusing to send empty message"}, content, notify, metadata), nil
 	}
@@ -380,10 +379,10 @@ func (a *DiscordAdapter) sendToForum(ctx context.Context, forum *discordgo.Chann
 func (a *DiscordAdapter) forumPostFile(ctx context.Context, forum *discordgo.Channel, threadName, content string, files []*discordgo.File) gateway.SendResult {
 	if threadName == "" {
 		hint := content
-		if pystr.Strip(hint) == "" && len(files) > 0 {
+		if strings.TrimSpace(hint) == "" && len(files) > 0 {
 			hint = files[0].Name
 		}
-		if pystr.Strip(hint) != "" {
+		if strings.TrimSpace(hint) != "" {
 			threadName = deriveForumThreadName(ctx, hint)
 		} else {
 			threadName = i18n.T(ctx, "platform.discord.forum.default_title", "", nil)
@@ -417,8 +416,8 @@ func (a *DiscordAdapter) forumPostFile(ctx context.Context, forum *discordgo.Cha
 
 // Thread name from the first message line without heading marks, capped at 100 characters
 func deriveForumThreadName(ctx context.Context, message string) string {
-	firstLine := pystr.Strip(strings.SplitN(pystr.Strip(message), "\n", 2)[0])
-	firstLine = pystr.Strip(strings.TrimLeft(firstLine, "#"))
+	firstLine := strings.TrimSpace(strings.SplitN(strings.TrimSpace(message), "\n", 2)[0])
+	firstLine = strings.TrimSpace(strings.TrimLeft(firstLine, "#"))
 	if firstLine == "" {
 		firstLine = i18n.T(ctx, "platform.discord.forum.default_title", "", nil)
 	}

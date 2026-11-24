@@ -184,9 +184,14 @@ var elevenLabsVoicesGet = func(ctx context.Context, rawURL, apiKey string) (int,
 }
 
 // One compact paginated page of ElevenLabs voices from the library or the account
-func searchVoices(ctx context.Context, find map[string]any, ttsConfig map[string]any, apiKey string) string {
-	arg := func(name string) string { return pystr.Strip(pyrepr.Str(orEmptyString(find[name]))) }
-	source := pystr.Lower(arg("source"))
+func searchVoices(ctx context.Context, find map[string]any, req *ttsRequest, apiKey string) string {
+	arg := func(name string) string {
+		if !pyTruthy(find[name]) {
+			return ""
+		}
+		return strings.TrimSpace(pyrepr.Str(find[name]))
+	}
+	source := strings.ToLower(arg("source"))
 	if arg("source") == "" {
 		source = elevenLabsVoiceSources[0]
 	}
@@ -204,24 +209,15 @@ func searchVoices(ctx context.Context, find map[string]any, ttsConfig map[string
 	var filters [][2]string
 	for _, name := range elevenLabsVoiceFilters {
 		if v := arg(name); v != "" {
-			filters = append(filters, [2]string{name, pystr.Lower(v)})
+			filters = append(filters, [2]string{name, strings.ToLower(v)})
 		}
 	}
 	page := arg("page")
-	path, params, err := voiceRequestParams(source, arg("query"), filters, pystr.Lower(arg("use_case")), pystr.Lower(arg("sort")), page, size)
+	path, params, err := voiceRequestParams(source, arg("query"), filters, strings.ToLower(arg("use_case")), strings.ToLower(arg("sort")), page, size)
 	if err != nil {
 		return ttsToolError(err.Error())
 	}
-	elConfig, err := orEmptyDict(ttsConfig, "elevenlabs")
-	if err != nil {
-		return ttsToolError(err.Error())
-	}
-	base := defaultElevenLabsBaseURL
-	if pyTruthy(elConfig["base_url"]) {
-		base = pyrepr.Str(elConfig["base_url"])
-	}
-	base = strings.TrimRight(base, "/")
-	status, raw2, err := elevenLabsVoicesGet(ctx, base+path+"?"+params.Encode(), apiKey)
+	status, raw2, err := elevenLabsVoicesGet(ctx, elevenLabsBase(req)+path+"?"+params.Encode(), apiKey)
 	if err != nil {
 		return ttsToolError(fmt.Sprintf("ElevenLabs voice search failed: %v", err))
 	}
@@ -241,9 +237,9 @@ func searchVoices(ctx context.Context, find map[string]any, ttsConfig map[string
 			voices = append(voices, voiceRow(m))
 		}
 	}
-	configured := elConfig["voice_id"]
-	if !pyTruthy(configured) {
-		configured = nil
+	var configured any
+	if v := strings.TrimSpace(req.ElevenLabs.VoiceID); v != "" {
+		configured = v
 	}
 	result := pyjson.ObjectOf("success", true, "source", source, "count", len(voices), "voices", voices,
 		"next_page", voiceNextPage(source, body, page), "configured_voice_id", configured)

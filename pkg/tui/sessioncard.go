@@ -58,7 +58,7 @@ type sessionCard struct {
 // Window of one app with an empty transcript and a focused prompt
 func newSessionCard(a *app) *sessionCard {
 	c := &sessionCard{app: a, view: newTranscriptView(a.store.nowMillis), barGrab: -1, xtermJS: os.Getenv("TERM_PROGRAM") == "vscode"}
-	c.accel = newWheelAccel(c.xtermJS, scrollSpeedBase(os.LookupEnv))
+	c.accel = newWheelAccel(c.xtermJS, scrollSpeedBase())
 	c.composer = cards.NewComposer(a.uiTheme(), a.keys, "", a.store.sessionCwd)
 	c.composer.Literal = true
 	c.composer.Hint = composerHint()
@@ -225,7 +225,7 @@ func (c *sessionCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	case tea.TerminalVersionMsg:
 		if strings.HasPrefix(m.Name, "xterm.js") && !c.xtermJS {
 			c.xtermJS = true
-			c.accel = newWheelAccel(true, scrollSpeedBase(os.LookupEnv))
+			c.accel = newWheelAccel(true, scrollSpeedBase())
 		}
 	case keys.ChangedMsg:
 		c.composer.Rebind()
@@ -303,7 +303,7 @@ func (c *sessionCard) wheel(m tea.MouseWheelMsg) {
 	case !precise:
 		rows = c.accel.step(dir, now)
 	case entered:
-		c.accel = newWheelAccel(c.xtermJS, scrollSpeedBase(os.LookupEnv))
+		c.accel = newWheelAccel(c.xtermJS, scrollSpeedBase())
 	}
 	if rows != 0 {
 		c.view.scrollBy(dir * rows)

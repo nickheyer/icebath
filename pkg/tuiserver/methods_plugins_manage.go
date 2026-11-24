@@ -1,6 +1,8 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,11 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // One plugins.manage action handler
@@ -41,6 +41,12 @@ func pluginRows(ctx context.Context) ([]map[string]any, error) {
 	entries, err := plugins.DiscoverAllPlugins(h)
 	if err != nil {
 		return nil, err
+	}
+	provenance := map[string]plugins.ProvenanceClass{}
+	if dir, found := plugins.UserPluginsDir(ctx); found {
+		for _, p := range plugins.PluginsProvenance(ctx, dir) {
+			provenance[filepath.Clean(p.Path)] = p.Class
+		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
@@ -84,6 +90,9 @@ func pluginRows(ctx context.Context) ([]map[string]any, error) {
 		if e.Dir != "" {
 			if target := gitUpdates[filepath.Base(e.Dir)]; target != "" {
 				row["update_available"], row["update_target"] = true, target
+			}
+			if class := provenance[filepath.Clean(e.Dir)]; class != "" {
+				row["provenance"] = string(class)
 			}
 		}
 		sha, err := plugins.PinnedRevision(ctx, e.Name, refPins)
@@ -149,7 +158,7 @@ func withActivation(result map[string]any, name string) map[string]any {
 func firstParam(params map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if v := params[key]; pyrepr.Truthy(v) {
-			return pystr.Strip(strOr(v))
+			return strings.TrimSpace(strOr(v))
 		}
 	}
 	return ""
@@ -569,7 +578,7 @@ func runAction[A any](rid any, params map[string]any, table map[string]A, label 
 }
 
 // Plugins hub backend listing, toggling, installing, inspecting, updating, removing and configuring plugins
-func pluginsManage(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func pluginsManage(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	return runAction(rid, params, pluginsActions, "plugins", func(h pluginsAction) (map[string]any, error) { return h(ctx, rid, params) })
 }
 

@@ -47,7 +47,7 @@ func validateModelOverride(model, provider *string) (*string, *string, error) {
 		if s == nil {
 			return nil
 		}
-		v := pystr.Strip(*s)
+		v := strings.TrimSpace(*s)
 		if v == "" {
 			return nil
 		}
@@ -85,7 +85,7 @@ func resolveProjectLink(ctx context.Context, conn state.SQLiteConn, projectID, s
 	none := projectLink{WorkspaceKind: workspaceKind}
 	id := ""
 	if projectID != nil {
-		id = pystr.Strip(*projectID)
+		id = strings.TrimSpace(*projectID)
 	}
 	if id == "" {
 		return none, nil
@@ -187,7 +187,7 @@ func normalizeTaskSkills(skills []string) ([]string, error) {
 	var typos []string
 	known := knownToolsetNames()
 	for _, s := range skills {
-		name := pystr.Strip(s)
+		name := strings.TrimSpace(s)
 		if name == "" {
 			continue
 		}

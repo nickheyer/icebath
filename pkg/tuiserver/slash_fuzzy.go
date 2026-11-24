@@ -7,13 +7,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Score of one completion item against the query from its name and description, lower is better
 func scoreSlashCompletionItem(item map[string]any, query string) float64 {
-	name := strings.TrimLeft(pystr.Strip(itemField(item, "text")), "/")
+	name := strings.TrimLeft(strings.TrimSpace(itemField(item, "text")), "/")
 	return math.Min(tuigateway.ScoreFields(tuigateway.TokenizeSearchText(name), query, 0), tuigateway.ScoreFields(tuigateway.TokenizeSearchText(itemField(item, "meta")), query, 3))
 }
 
@@ -33,11 +32,11 @@ func itemID(item map[string]any) uintptr { return reflect.ValueOf(item).Pointer(
 func fuzzyRankSlashItems(items, catalog []map[string]any, query string) ([]map[string]any, func(map[string]any) float64) {
 	seen := map[string]bool{}
 	for _, item := range items {
-		seen[pystr.Strip(itemField(item, "text"))] = true
+		seen[strings.TrimSpace(itemField(item, "text"))] = true
 	}
 	merged := slices.Clone(items)
 	for _, item := range catalog {
-		if !seen[pystr.Strip(itemField(item, "text"))] && !math.IsInf(scoreSlashCompletionItem(item, query), 1) {
+		if !seen[strings.TrimSpace(itemField(item, "text"))] && !math.IsInf(scoreSlashCompletionItem(item, query), 1) {
 			merged = append(merged, item)
 		}
 	}

@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -31,9 +32,8 @@ const (
 
 var vertexCloudPlatformScopes = []string{gcpCloudPlatformScope}
 
-// Profile view the Vertex settings resolve through, the config tree and the profile secrets
+// Profile view the Vertex credentials resolve through, the profile secrets; project and region are settings read for the call context
 type vertexEnv struct {
-	cfg     map[string]any
 	secrets *config.Secrets
 }
 
@@ -47,38 +47,20 @@ func (e vertexEnv) secret(ctx context.Context, name string) string {
 	return SecretScopeFrom(ctx).GetSecretStr(name, "")
 }
 
-func (e vertexEnv) section() map[string]any {
-	if m, ok := e.cfg["vertex"].(map[string]any); ok {
-		return m
-	}
-	return map[string]any{}
-}
-
-// Env or secret value first, then the vertex config section, empty when neither is set
-func (e vertexEnv) envOrConfig(ctx context.Context, envVar, key string) string {
-	if v := strings.TrimSpace(e.secret(ctx, envVar)); v != "" {
-		return v
-	}
-	if v := e.section()[key]; v != nil {
-		return strings.TrimSpace(fmt.Sprint(v))
-	}
-	return ""
-}
-
-// Explicit region, then VERTEX_REGION, then config, then global
+// Explicit region, then the vertex.region setting (VERTEX_REGION overriding it), then global
 func (e vertexEnv) region(ctx context.Context, explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if v := e.envOrConfig(ctx, "VERTEX_REGION", "region"); v != "" {
+	if v := strings.TrimSpace(settings.VertexRegion.Get(ctx)); v != "" {
 		return v
 	}
 	return vertexDefaultRegion
 }
 
-// Project id override from VERTEX_PROJECT_ID or config, empty to use the credentials project
+// Project id override from the vertex.project_id setting (VERTEX_PROJECT_ID overriding it), empty to use the credentials project
 func (e vertexEnv) projectOverride(ctx context.Context) string {
-	return e.envOrConfig(ctx, "VERTEX_PROJECT_ID", "project_id")
+	return strings.TrimSpace(settings.VertexProjectId.Get(ctx))
 }
 
 func vertexPathExists(p string) bool {
@@ -293,8 +275,8 @@ func hasVertexCredentials(ctx context.Context, e vertexEnv) bool {
 
 // True only for icebath scoped Vertex signals, an explicit project or a readable VERTEX_CREDENTIALS_PATH
 func hasExplicitVertexConfig(env PoolEnv) bool {
-	e := vertexEnv{cfg: env.config(), secrets: env.Secrets}
-	ctx := env.ctx()
+	e := vertexEnv{secrets: env.Secrets}
+	ctx := env.hookContext()
 	if e.projectOverride(ctx) != "" {
 		return true
 	}
@@ -327,19 +309,13 @@ func deferredTokenMint(ctx context.Context) bool {
 }
 
 // Vertex token source and base URL for the profile, minting once up front unless the mint is deferred
-func vertexRuntimeConfig(ctx context.Context, cfg map[string]any, secrets *config.Secrets, h string) (func(context.Context) (string, error), string, bool) {
+func vertexRuntimeConfig(ctx context.Context, secrets *config.Secrets, h string) (func(context.Context) (string, error), string, bool) {
 	if secrets == nil {
 		secrets = config.NewSecrets(h)
 	}
-	if cfg == nil {
-		tree, err := config.Load(h, secrets.Lookup())
-		if err != nil {
-			tree = config.Defaults()
-		}
-		cfg = map[string]any(tree)
-	}
-	e := vertexEnv{cfg: cfg, secrets: secrets}
-	src := TagCredentialSource(func(c context.Context) (string, error) { return vertexAccessToken(c, e) }, CredentialSourceVertexOAuth).Func()
+	ctx = ctxForHome(ctx, h)
+	e := vertexEnv{secrets: secrets}
+	src := TagCredentialSource(func(c context.Context) (string, error) { return vertexAccessToken(ctxForHome(c, h), e) }, CredentialSourceVertexOAuth).Func()
 	if deferredTokenMint(ctx) {
 		base := vertexGetBaseURL(ctx, e, "", "")
 		return src, base, base != ""
@@ -362,15 +338,9 @@ func vertexTransport(route Route) (anthTransport, error) {
 	return &anthVertexTransport{route: route}, nil
 }
 
-// Profile Vertex view loaded from the home the context routes to
+// Profile Vertex view of the home the context routes to
 func vertexHomeEnv(ctx context.Context) vertexEnv {
-	h := home.Dir(ctx)
-	secrets := config.NewSecrets(h)
-	tree, err := config.Load(h, secrets.Lookup())
-	if err != nil {
-		tree = config.Defaults()
-	}
-	return vertexEnv{cfg: map[string]any(tree), secrets: secrets}
+	return vertexEnv{secrets: config.NewSecrets(home.Dir(ctx))}
 }
 
 // Project and region named by a Vertex URL path segment pair projects/P/locations/R

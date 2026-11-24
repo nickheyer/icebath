@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -16,7 +18,7 @@ func oneshotTruncate(text string, limit int) string {
 	if pystr.Len(text) <= limit {
 		return text
 	}
-	return pystr.Rstrip(pystr.Slice(text, 0, limit)) + "\n…(truncated)"
+	return strings.TrimRightFunc(pystr.Slice(text, 0, limit), unicode.IsSpace) + "\n…(truncated)"
 }
 
 const commitInstructions = "You write git commit messages. Given a diff of staged changes, write ONE concise Conventional Commits " +
@@ -44,14 +46,14 @@ func commitMessageTemplate(variables map[string]any) (string, string) {
 	diff := oneshotTruncate(oneshotVar(variables, "diff"), 12000)
 	recent := oneshotTruncate(oneshotVar(variables, "recent_commits"), 1500)
 	var parts []string
-	if pystr.Strip(recent) != "" {
+	if strings.TrimSpace(recent) != "" {
 		parts = append(parts, "Recent commit subjects from this repo (match their style/conventions):\n"+recent)
 	}
 	if diff == "" {
 		diff = "(no textual diff available)"
 	}
 	parts = append(parts, "Diff to describe:\n"+diff)
-	if avoid := oneshotTruncate(pystr.Strip(oneshotVar(variables, "avoid")), 1000); avoid != "" {
+	if avoid := oneshotTruncate(strings.TrimSpace(oneshotVar(variables, "avoid")), 1000); avoid != "" {
 		parts = append(parts, "You already proposed the message below and the user wants a different one. Write a NEW message with "+
 			"different wording (and, if reasonable, a different emphasis or scope framing) — do not repeat "+
 			"it:\n"+avoid)
@@ -97,8 +99,8 @@ func RunOneshot(ctx context.Context, req OneshotRequest) (string, error) {
 			return "", err
 		}
 	}
-	hasInstructions := pystr.Strip(instructions) != ""
-	if !hasInstructions && pystr.Strip(userInput) == "" {
+	hasInstructions := strings.TrimSpace(instructions) != ""
+	if !hasInstructions && strings.TrimSpace(userInput) == "" {
 		return "", errors.New("a one-shot run needs a template, instructions or user input")
 	}
 	messages := []any{}
@@ -119,7 +121,7 @@ func RunOneshot(ctx context.Context, req OneshotRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return stripCodeFence(pystr.Strip(provider.ExtractContentOrReasoning(response, -1))), nil
+	return stripCodeFence(strings.TrimSpace(provider.ExtractContentOrReasoning(response, -1))), nil
 }
 
 // Text without the single wrapping code fence a model may add
@@ -128,8 +130,8 @@ func stripCodeFence(text string) string {
 		return text
 	}
 	lines := pystr.Splitlines(text, false)
-	if len(lines) >= 2 && pystr.Strip(lines[len(lines)-1]) == "```" {
-		return pystr.Strip(strings.Join(lines[1:len(lines)-1], "\n"))
+	if len(lines) >= 2 && strings.TrimSpace(lines[len(lines)-1]) == "```" {
+		return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
 	}
 	return text
 }

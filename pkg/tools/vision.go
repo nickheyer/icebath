@@ -77,7 +77,7 @@ var detectHostCPUs = func() int { return max(1, runtime.NumCPU()) }
 
 // Worker count from the vision worker setting, else the usable cores
 func resolveVisionCPUWorkers(env *Env) int {
-	if n, ok := settings.AuxiliaryVisionMaxConcurrency.Lookup(envHomeCtx(context.Background(), env)); ok && n > 0 {
+	if n, ok := settings.AuxiliaryVisionMaxConcurrency.Lookup(envHomeCtx(context.Background(), env)); ok {
 		return n
 	}
 	return detectHostCPUs()

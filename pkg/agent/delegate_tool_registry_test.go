@@ -13,7 +13,6 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -358,14 +357,14 @@ func childCompletionEvt(taskID, sid string) map[string]any {
 
 func surfaceEnv(t *testing.T, surface bool) *tools.Env {
 	t.Helper()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	cfg := config.Defaults()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
 	if surface {
-		if err := cfg.Set("delegation.surface_child_process_notifications", true); err != nil {
+		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("delegation:\n  surface_child_process_notifications: true\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return &tools.Env{Config: cfg}
+	return &tools.Env{Home: h}
 }
 
 func TestCompletionNotificationCarriesDelegationAttribution(t *testing.T) {

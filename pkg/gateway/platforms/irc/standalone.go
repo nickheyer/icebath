@@ -1,6 +1,8 @@
 package irc
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"errors"
@@ -16,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Largest line the asyncio stream reader buffers before it reports an overrun
@@ -104,7 +107,7 @@ func (c *standaloneConn) pump(ctx context.Context, timeout time.Duration, onMsg 
 		if err != nil {
 			return nil, err
 		}
-		msg := parseIRCMessage(pystr.RstripChars(pystr.DecodeUTF8Replace(rawLine), "\r\n"))
+		msg := parseIRCMessage(strings.TrimRight(pystr.DecodeUTF8Replace(rawLine), "\r\n"))
 		if msg.command == "PING" {
 			token := ""
 			if len(msg.params) > 0 {
@@ -234,16 +237,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	} else if err != nil {
 		return nil, err
 	}
-	useTLSEnv, found, err := gateway.LookupScopedSecret(ctx, "IRC_USE_TLS", false)
-	if err != nil {
-		return nil, err
-	}
-	useTLS := true
-	if found {
-		useTLS = truthyValues[pystr.Lower(useTLSEnv)]
-	} else if v, ok := extra["use_tls"]; ok {
-		useTLS = pyrepr.Truthy(v)
-	}
+	useTLS := settings.IrcUseTLS.Get(gateway.SettingsContext(ctx))
 	var targetValue any = chatID
 	if chatID == "" {
 		targetValue = channel
@@ -263,7 +257,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	nickBase := pystr.Slice(pystr.RstripChars(nickText, "_0123456789-"), 0, 24)
+	nickBase := pystr.Slice(strings.TrimRight(nickText, "_0123456789-"), 0, 24)
 	if nickBase == "" {
 		nickBase = "icebath-bot"
 	}
@@ -332,7 +326,7 @@ func standaloneDeliver(ctx context.Context, conn *standaloneConn, extra map[stri
 	}
 	paragraphs := []string{}
 	for _, p := range strings.Split(plain, "\n") {
-		if q := pystr.Rstrip(stripIRCControlChars(p)); q != "" {
+		if q := strings.TrimRightFunc(stripIRCControlChars(p), unicode.IsSpace); q != "" {
 			paragraphs = append(paragraphs, q)
 		}
 	}

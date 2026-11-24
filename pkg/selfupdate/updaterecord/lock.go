@@ -115,7 +115,7 @@ func asCT(recorded any) *float64 {
 	case float64:
 		value = v
 	case string:
-		text := strings.TrimPrefix(pystr.Strip(v), "ct:")
+		text := strings.TrimPrefix(strings.TrimSpace(v), "ct:")
 		if !ctValueRE.MatchString(text) {
 			return nil
 		}
@@ -415,7 +415,7 @@ func readGitPointer(path string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	return pystr.Strip(text), true, nil
+	return strings.TrimSpace(text), true, nil
 }
 
 // Common git dir of the checkout at root read from disk, empty when root is no checkout
@@ -434,7 +434,7 @@ func GitCommonDir(root string) (string, error) {
 		if !ok || err != nil || !strings.HasPrefix(text, "gitdir:") {
 			return "", err
 		}
-		gitdir = joinPath(root, pystr.Strip(text[len("gitdir:"):]))
+		gitdir = joinPath(root, strings.TrimSpace(text[len("gitdir:"):]))
 	default:
 		return "", nil
 	}

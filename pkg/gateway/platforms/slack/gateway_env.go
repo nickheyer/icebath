@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Creates a disabled entry when needed and keeps user and scope provenance across an unchanged chat id
@@ -42,8 +41,7 @@ var envOverrides = []gateway.EnvStep{
 
 var authz = map[string]any{"allowed_users_env": "SLACK_ALLOWED_USERS", "allow_all_env": "SLACK_ALLOW_ALL_USERS", "allow_bots_env": "SLACK_ALLOW_BOTS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled slack directory and the setting its bot policy name moved to
+// Registers the env declarations of the bundled slack directory
 func init() {
 	gateway.RegisterBundledEnv("slack", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
-	gateway.RegisterEnvSettings(map[string]settings.Entry{"SLACK_ALLOW_BOTS": settings.SlackAllowBots})
 }

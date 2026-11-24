@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"math"
@@ -83,7 +85,7 @@ func looksLikeErrorOutput(content any) bool {
 	if text == "" {
 		return false
 	}
-	if trimmed := pystr.Lstrip(text); strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+	if trimmed := strings.TrimLeftFunc(text, unicode.IsSpace); strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
 		if parsed, err := pyjson.Loads(text); err == nil {
 			if obj, ok := pyjson.AsObject(parsed); ok {
 				errVal, _ := obj.Get("error")
@@ -92,7 +94,7 @@ func looksLikeErrorOutput(content any) bool {
 				if pyrepr.Truthy(status) {
 					statusText = pyrepr.Str(status)
 				}
-				if pyrepr.Truthy(errVal) || errorStatuses[pystr.Lower(pystr.Strip(statusText))] {
+				if pyrepr.Truthy(errVal) || errorStatuses[strings.ToLower(strings.TrimSpace(statusText))] {
 					return true
 				}
 			}
@@ -100,7 +102,7 @@ func looksLikeErrorOutput(content any) bool {
 	}
 	first := ""
 	if lines := pystr.Splitlines(text, false); len(lines) > 0 {
-		first = pystr.Lower(pystr.Strip(lines[0]))
+		first = strings.ToLower(strings.TrimSpace(lines[0]))
 	}
 	for _, marker := range []string{"error:", "failed:", "traceback ", "exception:"} {
 		if strings.HasPrefix(first, marker) {
@@ -251,7 +253,7 @@ func sanitizeToolTarget(env *tools.Env, key string, value any, force bool) any {
 func sanitizeTargets(env *tools.Env, mapping *pyjson.Object, force bool) *pyjson.Object {
 	targets := pyjson.NewObject()
 	for _, rawKey := range mapping.Keys {
-		key := pystr.Lower(rawKey)
+		key := strings.ToLower(rawKey)
 		if !toolInputTargetKeys[key] {
 			continue
 		}
@@ -350,7 +352,7 @@ func subagentStopToolCallHistory(env *tools.Env, toolTrace any) ([]any, error) {
 		if pyrepr.Truthy(statusVal) {
 			status = pyrepr.Str(statusVal)
 		}
-		status = pystr.Lower(status)
+		status = strings.ToLower(status)
 		summaryRaw, _ := item.Get("input_summary")
 		summary, ok := pyjson.AsObject(summaryRaw)
 		if !ok {

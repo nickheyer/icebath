@@ -205,7 +205,7 @@ func currentVaultPageOrigin(ctx context.Context, env *tools.Env, taskID string) 
 	if !pyrepr.Truthy(anyGet(res, "success")) {
 		return ""
 	}
-	href := pystr.StripChars(pystr.StripChars(pystr.Strip(vaultText(anyGet(res, "result"))), `"`), "'")
+	href := strings.Trim(strings.Trim(strings.TrimSpace(vaultText(anyGet(res, "result"))), `"`), "'")
 	if href == "" || href == "about:blank" {
 		return ""
 	}
@@ -421,7 +421,7 @@ func browserVaultSaveLogin(ctx context.Context, env *tools.Env, label, taskID st
 				"`icebath vault add` for "+origin+".")), nil
 	}
 	host := originHost(origin)
-	site := pystr.Strip(label)
+	site := strings.TrimSpace(label)
 	if site == "" {
 		site = host
 	}
@@ -429,11 +429,11 @@ func browserVaultSaveLogin(ctx context.Context, env *tools.Env, label, taskID st
 	if len(answer) == 0 || answer["password"] == "" || answer["identifier"] == "" {
 		return vaultDumps(vaultFail("error_type", "save_declined", "error", "The user chose not to save a login for this site. Do not ask again this turn.")), nil
 	}
-	identifier := pystr.Strip(answer["identifier"])
+	identifier := strings.TrimSpace(answer["identifier"])
 	idType := "username"
 	if strings.Contains(identifier, "@") {
 		idType = "email"
-	} else if pystr.StrIsDigit(pystr.LstripChars(identifier, "+")) {
+	} else if pystr.StrIsDigit(strings.TrimLeft(identifier, "+")) {
 		idType = "phone"
 	}
 	meta, err := localVaultStore(ctx).AddItem("login", site, pyjson.ObjectOf("identifier_type", idType, "identifier", identifier,
@@ -664,7 +664,7 @@ func enterVaultCode(ctx context.Context, env *tools.Env, handle, taskID string) 
 			" asks for a one-time code and this session cannot ask the user (headless/cron/API). "+
 			"Save an authenticator key for this login so codes can be generated automatically.")), nil
 	}
-	code := strings.ReplaceAll(strings.ReplaceAll(pystr.Strip(prompt(site, "")), " ", ""), "-", "")
+	code := strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(prompt(site, "")), " ", ""), "-", "")
 	if code == "" {
 		return vaultDumps(vaultFail("error_type", "code_declined", "error", "The user did not enter a code. Do not ask again this turn.")), nil
 	}

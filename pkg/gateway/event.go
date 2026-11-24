@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"regexp"
 	"strings"
 	"sync"
@@ -31,7 +33,7 @@ func CleanAttachmentFilename(name any) string {
 		}
 		b.WriteRune(r)
 	}
-	base := []rune(pystr.Strip(b.String()))
+	base := []rune(strings.TrimSpace(b.String()))
 	if len(base) == 0 || string(base) == "." || string(base) == ".." {
 		return ""
 	}
@@ -198,7 +200,7 @@ func (e *MessageEvent) ExtendMedia(other *MessageEvent) {
 
 // Message text with the leading attachment reference tags stripped
 func (e *MessageEvent) commandText() string {
-	return pystr.Lstrip(attachmentRefRE.ReplaceAllString(pystr.Lstrip(e.Text), ""))
+	return strings.TrimLeftFunc(attachmentRefRE.ReplaceAllString(strings.TrimLeftFunc(e.Text, unicode.IsSpace), ""), unicode.IsSpace)
 }
 
 // Reports a slash command the event is allowed to run as gateway control
@@ -211,7 +213,7 @@ func (e *MessageEvent) GetCommand() (string, bool) {
 	if !e.IsCommand() {
 		return "", false
 	}
-	raw := pystr.Lower(pystr.SplitWhitespace(e.commandText(), 1)[0][1:])
+	raw := strings.ToLower(pystr.SplitWhitespace(e.commandText(), 1)[0][1:])
 	raw, _, _ = strings.Cut(raw, "@")
 	if strings.Contains(raw, "/") {
 		return "", false
@@ -224,7 +226,7 @@ func (e *MessageEvent) GetCommandArgs() string {
 	if !e.IsCommand() {
 		return e.Text
 	}
-	parts := pystr.SplitWhitespace(pystr.Lstrip(e.commandText()), 1)
+	parts := pystr.SplitWhitespace(strings.TrimLeftFunc(e.commandText(), unicode.IsSpace), 1)
 	args := ""
 	if len(parts) > 1 {
 		args = parts[1]

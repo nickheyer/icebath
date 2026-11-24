@@ -274,13 +274,9 @@ var namedCustomProviderConfiguredFn func(ctx context.Context, name, h string) bo
 // Binds the probe at init since the probe reaches the registry that reads it
 func init() { namedCustomProviderConfiguredFn = namedCustomProviderConfigured }
 
-// True when config defines a providers entry matching the request
+// True when the providers setting of home h defines an entry matching the request
 func namedCustomProviderConfigured(ctx context.Context, name, h string) bool {
-	cfg := LoadConfigSafe(ctx, h)
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(h), h, nil).getNamedCustomProvider(name, cfg, true) != nil
+	return newResolver(ctx, config.NewSecrets(h), h, nil).HasNamedCustomProvider(name)
 }
 
 // Reports whether the home's config defines a providers entry for the name

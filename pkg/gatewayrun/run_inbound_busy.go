@@ -5,13 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -186,14 +184,7 @@ func authorityLive(authority *gateway.SessionAuthority, sid string) (*gateway.Li
 
 // Queues a Telegram text follow up that lands inside the post start grace window
 func (r *GatewayRunner) hmBusyTelegramGraceQueue(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey, effectiveBusyInputMode string) (bool, error) {
-	rawGrace, ok := os.LookupEnv("ICEBATH_TELEGRAM_FOLLOWUP_GRACE_SECONDS")
-	if !ok {
-		rawGrace = "3.0"
-	}
-	grace, err := pyint.ParseFloat(rawGrace)
-	if err != nil {
-		return false, err
-	}
+	grace := settings.TelegramFollowupGraceSeconds.Get(settings.WithPlatform(gateway.SettingsContext(ctx), string(gateway.PlatformTelegram))).Seconds()
 	startedAt := r.peekSessionState(quickKey).turnStartedTS()
 	now := float64(time.Now().UnixNano()) / 1e9
 	if !(source.Platform == gateway.PlatformTelegram && event.MessageType == gateway.MessageTypeText &&

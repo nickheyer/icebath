@@ -16,12 +16,13 @@ func TestRestoreSessionCwdMovesIntoTheRecordedDirectory(t *testing.T) {
 	recorded := t.TempDir()
 	t.Chdir(start)
 	t.Setenv("TERMINAL_CWD", start)
+	t.Cleanup(func() { moveCLIFolder("") })
 	c.restoreSessionCwd(map[string]any{"cwd": recorded}, false)
 	now, _ := os.Getwd()
 	want, _ := filepath.EvalSymlinks(recorded)
 	got, _ := filepath.EvalSymlinks(now)
-	if got != want || os.Getenv("TERMINAL_CWD") != recorded {
-		t.Fatalf("cwd %q terminal cwd %q", now, os.Getenv("TERMINAL_CWD"))
+	if got != want || movedOrHandedFolder() != recorded {
+		t.Fatalf("cwd %q session folder %q", now, movedOrHandedFolder())
 	}
 	rec.reset()
 	c.restoreSessionCwd(map[string]any{"cwd": recorded}, false)

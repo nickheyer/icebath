@@ -8,12 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -84,7 +82,7 @@ func optionText(cc CommandContext, key string) string {
 	if !ok || !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Active profile name and home, a multiplexed gateway passing its own per source values in options
@@ -195,13 +193,9 @@ func allowedOption(cc CommandContext) []string {
 	return []string{}
 }
 
-// Gateway help lines of the default registry under the raw config gates of the process home
+// Gateway help lines of the default registry under the gate settings of ctx
 func defaultGatewayHelpLines(ctx context.Context, allowed []string) []string {
-	raw, err := config.ReadRawConfig(ctx, home.Dir(ctx))
-	if err != nil {
-		raw = nil
-	}
-	return GatewayHelpLines(Default, config.Tree(raw), allowed)
+	return GatewayHelpLines(ctx, Default, allowed)
 }
 
 // Gateway help body with the first ten skill commands, before platform mention decoration

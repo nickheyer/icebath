@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -26,7 +26,11 @@ func cloudEnv(t *testing.T, home string, section map[string]any) *tools.Env {
 	if home == "" {
 		home = t.TempDir()
 	}
-	return &tools.Env{Home: home, Config: config.Tree{"browser": section}}
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeBrowserSection(t, home, section)
+	return &tools.Env{Home: home}
 }
 
 func resolutionCached(env *tools.Env) bool {
@@ -156,7 +160,7 @@ func TestCloudProviderExplicitLocalCachesPermanently(t *testing.T) {
 	if !resolutionCached(env) {
 		t.Fatal("explicit local not cached")
 	}
-	env.Config = config.Tree{"browser": map[string]any{"cloud_provider": "browser-use"}}
+	writeBrowserSection(t, env.Home, map[string]any{"cloud_provider": "browser-use"})
 	if p, err := getCloudProvider(env); err != nil || p != nil {
 		t.Fatalf("cache did not stick %v %v", p, err)
 	}
@@ -231,15 +235,17 @@ func TestCDPOverrideIsNeverALocalBackend(t *testing.T) {
 
 // TestGetBrowserEngine test_config_lightpanda
 func TestGetBrowserEngineConfigLightpanda(t *testing.T) {
-	if got := cfgOf(browserEnv(map[string]any{"engine": "lightpanda"})).engine(); got != "lightpanda" {
+	if got := cfgOf(browserEnv(t, map[string]any{"engine": "lightpanda"})).engine(); got != "lightpanda" {
 		t.Fatalf("engine %q", got)
 	}
 }
 
 // TestGetCommandTimeoutRace test_returns_default_when_config_read_raises
 func TestCommandTimeoutDefaultWithoutConfig(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s := cfgOf(&tools.Env{})
-	if s.commandTimeout() != defaultCommandTimeout || s.commandTimeout() != defaultCommandTimeout {
+	want := int(settings.BrowserCommandTimeout.Default / time.Second)
+	if s.commandTimeout() != want || s.commandTimeout() != want {
 		t.Fatal("unreadable config did not answer the default")
 	}
 }
@@ -256,11 +262,7 @@ func TestCommandTimeoutFollowsEachProfile(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		tree, err := config.Load(h, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return &tools.Env{Home: h, Config: tree}
+		return &tools.Env{Home: h}
 	}
 	a, b := load("profA", 33), load("profB", 77)
 	if cfgOf(a).commandTimeout() != 33 || cfgOf(b).commandTimeout() != 77 || cfgOf(a).commandTimeout() != 33 {
@@ -284,11 +286,7 @@ func TestExplicitLocalStaysLocal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("browser:\n  cloud_provider: local\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	tree, err := config.Load(h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	env := &tools.Env{Home: h, Config: tree}
+	env := &tools.Env{Home: h}
 	if p, err := getCloudProvider(env); err != nil || p != nil {
 		t.Fatalf("provider %v %v", p, err)
 	}
@@ -325,7 +323,8 @@ func TestBrowserUseNeverConfiguredRoutesDirect(t *testing.T) {
 }
 
 func TestIsHeadedModeConfigTrue(t *testing.T) {
-	env := &tools.Env{Config: config.Tree{"browser": map[string]any{"headed": true}}}
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	env := browserEnv(t, map[string]any{"headed": true})
 	if !tools.IsHeadedMode(env) || tools.IsHeadedMode(&tools.Env{}) {
 		t.Fatal("browser.headed true is not what the installed hook reports")
 	}

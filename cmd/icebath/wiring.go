@@ -30,6 +30,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
@@ -122,28 +123,10 @@ func installProcessWiring() {
 	tui.ClipboardImage, tui.ClipboardImageBlocker = app.SaveClipboardImage, app.ClipboardImageBlocker
 	tui.PluginWidgets = pluginWidgets
 	tui.ScanPluginWidgets = scanPluginWidgets
-	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
+	tuihost.RegisterSessionSettingsStore()
 	gatewayrun.ServeSessionSocket = serveSessionSocket
-	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
-	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
-	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
-	tuiserver.CommandsByCategory = func() []tuiserver.HelpCategory {
-		var out []tuiserver.HelpCategory
-		for _, g := range commands.CommandsByCategory(commands.Default) {
-			category := tuiserver.HelpCategory{Category: g.Category}
-			for _, row := range g.Rows {
-				category.Rows = append(category.Rows, [2]string{row.Command, row.Description})
-			}
-			out = append(out, category)
-		}
-		return out
-	}
-	tuiserver.ActivePersonalityName = commands.ActivePersonalityName
 	tuiserver.QuickSnapshots = func(h string, t func(string, map[string]any) string) tuiserver.SnapshotLines {
 		return gatewaycli.SnapshotCommand{Home: h, T: t}
-	}
-	tuiserver.AvailablePersonalities = func(cfg map[string]any) map[string]any {
-		return commands.AvailablePersonalities(config.Tree(cfg))
 	}
 	tuiserver.Banner.ReleaseDate = app.ReleaseDate
 	tuiserver.Banner.AvailableSkills = app.AvailableSkills
@@ -155,9 +138,6 @@ func installProcessWiring() {
 	gateway.InventoryBanner.ToolsetAvailability = app.ToolsetAvailability
 	gateway.ConsumeTypedStopPhrase = tuiserver.ConsumeTypedStopPhrase
 	gateway.HasAnyProviderConfigured = hasAnyProviderConfigured
-	tuiserver.Prefill.ResolveFile = app.ResolvePrefillMessagesFile
-	tuiserver.Prefill.Load = app.LoadPrefillMessages
-	tuiserver.Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
 	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
 	tuiserver.CatalogRegistry, tuiserver.RegistryPluginCommands = catalogRegistry, registryPluginCommands
 	tuiserver.SaveConfigValue = app.SaveConfigValue
@@ -173,18 +153,10 @@ func installProcessWiring() {
 	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
 	gateway.TUIReadRender.Status, gateway.TUIReadRender.Context = app.TUIStatusRead, app.TUIContextRead
 	gateway.ViewerAutomationInvoke = agent.InvokeViewerAutomation
-	gateway.NormalizeRunBudgetSeconds = agent.NormalizeRunBudgetSeconds
 	gateway.RosterProfileInfo = func(ctx context.Context, name, path string, isDefault bool) (gateway.RosterProfile, error) {
 		info, err := manage.ProfileInfoOf(ctx, name, path, isDefault)
 		return gateway.RosterProfile{IsDefault: info.IsDefault, Model: info.Model, Provider: info.Provider,
 			Description: info.Description, DisplayName: info.DisplayName, SkillCount: info.SkillCount}, err
-	}
-	tuiserver.ResolveCommand = func(name string) (tuiserver.ResolvedCommand, bool) {
-		d := commands.Resolve(name)
-		if d == nil {
-			return tuiserver.ResolvedCommand{}, false
-		}
-		return tuiserver.ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe}, true
 	}
 	tuiserver.SlashCompleter = func(ctx context.Context, skillCommands, skillBundles skills.SkillCommands) func(string) []tuiserver.SlashCompletion {
 		completer := commands.TUISlashCompleter(ctx, skillCommands, skillBundles)
@@ -202,11 +174,8 @@ func installProcessWiring() {
 	mcp.TUIProfileRuntimeScope = tuiserver.ProfileRuntimeScope
 	pm.LooksLikeGatewayCommandLine = gateway.LooksLikeGatewayCommandLine
 	tools.ApprovalHookInvoker = approvalHookInvoker
-	tools.LoadCLIConfig = app.CLIConfig
-	commands.LoadCLIConfig = app.LoadCLIConfig
+	tools.LoadCLIConfig = app.DefaultsConfig
 	tools.TerminalOutputTransformHook = terminalOutputTransform
-	tuiserver.SaveClipboardImage, tuiserver.HasClipboardImage = app.SaveClipboardImage, app.HasClipboardImage
-	tuiserver.ClipboardImageBlocker = app.ClipboardImageBlocker
 	state.MessagingPlatformLabels = gateway.MessagingPlatformLabels
 	state.MessagingPlatformSource = gateway.IsMessagingPlatformSource
 	state.SameOwner = gateway.SameOwner

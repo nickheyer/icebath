@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -127,7 +129,7 @@ func runProbe(ctx context.Context, timeout time.Duration, name string, args ...s
 
 // Whole second audio length from the WAVE header then ffprobe, false when unreadable
 func ProbeVoiceDurationSeconds(ctx context.Context, path string) (int, bool) {
-	if _, ext := pypath.Splitext(path); pystr.Lower(ext) == ".wav" {
+	if _, ext := pypath.Splitext(path); strings.ToLower(ext) == ".wav" {
 		if rate, frames, err := waveFrames(path); err == nil && rate != 0 {
 			if secs, ok, _ := coerceDurationSeconds(float64(frames) / float64(rate)); ok {
 				return secs, true
@@ -142,7 +144,7 @@ func ProbeVoiceDurationSeconds(ctx context.Context, path string) (int, bool) {
 	if err != nil || code != 0 {
 		return 0, false
 	}
-	secs, ok, _ := coerceDurationSeconds(pystr.Strip(out))
+	secs, ok, _ := coerceDurationSeconds(strings.TrimSpace(out))
 	return secs, ok
 }
 

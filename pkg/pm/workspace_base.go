@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Copies a tree like shutil.copytree with copy2, links copied as links or followed, failures gathered
@@ -210,7 +209,7 @@ func InstallNodeSidecar(ctx context.Context, pluginDir string, explicit bool) st
 	if tail == "" {
 		tail = decode(stdout.String())
 	}
-	tail = pystr.Strip(tail)
+	tail = strings.TrimSpace(tail)
 	if n := utf8.RuneCountInString(tail); n > 300 {
 		tail = string([]rune(tail)[n-300:])
 	}

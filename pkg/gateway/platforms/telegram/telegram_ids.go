@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"strings"
+
 	"math/big"
 	"regexp"
 
@@ -17,7 +19,7 @@ var sendTargetParser = gateway.RegexGroupsParser(sendTargetPattern, true)
 
 // Bot API chat id, an int64 or big int for numeric text and the stripped string otherwise
 func NormalizeTelegramChatID(chatID any) any {
-	text := pystr.Strip(pyrepr.Str(chatID))
+	text := strings.TrimSpace(pyrepr.Str(chatID))
 	n, ok := pystr.IntText(text)
 	if !ok {
 		return text
@@ -30,12 +32,12 @@ func NormalizeTelegramChatID(chatID any) any {
 
 // Whether the stripped text of the value is an at sign username of four to thirty two word characters
 func LooksLikeTelegramUsername(chatID any) bool {
-	return telegramUsernameRE.MatchString(pystr.Strip(pyrepr.Str(chatID)))
+	return telegramUsernameRE.MatchString(strings.TrimSpace(pyrepr.Str(chatID)))
 }
 
 // Stripped target when it is an at sign username, false otherwise
 func ParseTelegramUsernameTarget(targetRef any) (string, bool) {
-	value := pystr.Strip(pyrepr.Str(targetRef))
+	value := strings.TrimSpace(pyrepr.Str(targetRef))
 	if LooksLikeTelegramUsername(value) {
 		return value, true
 	}
@@ -64,7 +66,7 @@ func ParseTelegramMessageID(value any) *big.Int {
 	}
 	text := ""
 	if value != nil {
-		text = pystr.Strip(pyrepr.Str(value))
+		text = strings.TrimSpace(pyrepr.Str(value))
 	}
 	if text == "" {
 		return nil

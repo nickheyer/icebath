@@ -24,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Write contention budgets and retry jitter in seconds, vars a test may tune like the class attributes
@@ -378,7 +377,7 @@ func (d *SessionDB) openReadOnly(ctx context.Context) error {
 		if !isOperationalError(err) {
 			return err
 		}
-		transient := strings.Contains(pystr.Lower(errText(err)), diskIOErrorMarker)
+		transient := strings.Contains(strings.ToLower(errText(err)), diskIOErrorMarker)
 		if attempt >= readOnlyIOErrRetryAttempts || !transient {
 			return err
 		}
@@ -799,7 +798,7 @@ func (d *SessionDB) executeWrite(ctx context.Context, fn func(conn SQLiteConn) e
 		if isNoMoreRows(err) && d.sleepBeforeWriteRetry(deadline, patience) {
 			continue
 		}
-		errMsg := pystr.Lower(errText(err))
+		errMsg := strings.ToLower(errText(err))
 		if isOperationalError(err) {
 			if IsSQLiteLockError(err) {
 				if d.sleepBeforeWriteRetry(deadline, patience) {
@@ -953,7 +952,7 @@ func (d *SessionDB) readRetryingIOErr(ctx context.Context, fn func(conn SQLiteCo
 			return nil
 		}
 		if isOperationalError(err) {
-			if attempt >= readOnlyIOErrRetryAttempts || !strings.Contains(pystr.Lower(errText(err)), diskIOErrorMarker) {
+			if attempt >= readOnlyIOErrRetryAttempts || !strings.Contains(strings.ToLower(errText(err)), diskIOErrorMarker) {
 				NoteStorageError(d.path, err)
 				return err
 			}

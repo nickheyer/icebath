@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -20,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -70,12 +70,9 @@ var (
 	connectResolveSourceProfile = resolveSourceProfile
 	connectCopyAuthFile         = copyAuthFile
 	connectCloseBrowserHolding  = closeBrowserHoldingProfile
-	connectUserConfigEffective  = func(env *tools.Env) (map[string]any, error) {
-		return config.LoadUserEffective(home.ConfigPath(cfgOf(env).homeDir()), os.LookupEnv)
-	}
-	connectCopyTree  = pyshutil.CopyTreeIgnore
-	connectOpenFile  = os.Open
-	connectProcesses = listProfileProcesses
+	connectCopyTree             = pyshutil.CopyTreeIgnore
+	connectOpenFile             = os.Open
+	connectProcesses            = listProfileProcesses
 )
 
 func connectErrText(err error) string {
@@ -294,33 +291,9 @@ func profileIsLocked(src, sourceProfile string) bool {
 	return false
 }
 
-// A browser section value of the effective user config, nil when unset or unreadable
-func browserSetting(env *tools.Env, key string) any {
-	cfg, err := connectUserConfigEffective(env)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("could not read %s: %v", key, err))
-		return nil
-	}
-	section, ok := cfg["browser"]
-	if !ok {
-		return nil
-	}
-	switch m := section.(type) {
-	case map[string]any:
-		return m[key]
-	case config.Tree:
-		return m[key]
-	}
-	return nil
-}
-
 // Pinned source profile dir name from browser.real_profile_pin, empty when unset
 func realProfilePin(env *tools.Env) string {
-	pin, ok := browserSetting(env, "real_profile_pin").(string)
-	if !ok {
-		return ""
-	}
-	return pystr.Strip(pin)
+	return strings.TrimSpace(settings.BrowserRealProfilePin.Get(cfgOf(env).ctx()))
 }
 
 // The pinned profile when set, else the last used one, a pin missing on disk failing closed
@@ -340,7 +313,7 @@ func resolveSourceProfile(env *tools.Env, src string) (string, string) {
 
 // Whether browser.real_profile_autoclose consent is on
 func realProfileAutoclose(env *tools.Env) bool {
-	return pyrepr.Truthy(browserSetting(env, "real_profile_autoclose"))
+	return settings.BrowserRealProfileAutoclose.Get(cfgOf(env).ctx())
 }
 
 // One listed process with the facts the profile holder search reads
@@ -374,11 +347,11 @@ func processesHoldingProfile(src string) []profileProcess {
 	norm := pypath.Normcase(pypath.Normpath(src))
 	out := []profileProcess{}
 	for _, p := range connectProcesses() {
-		name := pystr.Lower(p.Name)
+		name := strings.ToLower(p.Name)
 		joined := strings.Join(p.Cmdline, " ")
 		argv0 := ""
 		if len(p.Cmdline) > 0 {
-			argv0 = pystr.Lower(p.Cmdline[0])
+			argv0 = strings.ToLower(p.Cmdline[0])
 		}
 		isBrowser := false
 		for _, b := range profileBrowserBins {
@@ -391,7 +364,7 @@ func processesHoldingProfile(src string) []profileProcess {
 			continue
 		}
 		if strings.Contains(pypath.Normcase(pypath.Normpath(joined)), norm) ||
-			strings.Contains(pystr.Lower(joined), pystr.Lower("--user-data-dir="+src)) {
+			strings.Contains(strings.ToLower(joined), strings.ToLower("--user-data-dir="+src)) {
 			out = append(out, p)
 		}
 	}
@@ -570,7 +543,7 @@ func snapshotSource(marker string) string {
 	if err != nil {
 		panic(err)
 	}
-	return pystr.Strip(text)
+	return strings.TrimSpace(text)
 }
 
 // Serves the last completed snapshot as it is while the live profile is locked

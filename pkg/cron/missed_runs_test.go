@@ -47,8 +47,8 @@ func TestCatchUpOffSkipsTheMissAndBooksIt(t *testing.T) {
 	}
 	grace := 5
 	os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte("cron:\n  catch_up_missed: 0\n"), 0o600)
-	if !s.jobCatchesUp(&Job{Schedule: &Schedule{Kind: "cron"}}) || s.jobCatchesUp(&Job{Schedule: &Schedule{Kind: "cron"}, GraceMinutes: &grace}) {
-		t.Fatal("non boolean config or explicit grace rule ignored")
+	if s.jobCatchesUp(&Job{Schedule: &Schedule{Kind: "cron"}}) || s.jobCatchesUp(&Job{Schedule: &Schedule{Kind: "cron"}, GraceMinutes: &grace}) {
+		t.Fatal("catch_up_missed 0 or explicit grace rule ignored")
 	}
 }
 

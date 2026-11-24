@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (yalnızca sonraki tur — bir yanıttan sonra geri döner)"
     switch_cancelled: "🟡 Model değişikliği iptal edildi. Geçerli model değişmedi ({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_Metin alternatifi: geçmek için `{prefix}approve`, geçerli modeli korumak için `{prefix}cancel` yazın._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "`--once` bu oturumda kullanılamıyor; `/model <name>` kullanın ve turdan sonra geri dönün."
+    local_next_turn: "Bir sonraki mesajınızdan itibaren geçerli olur."
   agents:
 
     header: "🤖 **Aktif Ajanlar ve Görevler**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast yalnızca Priority Processing destekleyen OpenAI modellerinde kullanılabilir."
-    status: "⚡ Priority Processing\n\nMevcut mod: `{mode}`\n\n_Kullanım:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ Bilinmeyen argüman: `{arg}`\n\n**Geçerli seçenekler:** normal, fast, status"
+    not_supported: "⚡ /fast, sağlayıcısı hızlı bir katman sunan bir model gerektirir; örneğin OpenAI Priority Processing veya Anthropic hızlı modu. /model ile bunu sunan bir modele geçin."
+    status: "⚡ Priority Processing\n\nMevcut mod: `{mode}`\n\n_Kullanım:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ Bilinmeyen argüman: `{arg}`\n\n**Geçerli seçenekler:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (yapılandırmaya kaydedildi)\n_(sonraki mesajda geçerli olur)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (yalnızca bu oturum)"
     label_fast: "HIZLI"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — yalnızca oturumun ilk turunda hızlı"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, 6 kat fiyat"
     ultrafast_not_supported: "⚡ Ultrafast bu hesapta veya rotada `{model}` için kullanılamıyor."
+  setup_wizard:
+
+    configure_in_config: "  {platform} ayarını config.yaml içinde platforms.{key} altında yapın"
   footer:
 
     status: "📎 Çalışma zamanı altbilgisi: **{state}**\nAlanlar: `{fields}`\nPlatform: `{platform}`"
@@ -244,20 +247,20 @@ gateway:
     no_output: "(çıktı yok)"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
+      completed: "tamamlandı"
+      gave_up: "vazgeçildi (yeniden denemeler tükendi)"
+      crashed: "çöktü (worker süreci sonlandı); dispatcher yeniden deneyecek"
+      timed_out: "zaman aşımına uğradı; dispatcher yeniden deneyecek"
+      blocked: "engellendi; ilgilenilmesi gerekiyor"
+      review_requested: "incelemeye devredildi; uygulama tamamlandı"
+      changes_requested: "inceleme değişiklik istedi (BLOCK); uygulama onaylanmadı"
+      block_loop_detected: "tekrarlanan engellemelerden sonra triyaja yönlendirildi; orkestrasyon dikkati gerekiyor"
+      status_default: "durumu değişti"
       status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
-      handoff: "Result: {summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      message: "[kanban] {task_id} görevi {status}.\nBaşlık: {title}\nAtanan: @{assignee}\nPano: {board}\n\nSonucu kontrol edin veya bir sonraki adıma karar verin."
+      handoff: "Sonuç: {summary}"
+      review_detail: "İnceleme geri bildirimi: {reason}\nMevcut kartı ve geçerli inceleme çalıştırmasını inceleyin; işi aynı uygulama görevine geri gönderin. Bu BLOCK'u onay olarak değerlendirmeyin ve yinelenen bir görev oluşturmayın."
+      guidance: "Bu, otomatik bir görev durumu bildirimidir; görevi yeniden parçalara ayırma isteği değildir. Takip görevleri oluşturmadan önce geçerli panoyu inceleyin; zaten var olan görevleri veya grafikleri yeniden oluşturmayın."
     ping:
 
       completed: "✔ {head} tamamlandı — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "Kullanılabilir komutları göster (/help skills skill komutlarını listeler, /help <text> filtreler)"
   palette:
 
-    description: "Bulanık eşleşmeli komut paletini aç (Ctrl+P ile de)"
+    description: "Bulanık eşleşmeli komut paletini aç"
   restart:
 
     description: "Aktif çalışmalar bitince gateway'i düzgün biçimde yeniden başlat"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "arşivlendi + kaldırıldı → {ref}"
     sweep_archived_kept: "arşivlendi, tutuldu ({reason}) → {ref}"
     discarded: "Worktree kaldırıldı ve değişiklikleri atıldı: {path}"
+  update:
+
+    held_icebath: "{mark} Bu kurulumdan başka icebath süreçleri çalışıyor ({count}):"
+    held_venv: "{mark} Bu kurulumun Python ortamından süreçler çalışıyor ({count}):"
+    held_forced: "  → {flag} nedeniyle yine de güncelleniyor."
+    held_refused: "  Bunları kapatıp `icebath update` komutunu yeniden çalıştırın ya da yine de güncellemek için {flag} verin."
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "yerel modelin bağlam penceresi işi bitirmek için çok küçüktü. Bağlam boyutunu artırın veya daha büyük bir model kullanın."
     pending_tool_result: "tur, bir araç sonucu hâlâ beklenirken durdu ve model devam metni üretmedi. Özetlemesi için `continue` gönderin."
     interrupted_during_api_call: "istek, yanıt alınamadan çağrının ortasında kesildi. Yeniden denemek için `continue` gönderin."
-    max_iterations_reached: "nihai bir yanıt üretilmeden azami araç yineleme sınırına ulaşıldı. Devam etmek için `continue` gönderin veya `max_iterations` değerini yükseltin."
+    max_iterations_reached: "nihai bir yanıt üretilmeden azami araç yineleme sınırına ulaşıldı. Devam etmek için `continue` gönderin veya `agent.max_turns` değerini yükseltin."
     error_near_max_iterations: "nihai bir yanıt üretilmeden, yineleme sınırına yakın bir noktada hata oluştu. Yukarıdaki araç çıktısını kontrol edin, ardından `continue` gönderin."
     repeated_outer_errors: "tur tekrarlanan hatalarla sürekli başarısız olduğu için sonsuza dek yeniden denemek yerine erken durduruldu. Yukarıdaki hataları kontrol edin, ardından yeniden denemek için `continue` gönderin."
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath proje bağlamını .icebath.md, AGENTS.md, CLAUDE.md veya .cursorrules dosyasından yükler (ilk eşleşen)."
   t178: "Alt dizinlerdeki AGENTS.md dosyaları, ajan klasörlere girdikçe aşamalı olarak keşfedilir."
   t179: "Bağlam dosyaları 20.000 karakterle sınırlıdır; akıllı baş/son kırpma uygulanır."
-  t180: "Tarayıcı arka uçları: yerel Chromium, Lightpanda, Browserbase, Browser Use ve Firecrawl — ayrıca yerleşik Camofox."
-  t181: "Camofox (tespit önleyici Firefox) yerleşiktir: icebath camofox setup ile kurun."
+  t180: "Tarayıcı arka uçları: yerel Chromium, Lightpanda, Browserbase, Browser Use ve Firecrawl — ayrıca eklenti olarak Camofox."
+  t181: "Camofox (tespit önleyici Firefox) bir eklentidir: icebath plugins install camofox ile yükleyin, ardından icebath camofox setup komutunu çalıştırın."
   t182: "browser_exec birden çok tarayıcı adımını tek bir Python çağrısında çalıştırır — gezinme, çıkarma ve tıklama birlikte."
   t183: "browser.dialog_policy, sayfanın yerel iletişim kutularının nasıl ele alınacağını belirler: must_respond (ajan browser_dialog ile yanıtlar), auto_dismiss veya auto_accept."
   t184: "icebath mcp, icebath'in yerleşik kataloğundaki MCP'leri tek tuşla kurabileceğiniz etkileşimli bir seçici açar."

@@ -234,7 +234,7 @@ func textArg(ns map[string]any, name string) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Integer argument with the default replacing an absent or falsy value
@@ -255,7 +255,7 @@ func intArg(ns map[string]any, name string, def int) (int, error) {
 	case bool:
 		return 1, nil
 	case string:
-		i, err := strconv.Atoi(strings.ReplaceAll(pystr.Strip(n), "_", ""))
+		i, err := strconv.Atoi(strings.ReplaceAll(strings.TrimSpace(n), "_", ""))
 		if err != nil {
 			return 0, fmt.Errorf("%s must be a whole number, got %s", name, n)
 		}
@@ -333,7 +333,7 @@ var createdResourcePrefixes = []string{
 
 // Created for transcript, recording and call record collections, updated for everything else
 func defaultChangeTypeForResource(resource string) string {
-	r := pystr.Lower(pystr.Strip(resource))
+	r := strings.ToLower(strings.TrimSpace(resource))
 	for _, p := range createdResourcePrefixes {
 		if strings.HasPrefix(r, p) {
 			return "created"
@@ -432,7 +432,7 @@ func cmdValidate(ctx context.Context, ns map[string]any) error {
 		}
 	}
 	var teamsMode any
-	if mode := pystr.Strip(pyrepr.Str(orValue(teamsExtra["delivery_mode"], ""))); mode != "" {
+	if mode := strings.TrimSpace(pyrepr.Str(orValue(teamsExtra["delivery_mode"], ""))); mode != "" {
 		teamsMode = mode
 	}
 	if !graphComplete {
@@ -477,14 +477,14 @@ func cmdList(ctx context.Context, ns map[string]any) error {
 	for _, k := range all.Keys {
 		jobs = append(jobs, all.Vals[k])
 	}
-	if status := pystr.Lower(textArg(ns, "status")); status != "" {
+	if status := strings.ToLower(textArg(ns, "status")); status != "" {
 		kept := jobs[:0:0]
 		for _, job := range jobs {
 			s, err := attrGet(job, "status")
 			if err != nil {
 				return err
 			}
-			if pystr.Lower(pyrepr.Str(orValue(s, ""))) == status {
+			if strings.ToLower(pyrepr.Str(orValue(s, ""))) == status {
 				kept = append(kept, job)
 			}
 		}

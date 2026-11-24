@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -95,7 +94,7 @@ func launchFlags(args map[string]any) *pyjson.Object {
 func splitNames(text string) []any {
 	out := []any{}
 	for _, name := range strings.Split(text, ",") {
-		if name = pystr.Strip(name); name != "" {
+		if name = strings.TrimSpace(name); name != "" {
 			out = append(out, name)
 		}
 	}

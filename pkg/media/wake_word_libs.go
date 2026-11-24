@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Directory of an installed Python package in its extra's environment, the import path or the selected environment, else ModuleNotFoundError
@@ -143,7 +144,7 @@ func (k sherpaSpotter) ResetStream(s sherpaStream) error {
 
 // Whether the process runs the speech engine on the GPU, the Piper setting every engine user follows
 func speechOnGPU(ctx context.Context) bool {
-	return pyTruthy(dictGetDefault(ttsSection(wakeLoadTTSConfig(ctx), "piper"), "use_cuda", false))
+	return settings.TtsPiperUseCuda.Get(ctx)
 }
 
 // Native speech engine of the process, the seam tests replace

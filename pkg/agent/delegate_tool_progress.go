@@ -65,8 +65,8 @@ func cleanErrorText(errText any, maxChars int) string {
 		s = pyrepr.Str(errText)
 	}
 	var lines []string
-	for _, ln := range pystr.Splitlines(pystr.Strip(tools.RedactChildText(nil, s, false)), false) {
-		if t := pystr.Strip(ln); t != "" {
+	for _, ln := range pystr.Splitlines(strings.TrimSpace(tools.RedactChildText(nil, s, false)), false) {
+		if t := strings.TrimSpace(ln); t != "" {
 			lines = append(lines, t)
 		}
 	}
@@ -114,7 +114,7 @@ func formatFailureDuration(seconds any) string {
 
 // Human readable line about a failed or timed out subagent with the next step for the user
 func formatSubagentFailureLine(goal, status string, errText, durationSeconds, failureReason any) string {
-	goalLabel := strings.ReplaceAll(pystr.Strip(goal), "\n", " ")
+	goalLabel := strings.ReplaceAll(strings.TrimSpace(goal), "\n", " ")
 	if pystr.Len(goalLabel) > 60 {
 		goalLabel = pystr.Slice(goalLabel, 0, 57) + "..."
 	}
@@ -213,10 +213,10 @@ const (
 // Focused system prompt of a child with its context, workspace files and the orchestrator block by role
 func buildChildSystemPrompt(ctx context.Context, env *tools.Env, contextText, workspacePath, role string, maxSpawnDepth, childDepth int) string {
 	parts := []string{"You are a focused subagent working on a specific delegated task."}
-	if contextText != "" && pystr.Strip(contextText) != "" {
+	if contextText != "" && strings.TrimSpace(contextText) != "" {
 		parts = append(parts, "\nCONTEXT:\n"+contextText)
 	}
-	if workspacePath != "" && pystr.Strip(workspacePath) != "" {
+	if workspacePath != "" && strings.TrimSpace(workspacePath) != "" {
 		parts = append(parts, "\nWORKSPACE PATH:\n"+workspacePath+"\n"+
 			"Use this exact path for local repository/workdir operations unless the task explicitly says otherwise.")
 		ctxFiles := ""
@@ -229,8 +229,8 @@ func buildChildSystemPrompt(ctx context.Context, env *tools.Env, contextText, wo
 			}
 			ctxFiles = out
 		})
-		if pystr.Strip(ctxFiles) != "" {
-			parts = append(parts, childContextFilesIntro+pystr.Strip(ctxFiles))
+		if strings.TrimSpace(ctxFiles) != "" {
+			parts = append(parts, childContextFilesIntro+strings.TrimSpace(ctxFiles))
 		}
 	}
 	parts = append(parts, childCompletionInstructions)
@@ -576,7 +576,7 @@ func buildChildProgressCallback(taskIndex int, goal string, parent *AIAgent, tas
 		sessionRefMu.Unlock()
 	}
 	r := &childProgressRelay{
-		taskIndex: taskIndex, taskCount: taskCount, goalLabel: pystr.Strip(goal), spinner: spinner, parentCB: parentCB,
+		taskIndex: taskIndex, taskCount: taskCount, goalLabel: strings.TrimSpace(goal), spinner: spinner, parentCB: parentCB,
 		sessionRef: sessionRef, sessionRefMu: sessionRefMu, subagentID: subagentID, parentID: parentID, depth: depth,
 		model: model, toolsets: toolsets, parentScope: parent,
 	}

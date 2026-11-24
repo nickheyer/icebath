@@ -56,8 +56,9 @@ func personalityEvent(args string) *gateway.MessageEvent {
 // test_personality_none.py TestGatewayPersonalityNone.test_default_clears_ephemeral_prompt
 func TestGatewayPersonalityNoneDefaultClearsEphemeralPrompt(t *testing.T) {
 	path := personalityHome(t, map[string]any{
-		"agent":   map[string]any{"system_prompt": "manual forever", "personalities": map[string]any{"helpful": "You are helpful."}},
-		"display": map[string]any{"personality": "helpful"},
+		"agent":         map[string]any{"system_prompt": "manual forever"},
+		"personalities": map[string]any{"helpful": "You are helpful."},
+		"display":       map[string]any{"personality": "helpful"},
 	})
 	r := allocGatewayRunner()
 	ctx := context.Background()
@@ -82,7 +83,8 @@ func TestGatewayPersonalityNoneDefaultClearsEphemeralPrompt(t *testing.T) {
 // test_personality_none.py TestGatewayPersonalityNone.test_set_persists_display_personality_not_system_prompt
 func TestGatewayPersonalityNoneSetPersistsDisplayPersonalityNotSystemPrompt(t *testing.T) {
 	path := personalityHome(t, map[string]any{
-		"agent": map[string]any{"system_prompt": "manual forever", "personalities": map[string]any{"helpful": "You are helpful."}},
+		"agent":         map[string]any{"system_prompt": "manual forever"},
+		"personalities": map[string]any{"helpful": "You are helpful."},
 	})
 	r := allocGatewayRunner()
 	ctx := context.Background()

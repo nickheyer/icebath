@@ -2,7 +2,6 @@ package feishu
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var envEnableCredentials = []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"}
@@ -16,8 +15,7 @@ var envOverrides = []gateway.EnvStep{
 
 var authz = map[string]any{"allowed_users_env": "FEISHU_ALLOWED_USERS", "allow_all_env": "FEISHU_ALLOW_ALL_USERS", "allow_bots_env": "FEISHU_ALLOW_BOTS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled feishu directory and the setting its bot policy name moved to
+// Registers the env declarations of the bundled feishu directory
 func init() {
 	gateway.RegisterBundledEnv("feishu", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
-	gateway.RegisterEnvSettings(map[string]settings.Entry{"FEISHU_ALLOW_BOTS": settings.FeishuAllowBots})
 }

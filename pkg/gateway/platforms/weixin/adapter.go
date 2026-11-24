@@ -1,6 +1,8 @@
 package weixin
 
 import (
+	"strings"
+
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -12,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -126,44 +127,23 @@ func NewWeixinAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Weixin
 		value, err = extraOrSecret(ctx, extra, key, def)
 		return value
 	}
-	floatSetting := func(key, def string) float64 {
-		text := setting(key, def)
-		if err != nil {
-			return 0
-		}
-		var value float64
-		value, err = pyint.ParseFloat(text)
-		return value
-	}
-	intSetting := func(key, def string) int {
-		text := setting(key, def)
-		if err != nil {
-			return 0
-		}
-		n, ok := pyint.Parse(text)
-		if !ok || !n.IsInt64() {
-			err = valueError("invalid literal for int() with base 10: " + pyrepr.Repr(text))
-			return 0
-		}
-		return int(n.Int64())
-	}
 	a.accountID = setting("account_id", "")
 	tokenRaw := pyrepr.Or(cfg.Token, extra["token"])
 	if err == nil && !pyrepr.Truthy(tokenRaw) {
 		tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false)
 	}
-	a.token = pystr.Strip(pyrepr.Str(tokenRaw))
-	a.baseURL = pystr.RstripChars(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/")
-	a.cdnBaseURL = pystr.RstripChars(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
-	a.sendChunkDelaySeconds = floatSetting("send_chunk_delay_seconds", "1.5")
-	a.sendChunkRetries = intSetting("send_chunk_retries", "4")
-	a.sendChunkRetryDelaySeconds = floatSetting("send_chunk_retry_delay_seconds", "1.0")
-	a.rateLimitCircuitThreshold = max(1, intSetting("rate_limit_circuit_threshold", "1"))
-	a.rateLimitCircuitWindowSeconds = floatSetting("rate_limit_circuit_window_seconds", "30.0")
-	a.rateLimitCircuitOpenSeconds = floatSetting("rate_limit_circuit_open_seconds", "30.0")
+	a.token = strings.TrimSpace(pyrepr.Str(tokenRaw))
+	a.baseURL = strings.TrimRight(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/")
+	a.cdnBaseURL = strings.TrimRight(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
 	sctx := gateway.SettingsContext(ctx)
-	a.DMPolicy = pystr.Lower(settings.WeixinDmPolicy.Get(sctx))
-	a.GroupPolicy = pystr.Lower(settings.WeixinGroupPolicy.Get(sctx))
+	a.sendChunkDelaySeconds = settings.WeixinSendChunkDelay.Get(sctx).Seconds()
+	a.sendChunkRetries = settings.WeixinSendChunkRetries.Get(sctx)
+	a.sendChunkRetryDelaySeconds = settings.WeixinSendChunkRetryDelay.Get(sctx).Seconds()
+	a.rateLimitCircuitThreshold = settings.WeixinRateLimitCircuitThreshold.Get(sctx)
+	a.rateLimitCircuitWindowSeconds = settings.WeixinRateLimitCircuitWindow.Get(sctx).Seconds()
+	a.rateLimitCircuitOpenSeconds = settings.WeixinRateLimitCircuitOpen.Get(sctx).Seconds()
+	a.DMPolicy = strings.ToLower(settings.WeixinDmPolicy.Get(sctx))
+	a.GroupPolicy = strings.ToLower(settings.WeixinGroupPolicy.Get(sctx))
 	for _, entry := range gateway.SettingList(ctx, settings.WeixinAllowFrom) {
 		a.AllowFrom[entry] = true
 	}
@@ -182,7 +162,7 @@ func NewWeixinAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Weixin
 		}
 		if persisted != nil && len(persisted.Keys) > 0 {
 			a.token = textOf(persisted.Vals["token"])
-			a.baseURL = pystr.RstripChars(pystr.Strip(pyrepr.Str(pyrepr.Or(persisted.Vals["base_url"], a.baseURL))), "/")
+			a.baseURL = strings.TrimRight(strings.TrimSpace(pyrepr.Str(pyrepr.Or(persisted.Vals["base_url"], a.baseURL))), "/")
 		}
 	}
 	return a, nil

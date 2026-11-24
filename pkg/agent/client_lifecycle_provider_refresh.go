@@ -1,10 +1,11 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -21,7 +22,7 @@ func (a *AIAgent) tryRefreshProviderRuntimeCredentials(ctx context.Context, reas
 	}
 	a.apiKey = token
 	if baseURL, _ := refreshed["base_url"].(string); baseURL != "" {
-		a.setBaseURL(pystr.RstripChars(baseURL, "/"))
+		a.setBaseURL(strings.TrimRight(baseURL, "/"))
 	}
 	a.syncClientKwargsCredentials()
 	if err := a.applyClientHeadersForBaseURL(ctx, a.baseURL, true); err != nil {

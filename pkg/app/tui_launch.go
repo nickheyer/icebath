@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"math/big"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,7 +59,7 @@ func readTUIActiveSessionFile(path string) string {
 	if !pyTruthyValue(value) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(value))
+	return strings.TrimSpace(pyrepr.Str(value))
 }
 
 // Python truthiness of a decoded JSON value
@@ -89,7 +90,7 @@ func splitCommaItems(items []string) []string {
 	var out []string
 	for _, item := range items {
 		for _, part := range strings.Split(item, ",") {
-			if part = pystr.Strip(part); part != "" {
+			if part = strings.TrimSpace(part); part != "" {
 				out = append(out, part)
 			}
 		}
@@ -118,7 +119,7 @@ func safeTUICwd(env map[string]string) (string, error) {
 	if candidate == "" {
 		candidate = os.Getenv("PWD")
 	}
-	candidate = pystr.Strip(candidate)
+	candidate = strings.TrimSpace(candidate)
 	if info, serr := os.Stat(candidate); candidate != "" && serr == nil && info.IsDir() {
 		return candidate, nil
 	}
@@ -195,7 +196,7 @@ func requireBypassModel(env map[string]string, model, resumeSessionID string, st
 			bypass = true
 		}
 	}
-	if bypass && resumeSessionID == "" && model == "" && pystr.Strip(env["ICEBATH_MODEL"]) == "" {
+	if bypass && resumeSessionID == "" && model == "" && strings.TrimSpace(env["ICEBATH_MODEL"]) == "" {
 		fmt.Fprintln(stderr, "Error: --safe-mode / --ignore-user-config (or ICEBATH_IGNORE_USER_CONFIG=1) read no profile "+
 			"default model: pass --model explicitly.\n"+
 			"  Example: icebath --safe-mode --provider openrouter --model anthropic/claude-sonnet-4")
@@ -208,7 +209,7 @@ func requireBypassModel(env map[string]string, model, resumeSessionID string, st
 type tuiLaunchDeps struct {
 	setupWorktree func(ctx context.Context) (map[string]any, error)
 	run           func(ctx context.Context, env map[string]string) (int, error)
-	relaunch      func(args []string, preserveInherited bool)
+	relaunch      func(args []string, preserveInherited bool, env []string)
 	stdout        io.Writer
 	stderr        io.Writer
 }
@@ -355,9 +356,12 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		printNotRun(deps.stderr, "icebath did not close normally, so these commands did not run:", queued)
 		return code
 	}
-	if len(queued) > 0 && runAfterExit(deps, queued) {
+	if len(queued) == 0 {
+		return code
+	}
+	if reopen, env := runAfterExit(deps, queued); reopen {
 		fmt.Fprint(deps.stdout, "\n󰆧 Opening icebath again...\n\n")
-		deps.relaunch(nil, false)
+		deps.relaunch(nil, false, env)
 	}
 	return code
 }
@@ -373,18 +377,19 @@ func printNotRun(w io.Writer, why string, queued [][]string) {
 	}
 }
 
-// Runs the queued commands in this terminal, the background service stopped first when one needs it, reporting whether icebath opens again
-func runAfterExit(deps tuiLaunchDeps, queued [][]string) bool {
+// Runs the queued commands in this terminal, the background service stopped first when one needs it, reporting whether icebath opens again and the environment it opens with (this process's when nil)
+func runAfterExit(deps tuiLaunchDeps, queued [][]string) (bool, []string) {
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintf(deps.stderr, "icebath: %v\n", err)
 		printNotRun(deps.stderr, "These commands did not run:", queued)
-		return false
+		return false, nil
 	}
+	var env []string
 	run := func(argv []string) int {
 		line := "icebath " + pyshlex.Join(argv)
 		fmt.Fprintf(deps.stdout, "\n󰆧 %s\n\n", line)
-		code, err := runAndWait(append([]string{exe}, argv...))
+		code, err := runAndWait(append([]string{exe}, argv...), env)
 		if err != nil {
 			fmt.Fprintf(deps.stderr, "%s: %v\n", line, err)
 		}
@@ -398,17 +403,29 @@ func runAfterExit(deps tuiLaunchDeps, queued [][]string) bool {
 		code := run(argv)
 		if code == 130 {
 			printNotRun(deps.stderr, "Stopped. These commands did not run:", queued[i+1:])
-			return false
+			return false, nil
 		}
 		switch path := strings.Join(argv[:min(2, len(argv))], " "); {
 		case argv[0] == "uninstall", path == "gateway stop":
 			reopen = false
 		case path == "profile use" && code == 0:
-			// The profile this process was started on would otherwise win over the new sticky one
-			_ = os.Setenv(home.EnvHome, home.Root())
+			// The profile this process was started on would otherwise win over the new sticky one in what runs next
+			env = environWith(home.EnvHome, home.Root())
 		}
 	}
-	return reopen
+	return reopen, env
+}
+
+// This process's environment with one variable set to value, the name matched without case on Windows
+func environWith(name, value string) []string {
+	out := []string{name + "=" + value}
+	for _, kv := range os.Environ() {
+		if key, _, _ := strings.Cut(kv, "="); key == name || (runtime.GOOS == "windows" && strings.EqualFold(key, name)) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // Whether a queued command needs the background service stopped first, one that removes icebath, replaces the service or repairs sessions
@@ -438,5 +455,5 @@ func runTerminalUI(ctx context.Context, env map[string]string) (int, error) {
 			return 0, err
 		}
 	}
-	return tui.Run(ctx, terminalUIHost()), nil
+	return tui.Run(ctx, terminalUIHost(ctx)), nil
 }

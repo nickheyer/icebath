@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -21,9 +22,12 @@ func TestOutboundWebhookExitChild(t *testing.T) {
 	if url == "" {
 		t.Skip("child mode only")
 	}
-	cfg := map[string]any{"hooks": map[string]any{"outbound": []any{map[string]any{"url": url, "events": []any{"on_session_end"}}}}}
+	cfg := "hooks:\n  outbound:\n    - url: " + url + "\n      events: [on_session_end]\n"
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
-	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx, cfg); err != nil {
+	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx); err != nil {
 		t.Fatal(err)
 	}
 	plugins.GetPluginManager(ctx).InvokeHook(ctx, "on_session_end", map[string]any{"session_id": "exit_test"})

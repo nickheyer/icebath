@@ -60,10 +60,7 @@ func seedServers(t *testing.T, servers map[string]any) string {
 
 func readServers(t *testing.T) map[string]any {
 	t.Helper()
-	s, err := getMCPServers(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := StoredServers(context.Background())
 	return s
 }
 

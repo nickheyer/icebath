@@ -578,9 +578,7 @@ func TestKrea3(t *testing.T) {
 		t.Setenv("KREA_IMAGE_MODEL", "krea-2-large")
 		p := newKreaImageGenProvider()
 		p.env = func(context.Context) *tools.Env { return env }
-		prev := kreaLoadConfig
-		t.Cleanup(func() { kreaLoadConfig = prev })
-		kreaLoadConfig = func(*tools.Env) map[string]any { return map[string]any{"provider": "krea", "model": "krea-3"} }
+		setImageConfig(t, env, config.Tree{"image_gen": map[string]any{"provider": "krea", "model": "krea-3"}})
 		if got := p.Capabilities()["creative_controls"]; !reflect.DeepEqual(got, []any{"thinking", "resolution"}) {
 			t.Fatal(got)
 		}

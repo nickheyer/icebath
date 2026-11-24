@@ -6,8 +6,6 @@ import (
 	"math/rand/v2"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var streamPieces = []string{"x", "X", "\n", "\r", "\r\n", " ", "No ", "SOLUTION", "solu", "tion found", "Conflicting ", "requirements", "conflicting urls",
@@ -94,7 +92,7 @@ func TestEnvironmentStreamingMatchesWholeWindowScan(t *testing.T) {
 				continue
 			}
 			if refConflict == "" {
-				lowered := pystr.Lower(refTail + want)
+				lowered := strings.ToLower(refTail + want)
 				for _, marker := range streamTailMarkers {
 					if strings.Contains(lowered, marker) {
 						refConflict = marker

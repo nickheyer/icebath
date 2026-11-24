@@ -115,7 +115,7 @@ func (c *safeConstructor) constructScalarTagRT(n *ry.Node, tag string) any {
 		return nil
 	case yamlTagPrefix + "bool":
 		value := c.constructScalarRT(n)
-		low := pystr.Lower(value)
+		low := strings.ToLower(value)
 		b, ok := boolValues[low]
 		if !ok {
 			panic(pyErr("KeyError", pyrepr.StrRepr(low)))
@@ -261,7 +261,7 @@ func (c *safeConstructor) constructIntRT(n *ry.Node) any {
 
 func (c *safeConstructor) constructFloatRT(n *ry.Node) any {
 	valueSO := c.constructScalarRT(n)
-	valueS := pystr.Lower(strings.ReplaceAll(valueSO, "_", ""))
+	valueS := strings.ToLower(strings.ReplaceAll(valueSO, "_", ""))
 	sign := 1.0
 	if strIndex(valueS, 0) == '-' {
 		sign = -1

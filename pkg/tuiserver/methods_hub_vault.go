@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -66,7 +65,7 @@ func vaultListing(ctx context.Context) (tuigateway.VaultListResult, error) {
 }
 
 // Items, password managers and key of the autofill vault for its screen
-func vaultList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func vaultList(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.VaultList.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -78,7 +77,7 @@ func vaultList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Sess
 }
 
 // One change to the autofill vault, answered with the vault after it
-func vaultChange(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func vaultChange(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.VaultChange.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

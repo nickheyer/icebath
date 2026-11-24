@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"os"
@@ -10,7 +12,6 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -115,7 +116,7 @@ func installPendingMemory(ctx context.Context, h, name string, install MemoryIns
 	if pyTruthy(result["error"]) {
 		reason = pyStr(result["error"])
 	}
-	reason = pystr.RstripChars(reason, ". ")
+	reason = strings.TrimRight(reason, ". ")
 	say(fmt.Sprintf("  \u26a0 Memory provider '%s' is configured but not installed, and its plugin could not be installed from the catalog: "+
 		"%s. Run `%s`.", name, reason, provider.PluginInstallCommand(name, h)))
 	return false, false
@@ -136,7 +137,7 @@ func memoryInstallInto(ctx context.Context, h string) MemoryInstallFunc {
 func MigrateAllMemoryHomes(ctx context.Context, say func(string)) ([]string, error) {
 	labelled := func(h string) func(string) {
 		return func(message string) {
-			say(fmt.Sprintf("  [%s] %s", provider.PluginHomeLabel(h), pystr.Lstrip(message)))
+			say(fmt.Sprintf("  [%s] %s", provider.PluginHomeLabel(h), strings.TrimLeftFunc(message, unicode.IsSpace)))
 		}
 	}
 	type group struct {

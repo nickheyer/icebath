@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python truth value that also treats typed Go slices by length
@@ -63,7 +62,7 @@ func isCodexInterim(m map[string]any) bool {
 // Whether content holds text, typed blocks or any value the API treats as non empty
 func ContentHasPayload(content any) bool {
 	if s, ok := content.(string); ok {
-		return pystr.Strip(s) != ""
+		return strings.TrimSpace(s) != ""
 	}
 	items, ok := listItems(content)
 	if !ok {
@@ -76,7 +75,7 @@ func ContentHasPayload(content any) bool {
 				return true
 			}
 			text, _ := mappingGet(block, "text")
-			if s, ok := text.(string); ok && pystr.Strip(s) != "" {
+			if s, ok := text.(string); ok && strings.TrimSpace(s) != "" {
 				return true
 			}
 			continue
@@ -93,7 +92,7 @@ func MsgHasPayload(msg map[string]any) bool {
 	if ContentHasPayload(msg["content"]) || seqTruthy(msg["tool_calls"]) {
 		return true
 	}
-	if s, ok := msg["reasoning_content"].(string); ok && pystr.Strip(s) != "" {
+	if s, ok := msg["reasoning_content"].(string); ok && strings.TrimSpace(s) != "" {
 		return true
 	}
 	return seqTruthy(msg["reasoning"]) || seqTruthy(msg["reasoning_details"]) ||
@@ -140,7 +139,7 @@ func mergeAssistantInto(prev, msg map[string]any) (bool, error) {
 	if prevIsStr && newIsStr {
 		textKept = true
 		var parts []string
-		for _, p := range []string{pystr.Strip(ps), pystr.Strip(ns)} {
+		for _, p := range []string{strings.TrimSpace(ps), strings.TrimSpace(ns)} {
 			if p != "" {
 				parts = append(parts, p)
 			}
@@ -457,7 +456,7 @@ func pruneUnansweredToolCalls(messages []map[string]any) ([]map[string]any, int,
 			if !ok {
 				return nil, 0, fmt.Errorf("a tool_call_id is %s, expected text", errchain.Kind(raw))
 			}
-			if tid := pystr.Strip(s); tid != "" {
+			if tid := strings.TrimSpace(s); tid != "" {
 				for id := range ToolResultIDVariants(tid) {
 					answered[id] = true
 				}

@@ -76,9 +76,9 @@ func wsGit(repoRoot string, timeout time.Duration, args ...string) (*gitResult, 
 // Stripped stderr, or stdout when stderr is empty
 func (r *gitResult) failureText() string {
 	if r.Stderr != "" {
-		return pystr.Strip(r.Stderr)
+		return strings.TrimSpace(r.Stderr)
 	}
-	return pystr.Strip(r.Stdout)
+	return strings.TrimSpace(r.Stdout)
 }
 
 // Reports whether a path is an existing directory the way Path.is_dir does
@@ -541,7 +541,7 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 	pkgLog().Debug(fmt.Sprintf("Removed worktree workspace: %s", wp))
 	branch := ""
 	if branchName != nil {
-		branch = pystr.Strip(*branchName)
+		branch = strings.TrimSpace(*branchName)
 	}
 	if branch == "" {
 		branch = "wt/" + taskID
@@ -633,7 +633,7 @@ func cleanupWorkerTmux(ctx context.Context, conn state.SQLiteConn, taskID string
 	if err != nil {
 		return
 	}
-	if pystr.Strip(pystr.DecodeUTF8Replace(out.Stdout)) == "1" {
+	if strings.TrimSpace(pystr.DecodeUTF8Replace(out.Stdout)) == "1" {
 		if _, err := pysubprocess.RunWith(context.Background(), []string{"tmux", "kill-session", "-t", session}, pysubprocess.Options{Timeout: 5 * time.Second}); err != nil {
 			return
 		}
@@ -832,7 +832,7 @@ func anchoredWorktree(repoRoot, taskID, branchName string) (string, string, erro
 func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (string, string, error) {
 	branchName := ""
 	if task.BranchName != nil {
-		branchName = pystr.Strip(*task.BranchName)
+		branchName = strings.TrimSpace(*task.BranchName)
 	}
 	if branchName == "" {
 		branchName = "wt/" + task.ID
@@ -848,7 +848,7 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 		}
 		boardDefault := ""
 		if v, _ := meta.Get("default_workdir"); truthy(v) {
-			boardDefault = pystr.Strip(cellStr(v))
+			boardDefault = strings.TrimSpace(cellStr(v))
 		}
 		if boardDefault == "" {
 			return "", "", &ValueError{fmt.Sprintf("task %s has workspace_kind=worktree but no workspace_path, "+

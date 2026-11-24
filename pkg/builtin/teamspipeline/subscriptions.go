@@ -1,6 +1,8 @@
 package teamspipeline
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
@@ -9,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type graphClient interface {
@@ -76,7 +77,7 @@ func expectedClientState(raw *string) any {
 	} else {
 		v = *raw
 	}
-	if s := pystr.Strip(v); s != "" {
+	if s := strings.TrimSpace(v); s != "" {
 		return s
 	}
 	return nil

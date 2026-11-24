@@ -20,17 +20,17 @@ func TestPluginInBothListsWarnsInsteadOfSilentDebugSkip(t *testing.T) {
 	if manifest == nil {
 		t.Fatal("intake-probe not collected")
 	}
-	conflicting := GateManifest(h, manifest, map[string]bool{"obs/intake": true}, map[string]bool{"obs/intake": true}, true)
+	conflicting := GateManifest(h, manifest, map[string]bool{"obs/intake": true}, map[string]bool{"obs/intake": true})
 	if conflicting.Action != "placeholder" || conflicting.Error != "listed in both plugins.enabled and plugins.disabled — disabled wins" || conflicting.Level != "warn" {
 		t.Fatalf("conflicting %+v", conflicting)
 	}
 	if want := "Plugin 'obs/intake' is listed in both plugins.enabled and plugins.disabled; the disable wins and it will not load — remove it from one of the two lists"; conflicting.Log != want {
 		t.Fatalf("log %q", conflicting.Log)
 	}
-	if cross := GateManifest(h, manifest, map[string]bool{"obs/intake": true}, map[string]bool{"intake-probe": true}, true); cross.Level != "warn" {
+	if cross := GateManifest(h, manifest, map[string]bool{"obs/intake": true}, map[string]bool{"intake-probe": true}); cross.Level != "warn" {
 		t.Fatalf("cross %+v", cross)
 	}
-	if plain := GateManifest(h, manifest, map[string]bool{"obs/intake": true}, map[string]bool{"other/plugin": true}, true); plain.Error != "disabled via config" || plain.Level != "debug" {
+	if plain := GateManifest(h, manifest, map[string]bool{"obs/intake": true}, map[string]bool{"other/plugin": true}); plain.Error != "disabled via config" || plain.Level != "debug" {
 		t.Fatalf("plain %+v", plain)
 	}
 }
@@ -68,7 +68,7 @@ func TestGateManifestLogsTheIcebathMessages(t *testing.T) {
 			"Refusing to load plugin 'killed' — removed from the Icebath plugin catalog: backdoor; run `icebath plugins remove`",
 			"removed from the Icebath plugin catalog: backdoor"},
 	} {
-		g := GateManifest(h, tc.m, tc.disabled, tc.enabled, true)
+		g := GateManifest(h, tc.m, tc.disabled, tc.enabled)
 		if g.Action != "placeholder" || g.Level != tc.level || g.Log != tc.log || g.Error != tc.errMsg {
 			t.Fatalf("%s gate %+v", tc.m.Key, g)
 		}

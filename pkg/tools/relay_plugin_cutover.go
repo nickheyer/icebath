@@ -1,10 +1,11 @@
 package tools
 
 import (
+	"strings"
+
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Environment variable selecting an explicit Relay plugins toml file
@@ -30,7 +31,7 @@ var LegacyRelayExportEnvVars = []string{
 func ConfiguredLegacyRelayEnvVars(env map[string]any) []string {
 	var out []string
 	for _, name := range LegacyRelayExportEnvVars {
-		if v, ok := env[name]; ok && v != nil && pystr.Strip(pyrepr.Str(v)) != "" {
+		if v, ok := env[name]; ok && v != nil && strings.TrimSpace(pyrepr.Str(v)) != "" {
 			out = append(out, name)
 		}
 	}

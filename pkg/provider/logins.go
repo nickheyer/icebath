@@ -422,7 +422,7 @@ func ensureLoginNames(env PoolEnv, provider string, entries []PooledCredential) 
 func ListLogins(env PoolEnv, provider string) LoginGroup {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	ctx := env.loginCtx()
-	group := LoginGroup{Provider: provider, Slug: LoginPoolSlug(env.loginConfig(), provider), Label: provider, Default: LoginDefault(ctx, provider),
+	group := LoginGroup{Provider: provider, Slug: LoginPoolSlug(ctx, provider), Label: provider, Default: LoginDefault(ctx, provider),
 		Strategy: GetPoolStrategy(ctx, provider), OnExhausted: LoginOnExhausted(ctx, provider)}
 	if p, ok := registryProfileCtx(env.ctx(), provider); ok {
 		group.Label = p.Label()
@@ -458,10 +458,10 @@ func ListLogins(env PoolEnv, provider string) LoginGroup {
 	return group
 }
 
-// LoginPoolSlug is the provider id the model picker lists for a pool key, a custom endpoint's custom:<name> slug for its pool
-func LoginPoolSlug(cfg map[string]any, poolKey string) string {
+// LoginPoolSlug is the provider id the model picker lists for a pool key, the custom:<name> slug of the endpoint of the providers setting ctx gives that owns the pool
+func LoginPoolSlug(ctx context.Context, poolKey string) string {
 	poolKey = poolKeyOf(poolKey)
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(settings.Providers.Get(ctx)) {
 		if slices.Contains(poolKeysForCustomEntry(ne.name, ne.entry), poolKey) {
 			return CustomProviderSlug(cfgString(ne.entry["name"]), cfgString(ne.entry["provider_key"]))
 		}
@@ -469,10 +469,10 @@ func LoginPoolSlug(cfg map[string]any, poolKey string) string {
 	return poolKey
 }
 
-// IsCustomPoolKey reports a pool key that holds the logins of a configured custom endpoint
-func IsCustomPoolKey(cfg map[string]any, poolKey string) bool {
+// IsCustomPoolKey reports a pool key that holds the logins of a custom endpoint of the providers setting ctx gives
+func IsCustomPoolKey(ctx context.Context, poolKey string) bool {
 	poolKey = poolKeyOf(poolKey)
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(settings.Providers.Get(ctx)) {
 		if slices.Contains(poolKeysForCustomEntry(ne.name, ne.entry), poolKey) {
 			return true
 		}
@@ -480,14 +480,14 @@ func IsCustomPoolKey(cfg map[string]any, poolKey string) bool {
 	return poolKey == "custom" || strings.HasPrefix(poolKey, CustomPoolPrefix)
 }
 
-// LoginPoolKey maps a pool key or a provider slug a client sent to the pool key its logins are stored under
-func LoginPoolKey(cfg map[string]any, provider string) string {
+// LoginPoolKey maps a pool key or a provider slug a client sent to the pool key its logins are stored under for the settings ctx gives
+func LoginPoolKey(ctx context.Context, provider string) string {
 	key := poolKeyOf(provider)
+	providers := settings.Providers.Get(ctx)
 	if key == "custom" {
-		model, _ := cfg["model"].(map[string]any)
-		return ResolveRuntimePoolKey(key, cfgString(model["base_url"]), cfg)
+		return ResolveRuntimePoolKey(key, settings.ModelBaseURL.Get(ctx), providers)
 	}
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		keys := poolKeysForCustomEntry(ne.name, ne.entry)
 		if len(keys) == 0 {
 			continue

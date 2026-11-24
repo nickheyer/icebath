@@ -86,20 +86,20 @@ func CollectInlineCatalog(ctx context.Context) []CatalogItem {
 
 // Catalog ranked against term by name prefix, then name substring, then description, everything for an empty term
 func FilterCatalog(catalog []CatalogItem, term string) []CatalogItem {
-	term = pystr.LstripChars(pystr.Lower(pystr.Strip(term)), "/")
+	term = strings.TrimLeft(strings.ToLower(strings.TrimSpace(term)), "/")
 	if term == "" {
 		return append([]CatalogItem{}, catalog...)
 	}
 	var prefix, nameSub, descSub []CatalogItem
 	normTerm := strings.ReplaceAll(term, "-", "_")
 	for _, item := range catalog {
-		normName := strings.ReplaceAll(pystr.Lower(item.Name), "-", "_")
+		normName := strings.ReplaceAll(strings.ToLower(item.Name), "-", "_")
 		switch {
 		case strings.HasPrefix(normName, normTerm):
 			prefix = append(prefix, item)
 		case strings.Contains(normName, normTerm):
 			nameSub = append(nameSub, item)
-		case strings.Contains(pystr.Lower(item.Description), term):
+		case strings.Contains(strings.ToLower(item.Description), term):
 			descSub = append(descSub, item)
 		}
 	}
@@ -117,13 +117,13 @@ func headRunes(s string, n int) string {
 
 // One page of inline results whose first query token filters the catalog and whose rest becomes the command argument
 func BuildInlineResults(ctx context.Context, query, offset string, pageSize int) ([]InlineResult, string) {
-	parts := pystr.SplitWhitespace(pystr.Strip(query), 1)
+	parts := pystr.SplitWhitespace(strings.TrimSpace(query), 1)
 	term, args := "", ""
 	if len(parts) > 0 {
 		term = parts[0]
 	}
 	if len(parts) > 1 {
-		args = pystr.Strip(parts[1])
+		args = strings.TrimSpace(parts[1])
 	}
 	matches := FilterCatalog(CollectInlineCatalog(ctx), term)
 	start := new(big.Int)

@@ -14,11 +14,9 @@ import (
 
 func TestPredicateAgreesWithLoaderAndKeepsNativeAdapters(t *testing.T) {
 	for spelling, doc := range map[string]string{
-		"top":              "platforms:\n  relay:\n    enabled: false\n",
-		"nested":           "gateway:\n  platforms:\n    relay:\n      enabled: false\n",
-		"string-false":     "platforms:\n  relay:\n    enabled: 'false'\n",
-		"top-beats-nested": "platforms:\n  relay:\n    enabled: false\ngateway:\n  platforms:\n    relay:\n      enabled: true\n",
-		"managed":          "",
+		"top":          "platforms:\n  relay:\n    enabled: false\n",
+		"string-false": "platforms:\n  relay:\n    enabled: 'false'\n",
+		"managed":      "",
 	} {
 		t.Run(spelling, func(t *testing.T) {
 			h := filepath.Join(t.TempDir(), ".icebath")

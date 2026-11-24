@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var clientEnvTestSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN",
@@ -18,7 +17,7 @@ func installSecretPolicy(t *testing.T) {
 	prevName, prevSubs := SecretEnvName, SecretEnvSubstrings
 	SecretEnvSubstrings = clientEnvTestSubstrings
 	SecretEnvName = func(name string) bool {
-		upper := pystr.Upper(name)
+		upper := strings.ToUpper(name)
 		for _, s := range clientEnvTestSubstrings {
 			if strings.Contains(upper, s) {
 				return true

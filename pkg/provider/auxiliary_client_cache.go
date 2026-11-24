@@ -419,11 +419,7 @@ func auxGetCachedClient(ctx context.Context, req auxCachedClientRequest) (AuxCli
 	auxClientCacheMu.Unlock()
 	effectiveKey := apiKey
 	if !auxTruthy(effectiveKey) {
-		pool, perr := auxCachedClientPool(ctx, provider)
-		if perr != nil {
-			return nil, "", perr
-		}
-		if pool != nil {
+		if pool := auxCachedClientPool(ctx, provider); pool != nil {
 			if entry := auxPeekPoolEntry(ctx, provider, pool); entry != nil {
 				if k := auxPoolRuntimeAPIKey(entry); k != "" {
 					effectiveKey = k
@@ -459,19 +455,10 @@ func auxGetCachedClient(ctx context.Context, req auxCachedClientRequest) (AuxCli
 }
 
 // Pool a cached client miss derives its key from, entry scoped when the provider or its pool key names a custom entry
-func auxCachedClientPool(ctx context.Context, provider string) (*Pool, error) {
-	var cfg map[string]any
-	normalized := auxNormalizeAuxProvider(ctx, provider)
-	if mayNameCustomEntry(provider) || mayNameCustomEntry(normalized) {
-		tree, err := auxLoadConfigFn(ctx)
-		if err != nil {
-			return nil, err
-		}
-		cfg = tree
-	}
-	return PoolForAuxProvider(ctx, provider, normalized, cfg, func(k string) *Pool {
+func auxCachedClientPool(ctx context.Context, provider string) *Pool {
+	return PoolForAuxProvider(ctx, provider, auxNormalizeAuxProvider(ctx, provider), func(k string) *Pool {
 		return auxLoadPoolWithCredentials(ctx, k, " (peek)")
-	}), nil
+	})
 }
 
 // True when a first class provider keeps its identity alongside an explicit base URL
@@ -516,13 +503,9 @@ func auxProfileCredentialsBypassCustom(ctx context.Context, name string) bool {
 	return found && profile.Name == name && (profile.AmbientCredentials || profile.AuthType == "external_process")
 }
 
-// Named custom lookup seam, a raised config load failing closed
+// Named custom lookup seam over the providers setting of ctx
 var auxNamedCustomProviderFn = func(ctx context.Context, name string) bool {
-	tree, err := auxLoadConfigFn(ctx)
-	if err != nil {
-		panic(err)
-	}
-	return newResolver(ctx, tree, nil, "", nil).HasNamedCustomProvider(name)
+	return newResolver(ctx, nil, "", nil).HasNamedCustomProvider(name)
 }
 
 // True when the user defined providers section names the provider, false when config cannot load

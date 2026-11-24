@@ -217,7 +217,7 @@ func TestGenerateSubmitsPollsAndDownloadsFromConfiguredOrigin(t *testing.T) {
 // Adds an api key credential to the openrouter pool like icebath auth add openrouter
 func addPooledKey(t *testing.T, h, key, label, id string) {
 	t.Helper()
-	env := provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Config: provider.ConfigLoader(h)}
+	env := provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h)}
 	_, err := provider.LoadPool(env, "openrouter").AddEntry(provider.PooledCredential{Provider: "openrouter", ID: id, Label: label,
 		AuthType: provider.AuthTypeAPIKey, Source: provider.SourceManual, AccessToken: key, BaseURL: "https://openrouter.ai/api/v1"})
 	if err != nil {

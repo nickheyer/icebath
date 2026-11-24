@@ -96,10 +96,10 @@ func TestPromptModelSelectionFallbackUsesLineEditorForCustomModel(t *testing.T) 
 	}
 }
 
-func TestSaveModelChoiceStringModelBecomesDict(t *testing.T) {
+func TestSaveModelChoiceWritesModelDefault(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("model: some-old-model\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("model:\n  default: some-old-model\n  provider: kimi\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	before := ModelChoiceSaveCount()
@@ -111,7 +111,7 @@ func TestSaveModelChoiceStringModelBecomesDict(t *testing.T) {
 		t.Fatal(err)
 	}
 	model, ok := cfg["model"].(map[string]any)
-	if !ok || model["default"] != "kimi-k2.5" || ModelChoiceSaveCount() != before+1 {
+	if !ok || model["default"] != "kimi-k2.5" || model["provider"] != "kimi" || ModelChoiceSaveCount() != before+1 {
 		t.Fatalf("model %#v", cfg["model"])
 	}
 }

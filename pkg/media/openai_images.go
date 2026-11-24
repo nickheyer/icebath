@@ -13,13 +13,14 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
@@ -102,12 +103,13 @@ var openAISleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Process environment lookup that tells unset apart from empty
+// Credential of the environment's profile that tells unset apart from empty: its .env resolver, else the profile .env then the process environment
 func lookupProcessEnv(env *tools.Env, name string) (string, bool) {
 	if env != nil && env.Secrets != nil {
 		return env.Secrets.Get(name)
 	}
-	return os.LookupEnv(name)
+	h := homeOf(env)
+	return config.ProfileEnvLookup(home.WithOverride(context.Background(), h), h)(name)
 }
 
 // openai.OpenAI resolving the key, organization, project and base URL from the environment when not passed

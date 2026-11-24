@@ -368,7 +368,7 @@ func ftsUpdateTriggerNeedsNarrowing(sql any) bool {
 	if !pyTruthy(sql) {
 		return false
 	}
-	compact := pystr.Upper(strings.Join(pystr.SplitWhitespace(pyStr(sql), -1), " "))
+	compact := strings.ToUpper(strings.Join(pystr.SplitWhitespace(pyStr(sql), -1), " "))
 	return !strings.Contains(compact, "AFTER UPDATE OF ") && strings.Contains(compact, "AFTER UPDATE ON ")
 }
 
@@ -457,8 +457,8 @@ func executeDDLSkippingSettledTriggers(ctx context.Context, conn SQLiteConn, ddl
 	}
 	pendingDrop := ""
 	remainder, err := forEachCompleteStatement(ddl, func(statement string) error {
-		current := pystr.Strip(statement)
-		upper := pystr.Upper(current)
+		current := strings.TrimSpace(statement)
+		upper := strings.ToUpper(current)
 		if strings.HasPrefix(upper, "DROP TRIGGER IF EXISTS ") {
 			pendingDrop = current
 			return nil
@@ -486,7 +486,7 @@ func executeDDLSkippingSettledTriggers(ctx context.Context, conn SQLiteConn, ddl
 	if err != nil {
 		return err
 	}
-	if pystr.Strip(remainder) != "" {
+	if strings.TrimSpace(remainder) != "" {
 		return &SQLiteError{Class: SQLiteOperationalError, Msg: "incomplete DDL statement"}
 	}
 	return nil
@@ -501,7 +501,7 @@ func executeDDLScriptTransactional(ctx context.Context, conn SQLiteConn, ddl str
 	if err != nil {
 		return err
 	}
-	if pystr.Strip(remainder) != "" {
+	if strings.TrimSpace(remainder) != "" {
 		return &SQLiteError{Class: SQLiteOperationalError, Msg: "incomplete FTS DDL statement"}
 	}
 	return nil

@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -139,7 +138,7 @@ func isRealAppWindow(w *pyjson.Object) bool {
 		return true
 	}
 	for _, p := range nonAppWindowTitlePrefixes {
-		if strings.HasPrefix(title, p) || strings.HasPrefix(pystr.Lower(title), pystr.Lower(p)) {
+		if strings.HasPrefix(title, p) || strings.HasPrefix(strings.ToLower(title), strings.ToLower(p)) {
 			return false
 		}
 	}
@@ -249,10 +248,10 @@ func parseKeyCombo(keys string) (*string, []string) {
 	modifiers := []string{}
 	var key *string
 	for _, p := range keyComboSplitRE.Split(keys, -1) {
-		if pystr.Strip(p) == "" {
+		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		part := pystr.Lower(pystr.Strip(p))
+		part := strings.ToLower(strings.TrimSpace(p))
 		normalized := part
 		if alias, ok := keyAliases[part]; ok {
 			normalized = alias
@@ -315,7 +314,7 @@ func extractToolResult(result *pyjson.Object) *pyjson.Object {
 		}
 		joined := strings.Join(kept, "\n")
 		data = joined
-		if s := pystr.Strip(joined); strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") {
+		if s := strings.TrimSpace(joined); strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") {
 			if v, err := pyjson.Loads(joined); err == nil {
 				data = v
 			}

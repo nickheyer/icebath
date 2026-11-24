@@ -30,7 +30,7 @@ func loadFull(t *testing.T, ctx context.Context) *GatewayConfig {
 	return cfg
 }
 
-const telegramYAML = "gateway:\n  platforms:\n    telegram:\n      enabled: true\n      bot_token: '123:abc'\n"
+const telegramYAML = "platforms:\n  telegram:\n    enabled: true\n    bot_token: '123:abc'\n"
 
 func TestRelayPlatformEnabledFromEnvURL(t *testing.T) {
 	ctx, _ := yamlHome(t, "")
@@ -50,7 +50,7 @@ func TestRelayPlatformEnabledFromEnvURL(t *testing.T) {
 }
 
 func TestRelayEnvURLDisablesOtherMessagingPlatforms(t *testing.T) {
-	ctx, _ := yamlHome(t, telegramYAML+"    api_server:\n      enabled: true\n")
+	ctx, _ := yamlHome(t, telegramYAML+"  api_server:\n    enabled: true\n")
 	t.Setenv("GATEWAY_RELAY_URL", "https://connector.example/relay")
 	t.Setenv("DISCORD_BOT_TOKEN", "fake-token-for-test")
 	cfg := loadFull(t, ctx)
@@ -63,8 +63,8 @@ func TestRelayEnvURLDisablesOtherMessagingPlatforms(t *testing.T) {
 }
 
 func TestRelayYAMLURLKeepsOtherPlatformsEnabled(t *testing.T) {
-	ctx, _ := yamlHome(t, "gateway:\n  platforms:\n    relay:\n      enabled: true\n      extra:\n        relay_url: https://connector.example/relay\n"+
-		"    telegram:\n      enabled: true\n      bot_token: '123:abc'\n")
+	ctx, _ := yamlHome(t, "platforms:\n  relay:\n    enabled: true\n    extra:\n      relay_url: https://connector.example/relay\n"+
+		"  telegram:\n    enabled: true\n    bot_token: '123:abc'\n")
 	os.Unsetenv("GATEWAY_RELAY_URL")
 	cfg := loadFull(t, ctx)
 	if !cfg.Platforms[PlatformRelay].Enabled || !cfg.Platforms[PlatformTelegram].Enabled {
@@ -83,7 +83,7 @@ func TestRelayEnvURLOptOutKeepsDirectPlatforms(t *testing.T) {
 }
 
 func TestRelayExclusiveSweepLogLevelsAndMarkerCleanup(t *testing.T) {
-	ctx, h := yamlHome(t, telegramYAML+"    slack:\n      enabled: true\n      bot_token: x\n")
+	ctx, h := yamlHome(t, telegramYAML+"  slack:\n    enabled: true\n    bot_token: x\n")
 	t.Setenv("GATEWAY_RELAY_URL", "https://connector.example/relay")
 	logs := captureLogs(t)
 	cfg := loadLayers(t, ctx, h)

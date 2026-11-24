@@ -74,20 +74,20 @@ func ParseContract(text string) (string, GoalContract) {
 	var headline []string
 	fields := map[string][]string{}
 	for _, rawLine := range pystr.Splitlines(text, false) {
-		line := pystr.Strip(rawLine)
+		line := strings.TrimSpace(rawLine)
 		if line == "" {
 			continue
 		}
 		if prefix, value, found := strings.Cut(line, ":"); found {
-			if key, known := goalContractAliases[pystr.Lower(pystr.Strip(prefix))]; known && pystr.Strip(value) != "" {
-				fields[key] = append(fields[key], pystr.Strip(value))
+			if key, known := goalContractAliases[strings.ToLower(strings.TrimSpace(prefix))]; known && strings.TrimSpace(value) != "" {
+				fields[key] = append(fields[key], strings.TrimSpace(value))
 				continue
 			}
 		}
 		headline = append(headline, line)
 	}
-	joined := func(key string) string { return pystr.Strip(strings.Join(fields[key], " ")) }
-	return pystr.Strip(strings.Join(headline, " ")), GoalContract{Outcome: joined("outcome"), Verification: joined("verification"),
+	joined := func(key string) string { return strings.TrimSpace(strings.Join(fields[key], " ")) }
+	return strings.TrimSpace(strings.Join(headline, " ")), GoalContract{Outcome: joined("outcome"), Verification: joined("verification"),
 		Constraints: joined("constraints"), Boundaries: joined("boundaries"), StopWhen: joined("stop_when")}
 }
 
@@ -335,9 +335,9 @@ func extractJSONObject(raw any) (*pyjson.Object, error) {
 	if !isText {
 		return nil, strMethodError(raw, "strip")
 	}
-	text := pystr.Strip(rawText)
+	text := strings.TrimSpace(rawText)
 	if strings.HasPrefix(text, "```") {
-		text = pystr.StripChars(text, "`")
+		text = strings.Trim(text, "`")
 		if nl := strings.Index(text, "\n"); nl != -1 {
 			text = text[nl+1:]
 		}
@@ -369,17 +369,17 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 		return "continue", "judge reply was not JSON: " + pyrepr.Repr(goalTruncate(raw.(string), 200)), true, nil, nil
 	}
 	get := func(key string) any { return data.GetOr(key, nil) }
-	reason = pystr.Strip(pyrepr.Str(pyrepr.Or(get("reason"), "")))
+	reason = strings.TrimSpace(pyrepr.Str(pyrepr.Or(get("reason"), "")))
 	if reason == "" {
 		reason = "no reason provided"
 	}
 	if verdictRaw, isStr := get("verdict").(string); isStr {
-		verdict = pystr.Lower(pystr.Strip(verdictRaw))
+		verdict = strings.ToLower(strings.TrimSpace(verdictRaw))
 	} else {
 		doneVal := get("done")
 		done := pyrepr.Truthy(doneVal)
 		if text, isStr := doneVal.(string); isStr {
-			switch pystr.Lower(pystr.Strip(text)) {
+			switch strings.ToLower(strings.TrimSpace(text)) {
 			case "true", "yes", "1", "done":
 				done = true
 			default:
@@ -424,8 +424,8 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 			sess = get(key)
 		}
 	}
-	if text, isStr := sess.(string); isStr && pystr.Strip(text) != "" {
-		return "wait", reason, false, map[string]any{"session_id": pystr.Strip(text)}, nil
+	if text, isStr := sess.(string); isStr && strings.TrimSpace(text) != "" {
+		return "wait", reason, false, map[string]any{"session_id": strings.TrimSpace(text)}, nil
 	}
 	if pid := firstInt("wait_on_pid", "pid", "wait_pid"); pid != nil {
 		return "wait", reason, false, map[string]any{"pid": pid}, nil
@@ -439,7 +439,7 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 // Single line text of a process field cut to 120 characters
 func backgroundField(p map[string]any, key string) string {
 	text := pyrepr.Str(pyrepr.Or(p[key], ""))
-	return goalTruncate(pystr.Strip(strings.ReplaceAll(text, "\n", " ")), 120)
+	return goalTruncate(strings.TrimSpace(strings.ReplaceAll(text, "\n", " ")), 120)
 }
 
 // Running process registry entries as judge prompt lines, empty when nothing runs
@@ -524,10 +524,10 @@ type JudgeResult struct {
 
 // Asks the auxiliary model whether the goal is satisfied, failing open to continue on any transport error
 func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) JudgeResult {
-	if pystr.Strip(goal) == "" {
+	if strings.TrimSpace(goal) == "" {
 		return JudgeResult{Verdict: "skipped", Reason: "empty goal"}
 	}
-	if pystr.Strip(lastResponse) == "" {
+	if strings.TrimSpace(lastResponse) == "" {
 		return JudgeResult{Verdict: "continue", Reason: "empty response (nothing to evaluate)"}
 	}
 	timeout := goalJudgeTimeout(ctx)
@@ -536,8 +536,8 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 	}
 	var cleanSubgoals []string
 	for _, s := range o.Subgoals {
-		if pystr.Strip(s) != "" {
-			cleanSubgoals = append(cleanSubgoals, pystr.Strip(s))
+		if strings.TrimSpace(s) != "" {
+			cleanSubgoals = append(cleanSubgoals, strings.TrimSpace(s))
 		}
 	}
 	backgroundBlock := renderBackgroundBlock(o.BackgroundProcesses)
@@ -760,7 +760,7 @@ func GatherBackgroundProcesses(ctx context.Context, taskID, ownerTaskID string) 
 
 // Completion contract drafted from a plain objective through the goal_judge task, nil when unavailable or unparseable
 func DraftContract(ctx context.Context, objective string, timeout *float64) *GoalContract {
-	objective = pystr.Strip(objective)
+	objective = strings.TrimSpace(objective)
 	if objective == "" {
 		return nil
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -201,19 +202,9 @@ func printTools(ui TerminalUI, found []ToolSummary, width, descMax int) {
 	}
 }
 
-// The mcp_servers mapping of a config document, the ctx home user config when cfg is nil
-func getMCPServers(ctx context.Context, cfg map[string]any) (map[string]any, error) {
-	if cfg == nil {
-		raw, err := config.ReadUser(home.Dir(ctx))
-		if err != nil {
-			return nil, err
-		}
-		cfg = raw
-	}
-	if s, ok := cfg["mcp_servers"].(map[string]any); ok && len(s) > 0 {
-		return s, nil
-	}
-	return map[string]any{}, nil
+// Server entries the profile's config.yaml holds, references unexpanded so an entry can be shown, edited and saved back as written
+func StoredServers(ctx context.Context) map[string]any {
+	return settings.McpServers.Stored(ctx)
 }
 
 // Include and exclude lists of a server entry, nil when the key is absent or not a list
@@ -247,18 +238,8 @@ func SaveServer(ctx context.Context, ui TerminalUI, name string, serverConfig ma
 	if !validateOrWarn(ui, name, serverConfig) {
 		return false, nil
 	}
-	h := home.Dir(ctx)
-	doc, err := config.ReadUser(h)
-	if err != nil {
-		return false, err
-	}
-	servers, ok := doc["mcp_servers"].(map[string]any)
-	if !ok {
-		servers = map[string]any{}
-	}
-	servers[name] = serverConfig
-	doc["mcp_servers"] = servers
-	return true, config.SaveUser(ctx, h, doc)
+	_, err := settings.McpServers.SetEntry(ctx, name, serverConfig)
+	return true, err
 }
 
 // Named server entry, or the not found hint listing the available names
@@ -277,22 +258,13 @@ func lookupServer(ui TerminalUI, name string, servers map[string]any, availableL
 	return nil, false
 }
 
-// Removes a server from config.yaml, dropping the mapping once empty, reporting whether it existed
+// Removes a server from config.yaml, reporting whether it existed
 func RemoveServer(ctx context.Context, name string) (bool, error) {
-	h := home.Dir(ctx)
-	doc, err := config.ReadUser(h)
-	if err != nil {
-		return false, err
-	}
-	servers, _ := doc["mcp_servers"].(map[string]any)
-	if _, ok := servers[name]; !ok {
+	if _, ok := StoredServers(ctx)[name]; !ok {
 		return false, nil
 	}
-	delete(servers, name)
-	if len(servers) == 0 {
-		delete(doc, "mcp_servers")
-	}
-	return true, config.SaveUser(ctx, h, doc)
+	_, err := settings.McpServers.DeleteEntry(ctx, name)
+	return true, err
 }
 
 // Env key holding the API key of a server, MCP_<NAME>_API_KEY
@@ -645,11 +617,7 @@ func cmdMCPAdd(ctx context.Context, env *tools.Env, ui CLIConfigUI, a MCPArgs) i
 		cfgInfo(ui, "  icebath mcp add myserver --preset mypreset")
 		return 0
 	}
-	existing, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	existing := StoredServers(ctx)
 	_, present := existing[name]
 	if present && !cfgConfirm(ui, fmt.Sprintf("Server '%s' already exists. Overwrite?", name), false) {
 		cfgInfo(ui, "Cancelled.")
@@ -721,11 +689,7 @@ func cmdMCPAdd(ctx context.Context, env *tools.Env, ui CLIConfigUI, a MCPArgs) i
 
 // Removes a configured server after confirmation and cleans up its OAuth tokens
 func cmdMCPRemove(ctx context.Context, ui CLIConfigUI, name string) int {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	servers := StoredServers(ctx)
 	if _, ok := lookupServer(ui, name, servers, "Available servers"); !ok {
 		return 0
 	}
@@ -746,11 +710,7 @@ func cmdMCPRemove(ctx context.Context, ui CLIConfigUI, name string) int {
 
 // Prints every configured server with its transport, tool filter and enabled state
 func cmdMCPList(ctx context.Context, ui TerminalUI) int {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	servers := StoredServers(ctx)
 	out := ui.Out()
 	if len(servers) == 0 {
 		fmt.Fprintln(out)
@@ -865,11 +825,7 @@ func probeFailureNextStep(ctx context.Context, name string, err error) string {
 
 // Probes one configured server, exit 0 connected, 1 failed, 3 not in the config
 func cmdMCPTest(ctx context.Context, env *tools.Env, ui TerminalUI, name string) int {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	servers := StoredServers(ctx)
 	cfg, ok := lookupServer(ui, name, servers, "Available")
 	if !ok {
 		return 3
@@ -1014,11 +970,7 @@ var cliProbe = probeServer
 
 // Runs an explicit browser or device authorization for one OAuth server
 func cmdMCPLogin(ctx context.Context, env *tools.Env, ui TerminalUI, name, flow string) int {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	servers := StoredServers(ctx)
 	if cfg, ok := lookupServer(ui, name, servers, "Available servers"); ok {
 		reauthOAuthServer(ctx, env, ui, name, cfg, flow)
 	}
@@ -1027,11 +979,7 @@ func cmdMCPLogin(ctx context.Context, env *tools.Env, ui TerminalUI, name, flow 
 
 // Re-authenticates one OAuth server or every OAuth server in turn
 func cmdMCPReauth(ctx context.Context, env *tools.Env, ui TerminalUI, name string, all bool) int {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	servers := StoredServers(ctx)
 	if all {
 		var names []string
 		for _, n := range sortedKeys(servers) {
@@ -1136,11 +1084,7 @@ func cmdMCPConfigure(ctx context.Context, env *tools.Env, ui TerminalUI, name st
 		fmt.Fprintln(cliStderr, "Error: 'icebath mcp configure' requires an interactive terminal.")
 		return 1
 	}
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
+	servers := StoredServers(ctx)
 	cfg, ok := lookupServer(ui, name, servers, "Available")
 	if !ok {
 		return 0
@@ -1195,14 +1139,8 @@ func cmdMCPConfigure(ctx context.Context, env *tools.Env, ui TerminalUI, name st
 		cfgInfo(ui, "No changes made.")
 		return 0
 	}
-	h := home.Dir(ctx)
-	doc, err := config.ReadUser(h)
-	if err != nil {
-		cfgError(ui, err.Error())
-		return 1
-	}
-	docServers, _ := doc["mcp_servers"].(map[string]any)
-	entry, _ := docServers[name].(map[string]any)
+	sctx := tools.WithEnvHome(ctx, env)
+	entry, _ := StoredServers(sctx)[name].(map[string]any)
 	if entry == nil {
 		entry = map[string]any{}
 	}
@@ -1236,12 +1174,7 @@ func cmdMCPConfigure(ctx context.Context, env *tools.Env, ui TerminalUI, name st
 		tc["include"] = names
 		delete(tc, "exclude")
 	}
-	if docServers == nil {
-		docServers = map[string]any{}
-	}
-	docServers[name] = entry
-	doc["mcp_servers"] = docServers
-	if err := config.SaveUser(tools.WithEnvHome(ctx, env), h, doc); err != nil {
+	if _, err := settings.McpServers.SetEntry(sctx, name, entry); err != nil {
 		cfgError(ui, err.Error())
 		return 1
 	}

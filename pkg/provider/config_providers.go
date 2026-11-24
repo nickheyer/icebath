@@ -15,7 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var falseWords = map[string]bool{"false": true, "0": true, "no": true, "off": true}
@@ -384,9 +384,14 @@ func ProvidersDictToCustomProviders(providersDict any) []map[string]any {
 	return out
 }
 
-// ProviderEntries is the deduplicated list view of the enabled providers entries
-func ProviderEntries(cfg map[string]any) []map[string]any {
-	candidates := ProvidersDictToCustomProviders(cfg["providers"])
+// Deduplicated list view of the enabled providers entries the providers setting gives ctx
+func CustomProviderEntries(ctx context.Context) []map[string]any {
+	return ProviderEntriesOf(settings.Providers.Get(ctx))
+}
+
+// ProviderEntriesOf is the deduplicated list view of the enabled entries of a providers mapping
+func ProviderEntriesOf(providers map[string]any) []map[string]any {
+	candidates := ProvidersDictToCustomProviders(providers)
 	norm := func(entry map[string]any, field string) string {
 		return strings.ToLower(strings.TrimSpace(cfgString(entry[field])))
 	}
@@ -418,11 +423,16 @@ func ProviderEntries(cfg map[string]any) []map[string]any {
 	return compatible
 }
 
-// Entries whose normalized route identity equals the base URL, from the given list or the config view
-func entriesForRoute(baseURL string, customProviders []map[string]any, cfg map[string]any) []map[string]any {
-	if customProviders == nil {
-		customProviders = ProviderEntries(cfg)
+// The providers list a caller passed, else the entries of the providers setting ctx gives
+func routeEntries(ctx context.Context, customProviders []map[string]any) []map[string]any {
+	if customProviders != nil {
+		return customProviders
 	}
+	return CustomProviderEntries(ctx)
+}
+
+// Entries of a providers list whose normalized route identity equals the base URL
+func entriesForRoute(baseURL string, customProviders []map[string]any) []map[string]any {
 	if baseURL == "" {
 		return nil
 	}
@@ -444,13 +454,13 @@ func entriesForRoute(baseURL string, customProviders []map[string]any, cfg map[s
 }
 
 // EntriesForRoute exposes the route entry match to the agent capability checks
-func EntriesForRoute(baseURL string, customProviders []map[string]any, cfg map[string]any) []map[string]any {
-	return entriesForRoute(baseURL, customProviders, cfg)
+func EntriesForRoute(baseURL string, customProviders []map[string]any) []map[string]any {
+	return entriesForRoute(baseURL, customProviders)
 }
 
 // CustomProviderAPIMode is the api_mode of the first custom entry serving the base URL or empty
-func CustomProviderAPIMode(baseURL string, customProviders []map[string]any, cfg map[string]any) string {
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+func CustomProviderAPIMode(baseURL string, customProviders []map[string]any) string {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if value, ok := entry["api_mode"].(string); ok && strings.TrimSpace(value) != "" {
 			return strings.TrimSpace(value)
 		}
@@ -472,9 +482,9 @@ func routeModelCfg(entry map[string]any, model string) map[string]any {
 }
 
 // The models.<model> mapping of every entry matching the base URL
-func routeModelCfgs(model, baseURL string, customProviders []map[string]any, cfg map[string]any) []map[string]any {
+func routeModelCfgs(model, baseURL string, customProviders []map[string]any) []map[string]any {
 	var out []map[string]any
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if mc := routeModelCfg(entry, model); mc != nil {
 			out = append(out, mc)
 		}
@@ -507,8 +517,8 @@ type TLSSettings struct {
 }
 
 // CustomProviderTLSSettings returns the TLS settings of the first entry serving the base URL
-func CustomProviderTLSSettings(baseURL string, customProviders []map[string]any, cfg map[string]any) TLSSettings {
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+func CustomProviderTLSSettings(baseURL string, customProviders []map[string]any) TLSSettings {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		var out TLSSettings
 		if ca, ok := entry["ssl_ca_cert"].(string); ok && strings.TrimSpace(ca) != "" {
 			out.CACert = strings.TrimSpace(ca)
@@ -522,8 +532,8 @@ func CustomProviderTLSSettings(baseURL string, customProviders []map[string]any,
 }
 
 // Attaches the TLS knobs of the entry serving the base URL to OpenAI client kwargs
-func ApplyCustomProviderTLSToClientKwargs(clientKwargs map[string]any, baseURL string, customProviders []map[string]any, cfg map[string]any) {
-	tls := CustomProviderTLSSettings(baseURL, customProviders, cfg)
+func ApplyCustomProviderTLSToClientKwargs(clientKwargs map[string]any, baseURL string, customProviders []map[string]any) {
+	tls := CustomProviderTLSSettings(baseURL, customProviders)
 	if tls.CACert != "" {
 		clientKwargs["ssl_ca_cert"] = tls.CACert
 	}
@@ -538,8 +548,8 @@ func NormalizeExtraHeaders(extraHeaders any) map[string]string {
 }
 
 // CustomProviderExtraHeaders returns the headers of the first route matching entry declaring any
-func CustomProviderExtraHeaders(baseURL string, customProviders []map[string]any, cfg map[string]any) map[string]string {
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+func CustomProviderExtraHeaders(baseURL string, customProviders []map[string]any) map[string]string {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if headers := NormalizeExtraHeaders(entry["extra_headers"]); len(headers) > 0 {
 			return headers
 		}
@@ -548,8 +558,8 @@ func CustomProviderExtraHeaders(baseURL string, customProviders []map[string]any
 }
 
 // Merges the route entry's extra headers onto the client kwargs default headers, the entry winning over existing values
-func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, baseURL string, customProviders []map[string]any, cfg map[string]any) {
-	extra := CustomProviderExtraHeaders(baseURL, customProviders, cfg)
+func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, baseURL string, customProviders []map[string]any) {
+	extra := CustomProviderExtraHeaders(baseURL, customProviders)
 	if len(extra) == 0 {
 		return
 	}
@@ -568,8 +578,8 @@ func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, 
 }
 
 // CustomProviderSessionAffinityHeader is the header name a route matching entry opted into or empty
-func CustomProviderSessionAffinityHeader(baseURL string, customProviders []map[string]any, cfg map[string]any) string {
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+func CustomProviderSessionAffinityHeader(baseURL string, customProviders []map[string]any) string {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if header, ok := entry["session_affinity_header"].(string); ok && strings.TrimSpace(header) != "" {
 			return strings.TrimSpace(header)
 		}
@@ -595,19 +605,16 @@ func positiveInt(raw any) (int, bool) {
 }
 
 // CustomProviderContextLength is the per model or entry level context_length override for a route or 0
-func CustomProviderContextLength(model, baseURL string, customProviders []map[string]any, cfg map[string]any) int {
+func CustomProviderContextLength(model, baseURL string, customProviders []map[string]any) int {
 	if model == "" || baseURL == "" {
 		return 0
 	}
-	if customProviders == nil {
-		customProviders = ProviderEntries(cfg)
-	}
-	for _, mc := range routeModelCfgs(model, baseURL, customProviders, cfg) {
+	for _, mc := range routeModelCfgs(model, baseURL, customProviders) {
 		if ctx, ok := positiveInt(mc["context_length"]); ok {
 			return ctx
 		}
 	}
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if ctx, ok := positiveInt(entry["context_length"]); ok {
 			return ctx
 		}
@@ -616,14 +623,11 @@ func CustomProviderContextLength(model, baseURL string, customProviders []map[st
 }
 
 // CustomProviderModelCapability is the explicit boolean capability for one custom model, known false when absent
-func CustomProviderModelCapability(model, baseURL, capability string, customProviders []map[string]any, cfg map[string]any) (value bool, known bool) {
+func CustomProviderModelCapability(model, baseURL, capability string, customProviders []map[string]any) (value bool, known bool) {
 	if model == "" || baseURL == "" || capability == "" {
 		return false, false
 	}
-	if customProviders == nil {
-		customProviders = ProviderEntries(cfg)
-	}
-	for _, mc := range routeModelCfgs(model, baseURL, customProviders, cfg) {
+	for _, mc := range routeModelCfgs(model, baseURL, customProviders) {
 		if b, ok := mc[capability].(bool); ok {
 			return b, true
 		}
@@ -645,7 +649,7 @@ func IsProviderEnabled(providerCfg any) bool {
 	case bool:
 		return f
 	case string:
-		return !falseWords[pystr.Lower(pystr.Strip(f))]
+		return !falseWords[strings.ToLower(strings.TrimSpace(f))]
 	}
 	return truthy(flag)
 }

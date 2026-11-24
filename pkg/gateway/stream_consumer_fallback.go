@@ -7,13 +7,12 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Sends a new chunk threaded to replyToID, the new message id or replyToID when nothing landed
 func (s *GatewayStreamConsumer) sendNewChunk(ctx context.Context, text, replyToID string, final bool) string {
 	text = cleanForDisplay(text)
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return replyToID
 	}
 	result, err := s.adapter.Send(ctx, s.chatID, text, replyToID, s.metadataForSend(final, !final))
@@ -60,7 +59,7 @@ func (s *GatewayStreamConsumer) continuationText(finalText string) string {
 			cut = boundary + 1
 		}
 	}
-	return pystr.Lstrip(string(runes[cut:]))
+	return strings.TrimLeftFunc(string(runes[cut:]), unicode.IsSpace)
 }
 
 // Fallback chunks split by newline and balanced across code fences
@@ -85,7 +84,7 @@ func (s *GatewayStreamConsumer) sendFallbackFinal(ctx context.Context, text stri
 	finalText := EnsureClosedCodeFences(cleanForDisplay(text))
 	continuation := s.continuationText(finalText)
 	s.fallbackFinalSend = false
-	if pystr.Strip(continuation) == "" {
+	if strings.TrimSpace(continuation) == "" {
 		next, send := s.fallbackWhenNothingUnseen(ctx, finalText)
 		if !send {
 			return
@@ -142,7 +141,7 @@ func (s *GatewayStreamConsumer) sendFallbackFinal(ctx context.Context, text stri
 func (s *GatewayStreamConsumer) fallbackWhenNothingUnseen(ctx context.Context, finalText string) (string, bool) {
 	visible := s.visiblePrefix()
 	resender, resends := s.adapter.(EmptyStreamFallbackResender)
-	if pystr.Strip(finalText) != "" && finalText == visible && resends && resender.ResendFinalOnEmptyStreamFallback() {
+	if strings.TrimSpace(finalText) != "" && finalText == visible && resends && resender.ResendFinalOnEmptyStreamFallback() {
 		delivery := s.sendEmptyFallbackFinal(ctx, finalText)
 		if delivery == "delivered" {
 			return "", false
@@ -161,7 +160,7 @@ func (s *GatewayStreamConsumer) fallbackWhenNothingUnseen(ctx context.Context, f
 		}
 		return "", false
 	}
-	if pystr.Strip(finalText) != "" && finalText != visible {
+	if strings.TrimSpace(finalText) != "" && finalText != visible {
 		return finalText, true
 	}
 	if s.messageID != "" && s.lastSentText != "" && s.cfg.Cursor != "" && strings.HasSuffix(s.lastSentText, s.cfg.Cursor) {
@@ -319,9 +318,9 @@ func (s *GatewayStreamConsumer) flushSegmentTailOnEditFailure(ctx context.Contex
 	}
 	tail := cleanForDisplay(s.accumulated)
 	if visible != "" && strings.HasPrefix(tail, visible) {
-		tail = pystr.Lstrip(tail[len(visible):])
+		tail = strings.TrimLeftFunc(tail[len(visible):], unicode.IsSpace)
 	}
-	if pystr.Strip(tail) == "" {
+	if strings.TrimSpace(tail) == "" {
 		return
 	}
 	md := map[string]any{}
@@ -342,7 +341,7 @@ func (s *GatewayStreamConsumer) flushSegmentTailOnEditFailure(ctx context.Contex
 // Edit removing a cursor stuck on the preview when entering fallback mode
 func (s *GatewayStreamConsumer) tryStripCursor(ctx context.Context) {
 	prefix := s.visiblePrefix()
-	if !s.hasRealPreview() || pystr.Strip(prefix) == "" {
+	if !s.hasRealPreview() || strings.TrimSpace(prefix) == "" {
 		return
 	}
 	if result, err := s.editMessage(ctx, s.messageID, prefix, false); err == nil && result.Success {
@@ -356,7 +355,7 @@ var replyAnchoredCommentaryPlatforms = map[string]bool{"buzz": true, "slack": tr
 // Sends a completed interim commentary message, recording its text once it landed
 func (s *GatewayStreamConsumer) sendCommentary(ctx context.Context, text string) bool {
 	text = cleanForDisplay(text)
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return false
 	}
 	md := s.metadataForSend(false, false)

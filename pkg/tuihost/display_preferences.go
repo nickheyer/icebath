@@ -1,8 +1,9 @@
 package tuihost
 
 import (
+	"strings"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var toolProgressModeWords = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
@@ -17,7 +18,7 @@ func NormalizeToolProgressMode(mode any, def string) string {
 	}
 	text := ""
 	if pyrepr.Truthy(mode) {
-		text = pystr.Lower(pystr.Strip(pyrepr.Str(mode)))
+		text = strings.ToLower(strings.TrimSpace(pyrepr.Str(mode)))
 	}
 	if toolProgressModeWords[text] || text == "log" {
 		return text

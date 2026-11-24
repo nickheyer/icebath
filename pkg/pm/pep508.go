@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // InvalidRequirementError is a dependency specifier packaging refuses
@@ -274,15 +272,15 @@ func parseSpecifier(spec string) (pySpecifier, error) {
 	if !specifierFull.MatchString(spec) {
 		return pySpecifier{}, &InvalidRequirementError{Message: "invalid specifier: " + spec}
 	}
-	spec = pystr.Strip(spec)
+	spec = strings.TrimSpace(spec)
 	switch {
 	case strings.HasPrefix(spec, "==="):
-		return pySpecifier{"===", pystr.Strip(spec[3:])}, nil
+		return pySpecifier{"===", strings.TrimSpace(spec[3:])}, nil
 	case strings.HasPrefix(spec, "~="), strings.HasPrefix(spec, "=="), strings.HasPrefix(spec, "!="),
 		strings.HasPrefix(spec, "<="), strings.HasPrefix(spec, ">="):
-		return pySpecifier{spec[:2], pystr.Strip(spec[2:])}, nil
+		return pySpecifier{spec[:2], strings.TrimSpace(spec[2:])}, nil
 	}
-	return pySpecifier{spec[:1], pystr.Strip(spec[1:])}, nil
+	return pySpecifier{spec[:1], strings.TrimSpace(spec[1:])}, nil
 }
 
 // Identity two clauses compare equal by, trailing release zeros dropped except for the compatible operator
@@ -304,7 +302,7 @@ func (s pySpecifier) canonical() (string, error) {
 func parseSpecifierSet(text string) ([]pySpecifier, error) {
 	var specs []pySpecifier
 	for _, part := range strings.Split(text, ",") {
-		part = pystr.Strip(part)
+		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
 		}
@@ -344,7 +342,7 @@ func formatSpecifierSet(specs []pySpecifier) (string, error) {
 
 // Normalizes a project or extra name like packaging canonicalize_name
 func CanonicalizeName(name string) string {
-	value := strings.ReplaceAll(strings.ReplaceAll(pystr.Lower(name), "_", "-"), ".", "-")
+	value := strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(name), "_", "-"), ".", "-")
 	for strings.Contains(value, "--") {
 		value = strings.ReplaceAll(value, "--", "-")
 	}

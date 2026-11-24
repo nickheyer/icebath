@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -35,8 +34,8 @@ var (
 
 // True when a changed path is documentation or prose with nothing to verify
 func isNonCodeVerifyPath(raw string) bool {
-	suffix := pystr.Lower(pypath.PathSuffix(raw))
-	return nonCodeVerifyExtensions[suffix] || (suffix == "" && nonCodeVerifyFilenames[pystr.Lower(pypath.PathName(raw))])
+	suffix := strings.ToLower(pypath.PathSuffix(raw))
+	return nonCodeVerifyExtensions[suffix] || (suffix == "" && nonCodeVerifyFilenames[strings.ToLower(pypath.PathName(raw))])
 }
 
 // Edit then verify before finish switch from agent.verify_on_stop, auto meaning on outside chat apps
@@ -148,7 +147,7 @@ func verifyStatusDetail(status map[string]any) string {
 	}
 	summary := ""
 	if v := evidence["output_summary"]; pyTruthy(v) {
-		summary = pystr.Strip(pyrepr.Str(v))
+		summary = strings.TrimSpace(pyrepr.Str(v))
 	}
 	parts := []string{name}
 	if pyTruthy(command) {
@@ -191,14 +190,14 @@ func buildVerifyOnStopNudge(ctx context.Context, env *tools.Env, sessionID strin
 	verifyCommands := []string{}
 	if cmds, ok := facts["verifyCommands"].([]string); ok {
 		for _, c := range cmds {
-			if c = pystr.Strip(c); c != "" {
+			if c = strings.TrimSpace(c); c != "" {
 				verifyCommands = append(verifyCommands, c)
 			}
 		}
 	}
 	hasRecipe := workspaceHasRunnableRecipe(facts["root"])
 	addendum := ""
-	if guidance := verify.CodingVerifyGuidance(nil); guidance != "" {
+	if guidance := verify.CodingVerifyGuidance(ctx); guidance != "" {
 		addendum = "\n\n" + guidance
 	}
 

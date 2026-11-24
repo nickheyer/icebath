@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -42,7 +41,7 @@ func testEnv(t *testing.T) *tools.Env {
 		tools.ResetEnvPassthroughConfigCache()
 		tools.BundledPlatformSecretEnvs, tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv = bundled, table, adapters
 	})
-	return &tools.Env{Home: dir, Config: config.Tree{}, Values: &sync.Map{}, Cwd: dir}
+	return &tools.Env{Home: dir, Values: &sync.Map{}, Cwd: dir}
 }
 
 // A Python interpreter with the prefix it reports

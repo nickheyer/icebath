@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Presentation metadata of a profile read from profile.yaml
@@ -126,7 +125,7 @@ func ReadProfileMeta(profileDir string) ProfileMeta {
 		botTitle := ""
 		if ui, ok := data["ui_meta"].(map[string]any); ok {
 			if bots, ok := ui["icebath-bots"].(map[string]any); ok {
-				botTitle = pystr.Strip(strOr(bots["title"]))
+				botTitle = strings.TrimSpace(strOr(bots["title"]))
 			}
 		}
 		descAuto := false
@@ -134,9 +133,9 @@ func ReadProfileMeta(profileDir string) ProfileMeta {
 			descAuto = pyTruthy(v)
 		}
 		return ProfileMeta{
-			Description:     pystr.Strip(strOr(data["description"])),
+			Description:     strings.TrimSpace(strOr(data["description"])),
 			DescriptionAuto: descAuto,
-			DisplayName:     pystr.Strip(strOr(data["display_name"])),
+			DisplayName:     strings.TrimSpace(strOr(data["display_name"])),
 			BotTitle:        botTitle,
 			PreviousNames:   cleanPreviousNames(data["previous_names"]),
 		}
@@ -162,7 +161,7 @@ func cleanPreviousNames(raw any) []string {
 	cleaned := []string{}
 	seen := map[string]bool{}
 	for _, item := range items {
-		name := pystr.Strip(strOr(item))
+		name := strings.TrimSpace(strOr(item))
 		if name != "" && !seen[name] {
 			seen[name] = true
 			cleaned = append(cleaned, name)
@@ -182,13 +181,13 @@ func WriteProfileMeta(ctx context.Context, profileDir string, upd MetaUpdate) er
 		existing = map[string]any{}
 	}
 	if upd.Description != nil {
-		setOrdered(existing, "description", pystr.Strip(*upd.Description))
+		setOrdered(existing, "description", strings.TrimSpace(*upd.Description))
 	}
 	if upd.DescriptionAuto != nil {
 		setOrdered(existing, "description_auto", *upd.DescriptionAuto)
 	}
 	if upd.DisplayName != nil {
-		if dn := pystr.Strip(*upd.DisplayName); dn != "" {
+		if dn := strings.TrimSpace(*upd.DisplayName); dn != "" {
 			setOrdered(existing, "display_name", dn)
 		} else {
 			delete(existing, "display_name")
@@ -210,7 +209,7 @@ func WriteProfileMeta(ctx context.Context, profileDir string, upd MetaUpdate) er
 
 // Display name followed by the canonical id in parentheses, the bare id when they match or no name is set
 func FormatProfileLabel(name, displayName string) string {
-	dn := pystr.Strip(displayName)
+	dn := strings.TrimSpace(displayName)
 	if dn != "" && dn != name {
 		return fmt.Sprintf("%s (%s)", dn, name)
 	}
@@ -223,7 +222,7 @@ func SetProfileDisplayName(ctx context.Context, profileName, displayName string)
 	if err != nil {
 		return "", err
 	}
-	cleaned := pystr.Strip(displayName)
+	cleaned := strings.TrimSpace(displayName)
 	if n := utf8.RuneCountInString(cleaned); n > 64 {
 		return "", &ValueError{fmt.Sprintf("Display name too long (%d chars, max 64).", n)}
 	}

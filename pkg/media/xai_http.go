@@ -1,14 +1,16 @@
 package media
 
 import (
+	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -25,45 +27,36 @@ type xaiStorageConfig struct {
 	ExpiresAfter int
 }
 
-// Normalizes an xAI storage TTL, zero means permanent storage
-func coerceExpiresAfter(v any) int {
-	switch t := v.(type) {
-	case nil:
-		return 0
-	case string:
-		s := strings.ToLower(strings.TrimSpace(t))
-		switch s {
-		case "", "default", "none", "null", "never", "permanent", "forever", "0":
-			return 0
-		}
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			return safeXAIStorageExpiresAfter
-		}
-		if n <= 0 {
-			return 0
-		}
-		return min(n, maxXAIStorageExpiresAfter)
-	case bool:
-		return safeXAIStorageExpiresAfter
-	}
-	f, ok := config.AsFloat(v)
-	if !ok {
-		return safeXAIStorageExpiresAfter
-	}
-	if int(f) <= 0 {
+// Seconds xAI keeps a stored file by the text of a storage expiry setting, zero for permanent storage, the safe two days for text that names no number
+func coerceExpiresAfter(text string) int {
+	s := strings.ToLower(strings.TrimSpace(text))
+	switch s {
+	case "", "default", "none", "null", "never", "permanent", "forever", "0":
 		return 0
 	}
-	return min(int(f), maxXAIStorageExpiresAfter)
+	f, err := strconv.ParseFloat(s, 64)
+	switch {
+	case err != nil || math.IsNaN(f):
+		return safeXAIStorageExpiresAfter
+	case f < 1:
+		return 0
+	case f >= maxXAIStorageExpiresAfter:
+		return maxXAIStorageExpiresAfter
+	}
+	return int(f)
 }
 
 // Storage settings of the image_gen or video_gen xai block, on by default
 func readXAIStorageConfig(env *tools.Env, sectionName string) xaiStorageConfig {
-	storage := section(section(section(cfgOf(env), sectionName), "xai"), "storage")
+	ctx := tools.WithEnvHome(context.Background(), env)
+	enabled, publicURL, expires := settings.XAIImageStorage, settings.XAIImagePublicURL, settings.XAIImageExpiresAfter
+	if sectionName == "video_gen" {
+		enabled, publicURL, expires = settings.XAIVideoStorage, settings.XAIVideoPublicURL, settings.XAIVideoExpiresAfter
+	}
 	return xaiStorageConfig{
-		Enabled:      configBool(storage["enabled"], true),
-		PublicURL:    configBool(storage["public_url"], true),
-		ExpiresAfter: coerceExpiresAfter(storage["expires_after"]),
+		Enabled:      enabled.Get(ctx),
+		PublicURL:    publicURL.Get(ctx),
+		ExpiresAfter: coerceExpiresAfter(expires.Get(ctx)),
 	}
 }
 

@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"fmt"
 	"math"
 	"regexp"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -39,7 +40,7 @@ func ValidateCoalesceConfig(routeName string, route *pyjson.Object) error {
 	if isDict {
 		key = block.GetOr("key", nil)
 	}
-	if text, ok := key.(string); !ok || pystr.Strip(text) == "" {
+	if text, ok := key.(string); !ok || strings.TrimSpace(text) == "" {
 		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has a coalesce block without a non-empty string 'key'. "+
 			"Set coalesce.key to a payload field (e.g. 'pull_request.number') or a template "+
 			"(e.g. '{repository.full_name}#{number}').", routeName)}
@@ -149,7 +150,7 @@ func (c *WebhookCoalescer) Pending() map[string]*WebhookPendingEvent {
 
 // Route qualified group key of a dotted field or brace template, false when a field did not resolve
 func (c *WebhookCoalescer) GroupKey(routeName, keyTemplate string, payload, eventType any) (string, bool, error) {
-	template := pystr.Strip(keyTemplate)
+	template := strings.TrimSpace(keyTemplate)
 	if !containsRune(template, '{') {
 		template = "{" + template + "}"
 	}

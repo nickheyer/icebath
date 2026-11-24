@@ -119,7 +119,7 @@ func TestLoadDisabledToolsetsNoneWhenUnsetOrConfigFails(t *testing.T) {
 func fakeCodingSelection(t *testing.T, selection []string) {
 	t.Helper()
 	saved := codingSelection
-	codingSelection = func(*tools.Env, string, string) []string { return selection }
+	codingSelection = func(context.Context, *tools.Env, string, string) []string { return selection }
 	t.Cleanup(func() { codingSelection = saved })
 }
 

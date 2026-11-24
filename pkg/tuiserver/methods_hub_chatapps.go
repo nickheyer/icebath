@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -77,7 +76,7 @@ func chatAppsText(v any) string {
 }
 
 // Platforms of the profile with their state, pairing, webhooks and peers, and whether the background service starts with the computer
-func chatAppsList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func chatAppsList(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.ChatAppsList.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -273,7 +272,7 @@ func chatAppsPeers(ctx context.Context, h string) ([]tuigateway.ChatAppPeer, err
 }
 
 // Approves a pairing request or code, revokes an approved person, or clears the pending requests of a platform
-func chatAppsPairing(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func chatAppsPairing(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ChatAppsPairing.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -309,7 +308,7 @@ func chatAppsPairing(ctx context.Context, rid any, raw map[string]any, _ *tuihos
 }
 
 // Adds or replaces a webhook route, removes one, or posts a signed test payload to one, through the webhook command
-func chatAppsWebhook(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func chatAppsWebhook(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ChatAppsWebhook.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -335,7 +334,7 @@ func chatAppsWebhook(ctx context.Context, rid any, raw map[string]any, _ *tuihos
 }
 
 // Adds or updates a peer or removes one, through the peer command
-func chatAppsPeer(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func chatAppsPeer(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ChatAppsPeer.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -365,7 +364,7 @@ func chatAppsPeer(ctx context.Context, rid any, raw map[string]any, _ *tuihost.S
 }
 
 // Sends a message to a chat of a configured platform, through the send command
-func chatAppsSend(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func chatAppsSend(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ChatAppsSend.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

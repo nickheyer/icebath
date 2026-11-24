@@ -3,9 +3,11 @@ package browser
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -43,6 +45,18 @@ func testEnv(t *testing.T) *tools.Env {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
 	return &tools.Env{Home: dir}
+}
+
+// Writes the browser section as the config.yaml of the home h
+func writeBrowserSection(t *testing.T, h string, section map[string]any) {
+	t.Helper()
+	data, err := config.SafeDump(map[string]any{"browser": section})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {

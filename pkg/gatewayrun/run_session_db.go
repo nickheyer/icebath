@@ -7,12 +7,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -188,28 +186,9 @@ func housekeepingChore(label string, fn func() error) {
 	}
 }
 
-// Auto archive and auto prune with vacuum of the state db of the profile in scope, by its sessions config
+// Auto archive and auto prune with vacuum of the state db of the profile in scope, by its sessions settings
 func housekeepingStateDBMaintenance(ctx context.Context, launch *launchSessions) error {
-	full, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return err
-	}
-	sessCfg := map[string]any{}
-	if raw := full["sessions"]; pyrepr.Truthy(raw) {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			return &pyAttributeError{msg: fmt.Sprintf("config sessions section is %s where a mapping was expected", errchain.Kind(raw))}
-		}
-		sessCfg = m
-	}
-	get := func(key string, def any) any {
-		if v, ok := sessCfg[key]; ok {
-			return v
-		}
-		return def
-	}
-	autoArchive := pyrepr.Truthy(get("auto_archive", false))
-	autoPrune := pyrepr.Truthy(get("auto_prune", false))
+	autoArchive, autoPrune := settings.SessionsAutoArchive.Get(ctx), settings.AutoPrune.Get(ctx)
 	if !autoArchive && !autoPrune {
 		return nil
 	}
@@ -218,36 +197,17 @@ func housekeepingStateDBMaintenance(ctx context.Context, launch *launchSessions)
 		return err
 	}
 	defer state.ReleaseOrClose(adb)
+	minIntervalHours := settings.SessionsMinIntervalHours.Get(ctx).Hours()
 	if autoArchive {
-		idleDays, err := pyint.Float(get("auto_archive_days", 3))
-		if err != nil {
-			return err
-		}
-		minInterval, err := pyint.Int64(get("min_interval_hours", 24))
-		if err != nil {
-			return err
-		}
-		adb.MaybeAutoArchive(ctx, idleDays, float64(minInterval), true)
+		adb.MaybeAutoArchive(ctx, settings.SessionsAutoArchiveDays.Get(ctx).Hours()/24, minIntervalHours, true)
 	}
 	if autoPrune {
 		opts := state.NewAutoPruneOptions()
-		retention, err := pyint.Int64(get("retention_days", 90))
-		if err != nil {
-			return err
-		}
-		minInterval, err := pyint.Int64(get("min_interval_hours", 24))
-		if err != nil {
-			return err
-		}
-		minVacuum, err := pyint.Int64(get("min_vacuum_interval_days", 30))
-		if err != nil {
-			return err
-		}
-		days := float64(retention)
+		days := settings.SessionsRetentionDays.Get(ctx).Hours() / 24
 		opts.RetentionDays = &days
-		opts.MinIntervalHours = float64(minInterval)
-		opts.MinVacuumIntervalDays = float64(minVacuum)
-		opts.Vacuum = pyrepr.Truthy(get("vacuum_after_prune", true))
+		opts.MinIntervalHours = minIntervalHours
+		opts.MinVacuumIntervalDays = settings.SessionsMinVacuumIntervalDays.Get(ctx).Hours() / 24
+		opts.Vacuum = settings.SessionsVacuumAfterPrune.Get(ctx)
 		opts.SessionsDir = profileSessionsDir(ctx, launch)
 		adb.MaybeAutoPruneAndVacuum(ctx, opts)
 	}

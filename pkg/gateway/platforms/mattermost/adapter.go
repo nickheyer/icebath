@@ -1,6 +1,8 @@
 package mattermost
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -85,30 +87,13 @@ func withMentionsDisabled(payload *pyjson.Object) *pyjson.Object {
 	return payload
 }
 
-// Stripped non blank channel ids of a list or a comma separated value
-func channelIDSet(raw any) map[string]bool {
+// Channel ids a list setting holds for the profile served
+func channelSetting(ctx context.Context, channels *settings.List) map[string]bool {
 	out := map[string]bool{}
-	items, ok := raw.([]any)
-	if !ok {
-		for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-			items = append(items, part)
-		}
-	}
-	for _, c := range items {
-		if s := pystr.Strip(pyrepr.Str(c)); s != "" {
-			out[s] = true
-		}
+	for _, id := range channels.Strings(gateway.SettingsContext(ctx)) {
+		out[id] = true
 	}
 	return out
-}
-
-// Channel ids a list setting holds, written as a list or as comma separated text
-func channelSetting(ctx context.Context, e settings.Entry) (map[string]bool, error) {
-	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
-	if err != nil || v.Value == nil {
-		return map[string]bool{}, err
-	}
-	return channelIDSet(v.Value), nil
 }
 
 // Send result of a created or patched post, the given error when the reply carries no id
@@ -163,7 +148,7 @@ func validateMattermostConfig(ctx context.Context, config *gateway.PlatformConfi
 	if !ok {
 		return false, attributeError(token, "strip")
 	}
-	if pystr.Strip(tokenText) == "" {
+	if strings.TrimSpace(tokenText) == "" {
 		pkgLog().Debug("Mattermost: MATTERMOST_TOKEN not set")
 		return false, nil
 	}
@@ -171,7 +156,7 @@ func validateMattermostConfig(ctx context.Context, config *gateway.PlatformConfi
 	if !ok {
 		return false, attributeError(serverURL, "strip")
 	}
-	if pystr.Strip(urlText) == "" {
+	if strings.TrimSpace(urlText) == "" {
 		pkgLog().Warn("Mattermost: the server address is not set")
 		return false, nil
 	}
@@ -208,7 +193,7 @@ func mattermostAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Adapter for a platform config reading the server URL, token and reply mode from config then env
+// Adapter for a platform config with the server URL and reply mode of the profile served and the token of the connection
 func NewMattermostAdapter(ctx context.Context, config *gateway.PlatformConfig) (*MattermostAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -225,23 +210,8 @@ func NewMattermostAdapter(ctx context.Context, config *gateway.PlatformConfig) (
 	if !ok {
 		return nil, attributeError(serverURL, "rstrip")
 	}
-	a.baseURL, a.token = pystr.RstripChars(urlText, "/"), token
-	if config.Extra == nil {
-		return nil, attributeError(nil, "get")
-	}
-	replyMode := config.Extra["reply_mode"]
-	if !pyrepr.Truthy(replyMode) {
-		scoped, err := gateway.GetScopedSecret(ctx, "MATTERMOST_REPLY_MODE", "off", false)
-		if err != nil {
-			return nil, err
-		}
-		replyMode = scoped
-	}
-	modeText, ok := replyMode.(string)
-	if !ok {
-		return nil, attributeError(replyMode, "lower")
-	}
-	a.replyMode = pystr.Lower(modeText)
+	a.baseURL, a.token = strings.TrimRight(urlText, "/"), token
+	a.replyMode = settings.MattermostReplyMode.Get(gateway.SettingsContext(ctx))
 	return a, nil
 }
 
@@ -263,7 +233,7 @@ func (a *MattermostAdapter) api(ctx context.Context, method, path string, payloa
 		pkgLog().Error(fmt.Sprintf("MM API path traversal blocked: %s", path))
 		return map[string]any{}, nil
 	}
-	target := a.baseURL + "/api/v4/" + pystr.LstripChars(path, "/")
+	target := a.baseURL + "/api/v4/" + strings.TrimLeft(path, "/")
 	isPost := method == "POST"
 	if isPost {
 		a.mu.Lock()
@@ -348,7 +318,7 @@ func (a *MattermostAdapter) AddReaction(ctx context.Context, chatID, messageID, 
 // Whether the last failed POST clearly names an invalid or missing thread root
 func (a *MattermostAdapter) lastPostFailureIsBrokenThreadRoot() bool {
 	a.mu.Lock()
-	status, body := a.lastPostStatus, pystr.Lower(a.lastPostError)
+	status, body := a.lastPostStatus, strings.ToLower(a.lastPostError)
 	a.mu.Unlock()
 	if status == nil || (*status != 400 && *status != 404) || body == "" {
 		return false
@@ -384,7 +354,7 @@ func (a *MattermostAdapter) postPreservingThread(ctx context.Context, chatID str
 	if message, _ := flat.Get("message"); pyrepr.Truthy(message) {
 		body = pyrepr.Str(message)
 	}
-	visible := pystr.Strip("⚠️ Mattermost thread delivery failed; posting final reply in channel.\n\n" + body)
+	visible := strings.TrimSpace("⚠️ Mattermost thread delivery failed; posting final reply in channel.\n\n" + body)
 	var message any
 	if text := a.WarningText(ctx, visible, &body, "", "", nil); text != nil {
 		message = *text
@@ -667,7 +637,7 @@ func (a *MattermostAdapter) FormatMessage(content string) string {
 // Downloads a URL and posts it as a file attachment, the caption and URL as text when anything fails
 func (a *MattermostAdapter) sendURLAsFile(ctx context.Context, chatID, rawURL, caption, replyTo, kind string, metadata map[string]any) (gateway.SendResult, error) {
 	fallback := func() (gateway.SendResult, error) {
-		return a.Send(ctx, chatID, pystr.Strip(caption+"\n"+rawURL), replyTo, metadata)
+		return a.Send(ctx, chatID, strings.TrimSpace(caption+"\n"+rawURL), replyTo, metadata)
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), rawURL) {
 		pkgLog().Warn("Mattermost: blocked unsafe URL (SSRF protection)")
@@ -998,26 +968,19 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 
 // Mention gates a channel post, the cleaned text or false when the post is ignored
 func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, messageText string) (string, bool, error) {
-	allowed, err := channelSetting(ctx, settings.MattermostAllowedChannels)
-	if err != nil {
-		return "", false, err
-	}
-	if len(allowed) > 0 && !allowed[channelID] {
+	if allowed := channelSetting(ctx, settings.MattermostAllowedChannels); len(allowed) > 0 && !allowed[channelID] {
 		pkgLog().Debug(fmt.Sprintf("Mattermost: ignoring message in non-allowed channel: %s", channelID))
 		return "", false, nil
 	}
 	requireMention := settings.MattermostRequireMention.Get(gateway.SettingsContext(ctx))
-	freeChannels, err := channelSetting(ctx, settings.MattermostFreeResponseChannels)
-	if err != nil {
-		return "", false, err
-	}
+	freeChannels := channelSetting(ctx, settings.MattermostFreeResponseChannels)
 	a.mu.Lock()
 	mentionPatterns := []string{"@" + pyrepr.Str(a.botUsername), "@" + pyrepr.Str(a.botUserID)}
 	a.mu.Unlock()
 	hasMention := false
-	lowered := pystr.Lower(messageText)
+	lowered := strings.ToLower(messageText)
 	for _, pattern := range mentionPatterns {
-		if strings.Contains(lowered, pystr.Lower(pattern)) {
+		if strings.Contains(lowered, strings.ToLower(pattern)) {
 			hasMention = true
 			break
 		}
@@ -1036,7 +999,7 @@ func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, m
 			if err != nil {
 				return "", false, err
 			}
-			messageText = pystr.Strip(stripped)
+			messageText = strings.TrimSpace(stripped)
 		}
 	}
 	return messageText, true, nil
@@ -1188,8 +1151,8 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 	if threadID == "" && a.replyMode == "thread" && !isDM && pyrepr.Truthy(postIDValue) {
 		threadID = postID
 	}
-	if first := pystr.Slice(messageText, 0, 1); first != "" && pystr.Strip(first) == "" && strings.HasPrefix(pystr.Lstrip(messageText), "/") {
-		messageText = pystr.Lstrip(messageText)
+	if first := pystr.Slice(messageText, 0, 1); first != "" && strings.TrimSpace(first) == "" && strings.HasPrefix(strings.TrimLeftFunc(messageText, unicode.IsSpace), "/") {
+		messageText = strings.TrimLeftFunc(messageText, unicode.IsSpace)
 	}
 	fileIDs, _ := postMap["file_ids"].([]any)
 	if raw := postMap["file_ids"]; pyrepr.Truthy(raw) && fileIDs == nil {
@@ -1229,7 +1192,7 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 	if !ok {
 		return attributeError(senderNameValue, "lstrip")
 	}
-	userName := pystr.LstripChars(senderName, "@")
+	userName := strings.TrimLeft(senderName, "@")
 	if userName == "" {
 		userName = senderID
 	}

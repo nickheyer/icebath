@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -165,13 +164,13 @@ func (q *a2aRequest) requestPublicURL() string {
 		host = q.r.Host
 	}
 	host, _, _ = strings.Cut(host, ",")
-	host = pystr.Strip(host)
+	host = strings.TrimSpace(host)
 	scheme := q.r.Header.Get("X-Forwarded-Proto")
 	if scheme == "" {
 		scheme = "http"
 	}
 	scheme, _, _ = strings.Cut(scheme, ",")
-	scheme = pystr.Strip(scheme)
+	scheme = strings.TrimSpace(scheme)
 	if host == "" {
 		return ""
 	}
@@ -276,7 +275,7 @@ func (q *a2aRequest) doPOST() {
 	if p := getOr(reqObj, "params"); p != nil {
 		params = p
 	}
-	version := pystr.Strip(q.r.Header.Get("A2A-Version"))
+	version := strings.TrimSpace(q.r.Header.Get("A2A-Version"))
 	paramsObj, paramsIsObj := params.(*pyjson.Object)
 	var rt route
 	if paramsIsObj {

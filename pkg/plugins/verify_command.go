@@ -1,6 +1,8 @@
 package plugins
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"io"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -199,12 +200,12 @@ func printVerifyHumanReport(w io.Writer, recipe *verify.Recipe, source string, r
 	for _, p := range result.Phases {
 		if !p.OK() {
 			fmt.Fprintf(w, "\n--- output tail: %s (%s) ---\n", p.Phase, p.Command)
-			fmt.Fprintln(w, pystr.Rstrip(p.OutputTail))
+			fmt.Fprintln(w, strings.TrimRightFunc(p.OutputTail, unicode.IsSpace))
 		}
 	}
 	if r := result.Readiness; r != nil && !r.Ready && r.OutputTail != "" {
 		fmt.Fprintln(w, "\n--- output tail: start ---")
-		fmt.Fprintln(w, pystr.Rstrip(r.OutputTail))
+		fmt.Fprintln(w, strings.TrimRightFunc(r.OutputTail, unicode.IsSpace))
 	}
 }
 

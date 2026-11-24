@@ -21,7 +21,6 @@ import (
 	"golang.org/x/net/http/httpproxy"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -51,7 +50,7 @@ type Repo struct {
 
 // Web, API and identity of a repository URL in https or ssh form
 func ParseRepo(raw string) (Repo, error) {
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	var scheme, host, owner, name string
 	if m := scpRepoRE.FindStringSubmatch(raw); m != nil {
 		scheme, host, owner, name = "https", m[1], m[2], m[3]
@@ -138,7 +137,7 @@ func releaseHTTPClient(follow bool) *http.Client {
 // Token release API requests carry, ICEBATH_GITHUB_TOKEN before GITHUB_TOKEN
 func githubToken() string {
 	for _, name := range []string{"ICEBATH_GITHUB_TOKEN", "GITHUB_TOKEN"} {
-		if token := pystr.Strip(os.Getenv(name)); token != "" {
+		if token := strings.TrimSpace(os.Getenv(name)); token != "" {
 			return token
 		}
 	}

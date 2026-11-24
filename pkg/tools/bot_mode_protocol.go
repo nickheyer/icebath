@@ -5,8 +5,6 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // BotModeProtocolHeading opens the Bot Chat teammate section and the plugin era SOUL append
@@ -23,7 +21,7 @@ func StripLegacyBotProtocol(text string) string {
 	if err != nil {
 		panic(err)
 	}
-	return pystr.Strip(out) + "\n"
+	return strings.TrimSpace(out) + "\n"
 }
 
 // CoerceCapabilityBool is the image routing strict boolean of a capability override, ok false when unset

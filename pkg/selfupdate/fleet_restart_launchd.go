@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Launchd calls of the restart phase the tests replace
@@ -58,7 +57,7 @@ func restartLaunchdGatewayAfterUpdate(ctx context.Context, w io.Writer, supervis
 	case errors.Is(failure, errNoLaunchdInstall):
 		return []string{}, []string{}, nil
 	case errors.As(failure, &called):
-		fmt.Fprintf(w, "  ⚠ Gateway restart failed: %s\n    The gateway may be DOWN on pre-update code. Recover manually: icebath gateway restart\n", pystr.Strip(called.Stderr))
+		fmt.Fprintf(w, "  ⚠ Gateway restart failed: %s\n    The gateway may be DOWN on pre-update code. Recover manually: icebath gateway restart\n", strings.TrimSpace(called.Stderr))
 		return []string{}, []string{currentLabel}, nil
 	case isCommandMissing(failure):
 		fmt.Fprintf(w, "  ⚠ Could not restart the gateway (%s).\n    Recover manually: icebath gateway restart\n", launchErrorText(failure))
@@ -194,7 +193,7 @@ func restartSiblingLaunchdGateway(ctx context.Context, w io.Writer, label string
 			return err
 		}
 		*failedOrStaleUnits = append(*failedOrStaleUnits, label)
-		fmt.Fprintf(w, "  ⚠ Failed to restart %s: %s\n    Recover manually: launchctl kickstart -k %s/%s\n", label, pystr.Strip(called.Stderr), domain, label)
+		fmt.Fprintf(w, "  ⚠ Failed to restart %s: %s\n    Recover manually: launchctl kickstart -k %s/%s\n", label, strings.TrimSpace(called.Stderr), domain, label)
 		return nil
 	}
 	fresh, err := fleetWaitLaunchdPID(ctx, label, oldPID, haveOld, 15.0, domain)

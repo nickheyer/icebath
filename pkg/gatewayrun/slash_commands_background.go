@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -12,12 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Starts the prompt as a background agent with its own session, answering in this chat when done
 func (r *GatewayRunner) handleBackgroundCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	prompt := pystr.Strip(event.GetCommandArgs())
+	prompt := strings.TrimSpace(event.GetCommandArgs())
 	if prompt == "" {
 		return i18n.T(ctx, "gateway.background.usage", "", nil), nil
 	}
@@ -38,7 +39,7 @@ func (r *GatewayRunner) handleBackgroundCommand(ctx context.Context, event *gate
 
 // Answers a side question from a transcript snapshot in the background, leaving live history untouched
 func (r *GatewayRunner) handleBtwCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	question := pystr.Strip(event.GetCommandArgs())
+	question := strings.TrimSpace(event.GetCommandArgs())
 	if question == "" {
 		return i18n.T(ctx, "gateway.btw.usage", "", nil), nil
 	}

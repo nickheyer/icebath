@@ -70,7 +70,7 @@ var (
 
 // Raw github URL of plugin.json at the pinned commit, empty for a repo off github
 func rawManifestURL(repo, sha, subdir string) string {
-	m, _ := presenceGitHub.FindStringMatch(pystr.Strip(repo))
+	m, _ := presenceGitHub.FindStringMatch(strings.TrimSpace(repo))
 	if m == nil {
 		return ""
 	}

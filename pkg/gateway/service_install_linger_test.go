@@ -199,7 +199,6 @@ func TestSystemdInstallCallsLingerHelper(t *testing.T) {
 func systemInstallFakes(t *testing.T, unitPath string, helperCalls *[]string) {
 	t.Helper()
 	installHooks.requireRoot = func(string) error { return nil }
-	installHooks.hasLegacy = func(context.Context) bool { return false }
 	installHooks.unitPath = func(context.Context, bool) (string, error) { return unitPath, nil }
 	installHooks.ensureSystemLinger = func(_ context.Context, _ io.Writer, username string) error {
 		*helperCalls = append(*helperCalls, username)
@@ -218,7 +217,6 @@ func TestSystemdInstallTargetsLingerAtSystemServiceUser(t *testing.T) {
 				return "[Service]\nUser=" + runAsUser + "\n", nil
 			}
 			installHooks.conflictWarning = func(context.Context, io.Writer) error { return nil }
-			installHooks.legacyWarning = func(context.Context, io.Writer) {}
 			if err := systemdInstall(context.Background(), out, false, true, user, true, false, false); err != nil {
 				t.Fatal(err)
 			}
@@ -265,7 +263,6 @@ func TestSystemdInstallRepairPathKeepsLingerGuarantee(t *testing.T) {
 			}
 			installHooks.unitPath = func(context.Context, bool) (string, error) { return unitPath, nil }
 			installHooks.unitIsCurrent = func(context.Context, bool) (bool, error) { return false, nil }
-			installHooks.hasLegacy = func(context.Context) bool { return false }
 			installHooks.requireRoot = func(string) error { return nil }
 			installHooks.syncHome = func(context.Context, bool) error { return nil }
 			installHooks.readUser = func(string) (string, error) { return "", nil }

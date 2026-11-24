@@ -42,12 +42,12 @@ var compressionRecoveryPoll = 50 * time.Millisecond
 
 // Points the bound session id of the agent env and the log context at the new session
 func rebindSessionContext(ctx context.Context, a *AIAgent, sessionID string) {
-	bindCurrentSessionID(ctx, a, sessionID)
+	bindCurrentSessionID(a, sessionID)
 	setLoggingSessionContext(sessionID)
 }
 
-// Binds the session id the agent env and the process env resolve, the gateway set_current_session_id
-func bindCurrentSessionID(ctx context.Context, a *AIAgent, sessionID string) {
+// Binds the session id the agent's tool env and the processes its tools start resolve, the gateway set_current_session_id
+func bindCurrentSessionID(a *AIAgent, sessionID string) {
 	if a.env != nil {
 		vars := map[string]string{}
 		for _, name := range tools.SessionContextEnvVars {
@@ -57,9 +57,6 @@ func bindCurrentSessionID(ctx context.Context, a *AIAgent, sessionID string) {
 		}
 		vars["ICEBATH_SESSION_ID"] = sessionID
 		tools.BindSessionContext(a.env, vars)
-	}
-	if !tools.IsDelegatedChildContext(ctx) {
-		_ = os.Setenv("ICEBATH_SESSION_ID", sessionID)
 	}
 }
 

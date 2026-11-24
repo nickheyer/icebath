@@ -371,7 +371,7 @@ func newHTTPSinkWriter(ctx context.Context, secretName, apiKey string, transport
 		}
 		apiKey = secret
 	}
-	return httpSinkWriter{secretName: secretName, APIKey: pystr.Strip(apiKey), transport: transport}, nil
+	return httpSinkWriter{secretName: secretName, APIKey: strings.TrimSpace(apiKey), transport: transport}, nil
 }
 
 // Sink error when no API key is configured
@@ -686,7 +686,7 @@ func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *pyjson.Ob
 	job := &TeamsMeetingPipelineJob{JobID: "teams-job-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12], EventID: eventID, DedupeKey: eventID,
 		Status: "received", SourceEventType: sourceEventType, MeetingRef: meetingRef, ErrorInfo: pyjson.NewObject()}
 	for _, f := range [][2]string{{"event_id", job.EventID}, {"source_event_type", job.SourceEventType}, {"dedupe_key", job.DedupeKey}} {
-		if pystr.Strip(f[1]) == "" {
+		if strings.TrimSpace(f[1]) == "" {
 			return nil, requiredError("TeamsMeetingPipelineJob", f[0])
 		}
 	}
@@ -860,7 +860,7 @@ func (p *TeamsMeetingPipeline) obtainTranscript(ctx context.Context, job *TeamsM
 		}
 		if transcriptArtifact != nil && transcriptText != "" {
 			*artifacts = append(*artifacts, transcriptArtifact)
-			if int64(utf8.RuneCountInString(pystr.Strip(transcriptText))) < p.Config.TranscriptMinChars {
+			if int64(utf8.RuneCountInString(strings.TrimSpace(transcriptText))) < p.Config.TranscriptMinChars {
 				transcriptText = ""
 			}
 		}
@@ -994,7 +994,7 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 
 // Recording itself when it is audio or extraction is off, else a wav extracted beside it by ffmpeg
 func (p *TeamsMeetingPipeline) prepareAudioPath(ctx context.Context, recordingPath string) (string, error) {
-	if audioSuffixes[pystr.Lower(pypath.PathSuffix(recordingPath))] || !p.Config.FFmpegExtractAudio {
+	if audioSuffixes[strings.ToLower(pypath.PathSuffix(recordingPath))] || !p.Config.FFmpegExtractAudio {
 		return recordingPath, nil
 	}
 	ffmpeg, ok := pyshutil.Which("ffmpeg", nil)
@@ -1014,7 +1014,7 @@ func (p *TeamsMeetingPipeline) prepareAudioPath(ctx context.Context, recordingPa
 		if err != nil {
 			return "", err
 		}
-		return "", &TeamsPipelineRetryableError{TeamsPipelineError{"ffmpeg audio extraction failed: " + pystr.Strip(stderr)}}
+		return "", &TeamsPipelineRetryableError{TeamsPipelineError{"ffmpeg audio extraction failed: " + strings.TrimSpace(stderr)}}
 	}
 	return audioPath, nil
 }
@@ -1184,7 +1184,7 @@ func organizerUserIDFromPayload(payload *pyjson.Object) string {
 			}
 		}
 		if found, ok := user.(*pyjson.Object); ok && found != nil && pyrepr.Truthy(get(found, "id")) {
-			return pystr.Strip(pyrepr.Str(get(found, "id")))
+			return strings.TrimSpace(pyrepr.Str(get(found, "id")))
 		}
 	}
 	return strField(or(get(payload, "organizerUserId"), get(payload, "organizer_user_id"), ""))
@@ -1193,11 +1193,11 @@ func organizerUserIDFromPayload(payload *pyjson.Object) string {
 // Whether the resourceData id names a transcript or recording artifact instead of a meeting
 func resourceDataIDIsArtifact(notification, resourceData *pyjson.Object) bool {
 	odataType := textOrEmpty(odataField(resourceData, "odata.type"))
-	lowered := pystr.Lower(odataType)
+	lowered := strings.ToLower(odataType)
 	if strings.Contains(lowered, "calltranscript") || strings.Contains(lowered, "callrecording") {
 		return true
 	}
-	resource := pystr.Lower(textOrEmpty(get(notification, "resource")))
+	resource := strings.ToLower(textOrEmpty(get(notification, "resource")))
 	for _, marker := range []string{"getalltranscripts", "getallrecordings", "/transcripts", "/recordings"} {
 		if strings.Contains(resource, marker) {
 			return true
@@ -1281,7 +1281,7 @@ func cleanItems(values any) ([]any, error) {
 	}
 	out := []any{}
 	for _, item := range items {
-		if text := pystr.Strip(pyrepr.Str(item)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(item)); text != "" {
 			out = append(out, text)
 		}
 	}
@@ -1297,7 +1297,7 @@ type summaryFields struct {
 
 // Summary fields of a model reply holding one JSON object, prose or code fences around it ignored
 func parseSummaryJSON(content string) (summaryFields, error) {
-	text := pystr.Strip(content)
+	text := strings.TrimSpace(content)
 	if text == "" {
 		return heuristicSummary(""), nil
 	}
@@ -1327,7 +1327,7 @@ func parseSummaryJSON(content string) (summaryFields, error) {
 			return summaryFields{}, err
 		}
 	}
-	out.Confidence = pystr.Strip(pyrepr.Str(or(get(dict, "confidence"), "medium")))
+	out.Confidence = strings.TrimSpace(pyrepr.Str(or(get(dict, "confidence"), "medium")))
 	out.ConfidenceNotes = strField(get(dict, "confidence_notes"))
 	return out, nil
 }
@@ -1336,9 +1336,9 @@ func parseSummaryJSON(content string) (summaryFields, error) {
 func heuristicSummary(transcriptText string) summaryFields {
 	lines, lowered := []string{}, []string{}
 	for _, line := range pystr.Splitlines(transcriptText, false) {
-		if pystr.Strip(line) != "" {
-			stripped := pystr.StripChars(line, " -*\t")
-			lines, lowered = append(lines, stripped), append(lowered, pystr.Lower(stripped))
+		if strings.TrimSpace(line) != "" {
+			stripped := strings.Trim(line, " -*\t")
+			lines, lowered = append(lines, stripped), append(lowered, strings.ToLower(stripped))
 		}
 	}
 	pickLines := func(limit int, match func(low string) bool) []any {
@@ -1355,7 +1355,7 @@ func heuristicSummary(transcriptText string) summaryFields {
 		summary = "Transcript unavailable or too sparse for a confident summary."
 	}
 	confidence := "medium"
-	if utf8.RuneCountInString(pystr.Strip(transcriptText)) < 300 {
+	if utf8.RuneCountInString(strings.TrimSpace(transcriptText)) < 300 {
 		confidence = "low"
 	}
 	return summaryFields{
@@ -1398,5 +1398,5 @@ func renderSummaryMarkdown(payload *TeamsMeetingSummaryPayload) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }

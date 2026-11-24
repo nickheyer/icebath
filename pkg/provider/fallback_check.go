@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -102,7 +101,7 @@ func fallbackReportedModelIsEvidence(ctx context.Context, provider, model string
 		return false, err
 	}
 	host := "." + hostname + "."
-	lowered := pystr.Lower(pystr.Strip(model))
+	lowered := strings.ToLower(strings.TrimSpace(model))
 	name := provider
 	if profile := getProviderProfile(ctx, provider); profile != nil {
 		name = profile.Name
@@ -118,7 +117,7 @@ func fallbackReportedModelIsEvidence(ctx context.Context, provider, model string
 
 // Lowercased model id with a Vertex publisher path reduced to publisher and model
 func fallbackCanonicalModelID(modelID string) string {
-	return fallbackVertexPublisherPathRe.ReplaceAllString(pystr.Lower(pystr.Strip(modelID)), "${1}/")
+	return fallbackVertexPublisherPathRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(modelID)), "${1}/")
 }
 
 // AnsweredByRequestedModel reports a provider reported model that is the requested one or a dated snapshot of it, an empty report matching
@@ -153,13 +152,13 @@ func fallbackWithoutSDKRetries(client AuxClient) AuxClient {
 
 // Runtime of one fallback entry resolved from its provider pin, model, base url and inline or env backed key
 func resolveFallbackEntryRuntime(ctx context.Context, entry map[string]any) (*Runtime, error) {
-	return ResolveRuntimeProvider(ctx, home.Dir(ctx), pystr.Strip(auxStrOr(entry["provider"])), pystr.Strip(auxStrOr(entry["model"])),
+	return ResolveRuntimeProvider(ctx, home.Dir(ctx), strings.TrimSpace(auxStrOr(entry["provider"])), strings.TrimSpace(auxStrOr(entry["model"])),
 		auxStrOr(entry["base_url"]), ResolveFallbackEntryAPIKey(ctx, "", entry))
 }
 
 // CheckFallbackEntryStatic resolves an entry the way the fallback switch does without sending an inference request, an error only for a host abort or an unreadable config
 func CheckFallbackEntryStatic(ctx context.Context, entry map[string]any, redact FallbackCheckRedactor) (*FallbackEntryCheck, error) {
-	result := &FallbackEntryCheck{Provider: pystr.Lower(pystr.Strip(auxStrOr(entry["provider"]))), Model: auxStrOr(entry["model"])}
+	result := &FallbackEntryCheck{Provider: strings.ToLower(strings.TrimSpace(auxStrOr(entry["provider"]))), Model: auxStrOr(entry["model"])}
 	var runtime *Runtime
 	var err error
 	if raised := auxRecoverRaise(func() { runtime, err = resolveFallbackEntryRuntime(ctx, entry) }); raised != nil {
@@ -188,7 +187,7 @@ func CheckFallbackEntryStatic(ctx context.Context, entry map[string]any, redact 
 	}
 	result.Configured = true
 	result.BaseURL = fallbackRedacted(redact, runtime.BaseURL, nil, -1)
-	baseURLHint := pystr.Strip(auxStrOr(entry["base_url"]))
+	baseURLHint := strings.TrimSpace(auxStrOr(entry["base_url"]))
 	explicit, hinted, err := FallbackAPIModeHint(ctx, entry, result.Provider, &baseURLHint)
 	if err != nil {
 		return nil, err
@@ -279,7 +278,7 @@ func fallbackBodyFailure(raw any) (map[string]any, bool) {
 		if candidate := auxEmbeddedProviderError(layer); embedded == nil && fallbackAnyTruthy(candidate) {
 			embedded = candidate
 		}
-		failed = failed || fallbackFailedStatuses[pystr.Lower(auxStrOr(auxField(layer, "status", nil)))]
+		failed = failed || fallbackFailedStatuses[strings.ToLower(auxStrOr(auxField(layer, "status", nil)))]
 	}
 	return embedded, failed
 }
@@ -296,7 +295,7 @@ func fallbackAnyTruthy(errObj map[string]any) bool {
 
 // Reports a Responses style output no text can be read from, a message whose content is a bare number or true or a part whose type is a list or an object
 func fallbackOutputMalformed(response any) bool {
-	if text, ok := auxField(response, "output_text", nil).(string); ok && pystr.Strip(text) != "" {
+	if text, ok := auxField(response, "output_text", nil).(string); ok && strings.TrimSpace(text) != "" {
 		return false
 	}
 	output, _ := auxField(response, "output", nil).([]any)
@@ -362,7 +361,7 @@ func fallbackJudgeAnswer(ctx context.Context, result *FallbackEntryCheck, raw an
 		result.ErrorClass = "live_" + auxErrorClass(relayed, provider, result.Model)
 		result.Error = fallbackRedacted(redact, relayed.Error(), secrets, 300)
 	case failed || len(choices) == 0 || auxField(choices[0], "message", nil) == nil ||
-		pystr.Lower(auxStrOr(auxField(choices[0], "finish_reason", nil))) == "error" ||
+		strings.ToLower(auxStrOr(auxField(choices[0], "finish_reason", nil))) == "error" ||
 		auxIsRouterTimeoutShimResponse(response) || ExtractContentOrReasoning(response, -1) == "":
 		result.InferenceReady, result.ErrorClass = new(false), "live_response"
 		result.Error = "the provider answered without a usable completion"
@@ -388,7 +387,7 @@ type ProviderClientResolver func(ctx context.Context, provider, model string, op
 
 // ResolveRouteEntryClient builds the client the fallback swap binds for an entry, shared with the live check, the chat completions adapter of a Responses provider when rawCodex is off
 func ResolveRouteEntryClient(ctx context.Context, resolve ProviderClientResolver, entry map[string]any, provider, model string, rawCodex bool) (RouteEntryClient, error) {
-	baseURLHint := pystr.Strip(auxStrOr(entry["base_url"]))
+	baseURLHint := strings.TrimSpace(auxStrOr(entry["base_url"]))
 	apiKeyHint := ResolveFallbackEntryAPIKey(ctx, "", entry)
 	explicit, apiMode, err := FallbackAPIModeHint(ctx, entry, provider, &baseURLHint)
 	if err != nil {

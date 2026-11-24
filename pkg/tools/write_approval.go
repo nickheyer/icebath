@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Write approval subsystems gating cross session writes
@@ -27,38 +28,19 @@ const (
 	WriteApprovalSkills = "skills"
 )
 
-var writeApprovalSubsystems = setOf(WriteApprovalMemory, WriteApprovalSkills)
-
-// Per subsystem config key holding the single boolean gate
-const writeApprovalConfigKey = "write_approval"
-
-var writeApprovalTruthy = setOf("on", "true", "yes", "1", "approve", "enabled")
-
 // Write origin of a regular foreground agent turn
 const foregroundOrigin = "foreground"
 
 // Installed skill directory lookup by name, registered by the skills package at init
 var FindSkillDir func(env *Env, name string) string
 
-// Subsystem write_approval flag from the live config, unset or invalid values leave the gate off
-func WriteApprovalEnabled(env *Env, subsystem string) bool {
-	if !writeApprovalSubsystems[subsystem] {
-		return false
-	}
-	tree, err := config.Load(envHome(env), configLookup(env))
-	if err != nil {
-		return false
-	}
-	return normalizeWriteApprovalEnabled(tree.Get(subsystem + "." + writeApprovalConfigKey))
-}
+// Setting holding each subsystem's write approval switch
+var writeApprovalSettings = map[string]*settings.Bool{WriteApprovalMemory: settings.AskBeforeMemory, WriteApprovalSkills: settings.SkillsWriteApproval}
 
-// Coerces a config value to the gate state, real booleans pass and only the truthy strings enable
-func normalizeWriteApprovalEnabled(value any) bool {
-	if b, ok := value.(bool); ok {
-		return b
-	}
-	s, ok := value.(string)
-	return ok && writeApprovalTruthy[strings.ToLower(pyStrip(s))]
+// Whether the env's profile asks before a subsystem's writes land, off for an unknown subsystem
+func WriteApprovalEnabled(env *Env, subsystem string) bool {
+	s, ok := writeApprovalSettings[subsystem]
+	return ok && s.Get(envHomeCtx(context.Background(), env))
 }
 
 // Directory holding one subsystem's staged write records

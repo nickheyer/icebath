@@ -58,7 +58,7 @@ func RouteRuntime(ctx context.Context, policy *LocalSessionPolicy, frozen map[st
 		launchKey = *key
 	}
 	scoped := provider.WithFrozenRuntimeConfig(ctx, frozen)
-	runtime, err := provider.ResolveNamedCustomRuntime(scoped, "", requested, launchKey, launchURL, targetModel, frozen)
+	runtime, err := provider.ResolveNamedCustomRuntime(scoped, "", requested, launchKey, launchURL, targetModel)
 	if err != nil {
 		return nil, nil, err
 	}

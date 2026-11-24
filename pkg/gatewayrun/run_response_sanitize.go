@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -126,7 +125,7 @@ func looksLikeGatewayProviderError(text string) bool {
 	if text == "" {
 		return false
 	}
-	body := pystr.Strip(text)
+	body := strings.TrimSpace(text)
 	if len([]rune(body)) > 400 || strings.Count(body, "\n") > 4 {
 		return false
 	}
@@ -142,7 +141,7 @@ func redactGatewayUserFacingSecrets(ctx context.Context, text string) string {
 // reply on a chat surface or in the terminal UI, which marks a stopped turn itself
 func sanitizeGatewayFinalResponse(ctx context.Context, platform gateway.Platform, text string) string {
 	raw := gatewaySurfacePassesRawText(platform)
-	if strings.HasPrefix(pystr.Strip(text), agent.InterruptWaitingForModelPrefix) && (platform == gateway.PlatformLocal || !raw) {
+	if strings.HasPrefix(strings.TrimSpace(text), agent.InterruptWaitingForModelPrefix) && (platform == gateway.PlatformLocal || !raw) {
 		return ""
 	}
 	if text == "" || raw {
@@ -174,14 +173,14 @@ func isGatewayHiddenReasoningIncompleteTurn(agentResult map[string]any) bool {
 	}
 	errorText := ""
 	if v := agentResult["error"]; pyrepr.Truthy(v) {
-		errorText = pystr.Strip(pyrepr.Str(v))
+		errorText = strings.TrimSpace(pyrepr.Str(v))
 	}
 	if !strings.Contains(strings.ToLower(errorText), "remained incomplete after") {
 		return false
 	}
 	finalResponse := ""
 	if v := agentResult["final_response"]; pyrepr.Truthy(v) {
-		finalResponse = pystr.Strip(pyrepr.Str(v))
+		finalResponse = strings.TrimSpace(pyrepr.Str(v))
 	}
 	return finalResponse == "" || finalResponse == errorText
 }
@@ -253,7 +252,7 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 			if v := agentResult["failure_reason"]; pyrepr.Truthy(v) {
 				failureReason = pyrepr.Str(v)
 			}
-			if agent.SiteFailureCodes[failureReason] && pystr.Strip(err) != "" && !looksLikeGatewayProviderError(err) {
+			if agent.SiteFailureCodes[failureReason] && strings.TrimSpace(err) != "" && !looksLikeGatewayProviderError(err) {
 				if strings.HasPrefix(err, "⚠️") {
 					return err
 				}

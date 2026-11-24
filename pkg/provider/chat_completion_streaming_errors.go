@@ -25,7 +25,7 @@ func providerStreamErrorFromJSONDecodeError(err error, resp *http.Response) erro
 	if errors.As(err, &te) {
 		doc = te.Doc
 	}
-	rawText := pystr.Strip(doc)
+	rawText := strings.TrimSpace(doc)
 	var headers http.Header
 	if resp != nil {
 		headers = resp.Header

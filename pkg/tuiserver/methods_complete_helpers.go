@@ -11,7 +11,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -62,7 +61,7 @@ func gitRepoFiles(root string, limit int) []string {
 	if !ok {
 		return nil
 	}
-	top := pystr.Strip(topOut)
+	top := strings.TrimSpace(topOut)
 	listed, ok := runListingGit("-C", top, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if !ok {
 		return nil
@@ -171,7 +170,7 @@ func fuzzyBasenameRank(name, query string) (int, int, bool) {
 	if query == "" {
 		return 3, n, true
 	}
-	nl, ql := pystr.Lower(name), pystr.Lower(query)
+	nl, ql := strings.ToLower(name), strings.ToLower(query)
 	if nl == ql {
 		return 0, n, true
 	}
@@ -198,7 +197,7 @@ func fuzzyBasenameRank(name, query string) (int, int, bool) {
 		parts = append(parts, string(buf))
 	}
 	for _, p := range parts {
-		if strings.HasPrefix(pystr.Lower(p), ql) {
+		if strings.HasPrefix(strings.ToLower(p), ql) {
 			return 2, n, true
 		}
 	}
@@ -238,52 +237,23 @@ func absCompletionPrefixExists(pathPart string) bool {
 	if err != nil {
 		return false
 	}
-	tailLower := pystr.Lower(tail)
+	tailLower := strings.ToLower(tail)
 	for _, e := range entries {
-		if strings.HasPrefix(pystr.Lower(e.Name()), tailLower) {
+		if strings.HasPrefix(strings.ToLower(e.Name()), tailLower) {
 			return true
 		}
 	}
 	return false
 }
 
-// Picker inputs of the config with the live session route layered on, a custom route keeping its identity
-func modelPickerContext(ctx context.Context, a *agent.AIAgent) (provider.PickerConfigContext, error) {
+// Picker config of the profile with the model it resolves to as the current one
+func modelPickerContext(ctx context.Context) (provider.PickerConfigContext, error) {
 	pc, err := provider.LoadPickerContext(ctx)
 	if err != nil {
 		return pc, err
 	}
-	providerName, baseURL, model, requested := "", "", "", ""
-	if a != nil {
-		providerName, baseURL, model, requested = a.Provider(), a.BaseURL(), a.Model(), a.RequestedProvider()
-	}
-	if strings.ToLower(pystr.Strip(providerName)) == "custom" {
-		if identity := canonicalCustomIdentityQuietly(ctx, baseURL, pc.CurrentProvider, model, requested); identity != "" {
-			providerName = identity
-		}
-	}
-	if model == "" {
-		model = resolveModel(ctx)
-	}
-	if providerName != "" {
-		pc.CurrentProvider = providerName
-	}
-	if model != "" {
+	if model := resolveModel(ctx); model != "" {
 		pc.CurrentModel = model
 	}
-	if baseURL != "" {
-		pc.CurrentBaseURL = baseURL
-	}
 	return pc, nil
-}
-
-// Canonical identity of a custom route, empty when recovery fails
-func canonicalCustomIdentityQuietly(ctx context.Context, baseURL, configProvider, model, requested string) (identity string) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLog().Debug("custom provider identity recovery failed (model picker)", "error", r)
-			identity = ""
-		}
-	}()
-	return provider.CanonicalCustomIdentity(ctx, baseURL, configProvider, model, requested)
 }

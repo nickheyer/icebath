@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Author and content snippet of an event kept for NIP-10 parent lookups
@@ -123,7 +123,7 @@ func buzzAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Adapter for a platform config, env overriding config except under a secondary profile scope
+// Adapter for a platform config, its knobs from the buzz settings of the profile it serves
 func NewBuzzAdapter(ctx context.Context, config *gateway.PlatformConfig) (*BuzzAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -138,87 +138,32 @@ func NewBuzzAdapter(ctx context.Context, config *gateway.PlatformConfig) (*BuzzA
 		profileNames: map[string]ttlEntry[string]{}, threadRoots: map[string]string{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.Platform("buzz"), a)
 	a.Traits = buzzAdapterTraits()
-	var err error
-	if a.relayURL, err = configuredRelay(ctx, extra); err != nil {
-		return nil, err
-	}
-	for _, h := range splitCSV(extra["attachment_hosts"]) {
-		if s, ok := h.(string); ok {
-			if o, ok := attachmentOrigin(s); ok {
-				a.attachmentOrigins[o] = true
-			}
+	sctx := gateway.SettingsContext(ctx)
+	a.relayURL = configuredRelay(ctx)
+	for _, h := range settings.BuzzAttachmentHosts.Strings(sctx) {
+		if o, ok := attachmentOrigin(h); ok {
+			a.attachmentOrigins[o] = true
 		}
 	}
 	if o, ok := attachmentOrigin(a.relayURL); ok {
 		a.attachmentOrigins[o] = true
 	}
-	if a.cliPath, err = configuredCLIPath(ctx, extra); err != nil {
-		return nil, err
-	}
-	rawChannels, err := settingOr(ctx, "BUZZ_CHANNELS", extra, "channels", []any{})
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range splitCSV(rawChannels) {
-		if s, ok := c.(string); ok && pystr.Strip(s) != "" {
-			a.channels = append(a.channels, pystr.Strip(s))
-		}
-	}
+	a.cliPath = configuredCLIPath(ctx)
+	a.channels = configuredChannels(ctx)
+	var err error
 	if a.homeChannel, err = configuredHomeChannel(ctx, extra); err != nil {
 		return nil, err
 	}
-	pollRaw, err := scopedPlatformSetting(ctx, "BUZZ_POLL_INTERVAL", extra, "poll_interval")
-	if err != nil {
-		return nil, err
+	poll, set := settings.BuzzPollInterval.Lookup(sctx)
+	if !set || poll == 0 {
+		poll = defaultPollInterval
 	}
-	a.pollInterval = minPollInterval
-	var pollValue any = pollRaw
-	if !pyrepr.Truthy(pollValue) {
-		pollValue = extra["poll_interval"]
-		if pollValue == nil {
-			pollValue = defaultPollInterval
-		}
-	}
-	if f, ok := floatOf(pollValue); ok {
-		a.pollInterval = max(minPollInterval, f)
-	} else {
-		a.pollInterval = max(minPollInterval, defaultPollInterval)
-	}
-	rm, err := settingOr(ctx, "BUZZ_REQUIRE_MENTION", extra, "require_mention", true)
-	if err != nil {
-		return nil, err
-	}
-	a.requireMention = !falsy(rm)
-	if a.replyToMode, err = replyToMode(ctx, config, extra); err != nil {
-		return nil, err
-	}
-	transportRaw, err := scopedPlatformSetting(ctx, "BUZZ_TRANSPORT", extra, "transport")
-	if err != nil {
-		return nil, err
-	}
-	transport := strings.ToLower(pystr.Strip(pyrepr.Str(transportRaw)))
-	if !pyrepr.Truthy(transportRaw) {
-		transport = "auto"
-		if v := extra["transport"]; pyrepr.Truthy(v) {
-			transport = strings.ToLower(pystr.Strip(pyrepr.Str(v)))
-		}
-	}
-	switch transport {
-	case "auto", "websocket", "poll":
-		a.transport = transport
-	default:
-		a.transport = "auto"
-	}
-	allowed, err := settingOr(ctx, "BUZZ_ALLOWED_USERS", extra, "allowed_users", []any{})
-	if err != nil {
-		return nil, err
-	}
-	a.allowedPubkeys = pubkeySet(allowed)
-	reactionOnly, err := settingOr(ctx, "BUZZ_REACTION_ONLY_USERS", extra, "reaction_only_users", []any{})
-	if err != nil {
-		return nil, err
-	}
-	a.reactionOnly = pubkeySet(reactionOnly)
+	a.pollInterval = max(minPollInterval, poll)
+	a.requireMention = settings.BuzzRequireMention.Get(sctx)
+	a.replyToMode = replyToMode(ctx)
+	a.transport = settings.BuzzTransport.Get(sctx)
+	a.allowedPubkeys = pubkeySet(settings.BuzzAllowedUsers.Get(sctx))
+	a.reactionOnly = pubkeySet(settings.BuzzReactionOnlyUsers.Get(sctx))
 	return a, nil
 }
 
@@ -227,31 +172,6 @@ func (a *BuzzAdapter) Name() string { return "Buzz" }
 
 // Hex form of an allowlist entry given as hex or npub, the hook allowlist matching consults
 func (a *BuzzAdapter) NormalizeUserID(entry string) string { return normalizeUserRef(entry) }
-
-// Float of a config value, false when it does not parse
-func floatOf(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case string:
-		f, err := strconv.ParseFloat(pystr.Strip(n), 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
-// Whether a setting value spells off
-func falsy(v any) bool {
-	switch strings.ToLower(pystr.Strip(pyrepr.Str(v))) {
-	case "false", "0", "no", "off":
-		return true
-	}
-	return false
-}
 
 // Runs the buzz CLI with the resolved key and owner tag, resolving them first when unset
 func (a *BuzzAdapter) runCLI(ctx context.Context, args []string, input *string) (cliResult, error) {
@@ -336,7 +256,7 @@ func (a *BuzzAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	}
 	a.mu.Lock()
 	a.selfPubkey = strings.ToLower(strOf(profiles[0]["pubkey"]))
-	a.displayName = pystr.Strip(strOf(profiles[0]["display_name"]))
+	a.displayName = strings.TrimSpace(strOf(profiles[0]["display_name"]))
 	a.selfNpub = hexToNpub(a.selfPubkey)
 	selfPubkey := a.selfPubkey
 	a.mu.Unlock()
@@ -578,7 +498,7 @@ func (a *BuzzAdapter) profileDisplayName(ctx context.Context, pubkey string) (st
 // First non blank value stripped
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
-		if s := pystr.Strip(v); s != "" {
+		if s := strings.TrimSpace(v); s != "" {
 			return s
 		}
 	}

@@ -1,13 +1,14 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -100,7 +101,7 @@ func bootstrapServedProfileStore(ctx context.Context, dbPath string) error {
 func profileDB(ctx context.Context, params map[string]any, writer bool) (*state.DB, func(), error) {
 	profile := ""
 	if params != nil {
-		profile = pystr.Strip(strOr(params["profile"]))
+		profile = strings.TrimSpace(strOr(params["profile"]))
 	}
 	home, err := profileHome(profile)
 	if err != nil {

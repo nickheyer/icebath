@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -73,7 +72,7 @@ func (a *AIAgent) collapseContinuationTrail(ctx context.Context, messages *[]*st
 	if parts != nil {
 		raw = *parts
 	}
-	partial := pystr.Strip(a.stripThinkBlocks(joinTruncatedParts(raw)))
+	partial := strings.TrimSpace(a.stripThinkBlocks(joinTruncatedParts(raw)))
 	if partial != "" && a.holdStream {
 		partial, _, _ = applyLLMOutputTransform(ctx, a, partial, a.currentTurnID, nil)
 	}
@@ -643,9 +642,9 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 	if err != nil {
 		return nil, false, err
 	}
-	hasContent := pystr.Strip(interimContent) != ""
+	hasContent := strings.TrimSpace(interimContent) != ""
 	reasoning, isStr := interimMsg["reasoning"].(string)
-	hasReasoning := isStr && pystr.Strip(reasoning) != ""
+	hasReasoning := isStr && strings.TrimSpace(reasoning) != ""
 	hasCodexReasoning := pyrepr.Truthy(interimMsg["codex_reasoning_items"])
 	hasCodexMessageItems := pyrepr.Truthy(interimMsg["codex_message_items"])
 	reasoningOnly := !hasContent && !responseHasToolCalls(assistantMessage)
@@ -783,14 +782,14 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 	if err != nil {
 		return RefusalVerdict{}, err
 	}
-	refusalText = pystr.Strip(refusalText)
+	refusalText = strings.TrimSpace(refusalText)
 	if refusalText == "" {
-		refusalText = pystr.Strip(a.extractReasoning(refusal))
+		refusalText = strings.TrimSpace(a.extractReasoning(refusal))
 	}
 	rawStopDetails := provider.ResponseStopDetails(refusal)
 	stopDetails, _ := rawStopDetails.(map[string]any)
 	if refusalText == "" && stopDetails != nil {
-		refusalText = pystr.Strip(pyrepr.Str(orEmptyString(stopDetails["explanation"])))
+		refusalText = strings.TrimSpace(pyrepr.Str(orEmptyString(stopDetails["explanation"])))
 		if refusalText == "" && pyrepr.Truthy(stopDetails["category"]) {
 			refusalText = "provider refusal category: " + pyrepr.Str(stopDetails["category"])
 		}

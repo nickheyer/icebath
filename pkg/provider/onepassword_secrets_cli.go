@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
@@ -90,7 +89,7 @@ func opCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	if binaryPath == "" {
 		binaryPath = cfgText(op, "binary_path", "")
 	}
-	binaryPath = pystr.Strip(binaryPath)
+	binaryPath = strings.TrimSpace(binaryPath)
 	binary := findOp(binaryPath)
 	if binary == "" {
 		if binaryPath != "" {
@@ -105,7 +104,7 @@ func opCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	if binaryPath != "" {
 		op["binary_path"] = binaryPath
 	}
-	if account := pystr.Strip(nsText(ns, "account")); account != "" {
+	if account := strings.TrimSpace(nsText(ns, "account")); account != "" {
 		op["account"] = account
 		console.Print(fmt.Sprintf("  Account: [cyan]%s[/cyan]", account))
 	}
@@ -118,9 +117,9 @@ func opCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	if tokenEnv == "" {
 		tokenEnv = opDefaultTokenEnv
 	}
-	tokenEnv = pystr.Strip(tokenEnv)
+	tokenEnv = strings.TrimSpace(tokenEnv)
 	op["service_account_token_env"] = tokenEnv
-	token := pystr.Strip(nsText(ns, "token"))
+	token := strings.TrimSpace(nsText(ns, "token"))
 	switch {
 	case token != "":
 		if err := secretsSaveEnvValue(cli.home, tokenEnv, token); err != nil {
@@ -390,7 +389,7 @@ func opWhoami(cli *secretsCLI, binary, account, tokenValue string) (string, bool
 	if err != nil || res.Returncode != 0 {
 		return "", false
 	}
-	identity := headRunes(strings.ReplaceAll(pystr.Strip(decodeCLIOutput(res.Stdout)), "\n", " "), 120)
+	identity := headRunes(strings.ReplaceAll(strings.TrimSpace(decodeCLIOutput(res.Stdout)), "\n", " "), 120)
 	if identity == "" {
 		return "authenticated", true
 	}

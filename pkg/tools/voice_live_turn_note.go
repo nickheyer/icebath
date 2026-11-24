@@ -1,6 +1,8 @@
 package tools
 
-import "github.com/nickheyer/icebath/pkg/internal/pystr"
+import (
+	"strings"
+)
 
 // VoiceLiveTurnNote is prepended to the model input of a turn delegated from the live voice layer
 const VoiceLiveTurnNote = "[Note: this message is a delegation from a live spoken conversation. The text is a voice " +
@@ -13,7 +15,7 @@ const VoiceLiveTurnNote = "[Note: this message is a delegation from a live spoke
 
 // Live voice turn note followed by the recent spoken exchange the client sent, the bare note without one
 func VoiceLiveTurnNoteFor(context string) string {
-	context = pystr.Strip(context)
+	context = strings.TrimSpace(context)
 	if context == "" {
 		return VoiceLiveTurnNote
 	}

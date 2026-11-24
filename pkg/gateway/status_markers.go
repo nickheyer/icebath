@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -209,7 +208,7 @@ func validatedScopedLockGatewayOwner(record *pyjson.Object) (int, any, string, b
 	ownerStart := recGet(record, "start_time")
 	rawHome, isStr := recHome(record, home.RecordKey).(string)
 	if !ok || ownerPid <= 0 || ownerPid == statusGetpid() || !pyIsInt(ownerStart) || !isStr ||
-		pystr.Strip(rawHome) == "" || !pypath.IsAbs(pypath.Expanduser(rawHome)) {
+		strings.TrimSpace(rawHome) == "" || !pypath.IsAbs(pypath.Expanduser(rawHome)) {
 		return 0, nil, "", false
 	}
 	targetHome, err := canonicalIcebathHome(rawHome)
@@ -412,7 +411,7 @@ func WritePlannedStopMarker(ctx context.Context, targetPid int) bool {
 	record.Set("target_start_time", statusProcessStartTime(targetPid))
 	record.Set("stopper_pid", int64(statusGetpid()))
 	record.Set("written_at", utcNowISO())
-	return writeMarker(ctx, plannedStopMarkerPath(), record)
+	return writeMarker(ctx, filepath.Join(home.Dir(ctx), plannedStopMarkerFilename), record)
 }
 
 // Whether an update pause record or a recovery claim is on disk, true when the directory cannot be listed

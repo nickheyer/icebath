@@ -66,7 +66,7 @@ var AllowedCommands = Register(&List{Meta: Meta{Key: "command_allowlist", Label:
 // Confirmation before destructive slash commands
 var ConfirmDestructive = Register(&Bool{Meta: Meta{Key: "approvals.destructive_slash_confirm", Label: "Confirm destructive",
 	Short: "Ask before slash commands that delete or reset things.",
-	Group: GroupSafety, Order: 30},
+	Group: GroupSafety, Order: 30, Env: "ICEBATH_TUI_NO_CONFIRM", EnvInvert: true},
 	Default: true})
 
 // Personal details hidden from the model in chat apps

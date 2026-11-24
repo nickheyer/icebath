@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -32,7 +31,7 @@ func IsEgressDecline(result any) bool {
 	if pyrepr.Str(orEmpty(get("code"))) == EgressDeclineCode {
 		return true
 	}
-	return strings.Contains(pystr.Lower(pyrepr.Str(orEmpty(get("error")))), EgressDeclineMarker)
+	return strings.Contains(strings.ToLower(pyrepr.Str(orEmpty(get("error")))), EgressDeclineMarker)
 }
 
 // Key lookup of a Python dict value held as a Go map or a decoded JSON object
@@ -68,7 +67,7 @@ func DeclinedSend(result *SendResult) bool {
 	if !pyrepr.Truthy(result.Error) {
 		return false
 	}
-	if strings.Contains(pystr.Lower(pyrepr.Str(result.Error)), ambiguousAckMarker) {
+	if strings.Contains(strings.ToLower(pyrepr.Str(result.Error)), ambiguousAckMarker) {
 		return false
 	}
 	return IsEgressDecline(map[string]any{"success": false, "error": result.Error})
@@ -129,8 +128,8 @@ func liveRelayFronted() (fronted map[string]bool, ok bool, err error) {
 	}
 	out := map[string]bool{}
 	for _, p := range PlatformMembers() {
-		if pystr.Lower(string(p)) != "relay" && fronts.FrontsPlatform(p) {
-			out[pystr.Lower(pystr.Strip(string(p)))] = true
+		if strings.ToLower(string(p)) != "relay" && fronts.FrontsPlatform(p) {
+			out[strings.ToLower(strings.TrimSpace(string(p)))] = true
 		}
 	}
 	return out, true, nil
@@ -151,7 +150,7 @@ func relayFronted(ctx context.Context) (map[string]bool, error) {
 	}
 	out := map[string]bool{}
 	for p := range found {
-		out[pystr.Lower(pystr.Strip(p))] = true
+		out[strings.ToLower(strings.TrimSpace(p))] = true
 	}
 	return out, nil
 }
@@ -206,7 +205,7 @@ func hasLiveNativeAdapter(ctx context.Context, platformName string) (live bool, 
 
 // Whether a send to the platform would egress over the relay connector
 func RelayRoutedPlatform(ctx context.Context, platformName string) (bool, error) {
-	name := pystr.Lower(pystr.Strip(platformName))
+	name := strings.ToLower(strings.TrimSpace(platformName))
 	if name == "" {
 		return false, nil
 	}
@@ -295,7 +294,7 @@ func egressSessionIDs(ctx context.Context, platformName string) map[string]bool 
 
 // Chat ids with a home channel, directory or session provenance, every fronted platform for relay
 func AttestedRelayTargets(ctx context.Context, platformName string) (map[string]bool, error) {
-	name := pystr.Lower(pystr.Strip(platformName))
+	name := strings.ToLower(strings.TrimSpace(platformName))
 	names := []string{name}
 	if name == "relay" {
 		fronted, err := relayFronted(ctx)
@@ -380,17 +379,17 @@ func AuthorizeRelayTarget(ctx context.Context, platformName string, chatID, thre
 	if !routed {
 		return "", nil
 	}
-	target := pystr.Strip(pyrepr.Str(orEmpty(chatID)))
+	target := strings.TrimSpace(pyrepr.Str(orEmpty(chatID)))
 	if target == "" {
 		return "", nil
 	}
-	name := pystr.Lower(pystr.Strip(platformName))
+	name := strings.ToLower(strings.TrimSpace(platformName))
 	attested, err := AttestedRelayTargets(ctx, name)
 	if err != nil {
 		return "", err
 	}
 	if attested[target] {
-		thread := pystr.Strip(pyrepr.Str(orEmpty(threadID)))
+		thread := strings.TrimSpace(pyrepr.Str(orEmpty(threadID)))
 		if thread != "" && thread != target {
 			if attested[target+":"+thread] {
 				return "", nil

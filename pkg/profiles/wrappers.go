@@ -125,7 +125,7 @@ func CheckAliasCollision(name string) (string, error) {
 	if code != 0 {
 		return "", nil
 	}
-	lines := pystr.Splitlines(pystr.Strip(stdout), false)
+	lines := pystr.Splitlines(strings.TrimSpace(stdout), false)
 	if len(lines) == 0 {
 		return "", errors.New("list index out of range")
 	}
@@ -285,7 +285,7 @@ func BuildAliasMap() (map[string]string, error) {
 	}
 	isWindows := runtime.GOOS == "windows"
 	if isWindows {
-		sort.SliceStable(entries, func(i, j int) bool { return pystr.Lower(entries[i].Name()) < pystr.Lower(entries[j].Name()) })
+		sort.SliceStable(entries, func(i, j int) bool { return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name()) })
 	}
 	prefix := wrapperMarker + " "
 	for _, e := range entries {
@@ -306,10 +306,10 @@ func BuildAliasMap() (map[string]string, error) {
 			continue
 		}
 		rest := content[idx+len(prefix):]
-		if pystr.Strip(rest) == "" {
+		if strings.TrimSpace(rest) == "" {
 			continue
 		}
-		token := pystr.Strip(pystr.SplitWhitespace(rest, 1)[0])
+		token := strings.TrimSpace(pystr.SplitWhitespace(rest, 1)[0])
 		if token == "" {
 			continue
 		}

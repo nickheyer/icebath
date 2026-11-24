@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -88,7 +87,7 @@ func skillUsageLookup(ctx context.Context) (func(string) *big.Int, func(string) 
 
 // Lowercased command name of a completion item without its slash
 func slashNameOf(item map[string]any) string {
-	return strings.ToLower(strings.TrimLeft(pystr.Strip(itemField(item, "text")), "/"))
+	return strings.ToLower(strings.TrimLeft(strings.TrimSpace(itemField(item, "text")), "/"))
 }
 
 // Registry commands in order then skills by score, use and name, each kind capped at the completion limit
@@ -165,7 +164,7 @@ func detailsCompletions(text string) []map[string]any {
 	if len(text) < len("/details") || strings.ToLower(text[:len("/details")]) != "/details" {
 		return nil
 	}
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	if stripped != "" && !strings.HasPrefix("/details", strings.Fields(strings.ToLower(stripped))[0]) {
 		return nil
 	}
@@ -275,7 +274,7 @@ func slashCompletions(ctx context.Context, text string, scope func(context.Conte
 				display = c.Display
 			}
 			kind := "command"
-			if skillNames[strings.ToLower(strings.TrimLeft(pystr.Strip(c.Text), "/"))] {
+			if skillNames[strings.ToLower(strings.TrimLeft(strings.TrimSpace(c.Text), "/"))] {
 				kind = "skill"
 			}
 			out = append(out, map[string]any{"text": c.Text, "display": display, "meta": c.Meta, "kind": kind})

@@ -44,7 +44,7 @@ func sendSuccess(chatID string, warnings []string, fields ...any) map[string]any
 // QQ file type of a local path and voice flag
 func qqbotMediaFileType(mediaPath string, isVoice bool) int {
 	_, ext := pypath.Splitext(mediaPath)
-	ext = pystr.Lower(ext)
+	ext = strings.ToLower(ext)
 	switch {
 	case isVoice || senderVoiceExts[ext]:
 		return MediaTypeVoice
@@ -67,7 +67,7 @@ func qqbotAPIJSON(ctx context.Context, client *http.Client, headers map[string]s
 			return nil, err
 		}
 	}
-	resp, err := httpRequest(ctx, client, method, APIBase+path, headers, payload, timeout)
+	resp, err := httpRequest(ctx, client, method, apiBase(ctx)+path, headers, payload, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func qqbotUploadURL(ctx context.Context, client *http.Client, headers map[string
 // Posts a rich media message that references uploaded file info
 func qqbotSendMediaMessage(ctx context.Context, client *http.Client, headers map[string]string, chatType, chatID string, fileInfo any, caption string) (map[string]any, error) {
 	body := obj("msg_type", int64(MsgTypeMedia), "media", obj("file_info", fileInfo), "msg_seq", int64(wallClock()*1000)%1_000_000_000)
-	if stripped := pystr.Strip(caption); stripped != "" {
+	if stripped := strings.TrimSpace(caption); stripped != "" {
 		body.Set("content", pystr.Slice(stripped, 0, MaxMessageLength))
 	}
 	return qqbotAPIJSON(ctx, client, headers, http.MethodPost, messagesPath(chatType, chatID), body, 30.0)
@@ -136,10 +136,11 @@ func qqbotSendTextMessage(ctx context.Context, client *http.Client, headers map[
 		return nil, err
 	}
 	var statuses []string
+	base := apiBase(ctx)
 	for _, endpoint := range []struct{ kind, url string }{
-		{"channel", "https://api.sgroup.qq.com/channels/" + chatID + "/messages"},
-		{"c2c", "https://api.sgroup.qq.com/v2/users/" + chatID + "/messages"},
-		{"group", "https://api.sgroup.qq.com/v2/groups/" + chatID + "/messages"},
+		{"channel", base + "/channels/" + chatID + "/messages"},
+		{"c2c", base + "/v2/users/" + chatID + "/messages"},
+		{"group", base + "/v2/groups/" + chatID + "/messages"},
 	} {
 		resp, err := httpRequest(ctx, client, http.MethodPost, endpoint.url, headers, payload, timeout)
 		if err != nil {
@@ -309,9 +310,9 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 		return qqbotSendTextMessage(ctx, client, headers, chatID, message, clientTimeout)
 	}
 	var lastResult map[string]any
-	text := pystr.Strip(message)
+	text := strings.TrimSpace(message)
 	var warnings []string
-	if text != "" && pystr.Strip(caption) == "" {
+	if text != "" && strings.TrimSpace(caption) == "" {
 		textResult, err := qqbotSendTextMessage(ctx, client, headers, chatID, text, clientTimeout)
 		if err != nil {
 			return nil, err
@@ -348,7 +349,7 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 	if lastResult == nil {
 		fallbackText := text
 		if fallbackText == "" {
-			fallbackText = pystr.Strip(caption)
+			fallbackText = strings.TrimSpace(caption)
 		}
 		if fallbackText == "" {
 			return withWarnings(map[string]any{"error": "QQBot: no deliverable media attachments"}, warnings), nil

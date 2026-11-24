@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Marker of a request option the body did not carry
@@ -46,7 +45,7 @@ func apiCoerceRequestBool(value any, def bool) bool {
 	case nil:
 		return def
 	case string:
-		normalized := strings.ToLower(pystr.Strip(v))
+		normalized := strings.ToLower(strings.TrimSpace(v))
 		if apiTrueRequestBoolStrings[normalized] {
 			return true
 		}
@@ -69,7 +68,7 @@ func apiCleanRequestString(value any) *string {
 	if !ok {
 		return nil
 	}
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	if stripped == "" {
 		return nil
 	}

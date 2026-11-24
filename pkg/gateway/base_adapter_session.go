@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -94,7 +96,7 @@ func (b *BasePlatformAdapter) isQueueTextDebounceCandidate(event *MessageEvent) 
 	mode := b.busyTextMode
 	b.mu.Unlock()
 	result := mode == "queue" && event.MessageType == MessageTypeText && !event.Internal && !event.IsCommand() &&
-		pystr.Strip(event.Text) != ""
+		strings.TrimSpace(event.Text) != ""
 	if result {
 		pkgLog().Debug(fmt.Sprintf("[%s] Queue-text debounce candidate accepted: session=%s text_len=%d", b.Self().Name(), "?",
 			pystr.Len(event.Text)))
@@ -450,7 +452,7 @@ func (b *BasePlatformAdapter) HandleMessage(ctx context.Context, event *MessageE
 	expected := ""
 	if event.Metadata != nil {
 		if v := event.Metadata["gateway_session_key"]; pyrepr.Truthy(v) {
-			expected = pystr.Strip(fmt.Sprint(v))
+			expected = strings.TrimSpace(fmt.Sprint(v))
 		}
 	}
 	if expected == "" && recovery != nil && event.Source != nil && event.Source.Platform == PlatformTelegram &&

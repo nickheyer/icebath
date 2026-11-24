@@ -220,7 +220,7 @@ func processTable() map[int]psRow {
 		}
 		pid, _ := strconv.Atoi(parts[0])
 		ppid, _ := strconv.Atoi(parts[1])
-		rows[pid] = psRow{ppid: ppid, start: pystr.Strip(parts[3])}
+		rows[pid] = psRow{ppid: ppid, start: strings.TrimSpace(parts[3])}
 	}
 	return rows
 }

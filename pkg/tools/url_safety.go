@@ -18,7 +18,6 @@ import (
 
 	"golang.org/x/net/idna"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -226,19 +225,8 @@ func allowPrivateURLs(env *Env) bool {
 
 // CIDR blocks the local proxy answers DNS with, undeclarable ranges dropped with a warning
 func fakeIPRanges(env *Env) []netip.Prefix {
-	if env == nil || env.Config == nil {
-		return nil
-	}
-	raw := env.Config.Sub("security").Get("fake_ip_ranges")
-	var entries []string
-	switch v := raw.(type) {
-	case string:
-		entries = []string{v}
-	default:
-		entries = config.AsStrings(raw)
-	}
 	out := []netip.Prefix{}
-	for _, entry := range entries {
+	for _, entry := range settings.SecurityFakeIpRanges.Strings(envHomeCtx(context.Background(), env)) {
 		text := strings.TrimSpace(entry)
 		prefix, err := netip.ParsePrefix(text)
 		if err != nil {
@@ -266,7 +254,7 @@ func fakeIPRanges(env *Env) []netip.Prefix {
 }
 
 func normalizeHostname(host string) string {
-	return strings.TrimRight(pystr.Lower(pystr.Strip(host)), ".")
+	return strings.TrimRight(strings.ToLower(strings.TrimSpace(host)), ".")
 }
 
 const urlEdgeWhitespace = " \t\n\r\x0b\x0c"

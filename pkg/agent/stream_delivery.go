@@ -188,11 +188,11 @@ func outputTextOfParts(parts []any) string {
 		if !ok || part["type"] != "output_text" {
 			continue
 		}
-		if text, ok := part["text"].(string); ok && pystr.Strip(text) != "" {
+		if text, ok := part["text"].(string); ok && strings.TrimSpace(text) != "" {
 			b.WriteString(text)
 		}
 	}
-	return pystr.Strip(b.String())
+	return strings.TrimSpace(b.String())
 }
 
 // Visible Codex commentary items one string each, none when commentary display is off
@@ -209,7 +209,7 @@ func (a *AIAgent) extractCodexInterimVisibleParts(msg map[string]any) []string {
 		}
 		phase, ok := item["phase"].(string)
 		parts, isList := listOfAny(item["content"])
-		if !ok || pystr.Lower(pystr.Strip(phase)) != "commentary" || !isList {
+		if !ok || strings.ToLower(strings.TrimSpace(phase)) != "commentary" || !isList {
 			continue
 		}
 		if visible := a.visibleCommentary(outputTextOfParts(parts)); visible != "" {
@@ -221,7 +221,7 @@ func (a *AIAgent) extractCodexInterimVisibleParts(msg map[string]any) []string {
 
 // Think stripped and redacted commentary, empty when nothing visible remains
 func (a *AIAgent) visibleCommentary(text string) string {
-	visible := pystr.Strip(a.stripThinkBlocks(text))
+	visible := strings.TrimSpace(a.stripThinkBlocks(text))
 	if visible == "" {
 		return visible
 	}
@@ -230,7 +230,7 @@ func (a *AIAgent) visibleCommentary(text string) string {
 
 // Every visible Codex commentary item joined by blank lines
 func (a *AIAgent) extractCodexInterimVisibleText(msg map[string]any) string {
-	return pystr.Strip(strings.Join(a.extractCodexInterimVisibleParts(msg), "\n\n"))
+	return strings.TrimSpace(strings.Join(a.extractCodexInterimVisibleParts(msg), "\n\n"))
 }
 
 // Codex commentary first, else the think stripped flattened top level content
@@ -238,7 +238,7 @@ func (a *AIAgent) interimAssistantVisibleText(msg map[string]any) string {
 	if text := a.extractCodexInterimVisibleText(msg); text != "" {
 		return text
 	}
-	return pystr.Strip(a.stripThinkBlocks(state.FlattenMessageText(msg["content"], "\n")))
+	return strings.TrimSpace(a.stripThinkBlocks(state.FlattenMessageText(msg["content"], "\n")))
 }
 
 // True when the normalized text was already handed to the interim callback
@@ -314,7 +314,7 @@ func (a *AIAgent) emitInterimAssistantMessage(msg map[string]any) {
 	}
 	var visible string
 	if len(commentary) > 0 {
-		visible = pystr.Strip(strings.Join(undelivered, "\n\n"))
+		visible = strings.TrimSpace(strings.Join(undelivered, "\n\n"))
 	} else {
 		visible = a.interimAssistantVisibleText(msg)
 	}
@@ -375,7 +375,7 @@ func (a *AIAgent) fireStreamDelta(text string) {
 		a.noteDroppedStreamWriter("_fire_stream_delta")
 		return
 	}
-	prependedBreak := a.streamNeedsBreak && text != "" && pystr.Strip(text) != ""
+	prependedBreak := a.streamNeedsBreak && text != "" && strings.TrimSpace(text) != ""
 	if prependedBreak {
 		a.streamNeedsBreak = false
 		text = "\n\n" + text

@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -8,10 +10,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Recent chat messages the reviewer gets
@@ -32,16 +34,6 @@ const ReviewGoal = "Act as an independent senior reviewer. Thoroughly review the
 type reviewSkillPromptAgent interface{ EphemeralSystemPrompt() string }
 
 var reviewPreloadedSkillRe = regexp.MustCompile(`with the "([^"]+)" skill\s+preloaded`)
-
-// Read only config loader of the review credentials, swapped by tests
-var reviewLoadConfigReadonly = func(ctx context.Context, env *Env) (map[string]any, error) {
-	h := envHome(env)
-	tree, err := config.LoadReadonly(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil, err
-	}
-	return tree, nil
-}
 
 // Display text of a message, multimodal parts joined and non text parts noted
 func reviewMessageText(message map[string]any) string {
@@ -88,7 +80,7 @@ func SnapshotRecentMessages(messages []map[string]any, limit int) []map[string]s
 		}
 		text := ""
 		if role == "user" || role == "assistant" {
-			text = pystr.Strip(reviewMessageText(message))
+			text = strings.TrimSpace(reviewMessageText(message))
 		}
 		if text == "" {
 			continue
@@ -161,7 +153,7 @@ func CollectParentLoadedSkills(parent any, messages []map[string]any, limit int)
 	var names []string
 	seen := map[string]bool{}
 	for _, name := range candidates {
-		cleaned := pystr.Strip(name)
+		cleaned := strings.TrimSpace(name)
 		if cleaned != "" && !seen[cleaned] {
 			seen[cleaned] = true
 			names = append(names, cleaned)
@@ -181,7 +173,7 @@ func BuildReviewTask(snapshot []map[string]string, userPrompt string, loadedSkil
 		goal = "Review: " + focus
 	}
 	if runes := []rune(goal); len(runes) > 80 {
-		goal = pystr.Rstrip(string(runes[:79])) + "…"
+		goal = strings.TrimRightFunc(string(runes[:79]), unicode.IsSpace) + "…"
 	}
 	lines := []string{
 		ReviewGoal,
@@ -210,8 +202,8 @@ func BuildReviewTask(snapshot []map[string]string, userPrompt string, loadedSkil
 				"was produced under them and must be judged against them.",
 		)
 	}
-	if pystr.Strip(userPrompt) != "" {
-		lines = append(lines, "", "Additional review instructions from the user:", pystr.Strip(userPrompt))
+	if strings.TrimSpace(userPrompt) != "" {
+		lines = append(lines, "", "Additional review instructions from the user:", strings.TrimSpace(userPrompt))
 	}
 	lines = append(lines,
 		"",
@@ -224,28 +216,13 @@ func BuildReviewTask(snapshot []map[string]string, userPrompt string, loadedSkil
 
 // auxiliary.review as a delegation credentials map, nil when unconfigured so the reviewer inherits the parent
 func loadReviewCredentialsCfg(ctx context.Context, env *Env) map[string]any {
-	loaded, err := reviewLoadConfigReadonly(ctx, env)
-	if err != nil {
-		return nil
-	}
-	auxiliary, _ := loaded["auxiliary"].(map[string]any)
-	reviewValue := auxiliary["review"]
-	if !pyTruthy(reviewValue) {
-		return nil
-	}
-	review, ok := reviewValue.(map[string]any)
-	if !ok {
-		return nil
-	}
+	ctx = envHomeCtx(ctx, env)
 	cfg := map[string]any{}
-	for _, k := range []string{"provider", "model", "base_url", "api_key", "api_mode"} {
-		value := ""
-		if pyTruthy(review[k]) {
-			value = pyStr(review[k])
-		}
-		cfg[k] = pystr.Strip(value)
+	for k, s := range map[string]*settings.String{"provider": settings.AuxiliaryReviewProvider, "model": settings.AuxiliaryReviewModel,
+		"base_url": settings.AuxiliaryReviewBaseUrl, "api_key": settings.AuxiliaryReviewApiKey, "api_mode": settings.AuxiliaryReviewApiMode} {
+		cfg[k] = strings.TrimSpace(s.Get(ctx))
 	}
-	if pystr.Lower(cfg["provider"].(string)) == "auto" {
+	if strings.ToLower(cfg["provider"].(string)) == "auto" {
 		cfg["provider"] = ""
 	}
 	if cfg["provider"] == "" && cfg["model"] == "" && cfg["base_url"] == "" {
@@ -297,15 +274,15 @@ func FormatDispatchNote(result *pyjson.Object, userPrompt string) string {
 	}
 	model := ""
 	if v, _ := result.Get("review_model"); pyTruthy(v) {
-		model = pystr.Strip(pyStr(v))
+		model = strings.TrimSpace(pyStr(v))
 	}
 	modelNote := ""
 	if model != "" {
 		modelNote = " on " + model
 	}
 	focusNote := ""
-	if pystr.Strip(userPrompt) != "" {
-		focusNote = " (focus: " + pystr.Strip(userPrompt) + ")"
+	if strings.TrimSpace(userPrompt) != "" {
+		focusNote = " (focus: " + strings.TrimSpace(userPrompt) + ")"
 	}
 	var body any = result
 	if results, present := result.Get("results"); present {

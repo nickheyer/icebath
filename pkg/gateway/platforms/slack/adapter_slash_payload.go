@@ -38,7 +38,7 @@ func SlashCommandText(ctx context.Context, command map[string]any) (string, erro
 		if !ok {
 			return "", &SlashPayloadError{TypeName: pyrepr.TypeName(v)}
 		}
-		slashName = pystr.Strip(pystr.LstripChars(s, "/"))
+		slashName = strings.TrimSpace(strings.TrimLeft(s, "/"))
 	}
 	rawText := ""
 	if v := command["text"]; pyrepr.Truthy(v) {
@@ -50,7 +50,7 @@ func SlashCommandText(ctx context.Context, command map[string]any) (string, erro
 		}
 		return "/" + slashName + " " + rawText, nil
 	}
-	legacyText := pystr.Strip(rawText)
+	legacyText := strings.TrimSpace(rawText)
 	subcommandMap := subcommandMapLive(ctx)
 	subcommandMap["compact"] = "/compress"
 	firstWord := ""
@@ -58,8 +58,8 @@ func SlashCommandText(ctx context.Context, command map[string]any) (string, erro
 		firstWord = words[0]
 	}
 	if mapped, ok := subcommandMap[firstWord]; ok {
-		if rest := pystr.Strip(strings.TrimPrefix(legacyText, firstWord)); rest != "" {
-			return pystr.Strip(mapped + " " + rest), nil
+		if rest := strings.TrimSpace(strings.TrimPrefix(legacyText, firstWord)); rest != "" {
+			return strings.TrimSpace(mapped + " " + rest), nil
 		}
 		return mapped, nil
 	}

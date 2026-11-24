@@ -6,7 +6,6 @@ import (
 	"maps"
 
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var toolsMCPEnableRegistry = &handlerRegistry{}
@@ -17,7 +16,7 @@ func init() {
 }
 
 // Sets the enabled flag of a config server, the next session or MCP reload loading or dropping it
-func mcpServersEnable(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func mcpServersEnable(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	name, servers, errResp := mcpConfigServerOrError(ctx, rid, params)
 	if errResp != nil {
 		return errResp, nil

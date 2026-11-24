@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -323,8 +324,8 @@ func foldCompletion(event *MessageEvent, waiting *pyjson.Object, identity string
 	}
 	sort.Strings(identities)
 	body := func(text string) string {
-		text = pystr.Rstrip(text)
-		text = pystr.Rstrip(strings.TrimSuffix(text, InternalNotificationFooter))
+		text = strings.TrimRightFunc(text, unicode.IsSpace)
+		text = strings.TrimRightFunc(strings.TrimSuffix(text, InternalNotificationFooter), unicode.IsSpace)
 		if loc := foldHeaderPattern.FindStringIndex(text); loc != nil {
 			return text[loc[1]:]
 		}

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -17,20 +15,16 @@ func RegisterWorkerConfigHooks(ctx context.Context, failureMessage string, level
 	}
 }
 
-// Loads the scope config and wires its consented shell hooks then its outbound webhook targets
+// Wires the consented shell hooks then the outbound webhook targets of the scope's profile
 func registerConfigHooks(ctx context.Context) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
 		}
 	}()
-	cfg, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
+	if _, err := plugins.RegisterShellHooksFromConfig(ctx, false, false); err != nil {
 		return err
 	}
-	if _, err := plugins.RegisterShellHooksFromConfig(ctx, map[string]any(cfg), false, false); err != nil {
-		return err
-	}
-	_, err = plugins.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg))
+	_, err = plugins.RegisterOutboundWebhooksFromConfig(ctx)
 	return err
 }

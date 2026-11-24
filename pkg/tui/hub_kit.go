@@ -372,7 +372,7 @@ func (a *app) hubRunCLI(h *cards.Hub, title string, argv []string, then func(run
 			return asyncDoneMsg{run: finish}
 		}
 		cmd := exec.CommandContext(a.ctx, exe, argv...)
-		cmd.Env = append(os.Environ(), "NO_COLOR=1")
+		cmd.Env = append(append(os.Environ(), movedFolderEnv()...), "NO_COLOR=1")
 		cmd.Dir = a.store.sessionCwd()
 		r, w := io.Pipe()
 		cmd.Stdout, cmd.Stderr = w, w

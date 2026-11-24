@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -134,7 +133,7 @@ func identityName(value *string) string {
 	if value == nil {
 		return ""
 	}
-	return pystr.Strip(*value)
+	return strings.TrimSpace(*value)
 }
 
 // Whether the runner config enables multiplexed profiles
@@ -150,13 +149,13 @@ func identityMultiplexed(runner any) bool {
 // Primary profile name of the runner, else its active profile, else default
 func identityPrimaryProfile(ctx context.Context, runner any, activeFallback bool) string {
 	if r, ok := runner.(identityPrimaryRunner); ok {
-		if name := pystr.Strip(r.PrimaryProfileName()); name != "" {
+		if name := strings.TrimSpace(r.PrimaryProfileName()); name != "" {
 			return name
 		}
 	}
 	if activeFallback {
 		if r, ok := runner.(identityActiveRunner); ok {
-			if name := pystr.Strip(r.ActiveProfileName(ctx)); name != "" {
+			if name := strings.TrimSpace(r.ActiveProfileName(ctx)); name != "" {
 				return name
 			}
 		}
@@ -232,7 +231,7 @@ func resolveIdentity(ctx context.Context, source *SessionSource, runner Transpor
 	ownerProfile := ""
 	if adapter == nil {
 		if owner, profile, ok := runner.TransportOwner(source); ok {
-			adapter, ownerProfile = owner, pystr.Strip(profile)
+			adapter, ownerProfile = owner, strings.TrimSpace(profile)
 		}
 	} else {
 		if source.transportAdapterRef == nil {
@@ -243,9 +242,9 @@ func resolveIdentity(ctx context.Context, source *SessionSource, runner Transpor
 			return nil, fmt.Errorf("the gateway runner (%T) cannot name its owning profile", runner)
 		}
 		_, profile := owning.OwningProfile(adapter, platform)
-		ownerProfile = pystr.Strip(profile)
+		ownerProfile = strings.TrimSpace(profile)
 	}
-	explicit := pystr.Strip(transportProfile)
+	explicit := strings.TrimSpace(transportProfile)
 	transportName := explicit
 	if transportName == "" {
 		transportName = ownerProfile
@@ -394,7 +393,7 @@ func IsAuthenticatedIdentity(identity any) bool {
 	}
 	userID, okUser := fields["user_id"].(string)
 	provider, okProvider := fields["provider"].(string)
-	if !okUser || pystr.Strip(userID) == "" || !okProvider || pystr.Strip(provider) == "" {
+	if !okUser || strings.TrimSpace(userID) == "" || !okProvider || strings.TrimSpace(provider) == "" {
 		return false
 	}
 	return !(userID == wsInternalUserID && provider == wsInternalProvider)

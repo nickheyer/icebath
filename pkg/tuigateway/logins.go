@@ -233,6 +233,29 @@ type LoginConvertParams struct {
 	Login    string  `json:"login"`
 }
 
+type LoginSetPriorityParams struct {
+	Profile  *string `json:"profile,omitzero"`
+	Provider string  `json:"provider"`
+	Login    string  `json:"login"`
+	// Place in the order the provider's logins are tried, 0 first, a place past the end putting the login last
+	Priority int64 `json:"priority"`
+}
+
+type LoginResetParams struct {
+	Profile  *string `json:"profile,omitzero"`
+	Provider string  `json:"provider"`
+	// Login whose limit is forgotten, every login of the provider when empty
+	Login string `json:"login,omitzero"`
+}
+
+type LoginResetResult struct {
+	Provider string `json:"provider"`
+	// Logins whose limit was forgotten
+	Cleared int64 `json:"cleared"`
+	// The login named, as it stands now
+	Login *LoginRow `json:"login,omitzero"`
+}
+
 type SessionSetLoginParams struct {
 	SessionID string `json:"session_id"`
 	// Pool key or provider slug of the login, the session's current provider when omitted
@@ -336,6 +359,12 @@ var LoginSetRotation = NewMethod[LoginSetRotationParams, LoginResult]("login.set
 
 // Moves an env linked API key into an owned login of the same name
 var LoginConvert = NewMethod[LoginConvertParams, LoginResult]("login.convert")
+
+// Moves a login to a place in the order its provider's logins are tried
+var LoginSetPriority = NewMethod[LoginSetPriorityParams, LoginResult]("login.set_priority")
+
+// Forgets the limit one login, or every login of a provider, ran into
+var LoginReset = NewMethod[LoginResetParams, LoginResetResult]("login.reset")
 
 // Pins a login, or the rotation set, and the exhaustion reaction for one session, per provider
 var SessionSetLogin = NewMethod[SessionSetLoginParams, SessionSetLoginResult]("session.set_login")

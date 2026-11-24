@@ -1,69 +1,43 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
-	DefaultLoopMinIntervalSeconds            = 30
-	DefaultLoopMaxTicks                      = 100
-	DefaultLoopSelfPacedFloorSeconds         = 60
-	loopMetaPrefix                           = "loop:"
-	loopDefaultPauseReason                   = "user-paused"
-	loopResumeMaxDelaySeconds        float64 = 5.0
+	loopMetaPrefix                    = "loop:"
+	loopDefaultPauseReason            = "user-paused"
+	loopResumeMaxDelaySeconds float64 = 5.0
 )
 
-// Loops config section, empty when config fails to load or the section is not a mapping
-func loopsConfig(ctx context.Context) map[string]any {
-	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return map[string]any{}
-	}
-	switch section := pyOr(cfg["loops"], map[string]any{}).(type) {
-	case map[string]any:
-		return section
-	case config.Tree:
-		return section
-	}
-	return map[string]any{}
-}
-
-// Loops config key as an int clamped to floor, the default on any bad value
-func loopsConfigInt(ctx context.Context, key string, def, floor int64) int64 {
-	raw, ok := loopsConfig(ctx)[key]
-	if !ok {
-		raw = def
-	}
-	n, err := pyint.Int64(raw)
-	if err != nil {
-		return def
-	}
-	return max(floor, n)
+// Whole seconds of a loops duration setting in effect for ctx, never below floor
+func loopsSeconds(ctx context.Context, d *settings.Duration, floor int64) int64 {
+	return max(floor, int64(d.Get(ctx)/time.Second))
 }
 
 func loopMinIntervalSeconds(ctx context.Context) int64 {
-	return loopsConfigInt(ctx, "min_interval_seconds", DefaultLoopMinIntervalSeconds, 5)
+	return loopsSeconds(ctx, settings.LoopsMinIntervalSeconds, 5)
 }
 
 func loopMaxTicksDefault(ctx context.Context) int64 {
-	return loopsConfigInt(ctx, "max_ticks", DefaultLoopMaxTicks, 0)
+	return max(0, int64(settings.LoopsMaxTicks.Get(ctx)))
 }
 
 func loopSelfPacedFloorSeconds(ctx context.Context) int64 {
-	return loopsConfigInt(ctx, "self_paced_floor_seconds", DefaultLoopSelfPacedFloorSeconds, 10)
+	return loopsSeconds(ctx, settings.LoopsSelfPacedFloorSeconds, 10)
 }
 
 // Serializable loop state stored per session, uncoerced fields keeping their stored JSON value
@@ -89,7 +63,7 @@ type SessionLoopState struct {
 
 // Active interval loop of prompt with the dataclass defaults
 func NewSessionLoopState(prompt any) *SessionLoopState {
-	return &SessionLoopState{Prompt: prompt, Status: "active", Mode: "interval", MaxTicks: DefaultLoopMaxTicks, Route: pyjson.NewObject()}
+	return &SessionLoopState{Prompt: prompt, Status: "active", Mode: "interval", MaxTicks: int64(settings.LoopsMaxTicks.Default), Route: pyjson.NewObject()}
 }
 
 // JSON of every field in declaration order with non ASCII kept
@@ -152,7 +126,7 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 		return nil, err
 	}
 	s.Until = pyrepr.Str(pyOr(d.GetOr("until", ""), ""))
-	if s.MaxTicks, err = integer("max_ticks", DefaultLoopMaxTicks); err != nil {
+	if s.MaxTicks, err = integer("max_ticks", int64(settings.LoopsMaxTicks.Default)); err != nil {
 		return nil, err
 	}
 	if s.TicksFired, err = integer("ticks_fired", 0); err != nil {
@@ -310,7 +284,7 @@ func (m *LoopManager) save(ctx context.Context) *SessionLoopState {
 
 // Starts a loop replacing any existing one, self paced when intervalSeconds is nil
 func (m *LoopManager) Set(ctx context.Context, prompt string, intervalSeconds *int64, times int64, until string, route *pyjson.Object) (*SessionLoopState, error) {
-	prompt = pystr.Strip(prompt)
+	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, &pyint.Error{Kind: "ValueError", Msg: "loop prompt is empty"}
 	}
@@ -329,7 +303,7 @@ func (m *LoopManager) Set(ctx context.Context, prompt string, intervalSeconds *i
 	}
 	st.IntervalSeconds = interval
 	st.Times = max(0, times)
-	st.Until = pystr.Strip(until)
+	st.Until = strings.TrimSpace(until)
 	st.MaxTicks = loopMaxTicksDefault(ctx)
 	st.CreatedAt, st.NextDueAt = now, now
 	if route != nil {

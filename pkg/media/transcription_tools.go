@@ -10,8 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -73,7 +71,6 @@ var (
 	idleUnloadAlive       bool
 	idleUnloadStop        = make(chan struct{})
 	idleUnloadPolicyCtx   = context.Background()
-	idleUnloadFallback    int
 	lastTranscriptionNano atomic.Int64
 	sttMonotonicBase      = time.Now()
 	sttIdleCheckInterval  = 30 * time.Second
@@ -87,31 +84,19 @@ func init() {
 		"deepinfra": transcribeDeepInfra}
 }
 
-// Whether stt.enabled is truthy, loading the config when none is given
-func isSTTEnabled(ctx context.Context, sttConfig map[string]any) bool {
-	if sttConfig == nil {
-		sttConfig = loadSTTConfig(ctx)
+// First non blank language of the service's own settings, then stt.language, empty for auto detect
+func resolveSTTLanguage(ctx context.Context, providerKey string, req *sttRequest) string {
+	if own := ownSTTLanguage(ctx, providerKey, req); own != "" {
+		return own
 	}
-	return isTruthyValue(dictGetDefault(sttConfig, "enabled", true), true)
+	return strings.TrimSpace(req.Language)
 }
 
-// First non blank language of stt.<provider> keys, stt.language, then the env, empty for auto detect
-func resolveSTTLanguage(ctx context.Context, providerKey string, sttConfig map[string]any, extraKeys ...string) string {
-	if sttConfig == nil {
-		sttConfig = loadSTTConfig(ctx)
-	}
-	providerCfg := getProviderSection(sttConfig, providerKey)
-	candidates := []any{providerCfg["language"]}
-	for _, k := range extraKeys {
-		candidates = append(candidates, providerCfg[k])
-	}
-	candidates = append(candidates, sttConfig["language"])
-	if v, ok := os.LookupEnv(localSTTLanguageEnv); ok {
-		candidates = append(candidates, v)
-	}
-	for _, c := range candidates {
-		if s, ok := c.(string); ok && pystr.Strip(s) != "" {
-			return pystr.Strip(s)
+// Language a service's own settings give, empty when it leaves it to the general one
+func ownSTTLanguage(ctx context.Context, providerName string, req *sttRequest) string {
+	for _, s := range req.providerLanguages(ctx, providerName) {
+		if s = strings.TrimSpace(s); s != "" {
+			return s
 		}
 	}
 	return ""
@@ -128,7 +113,7 @@ func openAIAudioUnavailableReason(ctx context.Context) (string, error) {
 
 // Whether a provider is exempt from the remote upload cap
 func isLocalSTTProvider(providerName string) bool {
-	p := pystr.Strip(strings.ToLower(providerName))
+	p := strings.TrimSpace(strings.ToLower(providerName))
 	return p == "local" || p == "local_command"
 }
 
@@ -251,13 +236,12 @@ func resolveExplicitProvider(ctx context.Context, providerName string) (string, 
 }
 
 // STT provider in use, an explicit stt.provider honoured, else local then cloud auto detection
-func getProvider(ctx context.Context, sttConfig map[string]any) (string, error) {
-	if !isSTTEnabled(ctx, sttConfig) {
+func getProvider(ctx context.Context, req *sttRequest) (string, error) {
+	if !req.Enabled {
 		return "none", nil
 	}
-	_, explicit := sttConfig["provider"]
-	raw := dictGetDefault(sttConfig, "provider", sttDefaultProvider)
-	providerName := pyrepr.Str(raw)
+	explicit := req.ProviderSet
+	providerName := req.Provider
 	if explicit && providerName == "local" && sttReadSelection(ctx) == "" {
 		explicit = false
 	}
@@ -303,13 +287,9 @@ func unloadLocalModel() {
 	}
 }
 
-// Idle unload seconds of the stt.local section, an error for a non mapping section
-func configuredIdleUnloadSeconds(ctx context.Context) (int, error) {
-	localCfg, err := orEmptyDict(loadSTTConfig(ctx), "local")
-	if err != nil {
-		return 0, err
-	}
-	return getIdleUnloadSeconds(localCfg), nil
+// Idle unload seconds of stt.local.unload_after_idle_seconds
+func configuredIdleUnloadSeconds(ctx context.Context) int {
+	return loadSTTRequest(ctx).Local.UnloadAfterIdle
 }
 
 // Whether a cached model is loaded
@@ -325,10 +305,10 @@ func secondsSinceTranscription() float64 {
 }
 
 // Ensures the single idle unload watcher runs, governed by the profile of the latest caller
-func startIdleUnloadWatcher(ctx context.Context, timeoutSeconds int) {
+func startIdleUnloadWatcher(ctx context.Context) {
 	idleMgmtMu.Lock()
 	defer idleMgmtMu.Unlock()
-	idleUnloadPolicyCtx, idleUnloadFallback = context.WithoutCancel(ctx), timeoutSeconds
+	idleUnloadPolicyCtx = context.WithoutCancel(ctx)
 	if idleUnloadAlive {
 		return
 	}
@@ -351,12 +331,9 @@ func startIdleUnloadWatcher(ctx context.Context, timeoutSeconds int) {
 				return
 			}
 			idleMgmtMu.Lock()
-			owner, fallback := idleUnloadPolicyCtx, idleUnloadFallback
+			owner := idleUnloadPolicyCtx
 			idleMgmtMu.Unlock()
-			timeout, err := configuredIdleUnloadSeconds(owner)
-			if err != nil {
-				timeout = fallback
-			}
+			timeout := configuredIdleUnloadSeconds(owner)
 			if timeout <= 0 {
 				return
 			}
@@ -374,12 +351,12 @@ func touchTranscriptionTime() {
 }
 
 // Cached faster-whisper model loaded under the model lock, returned with a reference the caller releases
-func getOrLoadLocalModel(ctx context.Context, modelName string, localCfg map[string]any) (*whisperHandle, error) {
+func getOrLoadLocalModel(ctx context.Context, modelName string, local localSTTSettings) (*whisperHandle, error) {
 	localModelMu.Lock()
 	defer localModelMu.Unlock()
 	if localModel == nil || localModelName != modelName {
 		pkgLog().Info(fmt.Sprintf("Loading faster-whisper model '%s' (first load downloads the model)...", modelName))
-		m, err := loadLocalWhisperModel(ctx, modelName, dictGetDefault(localCfg, "device", "auto"), dictGetDefault(localCfg, "compute_type", "auto"))
+		m, err := loadLocalWhisperModel(ctx, modelName, textOr(local.Device, "auto"), textOr(local.ComputeType, "auto"))
 		if err != nil {
 			return nil, err
 		}
@@ -426,13 +403,9 @@ func transcribeLocal(ctx context.Context, filePath, modelName string, h sttHints
 
 // Body of the local transcription whose failures the caller maps to one envelope
 func transcribeLocalBody(ctx context.Context, filePath, modelName string, h sttHints) (map[string]any, error) {
-	sttConfig := loadSTTConfig(ctx)
-	localCfg, err := orEmptyDict(sttConfig, "local")
-	if err != nil {
-		return nil, err
-	}
+	req := loadSTTRequest(ctx)
 	touchTranscriptionTime()
-	handle, err := getOrLoadLocalModel(ctx, modelName, localCfg)
+	handle, err := getOrLoadLocalModel(ctx, modelName, req.Local)
 	if err != nil {
 		return nil, err
 	}
@@ -440,10 +413,7 @@ func transcribeLocalBody(ctx context.Context, filePath, modelName string, h sttH
 		return sttError("Local whisper model failed to load"), nil
 	}
 	defer func() { handle.release() }()
-	kwargs, err := buildLocalTranscribeKwargs(ctx, sttConfig)
-	if err != nil {
-		return nil, err
-	}
+	kwargs := buildLocalTranscribeKwargs(ctx, req)
 	var effective any = h.Language
 	if h.Language == "" {
 		effective = kwargs["language"]
@@ -472,11 +442,11 @@ func transcribeLocalBody(ctx context.Context, filePath, modelName string, h sttH
 			return nil, err
 		}
 	}
-	transcript := joinConfidentSegments(segments, localCfg)
+	transcript := joinConfidentSegments(segments, req.Local)
 	pkgLog().Info(fmt.Sprintf("Transcribed %s via local whisper (%s, lang=%s, %.1fs audio)", filepath.Base(filePath), modelName, info.Language, info.Duration))
 	touchTranscriptionTime()
-	if idle := getIdleUnloadSeconds(localCfg); idle > 0 {
-		startIdleUnloadWatcher(ctx, idle)
+	if req.Local.UnloadAfterIdle > 0 {
+		startIdleUnloadWatcher(ctx)
 	}
 	return sttOK(transcript, "local"), nil
 }
@@ -500,11 +470,11 @@ func transcribePreparedAudio(ctx context.Context, filePath, model, source string
 	if e := validateAudioFile(filePath, false); e != nil {
 		return e, nil
 	}
-	sttConfig := loadSTTConfig(ctx)
-	if !isSTTEnabled(ctx, sttConfig) {
+	req := loadSTTRequest(ctx)
+	if !req.Enabled {
 		return sttError("STT is disabled in config.yaml (stt.enabled: false)."), nil
 	}
-	providerName, err := sttGetProvider(ctx, sttConfig)
+	providerName, err := sttGetProvider(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -525,129 +495,110 @@ func transcribePreparedAudio(ctx context.Context, filePath, model, source string
 		filePath = converted
 	}
 	if cloudSTTProviders[providerName] {
-		if trimmed := trimSilenceForCloudSTT(filePath, sttConfig); trimmed != "" {
+		if trimmed := trimSilenceForCloudSTT(filePath, req); trimmed != "" {
 			filePath = trimmed
 			defer os.RemoveAll(filepath.Dir(trimmed))
 		}
 	}
 	if remote {
-		limit := uploadLimit(providerName, limitModelName(providerName, sttConfig, model))
+		limit := uploadLimit(providerName, limitModelName(providerName, req, model))
 		if exceedsUploadLimit(filePath, limit) {
-			hModel, hLanguage, hPrompt := resolveDispatchHints(ctx, filePath, providerName, sttConfig, model, source)
+			hModel, hLanguage, hPrompt := resolveDispatchHints(ctx, filePath, providerName, req, model, source)
 			return transcribeOversized(filePath, limit, func(part string) (map[string]any, error) {
-				return routeSTTProvider(ctx, part, providerName, sttConfig, hModel, hLanguage, hPrompt)
+				return routeSTTProvider(ctx, part, providerName, req, hModel, hLanguage, hPrompt)
 			})
 		}
 	}
-	return sttDispatchProvider(ctx, filePath, providerName, sttConfig, model, source)
+	return sttDispatchProvider(ctx, filePath, providerName, req, model, source)
 }
 
-// Model whose duration cap applies to an upload, built ins resolving config and defaults
-func limitModelName(providerName string, sttConfig map[string]any, model string) string {
-	if _, ok := builtinSTTModelKeys[providerName]; ok {
-		return builtinModelName(providerName, sttConfig, model)
+// Model whose duration cap applies to an upload, built ins resolving their settings and defaults
+func limitModelName(providerName string, req *sttRequest, model string) string {
+	if builtinSTTProviders[providerName] {
+		return builtinModelName(providerName, req, model)
 	}
 	return model
 }
 
-// Config section, key, default and empty as missing flag of a built in provider model
-type sttModelKey struct {
-	section, key, def string
-	emptyIsMissing    bool
-}
-
-var builtinSTTModelKeys = map[string]sttModelKey{
-	"local":         {"local", "model", sttDefaultLocalModel, false},
-	"local_command": {"local", "model", sttDefaultLocalModel, false},
-	"groq":          {"groq", "model", sttDefaultGroqModel, true},
-	"openai":        {"openai", "model", sttDefaultOpenAIModel, false},
-	"mistral":       {"mistral", "model", sttDefaultMistralModel, false},
-	"xai":           {"xai", "model", "", true},
-	"elevenlabs":    {"elevenlabs", "model_id", sttDefaultElevenLabsModel, false},
-	"deepinfra":     {"deepinfra", "model", "", true},
-}
-
-// String of a config value, empty for None
-func sttStrOrEmpty(v any) string {
-	if v == nil {
-		return ""
-	}
-	return pyrepr.Str(v)
-}
-
-// Built in provider model from the caller override, then stt.<provider> config, then the default
-func builtinModelName(providerName string, sttConfig map[string]any, model string) string {
+// Built in provider model from the caller override, then the service's model setting, groq taking an empty one as its default
+func builtinModelName(providerName string, req *sttRequest, model string) string {
 	if model != "" {
 		return model
 	}
-	k := builtinSTTModelKeys[providerName]
-	cfg := getProviderSection(sttConfig, k.section)
-	var resolved any
-	if k.emptyIsMissing {
-		resolved = cfg[k.key]
-		if !pyTruthy(resolved) {
-			resolved = k.def
-		}
-	} else {
-		resolved = dictGetDefault(cfg, k.key, k.def)
+	switch providerName {
+	case "local", "local_command":
+		return req.Local.Model
+	case "groq":
+		return textOr(req.Groq.Model, sttDefaultGroqModel)
+	case "openai":
+		return req.OpenAI.Model
+	case "mistral":
+		return req.Mistral.Model
+	case "xai":
+		return normalizeXAISTTModel(strings.TrimSpace(req.XAI.Model))
+	case "elevenlabs":
+		return req.ElevenLabs.ModelID
+	case "deepinfra":
+		return strings.TrimSpace(req.DeepInfra.Model)
 	}
-	if providerName == "xai" {
-		return normalizeXAISTTModel(sttStrOrEmpty(resolved))
-	}
-	return sttStrOrEmpty(resolved)
+	return ""
 }
 
 // Model, language and prompt of one recording from stt.prompt and pre_transcription hooks
-func resolveDispatchHints(ctx context.Context, filePath, providerName string, sttConfig map[string]any, model, source string) (string, string, string) {
+func resolveDispatchHints(ctx context.Context, filePath, providerName string, req *sttRequest, model, source string) (string, string, string) {
 	prompt := ""
-	if s, ok := sttConfig["prompt"].(string); ok && pystr.Strip(s) != "" {
-		prompt = s
+	if strings.TrimSpace(req.Prompt) != "" {
+		prompt = req.Prompt
 	}
-	model, language, prompt := applyPreTranscriptionHook(ctx, filePath, providerName, model, getProviderSection(sttConfig, providerName)["language"], prompt, source)
+	var own any
+	if language := ownSTTLanguage(ctx, providerName, req); language != "" {
+		own = language
+	}
+	model, language, prompt := applyPreTranscriptionHook(ctx, filePath, providerName, model, own, prompt, source)
 	return model, language, enforcePromptLengthLimit(prompt, providerName)
 }
 
 // Routes a file to the handler of a provider, built in then command then plugin
-func dispatchSTTProvider(ctx context.Context, filePath, providerName string, sttConfig map[string]any, model, source string) (map[string]any, error) {
-	m, l, p := resolveDispatchHints(ctx, filePath, providerName, sttConfig, model, source)
-	return routeSTTProvider(ctx, filePath, providerName, sttConfig, m, l, p)
+func dispatchSTTProvider(ctx context.Context, filePath, providerName string, req *sttRequest, model, source string) (map[string]any, error) {
+	m, l, p := resolveDispatchHints(ctx, filePath, providerName, req, model, source)
+	return routeSTTProvider(ctx, filePath, providerName, req, m, l, p)
 }
 
 // Handler call of a provider with resolved hints, the no provider envelope when nothing claims it
-func routeSTTProvider(ctx context.Context, filePath, providerName string, sttConfig map[string]any, model, language, prompt string) (map[string]any, error) {
+func routeSTTProvider(ctx context.Context, filePath, providerName string, req *sttRequest, model, language, prompt string) (map[string]any, error) {
 	if builtinSTTProviders[providerName] {
-		modelName := builtinModelName(providerName, sttConfig, model)
+		modelName := builtinModelName(providerName, req, model)
 		if providerName == "local" || providerName == "local_command" {
 			modelName = normalizeLocalModel(modelName)
 		}
 		return sttBuiltinHandlers[providerName](ctx, filePath, modelName, sttHints{Language: language, Prompt: prompt})
 	}
-	if cfg := resolveCommandSTTProviderConfig(providerName, sttConfig); cfg != nil {
-		return transcribeCommandSTT(ctx, filePath, providerName, cfg, sttConfig, model, language, prompt), nil
+	if p := req.command(providerName); p != nil {
+		return transcribeCommandSTT(ctx, filePath, p, req, model, language, prompt), nil
 	}
 	var pluginModel any = sttNone(model)
 	if model == "" {
-		pluginModel = getProviderSection(sttConfig, providerName)["model"]
+		pluginModel = sttNone(providerField(ctx, "stt", providerName, "model"))
 	}
 	pluginLanguage := language
 	if pluginLanguage == "" {
-		pluginLanguage = resolveSTTLanguage(ctx, providerName, sttConfig)
+		pluginLanguage = resolveSTTLanguage(ctx, providerName, req)
 	}
-	if result := dispatchToSTTPluginProvider(ctx, filePath, providerName, sttConfig, pluginModel, sttNone(pluginLanguage), prompt); result != nil {
+	if result := dispatchToSTTPluginProvider(ctx, filePath, providerName, req, pluginModel, sttNone(pluginLanguage), prompt); result != nil {
 		return result, nil
 	}
-	return noProviderError(ctx, providerName, sttConfig)
+	return noProviderError(ctx, providerName, req)
 }
 
 // Error envelope when nothing claimed a provider, unregistered name then openai selection reason then the setup hint
-func noProviderError(ctx context.Context, providerName string, sttConfig map[string]any) (map[string]any, error) {
-	key := pystr.Lower(pystr.Strip(providerName))
-	if _, set := sttConfig["provider"]; set && key != "" && !builtinSTTProviders[key] && key != "none" {
+func noProviderError(ctx context.Context, providerName string, req *sttRequest) (map[string]any, error) {
+	key := strings.ToLower(strings.TrimSpace(providerName))
+	if req.ProviderSet && key != "" && !builtinSTTProviders[key] && key != "none" {
 		return unregisteredSTTProviderError(key), nil
 	}
 	configured := ""
-	if v := sttConfig["provider"]; pyTruthy(v) {
-		configured = pyrepr.Str(v)
+	if req.ProviderSet {
+		configured = req.Provider
 	}
 	if key == "none" && configured == "openai" {
 		reason, err := openAIAudioUnavailableReason(ctx)
@@ -698,11 +649,7 @@ func TranscribeAudioLocalFallback(ctx context.Context, filePath, model string) (
 	}
 	localModel := model
 	if localModel == "" {
-		localCfg, err := orEmptyDict(loadSTTConfig(ctx), "local")
-		if err != nil {
-			return nil, err
-		}
-		localModel = sttStrOrEmpty(dictGetDefault(localCfg, "model", sttDefaultLocalModel))
+		localModel = loadSTTRequest(ctx).Local.Model
 	}
 	if hasFasterWhisper() {
 		return transcribeLocal(ctx, filePath, normalizeLocalModel(localModel), sttHints{})

@@ -122,7 +122,8 @@ func TestLocalSlashCommandsChangeTheView(t *testing.T) {
 }
 
 func TestApprovalDialogAnswersTheServerRequest(t *testing.T) {
-	t.Setenv("ICEBATH_TUI_REDUCED_MOTION", "1")
+	prefs.ReducedMotion = true
+	t.Cleanup(func() { prefs.ReducedMotion = false })
 	a := testApp(t)
 	g := attachScripted(t, a, nil)
 	req := &serverRequest{ID: "req-1", Method: tuigateway.ApprovalRequest.Name(), Params: map[string]any{"command": "rm -rf build", "description": "delete a folder"}, client: a.gw}
@@ -220,7 +221,8 @@ func TestDropLastExchangeKeepsNotesAndEarlierTurns(t *testing.T) {
 }
 
 func TestConnectionCardWalksTheTargets(t *testing.T) {
-	t.Setenv("ICEBATH_TUI_REDUCED_MOTION", "1")
+	prefs.ReducedMotion = true
+	t.Cleanup(func() { prefs.ReducedMotion = false })
 	a := testApp(t)
 	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
 		"connection.respond": fixed(map[string]any{"status": "ok", "settled": false}),

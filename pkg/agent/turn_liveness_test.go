@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"math/big"
 	"runtime/pprof"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -76,19 +77,19 @@ func livenessSection(section any) map[string]any {
 	return map[string]any{"agent": map[string]any{"turn_liveness": section}}
 }
 
+// Liveness settings of a fresh home whose config.yaml holds cfg
 func mustResolveLiveness(t *testing.T, cfg map[string]any) (*float64, float64) {
 	t.Helper()
-	timeout, poll, err := resolveTurnLivenessSettings(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return timeout, poll
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	setProfileConfig(t, h, cfg)
+	return resolveTurnLivenessSettings(home.WithOverride(context.Background(), h))
 }
 
 func assertLivenessDefaults(t *testing.T, cfg map[string]any) {
 	t.Helper()
 	timeout, poll := mustResolveLiveness(t, cfg)
-	if timeout == nil || *timeout != defaultTurnLivenessTimeoutS || poll != defaultTurnLivenessPollS {
+	if timeout == nil || *timeout != settings.AgentTurnLivenessTimeoutS.Default.Seconds() || poll != settings.AgentTurnLivenessPollS.Default.Seconds() {
 		t.Fatalf("settings %v %v for %v", timeout, poll, cfg)
 	}
 }
@@ -124,7 +125,7 @@ func TestTimeoutZeroIsDocumentedOptOut(t *testing.T) {
 }
 
 func TestTypoDoesNotCrashAndFallsBackToDefault(t *testing.T) {
-	records := captureLogger(t, "agent", slog.LevelWarn)
+	records := captureLogger(t, "settings", slog.LevelWarn)
 	assertLivenessDefaults(t, livenessSection(map[string]any{"timeout_s": "oops", "poll_s": "typo"}))
 	recs := records()
 	if len(recs) != 2 {
@@ -138,7 +139,7 @@ func TestTypoDoesNotCrashAndFallsBackToDefault(t *testing.T) {
 }
 
 func TestNanTimeoutFallsBackToDefaultNotDisabled(t *testing.T) {
-	records := captureLogger(t, "agent", slog.LevelWarn)
+	records := captureLogger(t, "settings", slog.LevelWarn)
 	assertLivenessDefaults(t, livenessSection(map[string]any{"timeout_s": math.NaN()}))
 	if n := len(records()); n != 1 {
 		t.Fatalf("records %d", n)
@@ -156,7 +157,7 @@ func TestInfPollFallsBackToDefaultNotFrozenWatcher(t *testing.T) {
 func TestInfTimeoutFallsBackToDefault(t *testing.T) {
 	records := captureLogger(t, "agent", slog.LevelWarn)
 	timeout, _ := mustResolveLiveness(t, livenessSection(map[string]any{"timeout_s": math.Inf(1)}))
-	if *timeout != defaultTurnLivenessTimeoutS || len(records()) != 1 {
+	if *timeout != settings.AgentTurnLivenessTimeoutS.Default.Seconds() || len(records()) != 1 {
 		t.Fatalf("timeout %v records %v", *timeout, records())
 	}
 }
@@ -164,14 +165,14 @@ func TestInfTimeoutFallsBackToDefault(t *testing.T) {
 func TestNonPositivePollFallsBackToDefault(t *testing.T) {
 	captureLogger(t, "agent", slog.LevelWarn)
 	for _, raw := range []any{0, -3} {
-		if _, poll := mustResolveLiveness(t, livenessSection(map[string]any{"poll_s": raw})); poll != defaultTurnLivenessPollS {
+		if _, poll := mustResolveLiveness(t, livenessSection(map[string]any{"poll_s": raw})); poll != settings.AgentTurnLivenessPollS.Default.Seconds() {
 			t.Fatalf("poll %v for %v", poll, raw)
 		}
 	}
 }
 
 func TestMalformedSectionsFallBackToDefaults(t *testing.T) {
-	records := captureLogger(t, "agent", slog.LevelWarn)
+	records := captureLogger(t, "settings", slog.LevelWarn)
 	assertLivenessDefaults(t, map[string]any{"agent": "nonsense"})
 	assertLivenessDefaults(t, livenessSection("nonsense"))
 	if len(records()) < 1 {
@@ -179,10 +180,11 @@ func TestMalformedSectionsFallBackToDefaults(t *testing.T) {
 	}
 }
 
-func TestOverflowingKnobRaisesLikePythonFloat(t *testing.T) {
-	huge, _ := new(big.Int).SetString("1"+strings.Repeat("0", 400), 10)
-	if _, _, err := resolveTurnLivenessSettings(livenessSection(map[string]any{"timeout_s": huge})); err == nil || !strings.Contains(err.Error(), "int too large to convert to float") {
-		t.Fatalf("overflow error %v", err)
+func TestOverflowingKnobFallsBackToDefault(t *testing.T) {
+	records := captureLogger(t, "settings", slog.LevelWarn)
+	assertLivenessDefaults(t, livenessSection(map[string]any{"timeout_s": "1" + strings.Repeat("0", 400)}))
+	if len(records()) != 1 {
+		t.Fatalf("records %v", records())
 	}
 }
 

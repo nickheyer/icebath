@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -42,14 +40,8 @@ var turnLeaseInterrupt = func(a *AIAgent, message string, o InterruptOptions) (b
 	return a.InterruptWith(message, o), nil
 }
 
-// Liveness config the watchdog resolves, an empty mapping when it cannot be read
-var turnLivenessConfig = func(ctx context.Context) map[string]any {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil || tree == nil {
-		return map[string]any{}
-	}
-	return tree
-}
+// Liveness timeout and poll seconds the watchdog runs with, swapped by tests that arm it fast or turn it off
+var turnLivenessSettings = resolveTurnLivenessSettings
 
 // Store a lease renews and releases its row through
 type turnLeaseStore interface {
@@ -132,13 +124,9 @@ func (l *durableTurnLease) currentSessionID() string {
 	return l.sessionID
 }
 
-// Creates the liveness watchdog when configured, erroring only when a knob overflows a float
+// Creates the liveness watchdog when configured
 func (l *durableTurnLease) BuildThreads(ctx context.Context) error {
-	timeoutS, pollS, err := resolveTurnLivenessSettings(turnLivenessConfig(ctx))
-	if err != nil {
-		return err
-	}
-	if timeoutS != nil {
+	if timeoutS, pollS := turnLivenessSettings(ctx); timeoutS != nil {
 		l.watchdog = newTurnLivenessWatchdog(l.agent, turnLivenessWatchdogConfig{
 			sessionID: l.currentSessionID(), timeoutS: *timeoutS, pollS: pollS, stopEvent: l.stop,
 			activityLock: l.agent.livenessActivityLock(), isTurnActive: l.IsTurnActive,

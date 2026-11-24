@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Dict is a literal dict keeping insertion order, its keys compared with Python equality
@@ -350,7 +349,7 @@ func reprNodeList(b *strings.Builder, list []*Node, depth int) error {
 
 // Items of a list literal rendered with str, false on ValueError, SyntaxError or a non list, other exceptions returned
 func LiteralStrList(text string) ([]string, bool, error) {
-	v, err := LiteralEval(pystr.Strip(text))
+	v, err := LiteralEval(strings.TrimSpace(text))
 	if err != nil {
 		var se *SyntaxError
 		var le *LiteralError

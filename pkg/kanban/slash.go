@@ -1,6 +1,9 @@
 package kanban
 
 import (
+	"strings"
+	"unicode"
+
 	"bytes"
 	"context"
 	"errors"
@@ -9,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // What the CLI parser made of slash tokens, parser text renamed to /kanban whenever no action parsed
@@ -50,7 +52,7 @@ const SlashKanbanHelp = "**/kanban** — manage the shared task board.\n" +
 
 // Slash tokens of a kanban invocation, non POSIX on Windows with one wrapping quote pair stripped
 func slashTokens(rest string) ([]string, error) {
-	if rest == "" || pystr.Strip(rest) == "" {
+	if rest == "" || strings.TrimSpace(rest) == "" {
 		return nil, nil
 	}
 	var raw []string
@@ -87,14 +89,14 @@ func RunSlash(ctx context.Context, rest string) (string, error) {
 	}
 	p := ParseSlash(tokens)
 	if !p.Parsed {
-		out := pystr.Rstrip(p.Out)
+		out := strings.TrimRightFunc(p.Out, unicode.IsSpace)
 		if p.ArgError != "" {
 			return "⚠ /kanban usage error\n" + p.Usage + "\n" + p.ArgError, nil
 		}
 		if p.Failure == nil && out != "" {
 			return out, nil
 		}
-		body := pystr.Rstrip(p.Err)
+		body := strings.TrimRightFunc(p.Err, unicode.IsSpace)
 		if body == "" {
 			body = out
 		}
@@ -112,7 +114,7 @@ func RunSlash(ctx context.Context, rest string) (string, error) {
 	if _, kerr := KanbanCommand(ctx, p.Namespace, &bufOut, &bufErr); kerr != nil {
 		fmt.Fprintf(&bufErr, "error: %s\n", pyrepr.ExceptionMessage(kerr))
 	}
-	out, errText := pystr.Rstrip(bufOut.String()), pystr.Rstrip(bufErr.String())
+	out, errText := strings.TrimRightFunc(bufOut.String(), unicode.IsSpace), strings.TrimRightFunc(bufErr.String(), unicode.IsSpace)
 	if errText != "" && out != "" {
 		return out + "\n" + errText, nil
 	}

@@ -9,7 +9,6 @@ import (
 // Browser parts of the session host, bound by the extras tier that carries the browser and nil in a build without it
 var (
 	browserManageHandler func(ctx context.Context, rid any, params map[string]any) map[string]any
-	releaseVaultSession  func(sessionID string)
 )
 
 var browserRegistry = &handlerRegistry{}

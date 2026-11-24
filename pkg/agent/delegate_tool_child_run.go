@@ -321,7 +321,7 @@ func dumpSubagentTimeoutDiagnostic(ctx context.Context, child *AIAgent, taskInde
 	}
 	now := childRunNow()
 	dumpPath := filepath.Join(logsDir, fmt.Sprintf("subagent-timeout-%s-%s.log", subagentID, now.Format("20060102_150405")))
-	goalPreview := tools.Elide(pystr.Strip(goal), 1000)
+	goalPreview := tools.Elide(strings.TrimSpace(goal), 1000)
 	if goalPreview == "" {
 		goalPreview = "(empty)"
 	}
@@ -691,7 +691,7 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 	}
 	firstText, _ := result["final_response"].(string)
 	valid, errs := mustValidateOutput(firstText, schema)
-	if valid || pystr.Strip(firstText) == "" || pyTruthy(result["interrupted"]) {
+	if valid || strings.TrimSpace(firstText) == "" || pyTruthy(result["interrupted"]) {
 		return schemaOutcome{schema, boolPtr(valid), errs, 0}
 	}
 	var retry map[string]any
@@ -716,7 +716,7 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 	}()
 	if retry != nil {
 		retryText, _ := retry["final_response"].(string)
-		if pystr.Strip(retryText) != "" {
+		if strings.TrimSpace(retryText) != "" {
 			result["final_response"] = retryText
 		}
 		result["api_calls"] = childNumInt(result["api_calls"]) + childNumInt(retry["api_calls"])
@@ -818,26 +818,26 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 // Parent visible result entry with status, exit reason, tool trace, tokens and cost
 func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, duration float64, schema schemaOutcome) *pyjson.Object {
 	summary, _ := result["final_response"].(string)
-	usable := summary != "" && pystr.Strip(summary) != "(empty)"
+	usable := summary != "" && strings.TrimSpace(summary) != "(empty)"
 	interruptNote := ""
 	var status, exitReason string
 	switch {
 	case pyTruthy(result["interrupted"]):
 		status, exitReason = "interrupted", "interrupted"
-		sentinels := map[string]bool{"": true, pystr.Strip(summary): true, "Operation interrupted.": true}
+		sentinels := map[string]bool{"": true, strings.TrimSpace(summary): true, "Operation interrupted.": true}
 		msgs := resultMessages(result["messages"])
 		partial := ""
 		for i := len(msgs) - 1; i >= 0; i-- {
 			if msgs[i]["role"] != "assistant" {
 				continue
 			}
-			if t := pystr.Strip(state.FlattenMessageText(msgs[i]["content"], "\n")); !sentinels[t] {
+			if t := strings.TrimSpace(state.FlattenMessageText(msgs[i]["content"], "\n")); !sentinels[t] {
 				partial = t
 				break
 			}
 		}
 		if partial != "" {
-			interruptNote, summary = pystr.Strip(summary), partial
+			interruptNote, summary = strings.TrimSpace(summary), partial
 		}
 	case pyTruthy(result["failed"]) || pyTruthy(result["error"]):
 		status, exitReason = "failed", "error"
@@ -916,7 +916,7 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 				"yourself (see schema_errors) rather than re-running the task.")
 		}
 	}
-	if missed, ok := result["pending_steer"].(string); ok && pystr.Strip(missed) != "" {
+	if missed, ok := result["pending_steer"].(string); ok && strings.TrimSpace(missed) != "" {
 		e.Set("missed_steer", missed)
 		note := "[steer did not land — the subagent finished before it could be delivered: " + missed + "]"
 		if summary != "" {

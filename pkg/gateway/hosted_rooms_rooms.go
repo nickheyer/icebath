@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -324,7 +323,7 @@ func hostedValidateActor(value any, kind string) (map[string]any, string, error)
 		if !ok {
 			return nil, "", hostedRoomError("actor." + field.name + " must be a string")
 		}
-		text = pystr.Strip(text)
+		text = strings.TrimSpace(text)
 		if utf8.RuneCountInString(text) > field.maxChars {
 			return nil, "", hostedRoomError("actor." + field.name + " is too long")
 		}

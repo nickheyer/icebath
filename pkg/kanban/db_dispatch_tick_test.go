@@ -33,7 +33,7 @@ func TestDispatchUnreadableAllowlistWarnsPerLaneTask(t *testing.T) {
 	prevOut, prevFlags := stdlog.Writer(), stdlog.Flags()
 	stdlog.SetOutput(&buf)
 	t.Cleanup(func() { stdlog.SetOutput(prevOut); stdlog.SetFlags(prevFlags) })
-	o := DefaultDispatchOptions()
+	o := ConfiguredDispatchOptions(context.Background())
 	o.DryRun = true
 	result, err := DispatchOnce(context.Background(), conn, o)
 	if err != nil {

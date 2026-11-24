@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugintree"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -143,7 +142,7 @@ func bundledManifestDefaultOn(manifest map[string]any) bool {
 	if v, ok := manifest["kind"]; ok {
 		rawKind = v
 	}
-	kind := strings.ToLower(pystr.Strip(pyrepr.Str(rawKind)))
+	kind := strings.ToLower(strings.TrimSpace(pyrepr.Str(rawKind)))
 	return kind == "model-provider" || bundledDefaultOnKinds[kind]
 }
 

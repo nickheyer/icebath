@@ -78,7 +78,7 @@ func ValidateChannelName(value any) (string, error) {
 // Reports whether tag is a stable version carrying a full UTC canary build timestamp
 func IsCanaryTag(tag any) bool {
 	text, ok := tag.(string)
-	return ok && canaryTagRE.MatchString(pystr.Strip(text))
+	return ok && canaryTagRE.MatchString(strings.TrimSpace(text))
 }
 
 // Sixteen hex digit key of the install at projectRoot, the running install when empty
@@ -169,13 +169,13 @@ func checkoutTracksOfficialOrigin(root string) (bool, error) {
 	}
 	inOrigin := false
 	for _, line := range pystr.Splitlines(text, false) {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		key, value, _ := strings.Cut(line, "=")
 		switch {
 		case strings.HasPrefix(line, "["):
 			inOrigin = line == `[remote "origin"]`
-		case inOrigin && pystr.Strip(key) == "url":
-			match := githubOriginRE.FindStringSubmatch(pystr.Strip(value))
+		case inOrigin && strings.TrimSpace(key) == "url":
+			match := githubOriginRE.FindStringSubmatch(strings.TrimSpace(value))
 			return match != nil && strings.ToLower(match[1]) == strings.ToLower(OfficialRepository), nil
 		}
 	}

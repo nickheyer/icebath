@@ -211,7 +211,7 @@ func GhCliToken() string {
 	if res.code != 0 {
 		return ""
 	}
-	return pystr.Strip(res.stdout)
+	return strings.TrimSpace(res.stdout)
 }
 
 // Username and password the user's git credential helpers store for origin, never prompting

@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -240,11 +239,11 @@ func ParseCLIValue(key, value string) (any, error) { return coerceConfigSetValue
 
 // Coerces a config set string to bool, null, int, float, list or mapping, string settings kept verbatim
 func coerceConfigSetValue(key, value string) (any, error) {
-	if _, isStr := defaultValueForKey(key).(string); isStr && !(key == "model" && LooksStructuredValue(value)) {
+	if _, isStr := defaultValueForKey(key).(string); isStr {
 		return value, nil
 	}
 	stripped := strings.TrimFunc(value, isPySpace)
-	if v, ok := scalarWords[pystr.Lower(stripped)]; ok {
+	if v, ok := scalarWords[strings.ToLower(stripped)]; ok {
 		return v, nil
 	}
 	if v, ok := coerceInt(stripped); ok {

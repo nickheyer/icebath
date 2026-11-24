@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -15,23 +14,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Registration API base and source of the device flow, env overrides first
-func registrationBaseURL() string {
-	if v, ok := os.LookupEnv("DINGTALK_REGISTRATION_BASE_URL"); ok {
-		return strings.TrimRight(v, "/")
-	}
-	return "https://oapi.dingtalk.com"
+// Registration API base of the device flow from dingtalk.registration_base_url
+func registrationBaseURL(ctx context.Context) string {
+	return strings.TrimRight(strings.TrimSpace(settings.DingtalkRegistrationBaseURL.Get(gateway.SettingsContext(ctx))), "/")
 }
 
-func registrationSource() string {
-	if v, ok := os.LookupEnv("DINGTALK_REGISTRATION_SOURCE"); ok {
-		return v
-	}
-	return "openClaw"
+// Source name of the device flow from dingtalk.registration_source
+func registrationSource(ctx context.Context) string {
+	return strings.TrimSpace(settings.DingtalkRegistrationSource.Get(gateway.SettingsContext(ctx)))
 }
 
 var pollStatuses = map[string]bool{"WAITING": true, "SUCCESS": true, "FAIL": true, "EXPIRED": true}
@@ -67,7 +61,7 @@ var (
 
 // POSTs to the registration API, the RegistrationError of a network failure or a non zero errcode
 func apiPost(ctx context.Context, path string, payload *pyjson.Object) (*pyjson.Object, error) {
-	url := registrationBaseURL() + path
+	url := registrationBaseURL(ctx) + path
 	network := func(err error) error {
 		return &RegistrationError{fmt.Sprintf("Network error calling %s: %s", url, err.Error())}
 	}
@@ -122,7 +116,7 @@ func fieldText(o *pyjson.Object, key string, def any) string {
 	if !ok {
 		v = def
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Python int of an object field, the default when missing
@@ -146,7 +140,7 @@ type registration struct {
 
 // Starts a device flow registration, init for the nonce then begin for the device code and URL
 func beginRegistration(ctx context.Context) (*registration, error) {
-	initData, err := apiPostFn(ctx, "/app/registration/init", pyjson.ObjectOf("source", registrationSource()))
+	initData, err := apiPostFn(ctx, "/app/registration/init", pyjson.ObjectOf("source", registrationSource(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +182,7 @@ func pollRegistration(ctx context.Context, deviceCode string) (*pollResult, erro
 	if err != nil {
 		return nil, err
 	}
-	status := pystr.Upper(fieldText(data, "status", ""))
+	status := strings.ToUpper(fieldText(data, "status", ""))
 	if !pollStatuses[status] {
 		status = "UNKNOWN"
 	}

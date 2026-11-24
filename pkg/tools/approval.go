@@ -583,7 +583,9 @@ func persistChoice(env *Env, sessionKey, choice string, keys []string) {
 				}
 			}
 			approvalState.Unlock()
-			SavePermanentAllowlist(env, grants)
+			if err := SavePermanentAllowlist(env, grants); err != nil {
+				envLog(env).Warn("The always answer is in effect but could not be saved to allowed commands", "pattern", key, "error", err)
+			}
 		}
 	}
 }
@@ -660,9 +662,9 @@ func copySet(s map[string]bool) map[string]bool {
 }
 
 // SavePermanentAllowlist writes the on disk list plus this process's grants back to config
-func SavePermanentAllowlist(env *Env, patterns map[string]bool) {
+func SavePermanentAllowlist(env *Env, patterns map[string]bool) error {
 	if env == nil || env.Home == "" {
-		return
+		return nil
 	}
 	ctx := envHomeCtx(context.Background(), env)
 	onDisk := map[string]bool{}
@@ -685,8 +687,7 @@ func SavePermanentAllowlist(env *Env, patterns map[string]bool) {
 	}
 	sort.Strings(sorted)
 	if _, err := settings.Set(ctx, settings.AllowedCommands.Key, sorted, settings.Global); err != nil {
-		envLog(env).Warn("Could not save allowlist", "error", err)
-		return
+		return err
 	}
 	approvalState.baselineByHome[key] = copySet(merged)
 	governing := approvalState.permanentByHome[key]
@@ -700,6 +701,7 @@ func SavePermanentAllowlist(env *Env, patterns map[string]bool) {
 	for k := range merged {
 		governing[k] = true
 	}
+	return nil
 }
 
 // IsApprovalBypassActiveForSession is the three source bypass check without floors
@@ -1307,7 +1309,7 @@ func runtimeDeleteHit(path string) string { return isProtectedPath(path, true) }
 
 // Matches a uv python uninstall spec against the running base version and directory name
 func versionSpecMatches(spec, version, uvRootName string) bool {
-	spec = pystr.Lower(pystr.Strip(spec))
+	spec = strings.ToLower(strings.TrimSpace(spec))
 	if spec == "" {
 		return false
 	}
@@ -1317,7 +1319,7 @@ func versionSpecMatches(spec, version, uvRootName string) bool {
 	if strings.HasPrefix(spec, "-") {
 		return false
 	}
-	if strings.HasPrefix(pystr.Lower(uvRootName), spec) {
+	if strings.HasPrefix(strings.ToLower(uvRootName), spec) {
 		return true
 	}
 	return spec == version || (strings.HasPrefix(version, spec) && strings.HasPrefix(version[len(spec):], "."))
@@ -1336,7 +1338,7 @@ func uvUninstallTarget(words []string) string {
 	}
 	pythonAt, uninstallAt := -1, -1
 	for i, w := range words {
-		lower := pystr.Lower(w)
+		lower := strings.ToLower(w)
 		if pythonAt < 0 {
 			if lower == "python" {
 				pythonAt = i
@@ -1370,7 +1372,7 @@ func uvUninstallTarget(words []string) string {
 
 // Description of the runtime path the command would delete, empty when none
 func commandDeletesRuntime(command string) string {
-	if pystr.Strip(command) == "" || len(protectedRuntimeEntries()) == 0 {
+	if strings.TrimSpace(command) == "" || len(protectedRuntimeEntries()) == 0 {
 		return ""
 	}
 	for _, segment := range runtimeSegmentSplitRe.Split(command, -1) {
@@ -1378,7 +1380,7 @@ func commandDeletesRuntime(command string) string {
 		if len(words) == 0 {
 			continue
 		}
-		name := pystr.Lower(pypath.Basename(words[0]))
+		name := strings.ToLower(pypath.Basename(words[0]))
 		if name == "uv" {
 			if target := uvUninstallTarget(words); target != "" {
 				return target

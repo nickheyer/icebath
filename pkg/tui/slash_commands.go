@@ -449,7 +449,7 @@ func (a *app) transcriptCommands() []slashCommand {
 				format, filename, redact := parseSaveArgs(r.arg)
 				cwd := a.store.sessionCwd()
 				if attachURLEnv() != "" {
-					cwd = os.Getenv("ICEBATH_CWD")
+					cwd = launchCwd()
 				}
 				if cwd == "" {
 					cwd, _ = os.Getwd()

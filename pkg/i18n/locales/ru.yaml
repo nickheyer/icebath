@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (только на следующий ход — вернётся после одного ответа)"
     switch_cancelled: "🟡 Смена модели отменена. Текущая модель не изменилась ({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_Текстовый вариант: ответьте `{prefix}approve`, чтобы переключиться, или `{prefix}cancel`, чтобы оставить текущую модель._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "`--once` недоступен в этой сессии; используйте `/model <name>` и переключитесь обратно после хода."
+    local_next_turn: "Применяется со следующего сообщения."
   agents:
 
     header: "🤖 **Активные агенты и задачи**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast доступен только для моделей OpenAI, поддерживающих Priority Processing."
-    status: "⚡ Priority Processing\n\nТекущий режим: `{mode}`\n\n_Использование:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ Неизвестный аргумент: `{arg}`\n\n**Допустимые варианты:** normal, fast, status"
+    not_supported: "⚡ Для /fast нужна модель, провайдер которой предлагает быстрый уровень, например OpenAI Priority Processing или быстрый режим Anthropic. Переключитесь через /model на такую модель."
+    status: "⚡ Priority Processing\n\nТекущий режим: `{mode}`\n\n_Использование:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ Неизвестный аргумент: `{arg}`\n\n**Допустимые варианты:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (сохранено в конфигурации)\n_(вступит в силу со следующего сообщения)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (только этот сеанс)"
     label_fast: "БЫСТРЫЙ"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — быстро только на первом ходе сессии"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, цена ×6"
     ultrafast_not_supported: "⚡ Ultrafast недоступен для `{model}` в этом аккаунте или маршруте."
+  setup_wizard:
+
+    configure_in_config: "  Настройте {platform} в config.yaml в разделе platforms.{key}"
   footer:
 
     status: "📎 Нижний колонтитул среды выполнения: **{state}**\nПоля: `{fields}`\nПлатформа: `{platform}`"
@@ -244,20 +247,20 @@ gateway:
     no_output: "(нет вывода)"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
+      completed: "завершена"
+      gave_up: "остановлена (попытки исчерпаны)"
+      crashed: "аварийно завершилась (воркер остановился); диспетчер повторит попытку"
+      timed_out: "превысила лимит времени; диспетчер повторит попытку"
+      blocked: "заблокирована; требует внимания"
+      review_requested: "передана на ревью; реализация готова"
+      changes_requested: "ревью запросило изменения (BLOCK); реализация не одобрена"
+      block_loop_detected: "направлена в триаж после повторных блокировок; требуется внимание оркестратора"
+      status_default: "изменила статус"
       status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
-      handoff: "Result: {summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      message: "[kanban] Задача {task_id} {status}.\nНазвание: {title}\nИсполнитель: @{assignee}\nДоска: {board}\n\nПроверьте результат или решите, что делать дальше."
+      handoff: "Результат: {summary}"
+      review_detail: "Замечания ревью: {reason}\nИзучите существующую карточку и её текущий запуск ревью; верните работу в ту же задачу реализации. Не считайте этот BLOCK одобрением и не создавайте дублирующую задачу."
+      guidance: "Это автоматическое уведомление о статусе задачи, а не просьба снова разбить задачу на части. Изучите текущую доску, прежде чем создавать последующие задачи; не создавайте заново задачи или графы, которые уже существуют."
     ping:
 
       completed: "✔ {head} готово — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "Показать доступные команды (/help skills — команды навыков, /help <текст> — фильтр)"
   palette:
 
-    description: "Открыть палитру команд с нечётким поиском (также Ctrl+P)"
+    description: "Открыть палитру команд с нечётким поиском"
   restart:
 
     description: "Аккуратно перезапустить шлюз после завершения активных запусков"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "заархивирован + удалён → {ref}"
     sweep_archived_kept: "заархивирован, сохранён ({reason}) → {ref}"
     discarded: "Worktree удалён, изменения отброшены: {path}"
+  update:
+
+    held_icebath: "{mark} Из этой установки запущены другие процессы icebath ({count}):"
+    held_venv: "{mark} Из Python-окружения этой установки запущены процессы ({count}):"
+    held_forced: "  → Обновление всё равно выполняется из-за {flag}."
+    held_refused: "  Закройте их и снова запустите `icebath update` или передайте {flag}, чтобы обновить всё равно."
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "окно контекста локальной модели оказалось слишком маленьким, чтобы завершить работу. Увеличьте размер контекста или используйте более крупную модель."
     pending_tool_result: "ход остановлен, пока результат инструмента ещё ожидался, а модель не выдала продолжения. Отправьте `continue`, чтобы она подвела итог."
     interrupted_during_api_call: "запрос был прерван во время вызова до получения ответа. Отправьте `continue`, чтобы повторить."
-    max_iterations_reached: "достигнут лимит итераций инструментов до получения окончательного ответа. Отправьте `continue`, чтобы продолжить, или увеличьте `max_iterations`."
+    max_iterations_reached: "достигнут лимит итераций инструментов до получения окончательного ответа. Отправьте `continue`, чтобы продолжить, или увеличьте `agent.max_turns`."
     error_near_max_iterations: "возникла ошибка вблизи лимита итераций до получения окончательного ответа. Проверьте вывод инструмента выше, затем отправьте `continue`."
     repeated_outer_errors: "ход раз за разом завершался ошибками и был остановлен досрочно вместо бесконечных повторов. Проверьте ошибки выше, затем отправьте `continue`, чтобы повторить."
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath загружает контекст проекта из .icebath.md, AGENTS.md, CLAUDE.md или .cursorrules (первый найденный)."
   t178: "Файлы AGENTS.md в подкаталогах обнаруживаются постепенно, по мере того как агент переходит в папки."
   t179: "Файлы контекста ограничены 20 000 символами с умной обрезкой начала и конца."
-  t180: "Браузерные бэкенды: локальный Chromium, Lightpanda, Browserbase, Browser Use и Firecrawl — плюс встроенный Camofox."
-  t181: "Camofox (Firefox с защитой от обнаружения) встроен: настройте его командой icebath camofox setup."
+  t180: "Браузерные бэкенды: локальный Chromium, Lightpanda, Browserbase, Browser Use и Firecrawl — плюс Camofox как плагин."
+  t181: "Camofox (Firefox с защитой от обнаружения) — это плагин: установите его командой icebath plugins install camofox, затем выполните icebath camofox setup."
   t182: "browser_exec выполняет несколько шагов в браузере за один вызов Python — переход, извлечение и клики вместе."
   t183: "browser.dialog_policy задаёт обработку нативных диалогов страницы: must_respond (агент отвечает через browser_dialog), auto_dismiss или auto_accept."
   t184: "icebath mcp открывает интерактивный выбор MCP-серверов из встроенного каталога icebath, которые устанавливаются одним нажатием."

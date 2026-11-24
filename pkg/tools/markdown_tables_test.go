@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
 )
 
@@ -70,7 +69,7 @@ func TestHorizontalKeptWhenTableFits(t *testing.T) {
 	out := RealignMarkdownTables(src, &width)
 	var bodyRows []string
 	for _, ln := range strings.Split(out, "\n") {
-		if strings.HasPrefix(pystr.Strip(ln), "|") {
+		if strings.HasPrefix(strings.TrimSpace(ln), "|") {
 			bodyRows = append(bodyRows, ln)
 		}
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -45,7 +44,7 @@ func LegacyAgentMain(ctx context.Context, argv []string, stdout, stderr io.Write
 	if err != nil {
 		return fail(err)
 	}
-	positional := pystr.Strip(strings.Join(args.Prompt, " "))
+	positional := strings.TrimSpace(strings.Join(args.Prompt, " "))
 	given := args.Query != nil && *args.Query != ""
 	if given && positional != "" {
 		return fail(parser.Error("pass the query either positionally or via --query, not both"))

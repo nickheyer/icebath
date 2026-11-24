@@ -1,6 +1,8 @@
 package plugins
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
@@ -66,7 +68,7 @@ func choiceOptions(choices []any) ([]choiceOption, error) {
 		}
 		description := ""
 		if d, _ := get("description"); config.PyTruthy(d) {
-			description = pystr.Strip(config.PyStr(d))
+			description = strings.TrimSpace(config.PyStr(d))
 		}
 		shown := label
 		if description != "" {
@@ -107,7 +109,7 @@ func askChoice(ctx context.Context, question any, choices []any) (string, bool, 
 		labels[i] = o.shown
 	}
 	picked, _ := asker(config.PyStr(question), labels)
-	typed := pystr.Casefold(pystr.Strip(picked))
+	typed := pystr.Casefold(strings.TrimSpace(picked))
 	if typed == "" {
 		return "", false, nil
 	}

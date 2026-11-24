@@ -1,9 +1,9 @@
 package state
 
 import (
-	"context"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"context"
 )
 
 // Lifecycle statuses a session transcript tail classifies to
@@ -20,11 +20,11 @@ var errorFinishReasons = map[string]bool{"error": true, "agent_error": true, "co
 // Error for an error finish, interrupted for pending tool calls or a trailing user or tool row, else complete
 func ClassifySessionStatus(role any, hasToolCalls bool, finishReason any) string {
 	finish, _ := finishReason.(string)
-	if errorFinishReasons[pystr.Lower(pystr.Strip(finish))] {
+	if errorFinishReasons[strings.ToLower(strings.TrimSpace(finish))] {
 		return SessionStatusError
 	}
 	roleText, _ := role.(string)
-	r := pystr.Lower(pystr.Strip(roleText))
+	r := strings.ToLower(strings.TrimSpace(roleText))
 	if r == "user" || r == "tool" || (r == "assistant" && hasToolCalls) {
 		return SessionStatusInterrupted
 	}

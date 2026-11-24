@@ -93,7 +93,7 @@ func runBackendProbe(ctx context.Context, env *Env, envType string) (string, err
 		pkgLog().Debug(fmt.Sprintf("Backend probe returned non-zero: %+v", *result))
 		return "", nil
 	}
-	return pystr.Strip(result.Output), nil
+	return strings.TrimSpace(result.Output), nil
 }
 
 // Indented OS summary from the probe key value lines, empty when nothing usable came back
@@ -102,7 +102,7 @@ func formatBackendProbe(output string) string {
 	for _, line := range pystr.Splitlines(output, false) {
 		k, v, ok := strings.Cut(line, "=")
 		if ok {
-			parsed[pystr.Strip(k)] = pystr.Strip(v)
+			parsed[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
 	}
 	parts := []string{}

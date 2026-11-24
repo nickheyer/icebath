@@ -7,7 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -35,12 +34,12 @@ func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error)
 		}
 		token = v
 	}
-	return pystr.Strip(homeserver) != "" && pystr.Strip(token) != "", nil
+	return strings.TrimSpace(homeserver) != "" && strings.TrimSpace(token) != "", nil
 }
 
 // Room and thread of a room colon dollar event id target, nil for bare rooms and users
 func parseSendTarget(ref string) any {
-	trimmed := pystr.Strip(ref)
+	trimmed := strings.TrimSpace(ref)
 	splitIdx := strings.LastIndex(trimmed, ":$")
 	if splitIdx <= 0 {
 		return nil

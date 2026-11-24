@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -35,6 +37,26 @@ func writeHomeConfig(t *testing.T, env *Env, text string) {
 	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Sets one dotted key in the config.yaml of the env's home, keeping the keys it already holds
+func setHomeConfigKey(t *testing.T, env *Env, key string, value any) {
+	t.Helper()
+	doc := map[string]any{}
+	if raw, err := os.ReadFile(filepath.Join(env.Home, "config.yaml")); err == nil {
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	if err := config.Tree(doc).Set(key, value); err != nil {
+		t.Fatal(err)
+	}
+	writeHomeConfigDoc(t, env, doc)
 }
 
 // Stores the tool batch time limit, in seconds, as the only setting of the env's home

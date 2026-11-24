@@ -79,8 +79,7 @@ func codexPoolRouteBaseURL(env PoolEnv, entryBaseURL string) string {
 		return override
 	}
 	if base == "" || base == DefaultCodexBaseURL {
-		modelCfg, _ := env.config()["model"].(map[string]any)
-		if cfgURL := configBaseURLForProvider(modelCfg, "openai-codex"); cfgURL != "" {
+		if cfgURL := configBaseURLForProvider(env.hookContext(), "openai-codex"); cfgURL != "" {
 			base = cfgURL
 		}
 	}

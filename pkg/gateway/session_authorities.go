@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -29,8 +30,12 @@ func ownerScope(ctx context.Context, a *SessionAuthority, hydrateSecrets bool) c
 	return profileRuntimeScope(ctx, profileHome, hydrateSecrets)
 }
 
-// Scopes config, skills, memory, credentials and the complete terminal policy to one profile home
+// Scopes config, skills, memory, credentials and the complete terminal policy to one profile home, ctx unchanged for a path that is no home
 var profileRuntimeScope = func(ctx context.Context, profileHome string, hydrateSecrets bool) context.Context {
+	if !filepath.IsAbs(profileHome) {
+		pkgLog().Error(fmt.Sprintf("Profile scope refused for %q: a profile home is an absolute path; the call keeps its own scope", profileHome))
+		return ctx
+	}
 	ctx = home.WithOverride(ctx, profileHome)
 	var secrets map[string]string
 	if hydrateSecrets {

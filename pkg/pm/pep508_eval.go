@@ -5,8 +5,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // UndefinedMarkerError is packaging's UndefinedComparison or UndefinedEnvironmentName raised while evaluating a marker
@@ -388,7 +386,7 @@ func fastSpecifierMatch(s pySpecifier, v *pep440Version) (match, decided bool, e
 // Whether a version satisfies one clause with prereleases admitted, an unparsable version matching nothing
 func (s pySpecifier) contains(item string) (bool, error) {
 	if s.op == "===" {
-		return pystr.Lower(item) == pystr.Lower(s.version), nil
+		return strings.ToLower(item) == strings.ToLower(s.version), nil
 	}
 	parsed, ok, err := parsePEP440(item)
 	if err != nil || !ok {

@@ -359,7 +359,7 @@ func registerLazyFromCache(ctx context.Context, env *tools.Env, fresh map[string
 
 // Connects every candidate with bounded concurrency and records each outcome unless the pass itself was cancelled
 func discoverAll(ctx context.Context, env *tools.Env, fresh map[string]*Rendered) {
-	limit := discoveryConnectConcurrency(ctx, env)
+	limit := discoveryConnectConcurrency(ctx)
 	var sem chan struct{}
 	if limit > 0 {
 		sem = make(chan struct{}, limit)
@@ -423,7 +423,7 @@ func runDiscoveryPass(ctx context.Context, env *tools.Env, fresh map[string]*Ren
 		tools.SetInterrupt(worker, false, "")
 		defer tools.SetInterrupt(worker, true, "")
 	}
-	timeout := discoveryPassTimeout(len(fresh), discoveryConnectConcurrency(ctx, env))
+	timeout := discoveryPassTimeout(len(fresh), discoveryConnectConcurrency(ctx))
 	_, err := runOnLoop(ctx, timeout, func(c context.Context) (struct{}, error) {
 		discoverAll(c, env, fresh)
 		return struct{}{}, nil

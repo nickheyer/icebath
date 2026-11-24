@@ -51,7 +51,7 @@ func namedCustomProviderCatalogs(ctx context.Context) []namedCatalog {
 		pkgLog().Debug("Could not load named custom providers")
 		return nil
 	}
-	entries := provider.ProviderEntries(map[string]any(cfg))
+	entries := provider.CustomProviderEntries(ctx)
 	disabled := map[string]bool{}
 	if raw, ok := cfg["providers"].(map[string]any); ok {
 		for k, v := range raw {

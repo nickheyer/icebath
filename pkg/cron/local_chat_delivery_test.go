@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -21,18 +22,11 @@ func installPrefillLoaders(t *testing.T) {
 	t.Helper()
 	prevResolve, prevLoad := gateway.ResolvePrefillMessagesFile, gateway.LoadPrefillMessages
 	t.Cleanup(func() { gateway.ResolvePrefillMessagesFile, gateway.LoadPrefillMessages = prevResolve, prevLoad })
-	gateway.ResolvePrefillMessagesFile = func(ctx context.Context, cfg map[string]any) string {
+	gateway.ResolvePrefillMessagesFile = func(ctx context.Context) string {
 		if v := strings.TrimSpace(state.SessionEnv(ctx, "ICEBATH_PREFILL_MESSAGES_FILE", "")); v != "" {
 			return v
 		}
-		if v, _ := cfg["prefill_messages_file"].(string); strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-		if agentCfg, ok := cfg["agent"].(map[string]any); ok {
-			v, _ := agentCfg["prefill_messages_file"].(string)
-			return strings.TrimSpace(v)
-		}
-		return ""
+		return strings.TrimSpace(settings.PrefillMessagesFile.Get(ctx))
 	}
 	gateway.LoadPrefillMessages = func(ctx context.Context, filePath, baseDir string) []any {
 		if filePath == "" {

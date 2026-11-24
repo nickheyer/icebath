@@ -154,13 +154,13 @@ func perplexityQueryForURLs(urls []string) (string, error) {
 		}
 		path := strings.NewReplacer("-", " ", "_", " ", "/", " ").Replace(parsed.Path)
 		for _, token := range pystr.SplitWhitespace(path, -1) {
-			lowered := pystr.Lower(token)
+			lowered := strings.ToLower(token)
 			if !seen[lowered] && !pyStrIsDigit(token) {
 				seen[lowered] = true
 				words = append(words, lowered)
 			}
 		}
-		if pystr.StripChars(parsed.Path, "/") == "" {
+		if strings.Trim(parsed.Path, "/") == "" {
 			words = append(words, parsed.Netloc)
 			seen[parsed.Netloc] = true
 		}

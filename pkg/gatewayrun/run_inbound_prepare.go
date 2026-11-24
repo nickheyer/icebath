@@ -84,7 +84,7 @@ func (r *GatewayRunner) InboundModelContextLength(ctx context.Context, source *g
 		configCtx = &n
 	}
 	cfg := gateway.LoadGatewayConfigMap(ctx, "")
-	customProviders := provider.ProviderEntries(cfg)
+	customProviders := provider.CustomProviderEntries(ctx)
 	model, runtime, err := r.resolveSessionAgentRuntime(ctx, source, sessionKey, cfg, true)
 	if err != nil {
 		return 0, err
@@ -97,7 +97,7 @@ func (r *GatewayRunner) InboundModelContextLength(ctx context.Context, source *g
 		configCtx = nil
 	}
 	if len(customProviders) > 0 && baseURL != "" {
-		if n := provider.CustomProviderContextLength(model, baseURL, customProviders, nil); n != 0 {
+		if n := provider.CustomProviderContextLength(model, baseURL, customProviders); n != 0 {
 			configCtx = &n
 		}
 	}

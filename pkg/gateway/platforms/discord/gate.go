@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"maps"
@@ -14,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -86,10 +87,12 @@ func (a *DiscordAdapter) bindProfile(ctx context.Context) {
 }
 
 // Items of a list setting of this adapter's profile as a set
-func (a *DiscordAdapter) settingSet(ctx context.Context, e settings.Entry) strSet {
+func (a *DiscordAdapter) settingSet(ctx context.Context, l *settings.List) strSet {
 	out := strSet{}
-	for _, item := range gateway.SettingList(a.sctx(ctx), e) {
-		out[item] = struct{}{}
+	for _, item := range l.Strings(gateway.SettingsContext(a.sctx(ctx))) {
+		if item = strings.TrimSpace(item); item != "" {
+			out[item] = struct{}{}
+		}
 	}
 	return out
 }
@@ -160,7 +163,7 @@ func (a *DiscordAdapter) syncAllowlists(ctx context.Context) {
 func canonicalRoleIDs(entries strSet) (strSet, error) {
 	out := strSet{}
 	for entry := range entries {
-		entry = pystr.Strip(entry)
+		entry = strings.TrimSpace(entry)
 		if !isDigitString(entry) {
 			continue
 		}
@@ -324,7 +327,7 @@ func (a *DiscordAdapter) discordChannelKeysFromChannel(ch *discordgo.Channel, pa
 	if ch.ID != "" {
 		keys[ch.ID] = struct{}{}
 	}
-	if name := pystr.Strip(ch.Name); name != "" {
+	if name := strings.TrimSpace(ch.Name); name != "" {
 		keys[name] = struct{}{}
 		keys["#"+name] = struct{}{}
 	}
@@ -336,7 +339,7 @@ func (a *DiscordAdapter) discordChannelKeysFromChannel(ch *discordgo.Channel, pa
 		keys[parentID] = struct{}{}
 	}
 	if parent := a.stateChannel(ch.ParentID); parent != nil {
-		if parentName := pystr.Strip(parent.Name); parentName != "" {
+		if parentName := strings.TrimSpace(parent.Name); parentName != "" {
 			keys[parentName] = struct{}{}
 			keys["#"+parentName] = struct{}{}
 		}

@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/setupflow"
 )
@@ -281,7 +280,7 @@ func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, re
 		var name string
 		if requireName {
 			name = provider.Name()
-			if name == "" || (skipBuiltin && builtin[pystr.Strip(pystr.Lower(name))]) {
+			if name == "" || (skipBuiltin && builtin[strings.TrimSpace(strings.ToLower(name))]) {
 				continue
 			}
 		}
@@ -579,7 +578,7 @@ func (s *ToolsSetup) webTierMatches(provider *pyjson.Object, cfg config.Tree) bo
 		panic("a web provider row has no web_backend")
 	}
 	backend := pyrepr.Str(backendValue)
-	configured := pystr.Strip(pystr.Lower(pyOrStr(mapGetOr(tiers, backend, ""))))
+	configured := strings.TrimSpace(strings.ToLower(pyOrStr(mapGetOr(tiers, backend, ""))))
 	if configured == "free" || configured == "paid" {
 		return pyjson.Equal(configured, rowTier)
 	}
@@ -611,7 +610,7 @@ func webServingBackends(cfg config.Tree) map[string]bool {
 	}
 	name := func(key string) string {
 		if v, ok := webCfg[key].(string); ok {
-			return pystr.Strip(pystr.Lower(v))
+			return strings.TrimSpace(strings.ToLower(v))
 		}
 		return ""
 	}
@@ -678,7 +677,7 @@ func browserProviderActive(provider *pyjson.Object, cfg config.Tree) bool {
 		if engine == "" {
 			engine = "auto"
 		}
-		return pyjson.Equal(pystr.Lower(pystr.Strip(engine)), rowGet(provider, "browser_engine"))
+		return pyjson.Equal(strings.ToLower(strings.TrimSpace(engine)), rowGet(provider, "browser_engine"))
 	}
 	return true
 }
@@ -1062,7 +1061,7 @@ func (s *ToolsSetup) configureSTTModel(sttProvider string, cfg config.Tree) erro
 	if !ok {
 		modelKey = "model"
 	}
-	current := pystr.Strip(pyOrStr(provCfg[modelKey]))
+	current := strings.TrimSpace(pyOrStr(provCfg[modelKey]))
 	ordered := slices.Clone(catalog)
 	def := slices.Index(ordered, current)
 	if def < 0 {
@@ -1156,7 +1155,7 @@ func (s *ToolsSetup) configurePiperVoice(cfg config.Tree) error {
 		return nil
 	}
 	piper := cfgSection(config.Tree(cfgSection(cfg, "tts")), "piper")
-	current := pystr.Strip(pyOrStr(piper["voice"]))
+	current := strings.TrimSpace(pyOrStr(piper["voice"]))
 	if current == "" {
 		current = defaultVoice
 	}
@@ -1222,7 +1221,7 @@ func (s *ToolsSetup) promptSecret(key, label, url, defaultVal string, reconfigur
 		if err != nil {
 			return false, err
 		}
-		if value := pystr.Strip(answer); value != "" {
+		if value := strings.TrimSpace(answer); value != "" {
 			if err := s.saveEnvValue(key, value); err != nil {
 				return false, err
 			}
@@ -1237,7 +1236,7 @@ func (s *ToolsSetup) promptSecret(key, label, url, defaultVal string, reconfigur
 		return false, err
 	}
 	if strip {
-		value = pystr.Strip(value)
+		value = strings.TrimSpace(value)
 	}
 	if value != "" {
 		if err := s.saveEnvValue(key, value); err != nil {
@@ -1382,7 +1381,7 @@ func (s *ToolsSetup) configureVisionBackend() error {
 		if err != nil {
 			return err
 		}
-		baseURL := pystr.Strip(answer)
+		baseURL := strings.TrimSpace(answer)
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
@@ -1399,7 +1398,7 @@ func (s *ToolsSetup) configureVisionBackend() error {
 		if err != nil {
 			return err
 		}
-		if pystr.Strip(apiKey) == "" {
+		if strings.TrimSpace(apiKey) == "" {
 			s.Con.PrintWarning("    Skipped")
 			return nil
 		}
@@ -1412,11 +1411,11 @@ func (s *ToolsSetup) configureVisionBackend() error {
 		if err != nil {
 			return err
 		}
-		model := pystr.Strip(answer)
+		model := strings.TrimSpace(answer)
 		if model == "" {
 			model = defaultModel
 		}
-		if err := s.saveEnvValue("OPENAI_API_KEY", pystr.Strip(apiKey)); err != nil {
+		if err := s.saveEnvValue("OPENAI_API_KEY", strings.TrimSpace(apiKey)); err != nil {
 			return err
 		}
 		visionCfg["provider"] = "custom"
@@ -1459,9 +1458,9 @@ func (s *ToolsSetup) configureVisionProviderModel(cfg config.Tree, visionCfg map
 		s.Con.PrintWarning("  Could not load provider list: " + errInventoryUnwired.Error())
 		return nil
 	}
-	currentProvider := pystr.Strip(pyOrStr(visionCfg["provider"]))
-	currentModel := pystr.Strip(pyOrStr(visionCfg["model"]))
-	currentBaseURL := pystr.Strip(pyOrStr(visionCfg["base_url"]))
+	currentProvider := strings.TrimSpace(pyOrStr(visionCfg["provider"]))
+	currentModel := strings.TrimSpace(pyOrStr(visionCfg["model"]))
+	currentBaseURL := strings.TrimSpace(pyOrStr(visionCfg["base_url"]))
 	providers, err := s.visionPickerRows(currentProvider, currentModel, currentBaseURL)
 	if err != nil {
 		s.Con.PrintWarning("  Could not detect providers: " + pyExcText(err))
@@ -1508,7 +1507,7 @@ func (s *ToolsSetup) configureVisionProviderModel(cfg config.Tree, visionCfg map
 		if err != nil {
 			return err
 		}
-		if model = pystr.Strip(answer); model == "" {
+		if model = strings.TrimSpace(answer); model == "" {
 			s.Con.PrintWarning("  No model entered — cancelled")
 			return nil
 		}

@@ -1,18 +1,13 @@
 package media
 
 import (
-	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -24,25 +19,18 @@ const (
 	localSTTCommandEnv      = "ICEBATH_LOCAL_STT_COMMAND"
 	localSTTLanguageEnv     = "ICEBATH_LOCAL_STT_LANGUAGE"
 	sttMaxFileSize          = 25 * 1024 * 1024
+	// Endpoints a recognition service is reached at when its base_url setting is unset
+	groqSTTBaseURL       = "https://api.groq.com/openai/v1"
+	openAISTTBaseURL     = "https://api.openai.com/v1"
+	xaiSTTBaseURL        = "https://api.x.ai/v1"
+	elevenLabsSTTBaseURL = "https://api.elevenlabs.io/v1"
 )
-
-// Environment value read once at import, the default when the variable is unset
-func sttEnvDefault(name, def string) string {
-	if v, ok := os.LookupEnv(name); ok {
-		return v
-	}
-	return def
-}
 
 var (
 	sttDefaultOpenAIModel     = "whisper-1"
 	sttDefaultGroqModel       = "whisper-large-v3-turbo"
 	sttDefaultMistralModel    = "voxtral-mini-latest"
 	sttDefaultElevenLabsModel = "scribe_v2"
-	groqSTTBaseURL            = sttEnvDefault("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-	openAISTTBaseURL          = sttEnvDefault("STT_OPENAI_BASE_URL", "https://api.openai.com/v1")
-	xaiSTTBaseURL             = sttEnvDefault("XAI_STT_BASE_URL", "https://api.x.ai/v1")
-	elevenLabsSTTBaseURL      = sttEnvDefault("ELEVENLABS_STT_BASE_URL", "https://api.elevenlabs.io/v1")
 
 	sttCommonLocalBinDirs = []string{"/opt/homebrew/bin", "/usr/local/bin"}
 	sttSupportedFormats   = map[string]bool{".mp3": true, ".mp4": true, ".mpeg": true, ".mpga": true, ".m4a": true, ".wav": true,
@@ -97,7 +85,7 @@ func (e *sttResponseError) Error() string { return e.msg }
 
 // Valid xAI model with blank or the grok-stt alias resolved to the catalog default
 func normalizeXAISTTModel(model string) string {
-	value := pystr.Strip(model)
+	value := strings.TrimSpace(model)
 	if value == "" || value == legacyXAISTTModel {
 		return sttModelCatalog["xai"][0]
 	}
@@ -133,11 +121,11 @@ func processErrorDetail(e *sttProcessError) string {
 		switch v := output.(type) {
 		case []byte:
 			s, _ := pycodecs.DecodeReplace(v, "utf-8")
-			detail = pystr.Strip(s)
+			detail = strings.TrimSpace(s)
 		case nil:
 			detail = ""
 		default:
-			detail = pystr.Strip(pyrepr.Str(v))
+			detail = strings.TrimSpace(pyrepr.Str(v))
 		}
 		if detail != "" {
 			return detail
@@ -149,44 +137,6 @@ func processErrorDetail(e *sttProcessError) string {
 // Debug record that a backend ignores transcription prompts
 func logPromptUnsupported(label string) {
 	pkgLog().Debug(fmt.Sprintf("%s does not support transcription prompts — proceeding without the prompt.", label))
-}
-
-// Config value cast to float, the default on a missing or bad value
-func configNumberFloat(cfg map[string]any, key string, def float64) float64 {
-	v, ok := cfg[key]
-	if !ok {
-		return def
-	}
-	if f, ok := sttCastFloat(v); ok {
-		return f
-	}
-	return def
-}
-
-// Config value cast to int like Python int(), the default on a missing or bad value
-func configNumberInt(cfg map[string]any, key string, def int) int {
-	v, ok := cfg[key]
-	if !ok {
-		return def
-	}
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1
-		}
-		return 0
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(x, "_", ""))); err == nil {
-			return n
-		}
-	}
-	return def
 }
 
 // Python float() of a config scalar
@@ -208,17 +158,4 @@ func sttCastFloat(v any) (float64, bool) {
 		return f, err == nil
 	}
 	return 0, false
-}
-
-// The stt section of the effective profile config, empty when unreadable, the seam tests replace
-var loadSTTConfig = func(ctx context.Context) map[string]any {
-	tree, err := config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
-	if err != nil {
-		return map[string]any{}
-	}
-	sec, ok := asStrMap(tree["stt"])
-	if !ok || !pyTruthy(tree["stt"]) {
-		return map[string]any{}
-	}
-	return sec
 }

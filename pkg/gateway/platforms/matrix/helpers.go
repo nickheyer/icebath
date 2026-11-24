@@ -76,7 +76,7 @@ func matrixVoiceMetadataForFile(path string) map[string]any {
 		result, err := runMediaTool([]string{ffprobe, "-v", "error", "-show_entries", "format=duration", "-of",
 			"default=noprint_wrappers=1:nokey=1", path}, 10*time.Second)
 		if err == nil && result.returnCode == 0 {
-			text := pystr.Strip(pystr.DecodeUTF8Replace(result.stdout))
+			text := strings.TrimSpace(pystr.DecodeUTF8Replace(result.stdout))
 			if text == "" {
 				text = "0"
 			}
@@ -172,8 +172,8 @@ var resolveMatrixBangCommand = func(ctx context.Context, name string) (string, b
 	if name == "" {
 		return "", false
 	}
-	candidates := []string{pystr.Lower(name)}
-	if dashed := strings.ReplaceAll(pystr.Lower(name), "_", "-"); dashed != candidates[0] {
+	candidates := []string{strings.ToLower(name)}
+	if dashed := strings.ReplaceAll(strings.ToLower(name), "_", "-"); dashed != candidates[0] {
 		candidates = append(candidates, dashed)
 	}
 	for _, candidate := range candidates {
@@ -228,7 +228,7 @@ func extractReplyFallback(body string) (quoted, author *string) {
 		}
 		quotedLines = append(quotedLines, content)
 	}
-	if text := pystr.Strip(strings.Join(quotedLines, "\n")); text != "" {
+	if text := strings.TrimSpace(strings.Join(quotedLines, "\n")); text != "" {
 		quoted = &text
 	}
 	return quoted, author
@@ -272,7 +272,7 @@ func isPermanentMatrixAuthError(err error) bool {
 	default:
 		return false
 	}
-	if httpErr.RespError != nil && matrixPermanentErrcodes[pystr.Lower(pystr.Strip(httpErr.RespError.ErrCode))] {
+	if httpErr.RespError != nil && matrixPermanentErrcodes[strings.ToLower(strings.TrimSpace(httpErr.RespError.ErrCode))] {
 		return true
 	}
 	if httpErr.Response != nil {
@@ -405,7 +405,7 @@ func looksLikeMatrixImageFilename(text string) bool {
 
 // Whether the text is a bare single token filename with a known media extension or matching guessed type
 func looksLikeTransportFilename(text string, mimePrefixes []string, exts map[string]bool, rejectSpaces bool) bool {
-	candidate := pystr.Strip(text)
+	candidate := strings.TrimSpace(text)
 	if candidate == "" || strings.Contains(candidate, "\n") || strings.HasSuffix(candidate, "/") {
 		return false
 	}
@@ -415,7 +415,7 @@ func looksLikeTransportFilename(text string, mimePrefixes []string, exts map[str
 	if pypath.PathName(candidate) != candidate {
 		return false
 	}
-	suffix := pystr.Lower(pypath.PathSuffix(candidate))
+	suffix := strings.ToLower(pypath.PathSuffix(candidate))
 	if suffix == "" {
 		return false
 	}
@@ -456,7 +456,7 @@ func matrixEventTimestampSeconds(ts int64) float64 {
 func normalizeE2EEMode(value any) string {
 	raw := ""
 	if pyTruthy(value) {
-		raw = pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+		raw = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	}
 	switch raw {
 	case "required", "require", "true", "1", "yes", "on":
@@ -490,7 +490,7 @@ func resolveE2EEMode(ctx context.Context, extra map[string]any) string {
 // Whether the scoped env value is true, 1 or yes
 func envTruthy(ctx context.Context, name, def string) bool {
 	v, _ := gateway.GetScopedSecret(ctx, name, def, false)
-	switch pystr.Lower(v) {
+	switch strings.ToLower(v) {
 	case "true", "1", "yes":
 		return true
 	}
@@ -533,7 +533,7 @@ func threadRoot(relatesTo map[string]any) string {
 // Configured recovery key output file through the profile scoped reader, empty when unset
 func recoveryKeyOutputPath(ctx context.Context) string {
 	v, _ := gateway.GetScopedSecret(ctx, "MATRIX_RECOVERY_KEY_OUTPUT_FILE", "", false)
-	if out := pystr.Strip(v); out != "" {
+	if out := strings.TrimSpace(v); out != "" {
 		return pypath.Expanduser(out)
 	}
 	return ""
@@ -605,7 +605,7 @@ func handleGeneratedMatrixRecoveryKey(ctx context.Context, mxid, recoveryKey str
 // Recovery key through the profile scoped reader, stripped
 func scopedRecoveryKey(ctx context.Context) string {
 	v, _ := gateway.GetScopedSecret(ctx, "MATRIX_RECOVERY_KEY", "", false)
-	return pystr.Strip(v)
+	return strings.TrimSpace(v)
 }
 
 var (
@@ -626,11 +626,11 @@ func latexToTokens(text string) (string, []texEntry) {
 	}
 	var store []texEntry
 	text = reSub(texDisplayRE, text, func(m regexp2.Match) string {
-		store = append(store, texEntry{"div", pystr.Strip(group(m, 1))})
+		store = append(store, texEntry{"div", strings.TrimSpace(group(m, 1))})
 		return fmt.Sprintf(texDisplayFmt, len(store)-1)
 	})
 	text = reSub(texInlineRE, text, func(m regexp2.Match) string {
-		store = append(store, texEntry{"span", pystr.Strip(group(m, 1))})
+		store = append(store, texEntry{"span", strings.TrimSpace(group(m, 1))})
 		return fmt.Sprintf(texInlineFmt, len(store)-1)
 	})
 	return text, store

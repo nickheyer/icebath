@@ -13,7 +13,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -223,7 +222,7 @@ var runtimeWinDriveFromPosixRe = regexp.MustCompile(`^/(?:(mnt)/)?([a-zA-Z])/([^
 
 // One canonical form for shell spellings and runtime paths, empty for blank input
 func runtimeNormalizePath(raw string) string {
-	path := pystr.Strip(raw)
+	path := strings.TrimSpace(raw)
 	if path == "" {
 		return ""
 	}
@@ -1388,37 +1387,4 @@ func isSecretFileArg(env *Env, arg string) bool {
 		}
 	}
 	return isUnderIcebathHome(env, path)
-}
-
-// Attached tree, else the readonly config of the home the env names, nil without either
-func homeConfigTree(env *Env) config.Tree {
-	if env == nil || (env.Config == nil && strings.TrimSpace(env.Home) == "") {
-		return nil
-	}
-	tree, err := liveConfigTree(env)
-	if err != nil {
-		return nil
-	}
-	return tree
-}
-
-// Tree attached to the env, else the readonly config of its home loaded at call time
-func liveConfigTree(env *Env) (config.Tree, error) {
-	if env != nil && env.Config != nil {
-		return env.Config, nil
-	}
-	h := envHome(env)
-	lookup := config.NewSecrets(h).Lookup()
-	if env != nil && env.Secrets != nil {
-		lookup = env.Secrets.Lookup()
-	}
-	return config.LoadReadonly(home.WithOverride(context.Background(), h), h, lookup)
-}
-
-// Config tree every tool reads, the defaults when the env resolves none
-func cfgTree(env *Env) config.Tree {
-	if tree := homeConfigTree(env); tree != nil {
-		return tree
-	}
-	return config.Defaults()
 }

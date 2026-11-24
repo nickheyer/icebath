@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -292,7 +291,7 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 		}
 		return lines
 	}
-	lower := pystr.Lower(reviewStr(message, "message"))
+	lower := strings.ToLower(reviewStr(message, "message"))
 	if !verbose && (strings.Contains(lower, "created") || strings.Contains(lower, "updated") ||
 		(isSkill && (strings.Contains(lower, "patched") || strings.Contains(lower, "deleted") || strings.Contains(lower, "written")))) {
 		return []string{message.(string)}
@@ -339,7 +338,7 @@ func summarizeBackgroundReviewActions(ctx context.Context, reviewMessages, prior
 	if !pyTruthy(notificationMode) {
 		notificationMode = "on"
 	}
-	mode := pystr.Lower(pyrepr.Str(notificationMode))
+	mode := strings.ToLower(pyrepr.Str(notificationMode))
 	if mode == "off" {
 		return []string{}, nil
 	}

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One declarable capability and the legacy config gate it maps to
@@ -66,7 +66,7 @@ func ParseDeclaredCapabilities(raw any, pluginName string) []string {
 			pkgLog().Warn(fmt.Sprintf("Plugin %s: ignoring non-string capability entry %s", pluginName, errchain.Show(item)))
 			continue
 		}
-		cap := pystr.Strip(s)
+		cap := strings.TrimSpace(s)
 		if _, known := CapabilityRegistry[cap]; !known {
 			pkgLog().Warn(fmt.Sprintf("Plugin %s: unknown capability %s (known: %s) — ignoring", pluginName, errchain.Show(cap), strings.Join(ValidCapabilityIDs(), ", ")))
 			continue
@@ -102,25 +102,21 @@ func CapabilitySetHash(caps []string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// The plugins.entries.<id> mapping of a config document, empty when absent or malformed
-func pluginEntry(cfg map[string]any, pluginID string) map[string]any {
-	entries := asMap(asMap(cfg["plugins"])["entries"])
-	if e := asMap(entries[pluginID]); e != nil {
-		return e
-	}
-	return map[string]any{}
+// Capabilities the user granted the plugin in the profile of ctx
+func GrantedCapabilities(ctx context.Context, pluginID string) map[string]bool {
+	return grantedIn(pluginEntry(ctx, pluginID))
 }
 
-// Capabilities the user granted the plugin in the given config document
-func GrantedCapabilities(cfg map[string]any, pluginID string) map[string]bool {
-	raw, isList := pluginEntry(cfg, pluginID)[GrantedCapabilitiesKey].([]any)
+// Capabilities a plugins.entries block grants
+func grantedIn(entry map[string]any) map[string]bool {
+	raw, isList := entry[GrantedCapabilitiesKey].([]any)
 	if !isList {
 		return map[string]bool{}
 	}
 	var stripped []string
 	for _, c := range raw {
 		if s, ok := c.(string); ok {
-			stripped = append(stripped, pystr.Strip(s))
+			stripped = append(stripped, strings.TrimSpace(s))
 		}
 	}
 	out := map[string]bool{}
@@ -146,16 +142,16 @@ func legacyGateSet(entry map[string]any, spec CapabilitySpec) bool {
 	return truthy(node)
 }
 
-// Reports whether a capability is live for a plugin through a grant or the legacy allow key
-func CapabilityGranted(cfg map[string]any, pluginID, capability string) bool {
+// Reports whether a capability is live for a plugin in the profile of ctx through a grant or the legacy allow key
+func CapabilityGranted(ctx context.Context, pluginID, capability string) bool {
 	spec, ok := CapabilityRegistry[capability]
 	if !ok {
 		pkgLog().Debug(fmt.Sprintf("capability check for unknown id %s (plugin %s) — denied", errchain.Show(capability), pluginID))
 		return false
 	}
-	entry := pluginEntry(cfg, pluginID)
+	entry := pluginEntry(ctx, pluginID)
 	allowed, evidence := false, "not granted"
-	if GrantedCapabilities(cfg, pluginID)[capability] {
+	if grantedIn(entry)[capability] {
 		allowed, evidence = true, GrantedCapabilitiesKey
 	} else if legacyGateSet(entry, spec) {
 		allowed, evidence = true, "legacy key plugins.entries."+pluginID+"."+strings.Join(spec.LegacyPath, ".")+" (deprecated)"
@@ -182,36 +178,33 @@ func childMap(parent map[string]any, key string) map[string]any {
 
 // Persists a consent decision, granting the union and mirroring every grant into its legacy gate
 func RecordConsent(ctx context.Context, h, pluginID string, granted, declared []string) error {
-	cfg, err := readUserConfig(h)
-	if err != nil {
-		return err
-	}
-	entry := childMap(childMap(childMap(cfg, "plugins"), "entries"), pluginID)
-	merged := append(stringList(entry[GrantedCapabilitiesKey]), knownCapabilities(granted)...)
+	ctx = home.WithOverride(ctx, h)
+	merged := append(stringList(pluginEntry(ctx, pluginID)[GrantedCapabilitiesKey]), knownCapabilities(granted)...)
 	known := knownCapabilities(merged)
 	sort.Strings(known)
 	grants := make([]any, 0, len(known))
 	for _, c := range known {
 		grants = append(grants, c)
 	}
-	entry[GrantedCapabilitiesKey] = grants
-	entry[CapabilitiesConsentKey] = map[string]any{
+	fields := []struct {
+		path  string
+		value any
+	}{{GrantedCapabilitiesKey, grants}, {CapabilitiesConsentKey, map[string]any{
 		"hash":       CapabilitySetHash(knownCapabilities(declared)),
 		"granted_at": time.Now().UTC().Format("2006-01-02T15:04:05-07:00"),
-	}
+	}}}
 	for _, c := range known {
-		spec := CapabilityRegistry[c]
-		if len(spec.LegacyPath) == 0 {
-			continue
+		if spec := CapabilityRegistry[c]; len(spec.LegacyPath) > 0 {
+			fields = append(fields, struct {
+				path  string
+				value any
+			}{strings.Join(spec.LegacyPath, "."), true})
 		}
-		node := entry
-		for _, part := range spec.LegacyPath[:len(spec.LegacyPath)-1] {
-			node = childMap(node, part)
-		}
-		node[spec.LegacyPath[len(spec.LegacyPath)-1]] = true
 	}
-	if err := saveUserConfig(ctx, h, cfg); err != nil {
-		return err
+	for _, f := range fields {
+		if err := setPluginEntryField(ctx, pluginID, f.path, f.value); err != nil {
+			return err
+		}
 	}
 	shown := strings.Join(known, ",")
 	if shown == "" {
@@ -221,16 +214,16 @@ func RecordConsent(ctx context.Context, h, pluginID string, granted, declared []
 	return nil
 }
 
-// Stored consent hash of a plugin, empty when absent
-func ConsentHash(cfg map[string]any, pluginID string) string {
-	consent := asMap(pluginEntry(cfg, pluginID)[CapabilitiesConsentKey])
+// Stored consent hash of a plugin in the profile of ctx, empty when absent
+func ConsentHash(ctx context.Context, pluginID string) string {
+	consent := asMap(pluginEntry(ctx, pluginID)[CapabilitiesConsentKey])
 	h, _ := consent["hash"].(string)
 	return h
 }
 
-// Declared capabilities the user has not granted yet
-func PendingCapabilities(cfg map[string]any, pluginID string, declared []string) []string {
-	granted := GrantedCapabilities(cfg, pluginID)
+// Declared capabilities the user has not granted yet in the profile of ctx
+func PendingCapabilities(ctx context.Context, pluginID string, declared []string) []string {
+	granted := GrantedCapabilities(ctx, pluginID)
 	var out []string
 	for _, c := range knownCapabilities(declared) {
 		if !granted[c] {
@@ -240,9 +233,9 @@ func PendingCapabilities(cfg map[string]any, pluginID string, declared []string)
 	return out
 }
 
-// Reports whether the declared set differs from the one the user consented to
-func DeclaredSetChanged(cfg map[string]any, pluginID string, declared []string) bool {
-	stored := ConsentHash(cfg, pluginID)
+// Reports whether the declared set differs from the one the user consented to in the profile of ctx
+func DeclaredSetChanged(ctx context.Context, pluginID string, declared []string) bool {
+	stored := ConsentHash(ctx, pluginID)
 	return stored == "" || stored != CapabilitySetHash(knownCapabilities(declared))
 }
 

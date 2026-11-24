@@ -31,10 +31,10 @@ func MatchesReasoningEchoFamily(family, provider, model, baseURL string) (bool, 
 		if rule.family != family {
 			continue
 		}
-		if rule.raw[provider] || rule.lowered[pystr.Lower(provider)] {
+		if rule.raw[provider] || rule.lowered[strings.ToLower(provider)] {
 			return true, nil
 		}
-		modelLower := pystr.Lower(model)
+		modelLower := strings.ToLower(model)
 		for _, sub := range rule.modelSubs {
 			if strings.Contains(modelLower, sub) {
 				return true, nil
@@ -62,7 +62,7 @@ func NeedsReasoningEcho(provider, model, baseURL string) bool {
 
 // Reasoning carriers the chat completions route reads before any runtime rejection, a fresh set per call
 func routeReasoningCarriers(provider, baseURL string) map[string]bool {
-	p := pystr.Lower(pystr.Strip(provider))
+	p := strings.ToLower(strings.TrimSpace(provider))
 	var carriers map[string]bool
 	for _, r := range reasoningCarrierRoutes {
 		if r.providers[p] || anyHostMatches(baseURL, r.hosts) {
@@ -247,7 +247,7 @@ func RejectedReasoningFields(errorBody any, sentMessages any) map[string]bool {
 			text = pyrepr.Str(errorBody)
 		}
 	}
-	body := pystr.Lower(text)
+	body := strings.ToLower(text)
 	out := map[string]bool{}
 	if !containsAnyStr(body, unknownFieldPhrases...) {
 		return out
@@ -279,7 +279,7 @@ func NormalizeFinishReason(raw any) any {
 	if !ok || s == "" {
 		return raw
 	}
-	lower := pystr.Lower(s)
+	lower := strings.ToLower(s)
 	if alias, ok := finishReasonAliases[lower]; ok {
 		return alias
 	}

@@ -1,6 +1,8 @@
 package kanban
 
 import (
+	"unicode"
+
 	"bufio"
 	"bytes"
 	"context"
@@ -153,7 +155,7 @@ func BuildWorkerContext(ctx context.Context, conn state.SQLiteConn, taskID strin
 	}
 	now := time.Now().Unix()
 	var lines []string
-	ctxHeader(&lines, task)
+	ctxHeader(ctx, &lines, task)
 	attachments, err := ListAttachments(ctx, conn, taskID)
 	if err != nil {
 		return "", err
@@ -173,7 +175,7 @@ func BuildWorkerContext(ctx context.Context, conn state.SQLiteConn, taskID strin
 		return "", err
 	}
 	ctxComments(&lines, comments, now)
-	return pystr.Rstrip(strings.Join(lines, "\n")) + "\n", nil
+	return strings.TrimRightFunc(strings.Join(lines, "\n"), unicode.IsSpace) + "\n", nil
 }
 
 // Per status and per assignee counts with the oldest ready age

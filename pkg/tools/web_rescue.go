@@ -2,17 +2,16 @@ package tools
 
 import (
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Ring vendor to the env var holding its paid key
 var ringKeyVars = map[string]string{"exa": "EXA_API_KEY", "parallel": "PARALLEL_API_KEY", "firecrawl": "FIRECRAWL_API_KEY", "keenable": "KEENABLE_API_KEY"}
 
-// web.keyless_rescue default on, implicitly off when the keyless tier is disabled
+// Whether a failed paid call is retried on the keyless ring, never while the keyless tier is off
 func keylessRescueEnabled(env *Env) bool {
-	if v, ok := webCfg(env).Lookup("keyless_rescue"); ok && v != nil && !truthy(v) {
-		return false
-	}
-	return keylessEnabled(env)
+	return settings.WebKeylessRescue.Get(webCtx(env)) && keylessEnabled(env)
 }
 
 // Did the vendor's own provider route this call through the anonymous keyless ring

@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"unicode"
+
 	"io/fs"
 	"regexp"
 	"sort"
@@ -8,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var authoringMarketing = regexp.MustCompile(`(?i)\b(powerful|comprehensive|seamless|revolutionary|cutting-edge|state-of-the-art)\b`)
@@ -77,7 +78,7 @@ func TestDescriptionHardline(t *testing.T) {
 			if n := len([]rune(desc)); n > SkillPromptDescLimit {
 				t.Errorf("%s: description %d chars (hardline %d)", rel, n, SkillPromptDescLimit)
 			}
-			if !strings.HasSuffix(pystr.Rstrip(desc), ".") {
+			if !strings.HasSuffix(strings.TrimRightFunc(desc, unicode.IsSpace), ".") {
 				t.Errorf("%s: description must end with a period", rel)
 			}
 			if m := authoringMarketing.FindString(desc); m != "" {

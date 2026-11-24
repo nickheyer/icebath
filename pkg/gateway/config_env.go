@@ -58,7 +58,7 @@ func warnExplicitDisableBeatsEnv(ctx context.Context, platform Platform) {
 	names := enableCredentialNames(ctx, platform)
 	present := []string{}
 	for _, n := range names {
-		if pystr.Strip(os.Getenv(n)) != "" {
+		if strings.TrimSpace(os.Getenv(n)) != "" {
 			present = append(present, n)
 		}
 	}
@@ -371,14 +371,14 @@ func enablePluginPlatformsFromEnv(ctx context.Context, cfg *GatewayConfig, entri
 
 // Relay enable from env or YAML, the env stamp disabling every directly connected messaging platform
 func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
-	relayURLEnv := pystr.Strip(getenvStr(ctx, "GATEWAY_RELAY_URL", ""))
+	relayURLEnv := strings.TrimSpace(getenvStr(ctx, "GATEWAY_RELAY_URL", ""))
 	relayURLYAML := ""
 	if existing, ok := cfg.Platforms[PlatformRelay]; ok {
 		v := existing.Extra["relay_url"]
 		if !pyrepr.Truthy(v) {
 			v = ""
 		}
-		relayURLYAML = pystr.Strip(pyrepr.Str(v))
+		relayURLYAML = strings.TrimSpace(pyrepr.Str(v))
 	}
 	relayURL := relayURLEnv
 	if relayURL == "" {

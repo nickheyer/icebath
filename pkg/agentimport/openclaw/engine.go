@@ -2,6 +2,8 @@
 package openclaw
 
 import (
+	"unicode"
+
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -681,7 +683,7 @@ func ExtractMarkdownEntries(text string) []string {
 	}
 	inCode := false
 	for _, rawLine := range pystr.Splitlines(text, false) {
-		line := pystr.Rstrip(rawLine)
+		line := strings.TrimRightFunc(rawLine, unicode.IsSpace)
 		stripped := strip(line)
 		if strings.HasPrefix(stripped, "```") {
 			inCode = !inCode

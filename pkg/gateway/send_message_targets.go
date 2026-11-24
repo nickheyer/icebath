@@ -60,7 +60,7 @@ func parseTargetRef(ctx context.Context, platformName, targetRef string) (chatID
 	}
 	if phonePlatforms[platformName] {
 		if ok, _ := e164TargetRe.MatchString(targetRef); ok {
-			stripped := pystr.Strip(targetRef)
+			stripped := strings.TrimSpace(targetRef)
 			return &stripped, nil, true
 		}
 	}

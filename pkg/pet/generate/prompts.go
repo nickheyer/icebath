@@ -3,8 +3,6 @@ package generate
 import (
 	"fmt"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // What each state depicts, phrased to avoid detached effects, motion lines and shadows
@@ -54,7 +52,7 @@ func StyleHint(style string) string {
 	if style == "" {
 		style = "auto"
 	}
-	return styleHints[pystr.Lower(pystr.Strip(style))]
+	return styleHints[strings.ToLower(strings.TrimSpace(style))]
 }
 
 const assumedStripWidth = 1536
@@ -78,7 +76,7 @@ var BaseVariations = []string{
 
 // Base look prompt, a single centred full body mascot, the variation differentiating drafts
 func BuildBasePrompt(concept, style, variation string) string {
-	concept = pystr.Strip(concept)
+	concept = strings.TrimSpace(concept)
 	if concept == "" {
 		concept = "a distinctive mascot creature"
 	}

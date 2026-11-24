@@ -40,7 +40,7 @@ func (a *GoogleChatAdapter) dispatchMessage(ctx context.Context, msg, envelope m
 		pkgLog().Error("[GoogleChat] _dispatch_message failed", "error", err)
 		return nil
 	}
-	text := pystr.Strip(event.Text)
+	text := strings.TrimSpace(event.Text)
 	if strings.HasPrefix(text, "/setup-files") && event.Source != nil {
 		thread, email := "", ""
 		if event.Source.ThreadID != nil {
@@ -78,18 +78,18 @@ func (a *GoogleChatAdapter) buildMessageEvent(ctx context.Context, msg, envelope
 	senderEmail := pyrepr.Str(orEmpty(sender["email"]))
 	if senderEmail != "" && spaceName != "" {
 		a.mu.Lock()
-		a.lastSenderByChat[spaceName] = strings.ToLower(pystr.Strip(senderEmail))
+		a.lastSenderByChat[spaceName] = strings.ToLower(strings.TrimSpace(senderEmail))
 		a.mu.Unlock()
 	}
 	chatType := "group"
 	if spaceType == "DIRECT_MESSAGE" || spaceType == "DM" {
 		chatType = "dm"
 	}
-	text := pystr.Strip(pyrepr.Str(orEmpty(firstTruthy(msg["argumentText"], msg["text"]))))
+	text := strings.TrimSpace(pyrepr.Str(orEmpty(firstTruthy(msg["argumentText"], msg["text"]))))
 	slash, _ := msg["slashCommand"].(map[string]any)
 	if len(slash) > 0 {
 		if commandID := pyrepr.Str(orEmpty(slash["commandId"])); commandID != "" && !strings.HasPrefix(text, "/") {
-			text = pystr.Strip(fmt.Sprintf("/cmd_%s %s", commandID, text))
+			text = strings.TrimSpace(fmt.Sprintf("/cmd_%s %s", commandID, text))
 		}
 	}
 	var mediaURLs, mediaTypes []string
@@ -246,7 +246,7 @@ func (a *GoogleChatAdapter) VerifyHTTPEventRequest(ctx context.Context, authHead
 	}
 	token := ""
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		token = pystr.Strip(authHeader[7:])
+		token = strings.TrimSpace(authHeader[7:])
 	}
 	if token == "" {
 		return false, "missing_google_bearer", nil
@@ -258,11 +258,11 @@ func (a *GoogleChatAdapter) VerifyHTTPEventRequest(ctx context.Context, authHead
 	}
 	expected := map[string]bool{}
 	for _, item := range strings.Split(a.httpEventsServiceAccount, ",") {
-		if item = strings.ToLower(pystr.Strip(item)); item != "" {
+		if item = strings.ToLower(strings.TrimSpace(item)); item != "" {
 			expected[item] = true
 		}
 	}
-	if !expected[strings.ToLower(pystr.Strip(pyrepr.Str(orEmpty(claims["email"]))))] {
+	if !expected[strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(claims["email"]))))] {
 		return false, "unexpected_google_bearer_identity", nil
 	}
 	return true, "", nil
@@ -514,7 +514,7 @@ func (a *GoogleChatAdapter) SendClarify(ctx context.Context, chatID, question st
 	if entry := tools.GetPendingClarify(clarifyID); entry != nil && entry.MultiSelect {
 		var items []any
 		for idx, choice := range choices {
-			if text := pystr.Strip(choice); text != "" {
+			if text := strings.TrimSpace(choice); text != "" {
 				items = append(items, map[string]any{"text": label(text), "value": strconv.Itoa(idx), "selected": false})
 			}
 		}
@@ -522,7 +522,7 @@ func (a *GoogleChatAdapter) SendClarify(ctx context.Context, chatID, question st
 		buttons = append(buttons, a.cardButton(tr(ctx, "clarify.submit_button", nil), params("")))
 	} else {
 		for idx, choice := range choices {
-			if text := pystr.Strip(choice); text != "" {
+			if text := strings.TrimSpace(choice); text != "" {
 				buttons = append(buttons, a.cardButton(label(text), params(strconv.Itoa(idx))))
 			}
 		}

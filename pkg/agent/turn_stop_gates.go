@@ -52,16 +52,11 @@ func preVerifyNudge(ctx context.Context, a *AIAgent, finalResponse string, attem
 	if len(edited) == 0 || !lifecycleHasHook(ctx, "pre_verify") {
 		return ""
 	}
-	limit, err := verify.MaxVerifyNudges(nil)
-	if err != nil {
-		pkgLog().Debug("pre_verify hook check failed", "error", err)
-		return ""
-	}
-	if attempt >= limit {
+	if attempt >= verify.MaxVerifyNudges(ctx) {
 		return ""
 	}
 	if a.resolvedIsCoding == nil {
-		coding := tools.IsCodingContext(a.env, a.platform, "")
+		coding := tools.IsCodingContext(ctx, a.env, a.platform, "")
 		a.resolvedIsCoding = &coding
 	}
 	return plugins.GetPreVerifyContinueMessage(ctx, plugins.PreVerifyInput{

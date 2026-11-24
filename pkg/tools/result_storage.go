@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,12 +18,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
 )
@@ -72,34 +71,9 @@ func SpilloverDir(env *Env) string {
 	return filepath.Join(envHome(env), filepath.FromSlash(SpilloverSubdir))
 }
 
-// Spill archive age equals the session retention window floored at the legacy cache age
+// Spill archive age equals the session retention window floored at the shortest cache age
 func spilloverRetentionHours(env *Env) int {
-	sessions := cfgTree(env).Map("sessions")
-	raw, ok := sessions["retention_days"]
-	days := 90.0
-	if ok && raw != nil {
-		f, isNum := config.AsFloat(raw)
-		if !isNum {
-			if s, isStr := raw.(string); isStr {
-				parsed, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-				if err != nil {
-					return SpilloverMaxAgeHours
-				}
-				f = parsed
-			} else {
-				return SpilloverMaxAgeHours
-			}
-		}
-		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return SpilloverMaxAgeHours
-		}
-		days = f
-	}
-	hours := int(days * 24)
-	if hours < SpilloverMaxAgeHours {
-		return SpilloverMaxAgeHours
-	}
-	return hours
+	return max(int(settings.SessionsRetentionDays.Get(envHomeCtx(context.Background(), env)).Hours()), SpilloverMaxAgeHours)
 }
 
 // ExpiredArchiveFields adds the expired hint for a pruned persisted tool result path
@@ -616,13 +590,6 @@ func EnforceTurnBudget(ctx context.Context, env *Env, sandbox Environment, toolM
 	return toolMessages
 }
 
-// Hook output spill defaults
-const (
-	SpillDefaultMaxChars    = 10000
-	SpillDefaultPreviewHead = 500
-	SpillDefaultPreviewTail = 500
-)
-
 // SpillConfig is the resolved hooks.output_spill section
 type SpillConfig struct {
 	Enabled     bool
@@ -632,25 +599,15 @@ type SpillConfig struct {
 	Directory   string
 }
 
-// SpillConfigFromEnv reads hooks.output_spill with defaults for every missing or invalid field
-func SpillConfigFromEnv(env *Env) SpillConfig {
-	section := map[string]any{}
-	if hooks := cfgTree(env).Map("hooks"); hooks != nil {
-		if s, ok := hooks["output_spill"].(map[string]any); ok {
-			section = s
-		}
-	}
-	enabled := true
-	if raw, ok := section["enabled"]; ok && raw != nil {
-		enabled = config.Truthy(raw)
-	}
-	directory, _ := section["directory"].(string)
+// SpillConfigFromEnv reads the hooks.output_spill settings for ctx and the env's profile
+func SpillConfigFromEnv(ctx context.Context, env *Env) SpillConfig {
+	ctx = envHomeCtx(ctx, env)
 	return SpillConfig{
-		Enabled:     enabled,
-		MaxChars:    coerceInt(section["max_chars"], SpillDefaultMaxChars, 1),
-		PreviewHead: coerceInt(section["preview_head"], SpillDefaultPreviewHead, 0),
-		PreviewTail: coerceInt(section["preview_tail"], SpillDefaultPreviewTail, 0),
-		Directory:   directory,
+		Enabled:     settings.HooksOutputSpillEnabled.Get(ctx),
+		MaxChars:    settings.HooksOutputSpillMaxChars.Get(ctx),
+		PreviewHead: settings.HooksOutputSpillPreviewHead.Get(ctx),
+		PreviewTail: settings.HooksOutputSpillPreviewTail.Get(ctx),
+		Directory:   settings.HooksOutputSpillDirectory.Get(ctx),
 	}
 }
 
@@ -674,14 +631,14 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 	if cfg != nil {
 		c = *cfg
 	} else {
-		c = SpillConfigFromEnv(env)
+		c = SpillConfigFromEnv(context.Background(), env)
 	}
 	if !c.Enabled {
 		return text
 	}
 	maxChars := c.MaxChars
 	if maxChars <= 0 {
-		maxChars = SpillDefaultMaxChars
+		maxChars = settings.HooksOutputSpillMaxChars.Default
 	}
 	if pystr.Len(text) <= maxChars {
 		return text

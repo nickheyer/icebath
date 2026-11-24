@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -32,7 +31,7 @@ var (
 func statusFormatISOTimestamp(value any) any {
 	text := ""
 	if s, ok := value.(string); ok {
-		text = pystr.Strip(s)
+		text = strings.TrimSpace(s)
 	}
 	if text == "" {
 		return "(unknown)"

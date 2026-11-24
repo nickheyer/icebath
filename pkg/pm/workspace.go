@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -667,7 +666,7 @@ var memberNameUnsafe = regexp.MustCompile(`[^a-z0-9._-]+`)
 // Plugin dir name plus sixteen hex digits of its resolved path hash, unique across homes and readable in uv errors
 func memberKey(identity string) string {
 	sum := sha256.Sum256([]byte(resolvePath(absoluteUnresolved(identity))))
-	name := strings.Trim(memberNameUnsafe.ReplaceAllString(pystr.Lower(pyPathName(identity)), "-"), "-.")
+	name := strings.Trim(memberNameUnsafe.ReplaceAllString(strings.ToLower(pyPathName(identity)), "-"), "-.")
 	if name == "" {
 		name = "plugin"
 	}

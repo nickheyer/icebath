@@ -1,13 +1,14 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"regexp"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Backend a blank or unset delegation.backend selects
@@ -31,8 +32,8 @@ var (
 
 // Lowercased stripped delegation.backend, default when blank or not a string
 func ConfiguredBackend(config map[string]any) string {
-	if raw, ok := config["backend"].(string); ok && pystr.Strip(raw) != "" {
-		return pystr.Lower(pystr.Strip(raw))
+	if raw, ok := config["backend"].(string); ok && strings.TrimSpace(raw) != "" {
+		return strings.ToLower(strings.TrimSpace(raw))
 	}
 	return DefaultDelegationBackend
 }

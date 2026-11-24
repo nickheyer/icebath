@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -45,7 +44,7 @@ func normalizeAttachProfile(name string) string {
 	if n, err := profiles.NormalizeProfileName(name); err == nil {
 		return n
 	}
-	return strings.ToLower(pystr.Strip(name))
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // Profile a home belongs to, default for the root home

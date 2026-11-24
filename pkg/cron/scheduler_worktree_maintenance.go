@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -48,7 +47,7 @@ func rawJobActive(job *pyjson.Object) bool {
 	if state != nil {
 		stateText = pyrepr.Str(state)
 	}
-	if pausedAt, _ := job.Get("paused_at"); pystr.Strip(stateText) == "paused" || pyrepr.Truthy(pausedAt) {
+	if pausedAt, _ := job.Get("paused_at"); strings.TrimSpace(stateText) == "paused" || pyrepr.Truthy(pausedAt) {
 		return false
 	}
 	text, isText := state.(string)

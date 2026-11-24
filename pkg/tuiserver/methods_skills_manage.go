@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // One skills.manage action handler given the fitted params
@@ -83,7 +82,7 @@ func skillsInstall(ctx context.Context, rid any, p tuigateway.SkillsManageParams
 	mu.Lock()
 	tail := lines[max(0, len(lines)-12):]
 	mu.Unlock()
-	log := pystr.Strip(strings.Join(tail, "\n"))
+	log := strings.TrimSpace(strings.Join(tail, "\n"))
 	message := "skill install failed"
 	var logValue any
 	if log != "" {
@@ -149,7 +148,7 @@ var skillsQueryNeeds = map[tuigateway.SkillsAction]string{
 }
 
 // Skills hub backend listing the profile skills or searching, browsing, inspecting and installing from the hub
-func skillsManage(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func skillsManage(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SkillsManage.Params(params)
 	if err != nil {
 		return nil, err
@@ -159,7 +158,7 @@ func skillsManage(ctx context.Context, rid any, params map[string]any, _ *tuihos
 		if _, isText := raw.(string); !isText {
 			return nil, fmt.Errorf("%s must be text, got %s", what, errchain.Kind(raw))
 		}
-		if pystr.Strip(p.Query) == "" {
+		if strings.TrimSpace(p.Query) == "" {
 			return nil, fmt.Errorf("%s is empty", what)
 		}
 	}

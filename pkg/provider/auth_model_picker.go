@@ -1,13 +1,15 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -344,21 +346,9 @@ func promptModelSelection(env PoolEnv, out io.Writer, p ModelSelectionPrompt) (s
 // ModelChoiceSaveCount is how many picks were saved in this process
 func ModelChoiceSaveCount() int { return int(modelChoiceSave.Load()) }
 
-// Saves the chosen model as model.default in config.yaml only, never the env file
+// Saves the chosen model as model.default of the env's profile through the settings writer, never the env file
 func saveModelChoice(env PoolEnv, modelID string) error {
-	h := envHome(env)
 	modelChoiceSave.Add(1)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
-	if model, ok := tree["model"].(map[string]any); ok {
-		pyDictSet(model, "default", modelID)
-	} else {
-		pyDictSet(tree, "model", map[string]any{"default": modelID})
-	}
-	if err := config.Save(h, tree); err != nil {
-		return err
-	}
-	return nil
+	_, err := settings.Set(home.WithOverride(context.Background(), envHome(env)), settings.Model.Key, modelID, settings.Global)
+	return err
 }

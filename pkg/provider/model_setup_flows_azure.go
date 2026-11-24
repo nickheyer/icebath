@@ -44,7 +44,7 @@ func azureCurrentSettings(r *ModelFlowRun) azureCurrent {
 		if pyTruthy(modelCfg["auth_mode"]) {
 			cur.authMode = pyStr(modelCfg["auth_mode"])
 		}
-		if cur.authMode = pystr.Lower(pystr.Strip(cur.authMode)); cur.authMode == "" {
+		if cur.authMode = strings.ToLower(strings.TrimSpace(cur.authMode)); cur.authMode == "" {
 			cur.authMode = "api_key"
 		}
 		if entra, ok := modelCfg["entra"].(map[string]any); ok {
@@ -65,7 +65,7 @@ type azureEntraPreflight struct {
 func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azureEntraPreflight {
 	fmt.Fprintln(r.Out)
 	entraOverrides := map[string]any{}
-	persistedScopeOverride := pystr.Strip(pyOrStr(currentEntra["scope"]))
+	persistedScopeOverride := strings.TrimSpace(pyOrStr(currentEntra["scope"]))
 	entraScope := persistedScopeOverride
 	if entraScope == "" {
 		entraScope = ScopeAIAzureDefault
@@ -97,7 +97,7 @@ func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azure
 		if !ok {
 			return azureEntraPreflight{cancelled: true}
 		}
-		switch pystr.Lower(ans) {
+		switch strings.ToLower(ans) {
 		case "", "y", "yes":
 		default:
 			fmt.Fprintln(r.Out, "Cancelled.")

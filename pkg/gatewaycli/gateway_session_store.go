@@ -16,8 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -30,6 +30,8 @@ var (
 		"ignore_rules", "checkpoints", "pass_session_id", "skills"}
 	// Tree the one shot chat recorded for its worktree flag, assigned by the CLI package
 	RecordedWorktree = func() map[string]string { return nil }
+	// Folder the one shot chat's sessions work in, assigned by the CLI package; else the TERMINAL_CWD the process that started this one handed it
+	LaunchFolder = func() string { return os.Getenv("TERMINAL_CWD") }
 )
 
 // Raised when another session already holds a title the gateway refused
@@ -201,7 +203,7 @@ func (s *GatewaySessionStore) OpenSession(ctx context.Context, cli OpenSessionCL
 // Creates a gateway session with the launch policy and an optional title, adopting and returning its id
 func (s *GatewaySessionStore) Create(ctx context.Context, launch map[string]any, title string, recordCwd bool) (string, error) {
 	params := creationPolicy(launch)
-	cwd, err := launchCwd()
+	cwd, err := launchCwd(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +211,7 @@ func (s *GatewaySessionStore) Create(ctx context.Context, launch map[string]any,
 	source := provider.SessionSourceFor(nil, "cli")
 	params["source"] = source
 	params["row_cwd"] = ""
-	if recordCwd && terminalIsLocal() && agent.CLIFamilySources[source] {
+	if recordCwd && terminalIsLocal(ctx) && agent.CLIFamilySources[source] {
 		rowCwd, err := os.Getwd()
 		if err != nil {
 			return "", err
@@ -237,13 +239,9 @@ func (s *GatewaySessionStore) Create(ctx context.Context, launch map[string]any,
 	return s.adopt(snapshot)
 }
 
-// Whether the terminal backend runs on this host
-func terminalIsLocal() bool {
-	backend := os.Getenv("TERMINAL_ENV")
-	if backend == "" {
-		backend = "local"
-	}
-	backend = strings.ToLower(pystr.Strip(backend))
+// Whether the terminal backend of the profile in ctx runs on this host, terminal.backend
+func terminalIsLocal(ctx context.Context) bool {
+	backend := strings.ToLower(strings.TrimSpace(settings.WhereCommandsRun.Get(ctx)))
 	return backend == "" || backend == "local"
 }
 
@@ -535,9 +533,9 @@ func joinedToolsets(v any) any {
 	return strings.Join(items, ",")
 }
 
-// Host folder session.create sends as cwd, the selected worktree or TERMINAL_CWD or this process's own
-func launchCwd() (string, error) {
-	terminalCwd := os.Getenv("TERMINAL_CWD")
+// Host folder session.create sends as cwd, the selected worktree or the launch folder or this process's own
+func launchCwd(ctx context.Context) (string, error) {
+	terminalCwd := LaunchFolder()
 	recorded := map[string]bool{}
 	if tree := RecordedWorktree(); tree["path"] != "" {
 		real, err := pypath.Realpath(tree["path"], pypath.Lax)
@@ -556,7 +554,7 @@ func launchCwd() (string, error) {
 		}
 	}
 	chosen := terminalCwd
-	if chosen != "" && !terminalIsLocal() {
+	if chosen != "" && !terminalIsLocal(ctx) {
 		if st, err := os.Stat(chosen); err != nil || !st.IsDir() {
 			chosen = ""
 		}
@@ -594,7 +592,7 @@ func pyFloatOf(v any) float64 {
 		return float64(n)
 	case string:
 		var f float64
-		fmt.Sscanf(pystr.Strip(n), "%g", &f)
+		fmt.Sscanf(strings.TrimSpace(n), "%g", &f)
 		return f
 	}
 	return float64(pyIntOf(v))
@@ -648,7 +646,7 @@ func CreateTitledSession(ctx context.Context, title string) (string, error) {
 // Titled create through the given store, the resolve or create step the owner runs under one lock
 func createTitledSession(ctx context.Context, store *GatewaySessionStore, title string) (string, error) {
 	params := creationPolicy(map[string]any{})
-	cwd, err := launchCwd()
+	cwd, err := launchCwd(ctx)
 	if err != nil {
 		return "", err
 	}

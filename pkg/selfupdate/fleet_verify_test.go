@@ -30,7 +30,6 @@ func pinFleetRows(t *testing.T, rows *[]*pyjson.Object) {
 // Fakes the legacy unit check of the verification pass
 func quietVerification(t *testing.T) {
 	t.Helper()
-	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
 }
 
 func unmappedStopOutcome(pids ...int) *gatewayRestartOutcome {
@@ -346,7 +345,6 @@ func verifyRestartCase(t *testing.T, restart *gatewayRestartOutcome, fleetState 
 	t.Helper()
 	h := newFleetHarness(t)
 	ctx := updaterecord.UpdateReceiptScope(h.ctx)
-	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
 	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
 		return completedText(cmd, "LoadState=not-found\nMainPID=0\n"), nil
 	})

@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const fileName = "install_id"
@@ -94,7 +93,7 @@ func readText(path string) (string, error) {
 	if !utf8.Valid(data) {
 		return "", &DecodeError{path}
 	}
-	return pystr.Lower(pystr.Strip(string(data))), nil
+	return strings.ToLower(strings.TrimSpace(string(data))), nil
 }
 
 // Valid identity or empty plus whether to mint, minting for a missing or malformed file only

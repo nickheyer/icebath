@@ -85,15 +85,6 @@ func metadataCacheFile(ctx context.Context, name string) string {
 	return filepath.Join(home.CacheDir(metadataHome(ctx)), name)
 }
 
-// Effective config tree of the bound home, nil when it cannot be read
-func metadataConfig(ctx context.Context) map[string]any {
-	tree, err := config.Load(metadataHome(ctx), nil)
-	if err != nil {
-		return nil
-	}
-	return map[string]any(tree)
-}
-
 // Host and port key so every probe path for one server shares an entry
 func endpointHostKey(baseURL string) string {
 	parsed := parseProbeURL(baseURL, "http")

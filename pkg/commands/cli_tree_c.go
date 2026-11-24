@@ -127,7 +127,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	bf(update, "list-venv-holders", "", "Print the processes the Windows venv-holder guard would refuse on as a JSON list [{pid, exe, argv, kind}] and exit: 0 when the venv is free, 3 when holders are present. Read-only; kind is gateway / icebath:<subcommand> / python, so a scheduled update can stop exactly those PIDs instead of looping. Always [] off Windows.")
 	bf(update, "no-backup", "", "Skip ALL pre-update backups for this run (both the quick state snapshot and the full zip; overrides updates.pre_update_backup)")
 	bf(update, "backup", "", "Force a FULL pre-update backup (quick state snapshot + ICEBATH_HOME zip) for this run, regardless of updates.pre_update_backup")
-	bf(update, "yes", "y", "Run without blocking on prompts: accepts the config-migration and stash-restore prompts, skips the fork-upstream prompt without adding a remote. API-key entry is skipped; run 'icebath config migrate' separately for those.")
+	bf(update, "yes", "y", "Run without blocking on prompts: accepts the stash-restore prompt and skips the fork-upstream prompt without adding a remote.")
 	bf(update, "keep-stash", "", "Do NOT re-apply local changes after the update. Uncommitted changes are still stashed so the update can proceed, but they stay parked in git stash instead of being restored onto the updated code, so local source edits never ride along across updates.")
 	sf(update, "branch", "", "", "Update against this branch instead of the default (main). If the local checkout is on a different branch, icebath will switch to the requested branch first (auto-stashing any uncommitted changes).")
 	bf(update, "switch-branch", "", "With updates.parked_branch_strategy: update_in_place configured, override it for this run: switch to the update target and update THERE instead of merging the target into the checked-out branch. The branch is left exactly as it was — no merge commit is written into its history. Use on long-lived feature branches where an update-driven merge commit would pollute the branch. No effect under the default strategy (switch), which already switches. Still refuses to touch a dirty tree.")
@@ -159,13 +159,13 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 
 	completion := c.newCmd(root, "completion", "Print shell completion script (bash, zsh, or fish)", "")
 	c.pos(completion, pOptChoice("shell", "bash", "bash", "zsh", "fish").withHelp("Shell type (default: bash)"))
-	completion.RunE = func(cmd *cobra.Command, args []string) error {
+	c.runSelf(completion, func(cmd *cobra.Command, args []string) error {
 		shell := "bash"
 		if len(args) > 0 {
 			shell = args[0]
 		}
 		return c.Completion(shell, cmd.OutOrStdout())
-	}
+	})
 
 	logs := c.newCmd(root, "logs", "View and filter Icebath log files",
 		"View, tail, and filter agent.log / errors.log / gateway.log / mcp-stderr.log / update.log")

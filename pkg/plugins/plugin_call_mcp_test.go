@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -67,8 +68,8 @@ func TestDefaultDenyWhenConfigUnreadable(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "not-a-directory")
 	writeFile(t, blocker, "x")
 	h := filepath.Join(blocker, "home")
-	if _, err := loadConfig(h); err == nil {
-		t.Fatal("a home under a regular file loaded its config without an error")
+	if _, err := os.Stat(filepath.Join(h, "config.yaml")); err == nil {
+		t.Fatal("a home under a regular file holds a readable config")
 	}
 	c := newContext(&Manifest{Name: "my-plugin", Key: "my-plugin"}, NewManager(h))
 	_, err := c.CallMCP(homeCtx(h), "github", "create_issue", nil, nil)

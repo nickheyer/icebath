@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -64,7 +65,7 @@ func cuaPrintOutputTail(con *cliui.Console, result *completedProcess, printer fu
 	if text == "" {
 		text = result.Stdout
 	}
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	if len(lines) > 3 {
 		lines = lines[len(lines)-3:]
 	}
@@ -92,7 +93,7 @@ func cuaPostSetupNoWindow(streamsToConsole bool) bool {
 // First non blank line of a version banner, stripped and bounded to limit characters
 func cuaVersionSummary(raw string, limit int) string {
 	for _, line := range pystr.Splitlines(raw, false) {
-		if s := pystr.Strip(line); s != "" {
+		if s := strings.TrimSpace(line); s != "" {
 			r := []rune(s)
 			if len(r) > limit {
 				r = r[:limit]
@@ -177,7 +178,7 @@ var cuaDriverInstallReady = func(ctx context.Context, env *tools.Env) (bool, err
 
 // Reconciles the PM pin or validates the override, then the host setup of an explicit install command
 var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Console, showInstallerProgress bool) (bool, error) {
-	override := pystr.Strip(os.Getenv(cuaDriverCmdEnv))
+	override := cuaDriverCmdOverride()
 	binary, err := cuaResolvedDriverCmd()
 	if err != nil {
 		return false, err
@@ -185,7 +186,7 @@ var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Cons
 	freshInstall := binary == ""
 	if override != "" {
 		if binary == "" {
-			return cuaFail(con, "    ICEBATH_CUA_DRIVER_CMD does not resolve to an executable: "+override,
+			return cuaFail(con, "    "+cuaDriverCmdEnv+" does not resolve to an executable: "+override,
 				"    Fix or unset the override before running computer-use install."), nil
 		}
 	} else {
@@ -374,34 +375,15 @@ var cuaDriverAutostartRegisteredWindows = func(env *tools.Env, binary string) bo
 	}
 	want := pypath.Normcase(binary)
 	for _, c := range commands {
-		if pypath.Normcase(strings.Trim(pystr.Strip(c), `"`)) == want {
+		if pypath.Normcase(strings.Trim(strings.TrimSpace(c), `"`)) == want {
 			return true
 		}
 	}
 	return false
 }
 
-// Opt in to the per boot cua-driver-serve logon task, unreadable config failing closed to on demand
-var cuaAutostartOptIn = func(env *tools.Env) (on bool) {
-	defer func() {
-		if recover() != nil {
-			on = false
-		}
-	}()
-	tree, err := loadCUConfig(env)
-	if err != nil || tree == nil {
-		return false
-	}
-	section := tree["computer_use"]
-	if !pyrepr.Truthy(section) {
-		return false
-	}
-	m, ok := section.(map[string]any)
-	if !ok {
-		return false
-	}
-	return pyrepr.Truthy(m["autostart"])
-}
+// Opt in to the per logon cua-driver-serve task on Windows, off unless computer_use.autostart is on
+var cuaAutostartOptIn = func(env *tools.Env) bool { return settings.ComputerUseAutostart.Get(settingsCtx(env)) }
 
 // Elevated registration body with a structured FilePath and ArgumentList so the exit code propagates
 func cuaAutostartRegistrationPSCommand(binary string) string {

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -51,7 +53,7 @@ type ForeignSession struct {
 func (s *ForeignSession) Label() string {
 	title := ""
 	if s.TitleGuess != nil {
-		title = pystr.Strip(*s.TitleGuess)
+		title = strings.TrimSpace(*s.TitleGuess)
 	}
 	if title == "" {
 		title = pypath.PathStem(s.Path)
@@ -84,7 +86,7 @@ func readForeignJSONLines(path string) []*pyjson.Object {
 	}
 	var out []*pyjson.Object
 	for _, line := range strings.SplitAfter(pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(raw)), "\n") {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -136,7 +138,7 @@ func foreignFlattenBlocks(content any) string {
 	}
 	var parts []string
 	for _, b := range list {
-		if p := pystr.Strip(foreignBlockText(b)); p != "" {
+		if p := strings.TrimSpace(foreignBlockText(b)); p != "" {
 			parts = append(parts, p)
 		}
 	}
@@ -147,7 +149,7 @@ func foreignFlattenBlocks(content any) string {
 func foreignMergeTurns(raw []foreignTurn) []foreignTurn {
 	var merged []foreignTurn
 	for _, t := range raw {
-		text := pystr.Strip(t.content)
+		text := strings.TrimSpace(t.content)
 		if text == "" {
 			continue
 		}
@@ -178,7 +180,7 @@ func foreignMessageTurn(message any) (foreignTurn, bool) {
 		return foreignTurn{}, false
 	}
 	if role == "user" {
-		if wrapped, _ := foreignWrapperTagRE.MatchString(pystr.Lstrip(text)); wrapped {
+		if wrapped, _ := foreignWrapperTagRE.MatchString(strings.TrimLeftFunc(text, unicode.IsSpace)); wrapped {
 			return foreignTurn{}, false
 		}
 	}
@@ -191,8 +193,8 @@ func foreignFirstUserLine(turns []foreignTurn) *string {
 		if t.role != "user" {
 			continue
 		}
-		head, _, _ := strings.Cut(pystr.Strip(t.content), "\n")
-		if line := pystr.Strip(head); line != "" {
+		head, _, _ := strings.Cut(strings.TrimSpace(t.content), "\n")
+		if line := strings.TrimSpace(head); line != "" {
 			cut := runePrefix(line, foreignTitleMax*2)
 			return &cut
 		}
@@ -215,8 +217,8 @@ func parseClaudeSession(path string) foreignParsed {
 	for _, obj := range readForeignJSONLines(path) {
 		otype, _ := obj.GetOr("type", nil).(string)
 		if otype == "summary" {
-			if s, ok := obj.GetOr("summary", nil).(string); ok && pystr.Strip(s) != "" {
-				stripped := pystr.Strip(s)
+			if s, ok := obj.GetOr("summary", nil).(string); ok && strings.TrimSpace(s) != "" {
+				stripped := strings.TrimSpace(s)
 				summary = &stripped
 			}
 		} else if (otype == "user" || otype == "assistant") &&
@@ -297,7 +299,7 @@ func foreignParser(source string) func(string) foreignParsed { return foreignSou
 // Default session store of a source honoring the relocation variable of the tool, blank meaning unset
 func foreignDefaultRoot(source string) (string, error) {
 	spec := foreignSources[source]
-	if override := pystr.Strip(os.Getenv(spec.envVar)); override != "" {
+	if override := strings.TrimSpace(os.Getenv(spec.envVar)); override != "" {
 		expanded, err := pypath.PathExpanduser(override)
 		if err != nil {
 			return "", err
@@ -439,7 +441,7 @@ func PickForeignSession(ctx context.Context, source string, w io.Writer) (*Forei
 		}
 		return nil, err
 	}
-	raw := pystr.Strip(answer)
+	raw := strings.TrimSpace(answer)
 	if raw == "" {
 		return nil, nil
 	}
@@ -476,7 +478,7 @@ func ImportForeignSession(ctx context.Context, source, path string) (string, err
 
 // Imports one foreign session through the gateway mutate import and a cosmetic rename, ValueError on bad input
 func importForeignSession(ctx context.Context, store foreignSessionCaller, source, path string) (string, error) {
-	source = pystr.LstripChars(pystr.Lower(pystr.Strip(source)), "@")
+	source = strings.TrimLeft(strings.ToLower(strings.TrimSpace(source)), "@")
 	if _, ok := foreignSourceLabels[source]; !ok {
 		return "", &appValueError{"Unknown foreign session source: " + errchain.Show(source)}
 	}

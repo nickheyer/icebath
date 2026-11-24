@@ -8,10 +8,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Realpath prefixes that block writes, only the sensitive macOS private var subtrees
@@ -130,29 +130,16 @@ func sensitivePathRefusal(filePath string) string {
 		"Use the terminal tool with sudo if you need to modify system files."
 }
 
-// Gate switch and extra basename patterns from the live config, read failures keep the gate on
+// Gate switch and extra basename patterns of the env's profile
 func protectedInstructionConfig(env *Env) (bool, []string) {
-	tree, err := config.Load(envHome(env), configLookup(env))
-	if err != nil {
-		return true, nil
-	}
-	enabled := true
-	if v, ok := tree.Lookup("security.protected_instruction_files"); ok {
-		if b, isBool := v.(bool); isBool {
-			enabled = b
-		}
-	}
+	ctx := envHomeCtx(context.Background(), env)
 	var extra []string
-	if v, ok := tree.Lookup("security.protected_instruction_extra_patterns"); ok {
-		if list, isList := v.([]any); isList {
-			for _, p := range list {
-				if truthy(p) {
-					extra = append(extra, pyStr(p))
-				}
-			}
+	for _, p := range settings.SecurityProtectedInstructionExtraPatterns.Strings(ctx) {
+		if p != "" {
+			extra = append(extra, p)
 		}
 	}
-	return enabled, extra
+	return settings.SecurityProtectedInstructionFiles.Get(ctx), extra
 }
 
 // Short label when the path names a protected instruction file by input or realpath, empty otherwise

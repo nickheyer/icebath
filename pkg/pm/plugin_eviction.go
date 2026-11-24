@@ -46,7 +46,7 @@ func pythonVersionOf(ctx context.Context, python string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(string(out)), nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // Python version lookup the eviction verdicts use, replaceable by tests the way Python patches it
@@ -456,7 +456,7 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 		memory, _ := orEmpty(selection["memory"]).(map[string]any)
 		provider := ""
 		if raw := memory["provider"]; pyrepr.Truthy(raw) {
-			provider = pystr.Strip(pyrepr.Str(raw))
+			provider = strings.TrimSpace(pyrepr.Str(raw))
 		}
 		record, ok := plugins[DisabledByUpdateRecord].(map[string]any)
 		if !ok {

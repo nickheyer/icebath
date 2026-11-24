@@ -1,20 +1,15 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
-	"sync"
 
-	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-const (
-	DefaultMaxBytes      = 50000
-	DefaultMaxLines      = 2000
-	DefaultMaxLineLength = 2000
-	headRatio            = 0.4
-)
+const headRatio = 0.4
 
 // OutputLimits holds the resolved tool_output caps from config.yaml
 type OutputLimits struct {
@@ -22,11 +17,6 @@ type OutputLimits struct {
 	MaxLines      int
 	MaxLineLength int
 }
-
-var (
-	outputLimitsMu    sync.Mutex
-	outputLimitsCache = map[string]OutputLimits{}
-)
 
 // Integer at least minimum, else the default on any issue
 func coerceInt(value any, def, minimum int) int {
@@ -69,22 +59,14 @@ func asIntValue(value any) (int, bool) {
 	return 0, false
 }
 
-// Resolved output caps cached per profile home so every profile keeps its own limits
+// Output caps of the env's profile
 func ToolOutputLimits(env *Env) OutputLimits {
-	key := home.Key(envHome(env))
-	outputLimitsMu.Lock()
-	defer outputLimitsMu.Unlock()
-	if cached, ok := outputLimitsCache[key]; ok {
-		return cached
+	ctx := envHomeCtx(context.Background(), env)
+	return OutputLimits{
+		MaxBytes:      settings.ToolOutputMaxBytes.Get(ctx),
+		MaxLines:      settings.ToolOutputMaxLines.Get(ctx),
+		MaxLineLength: settings.ToolOutputMaxLineLength.Get(ctx),
 	}
-	section := cfgTree(env).Map("tool_output")
-	limits := OutputLimits{
-		MaxBytes:      coerceInt(section["max_bytes"], DefaultMaxBytes, 1),
-		MaxLines:      coerceInt(section["max_lines"], DefaultMaxLines, 1),
-		MaxLineLength: coerceInt(section["max_line_length"], DefaultMaxLineLength, 1),
-	}
-	outputLimitsCache[key] = limits
-	return limits
 }
 
 // Formats an integer with thousands separators the way Python {n:,} does

@@ -118,8 +118,7 @@ func TestBrokenRootIsRetriedAfterBrokenRetrySeconds(t *testing.T) {
 	src := writeFile(t, filepath.Join(repo, "x.py"), "")
 	installFailingServer(t)
 	rt, _, _ := testRuntime(t)
-	svc, err := ServiceFromConfig(rt, map[string]any{"wait_timeout": 1.0, "install_strategy": "manual", "broken_retry_seconds": 0.2}, cwdRoots())
-	must(t, err)
+	svc := ServiceFromConfig(lspSettings(t, rt, map[string]any{"wait_timeout": 1.0, "install_strategy": "manual", "broken_retry_seconds": 0.2}), rt, cwdRoots())
 	t.Cleanup(svc.Shutdown)
 	svc.SnapshotBaseline(src, cwdRoots())
 	if svc.EnabledFor(src, cwdRoots()) || !slices.Contains(svc.GetStatus().Broken, [2]string{"pyright", repo}) {
@@ -148,9 +147,8 @@ func TestExcludeRootsSkipsMatchingRootOnly(t *testing.T) {
 	t.Cleanup(func() { Servers[idx] = original })
 	rt, h, _ := testRuntime(t)
 	roots := map[string]bool{big: true, small: true}
-	svc, err := ServiceFromConfig(rt, map[string]any{"wait_timeout": 1.0, "install_strategy": "manual",
-		"exclude_roots": []any{filepath.Join(tmp, "bi*")}}, roots)
-	must(t, err)
+	svc := ServiceFromConfig(lspSettings(t, rt, map[string]any{"wait_timeout": 1.0, "install_strategy": "manual",
+		"exclude_roots": []any{filepath.Join(tmp, "bi*")}}), rt, roots)
 	svc.SnapshotBaseline(filepath.Join(big, "x.py"), roots)
 	if svc.EnabledFor(filepath.Join(big, "x.py"), roots) || !svc.EnabledFor(filepath.Join(small, "x.py"), roots) {
 		t.Fatal("exclude must gate only the matching root")
@@ -159,8 +157,7 @@ func TestExcludeRootsSkipsMatchingRootOnly(t *testing.T) {
 		t.Fatal("the gate must be visible in the log")
 	}
 	svc.Shutdown()
-	bad, err := ServiceFromConfig(rt, map[string]any{"install_strategy": "manual", "exclude_roots": big}, roots)
-	must(t, err)
+	bad := ServiceFromConfig(lspSettings(t, rt, map[string]any{"install_strategy": "manual", "exclude_roots": big}), rt, roots)
 	defer bad.Shutdown()
 	if bad.EnabledFor(filepath.Join(small, "x.py"), roots) {
 		t.Fatal("a malformed key fails closed")
@@ -271,8 +268,7 @@ func trustSpawns(t *testing.T, rt *Runtime, tmp, launcher string, roots []string
 	t.Chdir(filepath.Join(tmp, "launch", "src"))
 	workspaces.ClearWorkspaceCache()
 	handed := recordSpawns(t)
-	svc, err := ServiceFromConfig(rt, map[string]any{"trusted_workspaces": tw, "servers": servers}, cwdRoots())
-	must(t, err)
+	svc := ServiceFromConfig(lspSettings(t, rt, map[string]any{"trusted_workspaces": tw, "servers": servers}), rt, cwdRoots())
 	defer svc.Shutdown()
 	for _, root := range roots {
 		for _, name := range trustServers {

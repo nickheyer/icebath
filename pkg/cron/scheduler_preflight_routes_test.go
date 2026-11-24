@@ -6,23 +6,23 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func TestCronPreflightEnabledUnlessLiterallyFalse(t *testing.T) {
-	s := &Store{}
+	s, _ := newTestStore(t)
 	for _, c := range []struct {
-		cfg  config.Tree
+		cfg  string
 		want bool
 	}{
-		{nil, true}, {config.Tree{"cron": "x"}, true}, {config.Tree{"cron": map[string]any{}}, true},
-		{config.Tree{"cron": map[string]any{"preflight": 0}}, true}, {config.Tree{"cron": map[string]any{"preflight": nil}}, true},
-		{config.Tree{"cron": map[string]any{"preflight": false}}, false},
+		{"", true}, {"cron: x\n", true}, {"cron: {}\n", true},
+		{"cron:\n  preflight: 0\n", false}, {"cron:\n  preflight: null\n", true},
+		{"cron:\n  preflight: false\n", false},
 	} {
-		if got := s.cronPreflightEnabled(c.cfg); got != c.want {
-			t.Fatalf("%v -> %v", c.cfg, got)
+		writeHomeConfig(t, s, c.cfg)
+		if got := s.cronPreflightEnabled(context.Background()); got != c.want {
+			t.Fatalf("%q -> %v", c.cfg, got)
 		}
 	}
 }

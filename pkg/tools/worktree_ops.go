@@ -61,7 +61,7 @@ func worktreeGitOut(args []string, cwd string, timeout time.Duration) (string, b
 	if r.Returncode != 0 {
 		return "", false, nil
 	}
-	return pystr.Strip(r.Stdout), true, nil
+	return strings.TrimSpace(r.Stdout), true, nil
 }
 
 // Runs git swallowing every error, logging it at debug under the given prefix
@@ -91,7 +91,7 @@ func worktreeincludeEntries(repoRoot string) []string {
 	text = strings.TrimPrefix(text, "\ufeff")
 	var entries []string
 	for _, line := range pystr.Splitlines(text, false) {
-		if entry := pystr.Strip(line); entry != "" && !strings.HasPrefix(entry, "#") {
+		if entry := strings.TrimSpace(line); entry != "" && !strings.HasPrefix(entry, "#") {
 			entries = append(entries, entry)
 		}
 	}
@@ -121,7 +121,7 @@ func worktreeLocalTrunk(path string, timeout time.Duration) (string, error) {
 	first, _, _ := strings.Cut(porcelain, "\n\n")
 	for _, line := range pystr.Splitlines(first, false) {
 		if strings.HasPrefix(line, "branch refs/heads/") {
-			return pystr.Strip(line[len("branch refs/heads/"):]), nil
+			return strings.TrimSpace(line[len("branch refs/heads/"):]), nil
 		}
 	}
 	return "", nil
@@ -320,7 +320,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 	}
 	var names []string
 	for _, r := range pystr.Splitlines(remotes, false) {
-		if r = pystr.Strip(r); r != "" {
+		if r = strings.TrimSpace(r); r != "" {
 			names = append(names, r)
 		}
 	}
@@ -346,7 +346,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 			if len(extra) > 0 {
 				label = " " + strings.Join(extra, " ")
 			}
-			stderr := pystr.Strip(r.Stderr)
+			stderr := strings.TrimSpace(r.Stderr)
 			envLog(nil).Debug(fmt.Sprintf("git fetch --unshallow%s failed: %s", label, pystr.Slice(stderr, -500, pystr.Len(stderr))))
 		}
 		return false
@@ -496,7 +496,7 @@ func worktreeCommitsAllMergedUpstream(worktreePath string, timeout time.Duration
 	}
 	var lines []string
 	for _, ln := range pystr.Splitlines(cherry.Stdout, false) {
-		if pystr.Strip(ln) != "" {
+		if strings.TrimSpace(ln) != "" {
 			lines = append(lines, ln)
 		}
 	}
@@ -574,7 +574,7 @@ func fetchRemoteBranchHeads(repoRoot string, timeout time.Duration) map[string]s
 	for _, line := range pystr.Splitlines(r.Stdout, false) {
 		sha, ref, ok := strings.Cut(line, "\t")
 		if ok && strings.HasPrefix(ref, "refs/heads/") {
-			heads[pystr.Strip(ref[len("refs/heads/"):])] = pystr.Strip(sha)
+			heads[strings.TrimSpace(ref[len("refs/heads/"):])] = strings.TrimSpace(sha)
 		}
 	}
 	return heads
@@ -859,7 +859,7 @@ func worktreeLockReason(repoRoot, worktreePath string, timeout time.Duration) (b
 	if !strings.HasPrefix(link, "gitdir:") {
 		return false, nil, fmt.Errorf("unreadable .git file in %s", worktreePath)
 	}
-	target := pystr.Strip(link[len("gitdir:"):])
+	target := strings.TrimSpace(link[len("gitdir:"):])
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(worktreePath, target)
 	}
@@ -1077,13 +1077,13 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 			if err != nil {
 				return err
 			}
-			branch := pystr.Strip(br.Stdout)
+			branch := strings.TrimSpace(br.Stdout)
 			rm, err := worktreeGit([]string{"worktree", "remove", v.entry, "--force"}, repoRoot, 15*time.Second, nil)
 			if err != nil {
 				return err
 			}
 			if rm.Returncode != 0 {
-				envLog(nil).Debug(fmt.Sprintf("Failed to remove worktree %s: %s", name, pystr.Strip(rm.Stderr)))
+				envLog(nil).Debug(fmt.Sprintf("Failed to remove worktree %s: %s", name, strings.TrimSpace(rm.Stderr)))
 				return nil
 			}
 			if branch != "" && v.verdict == "reap-keep-branch" {
@@ -1189,7 +1189,7 @@ func pruneOrphanedBranches(repoRoot string, protect map[string]bool) {
 	}
 	var all []string
 	for _, b := range strings.Split(listing, "\n") {
-		if b = pystr.Strip(b); b != "" {
+		if b = strings.TrimSpace(b); b != "" {
 			all = append(all, b)
 		}
 	}
@@ -1201,11 +1201,11 @@ func pruneOrphanedBranches(repoRoot string, protect map[string]bool) {
 	for _, line := range strings.Split(wt.Stdout, "\n") {
 		if strings.HasPrefix(line, "branch refs/heads/") {
 			_, after, _ := strings.Cut(line, "branch refs/heads/")
-			active[pystr.Strip(after)] = true
+			active[strings.TrimSpace(after)] = true
 		}
 	}
 	if cur, err := worktreeGit([]string{"branch", "--show-current"}, repoRoot, 5*time.Second, nil); err == nil {
-		if c := pystr.Strip(cur.Stdout); c != "" {
+		if c := strings.TrimSpace(cur.Stdout); c != "" {
 			active[c] = true
 		}
 	}

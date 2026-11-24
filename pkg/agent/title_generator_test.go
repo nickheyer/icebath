@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -44,7 +45,6 @@ func settleTitleUpgrades(t testing.TB) {
 func titleTestHome(t *testing.T) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swapTitleSeam(t, &titleLoadConfig, func(context.Context) (map[string]any, error) { return map[string]any{}, nil })
 }
 
 // Wire shaped auxiliary response whose first choice carries message
@@ -241,18 +241,16 @@ func TestGenerateTitleTitleInputBudgetAndManualAttachmentsStayUnread(t *testing.
 }
 
 func TestGenerateTitleTitleLanguageReadsConfig(t *testing.T) {
-	ctx := context.Background()
+	titleTestHome(t)
 	cfg := map[string]any{"auxiliary": map[string]any{"title_generation": map[string]any{"language": "  French "}}}
-	swapTitleSeam(t, &titleLoadConfig, func(context.Context) (map[string]any, error) { return cfg, nil })
-	if got := titleLanguage(ctx); got != "French" {
+	if got := titleLanguage(settings.WithFrozen(context.Background(), cfg)); got != "French" {
 		t.Fatalf("language %q", got)
 	}
-	titleLoadConfig = func(context.Context) (map[string]any, error) { return map[string]any{}, nil }
-	if got := titleLanguage(ctx); got != "" {
+	if got := titleLanguage(settings.WithFrozen(context.Background(), map[string]any{})); got != "" {
 		t.Fatalf("language %q", got)
 	}
-	titleLoadConfig = func(context.Context) (map[string]any, error) { return nil, errors.New("bad config") }
-	if got := titleLanguage(ctx); got != "" {
+	broken := map[string]any{"auxiliary": map[string]any{"title_generation": "French"}}
+	if got := titleLanguage(settings.WithFrozen(context.Background(), broken)); got != "" {
 		t.Fatalf("language %q", got)
 	}
 }
@@ -516,14 +514,13 @@ func TestMaybeAutoTitleTitleCallWaitsForTheTurnWhenItSharesASelfHostedEndpoint(t
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprint(c.runtime["provider"], c.cfg), func(t *testing.T) {
-			cfg := c.cfg
-			swapTitleSeam(t, &titleConfigFn, func(context.Context) (map[string]any, error) { return cfg, nil })
+			ctx := settings.WithFrozen(context.Background(), map[string]any{"auxiliary": map[string]any{"title_generation": c.cfg}})
 			started := make(chan struct{})
 			var once sync.Once
 			swapTitleSeam(t, &autoTitleSessionFn, func(context.Context, any, string, string, autoTitleSessionOptions) {
 				once.Do(func() { close(started) })
 			})
-			upgrade, startedNow := maybeAutoTitle(context.Background(), &fakeTitleDB{}, "sess-1", "hello", autoTitleOptions{
+			upgrade, startedNow := maybeAutoTitle(ctx, &fakeTitleDB{}, "sess-1", "hello", autoTitleOptions{
 				ConversationHistory: []*state.Message{{Role: "user", Content: "hello"}}, MainRuntime: c.runtime})
 			thread, ok := upgrade.(*memory.ContextThread)
 			if !ok || thread == nil {
@@ -546,8 +543,7 @@ func TestMaybeAutoTitleTitleCallWaitsForTheTurnWhenItSharesASelfHostedEndpoint(t
 }
 
 func TestMaybeAutoTitleTitlePinNamingTheSameSelfHostedRouteStillWaitsForTheTurn(t *testing.T) {
-	keyed := map[string]any{"providers": map[string]any{"gptoss": map[string]any{"name": "GPTOSS Local", "base_url": "http://127.0.0.1:8080/v1"}}}
-	swapTitleSeam(t, &titleLoadConfig, func(context.Context) (map[string]any, error) { return keyed, nil })
+	keyed := map[string]any{"gptoss": map[string]any{"name": "GPTOSS Local", "base_url": "http://127.0.0.1:8080/v1"}}
 	cases := []struct {
 		main     string
 		cfg      map[string]any
@@ -571,10 +567,9 @@ func TestMaybeAutoTitleTitlePinNamingTheSameSelfHostedRouteStillWaitsForTheTurn(
 		{"lmstudio", map[string]any{"provider": "openrouter"}, false},
 	}
 	for _, c := range cases {
-		cfg := c.cfg
-		swapTitleSeam(t, &titleConfigFn, func(context.Context) (map[string]any, error) { return cfg, nil })
+		ctx := settings.WithFrozen(context.Background(), map[string]any{"providers": keyed, "auxiliary": map[string]any{"title_generation": c.cfg}})
 		rt := map[string]any{"provider": c.main, "base_url": "http://127.0.0.1:8080/v1"}
-		if got := titleUpgradeMustWaitForTurn(context.Background(), rt); got != c.deferred {
+		if got := titleUpgradeMustWaitForTurn(ctx, rt); got != c.deferred {
 			t.Fatalf("main %q pin %v waits %v, want %v", c.main, c.cfg, got, c.deferred)
 		}
 	}
@@ -591,7 +586,6 @@ func titleKanbanHome(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_KANBAN_HOME", h)
 	t.Cleanup(home.PatchUserHome(tmp))
-	swapTitleSeam(t, &titleLoadConfig, func(context.Context) (map[string]any, error) { return map[string]any{}, nil })
 }
 
 // Creates a card on the default board and returns its id
@@ -694,10 +688,9 @@ func TestMaybeAutoTitleModelUpgradeDisabledKeepsDerivedTitleAndSpawnsNoThread(t 
 	titleTestHome(t)
 	db := newTitleTestDB(t, "cli", "sess-1")
 	cfg := map[string]any{"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": true, "model_upgrade_enabled": false}}}
-	swapTitleSeam(t, &titleLoadConfig, func(context.Context) (map[string]any, error) { return cfg, nil })
 	auto := fakeAutoTitleSession(t)
 	llm := fakeTitleLLMContent(t, `{"title": "Repair startup memory routing"}`)
-	upgrade, _ := maybeAutoTitle(context.Background(), db, "sess-1", "repair startup memory routing", autoTitleOptions{})
+	upgrade, _ := maybeAutoTitle(settings.WithFrozen(context.Background(), cfg), db, "sess-1", "repair startup memory routing", autoTitleOptions{})
 	if got := titleOf(t, db, "sess-1"); got == nil || *got != "repair startup memory routing" || titleSourceOf(t, db, "sess-1") != "derived" {
 		t.Fatalf("title %v", got)
 	}
@@ -713,10 +706,9 @@ func TestMaybeAutoTitleEnabledFalseStillDisablesDerivedAndModelTitles(t *testing
 	titleTestHome(t)
 	db := newTitleTestDB(t, "cli", "sess-1")
 	cfg := map[string]any{"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": false, "model_upgrade_enabled": true}}}
-	swapTitleSeam(t, &titleLoadConfig, func(context.Context) (map[string]any, error) { return cfg, nil })
 	auto := fakeAutoTitleSession(t)
 	llm := fakeTitleLLMContent(t, `{"title": "x"}`)
-	upgrade, _ := maybeAutoTitle(context.Background(), db, "sess-1", "repair startup memory routing", autoTitleOptions{})
+	upgrade, _ := maybeAutoTitle(settings.WithFrozen(context.Background(), cfg), db, "sess-1", "repair startup memory routing", autoTitleOptions{})
 	if got := titleOf(t, db, "sess-1"); got != nil || upgrade != nil || auto.Load() != 0 || llm.Load() != 0 {
 		t.Fatalf("title %v upgrade %v auto %d llm %d", got, upgrade, auto.Load(), llm.Load())
 	}

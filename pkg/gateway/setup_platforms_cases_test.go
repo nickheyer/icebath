@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Registers the IRC plugin entry as discovery would and returns its setup row, unregistering it after the test
@@ -39,6 +39,7 @@ func registerIRCPlatform(t *testing.T, setupFn func(context.Context) error) Setu
 func ircSetupHarness(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
+	t.Setenv("ICEBATH_MANAGED", "")
 	var out bytes.Buffer
 	t.Cleanup(provider.WithSetupOutput(&out))
 	savedSetup := WizardSetup
@@ -118,27 +119,29 @@ func TestIRCGatewaySetupFreshInstallSetupGatewayShowsIrcInPlatformMenu(t *testin
 	if !found {
 		t.Fatal("IRC not in platforms")
 	}
-	type checklistCall struct {
+	type menuCall struct {
 		question string
 		choices  []string
 	}
-	var checklistCalls []checklistCall
-	WizardSetup.PromptChecklist = func(question string, choices []string, _ []int) []int {
-		checklistCalls = append(checklistCalls, checklistCall{question, append([]string{}, choices...)})
-		return nil
+	var menuCalls []menuCall
+	saved := gatewayFacade
+	t.Cleanup(func() { gatewayFacade = saved })
+	gatewayFacade.promptChoice = func(question string, choices []string, def int) int {
+		menuCalls = append(menuCalls, menuCall{question, append([]string{}, choices...)})
+		return def
 	}
-	if err := SetupGateway(context.Background(), config.Tree{}); err != nil {
+	if err := GatewaySetup(context.Background(), provider.SetupOutput()); err != nil {
 		t.Fatal(err)
 	}
-	var prompt *checklistCall
-	for i := range checklistCalls {
-		if strings.Contains(strings.ToLower(checklistCalls[i].question), "platform") {
-			prompt = &checklistCalls[i]
+	var prompt *menuCall
+	for i := range menuCalls {
+		if strings.Contains(strings.ToLower(menuCalls[i].question), "platform") {
+			prompt = &menuCalls[i]
 			break
 		}
 	}
 	if prompt == nil {
-		t.Fatalf("no platform prompt found in %v", checklistCalls)
+		t.Fatalf("no platform prompt found in %v", menuCalls)
 	}
 	text := strings.Join(prompt.choices, "\n")
 	if !strings.Contains(text, "IRC") || !strings.Contains(strings.ToLower(text), "not configured") {
@@ -152,20 +155,23 @@ func TestIRCGatewaySetupFreshInstallSetupGatewayIrcCountsAsMessagingPlatform(t *
 	t.Setenv("IRC_SERVER", "irc.libera.chat")
 	t.Setenv("IRC_CHANNEL", "#icebath")
 	t.Setenv("IRC_NICKNAME", "icebath-bot")
-	WizardSetup.PromptChoice = func(string, []string, int) int { return 0 }
-	WizardSetup.PromptChecklist = func(_ string, items []string, _ []int) []int {
-		var picked []int
+	swapSetup(t, &setupNeedsNoService, func(context.Context, io.Writer) (bool, error) { return true, nil })
+	saved := gatewayFacade
+	t.Cleanup(func() { gatewayFacade = saved })
+	picked := false
+	gatewayFacade.promptChoice = func(_ string, items []string, def int) int {
 		for i, item := range items {
-			if strings.Contains(item, "IRC") {
-				picked = append(picked, i)
+			if !picked && strings.Contains(item, "IRC") {
+				picked = true
+				return i
 			}
 		}
-		return picked
+		return def
 	}
-	if err := SetupGateway(context.Background(), config.Tree{}); err != nil {
+	if err := GatewaySetup(context.Background(), provider.SetupOutput()); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Messaging platforms configured!") {
+	if !picked || !strings.Contains(out.String(), "Messaging platforms configured!") {
 		t.Fatalf("output %q", out.String())
 	}
 }
@@ -234,8 +240,11 @@ func TestCliWizardWizardStopsAskingAboutHiddenKnobs(t *testing.T) {
 		t.Fatal(err)
 	}
 	written := readHomeEnv(t, h)
-	if written["MATTERMOST_URL"] != "https://mm.example.com" || written["MATTERMOST_TOKEN"] != "tok-abc" {
-		t.Fatalf("env %v output %q", written, out.String())
+	if url := settings.MattermostURL.Get(context.Background()); url != "https://mm.example.com" || written["MATTERMOST_TOKEN"] != "tok-abc" {
+		t.Fatalf("server address %q env %v output %q", url, written, out.String())
+	}
+	if _, ok := written["MATTERMOST_URL"]; ok {
+		t.Fatalf("server address written to the keys file %v", written)
 	}
 	if _, ok := written["MATTERMOST_HOME_CHANNEL"]; ok {
 		t.Fatalf("home channel asked %v", written)

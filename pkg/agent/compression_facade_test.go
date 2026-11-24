@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 func newFenceRaceAgent(t *testing.T) *AIAgent {
@@ -406,7 +406,7 @@ func TestCompressContextMirrorsPersistedStampsAndRebindsTheCaller(t *testing.T) 
 	lg.SetPropagate(false)
 	lg.AddHandler(h)
 	t.Cleanup(func() { lg.RemoveHandler(h); lg.SetPropagate(true); logging.ClearSessionContext() })
-	a := &AIAgent{sessionID: "parent"}
+	a := &AIAgent{sessionID: "parent", env: &tools.Env{Home: t.TempDir(), Values: &sync.Map{}}}
 	live := []map[string]any{{"role": "user", "content": "kept turn"}, {"role": "assistant", "content": "old reply"}}
 	system := "sys"
 	if _, _, err := a.compressContext(context.Background(), live, &system, compressContextOptions{TaskID: "default", CommitFence: NewCompressionCommitFence()}); err != nil {
@@ -415,7 +415,7 @@ func TestCompressContextMirrorsPersistedStampsAndRebindsTheCaller(t *testing.T) 
 	if live[0][dbPersistedMarker] != true || live[1][dbPersistedMarker] != nil {
 		t.Fatalf("persisted stamp not mirrored onto the live twin: %v", live)
 	}
-	if v := os.Getenv("ICEBATH_SESSION_ID"); v != "child" {
+	if v := tools.SessionEnvValue(a.env, "ICEBATH_SESSION_ID"); v != "child" {
 		t.Fatalf("caller session id not rebound: %q", v)
 	}
 	lg.Info("after compression")

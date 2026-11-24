@@ -393,11 +393,11 @@ func delegateTaskGoals(tasks any, perGoalLen int) []string {
 
 // User friendly step label of a browser_exec call, the leading comment of its code
 func browserExecStepLabel(args map[string]any, maxChars int) (string, bool) {
-	first, _, _ := strings.Cut(pystr.Strip(pyStrOrEmpty(args["code"])), "\n")
-	first = pystr.Strip(first)
+	first, _, _ := strings.Cut(strings.TrimSpace(pyStrOrEmpty(args["code"])), "\n")
+	first = strings.TrimSpace(first)
 	label := ""
 	if strings.HasPrefix(first, "#") {
-		label = pystr.Strip(strings.TrimLeft(first, "#"))
+		label = strings.TrimSpace(strings.TrimLeft(first, "#"))
 	}
 	if label == "" {
 		return "", false

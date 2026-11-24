@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Argv marker of the detached child that installs the default plugins of every home
@@ -160,27 +161,18 @@ func manifestName(target string) string {
 	return pyrepr.Str(manifest["name"])
 }
 
-// Whether one of the names is in plugins.enabled and in plugins.disabled of a home, read with the managed overlay applied the way the loader reads it
+// Whether one of the names is in plugins.enabled and in plugins.disabled of a home, read through the settings the loader reads
 func listed(h string, names map[string]bool) (enabled, disabled bool) {
-	cfg, err := yamlLayers(h)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("default plugins: unreadable config for %s: %s", h, err))
-		return false, false
-	}
-	lists := mapping(cfg["plugins"])
-	in := func(key string) bool {
-		entries, ok := lists[key].([]any)
-		if !ok {
-			return false
-		}
-		for _, name := range entries {
-			if names[pyrepr.Str(name)] {
+	ctx := home.WithOverride(context.Background(), h)
+	in := func(list *settings.List) bool {
+		for _, name := range list.Strings(ctx) {
+			if names[name] {
 				return true
 			}
 		}
 		return false
 	}
-	return in("enabled"), in("disabled")
+	return in(settings.PluginsEnabled), in(settings.PluginsDisabled)
 }
 
 // Whether a home already has an entry: a tree the user put there, or one an earlier automatic attempt left that someone has since enabled or disabled; a tree a refused enable left behind is retried
@@ -205,25 +197,16 @@ func placedMarker(h string, entry *plugins.PluginCatalogEntry) string {
 	return filepath.Join(home.CacheDir(h), "default-plugins.placed-"+entry.Name)
 }
 
-// Fetch policy of a home read without binding its profile, nothing fetched unless allowed and an unreadable config keeping the home owed
+// Fetch policy of a home from security.allow_lazy_installs of its profile, nothing fetched unless allowed and an unreadable config keeping the home owed
 func FetchPolicy(h string) string {
-	switch pystr.Lower(pystr.Strip(os.Getenv(pm.EnvDisableLazyInstalls))) {
-	case "1", "true", "yes":
+	if !settings.SecurityAllowLazyInstalls.Get(home.WithOverride(context.Background(), h)) {
 		return FetchDenied
 	}
-	cfg, err := yamlLayers(h)
-	if err != nil {
+	if _, err := config.ReadDocument(home.ConfigPath(h)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("default plugins: unreadable config for %s: %s", h, err))
 		return FetchUnreadable
 	}
-	value, found := mapping(cfg["security"])["allow_lazy_installs"]
-	if !found {
-		return FetchAllowed
-	}
-	if allowed, isBool := value.(bool); isBool && allowed {
-		return FetchAllowed
-	}
-	return FetchDenied
+	return FetchAllowed
 }
 
 // Installs one catalog plugin into a home at its catalog pin and enables it, a leftover tree of an earlier attempt discarded first; never forced, so it does not overwrite another plugin at the destination
@@ -251,17 +234,6 @@ func installOne(ctx context.Context, h, name, discard string) (ok bool, reason s
 		return false, pyrepr.Str(result["error"])
 	}
 	return false, ""
-}
-
-// Mapping value of a config section, nil for any other value
-func mapping(v any) map[string]any {
-	switch m := v.(type) {
-	case map[string]any:
-		return m
-	case config.Tree:
-		return m
-	}
-	return nil
 }
 
 // Whether the path is a directory
@@ -566,7 +538,7 @@ func StepInstall(ctx context.Context) (map[string]any, error) {
 		return map[string]any{"ok": true, "skipped": skippedLazy}, nil
 	}
 	mark := stateFile(pm.DependencyHomeRoot(ctx), "settled")
-	if raw, err := os.ReadFile(mark); err == nil && pystr.Strip(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")) == identity(ctx) {
+	if raw, err := os.ReadFile(mark); err == nil && strings.TrimSpace(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")) == identity(ctx) {
 		return map[string]any{"ok": true}, nil
 	}
 	spawned, err := SpawnInstall(ctx, "")

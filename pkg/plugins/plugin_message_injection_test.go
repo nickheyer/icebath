@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -127,10 +126,13 @@ func TestGatewayInjectionDoesNotTreatStringAsPermission(t *testing.T) {
 // An unreadable profile config denies injection instead of granting it
 func TestGatewayInjectionFailsClosedWhenConfigCannotBeRead(t *testing.T) {
 	c, m := pmiContext(t, nil)
-	pmiWriteConfig(t, m.home, map[string]any{"allow_gateway_injection": true})
-	previous := injectionConfigLoader
-	injectionConfigLoader = func(string) (map[string]any, error) { return nil, errors.New("config unavailable") }
-	t.Cleanup(func() { injectionConfigLoader = previous })
+	if err := os.MkdirAll(m.home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	broken := "plugins:\n  entries:\n    notify-plugin:\n      allow_gateway_injection: true\n  [unclosed\n"
+	if err := os.WriteFile(filepath.Join(m.home, "config.yaml"), []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	inj := &pmiInjector{result: true}
 	m.SetGatewayMessageInjector(new(int), inj.inject)
 	if c.InjectMessage(context.Background(), "wake up", "user", "agent:main:telegram:dm:42", nil) || len(inj.calls) != 0 {

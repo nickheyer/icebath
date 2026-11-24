@@ -257,16 +257,12 @@ func Dispatch(ctx context.Context, req any, transport tuihost.Transport) map[str
 		}
 		return nil
 	}
-	_, method, params, errResp := normalizeRequest(plainRequest(req))
+	_, method, _, errResp := normalizeRequest(plainRequest(req))
 	if errResp != nil {
 		return errResp
 	}
 	if !isLongHandler(method) {
 		return handleRequest(ctx, req)
-	}
-	workCtx := ctx
-	if owner, isDict := params["owner"].(map[string]any); connectorRPCMethods[method] && isDict && owner["type"] == "session" {
-		workCtx = captureConnectorRPCOwner(workCtx, params)
 	}
 	run := func() {
 		var resp map[string]any
@@ -276,7 +272,7 @@ func Dispatch(ctx context.Context, req any, transport tuihost.Transport) map[str
 					resp = rpcErr(requestID(req), -32000, "handler error: "+failureText(failure), nil)
 				}
 			}()
-			resp = handleRequest(workCtx, req)
+			resp = handleRequest(ctx, req)
 		}()
 		if resp != nil {
 			t.Write(frameObject(resp))

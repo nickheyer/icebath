@@ -18,7 +18,7 @@ var slugifyRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // Lowercased hyphenated filesystem slug of a display name, pet when nothing remains
 func Slugify(name string) string {
-	slug := strings.Trim(slugifyRe.ReplaceAllString(pystr.Lower(pystr.Strip(name)), "-"), "-")
+	slug := strings.Trim(slugifyRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-")
 	if slug == "" {
 		return "pet"
 	}
@@ -34,7 +34,7 @@ func DisplayNameFor(concept string) string {
 	for i, w := range words {
 		words[i] = pystr.Capitalize(w)
 	}
-	return pystr.Strip(pystr.Slice(strings.Join(words, " "), 0, 28))
+	return strings.TrimSpace(pystr.Slice(strings.Join(words, " "), 0, 28))
 }
 
 // Slug of the name that does not collide with an existing pet directory

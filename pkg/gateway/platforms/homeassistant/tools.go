@@ -61,7 +61,7 @@ func getConfig(ctx context.Context) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	hassURL := pystr.RstripChars(rawURL, "/")
+	hassURL := strings.TrimRight(rawURL, "/")
 	if problem := urlSchemeProblem(hassURL); problem != "" {
 		return "", "", &pyErr{"ValueError", problem}
 	}
@@ -69,7 +69,7 @@ func getConfig(ctx context.Context) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	return hassURL, pystr.Strip(token), nil
+	return hassURL, strings.TrimSpace(token), nil
 }
 
 // Allow and deny patterns of the active profile
@@ -91,7 +91,7 @@ func getMaxEntitiesConfig(ctx context.Context) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
 	}
@@ -113,7 +113,7 @@ func parseEntityFilterPatterns(value string) []string {
 	}
 	var out []string
 	for _, p := range strings.Split(value, ",") {
-		if s := pystr.Strip(p); s != "" {
+		if s := strings.TrimSpace(p); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -138,7 +138,7 @@ func entityMatches(entityID any, patterns []string) (bool, error) {
 		}
 		patRunes := []rune(pat)
 		if strings.ContainsRune("*._", patRunes[len(patRunes)-1]) {
-			base := pystr.RstripChars(pat, "*._")
+			base := strings.TrimRight(pat, "*._")
 			idRunes, baseRunes := []rune(id), []rune(base)
 			if base != "" && strings.HasPrefix(id, base) &&
 				(len(idRunes) == len(baseRunes) || strings.ContainsRune("._", idRunes[len(baseRunes)])) {
@@ -262,7 +262,7 @@ func collectServiceTargets(payload any, entityIDs, indirect map[string]bool) {
 				ids = list
 			}
 			for e := range normalizeIDList(ids) {
-				entityIDs[pystr.Lower(e)] = true
+				entityIDs[strings.ToLower(e)] = true
 			}
 		case isDict(value):
 			collectServiceTargets(value, entityIDs, indirect)
@@ -349,13 +349,13 @@ func normalizeIDList(value any) map[string]bool {
 	case nil:
 		return out
 	case string:
-		parts = strings.FieldsFunc(pystr.Strip(t), func(r rune) bool { return r == ',' || pystr.IsSpace(r) })
+		parts = strings.FieldsFunc(strings.TrimSpace(t), func(r rune) bool { return r == ',' || pystr.IsSpace(r) })
 	case []any:
 		for _, p := range t {
-			parts = append(parts, pystr.Strip(pyrepr.Str(p)))
+			parts = append(parts, strings.TrimSpace(pyrepr.Str(p)))
 		}
 	default:
-		parts = []string{pystr.Strip(pyrepr.Str(value))}
+		parts = []string{strings.TrimSpace(pyrepr.Str(value))}
 	}
 	for _, p := range parts {
 		if p != "" {
@@ -443,7 +443,7 @@ func pyLower(v any) (string, error) {
 	if !ok {
 		return "", &pyErr{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 	}
-	return pystr.Lower(s), nil
+	return strings.ToLower(s), nil
 }
 
 // Lower of a value or the empty str when it is falsy
@@ -1298,7 +1298,7 @@ func handleCallService(ctx context.Context, call *tools.Call) string {
 	}
 	data := args["data"]
 	if s, ok := data.(string); ok {
-		if pystr.Strip(s) == "" {
+		if strings.TrimSpace(s) == "" {
 			data = nil
 		} else {
 			parsed, err := pyjson.Loads(s)

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"strings"
 
@@ -9,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -219,7 +220,7 @@ func (t *CompressionTelemetry) NoteAuxRouteFallback(route map[string]string) {
 			failure = "unknown error"
 		}
 		if rs := []rune(failure); len(rs) > 220 {
-			failure = pystr.Rstrip(string(rs[:217])) + "..."
+			failure = strings.TrimRightFunc(string(rs[:217]), unicode.IsSpace) + "..."
 		}
 		t.LastAuxModelFailureError = failure
 	}

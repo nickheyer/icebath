@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Pre suffix launcher of this home, a file or a task, with its label
@@ -105,11 +104,11 @@ func RemoveLegacyLaunchers(ctx context.Context) error {
 		switch {
 		case code == 0:
 			winPrintln(fmt.Sprintf("✓ Removed %s %s", a.Label, pyrepr.Repr(a.Target)))
-		case windowsIsAccessDenied(pystr.Strip(errText)):
+		case windowsIsAccessDenied(strings.TrimSpace(errText)):
 			winPrintln(fmt.Sprintf("⚠ %s %s needs an elevated shell to remove; run as administrator:", a.Label, pyrepr.Repr(a.Target)))
 			winPrintln("    schtasks /Delete /F /TN " + a.Target)
 		default:
-			winPrintln(fmt.Sprintf("⚠ schtasks /Delete %s returned code %d: %s", pyrepr.Repr(a.Target), code, pystr.Strip(errText)))
+			winPrintln(fmt.Sprintf("⚠ schtasks /Delete %s returned code %d: %s", pyrepr.Repr(a.Target), code, strings.TrimSpace(errText)))
 		}
 	}
 	return nil

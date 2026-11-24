@@ -226,7 +226,7 @@ func (s *UpdateAdmission) loadReceipts(botID int64) error {
 	for _, uid := range ids.Keys {
 		v, _ := ids.Get(uid)
 		ts, isNumber, overflow := receiptStamp(v)
-		if !isNumber || !(ts > cutoff) || !isDigitString(pystr.LstripChars(uid, "-")) {
+		if !isNumber || !(ts > cutoff) || !isDigitString(strings.TrimLeft(uid, "-")) {
 			continue
 		}
 		if overflow {

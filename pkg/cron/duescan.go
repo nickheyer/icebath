@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Mutable state of one due scan, the raw store records plus what to persist
@@ -404,7 +405,7 @@ func (sc *dueScan) evaluateDueJob(ctx context.Context, job *Job, runClaimTTL flo
 
 // Prunes completed one shot records whose last run is older than the retention window
 func (s *Store) sweepCompletedOneshots(raw []*Job, now time.Time, removed *[]string) ([]*Job, bool, error) {
-	days := s.cronConfigFloat("completed_retention_days", completedOneshotRetentionDays)
+	days := settings.CronCompletedRetentionDays.Get(s.settingsCtx())
 	if days <= 0 {
 		return raw, false, nil
 	}

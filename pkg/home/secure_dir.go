@@ -1,6 +1,8 @@
 package home
 
 import (
+	"strings"
+
 	"context"
 	"math"
 	"math/big"
@@ -22,7 +24,7 @@ var (
 
 // Package manager owning the install from ICEBATH_MANAGED or the home marker, empty when unmanaged
 func ManagedSystem(ctx context.Context, h string) string {
-	marker := pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_MANAGED")))
+	marker := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_MANAGED")))
 	set := marker != ""
 	if h == "" {
 		h = Dir(ctx)
@@ -31,7 +33,7 @@ func ManagedSystem(ctx context.Context, h string) string {
 		if pathExists(path) {
 			set = true
 			if b, err := os.ReadFile(path); err == nil {
-				marker = pystr.Lower(pystr.Strip(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(b))))
+				marker = strings.ToLower(strings.TrimSpace(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(b))))
 			}
 		}
 	}
@@ -61,7 +63,7 @@ func resolveIcebathUIDGID() (*big.Int, *big.Int) {
 		return nil, nil
 	}
 	envInt := func(name string) *big.Int {
-		text := pystr.Strip(os.Getenv(name))
+		text := strings.TrimSpace(os.Getenv(name))
 		if text == "" {
 			return nil
 		}
@@ -111,7 +113,7 @@ func ApplySecureDirPolicy(ctx context.Context, path, h string) {
 	if ManagedSystem(ctx, h) != "" {
 		return
 	}
-	explicit := pystr.Strip(os.Getenv("ICEBATH_HOME_MODE"))
+	explicit := strings.TrimSpace(os.Getenv("ICEBATH_HOME_MODE"))
 	if ContainerOrChmodSkipped() && explicit == "" {
 		chownToIcebathUID(path)
 		return

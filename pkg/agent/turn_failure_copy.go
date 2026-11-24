@@ -209,7 +209,7 @@ func IsMaxIterationHandoff(result any) bool {
 	if !ok || !strings.HasPrefix(reason, "max_iterations_reached(") {
 		return false
 	}
-	return pystr.Strip(pyStrOr(get("final_response"), "")) != ""
+	return strings.TrimSpace(pyStrOr(get("final_response"), "")) != ""
 }
 
 var exhaustedLeads = map[string]string{
@@ -355,7 +355,7 @@ func ShortDetail(exc any, limit int) string {
 	if text == "" {
 		text = "no details given"
 	}
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	first := "no details given"
 	if len(lines) > 0 {
 		first = lines[0]

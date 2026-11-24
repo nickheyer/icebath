@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,19 +15,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Interrupts the gateway turn for a shutdown signal, then sleeps the ICEBATH_SIGTERM_GRACE window
-func interruptAgentForSignal(a cliAgent, sig os.Signal) {
+// Interrupts the gateway turn for a shutdown signal, then sleeps the stop signal grace of the settings for the profile of ctx
+func interruptAgentForSignal(ctx context.Context, a cliAgent, sig os.Signal) {
 	if a == nil {
 		return
 	}
 	pkgLog().Debug(fmt.Sprintf("interrupting the gateway turn: received signal %s", signalNumber(sig)))
 	a.Interrupt()
-	if grace := floatEnv("ICEBATH_SIGTERM_GRACE", 1.5); grace > 0 {
-		time.Sleep(time.Duration(grace * float64(time.Second)))
+	if grace := settings.ShutdownSignalGrace.Get(ctx); grace > 0 {
+		time.Sleep(grace)
 	}
 }
 
@@ -266,7 +268,7 @@ func installSingleQuerySignalHandlers(c *CLI) {
 		for sig := range ch {
 			pkgLog().Debug(fmt.Sprintf("Received signal %s in single-query mode", signalNumber(sig)))
 			armExitWatchdogOnShutdownSignal(c.ctx)
-			interruptAgentForSignal(c.agentRef(), sig)
+			interruptAgentForSignal(c.ctx, c.agentRef(), sig)
 			if os.Getenv("ICEBATH_KANBAN_TASK") != "" {
 				time.AfterFunc(5*time.Second, killForegroundAndExit)
 				func() {

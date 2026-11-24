@@ -173,13 +173,13 @@ func (s *tuiStore) sessionCwd() string {
 	if cwd := val(infoOf(s.ui.Info).Cwd); cwd != "" {
 		return cwd
 	}
-	return os.Getenv("ICEBATH_CWD")
+	return launchCwd()
 }
 
 // Folder a path typed into this terminal resolves against, the launch folder when a remote gateway owns the session
 func (s *tuiStore) typedPathBase() string {
 	if attachURLEnv() != "" {
-		return os.Getenv("ICEBATH_CWD")
+		return launchCwd()
 	}
 	return s.sessionCwd()
 }

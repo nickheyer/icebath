@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -198,10 +201,10 @@ type namedEntry struct {
 	entry map[string]any
 }
 
-// Normalized name and entry pairs from the merged custom provider config view
-func iterCustomProviders(cfg map[string]any) []namedEntry {
+// Normalized name and entry pairs of the enabled entries of a providers mapping
+func iterCustomProviders(providers map[string]any) []namedEntry {
 	var out []namedEntry
-	for _, entry := range ProviderEntries(cfg) {
+	for _, entry := range ProviderEntriesOf(providers) {
 		if name, ok := entry["name"].(string); ok {
 			out = append(out, namedEntry{normalizeCustomPoolName(name), entry})
 		}
@@ -258,13 +261,13 @@ func poolKeysForCustomEntry(normName string, entry map[string]any) []string {
 	return keys
 }
 
-// Named entry the provider name resolves to in the custom provider config view
-func namedCustomEntry(providerName string, cfg map[string]any) *namedEntry {
+// Named entry the provider name resolves to among the entries of a providers mapping
+func namedCustomEntry(providerName string, providers map[string]any) *namedEntry {
 	aliases := requestedCustomNameAliases(providerName)
 	if len(aliases) == 0 {
 		return nil
 	}
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		for alias := range customEntryNameAliases(ne.name, ne.entry) {
 			if aliases[alias] {
 				found := ne
@@ -275,14 +278,14 @@ func namedCustomEntry(providerName string, cfg map[string]any) *namedEntry {
 	return nil
 }
 
-// Configured custom entry that owns a base URL, by name first and then by URL
-func customEntryForEndpoint(baseURL, providerName string, cfg map[string]any) *namedEntry {
+// Entry of a providers mapping that owns a base URL, by name first and then by URL
+func customEntryForEndpoint(baseURL, providerName string, providers map[string]any) *namedEntry {
 	if baseURL == "" {
 		return nil
 	}
 	u := normPoolURL(baseURL)
 	if providerName != "" {
-		if named := namedCustomEntry(providerName, cfg); named != nil {
+		if named := namedCustomEntry(providerName, providers); named != nil {
 			entryURL := normPoolURL(named.entry["base_url"])
 			if entryURL != "" && entryURL != u {
 				return nil
@@ -290,7 +293,7 @@ func customEntryForEndpoint(baseURL, providerName string, cfg map[string]any) *n
 			return named
 		}
 	}
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		if u != "" && normPoolURL(ne.entry["base_url"]) == u {
 			found := ne
 			return &found
@@ -299,17 +302,17 @@ func customEntryForEndpoint(baseURL, providerName string, cfg map[string]any) *n
 	return nil
 }
 
-// CustomEntryForEndpoint is the normalized name and entry of the custom provider owning a base url
-func CustomEntryForEndpoint(baseURL, providerName string, cfg map[string]any) (string, map[string]any, bool) {
-	if m := customEntryForEndpoint(baseURL, providerName, cfg); m != nil {
+// CustomEntryForEndpoint is the normalized name and entry of the custom provider of the providers setting ctx gives that owns a base url
+func CustomEntryForEndpoint(ctx context.Context, baseURL, providerName string) (string, map[string]any, bool) {
+	if m := customEntryForEndpoint(baseURL, providerName, settings.Providers.Get(ctx)); m != nil {
 		return m.name, m.entry, true
 	}
 	return "", nil, false
 }
 
-// Pool keys to try for a custom endpoint, durable slug then legacy custom name
-func customProviderPoolKeyCandidates(baseURL, providerName string, cfg map[string]any) []string {
-	match := customEntryForEndpoint(baseURL, providerName, cfg)
+// Pool keys to try for a custom endpoint a providers mapping owns, durable slug then legacy custom name
+func customProviderPoolKeyCandidates(baseURL, providerName string, providers map[string]any) []string {
+	match := customEntryForEndpoint(baseURL, providerName, providers)
 	if match == nil {
 		return nil
 	}
@@ -384,15 +387,15 @@ func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, e
 			"(e.g. `databricks auth login` if its OAuth session expired).", label, code)}
 	}
 	out := pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stdout))
-	if pystr.Strip(out) == "" {
+	if strings.TrimSpace(out) == "" {
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s produced no output", label)}
 	}
-	if strings.HasPrefix(pystr.Lstrip(out), "{") {
+	if strings.HasPrefix(strings.TrimLeftFunc(out, unicode.IsSpace), "{") {
 		decoded, _ := pyjson.Loads(out)
 		if payload, isDict := decoded.(*pyjson.Object); isDict && payload != nil {
 			token := ""
 			if raw, _ := payload.Get("access_token"); pyrepr.Truthy(raw) {
-				token = pystr.Strip(pyrepr.Str(raw))
+				token = strings.TrimSpace(pyrepr.Str(raw))
 			}
 			if token == "" {
 				return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s returned JSON without an 'access_token' field", label)}
@@ -410,7 +413,7 @@ func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, e
 			return token, 0, nil
 		}
 	}
-	token := pystr.Strip(out)
+	token := strings.TrimSpace(out)
 	if strings.Contains(token, "\n") {
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s printed multiple lines; it must "+
 			"print only the token (or JSON with an 'access_token' field)", label)}
@@ -513,7 +516,7 @@ func declaredKeyEnv(entry map[string]any) string {
 }
 
 // Label and key_env of the config block that declared a key variable for this custom endpoint
-func (r *resolver) declaredCustomKey(requestedProvider string, rt *Runtime, modelCfg map[string]any) (string, string) {
+func (r *resolver) declaredCustomKey(requestedProvider string, rt *Runtime) (string, string) {
 	baseURL := rt.BaseURL
 	name := ""
 	if requestedProvider != "" && requestedProvider != "auto" && requestedProvider != "custom" {
@@ -521,9 +524,9 @@ func (r *resolver) declaredCustomKey(requestedProvider string, rt *Runtime, mode
 	}
 	var match *namedEntry
 	if name != "" && strings.HasPrefix(rt.Source, "custom_provider:") {
-		match = namedCustomEntry(name, r.cfg)
+		match = namedCustomEntry(name, r.providers())
 	} else {
-		match = customEntryForEndpoint(baseURL, name, r.cfg)
+		match = customEntryForEndpoint(baseURL, name, r.providers())
 	}
 	if match != nil {
 		if keyEnv := declaredKeyEnv(match.entry); keyEnv != "" {
@@ -534,9 +537,9 @@ func (r *resolver) declaredCustomKey(requestedProvider string, rt *Runtime, mode
 			return fmt.Sprintf("custom provider '%s'", label), keyEnv
 		}
 	}
-	cfgURL := strings.TrimRight(strings.TrimSpace(cfgString(modelCfg["base_url"])), "/")
+	cfgURL := strings.TrimRight(r.cfgBaseURL(), "/")
 	if cfgURL != "" && cfgURL == strings.TrimRight(strings.TrimSpace(baseURL), "/") {
-		if keyEnv := declaredKeyEnv(modelCfg); keyEnv != "" {
+		if keyEnv := strings.TrimSpace(settings.ModelKeyEnv.Get(r.hookCtx())); keyEnv != "" {
 			return "the custom endpoint in config.yaml (model.key_env)", keyEnv
 		}
 	}
@@ -584,7 +587,7 @@ func (r *resolver) namedProfileKeyHint(envVars []string) string {
 }
 
 // Refuses a synthesized placeholder key when a routed profile's declared key variable resolves to nothing
-func (r *resolver) raiseIfDeclaredKeyMissing(requestedProvider string, rt *Runtime, modelCfg map[string]any, explicitAPIKey string) error {
+func (r *resolver) raiseIfDeclaredKeyMissing(requestedProvider string, rt *Runtime, explicitAPIKey string) error {
 	if rt.Provider != "custom" || rt.APIKey != NoKeyPlaceholder {
 		return nil
 	}
@@ -594,7 +597,7 @@ func (r *resolver) raiseIfDeclaredKeyMissing(requestedProvider string, rt *Runti
 	if !r.servesRoutedProfile() {
 		return nil
 	}
-	label, keyEnv := r.declaredCustomKey(strings.ToLower(strings.TrimSpace(requestedProvider)), rt, modelCfg)
+	label, keyEnv := r.declaredCustomKey(strings.ToLower(strings.TrimSpace(requestedProvider)), rt)
 	if keyEnv == "" || strings.TrimSpace(r.secret(keyEnv)) != "" {
 		return nil
 	}
@@ -627,9 +630,9 @@ func RouteKey(value any) string { return routeKey(value) }
 
 func clean(value any) string { return strings.TrimSpace(cfgString(value)) }
 
-// Credential named by key_env on a config block, warning when it resolves to nothing
-func (r *resolver) keyEnvSecret(entry map[string]any, label string) string {
-	keyEnv := clean(cfgString(entry["key_env"]))
+// Credential a key_env variable name holds, warning when it resolves to nothing
+func (r *resolver) keyEnvSecret(keyEnv, label string) string {
+	keyEnv = strings.TrimSpace(keyEnv)
 	if keyEnv == "" {
 		return ""
 	}
@@ -641,13 +644,13 @@ func (r *resolver) keyEnvSecret(entry map[string]any, label string) string {
 	return value
 }
 
-// model.key_env for a bare custom runtime only when the base URL is the configured model.base_url
-func (r *resolver) modelCfgKeyEnvFor(modelCfg map[string]any, baseURL string) string {
-	cfgBaseURL := strings.TrimRight(clean(modelCfg["base_url"]), "/")
+// Credential of model.key_env for a bare custom runtime only when the base URL is the configured model.base_url
+func (r *resolver) modelKeyEnvFor(baseURL string) string {
+	cfgBaseURL := strings.TrimRight(r.cfgBaseURL(), "/")
 	if cfgBaseURL == "" || cfgBaseURL != strings.TrimRight(clean(baseURL), "/") {
 		return ""
 	}
-	return r.keyEnvSecret(modelCfg, "model")
+	return r.keyEnvSecret(settings.ModelKeyEnv.Get(r.hookCtx()), "model")
 }
 
 func entryURL(entry map[string]any) string {
@@ -748,7 +751,7 @@ func (r *resolver) providerEntryKey(name string, providers map[string]any) (stri
 	if len(providers) == 0 {
 		return "", false
 	}
-	if _, path := r.selectNamedCustomProvider(name, map[string]any{"providers": providers}, false); path != nil {
+	if _, path := r.selectNamedCustomProvider(name, providers, false); path != nil {
 		return path.Key, true
 	}
 	return "", false
@@ -807,39 +810,30 @@ type ConfigPath struct {
 	Key     string
 }
 
-// Resolved entry and config path of the providers entry a name selects
-func (r *resolver) selectNamedCustomProvider(requestedProvider string, cfg map[string]any, resolveCredentials bool) (map[string]any, *ConfigPath) {
+// Resolved entry and config path of the entry of a providers mapping a name selects
+func (r *resolver) selectNamedCustomProvider(requestedProvider string, providers map[string]any, resolveCredentials bool) (map[string]any, *ConfigPath) {
 	requestedNorm := normalizeCustomProviderName(requestedProvider)
-	if requestedNorm == "" || requestedNorm == "auto" {
+	if requestedNorm == "" || requestedNorm == "auto" || len(providers) == 0 {
 		return nil, nil
 	}
-	shadowed := r.shadowedByBuiltin(requestedNorm)
-	if cfg == nil {
-		cfg = r.cfg
+	// A bare built in name in any case means the user's entry under that key when the entry declares
+	// its own endpoint, while a tuning only block without a base URL keeps the built in
+	if r.shadowedByBuiltin(requestedNorm) {
+		providers = builtinNamedEntries(requestedNorm, providers)
 	}
-	if providers, ok := cfg["providers"].(map[string]any); ok {
-		// A bare built in name in any case means the user's entry under that key when the entry declares
-		// its own endpoint, while a tuning only block without a base URL keeps the built in
-		if shadowed {
-			providers = builtinNamedEntries(requestedNorm, providers)
-		}
-		if found, key, ok := r.matchNewStyleProvider(requestedNorm, providers, resolveCredentials); ok {
-			return found, &ConfigPath{Section: "providers", Key: key}
-		}
+	if found, key, ok := r.matchNewStyleProvider(requestedNorm, providers, resolveCredentials); ok {
+		return found, &ConfigPath{Section: "providers", Key: key}
 	}
 	return nil, nil
 }
 
-// Where a compatible view entry lives in config, the first raw entry normalizing to it
-func compatibleEntryPath(cfg map[string]any, entry map[string]any) *ConfigPath {
+// Where a compatible view entry lives in a providers mapping, the first raw entry normalizing to it
+func compatibleEntryPath(providers map[string]any, entry map[string]any) *ConfigPath {
 	if key := cfgString(entry["provider_key"]); key != "" {
-		if providers, ok := cfg["providers"].(map[string]any); ok {
-			for _, k := range config.MappingKeys(providers) {
-				if strings.TrimSpace(k) == key {
-					return &ConfigPath{Section: "providers", Key: k}
-				}
+		for _, k := range config.MappingKeys(providers) {
+			if strings.TrimSpace(k) == key {
+				return &ConfigPath{Section: "providers", Key: k}
 			}
-			return nil
 		}
 	}
 	return nil
@@ -855,51 +849,55 @@ func sameAnyMap(a, b map[string]any) bool {
 	return errA == nil && errB == nil && string(ab) == string(bb)
 }
 
-// Resolved named endpoint entry or nil, reading credentials unless told not to
-func (r *resolver) getNamedCustomProvider(requestedProvider string, cfg map[string]any, resolveCredentials bool) map[string]any {
-	found, _ := r.selectNamedCustomProvider(requestedProvider, cfg, resolveCredentials)
+// Resolved entry of a providers mapping a name selects or nil, reading credentials unless told not to
+func (r *resolver) getNamedCustomProvider(requestedProvider string, providers map[string]any, resolveCredentials bool) map[string]any {
+	found, _ := r.selectNamedCustomProvider(requestedProvider, providers, resolveCredentials)
 	return found
 }
 
 // GetNamedCustomProvider is the named endpoint entry with credentials resolved, nil when none matches
 func GetNamedCustomProvider(ctx context.Context, name string) map[string]any {
-	return modelsResolver(ctx).getNamedCustomProvider(name, nil, true)
+	r := modelsResolver(ctx)
+	return r.getNamedCustomProvider(name, r.providers(), true)
 }
 
-// Named endpoint entry a provider name selects in cfg without reading credentials, nil when none matches
-func NamedCustomProviderEntry(ctx context.Context, name string, cfg map[string]any) map[string]any {
-	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(home.Dir(ctx)), home.Dir(ctx), homeCredentialSource(home.Dir(ctx))).getNamedCustomProvider(name, cfg, false)
+// Named endpoint entry a provider name selects in the providers setting ctx gives, without reading credentials, nil when none matches
+func NamedCustomProviderEntry(ctx context.Context, name string) map[string]any {
+	r := modelsResolver(ctx)
+	return r.getNamedCustomProvider(name, r.providers(), false)
 }
 
 // Resolved named endpoint entry with credentials, nil when no entry matches
 func NamedCustomProvider(ctx context.Context, h, name string) (map[string]any, error) {
-	r, cfg, err := strictHomeResolver(ctx, h)
+	r, err := strictHomeResolver(ctx, h)
 	if err != nil {
 		return nil, err
 	}
-	return r.getNamedCustomProvider(name, cfg, true), nil
+	return r.getNamedCustomProvider(name, r.providers(), true), nil
 }
 
-// NamedCustomProviderConfigPath is the config path of the one entry the runtime routes a provider through
-func (r *resolver) NamedCustomProviderConfigPath(requestedProvider string, cfg map[string]any) *ConfigPath {
-	_, path := r.selectNamedCustomProvider(requestedProvider, cfg, false)
+// NamedCustomProviderConfigPath is the config path of the one entry of a providers mapping the runtime routes a provider through
+func (r *resolver) NamedCustomProviderConfigPath(requestedProvider string, providers map[string]any) *ConfigPath {
+	_, path := r.selectNamedCustomProvider(requestedProvider, providers, false)
 	return path
 }
 
-// Config path of the entry the active home runtime routes a provider through, reading no credential
-func NamedCustomProviderPath(ctx context.Context, name string, cfg map[string]any) *ConfigPath {
-	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(home.Dir(ctx)), home.Dir(ctx), homeCredentialSource(home.Dir(ctx))).NamedCustomProviderConfigPath(name, cfg)
+// Config path of the entry of the providers setting ctx gives that the runtime routes a provider through, reading no credential
+func NamedCustomProviderPath(ctx context.Context, name string) *ConfigPath {
+	r := modelsResolver(ctx)
+	return r.NamedCustomProviderConfigPath(name, r.providers())
 }
 
-// CustomProviderConfigPathForURL is the config path of the entry a bare custom route at a URL takes its key from
-func CustomProviderConfigPathForURL(baseURL any, cfg map[string]any) *ConfigPath {
+// CustomProviderConfigPathForURL is the config path of the entry of the providers setting ctx gives that a bare custom route at a URL takes its key from
+func CustomProviderConfigPathForURL(ctx context.Context, baseURL any) *ConfigPath {
 	u := strings.TrimRight(strings.TrimSpace(cfgString(baseURL)), "/")
 	if u == "" {
 		return nil
 	}
-	for _, entry := range ProviderEntries(cfg) {
+	providers := settings.Providers.Get(ctx)
+	for _, entry := range ProviderEntriesOf(providers) {
 		if strings.TrimRight(strings.TrimSpace(cfgString(entry["base_url"])), "/") == u {
-			return compatibleEntryPath(cfg, entry)
+			return compatibleEntryPath(providers, entry)
 		}
 	}
 	return nil
@@ -907,7 +905,7 @@ func CustomProviderConfigPathForURL(baseURL any, cfg map[string]any) *ConfigPath
 
 // HasNamedCustomProvider reports whether config defines an entry matching the request
 func (r *resolver) HasNamedCustomProvider(requestedProvider string) bool {
-	return r.getNamedCustomProvider(requestedProvider, nil, true) != nil
+	return r.getNamedCustomProvider(requestedProvider, r.providers(), true) != nil
 }
 
 // CodexModelProviderID is the codex model_providers key for a configured named custom provider or empty
@@ -916,7 +914,7 @@ func (r *resolver) CodexModelProviderID(requestedProvider string) string {
 	if norm == "" || norm == "custom" {
 		return ""
 	}
-	entry := r.getNamedCustomProvider(requestedProvider, nil, true)
+	entry := r.getNamedCustomProvider(requestedProvider, r.providers(), true)
 	if entry == nil {
 		return ""
 	}
@@ -927,34 +925,29 @@ func (r *resolver) CodexModelProviderID(requestedProvider string) string {
 	return ""
 }
 
-// First enabled entry matching the predicate as its canonical custom slug, preferring a held one
-func findCustomIdentity(matches func(map[string]any) bool, cfg map[string]any, prefer string) string {
-	if cfg == nil {
-		return ""
-	}
+// First enabled entry of a providers mapping matching the predicate as its canonical custom slug, preferring a held one
+func findCustomIdentity(matches func(map[string]any) bool, providers map[string]any, prefer string) string {
 	first := ""
 	owned := map[string]bool{}
-	if providers, ok := cfg["providers"].(map[string]any); ok {
-		for _, epName := range sortedKeys(providers) {
-			entry, ok := providers[epName].(map[string]any)
-			if !ok || !IsProviderEnabled(entry) {
-				continue
+	for _, epName := range sortedKeys(providers) {
+		entry, ok := providers[epName].(map[string]any)
+		if !ok || !IsProviderEnabled(entry) {
+			continue
+		}
+		slug := CustomProviderSlug(epName, epName)
+		if entryURL(entry) != "" {
+			owned[slug] = true
+		}
+		if matches(entry) {
+			if prefer == "" || slug == prefer {
+				return slug
 			}
-			slug := CustomProviderSlug(epName, epName)
-			if entryURL(entry) != "" {
-				owned[slug] = true
-			}
-			if matches(entry) {
-				if prefer == "" || slug == prefer {
-					return slug
-				}
-				if first == "" {
-					first = slug
-				}
+			if first == "" {
+				first = slug
 			}
 		}
 	}
-	for _, entry := range ProviderEntries(cfg) {
+	for _, entry := range ProviderEntriesOf(providers) {
 		name, ok := entry["name"].(string)
 		if !ok || strings.TrimSpace(name) == "" || !matches(entry) {
 			continue
@@ -973,13 +966,13 @@ func findCustomIdentity(matches func(map[string]any) bool, cfg map[string]any, p
 	return first
 }
 
-// FindCustomProviderIdentity maps an endpoint URL back to its canonical custom menu key
-func FindCustomProviderIdentity(baseURL string, cfg map[string]any) string {
+// FindCustomProviderIdentity maps an endpoint URL back to the canonical custom menu key of an entry of a providers mapping
+func FindCustomProviderIdentity(baseURL string, providers map[string]any) string {
 	target := routeKey(baseURL)
 	if target == "" {
 		return ""
 	}
-	return findCustomIdentity(func(entry map[string]any) bool { return routeKey(entryURL(entry)) == target }, cfg, "")
+	return findCustomIdentity(func(entry map[string]any) bool { return routeKey(entryURL(entry)) == target }, providers, "")
 }
 
 func modelIDMatches(value any, target string) bool {
@@ -987,13 +980,13 @@ func modelIDMatches(value any, target string) bool {
 	return ok && strings.ToLower(strings.TrimSpace(s)) == target
 }
 
-// FindCustomProviderIdentityByModel maps a model id back to the custom entry that serves it
-func FindCustomProviderIdentityByModel(model string, cfg map[string]any) string {
+// FindCustomProviderIdentityByModel maps a model id back to the entry of a providers mapping that serves it
+func FindCustomProviderIdentityByModel(model string, providers map[string]any) string {
 	target := strings.ToLower(strings.TrimSpace(model))
 	if target == "" {
 		return ""
 	}
-	return findCustomIdentity(func(entry map[string]any) bool { return entryServesModel(entry, target) }, cfg, "")
+	return findCustomIdentity(func(entry map[string]any) bool { return entryServesModel(entry, target) }, providers, "")
 }
 
 func entryServesModel(entry map[string]any, target string) bool {
@@ -1025,25 +1018,26 @@ func entryServesModel(entry map[string]any, target string) bool {
 	return false
 }
 
-// RoutedCustomIdentity names the configured entry a bare custom pick on a URL or model resolves to
-func RoutedCustomIdentity(baseURL, model string, cfg map[string]any, held string) string {
+// RoutedCustomIdentity names the entry of the providers setting ctx gives that a bare custom pick on a URL or model resolves to
+func RoutedCustomIdentity(ctx context.Context, baseURL, model, held string) string {
+	providers := settings.Providers.Get(ctx)
 	u := routeKey(baseURL)
 	target := strings.ToLower(strings.TrimSpace(model))
 	onURL := func(entry map[string]any) bool { return u == "" || routeKey(entryURL(entry)) == u }
 	if target != "" {
-		if id := findCustomIdentity(func(e map[string]any) bool { return onURL(e) && entryServesModel(e, target) }, cfg, held); id != "" {
+		if id := findCustomIdentity(func(e map[string]any) bool { return onURL(e) && entryServesModel(e, target) }, providers, held); id != "" {
 			return id
 		}
 	}
 	if u != "" {
-		return findCustomIdentity(onURL, cfg, "")
+		return findCustomIdentity(onURL, providers, "")
 	}
 	return ""
 }
 
 // Menu identity that owns a base URL, a configured entry else the managed local server
 func (r *resolver) endpointIdentity(baseURL string) string {
-	if identity := FindCustomProviderIdentity(baseURL, r.cfg); identity != "" {
+	if identity := FindCustomProviderIdentity(baseURL, r.providers()); identity != "" {
 		return identity
 	}
 	if endpointURL, _, ok := managedLocalStateEndpoint(r.home); ok && routeKey(baseURL) == routeKey(endpointURL) {
@@ -1061,7 +1055,7 @@ func (r *resolver) IsRoutableProvider(provider string) bool {
 	if strings.ToLower(name) == "custom" {
 		return false
 	}
-	userProviders, _ := r.cfg["providers"].(map[string]any)
+	userProviders := r.providers()
 	if resolveUserProvider(strings.ToLower(name), userProviders) != nil {
 		return true
 	}
@@ -1069,7 +1063,7 @@ func (r *resolver) IsRoutableProvider(provider string) bool {
 		return true
 	}
 	var customList []any
-	for _, e := range ProviderEntries(r.cfg) {
+	for _, e := range ProviderEntriesOf(userProviders) {
 		customList = append(customList, e)
 	}
 	if resolveCustomProvider(name, customList) != nil {
@@ -1082,7 +1076,7 @@ func (r *resolver) IsRoutableProvider(provider string) bool {
 
 // The providers entry that owns a custom endpoint
 func (r *resolver) owningEntry(baseURL, providerName string) map[string]any {
-	match := customEntryForEndpoint(baseURL, providerName, r.cfg)
+	match := customEntryForEndpoint(baseURL, providerName, r.providers())
 	if match == nil {
 		return nil
 	}
@@ -1110,7 +1104,7 @@ func (r *resolver) entryCredential(entry map[string]any, name string) (string, *
 			return "", src
 		}
 	}
-	for _, c := range []string{clean(entry["api_key"]), r.keyEnvSecret(entry, fmt.Sprintf("custom provider '%s'", name))} {
+	for _, c := range []string{clean(entry["api_key"]), r.keyEnvSecret(clean(entry["key_env"]), fmt.Sprintf("custom provider '%s'", name))} {
 		if hasUsableSecret(c) {
 			return c, nil
 		}
@@ -1120,7 +1114,7 @@ func (r *resolver) entryCredential(entry map[string]any, name string) (string, *
 
 // Runtime from the first credential pool that owns this custom endpoint, nil when none does
 func (r *resolver) tryResolveFromCustomPool(baseURL, providerLabel string, apiModeOverride APIMode, providerName string) *Runtime {
-	rawKeys := customProviderPoolKeyCandidates(baseURL, providerName, r.cfg)
+	rawKeys := customProviderPoolKeyCandidates(baseURL, providerName, r.providers())
 	owner := r.owningEntry(baseURL, providerName)
 	var candidates []string
 	seen := map[string]bool{}
@@ -1230,7 +1224,7 @@ func (e *LocalRuntimeUnavailableError) ErrorCode() string { return "local_runtim
 
 // Managed llama.cpp runtime, the supervised or detected server, or a typed error
 func (r *resolver) resolveLlamacppRuntime(requestedProvider, explicitAPIKey string) (*Runtime, error) {
-	if baseURL, apiKey, ok := resolveLlamacppEndpoint(r.ctx, r.cfg, r.home); ok {
+	if baseURL, apiKey, ok := resolveLlamacppEndpoint(r.ctx, r.home); ok {
 		key := strings.TrimSpace(explicitAPIKey)
 		if key == "" {
 			key = apiKey
@@ -1242,11 +1236,7 @@ func (r *resolver) resolveLlamacppRuntime(requestedProvider, explicitAPIKey stri
 		rt.RequestedProvider = requestedProvider
 		return rt, nil
 	}
-	enabled := false
-	if lr, ok := r.cfg["local_runtime"].(map[string]any); ok {
-		enabled = truthy(lr["enabled"])
-	}
-	if enabled {
+	if settings.LocalRuntimeEnabled.Get(r.hookCtx()) {
 		return nil, &LocalRuntimeUnavailableError{Message: "The local model server isn't running. It may still be " +
 			"starting — try again in a moment, or switch to another model with /model.", Retryable: true}
 	}
@@ -1277,7 +1267,7 @@ func (r *resolver) expandDirectAPIAlias(provider, existingBase string) (string, 
 		return provider, existingBase
 	}
 	targetBase, ok := directAPIBaseURLs[strings.ToLower(strings.TrimSpace(provider))]
-	if !ok || r.getNamedCustomProvider(provider, nil, true) != nil {
+	if !ok || r.getNamedCustomProvider(provider, r.providers(), true) != nil {
 		return provider, existingBase
 	}
 	base := strings.TrimSpace(existingBase)
@@ -1307,7 +1297,7 @@ func (r *resolver) resolveDirectAliasRuntime(requestedProvider, explicitAPIKey, 
 		}
 	}
 	declared, entryKey, entrySrc := r.owningEntryCredential(baseURL)
-	candidates := []string{explicitKey, r.modelCfgKeyEnvFor(r.modelConfig(), baseURL)}
+	candidates := []string{explicitKey, r.modelKeyEnvFor(baseURL)}
 	if !declared {
 		candidates = append(candidates, r.hostGatedEnvKeyCandidates(baseURL, true)...)
 	}
@@ -1351,11 +1341,11 @@ func OpencodeFamilyForCustom(requestedProvider, baseURL string) string {
 }
 
 // Runtime for a llamacpp alias, a bare custom direct alias, or a configured custom entry
-func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel string, cfg map[string]any) (*Runtime, error) {
+func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel string) (*Runtime, error) {
 	requestedNorm := strings.ToLower(strings.TrimSpace(requestedProvider))
 	var customProvider map[string]any
 	if IsLlamaCppAlias(requestedNorm) && explicitBaseURL == "" {
-		customProvider = r.getNamedCustomProvider(requestedProvider, nil, true)
+		customProvider = r.getNamedCustomProvider(requestedProvider, r.providers(), true)
 		if customProvider == nil {
 			return r.resolveLlamacppRuntime(requestedProvider, explicitAPIKey)
 		}
@@ -1367,7 +1357,7 @@ func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, 
 		return r.resolveDirectAliasRuntime(requestedProvider, explicitAPIKey, explicitBaseURL), nil
 	}
 	if customProvider == nil {
-		customProvider = r.getNamedCustomProvider(requestedProvider, cfg, true)
+		customProvider = r.getNamedCustomProvider(requestedProvider, r.providers(), true)
 	}
 	if customProvider == nil {
 		return nil, nil
@@ -1392,8 +1382,8 @@ func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, 
 			pooled.RequestedProvider = requestedProvider
 			return pooled, nil
 		}
-		for _, poolKey := range customProviderPoolKeyCandidates(baseURL, providerName, r.cfg) {
-			if err := r.selectedLoginUnavailable(poolKey, requestedProvider, nil, explicitKey, explicitBaseURL, targetModel); err != nil {
+		for _, poolKey := range customProviderPoolKeyCandidates(baseURL, providerName, r.providers()) {
+			if err := r.selectedLoginUnavailable(poolKey, requestedProvider, explicitKey, explicitBaseURL, targetModel); err != nil {
 				return nil, err
 			}
 		}
@@ -1440,7 +1430,7 @@ func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, 
 			effectiveModel = strings.TrimSpace(cfgString(customProvider["model"]))
 		}
 		if effectiveModel == "" {
-			effectiveModel = strings.TrimSpace(cfgString(r.modelConfig()["default"]))
+			effectiveModel = r.cfgModel()
 		}
 		if effectiveModel != "" {
 			rt.APIMode = OpenCodeModelMode(family, effectiveModel)

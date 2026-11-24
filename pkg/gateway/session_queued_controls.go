@@ -1,11 +1,12 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -110,7 +111,7 @@ func queuedControls(ctx context.Context, a *SessionAuthority, row *pyjson.Object
 	}
 	text, _ := payload.Get("text")
 	textStr, isText := text.(string)
-	if rowString(row, "status") != AdmissionQueued || !isText || pystr.Strip(textStr) == "" {
+	if rowString(row, "status") != AdmissionQueued || !isText || strings.TrimSpace(textStr) == "" {
 		return []string{}, nil
 	}
 	for _, key := range payload.Keys {

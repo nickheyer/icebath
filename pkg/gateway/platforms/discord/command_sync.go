@@ -27,14 +27,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const discordCommandSyncStateFilename = "discord_command_sync_state.json"
 
 // Pacing between command sync mutations in seconds
 var commandSyncMutationInterval = 4.5
-
-var discordCommandSyncPolicies = map[string]bool{"safe": true, "bulk": true, "off": true}
 
 // Value decoded from JSON with integral numbers as int64 the way Python json loads them
 func jsonValue(v any) (any, error) {
@@ -285,16 +284,9 @@ func (a *DiscordAdapter) sleepBetweenCommandSyncMutations(ctx context.Context) e
 	}
 }
 
-// Configured sync policy of safe, bulk or off, safe on an invalid value
+// Sync policy of safe, bulk or off from discord.command_sync_policy
 func (a *DiscordAdapter) getDiscordCommandSyncPolicy(ctx context.Context) string {
-	raw := strings.ToLower(gateway.PlatformGateEnv(ctx, "DISCORD_COMMAND_SYNC_POLICY", "safe"))
-	if discordCommandSyncPolicies[raw] {
-		return raw
-	}
-	if raw != "" {
-		pkgLog().Warn(fmt.Sprintf("[%s] Invalid DISCORD_COMMAND_SYNC_POLICY=%s; falling back to 'safe'", a.Name(), pyrepr.Repr(raw)))
-	}
-	return "safe"
+	return settings.DiscordCommandSyncPolicy.Get(gateway.SettingsContext(a.sctx(ctx)))
 }
 
 func intOr(v any, def int64) int64 {

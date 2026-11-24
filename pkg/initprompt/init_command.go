@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -31,7 +30,7 @@ from noise):
 
 // The /init prompt, an existing AGENTS.md switching it to merge discipline and extra carrying the user's notes
 func BuildInitPrompt(cwd string, existingFile *string, extra string) string {
-	extra = pystr.Strip(extra)
+	extra = strings.TrimSpace(extra)
 	update := existingFile != nil
 	verb, write := "generate an", "."
 	if update {

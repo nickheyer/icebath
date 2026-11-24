@@ -141,7 +141,7 @@ func headSHA(ctx context.Context, root string) string {
 	head, err := pysubprocess.RunWith(ctx, []string{takeoverGitExecutable(ctx), "-C", root, "rev-parse", "HEAD"},
 		pysubprocess.Options{Timeout: 60 * time.Second})
 	if err == nil && head.Returncode == 0 {
-		if sha := pystr.Strip(pystr.DecodeUTF8Replace(head.Stdout)); takeoverSHA.MatchString(sha) {
+		if sha := strings.TrimSpace(pystr.DecodeUTF8Replace(head.Stdout)); takeoverSHA.MatchString(sha) {
 			return sha
 		}
 	}
@@ -165,15 +165,15 @@ func headSHA(ctx context.Context, root string) string {
 	if !ok {
 		return ""
 	}
-	sha := pystr.Strip(text)
+	sha := strings.TrimSpace(text)
 	if strings.HasPrefix(sha, "ref:") {
-		ref := pystr.Strip(strings.TrimPrefix(sha, "ref:"))
+		ref := strings.TrimSpace(strings.TrimPrefix(sha, "ref:"))
 		loose := pypath.Join(common, ref)
 		if takeoverIsFile(loose) {
 			if text, ok = read(loose); !ok {
 				return ""
 			}
-			sha = pystr.Strip(text)
+			sha = strings.TrimSpace(text)
 		} else {
 			if text, ok = read(filepath.Join(common, "packed-refs")); !ok {
 				return ""

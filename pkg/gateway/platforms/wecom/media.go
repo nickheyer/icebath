@@ -196,7 +196,7 @@ func (a *WeComAdapter) cacheMedia(ctx context.Context, kind string, media *pyjso
 		pkgLog().Debug(fmt.Sprintf("[%s] Failed to %s %s from %s: %s", a.Name(), step, kind, url, errText(err)))
 		return "", "", nil
 	}
-	contentType := pystr.Strip(strings.SplitN(headers["content-type"], ";", 2)[0])
+	contentType := strings.TrimSpace(strings.SplitN(headers["content-type"], ";", 2)[0])
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -243,7 +243,7 @@ func decodeBase64(data any) ([]byte, error) {
 		return nil, &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'split'", pyrepr.TypeName(data))}
 	}
 	parts := strings.SplitN(s, ",", 2)
-	return pybase64.B64Decode(pystr.Strip(parts[len(parts)-1]))
+	return pybase64.B64Decode(strings.TrimSpace(parts[len(parts)-1]))
 }
 
 // Image extension from magic bytes, webp for a RIFF WEBP container and jpg otherwise
@@ -263,7 +263,7 @@ func detectImageExt(data []byte) string {
 
 // MIME type the strict mimetypes table holds for an extension, else the fallback
 func mimeForExt(ext, fallback string) string {
-	if typ, ok := pymimetypes.TypesMapGet(pystr.Lower(ext)); ok {
+	if typ, ok := pymimetypes.TypesMapGet(strings.ToLower(ext)); ok {
 		return typ
 	}
 	return fallback
@@ -421,7 +421,7 @@ func guessMimeType(filename string) (string, error) {
 	if typ != "" {
 		return typ, nil
 	}
-	if pystr.Lower(pypath.Suffix(filename)) == ".amr" {
+	if strings.ToLower(pypath.Suffix(filename)) == ".amr" {
 		return "audio/amr", nil
 	}
 	return "application/octet-stream", nil
@@ -429,7 +429,7 @@ func guessMimeType(filename string) (string, error) {
 
 // Lowercased bare content type, guessed from the file name when missing or generic
 func normalizeContentType(contentType, filename string) (string, error) {
-	normalized := pystr.Lower(pystr.Strip(strings.SplitN(contentType, ";", 2)[0]))
+	normalized := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
 	if normalized != "" && normalized != "application/octet-stream" && normalized != "text/plain" {
 		return normalized, nil
 	}
@@ -438,7 +438,7 @@ func normalizeContentType(contentType, filename string) (string, error) {
 
 // WeCom media type of a content type, ogg containers counting as voice and unknown types as file
 func detectWeComMediaType(contentType string) string {
-	mimeType := pystr.Lower(pystr.Strip(contentType))
+	mimeType := strings.ToLower(strings.TrimSpace(contentType))
 	if mimeType == "application/ogg" {
 		return "voice"
 	}
@@ -453,11 +453,11 @@ func detectWeComMediaType(contentType string) string {
 // Rejects a file over the absolute cap and downgrades unsupported voice formats and oversized media to file
 func applyFileSizeLimits(ctx context.Context, fileSize int, detectedType, contentType string) sizeVerdict {
 	sizeMB := fmt.Sprintf("%.2f", float64(fileSize)/(1024*1024))
-	normalizedType := pystr.Lower(detectedType)
+	normalizedType := strings.ToLower(detectedType)
 	if normalizedType == "" {
 		normalizedType = "file"
 	}
-	normalizedContentType := pystr.Lower(pystr.Strip(contentType))
+	normalizedContentType := strings.ToLower(strings.TrimSpace(contentType))
 	if fileSize > absoluteMaxBytes {
 		return sizeVerdict{finalType: normalizedType, rejected: true,
 			rejectReason: i18n.T(ctx, "platform.wecom.media.file_too_large", "", map[string]any{"size_mb": sizeMB})}
@@ -482,7 +482,7 @@ func looksLikeURL(mediaSource string) bool {
 
 // Bytes, content type and file name of an outbound media given as a URL or a local path
 func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileName string) ([]byte, string, string, error) {
-	source := pystr.Strip(mediaSource)
+	source := strings.TrimSpace(mediaSource)
 	if source == "" {
 		return nil, "", "", &pyErr{"ValueError", "media source is required"}
 	}

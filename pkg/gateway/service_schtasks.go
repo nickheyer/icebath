@@ -48,7 +48,6 @@ const (
 	windowsAccessDeniedWords      = `access is denied|acceso denegado|přístup byl odepřen|拒绝访问|拒絕存取|アクセスが拒否されました|액세스가 거부되었습니다`
 	windowsReadyIntervalS         = 0.4
 	windowsReadyConfirmS          = 2.0
-	windowsElevatedHandoffEnv     = "ICEBATH_GATEWAY_ELEVATED_HANDOFF"
 	windowsInstallStartNowEnv     = "ICEBATH_GATEWAY_INSTALL_START_NOW"
 	windowsInstallStartOnLoginEnv = "ICEBATH_GATEWAY_INSTALL_START_ON_LOGIN"
 )
@@ -191,7 +190,7 @@ func winWithSuffix(p, suffix string) string {
 
 // Stripped, unquoted, forward slashed and casefolded path text for prefix comparisons
 func normalizeWindowsPath(value string) string {
-	v := strings.TrimLeft(pystr.Strip(value), `"`)
+	v := strings.TrimLeft(strings.TrimSpace(value), `"`)
 	return pystr.Casefold(strings.TrimRight(strings.ReplaceAll(v, `\`, "/"), "/"))
 }
 
@@ -289,47 +288,24 @@ func launchElevatedGatewayCommand(ctx context.Context, command string, extra []s
 	return true, nil
 }
 
-// Launches the elevated install with every decision passed as flags and environment
+// Launches the elevated install with every decision passed as flags, which the elevated child reads before its environment
 func launchElevatedInstall(ctx context.Context, force bool, startNow, startOnLogin *bool) (bool, error) {
-	overrides := [][2]string{{windowsElevatedHandoffEnv, "1"}}
 	extra := []string{"--elevated-handoff"}
 	if force {
 		extra = append(extra, "--force")
 	}
 	for _, c := range []struct {
 		choice *bool
-		env    string
 		flag   string
-	}{{startNow, windowsInstallStartNowEnv, "start-now"}, {startOnLogin, windowsInstallStartOnLoginEnv, "start-on-login"}} {
+	}{{startNow, "start-now"}, {startOnLogin, "start-on-login"}} {
 		if c.choice == nil {
 			continue
 		}
 		if *c.choice {
-			overrides, extra = append(overrides, [2]string{c.env, "1"}), append(extra, "--"+c.flag)
+			extra = append(extra, "--"+c.flag)
 		} else {
-			overrides, extra = append(overrides, [2]string{c.env, "0"}), append(extra, "--no-"+c.flag)
+			extra = append(extra, "--no-"+c.flag)
 		}
-	}
-	type saved struct {
-		value string
-		set   bool
-	}
-	old := map[string]saved{}
-	for _, kv := range overrides {
-		v, ok := os.LookupEnv(kv[0])
-		old[kv[0]] = saved{v, ok}
-	}
-	defer func() {
-		for key, s := range old {
-			if s.set {
-				os.Setenv(key, s.value)
-			} else {
-				os.Unsetenv(key)
-			}
-		}
-	}()
-	for _, kv := range overrides {
-		os.Setenv(kv[0], kv[1])
 	}
 	return launchElevatedGatewayCommand(ctx, "install", extra)
 }
@@ -373,12 +349,12 @@ func windowsTaskScriptPath(ctx context.Context) (string, error) {
 // Startup folder under APPDATA, else under USERPROFILE or HOME AppData Roaming
 func windowsStartupDir() (string, error) {
 	tail := []string{"Microsoft", "Windows", "Start Menu", "Programs", "Startup"}
-	if appdata := pystr.Strip(os.Getenv("APPDATA")); appdata != "" {
+	if appdata := strings.TrimSpace(os.Getenv("APPDATA")); appdata != "" {
 		return filepath.Join(append([]string{appdata}, tail...)...), nil
 	}
-	profile := pystr.Strip(os.Getenv("USERPROFILE"))
+	profile := strings.TrimSpace(os.Getenv("USERPROFILE"))
 	if profile == "" {
-		profile = pystr.Strip(os.Getenv("HOME"))
+		profile = strings.TrimSpace(os.Getenv("HOME"))
 	}
 	if profile == "" {
 		return "", errors.New("neither APPDATA nor USERPROFILE is set — cannot resolve Startup folder")
@@ -716,7 +692,7 @@ func installWindowsScheduledTask(ctx context.Context, taskName, scriptPath strin
 	if err != nil {
 		return false, "", err
 	}
-	deleteDetail := pystr.Strip(firstNonEmpty(deleteErr, deleteOut))
+	deleteDetail := strings.TrimSpace(firstNonEmpty(deleteErr, deleteOut))
 	if strings.Contains(strings.ToLower(deleteDetail), "cannot find") {
 		deleteDetail = ""
 	}
@@ -747,9 +723,9 @@ func installWindowsScheduledTask(ctx context.Context, taskName, scriptPath strin
 		lastCode, lastErr = code, firstNonEmpty(errText, out)
 	}
 	if deleteDetail != "" {
-		lastErr = fmt.Sprintf("%s (delete detail: %s)", pystr.Strip(lastErr), deleteDetail)
+		lastErr = fmt.Sprintf("%s (delete detail: %s)", strings.TrimSpace(lastErr), deleteDetail)
 	}
-	return false, fmt.Sprintf("schtasks /Create failed (code %d): %s", lastCode, pystr.Strip(lastErr)), nil
+	return false, fmt.Sprintf("schtasks /Create failed (code %d): %s", lastCode, strings.TrimSpace(lastErr)), nil
 }
 
 // Whether a path exists, every stat failure counted as absent
@@ -1002,7 +978,7 @@ func stdinIsInteractive(isatty bool, consoleModeOK *bool) bool {
 
 // Whether no human can answer a prompt, as ICEBATH_NONINTERACTIVE declares
 func setupIsNoninteractive() bool {
-	switch strings.ToLower(pystr.Strip(os.Getenv("ICEBATH_NONINTERACTIVE"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_NONINTERACTIVE"))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -1020,7 +996,7 @@ func installChoiceFromEnv(name string) *bool {
 	if !ok {
 		return nil
 	}
-	switch strings.ToLower(pystr.Strip(raw)) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes", "y", "on":
 		return new(true)
 	case "0", "false", "no", "n", "off":
@@ -1602,8 +1578,8 @@ func queryScheduledTaskXML(taskName string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if code != 0 || pystr.Strip(out) == "" {
-		pkgLog().Debug(fmt.Sprintf("Could not query Scheduled Task XML for %s: %s", pyrepr.Repr(taskName), pystr.Strip(firstNonEmpty(errText, out))))
+	if code != 0 || strings.TrimSpace(out) == "" {
+		pkgLog().Debug(fmt.Sprintf("Could not query Scheduled Task XML for %s: %s", pyrepr.Repr(taskName), strings.TrimSpace(firstNonEmpty(errText, out))))
 		return "", false, nil
 	}
 	return out, true, nil
@@ -1862,7 +1838,7 @@ func WindowsStop(ctx context.Context) error {
 		if code == 0 {
 			stoppedAny = true
 		} else if !strings.Contains(strings.ToLower(errText), "not running") {
-			winPrintln(fmt.Sprintf("⚠ schtasks /End returned code %d: %s", code, pystr.Strip(errText)))
+			winPrintln(fmt.Sprintf("⚠ schtasks /End returned code %d: %s", code, strings.TrimSpace(errText)))
 		}
 	}
 	known := map[int]bool{}

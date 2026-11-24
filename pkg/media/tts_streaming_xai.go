@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -57,9 +55,9 @@ func putUnlessStopped(q chan any, item any, stop *pythread.Event, pollS float64)
 // xAI WebSocket TTS, base64 PCM audio.delta frames at 24 kHz mono int16
 type xaiStreamer struct{ streamerBase }
 
-func newXAIStreamer(env *tools.Env, ttsConfig map[string]any, section any) (StreamingTTSProvider, error) {
+func newXAIStreamer(env *tools.Env, req *ttsRequest) (StreamingTTSProvider, error) {
 	s := &xaiStreamer{}
-	s.init(env, ttsConfig, section, defaultXAISampleRate)
+	s.init(env, req, defaultXAISampleRate)
 	return s, nil
 }
 
@@ -68,7 +66,7 @@ func xaiStreamAPIKey(env *tools.Env) (string, error) {
 	key := ""
 	err := pluginCall(func() error {
 		_, k, _ := ttsResolveXAICredentials(env)
-		key = pystr.Strip(k)
+		key = strings.TrimSpace(k)
 		return nil
 	})
 	return key, err
@@ -165,20 +163,15 @@ func wsParseURI(raw string) (*url.URL, error) {
 	return u, nil
 }
 
+// Redirects a socket open follows before it gives up
+const wsMaxRedirects = 10
+
 // Opens the socket within ten seconds, following redirects the way the websockets client does
 func wsConnect(ctx context.Context, rawURL string, headers http.Header) (*websocket.Conn, error) {
-	maxRedirects := 10
-	if v, ok := os.LookupEnv("WEBSOCKETS_MAX_REDIRECTS"); ok {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil {
-			return nil, &ttsValueError{msg: fmt.Sprintf("WEBSOCKETS_MAX_REDIRECTS is %s, which is not a whole number", v)}
-		}
-		maxRedirects = n
-	}
 	dctx, cancel := context.WithTimeout(ctx, wsOpenTimeout)
 	defer cancel()
 	dialer := websocket.Dialer{Proxy: http.ProxyFromEnvironment}
-	for i := 0; i < maxRedirects; i++ {
+	for i := 0; i < wsMaxRedirects; i++ {
 		current, err := wsParseURI(rawURL)
 		if err != nil {
 			return nil, err
@@ -214,7 +207,7 @@ func wsConnect(ctx context.Context, rawURL string, headers http.Header) (*websoc
 		}
 		rawURL = target.String()
 	}
-	return nil, &wsError{class: "SecurityError", msg: fmt.Sprintf("more than %d redirects", maxRedirects)}
+	return nil, &wsError{class: "SecurityError", msg: fmt.Sprintf("more than %d redirects", wsMaxRedirects)}
 }
 
 // Pings every twenty seconds and fails the socket with 1011 when a pong does not answer in time
@@ -315,23 +308,9 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 	if apiKey == "" {
 		return &ttsRuntimeError{msg: "No xAI credentials for streaming TTS"}
 	}
-	section, err := s.sectionMap()
-	if err != nil {
-		return err
-	}
-	voice := pystr.Strip(pyrepr.Str(dictGetDefault(section, "voice_id", defaultXAIVoiceID)))
-	if voice == "" {
-		voice = defaultXAIVoiceID
-	}
-	language := pystr.Strip(pyrepr.Str(dictGetDefault(section, "language", defaultXAILanguage)))
-	if language == "" {
-		language = defaultXAILanguage
-	}
-	base := xaiDefaultStreamingURL
-	if v := section["streaming_url"]; pyTruthy(v) {
-		base = pyrepr.Str(v)
-	}
-	base = pystr.Strip(base)
+	voice := textOr(s.req.XAI.VoiceID, defaultXAIVoiceID)
+	language := textOr(s.req.XAI.Language, defaultXAILanguage)
+	base := textOr(s.req.XAI.StreamingURL, xaiDefaultStreamingURL)
 	params := "voice=" + url.QueryEscape(voice) + "&language=" + url.QueryEscape(language) + "&codec=pcm&sample_rate=" + strconv.Itoa(s.SampleRate())
 	sep := "?"
 	if strings.Contains(base, "?") {

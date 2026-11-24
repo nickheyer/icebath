@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"io"
@@ -17,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -135,29 +138,14 @@ func buildInspectionAgent(ctx context.Context, env *tools.Env, platform string) 
 	if err != nil {
 		return nil, err
 	}
-	modelCfg := map[string]any{}
-	if m, ok := cfg["model"].(map[string]any); ok {
-		modelCfg = m
-	}
-	agentCfg := map[string]any{}
-	if raw := cfg["agent"]; pyrepr.Truthy(raw) {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("the agent section of the config is %s, expected a mapping", errchain.Kind(raw))
-		}
-		agentCfg = m
-	}
-	model := ""
-	if v := modelCfg["default"]; pyrepr.Truthy(v) {
-		model = pyrepr.Str(v)
-	}
+	model := strings.TrimSpace(settings.Model.Get(ctx))
 	platformTools := tools.Default.PlatformTools(ctx, tools.ScopeKey(home.Dir(ctx)), cfg, platform, tools.PlatformToolsOptions{IncludeDefaultMCPServers: true})
 	enabled := make([]string, 0, len(platformTools))
 	for name := range platformTools {
 		enabled = append(enabled, name)
 	}
 	sort.Strings(enabled)
-	disabled := tools.ParseConfigStringList(agentCfg["disabled_toolsets"])
+	disabled := settings.AgentDisabledToolsets.Strings(ctx)
 	if len(disabled) == 0 {
 		disabled = nil
 	}
@@ -229,7 +217,7 @@ func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdow
 		if m := promptNamesOnlyLineRe.FindStringSubmatch(line); m != nil {
 			var names []string
 			for _, n := range strings.Split(m[promptNamesOnlyLineRe.SubexpIndex("names")], ",") {
-				if s := pystr.Strip(n); s != "" {
+				if s := strings.TrimSpace(n); s != "" {
 					names = append(names, s)
 				}
 			}
@@ -253,12 +241,12 @@ func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdow
 				appendEntry(SkillBreakdownEntry{Name: name, IndexLineBytes: nameBytes[i] + shared, IndexLineTotalBytes: lineBytes,
 					IndexLineSharedBytes: shared, IndexLineSkillCount: len(names)})
 			}
-		} else if row := pystr.Lstrip(line); strings.HasPrefix(row, promptSkillLinePrefix) {
+		} else if row := strings.TrimLeftFunc(line, unicode.IsSpace); strings.HasPrefix(row, promptSkillLinePrefix) {
 			rest := row[len(promptSkillLinePrefix):]
 			if i := strings.Index(rest, ": "); i >= 0 {
 				rest = rest[:i]
 			}
-			if name := pystr.Strip(rest); name != "" {
+			if name := strings.TrimSpace(rest); name != "" {
 				appendEntry(SkillBreakdownEntry{Name: name, IndexLineBytes: lineBytes, IndexLineTotalBytes: lineBytes,
 					IndexLineSharedBytes: 0, IndexLineSkillCount: 1})
 			}

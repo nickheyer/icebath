@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ func init() {
 }
 
 // Names /system takes to open one section
-var systemSectionIDs = []string{"service", "health", "logs", "storage", "packages", "updates", "security", "lsp", "computer-use", "proxy", "migrations"}
+var systemSectionIDs = []string{"service", "health", "logs", "storage", "packages", "updates", "verify", "security", "lsp", "computer-use", "proxy", "migrations", "uninstall"}
 
 // System screen: its hub, the command tree of this build and what it measured
 type systemHub struct {
@@ -151,12 +152,14 @@ func (s *systemHub) sections() []systemSection {
 		{id: "packages", title: tr(txt.SystemPackagesTitle), covers: tr(txt.SystemPackagesCovers), open: s.openPackages, paths: []string{"pm status"}},
 		{id: "updates", title: tr(txt.SystemUpdatesTitle), covers: tr(txt.SystemUpdatesCovers), state: func() string { return s.update }, open: s.openUpdates,
 			paths: []string{"update"}},
+		{id: "verify", title: tr(txt.SystemVerifyTitle), covers: tr(txt.SystemVerifyCovers), open: s.openVerify, paths: []string{"verify"}},
 		{id: "security", title: tr(txt.SystemSecurityTitle), covers: tr(txt.SystemSecurityCovers), open: s.openSecurity, paths: []string{"security audit", "egress status"}},
 		{id: "lsp", title: tr(txt.SystemLspTitle), covers: tr(txt.SystemLspCovers), open: s.openLSP, paths: []string{"lsp status"}},
 		{id: "computer-use", title: tr(txt.SystemComputerTitle), covers: tr(txt.SystemComputerCovers), open: s.openComputerUse, paths: []string{"computer-use status"}},
 		{id: "proxy", title: tr(txt.SystemProxyTitle), covers: tr(txt.SystemProxyCovers), open: s.openProxy, paths: []string{"proxy status"}},
 		{id: "migrations", title: tr(txt.SystemMigrationsTitle), covers: tr(txt.SystemMigrationsCovers), open: s.openMigrations,
 			paths: []string{"migrate xai", "codex-runtime migrate"}},
+		{id: "uninstall", title: tr(txt.SystemUninstallTitle), covers: tr(txt.SystemUninstallCovers), open: s.openUninstall, paths: []string{"uninstall"}},
 		{id: "after-exit", title: tr(txt.HubsTitleAfterExit), covers: tr(txt.HubsShortAfterExit), state: afterExitState, open: a.openAfterExit},
 	}
 }
@@ -859,7 +862,9 @@ func (s *systemHub) openStorage() tea.Cmd {
 		return out
 	}
 	return s.section(tr(txt.SystemStorageTitle), detail,
+		s.backupAction,
 		s.cmd(txt.SystemStorageStats, txt.SystemStorageStatsDoes, []string{"sessions", "stats"}, ""),
+		s.recoverAction,
 		s.cmd(txt.SystemStorageCheckpoints, txt.SystemStorageCheckpointsDoes, []string{"checkpoints", "status"}, ""),
 		s.cmd(txt.SystemStoragePrune, txt.SystemStoragePruneDoes, []string{"checkpoints", "prune", "--force"}, tr(txt.SystemStoragePruneConfirm)),
 		s.cmd(txt.SystemStorageClearLegacy, txt.SystemStorageClearLegacyDoes, []string{"checkpoints", "clear-legacy", "--force"}, tr(txt.SystemStorageClearLegacyConfirm)),
@@ -880,6 +885,152 @@ func (s *systemHub) openStorage() tea.Cmd {
 			return s.asking(tr(txt.SystemStorageJournal), tr(txt.SystemStorageJournalDoes), tr(txt.SystemStorageJournalAsk), []string{"sessions", "set-journal-mode"})
 		},
 	)
+}
+
+// Full backup of the profile home, asking where the zip goes and how many older backups beside it stay
+func (s *systemHub) backupAction() []hubAction {
+	c, ok := s.lookup([]string{"backup"})
+	if !ok {
+		return nil
+	}
+	title := tr(txt.SystemStorageBackup)
+	return []hubAction{{label: title, does: tr(txt.SystemStorageBackupDoes), run: func() tea.Cmd {
+		spec := cards.FormSpec{Title: title, Intro: []string{tr(txt.SystemStorageBackupIntro)}, Submit: tr(txt.SlashFormRun), Fields: []cards.Field{
+			{ID: "output", Label: tr(txt.SystemStorageBackupOutput), Kind: cards.FieldText, Help: tr(txt.SystemStorageBackupOutputHelp)},
+			{ID: "keep", Label: tr(txt.SystemStorageBackupKeep), Kind: cards.FieldNumber, Value: "3", Help: tr(txt.SystemStorageBackupKeepHelp)},
+		}}
+		return s.a.hubForm(s.h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			argv := []string{"backup"}
+			if output := strings.TrimSpace(v["output"]); output != "" {
+				argv = append(argv, "--output", output)
+			}
+			keep := strings.TrimSpace(v["keep"])
+			if n, err := strconv.Atoi(keep); err != nil || n < 0 {
+				return s.h.Fail(tr(txt.SystemStorageBackupKeep) + ": " + tr(txt.KitFormNumber))
+			}
+			return s.run(title, append(argv, "--keep", keep), c, nil)
+		})
+	}}}
+}
+
+// Recovery of the session store into a new one, on a copy and never in place: here for a preserved copy or another file, after exit for the
+// store this profile has open, which must be closed while it is copied
+func (s *systemHub) recoverAction() []hubAction {
+	if _, ok := s.lookup([]string{"sessions", "recover"}); !ok {
+		return nil
+	}
+	title, dir := tr(txt.SystemStorageRecover), home.Dir(s.a.ctx)
+	live := filepath.Join(dir, "state.db")
+	return []hubAction{{label: title, does: tr(txt.SystemStorageRecoverDoes), run: func() tea.Cmd {
+		spec := cards.FormSpec{Title: title, Intro: []string{tr(txt.SystemStorageRecoverIntro)}, Submit: tr(txt.SlashFormRun), Fields: []cards.Field{
+			{ID: "source", Label: tr(txt.SystemStorageRecoverSource), Kind: cards.FieldText, Value: live, Required: true},
+			{ID: "output", Label: tr(txt.SystemStorageRecoverOutput), Kind: cards.FieldText, Value: filepath.Join(dir, "state-recovered.db"), Help: tr(txt.SystemStorageRecoverOutputHelp)},
+			{ID: "inspect", Label: tr(txt.SystemStorageRecoverInspect), Kind: cards.FieldBool, Value: "false"},
+			{ID: "partial", Label: tr(txt.SystemStorageRecoverPartial), Kind: cards.FieldBool, Value: "false"},
+		}}
+		return s.a.hubForm(s.h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			source := strings.TrimSpace(v["source"])
+			argv := []string{"sessions", "recover", "--source", source}
+			if v["inspect"] == "true" {
+				argv = append(argv, "--inspect-only")
+			} else {
+				output := strings.TrimSpace(v["output"])
+				if output == "" {
+					return s.h.Fail(tr(txt.SystemStorageRecoverOutput) + ": " + tr(txt.KitFormRequired))
+				}
+				argv = append(argv, "--output", output)
+				if v["partial"] == "true" {
+					argv = append(argv, "--allow-partial")
+				}
+			}
+			if !sameFile(source, live) {
+				return s.a.hubRunCLI(s.h, title, argv, func(*cliRun) tea.Cmd { return nil })
+			}
+			if err := queueAfterExit(argv, tr(txt.SystemStorageRecoverReason)); err != nil {
+				return s.h.Fail(tr(txt.AfterExitQueueFailed, err.Error()))
+			}
+			return s.h.Done(tr(txt.AfterExitQueued, "icebath "+joinCommandLine(argv)))
+		})
+	}}}
+}
+
+// Whether two paths name the same file, links and relative spellings resolved, the cleaned spellings compared when either cannot be read
+func sameFile(a, b string) bool {
+	x, errX := os.Stat(a)
+	y, errY := os.Stat(b)
+	if errX == nil && errY == nil {
+		return os.SameFile(x, y)
+	}
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && absA == absB
+}
+
+// Removing icebath: what each way removes, read here, and each way itself after a question, queued for after exit
+func (s *systemHub) openUninstall() tea.Cmd {
+	detail := func() []string { return []string{tr(txt.SystemUninstallAbout)} }
+	return s.section(tr(txt.SystemUninstallTitle), detail,
+		s.cmd(txt.SystemUninstallShowKeep, txt.SystemUninstallShowKeepDoes, []string{"uninstall", "--dry-run"}, ""),
+		s.cmd(txt.SystemUninstallShowFull, txt.SystemUninstallShowFullDoes, []string{"uninstall", "--full", "--dry-run"}, ""),
+		s.cmd(txt.SystemUninstallShowData, txt.SystemUninstallShowDataDoes, []string{"uninstall", "--data", "--dry-run"}, ""),
+		s.cmd(txt.SystemUninstallKeep, txt.SystemUninstallKeepDoes, []string{"uninstall", "--yes"}, tr(txt.SystemUninstallKeepConfirm)),
+		s.cmd(txt.SystemUninstallFull, txt.SystemUninstallFullDoes, []string{"uninstall", "--full", "--yes"}, tr(txt.SystemUninstallFullConfirm)),
+		s.cmd(txt.SystemUninstallData, txt.SystemUninstallDataDoes, []string{"uninstall", "--data", "--yes"}, tr(txt.SystemUninstallDataConfirm)),
+	)
+}
+
+// Project check of the folder this window works in: its run recipe read or saved, the check whole, without starting, or by chosen steps
+func (s *systemHub) openVerify() tea.Cmd {
+	cwd := s.a.store.sessionCwd()
+	detail := func() []string { return []string{tr(txt.SystemVerifyAbout, cwd)} }
+	steps := func() []hubAction {
+		c, ok := s.lookup([]string{"verify"})
+		if !ok {
+			return nil
+		}
+		title := tr(txt.SystemVerifyPhases)
+		return []hubAction{{label: title, does: tr(txt.SystemVerifyPhasesDoes), run: func() tea.Cmd {
+			spec := cards.FormSpec{Title: title, Intro: []string{tr(txt.SystemVerifyAbout, cwd)}, Submit: tr(txt.SlashFormRun), Fields: []cards.Field{
+				{ID: "bootstrap", Label: tr(txt.SystemVerifyPhaseBootstrap), Kind: cards.FieldBool, Value: "true"},
+				{ID: "build", Label: tr(txt.SystemVerifyPhaseBuild), Kind: cards.FieldBool, Value: "true"},
+				{ID: "test", Label: tr(txt.SystemVerifyPhaseTest), Kind: cards.FieldBool, Value: "true"},
+				{ID: "start", Label: tr(txt.SystemVerifyPhaseStart), Kind: cards.FieldBool, Value: "true"},
+				{ID: "port", Label: tr(txt.SystemVerifyPort), Kind: cards.FieldNumber, Help: tr(txt.SystemVerifyPortHelp)},
+				{ID: "timeout", Label: tr(txt.SystemVerifyTimeout), Kind: cards.FieldNumber, Value: "600"},
+				{ID: "ready", Label: tr(txt.SystemVerifyReadyTimeout), Kind: cards.FieldNumber, Value: "60"},
+			}}
+			return s.a.hubForm(s.h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+				argv := []string{"verify"}
+				for _, phase := range []string{"bootstrap", "build", "test", "start"} {
+					if v[phase] == "true" {
+						argv = append(argv, "--phase", phase)
+					}
+				}
+				if len(argv) == 1 {
+					return s.h.Fail(title + ": " + tr(txt.KitFormRequired))
+				}
+				for _, opt := range []struct{ id, flag, label string }{{"port", "--port", tr(txt.SystemVerifyPort)},
+					{"timeout", "--timeout", tr(txt.SystemVerifyTimeout)}, {"ready", "--ready-timeout", tr(txt.SystemVerifyReadyTimeout)}} {
+					text := strings.TrimSpace(v[opt.id])
+					if text == "" {
+						continue
+					}
+					n, err := strconv.ParseFloat(text, 64)
+					if err != nil || n < 0 || (opt.id == "port" && n != float64(int(n))) {
+						return s.h.Fail(opt.label + ": " + tr(txt.KitFormNumber))
+					}
+					argv = append(argv, opt.flag, text)
+				}
+				return s.run(title, argv, c, nil)
+			})
+		}}}
+	}
+	return s.section(tr(txt.SystemVerifyTitle), detail,
+		s.cmd(txt.SystemVerifyDetect, txt.SystemVerifyDetectDoes, []string{"verify", "--detect-only"}, ""),
+		s.cmd(txt.SystemVerifySave, txt.SystemVerifySaveDoes, []string{"verify", "--detect-only", "--save"}, ""),
+		s.cmd(txt.SystemVerifyRun, txt.SystemVerifyRunDoes, []string{"verify"}, ""),
+		s.cmd(txt.SystemVerifyNoStart, txt.SystemVerifyNoStartDoes, []string{"verify", "--skip-start"}, ""),
+		steps)
 }
 
 // Text padded with spaces to n cells, longer text left whole

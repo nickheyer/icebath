@@ -19,7 +19,7 @@ func TestOllamaApiKeyUsedForOllamaEndpoint(t *testing.T) {
 }
 
 func TestOllamaKeyIsHostMatchedNotSubstringMatched(t *testing.T) {
-	ctx, h := switchAliasHome(t, "")
+	ctx, _ := switchAliasHome(t, "")
 	t.Setenv("OLLAMA_API_KEY", "sk-ollama-KEY")
 	for _, tc := range []struct {
 		baseURL   string
@@ -29,7 +29,7 @@ func TestOllamaKeyIsHostMatchedNotSubstringMatched(t *testing.T) {
 		{"https://ollama.com.attacker.test/v1", false},
 		{"http://127.0.0.1/ollama.com/v1", false},
 	} {
-		rt, err := modelsResolver(ctx).resolveNamedCustomRuntime("custom", "", tc.baseURL, "", readConfigYAMLMap(t, h))
+		rt, err := modelsResolver(ctx).resolveNamedCustomRuntime("custom", "", tc.baseURL, "")
 		if err != nil {
 			t.Fatalf("%s: %v", tc.baseURL, err)
 		}

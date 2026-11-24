@@ -2,7 +2,6 @@ package slack
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -74,28 +74,11 @@ func (a *SlackAdapter) slackIgnoredChannels(ctx context.Context) map[string]bool
 	return channelSetting(ctx, settings.SlackIgnoredChannels)
 }
 
-// Channel ids a list setting holds, written as a list or as comma separated text
-func channelSetting(ctx context.Context, e settings.Entry) map[string]bool {
-	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
-	if err != nil {
-		pkgLog().Warn("Slack: reading a channel list setting failed", "key", e.Info().Key, "err", err)
-		return map[string]bool{}
-	}
+// Channel ids a list setting holds for the profile ctx serves
+func channelSetting(ctx context.Context, list *settings.List) map[string]bool {
 	out := map[string]bool{}
-	var parts []string
-	switch t := v.Value.(type) {
-	case []any:
-		for _, item := range t {
-			parts = append(parts, pyrepr.Str(item))
-		}
-	case nil:
-	default:
-		parts = strings.Split(pyrepr.Str(t), ",")
-	}
-	for _, part := range parts {
-		if id := pystr.Strip(part); id != "" {
-			out[id] = true
-		}
+	for _, id := range list.Strings(gateway.SettingsContext(ctx)) {
+		out[id] = true
 	}
 	return out
 }
@@ -155,7 +138,7 @@ func slackMessageMentionsSelf(text string, selfUIDs map[string]bool) bool {
 	return false
 }
 
-// Wake word patterns from extra mention_patterns or SLACK_MENTION_PATTERNS, compiled once
+// Wake word patterns of slack.mention_patterns, compiled once
 func (a *SlackAdapter) slackMentionPatterns(ctx context.Context) []*regexp2.Regexp {
 	a.mu.Lock()
 	if a.mentionPatternsLoaded {
@@ -164,46 +147,17 @@ func (a *SlackAdapter) slackMentionPatterns(ctx context.Context) []*regexp2.Rege
 		return cached
 	}
 	a.mu.Unlock()
-	var patterns any
-	if extra := a.extra(); len(extra) > 0 {
-		patterns = extra["mention_patterns"]
-	}
-	if patterns == nil {
-		secret, _ := gateway.GetScopedSecret(ctx, "SLACK_MENTION_PATTERNS", "", false)
-		if raw := pystr.Strip(secret); raw != "" {
-			var decoded any
-			if err := json.Unmarshal([]byte(raw), &decoded); err == nil {
-				patterns = decoded
-			} else {
-				var parts []any
-				for _, p := range strings.Split(strings.ReplaceAll(raw, "\n", ","), ",") {
-					if p = pystr.Strip(p); p != "" {
-						parts = append(parts, p)
-					}
-				}
-				patterns = parts
-			}
-		}
-	}
-	if s, ok := patterns.(string); ok {
-		patterns = []any{s}
-	}
 	var compiled []*regexp2.Regexp
-	if list, ok := patterns.([]any); ok {
-		for _, raw := range list {
-			pat, ok := raw.(string)
-			if !ok || pystr.Strip(pat) == "" {
-				continue
-			}
-			re, err := compileIgnoreCase(pat)
-			if err != nil {
-				pkgLog().Warn(fmt.Sprintf("[Slack] Invalid mention pattern %s: %v", pyrepr.Repr(pat), err))
-				continue
-			}
-			compiled = append(compiled, re)
+	for _, pat := range config.AsStrings(settings.SlackMentionPatterns.Get(gateway.SettingsContext(ctx))) {
+		if strings.TrimSpace(pat) == "" {
+			continue
 		}
-	} else if patterns != nil {
-		pkgLog().Warn(fmt.Sprintf("[Slack] mention_patterns must be a list or string; got %s", pyrepr.TypeName(patterns)))
+		re, err := compileIgnoreCase(pat)
+		if err != nil {
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid mention pattern %s: %v", pyrepr.Repr(pat), err))
+			continue
+		}
+		compiled = append(compiled, re)
 	}
 	if len(compiled) > 0 {
 		pkgLog().Info(fmt.Sprintf("[Slack] Loaded %d mention pattern(s)", len(compiled)))

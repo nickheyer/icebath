@@ -1,16 +1,17 @@
 package homeassistant
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // Explicit notify target of a reference, false for a blank one
 func parseTargetRef(ref string) (string, *string, bool) {
-	target := pystr.Strip(ref)
+	target := strings.TrimSpace(ref)
 	return target, nil, target != ""
 }
 

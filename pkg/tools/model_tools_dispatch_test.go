@@ -170,7 +170,7 @@ func TestDelegateTaskAbsentFromATurnIsReportedAsUnavailable(t *testing.T) {
 		installWorkerProcess(t, worker)
 		env := &Env{Home: t.TempDir()}
 		turnTools := []map[string]any{{"type": "function", "function": map[string]any{"name": "kanban_create", "parameters": map[string]any{}}}}
-		cfg := ToolSearchConfigFromRaw(map[string]any{})
+		cfg := toolSearchConfigOf(t, map[string]any{})
 		var described map[string]any
 		if err := json.Unmarshal([]byte(DispatchToolDescribe(context.Background(), env, map[string]any{"names": []any{"delegate_task"}}, turnTools, &cfg, nil)), &described); err != nil {
 			t.Fatal(err)

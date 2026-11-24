@@ -54,7 +54,7 @@ func multiplexSecondaryScope(t *testing.T) context.Context {
 func TestBaseURLsFollowTheScopedKeyNotDefaultEnviron(t *testing.T) {
 	h := newTestHome(t)
 	ctx := multiplexSecondaryScope(t)
-	r := newResolver(ctx, config.Tree{}, config.NewSecrets(h), h, &fakeCreds{})
+	r := newResolver(ctx, config.NewSecrets(h), h, &fakeCreds{})
 	if _, base := r.expandDirectAPIAlias("openai", ""); strings.Contains(base, "default.example") {
 		t.Fatalf("direct alias base %q", base)
 	}

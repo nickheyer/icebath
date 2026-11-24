@@ -184,13 +184,9 @@ func lifecyclePollUntil(pred func() bool, timeout, interval time.Duration) bool 
 	}
 }
 
-// Waits for a user systemd control socket and adopts its environment
+// Waits for a user systemd control socket, which UserSystemdEnv hands the next service command
 func waitForUserDbusSocket(timeout time.Duration) bool {
-	if !lifecyclePollUntil(lifecycleUserSystemdSocketUp, timeout, lifecycleUserBusPollInterval) {
-		return false
-	}
-	ensureUserSystemdEnv()
-	return true
+	return lifecyclePollUntil(lifecycleUserSystemdSocketUp, timeout, lifecycleUserBusPollInterval)
 }
 
 // Waits for the D-Bus socket of another account without adopting it
@@ -213,7 +209,7 @@ func completedProcessDetail(res CommandResult) string {
 	if text == "" {
 		text = fmt.Sprintf("exit %d", res.ReturnCode)
 	}
-	return pystr.Strip(text)
+	return strings.TrimSpace(text)
 }
 
 // Linger state of the user or the caller, nil with the reason when it cannot be determined
@@ -251,7 +247,7 @@ func GetSystemdLingerStatus(ctx context.Context, username string) (*bool, string
 		}
 		return nil, detail
 	}
-	value := strings.ToLower(pystr.Strip(res.Stdout))
+	value := strings.ToLower(strings.TrimSpace(res.Stdout))
 	yes, no := true, false
 	switch value {
 	case "yes", "true", "1":
@@ -280,7 +276,6 @@ func userSystemdUnavailable(reason, fixHint string) error {
 
 // Ensures systemctl --user reaches user systemd, enabling linger when allowed, else UserSystemdUnavailableError
 func preflightUserSystemd(ctx context.Context, autoEnableLinger bool) error {
-	ensureUserSystemdEnv()
 	if lifecycleUserSystemdSocketUp() {
 		return nil
 	}

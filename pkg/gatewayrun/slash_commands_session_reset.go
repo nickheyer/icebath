@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -237,7 +238,7 @@ func (r *GatewayRunner) handleResetCommand(ctx context.Context, event *gateway.M
 	if !ok || header == "" {
 		header = defaultHeader
 	}
-	titleArg := pystr.Strip(event.GetCommandArgs())
+	titleArg := strings.TrimSpace(event.GetCommandArgs())
 	if titleArg != "" && r.sessionDB(ctx) != nil && newEntry != nil {
 		header = r.resetTitledHeader(ctx, header, newEntry.SessionID, titleArg)
 	}

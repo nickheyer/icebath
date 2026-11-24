@@ -51,10 +51,10 @@ func annotateSessionStatuses(r *sessionsRun, sessions []*pyjson.Object, db *stat
 
 // Title of a row, else its preview, else its id
 func sessionLabel(s *pyjson.Object) string {
-	if t := pystr.Strip(rowText(s, "title")); t != "" {
+	if t := strings.TrimSpace(rowText(s, "title")); t != "" {
 		return t
 	}
-	if p := pystr.Strip(rowText(s, "preview")); p != "" {
+	if p := strings.TrimSpace(rowText(s, "preview")); p != "" {
 		return p
 	}
 	return rowText(s, "id")
@@ -81,9 +81,9 @@ func msgsStr(s *pyjson.Object) string {
 
 // Case insensitive substring match of a query over title, preview, id and source
 func sessionMatches(s *pyjson.Object, query string) bool {
-	q := pystr.Lower(query)
+	q := strings.ToLower(query)
 	for _, key := range []string{"title", "preview", "id", "source"} {
-		if strings.Contains(pystr.Lower(rowText(s, key)), q) {
+		if strings.Contains(strings.ToLower(rowText(s, key)), q) {
 			return true
 		}
 	}
@@ -96,9 +96,9 @@ const browseFixedCols = 3 + 5 + 2 + 5 + 2 + 12 + 6 + 18 + 6
 func formatRow(s *pyjson.Object, maxX int, now time.Time) string {
 	nameWidth := max(20, maxX-browseFixedCols)
 	sid := runePrefix(rowText(s, "id"), 18)
-	name := pystr.Strip(rowText(s, "title"))
+	name := strings.TrimSpace(rowText(s, "title"))
 	if name == "" {
-		name = pystr.Strip(rowText(s, "preview"))
+		name = strings.TrimSpace(rowText(s, "preview"))
 	}
 	if name = runePrefix(name, nameWidth); name == "" {
 		name = sid
@@ -357,8 +357,8 @@ func fallbackPicker(r *sessionsRun, sessions []*pyjson.Object) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		val := pystr.Strip(line)
-		if lowered := pystr.Lower(val); val == "" || lowered == "q" || lowered == "quit" || lowered == "exit" {
+		val := strings.TrimSpace(line)
+		if lowered := strings.ToLower(val); val == "" || lowered == "q" || lowered == "quit" || lowered == "exit" {
 			return "", nil
 		}
 		n, ok := pyint.Parse(val)

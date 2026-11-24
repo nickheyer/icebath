@@ -89,7 +89,7 @@ func TestPromptCachingCacheTTLDefaultsWithoutConfig(t *testing.T) {
 }
 
 func TestPromptCachingDisabledByFalsyCacheTTL(t *testing.T) {
-	for _, falsy := range []string{"false", "null", "off", "\"false\"", "disabled", "no", "none"} {
+	for _, falsy := range []string{"false", "off", "\"false\"", "disabled", "no", "none"} {
 		t.Run(falsy, func(t *testing.T) {
 			a := newFixtureAgentWithConfig(t, "prompt_caching:\n  cache_ttl: "+falsy+"\n", AIAgentOptions{Model: "anthropic/claude-sonnet-4-20250514", BaseURL: "https://openrouter.ai/api/v1"})
 			if a.usePromptCaching || a.useNativeCacheLayout || a.cacheTTL != "" {

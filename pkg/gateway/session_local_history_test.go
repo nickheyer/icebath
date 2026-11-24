@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -95,16 +96,11 @@ func recoverActor() Principal {
 func installPrefillLoaders(t *testing.T) {
 	t.Helper()
 	prevResolve, prevLoad := ResolvePrefillMessagesFile, LoadPrefillMessages
-	ResolvePrefillMessagesFile = func(ctx context.Context, cfg map[string]any) string {
+	ResolvePrefillMessagesFile = func(ctx context.Context) string {
 		if text := strings.TrimSpace(state.SessionEnv(ctx, "ICEBATH_PREFILL_MESSAGES_FILE", "")); text != "" {
 			return text
 		}
-		if text, _ := cfg["prefill_messages_file"].(string); strings.TrimSpace(text) != "" {
-			return strings.TrimSpace(text)
-		}
-		agentCfg, _ := cfg["agent"].(map[string]any)
-		text, _ := agentCfg["prefill_messages_file"].(string)
-		return strings.TrimSpace(text)
+		return strings.TrimSpace(settings.PrefillMessagesFile.Get(ctx))
 	}
 	LoadPrefillMessages = func(ctx context.Context, filePath, baseDir string) []any {
 		if filePath == "" {

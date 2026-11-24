@@ -1,6 +1,8 @@
 package updaterecord
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -21,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -78,7 +79,7 @@ func pauseAt(point string) {
 
 // Pid of the orchestrating updater named by the handoff variable, zero when absent or malformed
 func handoffPID() int {
-	value, ok := pyint.Parse(pystr.Strip(os.Getenv(HandoffPIDEnv)))
+	value, ok := pyint.Parse(strings.TrimSpace(os.Getenv(HandoffPIDEnv)))
 	if !ok || value.Sign() <= 0 || !value.IsInt64() || value.Int64() > math.MaxInt32 {
 		return 0
 	}

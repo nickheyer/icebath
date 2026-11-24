@@ -257,8 +257,8 @@ func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environme
 		}
 		pid := ""
 		for _, line := range pystr.Splitlines(started, false) {
-			if stripped := pystr.Strip(line); strings.HasPrefix(stripped, "PID:") {
-				pid = pystr.Strip(stripped[4:])
+			if stripped := strings.TrimSpace(line); strings.HasPrefix(stripped, "PID:") {
+				pid = strings.TrimSpace(stripped[4:])
 				break
 			}
 		}
@@ -369,7 +369,7 @@ func runRemoteCell(ctx context.Context, kernel *remoteKernel, code string, timeo
 		if err != nil {
 			out = ""
 		}
-		if text := pystr.Strip(out); text != "" {
+		if text := strings.TrimSpace(out); text != "" {
 			var status any
 			payload := pyjson.NewObject()
 			decoded, err := pyjson.Loads(text)
@@ -505,7 +505,7 @@ func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, 
 		if !ok {
 			return nil, fmt.Errorf("remote kernel traceback is %s where text was expected", errchain.Kind(tb))
 		}
-		lines := pystr.Splitlines(pystr.Strip(text), false)
+		lines := pystr.Splitlines(strings.TrimSpace(text), false)
 		if len(lines) == 0 {
 			return nil, errors.New("remote kernel traceback is blank")
 		}

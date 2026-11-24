@@ -57,7 +57,7 @@ func TestResolveProviderAutoDetectWithAwsCredentials(t *testing.T) {
 func TestRuntimeProviderBedrockRuntimeNoCredentialsRaisesOnAutoDetect(t *testing.T) {
 	bedrockIsolatedEnv(t)
 	r := testResolver(t, map[string]any{"model": map[string]any{"provider": "bedrock"}}, &fakeCreds{}, "")
-	_, err := r.resolveBedrockRuntime("auto", map[string]any{"provider": "bedrock"}, "")
+	_, err := r.resolveBedrockRuntime("auto", "")
 	var ae *AuthError
 	if !errors.As(err, &ae) || !strings.Contains(err.Error(), "No AWS credentials") {
 		t.Fatalf("err %v", err)
@@ -67,7 +67,7 @@ func TestRuntimeProviderBedrockRuntimeNoCredentialsRaisesOnAutoDetect(t *testing
 func TestRuntimeProviderBedrockRuntimeExplicitSkipsCredentialCheck(t *testing.T) {
 	bedrockIsolatedEnv(t)
 	r := testResolver(t, map[string]any{"model": map[string]any{"provider": "bedrock"}}, &fakeCreds{}, "")
-	rt, err := r.resolveBedrockRuntime("bedrock", map[string]any{"provider": "bedrock"}, "")
+	rt, err := r.resolveBedrockRuntime("bedrock", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRuntimeProviderBedrockOpenaiModelsRouteToMantleResponses(t *testing.T) 
 	}
 	for _, modelID := range BedrockOpenAIResponsesModelIDs {
 		r := testResolver(t, map[string]any{"model": map[string]any{"provider": "bedrock", "default": modelID}}, &fakeCreds{}, "")
-		rt, err := r.resolveBedrockRuntime("bedrock", map[string]any{"provider": "bedrock", "default": modelID}, "")
+		rt, err := r.resolveBedrockRuntime("bedrock", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +98,7 @@ func TestRuntimeProviderBedrockOpenaiProfileIdsRouteToRuntimeConverse(t *testing
 	for _, modelID := range BedrockOpenAIResponsesModelIDs {
 		for _, profileID := range []string{"us." + modelID, "global." + modelID} {
 			r := testResolver(t, map[string]any{"model": map[string]any{"provider": "bedrock", "default": profileID}}, &fakeCreds{}, "")
-			rt, err := r.resolveBedrockRuntime("bedrock", map[string]any{"provider": "bedrock", "default": profileID}, "")
+			rt, err := r.resolveBedrockRuntime("bedrock", "")
 			if err != nil {
 				t.Fatal(err)
 			}

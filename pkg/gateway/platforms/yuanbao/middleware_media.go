@@ -107,7 +107,7 @@ func guessImageExtFromURL(rawURL string) (string, error) {
 		return "", err
 	}
 	_, ext := pypath.Splitext(parsed.Path)
-	if ext = pystr.Lower(ext); imageURLExts[ext] {
+	if ext = strings.ToLower(ext); imageURLExts[ext] {
 		return ext, nil
 	}
 	return ".jpg", nil
@@ -116,11 +116,11 @@ func guessImageExtFromURL(rawURL string) (string, error) {
 // Auth headers of a resource API request, nil without a token or a bot id
 func resourceAuthHeaders(adapter *YuanbaoAdapter, tokenData map[string]any, fallbackSource string) map[string]string {
 	token := stripOrEmpty(tokenData["token"])
-	botID := pystr.Strip(pyrepr.Str(pyrepr.Or(pyrepr.Or(tokenData["bot_id"], adapter.botIDValue()), adapter.appKey)))
+	botID := strings.TrimSpace(pyrepr.Str(pyrepr.Or(pyrepr.Or(tokenData["bot_id"], adapter.botIDValue()), adapter.appKey)))
 	if token == "" || botID == "" {
 		return nil
 	}
-	source := pystr.Strip(pyrepr.Str(pyrepr.Or(tokenData["source"], fallbackSource)))
+	source := strings.TrimSpace(pyrepr.Str(pyrepr.Or(tokenData["source"], fallbackSource)))
 	if source == "" {
 		source = "web"
 	}
@@ -132,7 +132,7 @@ var resourceHTTPClient = func() *http.Client { return pyhttpx.PlainClient(true) 
 
 // Exchanges a resource id for a direct download URL, retrying once with a fresh token after a 401
 func fetchResourceURL(ctx context.Context, adapter *YuanbaoAdapter, resourceID string) (string, error) {
-	resourceID = pystr.Strip(resourceID)
+	resourceID = strings.TrimSpace(resourceID)
 	if resourceID == "" {
 		return "", runtimeError("missing resource_id")
 	}
@@ -381,8 +381,8 @@ func resolveMediaURLs(ctx context.Context, adapter *YuanbaoAdapter, mediaRefs []
 	mediaURLs, mediaTypes := []string{}, []string{}
 	var active []resolveItem
 	for _, ref := range mediaRefs {
-		kind := pystr.Lower(pystr.Strip(ref.Kind))
-		rawURL := pystr.Strip(ref.URL)
+		kind := strings.ToLower(strings.TrimSpace(ref.Kind))
+		rawURL := strings.TrimSpace(ref.URL)
 		if !resolvableMediaKinds[kind] || rawURL == "" {
 			continue
 		}
@@ -390,7 +390,7 @@ func resolveMediaURLs(ctx context.Context, adapter *YuanbaoAdapter, mediaRefs []
 		if rid != "" && appendCachedResource(adapter, rid, &mediaURLs, &mediaTypes) {
 			continue
 		}
-		active = append(active, resolveItem{kind, pystr.Strip(ref.Name), rid, rawURL})
+		active = append(active, resolveItem{kind, strings.TrimSpace(ref.Name), rid, rawURL})
 	}
 	if len(active) == 0 {
 		return mediaURLs, mediaTypes, nil
@@ -510,7 +510,7 @@ func collectQuoteLocalMedia(ic *InboundContext) ([]string, []string) {
 	}
 	seen := map[string]bool{}
 	for _, m := range findAll(ybLocalMediaRE, ic.Adapter.cachedMsgContent(*ic.ReplyToMessageID)) {
-		path := pystr.Strip(m.GroupByNumber(2).String())
+		path := strings.TrimSpace(m.GroupByNumber(2).String())
 		if path == "" || seen[path] {
 			continue
 		}
@@ -598,11 +598,11 @@ func patchAnchors(text string, urls, types []string) string {
 		}
 		kind, filename := pystrPartition(anchor.GroupByNumber(1).String(), ":")
 		var replacement string
-		switch kind = pystr.Strip(kind); {
+		switch kind = strings.TrimSpace(kind); {
 		case kind == "image" && strings.HasPrefix(mime, "image/"):
 			replacement = "[image: " + path + "]"
 		case kind == "file":
-			label := pystr.Strip(filename)
+			label := strings.TrimSpace(filename)
 			if label == "" {
 				label = pypath.Basename(path)
 			}

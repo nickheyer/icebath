@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -38,7 +37,7 @@ func stripMarkdownForSMS(message string) string {
 		}
 		message = out
 	}
-	return pystr.Strip(message)
+	return strings.TrimSpace(message)
 }
 
 // Out of process SMS delivery through the Twilio REST API
@@ -59,7 +58,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	authToken := ""
 	if pyrepr.Truthy(rawToken) {
-		authToken = pystr.Strip(pyrepr.Str(rawToken))
+		authToken = strings.TrimSpace(pyrepr.Str(rawToken))
 	}
 	accountSID, err := gateway.GetScopedSecret(ctx, "TWILIO_ACCOUNT_SID", "", false)
 	if err != nil {

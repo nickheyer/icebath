@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -439,8 +441,8 @@ func TestEveryPkgSkillsSurfaceResolvesDuplicatesLikeSkillView(t *testing.T) {
 	indexRows := func() string {
 		var rows []string
 		for _, ln := range strings.Split(buildIndex(t, s, SkillsPromptOptions{}), "\n") {
-			if strings.HasPrefix(pystr.Lstrip(ln), "- ") {
-				rows = append(rows, pystr.Strip(ln))
+			if strings.HasPrefix(strings.TrimLeftFunc(ln, unicode.IsSpace), "- ") {
+				rows = append(rows, strings.TrimSpace(ln))
 			}
 		}
 		return strings.Join(rows, "|")

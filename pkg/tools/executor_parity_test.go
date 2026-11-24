@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -87,7 +86,7 @@ func TestDelegateTaskIsExemptFromTheSequentialDeadline(t *testing.T) {
 
 func TestImageGenerateParallelWorkerCapCanBeConfiguredLower(t *testing.T) {
 	env := newTestToolEnv(t)
-	env.Config = config.Tree{"image_gen": map[string]any{"max_parallel_requests": 1}}
+	setHomeConfigKey(t, env, "image_gen.max_parallel_requests", 1)
 	if got := maxWorkersForToolBatch(env, []string{"image_generate", "image_generate"}); got != 1 {
 		t.Fatalf("got %d", got)
 	}

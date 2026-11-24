@@ -26,7 +26,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
@@ -35,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -68,17 +68,6 @@ var (
 // Wall clock seconds since the epoch
 func nowSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
-// Stripped non blank members of a comma separated value
-func parseCommaList(value string) []string {
-	out := []string{}
-	for _, v := range strings.Split(value, ",") {
-		if s := pystr.Strip(v); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // Home scope and allowlist name sets already warned about, kept for the process
 var nameAllowlistWarned = struct {
 	sync.Mutex
@@ -87,15 +76,7 @@ var nameAllowlistWarned = struct {
 
 // Warns once per profile and value about allowlist entries that are not numeric contact ids
 func warnNameAllowlistEntries(ctx context.Context) {
-	raw := gateway.DecodeJSONListLiteral(gateway.PlatformGateEnv(ctx, "SIMPLEX_ALLOWED_USERS", ""))
-	var entries []string
-	if list, ok := raw.([]any); ok {
-		for _, e := range list {
-			entries = append(entries, pystr.Strip(pyrepr.Str(e)))
-		}
-	} else {
-		entries = parseCommaList(pyrepr.Str(raw))
-	}
+	entries := settings.SimplexAllowedUsers.Strings(gateway.SettingsContext(ctx))
 	names := []any{}
 	unique := map[string]bool{}
 	for _, u := range entries {
@@ -120,7 +101,7 @@ func warnNameAllowlistEntries(ctx context.Context) {
 	if seen {
 		return
 	}
-	pkgLog().Warn(fmt.Sprintf("SimpleX: SIMPLEX_ALLOWED_USERS entries %s are not numeric contactIds and are ignored "+
+	pkgLog().Warn(fmt.Sprintf("SimpleX: simplex.allowed_users (SIMPLEX_ALLOWED_USERS) entries %s are not numeric contactIds and are ignored "+
 		"(display names are not trusted; see /contacts for IDs)", pyrepr.Repr(names)))
 }
 
@@ -136,17 +117,17 @@ func redactID(contactID any) string {
 	return string(rs[:2]) + "**" + string(rs[len(rs)-2:])
 }
 
-func isImageExt(ext string) bool { return imageExts[pystr.Lower(ext)] }
+func isImageExt(ext string) bool { return imageExts[strings.ToLower(ext)] }
 
-func isAudioExt(ext string) bool { return audioExts[pystr.Lower(ext)] }
+func isAudioExt(ext string) bool { return audioExts[strings.ToLower(ext)] }
 
 // Mime type of an image or audio extension, octet stream for anything else
 func mimeForExt(ext string) string {
 	if isImageExt(ext) {
-		return "image/" + pystr.LstripChars(ext, ".")
+		return "image/" + strings.TrimLeft(ext, ".")
 	}
 	if isAudioExt(ext) {
-		return "audio/" + pystr.LstripChars(ext, ".")
+		return "audio/" + strings.TrimLeft(ext, ".")
 	}
 	return "application/octet-stream"
 }
@@ -255,7 +236,7 @@ func simplexAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Adapter for a platform config reading the daemon URL from extra and the accept and group policy from env then extra
+// Adapter for a platform config with its daemon URL and the accept and group policy of the profile served
 func NewSimplexAdapter(ctx context.Context, config *gateway.PlatformConfig) (*SimplexAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -276,52 +257,14 @@ func NewSimplexAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Si
 	if !ok {
 		return nil, attributeError(wsURL, "rstrip")
 	}
-	a.wsURL = pystr.RstripChars(wsText, "/")
-	envAuto, found, err := gateway.LookupScopedSecret(ctx, "SIMPLEX_AUTO_ACCEPT", false)
-	if err != nil {
-		return nil, err
-	}
-	if found {
-		switch pystr.Lower(pystr.Strip(envAuto)) {
-		case "0", "false", "no", "":
-			a.autoAccept = false
-		default:
-			a.autoAccept = true
-		}
-	} else if v, ok := extra["auto_accept"]; ok {
-		a.autoAccept = pyrepr.Truthy(v)
-	} else {
-		a.autoAccept = true
-	}
-	groupEnv, err := gateway.GetScopedSecret(ctx, "SIMPLEX_GROUP_ALLOWED", "", false)
-	if err != nil {
-		return nil, err
-	}
-	var groupAllowed any = groupEnv
-	if groupEnv == "" {
-		groupAllowed = ""
-		if v, ok := extra["group_allowed"]; ok {
-			groupAllowed = v
-		}
-	}
-	groupText, ok := groupAllowed.(string)
-	if !ok {
-		return nil, attributeError(groupAllowed, "split")
-	}
+	a.wsURL = strings.TrimRight(wsText, "/")
+	sctx := gateway.SettingsContext(ctx)
+	a.autoAccept = settings.SimplexAutoAccept.Get(sctx)
 	a.groupAllowFrom = map[string]bool{}
-	for _, g := range parseCommaList(groupText) {
+	for _, g := range settings.SimplexGroupAllowed.Strings(sctx) {
 		a.groupAllowFrom[g] = true
 	}
-	delayText := "0.8"
-	if v, ok := os.LookupEnv("ICEBATH_SIMPLEX_TEXT_BATCH_DELAY"); ok {
-		delayText = v
-	}
-	delay, err := pyint.ParseFloat(delayText)
-	if pe, ok := err.(*pyint.Error); ok {
-		return nil, &gateway.PyError{Kind: pe.Kind, Msg: pe.Msg}
-	} else if err != nil {
-		return nil, err
-	}
+	delay := settings.SimplexTextBatchDelay.Get(sctx).Seconds()
 	a.SetTextBatchDelays(delay, delay)
 	groups := "disabled"
 	if len(a.groupAllowFrom) > 0 {
@@ -842,7 +785,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 				return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
 					pyrepr.TypeName(filePathValue))}
 			}
-			ext = pystr.Lower(pypath.PathSuffix(filePath))
+			ext = strings.ToLower(pypath.PathSuffix(filePath))
 		}
 		if fileName := fileInfo["fileName"]; ext == "" && pyrepr.Truthy(fileName) {
 			name, isStr := fileName.(string)
@@ -850,7 +793,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 				return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
 					pyrepr.TypeName(fileName))}
 			}
-			ext = pystr.Lower(pypath.PathSuffix(name))
+			ext = strings.ToLower(pypath.PathSuffix(name))
 		}
 		if filePath == "" && isAudioExt(ext) && fileID != nil {
 			if err := unhashable(fileID); err != nil {
@@ -1101,7 +1044,7 @@ func (a *SimplexAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
-		content = pystr.Strip(stripped)
+		content = strings.TrimSpace(stripped)
 	}
 	if content != "" {
 		command, err := sendCmd(chatID, []any{pyjson.ObjectOf("msgContent", pyjson.ObjectOf("type", "text", "text", content))})
@@ -1115,7 +1058,7 @@ func (a *SimplexAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 	for _, path := range mediaPaths {
 		var result gateway.SendResult
 		var err error
-		if _, ext := pypath.Splitext(path); voiceTagExts[pystr.Lower(ext)] {
+		if _, ext := pypath.Splitext(path); voiceTagExts[strings.ToLower(ext)] {
 			result, err = a.SendVoice(ctx, chatID, path, "", "", nil, nil)
 		} else {
 			result, err = a.SendDocument(ctx, chatID, path, "", "", "", nil, nil)
@@ -1225,7 +1168,7 @@ func iterItems(v any) ([]any, error) {
 
 // PNG or JPEG path of an image, converting other formats to PNG, with a 128 pixel JPEG thumbnail data URI
 func prepareImage(filePath string) (string, string, error) {
-	suffix := pystr.Lower(pypath.PathSuffix(filePath))
+	suffix := strings.ToLower(pypath.PathSuffix(filePath))
 	needsPNG := suffix != ".png" && suffix != ".jpg" && suffix != ".jpeg"
 	pngPath := filePath
 	if needsPNG {

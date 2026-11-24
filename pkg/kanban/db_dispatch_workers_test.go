@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -83,7 +82,7 @@ func testInstantiationEpoch() string {
 	}
 	bootID, pid1 := "", ""
 	if b, err := os.ReadFile("/proc/sys/kernel/random/boot_id"); err == nil {
-		bootID = pystr.Strip(string(b))
+		bootID = strings.TrimSpace(string(b))
 	}
 	if b, err := os.ReadFile("/proc/1/stat"); err == nil {
 		if i := strings.LastIndex(string(b), ")"); i >= 0 {

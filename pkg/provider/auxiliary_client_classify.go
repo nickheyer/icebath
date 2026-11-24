@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -245,7 +244,7 @@ func auxWithoutReasoningFields(kwargs map[string]any) map[string]any {
 	if extra, ok := pyjson.AsObject(retry["extra_body"]); ok {
 		remaining := pyjson.NewObject()
 		for _, k := range extra.Keys {
-			if !auxProfileReasoningKeys[pystr.Lower(pystr.Strip(k))] {
+			if !auxProfileReasoningKeys[strings.ToLower(strings.TrimSpace(k))] {
 				remaining.Set(k, extra.Vals[k])
 			}
 		}

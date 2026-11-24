@@ -5,19 +5,18 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Raw text of a clarify reply, or its successful voice transcripts joined by blank lines
 func (r *GatewayRunner) prepareClarifyReplyText(ctx context.Context, event *gateway.MessageEvent) string {
 	if len(pendingEventAudioPaths(event)) == 0 {
-		return pystr.Strip(event.Text)
+		return strings.TrimSpace(event.Text)
 	}
 	empty := ""
 	_, transcripts := r.transcribePendingAudioEventOnce(ctx, event, &empty)
 	kept := []string{}
 	for _, tx := range transcripts {
-		if s := pystr.Strip(tx); s != "" {
+		if s := strings.TrimSpace(tx); s != "" {
 			kept = append(kept, s)
 		}
 	}

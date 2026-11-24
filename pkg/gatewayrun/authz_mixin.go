@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -29,7 +28,7 @@ func authEnv(ctx context.Context, name string) string {
 
 // Whether a scoped gate environment value is a true token
 func envTruthy(ctx context.Context, name string) bool {
-	switch pystr.Lower(authEnv(ctx, name)) {
+	switch strings.ToLower(authEnv(ctx, name)) {
 	case "true", "1", "yes":
 		return true
 	}
@@ -147,7 +146,7 @@ func convertBits(data []int, fromBits, toBits uint, pad bool) []int {
 
 // Hex public key of an npub1 bech32 string, empty when it is not a valid npub
 func npubToHex(npub string) string {
-	npub = pystr.Lower(pystr.Strip(npub))
+	npub = strings.ToLower(strings.TrimSpace(npub))
 	if !strings.HasPrefix(npub, "npub1") {
 		return ""
 	}
@@ -178,7 +177,7 @@ func normalizeNostrAllowEntries(entries map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for entry := range entries {
 		out[entry] = true
-		if strings.HasPrefix(pystr.Lower(entry), "npub1") {
+		if strings.HasPrefix(strings.ToLower(entry), "npub1") {
 			if h := npubToHex(entry); h != "" {
 				out[h] = true
 			}
@@ -282,7 +281,7 @@ func (r *GatewayRunner) adapterPolicy(ctx context.Context, platform gateway.Plat
 	if !pyrepr.Truthy(value) {
 		return ""
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 }
 
 // Whether a per group sender allowlist already gated the message at the adapter
@@ -296,10 +295,10 @@ func (r *GatewayRunner) adapterGroupHasSenderAllowlist(ctx context.Context, plat
 	}
 	groupCfg, ok := groups[chatID].(map[string]any)
 	if !ok {
-		lowered := pystr.Lower(chatID)
+		lowered := strings.ToLower(chatID)
 		groupCfg, ok = nil, false
 		for key, value := range groups {
-			if cfg, isCfg := value.(map[string]any); isCfg && pystr.Lower(key) == lowered {
+			if cfg, isCfg := value.(map[string]any); isCfg && strings.ToLower(key) == lowered {
 				groupCfg, ok = cfg, true
 				break
 			}
@@ -313,10 +312,10 @@ func (r *GatewayRunner) adapterGroupHasSenderAllowlist(ctx context.Context, plat
 	}
 	switch v := groupCfg["allow_from"].(type) {
 	case string:
-		return pystr.Strip(v) != ""
+		return strings.TrimSpace(v) != ""
 	case []any:
 		for _, item := range v {
-			if pystr.Strip(pyrepr.Str(item)) != "" {
+			if strings.TrimSpace(pyrepr.Str(item)) != "" {
 				return true
 			}
 		}
@@ -440,7 +439,7 @@ func (r *GatewayRunner) adapterResolvedAllowlistIDs(ctx context.Context, source 
 	for _, item := range items {
 		switch item.(type) {
 		case string, int, int64:
-			if s := pystr.Strip(pyrepr.Str(item)); s != "" {
+			if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
 				out[s] = true
 			}
 		}
@@ -476,7 +475,7 @@ func (r *GatewayRunner) chatScopedGrant(ctx context.Context, source *gateway.Ses
 			}
 			mode, err := gateway.ExtraOrSecret(ctx, extra, "allow_bots", allowBotsVar, "none", false)
 			if err == nil {
-				switch pystr.Strip(pystr.Lower(pyrepr.Str(mode))) {
+				switch strings.TrimSpace(strings.ToLower(pyrepr.Str(mode))) {
 				case "mentions", "all":
 					return true
 				}
@@ -490,8 +489,8 @@ func (r *GatewayRunner) chatScopedGrant(ctx context.Context, source *gateway.Ses
 func (r *GatewayRunner) legacyTelegramChatGrant(source *gateway.SessionSource, groupUserAllowlist string) bool {
 	legacy := map[string]bool{}
 	for _, value := range strings.Split(groupUserAllowlist, ",") {
-		if strings.HasPrefix(pystr.Strip(value), "-") {
-			legacy[pystr.Strip(value)] = true
+		if strings.HasPrefix(strings.TrimSpace(value), "-") {
+			legacy[strings.TrimSpace(value)] = true
 		}
 	}
 	if len(legacy) == 0 {
@@ -673,7 +672,7 @@ func (r *GatewayRunner) getUnauthorizedDMBehavior(ctx context.Context, platform 
 		dmPolicy := r.adapterPolicy(ctx, platform, "dm", profile)
 		if dmPolicy == "" {
 			if raw := r.configExtra(platform)["dm_policy"]; pyrepr.Truthy(raw) {
-				dmPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(raw)))
+				dmPolicy = strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
 			}
 		}
 		if dmPolicy == "pairing" {
@@ -689,7 +688,7 @@ func (r *GatewayRunner) getUnauthorizedDMBehavior(ctx context.Context, platform 
 		}
 	}
 	for _, key := range allowlistKeys {
-		if key != "" && pystr.Strip(authEnv(ctx, key)) != "" {
+		if key != "" && strings.TrimSpace(authEnv(ctx, key)) != "" {
 			return "ignore"
 		}
 	}

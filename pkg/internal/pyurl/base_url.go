@@ -2,13 +2,11 @@ package pyurl
 
 import (
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Parses a base URL like urlparse with a bare host, port and path read as a netloc, nil when blank
 func parseBaseURL(baseURL string) (*URL, error) {
-	raw := pystr.Strip(baseURL)
+	raw := strings.TrimSpace(baseURL)
 	if raw == "" {
 		return nil, nil
 	}
@@ -27,7 +25,7 @@ func hostnameOf(u *URL) string {
 	if u == nil {
 		return ""
 	}
-	return strings.TrimRight(pystr.Lower(u.Hostname()), ".")
+	return strings.TrimRight(strings.ToLower(u.Hostname()), ".")
 }
 
 // Lowercased path of a base URL without trailing slashes, empty for a bare host, the urlparse ValueError on a bad netloc
@@ -36,5 +34,5 @@ func BaseURLPath(baseURL string) (string, error) {
 	if err != nil || u == nil {
 		return "", err
 	}
-	return strings.TrimRight(pystr.Lower(u.Path), "/"), nil
+	return strings.TrimRight(strings.ToLower(u.Path), "/"), nil
 }

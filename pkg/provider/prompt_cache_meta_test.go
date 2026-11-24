@@ -37,7 +37,7 @@ func TestPromptCacheMetaHostMandatedResponses(t *testing.T) {
 			t.Fatalf("detect spoof %s gave %q", u, got)
 		}
 	}
-	r := &resolver{cfg: map[string]any{}}
+	r := newResolver(pcpHome(t), nil, "", nil)
 	if r.fallbackAPIMode("meta", "https://api.meta.ai/v1", "muse-spark-1.2") != ModeCodexResponses || r.fallbackAPIMode("custom", "https://api.meta.ai/v1", "muse-spark-1.2") != ModeCodexResponses {
 		t.Fatal("fallback mode for meta must be codex_responses")
 	}

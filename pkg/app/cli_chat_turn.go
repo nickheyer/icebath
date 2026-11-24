@@ -28,7 +28,6 @@ var (
 	interruptJoinPoll        = 200 * time.Millisecond
 	interruptJoinPolls       = 50
 	agentJoinTimeout         = 30 * time.Second
-	loadFallbackChainConfig  = config.LoadUserEffectiveFailClosed
 	decideImageInputMode     = tools.DecideImageInputMode
 	buildNativeContentParts  = tools.BuildNativeContentParts
 	cleanupStaleAsyncClients = provider.CleanupStaleAsyncClients
@@ -91,14 +90,9 @@ func (c *CLI) turnModel() string {
 	return c.model
 }
 
-// Adopts fallback_providers edits made while this chat is open, a torn config keeping the last good chain
+// Adopts fallback_providers edits made while this chat is open, a torn config keeping the last good read of the settings
 func (c *CLI) syncFallbackChainWithConfig() {
-	cfg, err := loadFallbackChainConfig(home.ConfigPath(home.Dir(c.ctx)), nil)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("fallback chain sync skipped (keeping current chain): %s", err))
-		return
-	}
-	c.fallbackModel = provider.GetFallbackChain(cfg)
+	c.fallbackModel = provider.FallbackChain(c.ctx)
 	if applier, ok := c.agentRef().(fallbackChainApplier); ok {
 		applier.ApplyFallbackChain(c.fallbackModel)
 	}
@@ -195,7 +189,7 @@ func (c *CLI) chatRouteImages(message any, images []string) any {
 				mode = "text"
 			}
 		}()
-		return decideImageInputMode(c.ctx, c.env, pystr.Strip(c.provider), pystr.Strip(c.model), pystr.Strip(c.requestedProvider))
+		return decideImageInputMode(c.ctx, c.env, strings.TrimSpace(c.provider), strings.TrimSpace(c.model), strings.TrimSpace(c.requestedProvider))
 	}()
 	if mode == "native" {
 		parts, skipped, err := buildNativeContentParts(c.env, text, images, nil)
@@ -551,8 +545,8 @@ func (c *CLI) chatPrintReasoningBox(turn *chatTurn) {
 	label := " " + c.t("cli.chat.reasoning_label", nil) + " "
 	top := dimANSI + "┌─" + label + strings.Repeat("─", max(w-3-pystr.Len(label), 0)) + "┐" + resetANSI
 	bottom := dimANSI + "└" + strings.Repeat("─", max(w-2, 0)) + "┘" + resetANSI
-	lines := pystr.Splitlines(pystr.Strip(reasoning), false)
-	display := pystr.Strip(reasoning)
+	lines := pystr.Splitlines(strings.TrimSpace(reasoning), false)
+	display := strings.TrimSpace(reasoning)
 	if len(lines) > 10 && !c.reasoningFull {
 		display = strings.Join(lines[:10], "\n") + "\n" + dimANSI + "  " + c.t("cli.chat.reasoning_more_lines", map[string]any{"count": len(lines) - 10}) + resetANSI
 	}
@@ -579,7 +573,7 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	c.uiMu.Lock()
 	lastTurnInterrupted := c.lastTurnInterrupted
 	c.uiMu.Unlock()
-	interruptedStreamed := lastTurnInterrupted && pystr.Strip(response) != "" &&
+	interruptedStreamed := lastTurnInterrupted && strings.TrimSpace(response) != "" &&
 		strings.Contains(strings.Join(pystr.SplitWhitespace(streamedText, -1), " "), strings.Join(pystr.SplitWhitespace(response, -1), " "))
 	alreadyStreamed := ((streamStarted && streamBoxOpened) || interruptedStreamed) && !isErrorResponse
 	mode := c.finalResponseMarkdown
@@ -588,7 +582,7 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	}
 	switch {
 	case alreadyStreamed:
-		if text := postStreamTransformOutput(response, result); pystr.Strip(text) != "" {
+		if text := postStreamTransformOutput(response, result); strings.TrimSpace(text) != "" {
 			cprint(text)
 		}
 	case c.modernLayout:

@@ -1,10 +1,11 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -16,9 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -140,18 +141,7 @@ func (a *AIAgent) providerPreferencesForAgent(ctx context.Context) map[string]an
 	perModel := map[string]any{}
 	func() {
 		defer func() { _ = recover() }()
-		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-		if err != nil {
-			return
-		}
-		var models any
-		switch pr := cfg["provider_routing"].(type) {
-		case map[string]any:
-			models = pr["models"]
-		case config.Tree:
-			models = pr["models"]
-		}
-		perModel = config.ResolvePerModelProviderRouting(a.model, models)
+		perModel = config.ResolvePerModelProviderRouting(a.model, settings.ProviderRouting.Get(ctx)["models"])
 	}()
 	for _, k := range keys {
 		if v, ok := perModel[k]; ok {
@@ -343,7 +333,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 	isQwen := a.isQwenPortal()
 	isOpenRouter := a.isOpenRouterURL()
 	host := a.baseURLLower
-	isLMStudio := pystr.Lower(pystr.Strip(a.provider)) == "lmstudio"
+	isLMStudio := strings.ToLower(strings.TrimSpace(a.provider)) == "lmstudio"
 	profileEndpoint := a.reasoningEndpointProfile(ctx) != nil
 	omitTemp, fixedTemp := fixedTemperatureFor(a.model, a.baseURL)
 	prefs := a.providerPreferencesForAgent(ctx)
@@ -399,7 +389,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 		endpointReasoning = a.endpointReasoningPayload(ctx)
 	}
 	for k, v := range map[string]any{
-		"model_lower": pystr.Lower(a.model), "is_openrouter": isOpenRouter,
+		"model_lower": strings.ToLower(a.model), "is_openrouter": isOpenRouter,
 		"is_qwen_portal": isQwen, "is_nvidia_nim": hostMatches(host, "integrate.api.nvidia.com"), "is_kimi": isKimi,
 		"is_tokenhub": hostMatches(host, "tokenhub.tencentmaas.com"), "is_custom_provider": a.provider == "custom",
 		"qwen_prepare_fn": qwenPrepare, "qwen_prepare_inplace_fn": qwenPrepareInplace, "fixed_temperature": fixedTemp,

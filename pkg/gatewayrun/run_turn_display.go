@@ -16,7 +16,9 @@ import (
 
 // Per turn display, progress, status and streaming surface settings of one agent run
 type runAgentDisplay struct {
-	userConfig                      map[string]any
+	userConfig map[string]any
+	// The session's frozen launch config when a launch policy governs the turn, nil for a turn that reads config.yaml
+	launchConfig                    map[string]any
 	platformKey                     string
 	enabledToolsets                 []string
 	disabledToolsets                []string
@@ -57,6 +59,9 @@ type replyInThreadAdapter interface {
 
 // Context resolving display settings for the turn's chat platform
 func (d *runAgentDisplay) settingsCtx(ctx context.Context) context.Context {
+	if d.launchConfig != nil {
+		ctx = settings.WithFrozen(ctx, d.launchConfig)
+	}
 	return settings.WithPlatform(ctx, d.platformKey)
 }
 
@@ -99,7 +104,13 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 		}
 	}
 	adapter, _ := r.deliveryAdapterFor(ctx, source)
-	dctx := settings.WithPlatform(ctx, platformKey)
+	var launchConfig map[string]any
+	sctx := ctx
+	if policy != nil {
+		launchConfig = userConfig
+		sctx = settings.WithFrozen(ctx, launchConfig)
+	}
+	dctx := settings.WithPlatform(sctx, platformKey)
 	tools.SetToolPreviewMaxLen(max(0, settings.DisplayToolPreviewLength.Get(dctx)))
 	tools.SetFriendlyToolLabels(settings.DisplayFriendlyToolLabels.Get(dctx))
 	progress, err := settings.Resolve(dctx, settings.ToolProgress.Key)
@@ -133,8 +144,8 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 	}
 	logModeEnabled := progressMode == "log" && !isWebhook
 	mattermostOnly := []gateway.Platform{gateway.PlatformMattermost}
-	interimEnabled := displaySwitchOn(ctx, settings.DisplayInterimAssistantMessages, source.Platform, platformKey, mattermostOnly...)
-	thinkingEnabled := displaySwitchOn(ctx, settings.DisplayThinkingProgress, source.Platform, platformKey, mattermostOnly...)
+	interimEnabled := displaySwitchOn(sctx, settings.DisplayInterimAssistantMessages, source.Platform, platformKey, mattermostOnly...)
+	thinkingEnabled := displaySwitchOn(sctx, settings.DisplayThinkingProgress, source.Platform, platformKey, mattermostOnly...)
 	nativeCards := false
 	if cards, ok := adapter.(nativeTaskCardsAdapter); ok && adapter != nil && source.Platform == gateway.PlatformSlack && !(explicit && progressMode == "off") {
 		enabled, err := cards.NativeTaskCardsEnabled()
@@ -145,7 +156,7 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 		}
 	}
 	disp := &runAgentDisplay{
-		userConfig: userConfig, platformKey: platformKey, enabledToolsets: enabledToolsets, disabledToolsets: disabledToolsets,
+		userConfig: userConfig, launchConfig: launchConfig, platformKey: platformKey, enabledToolsets: enabledToolsets, disabledToolsets: disabledToolsets,
 		progressMode: progressMode, progressGrouping: progressGrouping,
 		toolProgressEnabled: toolProgressEnabled, liveStatusMode: liveStatusMode,
 		liveStatusAdapter: liveStatusAdapter, logModeEnabled: logModeEnabled,

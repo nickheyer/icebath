@@ -15,7 +15,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -51,7 +50,7 @@ func owningInstallBinary() string {
 func owningSamePath(a, b string) bool {
 	a, b = pypath.PathStr(a), pypath.PathStr(b)
 	if runtime.GOOS == "windows" {
-		return pystr.Lower(a) == pystr.Lower(b)
+		return strings.ToLower(a) == strings.ToLower(b)
 	}
 	return a == b
 }
@@ -112,7 +111,7 @@ func pmEnvironmentOwner(venv string) (string, error) {
 	if !utf8.Valid(data) {
 		return "", errors.New("the recorded project root is not valid UTF-8")
 	}
-	owner := pypath.PathStr(pystr.Strip(string(data)))
+	owner := pypath.PathStr(strings.TrimSpace(string(data)))
 	if pm.InstallKey(owner) != pypath.PathName(state) || !isRegular(pypath.PathJoin(owner, owningInstallBinary())) {
 		return "", nil
 	}

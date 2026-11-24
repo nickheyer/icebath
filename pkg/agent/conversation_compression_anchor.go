@@ -1,12 +1,13 @@
 package agent
 
 import (
+	"unicode"
+
 	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -54,7 +55,7 @@ func stripStaleTodoSnapshot(content any) any {
 		if idx == -1 {
 			return c
 		}
-		return pystr.Rstrip(c[:idx])
+		return strings.TrimRightFunc(c[:idx], unicode.IsSpace)
 	case []any:
 		cleaned := []any{}
 		for _, part := range c {
@@ -70,7 +71,7 @@ func stripStaleTodoSnapshot(content any) any {
 			}
 			if idx == -1 {
 				cleaned = append(cleaned, part)
-			} else if stripped := pystr.Rstrip(text[:idx]); stripped != "" {
+			} else if stripped := strings.TrimRightFunc(text[:idx], unicode.IsSpace); stripped != "" {
 				clone := map[string]any{}
 				for k, v := range part.(map[string]any) {
 					clone[k] = v
@@ -89,7 +90,7 @@ func todoSnapshotIsOnlyContent(content, stripped any) bool {
 	_, ok1 := content.(string)
 	ss, ok2 := stripped.(string)
 	if ok1 && ok2 {
-		return pystr.Strip(ss) == ""
+		return strings.TrimSpace(ss) == ""
 	}
 	_, ok1 = content.([]any)
 	sl, ok2 := stripped.([]any)
@@ -150,7 +151,7 @@ func mergeAnchorIntoUserMessage(target, anchor map[string]any) {
 		}
 		replaceMessageContent(target, append(parts(anchorContent), parts(targetContent)...))
 	} else {
-		replaceMessageContent(target, pystr.Strip(strOrEmpty(anchorContent)+"\n\n"+strOrEmpty(targetContent)))
+		replaceMessageContent(target, strings.TrimSpace(strOrEmpty(anchorContent)+"\n\n"+strOrEmpty(targetContent)))
 	}
 	for _, flag := range syntheticUserFlags {
 		delete(target, flag)

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // CodingToolset is the toolset the coding posture collapses to under focus
@@ -88,8 +90,6 @@ const noTodoSentence = "- Reference code as `path:line` instead of pasting whole
 
 var nonCodingSkillCategories = []string{"apple", "communication", "cooking", "creative", "email", "finance", "gaming", "gifs", "health", "media", "music", "note-taking", "productivity", "shopping", "smart-home", "social-media", "travel", "yuanbao"}
 
-var codingModeAliases = map[string]string{"focus": "focus", "strict": "focus", "lean": "focus", "on": "on", "true": "on", "yes": "on", "1": "on", "always": "on", "off": "off", "false": "off", "no": "off", "0": "off", "never": "off"}
-
 // ContextProfile is a named operating posture
 type ContextProfile struct {
 	Name                   string
@@ -130,16 +130,9 @@ func editFormatLine(family string) string {
 	return ""
 }
 
-// Normalized agent.coding_context mode
-func codingMode(env *Env) string {
-	raw := ""
-	if env != nil {
-		raw = env.Config.String("agent.coding_context", "auto")
-	}
-	if m, ok := codingModeAliases[strings.ToLower(strings.TrimSpace(raw))]; ok {
-		return m
-	}
-	return "auto"
+// Coding mode in effect for ctx and the env's profile: auto, focus, on or off
+func codingMode(ctx context.Context, env *Env) string {
+	return settings.AgentCodingContext.Get(envHomeCtx(ctx, env))
 }
 
 func resolveCodingCwd(env *Env, cwd string) string {
@@ -276,13 +269,9 @@ func detectProfile(mode, platform, cwd string) ContextProfile {
 }
 
 // Names of MCP servers the user enabled, kept in the coding posture
-func enabledMCPServers(env *Env) []string {
-	portable := portableMCPServerNames(WithEnvHome(context.Background(), env))
-	cfg := env.Config
-	if raw, err := readRawConfig(env); err == nil {
-		cfg = raw
-	}
-	names := EnabledMCPServerNames(cfg, portable)
+func enabledMCPServers(ctx context.Context, env *Env) []string {
+	ctx = envHomeCtx(ctx, env)
+	names := enabledServerNames(settings.McpServers.Get(ctx), portableMCPServerNames(ctx))
 	out := make([]string, 0, len(names))
 	for n := range names {
 		out = append(out, n)
@@ -291,14 +280,15 @@ func enabledMCPServers(env *Env) []string {
 	return out
 }
 
-func postureToolsets(env *Env) []string {
-	return append([]string{CodingToolset}, enabledMCPServers(env)...)
+// Toolsets of the coding posture: the coding toolset and every enabled MCP server
+func postureToolsets(ctx context.Context, env *Env) []string {
+	return append([]string{CodingToolset}, enabledMCPServers(ctx, env)...)
 }
 
 // FocusToolsets returns the coding posture toolsets under focus mode, nil otherwise
-func FocusToolsets(env *Env) []string {
-	if codingMode(env) == "focus" {
-		return postureToolsets(env)
+func FocusToolsets(ctx context.Context, env *Env) []string {
+	if codingMode(ctx, env) == "focus" {
+		return postureToolsets(ctx, env)
 	}
 	return nil
 }
@@ -317,11 +307,11 @@ type RuntimeMode struct {
 func (m RuntimeMode) IsCoding() bool { return m.Profile.Name == CodingProfile.Name }
 
 // ToolsetSelection returns the focus toolset list or nil to keep the platform default
-func (m RuntimeMode) ToolsetSelection(env *Env) []string {
+func (m RuntimeMode) ToolsetSelection(ctx context.Context, env *Env) []string {
 	if m.ConfigMode != "focus" || m.Profile.Toolset == "" {
 		return nil
 	}
-	return postureToolsets(env)
+	return postureToolsets(ctx, env)
 }
 
 // SystemPromptParts returns the prefix, workspace, and trailing posture blocks in order
@@ -369,25 +359,13 @@ func (m RuntimeMode) CompactSkillCategories() map[string]bool {
 	return out
 }
 
-// ResolveRuntimeMode resolves the operating posture once for a session
-func ResolveRuntimeMode(env *Env, platform, cwd, model string) RuntimeMode {
+// ResolveRuntimeMode resolves the operating posture once for a session, its settings read for ctx
+func ResolveRuntimeMode(ctx context.Context, env *Env, platform, cwd, model string) RuntimeMode {
 	resolvedCwd := resolveCodingCwd(env, cwd)
-	mode := codingMode(env)
-	var items []string
-	if env != nil {
-		switch raw := env.Config.Get("agent.coding_instructions").(type) {
-		case []any:
-			for _, it := range raw {
-				items = append(items, strings.TrimSpace(asStr(it)))
-			}
-		case nil:
-		default:
-			items = append(items, strings.TrimSpace(asStr(raw)))
-		}
-	}
+	mode := codingMode(ctx, env)
 	var kept []string
-	for _, it := range items {
-		if it != "" {
+	for _, it := range settings.CodingInstructions.Strings(envHomeCtx(ctx, env)) {
+		if it = strings.TrimSpace(it); it != "" {
 			kept = append(kept, it)
 		}
 	}
@@ -402,31 +380,31 @@ func ResolveRuntimeMode(env *Env, platform, cwd, model string) RuntimeMode {
 }
 
 // IsCodingContext reports whether the coding posture applies right now
-func IsCodingContext(env *Env, platform, cwd string) bool {
-	return ResolveRuntimeMode(env, platform, cwd, "").IsCoding()
+func IsCodingContext(ctx context.Context, env *Env, platform, cwd string) bool {
+	return ResolveRuntimeMode(ctx, env, platform, cwd, "").IsCoding()
 }
 
 // InFocusWorkspace reports whether the cwd selects the coding toolsets under focus
-func InFocusWorkspace(env *Env, platform, cwd string) bool {
-	return codingMode(env) == "focus" && IsCodingContext(env, platform, cwd)
+func InFocusWorkspace(ctx context.Context, env *Env, platform, cwd string) bool {
+	return codingMode(ctx, env) == "focus" && IsCodingContext(ctx, env, platform, cwd)
 }
 
 // CodingSelection returns the focus toolset selection or nil
-func CodingSelection(env *Env, platform, cwd string) []string {
-	if codingMode(env) != "focus" {
+func CodingSelection(ctx context.Context, env *Env, platform, cwd string) []string {
+	if codingMode(ctx, env) != "focus" {
 		return nil
 	}
-	return ResolveRuntimeMode(env, platform, cwd, "").ToolsetSelection(env)
+	return ResolveRuntimeMode(ctx, env, platform, cwd, "").ToolsetSelection(ctx, env)
 }
 
 // CodingSystemPromptParts returns the coding prefix, workspace snapshot, and trailing guidance
-func CodingSystemPromptParts(env *Env, platform, cwd, model string, validToolNames map[string]bool, workspaceBlock *string) ([]string, []string, []string) {
-	return ResolveRuntimeMode(env, platform, cwd, model).SystemPromptParts(validToolNames, workspaceBlock)
+func CodingSystemPromptParts(ctx context.Context, env *Env, platform, cwd, model string, validToolNames map[string]bool, workspaceBlock *string) ([]string, []string, []string) {
+	return ResolveRuntimeMode(ctx, env, platform, cwd, model).SystemPromptParts(validToolNames, workspaceBlock)
 }
 
 // CodingCompactSkillCategories lists the categories the active posture demotes
-func CodingCompactSkillCategories(env *Env, platform, cwd string) map[string]bool {
-	return ResolveRuntimeMode(env, platform, cwd, "").CompactSkillCategories()
+func CodingCompactSkillCategories(ctx context.Context, env *Env, platform, cwd string) map[string]bool {
+	return ResolveRuntimeMode(ctx, env, platform, cwd, "").CompactSkillCategories()
 }
 
 func gitIn(cwd string, args ...string) string {

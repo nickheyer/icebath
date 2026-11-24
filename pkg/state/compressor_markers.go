@@ -1,10 +1,11 @@
 package state
 
 import (
+	"unicode"
+
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Every shipped compaction handoff prefix newest first, byte pinned so stale directives stay recognisable on resume
@@ -68,9 +69,9 @@ func StartsWithSummaryPrefix(text string) bool {
 
 // Classifies content as a standalone handoff, a merged tail plus summary, or empty when it is no summary
 func ClassifySummaryContent(content any) string {
-	text := pystr.Lstrip(ContentTextForContains(content))
+	text := strings.TrimLeftFunc(ContentTextForContains(content), unicode.IsSpace)
 	if i := strings.Index(text, MergedSummaryDelimiter); i >= 0 {
-		if StartsWithSummaryPrefix(pystr.Lstrip(text[i+len(MergedSummaryDelimiter):])) {
+		if StartsWithSummaryPrefix(strings.TrimLeftFunc(text[i+len(MergedSummaryDelimiter):], unicode.IsSpace)) {
 			return "merged"
 		}
 		return ""

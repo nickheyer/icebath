@@ -6,82 +6,38 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-var configWriteMu sync.Mutex
-
-// Effective configuration of a home with defaults merged and secrets expanded
-func loadConfig(h string) (map[string]any, error) {
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any(tree), nil
+// Names a plugin list setting holds for the profile of ctx, as a set
+func nameSet(ctx context.Context, list *settings.List) map[string]bool {
+	return toSet(list.Strings(ctx))
 }
 
-// Effective configuration of a home, empty on any read failure
-func loadConfigOrEmpty(h string) map[string]any {
-	cfg, err := loadConfig(h)
-	if err != nil {
-		return map[string]any{}
-	}
-	return cfg
-}
-
-// Raw user configuration document of a home
-func readUserConfig(h string) (map[string]any, error) {
-	return config.ReadUser(h)
-}
-
-// Writes the raw user configuration document of a home
-func saveUserConfig(ctx context.Context, h string, doc map[string]any) error {
-	return config.SaveUser(ctx, h, doc)
-}
-
-// Rewrites the user config of a home under one process wide lock
-func updateUserConfig(ctx context.Context, h string, mutate func(doc map[string]any) error) error {
-	configWriteMu.Lock()
-	defer configWriteMu.Unlock()
-	doc, err := readUserConfig(h)
-	if err != nil {
-		return err
-	}
-	if err := mutate(doc); err != nil {
-		return err
-	}
-	return saveUserConfig(ctx, h, doc)
-}
-
-// The plugins section of a config document, empty when absent
-func pluginsSection(cfg map[string]any) map[string]any {
-	if m := asMap(cfg["plugins"]); m != nil {
-		return m
+// The plugins.entries block of one plugin for the profile of ctx, empty when absent or not a mapping
+func pluginEntry(ctx context.Context, pluginID string) map[string]any {
+	if e := asMap(settings.PluginsEntries.Get(ctx)[pluginID]); e != nil {
+		return e
 	}
 	return map[string]any{}
 }
 
-// Set of strings in a plugins list key, nil when the key is absent or malformed
-func pluginNameList(cfg map[string]any, key string) ([]string, bool) {
-	raw, ok := pluginsSection(cfg)[key]
-	if !ok {
-		return nil, false
+// A plugin's own free-form block at a config key for the profile of ctx, the map setting its manifest registered; empty when none is registered there
+func pluginBlock(ctx context.Context, key string) map[string]any {
+	if block, ok := settings.FindKey(key).(*settings.Map); ok {
+		return block.Get(ctx)
 	}
-	items, ok := raw.([]any)
-	if !ok {
-		return nil, false
-	}
-	out := make([]string, 0, len(items))
-	for _, it := range items {
-		if s, ok := it.(string); ok {
-			out = append(out, s)
-		}
-	}
-	return out, true
+	return map[string]any{}
+}
+
+// Writes one field of a plugin's plugins.entries block into the profile of ctx through the settings writer, a dotted field nesting
+func setPluginEntryField(ctx context.Context, pluginID, field string, value any) error {
+	_, err := settings.Set(ctx, settings.PluginsEntries.EntryKey(pluginID)+"."+field, value, settings.Global)
+	return err
 }
 
 // Set form of a string slice
@@ -136,7 +92,7 @@ func pluginsDir(h string) (string, error) {
 
 // Bundled plugins directory, ICEBATH_BUNDLED_PLUGINS first, else the plugins tree beside the running install
 func GetBundledPluginsDir() string {
-	if override := os.Getenv("ICEBATH_BUNDLED_PLUGINS"); override != "" {
+	if override := bundledOverrideDir(); override != "" {
 		return override
 	}
 	return filepath.Join(pm.RepoRoot(), "plugins")

@@ -370,12 +370,7 @@ func (c *geminiNativeClient) credentials(ctx context.Context) (string, map[strin
 	c.mu.Unlock()
 	if src == nil || base == "" {
 		h := home.Dir(ctx)
-		secrets := config.NewSecrets(h)
-		tree, err := config.Load(h, secrets.Lookup())
-		if err != nil {
-			tree = config.Defaults()
-		}
-		tokenSrc, vertexBase, ok := vertexRuntimeConfig(ctx, map[string]any(tree), secrets, h)
+		tokenSrc, vertexBase, ok := vertexRuntimeConfig(ctx, config.NewSecrets(h), h)
 		if !ok || tokenSrc == nil || (base == "" && vertexBase == "") {
 			return "", nil, &APIError{Provider: c.route.Provider, Model: c.route.Model, StatusCode: 401, Kind: ErrAuth, Code: "vertex_credentials_missing",
 				Message: geminiVertexCredentialsError, Err: errors.New(geminiVertexCredentialsError)}

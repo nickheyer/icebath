@@ -49,6 +49,9 @@ func writeFeedManifest(t *testing.T, plugin, version, feedURL string) string {
 
 func TestCadenceNeverAppliesAnUnparseableVersion(t *testing.T) {
 	ctx, h, _ := cadenceHome(t)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  auto_apply: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv(pm.EnvRuntimeDir, filepath.Join(filepath.Dir(h), "tools"))
 	plugins := filepath.Join(h, "plugins")
 	plugin, metadata, feedURL := installedFeedPlugin(t, plugins)
@@ -64,12 +67,6 @@ func TestCadenceNeverAppliesAnUnparseableVersion(t *testing.T) {
 					t.Fatal("feed version failure is not a Git update")
 					return "", nil
 				}}), nil
-		},
-		ConfigGet: func(section, key string) (any, error) {
-			if key == "auto_apply" {
-				return true, nil
-			}
-			return 24, nil
 		},
 		ApplyUpdate: func(_ context.Context, name string) error { applied = append(applied, name); return nil },
 	})

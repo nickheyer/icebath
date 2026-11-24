@@ -1,6 +1,8 @@
 package slack
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -327,7 +329,7 @@ func (a *SlackAdapter) sendSlashEphemeral(ctx context.Context, sc *slashContext,
 	if len(chunks) > 5 {
 		dropped := len(chunks) - 5
 		chunks = chunks[:5]
-		chunks[4] = pystr.Rstrip(chunks[4]) + i18n.T(ctx, "platform.slack.slash.reply_truncated", "", map[string]any{"count": strconv.Itoa(dropped)})
+		chunks[4] = strings.TrimRightFunc(chunks[4], unicode.IsSpace) + i18n.T(ctx, "platform.slack.slash.reply_truncated", "", map[string]any{"count": strconv.Itoa(dropped)})
 	}
 	client := trustEnvHTTPClient(ctx, 10*time.Second)
 	for idx, chunk := range chunks {
@@ -384,7 +386,7 @@ func (a *SlackAdapter) warnIfMissingGroupDMScopes(headers http.Header, teamName 
 	}
 	granted := map[string]bool{}
 	for _, s := range strings.Split(raw, ",") {
-		if s = pystr.Strip(s); s != "" {
+		if s = strings.TrimSpace(s); s != "" {
 			granted[s] = true
 		}
 	}
@@ -781,7 +783,7 @@ func (a *SlackAdapter) Send(ctx context.Context, chatID, content, replyTo string
 		return *streamResult, nil
 	}
 	formatted := a.FormatMessage(content)
-	if pystr.Strip(formatted) == "" {
+	if strings.TrimSpace(formatted) == "" {
 		a.clearThreadStatusQuietly(ctx, chatID, metadata)
 		return gateway.SendResult{Success: true}, nil
 	}
@@ -1091,7 +1093,7 @@ func (a *SlackAdapter) startStream(ctx context.Context, client *webClient, key t
 		kwargs["recipient_team_id"] = teamID
 	}
 	tail := pystr.Slice(text, base, pystr.Len(text))
-	if pystr.Strip(tail) != "" {
+	if strings.TrimSpace(tail) != "" {
 		kwargs["markdown_text"] = tail
 	}
 	response, err := client.call(ctx, "chat.startStream", kwargs)
@@ -1142,7 +1144,7 @@ func (a *SlackAdapter) streamKey(chatID string, metadata map[string]any) *thread
 func (a *SlackAdapter) sealStream(ctx context.Context, key threadKey, stream *draftStream, delta string) bool {
 	teamID, chatID := key[0], key[1]
 	kwargs := map[string]any{"channel": chatID, "ts": stream.ts}
-	if pystr.Strip(delta) != "" {
+	if strings.TrimSpace(delta) != "" {
 		kwargs["markdown_text"] = delta
 	}
 	client := a.getClient(chatID, teamID)
@@ -1180,7 +1182,7 @@ func (a *SlackAdapter) tryFinalizeStream(ctx context.Context, chatID, content st
 	sent := stream.sent
 	kind, delta := streamRelation(sent, text)
 	if kind == "unrelated" {
-		if !(pyrepr.Truthy(md["notify"]) && pystr.Strip(text) != "" && pystr.Strip(sent) != "" && mrkdwnInsensitive(text) == mrkdwnInsensitive(sent)) {
+		if !(pyrepr.Truthy(md["notify"]) && strings.TrimSpace(text) != "" && strings.TrimSpace(sent) != "" && mrkdwnInsensitive(text) == mrkdwnInsensitive(sent)) {
 			return nil
 		}
 		return a.commitStream(ctx, *key, stream, text, metadata, "", true)
@@ -1198,7 +1200,7 @@ func (a *SlackAdapter) commitStream(ctx context.Context, key threadKey, stream *
 	chatID, ts := key[1], stream.ts
 	a.dropActiveStream(key)
 	sealed := a.sealStream(ctx, key, stream, delta)
-	if !sealed && pystr.Strip(delta) == "" {
+	if !sealed && strings.TrimSpace(delta) == "" {
 		sealed = a.sealStream(ctx, key, stream, "")
 	}
 	var committed bool

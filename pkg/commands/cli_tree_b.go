@@ -102,12 +102,12 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 
 	checkpoints := c.newCmd(root, "checkpoints", "Inspect / prune / clear ~/.icebath/checkpoints/",
 		"Manage the filesystem checkpoint store — the shadow git repo icebath uses to snapshot working directories before write_file/patch/terminal calls. Lets you see how much space checkpoints occupy, force a prune, or wipe the base.")
-	checkpoints.RunE = func(cmd *cobra.Command, args []string) error { return c.dispatch("checkpoints status", cmd, args) }
+	c.runSelf(checkpoints, func(cmd *cobra.Command, args []string) error { return c.dispatch("checkpoints status", cmd, args) })
 	cpStatus := c.newCmd(checkpoints, "status", "Show total size, project count, and per-project breakdown", "")
 	inf(cpStatus, "limit", "", 20, "Max projects to list (default 20)")
 	cpList := c.newCmd(checkpoints, "list", "Alias for 'status'", "")
 	inf(cpList, "limit", "", 20, "Max projects to list (default 20)")
-	cpList.RunE = func(cmd *cobra.Command, args []string) error { return c.dispatch("checkpoints status", cmd, args) }
+	c.runSelf(cpList, func(cmd *cobra.Command, args []string) error { return c.dispatch("checkpoints status", cmd, args) })
 	cpPrune := c.newCmd(checkpoints, "prune", "Delete orphan/stale checkpoints and GC the store", "")
 	inf(cpPrune, "retention-days", "", 7, "Drop projects whose last_touch is older than N days (default 7)")
 	inf(cpPrune, "max-size-mb", "", 500, "After orphan/stale prune, drop oldest commits per project until total size <= this (default 500)")

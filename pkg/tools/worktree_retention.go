@@ -243,7 +243,7 @@ func retentionHash(wt string, env map[string]string, data []byte, rel string, ra
 	if err != nil || r.Returncode != 0 {
 		return ""
 	}
-	return pystr.Strip(strings.ToValidUTF8(string(r.Stdout), "�"))
+	return strings.TrimSpace(strings.ToValidUTF8(string(r.Stdout), "�"))
 }
 
 // Per worktree refs holding commits no branch, tag, remote or archive reaches
@@ -268,7 +268,7 @@ func PrivateWorktreeRefs(wtPath string, env map[string]string) ([]string, error)
 		if err != nil {
 			return nil, err
 		}
-		if pystr.Strip(reach) != "" {
+		if strings.TrimSpace(reach) != "" {
 			private = append(private, name)
 		}
 	}

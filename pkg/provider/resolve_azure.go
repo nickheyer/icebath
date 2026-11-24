@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Default Entra scope for Azure AI Foundry
@@ -22,7 +22,7 @@ const ScopeAIAzureDefault = "https://ai.azure.com/.default"
 func azureEntraCredentialsIn(ctx context.Context, cfgEntra map[string]any) (func(context.Context) (string, error), error) {
 	scope := ""
 	if raw := cfgEntra["scope"]; pyrepr.Truthy(raw) {
-		scope = pystr.Strip(pyrepr.Str(raw))
+		scope = strings.TrimSpace(pyrepr.Str(raw))
 	}
 	if scope == "" {
 		scope = ScopeAIAzureDefault
@@ -50,7 +50,7 @@ func (r *resolver) azureFoundryAPIKey(explicitAPIKey string) (string, error) {
 }
 
 // Azure Foundry from model.base_url and model.api_mode or explicit overrides with an API key or Entra token
-func (r *resolver) resolveAzureFoundryRuntime(requestedProvider string, modelCfg map[string]any, explicitAPIKey string, forwardedToken func(context.Context) (string, error), explicitBaseURL, targetModel string) (*Runtime, error) {
+func (r *resolver) resolveAzureFoundryRuntime(requestedProvider string, explicitAPIKey string, forwardedToken func(context.Context) (string, error), explicitBaseURL, targetModel string) (*Runtime, error) {
 	explicitAPIKey = strings.TrimSpace(explicitAPIKey)
 	if forwardedToken != nil {
 		explicitAPIKey = ""
@@ -58,21 +58,19 @@ func (r *resolver) resolveAzureFoundryRuntime(requestedProvider string, modelCfg
 	explicitBaseURLClean := strings.TrimRight(strings.TrimSpace(explicitBaseURL), "/")
 	cfgBaseURL, cfgAPIMode, cfgAuthMode := "", ModeChatCompletions, "api_key"
 	cfgEntra := map[string]any{}
-	if cfgProviderOf(modelCfg) == "azure-foundry" {
-		cfgBaseURL = configBaseURLForProvider(modelCfg, "azure-foundry")
-		if parsed := r.parseAPIMode(modelCfg["api_mode"]); parsed != "" {
+	if r.cfgProvider() == "azure-foundry" {
+		cfgBaseURL = configBaseURLForProvider(r.hookCtx(), "azure-foundry")
+		if parsed := r.cfgAPIMode(); parsed != "" {
 			cfgAPIMode = parsed
 		}
-		if mode := strings.ToLower(strings.TrimSpace(cfgString(modelCfg["auth_mode"]))); mode != "" {
+		if mode := strings.ToLower(strings.TrimSpace(settings.ModelAuthMode.Get(r.hookCtx()))); mode != "" {
 			cfgAuthMode = mode
 		}
-		if entra, ok := modelCfg["entra"].(map[string]any); ok {
-			cfgEntra = entra
-		}
+		cfgEntra = settings.ModelEntra.Get(r.hookCtx())
 	}
 	model := strings.TrimSpace(targetModel)
 	if model == "" {
-		model = strings.TrimSpace(cfgString(modelCfg["default"]))
+		model = r.cfgModel()
 	}
 	cfgAPIMode = azureInferredAPIMode(model, cfgAPIMode)
 	envBaseURL := strings.TrimRight(strings.TrimSpace(r.secret("AZURE_FOUNDRY_BASE_URL")), "/")

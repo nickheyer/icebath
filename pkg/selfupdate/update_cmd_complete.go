@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
@@ -110,7 +109,8 @@ func cmdUpdateCheck(ctx context.Context, w io.Writer, branch string, branchExpli
 		return &pm.SystemExit{Code: 1}
 	}
 	gitCmd := baseGitCmd()
-	if err := mapSSLCertFileForGit(ctx, gitCmd); err != nil {
+	gitCmd, err = mapSSLCertFileForGit(ctx, gitCmd)
+	if err != nil {
 		return err
 	}
 	clearGitDebris(ctx, w, root)
@@ -174,7 +174,7 @@ func isShallowCheckout(ctx context.Context, gitCmd []string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pystr.Strip(result.Stdout) == "true", nil
+	return strings.TrimSpace(result.Stdout) == "true", nil
 }
 
 // The shas rev-parse prints for base and the target ref, empty when unresolvable
@@ -185,7 +185,7 @@ func tipShas(ctx context.Context, gitCmd []string, targetRef, base string) (stri
 		if err != nil {
 			return "", "", err
 		}
-		shas[i] = pystr.Strip(result.Stdout)
+		shas[i] = strings.TrimSpace(result.Stdout)
 	}
 	return shas[0], shas[1], nil
 }

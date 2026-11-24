@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -31,8 +30,8 @@ func (a *app) onceSessionStands(tries int, tell func()) tea.Cmd {
 	return nil
 }
 
-// Environment variables the light or dark detection reads, in the order it weighs them
-var themeDetectionInputs = []string{"ICEBATH_TUI_BACKGROUND", "ICEBATH_TUI_THEME", "ICEBATH_TUI_LIGHT", "COLORFGBG", "TERM_PROGRAM"}
+// Inputs the light or dark detection reads, the theme pin and the terminal's variables
+var themeDetectionInputs = []string{"ICEBATH_TUI_BACKGROUND", "ICEBATH_TUI_THEME", "COLORFGBG", "TERM_PROGRAM"}
 
 // Prints where a memory dump went, its heap profile and its facts file, or why it failed
 func (a *app) showHeapDump(dump heapDumpResult) {
@@ -65,14 +64,10 @@ func (a *app) themeInfoRows() [][2]string {
 		{tr(txt.SlashCmdDebugThemeInfoOsc10Foreground), answer(themes.reportedFg)},
 	}
 	for _, name := range themeDetectionInputs {
-		value, set := os.LookupEnv(name)
-		if !set {
-			value = unset
-		}
-		rows = append(rows, [2]string{name, value})
+		rows = append(rows, [2]string{name, orUnset(a.store.themeEnv(name))})
 	}
 	mode := tr(txt.SlashCmdDebugThemeInfoDark)
-	if detectLightMode(os.Getenv) {
+	if detectLightMode(a.store.themeEnv) {
 		mode = tr(txt.SlashCmdDebugThemeInfoLight)
 	}
 	c := t.Color

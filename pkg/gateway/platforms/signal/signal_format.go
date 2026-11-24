@@ -115,7 +115,7 @@ func fenceUnfencedTables(text string) string {
 	for i := 0; i < n; {
 		if strings.Contains(lines[i], "|") && i+1 < n && tools.IsTableDivider(lines[i+1]) {
 			j := i + 2
-			for j < n && strings.Contains(lines[j], "|") && pystr.Strip(lines[j]) != "" {
+			for j < n && strings.Contains(lines[j], "|") && strings.TrimSpace(lines[j]) != "" {
 				j++
 			}
 			out = append(out, "```", tools.RealignMarkdownTables(strings.Join(lines[i:j], "\n"), &tableWidth), "```")
@@ -134,7 +134,7 @@ func markdownToSignal(text string) (string, []string) {
 	if err != nil {
 		panic(err)
 	}
-	runes := pystr.Runes(fenceTables(normalizeBulletMarkers(pystr.Strip(collapsed))))
+	runes := pystr.Runes(fenceTables(normalizeBulletMarkers(strings.TrimSpace(collapsed))))
 	var styles []styleRange
 	for {
 		m, _ := codeBlockRE.FindRunesMatch(runes)

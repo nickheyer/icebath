@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func xaiP() *xaiWebProvider { return webProvider(nil, "xai").(*xaiWebProvider) }
@@ -71,7 +72,7 @@ func TestXAIProviderSearchJSONPath(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 	tools := c.body["tools"].([]any)
-	if c.body["model"] != xaiWebDefaultModel || tools[0].(map[string]any)["type"] != "web_search" || tools[0].(map[string]any)["filters"] != nil || c.body["include"].([]any)[0] != "no_inline_citations" {
+	if c.body["model"] != settings.WebXaiModel.Default || tools[0].(map[string]any)["type"] != "web_search" || tools[0].(map[string]any)["filters"] != nil || c.body["include"].([]any)[0] != "no_inline_citations" {
 		t.Fatalf("%v", c.body)
 	}
 	prompt := c.body["input"].([]any)[0].(map[string]any)["content"].(string)
@@ -209,15 +210,6 @@ func TestXAITryParseAndCoercions(t *testing.T) {
 	}
 	if got := xaiTryParseJSONResults(`{"results":[{"url":"https://1.example"},{"url":"https://2.example"}]}`, 1); len(got) != 1 {
 		t.Fatalf("%v", got)
-	}
-	if f, err := coerceFloat("abc", 90); err != nil || f != 90 {
-		t.Fatal(f, err)
-	}
-	if f, err := coerceFloat("12.5", 90); err != nil || f != 12.5 {
-		t.Fatal(f, err)
-	}
-	if f, _ := coerceFloat(nil, 90); f != 90 {
-		t.Fatal(f)
 	}
 }
 

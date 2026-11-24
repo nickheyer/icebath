@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Resumes a session by exact id first and then by title, the way chat --resume resolves a name
@@ -45,7 +44,7 @@ func discardConfirm(w io.Writer, sessionID string, rows []map[string]any) (bool,
 	if err != nil {
 		return false, err
 	}
-	answer := pystr.Lower(pystr.Strip(line))
+	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes", nil
 }
 

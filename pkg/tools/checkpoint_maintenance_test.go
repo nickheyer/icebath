@@ -254,12 +254,12 @@ func TestCheckpointAutoPruneFromConfigHonoursTheSection(t *testing.T) {
 	if out := AutoPruneCheckpointsFromConfig(f.env); !out.Skipped || out.Error != "" {
 		t.Fatalf("disabled auto prune ran: %+v", out)
 	}
-	os.WriteFile(filepath.Join(f.env.Home, "config.yaml"), []byte("checkpoints:\n  auto_prune: true\n  retention_days: soon\n"), 0o644)
-	if out := AutoPruneCheckpointsFromConfig(f.env); !out.Skipped || !strings.Contains(out.Error, "is not a whole number") {
-		t.Fatalf("bad retention not reported: %+v", out)
+	os.WriteFile(filepath.Join(f.env.Home, "config.yaml"), []byte("checkpoints:\n  auto_prune: true\n  retention_days: soon\n  min_interval_hours: 0\n"), 0o644)
+	if out := AutoPruneCheckpointsFromConfig(f.env); out.Skipped || out.Error != "" {
+		t.Fatalf("a bad retention must prune with the default retention: %+v", out)
 	}
 	orphan := cpSeedLegacyRepo(t, f.base, strings.Repeat("abcd", 4), filepath.Join(f.tmp, "gone"), nil)
-	os.WriteFile(filepath.Join(f.env.Home, "config.yaml"), []byte("checkpoints:\n  auto_prune: true\n"), 0o644)
+	os.WriteFile(filepath.Join(f.env.Home, "config.yaml"), []byte("checkpoints:\n  auto_prune: true\n  min_interval_hours: 0\n"), 0o644)
 	out := AutoPruneCheckpointsFromConfig(f.env)
 	if out.Skipped || out.Result == nil || out.Result.DeletedOrphan != 0 || !f.exists(orphan) {
 		t.Fatalf("unattended prune deleted an orphan: %+v", out)

@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Records which checkout owns an install state, the root the orphan collector and the update owner lookup read
@@ -287,7 +286,7 @@ func pyEnvironOrdered() *environList {
 			continue
 		}
 		if runtime.GOOS == "windows" {
-			key = pystr.Upper(key)
+			key = strings.ToUpper(key)
 		}
 		if list.find(key) < 0 {
 			list.set(key, value)
@@ -352,7 +351,7 @@ func composeEnviron(diffs []EnvDiff) *environList {
 	if len(pathDirs) > 0 {
 		key := "PATH"
 		for _, k := range env.keys {
-			if pystr.Upper(k) == "PATH" {
+			if strings.ToUpper(k) == "PATH" {
 				key = k
 				break
 			}

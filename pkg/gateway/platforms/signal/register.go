@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -39,11 +38,11 @@ const platformHint = "You are on Signal. Standard markdown (**bold**, *italic*, 
 
 // Native group target of a group prefixed reference, not explicit for an empty id and nil otherwise
 func parseSendTarget(ref string) any {
-	stripped := pystr.Strip(ref)
+	stripped := strings.TrimSpace(ref)
 	if !strings.HasPrefix(stripped, "group:") {
 		return nil
 	}
-	groupID := pystr.Strip(stripped[len("group:"):])
+	groupID := strings.TrimSpace(stripped[len("group:"):])
 	if groupID == "" {
 		return gateway.NotExplicit
 	}

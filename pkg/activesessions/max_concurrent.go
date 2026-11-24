@@ -1,6 +1,8 @@
 package activesessions
 
 import (
+	"strings"
+
 	"fmt"
 	"math"
 	"math/big"
@@ -8,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Positive integer session cap of a config value, nil when disabled or invalid with a warning logged
@@ -25,7 +26,7 @@ func CoerceMaxConcurrentSessions(value any, key string) *big.Int {
 		err = fmt.Errorf("%v is not a whole number", value)
 	default:
 		if s, ok := value.(string); ok {
-			if n, good := pyint.Parse(pystr.Strip(s)); good {
+			if n, good := pyint.Parse(strings.TrimSpace(s)); good {
 				parsed = n
 			} else {
 				err = fmt.Errorf("%s is not a whole number", s)

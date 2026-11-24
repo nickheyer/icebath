@@ -5,6 +5,7 @@ package selfupdate
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -31,6 +33,7 @@ var (
 	winSnapshot        = proc.Snapshot
 	winPidExists       = proc.Exists
 	winDetectHolders   = detectVenvPythonProcesses
+	winDetectBinaries  = detectOtherIcebathProcesses
 	winFindGatewayPids = func(ctx context.Context) ([]int, error) { return gateway.FindGatewayPIDsFor(ctx, nil, true) }
 	winMonotonic       = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 	winSleep           = func(seconds float64) { time.Sleep(time.Duration(seconds * float64(time.Second))) }
@@ -192,6 +195,86 @@ func detectVenvPythonProcesses(ctx context.Context, excludePids map[int]bool) []
 		}
 	}
 	return matches
+}
+
+// Live processes running this install's icebath executable, other than this process and its non gateway ancestors
+func detectOtherIcebathProcesses(ctx context.Context) []venvMatch {
+	if !winIsWindows() {
+		return nil
+	}
+	self, err := os.Executable()
+	if err != nil {
+		pkgLog().DebugContext(ctx, "Could not read this executable's path for the running icebath scan: "+launchErrorText(err))
+		return nil
+	}
+	selfNorm := strings.ToLower(self)
+	if resolved, err := pypath.Resolve(self); err == nil {
+		selfNorm = strings.ToLower(resolved)
+	}
+	table, err := winSnapshot()
+	if err != nil {
+		pkgLog().DebugContext(ctx, "Could not list processes for the running icebath scan: "+launchErrorText(err))
+		return nil
+	}
+	skip := selfAndNonGatewayAncestorPids()
+	var matches []venvMatch
+	for _, row := range table {
+		if skip[row.PID] {
+			continue
+		}
+		exe, err := winExe(row.PID)
+		if err != nil || exe == "" {
+			continue
+		}
+		exeNorm := strings.ToLower(exe)
+		if resolved, err := pypath.Resolve(exe); err == nil {
+			exeNorm = strings.ToLower(resolved)
+		}
+		if exeNorm != selfNorm {
+			continue
+		}
+		name, err := winName(row.PID)
+		if err != nil || name == "" {
+			name = pypath.PathName(exe)
+		}
+		matches = append(matches, venvMatch{PID: row.PID, Name: name, Cmdline: cmdlineOrEmpty(row.PID)})
+	}
+	return matches
+}
+
+// Refuses a Windows update while processes outside the paused gateways hold the install: other icebath processes unless --force, Python environment holders unless --force-venv, which --force never covers
+func refuseHeldInstall(ctx context.Context, w io.Writer, opts *updateOptions) error {
+	if !winIsWindows() {
+		return nil
+	}
+	binaries, interpreters := winDetectBinaries(ctx), winDetectHolders(ctx, nil)
+	refused := false
+	report := func(holders []venvMatch, forced bool, flag, key string) {
+		if len(holders) == 0 {
+			return
+		}
+		mark := "✗"
+		if forced {
+			mark = "⚠"
+		}
+		fmt.Fprintln(w, i18n.T(ctx, key, "", map[string]any{"mark": mark, "count": len(holders)}))
+		for _, holder := range holders {
+			fmt.Fprintf(w, "    PID %d  %s\n", holder.PID, holder.Cmdline)
+		}
+		if forced {
+			fmt.Fprintln(w, i18n.T(ctx, "cli.update.held_forced", "", map[string]any{"flag": flag}))
+			return
+		}
+		fmt.Fprintln(w, i18n.T(ctx, "cli.update.held_refused", "", map[string]any{"flag": flag}))
+		refused = true
+	}
+	report(binaries, opts.Force, "--force", "cli.update.held_icebath")
+	report(interpreters, opts.ForceVenv, "--force-venv", "cli.update.held_venv")
+	if refused {
+		recordStop(ctx, "install_held")
+		return updateExit(venvHoldersExit)
+	}
+	return nil
 }
 
 // Lower cased working directory of a process with one trailing separator, the bare separator when unreadable

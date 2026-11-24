@@ -4,10 +4,9 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"math"
-	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -206,31 +205,7 @@ func (a *AIAgent) mergeCustomProviderExtraBody(customProviders []map[string]any)
 }
 
 // Positive seconds of a run budget, nil turns the feature off and a bool is rejected
-func normalizeRunBudgetSeconds(value any) *float64 {
-	var seconds float64
-	switch v := value.(type) {
-	case nil, bool:
-		return nil
-	case int:
-		seconds = float64(v)
-	case int64:
-		seconds = float64(v)
-	case float64:
-		seconds = v
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		if err != nil {
-			return nil
-		}
-		seconds = f
-	default:
-		return nil
-	}
-	if math.IsNaN(seconds) || seconds <= 0 {
-		return nil
-	}
-	return &seconds
-}
+func normalizeRunBudgetSeconds(value any) *float64 { return config.RunBudgetSeconds(value) }
 
 // Fails closed when a required checkpoint meets the codex app server that compacts its own thread
 func refuseCheckpointRequiredOnCodexAppServer(checkpointRequired bool, apiMode string) error {
@@ -243,49 +218,6 @@ func refuseCheckpointRequiredOnCodexAppServer(checkpointRequired bool, apiMode s
 			"or use a non-app-server API mode.")
 	}
 	return nil
-}
-
-// Strict int coercion rejecting bool and fractional floats
-func parseConfigInt(raw any, def int) int {
-	switch v := raw.(type) {
-	case bool:
-		return def
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case float64:
-		if v == math.Trunc(v) && !math.IsInf(v, 0) {
-			return int(v)
-		}
-		return def
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(initStr(raw)))
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-// Whether a config section key reads true, 1 or yes in any case, the default when absent
-func cfgFlag(cfg map[string]any, key string, def bool) bool {
-	v, ok := cfg[key]
-	if !ok {
-		v = def
-	}
-	switch strings.ToLower(pyBoolStr(v)) {
-	case "true", "1", "yes":
-		return true
-	}
-	return false
-}
-
-// Section mapping or empty when malformed
-func cfgDict(cfg map[string]any, key string) map[string]any {
-	if section, ok := cfg[key].(map[string]any); ok {
-		return section
-	}
-	return map[string]any{}
 }
 
 var explicitAPIModes = map[string]bool{"chat_completions": true, "codex_responses": true, "anthropic_messages": true, "bedrock_converse": true, "codex_app_server": true}

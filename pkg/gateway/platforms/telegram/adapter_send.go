@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -29,7 +28,7 @@ func errLower(err error) string {
 	if err == nil {
 		return ""
 	}
-	return pystr.Lower(pyrepr.ExceptionMessage(err))
+	return strings.ToLower(pyrepr.ExceptionMessage(err))
 }
 
 // Server retry_after of a RetryAfter error, nil for every other error
@@ -213,21 +212,22 @@ func (a *TelegramAdapter) retriggerTyping(ctx context.Context, chatID string, me
 		return
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if inFlight := a.retriggerTasks[chatID]; inFlight != nil && !inFlight.Done() {
+		a.mu.Unlock()
 		return
 	}
 	now := monotonicNow()
 	if last, ok := a.retriggerAt[chatID]; ok && now-last < a.typingRetriggerInterval {
+		a.mu.Unlock()
 		return
 	}
 	a.retriggerAt[chatID] = now
-	var task *gateway.AdapterTask
-	task = gateway.SpawnAdapterTask(context.WithoutCancel(ctx), func(c context.Context) error {
+	task := gateway.SpawnAdapterTask(context.WithoutCancel(ctx), func(c context.Context) error {
 		_ = a.SendTyping(c, chatID, metadata)
 		return nil
 	})
 	a.retriggerTasks[chatID] = task
+	a.mu.Unlock()
 	task.AddDoneCallback(func() {
 		a.mu.Lock()
 		if a.retriggerTasks[chatID] == task {
@@ -265,7 +265,7 @@ func (a *TelegramAdapter) Send(ctx context.Context, chatID, content, replyTo str
 	if a.SendPathDegraded() {
 		return gateway.SendResult{Success: false, Error: "send_path_degraded", Retryable: true}, nil
 	}
-	if content == "" || pystr.Strip(content) == "" {
+	if content == "" || strings.TrimSpace(content) == "" {
 		return gateway.SendResult{Success: true, MessageID: nil}, nil
 	}
 	var result gateway.SendResult
@@ -851,7 +851,7 @@ func (a *TelegramAdapter) SupportsDraftStreaming(chatType string, metadata map[s
 	if a.currentBot() == nil {
 		return false
 	}
-	switch pystr.Lower(chatType) {
+	switch strings.ToLower(chatType) {
 	case "dm", "private":
 		return true
 	}
@@ -930,13 +930,13 @@ func (a *TelegramAdapter) richDeliveryEnabled() bool { return a.richMessagesEnab
 
 // Shape checks shared by rich sends and rich drafts
 func (a *TelegramAdapter) richContentOK(content string) bool {
-	return content != "" && pystr.Strip(content) != "" && !hasTelegramDesktopDetailsMathCrashShape(content) &&
+	return content != "" && strings.TrimSpace(content) != "" && !hasTelegramDesktopDetailsMathCrashShape(content) &&
 		(a.allowCJKRichMessages || !hasTelegramDesktopCJKRichGarbleShape(content)) && contentFitsRichLimits(content) && a.botSupportsRich()
 }
 
 // Rich eligibility ignoring expect_edits so a streamed final edit still upgrades
 func (a *TelegramAdapter) richEligible(content string) bool {
-	return a.richDeliveryEnabled() && !a.richSendDisabled.Load() && content != "" && pystr.Strip(content) != "" &&
+	return a.richDeliveryEnabled() && !a.richSendDisabled.Load() && content != "" && strings.TrimSpace(content) != "" &&
 		needsRichRendering(content) && a.richContentOK(content)
 }
 

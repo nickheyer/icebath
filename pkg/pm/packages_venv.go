@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -380,7 +379,7 @@ func UvCacheDir(ctx context.Context) (string, error) {
 		if err := strictUTF8(text); err != nil {
 			return "", fmt.Errorf("%s is %w", marker, err)
 		}
-		current = pystr.Strip(string(text)) == seed
+		current = strings.TrimSpace(string(text)) == seed
 	}
 	if current {
 		return machine, nil

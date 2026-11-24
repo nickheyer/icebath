@@ -7,10 +7,8 @@ import (
 func TestLoadRuntimePoolWithReadsResolvedKeyThroughLoad(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	env.Config = func() map[string]any {
-		return map[string]any{"providers": map[string]any{"gemini-no-filter": map[string]any{
-			"name": "Gemini Display", "base_url": "https://generativelanguage.googleapis.com/v1beta"}}}
-	}
+	writeConfig(t, h, map[string]any{"providers": map[string]any{"gemini-no-filter": map[string]any{
+		"name": "Gemini Display", "base_url": "https://generativelanguage.googleapis.com/v1beta"}}})
 	var keys []string
 	want := NewPool(env, "openrouter", nil)
 	load := func(_ PoolEnv, key string) *Pool { keys = append(keys, key); return want }

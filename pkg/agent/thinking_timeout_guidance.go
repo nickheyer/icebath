@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -40,7 +39,7 @@ func IsThinkingTimeout(classified any, model string, errorMsg *string) bool {
 	}
 	msg := ""
 	if errorMsg != nil {
-		msg = pystr.Lower(*errorMsg)
+		msg = strings.ToLower(*errorMsg)
 	}
 	for _, p := range thinkingTimeoutSubstrings {
 		if strings.Contains(msg, p) {

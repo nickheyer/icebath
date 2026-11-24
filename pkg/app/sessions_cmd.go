@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -161,7 +160,7 @@ func confirmPrompt(r *sessionsRun, prompt string) (yes, answered bool, err error
 	if err != nil {
 		return false, false, err
 	}
-	answer := pystr.Lower(pystr.Strip(line))
+	answer := strings.ToLower(strings.TrimSpace(line))
 	return answer == "y" || answer == "yes", true, nil
 }
 
@@ -501,12 +500,12 @@ func cmdList(r *sessionsRun, db *state.SessionDB) (int, error) {
 		key, _ := state.WorkspaceKey(s)
 		return key
 	}
-	wsFilter := pystr.Strip(nsText(r.ns, "workspace"))
+	wsFilter := strings.TrimSpace(nsText(r.ns, "workspace"))
 	if wsFilter != "" {
-		needle := pystr.Lower(wsFilter)
+		needle := strings.ToLower(wsFilter)
 		var kept []*pyjson.Object
 		for _, s := range sessions {
-			key := pystr.Lower(wsKey(s))
+			key := strings.ToLower(wsKey(s))
 			if key != "" && (strings.Contains(key, needle) || needle == sessionsBasename(strings.TrimRight(key, "/\\"))) {
 				kept = append(kept, s)
 			}

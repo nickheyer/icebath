@@ -150,26 +150,6 @@ func tsKey(v any) string {
 	return pyrepr.Str(v)
 }
 
-// Comma separated text split into stripped non empty items
-func parseCommaList(value string) []string {
-	out := []string{}
-	for _, v := range strings.Split(value, ",") {
-		if s := pystr.Strip(v); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// Set of the items of a comma separated text
-func commaSet(value string) map[string]bool {
-	set := map[string]bool{}
-	for _, v := range parseCommaList(value) {
-		set[v] = true
-	}
-	return set
-}
-
 // File extension from magic bytes, WEBP claimed before the shared sniffer and zip or bin last
 func guessExtension(data []byte) string {
 	for _, m := range magicExtensions {
@@ -189,9 +169,9 @@ func guessExtension(data []byte) string {
 	return ".bin"
 }
 
-func isImageExt(ext string) bool { return imageExts[pystr.Lower(ext)] }
+func isImageExt(ext string) bool { return imageExts[strings.ToLower(ext)] }
 
-func isAudioExt(ext string) bool { return audioExts[pystr.Lower(ext)] }
+func isAudioExt(ext string) bool { return audioExts[strings.ToLower(ext)] }
 
 // MIME type of a file extension from the shared table, octet stream when unknown
 func extToMime(ext string) string {
@@ -362,7 +342,7 @@ func extraOrSecretText(ctx context.Context, extra map[string]any, key, env strin
 	if !ok {
 		return "", noAttr(v, "strip")
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 // Whether Signal has the daemon URL and account it needs to connect
@@ -441,7 +421,7 @@ func NewSignalAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Sig
 	if !ok {
 		return nil, noAttr(rawURL, "rstrip")
 	}
-	a.httpURL = pystr.RstripChars(urlText, "/")
+	a.httpURL = strings.TrimRight(urlText, "/")
 	rawAccount := getOr(extra, "account", "")
 	account, ok := rawAccount.(string)
 	if !ok {
@@ -449,18 +429,12 @@ func NewSignalAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Sig
 	}
 	a.account = account
 	a.ignoreStories = settings.SignalIgnoreStories.Get(gateway.SettingsContext(ctx))
-	groups, err := gateway.GetScopedSecret(ctx, "SIGNAL_GROUP_ALLOWED_USERS", "", false)
-	if err != nil {
-		return nil, err
-	}
-	a.groupAllowFrom = commaSet(groups)
+	a.groupAllowFrom = gateway.SettingSet(ctx, settings.SignalGroupAllowedUsers)
 	a.requireMention = settings.SignalRequireMention.Get(gateway.SettingsContext(ctx))
-	allowed, err := gateway.GetScopedSecret(ctx, "SIGNAL_ALLOWED_USERS", "*", false)
-	if err != nil {
-		return nil, err
+	if a.dmAllowFrom = gateway.SettingSet(ctx, settings.SignalAllowedUsers); len(a.dmAllowFrom) == 0 {
+		a.dmAllowFrom = map[string]bool{"*": true}
 	}
-	a.dmAllowFrom = commaSet(allowed)
-	a.accountNormalized = pystr.Strip(a.account)
+	a.accountNormalized = strings.TrimSpace(a.account)
 	groupsState := "disabled"
 	if len(a.groupAllowFrom) > 0 {
 		groupsState = "enabled"
@@ -517,7 +491,7 @@ func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connecte
 	default:
 		lockAcquired = true
 	}
-	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
+	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.mu.Lock()
 	a.client = client
 	a.mu.Unlock()
@@ -593,7 +567,7 @@ func (a *SignalAdapter) handleSSELine(ctx context.Context, line string) error {
 	if !strings.HasPrefix(line, "data:") {
 		return nil
 	}
-	dataStr := pystr.Strip(line[5:])
+	dataStr := strings.TrimSpace(line[5:])
 	if dataStr == "" {
 		return nil
 	}
@@ -645,7 +619,7 @@ func (a *SignalAdapter) readSSEStream(ctx context.Context, rawURL string, backof
 			return nil
 		}
 		if readErr == nil {
-			if line := pystr.Strip(pystr.DecodeUTF8Replace(raw[:len(raw)-1])); line != "" {
+			if line := strings.TrimSpace(pystr.DecodeUTF8Replace(raw[:len(raw)-1])); line != "" {
 				if err := a.handleSSELine(ctx, line); err != nil {
 					return err
 				}
@@ -820,7 +794,7 @@ func (a *SignalAdapter) applyGroupMentionRules(text string, dataMessage map[stri
 		if botUUID != "" {
 			text = strings.ReplaceAll(text, "@"+botUUID, "")
 		}
-		text = pystr.Strip(strings.ReplaceAll(text, "  ", " "))
+		text = strings.TrimSpace(strings.ReplaceAll(text, "  ", " "))
 	}
 	return true, text, nil
 }
@@ -1024,7 +998,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 			return err
 		}
 	}
-	if pystr.Strip(text) == "" && len(mediaURLs) == 0 {
+	if strings.TrimSpace(text) == "" && len(mediaURLs) == 0 {
 		pkgLog().Debug(fmt.Sprintf("Signal: skipping contentless envelope from %s (%d attachments)", gateway.RedactPhone(sender), len(mediaURLs)))
 		return nil
 	}
@@ -1090,7 +1064,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 // Group policy from the group allowlist, unset disabling groups and a star allowing all
 func (a *SignalAdapter) groupAllowed(groupID string) bool {
 	if len(a.groupAllowFrom) == 0 {
-		pkgLog().Debug("Signal: ignoring group message (no SIGNAL_GROUP_ALLOWED_USERS)")
+		pkgLog().Debug("Signal: ignoring group message (no allowed groups set)")
 		return false
 	}
 	if !a.groupAllowFrom["*"] && !a.groupAllowFrom[groupID] {
@@ -1141,7 +1115,7 @@ func (a *SignalAdapter) quoteReferencesOwnMessage(replyToID, replyToAuthor *stri
 	if replyToAuthor == nil || *replyToAuthor == "" {
 		return false
 	}
-	author, acct := pystr.Strip(*replyToAuthor), a.accountNormalized
+	author, acct := strings.TrimSpace(*replyToAuthor), a.accountNormalized
 	if acct == "" {
 		return false
 	}

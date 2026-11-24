@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -494,7 +493,7 @@ func priorReviewer(ctx context.Context, conn state.SQLiteConn, taskID string) (*
 		return nil, false, err
 	}
 	reviewer, _ := jsonDict(rowGet(changesEvent, "payload", nil)).Get("reviewer")
-	if s, ok := reviewer.(string); ok && pystr.Strip(s) != "" {
+	if s, ok := reviewer.(string); ok && strings.TrimSpace(s) != "" {
 		return &s, false, nil
 	}
 	return nil, true, nil
@@ -502,7 +501,7 @@ func priorReviewer(ctx context.Context, conn state.SQLiteConn, taskID string) (*
 
 // The value when it is a string with non whitespace content, nil otherwise
 func nonblankStr(value any) *string {
-	if s, ok := value.(string); ok && pystr.Strip(s) != "" {
+	if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
 		return &s
 	}
 	return nil
@@ -510,7 +509,7 @@ func nonblankStr(value any) *string {
 
 // Closes an active reviewer run and hands the task back to the implementer of the latest review request
 func RequestChanges(ctx context.Context, conn state.SQLiteConn, taskID, reason string, expectedRunID *int64) (bool, string, error) {
-	reason = pystr.Strip(redactReviewValue(reason).(string))
+	reason = strings.TrimSpace(redactReviewValue(reason).(string))
 	if reason == "" {
 		return false, "reason is required", nil
 	}
@@ -892,7 +891,7 @@ func InvalidateDescendantsForParentReopen(ctx context.Context, conn state.SQLite
 
 // Updates title, body and assignee when given and moves triage to todo in one transaction
 func SpecifyTriageTask(ctx context.Context, conn state.SQLiteConn, taskID string, title, body, assignee, author *string) (bool, error) {
-	if title != nil && pystr.Strip(*title) == "" {
+	if title != nil && strings.TrimSpace(*title) == "" {
 		return false, &ValueError{"title cannot be blank"}
 	}
 	assignee, err := canonicalAssignee(assignee)
@@ -908,9 +907,9 @@ func SpecifyTriageTask(ctx context.Context, conn state.SQLiteConn, taskID string
 		sets := []string{"status = 'todo'"}
 		var params []any
 		var changedFields []string
-		if title != nil && pystr.Strip(*title) != cellStr(existing.Get("title")) {
+		if title != nil && strings.TrimSpace(*title) != cellStr(existing.Get("title")) {
 			sets = append(sets, "title = ?")
-			params = append(params, pystr.Strip(*title))
+			params = append(params, strings.TrimSpace(*title))
 			changedFields = append(changedFields, "title")
 		}
 		if body != nil && *body != cellStr(existing.Get("body")) {
@@ -931,8 +930,8 @@ func SpecifyTriageTask(ctx context.Context, conn state.SQLiteConn, taskID string
 		if rowsAffected(res) != 1 {
 			return nil
 		}
-		if len(changedFields) > 0 && author != nil && pystr.Strip(*author) != "" {
-			if err := insertComment(ctx, conn, taskID, pystr.Strip(*author),
+		if len(changedFields) > 0 && author != nil && strings.TrimSpace(*author) != "" {
+			if err := insertComment(ctx, conn, taskID, strings.TrimSpace(*author),
 				"Specified — updated "+strings.Join(changedFields, ", ")+" and promoted to todo.", time.Now().Unix()); err != nil {
 				return err
 			}

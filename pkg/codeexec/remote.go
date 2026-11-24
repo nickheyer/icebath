@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -311,12 +312,8 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 
 // Runs code on the remote backend through the owner's session kernel, else the per call script ship
 func executeRemote(ctx context.Context, env *tools.Env, code, taskID string, enabledTools []string, reset bool) string {
-	cfg := loadConfig(env)
-	timeout, timeoutText, err := configSeconds(configValue(cfg, "timeout", defaultTimeout))
-	if err != nil {
-		panic(err)
-	}
-	maxToolCalls := toolCallLimit(configValue(cfg, "max_tool_calls", defaultMaxToolCalls))
+	timeout, timeoutText := executionTimeout(env)
+	maxToolCalls := settings.CodeExecutionMaxToolCalls.Get(settingsCtx(env))
 	sandboxTools, effectiveTaskID := sandboxToolsFor(enabledTools), taskID
 	if effectiveTaskID == "" {
 		effectiveTaskID = "default"
@@ -341,10 +338,7 @@ func executeRemote(ctx context.Context, env *tools.Env, code, taskID string, ena
 			"environment. Install Python to use execute_code with remote backends.", 0, 0, "")
 	}
 	kernelResult, err := func() (*pyjson.Object, error) {
-		idle, err := pyint.Of(configValue(cfg, "kernel_idle_timeout", 1800))
-		if err != nil {
-			return nil, err
-		}
+		idle := big.NewInt(int64(max(1, int(settings.CodeExecutionKernelIdleTimeout.Get(settingsCtx(env))/time.Second))))
 		return executeInRemoteKernelFn(ctx, env, envr, code, remoteCell{envType: envType, taskEnvID: effectiveTaskID,
 			sandboxTools: sandboxTools, timeout: timeout, maxToolCalls: maxToolCalls, reset: reset, idleExit: idle})
 	}()

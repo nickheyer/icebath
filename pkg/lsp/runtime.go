@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Opcode is one difflib opcode turning the a range I1 to I2 into the b range J1 to J2
@@ -20,7 +21,6 @@ type Opcode struct {
 type Runtime struct {
 	Home                         string
 	Log                          *slog.Logger
-	Config                       func() map[string]any
 	EnvFor                       func(names []string, base map[string]string) map[string]string
 	EnsureEnv                    func(name string, base map[string]string) (map[string]string, error)
 	InstalledBinary              func(name string) (string, bool)
@@ -54,15 +54,18 @@ func (rt *Runtime) logf(level slog.Level, format string, args ...any) {
 	l.Log(context.Background(), level, fmt.Sprintf(format, args...), "logger", logName)
 }
 
-// Current lsp config section, empty when none is attached
-func (rt *Runtime) lspConfig() map[string]any {
-	if rt == nil || rt.Config == nil {
-		return map[string]any{}
+// Context whose settings reads resolve in the runtime's profile home
+func (rt *Runtime) settingsCtx() context.Context {
+	return home.WithOverride(context.Background(), rt.home())
+}
+
+// Value a setting holds as the registry resolves it, before the typed reading, so a malformed value is seen as such and fails closed
+func storedSetting(ctx context.Context, key string) any {
+	v, err := settings.Resolve(ctx, key)
+	if err != nil {
+		return nil
 	}
-	if cfg := rt.Config(); cfg != nil {
-		return cfg
-	}
-	return map[string]any{}
+	return v.Value
 }
 
 // Profile home, the process home when the runtime names none

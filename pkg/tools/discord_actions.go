@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Bot token of the active profile secret scope, empty when unset
@@ -200,7 +201,7 @@ func discordInt(v any, fallback int64) (int64, error) {
 		if t == "" {
 			return fallback, nil
 		}
-		n, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(t), "_", ""), 10, 64)
+		n, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(t), "_", ""), 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("%q is not a whole number", t)
 		}
@@ -616,28 +617,13 @@ func discordRequiredParams(name string) []string {
 
 // The discord.server_actions allowlist, nil when unrestricted, unknown names dropped with a warning
 func discordLoadAllowedActionsConfig(env *Env) ([]string, bool) {
-	var raw any
-	if section := cfgTree(env).Get("discord"); connTruthy(section) {
-		raw = discordDict(pyjson.Ordered(section)).GetOr("server_actions", nil)
-	}
-	if raw == nil || raw == "" {
-		return nil, false
-	}
-	var items []any
-	switch t := raw.(type) {
-	case string:
-		for _, part := range strings.Split(t, ",") {
-			items = append(items, part)
-		}
-	case []any:
-		items = t
-	default:
-		envLog(env).Warn(fmt.Sprintf("discord.server_actions: unexpected %s; ignoring.", errchain.Kind(raw)))
+	items := settings.DiscordServerActions.Get(envHomeCtx(context.Background(), env))
+	if items == nil {
 		return nil, false
 	}
 	var names, invalid, known []string
 	for _, n := range items {
-		if s := pystr.Strip(pyrepr.Str(n)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(n)); s != "" {
 			names = append(names, s)
 		}
 	}

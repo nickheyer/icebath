@@ -1,6 +1,8 @@
 package monitoring
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"math"
@@ -10,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -97,7 +98,7 @@ func ClassifyCronError(raw any) string {
 	if !pyrepr.Truthy(raw) {
 		raw = ""
 	}
-	text := pystr.Lower(pyrepr.Str(raw))
+	text := strings.ToLower(pyrepr.Str(raw))
 	for _, rule := range cronErrorRules {
 		if rule.match(text) {
 			return rule.label
@@ -144,7 +145,7 @@ func loweredOr(v any, fallback string) string {
 	if !pyrepr.Truthy(v) {
 		return fallback
 	}
-	return pystr.Lower(pyrepr.Str(v))
+	return strings.ToLower(pyrepr.Str(v))
 }
 
 // Content free event of a ledger record with opaque job key and bucketed status, source and outcome
@@ -162,7 +163,7 @@ func ProjectExecutionEvent(record map[string]any, deliveryOutcome *string) CronE
 	}
 	ev.DurationMS = durationMS(record)
 	if deliveryOutcome != nil {
-		if outcome := pystr.Lower(*deliveryOutcome); knownDeliveryOutcomes[outcome] {
+		if outcome := strings.ToLower(*deliveryOutcome); knownDeliveryOutcomes[outcome] {
 			ev.DeliveryOutcome = &outcome
 		}
 	}

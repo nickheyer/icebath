@@ -29,7 +29,7 @@ func resolveGatewayModelContext(ctx context.Context, model string, route map[str
 	}
 	configuredModel, configuredProvider, configuredBaseURL := settings.Model.Get(ctx), settings.ModelProvider.Get(ctx), settings.ModelBaseURL.Get(ctx)
 	providerName, baseURL, apiKey := configuredProvider, configuredBaseURL, ""
-	customProviders := provider.ProviderEntries(gateway.LoadGatewayConfigMap(ctx, ""))
+	customProviders := provider.CustomProviderEntries(ctx)
 	if route != nil && pyrepr.Truthy(route["base_url"]) {
 		if pyrepr.Truthy(route["provider"]) {
 			providerName = noneText(route["provider"])
@@ -49,7 +49,7 @@ func resolveGatewayModelContext(ctx context.Context, model string, route map[str
 		configContextLength = nil
 	}
 	if configContextLength == nil && len(customProviders) > 0 && baseURL != "" {
-		if n := provider.CustomProviderContextLength(resolvedModel, baseURL, customProviders, nil); n != 0 {
+		if n := provider.CustomProviderContextLength(resolvedModel, baseURL, customProviders); n != 0 {
 			configContextLength = &n
 		}
 	}

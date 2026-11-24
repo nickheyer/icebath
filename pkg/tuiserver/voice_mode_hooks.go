@@ -16,7 +16,7 @@ var voiceModeOps struct {
 	beginTTSStream     func(ctx context.Context) *ttsTurnQueue
 	continuousActive   func() bool
 	speakWithBarge     func(ctx context.Context, text string)
-	isStopPhrase       func(text string) bool
+	isStopPhrase       func(ctx context.Context, text string) bool
 	stopListening      func(owner tuihost.Transport)
 	startThinkingSound func(ctx context.Context) bool
 	stopThinkingSound  func()
@@ -51,29 +51,14 @@ func armFullDuplexListener(ctx context.Context) {
 	}
 }
 
-// Per turn streaming TTS queue, nil when spoken replies are off or voice mode is not linked
-func ttsStreamBegin(ctx context.Context) *ttsTurnQueue {
-	if voiceModeOps.beginTTSStream == nil {
-		return nil
-	}
-	return voiceModeOps.beginTTSStream(ctx)
-}
-
 // Whether the continuous voice loop is running, false without voice mode
 func voiceContinuousActive() bool {
 	return voiceModeOps.continuousActive != nil && voiceModeOps.continuousActive()
 }
 
-// Speaks a reply with barge in detection
-func speakTextWithBarge(ctx context.Context, text string) {
-	if voiceModeOps.speakWithBarge != nil {
-		voiceModeOps.speakWithBarge(ctx, text)
-	}
-}
-
 // Whether text is a voice stop phrase, false without voice mode
-func isVoiceStopPhrase(text string) bool {
-	return voiceModeOps.isStopPhrase != nil && voiceModeOps.isStopPhrase(text)
+func isVoiceStopPhrase(ctx context.Context, text string) bool {
+	return voiceModeOps.isStopPhrase != nil && voiceModeOps.isStopPhrase(ctx, text)
 }
 
 // Stops the wake listener a transport owns
@@ -93,18 +78,6 @@ func stopThinkingSound() {
 	if voiceModeOps.stopThinkingSound != nil {
 		voiceModeOps.stopThinkingSound()
 	}
-}
-
-// Latches that the user cut a spoken reply off, nothing speaks without voice mode
-func markSpeechInterrupted() {
-	if voiceModeOps.markInterrupted != nil {
-		voiceModeOps.markInterrupted()
-	}
-}
-
-// Pops the spoken reply cut off latch, false without voice mode
-func takeSpeechInterrupted() bool {
-	return voiceModeOps.takeInterrupted != nil && voiceModeOps.takeInterrupted()
 }
 
 // Forgets the speech playback and speaker claims of a window that left, nothing to forget without voice mode

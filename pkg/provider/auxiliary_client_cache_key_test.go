@@ -230,7 +230,7 @@ func TestPreserveProviderWithBaseURLRegistriesFailIndependently(t *testing.T) {
 
 func TestUnwrapMoaProviderKeepsNonMoa(t *testing.T) {
 	h := t.TempDir()
-	r := newResolver(context.Background(), config.Tree{}, config.NewSecrets(h), h, nil)
+	r := newResolver(context.Background(), config.NewSecrets(h), h, nil)
 	if p, m := r.unwrapMoaProvider("openrouter", "x"); p != "openrouter" || m != "x" {
 		t.Fatalf("non moa changed %q %q", p, m)
 	}

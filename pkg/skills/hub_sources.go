@@ -228,7 +228,7 @@ func (w *WellKnownSkillSource) Fetch(ctx context.Context, identifier string) (b 
 
 // Index URL an http query names, ok false for anything else
 func wellKnownIndexURL(query string) (string, bool) {
-	query = pystr.Strip(query)
+	query = strings.TrimSpace(query)
 	if !strings.HasPrefix(query, "http://") && !strings.HasPrefix(query, "https://") {
 		return "", false
 	}
@@ -352,8 +352,8 @@ func (u *UrlSource) Search(context.Context, string, int) ([]SkillMeta, error) {
 
 // Claims bare http URLs ending in .md, leaving wrapped and well known identifiers to their adapters
 func (u *UrlSource) matches(identifier string) bool {
-	ident := pystr.Strip(identifier)
-	lower := pystr.Lower(ident)
+	ident := strings.TrimSpace(identifier)
+	lower := strings.ToLower(ident)
 	if (!strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://")) || strings.Contains(ident, "/.well-known/skills/") ||
 		strings.HasSuffix(strings.TrimRight(ident, "/"), "/index.json") {
 		return false
@@ -362,7 +362,7 @@ func (u *UrlSource) matches(identifier string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasSuffix(pystr.Lower(parsed.Path), ".md")
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".md")
 }
 
 type urlLoaded struct {
@@ -375,7 +375,7 @@ func (u *UrlSource) load(ctx context.Context, identifier string) *urlLoaded {
 	if !u.matches(identifier) {
 		return nil
 	}
-	url := pystr.Strip(identifier)
+	url := strings.TrimSpace(identifier)
 	text, ok := u.h.fetchText(ctx, url)
 	if !ok {
 		return nil
@@ -461,7 +461,7 @@ func (u *UrlSource) Fetch(ctx context.Context, identifier string) (b *SkillBundl
 
 // Reports a lowercase identifier shaped name other than the generic sentinels
 func urlIsValidSkillName(name string) bool {
-	candidate := pystr.Lower(pystr.Strip(name))
+	candidate := strings.ToLower(strings.TrimSpace(name))
 	switch candidate {
 	case "", "skill", "readme", "index", "unnamed-skill":
 		return false
@@ -474,7 +474,7 @@ var mdSuffixRe = regexp.MustCompile(`(?i)\.md$`)
 // Frontmatter name when valid, else the URL slug, nil when nothing usable resolves
 func urlResolveSkillName(fm map[string]any, rawURL string) *string {
 	if n, ok := fm["name"].(string); ok && urlIsValidSkillName(n) {
-		return strPtr(pystr.Strip(n))
+		return strPtr(strings.TrimSpace(n))
 	}
 	u, err := pyurl.Parse(rawURL)
 	if err != nil {
@@ -486,7 +486,7 @@ func urlResolveSkillName(fm map[string]any, rawURL string) *string {
 			parts = append(parts, p)
 		}
 	}
-	if len(parts) >= 2 && pystr.Lower(parts[len(parts)-1]) == "skill.md" && urlIsValidSkillName(parts[len(parts)-2]) {
+	if len(parts) >= 2 && strings.ToLower(parts[len(parts)-1]) == "skill.md" && urlIsValidSkillName(parts[len(parts)-2]) {
 		return strPtr(parts[len(parts)-2])
 	}
 	candidate := ""
@@ -566,11 +566,11 @@ func (l *LobeHubSource) Search(ctx context.Context, query string, limit int) (ou
 	toMeta := func(agent any) *SkillMeta {
 		meta := pyGet(agent, "meta", agent)
 		title := pyGet(meta, "title", pyGet(agent, "identifier", ""))
-		identifier := pyGet(agent, "identifier", strings.ReplaceAll(pystr.Lower(pyStrOf(title)), " ", "-"))
+		identifier := pyGet(agent, "identifier", strings.ReplaceAll(strings.ToLower(pyStrOf(title)), " ", "-"))
 		m := lobeHubAgentMeta(agent, pyStrOf(identifier), pyHead(pyGet(meta, "description", ""), 200))
 		return &m
 	}
-	return firstMatching(pystr.Lower(query), agents, fields, toMeta, limit), nil
+	return firstMatching(strings.ToLower(query), agents, fields, toMeta, limit), nil
 }
 
 // One agent converted to a SKILL.md bundle
@@ -685,7 +685,7 @@ func (b *BrowseShSource) Search(ctx context.Context, query string, limit int) (o
 		return []any{pyGet(item, "name", ""), pyGet(item, "title", ""), pyGet(item, "description", ""),
 			pyGet(item, "hostname", ""), pyGet(item, "category", ""), pyGet(item, "tags", []any{})}
 	}
-	return firstMatching(pystr.Lower(query), b.catalog(ctx), fields, b.itemToMeta, limit), nil
+	return firstMatching(strings.ToLower(query), b.catalog(ctx), fields, b.itemToMeta, limit), nil
 }
 
 func (b *BrowseShSource) catalogItem(ctx context.Context, identifier string) any {

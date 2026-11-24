@@ -102,7 +102,7 @@ func (s *Scope) readMetaLines(path, failLog string) ([]string, error) {
 	}
 	var out []string
 	for _, line := range pystr.Splitlines(strings.TrimPrefix(text, "\xEF\xBB\xBF"), false) {
-		if line = pystr.Strip(line); line != "" {
+		if line = strings.TrimSpace(line); line != "" {
 			out = append(out, line)
 		}
 	}
@@ -188,7 +188,7 @@ func (s *Scope) readBundledNames() (map[string]bool, error) {
 		return nil, err
 	}
 	for _, line := range lines {
-		if n := pystr.Strip(strings.SplitN(line, ":", 2)[0]); n != "" {
+		if n := strings.TrimSpace(strings.SplitN(line, ":", 2)[0]); n != "" {
 			names[n] = true
 		}
 	}
@@ -236,7 +236,7 @@ func (s *Scope) readHubInstalledNames() map[string]bool {
 		}
 		ip, _ := entry.Get("install_path")
 		p, ok := ip.(string)
-		if !ok || pystr.Strip(p) == "" {
+		if !ok || strings.TrimSpace(p) == "" {
 			continue
 		}
 		joined := p

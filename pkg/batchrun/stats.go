@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Call, success and failure tally of one tool
@@ -93,7 +92,7 @@ func toolCallSucceeded(content any) bool {
 	if text, ok := content.(string); ok {
 		parsed, err := pyjson.Loads(text)
 		if err != nil {
-			return text != "" && !strings.HasPrefix(pystr.Lower(pystr.Strip(text)), "error:")
+			return text != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(text)), "error:")
 		}
 		decoded = parsed
 	}
@@ -196,7 +195,7 @@ func turnHasReasoning(msg map[string]any) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(reasoning))
 	}
-	return pystr.Strip(text) != "", nil
+	return strings.TrimSpace(text) != "", nil
 }
 
 // Assistant turns with and without reasoning and whether any turn reasoned

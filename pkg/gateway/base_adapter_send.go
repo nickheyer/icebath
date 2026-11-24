@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Thread created for a handoff, false when the platform has none and the watcher uses the parent chat
@@ -27,18 +27,9 @@ func (b *BasePlatformAdapter) DeleteMessage(ctx context.Context, chatID, message
 	return false, nil
 }
 
-// Default seconds before a system notice is auto deleted from display ephemeral system ttl, zero keeping it
+// Default seconds before a system notice is auto deleted, display.ephemeral_system_ttl of the profile ctx serves, zero keeping it
 func (b *BasePlatformAdapter) ephemeralSystemTTLDefault(ctx context.Context) int {
-	return orDefault(func() (int, error) {
-		n, err := pyint.Of(configSection(ctx, "display")["ephemeral_system_ttl"])
-		if err != nil {
-			return 0, err
-		}
-		if !n.IsInt64() {
-			return 0, fmt.Errorf("the ephemeral system message lifetime is too large")
-		}
-		return int(n.Int64()), nil
-	}, 0)
+	return settings.DisplayEphemeralSystemTtl.Get(SettingsContext(ctx))
 }
 
 // Waits out an ephemeral reply's ttl, swapped by tests

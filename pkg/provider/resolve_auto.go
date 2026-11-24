@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -104,30 +105,46 @@ func (rt *Runtime) Route() Route {
 	return route
 }
 
-// resolver carries the config, secrets, home, and logins one resolution walks with
+// resolver carries the context, secrets, home, and logins one resolution walks with, its settings read for the context bound to the home
 type resolver struct {
-	ctx      context.Context
-	cfg      map[string]any
-	secrets  *config.Secrets
-	home     string
-	creds    CredentialSource
-	modelCfg map[string]any
-	http     *http.Client
+	ctx     context.Context
+	secrets *config.Secrets
+	home    string
+	creds   CredentialSource
+	// model.default with a local server's single model filled in, once read
+	model     string
+	modelRead bool
+	http      *http.Client
 }
 
-func newResolver(ctx context.Context, cfg config.Tree, secrets *config.Secrets, h string, creds CredentialSource) *resolver {
+// Resolver over a home's secrets and logins whose settings reads follow ctx
+func newResolver(ctx context.Context, secrets *config.Secrets, h string, creds CredentialSource) *resolver {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	m := map[string]any(cfg)
-	if m == nil {
-		m = map[string]any{}
-	}
-	return &resolver{ctx: ctx, cfg: m, secrets: secrets, home: h, creds: creds, http: &http.Client{}}
+	return &resolver{ctx: ctx, secrets: secrets, home: h, creds: creds, http: &http.Client{}}
 }
 
-// Call context profile hooks read through, the resolver's home bound onto its context
+// Call context settings reads and profile hooks go through, the resolver's home bound onto its context
 func (r *resolver) hookCtx() context.Context { return ctxForHome(r.ctx, r.home) }
+
+// Providers setting in effect for the resolution
+func (r *resolver) providers() map[string]any { return settings.Providers.Get(r.hookCtx()) }
+
+// model.provider in effect for the resolution, lower case
+func (r *resolver) cfgProvider() string {
+	return strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(r.hookCtx())))
+}
+
+// model.base_url in effect for the resolution
+func (r *resolver) cfgBaseURL() string {
+	return strings.TrimSpace(settings.ModelBaseURL.Get(r.hookCtx()))
+}
+
+// model.api_mode in effect for the resolution when it names a known mode
+func (r *resolver) cfgAPIMode() APIMode {
+	return r.parseAPIMode(settings.ModelAPIMode.Get(r.hookCtx()))
+}
 
 // Process environment value under the get_secret rules, a scoped routed profile never reading another profile's value
 func (r *resolver) processEnv(name string) string {
@@ -224,41 +241,17 @@ func (r *resolver) autoDetectLocalModel(baseURL string) string {
 	return ""
 }
 
-// The model section with model as an alias of default, dict defaults split, and a local single model detected
-func (r *resolver) modelConfig() map[string]any {
-	if r.modelCfg != nil {
-		return r.modelCfg
+// model.default in effect, or the single model a local server at model.base_url serves when none is set
+func (r *resolver) cfgModel() string {
+	if r.modelRead {
+		return r.model
 	}
-	cfg := map[string]any{}
-	switch m := r.cfg["model"].(type) {
-	case string:
-		if strings.TrimSpace(m) != "" {
-			cfg["default"] = strings.TrimSpace(m)
-		}
-	case map[string]any:
-		cfg = copyAnyMap(m)
-		if !truthy(cfg["default"]) && truthy(cfg["model"]) {
-			cfg["default"] = cfg["model"]
-		}
-		if d, ok := cfg["default"].(map[string]any); ok {
-			cfgModel, cfgProvider := config.SplitModelDefault(d)
-			if cfgProvider == "" {
-				cfgProvider = cfgString(m["provider"])
-			}
-			cfg["default"] = cfgModel
-			if cfgProvider != "" && !truthy(cfg["provider"]) {
-				cfg["provider"] = cfgProvider
-			}
-		}
-		baseURL := strings.TrimSpace(cfgString(cfg["base_url"]))
-		if strings.TrimSpace(cfgString(cfg["default"])) == "" && baseURL != "" && localModelHosts[Hostname(baseURL)] {
-			if detected := r.autoDetectLocalModel(baseURL); detected != "" {
-				cfg["default"] = detected
-			}
-		}
+	model := strings.TrimSpace(settings.Model.Get(r.hookCtx()))
+	if baseURL := r.cfgBaseURL(); model == "" && baseURL != "" && localModelHosts[Hostname(baseURL)] {
+		model = r.autoDetectLocalModel(baseURL)
 	}
-	r.modelCfg = cfg
-	return cfg
+	r.model, r.modelRead = model, true
+	return model
 }
 
 // Provider request from the explicit arg, then config, then the bound client or secret ICEBATH_INFERENCE_PROVIDER, else auto
@@ -266,8 +259,8 @@ func (r *resolver) resolveRequestedProvider(requested string) string {
 	if strings.TrimSpace(requested) != "" {
 		return strings.ToLower(strings.TrimSpace(requested))
 	}
-	if cfgProvider, ok := r.modelConfig()["provider"].(string); ok && strings.TrimSpace(cfgProvider) != "" {
-		return strings.ToLower(strings.TrimSpace(cfgProvider))
+	if cfgProvider := r.cfgProvider(); cfgProvider != "" {
+		return cfgProvider
 	}
 	var requestedEnv string
 	if client := state.BoundClientEnv(r.ctx); client != nil {
@@ -283,7 +276,7 @@ func (r *resolver) resolveRequestedProvider(requested string) string {
 
 // Explicit provider, then the config provider, then ICEBATH_INFERENCE_PROVIDER, else auto
 func ResolveRequestedProvider(ctx context.Context, h, requested string) (string, error) {
-	r, _, err := strictHomeResolver(ctx, h)
+	r, err := strictHomeResolver(ctx, h)
 	if err != nil {
 		return "", err
 	}
@@ -371,11 +364,11 @@ func onDeclaredAnthropicEndpoint(ctx context.Context, provider, baseURL string) 
 }
 
 // Api mode for legacy plain custom endpoints, only direct OpenAI shaped URLs imply Responses
-func (r *resolver) resolvePlainCustomAPIMode(modelCfg map[string]any, baseURL string) APIMode {
+func (r *resolver) resolvePlainCustomAPIMode(baseURL string) APIMode {
 	if isActualRouteCtx(r.ctx, "", baseURL) {
 		return ModeChatCompletions
 	}
-	configured := r.parseAPIMode(modelCfg["api_mode"])
+	configured := r.cfgAPIMode()
 	detected := detectAPIModeForURL(baseURL)
 	if configured == ModeCodexResponses && detected != ModeCodexResponses {
 		target := baseURL
@@ -435,25 +428,21 @@ func providerSupportsExplicitAPIMode(ctx context.Context, provider, configuredPr
 	return sameRegisteredProvider(ctx, p, c)
 }
 
-func cfgProviderOf(modelCfg map[string]any) string {
-	return strings.ToLower(strings.TrimSpace(cfgString(modelCfg["provider"])))
-}
-
 // Persisted model.api_mode when valid and recorded for this provider
-func (r *resolver) configuredAPIMode(provider string, modelCfg map[string]any) APIMode {
-	configured := r.parseAPIMode(modelCfg["api_mode"])
-	if configured != "" && providerSupportsExplicitAPIMode(r.ctx, provider, cfgProviderOf(modelCfg)) {
+func (r *resolver) configuredAPIMode(provider string) APIMode {
+	configured := r.cfgAPIMode()
+	if configured != "" && providerSupportsExplicitAPIMode(r.ctx, provider, r.cfgProvider()) {
 		return configured
 	}
 	return ""
 }
 
-// The caller's target model beats the persisted default
-func effectiveModel(modelCfg map[string]any, targetModel string) string {
+// The caller's target model beats the configured one
+func (r *resolver) effectiveModel(targetModel string) string {
 	if targetModel != "" {
 		return targetModel
 	}
-	return cfgString(modelCfg["default"])
+	return r.cfgModel()
 }
 
 // PerModelAPIModeHook answers the wire for one model with a key or no key, empty for the declared mode
@@ -532,10 +521,10 @@ func ProfileModelAPIMode(ctx context.Context, profile Profile, model string) (st
 }
 
 // Api mode for a provider that routes per model, its hard per model wire beating a stale persisted one
-func (r *resolver) profileRuntimeAPIMode(provider string, modelCfg map[string]any, apiKey, targetModel string) APIMode {
+func (r *resolver) profileRuntimeAPIMode(provider string, apiKey, targetModel string) APIMode {
 	profile := perModelProfileCtx(r.ctx, provider)
-	configured := r.configuredAPIMode(provider, modelCfg)
-	modelName := strings.TrimSpace(effectiveModel(modelCfg, targetModel))
+	configured := r.configuredAPIMode(provider)
+	modelName := strings.TrimSpace(r.effectiveModel(targetModel))
 	if configured != "" {
 		if configured == ModeCodexResponses && modelName != "" && profile != nil && modelAPIMode(r.ctx, profile, modelName, nil) == ModeChatCompletions {
 			return ModeChatCompletions
@@ -565,9 +554,9 @@ func azureInferredAPIMode(model string, apiMode APIMode) APIMode {
 }
 
 // Persisted model.api_mode when it belongs to this provider, else URL and transport fallback
-func (r *resolver) configuredOrFallbackAPIMode(provider string, modelCfg map[string]any, baseURL, model string, opencodeByModel bool) APIMode {
+func (r *resolver) configuredOrFallbackAPIMode(provider string, baseURL, model string, opencodeByModel bool) APIMode {
 	if provider == "actual" {
-		if configured := r.configuredAPIMode(provider, modelCfg); configured != "" && configured != ModeChatCompletions {
+		if configured := r.configuredAPIMode(provider); configured != "" && configured != ModeChatCompletions {
 			pkgLog().Info(fmt.Sprintf("Routing built-in Actual through chat_completions instead of persisted api_mode=%s", configured))
 		}
 		return ModeChatCompletions
@@ -575,26 +564,26 @@ func (r *resolver) configuredOrFallbackAPIMode(provider string, modelCfg map[str
 	if opencodeByModel && OpenCodeFamily(provider) != "" {
 		return OpenCodeModelMode(provider, model)
 	}
-	if configured := r.configuredAPIMode(provider, modelCfg); configured != "" {
+	if configured := r.configuredAPIMode(provider); configured != "" {
 		return configured
 	}
 	return r.fallbackAPIMode(provider, baseURL, model)
 }
 
 // Api mode for a registry api_key provider on the explicit and env paths
-func (r *resolver) apiKeyProviderAPIMode(provider string, modelCfg map[string]any, apiKey, baseURL, model string, opencodeByModel bool) APIMode {
+func (r *resolver) apiKeyProviderAPIMode(provider string, apiKey, baseURL, model string, opencodeByModel bool) APIMode {
 	if perModelProfileCtx(r.ctx, provider) != nil {
-		return r.profileRuntimeAPIMode(provider, modelCfg, apiKey, model)
+		return r.profileRuntimeAPIMode(provider, apiKey, model)
 	}
 	if provider == "xai" {
 		return ModeCodexResponses
 	}
-	return r.configuredOrFallbackAPIMode(provider, modelCfg, baseURL, model, opencodeByModel)
+	return r.configuredOrFallbackAPIMode(provider, baseURL, model, opencodeByModel)
 }
 
 // Opt in rewrite to codex_app_server via model.openai_runtime for openai, codex, and named custom providers
-func (r *resolver) maybeApplyCodexAppServerRuntime(provider string, apiMode APIMode, modelCfg map[string]any, requestedProvider string) APIMode {
-	if modelCfg == nil || strings.ToLower(strings.TrimSpace(cfgString(modelCfg["openai_runtime"]))) != "codex_app_server" {
+func (r *resolver) maybeApplyCodexAppServerRuntime(provider string, apiMode APIMode, requestedProvider string) APIMode {
+	if settings.ModelOpenAIRuntime.Get(r.hookCtx()) != "codex_app_server" {
 		return apiMode
 	}
 	if provider == "openai" || provider == "openai-codex" || requestedProvider == "openai" || requestedProvider == "openai-codex" ||
@@ -618,21 +607,16 @@ func (r *resolver) runtime(provider string, apiMode APIMode, baseURL, apiKey, so
 	return &Runtime{Provider: provider, APIMode: apiMode, BaseURL: baseURL, APIKey: apiKey, Source: source}
 }
 
-// model.base_url only when model.provider is this provider so a stale URL never leaks across providers
-func configBaseURLForProvider(modelCfg map[string]any, provider string) string {
-	return configBaseURLForProviderCtx(context.Background(), modelCfg, provider)
-}
-
-// Config base url for the provider judged against the registry of the home bound to ctx
-func configBaseURLForProviderCtx(ctx context.Context, modelCfg map[string]any, provider string) string {
-	configured := cfgProviderOf(modelCfg)
+// model.base_url in effect for ctx only when model.provider is this provider, judged against the registry of the home bound to ctx, so a stale URL never leaks across providers
+func configBaseURLForProvider(ctx context.Context, provider string) string {
+	configured := strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx)))
 	if provider == "actual" {
 		configured = NormalizeProvider(configured)
 	}
 	if !sameRegisteredProvider(ctx, provider, configured) {
 		return ""
 	}
-	return strings.TrimRight(strings.TrimSpace(cfgString(modelCfg["base_url"])), "/")
+	return strings.TrimRight(strings.TrimSpace(settings.ModelBaseURL.Get(ctx)), "/")
 }
 
 // IsForeignProviderEndpoint reports whether the base URL is another built in provider's canonical endpoint
@@ -664,9 +648,9 @@ func anthropicBaseURLOverrideOK(baseURL string) bool {
 		strings.HasSuffix(hostname, ".azure.com") || detectAPIModeForURL(candidate) == ModeAnthropicMessages
 }
 
-// Config base URL for native Anthropic, empty when absent or untrustworthy
-func anthropicCfgBaseURL(modelCfg map[string]any) string {
-	cfgBaseURL := configBaseURLForProvider(modelCfg, "anthropic")
+// Config base URL for native Anthropic in effect for ctx, empty when absent or untrustworthy
+func anthropicCfgBaseURL(ctx context.Context) string {
+	cfgBaseURL := configBaseURLForProvider(ctx, "anthropic")
 	if anthropicBaseURLOverrideOK(cfgBaseURL) {
 		return cfgBaseURL
 	}
@@ -953,14 +937,10 @@ type apiKeyCreds struct {
 
 // model.key_env when config.yaml's main model targets the provider
 func (r *resolver) modelLevelKeyEnv(providerID string) string {
-	modelCfg, ok := r.cfg["model"].(map[string]any)
-	if !ok {
+	if r.cfgProvider() != providerID {
 		return ""
 	}
-	if strings.ToLower(strings.TrimSpace(cfgString(modelCfg["provider"]))) != providerID {
-		return ""
-	}
-	return strings.TrimSpace(cfgString(modelCfg["key_env"]))
+	return strings.TrimSpace(settings.ModelKeyEnv.Get(r.hookCtx()))
 }
 
 // APIKeySecretResolver is a provider owned credential resolution returning the runtime key and its source
@@ -1010,8 +990,8 @@ func (r *resolver) apiKeyProviderSecret(providerID string, pconfig Profile) (str
 // Env base URL override for a registry provider, Actual honouring a configured model.base_url first
 func (r *resolver) providerEnvBaseURL(pconfig Profile) string {
 	if pconfig.Name == "actual" {
-		if model, ok := r.cfg["model"].(map[string]any); ok && NormalizeProvider(cfgString(model["provider"])) == "actual" {
-			if configured := strings.TrimSpace(cfgString(model["base_url"])); configured != "" {
+		if NormalizeProvider(r.cfgProvider()) == "actual" {
+			if configured := r.cfgBaseURL(); configured != "" {
 				return configured
 			}
 		}
@@ -1213,31 +1193,22 @@ func (r *resolver) signedInProvider() string {
 	return signedIn
 }
 
-// Model config and the provider config.yaml names when it pins a registry provider or a custom endpoint
-func (r *resolver) configModelProvider() (map[string]any, string) {
-	modelCfg, _ := r.cfg["model"].(map[string]any)
-	provider := ""
-	if modelCfg != nil {
-		provider = strings.ToLower(strings.TrimSpace(cfgString(modelCfg["provider"])))
-	}
-	provider = authNormalizeProvider(provider)
+// Provider model.provider names when it pins a registry provider or a custom endpoint
+func (r *resolver) configModelProvider() string {
+	provider := authNormalizeProvider(r.cfgProvider())
 	if provider == "custom" || strings.HasPrefix(provider, "custom:") {
-		return modelCfg, "custom"
+		return "custom"
 	}
 	if _, ok := registryProfileCtx(r.ctx, provider); provider == "openrouter" || ok {
-		return modelCfg, provider
+		return provider
 	}
 	if provider != "" && r.HasNamedCustomProvider(provider) {
-		return modelCfg, "custom"
+		return "custom"
 	}
-	baseURL := ""
-	if modelCfg != nil {
-		baseURL = strings.TrimSpace(cfgString(modelCfg["base_url"]))
+	if baseURL := r.cfgBaseURL(); baseURL != "" && r.configBaseURLTrustworthyForBareCustom(baseURL, provider) {
+		return "custom"
 	}
-	if baseURL != "" && r.configBaseURLTrustworthyForBareCustom(baseURL, provider) {
-		return modelCfg, "custom"
-	}
-	return modelCfg, ""
+	return ""
 }
 
 var noAutoDetectProviders = map[string]bool{"lmstudio": true}
@@ -1280,7 +1251,7 @@ func (r *resolver) unknownProviderHint(providerName string) string {
 			"Switch to 'opencode-zen' (pay-as-you-go, OPENCODE_ZEN_API_KEY) or 'opencode-go' " +
 			"($10/mo subscription, OPENCODE_GO_API_KEY) via 'icebath model'."
 	}
-	issues := configStructureIssueLines(r.cfg)
+	issues := configStructureIssueLines(r.hookCtx())
 	if len(issues) == 0 {
 		return ""
 	}
@@ -1312,7 +1283,7 @@ func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL st
 	if explicitAPIKey != "" || explicitBaseURL != "" {
 		return "openrouter", nil
 	}
-	modelCfg, cfgProvider := r.configModelProvider()
+	cfgProvider := r.configModelProvider()
 	if cfgProvider != "" {
 		return cfgProvider, nil
 	}
@@ -1327,7 +1298,7 @@ func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL st
 		return envPid, nil
 	}
 	if signedIn != "" {
-		if len(modelCfg) > 0 && !truthy(modelCfg["provider"]) {
+		if r.cfgProvider() == "" && r.cfgModel() != "" {
 			pkgLog().Warn(fmt.Sprintf("Provider resolved to the signed-in provider %q because config.yaml `model` has no `provider` key. "+
 				"If you meant a different provider, set `model.provider` explicitly.", signedIn))
 		}
@@ -1372,9 +1343,9 @@ var poolEntrySimpleModes = map[string]poolSimpleMode{
 var v1TailRe = regexp.MustCompile(`/v1/?$`)
 
 // Api mode and base URL for a pool entry of the provider
-func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCfg map[string]any, model, baseURL string) (APIMode, string) {
+func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, model, baseURL string) (APIMode, string) {
 	if provider == "actual" && strings.HasPrefix(strings.TrimPrefix(cred.Source, "pool:"), "env:") {
-		if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
+		if cfgURL := configBaseURLForProvider(r.hookCtx(), provider); cfgURL != "" {
 			baseURL = cfgURL
 		}
 	}
@@ -1385,7 +1356,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 				return simple.mode, override
 			}
 			if baseURL == "" || baseURL == defaultURL {
-				if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
+				if cfgURL := configBaseURLForProvider(r.hookCtx(), provider); cfgURL != "" {
 					baseURL = cfgURL
 				}
 			}
@@ -1396,7 +1367,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 				canonical = strings.TrimRight(p.BaseURL, "/")
 			}
 			if t := strings.TrimRight(baseURL, "/"); t == "" || t == canonical {
-				if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
+				if cfgURL := configBaseURLForProvider(r.hookCtx(), provider); cfgURL != "" {
 					baseURL = cfgURL
 				}
 			}
@@ -1407,7 +1378,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 		return simple.mode, baseURL
 	}
 	if provider == "anthropic" {
-		u := anthropicCfgBaseURL(modelCfg)
+		u := anthropicCfgBaseURL(r.hookCtx())
 		if u == "" {
 			u = baseURL
 		}
@@ -1417,7 +1388,7 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 		return ModeAnthropicMessages, u
 	}
 	if perModelProfileCtx(r.ctx, provider) != nil {
-		mode := r.profileRuntimeAPIMode(provider, modelCfg, cred.APIKey, model)
+		mode := r.profileRuntimeAPIMode(provider, cred.APIKey, model)
 		if baseURL == "" {
 			if p, ok := ProfileFor(provider); ok {
 				baseURL = p.BaseURL
@@ -1427,11 +1398,11 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 	}
 	if provider == "azure-foundry" {
 		mode := ModeChatCompletions
-		if cfgProviderOf(modelCfg) == "azure-foundry" {
-			if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, "azure-foundry"); cfgURL != "" {
+		if r.cfgProvider() == "azure-foundry" {
+			if cfgURL := configBaseURLForProvider(r.hookCtx(), "azure-foundry"); cfgURL != "" {
 				baseURL = cfgURL
 			}
-			if parsed := r.parseAPIMode(modelCfg["api_mode"]); parsed != "" {
+			if parsed := r.cfgAPIMode(); parsed != "" {
 				mode = parsed
 			}
 		}
@@ -1442,18 +1413,18 @@ func (r *resolver) poolEntryModeAndURL(provider string, cred Credential, modelCf
 		return mode, baseURL
 	}
 	if pconfig, ok := registryProfileCtx(r.ctx, provider); ok && (baseURL == "" || strings.TrimRight(baseURL, "/") == strings.TrimRight(pconfig.BaseURL, "/")) {
-		if cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider); cfgURL != "" {
+		if cfgURL := configBaseURLForProvider(r.hookCtx(), provider); cfgURL != "" {
 			baseURL = cfgURL
 		} else if baseURL == "" {
 			baseURL = pconfig.BaseURL
 		}
 	}
-	return r.configuredOrFallbackAPIMode(provider, modelCfg, baseURL, model, true), baseURL
+	return r.configuredOrFallbackAPIMode(provider, baseURL, model, true), baseURL
 }
 
 // Runtime from a selected login of the provider
-func (r *resolver) runtimeFromPoolEntry(provider string, cred Credential, requestedProvider string, modelCfg map[string]any, targetModel string) *Runtime {
-	mode, baseURL := r.poolEntryModeAndURL(provider, cred, modelCfg, effectiveModel(modelCfg, targetModel), strings.TrimRight(cred.BaseURL, "/"))
+func (r *resolver) runtimeFromPoolEntry(provider string, cred Credential, requestedProvider string, targetModel string) *Runtime {
+	mode, baseURL := r.poolEntryModeAndURL(provider, cred, r.effectiveModel(targetModel), strings.TrimRight(cred.BaseURL, "/"))
 	baseURL = finalizeBaseURL(provider, mode, baseURL)
 	source := cred.Source
 	if source == "" {
@@ -1467,13 +1438,13 @@ func (r *resolver) runtimeFromPoolEntry(provider string, cred Credential, reques
 }
 
 // OpenRouter pool only for a plain openrouter or auto request with no custom endpoint or override
-func (r *resolver) openrouterShouldUsePool(requestedProvider string, modelCfg map[string]any, explicitAPIKey, explicitBaseURL string) bool {
-	cfgBaseURL := strings.TrimSpace(cfgString(modelCfg["base_url"]))
+func (r *resolver) openrouterShouldUsePool(requestedProvider string, explicitAPIKey, explicitBaseURL string) bool {
+	cfgBaseURL := r.cfgBaseURL()
 	envBase := strings.TrimSpace(r.secret("OPENAI_BASE_URL"))
 	if envBase == "" {
 		envBase = strings.TrimSpace(r.secret("OPENROUTER_BASE_URL"))
 	}
-	cfgProv := cfgProviderOf(modelCfg)
+	cfgProv := r.cfgProvider()
 	cfgIsMirror := cfgBaseURL != "" && (cfgProv == "auto" || cfgProv == "custom" || (cfgProv == "openrouter" && !HostMatches(cfgBaseURL, "openrouter.ai")))
 	hasCustomEndpoint := explicitBaseURL != "" || envBase != "" || cfgIsMirror
 	return (requestedProvider == "openrouter" || requestedProvider == "auto") && !hasCustomEndpoint && explicitAPIKey == "" && explicitBaseURL == ""
@@ -1491,8 +1462,8 @@ func (r *resolver) credentialForModel(provider, model string) (Credential, bool)
 }
 
 // Runtime from the provider's credential pool, nil to continue down the ladder
-func (r *resolver) resolveFromPool(provider, requestedProvider string, modelCfg map[string]any, explicitAPIKey, explicitBaseURL, targetModel string) *Runtime {
-	if provider == "openrouter" && !r.openrouterShouldUsePool(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL) {
+func (r *resolver) resolveFromPool(provider, requestedProvider string, explicitAPIKey, explicitBaseURL, targetModel string) *Runtime {
+	if provider == "openrouter" && !r.openrouterShouldUsePool(requestedProvider, explicitAPIKey, explicitBaseURL) {
 		return nil
 	}
 	cred, ok := r.credentialForModel(provider, targetModel)
@@ -1507,12 +1478,12 @@ func (r *resolver) resolveFromPool(provider, requestedProvider string, modelCfg 
 	if cred.TokenSource == nil && !hasUsableSecret(cred.APIKey) {
 		return nil
 	}
-	return r.runtimeFromPoolEntry(provider, cred, requestedProvider, modelCfg, targetModel)
+	return r.runtimeFromPoolEntry(provider, cred, requestedProvider, targetModel)
 }
 
 // Refusal of a provider whose selected login or rotation set serves nothing, so the ladder never falls over to another account
-func (r *resolver) selectedLoginUnavailable(provider, requestedProvider string, modelCfg map[string]any, explicitAPIKey, explicitBaseURL, targetModel string) *AuthError {
-	if provider == "openrouter" && !r.openrouterShouldUsePool(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL) {
+func (r *resolver) selectedLoginUnavailable(provider, requestedProvider string, explicitAPIKey, explicitBaseURL, targetModel string) *AuthError {
+	if provider == "openrouter" && !r.openrouterShouldUsePool(requestedProvider, explicitAPIKey, explicitBaseURL) {
 		return nil
 	}
 	src, ok := r.creds.(interface {
@@ -1526,9 +1497,9 @@ func (r *resolver) selectedLoginUnavailable(provider, requestedProvider string, 
 
 // ---- explicit --api-key / --base-url path ----
 
-func (r *resolver) explicitAnthropic(requestedProvider string, modelCfg map[string]any, apiKey, baseURL, targetModel string) (*Runtime, error) {
+func (r *resolver) explicitAnthropic(requestedProvider string, apiKey, baseURL, targetModel string) (*Runtime, error) {
 	if baseURL == "" {
-		baseURL = anthropicCfgBaseURL(modelCfg)
+		baseURL = anthropicCfgBaseURL(r.hookCtx())
 	}
 	if baseURL == "" {
 		baseURL = AnthropicBaseURL
@@ -1594,7 +1565,7 @@ func (r *resolver) credsFallback(provider, apiKey, explicitBaseURL, baseURL stri
 	return cred.APIKey, u, cred.TokenSource, "explicit", nil
 }
 
-func (r *resolver) explicitCodex(requestedProvider string, modelCfg map[string]any, apiKey, explicitBaseURL, targetModel string) (*Runtime, error) {
+func (r *resolver) explicitCodex(requestedProvider string, apiKey, explicitBaseURL, targetModel string) (*Runtime, error) {
 	base := explicitBaseURL
 	if base == "" {
 		base = CodexBaseURL
@@ -1617,7 +1588,7 @@ func qwenBaseURLFromEnv() string {
 	return QwenBaseURL
 }
 
-func (r *resolver) explicitQwen(requestedProvider string, modelCfg map[string]any, apiKey, explicitBaseURL, targetModel string) (*Runtime, error) {
+func (r *resolver) explicitQwen(requestedProvider string, apiKey, explicitBaseURL, targetModel string) (*Runtime, error) {
 	base := explicitBaseURL
 	if base == "" {
 		base = qwenBaseURLFromEnv()
@@ -1647,12 +1618,12 @@ func actualURL(provider, baseURL string) string {
 	return baseURL
 }
 
-func (r *resolver) explicitAPIKeyProvider(provider string, pconfig Profile, requestedProvider string, modelCfg map[string]any, apiKey, baseURL, targetModel string) (*Runtime, error) {
+func (r *resolver) explicitAPIKeyProvider(provider string, pconfig Profile, requestedProvider string, apiKey, baseURL, targetModel string) (*Runtime, error) {
 	var tokenSrc func(context.Context) (string, error)
 	if baseURL == "" {
 		switch {
 		case provider == "actual":
-			baseURL = configBaseURLForProviderCtx(r.ctx, modelCfg, provider)
+			baseURL = configBaseURLForProvider(r.hookCtx(), provider)
 			if baseURL == "" {
 				creds, err := r.apiKeyProviderCredentials(provider)
 				if err != nil {
@@ -1691,9 +1662,9 @@ func (r *resolver) explicitAPIKeyProvider(provider string, pconfig Profile, requ
 	}
 	model := targetModel
 	if model == "" {
-		model = cfgString(modelCfg["default"])
+		model = r.cfgModel()
 	}
-	mode := r.apiKeyProviderAPIMode(provider, modelCfg, apiKey, baseURL, model, true)
+	mode := r.apiKeyProviderAPIMode(provider, apiKey, baseURL, model, true)
 	baseURL = finalizeBaseURL(provider, mode, baseURL)
 	apiKey = actualLocalKey(provider, apiKey, baseURL)
 	rt := r.runtime(provider, mode, strings.TrimRight(baseURL, "/"), apiKey, "explicit")
@@ -1703,7 +1674,7 @@ func (r *resolver) explicitAPIKeyProvider(provider string, pconfig Profile, requ
 }
 
 // Runtime from explicit CLI credentials, nil when none were given or the provider takes none
-func (r *resolver) resolveExplicitRuntime(provider, requestedProvider string, modelCfg map[string]any, explicitAPIKey, explicitBaseURL, targetModel string) (*Runtime, error) {
+func (r *resolver) resolveExplicitRuntime(provider, requestedProvider string, explicitAPIKey, explicitBaseURL, targetModel string) (*Runtime, error) {
 	explicitAPIKey = strings.TrimSpace(explicitAPIKey)
 	explicitBaseURL = strings.TrimRight(strings.TrimSpace(explicitBaseURL), "/")
 	if explicitAPIKey == "" && explicitBaseURL == "" {
@@ -1711,19 +1682,19 @@ func (r *resolver) resolveExplicitRuntime(provider, requestedProvider string, mo
 	}
 	switch provider {
 	case "anthropic":
-		return r.explicitAnthropic(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
+		return r.explicitAnthropic(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel)
 	case "openai-codex":
-		return r.explicitCodex(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
+		return r.explicitCodex(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel)
 	case "qwen-oauth":
-		return r.explicitQwen(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
+		return r.explicitQwen(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel)
 	case "azure-foundry":
-		return r.resolveAzureFoundryRuntime(requestedProvider, modelCfg, explicitAPIKey, nil, explicitBaseURL, targetModel)
+		return r.resolveAzureFoundryRuntime(requestedProvider, explicitAPIKey, nil, explicitBaseURL, targetModel)
 	}
 	pconfig, ok := registryProfileCtx(r.ctx, provider)
 	if !ok || pconfig.AuthType != AuthTypeAPIKey {
 		return nil, nil
 	}
-	return r.explicitAPIKeyProvider(provider, pconfig, requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel)
+	return r.explicitAPIKeyProvider(provider, pconfig, requestedProvider, explicitAPIKey, explicitBaseURL, targetModel)
 }
 
 // ---- OAuth and auth store providers ----
@@ -1746,7 +1717,7 @@ var oauthRuntimeProviders = map[string]oauthRuntimeSpec{
 }
 
 // Runtime from an oauth spec, raising when the stored login is stale, revoked, or benched
-func (r *resolver) resolveOAuthRuntime(provider, requestedProvider string, modelCfg map[string]any, targetModel string) (*Runtime, error) {
+func (r *resolver) resolveOAuthRuntime(provider, requestedProvider string, targetModel string) (*Runtime, error) {
 	spec := oauthRuntimeProviders[provider]
 	cred, err := r.oauthCredential(provider)
 	if err != nil {
@@ -1760,7 +1731,7 @@ func (r *resolver) resolveOAuthRuntime(provider, requestedProvider string, model
 	if source == "" {
 		source = spec.defaultSource
 	}
-	rt := r.runtime(provider, spec.mode(effectiveModel(modelCfg, targetModel), r), baseURL, cred.APIKey, source)
+	rt := r.runtime(provider, spec.mode(r.effectiveModel(targetModel), r), baseURL, cred.APIKey, source)
 	rt.TokenSource = cred.TokenSource
 	rt.RequestedProvider = requestedProvider
 	return rt, nil
@@ -1787,31 +1758,31 @@ func (r *resolver) minimaxOAuthRuntime(provider, requestedProvider string) (*Run
 
 // ---- env and config paths for anthropic and registry api_key providers ----
 
-// Azure Anthropic key from key_env hints, an inline api_key, then the historical fixed names
-func (r *resolver) azureAnthropicEnvKey(modelCfg map[string]any) string {
-	for _, hint := range []string{"key_env"} {
-		if envVar := strings.TrimSpace(cfgString(modelCfg[hint])); envVar != "" {
+// Azure Anthropic key from model.key_env and an inline model.api_key when fromModel, then the fixed env names
+func (r *resolver) azureAnthropicEnvKey(fromModel bool) string {
+	if fromModel {
+		if envVar := strings.TrimSpace(settings.ModelKeyEnv.Get(r.hookCtx())); envVar != "" {
 			if token := strings.TrimSpace(r.secret(envVar)); token != "" {
 				return token
 			}
 		}
-	}
-	if inline := strings.TrimSpace(cfgString(modelCfg["api_key"])); inline != "" {
-		return inline
+		if inline := strings.TrimSpace(settings.ModelAPIKey.Get(r.hookCtx())); inline != "" {
+			return inline
+		}
 	}
 	return r.firstSecret("AZURE_ANTHROPIC_KEY", "ANTHROPIC_API_KEY")
 }
 
 // Native Anthropic from env and the login store, model.base_url honoured only for provider anthropic
-func (r *resolver) anthropicEnvRuntime(requestedProvider string, modelCfg map[string]any, targetModel string) (*Runtime, error) {
-	baseURL := anthropicCfgBaseURL(modelCfg)
+func (r *resolver) anthropicEnvRuntime(requestedProvider string, targetModel string) (*Runtime, error) {
+	baseURL := anthropicCfgBaseURL(r.hookCtx())
 	if baseURL == "" {
 		baseURL = AnthropicBaseURL
 	}
 	var token string
 	var src func(context.Context) (string, error)
 	if HostMatches(baseURL, "azure.com") {
-		token = r.azureAnthropicEnvKey(modelCfg)
+		token = r.azureAnthropicEnvKey(true)
 		if token == "" {
 			return nil, newAuthErr("anthropic", "No Azure Anthropic API key found. Set AZURE_ANTHROPIC_KEY or ANTHROPIC_API_KEY, or point "+
 				"key_env in your config.yaml model section at a custom env var.", "", false)
@@ -1830,13 +1801,13 @@ func (r *resolver) anthropicEnvRuntime(requestedProvider string, modelCfg map[st
 }
 
 // Registry api_key providers from env and config, an empty key failing closed with the env names to set
-func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, requestedProvider string, modelCfg map[string]any, targetModel string) (*Runtime, error) {
+func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, requestedProvider string, targetModel string) (*Runtime, error) {
 	creds, err := r.apiKeyProviderCredentials(provider)
 	if err != nil {
 		return nil, err
 	}
 	if provider == "actual" && creds.TokenSource == nil && !hasUsableSecret(creds.APIKey) {
-		cfgURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider)
+		cfgURL := configBaseURLForProvider(r.hookCtx(), provider)
 		probe := cfgURL
 		if probe == "" {
 			probe = strings.TrimRight(creds.BaseURL, "/")
@@ -1857,16 +1828,16 @@ func (r *resolver) apiKeyProviderRuntime(provider string, pconfig Profile, reque
 		hint += r.namedProfileKeyHint(pconfig.KeyEnvNames())
 		return nil, newAuthErr(provider, fmt.Sprintf("No usable credentials found for provider '%s'.%s", provider, hint), "missing_api_key", false)
 	}
-	baseURL := configBaseURLForProviderCtx(r.ctx, modelCfg, provider)
+	baseURL := configBaseURLForProvider(r.hookCtx(), provider)
 	if baseURL == "" {
 		baseURL = strings.TrimRight(creds.BaseURL, "/")
 	}
 	baseURL = actualURL(provider, baseURL)
 	model := targetModel
 	if model == "" {
-		model = cfgString(modelCfg["default"])
+		model = r.cfgModel()
 	}
-	mode := r.apiKeyProviderAPIMode(provider, modelCfg, creds.APIKey, baseURL, model, true)
+	mode := r.apiKeyProviderAPIMode(provider, creds.APIKey, baseURL, model, true)
 	baseURL = finalizeBaseURL(provider, mode, baseURL)
 	apiKey := actualLocalKey(provider, creds.APIKey, baseURL)
 	rt := r.runtime(provider, mode, baseURL, apiKey, creds.Source)
@@ -1914,11 +1885,7 @@ var vertexNames = map[string]bool{"vertex": true, "google-vertex": true, "vertex
 
 // Honours providers.<name>.enabled false for built ins too
 func (r *resolver) raiseIfProviderDisabled(requestedProvider string) error {
-	provs, ok := r.cfg["providers"].(map[string]any)
-	if !ok {
-		return nil
-	}
-	block, ok := provs[requestedProvider].(map[string]any)
+	block, ok := r.providers()[requestedProvider].(map[string]any)
 	if ok && !IsProviderEnabled(block) {
 		return &ValueError{Message: fmt.Sprintf("provider %s is disabled in config (providers.%s.enabled: false)", pyrepr.StrRepr(requestedProvider), requestedProvider)}
 	}
@@ -1934,11 +1901,10 @@ func (r *resolver) raiseIfLocalAliasMissingEndpoint(requestedProvider, explicitB
 	if strings.TrimSpace(explicitBaseURL) != "" || strings.TrimSpace(r.secret("CUSTOM_BASE_URL")) != "" {
 		return nil
 	}
-	modelCfg := r.modelConfig()
-	if r.configBaseURLTrustworthyForBareCustom(cfgString(modelCfg["base_url"]), cfgProviderOf(modelCfg)) {
+	if r.configBaseURLTrustworthyForBareCustom(r.cfgBaseURL(), r.cfgProvider()) {
 		return nil
 	}
-	if entry := r.getNamedCustomProvider(requestedProvider, nil, true); entry != nil && strings.TrimSpace(cfgString(entry["base_url"])) != "" {
+	if entry := r.getNamedCustomProvider(requestedProvider, r.providers(), true); entry != nil && strings.TrimSpace(cfgString(entry["base_url"])) != "" {
 		return nil
 	}
 	return newAuthErr(requestedProvider, fmt.Sprintf("provider '%s' has no endpoint configured, so the request is not sent anywhere "+
@@ -1948,7 +1914,7 @@ func (r *resolver) raiseIfLocalAliasMissingEndpoint(requestedProvider, explicitB
 
 // Vertex AI with a short lived token minted per call rather than a static key
 func (r *resolver) resolveVertexRuntime(requestedProvider string) (*Runtime, error) {
-	tokenSrc, baseURL, ok := vertexRuntimeConfig(r.ctx, r.cfg, r.secrets, r.home)
+	tokenSrc, baseURL, ok := vertexRuntimeConfig(r.ctx, r.secrets, r.home)
 	if !ok || tokenSrc == nil || baseURL == "" {
 		return nil, newAuthErr("vertex", "Vertex AI credentials could not be resolved. Vertex uses OAuth2 (not a static API key): provide a "+
 			"service-account JSON via GOOGLE_APPLICATION_CREDENTIALS (or VERTEX_CREDENTIALS_PATH) in ~/.icebath/.env, "+
@@ -1972,14 +1938,14 @@ func (r *resolver) resolveRequestedShortcuts(requestedProvider, explicitAPIKey, 
 	if requestedProvider == "anthropic" && HostMatches(effBase, "azure.com") {
 		key := strings.TrimSpace(explicitAPIKey)
 		if key == "" {
-			key = r.azureAnthropicEnvKey(map[string]any{})
+			key = r.azureAnthropicEnvKey(false)
 		}
 		rt := r.runtime("anthropic", ModeAnthropicMessages, strings.TrimRight(effBase, "/"), key, "azure-explicit")
 		rt.RequestedProvider = requestedProvider
 		return rt, nil
 	}
 	if requestedProvider == "azure-foundry" {
-		return r.resolveAzureFoundryRuntime(requestedProvider, r.modelConfig(), explicitAPIKey, explicitToken, explicitBaseURL, targetModel)
+		return r.resolveAzureFoundryRuntime(requestedProvider, explicitAPIKey, explicitToken, explicitBaseURL, targetModel)
 	}
 	if vertexNames[requestedProvider] {
 		return r.resolveVertexRuntime(requestedProvider)
@@ -1989,7 +1955,7 @@ func (r *resolver) resolveRequestedShortcuts(requestedProvider, explicitAPIKey, 
 
 // Rung 3, a configured named custom provider honouring the codex app server opt in
 func (r *resolver) namedCustomRung(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel string) (*Runtime, error) {
-	rt, err := r.resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel, nil)
+	rt, err := r.resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, explicitBaseURL, targetModel)
 	if err != nil || rt == nil {
 		return rt, err
 	}
@@ -1999,7 +1965,7 @@ func (r *resolver) namedCustomRung(requestedProvider, explicitAPIKey, explicitBa
 		if mode == "" {
 			mode = ModeChatCompletions
 		}
-		rt.APIMode = r.maybeApplyCodexAppServerRuntime("custom", mode, r.modelConfig(), requestedProvider)
+		rt.APIMode = r.maybeApplyCodexAppServerRuntime("custom", mode, requestedProvider)
 	}
 	return rt, nil
 }
@@ -2036,19 +2002,18 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 	if err != nil {
 		return nil, err
 	}
-	modelCfg := r.modelConfig()
-	if rt, err := r.resolveExplicitRuntime(provider, requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel); err != nil || rt != nil {
+	if rt, err := r.resolveExplicitRuntime(provider, requestedProvider, explicitAPIKey, explicitBaseURL, targetModel); err != nil || rt != nil {
 		return rt, err
 	}
-	if rt := r.resolveFromPool(provider, requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel); rt != nil {
+	if rt := r.resolveFromPool(provider, requestedProvider, explicitAPIKey, explicitBaseURL, targetModel); rt != nil {
 		return rt, nil
 	}
-	if err := r.selectedLoginUnavailable(provider, requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel); err != nil {
+	if err := r.selectedLoginUnavailable(provider, requestedProvider, explicitAPIKey, explicitBaseURL, targetModel); err != nil {
 		return nil, err
 	}
 	var swallowed *AuthError
 	if spec, ok := oauthRuntimeProviders[provider]; ok {
-		rt, err := r.resolveOAuthRuntime(provider, requestedProvider, modelCfg, targetModel)
+		rt, err := r.resolveOAuthRuntime(provider, requestedProvider, targetModel)
 		if err != nil {
 			authErr, isAuth := err.(*AuthError)
 			if !isAuth || requestedProvider != "auto" {
@@ -2069,13 +2034,13 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 		return r.resolveExternalProcessRuntime(provider, requestedProvider)
 	}
 	if provider == "anthropic" {
-		return r.anthropicEnvRuntime(requestedProvider, modelCfg, targetModel)
+		return r.anthropicEnvRuntime(requestedProvider, targetModel)
 	}
 	if provider == "bedrock" {
-		return r.resolveBedrockRuntime(requestedProvider, modelCfg, targetModel)
+		return r.resolveBedrockRuntime(requestedProvider, targetModel)
 	}
 	if pconfig, ok := registryProfileCtx(r.ctx, provider); ok && pconfig.AuthType == AuthTypeAPIKey {
-		return r.apiKeyProviderRuntime(provider, pconfig, requestedProvider, modelCfg, targetModel)
+		return r.apiKeyProviderRuntime(provider, pconfig, requestedProvider, targetModel)
 	}
 	fallback := r.openrouterFallback(requestedProvider, explicitAPIKey, explicitBaseURL)
 	if swallowed != nil && fallback.APIKey == "" && fallback.TokenSource == nil {
@@ -2102,13 +2067,13 @@ func (r *resolver) ResolveRuntime(requested, explicitAPIKey, explicitBaseURL str
 	if err := raiseForCredentiallessBareCustom(requestedProvider, rt); err != nil {
 		return nil, err
 	}
-	mode := r.maybeApplyCodexAppServerRuntime(rt.Provider, rt.APIMode, r.modelConfig(), requestedAlias)
+	mode := r.maybeApplyCodexAppServerRuntime(rt.Provider, rt.APIMode, requestedAlias)
 	if mode != rt.APIMode {
 		pkgLog().Info(fmt.Sprintf("model.openai_runtime=codex_app_server overrides the %s runtime (source=%s); its credential/endpoint "+
 			"is not used — the app-server authenticates with its own login", rt.Provider, rt.Source))
 	}
 	rt.APIMode = mode
-	if err := r.raiseIfDeclaredKeyMissing(requestedProvider, rt, r.modelConfig(), explicitAPIKey); err != nil {
+	if err := r.raiseIfDeclaredKeyMissing(requestedProvider, rt, explicitAPIKey); err != nil {
 		return nil, err
 	}
 	return rt, nil
@@ -2148,7 +2113,7 @@ func (r *resolver) ResolveRuntimeWithFallback(requested, targetModel, explicitBa
 	if !isAuth {
 		return nil, nil, primaryErr
 	}
-	for _, entry := range GetFallbackChain(r.cfg) {
+	for _, entry := range FallbackChain(r.hookCtx()) {
 		provider := strings.ToLower(strings.TrimSpace(cfgString(entry["provider"])))
 		model := strings.TrimSpace(cfgString(entry["model"]))
 		if provider == "" || model == "" {
@@ -2156,7 +2121,7 @@ func (r *resolver) ResolveRuntimeWithFallback(requested, targetModel, explicitBa
 		}
 		baseURL := cfgString(entry["base_url"])
 		entryKey := r.ResolveEntryAPIKey(entry)
-		fb := newResolver(r.ctx, r.cfg, r.secrets, r.home, r.creds)
+		fb := newResolver(r.ctx, r.secrets, r.home, r.creds)
 		runtime, err := fb.ResolveRuntime(provider, entryKey, baseURL, nil, model)
 		if err != nil {
 			if _, ok := err.(*AuthError); ok {
@@ -2186,7 +2151,7 @@ func (r *resolver) unwrapMoaProvider(prov, mdl string) (string, string) {
 	if strings.ToLower(strings.TrimSpace(prov)) != "moa" {
 		return prov, mdl
 	}
-	if aggProvider, aggModel, ok := resolveMoaAggregator(r.cfg, mdl); ok && aggProvider != "" && aggModel != "" {
+	if aggProvider, aggModel, ok := resolveMoaAggregator(r.hookCtx(), mdl); ok && aggProvider != "" && aggModel != "" {
 		return aggProvider, aggModel
 	}
 	return prov, mdl
@@ -2243,7 +2208,7 @@ func (r *resolver) resolveTaskProviderModel(task any, provider, model, baseURL, 
 	if cfgProvider != "" {
 		cfgProvider, cfgBaseURL = r.expandDirectAPIAlias(cfgProvider, cfgBaseURL)
 	}
-	if provider != "" && provider != "auto" && baseURL == "" && cfgBaseURL != "" && (cfgProvider == "" || cfgProvider == provider) {
+	if provider != "" && provider != "auto" && baseURL == "" && cfgBaseURL != "" && (cfgProvider == "" || cfgProvider == "auto" || cfgProvider == provider) {
 		baseURL = cfgBaseURL
 		if apiKey == "" {
 			apiKey = cfgAPIKey

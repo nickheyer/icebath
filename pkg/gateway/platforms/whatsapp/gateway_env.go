@@ -1,18 +1,18 @@
 package whatsapp
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Disables a configured entry on a false flag and enables from env on a truthy one without beating a yaml disable
 func whatsappEnabledFlag(ctx context.Context, cfg *gateway.GatewayConfig) error {
 	raw := gateway.EnvFirst(ctx, []string{"WHATSAPP_ENABLED"})
 	pc, ok := cfg.Platforms[gateway.PlatformWhatsApp]
-	switch lowered := pystr.Lower(raw); {
+	switch lowered := strings.ToLower(raw); {
 	case ok && pc != nil && (lowered == "false" || lowered == "0" || lowered == "no"):
 		pc.Enabled = false
 	case gateway.TruthyValue(raw).(bool):
@@ -31,9 +31,7 @@ var envOverrides = []gateway.EnvStep{
 var authz = map[string]any{"allowed_users_env": "WHATSAPP_ALLOWED_USERS", "allow_all_env": "WHATSAPP_ALLOW_ALL_USERS",
 	"own_policy_env": []string{"WHATSAPP_DM_POLICY", "WHATSAPP_GROUP_POLICY"}, "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled whatsapp directory with the gateway config bridge, and the settings its access names moved to
+// Registers the env declarations of the bundled whatsapp directory with the gateway config bridge
 func init() {
 	gateway.RegisterBundledEnv("whatsapp", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
-	gateway.RegisterEnvSettings(map[string]settings.Entry{"WHATSAPP_ALLOWED_USERS": settings.WhatsappAllowFrom,
-		"WHATSAPP_DM_POLICY": settings.WhatsappDmPolicy, "WHATSAPP_GROUP_POLICY": settings.WhatsappGroupPolicy})
 }

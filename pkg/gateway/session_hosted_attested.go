@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -47,7 +46,7 @@ func driverIdentifier(value any, label string) (string, error) {
 	if !ok {
 		return "", &DriverValidationError{label + " must be a string"}
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > maxDriverIdentifierChar || !roomIdentifierRe.MatchString(text) {
 		return "", &DriverValidationError{"invalid " + label}
 	}
@@ -90,7 +89,7 @@ func safeManifestEntry(value any) (map[string]any, error) {
 	if !ok {
 		return nil, &AttachmentError{"attachment mime must be a string"}
 	}
-	mime := strings.ToLower(pystr.Strip(rawMime))
+	mime := strings.ToLower(strings.TrimSpace(rawMime))
 	if mime == "" || utf8.RuneCountInString(mime) > maxAttachmentMimeChars || !attachmentMimeRe.MatchString(mime) {
 		return nil, &AttachmentError{"attachment mime is invalid"}
 	}
@@ -108,7 +107,7 @@ func safeManifestEntry(value any) (map[string]any, error) {
 	if !ok {
 		return nil, &AttachmentError{"attachment name must be a string"}
 	}
-	name := pystr.Strip(rawName)
+	name := strings.TrimSpace(rawName)
 	if !utf8.ValidString(name) {
 		return nil, &AttachmentError{"attachment name must contain valid Unicode"}
 	}

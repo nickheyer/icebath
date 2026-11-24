@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -190,13 +191,11 @@ var (
 )
 
 const (
-	defaultMaxSessionKernels = 4
-	defaultKernelIdleTimeout = 1800
-	childOwnerQualifier      = "::child::"
-	staleStagingDirAge       = 7 * 86400 * time.Second
-	reaperIntervalFloor      = 30.0
-	reaperIntervalCeil       = 300.0
-	kernelStagingPrefix      = "icebath_kernel_"
+	childOwnerQualifier = "::child::"
+	staleStagingDirAge  = 7 * 86400 * time.Second
+	reaperIntervalFloor = 30.0
+	reaperIntervalCeil  = 300.0
+	kernelStagingPrefix = "icebath_kernel_"
 )
 
 // Approval and session identity of exactly one cell, refusing dispatch once the cell settles
@@ -431,27 +430,10 @@ var registry = &kernelRegistry[kernelKey, *sessionKernel]{
 	teardown: func(k *sessionKernel) { k.teardown() },
 }
 
-// Configured max live kernels and idle timeout, each at least one, defaults when not an integer
+// Configured max live kernels and idle timeout in seconds, each at least one
 var lifecycleLimits = func(env *tools.Env) (int, int) {
-	cfg := loadConfig(env)
-	limit := func(key string, def int) int {
-		v, ok := cfg[key]
-		if !ok {
-			v = def
-		}
-		n, err := pyint.Of(v)
-		if err != nil {
-			return def
-		}
-		if !n.IsInt64() || n.Int64() > math.MaxInt {
-			if n.Sign() > 0 {
-				return math.MaxInt
-			}
-			return 1
-		}
-		return max(1, int(n.Int64()))
-	}
-	return limit("max_session_kernels", defaultMaxSessionKernels), limit("kernel_idle_timeout", defaultKernelIdleTimeout)
+	ctx := settingsCtx(env)
+	return max(1, settings.CodeExecutionMaxSessionKernels.Get(ctx)), max(1, int(settings.CodeExecutionKernelIdleTimeout.Get(ctx)/time.Second))
 }
 
 // Session key owning the kernel, task id as last resort, qualified by the child id inside a delegated child
@@ -1045,7 +1027,7 @@ func cellResult(kernel *sessionKernel, key kernelKey, status string, payload *py
 		registry.discard(key, kernel)
 		result.Set("exit_code", -1)
 		message := "The session kernel died while running the cell"
-		if s := pystr.Strip(stderrRaw); s != "" {
+		if s := strings.TrimSpace(stderrRaw); s != "" {
 			message += ": " + s
 		} else {
 			message += "."

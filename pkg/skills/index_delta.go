@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"unicode"
+
 	"fmt"
 	"regexp"
 	"sort"
@@ -35,13 +37,13 @@ type SkillsIndexNotes struct {
 
 // Skill name of an index row, splitting on a colon and space so qualified plugin names stay whole
 func indexRowName(line string) string {
-	stripped := pystr.Strip(line)
+	stripped := strings.TrimSpace(line)
 	if len(stripped) >= 2 {
 		stripped = stripped[2:]
 	} else {
 		stripped = ""
 	}
-	return pystr.Strip(strings.SplitN(stripped, ": ", 2)[0])
+	return strings.TrimSpace(strings.SplitN(stripped, ": ", 2)[0])
 }
 
 // Index row text by skill name for every skill in the prompt available_skills block, names only rows mapping to empty
@@ -56,17 +58,17 @@ func IndexEntries(prompt any) map[string]string {
 		return entries
 	}
 	for _, line := range pystr.Splitlines(m[1], false) {
-		if strings.HasPrefix(pystr.Strip(line), "- ") {
+		if strings.HasPrefix(strings.TrimSpace(line), "- ") {
 			if name := indexRowName(line); name != "" {
 				if _, seen := entries[name]; !seen {
-					entries[name] = pystr.Rstrip(line)
+					entries[name] = strings.TrimRightFunc(line, unicode.IsSpace)
 				}
 				continue
 			}
 		}
 		if names := indexNamesOnlyRe.FindStringSubmatch(line); names != nil {
 			for _, n := range strings.Split(names[1], ",") {
-				if n = pystr.Strip(n); n != "" {
+				if n = strings.TrimSpace(n); n != "" {
 					if _, seen := entries[n]; !seen {
 						entries[n] = ""
 					}
@@ -96,7 +98,7 @@ func renderIndexNote(added map[string]string, removed map[string]bool) string {
 	if len(added) > 0 {
 		parts = append(parts, indexAddedHead)
 		for _, name := range sortedNames(added) {
-			row := pystr.Lstrip(added[name])
+			row := strings.TrimLeftFunc(added[name], unicode.IsSpace)
 			if row == "" {
 				row = "- " + name
 			}
@@ -125,7 +127,7 @@ func parseIndexNote(note string) indexDelta {
 		if strings.HasPrefix(line, indexRemovedHead) {
 			tail := strings.TrimSuffix(line[len(indexRemovedHead):], "]")
 			for _, n := range strings.Split(tail, ",") {
-				if n = pystr.Strip(n); n != "" {
+				if n = strings.TrimSpace(n); n != "" {
 					d.removed[n] = true
 				}
 			}

@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -83,7 +84,7 @@ func allOrigins(urls []string) []string {
 }
 
 func managerIdentifier(v any) (any, any) {
-	username := pystr.Strip(vaultText(v))
+	username := strings.TrimSpace(vaultText(v))
 	if username == "" {
 		return nil, nil
 	}
@@ -103,27 +104,24 @@ func findMeta(items []vault.VaultItemMeta, handle string) *vault.VaultItemMeta {
 type OnePasswordLoginBackend struct {
 	LoginBackendDefaults
 	ctx          context.Context
-	cfg          map[string]any
+	cfg          ManagerConfig
 	serviceToken string
 	itemVaults   map[string]string
 	run          func(args ...string) (string, error)
 	unlocked     func() bool
 }
 
-// 1Password backend of a config section, a configured service account token skipping the prompt
-func NewOnePasswordLoginBackend(ctx context.Context, cfg map[string]any) LoginBackend {
+// 1Password backend of its settings, a configured service account token skipping the prompt
+func NewOnePasswordLoginBackend(ctx context.Context, cfg ManagerConfig) LoginBackend {
 	return newOnePasswordLoginBackend(ctx, cfg)
 }
 
-func newOnePasswordLoginBackend(ctx context.Context, cfg map[string]any) *OnePasswordLoginBackend {
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
+func newOnePasswordLoginBackend(ctx context.Context, cfg ManagerConfig) *OnePasswordLoginBackend {
 	b := &OnePasswordLoginBackend{ctx: ctx, cfg: cfg, itemVaults: map[string]string{}}
 	b.Self = b
-	envName := vaultText(cfg["service_account_token_env"])
+	envName := cfg.ServiceAccountTokenEnv
 	if envName == "" {
-		envName = "OP_SERVICE_ACCOUNT_TOKEN"
+		envName = settings.VaultOnepasswordServiceAccountTokenEnv.Default
 	}
 	b.serviceToken = vaultGetSecret(ctx, envName, "")
 	b.run = b.runOp
@@ -138,7 +136,7 @@ func (*OnePasswordLoginBackend) NeedsUnlock() bool   { return true }
 func (b *OnePasswordLoginBackend) IsUnlocked() bool  { return b.unlocked() }
 
 func (b *OnePasswordLoginBackend) op() (string, error) {
-	op := provider.FindOp(vaultText(b.cfg["binary_path"]))
+	op := provider.FindOp(b.cfg.BinaryPath)
 	if op == "" {
 		return "", errors.New("1Password CLI (op) not found — install it or set vault.onepassword.binary_path")
 	}
@@ -159,7 +157,7 @@ func (b *OnePasswordLoginBackend) env(sessionToken string) map[string]string {
 		}
 	}
 	env["NO_COLOR"] = "1"
-	account := vaultText(b.cfg["account"])
+	account := b.cfg.Account
 	if account != "" {
 		env["OP_ACCOUNT"] = account
 	}
@@ -183,14 +181,14 @@ func (b *OnePasswordLoginBackend) Unlock(masterPassword string) error {
 		return err
 	}
 	cmd := []string{op, "signin", "--raw"}
-	if account := vaultText(b.cfg["account"]); account != "" {
+	if account := b.cfg.Account; account != "" {
 		cmd = append(cmd, "--account", account)
 	}
 	proc, err := RunWithStdinSecret(cmd, b.env(""), masterPassword, vaultManagerTimeout, "op")
 	if err != nil {
 		return err
 	}
-	token := pystr.Strip(proc.Stdout)
+	token := strings.TrimSpace(proc.Stdout)
 	if proc.ReturnCode != 0 || token == "" {
 		detail := vaultHead(provider.OpScrub(proc.Stderr), 200)
 		if detail == "" {
@@ -339,7 +337,7 @@ func (b *OnePasswordLoginBackend) ResolveOTP(handle string) (string, bool, error
 	if err != nil {
 		return "", false, nil
 	}
-	code := pystr.Strip(out)
+	code := strings.TrimSpace(out)
 	if !pystr.StrIsDigit(code) {
 		return "", false, nil
 	}
@@ -355,20 +353,17 @@ const bitwardenMasterEnv = "ICEBATH_BW_MASTER"
 type BitwardenLoginBackend struct {
 	LoginBackendDefaults
 	ctx      context.Context
-	cfg      map[string]any
+	cfg      ManagerConfig
 	run      func(args ...string) (string, error)
 	unlocked func() bool
 }
 
-// Bitwarden backend of a config section
-func NewBitwardenLoginBackend(ctx context.Context, cfg map[string]any) LoginBackend {
+// Bitwarden backend of its settings
+func NewBitwardenLoginBackend(ctx context.Context, cfg ManagerConfig) LoginBackend {
 	return newBitwardenLoginBackend(ctx, cfg)
 }
 
-func newBitwardenLoginBackend(ctx context.Context, cfg map[string]any) *BitwardenLoginBackend {
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
+func newBitwardenLoginBackend(ctx context.Context, cfg ManagerConfig) *BitwardenLoginBackend {
 	b := &BitwardenLoginBackend{ctx: ctx, cfg: cfg}
 	b.Self = b
 	b.run = b.runBw
@@ -383,7 +378,7 @@ func (*BitwardenLoginBackend) NeedsUnlock() bool   { return true }
 func (b *BitwardenLoginBackend) IsUnlocked() bool  { return b.unlocked() }
 
 func (b *BitwardenLoginBackend) bw() (string, error) {
-	found := vaultText(b.cfg["binary_path"])
+	found := b.cfg.BinaryPath
 	if found == "" {
 		found, _ = exec.LookPath("bw")
 	}
@@ -419,9 +414,9 @@ func (b *BitwardenLoginBackend) Unlock(masterPassword string) error {
 	if err != nil {
 		return err
 	}
-	token := pystr.Strip(proc.Stdout)
+	token := strings.TrimSpace(proc.Stdout)
 	if proc.ReturnCode != 0 || token == "" {
-		detail := vaultHead(pystr.Strip(provider.ScrubANSI(proc.Stderr)), 200)
+		detail := vaultHead(strings.TrimSpace(provider.ScrubANSI(proc.Stderr)), 200)
 		if strings.Contains(strings.ToLower(detail), "not logged in") {
 			detail = "not logged in — run `bw login` once in a terminal first"
 		}
@@ -553,7 +548,7 @@ func (b *BitwardenLoginBackend) ResolveOTP(handle string) (string, bool, error) 
 	if err != nil {
 		return "", false, nil
 	}
-	code := pystr.Strip(out)
+	code := strings.TrimSpace(out)
 	if !pystr.StrIsDigit(code) {
 		return "", false, nil
 	}

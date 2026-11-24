@@ -564,7 +564,7 @@ func validatePluginDir(ctx context.Context, path string, probe *capabilityProbe)
 	if err := checkPrivateImports(report, path); err != nil {
 		return nil, err
 	}
-	checkLanguagePacks(report, manifest, path)
+	checkLanguagePacks(ctx, report, manifest, path)
 	return report, nil
 }
 

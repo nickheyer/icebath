@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -43,7 +42,7 @@ func newClientID() string { return "icebath-weixin-" + uuidHex() }
 
 // Sends one local file through the sender its extension selects, voice flagged media always as voice
 func (a *WeixinAdapter) deliverLocalFile(ctx context.Context, chatID, path string, isVoice bool, metadata map[string]any) error {
-	ext := pystr.Lower(pypath.Suffix(path))
+	ext := strings.ToLower(pypath.Suffix(path))
 	var err error
 	switch {
 	case isVoice || voiceExts[ext]:
@@ -106,7 +105,7 @@ func (a *WeixinAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		}
 		var chunks []string
 		for _, chunk := range a.splitText(a.FormatMessage(finalContent)) {
-			if pystr.Strip(chunk) != "" {
+			if strings.TrimSpace(chunk) != "" {
 				chunks = append(chunks, chunk)
 			}
 		}
@@ -339,7 +338,7 @@ func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption stri
 	}
 	uploadURL := strOf(uploadResponse.Vals["upload_full_url"])
 	if uploadURL == "" && uploadParam != "" {
-		uploadURL = pystr.RstripChars(a.cdnBaseURL, "/") + "/upload?encrypted_query_param=" + pyurl.Quote(uploadParam, "") + "&filekey=" + pyurl.Quote(filekey, "")
+		uploadURL = strings.TrimRight(a.cdnBaseURL, "/") + "/upload?encrypted_query_param=" + pyurl.Quote(uploadParam, "") + "&filekey=" + pyurl.Quote(filekey, "")
 	}
 	if uploadURL == "" {
 		return "", runtimeError("getUploadUrl returned neither upload_param nor upload_full_url: " + pyrepr.Str(uploadResponse))

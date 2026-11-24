@@ -14,28 +14,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Worktrees section of the active profile config with every field coerced
+// Worktrees settings of the active profile
 type SweepConfig struct {
 	ArchiveDirty         bool
 	ArchiveMaxFileMB     float64
 	ArchiveRetentionDays float64
 	MaxTotalGB           float64
 }
-
-var sweepDefaults = []struct {
-	key string
-	val any
-}{{"archive_dirty", true}, {"archive_max_file_mb", int64(50)}, {"archive_retention_days", int64(30)}, {"max_total_gb", int64(0)}}
 
 var protectedBranches = map[string]bool{"main": true, "master": true, "develop": true, "dev": true, "trunk": true}
 
@@ -89,40 +82,14 @@ func (d *Decision) AsDict() *pyjson.Object {
 	return o
 }
 
-// Loads the readonly config tree of the active profile, swapped by tests
-var sweepLoadConfig = func() (config.Tree, error) {
-	h := home.Process()
-	return config.LoadReadonly(context.Background(), h, config.NewSecrets(h).Lookup())
-}
-
-// Worktrees settings of the active profile, defaults on any read failure and per field on a bad value
+// Worktrees settings of the process profile, sizes and ages never below zero
 func SweepSettings() SweepConfig {
-	raw := map[string]any{}
-	for _, d := range sweepDefaults {
-		raw[d.key] = d.val
-	}
-	tree, err := sweepLoadConfig()
-	if err != nil {
-		envLog(nil).Debug("worktrees config unreadable; using defaults")
-	} else if section, ok := tree["worktrees"].(map[string]any); ok {
-		for _, d := range sweepDefaults {
-			if v, ok := section[d.key]; ok && v != nil {
-				raw[d.key] = v
-			}
-		}
-	}
-	num := func(key string, def int64) float64 {
-		f, err := pyint.Float(raw[key])
-		if err != nil {
-			return float64(def)
-		}
-		return max(0.0, f)
-	}
+	ctx := context.Background()
 	return SweepConfig{
-		ArchiveDirty:         pyTruthy(raw["archive_dirty"]),
-		ArchiveMaxFileMB:     num("archive_max_file_mb", 50),
-		ArchiveRetentionDays: num("archive_retention_days", 30),
-		MaxTotalGB:           num("max_total_gb", 0),
+		ArchiveDirty:         settings.WorktreesArchiveDirty.Get(ctx),
+		ArchiveMaxFileMB:     float64(max(settings.WorktreesArchiveMaxFileMb.Get(ctx), 0)),
+		ArchiveRetentionDays: max(settings.WorktreesArchiveRetentionDays.Get(ctx).Hours()/24, 0),
+		MaxTotalGB:           float64(max(settings.WorktreesMaxTotalGb.Get(ctx), 0)),
 	}
 }
 
@@ -262,7 +229,7 @@ func lastActivity(path string) float64 {
 	if err != nil || status.Returncode != 0 {
 		return nowSeconds()
 	}
-	gitDir := pystr.Strip(string(gd.Stdout))
+	gitDir := strings.TrimSpace(string(gd.Stdout))
 	var candidates []string
 	if gitDir != "" {
 		candidates = append(candidates, filepath.Join(gitDir, "HEAD"), filepath.Join(gitDir, "logs", "HEAD"))
@@ -361,12 +328,11 @@ var kanbanTreeFullRe = regexp.MustCompile(`^t_[0-9a-f]+\n?$`)
 
 // Read only decision for every tree under the worktrees dir, olderThanDays when positive only restricts removal
 func PlanSweep(ctx context.Context, repoRoot string, maxAgeHours int, s *SweepConfig, now float64, olderThanDays *float64) []*Decision {
-	settings := SweepSettings
 	cfg := SweepConfig{}
 	if s != nil {
 		cfg = *s
 	} else {
-		cfg = settings()
+		cfg = SweepSettings()
 	}
 	if now == 0 {
 		now = nowSeconds()
@@ -482,7 +448,7 @@ func branchPublished(repoRoot, branch string, remoteHeads map[string]string, hea
 	if err != nil {
 		return true
 	}
-	return !ok || pystr.Strip(refs) != ""
+	return !ok || strings.TrimSpace(refs) != ""
 }
 
 // Why the path must not be removed now, a live process in it or a change at or after since, empty while idle
@@ -572,7 +538,7 @@ func ArchiveThenRemove(repoRoot, path, reason string, maxUntrackedMB float64, un
 		return nil, err
 	}
 	if removed.Returncode != 0 {
-		stderr := pystr.Strip(removed.Stderr)
+		stderr := strings.TrimSpace(removed.Stderr)
 		envLog(nil).Warn(fmt.Sprintf("Archived %s to %s but could not remove it: %s", path, arc.Ref, stderr))
 		if stderr == "" {
 			stderr = "git worktree remove failed"

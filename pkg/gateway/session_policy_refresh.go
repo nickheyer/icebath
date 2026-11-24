@@ -215,19 +215,14 @@ func refreshSettings(ctx context.Context, policy *LocalSessionPolicy, cfg, live 
 	if err := followLive(cfg, live, "checkpoints"); err != nil {
 		return nil, err
 	}
-	if request["checkpoints"] == true {
+	if on, set := request["checkpoints"].(bool); set {
 		section := map[string]any{}
-		switch held := cfg["checkpoints"].(type) {
-		case map[string]any:
+		if held, isMap := cfg["checkpoints"].(map[string]any); isMap {
 			for key, value := range held {
 				section[key] = value
 			}
-		default:
-			if pyrepr.Truthy(held) {
-				section["enabled"] = true
-			}
 		}
-		section["enabled"] = true
+		section["enabled"] = on
 		cfg["checkpoints"] = section
 	}
 	return toolsets, nil

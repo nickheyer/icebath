@@ -43,7 +43,7 @@ func newTestHome(t *testing.T) string {
 
 func testEnv(t *testing.T, h string) PoolEnv {
 	t.Helper()
-	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Config: ConfigLoader(h), Log: slog.New(slog.NewTextHandler(os.Stderr, nil))}
+	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Log: slog.New(slog.NewTextHandler(os.Stderr, nil))}
 }
 
 func writeAuthStore(t *testing.T, h string, payload map[string]any) {

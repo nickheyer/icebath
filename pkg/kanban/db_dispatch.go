@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -21,7 +22,7 @@ type RecordFailureOptions struct {
 
 // Records a non success outcome and trips the circuit breaker at the limit, true when the task auto blocked
 func recordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errText string, f RecordFailureOptions) (bool, error) {
-	limit := int64(DefaultFailureLimit)
+	limit := int64(settings.KanbanFailureLimit.Get(ctx))
 	if f.FailureLimit != nil {
 		limit = *f.FailureLimit
 	}

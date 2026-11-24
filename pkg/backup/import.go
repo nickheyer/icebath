@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -188,7 +187,7 @@ func RunImport(ctx context.Context, h string, ns map[string]any, w io.Writer) (i
 			}
 			return 1, err
 		}
-		if a := pystr.Lower(pystr.Strip(answer)); a != "y" && a != "yes" {
+		if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 			fmt.Fprintln(w, "Aborted.")
 			return 0, nil
 		}

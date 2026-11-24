@@ -1,12 +1,13 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // tui_gateway/server.py _consume_typed_stop_phrase without emit, assigned in cmd/icebath/wiring.go to the tuiserver port
@@ -51,7 +52,7 @@ func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 	text, isStr := params.GetOr("text", nil).(string)
 	echoed := params.GetOr("execution_generation", nil)
 	exact, isInt := strictInt(echoed)
-	if paramsOutside(params, "session_id", "profile", "text", "execution_generation") || !isStr || pystr.Strip(text) == "" || !isInt {
+	if paramsOutside(params, "session_id", "profile", "text", "execution_generation") || !isStr || strings.TrimSpace(text) == "" || !isInt {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	generation := int64(absentGeneration)

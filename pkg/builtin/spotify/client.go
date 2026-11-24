@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -208,7 +207,7 @@ func (c *spotifyClient) Request(method, path string, params, jsonBody *pyjson.Ob
 		return c.Request(method, path, params, jsonBody, withoutRetryOn401())
 	}
 	if resp.StatusCode >= 400 {
-		detail := pystr.Strip(resp.Text())
+		detail := strings.TrimSpace(resp.Text())
 		message := friendlySpotifyErrorMessage(resp.StatusCode, extractSpotifyErrorDetail(resp, detail), path, resp.Header.Get("Retry-After"))
 		return nil, &SpotifyAPIError{Msg: message, StatusCode: resp.StatusCode, ResponseBody: detail, Path: path}
 	}
@@ -256,7 +255,7 @@ func extractSpotifyErrorDetail(resp *pyhttpx.Response, fallback string) string {
 			}
 		}
 	}
-	return pystr.Strip(detail)
+	return strings.TrimSpace(detail)
 }
 
 // Friendly text of a failed Web API call by status and path
@@ -270,7 +269,7 @@ func friendlySpotifyErrorMessage(statusCode int, detail, path, retryAfter string
 			return "Spotify rejected this playback request. Playback control usually requires a Spotify Premium account " +
 				"and an active Spotify Connect device."
 		}
-		lower := pystr.Lower(detail)
+		lower := strings.ToLower(detail)
 		if strings.Contains(lower, "scope") || strings.Contains(lower, "permission") {
 			return "Spotify rejected the request because the current auth scope is insufficient. Re-run `icebath spotify login` to refresh permissions."
 		}
@@ -325,7 +324,7 @@ func urlPathSegments(cleaned string) ([]string, error) {
 
 // Bare id of a bare id, spotify type id URI or open.spotify.com URL, the type checked when expected
 func normalizeSpotifyID(value, expectedType string) (string, error) {
-	cleaned := pystr.Strip(value)
+	cleaned := strings.TrimSpace(value)
 	if cleaned == "" {
 		return "", &SpotifyError{Msg: "Spotify id/uri/url is required."}
 	}
@@ -354,7 +353,7 @@ func normalizeSpotifyID(value, expectedType string) (string, error) {
 
 // URI of a reference, a bare id needing the expected type to become one
 func normalizeSpotifyURI(value, expectedType string) (string, error) {
-	cleaned := pystr.Strip(value)
+	cleaned := strings.TrimSpace(value)
 	if cleaned == "" {
 		return "", &SpotifyError{Msg: "Spotify URI/url/id is required."}
 	}

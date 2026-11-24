@@ -7,12 +7,9 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -151,61 +148,6 @@ func PollUntil[T any](pred func() (T, bool), timeout, interval time.Duration) T 
 		}
 		_ = deadlineSleep(context.Background(), remaining)
 	}
-}
-
-// TimeoutsSection reads the timeouts root section of the config, empty when absent or malformed
-func TimeoutsSection(cfg config.Tree) map[string]any {
-	if cfg == nil {
-		return map[string]any{}
-	}
-	if m := cfg.Map("timeouts"); m != nil {
-		return m
-	}
-	return map[string]any{}
-}
-
-func lookupDotted(section map[string]any, key string) (any, bool) {
-	var node any = section
-	for _, part := range strings.Split(key, ".") {
-		m, ok := node.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		node, ok = m[part]
-		if !ok {
-			return nil, false
-		}
-	}
-	return node, true
-}
-
-// ResolveTimeout picks timeouts.<key> over the env var over the default, invalid values fall through with a warning
-func ResolveTimeout(cfg config.Tree, key string, def time.Duration, hasDefault bool, envVar string) (time.Duration, bool) {
-	if raw, ok := lookupDotted(TimeoutsSection(cfg), key); ok && raw != nil {
-		if _, isBool := raw.(bool); !isBool {
-			if f, isNum := config.AsFloat(raw); isNum && !math.IsNaN(f) {
-				return ClampTimeout(f)
-			}
-			if s, isStr := raw.(string); isStr {
-				if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil && !math.IsNaN(f) {
-					return ClampTimeout(f)
-				}
-			}
-		}
-		pkgLog().Warn(fmt.Sprintf("timeouts.%s: invalid value %v in config.yaml; ignoring", key, raw))
-	}
-	if envVar != "" {
-		if envRaw := strings.TrimSpace(os.Getenv(envVar)); envRaw != "" {
-			if f, err := strconv.ParseFloat(envRaw, 64); err == nil {
-				return ClampTimeout(f)
-			}
-			pkgLog().Warn(fmt.Sprintf("invalid %s=%q; ignoring", envVar, envRaw))
-		}
-	}
-	if !hasDefault {
-		return 0, false
-	}
-	return ClampTimeout(def.Seconds())
 }
 
 type boundedOutcome struct {

@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -79,16 +78,6 @@ func TestEverySeederKeepsEveryPlatformDisplayDefault(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := config.EditConfig(ctx, h); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"apply-default-agent-settings", func(t *testing.T, ctx context.Context, _, h string) {
-			t.Cleanup(provider.WithSetupOutput(io.Discard))
-			cfg, err := config.LoadContext(ctx, h, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := provider.ApplyDefaultAgentSettings(ctx, cfg); err != nil {
 				t.Fatal(err)
 			}
 		}},

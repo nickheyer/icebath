@@ -520,7 +520,7 @@ func (s *messageSender) sendText(ctx context.Context, chatID, content, replyTo s
 func (s *messageSender) sendDirect(ctx context.Context, chatID, message string, mediaFiles []gateway.MediaRef) (map[string]any, error) {
 	adapter := s.adapter
 	var last *gateway.SendResult
-	if pystr.Strip(message) != "" {
+	if strings.TrimSpace(message) != "" {
 		result, err := adapter.Send(ctx, chatID, message, "", nil)
 		if err != nil {
 			return nil, err
@@ -533,7 +533,7 @@ func (s *messageSender) sendDirect(ctx context.Context, chatID, message string, 
 	for _, media := range mediaFiles {
 		var result gateway.SendResult
 		var err error
-		if senderImageExts[pystr.Lower(pypath.PathSuffix(media.Path))] {
+		if senderImageExts[strings.ToLower(pypath.PathSuffix(media.Path))] {
 			result, err = adapter.SendImageFile(ctx, chatID, media.Path, "", "", nil, nil)
 		} else {
 			result, err = adapter.SendDocument(ctx, chatID, media.Path, "", "", "", nil, nil)
@@ -637,17 +637,17 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 		if err != nil {
 			return nil, err
 		}
-		byNick[pystr.Lower(nickText)] = mention{nickText, uid}
+		byNick[strings.ToLower(nickText)] = mention{nickText, uid}
 	}
 	var msgBody []any
 	last := 0
 	for _, match := range findAll(atUserRE, text) {
 		start, length := match.ByteRange()
-		if segment := pystr.Strip(text[last:start]); segment != "" {
+		if segment := strings.TrimSpace(text[last:start]); segment != "" {
 			msgBody = append(msgBody, textElem(segment))
 		}
 		nickname := match.GroupByNumber(1).String()
-		if member, known := byNick[pystr.Lower(nickname)]; known {
+		if member, known := byNick[strings.ToLower(nickname)]; known {
 			data, err := pyjson.Dumps(pyjson.ObjectOf("elem_type", int64(1002), "text", "@"+member.nick, "user_id", member.uid))
 			if err != nil {
 				return nil, err
@@ -658,7 +658,7 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 		}
 		last = start + length
 	}
-	if tail := pystr.Strip(text[last:]); tail != "" {
+	if tail := strings.TrimSpace(text[last:]); tail != "" {
 		msgBody = append(msgBody, textElem(tail))
 	}
 	if len(msgBody) == 0 {
@@ -744,7 +744,7 @@ func stripCronWrapper(content string) string {
 	if dividerPos < 0 || footerPos < 0 || footerPos <= dividerPos || !strings.Contains(content[:dividerPos], "\n(job_id: ") {
 		return content
 	}
-	if body := pystr.Strip(content[dividerPos+len(cronWrapperDivider) : footerPos]); body != "" {
+	if body := strings.TrimSpace(content[dividerPos+len(cronWrapperDivider) : footerPos]); body != "" {
 		return body
 	}
 	return content

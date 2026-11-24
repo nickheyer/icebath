@@ -48,17 +48,17 @@ func secretScopeState(ctx context.Context, env *Env) (bool, bool) {
 // Scope value, else the process env for the launch profile only, else the profile .env
 func scopedProviderEnv(scope map[string]string, env *Env, name string) string {
 	if v, ok := scope[name]; ok {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
 	if !servesRoutedEnv(env) {
 		if v, ok := os.LookupEnv(name); ok {
-			return pystr.Strip(v)
+			return strings.TrimSpace(v)
 		}
 	}
 	if env == nil || env.Secrets == nil {
 		return ""
 	}
-	return pystr.Strip(env.Secrets.File()[name])
+	return strings.TrimSpace(env.Secrets.File()[name])
 }
 
 // Raw process level setting a vendor SDK reads from its environment, the .env layer included
@@ -340,7 +340,7 @@ var (
 // camelCase key in snake_case the way the Exa SDK converts response keys
 func camelToSnake(s string) string {
 	s = camelWordRe.ReplaceAllString(s, "${1}_${2}")
-	return pystr.Lower(camelUpperRe.ReplaceAllString(s, "${1}_${2}"))
+	return strings.ToLower(camelUpperRe.ReplaceAllString(s, "${1}_${2}"))
 }
 
 // Top level keys of a response row in snake_case, a later key winning a collision

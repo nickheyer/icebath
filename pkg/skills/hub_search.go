@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -216,7 +215,7 @@ func selectActiveSources(sources []SkillSource, sourceFilter string) []SkillSour
 
 // Registries to ask after the index answered a non empty unfiltered query with nothing
 func indexMissFallbackSources(sources, active []SkillSource, query string, counts *pyjson.Object, providerFilter string) []SkillSource {
-	if pystr.Strip(query) == "" || providerFilter != "" || !slices.ContainsFunc(active, func(s SkillSource) bool { return s.SourceID() == "skills-index" }) {
+	if strings.TrimSpace(query) == "" || providerFilter != "" || !slices.ContainsFunc(active, func(s SkillSource) bool { return s.SourceID() == "skills-index" }) {
 		return nil
 	}
 	if n, ok := counts.Get("skills-index"); !ok || n != 0 {

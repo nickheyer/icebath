@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type auxRejectedRoute struct {
@@ -29,10 +28,10 @@ func auxRouteKey(provider, baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if key := pystr.Lower(parts.netloc); key != "" {
+	if key := strings.ToLower(parts.netloc); key != "" {
 		return key, nil
 	}
-	return pystr.Lower(pystr.Strip(provider)), nil
+	return strings.ToLower(strings.TrimSpace(provider)), nil
 }
 
 // Response format type carried in extra_body or top level kwargs, nil when absent
@@ -61,7 +60,7 @@ func auxHashable(v any) error {
 
 // Provider profile unsupported response formats, a custom route on a profiled host gets that profile
 func auxProfileUnsupportedFormats(ctx context.Context, provider, baseURL string) []string {
-	name := pystr.Lower(pystr.Strip(provider))
+	name := strings.ToLower(strings.TrimSpace(provider))
 	if name == "custom" && baseURL != "" {
 		if inferred := inferProviderFromBaseURL(baseURL); inferred != "" {
 			name = inferred
@@ -85,7 +84,7 @@ func IsCapabilityRejection(err error) bool {
 	if err == nil {
 		return false
 	}
-	lower := pystr.Lower(err.Error())
+	lower := strings.ToLower(err.Error())
 	if strings.Contains(lower, "invalid schema") {
 		return false
 	}

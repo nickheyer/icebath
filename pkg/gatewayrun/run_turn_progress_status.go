@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
@@ -45,11 +47,11 @@ func (t *TurnRunner) eventCallbackSync(eventType string, hookContext map[string]
 // Publishes an agent notice to local viewers as notification.show
 func (t *TurnRunner) localNoticeCallbackSync(notice provider.AgentNotice) {
 	tc := t.ctx
-	if tc.muteNotificationReply || !t.statusLive() || pystr.Strip(notice.Text) == "" {
+	if tc.muteNotificationReply || !t.statusLive() || strings.TrimSpace(notice.Text) == "" {
 		return
 	}
 	_, err := config.RenderNotification(t.turnCtx, func() error {
-		t.publishExecution("notification.show", map[string]any{"text": pystr.Strip(notice.Text), "level": notice.Level,
+		t.publishExecution("notification.show", map[string]any{"text": strings.TrimSpace(notice.Text), "level": notice.Level,
 			"kind": notice.Kind, "ttl_ms": notice.TTLMs, "key": notice.Key, "id": notice.ID})
 		return nil
 	}, string(tc.source.Platform), config.IsDiagnosticNotice(notice.Level, notice.Key))

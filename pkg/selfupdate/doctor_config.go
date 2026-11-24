@@ -91,8 +91,8 @@ func checkRelayPlugins(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 func doctorRelayInfoLines(w io.Writer, lines []string) {
 	for _, line := range lines {
 		var parts []string
-		for _, part := range pystr.Splitlines(pystr.Strip(line), false) {
-			if pystr.Strip(part) != "" {
+		for _, part := range pystr.Splitlines(strings.TrimSpace(line), false) {
+			if strings.TrimSpace(part) != "" {
 				parts = append(parts, part)
 			}
 		}
@@ -108,7 +108,7 @@ func doctorManagedScopeCheck(w io.Writer) {
 	}
 	nCfg, nEnv := len(config.ManagedConfigKeys()), len(config.LoadManagedEnv())
 	doctorCheckOK(w, fmt.Sprintf("Managed scope active: %d config key(s), %d env key(s) pinned by %s", nCfg, nEnv, managedDir), "")
-	if pystr.Strip(os.Getenv(config.EnvManagedDir)) != "" {
+	if strings.TrimSpace(os.Getenv(config.EnvManagedDir)) != "" {
 		doctorCheckInfo(w, "managed dir set via "+config.EnvManagedDir+"="+managedDir)
 	}
 }
@@ -199,25 +199,25 @@ func doctorKnownProviderIDs(ctx context.Context, cfg map[string]any) (map[string
 	for _, key := range provider.RegistryKeys(ctx) {
 		known[key] = true
 	}
-	customProviders := provider.ProviderEntries(cfg)
+	customProviders := provider.ProviderEntriesOf(config.AsMap(cfg["providers"]))
 	if userProviders, ok := cfg["providers"].(map[string]any); ok {
 		for name, provCfg := range userProviders {
-			if stripped := pystr.Strip(name); stripped != "" && provider.IsProviderEnabled(provCfg) {
-				known[pystr.Lower(stripped)] = true
+			if stripped := strings.TrimSpace(name); stripped != "" && provider.IsProviderEnabled(provCfg) {
+				known[strings.ToLower(stripped)] = true
 			}
 		}
 	}
 	for _, entry := range customProviders {
 		name := ""
 		if pyrepr.Truthy(entry["name"]) {
-			name = pystr.Strip(pyrepr.Str(entry["name"]))
+			name = strings.TrimSpace(pyrepr.Str(entry["name"]))
 		}
 		if name == "" {
 			continue
 		}
 		providerKey := ""
 		if pyrepr.Truthy(entry["provider_key"]) {
-			providerKey = pystr.Strip(pyrepr.Str(entry["provider_key"]))
+			providerKey = strings.TrimSpace(pyrepr.Str(entry["provider_key"]))
 		}
 		for alias := range provider.CustomProviderAliases(name, providerKey) {
 			known[alias] = true
@@ -247,7 +247,7 @@ func doctorProviderHasCredentials(ctx context.Context, h, runtimeProvider string
 			if err != nil {
 				return false, err
 			}
-			if pystr.Strip(v) != "" {
+			if strings.TrimSpace(v) != "" {
 				return true, nil
 			}
 		}
@@ -271,7 +271,7 @@ func doctorStripField(m map[string]any, keys ...string) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("config value is %s where text was expected", errchain.Kind(v))
 		}
-		return pystr.Strip(s), nil
+		return strings.TrimSpace(s), nil
 	}
 	return "", nil
 }
@@ -294,7 +294,7 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 	if err != nil {
 		return err
 	}
-	providerID := pystr.Lower(providerRaw)
+	providerID := strings.ToLower(providerRaw)
 	defaultModel, err := doctorStripField(modelSection, "default", "model")
 	if err != nil {
 		return err
@@ -349,11 +349,11 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 	if policyID == "" {
 		policyID = catalogProvider
 	}
-	policyID = pystr.Lower(pystr.Strip(policyID))
+	policyID = strings.ToLower(strings.TrimSpace(policyID))
 	acceptsVendorSlug := doctorVendorSlugProviders[policyID] || policyID == "custom" || strings.HasPrefix(policyID, "custom:")
 	modelBaseURL := ""
 	if pyrepr.Truthy(modelSection["base_url"]) {
-		modelBaseURL = pystr.Strip(pyrepr.Str(modelSection["base_url"]))
+		modelBaseURL = strings.TrimSpace(pyrepr.Str(modelSection["base_url"]))
 	}
 	if policyID == "openai-api" && modelBaseURL != "" && !acceptsVendorSlug {
 		matches, merr := pyurl.BaseURLHostMatches(modelBaseURL, "api.openai.com")
@@ -391,7 +391,7 @@ func doctorWarnBuiltinNameOwnedByEntry(ctx context.Context, d *Doctor, providerR
 	url := ""
 	for _, key := range []string{"base_url", "api", "url"} {
 		if value := entry[key]; pyrepr.Truthy(value) {
-			url = pystr.Strip(pyrepr.Str(value))
+			url = strings.TrimSpace(pyrepr.Str(value))
 			break
 		}
 	}
@@ -411,7 +411,7 @@ func doctorValidateAuxiliaryConfig(ctx context.Context, d *Doctor, configPath st
 		if !pyrepr.Truthy(block[key]) {
 			return ""
 		}
-		return pystr.Strip(pyrepr.Str(block[key]))
+		return strings.TrimSpace(pyrepr.Str(block[key]))
 	}
 	aux, _ := cfg["auxiliary"].(map[string]any)
 	var tasks []string
@@ -420,7 +420,7 @@ func doctorValidateAuxiliaryConfig(ctx context.Context, d *Doctor, configPath st
 		if !ok {
 			continue
 		}
-		if p := pystr.Lower(field(block, "provider")); p != "" && p != "auto" {
+		if p := strings.ToLower(field(block, "provider")); p != "" && p != "auto" {
 			tasks = append(tasks, name)
 		}
 	}

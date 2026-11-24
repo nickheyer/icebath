@@ -94,10 +94,10 @@ func (a *GatewayAgent) onInterim(payload map[string]any, streamCallback func(str
 	if pyrepr.Truthy(text) {
 		shown = pyrepr.Str(text)
 	}
-	a.currentTurn().seen[pystr.Strip(shown)] = true
+	a.currentTurn().seen[strings.TrimSpace(shown)] = true
 	if cb := a.opts.InterimAssistantCallback; cb != nil {
 		cb(text, pyrepr.Truthy(payload["already_streamed"]))
-	} else if pyrepr.Truthy(text) && pystr.Strip(pyrepr.Str(text)) != "" {
+	} else if pyrepr.Truthy(text) && strings.TrimSpace(pyrepr.Str(text)) != "" {
 		a.emitPrint(pyrepr.Str(text))
 	}
 }
@@ -180,7 +180,7 @@ func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback fun
 	}
 	if diff, isStr := payload["inline_diff"].(string); isStr && diff != "" {
 		emit := diffPrinter(cprint)
-		for _, line := range pystr.Splitlines(pystr.RstripChars(diff, "\n"), false) {
+		for _, line := range pystr.Splitlines(strings.TrimRight(diff, "\n"), false) {
 			emit(line)
 		}
 		if name == "delegate_task" && a.opts.ToolCompleteCallback != nil {

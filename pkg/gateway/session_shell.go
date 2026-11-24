@@ -40,7 +40,7 @@ func shellHandlers(c *AuthorityConnection) map[string]controlHandler {
 // Runs one captured command for a local terminal session in its frozen launch cwd behind the dangerous command refusal
 func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
 	command, isStr := params.GetOr("command", nil).(string)
-	if paramsOutside(params, "session_id", "profile", "command") || ref.SessionID == "" || !isStr || pystr.Strip(command) == "" {
+	if paramsOutside(params, "session_id", "profile", "command") || ref.SessionID == "" || !isStr || strings.TrimSpace(command) == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	a := c.authority
@@ -78,7 +78,7 @@ func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	}
 	backend := ""
 	if pyrepr.Truthy(backendValue) {
-		backend = pystr.Lower(pystr.Strip(pyrepr.Str(backendValue)))
+		backend = strings.ToLower(strings.TrimSpace(pyrepr.Str(backendValue)))
 	}
 	if !localShellBackends[backend] {
 		field, detail := "terminal.backend", backend

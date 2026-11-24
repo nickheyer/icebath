@@ -13,12 +13,11 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Stream flushes are skipped when the no flush variable is set to a true word
 var disableFlush = func() bool {
-	switch strings.ToLower(pystr.Strip(os.Getenv("ICEBATH_TUI_GATEWAY_NO_FLUSH"))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_TUI_GATEWAY_NO_FLUSH"))) {
 	case "1", "true", "yes", "on":
 		return true
 	}

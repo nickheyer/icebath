@@ -1,14 +1,14 @@
 package pymimetypes
 
 import (
-	"slices"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"slices"
 )
 
 // Extensions known for the lowercased type, strict ones first then any non strict extras
 func (d *DB) GuessAllExtensions(typ string, strict bool) []string {
-	typ = pystr.Lower(typ)
+	typ = strings.ToLower(typ)
 	extensions := slices.Clone(d.typesInv[1][typ])
 	if !strict {
 		for _, ext := range d.typesInv[0][typ] {

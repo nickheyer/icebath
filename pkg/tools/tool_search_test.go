@@ -57,31 +57,39 @@ func registerSearchTool(t *testing.T, name, toolset string, params map[string]an
 	})
 }
 
+// Tool search settings read from a fresh home whose config.yaml holds section under tools.tool_search
+func toolSearchConfigOf(t *testing.T, section any) ToolSearchConfig {
+	t.Helper()
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, env, map[string]any{"tools": map[string]any{"tool_search": section}})
+	return LoadToolSearchConfig(env)
+}
+
 func TestToolSearchConfigParsing(t *testing.T) {
 	configured := DefaultDeferredTools()
 	if len(configured) == 0 || !configured["todo_list"] {
 		t.Fatalf("defaults %v", configured)
 	}
-	if got := ToolSearchConfigFromRaw(nil).EffectiveDeferTools(); len(got) != len(configured) {
+	if got := toolSearchConfigOf(t, nil).EffectiveDeferTools(); len(got) != len(configured) {
 		t.Fatal("nil raw not default")
 	}
-	if got := ToolSearchConfigFromRaw(map[string]any{"defer": []any{"terminal"}}).EffectiveDeferTools(); len(got) != 1 || !got["terminal"] {
+	if got := toolSearchConfigOf(t, map[string]any{"defer": []any{"terminal"}}).EffectiveDeferTools(); len(got) != 1 || !got["terminal"] {
 		t.Fatal("user list did not replace")
 	}
-	if got := ToolSearchConfigFromRaw(map[string]any{"defer": []any{}}).EffectiveDeferTools(); len(got) != 0 {
+	if got := toolSearchConfigOf(t, map[string]any{"defer": []any{}}).EffectiveDeferTools(); len(got) != 0 {
 		t.Fatal("empty list not kept")
 	}
-	if got := ToolSearchConfigFromRaw(map[string]any{"defer": "todo_list"}).EffectiveDeferTools(); len(got) != len(configured) {
-		t.Fatal("scalar did not fall back")
+	if got := toolSearchConfigOf(t, map[string]any{"defer": "todo_list"}).EffectiveDeferTools(); len(got) != 1 || !got["todo_list"] {
+		t.Fatal("text did not read as a list")
 	}
-	if ToolSearchConfigFromRaw(true).Enabled != "auto" || ToolSearchConfigFromRaw(false).Enabled != "off" {
-		t.Fatal("bool aliases")
+	if toolSearchConfigOf(t, map[string]any{"enabled": "yes"}).Enabled != "on" || toolSearchConfigOf(t, map[string]any{"enabled": false}).Enabled != "off" {
+		t.Fatal("switch words")
 	}
-	cfg := ToolSearchConfigFromRaw(map[string]any{"search_default_limit": 100, "max_search_limit": 1000})
+	cfg := toolSearchConfigOf(t, map[string]any{"search_default_limit": 100, "max_search_limit": 1000})
 	if cfg.MaxSearchLimit != 50 || cfg.SearchDefaultLimit != 50 {
 		t.Fatalf("clamp %+v", cfg)
 	}
-	cfg = ToolSearchConfigFromRaw(map[string]any{"search_default_limit": 0, "listing_max_tokens": 10})
+	cfg = toolSearchConfigOf(t, map[string]any{"search_default_limit": 0, "listing_max_tokens": 10})
 	if cfg.SearchDefaultLimit != 1 || cfg.ListingMaxTokens != 200 {
 		t.Fatalf("floors %+v", cfg)
 	}
@@ -123,11 +131,11 @@ func TestToolSearchClassification(t *testing.T) {
 }
 
 func TestThresholdGate(t *testing.T) {
-	cfg := ToolSearchConfigFromRaw(map[string]any{"enabled": "off"})
+	cfg := toolSearchConfigOf(t, map[string]any{"enabled": "off"})
 	if ShouldActivate(cfg, 999999, 200000) {
 		t.Fatal("off activated")
 	}
-	if !ShouldActivate(ToolSearchConfigFromRaw(nil), 1, 200000) {
+	if !ShouldActivate(toolSearchConfigOf(t, nil), 1, 200000) {
 		t.Fatal("deferrable tokens did not activate")
 	}
 	small := EstimateTokensFromSchemas([]map[string]any{toolDef("a", "x", nil)})
@@ -135,7 +143,7 @@ func TestThresholdGate(t *testing.T) {
 	if large <= small {
 		t.Fatal("token estimate not proportional")
 	}
-	if ListingTokenBudget(ToolSearchConfigFromRaw(nil), 0) != 4000 || ListingTokenBudget(ToolSearchConfigFromRaw(nil), 20000) != 1000 {
+	if ListingTokenBudget(toolSearchConfigOf(t, nil), 0) != 4000 || ListingTokenBudget(toolSearchConfigOf(t, nil), 20000) != 1000 {
 		t.Fatal("listing budget")
 	}
 }
@@ -243,7 +251,7 @@ func TestAssembly(t *testing.T) {
 	if !first.Activated || first.DeferredCount != 3 || first.ListingForm != "full" {
 		t.Fatalf("first %+v", first)
 	}
-	offCfg := ToolSearchConfigFromRaw(map[string]any{"enabled": "off"})
+	offCfg := toolSearchConfigOf(t, map[string]any{"enabled": "off"})
 	stale := AssembleToolDefs(ctx, env, []map[string]any{toolDef("terminal", "Run shell", nil), toolDef(ToolSearchName, "old", nil)}, 200000, &offCfg)
 	for _, td := range stale.ToolDefs {
 		if toolDefName(td) == ToolSearchName {
@@ -258,7 +266,7 @@ func TestAssembly(t *testing.T) {
 	if names[ToolSearchName] != 1 || names[ToolCallName] != 1 || names[ToolDescribeName] != 1 || len(second.ToolDefs) != len(first.ToolDefs) {
 		t.Fatalf("not idempotent: %v", names)
 	}
-	off := ToolSearchConfigFromRaw(map[string]any{"enabled": "on", "listing": "off"})
+	off := toolSearchConfigOf(t, map[string]any{"enabled": "on", "listing": "off"})
 	bare := AssembleToolDefs(ctx, env, defs, 1000, &off)
 	if !bare.Activated {
 		t.Fatal("listing off did not activate")

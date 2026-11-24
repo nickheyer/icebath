@@ -51,7 +51,7 @@ func TestGetActiveProfileNameProfilePathReturnsProfileName(t *testing.T) {
 func commentOnlyEnv(t *testing.T, path string) {
 	t.Helper()
 	for _, line := range pystr.Splitlines(strings.TrimPrefix(readText(t, path), "\ufeff"), false) {
-		if !strings.HasPrefix(line, "#") && pystr.Strip(line) != "" {
+		if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
 			t.Fatalf("%s carries %q", path, line)
 		}
 	}

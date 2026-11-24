@@ -1,6 +1,8 @@
 package teamspipeline
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"sync"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Teams platform settings mirrored into the teams_delivery config of the pipeline
@@ -83,7 +84,7 @@ func teamsSummaryContent(payload *TeamsMeetingSummaryPayload) teams.SummaryPaylo
 // Whether the delivery mode has its target, a webhook URL or a chat or team channel pair
 func teamsDeliveryIsConfigured(teamsExtra map[string]any, teamsDelivery *pyjson.Object) bool {
 	pick := func(key string) any { return or(get(teamsDelivery, key), teamsExtra[key]) }
-	switch pystr.Lower(strField(or(get(teamsDelivery, "mode"), pick("delivery_mode"), ""))) {
+	switch strings.ToLower(strField(or(get(teamsDelivery, "mode"), pick("delivery_mode"), ""))) {
 	case "incoming_webhook":
 		return pyrepr.Truthy(pick("incoming_webhook_url"))
 	case "graph":

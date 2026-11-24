@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -44,12 +45,12 @@ func videoStaticProperties() *pyjson.Object {
 
 // Configured video_gen.provider of the environment profile, empty when unset
 var readConfiguredVideoProvider = func(ctx context.Context, env *tools.Env) string {
-	return readVideoGenKey(envContext(ctx, env), "provider")
+	return strings.TrimSpace(settings.VideoGenProvider.Get(envContext(ctx, env)))
 }
 
 // Configured video_gen.model of the environment profile, empty when unset
 var readConfiguredVideoModel = func(ctx context.Context, env *tools.Env) string {
-	return readVideoGenKey(envContext(ctx, env), "model")
+	return strings.TrimSpace(settings.VideoGenModel.Get(envContext(ctx, env)))
 }
 
 // Provider method result with a panic or empty value replaced by the default

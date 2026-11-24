@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    （仅下一回合生效——一次响应后恢复）"
     switch_cancelled: "🟡 已取消切换模型。当前模型不变（{model}）。"
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_文字回退方式：回复 `{prefix}approve` 切换，或回复 `{prefix}cancel` 保留当前模型。_"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "此会话中无法使用 `--once`；请使用 `/model <name>`，并在本轮结束后切换回来。"
+    local_next_turn: "从您的下一条消息开始生效。"
   agents:
 
     header: "🤖 **活跃代理与任务**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast 仅适用于支持优先处理（Priority Processing）的 OpenAI 模型。"
-    status: "⚡ 优先处理\n\n当前模式：`{mode}`\n\n_用法：_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ 未知参数：`{arg}`\n\n**有效选项：** normal、fast、status"
+    not_supported: "⚡ /fast 需要提供商提供快速层级的模型，例如 OpenAI 优先处理（Priority Processing）或 Anthropic 快速模式。请用 /model 切换到提供它的模型。"
+    status: "⚡ 优先处理\n\n当前模式：`{mode}`\n\n_用法：_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ 未知参数：`{arg}`\n\n**有效选项：** normal、fast、auto、cold、ultrafast、toggle、status、--global"
     saved: "⚡ ✓ 优先处理：**{label}**（已保存到配置）\n_（下一条消息生效）_"
     session_only: "⚡ ✓ 优先处理：**{label}**（仅本次会话）"
     label_fast: "FAST"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — 仅会话的第一轮快速"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast，6 倍价格"
     ultrafast_not_supported: "⚡ 此账户或路由无法为 `{model}` 使用 Ultrafast。"
+  setup_wizard:
+
+    configure_in_config: "  在 config.yaml 的 platforms.{key} 下配置 {platform}"
   footer:
 
     status: "📎 运行时页脚：**{state}**\n字段：`{fields}`\n平台：`{platform}`"
@@ -1978,7 +1981,7 @@ slash:
     description: "显示可用命令（/help skills 列出技能命令，/help <text> 过滤）"
   palette:
 
-    description: "打开模糊搜索命令面板（也可按 Ctrl+P）"
+    description: "打开模糊搜索命令面板"
   restart:
 
     description: "等待活跃运行结束后平滑重启网关"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "已归档并移除 → {ref}"
     sweep_archived_kept: "已归档，保留（{reason}）→ {ref}"
     discarded: "工作树已移除，更改已丢弃：{path}"
+  update:
+
+    held_icebath: "{mark} 有其他 icebath 进程正从此安装运行（{count}）："
+    held_venv: "{mark} 有进程正从此安装的 Python 环境运行（{count}）："
+    held_forced: "  → 由于 {flag}，仍然进行更新。"
+    held_refused: "  请关闭它们后再运行一次 `icebath update`，或加上 {flag} 仍然更新。"
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "本地模型的上下文窗口太小，无法完成。请增大上下文长度或使用更大的模型。"
     pending_tool_result: "本回合在工具结果仍待处理时停止，模型没有生成后续文本。发送 `continue` 让它进行总结。"
     interrupted_during_api_call: "请求在调用中途被中断，尚未收到回复。发送 `continue` 重试。"
-    max_iterations_reached: "在得出最终答案之前已达到工具迭代次数上限。发送 `continue` 继续，或提高 `max_iterations`。"
+    max_iterations_reached: "在得出最终答案之前已达到工具迭代次数上限。发送 `continue` 继续，或提高 `agent.max_turns`。"
     error_near_max_iterations: "在接近迭代上限时出错，尚未得出最终答案。请查看上方的工具输出，然后发送 `continue`。"
     repeated_outer_errors: "本回合反复出错，已提前停止，不再无限重试。请查看上方的错误，然后发送 `continue` 重试。"
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath 从 .icebath.md、AGENTS.md、CLAUDE.md 或 .cursorrules 加载项目上下文（取首个匹配）。"
   t178: "子目录中的 AGENTS.md 文件会随着代理进入相应文件夹而逐步被发现。"
   t179: "上下文文件上限为 20,000 字符，超出部分会智能保留首尾截断。"
-  t180: "浏览器后端：本地 Chromium、Lightpanda、Browserbase、Browser Use 和 Firecrawl，另有内置的 Camofox。"
-  t181: "Camofox（反检测 Firefox）已内置：使用 icebath camofox setup 进行设置。"
+  t180: "浏览器后端：本地 Chromium、Lightpanda、Browserbase、Browser Use 和 Firecrawl，另有以插件形式提供的 Camofox。"
+  t181: "Camofox（反检测 Firefox）是一个插件：先用 icebath plugins install camofox 安装，再运行 icebath camofox setup。"
   t182: "browser_exec 在一次 Python 调用中执行多个浏览器步骤——导航、提取和点击一次完成。"
   t183: "browser.dialog_policy 决定如何处理页面的原生对话框：must_respond（代理用 browser_dialog 回应）、auto_dismiss 或 auto_accept。"
   t184: "icebath mcp 打开一个交互式选择器，列出 icebath 内置目录中的 MCP，一键即可安装。"

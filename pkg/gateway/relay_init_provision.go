@@ -11,9 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Delays in seconds before each boot provision retry, the last one repeating
@@ -169,11 +172,11 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 	if herr != nil {
 		host = ""
 	}
-	host = pystr.Strip(host)
+	host = strings.TrimSpace(host)
 	if host == "" {
 		host = "icebath"
 	}
-	gatewayID := pystr.Strip(os.Getenv("GATEWAY_RELAY_ID"))
+	gatewayID := relaySetting(ctx, settings.GatewayRelayID)
 	if gatewayID == "" {
 		gatewayID = "gw-" + host
 	}
@@ -184,7 +187,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 	if u := RelayWakeURL(ctx); u != nil {
 		wakeURL = *u
 	}
-	provisioned, refused, result, err := relayProvisionEachPlatform(identities, gatewayID, relayProvisionArgs{
+	provisioned, refused, result, err := relayProvisionEachPlatform(ctx, identities, gatewayID, relayProvisionArgs{
 		provisionURL: relayProvisionURL(dialURL), accessToken: accessToken, gatewayEndpoint: endpoint,
 		routeKeys: routeKeys, instanceID: instanceID, wakeURL: wakeURL, displayName: RelayDisplayName(ctx),
 	})
@@ -203,7 +206,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 		}
 		return relayFailed, nil
 	}
-	if os.Getenv("GATEWAY_RELAY_SECRET") == "" {
+	if relaySetting(ctx, settings.GatewayRelaySecret) == "" {
 		pkgLog().Warn(fmt.Sprintf("relay self-provision withheld credentials for ALL platforms (%s): the connector "+
 			"holds a binding for gateway_id=%s this caller could not prove ownership of; "+
 			"gateway will boot without relay auth. Recover with POST /relay/rotate or pin "+
@@ -211,7 +214,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 		return relayRefused, nil
 	}
 	loggedID := gatewayID
-	if v, ok := os.LookupEnv("GATEWAY_RELAY_ID"); ok {
+	if v := relaySetting(ctx, settings.GatewayRelayID); v != "" {
 		loggedID = v
 	}
 	tenant := pyrepr.Str(pyrepr.Or(result.GetOr("tenant", nil), ""))
@@ -233,8 +236,8 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 	return relayProvisioned, nil
 }
 
-// Provisions every fronted platform under one gateway id, returning the provisioned names, refusal count and last result
-func relayProvisionEachPlatform(identities [][2]string, gatewayID string, post relayProvisionArgs) ([]string, int, *pyjson.Object, error) {
+// Provisions every fronted platform under one gateway id, saving the first credentials the connector hands out into the profile .env as icebath gateway enroll does, returning the provisioned names, refusal count and last result
+func relayProvisionEachPlatform(ctx context.Context, identities [][2]string, gatewayID string, post relayProvisionArgs) ([]string, int, *pyjson.Object, error) {
 	provisioned := []string{}
 	refused := 0
 	result := pyjson.NewObject()
@@ -257,10 +260,17 @@ func relayProvisionEachPlatform(identities [][2]string, gatewayID string, post r
 		}
 		result = payload
 		provisioned = append(provisioned, id[0])
-		if pyrepr.Truthy(result.GetOr("secret", nil)) && os.Getenv("GATEWAY_RELAY_SECRET") == "" {
-			os.Setenv("GATEWAY_RELAY_ID", pyrepr.Str(pyrepr.Or(result.GetOr("gatewayId", nil), gatewayID)))
-			os.Setenv("GATEWAY_RELAY_SECRET", pyrepr.Str(result.GetOr("secret", nil)))
-			os.Setenv("GATEWAY_RELAY_DELIVERY_KEY", pyrepr.Str(pyrepr.Or(result.GetOr("deliveryKey", nil), "")))
+		if pyrepr.Truthy(result.GetOr("secret", nil)) && relaySetting(ctx, settings.GatewayRelaySecret) == "" {
+			for _, pair := range [][2]string{{"GATEWAY_RELAY_ID", pyrepr.Str(pyrepr.Or(result.GetOr("gatewayId", nil), gatewayID))},
+				{"GATEWAY_RELAY_SECRET", pyrepr.Str(result.GetOr("secret", nil))},
+				{"GATEWAY_RELAY_DELIVERY_KEY", pyrepr.Str(pyrepr.Or(result.GetOr("deliveryKey", nil), ""))}} {
+				if pair[1] == "" {
+					continue
+				}
+				if err := config.SaveEnvValueContext(ctx, home.Dir(ctx), pair[0], pair[1]); err != nil {
+					return nil, 0, nil, err
+				}
+			}
 		}
 	}
 	return provisioned, refused, result, nil

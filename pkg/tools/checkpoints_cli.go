@@ -217,7 +217,7 @@ func checkpointsConfirm(w io.Writer, prompt string) bool {
 		fmt.Fprintln(w)
 		return false
 	}
-	answer = pystr.Lower(pystr.Strip(answer))
+	answer = strings.ToLower(strings.TrimSpace(answer))
 	return answer == "y" || answer == "yes"
 }
 

@@ -3,13 +3,14 @@
 package app
 
 import (
+	"unicode"
+
 	"bytes"
 	"errors"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/spf13/cobra"
 )
@@ -99,5 +100,5 @@ func kanbanUsageForError(root *cobra.Command, tokens []string) string {
 			}
 		}
 	}
-	return pystr.Rstrip("usage: " + kanbanSlashRename(target.UseLine(), root))
+	return strings.TrimRightFunc("usage: "+kanbanSlashRename(target.UseLine(), root), unicode.IsSpace)
 }

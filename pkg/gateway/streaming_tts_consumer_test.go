@@ -7,9 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // test_streaming_tts_consumer.py FakeStreamer
@@ -118,7 +122,7 @@ func ttsText(s string) *string { return &s }
 // test_streaming_tts_consumer.py TestConsumerLifecycle test_successful_stream_produces_ordered_chunks
 func TestSuccessfulStreamProducesOrderedChunks(t *testing.T) {
 	adapter := newFakeVoiceAdapter()
-	consumer := newStreamingTTSConsumerWith(t.Context(), adapter, "chat1", map[string]any{}, nil, nil, newFakeTTSStreamer(2))
+	consumer := newStreamingTTSConsumerWith(t.Context(), nil, adapter, "chat1", nil, nil, newFakeTTSStreamer(2))
 	consumer.Start()
 	consumer.OnDelta(ttsText("This is the first sentence. "))
 	consumer.OnDelta(ttsText("Here is the second one. "))
@@ -138,7 +142,7 @@ func TestSuccessfulStreamProducesOrderedChunks(t *testing.T) {
 // test_streaming_tts_consumer.py TestStreamerFormatAndLooping test_audio_format_tracks_resolved_streamer
 func TestAudioFormatTracksResolvedStreamer(t *testing.T) {
 	streamer := &fakeTTSStreamer{chunksPerClause: 1, rate: 48000, ch: 2, width: 4}
-	consumer := newStreamingTTSConsumerWith(t.Context(), newFakeVoiceAdapter(), "chat1", map[string]any{}, nil, nil, streamer)
+	consumer := newStreamingTTSConsumerWith(t.Context(), nil, newFakeVoiceAdapter(), "chat1", nil, nil, streamer)
 	if got := consumer.AudioFormat(); got != (AudioFormat{SampleRate: 48000, Channels: 2, SampleWidth: 4}) {
 		t.Fatalf("audio format %+v", got)
 	}
@@ -146,8 +150,11 @@ func TestAudioFormatTracksResolvedStreamer(t *testing.T) {
 
 // test_streaming_tts_consumer.py TestStreamerFormatAndLooping test_chunker_min_len_comes_from_tts_streaming_config
 func TestChunkerMinLenComesFromTtsStreamingConfig(t *testing.T) {
-	consumer := newStreamingTTSConsumerWith(t.Context(), newFakeVoiceAdapter(), "chat1",
-		map[string]any{"streaming": map[string]any{"min_len": 6}}, nil, nil, nil)
+	h := t.TempDir()
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("tts:\n  streaming:\n    min_len: 6\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	consumer := newStreamingTTSConsumerWith(t.Context(), &tools.Env{Home: h}, newFakeVoiceAdapter(), "chat1", nil, nil, nil)
 	if consumer.chunker.MinLen != 6 {
 		t.Fatalf("min_len %d", consumer.chunker.MinLen)
 	}
@@ -156,7 +163,7 @@ func TestChunkerMinLenComesFromTtsStreamingConfig(t *testing.T) {
 // test_streaming_tts_consumer.py TestAbortAndCancellation test_abort_is_idempotent
 func TestAbortIsIdempotent(t *testing.T) {
 	adapter := newFakeVoiceAdapter()
-	consumer := newStreamingTTSConsumerWith(t.Context(), adapter, "chat1", map[string]any{}, nil, nil, newFakeTTSStreamer(10))
+	consumer := newStreamingTTSConsumerWith(t.Context(), nil, adapter, "chat1", nil, nil, newFakeTTSStreamer(10))
 	consumer.Start()
 	consumer.OnDelta(ttsText("A sentence. "))
 	consumer.Abort("test")
@@ -176,7 +183,7 @@ func TestPreAudioFailureFallsBack(t *testing.T) {
 	adapter := newFakeVoiceAdapter()
 	streamer := newFakeTTSStreamer(3)
 	streamer.failOnClause = 1
-	consumer := newStreamingTTSConsumerWith(t.Context(), adapter, "chat1", map[string]any{}, nil, nil, streamer)
+	consumer := newStreamingTTSConsumerWith(t.Context(), nil, adapter, "chat1", nil, nil, streamer)
 	consumer.Start()
 	consumer.OnDelta(ttsText("A sentence. "))
 	consumer.Finish()
@@ -192,8 +199,8 @@ func TestPreAudioFailureFallsBack(t *testing.T) {
 func TestTwoConcurrentTurnsDoNotCrossContaminate(t *testing.T) {
 	adapter1, adapter2 := newFakeVoiceAdapter(), newFakeVoiceAdapter()
 	streamer := newFakeTTSStreamer(2)
-	c1 := newStreamingTTSConsumerWith(t.Context(), adapter1, "chat1", map[string]any{}, nil, nil, streamer)
-	c2 := newStreamingTTSConsumerWith(t.Context(), adapter2, "chat2", map[string]any{}, nil, nil, streamer)
+	c1 := newStreamingTTSConsumerWith(t.Context(), nil, adapter1, "chat1", nil, nil, streamer)
+	c2 := newStreamingTTSConsumerWith(t.Context(), nil, adapter2, "chat2", nil, nil, streamer)
 	c1.Start()
 	c2.Start()
 	c1.OnDelta(ttsText("Sentence for chat one. "))

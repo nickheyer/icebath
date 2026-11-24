@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Typed reply synonyms of an approval input, English first then the active language, lower cased and unique
@@ -18,7 +17,7 @@ func approvalInputWords(ctx context.Context, inputKey string) []string {
 			continue
 		}
 		for _, word := range strings.Split(raw, ",") {
-			word = pystr.Lower(pystr.Strip(word))
+			word = strings.ToLower(strings.TrimSpace(word))
 			if word != "" && !seen[word] {
 				seen[word] = true
 				words = append(words, word)

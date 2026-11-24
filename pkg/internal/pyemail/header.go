@@ -1,6 +1,8 @@
 package pyemail
 
 import (
+	"unicode"
+
 	"bytes"
 	"encoding/base64"
 	"errors"
@@ -284,18 +286,18 @@ func DecodeHeader(header HeaderValue) ([]DecodedPart, error) {
 		for _, m := range encodedWordRE.FindAllStringSubmatchIndex(line, -1) {
 			unencoded := line[pos:m[0]]
 			if first {
-				unencoded = pystr.Lstrip(unencoded)
+				unencoded = strings.TrimLeftFunc(unencoded, unicode.IsSpace)
 				first = false
 			}
 			if unencoded != "" {
 				words = append(words, word{text: unencoded})
 			}
-			words = append(words, word{text: line[m[6]:m[7]], encoding: pystr.Lower(line[m[4]:m[5]]), charset: pystr.Lower(line[m[2]:m[3]])})
+			words = append(words, word{text: line[m[6]:m[7]], encoding: strings.ToLower(line[m[4]:m[5]]), charset: strings.ToLower(line[m[2]:m[3]])})
 			pos = m[1]
 		}
 		tail := line[pos:]
 		if first {
-			tail = pystr.Lstrip(tail)
+			tail = strings.TrimLeftFunc(tail, unicode.IsSpace)
 		}
 		if tail != "" {
 			words = append(words, word{text: tail})
@@ -303,7 +305,7 @@ func DecodeHeader(header HeaderValue) ([]DecodedPart, error) {
 	}
 	var droplist []int
 	for n, w := range words {
-		if n > 1 && w.encoding != "" && words[n-2].encoding != "" && words[n-1].text != "" && pystr.Strip(words[n-1].text) == "" {
+		if n > 1 && w.encoding != "" && words[n-2].encoding != "" && words[n-1].text != "" && strings.TrimSpace(words[n-1].text) == "" {
 			droplist = append(droplist, n-1)
 		}
 	}

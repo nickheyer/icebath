@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // NameDesc is one platform menu entry
@@ -40,6 +41,25 @@ func ResolveConfigGates(cfg config.Tree) map[string]bool {
 	for _, d := range Builtin {
 		gate := builtinMeta[d.Name].GatewayConfigGate
 		if gate != "" && config.Truthy(cfg.Get(gate)) {
+			out[d.Name] = true
+		}
+	}
+	return out
+}
+
+// Names whose gateway gate setting is on for ctx, each gate read through its registered setting
+func GatewayGates(ctx context.Context) map[string]bool {
+	out := map[string]bool{}
+	for _, d := range Builtin {
+		gate := builtinMeta[d.Name].GatewayConfigGate
+		if gate == "" {
+			continue
+		}
+		setting, ok := settings.Find(gate).(*settings.Bool)
+		if !ok {
+			panic("commands: the gateway gate " + gate + " of /" + d.Name + " is no registered on/off setting")
+		}
+		if setting.Get(ctx) {
 			out[d.Name] = true
 		}
 	}
@@ -548,9 +568,9 @@ func SlackSubcommandMap(ctx context.Context, r *Registry, cfg config.Tree) map[s
 	return out
 }
 
-// GatewayHelpLines renders the gateway help catalog, restricted to allowed canonical names when given
-func GatewayHelpLines(r *Registry, cfg config.Tree, allowed []string) []string {
-	gates := ResolveConfigGates(cfg)
+// GatewayHelpLines renders the localized gateway help catalog with each command's aliases, restricted to allowed canonical names when given
+func GatewayHelpLines(ctx context.Context, r *Registry, allowed []string) []string {
+	gates := GatewayGates(ctx)
 	var allowedSet map[string]bool
 	if allowed != nil {
 		allowedSet = map[string]bool{}
@@ -581,7 +601,7 @@ func GatewayHelpLines(r *Registry, cfg config.Tree, allowed []string) []string {
 		if len(aliasParts) > 0 {
 			note = " (alias: " + strings.Join(aliasParts, ", ") + ")"
 		}
-		lines = append(lines, "`/"+d.Name+args+"` -- "+d.Description+note)
+		lines = append(lines, "`/"+d.Name+args+"` -- "+d.Describe(ctx)+note)
 	}
 	return lines
 }

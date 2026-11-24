@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -114,7 +115,7 @@ func (a *GoogleChatAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *
 	}
 	details = append(details, plainParagraph(gateway.FormatApprovalDeadlineLine(ctx, gateway.ApprovalTimeoutSeconds(ctx))))
 	if prompt.SmartDenied {
-		details = append(details, plainParagraph(pystr.Strip(a.EASmartDenyLine(ctx))))
+		details = append(details, plainParagraph(strings.TrimSpace(a.EASmartDenyLine(ctx))))
 	}
 	card, err := promptCard("approval-"+promptID, "⚠️ "+i18n.T(ctx, "gateway.exec_approval.header", "", nil), details, []any{buttonRow(buttons)})
 	if err != nil {
@@ -251,14 +252,13 @@ func (a *GoogleChatAdapter) clickAuthorized(ctx context.Context, c *cardClick) b
 			return allowed
 		}
 	}
-	switch pystr.Lower(pystr.Strip(gateway.PlatformGateEnv(ctx, "GOOGLE_CHAT_ALLOW_ALL_USERS", ""))) {
-	case "true", "1", "yes":
+	sctx := gateway.SettingsContext(ctx)
+	if settings.GoogleChatAllowAllUsers.Get(sctx) {
 		return true
 	}
-	for _, env := range []string{"GOOGLE_CHAT_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS"} {
-		for _, entry := range strings.Split(gateway.PlatformGateEnv(ctx, env, ""), ",") {
-			entry = strings.ToLower(pystr.Strip(entry))
-			if entry == "*" || (entry != "" && (entry == strings.ToLower(email) || entry == strings.ToLower(name))) {
+	for _, entries := range [][]string{settings.GoogleChatAllowedUsers.Strings(sctx), settings.GatewayAllowedUsers.Strings(sctx)} {
+		for _, entry := range entries {
+			if entry = strings.ToLower(entry); entry == "*" || entry == strings.ToLower(email) || entry == strings.ToLower(name) {
 				return true
 			}
 		}

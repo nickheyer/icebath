@@ -3,24 +3,22 @@ package lsp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"maps"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
@@ -42,13 +40,10 @@ type brokenEntry struct {
 
 // Options configure a service the way the lsp config section does
 type Options struct {
-	Enabled         bool
-	WaitMode        string
-	WaitTimeout     float64
-	InstallStrategy string
-	// Non string install_strategy of the config kept as given for the status report
-	InstallStrategyRaw any
-	InstallStrategySet bool
+	Enabled            bool
+	WaitMode           string
+	WaitTimeout        float64
+	InstallStrategy    string
 	BinaryOverrides    map[string][]string
 	EnvOverrides       map[string]map[string]string
 	InitOverrides      map[string]map[string]any
@@ -64,26 +59,24 @@ type Options struct {
 
 // Service owns the language server clients of one profile and the post write checks that use them
 type Service struct {
-	rt                 *Runtime
-	enabled            bool
-	waitMode           string
-	waitTimeout        float64
-	installStrategy    string
-	installStrategyRaw any
-	installStrategySet bool
-	binaryOverrides    map[string][]string
-	envOverrides       map[string]map[string]string
-	initOverrides      map[string]map[string]any
-	disabledServers    map[string]bool
-	idleTimeout        float64
-	extraServers       []*ServerDef
-	brokenRetry        float64
-	warmupTimeout      float64
-	excludeRoots       []string
-	excludeInvalid     bool
-	trustedWorkspaces  []string
-	untrustedSkipped   map[pairKey]bool
-	operatorRoots      atomic.Pointer[map[string]bool]
+	rt                *Runtime
+	enabled           bool
+	waitMode          string
+	waitTimeout       float64
+	installStrategy   string
+	binaryOverrides   map[string][]string
+	envOverrides      map[string]map[string]string
+	initOverrides     map[string]map[string]any
+	disabledServers   map[string]bool
+	idleTimeout       float64
+	extraServers      []*ServerDef
+	brokenRetry       float64
+	warmupTimeout     float64
+	excludeRoots      []string
+	excludeInvalid    bool
+	trustedWorkspaces []string
+	untrustedSkipped  map[pairKey]bool
+	operatorRoots     atomic.Pointer[map[string]bool]
 
 	l             *loop
 	stateMu       sync.Mutex
@@ -95,53 +88,6 @@ type Service struct {
 	deltaBaseline *omap[string, []map[string]any]
 	checks        *editChecks
 	reapOnce      func(ctx context.Context) error
-}
-
-// Python float() of a config value
-func pyFloat(v any) (float64, error) {
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return 1, nil
-		}
-		return 0, nil
-	case int:
-		return float64(t), nil
-	case int64:
-		return float64(t), nil
-	case float64:
-		return t, nil
-	case string:
-		s := strings.ToLower(pystr.Strip(t))
-		switch strings.TrimLeft(s, "+-") {
-		case "inf", "infinity":
-			if strings.HasPrefix(s, "-") {
-				return math.Inf(-1), nil
-			}
-			return math.Inf(1), nil
-		case "nan":
-			return math.NaN(), nil
-		}
-		if !strings.Contains(s, "__") && !strings.HasPrefix(strings.TrimLeft(s, "+-"), "_") && !strings.HasSuffix(s, "_") {
-			if f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64); err == nil || errors.Is(err, strconv.ErrRange) {
-				return f, nil
-			}
-		}
-		return 0, &pyExc{typ: "ValueError", text: "could not convert string to float: " + pyrepr.StrRepr(t)}
-	}
-	return 0, &pyExc{typ: "TypeError", text: fmt.Sprintf("float() argument must be a string or a real number, not '%s'", pyrepr.TypeName(v))}
-}
-
-// Float of a config value with a default for None and unconvertible values
-func floatOr(v any, fallback float64) float64 {
-	if v == nil {
-		return fallback
-	}
-	f, err := pyFloat(v)
-	if err != nil {
-		return fallback
-	}
-	return f
 }
 
 // ParseTrustedWorkspaces reads lsp.trusted_workspaces, a malformed value trusting nothing extra
@@ -195,7 +141,6 @@ func seconds(f float64) time.Duration {
 func NewService(rt *Runtime, o Options) *Service {
 	s := &Service{
 		rt: rt, enabled: o.Enabled, waitMode: o.WaitMode, waitTimeout: o.WaitTimeout, installStrategy: o.InstallStrategy,
-		installStrategyRaw: o.InstallStrategyRaw, installStrategySet: o.InstallStrategySet,
 		binaryOverrides: o.BinaryOverrides, envOverrides: o.EnvOverrides, initOverrides: o.InitOverrides,
 		disabledServers: map[string]bool{}, idleTimeout: o.IdleTimeout, extraServers: append([]*ServerDef{}, o.ExtraServers...),
 		brokenRetry: pyMax0(o.BrokenRetrySeconds), warmupTimeout: pyMax0(o.WarmupTimeout),
@@ -237,56 +182,26 @@ func NewService(rt *Runtime, o Options) *Service {
 	return s
 }
 
-// ServiceFromConfig builds a service from the lsp config section the way create_from_config does
-func ServiceFromConfig(rt *Runtime, lspCfg any, operatorRoots map[string]bool) (*Service, error) {
-	cfg, ok := lspCfg.(map[string]any)
-	if !ok {
-		cfg = map[string]any{}
-	}
-	idle, err := pyFloat(dgetOr(cfg, "idle_timeout", DefaultIdleTimeout))
-	if err != nil {
-		idle = DefaultIdleTimeout
-	}
+// ServiceFromConfig builds a service from the lsp settings in effect for ctx
+func ServiceFromConfig(ctx context.Context, rt *Runtime, operatorRoots map[string]bool) *Service {
+	idle := settings.LspIdleTimeout.Get(ctx).Seconds()
 	if idle > 0 && idle < minIdleTimeout {
 		idle = minIdleTimeout
 	}
 	servers := map[string]map[string]any{}
-	if sc, ok := pyOr(cfg["servers"], map[string]any{}).(map[string]any); ok {
-		for n, c := range sc {
-			if m, ok := c.(map[string]any); ok {
-				servers[n] = m
-			}
-		}
-	}
-	waitMode := ""
-	switch wm := dgetOr(cfg, "wait_mode", "document").(type) {
-	case string:
-		waitMode = wm
-	case []any, map[string]any:
-		return nil, &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(wm))}
-	}
-	waitTimeout, err := pyFloat(dgetOr(cfg, "wait_timeout", DiagnosticsDocumentWait.Seconds()))
-	if err != nil {
-		return nil, err
-	}
-	installStrategy := "auto"
-	var installStrategyRaw any
-	installStrategySet := false
-	if v, ok := cfg["install_strategy"]; ok {
-		installStrategy = pyrepr.Str(v)
-		if s, isStr := v.(string); isStr {
-			installStrategy = s
-		} else {
-			installStrategyRaw, installStrategySet = v, true
+	for n, c := range settings.LspServers.Get(ctx) {
+		if m, ok := c.(map[string]any); ok {
+			servers[n] = m
 		}
 	}
 	o := Options{
-		Enabled: pyrepr.Truthy(dgetOr(cfg, "enabled", true)), WaitMode: waitMode, WaitTimeout: waitTimeout,
-		InstallStrategy: installStrategy, InstallStrategyRaw: installStrategyRaw, InstallStrategySet: installStrategySet,
+		Enabled: settings.LspEnabled.Get(ctx), WaitMode: settings.LspWaitMode.Get(ctx), WaitTimeout: settings.LspWaitTimeout.Get(ctx).Seconds(),
+		InstallStrategy: settings.LspInstallStrategy.Get(ctx),
 		BinaryOverrides: map[string][]string{}, EnvOverrides: map[string]map[string]string{},
 		InitOverrides: map[string]map[string]any{}, IdleTimeout: idle,
-		BrokenRetrySeconds: floatOr(cfg["broken_retry_seconds"], 0), WarmupTimeout: floatOr(cfg["warmup_timeout"], 0),
-		ExcludeRoots: cfg["exclude_roots"], TrustedWorkspaces: cfg["trusted_workspaces"], OperatorRoots: operatorRoots,
+		BrokenRetrySeconds: settings.LspBrokenRetrySeconds.Get(ctx).Seconds(), WarmupTimeout: settings.LspWarmupTimeout.Get(ctx).Seconds(),
+		ExcludeRoots: storedSetting(ctx, settings.LspExcludeRoots.Key), TrustedWorkspaces: storedSetting(ctx, settings.LspTrustedWorkspaces.Key),
+		OperatorRoots: operatorRoots,
 	}
 	names := make([]string, 0, len(servers))
 	for n := range servers {
@@ -319,7 +234,7 @@ func ServiceFromConfig(rt *Runtime, lspCfg any, operatorRoots map[string]bool) (
 		}
 	}
 	o.ExtraServers = CustomServers(rt, serversAny)
-	return NewService(rt, o), nil
+	return NewService(rt, o)
 }
 
 // Config declared servers first, then the built in registry
@@ -739,8 +654,6 @@ type Status struct {
 	WaitMode            string
 	WaitTimeout         float64
 	InstallStrategy     string
-	InstallStrategyRaw  any
-	InstallStrategySet  bool
 	Clients             []ClientStatus
 	Broken              [][2]string
 	DisabledServers     []string
@@ -755,7 +668,6 @@ type Status struct {
 // GetStatus snapshots the service for the status command
 func (s *Service) GetStatus() Status {
 	st := Status{Enabled: s.enabled, WaitMode: s.waitMode, WaitTimeout: s.waitTimeout, InstallStrategy: s.installStrategy,
-		InstallStrategyRaw: s.installStrategyRaw, InstallStrategySet: s.installStrategySet,
 		BrokenRetrySeconds: s.brokenRetry, WarmupTimeout: s.warmupTimeout, ExcludeRootsInvalid: s.excludeInvalid,
 		Clients: []ClientStatus{}, Broken: [][2]string{}, UntrustedSkipped: [][2]string{}}
 	s.l.with(func() {

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type toolEnvKey struct{}
@@ -38,7 +37,7 @@ func ExplicitBoardIntentIsPinned(ctx context.Context) bool {
 	if IsDelegatedChildContext(ctx) || os.Getenv(delegatedChildEnvMarker) != "" {
 		return true
 	}
-	return pystr.Strip(os.Getenv("ICEBATH_KANBAN_TASK")) != ""
+	return strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK")) != ""
 }
 
 // Whether kanban mutations at path are denied, always in a delegate child and under the fence otherwise
@@ -57,7 +56,7 @@ func KanbanPathIsFenced(ctx context.Context, path string) bool {
 	if err != nil {
 		return true
 	}
-	if pinned := pystr.Strip(os.Getenv("ICEBATH_KANBAN_DB")); pinned != "" {
+	if pinned := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_DB")); pinned != "" {
 		if p, err := pypath.Resolve(pypath.Expanduser(pinned)); err != nil || p == target {
 			return true
 		}

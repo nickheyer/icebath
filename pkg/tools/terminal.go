@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Force redacts text before serializing a terminal error envelope
@@ -22,19 +21,10 @@ func redactTerminalErrorText(env *Env, value string) string {
 	return RedactSensitiveTextWith(env, value, RedactOptions{Force: true})
 }
 
-// Hard cap on the foreground timeout, overridable through TERMINAL_MAX_FOREGROUND_TIMEOUT
-var foregroundMaxTimeout = sync.OnceValue(func() int {
-	raw := os.Getenv("TERMINAL_MAX_FOREGROUND_TIMEOUT")
-	if raw == "" {
-		return 600
-	}
-	v, err := strconv.Atoi(raw)
-	if err != nil {
-		envLog(nil).Warn("Invalid value for TERMINAL_MAX_FOREGROUND_TIMEOUT (expected integer). Falling back to 600.", "value", raw)
-		return 600
-	}
-	return v
-})
+// Hard cap on the foreground timeout in seconds, terminal.max_foreground_timeout of the process profile
+func foregroundMaxTimeout() int {
+	return int(settings.TerminalMaxForegroundTimeout.Get(context.Background()) / time.Second)
+}
 
 // Tool description shown to the model
 const terminalToolDescription = `Run shell commands on the OS/shell/backend named in your environment section. The working directory, files and exported variables persist between calls: activate a virtualenv or export once, not before every command.

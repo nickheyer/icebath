@@ -188,6 +188,3 @@ func InOwnerHome[T any](bound *BoundScope, fn func(ctx context.Context) T) func(
 		return fn(home.WithOverride(ctx, h))
 	}
 }
-
-// Memory caller scope registers nothing at import
-func registerMemoryCallerScope() {}

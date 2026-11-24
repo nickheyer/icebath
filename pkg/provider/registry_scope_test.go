@@ -372,7 +372,7 @@ func resolveHintedProvider(t *testing.T) error {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("FAKE_HINTED_KEY", "")
-	_, err := newResolver(context.Background(), config.Tree(map[string]any{}), config.NewSecrets(h), h, &fakeCreds{}).ResolveRuntime("fake-hinted", "", "", nil, "")
+	_, err := newResolver(context.Background(), config.NewSecrets(h), h, &fakeCreds{}).ResolveRuntime("fake-hinted", "", "", nil, "")
 	return err
 }
 
@@ -425,8 +425,8 @@ func TestABrokenHintKeepsTheAuthError(t *testing.T) {
 			}
 			h := os.Getenv("ICEBATH_HOME")
 			t.Setenv("OPENROUTER_API_KEY", "sk-or-fake")
-			cfg := config.Tree(map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "acme/model"}}})
-			rt, entry, err := newResolver(context.Background(), cfg, config.NewSecrets(h), h, &fakeCreds{}).ResolveRuntimeWithFallback("fake-hinted", "", "", "")
+			writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "acme/model"}}})
+			rt, entry, err := newResolver(context.Background(), config.NewSecrets(h), h, &fakeCreds{}).ResolveRuntimeWithFallback("fake-hinted", "", "", "")
 			if err != nil || rt.Provider != "openrouter" || entry["provider"] != "openrouter" {
 				t.Fatalf("fallback chain = %+v %v %v", rt, entry, err)
 			}

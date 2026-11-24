@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Logger every plugin subsystem message goes through, replaceable by the host
@@ -19,21 +21,16 @@ const logName = "plugins"
 // Logger named after this package on the host replaceable base
 func pkgLog() *slog.Logger { return Logger.With("logger", logName) }
 
-// EnvPluginsDebug tees verbose plugin discovery logs to stderr when truthy
-const EnvPluginsDebug = "ICEBATH_PLUGINS_DEBUG"
-
+// Plugin debug logging of this process, plugins.debug read at the first discovery
 var pluginsDebugState struct {
 	sync.Mutex
 	enabled   bool
+	read      bool
 	installed bool
 }
 
+// Where the plugin debug tee writes
 var debugStderr io.Writer = os.Stderr
-
-func init() {
-	pluginsDebugState.enabled = envEnabled(EnvPluginsDebug)
-	installPluginDebugHandler(false)
-}
 
 // Whether plugin debug logging is on, which also attaches error detail to plugin failure warnings
 func pluginsDebug() bool {
@@ -42,11 +39,11 @@ func pluginsDebug() bool {
 	return pluginsDebugState.enabled
 }
 
-// Tees plugin logs to stderr at debug once per process when ICEBATH_PLUGINS_DEBUG is on, force rereads it
-func installPluginDebugHandler(force bool) {
+// Tees plugin logs to stderr at debug once per process when plugins.debug or its ICEBATH_PLUGINS_DEBUG override is on for the profile of ctx, read once unless forced
+func installPluginDebugHandler(ctx context.Context, force bool) {
 	pluginsDebugState.Lock()
-	if force {
-		pluginsDebugState.enabled = envEnabled(EnvPluginsDebug)
+	if force || !pluginsDebugState.read {
+		pluginsDebugState.enabled, pluginsDebugState.read = settings.PluginsDebug.Get(ctx), true
 	}
 	if !pluginsDebugState.enabled || pluginsDebugState.installed {
 		pluginsDebugState.Unlock()

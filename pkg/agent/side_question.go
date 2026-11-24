@@ -3,13 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
-	"os"
+	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -88,21 +86,13 @@ func RenderHistoryForSideQuestion(history []map[string]any, charBudget int) stri
 	return prefix + strings.Join(kept, "\n")
 }
 
-// The auxiliary side_question block of the config, empty on failure or a shape mismatch
+// The resolved auxiliary side_question block, empty when it cannot be read
 func sideQuestionTaskConfig(ctx context.Context) map[string]any {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	block, err := auxiliaryTaskBlock(ctx, sideQuestionTask)
 	if err != nil {
-		return map[string]any{}
+		pkgLog().Debug(fmt.Sprintf("auxiliary.side_question could not be read; the side question runs on the main model: %v", err))
 	}
-	aux, ok := tree["auxiliary"].(map[string]any)
-	if !ok {
-		return map[string]any{}
-	}
-	task, ok := aux[sideQuestionTask].(map[string]any)
-	if !ok {
-		return map[string]any{}
-	}
-	return task
+	return block
 }
 
 // Answers through a cache parity fork of the parent with every tool denied, publishing the fork to onFork
@@ -139,7 +129,7 @@ func answerViaFork(ctx context.Context, parent *AIAgent, question string, histor
 	if text == "" && result != nil && pyrepr.Truthy(result["error"]) {
 		return "", errors.New(pyrepr.Str(result["error"]))
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
 // Answers from a rendered transcript digest in one auxiliary call
@@ -170,7 +160,7 @@ func NewSideQuestionOptions() SideQuestionOptions {
 
 // Answers a question about the conversation from a fork of the live parent, else a one shot transcript call
 func AnswerSideQuestion(ctx context.Context, question string, history []map[string]any, o SideQuestionOptions) (string, error) {
-	question = pystr.Strip(question)
+	question = strings.TrimSpace(question)
 	if question == "" {
 		return "", errors.New("the side question is empty")
 	}

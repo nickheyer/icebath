@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -52,7 +53,7 @@ func ParseHeartbeatInterval(text string) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	unit := pystr.Lower(m[2])
+	unit := strings.ToLower(m[2])
 	factor, known := heartbeatUnitSeconds[unit]
 	if !known {
 		return nil, &pyint.Error{Kind: "KeyError", Msg: "unknown interval unit " + unit}
@@ -205,7 +206,7 @@ func (e *HeartbeatValueError) PyTypeName() string { return "ValueError" }
 
 // Stores a fresh active heartbeat, refusing an empty prompt or an interval under the floor
 func (m *HeartbeatManager) Set(prompt string, intervalSeconds any) (*HeartbeatState, error) {
-	prompt = pystr.Strip(prompt)
+	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, &HeartbeatValueError{"heartbeat prompt is empty"}
 	}

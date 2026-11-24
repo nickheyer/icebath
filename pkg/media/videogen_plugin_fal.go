@@ -10,12 +10,11 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -261,30 +260,13 @@ func falNormalizeFamilyKey(c string) string {
 	return ""
 }
 
-// video_gen section of the active profile config.yaml, empty when unreadable or not a mapping
-func videoGenConfig(ctx context.Context) config.Tree {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	h := home.Dir(ctx)
-	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Could not load video_gen config: %v", err))
-		return config.Tree{}
-	}
-	return section(cfg, "video_gen")
-}
-
-// Family chosen by the tool model, FAL_VIDEO_MODEL, video_gen.fal.model, video_gen.model, then the default
+// Family chosen by the tool model, video_gen.fal.model with its FAL_VIDEO_MODEL override, video_gen.model, then the default
 var falResolveFamily = func(ctx context.Context, env *tools.Env, explicit string) (string, *falFamily, error) {
-	cfg := videoGenConfig(ctx)
-	candidates := []any{explicit, rawEnvValue(env, "FAL_VIDEO_MODEL"), section(cfg, "fal")["model"], cfg["model"]}
-	for _, c := range candidates {
-		if s, ok := c.(string); ok {
-			if fid := falNormalizeFamilyKey(s); fid != "" {
-				f := falFamilies[fid]
-				return fid, &f, nil
-			}
+	ctx = tools.WithEnvHome(ctx, env)
+	for _, c := range []string{explicit, settings.FalVideoModel.Get(ctx), settings.VideoGenModel.Get(ctx)} {
+		if fid := falNormalizeFamilyKey(c); fid != "" {
+			f := falFamilies[fid]
+			return fid, &f, nil
 		}
 	}
 	f := falFamilies[falVideoDefaultModel]

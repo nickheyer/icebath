@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var toolsLearningRegistry = &handlerRegistry{}
@@ -26,7 +25,7 @@ func init() {
 // Registers a learning node mutation fed the str of each named param, failures answered 5000 with its label
 func learningMutation(name string, argKeys []string, fn func(ctx context.Context, args []string) (map[string]any, error)) {
 	guardedRPC(toolsLearningRegistry, "learning."+name, 5000, rpcShape{prefix: "learning." + name + " failed: "},
-		func(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+		func(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 			args := make([]string, len(argKeys))
 			for i, k := range argKeys {
 				raw, present := params[k]

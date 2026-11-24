@@ -4,8 +4,6 @@ package media
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -14,28 +12,20 @@ import (
 func withStopPhrases(t *testing.T, phrases []string) {
 	t.Helper()
 	orig := loadVoiceStopPhrases
-	loadVoiceStopPhrases = func() []string { return phrases }
+	loadVoiceStopPhrases = func(context.Context) []string { return phrases }
 	t.Cleanup(func() { loadVoiceStopPhrases = orig })
-}
-
-// Replaces the voice config section for one test
-func withVoiceConfig(t *testing.T, cfg map[string]any) {
-	t.Helper()
-	orig := voiceConfig
-	voiceConfig = func(context.Context) map[string]any { return cfg }
-	t.Cleanup(func() { voiceConfig = orig })
 }
 
 func TestVoiceStopHintDisabledPhrasesShowNoHint(t *testing.T) {
 	withStopPhrases(t, []string{})
-	if got := voiceStopHint(); got != "" {
+	if got := voiceStopHint(context.Background()); got != "" {
 		t.Fatalf("hint %q", got)
 	}
 }
 
 func TestIsVoiceStopPhraseBareStopMatches(t *testing.T) {
 	for _, u := range []string{"stop", "Stop", "STOP", "stop.", "Stop!", " stop ", `"Stop."`, "stop?"} {
-		if !isVoiceStopPhrase(u, []string{"stop"}) {
+		if !isVoiceStopPhrase(context.Background(), u, []string{"stop"}) {
 			t.Fatalf("%q did not match", u)
 		}
 	}
@@ -43,25 +33,21 @@ func TestIsVoiceStopPhraseBareStopMatches(t *testing.T) {
 
 func TestIsVoiceStopPhraseUsesConfigWhenPhrasesOmitted(t *testing.T) {
 	withStopPhrases(t, []string{"halt"})
-	if !isVoiceStopPhrase("halt", nil) || isVoiceStopPhrase("stop", nil) {
+	if !isVoiceStopPhrase(context.Background(), "halt", nil) || isVoiceStopPhrase(context.Background(), "stop", nil) {
 		t.Fatal("configured phrases not honored")
 	}
 }
 
 func TestLoadVoiceStopPhrasesDefault(t *testing.T) {
-	withVoiceConfig(t, map[string]any{})
-	if got := loadVoiceStopPhrases(); !reflect.DeepEqual(got, defaultVoiceStopPhrases) {
+	withVoiceHome(t, "voice: {}\n")
+	if got := loadVoiceStopPhrases(context.Background()); !reflect.DeepEqual(got, []string{"stop"}) {
 		t.Fatalf("got %v", got)
 	}
 }
 
 func TestLoadVoiceStopPhrasesConfigErrorFallsBack(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("ICEBATH_HOME", dir)
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("voice: [unclosed\n  : :"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := loadVoiceStopPhrases(); !reflect.DeepEqual(got, defaultVoiceStopPhrases) {
+	withVoiceHome(t, "voice: [unclosed\n  : :")
+	if got := loadVoiceStopPhrases(context.Background()); !reflect.DeepEqual(got, []string{"stop"}) {
 		t.Fatalf("got %v", got)
 	}
 }

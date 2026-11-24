@@ -19,7 +19,7 @@ func lspProfileEnv(env *Env) *Env {
 	if env == nil {
 		return &Env{}
 	}
-	return &Env{Home: env.Home, Config: env.Config, Secrets: env.Secrets, Platform: env.Platform, Log: env.Log}
+	return &Env{Home: env.Home, Secrets: env.Secrets, Platform: env.Platform, Log: env.Log}
 }
 
 // Profile home a session's LSP service is keyed by
@@ -28,14 +28,6 @@ func lspHomeKey(env *Env) string {
 		return env.Home
 	}
 	return home.Process()
-}
-
-// Current lsp config section of a session, empty when absent or malformed
-func lspConfigSection(env *Env) map[string]any {
-	if m, ok := cfgTree(env)["lsp"].(map[string]any); ok {
-		return m
-	}
-	return map[string]any{}
 }
 
 // Difflib opcodes of two line lists without autojunk
@@ -54,7 +46,6 @@ func LSPRuntime(env *Env) *lsp.Runtime {
 	return &lsp.Runtime{
 		Home:             lspHomeKey(env),
 		Log:              envLog(env),
-		Config:           func() map[string]any { return lspConfigSection(profile) },
 		EnvFor:           pmEnvFor,
 		EnsureEnv:        pmEnsureEnv,
 		InstalledBinary:  pmInstalledBinary,
@@ -148,7 +139,7 @@ func bridgeServiceLookup(env *Env) lspService {
 // LSPServiceFor returns the active LSP service of the session's profile, built on first use, nil when disabled
 func LSPServiceFor(env *Env) (*lsp.Service, error) {
 	return lsp.ServiceFor(lspHomeKey(env), func() (*lsp.Service, error) {
-		return lsp.ServiceFromConfig(LSPRuntime(env), cfgTree(env)["lsp"], lspOperatorWorkspaceRoots(env))
+		return lsp.ServiceFromConfig(WithEnvHome(context.Background(), env), LSPRuntime(env), lspOperatorWorkspaceRoots(env)), nil
 	})
 }
 
@@ -156,7 +147,6 @@ func LSPServiceFor(env *Env) (*lsp.Service, error) {
 func LSPCommandContext(env *Env) lsp.CommandContext {
 	return lsp.CommandContext{
 		Runtime: LSPRuntime(env),
-		Config:  func() map[string]any { return lspConfigSection(env) },
 		Service: func() (*lsp.Service, error) { return LSPServiceFor(env) },
 	}
 }

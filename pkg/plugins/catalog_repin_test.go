@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -66,7 +68,7 @@ func TestRepinKeepsLocalFilesBacksUpEditsAndFollowsManifestRename(t *testing.T) 
 	}
 	c6Write(t, filepath.Join(target, "config.yaml"), "api_key: real\n")
 	c6Write(t, filepath.Join(target, "helper.py"), "def register(ctx):\n    pass  # mine\n")
-	if err := writeConfigValue(w.ctx, w.h, "plugins", "enabled", []any{"cat-plugin"}); err != nil {
+	if _, err := settings.Set(home.WithOverride(w.ctx, w.h), settings.PluginsEnabled.Key, []any{"cat-plugin"}, settings.Global); err != nil {
 		t.Fatal(err)
 	}
 	c6Write(t, filepath.Join(w.repo, "plugin.yaml"), "name: cat-plugin-v2\nversion: 2.0.0\ndescription: d\n")

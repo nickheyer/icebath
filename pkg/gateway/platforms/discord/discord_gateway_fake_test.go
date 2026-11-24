@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Loopback Discord gateway and REST API serving login, the gateway URL and a READY session
@@ -139,15 +140,19 @@ func emptySlashRegistry(t *testing.T) {
 	})
 }
 
-// Real adapter for a token built from a platform config
-func newConnectAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
+// Real adapter for a token; block is the discord section of the home's config.yaml, its settings stored there and the other keys handed over as the platform extra
+func newConnectAdapter(t *testing.T, block map[string]any) *DiscordAdapter {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Cleanup(func() { gateway.FlushRuntimeStatus(5 * time.Second) })
 	cfg := gateway.NewPlatformConfig()
 	cfg.Enabled, cfg.Token = true, "test-token"
-	if extra != nil {
-		cfg.Extra = extra
+	for key, value := range block {
+		if settings.Lookup("discord."+key) != nil {
+			setDiscord(t, key, value)
+		} else {
+			cfg.Extra[key] = value
+		}
 	}
 	a, err := NewDiscordAdapter(context.Background(), cfg)
 	if err != nil {

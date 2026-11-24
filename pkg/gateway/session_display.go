@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -56,7 +58,7 @@ func AdmitDisplay(params map[string]any) (map[string]any, error) {
 	if kind != nil {
 		committed["kind"] = DisplayHidden
 	}
-	if text != "" && pystr.Strip(text) != "" {
+	if text != "" && strings.TrimSpace(text) != "" {
 		if rs := pystr.Runes(text); len(rs) > displayTitlePreviewLimit {
 			text = pystr.FromRunes(rs[:displayTitlePreviewLimit])
 		}

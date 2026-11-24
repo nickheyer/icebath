@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -168,7 +169,7 @@ func serializeRecordsForSummary(turns []map[string]any) []string {
 			}
 			text += "\n[Tool calls:\n" + strings.Join(lines, "\n") + "\n]"
 		}
-		parts = append(parts, "["+pystr.Upper(role)+"]: "+text)
+		parts = append(parts, "["+strings.ToUpper(role)+"]: "+text)
 	}
 	return parts
 }
@@ -239,18 +240,18 @@ func fallbackAnchors(turns []map[string]any) fallbackAnchorSet {
 				turnText = prefix
 			}
 		}
-		label := pystr.Upper(role)
+		label := strings.ToUpper(role)
 		if synthetic {
 			label = "INTERNAL CONTEXT"
 		}
-		if pystr.Strip(turnText) != "" {
-			a.lastDroppedTurns = append(a.lastDroppedTurns, label+": "+pystr.Strip(turnText))
+		if strings.TrimSpace(turnText) != "" {
+			a.lastDroppedTurns = append(a.lastDroppedTurns, label+": "+strings.TrimSpace(turnText))
 			if len(a.lastDroppedTurns) > 8 {
 				a.lastDroppedTurns = a.lastDroppedTurns[len(a.lastDroppedTurns)-8:]
 			}
 		}
 		if r := []rune(text); len(r) > 600 {
-			text = pystr.Rstrip(string(r[:420])) + " ... " + pystr.Lstrip(string(r[len(r)-160:]))
+			text = strings.TrimRightFunc(string(r[:420]), unicode.IsSpace) + " ... " + strings.TrimLeftFunc(string(r[len(r)-160:]), unicode.IsSpace)
 		}
 		switch {
 		case role == "user" && text != "" && !synthetic:
@@ -293,7 +294,7 @@ func (c *ContextCompressor) buildStaticFallbackSummary(turns []map[string]any, r
 	}
 	previousNote := ""
 	if c.previousSummary != nil && *c.previousSummary != "" {
-		prev := tools.RedactSensitiveText(pystr.Strip(*c.previousSummary))
+		prev := tools.RedactSensitiveText(strings.TrimSpace(*c.previousSummary))
 		prev = tools.Elide(prev, fallbackPreviousSummaryMaxChars)
 		previousNote = "\n\n## Previous Summary Snapshot\n" + prev + "\n\n" +
 			"The previous compaction summary above remains background " +
@@ -326,7 +327,7 @@ func (c *ContextCompressor) buildStaticFallbackSummary(turns []map[string]any, r
 	if len(pruned) > maxPrunedSkillMarkers {
 		pruned = pruned[:maxPrunedSkillMarkers]
 	}
-	summary := withSummaryPrefix(redactCompactionText(pystr.Strip(body)))
+	summary := withSummaryPrefix(redactCompactionText(strings.TrimSpace(body)))
 	summary = tools.Elide(summary, fallbackSummaryMaxChars)
 	summary = reinjectPrunedSkillMarkers(summary, pruned)
 	return c.augmentSummaryLean(summary, turns)
@@ -379,9 +380,9 @@ func boundSummaryInput(content string) string {
 	}
 	tail := ""
 	if tailChars > 0 {
-		tail = pystr.Lstrip(string(r[len(r)-tailChars:]))
+		tail = strings.TrimLeftFunc(string(r[len(r)-tailChars:]), unicode.IsSpace)
 	}
-	return pystr.Rstrip(string(r[:headChars])) + marker + tail
+	return strings.TrimRightFunc(string(r[:headChars]), unicode.IsSpace) + marker + tail
 }
 
 // Bounds an oversized record with an explicit intra record truncation marker
@@ -564,7 +565,7 @@ func (c *ContextCompressor) fallbackToMainForCompression(err error, reason, fail
 	if failed == "" {
 		failed = c.lastAuxResolvedModel
 	}
-	failed = pystr.Strip(failed)
+	failed = strings.TrimSpace(failed)
 	c.summaryModelFallenBack = true
 	shown := failed
 	if shown == "" {
@@ -632,7 +633,7 @@ func (c *ContextCompressor) callSummaryLLM(ctx context.Context, prompt string, p
 		providerShown = "auto"
 	}
 	where := "(provider=" + providerShown + " model=" + model + ")"
-	if pystr.Strip(content) == "" {
+	if strings.TrimSpace(content) == "" {
 		return "", &summaryRuntimeError{msg: "Context compression LLM returned empty content " + where, reply: summaryReplyEmpty}
 	}
 	if isRefusalResponse(response, content) {
@@ -689,10 +690,10 @@ func (c *ContextCompressor) generateSummary(ctx context.Context, turns []map[str
 		if err != nil {
 			return "", err
 		}
-		if stripped := pystr.Strip(provider.StripThinkBlocks(text)); stripped != "" {
+		if stripped := strings.TrimSpace(provider.StripThinkBlocks(text)); stripped != "" {
 			text = stripped
 		}
-		out := redactCompactionText(pystr.Strip(text))
+		out := redactCompactionText(strings.TrimSpace(text))
 		out = reinjectPrunedSkillMarkers(out, prunedNames)
 		out = groundHistoricalTaskSnapshot(out, turns)
 		out = c.augmentSummaryLean(out, turns)
@@ -859,7 +860,7 @@ func (c *ContextCompressor) onSummaryFailure(ctx context.Context, err error, tur
 	if routeModel == "" {
 		routeModel = c.lastAuxResolvedModel
 	}
-	routeModel = pystr.Strip(routeModel)
+	routeModel = strings.TrimSpace(routeModel)
 	if routeModel != "" && routeModel != c.model && !c.summaryModelFallenBack {
 		c.fallbackToMainForCompression(err, kind.FallbackReason(), routeModel)
 		return c.generateSummary(ctx, turns, focusTopic, memoryContext, false)

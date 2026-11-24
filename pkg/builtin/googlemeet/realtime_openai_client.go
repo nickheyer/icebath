@@ -305,7 +305,7 @@ func (s *realtimeSpeaker) readQueueFile() ([]*pyjson.Object, error) {
 	}
 	var out []*pyjson.Object
 	for _, line := range pystr.Splitlines(text, false) {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		v, err := pyjson.Loads(line)
@@ -382,7 +382,7 @@ func (s *realtimeSpeaker) runUntilStopped(stop func() bool, poll time.Duration) 
 			if !ok {
 				return fmt.Errorf("'%s' object has no attribute 'strip'", pyTypeName(rawText))
 			}
-			text = pystr.Strip(str)
+			text = strings.TrimSpace(str)
 		}
 		result := pyjson.ObjectOf("ok", true, "bytes_written", 0, "duration_ms", 0.0)
 		if text != "" {

@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"sync"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -48,7 +49,7 @@ func agentSnapshot(a *agent.AIAgent) []map[string]any {
 
 // Runs the memory and skill review fork on demand, over the stored transcript when no agent holds it
 func (r *GatewayRunner) handleRefineCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Strip(event.GetCommandArgs())
+	args := strings.TrimSpace(event.GetCommandArgs())
 	quickKey, cached, errorText, err := r.idleCachedAgentOrError(ctx, event, "refine")
 	if err != nil {
 		return "", err
@@ -109,7 +110,7 @@ func (e *reviewRefusal) Error() string { return e.err.Error() }
 
 // Dispatches the reviewer subagent with the approval session key bound, from a cold parent when no agent is cached
 func (r *GatewayRunner) handleReviewCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Strip(event.GetCommandArgs())
+	args := strings.TrimSpace(event.GetCommandArgs())
 	quickKey, cached, errorText, err := r.idleCachedAgentOrError(ctx, event, "review")
 	if err != nil {
 		return "", err

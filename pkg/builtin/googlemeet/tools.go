@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -202,13 +201,13 @@ func dispatchMeet(ctx context.Context, node any, op string, remote func(*nodeCli
 func argText(args map[string]any, key, def string) string {
 	v := args[key]
 	if !pyrepr.Truthy(v) {
-		return pystr.Strip(def)
+		return strings.TrimSpace(def)
 	}
 	s, ok := v.(string)
 	if !ok {
 		panic(&AttributeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyTypeName(v))})
 	}
-	return pystr.Strip(s)
+	return strings.TrimSpace(s)
 }
 
 // Joins a Meet URL locally or on a node after the url and mode checks
@@ -218,7 +217,7 @@ func handleMeetJoin(ctx context.Context, call *tools.Call) string {
 	if url == "" {
 		return toolErr("url is required")
 	}
-	mode := pystr.Lower(argText(args, "mode", "transcribe"))
+	mode := strings.ToLower(argText(args, "mode", "transcribe"))
 	if mode != "transcribe" && mode != "realtime" {
 		return toolErr(fmt.Sprintf("mode must be 'transcribe' or 'realtime' (got %s)", pyrepr.StrRepr(mode)))
 	}

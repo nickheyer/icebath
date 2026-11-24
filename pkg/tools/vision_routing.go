@@ -5,10 +5,9 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Env.Values key holding the live main runtime a turn bound for auxiliary routing
@@ -109,35 +108,22 @@ func cleanStr(v any) string {
 	return strings.TrimSpace(pyStr(v))
 }
 
-// Main model field from the live runtime first, then config model, lowercased when asked
+// Main model field from the live runtime first, then the profile's model settings, lowercased when asked
 func readMainField(env *Env, field string, lower bool) string {
-	if s, ok := runtimeMainValue(env, field).(string); ok && strings.TrimSpace(s) != "" {
-		s = strings.TrimSpace(s)
-		if lower {
-			return strings.ToLower(s)
-		}
-		return s
-	}
-	modelCfg := cfgTree(env)["model"]
-	if field == "model" {
-		if s, ok := modelCfg.(string); ok && strings.TrimSpace(s) != "" {
-			return strings.TrimSpace(s)
+	s, _ := runtimeMainValue(env, field).(string)
+	if s = strings.TrimSpace(s); s == "" {
+		ctx := envHomeCtx(context.Background(), env)
+		switch field {
+		case "model":
+			s = strings.TrimSpace(settings.Model.Get(ctx))
+		case "provider":
+			s = strings.TrimSpace(settings.ModelProvider.Get(ctx))
 		}
 	}
-	if m := config.AsMap(modelCfg); m != nil {
-		key := field
-		if field == "model" {
-			key = "default"
-		}
-		if s, ok := m[key].(string); ok && strings.TrimSpace(s) != "" {
-			s = strings.TrimSpace(s)
-			if lower {
-				return strings.ToLower(s)
-			}
-			return s
-		}
+	if lower {
+		return strings.ToLower(s)
 	}
-	return ""
+	return s
 }
 
 // Main model of the session
@@ -213,23 +199,14 @@ func coerceCapabilityBool(raw any) (bool, bool) {
 // Mapping value or nil
 func dictOrNil(v any) map[string]any { return config.AsMap(v) }
 
-// Per model supports_vision or vision alias from a models mapping
+// Per model supports_vision from a models mapping
 func modelSupportsVisionOverride(modelsCfg any, model string) (bool, bool) {
-	perModel := dictOrNil(dictOrNil(modelsCfg)[model])
-	raw, ok := perModel["supports_vision"]
-	if !ok {
-		raw = perModel["vision"]
-	}
-	return coerceCapabilityBool(raw)
+	return coerceCapabilityBool(dictOrNil(dictOrNil(modelsCfg)[model])["supports_vision"])
 }
 
-// User declared vision capability from config, the first hit across model and providers
-func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvider string) (bool, bool) {
-	if cfg == nil {
-		return false, false
-	}
-	modelCfg := dictOrNil(cfg["model"])
-	if v, ok := coerceCapabilityBool(modelCfg["supports_vision"]); ok {
+// User declared vision capability from the settings of ctx, the first hit across model and providers
+func supportsVisionOverride(ctx context.Context, provider, model, requestedProvider string) (bool, bool) {
+	if v, ok := settings.ModelSupportsVision.Lookup(ctx); ok {
 		return v, true
 	}
 	var candidates []string
@@ -240,7 +217,7 @@ func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvid
 			candidates = append(candidates, c)
 		}
 	}
-	for _, c := range []string{requestedProvider, provider, cleanStr(modelCfg["provider"])} {
+	for _, c := range []string{requestedProvider, provider, strings.TrimSpace(settings.ModelProvider.Get(ctx))} {
 		if c == "" {
 			continue
 		}
@@ -249,7 +226,7 @@ func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvid
 			add(c[len("custom:"):])
 		}
 	}
-	providersCfg := dictOrNil(cfg["providers"])
+	providersCfg := settings.Providers.Get(ctx)
 	var maps []any
 	for _, p := range candidates {
 		maps = append(maps, dictOrNil(providersCfg[p])["models"])
@@ -262,8 +239,9 @@ func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvid
 	return false, false
 }
 
-// base_url or api_key of the active inference provider, runtime first then model and providers
-func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, runtimeOK func(string) bool) string {
+// base_url or api_key of the active inference provider, runtime first then the model and providers settings of ctx
+func resolveInferenceValue(ctx context.Context, env *Env, provider, key string, runtimeOK func(string) bool) string {
+	ctx = envHomeCtx(ctx, env)
 	var runtime string
 	if key == "api_key" {
 		raw := runtimeMainValue(env, "api_key")
@@ -278,11 +256,11 @@ func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, r
 	if runtime != "" && runtimeOK(runtime) {
 		return runtime
 	}
-	if cfg == nil {
-		return ""
+	own := settings.ModelBaseURL
+	if key == "api_key" {
+		own = settings.ModelAPIKey
 	}
-	modelCfg := dictOrNil(cfg["model"])
-	if v := cleanStr(modelCfg[key]); v != "" {
+	if v := strings.TrimSpace(own.Get(ctx)); v != "" {
 		return v
 	}
 	var names []string
@@ -293,7 +271,7 @@ func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, r
 			names = append(names, n)
 		}
 	}
-	for _, p := range []string{provider, cleanStr(modelCfg["provider"])} {
+	for _, p := range []string{provider, strings.TrimSpace(settings.ModelProvider.Get(ctx))} {
 		if p == "" {
 			continue
 		}
@@ -304,7 +282,7 @@ func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, r
 			add("custom:" + p)
 		}
 	}
-	providersCfg := dictOrNil(cfg["providers"])
+	providersCfg := settings.Providers.Get(ctx)
 	var entries []map[string]any
 	for _, n := range names {
 		if e := dictOrNil(providersCfg[n]); e != nil {
@@ -320,16 +298,16 @@ func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, r
 }
 
 // Base URL of the active inference provider, the runtime value only when it belongs to the requested provider
-func resolveInferenceBaseURL(env *Env, cfg map[string]any, provider string) string {
+func resolveInferenceBaseURL(ctx context.Context, env *Env, provider string) string {
 	requested := strings.ToLower(strings.TrimSpace(provider))
-	return resolveInferenceValue(env, cfg, provider, "base_url", func(string) bool {
+	return resolveInferenceValue(ctx, env, provider, "base_url", func(string) bool {
 		return requested == "" || requested == strings.ToLower(runtimeMainText(env, "provider"))
 	})
 }
 
 // API key resolved like the base URL so the probed endpoint gets its own key
-func resolveInferenceAPIKey(env *Env, cfg map[string]any, provider string) string {
-	return resolveInferenceValue(env, cfg, provider, "api_key", func(string) bool { return true })
+func resolveInferenceAPIKey(ctx context.Context, env *Env, provider string) string {
+	return resolveInferenceValue(ctx, env, provider, "api_key", func(string) bool { return true })
 }
 
 // Reports whether the active provider likely fronts a local Ollama server
@@ -343,29 +321,15 @@ func shouldProbeOllamaVision(ctx context.Context, provider, baseURL, apiKey stri
 	return VisionCapabilities.IsLocalEndpoint(baseURL) && VisionCapabilities.DetectLocalServerType(ctx, baseURL, apiKey) == "ollama"
 }
 
-// Image input mode from config, auto unless native or text
-func coerceImageMode(raw any) string {
-	s, _ := raw.(string)
-	switch mode := pystr.Lower(pystr.Strip(s)); mode {
-	case "auto", "native", "text":
-		return mode
-	}
-	return "auto"
-}
-
-// Reports whether the user configured a specific auxiliary.vision backend
-func explicitAuxVisionOverride(cfg map[string]any) bool {
-	vision := dictOrNil(dictOrNil(dictOrNil(cfg)["auxiliary"])["vision"])
-	if len(vision) == 0 {
-		return false
-	}
-	provider := strings.ToLower(cleanStr(vision["provider"]))
-	return !((provider == "" || provider == "auto") && cleanStr(vision["model"]) == "" && cleanStr(vision["base_url"]) == "")
+// Reports whether the settings of ctx name a specific auxiliary.vision backend
+func explicitAuxVisionOverride(ctx context.Context) bool {
+	provider := strings.ToLower(strings.TrimSpace(settings.AuxiliaryVisionProvider.Get(ctx)))
+	return !((provider == "" || provider == "auto") && strings.TrimSpace(settings.AuxiliaryVisionModel.Get(ctx)) == "" && strings.TrimSpace(settings.AuxiliaryVisionBaseUrl.Get(ctx)) == "")
 }
 
 // Managed local runtime verdict, the serving process is the authority on whether it can see
-func probeManagedRuntime(ctx context.Context, env *Env, provider, model string, cfg map[string]any) (bool, bool) {
-	if !isManagedLocalProvider(provider, resolveInferenceBaseURL(env, cfg, provider)) {
+func probeManagedRuntime(ctx context.Context, env *Env, provider, model string) (bool, bool) {
+	if !isManagedLocalProvider(provider, resolveInferenceBaseURL(ctx, env, provider)) {
 		return false, false
 	}
 	if model == "" || VisionCapabilities == nil {
@@ -375,7 +339,7 @@ func probeManagedRuntime(ctx context.Context, env *Env, provider, model string, 
 }
 
 // models.dev catalog verdict with network allowed, Codex picker variants mapped to their base slug
-func probeModelsDev(ctx context.Context, env *Env, provider, model string, cfg map[string]any) (bool, bool) {
+func probeModelsDev(ctx context.Context, env *Env, provider, model string) (bool, bool) {
 	if VisionCapabilities == nil {
 		return false, false
 	}
@@ -386,12 +350,12 @@ func probeModelsDev(ctx context.Context, env *Env, provider, model string, cfg m
 }
 
 // Ollama api show verdict for local endpoints
-func probeOllama(ctx context.Context, env *Env, provider, model string, cfg map[string]any) (bool, bool) {
-	baseURL := resolveInferenceBaseURL(env, cfg, provider)
+func probeOllama(ctx context.Context, env *Env, provider, model string) (bool, bool) {
+	baseURL := resolveInferenceBaseURL(ctx, env, provider)
 	if baseURL == "" && strings.ToLower(strings.TrimSpace(provider)) == "ollama" {
 		baseURL = "http://localhost:11434/v1"
 	}
-	apiKey := resolveInferenceAPIKey(env, cfg, provider)
+	apiKey := resolveInferenceAPIKey(ctx, env, provider)
 	if !shouldProbeOllamaVision(ctx, provider, baseURL, apiKey) || VisionCapabilities == nil {
 		return false, false
 	}
@@ -399,25 +363,26 @@ func probeOllama(ctx context.Context, env *Env, provider, model string, cfg map[
 }
 
 // Capability probes after the config override in priority order
-var visionProbes = []func(ctx context.Context, env *Env, provider, model string, cfg map[string]any) (bool, bool){
+var visionProbes = []func(ctx context.Context, env *Env, provider, model string) (bool, bool){
 	probeManagedRuntime, probeModelsDev, probeOllama,
 }
 
 // Vision capability from the config override then the probes, known false when nothing resolves it
-func lookupSupportsVision(ctx context.Context, env *Env, provider, model string, cfg map[string]any, requestedProvider string) (bool, bool) {
+func lookupSupportsVision(ctx context.Context, env *Env, provider, model, requestedProvider string) (bool, bool) {
+	ctx = envHomeCtx(ctx, env)
 	if requestedProvider == "" &&
 		strings.ToLower(runtimeMainText(env, "provider")) == strings.ToLower(strings.TrimSpace(provider)) &&
 		runtimeMainText(env, "model") == strings.TrimSpace(model) {
 		requestedProvider = runtimeMainText(env, "requested_provider")
 	}
-	if v, ok := supportsVisionOverride(cfg, provider, model, requestedProvider); ok {
+	if v, ok := supportsVisionOverride(ctx, provider, model, requestedProvider); ok {
 		return v, true
 	}
 	if provider == "" || model == "" {
 		return false, false
 	}
 	for _, probe := range visionProbes {
-		if v, ok := probe(ctx, env, provider, model, cfg); ok {
+		if v, ok := probe(ctx, env, provider, model); ok {
 			return v, true
 		}
 	}
@@ -426,28 +391,24 @@ func lookupSupportsVision(ctx context.Context, env *Env, provider, model string,
 
 // LookupSupportsVision reports the vision verdict for a provider and model under the session config and whether it is known
 func LookupSupportsVision(ctx context.Context, env *Env, provider, model string) (bool, bool) {
-	return lookupSupportsVision(visionCtx(ctx, env), env, provider, model, map[string]any(cfgTree(env)), "")
+	return lookupSupportsVision(visionCtx(ctx, env), env, provider, model, "")
 }
 
 // DecideImageInputMode returns native or text for a provider and model under the session config
 func DecideImageInputMode(ctx context.Context, env *Env, provider, model, requestedProvider string) string {
-	return decideImageInputMode(visionCtx(ctx, env), env, provider, model, map[string]any(cfgTree(env)), requestedProvider)
-}
-
-// Native or text for a provider and model under the config tree the caller loaded
-func DecideImageInputModeWithConfig(ctx context.Context, env *Env, provider, model string, cfg map[string]any, requestedProvider string) string {
-	return decideImageInputMode(visionCtx(ctx, env), env, provider, model, cfg, requestedProvider)
+	return decideImageInputMode(visionCtx(ctx, env), env, provider, model, requestedProvider)
 }
 
 // Native or text for the turn, an explicit auxiliary.vision backend winning in auto mode
-func decideImageInputMode(ctx context.Context, env *Env, provider, model string, cfg map[string]any, requestedProvider string) string {
-	if mode := coerceImageMode(dictOrNil(dictOrNil(cfg)["agent"])["image_input_mode"]); mode != "auto" {
+func decideImageInputMode(ctx context.Context, env *Env, provider, model, requestedProvider string) string {
+	ctx = envHomeCtx(ctx, env)
+	if mode := settings.ImageInput.Get(ctx); mode != "auto" {
 		return mode
 	}
-	if explicitAuxVisionOverride(cfg) {
+	if explicitAuxVisionOverride(ctx) {
 		return "text"
 	}
-	if v, ok := lookupSupportsVision(ctx, env, provider, model, cfg, requestedProvider); ok && v {
+	if v, ok := lookupSupportsVision(ctx, env, provider, model, requestedProvider); ok && v {
 		return "native"
 	}
 	return "text"
@@ -516,27 +477,25 @@ func supportsMediaInToolResults(provider, model string) bool {
 }
 
 // One gate for every native lane, the profile veto first then provider media support or a vision capable model
-func acceptsToolResultImages(ctx context.Context, env *Env, provider, model string, cfg map[string]any) bool {
+func acceptsToolResultImages(ctx context.Context, env *Env, provider, model string) bool {
 	if profileRejectsToolMedia(provider, model) {
 		return false
 	}
 	if supportsMediaInToolResults(provider, model) {
 		return true
 	}
-	v, ok := lookupSupportsVision(ctx, env, provider, model, cfg, "")
+	v, ok := lookupSupportsVision(ctx, env, provider, model, "")
 	return ok && v
 }
 
 // NativeToolResultImages reports whether a tool may hand the main model pixels inside its result
 func NativeToolResultImages(ctx context.Context, env *Env, provider, model string) bool {
-	ctx = visionCtx(ctx, env)
-	cfg := map[string]any(cfgTree(env))
-	return nativeToolResultImages(ctx, env, provider, model, cfg)
+	return nativeToolResultImages(visionCtx(ctx, env), env, provider, model)
 }
 
 // Image routing resolves to native and the route accepts images inside tool results
-func nativeToolResultImages(ctx context.Context, env *Env, provider, model string, cfg map[string]any) bool {
-	return decideImageInputMode(ctx, env, provider, model, cfg, "") == "native" && acceptsToolResultImages(ctx, env, provider, model, cfg)
+func nativeToolResultImages(ctx context.Context, env *Env, provider, model string) bool {
+	return decideImageInputMode(ctx, env, provider, model, "") == "native" && acceptsToolResultImages(ctx, env, provider, model)
 }
 
 // ShouldUseNativeVisionFastPath applies the native image gate to the session main model

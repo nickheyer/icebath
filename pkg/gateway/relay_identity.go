@@ -1,15 +1,16 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"os"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Value of key in a decoded JSON object of either representation
@@ -31,15 +32,11 @@ func RelayExplicitlyDisabled(ctx context.Context) (bool, error) {
 	if err != nil || cfg == nil {
 		return false, nil
 	}
-	gw, ok := cfg["gateway"].(map[string]any)
-	if !ok {
-		gw = map[string]any{}
-	}
-	platforms, err := MergePlatformSections(ctx, cfg, gw, map[string]any{}, nil)
+	platforms, err := MergePlatformSections(cfg, map[string]any{})
 	if err != nil {
 		return false, err
 	}
-	BridgePlatformSharedKeys(cfg, gw["platforms"], map[string]any{}, platforms, []Platform{PlatformRelay}, nil, nil)
+	BridgePlatformSharedKeys(cfg, map[string]any{}, platforms, []Platform{PlatformRelay}, nil, nil)
 	block, ok := platforms["relay"].(map[string]any)
 	if !ok {
 		return false, nil
@@ -64,7 +61,7 @@ func RelayExplicitlyDisabled(ctx context.Context) (bool, error) {
 
 // Parsed GATEWAY_RELAY_BOT_IDS, empty when unset or malformed
 func relayBotIDsMap() any {
-	raw := pystr.Strip(os.Getenv("GATEWAY_RELAY_BOT_IDS"))
+	raw := strings.TrimSpace(os.Getenv("GATEWAY_RELAY_BOT_IDS"))
 	if raw == "" {
 		return map[string]any{}
 	}
@@ -79,14 +76,9 @@ func relayBotIDsMap() any {
 	return map[string]any{}
 }
 
-// Ordered platform and bot id pairs the relay fronts, the generic relay pair when nothing is set
+// Ordered platform and bot id pairs the relay fronts for this process's profile, the generic relay pair when nothing is set
 func RelayPlatformIdentities() [][2]string {
-	var platforms []string
-	for _, p := range strings.Split(os.Getenv("GATEWAY_RELAY_PLATFORMS"), ",") {
-		if s := pystr.Strip(p); s != "" {
-			platforms = append(platforms, s)
-		}
-	}
+	platforms := SettingList(context.Background(), settings.GatewayRelayPlatforms)
 	if len(platforms) == 0 {
 		return [][2]string{{"relay", ""}}
 	}
@@ -102,7 +94,7 @@ func RelayPlatformIdentities() [][2]string {
 			if !has {
 				v = ""
 			}
-			botID = pystr.Strip(pyrepr.Str(v))
+			botID = strings.TrimSpace(pyrepr.Str(v))
 		}
 		out = append(out, [2]string{platform, botID})
 	}

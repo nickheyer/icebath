@@ -13,7 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
@@ -23,16 +22,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var fireClaimHeartbeatGraceSecs = runClaimHeartbeatSeconds * 3
 
-const (
-	fireClaimMissConfirmSeconds  = 1.0
-	cronDefaultCleanupTimeoutSec = 10.0
-)
+const fireClaimMissConfirmSeconds = 1.0
 
 var cronDeliveryVars = []string{
 	"ICEBATH_CRON_AUTO_DELIVER_PLATFORM",
@@ -65,30 +62,9 @@ func (s *Store) drainDeliveryQueue(ctx context.Context, adapters, loop any) (int
 	return openDeliveryQueue(s).Drain(ctx, send, deliveryDrainLimit)
 }
 
-// Wall clock bound for post run cleanup from cron.cleanup_timeout_seconds, ten seconds by default
+// Wall clock bound for post run cleanup from cron.cleanup_timeout_seconds
 func (s *Store) cronCleanupTimeoutSeconds() float64 {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		s.log.Debug(fmt.Sprintf("Failed to load cron cleanup timeout from config: %v", err))
-		return cronDefaultCleanupTimeoutSec
-	}
-	cronCfg, ok := cfg["cron"].(map[string]any)
-	if !ok {
-		return cronDefaultCleanupTimeoutSec
-	}
-	configured, present := cronCfg["cleanup_timeout_seconds"]
-	if !present || configured == nil {
-		return cronDefaultCleanupTimeoutSec
-	}
-	timeout, ok, convErr := anyFloat(configured)
-	if convErr != nil || !ok {
-		s.log.Debug(fmt.Sprintf("Failed to load cron cleanup timeout from config: could not convert %v to float", configured))
-		return cronDefaultCleanupTimeoutSec
-	}
-	if timeout >= 0 {
-		return timeout
-	}
-	return cronDefaultCleanupTimeoutSec
+	return settings.CronCleanupTimeoutSeconds.Get(s.settingsCtx()).Seconds()
 }
 
 // Runs fallible cleanup under the timeout, false on failure or when the bound passed and the worker was abandoned
@@ -241,7 +217,7 @@ func (s *Store) runNoAgentJob(ctx context.Context, job *Job, jobID, jobName stri
 	if job.Script != nil {
 		scriptPath = *job.Script
 	}
-	if pystr.Strip(scriptPath) == "" {
+	if strings.TrimSpace(scriptPath) == "" {
 		return s.blockAndPauseJob(home.WithOverride(ctx, s.home), jobID, jobName, noAgentWithoutScriptError)
 	}
 	workdir := ""
@@ -263,7 +239,7 @@ func (s *Store) runNoAgentJob(ctx context.Context, job *Job, jobID, jobName stri
 		s.log.Info(fmt.Sprintf("Job '%s' (no_agent): wakeAgent=false gate — silent run", jobID))
 		return jobRunOutcome{true, header + "**Status:** silent (wakeAgent=false)\n", SilentMarker, nil}
 	}
-	if pystr.Strip(output) == "" {
+	if strings.TrimSpace(output) == "" {
 		s.log.Info(fmt.Sprintf("Job '%s' (no_agent): empty stdout — silent run", jobID))
 		return jobRunOutcome{true, header + "**Status:** silent (empty output)\n", SilentMarker, nil}
 	}
@@ -299,57 +275,41 @@ func (s *Store) applyMonitorGate(ctx context.Context, job *Job, jobID, jobName s
 
 // Config derived inputs for one agent backed run
 type cronJobConfig struct {
-	cfg                 config.Tree
-	model               string
-	modelCfg            any
-	cronDefaultProvider string
+	// The profile's config document the run's agent is built from, handed whole to the provider, tool and reasoning resolvers
+	cfg   config.Tree
+	model string
 }
 
-// Model for the run from the job pin, cron.model, the main model, then the claimed trial model
-func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName string) (cronJobConfig, error) {
-	model := ""
-	if job.Model != nil && *job.Model != "" {
-		model = *job.Model
-	} else {
-		model = s.cronEnvSetting(ctx, "ICEBATH_MODEL", "")
+// Model a run of the job uses: its own pin, else cron.model, else the main model
+func (s *Store) jobModel(ctx context.Context, job *Job) string {
+	if job.Model != nil && strings.TrimSpace(*job.Model) != "" {
+		return strings.TrimSpace(*job.Model)
 	}
-	jc := cronJobConfig{cfg: config.Tree{}, modelCfg: map[string]any{}}
+	sctx := home.WithOverride(ctx, s.home)
+	if m := strings.TrimSpace(settings.CronModel.Get(sctx)); m != "" {
+		return m
+	}
+	return strings.TrimSpace(settings.Model.Get(sctx))
+}
+
+// Provider a run of the job asks for: its own pin, else cron.model_provider, empty for the main provider
+func (s *Store) jobRequestedProvider(ctx context.Context, job *Job) string {
+	if job.Provider != nil && *job.Provider != "" {
+		return *job.Provider
+	}
+	return strings.TrimSpace(settings.CronModelProvider.Get(home.WithOverride(ctx, s.home)))
+}
+
+// Model and config document for the run, an error when no model is configured anywhere
+func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName string) (cronJobConfig, error) {
+	jc := cronJobConfig{cfg: config.Tree{}}
 	cfgPath := filepath.Join(s.home, "config.yaml")
 	exists, err := config.ConfigExists(ctx, cfgPath)
 	if err == nil && exists {
 		var cfg config.Tree
 		cfg, err = s.loadConfig()
-		if err == nil {
-			if cfg == nil {
-				cfg = config.Tree{}
-			}
+		if err == nil && cfg != nil {
 			jc.cfg = cfg
-			if raw, ok := cfg["model"]; ok && pyTruthy(raw) {
-				jc.modelCfg = raw
-			}
-			cronDefaultModel := ""
-			if cronCfg, ok := cfg["cron"].(map[string]any); ok {
-				cronDefaultModel = pystr.Strip(pyStrOrEmpty(cronCfg["model"]))
-				jc.cronDefaultProvider = pystr.Strip(pyStrOrEmpty(cronCfg["model_provider"]))
-			}
-			if job.Model == nil || *job.Model == "" {
-				if cronDefaultModel != "" {
-					model = cronDefaultModel
-				} else {
-					var main any
-					switch mc := jc.modelCfg.(type) {
-					case string:
-						main = mc
-					case map[string]any:
-						main = mc["default"]
-					default:
-						main = ""
-					}
-					if m := pystr.Strip(pyStrOrEmpty(main)); m != "" {
-						model = m
-					}
-				}
-			}
 		}
 	}
 	if err != nil {
@@ -359,33 +319,25 @@ func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName 
 		}
 		s.log.Warn(fmt.Sprintf("Job '%s': failed to load config.yaml, using defaults: %v", jobID, err))
 	}
-	model = pystr.Strip(model)
+	model := s.jobModel(ctx, job)
 	if model == "" {
 		jobModel := "None"
 		if job.Model != nil {
 			jobModel = pyrepr.Repr(*job.Model)
 		}
-		envModel := s.cronEnvSetting(ctx, "ICEBATH_MODEL", "")
-		return jc, fmt.Errorf("Cron job '%s' has no model configured (job.model=%s, ICEBATH_MODEL=%s, config.yaml model.default missing or empty). Set a per-job model via `icebath cron edit %s --model <name>` or set a default with `icebath model <name>`.",
-			jobName, jobModel, pyrepr.Repr(envModel), jobID)
+		return jc, fmt.Errorf("Cron job '%s' has no model configured (job.model=%s, cron.model and model.default empty, ICEBATH_MODEL unset). Set a per-job model via `icebath cron edit %s --model <name>` or set a default with `icebath model <name>`.",
+			jobName, jobModel, jobID)
 	}
-	if netCfg, ok := jc.cfg["network"].(map[string]any); ok && pyTruthy(netCfg["force_ipv4"]) {
+	if settings.NetworkForceIpv4.Get(home.WithOverride(ctx, s.home)) {
 		netpref.ApplyIPv4Preference(true)
 	}
 	jc.model = model
 	return jc, nil
 }
 
-// Prefill messages from the env override or config, nil when unset, missing or not a JSON list
-func (s *Store) loadPrefillMessages(ctx context.Context, cfg config.Tree, jobID string) []any {
-	agentCfg, _ := cfg["agent"].(map[string]any)
-	prefillFile := s.cronEnvSetting(ctx, "ICEBATH_PREFILL_MESSAGES_FILE", "")
-	if prefillFile == "" {
-		prefillFile = pyStrOrEmpty(cfg["prefill_messages_file"])
-	}
-	if prefillFile == "" && agentCfg != nil {
-		prefillFile = pyStrOrEmpty(agentCfg["prefill_messages_file"])
-	}
+// Prefill messages from prefill_messages_file, nil when unset, missing or not a JSON list
+func (s *Store) loadPrefillMessages(ctx context.Context, jobID string) []any {
+	prefillFile := strings.TrimSpace(settings.PrefillMessagesFile.Get(home.WithOverride(ctx, s.home)))
 	if prefillFile == "" {
 		return nil
 	}
@@ -412,7 +364,7 @@ func (s *Store) loadPrefillMessages(ctx context.Context, cfg config.Tree, jobID 
 }
 
 // Refuses an unrunnable job before the agent is built, nil when preflight passes or errors open
-func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName string, cfg config.Tree) *jobRunOutcome {
+func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName string) *jobRunOutcome {
 	reason := ""
 	func() {
 		defer func() {
@@ -421,10 +373,10 @@ func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName s
 				reason = ""
 			}
 		}()
-		if !s.cronPreflightEnabled(cfg) {
+		if !s.cronPreflightEnabled(ctx) {
 			return
 		}
-		r, err := s.preflightJobConfig(ctx, job, cfg)
+		r, err := s.preflightJobConfig(ctx, job)
 		if err != nil {
 			s.log.Debug(fmt.Sprintf("Job '%s': preflight validation errored — failing open", jobID), "error", err)
 			return
@@ -465,12 +417,7 @@ func (s *Store) blockedConfigResult(ctx context.Context, jobID, jobName, reason 
 // Runtime for the run, walking the fallback chain on auth or transient network resolve failures
 func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, jc cronJobConfig) (*provider.Runtime, string, *string, error) {
 	model := jc.model
-	requested := ""
-	if job.Provider != nil && *job.Provider != "" {
-		requested = *job.Provider
-	} else {
-		requested = jc.cronDefaultProvider
-	}
+	requested := s.jobRequestedProvider(ctx, job)
 	baseURL := ""
 	if job.BaseURL != nil {
 		baseURL = *job.BaseURL
@@ -485,7 +432,7 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 	if !isAuth && !isTransient {
 		return nil, "", nil, fmt.Errorf("%s: %w", provider.FormatRuntimeProviderError(resolveErr), resolveErr)
 	}
-	chain := jobFallbackChain(job, jc.cfg)
+	chain := s.jobFallbackChain(ctx, job)
 	kind := "transient network"
 	if isAuth {
 		kind = "auth"
@@ -501,8 +448,8 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 		if entry == nil {
 			continue
 		}
-		fbProvider := pystr.Strip(pyStrOrEmpty(entry["provider"]))
-		fbModel := pystr.Strip(pyStrOrEmpty(entry["model"]))
+		fbProvider := strings.TrimSpace(pyStrOrEmpty(entry["provider"]))
+		fbModel := strings.TrimSpace(pyStrOrEmpty(entry["model"]))
 		if fbProvider == "" || fbModel == "" {
 			continue
 		}
@@ -520,9 +467,7 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 		s.log.Info(fmt.Sprintf("Job '%s': fallback resolved to %s model %s", jobID, fbRT.Provider, fbModel))
 		primary := requested
 		if primary == "" {
-			if mc, ok := jc.modelCfg.(map[string]any); ok {
-				primary = pyStrOrEmpty(mc["provider"])
-			}
+			primary = strings.TrimSpace(settings.ModelProvider.Get(home.WithOverride(ctx, s.home)))
 		}
 		notice := provider.PreAgentFallbackNotice(primary, model, fbRT.Provider, fbModel)
 		return fbRT, fbModel, &notice, nil
@@ -532,11 +477,11 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 
 // Credential pool of the runtime provider when it holds credentials, nil otherwise
 func (s *Store) loadCredentialPool(rt *provider.Runtime, jobID string) *provider.Pool {
-	runtimeProvider := strings.ToLower(pystr.Strip(rt.Provider))
+	runtimeProvider := strings.ToLower(strings.TrimSpace(rt.Provider))
 	if runtimeProvider == "" {
 		return nil
 	}
-	env := provider.PoolEnv{Store: provider.NewStore(s.home), Secrets: config.NewSecrets(s.home), Config: provider.ConfigLoader(s.home), Log: s.log}
+	env := provider.PoolEnv{Store: provider.NewStore(s.home), Secrets: config.NewSecrets(s.home), Log: s.log}
 	pool := provider.LoadRoutePool(env, runtimeProvider, rt.BaseURL, rt.RequestedProvider)
 	if pool != nil && pool.HasCredentials() {
 		s.log.Info(fmt.Sprintf("Job '%s': loaded credential pool for provider %s with %d entries", jobID, runtimeProvider, len(pool.Entries())))
@@ -856,7 +801,7 @@ func cronResultMessages(result map[string]any) []any {
 // Deliverable reply of a conversation result, failing on a reported failure and dropping explainer only turns
 func finalResponseFromResult(ctx context.Context, s *Store, result map[string]any, jobID, jobName string) (string, error) {
 	turnExitReason := pyStrOrEmpty(result["turn_exit_reason"])
-	finalText := pystr.Strip(pyStrOrEmpty(result["final_response"]))
+	finalText := strings.TrimSpace(pyStrOrEmpty(result["final_response"]))
 	maxIterationSummary := isMaxIterationHandoff(result)
 	failed, _ := result["failed"].(bool)
 	completed, hasCompleted := result["completed"].(bool)
@@ -877,10 +822,10 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 	if finalResponse != "" {
 		finalResponse = gateway.RepairExplicitComputerUseMediaPathsAt(ctx, finalResponse, cronResultMessages(result), 0)
 	}
-	if pystr.Strip(finalResponse) == "(No response generated)" {
+	if strings.TrimSpace(finalResponse) == "(No response generated)" {
 		finalResponse = ""
 	}
-	if pystr.Strip(finalResponse) != "" && turnExitReason != "" {
+	if strings.TrimSpace(finalResponse) != "" && turnExitReason != "" {
 		model := pyStrOrEmpty(result["model"])
 		causes := append([]*string{nil}, func() []*string {
 			out := make([]*string, 0, len(state.PersistenceErrorCauses))
@@ -897,11 +842,11 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 					m = &model
 				}
 				if v := formatTurnCompletionExplanation(ctx, turnExitReason, cause, m); v != "" {
-					variants[pystr.Strip(v)] = true
+					variants[strings.TrimSpace(v)] = true
 				}
 			}
 		}
-		if variants[pystr.Strip(finalResponse)] {
+		if variants[strings.TrimSpace(finalResponse)] {
 			s.log.Info(fmt.Sprintf("Job '%s': abnormal empty turn (%s) — suppressing explainer for cron delivery", jobID, turnExitReason))
 			finalResponse = ""
 		}
@@ -923,7 +868,7 @@ func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a Cro
 	} else if tip != "" {
 		finalID = tip
 	}
-	titleBase := pystr.Strip(truncateRunes(strings.Join(strings.Fields(jobName), " "), 60))
+	titleBase := strings.TrimSpace(truncateRunes(strings.Join(strings.Fields(jobName), " "), 60))
 	if titleBase == "" {
 		titleBase = "cron " + jobID
 	}
@@ -1161,16 +1106,15 @@ type cronAgentSetup struct {
 func (s *Store) resolveCronAgentSetup(ctx context.Context, job *Job, jobID, jobName string, jc cronJobConfig) (*cronAgentSetup, error) {
 	cfg := jc.cfg
 	setup := &cronAgentSetup{model: jc.model}
-	setup.prefill = s.loadPrefillMessages(ctx, cfg, jobID)
-	var maxTurns any
-	if agentCfg, ok := cfg["agent"].(map[string]any); ok {
-		maxTurns = agentCfg["max_turns"]
+	setup.prefill = s.loadPrefillMessages(ctx, jobID)
+	setup.maxIterations = config.TurnLimitUnlimited
+	if n, set := settings.MaxTurns.Lookup(home.WithOverride(ctx, s.home)); set {
+		setup.maxIterations = n
 	}
-	setup.maxIterations = config.ResolveTurnLimit(maxTurns, config.TurnLimitUnlimited)
 	if err := s.guardJobCredentialExfil(job); err != nil {
 		return nil, err
 	}
-	setup.blocked = s.preflightOrBlock(ctx, job, jobID, jobName, cfg)
+	setup.blocked = s.preflightOrBlock(ctx, job, jobID, jobName)
 	if setup.blocked != nil {
 		return setup, nil
 	}
@@ -1179,11 +1123,11 @@ func (s *Store) resolveCronAgentSetup(ctx context.Context, job *Job, jobID, jobN
 		return nil, err
 	}
 	setup.runtime, setup.model, setup.fallbackNotice = rt, model, notice
-	setup.reasoningConfig = s.resolveJobReasoningConfig(job, cfg, setup.model)
-	setup.fallbackModel = jobFallbackChain(job, cfg)
+	setup.reasoningConfig = s.resolveJobReasoningConfig(ctx, job, setup.model)
+	setup.fallbackModel = s.jobFallbackChain(ctx, job)
 	setup.credentialPool = s.loadCredentialPool(setup.runtime, jobID)
 	s.initCronMCPTools(ctx, jobID)
-	if s.cronPreflightEnabled(cfg) {
+	if s.cronPreflightEnabled(ctx) {
 		if reason := s.emptyRequestedMCPToolsets(ctx, job, cfg); reason != "" {
 			out := s.blockedConfigResult(home.WithOverride(ctx, s.home), jobID, jobName, reason)
 			setup.blocked = &out
@@ -1201,29 +1145,10 @@ func (s *Store) constructCronAgent(ctx context.Context, job *Job, cfg config.Tre
 	return newCronAgent(ctx, spec)
 }
 
-// Config section read like cfg.get(key) or {} followed by a get, failing on a truthy non mapping
-func cronConfigSection(cfg config.Tree, key string) (map[string]any, error) {
-	raw := cfg[key]
-	if !pyrepr.Truthy(raw) {
-		return map[string]any{}, nil
-	}
-	section, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("the %s section of config.yaml is %s, expected a mapping", key, errchain.Kind(raw))
-	}
-	return section, nil
-}
-
 // Agent construction arguments for the run, the AIAgent keyword set the cron path passes
 func (s *Store) cronAgentSpecFor(ctx context.Context, job *Job, cfg config.Tree, setup *cronAgentSetup, scope *cronRunScope, sessionID string, db *state.DB) (AgentOptions, error) {
-	pr, err := cronConfigSection(cfg, "provider_routing")
-	if err != nil {
-		return AgentOptions{}, err
-	}
-	openrouter, err := cronConfigSection(cfg, "openrouter")
-	if err != nil {
-		return AgentOptions{}, err
-	}
+	sctx := home.WithOverride(ctx, s.home)
+	pr := settings.ProviderRouting.Get(sctx)
 	enabled, err := resolveCronEnabledToolsets(ctx, job, cfg)
 	if err != nil {
 		return AgentOptions{}, err
@@ -1240,9 +1165,9 @@ func (s *Store) cronAgentSpecFor(ctx context.Context, job *Job, cfg config.Tree,
 		ProvidersIgnored:         pr["ignore"],
 		ProvidersOrder:           pr["order"],
 		ProviderSort:             pr["sort"],
-		OpenRouterMinCodingScore: openrouter["min_coding_score"],
+		OpenRouterMinCodingScore: settings.OpenrouterMinCodingScore.Get(sctx),
 		EnabledToolsets:          enabled,
-		DisabledToolsets:         resolveCronDisabledToolsets(cfg),
+		DisabledToolsets:         resolveCronDisabledToolsets(sctx),
 		QuietMode:                true,
 		SkipContextFiles:         scope.workdir == "",
 		LoadSoulIdentity:         true,
@@ -1404,7 +1329,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		if setup.fallbackNotice != nil && *setup.fallbackNotice != "" && pystr.Strip(finalResponse) != "" && !isCronSilenceResponse(finalResponse) {
+		if setup.fallbackNotice != nil && *setup.fallbackNotice != "" && strings.TrimSpace(finalResponse) != "" && !isCronSilenceResponse(finalResponse) {
 			if _, marked := cronFailureMarkerError(finalResponse); !marked {
 				finalResponse = *setup.fallbackNotice + "\n\n" + finalResponse
 			}

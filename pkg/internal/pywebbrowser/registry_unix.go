@@ -9,8 +9,6 @@ import (
 	"slices"
 	"strings"
 	"syscall"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Process attributes of a browser started in its own session
@@ -54,7 +52,7 @@ func openMacOSX(b *browser, url string) (bool, error) {
 	var script string
 	if b.name == "default" {
 		proto, _, found := strings.Cut(url, ":")
-		if found && (pystr.Lower(proto) == "http" || pystr.Lower(proto) == "https") {
+		if found && (strings.ToLower(proto) == "http" || strings.ToLower(proto) == "https") {
 			script = `open location "` + url + `"`
 		} else {
 			script = "\n" +

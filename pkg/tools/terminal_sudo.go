@@ -70,7 +70,7 @@ var sudoHeadlessFailures = []string{"sudo: a password is required", "sudo: no tt
 
 // Appends the SUDO_PASSWORD tip when sudo failed in a headless context
 func handleSudoFailure(ctx context.Context, env *Env, output string, envType string) string {
-	isGateway := sessionFlag(env, "gateway_session", "ICEBATH_GATEWAY_SESSION")
+	isGateway := sessionFlag(env, "gateway", "ICEBATH_GATEWAY_SESSION")
 	noUser := noSudoUser(ctx, env)
 	if !(isGateway || noUser) {
 		return output

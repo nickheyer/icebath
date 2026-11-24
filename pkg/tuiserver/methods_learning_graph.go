@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var learningGraphRegistry = &handlerRegistry{}
@@ -15,7 +14,7 @@ func init() {
 }
 
 // Learning graph of the profile, its learned skills and memories with their links and stats
-func learningGraph(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func learningGraph(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	graph, err := memory.BuildLearningGraph(ctx, configEnv(ctx))
 	if err != nil {
 		return nil, err

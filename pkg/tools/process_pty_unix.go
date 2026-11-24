@@ -123,9 +123,13 @@ func (p *ptyProcess) ExitStatus() *int {
 	}
 }
 
+// Signals the child's whole session group, which it leads from its own setsid, the child alone when that fails
 func (p *ptyProcess) kill(sig syscall.Signal) {
-	if p.IsAlive() {
-		syscall.Kill(p.cmd.Process.Pid, sig)
+	if !p.IsAlive() {
+		return
+	}
+	if pid := p.cmd.Process.Pid; syscall.Kill(-pid, sig) != nil {
+		syscall.Kill(pid, sig)
 	}
 }
 

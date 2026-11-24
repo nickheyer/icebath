@@ -48,7 +48,7 @@ func (r *GatewayRunner) handleMemoryCommand(ctx context.Context, event *gateway.
 		return "", err
 	}
 	out, handled, err := memory.HandlePendingSubcommand(ctx, env, tools.WriteApprovalMemory,
-		pystr.SplitWhitespace(pystr.Strip(event.GetCommandArgs()), -1), memory.PendingOptions{MemoryStore: store, SetMode: setMode})
+		pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1), memory.PendingOptions{MemoryStore: store, SetMode: setMode})
 	if err != nil {
 		return "", err
 	}
@@ -61,10 +61,10 @@ func (r *GatewayRunner) handleMemoryCommand(ctx context.Context, event *gateway.
 // Reviews pending skill writes, answering while staged writes remain after the gate turned off
 func (r *GatewayRunner) handleSkillsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	env := slashToolsEnv(ctx)
-	args := pystr.SplitWhitespace(pystr.Strip(event.GetCommandArgs()), -1)
+	args := pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1)
 	sub := ""
 	if len(args) > 0 {
-		sub = pystr.Lower(args[0])
+		sub = strings.ToLower(args[0])
 	}
 	gateOff := !tools.WriteApprovalEnabled(env, tools.WriteApprovalSkills) && sub != "approval" && sub != "mode"
 	if gateOff && tools.PendingCount(env, tools.WriteApprovalSkills) == 0 {
@@ -95,7 +95,7 @@ func (r *GatewayRunner) handleSkillsCommand(ctx context.Context, event *gateway.
 
 // Shows the profile approval mode or persists a new one, admins only when the slash gate is configured
 func (r *GatewayRunner) handleApprovalsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	requested := pystr.Strip(event.GetCommandArgs())
+	requested := strings.TrimSpace(event.GetCommandArgs())
 	policy := gateway.PolicyForRunnerSource(r, event.Source)
 	userID := ""
 	if event.Source.UserID != nil {
@@ -171,7 +171,7 @@ func (r *GatewayRunner) handleVerboseCommand(ctx context.Context, event *gateway
 
 // Shows or sets what a message sent while the agent works does, queue, steer or interrupt
 func (r *GatewayRunner) handleBusyCommand(ctx context.Context, event *gateway.MessageEvent) (any, error) {
-	arg := pystr.Lower(pystr.Strip(event.GetCommandArgs()))
+	arg := strings.ToLower(strings.TrimSpace(event.GetCommandArgs()))
 	live := gateway.LocalLive(r, event.Source)
 	if arg == "" || arg == "status" {
 		var mode string
@@ -223,7 +223,7 @@ func (r *GatewayRunner) handleBusyCommand(ctx context.Context, event *gateway.Me
 // Shows or toggles the runtime metadata footer, a local session saving it under its own platform key
 func (r *GatewayRunner) handleFooterCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	platformKey := platformConfigKey(event.Source.Platform)
-	arg := pystr.Lower(pystr.Strip(event.GetCommandArgs()))
+	arg := strings.ToLower(strings.TrimSpace(event.GetCommandArgs()))
 	userConfig := gateway.LoadGatewayConfigMap(ctx, "")
 	enabled, fields := gateway.ResolveFooterConfig(ctx, platformKey)
 	state := func(on bool) string {

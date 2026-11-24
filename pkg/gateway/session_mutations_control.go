@@ -394,7 +394,8 @@ func (c *ModelSwitchContext) readConfig(ctx context.Context) {
 		c.CurrentBaseURL = pyrepr.Str(pyrepr.Or(model["base_url"], ""))
 	}
 	c.UserProviders = cfg["providers"]
-	c.CustomProviders = provider.ProviderEntries(cfg)
+	userProviders, _ := cfg["providers"].(map[string]any)
+	c.CustomProviders = provider.ProviderEntriesOf(userProviders)
 	if catalog, ok := cfg["model_catalog"].(map[string]any); ok {
 		if excluded, ok := catalog["excluded_providers"].([]any); ok {
 			c.ExcludedProvider = excluded

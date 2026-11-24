@@ -50,8 +50,8 @@ func formatConciseProcessNotification(ctx context.Context, sessionID, command st
 	text := strings.Join(parts, " ")
 	if !ok && output != "" {
 		var tailLines []string
-		for _, line := range pystr.Splitlines(pystr.Strip(output), false) {
-			if pystr.Strip(line) != "" {
+		for _, line := range pystr.Splitlines(strings.TrimSpace(output), false) {
+			if strings.TrimSpace(line) != "" {
 				tailLines = append(tailLines, line)
 			}
 		}

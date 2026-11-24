@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -25,10 +24,8 @@ var hasEnabledPluginMCP = func(ctx context.Context, rawConfig map[string]any) bo
 // Env var names some profile's external secret source applied
 func secretSourceNames() []string { return provider.SecretSourceNames() }
 
-// Timeout from timeouts.<key> over the default, clamped like every configured deadline
-func resolveConfiguredTimeout(tree config.Tree, key string, def time.Duration) (time.Duration, bool) {
-	return provider.ResolveTimeout(tree, key, def, true, "")
-}
+// Seconds as a deadline clamped like every configured one, false for zero, a negative or no number
+func clampTimeout(seconds float64) (time.Duration, bool) { return provider.ClampTimeout(seconds) }
 
 // Why the package manager ships no build of a package for this platform, empty when it ships one
 var pmMissingReason = func(name string) (string, error) {

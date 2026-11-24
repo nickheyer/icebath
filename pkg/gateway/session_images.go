@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"path/filepath"
@@ -8,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -78,7 +79,7 @@ func stageImage(directory string, params *pyjson.Object) (*pyjson.Object, error)
 	if len(data) == 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	hint := pystr.LstripChars(pystr.Lower(pystr.Strip(text("ext"))), ".")
+	hint := strings.TrimLeft(strings.ToLower(strings.TrimSpace(text("ext"))), ".")
 	filename := text("filename")
 	if filename == "" && hint != "" {
 		filename = "x." + hint

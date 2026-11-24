@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Built in generic status phrases shipped beside the gateway
@@ -68,7 +67,7 @@ func cleanPhraseList(value any) []string {
 		if !pyrepr.Truthy(item) {
 			item = ""
 		}
-		phrase := pystr.Strip(pyrepr.Str(item))
+		phrase := strings.TrimSpace(pyrepr.Str(item))
 		if phrase != "" && len([]rune(phrase)) <= maxPhraseChars && !slices.Contains(cleaned, phrase) {
 			cleaned = append(cleaned, phrase)
 		}
@@ -85,7 +84,7 @@ func mergePhraseMapping(catalog statusPhraseCatalog, section map[string]any, inh
 			mode = "append"
 		}
 	}
-	replace := strings.ToLower(pystr.Strip(pyrepr.Str(mode))) == "replace"
+	replace := strings.ToLower(strings.TrimSpace(pyrepr.Str(mode))) == "replace"
 	phraseMap, isMap := section["phrases"].(map[string]any)
 	if !isMap {
 		phraseMap = section
@@ -129,7 +128,7 @@ func iterPhraseFiles(baseDir string, rawPath any) []string {
 	if !pyrepr.Truthy(rawPath) {
 		rawPath = ""
 	}
-	raw := pystr.Strip(pyrepr.Str(rawPath))
+	raw := strings.TrimSpace(pyrepr.Str(rawPath))
 	candidate := pypath.Expanduser(raw)
 	if raw == "" || filepath.IsAbs(candidate) || slices.Contains(strings.Split(filepath.ToSlash(candidate), "/"), "..") {
 		return nil
@@ -207,7 +206,7 @@ func mergePhraseConfig(catalog statusPhraseCatalog, section any, baseDir string)
 	if !pyrepr.Truthy(mode) {
 		mode = "append"
 	}
-	modeText := strings.ToLower(pystr.Strip(pyrepr.Str(mode)))
+	modeText := strings.ToLower(strings.TrimSpace(pyrepr.Str(mode)))
 	for _, key := range []string{"path", "paths"} {
 		mergePhrasePaths(catalog, mapping[key], baseDir, modeText)
 	}
@@ -242,7 +241,7 @@ func resolveStatusPhraseCatalog(home string, userConfig map[string]any, platform
 
 // UI surface bucket of an internal gateway event
 func classifyStatusContext(kind string) string {
-	switch strings.ToLower(pystr.Strip(kind)) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "heartbeat", "waiting", "long_running", "status":
 		return "status"
 	}

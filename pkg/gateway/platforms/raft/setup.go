@@ -1,10 +1,11 @@
 package raft
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Raft wizard of icebath gateway setup persisting RAFT_PROFILE to the home .env
@@ -32,7 +33,7 @@ func InteractiveSetup(ctx context.Context) error {
 		gateway.WizardCLI.PrintWarning("Raft profile slug is required; skipping Raft setup")
 		return nil
 	}
-	if err := gateway.WizardConfig.SaveEnvValue(ctx, "RAFT_PROFILE", pystr.Strip(profile)); err != nil {
+	if err := gateway.WizardConfig.SaveEnvValue(ctx, "RAFT_PROFILE", strings.TrimSpace(profile)); err != nil {
 		return err
 	}
 	gateway.WizardPrintln("")

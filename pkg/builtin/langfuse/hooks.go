@@ -38,7 +38,7 @@ func onPreLLMCall(ctx context.Context, kw map[string]any) (any, error) {
 	senderID := kw["sender_id"]
 	sender := ""
 	if truthy(senderID) && endUserAttribution(ctx) {
-		sender = pystr.Strip(pyStr(senderID))
+		sender = strings.TrimSpace(pyStr(senderID))
 	}
 	messages := kw["messages"]
 	if _, isList := listItems(messages); !isList {

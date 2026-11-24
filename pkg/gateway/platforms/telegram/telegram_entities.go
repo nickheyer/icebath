@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Telegram message entity as the bot API delivers it, fields untyped so malformed values are skipped like Python
@@ -93,8 +92,8 @@ func expandLinkEntities(message EntityMessage) string {
 		}
 		parts := strings.Split(typeName, ".")
 		rawURL, _ := entity.URL.(string)
-		url := pystr.Strip(rawURL)
-		if pystr.Lower(parts[len(parts)-1]) != "text_link" || url == "" {
+		url := strings.TrimSpace(rawURL)
+		if strings.ToLower(parts[len(parts)-1]) != "text_link" || url == "" {
 			continue
 		}
 		offsetValue, lengthValue := entity.Offset, entity.Length
@@ -114,7 +113,7 @@ func expandLinkEntities(message EntityMessage) string {
 		if !okStart || !okEnd || end <= start {
 			continue
 		}
-		if pystr.Strip(string(runes[start:end])) == url {
+		if strings.TrimSpace(string(runes[start:end])) == url {
 			continue
 		}
 		links = append(links, textLink{start, end, url})

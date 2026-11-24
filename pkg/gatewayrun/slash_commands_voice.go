@@ -7,7 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Voice subcommand to the stored mode and its confirmation key
@@ -24,7 +23,7 @@ type voiceChannelInfoReader interface {
 
 // Sets, reports or toggles the chat's voice reply mode and joins or leaves Discord voice channels
 func (r *GatewayRunner) handleVoiceCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Lower(pystr.Strip(event.GetCommandArgs()))
+	args := strings.ToLower(strings.TrimSpace(event.GetCommandArgs()))
 	chatID := event.Source.ChatID
 	voiceKey := r.voiceKeyForSource(event.Source)
 	adapter, err := r.deliveryAdapterFor(ctx, event.Source)

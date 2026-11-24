@@ -23,13 +23,13 @@ func TestTermuxTUIMode(t *testing.T) {
 		return func(k string) string { return m[k] }
 	}
 	t.Run("defaults on inside Termux and honours the opt out", func(t *testing.T) {
-		if !isTermuxTUIMode(env("TERMUX_VERSION", "0.118")) || !isTermuxTUIMode(env("PREFIX", termuxPrefix)) {
+		if !isTermuxTUIMode(env("TERMUX_VERSION", "0.118"), true) || !isTermuxTUIMode(env("PREFIX", termuxPrefix), true) {
 			t.Fatal("termux default")
 		}
-		if isTermuxTUIMode(env("TERMUX_VERSION", "0.118", "ICEBATH_TUI_TERMUX_MODE", "0")) || !isTermuxTUIMode(env("TERMUX_VERSION", "1", "ICEBATH_TUI_TERMUX_MODE", " Yes ")) {
+		if isTermuxTUIMode(env("TERMUX_VERSION", "0.118"), false) {
 			t.Fatal("override")
 		}
-		if isTermuxTUIMode(env("ICEBATH_TUI_TERMUX_MODE", "1")) {
+		if isTermuxTUIMode(env(), true) {
 			t.Fatal("outside termux")
 		}
 	})

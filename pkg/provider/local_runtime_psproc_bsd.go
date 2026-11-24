@@ -3,16 +3,10 @@
 package provider
 
 import (
-	"bytes"
 	"errors"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
-
-	"golang.org/x/sys/unix"
 )
 
 // The swapper holds pid 0 on the BSDs

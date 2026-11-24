@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Local session created over a real runner's own authority, with its owner connection
@@ -25,9 +26,8 @@ type contractLocalSession struct {
 func installContractPrefillLoaders(t *testing.T) {
 	t.Helper()
 	prevResolve, prevLoad := gateway.ResolvePrefillMessagesFile, gateway.LoadPrefillMessages
-	gateway.ResolvePrefillMessagesFile = func(ctx context.Context, cfg map[string]any) string {
-		text, _ := cfg["prefill_messages_file"].(string)
-		return strings.TrimSpace(text)
+	gateway.ResolvePrefillMessagesFile = func(ctx context.Context) string {
+		return strings.TrimSpace(settings.PrefillMessagesFile.Get(ctx))
 	}
 	gateway.LoadPrefillMessages = func(ctx context.Context, filePath, baseDir string) []any {
 		if filePath == "" {

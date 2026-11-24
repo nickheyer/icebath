@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -397,11 +396,6 @@ func (a *app) hotkeyRows() [][2]string {
 	return append(rows, [2]string{`\ + enter`, tr(txt.HintsContinuation)}, [2]string{"!<cmd>", tr(txt.HintsShell)}, [2]string{"{!<cmd>}", tr(txt.HintsInterpolate)})
 }
 
-// Whether destructive commands skip their confirmation
-func noConfirmDestructive() bool {
-	return trueRe.MatchString(strings.ToLower(trimJS(os.Getenv("ICEBATH_TUI_NO_CONFIRM"))))
-}
-
 // Reads on, off or toggle against the current state, false for anything else
 func flagFromArg(arg string, current bool) (bool, bool) {
 	switch strings.ToLower(trimJS(arg)) {
@@ -422,7 +416,7 @@ func (r *slashRun) saveDisplayPref(key, value string) tea.Cmd {
 
 // Asks before a destructive step unless confirmations are off
 func (a *app) confirmDestructive(title, detail, yes, no string, commit func() tea.Cmd) tea.Cmd {
-	if noConfirmDestructive() || !a.store.ui.DestructiveSlashConfirm {
+	if prefs.NoConfirm || !a.store.ui.DestructiveSlashConfirm {
 		return commit()
 	}
 	a.store.overlay.Confirm = &confirmReq{CancelLabel: no, ConfirmLabel: yes, Danger: true, Detail: detail, OnConfirm: commit, Title: title}

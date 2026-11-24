@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -46,7 +45,7 @@ func splitCSV(value string) []string {
 	}
 	parts := strings.Split(value, ",")
 	for i, part := range parts {
-		parts[i] = pystr.Strip(part)
+		parts[i] = strings.TrimSpace(part)
 	}
 	return parts
 }

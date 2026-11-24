@@ -194,6 +194,3 @@ func NotifyMemoryProvider(ctx context.Context, profileDir string, call func(ctx 
 		failed(err)
 	}
 }
-
-// Profile memory config cloning has no import time effects, profile create calls it directly
-func registerProfileMemoryConfigClone() {}

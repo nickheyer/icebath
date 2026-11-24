@@ -107,7 +107,7 @@ func resolveDMRecipient(ctx context.Context, adapter *YuanbaoAdapter, groupCode,
 	if err != nil {
 		return nil, nil, err
 	}
-	filter := pystr.Lower(pystr.Strip(nameText))
+	filter := strings.ToLower(strings.TrimSpace(nameText))
 	members, err := groupMembers(ctx, adapter, groupCode)
 	if err != nil {
 		return nil, nil, err
@@ -122,7 +122,7 @@ func resolveDMRecipient(ctx context.Context, adapter *YuanbaoAdapter, groupCode,
 		if err != nil {
 			return nil, nil, err
 		}
-		if strings.Contains(pystr.Lower(nick), filter) {
+		if strings.Contains(strings.ToLower(nick), filter) {
 			matched = append(matched, member)
 		}
 	}
@@ -238,14 +238,14 @@ func queryGroupMembers(ctx context.Context, call *tools.Call) (*pyjson.Object, e
 		if err != nil {
 			return nil, err
 		}
-		filter := pystr.Lower(pystr.Strip(nameText))
+		filter := strings.ToLower(strings.TrimSpace(nameText))
 		var matched []*pyjson.Object
 		for _, member := range allMembers {
 			nick, err := strMethod(member.GetOr("nickname", ""), "a member nickname")
 			if err != nil {
 				return nil, err
 			}
-			if strings.Contains(pystr.Lower(nick), filter) {
+			if strings.Contains(strings.ToLower(nick), filter) {
 				matched = append(matched, member)
 			}
 		}
@@ -301,7 +301,7 @@ func searchSticker(ctx context.Context, call *tools.Call) (*pyjson.Object, error
 // Stripped text of an optional string argument, the AttributeError a value that is not text raises
 func strippedArg(call *tools.Call, key string) (string, error) {
 	text, err := strMethod(pyrepr.Or(toolArg(call, key, ""), ""), key)
-	return pystr.Strip(text), err
+	return strings.TrimSpace(text), err
 }
 
 // Sends a builtin sticker by name or id, a random one for an empty name, to the session chat by default
@@ -414,7 +414,7 @@ func sendDM(ctx context.Context, call *tools.Call) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	var resolvedUserID, resolvedNickname any = userID, pystr.Strip(nameText)
+	var resolvedUserID, resolvedNickname any = userID, strings.TrimSpace(nameText)
 	if userID == "" {
 		if resolvedUserID, resolvedNickname, err = resolveDMRecipient(ctx, adapter, groupCode, name); err != nil {
 			return nil, err
@@ -433,7 +433,7 @@ func sendDM(ctx context.Context, call *tools.Call) (*pyjson.Object, error) {
 			failures = append(failures, pyrepr.Str(pyrepr.Or(result.Error, fallback)))
 		}
 	}
-	if pystr.Strip(message) != "" {
+	if strings.TrimSpace(message) != "" {
 		result, err := adapter.SendDM(ctx, recipient, message, groupCode)
 		if err != nil {
 			return nil, err
@@ -443,7 +443,7 @@ func sendDM(ctx context.Context, call *tools.Call) (*pyjson.Object, error) {
 	extra := map[string]any{"group_code": groupCode}
 	for _, media := range mediaFiles {
 		var result gateway.SendResult
-		if senderImageExts[pystr.Lower(pypath.PathSuffix(media.Path))] {
+		if senderImageExts[strings.ToLower(pypath.PathSuffix(media.Path))] {
 			result, err = adapter.SendImageFile(ctx, chatID, media.Path, "", "", nil, extra)
 		} else {
 			result, err = adapter.SendDocument(ctx, chatID, media.Path, "", "", "", nil, extra)

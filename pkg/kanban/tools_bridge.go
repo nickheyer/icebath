@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -72,7 +71,7 @@ func goalGate(k *kanbanCall, toolName string, task *Task, tid, evidence string) 
 		if task.Body != nil {
 			body = *task.Body
 		}
-		result = judgeGoalFn(ctx, pystr.Strip(task.Title+"\n\n"+body), pystr.Strip(evidence), goals.JudgeOptions{})
+		result = judgeGoalFn(ctx, strings.TrimSpace(task.Title+"\n\n"+body), strings.TrimSpace(evidence), goals.JudgeOptions{})
 		return nil
 	}()
 	if judged != nil {
@@ -234,14 +233,14 @@ func InjectNewCommentsFromEnv(ctx context.Context, agent any) (injected bool) {
 	own := persistedIdentity(ctx)
 	var lines []string
 	for _, c := range rows {
-		if pystr.Strip(c.Author) == own || pystr.Strip(c.Body) == "" {
+		if strings.TrimSpace(c.Author) == own || strings.TrimSpace(c.Body) == "" {
 			continue
 		}
 		author := c.Author
 		if author == "" {
 			author = "operator"
 		}
-		lines = append(lines, fmt.Sprintf("- %s: %s", author, pystr.Strip(c.Body)))
+		lines = append(lines, fmt.Sprintf("- %s: %s", author, strings.TrimSpace(c.Body)))
 	}
 	if len(lines) == 0 {
 		return false

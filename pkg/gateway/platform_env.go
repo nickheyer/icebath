@@ -26,7 +26,7 @@ func (f EnvStepFunc) Apply(ctx context.Context, cfg *GatewayConfig) error { retu
 func CSVList(value string) []any {
 	out := []any{}
 	for _, part := range strings.Split(value, ",") {
-		if p := pystr.Strip(part); p != "" {
+		if p := strings.TrimSpace(part); p != "" {
 			out = append(out, p)
 		}
 	}
@@ -36,7 +36,7 @@ func CSVList(value string) []any {
 // Parser of a base ten int falling back to def on malformed or blank input
 func IntOr(def int) func(string) any {
 	return func(raw string) any {
-		if n, ok := pyint.Parse(pystr.Strip(raw)); ok {
+		if n, ok := pyint.Parse(strings.TrimSpace(raw)); ok {
 			return pyint.Native(n)
 		}
 		return def
@@ -47,11 +47,11 @@ func IntOr(def int) func(string) any {
 func StripSlash(value string) any { return strings.TrimRight(value, "/") }
 
 // Value stripped and lower cased
-func StripLower(value string) any { return pystr.Lower(pystr.Strip(value)) }
+func StripLower(value string) any { return strings.ToLower(strings.TrimSpace(value)) }
 
 // Whether the lower cased value is a truthy token, surrounding blanks not stripped
 func TruthyToken(value string) any {
-	switch pystr.Lower(value) {
+	switch strings.ToLower(value) {
 	case "true", "1", "yes", "on":
 		return true
 	}
@@ -112,7 +112,7 @@ func EnvExtras(ctx context.Context, extra map[string]any, spec []EnvSpec, strip 
 	for _, s := range spec {
 		value := getenvStr(ctx, s.Env, "")
 		if strip {
-			value = pystr.Strip(value)
+			value = strings.TrimSpace(value)
 		}
 		if value == "" {
 			continue
@@ -134,7 +134,7 @@ func EnvExtras(ctx context.Context, extra map[string]any, spec []EnvSpec, strip 
 func EnvHomeChannel(ctx context.Context, cfg *GatewayConfig, platform Platform, envBase string, strip bool) {
 	chatID := getenvStr(ctx, envBase, "")
 	if strip {
-		chatID = pystr.Strip(chatID)
+		chatID = strings.TrimSpace(chatID)
 	}
 	pc, ok := cfg.Platforms[platform]
 	if chatID == "" || !ok {
@@ -150,7 +150,7 @@ func EnvHomeChannel(ctx context.Context, cfg *GatewayConfig, platform Platform, 
 
 // Sets the reply mode from env when it names off, first or all
 func EnvReplyMode(ctx context.Context, cfg *GatewayConfig, platform Platform, env string) {
-	mode := pystr.Lower(getenvStr(ctx, env, ""))
+	mode := strings.ToLower(getenvStr(ctx, env, ""))
 	if mode == "off" || mode == "first" || mode == "all" {
 		platformSetDefault(cfg, platform).ReplyToMode = mode
 	}
@@ -328,7 +328,7 @@ func AuthzField(name any, field string, entry *PlatformEntry) any {
 	if pyrepr.Truthy(name) {
 		text = pyrepr.Str(name)
 	}
-	return BundledAuthz(pystr.Lower(pystr.Strip(text)))[field]
+	return BundledAuthz(strings.ToLower(strings.TrimSpace(text)))[field]
 }
 
 // Value of the entry field a keyword names, nil for an unknown keyword

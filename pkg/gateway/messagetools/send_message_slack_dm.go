@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Slack Web API base, replaced by tests with a local server
@@ -91,7 +90,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 	}
 	if strings.HasPrefix(chatID, "user_name:") {
 		name := chatID[len("user_name:"):]
-		query := pystr.Lower(strings.TrimLeft(pystr.Strip(name), "@"))
+		query := strings.ToLower(strings.TrimLeft(strings.TrimSpace(name), "@"))
 		var matches []*pyjson.Object
 		var cursor any
 		for page := 0; page < 20; page++ {
@@ -119,7 +118,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 				if pyrepr.Truthy(get(m, "deleted", nil)) || pyrepr.Truthy(get(m, "is_bot", nil)) {
 					continue
 				}
-				if pystr.Lower(pystr.Strip(pyrepr.Str(get(m, "name", "")))) == query {
+				if strings.ToLower(strings.TrimSpace(pyrepr.Str(get(m, "name", "")))) == query {
 					matches = append(matches, m)
 				}
 			}

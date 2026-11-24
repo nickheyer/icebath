@@ -396,6 +396,3 @@ func DiscoverPluginCLICommands(ctx context.Context, env *tools.Env) []PluginCLIC
 	}
 	return []PluginCLICommand{{Name: active, Help: help, Description: desc, Setup: cli.Setup, Handler: cli.Handler, Plugin: active}}
 }
-
-// Provider registry registers nothing at import, bundled providers register from their own files
-func registerMemoryProviderRegistry() {}

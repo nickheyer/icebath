@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -291,7 +290,7 @@ func DeleteProfile(ctx context.Context, name string, yes bool) (string, error) {
 		fmt.Fprintln(stdout)
 		fmt.Fprintf(stdout, "Type '%s' to confirm: ", canon)
 		line, rerr := bufio.NewReader(stdin).ReadString('\n')
-		confirm, answered := pystr.Strip(strings.TrimSuffix(line, "\n")), true
+		confirm, answered := strings.TrimSpace(strings.TrimSuffix(line, "\n")), true
 		if rerr != nil && line == "" {
 			answered = false
 			fmt.Fprintln(stdout)
@@ -539,7 +538,7 @@ func stopRecordedGateway(profileDir, pidFile string) error {
 	if err != nil {
 		return err
 	}
-	text := pystr.Strip(strings.TrimPrefix(string(raw), "\ufeff"))
+	text := strings.TrimSpace(strings.TrimPrefix(string(raw), "\ufeff"))
 	data := map[string]any{}
 	if strings.HasPrefix(text, "{") {
 		v, err := pyjson.Loads(text)
@@ -605,7 +604,7 @@ func pyInt(v any) (int, error) {
 		}
 		return 0, nil
 	case string:
-		n, err := strconv.Atoi(strings.ReplaceAll(pystr.Strip(x), "_", ""))
+		n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimSpace(x), "_", ""))
 		if err != nil {
 			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(x))
 		}

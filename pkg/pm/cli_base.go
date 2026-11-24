@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"strings"
+
 	"context"
 	"io"
 	"os"
@@ -8,7 +10,6 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // LockArgs are pm lock's arguments, a nil Name or Version when not given
@@ -53,7 +54,7 @@ var (
 func samePath(a, b string) bool {
 	a, b = pypath.PurePathStr(a), pypath.PurePathStr(b)
 	if runtime.GOOS == "windows" {
-		return pystr.Lower(a) == pystr.Lower(b)
+		return strings.ToLower(a) == strings.ToLower(b)
 	}
 	return a == b
 }
@@ -62,7 +63,7 @@ func samePath(a, b string) bool {
 func sortPathNames(names []string) {
 	sort.SliceStable(names, func(i, j int) bool {
 		if runtime.GOOS == "windows" {
-			return pystr.Lower(names[i]) < pystr.Lower(names[j])
+			return strings.ToLower(names[i]) < strings.ToLower(names[j])
 		}
 		return tarNameLess(names[i], names[j])
 	})

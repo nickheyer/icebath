@@ -41,14 +41,14 @@ var (
 // Stripped process env value, the default stripped when unset
 func envStr(name, def string) string {
 	if v, ok := os.LookupEnv(name); ok {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
-	return pystr.Strip(def)
+	return strings.TrimSpace(def)
 }
 
 // Logs a plugin message at info when ICEBATH_LANGFUSE_DEBUG is on
 func debugLog(message string) {
-	switch pystr.Lower(envStr("ICEBATH_LANGFUSE_DEBUG", "")) {
+	switch strings.ToLower(envStr("ICEBATH_LANGFUSE_DEBUG", "")) {
 	case "1", "true", "yes", "on":
 		pkgLog().Info("Langfuse tracing: " + message)
 	}
@@ -66,7 +66,7 @@ func failsafe(label string, fn func()) {
 
 // Active capture mode read per call, an invalid value warning once and meaning sanitized
 func captureMode() string {
-	value := pystr.Lower(envStr("ICEBATH_LANGFUSE_CAPTURE", ""))
+	value := strings.ToLower(envStr("ICEBATH_LANGFUSE_CAPTURE", ""))
 	if value == "" {
 		return defaultCapture
 	}
@@ -160,7 +160,7 @@ func captureContent(value any, parseJSON bool, result *toolResult) any {
 
 // String of value cut to maxChars code points after secret redaction, base64 data URIs replaced by a stub
 func truncateText(value string, maxChars int) any {
-	prefix := pystr.Lower(pystr.Slice(value, 0, 200))
+	prefix := strings.ToLower(pystr.Slice(value, 0, 200))
 	if strings.HasPrefix(prefix, "data:") && strings.Contains(prefix, ";base64,") {
 		header := "data:"
 		if strings.Contains(value, ",") {
@@ -186,7 +186,7 @@ func truncateText(value string, maxChars int) any {
 
 // JSON object or array a string holds, trailing text kept under _hint or _trailing_text, false when unchanged
 func maybeParseJSONString(value string) (any, bool) {
-	stripped := pystr.Strip(value)
+	stripped := strings.TrimSpace(value)
 	rs := pystr.Runes(stripped)
 	if len(rs) < 2 || (rs[0] != '{' && rs[0] != '[') {
 		return value, false
@@ -200,7 +200,7 @@ func maybeParseJSONString(value string) (any, bool) {
 			return value, false
 		}
 	}
-	trailing := pystr.Strip(pystr.FromRunes(rs[idx:]))
+	trailing := strings.TrimSpace(pystr.FromRunes(rs[idx:]))
 	if trailing == "" {
 		return parsed, true
 	}
@@ -451,7 +451,7 @@ func serializeSystemPrompt(systemPrompt any) any {
 	text := ""
 	switch t := systemPrompt.(type) {
 	case string:
-		text = pystr.Strip(t)
+		text = strings.TrimSpace(t)
 	default:
 		blocks, ok := listItems(systemPrompt)
 		if !ok {

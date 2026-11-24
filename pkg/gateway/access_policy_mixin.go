@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Values of an allow all users opt in that open DMs
@@ -76,7 +74,7 @@ func (p *OwnAccessPolicyMixin) PurgeAllowlistSnapshots(keep func(entry string) b
 
 // Policy of a host, refused like a class with no platform prefix is at creation
 func NewOwnAccessPolicyMixin(host, prefix string) (*OwnAccessPolicyMixin, error) {
-	if pystr.Strip(prefix) == "" {
+	if strings.TrimSpace(prefix) == "" {
 		return nil, fmt.Errorf("platform %s has its own access policy but no environment variable prefix for allowing all users", host)
 	}
 	return &OwnAccessPolicyMixin{AllowAllEnvPrefix: prefix, AllowFrom: map[string]bool{}, GroupAllowFrom: map[string]bool{}}, nil
@@ -93,17 +91,11 @@ func (p *OwnAccessPolicyMixin) AllowAllEnvNames() []string {
 // Whether a profile scoped allow all users opt in is set, failing closed
 func (p *OwnAccessPolicyMixin) OpenDMOptedIn(ctx context.Context) (bool, error) {
 	for _, name := range p.AllowAllEnvNames() {
-		value := ""
-		if e := envSetting(name); e != nil {
-			value = SettingText(ctx, e)
-		} else {
-			scoped, err := GetScopedSecret(ctx, name, "", false)
-			if err != nil {
-				return false, err
-			}
-			value = scoped
+		value, err := GetScopedSecret(ctx, name, "", false)
+		if err != nil {
+			return false, err
 		}
-		if accessOptinTruthy[strings.ToLower(pystr.Strip(value))] {
+		if accessOptinTruthy[strings.ToLower(strings.TrimSpace(value))] {
 			return true, nil
 		}
 	}
@@ -150,7 +142,7 @@ func (p *OwnAccessPolicyMixin) IsDMAllowed(ctx context.Context, senderID string)
 
 // Whether a DM may reach gateway intake, pairing admitting any principal and a blank one never
 func (p *OwnAccessPolicyMixin) IsDMIntakeAllowed(ctx context.Context, senderID string) (bool, error) {
-	principal := pystr.Strip(senderID)
+	principal := strings.TrimSpace(senderID)
 	if principal == "" {
 		return false, nil
 	}

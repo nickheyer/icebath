@@ -7,14 +7,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Route a resumed session runs on, false when the stored model is absent or already current
 func storedSessionRoute(ctx context.Context, sessionMeta map[string]any, currentModel, currentProvider string) (model, prov, baseURL, apiMode string, providerChanged, ok bool) {
-	stored := pystr.Strip(cliStr(sessionMeta["model"], ""))
+	stored := strings.TrimSpace(cliStr(sessionMeta["model"], ""))
 	if stored == "" {
 		return "", "", "", "", false, false
 	}
@@ -45,7 +44,7 @@ func storedSessionRoute(ctx context.Context, sessionMeta map[string]any, current
 
 // Durable custom identity of a bare custom provider, empty when nothing heals it
 func healBareCustomProvider(ctx context.Context, prov, baseURL, model string) (healed string) {
-	if strings.ToLower(pystr.Strip(prov)) != "custom" {
+	if strings.ToLower(strings.TrimSpace(prov)) != "custom" {
 		return prov
 	}
 	defer func() {
@@ -65,7 +64,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 	if !ok {
 		return
 	}
-	managed := provider.LlamacppAliases[strings.ToLower(pystr.Strip(storedProvider))]
+	managed := provider.LlamacppAliases[strings.ToLower(strings.TrimSpace(storedProvider))]
 	c.model = storedModel
 	if storedProvider != "" {
 		c.provider = storedProvider

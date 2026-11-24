@@ -17,11 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	defaultPort  = 3978
 	maxBodyBytes = 1_048_576
 	webhookPath  = "/api/messages"
 	maxMessage   = 28000
@@ -109,7 +109,6 @@ type teamsApp struct {
 type TeamsAdapter struct {
 	*gateway.BasePlatformAdapter
 
-	extra          map[string]any
 	clientID       string
 	clientSecret   string
 	tenantID       string
@@ -166,7 +165,7 @@ func credentials(ctx context.Context, config *gateway.PlatformConfig) (string, s
 	return out[0], out[1], out[2], nil
 }
 
-// Adapter for a platform config reading credentials, port, host and the mention gate
+// Adapter for a platform config with its credentials and the port, host and mention gate of the profile served
 func NewTeamsAdapter(ctx context.Context, config *gateway.PlatformConfig) (*TeamsAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -175,51 +174,17 @@ func NewTeamsAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Team
 		approvalPreviews: map[string][2]string{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.Platform("teams"), a)
 	a.Traits = teamsAdapterTraits()
-	a.extra = config.Extra
-	if a.extra == nil {
-		a.extra = map[string]any{}
-	}
 	var err error
 	if a.clientID, a.clientSecret, a.tenantID, err = credentials(ctx, config); err != nil {
 		return nil, err
 	}
-	var port any = a.extra["port"]
-	if !pyrepr.Truthy(port) {
-		if port, err = gateway.GetScopedSecret(ctx, "TEAMS_PORT", fmt.Sprint(defaultPort), false); err != nil {
-			return nil, err
-		}
+	sctx := gateway.SettingsContext(ctx)
+	a.port = settings.TeamsPort.Get(sctx)
+	if host := settings.TeamsHost.Get(sctx); host != "" {
+		a.host = &host
 	}
-	a.port = gateway.CoercePort(port, defaultPort)
-	var host any = a.extra["host"]
-	if !pyrepr.Truthy(host) {
-		if host, err = gateway.GetScopedSecret(ctx, "TEAMS_HOST", "", false); err != nil {
-			return nil, err
-		}
-	}
-	if pyrepr.Truthy(host) {
-		h := pyrepr.Str(host)
-		a.host = &h
-	}
-	if a.requireMention, err = parseRequireMention(ctx, config); err != nil {
-		return nil, err
-	}
+	a.requireMention = settings.TeamsRequireMention.Get(sctx)
 	return a, nil
-}
-
-// TEAMS_REQUIRE_MENTION then extra require_mention then false, any value but a false word turning it on
-func parseRequireMention(ctx context.Context, config *gateway.PlatformConfig) (bool, error) {
-	configured, err := gateway.ExtraOrSecret(ctx, config.Extra, "require_mention", "TEAMS_REQUIRE_MENTION", false, true)
-	if err != nil {
-		return false, err
-	}
-	if b, ok := configured.(bool); ok {
-		return b, nil
-	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(configured))) {
-	case "false", "0", "no", "off":
-		return false, nil
-	}
-	return true, nil
 }
 
 // Validates credentials, wires the activity routes and binds or publishes the webhook listener

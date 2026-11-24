@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
@@ -114,7 +113,7 @@ func extractJSONBlob(raw string, fence *regexp.Regexp) *pyjson.Object {
 	if raw == "" {
 		return nil
 	}
-	stripped := fence.ReplaceAllString(pystr.Strip(raw), "")
+	stripped := fence.ReplaceAllString(strings.TrimSpace(raw), "")
 	first, last := strings.Index(stripped, "{"), strings.LastIndex(stripped, "}")
 	if first == -1 || last == -1 || last <= first {
 		return nil
@@ -185,13 +184,13 @@ func DescribeProfile(ctx context.Context, profileName string, overwrite bool, ti
 	}
 	var description string
 	if parsed := extractJSONBlob(raw, describerFenceRe); parsed == nil {
-		stripped := describerFenceRe.ReplaceAllString(pystr.Strip(raw), "")
+		stripped := describerFenceRe.ReplaceAllString(strings.TrimSpace(raw), "")
 		if strings.HasPrefix(stripped, "{") {
 			pkgLog().Info(fmt.Sprintf("describe: %s aux response looked JSON-shaped but failed to parse "+
 				"(likely truncated) -- refusing to persist the raw fragment", canon))
 			return fail("LLM returned malformed/truncated JSON response")
 		}
-		text, _, _ := strings.Cut(pystr.Strip(raw), "\n\n")
+		text, _, _ := strings.Cut(strings.TrimSpace(raw), "\n\n")
 		if text == "" {
 			return fail("LLM returned an empty response")
 		}
@@ -199,10 +198,10 @@ func DescribeProfile(ctx context.Context, profileName string, overwrite bool, ti
 	} else {
 		val, _ := parsed.Get("description")
 		s, ok := val.(string)
-		if !ok || pystr.Strip(s) == "" {
+		if !ok || strings.TrimSpace(s) == "" {
 			return fail("LLM response missing 'description' field")
 		}
-		description = headRunes(pystr.Strip(s), 280)
+		description = headRunes(strings.TrimSpace(s), 280)
 	}
 	auto := true
 	if err := profiles.WriteProfileMeta(ctx, profileDir, profiles.MetaUpdate{Description: &description, DescriptionAuto: &auto}); err != nil {
@@ -227,7 +226,7 @@ func ListDescribableProfiles(ctx context.Context, missingOnly bool) ([]string, e
 	}
 	var out []string
 	for _, p := range infos {
-		if !(missingOnly && pystr.Strip(p.Description) != "" && !p.DescriptionAuto) {
+		if !(missingOnly && strings.TrimSpace(p.Description) != "" && !p.DescriptionAuto) {
 			out = append(out, p.Name)
 		}
 	}

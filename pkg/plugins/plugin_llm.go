@@ -10,9 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -108,19 +106,7 @@ func resolveTrustPolicy(ctx context.Context, pluginID string) trustPolicy {
 	if pluginID == "" {
 		return trustPolicy{}
 	}
-	var node any
-	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil); err == nil {
-		node = map[string]any(cfg)["plugins"]
-	}
-	for _, key := range []string{"entries", pluginID, "llm"} {
-		m, ok := node.(map[string]any)
-		if !ok {
-			node = nil
-			break
-		}
-		node = m[key]
-	}
-	llm, ok := node.(map[string]any)
+	llm, ok := pluginEntry(ctx, pluginID)["llm"].(map[string]any)
 	if !ok {
 		return trustPolicy{pluginID: pluginID}
 	}

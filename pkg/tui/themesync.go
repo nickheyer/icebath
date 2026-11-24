@@ -61,12 +61,30 @@ type themeSync struct {
 	reportedFg    *string
 	terminalBg    string
 	terminalFg    string
+	// Theme detection values the window worked out itself, the configured pin and the terminal's background, by the variable they stand over
+	signals map[string]string
 }
 
-// Theme of a skin, its polarity colors laid over the base colors
-func themeForSkin(s *gatewaySkin) theme {
+// Value of a theme detection variable, what the window worked out itself before the terminal's environment and the boot seed
+func (s *tuiStore) themeEnv(name string) string {
+	if v, ok := s.themes.signals[name]; ok {
+		return v
+	}
+	return bootThemeEnv(name)
+}
+
+// Records a theme detection value the window worked out, laid over the terminal's environment
+func (s *tuiStore) setThemeSignal(name, value string) {
+	if s.themes.signals == nil {
+		s.themes.signals = map[string]string{}
+	}
+	s.themes.signals[name] = value
+}
+
+// Theme of a skin under the detection values env reads, its polarity colors laid over the base colors
+func themeForSkin(s *gatewaySkin, env func(string) string) theme {
 	paired := s.DarkColors
-	if skinIsLight(s.Colors, os.Getenv) {
+	if skinIsLight(s.Colors, env) {
 		paired = s.LightColors
 	}
 	colors := s.Colors
@@ -79,7 +97,7 @@ func themeForSkin(s *gatewaySkin) theme {
 			colors[k] = v
 		}
 	}
-	t := fromSkin(colors, s.Branding, s.BannerLogo, s.BannerHero, s.ToolPrefix, s.HelpHeader, os.Getenv)
+	t := fromSkin(colors, s.Branding, s.BannerLogo, s.BannerHero, s.ToolPrefix, s.HelpHeader, env)
 	t.Skin, t.Builtin = s.Name, s.Source == "builtin"
 	return t
 }
@@ -100,11 +118,11 @@ func (s *tuiStore) commitTheme(t theme) tea.Cmd {
 	s.ui.setTheme(t)
 	pin := ""
 	if s.themes.configPinned {
-		if p := os.Getenv("ICEBATH_TUI_THEME"); p == "light" || p == "dark" {
+		if p := s.themeEnv("ICEBATH_TUI_THEME"); p == "light" || p == "dark" {
 			pin = p
 		}
 	}
-	writeBootTheme(t, os.Getenv("ICEBATH_TUI_BACKGROUND"), pin)
+	writeBootTheme(t, s.themeEnv("ICEBATH_TUI_BACKGROUND"), pin)
 	if !changed {
 		return nil
 	}
@@ -129,7 +147,7 @@ func (s *tuiStore) paintTerminalDefaults(t theme) {
 // Applies a gateway skin to the theme and the terminal colors
 func (s *tuiStore) applySkin(skin *gatewaySkin) tea.Cmd {
 	s.themes.lastSkin = skin
-	t := themeForSkin(skin)
+	t := themeForSkin(skin, s.themeEnv)
 	cmd := s.commitTheme(t)
 	s.paintTerminalDefaults(t)
 	return cmd
@@ -137,30 +155,32 @@ func (s *tuiStore) applySkin(skin *gatewaySkin) tea.Cmd {
 
 // Derives the theme again from the current detection signals
 func (s *tuiStore) reapplyTheme() tea.Cmd {
-	t := defaultThemeForCurrentBackground(os.Getenv)
+	t := defaultThemeForCurrentBackground(s.themeEnv)
 	if s.themes.lastSkin != nil {
-		t = themeForSkin(s.themes.lastSkin)
+		t = themeForSkin(s.themes.lastSkin, s.themeEnv)
 	}
 	cmd := s.commitTheme(t)
 	s.paintTerminalDefaults(t)
 	return cmd
 }
 
-// Applies the display.tui_theme pin, light or dark pinning the mode and auto clearing a pin it set
+// Applies the display.tui_theme pin, light or dark pinning the mode and auto clearing the pin it or the boot file set, which leaves a pin of
+// the terminal's own environment in force
 func (s *tuiStore) applyConfiguredTuiTheme(mode tuigateway.ThemeMode) tea.Cmd {
-	current := os.Getenv("ICEBATH_TUI_THEME")
+	current := s.themeEnv("ICEBATH_TUI_THEME")
 	if mode == "light" || mode == "dark" {
 		s.themes.configPinned = true
 		if current == string(mode) {
 			return nil
 		}
-		_ = os.Setenv("ICEBATH_TUI_THEME", string(mode))
+		s.setThemeSignal("ICEBATH_TUI_THEME", string(mode))
 	} else {
 		if current == "" || !s.themes.configPinned {
 			return nil
 		}
 		s.themes.configPinned = false
-		_ = os.Unsetenv("ICEBATH_TUI_THEME")
+		delete(s.themes.signals, "ICEBATH_TUI_THEME")
+		dropBootMode()
 	}
 	return s.reapplyTheme()
 }
@@ -229,13 +249,13 @@ func (s *tuiStore) onTerminalForeground(hex string) tea.Cmd {
 // Background answer, a pure black one from a transparent profile deferring to the foreground
 func (s *tuiStore) backgroundListener(hex string) tea.Cmd {
 	if hex == "#000000" {
-		if invalidateBootBackground() {
+		if invalidateBootBackground(s.themeEnv("ICEBATH_TUI_BACKGROUND")) {
 			return tea.Tick(bootBackgroundRecheck, func(time.Time) tea.Msg { return bootBackgroundRecheckMsg{} })
 		}
 		return nil
 	}
 	s.themes.resolved = true
-	_ = os.Setenv("ICEBATH_TUI_BACKGROUND", hex)
+	s.setThemeSignal("ICEBATH_TUI_BACKGROUND", hex)
 	return s.reapplyTheme()
 }
 
@@ -249,7 +269,7 @@ func (s *tuiStore) onBootBackgroundRecheck() tea.Cmd {
 
 // Foreground answer, inferring the polarity when no background answer or pin decided it
 func (s *tuiStore) foregroundListener(hex string) tea.Cmd {
-	if s.themes.resolved || os.Getenv("ICEBATH_TUI_THEME") != "" || os.Getenv("ICEBATH_TUI_LIGHT") != "" {
+	if s.themes.resolved || s.themeEnv("ICEBATH_TUI_THEME") != "" {
 		return nil
 	}
 	inferred := polarityBackgroundFromForeground(hex)
@@ -257,18 +277,18 @@ func (s *tuiStore) foregroundListener(hex string) tea.Cmd {
 		return nil
 	}
 	s.themes.resolved = true
-	_ = os.Setenv("ICEBATH_TUI_BACKGROUND", inferred)
+	s.setThemeSignal("ICEBATH_TUI_BACKGROUND", inferred)
 	return s.reapplyTheme()
 }
 
 // Whether the macOS appearance setting still has to decide the background
 func (s *tuiStore) macAppearanceUndecided() bool {
-	return !s.themes.resolved && os.Getenv("ICEBATH_TUI_BACKGROUND") == "" && os.Getenv("ICEBATH_TUI_THEME") == ""
+	return !s.themes.resolved && s.themeEnv("ICEBATH_TUI_BACKGROUND") == "" && s.themeEnv("ICEBATH_TUI_THEME") == ""
 }
 
 // Reads the macOS appearance when no probe answered and nothing pins the mode
 func (s *tuiStore) onMacAppearanceProbe() tea.Cmd {
-	if !s.macAppearanceUndecided() || runtime.GOOS != "darwin" || os.Getenv("ICEBATH_TUI_LIGHT") != "" || os.Getenv("COLORFGBG") != "" {
+	if !s.macAppearanceUndecided() || runtime.GOOS != "darwin" || os.Getenv("COLORFGBG") != "" {
 		return nil
 	}
 	return func() tea.Msg {
@@ -282,7 +302,7 @@ func (s *tuiStore) onMacAppearanceProbe() tea.Cmd {
 			if err == nil && strings.TrimFunc(string(out), isJSSpace) == "Dark" {
 				background = "#1e1e1e"
 			}
-			_ = os.Setenv("ICEBATH_TUI_BACKGROUND", background)
+			s.setThemeSignal("ICEBATH_TUI_BACKGROUND", background)
 			return s.reapplyTheme()
 		}}
 	}

@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -65,7 +64,7 @@ func SendMessageTool(ctx context.Context, args map[string]any) (string, error) {
 // Platform, chat, thread and resolution error of a tool target, empty chat when no ref was given
 func resolveToolTarget(ctx context.Context, target string, passUnresolved bool) (platformName, chatID string, threadID *string, resErr string) {
 	name, ref, _ := strings.Cut(target, ":")
-	platformName, ref = pystr.Lower(pystr.Strip(name)), pystr.Strip(ref)
+	platformName, ref = strings.ToLower(strings.TrimSpace(name)), strings.TrimSpace(ref)
 	discoverPlugins(ctx)
 	if ref == "" {
 		return platformName, "", nil, ""
@@ -117,7 +116,7 @@ func strippedArg(args map[string]any, key string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s must be text, got %s", key, errchain.Kind(v))
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 // Argument value or its default, the args.get idiom
@@ -285,7 +284,7 @@ func handleSend(ctx context.Context, args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	mirrorText := pystr.Strip(cleaned)
+	mirrorText := strings.TrimSpace(cleaned)
 	if mirrorText == "" {
 		mirrorText = describeMediaForMirror(mediaFiles)
 	}
@@ -585,13 +584,13 @@ func homeChatID(ctx context.Context, cfg *gateway.GatewayConfig, platform gatewa
 		if err != nil {
 			return "", "", err
 		}
-		if wx = pystr.Strip(wx); wx != "" {
+		if wx = strings.TrimSpace(wx); wx != "" {
 			return wx, "", nil
 		}
 	}
 	homeEnv, ok := gateway.HomeChannelEnvOverrides[platformName]
 	if !ok {
-		homeEnv = pystr.Upper(platformName) + "_HOME_CHANNEL"
+		homeEnv = strings.ToUpper(platformName) + "_HOME_CHANNEL"
 	}
 	return "", fmt.Sprintf("No home channel set for %s to determine where to send the message. "+
 		"Either specify a channel directly with '%s:CHANNEL_NAME', "+
@@ -631,7 +630,7 @@ func mirrorSentMessage(ctx context.Context, platformName, chatID, mirrorText str
 func weixinEnvPConfig(ctx context.Context) (*gateway.PlatformConfig, error) {
 	secret := func(name string) (string, error) {
 		v, _, err := provider.GetSecret(ctx, name)
-		return pystr.Strip(v), err
+		return strings.TrimSpace(v), err
 	}
 	token, err := secret("WEIXIN_TOKEN")
 	if err != nil {
@@ -685,9 +684,9 @@ func describeMediaForMirror(media []gateway.MediaRef) string {
 // Skip payload when the cron job already auto delivers its final response to the same target
 func maybeSkipCronDuplicateSend(ctx context.Context, platformName, chatID string, threadID *string) map[string]any {
 	env := tools.ToolEnvFrom(ctx)
-	autoPlatform := pystr.Lower(pystr.Strip(tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM", "")))
-	autoChat := pystr.Strip(tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_CHAT_ID", ""))
-	autoThread := pystr.Strip(tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_THREAD_ID", ""))
+	autoPlatform := strings.ToLower(strings.TrimSpace(tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM", "")))
+	autoChat := strings.TrimSpace(tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_CHAT_ID", ""))
+	autoThread := strings.TrimSpace(tools.GetSessionEnv(env, "ICEBATH_CRON_AUTO_DELIVER_THREAD_ID", ""))
 	sameThread := (autoThread == "" && threadID == nil) || (threadID != nil && autoThread != "" && *threadID == autoThread)
 	if autoPlatform == "" || autoChat == "" || autoPlatform != platformName || autoChat != chatID || !sameThread {
 		return nil

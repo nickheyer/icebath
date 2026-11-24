@@ -636,7 +636,7 @@ func (p *Pool) Credential(provider string) (Credential, bool) {
 
 // CredentialForModel selects a login not benched for the model
 func (p *Pool) CredentialForModel(provider, model string) (Credential, bool) {
-	if !CredentialPoolMatchesProviderIn(p.provider, provider, "", p.env.config()) {
+	if !CredentialPoolMatchesProvider(p.env.hookContext(), p.provider, provider, "") {
 		return Credential{}, false
 	}
 	entry, ok := p.Select(model)
@@ -648,7 +648,7 @@ func (p *Pool) CredentialForModel(provider, model string) (Credential, bool) {
 
 // TokenBenchedForModel reports a model cooldown on the token
 func (p *Pool) TokenBenchedForModel(provider, token, model string) bool {
-	if !CredentialPoolMatchesProviderIn(p.provider, provider, "", p.env.config()) {
+	if !CredentialPoolMatchesProvider(p.env.hookContext(), p.provider, provider, "") {
 		return false
 	}
 	return p.TokenIsBlocked(token, model)

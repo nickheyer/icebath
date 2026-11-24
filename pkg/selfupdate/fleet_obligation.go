@@ -158,7 +158,7 @@ func captureHeadSHA(ctx context.Context, gitCmd []string, cwd string) string {
 	if err != nil {
 		return ""
 	}
-	return pystr.Strip(result.Stdout)
+	return strings.TrimSpace(result.Stdout)
 }
 
 // True when the receipt is from an update that did not finish cleanly
@@ -378,7 +378,7 @@ func markerOwedGateways(ctx context.Context, inventory any) (owed map[gatewayIde
 			continue
 		}
 		profile, isStr := rowValue(runtime, "profile").(string)
-		if rowValue(runtime, "kind") != "gateway" || !isStr || pystr.Strip(profile) == "" || profile == "unknown" {
+		if rowValue(runtime, "kind") != "gateway" || !isStr || strings.TrimSpace(profile) == "" || profile == "unknown" {
 			return nil, false, &inventoryValueError{"fleet-restart inventory row is not an identified gateway"}
 		}
 		owed[gatewayIdentity{"gateway", profile}] = true
@@ -430,7 +430,7 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 	if !armed {
 		return false, nil
 	}
-	expectedSHA := pystr.Strip(fields["expected_sha"])
+	expectedSHA := strings.TrimSpace(fields["expected_sha"])
 	inventoryText, present := fields["inventory"]
 	if !present {
 		inventoryText = "null"

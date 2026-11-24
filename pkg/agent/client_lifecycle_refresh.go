@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -28,8 +27,7 @@ func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged boo
 	}
 	delete(a.clientKwargs, "ssl_verify")
 	delete(a.clientKwargs, "ssl_ca_cert")
-	cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, a.baseURL, provider.ProviderEntries(cfg), cfg)
+	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, a.baseURL, provider.CustomProviderEntries(ctx))
 	return a.applyClientHeadersForBaseURL(ctx, a.baseURL, !routeChanged)
 }
 
@@ -98,8 +96,7 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 		a.applyUserDefaultHeaders(ctx)
 	}
 	if a.apiMode != "anthropic_messages" && a.apiMode != "bedrock_converse" {
-		cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-		provider.ApplyCustomProviderExtraHeadersToClientKwargs(a.clientKwargs, baseURL, nil, cfg)
+		provider.ApplyCustomProviderExtraHeadersToClientKwargs(a.clientKwargs, baseURL, provider.CustomProviderEntries(ctx))
 	}
 	return nil
 }

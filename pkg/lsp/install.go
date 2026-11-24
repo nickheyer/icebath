@@ -18,7 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Recipe is how one server package installs and which binary it provides
@@ -335,9 +335,9 @@ func runInstaller(rt *Runtime, tool, pkg string, cmd []string, timeout time.Dura
 		return false
 	}
 	if res.code != 0 {
-		detail := pystr.Strip(res.stderr)
+		detail := strings.TrimSpace(res.stderr)
 		if detail == "" {
-			detail = pystr.Strip(res.stdout)
+			detail = strings.TrimSpace(res.stdout)
 		}
 		rt.logf(slog.LevelWarn, "[install] %s install failed for %s: %s", tool, pkg, runePrefix(detail, 500))
 		return false
@@ -405,8 +405,8 @@ var nodePMArgv = map[string]func(staging string) []string{
 // Configured Node package manager, empty for an unknown value so installs fail closed
 func nodePackageManager(rt *Runtime) string {
 	pm := "npm"
-	if v := rt.lspConfig()["package_manager"]; pyrepr.Truthy(v) {
-		pm = strings.ToLower(pystr.Strip(pyrepr.Str(v)))
+	if v := storedSetting(rt.settingsCtx(), settings.LspPackageManager.Key); pyrepr.Truthy(v) {
+		pm = strings.ToLower(strings.TrimSpace(pyrepr.Str(v)))
 	}
 	if _, ok := nodePMArgv[pm]; !ok {
 		rt.logf(slog.LevelWarn, "[install] lsp.package_manager=%s is not one of %s; skipping install",

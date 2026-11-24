@@ -1,5 +1,12 @@
 package settings
 
+import (
+	"context"
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/config"
+)
+
 // Words of every reasoning effort, off first
 var reasoningChoices = []Choice{
 	{"none", "Off", "No thinking before answering."},
@@ -110,7 +117,28 @@ var ReasoningEffort = Register(&Enum{Meta: Meta{Key: "agent.reasoning_effort", L
 	Short: "How long the model thinks before answering.",
 	Help:  "More effort is slower and costs more, but is often better. Models that cannot think ignore it.",
 	Group: GroupModel, Order: 20, Scopes: Global | Session, Apply: NextTurn, Slash: "reasoning"},
-	Null: "the model's default", Values: reasoningChoices})
+	Null: "the model's default", Values: reasoningChoices, Also: map[string]string{"false": "none", "disabled": "none"}})
+
+// Reasoning config the settings of ctx give a model, the model in effect when model is empty: its Reasoning by model entry, else Reasoning effort; nil leaves the model's own default
+func ReasoningConfig(ctx context.Context, model string) map[string]any {
+	if model = strings.TrimSpace(model); model == "" {
+		model = strings.TrimSpace(Model.Get(ctx))
+	}
+	if perModel := config.ResolvePerModelReasoningEffort(model, AgentReasoningOverrides.Get(ctx)); perModel != nil {
+		return perModel
+	}
+	return config.ParseReasoningEffort(ReasoningEffort.Get(ctx))
+}
+
+// Reasoning config of a helper task: the task's own thinking effort when one is set, else ReasoningConfig of the model
+func TaskReasoningConfig(ctx context.Context, task, model string) map[string]any {
+	if effort, ok := Lookup("auxiliary." + task + ".reasoning_effort").(*Enum); ok {
+		if word := effort.Get(ctx); word != "" {
+			return config.ParseReasoningEffort(word)
+		}
+	}
+	return ReasoningConfig(ctx, model)
+}
 
 // Priority processing tier
 var FastMode = Register(&Enum{Meta: Meta{Key: "agent.service_tier", Label: "Fast mode",

@@ -257,7 +257,7 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 	if s, ok := best.Validator.(string); ok && s != "" {
 		constraint = s
 	}
-	detail := pystr.Strip(validationCollapseSpace(best.Message))
+	detail := strings.TrimSpace(validationCollapseSpace(best.Message))
 	if pystr.Len(detail) > 600 {
 		detail = pystr.Slice(detail, 0, 597) + "..."
 	}
@@ -282,7 +282,7 @@ func toolCallEntryName(v any) string {
 	if v == nil || !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // NormalizeToolCallEntries turns tool_call arguments holding Python values into entries, accepting the legacy single shape
@@ -322,7 +322,7 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 			return nil, fmt.Sprintf("tool_call cannot invoke '%s' (it is itself a bridge tool)", name)
 		}
 		rawArgs := m.Vals["arguments"]
-		if s, isStr := rawArgs.(string); rawArgs == nil || (isStr && pystr.Strip(s) == "") {
+		if s, isStr := rawArgs.(string); rawArgs == nil || (isStr && strings.TrimSpace(s) == "") {
 			rawArgs = pyjson.NewObject()
 		}
 		if s, isStr := rawArgs.(string); isStr {

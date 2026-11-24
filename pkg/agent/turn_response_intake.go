@@ -140,7 +140,7 @@ func pySizedLen(v any) (int, bool) {
 // Reasoning for the reasoning.available event from the structured extractor, else inline think blocks, never reply text
 func reasoningPreview(a *AIAgent, content string, assistantMessage *provider.Response) string {
 	if assistantMessage != nil {
-		if extracted := pystr.Strip(a.extractReasoning(assistantMessage)); extracted != "" {
+		if extracted := strings.TrimSpace(a.extractReasoning(assistantMessage)); extracted != "" {
 			return extracted
 		}
 	}
@@ -149,7 +149,7 @@ func reasoningPreview(a *AIAgent, content string, assistantMessage *provider.Res
 	}
 	var blocks []string
 	for _, m := range intakeInlineReasoning.FindAllStringSubmatch(content, -1) {
-		if block := pystr.Strip(m[1]); block != "" {
+		if block := strings.TrimSpace(m[1]); block != "" {
 			blocks = append(blocks, block)
 		}
 	}
@@ -162,7 +162,7 @@ func relayThinking(a *AIAgent, content any, assistantMessage *provider.Response)
 	if !isText && pyrepr.Truthy(content) {
 		return &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("response content is %s where text was expected", errchain.Kind(content))}
 	}
-	thinkText := pystr.Strip(intakeReasoningTagRE.ReplaceAllString(pystr.Strip(text), ""))
+	thinkText := strings.TrimSpace(intakeReasoningTagRE.ReplaceAllString(strings.TrimSpace(text), ""))
 	firstLine := ""
 	if thinkText != "" {
 		firstLine = pystr.Slice(strings.SplitN(thinkText, "\n", 2)[0], 0, 80)

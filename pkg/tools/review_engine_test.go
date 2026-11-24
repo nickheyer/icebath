@@ -14,11 +14,12 @@ type reviewParentDouble struct{ prompt string }
 
 func (p *reviewParentDouble) EphemeralSystemPrompt() string { return p.prompt }
 
-func swapReviewConfig(t *testing.T, cfg map[string]any) {
+// Env whose home config.yaml holds cfg
+func reviewConfigEnv(t *testing.T, cfg map[string]any) *Env {
 	t.Helper()
-	saved := reviewLoadConfigReadonly
-	reviewLoadConfigReadonly = func(context.Context, *Env) (map[string]any, error) { return cfg, nil }
-	t.Cleanup(func() { reviewLoadConfigReadonly = saved })
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, env, cfg)
+	return env
 }
 
 func userMsg(text string) map[string]any { return map[string]any{"role": "user", "content": text} }
@@ -90,8 +91,8 @@ func TestBuildReviewTaskIncludesExcerptAndPrompt(t *testing.T) {
 }
 
 func TestLoadReviewCredentialsCfgReadsConfig(t *testing.T) {
-	swapReviewConfig(t, map[string]any{"auxiliary": map[string]any{"review": map[string]any{"provider": "openrouter", "model": "anthropic/claude-opus-4.6"}}})
-	cfg := loadReviewCredentialsCfg(context.Background(), nil)
+	env := reviewConfigEnv(t, map[string]any{"auxiliary": map[string]any{"review": map[string]any{"provider": "openrouter", "model": "anthropic/claude-opus-4.6"}}})
+	cfg := loadReviewCredentialsCfg(context.Background(), env)
 	want := map[string]any{"provider": "openrouter", "model": "anthropic/claude-opus-4.6", "base_url": "", "api_key": "", "api_mode": ""}
 	if !reflect.DeepEqual(cfg, want) {
 		t.Fatalf("cfg %v", cfg)
@@ -99,15 +100,15 @@ func TestLoadReviewCredentialsCfgReadsConfig(t *testing.T) {
 }
 
 func TestLoadReviewCredentialsCfgAutoMeansInherit(t *testing.T) {
-	swapReviewConfig(t, map[string]any{"auxiliary": map[string]any{"review": map[string]any{"provider": "auto", "model": ""}}})
-	if cfg := loadReviewCredentialsCfg(context.Background(), nil); cfg != nil {
+	env := reviewConfigEnv(t, map[string]any{"auxiliary": map[string]any{"review": map[string]any{"provider": "auto", "model": ""}}})
+	if cfg := loadReviewCredentialsCfg(context.Background(), env); cfg != nil {
 		t.Fatalf("cfg %v", cfg)
 	}
 }
 
 func TestLoadReviewCredentialsCfgMissingSection(t *testing.T) {
-	swapReviewConfig(t, map[string]any{"auxiliary": map[string]any{}})
-	if cfg := loadReviewCredentialsCfg(context.Background(), nil); cfg != nil {
+	env := reviewConfigEnv(t, map[string]any{"auxiliary": map[string]any{}})
+	if cfg := loadReviewCredentialsCfg(context.Background(), env); cfg != nil {
 		t.Fatalf("cfg %v", cfg)
 	}
 }

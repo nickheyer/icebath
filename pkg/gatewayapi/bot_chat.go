@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -87,7 +86,7 @@ func createPeerBotChat(ctx context.Context, a *APIServerAdapter, body *pyjson.Ob
 	}
 	title := ""
 	if raw := body.GetOr("title", nil); pyrepr.Truthy(raw) {
-		title = pystr.Strip(pyrepr.Str(raw))
+		title = strings.TrimSpace(pyrepr.Str(raw))
 	}
 	if authority == nil || title != botmode.BotChatTitle || pyrepr.Truthy(body.GetOr("id", nil)) || pyrepr.Truthy(body.GetOr("session_id", nil)) {
 		return nil, nil

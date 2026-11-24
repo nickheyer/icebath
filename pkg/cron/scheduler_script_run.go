@@ -23,9 +23,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -45,18 +45,15 @@ var (
 	cronHeartbeatRunClaim      = (*Store).heartbeatRunClaim
 )
 
-// Any float the value converts to, the parse a zero meaning unlimited timeout uses
+// Float a value converts to, false with the error when it does not convert
 func anyFloat(raw any) (float64, bool, error) {
 	v, err := pyint.Float(raw)
 	return v, err == nil, err
 }
 
-// Session DB init bound from env, config, then ten seconds, zero passing through as unlimited
+// Session DB init bound from cron.session_db_timeout_seconds, zero passing through as unlimited
 func (s *Store) getSessionDBTimeout(ctx context.Context) float64 {
-	if v, ok := timeoutSetting(s, ctx, "ICEBATH_CRON_SESSION_DB_TIMEOUT", "session_db_timeout_seconds", "cron.session_db_timeout_seconds", anyFloat); ok {
-		return v
-	}
-	return 10.0
+	return settings.CronSessionDbTimeoutSeconds.Get(home.WithOverride(ctx, s.home)).Seconds()
 }
 
 // Script path confined to the profile scripts folder, or the refusal the run reports
@@ -104,7 +101,7 @@ func (s *Store) resolveJobScriptPath(scriptPath string) (string, string, error) 
 
 // Absolute Python interpreter a job names, or the refusal for a bare, missing, non executable or non Python path
 func resolveCronInterpreter(interpreter string) (string, string, error) {
-	raw := pystr.Strip(interpreter)
+	raw := strings.TrimSpace(interpreter)
 	unresolvable := func(text string) (string, string, error) {
 		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", pyrepr.StrRepr(raw), text), nil
 	}
@@ -130,7 +127,7 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 	if err != nil {
 		return unresolvable(errchain.OSText(err))
 	}
-	names := []string{pystr.Lower(pypath.PathName(resolved)), pystr.Lower(pypath.PathName(target))}
+	names := []string{strings.ToLower(pypath.PathName(resolved)), strings.ToLower(pypath.PathName(target))}
 	if !info.Mode().IsRegular() {
 		return "", "Interpreter path is not a file: " + resolved, nil
 	}
@@ -162,7 +159,7 @@ func cronHostPython() (string, error) {
 
 // Argv by extension, bash for sh scripts, else the job interpreter or the Python on PATH
 func (s *Store) scriptArgv(path string, interpreter *string) ([]string, string, error) {
-	suffix := pystr.Lower(pypath.PathSuffix(path))
+	suffix := strings.ToLower(pypath.PathSuffix(path))
 	if suffix == ".sh" || suffix == ".bash" {
 		bash, found := cronWhich("bash", nil)
 		if !found {
@@ -177,7 +174,7 @@ func (s *Store) scriptArgv(path string, interpreter *string) ([]string, string, 
 		}
 		return []string{bash, path}, "", nil
 	}
-	if interpreter != nil && pystr.Strip(*interpreter) != "" {
+	if interpreter != nil && strings.TrimSpace(*interpreter) != "" {
 		pythonExe, refusal, err := resolveCronInterpreter(*interpreter)
 		if err != nil {
 			return nil, "", err
@@ -445,7 +442,7 @@ func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, can
 	if err != nil {
 		return false, "", err
 	}
-	stdout, stderr = s.redactScriptOutput(pystr.Strip(stdout), pystr.Strip(stderr))
+	stdout, stderr = s.redactScriptOutput(strings.TrimSpace(stdout), strings.TrimSpace(stderr))
 	if code := cronScriptReturnCode(proc.state); code != 0 {
 		parts := []string{fmt.Sprintf("Script exited with code %d", code)}
 		if stderr != "" {

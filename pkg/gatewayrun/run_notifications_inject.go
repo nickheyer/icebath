@@ -1,13 +1,14 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -61,7 +62,7 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 		return boolp(false), nil
 	}
 	if !gateway.AdapterSupportsPush(adapter) {
-		rawSID := pystr.Strip(pyrepr.Str(pyrepr.Or(evt["origin_session_id"], "")))
+		rawSID := strings.TrimSpace(pyrepr.Str(pyrepr.Or(evt["origin_session_id"], "")))
 		if rawSID == "" {
 			rawSID = source.ChatID
 		}
@@ -107,7 +108,7 @@ func (r *GatewayRunner) admitWatchNotification(ctx context.Context, adapter gate
 	}()
 	synthText = gateway.MarkInternalNotification(synthText)
 	metadata := watchNotificationMetadata(evt, source)
-	if trigger := pystr.Strip(pyrepr.Str(pyrepr.Or(evt["message_id"], ""))); trigger != "" {
+	if trigger := strings.TrimSpace(pyrepr.Str(pyrepr.Or(evt["message_id"], ""))); trigger != "" {
 		metadata["original_trigger_message_id"] = trigger
 	}
 	if source.MessageID != nil && *source.MessageID != "" {

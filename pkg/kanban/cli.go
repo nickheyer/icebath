@@ -1,6 +1,8 @@
 package kanban
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -35,7 +38,7 @@ func (e *pyException) PyTypeName() string { return e.Class }
 
 // None for the unassign spellings none, dash and null
 func noneProfile(value string) *string {
-	switch pystr.Lower(value) {
+	switch strings.ToLower(value) {
 	case "none", "-", "null":
 		return nil
 	}
@@ -77,7 +80,7 @@ func parseWorkspaceFlag(value *string) (*string, *string, error) {
 	if value == nil || *value == "" {
 		return nil, nil, nil
 	}
-	v := pystr.Strip(*value)
+	v := strings.TrimSpace(*value)
 	if v == "scratch" || v == "worktree" {
 		return &v, nil, nil
 	}
@@ -86,7 +89,7 @@ func parseWorkspaceFlag(value *string) (*string, *string, error) {
 		if !ok {
 			continue
 		}
-		path := pystr.Strip(rest)
+		path := strings.TrimSpace(rest)
 		if path == "" {
 			return nil, nil, &argumentTypeError{"--workspace " + pair[0] + " requires a path after the colon"}
 		}
@@ -101,7 +104,7 @@ func parseBranchFlag(value *string) (*string, error) {
 	if value == nil {
 		return nil, nil
 	}
-	branch := pystr.Strip(*value)
+	branch := strings.TrimSpace(*value)
 	if branch == "" {
 		return nil, &argumentTypeError{"--branch requires a non-empty name"}
 	}
@@ -127,12 +130,7 @@ func CheckDispatcherPresence(ctx context.Context, icebathHome string) (running b
 	if probeError {
 		return true, ""
 	}
-	dispatchInGateway := true
-	if section, ok := kanbanSection(ctx, false); ok {
-		if v, present := section["dispatch_in_gateway"]; present {
-			dispatchInGateway = pyrepr.Truthy(v)
-		}
-	}
+	dispatchInGateway := settings.KanbanDispatchInGateway.Get(ctx)
 	if pyrepr.Truthy(pid) && dispatchInGateway {
 		return true, fmt.Sprintf("gateway pid=%s, dispatch enabled", pyrepr.Str(pid))
 	}
@@ -288,7 +286,7 @@ func joinedWords(words []string) *string {
 	if len(words) == 0 {
 		return nil
 	}
-	s := pystr.Strip(strings.Join(words, " "))
+	s := strings.TrimSpace(strings.Join(words, " "))
 	return &s
 }
 
@@ -297,7 +295,7 @@ func strippedOrNone(value *string) *string {
 	if value == nil {
 		return nil
 	}
-	s := pystr.Strip(*value)
+	s := strings.TrimSpace(*value)
 	if s == "" {
 		return nil
 	}
@@ -334,7 +332,7 @@ func parseDuration(val any) (*int64, error) {
 	if val == nil || val == "" {
 		return nil, nil
 	}
-	s := pystr.Lower(pystr.Strip(pyrepr.Str(val)))
+	s := strings.ToLower(strings.TrimSpace(pyrepr.Str(val)))
 	if n, ok := pyint.Parse(s); ok {
 		v := int64(math.MaxInt64)
 		if n.IsInt64() {
@@ -801,25 +799,17 @@ func (c *kanbanCLI) cmdShow() (int, error) {
 	}
 	if task.MaxRetries != nil {
 		fmt.Fprintf(c.w, "  max-retries: %d (task)\n", *task.MaxRetries)
-	} else if cfgVal := c.kanbanConfig()["failure_limit"]; cfgVal != nil {
-		n, err := pyint.Of(cfgVal)
-		if err != nil {
-			return 0, &ValueError{"config kanban.failure_limit: " + wholeNumberRefusal(cfgVal)}
-		}
-		if !n.IsInt64() || n.Int64() != DefaultFailureLimit {
-			fmt.Fprintf(c.w, "  max-retries: %s (config kanban.failure_limit)\n", n.String())
-		} else {
-			fmt.Fprintf(c.w, "  max-retries: %d (default)\n", DefaultFailureLimit)
-		}
+	} else if limit := settings.KanbanFailureLimit.Get(c.ctx); limit != settings.KanbanFailureLimit.Default {
+		fmt.Fprintf(c.w, "  max-retries: %d (config kanban.failure_limit)\n", limit)
 	} else {
-		fmt.Fprintf(c.w, "  max-retries: %d (default)\n", DefaultFailureLimit)
+		fmt.Fprintf(c.w, "  max-retries: %d (default)\n", limit)
 	}
 	field("created", fmtTS(task.CreatedAt)+" by "+orDash(task.CreatedBy))
 	var graphArg any
 	if graph != nil {
 		graphArg = graph
 	}
-	if diags := ComputeTaskDiagnostics(task, eventsAny(events), runsAny(runs), nil, nil, graphArg); len(diags) > 0 {
+	if diags := ComputeTaskDiagnostics(task, eventsAny(events), runsAny(runs), nil, DiagnosticsConfigFor(c.ctx), graphArg); len(diags) > 0 {
 		fmt.Fprintf(c.w, "\n  Diagnostics (%d):\n", len(diags))
 		c.printDiagnostics(diags, "    ", false)
 	}
@@ -935,7 +925,7 @@ func (c *kanbanCLI) cmdSetModel() (int, error) {
 	tid := nsStr(c.ns, "task_id")
 	model := nsOptStr(c.ns, "model")
 	if model != nil {
-		switch pystr.Lower(*model) {
+		switch strings.ToLower(*model) {
 		case "none", "-", "null", "":
 			model = nil
 		}
@@ -1029,20 +1019,13 @@ func rowsByTask(ctx context.Context, conn state.SQLiteConn, table string, ids []
 
 // Lists active diagnostics for one task or the whole board through the diagnostics rule engine
 func (c *kanbanCLI) cmdDiagnostics() (int, error) {
-	cfg, err := loadKanbanConfigTree(c.ctx, false)
-	if err != nil {
-		return 0, err
-	}
-	diagConfig, err := ConfigFromRuntimeConfig(map[string]any(cfg))
-	if err != nil {
-		return 0, err
-	}
+	diagConfig := DiagnosticsConfigFor(c.ctx)
 	var order []string
 	byTask := map[string][]*Diagnostic{}
 	meta := map[string]*pyjson.Object{}
 	taskArg := nsStr(c.ns, "task")
 	missing := false
-	err = ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
+	err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		if taskArg != "" {
 			task, err := GetTask(c.ctx, conn, taskArg)
 			if err != nil || task == nil {
@@ -1276,14 +1259,14 @@ func (c *kanbanCLI) cmdClaim() (int, error) {
 // Appends a comment, trimmed to --max-len with a marker
 func (c *kanbanCLI) cmdComment() (int, error) {
 	tid := nsStr(c.ns, "task_id")
-	body := pystr.Strip(strings.Join(nsStrs(c.ns, "text"), " "))
+	body := strings.TrimSpace(strings.Join(nsStrs(c.ns, "text"), " "))
 	if maxLen := nsOptInt(c.ns, "max_len"); maxLen != nil {
 		if *maxLen < 1 {
 			return cliErr(c.errw, "kanban: --max-len must be positive", 2), nil
 		}
 		if int64(pystr.Len(body)) > *maxLen {
 			suffix := fmt.Sprintf("\n\n[trimmed to %d chars by --max-len]", *maxLen)
-			body = pystr.Rstrip(pystr.Slice(body, 0, int(max(0, *maxLen-int64(pystr.Len(suffix)))))) + suffix
+			body = strings.TrimRightFunc(pystr.Slice(body, 0, int(max(0, *maxLen-int64(pystr.Len(suffix))))), unicode.IsSpace) + suffix
 		}
 	}
 	author := nsStr(c.ns, "author")
@@ -1446,7 +1429,7 @@ func (c *kanbanCLI) goalModeHandoffRejection(task *Task, evidence string) (strin
 		if task.Body != nil {
 			body = *task.Body
 		}
-		result := judgeGoalFn(ctx, pystr.Strip(task.Title+"\n\n"+body), pystr.Strip(evidence), goals.JudgeOptions{})
+		result := judgeGoalFn(ctx, strings.TrimSpace(task.Title+"\n\n"+body), strings.TrimSpace(evidence), goals.JudgeOptions{})
 		verdict, reason, transportFailed = result.Verdict, result.Reason, result.TransportFailed
 	}()
 	if transportFailed {
@@ -1504,7 +1487,7 @@ func (c *kanbanCLI) cmdComplete() (int, error) {
 	var code int
 	err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		op := func(tid string) (bool, error) {
-			gateErr, err := c.goalGateError(conn, tid, pystr.Strip(evidence), "completion",
+			gateErr, err := c.goalGateError(conn, tid, strings.TrimSpace(evidence), "completion",
 				"Re-scope with kanban edit, or record the block with kanban block instead of completing.",
 				"Provide evidence matching the task's acceptance criteria.")
 			if err != nil {
@@ -1764,7 +1747,7 @@ func (c *kanbanCLI) cmdRequestReview() (int, error) {
 // Returns an active review to its implementer with a reason
 func (c *kanbanCLI) cmdRequestChanges() (int, error) {
 	tid := nsStr(c.ns, "task_id")
-	reason := pystr.Strip(strings.Join(nsStrs(c.ns, "reason"), " "))
+	reason := strings.TrimSpace(strings.Join(nsStrs(c.ns, "reason"), " "))
 	var code int
 	err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		runID, err := workerRunIDFor(tid)
@@ -1800,7 +1783,7 @@ func (c *kanbanCLI) cmdReopen() (int, error) {
 	}
 	var reason *string
 	if raw := nsOptStr(c.ns, "reason"); raw != nil {
-		if s := pystr.Strip(*raw); s != "" {
+		if s := strings.TrimSpace(*raw); s != "" {
 			reason = &s
 		}
 	}
@@ -1839,7 +1822,7 @@ func (c *kanbanCLI) cmdReopenReview() (int, error) {
 	}
 	var reason *string
 	if raw := nsOptStr(c.ns, "reason"); raw != nil {
-		if s := pystr.Strip(pyrepr.Str(redactReviewValue(pystr.Strip(*raw)))); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(redactReviewValue(strings.TrimSpace(*raw)))); s != "" {
 			reason = &s
 		}
 	}
@@ -2294,7 +2277,7 @@ func retitledSuffix(newTitle *string) string {
 func (c *kanbanCLI) cmdSpecify() (int, error) {
 	return c.runTriageSweep("specify", "specified", func(tenant *string) ([]string, error) { return SpecifyListTriageIDs(c.ctx, tenant) },
 		func(tid, author string) (*triageOutcome, error) {
-			o, err := SpecifyTask(c.ctx, tid, &author, nil)
+			o, err := SpecifyTask(c.ctx, tid, &author)
 			if err != nil {
 				return nil, err
 			}
@@ -2316,7 +2299,7 @@ func decomposeOKLine(o *DecomposeOutcome) string {
 func (c *kanbanCLI) cmdDecompose() (int, error) {
 	return c.runTriageSweep("decompose", "decomposed", func(tenant *string) ([]string, error) { return DecomposeListTriageIDs(c.ctx, tenant) },
 		func(tid, author string) (*triageOutcome, error) {
-			o, err := DecomposeTask(c.ctx, tid, &author, nil)
+			o, err := DecomposeTask(c.ctx, tid, &author)
 			if err != nil {
 				return nil, err
 			}

@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -311,7 +310,7 @@ func checkGitAndRg(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 		git, gitDetail := doctorTool(ctx, "git")
 		rg, rgDetail := doctorTool(ctx, "rg")
 		doctorCheckBool(d.W, git != "", doctorRow{"git", gitDetail}, doctorRow{"git not found", "(optional)"}, false)
-		if !doctorCheckBool(d.W, rg != "", doctorRow{"ripgrep (rg)", pystr.Strip(rgDetail + " (faster file search)")},
+		if !doctorCheckBool(d.W, rg != "", doctorRow{"ripgrep (rg)", strings.TrimSpace(rgDetail + " (faster file search)")},
 			doctorRow{"ripgrep (rg) not found", "(file search uses grep fallback)"}, false) {
 			doctorCheckInfo(d.W, "Install for faster search: "+doctorSystemPackageInstallCmd("ripgrep"))
 		}
@@ -423,7 +422,7 @@ func doctorCheckDaytonaBackend(ctx context.Context, d *Doctor, issues *[]string)
 // Reports the Vercel runtime, disk setting, linked client, auth mode and persistence
 func doctorCheckVercelBackend(ctx context.Context, d *Doctor, issues *[]string) error {
 	sctx := home.WithOverride(ctx, d.Home)
-	runtimeName := pystr.Strip(settings.TerminalVercelRuntime.Get(sctx))
+	runtimeName := strings.TrimSpace(settings.TerminalVercelRuntime.Get(sctx))
 	if runtimeName == "" {
 		runtimeName = "node24"
 	}
@@ -544,7 +543,7 @@ func doctorChromiumNotNeededReason(ctx context.Context, d *Doctor) (string, erro
 	if settings.BrowserEngine.Get(sctx) == "lightpanda" {
 		return "browser.engine is lightpanda", nil
 	}
-	provider := strings.ToLower(pystr.Strip(doctorConfigText(cfg.Get("browser.cloud_provider"))))
+	provider := strings.ToLower(strings.TrimSpace(doctorConfigText(cfg.Get("browser.cloud_provider"))))
 	if provider != "" && provider != "local" {
 		return "cloud provider " + provider + " is selected", nil
 	}

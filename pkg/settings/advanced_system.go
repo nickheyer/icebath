@@ -6,7 +6,7 @@ import "time"
 var AgentAgentCacheIdleTtlSecs = Register(&Duration{Meta: Meta{Key: "agent.agent_cache.idle_ttl_secs", Label: "Idle session lifetime", Short: "How long an unused agent stays loaded before it can be freed.", Group: GroupSystem, Order: 1000, Advanced: true}, Default: time.Hour})
 
 // Most idle agents freed in one cleanup sweep
-var AgentAgentCacheMaxEvictionsPerPass = Register(&Int{Meta: Meta{Key: "agent.agent_cache.max_evictions_per_pass", Label: "Frees per sweep", Short: "Most idle agents freed in one cleanup sweep.", Group: GroupSystem, Order: 1010, Advanced: true}, Min: at(1), Default: 16})
+var AgentAgentCacheMaxEvictionsPerPass = Register(&Int{Meta: Meta{Key: "agent.agent_cache.max_evictions_per_pass", Label: "Frees per sweep", Short: "Most idle agents freed in one cleanup sweep.", Group: GroupSystem, Order: 1010, Advanced: true}, Min: at(1), Default: 16, DefaultBelow: true})
 
 // How many agents stay loaded before the oldest idle ones are freed
 var AgentAgentCacheMaxSize = Register(&Int{Meta: Meta{Key: "agent.agent_cache.max_size", Label: "Loaded agents", Short: "How many agents stay loaded before the oldest idle ones are freed.", Group: GroupSystem, Order: 1020, Advanced: true}, Default: 128})
@@ -15,7 +15,7 @@ var AgentAgentCacheMaxSize = Register(&Int{Meta: Meta{Key: "agent.agent_cache.ma
 var AgentAgentCacheMemoryHighMb = Register(&String{Meta: Meta{Key: "agent.agent_cache.memory_high_mb", Label: "Memory ceiling", Short: "Memory use in MB above which idle agents are freed.", Help: "Use auto to pick from the machine's memory, a number of MB, or off to never free by memory.", Group: GroupSystem, Order: 1030, Advanced: true}, Default: "auto"})
 
 // Most recently used agents that are never freed
-var AgentAgentCacheProtectRecent = Register(&Int{Meta: Meta{Key: "agent.agent_cache.protect_recent", Label: "Keep recent agents", Short: "Most recently used agents that are never freed.", Group: GroupSystem, Order: 1040, Advanced: true}, Min: at(0), Default: 8})
+var AgentAgentCacheProtectRecent = Register(&Int{Meta: Meta{Key: "agent.agent_cache.protect_recent", Label: "Keep recent agents", Short: "Most recently used agents that are never freed.", Group: GroupSystem, Order: 1040, Advanced: true}, Min: at(0), Default: 8, DefaultBelow: true})
 
 // Times a failed model request is retried before giving up
 var AgentApiMaxRetries = Register(&Int{Meta: Meta{Key: "agent.api_max_retries", Label: "Model retries", Short: "Times a failed model request is retried before giving up.", Group: GroupSystem, Order: 1050, Advanced: true, Apply: NewSession}, Default: 3})
@@ -280,7 +280,7 @@ var UpdatesParkedBranchStrategy = Register(&Enum{Meta: Meta{Key: "updates.parked
 }})
 
 // What is backed up before an update runs
-var UpdatesPreUpdateBackup = Register(&Enum{Meta: Meta{Key: "updates.pre_update_backup", Label: "Backup before update", Short: "What is backed up before an update runs.", Group: GroupSystem, Order: 1850, Advanced: true}, Default: "quick", Values: []Choice{
+var UpdatesPreUpdateBackup = Register(&Enum{Meta: Meta{Key: "updates.pre_update_backup", Label: "Backup before update", Short: "What is backed up before an update runs.", Group: GroupSystem, Order: 1850, Advanced: true}, Default: "quick", Also: map[string]string{"false": "off", "none": "off", "disabled": "off", "true": "full", "zip": "full"}, Values: []Choice{
 	{Value: "off", Label: "Off", Meaning: "No backup."},
 	{Value: "quick", Label: "Quick", Meaning: "Snapshot of state only."},
 	{Value: "full", Label: "Full", Meaning: "Zip of the whole home folder."},
@@ -315,3 +315,48 @@ var TimeoutsToolsConcurrentBatch = Register(&Duration{Meta: Meta{Key: "timeouts.
 
 // Longest one tool call run on its own may take
 var TimeoutsToolsSequentialCall = Register(&Duration{Meta: Meta{Key: "timeouts.tools.sequential_call", Label: "Single tool limit", Short: "Longest one tool call run on its own may take.", Help: "Zero means no limit.", Group: GroupSystem, Order: 2010, Advanced: true, Apply: NextTurn}, Null: "the tool batch limit", Min: at(time.Duration(0))})
+
+// Longest the terminal UI waits for the background service to answer a request
+var DisplayTuiRequestTimeout = Register(&Duration{Meta: Meta{Key: "display.tui_request_timeout", Label: "Request timeout", Short: "Longest the terminal UI waits for the background service to answer.", Group: GroupSystem, Order: 2100, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_RPC_TIMEOUT_MS"}, Default: 2 * time.Minute, Unit: time.Millisecond, Min: at(30 * time.Second)})
+
+// Longest the terminal UI waits for the background service to be ready
+var DisplayTuiStartupTimeout = Register(&Duration{Meta: Meta{Key: "display.tui_startup_timeout", Label: "Startup timeout", Short: "Longest the terminal UI waits for the background service to be ready.", Group: GroupSystem, Order: 2110, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_STARTUP_TIMEOUT_MS"}, Default: 15 * time.Second, Unit: time.Millisecond, Min: at(5 * time.Second)})
+
+// File the terminal UI writes a CPU profile to while it runs
+var DiagnosticsCPUProfile = Register(&Path{Meta: Meta{Key: "diagnostics.cpu_profile", Label: "CPU profile file", Short: "File the terminal UI writes a CPU profile to while it runs.", Help: "Empty writes none.", Group: GroupSystem, Order: 2120, Advanced: true, Apply: NewSession, Env: "ICEBATH_CPUPROFILE"}, Default: ""})
+
+// Frames a second the terminal UI draws, shown over the window
+var DiagnosticsFrameRate = Register(&Bool{Meta: Meta{Key: "diagnostics.frame_rate", Label: "Frame rate readout", Short: "Show how many frames a second the terminal UI draws.", Group: GroupSystem, Order: 2130, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_FPS"}, Default: false})
+
+// Log of how long the terminal UI takes to draw its slow frames
+var DiagnosticsFrameLog = Register(&Bool{Meta: Meta{Key: "diagnostics.frame_log", Label: "Frame timing log", Short: "Log how long the terminal UI takes to draw its slow frames.", Group: GroupSystem, Order: 2140, Advanced: true, Apply: NewSession, Env: "ICEBATH_DEV_PERF"}, Default: false})
+
+// Frames drawn faster than this stay out of the frame timing log
+var DiagnosticsFrameLogThreshold = Register(&Duration{Meta: Meta{Key: "diagnostics.frame_log_threshold", Label: "Slow frame time", Short: "Frames drawn faster than this stay out of the frame timing log.", Help: "Zero logs every frame.", Group: GroupSystem, Order: 2150, Advanced: true, Apply: NewSession, Env: "ICEBATH_DEV_PERF_MS"}, Default: 2 * time.Millisecond, Unit: time.Millisecond, Min: at(time.Duration(0))})
+
+// File the frame timing log is written to
+var DiagnosticsFrameLogFile = Register(&Path{Meta: Meta{Key: "diagnostics.frame_log_file", Label: "Frame log file", Short: "File the frame timing log is written to.", Help: "Empty writes perf.log in the icebath folder.", Group: GroupSystem, Order: 2160, Advanced: true, Apply: NewSession, Env: "ICEBATH_DEV_PERF_LOG"}, Default: ""})
+
+// Folder the memory dumps of the terminal UI go to
+var DiagnosticsHeapdumpDir = Register(&Path{Meta: Meta{Key: "diagnostics.heapdump_dir", Label: "Memory dump folder", Short: "Folder the memory dumps of the terminal UI go to.", Help: "Empty uses the heapdumps folder in the icebath folder.", Group: GroupSystem, Order: 2170, Advanced: true, Apply: NewSession, Env: "ICEBATH_HEAPDUMP_DIR"}, Default: ""})
+
+// Whole heap profiles written by the memory watchdog, not only the memory facts
+var DiagnosticsAutoHeapProfile = Register(&Bool{Meta: Meta{Key: "diagnostics.auto_heap_profile", Label: "Automatic heap profiles", Short: "Let the memory watchdog write whole heap profiles, not only facts.", Help: "Heap profiles of a large heap take much disk space.", Group: GroupSystem, Order: 2180, Advanced: true, Apply: NewSession, Env: "ICEBATH_AUTO_HEAPDUMP"}, Default: false})
+
+// Space the memory dump folder may take before the oldest dumps are deleted
+var DiagnosticsHeapdumpMaxBytes = Register(&Int{Meta: Meta{Key: "diagnostics.heapdump_max_bytes", Label: "Memory dump space", Short: "Space the memory dumps may take before the oldest are deleted.", Help: "The newest dump is always kept.", Group: GroupSystem, Order: 2190, Advanced: true, Apply: NewSession, Env: "ICEBATH_HEAPDUMP_MAX_BYTES"}, Default: 2 << 30, Min: at(1), Unit: "bytes"})
+
+// Shortest wait between two automatic memory dumps
+var DiagnosticsHeapdumpCooldown = Register(&Duration{Meta: Meta{Key: "diagnostics.heapdump_cooldown", Label: "Memory dump pause", Short: "Shortest wait between two automatic memory dumps.", Help: "A memory dump just before the window closes for lack of memory is never held back.", Group: GroupSystem, Order: 2200, Advanced: true, Apply: NewSession, Env: "ICEBATH_AUTO_HEAPDUMP_COOLDOWN_MS"}, Default: 10 * time.Minute, Unit: time.Millisecond, Min: at(time.Duration(0))})
+
+// Memory dump written as soon as the terminal UI starts
+var DiagnosticsHeapdumpOnStart = Register(&Bool{Meta: Meta{Key: "diagnostics.heapdump_on_start", Label: "Dump memory at start", Short: "Write a memory dump as soon as the terminal UI starts.", Group: GroupSystem, Order: 2210, Advanced: true, Apply: NewSession, Env: "ICEBATH_HEAPDUMP_ON_START"}, Default: false})
+
+// Longest the command line's cleanup may take before the process ends anyway
+var ShutdownExitWatchdog = Register(&Duration{Meta: Meta{Key: "shutdown.exit_watchdog", Label: "Exit watchdog", Short: "Longest the command line's cleanup may take before it is ended anyway.", Help: "A stop signal doubles it. Zero turns the watchdog off.", Group: GroupSystem, Order: 2220, Advanced: true, Apply: NewSession, Env: "ICEBATH_EXIT_WATCHDOG_S"}, Default: 30 * time.Second, Min: at(time.Duration(0))})
+
+// Wait after a stop signal interrupts a one shot run, so the turn can wind down
+var ShutdownSignalGrace = Register(&Duration{Meta: Meta{Key: "shutdown.signal_grace", Label: "Stop signal grace", Short: "Wait after a stop signal interrupts a one-shot run before it ends.", Help: "Zero ends it at once.", Group: GroupSystem, Order: 2230, Advanced: true, Apply: NewSession, Env: "ICEBATH_SIGTERM_GRACE"}, Default: 1500 * time.Millisecond, Min: at(time.Duration(0))})
+
+// Windows console switched to UTF-8 text when icebath starts
+var DisplayWindowsUTF8 = Register(&Bool{Meta: Meta{Key: "display.windows_utf8", Label: "Windows UTF-8", Short: "Switch the Windows console to UTF-8 text when icebath starts.", Help: "Off keeps the console's own code page.", Group: GroupSystem, Order: 2240, Advanced: true, Apply: NewSession, Env: "ICEBATH_DISABLE_WINDOWS_UTF8", EnvInvert: true}, Default: true})

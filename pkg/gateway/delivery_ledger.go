@@ -82,7 +82,7 @@ func ledgerErrorKey(errValue any) string {
 	if !pyrepr.Truthy(errValue) {
 		return ""
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(errValue)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(errValue)))
 }
 
 // True for a row only an adapter reconnect may retry with no timer and no backoff
@@ -103,7 +103,7 @@ func FloodWaitSeconds(err any, def float64) float64 {
 	text := ledgerErrorKey(err)
 	wait := def
 	if strings.HasPrefix(text, FloodErrorPrefix) {
-		if parsed, perr := pyint.ParseFloat(pystr.Strip(text[len(FloodErrorPrefix):])); perr == nil {
+		if parsed, perr := pyint.ParseFloat(strings.TrimSpace(text[len(FloodErrorPrefix):])); perr == nil {
 			wait = parsed
 		}
 	} else if raw, ok := rawFloodWait(text); ok {
@@ -327,7 +327,7 @@ func (o DeliveryObligation) profileArg() string {
 	if o.AdapterProfile == nil || *o.AdapterProfile == "" {
 		return "default"
 	}
-	return pystr.Strip(*o.AdapterProfile)
+	return strings.TrimSpace(*o.AdapterProfile)
 }
 
 // Nullable SQL argument of an optional start time

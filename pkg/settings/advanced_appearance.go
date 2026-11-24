@@ -37,6 +37,21 @@ var DisplayTuiAgentsNudge = Register(&Bool{Meta: Meta{Key: "display.tui_agents_n
 // Let your terminal handle mouse selection and scrolling
 var DisplayTuiNative = Register(&Bool{Meta: Meta{Key: "display.tui_native", Label: "Native terminal mode", Short: "Let your terminal handle mouse selection and scrolling.", Help: "Turns off mouse tracking in the terminal UI. The native flag on the command line does the same.", Group: GroupAppearance, Order: 1080, Advanced: true}, Default: false})
 
+// Window animations of the terminal UI turned off
+var DisplayTuiReducedMotion = Register(&Bool{Meta: Meta{Key: "display.tui_reduced_motion", Label: "Reduced motion", Short: "Turn off the window animations of the terminal UI.", Group: GroupAppearance, Order: 1082, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_REDUCED_MOTION"}, Default: false})
+
+// Rows one mouse wheel step scrolls in the terminal UI before it speeds up
+var DisplayTuiScrollSpeed = Register(&Float{Meta: Meta{Key: "display.tui_scroll_speed", Label: "Scroll speed", Short: "Rows one mouse wheel step scrolls in the terminal UI.", Help: "Fast scrolling speeds up from there.", Group: GroupAppearance, Order: 1084, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_SCROLL_SPEED"}, Default: 1, Min: at(0.1), Max: at(20.0), Unit: "rows"})
+
+// Layout defaults of the terminal UI inside Termux
+var DisplayTuiTermuxMode = Register(&Bool{Meta: Meta{Key: "display.tui_termux_mode", Label: "Termux layout", Short: "Use the Termux layout defaults when the window runs inside Termux.", Help: "They turn mouse tracking off. Outside Termux this does nothing.", Group: GroupAppearance, Order: 1086, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_TERMUX_MODE"}, Default: true})
+
+// Folder of language catalogs read in place of the built-in ones
+var DisplayLanguageCatalogs = Register(&Path{Meta: Meta{Key: "display.language_catalogs", Label: "Catalog folder", Short: "Folder of language catalogs read in place of the built-in ones.", Help: "Empty uses the built-in catalogs. A folder that does not exist is ignored.", Group: GroupAppearance, Order: 1088, Advanced: true, Apply: Restart, Env: "ICEBATH_BUNDLED_LOCALES"}, Default: ""})
+
+// Copies in the terminal UI sent through the terminal's own clipboard sequence, whatever the connection
+var DisplayTuiClipboardSequence = Register(&Bool{Meta: Meta{Key: "display.tui_clipboard_sequence", Label: "Terminal clipboard", Short: "Copy through the terminal's own clipboard sequence in the terminal UI.", Help: "On always sends it, off never does.", Group: GroupAppearance, Order: 1089, Advanced: true, Apply: NewSession, Env: "ICEBATH_TUI_FORCE_OSC52"}, Null: "over SSH and outside tmux or screen"})
+
 // Pasted text longer than this is folded into a short placeholder
 var PasteCollapseCharThreshold = Register(&Int{Meta: Meta{Key: "paste_collapse_char_threshold", Label: "Paste collapse size", Short: "Pasted text longer than this is folded into a short placeholder.", Group: GroupAppearance, Order: 1090, Advanced: true}, Default: 2000, Unit: "characters"})
 

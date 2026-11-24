@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Flow of each provider id with a bespoke icebath model step, swappable per entry like the table
@@ -104,13 +103,13 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 			if !isMap {
 				continue
 			}
-			if template := pystr.Strip(pyOrStr(dictGet(entry, "api_key", ""))); strings.Contains(template, "${") {
-				rawAPIKeyRefs[pystr.Lower(storedProviderID(providers, k))] = template
+			if template := strings.TrimSpace(pyOrStr(dictGet(entry, "api_key", ""))); strings.Contains(template, "${") {
+				rawAPIKeyRefs[strings.ToLower(storedProviderID(providers, k))] = template
 			}
 		}
 	}
 	out := newCustomProviderMap()
-	for _, entry := range ProviderEntries(cfg) {
+	for _, entry := range ProviderEntriesOf(config.AsMap(cfg["providers"])) {
 		if entry == nil {
 			continue
 		}
@@ -122,7 +121,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if err != nil {
 			return nil, err
 		}
-		name, baseURL := pystr.Strip(rawName), pystr.Strip(rawBase)
+		name, baseURL := strings.TrimSpace(rawName), strings.TrimSpace(rawBase)
 		if name == "" || baseURL == "" {
 			continue
 		}
@@ -130,7 +129,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if err != nil {
 			return nil, err
 		}
-		providerKey := pystr.Strip(rawKey)
+		providerKey := strings.TrimSpace(rawKey)
 		model := dictGet(entry, "model", "")
 		keyEnv := entry["key_env"]
 		out.set(CustomProviderSlug(name, providerKey), map[string]any{
@@ -146,7 +145,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 			"discover_models":   dictGet(entry, "discover_models", true),
 			"api_mode":          dictGet(entry, "api_mode", ""),
 			"provider_key":      providerKey,
-			"api_key_ref":       rawAPIKeyRefs[pystr.Lower(providerKey)],
+			"api_key_ref":       rawAPIKeyRefs[strings.ToLower(providerKey)],
 		})
 	}
 	return out, nil
@@ -182,7 +181,7 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 		}
 		for _, p := range items {
 			if pyTruthy(p) {
-				excluded[pystr.Lower(pystr.Strip(pyStr(p)))] = true
+				excluded[strings.ToLower(strings.TrimSpace(pyStr(p)))] = true
 			}
 		}
 	}
@@ -190,20 +189,20 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 	if len(excluded) > 0 {
 		namesFor := map[string]map[string]bool{}
 		for _, p := range canonical {
-			namesFor[p.Slug] = map[string]bool{pystr.Lower(p.Slug): true}
+			namesFor[p.Slug] = map[string]bool{strings.ToLower(p.Slug): true}
 		}
 		for alias, canon := range CatalogProviderAliases() {
 			names, ok := namesFor[canon]
 			if !ok {
-				names = map[string]bool{pystr.Lower(canon): true}
+				names = map[string]bool{strings.ToLower(canon): true}
 				namesFor[canon] = names
 			}
-			names[pystr.Lower(alias)] = true
+			names[strings.ToLower(alias)] = true
 		}
 		for _, p := range listed {
 			names, ok := namesFor[p.Slug]
 			if !ok {
-				names = map[string]bool{pystr.Lower(p.Slug): true}
+				names = map[string]bool{strings.ToLower(p.Slug): true}
 			}
 			hidden := false
 			for n := range names {
@@ -280,7 +279,7 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 
 // Base URL lowercased with whitespace and trailing slashes removed
 func normBaseURL(u any) string {
-	return pystr.Lower(pystr.RstripChars(pystr.Strip(pyOrStr(u)), "/"))
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(u)), "/"))
 }
 
 // Provider slug in effect for the picker default row, empty when no provider is set up yet
@@ -298,7 +297,7 @@ func resolveActiveProvider(r *ModelFlowRun, cfg map[string]any, modelCfg any, ef
 	}
 	if active == "" && effectiveProvider != "auto" {
 		userProviders, _ := cfg["providers"].(map[string]any)
-		compat := ProviderEntries(cfg)
+		compat := ProviderEntriesOf(userProviders)
 		customProviders := make([]any, len(compat))
 		for i, e := range compat {
 			customProviders[i] = e
@@ -306,7 +305,7 @@ func resolveActiveProvider(r *ModelFlowRun, cfg map[string]any, modelCfg any, ef
 		if activeDef := ResolveProviderFull(r.ctx(), effectiveProvider, userProviders, customProviders); activeDef != nil {
 			active = activeDef.ID
 			if activeDef.Source == "user-config" {
-				requested := pystr.Lower(pystr.Strip(active))
+				requested := strings.ToLower(strings.TrimSpace(active))
 				for _, k := range customMap.keys {
 					info := customMap.byKey[k]
 					if CustomProviderAliases(pyOrStr(dictGet(info, "name", "")), pyOrStr(dictGet(info, "provider_key", "")))[requested] {

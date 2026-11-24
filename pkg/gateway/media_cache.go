@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Agreed mime to extension union of the adapters, the extension common in the wild winning over the registered one
@@ -18,7 +17,7 @@ var DefaultMimeToExt = map[string]string{
 
 // Lowercased mime type with any charset style parameters dropped
 func normalizeMime(mime string) string {
-	return pystr.Lower(pystr.Strip(strings.SplitN(mime, ";", 2)[0]))
+	return strings.ToLower(strings.TrimSpace(strings.SplitN(mime, ";", 2)[0]))
 }
 
 // Dotted extension of a mime from the overrides, the shared table and the mimetypes guess in turn, else the fallback
@@ -58,7 +57,7 @@ var DefaultExtToMime = map[string]string{
 
 // Mime of a dotted extension from the overrides then the shared inverse table, else the fallback
 func MimeForExt(ext string, overrides map[string]string, fallback string) string {
-	key := pystr.Lower(pystr.Strip(ext))
+	key := strings.ToLower(strings.TrimSpace(ext))
 	if mime := overrides[key]; mime != "" {
 		return mime
 	}

@@ -346,7 +346,7 @@ func (a *RelayAdapter) ackEmoji(event *MessageEvent, chatID string) [3]string {
 	a.mu.Unlock()
 	candidates = append(candidates, a.Descriptor().Platform)
 	for _, candidate := range candidates {
-		name := pystr.Lower(candidate)
+		name := strings.ToLower(candidate)
 		if name != "" && name != string(PlatformRelay) {
 			if set, ok := relayAckEmojiByPlatform[name]; ok {
 				return set
@@ -395,7 +395,7 @@ func (a *RelayAdapter) OnProcessingComplete(ctx context.Context, event *MessageE
 
 // Creates a thread or topic under the parent through the connector, false on any failure
 func (a *RelayAdapter) CreateHandoffThread(ctx context.Context, parentChatID, name string) (string, bool, error) {
-	threadName := pystr.Strip(name)
+	threadName := strings.TrimSpace(name)
 	if threadName == "" {
 		threadName = "handoff"
 	}
@@ -414,7 +414,7 @@ func (a *RelayAdapter) CreateHandoffThread(ctx context.Context, parentChatID, na
 
 // Renames a thread through the connector, its no clobber guard preferred over the legacy name guard
 func (a *RelayAdapter) RenameThread(ctx context.Context, threadID, name string, opts ThreadRenameOptions) (bool, error) {
-	cleaned := pystr.Strip(strings.Join(pystr.SplitWhitespace(name, -1), " "))
+	cleaned := strings.TrimSpace(strings.Join(pystr.SplitWhitespace(name, -1), " "))
 	if cleaned == "" || threadID == "" {
 		return false, nil
 	}

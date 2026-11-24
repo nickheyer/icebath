@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -177,7 +178,8 @@ func ensureCodexSession(agent CodexRuntimeAgent, messages []map[string]any) erro
 		}
 		cwd = resolved
 	}
-	codexBin := GetConfiguredCodexBinary(loadLiveConfigSafe(codexAgentHome(agent)))
+	codexBin := GetConfiguredCodexBinary(map[string]any{"model": map[string]any{
+		"codex_bin": settings.ModelCodexBin.Get(ctxForHome(context.Background(), codexAgentHome(agent)))}})
 	providerID := ""
 	if modelProvider != nil {
 		providerID = *modelProvider

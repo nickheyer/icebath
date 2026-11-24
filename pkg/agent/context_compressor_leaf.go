@@ -200,7 +200,7 @@ func modelThresholdKeyRank(key, model, provider string) (int, int, bool) {
 	if !scoped {
 		return utf8.RuneCountInString(key), 0, strings.Contains(model, key)
 	}
-	if pystr.Lower(pystr.Strip(scope)) == provider && strings.Contains(model, substr) {
+	if strings.ToLower(strings.TrimSpace(scope)) == provider && strings.Contains(model, substr) {
 		return utf8.RuneCountInString(substr), 1, true
 	}
 	return 0, 0, false
@@ -211,7 +211,7 @@ func resolveModelThreshold(model string, modelThresholds map[string]float64, def
 	if len(modelThresholds) == 0 || model == "" {
 		return def
 	}
-	provider = pystr.Lower(pystr.Strip(provider))
+	provider = strings.ToLower(strings.TrimSpace(provider))
 	best, bestLen, bestScope, found := "", 0, 0, false
 	for key := range modelThresholds {
 		n, scope, ok := modelThresholdKeyRank(key, model, provider)

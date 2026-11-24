@@ -215,9 +215,9 @@ func routeSecretPaths(ctx context.Context, policy *LocalSessionPolicy) map[strin
 	providerName := routeStr(model["provider"])
 	var selected secretPath
 	if strings.ToLower(strings.TrimSpace(providerName)) == "custom" {
-		selected = configPathTuple(provider.CustomProviderConfigPathForURL(model["base_url"], cfg))
+		selected = configPathTuple(provider.CustomProviderConfigPathForURL(provider.WithFrozenRuntimeConfig(ctx, cfg), model["base_url"]))
 	} else {
-		selected = configPathTuple(provider.NamedCustomProviderPath(ctx, providerName, cfg))
+		selected = configPathTuple(provider.NamedCustomProviderPath(provider.WithFrozenRuntimeConfig(ctx, cfg), providerName))
 	}
 	if selected != nil {
 		if entry, ok := definedAt(cfg, selected); ok {
@@ -802,12 +802,12 @@ func pathAt(path []any, i int) any {
 func entryOwnerPath(ctx context.Context, entry, config map[string]any) secretPath {
 	providerName := strings.TrimSpace(routeStr(entry["provider"]))
 	if strings.ToLower(providerName) == "custom" {
-		return configPathTuple(provider.CustomProviderConfigPathForURL(entry["base_url"], config))
+		return configPathTuple(provider.CustomProviderConfigPathForURL(provider.WithFrozenRuntimeConfig(ctx, config), entry["base_url"]))
 	}
 	if providerName == "" {
 		return nil
 	}
-	return configPathTuple(provider.NamedCustomProviderPath(ctx, providerName, config))
+	return configPathTuple(provider.NamedCustomProviderPath(provider.WithFrozenRuntimeConfig(ctx, config), providerName))
 }
 
 // Field of a fallback entry for the removal warning, a question mark for a non mapping entry

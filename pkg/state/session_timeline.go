@@ -1,6 +1,8 @@
 package state
 
 import (
+	"unicode"
+
 	"context"
 	"database/sql"
 	"fmt"
@@ -62,7 +64,7 @@ func promptPreview(content, displayKind, summary any) (string, error) {
 	if pystr.Len(text) <= 120 {
 		return text, nil
 	}
-	return pystr.Rstrip(pystr.Slice(text, 0, 119)) + "…", nil
+	return strings.TrimRightFunc(pystr.Slice(text, 0, 119), unicode.IsSpace) + "…", nil
 }
 
 // Runs fn inside one read transaction so a count and its page see the same compaction generation

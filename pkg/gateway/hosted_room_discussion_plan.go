@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -94,7 +93,7 @@ func discussionTruncateUTF8(value any, maxBytes int, suffix string) string {
 	if prefix != "" {
 		return prefix + suffix
 	}
-	return pystr.Strip(suffix)
+	return strings.TrimSpace(suffix)
 }
 
 // Bounded member prompt of the thread delta after the watermark
@@ -490,7 +489,7 @@ func ReconstructTaskPlan(roomValue any, events []any, task map[string]any, local
 		return DiscussionTaskPlan{}, discussionUnreconstructable("task target member does not match turn_id")
 	}
 	prompt, ok := payload["prompt"].(string)
-	if !ok || pystr.Strip(prompt) == "" {
+	if !ok || strings.TrimSpace(prompt) == "" {
 		return DiscussionTaskPlan{}, discussionUnreconstructable("task prompt is missing")
 	}
 	if len(prompt) > driverMaxPromptBytes {
@@ -556,7 +555,7 @@ func discussionTerminalText(result any, field, fallback string) string {
 			result = mapping["text"]
 		}
 	}
-	if text := pystr.Strip(roomLinkText(result)); text != "" {
+	if text := strings.TrimSpace(roomLinkText(result)); text != "" {
 		return text
 	}
 	return fallback
@@ -650,7 +649,7 @@ func PlanPublication(roomValue any, events []any, task DiscussionTaskPlan, statu
 			if !pyrepr.Truthy(value) {
 				value = mapping["reason"]
 			}
-			supplied = pystr.Strip(roomLinkText(value))
+			supplied = strings.TrimSpace(roomLinkText(value))
 		}
 		reason := supplied
 		if !tools.AllReasons[supplied] {

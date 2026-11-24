@@ -47,7 +47,7 @@ func (c *ContextCompressor) resolveCompactCursor(messages []map[string]any, head
 	if last >= headEnd {
 		cursor = last + 1
 		recovered := ""
-		if pystr.Strip(c.microCompactRollingSummary) == "" {
+		if strings.TrimSpace(c.microCompactRollingSummary) == "" {
 			recovered = compressorRollingSummaryFromMarker(messages[last]["content"])
 		}
 		if recovered != "" {
@@ -91,7 +91,7 @@ func (c *ContextCompressor) findOneExchange(messages []map[string]any, start, ta
 // Prompt messages merging one exchange into the running summary
 func buildMicroSummaryPrompt(existingSummary, exchangeText string) []map[string]any {
 	summaryBlock := existingSummary
-	if pystr.Strip(existingSummary) == "" {
+	if strings.TrimSpace(existingSummary) == "" {
 		summaryBlock = "(No previous summary yet.)"
 	}
 	userPrompt := "You are a summarization agent creating a compact record of an " +
@@ -166,7 +166,7 @@ func (c *ContextCompressor) microSummarizeOne(exchangeText string) (*string, err
 	if err != nil {
 		return nil, err
 	}
-	content = pystr.Strip(provider.StripThinkBlocks(pystr.Strip(content)))
+	content = strings.TrimSpace(provider.StripThinkBlocks(strings.TrimSpace(content)))
 	if content == "" {
 		pkgLog().Info("micro-summarization returned empty content")
 		return nil, nil
@@ -186,7 +186,7 @@ func (c *ContextCompressor) needsDefrag() bool {
 // Re-summarizes the rolling summary and rewrites the newest micro marker in place, true when it rewrote
 func (c *ContextCompressor) defragRollingSummary(messages []map[string]any) (bool, error) {
 	oldSummary := c.microCompactRollingSummary
-	if pystr.Strip(oldSummary) == "" {
+	if strings.TrimSpace(oldSummary) == "" {
 		return false, nil
 	}
 	c.microCompactRollingSummary = ""
@@ -289,7 +289,7 @@ func (c *ContextCompressor) microCompact(messages []map[string]any, turnSessionI
 		telemetry(outcome, messages, estimateRowsRough(c.ctx, messages), nil)
 		return messages, nil
 	}
-	cumulative := pystr.Strip(c.microCompactRollingSummary) != ""
+	cumulative := strings.TrimSpace(c.microCompactRollingSummary) != ""
 	exchangeText := serializeForSummary(messages[exchangeStart:exchangeEnd])
 	exchangeTokens := provider.EstimateTokens(exchangeText)
 	updated, err := compressorMicroSummarizeOne(c, exchangeText)
@@ -349,7 +349,7 @@ func (c *ContextCompressor) nextExchange(messages []map[string]any) (int, int, b
 // Rolling summary text recovered from a summary marker body
 func rollingSummaryFromMarker(content any) string {
 	s, ok := content.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return ""
 	}
 	body := s
@@ -359,7 +359,7 @@ func rollingSummaryFromMarker(content any) string {
 	if end := strings.Index(body, state.SummaryEndMarker); end != -1 {
 		body = body[:end]
 	}
-	return pystr.Strip(body)
+	return strings.TrimSpace(body)
 }
 
 // Index just past the newest summary marker of the spliced list, fallback when none
@@ -494,7 +494,7 @@ func (c *ContextCompressor) archiveMicroCompaction(compacted, held []map[string]
 // Replaces the exchange span with an assistant summary marker, superseding older micro markers
 func (c *ContextCompressor) spliceMicroCompactResult(messages []map[string]any, spliceStart, spliceEnd int, supersede bool) []map[string]any {
 	summaryText := c.microCompactRollingSummary
-	if pystr.Strip(summaryText) == "" {
+	if strings.TrimSpace(summaryText) == "" {
 		return messages
 	}
 	summaryMsg := map[string]any{
@@ -529,7 +529,7 @@ func (c *ContextCompressor) spliceMicroCompactResult(messages []map[string]any, 
 
 // Marker content wrapped around the rolling summary text
 func renderMicroMarkerContent(summaryText string) string {
-	return state.SummaryPrefix + "\n\n" + state.HistoricalTaskHeading + "\n" + pystr.Strip(summaryText) + "\n\n" + state.SummaryEndMarker
+	return state.SummaryPrefix + "\n\n" + state.HistoricalTaskHeading + "\n" + strings.TrimSpace(summaryText) + "\n\n" + state.SummaryEndMarker
 }
 
 // Merges consecutive plain text real user turns a supersede left adjacent

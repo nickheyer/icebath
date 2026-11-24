@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -199,36 +200,9 @@ func ownerEnv(ctx context.Context, env *tools.Env) *tools.Env {
 	return out
 }
 
-// Concurrent connects per discovery pass from mcp.discovery_concurrency, zero unlimited, invalid values warn and use four
-func discoveryConnectConcurrency(ctx context.Context, env *tools.Env) int {
-	const def = 4
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, secretsLookup(env, h))
-	if err != nil {
-		return def
-	}
-	section, _ := tree["mcp"].(map[string]any)
-	raw, ok := section["discovery_concurrency"]
-	if !ok {
-		return def
-	}
-	var n int64
-	switch v := raw.(type) {
-	case int:
-		n = int64(v)
-	case int64:
-		n = v
-	case uint64:
-		n = int64(min(v, 1<<62))
-	default:
-		pkgLog().Warn(fmt.Sprintf("mcp.discovery_concurrency=%s is not a non-negative integer; using %d", pyRepr(raw), def))
-		return def
-	}
-	if n < 0 {
-		pkgLog().Warn(fmt.Sprintf("mcp.discovery_concurrency=%d is not a non-negative integer; using %d", n, def))
-		return def
-	}
-	return int(min(n, 1<<31))
+// Concurrent connects per discovery pass from mcp.discovery_concurrency, zero unlimited
+func discoveryConnectConcurrency(ctx context.Context) int {
+	return settings.McpDiscoveryConcurrency.Get(ctx)
 }
 
 // Cross process discovery lock, waiting out another holder and running unguarded when locking is unavailable or the wait expires

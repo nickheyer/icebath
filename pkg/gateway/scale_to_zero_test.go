@@ -12,30 +12,46 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func TestEnabledTruthyValues(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, value := range []string{"1", "true", "TRUE", "yes", "on", " On "} {
-		if !ScaleToZeroEnabled(map[string]string{ScaleToZeroEnv: value}) {
+		t.Setenv(settings.GatewayScaleToZeroEnabled.Env, value)
+		if !ScaleToZeroEnabled(context.Background()) {
 			t.Fatalf("%q should enable scale to zero", value)
 		}
 	}
 }
 
+// Idle window seconds the service reads with idle_timeout_minutes written as text in a fresh config.yaml
+func idleTimeoutSecondsWith(t *testing.T, value string) float64 {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("gateway:\n  scale_to_zero:\n    idle_timeout_minutes: "+value+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return ScaleToZeroIdleTimeoutSeconds(home.WithOverride(context.Background(), dir))
+}
+
 func TestTimeoutParsesMinutesToSeconds(t *testing.T) {
 	for _, c := range []struct {
-		in   any
+		in   string
 		want float64
-	}{{5, 300.0}, {10, 600.0}, {"5", 300.0}} {
-		if got := ParseIdleTimeoutSeconds(c.in, DefaultIdleTimeoutMinutes); got != c.want {
+	}{{"5", 300.0}, {"10", 600.0}, {`"5"`, 300.0}} {
+		if got := idleTimeoutSecondsWith(t, c.in); got != c.want {
 			t.Fatalf("%v: got %v want %v", c.in, got, c.want)
 		}
 	}
 }
 
 func TestTimeoutInvalidValuesDegradeToDefault(t *testing.T) {
-	for _, bad := range []any{nil, "", "nope", 0, -3} {
-		if got := ParseIdleTimeoutSeconds(bad, DefaultIdleTimeoutMinutes); got != DefaultIdleTimeoutMinutes*60.0 {
+	want := settings.GatewayScaleToZeroIdleTimeoutMinutes.Default.Seconds()
+	for _, bad := range []string{"~", `""`, "nope", "0", "-3"} {
+		if got := idleTimeoutSecondsWith(t, bad); got != want {
 			t.Fatalf("%v: got %v", bad, got)
 		}
 	}

@@ -1,15 +1,12 @@
 package cron
 
 import (
-	"os"
+	"context"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// Environment variable naming the IANA zone every stamp is rendered in
-const EnvTimezone = "ICEBATH_TIMEZONE"
 
 // Clock supplies the current instant and the configured zone to every cron component
 type clock struct {
@@ -38,7 +35,7 @@ func (c *clock) zone() *time.Location {
 	return systemFixedZone(t)
 }
 
-// Zone named by the environment or config, nil for server local time
+// Zone of the timezone setting, nil for server local time
 func (c *clock) configuredZone() *time.Location {
 	if c != nil && c.zoneFn != nil {
 		return c.zoneFn()
@@ -49,21 +46,15 @@ func (c *clock) configuredZone() *time.Location {
 // Current instant as Python isoformat text
 func (c *clock) nowISO() string { return FormatISO(c.now()) }
 
-// ResolveZone reads the environment then config.timezone, returning nil for server local time
-func ResolveZone(cfg config.Tree, env func(string) string) (*time.Location, string) {
-	if env == nil {
-		env = os.Getenv
-	}
-	name := strings.TrimSpace(env(EnvTimezone))
-	if name == "" && cfg != nil {
-		name = strings.TrimSpace(cfg.String("timezone", ""))
-	}
+// Zone the timezone setting names for the profile of ctx, nil for server local time or a name that does not load
+func configuredZoneOf(ctx context.Context) *time.Location {
+	name := strings.TrimSpace(settings.Timezone.Get(ctx))
 	if name == "" {
-		return nil, ""
+		return nil
 	}
 	loc, err := time.LoadLocation(name)
 	if err != nil {
-		return nil, name
+		return nil
 	}
-	return loc, name
+	return loc
 }

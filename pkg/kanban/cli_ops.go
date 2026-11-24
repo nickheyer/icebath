@@ -13,21 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Kanban section of config.yaml, empty when the config cannot be loaded or the section is falsy
-func (c *kanbanCLI) kanbanConfig() map[string]any {
-	cfg, err := loadKanbanConfigTree(c.ctx, false)
-	if err != nil {
-		return map[string]any{}
-	}
-	section, ok := cfg["kanban"].(map[string]any)
-	if !ok || len(section) == 0 {
-		return map[string]any{}
-	}
-	return section
-}
 
 // Runs tick every interval seconds with a floor of 0.1 until Ctrl-C
 func (c *kanbanCLI) pollLoop(interval float64, tick func() error) (int, error) {
@@ -78,71 +66,25 @@ func (c *kanbanCLI) cmdTail() (int, error) {
 	})
 }
 
-// Optional positive integer of a config value, nil for anything below one or unparseable
-func positiveIntOpt(value any) *int {
-	n, err := pyint.Of(value)
-	if err != nil || n.Sign() < 1 {
-		return nil
-	}
-	v := int(n.Int64())
-	if !n.IsInt64() {
-		v = int(^uint(0) >> 1)
-	}
-	return &v
-}
-
-// Dispatch knobs from the kanban config, the CLI --max winning over kanban.max_spawn
-func (c *kanbanCLI) dispatchSettings() (defaultAssignee *string, perProfile, maxInProgress, maxSpawn *int) {
-	cliMax := nsOptIntInt(c.ns, "max")
-	cfg, err := loadKanbanConfigTree(c.ctx, false)
-	if err != nil {
-		return nil, nil, nil, cliMax
-	}
-	section, present := cfg["kanban"]
-	if !present {
-		section = map[string]any{}
-	}
-	kanbanCfg, ok := section.(map[string]any)
-	if !ok {
-		return nil, nil, nil, cliMax
-	}
-	raw := kanbanCfg["default_assignee"]
-	if !pyrepr.Truthy(raw) {
-		raw = ""
-	}
-	text, ok := raw.(string)
-	if !ok {
-		return nil, nil, nil, cliMax
-	}
-	if text = strings.TrimSpace(text); text != "" {
-		defaultAssignee = &text
-	}
-	perProfile = positiveIntOpt(kanbanCfg["max_in_progress_per_profile"])
-	maxInProgress = ResolveMaxInProgress(positiveIntOpt(kanbanCfg["max_in_progress"]))
-	maxSpawn = cliMax
-	if maxSpawn == nil {
-		maxSpawn = positiveIntOpt(kanbanCfg["max_spawn"])
-	}
-	return defaultAssignee, perProfile, maxInProgress, maxSpawn
-}
-
-// Failure limit of the namespace, the dispatcher default when absent
+// Failure limit of the namespace, else kanban.failure_limit
 func (c *kanbanCLI) failureLimit() int64 {
 	if n := nsOptInt(c.ns, "failure_limit"); n != nil {
 		return *n
 	}
-	return DefaultFailureLimit
+	return int64(settings.KanbanFailureLimit.Get(c.ctx))
 }
 
 // Runs one dispatcher pass and prints its outcome as text or JSON
 func (c *kanbanCLI) cmdDispatch() (int, error) {
-	defaultAssignee, perProfile, maxInProgress, maxSpawn := c.dispatchSettings()
+	o := ConfiguredDispatchOptions(c.ctx)
 	dryRun := nsBool(c.ns, "dry_run")
+	o.DryRun, o.FailureLimit = dryRun, c.failureLimit()
+	if cliMax := nsOptIntInt(c.ns, "max"); cliMax != nil {
+		o.MaxSpawn = cliMax
+	}
+	defaultAssignee := o.DefaultAssignee
 	var res *DispatchResult
 	if err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
-		o := DefaultDispatchOptions()
-		o.DryRun, o.MaxSpawn, o.MaxInProgress, o.FailureLimit = dryRun, maxSpawn, maxInProgress, c.failureLimit()
-		o.DefaultAssignee, o.MaxInProgressPerProfile = defaultAssignee, perProfile
 		var err error
 		res, err = DispatchOnce(c.ctx, conn, o)
 		return err

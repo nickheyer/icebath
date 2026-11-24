@@ -78,11 +78,11 @@ var (
 
 // Returns git or git-sub when arg0 runs git in any directory, separator, case or .exe form, else empty
 func gitProgram(arg0 string) string {
-	name := pystr.Strip(arg0)
+	name := strings.TrimSpace(arg0)
 	if i := strings.LastIndexAny(name, `\/`); i >= 0 {
 		name = name[i+1:]
 	}
-	name = strings.TrimSuffix(pystr.Lower(name), ".exe")
+	name = strings.TrimSuffix(strings.ToLower(name), ".exe")
 	if name == "git" || strings.HasPrefix(name, "git-") {
 		return name
 	}
@@ -332,7 +332,7 @@ func procComm(pidDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(pystr.DecodeASCIIReplace(raw)), nil
+	return strings.TrimSpace(pystr.DecodeASCIIReplace(raw)), nil
 }
 
 // Environment of a /proc directory, later entries winning
@@ -567,7 +567,7 @@ func psGitHolder(lsof, gitDir, root string, anyGit bool) LockHold {
 		}
 		rows := [][]string{}
 		for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(out.Stdout), false) {
-			if pystr.Strip(line) != "" {
+			if strings.TrimSpace(line) != "" {
 				rows = append(rows, pystr.SplitWhitespace(line, len(columns)-1))
 			}
 		}

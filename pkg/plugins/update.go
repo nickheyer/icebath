@@ -151,8 +151,8 @@ func updateOne(ctx context.Context, name, target string, console *Console, inter
 		pluginID = pyrepr.Str(v)
 	}
 	if declared := declaredCapabilitiesFromManifest(updated, pluginID); len(declared) > 0 {
-		cfg := loadConfigOrEmpty(h)
-		if len(PendingCapabilities(cfg, pluginID, declared)) > 0 || DeclaredSetChanged(cfg, pluginID, declared) {
+		hctx := homeContext(h)
+		if len(PendingCapabilities(hctx, pluginID, declared)) > 0 || DeclaredSetChanged(hctx, pluginID, declared) {
 			if interactive {
 				if err := runCapabilityConsent(ctx, console, pluginID, declared, "update"); err != nil {
 					return false, err

@@ -71,20 +71,13 @@ func (c *Context) segments(key string) ([]string, error) {
 	return segments, err
 }
 
-// Plugin relative setting from plugins.entries.<id>.settings, falling back to the legacy config subtree
+// Plugin relative setting from plugins.entries.<id>.settings in the profile of ctx
 func (c *Context) GetConfig(ctx context.Context, key string, def any) (any, error) {
 	segments, err := c.segments(key)
 	if err != nil {
 		return nil, err
 	}
-	entry := pluginSettingsEntry(loadConfigOrEmpty(home.Dir(ctx)), c.PluginID())
-	if entry == nil {
-		return def, nil
-	}
-	if v, ok := nestedPluginValue(entry["settings"], segments); ok {
-		return v, nil
-	}
-	if v, ok := nestedPluginValue(entry["config"], segments); ok {
+	if v, ok := nestedPluginValue(pluginEntry(ctx, c.PluginID())["settings"], segments); ok {
 		return v, nil
 	}
 	return def, nil

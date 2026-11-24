@@ -151,7 +151,7 @@ func pluginScope(ctx context.Context, sourceDir string) context.Context {
 
 // Env prefixes owned by one messaging platform, the canonical upper case one first then its aliases
 func PlatformEnvPrefixes(platformID string) []string {
-	canonical := strings.ReplaceAll(pystr.Upper(platformID), "-", "_") + "_"
+	canonical := strings.ReplaceAll(strings.ToUpper(platformID), "-", "_") + "_"
 	return append([]string{canonical}, platformEnvPrefixAliases[platformID]...)
 }
 
@@ -465,7 +465,7 @@ func envValues(envPath string, wanted *envOwners) map[string]string {
 				continue
 			}
 		}
-		if v := pystr.Strip(value); v != "" {
+		if v := strings.TrimSpace(value); v != "" {
 			values[key] = v
 		}
 	}
@@ -985,8 +985,8 @@ func configPlatformTokens(ctx context.Context, configPath string) (map[string]st
 			if !pyrepr.Truthy(token) {
 				token = b["api_key"]
 			}
-			if s, ok := token.(string); ok && pystr.Strip(s) != "" {
-				tokens[pid] = pystr.Strip(s)
+			if s, ok := token.(string); ok && strings.TrimSpace(s) != "" {
+				tokens[pid] = strings.TrimSpace(s)
 			}
 		}
 	}

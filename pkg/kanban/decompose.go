@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -94,38 +95,21 @@ type DecomposeOutcome struct {
 	NewTitle *string
 }
 
-// kanban.<key> naming an existing profile, else the root's assignee, else the active profile
-func resolveProfileFromCfg(ctx context.Context, cfg any, key string, fallback *string) (string, error) {
-	var kanbanCfg any = map[string]any{}
-	if isDict(cfg) {
-		if v, ok := dictGet(cfg, "kanban"); ok {
-			kanbanCfg = v
-		}
-	}
-	if !isDict(kanbanCfg) {
-		return "", &TypeError{fmt.Sprintf("config kanban section is %s where a mapping was expected", errchain.Kind(kanbanCfg))}
-	}
-	raw, _ := dictGet(kanbanCfg, key)
-	if !pyrepr.Truthy(raw) {
-		raw = ""
-	}
-	text, ok := raw.(string)
-	if !ok {
-		return "", &TypeError{fmt.Sprintf("config kanban.%s is %s where text was expected", key, errchain.Kind(raw))}
-	}
+// Configured profile naming an existing profile, else the root's assignee, else the active profile
+func resolveRoutingProfile(ctx context.Context, configured string, fallback *string) string {
 	fb := ""
 	if fallback != nil {
 		fb = *fallback
 	}
-	for _, candidate := range []string{pystr.Strip(text), pystr.Strip(fb)} {
+	for _, candidate := range []string{strings.TrimSpace(configured), strings.TrimSpace(fb)} {
 		if candidate != "" && profileExistsFn(candidate) {
-			return candidate, nil
+			return candidate
 		}
 	}
 	if name := profiles.GetActiveProfileName(ctx); name != "" {
-		return name, nil
+		return name
 	}
-	return "default", nil
+	return "default"
 }
 
 // rosterEntry is one profile the decomposer may route to
@@ -144,7 +128,7 @@ func buildRoster(ctx context.Context) ([]rosterEntry, map[string]bool) {
 	roster := make([]rosterEntry, 0, len(all))
 	valid := map[string]bool{}
 	for _, p := range all {
-		desc := pystr.Strip(p.Description)
+		desc := strings.TrimSpace(p.Description)
 		entry := rosterEntry{name: p.Name, description: desc, hasDescription: desc != ""}
 		if desc == "" {
 			entry.description = "(no description; profile named " + errchain.Show(p.Name) + ")"
@@ -174,10 +158,10 @@ func formatRoster(roster []rosterEntry) string {
 // Valid stripped assignee choice, else the default so promoted work is never unassigned
 func normalizeAssigneeChoice(assignee any, defaultAssignee string, valid map[string]bool) string {
 	s, ok := assignee.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return defaultAssignee
 	}
-	if chosen := pystr.Strip(s); valid[chosen] {
+	if chosen := strings.TrimSpace(s); valid[chosen] {
 		return chosen
 	}
 	return defaultAssignee
@@ -192,30 +176,16 @@ type decomposeRouting struct {
 	validNames      map[string]bool
 }
 
-// Routing context from the readonly config and the profile roster
-func loadRouting(ctx context.Context, rootAssignee *string) (*decomposeRouting, error) {
-	var cfg any = map[string]any{}
-	if tree, err := loadKanbanConfigTree(ctx, true); err == nil {
-		cfg = map[string]any(tree)
-	}
-	kanbanCfg, _ := dictGet(cfg, "kanban")
-	if _, present := dictGet(cfg, "kanban"); !present {
-		kanbanCfg = map[string]any{}
-	}
+// Routing context from kanban.orchestrator_profile, kanban.default_assignee, kanban.auto_promote_children and the profile roster
+func loadRouting(ctx context.Context, rootAssignee *string) *decomposeRouting {
 	roster, valid := buildRoster(ctx)
-	orchestrator, err := resolveProfileFromCfg(ctx, cfg, "orchestrator_profile", rootAssignee)
-	if err != nil {
-		return nil, err
+	return &decomposeRouting{
+		orchestrator:    resolveRoutingProfile(ctx, settings.KanbanOrchestratorProfile.Get(ctx), rootAssignee),
+		defaultAssignee: resolveRoutingProfile(ctx, settings.KanbanDefaultAssignee.Get(ctx), rootAssignee),
+		autoPromote:     settings.KanbanAutoPromoteChildren.Get(ctx),
+		roster:          roster,
+		validNames:      valid,
 	}
-	defaultAssignee, err := resolveProfileFromCfg(ctx, cfg, "default_assignee", rootAssignee)
-	if err != nil {
-		return nil, err
-	}
-	autoPromote := true
-	if v, ok := dictGet(kanbanCfg, "auto_promote_children"); ok {
-		autoPromote = pyrepr.Truthy(v)
-	}
-	return &decomposeRouting{orchestrator, defaultAssignee, autoPromote, roster, valid}, nil
 }
 
 // Single task promotion of a fanout false reply, the same effect as specify
@@ -252,13 +222,13 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 			return nil, fmt.Sprintf("tasks[%d] is not an object", idx)
 		}
 		title, ok := obj.GetOr("title", nil).(string)
-		if !ok || pystr.Strip(title) == "" {
+		if !ok || strings.TrimSpace(title) == "" {
 			return nil, fmt.Sprintf("tasks[%d].title is missing or empty", idx)
 		}
 		body := obj.GetOr("body", nil)
 		assignee := obj.GetOr("assignee", nil)
 		chosen := normalizeAssigneeChoice(assignee, routing.defaultAssignee, routing.validNames)
-		if s, isStr := assignee.(string); isStr && pystr.Strip(s) != "" && !routing.validNames[pystr.Strip(s)] {
+		if s, isStr := assignee.(string); isStr && strings.TrimSpace(s) != "" && !routing.validNames[strings.TrimSpace(s)] {
 			pkgLog().Info(fmt.Sprintf("decompose: task %s child %d picked unknown assignee %s — routing to default_assignee %s",
 				taskID, idx, errchain.Show(s), errchain.Show(routing.defaultAssignee)))
 		}
@@ -279,9 +249,9 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 		}
 		bodyText := ""
 		if s, isStr := body.(string); isStr {
-			bodyText = pystr.Strip(s)
+			bodyText = strings.TrimSpace(s)
 		}
-		children = append(children, pyjson.ObjectOf("title", pystr.Slice(pystr.Strip(title), 0, 200), "body", bodyText,
+		children = append(children, pyjson.ObjectOf("title", pystr.Slice(strings.TrimSpace(title), 0, 200), "body", bodyText,
 			"assignee", chosen, "parents", parents))
 	}
 	return children, ""
@@ -322,7 +292,7 @@ func applyFanout(ctx context.Context, taskID string, parsed *pyjson.Object, rout
 }
 
 // Decomposes a triage task into a routed child graph, expected failures as not ok
-func DecomposeTask(ctx context.Context, taskID string, author *string, timeout *int64) (*DecomposeOutcome, error) {
+func DecomposeTask(ctx context.Context, taskID string, author *string) (*DecomposeOutcome, error) {
 	task, reason, err := loadTriageTask(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -330,16 +300,10 @@ func DecomposeTask(ctx context.Context, taskID string, author *string, timeout *
 	if task == nil {
 		return &DecomposeOutcome{TaskID: taskID, Reason: reason}, nil
 	}
-	routing, err := loadRouting(ctx, task.Assignee)
-	if err != nil {
-		return nil, err
-	}
-	limit := int64(180)
-	if timeout != nil && *timeout != 0 {
-		limit = *timeout
-	}
+	routing := loadRouting(ctx, task.Assignee)
 	raw, reason := callAux(ctx, "decompose", taskID, "kanban_decomposer", decomposeSystemPrompt,
-		decomposeUserPrompt(promptFieldsOf(task), formatRoster(routing.roster), routing.defaultAssignee), 4000, limit, pkgLog())
+		decomposeUserPrompt(promptFieldsOf(task), formatRoster(routing.roster), routing.defaultAssignee), 4000,
+		settings.AuxiliaryKanbanDecomposerTimeout.Get(ctx), pkgLog())
 	if raw == nil {
 		return &DecomposeOutcome{TaskID: taskID, Reason: reason}, nil
 	}

@@ -21,16 +21,6 @@ func capHome(t *testing.T) string {
 	return h
 }
 
-func capCfg(t *testing.T, h string) map[string]any {
-	t.Helper()
-	config.ResetCache()
-	cfg, err := loadConfig(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cfg
-}
-
 func capEntry(t *testing.T, h, plugin string) map[string]any {
 	t.Helper()
 	return rmConfig(t, h)["plugins"].(map[string]any)["entries"].(map[string]any)[plugin].(map[string]any)
@@ -108,11 +98,11 @@ func TestConsentPersistence(t *testing.T) {
 		t.Fatalf("%v", capEntry(t, h, "capplug2"))
 	}
 	capRecord(t, h, "capplug", []string{"llm.model_override"}, []string{"tools.override", "llm.model_override"})
-	if got := GrantedCapabilities(capCfg(t, h), "capplug"); !reflect.DeepEqual(got, capSet("tools.override", "llm.model_override")) {
+	if got := GrantedCapabilities(homeCtx(h), "capplug"); !reflect.DeepEqual(got, capSet("tools.override", "llm.model_override")) {
 		t.Fatalf("%v", got)
 	}
-	cfg := capCfg(t, h)
-	if CapabilityGranted(cfg, "declined", "tools.override") || !slices.Equal(PendingCapabilities(cfg, "declined", []string{"tools.override"}), []string{"tools.override"}) {
+	hctx := homeCtx(h)
+	if CapabilityGranted(hctx, "declined", "tools.override") || !slices.Equal(PendingCapabilities(hctx, "declined", []string{"tools.override"}), []string{"tools.override"}) {
 		t.Fatal("a plugin without consent must stay off")
 	}
 }
@@ -121,25 +111,25 @@ func TestUpdateReconsent(t *testing.T) {
 	h := capHome(t)
 	capRecord(t, h, "capplug", []string{"tools.override"}, []string{"tools.override"})
 	v2 := []string{"tools.override", "llm.model_override"}
-	cfg := capCfg(t, h)
-	if !slices.Equal(PendingCapabilities(cfg, "capplug", v2), []string{"llm.model_override"}) || !DeclaredSetChanged(cfg, "capplug", v2) {
+	hctx := homeCtx(h)
+	if !slices.Equal(PendingCapabilities(hctx, "capplug", v2), []string{"llm.model_override"}) || !DeclaredSetChanged(hctx, "capplug", v2) {
 		t.Fatal("added capability must be pending")
 	}
-	if CapabilityGranted(cfg, "capplug", "llm.model_override") || !CapabilityGranted(cfg, "capplug", "tools.override") {
+	if CapabilityGranted(hctx, "capplug", "llm.model_override") || !CapabilityGranted(hctx, "capplug", "tools.override") {
 		t.Fatal("grant state after update")
 	}
-	if len(PendingCapabilities(cfg, "capplug", []string{"tools.override"})) != 0 || DeclaredSetChanged(cfg, "capplug", []string{"tools.override"}) {
+	if len(PendingCapabilities(hctx, "capplug", []string{"tools.override"})) != 0 || DeclaredSetChanged(hctx, "capplug", []string{"tools.override"}) {
 		t.Fatal("unchanged set needs no reconsent")
 	}
 	if CapabilitySetHash([]string{"tools.override", "llm.model_override"}) != CapabilitySetHash([]string{"llm.model_override", "tools.override"}) {
 		t.Fatal("hash must ignore order")
 	}
-	if !DeclaredSetChanged(cfg, "nobody", []string{"tools.override"}) {
+	if !DeclaredSetChanged(hctx, "nobody", []string{"tools.override"}) {
 		t.Fatal("no consent record counts as changed")
 	}
-	capRecord(t, h, "capplug", PendingCapabilities(cfg, "capplug", v2), v2)
-	cfg = capCfg(t, h)
-	if !CapabilityGranted(cfg, "capplug", "llm.model_override") || DeclaredSetChanged(cfg, "capplug", v2) {
+	capRecord(t, h, "capplug", PendingCapabilities(hctx, "capplug", v2), v2)
+	hctx = homeCtx(h)
+	if !CapabilityGranted(hctx, "capplug", "llm.model_override") || DeclaredSetChanged(hctx, "capplug", v2) {
 		t.Fatal("reconsent must grant the addition")
 	}
 }
@@ -147,7 +137,7 @@ func TestUpdateReconsent(t *testing.T) {
 func TestCapabilitiesFailClosed(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nonexistent")
 	t.Setenv("ICEBATH_HOME", missing)
-	if cfg := capCfg(t, missing); CapabilityGranted(cfg, "capplug", "tools.override") || len(GrantedCapabilities(cfg, "capplug")) != 0 {
+	if hctx := homeCtx(missing); CapabilityGranted(hctx, "capplug", "tools.override") || len(GrantedCapabilities(hctx, "capplug")) != 0 {
 		t.Fatal("missing config must grant nothing")
 	}
 	h := capHome(t)
@@ -157,19 +147,19 @@ func TestCapabilitiesFailClosed(t *testing.T) {
 		"plugins:\n  entries:\n    capplug:\n      granted_capabilities: [root.everything, 42]\n",
 	} {
 		writeFile(t, filepath.Join(h, "config.yaml"), body)
-		cfg := capCfg(t, h)
-		if CapabilityGranted(cfg, "capplug", "tools.override") || len(GrantedCapabilities(cfg, "capplug")) != 0 {
+		hctx := homeCtx(h)
+		if CapabilityGranted(hctx, "capplug", "tools.override") || len(GrantedCapabilities(hctx, "capplug")) != 0 {
 			t.Fatalf("granted under %q", body)
 		}
 	}
 	writeFile(t, filepath.Join(h, "config.yaml"), "{}\n")
 	capRecord(t, h, "capplug", []string{"tools.override"}, []string{"tools.override"})
-	if CapabilityGranted(capCfg(t, h), "capplug", "root.everything") {
+	if CapabilityGranted(homeCtx(h), "capplug", "root.everything") {
 		t.Fatal("unknown capability granted")
 	}
 	writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  entries:\n    capplug:\n      capabilities_consent: broken\n")
-	cfg := capCfg(t, h)
-	if ConsentHash(cfg, "capplug") != "" || !DeclaredSetChanged(cfg, "capplug", []string{"tools.override"}) {
+	hctx := homeCtx(h)
+	if ConsentHash(hctx, "capplug") != "" || !DeclaredSetChanged(hctx, "capplug", []string{"tools.override"}) {
 		t.Fatal("corrupt consent hash counts as changed")
 	}
 }
@@ -191,7 +181,7 @@ func TestLegacyGateCompat(t *testing.T) {
 		{"plugins:\n  entries:\n    oldplug:\n      allow_tool_override: false\n", "oldplug", "tools.override", false},
 	} {
 		writeFile(t, filepath.Join(h, "config.yaml"), tc.body)
-		if got := CapabilityGranted(capCfg(t, h), tc.plugin, tc.capability); got != tc.want {
+		if got := CapabilityGranted(homeCtx(h), tc.plugin, tc.capability); got != tc.want {
 			t.Fatalf("%q: %v", tc.body, got)
 		}
 	}
@@ -208,7 +198,7 @@ func TestLegacyGateCompat(t *testing.T) {
 	capRecord(t, h, "freshplug", []string{"llm.side_question"}, []string{"llm.side_question"})
 	entry := capEntry(t, h, "freshplug")
 	if _, hasLLM := entry["llm"]; hasLLM || !reflect.DeepEqual(entry["granted_capabilities"], []any{"llm.side_question"}) ||
-		!CapabilityGranted(capCfg(t, h), "freshplug", "llm.side_question") {
+		!CapabilityGranted(homeCtx(h), "freshplug", "llm.side_question") {
 		t.Fatalf("%v", entry)
 	}
 	capRecord(t, h, "capplug", []string{"tools.override"}, []string{"tools.override"})

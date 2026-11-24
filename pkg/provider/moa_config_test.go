@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func moaEnabledRefs(refs []map[string]any) []any {
@@ -106,8 +107,10 @@ func TestConfigKeyAggregatorFieldsAreTheSlotFieldsCleanSlotKeeps(t *testing.T) {
 }
 
 func TestPrintConfigMarksAggregatorAsBilledAndWarnsOnProviderMismatch(t *testing.T) {
+	ctx, _ := moaCmdHome(t, nil)
+	writeConfigYAML(t, home.Dir(ctx), "model:\n  provider: openai-codex\n")
 	var out strings.Builder
-	moaPrintConfig(&out, map[string]any{"model": map[string]any{"provider": "openai-codex"}})
+	moaPrintConfig(ctx, &out)
 	var notice string
 	for _, line := range strings.Split(out.String(), "\n") {
 		if strings.Contains(line, "Aggregator is on") {
@@ -121,26 +124,28 @@ func TestPrintConfigMarksAggregatorAsBilledAndWarnsOnProviderMismatch(t *testing
 }
 
 func TestBillingNoticeSilentWhenProvidersMatchOrMainUnknown(t *testing.T) {
-	for _, cfg := range []map[string]any{{"model": map[string]any{"provider": "openrouter"}}, {}} {
+	ctx, _ := moaCmdHome(t, nil)
+	for _, cfg := range []string{"model:\n  provider: openrouter\n", "{}\n"} {
+		writeConfigYAML(t, home.Dir(ctx), cfg)
 		var out strings.Builder
-		moaPrintConfig(&out, cfg)
+		moaPrintConfig(ctx, &out)
 		if strings.Contains(out.String(), "Aggregator is on") {
-			t.Fatalf("unexpected notice for %v", cfg)
+			t.Fatalf("unexpected notice for %q", cfg)
 		}
 	}
 }
 
 func TestNonfiniteFanoutFallsBackToDefaultCadence(t *testing.T) {
-	def := normalizeMoAConfig(map[string]any{})["fanout"]
+	def := normalizeMoAPreset(map[string]any{})["fanout"]
 	for _, fanout := range []any{map[string]any{"mode": "every_n", "n": math.Inf(1)}, map[string]any{"mode": "every_n", "n": "-inf"}, "every_n:inf", "every_n:nan"} {
-		mustEqual(t, normalizeMoAConfig(map[string]any{"fanout": fanout})["fanout"], def, "nonfinite fanout")
+		mustEqual(t, normalizeMoAPreset(map[string]any{"fanout": fanout})["fanout"], def, "nonfinite fanout")
 	}
-	mustEqual(t, normalizeMoAConfig(map[string]any{"fanout": map[string]any{"mode": "every_n", "n": "3.0"}})["fanout"], any("every_n:3"), "float string n")
+	mustEqual(t, normalizeMoAPreset(map[string]any{"fanout": map[string]any{"mode": "every_n", "n": "3.0"}})["fanout"], any("every_n:3"), "float string n")
 }
 
 func TestNonfiniteTemperaturesDoNotEscapeIntoJSON(t *testing.T) {
 	for _, temperature := range []any{math.NaN(), math.Inf(1), "-inf", "NaN"} {
-		normalized := normalizeMoAConfig(map[string]any{"reference_temperature": temperature, "aggregator_temperature": temperature})
+		normalized := normalizeMoAPreset(map[string]any{"reference_temperature": temperature, "aggregator_temperature": temperature})
 		if normalized["reference_temperature"] != nil || normalized["aggregator_temperature"] != nil {
 			t.Fatalf("%v escaped %v", temperature, normalized)
 		}
@@ -148,7 +153,7 @@ func TestNonfiniteTemperaturesDoNotEscapeIntoJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	finite := normalizeMoAConfig(map[string]any{"reference_temperature": 0, "aggregator_temperature": "0.75"})
+	finite := normalizeMoAPreset(map[string]any{"reference_temperature": 0, "aggregator_temperature": "0.75"})
 	mustEqual(t, finite["reference_temperature"], any(0.0), "zero temperature")
 	mustEqual(t, finite["aggregator_temperature"], any(0.75), "string temperature")
 }
@@ -210,11 +215,11 @@ func TestMoADefaultAndActivePresetSelection(t *testing.T) {
 	if cfg["default_preset"] != "beta" || cfg["active_preset"] != "beta" || cfg["privacy_filter"] != "display" || cfg["fanout"] != "per_iteration" {
 		t.Fatalf("selection %v", cfg)
 	}
-	provider, model, ok := resolveMoaAggregator(map[string]any{"moa": cfg}, "beta")
+	provider, model, ok := moaAggregatorOf(cfg, "beta")
 	if !ok || provider != "openrouter" || model != "anthropic/claude-opus-4.8" {
 		t.Fatalf("aggregator %q %q %v", provider, model, ok)
 	}
-	if _, _, ok := resolveMoaAggregator(map[string]any{}, "nope"); ok {
+	if _, _, ok := moaAggregatorOf(map[string]any{}, "nope"); ok {
 		t.Fatal("a missing preset resolves no aggregator")
 	}
 }
@@ -239,9 +244,6 @@ func TestMoANamedPresetMapIsAuthoritativeOverDefaults(t *testing.T) {
 	ApplyUserMoAPresets(merged, plain)
 	if !reflect.DeepEqual(normalizeMoAConfig(merged["moa"]), normalizeMoAConfig(config.Defaults()["moa"])) {
 		t.Fatal("a missing moa map keeps the schema defaults")
-	}
-	if !SkipDeepMerge("moa", "presets") || SkipDeepMerge("moa", "default_preset") || SkipDeepMerge("agent", "presets") {
-		t.Fatal("only moa.presets skips the deep merge")
 	}
 }
 

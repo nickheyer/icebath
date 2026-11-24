@@ -113,7 +113,7 @@ func textwrapWrapChunks(chunks []string, o TextwrapOptions) []string {
 			indent = o.SubsequentIndent
 		}
 		width := o.Width - Len(indent)
-		if o.DropWhitespace && Strip(chunks[len(chunks)-1]) == "" && len(lines) > 0 {
+		if o.DropWhitespace && strings.TrimSpace(chunks[len(chunks)-1]) == "" && len(lines) > 0 {
 			chunks = chunks[:len(chunks)-1]
 		}
 		for len(chunks) > 0 {
@@ -132,7 +132,7 @@ func textwrapWrapChunks(chunks []string, o TextwrapOptions) []string {
 				curLen += Len(c)
 			}
 		}
-		if o.DropWhitespace && len(cur) > 0 && Strip(cur[len(cur)-1]) == "" {
+		if o.DropWhitespace && len(cur) > 0 && strings.TrimSpace(cur[len(cur)-1]) == "" {
 			curLen -= Len(cur[len(cur)-1])
 			cur = cur[:len(cur)-1]
 		}

@@ -1,19 +1,19 @@
 package qqbot
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Sets the home channel from the QQBOT names, else the deprecated QQ names with a rename warning
 func qqHome(ctx context.Context, cfg *gateway.GatewayConfig, pc *gateway.PlatformConfig) error {
-	home := pystr.Strip(gateway.Getenv(ctx, "QQBOT_HOME_CHANNEL", ""))
+	home := strings.TrimSpace(gateway.Getenv(ctx, "QQBOT_HOME_CHANNEL", ""))
 	nameEnv := "QQBOT_HOME_CHANNEL_NAME"
 	if home == "" {
-		if home = pystr.Strip(gateway.Getenv(ctx, "QQ_HOME_CHANNEL", "")); home != "" {
+		if home = strings.TrimSpace(gateway.Getenv(ctx, "QQ_HOME_CHANNEL", "")); home != "" {
 			nameEnv = "QQ_HOME_CHANNEL_NAME"
 			pkgLog().Warn("QQ_HOME_CHANNEL is deprecated; rename to QQBOT_HOME_CHANNEL in your .env for consistency with the platform key.")
 		}
@@ -49,8 +49,7 @@ var envOverrides = []gateway.EnvStep{
 var authz = map[string]any{"allowed_users_env": "QQ_ALLOWED_USERS", "allow_all_env": "QQ_ALLOW_ALL_USERS",
 	"own_policy_env": []string{"", ""}, "group_allowed_chats_env": "QQ_GROUP_ALLOWED_USERS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled qqbot directory and the settings its allowlist names moved to
+// Registers the env declarations of the bundled qqbot directory
 func init() {
 	gateway.RegisterBundledEnv("qqbot", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
-	gateway.RegisterEnvSettings(map[string]settings.Entry{"QQ_ALLOWED_USERS": settings.QqbotAllowFrom, "QQ_GROUP_ALLOWED_USERS": settings.QqbotGroupAllowFrom})
 }

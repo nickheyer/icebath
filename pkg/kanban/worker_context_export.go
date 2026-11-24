@@ -1,8 +1,10 @@
 package kanban
 
-// Terminal timeout a bound worker exports for its run budget, nil when the current one stands
-func WorkerTerminalTimeoutEnv(maxRuntimeSeconds *int64, currentTimeout *string) *string {
-	return workerTerminalTimeoutEnv(maxRuntimeSeconds, currentTimeout)
+import "context"
+
+// Terminal timeouts a bound worker exports for its run budget over what the profile of ctx allows, by env name
+func WorkerTerminalTimeouts(ctx context.Context, maxRuntimeSeconds *int64) map[string]string {
+	return workerTerminalTimeouts(ctx, maxRuntimeSeconds)
 }
 
 // Start fingerprint of a live pid, nil when it cannot be read

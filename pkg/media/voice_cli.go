@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -65,45 +65,16 @@ func setEvent() *pythread.Event {
 	return e
 }
 
-// Writes a voice breadcrumb to stderr when ICEBATH_VOICE_DEBUG is 1
+// Writes a voice breadcrumb to stderr when voice.debug is on for the process home
 func voiceDebug(msg string) {
-	if strings.TrimSpace(os.Getenv("ICEBATH_VOICE_DEBUG")) == "1" {
+	if settings.VoiceDebug.Get(context.Background()) {
 		fmt.Fprintf(os.Stderr, "[voice] %s\n", msg)
 	}
 }
 
-// Whether voice.beep_enabled allows cue beeps, true by default and on any read failure
-func voiceBeepsEnabled(ctx context.Context) (enabled bool) {
-	defer func() {
-		if recover() != nil {
-			enabled = true
-		}
-	}()
-	tree, err := config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
-	if err != nil {
-		return true
-	}
-	voiceCfg, isDict := tree["voice"].(map[string]any)
-	if !isDict {
-		return true
-	}
-	raw, present := voiceCfg["beep_enabled"]
-	if !present || raw == nil {
-		return true
-	}
-	if text, isText := raw.(string); isText {
-		switch pystr.Lower(pystr.Strip(text)) {
-		case "1", "true", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return pyrepr.Truthy(raw)
-}
-
-// Plays a cue beep when beeps are enabled, a failure only logged
+// Plays a cue beep when voice.beep_enabled allows it, a failure only logged
 func voicePlayBeep(ctx context.Context, frequency, count int) {
-	if !voiceBeepsEnabled(ctx) {
+	if !settings.VoiceBeepEnabled.Get(ctx) {
 		return
 	}
 	defer func() {
@@ -142,7 +113,7 @@ func transcribeWav(ctx context.Context, wavPath, failMsg, debugPrefix string) (t
 	success := pyrepr.Truthy(result["success"])
 	transcript := ""
 	if raw := result["transcript"]; pyrepr.Truthy(raw) {
-		transcript = pystr.Strip(pyrepr.Str(raw))
+		transcript = strings.TrimSpace(pyrepr.Str(raw))
 	}
 	if debugPrefix != "" {
 		voiceDebug(fmt.Sprintf("%s: transcribe -> success=%s text=%s err=%s", debugPrefix, errchain.Show(success), errchain.Show(transcript), errchain.Show(result["error"])))
@@ -196,7 +167,7 @@ func turnTranscript(ctx context.Context, wavPath, failMsg, where, tail string, t
 		}
 		transcript = transcribeWav(ctx, wavPath, failMsg, prefix)
 	}
-	if transcript == "" || !IsVoiceStopPhrase(transcript) {
+	if transcript == "" || !IsVoiceStopPhrase(ctx, transcript) {
 		return transcript, false, ""
 	}
 	voiceDebug(fmt.Sprintf("%s: stop phrase %s — %s", where, errchain.Show(transcript), tail))
@@ -493,14 +464,11 @@ type speakEvent struct{ *pythread.Event }
 func (e speakEvent) Wait(timeout time.Duration) bool { return e.Event.Wait(timeout.Seconds()) }
 
 // Speaks through the streaming pipeline when a chunked streamer resolves, false sending the caller to the whole file path
-func speakStreaming(ctx context.Context, text string, stop *pythread.Event) (bool, error) {
+func speakStreaming(ctx context.Context, text string, stop *pythread.Event) bool {
 	env := &tools.Env{Home: home.Dir(ctx)}
-	provider, err := ResolveStreamingProvider(ctx, env, LoadTTSConfig(ctx, env), "")
-	if err != nil {
-		return false, err
-	}
+	provider := ResolveStreamingProvider(ctx, env, "")
 	if provider == nil {
-		return false, nil
+		return false
 	}
 	queue := &replyTextQueue{items: make(chan any, 2)}
 	queue.items <- text
@@ -510,7 +478,7 @@ func speakStreaming(ctx context.Context, text string, stop *pythread.Event) (boo
 		stop = &pythread.Event{}
 	}
 	StreamTTSToSpeaker(ctx, queue, speakEvent{stop}, speakEvent{done}, nil, "")
-	return done.IsSet(), nil
+	return done.IsSet()
 }
 
 // Cleans, synthesizes, plays and removes the reply audio through the TTS tool
@@ -525,7 +493,7 @@ func speakWholeFile(ctx context.Context, text string) error {
 		for _, rule := range legacyTTSStrip {
 			ttsText = rule.re.ReplaceAllString(ttsText, rule.repl)
 		}
-		ttsText = pystr.Strip(ttsText)
+		ttsText = strings.TrimSpace(ttsText)
 	}
 	if ttsText == "" {
 		return nil
@@ -585,7 +553,7 @@ func speakWholeFile(ctx context.Context, text string) error {
 
 // SpeakText synthesizes and plays text, pausing live capture so the reply never feeds back into the mic
 func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return
 	}
 	pausedRecording := false
@@ -621,10 +589,7 @@ func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
 				err = fmt.Errorf("%v", r)
 			}
 		}()
-		streamed, streamErr := speakStreaming(ctx, text, stop)
-		if streamErr != nil {
-			voiceDebug(fmt.Sprintf("speak_text: streaming dispatch unavailable (%s); using sync path", streamErr))
-		} else if streamed {
+		if speakStreaming(ctx, text, stop) {
 			return nil
 		}
 		return speakWholeFile(ctx, text)

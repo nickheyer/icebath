@@ -44,9 +44,9 @@ func (a *AIAgent) resolveToolName(toolName string) (string, bool) {
 		return registered
 	}
 	norm := func(s string) string {
-		return strings.ReplaceAll(strings.ReplaceAll(pystr.Lower(s), "-", "_"), " ", "_")
+		return strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(s), "-", "_"), " ", "_")
 	}
-	lowered := pystr.Lower(toolName)
+	lowered := strings.ToLower(toolName)
 	normalized := norm(toolName)
 	var cands []string
 	add := func(items ...string) {
@@ -132,15 +132,15 @@ func camelSnake(s string) string {
 		}
 		b.WriteByte(s[i])
 	}
-	return pystr.Lower(b.String())
+	return strings.ToLower(b.String())
 }
 
 // Name without a trailing tool suffix and its separators, false when no suffix ends it
 func stripToolSuffix(s string) (string, bool) {
-	lc := pystr.Lower(s)
+	lc := strings.ToLower(s)
 	for _, sfx := range []string{"_tool", "-tool", "tool"} {
 		if strings.HasSuffix(lc, sfx) {
-			return pystr.RstripChars(pystr.Slice(s, 0, -len(sfx)), "_-"), true
+			return strings.TrimRight(pystr.Slice(s, 0, -len(sfx)), "_-"), true
 		}
 	}
 	return "", false

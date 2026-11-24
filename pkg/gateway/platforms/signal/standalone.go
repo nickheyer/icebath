@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Transport of out of process sends, a clone of the default transport when nil
@@ -170,7 +169,7 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 	if !ok {
 		return nil, noAttr(rawURL, "rstrip")
 	}
-	httpURL, account := pystr.RstripChars(urlText, "/"), getOr(extra, "account", "")
+	httpURL, account := strings.TrimRight(urlText, "/"), getOr(extra, "account", "")
 	if !pyrepr.Truthy(account) {
 		return map[string]any{"error": "Signal account not configured"}, nil
 	}

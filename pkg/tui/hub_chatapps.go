@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,6 +64,141 @@ type chatAppsHub struct {
 	data    tuigateway.ChatAppsListResult
 	rows    []chatAppsRow
 	loading bool
+	// Commands of this build by path, read once the screen opens, the chat apps' own tools offered only when their command is there
+	tree map[string]tuigateway.CLICommand
+}
+
+// Whether this build has a command people run, by its path
+func (c *chatAppsHub) has(path string) bool {
+	command, ok := c.tree[path]
+	return ok && command.Class != tuigateway.CLIRunInternal
+}
+
+// Runs an icebath command that asks its own questions in a terminal window of its own, the screen making way for it
+func (c *chatAppsHub) inTerminal(argv ...string) tea.Cmd {
+	exe, err := os.Executable()
+	if err != nil {
+		return c.h.Fail(err.Error())
+	}
+	return tea.Batch(wm.RequestDismissOf(c.h), c.a.runInTerminal(append([]string{exe}, argv...), func(cards.TerminalEnd) tea.Cmd { return nil }))
+}
+
+// Runs an icebath command in a page of the screen, the screen read again after it
+func (c *chatAppsHub) runPage(title string, argv ...string) tea.Cmd {
+	return c.a.hubRunCLI(c.h, title, argv, func(*cliRun) tea.Cmd { return c.load() })
+}
+
+// Tools a chat app's own commands bring, on the app's row, each left out when this build lacks its command
+func (c *chatAppsHub) appTools(platform string) []hubAction {
+	var out []hubAction
+	add := func(path string, label, does txt.Key, run func() tea.Cmd) {
+		if c.has(path) {
+			out = append(out, hubAction{label: tr(label), does: tr(does), run: run})
+		}
+	}
+	page := func(title txt.Key, argv ...string) func() tea.Cmd {
+		return func() tea.Cmd { return c.runPage(tr(title), argv...) }
+	}
+	switch platform {
+	case "whatsapp":
+		add("whatsapp", txt.HubsChatappsWhatsappPair, txt.HubsChatappsWhatsappPairDoes, func() tea.Cmd { return c.inTerminal("whatsapp") })
+	case "whatsapp_cloud":
+		add("whatsapp-cloud", txt.HubsChatappsWhatsappCloud, txt.HubsChatappsWhatsappCloudDoes, func() tea.Cmd { return c.inTerminal("whatsapp-cloud") })
+	case "photon":
+		add("photon status", txt.HubsChatappsPhotonStatus, txt.HubsChatappsPhotonStatusDoes, page(txt.HubsChatappsPhotonStatus, "photon", "status"))
+		add("photon setup", txt.HubsChatappsPhotonSetup, txt.HubsChatappsPhotonSetupDoes, func() tea.Cmd { return c.inTerminal("photon", "setup") })
+		add("photon install-sidecar", txt.HubsChatappsPhotonSidecar, txt.HubsChatappsPhotonSidecarDoes, page(txt.HubsChatappsPhotonSidecar, "photon", "install-sidecar"))
+		add("photon telemetry", txt.HubsChatappsPhotonTelemetry, txt.HubsChatappsPhotonTelemetryDoes, c.photonTelemetry)
+	case "feishu":
+		add("feishu comment-rules", txt.HubsChatappsFeishuRules, txt.HubsChatappsFeishuRulesDoes, page(txt.HubsChatappsFeishuRules, "feishu", "comment-rules", "status"))
+		add("feishu comment-rules", txt.HubsChatappsFeishuCheck, txt.HubsChatappsFeishuCheckDoes, c.feishuCheck)
+		add("feishu comment-rules", txt.HubsChatappsFeishuApprove, txt.HubsChatappsFeishuApproveDoes, c.feishuPairing("add", txt.HubsChatappsFeishuApprove))
+		add("feishu comment-rules", txt.HubsChatappsFeishuRevoke, txt.HubsChatappsFeishuRevokeDoes, c.feishuPairing("remove", txt.HubsChatappsFeishuRevoke))
+		add("feishu comment-rules", txt.HubsChatappsFeishuList, txt.HubsChatappsFeishuListDoes, page(txt.HubsChatappsFeishuList, "feishu", "comment-rules", "pairing", "list"))
+	case "google_chat":
+		add("google_chat oauth", txt.HubsChatappsGchatCheck, txt.HubsChatappsGchatCheckDoes, c.gchatStep(txt.HubsChatappsGchatCheck, "--check", nil))
+		secret := cards.Field{ID: "value", Label: tr(txt.HubsChatappsGchatSecretPath), Kind: cards.FieldText, Required: true}
+		add("google_chat oauth", txt.HubsChatappsGchatSecret, txt.HubsChatappsGchatSecretDoes, c.gchatStep(txt.HubsChatappsGchatSecret, "--client-secret", &secret))
+		add("google_chat oauth", txt.HubsChatappsGchatLink, txt.HubsChatappsGchatLinkDoes, c.gchatStep(txt.HubsChatappsGchatLink, "--auth-url", nil))
+		code := cards.Field{ID: "value", Label: tr(txt.HubsChatappsGchatCodeLabel), Kind: cards.FieldText, Required: true}
+		add("google_chat oauth", txt.HubsChatappsGchatCode, txt.HubsChatappsGchatCodeDoes, c.gchatStep(txt.HubsChatappsGchatCode, "--auth-code", &code))
+		if c.has("google_chat oauth") {
+			out = append(out, hubAction{label: tr(txt.HubsChatappsGchatRevoke), does: tr(txt.HubsChatappsGchatRevokeDoes), confirm: tr(txt.HubsChatappsGchatRevokeConfirm),
+				run: c.gchatStep(txt.HubsChatappsGchatRevoke, "--revoke", nil)})
+		}
+	}
+	return out
+}
+
+// Shows, turns on or turns off the telemetry Photon's Spectrum SDK sends, picked first
+func (c *chatAppsHub) photonTelemetry() tea.Cmd {
+	title := tr(txt.HubsChatappsPhotonTelemetry)
+	choices := []hubChoice{{id: "", title: tr(txt.HubsChatappsTelemetryShow)}, {id: "on", title: tr(txt.HubsChatappsTelemetryOn)}, {id: "off", title: tr(txt.HubsChatappsTelemetryOff)}}
+	return c.a.hubPick(c.h, title, choices, "", func(ch hubChoice) tea.Cmd {
+		if ch.id == "" {
+			return c.runPage(title, "photon", "telemetry")
+		}
+		return c.runPage(title, "photon", "telemetry", ch.id)
+	})
+}
+
+// Asks for a document and a user and shows whether Feishu document comments from that user there would be answered
+func (c *chatAppsHub) feishuCheck() tea.Cmd {
+	title := tr(txt.HubsChatappsFeishuCheck)
+	spec := cards.FormSpec{Title: title, Submit: tr(txt.SlashFormRun), Fields: []cards.Field{
+		{ID: "doc", Label: tr(txt.HubsChatappsFeishuDocument), Kind: cards.FieldText, Help: tr(txt.HubsChatappsFeishuDocumentHelp), Required: true},
+		{ID: "user", Label: tr(txt.HubsChatappsFeishuUser), Kind: cards.FieldText, Required: true},
+	}}
+	return c.a.hubForm(c.h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+		return c.runPage(title, "feishu", "comment-rules", "check", strings.TrimSpace(v["doc"]), strings.TrimSpace(v["user"]))
+	})
+}
+
+// Asks for a user and adds them to, or removes them from, the users whose Feishu document comments reach the agent
+func (c *chatAppsHub) feishuPairing(verb string, title txt.Key) func() tea.Cmd {
+	return func() tea.Cmd {
+		return c.a.hubAsk(c.h, tr(title), tr(txt.HubsChatappsFeishuUser), "", false, func(user string) tea.Cmd {
+			if user == "" {
+				return nil
+			}
+			return c.runPage(tr(title), "feishu", "comment-rules", "pairing", verb, user)
+		})
+	}
+}
+
+// One step of the Google Chat attachment sign-in: the value the step takes, when it takes one, and the user email it is for, then the step
+// run in a page; the sign-in link step copies the link it printed
+func (c *chatAppsHub) gchatStep(title txt.Key, flag string, value *cards.Field) func() tea.Cmd {
+	return func() tea.Cmd {
+		var fields []cards.Field
+		if value != nil {
+			fields = append(fields, *value)
+		}
+		if flag != "--client-secret" {
+			fields = append(fields, cards.Field{ID: "email", Label: tr(txt.HubsChatappsGchatEmail), Kind: cards.FieldText, Help: tr(txt.HubsChatappsGchatEmailHelp)})
+		}
+		spec := cards.FormSpec{Title: tr(title), Submit: tr(txt.SlashFormRun), Fields: fields}
+		return c.a.hubForm(c.h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			argv := []string{"google_chat", "oauth", flag}
+			if value != nil {
+				argv = append(argv, strings.TrimSpace(v["value"]))
+			}
+			if email := strings.TrimSpace(v["email"]); email != "" {
+				argv = append(argv, "--email", email)
+			}
+			return c.a.hubRunCLI(c.h, tr(title), argv, func(run *cliRun) tea.Cmd {
+				if flag != "--auth-url" || run.err != nil || run.code != 0 {
+					return nil
+				}
+				for _, line := range run.lines {
+					if at := strings.Index(line, "https://"); at >= 0 {
+						return c.a.hubCopy(c.h, strings.Fields(line[at:])[0], tr(txt.HubsChatappsUrlWord))
+					}
+				}
+				return nil
+			})
+		})
+	}
 }
 
 // Chat apps screen: messaging platforms with their state, people waiting to pair, webhooks and peers, with every write in place
@@ -95,7 +231,14 @@ func (a *app) openChatApps() tea.Cmd {
 		OnFocus: func(*cards.List) tea.Cmd { return c.load() },
 	})
 	c.h = a.newHub("tui:chatapps", c.list)
-	return a.wm.ShowOverlay(c.h)
+	tree := hubCall(a, c.h, "", tuigateway.CommandsTree, tuigateway.CommandsTreeParams{}, func(r *tuigateway.CommandsTreeResult) tea.Cmd {
+		c.tree = map[string]tuigateway.CLICommand{}
+		for _, command := range r.Commands {
+			c.tree[command.Path] = command
+		}
+		return nil
+	})
+	return tea.Batch(a.wm.ShowOverlay(c.h), tree)
 }
 
 // Reads everything the screen shows again, a failure staying in the hub
@@ -339,6 +482,7 @@ func (c *chatAppsHub) open(l *cards.List, i int) tea.Cmd {
 			if p.Platform == "slack" {
 				acts = append(acts, hubAction{label: tr(txt.HubsChatappsSlackManifest), does: tr(txt.HubsChatappsSlackManifestDoes), run: c.slackManifest})
 			}
+			acts = append(acts, c.appTools(p.Platform)...)
 			return append(acts, hubAction{label: tr(txt.HubsChatappsApproveCode), does: tr(txt.HubsChatappsApproveCodeDoes), run: func() tea.Cmd { return c.approveCode(p.Platform) }})
 		})
 	case chatAppPending:
@@ -449,7 +593,26 @@ func (c *chatAppsHub) add() tea.Cmd {
 		{id: "send", title: tr(txt.HubsChatappsSend), detail: tr(txt.HubsChatappsSendDoes)},
 		{id: "slack", title: tr(txt.HubsChatappsSlackManifest), detail: tr(txt.HubsChatappsSlackManifestDoes)},
 	}
+	// Setups that ask their own questions in a terminal, for apps that are not set up yet
+	wizards := map[string][]string{}
+	for _, w := range []struct {
+		id, path      string
+		title, detail txt.Key
+		argv          []string
+	}{
+		{"whatsapp", "whatsapp", txt.HubsChatappsWhatsappPair, txt.HubsChatappsWhatsappPairDoes, []string{"whatsapp"}},
+		{"whatsapp-cloud", "whatsapp-cloud", txt.HubsChatappsWhatsappCloud, txt.HubsChatappsWhatsappCloudDoes, []string{"whatsapp-cloud"}},
+		{"photon", "photon setup", txt.HubsChatappsPhotonSetup, txt.HubsChatappsPhotonSetupDoes, []string{"photon", "setup"}},
+	} {
+		if c.has(w.path) {
+			choices = append(choices, hubChoice{id: "wizard:" + w.id, title: tr(w.title), detail: tr(w.detail)})
+			wizards["wizard:"+w.id] = w.argv
+		}
+	}
 	return c.a.hubPick(c.h, tr(txt.HubsChatappsAddTitle), choices, "", func(ch hubChoice) tea.Cmd {
+		if argv, wizard := wizards[ch.id]; wizard {
+			return c.inTerminal(argv...)
+		}
 		switch ch.id {
 		case "code":
 			return c.approveCode("")

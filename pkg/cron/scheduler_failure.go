@@ -1,21 +1,24 @@
 package cron
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -34,7 +37,7 @@ func setCronSessionTitle(ctx context.Context, db cronTitleDB, sessionID, baseTit
 	if db == nil || sessionID == "" {
 		return "", nil
 	}
-	title := pystr.Strip(baseTitle)
+	title := strings.TrimSpace(baseTitle)
 	if title == "" {
 		return "", nil
 	}
@@ -66,38 +69,26 @@ func setCronSessionTitle(ctx context.Context, db cronTitleDB, sessionID, baseTit
 // True when the job carries its own provider, model or endpoint
 func jobRoutePinned(job *Job) bool {
 	for _, v := range []*string{job.Provider, job.Model, job.BaseURL} {
-		if v != nil && pystr.Strip(*v) != "" {
+		if v != nil && strings.TrimSpace(*v) != "" {
 			return true
 		}
 	}
 	return false
 }
 
-// Fallback chain the job may walk, empty for a pinned job that never borrows the global chain
-func jobFallbackChain(job *Job, cfg config.Tree) []map[string]any {
-	return provider.ScopedFallbackChain(provider.GetFallbackChain(cfg), nil, false, jobRoutePinned(job), "cron job")
+// Fallback chain the job may walk from the profile's fallback models, empty for a pinned job that never borrows the global chain
+func (s *Store) jobFallbackChain(ctx context.Context, job *Job) []map[string]any {
+	return provider.ScopedFallbackChain(provider.FallbackChain(home.WithOverride(ctx, s.home)), nil, false, jobRoutePinned(job), "cron job")
 }
 
-// Backup provider clause for a provider failure notice, failing open when config cannot be read
+// Backup provider clause for a provider failure notice
 func (s *Store) fallbackChainPhrase(job *Job) string {
 	if job != nil && jobRoutePinned(job) {
 		return "This job is pinned to its own provider/model, so it does not fall back to " +
 			fmt.Sprintf("`fallback_providers`; `icebath cron edit %s --unpin` lets it follow the ", job.ID) +
 			"main model and its fallback chain."
 	}
-	chain, ok := func() (chain []map[string]any, ok bool) {
-		defer func() {
-			if recover() != nil {
-				ok = false
-			}
-		}()
-		cfg, err := s.loadConfig()
-		if err != nil {
-			return nil, false
-		}
-		return provider.GetFallbackChain(cfg), true
-	}()
-	if !ok || len(chain) > 0 {
+	if len(provider.FallbackChain(s.settingsCtx())) > 0 {
 		return "No backup provider succeeded either."
 	}
 	return "No backup provider is configured — add one with `icebath fallback add`, " +
@@ -109,36 +100,7 @@ func (s *Store) failureStreakNudge(job *Job) string {
 	if job.Schedule == nil || (job.Schedule.Kind != "cron" && job.Schedule.Kind != "interval") {
 		return ""
 	}
-	threshold := int64(3)
-	func() {
-		defer func() {
-			if recover() != nil {
-				threshold = 3
-			}
-		}()
-		cfg, err := s.loadConfig()
-		if err != nil {
-			return
-		}
-		var raw any = int64(3)
-		if cron, ok := cfg["cron"].(map[string]any); ok {
-			if v, present := cron["failure_nudge_threshold"]; present {
-				raw = v
-			}
-		}
-		n, err := pyint.Of(raw)
-		if err != nil {
-			return
-		}
-		switch {
-		case n.IsInt64():
-			threshold = n.Int64()
-		case n.Sign() > 0:
-			threshold = math.MaxInt64
-		default:
-			threshold = -1
-		}
-	}()
+	threshold := int64(settings.CronFailureNudgeThreshold.Get(s.settingsCtx()))
 	if threshold <= 0 {
 		return ""
 	}
@@ -259,8 +221,8 @@ func (s *Store) summarizeCronFailureForDelivery(job *Job, errText *string) strin
 	if errText != nil && *errText != "" {
 		text = *errText
 	}
-	text = pystr.Strip(text)
-	lower := pystr.Lower(text)
+	text = strings.TrimSpace(text)
+	lower := strings.ToLower(text)
 	if strings.HasPrefix(lower, "script timed out") {
 		return scriptTimeoutNotice(s.home, name, id)
 	}
@@ -286,9 +248,9 @@ func (s *Store) summarizeCronFailureForDelivery(job *Job, errText *string) strin
 	}
 	cleaned, _ := leadingExcNameRe.Replace(string(runes), "", -1, -1)
 	collapsed, _ := whitespaceRunRe.Replace(cleaned, " ", -1, -1)
-	cleaned = strings.TrimRight(pystr.Strip(collapsed), ".")
+	cleaned = strings.TrimRight(strings.TrimSpace(collapsed), ".")
 	if cr := []rune(cleaned); len(cr) > 180 {
-		cleaned = pystr.Rstrip(string(cr[:177])) + "..."
+		cleaned = strings.TrimRightFunc(string(cr[:177]), unicode.IsSpace) + "..."
 	}
 	message := genericFailureNotice(s.home, name, id, cleaned)
 	if isImport, _ := importErrorRe.MatchString(lower); !job.NoAgent && isImport {
@@ -300,11 +262,9 @@ func (s *Store) summarizeCronFailureForDelivery(job *Job, errText *string) strin
 	return message
 }
 
-const defaultFailureRepeatAlertHours = 6.0
-
 // Hours an alerted incident stays quiet before a reminder ping, zero or less re alerts every run
 func (s *Store) failureRepeatAlertHours() float64 {
-	return s.cronConfigFloat("failure_repeat_alert_hours", defaultFailureRepeatAlertHours)
+	return settings.CronFailureRepeatAlertHours.Get(s.settingsCtx()).Hours()
 }
 
 // True when an alerted incident pinged inside the repeat alert cooldown
@@ -397,16 +357,14 @@ type CronPromptInjectionBlocked struct{ Msg string }
 
 func (e *CronPromptInjectionBlocked) Error() string { return e.Msg }
 
-// Toolsets a cron agent never gets plus the user's agent.disabled_toolsets
-func resolveCronDisabledToolsets(cfg config.Tree) []string {
-	cronCfg, _ := cfg["cron"].(map[string]any)
+// Toolsets a cron agent never gets plus the user's agent.disabled_toolsets, read for the profile of ctx
+func resolveCronDisabledToolsets(ctx context.Context) []string {
 	disabled := []string{"cronjob", "messaging", "clarify"}
-	if pyrepr.Truthy(cronCfg["allow_agent_scheduling"]) {
+	if settings.CronAllowAgentScheduling.Get(ctx) {
 		disabled = []string{"messaging", "clarify"}
 	}
-	agentCfg, _ := cfg["agent"].(map[string]any)
-	for _, name := range tools.ParseConfigStringList(agentCfg["disabled_toolsets"]) {
-		name = pystr.Strip(name)
+	for _, name := range settings.AgentDisabledToolsets.Strings(ctx) {
+		name = strings.TrimSpace(name)
 		if name != "" && !containsString(disabled, name) {
 			disabled = append(disabled, name)
 		}
@@ -489,8 +447,8 @@ func resolveCronEnabledToolsets(ctx context.Context, job *Job, cfg config.Tree) 
 	return out, nil
 }
 
-// Reasoning config for the run, a valid per job pin first then config resolution
-func (s *Store) resolveJobReasoningConfig(job *Job, cfg config.Tree, model string) map[string]any {
+// Reasoning config for the run, a valid per job pin first then the reasoning settings of the store's profile
+func (s *Store) resolveJobReasoningConfig(ctx context.Context, job *Job, model string) map[string]any {
 	if job.ReasoningEffort != nil {
 		pinned := *job.ReasoningEffort
 		if parsed := config.ParseReasoningEffort(pinned); parsed != nil {
@@ -502,11 +460,7 @@ func (s *Store) resolveJobReasoningConfig(job *Job, cfg config.Tree, model strin
 			"action=update job_id=%s reasoning_effort=<level>` (valid: none, "+
 			"minimal, low, medium, high, xhigh, max, ultra).", jobIDOrUnknown(job), pyrepr.StrRepr(pinned), jobIDOrUnknown(job)))
 	}
-	var tree any = map[string]any(cfg)
-	if cfg == nil {
-		tree = map[string]any{}
-	}
-	return config.ResolveReasoningConfig(tree, model)
+	return settings.ReasoningConfig(home.WithOverride(ctx, s.home), model)
 }
 
 // Job id or a question mark for log lines
@@ -525,10 +479,10 @@ const (
 // Evidence of a failure the agent reported with the first line marker, false for any other response
 func cronFailureMarkerError(text string) (string, bool) {
 	lines := pystr.Splitlines(text, false)
-	if len(lines) == 0 || pystr.Rstrip(lines[0]) != CronFailureMarker {
+	if len(lines) == 0 || strings.TrimRightFunc(lines[0], unicode.IsSpace) != CronFailureMarker {
 		return "", false
 	}
-	evidence := pystr.Strip(strings.Join(lines[1:], "\n"))
+	evidence := strings.TrimSpace(strings.Join(lines[1:], "\n"))
 	if evidence == "" {
 		evidence = "Cron agent reported failure."
 	}

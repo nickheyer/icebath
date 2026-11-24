@@ -940,7 +940,7 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 		}
 		if worker != nil {
 			fields["worker_session"] = pyjson.ObjectOf("id", worker.GetOr("id", nil),
-				"source", strings.ToLower(pystr.Strip(pyStrOf(groupTruthyOr(worker.GetOr("source", nil), "")))),
+				"source", strings.ToLower(strings.TrimSpace(pyStrOf(groupTruthyOr(worker.GetOr("source", nil), "")))),
 				"title", groupTruthyOr(worker.GetOr("title", nil), ""), "last_active", groupTruthyOr(worker.GetOr("last_active", nil), int64(0)))
 		}
 		return nil

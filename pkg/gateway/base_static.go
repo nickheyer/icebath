@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"fmt"
 	"regexp"
 	"strings"
@@ -28,14 +30,14 @@ type ImageRef struct {
 
 // Reports whether the URL points at an animated GIF
 func isAnimationURL(rawURL string) bool {
-	return strings.HasSuffix(strings.SplitN(pystr.Lower(rawURL), "?", 2)[0], ".gif")
+	return strings.HasSuffix(strings.SplitN(strings.ToLower(rawURL), "?", 2)[0], ".gif")
 }
 
 // Markdown images whose URL looks like an image and every HTML img URL, with only those tags removed from the text
 func ExtractImages(content string) ([]ImageRef, string) {
 	var images []ImageRef
 	for _, m := range MDImageTagPattern.FindAllStringSubmatch(content, -1) {
-		lowered := pystr.Lower(m[2])
+		lowered := strings.ToLower(m[2])
 		for _, marker := range imageURLMarkers {
 			if strings.HasSuffix(lowered, marker) || strings.Contains(lowered, marker) {
 				images = append(images, ImageRef{URL: m[2], Alt: m[1]})
@@ -65,13 +67,13 @@ func ExtractImages(content string) ([]ImageRef, string) {
 			return match
 		})
 	}
-	return images, pystr.Strip(threeNewlinesRE.ReplaceAllString(cleaned, "\n\n"))
+	return images, strings.TrimSpace(threeNewlinesRE.ReplaceAllString(cleaned, "\n\n"))
 }
 
 // Final code fence state and language after walking the lines and toggling on each fence line
 func FenceStateAfter(text string, inCode bool, lang string) (bool, string) {
 	for _, line := range strings.Split(text, "\n") {
-		stripped := pystr.Strip(line)
+		stripped := strings.TrimSpace(line)
 		if !strings.HasPrefix(stripped, "```") {
 			continue
 		}
@@ -161,7 +163,7 @@ func TruncateMessage(content string, maxLength int, lenFn func(string) int) []st
 			}
 		}
 		chunkBody := string(remaining[:splitAt])
-		remaining = []rune(pystr.Lstrip(string(remaining[splitAt:])))
+		remaining = []rune(strings.TrimLeftFunc(string(remaining[splitAt:]), unicode.IsSpace))
 		carried := carryLang != nil
 		carriedLang := ""
 		if carried {

@@ -57,8 +57,6 @@ func TestGatewayParserNamespaceDestsAndDefaults(t *testing.T) {
 		{[]string{"uninstall"}, map[string]any{"gateway_command": "uninstall", "system": false}},
 		{[]string{"list"}, map[string]any{"gateway_command": "list"}},
 		{[]string{"setup"}, map[string]any{"gateway_command": "setup"}},
-		{[]string{"migrate-legacy"}, map[string]any{"gateway_command": "migrate-legacy", "dry_run": false, "yes": false}},
-		{[]string{"migrate-legacy", "--dry-run", "-y"}, map[string]any{"dry_run": true, "yes": true}},
 		{[]string{"migrate"}, map[string]any{"gateway_command": "migrate", "multiplex": false, "dry_run": false, "yes": false}},
 		{[]string{"migrate", "--multiplex", "--dry-run", "--yes"}, map[string]any{"multiplex": true, "dry_run": true, "yes": true}},
 		{[]string{"enroll"}, map[string]any{"gateway_command": "enroll", "token": nil, "connector_url": nil, "gateway_id": nil, "wake_url": nil}},

@@ -35,7 +35,7 @@ var GitHubTapProviders = map[string]string{
 var providerFilterValues = func() map[string]bool {
 	out := map[string]bool{}
 	for _, v := range GitHubTapProviders {
-		out[pystr.Lower(v)] = true
+		out[strings.ToLower(v)] = true
 	}
 	return out
 }()
@@ -50,12 +50,12 @@ func githubProviderFor(repo string) string {
 	if repo == "" {
 		return ""
 	}
-	return GitHubTapProviders[pystr.Lower(pystr.Strip(repo))]
+	return GitHubTapProviders[strings.ToLower(strings.TrimSpace(repo))]
 }
 
 // Results whose extra provider equals the requested provider ignoring case
 func filterResultsByProvider(results []SkillMeta, provider string) []SkillMeta {
-	want := pystr.Lower(pystr.Strip(provider))
+	want := strings.ToLower(strings.TrimSpace(provider))
 	out := []SkillMeta{}
 	for _, r := range results {
 		got := ""
@@ -64,7 +64,7 @@ func filterResultsByProvider(results []SkillMeta, provider string) []SkillMeta {
 				got = pyrepr.Str(v)
 			}
 		}
-		if pystr.Lower(got) == want {
+		if strings.ToLower(got) == want {
 			out = append(out, r)
 		}
 	}
@@ -73,7 +73,7 @@ func filterResultsByProvider(results []SkillMeta, provider string) []SkillMeta {
 
 // Normalized provider filter when the source filter names a tap provider, else empty
 func providerFilterOf(sourceFilter string) string {
-	value := pystr.Lower(pystr.Strip(sourceFilter))
+	value := strings.ToLower(strings.TrimSpace(sourceFilter))
 	if providerFilterValues[value] {
 		return value
 	}
@@ -467,10 +467,10 @@ func (g *GitHubSource) Search(ctx context.Context, query string, limit int) ([]S
 // Substring matches of every tap of the provider, deduped by trust and cut to limit
 func (g *GitHubSource) SearchProvider(ctx context.Context, query string, limit int, providerFilter string) ([]SkillMeta, error) {
 	results := []SkillMeta{}
-	ql := pystr.Lower(query)
-	want := pystr.Lower(pystr.Strip(providerFilter))
+	ql := strings.ToLower(query)
+	want := strings.ToLower(strings.TrimSpace(providerFilter))
 	for _, tap := range g.Taps {
-		if want != "" && pystr.Lower(githubProviderFor(tap.Repo)) != want {
+		if want != "" && strings.ToLower(githubProviderFor(tap.Repo)) != want {
 			continue
 		}
 		var err error

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -30,7 +29,7 @@ func checkFileLengthInvariant(ctx context.Context, conn state.SQLiteConn) error 
 	}
 	mode := ""
 	if row != nil && len(row.Vals) > 0 && row.Vals[0] != nil {
-		mode = pystr.Lower(fmt.Sprint(row.Vals[0]))
+		mode = strings.ToLower(fmt.Sprint(row.Vals[0]))
 	}
 	if mode == "wal" {
 		return nil
@@ -54,7 +53,7 @@ func isBusyError(err error) bool {
 	if !ok || class != state.SQLiteOperationalError {
 		return false
 	}
-	text := pystr.Lower(state.ErrText(err))
+	text := strings.ToLower(state.ErrText(err))
 	return strings.Contains(text, "database is locked") || strings.Contains(text, "database is busy")
 }
 

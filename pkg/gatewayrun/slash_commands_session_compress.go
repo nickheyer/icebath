@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -176,7 +175,7 @@ func (r *GatewayRunner) runManualCompression(ctx context.Context, source *gatewa
 	if err != nil {
 		return "", err
 	}
-	if pystr.Lower(pyrepr.Str(pyrepr.Or(runtimeKwargs["api_mode"], ""))) == "codex_app_server" {
+	if strings.ToLower(pyrepr.Str(pyrepr.Or(runtimeKwargs["api_mode"], ""))) == "codex_app_server" {
 		return r.compressCodexAppServerSession(ctx, sessionKey, entry.SessionID)
 	}
 	if !pyrepr.Truthy(runtimeKwargs["api_key"]) {

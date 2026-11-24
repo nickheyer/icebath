@@ -21,7 +21,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -31,6 +30,8 @@ const (
 	defaultKittenTTSModel = "KittenML/kitten-tts-nano-0.8-int8"
 	defaultKittenTTSVoice = "Jasper"
 	defaultPiperVoice     = "en_US-lessac-medium"
+	defaultNeuTTSModel    = "neuphonic/neutts-air-q4-gguf"
+	defaultNeuTTSDevice   = "cpu"
 )
 
 // LRU bound of each local model cache
@@ -201,11 +202,7 @@ func SpeechSample(ctx context.Context) (string, string, error) {
 }
 
 // NeuTTS synthesis in a helper process so the large model exits after use
-func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
-	neuttsConfig, err := orEmptyDict(ttsConfig, "neutts")
-	if err != nil {
-		return "", err
-	}
+func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
 	samples, err := neuttsSamplesDir(ctx, env)
 	if err != nil {
 		return "", err
@@ -215,26 +212,20 @@ func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string
 		return "", err
 	}
 	wavPath := wavSidecarPath(outputPath)
-	pick := func(key string, def string) string {
-		v := dictGetDefault(neuttsConfig, key, "")
-		if !pyTruthy(v) {
-			return def
-		}
-		return pyrepr.Str(v)
-	}
+	n := req.NeuTTS
 	cmd := append(append([]string(nil), python...), "-c", "import os\n"+shortEspeakDataScript+neuttsSynthScript,
 		"--text", text, "--out", wavPath,
-		"--ref-audio", pick("ref_audio", filepath.Join(samples, "jo.wav")),
-		"--ref-text", pick("ref_text", filepath.Join(samples, "jo.txt")),
-		"--model", pyrepr.Str(dictGetDefault(neuttsConfig, "model", "neuphonic/neutts-air-q4-gguf")),
-		"--device", pyrepr.Str(dictGetDefault(neuttsConfig, "device", "cpu")))
+		"--ref-audio", textOr(n.RefAudio, filepath.Join(samples, "jo.wav")),
+		"--ref-text", textOr(n.RefText, filepath.Join(samples, "jo.txt")),
+		"--model", textOr(n.Model, defaultNeuTTSModel),
+		"--device", textOr(n.Device, defaultNeuTTSDevice))
 	result, err := runTTSHelper(cmd, 120)
 	if err != nil {
 		return "", err
 	}
 	if result.ReturnCode != 0 {
 		var errorLines []string
-		for _, l := range pystr.Splitlines(pystr.Strip(result.Stderr), false) {
+		for _, l := range pystr.Splitlines(strings.TrimSpace(result.Stderr), false) {
 			if !strings.HasPrefix(l, "OK:") {
 				errorLines = append(errorLines, l)
 			}
@@ -281,27 +272,22 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
-// Loaded or cached Piper voice of the config with its section
-func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, ttsConfig map[string]any) (localVoice, map[string]any, error) {
-	piperConfig := ttsSection(ttsConfig, "piper")
-	voiceName := defaultPiperVoice
-	if pyTruthy(piperConfig["voice"]) {
-		voiceName = pyrepr.Str(piperConfig["voice"])
-	}
+// Loaded or cached Piper voice of the request
+func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, req *ttsRequest) (localVoice, error) {
+	pc := req.Piper
+	voiceName := textOr(pc.Voice, defaultPiperVoice)
 	voicesDir := home.IcebathDir(ttsHome(ctx, env), "cache/piper-voices", "piper_voices_cache")
-	if pyTruthy(piperConfig["voices_dir"]) {
-		voicesDir = pypath.Expanduser(pyrepr.Str(piperConfig["voices_dir"]))
+	if v := strings.TrimSpace(pc.VoicesDir); v != "" {
+		voicesDir = pypath.Expanduser(v)
 	}
-	useCUDA := pyTruthy(dictGetDefault(piperConfig, "use_cuda", false))
+	useCUDA := pc.UseCUDA
 	files, err := resolvePiperVoice(ctx, voiceName, voicesDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	for key, scale := range map[string]*float64{"length_scale": &files.LengthScale, "noise_scale": &files.NoiseScale, "noise_w_scale": &files.NoiseW} {
-		if configured, ok := piperConfig[key]; ok {
-			if *scale, err = ttsFloat(configured); err != nil {
-				return nil, nil, err
-			}
+	for configured, scale := range map[*float64]*float64{pc.LengthScale: &files.LengthScale, pc.NoiseScale: &files.NoiseScale, pc.NoiseWScale: &files.NoiseW} {
+		if configured != nil {
+			*scale = *configured
 		}
 	}
 	cacheKey := fmt.Sprintf("%s::cuda=%t::scales=%g,%g,%g", files.Model, useCUDA, files.LengthScale, files.NoiseScale, files.NoiseW)
@@ -315,9 +301,9 @@ func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, ttsConfig map[
 		return voice, nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return v.(localVoice), piperConfig, nil
+	return v.(localVoice), nil
 }
 
 // Samples scaled to full range when asked, multiplied by the volume and clipped
@@ -351,24 +337,17 @@ func pcm16(samples []float32) []byte {
 }
 
 // Piper synthesis in the native speech engine to WAV, then the requested container
-func generatePiperTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
-	voice, piperConfig, err := loadPiperVoiceForConfig(ctx, env, ttsConfig)
+func generatePiperTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
+	voice, err := loadPiperVoiceForConfig(ctx, env, req)
 	if err != nil {
 		return "", err
 	}
-	speakerID := 0
-	if n, ok := dictGetDefault(piperConfig, "speaker_id", 0).(int); ok {
-		speakerID = n
-	}
-	volume, err := ttsFloat(dictGetDefault(piperConfig, "volume", 1.0))
+	speed, _ := req.speedFor(nil)
+	samples, sampleRate, err := voice.Speak(text, max(0, req.Piper.SpeakerID), float32(speed))
 	if err != nil {
 		return "", err
 	}
-	samples, sampleRate, err := voice.Speak(text, speakerID, 1)
-	if err != nil {
-		return "", err
-	}
-	samples = shapePiperAudio(samples, pyTruthy(dictGetDefault(piperConfig, "normalize_audio", true)), volume)
+	samples = shapePiperAudio(samples, req.Piper.NormalizeAudio, req.Piper.Volume)
 	wavPath := wavSidecarPath(outputPath)
 	if err := os.WriteFile(wavPath, wrapPCMAsWAV(pcm16(samples), sampleRate, 1, 2), 0o666); err != nil {
 		return "", err
@@ -376,13 +355,12 @@ func generatePiperTTS(ctx context.Context, env *tools.Env, text, outputPath stri
 	return finalizeWAVOutput(wavPath, outputPath)
 }
 
-// Loaded or cached KittenTTS model of the config with its section
-func loadKittenTTSModelForConfig(ctx context.Context, ttsConfig map[string]any) (*localTTSWorker, map[string]any, error) {
+// Loaded or cached KittenTTS model of the request
+func loadKittenTTSModelForConfig(ctx context.Context, req *ttsRequest) (*localTTSWorker, error) {
 	if err := ttsImportKittenTTS(ctx); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	ktConfig := ttsSection(ttsConfig, "kittentts")
-	modelName := pyrepr.Str(dictGetDefault(ktConfig, "model", defaultKittenTTSModel))
+	modelName := textOr(req.KittenTTS.Model, defaultKittenTTSModel)
 	v, err := ttsCacheGetOrLoad(kittenTTSModelCache, modelName, func() (any, error) {
 		pkgLog().Info(fmt.Sprintf("[KittenTTS] Loading model: %s", modelName))
 		w, err := startLocalTTSWorker(ctx, map[string]any{"model_name": modelName})
@@ -393,21 +371,22 @@ func loadKittenTTSModelForConfig(ctx context.Context, ttsConfig map[string]any) 
 		return w, nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return v.(*localTTSWorker), ktConfig, nil
+	return v.(*localTTSWorker), nil
 }
 
 // KittenTTS synthesis at 24kHz to WAV then the requested container
-func generateKittenTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
-	model, ktConfig, err := loadKittenTTSModelForConfig(ctx, ttsConfig)
+func generateKittenTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
+	model, err := loadKittenTTSModelForConfig(ctx, req)
 	if err != nil {
 		return "", err
 	}
+	kt := req.KittenTTS
+	speed, _ := req.speedFor(kt.Speed)
 	wavPath := wavSidecarPath(outputPath)
 	if _, err := model.Request(map[string]any{"text": text, "wav_path": wavPath,
-		"voice": dictGetDefault(ktConfig, "voice", defaultKittenTTSVoice), "speed": dictGetDefault(ktConfig, "speed", 1.0),
-		"clean_text": dictGetDefault(ktConfig, "clean_text", true)}); err != nil {
+		"voice": textOr(kt.Voice, defaultKittenTTSVoice), "speed": speed, "clean_text": kt.CleanText}); err != nil {
 		return "", err
 	}
 	return finalizeWAVOutput(wavPath, outputPath)

@@ -69,7 +69,7 @@ func SystemdUnitIsActive(ctx context.Context, system bool) (bool, error) {
 		}
 		return false, err
 	}
-	return pystr.Strip(res.Stdout) == "active", nil
+	return strings.TrimSpace(res.Stdout) == "active", nil
 }
 
 // Selected scope and whether its unit is active
@@ -87,7 +87,7 @@ func parseKVPairs(items []string) map[string]string {
 	out := map[string]string{}
 	for _, item := range items {
 		if k, v, ok := strings.Cut(item, "="); ok {
-			out[k] = pystr.Strip(v)
+			out[k] = strings.TrimSpace(v)
 		}
 	}
 	return out
@@ -146,15 +146,15 @@ func SyncIcebathHomeFromSystemdUnit(ctx context.Context, system bool) error {
 	if err != nil {
 		return err
 	}
-	unitHome = pystr.Strip(unitHome)
+	unitHome = strings.TrimSpace(unitHome)
 	if unitHome == "" {
 		props, err := systemctlShow(ctx, []string{"Environment"}, true)
 		if err != nil {
 			return err
 		}
-		unitHome = pystr.Strip(parseKVPairs(pystr.SplitWhitespace(props["Environment"], -1))["ICEBATH_HOME"])
+		unitHome = strings.TrimSpace(parseKVPairs(pystr.SplitWhitespace(props["Environment"], -1))["ICEBATH_HOME"])
 	}
-	if unitHome != "" && pystr.Strip(os.Getenv("ICEBATH_HOME")) != unitHome {
+	if unitHome != "" && strings.TrimSpace(os.Getenv("ICEBATH_HOME")) != unitHome {
 		os.Setenv("ICEBATH_HOME", unitHome)
 	}
 	return nil

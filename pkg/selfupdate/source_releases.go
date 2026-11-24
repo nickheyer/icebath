@@ -68,7 +68,7 @@ func sourceRepository(ctx context.Context, gitCmd []string, cwd string) (string,
 		if err != nil {
 			return "", err
 		}
-		if match := githubOriginRE.FindStringSubmatch(pystr.Strip(result.Stdout)); result.ReturnCode == 0 && match != nil {
+		if match := githubOriginRE.FindStringSubmatch(strings.TrimSpace(result.Stdout)); result.ReturnCode == 0 && match != nil {
 			return match[1], nil
 		}
 	}
@@ -109,7 +109,7 @@ func headContaining(ctx context.Context, gitCmd []string, cwd, commit, repositor
 	if err != nil {
 		return "", err
 	}
-	head := pystr.Strip(result.Stdout)
+	head := strings.TrimSpace(result.Stdout)
 	if !sourceSHARE.MatchString(head) {
 		return "", nil
 	}
@@ -119,7 +119,7 @@ func headContaining(ctx context.Context, gitCmd []string, cwd, commit, repositor
 	}
 	if ancestry != nil && ancestry.ReturnCode == 1 {
 		shallow := sourceProbe(ctx, gitCmd, cwd, "rev-parse", "--is-shallow-repository")
-		if shallow != nil && pystr.Strip(shallow.Stdout) == "false" {
+		if shallow != nil && strings.TrimSpace(shallow.Stdout) == "false" {
 			return "", nil
 		}
 	}

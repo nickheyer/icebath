@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Blueprint block present but malformed, the ValueError subclass of tools/blueprints.py
@@ -69,7 +68,7 @@ func ParseBlueprint(skillMD string) (*BlueprintSpec, error) {
 		}
 		return def
 	}
-	schedule := pystr.Strip(pyrepr.Str(get("schedule", "")))
+	schedule := strings.TrimSpace(pyrepr.Str(get("schedule", "")))
 	if schedule == "" {
 		return nil, &BlueprintError{"blueprint.schedule is required and must be non-empty"}
 	}
@@ -78,8 +77,8 @@ func ParseBlueprint(skillMD string) (*BlueprintSpec, error) {
 	if toolsets != nil && !isList {
 		return nil, &BlueprintError{"blueprint.enabled_toolsets must be a list when present"}
 	}
-	spec := &BlueprintSpec{SkillName: pystr.Strip(pyrepr.Str(fmGet(fm, "name", ""))), Schedule: schedule,
-		Deliver: pystr.Strip(pyrepr.Str(get("deliver", "origin"))), NoAgent: pyrepr.Truthy(get("no_agent", false)), Raw: bp}
+	spec := &BlueprintSpec{SkillName: strings.TrimSpace(pyrepr.Str(fmGet(fm, "name", ""))), Schedule: schedule,
+		Deliver: strings.TrimSpace(pyrepr.Str(get("deliver", "origin"))), NoAgent: pyrepr.Truthy(get("no_agent", false)), Raw: bp}
 	if spec.Deliver == "" {
 		spec.Deliver = "origin"
 	}
@@ -87,10 +86,10 @@ func ParseBlueprint(skillMD string) (*BlueprintSpec, error) {
 		spec.Prompt = strPtr(pyrepr.Str(p))
 	}
 	if m := bp["model"]; pyrepr.Truthy(m) {
-		spec.Model = strPtr(pystr.Strip(pyrepr.Str(m)))
+		spec.Model = strPtr(strings.TrimSpace(pyrepr.Str(m)))
 	}
 	if p := bp["provider"]; pyrepr.Truthy(p) {
-		spec.Provider = strPtr(pystr.Strip(pyrepr.Str(p)))
+		spec.Provider = strPtr(strings.TrimSpace(pyrepr.Str(p)))
 	}
 	for _, t := range list {
 		spec.EnabledToolsets = append(spec.EnabledToolsets, pyrepr.Str(t))

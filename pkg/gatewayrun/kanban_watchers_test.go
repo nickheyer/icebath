@@ -104,7 +104,7 @@ func TestAutoDecomposeTickReadsLaunchProfileSecretsUnderMultiplex(t *testing.T) 
 	dispatcherBoardSlugs = func() ([]string, error) { return []string{"default"}, nil }
 	kanbanDecomposeListTriageIDs = func(context.Context, *string) ([]string, error) { return []string{"t1"}, nil }
 	seen := ""
-	kanbanDecomposeTask = func(ctx context.Context, taskID string, author *string, timeout *int64) (*kanban.DecomposeOutcome, error) {
+	kanbanDecomposeTask = func(ctx context.Context, taskID string, author *string) (*kanban.DecomposeOutcome, error) {
 		seen, _, _ = provider.GetSecret(ctx, "ANTHROPIC_API_KEY")
 		return &kanban.DecomposeOutcome{OK: true}, nil
 	}

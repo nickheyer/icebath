@@ -50,18 +50,16 @@ func isRegistryValueError(err error) bool {
 }
 
 func TestRegistrationRequiresExplicitProfileEnablement(t *testing.T) {
-	ctx, _ := vaultProfile(t)
+	ctx, env := vaultProfile(t)
 	loginRegistryFixture(t)
 	pin(t, &isLoginBackendEnabledFn, func(context.Context, string) (bool, error) { return false, nil })
-	cfg := map[string]any{}
-	pin(t, &vaultCfgFn, func(context.Context) (map[string]any, error) { return cfg, nil })
 	if err := RegisterLoginBackendProvider(ctx, exampleBackend(t), ""); err != nil {
 		t.Fatal(err)
 	}
 	if backend, err := LoginBackendForHandle(ctx, "example:one"); err != nil || backend != nil {
 		t.Fatalf("backend %v %v", backend, err)
 	}
-	cfg = map[string]any{"example": map[string]any{"enabled": true}}
+	writeFile(t, filepath.Join(env.Home, "config.yaml"), "vault:\n  example:\n    enabled: true\n")
 	if backend, err := LoginBackendForHandle(ctx, "example:one"); err != nil || backend == nil || backend.Name() != "example" {
 		t.Fatalf("backend %v %v", backend, err)
 	}

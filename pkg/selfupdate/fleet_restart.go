@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -165,7 +164,7 @@ func restartIdentitySHA(ctx context.Context) (sha string) {
 		return sha
 	}
 	if fields, ok := fleetObligationFields(ctx); ok {
-		if sha = pystr.Strip(fields["expected_sha"]); sha != "" {
+		if sha = strings.TrimSpace(fields["expected_sha"]); sha != "" {
 			return sha
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Source label older builds stored client app chats under, also given to a bound client app history row
@@ -58,7 +57,7 @@ func NotClientLabels() map[string]bool {
 // Whether the source is a client app's own label rather than a surface, platform or automation label
 func ClientLabel(source any) bool {
 	text, ok := source.(string)
-	return ok && pystr.Strip(text) != "" && !NotClientLabels()[text]
+	return ok && strings.TrimSpace(text) != "" && !NotClientLabels()[text]
 }
 
 func rowGet(row *pyjson.Object, key string) any {

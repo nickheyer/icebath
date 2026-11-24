@@ -208,7 +208,7 @@ func (r *Runner) loadDataset() error {
 		return err
 	}
 	for n, line := range splitLines(text) {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -357,7 +357,7 @@ func (r *Runner) scanCompletedPrompts() map[string]bool {
 			continue
 		}
 		for _, line := range splitLines(text) {
-			decoded, err := pyjson.Loads(pystr.Strip(line))
+			decoded, err := pyjson.Loads(strings.TrimSpace(line))
 			if err != nil {
 				continue
 			}
@@ -379,7 +379,7 @@ func mustStrip(v any) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
 // Human prompt text of a dataset entry as resume matches it, the flat prompt or the first user turn of its conversations

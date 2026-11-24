@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // IRC wizard of icebath gateway setup writing the server, identity, auth and access settings to the home .env
@@ -24,7 +23,7 @@ func InteractiveSetup(ctx context.Context) error {
 			s.PrintWarning(what + " is required — skipping IRC setup")
 			return false, nil
 		}
-		return true, s.SaveEnvValue(ctx, env, pystr.Strip(value))
+		return true, s.SaveEnvValue(ctx, env, strings.TrimSpace(value))
 	}
 	s.PrintHeader("IRC")
 	existingServer, err := get("IRC_SERVER")

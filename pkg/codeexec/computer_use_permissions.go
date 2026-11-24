@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -64,7 +63,7 @@ func permissionsJSONOut(ctx context.Context, env *tools.Env, binary string, time
 	if err != nil {
 		return nil, err
 	}
-	raw := pystr.Strip(proc.Stdout)
+	raw := strings.TrimSpace(proc.Stdout)
 	if raw == "" {
 		return nil, nil
 	}
@@ -180,7 +179,7 @@ func computerUseStatus(ctx context.Context, env *tools.Env, driverCmd *string) (
 		return out, nil
 	}
 	if proc, err := permissionsRun(ctx, env, binary, 5, "--version"); err == nil {
-		if v := pystr.Strip(proc.Stdout); v != "" {
+		if v := strings.TrimSpace(proc.Stdout); v != "" {
 			out.Set("version", v)
 		}
 	}

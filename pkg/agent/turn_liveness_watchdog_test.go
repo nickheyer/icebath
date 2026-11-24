@@ -83,11 +83,10 @@ func watchdogAgent(t *testing.T, db *watchdogDB) *AIAgent {
 // Arms the watchdog fast through the agent.turn_liveness config section
 func watchdogConfig(t *testing.T) {
 	t.Helper()
-	prev := turnLivenessConfig
-	turnLivenessConfig = func(context.Context) map[string]any {
-		return map[string]any{"agent": map[string]any{"turn_liveness": map[string]any{"timeout_s": 0.3, "poll_s": 0.05}}}
-	}
-	t.Cleanup(func() { turnLivenessConfig = prev })
+	prev := turnLivenessSettings
+	timeout := 0.3
+	turnLivenessSettings = func(context.Context) (*float64, float64) { return &timeout, 0.05 }
+	t.Cleanup(func() { turnLivenessSettings = prev })
 }
 
 // Drives the facade with a fake inner conversation loop

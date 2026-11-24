@@ -94,7 +94,7 @@ func ownerProfileValue(adapter gateway.PlatformAdapter) any {
 
 // Collapses whitespace, lowercases and drops every non word non space rune of a transcript
 func normalizeVoiceTranscript(transcript string) string {
-	lowered := pystr.Lower(strings.Join(pystr.SplitWhitespace(transcript, -1), " "))
+	lowered := strings.ToLower(strings.Join(pystr.SplitWhitespace(transcript, -1), " "))
 	var b strings.Builder
 	for _, r := range lowered {
 		if pystr.IsAlnum(r) || r == '_' || pystr.IsSpace(r) {

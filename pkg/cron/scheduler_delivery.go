@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -17,12 +16,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -274,7 +272,7 @@ func (s *Store) seedCronSession(ctx context.Context, job *Job, adapter any, plat
 
 // Seeds the brief into the session an in thread reply resolves to
 func (s *Store) seedCronThreadSession(ctx context.Context, job *Job, adapter any, platform, chatID, threadID, mirrorText string, chatName *string, isDM bool, scopeID *string) {
-	text := pystr.Strip(mirrorText)
+	text := strings.TrimSpace(mirrorText)
 	if text == "" {
 		return
 	}
@@ -297,7 +295,7 @@ func (s *Store) seedCronThreadSession(ctx context.Context, job *Job, adapter any
 
 // Seeds the flat session an in channel delivery continues in, true when the seed landed
 func (s *Store) seedCronChannelSession(ctx context.Context, job *Job, adapter any, platform, chatID, mirrorText string, isDM bool, userID, chatName, scopeID *string) bool {
-	text := pystr.Strip(mirrorText)
+	text := strings.TrimSpace(mirrorText)
 	if text == "" {
 		return false
 	}
@@ -320,25 +318,12 @@ func (s *Store) seedCronChannelSession(ctx context.Context, job *Job, adapter an
 	return ok
 }
 
-// Positive cron.standalone_send_timeout_seconds, 60 otherwise
+// Seconds a send outside a chat session may take from cron.standalone_send_timeout_seconds, its default when not positive
 func (s *Store) getStandaloneSendTimeout() int {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return 60
+	if v := int(settings.CronStandaloneSendTimeoutSeconds.Get(s.settingsCtx()) / time.Second); v > 0 {
+		return v
 	}
-	cronCfg, ok := cfg["cron"].(map[string]any)
-	if !ok {
-		return 60
-	}
-	raw, present := cronCfg["standalone_send_timeout_seconds"]
-	if !present {
-		return 60
-	}
-	v, err := pyint.Of(raw)
-	if err != nil || !v.IsInt64() || v.Int64() <= 0 {
-		return 60
-	}
-	return int(v.Int64())
+	return int(settings.CronStandaloneSendTimeoutSeconds.Default / time.Second)
 }
 
 // Bot Chat turn text framing the redacted job output
@@ -663,20 +648,6 @@ func (s *Store) isChannelDMTopic(ctx context.Context, adapter any, chatID string
 		s.log.Info(fmt.Sprintf("Job '%s': chat=%s is a channel — routing via direct_messages_topic_id", jobID, chatID))
 	}
 	return isChannel
-}
-
-// Push notification for deliveries unless cron.delivery.notify is false
-func cronDeliveryNotifyEnabled(cfg config.Tree) bool {
-	cronCfg, ok := cfg["cron"].(map[string]any)
-	if !ok {
-		return true
-	}
-	delivery, ok := cronCfg["delivery"].(map[string]any)
-	if !ok {
-		return true
-	}
-	v, present := delivery["notify"]
-	return !present || v != false
 }
 
 // Persists the unverified targets and the queued Bot Chat receipts when either changed
@@ -1069,7 +1040,7 @@ func (s *Store) deliverViaLiveAdapter(ctx context.Context, t *targetDelivery, cl
 			delivered = false
 		}
 	}()
-	text := pystr.Strip(cleaned)
+	text := strings.TrimSpace(cleaned)
 	ok, timedOut := true, false
 	var messageID any
 	if text == "" && len(media) == 0 {
@@ -1121,7 +1092,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 	if interpreterShuttingDown(nil) {
 		return warned(shutdownMsg)
 	}
-	if pystr.Strip(content) == "" && len(media) == 0 {
+	if strings.TrimSpace(content) == "" && len(media) == 0 {
 		return warned("standalone send skipped (empty text and no media) for " + t.where())
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
@@ -1338,7 +1309,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 		s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, nil)
 		return s.unresolvedDeliveryOutcome(job, forFailure), nil
 	}
-	external := os.Getenv(externalWorkerEnv)
+	external := externalWorkerOf(ctx)
 	if external != "" && adapters == nil && job.ExecutionID != nil && external == *job.ExecutionID && anyNonBotChat(targets) {
 		s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, nil)
 		q := openDeliveryQueue(s)
@@ -1363,18 +1334,9 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 		}
 		return errText, nil
 	}
-	wrap := true
-	userCfg, cfgErr := s.loadConfig()
-	if cfgErr == nil {
-		if cronCfg, ok := userCfg["cron"].(map[string]any); ok {
-			if v, ok := cronCfg["wrap_response"]; ok {
-				wrap = pyTruthy(v)
-			}
-		}
-	} else {
-		userCfg = nil
-	}
-	notify := cronDeliveryNotifyEnabled(userCfg)
+	sctx := home.WithOverride(ctx, s.home)
+	wrap := settings.CronWrapResponse.Get(sctx)
+	notify := settings.CronDeliveryNotify.Get(sctx)
 	var unverified []string
 	deliveryContent := content
 	if wrap {
@@ -1394,12 +1356,12 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	if dropped := requested - len(media); dropped > 0 {
 		policyDropErrors = []string{fmt.Sprintf("%d media attachment(s) dropped by media path policy (missing file, denied prefix, or strict-mode miss); see gateway.strict / media_delivery_allow_dirs in config.yaml", dropped)}
 	}
-	mirrorEnabled := s.cronMirrorDeliveryEnabled(job, userCfg)
+	mirrorEnabled := s.cronMirrorDeliveryEnabled(sctx, job)
 	_, mirrorText, err := gateway.ExtractMedia(ctx, content)
 	if err != nil {
 		return nil, err
 	}
-	mirrorText = s.redactCronPayload(pystr.Strip(mirrorText), "mirror payload")
+	mirrorText = s.redactCronPayload(strings.TrimSpace(mirrorText), "mirror payload")
 	gwCfg, err := loadGatewayConfig(ctx)
 	if err != nil {
 		msg := fmt.Sprintf("failed to load gateway config: %v", err)

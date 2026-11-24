@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -137,8 +136,6 @@ var (
 	bgHex6Re  = regexp.MustCompile(`^[0-9a-f]{6}$`)
 	bgHex3Re  = regexp.MustCompile(`^[0-9a-f]{3}$`)
 	digitsRe  = regexp.MustCompile(`^\d+$`)
-	trueRe    = regexp.MustCompile(`^(?:1|true|yes|on)$`)
-	falseRe   = regexp.MustCompile(`^(?:0|false|no|off)$`)
 )
 
 // Channel rounded and clamped to a byte
@@ -570,15 +567,8 @@ func referenceBackground(isLight bool, env func(string) string) string {
 
 var lightDefaultTermPrograms = map[string]bool{"Apple_Terminal": true}
 
-// Whether the terminal is light, by the light flag, the theme pin, the background hint, COLORFGBG, then the terminal program
+// Whether the terminal is light, by the theme pin, the background hint, COLORFGBG, then the terminal program
 func detectLightMode(env func(string) string) bool {
-	lightFlag := strings.ToLower(strings.TrimFunc(env("ICEBATH_TUI_LIGHT"), isJSSpace))
-	if trueRe.MatchString(lightFlag) {
-		return true
-	}
-	if falseRe.MatchString(lightFlag) {
-		return false
-	}
 	switch strings.ToLower(strings.TrimFunc(env("ICEBATH_TUI_THEME"), isJSSpace)) {
 	case "light":
 		return true
@@ -638,7 +628,7 @@ func startupTheme() theme {
 	if boot := loadBootTheme(); boot.theme != nil {
 		return *boot.theme
 	}
-	return defaultThemeForCurrentBackground(os.Getenv)
+	return defaultThemeForCurrentBackground(bootThemeEnv)
 }
 
 // Background a skin authored, false when it set none

@@ -132,7 +132,7 @@ func detectorFailed(det *WakeWordDetector) {
 }
 
 // StartListening claims, builds and starts the detector, idempotent for its owner and WakeWordInUse for others
-func StartListening(ctx context.Context, onWake func() error, owner any, cfg map[string]any) (*WakeWordDetector, error) {
+func StartListening(ctx context.Context, onWake func() error, owner any, cfg *WakeConfig) (*WakeWordDetector, error) {
 	if owner == nil {
 		return nil, &WakeWordError{Class: "ValueError", Msg: "wake-word owner must not be None"}
 	}
@@ -165,9 +165,9 @@ func StartListening(ctx context.Context, onWake func() error, owner any, cfg map
 		if err != nil {
 			return nil, err
 		}
-		wakeDetector = NewWakeWordDetector(engine, onWake, WakeDetectorOptions{OnFailure: detectorFailed, InputDevice: wakeInputDevice(cfg)})
+		wakeDetector = NewWakeWordDetector(engine, onWake, WakeDetectorOptions{OnFailure: detectorFailed, InputDevice: cfg.InputDevice})
 		wakeDetectorOwner = owner
-		wakeDetectorPhrase, wakeDetectorProvider = WakePhrase(ctx, cfg), provider
+		wakeDetectorPhrase, wakeDetectorProvider = cfg.Phrase, provider
 		return wakeDetector, wakeDetector.Start()
 	}()
 	if err != nil {
@@ -249,14 +249,14 @@ func AudioIsSilent() bool {
 }
 
 // GetInputDeviceStatus returns the active or configured PortAudio input diagnostics for status UIs
-func GetInputDeviceStatus(ctx context.Context, cfg map[string]any) WakeInputDeviceDetails {
+func GetInputDeviceStatus(ctx context.Context, cfg *WakeConfig) WakeInputDeviceDetails {
 	if det := currentDetector(); det != nil {
 		return det.InputDeviceDetails()
 	}
 	if cfg == nil {
 		cfg = LoadWakeWordConfig(ctx)
 	}
-	return describeInputDevice(wakeInputDevice(cfg), nil)
+	return describeInputDevice(cfg.InputDevice, nil)
 }
 
 // Engines that report which phrase and profile the last fire matched

@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -37,7 +37,7 @@ func isDelegationValueError(err error) bool {
 // Home directory of an existing profile named by a route, a route error otherwise
 func delegationProfileHome(name any) (string, error) {
 	s, ok := name.(string)
-	if !ok || pystr.Strip(s) == "" || !profiles.ProfileExists(s) {
+	if !ok || strings.TrimSpace(s) == "" || !profiles.ProfileExists(s) {
 		return "", routeError("Profile %s does not exist (see `icebath profile list`).", errchain.Show(name))
 	}
 	return profiles.GetProfileDir(s)
@@ -72,27 +72,22 @@ type profileModelRequest struct {
 	targetModel, requested, explicitBaseURL, explicitAPIKey string
 }
 
-// Primary model request of a profile config, resolved the way CLI startup reads model.default
-func profileModelRequestOf(ctx context.Context, cfg map[string]any) (profileModelRequest, error) {
-	var model any
-	cfgProvider := ""
-	if modelCfg, ok := cfg["model"].(map[string]any); ok {
-		model = modelCfg["default"]
-		cfgProvider = pystr.Strip(liveText(modelCfg["provider"]))
-	}
-	text, isStr := model.(string)
-	request := profileModelRequest{}
-	if isStr {
-		request.targetModel = text
-	}
-	if !isStr || pystr.Strip(text) == "" {
+// Primary model request of the profile ctx names, resolved the way CLI startup reads model.default
+func profileModelRequestOf(ctx context.Context) (profileModelRequest, error) {
+	text := settings.Model.Get(ctx)
+	request := profileModelRequest{targetModel: text}
+	if strings.TrimSpace(text) == "" {
 		return request, nil
 	}
-	userProviders, _ := cfg["providers"].(map[string]any)
-	customProviders := provider.ProviderEntryList(cfg)
+	cfgProvider := strings.TrimSpace(settings.ModelProvider.Get(ctx))
+	entries := provider.CustomProviderEntries(ctx)
+	customProviders := make([]any, len(entries))
+	for i, entry := range entries {
+		customProviders[i] = entry
+	}
 	startup, err := provider.ResolveStartupModelRoute(ctx, text, provider.StartupRouteOptions{
-		CurrentProvider: pystr.Lower(cfgProvider), UserProviders: userProviders, CustomProviders: customProviders,
-		AliasConfig: maps.Clone(cfg),
+		CurrentProvider: strings.ToLower(cfgProvider), UserProviders: settings.Providers.Get(ctx), CustomProviders: customProviders,
+		AliasConfig: map[string]any{"model": map[string]any{"aliases": settings.ModelAliases.Get(ctx), "provider": cfgProvider}},
 	})
 	if err != nil {
 		return request, err
@@ -123,15 +118,7 @@ func profileRoute(ctx context.Context, h string) (*tools.TaskRoute, error) {
 		return nil, err
 	}
 	scoped := delegatedProfileScope(ctx, h)
-	tree, err := config.LoadReadonly(scoped, home.Dir(scoped), nil)
-	if err != nil {
-		return nil, err
-	}
-	cfg := map[string]any(tree)
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	request, err := profileModelRequestOf(scoped, cfg)
+	request, err := profileModelRequestOf(scoped)
 	if err != nil {
 		return nil, err
 	}
@@ -144,10 +131,9 @@ func profileRoute(ctx context.Context, h string) (*tools.TaskRoute, error) {
 	if model == "" {
 		model = rt.Model
 	}
-	fallback := cfg["fallback_providers"]
-	requested := pystr.Strip(rt.RequestedProvider)
+	requested := strings.TrimSpace(rt.RequestedProvider)
 	providerName := rt.Provider
-	if rt.Provider == "custom" && !slices.Contains([]string{"", "auto"}, pystr.Lower(requested)) {
+	if rt.Provider == "custom" && !slices.Contains([]string{"", "auto"}, strings.ToLower(requested)) {
 		providerName = requested
 	}
 	if err := tools.RequirePinnedCommand(rt.Command, fmt.Sprintf("Profile at %s is pinned to the '%s' command, which was not "+
@@ -168,13 +154,13 @@ func profileRoute(ctx context.Context, h string) (*tools.TaskRoute, error) {
 	}
 	creds := tools.CredentialBundle(noneIfEmpty(model), noneIfEmpty(providerName), noneIfEmpty(rt.BaseURL), apiKey,
 		noneIfEmpty(string(rt.APIMode)), overrides, map[string]any{"command": noneIfEmpty(rt.Command), "args": args})
-	chain, ok := fallback.([]any)
-	if !ok {
+	chain := settings.FallbackModels.Get(scoped)
+	if chain == nil {
 		chain = []any{}
 	}
 	return &tools.TaskRoute{
 		Creds: creds, RoutingCfg: map[string]any{"fallback_providers": chain},
-		ReasoningEffort: tools.ResolvedReasoning{Config: config.ResolveReasoningConfig(cfg, model)}, ProfileHome: h,
+		ReasoningEffort: tools.ResolvedReasoning{Config: settings.ReasoningConfig(settings.WithoutSession(scoped), model)}, ProfileHome: h,
 		Backend: tools.DefaultDelegationBackend,
 	}, nil
 }

@@ -1,11 +1,12 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -15,15 +16,14 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -59,17 +59,15 @@ var (
 	autoTitleSessionFn       = autoTitleSession
 	generateTitleFn          = generateTitle
 	maybeAutoTitleFn         = maybeAutoTitle
-	titleLoadConfig          = loadTitleConfigTree
-	titleConfigFn            = titleConfig
 	titleGreetingTitleChecks = []string{provisionalGreetingTitle, provisionalGreetingTitle + " in chat"}
 )
 
 // Lowered prompt examples a model echo is rejected for, the greeting example excepted
 func buildExampleEchoReject() map[string]bool {
-	out := map[string]bool{pystr.Lower(promptVagueExample): true}
+	out := map[string]bool{strings.ToLower(promptVagueExample): true}
 	for _, t := range promptGoodExamples {
 		if t != "Friendly greeting" {
-			out[pystr.Lower(t)] = true
+			out[strings.ToLower(t)] = true
 		}
 	}
 	return out
@@ -108,83 +106,19 @@ func titleResponseFormat() *pyjson.Object {
 	)
 }
 
-// Read only config of the active profile
-func loadTitleConfigTree(ctx context.Context) (map[string]any, error) {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return nil, err
-	}
-	return tree, nil
-}
-
-// Mapping view of a config node, false for any other value
-func titleConfigMap(v any) (map[string]any, bool) {
-	switch m := v.(type) {
-	case map[string]any:
-		return m, true
-	case config.Tree:
-		return m, true
-	}
-	return nil, false
-}
-
-// Refusal of a title config section that is not a mapping
-func titleNoGetError(v any) error {
-	return &pyint.Error{Kind: "AttributeError", Msg: "title generation config section is " + errchain.Kind(v) + " where a mapping was expected"}
-}
-
-// auxiliary.title_generation mapping, empty when unset, an error where a level is a non mapping value
-func titleConfig(ctx context.Context) (map[string]any, error) {
-	cfg, err := titleLoadConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	node := map[string]any(cfg)
-	for _, key := range []string{"auxiliary", "title_generation"} {
-		v := node[key]
-		if !pyrepr.Truthy(v) {
-			return map[string]any{}, nil
-		}
-		m, ok := titleConfigMap(v)
-		if !ok {
-			return nil, titleNoGetError(v)
-		}
-		node = m
-	}
-	return node, nil
-}
-
 // Configured title language, empty to match the user
 func titleLanguage(ctx context.Context) string {
-	cfg, err := titleConfigFn(ctx)
-	if err != nil {
-		return ""
-	}
-	v, ok := cfg["language"]
-	if !ok {
-		v = ""
-	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(settings.AuxiliaryTitleGenerationLanguage.Get(ctx))
 }
 
-// Whether automatic titling is on, true when the config cannot be read
+// Whether automatic titling is on
 func autoTitleEnabled(ctx context.Context) bool {
-	cfg, err := titleConfigFn(ctx)
-	if err != nil {
-		pkgLog().Debug("Failed to read title_generation.enabled", "error", err)
-		return true
-	}
-	return isTruthyValue(cfg["enabled"], true)
+	return settings.AuxiliaryTitleGenerationEnabled.Get(ctx)
 }
 
-// Whether the background model upgrade of the instant title runs, true when the config cannot be read
+// Whether the background model upgrade of the instant title runs
 func modelTitleUpgradeEnabled(ctx context.Context) bool {
-	cfg, err := titleConfigFn(ctx)
-	if err != nil {
-		pkgLog().Debug("Failed to read title_generation.model_upgrade_enabled", "error", err)
-		return true
-	}
-	return isTruthyValue(cfg["model_upgrade_enabled"], true)
+	return settings.AuxiliaryTitleGenerationModelUpgradeEnabled.Get(ctx)
 }
 
 // Python str of a value after an or empty string fallback
@@ -197,26 +131,18 @@ func titleStrOr(v any) string {
 
 // True when the title call would share the turn's own self hosted endpoint and must wait for the turn
 func titleUpgradeMustWaitForTurn(ctx context.Context, mainRuntime map[string]any) bool {
-	providerName := pystr.Lower(pystr.Strip(titleStrOr(mainRuntime["provider"])))
+	providerName := strings.ToLower(strings.TrimSpace(titleStrOr(mainRuntime["provider"])))
 	if !titleIsSelfHostedProvider(ctx, providerName) {
 		return false
 	}
-	cfg, err := titleConfigFn(ctx)
-	if err != nil {
-		return true
-	}
-	pinnedProvider := pystr.Lower(pystr.Strip(titleStrOr(cfg["provider"])))
-	mainBaseURL := pystr.RstripChars(pystr.Strip(titleStrOr(mainRuntime["base_url"])), "/")
+	pinnedProvider := strings.ToLower(strings.TrimSpace(settings.AuxiliaryTitleGenerationProvider.Get(ctx)))
+	mainBaseURL := strings.TrimRight(strings.TrimSpace(titleStrOr(mainRuntime["base_url"])), "/")
 	if pinnedProvider != "" && pinnedProvider != "auto" {
-		shares, err := titlePinMayShareEndpoint(ctx, pinnedProvider, providerName, mainBaseURL)
-		if err != nil {
-			return true
-		}
-		if !shares {
+		if !titlePinMayShareEndpoint(ctx, pinnedProvider, providerName, mainBaseURL) {
 			return false
 		}
 	}
-	pinnedBaseURL := pystr.RstripChars(pystr.Strip(titleStrOr(cfg["base_url"])), "/")
+	pinnedBaseURL := strings.TrimRight(strings.TrimSpace(settings.AuxiliaryTitleGenerationBaseUrl.Get(ctx)), "/")
 	return pinnedBaseURL == "" || pinnedBaseURL == mainBaseURL
 }
 
@@ -227,27 +153,23 @@ func titleIsSelfHostedProvider(ctx context.Context, name string) bool {
 }
 
 // True when a title pin can land on the turn's own self hosted server
-func titlePinMayShareEndpoint(ctx context.Context, pinnedProvider, mainProvider, mainBaseURL string) (bool, error) {
+func titlePinMayShareEndpoint(ctx context.Context, pinnedProvider, mainProvider, mainBaseURL string) bool {
 	if titleIsSelfHostedProvider(ctx, pinnedProvider) {
-		return true, nil
+		return true
 	}
 	mainAliases := provider.CustomProviderAliases(mainProvider, "")
 	for alias := range provider.CustomProviderAliases(pinnedProvider, "") {
 		if mainAliases[alias] {
-			return true, nil
+			return true
 		}
 	}
-	cfg, err := titleLoadConfig(ctx)
-	if err != nil {
-		return false, err
-	}
-	compatible := provider.ProviderEntries(cfg)
+	compatible := provider.CustomProviderEntries(ctx)
 	entries := make([]any, len(compatible))
 	for i, e := range compatible {
 		entries[i] = e
 	}
 	pdef := provider.ResolveCustomProvider(pinnedProvider, entries)
-	return pdef != nil && mainBaseURL != "" && pystr.RstripChars(pystr.Strip(pdef.BaseURL), "/") == mainBaseURL, nil
+	return pdef != nil && mainBaseURL != "" && strings.TrimRight(strings.TrimSpace(pdef.BaseURL), "/") == mainBaseURL
 }
 
 // Registers a started upgrade weakly, false when it was already started
@@ -303,7 +225,7 @@ func titleReSub(re *regexp2.Regexp, s string) string {
 
 // Removes leading control wrappers including nested ones so a slash command turn keeps its typed prose
 func stripControlWrappers(text string) string {
-	current := pystr.Strip(text)
+	current := strings.TrimSpace(text)
 	for range len(titleControlWrapperTags) * 2 {
 		stripped := stripOneWrapper(current)
 		if stripped == current {
@@ -316,7 +238,7 @@ func stripControlWrappers(text string) string {
 
 // Text with one leading control wrapper removed, trailing prose preferred over the wrapper body
 func stripOneWrapper(text string) string {
-	lowered := pystr.Lower(text)
+	lowered := strings.ToLower(text)
 	for _, tag := range titleControlWrapperTags {
 		openTag, closeTag := "<"+tag+">", "</"+tag+">"
 		if !strings.HasPrefix(lowered, openTag) {
@@ -324,14 +246,14 @@ func stripOneWrapper(text string) string {
 		}
 		at := strings.Index(lowered, closeTag)
 		if at == -1 {
-			return pystr.Strip(titleFrom(text, len(openTag)))
+			return strings.TrimSpace(titleFrom(text, len(openTag)))
 		}
 		end := pystr.Len(lowered[:at])
-		kept := pystr.Strip(titleFrom(text, end+len(closeTag)))
+		kept := strings.TrimSpace(titleFrom(text, end+len(closeTag)))
 		if kept == "" {
-			kept = pystr.Strip(pystr.Slice(text, len(openTag), end))
+			kept = strings.TrimSpace(pystr.Slice(text, len(openTag), end))
 		}
-		return pystr.Strip(kept)
+		return strings.TrimSpace(kept)
 	}
 	return text
 }
@@ -339,7 +261,7 @@ func stripOneWrapper(text string) string {
 // True when only context references and their expansion footer remain in the message
 func attachmentOnlyOpener(message string) bool {
 	residual := titleReSub(contextReferenceTokenRe, titleReSub(contextFooterRe, message))
-	return pystr.Strip(residual) == ""
+	return strings.TrimSpace(residual) == ""
 }
 
 // Text worth titling, a skill invocation described as typed and control wrappers stripped
@@ -358,13 +280,13 @@ func buildTitleInput(userMessage string, titlePreview *string) string {
 	message := summarizeUserMessage(userMessage)
 	preview := ""
 	if titlePreview != nil {
-		preview = pystr.Strip(*titlePreview)
+		preview = strings.TrimSpace(*titlePreview)
 	}
 	if preview == "" {
 		return pystr.Slice(message, 0, maxTitleInputChars)
 	}
-	message = pystr.Strip(titleReSub(contextFooterRe, message))
-	if pystr.Strip(titleReSub(attachmentRefRe, message)) == "" {
+	message = strings.TrimSpace(titleReSub(contextFooterRe, message))
+	if strings.TrimSpace(titleReSub(attachmentRefRe, message)) == "" {
 		return pystr.Slice(preview, 0, maxTitleInputChars)
 	}
 	messageBudget := min(pystr.Len(message), maxTitleInputChars/2)
@@ -377,16 +299,16 @@ func buildTitleInput(userMessage string, titlePreview *string) string {
 
 // False for machine authored openers, scaffolding only turns and attachment only openers
 func isTitleableUserMessage(userMessage string) bool {
-	if pystr.Strip(userMessage) == "" {
+	if strings.TrimSpace(userMessage) == "" {
 		return false
 	}
-	trimmed := pystr.Lstrip(userMessage)
+	trimmed := strings.TrimLeftFunc(userMessage, unicode.IsSpace)
 	for _, prefix := range titleMachinePrefixes {
 		if strings.HasPrefix(trimmed, prefix) {
 			return false
 		}
 	}
-	return pystr.Strip(summarizeUserMessage(userMessage)) != "" && !attachmentOnlyOpener(userMessage)
+	return strings.TrimSpace(summarizeUserMessage(userMessage)) != "" && !attachmentOnlyOpener(userMessage)
 }
 
 // Instant title from the first meaningful line cut at a word boundary, empty when nothing is titleable
@@ -404,15 +326,15 @@ func deriveTitle(userMessage string, titlePreview *string) string {
 		if space > maxDerivedTitleChars/2 {
 			cut = pystr.Slice(cut, 0, space)
 		}
-		line = pystr.RstripChars(cut, " ,.;:—-") + "…"
+		line = strings.TrimRight(cut, " ,.;:—-") + "…"
 	}
 	return line
 }
 
 // Text without a leading case insensitive Title prefix
 func stripTitlePrefix(text string) string {
-	if strings.HasPrefix(pystr.Lower(text), "title:") {
-		return pystr.Strip(titleFrom(text, 6))
+	if strings.HasPrefix(strings.ToLower(text), "title:") {
+		return strings.TrimSpace(titleFrom(text, 6))
 	}
 	return text
 }
@@ -420,7 +342,7 @@ func stripTitlePrefix(text string) string {
 // First non blank line stripped, empty when there is none
 func titleFirstLine(text string) string {
 	for _, ln := range pystr.Splitlines(text, false) {
-		if s := pystr.Strip(ln); s != "" {
+		if s := strings.TrimSpace(ln); s != "" {
 			return s
 		}
 	}
@@ -433,7 +355,7 @@ func extractJSONTitle(raw string) (string, bool) {
 		if obj, ok := parsed.(*pyjson.Object); ok {
 			if v, ok := obj.Get("title"); ok {
 				if s, ok := v.(string); ok {
-					return pystr.Strip(s), true
+					return strings.TrimSpace(s), true
 				}
 			}
 		}
@@ -445,10 +367,10 @@ func extractJSONTitle(raw string) (string, bool) {
 	group := m.GroupByNumber(1).String()
 	if v, err := pyjson.Loads(`"` + group + `"`); err == nil {
 		if s, ok := v.(string); ok {
-			return pystr.Strip(s), true
+			return strings.TrimSpace(s), true
 		}
 	}
-	return pystr.Strip(group), true
+	return strings.TrimSpace(group), true
 }
 
 // True for structured output cut before its closing quote, brace or fence
@@ -466,9 +388,9 @@ func extractTitleText(content string) string {
 	if content == "" {
 		return ""
 	}
-	raw := pystr.Strip(content)
+	raw := strings.TrimSpace(content)
 	if m, _ := fencedTitleRe.FindStringMatch(raw); m != nil {
-		raw = pystr.Strip(m.GroupByNumber(1).String())
+		raw = strings.TrimSpace(m.GroupByNumber(1).String())
 	}
 	if title, ok := extractJSONTitle(raw); ok {
 		return title
@@ -476,16 +398,16 @@ func extractTitleText(content string) string {
 	if isTruncatedStructuredOutput(raw) {
 		return ""
 	}
-	raw = pystr.Strip((*AIAgent)(nil).stripThinkBlocks(raw))
-	return pystr.Strip(pystr.StripChars(stripTitlePrefix(titleFirstLine(raw)), "\"'"))
+	raw = strings.TrimSpace((*AIAgent)(nil).stripThinkBlocks(raw))
+	return strings.TrimSpace(strings.Trim(stripTitlePrefix(titleFirstLine(raw)), "\"'"))
 }
 
 // Title payload a reasoning model left in its reasoning fields, never reasoning prose
 func titleFromReasoning(message any) string {
 	for _, field := range []string{"reasoning_content", "reasoning"} {
 		text, ok := provider.MessageField(message, field).(string)
-		if ok && pystr.Strip(text) != "" {
-			if title, found := extractJSONTitle(pystr.Strip(text)); found && title != "" {
+		if ok && strings.TrimSpace(text) != "" {
+			if title, found := extractJSONTitle(strings.TrimSpace(text)); found && title != "" {
 				return title
 			}
 		}
@@ -496,9 +418,9 @@ func titleFromReasoning(message any) string {
 // Normalized model title capped at 80 characters, empty when nothing usable remains
 func cleanTitle(text string) string {
 	collapsed := strings.Join(pystr.SplitWhitespace(text, -1), " ")
-	title := pystr.RstripChars(stripTitlePrefix(pystr.Strip(pystr.StripChars(collapsed, "\"'"))), ".!,;:")
+	title := strings.TrimRight(stripTitlePrefix(strings.TrimSpace(strings.Trim(collapsed, "\"'"))), ".!,;:")
 	if pystr.Len(title) > 80 {
-		title = pystr.Rstrip(pystr.Slice(title, 0, 77)) + "..."
+		title = strings.TrimRightFunc(pystr.Slice(title, 0, 77), unicode.IsSpace) + "..."
 	}
 	return title
 }
@@ -539,7 +461,7 @@ func notifyTitle(titleCallback any, title, source, label string) {
 
 // Lowered title with leading and trailing non word runs removed
 func normalizeTitleEdges(title string) string {
-	return pystr.Lower(titleReSub(titleEdgeRe, pystr.Strip(title)))
+	return strings.ToLower(titleReSub(titleEdgeRe, strings.TrimSpace(title)))
 }
 
 // True for the provisional greeting title the prompt asks for on a topicless opener
@@ -653,7 +575,7 @@ func generateTitle(ctx context.Context, userMessage string, o generateTitleOptio
 	}
 	snippet := buildTitleInput(userMessage, o.TitlePreview)
 	noPreview := o.TitlePreview == nil || *o.TitlePreview == ""
-	if pystr.Strip(snippet) == "" || (noPreview && attachmentOnlyOpener(snippet)) {
+	if strings.TrimSpace(snippet) == "" || (noPreview && attachmentOnlyOpener(snippet)) {
 		return ""
 	}
 	rule := languageRuleMatchUser
@@ -942,7 +864,7 @@ func sessionIsUntitled(ctx context.Context, db any, sessionID string) bool {
 		pkgLog().Debug(fmt.Sprintf("Untitled check failed for %s", sessionID), "error", err)
 		return false
 	}
-	return pystr.Strip(title) == ""
+	return strings.TrimSpace(title) == ""
 }
 
 // Kanban worker card title, empty outside a dispatched worker, installed by the extras tier that carries kanban
@@ -1005,7 +927,7 @@ func maybeAutoTitle(ctx context.Context, db any, sessionID, userMessage string, 
 	}
 	upgradeOpts := autoTitleSessionOptions{FailureCallback: o.FailureCallback, MainRuntime: o.MainRuntime, TitleCallback: o.TitleCallback,
 		RuntimeValidator: o.RuntimeValidator}
-	if o.TitlePreview != nil && pystr.Strip(*o.TitlePreview) != "" {
+	if o.TitlePreview != nil && strings.TrimSpace(*o.TitlePreview) != "" {
 		upgradeOpts.TitlePreview = o.TitlePreview
 	}
 	target := autoTitleSessionFn

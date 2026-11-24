@@ -1,13 +1,14 @@
 package feishu
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -32,14 +33,6 @@ const (
 	feishuConnectAttempts            = 3
 	feishuSendAttempts               = 3
 	feishuAppLockScope               = "feishu-app-id"
-	defaultTextBatchDelaySeconds     = 0.6
-	defaultTextBatchMaxMessages      = 8
-	defaultTextBatchMaxChars         = 4000
-	defaultMediaBatchDelaySeconds    = 0.8
-	defaultDedupCacheSize            = 2048
-	defaultWebhookHost               = "127.0.0.1"
-	defaultWebhookPort               = 8765
-	defaultWebhookPath               = "/feishu/webhook"
 	feishuDedupTTLSeconds            = 24 * 60 * 60
 	feishuSenderNameTTLSeconds       = 10 * 60
 	feishuWebhookMaxBodyBytes        = 1 * 1024 * 1024
@@ -101,7 +94,6 @@ type FeishuAdapterSettings struct {
 	WSPingInterval             *int
 	WSPingTimeout              *int
 	Admins                     map[string]bool
-	DefaultGroupPolicy         string
 	GroupRules                 map[string]*FeishuGroupRule
 	AllowBots                  string
 	RequireMention             bool
@@ -129,100 +121,86 @@ func idSet(values any) map[string]bool {
 		}
 	}
 	for _, item := range items {
-		if s := pystr.Strip(pyrepr.Str(item)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
 			out[s] = true
 		}
 	}
 	return out
 }
 
-// Settings of a platform config extra block and the profile's scoped env
+// Whole seconds of a length of time
+func wholeSeconds(d time.Duration) int { return int(d / time.Second) }
+
+// Whole seconds of a length of time that may be unset
+func optionalSeconds(d time.Duration, set bool) *int {
+	if !set {
+		return nil
+	}
+	n := wholeSeconds(d)
+	return &n
+}
+
+// Settings of the profile served, the app's credentials from its scoped env first and the connection's config after
 func loadSettings(ctx context.Context, extra map[string]any) (FeishuAdapterSettings, error) {
 	var firstErr error
-	keep := func(err error) {
+	credential := func(key, env string) string {
+		v, err := gateway.ExtraOrSecret(ctx, extra, key, env, "", true)
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
+		return strings.TrimSpace(pyrepr.Str(v))
 	}
-	secret := func(name, def string) string {
-		v, err := gateway.GetScopedSecret(ctx, name, def, false)
-		keep(err)
-		return pystr.Strip(v)
-	}
-	extraOrSecret := func(key, env, def string) string {
-		v, err := gateway.ExtraOrSecret(ctx, extra, key, env, def, true)
-		keep(err)
-		return pystr.Strip(pyrepr.Str(v))
-	}
+	sctx := gateway.SettingsContext(ctx)
 	groupRules := map[string]*FeishuGroupRule{}
-	if raw, ok := extra["group_rules"].(map[string]any); ok {
-		for _, chatID := range sortedKeys(raw) {
-			cfg, ok := raw[chatID].(map[string]any)
-			if !ok {
-				continue
-			}
-			rule := &FeishuGroupRule{Policy: pystr.Lower(pystr.Strip(pyrepr.Str(mapGet(cfg, "policy", "open")))),
-				Allowlist: idSet(mapGet(cfg, "allowlist", []any{})), Blacklist: idSet(mapGet(cfg, "blacklist", []any{}))}
-			if v, ok := cfg["require_mention"]; ok {
-				b := toBoolean(v)
-				rule.RequireMention = &b
-			}
-			groupRules[chatID] = rule
+	rules := settings.FeishuGroupRules.Get(sctx)
+	for _, chatID := range sortedKeys(rules) {
+		cfg, ok := rules[chatID].(map[string]any)
+		if !ok {
+			continue
 		}
+		rule := &FeishuGroupRule{Policy: strings.ToLower(strings.TrimSpace(pyrepr.Str(mapGet(cfg, "policy", "open")))),
+			Allowlist: idSet(mapGet(cfg, "allowlist", []any{})), Blacklist: idSet(mapGet(cfg, "blacklist", []any{}))}
+		if v, ok := cfg["require_mention"]; ok {
+			b := toBoolean(v)
+			rule.RequireMention = &b
+		}
+		groupRules[chatID] = rule
 	}
-	allowBots := settings.FeishuAllowBots.Get(gateway.SettingsContext(ctx))
-	allowAllDM := settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx))
-	switch pystr.Lower(secret("FEISHU_ALLOW_ALL_USERS", "")) {
-	case "true", "1", "yes":
-		allowAllDM = true
-	}
-	allowedRaw, err := gateway.GetScopedSecret(ctx, "FEISHU_ALLOWED_USERS", "", false)
-	keep(err)
-	webhookPortRaw := mapGet(extra, "webhook_port", nil)
-	if !pyrepr.Truthy(webhookPortRaw) {
-		v, err := gateway.GetScopedSecret(ctx, "FEISHU_WEBHOOK_PORT", fmt.Sprint(defaultWebhookPort), false)
-		keep(err)
-		webhookPortRaw = v
-	}
-	webhookPort, perr := pyintValue(webhookPortRaw)
-	keep(perr)
-	webhookPath := extraOrSecret("webhook_path", "FEISHU_WEBHOOK_PATH", defaultWebhookPath)
-	if webhookPath == "" {
-		webhookPath = defaultWebhookPath
-	}
-	requireMentionDefault, err := gateway.GetScopedSecret(ctx, "FEISHU_REQUIRE_MENTION", "true", false)
-	keep(err)
+	pingInterval, pingIntervalSet := settings.FeishuWSPingInterval.Lookup(sctx)
+	pingTimeout, pingTimeoutSet := settings.FeishuWSPingTimeout.Lookup(sctx)
 	s := FeishuAdapterSettings{
-		AppID:                      extraOrSecret("app_id", "FEISHU_APP_ID", ""),
-		AppSecret:                  extraOrSecret("app_secret", "FEISHU_APP_SECRET", ""),
-		DomainName:                 settings.FeishuDomain.Get(gateway.SettingsContext(ctx)),
-		ConnectionMode:             settings.FeishuConnectionMode.Get(gateway.SettingsContext(ctx)),
-		EncryptKey:                 extraOrSecret("encrypt_key", "FEISHU_ENCRYPT_KEY", ""),
-		VerificationToken:          extraOrSecret("verification_token", "FEISHU_VERIFICATION_TOKEN", ""),
-		GroupPolicy:                pystr.Lower(secret("FEISHU_GROUP_POLICY", "allowlist")),
-		AllowedGroupUsers:          idSet(strings.Split(allowedRaw, ",")),
-		BotOpenID:                  secret("FEISHU_BOT_OPEN_ID", ""),
-		BotUserID:                  secret("FEISHU_BOT_USER_ID", ""),
-		BotName:                    secret("FEISHU_BOT_NAME", ""),
-		DedupCacheSize:             max(32, int(config.EnvInt("ICEBATH_FEISHU_DEDUP_CACHE_SIZE", defaultDedupCacheSize))),
-		TextBatchDelaySeconds:      config.EnvFloat("ICEBATH_FEISHU_TEXT_BATCH_DELAY_SECONDS", defaultTextBatchDelaySeconds),
-		TextBatchSplitDelaySeconds: config.EnvFloat("ICEBATH_FEISHU_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0),
-		TextBatchMaxMessages:       max(1, int(config.EnvInt("ICEBATH_FEISHU_TEXT_BATCH_MAX_MESSAGES", defaultTextBatchMaxMessages))),
-		TextBatchMaxChars:          max(1, int(config.EnvInt("ICEBATH_FEISHU_TEXT_BATCH_MAX_CHARS", defaultTextBatchMaxChars))),
-		MediaBatchDelaySeconds:     config.EnvFloat("ICEBATH_FEISHU_MEDIA_BATCH_DELAY_SECONDS", defaultMediaBatchDelaySeconds),
-		WebhookHost:                extraOrSecret("webhook_host", "FEISHU_WEBHOOK_HOST", defaultWebhookHost),
-		WebhookPort:                webhookPort,
-		WebhookPath:                webhookPath,
-		WSReconnectNonce:           coerceRequiredInt(extra["ws_reconnect_nonce"], 30, 0),
-		WSReconnectInterval:        coerceRequiredInt(extra["ws_reconnect_interval"], 120, 1),
-		WSPingInterval:             coerceInt(extra["ws_ping_interval"], nil, 1),
-		WSPingTimeout:              coerceInt(extra["ws_ping_timeout"], nil, 1),
-		Admins:                     idSet(mapGet(extra, "admins", []any{})),
-		DefaultGroupPolicy:         pystr.Lower(pystr.Strip(pyrepr.Str(mapGet(extra, "default_group_policy", "")))),
+		AppID:                      credential("app_id", "FEISHU_APP_ID"),
+		AppSecret:                  credential("app_secret", "FEISHU_APP_SECRET"),
+		DomainName:                 settings.FeishuDomain.Get(sctx),
+		ConnectionMode:             settings.FeishuConnectionMode.Get(sctx),
+		EncryptKey:                 credential("encrypt_key", "FEISHU_ENCRYPT_KEY"),
+		VerificationToken:          credential("verification_token", "FEISHU_VERIFICATION_TOKEN"),
+		GroupPolicy:                settings.FeishuGroupPolicy.Get(sctx),
+		AllowedGroupUsers:          idSet(settings.FeishuAllowedUsers.Strings(sctx)),
+		BotOpenID:                  strings.TrimSpace(settings.FeishuBotOpenID.Get(sctx)),
+		BotUserID:                  strings.TrimSpace(settings.FeishuBotUserID.Get(sctx)),
+		BotName:                    strings.TrimSpace(settings.FeishuBotName.Get(sctx)),
+		DedupCacheSize:             settings.FeishuDedupCacheSize.Get(sctx),
+		TextBatchDelaySeconds:      settings.FeishuTextBatchDelay.Get(sctx).Seconds(),
+		TextBatchSplitDelaySeconds: settings.FeishuTextBatchSplitDelay.Get(sctx).Seconds(),
+		TextBatchMaxMessages:       settings.FeishuTextBatchMaxMessages.Get(sctx),
+		TextBatchMaxChars:          settings.FeishuTextBatchMaxChars.Get(sctx),
+		MediaBatchDelaySeconds:     settings.FeishuMediaBatchDelay.Get(sctx).Seconds(),
+		WebhookHost:                strings.TrimSpace(settings.FeishuWebhookHost.Get(sctx)),
+		WebhookPort:                settings.FeishuWebhookPort.Get(sctx),
+		WebhookPath:                strings.TrimSpace(settings.FeishuWebhookPath.Get(sctx)),
+		WSReconnectNonce:           wholeSeconds(settings.FeishuWSReconnectNonce.Get(sctx)),
+		WSReconnectInterval:        wholeSeconds(settings.FeishuWSReconnectInterval.Get(sctx)),
+		WSPingInterval:             optionalSeconds(pingInterval, pingIntervalSet),
+		WSPingTimeout:              optionalSeconds(pingTimeout, pingTimeoutSet),
+		Admins:                     idSet(settings.FeishuAdmins.Strings(sctx)),
 		GroupRules:                 groupRules,
-		AllowBots:                  allowBots,
-		AllowAllDM:                 allowAllDM,
-		RequireMention:             toBoolean(mapGet(extra, "require_mention", requireMentionDefault)),
+		AllowBots:                  settings.FeishuAllowBots.Get(sctx),
+		AllowAllDM:                 settings.GatewayAllowAllUsers.Get(sctx) || settings.FeishuAllowAllUsers.Get(sctx),
+		RequireMention:             settings.FeishuRequireMention.Get(sctx),
+	}
+	if s.WebhookPath == "" {
+		s.WebhookPath = settings.FeishuWebhookPath.Default
 	}
 	return s, firstErr
 }
@@ -232,12 +210,6 @@ func mapGet(m map[string]any, key string, def any) any {
 		return v
 	}
 	return def
-}
-
-// Python int of a port value, failing where int() raises
-func pyintValue(v any) (int, error) {
-	n, err := pyint.Int64(v)
-	return int(n), err
 }
 
 // Map keys in sorted order
@@ -414,16 +386,16 @@ func NewFeishuAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Feishu
 	if cfg != nil && cfg.Extra != nil {
 		extra = cfg.Extra
 	}
-	settings, err := loadSettings(ctx, extra)
+	loaded, err := loadSettings(ctx, extra)
 	if err != nil {
 		return nil, err
 	}
-	a.applySettings(settings)
+	a.applySettings(loaded)
 	a.loadSeenMessageIDs()
 	return a, nil
 }
 
-// Mirrors the settings onto the adapter, the default group policy falling back to the group policy
+// Mirrors the settings onto the adapter
 func (a *FeishuAdapter) applySettings(s FeishuAdapterSettings) {
 	a.settings = s
 	a.allowedGroupUsers = map[string]bool{}
@@ -433,9 +405,6 @@ func (a *FeishuAdapter) applySettings(s FeishuAdapterSettings) {
 	a.admins = map[string]bool{}
 	for k := range s.Admins {
 		a.admins[k] = true
-	}
-	if a.settings.DefaultGroupPolicy == "" {
-		a.settings.DefaultGroupPolicy = s.GroupPolicy
 	}
 	a.botOpenID, a.botName = s.BotOpenID, s.BotName
 	a.SetTextBatchDelays(s.TextBatchDelaySeconds, s.TextBatchSplitDelaySeconds)
@@ -971,14 +940,14 @@ func (a *FeishuAdapter) loadSeenMessageIDs() {
 	switch v := seen.(type) {
 	case []any:
 		for _, item := range v {
-			if s := pystr.Strip(pyrepr.Str(item)); s != "" {
+			if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
 				entries[s] = 0.0
 			}
 		}
 	case *pyjson.Object:
 		for _, k := range v.Keys {
 			val, _ := v.Get(k)
-			if pystr.Strip(k) == "" {
+			if strings.TrimSpace(k) == "" {
 				continue
 			}
 			if _, isInt := pyint.Instance(val); !isInt {

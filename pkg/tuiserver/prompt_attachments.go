@@ -46,7 +46,7 @@ func stripAllSpace(s string) string {
 
 // Strictly decoded bytes of an optionally data URL wrapped base64 payload, the cap refusal before decoding when the text is already too long
 func b64Payload(raw string, dataURL *regexp.Regexp, maxBytes int, label string) ([]byte, error) {
-	cleaned := pystr.Strip(raw)
+	cleaned := strings.TrimSpace(raw)
 	if m := dataURL.FindStringSubmatch(cleaned); m != nil {
 		cleaned = m[1]
 	}

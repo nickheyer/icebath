@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -163,7 +162,7 @@ func (a *DiscordAdapter) sendFileAttachment(ctx context.Context, chatID, path, c
 		return *rejected, nil
 	}
 	_, ext := pypath.Splitext(filename)
-	ext = pystr.Lower(ext)
+	ext = strings.ToLower(ext)
 	if ext == "" {
 		ext = "no-ext"
 	}
@@ -175,7 +174,7 @@ func (a *DiscordAdapter) sendFileAttachment(ctx context.Context, chatID, path, c
 	defer f.Close()
 	files := []*discordgo.File{{Name: filename, Reader: f}}
 	if isForumParent(ch) {
-		return a.forumPostFile(ctx, ch, "", pystr.Strip(caption), files), nil
+		return a.forumPostFile(ctx, ch, "", strings.TrimSpace(caption), files), nil
 	}
 	msg, err := client.ChannelMessageSendComplex(ch.ID, &discordgo.MessageSend{Content: caption, Files: files, AllowedMentions: a.allowedMentions}, discordgo.WithContext(ctx))
 	if err != nil {
@@ -363,7 +362,7 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 	}
 	pkgLog().Info(fmt.Sprintf("[%s] Sending %d image(s) as single Discord message (chunk %d/%d)", a.Name(), len(files), idx+1, total))
 	if isForumParent(ch) {
-		a.forumPostFile(ctx, ch, "", pystr.Strip(content), files)
+		a.forumPostFile(ctx, ch, "", strings.TrimSpace(content), files)
 		return true, nil
 	}
 	client := a.liveClient()
@@ -432,7 +431,7 @@ func (a *DiscordAdapter) sendVoiceMessage(ctx context.Context, chatID, audioPath
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
-		return a.forumPostFile(ctx, ch, "", pystr.Strip(caption), []*discordgo.File{{Name: filename, Reader: bytes.NewReader(data)}}), nil
+		return a.forumPostFile(ctx, ch, "", strings.TrimSpace(caption), []*discordgo.File{{Name: filename, Reader: bytes.NewReader(data)}}), nil
 	}
 	voice, duration, ok, err := oggOpusVoicePayload(ctx, audioPath)
 	if err != nil {
@@ -565,7 +564,7 @@ func (a *DiscordAdapter) uploadURLMedia(ctx context.Context, chatID, rawURL, cap
 	}
 	files := []*discordgo.File{{Name: filenameFor(headers), Reader: bytes.NewReader(data)}}
 	if isForumParent(ch) {
-		return a.forumPostFile(ctx, ch, "", pystr.Strip(caption), files), nil
+		return a.forumPostFile(ctx, ch, "", strings.TrimSpace(caption), files), nil
 	}
 	client := a.liveClient()
 	if client == nil {

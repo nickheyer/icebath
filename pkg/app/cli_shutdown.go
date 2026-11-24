@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -22,21 +22,10 @@ func flushLoggingAndStdio() {
 	_ = os.Stderr.Sync()
 }
 
-// Returns the float value of an environment variable, the default when unset or unparseable
-func floatEnv(name string, def float64) float64 {
-	raw, ok := os.LookupEnv(name)
-	if !ok {
-		return def
-	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil {
-		return def
-	}
-	return f
+// Exit watchdog of the settings for the profile of ctx in seconds, zero disabling the watchdog
+func exitWatchdogTimeout(ctx context.Context) float64 {
+	return settings.ShutdownExitWatchdog.Get(ctx).Seconds()
 }
-
-// Returns ICEBATH_EXIT_WATCHDOG_S as seconds, 30 by default and 0 disabling the watchdog
-func exitWatchdogTimeout() float64 { return floatEnv("ICEBATH_EXIT_WATCHDOG_S", 30.0) }
 
 // Starts the timer that forces process exit once shutdown has begun and the leash runs out
 func armExitWatchdog(ctx context.Context, timeoutS float64, fromSignal bool) {

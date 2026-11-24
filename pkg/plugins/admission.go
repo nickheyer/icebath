@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // The candidate plugin set was refused with config and environment untouched
@@ -96,7 +96,7 @@ func admitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool
 	return &AdmissionRefused{Msg: err.Error()}
 }
 
-// Writes a plugin set change into the home config of a build without the package manager, refusing a new plugin that needs Python packages
+// Writes a plugin set change into the home config of a build without the package manager, the disabled list first so no step between the writes runs a plugin the change turns off, refusing a new plugin that needs Python packages
 func admitWithoutPackageManager(ctx context.Context, h string, enabled, disabled map[string]bool, opts admitOptions) error {
 	before := getEnabledSet(h)
 	for _, name := range sortedKeys(enabled) {
@@ -124,42 +124,32 @@ func admitWithoutPackageManager(ctx context.Context, h string, enabled, disabled
 			return &AdmissionRefused{Msg: "Plugin configuration changed since this selection was read; retry."}
 		}
 	}
-	changes := config.Changes{Set: []config.KeyValue{
-		{Key: "plugins.enabled", Value: sortedCopy(sortedKeys(enabled))},
-		{Key: "plugins.disabled", Value: sortedCopy(sortedKeys(disabled))},
-	}}
-	record, present, err := settledUpdateRecord(h, disabled, opts.Settled)
-	if err != nil {
-		return &AdmissionRefused{Msg: err.Error()}
+	hctx := homeContext(h)
+	record := settledUpdateRecord(hctx, disabled, opts.Settled)
+	writes := []struct {
+		key   string
+		value any
+	}{{settings.PluginsDisabled.Key, sortedCopy(sortedKeys(disabled))}, {settings.PluginsEnabled.Key, sortedCopy(sortedKeys(enabled))}, {settings.PluginsDisabledByUpdate.Key, nil}}
+	if len(record) > 0 {
+		writes[2].value = record
 	}
-	switch {
-	case len(record) > 0:
-		changes.Set = append(changes.Set, config.KeyValue{Key: "plugins." + pm.DisabledByUpdateRecord, Value: record})
-	case present:
-		changes.Unset = append(changes.Unset, "plugins."+pm.DisabledByUpdateRecord)
-	}
-	if err := (config.FileBackend{}).WritePath(ctx, filepath.Join(h, "config.yaml"), changes); err != nil {
-		return &AdmissionRefused{Msg: err.Error()}
+	for _, w := range writes {
+		if _, err := settings.Set(hctx, w.key, w.value, settings.Global); err != nil {
+			return &AdmissionRefused{Msg: err.Error()}
+		}
 	}
 	return nil
 }
 
-// Record of plugins an update disabled without the ones just settled or no longer disabled, and whether the config holds one
-func settledUpdateRecord(h string, disabled map[string]bool, settled []string) (map[string]any, bool, error) {
-	user, err := config.ReadUser(h)
-	if err != nil {
-		return nil, false, err
-	}
-	plugins, _ := user["plugins"].(map[string]any)
-	raw, present := plugins[pm.DisabledByUpdateRecord]
-	record, _ := raw.(map[string]any)
+// Record of plugins an update disabled without the ones just settled or no longer disabled
+func settledUpdateRecord(ctx context.Context, disabled map[string]bool, settled []string) map[string]any {
 	kept := map[string]any{}
-	for name, why := range record {
+	for name, why := range settings.PluginsDisabledByUpdate.Get(ctx) {
 		if disabled[name] && !slices.Contains(settled, name) {
 			kept[name] = why
 		}
 	}
-	return kept, present, nil
+	return kept
 }
 
 // AdmitOptions carries the keyword arguments of admit_plugin_set_change

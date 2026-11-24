@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // VenvState is the dependency environment state package a venv sync drives, the catalogue Venv or a test double
@@ -174,7 +173,7 @@ var extraSeparators = regexp.MustCompile(`[-_.]+`)
 
 // PEP 685 name uv matches an extra by, separator runs folded to one dash and lowercased
 func ExtraKey(name string) string {
-	return pystr.Lower(extraSeparators.ReplaceAllString(name, "-"))
+	return strings.ToLower(extraSeparators.ReplaceAllString(name, "-"))
 }
 
 // Recorded extras the project still declares, the recorded spelling kept for uv

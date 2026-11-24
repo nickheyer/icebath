@@ -1,10 +1,11 @@
 package app
 
 import (
+	"unicode"
+
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Marker printed before a whole reply whose painted segment is not its prefix
@@ -40,7 +41,7 @@ func replayGapSettled(receipt map[string]any) *bool {
 // Rest of the final reply after the painted exact prefix, else the resumed marker and the whole reply
 func replayGapOwedReply(shown, final string) string {
 	head := strings.TrimPrefix(shown, "\n\n")
-	for _, prefix := range []string{head, pystr.Rstrip(head)} {
+	for _, prefix := range []string{head, strings.TrimRightFunc(head, unicode.IsSpace)} {
 		if strings.HasPrefix(final, prefix) {
 			return final[len(prefix):]
 		}

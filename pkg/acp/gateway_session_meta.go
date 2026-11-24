@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -137,7 +136,7 @@ func gatewayConfigOptions(models *pyacp.SessionModelState, info *pyjson.Object, 
 var gatewayModelState = func(ctx context.Context, info *pyjson.Object) *pyacp.SessionModelState {
 	model := ""
 	if v := dget(info, "model"); truthy(v) {
-		model = pystr.Strip(pyStr(v))
+		model = strings.TrimSpace(pyStr(v))
 	}
 	providerName := ""
 	if v := dget(info, "provider"); truthy(v) {

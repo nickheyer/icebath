@@ -75,7 +75,7 @@ func fmtPendingSuggestions(pending []any) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("a cron suggestion description is %s, expected text", errchain.Kind(descVal))
 		}
-		if desc := pystr.Strip(descStr); desc != "" {
+		if desc := strings.TrimSpace(descStr); desc != "" {
 			lines = append(lines, "     "+desc)
 		}
 	}
@@ -172,14 +172,14 @@ func HandleSuggestionsCommand(ctx context.Context, args string, origin map[strin
 	if origin == nil {
 		origin = resolveSuggestionOrigin(ctx, s)
 	}
-	parts := pystr.SplitWhitespace(pystr.Strip(args), -1)
+	parts := pystr.SplitWhitespace(strings.TrimSpace(args), -1)
 	sub := ""
 	if len(parts) > 0 {
-		sub = pystr.Lower(parts[0])
+		sub = strings.ToLower(parts[0])
 	}
 	rest := ""
 	if len(parts) > 1 {
-		rest = pystr.Strip(strings.Join(parts[1:], " "))
+		rest = strings.TrimSpace(strings.Join(parts[1:], " "))
 	}
 	switch sub {
 	case "":

@@ -65,7 +65,7 @@ func probeAudioDuration(ctx context.Context, path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	seconds, err := pyint.ParseFloat(pystr.Strip(text))
+	seconds, err := pyint.ParseFloat(strings.TrimSpace(text))
 	if err != nil {
 		return "", false
 	}

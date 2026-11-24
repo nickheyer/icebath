@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -199,7 +197,7 @@ func authResolver(env PoolEnv) *resolver {
 		h = env.Store.Home()
 	}
 	creds := newHomeCredentials(env)
-	return newResolver(env.ctx(), config.Tree(creds.env.config()), creds.env.Secrets, h, creds)
+	return newResolver(env.ctx(), creds.env.Secrets, h, creds)
 }
 
 // GetAPIKeyProviderStatus is the status snapshot for an API key provider
@@ -359,47 +357,7 @@ func clearModelEndpointCredentials(modelCfg map[string]any, clearAPIKey, clearAP
 	return modelCfg
 }
 
-// ConfigWriteRefusedError is a config.yaml that cannot be read and so must not be replaced
-type ConfigWriteRefusedError struct {
-	Path   string
-	Reason string
-	Err    error
-}
-
-func (e *ConfigWriteRefusedError) Error() string {
-	return fmt.Sprintf("Refusing to write %s: the file %s (%v). Fix it, then retry.", e.Path, e.Reason, e.Err)
-}
-
-func (e *ConfigWriteRefusedError) Unwrap() error { return e.Err }
-
-// Refuses to replace an existing config.yaml that cannot be read or parsed, returning the raw mapping
-func requireReadableConfigBeforeWrite(h string) (map[string]any, error) {
-	path := home.ConfigPath(h)
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]any{}, nil
-		}
-		return nil, &ConfigWriteRefusedError{Path: path, Reason: "cannot be accessed", Err: err}
-	}
-	loaded, err := config.ReadUser(h)
-	if err != nil {
-		var invalid *config.InvalidUserConfigError
-		if errors.As(err, &invalid) {
-			return nil, &ConfigWriteRefusedError{Path: path, Reason: "has a formatting error", Err: err}
-		}
-		return nil, &ConfigWriteRefusedError{Path: path, Reason: "cannot be read", Err: err}
-	}
-	if loaded == nil {
-		return map[string]any{}, nil
-	}
-	return loaded, nil
-}
-
-// Persists the complete desired config state, omitted mapping keys being deliberately deleted
-func atomicConfigReplace(ctx context.Context, h string, data map[string]any) error {
-	return config.SaveUser(ctx, h, data)
-}
-
+// Home of a pool env's profile, the process profile when the env names no store
 func envHome(env PoolEnv) string {
 	if env.Store != nil {
 		return env.Store.Home()
@@ -407,47 +365,41 @@ func envHome(env PoolEnv) string {
 	return home.Process()
 }
 
-// Writes model.provider plus base_url into config.yaml
-func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultModel string, clearDefault bool) (string, error) {
-	h := envHome(env)
-	configPath := home.ConfigPath(h)
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
-		return "", err
-	}
-	if _, err := requireReadableConfigBeforeWrite(h); err != nil {
-		return "", err
-	}
-	cfg, err := config.ReadUser(h)
-	if err != nil {
-		return "", err
-	}
-	modelCfg := map[string]any{}
-	if current, ok := cfg["model"].(map[string]any); ok {
-		for k, v := range current {
-			modelCfg[k] = v
+// Context whose settings writes and reads belong to the pool env's profile
+func envSettingsCtx(env PoolEnv) context.Context {
+	return home.WithOverride(env.ctx(), envHome(env))
+}
+
+// Writes each key of the profile of ctx through the settings writer in order, a nil value removing the key
+func setProfileSettings(ctx context.Context, changes ...config.KeyValue) error {
+	for _, kv := range changes {
+		if _, err := settings.Set(ctx, kv.Key, kv.Value, settings.Global); err != nil {
+			return err
 		}
-		config.SetMappingKeys(modelCfg, config.MappingKeys(current))
 	}
-	pyDictSet(modelCfg, "provider", providerID)
+	return nil
+}
+
+// Writes model.provider plus base_url of the env's profile, dropping the inline key, its variable and the request format of the previous route
+func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultModel string, clearDefault bool) (string, error) {
+	ctx := envSettingsCtx(env)
+	var baseURL any
 	if strings.TrimSpace(inferenceBaseURL) != "" {
-		pyDictSet(modelCfg, "base_url", strings.TrimRight(inferenceBaseURL, "/"))
-	} else {
-		delete(modelCfg, "base_url")
+		baseURL = strings.TrimRight(inferenceBaseURL, "/")
 	}
-	clearModelEndpointCredentials(modelCfg, true, true, false)
+	changes := []config.KeyValue{{Key: settings.ModelProvider.Key, Value: providerID}, {Key: settings.ModelBaseURL.Key, Value: baseURL},
+		{Key: settings.ModelAPIKey.Key}, {Key: settings.ModelKeyEnv.Key}, {Key: settings.ModelAPIMode.Key}}
 	if defaultModel != "" {
-		curDefault := cfgString(modelCfg["default"])
-		if curDefault == "" || strings.Contains(curDefault, "/") {
-			pyDictSet(modelCfg, "default", defaultModel)
+		if current := strings.TrimSpace(settings.Model.Get(ctx)); current == "" || strings.Contains(current, "/") {
+			changes = append(changes, config.KeyValue{Key: settings.Model.Key, Value: defaultModel})
 		}
 	} else if clearDefault {
-		delete(modelCfg, "default")
+		changes = append(changes, config.KeyValue{Key: settings.Model.Key})
 	}
-	pyDictSet(cfg, "model", modelCfg)
-	if err := atomicConfigReplace(env.ctx(), h, cfg); err != nil {
+	if err := setProfileSettings(ctx, changes...); err != nil {
 		return "", err
 	}
-	return configPath, nil
+	return home.ConfigPath(envHome(env)), nil
 }
 
 // Normalized model.provider from config.yaml, empty when absent or unreadable
@@ -473,30 +425,18 @@ func logoutDefaultProviderFromConfig(env PoolEnv) string {
 	return provider
 }
 
-// Resets config.yaml model.provider to auto after logout
+// Resets the profile's model.provider to auto after logout, a custom endpoint address going back to OpenRouter's
 func resetConfigProvider(env PoolEnv) (string, error) {
-	h := envHome(env)
-	configPath := home.ConfigPath(h)
-	if _, err := os.Stat(configPath); err != nil {
+	ctx := envSettingsCtx(env)
+	configPath := home.ConfigPath(envHome(env))
+	if strings.TrimSpace(settings.ModelProvider.Get(ctx)) == "" {
 		return configPath, nil
 	}
-	if _, err := requireReadableConfigBeforeWrite(h); err != nil {
-		return "", err
+	changes := []config.KeyValue{{Key: settings.ModelProvider.Key, Value: "auto"}}
+	if strings.TrimSpace(settings.ModelBaseURL.Get(ctx)) != "" {
+		changes = append(changes, config.KeyValue{Key: settings.ModelBaseURL.Key, Value: OpenRouterBaseURL})
 	}
-	cfg, err := config.ReadUser(h)
-	if err != nil {
-		return "", err
-	}
-	if len(cfg) == 0 {
-		return configPath, nil
-	}
-	if model, ok := cfg["model"].(map[string]any); ok {
-		model["provider"] = "auto"
-		if _, has := model["base_url"]; has {
-			model["base_url"] = OpenRouterBaseURL
-		}
-	}
-	if err := atomicConfigReplace(env.ctx(), h, cfg); err != nil {
+	if err := setProfileSettings(ctx, changes...); err != nil {
 		return "", err
 	}
 	return configPath, nil

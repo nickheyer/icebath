@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Reply text of a message frame, empty when text is absent or null
@@ -150,7 +149,7 @@ func (a *GatewayACPAgent) projectSideUpdate(ctx context.Context, kind, sid, edit
 func (a *GatewayACPAgent) closeSegment(aid string) {
 	streamed := a.streamed[aid]
 	delete(a.streamed, aid)
-	if pystr.Strip(streamed) != "" {
+	if strings.TrimSpace(streamed) != "" {
 		a.segments[aid] = append(a.segments[aid], streamed)
 	}
 }
@@ -169,12 +168,12 @@ func (a *GatewayACPAgent) finalRemainder(aid string, payload *pyjson.Object) str
 	}
 	segments := map[string]bool{}
 	for _, s := range shown {
-		segments[pystr.Strip(s)] = true
+		segments[strings.TrimSpace(s)] = true
 	}
 	if dget(payload, "response_reused") == true {
 		painted := false
 		if hasCut || truthy(dget(payload, "receipt")) {
-			painted = segments[pystr.Strip(text)] || pystr.Strip(text) == pystr.Strip(streamed)
+			painted = segments[strings.TrimSpace(text)] || strings.TrimSpace(text) == strings.TrimSpace(streamed)
 		} else {
 			painted = streamed != "" || len(shown) > 0
 		}
@@ -183,18 +182,18 @@ func (a *GatewayACPAgent) finalRemainder(aid string, payload *pyjson.Object) str
 		}
 	}
 	if hasCut {
-		if cut == "" && segments[pystr.Strip(text)] {
+		if cut == "" && segments[strings.TrimSpace(text)] {
 			return ""
 		}
 		return ReplayGapOwedReply(cut, text)
 	}
 	if strings.HasPrefix(text, streamed) {
-		if streamed == "" && segments[pystr.Strip(text)] {
+		if streamed == "" && segments[strings.TrimSpace(text)] {
 			return ""
 		}
 		return text[len(streamed):]
 	}
-	if pystr.Strip(text) == pystr.Strip(streamed) {
+	if strings.TrimSpace(text) == strings.TrimSpace(streamed) {
 		return ""
 	}
 	return "\n\n" + text

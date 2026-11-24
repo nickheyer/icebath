@@ -22,7 +22,7 @@ func NormalizeExportFormat(format string) (string, error) {
 	if name == "" {
 		name = "jsonl"
 	}
-	value, ok := sessionExportFormats[pystr.Lower(pystr.Strip(name))]
+	value, ok := sessionExportFormats[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
 		return "", &pyint.Error{Kind: "ValueError", Msg: "Unsupported session export format: " + format}
 	}
@@ -35,7 +35,7 @@ func NormalizeExportOnly(only any) (string, error) {
 		return "", nil
 	}
 	text := pyrepr.Str(only)
-	if sessionExportOnlyAliases[pystr.Lower(pystr.Strip(text))] {
+	if sessionExportOnlyAliases[strings.ToLower(strings.TrimSpace(text))] {
 		return "user-prompts", nil
 	}
 	return "", &pyint.Error{Kind: "ValueError", Msg: "Unsupported session export filter: " + text}
@@ -304,7 +304,7 @@ func exportSessionMetadataLines(session *pyjson.Object) []string {
 		}
 	}
 	if title := rowValue(session, "title"); pyrepr.Truthy(title) {
-		lines = append(lines, "- Title: "+pystr.Strip(strings.Join(pystr.Splitlines(pyrepr.Str(title), false), " ")))
+		lines = append(lines, "- Title: "+strings.TrimSpace(strings.Join(pystr.Splitlines(pyrepr.Str(title), false), " ")))
 	}
 	if started, ok := formatExportTimestamp(rowValue(session, "started_at"), exportSessionID(session)); ok && started != "" {
 		lines = append(lines, "- Started: "+started)
@@ -328,7 +328,7 @@ func exportSessionID(session *pyjson.Object) string {
 // Stripped title of an exported session, its id when untitled
 func exportSessionTitleOrID(session *pyjson.Object) string {
 	if title := rowValue(session, "title"); pyrepr.Truthy(title) {
-		if text := pystr.Strip(pyrepr.Str(title)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(title)); text != "" {
 			return text
 		}
 	}
@@ -337,7 +337,7 @@ func exportSessionTitleOrID(session *pyjson.Object) string {
 
 // One line heading text, unknown when nothing is left
 func exportHeadingText(value string) string {
-	if text := pystr.Strip(strings.Join(pystr.Splitlines(value, false), " ")); text != "" {
+	if text := strings.TrimSpace(strings.Join(pystr.Splitlines(value, false), " ")); text != "" {
 		return text
 	}
 	return "unknown"
@@ -429,7 +429,7 @@ func NormalizeSaveFormat(format string) (string, error) {
 	if token == "" {
 		token = "json"
 	}
-	token = pystr.Lower(pystr.Strip(token))
+	token = strings.ToLower(strings.TrimSpace(token))
 	canonical, ok := sessionSaveFormatAliases[token]
 	if !ok {
 		return "", &pyint.Error{Kind: "ValueError", Msg: "Unknown format " + pyrepr.Repr(token) + " — expected one of: json, md, html"}

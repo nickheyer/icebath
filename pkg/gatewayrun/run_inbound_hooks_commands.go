@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -18,7 +17,7 @@ var RunGatewayExecQuickCommand func(ctx context.Context, env *tools.Env, execCmd
 
 // Fires the pre_command observers and the command interceptors, a rewrite returning the new command name
 func (r *GatewayRunner) hmCommandHooks(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey, command, canonical string) (bool, *string, *string) {
-	rawArgs := pystr.Strip(event.GetCommandArgs())
+	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	platform := string(source.Platform)
 	func() {
 		defer func() {
@@ -44,7 +43,7 @@ func (r *GatewayRunner) hmCommandHooks(ctx context.Context, event *gateway.Messa
 		if !ok {
 			continue
 		}
-		decision := pystr.Lower(pystr.Strip(hookPyStr(hookResult, "decision")))
+		decision := strings.ToLower(strings.TrimSpace(hookPyStr(hookResult, "decision")))
 		var message *string
 		if text, isText := hookResult["message"].(string); isText && text != "" {
 			message = &text
@@ -59,9 +58,9 @@ func (r *GatewayRunner) hmCommandHooks(ctx context.Context, event *gateway.Messa
 		case "handled":
 			return true, message, nil
 		case "rewrite":
-			newCommand := pystr.LstripChars(pystr.Strip(hookPyStr(hookResult, "command_name")), "/")
+			newCommand := strings.TrimLeft(strings.TrimSpace(hookPyStr(hookResult, "command_name")), "/")
 			if newCommand != "" {
-				event.Text = pystr.Strip("/" + newCommand + " " + pystr.Strip(hookPyStr(hookResult, "raw_args")))
+				event.Text = strings.TrimSpace("/" + newCommand + " " + strings.TrimSpace(hookPyStr(hookResult, "raw_args")))
 				rewritten, _ := event.GetCommand()
 				return false, nil, &rewritten
 			}
@@ -152,7 +151,7 @@ func (r *GatewayRunner) hmRunPluginHandler(ctx context.Context, handler plugins.
 	if sessionEntry == nil {
 		pluginContext.SessionKey = sessionKey
 	}
-	userArgs := pystr.Strip(event.GetCommandArgs())
+	userArgs := strings.TrimSpace(event.GetCommandArgs())
 	if args != nil {
 		userArgs = *args
 	}

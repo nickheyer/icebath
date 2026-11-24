@@ -2,7 +2,6 @@ package whatsappcloud
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var envEnableCredentials = []string{"WHATSAPP_CLOUD_PHONE_NUMBER_ID", "WHATSAPP_CLOUD_ACCESS_TOKEN"}
@@ -21,11 +20,7 @@ var envOverrides = []gateway.EnvStep{
 
 var authz = map[string]any{"allowed_users_env": "WHATSAPP_CLOUD_ALLOWED_USERS", "allow_all_env": "WHATSAPP_CLOUD_ALLOW_ALL_USERS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled whatsapp_cloud directory with the gateway config bridge, and the settings its names moved to
+// Registers the env declarations of the bundled whatsapp_cloud directory with the gateway config bridge
 func init() {
 	gateway.RegisterBundledEnv("whatsapp_cloud", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
-	gateway.RegisterEnvSettings(map[string]settings.Entry{"WHATSAPP_CLOUD_PHONE_NUMBER_ID": settings.WhatsappCloudPhoneNumberID,
-		"WHATSAPP_CLOUD_APP_ID": settings.WhatsappCloudAppID, "WHATSAPP_CLOUD_WABA_ID": settings.WhatsappCloudWabaID,
-		"WHATSAPP_CLOUD_WEBHOOK_HOST": settings.WhatsappCloudWebhookHost, "WHATSAPP_CLOUD_WEBHOOK_PORT": settings.WhatsappCloudWebhookPort,
-		"WHATSAPP_CLOUD_WEBHOOK_PATH": settings.WhatsappCloudWebhookPath, "WHATSAPP_CLOUD_API_VERSION": settings.WhatsappCloudAPIVersion})
 }

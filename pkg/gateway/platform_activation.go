@@ -11,19 +11,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Keys of every mapping a platform block may live in
+// Keys of every mapping a platform block may live in: the root and platforms
 func yamlBlockNames(yamlCfg any) map[string]bool {
 	out := map[string]bool{}
 	cfg, ok := yamlCfg.(map[string]any)
 	if !ok {
 		return out
 	}
-	gw, _ := cfg["gateway"].(map[string]any)
-	for _, parent := range []any{cfg, cfg["platforms"], gw, gw["platforms"]} {
+	for _, parent := range []any{cfg, cfg["platforms"]} {
 		if m, ok := parent.(map[string]any); ok {
 			for k, v := range m {
 				if _, isMap := v.(map[string]any); isMap {
@@ -40,13 +38,13 @@ func envNames(ctx context.Context, h string) map[string]bool {
 	names := map[string]bool{}
 	add := func(m map[string]string) {
 		for k, v := range m {
-			if pystr.Strip(v) != "" {
+			if strings.TrimSpace(v) != "" {
 				names[k] = true
 			}
 		}
 	}
 	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok && pystr.Strip(v) != "" {
+		if k, v, ok := strings.Cut(kv, "="); ok && strings.TrimSpace(v) != "" {
 			names[k] = true
 		}
 	}
@@ -101,9 +99,9 @@ func jsonSectionKeys(path, section, what string) map[string]bool {
 
 // Whether a candidate equals the name or extends it with an underscore suffix, case insensitively
 func activationMatches(name string, candidates map[string]bool) bool {
-	lowered := pystr.Lower(name)
+	lowered := strings.ToLower(name)
 	for c := range candidates {
-		cl := pystr.Lower(c)
+		cl := strings.ToLower(c)
 		if cl == lowered || strings.HasPrefix(cl, lowered+"_") {
 			return true
 		}
@@ -129,14 +127,14 @@ func ActivationPredicate(ctx context.Context, yamlCfg any, platformNames []strin
 	}
 	upperEnv := map[string]bool{}
 	for e := range envNames(ctx, h) {
-		upperEnv[pystr.Upper(e)] = true
+		upperEnv[strings.ToUpper(e)] = true
 	}
 	pools := jsonSectionKeys(filepath.Join(h, "auth.json"), "credential_pool", "auth.json")
 	return func(name string) bool {
 		if activationMatches(name, blocks) || activationMatches(name, pools) {
 			return true
 		}
-		prefix := strings.ReplaceAll(pystr.Upper(name), "-", "_") + "_"
+		prefix := strings.ReplaceAll(strings.ToUpper(name), "-", "_") + "_"
 		for e := range upperEnv {
 			if strings.HasPrefix(e, prefix) {
 				return true
@@ -146,7 +144,7 @@ func ActivationPredicate(ctx context.Context, yamlCfg any, platformNames []strin
 			return false
 		}
 		for d := range registry.ActivationEnv(name) {
-			if upperEnv[pystr.Upper(d)] {
+			if upperEnv[strings.ToUpper(d)] {
 				return true
 			}
 		}

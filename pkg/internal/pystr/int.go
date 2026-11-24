@@ -8,7 +8,7 @@ import (
 
 // Base ten value int of a str gives, false where int raises ValueError
 func IntText(s string) (*big.Int, bool) {
-	t := Strip(s)
+	t := strings.TrimSpace(s)
 	neg := false
 	if strings.HasPrefix(t, "+") || strings.HasPrefix(t, "-") {
 		neg, t = t[0] == '-', t[1:]

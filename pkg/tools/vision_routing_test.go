@@ -86,13 +86,13 @@ func standardCaps() *fakeVisionCaps {
 	}
 }
 
-// Env with a config tree and a bound main runtime
+// Env whose home config.yaml holds cfg, with a bound main runtime
 func routingEnv(t *testing.T, cfg config.Tree, runtime map[string]any) *Env {
 	t.Helper()
-	if cfg == nil {
-		cfg = config.Defaults()
+	env := &Env{Home: t.TempDir(), Values: &sync.Map{}}
+	if cfg != nil {
+		writeHomeConfigDoc(t, env, cfg)
 	}
-	env := &Env{Home: t.TempDir(), Config: cfg, Values: &sync.Map{}}
 	if runtime != nil {
 		env.Values.Store("runtime_main", runtime)
 	}
@@ -125,7 +125,7 @@ func TestProfileVetoBeatsVisionCapableLookup(t *testing.T) {
 	caps := installVisionCaps(t, standardCaps())
 	caps.catalog["xiaomi|mimo-v2.5"] = true
 	env := routingEnv(t, nil, map[string]any{"provider": "xiaomi", "model": "mimo-v2.5"})
-	if decideImageInputMode(context.Background(), env, "xiaomi", "mimo-v2.5", map[string]any(env.Config), "") != "native" {
+	if decideImageInputMode(context.Background(), env, "xiaomi", "mimo-v2.5", "") != "native" {
 		t.Fatal("catalog should route native")
 	}
 	if ShouldUseNativeVisionFastPath(context.Background(), env) {
@@ -149,44 +149,35 @@ func TestFastPathGatingByConfig(t *testing.T) {
 	if ShouldUseNativeVisionFastPath(context.Background(), env) {
 		t.Fatal("unknown provider must fall through")
 	}
-	cfg := config.Defaults()
-	cfg.Set("model.supports_vision", true)
-	env = routingEnv(t, cfg, map[string]any{"provider": "brand-new-provider", "model": "llava-v1.6"})
+	env = routingEnv(t, config.Tree{}, map[string]any{"provider": "brand-new-provider", "model": "llava-v1.6"})
+	setHomeConfigKey(t, env, "model.supports_vision", true)
 	if !ShouldUseNativeVisionFastPath(context.Background(), env) {
 		t.Fatal("supports_vision override must enable the fast path")
 	}
-	cfg.Set("agent.image_input_mode", "text")
+	setHomeConfigKey(t, env, "agent.image_input_mode", "text")
 	if ShouldUseNativeVisionFastPath(context.Background(), env) {
 		t.Fatal("explicit text mode wins")
 	}
-	cfg = config.Defaults()
-	cfg.Set("model.supports_vision", true)
-	cfg.Set("auxiliary.vision.model", "google/gemini-flash")
-	env = routingEnv(t, cfg, map[string]any{"provider": "anthropic", "model": "claude"})
+	env = routingEnv(t, config.Tree{}, map[string]any{"provider": "anthropic", "model": "claude"})
+	setHomeConfigKey(t, env, "model.supports_vision", true)
+	setHomeConfigKey(t, env, "auxiliary.vision.model", "google/gemini-flash")
 	if DecideImageInputMode(context.Background(), env, "anthropic", "claude", "") != "text" {
 		t.Fatal("explicit auxiliary.vision backend routes text in auto mode")
 	}
-	cfg.Set("agent.image_input_mode", "native")
+	setHomeConfigKey(t, env, "agent.image_input_mode", "native")
 	if DecideImageInputMode(context.Background(), env, "anthropic", "claude", "") != "native" {
 		t.Fatal("explicit native mode wins")
 	}
 }
 
 func TestReadMainFieldsFallBackToConfig(t *testing.T) {
-	cfg := config.Defaults()
-	cfg.Set("model", map[string]any{"default": " gpt-4o ", "provider": " OpenAI-Codex "})
-	env := routingEnv(t, cfg, nil)
+	env := routingEnv(t, config.Tree{"model": map[string]any{"default": " gpt-4o ", "provider": " OpenAI-Codex "}}, nil)
 	if readMainModel(env) != "gpt-4o" || readMainProvider(env) != "openai-codex" {
 		t.Fatalf("config fallback %q %q", readMainModel(env), readMainProvider(env))
 	}
 	env.Values.Store("runtime_main", map[string]any{"provider": "Anthropic", "model": "claude-opus"})
 	if readMainModel(env) != "claude-opus" || readMainProvider(env) != "anthropic" {
 		t.Fatal("runtime override must win")
-	}
-	cfg.Set("model", "plain-model")
-	env = routingEnv(t, cfg, nil)
-	if readMainModel(env) != "plain-model" || readMainProvider(env) != "" {
-		t.Fatal("string model config")
 	}
 }
 
@@ -207,24 +198,25 @@ func TestCoerceCapabilityBool(t *testing.T) {
 }
 
 func TestSupportsVisionOverridePrecedence(t *testing.T) {
-	cfg := map[string]any{
+	env := routingEnv(t, config.Tree{
 		"model": map[string]any{"provider": "my-local"},
 		"providers": map[string]any{
-			"my-local": map[string]any{"models": map[string]any{"llava": map[string]any{"vision": "true"}}},
+			"my-local": map[string]any{"models": map[string]any{"llava": map[string]any{"supports_vision": "true"}}},
 			"other":    map[string]any{"name": "Other", "models": map[string]any{"qwen-vl": map[string]any{"supports_vision": "false"}}},
 		},
-	}
-	if v, ok := supportsVisionOverride(cfg, "custom", "llava", ""); !ok || !v {
+	}, nil)
+	ctx := envHomeCtx(context.Background(), env)
+	if v, ok := supportsVisionOverride(ctx, "custom", "llava", ""); !ok || !v {
 		t.Fatal("providers block through model.provider")
 	}
-	if v, ok := supportsVisionOverride(cfg, "custom", "qwen-vl", "custom:other"); !ok || v {
+	if v, ok := supportsVisionOverride(ctx, "custom", "qwen-vl", "custom:other"); !ok || v {
 		t.Fatal("quoted false must disable through the requested provider's entry")
 	}
-	if _, ok := supportsVisionOverride(cfg, "custom", "unknown", ""); ok {
+	if _, ok := supportsVisionOverride(ctx, "custom", "unknown", ""); ok {
 		t.Fatal("unset model has no verdict")
 	}
-	cfg["model"].(map[string]any)["supports_vision"] = "no"
-	if v, ok := supportsVisionOverride(cfg, "custom", "llava", ""); !ok || v {
+	setHomeConfigKey(t, env, "model.supports_vision", "no")
+	if v, ok := supportsVisionOverride(ctx, "custom", "llava", ""); !ok || v {
 		t.Fatal("top level override wins")
 	}
 }
@@ -239,60 +231,61 @@ func TestLookupSupportsVisionProbes(t *testing.T) {
 	caps.catalog["openai-codex|gpt-5"] = true
 	ctx := context.Background()
 	env := routingEnv(t, nil, map[string]any{"provider": "custom", "model": "gemma-local", "base_url": "http://127.0.0.1:8090/v1"})
-	if v, ok := lookupSupportsVision(ctx, env, "custom", "gemma-local", map[string]any(env.Config), ""); !ok || !v {
+	if v, ok := lookupSupportsVision(ctx, env, "custom", "gemma-local", ""); !ok || !v {
 		t.Fatal("managed runtime verdict")
 	}
-	if v, ok := lookupSupportsVision(ctx, env, "llamacpp", "gemma-local", map[string]any(env.Config), ""); !ok || !v {
+	if v, ok := lookupSupportsVision(ctx, env, "llamacpp", "gemma-local", ""); !ok || !v {
 		t.Fatal("llamacpp alias is always managed")
 	}
 	env = routingEnv(t, nil, nil)
-	if v, ok := lookupSupportsVision(ctx, env, "openai-codex", "gpt-5-900k", map[string]any(env.Config), ""); !ok || !v {
+	if v, ok := lookupSupportsVision(ctx, env, "openai-codex", "gpt-5-900k", ""); !ok || !v {
 		t.Fatal("codex variant must map to its base slug")
 	}
-	if v, ok := lookupSupportsVision(ctx, env, "ollama", "llava:7b", map[string]any(env.Config), ""); !ok || !v {
+	if v, ok := lookupSupportsVision(ctx, env, "ollama", "llava:7b", ""); !ok || !v {
 		t.Fatal("ollama probe with the default local base URL")
 	}
 	if len(caps.ollamaAsks) != 1 || caps.ollamaAsks[0] != "llava:7b|http://localhost:11434/v1|" {
 		t.Fatalf("ollama asks %v", caps.ollamaAsks)
 	}
-	if _, ok := lookupSupportsVision(ctx, env, "", "model", map[string]any(env.Config), ""); ok {
+	if _, ok := lookupSupportsVision(ctx, env, "", "model", ""); ok {
 		t.Fatal("empty provider has no verdict")
 	}
 	VisionCapabilities = nil
-	if _, ok := lookupSupportsVision(ctx, env, "anthropic", "claude", map[string]any(env.Config), ""); ok {
+	if _, ok := lookupSupportsVision(ctx, env, "anthropic", "claude", ""); ok {
 		t.Fatal("no capability source leaves no verdict")
 	}
 }
 
 func TestResolveInferenceValues(t *testing.T) {
-	cfg := map[string]any{
+	cfg := config.Tree{
 		"model":     map[string]any{"provider": "custom:box"},
 		"providers": map[string]any{"box": map[string]any{"base_url": "http://box:8000/v1", "api_key": "box-key"}},
 	}
-	env := routingEnv(t, nil, map[string]any{"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1", "api_key": func() string { return " minted " }})
-	if got := resolveInferenceBaseURL(env, cfg, "custom"); got != "http://box:8000/v1" {
+	ctx := context.Background()
+	env := routingEnv(t, cfg, map[string]any{"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1", "api_key": func() string { return " minted " }})
+	if got := resolveInferenceBaseURL(ctx, env, "custom"); got != "http://box:8000/v1" {
 		t.Fatalf("runtime base URL of another provider must be ignored, got %q", got)
 	}
-	if got := resolveInferenceBaseURL(env, cfg, "openrouter"); got != "https://openrouter.ai/api/v1" {
+	if got := resolveInferenceBaseURL(ctx, env, "openrouter"); got != "https://openrouter.ai/api/v1" {
 		t.Fatalf("runtime base URL of the same provider, got %q", got)
 	}
-	if got := resolveInferenceAPIKey(env, cfg, "custom"); got != "minted" {
+	if got := resolveInferenceAPIKey(ctx, env, "custom"); got != "minted" {
 		t.Fatalf("token source owns authentication, got %q", got)
 	}
-	env = routingEnv(t, nil, nil)
-	if got := resolveInferenceAPIKey(env, cfg, "custom"); got != "box-key" {
+	env = routingEnv(t, cfg, nil)
+	if got := resolveInferenceAPIKey(ctx, env, "custom"); got != "box-key" {
 		t.Fatalf("providers block key, got %q", got)
 	}
 }
 
 func TestRequestedProviderBorrowedOnExactRuntimeMatch(t *testing.T) {
 	installVisionCaps(t, standardCaps())
-	cfg := map[string]any{"providers": map[string]any{"my-box": map[string]any{"models": map[string]any{"vl": map[string]any{"supports_vision": true}}}}}
-	env := routingEnv(t, nil, map[string]any{"provider": "custom", "model": "vl", "requested_provider": "my-box"})
-	if v, ok := lookupSupportsVision(context.Background(), env, "custom", "vl", cfg, ""); !ok || !v {
+	cfg := config.Tree{"providers": map[string]any{"my-box": map[string]any{"models": map[string]any{"vl": map[string]any{"supports_vision": true}}}}}
+	env := routingEnv(t, cfg, map[string]any{"provider": "custom", "model": "vl", "requested_provider": "my-box"})
+	if v, ok := lookupSupportsVision(context.Background(), env, "custom", "vl", ""); !ok || !v {
 		t.Fatal("requested provider identity must be borrowed")
 	}
-	if _, ok := lookupSupportsVision(context.Background(), env, "custom", "other", cfg, ""); ok {
+	if _, ok := lookupSupportsVision(context.Background(), env, "custom", "other", ""); ok {
 		t.Fatal("identity borrowed for a different model")
 	}
 }

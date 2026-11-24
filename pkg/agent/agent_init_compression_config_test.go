@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -9,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func compressionConfigAgent() *AIAgent {
@@ -18,17 +19,17 @@ func compressionConfigAgent() *AIAgent {
 
 func TestThresholdTokensDefaultAndNullOptOut(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	defaults := map[string]any(config.Defaults())
-	shippedTokens, _ := config.CfgGet(defaults, "compression", "threshold_tokens")
-	shippedThreshold, _ := config.CfgGet(defaults, "compression", "threshold")
+	shippedTokens := settings.CompressionThresholdTokens.DefaultValue()
+	shippedThreshold := settings.CompressAt.Default
 	for _, tc := range []struct {
 		cfg  map[string]any
 		want any
 	}{
 		{map[string]any{}, shippedTokens},
 		{map[string]any{"compression": map[string]any{"threshold_tokens": nil}}, nil},
+		{map[string]any{"compression": map[string]any{"threshold_tokens": 120_000}}, 120_000},
 	} {
-		cs, err := parseCompressionConfig(compressionConfigAgent(), tc.cfg)
+		cs, err := parseCompressionConfig(settings.WithFrozen(t.Context(), tc.cfg), compressionConfigAgent())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,38 +45,34 @@ func TestThresholdTokensDefaultAndNullOptOut(t *testing.T) {
 
 func TestConfigFlagReachesTheCompressorThroughTheLoader(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if v, _ := config.CfgGet(map[string]any(config.Defaults()), "compression", "prepare_ahead"); v != false {
-		t.Fatalf("shipped prepare_ahead %v", v)
+	if settings.CompressionPrepareAhead.Default {
+		t.Fatal("shipped prepare_ahead is on")
 	}
 	h := filepath.Join(t.TempDir(), "profile")
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	load := func() map[string]any {
-		tree, err := config.LoadReadonly(t.Context(), h, config.EnvRefLookup)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return map[string]any(tree)
-	}
-	if cs, err := parseCompressionConfig(compressionConfigAgent(), load()); err != nil || cs.PrepareAhead {
+	if cs, err := parseCompressionConfig(t.Context(), compressionConfigAgent()); err != nil || cs.PrepareAhead {
 		t.Fatalf("default prepare_ahead %v %v", cs.PrepareAhead, err)
 	}
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("compression:\n  prepare_ahead: true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if cs, err := parseCompressionConfig(compressionConfigAgent(), load()); err != nil || !cs.PrepareAhead {
+	if cs, err := parseCompressionConfig(t.Context(), compressionConfigAgent()); err != nil || !cs.PrepareAhead {
 		t.Fatalf("configured prepare_ahead %v %v", cs.PrepareAhead, err)
 	}
 }
 
 func TestCompressionConfigDefaultsCoercionsAndGarbage(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	cs, err := parseCompressionConfig(compressionConfigAgent(), map[string]any{"compression": map[string]any{
+	frozen := func(compression map[string]any) context.Context {
+		return settings.WithFrozen(t.Context(), map[string]any{"compression": compression})
+	}
+	cs, err := parseCompressionConfig(frozen(map[string]any{
 		"max_attempts": 0, "protect_first_n": -2, "tail_mode": " LEGACY ", "min_tail_user_messages": 0, "model_thresholds": map[string]any{"gpt": 0.7, "flag": true, "n": 1},
 		"codex_app_server_auto": "Bogus", "codex_responses_native": "off", "codex_responses_compact_threshold": 2.5, "in_place": nil, "micro_compact_every_n_turns": "x",
-	}})
+	}), compressionConfigAgent())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,10 +82,10 @@ func TestCompressionConfigDefaultsCoercionsAndGarbage(t *testing.T) {
 	if cs.CodexAppServerAuto != "native" || cs.CodexResponsesNative || cs.CodexResponsesCompactThreshold != nil || !cs.InPlace || cs.MicroCompactEveryNTurns != 1 || !cs.Enabled || cs.TargetRatio != 0.20 || cs.ProtectLast != 20 {
 		t.Fatalf("defaults %+v", cs)
 	}
-	if _, err := parseCompressionConfig(compressionConfigAgent(), map[string]any{"compression": map[string]any{"protect_last_n": "many"}}); err == nil {
-		t.Fatal("garbage protect_last_n must raise")
+	if cs, err := parseCompressionConfig(frozen(map[string]any{"protect_last_n": "many", "target_ratio": 5}), compressionConfigAgent()); err != nil || cs.ProtectLast != settings.CompressionProtectLastN.Default || cs.TargetRatio != 0.80 {
+		t.Fatalf("garbage protect_last_n %d and out of range target_ratio %v, err %v", cs.ProtectLast, cs.TargetRatio, err)
 	}
-	if _, err := parseCompressionConfig(&AIAgent{apiMode: "codex_app_server"}, map[string]any{"compression": map[string]any{"checkpoint_required": "yes"}}); err == nil {
+	if _, err := parseCompressionConfig(frozen(map[string]any{"checkpoint_required": "yes"}), &AIAgent{apiMode: "codex_app_server"}); err == nil {
 		t.Fatal("checkpoint_required on codex_app_server must be refused")
 	}
 }

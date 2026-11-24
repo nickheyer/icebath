@@ -154,16 +154,36 @@ func TestCaptureResponseInvalidAuxResponseDegradesToTextPayload(t *testing.T) {
 	}
 }
 
+// Writes doc as the config.yaml of the home h
+func cuWriteConfig(t *testing.T, h string, doc map[string]any) {
+	t.Helper()
+	data, err := config.SafeDump(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Env of a fresh profile home whose config.yaml holds doc
+func cuConfigHome(t *testing.T, doc map[string]any) *tools.Env {
+	t.Helper()
+	env := &tools.Env{Home: t.TempDir()}
+	cuWriteConfig(t, env.Home, doc)
+	return env
+}
+
 func TestRoutingDecisionWiring(t *testing.T) {
-	env := &tools.Env{Home: t.TempDir(), Config: config.Tree{
+	env := cuConfigHome(t, map[string]any{
 		"model":     map[string]any{"default": "tencent/hy3-preview", "provider": "openrouter"},
-		"auxiliary": map[string]any{"vision": map[string]any{"provider": "openrouter", "model": "google/gemini-2.5-flash"}}}}
+		"auxiliary": map[string]any{"vision": map[string]any{"provider": "openrouter", "model": "google/gemini-2.5-flash"}}})
 	if !shouldRouteThroughAuxVision(context.Background(), env) {
 		t.Fatal("explicit auxiliary.vision did not route to aux")
 	}
-	text := &tools.Env{Home: t.TempDir(), Config: config.Tree{
+	text := cuConfigHome(t, map[string]any{
 		"model": map[string]any{"default": "claude-opus-4-5", "provider": "anthropic"},
-		"agent": map[string]any{"image_input_mode": "text"}}}
+		"agent": map[string]any{"image_input_mode": "text"}})
 	if !shouldRouteThroughAuxVision(context.Background(), text) {
 		t.Fatal("image_input_mode text kept pixels in")
 	}
@@ -489,13 +509,12 @@ func TestCacheFilePrunesOldestDownToTheCap(t *testing.T) {
 }
 
 func TestAuxVisionRouteFollowsAConfigChangeWithoutRestart(t *testing.T) {
-	agent := map[string]any{"image_input_mode": "native"}
-	env := &tools.Env{Home: t.TempDir(), Config: config.Tree{
-		"model": map[string]any{"default": "claude-opus-4-5", "provider": "anthropic"}, "agent": agent}}
+	model := map[string]any{"default": "claude-opus-4-5", "provider": "anthropic"}
+	env := cuConfigHome(t, map[string]any{"model": model, "agent": map[string]any{"image_input_mode": "native"}})
 	if shouldRouteThroughAuxVision(context.Background(), env) {
 		t.Fatal("native mode on a vision main model routed to aux")
 	}
-	agent["image_input_mode"] = "text"
+	cuWriteConfig(t, env.Home, map[string]any{"model": model, "agent": map[string]any{"image_input_mode": "text"}})
 	if !shouldRouteThroughAuxVision(context.Background(), env) {
 		t.Fatal("the image_input_mode edit did not reach the next capture")
 	}

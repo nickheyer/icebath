@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -56,7 +57,7 @@ func mustSecret(ctx context.Context, name string) string {
 
 // Selected OpenAI tier, custom ids passing through from the env var or the scoped config
 func resolveOpenAIImageModel(env *tools.Env) (string, map[string]any) {
-	return resolveStaticModel(env, openAIImageModels, gptImage2Default, staticModelOptions{EnvVar: "OPENAI_IMAGE_MODEL", ConfigKey: "openai", Passthrough: true})
+	return resolveStaticModel(env, openAIImageModels, gptImage2Default, staticModelOptions{Scoped: settings.OpenAIImageModel, Passthrough: true})
 }
 
 // Base URL and key of a declared custom endpoint, empty with a warning when no entry matches
@@ -87,8 +88,8 @@ func orNone(v any) any {
 
 // Base URL then key from config, the named endpoint, and the OpenAI env vars, shared by availability and generate
 func resolveOpenAIEndpoint(ctx context.Context, env *tools.Env) (string, string, error) {
-	cfg := loadImageGenConfig(env, "openai")
-	named := strings.TrimSpace(pyStrOf(orNone(cfg["provider"])))
+	sctx := tools.WithEnvHome(ctx, env)
+	named := strings.TrimSpace(settings.OpenAIImageProvider.Get(sctx))
 	var namedBase, namedKey string
 	if named != "" {
 		var err error
@@ -96,14 +97,14 @@ func resolveOpenAIEndpoint(ctx context.Context, env *tools.Env) (string, string,
 			return "", "", err
 		}
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(pyStrOf(orNone(cfg["base_url"]))), "/")
+	baseURL := strings.TrimRight(strings.TrimSpace(settings.OpenAIImageBaseURL.Get(sctx)), "/")
 	if baseURL == "" {
 		baseURL = namedBase
 	}
 	if baseURL == "" {
 		baseURL = strings.TrimSpace(provider.GetSecretStr(ctx, "OPENAI_BASE_URL", ""))
 	}
-	keyEnv := strings.TrimSpace(pyStrOf(orNone(cfg["key_env"])))
+	keyEnv := strings.TrimSpace(settings.OpenAIImageKeyEnv.Get(sctx))
 	apiKey := ""
 	if keyEnv != "" {
 		apiKey = mustSecret(ctx, keyEnv)

@@ -285,20 +285,9 @@ func warnMissingLoginOnce(env PoolEnv, key, message string) {
 	env.log().Warn(message)
 }
 
-// Context the login choice reads settings through, the live config.yaml of the store's home and never a session's frozen copy
+// Context the login choice reads settings through, the store's home bound onto the env's context
 func (env PoolEnv) loginCtx() context.Context {
 	return env.hookContext()
-}
-
-// Profile config custom provider slugs are read from, the live config.yaml of the store's home and never a session's frozen copy
-func (env PoolEnv) loginConfig() map[string]any {
-	if env.Config != nil {
-		return env.Config()
-	}
-	if env.Store != nil {
-		return loadLiveConfigSafe(env.Store.Home())
-	}
-	return env.config()
 }
 
 // SessionOnExhausted is the reaction of a session's exhausted pinned login, its own override first, then the profile's
@@ -566,7 +555,7 @@ func LoginExhaustion(pool *Pool, credentialID string) *LoginExhaustedEvent {
 		return nil
 	}
 	reaction, _ := SessionOnExhausted(pool.env, pool.provider)
-	ev := &LoginExhaustedEvent{Provider: pool.Provider(), Slug: LoginPoolSlug(pool.env.loginConfig(), pool.provider),
+	ev := &LoginExhaustedEvent{Provider: pool.Provider(), Slug: LoginPoolSlug(pool.env.loginCtx(), pool.provider),
 		Login: LoginRef{ID: row.ID, Name: row.LoginName()}, Reason: row.LastErrorReason, OnExhausted: reaction}
 	if until, ok := exhaustedUntil(row, true); ok {
 		ev.ResetsAt = until

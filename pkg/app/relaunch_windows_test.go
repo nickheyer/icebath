@@ -17,12 +17,12 @@ func captureWindowsRelaunch(t *testing.T, returncode int) (*[][]string, *[]int, 
 	var exits []int
 	execs := 0
 	savedRun, savedExit, savedExec := relaunchRun, relaunchExit, relaunchExecvp
-	relaunchRun = func(argv []string) (int, error) {
+	relaunchRun = func(argv, env []string) (int, error) {
 		spawned = append(spawned, slices.Clone(argv))
 		return returncode, nil
 	}
 	relaunchExit = func(code int) { exits = append(exits, code) }
-	relaunchExecvp = func(string, []string) error {
+	relaunchExecvp = func(string, []string, []string) error {
 		execs++
 		return nil
 	}
@@ -33,7 +33,7 @@ func captureWindowsRelaunch(t *testing.T, returncode int) (*[][]string, *[]int, 
 func TestRelaunchWindowsUsesSubprocessNotExecvp(t *testing.T) {
 	bin := resolvedRelaunchBin(t)
 	spawned, exits, execs := captureWindowsRelaunch(t, 0)
-	relaunch([]string{"chat"}, true)
+	relaunch([]string{"chat"}, true, nil)
 	if !slices.Equal(*exits, []int{0}) || *execs != 0 || len(*spawned) != 1 || !slices.Equal((*spawned)[0], []string{bin, "chat"}) {
 		t.Fatalf("spawned %v exits %v execs %d", *spawned, *exits, *execs)
 	}
@@ -42,7 +42,7 @@ func TestRelaunchWindowsUsesSubprocessNotExecvp(t *testing.T) {
 func TestRelaunchWindowsPropagatesChildExitCode(t *testing.T) {
 	resolvedRelaunchBin(t)
 	_, exits, _ := captureWindowsRelaunch(t, 42)
-	relaunch([]string{"chat"}, true)
+	relaunch([]string{"chat"}, true, nil)
 	if !slices.Equal(*exits, []int{42}) {
 		t.Fatalf("exits %v", *exits)
 	}

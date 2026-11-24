@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubKanbanRegistry = &handlerRegistry{}
@@ -28,6 +27,7 @@ func init() {
 	scopedRPC(hubKanbanRegistry, tuigateway.KanbanBoardCommand.Name(), 5180, rpcShape{}, kanbanCommandRPC(kanbanBoardVerbs, true))
 	scopedRPC(hubKanbanRegistry, tuigateway.KanbanTaskShow.Name(), 5180, rpcShape{}, kanbanTaskShow)
 	scopedRPC(hubKanbanRegistry, tuigateway.KanbanTaskCommand.Name(), 5180, rpcShape{}, kanbanCommandRPC(kanbanTaskVerbs, false))
+	scopedRPC(hubKanbanRegistry, tuigateway.KanbanEvents.Name(), 5180, rpcShape{}, kanbanEvents)
 	hubKanbanRegistry.install()
 }
 
@@ -119,7 +119,7 @@ func kanbanTaskRow(t *kanban.Task) tuigateway.KanbanTaskRow {
 }
 
 // One board in full with every board to switch to, its columns and its tasks
-func kanbanBoardView(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func kanbanBoardView(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.KanbanBoardView.Params(params)
 	if err != nil {
 		return kanbanParamsRefused(rid, err), nil
@@ -169,7 +169,7 @@ func kanbanBoardView(ctx context.Context, rid any, params map[string]any, _ *tui
 }
 
 // One task with its comments, attempts and links
-func kanbanTaskShow(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func kanbanTaskShow(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.KanbanTaskShow.Params(params)
 	if err != nil {
 		return kanbanParamsRefused(rid, err), nil
@@ -219,6 +219,88 @@ func kanbanTaskShow(ctx context.Context, rid any, params map[string]any, _ *tuih
 	return ok(rid, tuigateway.Plain(out)), nil
 }
 
+// Text of a cell, empty for NULL
+func kanbanCellText(v any) string {
+	if v == nil {
+		return ""
+	}
+	return pyrepr.Str(v)
+}
+
+// Events of a board or one task after a cursor, oldest first, narrowed by assignee, tenant and kinds; the first read answers the newest ones.
+// The cursor moves to the newest event that existed when the read began, so events the narrowing leaves out are not read again
+func kanbanEvents(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
+	p, err := tuigateway.KanbanEvents.Params(params)
+	if err != nil {
+		return kanbanParamsRefused(rid, err), nil
+	}
+	slug := kanbanBoardOf(ctx, p.Board)
+	limit := p.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if _, err := kanban.InitDB(ctx, "", &slug); err != nil {
+		return nil, err
+	}
+	where, args := []string{"e.id > ?", "e.id <= ?"}, []any{max(p.After, 0)}
+	var filters []any
+	if id := strings.TrimSpace(p.TaskID); id != "" {
+		where, filters = append(where, "e.task_id = ?"), append(filters, id)
+	}
+	if assignee := strings.TrimSpace(p.Assignee); assignee != "" {
+		where, filters = append(where, "t.assignee = ?"), append(filters, assignee)
+	}
+	if tenant := strings.TrimSpace(p.Tenant); tenant != "" {
+		where, filters = append(where, "t.tenant = ?"), append(filters, tenant)
+	}
+	var kinds []string
+	for _, k := range p.Kinds {
+		if k = strings.TrimSpace(k); k != "" && !slices.Contains(kinds, k) {
+			kinds = append(kinds, k)
+		}
+	}
+	if len(kinds) > 0 {
+		where = append(where, "e.kind IN ("+strings.TrimSuffix(strings.Repeat("?, ", len(kinds)), ", ")+")")
+		for _, k := range kinds {
+			filters = append(filters, k)
+		}
+	}
+	order := "ASC"
+	if p.After <= 0 {
+		order = "DESC"
+	}
+	out := tuigateway.KanbanEventsResult{Events: []tuigateway.KanbanEvent{}, Cursor: max(p.After, 0)}
+	err = kanban.ConnectClosing(ctx, "", &slug, func(conn state.SQLiteConn) error {
+		top, err := kanban.QueryOne(ctx, conn, "SELECT COALESCE(MAX(id), 0) AS m FROM task_events")
+		if err != nil {
+			return err
+		}
+		newest := kanbanInt(top.Get("m"))
+		query := "SELECT e.id, e.task_id, e.kind, e.payload, e.created_at, t.assignee, t.title FROM task_events e LEFT JOIN tasks t ON t.id = e.task_id WHERE " +
+			strings.Join(where, " AND ") + " ORDER BY e.id " + order + " LIMIT ?"
+		rows, err := kanban.QueryRows(ctx, conn, query, append(append(append(args, newest), filters...), limit)...)
+		if err != nil {
+			return err
+		}
+		for _, r := range rows {
+			out.Events = append(out.Events, tuigateway.KanbanEvent{ID: kanbanInt(r.Get("id")), TaskID: kanbanCellText(r.Get("task_id")), Title: kanbanCellText(r.Get("title")),
+				Kind: kanbanCellText(r.Get("kind")), Payload: kanbanCellText(r.Get("payload")), CreatedAt: kanbanInt(r.Get("created_at")), Assignee: kanbanCellText(r.Get("assignee"))})
+		}
+		out.Cursor = max(out.Cursor, newest)
+		if order == "ASC" && int64(len(rows)) == limit {
+			out.Cursor = out.Events[len(out.Events)-1].ID
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if order == "DESC" {
+		slices.Reverse(out.Events)
+	}
+	return ok(rid, tuigateway.Plain(out)), nil
+}
+
 // First text that is not blank
 func kanbanFirstText(texts ...string) string {
 	for _, t := range texts {
@@ -232,7 +314,7 @@ func kanbanFirstText(texts ...string) string {
 // Runs a kanban command in this process the way icebath kanban does, a board verb after boards and a task verb on the named board,
 // refusing a verb that follows the board until stopped
 func kanbanCommandRPC(verbs map[string]bool, boards bool) rpcBody {
-	return func(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+	return func(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 		p, err := tuigateway.KanbanTaskCommand.Params(params)
 		if err != nil {
 			return kanbanParamsRefused(rid, err), nil

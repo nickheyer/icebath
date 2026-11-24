@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
+	"github.com/nickheyer/icebath/pkg/ui/clip"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -264,9 +264,9 @@ func (sh *shell) newSession() *app {
 	return a
 }
 
-// Animation scale of the window manager, still when the environment asks for reduced motion
+// Animation scale of the window manager, still when the settings ask for reduced motion
 func bootMotion() float64 {
-	if trueRe.MatchString(strings.ToLower(trimJS(os.Getenv("ICEBATH_TUI_REDUCED_MOTION")))) {
+	if prefs.ReducedMotion {
 		return 0
 	}
 	return 1
@@ -274,7 +274,12 @@ func bootMotion() float64 {
 
 // Runs the terminal UI, prints the session summary when it ends and returns the exit status
 func Run(ctx context.Context, host Host) int {
-	if stop := startCPUProfile(os.Getenv("ICEBATH_CPUPROFILE")); stop != nil {
+	if host.Prefs != nil {
+		prefs = *host.Prefs
+	}
+	clip.ForceSequence(prefs.ClipboardSequence)
+	noteLaunchFolder()
+	if stop := startCPUProfile(prefs.CPUProfile); stop != nil {
 		defer stop()
 	}
 	a := newApp(ctx, host)

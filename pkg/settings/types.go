@@ -58,6 +58,10 @@ func emptyText(v any) bool {
 type Bool struct {
 	Meta
 	Default bool
+	// Other words the setting takes, lower case, by the state each stands for
+	Also map[string]bool
+	// A stored value counts only when it is a real on or off, so text, which a reference to the environment can produce, never turns it on
+	Literal bool
 	// Unset by default when not empty, the text saying what unset means
 	Null string
 }
@@ -78,6 +82,9 @@ func (b *Bool) Coerce(v any) (any, error) {
 	if on, ok := boolWords[word(v)]; ok {
 		return on, nil
 	}
+	if on, ok := b.Also[word(v)]; ok {
+		return on, nil
+	}
 	return nil, invalid(b.Key, "takes on or off")
 }
 
@@ -85,7 +92,14 @@ func (b *Bool) read(v any) (any, bool) {
 	if v == nil || (b.Null != "" && emptyText(v)) {
 		return nil, b.Null != ""
 	}
+	if b.Literal {
+		on, isSwitch := v.(bool)
+		return on, isSwitch
+	}
 	if on, ok := boolWords[word(v)]; ok {
+		return on, true
+	}
+	if on, ok := b.Also[word(v)]; ok {
 		return on, true
 	}
 	return config.AsBool(v)
@@ -99,6 +113,12 @@ func (b *Bool) Get(ctx context.Context) bool {
 	return b.Default
 }
 
+// Value in effect for ctx and whether it is set at all
+func (b *Bool) Lookup(ctx context.Context) (bool, bool) {
+	on, ok := resolveTyped(ctx, b).(bool)
+	return on, ok
+}
+
 // Whole number setting with optional bounds and a unit
 type Int struct {
 	Meta
@@ -107,11 +127,22 @@ type Int struct {
 	Max     *int
 	// Unit shown after the number, such as tokens or MB
 	Unit string
+	// A stored number under the minimum gives way to the default, not to the minimum
+	DefaultBelow bool
+	// A stored number over the maximum gives way to the default, not to the maximum
+	DefaultAbove bool
 	// Unset by default when not empty, the text saying what unset means
 	Null string
+	// Other spellings of unset a setting with Null takes, lower case, such as unlimited or 0
+	Unset []string
 }
 
 func (n *Int) Kind() Kind { return KindInt }
+
+// Whether a value is one of the setting's own spellings of unset
+func (n *Int) spellsUnset(v any) bool {
+	return n.Null != "" && v != nil && slices.Contains(n.Unset, word(v))
+}
 
 func (n *Int) DefaultValue() any {
 	if n.Null != "" {
@@ -121,7 +152,7 @@ func (n *Int) DefaultValue() any {
 }
 
 func (n *Int) Coerce(v any) (any, error) {
-	if blank(v) && n.Null != "" {
+	if (blank(v) && n.Null != "") || n.spellsUnset(v) {
 		return nil, nil
 	}
 	i, ok := config.AsInt(v)
@@ -138,10 +169,26 @@ func (n *Int) Coerce(v any) (any, error) {
 }
 
 func (n *Int) read(v any) (any, bool) {
-	if v == nil || (n.Null != "" && emptyText(v)) {
+	if v == nil || (n.Null != "" && emptyText(v)) || n.spellsUnset(v) {
 		return nil, n.Null != ""
 	}
-	return config.AsInt(v)
+	i, ok := config.AsInt(v)
+	if !ok {
+		return nil, false
+	}
+	if n.Min != nil && i < *n.Min {
+		if n.DefaultBelow {
+			return nil, false
+		}
+		i = *n.Min
+	}
+	if n.Max != nil && i > *n.Max {
+		if n.DefaultAbove {
+			return nil, false
+		}
+		i = *n.Max
+	}
+	return i, true
 }
 
 // Value in effect for ctx, the default when unset
@@ -165,6 +212,10 @@ type Float struct {
 	Min     *float64
 	Max     *float64
 	Unit    string
+	// A stored number under the minimum gives way to the default, not to the minimum
+	DefaultBelow bool
+	// A stored number over the maximum gives way to the default, not to the maximum
+	DefaultAbove bool
 	// Unset by default when not empty, the text saying what unset means
 	Null string
 }
@@ -199,7 +250,26 @@ func (f *Float) read(v any) (any, bool) {
 	if v == nil || (f.Null != "" && emptyText(v)) {
 		return nil, f.Null != ""
 	}
-	return config.AsFloat(v)
+	x, ok := config.AsFloat(v)
+	if !ok || math.IsNaN(x) {
+		return nil, false
+	}
+	if f.Min != nil && x < *f.Min {
+		if f.DefaultBelow {
+			return nil, false
+		}
+		x = *f.Min
+	}
+	if f.Max != nil && x > *f.Max {
+		if f.DefaultAbove {
+			return nil, false
+		}
+		x = *f.Max
+	}
+	if math.IsInf(x, 0) {
+		return nil, false
+	}
+	return x, true
 }
 
 // Value in effect for ctx, the default when unset
@@ -224,6 +294,12 @@ type Duration struct {
 	Unit time.Duration
 	Min  *time.Duration
 	Max  *time.Duration
+	// Other words the setting takes, lower case, by the length of time each stands for
+	Also map[string]time.Duration
+	// A stored length under the minimum gives way to the default, not to the minimum
+	DefaultBelow bool
+	// A stored length over the maximum gives way to the default, not to the maximum
+	DefaultAbove bool
 	// Unset by default when not empty, the text saying what unset means
 	Null string
 }
@@ -255,6 +331,11 @@ func (d *Duration) DefaultValue() any {
 
 // Duration a stored or written value spells
 func (d *Duration) parse(v any) (time.Duration, bool) {
+	if s, isText := v.(string); isText {
+		if named, ok := d.Also[word(s)]; ok {
+			return named, true
+		}
+	}
 	if x, ok := config.AsFloat(v); ok {
 		if math.IsNaN(x) {
 			return 0, false
@@ -279,6 +360,11 @@ func (d *Duration) Coerce(v any) (any, error) {
 	if blank(v) && d.Null != "" {
 		return nil, nil
 	}
+	if s, isText := v.(string); isText {
+		if named, ok := d.Also[word(s)]; ok {
+			return d.stored(named), nil
+		}
+	}
 	parsed, ok := d.parse(v)
 	if !ok {
 		return nil, invalid(d.Key, "takes a length of time such as 30s or 5m")
@@ -302,6 +388,18 @@ func (d *Duration) read(v any) (any, bool) {
 	parsed, ok := d.parse(v)
 	if !ok {
 		return nil, false
+	}
+	if d.Min != nil && parsed < *d.Min {
+		if d.DefaultBelow {
+			return nil, false
+		}
+		parsed = *d.Min
+	}
+	if d.Max != nil && parsed > *d.Max {
+		if d.DefaultAbove {
+			return nil, false
+		}
+		parsed = *d.Max
 	}
 	return parsed, true
 }
@@ -334,6 +432,8 @@ type Enum struct {
 	Off, On string
 	// Accepts words outside Values, Validate deciding
 	Open bool
+	// Other words the setting takes, lower case, by the value each stands for
+	Also map[string]string
 	// Unset by default when not empty, the text saying what unset means
 	Null string
 }
@@ -383,6 +483,11 @@ func (e *Enum) match(v any) (string, bool) {
 				return c, true
 			}
 		}
+		for _, w := range yamlBoolWords[on] {
+			if c, ok := e.Also[w]; ok {
+				return c, true
+			}
+		}
 		return "", false
 	}
 	text := ""
@@ -394,6 +499,9 @@ func (e *Enum) match(v any) (string, bool) {
 		text = strings.TrimSpace(fmt.Sprint(t))
 	}
 	if c, ok := e.choice(text); ok {
+		return c, true
+	}
+	if c, ok := e.Also[strings.ToLower(text)]; ok {
 		return c, true
 	}
 	if e.Open && text != "" {
@@ -555,6 +663,8 @@ type List struct {
 	Whole bool
 	// Unset by default when not empty, the text saying what unset means
 	Null string
+	// Text of the environment override holds several items separated by commas or lines, even when a written text is one whole item
+	EnvSplit bool
 }
 
 func (l *List) Kind() Kind { return KindList }
@@ -582,7 +692,7 @@ func (l *List) coerceItems(items []any) (any, error) {
 	return out, nil
 }
 
-// Items a written or stored value spells: a list as it is and, for a list of text, a JSON list decoded, other text split at commas or kept whole, and a lone switch or number as its one item
+// Items a written or stored value spells: a list as it is, a lone mapping as the one item of a list of mappings and, for a list of text, a JSON list decoded, other text split at commas or kept whole, and a lone switch or number as its one item
 func (l *List) items(v any) ([]any, bool) {
 	switch t := v.(type) {
 	case []any:
@@ -593,6 +703,11 @@ func (l *List) items(v any) ([]any, bool) {
 			out[i] = s
 		}
 		return out, true
+	case map[string]any:
+		if l.Of == KindMap || l.Of == KindObject {
+			return []any{t}, true
+		}
+		return nil, false
 	}
 	if l.Of != "" && l.Of != KindString {
 		return nil, false
@@ -621,6 +736,24 @@ func (l *List) items(v any) ([]any, bool) {
 		return []any{fmt.Sprint(t)}, true
 	}
 	return nil, false
+}
+
+// Items of an environment override that separates them by commas or lines, a JSON list taken as written
+func (l *List) envItems(text string) []any {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "[") {
+		var decoded []any
+		if json.Unmarshal([]byte(text), &decoded) == nil {
+			return decoded
+		}
+	}
+	out := []any{}
+	for _, part := range strings.Split(strings.ReplaceAll(text, "\n", ","), ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func (l *List) Coerce(v any) (any, error) {
@@ -665,9 +798,19 @@ func (l *List) Get(ctx context.Context) []any {
 	return l.Default
 }
 
-// Items in effect for ctx as text, items that are not scalars skipped
+// Items in effect for ctx as text with the space around each cut off, blank items and items that are not scalars skipped
 func (l *List) Strings(ctx context.Context) []string {
-	return config.AsStrings(l.Get(ctx))
+	items := config.AsStrings(l.Get(ctx))
+	if items == nil {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // Mapping of names to values, each value optionally following an entry schema
@@ -676,6 +819,10 @@ type Map struct {
 	Default map[string]any
 	// Schema of each value, nil for free form values
 	Value Entry
+	// Entries may also sit beside the map in its parent section, under names no other setting there takes; the map's own entry wins
+	Beside bool
+	// A stored mapping replaces Default as a whole instead of being merged over it, so the entries a person writes are the whole list
+	Replace bool
 }
 
 func (m *Map) Kind() Kind { return KindMap }
@@ -740,12 +887,45 @@ func (m *Map) DeleteEntry(ctx context.Context, name string) (Change, error) {
 	return Reset(ctx, m.EntryKey(name), 0)
 }
 
-// Mapping in effect for ctx
-func (m *Map) Get(ctx context.Context) map[string]any {
-	if out, ok := resolveTyped(ctx, m).(map[string]any); ok {
-		return out
+// Entries the profile stores for the map as written, references unexpanded, a copy for code that edits an entry and writes it back
+func (m *Map) Stored(ctx context.Context) map[string]any {
+	v, _ := Stored(ctx, m.Key)
+	if entries := config.AsMap(v); entries != nil {
+		return entries
 	}
 	return map[string]any{}
+}
+
+// Mapping in effect for ctx, with the entries written beside it for a map that takes them
+func (m *Map) Get(ctx context.Context) map[string]any {
+	out, ok := resolveTyped(ctx, m).(map[string]any)
+	if !ok {
+		out = map[string]any{}
+	}
+	if !m.Beside || defaultsOnly(ctx) {
+		return out
+	}
+	beside := besideEntries(ctx, m)
+	if len(beside) == 0 {
+		return out
+	}
+	merged := make(map[string]any, len(out)+len(beside))
+	for name, v := range beside {
+		merged[name] = v
+	}
+	for name, v := range out {
+		merged[name] = v
+	}
+	return merged
+}
+
+// Layer the mapping in effect for ctx comes from, SourceDefault when no layer holds one of the person's own
+func (m *Map) Source(ctx context.Context) Source {
+	source := resolveEntry(ctx, m).Source
+	if source == SourceDefault && m.Beside && !defaultsOnly(ctx) && len(besideEntries(ctx, m)) > 0 {
+		return SourceGlobal
+	}
+	return source
 }
 
 // Mapping of named fields, each field following its own entry whose Key is the field name, a dotted Key naming a field nested inside mappings

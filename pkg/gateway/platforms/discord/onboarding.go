@@ -125,7 +125,7 @@ func owners(app *pyjson.Object) [][2]string {
 
 // Reads the application behind a token, the Discord API error for a bad one and the OSError when unreachable
 func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) {
-	decoded, err := tools.DiscordRequest(ctx, "GET", "/applications/@me", pystr.Strip(token), nil, nil, 10*time.Second)
+	decoded, err := tools.DiscordRequest(ctx, "GET", "/applications/@me", strings.TrimSpace(token), nil, nil, 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -177,11 +177,11 @@ var checkBotTokenFn = CheckBotToken
 func cleanDiscordUserIDs(raw string) []string {
 	var cleaned []string
 	for _, uid := range strings.Split(strings.ReplaceAll(raw, " ", ""), ",") {
-		uid = pystr.Strip(uid)
+		uid = strings.TrimSpace(uid)
 		if strings.HasPrefix(uid, "<@") && strings.HasSuffix(uid, ">") {
-			uid = pystr.RstripChars(pystr.LstripChars(uid, "<@!"), ">")
+			uid = strings.TrimRight(strings.TrimLeft(uid, "<@!"), ">")
 		}
-		if strings.HasPrefix(pystr.Lower(uid), "user:") {
+		if strings.HasPrefix(strings.ToLower(uid), "user:") {
 			uid = string([]rune(uid)[5:])
 		}
 		if uid != "" {
@@ -193,7 +193,7 @@ func cleanDiscordUserIDs(raw string) []string {
 
 // Guidance when a pasted bot token is really the numeric application id, empty otherwise
 func discordTokenShapeError(token string) string {
-	if token != "" && pystr.StrIsDigit(pystr.Strip(token)) {
+	if token != "" && pystr.StrIsDigit(strings.TrimSpace(token)) {
 		return "That looks like a numeric application ID, not a bot token. " +
 			"Paste the bot token from the Discord Developer Portal (Bot page), " +
 			"not the application ID (General Information page)."
@@ -222,7 +222,7 @@ func promptDiscordBotToken() string {
 func promptCheckedToken(ctx context.Context) (string, *DiscordBotCheck, error) {
 	cli := gateway.WizardCLI
 	for attempt := 0; attempt < 3; attempt++ {
-		token := pystr.Strip(config.CheckNonASCIICredential("DISCORD_BOT_TOKEN", promptDiscordBotToken()))
+		token := strings.TrimSpace(config.CheckNonASCIICredential("DISCORD_BOT_TOKEN", promptDiscordBotToken()))
 		if token == "" {
 			return "", nil, nil
 		}
@@ -271,7 +271,7 @@ func ensureMessageContentIntent(ctx context.Context, token string, check *Discor
 		cli.PrintWarning("Message Content Intent is OFF: Discord will refuse the bot's connection until it's on.")
 		cli.PrintInfo("   Turn it on here: " + check.BotSettingsURL())
 		cli.PrintInfo("   (Privileged Gateway Intents → Message Content Intent → Save Changes)")
-		if pystr.Lower(pystr.Strip(cli.Prompt("Press Enter once it's saved to re-check, or type 'skip'", "", false))) == "skip" {
+		if strings.ToLower(strings.TrimSpace(cli.Prompt("Press Enter once it's saved to re-check, or type 'skip'", "", false))) == "skip" {
 			return check, nil
 		}
 		next, err := checkBotTokenFn(ctx, token)
@@ -459,7 +459,7 @@ func InteractiveSetup(ctx context.Context) error {
 	} {
 		cli.PrintInfo(line)
 	}
-	if channel := pystr.Strip(cli.Prompt("Home channel ID (leave empty to set later with /set-home)", "", false)); channel != "" {
+	if channel := strings.TrimSpace(cli.Prompt("Home channel ID (leave empty to set later with /set-home)", "", false)); channel != "" {
 		return cfg.SaveEnvValue(ctx, "DISCORD_HOME_CHANNEL", channel)
 	}
 	removed, err := cfg.RemoveEnvValue(ctx, "DISCORD_HOME_CHANNEL")

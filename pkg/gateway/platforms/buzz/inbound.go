@@ -33,7 +33,7 @@ import (
 
 // Websocket URL of the relay, http mapped to ws and https to wss
 func (a *BuzzAdapter) websocketURL() (string, error) {
-	parsed, err := url.Parse(pystr.Strip(a.relayURL))
+	parsed, err := url.Parse(strings.TrimSpace(a.relayURL))
 	if err != nil {
 		return "", err
 	}
@@ -752,11 +752,11 @@ func parseImetaAttachments(event map[string]any) ([]attachmentMeta, int) {
 			}
 			key, value, found := strings.Cut(s, " ")
 			if _, dup := fields[key]; found && !dup {
-				fields[key] = pystr.Strip(value)
+				fields[key] = strings.TrimSpace(value)
 			}
 		}
 		rawURL, digest := fields["url"], strings.ToLower(fields["x"])
-		size, sizeErr := strconv.ParseInt(pystr.Strip(fields["size"]), 10, 64)
+		size, sizeErr := strconv.ParseInt(strings.TrimSpace(fields["size"]), 10, 64)
 		parsed, urlErr := url.Parse(rawURL)
 		portOK := true
 		if urlErr == nil && parsed.Port() != "" {
@@ -830,7 +830,7 @@ func (a *BuzzAdapter) downloadAttachment(ctx context.Context, meta attachmentMet
 		return nil
 	}
 	if cl := resp.Header.Get("Content-Length"); cl != "" {
-		declared, err := strconv.ParseInt(pystr.Strip(cl), 10, 64)
+		declared, err := strconv.ParseInt(strings.TrimSpace(cl), 10, 64)
 		if err != nil {
 			return nil
 		}
@@ -883,7 +883,7 @@ func (a *BuzzAdapter) handleEvent(ctx context.Context, channelID string, st *cha
 	pubkey := strings.ToLower(strOf(event["pubkey"]))
 	content, isText := event["content"].(string)
 	attachments, rejectedAttachments := parseImetaAttachments(event)
-	if pubkey == "" || !isText || (pystr.Strip(content) == "" && len(attachments) == 0 && rejectedAttachments == 0) {
+	if pubkey == "" || !isText || (strings.TrimSpace(content) == "" && len(attachments) == 0 && rejectedAttachments == 0) {
 		return nil
 	}
 	a.mu.Lock()
@@ -940,10 +940,10 @@ func (a *BuzzAdapter) handleEvent(ctx context.Context, channelID string, st *cha
 		}
 	}
 	if rejectedAttachments > 0 {
-		dispatchText = pystr.Strip(dispatchText + "\n" + attachmentRejectionNote(rejectedAttachments))
+		dispatchText = strings.TrimSpace(dispatchText + "\n" + attachmentRejectionNote(rejectedAttachments))
 	}
 	if failed := len(attachments) - len(cached); fetchAllowed && failed > 0 {
-		dispatchText = pystr.Strip(fmt.Sprintf("%s\n[%d Buzz attachment(s) could not be downloaded or failed integrity checks.]", dispatchText, failed))
+		dispatchText = strings.TrimSpace(fmt.Sprintf("%s\n[%d Buzz attachment(s) could not be downloaded or failed integrity checks.]", dispatchText, failed))
 	}
 	messageType := gateway.MessageTypeText
 	if len(cached) > 0 {
@@ -981,7 +981,7 @@ func (a *BuzzAdapter) mayReclassifyAsDM(channelID string) bool {
 	if !ok {
 		return false
 	}
-	return pystr.Strip(strOf(meta["name"])) == "DM" && pystr.Strip(strOf(meta["description"])) == ""
+	return strings.TrimSpace(strOf(meta["name"])) == "DM" && strings.TrimSpace(strOf(meta["description"])) == ""
 }
 
 // Whether a kind 9 event from another user is p tagged to this identity without mentioning it in text
@@ -1050,7 +1050,7 @@ func (a *BuzzAdapter) isAddressed(event map[string]any) bool {
 
 // Text without a leading mention of this agent so a command after it is recognized
 func (a *BuzzAdapter) stripMention(content string) string {
-	text := pystr.Strip(content)
+	text := strings.TrimSpace(content)
 	a.mu.Lock()
 	self, npub, display := a.selfPubkey, a.selfNpub, a.displayName
 	a.mu.Unlock()
@@ -1072,7 +1072,7 @@ func (a *BuzzAdapter) stripMention(content string) string {
 	if err != nil {
 		return text
 	}
-	return pystr.Strip(out)
+	return strings.TrimSpace(out)
 }
 
 // Display name of a public key, cached negatively too, an npub prefix standing in
@@ -1090,7 +1090,7 @@ func (a *BuzzAdapter) resolveUserName(ctx context.Context, pubkey string) (strin
 	name := ""
 	if res.code == 0 {
 		if profiles := parseJSONList(res.stdout); len(profiles) > 0 {
-			name = pystr.Strip(strOf(profiles[0]["display_name"]))
+			name = strings.TrimSpace(strOf(profiles[0]["display_name"]))
 		}
 	}
 	if name == "" {

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -218,7 +219,7 @@ func directMessagesForPreCompressMemory(messages []map[string]any) []map[string]
 			content := message["content"]
 			hasProse := pyTruthy(content)
 			if s, ok := content.(string); ok {
-				hasProse = pystr.Strip(s) != ""
+				hasProse = strings.TrimSpace(s) != ""
 			}
 			if !hasProse {
 				continue

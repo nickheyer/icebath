@@ -554,13 +554,13 @@ func TestPlatformHTTPClientLimits(t *testing.T) {
 	t.Run("env_override_rejects_garbage", func(t *testing.T) {
 		t.Setenv("ICEBATH_GATEWAY_HTTPX_KEEPALIVE_EXPIRY", "not-a-number")
 		t.Setenv("ICEBATH_GATEWAY_HTTPX_MAX_KEEPALIVE", "-3")
-		l := PlatformHTTPXLimits()
+		l := PlatformHTTPXLimits(context.Background())
 		if *l.KeepaliveExpiry != 2.0 || *l.MaxKeepaliveConnections != 10 || l.MaxConnections != nil {
 			t.Fatalf("limits %+v", l)
 		}
 		t.Setenv("ICEBATH_GATEWAY_HTTPX_KEEPALIVE_EXPIRY", " 7.5 ")
 		t.Setenv("ICEBATH_GATEWAY_HTTPX_MAX_KEEPALIVE", "4")
-		if l = PlatformHTTPXLimits(); *l.KeepaliveExpiry != 7.5 || *l.MaxKeepaliveConnections != 4 {
+		if l = PlatformHTTPXLimits(context.Background()); *l.KeepaliveExpiry != 7.5 || *l.MaxKeepaliveConnections != 4 {
 			t.Fatalf("limits %+v", l)
 		}
 	})
@@ -705,26 +705,6 @@ func TestSharedPlatformBoilerplate(t *testing.T) {
 		scoped := provider.WithMultiplexContext(provider.WithSecretScope(ctx, map[string]string{"OTHER": "x"}, ""), true)
 		if v, err := GetScopedSecret(scoped, "K", "dflt", true); err != nil || v != "dflt" {
 			t.Fatalf("scoped read %q %v", v, err)
-		}
-	})
-	t.Run("yaml_bridge_seeds_extra_and_writes_env_only_unscoped", func(t *testing.T) {
-		for _, v := range []string{"BR_MODE", "BR_CHANNELS", "BR_MENTION", "BR_URL", "BR_JSON"} {
-			t.Setenv(v, "")
-			os.Unsetenv(v)
-		}
-		spec := []YAMLBridgeRow{{"reply_to_mode", "BR_MODE", "str"}, {"channels", "BR_CHANNELS", "csv"}, {"require_mention", "BR_MENTION", "lower"}, {"relay_url", "BR_URL", "str"}, {"opts", "BR_JSON", "json"}}
-		cfg := map[string]any{"reply_to_mode": "off", "channels": []any{"a", "b"}, "require_mention": false, "relay_url": "", "opts": map[string]any{"k": 1}}
-		scoped := provider.WithMultiplexContext(provider.WithSecretScope(ctx, map[string]string{}, ""), true)
-		seeded, err := ApplyYAMLBridge(scoped, cfg, spec)
-		if err != nil || len(seeded) != 4 || os.Getenv("BR_MODE") != "" {
-			t.Fatalf("seeded %v err %v", seeded, err)
-		}
-		ApplyYAMLBridge(provider.WithMultiplexContext(ctx, false), cfg, spec)
-		if os.Getenv("BR_MODE") != "off" || os.Getenv("BR_CHANNELS") != "a,b" || os.Getenv("BR_MENTION") != "false" || os.Getenv("BR_JSON") != `{"k": 1}` {
-			t.Fatalf("env %q %q %q %q", os.Getenv("BR_MODE"), os.Getenv("BR_CHANNELS"), os.Getenv("BR_MENTION"), os.Getenv("BR_JSON"))
-		}
-		if none, _ := ApplyYAMLBridge(ctx, map[string]any{}, spec); none != nil {
-			t.Fatalf("nothing matched must be nil, got %v", none)
 		}
 	})
 	t.Run("connected_checks_and_coercions", func(t *testing.T) {

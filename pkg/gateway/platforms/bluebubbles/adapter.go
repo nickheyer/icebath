@@ -1,6 +1,8 @@
 package bluebubbles
 
 import (
+	"unicode"
+
 	"bytes"
 	"container/list"
 	"context"
@@ -163,13 +165,13 @@ func normalizeServerURL(raw any) (string, error) {
 	if !ok {
 		return "", noAttr(raw, "strip")
 	}
-	value := pystr.Strip(s)
+	value := strings.TrimSpace(s)
 	if value != "" {
 		if matched, _ := schemeRE.MatchString(value); !matched {
 			value = "http://" + value
 		}
 	}
-	return pystr.RstripChars(value, "/"), nil
+	return strings.TrimRight(value, "/"), nil
 }
 
 // Extension from a closed mime map, unlisted or blank mimes taking the fallback
@@ -230,7 +232,7 @@ type BlueBubblesAdapter struct {
 
 type guidEntry struct{ target, guid string }
 
-// Adapter configured from extra and the scoped BLUEBUBBLES env, the int error for a malformed port
+// Adapter configured from the bluebubbles settings and the password credential of the connection block or the scoped env
 func NewBlueBubblesAdapter(ctx context.Context, config *gateway.PlatformConfig) (*BlueBubblesAdapter, error) {
 	a := &BlueBubblesAdapter{guidOrder: list.New(), guidCache: map[string]*list.Element{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.PlatformBlueBubbles, a)
@@ -243,11 +245,9 @@ func NewBlueBubblesAdapter(ctx context.Context, config *gateway.PlatformConfig) 
 	if config != nil && config.Extra != nil {
 		extra = config.Extra
 	}
-	raw, err := gateway.ExtraOrSecret(ctx, extra, "server_url", "BLUEBUBBLES_SERVER_URL", "", true)
-	if err != nil {
-		return nil, err
-	}
-	if a.serverURL, err = normalizeServerURL(raw); err != nil {
+	sctx := gateway.SettingsContext(ctx)
+	var err error
+	if a.serverURL, err = normalizeServerURL(strings.TrimSpace(settings.BluebubblesServerURL.Get(sctx))); err != nil {
 		return nil, err
 	}
 	if pw := extra["password"]; pyrepr.Truthy(pw) {
@@ -255,24 +255,24 @@ func NewBlueBubblesAdapter(ctx context.Context, config *gateway.PlatformConfig) 
 	} else if a.password, err = gateway.GetScopedSecret(ctx, "BLUEBUBBLES_PASSWORD", "", false); err != nil {
 		return nil, err
 	}
-	a.webhookHost = settings.BluebubblesWebhookHost.Get(gateway.SettingsContext(ctx))
-	a.webhookPort = settings.BluebubblesWebhookPort.Get(gateway.SettingsContext(ctx))
-	a.webhookPath = settings.BluebubblesWebhookPath.Get(gateway.SettingsContext(ctx))
+	a.webhookHost = settings.BluebubblesWebhookHost.Get(sctx)
+	a.webhookPort = settings.BluebubblesWebhookPort.Get(sctx)
+	a.webhookPath = settings.BluebubblesWebhookPath.Get(sctx)
 	if !strings.HasPrefix(a.webhookPath, "/") {
 		a.webhookPath = "/" + a.webhookPath
 	}
-	a.sendReadReceipts = settings.BluebubblesSendReadReceipts.Get(gateway.SettingsContext(ctx))
-	a.requireMention = settings.BluebubblesRequireMention.Get(gateway.SettingsContext(ctx))
-	patterns, err := settings.Resolve(gateway.SettingsContext(ctx), settings.BluebubblesMentionPatterns.Key)
-	if err != nil {
-		return nil, err
-	}
-	a.mentionPatterns = compileMentionPatterns(patterns.Value)
+	a.sendReadReceipts = settings.BluebubblesSendReadReceipts.Get(sctx)
+	a.requireMention = settings.BluebubblesRequireMention.Get(sctx)
+	a.mentionPatterns = compileMentionPatterns(settings.BluebubblesMentionPatterns.Get(sctx))
 	return a, nil
 }
 
-// Group mention wake words from a list, a raw env string or nil for the Icebath defaults
-func compileMentionPatterns(raw any) []*regexp2.Regexp {
+// Group mention wake words of the bluebubbles.mention_patterns items, the Icebath defaults while the setting is unset
+func compileMentionPatterns(items []any) []*regexp2.Regexp {
+	var raw any
+	if items != nil {
+		raw = items
+	}
 	return gateway.CompileMentionPatterns(raw, gateway.MentionPatternOptions{LogPrefix: "bluebubbles", Defaults: defaultMentionPatterns})
 }
 
@@ -291,13 +291,13 @@ func (a *BlueBubblesAdapter) messageMatchesMentionPatterns(text string) bool {
 
 // Text with only a leading wake word removed, the original text when nothing would remain
 func (a *BlueBubblesAdapter) cleanMentionText(text string) string {
-	stripped := pystr.Lstrip(text)
+	stripped := strings.TrimLeftFunc(text, unicode.IsSpace)
 	for _, re := range a.mentionPatterns {
 		m, err := re.FindStringMatch(stripped)
 		if err != nil || m == nil || m.RuneIndex != 0 {
 			continue
 		}
-		rest := pystr.LstripChars(string([]rune(stripped)[m.RuneIndex+m.RuneLength:]), " ,:-")
+		rest := strings.TrimLeft(string([]rune(stripped)[m.RuneIndex+m.RuneLength:]), " ,:-")
 		if rest == "" {
 			return text
 		}
@@ -505,7 +505,7 @@ func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (boo
 		pkgLog().Error("[bluebubbles] BLUEBUBBLES_SERVER_URL and BLUEBUBBLES_PASSWORD are required")
 		return false, nil
 	}
-	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
+	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.mu.Lock()
 	a.client = client
 	a.followClient = &http.Client{Transport: client.Transport, CheckRedirect: pyhttpx.RedirectPolicy(true)}
@@ -743,7 +743,7 @@ func (a *BlueBubblesAdapter) storeGUID(target, guid string) {
 
 // Chat GUID of an email or phone matched strictly on the chat identifier, raw GUIDs passing through
 func (a *BlueBubblesAdapter) resolveChatGUIDFromServer(ctx context.Context, target string) (string, error) {
-	target = pystr.Strip(target)
+	target = strings.TrimSpace(target)
 	if target == "" || strings.Contains(target, ";") {
 		return target, nil
 	}
@@ -800,13 +800,13 @@ func paragraphsOf(text string) []string {
 	start := 0
 	m, _ := paragraphBreakRE.FindStringMatch(text)
 	for m != nil {
-		if p := pystr.Strip(string(runes[start:m.RuneIndex])); p != "" {
+		if p := strings.TrimSpace(string(runes[start:m.RuneIndex])); p != "" {
 			out = append(out, p)
 		}
 		start = m.RuneIndex + m.RuneLength
 		m, _ = paragraphBreakRE.FindNextMatch(m)
 	}
-	if p := pystr.Strip(string(runes[start:])); p != "" {
+	if p := strings.TrimSpace(string(runes[start:])); p != "" {
 		out = append(out, p)
 	}
 	return out
@@ -913,7 +913,7 @@ func (a *BlueBubblesAdapter) GetChatInfo(ctx context.Context, chatID string) (ma
 		if !isStr {
 			return info, nil
 		}
-		if s = pystr.Strip(s); s != "" {
+		if s = strings.TrimSpace(s); s != "" {
 			participants = append(participants, s)
 		}
 	}

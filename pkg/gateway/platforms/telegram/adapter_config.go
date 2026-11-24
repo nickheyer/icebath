@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"unicode"
+
 	"context"
 	"slices"
 	"strings"
@@ -57,7 +59,7 @@ func flattenRichBlocks(blocks any) string {
 					continue
 				}
 				if label := item["label"]; pyTruthy(label) {
-					lines = append(lines, pystr.Strip(pyrepr.Str(label)+" "+itemLines[0]))
+					lines = append(lines, strings.TrimSpace(pyrepr.Str(label)+" "+itemLines[0]))
 				} else {
 					lines = append(lines, itemLines[0])
 				}
@@ -72,7 +74,7 @@ func flattenRichBlocks(blocks any) string {
 	var kept []string
 	for _, line := range lines {
 		if line != "" {
-			kept = append(kept, pystr.Rstrip(line))
+			kept = append(kept, strings.TrimRightFunc(line, unicode.IsSpace))
 		}
 	}
 	return strings.Join(kept, "\n")
@@ -84,7 +86,7 @@ func extractRichReplyText(richMessage any) *string {
 	if !ok {
 		return nil
 	}
-	text := pystr.Strip(flattenRichBlocks(rich["blocks"]))
+	text := strings.TrimSpace(flattenRichBlocks(rich["blocks"]))
 	if text == "" {
 		return nil
 	}
@@ -114,7 +116,7 @@ func applyYAMLConfig(ctx context.Context, yamlCfg, telegramCfg map[string]any) (
 		}
 	}
 	if proxy, ok := telegramCfg["proxy_url"]; ok {
-		extras["proxy_url"] = pystr.Strip(pyrepr.Str(proxy))
+		extras["proxy_url"] = strings.TrimSpace(pyrepr.Str(proxy))
 	}
 	telegramExtra, _ := telegramCfg["extra"].(map[string]any)
 	for k, v := range telegramExtra {

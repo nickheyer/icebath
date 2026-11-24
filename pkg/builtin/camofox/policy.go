@@ -201,7 +201,7 @@ func truthy(v any) bool {
 	if v == nil {
 		return false
 	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(v))) {
+	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(v))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -245,9 +245,9 @@ func riskyEvalReason(expression string) string {
 		literals.WriteString(decodeJSStringLiteral(m.String()))
 		m, _ = jsStringLiteralRE.FindNextMatch(m)
 	}
-	lowered := pystr.Lower(literals.String())
+	lowered := strings.ToLower(literals.String())
 	for _, t := range sensitiveEvalTokens {
-		if searches(t.word, expression) || strings.Contains(lowered, pystr.Lower(t.token)) {
+		if searches(t.word, expression) || strings.Contains(lowered, strings.ToLower(t.token)) {
 			return t.reason
 		}
 	}

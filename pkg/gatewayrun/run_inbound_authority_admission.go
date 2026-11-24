@@ -1,13 +1,14 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -18,7 +19,7 @@ func hmTextOnly(event *gateway.MessageEvent) bool {
 
 // Steer mode injects the text mid run, falling back to queue semantics when the agent does not take it
 func (r *GatewayRunner) hmBusySteer(ctx context.Context, event *gateway.MessageEvent, runningAgent *agent.AIAgent, quickKey string) error {
-	steerText := pystr.Strip(event.Text)
+	steerText := strings.TrimSpace(event.Text)
 	steered := false
 	if hmTextOnly(event) && steerText != "" {
 		func() {
@@ -47,7 +48,7 @@ func (r *GatewayRunner) hmBusySteer(ctx context.Context, event *gateway.MessageE
 // Redirects a text only correction when the runtime supports it, else interrupts the running agent
 func (r *GatewayRunner) hmBusyInterrupt(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, runningAgent *agent.AIAgent, quickKey string) error {
 	if hmTextOnly(event) && runningAgent.SupportsActiveTurnRedirect() {
-		if r.redirectActiveTurn(ctx, runningAgent, pystr.Strip(event.Text), quickKey, event) {
+		if r.redirectActiveTurn(ctx, runningAgent, strings.TrimSpace(event.Text), quickKey, event) {
 			pkgLog().Debug(fmt.Sprintf("PRIORITY redirect for session %s", quickKey))
 			return nil
 		}

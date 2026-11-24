@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -110,7 +111,8 @@ func stripOutboundCallbacks(ctx context.Context) {
 
 func iterTargets(t *testing.T, cfg any) []*OutboundWebhookTarget {
 	t.Helper()
-	targets, err := IterConfiguredOutboundWebhooks(context.Background(), cfg)
+	doc, _ := cfg.(map[string]any)
+	targets, err := IterConfiguredOutboundWebhooks(settings.WithFrozen(context.Background(), doc))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +350,7 @@ func TestPayloadUnserialisableValuesStringified(t *testing.T) {
 
 func registerTargets(t *testing.T, ctx context.Context, cfg map[string]any) []*OutboundWebhookTarget {
 	t.Helper()
-	registered, err := RegisterOutboundWebhooksFromConfig(ctx, cfg)
+	registered, err := RegisterOutboundWebhooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if err != nil {
 		t.Fatal(err)
 	}

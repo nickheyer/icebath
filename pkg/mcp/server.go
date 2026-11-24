@@ -169,14 +169,6 @@ func (s *serverTask) setSession(sess *Session) {
 	s.mu.Unlock()
 }
 
-// Config tree tool timeouts resolve against
-func (s *serverTask) tree() config.Tree {
-	if s.env == nil {
-		return config.Tree{}
-	}
-	return s.env.Config
-}
-
 // Snapshot of the config the task currently serves
 func (s *serverTask) currentConfig() map[string]any {
 	s.mu.Lock()
@@ -778,7 +770,7 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 	cfg := r.Config
 	s.mu.Lock()
 	s.rendered, s.config = r, cfg
-	s.toolTimeout = resolveToolTimeout(cfg, s.tree())
+	s.toolTimeout = resolveToolTimeout(ctx, cfg)
 	s.authType = strings.ToLower(strings.TrimSpace(pyStr(cfg["auth"])))
 	s.idleTimeout, s.maxLifetime = nil, nil
 	if v, ok := lifecycleSeconds(cfg, "idle_timeout_seconds"); ok {

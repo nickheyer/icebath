@@ -6,19 +6,18 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
-	defaultEmptyRetryBudget  = 3
-	reducedEmptyRetryBudget  = 1
-	defaultEmptyGuardEnabled = true
+	defaultEmptyRetryBudget = 3
+	reducedEmptyRetryBudget = 1
 )
 
 // One observed empty completion within the current streak
@@ -38,11 +37,10 @@ type guardDecimal struct {
 }
 
 var (
-	defaultEmptyGuardCostThresholdUSD = guardDecimal{amount: big.NewRat(1, 4)}
-	pyDecimalLiteral                  = regexp.MustCompile(`^([+-]?)(?:(\d(?:_?\d)*)(?:\.(\d(?:_?\d)*)?)?|\.(\d(?:_?\d)*))(?:[eE]([+-]?\d(?:_?\d)*))?$`)
-	pyDecimalSpecial                  = regexp.MustCompile(`(?i)^([+-]?)(inf|infinity|nan|snan)(\d*)$`)
-	errDecimalNaNCompare              = errors.New("[<class 'decimal.InvalidOperation'>]")
-	estimateEmptyAttemptCostFn        = estimateEmptyAttemptCost
+	pyDecimalLiteral           = regexp.MustCompile(`^([+-]?)(?:(\d(?:_?\d)*)(?:\.(\d(?:_?\d)*)?)?|\.(\d(?:_?\d)*))(?:[eE]([+-]?\d(?:_?\d)*))?$`)
+	pyDecimalSpecial           = regexp.MustCompile(`(?i)^([+-]?)(inf|infinity|nan|snan)(\d*)$`)
+	errDecimalNaNCompare       = errors.New("[<class 'decimal.InvalidOperation'>]")
+	estimateEmptyAttemptCostFn = estimateEmptyAttemptCost
 )
 
 // Decimal of a str() form with the Python grammar, an error where Decimal raises InvalidOperation
@@ -95,44 +93,39 @@ func (d guardDecimal) reachedBy(cost *big.Rat) bool {
 	return cost.Cmp(d.amount) >= 0
 }
 
-// Enabled flag and cost threshold of agent.empty_response_guard, malformed input giving the schema defaults
-func resolveGuardSettings(raw any) (bool, guardDecimal) {
-	section, ok := raw.(map[string]any)
-	if !ok {
-		return defaultEmptyGuardEnabled, defaultEmptyGuardCostThresholdUSD
+// Decimal of a cost in dollars, nil when it is no positive finite or infinite amount
+func guardDecimalOf(usd float64) *guardDecimal {
+	d, err := parseGuardDecimal(strconv.FormatFloat(usd, 'g', -1, 64))
+	if err != nil {
+		return nil
 	}
-	enabled := defaultEmptyGuardEnabled
-	switch v := section["enabled"].(type) {
-	case string:
-		switch pystr.Lower(pystr.Strip(v)) {
-		case "0", "false", "no", "off":
-			enabled = false
-		}
-	case bool:
-		enabled = v
+	if sign, err := d.sign(); err != nil || sign <= 0 {
+		return nil
 	}
-	threshold := defaultEmptyGuardCostThresholdUSD
-	if thresholdRaw := section["cost_threshold_usd"]; thresholdRaw != nil {
-		if _, isBool := thresholdRaw.(bool); !isBool {
-			candidate, err := parseGuardDecimal(pyrepr.Str(thresholdRaw))
-			sign := 0
-			if err == nil {
-				sign, err = candidate.sign()
-			}
-			if err != nil {
-				pkgLog().Debug(fmt.Sprintf("empty-guard: invalid cost_threshold_usd %s, using default", errchain.Show(thresholdRaw)))
-			} else if sign > 0 {
-				threshold = candidate
-			}
-		}
-	}
-	return enabled, threshold
+	return &d
 }
 
-// Config resolved enabled flag, agents built without config enabled
+// Cost threshold the registry gives the guard when none is set
+func defaultEmptyGuardCostThresholdUSD() guardDecimal {
+	return *guardDecimalOf(settings.AgentEmptyResponseGuardCostThresholdUsd.Default)
+}
+
+// Enabled flag and cost threshold of the empty response guard in effect for ctx, a threshold that is not above zero giving the default
+func resolveGuardSettings(ctx context.Context) (bool, guardDecimal) {
+	threshold := defaultEmptyGuardCostThresholdUSD()
+	usd := settings.AgentEmptyResponseGuardCostThresholdUsd.Get(ctx)
+	if d := guardDecimalOf(usd); d != nil {
+		threshold = *d
+	} else {
+		pkgLog().Debug(fmt.Sprintf("empty-guard: cost_threshold_usd %s is not above zero, using default", strconv.FormatFloat(usd, 'g', -1, 64)))
+	}
+	return settings.AgentEmptyResponseGuardEnabled.Get(ctx), threshold
+}
+
+// Config resolved enabled flag, agents built without config taking the registry default
 func (a *AIAgent) emptyGuardIsEnabled() bool {
 	if a.emptyGuardEnabled == nil {
-		return defaultEmptyGuardEnabled
+		return settings.AgentEmptyResponseGuardEnabled.Default
 	}
 	return *a.emptyGuardEnabled
 }
@@ -144,7 +137,7 @@ func (a *AIAgent) emptyGuardThreshold() guardDecimal {
 			return *t
 		}
 	}
-	return defaultEmptyGuardCostThresholdUSD
+	return defaultEmptyGuardCostThresholdUSD()
 }
 
 // Attempt history of the current empty streak, the list the agent itself holds

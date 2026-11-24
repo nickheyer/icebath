@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -124,22 +125,26 @@ func isDirPath(p string) bool {
 	return err == nil && st.IsDir()
 }
 
-// Per task workspace dir persisting across calls, BH_AGENT_WORKSPACE when the process sets it
+// Workspace dir persisting across calls and made when missing: the one browser.exec_workspace folder when the profile names it, relative to the home, else a folder per task
 func workspaceDir(env *tools.Env, taskID string) string {
-	if v := os.Getenv("BH_AGENT_WORKSPACE"); v != "" {
-		return v
+	s := cfgOf(env)
+	path := expandTilde(strings.TrimSpace(settings.BrowserExecWorkspace.Get(s.ctx())))
+	if path != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(s.homeDir(), path)
 	}
-	if taskID == "" {
-		taskID = "default"
+	if path == "" {
+		if taskID == "" {
+			taskID = "default"
+		}
+		safe := execTaskIDSafe.ReplaceAllString(taskID, "_")
+		if r := []rune(safe); len(r) > 80 {
+			safe = string(r[:80])
+		}
+		if safe == "" {
+			safe = "default"
+		}
+		path = filepath.Join(s.homeDir(), "cache", "browser-use", "workspace", safe)
 	}
-	safe := execTaskIDSafe.ReplaceAllString(taskID, "_")
-	if r := []rune(safe); len(r) > 80 {
-		safe = string(r[:80])
-	}
-	if safe == "" {
-		safe = "default"
-	}
-	path := filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use", "workspace", safe)
 	if err := os.MkdirAll(path, 0o777); err != nil {
 		pkgLog().Debug(fmt.Sprintf("browser_exec workspace unavailable: %s", pypath.OSErrorText(err)))
 		return ""
@@ -335,7 +340,7 @@ func resolveRealProfileCDP(env *tools.Env, penv map[string]string, forceLocal bo
 	}
 	if !forceLocal {
 		prov, err := execCloudProvider(env)
-		if err != nil || prov != nil || isLegacyBrowserUseCloudConfig(env) {
+		if err != nil || prov != nil || browserUseCloudByKey(env) {
 			return ""
 		}
 	}
@@ -545,7 +550,7 @@ func execChildEnv(env *tools.Env, route map[string]string, workspace string) map
 
 // Runs the model's Python on the user's interpreter against the routed browser and returns its output
 func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, timeoutS any, taskID string, local bool) (string, error) {
-	if pystr.Strip(code) == "" {
+	if strings.TrimSpace(code) == "" {
 		return toolErr(`No code provided. Pass Python that uses the pre-imported helpers, e.g. new_tab("https://example.com") then print(page_info()).`), nil
 	}
 	blocked, verdictSidecar, err := codeURLVerdict(env, code)
@@ -633,7 +638,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 	if note, ok := takeRealProfileNote(routeKey); ok {
 		result.Set("real_profile_unavailable", note)
 	}
-	stderr := redact(pystr.Strip(proc.stderr))
+	stderr := redact(strings.TrimSpace(proc.stderr))
 	if runes := []rune(stderr); len(runes) > execStderrCapChars {
 		stderr = string(runes[:execStderrCapChars]) + "\n… (stderr truncated)"
 	}

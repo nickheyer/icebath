@@ -102,7 +102,7 @@ func TestSettingsWritesThePluginNamespaceAndRefusesSecretsAndBadTypes(t *testing
 	if !reflect.DeepEqual(written, []string{"api_url", "mode", "retries"}) {
 		t.Fatal(written)
 	}
-	entry := pluginSettingsEntry(loadConfigOrEmpty(h), "demo-plugin")
+	entry := pluginEntry(homeCtx(h), "demo-plugin")
 	if !reflect.DeepEqual(entry["settings"], map[string]any{"api_url": "https://real.invalid", "retries": 2, "mode": "careful"}) {
 		t.Fatalf("%#v", entry["settings"])
 	}
@@ -140,7 +140,7 @@ func TestPortablePluginJSONSchemaListsAndSavesLikeANativeOne(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(written, []string{"show_chip"}) {
 		t.Fatal(written, err)
 	}
-	if got := pluginSettingsEntry(loadConfigOrEmpty(h), "portable-demo")["settings"]; !reflect.DeepEqual(got, map[string]any{"show_chip": false}) {
+	if got := pluginEntry(homeCtx(h), "portable-demo")["settings"]; !reflect.DeepEqual(got, map[string]any{"show_chip": false}) {
 		t.Fatalf("%#v", got)
 	}
 	if _, err := SavePluginSettings(context.Background(), h, "portable-demo", dir, []PluginSettingValue{{"api_key", "leak"}}); err == nil {

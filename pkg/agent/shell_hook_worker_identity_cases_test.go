@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -47,7 +48,7 @@ func TestRealToolHooksReceiveOnlyTheOwningWorkersIdentity(t *testing.T) {
 		"pre_tool_call":  []any{map[string]any{"matcher": "kanban_complete", "command": script}},
 		"post_tool_call": []any{map[string]any{"matcher": "kanban_complete", "command": script}},
 	}}
-	if registered, err := plugins.RegisterShellHooksFromConfig(ctx, cfg, true, false); err != nil || len(registered) != 2 {
+	if registered, err := plugins.RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), true, false); err != nil || len(registered) != 2 {
 		t.Fatalf("registered %v %v", registered, err)
 	}
 	read := func() (map[string]any, string) {

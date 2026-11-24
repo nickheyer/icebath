@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"errors"
@@ -13,7 +15,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media"
 )
 
@@ -217,7 +218,7 @@ var ffmpegCommand = exec.CommandContext
 func pcmToWav(ctx context.Context, pcm []byte, outputPath string, srcRate, srcChannels int) error {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cmd := ffmpegCommand(cctx, resolveFFmpegExecutable(), "-y", "-loglevel", "error", "-f", "s16le", "-ar", strconv.Itoa(srcRate),
+	cmd := ffmpegCommand(cctx, resolveFFmpegExecutable(ctx), "-y", "-loglevel", "error", "-f", "s16le", "-ar", strconv.Itoa(srcRate),
 		"-ac", strconv.Itoa(srcChannels), "-i", "pipe:0", "-ar", "16000", "-ac", "1", outputPath)
 	cmd.Stdin = bytes.NewReader(pcm)
 	var stderr bytes.Buffer
@@ -249,7 +250,7 @@ func (a *DiscordAdapter) processVoiceInput(ctx context.Context, guildID, userID 
 	fail := func(err error) {
 		var fe *ffmpegError
 		if errors.As(err, &fe) && fe.stderr != "" {
-			pkgLog().Warn(fmt.Sprintf("Voice input processing failed: %s (ffmpeg: %s)", err, pystr.Strip(fe.stderr)))
+			pkgLog().Warn(fmt.Sprintf("Voice input processing failed: %s (ffmpeg: %s)", err, strings.TrimSpace(fe.stderr)))
 			return
 		}
 		pkgLog().Warn(fmt.Sprintf("Voice input processing failed: %s", err))
@@ -267,7 +268,7 @@ func (a *DiscordAdapter) processVoiceInput(ctx context.Context, guildID, userID 
 		return
 	}
 	transcript, _ := result["transcript"].(string)
-	transcript = pystr.Strip(transcript)
+	transcript = strings.TrimSpace(transcript)
 	if transcript == "" || media.IsWhisperHallucination(transcript) {
 		return
 	}

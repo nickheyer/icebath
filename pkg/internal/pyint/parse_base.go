@@ -4,8 +4,6 @@ import (
 	"math/big"
 	"strings"
 	"unicode"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python int of a string in base 2 to 36 with its prefix, underscores and Unicode decimal digits
@@ -13,7 +11,7 @@ func ParseBase(text string, base int) (*big.Int, bool) {
 	if base < 2 || base > 36 {
 		return nil, false
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	sign := ""
 	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
 		sign, text = text[:1], text[1:]

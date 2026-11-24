@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -154,7 +153,7 @@ func (e *PlatformEntry) SetKeywords(kwargs map[string]any) error {
 // Whether core ships an adapter for the name, a static member or a bundled platform plugin
 func CoreShipsPlatform(name any) bool {
 	s, _ := name.(string)
-	value := pystr.Lower(pystr.Strip(s))
+	value := strings.ToLower(strings.TrimSpace(s))
 	if BuiltinPlatformValues[value] {
 		return true
 	}
@@ -263,7 +262,7 @@ func (r *PlatformRegistry) NoteActivationEnv(name string, envNames []string) {
 		r.activationEnv[name] = set
 	}
 	for _, n := range envNames {
-		if s := pystr.Strip(n); s != "" {
+		if s := strings.TrimSpace(n); s != "" {
 			set[s] = true
 		}
 	}

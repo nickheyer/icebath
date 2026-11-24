@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -22,7 +24,7 @@ func bgPromptPreview(prompt string, limit int) string {
 	if pystr.Len(text) <= limit {
 		return text
 	}
-	return pystr.Rstrip(pystr.Slice(text, 0, limit-1)) + "…"
+	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-1), unicode.IsSpace) + "…"
 }
 
 // Runs a background task inside the source's profile scope
@@ -149,7 +151,7 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 	}
 	for _, m := range mediaFiles {
 		_, ext := pypath.Splitext(m.Path)
-		ext = pystr.Lower(ext)
+		ext = strings.ToLower(ext)
 		switch {
 		case gateway.ShouldSendMediaAsAudio(source.Platform, ext, m.IsVoice):
 			_, _ = adapter.SendVoice(ctx, source.ChatID, m.Path, "", "", threadMetadata, map[string]any{"is_voice": m.IsVoice})

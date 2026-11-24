@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,29 +17,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-var (
-	cliConfigMu     sync.Mutex
-	cliConfigLoaded map[string]any
-	gatewayProcess  atomic.Bool
-)
-
-// Marks this process as the one running the gateway so config mirroring leaves TERMINAL_CWD alone
-func MarkGatewayProcess() { gatewayProcess.Store(true) }
-
-// Reports whether this process runs the gateway
-func InGatewayProcess() bool { return gatewayProcess.Load() }
-
-// The process wide CLI config, loaded once from the home config over the built in defaults
-func CLIConfig(ctx context.Context) map[string]any {
-	cliConfigMu.Lock()
-	defer cliConfigMu.Unlock()
-	if cliConfigLoaded == nil {
-		cliConfigLoaded = LoadCLIConfig(ctx)
-	}
-	return cliConfigLoaded
+// Registry defaults under the administrator's pins, the config document a run that ignores the user's config.yaml reads
+func DefaultsConfig(ctx context.Context) map[string]any {
+	return config.ApplyManagedOverlay(config.Clone(map[string]any(config.Defaults())).(map[string]any))
 }
 
 // Loads prefill messages from a JSON array file, relative paths under baseDir or the home, missing or invalid giving none
@@ -77,18 +60,12 @@ func loadPrefillMessages(ctx context.Context, filePath, baseDir string) []any {
 	return list
 }
 
-// Prefill file path from the session env, then the top level key, then the legacy agent key
-func resolvePrefillMessagesFile(ctx context.Context, cfg map[string]any) string {
+// Prefill file path for ctx: the session's client env, then the prefill messages setting
+func resolvePrefillMessagesFile(ctx context.Context) string {
 	if v := strings.TrimSpace(state.SessionEnv(ctx, "ICEBATH_PREFILL_MESSAGES_FILE", "")); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(strOrEmpty(cfg["prefill_messages_file"])); v != "" {
-		return v
-	}
-	if agentCfg, ok := cfg["agent"].(map[string]any); ok {
-		return strings.TrimSpace(strOrEmpty(agentCfg["prefill_messages_file"]))
-	}
-	return ""
+	return strings.TrimSpace(settings.PrefillMessagesFile.Get(ctx))
 }
 
 // Python str of a value, empty for None and for the empty string
@@ -108,6 +85,17 @@ func parseReasoningConfig(effort any) map[string]any {
 	return result
 }
 
+// Reasoning config the settings of ctx give a model, the configured model when none is named: its per model override, else the reasoning effort setting
+func configuredReasoning(ctx context.Context, model string) map[string]any {
+	if model == "" {
+		model = strings.TrimSpace(settings.Model.Get(ctx))
+	}
+	if perModel := config.ResolvePerModelReasoningEffort(model, settings.AgentReasoningOverrides.Get(ctx)); perModel != nil {
+		return perModel
+	}
+	return parseReasoningConfig(settings.ReasoningEffort.Get(ctx))
+}
+
 // Parses a persisted fast mode preference, warning when the word is neither a tier nor a normal tier word
 func parseServiceTierConfig(raw string) string {
 	tier := provider.ParseServiceTier(raw)
@@ -117,101 +105,54 @@ func parseServiceTierConfig(raw string) string {
 	return tier
 }
 
-var cwdStandIns = map[string]bool{".": true, "auto": true, "cwd": true}
+// Values of terminal.cwd that name no folder of their own
+var cwdStandIns = map[string]bool{"": true, ".": true, "auto": true, "cwd": true}
 
-// Dict valued section of a config, an empty map when missing or not a dict
-func sectionOf(cfg map[string]any, key string) map[string]any {
-	if m, ok := cfg[key].(map[string]any); ok {
-		return m
-	}
-	return map[string]any{}
+// Folder this command line moved its sessions to: a worktree it made or the folder a resumed session recorded
+var movedFolder struct {
+	sync.Mutex
+	path string
 }
 
-// Hands the terminal tools this launch's working folder: the launch folder on the local backend, else the configured one
-func exportTerminalCwd(cfg map[string]any) {
-	terminal, ok := cfg["terminal"].(map[string]any)
-	if !ok {
-		terminal = map[string]any{}
-		cfg["terminal"] = terminal
-	}
-	backend := "local"
-	if v, set := terminal["backend"]; set && v != nil {
-		backend = pyrepr.Str(v)
-	}
-	cwd := ""
-	if backend == "local" {
-		cwd, _ = os.Getwd()
-		terminal["cwd"] = cwd
-	} else if v, set := terminal["cwd"]; set {
-		if text, isStr := v.(string); isStr && cwdStandIns[text] {
-			delete(terminal, "cwd")
-		} else {
-			cwd = pyrepr.Str(v)
-		}
-	}
-	if cwd != "" && !InGatewayProcess() {
-		os.Setenv("TERMINAL_CWD", cwd)
-	}
+// Notes the folder this command line moved its sessions to
+func moveCLIFolder(path string) {
+	movedFolder.Lock()
+	movedFolder.path = path
+	movedFolder.Unlock()
 }
 
-// The registry defaults every config starts from
-func cliConfigDefaults() map[string]any {
-	return config.Clone(map[string]any(config.Defaults())).(map[string]any)
+// Folder this command line moved its sessions to, else the TERMINAL_CWD the process that started it handed it, empty for neither
+func movedOrHandedFolder() string {
+	movedFolder.Lock()
+	moved := movedFolder.path
+	movedFolder.Unlock()
+	if moved != "" {
+		return moved
+	}
+	return os.Getenv("TERMINAL_CWD")
 }
 
-// Overlays a parsed config file onto the defaults in place, a section of the defaults merging key by key and the model section staying a mapping
-func mergeFileConfig(defaults, fileConfig map[string]any) {
-	defaults["model"] = sectionOf(defaults, "model")
-	for key, value := range fileConfig {
-		existing, isSection := defaults[key].(map[string]any)
-		if !isSection {
-			defaults[key] = value
-			continue
-		}
-		if section, isMap := value.(map[string]any); isMap {
-			for k, v := range section {
-				existing[k] = v
-			}
-		} else if value != nil && key != "model" {
-			defaults[key] = value
-		}
+// Local folder relative paths of this command line resolve against: the moved or handed folder, else the working directory
+func localFolder() string {
+	if folder := movedOrHandedFolder(); folder != "" {
+		return folder
 	}
+	cwd, _ := os.Getwd()
+	return cwd
 }
 
-// Home config.yaml, else cli-config.yaml beside the executable, over the registry defaults, the terminal working folder exported
-func LoadCLIConfig(ctx context.Context) map[string]any {
-	configPath := filepath.Join(home.Dir(ctx), "config.yaml")
-	exists, _ := config.ConfigExists(ctx, configPath)
-	if !exists || os.Getenv("ICEBATH_IGNORE_USER_CONFIG") == "1" {
-		configPath = filepath.Join(executableDir(), "cli-config.yaml")
+// Folder a new session of this command line works in: the moved or handed folder, else the working folder setting of a backend other than local, empty for the launch folder
+func sessionFolder(ctx context.Context) string {
+	if folder := movedOrHandedFolder(); folder != "" {
+		return folder
 	}
-	defaults := cliConfigDefaults()
-	if exists, _ = config.ConfigExists(ctx, configPath); exists {
-		doc, err := config.ReadConfigDoc(ctx, configPath)
-		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Failed to load cli-config.yaml: %s", err))
-		} else {
-			fileConfig, _ := doc.(map[string]any)
-			if fileConfig == nil {
-				fileConfig = map[string]any{}
-			}
-			mergeFileConfig(defaults, fileConfig)
-		}
+	if backend := strings.TrimSpace(settings.WhereCommandsRun.Get(ctx)); backend == "" || backend == "local" {
+		return ""
 	}
-	defaults = config.Expand(defaults, os.LookupEnv).(map[string]any)
-	defaults = config.ApplyManagedOverlay(defaults)
-	exportTerminalCwd(defaults)
-	return defaults
-}
-
-// Directory holding the running executable, the working directory when it cannot be resolved
-func executableDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		cwd, _ := os.Getwd()
+	if cwd := strings.TrimSpace(settings.WorkingFolder.Get(ctx)); !cwdStandIns[cwd] {
 		return cwd
 	}
-	return filepath.Dir(exe)
+	return ""
 }
 
 // Python int() of a bool, integer, float or numeric string, false when it does not parse
@@ -240,7 +181,7 @@ func pyIntOf(v any) (int, bool) {
 
 // Python int of a base ten string with Unicode digits and single underscores between digits, clamped to int
 func pyIntString(s string) (int, bool) {
-	s = pystr.Strip(s)
+	s = strings.TrimSpace(s)
 	neg := false
 	if s != "" && (s[0] == '+' || s[0] == '-') {
 		neg, s = s[0] == '-', s[1:]

@@ -516,7 +516,7 @@ func extractReplyText(reply *pyjson.Object, semantic bool, selfOpenID string) st
 	}
 	text := strings.Join(parts, "")
 	if semantic {
-		return pystr.Strip(strings.Join(pystr.SplitWhitespace(text, -1), " "))
+		return strings.TrimSpace(strings.Join(pystr.SplitWhitespace(text, -1), " "))
 	}
 	return text
 }
@@ -852,7 +852,7 @@ func runCommentAgent(ctx context.Context, prompt string, client larkAPI, session
 		pkgLog().Error("[Feishu-Comment] _run_comment_agent: agent failed: " + err.Error())
 		return ""
 	}
-	response := pystr.Strip(run.FinalResponse)
+	response := strings.TrimSpace(run.FinalResponse)
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] _run_comment_agent: done api_calls=%d response_len=%d response=%s", run.APICalls, pystr.Len(response), pystr.Slice(response, 0, 200)))
 	if sessionKey != "" && len(run.Messages) > 0 {
 		saveSessionHistory(sessionKey, run.Messages)

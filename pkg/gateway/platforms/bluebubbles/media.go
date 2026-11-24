@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -208,5 +207,5 @@ func lowerText(v any) (string, error) {
 	if !ok {
 		return "", noAttr(v, "lower")
 	}
-	return pystr.Lower(s), nil
+	return strings.ToLower(s), nil
 }

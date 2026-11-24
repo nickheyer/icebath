@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -20,13 +19,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const (
-	cuaDriverCmdEnv     = "ICEBATH_CUA_DRIVER_CMD"
-	cuaDriverDefaultCmd = "cua-driver"
-)
+const cuaDriverDefaultCmd = "cua-driver"
+
+// Environment override of computer_use.driver_command, named in messages
+var cuaDriverCmdEnv = settings.ComputerUseDriverCommand.Env
+
+// Driver program computer_use.driver_command or its ICEBATH_CUA_DRIVER_CMD override names, empty for the managed one; the driver is one per machine, so the profile icebath runs as decides
+func cuaDriverCmdOverride() string {
+	return strings.TrimSpace(settings.ComputerUseDriverCommand.Get(context.Background()))
+}
 
 var (
 	cuaDriverArgs               = []string{"mcp"}
@@ -51,7 +56,7 @@ func driverJSON(ctx context.Context, env *tools.Env, driverCmd string, timeout f
 	if err != nil || proc == nil {
 		return nil
 	}
-	out := pystr.Strip(proc.Stdout)
+	out := strings.TrimSpace(proc.Stdout)
 	if out == "" || proc.Returncode != 0 {
 		return nil
 	}
@@ -124,11 +129,11 @@ var pmInstalled = pm.Installed
 
 // PM selected driver binary without installing, an explicit override is never replaced
 func resolveCuaDriverCmd(override *string) (string, error) {
-	configured := os.Getenv(cuaDriverCmdEnv)
+	configured := cuaDriverCmdOverride()
 	if override != nil {
 		configured = *override
 	}
-	configured = pystr.Strip(configured)
+	configured = strings.TrimSpace(configured)
 	if configured != "" {
 		expanded := pypath.Expanduser(configured)
 		resolved, ok := pyshutil.Which(expanded, nil)
@@ -236,7 +241,7 @@ func manifestContractReason(manifest *pyjson.Object) (string, error) {
 	if pyrepr.Truthy(raw) {
 		text = pyrepr.Str(raw)
 	}
-	m := cuaSemverRE.FindStringSubmatch(pystr.Strip(text))
+	m := cuaSemverRE.FindStringSubmatch(strings.TrimSpace(text))
 	if m == nil {
 		return "driver manifest does not report a semantic version", nil
 	}
@@ -361,7 +366,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 			if text == "" {
 				text = "manifest command failed"
 			}
-			lines := pystr.Splitlines(pystr.Strip(text), false)
+			lines := pystr.Splitlines(strings.TrimSpace(text), false)
 			if len(lines) == 0 {
 				return nil, errors.New("the manifest command printed only blank lines")
 			}
@@ -380,7 +385,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 				if pyrepr.Truthy(raw) {
 					text = pyrepr.Str(raw)
 				}
-				if v := pystr.Strip(text); v != "" {
+				if v := strings.TrimSpace(text); v != "" {
 					version = v
 				}
 			}

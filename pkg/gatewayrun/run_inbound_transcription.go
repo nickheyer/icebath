@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -188,7 +187,7 @@ func (r *GatewayRunner) transcribeAndEchoPendingVoice(ctx context.Context, event
 
 // Prefix then the user text, dropping the empty content notice of Discord as redundant
 func prependMediaPrefix(prefix, userText string) string {
-	if userText != "" && pystr.Strip(userText) != emptyContentText {
+	if userText != "" && strings.TrimSpace(userText) != emptyContentText {
 		return prefix + "\n\n" + userText
 	}
 	return prefix
@@ -231,7 +230,7 @@ func (r *GatewayRunner) transcribeOneClip(ctx context.Context, path string, tran
 		return gateway.STTClip{Note: untranscribedAudioNote(ctx, path)}, nil
 	}
 	transcript, _ := result["transcript"].(string)
-	if pystr.Strip(transcript) == "" {
+	if strings.TrimSpace(transcript) == "" {
 		return gateway.STTClip{Note: "[The user sent a voice message but it came through " +
 			"empty or inaudible — speech-to-text returned no " +
 			"words. Do not guess at the content; ask the user " +

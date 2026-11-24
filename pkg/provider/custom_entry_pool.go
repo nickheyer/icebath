@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // SnapshotOwnerKey is the primary runtime field holding the owning entry's provenance
@@ -55,15 +57,15 @@ func EntryScopedPool(pool *Pool, poolKey string, entry map[string]any) *Pool {
 	return view
 }
 
-// PoolForAuxProvider loads a pool for an auxiliary read, entry scoped when the provider or its pool key names a custom entry
-func PoolForAuxProvider(ctx context.Context, provider, poolKey string, cfg map[string]any, load func(string) *Pool) *Pool {
+// PoolForAuxProvider loads a pool for an auxiliary read, entry scoped when the provider or its pool key names a custom entry of the providers setting ctx gives
+func PoolForAuxProvider(ctx context.Context, provider, poolKey string, load func(string) *Pool) *Pool {
 	pool := load(poolKey)
 	if pool == nil {
 		return pool
 	}
-	match := customEntryForIdentity(ctx, provider, cfg)
+	match := customEntryForIdentity(ctx, provider)
 	if match == nil {
-		match = customEntryForIdentity(ctx, poolKey, cfg)
+		match = customEntryForIdentity(ctx, poolKey)
 	}
 	if match == nil {
 		return pool
@@ -96,24 +98,25 @@ func builtinPoolAddress(ctx context.Context, poolKey string) (string, bool) {
 	return registryInferenceBaseURL(row), true
 }
 
-// Configured custom endpoint a provider identity names the way the runtime resolves it, nil for a built-in, bare custom and auto
-func customEntryForIdentity(ctx context.Context, provider string, cfg map[string]any) *namedEntry {
+// Custom endpoint of the providers setting ctx gives that a provider identity names the way the runtime resolves it, nil for a built-in, bare custom and auto
+func customEntryForIdentity(ctx context.Context, provider string) *namedEntry {
 	name := strings.ToLower(strings.TrimSpace(provider))
 	if !mayNameCustomEntry(name) {
 		return nil
 	}
+	providers := settings.Providers.Get(ctx)
 	if strings.HasPrefix(name, CustomPoolPrefix) {
-		return namedCustomEntry(name, cfg)
+		return namedCustomEntry(name, providers)
 	}
-	path := NamedCustomProviderPath(ctx, name, cfg)
+	path := modelsResolver(ctx).NamedCustomProviderConfigPath(name, providers)
 	if path == nil {
 		return nil
 	}
 	if path.Section != "providers" {
-		return namedCustomEntry(name, cfg)
+		return namedCustomEntry(name, providers)
 	}
 	key := normalizeCustomPoolName(path.Key)
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		if normalizeCustomPoolName(cfgString(ne.entry["provider_key"])) == key {
 			found := ne
 			return &found
@@ -122,17 +125,17 @@ func customEntryForIdentity(ctx context.Context, provider string, cfg map[string
 	return nil
 }
 
-// Whether a provider and requested provider pair names a custom runtime at baseURL, with the entry's identity when one names it
-func customIdentity(ctx context.Context, provider, requestedProvider, baseURL string, cfg map[string]any) (bool, string) {
+// Whether a provider and requested provider pair names a custom runtime at baseURL under the providers setting ctx gives, with the entry's identity when one names it
+func customIdentity(ctx context.Context, provider, requestedProvider, baseURL string) (bool, string) {
 	identities := []string{strings.ToLower(strings.TrimSpace(provider)), strings.ToLower(strings.TrimSpace(requestedProvider))}
 	namesEntry := func(v string) bool {
-		if customEntryForIdentity(ctx, v, cfg) == nil {
+		if customEntryForIdentity(ctx, v) == nil {
 			return false
 		}
 		if _, builtin := builtinPoolAddress(ctx, v); !builtin {
 			return true
 		}
-		return customEntryForEndpoint(baseURL, v, cfg) != nil
+		return customEntryForEndpoint(baseURL, v, settings.Providers.Get(ctx)) != nil
 	}
 	name := ""
 	for _, v := range identities {
@@ -154,17 +157,17 @@ func customIdentity(ctx context.Context, provider, requestedProvider, baseURL st
 
 // IsCustomRuntime reports a runtime identity that is a custom entry's, whose pool comes from LoadRuntimePool and never a raw LoadPool of a slug a built-in may share
 func IsCustomRuntime(env PoolEnv, provider, requestedProvider, baseURL string) bool {
-	custom, _ := customIdentity(env.hookContext(), provider, requestedProvider, baseURL, env.config())
+	custom, _ := customIdentity(env.hookContext(), provider, requestedProvider, baseURL)
 	return custom
 }
 
-// RuntimeEntryOwner is the credential provenance of the entry owning a custom runtime, names only
-func RuntimeEntryOwner(ctx context.Context, provider, requestedProvider, baseURL string, cfg map[string]any) map[string]any {
-	custom, name := customIdentity(ctx, provider, requestedProvider, baseURL, cfg)
+// RuntimeEntryOwner is the credential provenance of the entry of the providers setting ctx gives that owns a custom runtime, names only
+func RuntimeEntryOwner(ctx context.Context, provider, requestedProvider, baseURL string) map[string]any {
+	custom, name := customIdentity(ctx, provider, requestedProvider, baseURL)
 	if !custom {
 		return nil
 	}
-	match := customEntryForEndpoint(baseURL, name, cfg)
+	match := customEntryForEndpoint(baseURL, name, settings.Providers.Get(ctx))
 	if match == nil {
 		return nil
 	}
@@ -182,10 +185,11 @@ func LoadRuntimePool(env PoolEnv, provider, baseURL, requestedProvider string, s
 
 // Pool key of a runtime identity and the custom entry owning it, empty when no pool fits
 func runtimePoolKey(env PoolEnv, provider, baseURL, requestedProvider string, snapshot map[string]any) (string, map[string]any, bool) {
-	cfg := env.config()
-	custom, name := customIdentity(env.hookContext(), provider, requestedProvider, baseURL, cfg)
+	ctx := env.hookContext()
+	providers := settings.Providers.Get(ctx)
+	custom, name := customIdentity(ctx, provider, requestedProvider, baseURL)
 	if !custom {
-		return ResolveRuntimePoolKey(provider, baseURL, cfg), nil, false
+		return ResolveRuntimePoolKey(provider, baseURL, providers), nil, false
 	}
 	var owner map[string]any
 	if snapshot != nil {
@@ -198,7 +202,7 @@ func runtimePoolKey(env PoolEnv, provider, baseURL, requestedProvider string, sn
 	if owner != nil {
 		match = &namedEntry{name: anyString(owner["name"]), entry: owner}
 	} else {
-		match = customEntryForEndpoint(baseURL, name, cfg)
+		match = customEntryForEndpoint(baseURL, name, providers)
 	}
 	if name != "" && match == nil {
 		return "", nil, true
@@ -209,7 +213,7 @@ func runtimePoolKey(env PoolEnv, provider, baseURL, requestedProvider string, sn
 			key = keys[0]
 		}
 	} else {
-		key = ResolveRuntimePoolKey(provider, baseURL, cfg)
+		key = ResolveRuntimePoolKey(provider, baseURL, providers)
 	}
 	var entry map[string]any
 	if match != nil {
@@ -225,7 +229,7 @@ func RoutePoolKey(env PoolEnv, provider, baseURL, requestedProvider string) stri
 		return key
 	}
 	for _, name := range []string{provider, requestedProvider} {
-		if named := namedCustomEntry(name, env.config()); named != nil {
+		if named := namedCustomEntry(name, settings.Providers.Get(env.hookContext())); named != nil {
 			if keys := poolKeysForCustomEntry(named.name, named.entry); len(keys) > 0 {
 				return keys[0]
 			}

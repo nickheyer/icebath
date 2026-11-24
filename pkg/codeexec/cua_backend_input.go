@@ -1,11 +1,12 @@
 package codeexec
 
 import (
+	"strings"
+
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -131,7 +132,7 @@ func (b *CuaDriverBackend) Click(a ClickArgs) (*ActionResult, error) {
 	if button == "" {
 		button = "left"
 	}
-	norm := pystr.Lower(button)
+	norm := strings.ToLower(button)
 	if norm != "left" && norm != "right" && norm != "middle" {
 		return refuseAction("click", fmt.Sprintf("unknown button %s — expected left, right, middle.", errchain.Show(a.Button))), nil
 	}

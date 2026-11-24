@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Extension to bridge media kind for out of process sends
@@ -163,7 +162,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 		return nil, gateway.SendError(fmt.Sprintf("WhatsApp %s error (%d): %s", label, status, string(raw))), nil
 	}
 	var lastMessageID any
-	if pystr.Strip(message) != "" && mediaCaption == "" {
+	if strings.TrimSpace(message) != "" && mediaCaption == "" {
 		id, errPayload, err := post("send", mentionFirst(map[string]any{"chatId": normalizedChatID, "message": message}), 30*time.Second, "bridge")
 		if err != nil {
 			return failed(err)

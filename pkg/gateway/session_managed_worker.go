@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -374,6 +375,25 @@ func workerEnv(ctx context.Context, a *SessionAuthority) ([]string, error) {
 	return out, nil
 }
 
+// Child env of one turn's worker: the profile's worker env, the process env when that inherits, with a kanban attempt's worker protocol env over it
+func turnWorkerEnv(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy) ([]string, error) {
+	env, err := workerEnv(ctx, a)
+	if err != nil || kanbanSpawnEnv == nil {
+		return env, err
+	}
+	attempt, err := kanbanSpawnEnv(ctx, policy)
+	if err != nil || len(attempt) == 0 {
+		return env, err
+	}
+	if env == nil {
+		env = os.Environ()
+	}
+	for key, value := range attempt {
+		env = append(env, key+"="+value)
+	}
+	return env, nil
+}
+
 // Launch profile credentials from its frozen launch env that the scrub removed, credential names only
 func launchEnvOnlyCredentials(profileHome string, env map[string]string) map[string]string {
 	missing := map[string]string{}
@@ -657,12 +677,12 @@ func settleLost(ctx context.Context, a *SessionAuthority, row, scope *pyjson.Obj
 }
 
 // Spawns the turn's child and registers it for stops, nil when the spawn was cancelled with its interrupted result recorded
-func spawnRegisteredWorker(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (*managedWorker, *workerProcess, error) {
+func spawnRegisteredWorker(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, policy *LocalSessionPolicy) (*managedWorker, *workerProcess, error) {
 	markSpawning(a, ref, row)
 	generation := row.GetOr("generation", nil)
 	logPath := workerLogPath(a.ProfileID)
 	process, err := func() (*workerProcess, error) {
-		env, err := workerEnv(ctx, a)
+		env, err := turnWorkerEnv(ctx, a, policy)
 		if err != nil {
 			return nil, err
 		}
@@ -741,7 +761,7 @@ func executeManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, ro
 	if stoppedBeforeSpawn(a, ref, row) {
 		return "", nil
 	}
-	worker, process, err := spawnRegisteredWorker(ctx, a, ref, row)
+	worker, process, err := spawnRegisteredWorker(ctx, a, ref, row, policy)
 	if err != nil {
 		return nil, err
 	}

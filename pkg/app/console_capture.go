@@ -1,6 +1,9 @@
 package app
 
 import (
+	"strings"
+	"unicode"
+
 	"bytes"
 	"errors"
 	"fmt"
@@ -10,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // A user facing console command failure, reported like a RuntimeError subclass
@@ -152,14 +154,14 @@ func consoleSettle(code int, raised error, stdout, stderr string) (string, error
 	}
 	text := stdout + stderr
 	if code != 0 {
-		detail := pystr.Strip(message)
+		detail := strings.TrimSpace(message)
 		if detail == "" {
-			detail = pystr.Strip(text)
+			detail = strings.TrimSpace(text)
 		}
 		if detail == "" {
 			detail = fmt.Sprintf("Command exited with status %d", code)
 		}
 		return "", &ConsoleCommandError{Msg: detail}
 	}
-	return pystr.Rstrip(text), nil
+	return strings.TrimRightFunc(text, unicode.IsSpace), nil
 }

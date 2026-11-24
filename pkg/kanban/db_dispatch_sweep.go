@@ -422,7 +422,7 @@ func errorFingerprint(errorText string) string {
 	}
 	fp, _ := fingerprintPidRE.Replace(head, "pid N", -1, -1)
 	fp, _ = fingerprintTSRE.Replace(fp, "<TS>", -1, -1)
-	return pystr.Strip(pystr.Lower(fp))
+	return strings.TrimSpace(strings.ToLower(fp))
 }
 
 // Trailing run of clean exit protocol violations on a task, rate limited runs skipped
@@ -477,7 +477,7 @@ func workerFinalOutput(ctx context.Context, taskID string, board *string) string
 	var lines []string
 	for _, ln := range pystr.Splitlines(text, false) {
 		stripped, _ := logChromeRE.Replace(ln, "", -1, -1)
-		stripped = pystr.Strip(stripped)
+		stripped = strings.TrimSpace(stripped)
 		if stripped == "" {
 			continue
 		}

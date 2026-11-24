@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python exception class and message of a failed int conversion
@@ -26,7 +25,7 @@ var _ interface{ PyExceptionMRO() []string } = (*Error)(nil)
 
 // Python int of a string in base 10, digits of any script with single underscores between digits
 func Parse(text string) (*big.Int, bool) {
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	sign := ""
 	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
 		sign, text = text[:1], text[1:]

@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (csak a következő körre — egy válasz után visszaáll)"
     switch_cancelled: "🟡 Modellváltás megszakítva. A jelenlegi modell változatlan ({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_Szöveges mód: írd be: `{prefix}approve` a váltáshoz, `{prefix}cancel` a jelenlegi modell megtartásához._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "A `--once` ebben a munkamenetben nem érhető el; használd a `/model <name>` parancsot, majd a kör után válts vissza."
+    local_next_turn: "A következő üzenetedtől érvényes."
   agents:
 
     header: "🤖 **Aktív ügynökök és feladatok**"
@@ -196,9 +196,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ A /fast csak olyan OpenAI modelleknél érhető el, amelyek támogatják a Priority Processinget."
-    status: "⚡ Priority Processing\n\nJelenlegi mód: `{mode}`\n\n_Használat:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ Ismeretlen argumentum: `{arg}`\n\n**Érvényes lehetőségek:** normal, fast, status"
+    not_supported: "⚡ A /fast olyan modellt igényel, amelynek szolgáltatója gyors szintet kínál, például az OpenAI Priority Processing vagy az Anthropic gyors módja. Válts a /model paranccsal egy ilyen modellre."
+    status: "⚡ Priority Processing\n\nJelenlegi mód: `{mode}`\n\n_Használat:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ Ismeretlen argumentum: `{arg}`\n\n**Érvényes lehetőségek:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (mentve a konfigurációba)\n_(a következő üzenettől lép életbe)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (csak ebben a munkamenetben)"
     label_fast: "GYORS"
@@ -212,6 +212,9 @@ gateway:
     choice_cold: "cold — gyors csak a munkamenet első körében"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, hatszoros ár"
     ultrafast_not_supported: "⚡ Az Ultrafast nem érhető el a(z) `{model}` modellhez ezen a fiókon vagy útvonalon."
+  setup_wizard:
+
+    configure_in_config: "  Állítsd be a(z) {platform} platformot a config.yaml fájlban a platforms.{key} alatt"
   footer:
 
     status: "📎 Futási idejű lábléc: **{state}**\nMezők: `{fields}`\nPlatform: `{platform}`"
@@ -1995,7 +1998,7 @@ slash:
     description: "Elérhető parancsok megjelenítése (a /help skills a skillparancsokat listázza, a /help <text> szűr)"
   palette:
 
-    description: "A fuzzy parancspaletta megnyitása (Ctrl+P is)"
+    description: "A fuzzy parancspaletta megnyitása"
   restart:
 
     description: "Az átjáró kíméletes újraindítása az aktív futások befejezése után"
@@ -2516,6 +2519,12 @@ cli:
     sweep_archived_removed: "archiválva + eltávolítva → {ref}"
     sweep_archived_kept: "archiválva, megtartva ({reason}) → {ref}"
     discarded: "Worktree eltávolítva, változásai elvetve: {path}"
+  update:
+
+    held_icebath: "{mark} Más icebath-folyamatok futnak erről a telepítésről ({count}):"
+    held_venv: "{mark} Folyamatok futnak ennek a telepítésnek a Python-környezetéből ({count}):"
+    held_forced: "  → Frissítés mégis, a(z) {flag} miatt."
+    held_refused: "  Zárd be őket, és futtasd újra az `icebath update` parancsot, vagy add meg a(z) {flag} kapcsolót a frissítéshez."
 display:
 
   verb:
@@ -2697,7 +2706,7 @@ explainer:
     ollama_runtime_context_too_small: "a helyi modell kontextusablaka túl kicsi volt a befejezéshez. Növeld a kontextusméretet, vagy használj nagyobb modellt."
     pending_tool_result: "a kör úgy állt le, hogy egy eszköz eredménye még függőben volt, és a modell nem írt hozzá folytatást. Küldj `continue` üzenetet, hogy összefoglalja."
     interrupted_during_api_call: "a kérés a hívás közepén, a válasz megérkezése előtt megszakadt. Küldj `continue` üzenetet az újrapróbáláshoz."
-    max_iterations_reached: "az eszköziterációk maximális száma még a végső válasz előtt elérve. Küldj `continue` üzenetet a folytatáshoz, vagy emeld meg a `max_iterations` értékét."
+    max_iterations_reached: "az eszköziterációk maximális száma még a végső válasz előtt elérve. Küldj `continue` üzenetet a folytatáshoz, vagy emeld meg a `agent.max_turns` értékét."
     error_near_max_iterations: "az iterációs limit közelében hiba történt, még a végső válasz előtt. Nézd meg a fenti eszközkimenetet, majd küldj `continue` üzenetet."
     repeated_outer_errors: "a kör ismétlődő hibákkal folyton elakadt, ezért idő előtt leállt, hogy ne próbálkozzon a végtelenségig. Nézd meg a fenti hibákat, majd küldj `continue` üzenetet az újrapróbáláshoz."
   persistence:
@@ -2903,8 +2912,8 @@ tips:
   t177: "A Icebath a .icebath.md, AGENTS.md, CLAUDE.md vagy .cursorrules fájlból tölti be a projekt kontextusát (az első találatból)."
   t178: "Az almappák AGENTS.md fájljait az ügynök fokozatosan fedezi fel, ahogy a mappákba lép."
   t179: "A kontextusfájlok mérete legfeljebb 20 000 karakter, intelligens eleje/vége csonkolással."
-  t180: "Böngésző-háttérrendszerek: helyi Chromium, Lightpanda, Browserbase, Browser Use és Firecrawl — plusz a beépített Camofox."
-  t181: "A Camofox (észlelésgátló Firefox) beépített: beállítás az icebath camofox setup paranccsal."
+  t180: "Böngésző-háttérrendszerek: helyi Chromium, Lightpanda, Browserbase, Browser Use és Firecrawl — plusz a Camofox pluginként."
+  t181: "A Camofox (észlelésgátló Firefox) plugin: telepítsd az icebath plugins install camofox paranccsal, majd futtasd az icebath camofox setup parancsot."
   t182: "A browser_exec több böngészőlépést futtat egyetlen Python-hívásban — navigálás, kinyerés és kattintás együtt."
   t183: "A browser.dialog_policy határozza meg, hogyan kezelődnek az oldal natív párbeszédablakai: must_respond (az ügynök a browser_dialog eszközzel válaszol), auto_dismiss vagy auto_accept."
   t184: "A icebath mcp interaktív választót nyit az icebath beépített katalógusának MCP-iből, amelyeket egy billentyűnyomással telepíthetsz."

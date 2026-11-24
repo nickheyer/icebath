@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -446,7 +445,7 @@ func (s *GatewayStreamConsumer) markFinalDelivered(record *string) {
 
 // Text normalized like send output, directives stripped, fences closed and trimmed
 func (s *GatewayStreamConsumer) displayPayload(text string) string {
-	return pystr.Strip(EnsureClosedCodeFences(cleanForDisplay(text)))
+	return strings.TrimSpace(EnsureClosedCodeFences(cleanForDisplay(text)))
 }
 
 // Records what the user saw as the turn final answer, the whole ledger on a split delivery
@@ -466,7 +465,7 @@ func (s *GatewayStreamConsumer) DeliveredFinalMatches(finalText string) *bool {
 	}
 	yes, no := true, false
 	if s.deliveredFinalText != nil {
-		if pystr.Strip(*s.deliveredFinalText) == target || s.HasDeliveredText(finalText) {
+		if strings.TrimSpace(*s.deliveredFinalText) == target || s.HasDeliveredText(finalText) {
 			return &yes
 		}
 		return &no
@@ -485,14 +484,14 @@ func (s *GatewayStreamConsumer) DeliveredFinalMatches(finalText string) *bool {
 
 // Whether text was already delivered as visible chat content
 func (s *GatewayStreamConsumer) HasDeliveredText(text string) bool {
-	target := pystr.Strip(cleanForDisplay(text))
+	target := strings.TrimSpace(cleanForDisplay(text))
 	if target == "" {
 		return false
 	}
 	seen := append([]string{s.visiblePrefix()}, s.deliveredCommentaryTexts...)
 	seen = append(seen, s.deliveredSegmentTexts...)
 	for _, sent := range seen {
-		if pystr.Strip(sent) == target {
+		if strings.TrimSpace(sent) == target {
 			return true
 		}
 	}
@@ -501,7 +500,7 @@ func (s *GatewayStreamConsumer) HasDeliveredText(text string) bool {
 
 // Delivered text match restricted to deliveries that outlive the turn
 func (s *GatewayStreamConsumer) HasDurablyDeliveredText(text string) bool {
-	target := pystr.Strip(cleanForDisplay(text))
+	target := strings.TrimSpace(cleanForDisplay(text))
 	if target == "" {
 		return false
 	}
@@ -510,7 +509,7 @@ func (s *GatewayStreamConsumer) HasDurablyDeliveredText(text string) bool {
 		seen = append(seen, s.visiblePrefix())
 	}
 	for _, sent := range seen {
-		if pystr.Strip(sent) == target {
+		if strings.TrimSpace(sent) == target {
 			return true
 		}
 	}
@@ -598,7 +597,7 @@ func (s *GatewayStreamConsumer) resetSegmentState(preserveNoEdit bool) {
 	if preserveNoEdit && s.messageID == "__no_edit__" {
 		return
 	}
-	if finalized := pystr.Strip(cleanForDisplay(s.lastSentText)); finalized != "" {
+	if finalized := strings.TrimSpace(cleanForDisplay(s.lastSentText)); finalized != "" {
 		s.deliveredSegmentTexts = append(s.deliveredSegmentTexts, finalized)
 		s.lastSegmentDelivery = nil
 		if s.messageID != "" && s.messageID != "__no_edit__" {

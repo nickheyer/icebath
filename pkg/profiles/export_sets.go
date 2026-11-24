@@ -14,7 +14,7 @@ var DefaultExportExcludeRoot = func() map[string]bool {
 		"state.db", "state.db-shm", "state.db-wal", "icebath_state.db",
 		"response_store.db", "response_store.db-shm", "response_store.db-wal",
 		"gateway.pid", "gateway_state.json", "processes.json", "auth.json", ".env",
-		"auth.lock", "active_profile", ".update_check", "source-checks", "errors.log", ".icebath_history",
+		"auth.lock", ".config.yaml.lock", ".env.lock", "active_profile", ".update_check", "source-checks", "errors.log", ".icebath_history",
 		"image_cache", "audio_cache", "document_cache", "browser_screenshots", "checkpoints", "sandboxes", "logs",
 	} {
 		out[n] = true

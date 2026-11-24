@@ -1,6 +1,8 @@
 package email
 
-import "github.com/nickheyer/icebath/pkg/gateway"
+import (
+	"github.com/nickheyer/icebath/pkg/gateway"
+)
 
 var envEnableCredentials = []string{"EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SMTP_HOST"}
 

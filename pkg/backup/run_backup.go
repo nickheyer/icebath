@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -376,7 +375,7 @@ func resolveBackupOutputPath(w io.Writer, output string) (string, error) {
 			}
 			outPath = pypath.PathJoin(userHome, defaultName)
 		}
-		if suffix := pypath.Suffix(outPath); pystr.Lower(suffix) != ".zip" {
+		if suffix := pypath.Suffix(outPath); strings.ToLower(suffix) != ".zip" {
 			withZip, err := pypath.WithSuffix(outPath, suffix+".zip")
 			if err != nil {
 				return err

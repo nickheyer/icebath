@@ -220,7 +220,7 @@ func TestTrustedPeersFromConfigList(t *testing.T) {
 		t.Fatal(err)
 	}
 	sec := CaptureSecurityContext(ctx)
-	for _, peer := range []string{"alice", "5", "True"} {
+	for _, peer := range []string{"alice", "5", "true"} {
 		if _, ok := sec.TrustedPeers[peer]; !ok {
 			t.Fatalf("missing %q in %v", peer, sec.TrustedPeers)
 		}
@@ -231,8 +231,10 @@ func TestTrustedPeersFromConfigList(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("a2a:\n  trusted_peers: alice\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := CaptureSecurityContext(ctx).TrustedPeers; len(got) != 0 {
-		t.Fatalf("non list trusted_peers produced %v", got)
+	if got := CaptureSecurityContext(ctx).TrustedPeers; len(got) != 1 {
+		t.Fatalf("one peer written as text produced %v", got)
+	} else if _, ok := got["alice"]; !ok {
+		t.Fatalf("one peer written as text produced %v", got)
 	}
 	t.Setenv("A2A_TRUSTED_PEERS", " bob , ,carol")
 	if got := CaptureSecurityContext(ctx).TrustedPeers; len(got) != 2 {

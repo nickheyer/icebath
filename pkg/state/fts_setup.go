@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // FTS5 shadow tables the virtual table engine owns, orphaned by sqlite3 .recover
@@ -161,13 +159,13 @@ func newSessionFTSSetup(host ftsSetupHost) *sessionFTSSetup {
 
 // Reports a missing FTS5 module or a missing optional tokenizer
 func isFTS5UnavailableError(err error) bool {
-	text := pystr.Lower(errText(err))
+	text := strings.ToLower(errText(err))
 	return (strings.Contains(text, "no such module") && strings.Contains(text, "fts5")) || isTrigramUnavailableError(err)
 }
 
 // Reports that only the trigram or cjk_unicode61 tokenizer is missing
 func isTrigramUnavailableError(err error) bool {
-	text := pystr.Lower(errText(err))
+	text := strings.ToLower(errText(err))
 	return strings.Contains(text, "no such tokenizer: trigram") || strings.Contains(text, "no such tokenizer: cjk_unicode61")
 }
 
@@ -188,7 +186,7 @@ func dbHasTrigramToolCallsProjection(ctx context.Context, conn SQLiteConn) (bool
 		return false, err
 	}
 	text, _ := row[0].(string)
-	return strings.Contains(pystr.Lower(text), "tool_calls"), nil
+	return strings.Contains(strings.ToLower(text), "tool_calls"), nil
 }
 
 // Reports layout work for optimize storage, a stored FTS vtable differing from the shipping DDL
@@ -361,7 +359,7 @@ func (f *sessionFTSSetup) ftsTableProbe(ctx context.Context, conn SQLiteConn, ta
 		}
 		return ftsTableStatusDegraded, nil
 	}
-	text := pystr.Lower(errText(err))
+	text := strings.ToLower(errText(err))
 	if strings.Contains(text, "no such table") {
 		return ftsTableStatusAbsent, nil
 	}

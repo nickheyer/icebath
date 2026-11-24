@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -165,7 +164,7 @@ func removeRetiredSystemdUnit(ctx context.Context, w io.Writer, svc RetiredServi
 	if err != nil {
 		return false, err
 	}
-	running := active.ReturnCode == 0 && pystr.Strip(active.Stdout) == "active"
+	running := active.ReturnCode == 0 && strings.TrimSpace(active.Stdout) == "active"
 	for _, step := range []struct {
 		verb    string
 		timeout time.Duration

@@ -103,6 +103,37 @@ type KanbanCommandResult struct {
 	Output string `json:"output"`
 }
 
+// Events of a board after a cursor, for a page that follows them: one task's or every task's, narrowed by assignee, tenant and kind
+type KanbanEventsParams struct {
+	Profile *string `json:"profile,omitzero"`
+	Board   string  `json:"board,omitzero"`
+	TaskID  string  `json:"task_id,omitzero"`
+	// Events after this id; zero reads the newest ones
+	After    int64    `json:"after,omitzero"`
+	Assignee string   `json:"assignee,omitzero"`
+	Tenant   string   `json:"tenant,omitzero"`
+	Kinds    []string `json:"kinds,omitzero"`
+	// Most events answered, 200 when absent
+	Limit int64 `json:"limit,omitzero"`
+}
+
+// One event of a task as the events page shows it
+type KanbanEvent struct {
+	ID        int64  `json:"id"`
+	TaskID    string `json:"task_id"`
+	Title     string `json:"title,omitzero"`
+	Kind      string `json:"kind"`
+	Payload   string `json:"payload,omitzero"`
+	CreatedAt int64  `json:"created_at"`
+	Assignee  string `json:"assignee,omitzero"`
+}
+
+// Events in order, oldest first, and the cursor the next read starts after
+type KanbanEventsResult struct {
+	Events []KanbanEvent `json:"events"`
+	Cursor int64         `json:"cursor"`
+}
+
 var (
 	// One board with its columns and tasks, and every board to switch to
 	KanbanBoardView = NewMethod[KanbanBoardParams, KanbanBoardResult]("kanban.board.view")
@@ -112,4 +143,6 @@ var (
 	KanbanTaskShow = NewMethod[KanbanTaskParams, KanbanTaskResult]("kanban.task.show")
 	// Task verbs: create, edit, assign, comment, block, unblock, promote, complete, reopen, archive and the rest that return at once
 	KanbanTaskCommand = NewMethod[KanbanCommandParams, KanbanCommandResult]("kanban.task.command")
+	// Events of a board or one task after a cursor, for the page that follows them
+	KanbanEvents = NewMethod[KanbanEventsParams, KanbanEventsResult]("kanban.events")
 )

@@ -188,7 +188,7 @@ func strOrEmpty(v any) string {
 }
 
 // Stripped str of a falsy defaulted value, like str(value or "").strip()
-func stripOrEmpty(v any) string { return pystr.Strip(strOrEmpty(v)) }
+func stripOrEmpty(v any) string { return strings.TrimSpace(strOrEmpty(v)) }
 
 // Text of a value expected to be a string, other values through str and None as empty
 func textValue(v any) string {
@@ -217,8 +217,8 @@ func iterYbresRefs(matches []*regexp2.Match) []ybresRef {
 	var refs []ybresRef
 	for _, m := range matches {
 		kind, filename := pystrPartition(m.GroupByNumber(1).String(), ":")
-		if kind = pystr.Strip(kind); resolvableMediaKinds[kind] {
-			refs = append(refs, ybresRef{m.GroupByNumber(2).String(), kind, pystr.Strip(filename)})
+		if kind = strings.TrimSpace(kind); resolvableMediaKinds[kind] {
+			refs = append(refs, ybresRef{m.GroupByNumber(2).String(), kind, strings.TrimSpace(filename)})
 		}
 	}
 	return refs
@@ -324,7 +324,7 @@ func signPurgeExpired() int {
 
 // Posts the sign token request, retrying the retryable code up to the retry cap
 func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv string) (map[string]any, error) {
-	rawURL := pystr.RstripChars(apiDomain, "/") + signTokenPath
+	rawURL := strings.TrimRight(apiDomain, "/") + signTokenPath
 	client := signHTTPClient()
 	defer client.CloseIdleConnections()
 	for attempt := 0; attempt <= signMaxRetries; attempt++ {

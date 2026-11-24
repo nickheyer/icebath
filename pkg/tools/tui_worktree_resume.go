@@ -1,6 +1,9 @@
 package tools
 
 import (
+	"strings"
+	"unicode"
+
 	"context"
 	"fmt"
 	"os"
@@ -13,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -43,7 +45,7 @@ func readTUIWorktrees(ctx context.Context) *pyjson.Object {
 	if err != nil {
 		return pyjson.NewObject()
 	}
-	parsed, err := pyjson.Loads(pystr.Lstrip(string(raw)))
+	parsed, err := pyjson.Loads(strings.TrimLeftFunc(string(raw), unicode.IsSpace))
 	if err != nil {
 		return pyjson.NewObject()
 	}
@@ -170,7 +172,7 @@ func RecreateTUIWorktree(ctx context.Context, cwd, sessionID string) string {
 		return ""
 	}
 	if result.Returncode != 0 {
-		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, pystr.Strip(result.Stderr)))
+		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, strings.TrimSpace(result.Stderr)))
 		return ""
 	}
 	copyWorktreeIncludes(repoRoot, tree)

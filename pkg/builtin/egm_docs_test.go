@@ -84,7 +84,7 @@ func extractHeaders(t *testing.T, content string) map[string]bool {
 	slugs := map[string]bool{}
 	strip := pyPattern(t, `[^a-z0-9 -]`)
 	for _, m := range pyFindAll(t, pyPattern(t, `(?m)^(#{1,6})\s+(.+)$`), content) {
-		slug := pySub(t, strip, pystr.Lower(pystr.Strip(m[2])), func(string) string { return "" })
+		slug := pySub(t, strip, strings.ToLower(strings.TrimSpace(m[2])), func(string) string { return "" })
 		slugs[strings.ReplaceAll(slug, " ", "-")] = true
 	}
 	return slugs
@@ -112,7 +112,7 @@ func checkEGMLinks(t *testing.T, root string) int {
 		headers := extractHeaders(t, clean)
 		rel, _ := filepath.Rel(root, md)
 		for _, m := range pyFindAll(t, link, clean) {
-			target := pystr.Strip(m[2])
+			target := strings.TrimSpace(m[2])
 			if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:") || strings.HasPrefix(target, "file://") {
 				continue
 			}
@@ -121,7 +121,7 @@ func checkEGMLinks(t *testing.T, root string) int {
 			}
 			checked++
 			if strings.HasPrefix(target, "#") {
-				if anchor := pystr.Lower(target[1:]); !headers[anchor] && len(headers) > 0 {
+				if anchor := strings.ToLower(target[1:]); !headers[anchor] && len(headers) > 0 {
 					t.Errorf("Broken intra-document anchor '%s' in %s", target, rel)
 				}
 				continue

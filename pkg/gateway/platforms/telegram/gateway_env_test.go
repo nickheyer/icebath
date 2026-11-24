@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func applyEnv(t *testing.T, cfg *gateway.GatewayConfig) {
@@ -27,7 +28,7 @@ func TestTelegramEnvFallbackIPsCreateEntry(t *testing.T) {
 	t.Setenv("TELEGRAM_REPLY_TO_MODE", "ALL")
 	applyEnv(t, cfg)
 	pc := cfg.Platforms[gateway.PlatformTelegram]
-	ips, _ := pc.Extra["fallback_ips"].([]any)
+	ips := settings.TelegramFallbackIPs.Strings(context.Background())
 	if pc.Enabled || len(ips) != 2 || ips[0] != "1.1.1.1" || ips[1] != "2.2.2.2" || pc.ReplyToMode != "all" {
 		t.Fatalf("telegram config %+v", pc)
 	}

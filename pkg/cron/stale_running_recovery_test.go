@@ -85,7 +85,7 @@ func TestLiveOwnerStaleClaimGetsRecovered(t *testing.T) {
 }
 
 func TestLiveOwnerRecentClaimNotRecovered(t *testing.T) {
-	for _, timeout := range []string{"600", "0", "nan", "inf"} {
+	for _, timeout := range []string{"600", "0", "inf"} {
 		t.Run(timeout, func(t *testing.T) {
 			l, s := liveOwnerLedger(t)
 			t.Setenv("ICEBATH_CRON_TIMEOUT", timeout)

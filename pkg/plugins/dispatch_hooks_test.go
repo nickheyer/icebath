@@ -114,7 +114,7 @@ func TestPreToolCallCallbackExceptionFailsClosed(t *testing.T) {
 }
 
 func TestHookCallbackTimeoutReadsConfig(t *testing.T) {
-	cases := map[string]float64{"": 30, "0.12": 0.12, "-1": 30, "9999": 600, "'abc'": 30, "'2.5'": 2.5, "true": 1, "[1]": 30, "0": 0}
+	cases := map[string]float64{"": 30, "0.12": 0.12, "-1": 30, "9999": 600, "'abc'": 30, "'2.5'": 2.5, "true": 30, "[1]": 30, "0": 0}
 	for raw, want := range cases {
 		if got := timeoutManager(t, raw).resolveHookCallbackTimeout(); got != want {
 			t.Fatalf("%q -> %v want %v", raw, got, want)

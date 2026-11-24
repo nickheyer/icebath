@@ -12,11 +12,8 @@ const OpencodeSessionHeader = "x-opencode-session"
 
 // Named custom entry lookup seam the OpenCode transport consults for a declared api_mode
 var opencodeNamedCustomEntryFn = func(ctx context.Context, provider string) map[string]any {
-	tree, err := auxLoadConfigFn(ctx)
-	if err != nil {
-		return nil
-	}
-	return newResolver(ctx, tree, nil, "", nil).getNamedCustomProvider(provider, nil, true)
+	r := newResolver(ctx, nil, "", nil)
+	return r.getNamedCustomProvider(provider, r.providers(), true)
 }
 
 // OpencodeTransport is the api mode and base URL rederived per model for an OpenCode relay target, empty mode otherwise
@@ -59,14 +56,8 @@ func OpencodeSessionHeaders(ctx context.Context, provider, baseURL, sessionID st
 
 // CustomProviderSessionAffinityHeaders is the opted in affinity header of the route matching entry, empty when none
 func CustomProviderSessionAffinityHeaders(ctx context.Context, baseURL, sessionID string) map[string]string {
-	header := ""
-	if err := auxRecoverRaise(func() {
-		tree, err := auxLoadConfigFn(ctx)
-		if err != nil {
-			panic(err)
-		}
-		header = CustomProviderSessionAffinityHeader(baseURL, nil, tree)
-	}); err != nil || header == "" {
+	header := CustomProviderSessionAffinityHeader(baseURL, CustomProviderEntries(ctx))
+	if header == "" {
 		return map[string]string{}
 	}
 	if key := ResolveAffinityKey(ctx, sessionID); key != "" {

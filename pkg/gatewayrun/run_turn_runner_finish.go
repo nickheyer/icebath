@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -87,7 +86,7 @@ func (t *TurnRunner) finishStreamConsumer(ctx context.Context, result map[string
 	}
 	var finalForStream *string
 	if result != nil && !pyrepr.Truthy(result["failed"]) && !pyrepr.Truthy(result["interrupted"]) && result["completed"] != false {
-		if final, ok := result["final_response"].(string); ok && pystr.Strip(final) != "" && final != "(empty)" {
+		if final, ok := result["final_response"].(string); ok && strings.TrimSpace(final) != "" && final != "(empty)" {
 			finalForStream = &final
 		}
 	}
@@ -143,12 +142,12 @@ func (t *TurnRunner) combinedEphemeralPrompt(ctx context.Context) string {
 	combined := tc.contextPrompt
 	channel := ""
 	if tc.channelPrompt != nil {
-		channel = pystr.Strip(*tc.channelPrompt)
+		channel = strings.TrimSpace(*tc.channelPrompt)
 	}
 	extras := []string{channel, t.runner.getSystemPromptForChannel(ctx, tc.source.Platform, tc.source.ChatID, tc.source.ThreadID, tc.source.ParentChatID)}
 	for _, extra := range extras {
 		if extra != "" {
-			combined = pystr.Strip(combined + "\n\n" + extra)
+			combined = strings.TrimSpace(combined + "\n\n" + extra)
 		}
 	}
 	return combined

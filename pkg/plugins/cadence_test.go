@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -40,7 +41,7 @@ func cadenceRow(name, class string, available *bool, needsFixing string) *CheckR
 func TestCheckDueClockGate(t *testing.T) {
 	ctx, h, _ := cadenceHome(t)
 	now, day, zero := 1000.0, 24.0, 0.0
-	if !CheckDue(ctx, &now, &day, nil) {
+	if !CheckDue(ctx, &now, &day) {
 		t.Fatal("never run is not due")
 	}
 	marker := filepath.Join(h, "plugin-update-checks", "last-run")
@@ -50,27 +51,26 @@ func TestCheckDueClockGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	current := float64(time.Now().UnixNano()) / 1e9
-	if CheckDue(ctx, &current, &day, nil) {
+	if CheckDue(ctx, &current, &day) {
 		t.Fatal("due within the interval")
 	}
-	if CheckDue(ctx, &current, &zero, nil) {
+	if CheckDue(ctx, &current, &zero) {
 		t.Fatal("zero interval is due")
 	}
 }
 
 func TestCheckIntervalHoursReadsConfig(t *testing.T) {
-	ctx, _, _ := cadenceHome(t)
 	for _, tc := range []struct {
-		value any
+		value string
 		want  float64
-	}{{nil, 24}, {6, 6}, {0, 0}, {"garbage", 24}, {"6.5", 6.5}, {-3, 0}, {true, 1}} {
-		value := tc.value
-		if got := CheckIntervalHours(ctx, func(string, string) (any, error) { return value, nil }); got != tc.want {
+	}{{"", 24}, {"6", 6}, {"0", 0}, {"garbage", 24}, {"'6.5'", 6.5}, {"-3", 0}, {"true", 24}} {
+		ctx, h, _ := cadenceHome(t)
+		if tc.value != "" {
+			c6Write(t, filepath.Join(h, "config.yaml"), "plugins:\n  auto_update_check_hours: "+tc.value+"\n")
+		}
+		if got := CheckIntervalHours(ctx); got != tc.want {
 			t.Errorf("%v: %v", tc.value, got)
 		}
-	}
-	if got := CheckIntervalHours(ctx, func(string, string) (any, error) { return nil, errors.New("boom") }); got != 24 {
-		t.Errorf("raising reader %v", got)
 	}
 }
 
@@ -103,18 +103,13 @@ func TestScheduledCheckWritesReceiptAndMarker(t *testing.T) {
 func TestAutoApplySelectsOnlyUpdateableGitRows(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		ctx, h, buf := cadenceHome(t)
+		c6Write(t, filepath.Join(h, "config.yaml"), fmt.Sprintf("plugins:\n  auto_apply: %v\n  auto_update_check_hours: 24\n", enabled))
 		yes := true
 		rows := []*CheckResult{cadenceRow("gitplug", "git", &yes, ""), cadenceRow("pipplug", "pip", &yes, ""), cadenceRow("broken", "git", nil, "mismatch")}
 		var applied []string
 		RunScheduledCheck(ctx, ScheduledCheckOptions{PluginsDir: filepath.Join(h, "plugins"),
 			RunChecks:   func(context.Context, string) ([]*CheckResult, error) { return rows, nil },
-			ApplyUpdate: func(_ context.Context, name string) error { applied = append(applied, name); return nil },
-			ConfigGet: func(section, key string) (any, error) {
-				if key == "auto_apply" {
-					return enabled, nil
-				}
-				return 24, nil
-			}})
+			ApplyUpdate: func(_ context.Context, name string) error { applied = append(applied, name); return nil }})
 		want := []string(nil)
 		if enabled {
 			want = []string{"gitplug"}

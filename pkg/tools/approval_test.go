@@ -1682,7 +1682,10 @@ func TestCredentialInGlobTokensFallsBackToClassKey(t *testing.T) {
 	if len(proposals) != 1 || proposals[0].Pattern != "git push --force" || proposals[0].Kind != "class" || strings.Contains(proposals[0].Examples[0], "ghp_") {
 		t.Fatalf("proposals %+v", proposals)
 	}
-	added := ApplyProposals(env, proposals, []int{0})
+	added, err := ApplyProposals(env, proposals, []int{0})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for p := range added {
 		if strings.Contains(p, "*") {
 			t.Fatalf("wildcard persisted %q", p)
@@ -1696,7 +1699,10 @@ func TestApplyProposalsMergesAndPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	proposals := []*Proposal{{Pattern: "git push *", Kind: "glob", Count: 5}, {Pattern: "docker restart *", Kind: "glob", Count: 3}}
-	merged := ApplyProposals(env, proposals, []int{0})
+	merged, err := ApplyProposals(env, proposals, []int{0})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(merged) != 2 || !merged["podman *"] || !merged["git push *"] {
 		t.Fatalf("merged %v", merged)
 	}

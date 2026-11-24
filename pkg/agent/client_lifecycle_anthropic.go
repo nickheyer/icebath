@@ -19,7 +19,7 @@ var resolveAnthropicToken = provider.ResolveAnthropicToken
 // Profile scoped credential surface the anthropic token resolver reads
 func agentPoolEnv(ctx context.Context) provider.PoolEnv {
 	h := home.Dir(ctx)
-	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(ctx), Config: provider.ConfigLoader(h), Log: pkgLog(), Ctx: ctx}
+	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(ctx), Log: pkgLog(), Ctx: ctx}
 }
 
 // Request timeout seconds for the agent route, zero when unset so the builder keeps its default

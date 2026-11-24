@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -68,25 +69,31 @@ func TestTruncateHeadTail(t *testing.T) {
 
 func limitsEnv(t *testing.T, section any) *Env {
 	t.Helper()
-	ResetToolOutputLimitsCache()
-	return &Env{Home: t.TempDir(), Config: config.Tree{"tool_output": section}}
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, env, map[string]any{"tool_output": section})
+	return env
+}
+
+// Output limits every setting's default gives
+func defaultOutputLimits() OutputLimits {
+	return OutputLimits{settings.ToolOutputMaxBytes.Default, settings.ToolOutputMaxLines.Default, settings.ToolOutputMaxLineLength.Default}
 }
 
 func TestToolOutputLimits(t *testing.T) {
 	limits := ToolOutputLimits(limitsEnv(t, nil))
-	if limits != (OutputLimits{DefaultMaxBytes, DefaultMaxLines, DefaultMaxLineLength}) {
+	if limits != defaultOutputLimits() {
 		t.Fatalf("defaults %+v", limits)
 	}
 	limits = ToolOutputLimits(limitsEnv(t, map[string]any{"max_bytes": 100000, "max_lines": 5000, "max_line_length": 4096}))
 	if limits != (OutputLimits{100000, 5000, 4096}) {
 		t.Fatalf("overrides %+v", limits)
 	}
-	if ToolOutputLimits(limitsEnv(t, "nonsense")).MaxBytes != DefaultMaxBytes {
+	if ToolOutputLimits(limitsEnv(t, "nonsense")).MaxBytes != settings.ToolOutputMaxBytes.Default {
 		t.Fatal("non mapping section must fall back")
 	}
 	for _, bad := range []any{nil, "not a number", -1, 0, []any{}, map[string]any{}} {
 		limits = ToolOutputLimits(limitsEnv(t, map[string]any{"max_bytes": bad, "max_lines": bad, "max_line_length": bad}))
-		if limits != (OutputLimits{DefaultMaxBytes, DefaultMaxLines, DefaultMaxLineLength}) {
+		if limits != defaultOutputLimits() {
 			t.Fatalf("bad %v gave %+v", bad, limits)
 		}
 	}
@@ -94,18 +101,20 @@ func TestToolOutputLimits(t *testing.T) {
 		t.Fatal("string integer must coerce")
 	}
 	env := limitsEnv(t, map[string]any{"max_bytes": 111})
-	ToolOutputLimits(env)
-	env.Config = config.Tree{"tool_output": map[string]any{"max_bytes": 222}}
 	if ToolOutputLimits(env).MaxBytes != 111 {
-		t.Fatal("limits are cached per home")
+		t.Fatal("configured limit")
 	}
-	if config.Defaults().Map("tool_output")["max_bytes"] != DefaultMaxBytes {
+	writeHomeConfigDoc(t, env, map[string]any{"tool_output": map[string]any{"max_bytes": 222}})
+	if ToolOutputLimits(env).MaxBytes != 222 {
+		t.Fatal("a changed limit applies on the next read")
+	}
+	if config.Defaults().Map("tool_output")["max_bytes"] != settings.ToolOutputMaxBytes.Default {
 		t.Fatal("default config must carry tool_output")
 	}
 }
 
 func TestResolveThreshold(t *testing.T) {
-	env := &Env{Home: t.TempDir(), Config: config.Tree{}}
+	env := &Env{Home: t.TempDir()}
 	cfg := BudgetConfig{DefaultResultSize: DefaultResultSizeChars, ToolOverrides: map[string]int{"read_file": 1}}
 	if cfg.ResolveThreshold(env, "read_file") != BudgetUnlimited {
 		t.Fatal("pinned wins over override")
@@ -122,13 +131,13 @@ func TestResolveThreshold(t *testing.T) {
 	if DefaultBudget.ResolveThreshold(env, "zz_budget_probe") != 100000 {
 		t.Fatal("default budget keeps 100K")
 	}
-	if DefaultBudget.ResolveThreshold(env, "mcp_composio_search_tools") != DefaultMCPResultSizeChars {
+	if DefaultBudget.ResolveThreshold(env, "mcp_composio_search_tools") != settings.ToolBudgetMcpResultSizeChars.Default {
 		t.Fatal("mcp prefix threshold")
 	}
 	if DefaultBudget.ResolveThreshold(env, "some_random_tool") != DefaultResultSizeChars {
 		t.Fatal("generic default")
 	}
-	if (BudgetConfig{DefaultResultSize: DefaultResultSizeChars, MCPResultSize: DefaultMCPResultSizeChars, ToolOverrides: map[string]int{"mcp_special": 75000}}).ResolveThreshold(env, "mcp_special") != 75000 {
+	if (BudgetConfig{DefaultResultSize: DefaultResultSizeChars, MCPResultSize: settings.ToolBudgetMcpResultSizeChars.Default, ToolOverrides: map[string]int{"mcp_special": 75000}}).ResolveThreshold(env, "mcp_special") != 75000 {
 		t.Fatal("override wins over mcp prefix")
 	}
 	if (BudgetConfig{DefaultResultSize: 20000, MCPResultSize: 50000}).ResolveThreshold(env, "mcp_anything") != 20000 {
@@ -137,7 +146,7 @@ func TestResolveThreshold(t *testing.T) {
 }
 
 func TestBudgetForContextWindow(t *testing.T) {
-	env := &Env{Home: t.TempDir(), Config: config.Tree{}}
+	env := &Env{Home: t.TempDir()}
 	for _, window := range []int{0, -5} {
 		got := BudgetForContextWindow(env, window)
 		if got.DefaultResultSize != DefaultBudget.DefaultResultSize || got.TurnBudget != DefaultBudget.TurnBudget || got.MCPResultSize != DefaultBudget.MCPResultSize || got.ToolOverrides != nil {
@@ -152,7 +161,8 @@ func TestBudgetForContextWindow(t *testing.T) {
 	if small.DefaultResultSize >= 50000 || small.ResolveThreshold(env, "mcp_tool") != small.DefaultResultSize {
 		t.Fatalf("small window %+v", small)
 	}
-	override := &Env{Home: t.TempDir(), Config: config.Tree{"tool_budget": map[string]any{"mcp_result_size_chars": 30000}}}
+	override := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, override, map[string]any{"tool_budget": map[string]any{"mcp_result_size_chars": 30000}})
 	if BudgetForContextWindow(override, 0).ResolveThreshold(override, "mcp_composio_multi_execute") != 30000 {
 		t.Fatal("config override")
 	}
@@ -162,8 +172,9 @@ func TestBudgetForContextWindow(t *testing.T) {
 	if BudgetForContextWindow(override, 200000).MCPResultSize != 30000 {
 		t.Fatal("override survives scaling")
 	}
-	malformed := &Env{Home: t.TempDir(), Config: config.Tree{"tool_budget": "not-a-mapping"}}
-	if BudgetForContextWindow(malformed, 0).ResolveThreshold(malformed, "mcp_x_y") != DefaultMCPResultSizeChars {
+	malformed := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, malformed, map[string]any{"tool_budget": "not-a-mapping"})
+	if BudgetForContextWindow(malformed, 0).ResolveThreshold(malformed, "mcp_x_y") != settings.ToolBudgetMcpResultSizeChars.Default {
 		t.Fatal("malformed config falls back")
 	}
 }

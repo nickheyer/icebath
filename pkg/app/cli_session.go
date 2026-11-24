@@ -153,7 +153,7 @@ func (c *CLI) restoreSessionCwd(sessionMeta map[string]any, quiet bool) {
 	} else if cerr := os.Chdir(recorded); cerr != nil {
 		msg = c.t("cli.session.cwd_enter_failed", map[string]any{"path": recorded, "error": errchain.OSText(cerr)})
 	} else {
-		_ = os.Setenv("TERMINAL_CWD", recorded)
+		moveCLIFolder(recorded)
 		msg = c.t("cli.session.cwd_restored", map[string]any{"path": recorded})
 	}
 	c.dimNotice(msg, quiet)

@@ -6,8 +6,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const cacheSize = 32768
@@ -55,7 +53,7 @@ func normcase(s string) string {
 	if runtime.GOOS != "windows" {
 		return s
 	}
-	return pystr.Lower(strings.ReplaceAll(s, "/", `\`))
+	return strings.ToLower(strings.ReplaceAll(s, "/", `\`))
 }
 
 // Compiled RE2 form of the pattern from a 32768 entry least recently used cache

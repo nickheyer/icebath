@@ -3,9 +3,6 @@ package provider
 import (
 	"context"
 	"net/http"
-
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Options of one OpenAI SDK client beyond its key and base URL
@@ -23,13 +20,9 @@ type OpenAIClientOptions = auxOpenAIOptions
 // Keepalive client builder seam, nil when the client cannot be built and the SDK default applies
 var auxBuildKeepaliveHTTPClientFn = buildKeepaliveHTTPClient
 
-// TLS verification for an auxiliary base URL mirroring the main client, any config failure giving the default
+// TLS verification for an auxiliary base URL mirroring the main client, from the custom entry of the providers setting ctx gives that serves it
 func auxResolveAuxVerify(ctx context.Context, baseURL string) TLSVerify {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return TLSVerify{}
-	}
-	tls := CustomProviderTLSSettings(baseURL, nil, map[string]any(tree))
+	tls := CustomProviderTLSSettings(baseURL, CustomProviderEntries(ctx))
 	var sslVerify any
 	if tls.HasVerify {
 		sslVerify = tls.Verify

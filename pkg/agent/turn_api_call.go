@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -211,7 +210,7 @@ func (a *AIAgent) handleAPIInterrupt(retry *TurnRetryState, spinner tools.Spinne
 	a.vprint(a.logPrefix+"⚡ Interrupted during API call.", true, false)
 	interrupted = true
 	a.dropTrailingEmptyResponseScaffolding(messages)
-	partial := pystr.Strip(a.stripThinkBlocks(a.currentStreamedAssistantText()))
+	partial := strings.TrimSpace(a.stripThinkBlocks(a.currentStreamedAssistantText()))
 	switch {
 	case partial != "" && provider.IsRunawayRepetition(partial):
 		appendLiveMessage(messages, HiddenInterruptPlaceholderRow())

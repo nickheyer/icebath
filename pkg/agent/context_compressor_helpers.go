@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -186,7 +188,7 @@ func pyStrOf(v any) string {
 
 // Whether a cooldown error belongs only to pre agent hygiene and so never blocks the in agent compressor
 func isHygienePreagentOnlyCooldown(errValue any) bool {
-	text := pystr.Casefold(pystr.Strip(pyStrOf(errValue)))
+	text := pystr.Casefold(strings.TrimSpace(pyStrOf(errValue)))
 	for _, marker := range hygienePreagentOnlyCooldownMarkers {
 		if strings.Contains(text, marker) {
 			return true
@@ -210,7 +212,7 @@ func responseFinishReason(response any) string {
 	if !ok || !pyTruthy(fm["finish_reason"]) {
 		return ""
 	}
-	return pystr.Lower(pystr.Strip(pyStrOf(fm["finish_reason"])))
+	return strings.ToLower(strings.TrimSpace(pyStrOf(fm["finish_reason"])))
 }
 
 // Summary text that opens with a refusal about summarizing and carries no markdown section
@@ -239,7 +241,7 @@ func responseRefusalText(response any) string {
 		}
 	}
 	if s, ok := refusal.(string); ok {
-		return pystr.Strip(s)
+		return strings.TrimSpace(s)
 	}
 	return ""
 }
@@ -262,7 +264,7 @@ func isSummaryAccessOrQuotaError(err error) bool {
 	if reason == provider.ReasonAuth || reason == provider.ReasonAuthPermanent {
 		return true
 	}
-	errText := pystr.Lower(err.Error())
+	errText := strings.ToLower(err.Error())
 	for _, marker := range summaryMissingCredentialMarkers {
 		if strings.Contains(errText, marker) {
 			return true
@@ -425,7 +427,7 @@ func pruneStaleReasoningReplay(messages []map[string]any) int {
 // Whether a row reads as a compaction summary handoff rather than an ordinary message
 func looksLikeCompactionSummary(msg map[string]any, content string) bool {
 	role, _ := msg["role"].(string)
-	if !strings.HasSuffix(pystr.Rstrip(content), state.SummaryEndMarker) || strings.HasPrefix(content, state.MergedPriorContextHeader) ||
+	if !strings.HasSuffix(strings.TrimRightFunc(content, unicode.IsSpace), state.SummaryEndMarker) || strings.HasPrefix(content, state.MergedPriorContextHeader) ||
 		role == "tool" || ((role == "user" || role == "assistant") && !pyTruthy(msg[state.CompressedSummaryMetadataKey])) {
 		return false
 	}
@@ -517,7 +519,7 @@ func freshShallowCopy(msg map[string]any) map[string]any {
 
 // Error text bounded for status lines, the error class name when the text is empty
 func shortErrorText(err error, limit int) string {
-	text := pystr.Strip(err.Error())
+	text := strings.TrimSpace(err.Error())
 	if text == "" {
 		name := strings.TrimLeft(fmt.Sprintf("%T", err), "*")
 		text = name[strings.LastIndex(name, ".")+1:]
@@ -525,7 +527,7 @@ func shortErrorText(err error, limit int) string {
 	if pystr.Len(text) <= limit {
 		return text
 	}
-	return pystr.Rstrip(pystr.Slice(text, 0, limit-3)) + "..."
+	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-3), unicode.IsSpace) + "..."
 }
 
 // Transient failure classes of a summary call, several of which may hold at once
@@ -576,7 +578,7 @@ func containsAny(s string, markers ...string) bool {
 // Failure flags of a summary error from its status, class and text
 func classifySummaryFailure(err error) summaryFailureKind {
 	status := provider.ExcStatusCode(err)
-	text := pystr.Lower(err.Error())
+	text := strings.ToLower(err.Error())
 	stall := isPyTimeoutError(err) && provider.IsStreamStall(err)
 	var summaryErr *summaryRuntimeError
 	reply := summaryReply(0)
@@ -673,10 +675,10 @@ func reinjectPrunedSkillMarkers(summary string, skillNames []string) string {
 // Whether a user row is scaffolding rather than typed user text
 func syntheticUserRow(content any) bool {
 	s, ok := content.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return true
 	}
-	trimmed := pystr.Lstrip(s)
+	trimmed := strings.TrimLeftFunc(s, unicode.IsSpace)
 	return slices.ContainsFunc(syntheticUserRowPrefixes, func(p string) bool { return strings.HasPrefix(trimmed, p) })
 }
 
@@ -706,7 +708,7 @@ func buildVerbatimUserSection(turns []map[string]any) string {
 		if remaining <= 0 {
 			break
 		}
-		text := pystr.Strip(content)
+		text := strings.TrimSpace(content)
 		if pystr.Len(text) > remaining && remaining <= tools.ElisionMarkerMaxLen() {
 			break
 		}
@@ -764,8 +766,8 @@ func buildAnchorIndex(turns []map[string]any) string {
 		counts, lastSeen := map[string]int{}, map[string]int{}
 		var order []string
 		for n, m := range pyFindAll(ap.pattern, text) {
-			val := pystr.RstripChars(pystr.Strip(m.String()), ".,;:")
-			if anchorNoise[pystr.Lower(val)] {
+			val := strings.TrimRight(strings.TrimSpace(m.String()), ".,;:")
+			if anchorNoise[strings.ToLower(val)] {
 				continue
 			}
 			if _, seen := counts[val]; !seen {
@@ -845,11 +847,11 @@ func collectProtectedSkillNames(messages []map[string]any, pruneBoundary int) ma
 	var tailTexts []string
 	for _, m := range messages[min(tailStart, total):] {
 		if s, ok := m["content"].(string); ok && s != "" && m["role"] == "user" {
-			tailTexts = append(tailTexts, pystr.Lower(s))
+			tailTexts = append(tailTexts, strings.ToLower(s))
 		}
 	}
 	for _, site := range skillViewCallSites(messages) {
-		lower := pystr.Lower(site.skill)
+		lower := strings.ToLower(site.skill)
 		if site.index >= min(recentStart, tailStart) || slices.ContainsFunc(tailTexts, func(t string) bool { return strings.Contains(t, lower) }) {
 			out[lower] = true
 		}
@@ -864,7 +866,7 @@ func redactCompactionText(text string) string {
 
 // Appends a stripped value once while under the limit
 func dedupeAppend(items *[]string, value string, limit int) {
-	value = pystr.Strip(value)
+	value = strings.TrimSpace(value)
 	if value != "" && !slices.Contains(*items, value) && len(*items) < limit {
 		*items = append(*items, value)
 	}
@@ -911,7 +913,7 @@ func toolCallsByID(messages []map[string]any) map[string]toolCallRef {
 // Collects path like mentions of the text into the relevant files list
 func collectPathMentions(text string, relevantFiles *[]string, limit int) {
 	for _, m := range pyFindAll(pathMentionRE, text) {
-		dedupeAppend(relevantFiles, pystr.RstripChars(m.String(), ".,:;"), limit)
+		dedupeAppend(relevantFiles, strings.TrimRight(m.String(), ".,:;"), limit)
 	}
 }
 
@@ -956,7 +958,7 @@ func compactFallbackTurn(value any) string {
 	text := redactCompactionText(contentTextForContains(value))
 	text, _ = ghTokenRE.Replace(text, "[REDACTED]", -1, -1)
 	text, _ = whitespaceRunRE.Replace(text, " ", -1, -1)
-	text = tools.Elide(pystr.Strip(text), fallbackTurnMaxChars)
+	text = tools.Elide(strings.TrimSpace(text), fallbackTurnMaxChars)
 	text, _ = ghTokenTailRE.Replace(text, "[REDACTED]", -1, -1)
 	return text
 }
@@ -965,7 +967,7 @@ func compactFallbackTurn(value any) string {
 func bullets(items []string, limit int) string {
 	var unique []string
 	for _, item := range items {
-		item = pystr.Strip(item)
+		item = strings.TrimSpace(item)
 		if item != "" && !slices.Contains(unique, item) {
 			unique = append(unique, item)
 		}
@@ -1084,7 +1086,7 @@ func estimateMsgBudgetTokens(ctx context.Context, msg map[string]any, chargeStal
 		return tokens
 	}
 	rc, _ := msg["reasoning_content"].(string)
-	skipReasoningDup := pystr.Strip(rc) != ""
+	skipReasoningDup := strings.TrimSpace(rc) != ""
 	for _, key := range newestTurnOnlyBudgetKeys {
 		if key == "reasoning" && skipReasoningDup {
 			continue
@@ -1126,9 +1128,9 @@ func pendingToolRound(messages []map[string]any) (int, int) {
 
 // Request text after the newest in flight replay header
 func restatedRequestText(content any) string {
-	text := pystr.Strip(contentTextForContains(content))
+	text := strings.TrimSpace(contentTextForContains(content))
 	if i := strings.LastIndex(text, inflightTaskReplayHeader); i >= 0 {
-		text = pystr.Strip(text[i+len(inflightTaskReplayHeader):])
+		text = strings.TrimSpace(text[i+len(inflightTaskReplayHeader):])
 	}
 	return text
 }
@@ -1139,7 +1141,7 @@ func authoredRequestText(content any) string {
 	if loc := gatewayReplyPointerRE.FindStringIndex(text); loc != nil {
 		text = text[loc[1]:]
 	}
-	return pystr.Strip(text)
+	return strings.TrimSpace(text)
 }
 
 // Whether content is a string or a list of only text parts

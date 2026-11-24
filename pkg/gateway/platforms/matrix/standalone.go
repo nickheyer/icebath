@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -45,7 +44,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil {
 		token = tokenOf(pconfig.Token)
 	}
-	homeserver := strings.TrimRight(pystr.Strip(settings.MatrixHomeserver.Get(gateway.SettingsContext(ctx))), "/")
+	homeserver := strings.TrimRight(strings.TrimSpace(settings.MatrixHomeserver.Get(gateway.SettingsContext(ctx))), "/")
 	if token == "" {
 		secret, err := standaloneSecret(ctx, "MATRIX_ACCESS_TOKEN")
 		if err != nil {

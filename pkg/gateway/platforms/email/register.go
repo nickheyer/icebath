@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysmtplib"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // One shot email delivery over SMTP without a live adapter
@@ -21,13 +22,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil {
 		extra = pconfig.Extra
 	}
-	orSecret := func(key, env string) (any, error) {
-		if v := extra[key]; pyrepr.Truthy(v) {
-			return v, nil
-		}
-		return secret(ctx, env)
-	}
-	address, err := orSecret("address", "EMAIL_ADDRESS")
+	address, err := mailboxValue(ctx, extra, "EMAIL_ADDRESS", "address")
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +30,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	smtpHost, err := orSecret("smtp_host", "EMAIL_SMTP_HOST")
+	smtpHost, err := mailboxValue(ctx, extra, "EMAIL_SMTP_HOST", "smtp_host")
 	if err != nil {
 		return nil, err
 	}
@@ -43,38 +38,22 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	securityEnv, err := secret(ctx, "EMAIL_SMTP_SECURITY")
-	if err != nil {
-		return nil, err
-	}
-	var securityValue any = securityEnv
-	if securityEnv == "" {
-		securityValue = extra["smtp_security"]
-	}
-	securityDefault := "starttls"
-	if smtpPort == 465 {
-		securityDefault = "tls"
-	}
-	smtpSecurity := normalizeSecurity(securityValue, securityDefault)
-	smtpTLSVerify, err := esecretBool(ctx, "EMAIL_SMTP_TLS_VERIFY", isTruthyValue(extra["smtp_tls_verify"], true))
-	if err != nil {
-		return nil, err
-	}
-	if !pyrepr.Truthy(address) || password == "" || !pyrepr.Truthy(smtpHost) {
+	smtpSecurity := smtpSecurityFor(ctx, smtpPort)
+	smtpTLSVerify := settings.EmailSmtpTLSVerify.Get(gateway.SettingsContext(ctx))
+	if address == "" || password == "" || smtpHost == "" {
 		return gateway.SendError("Email not configured (EMAIL_ADDRESS, EMAIL_PASSWORD, EMAIL_SMTP_HOST required)"), nil
 	}
 	sendErr := func() error {
-		host, from := pyrepr.Str(smtpHost), pyrepr.Str(address)
 		msg := pyemail.NewTextUTF8(message)
-		msg.Set("From", from)
+		msg.Set("From", address)
 		msg.Set("To", chatID)
 		msg.Set("Subject", i18n.T(ctx, "platform.email.standalone_subject", "", nil))
 		msg.Set("Date", pyemail.FormatDateLocal())
-		server, err := openSMTP(ctx, host, smtpPort, smtpSecurity, tlsContext(smtpTLSVerify, host), pysmtplib.DialDefault, time.Duration(0))
+		server, err := openSMTP(ctx, smtpHost, smtpPort, smtpSecurity, tlsContext(smtpTLSVerify, smtpHost), pysmtplib.DialDefault, time.Duration(0))
 		if err != nil {
 			return err
 		}
-		if err := server.Login(from, password); err != nil {
+		if err := server.Login(address, password); err != nil {
 			return err
 		}
 		if err := server.SendMessage(msg); err != nil {

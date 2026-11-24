@@ -224,7 +224,7 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("language %s: %v %s", lang, err, printed)
 		}
-		catalog := i18n.LoadBundled(lang)
+		catalog := i18n.LoadBundled(ctx, lang)
 		want := func(key string, kwargs map[string]any) string {
 			t.Helper()
 			if catalog[key] == "" {

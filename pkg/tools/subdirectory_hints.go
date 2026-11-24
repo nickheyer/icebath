@@ -74,7 +74,7 @@ func firstHintFile(env *Env, directory string) (string, string, bool) {
 		if err != nil {
 			continue
 		}
-		return candidate, pystr.Strip(content), true
+		return candidate, strings.TrimSpace(content), true
 	}
 	return "", "", false
 }
@@ -229,7 +229,7 @@ func (t *SubdirectoryHintTracker) extractDirectories(toolName string, args map[s
 	var candidates []string
 	seen := map[string]bool{}
 	for _, key := range hintPathArgKeys {
-		if val, ok := args[key].(string); ok && pystr.Strip(val) != "" {
+		if val, ok := args[key].(string); ok && strings.TrimSpace(val) != "" {
 			t.addPathCandidate(val, &candidates, seen)
 		}
 	}
@@ -356,7 +356,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 			pkgLog().Debug(fmt.Sprintf("Could not read %s: %s", hintPath, errchain.OSText(err)))
 			continue
 		}
-		content := pystr.Strip(text)
+		content := strings.TrimSpace(text)
 		if content == "" {
 			continue
 		}

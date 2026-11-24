@@ -113,14 +113,14 @@ func resetHard(ctx context.Context, gitCmd []string, cwd string) error {
 
 // Prints stripped text behind prefix unless it is blank
 func printNonempty(w io.Writer, text, prefix string) {
-	if stripped := pystr.Strip(text); stripped != "" {
+	if stripped := strings.TrimSpace(text); stripped != "" {
 		fmt.Fprintln(w, prefix+stripped)
 	}
 }
 
 // Prints the first line of stripped text indented unless it is blank
 func printFirstLine(w io.Writer, text string) {
-	if stripped := pystr.Strip(text); stripped != "" {
+	if stripped := strings.TrimSpace(text); stripped != "" {
 		fmt.Fprintln(w, "  "+pystr.Splitlines(stripped, false)[0])
 	}
 }
@@ -217,7 +217,7 @@ func scanLocalChanges(ctx context.Context, gitCmd []string, cwd string, untracke
 	if err != nil {
 		return nil, err
 	}
-	if pystr.Strip(status.Stdout) == "" {
+	if strings.TrimSpace(status.Stdout) == "" {
 		return nil, nil
 	}
 	records := porcelainRecords(status.Stdout)
@@ -288,7 +288,7 @@ func askKeepLocalChanges(w io.Writer, changes *localChanges) (bool, error) {
 		}
 		response = ""
 	}
-	response = pystr.Lower(pystr.Strip(response))
+	response = strings.ToLower(strings.TrimSpace(response))
 	return response != "n" && response != "no", nil
 }
 
@@ -350,7 +350,7 @@ func stashLocalChangesIfNeeded(ctx context.Context, w io.Writer, gitCmd []string
 	if err != nil {
 		return nil, err
 	}
-	if pystr.Strip(unmerged.Stdout) != "" {
+	if strings.TrimSpace(unmerged.Stdout) != "" {
 		fmt.Fprintln(w, "→ Clearing unmerged index entries from a previous conflict...")
 		if _, err := gitQuiet(ctx, gitCmd, []string{"reset"}, cwd); err != nil {
 			return nil, err
@@ -372,7 +372,7 @@ func stashLocalChangesIfNeeded(ctx context.Context, w io.Writer, gitCmd []string
 	if err != nil {
 		return nil, err
 	}
-	prevStash := pystr.Strip(prev.Stdout)
+	prevStash := strings.TrimSpace(prev.Stdout)
 	stashRef := ""
 	err = withCheckoutMove(ctx, move, checkoutMoveBind{Revert: true}, func(map[string]any) error {
 		ref, err := pushStash(ctx, w, gitCmd, cwd, stashName, prevStash, changes.leaveUntracked)
@@ -404,7 +404,7 @@ func pushStash(ctx context.Context, w io.Writer, gitCmd []string, cwd, stashName
 	if err != nil {
 		return "", err
 	}
-	stashRef := pystr.Strip(probe.Stdout)
+	stashRef := strings.TrimSpace(probe.Stdout)
 	created := probe.ReturnCode == 0 && stashRef != "" && stashRef != prevStash
 	if push.ReturnCode != 0 {
 		if !created {
@@ -433,10 +433,10 @@ func resolveStashSelector(ctx context.Context, gitCmd []string, cwd, stashRef st
 	}
 	for _, line := range pystr.Splitlines(listed.Stdout, false) {
 		selector, commit, _ := strings.Cut(line, " ")
-		if pystr.Strip(commit) != stashRef {
+		if strings.TrimSpace(commit) != stashRef {
 			continue
 		}
-		selector = pystr.Strip(selector)
+		selector = strings.TrimSpace(selector)
 		if match := stashSelectorRE.FindStringSubmatch(selector); match != nil {
 			return match[1], true, nil
 		}
@@ -472,7 +472,7 @@ func warnOrphanedUpdateAutostashes(ctx context.Context, w io.Writer, gitCmd []st
 	cutoff := time.Now().UTC().Add(-autostashWarnAgeDays * 24 * time.Hour)
 	var stale [][2]string
 	for _, line := range pystr.Splitlines(listed.Stdout, false) {
-		selector, subject, _ := strings.Cut(pystr.Strip(line), " ")
+		selector, subject, _ := strings.Cut(strings.TrimSpace(line), " ")
 		pos := strings.Index(subject, autostashNamePrefix)
 		if pos < 0 {
 			continue
@@ -531,7 +531,7 @@ func printStashCleanupGuidance(w io.Writer, stashRef, stashSelector string) {
 func stashApplyFailedOnlyOnExistingUntracked(stderr string) bool {
 	sawUntrackedError := false
 	for _, raw := range pystr.Splitlines(stderr, false) {
-		line := pystr.Strip(raw)
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
@@ -549,7 +549,7 @@ func untrackedFilesReplacedByUpdate(ctx context.Context, gitCmd []string, cwd, s
 	var replaced []string
 	const suffix = " already exists, no checkout"
 	for _, raw := range pystr.Splitlines(stderr, false) {
-		line := pystr.Strip(raw)
+		line := strings.TrimSpace(raw)
 		if !strings.HasSuffix(line, suffix) {
 			continue
 		}
@@ -660,7 +660,7 @@ func restoreIsNonRuntime(ctx context.Context, gitCmd []string, cwd, stashRef str
 	}
 	for path := range restored {
 		parent := pypath.PathAsPosix(pypath.PathParent(path))
-		if !nonRuntimeSuffixes[pystr.Lower(pypath.PathSuffix(path))] || isSymlink(pypath.Join(cwd, fsEncode(path))) ||
+		if !nonRuntimeSuffixes[strings.ToLower(pypath.PathSuffix(path))] || isSymlink(pypath.Join(cwd, fsEncode(path))) ||
 			(parent != "." && !headDirs[parent]) {
 			return false, nil
 		}
@@ -761,7 +761,7 @@ func confirmRestore(w io.Writer, stashRef string, inputFn func(prompt, def strin
 		case err != nil:
 			response = "n"
 		default:
-			response = pystr.Lower(pystr.Strip(answer))
+			response = strings.ToLower(strings.TrimSpace(answer))
 		}
 	}
 	if response == "y" || response == "yes" || (!remotePrompt && response == "") {
@@ -831,7 +831,7 @@ func applyStashStep(ctx context.Context, gitCmd []string, cwd, stashRef string) 
 	if err != nil {
 		return nil, "", err
 	}
-	conflictedFiles := pystr.Strip(unmerged.Stdout)
+	conflictedFiles := strings.TrimSpace(unmerged.Stdout)
 	if conflictedFiles != "" || (restore.ReturnCode != 0 && !stashApplyFailedOnlyOnExistingUntracked(restore.Stderr)) {
 		if err := resetHard(ctx, gitCmd, cwd); err != nil {
 			return nil, "", err

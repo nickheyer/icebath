@@ -481,7 +481,7 @@ func hasStagedLocalModels() bool {
 // Local provider when the managed or a detected llama.cpp server resolves without waiting, or a model is staged
 func llamacppPdef(ctx context.Context) *ProviderDef {
 	h := home.Dir(ctx)
-	baseURL, _, ok := resolveLlamacppEndpointWithin(ctx, loadConfigTree(h), h, 0)
+	baseURL, _, ok := resolveLlamacppEndpointWithin(ctx, localRuntimeSettings(h), h, 0)
 	if !ok && !hasStagedLocalModels() {
 		return nil
 	}

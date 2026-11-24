@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // webCallContext carries the request context and the session env through the web pipeline
@@ -404,7 +405,6 @@ const (
 	noResultError       = "Extract backend returned no result for this URL"
 	extractBackendsHint = "firecrawl, tavily, keenable, exa, or parallel."
 	invalidItemError    = "Invalid URL item at index %d: expected a URL string or an object with a string 'url' or 'href' field"
-	defaultExtractTO    = 120.0
 )
 
 // URL from a model supplied extract item, string or object with url or href, empty when unusable
@@ -513,20 +513,9 @@ func resolveExtractProvider(env *Env, backend string) (WebProvider, string) {
 	return provider, ""
 }
 
-// Wall clock cap for one provider extract dispatch, web.extract_timeout, zero or negative disabling it
+// Wall clock cap for one provider extract dispatch, zero or negative disabling it
 func extractTimeout(env *Env) time.Duration {
-	v, ok := webCfg(env).Lookup("extract_timeout")
-	seconds := defaultExtractTO
-	if ok && v != nil {
-		if f, ok := pyFloatValue(v); ok {
-			seconds = f
-		} else if s, isString := v.(string); isString {
-			if parsed, err := parseFloatText(s); err == nil {
-				seconds = parsed
-			}
-		}
-	}
-	return time.Duration(seconds * float64(time.Second))
+	return settings.WebExtractTimeout.Get(webCtx(env))
 }
 
 // Reports whether every entry failed and none of the failures is the page's own HTTP answer

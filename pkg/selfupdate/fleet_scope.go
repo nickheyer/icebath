@@ -40,15 +40,15 @@ func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName stri
 	if err != nil || shown == nil || shown.Returncode != 0 {
 		return "", false
 	}
-	envLine := pystr.Strip(completedStdout(shown))
+	envLine := strings.TrimSpace(completedStdout(shown))
 	tokens, err := pyshlex.SplitPOSIX(envLine, false)
 	if err != nil {
 		tokens = pystr.SplitWhitespace(envLine, -1)
 	}
 	for _, token := range tokens {
 		key, value, found := strings.Cut(token, "=")
-		if found && key == "ICEBATH_HOME" && pystr.Strip(value) != "" {
-			return pystr.Strip(value), true
+		if found && key == "ICEBATH_HOME" && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value), true
 		}
 	}
 	if slices.Contains(scopeCmd, "--user") {

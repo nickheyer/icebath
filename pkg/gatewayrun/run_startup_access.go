@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -88,12 +87,12 @@ func ownPolicyOpenStartupViolation(ctx context.Context, cfg *gateway.GatewayConf
 		extra := cfg.Platforms[platform].Extra
 		policy := func(key, env string) string {
 			if value := extra[key]; pyrepr.Truthy(value) {
-				return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+				return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 			}
 			if env == "" {
 				return "pairing"
 			}
-			return pystr.Lower(pystr.Strip(gateway.PlatformGateEnv(ctx, env, "pairing")))
+			return strings.ToLower(strings.TrimSpace(gateway.PlatformGateEnv(ctx, env, "pairing")))
 		}
 		if policy("dm_policy", dmEnv) != "open" && policy("group_policy", groupEnv) != "open" {
 			continue

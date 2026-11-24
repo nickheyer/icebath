@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"fmt"
 	"math"
 	"reflect"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -44,7 +45,7 @@ func IsInterruptedToolResult(content any) bool {
 		return false
 	}
 	output := text
-	if strings.HasPrefix(pystr.Lstrip(text), "{") {
+	if strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "{") {
 		parsed, err := pyjson.Loads(text)
 		if err != nil {
 			return false
@@ -75,7 +76,7 @@ func IsInterruptedToolResult(content any) bool {
 			return false
 		}
 	}
-	trimmed := pystr.Rstrip(output)
+	trimmed := strings.TrimRightFunc(output, unicode.IsSpace)
 	last := trimmed[strings.LastIndex(trimmed, "\n")+1:]
 	matched, _ := interruptMarkerLine.MatchString(last)
 	return matched
@@ -284,7 +285,7 @@ func IsDangerousConfirmation(content any) bool {
 	if !ok {
 		return false
 	}
-	lowered := pystr.Lower(pystr.Strip(text))
+	lowered := strings.ToLower(strings.TrimSpace(text))
 	for _, p := range dangerousConfirmationPatterns {
 		if strings.Contains(lowered, p) {
 			return true

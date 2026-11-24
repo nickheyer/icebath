@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -87,7 +86,7 @@ func TurnFailureText(stdout, stderr any) (string, error) {
 		if !ok {
 			return "", pyAttributeError(value, "strip")
 		}
-		if stripped := pystr.Strip(text); stripped != "" {
+		if stripped := strings.TrimSpace(text); stripped != "" {
 			parts = append(parts, stripped)
 		}
 	}
@@ -136,7 +135,7 @@ func ClassifyAgentError(text any) string {
 	if pyrepr.Truthy(text) {
 		raw = pyrepr.Str(text)
 	}
-	if pystr.Strip(raw) != "" {
+	if strings.TrimSpace(raw) != "" {
 		for _, rule := range failureRules {
 			if rule.pattern.MatchString(raw) {
 				return rule.code
@@ -163,7 +162,7 @@ func DeliveryFailureReason(err error) string {
 	case ReasonedError:
 		supplied = e.Reason()
 	}
-	supplied = pystr.Strip(supplied)
+	supplied = strings.TrimSpace(supplied)
 	if supplied == "target_busy" || AllReasons[supplied] {
 		return supplied
 	}

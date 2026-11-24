@@ -25,6 +25,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -32,6 +33,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -153,30 +155,18 @@ func peerTransportFailure(err error) bool {
 
 // Environment variable holding a peer's API key
 func peerKeyEnv(name string) string {
-	return "ICEBATH_PEER_" + strings.ReplaceAll(pystr.Upper(name), "-", "_") + "_KEY"
+	return "ICEBATH_PEER_" + strings.ReplaceAll(strings.ToUpper(name), "-", "_") + "_KEY"
 }
 
-// Registered peers from config bot_peers, an empty mapping when the key is missing or malformed
+// Registered peers of the profile at h, bot_peers, an empty mapping when none are set
 var loadPeers = func(ctx context.Context, h string) (map[string]any, error) {
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil, err
-	}
-	peers, ok := cfg["bot_peers"].(map[string]any)
-	if !ok {
-		return map[string]any{}, nil
-	}
-	return peers, nil
+	return settings.BotPeers.Get(home.WithOverride(ctx, h)), nil
 }
 
-// Writes the peer registry back as config bot_peers
+// Writes the peer registry of the profile at h as bot_peers
 var savePeers = func(ctx context.Context, h string, peers map[string]any) error {
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
-	cfg["bot_peers"] = peers
-	return config.SaveConfig(ctx, h, map[string]any(cfg), config.SaveOptions{})
+	_, err := settings.Set(home.WithOverride(ctx, h), settings.BotPeers.Key, peers, settings.Global)
+	return err
 }
 
 // API key of a peer from the profile secret scope, the raw environment when the scope refuses
@@ -184,9 +174,9 @@ var peerSecret = func(ctx context.Context, name string) string {
 	envName := peerKeyEnv(name)
 	value, _, err := provider.GetSecret(ctx, envName)
 	if err != nil {
-		return pystr.Strip(os.Getenv(envName))
+		return strings.TrimSpace(os.Getenv(envName))
 	}
-	return pystr.Strip(value)
+	return strings.TrimSpace(value)
 }
 
 // Method, JSON body, timeout and extra headers of one peer API request
@@ -255,12 +245,12 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 
 // URL urllib would open, unknown schemes and missing hosts refused the way Request and do_open refuse them
 func peerRequestURL(raw string) (string, error) {
-	full := pystr.Strip(raw)
+	full := strings.TrimSpace(raw)
 	if strings.HasPrefix(full, "<") && strings.HasSuffix(full, ">") {
-		full = pystr.Strip(full[1 : len(full)-1])
+		full = strings.TrimSpace(full[1 : len(full)-1])
 	}
 	if strings.HasPrefix(full, "URL:") {
-		full = pystr.Strip(full[4:])
+		full = strings.TrimSpace(full[4:])
 	}
 	if i := strings.IndexByte(full, '#'); i >= 0 {
 		full = full[:i]
@@ -269,7 +259,7 @@ func peerRequestURL(raw string) (string, error) {
 	if m == nil {
 		return "", fmt.Errorf("the peer URL %q has no http or https scheme", full)
 	}
-	scheme := pystr.Lower(m[1])
+	scheme := strings.ToLower(m[1])
 	if scheme != "http" && scheme != "https" {
 		return "", &peerURLError{errors.New("unknown url type: " + scheme)}
 	}
@@ -380,7 +370,7 @@ func peerBaseURL(peer map[string]any, profile string) string {
 	if v := peer["url"]; pyrepr.Truthy(v) {
 		base = pyrepr.Str(v)
 	}
-	base = pystr.RstripChars(base, "/")
+	base = strings.TrimRight(base, "/")
 	if profile != "" {
 		return base + "/p/" + pyurl.Quote(profile, "")
 	}
@@ -479,7 +469,7 @@ func peerFindBotChat(ctx context.Context, base, key string) (string, error) {
 			}
 			text = s
 		}
-		if pystr.Strip(text) == peerBotChatTitle {
+		if strings.TrimSpace(text) == peerBotChatTitle {
 			id, _ := session.Get("id")
 			if !pyrepr.Truthy(id) {
 				return "", nil
@@ -506,7 +496,7 @@ var peerEnsureBotChat = func(ctx context.Context, base, key string) (string, err
 		if errors.As(err, &he) {
 			if he.code == 400 {
 				text := peerHTTPErrorDetail(he)
-				if strings.Contains(pystr.Lower(text), "title") {
+				if strings.Contains(strings.ToLower(text), "title") {
 					return "", &peerRuntimeError{fmt.Sprintf("Peer already has a '%s' session but it is hidden and the "+
 						"peer's gateway is too old to expose hidden sessions to this lookup "+
 						"(HTTP 400: %s). Update the peer's icebath-agent, or unhide the "+
@@ -542,9 +532,9 @@ func peerParseTarget(target any) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	peer, profile, _ := strings.Cut(pystr.Strip(raw), "/")
-	peer = pystr.Strip(peer)
-	profile = pystr.Strip(profile)
+	peer, profile, _ := strings.Cut(strings.TrimSpace(raw), "/")
+	peer = strings.TrimSpace(peer)
+	profile = strings.TrimSpace(profile)
 	if peer == "" {
 		return "", "", &peerValueError{"Peer name required (icebath peer dm <peer>[/<agent>] ...)"}
 	}
@@ -617,7 +607,7 @@ func peerText(v any) (string, error) {
 	if !ok {
 		return "", &peerAttributeError{fmt.Sprintf("a peer reply field is %s, expected text", errchain.Kind(v))}
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 // Message argument, stdin when the argument is empty and stdin is not a terminal
@@ -637,7 +627,7 @@ func peerMessageFromArgs(c *peerCLI, ns map[string]any) (string, error) {
 	if runtime.GOOS == "windows" {
 		text = pystr.TranslateNewlines(text)
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
 // Restart durable replay support a peer advertises, nil when an older peer cannot advertise it
@@ -710,7 +700,7 @@ func peerAdd(c *peerCLI, ns map[string]any) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	name := pystr.Lower(rawName)
+	name := strings.ToLower(rawName)
 	if !peerNameRe.MatchString(name) {
 		c.eprintln(fmt.Sprintf("Invalid peer name: %s (lowercase, digits, -, _; max 64)", pyrepr.Repr(name)))
 		return 2, nil
@@ -719,7 +709,7 @@ func peerAdd(c *peerCLI, ns map[string]any) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	lowered := pystr.Lower(peerURL)
+	lowered := strings.ToLower(peerURL)
 	if !strings.HasPrefix(lowered, "http://") && !strings.HasPrefix(lowered, "https://") {
 		c.eprintln("Peer --url must be an http(s) gateway base URL, e.g. http://spark.lan:8377")
 		return 2, nil
@@ -728,7 +718,7 @@ func peerAdd(c *peerCLI, ns map[string]any) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	entry := map[string]any{"url": pystr.RstripChars(peerURL, "/")}
+	entry := map[string]any{"url": strings.TrimRight(peerURL, "/")}
 	if note := ns["note"]; pyrepr.Truthy(note) {
 		text, err := peerText(note)
 		if err != nil {
@@ -764,7 +754,7 @@ func peerRemove(c *peerCLI, ns map[string]any) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	name := pystr.Lower(rawName)
+	name := strings.ToLower(rawName)
 	peers, err := loadPeers(c.ctx, c.home)
 	if err != nil {
 		return 1, err

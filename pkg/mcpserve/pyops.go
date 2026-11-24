@@ -2,6 +2,8 @@
 package mcpserve
 
 import (
+	"strings"
+
 	"fmt"
 	"math"
 	"math/big"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python exception raised by a dict, string or comparison operation, str giving Msg
@@ -84,7 +85,7 @@ func pyLower(v any) string {
 	if !ok {
 		noAttribute(v, "lower")
 	}
-	return pystr.Lower(s)
+	return strings.ToLower(s)
 }
 
 // Raises the TypeError a set membership test raises for an unhashable value

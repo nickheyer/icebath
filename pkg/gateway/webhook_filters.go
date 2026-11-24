@@ -52,7 +52,7 @@ func webhookResolveProfilePath(ctx context.Context, pathValue any) (string, bool
 	if !ok {
 		return "", false, nil
 	}
-	raw := pypath.Expandvars(pystr.Strip(text))
+	raw := pypath.Expandvars(strings.TrimSpace(text))
 	if raw == "" {
 		return "", false, nil
 	}
@@ -77,14 +77,14 @@ func webhookResolveProfilePath(ctx context.Context, pathValue any) (string, bool
 // Script path under the home scripts directory, or the reason the route script is refused
 func webhookResolveScriptPath(ctx context.Context, scriptValue any) (string, string, error) {
 	text, ok := scriptValue.(string)
-	if !ok || pystr.Strip(text) == "" {
+	if !ok || strings.TrimSpace(text) == "" {
 		return "", "script path is empty", nil
 	}
 	scriptsRoot, err := pypath.Resolve(pypath.PathJoin(home.Dir(ctx), "scripts"))
 	if err != nil {
 		return "", "", err
 	}
-	rawText := pypath.Expandvars(pystr.Strip(text))
+	rawText := pypath.Expandvars(strings.TrimSpace(text))
 	candidate := scriptsRoot
 	if rawText == "~/.icebath" || strings.HasPrefix(rawText, "~/.icebath/") {
 		mapped, found, err := webhookResolveProfilePath(ctx, rawText)
@@ -145,7 +145,7 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 		}
 		var lines []any
 		for _, line := range pystr.Splitlines(raw, false) {
-			if stripped := pystr.Strip(line); stripped != "" {
+			if stripped := strings.TrimSpace(line); stripped != "" {
 				lines = append(lines, stripped)
 			}
 		}
@@ -288,11 +288,11 @@ func webhookPayloadGet(payload any, key string, def any) (any, error) {
 // Dotted field resolved against the payload, event and headers context, missing when absent
 func (p *WebhookRouteProcessor) ResolveFilterField(field, payload, eventType any, headers *pyjson.Object) (any, error) {
 	text, ok := field.(string)
-	if !ok || pystr.Strip(text) == "" {
+	if !ok || strings.TrimSpace(text) == "" {
 		return webhookMissing, nil
 	}
 	var parts []string
-	for _, part := range strings.Split(pystr.Strip(text), ".") {
+	for _, part := range strings.Split(strings.TrimSpace(text), ".") {
 		if part != "" {
 			parts = append(parts, part)
 		}
@@ -486,8 +486,8 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		log.Warn("[webhook] script execution failed: " + webhookExecErrorText(err))
 		return false, nil, nil
 	}
-	stdout := pystr.Strip(strings.ToValidUTF8(string(result.Stdout), "�"))
-	stderr := pystr.Strip(strings.ToValidUTF8(string(result.Stderr), "�"))
+	stdout := strings.TrimSpace(strings.ToValidUTF8(string(result.Stdout), "�"))
+	stderr := strings.TrimSpace(strings.ToValidUTF8(string(result.Stderr), "�"))
 	stdout, stderr = tools.RedactSensitiveText(stdout), tools.RedactSensitiveText(stderr)
 	if result.Returncode != 0 {
 		level := slog.LevelInfo

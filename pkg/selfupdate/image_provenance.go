@@ -1,6 +1,8 @@
 package selfupdate
 
 import (
+	"strings"
+
 	"bytes"
 	"errors"
 	"io/fs"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Marker an image bakes outside the home and the checkout, a var so tests and other image builders repoint it
@@ -45,7 +46,7 @@ func optionalProvenanceString(payload *pyjson.Object, name string) (*string, boo
 	if !isStr {
 		return nil, false
 	}
-	if stripped := pystr.Strip(text); stripped != "" {
+	if stripped := strings.TrimSpace(text); stripped != "" {
 		return &stripped, true
 	}
 	return nil, true
@@ -91,10 +92,10 @@ func ReadImageProvenance(markerPath string) *ImageProvenance {
 	}
 	rawManager, _ := payload.Get("manager")
 	manager, isStr := rawManager.(string)
-	if !isStr || pystr.Strip(manager) == "" {
+	if !isStr || strings.TrimSpace(manager) == "" {
 		return invalidProvenance(path, "missing_manager")
 	}
-	out := &ImageProvenance{Schema: imageProvenanceSchema, DeploymentKind: "image", Manager: pystr.Strip(manager), MarkerPath: path, Valid: true}
+	out := &ImageProvenance{Schema: imageProvenanceSchema, DeploymentKind: "image", Manager: strings.TrimSpace(manager), MarkerPath: path, Valid: true}
 	for name, field := range map[string]**string{"image": &out.Image, "version": &out.Version, "revision": &out.Revision} {
 		value, ok := optionalProvenanceString(payload, name)
 		if !ok {

@@ -13,53 +13,6 @@ func IsSpace(r rune) bool {
 	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }
 
-// str.strip with no argument, removing Python whitespace from both ends
-func Strip(s string) string { return trim(s, IsSpace, true, true) }
-
-// str.lstrip with no argument
-func Lstrip(s string) string { return trim(s, IsSpace, true, false) }
-
-// str.rstrip with no argument
-func Rstrip(s string) string { return trim(s, IsSpace, false, true) }
-
-// str.strip(chars) removing any code point of chars from both ends
-func StripChars(s, chars string) string { return trim(s, inSet(chars), true, true) }
-
-// str.lstrip(chars)
-func LstripChars(s, chars string) string { return trim(s, inSet(chars), true, false) }
-
-// str.rstrip(chars)
-func RstripChars(s, chars string) string { return trim(s, inSet(chars), false, true) }
-
-// Membership test over the WTF-8 code points of chars
-func inSet(chars string) func(rune) bool {
-	set := map[rune]bool{}
-	for _, r := range Runes(chars) {
-		set[r] = true
-	}
-	return func(r rune) bool { return set[r] }
-}
-
-// Cuts leading and trailing code points matching drop, reading surrogates and stray bytes as single code points
-func trim(s string, drop func(rune) bool, left, right bool) string {
-	start, end := 0, len(s)
-	for left && start < end {
-		r, n := DecodeRune(s[start:end])
-		if !drop(r) {
-			break
-		}
-		start += n
-	}
-	for right && end > start {
-		r, n := DecodeLastRune(s[start:end])
-		if !drop(r) {
-			break
-		}
-		end -= n
-	}
-	return s[start:end]
-}
-
 // str.split(None, maxsplit), whitespace runs as separators and the remainder keeping trailing space once maxsplit is spent
 func SplitWhitespace(s string, maxsplit int) []string {
 	out := []string{}
@@ -121,12 +74,6 @@ func Splitlines(s string, keepends bool) []string {
 	return lines
 }
 
-// str.lower with full case mapping and the Final_Sigma rule
-func Lower(s string) string { return cases.Lower(language.Und).String(s) }
-
-// str.upper with full case mapping
-func Upper(s string) string { return cases.Upper(language.Und).String(s) }
-
 // str.casefold with full case folding, Cherokee folding to its uppercase letters as CaseFolding.txt maps it
 func Casefold(s string) string {
 	return strings.Map(func(r rune) rune {
@@ -174,7 +121,7 @@ func Capitalize(s string) string {
 	if !IsSurrogate(rs[0]) {
 		head = cases.Title(language.Und, cases.NoLower).String(head)
 	}
-	return head + Lower(FromRunes(rs[1:]))
+	return head + strings.ToLower(FromRunes(rs[1:]))
 }
 
 // Lowercase sigma at i, final form when a cased letter precedes and none follows past case ignorables

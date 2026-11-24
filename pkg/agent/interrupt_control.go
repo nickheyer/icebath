@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -383,7 +382,7 @@ func (a *AIAgent) Steer(text string) bool { return a.SteerTicket(text, nil) }
 
 // Queues steer text under a ticket that WithdrawSteer can settle later
 func (a *AIAgent) SteerTicket(text string, ticket any) bool {
-	cleaned := pystr.Strip(text)
+	cleaned := strings.TrimSpace(text)
 	if cleaned == "" {
 		return false
 	}
@@ -395,7 +394,7 @@ func (a *AIAgent) SteerTicket(text string, ticket any) bool {
 
 // Redirects the active model request with a correction, degrading to a steer during tool execution
 func (a *AIAgent) Redirect(text string) bool {
-	cleaned := pystr.Strip(text)
+	cleaned := strings.TrimSpace(text)
 	if cleaned == "" {
 		return false
 	}

@@ -3,15 +3,14 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -30,7 +29,7 @@ var RelaySlackSubcommandMap func(ctx context.Context) map[string]string
 
 // Drain grace clamped to the remaining disconnect budget after the three teardown awaits and a margin
 func relayDisconnectDrainGrace(budgetS *float64) float64 {
-	budget := relayEnvDisconnectBudget()
+	budget := relayDisconnectBudget()
 	if budgetS != nil {
 		budget = 0.0
 		if *budgetS > 0 {
@@ -41,29 +40,20 @@ func relayDisconnectDrainGrace(budgetS *float64) float64 {
 	return max(0.0, min(relayDisconnectDrainGraceS, budget-reserved))
 }
 
-// Adapter disconnect budget of the runner env override, five seconds by default
-func relayEnvDisconnectBudget() float64 {
-	budget := 5.0
-	if raw := pystr.Strip(os.Getenv("ICEBATH_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT")); raw != "" {
-		if f, err := pyint.ParseFloat(raw); err == nil {
-			budget = 0.0
-			if f > 0 {
-				budget = f
-			}
-		}
-	}
-	return budget
+// Adapter disconnect budget the runner gives each chat app, never negative
+func relayDisconnectBudget() float64 {
+	return max(0.0, settings.GatewayAdapterDisconnectTimeout.Get(context.Background()).Seconds())
 }
 
 // Connector base URL normalized to the ws or wss dial target ending in /relay
 func relayWSDialURL(url string) string {
-	raw := pystr.Strip(url)
+	raw := strings.TrimSpace(url)
 	if strings.HasPrefix(raw, "https://") {
 		raw = "wss://" + raw[len("https://"):]
 	} else if strings.HasPrefix(raw, "http://") {
 		raw = "ws://" + raw[len("http://"):]
 	}
-	raw = pystr.RstripChars(raw, "/")
+	raw = strings.TrimRight(raw, "/")
 	if !strings.HasSuffix(raw, "/relay") {
 		raw += "/relay"
 	}
@@ -105,13 +95,13 @@ func relayRenderContext(context any) *string {
 
 // Native Slack parent slash routing of relay text, unchanged unless it starts with /icebath
 func relayNormalizeSlackParentCommand(ctx context.Context, text string, messageType MessageType) (string, MessageType) {
-	parts := pystr.SplitWhitespace(pystr.Strip(text), 1)
+	parts := pystr.SplitWhitespace(strings.TrimSpace(text), 1)
 	if len(parts) == 0 || parts[0] != "/icebath" {
 		return text, messageType
 	}
 	payload := ""
 	if len(parts) > 1 {
-		payload = pystr.Strip(parts[1])
+		payload = strings.TrimSpace(parts[1])
 	}
 	if RelaySlackSubcommandMap == nil {
 		panic("gateway.RelaySlackSubcommandMap unassigned: the process wiring installs commands.SlackSubcommandMap over commands.Default and the raw config")
@@ -127,8 +117,8 @@ func relayNormalizeSlackParentCommand(ctx context.Context, text string, messageT
 	}
 	normalized := payload
 	if mapped, ok := subcommands[firstWord]; ok {
-		rest := pystr.Strip(payload[len(firstWord):])
-		normalized = pystr.Strip(mapped + " " + rest)
+		rest := strings.TrimSpace(payload[len(firstWord):])
+		normalized = strings.TrimSpace(mapped + " " + rest)
 	} else if normalized == "" {
 		normalized = "/help"
 	}

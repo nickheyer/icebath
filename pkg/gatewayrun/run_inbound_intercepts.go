@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -63,7 +62,7 @@ func (r *GatewayRunner) hmUpdatePromptReply(ctx context.Context, event *gateway.
 			}
 		}
 		if recognized == "" {
-			responseText = pystr.Strip(event.Text)
+			responseText = strings.TrimSpace(event.Text)
 		}
 	}
 	if responseText == "" && recognized == "" {
@@ -190,7 +189,7 @@ func (r *GatewayRunner) hmSlashConfirmReply(ctx context.Context, event *gateway.
 	if tools.HasBlockingApproval(quickKey) {
 		return nil
 	}
-	normReply := pystr.Lower(pystr.LstripChars(pystr.Strip(event.Text), "!/"))
+	normReply := strings.ToLower(strings.TrimLeft(strings.TrimSpace(event.Text), "!/"))
 	cmd, _ := event.GetCommand()
 	choice, ok := slashConfirmCmdChoices[cmd]
 	if !ok {

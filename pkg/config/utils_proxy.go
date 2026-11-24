@@ -23,8 +23,8 @@ var (
 
 // The socks5 form of a socks proxy URL, other values stripped, empty for a blank value
 func NormalizeProxyURL(proxyURL string) string {
-	candidate := pystr.Strip(proxyURL)
-	if strings.HasPrefix(pystr.Lower(candidate), "socks://") {
+	candidate := strings.TrimSpace(proxyURL)
+	if strings.HasPrefix(strings.ToLower(candidate), "socks://") {
 		return "socks5://" + string([]rune(candidate)[len("socks://"):])
 	}
 	return candidate
@@ -32,7 +32,7 @@ func NormalizeProxyURL(proxyURL string) string {
 
 // Bare literal a bracketed or CIDR IPv6 bypass entry becomes, empty for every other entry
 func bareIPv6Literal(entry string) string {
-	candidate := pystr.Strip(entry)
+	candidate := strings.TrimSpace(entry)
 	m := noProxyBracketedIPv6Re.FindStringSubmatch(candidate)
 	if m == nil {
 		m = noProxyCIDRIPv6Re.FindStringSubmatch(candidate)
@@ -49,7 +49,7 @@ func bareIPv6Literal(entry string) string {
 
 // Bypass list with bracketed and CIDR IPv6 entries rewritten to bare literals, the input itself when nothing changed
 func SanitizeNoProxyEntries(noProxyValue string) string {
-	entries := strings.FieldsFunc(pystr.Strip(noProxyValue), func(r rune) bool { return r == ',' || pystr.IsSpace(r) })
+	entries := strings.FieldsFunc(strings.TrimSpace(noProxyValue), func(r rune) bool { return r == ',' || pystr.IsSpace(r) })
 	if len(entries) == 0 || slices.Contains(entries, "*") {
 		return noProxyValue
 	}
@@ -89,7 +89,7 @@ func NormalizeProxyEnvVars() {
 
 // Whether an OpenAI model family rejects max_tokens and needs max_completion_tokens
 func ModelForcesMaxCompletionTokens(model string) bool {
-	m := pystr.Lower(pystr.Strip(model))
+	m := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.LastIndex(m, "/"); i >= 0 {
 		m = m[i+1:]
 	}

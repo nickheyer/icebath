@@ -465,6 +465,7 @@ Where the agent's shell commands run.
 | Stop grace period | `terminal.daemon_term_grace_seconds` | see config | Wait before force-killing a background process that was asked to stop. Zero kills it immediately. |
 | Daytona image | `terminal.daytona_image` | see config | Image Daytona sandboxes start from. Applies to new sessions. |
 | Backend failure mode | `terminal.degraded_mode` | see config | What happens when the place commands run cannot be reached. One of: warn, fail. Applies to new sessions. |
+| Disk warning | `terminal.disk_warning_gb` | see config | Space Singularity sandboxes may use before a warning, in GB. The TERMINAL_DISK_WARNING_GB environment variable overrides it. |
 | Docker variables | `terminal.docker_env` | `{}` | Variables set inside Docker sandboxes, as name and value. Applies to new sessions. |
 | Docker extra flags | `terminal.docker_extra_args` | `[]` | Extra flags added to the Docker run command. Applies to new sessions. |
 | Docker forwarded variables | `terminal.docker_forward_env` | `[]` | Host variables passed into Docker sandboxes. Names only. The values come from your environment. Applies to new sessions. |
@@ -480,10 +481,12 @@ Where the agent's shell commands run.
 | Passthrough env names | `terminal.env_passthrough` | `[]` | Extra variable names commands may see from your environment. Provider keys are refused here. |
 | Home folder mode | `terminal.home_mode` | see config | Which home folder commands see. One of: auto, profile, real. Applies to new sessions. |
 | Modal image | `terminal.modal_image` | see config | Image Modal sandboxes start from. Applies to new sessions. |
+| Timeout ceiling | `terminal.max_foreground_timeout` | see config | Longest timeout one foreground command may ask for. A longer one runs the command in the background instead. The TERMINAL_MAX_FOREGROUND_TIMEOUT environment variable overrides it. |
 | One-shot wait limit | `terminal.oneshot_completion_wait_seconds` | see config | Longest wait for a one-shot background command to finish. |
 | Persistent SSH shell | `terminal.persistent_shell` | see config | Keep one shell open between remote commands over SSH. Other backends have their own persistence settings. Applies to new sessions. |
 | Notify on finish | `terminal.process_wait_auto_notify` | see config | Tell the agent when a waited-on background process ends. |
 | Sandbox folder | `terminal.sandbox_dir` | unset (the sandboxes folder in the icebath home) | Host folder where sandbox files are stored. Unset uses the sandboxes folder in the icebath home. Unset: the sandboxes folder in the icebath home. Applies to new sessions. |
+| Singularity scratch | `terminal.scratch_dir` | unset (a writable /scratch, else the sandbox folder) | Folder for Singularity overlays and the image cache. Unset: a writable /scratch, else the sandbox folder. The TERMINAL_SCRATCH_DIR environment variable overrides it. |
 | Shell init files | `terminal.shell_init_files` | `[]` | Files sourced before commands run, instead of the usual ones. Empty falls back to the profile and bashrc files. |
 | Sync-back size cap | `terminal.sync_back_max_bytes` | see config | Largest archive copied back from a remote sandbox. |
 | Temp folder | `terminal.temp_dir` | `''` | Folder commands use for temporary files. Empty uses the normal system temp folder. Applies to new sessions. |
@@ -502,6 +505,7 @@ Where the agent's shell commands run.
 | Worktree disk limit | `worktrees.max_total_gb` | see config | Total disk space worktrees may use before cleanup. Zero means no limit. |
 | Apptainer image | `terminal.singularity_image` | unset (the default sandbox image) | Image the Apptainer sandbox starts from. Unset: the default sandbox image. Applies to new sessions. |
 | Persistent local shell | `terminal.local_persistent` | see config | Keep one shell open between commands run on this machine. Off starts a fresh shell for every command. Applies to new sessions. |
+| Worker memory cap | `terminal.local_memory_max_mb` | unset (half of this machine's memory, at most 4 GB) | Most memory a background command worker may use, in MB. It never exceeds this machine's own limit. Unset: half of this machine's memory, at most 4 GB. The TERMINAL_LOCAL_MEMORY_MAX_MB environment variable overrides it. |
 | Own work tree | `worktree` | see config | Start each terminal session in its own git work tree. Applies to new sessions. |
 | Fetch before branching | `worktree_sync` | see config | Fetch the upstream branch before making a new work tree. Off branches from your local HEAD. Applies to new sessions. |
 
@@ -608,6 +612,7 @@ Talking to the agent and hearing its replies.
 | Trim padding | `stt.cloud_trim_keep_ms` | see config | Quiet audio kept around speech when trimming before upload. |
 | Trim silence | `stt.cloud_trim_silence` | see config | Cut silence from recordings before sending them to a cloud service. |
 | Trim threshold | `stt.cloud_trim_threshold_db` | see config | Loudness below which audio counts as silence when trimming. |
+| DeepInfra recognition endpoint | `stt.deepinfra.base_url` | unset (the provider endpoint) | Custom endpoint for DeepInfra speech recognition. Unset: the provider endpoint. |
 | DeepInfra model | `stt.deepinfra.model` | `''` | Speech recognition model used with DeepInfra. Empty uses the service's default. |
 | ElevenLabs endpoint | `stt.elevenlabs.base_url` | unset (the provider endpoint) | Custom endpoint for ElevenLabs speech recognition. Unset: the provider endpoint. |
 | Label speakers | `stt.elevenlabs.diarize` | see config | Have ElevenLabs mark who is speaking in transcripts. |
@@ -616,7 +621,9 @@ Talking to the agent and hearing its replies.
 | Tag sounds | `stt.elevenlabs.tag_audio_events` | see config | Mark non-speech sounds such as laughter in ElevenLabs transcripts. |
 | Groq language | `stt.groq.language` | `''` | Language hint for Groq transcripts. Empty detects it. |
 | Groq model | `stt.groq.model` | see config | Speech recognition model used with Groq. |
-| Recognition language | `stt.language` | see config | Language of your speech, as a language code such as en. Used when the chosen service has no language of its own. |
+| Recognition language | `stt.language` | unset (detected from the speech) | Language of your speech, as a language code such as en. Used when the chosen service has no language of its own. Unset: detected from the speech. The ICEBATH_LOCAL_STT_LANGUAGE environment variable overrides it. |
+| Local compute type | `stt.local.compute_type` | see config | Number format the on-device recognizer computes in, such as int8. Auto picks one for the device. |
+| Local device | `stt.local.device` | see config | Where on-device recognition runs, such as cpu or cuda. Auto uses the graphics card when it works. |
 | Local prompt | `stt.local.initial_prompt` | `''` | Text that primes the on-device recognizer, such as names or jargon. |
 | Local language | `stt.local.language` | `''` | Language hint for on-device recognition. Empty detects it. |
 | Confidence cutoff | `stt.local.logprob_threshold` | see config | Average confidence below which on-device text is retried. |
@@ -625,6 +632,7 @@ Talking to the agent and hearing its replies.
 | Unload when idle | `stt.local.unload_after_idle_seconds` | see config | Free the on-device recognizer after this long unused. Zero keeps it loaded. |
 | Skip silence | `stt.local.vad` | see config | Detect speech and skip silent parts before on-device recognition. |
 | Silence length | `stt.local.vad_min_silence_ms` | see config | How long a pause must last to count as a break in speech. |
+| Local command | `stt.local_command` | unset (the bundled whisper.cpp engine, else a whisper program on PATH) | Program that transcribes a recording on this machine. Write {input_path}, {output_dir}, {language} and {model} where they belong; it must leave a .txt file in {output_dir}. Unset: the bundled whisper.cpp engine, else a whisper program on PATH. The ICEBATH_LOCAL_STT_COMMAND environment variable overrides it. |
 | Mistral language | `stt.mistral.language` | `''` | Language hint for Mistral transcripts. Empty detects it. |
 | Mistral model | `stt.mistral.model` | see config | Speech recognition model used with Mistral. |
 | OpenAI recognition key | `stt.openai.api_key` | secret, in .env | Key for OpenAI speech recognition. |
@@ -635,45 +643,58 @@ Talking to the agent and hearing its replies.
 | OpenAI live model | `stt.openai.streaming_model` | see config | Model used for live transcription with OpenAI. |
 | OpenAI timeout | `stt.openai.timeout` | see config | How long to wait for OpenAI to transcribe before giving up. |
 | Recognition prompt | `stt.prompt` | unset (no static prompt) | Text that primes cloud recognition, such as names or jargon. Unset: no static prompt. |
+| Recognition commands | `stt.providers` | `{}` | Your own speech recognition programs, by name. Set Recognition service to a name here to use it. A program may also sit directly under stt by its name. |
 | Live transcription | `stt.streaming` | see config | Show words as you speak when the chosen service supports it. |
 | xAI recognition endpoint | `stt.xai.base_url` | unset (the provider endpoint) | Custom endpoint for xAI speech recognition. Unset: the provider endpoint. |
+| xAI speakers | `stt.xai.diarize` | see config | Have xAI mark who is speaking in transcripts. |
+| xAI formatting | `stt.xai.format` | see config | Have xAI tidy numbers and punctuation in transcripts. Applies when a language is set. |
 | xAI language | `stt.xai.language` | `''` | Language hint for xAI transcripts. Empty detects it. |
 | xAI model | `stt.xai.model` | `''` | Speech recognition model used with xAI. Empty uses the service's default. |
+| DeepInfra endpoint | `tts.deepinfra.base_url` | unset (the provider endpoint) | Custom endpoint for DeepInfra speech. Unset: the provider endpoint. |
+| DeepInfra text limit | `tts.deepinfra.max_text_length` | unset (the service's own limit) | Most text DeepInfra speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | DeepInfra model | `tts.deepinfra.model` | `''` | Speech model used with DeepInfra. Empty uses the service's default. |
 | DeepInfra speed | `tts.deepinfra.speed` | unset (the general speech speed) | How fast DeepInfra speaks. 1 is normal. Unset: the general speech speed. |
 | DeepInfra voice | `tts.deepinfra.voice` | see config | Voice used with DeepInfra. |
+| Audio upload limits | `tts.delivery_profiles` | `{}` | Largest speech file sent to each chat app, by app name. Longer speech is sent as several files; default covers apps not named. |
+| Edge text limit | `tts.edge.max_text_length` | unset (the service's own limit) | Most text Edge speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | Edge speed | `tts.edge.speed` | unset (the general speech speed) | How fast the Edge voice speaks. 1 is normal. Unset: the general speech speed. |
 | Edge voice | `tts.edge.voice` | see config | Voice used with Edge speech. |
 | ElevenLabs endpoint | `tts.elevenlabs.base_url` | unset (the provider endpoint) | Custom endpoint for ElevenLabs speech. Unset: the provider endpoint. |
+| ElevenLabs text limit | `tts.elevenlabs.max_text_length` | unset (the service's own limit) | Most text ElevenLabs speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | ElevenLabs model | `tts.elevenlabs.model_id` | see config | Speech model used with ElevenLabs. |
 | ElevenLabs live model | `tts.elevenlabs.streaming_model_id` | unset (the ElevenLabs model) | Speech model for ElevenLabs when speaking as text arrives. Unset: the ElevenLabs model. |
 | ElevenLabs voice | `tts.elevenlabs.voice_id` | see config | Voice used with ElevenLabs, by its ID. |
 | Gemini tone tags | `tts.gemini.audio_tags` | see config | Add tone cues to text before Gemini speaks it. |
 | Gemini endpoint | `tts.gemini.base_url` | unset (the provider endpoint) | Custom endpoint for Gemini speech. Unset: the provider endpoint. |
+| Gemini text limit | `tts.gemini.max_text_length` | unset (the service's own limit) | Most text Gemini speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | Gemini model | `tts.gemini.model` | see config | Speech model used with Gemini. |
 | Gemini persona file | `tts.gemini.persona_prompt_file` | `''` | Path to a text file describing how Gemini should sound. |
 | Gemini voice | `tts.gemini.voice` | see config | Voice used with Gemini. |
 | Keep voice loaded | `tts.keep_warm_seconds` | see config | How long a local voice stays loaded after use. Zero unloads it at once. |
 | Clean text | `tts.kittentts.clean_text` | see config | Tidy text before KittenTTS speaks it. |
+| KittenTTS text limit | `tts.kittentts.max_text_length` | unset (the service's own limit) | Most text KittenTTS speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | KittenTTS model | `tts.kittentts.model` | see config | On-device speech model used with KittenTTS. |
-| KittenTTS speed | `tts.kittentts.speed` | see config | How fast KittenTTS speaks. 1 is normal. |
+| KittenTTS speed | `tts.kittentts.speed` | unset (the general speech speed) | How fast KittenTTS speaks. 1 is normal. Unset: the general speech speed. |
 | KittenTTS voice | `tts.kittentts.voice` | see config | Voice used with KittenTTS. |
 | MiniMax endpoint | `tts.minimax.base_url` | unset (the endpoint of the region) | Custom endpoint for MiniMax speech. Unset: the endpoint of the region. |
 | MiniMax bitrate | `tts.minimax.bitrate` | see config | Audio quality of MiniMax speech, in bits per second. |
 | MiniMax emotion | `tts.minimax.emotion` | see config | Emotion MiniMax puts in its speech, such as neutral or happy. |
 | MiniMax group ID | `tts.minimax.group_id` | unset (none) | Account group ID sent to MiniMax. Unset: none. |
+| MiniMax text limit | `tts.minimax.max_text_length` | unset (the service's own limit) | Most text MiniMax speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | MiniMax model | `tts.minimax.model` | see config | Speech model used with MiniMax. |
 | MiniMax pitch | `tts.minimax.pitch` | see config | Raise or lower the MiniMax voice pitch. |
 | MiniMax region | `tts.minimax.region` | unset (global, or China when only a China key is set) | Which MiniMax service region to use. One of: global, cn. Unset: global, or China when only a China key is set. |
 | MiniMax sample rate | `tts.minimax.sample_rate` | see config | Audio sample rate for MiniMax speech, in Hz. |
-| MiniMax speed | `tts.minimax.speed` | see config | How fast MiniMax speaks. 1 is normal. |
+| MiniMax speed | `tts.minimax.speed` | unset (the general speech speed) | How fast MiniMax speaks. 1 is normal. Unset: the general speech speed. |
 | MiniMax voice | `tts.minimax.voice_id` | see config | Voice used with MiniMax, by its ID. |
 | MiniMax volume | `tts.minimax.vol` | see config | How loud MiniMax speaks. |
 | Mistral endpoint | `tts.mistral.base_url` | unset (the provider endpoint) | Custom endpoint for Mistral speech. Unset: the provider endpoint. |
+| Mistral text limit | `tts.mistral.max_text_length` | unset (the service's own limit) | Most text Mistral speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | Mistral model | `tts.mistral.model` | see config | Speech model used with Mistral. |
 | Mistral voice | `tts.mistral.voice_id` | see config | Voice used with Mistral, by its ID. |
 | Speech model | `tts.model` | unset (the plugin provider's model) | Speech model for plugin voice services. Unset: the plugin provider's model. |
 | NeuTTS device | `tts.neutts.device` | see config | Where NeuTTS runs, such as cpu or cuda. |
+| NeuTTS text limit | `tts.neutts.max_text_length` | unset (the service's own limit) | Most text NeuTTS speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | NeuTTS model | `tts.neutts.model` | see config | On-device speech model used with NeuTTS. |
 | NeuTTS sample audio | `tts.neutts.ref_audio` | `''` | Path to a sample recording of the voice to copy. |
 | NeuTTS sample text | `tts.neutts.ref_text` | `''` | Path to the transcript of the sample recording. |
@@ -681,6 +702,7 @@ Talking to the agent and hearing its replies.
 | OpenAI speech endpoint | `tts.openai.base_url` | unset (the provider endpoint) | Custom endpoint for OpenAI-compatible speech. Unset: the provider endpoint. |
 | Voice consent | `tts.openai.consent_attestation` | `''` | Consent statement sent when using a custom cloned voice. |
 | OpenAI language | `tts.openai.language` | unset (no language hint) | Language hint sent with OpenAI-compatible speech. Unset: no language hint. |
+| OpenAI text limit | `tts.openai.max_text_length` | unset (the service's own limit) | Most text OpenAI speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | OpenAI model | `tts.openai.model` | see config | Speech model used with OpenAI. |
 | Live sample rate | `tts.openai.pcm_sample_rate` | see config | Audio sample rate when OpenAI speech plays as it arrives, in Hz. |
 | OpenAI speed | `tts.openai.speed` | unset (the general speech speed) | How fast OpenAI speaks. 1 is normal, from 0.25 to 4. Unset: the general speech speed. |
@@ -688,6 +710,7 @@ Talking to the agent and hearing its replies.
 | Live latency boost | `tts.optimize_streaming_latency` | unset (no boost) | Trade quality for faster start when speech plays as it arrives. Used by xAI speech when its own setting is absent. Unset: no boost. |
 | Output format | `tts.output_format` | unset (the default format of command providers) | Audio format produced by command-based voices. Unset: the default format of command providers. |
 | Piper pace | `tts.piper.length_scale` | unset (the voice's own value) | Stretches or shortens Piper speech. Higher is slower. Unset: the voice's own value. |
+| Piper text limit | `tts.piper.max_text_length` | unset (the service's own limit) | Most text Piper speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
 | Piper variation | `tts.piper.noise_scale` | unset (the voice's own value) | How much natural variation Piper adds to the voice. Unset: the voice's own value. |
 | Piper timing variation | `tts.piper.noise_w_scale` | unset (the voice's own value) | How much Piper varies the timing of words. Unset: the voice's own value. |
 | Even out volume | `tts.piper.normalize_audio` | see config | Level out loudness in Piper speech. |
@@ -696,6 +719,7 @@ Talking to the agent and hearing its replies.
 | Piper voice | `tts.piper.voice` | see config | Voice used with Piper. |
 | Piper voices folder | `tts.piper.voices_dir` | unset (the voices folder in the icebath home) | Folder where Piper voices are stored and downloaded. Unset: the voices folder in the icebath home. |
 | Piper volume | `tts.piper.volume` | see config | How loud Piper speaks. 1 is unchanged. |
+| Speech commands | `tts.providers` | `{}` | Your own speech programs, by name. Set Speech voice to a name here to use it. A program may also sit directly under tts by its name. |
 | Speech speed | `tts.speed` | unset (normal speed) | How fast voices speak. 1 is normal. Services with their own speed setting use that instead. Unset: normal speed. |
 | Live chunk size | `tts.streaming.min_len` | see config | Smallest piece of text spoken at once while streaming speech. |
 | Live speech service | `tts.streaming.provider` | unset (the Speech voice service) | Service for speech that plays as the text arrives. Unset: the Speech voice service. |
@@ -704,9 +728,10 @@ Talking to the agent and hearing its replies.
 | xAI speech endpoint | `tts.xai.base_url` | unset (the provider endpoint) | Custom endpoint for xAI speech. Unset: the provider endpoint. |
 | xAI bitrate | `tts.xai.bit_rate` | see config | Audio quality of xAI speech, in bits per second. |
 | xAI language | `tts.xai.language` | see config | Language xAI speaks in, as a language code. |
-| xAI latency boost | `tts.xai.optimize_streaming_latency` | see config | Trade quality for faster start in xAI speech. Zero turns it off. |
+| xAI text limit | `tts.xai.max_text_length` | unset (the service's own limit) | Most text xAI speaks in one request. Longer text is split into several requests. Unset: the service's own limit. |
+| xAI latency boost | `tts.xai.optimize_streaming_latency` | unset (the general live latency boost) | Trade quality for faster start in xAI speech. Zero turns it off. Unset: the general live latency boost. |
 | xAI sample rate | `tts.xai.sample_rate` | see config | Audio sample rate for xAI speech, in Hz. |
-| xAI speed | `tts.xai.speed` | see config | How fast xAI speaks. 1 is normal. |
+| xAI speed | `tts.xai.speed` | unset (the general speech speed) | How fast xAI speaks. 1 is normal. Unset: the general speech speed. |
 | xAI live endpoint | `tts.xai.streaming_url` | unset (the provider streaming endpoint) | Custom endpoint for xAI speech that plays as it arrives. Unset: the provider streaming endpoint. |
 | xAI text cleanup | `tts.xai.text_normalization` | unset (the service default) | Have xAI spell out numbers and symbols before speaking. Unset: the service default. |
 | xAI voice | `tts.xai.voice_id` | see config | Voice used with xAI. |
@@ -905,11 +930,12 @@ Chat apps, scheduled jobs and their replies.
 | Agent scheduling | `cron.allow_agent_scheduling` | see config | Let scheduled jobs create and change other scheduled jobs. |
 | Catch up missed | `cron.catch_up_missed` | see config | Run jobs missed while the app was off, once when it returns. |
 | Cleanup wait | `cron.cleanup_timeout_seconds` | see config | How long to wait for cleanup after a scheduled job finishes. Cleanup that runs longer is abandoned. |
+| Done job retention | `cron.completed_retention_days` | see config | Days a finished one-time job stays in the list before it is removed. Zero keeps them. |
 | Delivery notices | `cron.delivery.notify` | see config | Send a notice to the chat when a scheduled result is delivered. |
 | Failure nudge after | `cron.failure_nudge_threshold` | see config | Failed runs in a row before you get a nudge about a job. |
 | Repeat alert gap | `cron.failure_repeat_alert_hours` | see config | Wait between repeat alerts for a job that keeps failing. Zero alerts on every failed run. |
-| Stuck job limit | `cron.inflight_max_minutes` | unset (30 minutes) | Minimum time a running job gets before it counts as stuck. Unset falls back to the matching environment variable, then 30 minutes. Unset: 30 minutes. |
-| Parallel jobs | `cron.max_parallel_jobs` | unset (no limit) | Most scheduled jobs that run at the same time. Zero also means no limit. The matching environment variable wins. Unset: no limit. |
+| Stuck job limit | `cron.inflight_max_minutes` | unset (30 minutes) | Minimum time a running job gets before it counts as stuck. Unset: 30 minutes. |
+| Parallel jobs | `cron.max_parallel_jobs` | unset (no limit) | Most scheduled jobs that run at the same time. Zero also means no limit. Unset: no limit. |
 | Media send wait | `cron.media_send_timeout_seconds` | see config | How long to wait when sending each file from a scheduled job. |
 | Mirror results | `cron.mirror_delivery` | see config | Also add scheduled results to the chat session they were sent to. A job can override this. |
 | Allow everyone | `buzz.allow_all_users` | see config | Buzz: let anyone in its channels talk to it. |
@@ -998,8 +1024,9 @@ Chat apps, scheduled jobs and their replies.
 | Message timestamps | `gateway.message_timestamps.enabled` | see config | Show the agent the time each chat message was sent. |
 | Merge profiles | `gateway.multiplex_profiles` | see config | Serve every profile from one background service. |
 | Chat connect wait | `gateway.platform_connect_timeout` | see config | How long each chat app gets to connect at startup. Restart the background service to apply. |
+| Chat disconnect wait | `gateway.adapter_disconnect_timeout` | see config | How long each chat app gets to disconnect when the service stops. Zero stops without waiting. |
 | Profile routes | `gateway.profile_routes` | `[]` | Rules that send particular chats to a particular profile. Each entry names a chat and the profile that handles it. Restart the background service to apply. |
-| Chat proxy | `gateway.proxy_url` | `''` | Proxy address for chat app connections. Empty connects directly. |
+| Remote agent | `gateway.proxy_url` | `''` | Address of an icebath API server that answers the chats instead. Chat apps still connect from here and every turn runs on that server. Empty answers here. The GATEWAY_PROXY_URL environment variable overrides it. |
 | Restart storm starts | `gateway.respawn_storm.max_starts` | see config | Starts allowed in the window before startup is delayed. Restart the background service to apply. |
 | Restart storm window | `gateway.respawn_storm.window_seconds` | see config | Time span over which service starts are counted. Restart the background service to apply. |
 | Restart loop gap | `gateway.restart_loop_guard.max_gap_seconds` | see config | Longest gap between restarts that still counts as a loop. |
@@ -1061,6 +1088,7 @@ Chat apps, scheduled jobs and their replies.
 | Move DM topics | `telegram.extra.dm_topic_auto_transfer` | see config | Telegram: move a direct message conversation into its own topic. Restart the background service to apply. |
 | Rich drafts | `telegram.extra.rich_drafts` | see config | Telegram: use rich formatting in streamed drafts. Restart the background service to apply. |
 | Rich messages | `telegram.extra.rich_messages` | see config | Telegram: use rich formatting in replies. Restart the background service to apply. |
+| Follow-up grace | `telegram.followup_grace_seconds` | see config | Telegram: a follow-up this soon after a reply starts waits for it. Zero lets every message interrupt at once. |
 | Answer bots | `telegram.allow_bots` | see config | Telegram: which messages from other bots it answers. One of: none, mentions, all. |
 | Allowed people | `telegram.allow_from` | `[]` | Telegram: user IDs allowed to talk to it; * allows everyone. Empty leaves access to pairing and the shared allow list. |
 | Allowed topics | `telegram.allowed_topics` | `[]` | Telegram: the only forum topics it answers in. Each item is chat:topic. Empty allows every topic. |
@@ -1143,7 +1171,7 @@ Chat apps, scheduled jobs and their replies.
 | Thread per person | `gateway.thread_sessions_per_user` | see config | In threads, keep a separate conversation per person. Restart the background service to apply. |
 | Keep local log | `gateway.always_log_local` | see config | Keep a local copy of chat app conversations. Restart the background service to apply. |
 | Skip silence notes | `gateway.filter_silence_narration` | see config | Do not send replies that only say nothing happened. Restart the background service to apply. |
-| Reset words | `gateway.reset_triggers` | see config | Messages that start a new conversation in a chat app. Restart the background service to apply. |
+| Reset words | `gateway.reset_triggers` | see config | Messages that start a new conversation in a chat app. A message that is exactly one of these, in any letter case, works like /new. |
 | Strangers | `gateway.unauthorized_dm_behavior` | see config | What the bot does when someone it does not know writes. One of: pair, ignore, decline. Restart the background service to apply. |
 | Decline message | `gateway.unauthorized_dm_decline_message` | `''` | Reply sent to strangers when Strangers is Decline. Restart the background service to apply. |
 

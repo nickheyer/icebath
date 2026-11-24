@@ -70,7 +70,6 @@ func firstQueuedEntry(t *testing.T, queued any) interface{ Get(string) (any, boo
 func TestResultRecordsPendingUntilTerminalReceipt(t *testing.T) {
 	s, _ := newTestStore(t)
 	t.Setenv("ICEBATH_HOME", s.home)
-	t.Setenv(externalWorkerEnv, "")
 	useRealDelivery(t)
 	authority := &fakeBotAuthority{records: map[string]map[string]any{}}
 	savedFind, savedDeliver, savedRead := findCanonicalLiveOwner, deliverToLiveOwner, readDeliveryResult

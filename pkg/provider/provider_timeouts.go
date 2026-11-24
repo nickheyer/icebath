@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -141,7 +140,7 @@ func bedrockReasoningStaleFloor(modelID any) (float64, bool) {
 	if !ok || id == "" {
 		return 0, false
 	}
-	name := pystr.Lower(pystr.Strip(id))
+	name := strings.ToLower(strings.TrimSpace(id))
 	for _, prefix := range bedrockRegionPrefixes {
 		if strings.HasPrefix(name, prefix) {
 			name = name[len(prefix):]

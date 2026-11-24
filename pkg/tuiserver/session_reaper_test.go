@@ -42,36 +42,6 @@ func reaperExec(t *testing.T, db *state.DB, query string, args ...any) {
 	}
 }
 
-// Row with one user message, its start and message clock set to the given times
-func seedReaperSession(t *testing.T, db *state.DB, sid, source string, lastActive float64, startedAt *float64) {
-	t.Helper()
-	if err := db.CreateSession(state.NewSession{ID: sid, Source: source}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.AppendMessage(context.Background(), sid, map[string]any{"role": "user", "content": "hello"}, state.AppendGuards{}); err != nil {
-		t.Fatal(err)
-	}
-	started := lastActive
-	if startedAt != nil {
-		started = *startedAt
-	}
-	reaperExec(t, db, "UPDATE sessions SET started_at = ? WHERE id = ?", started, sid)
-	reaperExec(t, db, "UPDATE messages SET timestamp = ? WHERE session_id = ?", lastActive, sid)
-}
-
-func reaperRow(t *testing.T, db *state.DB, sid string) map[string]any {
-	t.Helper()
-	row, err := db.GetSession(context.Background(), sid)
-	if err != nil || row == nil {
-		t.Fatalf("row %s: %v", sid, err)
-	}
-	out := map[string]any{}
-	for _, key := range row.Keys {
-		out[key] = row.Vals[key]
-	}
-	return out
-}
-
 func TestOncePerProcessAndConfigAndTTLGates(t *testing.T) {
 	started := 0
 	swapVar(t, &reaperAfterFunc, func(time.Duration, func()) *time.Timer { started++; return nil })

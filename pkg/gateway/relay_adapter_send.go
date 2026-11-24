@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Optional reply target, nil for an empty one
@@ -31,7 +30,7 @@ func relayWireReply(replyTo *string) any {
 // Stops the revocation monitor, asks the connector to buffer, then closes the transport within the remaining budget
 func (a *RelayAdapter) Disconnect(ctx context.Context) error {
 	started := time.Now()
-	budget := relayEnvDisconnectBudget()
+	budget := relayDisconnectBudget()
 	a.mu.Lock()
 	monitor := a.revocationMonitor
 	a.mu.Unlock()
@@ -144,7 +143,7 @@ func (a *RelayAdapter) formatHints(descriptor *CapabilityDescriptor, platform st
 	if descriptor == nil || !descriptor.SupportsBlockFormatting {
 		return nil
 	}
-	knobs := a.relayPlatformExtra(pystr.Lower(platform))
+	knobs := a.relayPlatformExtra(strings.ToLower(platform))
 	hints := map[string]any{}
 	for _, knob := range []string{"rich_blocks", "markdown_blocks"} {
 		if relayCoerceFlag(knobs[knob], false) {

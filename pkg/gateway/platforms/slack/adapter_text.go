@@ -1,6 +1,8 @@
 package slack
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,11 +14,11 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"golang.org/x/text/width"
 )
@@ -38,7 +40,7 @@ func slackUnfurlKwargs(extra map[string]any) map[string]bool {
 		case bool:
 			kwargs[key] = val
 		case string:
-			word := pystr.Lower(pystr.Strip(val))
+			word := strings.ToLower(strings.TrimSpace(val))
 			if boolWords[word] {
 				kwargs[key] = word == "1" || word == "true" || word == "yes" || word == "on"
 			}
@@ -118,7 +120,7 @@ func slackFileMarker(fileObj map[string]any) string {
 	if v := firstTruthy(fileObj, "name", "title", "id"); v != nil {
 		name = pyrepr.Str(v)
 	}
-	name = pystr.Strip(replaceAll(fileMarkerNameRe, name, func(reMatch) string { return " " }))
+	name = strings.TrimSpace(replaceAll(fileMarkerNameRe, name, func(reMatch) string { return " " }))
 	if name == "" {
 		name = "file"
 	}
@@ -207,7 +209,7 @@ func wrapMarkdownTables(text string) string {
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
-		if strings.HasPrefix(pystr.Lstrip(line), "```") {
+		if strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), "```") {
 			inFence = !inFence
 		} else if _, sep := searchAt(tableSeparatorRe, lines, i+1); !inFence && strings.Contains(line, "|") && sep {
 			block := []string{line, lines[i+1]}
@@ -285,7 +287,7 @@ func slackMentionDetectionText(event map[string]any) string {
 	if len(extra) == 0 {
 		return flat
 	}
-	return pystr.Strip(pystr.Strip(flat) + "\n" + strings.Join(extra, " "))
+	return strings.TrimSpace(strings.TrimSpace(flat) + "\n" + strings.Join(extra, " "))
 }
 
 // Whether a name is a gateway command of the registry, installed by the process wiring from pkg/commands
@@ -300,7 +302,7 @@ func rewriteKnownBangCommand(ctx context.Context, text string) string {
 	if len(fields) == 0 {
 		return text
 	}
-	cmdName := pystr.Lower(strings.SplitN(fields[0], "@", 2)[0])
+	cmdName := strings.ToLower(strings.SplitN(fields[0], "@", 2)[0])
 	if cmdName != "" && !strings.Contains(cmdName, "/") && IsGatewayKnownCommand != nil && IsGatewayKnownCommand(ctx, cmdName) {
 		return "/" + text[1:]
 	}
@@ -424,14 +426,14 @@ func extractTextFromSlackBlocks(blocks []any) string {
 	}
 	var parts []string
 	appendLine := func(text string, quoteDepth int, bullet string) {
-		if text == "" || pystr.Strip(text) == "" {
+		if text == "" || strings.TrimSpace(text) == "" {
 			return
 		}
 		prefix := ""
 		if quoteDepth > 0 {
 			prefix = strings.Repeat(">", quoteDepth) + " "
 		}
-		parts = append(parts, pystr.Rstrip(prefix+bullet+text))
+		parts = append(parts, strings.TrimRightFunc(prefix+bullet+text, unicode.IsSpace))
 	}
 	var walk func(elements []any, quoteDepth int, bullet string)
 	walk = func(elements []any, quoteDepth int, bullet string) {
@@ -527,7 +529,7 @@ func collectSlackTableCellText(value any) string {
 			kept = append(kept, p)
 		}
 	}
-	return pystr.Strip(strings.Join(kept, " "))
+	return strings.TrimSpace(strings.Join(kept, " "))
 }
 
 // Table block rendered as pipe separated rows, capped at maxChars with a visible truncation marker
@@ -551,7 +553,7 @@ func renderSlackTableBlock(block any, maxChars int) string {
 			cells[i] = collectSlackTableCellText(cell)
 		}
 		rendered := strings.Join(cells, " | ")
-		if pystr.StripChars(rendered, " |") != "" {
+		if strings.Trim(rendered, " |") != "" {
 			lines = append(lines, rendered)
 		}
 	}
@@ -560,7 +562,7 @@ func renderSlackTableBlock(block any, maxChars int) string {
 		return ""
 	}
 	if runes := []rune(text); len(runes) > maxChars {
-		text = pystr.Rstrip(string(runes[:max(maxChars-20, 0)])) + "\n[table truncated]"
+		text = strings.TrimRightFunc(string(runes[:max(maxChars-20, 0)]), unicode.IsSpace) + "\n[table truncated]"
 	}
 	return text
 }
@@ -607,7 +609,7 @@ func extractTextFromSlackAttachments(attachments []any) string {
 			kept = append(kept, line)
 		}
 	}
-	return pystr.Strip(strings.Join(kept, "\n"))
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 var (
@@ -663,7 +665,7 @@ func normalizeSlackTextForDedupe(text, botUID string) string {
 		}
 		canonical = unstyled
 	}
-	return pystr.Strip(replaceAll(slackWhitespaceRe, canonical, func(reMatch) string { return " " }))
+	return strings.TrimSpace(replaceAll(slackWhitespaceRe, canonical, func(reMatch) string { return " " }))
 }
 
 // Rich text and table content of the blocks not already present in the primary text
@@ -689,7 +691,7 @@ func extractAdditionalTextFromSlackBlocks(blocks []any, primaryText, botUID stri
 		for _, rawElement := range asList(getOr(block, "elements", []any{})) {
 			element := asMap(rawElement)
 			elementType, _ := getOr(element, "type", "").(string)
-			rendered := pystr.Strip(extractTextFromSlackBlocks([]any{map[string]any{"type": "rich_text", "elements": []any{element}}}))
+			rendered := strings.TrimSpace(extractTextFromSlackBlocks([]any{map[string]any{"type": "rich_text", "elements": []any{element}}}))
 			if rendered == "" {
 				continue
 			}
@@ -810,18 +812,9 @@ func extractURLsFromSlackBlocks(blocks []any) []string {
 	return found
 }
 
-// Dedup window for Socket Mode replays, overridable by a positive SLACK_DEDUP_TTL_SECONDS
+// Dedup window for Socket Mode replays, slack.dedup_ttl_seconds
 func slackDedupTTLSeconds(ctx context.Context) float64 {
-	raw, _ := gateway.GetScopedSecret(ctx, "SLACK_DEDUP_TTL_SECONDS", "", false)
-	if raw != "" {
-		value, err := pyint.ParseFloat(raw)
-		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid SLACK_DEDUP_TTL_SECONDS=%s; using default", pyrepr.StrRepr(raw)))
-		} else if value > 0 {
-			return value
-		}
-	}
-	return 3600.0
+	return settings.SlackDedupTTL.Get(gateway.SettingsContext(ctx)).Seconds()
 }
 
 var slackAudioMimeToExt = map[string]string{
@@ -838,12 +831,12 @@ var slackSTTSupportedExts = map[string]bool{
 
 // Cache extension matching inbound audio bytes, from the filename, then the mimetype, else m4a
 func resolveSlackAudioExt(fileObj map[string]any, mimetype string) string {
-	_, ext := pypath.Splitext(pystr.Strip(strOrEmpty(fileObj["name"])))
-	nameExt := pystr.Lower(ext)
+	_, ext := pypath.Splitext(strings.TrimSpace(strOrEmpty(fileObj["name"])))
+	nameExt := strings.ToLower(ext)
 	if slackSTTSupportedExts[nameExt] {
 		return nameExt
 	}
-	mimeKey := pystr.Lower(pystr.Strip(strings.SplitN(mimetype, ";", 2)[0]))
+	mimeKey := strings.ToLower(strings.TrimSpace(strings.SplitN(mimetype, ";", 2)[0]))
 	if ext, ok := slackAudioMimeToExt[mimeKey]; ok {
 		return ext
 	}
@@ -852,8 +845,8 @@ func resolveSlackAudioExt(fileObj map[string]any, mimetype string) string {
 
 // Whether a file is an audio only voice clip by its slack_audio subtype or audio_message name
 func isSlackVoiceClip(fileObj map[string]any) bool {
-	return pystr.Lower(pystr.Strip(strOrEmpty(fileObj["subtype"]))) == "slack_audio" ||
-		strings.HasPrefix(pystr.Lower(pystr.Strip(strOrEmpty(fileObj["name"]))), "audio_message")
+	return strings.ToLower(strings.TrimSpace(strOrEmpty(fileObj["subtype"]))) == "slack_audio" ||
+		strings.HasPrefix(strings.ToLower(strings.TrimSpace(strOrEmpty(fileObj["name"]))), "audio_message")
 }
 
 // Human label of a Slack file object for user facing diagnostics
@@ -890,7 +883,7 @@ func appendLinkUnfurls(text string, slackAttachments []any) string {
 		if body == "" {
 			body = attFallback
 		}
-		body = pystr.Strip(body)
+		body = strings.TrimSpace(body)
 		if runes := []rune(body); len(runes) > 500 {
 			body = string(runes[:497]) + "..."
 		}
@@ -905,7 +898,7 @@ func appendLinkUnfurls(text string, slackAttachments []any) string {
 		if nestedText != "" && !strings.Contains(body, nestedText) {
 			blocksBudget -= pystr.Len(nestedText)
 			if body != "" {
-				body = pystr.Strip(body + "\n" + nestedText)
+				body = strings.TrimSpace(body + "\n" + nestedText)
 			} else {
 				body = nestedText
 			}
@@ -930,7 +923,7 @@ func appendLinkUnfurls(text string, slackAttachments []any) string {
 		attParts = append(attParts, section)
 	}
 	if len(attParts) > 0 {
-		text = pystr.Strip(pystr.Strip(text) + "\n\n" + strings.Join(attParts, "\n\n"))
+		text = strings.TrimSpace(strings.TrimSpace(text) + "\n\n" + strings.Join(attParts, "\n\n"))
 		pkgLog().Debug(fmt.Sprintf("Slack: appended %d link unfurl(s) to message text", len(attParts)))
 	}
 	return text

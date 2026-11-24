@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysmtplib"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -33,10 +32,6 @@ const (
 )
 
 var (
-	securityAliases = map[string]string{"tls": "tls", "ssl": "tls", "implicit": "tls", "starttls": "starttls", "plain": "plain", "none": "plain"}
-	truthyValues    = map[string]bool{"true": true, "1": true, "yes": true}
-	truthyStrings   = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
-
 	// Seen UID snapshot per account surviving adapter recreation, and the accounts warned about a missing authserv pin
 	accountState = struct {
 		sync.Mutex
@@ -44,17 +39,6 @@ var (
 		missingPinWarned map[string]bool
 	}{seenUIDs: map[string]map[string]bool{}, missingPinWarned: map[string]bool{}}
 )
-
-// Bool of a config or env value under the shared truthy strings, the default for an unset one
-func isTruthyValue(value any, def bool) bool {
-	if value == nil {
-		return def
-	}
-	if s, ok := value.(string); ok {
-		return truthyStrings[pystr.Lower(pystr.Strip(s))]
-	}
-	return pyrepr.Truthy(value)
-}
 
 // Scope aware secret read with an empty default
 func secret(ctx context.Context, name string) (string, error) {
@@ -67,38 +51,21 @@ func esecretInt(ctx context.Context, name string, def int) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if text := pystr.Strip(raw); text != "" {
+	if text := strings.TrimSpace(raw); text != "" {
 		return gateway.CoercePort(text, def), nil
 	}
 	return def, nil
 }
 
-// Scope aware boolean read, the default when unset
-func esecretBool(ctx context.Context, name string, def bool) (bool, error) {
-	raw, err := secret(ctx, name)
-	if err != nil {
-		return false, err
+// How the sending connection is secured for the profile ctx serves: the setting, else STARTTLS and TLS on port 465
+func smtpSecurityFor(ctx context.Context, port int) string {
+	if mode := settings.EmailSmtpSecurity.Get(gateway.SettingsContext(ctx)); mode != "" {
+		return mode
 	}
-	if text := pystr.Strip(raw); text != "" {
-		return isTruthyValue(text, def), nil
+	if port == 465 {
+		return "tls"
 	}
-	return def, nil
-}
-
-// Security mode as tls, starttls or plain, an unknown value warned about and read as the default
-func normalizeSecurity(value any, def string) string {
-	raw := ""
-	if pyrepr.Truthy(value) {
-		raw = strings.ReplaceAll(strings.ReplaceAll(pystr.Lower(pystr.Strip(pyrepr.Str(value))), "-", ""), "_", "")
-	}
-	mode, known := securityAliases[raw]
-	if raw != "" && !known {
-		pkgLog().Warn(fmt.Sprintf("Unknown email security mode %s; using %s", pyrepr.Repr(value), pyrepr.Repr(def)))
-	}
-	if !known {
-		return def
-	}
-	return mode
+	return "starttls"
 }
 
 // TLS settings verifying the server unless verification was explicitly turned off
@@ -174,7 +141,7 @@ func imapPayload(data []any) ([]byte, bool) {
 func checkEmailRequirements(ctx context.Context) bool {
 	for _, name := range []string{"EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_IMAP_HOST", "EMAIL_SMTP_HOST"} {
 		value, err := secret(ctx, name)
-		if err != nil || pystr.Strip(value) == "" {
+		if err != nil || strings.TrimSpace(value) == "" {
 			return false
 		}
 	}
@@ -216,7 +183,7 @@ type EmailAdapter struct {
 	smtpPort                   int
 	smtpSecurity               string
 	smtpTLSVerify              bool
-	pollInterval               int
+	pollInterval               time.Duration
 	skipAttachments            bool
 	requireAuthenticatedSender bool
 	authservID                 string
@@ -243,10 +210,25 @@ func stripSetting(v any) (string, error) {
 	if !ok {
 		return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))}
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
-// Adapter for a platform config, each setting read from the scoped env first and the config extra after
+// Address or host of the mailbox, from the scoped env first and the connection's config after, the space around it cut off
+func mailboxValue(ctx context.Context, extra map[string]any, env, key string) (string, error) {
+	value, err := secret(ctx, env)
+	if err != nil {
+		return "", err
+	}
+	if value != "" {
+		return strings.TrimSpace(value), nil
+	}
+	if v, ok := extra[key]; ok {
+		return stripSetting(v)
+	}
+	return "", nil
+}
+
+// Adapter for a platform config: the mailbox from the scoped env first and the connection's config after, the rest from the settings of the profile served
 func NewEmailAdapter(ctx context.Context, config *gateway.PlatformConfig) (*EmailAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -258,92 +240,34 @@ func NewEmailAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Emai
 	if extra == nil {
 		extra = map[string]any{}
 	}
-	setting := func(env, key string) (any, error) {
-		value, err := secret(ctx, env)
-		if err != nil {
-			return nil, err
-		}
-		if value != "" {
-			return value, nil
-		}
-		if v, ok := extra[key]; ok {
-			return v, nil
-		}
-		return "", nil
-	}
-	strippedSetting := func(env, key string) (string, error) {
-		value, err := setting(env, key)
-		if err != nil {
-			return "", err
-		}
-		return stripSetting(value)
-	}
-	tlsVerify := func(env, key string) (bool, error) {
-		return esecretBool(ctx, env, isTruthyValue(extra[key], true))
-	}
+	sctx := gateway.SettingsContext(ctx)
 	var err error
-	if a.address, err = strippedSetting("EMAIL_ADDRESS", "address"); err != nil {
+	if a.address, err = mailboxValue(ctx, extra, "EMAIL_ADDRESS", "address"); err != nil {
 		return nil, err
 	}
 	if a.password, err = secret(ctx, "EMAIL_PASSWORD"); err != nil {
 		return nil, err
 	}
-	if a.imapHost, err = strippedSetting("EMAIL_IMAP_HOST", "imap_host"); err != nil {
+	if a.imapHost, err = mailboxValue(ctx, extra, "EMAIL_IMAP_HOST", "imap_host"); err != nil {
 		return nil, err
 	}
 	if a.imapPort, err = esecretInt(ctx, "EMAIL_IMAP_PORT", 993); err != nil {
 		return nil, err
 	}
-	imapSecurity, err := setting("EMAIL_IMAP_SECURITY", "imap_security")
-	if err != nil {
-		return nil, err
-	}
-	a.imapSecurity = normalizeSecurity(imapSecurity, "tls")
-	if a.imapTLSVerify, err = tlsVerify("EMAIL_IMAP_TLS_VERIFY", "imap_tls_verify"); err != nil {
-		return nil, err
-	}
-	if a.smtpHost, err = strippedSetting("EMAIL_SMTP_HOST", "smtp_host"); err != nil {
+	a.imapSecurity = settings.EmailImapSecurity.Get(sctx)
+	a.imapTLSVerify = settings.EmailImapTLSVerify.Get(sctx)
+	if a.smtpHost, err = mailboxValue(ctx, extra, "EMAIL_SMTP_HOST", "smtp_host"); err != nil {
 		return nil, err
 	}
 	if a.smtpPort, err = esecretInt(ctx, "EMAIL_SMTP_PORT", 587); err != nil {
 		return nil, err
 	}
-	smtpSecurity, err := setting("EMAIL_SMTP_SECURITY", "smtp_security")
-	if err != nil {
-		return nil, err
-	}
-	smtpDefault := "starttls"
-	if a.smtpPort == 465 {
-		smtpDefault = "tls"
-	}
-	a.smtpSecurity = normalizeSecurity(smtpSecurity, smtpDefault)
-	if a.smtpTLSVerify, err = tlsVerify("EMAIL_SMTP_TLS_VERIFY", "smtp_tls_verify"); err != nil {
-		return nil, err
-	}
-	if a.pollInterval, err = esecretInt(ctx, "EMAIL_POLL_INTERVAL", 15); err != nil {
-		return nil, err
-	}
-	a.skipAttachments = pyrepr.Truthy(extra["skip_attachments"])
-	if required, ok := extra["require_authenticated_sender"]; ok {
-		a.requireAuthenticatedSender = pyrepr.Truthy(required)
-	} else {
-		trust, err := esecretBool(ctx, "EMAIL_TRUST_FROM_HEADER", false)
-		if err != nil {
-			return nil, err
-		}
-		a.requireAuthenticatedSender = !trust
-	}
-	var authserv any = extra["authserv_id"]
-	if !pyrepr.Truthy(authserv) {
-		if authserv, err = secret(ctx, "EMAIL_AUTHSERV_ID"); err != nil {
-			return nil, err
-		}
-	}
-	authservText, err := stripSetting(authserv)
-	if err != nil {
-		return nil, err
-	}
-	a.authservID = pystr.Lower(authservText)
+	a.smtpSecurity = smtpSecurityFor(ctx, a.smtpPort)
+	a.smtpTLSVerify = settings.EmailSmtpTLSVerify.Get(sctx)
+	a.pollInterval = settings.EmailPollInterval.Get(sctx)
+	a.skipAttachments = settings.EmailSkipAttachments.Get(sctx)
+	a.requireAuthenticatedSender = settings.EmailRequireAuthenticatedSender.Get(sctx)
+	a.authservID = strings.ToLower(strings.TrimSpace(settings.EmailAuthservID.Get(sctx)))
 	pkgLog().Info(fmt.Sprintf("[Email] Adapter initialized for %s", a.address))
 	return a, nil
 }
@@ -578,7 +502,7 @@ func (a *EmailAdapter) pollLoop(ctx context.Context) error {
 		if err != nil {
 			pkgLog().Error(fmt.Sprintf("[Email] Poll error: %s", pyrepr.ExceptionMessage(err)))
 		}
-		timer := time.NewTimer(time.Duration(a.pollInterval) * time.Second)
+		timer := time.NewTimer(a.pollInterval)
 		select {
 		case <-timer.C:
 		case <-ctx.Done():
@@ -591,7 +515,7 @@ func (a *EmailAdapter) pollLoop(ctx context.Context) error {
 
 // Fetches unseen messages off the caller, dispatches what arrived and escalates a failed fetch as a fatal error
 func (a *EmailAdapter) checkInbox(ctx context.Context) error {
-	gate := func(candidate *fetchedMessage) (bool, error) {
+	gate := func(candidate *fetchedMessage) bool {
 		return a.senderAccepted(ctx, candidate.senderAddr, candidate)
 	}
 	fetched := make(chan []*fetchedMessage, 1)
@@ -638,7 +562,7 @@ func (a *EmailAdapter) markUIDConsumed(imap *pyimaplib.IMAP4, uid string) error 
 }
 
 // Fetches unseen messages, the bounded headers of each passing the pre authorization before its body is requested
-func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*fetchedMessage) (bool, error)) []*fetchedMessage {
+func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*fetchedMessage) bool) []*fetchedMessage {
 	results := []*fetchedMessage{}
 	err := a.inbox(ctx, func(imap *pyimaplib.IMAP4) error {
 		status, data, err := imap.UID("search", "UNSEEN")
@@ -670,11 +594,10 @@ func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*
 			accepted := false
 			candidate, authErr := a.parseFetchedHeaders(uid, rawHeaders)
 			if authErr == nil && candidate != nil {
-				accepted, authErr = preauthorize(candidate)
+				accepted = preauthorize(candidate)
 			}
 			if authErr != nil {
-				pkgLog().Error(fmt.Sprintf("[Email] Failed to authorize message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(authErr)))
-				accepted = false
+				pkgLog().Error(fmt.Sprintf("[Email] Failed to read the headers of message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(authErr)))
 			}
 			if !accepted {
 				if err := a.markUIDConsumed(imap, uid); err != nil {
@@ -730,7 +653,7 @@ func (a *EmailAdapter) messageMetadata(uid string, msg *pyemail.Message) (*fetch
 	senderName := decodeHeaderValue(from)
 	if strings.Contains(senderName, "<") {
 		head, _, _ := strings.Cut(senderName, "<")
-		senderName = pystr.StripChars(pystr.Strip(head), `"`)
+		senderName = strings.Trim(strings.TrimSpace(head), `"`)
 	}
 	subjectValue, ok := msg.Get("Subject")
 	if !ok {
@@ -777,16 +700,10 @@ func (a *EmailAdapter) parseFetchedMessage(ctx context.Context, uid string, rawE
 	return metadata, nil
 }
 
-// Whether the operator opted into any sender through the scoped allow all settings
-func allowAllSenders(ctx context.Context) (bool, error) {
-	if settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx)) {
-		return true, nil
-	}
-	value, err := secret(ctx, "EMAIL_ALLOW_ALL_USERS")
-	if err != nil {
-		return false, err
-	}
-	return truthyValues[pystr.Lower(pystr.Strip(value))], nil
+// Whether the operator opted into any sender, for every chat app or for email
+func allowAllSenders(ctx context.Context) bool {
+	sctx := gateway.SettingsContext(ctx)
+	return settings.GatewayAllowAllUsers.Get(sctx) || settings.EmailAllowAllUsers.Get(sctx)
 }
 
 // Whether the config answers unknown senders with a pairing code or a decline
@@ -795,65 +712,47 @@ func (a *EmailAdapter) answersUnknownSenders() bool {
 	if !ok {
 		return false
 	}
-	behavior = pystr.Lower(pystr.Strip(behavior))
+	behavior = strings.ToLower(strings.TrimSpace(behavior))
 	return behavior == "pair" || behavior == "decline"
 }
 
 // Pre dispatch sender gate, self mail, automated senders, authorization, then From authentication
-func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, msg *fetchedMessage) (bool, error) {
-	if senderAddr == pystr.Lower(a.address) {
-		return false, nil
+func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, msg *fetchedMessage) bool {
+	if senderAddr == strings.ToLower(a.address) {
+		return false
 	}
 	if automated, _ := isAutomatedSender(senderAddr, nil); automated {
 		pkgLog().Debug(fmt.Sprintf("[Email] Dropping automated sender at dispatch: %s", senderAddr))
-		return false, nil
+		return false
 	}
-	allowedSecret, err := secret(ctx, "EMAIL_ALLOWED_USERS")
-	if err != nil {
-		return false, err
-	}
-	allowedRaw := pystr.Strip(allowedSecret)
-	gatewayAllowed, err := secret(ctx, "GATEWAY_ALLOWED_USERS")
-	if err != nil {
-		return false, err
-	}
+	sctx := gateway.SettingsContext(ctx)
+	allowed := settings.EmailAllowedUsers.Strings(sctx)
 	listed := map[string]bool{}
-	for _, raw := range []string{allowedRaw, gatewayAllowed} {
-		decoded := gateway.DecodeJSONListLiteral(raw)
-		items, ok := decoded.([]any)
-		if !ok {
-			for _, part := range strings.Split(pyrepr.Str(decoded), ",") {
-				items = append(items, part)
-			}
-		}
-		for _, item := range items {
-			if entry := pystr.Strip(pyrepr.Str(item)); entry != "" {
-				listed[pystr.Lower(entry)] = true
-			}
+	for _, entries := range [][]string{allowed, settings.GatewayAllowedUsers.Strings(sctx)} {
+		for _, entry := range entries {
+			listed[strings.ToLower(entry)] = true
 		}
 	}
-	isListed := listed[pystr.Lower(senderAddr)]
+	isListed := listed[strings.ToLower(senderAddr)]
 	granted := false
 	localPart, _, _ := strings.Cut(senderAddr, "@")
 	switch {
 	case isListed:
 		granted = true
-	case listed[pystr.Lower(localPart)]:
+	case listed[strings.ToLower(localPart)]:
 		pkgLog().Debug(fmt.Sprintf("[Email] Dropping sender whose local part alone matches an allowlist entry: %s", senderAddr))
-		return false, nil
+		return false
 	default:
 		dm := "dm"
 		if verdict := a.IsSenderAuthorized(senderAddr, &dm, &senderAddr, gateway.AuthorizationOpts{}); verdict != nil {
 			granted = *verdict
-		} else if allowedRaw == "" {
-			if granted, err = allowAllSenders(ctx); err != nil {
-				return false, err
-			}
+		} else if len(allowed) == 0 {
+			granted = allowAllSenders(ctx)
 		}
 	}
 	if !granted && !a.answersUnknownSenders() {
 		pkgLog().Debug(fmt.Sprintf("[Email] Dropping unauthorized sender at dispatch (unknown senders are ignored): %s", senderAddr))
-		return false, nil
+		return false
 	}
 	if a.requireAuthenticatedSender && !msg.senderAuthenticated {
 		authReason := msg.authReason
@@ -870,19 +769,18 @@ func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, ms
 			}
 			pkgLog().Debug(fmt.Sprintf("[Email] Dropping %s sender with unauthenticated From: %s (%s)", kind, senderAddr, authReason))
 		}
-		return false, nil
+		return false
 	}
-	return true, nil
+	return true
 }
 
 // Converts a fetched email into a message event and dispatches it
 func (a *EmailAdapter) dispatchMessage(ctx context.Context, msg *fetchedMessage) error {
 	senderAddr := msg.senderAddr
-	accepted, err := a.senderAccepted(ctx, senderAddr, msg)
-	if err != nil || !accepted {
-		return err
+	if !a.senderAccepted(ctx, senderAddr, msg) {
+		return nil
 	}
-	subject, body := msg.subject, pystr.Strip(msg.body)
+	subject, body := msg.subject, strings.TrimSpace(msg.body)
 	text := body
 	if subject != "" && !strings.HasPrefix(subject, "Re:") {
 		text = fmt.Sprintf("[Subject: %s]\n\n%s", subject, body)
@@ -1061,7 +959,7 @@ func (a *EmailAdapter) sendWithFiles(ctx context.Context, toAddr, body string, f
 
 // Sends an image URL as a line of the email body
 func (a *EmailAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
-	return a.Send(ctx, chatID, pystr.Strip(caption+"\n\nImage: "+imageURL), replyTo, nil)
+	return a.Send(ctx, chatID, strings.TrimSpace(caption+"\n\nImage: "+imageURL), replyTo, nil)
 }
 
 // Sends one email per batch, local files attached and URL images linked in the body, the base loop on failure

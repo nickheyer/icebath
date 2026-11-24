@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -302,11 +302,11 @@ func promptUnauthorizedAccess(ctx context.Context, platformKey string) error {
 func cleanDiscordIDs(cleaned string) string {
 	var parts []string
 	for _, uid := range strings.Split(cleaned, ",") {
-		uid = pystr.Strip(uid)
+		uid = strings.TrimSpace(uid)
 		if strings.HasPrefix(uid, "<@") && strings.HasSuffix(uid, ">") {
-			uid = pystr.RstripChars(pystr.LstripChars(uid, "<@!"), ">")
+			uid = strings.TrimRight(strings.TrimLeft(uid, "<@!"), ">")
 		}
-		if strings.HasPrefix(pystr.Lower(uid), "user:") {
+		if strings.HasPrefix(strings.ToLower(uid), "user:") {
 			uid = string([]rune(uid)[5:])
 		}
 		if uid != "" {
@@ -388,14 +388,14 @@ func setupStandardPlatform(ctx context.Context, p SetupPlatform) error {
 			gatewayFacade.printInfo("  Skipped (can configure later)")
 		}
 	}
-	homeVar := pystr.Upper(p.Label) + "_HOME_CHANNEL"
+	homeVar := strings.ToUpper(p.Label) + "_HOME_CHANNEL"
 	homeVal, err := gatewayFacade.getEnvValue(ctx, homeVar)
 	if err != nil {
 		return err
 	}
 	if allowedValSet != "" && homeVal == "" && p.Label == "Telegram" {
 		first, _, _ := strings.Cut(allowedValSet, ",")
-		if first = pystr.Strip(first); first != "" {
+		if first = strings.TrimSpace(first); first != "" {
 			if err := offerHomeChannel(ctx, homeVar, first, "your user ID"); err != nil {
 				return err
 			}
@@ -437,7 +437,7 @@ func configurePlatform(ctx context.Context, p SetupPlatform) error {
 	if len(required) > 0 {
 		gatewayFacade.printInfo("  Set these env vars in ~/.icebath/.env: " + strings.Join(required, ", "))
 	} else {
-		gatewayFacade.printInfo(fmt.Sprintf("  Configure %s in config.yaml under gateway.platforms.%s", p.Label, p.Key))
+		gatewayFacade.printInfo(i18n.T(ctx, "gateway.setup_wizard.configure_in_config", "", map[string]any{"platform": p.Label, "key": p.Key}))
 	}
 	if p.InstallHint != "" {
 		gatewayFacade.printInfo("  " + p.InstallHint)

@@ -481,11 +481,7 @@ func (m *MemoryManager) AddProvider(ctx context.Context, p Provider) error {
 	}
 	var spill *tools.SpillConfig
 	if name != "builtin" {
-		tree, err := registryConfig(ctx, m.env)
-		if err != nil {
-			return err
-		}
-		cfg := tools.SpillConfigFromEnv(&tools.Env{Config: tree})
+		cfg := tools.SpillConfigFromEnv(ctx, m.env)
 		if !settings.MemoryPrefetchSpillEnabled.Get(registrySettings(ctx, m.env)) {
 			cfg.MaxChars = max(cfg.MaxChars*10, 100000)
 		}

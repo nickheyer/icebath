@@ -2,12 +2,8 @@ package agent
 
 import (
 	"context"
-	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -34,36 +30,29 @@ func agentCustomProviderEntries(a *AIAgent) []map[string]any {
 // True when the live route may return a clean stop reasoning payload as the answer
 func answerInReasoningCapability(ctx context.Context, a *AIAgent) bool {
 	baseURL := a.baseURL
-	prov := strings.ToLower(pystr.Strip(a.provider))
+	prov := strings.ToLower(strings.TrimSpace(a.provider))
 	if hostMatches, _ := pyurl.BaseURLHostMatches(baseURL, "openrouter.ai"); prov == "openrouter" || hostMatches {
 		return false
 	}
-	if mode := strings.ToLower(pystr.Strip(a.apiMode)); mode != "" && mode != "chat_completions" {
+	if mode := strings.ToLower(strings.TrimSpace(a.apiMode)); mode != "" && mode != "chat_completions" {
 		return false
 	}
 	model := a.model
 	customProviders := agentCustomProviderEntries(a)
-	var cfg map[string]any
-	loaded := true
 	if customProviders == nil {
-		tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-		if loaded = err == nil; loaded {
-			cfg = map[string]any(tree)
-		}
+		customProviders = provider.CustomProviderEntries(ctx)
 	}
-	if loaded {
-		if v, known := provider.CustomProviderModelCapability(model, baseURL, answerInReasoningCap, customProviders, cfg); known {
-			return v
-		}
+	if v, known := provider.CustomProviderModelCapability(model, baseURL, answerInReasoningCap, customProviders); known {
+		return v
 	}
-	requested := strings.ToLower(pystr.Strip(a.requestedProvider))
+	requested := strings.ToLower(strings.TrimSpace(a.requestedProvider))
 	ids := map[string]bool{}
 	for _, p := range []string{prov, requested} {
 		if strings.HasPrefix(p, "custom:") {
 			ids[provider.CustomProviderSlug(p, "")] = true
 		}
 	}
-	entries := provider.EntriesForRoute(baseURL, customProviders, cfg)
+	entries := provider.EntriesForRoute(baseURL, customProviders)
 	var live []map[string]any
 	for _, e := range entries {
 		name, _ := e["name"].(string)

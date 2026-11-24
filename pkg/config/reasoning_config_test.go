@@ -111,56 +111,17 @@ func TestReverseLookupFollowsFileOrder(t *testing.T) {
 	}
 }
 
-// Config of the TestResolveReasoningConfig cases, overrides nil standing for the Python or {} default
-func reasoningCfg(effort any, overrides map[string]any, defaultModel string) map[string]any {
-	if overrides == nil {
-		overrides = map[string]any{}
-	}
-	return map[string]any{
-		"model": map[string]any{"default": defaultModel},
-		"agent": map[string]any{"reasoning_effort": effort, "reasoning_overrides": overrides},
-	}
-}
-
-func TestPerModelOverrideWins(t *testing.T) {
-	cfg := reasoningCfg("medium", map[string]any{"claude-opus-4.5": "xhigh"}, "gpt-5")
-	if got := ResolveReasoningConfig(cfg, "claude-opus-4.5"); !reflect.DeepEqual(got, effortOf("xhigh")) {
-		t.Fatal(got)
-	}
-}
-
-func TestEmptyModelDerivesFromConfigDefault(t *testing.T) {
-	cfg := reasoningCfg("medium", map[string]any{"gpt-5": "high"}, "gpt-5")
-	if got := ResolveReasoningConfig(cfg, ""); !reflect.DeepEqual(got, effortOf("high")) {
-		t.Fatal(got)
-	}
-}
-
-func TestMalformedSectionsTolerated(t *testing.T) {
-	for _, cfg := range []any{
-		map[string]any{"agent": "oops", "model": 42},
-		map[string]any{"agent": nil, "model": nil},
-		map[string]any{"agent": map[string]any{"reasoning_overrides": "bad"}},
-	} {
-		if got := ResolveReasoningConfig(cfg, ""); got != nil {
-			t.Fatalf("malformed %v gave %v", cfg, got)
-		}
-	}
-}
-
 func TestInvalidOverrideValueFallsBackToGlobal(t *testing.T) {
-	cfg := reasoningCfg("medium", map[string]any{"gpt-5": "turbo-max"}, "gpt-5")
-	if got := ResolveReasoningConfig(cfg, "gpt-5"); !reflect.DeepEqual(got, effortOf("medium")) {
-		t.Fatal(got)
+	if got := ResolvePerModelReasoningEffort("gpt-5", map[string]any{"gpt-5": "turbo-max"}); got != nil {
+		t.Fatalf("an unparseable override must give way to the global effort, got %v", got)
 	}
 }
 
 func TestDictFormPassesBespokeTierVerbatimGloballyAndPerModel(t *testing.T) {
-	cfg := reasoningCfg(map[string]any{"enabled": true, "effort": "thinking"}, map[string]any{"lumo-max": map[string]any{"enabled": true, "effort": "fast"}}, "gpt-5")
-	if got := ResolveReasoningConfig(cfg, "gpt-5"); !reflect.DeepEqual(got, effortOf("thinking")) {
+	if got := ParseReasoningEffort(map[string]any{"enabled": true, "effort": "thinking"}); !reflect.DeepEqual(got, effortOf("thinking")) {
 		t.Fatal(got)
 	}
-	if got := ResolveReasoningConfig(cfg, "my-relay/lumo-max"); !reflect.DeepEqual(got, effortOf("fast")) {
+	if got := ResolvePerModelReasoningEffort("my-relay/lumo-max", map[string]any{"lumo-max": map[string]any{"enabled": true, "effort": "fast"}}); !reflect.DeepEqual(got, effortOf("fast")) {
 		t.Fatal(got)
 	}
 	if ParseReasoningEffort("thinking") != nil {
@@ -177,18 +138,6 @@ func TestDictFormDisabledOrEmptyEffort(t *testing.T) {
 	}
 	if ParseReasoningEffort(map[string]any{"effort": 0}) != nil {
 		t.Fatal("falsy dict level parsed")
-	}
-}
-
-func TestResolveReasoningConfigKeepsYAMLFalseAndModelKey(t *testing.T) {
-	if got := ResolveReasoningConfig(nil, ""); got != nil {
-		t.Fatal(got)
-	}
-	if got := ResolveReasoningConfig(reasoningCfg(false, nil, "gpt-5"), ""); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
-		t.Fatalf("YAML false re-enabled thinking: %v", got)
-	}
-	if got := ResolveReasoningConfig(Tree{"model": map[string]any{"model": " gpt-5 "}, "agent": map[string]any{"reasoning_overrides": map[string]any{"gpt-5": "low"}}}, ""); !reflect.DeepEqual(got, effortOf("low")) {
-		t.Fatal(got)
 	}
 }
 

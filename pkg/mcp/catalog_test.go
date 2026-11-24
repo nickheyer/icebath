@@ -132,7 +132,7 @@ func parseManifestFile(path string) (*CatalogEntry, error) {
 
 func mustEntry(t *testing.T, name string) *CatalogEntry {
 	t.Helper()
-	e, err := GetEntry(name)
+	e, err := GetEntry(context.Background(), name)
 	if err != nil || e == nil {
 		t.Fatalf("catalog entry %q missing: %v", name, err)
 	}
@@ -141,7 +141,7 @@ func mustEntry(t *testing.T, name string) *CatalogEntry {
 
 func mustList(t *testing.T) []*CatalogEntry {
 	t.Helper()
-	entries, err := ListCatalog()
+	entries, err := ListCatalog(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +742,7 @@ func TestCatalogShippedManifestConnectorSlugsAreValidAndUnique(t *testing.T) {
 
 func TestCatalogAllShippedManifestsParseAndAreVersionLocked(t *testing.T) {
 	t.Setenv("ICEBATH_OPTIONAL_MCPS", "")
-	fsys, label := catalogRoot()
+	fsys, label := catalogRoot(context.Background())
 	matches, err := fs.Glob(fsys, "*/manifest.yaml")
 	if err != nil || len(matches) == 0 {
 		t.Fatalf("%v %v", err, matches)
@@ -790,10 +790,10 @@ func TestCatalogAllShippedManifestsParseAndAreVersionLocked(t *testing.T) {
 func TestCatalogProcessSuppliedCatalogRootRemainsSupported(t *testing.T) {
 	dir, _ := catalogFixture(t)
 	writeManifest(t, dir, "demo", basicManifest("demo", nil))
-	if e, err := GetEntry("official/demo"); err != nil || e == nil || e.Name != "demo" {
+	if e, err := GetEntry(context.Background(), "official/demo"); err != nil || e == nil || e.Name != "demo" {
 		t.Fatalf("%v %v", e, err)
 	}
-	if e, err := GetEntry("missing"); err != nil || e != nil {
+	if e, err := GetEntry(context.Background(), "missing"); err != nil || e != nil {
 		t.Fatalf("%v %v", e, err)
 	}
 }

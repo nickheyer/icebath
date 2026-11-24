@@ -7,7 +7,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -40,9 +39,9 @@ func TestKeylessEnabledReadsTheSettingWithBool(t *testing.T) {
 		web  any
 		want bool
 	}{
-		{map[string]any{"keyless_fallback": "false"}, true},
+		{map[string]any{"keyless_fallback": "false"}, false},
 		{map[string]any{"keyless_fallback": false}, false},
-		{map[string]any{"keyless_fallback": nil}, false},
+		{map[string]any{"keyless_fallback": nil}, true},
 		{map[string]any{"keyless_fallback": 0}, false},
 		{map[string]any{"keyless_fallback": "enabled"}, true},
 		{map[string]any{}, true},
@@ -50,12 +49,13 @@ func TestKeylessEnabledReadsTheSettingWithBool(t *testing.T) {
 		{"x", true},
 		{[]any{1}, true},
 	} {
-		env := &Env{Config: config.Tree{"web": c.web}}
+		env := &Env{Home: t.TempDir()}
+		writeHomeConfigDoc(t, env, map[string]any{"web": c.web})
 		if keylessEnabled(env) != c.want {
 			t.Fatalf("%#v: want %v", c.web, c.want)
 		}
 	}
-	if !keylessEnabled(nil) || !keylessEnabled(&Env{Config: config.Tree{}}) {
+	if !keylessEnabled(nil) || !keylessEnabled(&Env{Home: t.TempDir()}) {
 		t.Fatal("unset setting enables the keyless tier")
 	}
 }

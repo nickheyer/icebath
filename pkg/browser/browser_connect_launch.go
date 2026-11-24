@@ -220,7 +220,7 @@ func (l ChromeDebugLaunch) Hint() string {
 	for _, a := range l.Attempts {
 		if a.State == "exited" && a.StderrTail != "" {
 			lines := pystr.Splitlines(a.StderrTail, false)
-			return filepath.Base(a.Binary) + " exited before the debug port opened: " + pystr.Strip(lines[len(lines)-1])
+			return filepath.Base(a.Binary) + " exited before the debug port opened: " + strings.TrimSpace(lines[len(lines)-1])
 		}
 	}
 	return ""
@@ -235,7 +235,7 @@ func readStderrTail(p string) string {
 	if len(data) > stderrTailLimit {
 		data = data[len(data)-stderrTailLimit:]
 	}
-	return pystr.Strip(strings.ToValidUTF8(string(data), "�"))
+	return strings.TrimSpace(strings.ToValidUTF8(string(data), "�"))
 }
 
 // Launches a Chromium family browser with remote debugging, trying each candidate until one stays up

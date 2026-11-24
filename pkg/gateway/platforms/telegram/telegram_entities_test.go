@@ -1,6 +1,8 @@
 package telegram
 
-import "testing"
+import (
+	"testing"
+)
 
 func link(offset, length, url any) MessageEntity {
 	return MessageEntity{Type: "text_link", Offset: offset, Length: length, URL: url}

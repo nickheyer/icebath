@@ -58,7 +58,7 @@ func InteractiveSetup(ctx context.Context) error {
 			cli.PrintWarning(q.required + " is required — skipping Google Chat setup")
 			return nil
 		}
-		if err := cfg.SaveEnvValue(ctx, q.env, pystr.Strip(value)); err != nil {
+		if err := cfg.SaveEnvValue(ctx, q.env, strings.TrimSpace(value)); err != nil {
 			return err
 		}
 	}
@@ -86,7 +86,7 @@ func InteractiveSetup(ctx context.Context) error {
 		return err
 	}
 	if home := cli.Prompt("Home space for cron/notification delivery (e.g. spaces/AAAA, or empty)", existingHome, false); home != "" {
-		if err := cfg.SaveEnvValue(ctx, "GOOGLE_CHAT_HOME_CHANNEL", pystr.Strip(home)); err != nil {
+		if err := cfg.SaveEnvValue(ctx, "GOOGLE_CHAT_HOME_CHANNEL", strings.TrimSpace(home)); err != nil {
 			return err
 		}
 	}

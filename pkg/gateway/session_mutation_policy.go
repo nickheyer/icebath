@@ -224,7 +224,7 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 		delete(request, "route_derived")
 	}
 	for key, value := range overrides {
-		if key != "cwd" {
+		if key != "cwd" && key != "api_key" {
 			request[key] = value
 		}
 	}
@@ -287,8 +287,11 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 		}
 		policy.Toolsets = sortedNames(enabled)
 	}
-	if _, has := launch["skills"]; has {
-		if policy.SkillsPrompt, err = renderLaunchSkills(ctx, request, sid); err != nil {
+	if names, has := launch["skills"]; has {
+		if listed, isList := names.([]any); isList && len(listed) == 0 {
+			delete(request, "skills")
+			policy.SkillsPrompt = nil
+		} else if policy.SkillsPrompt, err = renderLaunchSkills(ctx, request, sid); err != nil {
 			return nil, err
 		}
 	}

@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -385,26 +387,26 @@ func RenderCodexTOMLSection(servers map[string]*pyjson.Object, plugins []map[str
 
 // Places the managed block before the user's first table header so its root keys stay at the root
 func codexInsertManagedBlockAtTopLevel(userText, managedBlock string) string {
-	if pystr.Strip(userText) == "" {
+	if strings.TrimSpace(userText) == "" {
 		return managedBlock
 	}
 	lines := pystr.Splitlines(userText, true)
 	first := -1
 	for i, ln := range lines {
-		if strings.HasPrefix(pystr.Lstrip(ln), "[") {
+		if strings.HasPrefix(strings.TrimLeftFunc(ln, unicode.IsSpace), "[") {
 			first = i
 			break
 		}
 	}
 	if first < 0 {
-		prefix := pystr.RstripChars(userText, "\n")
+		prefix := strings.TrimRight(userText, "\n")
 		if prefix == "" {
 			return managedBlock
 		}
 		return prefix + "\n\n" + managedBlock
 	}
-	prefix := pystr.RstripChars(strings.Join(lines[:first], ""), "\n")
-	suffix := pystr.LstripChars(strings.Join(lines[first:], ""), "\n")
+	prefix := strings.TrimRight(strings.Join(lines[:first], ""), "\n")
+	suffix := strings.TrimLeft(strings.Join(lines[first:], ""), "\n")
 	if prefix == "" {
 		return managedBlock + "\n" + suffix
 	}
@@ -416,7 +418,7 @@ func codexStripUnmanagedPluginTables(tomlText string) string {
 	var out strings.Builder
 	inPluginTable := false
 	for _, line := range pystr.Splitlines(tomlText, true) {
-		stripped := pystr.Lstrip(line)
+		stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 		if codexLooksLikeTableHeader(stripped) {
 			inPluginTable = strings.HasPrefix(stripped, "[plugins.")
 		}
@@ -439,11 +441,11 @@ func codexUnmanagedMCPServerNames(tomlText string) (map[string]bool, error) {
 		}
 	}
 	for _, line := range pystr.Splitlines(tomlText, false) {
-		stripped := pystr.Lstrip(line)
+		stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 		if !codexLooksLikeTableHeader(stripped) || !strings.HasPrefix(stripped, "[mcp_servers.") {
 			continue
 		}
-		namePart := pystr.Strip(stripped[1:strings.Index(stripped, "]")][len("mcp_servers."):])
+		namePart := strings.TrimSpace(stripped[1:strings.Index(stripped, "]")][len("mcp_servers."):])
 		if strings.HasPrefix(namePart, "\"") {
 			end := strings.Index(namePart[1:], "\"")
 			if end < 0 {
@@ -465,7 +467,7 @@ func codexLooksLikeTableHeader(strippedLine string) bool {
 	if !strings.HasPrefix(strippedLine, "[") {
 		return false
 	}
-	head := pystr.Rstrip(strings.SplitN(strippedLine, "#", 2)[0])
+	head := strings.TrimRightFunc(strings.SplitN(strippedLine, "#", 2)[0], unicode.IsSpace)
 	return strings.HasSuffix(head, "]") && !strings.Contains(head[:strings.Index(head, "]")+1], "=")
 }
 
@@ -477,7 +479,7 @@ func codexStripExistingManagedBlock(tomlText string) string {
 	var out strings.Builder
 	inManaged := false
 	for _, line := range pystr.Splitlines(tomlText, true) {
-		bare := pystr.RstripChars(line, "\n")
+		bare := strings.TrimRight(line, "\n")
 		if bare == CodexMigrationMarker {
 			inManaged = true
 			continue
@@ -487,7 +489,7 @@ func codexStripExistingManagedBlock(tomlText string) string {
 				inManaged = false
 				continue
 			}
-			stripped := pystr.Lstrip(line)
+			stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 			managed := slices.ContainsFunc(codexManagedHeaders, func(h string) bool { return strings.HasPrefix(stripped, h) })
 			if !strings.HasPrefix(stripped, "[") || managed {
 				continue
@@ -529,7 +531,7 @@ var codexQueryCodexPlugins = func(codexHome string, timeout float64, codexBin st
 			if !cxIsObject(plugin) || !cxTruthy(cxGet(plugin, "installed")) {
 				continue
 			}
-			availability := pystr.Upper(cxStr(plugin, "availability", ""))
+			availability := strings.ToUpper(cxStr(plugin, "availability", ""))
 			if availability != "" && availability != "AVAILABLE" {
 				pkgLog().Debug(fmt.Sprintf("skipping plugin %s: availability=%s", pyrepr.Str(cxGet(plugin, "name")), availability))
 				continue
@@ -567,7 +569,7 @@ func codexLooksLikeTestTempdir(path string) bool {
 	if path == "" {
 		return false
 	}
-	lower := pystr.Lower(path)
+	lower := strings.ToLower(path)
 	return slices.ContainsFunc(codexTestTempdirNeedles, func(n string) bool { return strings.Contains(lower, n) })
 }
 

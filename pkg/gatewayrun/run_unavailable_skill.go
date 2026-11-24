@@ -37,13 +37,13 @@ func skillSlugFromFrontmatter(skillMD string) (string, string) {
 	}
 	declared := ""
 	for _, line := range pystr.Splitlines(content[3:3+end], false) {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "name:") {
-			value := pystr.Strip(strings.SplitN(line, ":", 2)[1])
+			value := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
 			if len(value) >= 2 && value[0] == value[len(value)-1] && (value[0] == '"' || value[0] == '\'') {
 				value = value[1 : len(value)-1]
 			}
-			declared = pystr.Strip(value)
+			declared = strings.TrimSpace(value)
 			break
 		}
 	}

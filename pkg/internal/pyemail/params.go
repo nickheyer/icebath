@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -47,9 +46,9 @@ func parseParam(s string) []string {
 		}
 		f := s[:end]
 		if i := strings.Index(f, "="); i >= 0 {
-			f = pystr.Lower(pystr.Strip(f[:i])) + "=" + pystr.Strip(f[i+1:])
+			f = strings.ToLower(strings.TrimSpace(f[:i])) + "=" + strings.TrimSpace(f[i+1:])
 		}
-		plist = append(plist, pystr.Strip(f))
+		plist = append(plist, strings.TrimSpace(f))
 		s = s[end:]
 	}
 	return plist
@@ -153,9 +152,9 @@ func GetParams(header string) ([]Param, error) {
 	for _, p := range parseParam(header) {
 		name, val, ok := strings.Cut(p, "=")
 		if ok {
-			params = append(params, [2]string{pystr.Strip(name), pystr.Strip(val)})
+			params = append(params, [2]string{strings.TrimSpace(name), strings.TrimSpace(val)})
 		} else {
-			params = append(params, [2]string{pystr.Strip(p), ""})
+			params = append(params, [2]string{strings.TrimSpace(p), ""})
 		}
 	}
 	decoded, err := decodeParams(params)

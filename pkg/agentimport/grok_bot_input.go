@@ -136,8 +136,8 @@ func resolveExportFiles(ctx context.Context, args *Args) ([]string, int, error) 
 			}
 			return nil, 0, err
 		}
-		answer = pystr.Strip(answer)
-		if low := pystr.Lower(answer); low == "q" || low == "quit" {
+		answer = strings.TrimSpace(answer)
+		if low := strings.ToLower(answer); low == "q" || low == "quit" {
 			return nil, 0, nil
 		}
 		if answer == "" {

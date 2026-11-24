@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -19,10 +21,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -88,7 +90,7 @@ var (
 // Reports whether an environment variable holds one of the shared truthy strings
 func envTruthy(name string) bool {
 	v, ok := os.LookupEnv(name)
-	return ok && truthyStrings[pystr.Lower(pystr.Strip(v))]
+	return ok && truthyStrings[strings.ToLower(strings.TrimSpace(v))]
 }
 
 // Resolves a config gate from booleans, gate words, a model substring list, or the default model list
@@ -97,27 +99,27 @@ func modelGate(setting any, model string, defaultModels []string) bool {
 	case bool:
 		return v
 	case string:
-		if on, ok := gateWords[pystr.Lower(v)]; ok {
+		if on, ok := gateWords[strings.ToLower(v)]; ok {
 			return on
 		}
 	case []any:
-		ml := pystr.Lower(model)
+		ml := strings.ToLower(model)
 		for _, p := range v {
-			if s, ok := p.(string); ok && strings.Contains(ml, pystr.Lower(s)) {
+			if s, ok := p.(string); ok && strings.Contains(ml, strings.ToLower(s)) {
 				return true
 			}
 		}
 		return false
 	case []string:
-		ml := pystr.Lower(model)
+		ml := strings.ToLower(model)
 		for _, s := range v {
-			if strings.Contains(ml, pystr.Lower(s)) {
+			if strings.Contains(ml, strings.ToLower(s)) {
 				return true
 			}
 		}
 		return false
 	}
-	ml := pystr.Lower(model)
+	ml := strings.ToLower(model)
 	for _, p := range defaultModels {
 		if strings.Contains(ml, p) {
 			return true
@@ -141,7 +143,7 @@ func resolvePlatformHint(a *AIAgent, platformKey, defaultHint string) string {
 	}
 	text := func(v any) string {
 		if s, ok := v.(string); ok {
-			return pystr.Strip(s)
+			return strings.TrimSpace(s)
 		}
 		return ""
 	}
@@ -151,7 +153,7 @@ func resolvePlatformHint(a *AIAgent, platformKey, defaultHint string) string {
 		base = defaultHint
 	}
 	if appendText != "" {
-		return pystr.Strip(base + "\n\n" + appendText)
+		return strings.TrimSpace(base + "\n\n" + appendText)
 	}
 	return base
 }
@@ -434,7 +436,7 @@ func skillsPrompt(ctx context.Context, a *AIAgent) (string, error) {
 	}
 	var compact map[string]bool
 	if cwd, err := tools.ResolveContextCwd(a.env, true); err == nil {
-		compact = tools.CodingCompactSkillCategories(a.env, a.platform, cwd)
+		compact = tools.CodingCompactSkillCategories(ctx, a.env, a.platform, cwd)
 	}
 	if len(compact) == 0 {
 		compact = nil
@@ -482,13 +484,13 @@ func autoLoadParts(ctx context.Context, a *AIAgent) []string {
 
 // Bot Mode teammate protocol and capability epoch, only in a bot's Bot Chat session, marking the prompt timeless
 func botModeParts(ctx context.Context, a *AIAgent) []string {
-	title := pystr.Strip(a.sessionTitleHint)
+	title := strings.TrimSpace(a.sessionTitleHint)
 	if title == "" && a.sessionDB != nil && a.sessionID != "" {
 		t, _, err := a.sessionDB.GetSessionTitle(ctx, a.sessionID)
 		if err != nil {
 			return nil
 		}
-		title = pystr.Strip(t)
+		title = strings.TrimSpace(t)
 	}
 	if title != botmode.BotChatTitle {
 		return nil
@@ -573,14 +575,14 @@ func defaultPlatformHint(ctx context.Context, platformKey string) string {
 		}
 	}
 	if platformKey == "telegram" && hint != "" && telegramRichMessagesEnabled(ctx) {
-		hint = pystr.Rstrip(hint) + " " + TelegramRichMessagesHint
+		hint = strings.TrimRightFunc(hint, unicode.IsSpace) + " " + TelegramRichMessagesHint
 	}
 	return hint
 }
 
 // The cron delivery channel's hint with its override, empty without an auto deliver platform
 func cronDeliveryHint(ctx context.Context, a *AIAgent) string {
-	key := pystr.Strip(pystr.Lower(tools.SessionEnvValue(a.env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM")))
+	key := strings.TrimSpace(strings.ToLower(tools.SessionEnvValue(a.env, "ICEBATH_CRON_AUTO_DELIVER_PLATFORM")))
 	if key == "" || key == "cron" {
 		return ""
 	}
@@ -593,62 +595,19 @@ func cronDeliveryHint(ctx context.Context, a *AIAgent) string {
 
 // PlatformHint is the platform hint with its override and a cron agent's delivery hint
 func PlatformHint(ctx context.Context, a *AIAgent) string {
-	key := pystr.Strip(pystr.Lower(a.platform))
+	key := strings.TrimSpace(strings.ToLower(a.platform))
 	hint := resolvePlatformHint(a, key, defaultPlatformHint(ctx, key))
 	if key == "cron" {
 		if delivery := cronDeliveryHint(ctx, a); delivery != "" {
-			hint = pystr.Strip(hint + "\n\n" + delivery)
+			hint = strings.TrimSpace(hint + "\n\n" + delivery)
 		}
 	}
 	return hint
 }
 
-// Python (x or {}).get(key), false when a truthy non dict would raise
-func cfgGet(v any, key string) (any, bool) {
-	if !config.PyTruthy(v) {
-		return nil, true
-	}
-	m, ok := pyDict(v)
-	if !ok {
-		return nil, false
-	}
-	return m[key], true
-}
-
-// Reads a nested config key chain the way chained (x or {}).get calls do
-func cfgDig(v any, keys ...string) (any, bool) {
-	for _, k := range keys {
-		var ok bool
-		if v, ok = cfgGet(v, k); !ok {
-			return nil, false
-		}
-	}
-	return v, true
-}
-
-// Telegram rich_messages with platforms.telegram.extra overriding gateway.platforms.telegram.extra, false on any read failure
+// Telegram rich_messages of the profile ctx serves, the setting the Telegram adapter reads
 func telegramRichMessagesEnabled(ctx context.Context) bool {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return false
-	}
-	gw, ok := cfgDig(map[string]any(cfg), "gateway", "platforms", "telegram", "extra")
-	if !ok {
-		return false
-	}
-	top, ok := cfgDig(map[string]any(cfg), "platforms", "telegram", "extra")
-	if !ok {
-		return false
-	}
-	merged := map[string]any{}
-	for _, src := range []any{gw, top} {
-		if m, ok := pyDict(src); ok {
-			for k, v := range m {
-				merged[k] = v
-			}
-		}
-	}
-	return config.PyTruthy(merged["rich_messages"])
+	return settings.TelegramExtraRichMessages.Get(settings.WithPlatform(ctx, "telegram"))
 }
 
 // IANA key, a differing abbreviation and the UTC offset of now
@@ -777,7 +736,7 @@ func guidanceParts(ctx context.Context, a *AIAgent) []string {
 	}
 	if modelGate(a.toolUseEnforcement, a.model, ToolUseEnforcementModels) {
 		parts = append(parts, ToolUseEnforcementGuidance)
-		ml := pystr.Lower(a.model)
+		ml := strings.ToLower(a.model)
 		if strings.Contains(ml, "gemini") || strings.Contains(ml, "gemma") {
 			parts = append(parts, GoogleModelOperationalGuidance)
 		}
@@ -903,7 +862,7 @@ func codingParts(a *AIAgent) ([]string, []string, []string) {
 		block := pin.block
 		replay = &block
 	}
-	prefix, workspace, trailing := codingSystemPromptPartsFn(a.env, a.platform, cwd, a.model, a.validToolNames, replay)
+	prefix, workspace, trailing := codingSystemPromptPartsFn(a.homeContext(), a.env, a.platform, cwd, a.model, a.validToolNames, replay)
 	if replay == nil {
 		block := ""
 		if len(workspace) > 0 {
@@ -951,7 +910,7 @@ func contextFilesPart(ctx context.Context, a *AIAgent, ctxLen *int, soulLoaded b
 func joinTier(parts []string) string {
 	var kept []string
 	for _, p := range parts {
-		if s := pystr.Strip(p); s != "" {
+		if s := strings.TrimSpace(p); s != "" {
 			kept = append(kept, s)
 		}
 	}

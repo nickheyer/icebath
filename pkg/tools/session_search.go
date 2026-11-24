@@ -233,7 +233,7 @@ func sessionSearchFloat(v any) (float64, bool) {
 		}
 		return 0, true
 	case string:
-		f, err := strconv.ParseFloat(strings.ReplaceAll(pystr.Strip(x), "_", ""), 64)
+		f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(x), "_", ""), 64)
 		return f, err == nil
 	}
 	return 0, false
@@ -318,7 +318,7 @@ func parseISOBound(value any) (*sessionSearchBound, error) {
 	if value == nil {
 		return nil, nil
 	}
-	text := pystr.Strip(pyrepr.Str(value))
+	text := strings.TrimSpace(pyrepr.Str(value))
 	if text == "" {
 		return nil, nil
 	}
@@ -357,7 +357,7 @@ func coerceStartedTS(value any) *int64 {
 		if s == "" {
 			return nil
 		}
-		text := pystr.Strip(s)
+		text := strings.TrimSpace(s)
 		if f, ok := sessionSearchFloat(text); ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
 			v := int64(f)
 			return &v
@@ -408,7 +408,7 @@ func normalizeExcludeSessionIDs(raw any) []string {
 	for _, item := range items {
 		sid := ""
 		if s, ok := item.(string); ok {
-			sid = pystr.Strip(s)
+			sid = strings.TrimSpace(s)
 		}
 		if sid != "" && !containsString(out, sid) {
 			out = append(out, sid)
@@ -526,7 +526,7 @@ func shapeMessage(m *pyjson.Object, anchorID any, maxContentLen int) *pyjson.Obj
 
 // Session reference the agent writes, the profile segment only when it can be named
 func sessionLink(ctx context.Context, sessionID string, profile any) string {
-	name := pystr.Strip(ostr(profile))
+	name := strings.TrimSpace(ostr(profile))
 	if name == "" {
 		name = ProfileStoreHooks.ActiveName(ctx)
 		if name == "custom" {
@@ -605,7 +605,7 @@ func shapeAll(rows []*pyjson.Object, anchorID any, maxContentLen int) []any {
 
 // Discovery shaped result when the query matches a session title, nil otherwise
 func titleMatchResult(ctx context.Context, db SessionSearchStore, query, currentLineageRoot string) *pyjson.Object {
-	titleQuery := strings.Trim(pystr.Strip(query), "`'\"")
+	titleQuery := strings.Trim(strings.TrimSpace(query), "`'\"")
 	if titleQuery == "" {
 		return nil
 	}
@@ -922,7 +922,7 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 
 // Another profile's state database opened read only, nil for the current profile
 func resolveProfileDB(ctx context.Context, profile any) (SessionSearchStore, error) {
-	if profile == nil || pystr.Strip(pyrepr.Str(profile)) == "" {
+	if profile == nil || strings.TrimSpace(pyrepr.Str(profile)) == "" {
 		return nil, nil
 	}
 	canon, err := ProfileStoreHooks.Normalize(pyrepr.Str(profile))
@@ -1167,14 +1167,14 @@ func scroll(ctx context.Context, db SessionSearchStore, sessionID string, around
 
 // Mode dispatch, scroll when an anchor is set, read for a bare session id, browse without a query
 func sessionSearchDispatch(ctx context.Context, a SessionSearchArgs, db SessionSearchStore, currentSessionID string) string {
-	if sid, ok := a.SessionID.(string); ok && pystr.Strip(sid) != "" {
+	if sid, ok := a.SessionID.(string); ok && strings.TrimSpace(sid) != "" {
 		if a.AroundMessageID != nil {
-			return scroll(ctx, db, pystr.Strip(sid), a.AroundMessageID, a.Window, currentSessionID)
+			return scroll(ctx, db, strings.TrimSpace(sid), a.AroundMessageID, a.Window, currentSessionID)
 		}
-		return readScoped(ctx, db, pystr.Strip(sid), a.Profile)
+		return readScoped(ctx, db, strings.TrimSpace(sid), a.Profile)
 	}
 	query, isText := a.Query.(string)
-	browse := !pyrepr.Truthy(a.Query) || !isText || pystr.Strip(query) == ""
+	browse := !pyrepr.Truthy(a.Query) || !isText || strings.TrimSpace(query) == ""
 	def := 3
 	if browse {
 		def = 10
@@ -1185,7 +1185,7 @@ func sessionSearchDispatch(ctx context.Context, a SessionSearchArgs, db SessionS
 	}
 	sortOrder := ""
 	if s, ok := a.Sort.(string); ok {
-		norm := pystr.Lower(pystr.Strip(s))
+		norm := strings.ToLower(strings.TrimSpace(s))
 		if norm == "newest" || norm == "oldest" {
 			sortOrder = norm
 		}
@@ -1201,16 +1201,16 @@ func sessionSearchDispatch(ctx context.Context, a SessionSearchArgs, db SessionS
 	var roleFilter []string
 	if rf, ok := a.RoleFilter.(string); ok {
 		for _, r := range strings.Split(rf, ",") {
-			if r = pystr.Strip(r); r != "" {
+			if r = strings.TrimSpace(r); r != "" {
 				roleFilter = append(roleFilter, r)
 			}
 		}
 	}
 	detail := "adaptive"
-	if d, ok := a.Detail.(string); ok && pystr.Lower(pystr.Strip(d)) == "full" {
+	if d, ok := a.Detail.(string); ok && strings.ToLower(strings.TrimSpace(d)) == "full" {
 		detail = "full"
 	}
-	return discover(ctx, db, pystr.Strip(query), roleFilter, limit, sortOrder, detail, currentSessionID, a.Profile,
+	return discover(ctx, db, strings.TrimSpace(query), roleFilter, limit, sortOrder, detail, currentSessionID, a.Profile,
 		afterTS, beforeTS, normalizeExcludeSessionIDs(a.ExcludeSessionIDs))
 }
 
@@ -1221,7 +1221,7 @@ func SessionSearch(ctx context.Context, a SessionSearchArgs) string {
 		embProfile, embID, _ := strings.Cut(sid, "/")
 		if embID != "" {
 			a.SessionID = embID
-			if embProfile != "" && (a.Profile == nil || pystr.Strip(pyrepr.Str(a.Profile)) == "") {
+			if embProfile != "" && (a.Profile == nil || strings.TrimSpace(pyrepr.Str(a.Profile)) == "") {
 				a.Profile = embProfile
 			}
 		}

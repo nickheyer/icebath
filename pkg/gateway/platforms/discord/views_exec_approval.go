@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"sync"
@@ -8,7 +10,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -43,7 +44,7 @@ func (a *DiscordAdapter) newExecApprovalView(ctx context.Context, sessionKey str
 	allowPermanent, allowSession, smartDenied bool, requestID string) (*execApprovalView, error) {
 	admins := strSet{}
 	for id := range adminUserIDs {
-		if s := pystr.Strip(id); s != "" {
+		if s := strings.TrimSpace(id); s != "" {
 			admins[s] = struct{}{}
 		}
 	}

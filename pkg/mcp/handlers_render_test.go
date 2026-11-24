@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -114,8 +113,8 @@ func TestHandlerReturnsTheNativeImageEnvelope(t *testing.T) {
 	handlerServer(t, "srv", func(string, map[string]any) (any, error) {
 		return map[string]any{"content": []any{map[string]any{"type": "image", "data": png, "mimeType": "image/png"}}}, nil
 	})
-	env := &tools.Env{Home: h, Values: &sync.Map{}, Config: config.Tree{"agent": map[string]any{"image_input_mode": "native"},
-		"model": map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-5"}}}
+	writeStartupConfig(t, h, "agent:\n  image_input_mode: native\nmodel:\n  provider: anthropic\n  default: claude-sonnet-4-5\n")
+	env := &tools.Env{Home: h, Values: &sync.Map{}}
 	out := decodeResult(t, makeToolHandler("srv", "shot", 30, true)(context.Background(), &tools.Call{Name: "mcp__srv__shot", Env: env, SessionID: "s1"}))
 	content, _ := out["content"].([]any)
 	if out["_multimodal"] != true || len(content) != 3 || content[2].(map[string]any)["type"] != "image_url" {

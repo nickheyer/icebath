@@ -2,6 +2,7 @@ package tools
 
 import (
 	"container/list"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -10,13 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-)
 
-// Embed byte budget bounds, 256 KB keeps a 1568px screenshot cheap enough to ride the session
-const (
-	defaultEmbedTargetBytes = 256 * 1024
-	minEmbedTargetBytes     = 64 * 1024
-	maxEmbedTargetBytes     = 4 * 1024 * 1024
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Default per image embed cap inside a delegated subagent, the main agent stays unlimited
@@ -42,25 +38,10 @@ var repeatCounts = struct {
 	count map[repeatKey]int
 }{order: list.New(), index: map[repeatKey]*list.Element{}, count: map[repeatKey]int{}}
 
-// Value under the vision config section, nil when unset
-func cfgVision(env *Env, key string) any {
-	return cfgTree(env).Sub("vision")[key]
-}
-
-// Embed byte budget from vision.embed_target_bytes clamped to 64 KiB through 4 MiB, the default on a bad value
+// Embed byte budget of the env's profile, clamped to the bounds of its setting
 func resolveEmbedTargetBytes(env *Env) int {
-	raw, present := cfgTree(env).Sub("vision")["embed_target_bytes"]
-	if !present || raw == nil {
-		return defaultEmbedTargetBytes
-	}
-	if _, isBool := raw.(bool); isBool {
-		return defaultEmbedTargetBytes
-	}
-	target, ok := pyInt(raw)
-	if !ok {
-		return defaultEmbedTargetBytes
-	}
-	return min(max(target, minEmbedTargetBytes), maxEmbedTargetBytes)
+	s := settings.VisionEmbedTargetBytes
+	return min(max(s.Get(envHomeCtx(context.Background(), env)), *s.Min), *s.Max)
 }
 
 // ResolveEmbedTargetBytes exposes the history embed byte budget to other tool packages
@@ -89,13 +70,8 @@ func pyInt(v any) (int, bool) {
 
 // Per image embed cap for this session, zero meaning unlimited
 func resolveRepeatCap(env *Env) int {
-	raw := cfgVision(env, "max_calls_per_image")
-	if raw != nil && raw != "" {
-		if _, isBool := raw.(bool); !isBool {
-			if n, ok := pyInt(raw); ok {
-				return max(n, 0)
-			}
-		}
+	if n, ok := settings.VisionMaxCallsPerImage.Lookup(envHomeCtx(context.Background(), env)); ok {
+		return max(n, 0)
 	}
 	if isDelegatedChildProcessContext(env) {
 		return subagentRepeatCap

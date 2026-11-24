@@ -1,6 +1,8 @@
 package a2a
 
 import (
+	"unicode"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"math"
 	"net"
 	"net/http"
 	"os"
@@ -20,7 +21,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -31,17 +31,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	defaultPort        = 9900
 	minOrphanTimeout   = 300.0
 	maxOrphanTimeout   = 86400.0
 	watchdogInterval   = 60 * time.Second
 	maxBody            = 1_048_576
 	sseKeepalive       = 5.0
-	defaultDescription = "Icebath Agent — a general-purpose agent reachable over A2A."
 	maxForwardedInputs = 1000
 	threadTimeoutMax   = 9223372036.854776
 )
@@ -112,56 +111,33 @@ var (
 		}
 		return home.Dir(ctx)
 	}
-	loadServedConfig = func(ctx context.Context) (map[string]any, error) {
-		tree, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-		return map[string]any(tree), err
-	}
 )
 
-// Seconds to wait for the agent to answer an inbound task, at least one
-func replyTimeout() float64 {
-	raw, ok := os.LookupEnv("A2A_REPLY_TIMEOUT")
-	if !ok {
-		raw = "300"
-	}
-	v, err := pyint.ParseFloat(raw)
-	if err != nil {
-		return 300
-	}
-	if v > 1 {
-		return v
-	}
-	return 1
+// Seconds to wait for the agent to answer an inbound task from a2a.reply_timeout, at least one
+func replyTimeout(ctx context.Context) float64 {
+	return max(1, settings.A2aReplyTimeout.Get(gateway.SettingsContext(ctx)).Seconds())
 }
 
 // Orphan grace never expiring before the reply window yet bounded by a day
-func orphanTimeout() float64 {
-	grace := minOrphanTimeout
-	if rt := replyTimeout(); rt > grace {
-		grace = rt
-	}
-	return min(maxOrphanTimeout, grace)
+func orphanTimeout(reply float64) float64 {
+	return min(maxOrphanTimeout, max(minOrphanTimeout, reply))
 }
 
-// Scoped A2A_AGENT_NAME, else icebath plus the hostname
-func defaultAgentName(ctx context.Context) (string, error) {
-	name, err := gateway.GetScopedSecret(ctx, "A2A_AGENT_NAME", "", false)
-	if err != nil {
-		return "", err
-	}
-	if name = pystr.Strip(name); name != "" {
-		return name, nil
+// Name from a2a.agent_name, else icebath plus the hostname
+func defaultAgentName(ctx context.Context) string {
+	if name := strings.TrimSpace(settings.A2aAgentName.Get(gateway.SettingsContext(ctx))); name != "" {
+		return name
 	}
 	host, err := os.Hostname()
 	if err != nil {
-		return "icebath-agent", nil
+		return "icebath-agent"
 	}
-	return "icebath-" + host, nil
+	return "icebath-" + host
 }
 
 // Single segment slug of a served agent, empty for the root agent
 func cleanSlug(value string) string {
-	slug := strings.Trim(pystr.Strip(value), "/")
+	slug := strings.Trim(strings.TrimSpace(value), "/")
 	if slug == "" || slug == "default" || slug == "root" {
 		return ""
 	}
@@ -171,7 +147,7 @@ func cleanSlug(value string) string {
 
 // Base URL with a trailing slash joined with the served agent prefix
 func joinURL(base, prefix string) string {
-	base = pystr.Strip(base)
+	base = strings.TrimSpace(base)
 	if base == "" {
 		base = "/"
 	}
@@ -246,6 +222,7 @@ type A2AAdapter struct {
 	port               int
 	host               string
 	agentName          string
+	replyWait          float64
 	advertisedToolsets []any
 	activeProfile      string
 	publicURL          string
@@ -280,71 +257,25 @@ func NewA2AAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (adapter *A
 			adapter, err = nil, perr
 		}
 	}()
-	a := &A2AAdapter{tasks: NewTaskStore(), turns: NewTurnTracker(), rateLimiter: NewRateLimiter(),
+	a := &A2AAdapter{tasks: NewTaskStore(), turns: NewTurnTracker(), rateLimiter: NewRateLimiter(rateLimit(ctx)), replyWait: replyTimeout(ctx),
 		pending: map[string]pendingEntry{}, pendingOrder: map[string][]string{}, activeTasks: map[string]struct{}{},
 		forwardedInputs: pydict.New[string, struct{}]()}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.Platform("a2a"), a)
 	a.prepareTask, a.forwardToProfile = a.prepareTaskImpl, a.forwardToProfileImpl
-	extra := map[string]any{}
-	if cfg != nil && cfg.Extra != nil {
-		extra = cfg.Extra
-	}
+	sctx := gateway.SettingsContext(ctx)
 	a.securityContext = CaptureSecurityContext(ctx)
-	portEnv, err := gateway.GetScopedSecret(ctx, "A2A_PORT", "", false)
-	if err != nil {
-		return nil, err
-	}
-	var rawPort any = portEnv
-	if portEnv == "" {
-		rawPort = defaultPort
-		if v, ok := extra["port"]; ok {
-			rawPort = v
-		}
-	}
-	port, err := pyint.Of(rawPort)
-	if err != nil {
-		return nil, err
-	}
-	switch {
-	case port.IsInt64():
-		a.port = int(port.Int64())
-	case port.Sign() < 0:
-		a.port = math.MinInt
-	default:
-		a.port = math.MaxInt
-	}
+	a.port = settings.A2aPort.Get(sctx)
 	a.host = a.securityContext.ResolveBindHost()
-	if a.agentName, err = defaultAgentName(ctx); err != nil {
-		return nil, err
-	}
-	configured := pyIter(pyOr(extra["advertised_toolsets"], []any{}))
-	if len(configured) == 0 {
-		raw, err := gateway.GetScopedSecret(ctx, "A2A_ADVERTISED_TOOLSETS", "", false)
-		if err != nil {
-			return nil, err
-		}
-		for _, t := range strings.Split(raw, ",") {
-			configured = append(configured, t)
-		}
-	}
+	a.agentName = defaultAgentName(ctx)
 	a.advertisedToolsets = []any{}
-	for _, t := range configured {
-		if pystr.Strip(pyrepr.Str(t)) == "" {
-			continue
+	for _, t := range settings.A2aAdvertisedToolsets.Strings(sctx) {
+		if t = strings.TrimSpace(t); t != "" {
+			a.advertisedToolsets = append(a.advertisedToolsets, t)
 		}
-		s, ok := t.(string)
-		if !ok {
-			panic(attributeError(t, "strip"))
-		}
-		a.advertisedToolsets = append(a.advertisedToolsets, pystr.Strip(s))
 	}
 	a.activeProfile = activeProfileName(ctx)
-	publicURL, err := gateway.GetScopedSecret(ctx, "A2A_PUBLIC_URL", "", false)
-	if err != nil {
-		return nil, err
-	}
-	a.publicURL = pystr.Strip(publicURL)
-	if a.agents, err = a.loadServedAgents(ctx, extra); err != nil {
+	a.publicURL = strings.TrimSpace(settings.A2aPublicURL.Get(sctx))
+	if a.agents, err = a.loadServedAgents(ctx); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -448,7 +379,7 @@ func (a *A2AAdapter) failOrphansOnce() []string {
 	a.pendingMu.Lock()
 	active := maps.Clone(a.activeTasks)
 	a.pendingMu.Unlock()
-	timeout := orphanTimeout()
+	timeout := orphanTimeout(a.replyWait)
 	failed := a.tasks.FailOrphans(timeout, active)
 	for _, tid := range failed {
 		pkgLog().Warn(fmt.Sprintf("A2A: orphaned task %s marked failed (timeout %gs)", tid, timeout))
@@ -457,24 +388,11 @@ func (a *A2AAdapter) failOrphansOnce() []string {
 	return failed
 }
 
-// Served agents from platforms.a2a.extra.agents or the config fallback, the root always the live session
-func (a *A2AAdapter) loadServedAgents(ctx context.Context, extra map[string]any) (*pydict.Dict[string, *servedAgent], error) {
-	raw := pyOr(extra["agents"], extra["served_agents"])
-	if raw == nil {
-		cfg, err := loadServedConfig(ctx)
-		if err != nil || cfg == nil {
-			cfg = map[string]any{}
-		}
-		if v := cfg["a2a_served_agents"]; pyrepr.Truthy(v) {
-			raw = v
-		} else {
-			raw = pyGet(pyOr(cfg["a2a"], map[string]any{}), "served_agents", nil)
-		}
-	}
-	defaultDesc, err := gateway.GetScopedSecret(ctx, "A2A_AGENT_DESCRIPTION", defaultDescription, false)
-	if err != nil {
-		return nil, err
-	}
+// Served agents from a2a.served_agents, the root always the live session
+func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*pydict.Dict[string, *servedAgent], error) {
+	sctx := gateway.SettingsContext(ctx)
+	var raw any = settings.A2aServedAgents.Get(sctx)
+	defaultDesc := settings.A2aAgentDescription.Get(sctx)
 	agents := pydict.New[string, *servedAgent]()
 	agents.Set("", &servedAgent{Profile: a.activeProfile, Local: true, Name: a.agentName, Description: defaultDesc,
 		AdvertisedToolsets: a.advertisedToolsets})
@@ -511,18 +429,18 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context, extra map[string]any)
 			pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with reserved/invalid path %s", pyrepr.StrRepr(slug), pyrepr.StrRepr(pathSegment)))
 			continue
 		}
-		profile := pystr.Strip(pyrepr.Str(pyOr(pyGet(val, "profile", nil), slug)))
+		profile := strings.TrimSpace(pyrepr.Str(pyOr(pyGet(val, "profile", nil), slug)))
 		toolsets := pyOr(pyOr(pyOr(pyGet(val, "advertised_toolsets", nil), pyGet(val, "toolsets", nil)), pyGet(val, "capabilities", nil)), []any{})
 		if s, ok := toolsets.(string); ok {
 			split := []any{}
 			for _, t := range strings.Split(s, ",") {
-				if t = pystr.Strip(t); t != "" {
+				if t = strings.TrimSpace(t); t != "" {
 					split = append(split, t)
 				}
 			}
 			toolsets = split
 		}
-		tenant := pystr.Strip(pyrepr.Str(pyOr(pyGet(val, "tenant", nil), slug)))
+		tenant := strings.TrimSpace(pyrepr.Str(pyOr(pyGet(val, "tenant", nil), slug)))
 		if tenant != "" {
 			if owner, dup := tenants[tenant]; dup {
 				pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with duplicate tenant %s already used by %s",
@@ -538,7 +456,7 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context, extra map[string]any)
 		local := pyrepr.Truthy(pyGet(val, "local", nil)) || profile == "" || profile == "default" || profile == a.activeProfile
 		timeoutValue := pyGet(val, "timeout", nil)
 		if !pyrepr.Truthy(timeoutValue) {
-			timeoutValue = replyTimeout()
+			timeoutValue = a.replyWait
 		}
 		timeout, err := pyint.Of(timeoutValue)
 		if err != nil {
@@ -560,7 +478,7 @@ func (a *A2AAdapter) rootAgent() *servedAgent {
 
 // Public URL when given, else the bind host and port with an IPv6 literal bracketed
 func (a *A2AAdapter) baseURL(publicURL string) string {
-	if s := pystr.Strip(publicURL); s != "" {
+	if s := strings.TrimSpace(publicURL); s != "" {
 		return s
 	}
 	host := a.host
@@ -652,9 +570,9 @@ func (a *A2AAdapter) buildCard(ctx context.Context, publicURL string, agent *ser
 		name = a.agentName
 	}
 	if description == "" {
-		description = defaultDescription
+		description = settings.A2aAgentDescription.Default
 	}
-	return BuildAgentCard(AgentCardOptions{Name: name, URL: joinURL(a.baseURL(publicURL), agent.Path), Description: description,
+	return BuildAgentCard(ctx, AgentCardOptions{Name: name, URL: joinURL(a.baseURL(publicURL), agent.Path), Description: description,
 		Skills: a.advertisedSkills(ctx, agent), Streaming: agent.Local, PushNotifications: true,
 		AuthRequired: !a.securityContext.LocalhostOnly(), Tenant: agent.Tenant})
 }
@@ -813,7 +731,13 @@ func (a *A2AAdapter) prepareTaskImpl(params *pyjson.Object, peer string, agent *
 	if !retry {
 		turn = a.turns.Track(contextID)
 	}
-	maxTurns := MaxPingpongTurns()
+	a.mu.Lock()
+	settingsCtx := a.loopCtx
+	a.mu.Unlock()
+	if settingsCtx == nil {
+		settingsCtx = ctx
+	}
+	maxTurns := MaxPingpongTurns(settingsCtx)
 	recInput := ""
 	if forwarded {
 		recInput = inputID
@@ -889,7 +813,7 @@ func (a *A2AAdapter) forwardToProfileImpl(agent *servedAgent, peer, contextID, f
 	if profile == "" {
 		profile = agent.Slug
 	}
-	profile = pystr.Strip(profile)
+	profile = strings.TrimSpace(profile)
 	ownerHome := profileHome(ctx, profile)
 	if ownerHome == "" {
 		return "[profile unavailable]", StateFailed
@@ -907,7 +831,7 @@ func (a *A2AAdapter) forwardToProfileImpl(agent *servedAgent, peer, contextID, f
 		}
 		timeout := agent.Timeout
 		if timeout == 0 {
-			n, err := pyint.Of(replyTimeout())
+			n, err := pyint.Of(a.replyWait)
 			if err != nil {
 				return nil, err
 			}
@@ -955,10 +879,10 @@ func (a *A2AAdapter) recordOutcome(taskID, contextID, peer, state, reply string,
 func (a *A2AAdapter) finalizeTask(pending *pendingTask, state, reply string) (string, string) {
 	defer a.popPending(pending.taskID)
 	reply = redactOutbound(reply)
-	stripped := pystr.Lstrip(reply)
-	if state == StateCompleted && strings.HasPrefix(pystr.Upper(stripped), InputRequiredMarker) {
+	stripped := strings.TrimLeftFunc(reply, unicode.IsSpace)
+	if state == StateCompleted && strings.HasPrefix(strings.ToUpper(stripped), InputRequiredMarker) {
 		state = StateInputRequired
-		reply = pystr.Strip(pystr.Slice(stripped, len([]rune(InputRequiredMarker)), len([]rune(stripped))))
+		reply = strings.TrimSpace(pystr.Slice(stripped, len([]rune(InputRequiredMarker)), len([]rune(stripped))))
 	}
 	started := pending.started
 	a.recordOutcome(pending.taskID, pending.contextID, pending.peer, state, reply, &started)
@@ -994,7 +918,7 @@ func awaitFuture(fut *TaskWatch, deadline float64, keepalive func() error, onTim
 }
 
 func (a *A2AAdapter) awaitReply(pending *pendingTask, keepalive func() error) (string, string) {
-	return awaitFuture(pending.future, pending.started+replyTimeout(), keepalive, StateFailed, "[agent did not reply in time]")
+	return awaitFuture(pending.future, pending.started+a.replyWait, keepalive, StateFailed, "[agent did not reply in time]")
 }
 
 // SendMessage answered once the agent replied, the v1.0 response wrapping the task
@@ -1090,7 +1014,7 @@ func (a *A2AAdapter) rpcTasksSubscribe(q *a2aRequest, reqID any, params *pyjson.
 		if fut == nil {
 			return q.sseWrite(SSEDone())
 		}
-		state, reply := awaitFuture(fut, nowSeconds()+replyTimeout(), q.keepalive, rec.State, rec.Reply)
+		state, reply := awaitFuture(fut, nowSeconds()+a.replyWait, q.keepalive, rec.State, rec.Reply)
 		return a.emitTerminal(q, taskID, rec.ContextID, state, reply, reqID)
 	}()
 	if err != nil {

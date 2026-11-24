@@ -1,6 +1,8 @@
 package plugins
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
@@ -72,9 +74,9 @@ func RunDirectoryHook(ctx context.Context, eventType, hookDir string, argv []str
 		return nil, fmt.Errorf("hook command timed out after %ds", timeout)
 	case r.ReturnCode != nil && *r.ReturnCode != 0:
 		return nil, fmt.Errorf("hook command exited with status %d: %s", *r.ReturnCode,
-			pystr.Slice(pystr.Strip(r.Stderr), 0, shellHookStderrLimit))
+			pystr.Slice(strings.TrimSpace(r.Stderr), 0, shellHookStderrLimit))
 	}
-	stdout := pystr.Strip(r.Stdout)
+	stdout := strings.TrimSpace(r.Stdout)
 	if stdout == "" {
 		return nil, nil
 	}

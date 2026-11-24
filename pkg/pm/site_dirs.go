@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"unicode"
+
 	"errors"
 	"os"
 	"runtime"
@@ -80,10 +82,10 @@ func addSitePackage(entries []string, sitedir, name string, known map[string]boo
 		}
 	}
 	for _, line := range pystr.Splitlines(content, false) {
-		if strings.HasPrefix(line, "#") || pystr.Strip(line) == "" || strings.HasPrefix(line, "import ") || strings.HasPrefix(line, "import\t") {
+		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" || strings.HasPrefix(line, "import ") || strings.HasPrefix(line, "import\t") {
 			continue
 		}
-		path, ok := fsEncodeLine(pystr.Rstrip(line))
+		path, ok := fsEncodeLine(strings.TrimRightFunc(line, unicode.IsSpace))
 		if !ok {
 			continue
 		}

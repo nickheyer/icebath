@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var versionRe = regexp.MustCompile(`(?i)^v?(?:(?:([0-9]+)!)?([0-9]+(?:\.[0-9]+)*)` +
@@ -38,7 +37,7 @@ type Version struct {
 
 // Parses text like packaging.version.Version, an InvalidVersion for text outside the grammar
 func Parse(text string) (*Version, error) {
-	m := versionRe.FindStringSubmatch(pystr.Strip(text))
+	m := versionRe.FindStringSubmatch(strings.TrimSpace(text))
 	if m == nil {
 		return nil, &InvalidVersion{Text: text}
 	}

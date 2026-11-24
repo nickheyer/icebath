@@ -35,8 +35,8 @@ func LocalPolicyForSource(ctx context.Context, runner AuthorityRunner, source *S
 }
 
 // Platform block of a config the loader picks, a top level block first
-func PlatformSection(yamlCfg map[string]any, name string, gatewayPlatforms any) (any, bool) {
-	return platformSection(yamlCfg, name, gatewayPlatforms)
+func PlatformSection(yamlCfg map[string]any, name string) (any, bool) {
+	return platformSection(yamlCfg, name)
 }
 
 // Authority of the active runtime scope of a runner

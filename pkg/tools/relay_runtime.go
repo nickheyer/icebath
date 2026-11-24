@@ -24,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -275,7 +274,7 @@ func RelayRuntimeMetadata(runtimeID string, extra map[string]any) map[string]any
 
 // Relay scope input for a known logical working directory
 func relayScopeInput(cwd string) map[string]any {
-	if s := pystr.Strip(cwd); s != "" {
+	if s := strings.TrimSpace(cwd); s != "" {
 		return map[string]any{"cwd": s}
 	}
 	return map[string]any{}
@@ -1463,7 +1462,7 @@ func relayConfiguredPluginInputs(ctx context.Context) (string, error) {
 
 // File the plugins toml variable selects after checking that it parses
 func relayExplicitPluginsTOML() (string, error) {
-	configured := pystr.Strip(os.Getenv(RelayPluginsConfigEnv))
+	configured := strings.TrimSpace(os.Getenv(RelayPluginsConfigEnv))
 	if configured == "" {
 		return "", nil
 	}

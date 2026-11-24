@@ -62,14 +62,14 @@ func cliText(ctx context.Context, env *tools.Env, binary string, timeout float64
 }
 
 // Stripped stdout plus stderr
-func combinedOutput(cp *completedProcess) string { return pystr.Strip(cp.Stdout + cp.Stderr) }
+func combinedOutput(cp *completedProcess) string { return strings.TrimSpace(cp.Stdout + cp.Stderr) }
 
 // First stripped line of the text, nil when blank
 func firstLine(text string) *string {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	l := pystr.Strip(pystr.Splitlines(pystr.Strip(text), false)[0])
+	l := strings.TrimSpace(pystr.Splitlines(strings.TrimSpace(text), false)[0])
 	return &l
 }
 
@@ -127,7 +127,7 @@ func versionToken(text string) string {
 			return m[1]
 		}
 	}
-	return pystr.Lower(pystr.Strip(text))
+	return strings.ToLower(strings.TrimSpace(text))
 }
 
 // Identity block comparing the resolved binary's own version with the health report's
@@ -190,7 +190,7 @@ func textItems(result *pyjson.Object) []string {
 // First non blank stripped text item, else the default
 func firstText(result *pyjson.Object, def string) string {
 	for _, t := range textItems(result) {
-		if s := pystr.Strip(t); s != "" {
+		if s := strings.TrimSpace(t); s != "" {
 			return s
 		}
 	}
@@ -282,7 +282,7 @@ func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*pyjson.Object,
 	if line == "" {
 		tail := "(empty)"
 		if b, err := io.ReadAll(p.stderr); err == nil {
-			lines := pystr.Splitlines(pystr.Strip(textModeDecode(b)), false)
+			lines := pystr.Splitlines(strings.TrimSpace(textModeDecode(b)), false)
 			lines = lines[max(0, len(lines)-3):]
 			if len(lines) > 0 {
 				items := make([]any, len(lines))
@@ -460,7 +460,7 @@ func driveFallbackProbes(ctx context.Context, env *tools.Env, binary string, tim
 
 // Lowercased Python platform.system, unknown when empty
 var doctorPlatformName = func() string {
-	if s := pystr.Lower(pyplatform.System()); s != "" {
+	if s := strings.ToLower(pyplatform.System()); s != "" {
 		return s
 	}
 	return "unknown"
@@ -546,12 +546,12 @@ func cliDoctorRow(txt *string) *doctorRow {
 		return nil
 	}
 	status := "skip"
-	if strings.Contains(pystr.Lower(*txt), "[ok") || strings.Contains(*txt, "ok  ]") {
+	if strings.Contains(strings.ToLower(*txt), "[ok") || strings.Contains(*txt, "ok  ]") {
 		status = "pass"
 	}
 	data := pyjson.NewObject()
 	data.Set("snippet", pyPrefix(*txt, 2000))
-	return &doctorRow{status: status, message: pystr.Strip(pystr.Splitlines(*txt, false)[0]), data: data}
+	return &doctorRow{status: status, message: strings.TrimSpace(pystr.Splitlines(*txt, false)[0]), data: data}
 }
 
 var fallbackProbeTable = []struct {
@@ -612,7 +612,7 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 	if reasonShort == "" {
 		reasonShort = "health_report unavailable"
 	}
-	reasonShort = pystr.Strip(reasonShort)
+	reasonShort = strings.TrimSpace(reasonShort)
 	if pystr.Len(reasonShort) > 160 {
 		reasonShort = pyPrefix(reasonShort, 157) + "..."
 	}
@@ -684,7 +684,7 @@ func applyStaleTCCGuard(report *pyjson.Object) *pyjson.Object {
 			if h := c.Vals["hint"]; pyrepr.Truthy(h) {
 				prev = pyrepr.Str(h)
 			}
-			c.Set("hint", pystr.Strip(prev+" "+staleTCCGrantHint(field)))
+			c.Set("hint", strings.TrimSpace(prev+" "+staleTCCGrantHint(field)))
 		}
 	}
 	return report
@@ -787,7 +787,7 @@ func cuaDaemonUnits(configDir string) []cuDaemonUnit {
 			}
 			text := strings.TrimPrefix(textModeDecode(raw), "\uFEFF")
 			for _, line := range pystr.Splitlines(text, false) {
-				stripped := pystr.Strip(line)
+				stripped := strings.TrimSpace(line)
 				var tokens []string
 				if strings.HasPrefix(stripped, src.key+"=") {
 					_, rest, _ := strings.Cut(stripped, "=")

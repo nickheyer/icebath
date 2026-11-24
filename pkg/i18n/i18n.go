@@ -72,21 +72,21 @@ type BundledLocales struct {
 	Label string
 }
 
-// Bundled locale tree from ICEBATH_BUNDLED_LOCALES when it is a directory, else the embedded catalogs
-func localesDir() BundledLocales {
-	override := strings.TrimSpace(os.Getenv("ICEBATH_BUNDLED_LOCALES"))
+// Bundled locale tree of the profile of ctx: the catalog folder of the settings when it is a directory, else the embedded catalogs
+func localesDir(ctx context.Context) BundledLocales {
+	override := strings.TrimSpace(settings.DisplayLanguageCatalogs.Get(ctx))
 	if override != "" {
 		if info, err := os.Stat(override); err == nil && info.IsDir() {
 			return BundledLocales{FS: os.DirFS(override), Label: override}
 		}
-		pkgLog().Warn(fmt.Sprintf("ICEBATH_BUNDLED_LOCALES points to a non-directory path (%s); falling back to bundled/source locale resolution", override))
+		pkgLog().Warn(fmt.Sprintf("%s points to a non-directory path (%s); falling back to the built-in catalogs", settings.DisplayLanguageCatalogs.Key, override))
 	}
 	sub, _ := fs.Sub(bundledFS, "locales")
 	return BundledLocales{FS: sub, Label: "locales"}
 }
 
-// LocalesDir reports the bundled locale tree in effect
-func LocalesDir() BundledLocales { return localesDirFn() }
+// LocalesDir reports the bundled locale tree in effect for the profile of ctx
+func LocalesDir(ctx context.Context) BundledLocales { return localesDirFn(ctx) }
 
 func currentHome(ctx context.Context) string { return home.Dir(ctx) }
 
@@ -140,7 +140,7 @@ func LanguageSurfaces(ctx context.Context, h string) map[string][]string {
 		h = currentHome(ctx)
 	}
 	pairs := map[langSurface]bool{}
-	for k := range bundledSurfaces(LocalesDir()) {
+	for k := range bundledSurfaces(LocalesDir(home.WithOverride(ctx, h))) {
 		pairs[k] = true
 	}
 	candidates := map[langSurface]bool{}
@@ -205,9 +205,9 @@ func normalizeLang(ctx context.Context, value any, h string) string {
 	return DefaultLanguage
 }
 
-// One bundled catalog flattened, empty and logged on any failure
-func loadBundled(name string) map[string]string {
-	b := LocalesDir()
+// One bundled catalog of the profile of ctx flattened, empty and logged on any failure
+func loadBundled(ctx context.Context, name string) map[string]string {
+	b := LocalesDir(ctx)
 	file := name + ".yaml"
 	path := filepath.Join(b.Label, file)
 	info, err := fs.Stat(b.FS, file)
@@ -223,8 +223,8 @@ func loadBundled(name string) map[string]string {
 	return flat
 }
 
-// LoadBundled returns one bundled catalog flattened
-func LoadBundled(name string) map[string]string { return loadBundled(name) }
+// LoadBundled returns one bundled catalog of the profile of ctx flattened
+func LoadBundled(ctx context.Context, name string) map[string]string { return loadBundled(ctx, name) }
 
 // Merged catalog for a language in a home, packs over overlay over bundled, cached per pair
 func loadCatalog(ctx context.Context, lang, h string) map[string]string {
@@ -238,7 +238,7 @@ func loadCatalog(ctx context.Context, lang, h string) map[string]string {
 		return cached
 	}
 	catalogMu.Unlock()
-	merged := loadBundled(lang)
+	merged := loadBundled(home.WithOverride(ctx, h), lang)
 	for k, v := range OverlayLayer(h, lang, CoreSurface) {
 		merged[k] = v
 	}
@@ -257,7 +257,7 @@ func SurfaceCatalog(ctx context.Context, lang, surface string) map[string]string
 	lang = normalizeLang(ctx, lang, h)
 	merged := map[string]string{}
 	if surface != CoreSurface {
-		for k, v := range loadBundled(lang + "." + surface) {
+		for k, v := range loadBundled(home.WithOverride(ctx, h), lang+"."+surface) {
 			merged[k] = v
 		}
 	}

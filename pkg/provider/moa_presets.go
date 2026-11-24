@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // MoASlot is one model of a mix
@@ -48,12 +48,22 @@ func moaSlotMapping(slot MoASlot, reference bool) map[string]any {
 	return out
 }
 
-// Puts the reference models and the aggregator in the named preset of the loaded MoA section and saves the config, a new preset starting from the default one and the first preset becoming the default
-func moaStorePreset(ctx context.Context, cfg config.Tree, moa map[string]any, name string, refs []any, aggregator map[string]any) error {
-	presets := anyMap(moa["presets"])
+// Presets of the profile of ctx as written, the built-in ones while the person stores none, so a change keeps the list the person sees
+func moaWritablePresets(ctx context.Context) map[string]any {
+	if stored, ok := settings.Stored(ctx, settings.MoaPresets.Key); ok {
+		if presets := config.AsMap(stored); presets != nil {
+			return presets
+		}
+	}
+	return config.AsMap(settings.MoaPresets.DefaultValue())
+}
+
+// Puts the reference models and the aggregator in the named preset through the settings writer, a new preset starting from the default one; while only the built-in presets apply they are written with it so they stay listed
+func moaStorePreset(ctx context.Context, name string, refs []any, aggregator map[string]any) error {
+	presets := moaWritablePresets(ctx)
 	current, ok := presets[name].(map[string]any)
 	if !ok {
-		current = anyMap(presets[pyStr(moa["default_preset"])])
+		current = anyMap(presets[pyStr(moaView(ctx)["default_preset"])])
 	}
 	updated := make(map[string]any, len(current)+2)
 	for k, v := range current {
@@ -61,15 +71,21 @@ func moaStorePreset(ctx context.Context, cfg config.Tree, moa map[string]any, na
 	}
 	updated["reference_models"] = refs
 	updated["aggregator"] = aggregator
-	presets[name] = updated
-	if _, has := moa["default_preset"]; !has {
-		moa["default_preset"] = name
+	if settings.MoaPresets.Source(ctx) != settings.SourceDefault {
+		_, err := settings.MoaPresets.SetEntry(ctx, name, updated)
+		return err
 	}
-	return moaSave(ctx, cfg, moa)
+	if !ok {
+		config.AppendMappingKey(presets, name)
+	}
+	presets[name] = updated
+	_, err := settings.Set(ctx, settings.MoaPresets.Key, presets, settings.Global)
+	return err
 }
 
-// Takes the named preset out of the loaded MoA section and saves the config, refusing an unknown one and the only one, the default moving on and the active name cleared when they named it
-func moaDeletePreset(ctx context.Context, cfg config.Tree, moa map[string]any, name string) error {
+// Takes the named preset out of the stored presets through the settings writer, refusing an unknown one and the only one, the default moving on and the active name cleared when they named it
+func moaDeletePreset(ctx context.Context, name string) error {
+	moa := moaView(ctx)
 	presets := anyMap(moa["presets"])
 	if _, ok := presets[name]; !ok {
 		return &MoAExitError{Message: "Unknown MoA preset: " + name}
@@ -77,39 +93,30 @@ func moaDeletePreset(ctx context.Context, cfg config.Tree, moa map[string]any, n
 	if len(presets) <= 1 {
 		return &MoAExitError{Message: "Cannot delete the only MoA preset"}
 	}
+	if _, err := settings.MoaPresets.DeleteEntry(ctx, name); err != nil {
+		return err
+	}
 	delete(presets, name)
+	var changes []config.KeyValue
 	if moa["default_preset"] == name {
-		moa["default_preset"] = moaPresetOrder(presets)[0]
+		changes = append(changes, config.KeyValue{Key: settings.MoaDefaultPreset.Key, Value: moaPresetOrder(presets)[0]})
 	}
 	if moa["active_preset"] == name {
-		moa["active_preset"] = ""
+		changes = append(changes, config.KeyValue{Key: settings.MoaActivePreset.Key})
 	}
-	return moaSave(ctx, cfg, moa)
-}
-
-// Config of the home in the context with its MoA section
-func moaLoad(ctx context.Context) (config.Tree, map[string]any, error) {
-	h := home.Dir(ctx)
-	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, moaSection(cfg), nil
+	return setProfileSettings(ctx, changes...)
 }
 
 // MoAPresets is every saved mix of the home in the context, in stored order
 func MoAPresets(ctx context.Context) ([]MoAPreset, error) {
-	cfg, moa, err := moaLoad(ctx)
-	if err != nil {
-		return nil, err
-	}
+	moa := moaView(ctx)
 	presets := anyMap(moa["presets"])
 	out := make([]MoAPreset, 0, len(presets))
 	for _, name := range moaPresetOrder(presets) {
 		stored := anyMap(presets[name])
 		aggregator := anyMap(stored["aggregator"])
 		preset := MoAPreset{Name: name, Default: moa["default_preset"] == name, Active: moa["active_preset"] == name,
-			Aggregator: moaSlotOf(aggregator), Notice: moaProviderMismatchNotice(cfg, aggregator)}
+			Aggregator: moaSlotOf(aggregator), Notice: moaProviderMismatchNotice(ctx, aggregator)}
 		refs, _ := stored["reference_models"].([]any)
 		for _, slot := range refs {
 			preset.References = append(preset.References, moaSlotOf(anyMap(slot)))
@@ -130,10 +137,6 @@ func SaveMoAPreset(ctx context.Context, name string, references []MoASlot, aggre
 	case aggregator.Provider == "" || aggregator.Model == "":
 		return &MoAExitError{Message: "A mix needs an aggregator model"}
 	}
-	cfg, moa, err := moaLoad(ctx)
-	if err != nil {
-		return err
-	}
 	refs := make([]any, 0, len(references))
 	for _, slot := range references {
 		if slot.Provider == "" || slot.Model == "" {
@@ -141,28 +144,20 @@ func SaveMoAPreset(ctx context.Context, name string, references []MoASlot, aggre
 		}
 		refs = append(refs, moaSlotMapping(slot, true))
 	}
-	return moaStorePreset(ctx, cfg, moa, name, refs, moaSlotMapping(aggregator, false))
+	return moaStorePreset(ctx, name, refs, moaSlotMapping(aggregator, false))
 }
 
 // DeleteMoAPreset removes the named mix, refusing the only one
 func DeleteMoAPreset(ctx context.Context, name string) error {
-	cfg, moa, err := moaLoad(ctx)
-	if err != nil {
-		return err
-	}
-	return moaDeletePreset(ctx, cfg, moa, pyStripSpace(name))
+	return moaDeletePreset(ctx, pyStripSpace(name))
 }
 
 // SetDefaultMoAPreset makes the named mix the one a run uses when it names none
 func SetDefaultMoAPreset(ctx context.Context, name string) error {
-	cfg, moa, err := moaLoad(ctx)
-	if err != nil {
-		return err
-	}
 	name = pyStripSpace(name)
-	if _, ok := anyMap(moa["presets"])[name]; !ok {
+	if _, ok := anyMap(moaView(ctx)["presets"])[name]; !ok {
 		return &MoAExitError{Message: "Unknown MoA preset: " + name}
 	}
-	moa["default_preset"] = name
-	return moaSave(ctx, cfg, moa)
+	_, err := settings.Set(ctx, settings.MoaDefaultPreset.Key, name, settings.Global)
+	return err
 }

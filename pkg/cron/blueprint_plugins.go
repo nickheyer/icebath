@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -31,10 +30,10 @@ func pyReMatches(re interface {
 
 func blueprintText(name string, value any) (string, error) {
 	s, ok := value.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return "", fmt.Errorf("%s must be a non-empty string", name)
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 // Members of an iterable of non empty strings, a string or non iterable value refused
@@ -46,7 +45,7 @@ func blueprintStrings(name string, value any) ([]string, error) {
 	out := make([]string, 0, len(items))
 	for _, v := range items {
 		s, ok := v.(string)
-		if !ok || pystr.Strip(s) == "" {
+		if !ok || strings.TrimSpace(s) == "" {
 			return nil, fmt.Errorf("%s must be a list of non-empty strings", name)
 		}
 		out = append(out, s)

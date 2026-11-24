@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Captured subprocess run with text output decoded with replacement characters
@@ -53,6 +52,7 @@ func runCommandDecoded(ctx context.Context, timeout time.Duration, dropInvalid b
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
+	cmd.Env = UserSystemdEnv()
 	cmd.WaitDelay = time.Second
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -91,12 +91,17 @@ func IsMacOS() bool { return serviceGOOS == "darwin" }
 // True on Windows hosts
 func IsWindows() bool { return serviceGOOS == "windows" }
 
-// Per user runtime dir from XDG_RUNTIME_DIR or the run user path
+// Per user runtime dir a systemctl user call reaches: this user's run dir when XDG_RUNTIME_DIR is unset or not ours and that dir is, else XDG_RUNTIME_DIR, else the run user path
 func userRuntimeDir() string {
-	if v := os.Getenv("XDG_RUNTIME_DIR"); v != "" {
-		return v
+	own := fmt.Sprintf("/run/user/%d", serviceGetuid())
+	xdg := os.Getenv("XDG_RUNTIME_DIR")
+	if (xdg == "" || !runtimeDirIsOurs(xdg)) && runtimeDirIsOurs(own) {
+		return own
 	}
-	return fmt.Sprintf("/run/user/%d", serviceGetuid())
+	if xdg != "" {
+		return xdg
+	}
+	return own
 }
 
 // Path exists with any stat failure counted as absent
@@ -117,31 +122,35 @@ func userSystemdSocketReady() bool {
 	return pathExistsSafe(filepath.Join(dir, "bus")) || pathExistsSafe(filepath.Join(dir, "systemd", "private"))
 }
 
-// Points XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS at this user so systemctl user calls reach its manager
-func ensureUserSystemdEnv() {
-	own := fmt.Sprintf("/run/user/%d", serviceGetuid())
-	xdg := os.Getenv("XDG_RUNTIME_DIR")
-	if (xdg == "" || !runtimeDirIsOurs(xdg)) && runtimeDirIsOurs(own) {
-		os.Setenv("XDG_RUNTIME_DIR", own)
+// XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS values a service command needs to reach this user's manager that the process env lacks
+func userSystemdOverrides() [][2]string {
+	var out [][2]string
+	dir := userRuntimeDir()
+	if os.Getenv("XDG_RUNTIME_DIR") != dir && runtimeDirIsOurs(dir) {
+		out = append(out, [2]string{"XDG_RUNTIME_DIR", dir})
 	}
 	if _, ok := os.LookupEnv("DBUS_SESSION_BUS_ADDRESS"); !ok {
-		base, set := os.LookupEnv("XDG_RUNTIME_DIR")
-		if !set {
-			base = own
-		}
-		bus := pypath.PathJoin(base, "bus")
-		if pathExistsSafe(bus) {
-			os.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+bus)
+		if bus := pypath.PathJoin(dir, "bus"); pathExistsSafe(bus) {
+			out = append(out, [2]string{"DBUS_SESSION_BUS_ADDRESS", "unix:path=" + bus})
 		}
 	}
+	return out
 }
 
-// Systemctl argv prefix of a scope, preparing the user bus environment for the user scope
+// Process env with the user manager values over it, the env a service command child is spawned with
+func UserSystemdEnv() []string {
+	env := os.Environ()
+	for _, kv := range userSystemdOverrides() {
+		env = append(env, kv[0]+"="+kv[1])
+	}
+	return env
+}
+
+// Systemctl argv prefix of a scope, run with UserSystemdEnv so the user scope reaches this user's manager
 func SystemctlCmd(system bool) []string {
 	if system {
 		return []string{"systemctl"}
 	}
-	ensureUserSystemdEnv()
 	return []string{"systemctl", "--user"}
 }
 
@@ -168,7 +177,7 @@ func systemdOperational(ctx context.Context, system bool) bool {
 	if err != nil {
 		return false
 	}
-	switch pystr.Lower(pystr.Strip(res.Stdout)) {
+	switch strings.ToLower(strings.TrimSpace(res.Stdout)) {
 	case "running", "degraded", "starting", "initializing":
 		return true
 	}

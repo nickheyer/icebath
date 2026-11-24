@@ -24,6 +24,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -86,20 +87,10 @@ func eventsHome(ctx context.Context, srv *serverTask) string {
 	return home.Dir(ctx)
 }
 
-// HTTPS origin servers deliver events to, from platforms.webhook public_url, false when unset or not https
-func eventsCallbackBase(h string, env *tools.Env) (string, bool) {
-	tree, err := config.Load(h, secretsLookup(env, h))
-	if err != nil {
-		return "", false
-	}
-	platforms, _ := tree["platforms"].(map[string]any)
-	webhook, _ := platforms["webhook"].(map[string]any)
-	extra, _ := webhook["extra"].(map[string]any)
-	raw := pyOr(extra["public_url"], webhook["public_url"])
-	url, _ := raw.(string)
-	if !pyTruthy(raw) {
-		url = ""
-	}
+// HTTPS origin servers deliver events to, from platforms.webhook.extra.public_url of the home, false when unset or not https
+func eventsCallbackBase(ctx context.Context, h string) (string, bool) {
+	webhook := config.AsMap(settings.Platforms.Get(home.WithOverride(ctx, h))["webhook"])
+	url, _ := config.AsMap(webhook["extra"])["public_url"].(string)
 	url = strings.TrimRight(pyStrip(url), "/")
 	return url, strings.HasPrefix(url, "https://")
 }
@@ -535,7 +526,7 @@ func refreshServerSubscriptions(ctx context.Context, srv *serverTask, force bool
 		failures = map[string]refreshFailure{}
 	}
 	h := eventsHome(ctx, srv)
-	base, haveBase := eventsCallbackBase(h, srv.env)
+	base, haveBase := eventsCallbackBase(ctx, h)
 	routes := loadEventRoutes(h, srv.name)
 	states := loadEventState(h)
 	nextDue := math.Inf(1)
@@ -724,7 +715,7 @@ func listEventTypes(ctx context.Context, srv *serverTask, args map[string]any) (
 // Publishes the signed webhook route then subscribes it, restoring the prior route when the server refuses
 func subscribeEvent(ctx context.Context, srv *serverTask, args map[string]any) (orderedJSON, error) {
 	h := eventsHome(ctx, srv)
-	base, ok := eventsCallbackBase(h, srv.env)
+	base, ok := eventsCallbackBase(ctx, h)
 	if !ok {
 		return orderedJSON{{"error", "MCP events need the gateway's webhook listener reachable over HTTPS: set " +
 			"platforms.webhook.extra.public_url in config.yaml and run the gateway."}}, nil
@@ -799,7 +790,7 @@ func unsubscribeEvent(ctx context.Context, srv *serverTask, args map[string]any)
 	}
 	url, _ := loadEventState(h)[routeName]["url"].(string)
 	if url == "" {
-		base, ok := eventsCallbackBase(h, srv.env)
+		base, ok := eventsCallbackBase(ctx, h)
 		if !ok {
 			base = ""
 		}

@@ -57,14 +57,15 @@ func TestSslCertFileReachesNetworkGitChildren(t *testing.T) {
 	t.Setenv("SSL_CERT_FILE", bundle)
 	ucUnsetenv(t, "GIT_SSL_CAINFO")
 	ucPatchGit(t, ucGitConfig(t, ""))
-	if err := mapSSLCertFileForGit(context.Background(), []string{"git"}); err != nil {
+	gitCmd, err := mapSSLCertFileForGit(context.Background(), []string{"git"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(noPromptGitKwargs().Env, "GIT_SSL_CAINFO="+bundle) {
-		t.Fatalf("network git env lacks the bundle")
+	if !slices.Equal(gitCmd, []string{"git", "-c", "http.sslCAInfo=" + bundle}) {
+		t.Fatalf("git argv lacks the bundle: %v", gitCmd)
 	}
-	if got := os.Getenv("GIT_SSL_CAINFO"); got != bundle {
-		t.Fatalf("GIT_SSL_CAINFO = %q", got)
+	if _, set := os.LookupEnv("GIT_SSL_CAINFO"); set {
+		t.Fatal("GIT_SSL_CAINFO was pushed onto the process environment")
 	}
 }
 
@@ -73,11 +74,12 @@ func TestConfiguredGitCaIsNotOverridden(t *testing.T) {
 	t.Setenv("SSL_CERT_FILE", filepath.Join(dir, "corp-bundle.pem"))
 	ucUnsetenv(t, "GIT_SSL_CAINFO")
 	ucPatchGit(t, ucGitConfig(t, filepath.Join(dir, "configured.pem")))
-	if err := mapSSLCertFileForGit(context.Background(), []string{"git"}); err != nil {
+	gitCmd, err := mapSSLCertFileForGit(context.Background(), []string{"git"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, set := os.LookupEnv("GIT_SSL_CAINFO"); set {
-		t.Fatal("GIT_SSL_CAINFO was set over a configured http.sslCAInfo")
+	if _, set := os.LookupEnv("GIT_SSL_CAINFO"); set || !slices.Equal(gitCmd, []string{"git"}) {
+		t.Fatalf("a configured http.sslCAInfo was overridden: %v", gitCmd)
 	}
 }
 

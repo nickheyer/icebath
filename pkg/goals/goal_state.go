@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -46,7 +45,7 @@ func (c GoalContract) values() [5]string {
 // True when every field is blank after stripping
 func (c GoalContract) IsEmpty() bool {
 	for _, v := range c.values() {
-		if pystr.Strip(v) != "" {
+		if strings.TrimSpace(v) != "" {
 			return false
 		}
 	}
@@ -71,7 +70,7 @@ func GoalContractFromDict(data any) GoalContract {
 	var v [5]string
 	for i, f := range goalContractFields {
 		raw, _ := d.Get(f)
-		v[i] = pystr.Strip(pyrepr.Str(pyrepr.Or(raw, "")))
+		v[i] = strings.TrimSpace(pyrepr.Str(pyrepr.Or(raw, "")))
 	}
 	return GoalContract{Outcome: v[0], Verification: v[1], Constraints: v[2], Boundaries: v[3], StopWhen: v[4]}
 }
@@ -80,7 +79,7 @@ func GoalContractFromDict(data any) GoalContract {
 func (c GoalContract) RenderBlock() string {
 	var lines []string
 	for i, v := range c.values() {
-		if s := pystr.Strip(v); s != "" {
+		if s := strings.TrimSpace(v); s != "" {
 			lines = append(lines, "- "+goalContractLabels[goalContractFields[i]]+": "+s)
 		}
 	}
@@ -235,7 +234,7 @@ func GoalStateFromJSON(raw string) (*GoalState, error) {
 	s.Subgoals = []string{}
 	if list, ok := rawSubgoals.([]any); ok {
 		for _, item := range list {
-			if t := pystr.Strip(pyrepr.Str(item)); t != "" {
+			if t := strings.TrimSpace(pyrepr.Str(item)); t != "" {
 				s.Subgoals = append(s.Subgoals, t)
 			}
 		}
@@ -264,7 +263,7 @@ func GoalStateFromJSON(raw string) (*GoalState, error) {
 			continue
 		}
 		cmd, _ := g.Get("command")
-		if pystr.Strip(pyrepr.Str(pyrepr.Or(cmd, ""))) == "" {
+		if strings.TrimSpace(pyrepr.Str(pyrepr.Or(cmd, ""))) == "" {
 			continue
 		}
 		gate, err := GoalGateFromDict(g)

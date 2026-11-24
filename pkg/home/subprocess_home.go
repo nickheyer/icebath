@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var homeModeAliases = map[string]string{
@@ -19,7 +18,7 @@ var homeModeAliases = map[string]string{
 
 // Comparable absolute and case normalized form of a home path, empty for blank input
 func NormHomePath(path string) string {
-	raw := pystr.Strip(path)
+	raw := strings.TrimSpace(path)
 	if raw == "" {
 		return ""
 	}
@@ -56,12 +55,12 @@ func isProfileHome(candidate, profileHome string) bool {
 // Stripped key from env, falling back to the process environment and then def
 func envGet(env map[string]string, key, def string) string {
 	if v := env[key]; v != "" {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
 	if v, ok := os.LookupEnv(key); ok {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
-	return pystr.Strip(def)
+	return strings.TrimSpace(def)
 }
 
 // Likely OS user home candidates in trust order
@@ -69,7 +68,7 @@ func realHomeCandidates(env map[string]string) []string {
 	candidates := []string{envGet(env, "ICEBATH_REAL_HOME", ""), envGet(env, "HOME", "")}
 	if runtime.GOOS != "windows" {
 		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
-			candidates = append(candidates, pystr.Strip(u.HomeDir))
+			candidates = append(candidates, strings.TrimSpace(u.HomeDir))
 		}
 	}
 	candidates = append(candidates, envGet(env, "USERPROFILE", ""))
@@ -116,7 +115,7 @@ func RealHome(ctx context.Context, env map[string]string) string {
 // HOME a subprocess gets under TERMINAL_HOME_MODE, empty when it keeps its own
 func SubprocessHome(ctx context.Context, env map[string]string) string {
 	profile := profileHomePath(ctx, env)
-	mode := pystr.Lower(envGet(env, "TERMINAL_HOME_MODE", "auto"))
+	mode := strings.ToLower(envGet(env, "TERMINAL_HOME_MODE", "auto"))
 	if mode == "" {
 		mode = "auto"
 	}

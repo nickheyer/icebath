@@ -1,6 +1,8 @@
 package plugins
 
 import (
+	"unicode"
+
 	"bufio"
 	"context"
 	"errors"
@@ -1323,7 +1325,7 @@ func pumpHostStderr(stream io.Reader, label string) {
 	r := bufio.NewReader(stream)
 	for {
 		raw, err := r.ReadBytes('\n')
-		if line := pystr.Rstrip(pystr.DecodeUTF8Replace(raw)); line != "" {
+		if line := strings.TrimRightFunc(pystr.DecodeUTF8Replace(raw), unicode.IsSpace); line != "" {
 			pkgLog().Info(fmt.Sprintf("plugin host [%s]: %s", label, line))
 		}
 		if err != nil {

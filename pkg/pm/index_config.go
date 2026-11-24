@@ -136,7 +136,7 @@ func PipConfIndexURL(env map[string]string, sitePrefix string) (string, error) {
 	if !parser.hasSection("global") {
 		return "", nil
 	}
-	return pystr.Strip(parser.get("global", "index-url")), nil
+	return strings.TrimSpace(parser.get("global", "index-url")), nil
 }
 
 // rawConfig mirrors RawConfigParser, sections of lowercased options with a DEFAULT fallback
@@ -186,7 +186,7 @@ func (c *rawConfig) parse(path, text string) error {
 	}()
 	for i, raw := range strings.Split(universalNewlines(text), "\n") {
 		lineno := i + 1
-		stripped := pystr.Strip(raw)
+		stripped := strings.TrimSpace(raw)
 		if stripped == "" || strings.HasPrefix(stripped, "#") || strings.HasPrefix(stripped, ";") {
 			if stripped == "" && option != nil {
 				option.lines = append(option.lines, "")
@@ -231,7 +231,7 @@ func (c *rawConfig) parse(path, text string) error {
 			return fmt.Errorf("%s line %d: option %s appears twice in section %s", path, lineno, key, currentName)
 		}
 		seenOptions[currentName+"\x00"+key] = true
-		option = &rawOption{target: current, name: key, lines: []string{pystr.Strip(stripped[cut+1:])}}
+		option = &rawOption{target: current, name: key, lines: []string{strings.TrimSpace(stripped[cut+1:])}}
 		options = append(options, option)
 	}
 	return nil
@@ -252,7 +252,7 @@ func BridgedIndexSettings(ambient map[string]string, sitePrefix string) (map[str
 		}
 	}
 	if !hasIndex {
-		indexURL := pystr.Strip(ambient["PIP_INDEX_URL"])
+		indexURL := strings.TrimSpace(ambient["PIP_INDEX_URL"])
 		if indexURL == "" {
 			fromConf, err := PipConfIndexURL(ambient, sitePrefix)
 			if err != nil {
@@ -265,7 +265,7 @@ func BridgedIndexSettings(ambient map[string]string, sitePrefix string) (map[str
 		}
 	}
 	for _, pair := range pipToUV {
-		value := pystr.Strip(ambient[pair[0]])
+		value := strings.TrimSpace(ambient[pair[0]])
 		if value != "" && settings[pair[1]] == "" {
 			settings[pair[1]] = value
 		}

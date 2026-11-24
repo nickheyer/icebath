@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -91,14 +90,14 @@ func legacyLaunchParams(row *pyjson.Object) (map[string]any, any, error) {
 	if runtime := state.SessionGatewayRuntime(row); runtime != nil {
 		for _, key := range runtime.Keys {
 			value, _ := runtime.Get(key)
-			if text, ok := value.(string); ok && pystr.Strip(text) != "" {
-				route[key] = pystr.Strip(text)
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				route[key] = strings.TrimSpace(text)
 			}
 		}
 	}
 	if _, has := route["base_url"]; !has {
-		if billing, ok := rowField(row, "billing_base_url").(string); ok && pystr.Strip(billing) != "" {
-			route["base_url"] = pystr.Strip(billing)
+		if billing, ok := rowField(row, "billing_base_url").(string); ok && strings.TrimSpace(billing) != "" {
+			route["base_url"] = strings.TrimSpace(billing)
 			if _, has := route["provider"]; !has {
 				route["provider"] = "custom"
 			}
@@ -138,7 +137,7 @@ func legacyLaunchParams(row *pyjson.Object) (map[string]any, any, error) {
 // Main's Bot Chat rule for a stored row, the follow marker or an exact Bot Chat title
 func botChatRow(row *pyjson.Object) bool {
 	saved := state.ParseModelConfig(rowField(row, "model_config"))
-	return saved["follow_profile_config"] == true || pystr.Strip(routeStr(rowField(row, "title"))) == "Bot Chat"
+	return saved["follow_profile_config"] == true || strings.TrimSpace(routeStr(rowField(row, "title"))) == "Bot Chat"
 }
 
 // Whether a row's composer pick still holds because the profile targets what it diverged from
@@ -148,7 +147,7 @@ func composerPickHolds(row *pyjson.Object, cfg map[string]any) bool {
 		return false
 	}
 	model, providerName := profileTarget(cfg)
-	return pystr.Strip(routeStr(composer["model"])) == model && pystr.Strip(routeStr(composer["provider"])) == providerName
+	return strings.TrimSpace(routeStr(composer["model"])) == model && strings.TrimSpace(routeStr(composer["provider"])) == providerName
 }
 
 // Params and api mode for adoption, a Bot Chat following its profile unless its composer pick holds
@@ -181,11 +180,11 @@ func routeIsUsageStamp(row *pyjson.Object) bool {
 		return false
 	}
 	for _, key := range []string{"provider", "base_url"} {
-		if text, ok := saved[key].(string); ok && pystr.Strip(text) != "" {
+		if text, ok := saved[key].(string); ok && strings.TrimSpace(text) != "" {
 			return false
 		}
 	}
-	return pystr.Lower(pystr.Strip(routeStr(rowField(row, "billing_provider")))) == "custom"
+	return strings.ToLower(strings.TrimSpace(routeStr(rowField(row, "billing_provider")))) == "custom"
 }
 
 // Configured named entry serving the saved URL, empty when none does
@@ -352,13 +351,13 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 	}
 	named := ""
 	if policy.Model != nil {
-		named = pystr.Strip(*policy.Model)
+		named = strings.TrimSpace(*policy.Model)
 	}
 	if named == "" {
-		named = pystr.Strip(resolveGatewayModel(ctx, policy.frozenConfig()))
+		named = strings.TrimSpace(resolveGatewayModel(ctx, policy.frozenConfig()))
 	}
 	if named == "" {
-		named = pystr.Strip(routeStr(rowField(row, "model")))
+		named = strings.TrimSpace(routeStr(rowField(row, "model")))
 	}
 	if named == "" {
 		field, detail := "model", "the profile names no model and the saved session has none"

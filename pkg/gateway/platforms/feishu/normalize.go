@@ -1,6 +1,8 @@
 package feishu
 
 import (
+	"unicode"
+
 	"strings"
 	"unicode/utf8"
 
@@ -9,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -244,7 +245,7 @@ func wrapInlineCode(text string) string {
 }
 
 func sanitizeFenceLanguage(language string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(pystr.Strip(language), "\n", " "), "\r", " ")
+	return strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(language), "\n", " "), "\r", " ")
 }
 
 var textStyleWrappers = [][3]string{{"bold", "**", "**"}, {"italic", "*", "*"}, {"underline", "<u>", "</u>"}, {"strikethrough", "~~", "~~"}}
@@ -291,34 +292,13 @@ func renderCodeBlockElement(element *pyjson.Object) string {
 func stripMarkdownToPlainText(text string) string {
 	plain := strings.ReplaceAll(text, "\r\n", "\n")
 	plain = reSub(markdownLinkRe, plain, func(m regexp2.Match) string {
-		return m.GroupByNumber(1).String() + " (" + pystr.Strip(m.GroupByNumber(2).String()) + ")"
+		return m.GroupByNumber(1).String() + " (" + strings.TrimSpace(m.GroupByNumber(2).String()) + ")"
 	})
 	plain = reSub(blockquoteRe, plain, func(regexp2.Match) string { return "" })
 	plain = reSub(hrLineRe, plain, func(regexp2.Match) string { return "---" })
 	plain = reSubGroup(strikeRe, plain)
 	plain = reSubGroup(underlineRe, plain)
 	return gateway.StripMarkdown(plain, false)
-}
-
-// Python int of a value when at least minValue, def otherwise
-func coerceInt(value any, def *int, minValue int) *int {
-	n, err := pyint.Int64(value)
-	if err != nil {
-		return def
-	}
-	if n >= int64(minValue) {
-		v := int(n)
-		return &v
-	}
-	return def
-}
-
-func coerceRequiredInt(value any, def, minValue int) int {
-	parsed := coerceInt(value, &def, minValue)
-	if parsed == nil {
-		return def
-	}
-	return *parsed
 }
 
 // Post content JSON of markdown under the zh_cn locale
@@ -352,7 +332,7 @@ func buildMarkdownPostRows(content string) []any {
 	inCode := false
 	flush := func() {
 		segment := strings.Join(current, "\n")
-		if pystr.Strip(segment) != "" {
+		if strings.TrimSpace(segment) != "" {
 			rows = append(rows, mdRow(segment))
 		}
 		current = nil
@@ -362,7 +342,7 @@ func buildMarkdownPostRows(content string) []any {
 		if inCode {
 			fenceRe = markdownFenceCloseRe
 		}
-		isFence := reMatchStart(fenceRe, pystr.Strip(raw))
+		isFence := reMatchStart(fenceRe, strings.TrimSpace(raw))
 		if isFence && !inCode {
 			flush()
 		}
@@ -390,7 +370,7 @@ func parseFeishuPostPayload(payload any, mentions *mentionsMap) FeishuPostParseR
 	var imageKeys []string
 	var mediaRefs []FeishuPostMediaRef
 	var parts []string
-	if title := normalizeFeishuText(pystr.Strip(pyrepr.Str(dgetDef(resolved, "title", ""))), nil); title != "" {
+	if title := normalizeFeishuText(strings.TrimSpace(pyrepr.Str(dgetDef(resolved, "title", ""))), nil); title != "" {
 		parts = append(parts, title)
 	}
 	rowsVal := dgetDef(resolved, "content", []any{})
@@ -411,7 +391,7 @@ func parseFeishuPostPayload(payload any, mentions *mentionsMap) FeishuPostParseR
 	files, _ := dgetDef(resolved, "files", []any{}).([]any)
 	for _, entry := range files {
 		e, ok := entry.(*pyjson.Object)
-		if !ok || toBoolean(dget(e, "is_folder")) || pystr.Strip(pyrepr.Str(dgetDef(e, "file_key", ""))) == "" {
+		if !ok || toBoolean(dget(e, "is_folder")) || strings.TrimSpace(pyrepr.Str(dgetDef(e, "file_key", ""))) == "" {
 			continue
 		}
 		withTag := pyjson.NewObject()
@@ -424,7 +404,7 @@ func parseFeishuPostPayload(payload any, mentions *mentionsMap) FeishuPostParseR
 			parts = append(parts, marker)
 		}
 	}
-	text := pystr.Strip(strings.Join(parts, "\n"))
+	text := strings.TrimSpace(strings.Join(parts, "\n"))
 	if text == "" {
 		text = fallbackPostText
 	}
@@ -493,7 +473,7 @@ func toPostPayload(candidate any) *pyjson.Object {
 var staticPostTags = map[string]string{"br": "\n", "hr": "\n\n---\n\n", "divider": "\n\n---\n\n"}
 
 func strippedField(el *pyjson.Object, key string) string {
-	return pystr.Strip(pyrepr.Str(dgetDef(el, key, "")))
+	return strings.TrimSpace(pyrepr.Str(dgetDef(el, key, "")))
 }
 
 // Markdown of one post element, recording image keys, media refs and an at all mention it meets
@@ -505,7 +485,7 @@ func renderPostElement(element any, imageKeys *[]string, mediaRefs *[]FeishuPost
 	if !ok {
 		return ""
 	}
-	tag := pystr.Lower(strippedField(el, "tag"))
+	tag := strings.ToLower(strippedField(el, "tag"))
 	if s, ok := staticPostTags[tag]; ok {
 		return s
 	}
@@ -516,7 +496,7 @@ func renderPostElement(element any, imageKeys *[]string, mediaRefs *[]FeishuPost
 		return renderCodeBlockElement(el)
 	case "a":
 		href := strippedField(el, "href")
-		label := pystr.Strip(strOr(dgetDef(el, "text", href)))
+		label := strings.TrimSpace(strOr(dgetDef(el, "text", href)))
 		if label == "" {
 			return ""
 		}
@@ -627,7 +607,7 @@ func renderNestedPost(value any, imageKeys *[]string, mediaRefs *[]FeishuPostMed
 
 // Normalized text, resources and mentions of an inbound message by its type
 func normalizeFeishuMessage(messageType, rawContent string, mentions []rawMention, bot feishuBotIdentity) FeishuNormalizedMessage {
-	normalizedType := pystr.Lower(pystr.Strip(messageType))
+	normalizedType := strings.ToLower(strings.TrimSpace(messageType))
 	payload := loadFeishuPayload(rawContent)
 	mm := buildMentionsMap(mentions, bot)
 	switch normalizedType {
@@ -648,7 +628,7 @@ func normalizeFeishuMessage(messageType, rawContent string, mentions []rawMentio
 	mentionRefs := mm.Values()
 	switch normalizedType {
 	case "image":
-		imageKey := pystr.Strip(strOr(dgetDef(payload, "image_key", "")))
+		imageKey := strings.TrimSpace(strOr(dgetDef(payload, "image_key", "")))
 		alt := firstNonEmpty(strOr(dgetDef(payload, "text", "")), strOr(dgetDef(payload, "alt", "")), fallbackImageText)
 		altText := normalizeFeishuText(alt, mm)
 		text := altText
@@ -712,7 +692,7 @@ func normalizeMergeForwardMessage(payload *pyjson.Object) FeishuNormalizedMessag
 		lines = append(lines, title)
 	}
 	lines = append(lines, entries[:min(8, len(entries))]...)
-	text := pystr.Strip(strings.Join(lines, "\n"))
+	text := strings.TrimSpace(strings.Join(lines, "\n"))
 	if text == "" {
 		text = fallbackForwardText
 	}
@@ -759,7 +739,7 @@ func normalizeInteractiveMessage(messageType string, payload *pyjson.Object) Fei
 	if len(actions) > 0 {
 		lines = append(lines, "Actions: "+strings.Join(actions, ", "))
 	}
-	text := pystr.Strip(strings.Join(lines[:min(12, len(lines))], "\n"))
+	text := strings.TrimSpace(strings.Join(lines[:min(12, len(lines))], "\n"))
 	if text == "" {
 		text = fallbackInteractiveText
 	}
@@ -794,7 +774,7 @@ func collectForwardEntries(payload *pyjson.Object) []string {
 		if !pyrepr.Truthy(typeVal) {
 			typeVal = dgetDef(d, "msg_type", "")
 		}
-		nestedType := pystr.Lower(pystr.Strip(pyrepr.Str(typeVal)))
+		nestedType := strings.ToLower(strings.TrimSpace(pyrepr.Str(typeVal)))
 		var body string
 		if nestedType == "post" {
 			content := dget(d, "content")
@@ -847,7 +827,7 @@ func nodeTag(d *pyjson.Object) string {
 	if !pyrepr.Truthy(v) {
 		v = dgetDef(d, "type", "")
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(v)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(v)))
 }
 
 // Text of every string inside rich blocks of a card tree, skipping id and routing keys
@@ -890,7 +870,7 @@ func collectTextSegments(value any, inRichBlock bool) []string {
 
 // File key, name and audio, video or file resource type of a media payload
 func buildMediaRefFromPayload(payload *pyjson.Object, resourceType string) FeishuPostMediaRef {
-	fileKey := pystr.Strip(strOr(dgetDef(payload, "file_key", "")))
+	fileKey := strings.TrimSpace(strOr(dgetDef(payload, "file_key", "")))
 	fileName := firstTextField(payload, []string{"file_name", "title", "text"}, nil)
 	effective := "file"
 	if resourceType == "audio" || resourceType == "video" {
@@ -1006,12 +986,12 @@ func normalizeFeishuText(text string, mentions *mentionsMap) string {
 	lines := strings.Split(cleaned, "\n")
 	kept := lines[:0]
 	for _, line := range lines {
-		if l := pystr.Strip(reSub(whitespaceRe, line, func(regexp2.Match) string { return " " })); l != "" {
+		if l := strings.TrimSpace(reSub(whitespaceRe, line, func(regexp2.Match) string { return " " })); l != "" {
 			kept = append(kept, l)
 		}
 	}
 	cleaned = reSub(multispaceRe, strings.Join(kept, "\n"), func(regexp2.Match) string { return " " })
-	return pystr.Strip(cleaned)
+	return strings.TrimSpace(cleaned)
 }
 
 func uniqueLines(lines []string) []string {
@@ -1030,7 +1010,7 @@ func uniqueLines(lines []string) []string {
 // Open id and user id of a mention in either payload form
 func extractMentionIDs(m rawMention) (string, string) {
 	if m.IDText != nil {
-		switch pystr.Lower(m.IDType) {
+		switch strings.ToLower(m.IDType) {
 		case "open_id":
 			return *m.IDText, ""
 		case "user_id":
@@ -1056,7 +1036,7 @@ func buildMentionsMap(mentions []rawMention, bot feishuBotIdentity) *mentionsMap
 			continue
 		}
 		openID, userID := extractMentionIDs(m)
-		name := pystr.Strip(m.Name)
+		name := strings.TrimSpace(m.Name)
 		result.Set(m.Key, FeishuMentionRef{Name: name, OpenID: openID, IsSelf: bot.matches(openID, userID, name)})
 	}
 	return result
@@ -1108,7 +1088,7 @@ func stripEdgeSelfMentions(text string, mentions []FeishuMentionRef) string {
 	if len(selfNames) == 0 {
 		return text
 	}
-	remaining := pystr.Lstrip(text)
+	remaining := strings.TrimLeftFunc(text, unicode.IsSpace)
 	for {
 		stripped := false
 		for _, nm := range selfNames {
@@ -1122,7 +1102,7 @@ func stripEdgeSelfMentions(text string, mentions []FeishuMentionRef) string {
 					continue
 				}
 			}
-			remaining = pystr.Lstrip(after)
+			remaining = strings.TrimLeftFunc(after, unicode.IsSpace)
 			stripped = true
 			break
 		}
@@ -1143,7 +1123,7 @@ func stripEdgeSelfMentions(text string, mentions []FeishuMentionRef) string {
 		stripped := false
 		for _, nm := range selfNames {
 			if strings.HasSuffix(body, nm) {
-				remaining = pystr.Rstrip(body[:len(body)-len(nm)]) + tail
+				remaining = strings.TrimRightFunc(body[:len(body)-len(nm)], unicode.IsSpace) + tail
 				stripped = true
 				break
 			}

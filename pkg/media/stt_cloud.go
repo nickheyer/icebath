@@ -28,7 +28,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -176,9 +175,7 @@ func (c openAITranscriptionClient) Create(ctx context.Context, filePath string, 
 	}
 	base := c.BaseURL
 	if base == "" {
-		if base = os.Getenv("OPENAI_BASE_URL"); base == "" {
-			base = "https://api.openai.com/v1"
-		}
+		base = openAISTTBaseURL
 	}
 	endpoint := strings.TrimRight(base, "/") + "/audio/transcriptions"
 	for attempt := 0; ; attempt++ {
@@ -252,8 +249,8 @@ var sttNewOpenAIClient = func(apiKey, baseURL string, timeout float64, maxRetrie
 
 // Runs a body on a fresh OpenAI client shaped by stt.openai timeout and retries, mapping failures to envelopes
 func withOpenAIClient(ctx context.Context, apiKey, baseURL, filePath, logLabel string, body func(sttTranscriptionClient) (map[string]any, error)) map[string]any {
-	openaiConfig := getProviderSection(loadSTTConfig(ctx), "openai")
-	client := sttNewOpenAIClient(apiKey, baseURL, configNumberFloat(openaiConfig, "timeout", sttDefaultTimeout), configNumberInt(openaiConfig, "max_retries", 1))
+	oai := loadSTTRequest(ctx).OpenAI
+	client := sttNewOpenAIClient(apiKey, baseURL, oai.Timeout, oai.MaxRetries)
 	result, err := body(client)
 	if err == nil {
 		return result
@@ -301,9 +298,10 @@ func transcribeGroq(ctx context.Context, filePath, modelName string, h sttHints)
 	}
 	language := h.Language
 	if language == "" {
-		language = resolveSTTLanguage(ctx, "groq", nil)
+		language = resolveSTTLanguage(ctx, "groq", loadSTTRequest(ctx))
 	}
-	return withOpenAIClient(ctx, apiKey, groqSTTBaseURL, filePath, "Groq", func(c sttTranscriptionClient) (map[string]any, error) {
+	base := textOr(loadSTTRequest(ctx).Groq.BaseURL, groqSTTBaseURL)
+	return withOpenAIClient(ctx, apiKey, base, filePath, "Groq", func(c sttTranscriptionClient) (map[string]any, error) {
 		fields := append([][2]string{{"model", modelName}, {"response_format", "text"}}, sdkPromptFields(language, h.Prompt)...)
 		transcription, err := c.Create(ctx, filePath, fields)
 		if err != nil {
@@ -361,7 +359,7 @@ func transcribeOpenAI(ctx context.Context, filePath, modelName string, e openAIE
 	}
 	language := e.Language
 	if language == "" {
-		language = resolveSTTLanguage(ctx, label, nil)
+		language = resolveSTTLanguage(ctx, label, loadSTTRequest(ctx))
 	}
 	if label == "openai" && (sttGroqModels[modelName] || sttRetiredGroqModels[modelName]) {
 		pkgLog().Info(fmt.Sprintf("Model %s not available on OpenAI, using %s", modelName, sttDefaultOpenAIModel))
@@ -482,7 +480,7 @@ func transcribeMistral(ctx context.Context, filePath, modelName string, h sttHin
 	}
 	language := h.Language
 	if language == "" {
-		language = resolveSTTLanguage(ctx, "mistral", nil)
+		language = resolveSTTLanguage(ctx, "mistral", loadSTTRequest(ctx))
 	}
 	fields := append([][2]string{{"model", modelName}}, sdkPromptFields(language, h.Prompt)...)
 	result, className, err := sttMistralTranscribe(ctx, apiKey, filePath, fields)
@@ -591,62 +589,48 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 	if h.Prompt != "" {
 		logPromptUnsupported("STT provider 'xai'")
 	}
-	directKey := pystr.Strip(sttEnvValue(ctx, "XAI_API_KEY"))
+	directKey := strings.TrimSpace(sttEnvValue(ctx, "XAI_API_KEY"))
 	var credProvider, apiKey, credBase string
 	if directKey != "" {
 		base := sttEnvValue(ctx, "XAI_BASE_URL")
 		if base == "" {
 			base = "https://api.x.ai/v1"
 		}
-		credProvider, apiKey, credBase = "xai", directKey, strings.TrimRight(pystr.Strip(base), "/")
+		credProvider, apiKey, credBase = "xai", directKey, strings.TrimRight(strings.TrimSpace(base), "/")
 	} else {
 		credProvider, apiKey, credBase = sttResolveXAICredentials(ctx)
 	}
-	apiKey = pystr.Strip(apiKey)
+	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return sttError("No xAI credentials found. Configure xAI OAuth in `icebath model` or set XAI_API_KEY"), nil
 	}
-	sttConfig := loadSTTConfig(ctx)
-	xaiConfig, err := orEmptyDict(sttConfig, "xai")
-	if err != nil {
-		return nil, err
-	}
+	req := loadSTTRequest(ctx)
 	resolveBase := func(provider, base string) string {
 		u := base
 		if provider != "xai-oauth" {
-			if v := xaiConfig["base_url"]; pyTruthy(v) {
-				u = pyrepr.Str(v)
-			} else if v := sttEnvValue(ctx, "XAI_STT_BASE_URL"); v != "" {
+			if v := strings.TrimSpace(req.XAI.BaseURL); v != "" {
 				u = v
 			}
 		}
 		if u == "" {
 			u = xaiSTTBaseURL
 		}
-		return strings.TrimRight(pystr.Strip(u), "/")
+		return strings.TrimRight(strings.TrimSpace(u), "/")
 	}
 	language := h.Language
 	if language == "" {
-		language = resolveSTTLanguage(ctx, "xai", sttConfig)
+		language = resolveSTTLanguage(ctx, "xai", req)
 	}
 	post := func() (*pyrequests.Response, error) {
 		data := [][2]string{{"model", normalizeXAISTTModel(modelName)}}
 		if language != "" {
 			data = append(data, [2]string{"language", language})
 		}
-		type flag struct {
-			name string
-			def  bool
+		if language != "" && req.XAI.Format {
+			data = append(data, [2]string{"format", "true"})
 		}
-		flags := []flag{}
-		if language != "" {
-			flags = append(flags, flag{"format", true})
-		}
-		flags = append(flags, flag{"diarize", false})
-		for _, f := range flags {
-			if isTruthyValue(dictGetDefault(xaiConfig, f.name, f.def), false) {
-				data = append(data, [2]string{f.name, "true"})
-			}
+		if req.XAI.Diarize {
+			data = append(data, [2]string{"diarize", "true"})
 		}
 		send := func(bearer, base string) (*pyrequests.Response, error) {
 			return postAudioMultipart(ctx, base+"/stt", map[string]string{"Authorization": "Bearer " + bearer, "User-Agent": tools.IcebathXAIUserAgent()}, filePath, data)
@@ -659,7 +643,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 			pkgLog().Info(fmt.Sprintf("xAI STT got HTTP %d; refreshing OAuth credentials and retrying once", resp.Status))
 			rp, rk, rb, rerr := sttRefreshXAICredentials(ctx, apiKey)
 			if rerr == nil {
-				rk = pystr.Strip(rk)
+				rk = strings.TrimSpace(rk)
 				if rk != "" && rk != apiKey {
 					var retried *pyrequests.Response
 					retried, rerr = send(rk, resolveBase(rp, rb))
@@ -709,7 +693,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 		if !ok {
 			return "", &sttValueError{msg: fmt.Sprintf("xAI transcription text is %s where text was expected", errchain.Kind(v))}
 		}
-		return pystr.Strip(s), nil
+		return strings.TrimSpace(s), nil
 	}
 	return restProvider(filePath, "xai", "xAI STT", post, detail, text, logFn), nil
 }
@@ -741,26 +725,21 @@ func transcribeElevenLabs(ctx context.Context, filePath, modelName string, h stt
 	if apiKey == "" {
 		return sttError("ELEVENLABS_API_KEY not set"), nil
 	}
-	sttConfig := loadSTTConfig(ctx)
-	elCfg, err := orEmptyDict(sttConfig, "elevenlabs")
-	if err != nil {
-		return nil, err
-	}
+	req := loadSTTRequest(ctx)
+	el := req.ElevenLabs
 	base := elevenLabsSTTBaseURL
-	if v := elCfg["base_url"]; pyTruthy(v) {
-		base = pyrepr.Str(v)
-	} else if v := sttEnvValue(ctx, "ELEVENLABS_STT_BASE_URL"); v != "" {
+	if v := strings.TrimSpace(el.BaseURL); v != "" {
 		base = v
 	}
-	base = strings.TrimRight(pystr.Strip(base), "/")
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	languageCode := h.Language
 	if languageCode == "" {
-		languageCode = resolveSTTLanguage(ctx, "elevenlabs", sttConfig, "language_code")
+		languageCode = resolveSTTLanguage(ctx, "elevenlabs", req)
 	}
 	post := func() (*pyrequests.Response, error) {
 		data := [][2]string{{"model_id", modelName},
-			{"tag_audio_events", strconv.FormatBool(isTruthyValue(dictGetDefault(elCfg, "tag_audio_events", false), false))},
-			{"diarize", strconv.FormatBool(isTruthyValue(dictGetDefault(elCfg, "diarize", false), false))}}
+			{"tag_audio_events", strconv.FormatBool(el.TagAudioEvents)},
+			{"diarize", strconv.FormatBool(el.Diarize)}}
 		if languageCode != "" {
 			data = append(data, [2]string{"language_code", languageCode})
 		}
@@ -782,7 +761,7 @@ func transcribeDeepInfra(ctx context.Context, filePath, modelName string, h sttH
 	if apiKey == "" {
 		return sttError("DEEPINFRA_API_KEY not set"), nil
 	}
-	base := provider.DeepinfraBaseURL(ctx, getProviderSection(loadSTTConfig(ctx), "deepinfra"))
+	base := deepInfraBaseURL(sttCredentialEnv(ctx), loadSTTRequest(ctx).DeepInfra.BaseURL)
 	if modelName == "" {
 		if ids := sttDeepInfraModelIDs(ctx); len(ids) > 0 {
 			modelName = ids[0]
@@ -812,19 +791,18 @@ func sttIsLocalOrPrivateURL(rawURL string) bool {
 	return pyipaddress.IsPrivate(addr) || addr.Unmap().IsLoopback()
 }
 
-// Config key, keyless local base URL with a placeholder key, then env key, false when none apply
-func directOpenAICredentials(ctx context.Context, cfgAPIKey, cfgBaseURL any) (string, string, bool) {
-	if pyTruthy(cfgAPIKey) {
-		base := openAISTTBaseURL
-		if pyTruthy(cfgBaseURL) {
-			base = pyrepr.Str(cfgBaseURL)
-		}
-		return pyrepr.Str(cfgAPIKey), base, true
+// Config key, keyless local base URL with a placeholder key, then env key, false when none apply; the env key goes only to an endpoint STT_OPENAI_BASE_URL names
+func directOpenAICredentials(ctx context.Context, cfgAPIKey, cfgBaseURL string, baseFromEnv bool) (string, string, bool) {
+	if cfgAPIKey != "" {
+		return cfgAPIKey, textOr(cfgBaseURL, openAISTTBaseURL), true
 	}
-	if pyTruthy(cfgBaseURL) && sttIsLocalOrPrivateURL(pyrepr.Str(cfgBaseURL)) {
-		return "not-needed", pyrepr.Str(cfgBaseURL), true
+	if cfgBaseURL != "" && sttIsLocalOrPrivateURL(cfgBaseURL) {
+		return "not-needed", cfgBaseURL, true
 	}
 	if key := sttResolveOpenAIAudioAPIKey(ctx); key != "" {
+		if baseFromEnv {
+			return key, textOr(cfgBaseURL, openAISTTBaseURL), true
+		}
 		return key, openAISTTBaseURL, true
 	}
 	return "", "", false
@@ -843,12 +821,9 @@ var sttTranscode = transcodeAudioForSTT
 
 // OpenAI STT key and base URL strict on the stored stt selection, a ValueError when unresolvable
 func resolveSTTOpenAIAudioClientConfig(ctx context.Context) (string, string, error) {
-	openaiCfg, err := orEmptyDict(loadSTTConfig(ctx), "openai")
-	if err != nil {
-		return "", "", err
-	}
+	oai := loadSTTRequest(ctx).OpenAI
 	selected := sttReadSelection(ctx)
-	if key, base, ok := directOpenAICredentials(ctx, dictGetDefault(openaiCfg, "api_key", ""), dictGetDefault(openaiCfg, "base_url", "")); ok {
+	if key, base, ok := directOpenAICredentials(ctx, strings.TrimSpace(oai.APIKey), strings.TrimSpace(oai.BaseURL), oai.BaseURLFromEnv); ok {
 		return key, base, nil
 	}
 	if selected != "" {
@@ -862,10 +837,10 @@ func extractTranscriptText(transcription any) (string, error) {
 	var text string
 	switch v := transcription.(type) {
 	case string:
-		text = pystr.Strip(v)
+		text = strings.TrimSpace(v)
 	case map[string]any:
 		if s, ok := v["text"].(string); ok {
-			text = pystr.Strip(s)
+			text = strings.TrimSpace(s)
 		} else {
 			if e := v["error"]; pyTruthy(e) {
 				return "", &sttResponseError{msg: pyrepr.Str(e)}
@@ -873,10 +848,10 @@ func extractTranscriptText(transcription any) (string, error) {
 			return "", &sttResponseError{msg: "Transcription response contained no text"}
 		}
 	default:
-		text = pystr.Strip(pyrepr.Str(v))
+		text = strings.TrimSpace(pyrepr.Str(v))
 	}
 	if m, _ := asrTextRe.FindStringMatch(text); m != nil {
-		return pystr.Strip(m.GroupByName("text").String()), nil
+		return strings.TrimSpace(m.GroupByName("text").String()), nil
 	}
 	return text, nil
 }

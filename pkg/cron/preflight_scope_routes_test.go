@@ -108,7 +108,6 @@ func TestMissingCodexCredentialVerdictNamesTheHomeItRead(t *testing.T) {
 	t.Setenv("ICEBATH_PROFILE", "")
 	os.Unsetenv("ICEBATH_PROFILE")
 	job := &Job{ID: "7a6ae427c1d8", Name: "radar", Provider: strPtr("openai-codex"), Model: strPtr("gpt-5.6-sol")}
-	cfg := config.Tree{"cron": map[string]any{}}
 	scope := func(reason *string) [2]string {
 		t.Helper()
 		if reason == nil {
@@ -122,11 +121,11 @@ func TestMissingCodexCredentialVerdictNamesTheHomeItRead(t *testing.T) {
 	}
 	s := openCronStore(root, nil)
 	ctx := context.Background()
-	if got := scope(s.preflightCheckProviderKey(ctx, job, cfg)); got != [2]string{"default", root} {
+	if got := scope(s.preflightCheckProviderKey(ctx, job)); got != [2]string{"default", root} {
 		t.Fatalf("launch scope = %v", got)
 	}
 	alphaCtx, alphaStore := s.profileCronScope(ctx, alpha)
-	if got := scope(alphaStore.preflightCheckProviderKey(alphaCtx, job, cfg)); got != [2]string{"alpha", alpha} {
+	if got := scope(alphaStore.preflightCheckProviderKey(alphaCtx, job)); got != [2]string{"alpha", alpha} {
 		t.Fatalf("satellite scope = %v", got)
 	}
 }
@@ -169,7 +168,7 @@ func TestCronEnvSettingsResolveFromTheServedProfile(t *testing.T) {
 	if got := s.cronInactivitySeconds(fire); got != 222.0 {
 		t.Fatalf("fire inactivity = %v", got)
 	}
-	s.preflightCheckProviderKey(fire, &Job{ID: "j"}, config.Tree{"cron": map[string]any{}})
+	s.preflightCheckProviderKey(fire, &Job{ID: "j"})
 	if tm, ok := captured["target_model"]; !ok || tm != "" {
 		t.Fatalf("target_model = %q (%v)", tm, ok)
 	}

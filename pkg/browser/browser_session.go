@@ -34,7 +34,8 @@ var (
 	cleanupFailures     = map[string]int{}
 	cleanupDone         bool
 	sessionNow          = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-	sessionInactivity   = sync.OnceValue(func() int { return getSessionInactivityTimeout(processBrowserEnv()) })
+	// Idle seconds before the janitor reaps a session of the env's profile, read at every sweep
+	sessionInactivity = getSessionInactivityTimeout
 )
 
 // Collaborators of session creation and teardown, the points tests patch
@@ -47,7 +48,7 @@ var (
 	sessionCDPOverride      = func(env *tools.Env) string { return cfgOf(env).cdpOverride(context.Background()) }
 )
 
-// Idle seconds before the janitor reaps a session, config first and BROWSER_INACTIVITY_TIMEOUT as the legacy fallback
+// Idle seconds before the janitor reaps a session of the env's profile
 func getSessionInactivityTimeout(env *tools.Env) int {
 	return cfgOf(env).inactivityTimeout()
 }

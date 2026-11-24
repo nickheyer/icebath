@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -282,7 +281,7 @@ func handleComplete(k *kanbanCall) (string, error) {
 		if !pyrepr.Truthy(evidence) {
 			evidence = result
 		}
-		if err := goalGate(k, "kanban_complete", task, tid, pystr.Strip(pyrepr.Str(evidence))); err != nil {
+		if err := goalGate(k, "kanban_complete", task, tid, strings.TrimSpace(pyrepr.Str(evidence))); err != nil {
 			return "", err
 		}
 		o := CompleteTaskOptions{Metadata: meta, ExpectedRunID: expectedRunID(tid)}
@@ -439,7 +438,7 @@ func handleSchedule(k *kanbanCall) (string, error) {
 		return "", reject("reason must be a string")
 	}
 	var reason *string
-	if stripped := pystr.Strip(text); stripped != "" {
+	if stripped := strings.TrimSpace(text); stripped != "" {
 		redacted := redactText(k.env, stripped)
 		reason = &redacted
 	}

@@ -19,7 +19,7 @@ import (
 var (
 	ActivateRuntime       func(ctx context.Context) error
 	MaybeRunBootBootstrap func(ctx context.Context, projectRoot string)
-	ConfigureWindowsStdio func() bool
+	ConfigureWindowsStdio func(ctx context.Context) bool
 )
 
 // Exit status of a Windows process an unhandled interrupt ended, STATUS_CONTROL_C_EXIT as a signed word
@@ -67,7 +67,7 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	bestEffort(func() (bool, error) { return gateway.ApplyMallocArenaMax(nil), nil }, "")
 	bestEffort(func() (bool, error) { tools.RegisterSelf(ctx, "gateway", ""); return true, nil }, "")
 	bestEffort(func() (bool, error) { gateway.ArmStartupWatchdog(ctx); return true, nil }, "")
-	bestEffort(func() (bool, error) { return ConfigureWindowsStdio(), nil }, "")
+	bestEffort(func() (bool, error) { return ConfigureWindowsStdio(ctx), nil }, "")
 	if ActivateRuntime != nil {
 		if _, ok := bestEffort(func() (bool, error) { return true, ActivateRuntime(ctx) }, ""); !ok {
 			pkgLog().Debug("store activation failed")

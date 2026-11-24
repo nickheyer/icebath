@@ -271,51 +271,6 @@ func TestStatusRouteReportsTheMovedEngine(t *testing.T) {
 	})
 }
 
-// Profile home under the root's profiles directory with its models dir and an identity marker
-func lmLegacyProfile(t *testing.T, root, name string) string {
-	t.Helper()
-	h := filepath.Join(root, "profiles", name)
-	if err := os.MkdirAll(filepath.Join(h, "models"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("{}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return h
-}
-
-func TestBootAndStatusBothAdoptLegacyModels(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv(home.EnvHome, root)
-	lmRestoreSeams(t)
-	savedBoot := bootInstalledEngine
-	t.Cleanup(func() { bootInstalledEngine = savedBoot })
-	bootInstalledEngine = func(context.Context, string) (*Engine, error) { return nil, nil }
-	lmDeps.installedEngine = func(context.Context, string) (*Engine, error) { return nil, nil }
-	work := lmLegacyProfile(t, root, "work")
-	lmTouch(t, filepath.Join(work, "models", "booted.gguf"))
-	if _, err := EnsureLocalRuntime(context.Background(), map[string]any{"local_runtime": map[string]any{"enabled": true}}, false); err != nil {
-		t.Fatal(err)
-	}
-	if !lrPathExists(filepath.Join(localModelsDir(), "booted.gguf")) {
-		t.Fatal("boot did not adopt the legacy model")
-	}
-	lmTouch(t, filepath.Join(work, "models", "listed.gguf"))
-	lmDeps.runtimeSection = func(context.Context) any { return map[string]any{"enabled": false} }
-	lmDeps.stateEndpoint = func() (map[string]any, error) { return nil, nil }
-	status, err := LocalModelsStatus(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	listed := false
-	for _, raw := range status["models"].([]any) {
-		listed = listed || raw.(map[string]any)["id"] == "listed"
-	}
-	if !listed {
-		t.Fatalf("status models %v", status["models"])
-	}
-}
-
 func TestTheHeadDownloadsWithTheModelFromItsOwnRepoAndIsPricedBeforeDownload(t *testing.T) {
 	lmTestHome(t, ".icebath")
 	build := QuantVariant{Quant: "UD-IQ4_XS", Files: []AssetFile{

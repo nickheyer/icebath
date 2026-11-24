@@ -1,11 +1,12 @@
 package qqbot
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -73,7 +74,7 @@ func setupQQBot(ctx context.Context) error {
 			cli.PrintWarning("  Skipped — QQ Bot won't work without an App Secret.")
 			return nil
 		}
-		credentials = &onboardCredentials{appID: pystr.Strip(appID), clientSecret: pystr.Strip(appSecret)}
+		credentials = &onboardCredentials{appID: strings.TrimSpace(appID), clientSecret: strings.TrimSpace(appSecret)}
 	}
 	if err := cfg.SaveEnvValue(ctx, "QQ_APP_ID", credentials.appID); err != nil {
 		return err
@@ -122,10 +123,10 @@ func setupQQBot(ctx context.Context) error {
 			return err
 		}
 	} else if homeChannel := setup.Prompt("  Home channel OpenID (for cron/notifications, or empty)", "", false); homeChannel != "" {
-		if err := cfg.SaveEnvValue(ctx, "QQBOT_HOME_CHANNEL", pystr.Strip(homeChannel)); err != nil {
+		if err := cfg.SaveEnvValue(ctx, "QQBOT_HOME_CHANNEL", strings.TrimSpace(homeChannel)); err != nil {
 			return err
 		}
-		cli.PrintSuccess("  Home channel set to " + pystr.Strip(homeChannel))
+		cli.PrintSuccess("  Home channel set to " + strings.TrimSpace(homeChannel))
 	}
 	gateway.WizardPrintln("")
 	cli.PrintSuccess("🐧 QQ Bot configured!")

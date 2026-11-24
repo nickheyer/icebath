@@ -11,21 +11,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/periodic"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
-	defaultTurnLivenessTimeoutS = 600.0
-	defaultTurnLivenessPollS    = 15.0
-	minTurnLivenessPollS        = 0.01
-	turnLivenessTimeoutKey      = "agent.turn_liveness.timeout_s"
-	turnLivenessPollKey         = "agent.turn_liveness.poll_s"
-	turnStallDumpMaxThreads     = 40
+	minTurnLivenessPollS    = 0.01
+	turnStallDumpMaxThreads = 40
 )
 
 // Builds the awake idle meter of each new watchdog, swapped by tests that drive both clocks
@@ -42,67 +37,28 @@ func warnInvalidTurnLivenessValue(key string, raw any, def float64) {
 	pkgLog().Warn(fmt.Sprintf("Invalid %s in config.yaml: %s — falling back to default %.1f.", key, errchain.Show(raw), def))
 }
 
-// Coerces one duration knob, warning and defaulting on typos, NaN and Inf, erroring only on overflow
-func resolveFiniteSeconds(raw any, def float64, key string) (float64, error) {
-	value, err := pyint.Float(raw)
-	if err != nil {
-		if pe, ok := err.(*pyint.Error); ok && pe.Kind == "OverflowError" {
-			return 0, err
-		}
-		value = math.NaN()
+// Seconds of a liveness knob in effect for ctx, an infinite or overflowing value warned about and read as the default
+func livenessSeconds(ctx context.Context, d *settings.Duration) float64 {
+	v := d.Get(ctx)
+	if v == time.Duration(math.MaxInt64) || v == time.Duration(math.MinInt64) {
+		warnInvalidTurnLivenessValue(d.Key, math.Inf(int(v/time.Duration(math.MaxInt64))), d.Default.Seconds())
+		return d.Default.Seconds()
 	}
-	if math.IsNaN(value) || math.IsInf(value, 0) {
-		warnInvalidTurnLivenessValue(key, raw, def)
-		return def, nil
-	}
-	return value, nil
+	return v.Seconds()
 }
 
-// Dict view of a config node, false for anything that is not a mapping
-func livenessConfigDict(v any) (map[string]any, bool) {
-	switch m := v.(type) {
-	case map[string]any:
-		return m, true
-	case config.Tree:
-		return m, true
-	}
-	return nil, false
-}
-
-// Timeout and poll seconds from agent.turn_liveness, nil timeout when non positive opts out
-func resolveTurnLivenessSettings(cfg map[string]any) (*float64, float64, error) {
-	var rawSection any
-	if agentCfg, ok := livenessConfigDict(cfg["agent"]); ok {
-		rawSection = agentCfg["turn_liveness"]
-	}
-	section, isDict := livenessConfigDict(rawSection)
-	if rawSection != nil && !isDict {
-		warnInvalidTurnLivenessValue("agent.turn_liveness", rawSection, defaultTurnLivenessTimeoutS)
-	}
-	rawTimeout, ok := section["timeout_s"]
-	if !ok {
-		rawTimeout = defaultTurnLivenessTimeoutS
-	}
-	timeoutS, err := resolveFiniteSeconds(rawTimeout, defaultTurnLivenessTimeoutS, turnLivenessTimeoutKey)
-	if err != nil {
-		return nil, 0, err
-	}
-	rawPoll, ok := section["poll_s"]
-	if !ok {
-		rawPoll = defaultTurnLivenessPollS
-	}
-	pollS, err := resolveFiniteSeconds(rawPoll, defaultTurnLivenessPollS, turnLivenessPollKey)
-	if err != nil {
-		return nil, 0, err
-	}
+// Timeout and poll seconds of agent.turn_liveness in effect for ctx, nil timeout when non positive opts out
+func resolveTurnLivenessSettings(ctx context.Context) (*float64, float64) {
+	timeoutS := livenessSeconds(ctx, settings.AgentTurnLivenessTimeoutS)
+	pollS := livenessSeconds(ctx, settings.AgentTurnLivenessPollS)
 	if pollS <= 0 {
-		warnInvalidTurnLivenessValue(turnLivenessPollKey, pollS, defaultTurnLivenessPollS)
-		pollS = defaultTurnLivenessPollS
+		warnInvalidTurnLivenessValue(settings.AgentTurnLivenessPollS.Key, pollS, settings.AgentTurnLivenessPollS.Default.Seconds())
+		pollS = settings.AgentTurnLivenessPollS.Default.Seconds()
 	}
 	if timeoutS <= 0 {
-		return nil, pollS, nil
+		return nil, pollS
 	}
-	return &timeoutS, pollS, nil
+	return &timeoutS, pollS
 }
 
 // Callbacks and bounds binding one watchdog to the lease that owns the turn

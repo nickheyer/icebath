@@ -1,6 +1,8 @@
 package kanban
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -52,7 +54,7 @@ func normalizeBoardSlug(slug *string) (string, error) {
 	if slug == nil {
 		return "", nil
 	}
-	s := pystr.Lower(pystr.Strip(*slug))
+	s := strings.ToLower(strings.TrimSpace(*slug))
 	if s == "" {
 		return "", nil
 	}
@@ -88,7 +90,7 @@ func requireSlug(slug string) (string, error) {
 }
 
 var kanbanHomeFn = func() string {
-	if override := pystr.Strip(os.Getenv("ICEBATH_KANBAN_HOME")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_HOME")); override != "" {
 		return pypath.PathStr(pypath.Expanduser(override))
 	}
 	return home.Root()
@@ -125,14 +127,14 @@ func existingBoard(candidate string) string {
 
 // Active slug from the context override, ICEBATH_KANBAN_BOARD, the current file while that board exists, else default
 func GetCurrentBoard(ctx context.Context) string {
-	for _, candidate := range []string{pystr.Strip(currentBoardOverride(ctx)), pystr.Strip(os.Getenv("ICEBATH_KANBAN_BOARD"))} {
+	for _, candidate := range []string{strings.TrimSpace(currentBoardOverride(ctx)), strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_BOARD"))} {
 		if found := existingBoard(candidate); found != "" {
 			return found
 		}
 	}
 	if raw, err := os.ReadFile(CurrentBoardPath()); err == nil {
 		if text, err := pystr.DecodeUTF8Sig(raw); err == nil {
-			if val := pystr.Strip(text); val != "" {
+			if val := strings.TrimSpace(text); val != "" {
 				if normed, err := normalizeBoardSlug(&val); err == nil && normed != "" && BoardExists(&normed) {
 					return normed
 				}
@@ -195,7 +197,7 @@ func explicitBoardSlug(ctx context.Context, board *string) (string, error) {
 	if board != nil {
 		return normalizeBoardSlug(board)
 	}
-	if c := pystr.Strip(currentBoardOverride(ctx)); c != "" {
+	if c := strings.TrimSpace(currentBoardOverride(ctx)); c != "" {
 		if normed, err := normalizeBoardSlug(&c); err == nil {
 			return normed, nil
 		}
@@ -217,7 +219,7 @@ func explicitBoardIntentPinned(ctx context.Context) bool {
 func boardPath(ctx context.Context, envVar string, board *string, defaultParts []string, leaf string) (string, error) {
 	pin := ""
 	if envVar != "" {
-		pin = pystr.Strip(os.Getenv(envVar))
+		pin = strings.TrimSpace(os.Getenv(envVar))
 	}
 	slug, err := explicitBoardSlug(ctx, board)
 	if err != nil {

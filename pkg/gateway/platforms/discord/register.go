@@ -33,7 +33,6 @@ func (discordPlugin) Register(ctx *plugins.Context) error {
 		"ensure_deps_fn":         func(context.Context) (bool, error) { return discordDepsPresent(), nil },
 		"is_connected":           gateway.EnvIsConnected("DISCORD_BOT_TOKEN"),
 		"setup_fn":               InteractiveSetup,
-		"apply_yaml_config_fn":   applyYAMLConfig,
 		"cron_deliver_env_var":   "DISCORD_HOME_CHANNEL",
 		"standalone_sender_fn":   standaloneSend,
 		"max_message_length":     discordMaxMessageLength,

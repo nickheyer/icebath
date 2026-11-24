@@ -1,6 +1,8 @@
 package acp
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -116,7 +118,7 @@ func (c *shownConfig) equal(o *shownConfig) bool {
 
 // Canonical command name a text invokes, false for ordinary text
 func slashCommandOf(text string) (string, bool) {
-	stripped := pystr.Lstrip(text)
+	stripped := strings.TrimLeftFunc(text, unicode.IsSpace)
 	if !strings.HasPrefix(stripped, "/") {
 		return "", false
 	}
@@ -601,7 +603,7 @@ type sessionFields struct {
 
 // Model picker, modes, provenance and config options of a session reply, the post attach notices scheduled behind it
 func (a *GatewayACPAgent) sessionFields(ctx context.Context, sessionID string, info *pyjson.Object, editorID string) (*sessionFields, error) {
-	if title, ok := dget(info, "title").(string); ok && pystr.Strip(title) != "" {
+	if title, ok := dget(info, "title").(string); ok && strings.TrimSpace(title) != "" {
 		a.titles[sessionID] = title
 	}
 	var models *pyacp.SessionModelState
@@ -1545,8 +1547,8 @@ func (a *GatewayACPAgent) runSlash(ctx context.Context, heldID, sessionID, text 
 		return false, text, nil
 	}
 	arg := ""
-	if parts := pystr.SplitWhitespace(pystr.Strip(text), 1); len(parts) > 1 {
-		arg = pystr.Strip(parts[1])
+	if parts := pystr.SplitWhitespace(strings.TrimSpace(text), 1); len(parts) > 1 {
+		arg = strings.TrimSpace(parts[1])
 	}
 	reply, submit, err := runGatewayCommand(ctx, a, sessionID, command, arg)
 	answered := submit == nil
@@ -1939,7 +1941,7 @@ func (a *GatewayACPAgent) project(ctx context.Context, event *pyjson.Object) err
 		a.closeSegment(aid)
 		text := replyText(payload)
 		a.endMessage(sid)
-		if !truthy(dget(payload, "already_streamed")) && pystr.Strip(text) != "" {
+		if !truthy(dget(payload, "already_streamed")) && strings.TrimSpace(text) != "" {
 			a.segments[aid] = append(a.segments[aid], text)
 			if a.conn != nil {
 				if err := a.sessionUpdate(ctx, editorID, a.chunk(sid, text+"\n\n", false)); err != nil {
@@ -2028,7 +2030,7 @@ func (a *GatewayACPAgent) gapGuard(ctx context.Context, kind, sid, aid string) (
 		return false, nil
 	}
 	if kind == "tool.start" || kind == "message.interim" {
-		if pystr.Strip(cut) != "" {
+		if strings.TrimSpace(cut) != "" {
 			a.segments[aid] = append(a.segments[aid], cut)
 		}
 		a.cut[aid] = ""
@@ -2154,7 +2156,7 @@ func (a *GatewayACPAgent) projectUsage(ctx context.Context, sid, editorID string
 // Projects a new title as a session info update
 func (a *GatewayACPAgent) projectTitle(ctx context.Context, sid, editorID string, title any) error {
 	text, ok := title.(string)
-	if !ok || pystr.Strip(text) == "" || text == a.titles[sid] {
+	if !ok || strings.TrimSpace(text) == "" || text == a.titles[sid] {
 		return nil
 	}
 	a.titles[sid] = text

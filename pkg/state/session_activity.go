@@ -1,9 +1,9 @@
 package state
 
 import (
-	"time"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"time"
 )
 
 var activityMonoStart = time.Now()
@@ -32,7 +32,7 @@ var activityProvenances = map[ActivityProvenance]bool{
 
 // Stripped activity text clamped to the description budget with an ellipsis
 func BoundActivityDescription(description string) string {
-	text := []rune(pystr.Strip(description))
+	text := []rune(strings.TrimSpace(description))
 	if len(text) <= ActivityDescriptionMax {
 		return string(text)
 	}
@@ -41,7 +41,7 @@ func BoundActivityDescription(description string) string {
 
 // Known provenance for the stripped value, unknown when unset or unrecognized
 func NormalizeActivityProvenance(provenance string) ActivityProvenance {
-	p := ActivityProvenance(pystr.Strip(provenance))
+	p := ActivityProvenance(strings.TrimSpace(provenance))
 	if activityProvenances[p] {
 		return p
 	}

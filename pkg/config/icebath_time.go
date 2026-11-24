@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strings"
+
 	"context"
 	"os"
 	"sync"
@@ -87,7 +89,7 @@ func envTimezone(ctx context.Context) string {
 	if IsMultiplexActive != nil && IsMultiplexActive(ctx) {
 		return ""
 	}
-	return pystr.Strip(os.Getenv("ICEBATH_TIMEZONE"))
+	return strings.TrimSpace(os.Getenv("ICEBATH_TIMEZONE"))
 }
 
 // Cache key naming the timezone source, the env value or the active config path
@@ -122,8 +124,8 @@ func resolveTimezoneName(ctx context.Context) string {
 	if !ok {
 		return ""
 	}
-	if tz, ok := cfg["timezone"].(string); ok && pystr.Strip(tz) != "" {
-		return pystr.Strip(tz)
+	if tz, ok := cfg["timezone"].(string); ok && strings.TrimSpace(tz) != "" {
+		return strings.TrimSpace(tz)
 	}
 	return ""
 }

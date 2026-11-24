@@ -111,7 +111,7 @@ func FlattenExceptionChain(err error) string {
 	}
 	parts := make([]string, len(seen))
 	for i, e := range seen {
-		msg := strings.ReplaceAll(pystr.Strip(e.Error()), "\n", " ")
+		msg := strings.ReplaceAll(strings.TrimSpace(e.Error()), "\n", " ")
 		if pystr.Len(msg) > 140 {
 			msg = pystr.Slice(msg, 0, 140) + "…"
 		}

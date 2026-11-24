@@ -17,11 +17,11 @@ const (
 
 // Partial flag, keep count and focus topic from the text after compress, nil focus for the partial forms
 func ParsePartialCompressArgs(rawArgs string) (bool, int, *string) {
-	text := pystr.Strip(rawArgs)
+	text := strings.TrimSpace(rawArgs)
 	if text == "" {
 		return false, DefaultKeepLast, nil
 	}
-	lowered := pystr.Lower(text)
+	lowered := strings.ToLower(text)
 	if strings.HasPrefix(lowered, "up to here") {
 		lowered = lowered[len("up to "):]
 		text = text[len("up to "):]
@@ -54,7 +54,7 @@ func ExtractCompressFlags(rawArgs string) (string, bool, bool) {
 	preview, aggressive := false, false
 	kept := []string{}
 	for _, tok := range pystr.SplitWhitespace(rawArgs, -1) {
-		switch pystr.Lower(tok) {
+		switch strings.ToLower(tok) {
 		case "--preview", "--dry-run", "--dryrun":
 			preview = true
 		case "--aggressive":

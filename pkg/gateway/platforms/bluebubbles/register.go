@@ -1,11 +1,12 @@
 package bluebubbles
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -24,12 +25,15 @@ const platformHint = "You are texting via iMessage (BlueBubbles). Replies arrive
 // Dependency check, always met since net/http is compiled into the binary
 func checkRequirements() bool { return true }
 
-// Whether server URL and password are present in the config extra or the env
+// Whether bluebubbles.server_url is set and a password is in the connection block or the env
 func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error) {
-	if cfg != nil && pyrepr.Truthy(cfg.Extra["server_url"]) && pyrepr.Truthy(cfg.Extra["password"]) {
+	if strings.TrimSpace(settings.BluebubblesServerURL.Get(gateway.SettingsContext(ctx))) == "" {
+		return false, nil
+	}
+	if cfg != nil && pyrepr.Truthy(cfg.Extra["password"]) {
 		return true, nil
 	}
-	return gateway.EnvIsConnected("BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD")(ctx, cfg)
+	return gateway.EnvIsConnected("BLUEBUBBLES_PASSWORD")(ctx, cfg)
 }
 
 // One shot connect, text send and disconnect against the BlueBubbles REST API for cron without a live gateway
@@ -48,10 +52,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		var serverURL string
-		if pconfig != nil && pyrepr.Truthy(pconfig.Extra["server_url"]) {
-			serverURL = pyrepr.Str(pconfig.Extra["server_url"])
-		}
+		serverURL := strings.TrimSpace(settings.BluebubblesServerURL.Get(gateway.SettingsContext(ctx)))
 		if shown := gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(serverURL)); shown != "" {
 			pkgLog().Debug("BlueBubbles standalone send failed")
 			return gateway.SendError("BlueBubbles send failed: " + shown), nil
@@ -115,7 +116,7 @@ func InteractiveSetup(ctx context.Context) error {
 		transform           func(string) string
 	}{
 		{"BlueBubbles server URL (e.g. http://192.168.1.10:1234)", "BLUEBUBBLES_SERVER_URL", "Server URL", false,
-			func(v string) string { return pystr.RstripChars(v, "/") }},
+			func(v string) string { return strings.TrimRight(v, "/") }},
 		{"BlueBubbles server password", "BLUEBUBBLES_PASSWORD", "Password", true, nil},
 	} {
 		saved, err := gateway.PlatformSetup.SavePrompted(ctx, field.envVar, field.label, gateway.SavePromptedOptions{

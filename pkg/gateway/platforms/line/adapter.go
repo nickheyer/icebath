@@ -14,9 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Stashed reply token of a chat with its expiry
@@ -75,64 +73,6 @@ func lineAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Scoped env value of name or the extra key, the Python env or extra fallback
-func envOr(ctx context.Context, extra map[string]any, env, key string, def any) (any, error) {
-	val, err := gateway.GetScopedSecret(ctx, env, "", false)
-	if err != nil {
-		return nil, err
-	}
-	if val != "" {
-		return val, nil
-	}
-	if v, ok := extra[key]; ok {
-		return v, nil
-	}
-	return def, nil
-}
-
-// Python set of an extra value restricted to its string members, the TypeError set raises otherwise
-func setOf(v any) (map[string]bool, error) {
-	out := map[string]bool{}
-	switch t := v.(type) {
-	case nil:
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: "'NoneType' object is not iterable"}
-	case string:
-		for _, r := range t {
-			out[string(r)] = true
-		}
-	case []string:
-		for _, s := range t {
-			out[s] = true
-		}
-	case []any:
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				out[s] = true
-			}
-		}
-	case map[string]any:
-		for k := range t {
-			out[k] = true
-		}
-	default:
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
-	}
-	return out, nil
-}
-
-// Scoped boolean env flag, the default when unset and true only for 1, true, yes or on
-func truthyEnv(ctx context.Context, name string, def bool) (bool, error) {
-	v, found, err := gateway.LookupScopedSecret(ctx, name, false)
-	if err != nil || !found {
-		return def, err
-	}
-	switch pystr.Lower(pystr.Strip(v)) {
-	case "1", "true", "yes", "on":
-		return true, nil
-	}
-	return false, nil
-}
-
 // Channel access token and channel secret from scoped secrets then extra, non strings reading as unset
 func credentials(ctx context.Context, config *gateway.PlatformConfig) (string, string, error) {
 	var extra map[string]any
@@ -149,7 +89,7 @@ func credentials(ctx context.Context, config *gateway.PlatformConfig) (string, s
 			value = extra[key]
 		}
 		if s, ok := value.(string); ok {
-			return pystr.Strip(s), nil
+			return strings.TrimSpace(s), nil
 		}
 		return "", nil
 	}
@@ -161,32 +101,7 @@ func credentials(ctx context.Context, config *gateway.PlatformConfig) (string, s
 	return token, secret, err
 }
 
-// Python int of a value, the default on TypeError or ValueError
-func coerceInt(v any, def int) (int, error) {
-	n, err := pyint.Int64(v)
-	if pe, ok := err.(*pyint.Error); ok && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-		return def, nil
-	} else if err != nil {
-		return 0, err
-	}
-	if n > math.MaxInt || n < math.MinInt {
-		return 0, &gateway.PyError{Kind: "OverflowError", Msg: "Python int too large to convert to C int"}
-	}
-	return int(n), nil
-}
-
-// Python float of a value, the default on TypeError or ValueError
-func coerceFloat(v any, def float64) (float64, error) {
-	f, err := pyint.Float(v)
-	if pe, ok := err.(*pyint.Error); ok && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-		return def, nil
-	} else if err != nil {
-		return 0, err
-	}
-	return f, nil
-}
-
-// Adapter for a platform config reading credentials, bind address, allowlists and postback copy
+// Adapter for a platform config with its credentials and the bind address, allowlists and postback copy of the profile served
 func NewLineAdapter(ctx context.Context, config *gateway.PlatformConfig) (*LineAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -196,86 +111,41 @@ func NewLineAdapter(ctx context.Context, config *gateway.PlatformConfig) (*LineA
 		mediaTempPaths: map[string]bool{}, mediaTTL: mediaTokenTTLSeconds, pendingButtons: map[string]string{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.Platform("line"), a)
 	a.Traits = lineAdapterTraits()
-	extra := config.Extra
-	if extra == nil {
-		extra = map[string]any{}
-	}
 	var err error
 	if a.channelAccessToken, a.channelSecret, err = credentials(ctx, config); err != nil {
 		return nil, err
 	}
-	host, err := envOr(ctx, extra, "LINE_HOST", "host", nil)
-	if err != nil {
-		return nil, err
+	sctx := gateway.SettingsContext(ctx)
+	if host := settings.LineHost.Get(sctx); host != "" {
+		a.webhookHost = &host
 	}
-	if pyrepr.Truthy(host) {
-		h := pyrepr.Str(host)
-		a.webhookHost = &h
-	}
-	port, err := envOr(ctx, extra, "LINE_PORT", "port", defaultWebhookPort)
-	if err != nil {
-		return nil, err
-	}
-	if a.webhookPort, err = coerceInt(port, defaultWebhookPort); err != nil {
-		return nil, err
-	}
-	a.webhookPath = defaultWebhookPath
-	if v, ok := extra["webhook_path"]; ok {
-		a.webhookPath = pyrepr.Str(v)
-	}
-	public, err := envOr(ctx, extra, "LINE_PUBLIC_URL", "public_url", "")
-	if err != nil {
-		return nil, err
-	}
-	if pyrepr.Truthy(public) {
-		a.publicBaseURL = strings.TrimRight(pyrepr.Str(public), "/")
-	}
-	if a.allowAll, err = truthyEnv(ctx, "LINE_ALLOW_ALL_USERS", pyrepr.Truthy(extra["allow_all_users"])); err != nil {
-		return nil, err
-	}
+	a.webhookPort = settings.LinePort.Get(sctx)
+	a.webhookPath = settings.LineWebhookPath.Get(sctx)
+	a.publicBaseURL = strings.TrimRight(settings.LinePublicURL.Get(sctx), "/")
+	a.allowAll = settings.LineAllowAllUsers.Get(sctx)
 	for _, list := range []struct {
-		dst      *map[string]bool
-		env, key string
-	}{{&a.allowedUsers, "LINE_ALLOWED_USERS", "allowed_users"}, {&a.allowedGroups, "LINE_ALLOWED_GROUPS", "allowed_groups"},
-		{&a.allowedRooms, "LINE_ALLOWED_ROOMS", "allowed_rooms"}} {
-		raw, err := gateway.GetScopedSecret(ctx, list.env, "", false)
-		if err != nil {
-			return nil, err
+		dst     *map[string]bool
+		allowed *settings.List
+	}{{&a.allowedUsers, settings.LineAllowedUsers}, {&a.allowedGroups, settings.LineAllowedGroups}, {&a.allowedRooms, settings.LineAllowedRooms}} {
+		members := map[string]bool{}
+		for _, id := range list.allowed.Strings(sctx) {
+			members[id] = true
 		}
-		merged := csvSet(raw)
-		configured, ok := extra[list.key]
-		if !ok {
-			configured = []any{}
-		}
-		fromExtra, err := setOf(configured)
-		if err != nil {
-			return nil, err
-		}
-		for k := range fromExtra {
-			merged[k] = true
-		}
-		*list.dst = merged
+		*list.dst = members
 	}
-	threshold, err := envOr(ctx, extra, "LINE_SLOW_RESPONSE_THRESHOLD", "slow_response_threshold", defaultSlowResponseThresh)
-	if err != nil {
-		return nil, err
-	}
-	if a.slowResponseThreshold, err = coerceFloat(threshold, defaultSlowResponseThresh); err != nil {
-		return nil, err
-	}
+	a.slowResponseThreshold = settings.LineSlowResponseThreshold.Get(sctx).Seconds()
 	for _, copyText := range []struct {
-		dst               *string
-		env, attr, keyOfT string
-	}{{&a.pendingText, "LINE_PENDING_TEXT", "pending_text", defaultPendingReplyTextKey},
-		{&a.buttonLabel, "LINE_BUTTON_LABEL", "button_label", defaultButtonLabelKey},
-		{&a.deliveredText, "LINE_DELIVERED_TEXT", "delivered_text", defaultDeliveredTextKey},
-		{&a.interruptedText, "LINE_INTERRUPTED_TEXT", "interrupted_text", defaultInterruptedTextKey},
-		{&a.expiredText, "LINE_EXPIRED_TEXT", "expired_text", defaultExpiredTextKey}} {
-		v, err := envOr(ctx, extra, copyText.env, copyText.attr, i18n.T(ctx, copyText.keyOfT, "", nil))
-		if err != nil {
-			return nil, err
+		dst    *string
+		text   *settings.String
+		keyOfT string
+	}{{&a.pendingText, settings.LinePendingText, defaultPendingReplyTextKey},
+		{&a.buttonLabel, settings.LineButtonLabel, defaultButtonLabelKey},
+		{&a.deliveredText, settings.LineDeliveredText, defaultDeliveredTextKey},
+		{&a.interruptedText, settings.LineInterruptedText, defaultInterruptedTextKey},
+		{&a.expiredText, settings.LineExpiredText, defaultExpiredTextKey}} {
+		if *copyText.dst = copyText.text.Get(sctx); *copyText.dst == "" {
+			*copyText.dst = i18n.T(ctx, copyText.keyOfT, "", nil)
 		}
-		*copyText.dst = pyrepr.Str(v)
 	}
 	return a, nil
 }

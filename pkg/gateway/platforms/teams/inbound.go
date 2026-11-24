@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -196,7 +197,7 @@ func (a *TeamsAdapter) onMessage(ctx context.Context, activity map[string]any) e
 		if err != nil {
 			return err
 		}
-		text = pystr.Strip(stripped)
+		text = strings.TrimSpace(stripped)
 	}
 	userID := str(from, "aadObjectId")
 	if userID == "" {
@@ -428,15 +429,13 @@ func (a *TeamsAdapter) onCardAction(ctx context.Context, activity map[string]any
 
 // Denial text for an approval click unless all users are allowed or the clicker is allowlisted
 func cardActionDenied(ctx context.Context, from map[string]any) string {
-	allowAll, _ := gateway.GetScopedSecret(ctx, "TEAMS_ALLOW_ALL_USERS", "", false)
-	switch pystr.Lower(pystr.Strip(allowAll)) {
-	case "1", "true", "yes":
+	sctx := gateway.SettingsContext(ctx)
+	if settings.TeamsAllowAllUsers.Get(sctx) {
 		return ""
 	}
-	allowedCSV, _ := gateway.GetScopedSecret(ctx, "TEAMS_ALLOWED_USERS", "", false)
-	allowedCSV = pystr.Strip(allowedCSV)
-	if allowedCSV == "" {
-		pkgLog().Warn("[teams] card action rejected: TEAMS_ALLOWED_USERS not configured and TEAMS_ALLOW_ALL_USERS not set — default deny")
+	allowedIDs := settings.TeamsAllowedUsers.Strings(sctx)
+	if len(allowedIDs) == 0 {
+		pkgLog().Warn("[teams] card action rejected: teams.allowed_users is empty and teams.allow_all_users is off — default deny")
 		return i18n.T(ctx, "platform.teams.approval.requires_allowlist", "", nil)
 	}
 	clicker := str(from, "aadObjectId")
@@ -444,10 +443,8 @@ func cardActionDenied(ctx context.Context, from map[string]any) string {
 		clicker = str(from, "id")
 	}
 	allowed := map[string]bool{}
-	for _, uid := range strings.Split(allowedCSV, ",") {
-		if s := pystr.Strip(uid); s != "" {
-			allowed[s] = true
-		}
+	for _, uid := range allowedIDs {
+		allowed[uid] = true
 	}
 	if !allowed["*"] && !allowed[clicker] {
 		pkgLog().Warn(fmt.Sprintf("[teams] Unauthorized card action by %s — ignoring", clicker))

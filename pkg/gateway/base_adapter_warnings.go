@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"regexp"
@@ -8,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -134,7 +135,7 @@ func (b *BasePlatformAdapter) PrepareTTSText(ctx context.Context, text string) s
 		return spoken
 	}
 	text = ttsThinkBlockRE.ReplaceAllString(text, " ")
-	return pystr.Strip(ttsMarkupRE.ReplaceAllString(text, ""))
+	return strings.TrimSpace(ttsMarkupRE.ReplaceAllString(text, ""))
 }
 
 // Plays auto TTS audio as a voice message, adapters with invisible playback override it
@@ -190,7 +191,7 @@ func (b *BasePlatformAdapter) streamingTTSTurnCompleted(sessionKey string, turnM
 
 // User visible notice that a MEDIA upload failed after its tag was stripped from the text
 func (b *BasePlatformAdapter) notifyMediaDeliveryFailure(ctx context.Context, chatID, mediaPath string, isVoice bool, metadata map[string]any) {
-	ext := pystr.Lower(pypath.PathSuffix(mediaPath))
+	ext := strings.ToLower(pypath.PathSuffix(mediaPath))
 	var text string
 	switch {
 	case isVoice || ShouldSendMediaAsAudio(b.Platform, ext, isVoice):

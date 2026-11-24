@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
@@ -32,9 +33,38 @@ var tuiBootstrapScrubbedEnv = []string{"ICEBATH_MODEL", "ICEBATH_INFERENCE_MODEL
 	"ICEBATH_TUI_CHECKPOINTS", "ICEBATH_TUI_PASS_SESSION_ID", "ICEBATH_KANBAN_BOARD",
 	"ICEBATH_TUI_CLIENT_ENV", "ICEBATH_TUI_BASE_URL", "ICEBATH_TUI_API_KEY", "ICEBATH_TUI_REASONING"}
 
-// Host work the terminal UI hands to the launcher, owner attach, snapshot restore and worktree settling
-func terminalUIHost() tui.Host {
-	return tui.Host{Attach: tuiAttachOwner, RestoreSnapshot: tuiRestoreSnapshot, SettleWorktrees: settleTUIWorktrees, ReplaceOwner: tuiReplaceOwner}
+// Host work the terminal UI hands to the launcher, owner attach, snapshot restore and worktree settling, with the window settings of the home
+func terminalUIHost(ctx context.Context) tui.Host {
+	return tui.Host{Attach: tuiAttachOwner, RestoreSnapshot: tuiRestoreSnapshot, SettleWorktrees: settleTUIWorktrees, ReplaceOwner: tuiReplaceOwner,
+		Prefs: terminalUIPrefs(ctx)}
+}
+
+// Settings of the window resolved for the home of ctx, which the terminal UI cannot read itself
+func terminalUIPrefs(ctx context.Context) *tui.Prefs {
+	var sequence *bool
+	if on, set := settings.DisplayTuiClipboardSequence.Lookup(ctx); set {
+		sequence = &on
+	}
+	return &tui.Prefs{
+		ClipboardSequence: sequence,
+		Theme:             settings.Theme.Get(ctx),
+		ReducedMotion:     settings.DisplayTuiReducedMotion.Get(ctx),
+		ScrollSpeed:       settings.DisplayTuiScrollSpeed.Get(ctx),
+		TermuxLayout:      settings.DisplayTuiTermuxMode.Get(ctx),
+		RequestTimeout:    settings.DisplayTuiRequestTimeout.Get(ctx),
+		StartupTimeout:    settings.DisplayTuiStartupTimeout.Get(ctx),
+		NoConfirm:         !settings.ConfirmDestructive.Get(ctx),
+		CPUProfile:        settings.DiagnosticsCPUProfile.Get(ctx),
+		FrameRate:         settings.DiagnosticsFrameRate.Get(ctx),
+		FrameLog:          settings.DiagnosticsFrameLog.Get(ctx),
+		FrameLogFloor:     settings.DiagnosticsFrameLogThreshold.Get(ctx),
+		FrameLogFile:      settings.DiagnosticsFrameLogFile.Get(ctx),
+		HeapDumpDir:       settings.DiagnosticsHeapdumpDir.Get(ctx),
+		AutoHeapProfile:   settings.DiagnosticsAutoHeapProfile.Get(ctx),
+		HeapDumpMaxBytes:  int64(settings.DiagnosticsHeapdumpMaxBytes.Get(ctx)),
+		HeapDumpCooldown:  settings.DiagnosticsHeapdumpCooldown.Get(ctx),
+		HeapDumpOnStart:   settings.DiagnosticsHeapdumpOnStart.Get(ctx),
+	}
 }
 
 // Stops the home's background service of another build, busy or not, so the window's reconnect starts one of this build

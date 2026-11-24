@@ -84,7 +84,7 @@ func eventPayload(event any) (*pyjson.Object, error) {
 	return nil, fmt.Errorf("cannot convert %T to dict", event)
 }
 
-// Enqueues an event without blocking or panicking, dropping the oldest entry when the queue is full
+// Enqueues an event without blocking or panicking, dropping the oldest entry when the queue is full; the dispatcher starts once the event is queued
 func (e *MonitoringEmitter) Emit(event any) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -102,7 +102,6 @@ func (e *MonitoringEmitter) Emit(event any) {
 	if _, ok := payload.Get("ts_ns"); !ok {
 		payload.Set("ts_ns", time.Now().UnixNano())
 	}
-	e.ensureStarted()
 	e.mu.Lock()
 	if len(e.q) >= maxQueue {
 		e.q[0] = nil
@@ -113,6 +112,7 @@ func (e *MonitoringEmitter) Emit(event any) {
 	e.q = append(e.q, payload)
 	e.unfinished++
 	e.mu.Unlock()
+	e.ensureStarted()
 	select {
 	case e.notify <- struct{}{}:
 	default:

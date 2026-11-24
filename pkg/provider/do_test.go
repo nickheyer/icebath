@@ -5,12 +5,10 @@ import (
 	"errors"
 	"math"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -167,50 +165,6 @@ func TestPollUntil(t *testing.T) {
 	PollUntil(func() (any, bool) { calls++; return nil, false }, 0, time.Second)
 	if calls != 1 || len(clock.slept) != 0 {
 		t.Fatalf("zero timeout calls %d slept %v", calls, clock.slept)
-	}
-}
-
-func TestResolveTimeout(t *testing.T) {
-	const env = "ICEBATH_TEST_DEADLINE_X"
-	os.Unsetenv(env)
-	if d, ok := ResolveTimeout(config.Tree{}, "a.b", 42*time.Second, true, env); !ok || d != 42*time.Second {
-		t.Fatalf("default %v %v", d, ok)
-	}
-	t.Setenv(env, "17.5")
-	if d, ok := ResolveTimeout(config.Tree{}, "a.b", 42*time.Second, true, env); !ok || d != 17500*time.Millisecond {
-		t.Fatalf("env %v %v", d, ok)
-	}
-	cfg := config.Tree{"timeouts": map[string]any{"a": map[string]any{"b": 99}}}
-	if d, ok := ResolveTimeout(cfg, "a.b", 42*time.Second, true, env); !ok || d != 99*time.Second {
-		t.Fatalf("config %v %v", d, ok)
-	}
-	cfg = config.Tree{"timeouts": map[string]any{"tools": map[string]any{"concurrent_batch": 300}}}
-	if d, ok := ResolveTimeout(cfg, "tools.concurrent_batch", 420*time.Second, true, ""); !ok || d != 300*time.Second {
-		t.Fatalf("dotted %v %v", d, ok)
-	}
-	cfg = config.Tree{"timeouts": map[string]any{"a": map[string]any{"b": 0}}}
-	if _, ok := ResolveTimeout(cfg, "a.b", 42*time.Second, true, ""); ok {
-		t.Fatal("zero config means unbounded")
-	}
-	cfg = config.Tree{"timeouts": map[string]any{"a": map[string]any{"b": "soon"}}}
-	if d, ok := ResolveTimeout(cfg, "a.b", 42*time.Second, true, env); !ok || d != 17500*time.Millisecond {
-		t.Fatalf("invalid config falls through to env %v %v", d, ok)
-	}
-	t.Setenv(env, "banana")
-	if d, ok := ResolveTimeout(config.Tree{}, "a.b", 42*time.Second, true, env); !ok || d != 42*time.Second {
-		t.Fatalf("invalid env falls through %v %v", d, ok)
-	}
-	os.Unsetenv(env)
-	cfg = config.Tree{"timeouts": map[string]any{"a": map[string]any{"b": true}}}
-	if d, ok := ResolveTimeout(cfg, "a.b", 42*time.Second, true, ""); !ok || d != 42*time.Second {
-		t.Fatalf("bool rejected %v %v", d, ok)
-	}
-	cfg = config.Tree{"timeouts": map[string]any{"a": map[string]any{"b": math.NaN()}}}
-	if d, ok := ResolveTimeout(cfg, "a.b", 42*time.Second, true, ""); !ok || d != 42*time.Second {
-		t.Fatalf("NaN falls through %v %v", d, ok)
-	}
-	if d, ok := ResolveTimeout(nil, "a.b", 5*time.Second, true, ""); !ok || d != 5*time.Second {
-		t.Fatalf("nil config uses default %v %v", d, ok)
 	}
 }
 

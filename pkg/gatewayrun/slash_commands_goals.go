@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -120,8 +122,8 @@ func (r *GatewayRunner) enqueueGoalTurn(ctx context.Context, event *gateway.Mess
 
 // Shows, pauses, resumes, clears or sets the session's one recurring re-entry prompt
 func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Strip(event.GetCommandArgs())
-	lower := pystr.Lower(args)
+	args := strings.TrimSpace(event.GetCommandArgs())
+	lower := strings.ToLower(args)
 	mgr, _ := r.getHeartbeatManagerForEvent(ctx, event)
 	if mgr == nil {
 		return i18n.T(ctx, "gateway.heartbeat.unavailable", "", nil), nil
@@ -168,7 +170,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 	var interval *big.Int
 	var err error
 	prompt := ""
-	if pystr.Lower(tokens[0]) == "every" && len(tokens) >= 2 {
+	if strings.ToLower(tokens[0]) == "every" && len(tokens) >= 2 {
 		if interval, err = agent.ParseHeartbeatInterval("every " + tokens[1]); err != nil {
 			return "", err
 		}
@@ -180,7 +182,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 			return "", err
 		}
 		if interval != nil && interval.Sign() > 0 {
-			prompt = pystr.Strip(args[len(tokens[0]):])
+			prompt = strings.TrimSpace(args[len(tokens[0]):])
 		}
 	}
 	if interval == nil {
@@ -189,7 +191,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 	if interval.Sign() < 0 {
 		return i18n.T(ctx, "gateway.heartbeat.interval_too_small", "", map[string]any{"min_seconds": agent.MinHeartbeatIntervalSeconds}), nil
 	}
-	if pystr.Strip(prompt) == "" {
+	if strings.TrimSpace(prompt) == "" {
 		return i18n.T(ctx, "gateway.heartbeat.prompt_required", "", nil), nil
 	}
 	st, err := mgr.Set(prompt, interval)
@@ -202,7 +204,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 
 // Adds, removes, clears or lists the extra criteria of the active goal
 func (r *GatewayRunner) handleSubgoalCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Strip(event.GetCommandArgs())
+	args := strings.TrimSpace(event.GetCommandArgs())
 	mgr, _ := r.getGoalManagerForEvent(ctx, event)
 	if mgr == nil {
 		return i18n.T(ctx, "gateway.goal.unavailable", "", nil), nil
@@ -214,10 +216,10 @@ func (r *GatewayRunner) handleSubgoalCommand(ctx context.Context, event *gateway
 		return mgr.StatusLine() + "\n" + mgr.RenderSubgoals(), nil
 	}
 	tokens := pystr.SplitWhitespace(args, 1)
-	verb := pystr.Lower(tokens[0])
+	verb := strings.ToLower(tokens[0])
 	rest := ""
 	if len(tokens) > 1 {
-		rest = pystr.Strip(tokens[1])
+		rest = strings.TrimSpace(tokens[1])
 	}
 	switch verb {
 	case "remove":
@@ -278,7 +280,7 @@ func (r *GatewayRunner) handleLoopCommand(ctx context.Context, event *gateway.Me
 			}
 		}
 	}
-	result, err := agent.DispatchLoopCommand(ctx, mgr, pystr.Strip(event.GetCommandArgs()), route)
+	result, err := agent.DispatchLoopCommand(ctx, mgr, strings.TrimSpace(event.GetCommandArgs()), route)
 	if err != nil {
 		return "", err
 	}

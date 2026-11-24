@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -85,10 +84,10 @@ func promptDegraded(job *pyjson.Object) bool {
 		return false
 	}
 	prompt, ok := field(job, "prompt", nil).(string)
-	if !ok || pystr.Strip(prompt) == "" {
+	if !ok || strings.TrimSpace(prompt) == "" {
 		return true
 	}
-	return pystr.Strip(prompt) == pystr.Strip(pyrepr.Str(field(job, "name", "")))
+	return strings.TrimSpace(prompt) == strings.TrimSpace(pyrepr.Str(field(job, "name", "")))
 }
 
 // Non blank snapshot prompts keyed by job id
@@ -99,7 +98,7 @@ func snapshotPromptsByID(snapDoc any) map[string]string {
 		if !ok {
 			continue
 		}
-		if prompt, ok := field(job, "prompt", nil).(string); ok && pystr.Strip(prompt) != "" {
+		if prompt, ok := field(job, "prompt", nil).(string); ok && strings.TrimSpace(prompt) != "" {
 			prompts[pyrepr.Str(field(job, "id", ""))] = prompt
 		}
 	}

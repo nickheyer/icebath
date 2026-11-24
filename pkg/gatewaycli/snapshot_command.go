@@ -75,7 +75,7 @@ func decimalCount(token string) (int, bool) {
 
 // Value of a token Python int accepts, underscores allowed between digits only
 func pyInt(token string) (int, bool) {
-	n, err := strconv.Atoi(pystr.Strip(strings.ReplaceAll(token, "_", "")))
+	n, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(token, "_", "")))
 	if err != nil || strings.HasPrefix(token, "_") || strings.HasSuffix(token, "_") || strings.Contains(token, "__") {
 		return 0, false
 	}

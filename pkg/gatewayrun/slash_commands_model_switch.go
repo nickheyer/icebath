@@ -327,7 +327,7 @@ func (r *GatewayRunner) commitModelSwitchLocked(ctx context.Context, result *pro
 		if oneTurn {
 			return i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": i18n.T(ctx, "gateway.model.err_once_local", "", nil)}), nil
 		}
-		effort := strings.ToLower(pystr.Strip(sw.ReasoningEffort))
+		effort := strings.ToLower(strings.TrimSpace(sw.ReasoningEffort))
 		if config.ParseReasoningEffort(effort) != nil {
 			level = effort
 		}
@@ -381,7 +381,7 @@ func (r *GatewayRunner) setReasoningOverride(ctx context.Context, sessionKey str
 
 // Applies a typed or picked reasoning argument and returns the reply
 func (r *GatewayRunner) applyReasoningSelection(ctx context.Context, sessionKey, platformKey, value string, persistGlobal bool) string {
-	value = strings.ToLower(pystr.Strip(value))
+	value = strings.ToLower(strings.TrimSpace(value))
 	live := gateway.LocalLiveForRoute(r, sessionKey)
 	if show, ok := reasoningDisplayToggles[value]; ok {
 		r.showReasoning = show

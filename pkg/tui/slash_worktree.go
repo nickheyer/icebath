@@ -77,7 +77,7 @@ func worktreePruneLines(ctx context.Context, res *tuigateway.WorktreePruneResult
 
 // Asks the gateway for the folder's repository and the tree a -w launch of this process locked
 func (a *app) worktreeStatus(cwd string, then func(repoRoot string, launch *Worktree, err error) tea.Cmd) tea.Cmd {
-	params := tuigateway.WorktreeStatusParams{Cwd: cwd, LaunchCwd: os.Getenv("ICEBATH_CWD"), PID: int64(os.Getpid())}
+	params := tuigateway.WorktreeStatusParams{Cwd: cwd, LaunchCwd: launchedCwd(), PID: int64(os.Getpid())}
 	return call(a.gw, tuigateway.WorktreeStatus, params, func(res *tuigateway.WorktreeStatusResult, err error) tea.Cmd {
 		if err != nil {
 			return then("", nil, err)
@@ -135,7 +135,7 @@ func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 		newWorktrees.Unlock()
 		lines := []string{commandText(ctx, "worktree.ready", map[string]any{"path": tree.Path}),
 			commandText(ctx, "worktree.branch", map[string]any{"branch": tree.Branch}), commandText(ctx, "worktree.tools_in_worktree", nil)}
-		if err := a.followWorktree(tree.Path); err != nil {
+		if err := a.followCwd(tree.Path); err != nil {
 			lines = append(lines, i18n.T(ctx, "cli.session.cwd_enter_failed", "", map[string]any{"path": tree.Path, "error": err.Error()}))
 		}
 		r.sys(strings.Join(lines, "\n"))
@@ -177,31 +177,80 @@ func (a *app) settleRefusedWorktree(r *slashRun, ref tuigateway.WorktreeRef) tea
 	})
 }
 
-// Points this process, its terminal cwd and the sessions it creates next at the tree
-func (a *app) followWorktree(path string) error {
+// Folder of the window: the one it was launched from, then the one a session last moved it into
+var launchFolder struct {
+	sync.Mutex
+	// Folder of the launch environment, read when the window starts and before the bootstrap scrubs the process environment
+	launched *string
+	// Folder a session moved the window into, empty until one does
+	moved string
+	// The launch pinned the folder new sessions start in, which then moves too
+	pinned bool
+}
+
+// Notes the folder of the launch environment while the process still holds it
+func noteLaunchFolder() {
+	launchFolder.Lock()
+	defer launchFolder.Unlock()
+	launched := os.Getenv("ICEBATH_CWD")
+	launchFolder.launched, launchFolder.moved, launchFolder.pinned = &launched, "", false
+}
+
+// Folder the window was launched from, which a move into another folder leaves as it was
+func launchedCwd() string {
+	launchFolder.Lock()
+	defer launchFolder.Unlock()
+	if launchFolder.launched != nil {
+		return *launchFolder.launched
+	}
+	return os.Getenv("ICEBATH_CWD")
+}
+
+// Folder the window was launched from or a session last moved it into
+func launchCwd() string {
+	launchFolder.Lock()
+	moved := launchFolder.moved
+	launchFolder.Unlock()
+	if moved != "" {
+		return moved
+	}
+	return launchedCwd()
+}
+
+// Launch variables of the folder a session moved the window into, handed to every icebath command the window runs; none before a move
+func movedFolderEnv() []string {
+	launchFolder.Lock()
+	defer launchFolder.Unlock()
+	if launchFolder.moved == "" {
+		return nil
+	}
+	out := []string{"TERMINAL_CWD=" + launchFolder.moved, "ICEBATH_CWD=" + launchFolder.moved}
+	if launchFolder.pinned {
+		out = append(out, "ICEBATH_TUI_CWD="+launchFolder.moved)
+	}
+	return out
+}
+
+// Points this process, the icebath commands it runs and the sessions it creates next at a folder the session moved into
+func (a *app) followCwd(path string) error {
 	if info := a.store.ui.Info; info != nil {
 		info.Cwd = &path
 	}
 	if err := os.Chdir(path); err != nil {
 		return err
 	}
-	keys := []string{"TERMINAL_CWD", "ICEBATH_CWD"}
-	if os.Getenv("ICEBATH_TUI_CWD") != "" {
-		keys = append(keys, "ICEBATH_TUI_CWD")
-	}
-	for _, key := range keys {
-		if err := os.Setenv(key, path); err != nil {
-			return err
-		}
-	}
 	a.gw.locked(func() {
 		launch := a.gw.env
+		pinned := launch("ICEBATH_TUI_CWD") != ""
 		a.gw.env = func(key string) string {
-			if key == "ICEBATH_CWD" {
+			if key == "ICEBATH_CWD" || (key == "ICEBATH_TUI_CWD" && pinned) {
 				return path
 			}
 			return launch(key)
 		}
+		launchFolder.Lock()
+		launchFolder.moved, launchFolder.pinned = path, pinned
+		launchFolder.Unlock()
 	})
 	return nil
 }

@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // MoAArgs carries the parsed icebath moa subcommand as typed and the optional preset name
@@ -178,12 +178,9 @@ func moaFormatSlot(slot map[string]any) string {
 	return label
 }
 
-// Billing notice when the aggregator runs on a different provider than the main model
-func moaProviderMismatchNotice(cfg map[string]any, aggregator map[string]any) string {
-	mainProvider := ""
-	if section, ok := cfg["model"].(map[string]any); ok {
-		mainProvider = strings.ToLower(pyStripSpace(pyOrStr(section["provider"])))
-	}
+// Billing notice when the aggregator runs on a different provider than the main model of ctx
+func moaProviderMismatchNotice(ctx context.Context, aggregator map[string]any) string {
+	mainProvider := strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx)))
 	aggProvider := strings.ToLower(pyStripSpace(pyOrStr(aggregator["provider"])))
 	if mainProvider == "" || aggProvider == "" || mainProvider == "moa" || mainProvider == "auto" || mainProvider == aggProvider {
 		return ""
@@ -191,14 +188,14 @@ func moaProviderMismatchNotice(cfg map[string]any, aggregator map[string]any) st
 	return fmt.Sprintf("Aggregator is on %s; the whole tool loop will be billed there, not to %s.", aggProvider, mainProvider)
 }
 
-// Normalized MoA section of a loaded config
-func moaSection(cfg map[string]any) map[string]any {
-	return normalizeMoAConfig(cfg["moa"])
+// Normalized mixture settings of the profile of ctx
+func moaView(ctx context.Context) map[string]any {
+	return normalizeMoAConfig(moaSettings(ctx))
 }
 
 // Prints every preset with its reference and aggregator slots and the billing notice
-func moaPrintConfig(out io.Writer, cfg map[string]any) {
-	moa := moaSection(cfg)
+func moaPrintConfig(ctx context.Context, out io.Writer) {
+	moa := moaView(ctx)
 	fmt.Fprintln(out, "Mixture of Agents presets")
 	fmt.Fprintf(out, "Default: %s\n", pyStr(moa["default_preset"]))
 	active := "(off)"
@@ -221,26 +218,20 @@ func moaPrintConfig(out io.Writer, cfg map[string]any) {
 		}
 		agg := anyMap(preset["aggregator"])
 		fmt.Fprintf(out, "  Aggregator: %s (acting model — runs every step and carries almost all of the cost)\n", moaFormatSlot(agg))
-		if notice := moaProviderMismatchNotice(cfg, agg); notice != "" {
+		if notice := moaProviderMismatchNotice(ctx, agg); notice != "" {
 			fmt.Fprintf(out, "    note: %s\n", notice)
 		}
 	}
 }
 
-// Stores the normalized MoA section in the config and saves it to the home
-func moaSave(ctx context.Context, cfg config.Tree, moa map[string]any) error {
-	cfg["moa"] = normalizeMoAConfig(moa)
-	return config.Save(home.Dir(ctx), cfg)
-}
-
-func moaCmdList(_ context.Context, out io.Writer, cfg config.Tree, _ MoAArgs) error {
-	moaPrintConfig(out, cfg)
+func moaCmdList(ctx context.Context, out io.Writer, _ MoAArgs) error {
+	moaPrintConfig(ctx, out)
 	return nil
 }
 
 // Picks reference models until done and an aggregator for the named preset, then saves it
-func moaCmdConfigure(ctx context.Context, out io.Writer, cfg config.Tree, args MoAArgs) error {
-	moa := moaSection(cfg)
+func moaCmdConfigure(ctx context.Context, out io.Writer, args MoAArgs) error {
+	moa := moaView(ctx)
 	presetName := args.Name
 	if presetName == "" {
 		presetName = pyOrStr(moa["default_preset"])
@@ -290,32 +281,31 @@ func moaCmdConfigure(ctx context.Context, out io.Writer, cfg config.Tree, args M
 	if err != nil {
 		return err
 	}
-	if notice := moaProviderMismatchNotice(cfg, aggregator); notice != "" {
+	if notice := moaProviderMismatchNotice(ctx, aggregator); notice != "" {
 		fmt.Fprintln(out, notice)
 	}
-	if err := moaStorePreset(ctx, cfg, moa, presetName, refs, aggregator); err != nil {
+	if err := moaStorePreset(ctx, presetName, refs, aggregator); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Saved MoA preset: %s\n", presetName)
-	moaPrintConfig(out, cfg)
+	moaPrintConfig(ctx, out)
 	return nil
 }
 
 // Removes a named preset unless it is the only one, moving the default and clearing the active name
-func moaCmdDelete(ctx context.Context, out io.Writer, cfg config.Tree, args MoAArgs) error {
-	moa := moaSection(cfg)
+func moaCmdDelete(ctx context.Context, out io.Writer, args MoAArgs) error {
 	presetName := pyStripSpace(args.Name)
 	if presetName == "" {
 		return &MoAExitError{Message: "Usage: icebath moa delete <name>"}
 	}
-	if err := moaDeletePreset(ctx, cfg, moa, presetName); err != nil {
+	if err := moaDeletePreset(ctx, presetName); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Deleted MoA preset: %s\n", presetName)
 	return nil
 }
 
-var moaSubcommands = map[string]func(context.Context, io.Writer, config.Tree, MoAArgs) error{
+var moaSubcommands = map[string]func(context.Context, io.Writer, MoAArgs) error{
 	"list":      moaCmdList,
 	"ls":        moaCmdList,
 	"config":    moaCmdConfigure,
@@ -325,11 +315,6 @@ var moaSubcommands = map[string]func(context.Context, io.Writer, config.Tree, Mo
 
 // CmdMoA manages Mixture of Agents presets for the icebath moa command, list when no subcommand is given
 func CmdMoA(ctx context.Context, out io.Writer, args MoAArgs) error {
-	h := home.Dir(ctx)
-	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
 	sub := args.Command
 	if sub == "" {
 		sub = "list"
@@ -338,7 +323,7 @@ func CmdMoA(ctx context.Context, out io.Writer, args MoAArgs) error {
 	if !ok {
 		return &MoAExitError{Message: "Unknown moa subcommand: " + sub}
 	}
-	return handler(ctx, out, cfg, args)
+	return handler(ctx, out, args)
 }
 
 // Python equality of two scalar config values, false for unhashable shapes that never equal a scalar

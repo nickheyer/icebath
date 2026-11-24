@@ -332,7 +332,7 @@ func cmdRename(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	words, _ := r.ns["title"].([]string)
 	title := strings.Join(words, " ")
-	if pystr.Strip(title) == "" {
+	if strings.TrimSpace(title) == "" {
 		r.print("Error: title cannot be empty or whitespace-only.")
 		return 1, nil
 	}
@@ -542,6 +542,6 @@ func cmdBrowse(r *sessionsRun, db *state.SessionDB) (int, error) {
 		return 0, nil
 	}
 	r.printf("Resuming session: %s", selectedID)
-	relaunch([]string{"--resume", selectedID}, true)
+	relaunch([]string{"--resume", selectedID}, true, nil)
 	return 0, nil
 }

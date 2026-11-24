@@ -398,14 +398,14 @@ func zipOverlayBlockReason(ctx context.Context, root string, staged []string, sh
 		if text == "" {
 			text = result.Stdout
 		}
-		detail := pystr.Splitlines(pystr.Strip(text), false)
+		detail := pystr.Splitlines(strings.TrimSpace(text), false)
 		if len(detail) > 0 {
 			return "could not check the working tree (" + detail[0] + ")", true, nil
 		}
 		return "could not check the working tree", true, nil
 	}
 	for _, line := range pystr.Splitlines(result.Stdout, false) {
-		if pystr.Strip(line) != "" && !isZipPreservedEntryStatusLine(line, shipped) && !isZipStagingArtifactStatusLine(line, staged) {
+		if strings.TrimSpace(line) != "" && !isZipPreservedEntryStatusLine(line, shipped) && !isZipStagingArtifactStatusLine(line, staged) {
 			return "the working tree has uncommitted changes or untracked files", true, nil
 		}
 	}
@@ -414,7 +414,7 @@ func zipOverlayBlockReason(ctx context.Context, root string, staged []string, sh
 
 // Top level entry a porcelain path sits under
 func statusTopLevel(path string) string {
-	cleaned := strings.TrimRight(strings.ReplaceAll(strings.Trim(pystr.Strip(path), `"`), `\`, "/"), "/")
+	cleaned := strings.TrimRight(strings.ReplaceAll(strings.Trim(strings.TrimSpace(path), `"`), `\`, "/"), "/")
 	top, _, _ := strings.Cut(cleaned, "/")
 	return top
 }
@@ -448,7 +448,7 @@ func isZipPreservedEntryStatusLine(line string, shipped map[string]bool) bool {
 	if status != "!!" {
 		return false
 	}
-	path := strings.TrimRight(strings.ReplaceAll(strings.Trim(pystr.Strip(payload), `"`), `\`, "/"), "/")
+	path := strings.TrimRight(strings.ReplaceAll(strings.Trim(strings.TrimSpace(payload), `"`), `\`, "/"), "/")
 	top, nested, _ := strings.Cut(path, "/")
 	if shipped != nil && !shipped[top] {
 		return true
@@ -540,7 +540,7 @@ func archiveCommit(zipPath string) (string, bool, error) {
 			decoded.WriteRune(utf8.RuneError)
 		}
 	}
-	comment := pystr.Strip(decoded.String())
+	comment := strings.TrimSpace(decoded.String())
 	return comment, fullCommitRE.MatchString(comment), nil
 }
 

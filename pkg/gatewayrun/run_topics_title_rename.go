@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -62,7 +64,7 @@ func collapseTitle(ctx context.Context, title string) string {
 		inSpace = false
 		b.WriteRune(r)
 	}
-	if cleaned := pystr.Strip(b.String()); cleaned != "" {
+	if cleaned := strings.TrimSpace(b.String()); cleaned != "" {
 		return cleaned
 	}
 	return i18n.T(ctx, "gateway.topic.default_title", "", nil)
@@ -75,7 +77,7 @@ func sanitizeTelegramTopicTitle(ctx context.Context, title string) string {
 	if len(runes) <= 120 {
 		return cleaned
 	}
-	return pystr.Rstrip(string(runes[:117])) + "..."
+	return strings.TrimRightFunc(string(runes[:117]), unicode.IsSpace) + "..."
 }
 
 // Discord safe thread title, at most 80 UTF-16 units with an ellipsis past that
@@ -84,7 +86,7 @@ func sanitizeDiscordThreadTitle(ctx context.Context, title string) string {
 	if gateway.UTF16Len(cleaned) <= 80 {
 		return cleaned
 	}
-	return pystr.Rstrip(gateway.PrefixWithinUTF16Limit(cleaned, 77)) + "..."
+	return strings.TrimRightFunc(gateway.PrefixWithinUTF16Limit(cleaned, 77), unicode.IsSpace) + "..."
 }
 
 // Thread id and initial name pair the connector reported, nil when the value is not one

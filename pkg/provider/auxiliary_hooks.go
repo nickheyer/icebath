@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -165,7 +167,7 @@ func auxPyInt(v any) (int, error) {
 		}
 		return int(x), nil
 	case string:
-		n, err := strconv.Atoi(pystr.Strip(x))
+		n, err := strconv.Atoi(strings.TrimSpace(x))
 		if err != nil {
 			return 0, fmt.Errorf("%v is not a whole number", x)
 		}

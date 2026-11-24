@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // LSP error codes the client acts on
@@ -169,15 +168,15 @@ func readHeaders(r *bufio.Reader) ([]headerField, bool, error) {
 		if key == "" {
 			return nil, false, protocolErrorf("malformed LSP header line: %s", pyrepr.BytesRepr(line))
 		}
-		name, repeated := pystr.Lower(pystr.Strip(key)), false
+		name, repeated := strings.ToLower(strings.TrimSpace(key)), false
 		for i := range headers {
 			if headers[i].key == name {
-				headers[i].value, repeated = pystr.Strip(value), true
+				headers[i].value, repeated = strings.TrimSpace(value), true
 				break
 			}
 		}
 		if !repeated {
-			headers = append(headers, headerField{name, pystr.Strip(value)})
+			headers = append(headers, headerField{name, strings.TrimSpace(value)})
 		}
 	}
 }

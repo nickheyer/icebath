@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -67,7 +66,7 @@ func iterationSummaryAPIMessages(agent ChatCompletionAgent, messages []map[strin
 	}
 	system := agent.CachedSystemPrompt()
 	if eph := agent.EphemeralSystemPrompt(); eph != "" {
-		system = pystr.Strip(system + "\n\n" + eph)
+		system = strings.TrimSpace(system + "\n\n" + eph)
 	}
 	if system != "" {
 		api = append([]map[string]any{{"role": "system", "content": system}}, api...)
@@ -93,7 +92,7 @@ func iterationSummaryAPIMessages(agent ChatCompletionAgent, messages []map[strin
 	}
 	for _, msg := range api {
 		if s, ok := msg["content"].(string); ok {
-			msg["content"] = pystr.Strip(s)
+			msg["content"] = strings.TrimSpace(s)
 		}
 	}
 	agent.CanonicalizeAPIToolCalls(api)
@@ -134,7 +133,7 @@ func routerTimeoutShimResponse(response any) bool {
 	choice, _ := choices[0].(map[string]any)
 	message, _ := choice["message"].(map[string]any)
 	content, ok := message["content"].(string)
-	if !ok || pystr.Strip(content) != routerTimeoutShim || pyrepr.Truthy(message["tool_calls"]) {
+	if !ok || strings.TrimSpace(content) != routerTimeoutShim || pyrepr.Truthy(message["tool_calls"]) {
 		return false
 	}
 	usage, _ := obj["usage"].(map[string]any)
@@ -173,7 +172,7 @@ func summaryText(agent ChatCompletionAgent, response any, normalizeKwargs map[st
 	if len(normalized.Message.ToolCalls) > 0 {
 		pkgLog().Warn("Iteration summary emitted tool calls; discarding them")
 	}
-	return pystr.Strip(normalized.Message.Text()), nil
+	return strings.TrimSpace(normalized.Message.Text()), nil
 }
 
 type summaryAttempt func(ctx context.Context, retryCount int) (string, error)
@@ -299,7 +298,7 @@ func summarizeAtIterationLimit(ctx context.Context, agent ChatCompletionAgent, m
 			continue
 		}
 		if strings.Contains(text, "<think>") {
-			text = pystr.Strip(summaryThinkBlockRe.ReplaceAllString(text, ""))
+			text = strings.TrimSpace(summaryThinkBlockRe.ReplaceAllString(text, ""))
 		}
 		if text != "" {
 			*outcome = "success"

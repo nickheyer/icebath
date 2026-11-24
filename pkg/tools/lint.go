@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Shell linters by extension, tsx deliberately absent so LSP covers it
@@ -502,11 +503,7 @@ func (s *shellFileOps) localWorkspaceUntrusted() bool {
 	if !s.lspLocalOnly() {
 		return false
 	}
-	var raw any
-	if lspCfg, ok := cfgTree(s.env)["lsp"].(map[string]any); ok {
-		raw = lspCfg["trusted_workspaces"]
-	}
-	trusted := lspParseTrustedWorkspaces(raw)
+	trusted := lspParseTrustedWorkspaces(settings.LspTrustedWorkspaces.Get(envHomeCtx(s.ctx, s.env)))
 	return !lspIsTrustedWorkspace(s.liveCwd(), trusted, lspOperatorWorkspaceRoots(s.env))
 }
 

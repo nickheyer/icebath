@@ -1,6 +1,8 @@
 package langfuse
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -25,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -668,7 +669,7 @@ func (e *mediaExporter) processString(span sdktrace.ReadOnlySpan, key, value str
 			return serializeMediaValue(processed)
 		}
 	}
-	stripped := pystr.Lstrip(value)
+	stripped := strings.TrimLeftFunc(value, unicode.IsSpace)
 	if !strings.HasPrefix(stripped, "{") && !strings.HasPrefix(stripped, "[") {
 		return value
 	}

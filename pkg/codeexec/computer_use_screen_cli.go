@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -154,7 +153,7 @@ func screenInstallCmd(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs
 		if err != nil {
 			return 0, err
 		}
-		switch strings.ToLower(pystr.Strip(answer)) {
+		switch strings.ToLower(strings.TrimSpace(answer)) {
 		case "", "y", "yes":
 		default:
 			return 1, nil

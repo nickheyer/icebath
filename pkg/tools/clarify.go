@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -43,9 +42,9 @@ func MarkRecommended(choices []string) []string {
 
 // StripRecommended removes the recommendation label so presentation never leaks into user_response
 func StripRecommended(text string) string {
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	if strings.HasSuffix(strings.ToLower(stripped), strings.ToLower(clarifyRecommended)) {
-		return pystr.Strip(stripped[:len(stripped)-len(clarifyRecommended)])
+		return strings.TrimSpace(stripped[:len(stripped)-len(clarifyRecommended)])
 	}
 	return stripped
 }
@@ -75,7 +74,7 @@ func clarifyCleanAnswer(raw any, multi bool) any {
 	}
 	out := []string{}
 	for _, item := range items {
-		if text := pyrepr.Str(item); pystr.Strip(text) != "" {
+		if text := pyrepr.Str(item); strings.TrimSpace(text) != "" {
 			out = append(out, StripRecommended(text))
 		}
 	}

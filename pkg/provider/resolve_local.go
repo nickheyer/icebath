@@ -1,9 +1,5 @@
 package provider
 
-import (
-	"strings"
-)
-
 // Kimi Code endpoint selected by an sk-kimi- prefixed key
 const KimiCodeBaseURL = "https://api.kimi.com/coding"
 
@@ -12,12 +8,11 @@ var localBypassCloudHosts = []string{"openrouter.ai", "anthropic.com", "openai.c
 
 // Provider auto with a config base_url at a non cloud host routes through the OpenAI compatible resolver
 func (r *resolver) localEndpointBypass(requestedProvider, explicitAPIKey, explicitBaseURL string) *Runtime {
-	modelCfg := r.modelConfig()
-	cfgBaseURL := strings.TrimSpace(cfgString(modelCfg["base_url"]))
+	cfgBaseURL := r.cfgBaseURL()
 	if cfgBaseURL == "" {
 		return nil
 	}
-	if p := cfgProviderOf(modelCfg); p != "auto" && p != "" {
+	if p := r.cfgProvider(); p != "auto" && p != "" {
 		return nil
 	}
 	for _, host := range localBypassCloudHosts {

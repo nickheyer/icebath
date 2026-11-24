@@ -1,6 +1,8 @@
 package state
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -363,7 +365,7 @@ func (d *SessionDB) validateImportPayload(sessions []any) ([]*pyjson.Object, []a
 		if obj, ok := raw.(*pyjson.Object); ok {
 			id, _ := obj.Get("id")
 			if pyTruthy(id) {
-				sessionID = pystr.Strip(pyStr(id))
+				sessionID = strings.TrimSpace(pyStr(id))
 			}
 		}
 		item, err := d.validateImportSession(raw, sessionID, seen, totals)
@@ -657,7 +659,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 		ids := make([]string, 0, len(normalized))
 		for _, item := range normalized {
 			id, _ := rowGet(item, "session").(*pyjson.Object).Get("id")
-			ids = append(ids, pystr.Strip(pyStr(pyOr(id, ""))))
+			ids = append(ids, strings.TrimSpace(pyStr(pyOr(id, ""))))
 		}
 		deleted := []any{}
 		for _, sid := range ids {
@@ -678,7 +680,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 		for _, item := range normalized {
 			raw := rowGet(item, "session").(*pyjson.Object)
 			id, _ := raw.Get("id")
-			sessionID := pystr.Strip(pyStr(pyOr(id, "")))
+			sessionID := strings.TrimSpace(pyStr(pyOr(id, "")))
 			exists, err := connRow(ctx, conn, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1", sessionID)
 			if err != nil {
 				return err
@@ -691,7 +693,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 				return err
 			}
 			parentRaw, _ := raw.Get("parent_session_id")
-			if parentID := pystr.Strip(pyStr(pyOr(parentRaw, ""))); parentID != "" {
+			if parentID := strings.TrimSpace(pyStr(pyOr(parentRaw, ""))); parentID != "" {
 				parentUpdates = append(parentUpdates, [2]string{sessionID, parentID})
 			}
 			imported = append(imported, sessionID)

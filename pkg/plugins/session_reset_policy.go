@@ -1,11 +1,12 @@
 package plugins
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Catalog plugin that applies idle and daily session resets
@@ -26,7 +27,7 @@ func TimedSessionReset(cfg any) (mode string, ok bool) {
 	if !isBlock || !pyrepr.Truthy(block["mode"]) {
 		return "", false
 	}
-	mode = pystr.Lower(pystr.Strip(pyrepr.Str(block["mode"])))
+	mode = strings.ToLower(strings.TrimSpace(pyrepr.Str(block["mode"])))
 	if !sessionResetTimedModes[mode] {
 		return "", false
 	}

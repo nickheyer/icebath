@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -61,13 +62,9 @@ func GetTerminalID() string {
 	return ""
 }
 
-// Config gate session.terminal_continue, default true
+// Whether the continue-in-this-terminal setting of ctx is on
 func breadcrumbsEnabled(ctx context.Context) bool {
-	cfg, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
-		return true
-	}
-	return cfg.Bool("session.terminal_continue", true)
+	return settings.SessionTerminalContinue.Get(ctx)
 }
 
 // Records that this terminal's live session is sessionID, never raising

@@ -164,7 +164,7 @@ func unitMainPid(ctx context.Context, scopeCmd []string, svcName string) (int, e
 	if result == nil || result.Returncode != 0 {
 		return 0, nil
 	}
-	text := pystr.Strip(completedStdout(result))
+	text := strings.TrimSpace(completedStdout(result))
 	if text == "" {
 		return 0, nil
 	}
@@ -279,7 +279,7 @@ func isIcebathGatewayUnit(unit string) bool {
 
 // Runs processUnit per gateway unit of a list-units output, a per unit timeout handed to onUnitTimeout
 func forEachSystemdGatewayUnit(listUnitsStdout string, processUnit func(name string) error, onUnitTimeout func(name string, err error)) error {
-	for _, line := range pystr.Splitlines(pystr.Strip(listUnitsStdout), false) {
+	for _, line := range pystr.Splitlines(strings.TrimSpace(listUnitsStdout), false) {
 		parts := pystr.SplitWhitespace(line, -1)
 		if len(parts) == 0 {
 			continue
@@ -379,7 +379,7 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 	if err != nil {
 		return err
 	}
-	if pystr.Strip(completedStdout(check)) != "active" {
+	if strings.TrimSpace(completedStdout(check)) != "active" {
 		return nil
 	}
 	if owned, err := fleetUnitOwned(ctx, w, scopeCmd, svcName); err != nil || !owned {
@@ -396,7 +396,7 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 		if asCommandTimeout(err) == nil && !isCommandMissing(err) {
 			return err
 		}
-	} else if text := pystr.Strip(completedStdout(show)); text != "" {
+	} else if text := strings.TrimSpace(completedStdout(show)); text != "" {
 		if pid, ok := pyint.Parse(text); ok && pid.IsInt64() {
 			mainPID = int(pid.Int64())
 		}
@@ -459,7 +459,7 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 	}
 	if restart.Returncode != 0 {
 		*failedOrStaleUnits = append(*failedOrStaleUnits, svcName)
-		fmt.Fprintf(w, "  ⚠ Failed to restart %s: %s\n", svcName, pystr.Strip(completedStderr(restart)))
+		fmt.Fprintf(w, "  ⚠ Failed to restart %s: %s\n", svcName, strings.TrimSpace(completedStderr(restart)))
 		return nil
 	}
 	active, err := fleetWaitServiceActive(ctx, scopeCmd, svcName, 10.0)
@@ -554,7 +554,7 @@ func waitForServiceActive(ctx context.Context, scopeCmd []string, svcName string
 		if err != nil && !isCommandMissing(err) && asCommandTimeout(err) == nil {
 			return false, err
 		}
-		if err == nil && pystr.Strip(completedStdout(verify)) == "active" {
+		if err == nil && strings.TrimSpace(completedStdout(verify)) == "active" {
 			return true, nil
 		}
 		if !fleetMonotonic().Before(deadline) {

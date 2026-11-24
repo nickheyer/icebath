@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (an chéad seal eile amháin — filleann sé tar éis freagra amháin)"
     switch_cancelled: "🟡 Athrú samhla cealaithe. Samhail reatha gan athrú ({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_Cúltaca téacs: freagair `{prefix}approve` chun athrú nó `{prefix}cancel` chun an tsamhail reatha a choinneáil._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "Níl `--once` ar fáil sa seisiún seo; úsáid `/model <name>` agus athraigh ar ais tar éis an tseala."
+    local_next_turn: "Bíonn feidhm leis ó do chéad teachtaireacht eile."
   agents:
 
     header: "🤖 **Gníomhairí & Tascanna Gníomhacha**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ Tá /fast ar fáil amháin do shamhlacha OpenAI a thacaíonn le Priority Processing."
-    status: "⚡ Priority Processing\n\nMód reatha: `{mode}`\n\n_Úsáid:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ Argóint anaithnid: `{arg}`\n\n**Roghanna bailí:** normal, fast, status"
+    not_supported: "⚡ Teastaíonn samhail ó /fast a bhfuil leibhéal tapa ag a soláthraí, mar Priority Processing OpenAI nó mód tapa Anthropic. Athraigh le /model go ceann a bhfuil sé aige."
+    status: "⚡ Priority Processing\n\nMód reatha: `{mode}`\n\n_Úsáid:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ Argóint anaithnid: `{arg}`\n\n**Roghanna bailí:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (sábháilte sa chumraíocht)\n_(éifeachtach ón gcéad teachtaireacht eile)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (an seisiún seo amháin)"
     label_fast: "TAPA"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — tapa don chéad seal de sheisiún amháin"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, praghas x6"
     ultrafast_not_supported: "⚡ Níl Ultrafast ar fáil do `{model}` ar an gcuntas nó ar an mbealach seo."
+  setup_wizard:
+
+    configure_in_config: "  Cumraigh {platform} in config.yaml faoi platforms.{key}"
   footer:
 
     status: "📎 Buntásc rite: **{state}**\nRéimsí: `{fields}`\nArdán: `{platform}`"
@@ -244,20 +247,20 @@ gateway:
     no_output: "(gan aschur)"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
+      completed: "críochnaithe"
+      gave_up: "éirithe as (atrialacha ídithe)"
+      crashed: "thit as a chéile (d'imigh an t-oibrí); bainfidh an dispatcher triail eile as"
+      timed_out: "imithe thar am; bainfidh an dispatcher triail eile as"
+      blocked: "blocáilte; aird ag teastáil"
+      review_requested: "tugtha ar láimh le hathbhreithniú; tá an cur i bhfeidhm críochnaithe"
+      changes_requested: "d'iarr an t-athbhreithniú athruithe (BLOCK); níl an cur i bhfeidhm ceadaithe"
+      block_loop_detected: "seolta chun triáise tar éis blocálacha arís agus arís eile; aird an chomhordaithe ag teastáil"
+      status_default: "stádas athraithe"
       status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
-      handoff: "Result: {summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      message: "[kanban] Tasc {task_id} {status}.\nTeideal: {title}\nSannta do: @{assignee}\nClár: {board}\n\nSeiceáil an toradh nó socraigh an chéad chéim eile."
+      handoff: "Toradh: {summary}"
+      review_detail: "Aiseolas an athbhreithnithe: {reason}\nScrúdaigh an cárta atá ann cheana agus a rith athbhreithnithe reatha; cuir an obair ar ais chuig an tasc cur i bhfeidhm céanna. Ná glac leis an BLOCK seo mar cheadú agus ná cruthaigh tasc dúblach."
+      guidance: "Is fógra uathoibríoch faoi stádas taisc é seo, ní iarratas an tasc a mhiondealú arís. Scrúdaigh an clár reatha sula gcruthaíonn tú tascanna leantacha; ná cruthaigh arís tascanna ná graif atá ann cheana."
     ping:
 
       completed: "✔ {head} déanta — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "Taispeáin na horduithe atá ar fáil (liostálann /help skills orduithe scileanna, scagann /help <text>)"
   palette:
 
-    description: "Oscail an pailéad orduithe doiléir (Ctrl+P freisin)"
+    description: "Oscail an pailéad orduithe doiléir"
   restart:
 
     description: "Atosaigh an gateway go réidh tar éis rití gníomhacha a dhraenáil"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "cartlannaithe + bainte → {ref}"
     sweep_archived_kept: "cartlannaithe, coinnithe ({reason}) → {ref}"
     discarded: "Worktree bainte agus a athruithe caite uait: {path}"
+  update:
+
+    held_icebath: "{mark} Tá próisis icebath eile ag rith ón suiteáil seo ({count}):"
+    held_venv: "{mark} Tá próisis ag rith ó thimpeallacht Python na suiteála seo ({count}):"
+    held_forced: "  → Ag nuashonrú mar sin féin mar gheall ar {flag}."
+    held_refused: "  Dún iad agus rith `icebath update` arís, nó tabhair {flag} chun nuashonrú mar sin féin."
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "bhí fuinneog chomhthéacs na samhla áitiúla róbheag le críochnú. Méadaigh méid an chomhthéacs nó úsáid samhail níos mó."
     pending_tool_result: "stop an seal fad a bhí toradh uirlise fós ar feitheamh agus níor thug an tsamhail aon téacs leantach. Seol `continue` chun ligean dó achoimre a dhéanamh."
     interrupted_during_api_call: "cuireadh isteach ar an iarratas i lár glao roimh fhreagra a fháil. Seol `continue` chun triail eile a bhaint as."
-    max_iterations_reached: "sroicheadh uasteorainn atriallta na n-uirlisí roimh fhreagra deiridh. Seol `continue` chun leanúint ar aghaidh, nó ardaigh `max_iterations`."
+    max_iterations_reached: "sroicheadh uasteorainn atriallta na n-uirlisí roimh fhreagra deiridh. Seol `continue` chun leanúint ar aghaidh, nó ardaigh `agent.max_turns`."
     error_near_max_iterations: "tharla earráid gar don teorainn atriallta roimh fhreagra deiridh. Seiceáil aschur na huirlise thuas, ansin seol `continue`."
     repeated_outer_errors: "lean an seal ag teip le hearráidí arís agus arís eile agus stopadh é go luath in ionad atriail a dhéanamh go deo. Seiceáil na hearráidí thuas, ansin seol `continue` chun triail eile a bhaint as."
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Lódálann Icebath comhthéacs tionscadail ó .icebath.md, AGENTS.md, CLAUDE.md, nó .cursorrules (an chéad cheann a aimsítear)."
   t178: "Aimsítear comhaid AGENTS.md fo-eolairí de réir a chéile de réir mar a thugann an gníomhaire aghaidh ar fhillteáin."
   t179: "Tá uasteorainn 20,000 carachtar ar chomhaid chomhthéacs le teascadh cliste ceann/deireadh."
-  t180: "Cúlchórais brabhsálaí: Chromium áitiúil, Lightpanda, Browserbase, Browser Use agus Firecrawl — chomh maith le Camofox ionsuite."
-  t181: "Tá Camofox (Firefox frith-bhrath) ionsuite: socraigh é le icebath camofox setup."
+  t180: "Cúlchórais brabhsálaí: Chromium áitiúil, Lightpanda, Browserbase, Browser Use agus Firecrawl — chomh maith le Camofox mar bhreiseán."
+  t181: "Is breiseán é Camofox (Firefox frith-bhrath): suiteáil é le icebath plugins install camofox, ansin rith icebath camofox setup."
   t182: "Ritheann browser_exec roinnt céimeanna brabhsálaí in aon ghlao Python amháin — nascleanúint, eastóscadh agus cliceáil le chéile."
   t183: "Socraíonn browser.dialog_policy conas a láimhseáiltear dialóga dúchasacha leathanaigh: must_respond (freagraíonn an gníomhaire le browser_dialog), auto_dismiss nó auto_accept."
   t184: "Osclaíonn icebath mcp roghnóir idirghníomhach de na MCPanna i gcatalóg ionsuite icebath agus is féidir leat iad a shuiteáil le brú amháin eochrach."

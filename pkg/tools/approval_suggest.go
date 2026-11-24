@@ -327,13 +327,15 @@ func ParseApplyIndices(spec string, total int) ([]int, error) {
 	return indices, nil
 }
 
-// ApplyProposals merges the chosen proposal patterns into command_allowlist and persists them
-func ApplyProposals(env *Env, proposals []*Proposal, indices []int) map[string]bool {
+// ApplyProposals merges the chosen proposal patterns into command_allowlist and persists them, the in memory allowlist unchanged when the save fails
+func ApplyProposals(env *Env, proposals []*Proposal, indices []int) (map[string]bool, error) {
 	merged := copySet(LoadPermanentAllowlist(env))
 	for _, idx := range indices {
 		merged[proposals[idx].Pattern] = true
 	}
-	SavePermanentAllowlist(env, merged)
+	if err := SavePermanentAllowlist(env, merged); err != nil {
+		return nil, err
+	}
 	LoadPermanent(env, merged)
-	return merged
+	return merged, nil
 }

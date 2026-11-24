@@ -164,10 +164,10 @@ func pyIntIndex(v any) (int, bool) {
 
 // Shrinks an error for inline display, long File not found paths become the filename
 func trimError(ctx context.Context, msg string) string {
-	msg = pystr.Strip(msg)
+	msg = strings.TrimSpace(msg)
 	if strings.Contains(msg, strings.TrimSpace(fileNotFoundLead)) {
 		_, tail, _ := strings.Cut(msg, strings.TrimSpace(fileNotFoundLead))
-		tail = pystr.Strip(tail)
+		tail = strings.TrimSpace(tail)
 		if i := strings.LastIndex(tail, "/"); i >= 0 {
 			msg = displayT(ctx, "display.failure.file_not_found", map[string]any{"name": tail[i+1:]})
 		}
@@ -184,9 +184,9 @@ func degradedSuffix(ctx context.Context, data map[string]any) string {
 	if !pyrepr.Truthy(reason) {
 		reason = displayT(ctx, "display.failure.terminal_backend_unavailable", nil)
 	}
-	text := pystr.Strip(pyrepr.Str(reason))
+	text := strings.TrimSpace(pyrepr.Str(reason))
 	if hint := data["retry_hint"]; pyrepr.Truthy(hint) {
-		if h := pystr.Strip(pyrepr.Str(hint)); h != "" {
+		if h := strings.TrimSpace(pyrepr.Str(hint)); h != "" {
 			text += " — " + h
 		}
 	}
@@ -315,14 +315,14 @@ type CuteRow struct {
 // Row with the catalog verb padded to nine cells after the emoji
 func cuteRow(ctx context.Context, emoji, verb, detail string) CuteRow {
 	label := displayT(ctx, "display.cute.verb."+verb, nil)
-	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(label, 9) + " " + detail, Emoji: pystr.Strip(emoji), Verb: label, Detail: detail}
+	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(label, 9) + " " + detail, Emoji: strings.TrimSpace(emoji), Verb: label, Detail: detail}
 }
 
 // Row for a tool without a dedicated renderer, its emoji, its name and its preview
 func cuteFallbackRow(ctx context.Context, env *Env, toolName string, args map[string]any) CuteRow {
 	detail := cuteTrunc(BuildToolPreview(env, toolName, args, nil))
 	emoji := GetToolEmoji(ctx, env, toolName, "⚡")
-	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(pystr.Slice(toolName, 0, 9), 9) + " " + detail, Emoji: pystr.Strip(emoji), Verb: toolName, Detail: detail}
+	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(pystr.Slice(toolName, 0, 9), 9) + " " + detail, Emoji: strings.TrimSpace(emoji), Verb: toolName, Detail: detail}
 }
 
 type cuteRenderer func(ctx context.Context, env *Env, a map[string]any, result any) CuteRow
@@ -484,7 +484,7 @@ func cuteExecuteCode(ctx context.Context, _ *Env, a map[string]any, _ any) CuteR
 	if !ok {
 		raiseDisplay("the code argument is %s, expected text", errchain.Kind(raw))
 	}
-	code = pystr.Strip(code)
+	code = strings.TrimSpace(code)
 	first, _, _ := strings.Cut(code, "\n")
 	return cuteRow(ctx, "🐍", "exec", cuteTrunc(first))
 }

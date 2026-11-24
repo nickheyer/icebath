@@ -51,7 +51,7 @@ func recordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, wind
 			return nil, errors.New("gateway-starts.log is not valid UTF-8")
 		}
 		for _, line := range pystr.Splitlines(string(data), false) {
-			line = pystr.Strip(line)
+			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
 			}

@@ -7,13 +7,16 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -153,6 +156,14 @@ func (FileBackend) ReadPathReadonly(path string) (any, error) { return LoadYAMLF
 
 // Applies the document, then each set key, then each unset key with comment preserving writers
 func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) error {
+	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
+		return err
+	}
+	unlock, err := configFileLock(path)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if changes.Document != nil {
 		if err := atomicRoundtripYAMLSave(ctx, path, changes.Document, changes.ExtraContentOnCreate); err != nil {
 			return err
@@ -166,6 +177,25 @@ func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) 
 	// The comment preserving writers carry the file's mode across the replace, so world bits it ever had would stay
 	DropOtherAccess(ctx, path)
 	return nil
+}
+
+// Reentrancy trackers of the config files being written, one per path so every profile has its own
+var configFileLockHolders = struct {
+	sync.Mutex
+	byPath map[string]*pyfs.LockHolder
+}{byPath: map[string]*pyfs.LockHolder{}}
+
+// Serializes a read, change and write of one config file across goroutines and processes, reentrant per goroutine
+func configFileLock(path string) (func(), error) {
+	configFileLockHolders.Lock()
+	holder, ok := configFileLockHolders.byPath[path]
+	if !ok {
+		holder = &pyfs.LockHolder{}
+		configFileLockHolders.byPath[path] = holder
+	}
+	configFileLockHolders.Unlock()
+	return pyfs.HolderFileLock(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock"), holder, 15*time.Second,
+		fmt.Sprintf("Timed out waiting for the settings file lock (%s)", path))
 }
 
 func (b FileBackend) Name() string { return "file" }
@@ -360,7 +390,7 @@ func GetConfigBackend(ctx context.Context) (ConfigBackend, error) {
 	if err := ensureBootstrapEnv(ctx); err != nil {
 		return nil, err
 	}
-	kind := pystr.Lower(pystr.Strip(os.Getenv(BackendEnv)))
+	kind := strings.ToLower(strings.TrimSpace(os.Getenv(BackendEnv)))
 	if kind == "" {
 		kind = "file"
 	}

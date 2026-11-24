@@ -1,6 +1,8 @@
 package gatewaycli
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,14 +13,12 @@ import (
 	"strings"
 
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -183,10 +183,10 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 		}
 	}
 	if pyrepr.Truthy(platformFilter) {
-		key := pystr.Lower(pystr.Strip(pyrepr.Str(platformFilter)))
+		key := strings.ToLower(strings.TrimSpace(pyrepr.Str(platformFilter)))
 		filtered := pyjson.NewObject()
 		for _, name := range platforms.Keys {
-			if pystr.Lower(name) == key {
+			if strings.ToLower(name) == key {
 				filtered.Set(name, platforms.Vals[name])
 			}
 		}
@@ -266,46 +266,17 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 	return sendSuccessExit, nil
 }
 
-// Loads the home dotenv and bridges top level config scalars into the credential environment without overriding
+// Loads the home dotenv into the process environment unless a profile secret scope is bound, a failed read told on the log
 func loadIcebathEnv(ctx context.Context, h string) {
-	var scope map[string]string
-	if provider.IsMultiplexActive(ctx) {
-		scope = provider.CurrentSecretScope(ctx)
-	}
-	if scope == nil {
-		envPath := home.EnvPath(h)
-		if _, err := os.Stat(envPath); err == nil {
-			_ = provider.LoadDotenvFile(envPath, true)
-		}
-	}
-	configPath := home.ConfigPath(h)
-	if exists, err := config.ConfigExists(ctx, configPath); err != nil || !exists {
+	if provider.IsMultiplexActive(ctx) && provider.CurrentSecretScope(ctx) != nil {
 		return
 	}
-	cfg, err := config.LoadUserEffective(configPath, os.LookupEnv)
-	if err != nil {
+	envPath := home.EnvPath(h)
+	if _, err := os.Stat(envPath); err != nil {
 		return
 	}
-	keys := make([]string, 0, len(cfg))
-	for key := range cfg {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch cfg[key].(type) {
-		case string, int, int64, float64, bool:
-		default:
-			continue
-		}
-		if scope != nil {
-			if _, has := scope[key]; !has {
-				scope[key] = pyrepr.Str(cfg[key])
-			}
-			continue
-		}
-		if _, has := os.LookupEnv(key); !has {
-			os.Setenv(key, pyrepr.Str(cfg[key]))
-		}
+	if err := provider.LoadDotenvFile(envPath, true); err != nil {
+		pkgLog().Warn(fmt.Sprintf("send: could not read %s: %v", envPath, err))
 	}
 }
 
@@ -342,7 +313,7 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 	}
 	target := ""
 	if pyrepr.Truthy(ns["to"]) {
-		target = pystr.Strip(pyrepr.Str(ns["to"]))
+		target = strings.TrimSpace(pyrepr.Str(ns["to"]))
 	}
 	if target == "" {
 		return usage("icebath send: --to PLATFORM[:channel[:thread]] is required\n" +
@@ -353,7 +324,7 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 	}
 	mentions := sendMentions(ns["mentions"])
 	platform, _, _ := strings.Cut(target, ":")
-	if len(mentions) > 0 && pystr.Lower(pystr.Strip(platform)) != "whatsapp" {
+	if len(mentions) > 0 && strings.ToLower(strings.TrimSpace(platform)) != "whatsapp" {
 		return usage("icebath send: --mention is only supported for WhatsApp targets.")
 	}
 	if invalid := invalidWhatsappMentions(mentions); len(invalid) > 0 {
@@ -368,12 +339,12 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 	if err != nil {
 		return sendFailureExit, err
 	}
-	if !present || pystr.Strip(message) == "" {
+	if !present || strings.TrimSpace(message) == "" {
 		return usage("icebath send: no message provided. Pass text as a positional " +
 			"argument, use --file PATH, or pipe data via stdin.")
 	}
 	if pyrepr.Truthy(ns["subject"]) {
-		message = pyrepr.Str(ns["subject"]) + "\n\n" + pystr.Lstrip(message)
+		message = pyrepr.Str(ns["subject"]) + "\n\n" + strings.TrimLeftFunc(message, unicode.IsSpace)
 	}
 	toolArgs := map[string]any{"action": "send", "target": target, "message": message}
 	if len(mentions) > 0 {

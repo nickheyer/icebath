@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"log/slog"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -169,7 +170,7 @@ func (r *GatewayRunner) crashLeftReply(ctx context.Context, history []any, start
 	if err != nil {
 		return nil, err
 	}
-	if text := pystr.Strip(stripped); text != "" {
+	if text := strings.TrimSpace(stripped); text != "" {
 		return &text, nil
 	}
 	return nil, nil

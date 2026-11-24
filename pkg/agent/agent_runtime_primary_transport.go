@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -137,7 +138,7 @@ func buildAnthropicClientFromRuntime(ctx context.Context, a *AIAgent, rt map[str
 // Rebuilds the primary client from the snapshot, the MoA facade, Bedrock runtime, native Anthropic or OpenAI wire
 func rebuildPrimaryClient(ctx context.Context, a *AIAgent, rt map[string]any, reason string) error {
 	switch {
-	case pystr.Lower(pystr.Strip(a.provider)) == "moa":
+	case strings.ToLower(strings.TrimSpace(a.provider)) == "moa":
 		a.client = buildMoaFacade(ctx, a, a.model)
 		a.anthropicClient = nil
 	case a.provider == "bedrock" && (a.apiMode == "anthropic_messages" || a.apiMode == "bedrock_converse"):

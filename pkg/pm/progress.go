@@ -40,7 +40,7 @@ func VerboseOutput(env map[string]string) bool {
 	if env != nil {
 		get = func(k string) string { return env[k] }
 	}
-	explicit := strings.ToLower(pystr.Strip(get("ICEBATH_VERBOSE")))
+	explicit := strings.ToLower(strings.TrimSpace(get("ICEBATH_VERBOSE")))
 	if verboseTrue[explicit] {
 		return true
 	}
@@ -48,7 +48,7 @@ func VerboseOutput(env map[string]string) bool {
 		return false
 	}
 	for _, key := range []string{"CI", "GITHUB_ACTIONS"} {
-		v := strings.ToLower(pystr.Strip(get(key)))
+		v := strings.ToLower(strings.TrimSpace(get(key)))
 		if v != "" && !verboseFalse[v] {
 			return true
 		}
@@ -172,7 +172,7 @@ func (t *LiveTail) Close(ok bool) {
 // Records one output line in the tail and redraws the status line at most every interval
 func (t *LiveTail) line(line string) {
 	line = strings.TrimRightFunc(ansiEscape.ReplaceAllString(lastRunes(line, MaxLine), ""), pystr.IsSpace)
-	if pystr.Strip(line) == "" {
+	if strings.TrimSpace(line) == "" {
 		return
 	}
 	t.Tail = append(t.Tail, line)
@@ -187,7 +187,7 @@ func (t *LiveTail) line(line string) {
 		return
 	}
 	t.lastDraw = now
-	t.draw(fmt.Sprintf("%s→ %s… %s", t.Indent, *t.Label, pystr.Strip(line)))
+	t.draw(fmt.Sprintf("%s→ %s… %s", t.Indent, *t.Label, strings.TrimSpace(line)))
 }
 
 // Rewrites the status line, padding over the previous text instead of an ANSI erase

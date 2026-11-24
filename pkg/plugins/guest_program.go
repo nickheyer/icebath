@@ -65,7 +65,7 @@ func (h *PluginHost) launchProgram(s *hostStart, spec *guestSpec) (*Channel, *ho
 		return nil, nil, err
 	}
 	env[GuestPluginNameEnv], env[GuestPluginDirEnv] = spec.name, spec.dir
-	launcher, err := HostLauncher(h.baseCtx, nil)
+	launcher, err := HostLauncher(h.baseCtx)
 	if err != nil {
 		return nil, nil, err
 	}

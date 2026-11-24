@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -43,7 +42,7 @@ func msgraphStringOrNone(value any) *string {
 	if value == nil {
 		return nil
 	}
-	text := pystr.Strip(pyrepr.Str(value))
+	text := strings.TrimSpace(pyrepr.Str(value))
 	if text == "" {
 		return nil
 	}
@@ -54,7 +53,7 @@ func msgraphStringOrNone(value any) *string {
 func msgraphNormalizePath(path any) string {
 	raw := ""
 	if pyrepr.Truthy(path) {
-		raw = pystr.Strip(pyrepr.Str(path))
+		raw = strings.TrimSpace(pyrepr.Str(path))
 	}
 	if raw == "" {
 		raw = "/"
@@ -120,7 +119,7 @@ func msgraphParseAllowedSourceCIDRs(raw any) []netip.Prefix {
 	}
 	var networks []netip.Prefix
 	for _, candidate := range candidates {
-		chunk := pystr.Strip(candidate)
+		chunk := strings.TrimSpace(candidate)
 		if chunk == "" {
 			continue
 		}
@@ -237,7 +236,7 @@ func NewMSGraphWebhookAdapter(config *PlatformConfig) (*MSGraphWebhookAdapter, e
 		return nil, err
 	}
 	for _, value := range resources {
-		if text := pystr.Strip(pyrepr.Str(value)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(value)); text != "" {
 			a.acceptedResources = append(a.acceptedResources, text)
 		}
 	}
@@ -436,7 +435,7 @@ func (a *MSGraphWebhookAdapter) ingestNotification(ctx context.Context, raw any)
 	var receiptKey *string
 	explicitID := ""
 	if value, _ := notification.Get("id"); pyrepr.Truthy(value) {
-		explicitID = pystr.Strip(pyrepr.Str(value))
+		explicitID = strings.TrimSpace(pyrepr.Str(value))
 	}
 	if explicitID != "" {
 		key := "id:" + explicitID
@@ -565,9 +564,9 @@ func (a *MSGraphWebhookAdapter) resourceAccepted(resource string) bool {
 	if len(a.acceptedResources) == 0 {
 		return true
 	}
-	resource = strings.Trim(pystr.Strip(resource), "/")
+	resource = strings.Trim(strings.TrimSpace(resource), "/")
 	for _, raw := range a.acceptedResources {
-		pattern := strings.Trim(pystr.Strip(raw), "/")
+		pattern := strings.Trim(strings.TrimSpace(raw), "/")
 		if strings.HasSuffix(pattern, "*") {
 			pattern = strings.TrimRight(pattern[:len(pattern)-1], "/")
 		}

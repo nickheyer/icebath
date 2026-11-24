@@ -1,10 +1,11 @@
 package state
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Store surface an interactive session listing reads its rows from
@@ -31,7 +32,7 @@ func QuerySessionListing(ctx context.Context, db SessionLister, q SessionListing
 	if limit == 0 {
 		limit = 10
 	}
-	search := pystr.Strip(q.SearchQuery)
+	search := strings.TrimSpace(q.SearchQuery)
 	source := q.Source
 	if q.IncludeAllSources {
 		source = ""

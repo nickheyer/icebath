@@ -316,7 +316,9 @@ func TestASandboxBackendSendsTheHostLaunchDirNotItsTerminalCwd(t *testing.T) {
 			tmp := t.TempDir()
 			t.Chdir(tmp)
 			t.Setenv("TERMINAL_CWD", "/project/not-on-this-host")
-			t.Setenv("TERMINAL_ENV", backend)
+			if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte("terminal:\n  backend: "+backend+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			mustCreate(t, db, true)
 			wantEqual(t, client.lastOf(t, "session.create")["cwd"], resolved(t, tmp))
 			if _, err := createTitledSession(context.Background(), db, "Remote Named"); err != nil {
@@ -336,8 +338,9 @@ func TestAMountingDockerBackendSendsTheWWorktreeNotTheLaunchDir(t *testing.T) {
 	}
 	t.Chdir(repo)
 	t.Setenv("TERMINAL_CWD", tree)
-	t.Setenv("TERMINAL_ENV", "docker")
-	t.Setenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "true")
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte("terminal:\n  backend: docker\n  docker_mount_cwd_to_workspace: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	mustCreate(t, db, true)
 	wantEqual(t, client.lastOf(t, "session.create")["cwd"], resolved(t, tree))
 }
@@ -361,9 +364,12 @@ func TestARemovedWWorktreeIsSentSoTheGatewayRefusesIt(t *testing.T) {
 			t.Chdir(repo)
 			recordWorktree(t, tree)
 			t.Setenv("TERMINAL_CWD", tree)
-			t.Setenv("TERMINAL_ENV", tc.backend)
+			doc := "terminal:\n  backend: " + tc.backend + "\n"
 			if tc.mount != "" {
-				t.Setenv("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", tc.mount)
+				doc += "  docker_mount_cwd_to_workspace: " + tc.mount + "\n"
+			}
+			if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte(doc), 0o600); err != nil {
+				t.Fatal(err)
 			}
 			mustCreate(t, db, true)
 			wantEqual(t, client.lastOf(t, "session.create")["cwd"], resolved(t, tree))

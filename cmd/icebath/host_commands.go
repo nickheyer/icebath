@@ -29,9 +29,7 @@ func bindHostCommands(cli *commands.CLI) {
 		"auth":          authGroup,
 		"checkpoints":   checkpointsGroup,
 		"codex-runtime": codexRuntimeGroup,
-		"completion":    completionGroup,
 		"console":       consoleGroup,
-		"curator":       curatorGroup,
 		"debug":         debugGroup,
 		"doctor":        doctorGroup,
 		"dump":          dumpGroup,
@@ -122,22 +120,8 @@ func codexRuntimeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Comman
 	return provider.CodexRuntimeCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
-func completionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	shell := cli.Positional(cmd, args, "shell")
-	if shell == "" {
-		shell = "bash"
-	}
-	return 0, cli.Completion(shell, cmd.OutOrStdout())
-}
-
 func consoleGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return app.RunConsoleREPL(ctx, app.ConsoleREPLOptions{})
-}
-
-func curatorGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	ns["curator_command"] = nilWhenEmpty(secondWord(path))
-	return memory.CuratorCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func debugGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

@@ -11,58 +11,24 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
-	contextFileReadTimeoutSecs = 5.0
-	ContextFileMaxChars        = 20000
-	ContextTruncateHeadRatio   = 0.7
-	ContextTruncateTailRatio   = 0.2
-	contextFileWindowFraction  = 0.06
-	contextFileDynamicCeiling  = 500000
+	ContextFileMaxChars       = 20000
+	ContextTruncateHeadRatio  = 0.7
+	ContextTruncateTailRatio  = 0.2
+	contextFileWindowFraction = 0.06
+	contextFileDynamicCeiling = 500000
 )
 
-// Readonly config of the env home, empty with a debug log when it cannot be read
-func ContextConfigReadonly(env *Env, what string) map[string]any {
-	h := envHome(env)
-	tree, err := config.LoadReadonly(context.Background(), h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Could not read %s from config: %v", what, err))
-		return map[string]any{}
-	}
-	return tree
-}
-
-// Positive int, float or bool config value as a float, false for anything else
-func positiveConfigNumber(v any) (float64, bool) {
-	var f float64
-	switch n := v.(type) {
-	case bool:
-		if n {
-			f = 1
-		}
-	case int:
-		f = float64(n)
-	case int64:
-		f = float64(n)
-	case uint64:
-		f = float64(n)
-	case float64:
-		f = n
-	default:
-		return 0, false
-	}
-	return f, f > 0
-}
-
-// Configured context_file_read_timeout in seconds, else five
+// Seconds one context file read may take for the env's profile, the setting's default when not above zero
 func contextFileReadTimeout(env *Env) float64 {
-	if f, ok := positiveConfigNumber(ContextConfigReadonly(env, "context_file_read_timeout")["context_file_read_timeout"]); ok {
-		return f
+	if d := settings.ContextFileReadTimeout.Get(envHomeCtx(context.Background(), env)); d > 0 {
+		return d.Seconds()
 	}
-	return contextFileReadTimeoutSecs
+	return settings.ContextFileReadTimeout.Default.Seconds()
 }
 
 // Text of path decoded as utf-8-sig with universal newlines, read errors returned unchanged
@@ -150,8 +116,8 @@ func dynamicContextFileMaxChars(contextLength *int) int {
 
 // Context file truncation limit, an explicit context_file_max_chars winning over the dynamic cap
 func ContextFileMaxCharsFor(env *Env, contextLength *int) int {
-	if f, ok := positiveConfigNumber(ContextConfigReadonly(env, "context_file_max_chars")["context_file_max_chars"]); ok {
-		return int(f)
+	if n, ok := settings.ContextFileMaxChars.Lookup(envHomeCtx(context.Background(), env)); ok && n > 0 {
+		return n
 	}
 	return dynamicContextFileMaxChars(contextLength)
 }
@@ -300,11 +266,11 @@ func omittedHeadings(runes []rune, start, end, limit int) []string {
 	headings := []string{}
 	offset, fenced := 0, false
 	for _, line := range pystr.Splitlines(string(runes), true) {
-		stripped := pystr.Strip(line)
+		stripped := strings.TrimSpace(line)
 		if strings.HasPrefix(stripped, "```") || strings.HasPrefix(stripped, "~~~") {
 			fenced = !fenced
 		} else if !fenced && start <= offset && offset < end && isMarkdownHeading(stripped) {
-			headings = append(headings, pystr.Strip(strings.TrimLeft(stripped, "#")))
+			headings = append(headings, strings.TrimSpace(strings.TrimLeft(stripped, "#")))
 		}
 		offset += utf8.RuneCountInString(line)
 	}

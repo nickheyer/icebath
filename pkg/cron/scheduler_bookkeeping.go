@@ -1,19 +1,20 @@
 package cron
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const emptyResponseError = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
 
 // A successful run with a blank answer becomes the soft empty response failure
 func failEmptyResponse(d *runDelivery, finalResponse string) {
-	if d.success && pystr.Strip(finalResponse) == "" {
+	if d.success && strings.TrimSpace(finalResponse) == "" {
 		d.success = false
 		d.err = strPtr(emptyResponseError)
 	}

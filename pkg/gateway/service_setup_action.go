@@ -1,13 +1,13 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Scope picker of the setup install, a seam tests replace like the patched gateway module
@@ -40,7 +40,7 @@ func refusesContainerUserScopeInstall(w io.Writer, system bool) bool {
 // First of SUDO_USER, USER and LOGNAME naming an account other than root, empty when none does
 func defaultSystemServiceUser() string {
 	for _, key := range []string{"SUDO_USER", "USER", "LOGNAME"} {
-		if candidate := pystr.Strip(os.Getenv(key)); candidate != "" && candidate != "root" {
+		if candidate := strings.TrimSpace(os.Getenv(key)); candidate != "" && candidate != "root" {
 			return candidate
 		}
 	}
@@ -80,7 +80,7 @@ func installLinuxGatewayFromSetup(ctx context.Context, w io.Writer, force, enabl
 			return scope, false, nil
 		}
 		for runAsUser == "" {
-			runAsUser = pystr.Strip(gatewayFacade.prompt("  Run the system gateway service as which user?", "", false))
+			runAsUser = strings.TrimSpace(gatewayFacade.prompt("  Run the system gateway service as which user?", "", false))
 			if runAsUser == "" {
 				con.PrintError("  Enter a username.")
 			}

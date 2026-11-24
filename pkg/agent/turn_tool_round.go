@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"regexp"
@@ -305,7 +307,7 @@ var stageToolCallMessage = func(a *AIAgent, assistantMessage *provider.Response,
 		return nil, false, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("assistant message content is %s where text was expected", errchain.Kind(msg.Content))}
 	}
 
-	if len(msg.ToolCalls) > 0 && toolCallStaleMarkerRE.MatchString(pystr.Strip(turnContent)) {
+	if len(msg.ToolCalls) > 0 && toolCallStaleMarkerRE.MatchString(strings.TrimSpace(turnContent)) {
 		pkgLog().Warn(fmt.Sprintf("Discarding bare tool-call marker from assistant content: %s", turnContent))
 		turnContent = ""
 		assistantMsg["content"] = ""
@@ -325,7 +327,7 @@ var stageToolCallMessage = func(a *AIAgent, assistantMessage *provider.Response,
 		if allHousekeeping && a.hasStreamConsumers() {
 			a.mutePostResponse = true
 		} else if a.shouldEmitQuietToolMessages() && !a.holdStream {
-			if clean := pystr.Strip(a.stripThinkBlocks(turnContent)); clean != "" {
+			if clean := strings.TrimSpace(a.stripThinkBlocks(turnContent)); clean != "" {
 				a.vprint("  ┊ 💬 "+clean, false, false)
 			}
 		}

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const depDist = "icebath-depprobe-fixture"
@@ -125,7 +126,7 @@ func TestPluginDebugHandlerTeesToStderr(t *testing.T) {
 	savedLogger, savedOut := Logger, debugStderr
 	pluginsDebugState.Lock()
 	savedState := pluginsDebugState.enabled
-	savedInstalled := pluginsDebugState.installed
+	savedInstalled, savedRead := pluginsDebugState.installed, pluginsDebugState.read
 	pluginsDebugState.installed = false
 	pluginsDebugState.Unlock()
 	var out bytes.Buffer
@@ -133,16 +134,17 @@ func TestPluginDebugHandlerTeesToStderr(t *testing.T) {
 	t.Cleanup(func() {
 		Logger, debugStderr = savedLogger, savedOut
 		pluginsDebugState.Lock()
-		pluginsDebugState.enabled, pluginsDebugState.installed = savedState, savedInstalled
+		pluginsDebugState.enabled, pluginsDebugState.installed, pluginsDebugState.read = savedState, savedInstalled, savedRead
 		pluginsDebugState.Unlock()
 	})
-	t.Setenv(EnvPluginsDebug, "")
-	installPluginDebugHandler(true)
+	ctx := homeCtx(t.TempDir())
+	t.Setenv(settings.PluginsDebug.Env, "")
+	installPluginDebugHandler(ctx, true)
 	if out.Len() != 0 || excInfo(errors.New("x")) != nil {
 		t.Fatal("debug handler installed while ICEBATH_PLUGINS_DEBUG is off")
 	}
-	t.Setenv(EnvPluginsDebug, "1")
-	installPluginDebugHandler(true)
+	t.Setenv(settings.PluginsDebug.Env, "1")
+	installPluginDebugHandler(ctx, true)
 	pkgLog().Warn("Failed to load plugin 'x': boom")
 	text := out.String()
 	if !strings.Contains(text, "[plugins] DEBUG ICEBATH_PLUGINS_DEBUG=1") || !strings.Contains(text, "[plugins] WARNING Failed to load plugin 'x': boom") {
@@ -151,7 +153,7 @@ func TestPluginDebugHandlerTeesToStderr(t *testing.T) {
 	if info := excInfo(&PluginPanicError{Value: "v", Stack: []byte("stack")}); len(info) != 2 || !strings.Contains(info[1].(string), "stack") {
 		t.Fatalf("exc_info = %v", info)
 	}
-	installPluginDebugHandler(true)
+	installPluginDebugHandler(ctx, true)
 	if strings.Count(out.String(), "verbose plugin discovery logging enabled") != 1 {
 		t.Fatal("handler installed twice")
 	}

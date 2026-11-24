@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -100,8 +99,8 @@ func reviewToolWhitelist(ctx context.Context, reviewAgent *AIAgent, taskCfg map[
 	extra := map[string]bool{}
 	if raw, ok := backgroundReviewTaskConfig(ctx, taskCfg)["extra_tools"].([]any); ok {
 		for _, item := range raw {
-			if name, ok := item.(string); ok && pystr.Strip(name) != "" {
-				extra[pystr.Strip(name)] = true
+			if name, ok := item.(string); ok && strings.TrimSpace(name) != "" {
+				extra[strings.TrimSpace(name)] = true
 			}
 		}
 	}
@@ -294,7 +293,7 @@ var spawnBackgroundReviewThread = func(ctx context.Context, a *AIAgent, kw backg
 	prompt := reviewPromptFor(a, promptNameByScope[[2]bool{kw.reviewMemory, kw.reviewSkills}])
 	focus := ""
 	if kw.focus != nil {
-		focus = pystr.Strip(*kw.focus)
+		focus = strings.TrimSpace(*kw.focus)
 	}
 	if focus != "" {
 		prompt = prompt + "\n\nThe user explicitly requested this review with the following " +

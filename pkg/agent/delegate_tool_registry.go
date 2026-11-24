@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"sync"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -206,7 +207,7 @@ func closeSubagentSteering(subagentID string, agent any) string {
 		return ""
 	}
 	pending := drainer.drainPendingSteer()
-	if pystr.Strip(pending) == "" {
+	if strings.TrimSpace(pending) == "" {
 		return ""
 	}
 	return pending
@@ -254,7 +255,7 @@ func subagentTransportMatches(record map[string]any, transport any) bool {
 
 // SteerSubagent queues steering text into a running child, an owner session id demanding exact gateway authority
 func SteerSubagent(subagentID, text string, ownerSessionID *string, ownerTransport, ownerSessionRecord any) bool {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return false
 	}
 	activeSubagentsMu.Lock()
@@ -501,7 +502,7 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 	if err != nil {
 		return "", err
 	}
-	sid := pystr.Strip(rawID)
+	sid := strings.TrimSpace(rawID)
 	if sid == "" {
 		return delegateToolError(fmt.Sprintf("action='%s' requires subagent_id (from the spawn dispatch response or action='list').", action)), nil
 	}
@@ -524,7 +525,7 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 	if err != nil && action == "steer" {
 		return "", err
 	}
-	if action == "steer" && pystr.Strip(text) == "" {
+	if action == "steer" && strings.TrimSpace(text) == "" {
 		return delegateToolError("action='steer' requires a non-empty 'message' describing the course correction."), nil
 	}
 	outcome, ok := controlOutcomes[action]
@@ -535,7 +536,7 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 	if action == "stop" {
 		done = InterruptSubagent(sid)
 	} else {
-		done = SteerSubagent(sid, pystr.Strip(text), nil, nil, nil)
+		done = SteerSubagent(sid, strings.TrimSpace(text), nil, nil, nil)
 	}
 	if done {
 		payload := pyjson.NewObject()

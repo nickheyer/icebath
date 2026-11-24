@@ -68,7 +68,7 @@ func captureImageFormat(c *CaptureResult) (string, string) {
 			mime = "image/jpeg"
 		}
 	}
-	if pystr.Lower(mime) == "image/jpeg" {
+	if strings.ToLower(mime) == "image/jpeg" {
 		return mime, ".jpg"
 	}
 	return mime, ".png"
@@ -676,12 +676,12 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 	if scaleNote != nil {
 		prompt += "\n\nNote: " + *scaleNote
 	}
-	analysis := pystr.Strip(cuVisionAnalyze(ctx, env, tempPath, prompt))
+	analysis := strings.TrimSpace(cuVisionAnalyze(ctx, env, tempPath, prompt))
 	if parsed, err := pyjson.Loads(analysis); err == nil {
 		analysis = ""
 		if obj, ok := parsed.(*pyjson.Object); ok {
 			if a := obj.Vals["analysis"]; pyrepr.Truthy(a) {
-				analysis = pystr.Strip(pyrepr.Str(a))
+				analysis = strings.TrimSpace(pyrepr.Str(a))
 			}
 		}
 	}

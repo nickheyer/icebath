@@ -166,6 +166,12 @@ func (r *GatewayRunner) handleFastCommand(ctx context.Context, event *gateway.Me
 	if alias, ok := provider.FastArgAliases[args]; ok {
 		args = alias
 	}
+	if args == "toggle" {
+		args = "fast"
+		if r.serviceTier != nil && provider.StaticTiers[*r.serviceTier] {
+			args = "normal"
+		}
+	}
 	ultrafast, err := provider.UltrafastOffered(model, cleanStr(runtime["provider"]), cleanStr(runtime["base_url"]), cleanStr(runtime["api_key"]))
 	if err != nil {
 		return nil, err

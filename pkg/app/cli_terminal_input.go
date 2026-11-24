@@ -54,11 +54,7 @@ func resolveAttachmentPath(rawPath string) string {
 	}
 	path := expanded
 	if !filepath.IsAbs(path) {
-		base := os.Getenv("TERMINAL_CWD")
-		if base == "" {
-			base, _ = os.Getwd()
-		}
-		path = filepath.Join(base, path)
+		path = filepath.Join(localFolder(), path)
 	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {

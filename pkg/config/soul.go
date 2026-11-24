@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // IdentityAuthor is the builder the default identity names
@@ -77,7 +76,7 @@ var legacySoulPatterns = func() []*regexp.Regexp {
 func normalizeSoul(text string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
-	return pystr.Strip(strings.TrimLeft(text, "\ufeff"))
+	return strings.TrimSpace(strings.TrimLeft(text, "\ufeff"))
 }
 
 // Reports whether a SOUL.md still holds an earlier auto seeded text nobody edited, never the current default

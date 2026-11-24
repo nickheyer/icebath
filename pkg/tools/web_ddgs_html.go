@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Parent and sibling names whose blank text the lxml HTML parser keeps, libxml2 allowPCData
@@ -102,7 +100,7 @@ func lxmlFromString(text string) (*lxmlTree, error) {
 		return t, nil
 	}
 	kids := lxmlElementChildren(body)
-	if len(kids) == 1 && pystr.Strip(lxmlText(body)) == "" && pystr.Strip(lxmlTail(kids[0])) == "" {
+	if len(kids) == 1 && strings.TrimSpace(lxmlText(body)) == "" && strings.TrimSpace(lxmlTail(kids[0])) == "" {
 		t.root = kids[0]
 		return t, nil
 	}

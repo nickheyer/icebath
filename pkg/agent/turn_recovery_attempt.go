@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -16,7 +15,7 @@ import (
 // Logs one failed attempt with its buffered retry trace and hints, returning type, lowered message, provider, base URL and model
 func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErrorTurn, elapsed float64, retryable bool) (string, string, string, string, string) {
 	errorType := surfaceExceptionName(e.apiError)
-	errorMsg := pystr.Lower(e.apiError.Error())
+	errorMsg := strings.ToLower(e.apiError.Error())
 	summary := a.summarizeAPIError(e.apiError)
 	attempt := fmt.Sprintf("attempt %d/%d", s.RetryCount, s.MaxRetries)
 	if !retryable {
@@ -67,8 +66,8 @@ func missingVendorPrefixSuggestion(apiError error, providerName, model string) s
 // Visible text already delivered this turn after the continuation trail collapses, empty when none
 func settleDeliveredPartial(ctx context.Context, a *AIAgent, messages *[]*state.Message, currentTurnUserIdx int) string {
 	collapsed := a.collapseContinuationTrail(ctx, messages, currentTurnUserIdx, "error", nil)
-	if live := a.currentStreamedAssistantText(); pystr.Strip(live) != "" {
-		if visible := pystr.Strip(a.stripThinkBlocks(live)); visible != "" {
+	if live := a.currentStreamedAssistantText(); strings.TrimSpace(live) != "" {
+		if visible := strings.TrimSpace(a.stripThinkBlocks(live)); visible != "" {
 			return visible
 		}
 		return collapsed
@@ -168,11 +167,11 @@ func markEntitlementRejectedModel(a *AIAgent, apiError error) bool {
 	if errors.As(apiError, &apiErr) && apiErr.Message != "" {
 		message = apiErr.Message
 	}
-	if !strings.Contains(pystr.Lower(message), provider.CodexAccountModelEntitlementMarker) {
+	if !strings.Contains(strings.ToLower(message), provider.CodexAccountModelEntitlementMarker) {
 		return false
 	}
-	providerName := pystr.Lower(pystr.Strip(a.provider))
-	model := pystr.Strip(a.model)
+	providerName := strings.ToLower(strings.TrimSpace(a.provider))
+	model := strings.TrimSpace(a.model)
 	if providerName == "" || model == "" {
 		return false
 	}

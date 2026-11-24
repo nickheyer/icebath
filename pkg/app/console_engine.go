@@ -1,6 +1,8 @@
 package app
 
 import (
+	"unicode"
+
 	"bufio"
 	"context"
 	"errors"
@@ -78,14 +80,14 @@ func NewConsoleEngine(ctx context.Context, outputLimit int) *ConsoleEngine {
 
 // Runs one console line, a mutating command asking for confirmation unless confirmed
 func (e *ConsoleEngine) Execute(line string, confirmed bool) (ConsoleResult, error) {
-	rawLine := pystr.Strip(line)
+	rawLine := strings.TrimSpace(line)
 	if rawLine == "" {
 		return ConsoleResult{Status: ConsoleOK}, nil
 	}
 	result, err := e.execute(rawLine, confirmed)
 	var console *ConsoleCommandError
 	if errors.As(err, &console) {
-		return ConsoleResult{Status: ConsoleError, Output: pystr.Strip(console.Msg), Command: rawLine}, nil
+		return ConsoleResult{Status: ConsoleError, Output: strings.TrimSpace(console.Msg), Command: rawLine}, nil
 	}
 	return result, err
 }
@@ -128,7 +130,7 @@ func (e *ConsoleEngine) execute(rawLine string, confirmed bool) (ConsoleResult, 
 	if err != nil {
 		return ConsoleResult{}, err
 	}
-	output = e.capOutput(pystr.Rstrip(output))
+	output = e.capOutput(strings.TrimRightFunc(output, unicode.IsSpace))
 	e.History = append(e.History, rawLine)
 	return ConsoleResult{Status: ConsoleOK, Output: output, Command: rawLine}, nil
 }
@@ -188,7 +190,7 @@ func (e *ConsoleEngine) Register(path []string, usage, summary string, handler c
 func (e *ConsoleEngine) executeBuiltin(tokens []string) (ConsoleResult, bool) {
 	switch tokens[0] {
 	case "help":
-		help, err := e.HelpText(pystr.Strip(strings.Join(tokens[1:], " ")))
+		help, err := e.HelpText(strings.TrimSpace(strings.Join(tokens[1:], " ")))
 		var console *ConsoleCommandError
 		if errors.As(err, &console) {
 			return ConsoleResult{Status: ConsoleError, Output: console.Msg}, true
@@ -261,20 +263,20 @@ func init() {
 
 // Command pairs the console refuses with the reason shown
 var consoleBlockedPairs = map[[2]string]string{
-	{"config", "edit"}:       "`config edit` opens an editor and is not available in Icebath Console.",
-	{"profile", "alias"}:     "`profile alias` creates shell wrappers and is not available in Icebath Console.",
-	{"skills", "config"}:     "`skills config` is interactive and is not available in Icebath Console.",
-	{"skills", "publish"}:    "`skills publish` is not available in Icebath Console.",
-	{"kanban", "tail"}:       "`kanban tail` streams output and is not available in Icebath Console.",
-	{"kanban", "watch"}:      "`kanban watch` streams output and is not available in Icebath Console.",
-	{"kanban", "daemon"}:     "`kanban daemon` starts a service and is not available in Icebath Console.",
-	{"kanban", "dispatcher"}: "`kanban dispatcher` starts a worker and is not available in Icebath Console.",
-	{"kanban", "swarm"}:      "`kanban swarm` starts agent work and is not available in Icebath Console.",
-	{"kanban", "decompose"}:  "`kanban decompose` starts agent work and is not available in Icebath Console.",
-	{"kanban", "specify"}:    "`kanban specify` starts agent work and is not available in Icebath Console.",
-	{"kanban", "gc"}:         "`kanban gc` is not available in Icebath Console.",
-	{"sessions", "delete"}:   "`sessions delete` and `sessions prune` are not available in Icebath Console.",
-	{"sessions", "prune"}:    "`sessions delete` and `sessions prune` are not available in Icebath Console.",
+	{"config", "edit"}:      "`config edit` opens an editor and is not available in Icebath Console.",
+	{"profile", "alias"}:    "`profile alias` creates shell wrappers and is not available in Icebath Console.",
+	{"skills", "config"}:    "`skills config` is interactive and is not available in Icebath Console.",
+	{"skills", "publish"}:   "`skills publish` is not available in Icebath Console.",
+	{"kanban", "tail"}:      "`kanban tail` streams output and is not available in Icebath Console.",
+	{"kanban", "watch"}:     "`kanban watch` streams output and is not available in Icebath Console.",
+	{"kanban", "daemon"}:    "`kanban daemon` starts a service and is not available in Icebath Console.",
+	{"kanban", "dispatch"}:  "`kanban dispatch` starts workers and is not available in Icebath Console.",
+	{"kanban", "swarm"}:     "`kanban swarm` starts agent work and is not available in Icebath Console.",
+	{"kanban", "decompose"}: "`kanban decompose` starts agent work and is not available in Icebath Console.",
+	{"kanban", "specify"}:   "`kanban specify` starts agent work and is not available in Icebath Console.",
+	{"kanban", "gc"}:        "`kanban gc` is not available in Icebath Console.",
+	{"sessions", "delete"}:  "`sessions delete` and `sessions prune` are not available in Icebath Console.",
+	{"sessions", "prune"}:   "`sessions delete` and `sessions prune` are not available in Icebath Console.",
 }
 
 // Refusal text for a flag, a blocked top level command or a blocked pair, empty when allowed
@@ -324,7 +326,7 @@ func consoleTableSummary(summary string, limit int) string {
 	if pystr.Len(summary) <= limit {
 		return summary
 	}
-	return pystr.Rstrip(pystr.Slice(summary, 0, limit-3)) + "..."
+	return strings.TrimRightFunc(pystr.Slice(summary, 0, limit-3), unicode.IsSpace) + "..."
 }
 
 // Help text as a one line summary, empty for hidden or run hints
@@ -418,9 +420,9 @@ var consoleCLIFamilies = []consoleFamily{
 	{"project", "builder", "list, show, *create, *add-folder, *remove-folder, *rename, *set-primary, *use, " +
 		"*archive, *restore, *bind-board"},
 	{"kanban", "builder", "*init, boards list, *boards create, *boards rm, *boards switch, boards current, " +
-		"*boards rename, *boards set-workdir, *create, list, show, *assign, *reclaim, *reassign, " +
-		"diagnose, *link, *unlink, *claim, *comment, *complete, *edit, *block, *schedule, " +
-		"*unblock, *promote, *archive, stats, runs, heartbeat, assignments, context"},
+		"*boards rename, *boards set-default-workdir, *create, list, show, *assign, *reclaim, *reassign, " +
+		"diagnostics, *link, *unlink, *claim, *comment, *complete, *edit, *block, *schedule, " +
+		"*unblock, *promote, *archive, stats, runs, heartbeat, assignees, context"},
 	{"bundles", "registered", "list, show, *create, *delete, *reload"},
 	{"checkpoints", "registered", "status, list, *prune, *clear, *clear-legacy"},
 	{"curator", "registered", "status, *run, *pause, *resume, *pin, *unpin, *restore, list-archived, *archive, *prune, " +
@@ -438,7 +440,7 @@ type consolePath struct {
 func consolePaths(spec string) []consolePath {
 	var out []consolePath
 	for _, item := range strings.Split(spec, ",") {
-		item = pystr.Strip(item)
+		item = strings.TrimSpace(item)
 		if item == "" {
 			continue
 		}
@@ -660,7 +662,7 @@ func RunConsoleREPL(ctx context.Context, o ConsoleREPLOptions) (int, error) {
 				return 1, nil
 			}
 			fmt.Fprint(stdout, result.ConfirmationMessage+" [y/N] ")
-			answer := pystr.Lower(pystr.Strip(readline()))
+			answer := strings.ToLower(strings.TrimSpace(readline()))
 			if answer != "y" && answer != "yes" {
 				fmt.Fprintln(stdout, "Cancelled.")
 				continue

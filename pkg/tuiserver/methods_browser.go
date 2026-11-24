@@ -25,7 +25,7 @@ import (
 var cdpSchemes = map[string]bool{"http": true, "https": true, "ws": true, "wss": true}
 
 // Binds the browser card method and the vault release of a closing session
-func init() { browserManageHandler, releaseVaultSession = browserManage, browser.ReleaseVaultSession }
+func init() { browserManageHandler = browserManage }
 
 // Tool env of the scoped profile home the browser session reads
 func browserEnv(ctx context.Context) *tools.Env {

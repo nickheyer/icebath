@@ -94,12 +94,12 @@ func TestInstalledRemovalHonoursCachedLiveListAndAllowRemoved(t *testing.T) {
 	meta := filepath.Join(h, "plugins", ".install-metadata.json")
 	writeJSON(meta, map[string]any{"later-killed": map[string]any{"source": "file:///x/later-killed#main", "catalog": map[string]any{"name": "killed"}}})
 	m := &Manifest{Name: "killed", Source: "user", Path: target, Key: "killed"}
-	gate := GateManifest(h, m, map[string]bool{}, map[string]bool{"killed": true}, true)
+	gate := GateManifest(h, m, map[string]bool{}, map[string]bool{"killed": true})
 	if gate.Action == "load" || gate.Error == "" {
 		t.Fatalf("removed plugin gated %+v", gate)
 	}
 	writeJSON(meta, map[string]any{"later-killed": map[string]any{"source": "file:///x/later-killed", "allow_removed": true}})
-	if gate := GateManifest(h, m, map[string]bool{}, map[string]bool{"killed": true}, true); gate.Action != "load" {
+	if gate := GateManifest(h, m, map[string]bool{}, map[string]bool{"killed": true}); gate.Action != "load" {
 		t.Fatalf("allow_removed bypass not honoured %+v", gate)
 	}
 	writeJSON(meta, []any{1})

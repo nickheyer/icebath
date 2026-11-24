@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -380,14 +382,14 @@ func summarizeRefusedToolResult(toolName string, args *pyjson.Object, content st
 	if e, ok := payload.Get("error"); ok {
 		errText, _ = e.(string)
 	}
-	if errText == "" && strings.HasPrefix(pystr.Lstrip(content), "BLOCKED") {
-		errText = pystr.Strip(content)
+	if errText == "" && strings.HasPrefix(strings.TrimLeftFunc(content, unicode.IsSpace), "BLOCKED") {
+		errText = strings.TrimSpace(content)
 	}
 	var outcome string
 	switch {
 	case status == "pending_approval":
 		outcome = "awaiting the user's approval, not run"
-	case errText != "" && (status == "blocked" || strings.HasPrefix(pystr.Lstrip(errText), "BLOCKED")):
+	case errText != "" && (status == "blocked" || strings.HasPrefix(strings.TrimLeftFunc(errText, unicode.IsSpace), "BLOCKED")):
 		outcome = "BLOCKED, not run"
 		if strings.Contains(errText, "NOT consented") {
 			outcome += "; the user did NOT consent, do not retry or reach the same outcome another way"
@@ -420,7 +422,7 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 	}
 	contentLen := pystr.Len(content)
 	lineCount := 0
-	if pystr.Strip(content) != "" {
+	if strings.TrimSpace(content) != "" {
 		lineCount = strings.Count(content, "\n") + 1
 	}
 	if summarizer, ok := toolResultSummarizers[toolName]; ok {

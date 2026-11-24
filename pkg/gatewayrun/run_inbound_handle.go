@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Inbound message of any platform, a user message whose turn the session store refused held until it takes writes again
@@ -38,6 +38,9 @@ func (r *GatewayRunner) handleMessageTurn(ctx context.Context, event *gateway.Me
 		return nil, err
 	}
 	event, source, isInternal := admitted.event, admitted.source, admitted.internal
+	if !isInternal {
+		rewriteResetWord(ctx, event)
+	}
 	if notice, paused := r.hmEstopGate(ctx, event, source, isInternal); paused {
 		return notice, nil
 	}
@@ -141,6 +144,23 @@ func (r *GatewayRunner) handleMessageTurn(ctx context.Context, event *gateway.Me
 		pkgLog().Debug(fmt.Sprintf("post-turn hook failed: %s", err))
 	}
 	return reply, nil
+}
+
+// Turns a text message that is one of the reset words into the new conversation command
+func rewriteResetWord(ctx context.Context, event *gateway.MessageEvent) {
+	if event.MessageType != gateway.MessageTypeText {
+		return
+	}
+	text := strings.ToLower(strings.TrimSpace(event.Text))
+	if text == "" || text == "/new" {
+		return
+	}
+	for _, word := range settings.GatewayResetTriggers.Strings(gateway.SettingsContext(ctx)) {
+		if strings.ToLower(strings.TrimSpace(word)) == text {
+			event.Text = "/new"
+			return
+		}
+	}
 }
 
 // Fast path while the session's agent runs, interrupting by default with queue, steer and protection demotions
@@ -391,7 +411,7 @@ func undoCount(raw string) *big.Int {
 
 // Undoes the last turns behind the confirm gate
 func (r *GatewayRunner) hmCmdUndo(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, any, error) {
-	n := undoCount(pystr.Strip(event.GetCommandArgs()))
+	n := undoCount(strings.TrimSpace(event.GetCommandArgs()))
 	detail := i18n.T(ctx, "gateway.confirm.detail_undo_one", "", nil)
 	if n.Cmp(big.NewInt(1)) != 0 {
 		detail = i18n.T(ctx, "gateway.confirm.detail_undo_many", "", map[string]any{"count": pyint.Native(n)})

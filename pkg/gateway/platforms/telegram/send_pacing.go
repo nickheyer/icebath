@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // FIFO lock handing ownership to waiters in arrival order
@@ -109,7 +108,7 @@ func isTransientTypingError(err error) bool {
 			return true
 		}
 	}
-	text := pystr.Lower(err.Error())
+	text := strings.ToLower(err.Error())
 	for _, marker := range []string{"too many requests", "rate limit", "timed out", "timeout", "temporar"} {
 		if strings.Contains(text, marker) {
 			return true

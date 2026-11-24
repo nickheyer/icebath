@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -54,17 +55,12 @@ func hexToANSI(hexColor string, bold bool) string {
 	return fmt.Sprintf("\033[%s38;2;%d;%d;%dm", prefix, rgb[0], rgb[1], rgb[2])
 }
 
-var (
-	trueRe  = regexp.MustCompile(`^(1|true|on|yes|y)$`)
-	falseRe = regexp.MustCompile(`^(0|false|off|no|n)$`)
-)
-
 // Terminal programs that default to light mode, none since Apple_Terminal is not reliable
 var lightDefaultTermPrograms = map[string]bool{}
 
 // Rec. 709 luma in the unit range of a #RGB or #RRGGBB color, false when malformed
 func luminanceFromHex(hexStr string) (float64, bool) {
-	s := pystr.LstripChars(pystr.Strip(hexStr), "#")
+	s := strings.TrimLeft(strings.TrimSpace(hexStr), "#")
 	if pystr.Len(s) == 3 {
 		var b strings.Builder
 		for _, c := range s {
@@ -89,18 +85,10 @@ func luminanceFromHex(hexStr string) (float64, bool) {
 
 var da1ReplyRe = regexp.MustCompile(`\x1b\[\?[0-9;]*c`)
 
-// The light mode detection ladder, env overrides, theme, background, COLORFGBG, OSC 11, then dark, a probe failure returned
-func detectLightModeUncached() (bool, error) {
-	for _, v := range []string{"ICEBATH_LIGHT", "ICEBATH_TUI_LIGHT"} {
-		val := pystr.Lower(pystr.Strip(os.Getenv(v)))
-		if trueRe.MatchString(val) {
-			return true, nil
-		}
-		if falseRe.MatchString(val) {
-			return false, nil
-		}
-	}
-	switch pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_TUI_THEME"))) {
+// The light mode detection ladder for the profile of ctx: the theme setting, the terminal's background hint, COLORFGBG, OSC 11, then
+// dark, a probe failure returned
+func detectLightModeUncached(ctx context.Context) (bool, error) {
+	switch settings.Theme.Get(ctx) {
 	case "light":
 		return true, nil
 	case "dark":
@@ -109,7 +97,7 @@ func detectLightModeUncached() (bool, error) {
 	if lum, ok := luminanceFromHex(os.Getenv("ICEBATH_TUI_BACKGROUND")); ok {
 		return lum >= 0.5, nil
 	}
-	parts := strings.Split(pystr.Strip(os.Getenv("COLORFGBG")), ";")
+	parts := strings.Split(strings.TrimSpace(os.Getenv("COLORFGBG")), ";")
 	last := parts[len(parts)-1]
 	if pystr.StrIsDigit(last) {
 		n, ok := pystr.IntText(last)
@@ -129,7 +117,7 @@ func detectLightModeUncached() (bool, error) {
 			return lum >= 0.5, nil
 		}
 	}
-	return lightDefaultTermPrograms[pystr.Strip(os.Getenv("TERM_PROGRAM"))], nil
+	return lightDefaultTermPrograms[strings.TrimSpace(os.Getenv("TERM_PROGRAM"))], nil
 }
 
 var (
@@ -137,14 +125,14 @@ var (
 	lightModeCache *bool
 )
 
-// Light terminal detection, queried once per process and dark on any failure
-func detectLightMode() bool {
+// Light terminal detection for the profile of ctx, queried once per process and dark on any failure
+func detectLightMode(ctx context.Context) bool {
 	lightModeMu.Lock()
 	defer lightModeMu.Unlock()
 	if lightModeCache != nil {
 		return *lightModeCache
 	}
-	result, err := detectLightModeUncached()
+	result, err := detectLightModeUncached(ctx)
 	if err != nil {
 		result = false
 	}
@@ -171,15 +159,16 @@ var lightModeRemapUpper = func() map[string]string {
 	return out
 }()
 
-// In light mode, the higher contrast equivalent of a dark tuned color
+// In light mode, the higher contrast equivalent of a dark tuned color; the colour filter knows no context, so the theme is the one of
+// this process's profile, which the profile flag sets for the whole process
 func maybeRemapForLightMode(hexColor string) string {
-	if !detectLightMode() {
+	if !detectLightMode(context.Background()) {
 		return hexColor
 	}
 	if hexColor == "" || !strings.HasPrefix(hexColor, "#") {
 		return hexColor
 	}
-	if mapped, ok := lightModeRemapUpper[pystr.Upper(hexColor)]; ok {
+	if mapped, ok := lightModeRemapUpper[strings.ToUpper(hexColor)]; ok {
 		return mapped
 	}
 	return hexColor
@@ -257,7 +246,7 @@ func stripMarkdownSyntax(text string) string {
 	for _, step := range markdownStripSteps {
 		plain, _ = step.re.Replace(plain, step.rep, -1, -1)
 	}
-	return pystr.StripChars(plain, "\n")
+	return strings.Trim(plain, "\n")
 }
 
 var windowsPathWithDotSegmentRe = regexp.MustCompile(`(?i)(?:\b[a-z]:\\|\\\\)[^\s` + "`" + `]*\\\.[^\s` + "`" + `]*`)
@@ -292,7 +281,7 @@ func terminalWidthForStreaming() int { return max(20, terminalColumns()-pystr.Le
 // Final assistant content as markdown, stripped text or raw text
 func renderFinalAssistantContent(text, mode string) pyrich.Renderable {
 	panelWidth := max(20, terminalColumns()-4)
-	switch pystr.Lower(pystr.Strip(cliStr(mode, "render"))) {
+	switch strings.ToLower(strings.TrimSpace(cliStr(mode, "render"))) {
 	case "strip":
 		return &pyrich.Text{Plain: tools.RealignMarkdownTables(stripMarkdownSyntax(text), &panelWidth)}
 	case "raw":

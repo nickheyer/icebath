@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubMemoryRegistry = &handlerRegistry{}
@@ -49,7 +48,7 @@ func memoryState(ctx context.Context) (tuigateway.MemoryOverviewResult, error) {
 }
 
 // State of memory for the memory provider screen
-func memoryOverview(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func memoryOverview(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.MemoryOverview.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -61,7 +60,7 @@ func memoryOverview(ctx context.Context, rid any, raw map[string]any, _ *tuihost
 }
 
 // One change to memory, answered with its state after it
-func memoryChange(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func memoryChange(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.MemoryChange.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

@@ -346,7 +346,7 @@ func stepfunOverrideView(t *testing.T, plugin Profile) (runtimeURL string, row P
 	if r == nil || g == nil {
 		t.Fatalf("stepfun row %v gmi row %v", r, g)
 	}
-	rt, err := newResolver(ctx, config.Tree(map[string]any{}), config.NewSecrets(h), h, NewStore(h)).ResolveRuntime("stepfun", "", "", nil, "")
+	rt, err := newResolver(ctx, config.NewSecrets(h), h, NewStore(h)).ResolveRuntime("stepfun", "", "", nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}

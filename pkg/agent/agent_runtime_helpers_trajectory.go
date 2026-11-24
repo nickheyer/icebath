@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"unicode"
+
 	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -55,7 +56,7 @@ func trajectoryStrip(v any) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("trajectory content is %s, expected text", errchain.Kind(v))
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 // Leading think block from native reasoning tokens, empty without reasoning
@@ -139,7 +140,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		}
 		content += "<tool_call>\n" + encoded + "\n</tool_call>\n"
 	}
-	return pystr.Rstrip(withThinkBlock(content)), nil
+	return strings.TrimRightFunc(withThinkBlock(content), unicode.IsSpace), nil
 }
 
 // The tool_response blocks of the tool run starting at start and the index after it
@@ -161,7 +162,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 			return nil, 0, err
 		}
 		if s, ok := toolContent.(string); ok {
-			if trimmed := pystr.Strip(s); strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+			if trimmed := strings.TrimSpace(s); strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
 				if parsed, perr := pyjson.Loads(s); perr == nil {
 					toolContent = parsed
 				}
@@ -265,7 +266,7 @@ func (a *AIAgent) convertToTrajectoryFormat(messages []map[string]any, userQuery
 				}
 				text = s
 			}
-			trajectory = append(trajectory, trajectoryTurn("gpt", pystr.Strip(withThinkBlock(prefix+ConvertScratchpadToThink(text)))))
+			trajectory = append(trajectory, trajectoryTurn("gpt", strings.TrimSpace(withThinkBlock(prefix+ConvertScratchpadToThink(text)))))
 		case "user":
 			content, err := trajectoryItem(msg, "content")
 			if err != nil {

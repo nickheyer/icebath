@@ -10,18 +10,18 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 type frozenRuntimeConfigKey struct{}
 
-// WithFrozenRuntimeConfig scopes resolution under the returned context to a session's frozen config over the defaults
+// WithFrozenRuntimeConfig scopes resolution under the returned context to a session's frozen config over the defaults, settings reads included
 func WithFrozenRuntimeConfig(ctx context.Context, cfg map[string]any) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	merged := config.DeepMerge(map[string]any(config.Defaults()), cfg)
-	return context.WithValue(ctx, frozenRuntimeConfigKey{}, merged)
+	return settings.WithFrozen(context.WithValue(ctx, frozenRuntimeConfigKey{}, merged), cfg)
 }
 
 // FrozenRuntimeConfig is the frozen session config scoped on the context, nil outside a frozen scope
@@ -33,36 +33,16 @@ func FrozenRuntimeConfig(ctx context.Context) map[string]any {
 	return cfg
 }
 
-// LoadConfigSafe is the context's frozen runtime config else the home's read only config, nil on any error
-func LoadConfigSafe(ctx context.Context, h string) map[string]any {
-	if frozen := FrozenRuntimeConfig(ctx); frozen != nil {
-		return frozen
-	}
-	return loadLiveConfigSafe(h)
-}
-
-// Read only config of the home or the process home, nil on any error
-func loadLiveConfigSafe(h string) map[string]any {
-	if h == "" {
-		h = home.Process()
-	}
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil
-	}
-	return map[string]any(tree)
-}
-
-// ConfigLoader binds the home's read only config to a PoolEnv, whose context applies a frozen scope first
-func ConfigLoader(h string) func() map[string]any {
-	return func() map[string]any { return loadLiveConfigSafe(h) }
-}
-
 // ---- custom endpoint pool keys ----
 
-// GetCustomProviderPoolKey is the preferred pool key for a custom provider, durable slug else custom name
-func GetCustomProviderPoolKey(baseURL, providerName string, cfg map[string]any) string {
-	candidates := customProviderPoolKeyCandidates(baseURL, providerName, cfg)
+// GetCustomProviderPoolKey is the preferred pool key of the custom endpoint the providers setting gives ctx for a base url, durable slug else custom name
+func GetCustomProviderPoolKey(ctx context.Context, baseURL, providerName string) string {
+	return customPoolKey(baseURL, providerName, settings.Providers.Get(ctx))
+}
+
+// Preferred pool key of the custom endpoint a providers mapping owns for a base url, empty when none
+func customPoolKey(baseURL, providerName string, providers map[string]any) string {
+	candidates := customProviderPoolKeyCandidates(baseURL, providerName, providers)
 	if len(candidates) == 0 {
 		return ""
 	}
@@ -86,12 +66,12 @@ func ListCustomPoolProviders(store *Store) []string {
 }
 
 // The providers entry matching a custom prefixed pool key
-func getCustomProviderConfig(poolKey string, cfg map[string]any) map[string]any {
+func getCustomProviderConfig(poolKey string, providers map[string]any) map[string]any {
 	if !strings.HasPrefix(poolKey, CustomPoolPrefix) {
 		return nil
 	}
 	suffix := poolKey[len(CustomPoolPrefix):]
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		if ne.name == suffix {
 			return ne.entry
 		}
@@ -108,12 +88,12 @@ func GetPoolStrategy(ctx context.Context, provider string) string {
 }
 
 // Matches a durable providers key pool against runtime identities
-func keyedCustomPoolMatches(poolProvider, providerNorm, baseURL string, cfg map[string]any) bool {
+func keyedCustomPoolMatches(poolProvider, providerNorm, baseURL string, providers map[string]any) bool {
 	runtimeURL := normPoolURL(baseURL)
 	if runtimeURL == "" {
 		return false
 	}
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		providerKey := normalizeCustomPoolName(cfgString(ne.entry["provider_key"]))
 		if providerKey != poolProvider {
 			continue
@@ -142,8 +122,8 @@ func intersects(a, b map[string]bool) bool {
 }
 
 // Matches a legacy custom prefixed pool against a named runtime identity
-func legacyCustomPoolMatches(poolProvider, providerNorm, runtimeURL string, cfg map[string]any) bool {
-	for _, ne := range iterCustomProviders(cfg) {
+func legacyCustomPoolMatches(poolProvider, providerNorm, runtimeURL string, providers map[string]any) bool {
+	for _, ne := range iterCustomProviders(providers) {
 		if CustomPoolPrefix+ne.name != poolProvider {
 			continue
 		}
@@ -166,8 +146,8 @@ func legacyCustomPoolMatches(poolProvider, providerNorm, runtimeURL string, cfg 
 	return false
 }
 
-// CredentialPoolMatchesProviderIn reports whether a pool key belongs to the runtime provider under cfg
-func CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL string, cfg map[string]any) bool {
+// CredentialPoolMatchesProviderIn reports whether a pool key belongs to the runtime provider under a providers mapping
+func CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL string, providers map[string]any) bool {
 	poolProvider = strings.ToLower(strings.TrimSpace(poolProvider))
 	providerNorm := strings.ToLower(strings.TrimSpace(provider))
 	if poolProvider == "" || providerNorm == "" {
@@ -177,13 +157,10 @@ func CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL string, cfg
 		if poolProvider == providerNorm {
 			return true
 		}
-		return keyedCustomPoolMatches(poolProvider, providerNorm, baseURL, cfg)
+		return keyedCustomPoolMatches(poolProvider, providerNorm, baseURL, providers)
 	}
 	if providerNorm == "custom" {
-		if strings.ToLower(strings.TrimSpace(GetCustomProviderPoolKey(baseURL, "", cfg))) == poolProvider {
-			return true
-		}
-		for _, key := range customProviderPoolKeyCandidates(baseURL, "", cfg) {
+		for _, key := range customProviderPoolKeyCandidates(baseURL, "", providers) {
 			if strings.ToLower(strings.TrimSpace(key)) == poolProvider {
 				return true
 			}
@@ -194,30 +171,30 @@ func CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL string, cfg
 	if runtimeURL == "" {
 		return false
 	}
-	return legacyCustomPoolMatches(poolProvider, providerNorm, runtimeURL, cfg)
+	return legacyCustomPoolMatches(poolProvider, providerNorm, runtimeURL, providers)
 }
 
-// CredentialPoolMatchesProvider is CredentialPoolMatchesProviderIn under the process config
+// CredentialPoolMatchesProvider is CredentialPoolMatchesProviderIn under the providers setting ctx gives
 func CredentialPoolMatchesProvider(ctx context.Context, poolProvider, provider, baseURL string) bool {
-	return CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL, LoadConfigSafe(ctx, ""))
+	return CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL, settings.Providers.Get(ctx))
 }
 
-// ResolveRuntimePoolKey is the pool key for a runtime provider identity, the normalized identity when no scoped key fits
-func ResolveRuntimePoolKey(provider, baseURL string, cfg map[string]any) string {
+// ResolveRuntimePoolKey is the pool key for a runtime provider identity under a providers mapping, the normalized identity when no scoped key fits
+func ResolveRuntimePoolKey(provider, baseURL string, providers map[string]any) string {
 	providerNorm := strings.ToLower(strings.TrimSpace(provider))
 	if providerNorm == "" {
 		return ""
 	}
 	accepts := func(candidate string) bool {
-		return CredentialPoolMatchesProviderIn(candidate, providerNorm, baseURL, cfg)
+		return CredentialPoolMatchesProviderIn(candidate, providerNorm, baseURL, providers)
 	}
 	if providerNorm == "custom" {
-		if candidate := GetCustomProviderPoolKey(baseURL, "", cfg); candidate != "" && accepts(candidate) {
+		if candidate := customPoolKey(baseURL, "", providers); candidate != "" && accepts(candidate) {
 			return strings.ToLower(strings.TrimSpace(candidate))
 		}
 		return providerNorm
 	}
-	for _, ne := range iterCustomProviders(cfg) {
+	for _, ne := range iterCustomProviders(providers) {
 		for _, candidate := range poolKeysForCustomEntry(ne.name, ne.entry) {
 			if accepts(candidate) {
 				return candidate
@@ -852,8 +829,9 @@ func pruneStaleSeededEntries(entries *[]PooledCredential, activeSources map[stri
 // Seeds a custom endpoint pool from custom provider config and the model config key
 func seedCustomPool(env PoolEnv, poolKey string, entries *[]PooledCredential) (bool, map[string]bool) {
 	seed := newSeeder(env, poolKey, entries)
-	cfg := env.config()
-	if cp := getCustomProviderConfig(poolKey, cfg); cp != nil {
+	ctx := env.hookContext()
+	providers := settings.Providers.Get(ctx)
+	if cp := getCustomProviderConfig(poolKey, providers); cp != nil {
 		apiKey := strings.TrimSpace(anyString(cp["api_key"]))
 		name := strings.TrimSpace(anyString(cp["name"]))
 		if apiKey != "" {
@@ -864,16 +842,14 @@ func seedCustomPool(env PoolEnv, poolKey string, entries *[]PooledCredential) (b
 			seed.upsert("config:"+name, map[string]any{"auth_type": AuthTypeAPIKey, "access_token": apiKey, "base_url": normPoolURL(cp["base_url"]), "label": label})
 		}
 	}
-	if modelCfg, ok := cfg["model"].(map[string]any); ok {
-		modelProvider := strings.ToLower(strings.TrimSpace(anyString(modelCfg["provider"])))
-		modelBaseURL := normPoolURL(modelCfg["base_url"])
-		modelAPIKey := strings.TrimSpace(anyString(modelCfg["api_key"]))
-		if modelProvider == "custom" && modelBaseURL != "" && modelAPIKey != "" {
-			for _, key := range customProviderPoolKeyCandidates(modelBaseURL, "", cfg) {
-				if strings.ToLower(strings.TrimSpace(key)) == poolKey {
-					seed.upsert("model_config", map[string]any{"auth_type": AuthTypeAPIKey, "access_token": modelAPIKey, "base_url": modelBaseURL, "label": "model_config"})
-					break
-				}
+	modelProvider := strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx)))
+	modelBaseURL := normPoolURL(settings.ModelBaseURL.Get(ctx))
+	modelAPIKey := strings.TrimSpace(settings.ModelAPIKey.Get(ctx))
+	if modelProvider == "custom" && modelBaseURL != "" && modelAPIKey != "" {
+		for _, key := range customProviderPoolKeyCandidates(modelBaseURL, "", providers) {
+			if strings.ToLower(strings.TrimSpace(key)) == poolKey {
+				seed.upsert("model_config", map[string]any{"auth_type": AuthTypeAPIKey, "access_token": modelAPIKey, "base_url": modelBaseURL, "label": "model_config"})
+				break
 			}
 		}
 	}
@@ -1010,44 +986,30 @@ func slotSelects(slot any, normalized string) bool {
 	return ok && strings.ToLower(strings.TrimSpace(anyString(m["provider"]))) == normalized
 }
 
-// config.yaml model.provider, an auxiliary task provider or a MoA slot naming the provider
-func configSelectsProvider(cfg map[string]any, normalized string) bool {
-	if slotSelects(cfg["model"], normalized) {
+// Whether the model provider, an auxiliary task provider or a slot of a mixture preset in effect for ctx names the provider
+func configSelectsProvider(ctx context.Context, normalized string) bool {
+	if strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx))) == normalized {
 		return true
 	}
-	if aux, ok := cfg["auxiliary"].(map[string]any); ok {
-		for _, slot := range aux {
-			if slotSelects(slot, normalized) {
-				return true
-			}
+	for _, provider := range auxTaskProviders(ctx) {
+		if strings.ToLower(strings.TrimSpace(provider)) == normalized {
+			return true
 		}
 	}
-	moa, ok := cfg["moa"].(map[string]any)
-	if !ok {
-		return false
-	}
-	blockMatches := func(block any) bool {
-		m, ok := block.(map[string]any)
+	for _, preset := range settings.MoaPresets.Get(ctx) {
+		m, ok := preset.(map[string]any)
 		if !ok {
-			return false
+			continue
 		}
 		if refs, ok := m["reference_models"].([]any); ok {
-			for _, s := range refs {
-				if slotSelects(s, normalized) {
+			for _, ref := range refs {
+				if slotSelects(ref, normalized) {
 					return true
 				}
 			}
 		}
-		return slotSelects(m["aggregator"], normalized)
-	}
-	if blockMatches(moa) {
-		return true
-	}
-	if presets, ok := moa["presets"].(map[string]any); ok {
-		for _, p := range presets {
-			if blockMatches(p) {
-				return true
-			}
+		if slotSelects(m["aggregator"], normalized) {
+			return true
 		}
 	}
 	return false
@@ -1088,8 +1050,7 @@ func keylessProviderHasExplicitConfig(env PoolEnv, normalized string) bool {
 		return hasExplicitVertexConfig(env)
 	}
 	if normalized == "bedrock" {
-		bedrock, ok := env.config()["bedrock"].(map[string]any)
-		return ok && strings.TrimSpace(anyString(bedrock["region"])) != ""
+		return strings.TrimSpace(settings.BedrockRegion.Get(env.hookContext())) != ""
 	}
 	return false
 }
@@ -1097,7 +1058,7 @@ func keylessProviderHasExplicitConfig(env PoolEnv, normalized string) bool {
 // IsProviderExplicitlyConfigured is true only when the user configured the provider through an explicit flow
 func IsProviderExplicitlyConfigured(env PoolEnv, providerID string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(providerID))
-	if configSelectsProvider(env.config(), normalized) {
+	if configSelectsProvider(env.hookContext(), normalized) {
 		return true
 	}
 	if explicitEnvCredentialsPresent(env, normalized) {

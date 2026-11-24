@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -160,7 +159,7 @@ func redactCDPOutput(env *tools.Env, value any, always, flagged [][]string, dept
 // Seams the tool reads its endpoint, transport and guard facts through
 var (
 	resolveCDPEndpoint = func(env *tools.Env) string {
-		return pystr.Strip(cfgOf(env).cdpOverride(context.Background()))
+		return strings.TrimSpace(cfgOf(env).cdpOverride(context.Background()))
 	}
 	cdpEvalSSRFGuardActive  = evalSSRFGuardActive
 	currentPagePrivateURL   = cdpCurrentPagePrivateURL
@@ -222,7 +221,7 @@ func expressionPrivateTarget(params any, blocked func(string) bool) string {
 
 // Blocked url literal of Page.navigate params, empty when allowed
 func navigatePrivateTarget(params any, blocked func(string) bool) string {
-	target := pystr.Strip(paramStr(params, "url"))
+	target := strings.TrimSpace(paramStr(params, "url"))
 	if target != "" && blocked(target) {
 		return target
 	}
@@ -231,7 +230,7 @@ func navigatePrivateTarget(params any, blocked func(string) bool) string {
 
 // A blank tab opens freely, any other url is held to the Page.navigate rule
 func newTabPrivateTarget(params any, blocked func(string) bool) string {
-	if pystr.Lower(pystr.Strip(paramStr(params, "url"))) == "about:blank" {
+	if strings.ToLower(strings.TrimSpace(paramStr(params, "url"))) == "about:blank" {
 		return ""
 	}
 	return navigatePrivateTarget(params, blocked)
@@ -311,8 +310,8 @@ func paramURLLiterals(value any, key string) []string {
 	switch v := value.(type) {
 	case string:
 		var out []string
-		if key == "url" && pystr.Strip(v) != "" {
-			out = append(out, pystr.Strip(v))
+		if key == "url" && strings.TrimSpace(v) != "" {
+			out = append(out, strings.TrimSpace(v))
 		}
 		return append(out, urlLiterals(v, true)...)
 	case []any:
@@ -370,7 +369,7 @@ func browserCDPPrivateGuard(env *tools.Env, method string, params any, endpoint 
 	}
 	if !hasGuard {
 		for _, u := range literals {
-			low := pystr.Lower(u)
+			low := strings.ToLower(u)
 			if (strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://")) && urlBlocked(env, u) {
 				return cdpBlocked(fmt.Sprintf("Blocked: CDP %s params target a private or internal address (%s).", method, u), method)
 			}
@@ -731,7 +730,7 @@ func browserCDP(ctx context.Context, env *tools.Env, method, params, targetID, f
 func floatArg(v any) (float64, bool) {
 	switch t := v.(type) {
 	case string:
-		f, err := strconv.ParseFloat(pystr.Strip(strings.ReplaceAll(t, "_", "")), 64)
+		f, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(t, "_", "")), 64)
 		return f, err == nil
 	case nil:
 		return 0, false

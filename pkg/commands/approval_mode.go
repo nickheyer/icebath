@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"errors"
@@ -9,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -55,7 +56,7 @@ func RunApprovalModeCommand(ctx context.Context, h string, env *tools.Env, reque
 	if err != nil {
 		return ApprovalModeResult{}, err
 	}
-	requested := pystr.Lower(pystr.Strip(requestedMode))
+	requested := strings.ToLower(strings.TrimSpace(requestedMode))
 	if requested == "" {
 		return ApprovalModeResult{true, current, false, fmt.Sprintf("Approval mode: %s (persistent profile setting).", current)}, nil
 	}
@@ -67,7 +68,7 @@ func RunApprovalModeCommand(ctx context.Context, h string, env *tools.Env, reque
 	})
 	var exit *config.ConfigExit
 	if errors.As(err, &exit) {
-		detail := pystr.Strip(output)
+		detail := strings.TrimSpace(output)
 		if detail == "" {
 			detail = "Approval mode is managed and cannot be changed."
 		}

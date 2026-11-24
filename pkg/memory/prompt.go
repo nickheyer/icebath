@@ -38,6 +38,3 @@ var MemoryGuidance = BuildMemoryGuidance(true, true, true)
 
 // Guidance for a session whose only store is the user profile
 var UserProfileGuidance = BuildMemoryGuidance(false, true, true)
-
-// Memory prompt blocks register nothing at import
-func registerMemoryPromptBlocks() {}

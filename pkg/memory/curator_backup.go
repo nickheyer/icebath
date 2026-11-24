@@ -842,5 +842,3 @@ func SummarizeCuratorBackups(ctx context.Context) (string, error) {
 	}
 	return strings.Join(lines, "\n"), nil
 }
-
-func registerCuratorBackup() {}

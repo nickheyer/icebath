@@ -422,10 +422,7 @@ func StartCardOAuth(ctx context.Context, env *tools.Env, serverName string, o Ca
 	if o.Cfg != nil {
 		cfg = maps.Clone(o.Cfg)
 	} else {
-		servers, err := getMCPServers(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
+		servers := StoredServers(ctx)
 		saved, _ := servers[serverName].(map[string]any)
 		cfg = maps.Clone(saved)
 	}

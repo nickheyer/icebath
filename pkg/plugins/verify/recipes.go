@@ -103,8 +103,8 @@ func asStrings(value any) []string {
 	}
 	out := []string{}
 	for _, v := range values {
-		if s, ok := v.(string); ok && pystr.Strip(s) != "" {
-			out = append(out, pystr.Strip(s))
+		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+			out = append(out, strings.TrimSpace(s))
 		}
 	}
 	return out
@@ -117,21 +117,21 @@ func RecipeFromDict(raw any) (*Recipe, error) {
 		return nil, nil
 	}
 	name, ok := firstOr(get, "name", "appLabel").(string)
-	if !ok || pystr.Strip(name) == "" {
+	if !ok || strings.TrimSpace(name) == "" {
 		return nil, nil
 	}
 	kind, ok := firstOr(get, "kind", "appKind").(string)
-	if !ok || pystr.Strip(kind) == "" {
+	if !ok || strings.TrimSpace(kind) == "" {
 		kind = "unknown"
 	}
-	r := &Recipe{Name: pystr.Strip(name), Kind: pystr.Strip(kind), ReadinessPath: "/"}
-	if start, ok := firstOr(get, "start", "startCommand").(string); ok && pystr.Strip(start) != "" {
-		s := pystr.Strip(start)
+	r := &Recipe{Name: strings.TrimSpace(name), Kind: strings.TrimSpace(kind), ReadinessPath: "/"}
+	if start, ok := firstOr(get, "start", "startCommand").(string); ok && strings.TrimSpace(start) != "" {
+		s := strings.TrimSpace(start)
 		r.Start = &s
 	}
 	portRaw := firstOr(get, "port", "startPort")
-	if s, ok := portRaw.(string); ok && pystr.StrIsDigit(pystr.Strip(s)) {
-		n, err := pyint.Of(pystr.Strip(s))
+	if s, ok := portRaw.(string); ok && pystr.StrIsDigit(strings.TrimSpace(s)) {
+		n, err := pyint.Of(strings.TrimSpace(s))
 		if err != nil {
 			return nil, err
 		}
@@ -296,7 +296,7 @@ func dedupe(values ...string) []string {
 	seen := map[string]bool{}
 	out := []string{}
 	for _, v := range values {
-		v = pystr.Strip(v)
+		v = strings.TrimSpace(v)
 		if v != "" && !seen[v] {
 			seen[v] = true
 			out = append(out, v)
@@ -441,7 +441,7 @@ func detectPythonRecipe(root string) (*Recipe, error) {
 			return nil, err
 		}
 	}
-	lower := pystr.Lower(deref(pyproject) + "\n" + deref(requirements))
+	lower := strings.ToLower(deref(pyproject) + "\n" + deref(requirements))
 	pm, err := DetectPackageManager(root)
 	if err != nil {
 		return nil, err

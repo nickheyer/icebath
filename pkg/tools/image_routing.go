@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Image extensions auto attached from free text, documents and archives excluded
@@ -97,7 +96,7 @@ func ExtractImageRefs(text string) ([]string, []string) {
 	}
 	seen = map[string]bool{}
 	for _, m := range matchesOutsideCode(imageURLRe, text) {
-		u := pystr.RstripChars(m, ".,;:!?)]>")
+		u := strings.TrimRight(m, ".,;:!?)]>")
 		if !seen[u] {
 			seen[u] = true
 			urls = append(urls, u)
@@ -382,7 +381,7 @@ func guessImageMime(path string, raw []byte, haveRaw bool) (string, error) {
 	if strings.HasPrefix(mime, "image/") {
 		return mime, nil
 	}
-	if m, ok := imageRoutingSuffixMimes[pystr.Lower(pySuffix(path))]; ok {
+	if m, ok := imageRoutingSuffixMimes[strings.ToLower(pySuffix(path))]; ok {
 		return m, nil
 	}
 	return "image/jpeg", nil
@@ -439,11 +438,11 @@ func BuildNativeContentParts(env *Env, userText string, imagePaths, imageURLs []
 		}
 	}
 	for _, u := range imageURLs {
-		if u = pystr.Strip(u); u != "" {
+		if u = strings.TrimSpace(u); u != "" {
 			urls, hints = append(urls, u), append(hints, "[Image attached: "+u+"]")
 		}
 	}
-	text := pystr.Strip(userText)
+	text := strings.TrimSpace(userText)
 	if len(urls) == 0 {
 		if text == "" {
 			return []any{}, skipped, nil

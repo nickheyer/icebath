@@ -14,7 +14,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -23,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -140,7 +140,7 @@ func coerceList(value any) []string {
 	}
 	out := []string{}
 	for _, item := range items {
-		if s := pystr.Strip(pyrepr.Str(item)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -149,15 +149,15 @@ func coerceList(value any) []string {
 
 // Allowlist entry without its wecom and user or group prefixes
 func normalizeEntry(raw string) string {
-	value := reSub(wecomPrefixRE, pystr.Strip(raw), "")
-	return pystr.Strip(reSub(entryKindRE, value, ""))
+	value := reSub(wecomPrefixRE, strings.TrimSpace(raw), "")
+	return strings.TrimSpace(reSub(entryKindRE, value, ""))
 }
 
 // Case insensitive allowlist match where a star entry matches anyone
 func entriesMatch(entries []string, target string) bool {
-	normalizedTarget := pystr.Lower(pystr.Strip(target))
+	normalizedTarget := strings.ToLower(strings.TrimSpace(target))
 	for _, e := range entries {
-		if n := pystr.Lower(normalizeEntry(e)); n == "*" || n == normalizedTarget {
+		if n := strings.ToLower(normalizeEntry(e)); n == "*" || n == normalizedTarget {
 			return true
 		}
 	}
@@ -184,7 +184,7 @@ func lowerOf(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Lower(pyrepr.Str(v))
+	return strings.ToLower(pyrepr.Str(v))
 }
 
 // Class attributes of the WeCom adapter
@@ -255,14 +255,14 @@ func NewWeComAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeComAd
 	setting := func(env, def string, keys ...string) (string, error) {
 		for _, k := range keys {
 			if v := extra[k]; pyrepr.Truthy(v) {
-				return pystr.Strip(pyrepr.Str(v)), nil
+				return strings.TrimSpace(pyrepr.Str(v)), nil
 			}
 		}
 		if env == "" {
 			return "", nil
 		}
 		secret, err := gateway.GetScopedSecret(ctx, env, def, false)
-		return pystr.Strip(secret), err
+		return strings.TrimSpace(secret), err
 	}
 	if a.botID, err = setting("WECOM_BOT_ID", "", "bot_id"); err != nil {
 		return nil, err
@@ -276,26 +276,11 @@ func NewWeComAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeComAd
 	if a.wsURL == "" {
 		a.wsURL = defaultWSURL
 	}
-	dmPolicy, err := setting("WECOM_DM_POLICY", "pairing", "dm_policy")
-	if err != nil {
-		return nil, err
-	}
-	a.DMPolicy = pystr.Lower(dmPolicy)
-	allowRaw := extra["allow_from"]
-	if !pyrepr.Truthy(allowRaw) {
-		secret, err := gateway.GetScopedSecret(ctx, "WECOM_ALLOWED_USERS", "", false)
-		if err != nil {
-			return nil, err
-		}
-		allowRaw = secret
-	}
-	a.allowFrom = coerceList(allowRaw)
-	groupPolicy, err := setting("WECOM_GROUP_POLICY", "pairing", "group_policy")
-	if err != nil {
-		return nil, err
-	}
-	a.GroupPolicy = pystr.Lower(groupPolicy)
-	a.groupAllowFrom = coerceList(extra["group_allow_from"])
+	sctx := gateway.SettingsContext(ctx)
+	a.DMPolicy = strings.ToLower(strings.TrimSpace(settings.WecomDmPolicy.Get(sctx)))
+	a.allowFrom = gateway.SettingList(ctx, settings.WecomAllowFrom)
+	a.GroupPolicy = strings.ToLower(strings.TrimSpace(settings.WecomGroupPolicy.Get(sctx)))
+	a.groupAllowFrom = gateway.SettingList(ctx, settings.WecomGroupAllowFrom)
 	for _, entry := range a.allowFrom {
 		a.AllowFrom[entry] = true
 	}
@@ -316,7 +301,7 @@ func NewWeComAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeComAd
 		a.groups = map[string]any{}
 	}
 	a.dedup = gateway.NewMessageDeduplicator(dedupMaxSize, 300)
-	a.SetTextBatchDelays(config.EnvFloat("ICEBATH_WECOM_TEXT_BATCH_DELAY_SECONDS", 0.6), config.EnvFloat("ICEBATH_WECOM_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0))
+	a.SetTextBatchDelays(settings.WecomTextBatchDelay.Get(sctx).Seconds(), settings.WecomTextBatchSplitDelay.Get(sctx).Seconds())
 	a.attachmentTextMergeDelaySeconds = extraFloat("attachment_text_merge_delay_seconds", 0.8)
 	a.stream = &Streamer{Host: a,
 		SafeDurationSeconds:      extraFloat("stream_safe_duration_seconds", StreamSafeDurationSeconds),
@@ -777,7 +762,7 @@ func (a *WeComAdapter) sendReplyRequest(ctx context.Context, replyReqID string, 
 
 // Stripped reply req id, a ValueError when it is blank
 func (a *WeComAdapter) RequireReplyReqID(replyReqID string) (string, error) {
-	normalized := pystr.Strip(replyReqID)
+	normalized := strings.TrimSpace(replyReqID)
 	if normalized == "" {
 		return "", &pyErr{"ValueError", "reply_req_id is required"}
 	}

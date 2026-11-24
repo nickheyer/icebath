@@ -97,12 +97,9 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 		log.add("done:" + method)
 		return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil), "result", pyjson.ObjectOf("method", method)), nil
 	})
-	prevClose := wsCloseSessionsForTransport
-	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
-		log.add("teardown")
-		return 0, 0
-	}
-	t.Cleanup(func() { wsCloseSessionsForTransport = prevClose })
+	prevRelease := wsReleaseSetupForTransport
+	wsReleaseSetupForTransport = func(tuihost.Transport) { log.add("teardown") }
+	t.Cleanup(func() { wsReleaseSetupForTransport = prevRelease })
 	return newWSTestSocket(), log, release
 }
 

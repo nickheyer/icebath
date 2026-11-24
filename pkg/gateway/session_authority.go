@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -621,7 +620,7 @@ func pendingDisplay(payload *pyjson.Object) (string, map[string]any) {
 	descriptor := automationDescriptor(payload)
 	name, _ := descriptor.GetOr("display_kind", nil).(string)
 	body, _ := descriptor.GetOr("display_text", nil).(string)
-	if ProducerNoticeDisplayKinds[name] && pystr.Strip(body) != "" {
+	if ProducerNoticeDisplayKinds[name] && strings.TrimSpace(body) != "" {
 		metadata["display_text"] = body
 	}
 	switch {

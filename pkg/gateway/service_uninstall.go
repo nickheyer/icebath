@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -161,7 +163,7 @@ func WindowsUninstall(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		detail := pystr.Strip(errOut)
+		detail := strings.TrimSpace(errOut)
 		admin := false
 		if code != 0 && windowsIsAccessDenied(detail) {
 			if admin, err = winIsRunningAsAdmin(); err != nil {

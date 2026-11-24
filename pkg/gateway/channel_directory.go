@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Explicit directory and alias file overrides tests set, empty reading the active home
@@ -82,10 +81,10 @@ func applyChannelAliases(ctx context.Context, platforms *pyjson.Object) {
 		}
 		for _, chatID := range idMap.Keys {
 			friendly, ok := idMap.Vals[chatID].(string)
-			if !ok || pystr.Strip(friendly) == "" {
+			if !ok || strings.TrimSpace(friendly) == "" {
 				continue
 			}
-			friendly = pystr.Strip(friendly)
+			friendly = strings.TrimSpace(friendly)
 			matched := false
 			for _, e := range entries {
 				if entry, isObj := e.(*pyjson.Object); isObj {
@@ -120,7 +119,7 @@ func aliasesNamePlatforms(ctx context.Context) bool {
 
 // Leading hashes trimmed, whitespace stripped and lowercased
 func normalizeChannelQuery(value string) string {
-	return pystr.Lower(pystr.Strip(strings.TrimLeft(value, "#")))
+	return strings.ToLower(strings.TrimSpace(strings.TrimLeft(value, "#")))
 }
 
 // Human facing target label of a directory entry
@@ -246,7 +245,7 @@ func resolveChannelName(ctx context.Context, platformName, name string) (string,
 	if err != nil || len(channels) == 0 {
 		return "", err
 	}
-	raw := pystr.Strip(name)
+	raw := strings.TrimSpace(name)
 	for _, ch := range channels {
 		if id, _ := ch.Get("id"); id == raw {
 			return raw, nil
@@ -277,7 +276,7 @@ func resolveChannelName(ctx context.Context, platformName, name string) (string,
 			if !ok {
 				return "", fmt.Errorf("a channel directory guild is %s, expected text", errchain.Kind(rawGuild))
 			}
-			if pystr.Lower(pystr.Strip(guild)) != guildPart {
+			if strings.ToLower(strings.TrimSpace(guild)) != guildPart {
 				continue
 			}
 			entryName, err := channelEntryQueryName(ch)

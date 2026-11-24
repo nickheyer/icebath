@@ -1,13 +1,15 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -20,13 +22,9 @@ var terminalKanbanTools = map[string]bool{
 	"kanban_request_review": true, "kanban_request_changes": true,
 }
 
-// On for the dispatcher owned worker unless ICEBATH_KANBAN_STOP_NUDGE disables it
+// On for the dispatcher owned worker unless the kanban.stop_nudge setting turns it off
 func kanbanStopNudgeEnabled(ctx context.Context) bool {
-	switch pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_KANBAN_STOP_NUDGE"))) {
-	case "0", "false", "no", "off":
-		return false
-	}
-	return tools.OwnedKanbanTask(ctx) != ""
+	return settings.KanbanStopNudge.Get(ctx) && tools.OwnedKanbanTask(ctx) != ""
 }
 
 // Tool name from a dict or typed tool call, function.name first and then name
@@ -104,7 +102,7 @@ func buildKanbanStopNudge(ctx context.Context, messages []map[string]any, attemp
 	if tid == "" {
 		tid = os.Getenv("ICEBATH_KANBAN_TASK")
 	}
-	if tid = pystr.Strip(tid); tid == "" {
+	if tid = strings.TrimSpace(tid); tid == "" {
 		tid = "this task"
 	}
 	return "[System: You are an Icebath kanban worker. A plain-text reply is NOT a " +

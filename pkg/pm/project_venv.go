@@ -85,7 +85,7 @@ func ProjectVenvDir(root string) (string, error) { return projectVenvDir(root) }
 func samePurePath(a, b string) bool {
 	a, b = pypath.PathStr(a), pypath.PathStr(b)
 	if runtime.GOOS == "windows" {
-		return pystr.Lower(a) == pystr.Lower(b)
+		return strings.ToLower(a) == strings.ToLower(b)
 	}
 	return a == b
 }
@@ -165,24 +165,24 @@ var metadataNameRuns = regexp.MustCompile(`[-_.]+`)
 
 // Distributions importlib.metadata finds for a name on one path entry, metadata dirs first then legacy eggs
 func metadataDistributions(root, name string) []metadataDistribution {
-	normalized := strings.ReplaceAll(pystr.Lower(metadataNameRuns.ReplaceAllString(name, "-")), "-", "_")
-	legacy := strings.ReplaceAll(pystr.Lower(name), "-", "_")
+	normalized := strings.ReplaceAll(strings.ToLower(metadataNameRuns.ReplaceAllString(name, "-")), "-", "_")
+	legacy := strings.ReplaceAll(strings.ToLower(name), "-", "_")
 	children, archive := metadataChildren(root)
-	base := pystr.Lower(pypath.Basename(root))
+	base := strings.ToLower(pypath.Basename(root))
 	var infos, eggs []metadataDistribution
 	for _, child := range children {
 		dist := metadataDistribution{dir: filepath.Join(root, child), archive: archive, member: child}
-		low := pystr.Lower(child)
+		low := strings.ToLower(child)
 		if strings.HasSuffix(low, ".dist-info") || strings.HasSuffix(low, ".egg-info") {
 			stem, _ := cutLast(low, ".")
 			stem, _, _ = strings.Cut(stem, "-")
-			if strings.ReplaceAll(pystr.Lower(metadataNameRuns.ReplaceAllString(stem, "-")), "-", "_") == normalized {
+			if strings.ReplaceAll(strings.ToLower(metadataNameRuns.ReplaceAllString(stem, "-")), "-", "_") == normalized {
 				infos = append(infos, dist)
 			}
 		} else if strings.HasSuffix(base, ".egg") && low == "egg-info" {
 			stem, _ := cutLast(base, ".")
 			stem, _, _ = strings.Cut(stem, "-")
-			if strings.ReplaceAll(pystr.Lower(stem), "-", "_") == legacy {
+			if strings.ReplaceAll(strings.ToLower(stem), "-", "_") == legacy {
 				eggs = append(eggs, dist)
 			}
 		}

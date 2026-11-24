@@ -168,7 +168,7 @@ func TestTMissingKeyInNonEnglishFallsBackToEnglish(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "en.yaml"), "foo: English Foo\n")
 	writeFile(t, filepath.Join(dir, "zh.yaml"), "# intentionally empty\n")
 	prev := localesDirFn
-	localesDirFn = func() BundledLocales { return BundledLocales{FS: os.DirFS(dir), Label: dir} }
+	localesDirFn = func(context.Context) BundledLocales { return BundledLocales{FS: os.DirFS(dir), Label: dir} }
 	t.Cleanup(func() { localesDirFn = prev; ResetLanguageCache() })
 	ResetLanguageCache()
 	if got := T(context.Background(), "foo", "zh", nil); got != "English Foo" {
@@ -177,14 +177,15 @@ func TestTMissingKeyInNonEnglishFallsBackToEnglish(t *testing.T) {
 }
 
 func TestLocalesDirEnvOverrideIgnoredWhenMissing(t *testing.T) {
+	tempHome(t)
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 	t.Setenv("ICEBATH_BUNDLED_LOCALES", missing)
-	got := localesDir()
+	got := localesDir(context.Background())
 	if got.Label == missing || filepath.Base(got.Label) != "locales" {
 		t.Fatalf("got %q", got.Label)
 	}
 	t.Setenv("ICEBATH_BUNDLED_LOCALES", "locales")
-	if got := localesDir(); got.Label != "locales" {
+	if got := localesDir(context.Background()); got.Label != "locales" {
 		t.Fatalf("existing override got %q", got.Label)
 	}
 }
@@ -212,7 +213,7 @@ func TestUserOverlayOverridesBundledAndIsPartial(t *testing.T) {
 	if got := T(ctx, approvalKey, "de", nil); got != "Überschrieben" {
 		t.Fatalf("got %q", got)
 	}
-	bundled := LoadBundled("de")
+	bundled := LoadBundled(ctx, "de")
 	for _, k := range sortedMapKeys(bundled) {
 		if k != approvalKey && bundled[k] != en(k) {
 			if got := T(ctx, k, "de", nil); got != bundled[k] {
@@ -234,7 +235,7 @@ func sortedMapKeys(m map[string]string) []string {
 }
 
 func firstOtherKey() string {
-	for _, k := range sortedMapKeys(LoadBundled("en")) {
+	for _, k := range sortedMapKeys(LoadBundled(context.Background(), "en")) {
 		if k != approvalKey {
 			return k
 		}
@@ -278,7 +279,7 @@ func TestOverlayIsProfileScopedAcrossTwoHomes(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", homeA)
 	ResetLanguageCache()
 	ctx := context.Background()
-	bundled := LoadBundled("de")[approvalKey]
+	bundled := LoadBundled(ctx, "de")[approvalKey]
 	if got := T(ctx, approvalKey, "de", nil); got != "Nur A" {
 		t.Fatalf("A got %q", got)
 	}

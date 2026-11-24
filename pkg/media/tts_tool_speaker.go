@@ -3,6 +3,8 @@
 package media
 
 import (
+	"strings"
+
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -19,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -55,7 +56,7 @@ type speakerTempFile interface {
 var (
 	speakerPlayAudioFile            = PlayAudioFile
 	speakerTextToSpeechTool         = TextToSpeechTool
-	speakerResolveStreamingProvider = ResolveStreamingProvider
+	speakerResolveStreamingProvider = resolveStreamingProvider
 	ttsImportSounddevice            = pysounddevice.Import
 	speakerNamedTempFile            = func(suffix string) (speakerTempFile, error) { return speakerCreateTemp(suffix) }
 	speakerMkstemp                  = func(suffix string) (string, error) {
@@ -698,38 +699,28 @@ func streamTTS(ctx context.Context, textQueue TextQueue, stopEvent, ttsDoneEvent
 		ttsDoneEvent.Set()
 	}()
 	if err := pluginCall(func() error {
-		ttsConfig := loadTTSConfig(ctx, nil)
-		streamer, err := speakerResolveStreamingProvider(ctx, nil, ttsConfig, provider)
-		if err != nil {
-			return err
-		}
+		req := loadTTSRequest(ctx, nil)
+		streamer := speakerResolveStreamingProvider(ctx, nil, req, provider)
 		streamMaxLen := 0
 		if streamer == nil {
 			syncPipeline = newSyncSentencePipeline(ctx, stopEvent, 2, out.play)
 		} else {
-			_ = pluginCall(func() error {
-				name := provider
-				if name == "" {
-					name = getTTSProvider(ttsConfig)
-				}
-				streamMaxLen = resolveMaxTextLength(name, ttsConfig)
-				return nil
-			})
+			streamMaxLen = resolveMaxTextLength(textOr(provider, req.Provider), req)
 			playback = newStreamerPlaybackTo(ctx, streamer, stopEvent, out)
 		}
-		chunker := SentenceChunkerFromConfig(ttsConfig)
+		chunker := NewSentenceChunker(req.StreamingMinLen)
 		var spokenSentences []string
 		speakSentence := func(sentence string) {
 			if stopEvent.IsSet() {
 				return
 			}
-			cleaned := pystr.Strip(tools.PrepareSpokenTextUncapped(sentence))
+			cleaned := strings.TrimSpace(tools.PrepareSpokenTextUncapped(sentence))
 			if cleaned == "" {
 				return
 			}
-			cleanedLower := pystr.RstripChars(pystr.Lower(cleaned), ".!,")
+			cleanedLower := strings.TrimRight(strings.ToLower(cleaned), ".!,")
 			for _, prev := range spokenSentences {
-				if pystr.RstripChars(pystr.Lower(prev), ".!,") == cleanedLower {
+				if strings.TrimRight(strings.ToLower(prev), ".!,") == cleanedLower {
 					return
 				}
 			}

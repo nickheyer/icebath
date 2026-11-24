@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -27,11 +26,11 @@ var (
 )
 
 // Lowercase name of a platform value
-func platformName(platform Platform) string { return pystr.Lower(string(platform)) }
+func platformName(platform Platform) string { return strings.ToLower(string(platform)) }
 
 // True when a media file goes through the platform audio sender, Telegram taking only voice or MP3 and M4A
 func ShouldSendMediaAsAudio(platform Platform, ext string, isVoice bool) bool {
-	normalized := pystr.Lower(ext)
+	normalized := strings.ToLower(ext)
 	if !mediaAudioExts[normalized] {
 		return false
 	}
@@ -180,7 +179,7 @@ func activeRemoteEnv(ctx context.Context) (tools.Environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	backend = pystr.Lower(pystr.Strip(backend))
+	backend = strings.ToLower(strings.TrimSpace(backend))
 	if !tools.IsRemoteTerminalBackend(backend) && !tools.PluginBackendIsRemote(backend) {
 		return nil, nil
 	}

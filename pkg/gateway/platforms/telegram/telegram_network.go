@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -456,7 +455,7 @@ func (t *TelegramFallbackTransport) Close() error {
 func normalizeFallbackIPs(values []string) []string {
 	var normalized []string
 	for _, value := range values {
-		raw := pystr.Strip(value)
+		raw := strings.TrimSpace(value)
 		if raw == "" {
 			continue
 		}
@@ -482,7 +481,7 @@ func ParseFallbackIPEnv(value string) []string {
 	}
 	parts := strings.Split(value, ",")
 	for i, part := range parts {
-		parts[i] = pystr.Strip(part)
+		parts[i] = strings.TrimSpace(part)
 	}
 	return normalizeFallbackIPs(parts)
 }
@@ -570,7 +569,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("a DNS over HTTPS answer value is %s, expected text", errchain.Kind(rawValue))
 		}
-		raw := pystr.Strip(text)
+		raw := strings.TrimSpace(text)
 		if _, ok := pyipaddress.IPAddress(raw); !ok {
 			continue
 		}

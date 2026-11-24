@@ -51,7 +51,7 @@ var keptCacheSubdirs = setOf("images", "audio", "videos", "documents", "screensh
 var (
 	sqliteSidecarSuffixes = []string{".db-wal", ".db-shm", ".db-journal"}
 	excludedSuffixes      = append([]string{".pyc", ".pyo"}, sqliteSidecarSuffixes...)
-	excludedNames         = setOf(".backup.lock", "gateway.pid", "cron.pid")
+	excludedNames         = setOf(".backup.lock", ".config.yaml.lock", ".env.lock", "gateway.pid", "cron.pid")
 	excludedPrefixes      = []string{emergencyPrefix, "state.db" + state.RetiredGenerationDirSuffix}
 )
 

@@ -4,13 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-func browserEnv(section map[string]any) *tools.Env {
-	return &tools.Env{Config: config.Tree{"browser": section}}
+// Env of a fresh profile home whose config.yaml holds the browser section
+func browserEnv(t *testing.T, section map[string]any) *tools.Env {
+	t.Helper()
+	h := t.TempDir()
+	writeBrowserSection(t, h, section)
+	return &tools.Env{Home: h}
 }
 
 func staticExecProps() map[string]any {
@@ -19,7 +22,7 @@ func staticExecProps() map[string]any {
 
 // test_browser_real_profile.py TestBrowserExecSchemaGating test_local_arg_absent_without_consent
 func TestExecSchemaLocalArgAbsentWithoutConsent(t *testing.T) {
-	overrides := BrowserExecSchemaOverrides(browserEnv(map[string]any{"use_real_profile": false}))
+	overrides := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"use_real_profile": false}))
 	if _, ok := overrides.Vals["parameters"]; ok {
 		t.Fatal("parameters overridden without consent")
 	}
@@ -30,7 +33,7 @@ func TestExecSchemaLocalArgAbsentWithoutConsent(t *testing.T) {
 
 // test_browser_real_profile.py TestBrowserExecSchemaGating test_local_arg_present_with_consent
 func TestExecSchemaLocalArgPresentWithConsent(t *testing.T) {
-	overrides := BrowserExecSchemaOverrides(browserEnv(map[string]any{"use_real_profile": true}))
+	overrides := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"use_real_profile": true}))
 	params := pyjson.Plain(overrides.Vals["parameters"]).(map[string]any)
 	local, ok := params["properties"].(map[string]any)["local"].(map[string]any)
 	if !ok || local["type"] != "boolean" || local["default"] != false {
@@ -46,13 +49,13 @@ func TestExecSchemaLocalArgPresentWithConsent(t *testing.T) {
 	}
 }
 
-// Consent reads the value as Python bool() does, a quoted false string consenting and zero not
-func TestRealProfileConsentIsPythonTruthiness(t *testing.T) {
+// Consent reads the value as an on or off switch, a quoted false or no never consenting
+func TestRealProfileConsentReadsOnOffWords(t *testing.T) {
 	for _, c := range []struct {
 		value any
 		want  bool
-	}{{"false", true}, {"no", true}, {0, false}, {"", false}, {nil, false}, {1, true}} {
-		if got := realProfileConsented(browserEnv(map[string]any{"use_real_profile": c.value})); got != c.want {
+	}{{"false", false}, {"no", false}, {"yes", true}, {0, false}, {"", false}, {nil, false}, {1, true}, {true, true}} {
+		if got := realProfileConsented(browserEnv(t, map[string]any{"use_real_profile": c.value})); got != c.want {
 			t.Fatalf("use_real_profile %#v consented %v", c.value, got)
 		}
 	}
@@ -62,7 +65,7 @@ func TestRealProfileConsentIsPythonTruthiness(t *testing.T) {
 func TestExecDescriptionHeaderLightpanda(t *testing.T) {
 	pin(t, &lightpandaFindBinary, func(*tools.Env) string { return "/opt/lightpanda" })
 	pin(t, &lightpandaCloudProvider, func(*tools.Env) (BrowserProvider, error) { return nil, nil })
-	desc := BrowserExecSchemaOverrides(browserEnv(map[string]any{"engine": "lightpanda"})).Vals["description"].(string)
+	desc := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"engine": "lightpanda"})).Vals["description"].(string)
 	if desc != execHeaderBase+execHeaderLightpanda+execHelpersDigest || !strings.Contains(desc, "TargetAlreadyLoaded") {
 		t.Fatalf("description %q", desc)
 	}

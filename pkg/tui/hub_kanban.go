@@ -36,6 +36,7 @@ func registerKanbanKeys(km *keys.Map) {
 		{ID: "tui.kanban.assign", Context: kanbanContext, Label: "assign", Doc: "hand the highlighted task to a profile", Default: []string{"p"}},
 		{ID: "tui.kanban.board", Context: kanbanContext, Label: "board", Doc: "switch to another board or make a new one", Default: []string{"b"}},
 		{ID: "tui.kanban.archived", Context: kanbanContext, Label: "archived", Doc: "show or hide the archived tasks", Default: []string{"tab"}},
+		{ID: "tui.kanban.events", Context: kanbanContext, Label: "events", Doc: "follow the board's events as they happen, narrowed by person or kind", Default: []string{"w"}},
 	} {
 		km.Register(act)
 	}
@@ -101,7 +102,7 @@ func (a *app) openKanban() tea.Cmd {
 			return tr(txt.HubsKanbanEmpty, k.boardName(), a.keys.Display("hub.add"))
 		},
 		Hints: k.hints,
-		Free:  map[string]bool{"hub.add": true, "tui.kanban.board": true, "tui.kanban.archived": true},
+		Free:  map[string]bool{"hub.add": true, "tui.kanban.board": true, "tui.kanban.archived": true, "tui.kanban.events": true},
 		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
 			"hub.use": func(_ *cards.List, i int) tea.Cmd { return task(i, k.open) },
 			"hub.add": func(*cards.List, int) tea.Cmd { return k.form(nil) },
@@ -117,6 +118,7 @@ func (a *app) openKanban() tea.Cmd {
 			"tui.kanban.comment": func(_ *cards.List, i int) tea.Cmd { return task(i, k.comment) },
 			"tui.kanban.assign":  func(_ *cards.List, i int) tea.Cmd { return task(i, k.assign) },
 			"tui.kanban.board":   func(*cards.List, int) tea.Cmd { return k.boards() },
+			"tui.kanban.events":  func(*cards.List, int) tea.Cmd { return k.events(nil) },
 			"tui.kanban.archived": func(*cards.List, int) tea.Cmd {
 				k.archived = !k.archived
 				return k.load(false)
@@ -335,7 +337,7 @@ func (k *kanbanHub) hints(_ *cards.List, i int) []wm.Hint {
 		out = append(out, wm.Hint{Action: "hub.use", Label: tr(txt.HintsLabelOpen)}, wm.Hint{Action: "tui.kanban.move"}, wm.Hint{Action: "hub.toggle", Label: done},
 			wm.Hint{Action: "tui.kanban.comment"}, wm.Hint{Action: "tui.kanban.assign"}, wm.Hint{Action: "hub.remove"})
 	}
-	return append(out, wm.Hint{Action: "hub.add"}, wm.Hint{Action: "tui.kanban.board"}, wm.Hint{Action: "tui.kanban.archived"})
+	return append(out, wm.Hint{Action: "hub.add"}, wm.Hint{Action: "tui.kanban.board"}, wm.Hint{Action: "tui.kanban.archived"}, wm.Hint{Action: "tui.kanban.events"})
 }
 
 // Runs a task command on the board, saying what it did or why it did not
@@ -565,6 +567,10 @@ func (k *kanbanHub) open(task tuigateway.KanbanTaskRow) tea.Cmd {
 			{key: "hub.edit", label: tr(txt.HubsKanbanActEdit), does: tr(txt.HubsKanbanActEditDoes), run: back(func(t tuigateway.KanbanTaskRow) tea.Cmd { return k.form(&t) })},
 			{key: "tui.kanban.comment", label: tr(txt.HubsKanbanActComment), does: tr(txt.HubsKanbanActCommentDoes), run: back(k.comment)},
 			{key: "tui.kanban.assign", label: tr(txt.HubsKanbanActAssign), does: tr(txt.HubsKanbanActAssignDoes), run: back(k.assign)},
+			{label: tr(txt.HubsKanbanActEvents), does: tr(txt.HubsKanbanActEventsDoes), run: func() tea.Cmd {
+				t := current()
+				return k.events(&t)
+			}},
 		}
 		if now.Status == "done" || now.Status == "archived" {
 			acts = append(acts, hubAction{key: "hub.toggle", label: tr(txt.HubsKanbanActReopen), does: tr(txt.HubsKanbanActReopenDoes), run: back(k.toggle)})
@@ -630,4 +636,163 @@ func (k *kanbanHub) boards() tea.Cmd {
 			return board(args, tr(txt.HubsKanbanBoardCreated, firstText(strings.TrimSpace(v["name"]), slug)), slug)
 		})
 	})
+}
+
+// How often an events page in view reads the new events
+const kanbanEventsEvery = time.Second
+
+// Most events an events page keeps, the oldest dropped first
+const kanbanEventsKept = 1000
+
+// Events page of the board, or of one task: the newest events at once, then each new one as it happens while the page is in view; enter shows
+// an event whole and, on the board's page, edit narrows the events by assignee, tenant and kind
+func (k *kanbanHub) events(task *tuigateway.KanbanTaskRow) tea.Cmd {
+	params := tuigateway.KanbanEventsParams{Board: k.view.Board}
+	title := tr(txt.HubsKanbanEventsOf, k.boardName())
+	if task != nil {
+		params.TaskID, title = task.ID, tr(txt.HubsKanbanEventsOf, task.Title)
+	}
+	var (
+		events  []tuigateway.KanbanEvent
+		cursor  int64
+		ticking bool
+		list    *cards.List
+	)
+	read := func() tea.Cmd {
+		p := params
+		p.After = cursor
+		return hubCall(k.a, k.h, "", tuigateway.KanbanEvents, p, func(r *tuigateway.KanbanEventsResult) tea.Cmd {
+			cursor = r.Cursor
+			if len(r.Events) > 0 {
+				events = append(events, r.Events...)
+				events = events[max(0, len(events)-kanbanEventsKept):]
+				list.Refresh()
+			}
+			return nil
+		})
+	}
+	restart := func() tea.Cmd {
+		events, cursor = nil, 0
+		list.Refresh()
+		return read()
+	}
+	var tick func() tea.Cmd
+	tick = func() tea.Cmd {
+		return tea.Tick(kanbanEventsEvery, func(time.Time) tea.Msg {
+			return asyncDoneMsg{run: func() tea.Cmd {
+				if !k.h.Shown() || k.h.Top() != wm.Card(list) {
+					ticking = false
+					return nil
+				}
+				return tea.Batch(read(), tick())
+			}}
+		})
+	}
+	narrowing := func() string {
+		var parts []string
+		if params.Assignee != "" {
+			parts = append(parts, tr(txt.HubsKanbanEventsForAssignee, params.Assignee))
+		}
+		if params.Tenant != "" {
+			parts = append(parts, tr(txt.HubsKanbanEventsForTenant, params.Tenant))
+		}
+		if len(params.Kinds) > 0 {
+			parts = append(parts, tr(txt.HubsKanbanEventsForKinds, strings.Join(params.Kinds, ", ")))
+		}
+		if len(parts) == 0 {
+			return tr(txt.HubsKanbanEventsShowAll)
+		}
+		return strings.Join(parts, " · ")
+	}
+	narrow := func(*cards.List, int) tea.Cmd {
+		if task != nil {
+			return nil
+		}
+		people := []cards.Choice{{Value: "", Label: tr(txt.HubsKanbanEventsAnyone)}}
+		for _, name := range k.view.Assignees {
+			people = append(people, cards.Choice{Value: name, Label: name})
+		}
+		spec := cards.FormSpec{Title: tr(txt.HubsKanbanEventsFilterTitle), Submit: tr(txt.HubsKanbanEventsApply), Fields: []cards.Field{
+			{ID: "assignee", Label: tr(txt.HubsKanbanEventsAssignee), Kind: cards.FieldChoice, Value: params.Assignee, Choices: people},
+			{ID: "tenant", Label: tr(txt.HubsKanbanEventsTenant), Kind: cards.FieldText, Value: params.Tenant, Help: tr(txt.HubsKanbanEventsTenantHelp)},
+			{ID: "kinds", Label: tr(txt.HubsKanbanEventsKinds), Kind: cards.FieldText, Value: strings.Join(params.Kinds, ", "), Help: tr(txt.HubsKanbanEventsKindsHelp)},
+		}}
+		return k.a.hubForm(k.h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			params.Assignee, params.Tenant, params.Kinds = strings.TrimSpace(v["assignee"]), strings.TrimSpace(v["tenant"]), nil
+			for _, kind := range strings.Split(v["kinds"], ",") {
+				if kind = strings.TrimSpace(kind); kind != "" {
+					params.Kinds = append(params.Kinds, kind)
+				}
+			}
+			return restart()
+		})
+	}
+	whole := func(e tuigateway.KanbanEvent) []string {
+		out := []string{e.Kind + " · " + time.Unix(e.CreatedAt, 0).Local().Format("2006-01-02 15:04:05"), strings.TrimSpace(e.TaskID + " " + e.Title)}
+		if e.Assignee != "" {
+			out = append(out, tr(txt.HubsKanbanEventsForAssignee, e.Assignee))
+		}
+		if e.Payload != "" {
+			out = append(out, "", e.Payload)
+		}
+		return out
+	}
+	columns := []render.Column{{Title: tr(txt.HubsKanbanColWhen)}, {Title: tr(txt.HubsKanbanColEvent), Max: 22}, {Title: tr(txt.HubsKanbanColDetail), Flex: 1}}
+	if task == nil {
+		columns = slices.Insert(columns, 1, render.Column{Title: tr(txt.HubsKanbanColTask), Max: 28})
+	}
+	list = cards.NewList(k.a.hubEnv(), cards.ListSpec{
+		Title: title, Glyph: k.a.toolkit.Glyphs.Plan, Key: "tui:kanban:events", Context: kanbanContext, Shared: []string{hubContext}, Primary: "hub.use", Follow: true,
+		Columns: columns,
+		Yield:   []int{len(columns) - 1},
+		Rows: func() [][]string {
+			out := make([][]string, len(events))
+			for i, e := range events {
+				row := []string{time.Unix(e.CreatedAt, 0).Local().Format("15:04:05"), e.Kind, e.Payload}
+				if task == nil {
+					row = slices.Insert(row, 1, firstText(e.Title, e.TaskID))
+				}
+				out[i] = row
+			}
+			return out
+		},
+		Detail: func(i int) []string {
+			if i < 0 || i >= len(events) {
+				return nil
+			}
+			return whole(events[i])
+		},
+		Status: func() string { return tr(txt.HubsKanbanEventsFollowing, narrowing()) },
+		Empty:  func() string { return tr(txt.HubsKanbanEventsNone) },
+		Hints: func(_ *cards.List, i int) []wm.Hint {
+			var out []wm.Hint
+			if i >= 0 && i < len(events) {
+				out = append(out, wm.Hint{Action: "hub.use", Label: tr(txt.HintsLabelOpen)})
+			}
+			if task == nil {
+				out = append(out, wm.Hint{Action: "hub.edit", Label: tr(txt.HintsLabelChange)})
+			}
+			return out
+		},
+		Free: map[string]bool{"hub.edit": task == nil, "hub.refresh": true},
+		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
+			"hub.use": func(_ *cards.List, i int) tea.Cmd {
+				if i < 0 || i >= len(events) {
+					return nil
+				}
+				e := events[i]
+				return k.h.Push(cards.NewPage(k.a.hubEnv(), cards.PageSpec{Title: title, Key: "tui:kanban:event", Lines: func(int) []string { return whole(e) }}))
+			},
+			"hub.edit":    narrow,
+			"hub.refresh": func(*cards.List, int) tea.Cmd { return restart() },
+		},
+		OnFocus: func(*cards.List) tea.Cmd {
+			if ticking {
+				return read()
+			}
+			ticking = true
+			return tea.Batch(read(), tick())
+		},
+	})
+	return k.h.Push(list)
 }

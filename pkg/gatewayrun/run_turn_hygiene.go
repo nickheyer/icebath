@@ -81,9 +81,6 @@ func (r *GatewayRunner) hmwaHygieneSettings(ctx context.Context, source *gateway
 		timeoutSeconds: positiveSeconds(ctx, settings.CompressionHygieneTimeoutSeconds), maxTurnHoldSeconds: positiveSeconds(ctx, settings.CompressionHygieneMaxTurnHoldSeconds),
 		failureCooldownSeconds: max(0, settings.CompressionHygieneFailureCooldownSeconds.Get(ctx).Seconds()), data: map[string]any{}}
 	hs.totalCeilingSeconds = max(positiveSeconds(ctx, settings.CompressionHygieneTotalCeilingSeconds), hs.timeoutSeconds)
-	if hs.hardMsgLimit < 1 {
-		hs.hardMsgLimit = settings.CompressionHygieneHardMessageLimit.Default
-	}
 	if hs.model == "" {
 		hs.model = "anthropic/claude-sonnet-4.6"
 	}
@@ -110,7 +107,7 @@ func (r *GatewayRunner) hmwaHygieneSettings(ctx context.Context, source *gateway
 			hs.configContextLength = nil
 		}
 		if hs.configContextLength == nil && hs.baseURL != "" {
-			if n := provider.CustomProviderContextLength(hs.model, hs.baseURL, provider.ProviderEntries(hs.data), nil); n != 0 {
+			if n := provider.CustomProviderContextLength(hs.model, hs.baseURL, provider.CustomProviderEntries(ctx)); n != 0 {
 				hs.configContextLength = &n
 			}
 		}

@@ -5,8 +5,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Designated requirement identifier that keeps TCC identity stable across managed Python generations
@@ -34,7 +32,7 @@ func SignManagedPython(python string) bool {
 		if text == "" {
 			text = fallback
 		}
-		return pystr.Strip(text)
+		return strings.TrimSpace(text)
 	}
 	signed, err := runProcess(processSpec{Argv: []string{codesign, "--force", "--deep", "--sign", "-", "--timestamp=none",
 		"--identifier", managedPythonIdentifier, "--requirements", fmt.Sprintf(`=designated => identifier "%s"`, managedPythonIdentifier), python},

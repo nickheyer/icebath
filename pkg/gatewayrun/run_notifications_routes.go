@@ -10,14 +10,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Canonical source of a synthetic background process event, the persisted origin preferred
 func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[string]any) (*gateway.SessionSource, error) {
-	sessionKey := pystr.Strip(truthyText(evt["session_key"]))
+	sessionKey := strings.TrimSpace(truthyText(evt["session_key"]))
 	derived := map[string]any{}
 	if sessionKey != "" {
 		if entry := r.sessionStore.LoadedEntry(ctx, sessionKey); entry != nil && entry.Origin != nil {
@@ -47,9 +46,9 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 		}
 		return truthyText(derived[field])
 	}
-	platformName := pystr.Lower(pystr.Strip(pick("platform")))
-	chatType := pystr.Lower(pystr.Strip(pick("chat_type")))
-	chatID := pystr.Strip(pick("chat_id"))
+	platformName := strings.ToLower(strings.TrimSpace(pick("platform")))
+	chatType := strings.ToLower(strings.TrimSpace(pick("chat_type")))
+	chatID := strings.TrimSpace(pick("chat_id"))
 	if platformName == "" || chatType == "" || chatID == "" {
 		if rawProcessEventSessionID(evt) != "" {
 			return nil, nil
@@ -71,7 +70,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 		return nil, nil
 	}
 	opt := func(field string) *string {
-		if v := pystr.Strip(truthyText(evt[field])); v != "" {
+		if v := strings.TrimSpace(truthyText(evt[field])); v != "" {
 			return &v
 		}
 		return nil
@@ -148,7 +147,7 @@ func (r *GatewayRunner) servedAPIServerWakeProfile(ctx context.Context, evt map[
 	}
 	hinted := ""
 	if source != nil && source.Profile != nil {
-		hinted = pystr.Strip(*source.Profile)
+		hinted = strings.TrimSpace(*source.Profile)
 	}
 	if hinted != "" && hinted != primary {
 		if gateway.SessionOwnedByProfile(ctx, r.config, hinted, rawSID) {

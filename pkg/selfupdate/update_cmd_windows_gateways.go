@@ -140,7 +140,7 @@ func scExe(ctx context.Context, verb, name string, service gatewaycli.WinService
 	if detail == "" {
 		detail = pystr.DecodeUTF8Replace(result.Stdout)
 	}
-	if detail = pystr.Strip(detail); detail == "" {
+	if detail = strings.TrimSpace(detail); detail == "" {
 		detail = fmt.Sprintf("sc.exe %s failed with %d", verb, result.Returncode)
 	}
 	return errors.New(detail)
@@ -549,7 +549,7 @@ func winFloat(v any) (float64, bool) {
 		}
 		return 0, true
 	case string:
-		parsed, err := strconv.ParseFloat(pystr.Strip(number), 64)
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(number), 64)
 		return parsed, err == nil
 	}
 	if number, ok := pyIntValue(v); ok {

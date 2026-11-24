@@ -149,7 +149,7 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	if pyrepr.Truthy(m["name"]) {
 		nameVal = m["name"]
 	}
-	name := pystr.Strip(pyrepr.Str(nameVal))
+	name := strings.TrimSpace(pyrepr.Str(nameVal))
 	if name == "" {
 		return skip("has no name")
 	}
@@ -162,7 +162,7 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	}
 	var members []any
 	for _, item := range rawSkills {
-		if v := pystr.Strip(pyrepr.Str(item)); v != "" {
+		if v := strings.TrimSpace(pyrepr.Str(item)); v != "" {
 			members = append(members, v)
 		}
 	}
@@ -173,12 +173,12 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	if slug == "" {
 		return skip("yielded empty slug")
 	}
-	desc := pystr.Strip(pyrepr.Str(orEmpty(m["description"])))
+	desc := strings.TrimSpace(pyrepr.Str(orEmpty(m["description"])))
 	if desc == "" {
 		desc = fmt.Sprintf("Load %d skills as a bundle", len(members))
 	}
 	return map[string]any{"name": name, "slug": slug, "skills": members, "path": path, "description": desc,
-		"instruction": pystr.Strip(pyrepr.Str(orEmpty(m["instruction"])))}, nil
+		"instruction": strings.TrimSpace(pyrepr.Str(orEmpty(m["instruction"])))}, nil
 }
 
 // Value when truthy, the empty string otherwise
@@ -290,7 +290,7 @@ func (s *Scope) BuildBundleInvocationMessage(ctx context.Context, cmdKey, userIn
 	members := info["skills"].([]any)
 	ids := make([]string, len(members))
 	for i, m := range members {
-		ids[i] = pystr.Strip(pyrepr.Str(orEmpty(m)))
+		ids[i] = strings.TrimSpace(pyrepr.Str(orEmpty(m)))
 	}
 	loadedNames, missing, disabled, blocks := s.loadSkillBlocks(ctx, ids,
 		func(id string) (loadedSkill, bool) {
@@ -319,13 +319,13 @@ func (s *Scope) BundlePathFor(name string) (string, error) {
 
 // Writes a bundle atomically keeping an existing file's mode and owner, then refreshes the cache
 func (s *Scope) SaveBundle(ctx context.Context, name string, skills []string, description, instruction string, overwrite bool) (string, error) {
-	name = pystr.Strip(name)
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", &BundleError{"ValueError", "Bundle name is required"}
 	}
 	var cleaned []any
 	for _, sk := range skills {
-		if v := pystr.Strip(sk); v != "" {
+		if v := strings.TrimSpace(sk); v != "" {
 			cleaned = append(cleaned, v)
 		}
 	}

@@ -10,11 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Parsed icebath hooks arguments, Action empty when no subcommand was given
@@ -226,12 +224,8 @@ func hooksTest(ctx context.Context, args HooksArgs, w io.Writer) error {
 			fmt.Fprintf(w, "Warning: %s is not a JSON object; ignoring\n", args.PayloadFile)
 		}
 	}
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		return err
-	}
 	var specs []*ShellHookSpec
-	for _, spec := range IterConfiguredShellHooks(cfg) {
+	for _, spec := range IterConfiguredShellHooks(ctx) {
 		if spec.Event != event {
 			continue
 		}
@@ -295,7 +289,7 @@ func printHookRunResult(w io.Writer, r *ShellHookResult) error {
 		}
 		fmt.Fprintf(w, "      exit=%s  elapsed=%ss\n", rc, pyrepr.Float(r.ElapsedSeconds))
 		for _, stream := range []struct{ name, text string }{{"stdout", r.Stdout}, {"stderr", r.Stderr}} {
-			if text := pystr.Strip(stream.text); text != "" {
+			if text := strings.TrimSpace(stream.text); text != "" {
 				fmt.Fprintf(w, "      %s: %s\n", stream.name, hookTruncate(text, 400))
 			}
 		}
@@ -340,11 +334,7 @@ func hooksRevoke(ctx context.Context, args HooksArgs, w io.Writer) error {
 
 // Checks every configured hook for executability, consent, drift and JSON output and counts the issues
 func hooksDoctor(ctx context.Context, _ HooksArgs, w io.Writer) error {
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		return err
-	}
-	specs := IterConfiguredShellHooks(cfg)
+	specs := IterConfiguredShellHooks(ctx)
 	if len(specs) == 0 {
 		fmt.Fprintln(w, "No shell hooks configured — nothing to check.")
 		return nil
@@ -412,7 +402,7 @@ func hookDoctorOne(ctx context.Context, spec *ShellHookSpec, w io.Writer) (int, 
 	case check.Output == "json":
 		fmt.Fprintf(w, "      ✓ produced valid JSON on synthetic payload (exit=%s, %ss)\n", rc, elapsed)
 	default:
-		fmt.Fprintf(w, "      ✗ stdout was not valid JSON (exit=%s, %ss): %s\n", rc, elapsed, hookTruncate(pystr.Strip(result.Stdout), 120))
+		fmt.Fprintf(w, "      ✗ stdout was not valid JSON (exit=%s, %ss): %s\n", rc, elapsed, hookTruncate(strings.TrimSpace(result.Stdout), 120))
 	}
 	return check.Problems, nil
 }

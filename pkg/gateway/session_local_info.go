@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -106,7 +107,7 @@ func reasoningFields(ctx context.Context, agent sessionInfoAgent, policy *LocalS
 		if nextModel != nil {
 			next = *nextModel
 		}
-		resolved = config.ResolveReasoningConfig(effective, next)
+		resolved = settings.ReasoningConfig(settings.WithFrozen(ctx, effective), next)
 	}
 	section, _ := effective["agent"].(map[string]any)
 	tier := provider.ParseServiceTier(anyText(section["service_tier"]))
@@ -217,6 +218,11 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 			return nil, err
 		}
 		info.Set("launch_request", request)
+		options, err := sessionLaunchOptions(ctx, a, policy)
+		if err != nil {
+			return nil, err
+		}
+		info.Set("launch_options", tuigateway.Plain(options))
 		var notices []string
 		if warning := projectPluginsWarning(policy); warning != nil && *warning != "" {
 			notices = append(notices, *warning)
@@ -240,6 +246,37 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 		}
 	}
 	return info, nil
+}
+
+// Launch options of a local session as its next turn reads them
+func sessionLaunchOptions(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy) (tuigateway.SessionLaunchOptions, error) {
+	cfg, err := policy.config(ctx, a, false)
+	if err != nil {
+		return tuigateway.SessionLaunchOptions{}, err
+	}
+	budget, err := policy.RunBudgetSeconds(ctx)
+	if err != nil {
+		return tuigateway.SessionLaunchOptions{}, err
+	}
+	out := tuigateway.SessionLaunchOptions{Checkpoints: pyrepr.Truthy(CheckpointAgentKwargs(cfg)["checkpoints_enabled"]),
+		PassSessionID: policy.PassSessionID(), IgnoreRules: policy.IgnoreRules(), SafeMode: policy.SafeMode,
+		IgnoreUserConfig: policy.IgnoreUserConfig, RunBudget: budget}
+	if turns := policy.MaxTurns(); turns != config.TurnLimitUnlimited {
+		limit := int64(turns)
+		out.MaxTurns = &limit
+	}
+	if block, isMap := cfg["model"].(map[string]any); isMap {
+		if url, isText := block["base_url"].(string); isText && strings.TrimSpace(url) != "" {
+			out.BaseURL = &url
+		}
+	}
+	names, _ := policyObject(policy.RequestJSON)["skills"].([]any)
+	for _, name := range names {
+		if text, isText := name.(string); isText && strings.TrimSpace(text) != "" {
+			out.Skills = append(out.Skills, strings.TrimSpace(text))
+		}
+	}
+	return out, nil
 }
 
 // Copies every key of src onto dst in order

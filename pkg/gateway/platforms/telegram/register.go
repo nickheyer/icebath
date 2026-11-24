@@ -1,13 +1,14 @@
 package telegram
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -34,7 +35,7 @@ func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error)
 		}
 		token = value
 	}
-	return pystr.Strip(token) != "", nil
+	return strings.TrimSpace(token) != "", nil
 }
 
 // Out of process delivery so deliver=telegram cron jobs succeed without the gateway, through the REST sender

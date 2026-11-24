@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"strings"
+
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -237,7 +238,7 @@ func (s *Scope) backgroundReviewPreflight(action, name string) *pyjson.Object {
 
 // Fails closed on review fork deletes that name no umbrella the skill was absorbed into
 func (s *Scope) curatorConsolidationDeleteGuard(name string, absorbedInto *string) *pyjson.Object {
-	if !IsBackgroundReview(s.Env) || (absorbedInto != nil && pystr.Strip(*absorbedInto) != "") {
+	if !IsBackgroundReview(s.Env) || (absorbedInto != nil && strings.TrimSpace(*absorbedInto) != "") {
 		return nil
 	}
 	return refusal(fmt.Sprintf("Refusing background curator delete of skill '%s': the consolidation pass may only archive a skill it has absorbed into an umbrella. Pass absorbed_into=<umbrella> (the umbrella must already exist) to record a verified consolidation. Pruning a skill with no forwarding target is not permitted here — the deterministic inactivity prune handles staleness archival separately. Keeping '%s' active.", name, name),

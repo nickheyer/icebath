@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -264,21 +265,25 @@ func TestCleanupSpilloverCache(t *testing.T) {
 	if CleanupSpilloverCache(&Env{Home: t.TempDir(), Config: config.Defaults()}, -1) != 0 {
 		t.Fatal("missing dir")
 	}
-	retention := &Env{Home: t.TempDir(), Config: config.Tree{"sessions": map[string]any{"retention_days": 90}}}
-	if spilloverRetentionHours(retention) != 90*24 {
+	retentionEnv := func(days any) *Env {
+		env := &Env{Home: t.TempDir()}
+		setHomeConfigKey(t, env, "sessions.retention_days", days)
+		return env
+	}
+	if spilloverRetentionHours(retentionEnv(30)) != 30*24 {
 		t.Fatal("retention days")
 	}
-	if spilloverRetentionHours(&Env{Home: t.TempDir(), Config: config.Tree{"sessions": map[string]any{"retention_days": 0}}}) != SpilloverMaxAgeHours {
+	if spilloverRetentionHours(retentionEnv(0)) != SpilloverMaxAgeHours {
 		t.Fatal("retention floor")
 	}
-	if spilloverRetentionHours(&Env{Home: t.TempDir(), Config: config.Tree{"sessions": map[string]any{"retention_days": "nope"}}}) != SpilloverMaxAgeHours {
+	if spilloverRetentionHours(retentionEnv("nope")) != int(settings.SessionsRetentionDays.Default.Hours()) {
 		t.Fatal("retention fallback")
 	}
 	ancient := filepath.Join(dir, "ancient.txt")
 	os.WriteFile(ancient, []byte("ancient"), 0o644)
 	os.Chtimes(ancient, stale, stale)
 	ResetSpilloverPruneState()
-	env.Config = config.Tree{"sessions": map[string]any{"retention_days": 1}}
+	setHomeConfigKey(t, env, "sessions.retention_days", 1)
 	MaybePersistToolResult(context.Background(), env, nil, strings.Repeat("v", 60000), "tool_call", "tc_prune_1", DefaultBudget, 30000)
 	if _, err := os.Stat(ancient); err == nil {
 		t.Fatal("first spill did not prune")
@@ -363,8 +368,8 @@ func TestMcpEnvelopeSpillover(t *testing.T) {
 
 func TestSpillIfOversized(t *testing.T) {
 	env := storageEnv(t)
-	cfg := SpillConfigFromEnv(env)
-	if !cfg.Enabled || cfg.MaxChars != SpillDefaultMaxChars || cfg.PreviewHead != SpillDefaultPreviewHead || cfg.PreviewTail != SpillDefaultPreviewTail {
+	cfg := SpillConfigFromEnv(context.Background(), env)
+	if !cfg.Enabled || cfg.MaxChars != settings.HooksOutputSpillMaxChars.Default || cfg.PreviewHead != settings.HooksOutputSpillPreviewHead.Default || cfg.PreviewTail != settings.HooksOutputSpillPreviewTail.Default {
 		t.Fatalf("defaults %+v", cfg)
 	}
 	if SpillIfOversized(env, "", "s", "hook", nil) != "" || SpillIfOversized(env, "short", "s", "hook", nil) != "short" {

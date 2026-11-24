@@ -28,7 +28,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // aiohttp ClientError of a request the transport failed, err the os error behind it
@@ -80,7 +79,7 @@ type httpResponse struct {
 }
 
 // Lowercased raw Content-Type header, empty when absent, as aiohttp reads it for json and the encoding
-func (r *httpResponse) rawContentType() string { return pystr.Lower(r.header.Get("Content-Type")) }
+func (r *httpResponse) rawContentType() string { return strings.ToLower(r.header.Get("Content-Type")) }
 
 // Charset parameter parse_mimetype yields, the first one with spaces and double quotes stripped
 func mimetypeCharset(ctype string) string {
@@ -93,8 +92,8 @@ func mimetypeCharset(ctype string) string {
 			continue
 		}
 		key, value, _ := strings.Cut(item, "=")
-		if pystr.Strip(pystr.Lower(key)) == "charset" {
-			return pystr.StripChars(value, ` "`)
+		if strings.TrimSpace(strings.ToLower(key)) == "charset" {
+			return strings.Trim(value, ` "`)
 		}
 	}
 	return ""

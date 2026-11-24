@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const defaultStoreFilename = "teams_pipeline_store.json"
@@ -32,8 +31,8 @@ func utcNowISO() string { return pydatetime.ISOFormatUTC(nowUTC()) }
 
 // Store path from the explicit value, MSGRAPH_WEBHOOK_STORE_PATH or the home default
 func resolveTeamsPipelineStorePath(ctx context.Context, path string) string {
-	explicit := pystr.Strip(path)
-	env := pystr.Strip(os.Getenv("MSGRAPH_WEBHOOK_STORE_PATH"))
+	explicit := strings.TrimSpace(path)
+	env := strings.TrimSpace(os.Getenv("MSGRAPH_WEBHOOK_STORE_PATH"))
 	if explicit == "" {
 		explicit = env
 	}

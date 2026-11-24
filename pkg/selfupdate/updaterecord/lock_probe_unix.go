@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Signal zero liveness, permission denied counting as live and a Linux or macOS zombie as dead
@@ -101,7 +100,7 @@ func stdlibCreateTime(pid int) *float64 {
 	if ctx.Err() != nil || (err != nil && !errors.As(err, &exitErr)) {
 		return nil
 	}
-	out := pystr.Strip(strings.ToValidUTF8(stdout.String(), "�"))
+	out := strings.TrimSpace(strings.ToValidUTF8(stdout.String(), "�"))
 	if out == "" {
 		return nil
 	}

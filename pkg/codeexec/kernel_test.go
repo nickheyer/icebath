@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -197,7 +196,7 @@ func kernelHostEntry() {
 	homeDir := os.Getenv("ICEBATH_HOME")
 	rt := interpreter{Python: os.Getenv("CODEEXEC_KERNEL_PYTHON"), Prefix: os.Getenv("CODEEXEC_KERNEL_PREFIX")}
 	userPython = func(context.Context, *tools.Env) (string, error) { return rt.Python, nil }
-	env := &tools.Env{Home: homeDir, Config: config.Tree{}, Values: &sync.Map{}, Cwd: homeDir}
+	env := &tools.Env{Home: homeDir, Values: &sync.Map{}, Cwd: homeDir}
 	k := newSessionKernel(kernelKey{owner: "parent-death"})
 	if err := k.spawn(context.Background(), env, rt.Python, "", nil, 1); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -68,7 +68,7 @@ func pyIntValue(v any) (int64, error) {
 	case *big.Int:
 		return n.Int64(), nil
 	case string:
-		if parsed, ok := pyint.Parse(pystr.Strip(n)); ok {
+		if parsed, ok := pyint.Parse(strings.TrimSpace(n)); ok {
 			return parsed.Int64(), nil
 		}
 		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(n))
@@ -406,8 +406,6 @@ func RefuseRestartOfServiceManagedGateway(ctx context.Context, w io.Writer, pid 
 	for _, c := range cmds {
 		lines = append(lines, "    "+c)
 	}
-	lines = append(lines, "  (Pre-convention `icebath.service` installs: `icebath gateway migrate-legacy`",
-		"  removes the legacy unit so the canonical one can own the gateway.)")
 	printLines(w, lines...)
 	return exitWith(1)
 }

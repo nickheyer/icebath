@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"slices"
 	"sync"
@@ -8,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -101,7 +102,7 @@ func SetGlobalBackend(ctx context.Context, name, sessionKey string, applyNow boo
 	if applyNow && sessionKey == "" {
 		return &DelegationBackendError{Kind: "ValueError", Message: "No session to apply the switch to: apply_now needs the command's session_key."}
 	}
-	key := pystr.Lower(pystr.Strip(name))
+	key := strings.ToLower(strings.TrimSpace(name))
 	if info := delegationBackendInfo(ctx, key); !info.Available {
 		return &DelegationBackendError{Kind: "ValueError", Message: info.Reason}
 	}

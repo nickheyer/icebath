@@ -244,5 +244,5 @@ func posixIsZombie(pid int) (bool, error) {
 	if err != nil || ctx.Err() != nil {
 		return false, nil
 	}
-	return strings.HasPrefix(pystr.Strip(pystr.DecodeUTF8Replace(out)), "Z"), nil
+	return strings.HasPrefix(strings.TrimSpace(pystr.DecodeUTF8Replace(out)), "Z"), nil
 }

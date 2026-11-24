@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Thread archive durations Discord accepts, in minutes
@@ -63,7 +64,7 @@ func threadCreated(th *discordgo.Channel, name string) map[string]any {
 
 // Creates a private thread in the interaction channel, a seed message thread when Discord rejects it
 func (a *DiscordAdapter) createThread(ctx context.Context, i *discordgo.Interaction, name, message string, autoArchiveDuration int) map[string]any {
-	name = pystr.Strip(name)
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return map[string]any{"error": i18n.T(ctx, "platform.discord.command.thread.error_name_required", "", nil)}
 	}
@@ -94,7 +95,7 @@ func (a *DiscordAdapter) createThread(ctx context.Context, i *discordgo.Interact
 		}
 	}
 	reason := "Requested by " + displayName + " via /thread"
-	starter := pystr.Strip(message)
+	starter := strings.TrimSpace(message)
 	th, directErr := a.startThread(ctx, parent.ID, "", map[string]any{"name": name, "auto_archive_duration": autoArchiveDuration,
 		"type": int(discordgo.ChannelTypeGuildPrivateThread), "invitable": true, "rate_limit_per_user": nil}, reason)
 	if directErr == nil && starter != "" {
@@ -178,12 +179,12 @@ func (a *DiscordAdapter) RenameThread(ctx context.Context, threadID, name string
 	if err != nil {
 		return false, nil
 	}
-	cleaned := pystr.Strip(whitespaceRunRE.ReplaceAllString(name, " "))
+	cleaned := strings.TrimSpace(whitespaceRunRE.ReplaceAllString(name, " "))
 	if cleaned == "" {
 		return false, nil
 	}
 	if gateway.UTF16Len(cleaned) > 80 {
-		cleaned = pystr.Rstrip(gateway.PrefixWithinUTF16Limit(cleaned, 77)) + "..."
+		cleaned = strings.TrimRightFunc(gateway.PrefixWithinUTF16Limit(cleaned, 77), unicode.IsSpace) + "..."
 	}
 	thread := a.stateChannel(id)
 	if thread == nil {
@@ -240,7 +241,7 @@ func (a *DiscordAdapter) CreateHandoffThread(ctx context.Context, parentChatID, 
 		pkgLog().Info(fmt.Sprintf("[%s] Handoff thread: parent %s is a DM; threads not supported here", a.Name(), parentChatID))
 		return "", false, nil
 	}
-	threadName := pystr.Strip(name)
+	threadName := strings.TrimSpace(name)
 	if name == "" {
 		threadName = "handoff"
 	}

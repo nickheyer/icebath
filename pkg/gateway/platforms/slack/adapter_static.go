@@ -1,6 +1,8 @@
 package slack
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -41,7 +43,7 @@ func slackTimestampSortKey(ts any) (int64, int64, string) {
 }
 
 func intOrZero(value string) int64 {
-	n, err := strconv.ParseInt(pystr.Strip(strings.ReplaceAll(value, "_", "")), 10, 64)
+	n, err := strconv.ParseInt(strings.TrimSpace(strings.ReplaceAll(value, "_", "")), 10, 64)
 	if err != nil {
 		return 0
 	}
@@ -124,14 +126,14 @@ func describeSlackAPIError(response map[string]any, fileObj map[string]any) stri
 	if response == nil {
 		return ""
 	}
-	errCode := pystr.Strip(strOrEmpty(response["error"]))
+	errCode := strings.TrimSpace(strOrEmpty(response["error"]))
 	if errCode == "" {
 		return ""
 	}
 	fileLabel := attachmentLabel(fileObj)
 	if errCode == "missing_scope" {
-		needed := pystr.Strip(strOrEmpty(response["needed"]))
-		provided := pystr.Strip(strOrEmpty(response["provided"]))
+		needed := strings.TrimSpace(strOrEmpty(response["needed"]))
+		provided := strings.TrimSpace(strOrEmpty(response["provided"]))
 		neededHint := "Missing required Slack scope."
 		if needed != "" {
 			neededHint = "Missing scope: " + needed + "."
@@ -221,7 +223,7 @@ func workspaceMessageMarker(teamID, messageID string) any {
 
 func truthyConfig(value any) bool {
 	if s, ok := value.(string); ok {
-		switch pystr.Lower(pystr.Strip(s)) {
+		switch strings.ToLower(strings.TrimSpace(s)) {
 		case "1", "true", "yes", "on":
 			return true
 		}
@@ -264,10 +266,10 @@ func retryAfterFromErr(err error) *float64 {
 var streamCursorGlyphs = []string{"▉", "▍", "▌", "…"}
 
 func stripStreamCursor(text string) string {
-	stripped := pystr.Rstrip(text)
+	stripped := strings.TrimRightFunc(text, unicode.IsSpace)
 	for _, g := range streamCursorGlyphs {
 		if strings.HasSuffix(stripped, g) {
-			return pystr.Rstrip(strings.TrimSuffix(stripped, g))
+			return strings.TrimRightFunc(strings.TrimSuffix(stripped, g), unicode.IsSpace)
 		}
 	}
 	return text
@@ -280,7 +282,7 @@ func mrkdwnInsensitive(text string) string {
 }
 
 func streamRelation(sent, text string) (string, string) {
-	core := pystr.Strip(sent)
+	core := strings.TrimSpace(sent)
 	if core == "" {
 		return "unrelated", ""
 	}
@@ -291,10 +293,10 @@ func streamRelation(sent, text string) (string, string) {
 		}
 		return "equal", ""
 	}
-	lead := len(text) - len(pystr.Lstrip(text))
+	lead := len(text) - len(strings.TrimLeftFunc(text, unicode.IsSpace))
 	if strings.HasPrefix(text[lead:], core) {
 		delta := text[lead+len(core):]
-		if pystr.Strip(delta) != "" {
+		if strings.TrimSpace(delta) != "" {
 			return "extends", delta
 		}
 		return "equal", delta
@@ -339,7 +341,7 @@ func isBlockPayloadRejection(err error) bool {
 }
 
 func markdownBlockPayload(content string) []any {
-	if pystr.Strip(content) == "" || pystr.Len(content) > markdownBlockMax {
+	if strings.TrimSpace(content) == "" || pystr.Len(content) > markdownBlockMax {
 		return nil
 	}
 	return []any{map[string]any{"type": "markdown", "text": content}}
@@ -526,9 +528,9 @@ func formatSlackMrkdwn(content string) string {
 		}},
 		{formatCodeRe, func(m reMatch, _ []rune) string { return ph(m.groups[0]) }},
 		{formatLinkRe, func(m reMatch, _ []rune) string {
-			u := pystr.Strip(m.groups[2])
+			u := strings.TrimSpace(m.groups[2])
 			if strings.HasPrefix(u, "<") && strings.HasSuffix(u, ">") {
-				u = pystr.Strip(u[1 : len(u)-1])
+				u = strings.TrimSpace(u[1 : len(u)-1])
 			}
 			return ph("<" + u + "|" + m.groups[1] + ">")
 		}},
@@ -536,7 +538,7 @@ func formatSlackMrkdwn(content string) string {
 		{formatQuoteRe, func(m reMatch, _ []rune) string { return ph(m.groups[0]) }},
 		nil,
 		{formatHeaderRe, func(m reMatch, _ []rune) string {
-			inner := replaceAll(headerBoldRe, pystr.Strip(m.groups[1]), func(bm reMatch) string { return bm.groups[1] })
+			inner := replaceAll(headerBoldRe, strings.TrimSpace(m.groups[1]), func(bm reMatch) string { return bm.groups[1] })
 			return ph("*" + inner + "*")
 		}},
 		{formatBoldItalRe, func(m reMatch, _ []rune) string { return ph("*_" + m.groups[1] + "_*") }},

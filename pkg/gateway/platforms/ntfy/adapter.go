@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -38,9 +39,6 @@ const (
 
 // Seconds to wait before each reconnect attempt, the last value repeating
 var reconnectBackoff = []int{2, 5, 10, 30, 60}
-
-// Lowercased markdown flag values that read as true
-var markdownTruthy = map[string]bool{"1": true, "true": true, "yes": true}
 
 // Stream failure the reconnect loop never retries, a 401 or a 404
 type fatalStreamError struct{ reason string }
@@ -64,7 +62,7 @@ func buildAuthHeader(token any) ([][2]string, error) {
 	if !ok {
 		return nil, attributeError(token, "strip")
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, nil
 	}
@@ -135,13 +133,13 @@ func serverURL(ctx context.Context, extra map[string]any) (string, error) {
 	if !ok {
 		return "", attributeError(value, "rstrip")
 	}
-	return pystr.RstripChars(text, "/"), nil
+	return strings.TrimRight(text, "/"), nil
 }
 
 // Whether the scoped env names a topic
 func checkRequirements(ctx context.Context) bool {
 	topic, err := gateway.GetScopedSecret(ctx, "NTFY_TOPIC", "", false)
-	return err == nil && pystr.Strip(topic) != ""
+	return err == nil && strings.TrimSpace(topic) != ""
 }
 
 // Whether the env or the config extra names a topic
@@ -444,7 +442,7 @@ func (a *NtfyAdapter) consumeStream(ctx context.Context, streamURL string, heade
 			if !a.IsConnected() {
 				return true, nil
 			}
-			line = pystr.Strip(line)
+			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
 			}
@@ -571,7 +569,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 		if !ok {
 			return attributeError(message, "strip")
 		}
-		text = pystr.Strip(s)
+		text = strings.TrimSpace(s)
 	}
 	if text == "" {
 		pkgLog().Debug(fmt.Sprintf("[%s] Empty message body, skipping", a.Name()))
@@ -622,7 +620,7 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 	if client == nil {
 		return gateway.SendResult{Success: false, Error: "HTTP client not initialized"}, nil
 	}
-	headers, err := publishHeaders(a.token, pyrepr.Truthy(configExtra(a.Config)["markdown"]), true)
+	headers, err := publishHeaders(a.token, settings.NtfyMarkdown.Get(gateway.SettingsContext(ctx)), true)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}

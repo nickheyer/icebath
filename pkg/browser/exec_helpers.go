@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/codeexec"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -241,20 +241,12 @@ type execProc struct {
 	launchErr  error
 }
 
-// Where capture_screenshot saves when the code names no path, BH_TMP_DIR when the process sets it
-func defaultShotDir(env *tools.Env) string {
-	if v := strings.TrimSpace(os.Getenv("BH_TMP_DIR")); v != "" {
-		return v
-	}
-	return filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use", "tmp")
-}
-
-// Screenshot dir of one call, the BH_TMP_DIR of its child env ahead of the process one
+// Where capture_screenshot saves when the code names no path: the BH_TMP_DIR of the call's child env, which carries the one the process inherited, else the home's browser cache
 func callShotDir(env *tools.Env, childEnv map[string]string) string {
 	if v := strings.TrimSpace(childEnv["BH_TMP_DIR"]); v != "" {
 		return v
 	}
-	return defaultShotDir(env)
+	return filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use", "tmp")
 }
 
 // Connects the session's browser, attaches a tab, then runs the code with its helper calls answered on that tab
@@ -272,6 +264,9 @@ var execRunCode = func(ctx context.Context, env *tools.Env, run execRun) execPro
 	sess := execSessionFor(strings.Join(append([]string{homeKey}, identity[:]...), "\x00"), homeKey)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
+	sess.eventMu.Lock()
+	sess.marker = settings.BrowserTabMarker.Get(cfgOf(env).ctx())
+	sess.eventMu.Unlock()
 	setupDeadline := time.Now().Add(execSetupTimeout)
 	if deadline.Before(setupDeadline) {
 		setupDeadline = deadline

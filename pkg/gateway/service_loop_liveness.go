@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"math"
 	"net"
@@ -9,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Witness outcome of a tick probe, absent when no witness node exists
@@ -102,7 +103,7 @@ func payloadInt(v any) (int, bool) {
 	case nil:
 		return 0, false
 	case string:
-		n, ok := pyIntOf(pystr.Strip(x))
+		n, ok := pyIntOf(strings.TrimSpace(x))
 		if !ok || x == "" || !n.IsInt64() {
 			return 0, false
 		}

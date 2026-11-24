@@ -996,9 +996,6 @@ func (s *Scope) isGatewaySurface() bool {
 			}
 		}
 	}
-	if envEnabled("ICEBATH_GATEWAY_SESSION") {
-		return true
-	}
 	if s.Env != nil && s.Env.Values != nil {
 		if v, ok := s.Env.Values.Load("session.platform"); ok {
 			if p, ok := v.(string); ok {

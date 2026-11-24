@@ -12,7 +12,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -25,7 +24,7 @@ var terminalHealthReasons = map[string]bool{"socket_closed": true, "client_close
 // Diff based slash command reconciliation, replaced by tests that patch _safe_sync_slash_commands
 var safeSyncSlashCommandsFn = (*DiscordAdapter).safeSyncSlashCommands
 
-// Discord adapter for one platform config with the instance state of a fresh connection
+// Discord adapter for one platform config with the instance state of a fresh connection, its knobs from the discord settings of the profile it serves
 func NewDiscordAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*DiscordAdapter, error) {
 	a := &DiscordAdapter{readyEvent: gateway.NewInterruptEvent(), allowedUserIDs: strSet{}, usernameResolvedIDs: strSet{}, allowedRoleIDs: strSet{},
 		botTagDebounceUntil: map[string]float64{}, lastSelfMessageID: map[string]string{}, lastOverflowPreview: map[[2]string]string{},
@@ -33,13 +32,13 @@ func NewDiscordAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Disco
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.PlatformDiscord, a)
 	a.handleMessage = a.BasePlatformAdapter.HandleMessage
 	applyDiscordTraits(a)
-	a.textBatchDelaySeconds = config.EnvFloat("ICEBATH_DISCORD_TEXT_BATCH_DELAY_SECONDS", 0.6)
-	a.textBatchSplitDelaySeconds = config.EnvFloat("ICEBATH_DISCORD_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0)
-	a.SetTextBatchDelays(a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds)
 	sctx := gateway.SettingsContext(ctx)
+	a.textBatchDelaySeconds = settings.DiscordTextBatchDelaySeconds.Get(sctx).Seconds()
+	a.textBatchSplitDelaySeconds = settings.DiscordTextBatchSplitDelaySeconds.Get(sctx).Seconds()
+	a.SetTextBatchDelays(a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds)
 	a.voiceTimeoutSeconds = max(int(settings.DiscordVoiceChannelInactivityTimeoutSeconds.Get(sctx).Seconds()), 0)
 	a.playbackTimeoutSeconds = max(int(settings.DiscordVoicePlaybackTimeoutSeconds.Get(sctx).Seconds()), 1)
-	a.voiceFXCfg = loadVoiceFXConfig(ctx)
+	a.voiceFX = loadVoiceFXConfig(ctx)
 	a.threads = gateway.NewThreadParticipationTracker(ctx, "discord", 500)
 	a.livenessIntervalSeconds = livenessSeconds(settings.DiscordWebsocketLivenessIntervalSeconds.Get(sctx))
 	a.livenessFailureThreshold = max(settings.DiscordWebsocketLivenessFailureThreshold.Get(sctx), 0)
@@ -52,10 +51,7 @@ func NewDiscordAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Disco
 	if mode, ok := cfg.ReplyToMode.(string); ok && mode != "" {
 		a.replyToMode = mode
 	}
-	a.slashCommands = true
-	if v, ok := cfg.Extra["slash_commands"]; ok {
-		a.slashCommands = pyrepr.Truthy(v)
-	}
+	a.slashCommands = settings.DiscordSlashCommands.Get(sctx)
 	a.nonconversationalMessages = newNonConversationalTracker(ctx, nonConversationalMaxTracked)
 	return a, nil
 }
@@ -139,10 +135,7 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 		a.mu.Unlock()
 		a.readyEvent.Clear()
 	}
-	mentions, err := buildAllowedMentions(ctx, a.Config.Extra)
-	if err != nil {
-		return false, err
-	}
+	mentions := buildAllowedMentions(ctx)
 	proxy, err := gateway.ProxyKwargsForBot(proxyURL)
 	if err != nil {
 		return false, err

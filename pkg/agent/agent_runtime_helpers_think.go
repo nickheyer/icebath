@@ -8,7 +8,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -70,7 +69,7 @@ func flattenContentPart(part any) string {
 		if pyrepr.Truthy(p["type"]) {
 			kind = pyrepr.Str(p["type"])
 		}
-		if text, ok := p["text"].(string); ok && text != "" && !droppedFlattenTypes[pystr.Lower(pystr.Strip(kind))] {
+		if text, ok := p["text"].(string); ok && text != "" && !droppedFlattenTypes[strings.ToLower(strings.TrimSpace(kind))] {
 			return text
 		}
 	}
@@ -120,14 +119,14 @@ func (a *AIAgent) extractReasoning(resp *provider.Response) string {
 	if len(parts) == 0 {
 		for _, block := range contentBlocks(msg.Content) {
 			if block["type"] == "thinking" {
-				add(pystr.Strip(provider.FlattenMessageText(firstTruthyKey(block, "thinking", "text", ""), "")))
+				add(strings.TrimSpace(provider.FlattenMessageText(firstTruthyKey(block, "thinking", "text", ""), "")))
 			}
 		}
 	}
 	if s, ok := msg.Content.(string); ok && len(parts) == 0 && s != "" {
 		for _, re := range inlineReasoningBlocks {
 			for _, m := range pyFindAll(re, s) {
-				add(pystr.Strip(m.GroupByNumber(1).String()))
+				add(strings.TrimSpace(m.GroupByNumber(1).String()))
 			}
 		}
 	}

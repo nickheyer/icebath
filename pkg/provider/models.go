@@ -139,7 +139,12 @@ func modelsConfig(ctx context.Context) map[string]any {
 	if frozen := FrozenRuntimeConfig(ctx); frozen != nil {
 		return config.Clone(frozen).(map[string]any)
 	}
-	return loadLiveConfigSafe(home.Dir(ctx))
+	h := home.Dir(ctx)
+	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
+	if err != nil {
+		return nil
+	}
+	return map[string]any(tree)
 }
 
 // Routable custom provider ids configured by the user
@@ -696,10 +701,10 @@ func openaiDiscoveryBaseURL(ctx context.Context, provider string) string {
 	return "https://api.openai.com/v1"
 }
 
-// Runtime resolver over the bound home's config, secrets and credential store
+// Runtime resolver over the bound home's settings, secrets and credential store
 func modelsResolver(ctx context.Context) *resolver {
 	h := home.Dir(ctx)
-	return newResolver(ctx, config.Tree(modelsConfig(ctx)), config.NewSecrets(h), h, homeCredentialSourceIn(ctx, h))
+	return newResolver(ctx, config.NewSecrets(h), h, homeCredentialSourceIn(ctx, h))
 }
 
 // Context bound to the given home, the context's own home when h is empty
@@ -713,21 +718,16 @@ func ctxForHome(ctx context.Context, h string) context.Context {
 	return ctx
 }
 
-// Resolver over the home's config, failing with the read error a malformed config raises
-func strictHomeResolver(ctx context.Context, h string) (*resolver, map[string]any, error) {
+// Resolver over the home's settings, failing with the error reading its config.yaml raises; a file that cannot be parsed raises none and runs on defaults
+func strictHomeResolver(ctx context.Context, h string) (*resolver, error) {
 	ctx = ctxForHome(ctx, h)
 	hd := home.Dir(ctx)
-	var cfg map[string]any
-	if frozen := FrozenRuntimeConfig(ctx); frozen != nil {
-		cfg = config.Clone(frozen).(map[string]any)
-	} else {
-		tree, err := config.Load(hd, config.NewSecrets(hd).Lookup())
-		if err != nil {
-			return nil, nil, err
+	if FrozenRuntimeConfig(ctx) == nil {
+		if _, err := config.ReadRawConfigReadonly(ctx, hd); err != nil {
+			return nil, err
 		}
-		cfg = map[string]any(tree)
 	}
-	return newResolver(ctx, config.Tree(cfg), config.NewSecrets(hd), hd, homeCredentialSourceIn(ctx, hd)), cfg, nil
+	return newResolver(ctx, config.NewSecrets(hd), hd, homeCredentialSourceIn(ctx, hd)), nil
 }
 
 // ---- per provider catalog fetchers ----
@@ -876,7 +876,7 @@ func bedrockCatalog(ctx context.Context, normalized string, forceRefresh bool) (
 
 // Live models listing of the configured Azure Foundry resource with the same credential inference uses
 func azureFoundryCatalog(ctx context.Context, normalized string, forceRefresh bool) (CatalogRows, bool) {
-	rt, err := azureFoundryRuntimeFn(ctx, normalized, modelConfigDictFn(ctx))
+	rt, err := azureFoundryRuntimeFn(ctx, normalized)
 	if err != nil || rt == nil {
 		return CatalogRows{}, false
 	}
@@ -1255,7 +1255,7 @@ func credentialFingerprint(ctx context.Context, provider string) string {
 		parts = append(parts, "effective_base="+openaiDiscoveryBaseURL(ctx, provider))
 	}
 	if provider == "azure-foundry" {
-		parts = append(parts, "effective_base="+configBaseURLForProvider(modelConfigDictFn(ctx), "azure-foundry"))
+		parts = append(parts, "effective_base="+configBaseURLForProvider(ctx, "azure-foundry"))
 	}
 	if provider == "ollama" {
 		providerCfg := getProviderConfigDict(ctx, "ollama")

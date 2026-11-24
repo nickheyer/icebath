@@ -1,13 +1,13 @@
 package media
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"math"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Runs third party plugin code, a panic becoming the returned error
@@ -43,42 +43,35 @@ func lookupPluginTTSProvider(ctx context.Context, key string, discover, retry bo
 	return p, err
 }
 
-// Normalized provider a plugin may service, empty for built ins and same named command providers
-func pluginRouteKey(provider string, ttsConfig map[string]any) string {
-	key := pystr.Strip(pystr.Lower(provider))
-	if key == "" || builtinTTSProviders[key] {
-		return ""
-	}
-	if isCommandProviderConfig(getNamedTTSProviderConfig(ttsConfig, key)) {
+// Normalized provider a plugin may service, empty for built ins and same named programs of your own
+func pluginRouteKey(provider string, req *ttsRequest) string {
+	key := strings.TrimSpace(strings.ToLower(provider))
+	if key == "" || builtinTTSProviders[key] || req.command(key) != nil {
 		return ""
 	}
 	return key
 }
 
 // Voice, model and speed options of a plugin call, nil meaning the provider default
-func pluginVoiceKwargs(ttsConfig map[string]any) TTSOptions {
+func pluginVoiceKwargs(req *ttsRequest) TTSOptions {
 	var opts TTSOptions
-	if v, ok := ttsConfig["voice"].(string); ok && v != "" {
-		opts.Voice = &v
+	if req.Voice != "" {
+		voice := req.Voice
+		opts.Voice = &voice
 	}
-	if m, ok := ttsConfig["model"].(string); ok && m != "" {
-		opts.Model = &m
+	if req.Model != "" {
+		model := req.Model
+		opts.Model = &model
 	}
-	if _, isBool := ttsConfig["speed"].(bool); isBool {
-		f := 0.0
-		if ttsConfig["speed"].(bool) {
-			f = 1
-		}
-		opts.Speed = &f
-	} else if f, ok := pyRealNumber(ttsConfig["speed"]); ok {
-		opts.Speed = &f
+	if speed, set := req.speedFor(nil); set {
+		opts.Speed = &speed
 	}
 	return opts
 }
 
 // Plugin and sample rate when the servicing plugin opted into raw PCM streaming with a valid rate
-func pluginPCMStreamingProvider(ctx context.Context, provider string, ttsConfig map[string]any) (TTSProvider, int, bool) {
-	key := pluginRouteKey(provider, ttsConfig)
+func pluginPCMStreamingProvider(ctx context.Context, provider string, req *ttsRequest) (TTSProvider, int, bool) {
+	key := pluginRouteKey(provider, req)
 	if key == "" {
 		return nil, 0, false
 	}
@@ -112,8 +105,8 @@ func pluginPCMStreamingProvider(ctx context.Context, provider string, ttsConfig 
 }
 
 // Synthesis through a registered plugin provider, empty with no error meaning fall through
-func dispatchToPluginTTSProvider(ctx context.Context, text, outputPath, provider string, ttsConfig map[string]any) (string, error) {
-	key := pluginRouteKey(provider, ttsConfig)
+func dispatchToPluginTTSProvider(ctx context.Context, text, outputPath, provider string, req *ttsRequest) (string, error) {
+	key := pluginRouteKey(provider, req)
 	if key == "" {
 		return "", nil
 	}
@@ -125,13 +118,9 @@ func dispatchToPluginTTSProvider(ctx context.Context, text, outputPath, provider
 	if plugin == nil {
 		return "", nil
 	}
-	format := "mp3"
-	if fmtValue := dictGetDefault(ttsConfig, "output_format", defaultCommandTTSOutputFormat); pyTruthy(fmtValue) {
-		format = pystr.Lower(pyrepr.Str(fmtValue))
-	}
 	pkgLog().Info(fmt.Sprintf("Generating speech with plugin TTS provider '%s'...", key))
-	opts := pluginVoiceKwargs(ttsConfig)
-	opts.Format = format
+	opts := pluginVoiceKwargs(req)
+	opts.Format = textOr(req.OutputFormat, defaultCommandTTSOutputFormat)
 	var written string
 	if err := pluginCall(func() error {
 		var serr error
@@ -148,7 +137,7 @@ func dispatchToPluginTTSProvider(ctx context.Context, text, outputPath, provider
 
 // Whether the registered plugin opts into voice bubble delivery, false on any failure
 func pluginProviderIsVoiceCompatible(ctx context.Context, provider string) bool {
-	key := pystr.Strip(pystr.Lower(provider))
+	key := strings.TrimSpace(strings.ToLower(provider))
 	if key == "" || builtinTTSProviders[key] {
 		return false
 	}

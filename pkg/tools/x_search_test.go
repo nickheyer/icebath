@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // One captured x_search request
@@ -97,7 +98,7 @@ func TestXSearchPostsResponsesRequest(t *testing.T) {
 func TestXSearchConfigSection(t *testing.T) {
 	env := xsEnv(t)
 	t.Setenv("XAI_API_KEY", "xai-test-key")
-	env.Config.Set("x_search", map[string]any{"model": "grok-x", "reasoning_effort": "HIGH", "timeout_seconds": 5, "retries": -3})
+	setHomeConfigKey(t, env, "x_search", map[string]any{"model": "grok-x", "reasoning_effort": "HIGH", "timeout_seconds": 5, "retries": -3})
 	captured := stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
 		return xsResponse(req, 503, `upstream down`), nil
 	})
@@ -108,17 +109,17 @@ func TestXSearchConfigSection(t *testing.T) {
 	if r["error_type"] != "HTTPError" || r["error"] != "upstream down" {
 		t.Fatalf("result %v", r)
 	}
-	if xSearchInt(env, "timeout_seconds", defaultXSearchTimeoutSeconds, 30) != 30 || xSearchInt(env, "retries", defaultXSearchRetries, 0) != 0 {
+	if xSearchTimeoutSeconds(env) != 30 || xSearchRetries(env) != 0 {
 		t.Fatal("floors not applied")
 	}
-	env.Config.Set("x_search.timeout_seconds", "abc")
-	if xSearchInt(env, "timeout_seconds", defaultXSearchTimeoutSeconds, 30) != 180 {
+	setHomeConfigKey(t, env, "x_search.timeout_seconds", "abc")
+	if xSearchTimeoutSeconds(env) != int(settings.XSearchTimeoutSeconds.Default/time.Second) {
 		t.Fatal("unparseable value must fall back to the default")
 	}
-	env.Config.Set("x_search.reasoning_effort", "turbo")
+	setHomeConfigKey(t, env, "x_search.reasoning_effort", "turbo")
 	r = decodeResult(t, xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false))
-	if r["error"] != "x_search.reasoning_effort must be one of: low, medium, high, xhigh (got 'turbo')" {
-		t.Fatalf("effort error %v", r)
+	if len(*captured) != 2 || (*captured)[1].body["reasoning"] != nil || r["error"] != "upstream down" {
+		t.Fatalf("an unknown effort must leave the model's default %+v %v", *captured, r)
 	}
 }
 

@@ -3,6 +3,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -82,7 +84,7 @@ func safeReviewReason(ctx context.Context, value any, limit int) string {
 	}
 	reason = strings.Join(pystr.SplitWhitespace(reason, -1), " ")
 	if len(pystr.Runes(reason)) > limit {
-		reason = pystr.Rstrip(pystr.Slice(reason, 0, limit-1)) + "…"
+		reason = strings.TrimRightFunc(pystr.Slice(reason, 0, limit-1), unicode.IsSpace) + "…"
 	}
 	return reason
 }
@@ -224,7 +226,7 @@ func warnUnroutableSubOnce(sub *pyjson.Object, platform gateway.Platform, stampe
 func kanbanPlatformNames(m *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]) map[string]bool {
 	out := map[string]bool{}
 	for _, p := range m.Keys() {
-		out[pystr.Lower(string(p))] = true
+		out[strings.ToLower(string(p))] = true
 	}
 	return out
 }
@@ -275,7 +277,7 @@ func adapterForSubscription(ctx context.Context, r *GatewayRunner, platform gate
 		profile = primaryProfile
 	}
 	own, _ := r.profileAdapters.Get(profile)
-	if kanbanPlatformNames(own)[pystr.Lower(string(platform))] {
+	if kanbanPlatformNames(own)[strings.ToLower(string(platform))] {
 		return nil, nil
 	}
 	meta := subMetadata(sub)
@@ -384,7 +386,7 @@ func newKanbanCollector(r *GatewayRunner, notifierProfile string, gcDue bool, gc
 	}
 	add(notifierProfile)
 	for _, p := range r.profileAdapters.Keys() {
-		if s := pystr.Strip(p); s != "" {
+		if s := strings.TrimSpace(p); s != "" {
 			add(s)
 		}
 	}
@@ -505,7 +507,7 @@ func (c *kanbanCollector) gcStaleSubs(ctx context.Context, conn state.SQLiteConn
 // Claims one subscription's unseen events, nil when skipped or nothing is new
 func (c *kanbanCollector) claimForSub(ctx context.Context, conn state.SQLiteConn, slug string, sub *pyjson.Object) (*kanbanDelivery, error) {
 	ownerProfile := subTruthyText(sub, "notifier_profile")
-	platform := pystr.Lower(subTruthyText(sub, "platform"))
+	platform := strings.ToLower(subTruthyText(sub, "platform"))
 	if !c.activePlatforms[platform] {
 		shown := platform
 		if shown == "" {
@@ -616,7 +618,7 @@ func kanbanClip(ctx context.Context, ev *kanban.Event, key, msgKey string, limit
 
 // First line of the stripped text clipped to limit, the clipped text when it has no line
 func kanbanFirstLine(text string, limit int) string {
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	if len(lines) > 0 {
 		return pystr.Slice(lines[0], 0, limit)
 	}
@@ -797,7 +799,7 @@ type kanbanNotification struct {
 func newKanbanNotification(ctx context.Context, r *GatewayRunner, d *kanbanDelivery, subFailCounts map[kanbanSubKey]int) *kanbanNotification {
 	sub, task := d.sub, d.task
 	n := &kanbanNotification{runner: r, d: d, subFailCounts: subFailCounts, sub: sub, task: task, boardSlug: d.board,
-		platformStr: pystr.Lower(subTruthyText(sub, "platform")), taskID: subText(sub, "task_id"),
+		platformStr: strings.ToLower(subTruthyText(sub, "platform")), taskID: subText(sub, "task_id"),
 		subProfile: subTruthyText(sub, "notifier_profile"), isPushAdapter: true, wakeKinds: map[string]bool{}}
 	title := n.taskID
 	if task != nil {
@@ -1040,7 +1042,7 @@ func (n *kanbanNotification) wake(ctx context.Context) error {
 		return nil
 	}
 	meta := subMetadata(sub)
-	chatType := pystr.Strip(pyrepr.Str(pyOr(pyOr(objValue(sub, "chat_type"), objValue(meta, "chat_type")), "")))
+	chatType := strings.TrimSpace(pyrepr.Str(pyOr(pyOr(objValue(sub, "chat_type"), objValue(meta, "chat_type")), "")))
 	if chatType == "" {
 		chatType = "group"
 	}

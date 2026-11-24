@@ -12,18 +12,16 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Lifecycle hook probe the platform event observer consults
@@ -164,11 +162,7 @@ func (a *TelegramAdapter) connectBody(ctx context.Context, token string, isRecon
 	started := a.tgApp
 	a.mu.Unlock()
 	started.Start()
-	webhookURL, err := gateway.GetScopedSecret(ctx, "TELEGRAM_WEBHOOK_URL", "", true)
-	if err != nil {
-		return false, err
-	}
-	if webhookURL = pystr.Strip(webhookURL); webhookURL != "" {
+	if webhookURL := strings.TrimSpace(settings.TelegramWebhookURL.Get(gateway.SettingsContext(ctx))); webhookURL != "" {
 		if err := a.startWebhookMode(ctx, webhookURL, isReconnect); err != nil {
 			return false, err
 		}
@@ -233,7 +227,7 @@ func (a *TelegramAdapter) restartHeartbeat(ctx context.Context) {
 // Initializes the application with a bounded retry ladder, rebuilding it after each failed attempt
 func (a *TelegramAdapter) initializeAppWithRetries(ctx context.Context, rebuild func() (*ptbApp, *TelegramApplication, error)) error {
 	const maxConnect = 8
-	initTimeout := config.EnvFloat("ICEBATH_TELEGRAM_INIT_TIMEOUT", 30.0)
+	initTimeout := settings.TelegramInitTimeout.Get(gateway.SettingsContext(ctx)).Seconds()
 	totalBudget := initTimeout*maxConnect + 120.0
 	totalDeadline := monotonicNow() + totalBudget
 	timedOut := fmt.Sprintf("Telegram initialization timed out after %d attempts (%.0fs each)", maxConnect, initTimeout)
@@ -297,17 +291,15 @@ func (a *TelegramAdapter) coldBootDropPending(isReconnect bool) bool {
 
 // Starts the webhook listener, refusing to run fail open without TELEGRAM_WEBHOOK_SECRET
 func (a *TelegramAdapter) startWebhookMode(ctx context.Context, webhookURL string, isReconnect bool) error {
-	port := int(config.EnvInt("TELEGRAM_WEBHOOK_PORT", 8443))
-	host := pystr.Strip(os.Getenv("TELEGRAM_WEBHOOK_HOST"))
-	if host == "" {
-		host = extraString(a.Config.Extra, "webhook_host")
-	}
+	sctx := gateway.SettingsContext(ctx)
+	port := settings.TelegramWebhookPort.Get(sctx)
+	host := strings.TrimSpace(settings.TelegramWebhookHost.Get(sctx))
 	secret, err := gateway.GetScopedSecret(ctx, "TELEGRAM_WEBHOOK_SECRET", "", true)
 	if err != nil {
 		return err
 	}
-	if secret = pystr.Strip(secret); secret == "" {
-		return &runtimeError{msg: "TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_WEBHOOK_URL is set. Without it, the " +
+	if secret = strings.TrimSpace(secret); secret == "" {
+		return &runtimeError{msg: "TELEGRAM_WEBHOOK_SECRET is required when a webhook URL is set. Without it, the " +
 			"webhook endpoint accepts forged updates from anyone who can reach it — the secret Telegram echoes in the " +
 			"X-Telegram-Bot-Api-Secret-Token header of every update is the only proof it came from Telegram, so " +
 			"webhook mode does not start without one.\n\n" +

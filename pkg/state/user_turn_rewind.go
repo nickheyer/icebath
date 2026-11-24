@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const rewindHistoryChanged = "session history changed before the rewind could be persisted"
@@ -118,7 +117,7 @@ func RetryableUserText(content any) (string, error) {
 		chunks.WriteString(text)
 	}
 	text := chunks.String()
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return "", ErrRetryNoText
 	}
 	return text, nil

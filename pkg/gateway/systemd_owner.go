@@ -32,7 +32,7 @@ func pidUnifiedCgroupEntries(pid int) []string {
 	}
 	var entries []string
 	for _, line := range pystr.Splitlines(pystr.DecodeUTF8SigReplace(raw), false) {
-		if _, entry, found := strings.Cut(pystr.Strip(line), "::"); found {
+		if _, entry, found := strings.Cut(strings.TrimSpace(line), "::"); found {
 			entries = append(entries, entry)
 		}
 	}
@@ -73,7 +73,7 @@ func unitMainPidIs(ctx context.Context, svcName, cgroupPath string, pid int) boo
 		if err != nil {
 			continue
 		}
-		if result.Returncode == 0 && pystr.Strip(pystr.DecodeUTF8Replace(result.Stdout)) == strconv.Itoa(pid) {
+		if result.Returncode == 0 && strings.TrimSpace(pystr.DecodeUTF8Replace(result.Stdout)) == strconv.Itoa(pid) {
 			return true
 		}
 	}

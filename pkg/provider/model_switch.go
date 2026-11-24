@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Configured model ids from a mapping, a list of ids or id and name entries, or one string, deduped case insensitively
@@ -270,11 +271,11 @@ var (
 	directAliasLoaded     []NamedDirectAlias
 )
 
-// Direct aliases from model.aliases of the given config, or of the active profile config when nil
+// Direct aliases from model.aliases of the given config, or of the model.aliases and model.provider settings of ctx when nil
 func loadDirectAliases(ctx context.Context, cfg map[string]any) *DirectAliasTable {
 	merged := NewDirectAliasTable(builtinDirectAliases...)
 	if cfg == nil {
-		cfg = LoadConfigSafe(ctx, home.Dir(ctx))
+		cfg = map[string]any{"model": map[string]any{"aliases": settings.ModelAliases.Get(ctx), "provider": settings.ModelProvider.Get(ctx)}}
 	}
 	modelSection, _ := cfg["model"].(map[string]any)
 	aliases, ok := modelSection["aliases"].(map[string]any)

@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -48,7 +47,7 @@ var compiled = compileRules(SecurityPatterns)
 
 // Whether an environment variable holds 1, true, yes or on ignoring case
 func envFlag(name string) bool {
-	switch pystr.Lower(os.Getenv(name)) {
+	switch strings.ToLower(os.Getenv(name)) {
 	case "1", "true", "yes", "on":
 		return true
 	}

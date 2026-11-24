@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Twilio REST base the Messages endpoint hangs off
@@ -27,8 +27,6 @@ var twilioAPIBase = "https://api.twilio.com/2010-04-01/Accounts"
 
 const (
 	maxSMSLength              = 1600
-	defaultWebhookPort        = 8080
-	defaultWebhookHost        = "127.0.0.1"
 	twilioWebhookMaxBodyBytes = 65_536
 	emptyTwiML                = `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`
 	webhookRoute              = "/webhooks/twilio"
@@ -99,7 +97,7 @@ func checkSMSRequirements(ctx context.Context) bool {
 		return false
 	}
 	token, err := gateway.GetScopedSecret(ctx, "TWILIO_AUTH_TOKEN", "", false)
-	return err == nil && pystr.Strip(token) != ""
+	return err == nil && strings.TrimSpace(token) != ""
 }
 
 // Twilio SMS adapter, one session per inbound number with replies sent from TWILIO_PHONE_NUMBER
@@ -127,7 +125,7 @@ func smsAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Adapter reading the Twilio credentials, from number and webhook settings from the profile scoped env
+// Adapter with the Twilio credentials and from number of the profile scoped env and the webhook settings of the profile served
 func NewSmsAdapter(ctx context.Context, config *gateway.PlatformConfig) (*SmsAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -144,46 +142,29 @@ func NewSmsAdapter(ctx context.Context, config *gateway.PlatformConfig) (*SmsAda
 	if err != nil {
 		return nil, err
 	}
-	a.authToken = pystr.Strip(token)
+	a.authToken = strings.TrimSpace(token)
 	if a.fromNumber, err = read("TWILIO_PHONE_NUMBER", ""); err != nil {
 		return nil, err
 	}
-	port, err := read("SMS_WEBHOOK_PORT", fmt.Sprint(defaultWebhookPort))
-	if err != nil {
-		return nil, err
-	}
-	n, err := pyint.Int64(port)
-	if err != nil {
-		return nil, err
-	}
-	a.webhookPort = int(n)
-	if a.webhookHost, err = read("SMS_WEBHOOK_HOST", defaultWebhookHost); err != nil {
-		return nil, err
-	}
-	webhookURL, err := read("SMS_WEBHOOK_URL", "")
-	if err != nil {
-		return nil, err
-	}
-	a.webhookURL = pystr.Strip(webhookURL)
+	sctx := gateway.SettingsContext(ctx)
+	a.webhookPort = settings.SmsWebhookPort.Get(sctx)
+	a.webhookHost = settings.SmsWebhookHost.Get(sctx)
+	a.webhookURL = strings.TrimSpace(settings.SmsWebhookURL.Get(sctx))
 	return a, nil
 }
 
 // Refuses to start without a from number or signature URL, then binds or publishes the Twilio webhook
 func (a *SmsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
-	insecure, err := gateway.GetScopedSecret(ctx, "SMS_INSECURE_NO_SIGNATURE", "", false)
-	if err != nil {
-		return false, err
-	}
-	insecureNoSig := pystr.Lower(insecure) == "true"
+	insecureNoSig := !settings.SmsVerifySignature.Get(gateway.SettingsContext(ctx))
 	var code, msg string
 	if a.fromNumber == "" {
 		code, msg = "sms_missing_phone_number", "[sms] TWILIO_PHONE_NUMBER not set — cannot send replies"
 	} else if a.webhookURL == "" && !insecureNoSig {
-		code, msg = "sms_missing_webhook_url", "[sms] Refusing to start: SMS_WEBHOOK_URL is required for Twilio "+
+		code, msg = "sms_missing_webhook_url", "[sms] Refusing to start: sms.webhook_url (SMS_WEBHOOK_URL) is required for Twilio "+
 			"signature validation. Set it to the public URL configured in your "+
 			"Twilio console (e.g. https://example.com/webhooks/twilio). "+
-			"For local development without validation, set "+
-			"SMS_INSECURE_NO_SIGNATURE=true (NOT recommended for production)."
+			"For local development without validation, turn sms.verify_signature off "+
+			"(SMS_INSECURE_NO_SIGNATURE=true; NOT recommended for production)."
 	}
 	if code != "" {
 		pkgLog().Error(msg)
@@ -191,7 +172,7 @@ func (a *SmsAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 		return false, nil
 	}
 	if insecureNoSig && a.webhookURL == "" {
-		pkgLog().Warn(fmt.Sprintf("[sms] SMS_INSECURE_NO_SIGNATURE=true — Twilio signature validation "+
+		pkgLog().Warn(fmt.Sprintf("[sms] sms.verify_signature is off — Twilio signature validation "+
 			"is DISABLED. Any client that can reach port %d can inject messages. "+
 			"Do NOT use this in production.", a.webhookPort))
 	}
@@ -388,7 +369,7 @@ func (a *SmsAdapter) handleWebhook(ctx context.Context, request *gateway.WebRequ
 	}
 	field := func(key string) string {
 		if v := form[key]; len(v) > 0 {
-			return pystr.Strip(v[0])
+			return strings.TrimSpace(v[0])
 		}
 		return ""
 	}

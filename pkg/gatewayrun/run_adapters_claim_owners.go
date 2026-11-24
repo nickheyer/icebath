@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -74,17 +73,17 @@ func (r *GatewayRunner) primaryResourceClaims(active string) map[claimKey]string
 func credentialClaimOrigin(profileName, profileHome string, platform gateway.Platform, token any) string {
 	envName := gateway.PlatformTokenEnvNames[platform]
 	text, ok := token.(string)
-	if envName == "" || !ok || pystr.Strip(text) == "" {
+	if envName == "" || !ok || strings.TrimSpace(text) == "" {
 		return ""
 	}
-	text = pystr.Strip(text)
-	if profileHome != "" && pystr.Strip(config.LoadEnvFile(filepath.Join(profileHome, ".env"))[envName]) == text {
+	text = strings.TrimSpace(text)
+	if profileHome != "" && strings.TrimSpace(config.LoadEnvFile(filepath.Join(profileHome, ".env"))[envName]) == text {
 		if profileName != "" && profileName != "default" {
 			return fmt.Sprintf("profiles/%s/.env", profileName)
 		}
 		return ".env"
 	}
-	if pystr.Strip(os.Getenv(envName)) == text {
+	if strings.TrimSpace(os.Getenv(envName)) == text {
 		return "env " + envName
 	}
 	return ""
@@ -94,8 +93,8 @@ func credentialClaimOrigin(profileName, profileHome string, platform gateway.Pla
 func duplicateCredentialOrigins(owner, profileName, profileHome string, platform gateway.Platform, adapter gateway.PlatformAdapter) (string, string) {
 	token := ""
 	for _, value := range []any{adapterAttr(adapter, "token"), adapterAttr(adapter, "bot_token"), adapterConfigToken(adapter)} {
-		if text, ok := value.(string); ok && pystr.Strip(text) != "" {
-			token = pystr.Strip(text)
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			token = strings.TrimSpace(text)
 			break
 		}
 	}

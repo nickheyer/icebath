@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -86,7 +85,7 @@ func codexStreamError(event map[string]any) *CodexStreamErrorEvent {
 	}
 	message := "stream emitted error event"
 	if raw := field("message"); raw != nil {
-		if s := pystr.Strip(strOrEmpty(raw)); s != "" {
+		if s := strings.TrimSpace(strOrEmpty(raw)); s != "" {
 			message = s
 		}
 	}

@@ -247,6 +247,3 @@ func TrimMemoryWhenIdle(ctx context.Context, env *tools.Env, reason string, cloc
 		reason, int(quietFor.Seconds()), stats.Frees-freesBefore, float64(time.Since(started).Microseconds())/1000))
 	return TrimMemory(ctx, env, TrimOptions{Force: true, Reason: reason + " after idle collection", AllocatorOnly: true})
 }
-
-// Memory trim registers nothing at import
-func registerMemoryTrim() {}

@@ -8,13 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Clipboard image helpers set by the binary
-var (
-	SaveClipboardImage    func(dest string) bool
-	HasClipboardImage     func() bool
-	ClipboardImageBlocker func() (missing string, noDesktop bool)
-)
-
 var promptAttachRegistry = &handlerRegistry{}
 
 func init() {

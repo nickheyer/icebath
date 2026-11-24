@@ -12,7 +12,6 @@ func init() {
 	armProviderEnv(config.OptionalEnvVars, config.StaticCoreEnvNames())
 	config.RegisterConfigFacade(config.FacadeHooks{
 		ApplyUserMoAPresets: ApplyUserMoAPresets,
-		SkipDeepMerge:       SkipDeepMerge,
 		DotenvUnreadable:    DotenvUnreadable,
 		ExtraEnvKeys:        configFacadeExtraEnvKeys,
 

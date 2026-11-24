@@ -135,16 +135,8 @@ func TestAgentInitScalarHelpers(t *testing.T) {
 		refuseCheckpointRequiredOnCodexAppServer(false, "codex_app_server") != nil || refuseCheckpointRequiredOnCodexAppServer(false, "") != nil {
 		t.Fatal("refused a compatible pairing")
 	}
-	for raw, want := range map[any]int{true: 7, 3: 3, 4.0: 4, 4.5: 7, " 12 ": 12, "x": 7} {
-		if got := parseConfigInt(raw, 7); got != want {
-			t.Errorf("parseConfigInt(%v) = %d", raw, got)
-		}
-	}
-	if !cfgFlag(map[string]any{"enabled": true}, "enabled", false) || cfgFlag(map[string]any{"enabled": "no"}, "enabled", true) || !cfgFlag(map[string]any{}, "enabled", true) {
-		t.Fatal("cfgFlag")
-	}
-	if len(cfgDict(map[string]any{"s": "bad"}, "s")) != 0 || !reflect.DeepEqual(customProviderRuntimeIDs("My Local"), map[string]bool{"my-local": true, "custom:my-local": true}) {
-		t.Fatal("cfgDict or runtime ids")
+	if !reflect.DeepEqual(customProviderRuntimeIDs("My Local"), map[string]bool{"my-local": true, "custom:my-local": true}) {
+		t.Fatal("runtime ids")
 	}
 }
 

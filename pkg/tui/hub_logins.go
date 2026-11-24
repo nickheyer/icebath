@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,9 @@ func registerLoginsKeys(km *keys.Map) {
 	}
 	for _, a := range []keys.Action{
 		{ID: "tui.logins.convert", Context: loginsContext, Label: "keep in icebath", Doc: "move a key read from an environment variable into icebath's own store", Default: []string{"c"}},
+		{ID: "tui.logins.up", Context: loginsContext, Label: "earlier", Doc: "try the highlighted login before the one above it", Default: []string{"K"}},
+		{ID: "tui.logins.down", Context: loginsContext, Label: "later", Doc: "try the highlighted login after the one below it", Default: []string{"J"}},
+		{ID: "tui.logins.reset", Context: loginsContext, Label: "clear limit", Doc: "forget the limit the highlighted login, or each login of a provider, ran into", Default: []string{"R"}},
 		{ID: "tui.signin.open", Context: signInContext, Label: "open link", Doc: "open the sign in link in the browser of this computer", Default: []string{"o"}},
 		{ID: "tui.signin.copy", Context: signInContext, Label: "copy link", Doc: "copy the sign in link", Default: []string{"c"}},
 		{ID: "tui.signin.code", Context: signInContext, Label: "copy code", Doc: "copy the code to type on the sign in page", Default: []string{"y"}},
@@ -163,6 +167,48 @@ func (a *app) loginsHub(provider string) (*cards.Hub, *cards.List, func(placed f
 		}
 		return a.addLoginKey(h, e.group.Provider, e.group.Name, l.Name, again)
 	}
+	// Moves the login at i one place earlier or later in the order its provider's logins are tried
+	move := func(i, step int) tea.Cmd {
+		e, ok := loginAt(i)
+		if !ok {
+			return nil
+		}
+		l, place := *e.login, loginPlace(e)
+		to := place + step
+		switch {
+		case place < 0:
+			return nil
+		case to < 0:
+			return h.Done(tr(txt.HubsLoginsAlreadyFirst, loginLabel(l)))
+		case to >= len(e.group.Logins):
+			return h.Done(tr(txt.HubsLoginsAlreadyLast, loginLabel(l)))
+		}
+		params := tuigateway.LoginSetPriorityParams{Provider: e.group.Provider, Login: l.ID, Priority: int64(to)}
+		return hubCall(a, h, "", tuigateway.LoginSetPriority, params, func(*tuigateway.LoginResult) tea.Cmd {
+			return tea.Batch(h.Done(tr(txt.HubsLoginsMoved, loginLabel(l), to+1, len(e.group.Logins))), again())
+		})
+	}
+	// Forgets the limit of the login at i, or of every login of the provider on a heading
+	reset := func(i int) tea.Cmd {
+		e, ok := at(i)
+		if !ok {
+			return nil
+		}
+		params := tuigateway.LoginResetParams{Provider: e.group.Provider}
+		if e.login != nil {
+			params.Login = e.login.ID
+		}
+		return hubCall(a, h, "", tuigateway.LoginReset, params, func(r *tuigateway.LoginResetResult) tea.Cmd {
+			done := tr(txt.HubsLoginsResetNothing, e.group.Name)
+			switch {
+			case e.login != nil:
+				done = tr(txt.HubsLoginsResetOne, loginLabel(*e.login))
+			case r.Cleared > 0:
+				done = trCount(txt.HubsLoginsResetCountOne, txt.HubsLoginsResetCountMany, int(r.Cleared), e.group.Name)
+			}
+			return tea.Batch(h.Done(done), again())
+		})
+	}
 	t := a.toolkit
 	list = cards.NewList(a.hubEnv(), cards.ListSpec{
 		Title: tr(txt.HubsTitleLogins), Glyph: t.Glyphs.Ext, Key: "tui:logins", Context: loginsContext, Shared: []string{hubContext}, Primary: "hub.use",
@@ -208,9 +254,13 @@ func (a *app) loginsHub(provider string) (*cards.Hub, *cards.List, func(placed f
 			case !ok:
 				return []wm.Hint{{Action: "hub.add"}}
 			case e.login == nil:
-				return []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelAdd)}, {Action: "hub.edit", Label: tr(txt.HintsLabelChange)}}
+				return []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelAdd)}, {Action: "hub.edit", Label: tr(txt.HintsLabelChange)}, {Action: "tui.logins.reset"}}
 			}
-			out := []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelUse)}, {Action: "hub.default"}, {Action: "hub.toggle", Label: tr(txt.HintsLabelRotation)}}
+			out := []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelUse)}, {Action: "hub.default"}, {Action: "hub.toggle", Label: tr(txt.HintsLabelRotation)},
+				{Action: "tui.logins.up"}, {Action: "tui.logins.down"}}
+			if e.login.Status == "limited" || e.login.Status == "dead" || e.login.ResetsAt != nil {
+				out = append(out, wm.Hint{Action: "tui.logins.reset"})
+			}
 			if e.login.AuthType == "oauth" {
 				out = append(out, wm.Hint{Action: "hub.edit", Label: tr(txt.HintsLabelSignInAgain)})
 			}
@@ -312,6 +362,9 @@ func (a *app) loginsHub(provider string) (*cards.Hub, *cards.List, func(placed f
 				e, _ := at(i)
 				return a.addLogin(h, e.group.Slug, false, again)
 			},
+			"tui.logins.up":    func(_ *cards.List, i int) tea.Cmd { return move(i, -1) },
+			"tui.logins.down":  func(_ *cards.List, i int) tea.Cmd { return move(i, 1) },
+			"tui.logins.reset": func(_ *cards.List, i int) tea.Cmd { return reset(i) },
 		},
 	})
 	h = a.newHub("tui:logins", list)
@@ -425,6 +478,9 @@ func loginDetail(e loginEntry) []string {
 	}
 	l := *e.login
 	out := []string{loginLabel(l) + " · " + g.Name, tr(txt.HubsLoginsDetailFrom, loginOrigin(l)), loginStatus(l)}
+	if place := loginPlace(e); place >= 0 && len(g.Logins) > 1 {
+		out = append(out, tr(txt.HubsLoginsDetailOrder, place+1, len(g.Logins)))
+	}
 	if l.Account != "" {
 		out = append(out, tr(txt.HubsLoginsDetailAccount, l.Account))
 	}
@@ -444,6 +500,14 @@ func loginDetail(e loginEntry) []string {
 		}
 	}
 	return out
+}
+
+// Place of a row's login in the order its provider's logins are tried, -1 for a heading
+func loginPlace(e loginEntry) int {
+	if e.login == nil {
+		return -1
+	}
+	return slices.IndexFunc(e.group.Logins, func(l tuigateway.LoginRow) bool { return l.ID == e.login.ID })
 }
 
 // One usage window of a login as a line

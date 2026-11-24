@@ -447,5 +447,5 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 // Binds the kanban card operations of the session host
 func init() {
 	kanbanRunTask, kanbanBindWorker = runKanbanTask, bindKanbanWorkerContext
-	kanbanStartFailure, kanbanWorkerLoss = recordKanbanStartFailure, recordWorkerLoss
+	kanbanStartFailure, kanbanWorkerLoss, kanbanSpawnEnv = recordKanbanStartFailure, recordWorkerLoss, kanbanWorkerSpawnEnv
 }

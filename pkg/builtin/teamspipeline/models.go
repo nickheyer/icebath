@@ -24,7 +24,7 @@ func parseDatetime(value any) (*time.Time, error) {
 	case *time.Time:
 		return t, nil
 	}
-	text := pystr.Strip(pyrepr.Str(value))
+	text := strings.TrimSpace(pyrepr.Str(value))
 	if text == "" {
 		return nil, nil
 	}
@@ -77,7 +77,7 @@ func strField(value any) string {
 	if !pyrepr.Truthy(value) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(value))
+	return strings.TrimSpace(pyrepr.Str(value))
 }
 
 // list(value or []) over JSON values
@@ -213,7 +213,7 @@ func GraphSubscriptionFromDict(payload *pyjson.Object) (*GraphSubscription, erro
 		Status:          pickField(payload, "status"),
 	}
 	for _, f := range [][2]string{{"subscription_id", s.SubscriptionID}, {"resource", s.Resource}, {"change_type", s.ChangeType}, {"notification_url", s.NotificationURL}} {
-		if pystr.Strip(f[1]) == "" {
+		if strings.TrimSpace(f[1]) == "" {
 			return nil, requiredError("GraphSubscription", f[0])
 		}
 	}
@@ -262,7 +262,7 @@ func TeamsMeetingRefFromDict(payload *pyjson.Object) (*TeamsMeetingRef, error) {
 		TenantID:        pickField(payload, "tenant_id"),
 		Metadata:        meta,
 	}
-	if pystr.Strip(r.MeetingID) == "" {
+	if strings.TrimSpace(r.MeetingID) == "" {
 		return nil, requiredError("TeamsMeetingRef", "meeting_id")
 	}
 	return r, nil
@@ -308,7 +308,7 @@ func MeetingArtifactFromDict(payload *pyjson.Object) (*MeetingArtifact, error) {
 		DownloadURL:  pick(payload, "download_url", "downloadUrl", "@microsoft.graph.downloadUrl"),
 		Metadata:     meta,
 	}
-	if pystr.Strip(a.ArtifactID) == "" {
+	if strings.TrimSpace(a.ArtifactID) == "" {
 		return nil, requiredError("MeetingArtifact", "artifact_id")
 	}
 	if a.CreatedAt, err = parseDatetime(pick(payload, "created_at", "createdDateTime")); err != nil {
@@ -480,7 +480,7 @@ func TeamsMeetingPipelineJobFromDict(payload *pyjson.Object) (*TeamsMeetingPipel
 		return nil, err
 	}
 	for _, f := range [][2]string{{"job_id", j.JobID}, {"event_id", j.EventID}, {"source_event_type", j.SourceEventType}, {"dedupe_key", j.DedupeKey}, {"status", j.Status}} {
-		if pystr.Strip(f[1]) == "" {
+		if strings.TrimSpace(f[1]) == "" {
 			return nil, requiredError("TeamsMeetingPipelineJob", f[0])
 		}
 	}

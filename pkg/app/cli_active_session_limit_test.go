@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,7 +14,14 @@ import (
 func TestCliClaimActiveSessionRespectsGlobalLimit(t *testing.T) {
 	t.Setenv("COLUMNS", "500")
 	rec := recordPrints(t)
-	t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), ".icebath"))
+	h := filepath.Join(t.TempDir(), ".icebath")
+	t.Setenv("ICEBATH_HOME", h)
+	if err := os.MkdirAll(h, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("max_concurrent_sessions: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	original := TryAcquireActiveSession
 	TryAcquireActiveSession = AcquireActiveSessionLease
 	t.Cleanup(func() { TryAcquireActiveSession = original })
@@ -25,7 +33,6 @@ func TestCliClaimActiveSessionRespectsGlobalLimit(t *testing.T) {
 	c := bareCLI()
 	c.console = console()
 	c.sessionID = "new-cli-session"
-	c.config = cfg
 	defer func() {
 		_ = held.Release()
 		c.releaseActiveSession()
@@ -59,7 +66,7 @@ func TestCliClaimActiveSessionRespectsGlobalLimit(t *testing.T) {
 func TestOneShotCliPreservesRefusalReason(t *testing.T) {
 	refusal := &activesessions.Refusal{Message: "Ce chat est occupé.", Reason: activesessions.SessionNotOwned}
 	original := TryAcquireActiveSession
-	TryAcquireActiveSession = func(context.Context, string, string, map[string]any, map[string]any) (ActiveSessionLease, *activesessions.Refusal, error) {
+	TryAcquireActiveSession = func(context.Context, string, string, map[string]any) (ActiveSessionLease, *activesessions.Refusal, error) {
 		return nil, refusal, nil
 	}
 	t.Cleanup(func() { TryAcquireActiveSession = original })
@@ -67,7 +74,6 @@ func TestOneShotCliPreservesRefusalReason(t *testing.T) {
 	t.Cleanup(SetStreams(console(), &stderr))
 	c := bareCLI()
 	c.sessionID = "isolated"
-	c.config = map[string]any{}
 	if c.claimActiveSession("cli", true) {
 		t.Fatal("refused claim reported as held")
 	}

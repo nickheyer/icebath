@@ -163,9 +163,7 @@ func spillEnv(t *testing.T) (*Env, string) {
 	t.Helper()
 	dir := t.TempDir()
 	env := newTerminalTestEnv(t, dir)
-	env.Config = config.Tree{"tool_output": map[string]any{"max_bytes": 2000, "max_lines": 2000, "max_line_length": 2000}}
-	ResetToolOutputLimitsCache()
-	t.Cleanup(ResetToolOutputLimitsCache)
+	writeHomeConfig(t, env, "tool_output:\n  max_bytes: 2000\n  max_lines: 2000\n  max_line_length: 2000\n")
 	local := NewLocalEnvironment(context.Background(), env, dir, 30, nil, true)
 	t.Cleanup(func() { local.Cleanup(false) })
 	cacheFakeEnv("default", local)

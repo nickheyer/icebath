@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -209,7 +208,7 @@ func (m *GoalManager) pauseDecision(pausedReason, verdict, reason, message strin
 
 // Starts a fresh active goal, a zero turn budget taking the manager default, a ValueError for empty text
 func (m *GoalManager) Set(goal string, maxTurns int64, contract *GoalContract) (*GoalState, error) {
-	goal = pystr.Strip(goal)
+	goal = strings.TrimSpace(goal)
 	if goal == "" {
 		return nil, &pyint.Error{Kind: "ValueError", Msg: "goal text is empty"}
 	}
@@ -285,7 +284,7 @@ func (m *GoalManager) AddSubgoal(text string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", &pyint.Error{Kind: "ValueError", Msg: "subgoal text is empty"}
 	}
@@ -380,7 +379,7 @@ func (m *GoalManager) AddGate(command string, timeoutSeconds, maxRetries int64) 
 	if err != nil {
 		return GoalGate{}, err
 	}
-	command = pystr.Strip(command)
+	command = strings.TrimSpace(command)
 	if command == "" {
 		return GoalGate{}, &pyint.Error{Kind: "ValueError", Msg: "gate command is empty"}
 	}
@@ -486,7 +485,7 @@ func (m *GoalManager) park(reason string, apply func(state *GoalState)) (*GoalSt
 	state.ClearWait()
 	apply(state)
 	state.WaitingReason = nil
-	if stripped := pystr.Strip(reason); stripped != "" {
+	if stripped := strings.TrimSpace(reason); stripped != "" {
 		state.WaitingReason = stripped
 	}
 	state.WaitingSince = goalTime()
@@ -512,7 +511,7 @@ func (m *GoalManager) WaitOnSession(sessionID, reason string) (*GoalState, error
 	if _, err := m.requireActive(); err != nil {
 		return nil, err
 	}
-	sessionID = pystr.Strip(sessionID)
+	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, &pyint.Error{Kind: "ValueError", Msg: "session_id must be a non-empty string"}
 	}
@@ -875,7 +874,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 			judgeCtx = provider.WithAffinityScope(ctx, "kanban:"+o.TaskID)
 		}
 		response, isText := lastResponse.(string)
-		if !isText && pystr.Strip(o.GoalText) != "" {
+		if !isText && strings.TrimSpace(o.GoalText) != "" {
 			return GoalLoopResult{}, strMethodError(lastResponse, "strip")
 		}
 		judged, err := judgeRaising(judgeCtx, o.GoalText, response, JudgeOptions{})

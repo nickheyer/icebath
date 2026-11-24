@@ -280,8 +280,8 @@ func adoptProviderContextLimit(ctx context.Context, a *AIAgent, errorMsg string,
 		a.bufferVprint(fmt.Sprintf("⚠️  Context length exceeded — using provider limit: %s → %s tokens", groupThousands(oldCtx), groupThousands(newCtx)))
 		return newCtx, true
 	}
-	providerLower := pystr.Lower(a.provider)
-	baseLower := pystr.Lower(pystr.RstripChars(a.baseURL, "/"))
+	providerLower := strings.ToLower(a.provider)
+	baseLower := strings.ToLower(strings.TrimRight(a.baseURL, "/"))
 	isMinimax := providerLower == "minimax" || providerLower == "minimax-cn"
 	for _, prefix := range minimaxAnthropicURLs {
 		isMinimax = isMinimax || strings.HasPrefix(baseLower, prefix)

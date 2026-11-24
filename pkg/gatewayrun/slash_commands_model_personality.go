@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -23,7 +22,7 @@ var (
 
 // Shows or switches the codex runtime, evicting the cached agent when the change needs a new session
 func (r *GatewayRunner) handleCodexRuntimeCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	newValue, problems := provider.CodexRuntimeParseArgs(pystr.Strip(event.GetCommandArgs()))
+	newValue, problems := provider.CodexRuntimeParseArgs(strings.TrimSpace(event.GetCommandArgs()))
 	if len(problems) > 0 {
 		return "❌ " + strings.Join(problems, "\n❌ "), nil
 	}
@@ -56,7 +55,7 @@ func (r *GatewayRunner) handleCodexRuntimeCommand(ctx context.Context, event *ga
 
 // Lists the personalities or persists the selected one for the next turn to resolve
 func (r *GatewayRunner) handlePersonalityCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Strip(event.GetCommandArgs())
+	args := strings.TrimSpace(event.GetCommandArgs())
 	cfg := gateway.LoadGatewayConfigMap(ctx, "")
 	if cfg == nil {
 		cfg = map[string]any{}
@@ -86,7 +85,7 @@ func (r *GatewayRunner) handlePersonalityCommand(ctx context.Context, event *gat
 		for i, n := range names {
 			quoted[i] = "`" + n + "`"
 		}
-		return i18n.T(ctx, "gateway.personality.unknown", "", map[string]any{"name": pystr.Lower(args),
+		return i18n.T(ctx, "gateway.personality.unknown", "", map[string]any{"name": strings.ToLower(args),
 			"available": "`none`, " + strings.Join(quoted, ", ")}), nil
 	}
 	if !PersistPersonality(ctx, name) {

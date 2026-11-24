@@ -53,7 +53,7 @@ func (n *Notepad) homeContext() context.Context {
 
 // Opens the notepad database with its schema initialised and the cron dir secured
 func (n *Notepad) connect(ctx context.Context) (state.SQLiteConn, error) {
-	if err := ensureCronDir(filepath.Dir(n.path)); err != nil {
+	if err := n.s.ensureStoreDir(filepath.Dir(n.path)); err != nil {
 		return nil, err
 	}
 	return state.OpenDB(ctx, n.path, "cron/notepad.db", state.WithInitialize(initializeNotepadSchema))

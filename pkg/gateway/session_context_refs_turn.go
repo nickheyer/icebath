@@ -1,12 +1,13 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Runner whose inbound turns expand @ references in the session workspace with the turn model context
@@ -79,7 +80,7 @@ func TurnReferences(ctx context.Context, runner ContextRefsRunner, event *Messag
 		return &expanded, nil
 	}
 	rebindAPIText(ctx, messageID, expanded)
-	head := pystr.Lstrip(apiText)
+	head := strings.TrimLeftFunc(apiText, unicode.IsSpace)
 	tail := ""
 	if strings.HasPrefix(expanded, head) {
 		tail = expanded[len(head):]
@@ -87,6 +88,6 @@ func TurnReferences(ctx context.Context, runner ContextRefsRunner, event *Messag
 	if tail == "" {
 		return &text, nil
 	}
-	stored := pystr.Strip(text + tail)
+	stored := strings.TrimSpace(text + tail)
 	return &stored, nil
 }

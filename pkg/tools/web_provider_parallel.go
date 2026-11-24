@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const parallelMissingKey = "PARALLEL_API_KEY environment variable not set. Get your API key at https://parallel.ai"
@@ -71,7 +70,7 @@ func newParallelClient(env *Env, apiKey string, async bool) *parallelClient {
 	if raw, ok := sdkEnvLookup(env, "PARALLEL_CUSTOM_HEADERS"); ok {
 		for _, line := range strings.Split(raw, "\n") {
 			if colon := strings.Index(line, ":"); colon >= 0 {
-				c.custom = append(c.custom, [2]string{pystr.Strip(line[:colon]), pystr.Strip(line[colon+1:])})
+				c.custom = append(c.custom, [2]string{strings.TrimSpace(line[:colon]), strings.TrimSpace(line[colon+1:])})
 			}
 		}
 	}
@@ -101,7 +100,7 @@ func resolveParallelSearchMode(env *Env) string {
 	if !ok {
 		mode = "agentic"
 	}
-	mode = pystr.Strip(pystr.Lower(mode))
+	mode = strings.TrimSpace(strings.ToLower(mode))
 	if mode == "fast" || mode == "one-shot" || mode == "agentic" {
 		return mode
 	}
@@ -189,11 +188,11 @@ func parallelRetryAfter(h http.Header) (float64, bool) {
 	if h == nil {
 		return 0, false
 	}
-	if v, err := strconv.ParseFloat(pystr.Strip(h.Get("retry-after-ms")), 64); err == nil {
+	if v, err := strconv.ParseFloat(strings.TrimSpace(h.Get("retry-after-ms")), 64); err == nil {
 		return v / 1000, true
 	}
 	raw := h.Get("retry-after")
-	if v, err := strconv.ParseFloat(pystr.Strip(raw), 64); err == nil {
+	if v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil {
 		return v, true
 	}
 	if t, err := mail.ParseDate(raw); err == nil {
@@ -224,7 +223,7 @@ func parallelShouldRetry(resp *sdkResponse) bool {
 
 // Status error message, the parsed JSON body in Python form when the body parses
 func parallelStatusError(resp *sdkResponse) error {
-	text := pystr.Strip(resp.text())
+	text := strings.TrimSpace(resp.text())
 	if parsed, err := pyjson.Loads(text); err == nil {
 		return &parallelAPIError{message: fmt.Sprintf("Error code: %d - %s", resp.status, pyrepr.Str(parsed))}
 	}

@@ -26,8 +26,7 @@ func (t *TurnRunner) skipContextFiles(ctx context.Context, platformKey string) (
 	if policy != nil {
 		return policy.IgnoreRules(), nil
 	}
-	gw, _ := t.ctx.userConfig["gateway"].(map[string]any)
-	platforms, ok := gw["platforms"].(map[string]any)
+	platforms, ok := t.ctx.userConfig["platforms"].(map[string]any)
 	if !ok {
 		return false, nil
 	}

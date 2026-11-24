@@ -1,6 +1,8 @@
 package pyemail
 
 import (
+	"unicode"
+
 	"bytes"
 	"encoding/base64"
 	"errors"
@@ -106,7 +108,7 @@ func (a *accumulator) reset(start [][2]string) { a.parts, a.initialSize = start,
 
 func (a *accumulator) isOnlyWS() bool {
 	text := a.String()
-	return a.initialSize == 0 && (len(a.parts) == 0 || (text != "" && pystr.Strip(text) == ""))
+	return a.initialSize == 0 && (len(a.parts) == 0 || (text != "" && strings.TrimSpace(text) == ""))
 }
 
 // Header value folder with the line breaking rules of the email.header value formatter
@@ -310,7 +312,7 @@ func foldHeader(name, value, linesep string) (string, error) {
 	}
 	for _, line := range lines[min(1, len(lines)):] {
 		f.newline()
-		stripped := pystr.Lstrip(line)
+		stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 		if ascii {
 			feed(line[:len(line)-len(stripped)], stripped)
 		} else {

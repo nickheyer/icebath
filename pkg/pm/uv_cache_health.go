@@ -91,7 +91,7 @@ func wheelEnd(text string, start int) int {
 
 // Packages uv failed to install because their cached copy is corrupt, empty for any other failure
 func FailedCachedPackages(output string) map[string]bool {
-	lowered := pystr.Lower(output)
+	lowered := strings.ToLower(output)
 	corrupt := missingArchive.MatchString(output)
 	for _, cause := range corruptCauses {
 		if strings.Contains(lowered, cause) {

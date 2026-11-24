@@ -2,6 +2,18 @@ package settings
 
 import "time"
 
+// Audio formats a speech program may write
+var commandAudioFormats = []Choice{{"mp3", "MP3", ""}, {"wav", "WAV", ""}, {"ogg", "Ogg", ""}, {"flac", "FLAC", ""}, {"m4a", "M4A", ""}, {"aac", "AAC", ""}, {"amr", "AMR", ""}, {"opus", "Opus", ""}}
+
+// Text formats a recognition program may write
+var commandTextFormats = []Choice{{"txt", "Text", "Plain text."}, {"json", "JSON", "A JSON document."}, {"srt", "SRT", "SubRip subtitles."}, {"vtt", "VTT", "WebVTT subtitles."}}
+
+// Character cap of one speech request to a service, unset for the service's own limit
+func maxTextLength(key, label, service string, order int) *Int {
+	return &Int{Meta: Meta{Key: key, Label: label, Short: "Most text " + service + " speaks in one request.", Help: "Longer text is split into several requests.", Group: GroupVoice, Order: order, Advanced: true},
+		Null: "the service's own limit", Min: at(1), Unit: "chars"}
+}
+
 // Key for the model that adds tone tags to speech text
 var AuxiliaryTtsAudioTagsApiKey = Register(&String{Meta: Meta{Key: "auxiliary.tts_audio_tags.api_key", Label: "Tag helper key", Short: "Key for the model that adds tone tags to speech text.", Group: GroupVoice, Order: 1000, Advanced: true}, Masked: true, Default: ""})
 
@@ -53,11 +65,14 @@ var SttCloudTrimSilence = Register(&Bool{Meta: Meta{Key: "stt.cloud_trim_silence
 // Loudness below which audio counts as silence when trimming
 var SttCloudTrimThresholdDb = Register(&Int{Meta: Meta{Key: "stt.cloud_trim_threshold_db", Label: "Trim threshold", Short: "Loudness below which audio counts as silence when trimming.", Group: GroupVoice, Order: 1160, Advanced: true}, Default: -40, Unit: "dB"})
 
+// Custom endpoint for DeepInfra speech recognition
+var SttDeepinfraBaseUrl = Register(&String{Meta: Meta{Key: "stt.deepinfra.base_url", Label: "DeepInfra recognition endpoint", Short: "Custom endpoint for DeepInfra speech recognition.", Group: GroupVoice, Order: 1165, Advanced: true}, Null: "the provider endpoint"})
+
 // Speech recognition model used with DeepInfra
 var SttDeepinfraModel = Register(&String{Meta: Meta{Key: "stt.deepinfra.model", Label: "DeepInfra model", Short: "Speech recognition model used with DeepInfra.", Help: "Empty uses the service's default.", Group: GroupVoice, Order: 1170, Advanced: true}, Default: ""})
 
 // Custom endpoint for ElevenLabs speech recognition
-var SttElevenlabsBaseUrl = Register(&String{Meta: Meta{Key: "stt.elevenlabs.base_url", Label: "ElevenLabs endpoint", Short: "Custom endpoint for ElevenLabs speech recognition.", Group: GroupVoice, Order: 1180, Advanced: true}, Null: "the provider endpoint"})
+var SttElevenlabsBaseUrl = Register(&String{Meta: Meta{Key: "stt.elevenlabs.base_url", Label: "ElevenLabs endpoint", Short: "Custom endpoint for ElevenLabs speech recognition.", Group: GroupVoice, Order: 1180, Advanced: true, Env: "ELEVENLABS_STT_BASE_URL"}, Null: "the provider endpoint"})
 
 // Have ElevenLabs mark who is speaking in transcripts
 var SttElevenlabsDiarize = Register(&Bool{Meta: Meta{Key: "stt.elevenlabs.diarize", Label: "Label speakers", Short: "Have ElevenLabs mark who is speaking in transcripts.", Group: GroupVoice, Order: 1190, Advanced: true}, Default: false})
@@ -71,6 +86,9 @@ var SttElevenlabsModelId = Register(&String{Meta: Meta{Key: "stt.elevenlabs.mode
 // Mark non-speech sounds such as laughter in ElevenLabs transcripts
 var SttElevenlabsTagAudioEvents = Register(&Bool{Meta: Meta{Key: "stt.elevenlabs.tag_audio_events", Label: "Tag sounds", Short: "Mark non-speech sounds such as laughter in ElevenLabs transcripts.", Group: GroupVoice, Order: 1220, Advanced: true}, Default: false})
 
+// Custom endpoint for Groq speech recognition
+var SttGroqBaseUrl = Register(&String{Meta: Meta{Key: "stt.groq.base_url", Label: "Groq endpoint", Short: "Custom endpoint for Groq speech recognition.", Group: GroupVoice, Order: 1225, Advanced: true, Env: "GROQ_BASE_URL"}, Null: "the provider endpoint"})
+
 // Language hint for Groq transcripts
 var SttGroqLanguage = Register(&String{Meta: Meta{Key: "stt.groq.language", Label: "Groq language", Short: "Language hint for Groq transcripts.", Help: "Empty detects it.", Group: GroupVoice, Order: 1230, Advanced: true}, Default: ""})
 
@@ -78,7 +96,13 @@ var SttGroqLanguage = Register(&String{Meta: Meta{Key: "stt.groq.language", Labe
 var SttGroqModel = Register(&String{Meta: Meta{Key: "stt.groq.model", Label: "Groq model", Short: "Speech recognition model used with Groq.", Group: GroupVoice, Order: 1240, Advanced: true}, Default: "whisper-large-v3-turbo"})
 
 // Language of your speech, as a language code such as en
-var SttLanguage = Register(&String{Meta: Meta{Key: "stt.language", Label: "Recognition language", Short: "Language of your speech, as a language code such as en.", Group: GroupVoice, Order: 1250, Help: "Used when the chosen service has no language of its own.", Advanced: true}, Default: "en"})
+var SttLanguage = Register(&String{Meta: Meta{Key: "stt.language", Label: "Recognition language", Short: "Language of your speech, as a language code such as en.", Group: GroupVoice, Order: 1250, Help: "Used when the chosen service has no language of its own.", Env: "ICEBATH_LOCAL_STT_LANGUAGE", Advanced: true}, Null: "detected from the speech"})
+
+// Number format the on-device recognizer computes in
+var SttLocalComputeType = Register(&String{Meta: Meta{Key: "stt.local.compute_type", Label: "Local compute type", Short: "Number format the on-device recognizer computes in, such as int8.", Help: "Auto picks one for the device.", Group: GroupVoice, Order: 1255, Advanced: true}, Default: "auto"})
+
+// Where on-device recognition runs
+var SttLocalDevice = Register(&String{Meta: Meta{Key: "stt.local.device", Label: "Local device", Short: "Where on-device recognition runs, such as cpu or cuda.", Help: "Auto uses the graphics card when it works.", Group: GroupVoice, Order: 1257, Advanced: true}, Default: "auto"})
 
 // Text that primes the on-device recognizer, such as names or jargon
 var SttLocalInitialPrompt = Register(&String{Meta: Meta{Key: "stt.local.initial_prompt", Label: "Local prompt", Short: "Text that primes the on-device recognizer, such as names or jargon.", Group: GroupVoice, Order: 1260, Advanced: true}, Default: ""})
@@ -104,6 +128,9 @@ var SttLocalVad = Register(&Bool{Meta: Meta{Key: "stt.local.vad", Label: "Skip s
 // How long a pause must last to count as a break in speech
 var SttLocalVadMinSilenceMs = Register(&Duration{Meta: Meta{Key: "stt.local.vad_min_silence_ms", Label: "Silence length", Short: "How long a pause must last to count as a break in speech.", Group: GroupVoice, Order: 1330, Advanced: true}, Default: 500 * time.Millisecond, Unit: time.Millisecond})
 
+// Program that transcribes a recording on this machine
+var SttLocalCommand = Register(&String{Meta: Meta{Key: "stt.local_command", Label: "Local command", Short: "Program that transcribes a recording on this machine.", Help: "Write {input_path}, {output_dir}, {language} and {model} where they belong; it must leave a .txt file in {output_dir}.", Env: "ICEBATH_LOCAL_STT_COMMAND", Group: GroupVoice, Order: 1335, Advanced: true}, Null: "the bundled whisper.cpp engine, else a whisper program on PATH"})
+
 // Language hint for Mistral transcripts
 var SttMistralLanguage = Register(&String{Meta: Meta{Key: "stt.mistral.language", Label: "Mistral language", Short: "Language hint for Mistral transcripts.", Help: "Empty detects it.", Group: GroupVoice, Order: 1340, Advanced: true}, Default: ""})
 
@@ -114,7 +141,7 @@ var SttMistralModel = Register(&String{Meta: Meta{Key: "stt.mistral.model", Labe
 var SttOpenaiApiKey = Register(&String{Meta: Meta{Key: "stt.openai.api_key", Label: "OpenAI recognition key", Short: "Key for OpenAI speech recognition.", Group: GroupVoice, Order: 1360, Advanced: true}, Masked: true, Null: "the provider key from the environment"})
 
 // Custom endpoint for OpenAI-compatible speech recognition
-var SttOpenaiBaseUrl = Register(&String{Meta: Meta{Key: "stt.openai.base_url", Label: "OpenAI recognition endpoint", Short: "Custom endpoint for OpenAI-compatible speech recognition.", Group: GroupVoice, Order: 1370, Advanced: true}, Null: "the provider endpoint"})
+var SttOpenaiBaseUrl = Register(&String{Meta: Meta{Key: "stt.openai.base_url", Label: "OpenAI recognition endpoint", Short: "Custom endpoint for OpenAI-compatible speech recognition.", Group: GroupVoice, Order: 1370, Advanced: true, Env: "STT_OPENAI_BASE_URL"}, Null: "the provider endpoint"})
 
 // Language hint for OpenAI transcripts
 var SttOpenaiLanguage = Register(&String{Meta: Meta{Key: "stt.openai.language", Label: "OpenAI language", Short: "Language hint for OpenAI transcripts.", Help: "Empty detects it.", Group: GroupVoice, Order: 1380, Advanced: true}, Default: ""})
@@ -134,17 +161,45 @@ var SttOpenaiTimeout = Register(&Duration{Meta: Meta{Key: "stt.openai.timeout", 
 // Text that primes cloud recognition, such as names or jargon
 var SttPrompt = Register(&String{Meta: Meta{Key: "stt.prompt", Label: "Recognition prompt", Short: "Text that primes cloud recognition, such as names or jargon.", Group: GroupVoice, Order: 1430, Advanced: true}, Null: "no static prompt"})
 
+// Your own speech recognition programs, by the name stt.provider picks them with
+var SttProviders = Register(&Map{Meta: Meta{Key: "stt.providers", Label: "Recognition commands", Short: "Your own speech recognition programs, by name.", Help: "Set Recognition service to a name here to use it. A program may also sit directly under stt by its name.", Group: GroupVoice, Order: 1435, Advanced: true},
+	Beside: true,
+	Value: &Object{Meta: Meta{Key: "stt.providers.*", Label: "Recognition command", Short: "One program that turns a recording into text."}, Fields: []Entry{
+		&String{Meta: Meta{Key: "type", Label: "Kind", Short: "Kind of program; only command entries run."}, Null: "command"},
+		&String{Meta: Meta{Key: "command", Label: "Command", Short: "Shell command run for each recording."}, Default: ""},
+		&String{Meta: Meta{Key: "language", Label: "Language", Short: "Language code passed to the command."}, Null: "the recognition language"},
+		&String{Meta: Meta{Key: "model", Label: "Model", Short: "Model name passed to the command."}, Default: ""},
+		&Enum{Meta: Meta{Key: "output_format", Label: "Output format", Short: "Format of the text file the command writes."}, Default: "txt", Values: commandTextFormats},
+		&Enum{Meta: Meta{Key: "format", Label: "Format", Short: "Format of the text file, before Output format."}, Null: "Output format", Values: commandTextFormats},
+		&Duration{Meta: Meta{Key: "timeout", Label: "Time limit", Short: "How long the command may stay silent before it is stopped."}, Null: "Time limit in seconds, else five minutes", Min: at(time.Second)},
+		&Duration{Meta: Meta{Key: "timeout_seconds", Label: "Time limit in seconds", Short: "The same limit, used when Time limit is not set."}, Null: "five minutes", Min: at(time.Second)},
+		&Bool{Meta: Meta{Key: "normalize", Label: "Convert audio", Short: "Hand the command 16 kHz mono audio instead of the original file."}, Default: false},
+		&List{Meta: Meta{Key: "env_passthrough", Label: "Passed variables", Short: "Environment variables the command may see."}},
+	}}})
+
 // Show words as you speak when the chosen service supports it
 var SttStreaming = Register(&Bool{Meta: Meta{Key: "stt.streaming", Label: "Live transcription", Short: "Show words as you speak when the chosen service supports it.", Group: GroupVoice, Order: 1440, Advanced: true}, Default: false})
 
 // Custom endpoint for xAI speech recognition
-var SttXaiBaseUrl = Register(&String{Meta: Meta{Key: "stt.xai.base_url", Label: "xAI recognition endpoint", Short: "Custom endpoint for xAI speech recognition.", Group: GroupVoice, Order: 1450, Advanced: true}, Null: "the provider endpoint"})
+var SttXaiBaseUrl = Register(&String{Meta: Meta{Key: "stt.xai.base_url", Label: "xAI recognition endpoint", Short: "Custom endpoint for xAI speech recognition.", Group: GroupVoice, Order: 1450, Advanced: true, Env: "XAI_STT_BASE_URL"}, Null: "the provider endpoint"})
+
+// Have xAI mark who is speaking in transcripts
+var SttXaiDiarize = Register(&Bool{Meta: Meta{Key: "stt.xai.diarize", Label: "xAI speakers", Short: "Have xAI mark who is speaking in transcripts.", Group: GroupVoice, Order: 1453, Advanced: true}, Default: false})
+
+// Have xAI tidy numbers and punctuation in transcripts
+var SttXaiFormat = Register(&Bool{Meta: Meta{Key: "stt.xai.format", Label: "xAI formatting", Short: "Have xAI tidy numbers and punctuation in transcripts.", Help: "Applies when a language is set.", Group: GroupVoice, Order: 1456, Advanced: true}, Default: true})
 
 // Language hint for xAI transcripts
 var SttXaiLanguage = Register(&String{Meta: Meta{Key: "stt.xai.language", Label: "xAI language", Short: "Language hint for xAI transcripts.", Help: "Empty detects it.", Group: GroupVoice, Order: 1460, Advanced: true}, Default: ""})
 
 // Speech recognition model used with xAI
 var SttXaiModel = Register(&String{Meta: Meta{Key: "stt.xai.model", Label: "xAI model", Short: "Speech recognition model used with xAI.", Help: "Empty uses the service's default.", Group: GroupVoice, Order: 1470, Advanced: true}, Default: ""})
+
+// Custom endpoint for DeepInfra speech
+var TtsDeepinfraBaseUrl = Register(&String{Meta: Meta{Key: "tts.deepinfra.base_url", Label: "DeepInfra endpoint", Short: "Custom endpoint for DeepInfra speech.", Group: GroupVoice, Order: 1475, Advanced: true}, Null: "the provider endpoint"})
+
+// Most text DeepInfra speaks in one request
+var TtsDeepinfraMaxTextLength = Register(maxTextLength("tts.deepinfra.max_text_length", "DeepInfra text limit", "DeepInfra", 1477))
 
 // Speech model used with DeepInfra
 var TtsDeepinfraModel = Register(&String{Meta: Meta{Key: "tts.deepinfra.model", Label: "DeepInfra model", Short: "Speech model used with DeepInfra.", Help: "Empty uses the service's default.", Group: GroupVoice, Order: 1480, Advanced: true}, Default: ""})
@@ -155,6 +210,16 @@ var TtsDeepinfraSpeed = Register(&Float{Meta: Meta{Key: "tts.deepinfra.speed", L
 // Voice used with DeepInfra
 var TtsDeepinfraVoice = Register(&String{Meta: Meta{Key: "tts.deepinfra.voice", Label: "DeepInfra voice", Short: "Voice used with DeepInfra.", Group: GroupVoice, Order: 1500, Advanced: true}, Default: "default"})
 
+// Largest audio file sent to each chat app, by app name
+var TtsDeliveryProfiles = Register(&Map{Meta: Meta{Key: "tts.delivery_profiles", Label: "Audio upload limits", Short: "Largest speech file sent to each chat app, by app name.", Help: "Longer speech is sent as several files; default covers apps not named.", Group: GroupVoice, Order: 1505, Advanced: true},
+	Value: &Object{Meta: Meta{Key: "tts.delivery_profiles.*", Label: "Upload limit", Short: "Size limits of speech files sent to one chat app."}, Fields: []Entry{
+		&Int{Meta: Meta{Key: "max_file_bytes", Label: "Largest file", Short: "Most bytes one speech file may have."}, Null: "the app's own limit", Min: at(1), Unit: "bytes"},
+		&Float{Meta: Meta{Key: "safety_ratio", Label: "Safety margin", Short: "Share of the largest file size actually filled."}, Null: "0.85", Min: at(0.01), Max: at(1.0)},
+	}}})
+
+// Most text Edge speaks in one request
+var TtsEdgeMaxTextLength = Register(maxTextLength("tts.edge.max_text_length", "Edge text limit", "Edge", 1507))
+
 // How fast the Edge voice speaks
 var TtsEdgeSpeed = Register(&Float{Meta: Meta{Key: "tts.edge.speed", Label: "Edge speed", Short: "How fast the Edge voice speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 1510, Advanced: true}, Null: "the general speech speed"})
 
@@ -163,6 +228,9 @@ var TtsEdgeVoice = Register(&String{Meta: Meta{Key: "tts.edge.voice", Label: "Ed
 
 // Custom endpoint for ElevenLabs speech
 var TtsElevenlabsBaseUrl = Register(&String{Meta: Meta{Key: "tts.elevenlabs.base_url", Label: "ElevenLabs endpoint", Short: "Custom endpoint for ElevenLabs speech.", Group: GroupVoice, Order: 1530, Advanced: true}, Null: "the provider endpoint"})
+
+// Most text ElevenLabs speaks in one request
+var TtsElevenlabsMaxTextLength = Register(maxTextLength("tts.elevenlabs.max_text_length", "ElevenLabs text limit", "ElevenLabs", 1535))
 
 // Speech model used with ElevenLabs
 var TtsElevenlabsModelId = Register(&String{Meta: Meta{Key: "tts.elevenlabs.model_id", Label: "ElevenLabs model", Short: "Speech model used with ElevenLabs.", Group: GroupVoice, Order: 1540, Advanced: true}, Default: "eleven_multilingual_v2"})
@@ -179,6 +247,9 @@ var TtsGeminiAudioTags = Register(&Bool{Meta: Meta{Key: "tts.gemini.audio_tags",
 // Custom endpoint for Gemini speech
 var TtsGeminiBaseUrl = Register(&String{Meta: Meta{Key: "tts.gemini.base_url", Label: "Gemini endpoint", Short: "Custom endpoint for Gemini speech.", Group: GroupVoice, Order: 1580, Advanced: true}, Null: "the provider endpoint"})
 
+// Most text Gemini speaks in one request
+var TtsGeminiMaxTextLength = Register(maxTextLength("tts.gemini.max_text_length", "Gemini text limit", "Gemini", 1585))
+
 // Speech model used with Gemini
 var TtsGeminiModel = Register(&String{Meta: Meta{Key: "tts.gemini.model", Label: "Gemini model", Short: "Speech model used with Gemini.", Group: GroupVoice, Order: 1590, Advanced: true}, Default: "gemini-2.5-flash-preview-tts"})
 
@@ -194,11 +265,14 @@ var TtsKeepWarmSeconds = Register(&Duration{Meta: Meta{Key: "tts.keep_warm_secon
 // Tidy text before KittenTTS speaks it
 var TtsKittenttsCleanText = Register(&Bool{Meta: Meta{Key: "tts.kittentts.clean_text", Label: "Clean text", Short: "Tidy text before KittenTTS speaks it.", Group: GroupVoice, Order: 1630, Advanced: true}, Default: true})
 
+// Most text KittenTTS speaks in one request
+var TtsKittenttsMaxTextLength = Register(maxTextLength("tts.kittentts.max_text_length", "KittenTTS text limit", "KittenTTS", 1635))
+
 // On-device speech model used with KittenTTS
 var TtsKittenttsModel = Register(&String{Meta: Meta{Key: "tts.kittentts.model", Label: "KittenTTS model", Short: "On-device speech model used with KittenTTS.", Group: GroupVoice, Order: 1640, Advanced: true}, Default: "KittenML/kitten-tts-nano-0.8-int8"})
 
 // How fast KittenTTS speaks
-var TtsKittenttsSpeed = Register(&Float{Meta: Meta{Key: "tts.kittentts.speed", Label: "KittenTTS speed", Short: "How fast KittenTTS speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 1650, Advanced: true}, Default: 1})
+var TtsKittenttsSpeed = Register(&Float{Meta: Meta{Key: "tts.kittentts.speed", Label: "KittenTTS speed", Short: "How fast KittenTTS speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 1650, Advanced: true}, Null: "the general speech speed"})
 
 // Voice used with KittenTTS
 var TtsKittenttsVoice = Register(&String{Meta: Meta{Key: "tts.kittentts.voice", Label: "KittenTTS voice", Short: "Voice used with KittenTTS.", Group: GroupVoice, Order: 1660, Advanced: true}, Default: "Jasper"})
@@ -215,6 +289,9 @@ var TtsMinimaxEmotion = Register(&String{Meta: Meta{Key: "tts.minimax.emotion", 
 // Account group ID sent to MiniMax
 var TtsMinimaxGroupId = Register(&String{Meta: Meta{Key: "tts.minimax.group_id", Label: "MiniMax group ID", Short: "Account group ID sent to MiniMax.", Group: GroupVoice, Order: 1700, Advanced: true}, Null: "none"})
 
+// Most text MiniMax speaks in one request
+var TtsMinimaxMaxTextLength = Register(maxTextLength("tts.minimax.max_text_length", "MiniMax text limit", "MiniMax", 1705))
+
 // Speech model used with MiniMax
 var TtsMinimaxModel = Register(&String{Meta: Meta{Key: "tts.minimax.model", Label: "MiniMax model", Short: "Speech model used with MiniMax.", Group: GroupVoice, Order: 1710, Advanced: true}, Default: "speech-02-hd"})
 
@@ -228,7 +305,7 @@ var TtsMinimaxRegion = Register(&Enum{Meta: Meta{Key: "tts.minimax.region", Labe
 var TtsMinimaxSampleRate = Register(&Int{Meta: Meta{Key: "tts.minimax.sample_rate", Label: "MiniMax sample rate", Short: "Audio sample rate for MiniMax speech, in Hz.", Group: GroupVoice, Order: 1740, Advanced: true}, Default: 32000, Unit: "Hz"})
 
 // How fast MiniMax speaks
-var TtsMinimaxSpeed = Register(&Float{Meta: Meta{Key: "tts.minimax.speed", Label: "MiniMax speed", Short: "How fast MiniMax speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 1750, Advanced: true}, Default: 1})
+var TtsMinimaxSpeed = Register(&Float{Meta: Meta{Key: "tts.minimax.speed", Label: "MiniMax speed", Short: "How fast MiniMax speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 1750, Advanced: true}, Null: "the general speech speed"})
 
 // Voice used with MiniMax, by its ID
 var TtsMinimaxVoiceId = Register(&String{Meta: Meta{Key: "tts.minimax.voice_id", Label: "MiniMax voice", Short: "Voice used with MiniMax, by its ID.", Group: GroupVoice, Order: 1760, Advanced: true}, Default: "English_expressive_narrator"})
@@ -238,6 +315,9 @@ var TtsMinimaxVol = Register(&Float{Meta: Meta{Key: "tts.minimax.vol", Label: "M
 
 // Custom endpoint for Mistral speech
 var TtsMistralBaseUrl = Register(&String{Meta: Meta{Key: "tts.mistral.base_url", Label: "Mistral endpoint", Short: "Custom endpoint for Mistral speech.", Group: GroupVoice, Order: 1780, Advanced: true}, Null: "the provider endpoint"})
+
+// Most text Mistral speaks in one request
+var TtsMistralMaxTextLength = Register(maxTextLength("tts.mistral.max_text_length", "Mistral text limit", "Mistral", 1785))
 
 // Speech model used with Mistral
 var TtsMistralModel = Register(&String{Meta: Meta{Key: "tts.mistral.model", Label: "Mistral model", Short: "Speech model used with Mistral.", Group: GroupVoice, Order: 1790, Advanced: true}, Default: "voxtral-mini-tts-2603"})
@@ -250,6 +330,9 @@ var TtsModel = Register(&String{Meta: Meta{Key: "tts.model", Label: "Speech mode
 
 // Where NeuTTS runs, such as cpu or cuda
 var TtsNeuttsDevice = Register(&String{Meta: Meta{Key: "tts.neutts.device", Label: "NeuTTS device", Short: "Where NeuTTS runs, such as cpu or cuda.", Group: GroupVoice, Order: 1820, Advanced: true}, Default: "cpu"})
+
+// Most text NeuTTS speaks in one request
+var TtsNeuttsMaxTextLength = Register(maxTextLength("tts.neutts.max_text_length", "NeuTTS text limit", "NeuTTS", 1825))
 
 // On-device speech model used with NeuTTS
 var TtsNeuttsModel = Register(&String{Meta: Meta{Key: "tts.neutts.model", Label: "NeuTTS model", Short: "On-device speech model used with NeuTTS.", Group: GroupVoice, Order: 1830, Advanced: true}, Default: "neuphonic/neutts-air-q4-gguf"})
@@ -272,6 +355,9 @@ var TtsOpenaiConsentAttestation = Register(&String{Meta: Meta{Key: "tts.openai.c
 // Language hint sent with OpenAI-compatible speech
 var TtsOpenaiLanguage = Register(&String{Meta: Meta{Key: "tts.openai.language", Label: "OpenAI language", Short: "Language hint sent with OpenAI-compatible speech.", Group: GroupVoice, Order: 1890, Advanced: true}, Null: "no language hint"})
 
+// Most text OpenAI speaks in one request
+var TtsOpenaiMaxTextLength = Register(maxTextLength("tts.openai.max_text_length", "OpenAI text limit", "OpenAI", 1895))
+
 // Speech model used with OpenAI
 var TtsOpenaiModel = Register(&String{Meta: Meta{Key: "tts.openai.model", Label: "OpenAI model", Short: "Speech model used with OpenAI.", Group: GroupVoice, Order: 1900, Advanced: true}, Default: "gpt-4o-mini-tts"})
 
@@ -292,6 +378,9 @@ var TtsOutputFormat = Register(&String{Meta: Meta{Key: "tts.output_format", Labe
 
 // Stretches or shortens Piper speech
 var TtsPiperLengthScale = Register(&Float{Meta: Meta{Key: "tts.piper.length_scale", Label: "Piper pace", Short: "Stretches or shortens Piper speech.", Help: "Higher is slower.", Group: GroupVoice, Order: 1960, Advanced: true}, Null: "the voice's own value"})
+
+// Most text Piper speaks in one request
+var TtsPiperMaxTextLength = Register(maxTextLength("tts.piper.max_text_length", "Piper text limit", "Piper", 1965))
 
 // How much natural variation Piper adds to the voice
 var TtsPiperNoiseScale = Register(&Float{Meta: Meta{Key: "tts.piper.noise_scale", Label: "Piper variation", Short: "How much natural variation Piper adds to the voice.", Group: GroupVoice, Order: 1970, Advanced: true}, Null: "the voice's own value"})
@@ -317,6 +406,26 @@ var TtsPiperVoicesDir = Register(&String{Meta: Meta{Key: "tts.piper.voices_dir",
 // How loud Piper speaks
 var TtsPiperVolume = Register(&Float{Meta: Meta{Key: "tts.piper.volume", Label: "Piper volume", Short: "How loud Piper speaks.", Help: "1 is unchanged.", Group: GroupVoice, Order: 2040, Advanced: true}, Default: 1})
 
+// Your own speech programs, by the name tts.provider picks them with
+var TtsProviders = Register(&Map{Meta: Meta{Key: "tts.providers", Label: "Speech commands", Short: "Your own speech programs, by name.", Help: "Set Speech voice to a name here to use it. A program may also sit directly under tts by its name.", Group: GroupVoice, Order: 2045, Advanced: true},
+	Beside: true,
+	Value: &Object{Meta: Meta{Key: "tts.providers.*", Label: "Speech command", Short: "One program that turns text into an audio file."}, Fields: []Entry{
+		&String{Meta: Meta{Key: "type", Label: "Kind", Short: "Kind of program; only command entries run."}, Null: "command"},
+		&String{Meta: Meta{Key: "command", Label: "Command", Short: "Shell command run for each piece of text."}, Default: ""},
+		&Enum{Meta: Meta{Key: "output_format", Label: "Output format", Short: "Audio format the command writes."}, Default: "mp3", Values: commandAudioFormats},
+		&Enum{Meta: Meta{Key: "format", Label: "Format", Short: "Audio format the command writes, before Output format."}, Null: "Output format", Values: commandAudioFormats},
+		&String{Meta: Meta{Key: "voice", Label: "Voice", Short: "Voice name passed to the command."}, Default: ""},
+		&String{Meta: Meta{Key: "model", Label: "Model", Short: "Model name passed to the command."}, Default: ""},
+		&Float{Meta: Meta{Key: "speed", Label: "Speed", Short: "Speed passed to the command."}, Null: "the general speech speed"},
+		&Duration{Meta: Meta{Key: "timeout", Label: "Time limit", Short: "How long the command may stay silent before it is stopped."}, Null: "Time limit in seconds, else two minutes", Min: at(time.Second)},
+		&Duration{Meta: Meta{Key: "timeout_seconds", Label: "Time limit in seconds", Short: "The same limit, used when Time limit is not set."}, Null: "two minutes", Min: at(time.Second)},
+		&Bool{Meta: Meta{Key: "voice_compatible", Label: "Voice bubbles", Short: "Send the audio as a voice message where chat apps allow."}, Default: false},
+		&Int{Meta: Meta{Key: "max_text_length", Label: "Text limit", Short: "Most text the command speaks at once."}, Default: 5000, Min: at(1), Unit: "chars"},
+		&List{Meta: Meta{Key: "env_passthrough", Label: "Passed variables", Short: "Environment variables the command may see."}},
+		&String{Meta: Meta{Key: "warm_command", Label: "Warm command", Short: "Shell command run when speech is about to be needed."}, Default: ""},
+		&String{Meta: Meta{Key: "release_command", Label: "Release command", Short: "Shell command run when speech is no longer needed."}, Default: ""},
+	}}})
+
 // How fast voices speak
 var TtsSpeed = Register(&Float{Meta: Meta{Key: "tts.speed", Label: "Speech speed", Short: "How fast voices speak.", Group: GroupVoice, Order: 2050, Help: "1 is normal. Services with their own speed setting use that instead.", Advanced: true}, Null: "normal speed"})
 
@@ -341,14 +450,17 @@ var TtsXaiBitRate = Register(&Int{Meta: Meta{Key: "tts.xai.bit_rate", Label: "xA
 // Language xAI speaks in, as a language code
 var TtsXaiLanguage = Register(&String{Meta: Meta{Key: "tts.xai.language", Label: "xAI language", Short: "Language xAI speaks in, as a language code.", Group: GroupVoice, Order: 2120, Advanced: true}, Default: "en"})
 
+// Most text xAI speaks in one request
+var TtsXaiMaxTextLength = Register(maxTextLength("tts.xai.max_text_length", "xAI text limit", "xAI", 2125))
+
 // Trade quality for faster start in xAI speech
-var TtsXaiOptimizeStreamingLatency = Register(&Int{Meta: Meta{Key: "tts.xai.optimize_streaming_latency", Label: "xAI latency boost", Short: "Trade quality for faster start in xAI speech.", Help: "Zero turns it off.", Group: GroupVoice, Order: 2130, Advanced: true}, Default: 0, Min: at(0), Max: at(2)})
+var TtsXaiOptimizeStreamingLatency = Register(&Int{Meta: Meta{Key: "tts.xai.optimize_streaming_latency", Label: "xAI latency boost", Short: "Trade quality for faster start in xAI speech.", Help: "Zero turns it off.", Group: GroupVoice, Order: 2130, Advanced: true}, Null: "the general live latency boost", Min: at(0), Max: at(2)})
 
 // Audio sample rate for xAI speech, in Hz
 var TtsXaiSampleRate = Register(&Int{Meta: Meta{Key: "tts.xai.sample_rate", Label: "xAI sample rate", Short: "Audio sample rate for xAI speech, in Hz.", Group: GroupVoice, Order: 2140, Advanced: true}, Default: 24000, Unit: "Hz"})
 
 // How fast xAI speaks
-var TtsXaiSpeed = Register(&Float{Meta: Meta{Key: "tts.xai.speed", Label: "xAI speed", Short: "How fast xAI speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 2150, Advanced: true}, Default: 1})
+var TtsXaiSpeed = Register(&Float{Meta: Meta{Key: "tts.xai.speed", Label: "xAI speed", Short: "How fast xAI speaks.", Help: "1 is normal.", Group: GroupVoice, Order: 2150, Advanced: true}, Null: "the general speech speed"})
 
 // Custom endpoint for xAI speech that plays as it arrives
 var TtsXaiStreamingUrl = Register(&String{Meta: Meta{Key: "tts.xai.streaming_url", Label: "xAI live endpoint", Short: "Custom endpoint for xAI speech that plays as it arrives.", Group: GroupVoice, Order: 2160, Advanced: true}, Null: "the provider streaming endpoint"})
@@ -372,7 +484,10 @@ var VoiceBargeInThresholdMultiplier = Register(&Float{Meta: Meta{Key: "voice.bar
 var VoiceBeepEnabled = Register(&Bool{Meta: Meta{Key: "voice.beep_enabled", Label: "Recording beep", Short: "Play a beep when recording starts and stops.", Group: GroupVoice, Order: 2220, Advanced: true}, Default: true})
 
 // How loud the recording beep is, from 0 to 1
-var VoiceBeepVolume = Register(&Float{Meta: Meta{Key: "voice.beep_volume", Label: "Beep volume", Short: "How loud the recording beep is, from 0 to 1.", Group: GroupVoice, Order: 2230, Advanced: true}, Default: 0.3, Min: at(0.0), Max: at(1.0)})
+var VoiceBeepVolume = Register(&Float{Meta: Meta{Key: "voice.beep_volume", Label: "Beep volume", Short: "How loud the recording beep is, from 0 to 1.", Group: GroupVoice, Order: 2230, Advanced: true}, Default: 0.3, Min: at(0.0), Max: at(1.0), DefaultBelow: true, DefaultAbove: true})
+
+// Each step of voice capture and recognition printed to the error output
+var VoiceDebug = Register(&Bool{Meta: Meta{Key: "voice.debug", Label: "Voice debug log", Short: "Print each step of voice capture and recognition to the error output.", Group: GroupVoice, Order: 2235, Advanced: true, Env: "ICEBATH_VOICE_DEBUG"}, Default: false})
 
 // Voice input stops listening after this long
 var VoiceMaxRecordingSeconds = Register(&Duration{Meta: Meta{Key: "voice.max_recording_seconds", Label: "Longest recording", Short: "Voice input stops listening after this long.", Group: GroupVoice, Order: 2240, Advanced: true}, Default: 2 * time.Minute})

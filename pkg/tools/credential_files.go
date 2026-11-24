@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // DefaultContainerBase is where container backends mount the profile home
@@ -50,11 +52,6 @@ type Mount struct {
 func mount(hostPath, containerPath string) Mount {
 	return Mount{HostPath: hostPath, ContainerPath: containerPath}
 }
-
-var configCredentialFiles = struct {
-	sync.Mutex
-	byHome map[string][]Mount
-}{byHome: map[string][]Mount{}}
 
 var safeSkillsTemp struct {
 	sync.Mutex
@@ -187,34 +184,18 @@ func RegisterCredentialFiles(env *Env, entries []any, containerBase string) []st
 	return missing
 }
 
-// Loads terminal.credential_files from the raw config, cached per profile home
+// Mounts of the terminal.credential_files of the env's profile that exist under its home
 func loadConfigCredentialFiles(env *Env) []Mount {
-	key := home.Key(env.Home)
-	configCredentialFiles.Lock()
-	if cached, ok := configCredentialFiles.byHome[key]; ok {
-		configCredentialFiles.Unlock()
-		return cached
-	}
-	configCredentialFiles.Unlock()
 	var result []Mount
-	raw, err := readRawConfig(env)
-	if err != nil {
-		envLog(env).Warn("Could not read terminal.credential_files from config", "error", err)
-	} else {
-		for _, item := range asList(raw.Get("terminal.credential_files")) {
-			rel := strings.TrimSpace(asStr(item))
-			if rel == "" {
-				continue
-			}
-			resolved := containedHostPath(env, rel, "credential_files: rejected absolute config path", "credential_files: rejected config path traversal")
-			if resolved != "" && isFile(resolved) {
-				result = append(result, mount(resolved, DefaultContainerBase+"/"+rel))
-			}
+	for _, rel := range settings.TerminalCredentialFiles.Strings(envHomeCtx(context.Background(), env)) {
+		if rel = strings.TrimSpace(rel); rel == "" {
+			continue
+		}
+		resolved := containedHostPath(env, rel, "credential_files: rejected absolute config path", "credential_files: rejected config path traversal")
+		if resolved != "" && isFile(resolved) {
+			result = append(result, mount(resolved, DefaultContainerBase+"/"+rel))
 		}
 	}
-	configCredentialFiles.Lock()
-	configCredentialFiles.byHome[key] = result
-	configCredentialFiles.Unlock()
 	return result
 }
 

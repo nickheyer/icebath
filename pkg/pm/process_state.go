@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"errors"
@@ -40,7 +42,7 @@ func processState(pid int) (string, bool) {
 		if err != nil && (ctx.Err() != nil || !errors.As(err, &exit)) {
 			return "", false
 		}
-		text := pystr.Strip(pystr.DecodeUTF8Replace(out))
+		text := strings.TrimSpace(pystr.DecodeUTF8Replace(out))
 		if text == "" {
 			return "", false
 		}

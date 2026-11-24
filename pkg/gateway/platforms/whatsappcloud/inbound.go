@@ -146,14 +146,14 @@ func (a *WhatsAppCloudAdapter) verifySignature(rawBody []byte, header string) bo
 	if a.appSecret == "" || header == "" || !strings.HasPrefix(header, "sha256=") {
 		return false
 	}
-	expected := pystr.Strip(header[7:])
+	expected := strings.TrimSpace(header[7:])
 	if expected == "" {
 		return false
 	}
 	mac := hmac.New(sha256.New, []byte(a.appSecret))
 	mac.Write(rawBody)
 	computed := hex.EncodeToString(mac.Sum(nil))
-	return subtle.ConstantTimeCompare([]byte(pystr.Lower(computed)), []byte(pystr.Lower(expected))) == 1
+	return subtle.ConstantTimeCompare([]byte(strings.ToLower(computed)), []byte(strings.ToLower(expected))) == 1
 }
 
 // True for a new wamid, false counting a duplicate for one already seen
@@ -510,7 +510,7 @@ func (a *WhatsAppCloudAdapter) collectInboundMedia(ctx context.Context, kind str
 func injectDocumentText(mediaURLs []string, body string) (string, []bool) {
 	inlined := make([]bool, len(mediaURLs))
 	for i, doc := range mediaURLs {
-		if _, suffix := pypath.Splitext(filepath.Base(doc)); !textInjectExts[pystr.Lower(suffix)] {
+		if _, suffix := pypath.Splitext(filepath.Base(doc)); !textInjectExts[strings.ToLower(suffix)] {
 			continue
 		}
 		info, err := os.Stat(doc)
@@ -542,7 +542,7 @@ func injectDocumentText(mediaURLs []string, body string) (string, []bool) {
 func (a *WhatsAppCloudAdapter) buildMessageEventFromCloud(ctx context.Context, raw map[string]any, contactsByWaid map[string]string, metadata map[string]any) (*gateway.MessageEvent, error) {
 	kind := "text"
 	if pyrepr.Truthy(raw["type"]) {
-		kind = pystr.Lower(pyrepr.Str(raw["type"]))
+		kind = strings.ToLower(pyrepr.Str(raw["type"]))
 	}
 	if contentlessKinds[kind] {
 		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] skipping contentless %s envelope (wamid=%s)", kind, pyrepr.Str(raw["id"])))

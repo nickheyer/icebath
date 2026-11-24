@@ -19,10 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 var (
@@ -183,7 +181,7 @@ func (s *StreamingSession) PartialTranscript() string {
 
 // Records a changed partial and hands it to the partial callback, a failing callback logged
 func (s *StreamingSession) setPartial(text string) {
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	s.mu.Lock()
 	changed := text != "" && text != s.partial
 	if changed {
@@ -380,7 +378,7 @@ func (w *openAIRealtimeWire) event(event *pyjson.Object) (map[string]any, error)
 		if transcript == "" {
 			transcript = w.text
 		}
-		return map[string]any{"success": true, "transcript": pystr.Strip(transcript), "provider": "openai"}, nil
+		return map[string]any{"success": true, "transcript": strings.TrimSpace(transcript), "provider": "openai"}, nil
 	case kind == "error":
 		message := "provider error"
 		if errObj, ok := event.Get("error"); ok && pyTruthy(errObj) {
@@ -392,7 +390,7 @@ func (w *openAIRealtimeWire) event(event *pyjson.Object) (map[string]any, error)
 				message = m
 			}
 		}
-		if strings.Contains(pystr.Lower(message), "buffer too small") {
+		if strings.Contains(strings.ToLower(message), "buffer too small") {
 			return map[string]any{"success": true, "transcript": "", "provider": "openai"}, nil
 		}
 		return w.s.errorEnvelope(message), nil
@@ -448,7 +446,7 @@ func joinNonEmpty(parts ...string) string {
 			kept = append(kept, p)
 		}
 	}
-	return pystr.Strip(strings.Join(kept, " "))
+	return strings.TrimSpace(strings.Join(kept, " "))
 }
 
 func (w *xaiStreamingWire) text() string {
@@ -461,7 +459,7 @@ func (w *xaiStreamingWire) event(event *pyjson.Object) (map[string]any, error) {
 	case "transcript.created":
 		w.created = true
 	case "transcript.partial":
-		text := pystr.Strip(eventText(event, "text"))
+		text := strings.TrimSpace(eventText(event, "text"))
 		speechFinal, _ := event.Get("speech_final")
 		isFinal, _ := event.Get("is_final")
 		switch {
@@ -538,10 +536,10 @@ func (w *elevenLabsRealtimeWire) event(event *pyjson.Object) (map[string]any, er
 	}
 	switch {
 	case kind == "partial_transcript":
-		w.interim = pystr.Strip(eventText(event, "text"))
+		w.interim = strings.TrimSpace(eventText(event, "text"))
 		w.s.setPartial(w.text())
 	case kind == "committed_transcript":
-		if text := pystr.Strip(eventText(event, "text")); text != "" {
+		if text := strings.TrimSpace(eventText(event, "text")); text != "" {
 			w.committed = append(w.committed, text)
 		}
 		w.interim = ""
@@ -563,14 +561,6 @@ type pluginStreamDriver struct {
 	inner TranscriptionStreamSession
 }
 
-func streamingEnabled(sttConfig map[string]any) bool {
-	v, ok := sttConfig["streaming"]
-	if !ok || v == nil {
-		return false
-	}
-	return provider.IsTruthyValue(v)
-}
-
 // OpenAI key and base URL for live STT, absent when unresolvable
 func openAIStreamingCredentials(ctx context.Context) (string, string, bool, error) {
 	key, base, err := resolveSTTOpenAIAudioClientConfig(ctx)
@@ -585,54 +575,28 @@ func openAIStreamingCredentials(ctx context.Context) (string, string, bool, erro
 }
 
 // Built in live session for openai, xai or elevenlabs, nil when its credentials are missing
-func builtinStreamingSession(ctx context.Context, providerName string, sttConfig map[string]any, language, prompt string, onPartial func(string)) (*StreamingSession, error) {
-	section, _ := asStrMap(sttConfig[providerName])
-	if section == nil {
-		section = map[string]any{}
-	}
-	sectionText := func(key string) string {
-		if v := section[key]; pyTruthy(v) {
-			return pyrepr.Str(v)
-		}
-		return ""
-	}
+func builtinStreamingSession(ctx context.Context, providerName string, req *sttRequest, language, prompt string, onPartial func(string)) (*StreamingSession, error) {
 	switch providerName {
 	case "openai":
 		key, base, ok, err := openAIStreamingCredentials(ctx)
 		if err != nil || !ok {
 			return nil, err
 		}
-		model := sectionText("streaming_model")
-		if model == "" {
-			model = defaultOpenAIStreamingModel
-		}
+		model := textOr(req.OpenAI.StreamingModel, defaultOpenAIStreamingModel)
 		return NewOpenAIRealtimeSession(ctx, key, base, model, language, prompt, onPartial)
 	case "xai":
-		apiKey := pystr.Strip(sttEnvValue(ctx, "XAI_API_KEY"))
+		apiKey := strings.TrimSpace(sttEnvValue(ctx, "XAI_API_KEY"))
 		if apiKey == "" {
 			return nil, nil
 		}
-		base := sectionText("base_url")
-		if base == "" {
-			base = sttEnvValue(ctx, "XAI_STT_BASE_URL")
-		}
-		if base == "" {
-			base = xaiSTTBaseURL
-		}
-		model := ""
-		if v := section["model"]; pyTruthy(v) {
-			model = pyrepr.Str(v)
-		}
-		return NewXAIStreamingSession(ctx, apiKey, base, normalizeXAISTTModel(model), language, onPartial)
+		base := textOr(req.XAI.BaseURL, xaiSTTBaseURL)
+		return NewXAIStreamingSession(ctx, apiKey, base, normalizeXAISTTModel(strings.TrimSpace(req.XAI.Model)), language, onPartial)
 	case "elevenlabs":
 		apiKey := resolveSTTProviderKey(ctx, "ELEVENLABS_API_KEY", "elevenlabs")
 		if apiKey == "" {
 			return nil, nil
 		}
-		base := sectionText("base_url")
-		if base == "" {
-			base = elevenLabsSTTBaseURL
-		}
+		base := textOr(req.ElevenLabs.BaseURL, elevenLabsSTTBaseURL)
 		return NewElevenLabsRealtimeSession(ctx, apiKey, base, language, onPartial)
 	}
 	return nil, nil
@@ -659,29 +623,20 @@ func pluginStreamingSession(ctx context.Context, providerName, language, prompt 
 }
 
 // OpenStreamingSession starts a live session for the active provider, nil when streaming is off or none opens
-func OpenStreamingSession(ctx context.Context, onPartial func(string), sttConfig map[string]any) (*StreamingSession, error) {
-	if sttConfig == nil {
-		sttConfig = loadSTTConfig(ctx)
-	}
-	if !streamingEnabled(sttConfig) {
+func OpenStreamingSession(ctx context.Context, onPartial func(string)) (*StreamingSession, error) {
+	req := loadSTTRequest(ctx)
+	if !req.Streaming {
 		return nil, nil
 	}
-	providerName, err := getProvider(ctx, sttConfig)
+	providerName, err := getProvider(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	if providerName == "none" || providerName == "local" || providerName == "local_command" {
 		return nil, nil
 	}
-	var extra []string
-	if providerName == "elevenlabs" {
-		extra = []string{"language_code"}
-	}
-	language := resolveSTTLanguage(ctx, providerName, sttConfig, extra...)
-	prompt := ""
-	if v := sttConfig["prompt"]; pyTruthy(v) {
-		prompt = pystr.Strip(pyrepr.Str(v))
-	}
+	language := resolveSTTLanguage(ctx, providerName, req)
+	prompt := strings.TrimSpace(req.Prompt)
 	session, err := func() (session *StreamingSession, err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -689,7 +644,7 @@ func OpenStreamingSession(ctx context.Context, onPartial func(string), sttConfig
 			}
 		}()
 		if streamingProviders[providerName] {
-			return builtinStreamingSession(ctx, providerName, sttConfig, language, prompt, onPartial)
+			return builtinStreamingSession(ctx, providerName, req, language, prompt, onPartial)
 		}
 		return pluginStreamingSession(ctx, providerName, language, prompt, onPartial)
 	}()

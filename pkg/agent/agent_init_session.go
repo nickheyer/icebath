@@ -10,15 +10,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -173,41 +170,15 @@ func setSessionStateDefaults(a *AIAgent) {
 	a.persistDisabled = false
 }
 
-// Display, fast window, LM Studio load mode, streaming switch and tool loop guardrails, a non mapping agent section raising
-func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) error {
-	a.showCommentary = pyrepr.Truthy(cfgValue(cfgDict(agentCfg, "display"), "show_commentary", true))
-	var window any = float64(provider.DefaultFastWindowSeconds)
-	switch section := agentCfg["agent"].(type) {
-	case map[string]any:
-		window = cfgValue(section, "fast_auto_seconds", window)
-	default:
-		if pyrepr.Truthy(section) {
-			return fmt.Errorf("the agent section of the config is %s, expected a mapping", errchain.Kind(section))
-		}
-	}
-	a.fastAutoSeconds = float64(provider.DefaultFastWindowSeconds)
-	if seconds, err := pyint.Float(window); err == nil {
-		a.fastAutoSeconds = seconds
-	}
-	modelSection := cfgDict(agentCfg, "model")
-	loadMode := strings.ToLower(strings.TrimSpace(cfgText(firstTruthy(modelSection["lmstudio_load_mode"], "explicit"))))
-	a.lmstudioLoadMode = "explicit"
-	if loadMode == "explicit" || loadMode == "jit" {
-		a.lmstudioLoadMode = loadMode
-	}
-	if a.lmstudioLoadMode != loadMode {
-		pkgLog().Warn(fmt.Sprintf("Invalid model.lmstudio_load_mode=%s; expected 'explicit' or 'jit'. Using explicit.", errchain.Show(modelSection["lmstudio_load_mode"])))
-	}
-	streaming := strings.ToLower(strings.TrimSpace(pyrepr.Str(cfgValue(modelSection, "streaming", "true"))))
-	a.RetrySession().DisableStreaming = slices.Contains([]string{"false", "0", "no", "off"}, streaming)
-	if !a.RetrySession().DisableStreaming && !slices.Contains([]string{"true", "1", "yes", "on"}, streaming) {
-		pkgLog().Warn(fmt.Sprintf("Invalid model.streaming=%s; expected a boolean. Using streaming (default).", errchain.Show(modelSection["streaming"])))
-	}
+// Commentary display, fast window, LM Studio load mode, streaming switch and tool loop guardrails in effect for ctx
+func applyDisplayConfig(ctx context.Context, a *AIAgent, platform string) {
+	a.showCommentary = settings.DisplayShowCommentary.Get(ctx)
+	a.fastAutoSeconds = settings.AgentFastAutoSeconds.Get(ctx).Seconds()
+	a.lmstudioLoadMode = settings.ModelLMStudioLoadMode.Get(ctx)
+	a.RetrySession().DisableStreaming = !settings.ModelStreaming.Get(ctx)
 	a.stream5xxProbeTS = 0
-	guardrails, _ := agentCfg["tool_loop_guardrails"].(map[string]any)
-	cfg := tools.ToolCallGuardrailConfigFromMap(guardrails, platform)
+	cfg := tools.ToolCallGuardrailConfigFor(ctx, platform)
 	a.toolGuardrails = tools.NewToolCallGuardrailController(&cfg)
-	return nil
 }
 
 // Memory manager scoping options, the CLI warn and status callbacks, title and gateway identity
@@ -241,33 +212,26 @@ func memoryProviderInitOptions(ctx context.Context, a *AIAgent, platform string)
 }
 
 // Built in memory store and the external memory provider manager, then the provider tools on the surface
-func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMemory bool, platform string, manager *memory.MemoryManager) {
+func initMemory(ctx context.Context, a *AIAgent, skipMemory bool, platform string, manager *memory.MemoryManager) {
 	a.memoryStore = nil
 	a.memoryEnabled, a.userProfileEnabled = false, false
-	a.memoryNudgeInterval, a.turnsSinceMemory, a.itersSinceSkill = 10, 0, 0
+	a.memoryNudgeInterval, a.turnsSinceMemory, a.itersSinceSkill = settings.MemoryNudgeInterval.Default, 0, 0
 	if config.SafeWorkerEnabled() {
 		a.memoryManager = nil
 		return
 	}
 	toolsetRequested := slices.Contains(a.enabledToolsets, "memory") && !slices.Contains(a.disabledToolsets, "memory")
-	var memConfig map[string]any
 	if !skipMemory || toolsetRequested {
-		memConfig = cfgDict(agentCfg, "memory")
-		a.memoryEnabled = isTruthyValue(memConfig["memory_enabled"], true)
-		a.userProfileEnabled = isTruthyValue(memConfig["user_profile_enabled"], true)
+		a.memoryEnabled, a.userProfileEnabled = settings.Memory.Get(ctx), settings.LearnAboutMe.Get(ctx)
 		if a.memoryAgentContext == "subagent" && !toolsetRequested {
 			a.memoryEnabled, a.userProfileEnabled = false, false
 		}
-		if nudge, ok := configIntOf(cfgValue(memConfig, "nudge_interval", 10)); ok {
-			a.memoryNudgeInterval = nudge
-			if a.memoryEnabled || a.userProfileEnabled {
-				memLimit, mok := configIntOf(cfgValue(memConfig, "memory_char_limit", 2200))
-				userLimit, uok := configIntOf(cfgValue(memConfig, "user_char_limit", 1375))
-				if mok && uok {
-					store := memory.NewStore(home.MemoriesDir(home.Dir(ctx)), memLimit, userLimit, a.memoryEnabled, a.userProfileEnabled)
-					a.memoryStore = store
-					_ = store.LoadFromDisk(tools.WithEnvHome(ctx, a.env))
-				}
+		a.memoryNudgeInterval = settings.MemoryNudgeInterval.Get(ctx)
+		if a.memoryEnabled || a.userProfileEnabled {
+			store := memory.NewStore(home.MemoriesDir(home.Dir(ctx)), settings.MemoryMemoryCharLimit.Get(ctx), settings.MemoryUserCharLimit.Get(ctx), a.memoryEnabled, a.userProfileEnabled)
+			a.memoryStore = store
+			if err := store.LoadFromDisk(tools.WithEnvHome(ctx, a.env)); err != nil {
+				pkgLog().Warn(fmt.Sprintf("Built-in memory could not be read from disk: %v", err))
 			}
 		}
 	}
@@ -275,7 +239,7 @@ func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMe
 	if manager != nil && !skipMemory {
 		a.memoryManager = manager
 	} else if !skipMemory {
-		name := cfgText(memConfig["provider"])
+		name := strings.TrimSpace(settings.MemoryProvider.Get(ctx))
 		if !memory.IsCoreMemoryProvider(name) {
 			mm := memory.NewMemoryManager(ctx, a.env, a.memoryStore)
 			p, err := resolveMemoryProvider(ctx, a.env, name, a.emitStartupWarning)
@@ -309,47 +273,41 @@ func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMe
 	}
 }
 
-// Agent section knobs, guard settings, retry and recovery budgets
-func applyAgentSection(a *AIAgent, agentCfg map[string]any) {
-	a.skillNudgeInterval = 10
-	if skills, ok := cfgValue(agentCfg, "skills", map[string]any{}).(map[string]any); ok {
-		if n, nok := configIntOf(cfgValue(skills, "creation_nudge_interval", 10)); nok {
-			a.skillNudgeInterval = n
-		}
+// Layered value of a setting that takes a word or a list of model name parts, which its readers decode themselves
+func wordOrModelList(ctx context.Context, e settings.Entry) any {
+	v, err := settings.Resolve(ctx, e.Info().Key)
+	if err != nil || v.Value == nil {
+		return e.DefaultValue()
 	}
-	section := cfgDict(agentCfg, "agent")
-	a.budgetWarningRatio, _ = NormalizeBudgetWarningRatio(section["budget_warning_ratio"])
-	a.toolUseEnforcement = cfgValue(section, "tool_use_enforcement", "auto")
-	a.executionGuidance = cfgValue(section, "execution_guidance", "auto")
+	return v.Value
+}
+
+// Agent section knobs, guard settings, retry and recovery budgets in effect for ctx
+func applyAgentSection(ctx context.Context, a *AIAgent) {
+	a.skillNudgeInterval = settings.SkillsCreationNudgeInterval.Get(ctx)
+	a.budgetWarningRatio = 0
+	if ratio, ok := settings.AgentBudgetWarningRatio.Lookup(ctx); ok {
+		a.budgetWarningRatio, _ = NormalizeBudgetWarningRatio(ratio)
+	}
+	a.toolUseEnforcement = wordOrModelList(ctx, settings.AgentToolUseEnforcement)
+	a.executionGuidance = wordOrModelList(ctx, settings.AgentExecutionGuidance)
 	if a.runBudgetSeconds == 0 {
-		if v := normalizeRunBudgetSeconds(section["run_budget_seconds"]); v != nil {
-			a.runBudgetSeconds = *v
+		if budget, ok := settings.AgentRunBudgetSeconds.Lookup(ctx); ok && budget > 0 {
+			a.runBudgetSeconds = budget.Seconds()
 		}
 	}
-	guardEnabled, guardThreshold := resolveGuardSettings(section["empty_response_guard"])
+	guardEnabled, guardThreshold := resolveGuardSettings(ctx)
 	a.emptyGuardEnabled, a.emptyGuardCostThresholdUSD = &guardEnabled, &guardThreshold
-	a.intentAckContinuation = cfgValue(section, "intent_ack_continuation", "auto")
-	verbosity := strings.ToLower(strings.TrimSpace(cfgText(section["text_verbosity"])))
-	if verbosity != "" && verbosity != "low" && verbosity != "medium" && verbosity != "high" {
-		pkgLog().Warn(fmt.Sprintf("Unknown agent.text_verbosity %s; expected low, medium or high — ignoring", errchain.Show(verbosity)))
-		verbosity = ""
-	}
-	a.textVerbosity = verbosity
-	flag := func(key string) bool { return pyrepr.Truthy(cfgValue(section, key, true)) }
-	a.stallGuards, a.taskCompletionGuidance = flag("stall_guards"), flag("task_completion_guidance")
-	a.parallelToolCallGuidance, a.environmentProbe = flag("parallel_tool_call_guidance"), flag("environment_probe")
-	a.botModeProtocol = flag("bot_mode_protocol")
+	a.intentAckContinuation = wordOrModelList(ctx, settings.AgentIntentAckContinuation)
+	a.textVerbosity = settings.AgentTextVerbosity.Get(ctx)
+	a.stallGuards, a.taskCompletionGuidance = settings.AgentStallGuards.Get(ctx), settings.AgentTaskCompletionGuidance.Get(ctx)
+	a.parallelToolCallGuidance, a.environmentProbe = settings.AgentParallelToolCallGuidance.Get(ctx), settings.AgentEnvironmentProbe.Get(ctx)
+	a.botModeProtocol = settings.AgentBotModeProtocol.Get(ctx)
 	if a.environmentProbe {
 		tools.WarmEnvironmentProbeAsync()
 	}
 	a.sessionTitleHint = ""
-	a.platformHintOverrides = cfgDict(agentCfg, "platform_hints")
-	a.apiMaxRetries = 3
-	if n, ok := configIntOf(cfgValue(section, "api_max_retries", 3)); ok {
-		a.apiMaxRetries = max(n, 1)
-	}
-	a.autoRecoveryCycles = 5
-	if n, ok := configIntOf(cfgValue(section, "auto_recovery_cycles", 5)); ok {
-		a.autoRecoveryCycles = max(n, 0)
-	}
+	a.platformHintOverrides = settings.PlatformHints.Get(ctx)
+	a.apiMaxRetries = max(settings.AgentApiMaxRetries.Get(ctx), 1)
+	a.autoRecoveryCycles = max(settings.AgentAutoRecoveryCycles.Get(ctx), 0)
 }

@@ -69,7 +69,7 @@ func (r *GatewayRunner) runAgentViaProxy(ctx context.Context, p proxyRunParams) 
 	if proxyURL == "" {
 		return proxyErrorResult(i18n.T(ctx, "gateway.proxy.url_missing", "", nil)), nil
 	}
-	proxyKey := pystr.Strip(provider.GetSecretStr(ctx, "GATEWAY_PROXY_KEY", ""))
+	proxyKey := strings.TrimSpace(provider.GetSecretStr(ctx, "GATEWAY_PROXY_KEY", ""))
 	runStillCurrent := r.runStillCurrentFn(p.sessionKey, p.runGeneration)
 	staleResult := func(what string) map[string]any {
 		generation := 0
@@ -157,12 +157,12 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 	runStillCurrent func() bool, staleResult func(string) map[string]any) (string, map[string]any, error) {
 	fullResponse := ""
 	consumeLine := func(line string) bool {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "data: ") {
 			return false
 		}
 		data := line[6:]
-		if pystr.Strip(data) == "[DONE]" {
+		if strings.TrimSpace(data) == "[DONE]" {
 			return true
 		}
 		var frame map[string]any

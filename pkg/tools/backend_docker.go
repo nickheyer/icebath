@@ -21,8 +21,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -531,14 +531,10 @@ func normalizeEnvDict(env *Env, raw any) map[string]string {
 // ---- egress plumbing ---------------------------------------------------------------------------
 
 func egressProxyArgsForDocker(env *Env) ([]string, map[string]string, []string, error) {
-	proxyCfg := cfgTree(env).Map("proxy")
-	if !config.Truthy(proxyCfg["enabled"]) {
+	if !settings.ProxyEnabled.Get(envHomeCtx(context.Background(), env)) {
 		return nil, map[string]string{}, nil, nil
 	}
-	enforce := true
-	if v, ok := proxyCfg["enforce_on_docker"]; ok && v != nil {
-		enforce = config.Truthy(v)
-	}
+	enforce := egressEnforceOnDocker(env)
 	degraded := func(msg string) ([]string, map[string]string, []string, error) {
 		if enforce {
 			return nil, nil, nil, errors.New(msg)
@@ -591,12 +587,9 @@ func egressReuseFingerprint(volumeArgs []string, overrides map[string]string, ho
 	return hex.EncodeToString(sum[:])[:24]
 }
 
+// Whether a Docker sandbox refuses to start while the egress proxy is not ready
 func egressEnforceOnDocker(env *Env) bool {
-	proxyCfg := cfgTree(env).Map("proxy")
-	if v, ok := proxyCfg["enforce_on_docker"]; ok && v != nil {
-		return config.Truthy(v)
-	}
-	return true
+	return settings.ProxyEnforceOnDocker.Get(envHomeCtx(context.Background(), env))
 }
 
 func criticalEgressEnvNames(overrides map[string]string) map[string]bool {

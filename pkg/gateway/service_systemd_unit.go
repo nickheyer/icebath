@@ -299,9 +299,9 @@ func GenerateSystemdUnit(ctx context.Context, system bool, runAsUser string) (st
 func stripOptionalSystemdDirectives(text string) string {
 	var kept []string
 	for _, line := range pystr.Splitlines(text, false) {
-		stripped := pystr.Strip(line)
+		stripped := strings.TrimSpace(line)
 		key, _, _ := strings.Cut(stripped, "=")
-		if stripped != "" && !strings.HasPrefix(stripped, "#") && slices.Contains(systemdOptionalDirectives, pystr.Strip(key)) {
+		if stripped != "" && !strings.HasPrefix(stripped, "#") && slices.Contains(systemdOptionalDirectives, strings.TrimSpace(key)) {
 			continue
 		}
 		kept = append(kept, line)
@@ -324,7 +324,7 @@ func readSystemdUserFromUnit(unitPath string) (string, error) {
 	for _, line := range pystr.Splitlines(strings.TrimPrefix(string(raw), "\ufeff"), false) {
 		if strings.HasPrefix(line, "User=") {
 			_, value, _ := strings.Cut(line, "=")
-			return pystr.Strip(value), nil
+			return strings.TrimSpace(value), nil
 		}
 	}
 	return "", nil
@@ -388,7 +388,7 @@ func serviceHomeForUnit(ctx context.Context, unitPath string, system bool) (stri
 	if !system {
 		return home.Dir(ctx), nil
 	}
-	if pystr.Strip(os.Getenv("ICEBATH_HOME")) == "" {
+	if strings.TrimSpace(os.Getenv("ICEBATH_HOME")) == "" {
 		pinned := ""
 		if pathExistsSafe(unitPath) {
 			var err error

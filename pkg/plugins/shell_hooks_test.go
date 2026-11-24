@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -221,7 +222,7 @@ func TestShellHookBlockAndApproveThroughThePluginManager(t *testing.T) {
 	dir := filepath.Dir(h)
 	block := writeHookScript(t, dir, "block.sh", "#!/usr/bin/env bash\nprintf '{\"decision\": \"block\", \"reason\": \"blocked-by-shell\"}\\n'\n")
 	ctx := context.Background()
-	registered, err := RegisterShellHooksFromConfig(ctx, hooksCfg("pre_tool_call", map[string]any{"matcher": "terminal", "command": block}), true, false)
+	registered, err := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, hooksCfg("pre_tool_call", map[string]any{"matcher": "terminal", "command": block})), true, false)
 	if err != nil || len(registered) != 1 {
 		t.Fatalf("registered %v, %v", registered, err)
 	}
@@ -231,7 +232,7 @@ func TestShellHookBlockAndApproveThroughThePluginManager(t *testing.T) {
 	ResetShellHooksForTests()
 	ResetPluginManagersForTests()
 	approve := writeHookScript(t, dir, "approve.sh", "#!/usr/bin/env bash\nprintf '{\"action\": \"approve\", \"message\": \"risky\", \"rule_key\": \"terminal:rm\"}\\n'\n")
-	if r, _ := RegisterShellHooksFromConfig(ctx, hooksCfg("pre_tool_call", map[string]any{"matcher": "terminal", "command": approve}), true, false); len(r) != 1 {
+	if r, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, hooksCfg("pre_tool_call", map[string]any{"matcher": "terminal", "command": approve})), true, false); len(r) != 1 {
 		t.Fatalf("approve hook registered %v", r)
 	}
 	InstallServices(&Services{InvokeLifecycleHook: shellHookLifecycle})
@@ -337,13 +338,13 @@ func TestShellHookIdempotentRegistration(t *testing.T) {
 	ctx := context.Background()
 	script := writeHookScript(t, filepath.Dir(h), "h.sh", "#!/usr/bin/env bash\nprintf '{}\\n'\n")
 	cfg := hooksCfg("on_session_start", map[string]any{"command": script})
-	first, _ := RegisterShellHooksFromConfig(ctx, cfg, true, false)
-	second, _ := RegisterShellHooksFromConfig(ctx, cfg, true, false)
+	first, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), true, false)
+	second, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), true, false)
 	if len(first) != 1 || len(second) != 0 || len(wiredShellHooks("on_session_start")) != 1 {
 		t.Fatalf("first %d second %d wired %v", len(first), len(second), wiredShellHooks("on_session_start"))
 	}
 	cfg = hooksCfg("pre_tool_call", map[string]any{"matcher": "terminal", "command": script}, map[string]any{"matcher": "web_search", "command": script})
-	if r, _ := RegisterShellHooksFromConfig(ctx, cfg, true, false); len(r) != 2 || len(wiredShellHooks("pre_tool_call")) != 2 {
+	if r, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), true, false); len(r) != 2 || len(wiredShellHooks("pre_tool_call")) != 2 {
 		t.Fatalf("matcher keyed registration %d", len(r))
 	}
 }
@@ -508,7 +509,7 @@ func TestShellHookRegistrationIsPerProfileHome(t *testing.T) {
 		guard := writeHookScript(t, dir, "guard.sh", fmt.Sprintf("#!/usr/bin/env bash\nprintf '{\"decision\":\"block\",\"reason\":\"%s\"}\\n'\n", label))
 		cfg := hooksCfg("pre_tool_call", map[string]any{"command": guard, "matcher": "write_file", "fail_closed": true})
 		cfg["hooks_auto_accept"] = consent
-		if _, err := RegisterShellHooksFromConfig(home.WithOverride(context.Background(), dir), cfg, false, false); err != nil {
+		if _, err := RegisterShellHooksFromConfig(settings.WithFrozen(home.WithOverride(context.Background(), dir), cfg), false, false); err != nil {
 			t.Fatal(err)
 		}
 	}

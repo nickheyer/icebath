@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Seams over the host facts the posture audit reads, replaced by tests
@@ -56,7 +57,7 @@ func auditIterSshdConfigLinesLive() []string {
 		}
 		text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 		for _, raw := range pystr.Splitlines(text, false) {
-			s := pystr.Strip(raw)
+			s := strings.TrimSpace(raw)
 			if s != "" && !strings.HasPrefix(s, "#") {
 				lines = append(lines, s)
 			}
@@ -160,23 +161,22 @@ func containerNoVolumeMount(ctx context.Context, dataHome string) string {
 		"volume over the ICEBATH_HOME data directory.", dataHome)
 }
 
-// Finding for an enabled API server reachable off loopback with no API_SERVER_KEY
-func networkListenerWithoutAuth(ctx context.Context, cfg map[string]any) []string {
-	plats, _ := cfg["platforms"].(map[string]any)
-	api, ok := plats["api_server"].(map[string]any)
+// Finding for an enabled API server of the profile ctx serves that binds off loopback with no API_SERVER_KEY
+func networkListenerWithoutAuth(ctx context.Context) []string {
+	sctx := SettingsContext(ctx)
+	api, ok := settings.Platforms.Get(sctx)[string(PlatformAPIServer)].(map[string]any)
 	if !ok || !pyrepr.Truthy(api["enabled"]) {
 		return nil
 	}
 	extra, _ := api["extra"].(map[string]any)
-	host := any(envDefault("API_SERVER_HOST", "127.0.0.1"))
-	if v := extra["host"]; pyrepr.Truthy(v) {
-		host = v
+	host, _ := APIServerListenAddress(sctx, extra)
+	key := ""
+	if v, set := extra["key"]; set {
+		key = pyrepr.Str(v)
+	} else if scoped, err := GetScopedSecret(sctx, "API_SERVER_KEY", "", true); err == nil {
+		key = scoped
 	}
-	key := any(envDefault("API_SERVER_KEY", ""))
-	if v := extra["key"]; pyrepr.Truthy(v) {
-		key = v
-	}
-	if !IsNetworkAccessible(ctx, pyrepr.Str(host)) || strings.TrimSpace(pyrepr.Str(key)) != "" {
+	if !IsNetworkAccessible(ctx, pyrepr.Str(host)) || strings.TrimSpace(key) != "" {
 		return nil
 	}
 	return []string{fmt.Sprintf("OpenAI-compatible API server is network-accessible (%s) with NO API_SERVER_KEY. It dispatches "+
@@ -184,22 +184,17 @@ func networkListenerWithoutAuth(ctx context.Context, cfg map[string]any) []strin
 		"Set a strong API_SERVER_KEY.", pyrepr.Str(host))}
 }
 
-// Environment value of name, fallback when unset
-func envDefault(name, fallback string) string {
-	if v, ok := os.LookupEnv(name); ok {
-		return v
-	}
-	return fallback
-}
-
 // Every posture finding as readable text, a check that panics contributing nothing
-func RunSecurityAudit(ctx context.Context, dataHome string, cfg map[string]any) []string {
+func RunSecurityAudit(ctx context.Context, dataHome string) []string {
+	if dataHome != "" {
+		ctx = home.WithOverride(ctx, dataHome)
+	}
 	findings := []string{}
 	checks := []func() []string{
 		func() []string { return auditFinding(runningAsRoot()) },
 		func() []string { return auditFinding(sshPasswordAuthEnabled()) },
 		func() []string { return auditFinding(containerNoVolumeMount(ctx, dataHome)) },
-		func() []string { return networkListenerWithoutAuth(ctx, cfg) },
+		func() []string { return networkListenerWithoutAuth(ctx) },
 	}
 	for _, check := range checks {
 		func() {
@@ -219,7 +214,7 @@ func auditFinding(finding string) []string {
 }
 
 // Runs the audit once per process unless forced and logs each finding as a warning
-func LogStartupSecurityWarnings(ctx context.Context, dataHome string, cfg map[string]any, force bool) []string {
+func LogStartupSecurityWarnings(ctx context.Context, dataHome string, force bool) []string {
 	auditRanMu.Lock()
 	if auditRan && !force {
 		auditRanMu.Unlock()
@@ -227,7 +222,7 @@ func LogStartupSecurityWarnings(ctx context.Context, dataHome string, cfg map[st
 	}
 	auditRan = true
 	auditRanMu.Unlock()
-	findings := RunSecurityAudit(ctx, dataHome, cfg)
+	findings := RunSecurityAudit(ctx, dataHome)
 	if len(findings) > 0 {
 		pkgLog().Warn(fmt.Sprintf("Security posture audit found %d issue(s) \u2014 review your deployment:", len(findings)))
 		for i, f := range findings {

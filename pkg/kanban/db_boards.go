@@ -108,7 +108,7 @@ func WriteBoardMetadata(ctx context.Context, board *string, u BoardMetadataUpdat
 	}
 	meta.Delete("db_path")
 	if u.Name != nil {
-		name := pystr.Strip(*u.Name)
+		name := strings.TrimSpace(*u.Name)
 		if name == "" {
 			name = defaultBoardDisplayName(slug)
 		}
@@ -207,7 +207,7 @@ func ListBoards(includeArchived bool) ([]*pyjson.Object, error) {
 		return entries, nil
 	}
 	slices.SortStableFunc(children, func(a, b os.DirEntry) int {
-		return strings.Compare(pystr.Lower(a.Name()), pystr.Lower(b.Name()))
+		return strings.Compare(strings.ToLower(a.Name()), strings.ToLower(b.Name()))
 	})
 	for _, child := range children {
 		full := pypath.PathJoin(root, child.Name())

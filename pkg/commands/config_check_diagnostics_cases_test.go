@@ -70,7 +70,7 @@ func TestConfigCheckReportsDisabledPlatformOnlyWhenRuntimeDisablesIt(t *testing.
 		{checkHome(t, filepath.Join(root, "key"), "plugins:\n  disabled: [platforms/fakechat]\n", token), true},
 		{checkHome(t, filepath.Join(root, "name"), "plugins:\n  disabled: [fakechat-platform]\n", token), true},
 		{checkHome(t, filepath.Join(root, "no_token"), "plugins:\n  disabled: [platforms/fakechat]\n", ""), false},
-		{checkHome(t, filepath.Join(root, "string"), "plugins:\n  disabled: platforms/fakechat\n", token), false},
+		{checkHome(t, filepath.Join(root, "string"), "plugins:\n  disabled: platforms/fakechat\n", token), true},
 	}
 	for _, c := range append(cases, cases[0]) {
 		src := ConfigCommandSources(c.h)

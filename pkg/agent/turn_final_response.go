@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -28,7 +27,7 @@ func bareMarkerAfterReply(a *AIAgent, final string, truncatedParts []TruncatedPa
 	}
 	reply := housekeepingReplyLine(a)
 	return reply != nil && *reply != "" && !gateway.IsIntentionalSilenceResponse(*reply) &&
-		gateway.IsIntentionalSilenceResponse(pystr.Strip(a.stripThinkBlocks(final)))
+		gateway.IsIntentionalSilenceResponse(strings.TrimSpace(a.stripThinkBlocks(final)))
 }
 
 // Ends the turn on the completed housekeeping reply instead of its bare silence marker, nil otherwise
@@ -98,7 +97,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	}
 	text, isText := content.(string)
 	promoted := ""
-	if finishReason == "stop" && toolCalls == 0 && (content == nil || (isText && pystr.Strip(text) == "")) &&
+	if finishReason == "stop" && toolCalls == 0 && (content == nil || (isText && strings.TrimSpace(text) == "")) &&
 		!hasSignedThinkingDetail(msg) && answerInReasoningCapability(ctx, a) {
 		if promoted = a.extractReasoning(msg); promoted != "" {
 			pkgLog().Warn(fmt.Sprintf("Reasoning-only clean stop (%d chars) — returning the reasoning as the final response (model=%s provider=%s api_calls=%d tool_turns=%d)",
@@ -171,7 +170,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	if joined {
 		s.TruncatedResponseParts, s.LengthContinueRetries = []TruncatedPart{}, 0
 	}
-	final = pystr.Strip(a.stripThinkBlocks(final))
+	final = strings.TrimSpace(a.stripThinkBlocks(final))
 	s.FinalResponse = final
 
 	if final != "" && pyLen(final) >= provider.StopPathMinChars && provider.IsRunawayRepetition(final) {

@@ -31,8 +31,7 @@ func init() {
 
 // Credential environment of a home so logins and status reads follow the profile
 func setupPoolEnv(ctx context.Context, h string) provider.PoolEnv {
-	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(ctx),
-		Config: provider.ConfigLoader(h), Ctx: ctx}
+	return provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Scope: provider.SecretScopeFrom(ctx), Ctx: ctx}
 }
 
 // Truth of one named fact about the home or the host, a prefixed name taking its subject after the colon

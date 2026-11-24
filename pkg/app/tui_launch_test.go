@@ -51,7 +51,7 @@ func tuiFakeDeps(t *testing.T, code int, captured *[]map[string]string) (tuiLaun
 			*captured = append(*captured, copied)
 			return code, nil
 		},
-		relaunch: func([]string, bool) { t.Fatal("relaunch") },
+		relaunch: func([]string, bool, []string) { t.Fatal("relaunch") },
 		stdout:   &bytes.Buffer{},
 		stderr:   &errOut,
 	}, &errOut

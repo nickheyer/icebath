@@ -3,9 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 type auxSessionAuxiliaryKey struct{}
@@ -75,13 +76,23 @@ func (r *resolver) auxiliaryTaskConfig(task any, seen map[string]bool) map[strin
 	return config
 }
 
+// The auxiliary section task configs merge over: the session's frozen section, else the readonly config of the resolver's home, empty when it cannot be read
+func (r *resolver) auxSection() map[string]any {
+	if aux, scoped := auxSessionAuxiliary(r.ctx); scoped {
+		return aux
+	}
+	tree, err := auxLoadConfigReadonlyFn(r.hookCtx())
+	if err != nil {
+		pkgLog().Debug("auxiliary task config: config.yaml unreadable", "error", err)
+		return map[string]any{}
+	}
+	aux, _ := tree["auxiliary"].(map[string]any)
+	return aux
+}
+
 // The session section or the loaded config block of a task resolved over its plugin defaults and inherit_from base
 func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved map[string]any) {
-	aux, scoped := auxSessionAuxiliary(r.ctx)
-	if !scoped {
-		aux, _ = r.cfg["auxiliary"].(map[string]any)
-	}
-	taskConfig, ok := aux[task].(map[string]any)
+	taskConfig, ok := r.auxSection()[task].(map[string]any)
 	if !ok {
 		taskConfig = map[string]any{}
 	}
@@ -127,6 +138,36 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 	return taskConfig
 }
 
+// Provider every auxiliary task's own settings name for ctx: each built-in task's provider setting and each plugin task's block, empty ones left out
+func auxTaskProviders(ctx context.Context) []string {
+	var out []string
+	for _, e := range settings.All() {
+		key := e.Info().Key
+		if !strings.HasPrefix(key, "auxiliary.") {
+			continue
+		}
+		var provider string
+		switch h := e.(type) {
+		case *settings.String:
+			if strings.Count(key, ".") != 2 || !strings.HasSuffix(key, ".provider") {
+				continue
+			}
+			provider = h.Get(ctx)
+		case *settings.Map:
+			if strings.Count(key, ".") != 1 {
+				continue
+			}
+			provider = auxStrOrEmpty(h.Get(ctx)["provider"])
+		default:
+			continue
+		}
+		if provider = strings.TrimSpace(provider); provider != "" {
+			out = append(out, provider)
+		}
+	}
+	return out
+}
+
 // Fields that together pick where an auxiliary call goes and travel as one unit
 var auxRouteKeys = map[string]bool{
 	"provider": true, "model": true, "base_url": true, "api_key": true, "api_mode": true, "key_env": true,
@@ -146,9 +187,9 @@ func auxStrOrEmpty(v any) string {
 
 // Merges a task's own auxiliary block over its inherited base, a pinned route replacing the whole route
 func layerOverInherited(inherited, user map[string]any) map[string]any {
-	provider := pystr.Lower(pystr.Strip(auxStrOrEmpty(user["provider"])))
-	pinned := (provider != "" && provider != "auto") || pystr.Strip(auxStrOrEmpty(user["model"])) != "" ||
-		pystr.Strip(auxStrOrEmpty(user["base_url"])) != ""
+	provider := strings.ToLower(strings.TrimSpace(auxStrOrEmpty(user["provider"])))
+	pinned := (provider != "" && provider != "auto") || strings.TrimSpace(auxStrOrEmpty(user["model"])) != "" ||
+		strings.TrimSpace(auxStrOrEmpty(user["base_url"])) != ""
 	merged := map[string]any{}
 	for k, v := range inherited {
 		if pinned && auxRouteKeys[k] {

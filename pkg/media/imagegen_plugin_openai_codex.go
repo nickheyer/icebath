@@ -17,9 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -46,8 +46,8 @@ func summarizeCodexErrorBody(body string) string {
 		if obj, ok := pyjson.AsObject(payload); ok {
 			errVal, _ := obj.Get("error")
 			if eo, ok := pyjson.AsObject(errVal); ok {
-				if msg, ok := eo.Vals["message"].(string); ok && pystr.Strip(msg) != "" {
-					return clipRunes(pystr.Strip(msg), codexMaxErrorBodyChars)
+				if msg, ok := eo.Vals["message"].(string); ok && strings.TrimSpace(msg) != "" {
+					return clipRunes(strings.TrimSpace(msg), codexMaxErrorBodyChars)
 				}
 			}
 		}
@@ -57,7 +57,7 @@ func summarizeCodexErrorBody(body string) string {
 
 // Selected gpt-image-2 tier from OPENAI_IMAGE_MODEL or the openai-codex config section
 func resolveCodexImageModel(env *tools.Env) (string, map[string]any) {
-	return resolveStaticModel(env, gptImage2Tiers, gptImage2Default, staticModelOptions{EnvVar: "OPENAI_IMAGE_MODEL", ConfigKey: "openai-codex"})
+	return resolveStaticModel(env, gptImage2Tiers, gptImage2Default, staticModelOptions{Scoped: settings.OpenAICodexImageModel})
 }
 
 // Codex token and the base URL its credential routes to, both empty when no usable token resolves
@@ -73,7 +73,7 @@ func readCodexImageCredential(ctx context.Context) (token, baseURL string) {
 		pkgLog().Debug(fmt.Sprintf("Could not resolve Codex credential: %v", err))
 		return "", ""
 	}
-	if t := pystr.Strip(tok); t != "" {
+	if t := strings.TrimSpace(tok); t != "" {
 		return t, base
 	}
 	return "", ""
@@ -160,7 +160,7 @@ func codexLocalImageToDataURL(env *tools.Env, value string) (string, error) {
 
 // images entry of a URL, data URL or local path for the edits endpoint
 func codexToInputImage(ctx context.Context, env *tools.Env, value string) (*pyjson.Object, error) {
-	candidate := pystr.Strip(value)
+	candidate := strings.TrimSpace(value)
 	if candidate == "" {
 		return nil, &imageValueError{"Blank image input"}
 	}
@@ -206,7 +206,7 @@ func buildCodexImageRequest(prompt, size string, quality any, inputImages []any)
 
 // Posts to the native Codex images endpoint and returns the decoded body with the backend request id
 func postCodexImageRequest(ctx context.Context, token, prompt, size string, quality any, inputImages []any, baseURL string) (*pyjson.Object, error) {
-	baseURL = strings.TrimRight(pystr.Strip(baseURL), "/")
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	headers := provider.CodexCloudflareHeaders(token, baseURL)
 	headers["Authorization"] = "Bearer " + token
 	headers["Content-Type"] = "application/json"
@@ -298,7 +298,7 @@ func (p *openAICodexImageGenProvider) Generate(ctx context.Context, env *tools.E
 	if env == nil {
 		env = p.env(ctx)
 	}
-	prompt := pystr.Strip(req.Prompt)
+	prompt := strings.TrimSpace(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)
 	if prompt == "" {
 		return promptRequiredError("openai-codex", aspect), nil

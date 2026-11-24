@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -83,8 +82,8 @@ func auxTaskSlots(ctx context.Context) []string {
 
 // Main slot pair as persisted, declared providers first, then the aggregator guess and model normalization
 func normalizeMainModelAssignment(ctx context.Context, provider, model string) (string, string) {
-	provIn := pystr.Strip(provider)
-	modelIn := pystr.Strip(model)
+	provIn := strings.TrimSpace(provider)
+	modelIn := strings.TrimSpace(model)
 	canonical := modelsNormalizeProvider(provIn)
 	cfg, err := configLoadFn(ctx)
 	if err != nil || cfg == nil {
@@ -102,7 +101,7 @@ func normalizeMainModelAssignment(ctx context.Context, provider, model string) (
 	if !knownProviderNames()[canonical] && !isCustomSlug && strings.Contains(modelIn, "/") {
 		curProvider := ""
 		if curCfg, ok := cfg["model"].(map[string]any); ok {
-			curProvider = pystr.Lower(pystr.Strip(pyOrStr(pyGetAny(curCfg, "provider", ""))))
+			curProvider = strings.ToLower(strings.TrimSpace(pyOrStr(pyGetAny(curCfg, "provider", ""))))
 		}
 		if curProvider != "" && IsAggregatorProvider(modelsNormalizeProvider(curProvider)) {
 			canonical = modelsNormalizeProvider(curProvider)
@@ -127,16 +126,16 @@ func modelsNormalizeProvider(provider string) string {
 	if provider == "" {
 		provider = "openrouter"
 	}
-	normalized := pystr.Lower(pystr.Strip(provider))
+	normalized := strings.ToLower(strings.TrimSpace(provider))
 	if target, ok := CatalogProviderAlias(normalized); ok {
 		return target
 	}
 	return normalized
 }
 
-// ProviderEntryList is ProviderEntries as a list of any, the shape the route options take
+// ProviderEntryList is the deduplicated providers entries of a config document a caller holds as a list of any, the shape the route options take
 func ProviderEntryList(cfg map[string]any) []any {
-	rows := ProviderEntries(cfg)
+	rows := ProviderEntriesOf(config.AsMap(cfg["providers"]))
 	out := make([]any, len(rows))
 	for i, row := range rows {
 		out[i] = row
@@ -146,7 +145,7 @@ func ProviderEntryList(cfg map[string]any) []any {
 
 // Trailing slash and case insensitive URL equality
 func sameEndpoint(a, b any) bool {
-	return pystr.Lower(strings.TrimRight(pystr.Strip(pyOrStr(a)), "/")) == pystr.Lower(strings.TrimRight(pystr.Strip(pyOrStr(b)), "/"))
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(a)), "/")) == strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(b)), "/"))
 }
 
 // A configured provider block naming a different host than the submitted endpoint
@@ -156,13 +155,13 @@ func entryPointsElsewhere(entry map[string]any, baseURL string) bool {
 
 // A bare custom or local pick carrying its own endpoint URL
 func isExplicitCustomEndpoint(provider, baseURL string) bool {
-	return bareCustomSelectors[pystr.Lower(pystr.Strip(provider))] && pystr.Strip(baseURL) != ""
+	return bareCustomSelectors[strings.ToLower(strings.TrimSpace(provider))] && strings.TrimSpace(baseURL) != ""
 }
 
 // Routes a main slot pick through the model switch seeded with the configured route, a refused pick returning ModelAssignmentRejected
 func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provider, model, baseURL, apiKey string, explicitEndpoint *bool) (ModelSwitchResult, error) {
 	modelCfg, _ := cfg["model"].(map[string]any)
-	isBareCustom := bareCustomSelectors[pystr.Lower(pystr.Strip(provider))]
+	isBareCustom := bareCustomSelectors[strings.ToLower(strings.TrimSpace(provider))]
 	explicit := isExplicitCustomEndpoint(provider, baseURL)
 	if explicitEndpoint != nil {
 		explicit = *explicitEndpoint
@@ -176,7 +175,7 @@ func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provid
 		for _, k := range config.MappingKeys(userProviders) {
 			v := userProviders[k]
 			entry, _ := v.(map[string]any)
-			if !(bareCustomSelectors[pystr.Lower(pystr.Strip(k))] && entryPointsElsewhere(entry, baseURL)) {
+			if !(bareCustomSelectors[strings.ToLower(strings.TrimSpace(k))] && entryPointsElsewhere(entry, baseURL)) {
 				assignKey(kept, k, v)
 			}
 		}
@@ -204,7 +203,7 @@ func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provid
 		}
 		return ModelSwitchResult{}, &ModelAssignmentRejected{Msg: detail}
 	}
-	if url := pystr.Strip(baseURL); isBareCustom && url != "" {
+	if url := strings.TrimSpace(baseURL); isBareCustom && url != "" {
 		result.BaseURL = url
 		result.APIMode = switchDetermineAPIMode(ctx, result.TargetProvider, url, "")
 	}
@@ -218,7 +217,7 @@ func applyMainModelAssignment(ctx context.Context, modelCfg any, result ModelSwi
 		return nil, err
 	}
 	out := ApplyModelSelection(modelCfg, result, !fileTooling)
-	if key := pystr.Strip(apiKey); key != "" {
+	if key := strings.TrimSpace(apiKey); key != "" {
 		assignKey(out, "api_key", key)
 	}
 	if err := RemoteModelSelectionGuard(ctx, modelCfg, out); err != nil {
@@ -259,7 +258,7 @@ func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, 
 	if spelled != nil {
 		pointer = spelled["key_env"]
 	}
-	if keyEnv := pystr.Strip(pyOrStr(pointer)); keyEnv != "" {
+	if keyEnv := strings.TrimSpace(pyOrStr(pointer)); keyEnv != "" {
 		assignKey(modelCfg, "key_env", keyEnv)
 		return DropModelKey(ctx, modelCfg, "api_key")
 	}
@@ -271,12 +270,12 @@ func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, 
 
 // Whether base_url is already an endpoint of the inline model block or a providers entry
 func endpointKnownToConfig(cfg map[string]any, baseURL string) bool {
-	wanted := pystr.Lower(strings.TrimRight(pystr.Strip(baseURL), "/"))
+	wanted := strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 	if wanted == "" {
 		return false
 	}
 	matches := func(value any) bool {
-		return pystr.Lower(strings.TrimRight(pystr.Strip(pyOrStr(value)), "/")) == wanted
+		return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(value)), "/")) == wanted
 	}
 	if modelCfg, ok := cfg["model"].(map[string]any); ok && matches(modelCfg["base_url"]) {
 		return true
@@ -308,7 +307,7 @@ func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) [
 	// Every spelling of one providers entry is the same provider
 	providers, _ := cfg["providers"].(map[string]any)
 	identity := func(name string) string {
-		return pystr.Lower(pystr.Strip(PersistedProviderID(ctx, pystr.Strip(name), providers)))
+		return strings.ToLower(strings.TrimSpace(PersistedProviderID(ctx, strings.TrimSpace(name), providers)))
 	}
 	current := identity(newProvider)
 	for _, slot := range auxTaskSlots(ctx) {
@@ -316,8 +315,8 @@ func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) [
 		if !ok {
 			continue
 		}
-		slotProvider := pystr.Strip(pyOrStr(pyGetAny(slotCfg, "provider", "")))
-		lower := pystr.Lower(slotProvider)
+		slotProvider := strings.TrimSpace(pyOrStr(pyGetAny(slotCfg, "provider", "")))
+		lower := strings.ToLower(slotProvider)
 		if slotProvider == "" || lower == "auto" || lower == "main" || identity(slotProvider) == current {
 			continue
 		}
@@ -350,13 +349,13 @@ func prepareMainAssignment(ctx context.Context, cfg map[string]any, provider, mo
 	}
 	explicit := isExplicitCustomEndpoint(provider, baseURL)
 	if explicit {
-		provider, model = pystr.Strip(provider), pystr.Strip(model)
+		provider, model = strings.TrimSpace(provider), strings.TrimSpace(model)
 	} else {
 		provider, model = normalizeMainModelAssignment(ctx, provider, model)
 	}
 	if baseURL == "" {
 		if _, entry := providerEntryOf(ctx, cfg, provider); pyTruthy(entry["base_url"]) {
-			baseURL = pystr.Strip(pyOrStr(entry["base_url"]))
+			baseURL = strings.TrimSpace(pyOrStr(entry["base_url"]))
 		}
 	}
 	result, err := validatedMainModelSelection(ctx, cfg, provider, model, baseURL, apiKey, &explicit)
@@ -382,7 +381,7 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 	baseURL, result := prepared.BaseURL, prepared.Result
 	provider, model = result.TargetProvider, result.NewModel
 	entryKey, providerEntry := providerEntryOf(ctx, cfg, provider)
-	providerLC := pystr.Lower(pystr.Strip(provider))
+	providerLC := strings.ToLower(strings.TrimSpace(provider))
 	endpointAlreadyKnown := bareCustomSelectors[providerLC] && baseURL != "" && endpointKnownToConfig(cfg, baseURL)
 	modelCfg, err := applyMainModelAssignment(ctx, pyGetAny(cfg, "model", map[string]any{}), result, apiKey)
 	if err != nil {

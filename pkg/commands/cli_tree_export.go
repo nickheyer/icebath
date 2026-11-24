@@ -41,7 +41,6 @@ var cliRunRules = map[string]cliRunRule{
 	"gateway install":           {tuigateway.CLIRunAfterExit, reasonServiceGone, nil},
 	"gateway uninstall":         {tuigateway.CLIRunAfterExit, reasonServiceGone, nil},
 	"gateway migrate":           {tuigateway.CLIRunAfterExit, reasonServiceGone, nil},
-	"gateway migrate-legacy":    {tuigateway.CLIRunAfterExit, reasonServiceGone, nil},
 	"gateway run":               {tuigateway.CLIRunInternal, "icebath starts the background service itself.", nil},
 	"gateway ensure":            {tuigateway.CLIRunInternal, reasonPlumbing, nil},
 	"sessions set-journal-mode": {tuigateway.CLIRunAfterExit, reasonStoreOffline, nil},

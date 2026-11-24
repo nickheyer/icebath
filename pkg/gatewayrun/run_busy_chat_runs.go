@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -218,13 +217,4 @@ func destructiveOptoutNote(ctx context.Context, persisted bool) string {
 		return i18n.T(ctx, "gateway.confirm.destructive_optout", "", nil)
 	}
 	return i18n.T(ctx, "gateway.confirm.destructive_optout_save_failed", "", nil)
-}
-
-// Raw config.yaml read fresh from disk for gate lookups, empty when it cannot be loaded
-func (r *GatewayRunner) readUserConfig(ctx context.Context) map[string]any {
-	tree, err := config.Load(home.Dir(ctx), nil)
-	if err != nil || tree == nil {
-		return map[string]any{}
-	}
-	return map[string]any(tree)
 }

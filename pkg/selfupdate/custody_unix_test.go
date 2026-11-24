@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
@@ -46,7 +45,7 @@ func cuGit(t *testing.T, dir string, args ...string) string {
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}
-	return pystr.Strip(string(out))
+	return strings.TrimSpace(string(out))
 }
 
 // A fresh repository under the test's temp dir with one committed file
@@ -222,7 +221,7 @@ func TestCustodyEveryUpdaterGitRunnerForbidsDetachedChildren(t *testing.T) {
 	}
 	for name, run := range runners {
 		for _, key := range []string{"gc.autoDetach", "maintenance.auto"} {
-			if got := pystr.Strip(run([]string{"config", "--get", key})); got != "false" {
+			if got := strings.TrimSpace(run([]string{"config", "--get", key})); got != "false" {
 				t.Errorf("%s may fork a detached gc or maintenance child: %s=%q", name, key, got)
 			}
 		}
@@ -279,7 +278,7 @@ func TestCustodyABackgroundHookNeverKeepsACompletedUpdateLocked(t *testing.T) {
 	merged, err := RunGit(ctx, []string{"git"}, []string{"merge", "--ff-only", target}, ChildOptions{Dir: repo, Capture: true, Text: true, Timeout: 30 * time.Second})
 	lock.Release(ctx)
 	defer func() {
-		if pid, err := strconv.Atoi(pystr.Strip(cuRead(pidFile))); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(cuRead(pidFile))); err == nil {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}()
@@ -319,13 +318,13 @@ func cuAssertFetchDiesWithKilledOwner(t *testing.T, noDeathSignal bool) {
 	}
 	defer func() {
 		_ = owner.Process.Kill()
-		if pid, err := strconv.Atoi(pystr.Strip(cuRead(started + ".self"))); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(cuRead(started + ".self"))); err == nil {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	}()
-	cuWaitFor(t, 15*time.Second, func() bool { return pystr.Strip(cuRead(started)) != "" }, "the fetch never started its upload pack")
-	fetchPID, _ := strconv.Atoi(pystr.Strip(cuRead(started)))
-	if pystr.Strip(cuRead("/proc/"+strconv.Itoa(fetchPID)+"/comm")) != "git" {
+	cuWaitFor(t, 15*time.Second, func() bool { return strings.TrimSpace(cuRead(started)) != "" }, "the fetch never started its upload pack")
+	fetchPID, _ := strconv.Atoi(strings.TrimSpace(cuRead(started)))
+	if strings.TrimSpace(cuRead("/proc/"+strconv.Itoa(fetchPID)+"/comm")) != "git" {
 		fetchPID = cuParent(fetchPID)
 	}
 	if !strings.Contains(cuRead("/proc/"+strconv.Itoa(fetchPID)+"/cmdline"), "git") {
@@ -639,7 +638,7 @@ func cuFetchRig(t *testing.T) (string, string, string) {
 	helper := filepath.Join(tmp, "helper.sh")
 	cuWrite(t, helper, "#!/bin/sh\necho $$ > "+helperPID+".tmp && mv "+helperPID+".tmp "+helperPID+"\nsleep 60\n", 0o755)
 	t.Cleanup(func() {
-		if pid, err := strconv.Atoi(pystr.Strip(cuRead(helperPID))); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(cuRead(helperPID))); err == nil {
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 		}
 	})
@@ -649,7 +648,7 @@ func cuFetchRig(t *testing.T) (string, string, string) {
 func cuWaitPID(t *testing.T, path string) int {
 	t.Helper()
 	cuWaitFor(t, 20*time.Second, func() bool { return cuExists(path) }, "the fetch never started its helper")
-	pid, err := strconv.Atoi(pystr.Strip(cuRead(path)))
+	pid, err := strconv.Atoi(strings.TrimSpace(cuRead(path)))
 	if err != nil {
 		t.Fatal(err)
 	}

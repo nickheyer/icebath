@@ -50,7 +50,7 @@ func extractPayloadRecord(payload map[string]any) map[string]any {
 func valueOf(candidates ...any) string {
 	for _, c := range candidates {
 		if s, ok := c.(string); ok {
-			if s = pystr.Strip(s); s != "" {
+			if s = strings.TrimSpace(s); s != "" {
 				return s
 			}
 		}

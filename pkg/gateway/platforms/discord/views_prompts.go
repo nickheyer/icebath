@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -15,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -639,7 +640,7 @@ func clarifyButtonLabel(index int, choice string) string {
 	if gateway.UTF16Len(choice) <= budget {
 		return prefix + choice
 	}
-	truncated := []rune(pystr.Rstrip(gateway.PrefixWithinUTF16Limit(choice, max(0, budget-gateway.UTF16Len(discordEllipsis)))))
+	truncated := []rune(strings.TrimRightFunc(gateway.PrefixWithinUTF16Limit(choice, max(0, budget-gateway.UTF16Len(discordEllipsis))), unicode.IsSpace))
 	cutAt := -1
 	if space := lastRuneIndex(truncated, ' '); space >= len(truncated)/2 {
 		cutAt = space
@@ -656,7 +657,7 @@ func clarifyButtonLabel(index int, choice string) string {
 	if cutAt > 0 {
 		truncated = truncated[:cutAt]
 	}
-	return prefix + pystr.Rstrip(string(truncated)) + discordEllipsis
+	return prefix + strings.TrimRightFunc(string(truncated), unicode.IsSpace) + discordEllipsis
 }
 
 // Disables the buttons and stamps the card, a bare defer when the edit fails, stopping the view either way

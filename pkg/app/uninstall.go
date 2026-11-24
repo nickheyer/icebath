@@ -93,7 +93,7 @@ func uninstallPrompt(w io.Writer, text string) (string, bool) {
 		fmt.Fprintln(w, "Cancelled.")
 		return "", false
 	}
-	return pystr.Lower(pystr.Strip(answer)), true
+	return strings.ToLower(strings.TrimSpace(answer)), true
 }
 
 // Prints the uninstall cancelled line after a blank line
@@ -329,7 +329,7 @@ func uninstallGatewayService(ctx context.Context, w io.Writer) bool {
 
 // subprocess.run with captured output and no check, the OSError or TimeoutExpired it raises returned
 func runUninstallCommand(argv []string, timeout time.Duration) error {
-	_, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Timeout: timeout})
+	_, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Timeout: timeout, Env: gateway.UserSystemdEnv()})
 	return err
 }
 

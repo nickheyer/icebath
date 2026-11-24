@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubMixesRegistry = &handlerRegistry{}
@@ -47,7 +46,7 @@ func mixListing(ctx context.Context) (tuigateway.MixesListResult, error) {
 }
 
 // Saved mixes of the profile for the model mixes screen
-func mixesList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func mixesList(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.MixesList.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -59,7 +58,7 @@ func mixesList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Sess
 }
 
 // One change to the saved mixes, answered with the mixes after it
-func mixesChange(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func mixesChange(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.MixesChange.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

@@ -87,7 +87,7 @@ func clearProviderEnv(t *testing.T) {
 	}
 }
 
-// Resolver over a temporary home whose config and .env are given
+// Resolver over a temporary home whose config.yaml and .env are given
 func testResolver(t *testing.T, cfg map[string]any, creds CredentialSource, dotenv string) *resolver {
 	t.Helper()
 	clearProviderEnv(t)
@@ -102,7 +102,8 @@ func testResolver(t *testing.T, cfg map[string]any, creds CredentialSource, dote
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
-	return newResolver(context.Background(), config.Tree(cfg), config.NewSecrets(h), h, creds)
+	writeConfig(t, h, cfg)
+	return newResolver(context.Background(), config.NewSecrets(h), h, creds)
 }
 
 func mustResolve(t *testing.T, r *resolver, requested, apiKey, baseURL, model string) *Runtime {
@@ -624,7 +625,7 @@ func TestNamedCustomProviderUsesSavedCredentials(t *testing.T) {
 	}
 	cfg = map[string]any{"providers": map[string]any{"local": map[string]any{"name": "Local", "base_url": "http://1.2.3.4:1234/v1", "capabilities": map[string]any{"openai_native_compaction": true, "invalid-value": "yes", "42": true}}}}
 	r = testResolver(t, cfg, &fakeCreds{}, "")
-	entry := r.getNamedCustomProvider("local", nil, true)
+	entry := r.getNamedCustomProvider("local", r.providers(), true)
 	if entry == nil || !reflect.DeepEqual(entry["capabilities"], map[string]bool{"openai_native_compaction": true, "42": true}) {
 		t.Fatalf("capabilities filtered: %v", entry)
 	}
@@ -716,7 +717,7 @@ func TestNamedCustomProvidersOnOneGatewayKeepOwnCredentials(t *testing.T) {
 		t.Fatalf("no leak to local: %+v", rt)
 	}
 	r = testResolver(t, map[string]any{"providers": map[string]any{"kimi": map[string]any{"base_url": "https://my-custom-kimi.example.com/v1", "api_key": "my-kimi-key"}}}, &fakeCreds{}, "")
-	entry := r.getNamedCustomProvider("kimi", nil, true)
+	entry := r.getNamedCustomProvider("kimi", r.providers(), true)
 	if entry == nil || entry["base_url"] != "https://my-custom-kimi.example.com/v1" || entry["api_key"] != "my-kimi-key" {
 		t.Fatalf("alias named entry wins over builtin alias: %v", entry)
 	}
@@ -1184,11 +1185,11 @@ func namedProfileResolver(t *testing.T, keyEnv bool, dotenv string, modelExtra m
 	if keyEnv {
 		entry["key_env"] = "CANARY_KEY"
 	}
-	cfg := config.Tree{"model": model, "providers": map[string]any{"fakeup": entry}}
+	writeConfig(t, h, map[string]any{"model": model, "providers": map[string]any{"fakeup": entry}})
 	SetMultiplexActive(true)
 	t.Cleanup(func() { SetMultiplexActive(false) })
 	ctx := WithSecretScope(context.Background(), BuildProfileSecretScope(h), h)
-	return newResolver(ctx, cfg, config.NewSecrets(h), h, &fakeCreds{})
+	return newResolver(ctx, config.NewSecrets(h), h, &fakeCreds{})
 }
 
 func TestDeclaredKeyMissingFromProfileScopeFailsBeforeTheRequest(t *testing.T) {
@@ -1284,7 +1285,8 @@ func TestResolveMainRouteAndFallbackChain(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", h)
 	secrets := config.NewSecrets(h)
-	r := newResolver(context.Background(), config.Tree(cfg), secrets, h, &fakeCreds{})
+	writeConfig(t, h, cfg)
+	r := newResolver(context.Background(), secrets, h, &fakeCreds{})
 	if route := mustResolve(t, r, "", "", "", "").Route(); route.Provider != "deepseek" || route.APIKey != "sk-deepseek-1234" {
 		t.Fatalf("main: %+v", route)
 	}
@@ -1296,7 +1298,8 @@ func TestResolveMainRouteAndFallbackChain(t *testing.T) {
 		t.Fatalf("an unknown provider is an AuthError and walks the chain: %+v %v", rt, err)
 	}
 	cfg["providers"].(map[string]any)["deepseek"] = map[string]any{"enabled": false}
-	r = newResolver(context.Background(), config.Tree(cfg), secrets, h, &fakeCreds{})
+	writeConfig(t, h, cfg)
+	r = newResolver(context.Background(), secrets, h, &fakeCreds{})
 	if _, _, err := r.ResolveRuntimeWithFallback("deepseek", "", "", ""); err == nil || !strings.Contains(err.Error(), "disabled in config") {
 		t.Fatalf("a plain misconfiguration error propagates: %v", err)
 	}

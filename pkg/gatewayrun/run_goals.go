@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -228,7 +229,7 @@ func (r *GatewayRunner) runPostTurnHooks(ctx context.Context, agentResult any, s
 		run   func(ctx context.Context, entry *gateway.SessionEntry, source *gateway.SessionSource, finalResponse string) error
 	}
 	hooks := []postTurnHook{{"loop completion", r.postTurnLoopCompletion}}
-	if pystr.Strip(finalText) != "" && !failed {
+	if strings.TrimSpace(finalText) != "" && !failed {
 		hooks = append([]postTurnHook{{"goal continuation", r.postTurnGoalContinuation}}, hooks...)
 	}
 	finalResponse := finalText
@@ -285,11 +286,11 @@ func finalTextForPostTurnHooks(agentResult any, event *gateway.MessageEvent) str
 	case string:
 		text = typed
 	}
-	if pystr.Strip(text) != "" {
+	if strings.TrimSpace(text) != "" {
 		return text
 	}
 	if event != nil {
-		if streamed := event.StreamedFinalResponse(); streamed != nil && pystr.Strip(*streamed) != "" {
+		if streamed := event.StreamedFinalResponse(); streamed != nil && strings.TrimSpace(*streamed) != "" {
 			return *streamed
 		}
 	}
@@ -417,7 +418,7 @@ func (r *GatewayRunner) loopWakeupInject(ctx context.Context, mgr *agent.LoopMan
 		ticks = fmt.Sprint(state.TicksFired)
 	}
 	pkgLog().Info(fmt.Sprintf("loop wakeup #%s — injecting for %s chat=%s thread=%s", ticks, platformName, source.ChatID, derefOrNoneText(source.ThreadID)))
-	slash := strings.HasPrefix(pystr.Lstrip(wakeup), "/")
+	slash := strings.HasPrefix(strings.TrimLeftFunc(wakeup, unicode.IsSpace), "/")
 	admitted := false
 	if !slash {
 		var err error

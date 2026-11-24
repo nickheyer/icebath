@@ -284,7 +284,7 @@ func NewAccessPolicy(dmPolicy string, dmAllowFrom []string, groupPolicy string, 
 
 // Strict DM authorization of the stripped sender, pairing never implying access
 func (p *AccessPolicy) IsDMAllowed(ctx context.Context, senderID string) (bool, error) {
-	return p.OwnAccessPolicyMixin.IsDMAllowed(ctx, pystr.Strip(senderID))
+	return p.OwnAccessPolicyMixin.IsDMAllowed(ctx, strings.TrimSpace(senderID))
 }
 
 // Whether a DM may reach gateway intake, the pairing handshake path included
@@ -301,7 +301,7 @@ func (p *AccessPolicy) IsGroupAllowed(ctx context.Context, groupCode any) (bool,
 	if err != nil {
 		return false, err
 	}
-	return p.OwnAccessPolicyMixin.IsGroupAllowed(ctx, pystr.Strip(code), "")
+	return p.OwnAccessPolicyMixin.IsGroupAllowed(ctx, strings.TrimSpace(code), "")
 }
 
 // AccessGuardMiddleware is the platform level DM and group access filter

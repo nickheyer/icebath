@@ -1,12 +1,13 @@
 package telegram
 
 import (
+	"unicode"
+
 	"github.com/go-telegram/bot/models"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Message fields the group addressing helpers read, a nil pointer or nil value standing for an absent attribute
@@ -72,7 +73,7 @@ func isOtherParticipant(host ContextHost, sourceText string, entity MessageEntit
 		}
 		return entity.User != nil && !pyrepr.Equal(entity.User.ID, botID)
 	}
-	handle := pystr.Lower(pystr.LstripChars(pystr.Strip(host.EntitySpan(sourceText, entity)), "@"))
+	handle := strings.ToLower(strings.TrimLeft(strings.TrimSpace(host.EntitySpan(sourceText, entity)), "@"))
 	return handle != "" && handle != host.CurrentBotUsername()
 }
 
@@ -89,7 +90,7 @@ func MentionsOtherParticipants(host ContextHost, message *ContextMessage) bool {
 // Reports whether the text opens with a mention entity naming someone other than this bot after whitespace
 func StartsWithOtherParticipantMention(host ContextHost, message *ContextMessage) bool {
 	for _, se := range mentionEntities(host, message) {
-		lead := utf8.RuneCountInString(se.text) - utf8.RuneCountInString(pystr.Lstrip(se.text))
+		lead := utf8.RuneCountInString(se.text) - utf8.RuneCountInString(strings.TrimLeftFunc(se.text, unicode.IsSpace))
 		if pyrepr.Equal(se.entity.Offset, lead) && isOtherParticipant(host, se.text, se.entity) {
 			return true
 		}
@@ -125,7 +126,7 @@ func GroupReplyExpected(host ContextHost, message *ContextMessage, chatType stri
 		return nil
 	}
 	text := firstText(message.Text, message.Caption)
-	if strings.HasPrefix(pystr.Lstrip(text), "/") || host.IsReplyToBot(message) || host.MessageMentionsBot(message) ||
+	if strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "/") || host.IsReplyToBot(message) || host.MessageMentionsBot(message) ||
 		host.MessageMatchesMentionPatterns(message) {
 		return &yes
 	}

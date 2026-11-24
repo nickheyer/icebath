@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -50,98 +50,42 @@ func sizeFor(aspect string) string {
 	return openAISizes["square"]
 }
 
-// Config and .env of the profile home the context binds, read when a provider method gets no call environment
+// Home and .env of the profile the context binds, for a provider method that gets no call environment
 func pluginEnv(ctx context.Context) *tools.Env {
 	h := home.Dir(ctx)
-	secrets := config.NewSecrets(h)
-	cfg, err := config.LoadContext(ctx, h, secrets.Lookup())
-	if err != nil {
-		cfg = config.Tree{}
-	}
-	return &tools.Env{Home: h, Config: cfg, Secrets: secrets}
+	return &tools.Env{Home: h, Secrets: config.NewSecrets(h)}
 }
 
-// Process environment value without trimming, the .env file first
-func rawEnvValue(env *tools.Env, name string) string {
-	if env != nil && env.Secrets != nil {
-		return env.Secrets.String(name)
-	}
-	return os.Getenv(name)
-}
-
-// The image_gen section or one of its subsections, empty when absent or not a mapping
-func loadImageGenConfig(env *tools.Env, sub string) map[string]any {
-	sec, _ := cfgOf(env)["image_gen"].(map[string]any)
-	if sec == nil {
-		if t, ok := cfgOf(env)["image_gen"].(config.Tree); ok {
-			sec = t
-		}
-	}
-	if sub != "" && sec != nil {
-		switch s := sec[sub].(type) {
-		case map[string]any:
-			sec = s
-		case config.Tree:
-			sec = s
-		default:
-			sec = nil
-		}
-	}
-	if sec == nil {
-		return map[string]any{}
-	}
-	return sec
-}
-
-// Options of resolveStaticModel, ExcludeTopLevel skipping image_gen.model and Config replacing the loaded section
+// Options of resolveStaticModel: Scoped is the provider's own model setting, ExcludeTopLevel skips image_gen.model
 type staticModelOptions struct {
-	EnvVar, ConfigKey, Explicit  string
+	Scoped                       *settings.String
+	Explicit                     string
 	ExcludeTopLevel, Passthrough bool
-	Config                       map[string]any
 }
 
-// First known model id among explicit, env var, scoped and top level config, else the default, unknown ids passing through when allowed
+// First known model id among explicit, the provider's own setting and image_gen.model, else the default, an unknown id of the provider's own setting passing through when allowed
 func resolveStaticModel(env *tools.Env, models imageModelCatalog, def string, o staticModelOptions) (string, map[string]any) {
 	if e := strings.TrimSpace(o.Explicit); e != "" {
 		if m, ok := models.get(e); ok {
 			return e, m
 		}
 	}
-	envOverride := rawEnvValue(env, o.EnvVar)
-	if envOverride != "" {
-		if m, ok := models.get(envOverride); ok {
-			return envOverride, m
-		}
+	ctx := tools.WithEnvHome(context.Background(), env)
+	scoped := ""
+	if o.Scoped != nil {
+		scoped = strings.TrimSpace(o.Scoped.Get(ctx))
 	}
-	cfg := o.Config
-	if cfg == nil {
-		cfg = loadImageGenConfig(env, "")
-	}
-	var scopedModel any
-	switch scoped := cfg[o.ConfigKey].(type) {
-	case map[string]any:
-		scopedModel = scoped["model"]
-	case config.Tree:
-		scopedModel = scoped["model"]
-	}
-	candidates := []any{scopedModel}
+	candidates := []string{scoped}
 	if !o.ExcludeTopLevel {
-		candidates = append(candidates, cfg["model"])
+		candidates = append(candidates, strings.TrimSpace(settings.ImageGenModel.Get(ctx)))
 	}
 	for _, c := range candidates {
-		if s, ok := c.(string); ok {
-			if m, ok := models.get(s); ok {
-				return s, m
-			}
+		if m, ok := models.get(c); c != "" && ok {
+			return c, m
 		}
 	}
-	if o.Passthrough {
-		for _, c := range []any{envOverride, scopedModel} {
-			if s, ok := c.(string); ok && strings.TrimSpace(s) != "" {
-				custom := strings.TrimSpace(s)
-				return custom, map[string]any{"display": custom, "api_model": custom, "quality": nil}
-			}
-		}
+	if o.Passthrough && scoped != "" {
+		return scoped, map[string]any{"display": scoped, "api_model": scoped, "quality": nil}
 	}
 	m, _ := models.get(def)
 	return def, m

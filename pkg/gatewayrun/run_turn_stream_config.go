@@ -3,15 +3,12 @@ package gatewayrun
 import (
 	"context"
 	"errors"
-	"os"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -63,27 +60,16 @@ func (r *GatewayRunner) resolveEnabledToolsetsForSource(ctx context.Context, use
 // Enabled and disabled toolsets of a run on source, disabled nil when the config lists none
 func (r *GatewayRunner) resolveTurnToolsets(ctx context.Context, userConfig map[string]any, source *gateway.SessionSource, platformKey string) ([]string, []string) {
 	enabled := r.resolveEnabledToolsetsForSource(ctx, userConfig, source, platformKey)
-	agentCfg, _ := userConfig["agent"].(map[string]any)
-	disabled := tools.ParseConfigStringList(agentCfg["disabled_toolsets"])
+	disabled := settings.AgentDisabledToolsets.Strings(settings.WithFrozen(ctx, userConfig))
 	if len(disabled) == 0 {
 		disabled = nil
 	}
 	return enabled, disabled
 }
 
-// Proxy URL of proxy mode, the profile scoped secret first and the gateway config second, empty when off
+// Proxy URL of proxy mode for the profile ctx serves, empty when off
 func (r *GatewayRunner) getProxyURL(ctx context.Context) string {
-	url, _, err := provider.GetSecret(ctx, "GATEWAY_PROXY_URL")
-	var unscoped *provider.UnscopedSecretError
-	if errors.As(err, &unscoped) {
-		url = os.Getenv("GATEWAY_PROXY_URL")
-	}
-	url = pystr.Strip(url)
-	if url == "" {
-		gatewayCfg, _ := gateway.LoadGatewayConfigMap(ctx, "")["gateway"].(map[string]any)
-		url = pystr.Strip(pyrepr.Str(pyrepr.Or(gatewayCfg["proxy_url"], "")))
-	}
-	return strings.TrimRight(url, "/")
+	return strings.TrimRight(strings.TrimSpace(settings.GatewayProxyUrl.Get(gateway.SettingsContext(ctx))), "/")
 }
 
 // Errors the stream consumer config raises for a platform that cannot stream

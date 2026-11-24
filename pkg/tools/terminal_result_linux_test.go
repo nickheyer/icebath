@@ -6,16 +6,12 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 func TestLargeProcessOutputIsBoundedBeforeSudoAndPluginHooks(t *testing.T) {
 	dir := t.TempDir()
 	env := newTerminalTestEnv(t, dir)
-	env.Config = config.Tree{"tool_output": map[string]any{"max_bytes": 10000}}
-	ResetToolOutputLimitsCache()
-	defer ResetToolOutputLimitsCache()
+	writeHomeConfig(t, env, "tool_output:\n  max_bytes: 10000\n")
 	var hookInputs []string
 	TerminalOutputTransformHook = func(_ context.Context, payload map[string]any) []any {
 		hookInputs = append(hookInputs, payload["output"].(string))

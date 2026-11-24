@@ -73,8 +73,6 @@ func envEnablement(ctx context.Context) map[string]any {
 	extra, err := gateway.SeedExtraFromEnv(ctx, []gateway.EnvSeedRow{
 		{Env: "GOOGLE_CHAT_HTTP_EVENTS_AUDIENCE", Key: "http_events_audience"},
 		{Env: "GOOGLE_CHAT_HTTP_EVENTS_SERVICE_ACCOUNT_EMAIL", Key: "http_events_service_account_email"},
-		{Env: "GOOGLE_CHAT_MAX_MESSAGES", Key: "max_messages"}, {Env: "GOOGLE_CHAT_MAX_BYTES", Key: "max_bytes"},
-		{Env: "GOOGLE_CHAT_BOOTSTRAP_SPACES", Key: "bootstrap_spaces"}, {Env: "GOOGLE_CHAT_DEBUG_RAW", Key: "debug_raw"},
 	}, "GOOGLE_CHAT_HOME_CHANNEL", "")
 	if err != nil {
 		panic(err)

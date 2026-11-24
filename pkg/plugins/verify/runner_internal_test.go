@@ -3,14 +3,15 @@ package verify
 import (
 	"context"
 	"errors"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func TestManifest(t *testing.T) {
@@ -288,51 +289,41 @@ func TestTerminateSharedGroupChildGetsTerminateOnly(t *testing.T) {
 }
 
 func TestHooks(t *testing.T) {
-	nudges := func(cfg map[string]any) int {
-		n, err := MaxVerifyNudges(cfg)
-		if err != nil {
+	profile := func(body string) context.Context {
+		h := t.TempDir()
+		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		return n
+		return home.WithOverride(context.Background(), h)
 	}
-	agent := func(k string, v any) map[string]any { return map[string]any{"agent": map[string]any{k: v}} }
+	nudges := func(value string) int {
+		return MaxVerifyNudges(profile("agent:\n  max_verify_nudges: " + value + "\n"))
+	}
+	guidance := func(body string) string { return CodingVerifyGuidance(profile(body)) }
 	t.Run("default_when_unset", func(t *testing.T) {
-		eq(t, "empty", nudges(map[string]any{}), DefaultMaxVerifyNudges)
-		eq(t, "agent", nudges(map[string]any{"agent": map[string]any{}}), DefaultMaxVerifyNudges)
+		eq(t, "empty", MaxVerifyNudges(profile("{}\n")), settings.AgentMaxVerifyNudges.Default)
+		eq(t, "agent", MaxVerifyNudges(profile("agent: {}\n")), settings.AgentMaxVerifyNudges.Default)
 	})
 	t.Run("reads_and_coerces", func(t *testing.T) {
-		eq(t, "5", nudges(agent("max_verify_nudges", 5)), 5)
-		eq(t, "'2'", nudges(agent("max_verify_nudges", "2")), 2)
-		eq(t, "-1", nudges(agent("max_verify_nudges", -1)), 0)
-		eq(t, "2.9", nudges(agent("max_verify_nudges", 2.9)), 2)
+		eq(t, "5", nudges("5"), 5)
+		eq(t, "'2'", nudges("'2'"), 2)
+		eq(t, "-1", nudges("-1"), 0)
 	})
 	t.Run("bad_value_falls_back", func(t *testing.T) {
-		eq(t, "x", nudges(agent("max_verify_nudges", "x")), DefaultMaxVerifyNudges)
-	})
-	t.Run("infinity_raises_overflow", func(t *testing.T) {
-		inf := math.Inf(1)
-		if _, err := MaxVerifyNudges(agent("max_verify_nudges", inf)); err == nil || err.Error() != "cannot convert float infinity to integer" {
-			t.Fatalf("err %v", err)
-		}
-	})
-	t.Run("loads_config_when_none_given", func(t *testing.T) {
-		prev := loadConfig
-		t.Cleanup(func() { loadConfig = prev })
-		loadConfig = func() (map[string]any, error) { return agent("max_verify_nudges", 7), nil }
-		eq(t, "loaded", nudges(nil), 7)
-		loadConfig = func() (map[string]any, error) { return nil, errors.New("broken") }
-		eq(t, "broken", nudges(nil), DefaultMaxVerifyNudges)
+		eq(t, "x", nudges("x"), settings.AgentMaxVerifyNudges.Default)
+		eq(t, "2.9", nudges("2.9"), settings.AgentMaxVerifyNudges.Default)
+		eq(t, "infinity", nudges(".inf"), settings.AgentMaxVerifyNudges.Default)
 	})
 	t.Run("guidance_enabled_by_default", func(t *testing.T) {
-		eq(t, "empty", CodingVerifyGuidance(map[string]any{}), CodingVerifyGuidanceText)
-		eq(t, "agent", CodingVerifyGuidance(map[string]any{"agent": map[string]any{}}), CodingVerifyGuidanceText)
+		eq(t, "empty", guidance("{}\n"), CodingVerifyGuidanceText)
+		eq(t, "agent", guidance("agent: {}\n"), CodingVerifyGuidanceText)
 	})
 	t.Run("guidance_reads_truthy_config", func(t *testing.T) {
-		eq(t, "yes", CodingVerifyGuidance(agent("verify_guidance", "yes")), CodingVerifyGuidanceText)
+		eq(t, "yes", guidance("agent:\n  verify_guidance: 'yes'\n"), CodingVerifyGuidanceText)
 	})
 	t.Run("guidance_opt_out_via_config", func(t *testing.T) {
-		eq(t, "false", CodingVerifyGuidance(agent("verify_guidance", false)), "")
-		eq(t, "null", CodingVerifyGuidance(agent("verify_guidance", nil)), CodingVerifyGuidanceText)
+		eq(t, "false", guidance("agent:\n  verify_guidance: false\n"), "")
+		eq(t, "null", guidance("agent:\n  verify_guidance: null\n"), CodingVerifyGuidanceText)
 	})
 }
 

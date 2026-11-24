@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -88,7 +89,7 @@ func HeadSHA(ctx context.Context, root string) string {
 	if result == nil || result.ReturnCode != 0 {
 		return ""
 	}
-	return pystr.Strip(result.Stdout)
+	return strings.TrimSpace(result.Stdout)
 }
 
 // Sorted tracked paths differing from HEAD in index or worktree, false when git cannot say
@@ -266,7 +267,7 @@ func pathsAMoveCouldWrite(ctx context.Context, root string) (map[string]bool, bo
 	if where == nil || where.ReturnCode != 0 || refs == nil || refs.ReturnCode != 0 {
 		return nil, false
 	}
-	fetchHead := pystr.Strip(where.Stdout)
+	fetchHead := strings.TrimSpace(where.Stdout)
 	if !filepath.IsAbs(fetchHead) {
 		fetchHead = filepath.Join(root, fetchHead)
 	}
@@ -430,8 +431,7 @@ func landedTorn(ctx context.Context, root, head string, changes []string, landed
 
 // Whether stale dependencies at a moved HEAD hold the set, only where the next launch syncs them
 func depsHoldResume(ctx context.Context, root string) (holds bool) {
-	switch pystr.Lower(os.Getenv("ICEBATH_DISABLE_LAZY_INSTALLS")) {
-	case "1", "true", "yes":
+	if !settings.SecurityAllowLazyInstalls.Get(ctx) {
 		return false
 	}
 	if !pathExists(filepath.Join(root, ".git")) || !isRegular(filepath.Join(root, "pyproject.toml")) {

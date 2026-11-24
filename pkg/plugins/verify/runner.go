@@ -499,7 +499,7 @@ func composeLiveStateReasonReal(root string) (string, error) {
 		if text == "" {
 			text = res.Stdout
 		}
-		detail := pystr.Splitlines(pystr.Strip(text), false)
+		detail := pystr.Splitlines(strings.TrimSpace(text), false)
 		last := "no output"
 		if len(detail) > 0 {
 			last = detail[len(detail)-1]
@@ -508,7 +508,7 @@ func composeLiveStateReasonReal(root string) (string, error) {
 	}
 	var names []string
 	for _, line := range pystr.Splitlines(res.Stdout, false) {
-		if pystr.Strip(line) != "" {
+		if strings.TrimSpace(line) != "" {
 			names = append(names, line)
 		}
 	}

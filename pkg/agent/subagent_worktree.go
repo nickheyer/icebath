@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -62,12 +62,7 @@ func subagentRunGit(args []string, cwd string, env map[string]string) (gitRunRes
 
 // Reports a local terminal backend where host worktrees are visible to tools
 func subagentLocalBackendActive(ctx context.Context) bool {
-	terminal, _ := provider.LoadConfigSafe(ctx, home.Dir(ctx))["terminal"].(map[string]any)
-	backend := "local"
-	if b := terminal["backend"]; pyTruthy(b) {
-		backend = fmt.Sprint(b)
-	}
-	b := strings.ToLower(pystr.Strip(backend))
+	b := strings.ToLower(strings.TrimSpace(settings.WhereCommandsRun.Get(ctx)))
 	return b == "" || b == "local"
 }
 
@@ -296,8 +291,8 @@ func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Objec
 
 // Snapshots a finished tree with work into an archive ref and removes it, keeping the branch
 func archiveFinishedWorktree(info map[string]string, payload *pyjson.Object) *pyjson.Object {
-	settings := tools.SweepSettings()
-	if !settings.ArchiveDirty {
+	sweep := tools.SweepSettings()
+	if !sweep.ArchiveDirty {
 		return payload
 	}
 	path := info["path"]
@@ -309,7 +304,7 @@ func archiveFinishedWorktree(info map[string]string, payload *pyjson.Object) *py
 	if repoRoot == "" {
 		repoRoot = path
 	}
-	res, err := tools.ArchiveThenRemove(repoRoot, path, "subagent finished", settings.ArchiveMaxFileMB, false, nil, true, []int{os.Getpid()})
+	res, err := tools.ArchiveThenRemove(repoRoot, path, "subagent finished", sweep.ArchiveMaxFileMB, false, nil, true, []int{os.Getpid()})
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("subagent worktree: archive failed, keeping %s: %v", path, err))
 		return payload

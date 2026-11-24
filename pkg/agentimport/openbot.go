@@ -265,7 +265,7 @@ func customCron(schedule *pyjson.Object) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	expression := pystr.Strip(pyStr(e))
+	expression := strings.TrimSpace(pyStr(e))
 	for _, f := range pystr.SplitWhitespace(expression, -1) {
 		if reMatch(bareStepRe, f) {
 			return "", false
@@ -597,7 +597,7 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 	for _, row := range rows {
 		name := ""
 		if colTruthy(row["name"]) {
-			name = pystr.Strip(colStr(row["name"]))
+			name = strings.TrimSpace(colStr(row["name"]))
 		}
 		if name == "" {
 			continue

@@ -1,6 +1,8 @@
 package home
 
 import (
+	"strings"
+
 	"context"
 	"os"
 	"runtime"
@@ -31,12 +33,12 @@ func SocketSafeTmpdir() (string, error) {
 func ApplyScratchTmpEnv(ctx context.Context, env map[string]string) bool {
 	ours := env[ScratchDirMarkerEnv]
 	for _, key := range ScratchTmpEnvVars {
-		if v := pystr.Strip(env[key]); v != "" && v != ours {
+		if v := strings.TrimSpace(env[key]); v != "" && v != ours {
 			return false
 		}
 	}
 	var base string
-	if h := pystr.Strip(env["ICEBATH_HOME"]); h != "" {
+	if h := strings.TrimSpace(env["ICEBATH_HOME"]); h != "" {
 		base = expand(h)
 	} else {
 		var err error

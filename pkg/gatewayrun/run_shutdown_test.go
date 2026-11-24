@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Relay adapter recording dormancy calls, refusing the going idle ack
@@ -63,7 +64,7 @@ func relayOnlyConfig() *gateway.GatewayConfig {
 
 func TestScaleToZeroGateAccountsForSecondaryProfileDirectAdapter(t *testing.T) {
 	t.Setenv(home.EnvHome, t.TempDir())
-	t.Setenv(gateway.ScaleToZeroEnv, "1")
+	t.Setenv(settings.GatewayScaleToZeroEnabled.Env, "1")
 	t.Setenv("GATEWAY_RELAY_WAKE_URL", "https://wake.example.test/instance")
 	r := allocGatewayRunner()
 	r.config = relayOnlyConfig()
@@ -220,7 +221,7 @@ func TestRecentInboundKeepsGatewayAwake(t *testing.T) {
 func armRunner(t *testing.T, states map[gateway.Platform]bool) *GatewayRunner {
 	t.Helper()
 	t.Setenv(home.EnvHome, t.TempDir())
-	t.Setenv(gateway.ScaleToZeroEnv, "1")
+	t.Setenv(settings.GatewayScaleToZeroEnabled.Env, "1")
 	t.Setenv("GATEWAY_RELAY_WAKE_URL", "https://wake.example")
 	r := allocGatewayRunner()
 	r.config = &gateway.GatewayConfig{Platforms: map[gateway.Platform]*gateway.PlatformConfig{}}

@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const DefaultGraphBaseURL = "https://graph.microsoft.com/v1.0"
@@ -513,7 +512,7 @@ func buildGraphAPIError(method, rawURL string, resp *pyhttpx.Response) *Microsof
 		detail, ok = FormatGraphError(get("error"))
 	}
 	if !ok {
-		detail = pystr.Strip(resp.Text())
+		detail = strings.TrimSpace(resp.Text())
 		if detail == "" {
 			detail = "unknown error"
 		}

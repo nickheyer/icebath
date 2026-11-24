@@ -65,12 +65,16 @@ func sdkProviderEnv(t *testing.T, dotenv string, settings map[string]any) *Env {
 			t.Fatal(err)
 		}
 	}
-	cfg := config.Defaults()
+	env := &Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
+	doc := config.Tree{}
 	for k, v := range settings {
-		cfg.Set(k, v)
+		if err := doc.Set(k, v); err != nil {
+			t.Fatal(err)
+		}
 	}
+	writeHomeConfigDoc(t, env, doc)
 	resetSDKClientSlots(t)
-	return &Env{Home: h, Config: cfg, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
+	return env
 }
 
 // Empties every SDK client slot before and after the test
@@ -587,11 +591,11 @@ func TestSDKProviderResolutionOrder(t *testing.T) {
 	if p == nil || p.Name() != want {
 		t.Fatalf("keyless fallback %v want %s", p, want)
 	}
-	env.Config.Set("web.keyless_fallback", false)
+	setHomeConfigKey(t, env, "web.keyless_fallback", false)
 	if p := activeSearchProvider(env); p != nil {
 		t.Fatalf("keyless disabled %v", p.Name())
 	}
-	env.Config.Set("web.keyless_fallback", true)
+	setHomeConfigKey(t, env, "web.keyless_fallback", true)
 	t.Setenv("EXA_API_KEY", "sk-real")
 	if p := activeSearchProvider(env); p == nil || p.Name() != "exa" {
 		t.Fatalf("keyed %v", p)

@@ -153,6 +153,8 @@ type Meta struct {
 	Slash string
 	// One documented env override from the pre config allowlist
 	Env string
+	// The env override of an on or off setting says the opposite: on there turns the setting off
+	EnvInvert bool
 	// Extra check of a coerced value, a one line error
 	Validate func(value any) error
 	// Other keys written in the same change so their existing readers follow
@@ -209,6 +211,14 @@ func WithSession(ctx context.Context, sessionID string) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, sessionCtxKey{}, sessionID)
+}
+
+// Context whose reads leave out the session ctx belongs to, answering what the profile gives a session that chose nothing itself
+func WithoutSession(ctx context.Context) context.Context {
+	if SessionFrom(ctx) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, sessionCtxKey{}, "")
 }
 
 // Session a context belongs to, empty when none

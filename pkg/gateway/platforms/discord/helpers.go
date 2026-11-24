@@ -450,61 +450,32 @@ func looksLikeNonconversationalHistoryMessage(content string) bool {
 
 // Strips pasted user prefixes and mention brackets to a bare id or username
 func cleanDiscordID(entry string) string {
-	entry = pystr.Strip(entry)
+	entry = strings.TrimSpace(entry)
 	if strings.HasPrefix(entry, "<@") && strings.HasSuffix(entry, ">") {
 		entry = strings.TrimRight(strings.TrimLeft(entry, "<@!"), ">")
 	}
 	if strings.HasPrefix(strings.ToLower(entry), "user:") {
 		entry = string([]rune(entry)[5:])
 	}
-	return pystr.Strip(entry)
+	return strings.TrimSpace(entry)
 }
 
-// Allowed mentions denying everyone here and role pings by default, overridable per profile in config or env
-func buildAllowedMentions(ctx context.Context, extra map[string]any) (*discordgo.MessageAllowedMentions, error) {
-	configured, _ := extra["allow_mentions"].(map[string]any)
-	if configured == nil {
-		configured = map[string]any{}
-	}
-	b := func(name, key string, def bool) (bool, error) {
-		raw, err := gateway.ExtraOrSecret(ctx, configured, key, name, nil, false)
-		if err != nil {
-			return false, err
-		}
-		if raw == nil {
-			return def, nil
-		}
-		if v, ok := raw.(bool); ok {
-			return v, nil
-		}
-		switch strings.ToLower(pystr.Strip(pyrepr.Str(raw))) {
-		case "true", "1", "yes", "on":
-			return true, nil
-		}
-		return false, nil
-	}
+// Allowed mentions of discord.allow_mentions, denying everyone, here and role pings by default
+func buildAllowedMentions(ctx context.Context) *discordgo.MessageAllowedMentions {
+	sctx := gateway.SettingsContext(ctx)
 	am := &discordgo.MessageAllowedMentions{Parse: []discordgo.AllowedMentionType{}}
 	for _, row := range []struct {
-		env, key string
-		def      bool
-		kind     discordgo.AllowedMentionType
+		on   *settings.Bool
+		kind discordgo.AllowedMentionType
 	}{
-		{"DISCORD_ALLOW_MENTION_EVERYONE", "everyone", false, discordgo.AllowedMentionTypeEveryone},
-		{"DISCORD_ALLOW_MENTION_ROLES", "roles", false, discordgo.AllowedMentionTypeRoles},
-		{"DISCORD_ALLOW_MENTION_USERS", "users", true, discordgo.AllowedMentionTypeUsers},
+		{settings.DiscordAllowMentionsEveryone, discordgo.AllowedMentionTypeEveryone},
+		{settings.DiscordAllowMentionsRoles, discordgo.AllowedMentionTypeRoles},
+		{settings.DiscordAllowMentionsUsers, discordgo.AllowedMentionTypeUsers},
 	} {
-		on, err := b(row.env, row.key, row.def)
-		if err != nil {
-			return nil, err
-		}
-		if on {
+		if row.on.Get(sctx) {
 			am.Parse = append(am.Parse, row.kind)
 		}
 	}
-	replied, err := b("DISCORD_ALLOW_MENTION_REPLIED_USER", "replied_user", true)
-	if err != nil {
-		return nil, err
-	}
-	am.RepliedUser = replied
-	return am, nil
+	am.RepliedUser = settings.DiscordAllowMentionsRepliedUser.Get(sctx)
+	return am
 }

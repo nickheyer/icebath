@@ -3,15 +3,17 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-// Swaps both config load seams to one fixed tree until the test ends
+// Writes a tree as the test home's config.yaml, which the settings read, and swaps both config load seams to it until the test ends
 func auxFakeConfigTree(t *testing.T, tree config.Tree) {
 	t.Helper()
+	writeConfig(t, os.Getenv("ICEBATH_HOME"), map[string]any(tree))
 	prevLoad, prevReadonly := auxLoadConfigFn, auxLoadConfigReadonlyFn
 	auxLoadConfigFn = func(context.Context) (config.Tree, error) { return tree, nil }
 	auxLoadConfigReadonlyFn = func(context.Context) (config.Tree, error) { return tree, nil }

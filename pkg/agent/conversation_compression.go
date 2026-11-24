@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -34,7 +33,7 @@ func isRealUserMessage(message map[string]any) bool {
 			return false
 		}
 	}
-	text := pystr.Strip(compressionMessageText(message))
+	text := strings.TrimSpace(compressionMessageText(message))
 	if text == "" {
 		return false
 	}

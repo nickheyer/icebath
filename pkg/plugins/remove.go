@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -39,7 +38,7 @@ func SweepPendingPluginDeletes(ctx context.Context) {
 			if err != nil {
 				continue
 			}
-			held := pystr.Strip(strings.TrimPrefix(string(raw), "\uFEFF"))
+			held := strings.TrimSpace(strings.TrimPrefix(string(raw), "\uFEFF"))
 			if held == "" {
 				held = "."
 			}

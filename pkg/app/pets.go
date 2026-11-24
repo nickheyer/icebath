@@ -70,11 +70,11 @@ func (r *petsRun) cmdList() (int, error) {
 		}
 		return 1, err
 	}
-	query := pystr.Lower(pystr.Strip(nsText(r.ns, "query")))
+	query := strings.ToLower(strings.TrimSpace(nsText(r.ns, "query")))
 	if query != "" {
 		var filtered []pet.ManifestEntry
 		for _, e := range entries {
-			if strings.Contains(pystr.Lower(e.Slug), query) || strings.Contains(pystr.Lower(e.DisplayName), query) {
+			if strings.Contains(strings.ToLower(e.Slug), query) || strings.Contains(strings.ToLower(e.DisplayName), query) {
 				filtered = append(filtered, e)
 			}
 		}
@@ -113,7 +113,7 @@ func (r *petsRun) cmdList() (int, error) {
 }
 
 func (r *petsRun) cmdInstall() (int, error) {
-	slug := pystr.Strip(nsText(r.ns, "slug"))
+	slug := strings.TrimSpace(nsText(r.ns, "slug"))
 	p, err := pet.InstallPet(r.ctx, r.env, r.h, slug, nsTruthy(r.ns, "force"))
 	if err != nil {
 		var se *pet.StoreError
@@ -141,7 +141,7 @@ func (r *petsRun) cmdInstall() (int, error) {
 }
 
 func (r *petsRun) cmdRemove() (int, error) {
-	slug := pystr.Strip(nsText(r.ns, "slug"))
+	slug := strings.TrimSpace(nsText(r.ns, "slug"))
 	removed, err := pet.RemovePet(r.h, slug)
 	if err != nil {
 		return 1, err
@@ -163,7 +163,7 @@ func (r *petsRun) interactivePick(pets []*pet.InstalledPet) string {
 	con := console()
 	prompter := &cliui.Console{In: con.In, Out: r.w, Getenv: con.Getenv, StdinTTY: con.StdinIsTTY, StdoutTTY: con.StdoutIsTTY}
 	answer, err := prompter.Input("Select a pet [1]: ")
-	raw := pystr.Strip(answer)
+	raw := strings.TrimSpace(answer)
 	if raw == "" {
 		raw = "1"
 	}
@@ -180,7 +180,7 @@ func (r *petsRun) interactivePick(pets []*pet.InstalledPet) string {
 }
 
 func (r *petsRun) cmdSelect() (int, error) {
-	slug := pystr.Strip(nsText(r.ns, "slug"))
+	slug := strings.TrimSpace(nsText(r.ns, "slug"))
 	if slug == "" {
 		pets, err := pet.InstalledPets(r.h)
 		if err != nil {
@@ -240,7 +240,7 @@ func (r *petsRun) cmdShow() (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	slug := pystr.Strip(nsText(r.ns, "slug"))
+	slug := strings.TrimSpace(nsText(r.ns, "slug"))
 	if slug == "" {
 		slug = pet.CfgText(cfg, "slug")
 	}
@@ -288,7 +288,7 @@ func (r *petsRun) cmdShow() (int, error) {
 		r.errf("✗ cannot render here (no TTY / graphics disabled). Effective mode: %s.", renderer.Mode)
 		return 1, nil
 	}
-	requested := pystr.Lower(pystr.Strip(nsText(r.ns, "state")))
+	requested := strings.ToLower(strings.TrimSpace(nsText(r.ns, "state")))
 	var states []string
 	switch {
 	case requested != "":

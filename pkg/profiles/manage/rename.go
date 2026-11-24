@@ -1,6 +1,8 @@
 package manage
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -61,7 +62,7 @@ func RenameProfile(ctx context.Context, oldName, newName string) (string, error)
 		return "", err
 	}
 	if oldCanon == "default" {
-		if pystr.Strip(newName) == "" {
+		if strings.TrimSpace(newName) == "" {
 			return "", &profiles.ValueError{Msg: "Display name cannot be empty."}
 		}
 		cleaned, err := profiles.SetProfileDisplayName(ctx, "default", newName)

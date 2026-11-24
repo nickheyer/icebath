@@ -55,26 +55,27 @@ func TestSmallHelpers(t *testing.T) {
 
 func TestBridgeToplevelKeysModes(t *testing.T) {
 	yamlCfg := map[string]any{
-		"quick_commands": nil, "stt": "bad", "streaming": "x", "profile_routes": []any{"r"},
-		"unauthorized_dm_behavior": " IGNORE ",
+		"quick_commands": map[string]any{"a": 1}, "stt": map[string]any{"p": 1}, "streaming": map[string]any{"mode": "edit"},
+		"profile_routes": []any{"root"}, "unauthorized_dm_behavior": "deny", "room_link_url": "root",
 	}
 	nested := map[string]any{
-		"quick_commands": map[string]any{"a": 1}, "stt": map[string]any{"p": 1}, "multiplex_profiles": true,
-		"systemd_watchdog_seconds": 30, "streaming": map[string]any{"mode": "edit"}, "room_link_url": "u",
+		"quick_commands": map[string]any{"b": 2}, "stt": map[string]any{"q": 2}, "streaming": map[string]any{"mode": "draft"},
+		"multiplex_profiles": true, "systemd_watchdog_seconds": 30, "room_link_url": "u", "profile_routes": []any{"r"},
+		"unauthorized_dm_behavior": " IGNORE ",
 	}
 	gw := map[string]any{"multiplex_profiles": false}
 	BridgeToplevelKeys(yamlCfg, nested, gw)
 	want := map[string]any{
-		"quick_commands": map[string]any{"a": 1}, "multiplex_profiles": false, "room_link_url": "u",
-		"profile_routes": []any{"r"}, "systemd_watchdog_seconds": 30, "streaming": map[string]any{"mode": "edit"},
+		"quick_commands": map[string]any{"a": 1}, "stt": map[string]any{"p": 1}, "streaming": map[string]any{"mode": "edit"},
+		"multiplex_profiles": false, "room_link_url": "u", "profile_routes": []any{"r"}, "systemd_watchdog_seconds": 30,
 		"unauthorized_dm_behavior": "ignore",
 	}
 	if !reflect.DeepEqual(gw, want) {
 		t.Fatalf("bridged %v", gw)
 	}
 	gw = map[string]any{}
-	BridgeToplevelKeys(map[string]any{"systemd_watchdog_seconds": 5, "stt": map[string]any{}}, "not a mapping", gw)
-	if !reflect.DeepEqual(gw, map[string]any{"stt": map[string]any{}}) {
-		t.Fatalf("nested only key ignores top level %v", gw)
+	BridgeToplevelKeys(map[string]any{"systemd_watchdog_seconds": 5, "stt": "bad", "streaming": "x", "quick_commands": nil}, "not a mapping", gw)
+	if len(gw) != 0 {
+		t.Fatalf("a key outside its one place or of the wrong shape is ignored %v", gw)
 	}
 }

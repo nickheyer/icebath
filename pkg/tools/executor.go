@@ -26,7 +26,6 @@ import (
 const (
 	largeToolResultTrimChars        = 1000000
 	maxToolWorkers                  = 8
-	defaultImageParallelRequests    = 4
 	startOrderGateTimeoutDefaultS   = 120.0
 	authorizationGateLockTimeoutS   = 360.0
 	PrunedToolArgumentsError        = "suspected_pruned_tool_arguments"
@@ -79,8 +78,8 @@ func resolveConcurrentToolTimeout(env *Env) time.Duration {
 // Deadline for one sequential call, else the concurrent batch deadline so the two never drift
 func resolveSequentialToolTimeout(env *Env) time.Duration {
 	ctx := envHomeCtx(context.Background(), env)
-	if v, err := settings.Resolve(ctx, settings.TimeoutsToolsSequentialCall.Key); err == nil && v.Value != nil {
-		return clampTimeoutSeconds(settings.TimeoutsToolsSequentialCall.Get(ctx).Seconds(), true)
+	if d, ok := settings.TimeoutsToolsSequentialCall.Lookup(ctx); ok {
+		return clampTimeoutSeconds(d.Seconds(), true)
 	}
 	return resolveConcurrentToolTimeout(env)
 }
@@ -96,19 +95,7 @@ func authorizationGateLockTimeout(env *Env) time.Duration {
 
 // Configured image generation parallelism cap
 func imageGenerateParallelLimit(env *Env) int {
-	limit := defaultImageParallelRequests
-	if block := cfgTree(env).Map("image_gen"); block != nil {
-		if n, ok := toolSearchAsInt(block["max_parallel_requests"]); ok {
-			limit = n
-		}
-	}
-	if limit < 1 {
-		limit = 1
-	}
-	if limit > maxToolWorkers {
-		limit = maxToolWorkers
-	}
-	return limit
+	return min(max(settings.ImageGenMaxParallelRequests.Get(envHomeCtx(context.Background(), env)), 1), maxToolWorkers)
 }
 
 // Worker count for a batch, capped at the image generation limit when any call generates images

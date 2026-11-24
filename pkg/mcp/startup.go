@@ -10,14 +10,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const (
-	defaultDiscoveryWait            = 1500 * time.Millisecond
-	defaultSingleQueryDiscoveryWait = 15 * time.Second
-	defaultDiscoveryThreadName      = "cli-mcp-discovery"
-)
+// Name of the thread the discovery of a command line run reports under
+const defaultDiscoveryThreadName = "cli-mcp-discovery"
 
 // Discovery slots per profile home key and the toolsets spawn allowlist
 var (
@@ -207,37 +205,19 @@ func discoverWithoutInteractiveOAuth(ctx context.Context, env *tools.Env, filter
 	return discoverMCPTools(SuppressInteractiveOAuth(ctx), env, filter)
 }
 
-// Discovery wait bound from the explicit value, then config.yaml, then the shipped default
-func resolveDiscoveryTimeout(ctx context.Context, env *tools.Env, explicit *time.Duration, singleQuery bool) time.Duration {
+// Discovery wait bound from the explicit value, then the setting, a bound of zero or less using the shipped default
+func resolveDiscoveryTimeout(ctx context.Context, explicit *time.Duration, singleQuery bool) time.Duration {
 	if explicit != nil {
 		return *explicit
 	}
-	key, fallback := "mcp_discovery_timeout", defaultDiscoveryWait
+	wait := settings.McpDiscoveryTimeout
 	if singleQuery {
-		key, fallback = "mcp_single_query_discovery_timeout", defaultSingleQueryDiscoveryWait
+		wait = settings.McpSingleQueryDiscoveryTimeout
 	}
-	def := fallback
-	if raw, ok := config.Defaults()[key]; ok {
-		f, ok := pyFloat(raw)
-		if !ok {
-			return fallback
-		}
-		def = secondsDuration(f)
+	if bound := wait.Get(ctx); bound > 0 {
+		return bound
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, secretsLookup(env, h))
-	if err != nil {
-		return def
-	}
-	raw, ok := tree[key]
-	if !ok {
-		return def
-	}
-	f, ok := pyFloat(raw)
-	if !ok || f <= 0 {
-		return def
-	}
-	return secondsDuration(f)
+	return wait.Default
 }
 
 // Waits for the home's discovery up to the resolved bound
@@ -246,7 +226,7 @@ func WaitForDiscovery(ctx context.Context, env *tools.Env, timeout *time.Duratio
 	if run == nil || !run.alive() {
 		return
 	}
-	bound := resolveDiscoveryTimeout(ctx, env, timeout, singleQuery)
+	bound := resolveDiscoveryTimeout(ctx, timeout, singleQuery)
 	run.join(ctx, &bound)
 }
 

@@ -40,7 +40,7 @@ func TestNormalizeEntryDropsInvalidExtraHeaders(t *testing.T) {
 
 func TestGetCustomProviderExtraHeadersMatchesBaseUrl(t *testing.T) {
 	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"CF-Access-Client-Id": "xxxx.access"}}}
-	got := CustomProviderExtraHeaders("https://LLM.internal.example.com/v1/", providers, nil)
+	got := CustomProviderExtraHeaders("https://LLM.internal.example.com/v1/", providers)
 	if !reflect.DeepEqual(got, map[string]string{"CF-Access-Client-Id": "xxxx.access"}) {
 		t.Fatalf("got %v", got)
 	}
@@ -49,7 +49,7 @@ func TestGetCustomProviderExtraHeadersMatchesBaseUrl(t *testing.T) {
 func TestGetCustomProviderExtraHeadersNoMatchReturnsEmpty(t *testing.T) {
 	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"X-Secret": "s"}}}
 	for _, url := range []string{"https://other.example.com/v1", "https://llm.internal.example.com.attacker.test/v1"} {
-		if got := CustomProviderExtraHeaders(url, providers, nil); got == nil || len(got) != 0 {
+		if got := CustomProviderExtraHeaders(url, providers); got == nil || len(got) != 0 {
 			t.Fatalf("%s -> %#v, want an empty mapping", url, got)
 		}
 	}
@@ -57,7 +57,7 @@ func TestGetCustomProviderExtraHeadersNoMatchReturnsEmpty(t *testing.T) {
 
 func TestGetCustomProviderExtraHeadersPreservesExtraPathSegment(t *testing.T) {
 	providers := []map[string]any{{"base_url": "https://llm.internal.example.com/v1//", "extra_headers": map[string]any{"Authorization": "secret"}}}
-	if got := CustomProviderExtraHeaders("https://llm.internal.example.com/v1", providers, nil); got == nil || len(got) != 0 {
+	if got := CustomProviderExtraHeaders("https://llm.internal.example.com/v1", providers); got == nil || len(got) != 0 {
 		t.Fatalf("got %#v", got)
 	}
 }
@@ -67,7 +67,7 @@ func TestGetCustomProviderExtraHeadersSkipsAliasWithoutHeaders(t *testing.T) {
 		{"name": "direct", "base_url": "http://127.0.0.1:8787/v1"},
 		{"name": "aether-router", "base_url": "http://127.0.0.1:8787/v1", "extra_headers": map[string]any{"X-Aether-Route": "my-route"}},
 	}
-	if got := CustomProviderExtraHeaders("http://127.0.0.1:8787/v1", providers, nil); !reflect.DeepEqual(got, map[string]string{"X-Aether-Route": "my-route"}) {
+	if got := CustomProviderExtraHeaders("http://127.0.0.1:8787/v1", providers); !reflect.DeepEqual(got, map[string]string{"X-Aether-Route": "my-route"}) {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestGetCustomProviderExtraHeadersSkipsEmptyHeaderDictAlias(t *testing.T) {
 		{"name": "bare-alias", "base_url": "http://127.0.0.1:8787/v1", "extra_headers": map[string]any{}},
 		{"name": "proxied", "base_url": "http://127.0.0.1:8787/v1", "extra_headers": map[string]any{"Authorization": "Bearer tok"}},
 	}
-	if got := CustomProviderExtraHeaders("http://127.0.0.1:8787/v1", providers, nil); !reflect.DeepEqual(got, map[string]string{"Authorization": "Bearer tok"}) {
+	if got := CustomProviderExtraHeaders("http://127.0.0.1:8787/v1", providers); !reflect.DeepEqual(got, map[string]string{"Authorization": "Bearer tok"}) {
 		t.Fatalf("got %v", got)
 	}
 }
@@ -86,7 +86,7 @@ func TestApplyExtraHeadersMergesOntoExistingDefaults(t *testing.T) {
 	defaults := map[string]string{"User-Agent": "curl/8.7.1", "X-Keep": "1"}
 	clientKwargs := map[string]any{"api_key": "x", "base_url": "https://llm.internal.example.com/v1", "default_headers": defaults}
 	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"User-Agent": "override", "X-New": "2"}}}
-	ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs, "https://llm.internal.example.com/v1", providers, nil)
+	ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs, "https://llm.internal.example.com/v1", providers)
 	if got := clientKwargs["default_headers"]; !reflect.DeepEqual(got, map[string]string{"User-Agent": "override", "X-Keep": "1", "X-New": "2"}) {
 		t.Fatalf("got %v", got)
 	}
@@ -98,7 +98,7 @@ func TestApplyExtraHeadersMergesOntoExistingDefaults(t *testing.T) {
 func TestApplyExtraHeadersNoopWithoutMatch(t *testing.T) {
 	providers := []map[string]any{{"name": "my-proxy", "base_url": "https://llm.internal.example.com/v1", "extra_headers": map[string]any{"X-Secret": "s"}}}
 	clientKwargs := map[string]any{"api_key": "x", "base_url": "https://other.example.com/v1"}
-	ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs, "https://other.example.com/v1", providers, nil)
+	ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs, "https://other.example.com/v1", providers)
 	if got, ok := clientKwargs["default_headers"]; ok {
 		t.Fatalf("default headers created without a match: %v", got)
 	}
@@ -147,7 +147,7 @@ func TestProvidersDictRoundtripLeavesCachedConfigUntouched(t *testing.T) {
 	if !reflect.DeepEqual(cfg, snapshot) {
 		t.Fatalf("providers view mutated the config: %v", cfg)
 	}
-	ProviderEntries(cfg)
+	ProviderEntriesOf(cfg["providers"].(map[string]any))
 	if !reflect.DeepEqual(cfg, snapshot) {
 		t.Fatalf("compatible view mutated the config: %v", cfg)
 	}
@@ -167,7 +167,7 @@ func TestNormalizedModelsMappingIsNotSharedWithInput(t *testing.T) {
 
 func TestGetCustomProviderTlsSettingsMatchesBaseUrl(t *testing.T) {
 	providers := []map[string]any{{"name": "Ollama", "base_url": "https://ollama.example.com/v1", "ssl_ca_cert": "/etc/ssl/mkcert-root.pem"}}
-	tls := CustomProviderTLSSettings("https://ollama.example.com/v1/", providers, nil)
+	tls := CustomProviderTLSSettings("https://ollama.example.com/v1/", providers)
 	if tls != (TLSSettings{CACert: "/etc/ssl/mkcert-root.pem"}) {
 		t.Fatalf("tls %+v", tls)
 	}
@@ -176,12 +176,12 @@ func TestGetCustomProviderTlsSettingsMatchesBaseUrl(t *testing.T) {
 func TestApplyCustomProviderTlsToClientKwargs(t *testing.T) {
 	clientKwargs := map[string]any{"api_key": "x", "base_url": "https://ollama.example.com/v1"}
 	providers := []map[string]any{{"name": "Ollama", "base_url": "https://ollama.example.com/v1", "ssl_ca_cert": "/etc/ssl/mkcert-root.pem", "ssl_verify": true}}
-	ApplyCustomProviderTLSToClientKwargs(clientKwargs, "https://ollama.example.com/v1", providers, nil)
+	ApplyCustomProviderTLSToClientKwargs(clientKwargs, "https://ollama.example.com/v1", providers)
 	if clientKwargs["ssl_ca_cert"] != "/etc/ssl/mkcert-root.pem" || clientKwargs["ssl_verify"] != true {
 		t.Fatalf("client kwargs %v", clientKwargs)
 	}
 	bare := map[string]any{"api_key": "x"}
-	ApplyCustomProviderTLSToClientKwargs(bare, "https://other.example.com/v1", providers, nil)
+	ApplyCustomProviderTLSToClientKwargs(bare, "https://other.example.com/v1", providers)
 	if len(bare) != 1 {
 		t.Fatalf("kwargs of an unmatched route %v", bare)
 	}

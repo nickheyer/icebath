@@ -56,11 +56,10 @@ type PoolEnv struct {
 	Store   *Store
 	Secrets *config.Secrets
 	Scope   *SecretScope
-	// Read only config, the session's frozen config when one is frozen
-	Config func() map[string]any
-	Log    *slog.Logger
-	HTTP   *http.Client
-	Ctx    context.Context
+	Log     *slog.Logger
+	HTTP    *http.Client
+	// Call context, whose home, session, chat platform and frozen launch config the pool's settings reads follow
+	Ctx context.Context
 }
 
 // Logger of the pool environment or the process default, named after this package
@@ -89,16 +88,6 @@ func (env PoolEnv) hookContext() context.Context {
 		ctx = WithSecretScope(ctx, env.Scope.Mapping, env.Scope.ProfileHome)
 	}
 	return ctx
-}
-
-func (env PoolEnv) config() map[string]any {
-	if frozen := FrozenRuntimeConfig(env.ctx()); frozen != nil {
-		return frozen
-	}
-	if env.Config == nil {
-		return nil
-	}
-	return env.Config()
 }
 
 func (env PoolEnv) scope() *SecretScope {

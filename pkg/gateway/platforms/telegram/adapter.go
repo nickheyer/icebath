@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"sync"
@@ -10,12 +12,10 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -153,11 +153,9 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	maxCooldown, maxRetrigger := 300.0, 30.0
 	a.pacer = newSendPacer(a.CoerceFloatExtra("typing_cooldown_seconds", 30.0, 1.0, &maxCooldown))
 	a.typingRetriggerInterval = a.CoerceFloatExtra("typing_retrigger_min_interval_seconds", 2.0, 0.0, &maxRetrigger)
-	a.mediaBatchDelaySeconds = config.EnvFloat("ICEBATH_TELEGRAM_MEDIA_BATCH_DELAY_SECONDS", 0.8)
-	minDelay, maxDelay := 0.08, gateway.TextBatchMaxDelayS
-	a.textBatchDelaySeconds = envFloatClamped("ICEBATH_TELEGRAM_TEXT_BATCH_DELAY_SECONDS", gateway.TextBatchDefaultDelayS, &minDelay, &maxDelay)
-	minSplit, maxSplit := a.textBatchDelaySeconds, gateway.TextBatchMaxSplitDelayS
-	a.textBatchSplitDelay = envFloatClamped("ICEBATH_TELEGRAM_TEXT_BATCH_SPLIT_DELAY_SECONDS", gateway.TextBatchDefaultSplitDelayS, &minSplit, &maxSplit)
+	a.mediaBatchDelaySeconds = settings.TelegramMediaBatchDelay.Get(sctx).Seconds()
+	a.textBatchDelaySeconds = settings.TelegramTextBatchDelay.Get(sctx).Seconds()
+	a.textBatchSplitDelay = max(settings.TelegramTextBatchSplitDelay.Get(sctx).Seconds(), a.textBatchDelaySeconds)
 	a.SetTextBatchDelays(a.textBatchDelaySeconds, a.textBatchSplitDelay)
 	a.statusIndicatorEnabled = pyTruthy(extra["status_indicator"])
 	a.statusOnlineText, a.statusOfflineText = "Online", "Offline"
@@ -379,7 +377,7 @@ func extraString(extra map[string]any, key string) string {
 	if !ok || !pyTruthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Bot API default server of the SDK the PTB default base url maps onto

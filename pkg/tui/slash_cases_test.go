@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -533,6 +534,11 @@ func TestWorktreeNewMovesTheSessionAndQuitHandsTheTreeToTheLauncher(t *testing.T
 	a.store.ui.Sid, a.store.ui.StoredSid = "sid-1", "stored-1"
 	a.store.ui.Info = &tuigateway.SessionInfo{Cwd: ptr(repo)}
 	t.Cleanup(func() { newWorktrees.active, newWorktrees.created = nil, nil })
+	t.Cleanup(func() {
+		launchFolder.Lock()
+		launchFolder.launched, launchFolder.moved, launchFolder.pinned = nil, "", false
+		launchFolder.Unlock()
+	})
 	settle(a, a.dispatchSubmission("/worktree"))
 	wantScreen(t, a, "No active worktree for this session.", "/worktree new [name]")
 	settle(a, a.dispatchSubmission("/worktree new feat"))
@@ -548,8 +554,8 @@ func TestWorktreeNewMovesTheSessionAndQuitHandsTheTreeToTheLauncher(t *testing.T
 	if recorded := g.sent("worktree.record"); len(recorded) != 1 || recorded[0]["path"] != tree {
 		t.Fatalf("worktree.record calls %v", recorded)
 	}
-	if cwd, _ := os.Getwd(); cwd != tree || os.Getenv("TERMINAL_CWD") != tree || a.store.sessionCwd() != tree {
-		t.Fatalf("process cwd %q terminal %q session %q", cwd, os.Getenv("TERMINAL_CWD"), a.store.sessionCwd())
+	if cwd, _ := os.Getwd(); cwd != tree || launchCwd() != tree || !slices.Contains(movedFolderEnv(), "TERMINAL_CWD="+tree) || a.store.sessionCwd() != tree {
+		t.Fatalf("process cwd %q window %q commands %q session %q", cwd, launchCwd(), movedFolderEnv(), a.store.sessionCwd())
 	}
 	settle(a, a.dispatchSubmission("/worktree status"))
 	wantScreen(t, a, "Active worktree: "+tree)

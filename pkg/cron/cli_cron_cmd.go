@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -59,7 +61,7 @@ func normalizeSkillArgs(single *string, skills []string) []string {
 	}
 	out := []string{}
 	for _, item := range items {
-		if text := pystr.Strip(item); text != "" && !containsString(out, text) {
+		if text := strings.TrimSpace(item); text != "" && !containsString(out, text) {
 			out = append(out, text)
 		}
 	}
@@ -323,10 +325,10 @@ func shortReason(text any, limit int) string {
 	if pyrepr.Truthy(text) {
 		t = pyrepr.Str(text)
 	}
-	lines := pystr.Splitlines(pystr.Strip(t), false)
+	lines := pystr.Splitlines(strings.TrimSpace(t), false)
 	reason := ""
 	if len(lines) > 0 {
-		reason = pystr.Strip(collapseWhitespace(lines[0]))
+		reason = strings.TrimSpace(collapseWhitespace(lines[0]))
 	}
 	if rs := []rune(reason); len(rs) > limit {
 		return string(rs[:limit-1]) + "…"
@@ -471,9 +473,9 @@ func (s *Store) cronIncidents(ctx context.Context, w io.Writer, a *CronArgs) (in
 		if !ok {
 			code = cliui.Dim
 		}
-		errText := pystr.Strip(collapseWhitespace(inc.Error))
+		errText := strings.TrimSpace(collapseWhitespace(inc.Error))
 		if rs := []rune(errText); len(rs) > 160 {
-			errText = pystr.Rstrip(string(rs[:157])) + "..."
+			errText = strings.TrimRightFunc(string(rs[:157]), unicode.IsSpace) + "..."
 		}
 		output := ""
 		if inc.OutputFile != nil {
@@ -810,7 +812,7 @@ func (s *Store) nextRunOverdueIssue(nextRun string) string {
 
 func strField(job *pyjson.Object, key string) string {
 	if v := field(job, key, nil); pyrepr.Truthy(v) {
-		return pystr.Strip(pyrepr.Str(v))
+		return strings.TrimSpace(pyrepr.Str(v))
 	}
 	return ""
 }
@@ -818,12 +820,12 @@ func strField(job *pyjson.Object, key string) string {
 // Read only health findings of one job
 func (s *Store) cronDoctorIssuesForJob(job *pyjson.Object) ([]string, error) {
 	var issues []string
-	if last := pystr.Lower(strField(job, "last_status")); last != "" && last != "ok" && last != "delivery_failed" && last != "delivery_queued" {
+	if last := strings.ToLower(strField(job, "last_status")); last != "" && last != "ok" && last != "delivery_failed" && last != "delivery_queued" {
 		e := "unknown error"
 		if v := field(job, "last_error", nil); pyrepr.Truthy(v) {
 			e = pyrepr.Str(v)
 		}
-		issues = append(issues, "last run failed: "+pystr.Strip(e))
+		issues = append(issues, "last run failed: "+strings.TrimSpace(e))
 	}
 	if de := strField(job, "last_delivery_error"); de != "" {
 		issues = append(issues, fmt.Sprintf("last run finished but the result was not delivered (%s). %s", shortReason(de, 120), deliveryFixHint(job)))

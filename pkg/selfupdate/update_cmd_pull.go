@@ -3,6 +3,8 @@
 package selfupdate
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -40,7 +42,7 @@ func reconcileDivergedCheckout(ctx context.Context, w io.Writer, gitCmd []string
 	if err != nil {
 		return err
 	}
-	if curBranch := pystr.Strip(shown.Stdout); curBranch != "" && curBranch != branch {
+	if curBranch := strings.TrimSpace(shown.Stdout); curBranch != "" && curBranch != branch {
 		fmt.Fprintf(w, "  ⚠ Checkout is on custom branch '%s' — merging origin/%s instead of resetting so local commits survive...\n", curBranch, branch)
 		if _, err := updateGitRun(ctx, gitCmd, []string{"tag", "pre-update-" + updateNow().Format("20060102-150405")}, "", false, false); err != nil {
 			return err
@@ -65,7 +67,7 @@ func reconcileDivergedCheckout(ctx context.Context, w io.Writer, gitCmd []string
 	if err != nil {
 		return err
 	}
-	hasCommonAncestor := mergeBase.ReturnCode == 0 && pystr.Strip(mergeBase.Stdout) != ""
+	hasCommonAncestor := mergeBase.ReturnCode == 0 && strings.TrimSpace(mergeBase.Stdout) != ""
 	if prePullSHA != "" {
 		kind := "orphan"
 		head := fmt.Sprintf("  ⚠ Local history shares no common ancestor with origin/%s (orphan divergence) — ", branch)
@@ -85,7 +87,7 @@ func reconcileDivergedCheckout(ctx context.Context, w io.Writer, gitCmd []string
 				if err != nil {
 					return err
 				}
-				dropped := pystr.Strip(counted.Stdout)
+				dropped := strings.TrimSpace(counted.Stdout)
 				if dropped == "" {
 					dropped = "Some"
 				}
@@ -105,7 +107,7 @@ func reconcileDivergedCheckout(ctx context.Context, w io.Writer, gitCmd []string
 	}
 	if reset.ReturnCode != 0 {
 		fmt.Fprintf(w, "✗ Failed to reset to origin/%s.\n", branch)
-		if detail := pystr.Strip(reset.Stderr); detail != "" {
+		if detail := strings.TrimSpace(reset.Stderr); detail != "" {
 			fmt.Fprintf(w, "  %s\n", detail)
 		}
 		fmt.Fprintf(w, "  Try manually: git fetch origin && git reset --hard origin/%s\n", branch)
@@ -283,7 +285,7 @@ func rollBackBrokenUpdate(ctx context.Context, w io.Writer, gitCmd []string, pre
 	} else {
 		fmt.Fprintln(w, "  ✗ Rollback failed. Recover manually with:")
 		fmt.Fprintf(w, "    cd %s && git %s\n", root, pyshlex.Join(rollbackArgs))
-		if detail := pystr.Strip(rollbackResult.Stderr); detail != "" {
+		if detail := strings.TrimSpace(rollbackResult.Stderr); detail != "" {
 			fmt.Fprintf(w, "    (%s)\n", pystr.Splitlines(detail, false)[0])
 		}
 		if info, err := os.Stat(marker); err == nil && info.Mode().IsRegular() {
@@ -303,7 +305,7 @@ func landedOffTarget(ctx context.Context, gitCmd []string, targetSHA string, mer
 	if err != nil {
 		return "", false, err
 	}
-	landed := pystr.Strip(head.Stdout)
+	landed := strings.TrimSpace(head.Stdout)
 	if landed == targetSHA {
 		return "", false, nil
 	}
@@ -361,7 +363,7 @@ func resolvedCommit(ctx context.Context, gitCmd []string, ref string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(result.Stdout), nil
+	return strings.TrimSpace(result.Stdout), nil
 }
 
 // The principal pull's one checkout move onto the target commit, exiting when it cannot be made
@@ -385,9 +387,9 @@ func moveCheckoutTo(ctx context.Context, w io.Writer, gitCmd []string, branch, m
 		return reconcileDivergedCheckout(ctx, w, gitCmd, branch, prePullSHA, targetSHA)
 	}
 	fmt.Fprintln(w, "✗ Fast-forward failed; refusing to reset because history divergence was not proven.")
-	detail := pystr.Strip(mergeResult.Stderr)
+	detail := strings.TrimSpace(mergeResult.Stderr)
 	if mergeResult.Stderr == "" {
-		detail = pystr.Strip(mergeResult.Stdout)
+		detail = strings.TrimSpace(mergeResult.Stdout)
 	}
 	if detail != "" {
 		fmt.Fprintf(w, "  %s\n", detail)
@@ -396,9 +398,9 @@ func moveCheckoutTo(ctx context.Context, w io.Writer, gitCmd []string, branch, m
 		fmt.Fprintf(w, "  HEAD is still an ancestor of %s.\n", mergeRef)
 	} else {
 		fmt.Fprintf(w, "  Could not verify whether HEAD is an ancestor of %s.\n", mergeRef)
-		ancestryDetail := pystr.Strip(ancestry.Stderr)
+		ancestryDetail := strings.TrimSpace(ancestry.Stderr)
 		if ancestry.Stderr == "" {
-			ancestryDetail = pystr.Strip(ancestry.Stdout)
+			ancestryDetail = strings.TrimSpace(ancestry.Stdout)
 		}
 		if ancestryDetail != "" {
 			fmt.Fprintf(w, "  %s\n", ancestryDetail)

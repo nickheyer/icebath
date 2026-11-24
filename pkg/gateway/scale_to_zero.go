@@ -13,18 +13,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
-	ScaleToZeroEnv                  = "ICEBATH_SCALE_TO_ZERO"
 	FlyAppNameEnv                   = "FLY_APP_NAME"
 	FlyMachineIDEnv                 = "FLY_MACHINE_ID"
 	FlyAPISocket                    = "/.fly/api"
 	SleepURLEnv                     = "GATEWAY_RELAY_SLEEP_URL"
-	DefaultIdleTimeoutMinutes       = 2
 	BrokeredSuspendTimeoutS         = 40.0
 	FlyFreezeGraceS                 = 15.0
 	FlyFreezeGraceTickS             = 0.25
@@ -34,7 +32,6 @@ const (
 )
 
 var (
-	scaleToZeroTruthy         = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 	malformedSleepURLLogged   bool
 	malformedSleepURLLoggedMu sync.Mutex
 )
@@ -42,32 +39,29 @@ var (
 // Stripped value of key from env, the process environment when env is nil
 func scaleToZeroEnvStr(env map[string]string, key string) string {
 	if env == nil {
-		return pystr.Strip(os.Getenv(key))
+		return strings.TrimSpace(os.Getenv(key))
 	}
-	return pystr.Strip(env[key])
+	return strings.TrimSpace(env[key])
 }
 
-// Whether the Labs toggle stamp is set to a truthy value
-func ScaleToZeroEnabled(env map[string]string) bool {
-	return scaleToZeroTruthy[strings.ToLower(scaleToZeroEnvStr(env, ScaleToZeroEnv))]
+// Whether gateway.scale_to_zero.enabled (or its ICEBATH_SCALE_TO_ZERO override) is on for the profile ctx serves
+func ScaleToZeroEnabled(ctx context.Context) bool {
+	return settings.GatewayScaleToZeroEnabled.Get(ctx)
 }
 
-// Idle timeout minutes coerced to seconds, a non numeric or non positive value giving the default
-func ParseIdleTimeoutSeconds(cfgValue any, defaultMinutes int) float64 {
-	minutes, err := pyint.Float(cfgValue)
-	if err != nil {
-		minutes = 0.0
+// Idle window in seconds before an armed instance suspends, the default for a value of zero or below
+func ScaleToZeroIdleTimeoutSeconds(ctx context.Context) float64 {
+	timeout := settings.GatewayScaleToZeroIdleTimeoutMinutes.Get(ctx)
+	if timeout <= 0 {
+		timeout = settings.GatewayScaleToZeroIdleTimeoutMinutes.Default
 	}
-	if minutes <= 0 {
-		return float64(defaultMinutes) * 60.0
-	}
-	return minutes * 60.0
+	return timeout.Seconds()
 }
 
 // True when the only platform named is relay or none is named at all
 func MessagingIsRelayOnlyOrAbsent(platforms []string) bool {
 	for _, p := range platforms {
-		if name := strings.ToLower(pystr.Strip(p)); name != "relay" {
+		if name := strings.ToLower(strings.TrimSpace(p)); name != "relay" {
 			return false
 		}
 	}
@@ -99,7 +93,7 @@ func BrokeredSleepURL(env map[string]string) *string {
 	if env != nil {
 		raw = env[SleepURLEnv]
 	}
-	value := pystr.Strip(raw)
+	value := strings.TrimSpace(raw)
 	if value == "" {
 		return nil
 	}

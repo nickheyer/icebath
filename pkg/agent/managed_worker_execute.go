@@ -245,9 +245,7 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel Wor
 	}
 	route := frame.Vals["route"].(string)
 	tools.SetCurrentSessionKey(env, route)
-	if err := os.Setenv("ICEBATH_GATEWAY_SESSION", "1"); err != nil {
-		return err
-	}
+	env.Values.Store("session.gateway", true)
 	inputs, err := gateway.ConstructKwargs(frame)
 	if err != nil {
 		return err

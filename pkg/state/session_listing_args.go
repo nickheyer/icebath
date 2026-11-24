@@ -24,7 +24,7 @@ func ParseSessionListingArgs(rawArgs string) (includeAll, includeUnnamed bool, t
 	}
 	var targetParts []string
 	for i, part := range parts {
-		lower := pystr.Lower(pystr.Strip(part))
+		lower := strings.ToLower(strings.TrimSpace(part))
 		if len(targetParts) == 0 {
 			if sessionListingListWords[lower] {
 				continue
@@ -38,13 +38,13 @@ func ParseSessionListingArgs(rawArgs string) (includeAll, includeUnnamed bool, t
 				continue
 			}
 			if sessionListingSearchWords[lower] {
-				query := pystr.Strip(strings.Join(parts[i+1:], " "))
+				query := strings.TrimSpace(strings.Join(parts[i+1:], " "))
 				return includeAll, includeUnnamed, "", &query, nil
 			}
 		}
 		targetParts = append(targetParts, part)
 	}
-	return includeAll, includeUnnamed, pystr.Strip(strings.Join(targetParts, " ")), nil, nil
+	return includeAll, includeUnnamed, strings.TrimSpace(strings.Join(targetParts, " ")), nil, nil
 }
 
 // Compact markdown session list for gateway messengers, the notice above the footer when given

@@ -26,101 +26,72 @@ func pyMappingCopy(v any) (map[string]any, error) {
 	return out, nil
 }
 
-// Every platform block merged into gwData platforms, gateway.platforms then platforms then gateway.<platform>
-func MergePlatformSections(ctx context.Context, yamlCfg map[string]any, gatewayCfg any, gwData map[string]any, also map[string]bool) (map[string]any, error) {
+// Every platforms.<name> block of config.yaml merged into gwData platforms
+func MergePlatformSections(yamlCfg map[string]any, gwData map[string]any) (map[string]any, error) {
 	platformsData := dictSlot(gwData, "platforms")
-	merge := func(source any) error {
-		src, ok := source.(map[string]any)
+	src, ok := yamlCfg["platforms"].(map[string]any)
+	if !ok {
+		return platformsData, nil
+	}
+	for _, name := range config.MappingKeys(src) {
+		block, ok := src[name].(map[string]any)
 		if !ok {
-			return nil
+			continue
 		}
-		for _, name := range config.MappingKeys(src) {
-			raw := src[name]
-			block, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			prior, had := platformsData[name]
-			existing, ok := prior.(map[string]any)
-			if !ok {
-				existing = map[string]any{}
-			}
-			existingExtra, present := existing["extra"]
-			if !present {
-				existingExtra = map[string]any{}
-			}
-			mergedExtra, err := pyMappingCopy(existingExtra)
-			if err != nil {
-				return err
-			}
-			blockExtra, present := block["extra"]
-			if !present {
-				blockExtra = map[string]any{}
-			}
-			overlay, err := pyMappingCopy(blockExtra)
-			if err != nil {
-				return err
-			}
-			for k, v := range overlay {
-				mergedExtra[k] = v
-			}
-			if _, ok := block["enabled"]; ok {
-				mergedExtra["_enabled_explicit"] = true
-			}
-			merged := make(map[string]any, len(existing)+len(block))
-			for k, v := range existing {
-				merged[k] = v
-			}
-			for k, v := range block {
-				merged[k] = v
-			}
-			if len(mergedExtra) > 0 {
-				merged["extra"] = mergedExtra
-			}
-			platformsData[name] = merged
-			if !had {
-				config.AppendMappingKey(platformsData, name)
-			}
+		prior, had := platformsData[name]
+		existing, ok := prior.(map[string]any)
+		if !ok {
+			existing = map[string]any{}
 		}
-		return nil
-	}
-	nested, _ := gatewayCfg.(map[string]any)
-	if err := merge(nested["platforms"]); err != nil {
-		return nil, err
-	}
-	if err := merge(yamlCfg["platforms"]); err != nil {
-		return nil, err
-	}
-	shorthand := map[string]any{}
-	var shorthandOrder []string
-	for _, k := range config.MappingKeys(nested) {
-		v := nested[k]
-		if _, isMap := v.(map[string]any); k != "platforms" && isMap && (also[k] || isPlatformName(ctx, k)) {
-			shorthand[k] = v
-			shorthandOrder = append(shorthandOrder, k)
+		existingExtra, present := existing["extra"]
+		if !present {
+			existingExtra = map[string]any{}
+		}
+		mergedExtra, err := pyMappingCopy(existingExtra)
+		if err != nil {
+			return nil, err
+		}
+		blockExtra, present := block["extra"]
+		if !present {
+			blockExtra = map[string]any{}
+		}
+		overlay, err := pyMappingCopy(blockExtra)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range overlay {
+			mergedExtra[k] = v
+		}
+		if _, ok := block["enabled"]; ok {
+			mergedExtra["_enabled_explicit"] = true
+		}
+		merged := make(map[string]any, len(existing)+len(block))
+		for k, v := range existing {
+			merged[k] = v
+		}
+		for k, v := range block {
+			merged[k] = v
+		}
+		if len(mergedExtra) > 0 {
+			merged["extra"] = mergedExtra
+		}
+		platformsData[name] = merged
+		if !had {
+			config.AppendMappingKey(platformsData, name)
 		}
 	}
-	config.SetMappingKeys(shorthand, shorthandOrder)
-	return platformsData, merge(shorthand)
+	return platformsData, nil
 }
 
-// Whether a key names a built in or registered platform
-func isPlatformName(ctx context.Context, key any) bool {
-	_, err := ParsePlatform(ctx, key)
-	return err == nil
-}
-
-// Platform block and whether it is top level, a nested block standing in when no top level mapping exists
-func platformSection(yamlCfg map[string]any, name string, gatewayPlatforms any) (any, bool) {
+// Platform block and whether it is top level, the platforms.<name> block standing in when no top level mapping exists
+func platformSection(yamlCfg map[string]any, name string) (any, bool) {
 	section := yamlCfg[name]
 	if _, toplevel := section.(map[string]any); toplevel {
 		return section, true
 	}
-	for _, src := range []any{gatewayPlatforms, yamlCfg["platforms"]} {
-		if m, ok := src.(map[string]any); ok {
-			if block, ok := m[name].(map[string]any); ok {
-				return block, false
-			}
+	if m, ok := yamlCfg["platforms"].(map[string]any); ok {
+		if block, ok := m[name].(map[string]any); ok {
+			return block, false
 		}
 	}
 	return section, false
@@ -263,7 +234,7 @@ func applyManagedExtra(ctx context.Context, authored map[string]map[string]any, 
 	if len(managed) == 0 {
 		return map[string]map[string]any{}, nil
 	}
-	managedPlatforms, err := MergePlatformSections(ctx, managed, managed["gateway"], map[string]any{}, nil)
+	managedPlatforms, err := MergePlatformSections(managed, map[string]any{})
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +318,7 @@ func authoredWins(extra, block map[string]any, platName string, toplevel bool, w
 }
 
 // Copies shared keys of each platform's YAML section into extra, enabled only from a top level block
-func BridgePlatformSharedKeys(yamlCfg map[string]any, gatewayPlatforms any, gwData, platformsData map[string]any, targets []Platform,
+func BridgePlatformSharedKeys(yamlCfg map[string]any, gwData, platformsData map[string]any, targets []Platform,
 	warned map[[2]string]bool, authored map[string]map[string]any) {
 	if authored == nil {
 		authored = snapshotAuthoredExtra(platformsData)
@@ -356,7 +327,7 @@ func BridgePlatformSharedKeys(yamlCfg map[string]any, gatewayPlatforms any, gwDa
 		if plat == PlatformLocal {
 			continue
 		}
-		section, toplevel := platformSection(yamlCfg, string(plat), gatewayPlatforms)
+		section, toplevel := platformSection(yamlCfg, string(plat))
 		platformCfg, ok := section.(map[string]any)
 		if !ok {
 			continue
@@ -393,7 +364,7 @@ func BridgePlatformSharedKeys(yamlCfg map[string]any, gatewayPlatforms any, gwDa
 }
 
 // Runs each plugin's YAML to env config bridge on its effective block, merging seeded values into extra
-func ApplyPluginYAMLHooks(ctx context.Context, yamlCfg map[string]any, gatewayPlatforms any, platformsData map[string]any, registry *PlatformRegistry,
+func ApplyPluginYAMLHooks(ctx context.Context, yamlCfg map[string]any, platformsData map[string]any, registry *PlatformRegistry,
 	warned map[[2]string]bool, authored, managedExtra map[string]map[string]any, entries []*PlatformEntry) {
 	if registry == nil {
 		return
@@ -408,7 +379,7 @@ func ApplyPluginYAMLHooks(ctx context.Context, yamlCfg map[string]any, gatewayPl
 		if entry.ApplyYAMLConfigFn == nil {
 			continue
 		}
-		section, toplevel := platformSection(yamlCfg, entry.Name, gatewayPlatforms)
+		section, toplevel := platformSection(yamlCfg, entry.Name)
 		platformCfg, ok := section.(map[string]any)
 		if !ok {
 			continue
@@ -448,7 +419,7 @@ func ReadYAMLLayers(ctx context.Context, h string) (map[string]any, error) {
 			doc = read
 		}
 	}
-	m, ok := config.Expand(doc, os.LookupEnv).(map[string]any)
+	m, ok := config.Expand(doc, config.ProfileEnvLookup(ctx, h)).(map[string]any)
 	if !ok {
 		return nil, &PyError{"AttributeError", "the config layer is " + errchain.Kind(doc) + ", expected a mapping"}
 	}
@@ -464,13 +435,8 @@ func LoadYAMLLayer(ctx context.Context, h string, gwData map[string]any) error {
 	if len(yamlCfg) == 0 {
 		return nil
 	}
-	gatewaySection := yamlCfg["gateway"]
-	BridgeToplevelKeys(yamlCfg, gatewaySection, gwData)
-	var gatewayPlatforms any
-	if m, ok := gatewaySection.(map[string]any); ok {
-		gatewayPlatforms = m["platforms"]
-	}
-	platformsData, err := MergePlatformSections(ctx, yamlCfg, gatewaySection, gwData, nil)
+	BridgeToplevelKeys(yamlCfg, yamlCfg["gateway"], gwData)
+	platformsData, err := MergePlatformSections(yamlCfg, gwData)
 	if err != nil {
 		return err
 	}
@@ -485,7 +451,7 @@ func LoadYAMLLayer(ctx context.Context, h string, gwData map[string]any) error {
 		}
 	}
 	targets := sharedLoopTargets(ctx, registry, pluginEntries)
-	scratch, err := MergePlatformSections(ctx, yamlCfg, gatewaySection, map[string]any{}, nil)
+	scratch, err := MergePlatformSections(yamlCfg, map[string]any{})
 	if err != nil {
 		return err
 	}
@@ -495,8 +461,8 @@ func LoadYAMLLayer(ctx context.Context, h string, gwData map[string]any) error {
 		return err
 	}
 	warned := map[[2]string]bool{}
-	BridgePlatformSharedKeys(yamlCfg, gatewayPlatforms, gwData, platformsData, targets, warned, authored)
-	ApplyPluginYAMLHooks(ctx, yamlCfg, gatewayPlatforms, platformsData, registry, warned, authored, managedExtra, entries)
+	BridgePlatformSharedKeys(yamlCfg, gwData, platformsData, targets, warned, authored)
+	ApplyPluginYAMLHooks(ctx, yamlCfg, platformsData, registry, warned, authored, managedExtra, entries)
 	return nil
 }
 

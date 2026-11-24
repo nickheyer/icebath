@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Platforms whose adapters create a handoff thread a branch can move into
@@ -16,10 +15,10 @@ const branchHereFlag = "--here"
 
 // Whether the branch stays here and its optional title, only a leading here flag counting as a flag
 func parseBranchArgs(raw string) (bool, string) {
-	text := pystr.Strip(raw)
+	text := strings.TrimSpace(raw)
 	head, rest, _ := strings.Cut(text, " ")
-	if pystr.Lower(head) == branchHereFlag {
-		return true, pystr.Strip(rest)
+	if strings.ToLower(head) == branchHereFlag {
+		return true, strings.TrimSpace(rest)
 	}
 	return false, text
 }

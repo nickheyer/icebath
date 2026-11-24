@@ -479,7 +479,7 @@ func partialClone(gitCmd []string, dir string) (bool, error) {
 		return false, nil
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-	return strings.Contains(pystr.Lower(pystr.DecodeUTF8Replace(raw)), "partialclone"), nil
+	return strings.Contains(strings.ToLower(pystr.DecodeUTF8Replace(raw)), "partialclone"), nil
 }
 
 // Path(base or ".") / value, an absolute value replacing the base
@@ -516,8 +516,8 @@ func prefetchForMove(ctx context.Context, gitCmd, args []string, opts ChildOptio
 		if err != nil {
 			return "", err
 		}
-		if out.ReturnCode == 0 && pystr.Strip(out.Stdout) != "" {
-			return pystr.Strip(out.Stdout), nil
+		if out.ReturnCode == 0 && strings.TrimSpace(out.Stdout) != "" {
+			return strings.TrimSpace(out.Stdout), nil
 		}
 		return "", nil
 	}
@@ -576,7 +576,7 @@ func reportRefusedJoin(ctx context.Context, report string, argv []string) *strin
 	note := ""
 	if err == nil {
 		if text, derr := pystr.DecodeUTF8Sig(raw); derr == nil {
-			note = pystr.Strip(text)
+			note = strings.TrimSpace(text)
 		}
 	}
 	_ = os.Remove(report)

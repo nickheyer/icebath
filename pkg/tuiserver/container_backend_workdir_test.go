@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Absolute path that exists only inside a sandbox, never on this host
@@ -51,7 +49,7 @@ func TestLocalBackendMissingCwdStillFallsBack(t *testing.T) {
 	h := containerLaunchHome(t)
 	writeCfg(t, h, "terminal:\n  backend: local\n  cwd: "+containerDir(t)+"\n")
 	wd, _ := os.Getwd()
-	if got := completionCwdOf(t, map[string]any{}); got != wd {
+	if got := completionCwdOf(t, h); got != wd {
 		t.Fatalf("cwd = %q want %q", got, wd)
 	}
 }
@@ -60,32 +58,7 @@ func TestContainerBackendHostCwdKeepsHostPath(t *testing.T) {
 	h := containerLaunchHome(t)
 	project := mustMkdir(t, filepath.Join(t.TempDir(), "project"))
 	writeCfg(t, h, "terminal:\n  backend: docker\n  cwd: "+project+"\n")
-	if got := completionCwdOf(t, map[string]any{}); got != project {
+	if got := completionCwdOf(t, h); got != project {
 		t.Fatalf("cwd = %q want %q", got, project)
-	}
-}
-
-func TestNamedContainerProfileUsesItsContainerCwd(t *testing.T) {
-	containerLaunchHome(t)
-	tmp := t.TempDir()
-	container := containerDir(t)
-	profile := writeCfg(t, filepath.Join(tmp, "box"), "terminal:\n  backend: docker\n  cwd: "+container+"\n")
-	saved := resolveProfileHome
-	resolveProfileHome = func(name string) (string, error) {
-		if name == "box" {
-			return profile, nil
-		}
-		return "", nil
-	}
-	t.Cleanup(func() { resolveProfileHome = saved })
-	inherited := mustMkdir(t, filepath.Join(tmp, "user-home"))
-	if got := completionCwdOf(t, map[string]any{"profile": "box", "cwd": inherited, "cwd_explicit": false}); got != container {
-		t.Fatalf("inherited cwd = %q", got)
-	}
-	if got := completionCwdOf(t, map[string]any{"profile": "box"}); got != container {
-		t.Fatalf("profile cwd = %q", got)
-	}
-	if sessionIsLocalBackend(t.Context(), tuihost.NewSession(map[string]any{"cwd": container, "profile_home": profile})) {
-		t.Fatal("named container session reported local")
 	}
 }

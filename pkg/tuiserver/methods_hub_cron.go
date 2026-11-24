@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubCronRegistry = &handlerRegistry{}
@@ -104,7 +103,7 @@ func cronJobRow(j *cron.Job) tuigateway.CronJobRow {
 }
 
 // Scheduled jobs of the profile, paused and finished ones when asked, and whether the background service starts on its own
-func cronJobsList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronJobsList(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronJobsList.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil
@@ -161,7 +160,7 @@ var createdJobRe = regexp.MustCompile(`Created job: (\S+)`)
 
 // Creates or edits a job through the cron command the CLI runs, the form's fields as its flags
 func cronJobsWrite(command string) rpcBody {
-	return func(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+	return func(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 		p, err := tuigateway.CronJobsCreate.Params(params)
 		if err != nil {
 			return cronParamsRefused(rid, err), nil
@@ -210,7 +209,7 @@ func cronJobsWrite(command string) rpcBody {
 
 // Pauses, resumes, cancels the live run of or removes a job through the cron command the CLI runs
 func cronJobsAction(command string) rpcBody {
-	return func(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+	return func(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 		p, err := tuigateway.CronJobsPause.Params(params)
 		if err != nil {
 			return cronParamsRefused(rid, err), nil
@@ -230,7 +229,7 @@ func cronJobsAction(command string) rpcBody {
 }
 
 // Starts a run of the job now as icebath cron run does, in the background so the answer comes at once and the outcome lands in the job's runs
-func cronJobsRun(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronJobsRun(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronJobsRun.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil
@@ -263,7 +262,7 @@ func plainPathPart(name string) bool {
 }
 
 // Durable runs of a job, or of every job, and the outputs its runs saved, newest first
-func cronJobsRuns(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronJobsRuns(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronJobsRuns.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil
@@ -310,7 +309,7 @@ func cronJobsRuns(ctx context.Context, rid any, params map[string]any, _ *tuihos
 const cronOutputReadLimit = 256 * 1024
 
 // Text of one saved output of a job, its end kept when it is long
-func cronJobsOutput(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronJobsOutput(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronJobsOutput.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil
@@ -332,7 +331,7 @@ func cronJobsOutput(ctx context.Context, rid any, params map[string]any, _ *tuih
 }
 
 // Failure incidents of the scheduled jobs, those in a state when one is named
-func cronIncidentsList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronIncidentsList(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronIncidentsList.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil
@@ -350,7 +349,7 @@ func cronIncidentsList(ctx context.Context, rid any, params map[string]any, _ *t
 }
 
 // Acknowledges a failure incident through the cron command the CLI runs
-func cronIncidentsAck(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronIncidentsAck(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronIncidentsAck.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil
@@ -363,7 +362,7 @@ func cronIncidentsAck(ctx context.Context, rid any, params map[string]any, _ *tu
 }
 
 // Scheduler doctor or status report, or a job's notepad listed, set or cleared, through the cron command the CLI runs
-func cronReport(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func cronReport(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.CronReport.Params(params)
 	if err != nil {
 		return cronParamsRefused(rid, err), nil

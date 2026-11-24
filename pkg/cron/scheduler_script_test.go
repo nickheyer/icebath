@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -360,15 +359,16 @@ func TestScriptTimeoutTreeKillTimeoutLeavesNoSetsidGrandchild(t *testing.T) {
 	}
 }
 
-func mediaTimeoutStore(t *testing.T, cfg config.Tree) *Store {
+// Store whose config.yaml holds the given text
+func mediaTimeoutStore(t *testing.T, configText string) *Store {
 	t.Helper()
 	s, _ := newTestStore(t)
-	s.loadConfig = func() (config.Tree, error) { return cfg, nil }
+	writeHomeConfig(t, s, configText)
 	return s
 }
 
 func TestMediaSendTimeoutResolutionDefault(t *testing.T) {
-	s := mediaTimeoutStore(t, config.Tree{})
+	s := mediaTimeoutStore(t, "")
 	t.Setenv("ICEBATH_CRON_MEDIA_SEND_TIMEOUT", "")
 	if got := s.getMediaSendTimeout(context.Background()); defaultMediaSendTimeout != 300 || got != defaultMediaSendTimeout {
 		t.Fatalf("got %d", got)
@@ -376,7 +376,7 @@ func TestMediaSendTimeoutResolutionDefault(t *testing.T) {
 }
 
 func TestMediaSendTimeoutResolutionEnvWins(t *testing.T) {
-	s := mediaTimeoutStore(t, config.Tree{"cron": map[string]any{"media_send_timeout_seconds": 900}})
+	s := mediaTimeoutStore(t, "cron:\n  media_send_timeout_seconds: 900\n")
 	t.Setenv("ICEBATH_CRON_MEDIA_SEND_TIMEOUT", "45")
 	if got := s.getMediaSendTimeout(context.Background()); got != 45 {
 		t.Fatalf("got %d", got)
@@ -384,7 +384,7 @@ func TestMediaSendTimeoutResolutionEnvWins(t *testing.T) {
 }
 
 func TestMediaSendTimeoutResolutionConfigValue(t *testing.T) {
-	s := mediaTimeoutStore(t, config.Tree{"cron": map[string]any{"media_send_timeout_seconds": 900}})
+	s := mediaTimeoutStore(t, "cron:\n  media_send_timeout_seconds: 900\n")
 	t.Setenv("ICEBATH_CRON_MEDIA_SEND_TIMEOUT", "")
 	if got := s.getMediaSendTimeout(context.Background()); got != 900 {
 		t.Fatalf("got %d", got)
@@ -393,7 +393,7 @@ func TestMediaSendTimeoutResolutionConfigValue(t *testing.T) {
 
 func TestMediaSendTimeoutResolutionInvalidEnvFallsBack(t *testing.T) {
 	for _, bad := range []string{"abc", "-5", "0", ""} {
-		s := mediaTimeoutStore(t, config.Tree{})
+		s := mediaTimeoutStore(t, "")
 		t.Setenv("ICEBATH_CRON_MEDIA_SEND_TIMEOUT", bad)
 		if got := s.getMediaSendTimeout(context.Background()); got != defaultMediaSendTimeout {
 			t.Fatalf("%q got %d", bad, got)
@@ -402,8 +402,14 @@ func TestMediaSendTimeoutResolutionInvalidEnvFallsBack(t *testing.T) {
 }
 
 func TestMediaSendTimeoutResolutionInvalidConfigFallsBack(t *testing.T) {
-	s := mediaTimeoutStore(t, config.Tree{"cron": map[string]any{"media_send_timeout_seconds": "nope"}})
 	t.Setenv("ICEBATH_CRON_MEDIA_SEND_TIMEOUT", "")
+	for _, bad := range []string{"nope", "-5", "0"} {
+		s := mediaTimeoutStore(t, "cron:\n  media_send_timeout_seconds: "+bad+"\n")
+		if got := s.getMediaSendTimeout(context.Background()); got != defaultMediaSendTimeout {
+			t.Fatalf("%q got %d", bad, got)
+		}
+	}
+	s := mediaTimeoutStore(t, "cron:\n  media_send_timeout_seconds: nope\n")
 	if got := s.getMediaSendTimeout(context.Background()); got != defaultMediaSendTimeout {
 		t.Fatalf("got %d", got)
 	}

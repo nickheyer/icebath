@@ -2,23 +2,14 @@ package browser
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Optional env knob as os.environ.get returns it
-func osEnvOr(name, fallback string) string {
-	if v, ok := os.LookupEnv(name); ok {
-		return v
-	}
-	return fallback
-}
 
 // Browserbase paid features dropped in order on a 402, with the warning each drop logs
 var browserbasePaidFallbacks = [][2]string{
@@ -79,21 +70,17 @@ func (p *BrowserbaseBrowserProvider) CreateSession(env *tools.Env, taskID string
 		return nil, err
 	}
 	log := p.log(env)
-	proxies := strings.ToLower(osEnvOr("BROWSERBASE_PROXIES", "true")) != "false"
-	stealth := strings.ToLower(osEnvOr("BROWSERBASE_ADVANCED_STEALTH", "false")) == "true"
-	keepAlive := strings.ToLower(osEnvOr("BROWSERBASE_KEEP_ALIVE", "true")) != "false"
-	customTimeout := os.Getenv("BROWSERBASE_SESSION_TIMEOUT")
+	ctx := cfgOf(env).ctx()
+	proxies := settings.BrowserBrowserbaseProxies.Get(ctx)
+	stealth := settings.BrowserBrowserbaseAdvancedStealth.Get(ctx)
+	keepAlive := settings.BrowserBrowserbaseKeepAlive.Get(ctx)
 	cfg := pyjson.NewObject()
 	cfg.Set("projectId", c.ProjectID)
 	if keepAlive {
 		cfg.Set("keepAlive", true)
 	}
-	if customTimeout != "" {
-		if n, ok := pyint.Parse(customTimeout); !ok {
-			log.Warn("Invalid BROWSERBASE_SESSION_TIMEOUT value: " + customTimeout)
-		} else if n.Sign() > 0 {
-			cfg.Set("timeout", pyint.Native(n))
-		}
+	if limit, set := settings.BrowserBrowserbaseSessionTimeout.Lookup(ctx); set && wholeSeconds(limit) > 0 {
+		cfg.Set("timeout", wholeSeconds(limit))
 	}
 	if proxies {
 		cfg.Set("proxies", true)
@@ -129,7 +116,7 @@ func (p *BrowserbaseBrowserProvider) CreateSession(env *tools.Env, taskID string
 	_, timed := cfg.Get("timeout")
 	order := []string{"basic_stealth", "proxies", "advanced_stealth", "keep_alive", "custom_timeout"}
 	features := map[string]any{"basic_stealth": true, "proxies": proxies && !dropped["proxies"], "advanced_stealth": stealth,
-		"keep_alive": keepAlive && !dropped["keepAlive"], "custom_timeout": customTimeout != "" && timed}
+		"keep_alive": keepAlive && !dropped["keepAlive"], "custom_timeout": timed}
 	var on []string
 	for _, k := range order {
 		if features[k].(bool) {
@@ -289,12 +276,9 @@ func (p *FirecrawlBrowserProvider) releaseHeaders(env *tools.Env, c *cloudConfig
 
 func (p *FirecrawlBrowserProvider) releaseBody(*cloudConfig) any { return nil }
 
-// Creates a browser with FIRECRAWL_BROWSER_TTL seconds of life, 300 when unset or unparseable
+// Creates a browser that lives for browser.firecrawl.ttl seconds
 func (p *FirecrawlBrowserProvider) CreateSession(env *tools.Env, taskID string) (map[string]any, error) {
-	var ttl any = 300
-	if n, ok := pyint.Parse(osEnvOr("FIRECRAWL_BROWSER_TTL", "300")); ok {
-		ttl = pyint.Native(n)
-	}
+	ttl := wholeSeconds(settings.BrowserFirecrawlTtl.Get(cfgOf(env).ctx()))
 	headers, err := p.headers(env, nil)
 	if err != nil {
 		return nil, err

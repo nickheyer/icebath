@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -218,20 +219,23 @@ func TestStaleEndpointSessionIsRebuilt(t *testing.T) {
 	}
 }
 
-// TestSessionInactivityTimeout test_default_matches_config_default
+// The idle timeout of a profile that sets nothing is the setting's default
 func TestSessionInactivityTimeoutDefault(t *testing.T) {
 	t.Setenv("BROWSER_INACTIVITY_TIMEOUT", "")
 	os.Unsetenv("BROWSER_INACTIVITY_TIMEOUT")
-	want := config.Defaults().Sub("browser").Get("inactivity_timeout")
-	if got := getSessionInactivityTimeout(&tools.Env{Config: config.Tree{}}); got != want {
+	want := int(settings.BrowserInactivityTimeout.Default / time.Second)
+	if got := getSessionInactivityTimeout(testEnv(t)); got != want {
 		t.Fatalf("timeout %d want %v", got, want)
 	}
 }
 
-// TestSessionInactivityTimeout test_invalid_config_preserves_env_fallback
-func TestSessionInactivityTimeoutInvalidConfigKeepsEnvFallback(t *testing.T) {
+// BROWSER_INACTIVITY_TIMEOUT overrides browser.inactivity_timeout, an invalid config value or a valid one
+func TestSessionInactivityTimeoutEnvOverridesConfig(t *testing.T) {
 	t.Setenv("BROWSER_INACTIVITY_TIMEOUT", "240")
-	if got := getSessionInactivityTimeout(browserEnv(map[string]any{"inactivity_timeout": "not-an-int"})); got != 240 {
+	if got := getSessionInactivityTimeout(browserEnv(t, map[string]any{"inactivity_timeout": "not-an-int"})); got != 240 {
+		t.Fatalf("timeout %d", got)
+	}
+	if got := getSessionInactivityTimeout(browserEnv(t, map[string]any{"inactivity_timeout": 600})); got != 240 {
 		t.Fatalf("timeout %d", got)
 	}
 }
@@ -317,14 +321,15 @@ func TestEmergencyCleanupClearsAllTrackingState(t *testing.T) {
 // TestInactivityJanitorMultiplex test_janitor_tears_down_under_owner_profile_scope
 func TestJanitorTearsDownUnderOwnerProfile(t *testing.T) {
 	isolateSessions(t)
-	pin(t, &sessionInactivity, func() int { return 0 })
+	pin(t, &sessionInactivity, func(*tools.Env) int { return 0 })
 	pin(t, &sessionStopSupervisor, func(*tools.Env, string) {})
 	clearCloudEnv(t)
 	p1 := t.TempDir()
 	if err := os.WriteFile(p1+"/.env", []byte("BROWSER_USE_API_KEY=p1-key\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	owner := &tools.Env{Home: p1, Secrets: config.NewSecrets(p1), Config: config.Tree{"browser": map[string]any{"cloud_provider": "local"}}}
+	writeBrowserSection(t, p1, map[string]any{"cloud_provider": "local"})
+	owner := &tools.Env{Home: p1, Secrets: config.NewSecrets(p1)}
 	updateSessionActivity(owner, "t1")
 	activeSessions.Set("t1", map[string]any{"session_name": "s1", "bb_session_id": nil, "launcher_key": "t1",
 		"features": map[string]any{"local": true}})
@@ -346,7 +351,7 @@ func TestJanitorTearsDownUnderOwnerProfile(t *testing.T) {
 // TestInactivityJanitorMultiplex test_repeated_failures_force_reap_and_close_cloud_session
 func TestRepeatedFailuresForceReapAndCloseCloudSession(t *testing.T) {
 	env := isolateSessions(t)
-	pin(t, &sessionInactivity, func() int { return 0 })
+	pin(t, &sessionInactivity, func(*tools.Env) int { return 0 })
 	pin(t, &sessionStopSupervisor, func(*tools.Env, string) {})
 	activeSessions.Set("t1", map[string]any{"session_name": "s1", "bb_session_id": "bb-1"})
 	sessionLastActivity.Set("t1", 1.0)

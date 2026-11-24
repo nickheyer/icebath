@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var httpPrefixes = []string{"http://", "https://"}
@@ -191,7 +190,7 @@ func (a *WhatsAppCloudAdapter) SendDocument(ctx context.Context, chatID, filePat
 func (a *WhatsAppCloudAdapter) SendVoice(ctx context.Context, chatID, audioPath, caption, replyTo string, metadata, extra map[string]any) (gateway.SendResult, error) {
 	mimeType := ""
 	isVoice, isBool := extra["is_voice"].(bool)
-	isMP3 := strings.HasSuffix(pystr.Lower(audioPath), ".mp3")
+	isMP3 := strings.HasSuffix(strings.ToLower(audioPath), ".mp3")
 	if isBool && !isVoice && isMP3 {
 		mimeType = "audio/mpeg"
 	} else if !isHTTPSource(audioPath) && isMP3 && pathExists(audioPath) {
@@ -262,7 +261,7 @@ func (a *WhatsAppCloudAdapter) downloadMediaToCache(ctx context.Context, mediaID
 	if client == nil {
 		return "", "", nil
 	}
-	mediaID = pystr.Strip(mediaID)
+	mediaID = strings.TrimSpace(mediaID)
 	if ok, _ := mediaIDRE.MatchString(mediaID); !ok {
 		short := []rune(mediaID)
 		if len(short) > 64 {

@@ -1,18 +1,12 @@
 package gateway
 
 import (
+	"context"
 	"math"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-)
-
-const (
-	defaultPlatformKeepaliveExpiry = 2.0
-	defaultPlatformMaxKeepalive    = 10
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Keepalive pool bounds of an HTTP client, nil fields meaning unbounded as in httpx Limits
@@ -28,39 +22,16 @@ func DefaultHTTPXLimits() HTTPXLimits {
 	return HTTPXLimits{MaxConnections: &maxConns, MaxKeepaliveConnections: &keep, KeepaliveExpiry: &expiry}
 }
 
-// Cast of the env value when set, parseable and positive, else the default
-func positiveEnv[T int | float64](name string, def T, cast func(string) (T, bool)) T {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return def
+// Tighter keepalive limits for persistent chat app clients of the profile ctx serves
+func PlatformHTTPXLimits(ctx context.Context) HTTPXLimits {
+	sctx := SettingsContext(ctx)
+	keep := settings.GatewayHTTPMaxKeepalive.Get(sctx)
+	expiry := settings.GatewayHTTPKeepaliveExpiry.Get(sctx)
+	if expiry <= 0 {
+		expiry = settings.GatewayHTTPKeepaliveExpiry.Default
 	}
-	val, ok := cast(raw)
-	if !ok || !(val > 0) {
-		return def
-	}
-	return val
-}
-
-// Python int of an env text that fits the platform int
-func envInt(raw string) (int, bool) {
-	n, ok := pyint.Parse(raw)
-	if !ok || !n.IsInt64() || n.Int64() > math.MaxInt || n.Int64() < math.MinInt {
-		return 0, false
-	}
-	return int(n.Int64()), true
-}
-
-// Python float of an env text
-func envFloat(raw string) (float64, bool) {
-	v, err := pyint.ParseFloat(raw)
-	return v, err == nil
-}
-
-// Tighter keepalive limits for persistent platform adapter clients with their env overrides
-func PlatformHTTPXLimits() HTTPXLimits {
-	keep := positiveEnv("ICEBATH_GATEWAY_HTTPX_MAX_KEEPALIVE", defaultPlatformMaxKeepalive, envInt)
-	expiry := positiveEnv("ICEBATH_GATEWAY_HTTPX_KEEPALIVE_EXPIRY", defaultPlatformKeepaliveExpiry, envFloat)
-	return HTTPXLimits{MaxKeepaliveConnections: &keep, KeepaliveExpiry: &expiry}
+	seconds := expiry.Seconds()
+	return HTTPXLimits{MaxKeepaliveConnections: &keep, KeepaliveExpiry: &seconds}
 }
 
 // Applies the pool bounds to a transport, unbounded fields lifting the net/http per host defaults

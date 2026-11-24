@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Environment variable naming the home directory of the running process
@@ -73,7 +72,7 @@ func expand(path string) string {
 func platformDefault(environ func(string) string, userHome func() (string, error)) (string, error) {
 	suffix := environ(EnvSuffix)
 	if runtime.GOOS == "windows" {
-		base := pystr.Strip(environ("LOCALAPPDATA"))
+		base := strings.TrimSpace(environ("LOCALAPPDATA"))
 		if base == "" {
 			h, err := userHome()
 			if err != nil {
@@ -137,7 +136,7 @@ func PlatformDefault() string {
 
 // Expanded home variable of the process, empty when it is blank
 func envHomePath() string {
-	if v := pystr.Strip(os.Getenv(EnvHome)); v != "" {
+	if v := strings.TrimSpace(os.Getenv(EnvHome)); v != "" {
 		return expand(v)
 	}
 	return ""
@@ -164,7 +163,7 @@ func Dir(ctx context.Context) string {
 	if o := Override(ctx); o != "" {
 		return expand(o)
 	}
-	if pystr.Strip(os.Getenv(EnvHome)) == "" {
+	if strings.TrimSpace(os.Getenv(EnvHome)) == "" {
 		warnProfileFallbackOnce()
 	}
 	return Process()
@@ -194,7 +193,7 @@ func AccountDefault(ctx context.Context) string {
 func pathEqual(a, b string) bool {
 	a, b = pypath.PathStr(a), pypath.PathStr(b)
 	if runtime.GOOS == "windows" {
-		return pystr.Lower(a) == pystr.Lower(b)
+		return strings.ToLower(a) == strings.ToLower(b)
 	}
 	return a == b
 }
@@ -249,7 +248,7 @@ func Root() string {
 // Root home that owns the given home
 func RootOf(home string) string {
 	native := PlatformDefault()
-	if h := pystr.Strip(home); h != "" {
+	if h := strings.TrimSpace(home); h != "" {
 		return rootOf(native, expand(h))
 	}
 	return native
@@ -297,7 +296,7 @@ func NamedProfileHome(path string) string {
 
 // Profile id owning path, default for the root home, empty when path is no home
 func ProfileNameFor(path string) string {
-	if pystr.Strip(path) == "" {
+	if strings.TrimSpace(path) == "" {
 		return ""
 	}
 	current, err := pypath.PathExpanduser(path)

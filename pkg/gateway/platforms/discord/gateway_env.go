@@ -2,7 +2,6 @@ package discord
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var envEnableCredentials = []string{"DISCORD_BOT_TOKEN"}
@@ -15,10 +14,7 @@ var envOverrides = []gateway.EnvStep{
 
 var authz = map[string]any{"allowed_users_env": "DISCORD_ALLOWED_USERS", "allow_all_env": "DISCORD_ALLOW_ALL_USERS", "allow_bots_env": "DISCORD_ALLOW_BOTS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled discord directory with the gateway config bridge, and the settings its access names moved to
+// Registers the env declarations of the bundled discord directory with the gateway config bridge
 func init() {
 	gateway.RegisterBundledEnv("discord", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
-	gateway.RegisterEnvSettings(map[string]settings.Entry{"DISCORD_ALLOWED_USERS": settings.DiscordAllowFrom,
-		"DISCORD_ALLOW_ALL_USERS": settings.DiscordAllowAllUsers, "DISCORD_ALLOW_BOTS": settings.DiscordAllowBots,
-		"DISCORD_ALLOWED_ROLES": settings.DiscordAllowedRoles, "DISCORD_ALLOWED_CHANNELS": settings.DiscordAllowedChannels})
 }

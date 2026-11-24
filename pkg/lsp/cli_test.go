@@ -22,8 +22,7 @@ func TestCommandStatusRendersServiceAndRegistry(t *testing.T) {
 	t.Setenv("PATH", "")
 	svc := testService(t, rt, Options{WaitTimeout: 5, DisabledServers: []string{"gopls"}})
 	svc.markBroken(pairKey{"pyright", "/r"})
-	cc := CommandContext{Runtime: rt, Config: func() map[string]any { return map[string]any{} },
-		Service: func() (*Service, error) { return svc, nil }}
+	cc := CommandContext{Runtime: rt, Service: func() (*Service, error) { return svc, nil }}
 	code, out, _ := runCLI(t, cc, CommandArgs{})
 	for _, want := range []string{"LSP Service\n===========\n  enabled:         True\n  wait_mode:       document\n  wait_timeout:    5.0s\n  install_strategy:manual\n  active clients:  none\n",
 		"  broken pairs:    1\n    - ('pyright', '/r')\n", "  disabled in cfg: gopls\n", "Registered Servers\n==================\n",

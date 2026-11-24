@@ -1,6 +1,8 @@
 package pet
 
 import (
+	"strings"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -79,7 +81,7 @@ func metaText(meta *pyjson.Object, key, fallback string) string {
 // Honors spritesheetPath, else probes the conventional names, the webp name when none is on disk
 func resolveSpritesheet(directory string, meta *pyjson.Object) string {
 	names := []string{}
-	if declared := pystr.Strip(metaText(meta, "spritesheetPath", "")); declared != "" {
+	if declared := strings.TrimSpace(metaText(meta, "spritesheetPath", "")); declared != "" {
 		names = append(names, declared)
 	}
 	for _, name := range append(names, "spritesheet.webp", "spritesheet.png", "sprite.webp", "sprite.png") {
@@ -93,7 +95,7 @@ func resolveSpritesheet(directory string, meta *pyjson.Object) string {
 
 // One bare path segment of a slug so it can never escape the pets directory, empty when it has none
 func safeSlug(slug string) string {
-	segment := pypath.PathName(pystr.Strip(slug))
+	segment := pypath.PathName(strings.TrimSpace(slug))
 	if segment == "." || segment == ".." {
 		return ""
 	}
@@ -171,7 +173,7 @@ func InstalledPets(h string) ([]*InstalledPet, error) {
 // ResolveActivePet returns the configured pet when installed, else the first pet alphabetically
 func ResolveActivePet(h, configuredSlug string) (*InstalledPet, error) {
 	if configuredSlug != "" {
-		p, err := usablePet(h, pystr.Strip(configuredSlug), "")
+		p, err := usablePet(h, strings.TrimSpace(configuredSlug), "")
 		if err != nil {
 			return nil, err
 		}

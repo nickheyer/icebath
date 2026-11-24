@@ -494,7 +494,7 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 	currentBase := envBaseURLFn(r, baseURLEnv)
 	if currentBase == "" {
 		if modelCfg, ok := r.Config["model"].(map[string]any); ok {
-			currentBase = pystr.Strip(pyOrStr(modelCfg["base_url"]))
+			currentBase = strings.TrimSpace(pyOrStr(modelCfg["base_url"]))
 		}
 	}
 	regionBase := currentBase
@@ -569,7 +569,7 @@ func modelFlowVertex(r *ModelFlowRun) error {
 	if saPath == "" {
 		saPath = r.envValue("GOOGLE_APPLICATION_CREDENTIALS")
 	}
-	saPath = pystr.Strip(saPath)
+	saPath = strings.TrimSpace(saPath)
 	if saPath != "" {
 		fmt.Fprintf(r.Out, "  Vertex credentials: service account JSON (%s) ✓\n", saPath)
 	} else {
@@ -584,7 +584,7 @@ func modelFlowVertex(r *ModelFlowRun) error {
 		return err
 	}
 	vertexCfg, _ := cfg["vertex"].(map[string]any)
-	currentProject := pystr.Strip(pyOrStr(vertexCfg["project_id"]))
+	currentProject := strings.TrimSpace(pyOrStr(vertexCfg["project_id"]))
 	shown := currentProject
 	if shown == "" {
 		shown = "from credentials"
@@ -601,7 +601,7 @@ func modelFlowVertex(r *ModelFlowRun) error {
 	if pyTruthy(vertexCfg["region"]) {
 		currentRegion = pyStr(vertexCfg["region"])
 	}
-	if currentRegion = pystr.Strip(currentRegion); currentRegion == "" {
+	if currentRegion = strings.TrimSpace(currentRegion); currentRegion == "" {
 		currentRegion = "global"
 	}
 	regionInput, ok := flowAskFn(r.Out, fmt.Sprintf("  Vertex region [%s]: ", currentRegion), flowAskOptions{CancelMsg: optStr("")})
@@ -789,8 +789,8 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 	currentBase := envBaseURLFn(r, baseURLEnv)
 	if currentBase == "" {
 		if cfg, cerr := r.loadConfig(); cerr == nil {
-			if m, ok := cfg["model"].(map[string]any); ok && pystr.Lower(pystr.Strip(pyOrStr(m["provider"]))) == providerID {
-				currentBase = pystr.Strip(pyOrStr(m["base_url"]))
+			if m, ok := cfg["model"].(map[string]any); ok && strings.ToLower(strings.TrimSpace(pyOrStr(m["provider"]))) == providerID {
+				currentBase = strings.TrimSpace(pyOrStr(m["base_url"]))
 			}
 		}
 	}
@@ -800,7 +800,7 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 	}
 	if providerID == "actual" {
 		if modelCfg, ok := r.Config["model"].(map[string]any); ok && NormalizeProvider(pyOrStr(modelCfg["provider"])) == providerID {
-			if configured := pystr.Strip(pyOrStr(modelCfg["base_url"])); configured != "" {
+			if configured := strings.TrimSpace(pyOrStr(modelCfg["base_url"])); configured != "" {
 				effectiveBase = configured
 			}
 		}

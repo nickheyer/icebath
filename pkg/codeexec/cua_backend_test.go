@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -20,15 +22,21 @@ func cuSwap[T any](t *testing.T, target *T, value T) {
 	t.Cleanup(func() { *target = old })
 }
 
-// Pins the config loader to a fixed tree or a load failure like patching load_config
+// Points the process profile at a fresh home whose config.yaml holds tree, or a config.yaml that cannot be parsed when fail is set
 func cuConfig(t *testing.T, tree map[string]any, fail bool) {
 	t.Helper()
-	cuSwap(t, &loadCUConfig, func(*tools.Env) (config.Tree, error) {
-		if fail {
-			return nil, errors.New("boom")
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	data := []byte("computer_use: [unclosed\n")
+	if !fail {
+		var err error
+		if data, err = config.SafeDump(tree); err != nil {
+			t.Fatal(err)
 		}
-		return config.Tree(tree), nil
-	})
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // cuRunCall is one argv and runOpts pair the faked subprocess runner saw

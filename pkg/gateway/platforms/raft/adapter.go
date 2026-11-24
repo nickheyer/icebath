@@ -22,23 +22,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	defaultHost           = "127.0.0.1"
-	defaultPort           = 0
-	defaultPath           = "/wake"
-	defaultRuntimeSession = "default"
-	defaultMaxBodyBytes   = 16_384
-	bridgeTokenHeader     = "x-raft-bridge-token"
-	wakePrompt            = "Raft wake hint received. New Raft messages may be pending. " +
+	bridgeTokenHeader = "x-raft-bridge-token"
+	wakePrompt        = "Raft wake hint received. New Raft messages may be pending. " +
 		"If you have not read the Raft manual in this session, run " +
 		"`raft manual get raft-cli-overview` before using Raft commands."
 )
@@ -53,9 +48,9 @@ func resolveRaftProfile(ctx context.Context) string {
 		if err != nil {
 			return ""
 		}
-		return pystr.Strip(value)
+		return strings.TrimSpace(value)
 	}
-	return pystr.Strip(os.Getenv("RAFT_PROFILE"))
+	return strings.TrimSpace(os.Getenv("RAFT_PROFILE"))
 }
 
 // Whether the raft CLI is on PATH, a silent probe run on every gateway config load
@@ -92,20 +87,7 @@ type RaftAdapter struct {
 	bridge      *bridgeProcess
 }
 
-// Python int of an extra value, the TypeError or ValueError int raises otherwise
-func extraInt(extra map[string]any, key string, def int) (int, error) {
-	value, ok := extra[key]
-	if !ok {
-		return def, nil
-	}
-	n, err := pyint.Int64(value)
-	if pe, isPy := err.(*pyint.Error); isPy {
-		return 0, &gateway.PyError{Kind: pe.Kind, Msg: pe.Msg}
-	}
-	return int(n), err
-}
-
-// Adapter for a platform config reading the bind address, wake path, bridge token and body cap from extra
+// Adapter for a platform config with its bridge token and the bind address, wake path and body cap of the profile served
 func NewRaftAdapter(ctx context.Context, config *gateway.PlatformConfig) (*RaftAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -116,35 +98,22 @@ func NewRaftAdapter(ctx context.Context, config *gateway.PlatformConfig) (*RaftA
 	if extra == nil {
 		extra = map[string]any{}
 	}
-	a.host = defaultHost
-	if v, ok := extra["host"]; ok {
-		a.host = pyrepr.Str(v)
-	}
-	var err error
-	if a.port, err = extraInt(extra, "port", defaultPort); err != nil {
-		return nil, err
-	}
-	var path any = defaultPath
-	if v, ok := extra["path"]; ok && pyrepr.Truthy(v) {
-		path = v
-	}
-	a.path = pystr.Strip(pyrepr.Str(path))
-	if a.path == "" {
-		a.path = defaultPath
+	sctx := gateway.SettingsContext(ctx)
+	a.host = settings.RaftHost.Get(sctx)
+	a.port = settings.RaftPort.Get(sctx)
+	if a.path = strings.TrimSpace(settings.RaftPath.Get(sctx)); a.path == "" {
+		a.path = settings.RaftPath.Default
 	}
 	if !strings.HasPrefix(a.path, "/") {
 		a.path = "/" + a.path
 	}
 	if token := extra["bridge_token"]; pyrepr.Truthy(token) {
-		a.bridgeToken = pystr.Strip(pyrepr.Str(token))
+		a.bridgeToken = strings.TrimSpace(pyrepr.Str(token))
 	}
-	a.runtimeSession = defaultRuntimeSession
-	if v, ok := extra["runtime_session"]; ok && pyrepr.Truthy(v) {
-		a.runtimeSession = pyrepr.Str(v)
+	if a.runtimeSession = settings.RaftRuntimeSession.Get(sctx); a.runtimeSession == "" {
+		a.runtimeSession = settings.RaftRuntimeSession.Default
 	}
-	if a.maxBodyBytes, err = extraInt(extra, "max_body_bytes", defaultMaxBodyBytes); err != nil {
-		return nil, err
-	}
+	a.maxBodyBytes = settings.RaftMaxBodyBytes.Get(sctx)
 	return a, nil
 }
 

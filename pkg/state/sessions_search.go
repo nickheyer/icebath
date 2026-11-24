@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // WHERE for a workspace key, git_repo_root equal to it or an older row whose cwd lies at or under it
@@ -81,7 +80,7 @@ func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o Sear
 	if o.Limit != nil {
 		limit = *o.Limit
 	}
-	needle := pystr.Lower(pystr.Strip(query))
+	needle := strings.ToLower(strings.TrimSpace(query))
 	if needle == "" || limit <= 0 {
 		return []*pyjson.Object{}, nil
 	}
@@ -96,7 +95,7 @@ func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o Sear
 		normalized := []string{}
 		for _, key := range []string{"id", "_lineage_root_id"} {
 			if v := rowValue(row, key); pyTruthy(v) {
-				normalized = append(normalized, pystr.Lower(pyStr(v)))
+				normalized = append(normalized, strings.ToLower(pyStr(v)))
 			}
 		}
 		if slices.Contains(normalized, needle) {

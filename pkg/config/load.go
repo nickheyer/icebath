@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -107,19 +106,6 @@ func Canonicalize(doc map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	return doc, nil
-}
-
-// Model and provider of a model default value that may be a string or a mapping
-func SplitModelDefault(raw any) (string, string) {
-	if m, ok := raw.(map[string]any); ok {
-		provider := strings.TrimFunc(pyOrEmpty(m["provider"]), isPySpace)
-		model := m["model"]
-		if !PyTruthy(model) {
-			model = m["default"]
-		}
-		return strings.TrimFunc(pyOrEmpty(model), isPySpace), provider
-	}
-	return strings.TrimFunc(pyOrEmpty(raw), isPySpace), ""
 }
 
 // Writes the effective document of a home, dropping values equal to the defaults the user never set

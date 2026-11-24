@@ -48,7 +48,7 @@ func portalPost(ctx context.Context, path string, payload any, timeout float64, 
 	if err != nil {
 		return nil, err
 	}
-	rawURL := "https://" + PortalHost + path
+	rawURL := "https://" + portalHost(ctx) + path
 	client := &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: pyhttpx.RedirectPolicy(true)}
 	defer client.CloseIdleConnections()
 	resp, err := httpRequest(ctx, client, http.MethodPost, rawURL, GetAPIHeaders(), body, timeout)

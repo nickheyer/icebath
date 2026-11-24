@@ -1,6 +1,8 @@
 package selfupdate
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"errors"
@@ -181,7 +183,7 @@ func sourceRequestWith(ctx context.Context, target, accept, token string) (strin
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
 // Decoded JSON of an api.github.com resource read through the credential ladder

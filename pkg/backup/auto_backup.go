@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 )
 
@@ -77,8 +76,8 @@ func isFile(p string) bool {
 func prunePrefixedZips(backupDir, prefix string, keep int, what string) (int, error) {
 	backups, err := newestFirst(backupDir, func(p string) bool {
 		name := pypath.PathName(p)
-		return isFile(p) && strings.HasPrefix(name, prefix) && pystr.Lower(pypath.Suffix(p)) == ".zip" &&
-			!strings.HasSuffix(pystr.Lower(name), incompleteZipSuffix)
+		return isFile(p) && strings.HasPrefix(name, prefix) && strings.ToLower(pypath.Suffix(p)) == ".zip" &&
+			!strings.HasSuffix(strings.ToLower(name), incompleteZipSuffix)
 	})
 	if err != nil {
 		return 0, err
@@ -90,7 +89,7 @@ func prunePrefixedZips(backupDir, prefix string, keep int, what string) (int, er
 func pruneIncompleteZips(backupDir, prefix, what string) (int, error) {
 	salvage, err := newestFirst(backupDir, func(p string) bool {
 		name := pypath.PathName(p)
-		return isFile(p) && strings.HasPrefix(name, prefix) && strings.HasSuffix(pystr.Lower(name), incompleteZipSuffix)
+		return isFile(p) && strings.HasPrefix(name, prefix) && strings.HasSuffix(strings.ToLower(name), incompleteZipSuffix)
 	})
 	if err != nil {
 		return 0, err

@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Bounds of the per job catch up override in minutes, zero meaning never catch up
@@ -64,7 +63,7 @@ func NormalizeTimezone(value any) (*string, error) {
 	if !ok {
 		return nil, fmt.Errorf("timezone must be an IANA name such as 'Asia/Hong_Kong', got %s.", errchain.Kind(value))
 	}
-	name := pystr.Strip(text)
+	name := strings.TrimSpace(text)
 	if name == "" {
 		return nil, nil
 	}

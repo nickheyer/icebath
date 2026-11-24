@@ -197,7 +197,7 @@ func GetServiceName(ctx context.Context) (string, error) {
 
 // XDG_CONFIG_HOME/systemd/user with the account home .config as the default base
 func UserSystemdUnitDir(ctx context.Context) string {
-	base := pystr.Strip(os.Getenv("XDG_CONFIG_HOME"))
+	base := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
 	if base == "" {
 		base = filepath.Join(home.RealHome(ctx, nil), ".config")
 	}
@@ -246,11 +246,11 @@ func unitEnvironmentValue(unitPath, name string) (string, error) {
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
 	for _, line := range pystr.Splitlines(text, false) {
-		body := pystr.Strip(line)
+		body := strings.TrimSpace(line)
 		if !strings.HasPrefix(body, "Environment=") {
 			continue
 		}
-		body = pystr.Strip(body[len("Environment="):])
+		body = strings.TrimSpace(body[len("Environment="):])
 		if len(body) >= 2 && strings.HasPrefix(body, `"`) && strings.HasSuffix(body, `"`) {
 			body = body[1 : len(body)-1]
 			body = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(body, `\"`, `"`), `\\`, `\`), "%%", "%")
@@ -258,7 +258,7 @@ func unitEnvironmentValue(unitPath, name string) (string, error) {
 			body = ""
 		}
 		if strings.HasPrefix(body, name+"=") {
-			return pystr.Strip(body[len(name)+1:]), nil
+			return strings.TrimSpace(body[len(name)+1:]), nil
 		}
 	}
 	return "", nil

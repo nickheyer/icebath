@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -37,7 +36,7 @@ func relayBindingReady() bool {
 
 // Whether Relay has a consumer for this process, a plugin file Relay discovers, the plugins variable or a legacy exporter variable
 func RelayDemanded(ctx context.Context) bool {
-	if pystr.Strip(os.Getenv(RelayPluginsConfigEnv)) != "" || len(RelayDiscoveredPluginFiles()) > 0 {
+	if strings.TrimSpace(os.Getenv(RelayPluginsConfigEnv)) != "" || len(RelayDiscoveredPluginFiles()) > 0 {
 		return true
 	}
 	environ := map[string]any{}

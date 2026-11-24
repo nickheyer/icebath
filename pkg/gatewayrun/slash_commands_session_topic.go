@@ -1,13 +1,14 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -40,8 +41,8 @@ func (r *GatewayRunner) handleTopicCommand(ctx context.Context, event *gateway.M
 	} else if !authorized {
 		return i18n.T(ctx, "gateway.topic.unauthorized", "", nil), nil
 	}
-	args := pystr.Strip(event.GetCommandArgs())
-	switch pystr.Lower(args) {
+	args := strings.TrimSpace(event.GetCommandArgs())
+	switch strings.ToLower(args) {
 	case "help", "?", "-h", "--help":
 		return telegramTopicHelpText(ctx), nil
 	case "off", "disable", "stop":

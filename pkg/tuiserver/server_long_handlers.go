@@ -6,18 +6,10 @@ import "sync"
 var (
 	longHandlersMu sync.RWMutex
 	longHandlers   = map[string]bool{
-		"session.usage": true, "browser.manage": true, "complete.path": true, "complete.slash": true,
-		"model.options": true, "pet.cells": true, "pet.gallery": true, "pet.generate": true,
-		"pet.hatch": true, "pet.info": true, "pet.select": true, "learning.frames": true, "learning.graph": true,
-		"plugins.manage": true, "reload.mcp": true, "mcp.servers.test": true,
-		"mcp.servers.oauth.start": true, "process.list": true,
-		"profiles.list": true,
-		"setup.status":  true,
-		"voice.toggle":  true, "voice.record": true,
-		"wake.start": true, "wake.status": true, "session.active_list": true, "session.branch": true,
-		"session.compress": true, "session.list": true, "session.resume": true, "session.save": true,
-		"session.workspace.move": true, "shell.exec": true, "skills.manage": true, "slash.exec": true,
-		"command.dispatch": true,
+		"browser.manage": true, "pet.cells": true, "pet.gallery": true, "pet.generate": true, "pet.hatch": true,
+		"pet.info": true, "pet.select": true, "learning.frames": true, "learning.graph": true, "plugins.manage": true,
+		"mcp.servers.test": true, "mcp.servers.oauth.start": true, "voice.toggle": true, "voice.record": true,
+		"wake.start": true, "wake.status": true, "skills.manage": true,
 	}
 )
 

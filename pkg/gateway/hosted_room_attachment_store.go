@@ -91,7 +91,7 @@ func attachmentIdentifier(value any, label string) (string, error) {
 	if !ok {
 		return "", attachmentErr(label + " must be a string")
 	}
-	normalized := pystr.Strip(text)
+	normalized := strings.TrimSpace(text)
 	if normalized == "" || utf8.RuneCountInString(normalized) > maxAttachmentIdentifierChars || !roomIdentifierRe.MatchString(normalized) {
 		return "", attachmentErr("invalid " + label)
 	}
@@ -111,7 +111,7 @@ func attachmentName(value any) (string, error) {
 	if !ok {
 		return "", attachmentErr("attachment name must be a string")
 	}
-	normalized := pystr.Strip(text)
+	normalized := strings.TrimSpace(text)
 	if !utf8.ValidString(normalized) {
 		return "", attachmentErr("attachment name must contain valid Unicode")
 	}
@@ -127,7 +127,7 @@ func attachmentMime(value any) (string, error) {
 	if !ok {
 		return "", attachmentErr("attachment mime must be a string")
 	}
-	normalized := pystr.Lower(pystr.Strip(text))
+	normalized := strings.ToLower(strings.TrimSpace(text))
 	if normalized == "" || utf8.RuneCountInString(normalized) > maxAttachmentMimeChars || !attachmentMimeRe.MatchString(normalized) {
 		return "", attachmentErr("attachment mime is invalid")
 	}

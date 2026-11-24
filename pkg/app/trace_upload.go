@@ -172,7 +172,7 @@ func traceParseToolArgs(raw any) any {
 		}
 		return pyjson.NewObject()
 	}
-	if pystr.Strip(s) == "" {
+	if strings.TrimSpace(s) == "" {
 		return pyjson.NewObject()
 	}
 	parsed, err := pyjson.Loads(s)
@@ -240,7 +240,7 @@ func traceGitBranch(ctx context.Context, cwd string) string {
 	if err != nil || done.Returncode != 0 {
 		return ""
 	}
-	return pystr.Strip(pystr.DecodeUTF8Replace(done.Stdout))
+	return strings.TrimSpace(pystr.DecodeUTF8Replace(done.Stdout))
 }
 
 // Assistant turn with text and tool_use blocks, one empty text block when it has neither
@@ -359,7 +359,7 @@ func buildTraceJSONL(ctx context.Context, messages []map[string]any, sessionID, 
 // Hugging Face token from the usual environment variables
 func traceResolveHFToken() string {
 	for _, name := range traceTokenVars {
-		if v := pystr.Strip(os.Getenv(name)); v != "" {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 			return v
 		}
 	}
@@ -461,7 +461,7 @@ func uploadSessionTraceWith(ctx context.Context, sessionID, model, cwd string, r
 		}
 		return "", err
 	}
-	if pystr.Strip(jsonl) == "" {
+	if strings.TrimSpace(jsonl) == "" {
 		return "No transcript content to upload for this session.", nil
 	}
 	return traceDoUpload(ctx, jsonl, token, sessionID, datasetName, private), nil

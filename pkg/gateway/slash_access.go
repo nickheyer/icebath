@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var alwaysAllowedForUsers = map[string]struct{}{"help": {}, "whoami": {}}
@@ -85,7 +84,7 @@ func coerceSlashList(raw any, normalize func(string) string) map[string]struct{}
 		}
 	case string:
 		for _, s := range strings.Split(v, ",") {
-			if pystr.Strip(s) != "" {
+			if strings.TrimSpace(s) != "" {
 				items = append(items, s)
 			}
 		}
@@ -93,7 +92,7 @@ func coerceSlashList(raw any, normalize func(string) string) map[string]struct{}
 		items = []any{raw}
 	}
 	for _, it := range items {
-		if s := normalize(pystr.Strip(pyrepr.Str(it))); s != "" {
+		if s := normalize(strings.TrimSpace(pyrepr.Str(it))); s != "" {
 			out[s] = struct{}{}
 		}
 	}
@@ -110,7 +109,7 @@ func CoerceIDList(raw any) map[string]struct{} { return coerceIDList(raw) }
 
 // Command allowlist with leading slashes dropped and names lowercased like resolve_command stores them
 func coerceCommandList(raw any) map[string]struct{} {
-	return coerceSlashList(raw, func(s string) string { return pystr.Lower(strings.TrimLeft(s, "/")) })
+	return coerceSlashList(raw, func(s string) string { return strings.ToLower(strings.TrimLeft(s, "/")) })
 }
 
 // Policy of one scope from a platform extra dict, the DM command list falling back to the group list
@@ -136,7 +135,7 @@ func PolicyForSource(gatewayConfig *GatewayConfig, source *SessionSource) SlashA
 	if pc := gatewayConfig.Platforms[source.Platform]; pc != nil && pc.Extra != nil {
 		extra = pc.Extra
 	}
-	if normalized := pystr.Lower(pystr.Strip(source.ChatType)); normalized != "" {
+	if normalized := strings.ToLower(strings.TrimSpace(source.ChatType)); normalized != "" {
 		scope := "group"
 		if _, dm := slashDMChatTypes[normalized]; dm {
 			scope = "dm"

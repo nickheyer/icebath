@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"maps"
@@ -50,16 +52,16 @@ func (a *AIAgent) SetVoiceTurnPending(pending bool) { a.voiceTurnPending = pendi
 
 // Entry the voice turn binds, nil when the slot follows the main model
 func voiceRouteTarget(ctx context.Context, a *AIAgent, cfg map[string]any) map[string]any {
-	providerName := pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(cfg["provider"]))))
-	model := pystr.Strip(pyrepr.Str(orEmpty(cfg["model"])))
-	baseURL := pystr.Strip(pyrepr.Str(orEmpty(cfg["base_url"])))
+	providerName := strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(cfg["provider"]))))
+	model := strings.TrimSpace(pyrepr.Str(orEmpty(cfg["model"])))
+	baseURL := strings.TrimSpace(pyrepr.Str(orEmpty(cfg["base_url"])))
 	switch providerName {
 	case "", "auto", "main":
 		switch {
 		case baseURL != "":
 			providerName = "custom"
 		case model != "":
-			providerName = pystr.Lower(pystr.Strip(a.provider))
+			providerName = strings.ToLower(strings.TrimSpace(a.provider))
 		default:
 			return nil
 		}
@@ -70,7 +72,7 @@ func voiceRouteTarget(ctx context.Context, a *AIAgent, cfg map[string]any) map[s
 	if providerName == "" || model == "" {
 		return nil
 	}
-	if baseURL == "" && providerName == pystr.Lower(a.provider) && model == a.model {
+	if baseURL == "" && providerName == strings.ToLower(a.provider) && model == a.model {
 		return nil
 	}
 	providerName, baseURL = provider.ExpandDirectAPIAlias(ctx, providerName, baseURL)

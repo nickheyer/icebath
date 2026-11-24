@@ -4,94 +4,35 @@ package media
 
 import (
 	"context"
-	"os"
-	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// The voice section of the effective config, empty when missing, malformed or unreadable
-var voiceConfig = func(ctx context.Context) map[string]any {
-	tree, err := config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
-	if err != nil {
-		return map[string]any{}
-	}
-	sec, ok := asStrMap(tree["voice"])
-	if !ok {
-		return map[string]any{}
-	}
-	return sec
-}
-
-var defaultVoiceStopPhrases = []string{"stop"}
-
-// Python str of a YAML scalar a stop phrase list may hold, false for any other type
-func stopPhraseText(v any) (string, bool) {
-	switch x := v.(type) {
-	case string:
-		return x, true
-	case bool:
-		if x {
-			return "True", true
-		}
-		return "False", true
-	case int:
-		return strconv.Itoa(x), true
-	case int64:
-		return strconv.FormatInt(x, 10), true
-	case uint64:
-		return strconv.FormatUint(x, 10), true
-	case float64:
-		return pyrepr.Float(x), true
-	}
-	return "", false
-}
-
-// Configured voice stop phrases lowercased, the default stop when malformed, empty when disabled
-var loadVoiceStopPhrases = func() []string {
-	raw, ok := voiceConfig(context.Background())["stop_phrases"]
-	if !ok {
-		return defaultVoiceStopPhrases
-	}
-	var items []any
-	switch x := raw.(type) {
-	case string:
-		items = []any{x}
-	case []any:
-		items = x
-	case []string:
-		for _, s := range x {
-			items = append(items, s)
-		}
-	default:
-		return defaultVoiceStopPhrases
-	}
+// Configured voice stop phrases lowercased with blanks dropped, empty when disabled
+var loadVoiceStopPhrases = func(ctx context.Context) []string {
 	phrases := []string{}
-	for _, p := range items {
-		text, ok := stopPhraseText(p)
-		if ok && pystr.Strip(text) != "" {
-			phrases = append(phrases, pystr.Lower(pystr.Strip(text)))
+	for _, p := range settings.VoiceStopPhrases.Strings(ctx) {
+		if p = strings.ToLower(strings.TrimSpace(p)); p != "" {
+			phrases = append(phrases, p)
 		}
 	}
 	return phrases
 }
 
 // Whether the whole utterance stripped of punctuation equals a configured stop phrase
-func isVoiceStopPhrase(transcript string, stopPhrases []string) bool {
+func isVoiceStopPhrase(ctx context.Context, transcript string, stopPhrases []string) bool {
 	cleaned := ""
 	if transcript != "" {
-		cleaned = pystr.StripChars(pystr.Lower(pystr.Strip(transcript)), ".,!?;: \t\n\"'")
+		cleaned = strings.Trim(strings.ToLower(strings.TrimSpace(transcript)), ".,!?;: \t\n\"'")
 	}
 	if cleaned == "" {
 		return false
 	}
 	if stopPhrases == nil {
-		stopPhrases = loadVoiceStopPhrases()
+		stopPhrases = loadVoiceStopPhrases(ctx)
 	}
 	for _, p := range stopPhrases {
 		if p == cleaned {
@@ -121,7 +62,7 @@ func normalizeForEchoCompare(text string) string {
 		inSpace = false
 		b.WriteRune(r)
 	}
-	return pystr.Lower(pystr.Strip(b.String()))
+	return strings.ToLower(strings.TrimSpace(b.String()))
 }
 
 // Whether a transcript reads as speaker bleed of the spoken reply by whole or sliding window similarity
@@ -146,8 +87,8 @@ func isTTSEcho(transcript, spokenText string, threshold float64) bool {
 }
 
 // Spoken hint naming the first configured stop phrase, empty when stop phrases are disabled
-func voiceStopHint() string {
-	phrases := loadVoiceStopPhrases()
+func voiceStopHint(ctx context.Context) string {
+	phrases := loadVoiceStopPhrases(ctx)
 	if len(phrases) == 0 {
 		return ""
 	}

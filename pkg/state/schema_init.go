@@ -85,7 +85,7 @@ func (s *sessionSchema) reconcileColumns(ctx context.Context, conn SQLiteConn) e
 			if !isOperationalError(err) {
 				return err
 			}
-			if strings.Contains(pystr.Lower(errText(err)), "duplicate column") {
+			if strings.Contains(strings.ToLower(errText(err)), "duplicate column") {
 				pkgLog().Debug(fmt.Sprintf("reconcile %s.%s: %s", table, column, errText(err)))
 				continue
 			}

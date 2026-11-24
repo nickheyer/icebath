@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -204,10 +203,10 @@ func namedFunction(container any) (any, string, bool) {
 	}
 	raw, _ := bridgeAttr(fn, "name")
 	name, ok := raw.(string)
-	if !ok || pystr.Strip(name) == "" {
+	if !ok || strings.TrimSpace(name) == "" {
 		return nil, "", false
 	}
-	return fn, pystr.Strip(name), true
+	return fn, strings.TrimSpace(name), true
 }
 
 // Flattens OpenAI tools into name, description and parameters specs, skipping malformed entries and those outside a non nil allowlist
@@ -216,7 +215,7 @@ func ToolSpecsFromOpenAITools(tools []any, allowlist []string) []*pyjson.Object 
 	if allowlist != nil {
 		allowed = make(map[string]bool, len(allowlist))
 		for _, n := range allowlist {
-			allowed[pystr.Strip(n)] = true
+			allowed[strings.TrimSpace(n)] = true
 		}
 	}
 	specs := []*pyjson.Object{}
@@ -274,7 +273,7 @@ func parseBridgeToolCall(rawJSON string, ordinal int) (state.ToolCall, bool, err
 	}
 	rawID, _ := bridgeAttr(obj, "id")
 	callID, isStr := rawID.(string)
-	if !isStr || pystr.Strip(callID) == "" {
+	if !isStr || strings.TrimSpace(callID) == "" {
 		callID = fmt.Sprintf("acp_call_%d", ordinal)
 	}
 	return BuildOpenAIToolCall(callID, fnName, args), true, nil
@@ -283,7 +282,7 @@ func parseBridgeToolCall(rawJSON string, ordinal int) (state.ToolCall, bool, err
 // Tool calls of an ACP response and its text minus consumed blocks, bare JSON tried only when no block parsed
 func ExtractToolCallsFromText(text string) ([]state.ToolCall, string, error) {
 	extracted := []state.ToolCall{}
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return extracted, "", nil
 	}
 	runes := []rune(text)
@@ -308,7 +307,7 @@ func ExtractToolCallsFromText(text string) ([]state.ToolCall, string, error) {
 		}
 	}
 	if len(consumed) == 0 {
-		return extracted, pystr.Strip(text), nil
+		return extracted, strings.TrimSpace(text), nil
 	}
 	sort.Slice(consumed, func(i, j int) bool {
 		if consumed[i].start != consumed[j].start {
@@ -337,9 +336,9 @@ func ExtractToolCallsFromText(text string) ([]state.ToolCall, string, error) {
 	}
 	kept := []string{}
 	for _, p := range parts {
-		if stripped := pystr.Strip(p); stripped != "" {
+		if stripped := strings.TrimSpace(p); stripped != "" {
 			kept = append(kept, stripped)
 		}
 	}
-	return extracted, pystr.Strip(strings.Join(kept, "\n")), nil
+	return extracted, strings.TrimSpace(strings.Join(kept, "\n")), nil
 }

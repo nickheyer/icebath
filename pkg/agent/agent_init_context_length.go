@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Providers whose runtime is resolved before any custom provider URL lookup
@@ -20,12 +18,9 @@ var runtimeFirstProviderIDs = map[string]bool{
 
 const ctxLenRequirement = "must be a positive integer (e.g. 256000, not '256K')"
 
-var (
-	resolveAuthProvider = func(ctx context.Context, name string) (string, error) {
-		return provider.ResolveAuthProvider(agentPoolEnv(ctx), name)
-	}
-	contextLengthConfigLoader = func(ctx context.Context) map[string]any { return provider.LoadConfigSafe(ctx, home.Dir(ctx)) }
-)
+var resolveAuthProvider = func(ctx context.Context, name string) (string, error) {
+	return provider.ResolveAuthProvider(agentPoolEnv(ctx), name)
+}
 
 // Python str of a config value with None as the empty string
 func cfgText(v any) string {
@@ -36,25 +31,6 @@ func cfgText(v any) string {
 		return s
 	}
 	return pyrepr.Str(v)
-}
-
-// First truthy value of the candidates, nil when every one is falsy
-func firstTruthy(values ...any) any {
-	for _, v := range values {
-		if pyTruthy(v) {
-			return v
-		}
-	}
-	return nil
-}
-
-// Python int() of a config value, false on the TypeError or ValueError
-func configIntOf(v any) (int, bool) {
-	n, err := pyint.Of(v)
-	if err != nil || !n.IsInt64() {
-		return 0, false
-	}
-	return int(n.Int64()), true
 }
 
 // URL with its query removed and the fragment kept like urlunparse over a query free urlparse
@@ -80,10 +56,10 @@ func customProviderConfiguredBaseURL(configuredProvider string, customProviders 
 	return ""
 }
 
-// Configured default route URL, the custom provider URL when model.provider is not an auth provider
-func configuredDefaultBaseURL(ctx context.Context, modelCfg map[string]any, customProviders []map[string]any) string {
-	configured := provider.NormalizeRouteBaseURL(cfgText(modelCfg["base_url"]))
-	configuredProvider := strings.TrimSpace(cfgText(firstTruthy(modelCfg["provider"])))
+// Configured default route URL in effect for ctx, the custom provider URL when model.provider is not an auth provider
+func configuredDefaultBaseURL(ctx context.Context, customProviders []map[string]any) string {
+	configured := provider.NormalizeRouteBaseURL(settings.ModelBaseURL.Get(ctx))
+	configuredProvider := strings.TrimSpace(settings.ModelProvider.Get(ctx))
 	norm := normalizeCustomProviderName(configuredProvider)
 	candidate := norm != ""
 	if runtimeFirstProviderIDs[norm] {
@@ -120,14 +96,10 @@ func normalizeModelSafely(ctx context.Context, model, providerName string) (out 
 	return provider.NormalizeModelForProviderCtx(ctx, model, providerName), true
 }
 
-// The configured context length only when the startup runtime is the configured default model and route
-func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, modelCfg map[string]any, customProviders []map[string]any, configContextLength *int, baseURL string) *int {
-	def := modelCfg["default"]
-	if _, ok := def.(map[string]any); ok {
-		m, _ := config.SplitModelDefault(def)
-		def = m
-	}
-	configuredModel := strings.TrimSpace(cfgText(firstTruthy(def)))
+// The configured context length only when the startup runtime is the default model and route the settings of ctx name
+func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, customProviders []map[string]any, configContextLength *int, baseURL string) *int {
+	configuredModel := strings.TrimSpace(settings.Model.Get(ctx))
+	configuredProvider := strings.TrimSpace(settings.ModelProvider.Get(ctx))
 	configuredRuntimeModel, activeRuntimeModel := configuredModel, a.model
 	if configuredModel != "" {
 		if m, ok := normalizeModelSafely(ctx, configuredModel, a.provider); ok {
@@ -137,25 +109,25 @@ func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, modelCf
 			}
 		}
 	}
-	configuredBaseURL := configuredDefaultBaseURL(ctx, modelCfg, customProviders)
+	configuredBaseURL := configuredDefaultBaseURL(ctx, customProviders)
 	activeBaseURL := activeRouteURL(a, baseURL)
-	routeMismatch := contextRouteMismatch(ctx, configuredBaseURL, activeBaseURL, strings.TrimSpace(cfgText(firstTruthy(modelCfg["provider"]))), a.provider, true)
+	routeMismatch := contextRouteMismatch(ctx, configuredBaseURL, activeBaseURL, configuredProvider, a.provider, true)
 	modelMismatch := configuredRuntimeModel != "" && configuredRuntimeModel != activeRuntimeModel
 	if modelMismatch || routeMismatch {
 		shownURL := activeBaseURL
 		if shownURL == "" {
 			shownURL = a.provider
 		}
-		configuredShown := any(configuredBaseURL)
+		configuredShown := configuredBaseURL
 		if configuredBaseURL == "" {
-			configuredShown = modelCfg["provider"]
+			configuredShown = configuredProvider
 		}
 		pin := any(nil)
 		if configContextLength != nil {
 			pin = *configContextLength
 		}
 		pkgLog().Debug(fmt.Sprintf("Ignoring model.context_length=%s for startup runtime %s at %s (configured default is %s at %s)",
-			pyrepr.Str(pin), a.model, shownURL, configuredModel, pyrepr.Str(configuredShown)))
+			pyrepr.Str(pin), a.model, shownURL, configuredModel, configuredShown))
 		return nil
 	}
 	return configContextLength
@@ -184,38 +156,19 @@ func setConfigContextLength(ctx context.Context, a *AIAgent, value *int) error {
 	return nil
 }
 
-// Re-reads model.context_length scoped to the agent's current runtime, nil when absent or for another route
-func configContextLengthForRuntime(ctx context.Context, a *AIAgent, cfg map[string]any) (out *int) {
+// Context length pin of ctx scoped to the agent's current runtime, nil when unset or for another route
+func configContextLengthForRuntime(ctx context.Context, a *AIAgent) (out *int) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLog().Debug("Could not re-read model.context_length for the current runtime", "error", r)
 			out = nil
 		}
 	}()
-	agentCfg := cfg
-	if agentCfg == nil {
-		agentCfg = contextLengthConfigLoader(ctx)
-	}
-	if agentCfg == nil {
+	pin, ok := settings.ModelContextLength.Lookup(ctx)
+	if !ok || pin <= 0 {
 		return nil
 	}
-	modelSection, ok := agentCfg["model"].(map[string]any)
-	if _, present := agentCfg["model"]; present && !ok {
-		return nil
-	}
-	pinRaw := modelSection["context_length"]
-	if _, isBool := pinRaw.(bool); pinRaw == nil || isBool {
-		return nil
-	}
-	pin, ok := configIntOf(pinRaw)
-	if !ok {
-		pkgLog().Debug("Could not re-read model.context_length for the current runtime")
-		return nil
-	}
-	if pin <= 0 {
-		return nil
-	}
-	return scopeContextLengthToDefaultRuntime(ctx, a, modelSection, provider.ProviderEntries(agentCfg), &pin, a.baseURL)
+	return scopeContextLengthToDefaultRuntime(ctx, a, provider.CustomProviderEntries(ctx), &pin, a.baseURL)
 }
 
 // Warns once when the matching custom provider model carries a context length that is not a positive integer
@@ -252,40 +205,19 @@ func warnInvalidCustomProviderContextLength(ctx context.Context, a *AIAgent, cus
 	}
 }
 
-// Resolves the configured, custom provider and LM Studio context lengths and the custom provider list
-func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]any, baseURL string) (*int, []map[string]any, int, map[string]any) {
-	var auxCfg any = map[string]any{}
-	if aux, ok := agentCfg["auxiliary"].(map[string]any); ok {
-		if v, present := aux["compression"]; present {
-			auxCfg = v
-		}
-	}
+// Resolves the configured, custom provider and LM Studio context lengths and the custom provider list in effect for ctx
+func resolveContextLength(ctx context.Context, a *AIAgent, baseURL string) (*int, []map[string]any, int) {
 	a.auxCompressionContextLengthConfig = nil
-	if m, ok := auxCfg.(map[string]any); ok && m["context_length"] != nil {
-		if n, ok := configIntOf(m["context_length"]); ok {
-			a.auxCompressionContextLengthConfig = &n
-		}
-	}
-	modelCfg, _ := agentCfg["model"].(map[string]any)
-	if _, present := agentCfg["model"]; !present {
-		modelCfg = map[string]any{}
-	}
-	modelSection := modelCfg
-	if modelSection == nil {
-		modelSection = map[string]any{}
+	if n, ok := settings.AuxiliaryCompressionContextLength.Lookup(ctx); ok {
+		a.auxCompressionContextLengthConfig = &n
 	}
 	var configContextLength *int
-	if raw := modelSection["context_length"]; raw != nil {
-		if n, ok := configIntOf(raw); ok {
-			configContextLength = &n
-		} else {
-			warnInvalidConfigInt(ctx, "model.context_length in config.yaml", raw,
-				"must be a plain integer (e.g. 256000, not '256K')", "auto-detection", "auto-detected context window", a)
-		}
+	if n, ok := settings.ModelContextLength.Lookup(ctx); ok {
+		configContextLength = &n
 	}
-	customProviders := provider.ProviderEntries(agentCfg)
+	customProviders := provider.CustomProviderEntries(ctx)
 	if configContextLength != nil {
-		configContextLength = scopeContextLengthToDefaultRuntime(ctx, a, modelSection, customProviders, configContextLength, baseURL)
+		configContextLength = scopeContextLengthToDefaultRuntime(ctx, a, customProviders, configContextLength, baseURL)
 	}
 	a.customProviderEntries = customProviders
 	a.customProviders = make([]any, len(customProviders))
@@ -294,7 +226,7 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 	}
 	a.mergeCustomProviderExtraBody(customProviders)
 	if configContextLength == nil && len(customProviders) > 0 {
-		if n := provider.CustomProviderContextLength(a.model, a.baseURL, customProviders, agentCfg); n != 0 {
+		if n := provider.CustomProviderContextLength(a.model, a.baseURL, customProviders); n != 0 {
 			configContextLength = &n
 		}
 		if configContextLength == nil {
@@ -312,5 +244,5 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 	if lmstudioLoadWasUnverified(runtime) {
 		pkgLog().Warn("LM Studio model activation was rejected or completed without a verifiable active context length; falling back to configured context")
 	}
-	return configContextLength, customProviders, effectiveLMStudioContextLength(pin, runtime), modelCfg
+	return configContextLength, customProviders, effectiveLMStudioContextLength(pin, runtime)
 }

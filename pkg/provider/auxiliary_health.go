@@ -46,7 +46,7 @@ func auxCustomHealthBaseURL(ctx context.Context, provider, explicitBaseURL strin
 		}
 		return auxCurrentCustomBaseURL(ctx)
 	}
-	if entry := r.getNamedCustomProvider(provider, r.cfg, true); entry != nil {
+	if entry := r.getNamedCustomProvider(provider, r.providers(), true); entry != nil {
 		if explicit != "" {
 			return explicit
 		}

@@ -358,7 +358,7 @@ var argparseTree = map[string]*apParser{
 	}},
 	"gateway": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "gateway_command", Nargs: "A...", Choices: []string{"run", "ensure", "start", "stop", "restart", "status", "install", "uninstall", "list", "setup", "migrate-legacy", "migrate", "enroll"}, Sub: []apChoice{{Name: "run", Aliases: []string{}, Help: "Run gateway in foreground (recommended for WSL and Docker)", Listed: true}, {Name: "ensure", Aliases: []string{}, Help: "Ensure a local runtime without installing or replacing a service", Listed: true}, {Name: "start", Aliases: []string{}, Help: "Start the installed systemd/launchd background service", Listed: true}, {Name: "stop", Aliases: []string{}, Help: "Stop gateway service", Listed: true}, {Name: "restart", Aliases: []string{}, Help: "Restart gateway service", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show gateway status", Listed: true}, {Name: "install", Aliases: []string{}, Help: "Install gateway as a systemd/launchd background service", Listed: true}, {Name: "uninstall", Aliases: []string{}, Help: "Uninstall gateway service", Listed: true}, {Name: "list", Aliases: []string{}, Help: "List all profiles and their gateway status", Listed: true}, {Name: "setup", Aliases: []string{}, Help: "Configure messaging platforms", Listed: true}, {Name: "migrate-legacy", Aliases: []string{}, Help: "Remove legacy icebath.service units from pre-rename installs", Listed: true}, {Name: "migrate", Aliases: []string{}, Help: "Converge every per-profile gateway onto the ONE host gateway", Listed: true}, {Name: "enroll", Aliases: []string{}, Help: "Enroll this gateway with a relay connector (writes relay auth creds to .env)", Listed: true}}},
+		{Kind: 's', Dest: "gateway_command", Nargs: "A...", Choices: []string{"run", "ensure", "start", "stop", "restart", "status", "install", "uninstall", "list", "setup", "migrate", "enroll"}, Sub: []apChoice{{Name: "run", Aliases: []string{}, Help: "Run gateway in foreground (recommended for WSL and Docker)", Listed: true}, {Name: "ensure", Aliases: []string{}, Help: "Ensure a local runtime without installing or replacing a service", Listed: true}, {Name: "start", Aliases: []string{}, Help: "Start the installed systemd/launchd background service", Listed: true}, {Name: "stop", Aliases: []string{}, Help: "Stop gateway service", Listed: true}, {Name: "restart", Aliases: []string{}, Help: "Restart gateway service", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show gateway status", Listed: true}, {Name: "install", Aliases: []string{}, Help: "Install gateway as a systemd/launchd background service", Listed: true}, {Name: "uninstall", Aliases: []string{}, Help: "Uninstall gateway service", Listed: true}, {Name: "list", Aliases: []string{}, Help: "List all profiles and their gateway status", Listed: true}, {Name: "setup", Aliases: []string{}, Help: "Configure messaging platforms", Listed: true}, {Name: "migrate", Aliases: []string{}, Help: "Converge every per-profile gateway onto the ONE host gateway", Listed: true}, {Name: "enroll", Aliases: []string{}, Help: "Enroll this gateway with a relay connector (writes relay auth creds to .env)", Listed: true}}},
 		{Kind: 'f', Opts: []string{"--accept-hooks"}, Dest: "accept_hooks", Nargs: "0"},
 	}},
 	"gateway run": {Acts: []apAction{
@@ -428,11 +428,6 @@ var argparseTree = map[string]*apParser{
 	}},
 	"gateway setup": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-	}},
-	"gateway migrate-legacy": {Desc: true, Acts: []apAction{
-		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"--dry-run"}, Dest: "dry_run", Nargs: "0"},
-		{Kind: 'f', Opts: []string{"-y", "--yes"}, Dest: "yes", Nargs: "0"},
 	}},
 	"gateway migrate": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},

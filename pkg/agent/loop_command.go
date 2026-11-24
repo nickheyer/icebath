@@ -34,7 +34,7 @@ func ParseLoopIntervalToken(token string) (int64, bool) {
 	if token == "" {
 		return 0, false
 	}
-	m, err := loopIntervalTokenRe.FindStringMatch(pystr.Strip(token))
+	m, err := loopIntervalTokenRe.FindStringMatch(strings.TrimSpace(token))
 	if err != nil || m == nil {
 		return 0, false
 	}
@@ -66,7 +66,7 @@ type LoopArgs struct {
 
 // Parses an interval, prompt, times flag and until flag out of loop command text
 func ParseLoopArgs(text string) LoopArgs {
-	raw := pystr.Strip(text)
+	raw := strings.TrimSpace(text)
 	if raw == "" {
 		return LoopArgs{Error: "empty"}
 	}
@@ -80,15 +80,15 @@ func ParseLoopArgs(text string) LoopArgs {
 			return LoopArgs{Error: "--times expects a positive integer, got " + errchain.Show(group)}
 		}
 		times = n.Int64()
-		raw = pystr.Strip(string(runes[:m.RuneIndex]) + string(runes[m.RuneIndex+m.RuneLength:]))
+		raw = strings.TrimSpace(string(runes[:m.RuneIndex]) + string(runes[m.RuneIndex+m.RuneLength:]))
 		runes = []rune(raw)
 	}
 	if m, _ := loopUntilFlagRe.FindStringMatch(raw); m != nil {
-		until = pystr.Strip(m.GroupByNumber(1).String())
-		raw = pystr.Strip(string(runes[:m.RuneIndex]))
+		until = strings.TrimSpace(m.GroupByNumber(1).String())
+		raw = strings.TrimSpace(string(runes[:m.RuneIndex]))
 	}
 	tokens := pystr.SplitWhitespace(raw, 1)
-	if len(tokens) > 0 && pystr.Lower(tokens[0]) == "every" && len(tokens) > 1 {
+	if len(tokens) > 0 && strings.ToLower(tokens[0]) == "every" && len(tokens) > 1 {
 		raw = tokens[1]
 		tokens = pystr.SplitWhitespace(raw, 1)
 	}
@@ -98,7 +98,7 @@ func ParseLoopArgs(text string) LoopArgs {
 			interval = &n
 			raw = ""
 			if len(tokens) > 1 {
-				raw = pystr.Strip(tokens[1])
+				raw = strings.TrimSpace(tokens[1])
 			}
 		}
 	}
@@ -158,8 +158,8 @@ type LoopCommandResult struct {
 
 // Handles the loop command arguments for every surface, storing route on a new loop
 func DispatchLoopCommand(ctx context.Context, mgr LoopAutomation, args string, route *pyjson.Object) (LoopCommandResult, error) {
-	arg := pystr.Strip(args)
-	out, isControl, err := loopControlOutput(ctx, mgr, pystr.Lower(arg))
+	arg := strings.TrimSpace(args)
+	out, isControl, err := loopControlOutput(ctx, mgr, strings.ToLower(arg))
 	if err != nil {
 		return LoopCommandResult{}, err
 	}

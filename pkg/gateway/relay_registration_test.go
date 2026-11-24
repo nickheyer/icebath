@@ -44,7 +44,7 @@ func TestRegistersWhenURLConfigured(t *testing.T) {
 func relayMultiplexScope(t *testing.T, profileEnv string) context.Context {
 	t.Helper()
 	h := relayCleanRegistry(t)
-	relayWriteConfig(t, h, "gateway:\n  platforms:\n    telegram:\n      enabled: true\n      bot_token: '123:abc'\n")
+	relayWriteConfig(t, h, "platforms:\n  telegram:\n    enabled: true\n    bot_token: '123:abc'\n")
 	profileDir := filepath.Join(t.TempDir(), "profile-a")
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		t.Fatal(err)

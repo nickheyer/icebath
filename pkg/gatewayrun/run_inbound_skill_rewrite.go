@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -32,7 +31,7 @@ func (r *GatewayRunner) hmBundleSlashRewrite(ctx context.Context, event *gateway
 	if !ok {
 		return false
 	}
-	text, _, missing, built, err := scope.BuildBundleInvocationMessage(ctx, bundleKey, pystr.Strip(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
+	text, _, missing, built, err := scope.BuildBundleInvocationMessage(ctx, bundleKey, strings.TrimSpace(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Bundle dispatch failed: %s", err))
 		return false
@@ -73,7 +72,7 @@ func (r *GatewayRunner) hmBoundCommandRewrite(ctx context.Context, event *gatewa
 	if !ok {
 		return false, nil
 	}
-	message, err := gateway.RunBoundTurn(ctx, bound.Name, pystr.Strip(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
+	message, err := gateway.RunBoundTurn(ctx, bound.Name, strings.TrimSpace(event.GetCommandArgs()), quickKey, sourcePlatformValue(source))
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Bound command /%s failed: %s", bound.Name, err))
 		reply := i18n.T(ctx, "cli.plugin.command_error", "", map[string]any{"error": err.Error()})
@@ -108,7 +107,7 @@ func (r *GatewayRunner) skillSlashRewrite(ctx context.Context, event *gateway.Me
 		return hmUnknownSlashReply(ctx, command, source), nil
 	}
 	platform := sourcePlatformValue(source)
-	userInstruction := pystr.Strip(event.GetCommandArgs())
+	userInstruction := strings.TrimSpace(event.GetCommandArgs())
 	extraKeys, stackedInstruction, err := scope.SplitStackedSkillCommands(ctx, userInstruction, false)
 	stacked := err == nil
 	if !stacked {

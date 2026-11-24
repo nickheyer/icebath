@@ -108,7 +108,7 @@ func codexSoftFailureError(response any) map[string]any {
 	}
 	out := map[string]any{}
 	for k, v := range fields {
-		if s, ok := v.(string); ok && pystr.Strip(s) != "" {
+		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
 			out[k] = s
 		}
 	}
@@ -121,7 +121,7 @@ func responseStatus(response any) string {
 	if !pyrepr.Truthy(status) {
 		return ""
 	}
-	return strings.ToLower(pystr.Strip(pyrepr.Str(status)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(status)))
 }
 
 // Classified verdict and error context of a failed or cancelled Codex response, nil when it is not one
@@ -175,7 +175,7 @@ func validateResponseShape(a *AIAgent, response any) (bool, []string, error) {
 			return true, []string{fmt.Sprintf("response.status=%s: %s", status, msg)}, nil
 		}
 		outText, _ := state.ToolCallField(response, "output_text").(string)
-		if stripped := pystr.Strip(outText); stripped != "" {
+		if stripped := strings.TrimSpace(outText); stripped != "" {
 			log.Debug(fmt.Sprintf("Codex response.output is empty but output_text is present (%d chars); deferring to normalization.", len([]rune(stripped))))
 			return false, []string{}, nil
 		}

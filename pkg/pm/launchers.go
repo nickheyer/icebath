@@ -333,7 +333,7 @@ func retireExe(exe string) bool {
 
 // First command token of a cmd line, quoted or bare
 func firstToken(line string) string {
-	text := pystr.Strip(line)
+	text := strings.TrimSpace(line)
 	if text == "" {
 		return ""
 	}
@@ -365,7 +365,7 @@ func launcherBinary(target string) string {
 	lines := pystr.Splitlines(strings.TrimPrefix(text, "\ufeff"), false)
 	if strings.EqualFold(filepath.Ext(target), ".cmd") {
 		for _, entry := range lines[min(1, len(lines)):] {
-			if pystr.Strip(entry) != "" && !strings.HasPrefix(entry, "@rem "+storeRecordPrefix) {
+			if strings.TrimSpace(entry) != "" && !strings.HasPrefix(entry, "@rem "+storeRecordPrefix) {
 				return firstToken(entry)
 			}
 		}

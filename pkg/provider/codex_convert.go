@@ -19,7 +19,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -358,7 +357,7 @@ func coerceArguments(arguments any) string {
 	default:
 		s = pyrepr.Str(arguments)
 	}
-	if s = pystr.Strip(s); s == "" {
+	if s = strings.TrimSpace(s); s == "" {
 		return "{}"
 	}
 	return s

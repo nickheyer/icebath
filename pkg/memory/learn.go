@@ -144,6 +144,3 @@ func BuildLearnPrompt(userRequest string) string {
 		"\n" +
 		"When done, tell the user the skill name, its category, a one-line summary of what it captured, and \u2014 for a knowledge-base skill \u2014 the list of reference files it can load on demand."
 }
-
-// Learn prompt is pure and registers nothing at import, the learn command handler calls it
-func registerLearnPrompt() {}

@@ -4,17 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"sync"
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -98,7 +95,7 @@ func releaseTickLock(f *os.File) {
 // Tick lock or nil when the tick must not run, degrading the store when the lock cannot be created
 func (s *Store) acquireTickLockOrDegrade() (*os.File, error) {
 	lockDir, lockFile := s.getLockPaths()
-	if err := ensureCronDir(lockDir); err != nil {
+	if err := s.ensureStoreDir(lockDir); err != nil {
 		return nil, err
 	}
 	f, err := s.acquireTickLock(lockFile)
@@ -317,53 +314,13 @@ func (s *Store) sweepStaleInflightForTick(ctx context.Context, due []*Job) {
 	s.sweepStaleInflight(sweep)
 }
 
-// Integer value of a config scalar like Python int(), false when int() would raise
-func pyIntCoerce(v any) (int, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case float64:
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return 0, false
-		}
-		return int(math.Trunc(x)), true
-	case string:
-		n, ok := pyint.Parse(x)
-		if !ok || !n.IsInt64() {
-			return 0, false
-		}
-		return int(n.Int64()), true
-	}
-	n, ok := pyrepr.Int(v)
-	if !ok || !n.IsInt64() {
-		return 0, false
-	}
-	return int(n.Int64()), true
-}
-
-// Worker cap from the environment, then cron.max_parallel_jobs, nil for unbounded
+// Worker cap from cron.max_parallel_jobs, nil for unbounded
 func (s *Store) resolveMaxParallelWorkers(ctx context.Context) *int {
-	if raw := pystr.Strip(s.cronEnvSetting(ctx, "ICEBATH_CRON_MAX_PARALLEL", "")); raw != "" {
-		if n, ok := pyIntCoerce(raw); ok {
-			if n == 0 {
-				return nil
-			}
-			return &n
-		}
-		s.log.Warn("Invalid ICEBATH_CRON_MAX_PARALLEL value; defaulting to unbounded")
+	n, ok := settings.CronMaxParallelJobs.Lookup(home.WithOverride(ctx, s.home))
+	if !ok || n == 0 {
+		return nil
 	}
-	if v := s.cronConfigValue("max_parallel_jobs", nil); v != nil {
-		if n, ok := pyIntCoerce(v); ok {
-			if n == 0 {
-				return nil
-			}
-			return &n
-		}
-	}
-	return nil
+	return &n
 }
 
 // Reaps stdio MCP children flagged as orphans once the jobs that spawned them finished

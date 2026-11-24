@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var shadowedBuiltins = [][2]string{{"deepseek", "DEEPSEEK_API_KEY"}, {"anthropic", "ANTHROPIC_API_KEY"}}
@@ -79,9 +82,8 @@ func TestFrozenRuntimeConfigConcurrentScopesStayApart(t *testing.T) {
 					errs <- "scope " + model + " saw " + cfgString(section["default"])
 					return
 				}
-				loaded, _ := LoadConfigSafe(ctx, h)["model"].(map[string]any)
-				if loaded["default"] != model {
-					errs <- "LoadConfigSafe in scope " + model + " saw " + cfgString(loaded["default"])
+				if loaded := settings.Model.Get(home.WithOverride(ctx, h)); loaded != model {
+					errs <- "model setting in scope " + model + " saw " + loaded
 					return
 				}
 				if _, ok := FrozenRuntimeConfig(ctx)["checkpoints"].(map[string]any); !ok {
@@ -98,9 +100,8 @@ func TestFrozenRuntimeConfigConcurrentScopesStayApart(t *testing.T) {
 	for msg := range errs {
 		t.Error(msg)
 	}
-	live, _ := LoadConfigSafe(base, h)["model"].(map[string]any)
-	if live["default"] != "live-model" {
-		t.Fatalf("outside every scope the live config is read, got %v", live["default"])
+	if live := settings.Model.Get(home.WithOverride(base, h)); live != "live-model" {
+		t.Fatalf("outside every scope the live config is read, got %v", live)
 	}
 }
 
@@ -110,7 +111,7 @@ func TestShadowingEntryFrozenPolicySendsItsKeyEnv(t *testing.T) {
 			shadowHome(t, tc[0], tc[1])
 			ctx := context.Background()
 			frozen := modelsConfig(ctx)
-			resolved, err := modelsResolver(ctx).resolveNamedCustomRuntime("custom:"+tc[0], "", "", "", frozen)
+			resolved, err := modelsResolver(ctx).resolveNamedCustomRuntime("custom:"+tc[0], "", "", "")
 			if err != nil || resolved == nil {
 				t.Fatalf("named custom runtime: %v %v", resolved, err)
 			}

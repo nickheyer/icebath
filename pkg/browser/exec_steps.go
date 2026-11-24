@@ -34,7 +34,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // A png that has not arrived by then will not, a hidden tab answers jpeg within a few seconds
@@ -73,15 +72,6 @@ func isAgentStartupPage(title, u string) bool {
 	return strings.HasPrefix(title, "Starting agent ") && (u == "" || u == "about:blank" || strings.HasPrefix(u, "about:blank#"))
 }
 
-// Tab marker on unless BH_TAB_MARKER turns it off
-func tabMarkerEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("BH_TAB_MARKER"))) {
-	case "0", "false", "no", "off":
-		return false
-	}
-	return true
-}
-
 // execEvent is one protocol event kept for drain_events, its session empty for a browser level event
 type execEvent struct {
 	Method    string
@@ -102,6 +92,8 @@ type execSession struct {
 	eventMu    sync.Mutex
 	dialog     map[string]any
 	events     []execEvent
+	// browser.tab_marker of the profile the current call runs for, written under both locks
+	marker bool
 }
 
 var execSessions = struct {
@@ -171,7 +163,7 @@ func (s *execSession) onEvent(ev CDPEvent) {
 	case "Page.javascriptDialogClosed":
 		s.dialog = nil
 	case "Page.loadEventFired", "Page.domContentEventFired":
-		if conn, sid := s.conn, s.session; conn != nil && sid != "" && tabMarkerEnabled() {
+		if conn, sid := s.conn, s.session; conn != nil && sid != "" && s.marker {
 			go func() {
 				_, _ = conn.CallTimeout("Runtime.evaluate", map[string]any{"expression": markTabJS}, sid, execMarkerTimeout)
 			}()
@@ -287,7 +279,7 @@ func (r *helperRun) currentTab() (map[string]any, error) {
 
 // Attaches the session to a tab, moving the marker, and returns the new session id
 func (r *helperRun) switchTab(target string, activate bool) (string, error) {
-	if tabMarkerEnabled() && r.s.session != "" {
+	if r.s.marker && r.s.session != "" {
 		_ = r.call("Runtime.evaluate", map[string]any{"expression": unmarkTabJS}, nil)
 	}
 	if activate {
@@ -312,7 +304,7 @@ func (r *helperRun) switchTab(target string, activate bool) (string, error) {
 			pkgLog().Debug(fmt.Sprintf("browser_exec: %s failed on %s: %s", domain, target, err))
 		}
 	}
-	if tabMarkerEnabled() {
+	if r.s.marker {
 		_ = r.call("Runtime.evaluate", map[string]any{"expression": markTabJS}, nil)
 	}
 	return r.s.session, nil
@@ -368,7 +360,7 @@ type jsUnserializable string
 
 // Expression shortened to one line of at most 160 characters for an error message
 func jsSnippet(expr string) string {
-	snippet := strings.ReplaceAll(pystr.Strip(expr), "\n", `\n`)
+	snippet := strings.ReplaceAll(strings.TrimSpace(expr), "\n", `\n`)
 	if runes := []rune(snippet); len(runes) > 160 {
 		return string(runes[:157]) + "..."
 	}

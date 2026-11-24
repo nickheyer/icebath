@@ -21,19 +21,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// x_search defaults and limits
-const (
-	defaultXSearchModel          = "grok-4.5"
-	defaultXSearchTimeoutSeconds = 180
-	defaultXSearchRetries        = 2
-	xSearchMaxHandles            = 10
-)
-
-// Reasoning efforts the xAI x_search model accepts
-var xSearchReasoningEfforts = []string{"low", "medium", "high", "xhigh"}
+// Most handles one x_search call may name
+const xSearchMaxHandles = 10
 
 // HTTP client for xAI calls, replaced in tests
 var xSearchHTTPClient = func(timeout time.Duration) *http.Client { return webHTTPClient(timeout) }
@@ -44,54 +36,22 @@ var xSearchSleep = func(ctx context.Context, d time.Duration) error { return med
 // Clock for the future date check, replaced in tests
 var xSearchNow = time.Now
 
-// The x_search config section
-func xSearchConfig(env *Env) map[string]any {
-	if m := dictOrNil(cfgTree(env)["x_search"]); m != nil {
-		return m
+// Model the env's profile runs X searches with, the setting's default when blank
+func xSearchModel(env *Env) string {
+	if model := strings.TrimSpace(settings.XSearchModel.Get(envHomeCtx(context.Background(), env))); model != "" {
+		return model
 	}
-	return map[string]any{}
+	return settings.XSearchModel.Default
 }
 
-// Reasoning effort from x_search.reasoning_effort, an error naming the allowed values
-func xSearchReasoningEffort(env *Env) (string, error) {
-	raw, present := xSearchConfig(env)["reasoning_effort"]
-	effort := ""
-	if present && raw != nil {
-		effort = strings.ToLower(strings.TrimSpace(pyStr(raw)))
-	}
-	if effort == "" {
-		return "", nil
-	}
-	for _, e := range xSearchReasoningEfforts {
-		if e == effort {
-			return effort, nil
-		}
-	}
-	return "", fmt.Errorf("x_search.reasoning_effort must be one of: %s (got %s)", strings.Join(xSearchReasoningEfforts, ", "), pyConfigRepr(raw))
+// Seconds an X search may take, never under 30
+func xSearchTimeoutSeconds(env *Env) int {
+	return max(int(settings.XSearchTimeoutSeconds.Get(envHomeCtx(context.Background(), env))/time.Second), 30)
 }
 
-// Integer x_search setting floored, the default when unparseable
-func xSearchInt(env *Env, key string, def, floor int) int {
-	raw, present := xSearchConfig(env)[key]
-	if !present {
-		return max(floor, def)
-	}
-	switch v := raw.(type) {
-	case bool:
-		if v {
-			return max(floor, 1)
-		}
-		return max(floor, 0)
-	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return def
-		}
-	}
-	n, ok := pyInt(raw)
-	if !ok {
-		return def
-	}
-	return max(floor, n)
+// Times a failed X search is retried, never below zero
+func xSearchRetries(env *Env) int {
+	return max(settings.XSearchRetries.Get(envHomeCtx(context.Background(), env)), 0)
 }
 
 // API key, base URL, and credential source, an explicit XAI_API_KEY winning over OAuth
@@ -238,7 +198,7 @@ func strOrEmptyStripped(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Answer text from output_text, else the joined message text parts
@@ -255,15 +215,7 @@ func extractResponseText(payload *pyjson.Object) string {
 			parts = append(parts, p)
 		}
 	}
-	return pystr.Strip(strings.Join(parts, "\n\n"))
-}
-
-// Nil for Python falsy values so str(x or "") renders empty
-func falsyNil(v any) any {
-	if !truthy(v) {
-		return nil
-	}
-	return v
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }
 
 // One url_citation annotation in wire order
@@ -336,36 +288,6 @@ func xaiHTTPErrorMessage(e *xaiHTTPError) string {
 	return out
 }
 
-// Python repr of a config scalar for validation messages
-func pyConfigRepr(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "None"
-	case bool:
-		if t {
-			return "True"
-		}
-		return "False"
-	case string:
-		return pyReprStr(t)
-	case int:
-		return strconv.Itoa(t)
-	case int64:
-		return strconv.FormatInt(t, 10)
-	case float64:
-		return pyFloatRepr(t)
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprint(v)
-	}
-	decoded, err := pyjson.Loads(string(b))
-	if err != nil {
-		return fmt.Sprint(v)
-	}
-	return pyJSONRepr(decoded)
-}
-
 // Ordered failure payload of an x_search call
 type xSearchFailure struct {
 	Success   bool   `json:"success"`
@@ -413,8 +335,8 @@ func (e *xSearchRequestError) Unwrap() error { return e.err }
 
 // Posts with retries on 5xx, timeouts, and connection errors, returning the last failure
 func xSearchPostWithRetries(ctx context.Context, env *Env, target string, headers map[string]string, payload any) ([]byte, error) {
-	timeout := xSearchInt(env, "timeout_seconds", defaultXSearchTimeoutSeconds, 30)
-	maxRetries := xSearchInt(env, "retries", defaultXSearchRetries, 0)
+	timeout := xSearchTimeoutSeconds(env)
+	maxRetries := xSearchRetries(env)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -552,14 +474,8 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 	if err != nil {
 		return toolErrorJSON(err.Error(), nil)
 	}
-	effort, err := xSearchReasoningEffort(env)
-	if err != nil {
-		return toolErrorJSON(err.Error(), nil)
-	}
-	model := strings.TrimSpace(pyStrOrEmpty(falsyNil(xSearchConfig(env)["model"])))
-	if model == "" {
-		model = defaultXSearchModel
-	}
+	effort := settings.XSearchReasoningEffort.Get(envHomeCtx(context.Background(), env))
+	model := xSearchModel(env)
 	q := strings.TrimSpace(query)
 	payload := xSearchPayload{Model: model, Input: []map[string]any{{"role": "user", "content": q}}, Tools: []xSearchToolDef{toolDef}, Store: false}
 	if effort != "" {
@@ -576,7 +492,7 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 			return xSearchErrorJSON(xaiHTTPErrorMessage(herr), "HTTPError")
 		case errors.As(err, &rerr) && rerr.class == "ReadTimeout":
 			log.Error("x_search timed out", "error", err)
-			return xSearchErrorJSON(fmt.Sprintf("xAI x_search timed out after %d seconds", xSearchInt(env, "timeout_seconds", defaultXSearchTimeoutSeconds, 30)), "ReadTimeout")
+			return xSearchErrorJSON(fmt.Sprintf("xAI x_search timed out after %d seconds", xSearchTimeoutSeconds(env)), "ReadTimeout")
 		case errors.As(err, &rerr):
 			log.Error("x_search failed", "error", err)
 			return xSearchErrorJSON(err.Error(), rerr.class)

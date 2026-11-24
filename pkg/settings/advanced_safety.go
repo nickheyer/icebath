@@ -48,7 +48,7 @@ var AuthCodexLoginFlow = Register(&Enum{Meta: Meta{Key: "auth.codex_login_flow",
 }})
 
 // Approve shell hooks without asking first
-var HooksAutoAccept = Register(&Bool{Meta: Meta{Key: "hooks_auto_accept", Label: "Auto-accept hooks", Short: "Approve shell hooks without asking first.", Help: "Hooks run commands on your machine, so only enable this for trusted configs.", Group: GroupSafety, Order: 1110, Advanced: true}, Default: false})
+var HooksAutoAccept = Register(&Bool{Meta: Meta{Key: "hooks_auto_accept", Label: "Auto-accept hooks", Short: "Approve shell hooks without asking first.", Help: "Hooks run commands on your machine, so only enable this for trusted configs.", Group: GroupSafety, Order: 1110, Advanced: true, Env: "ICEBATH_ACCEPT_HOOKS"}, Default: false})
 
 // Environment variable holding the Bitwarden access token
 var SecretsBitwardenAccessTokenEnv = Register(&String{Meta: Meta{Key: "secrets.bitwarden.access_token_env", Label: "Bitwarden token variable", Short: "Environment variable holding the Bitwarden access token.", Group: GroupSafety, Order: 1120, Advanced: true}, Default: "BWS_ACCESS_TOKEN"})
@@ -111,7 +111,7 @@ var SecurityAckedAdvisories = Register(&List{Meta: Meta{Key: "security.acked_adv
 var SecurityAllowDataTrainingTiersNoninteractive = Register(&Bool{Meta: Meta{Key: "security.allow_data_training_tiers_noninteractive", Label: "Allow training plans", Short: "Let non-interactive runs go ahead on data-training plans.", Help: "Otherwise such runs stop and ask for acknowledgement.", Group: GroupSafety, Order: 1310, Advanced: true}, Default: false})
 
 // Let tools install missing add-ons the first time they are used
-var SecurityAllowLazyInstalls = Register(&Bool{Meta: Meta{Key: "security.allow_lazy_installs", Label: "Allow on-demand installs", Short: "Let tools install missing add-ons the first time they are used.", Group: GroupSafety, Order: 1320, Advanced: true}, Default: true})
+var SecurityAllowLazyInstalls = Register(&Bool{Meta: Meta{Key: "security.allow_lazy_installs", Label: "Allow on-demand installs", Short: "Let tools install missing add-ons the first time they are used.", Group: GroupSafety, Order: 1320, Advanced: true, Env: "ICEBATH_DISABLE_LAZY_INSTALLS", EnvInvert: true}, Default: true})
 
 // Let web tools open local and private network addresses
 var SecurityAllowPrivateUrls = Register(&Bool{Meta: Meta{Key: "security.allow_private_urls", Label: "Allow private URLs", Short: "Let web tools open local and private network addresses.", Group: GroupSafety, Order: 1330, Advanced: true}, Default: false})

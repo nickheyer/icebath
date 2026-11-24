@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -221,7 +220,7 @@ func notifyProfileFilter(scope NotifyOwnerScope) (string, []any) {
 	seen := map[string]bool{}
 	var profiles []string
 	for _, p := range scope.Profiles {
-		if s := pystr.Strip(p); s != "" && !seen[s] {
+		if s := strings.TrimSpace(p); s != "" && !seen[s] {
 			seen[s] = true
 			profiles = append(profiles, s)
 		}
@@ -331,7 +330,7 @@ func CountNotifySubs(ctx context.Context, dbPath string, board *string, scope No
 	defer other.Close()
 	row, err := QueryOne(ctx, other, q, params...)
 	if err != nil {
-		if class, ok := state.SQLiteClassOf(err); ok && class == state.SQLiteOperationalError && strings.Contains(pystr.Lower(state.ErrText(err)), "no such table") {
+		if class, ok := state.SQLiteClassOf(err); ok && class == state.SQLiteOperationalError && strings.Contains(strings.ToLower(state.ErrText(err)), "no such table") {
 			return 0, nil
 		}
 		return 0, err

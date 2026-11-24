@@ -7,18 +7,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-const (
-	// DefaultExtractCharLimit is the per page character budget sent to the model
-	DefaultExtractCharLimit = 15000
-	// MaxStoredTextChars caps the full text file written to cache/web
-	MaxStoredTextChars = 2_000_000
-	charLimitFloor     = 2000
-	charLimitCeiling   = 500_000
-)
+// MaxStoredTextChars caps the full text file written to cache/web
+const MaxStoredTextChars = 2_000_000
 
-// Clamps to the sane range, false for non numeric input
+// Caller's limit clamped to the bounds of the page budget setting, false for non numeric input
 func clampCharLimit(value any) (int, bool) {
 	n, ok := pyIntValue(value)
 	if !ok {
@@ -27,33 +23,18 @@ func clampCharLimit(value any) (int, bool) {
 	if s, isString := value.(string); isString && !pyIntLiteralRe.MatchString(strings.TrimSpace(s)) {
 		return 0, false
 	}
-	return max(charLimitFloor, min(n, charLimitCeiling)), true
+	return max(*settings.WebExtractCharLimit.Min, min(n, *settings.WebExtractCharLimit.Max)), true
 }
 
-// Clamped limit, nil or non numeric input giving the default
-func clampOrDefault(value any) int {
-	if value == nil {
-		return DefaultExtractCharLimit
-	}
-	if n, ok := clampCharLimit(value); ok {
-		return n
-	}
-	return DefaultExtractCharLimit
-}
-
-// web.extract_char_limit clamped, else the default
+// Per page character budget of the env's profile, within its bounds
 func extractCharLimit(env *Env) int {
-	v, ok := webCfg(env).Lookup("extract_char_limit")
-	if !ok {
-		return DefaultExtractCharLimit
-	}
-	return clampOrDefault(v)
+	return settings.WebExtractCharLimit.Get(webCtx(env))
 }
 
 // Caller's limit clamped, else the configured one
 func effectiveCharLimit(env *Env, charLimit any) int {
-	if charLimit != nil {
-		return clampOrDefault(charLimit)
+	if n, ok := clampCharLimit(charLimit); ok {
+		return n
 	}
 	return extractCharLimit(env)
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -14,15 +15,15 @@ const SystemdStopMarkEntry = "__icebath_systemd_stop_mark__"
 
 var stopMarkWrite = WritePlannedStopMarker
 
-// Arguments after the binary with a leading home pin applied to an unset ICEBATH_HOME and dropped
-func pinnedEntryArgs(args []string) []string {
+// Arguments after the binary with a leading home pin dropped, and ctx naming the pinned home when ICEBATH_HOME is unset
+func pinnedEntryArgs(ctx context.Context, args []string) (context.Context, []string) {
 	if len(args) == 0 || (args[0] != pm.PinDefaultHomeFlag && !strings.HasPrefix(args[0], pm.PinDefaultHomeFlag+"=")) {
-		return args
+		return ctx, args
 	}
-	if value, ok := strings.CutPrefix(args[0], pm.PinDefaultHomeFlag+"="); ok && os.Getenv("ICEBATH_HOME") == "" {
-		os.Setenv("ICEBATH_HOME", value)
+	if value, ok := strings.CutPrefix(args[0], pm.PinDefaultHomeFlag+"="); ok && strings.TrimSpace(os.Getenv(home.EnvHome)) == "" {
+		ctx = home.WithOverride(ctx, value)
 	}
-	return args[1:]
+	return ctx, args[1:]
 }
 
 // Explicit argv pid or else systemd MAINPID, zero when unknown or not positive
@@ -58,7 +59,7 @@ func SystemdStopMarkMain(ctx context.Context, argv []string) (code int) {
 
 // Runs the stop marker and exits when the process was started with the hidden entry argument
 func DispatchSystemdStopMarkEntry(ctx context.Context) {
-	args := pinnedEntryArgs(os.Args[1:])
+	ctx, args := pinnedEntryArgs(ctx, os.Args[1:])
 	if len(args) > 0 && args[0] == SystemdStopMarkEntry {
 		os.Exit(SystemdStopMarkMain(ctx, args))
 	}

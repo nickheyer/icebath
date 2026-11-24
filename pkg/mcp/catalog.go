@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -145,9 +146,8 @@ func catalogErrClass(class, format string, a ...any) error {
 }
 
 var (
-	catalogDiagMu       sync.Mutex
-	catalogDiagnostics  []CatalogDiagnostic
-	catalogRootOverride = "ICEBATH_OPTIONAL_MCPS"
+	catalogDiagMu      sync.Mutex
+	catalogDiagnostics []CatalogDiagnostic
 )
 
 // Seams over the cli config probe and the git runner
@@ -157,9 +157,9 @@ var (
 	catalogLookPath    = exec.LookPath
 )
 
-// Catalog tree and its display path, the env override directory or the embedded manifests
-var catalogRoot = func() (fs.FS, string) {
-	if o := pyStrip(os.Getenv(catalogRootOverride)); o != "" {
+// Catalog tree and its display path, the folder mcp.catalog_dir names or the embedded manifests
+var catalogRoot = func(ctx context.Context) (fs.FS, string) {
+	if o := pyStrip(settings.McpCatalogDir.Get(ctx)); o != "" {
 		return os.DirFS(o), o
 	}
 	sub, err := fs.Sub(embeddedCatalog, "catalog")
@@ -620,8 +620,8 @@ func parseManifest(fsys fs.FS, rel, path string) (*CatalogEntry, error) {
 }
 
 // Every valid catalog entry sorted by name, recording skipped manifests for CatalogDiagnostics
-func ListCatalog() ([]*CatalogEntry, error) {
-	fsys, label := catalogRoot()
+func ListCatalog(ctx context.Context) ([]*CatalogEntry, error) {
+	fsys, label := catalogRoot(ctx)
 	if _, err := fs.Stat(fsys, "."); err != nil {
 		return nil, nil
 	}
@@ -664,9 +664,9 @@ func CatalogDiagnostics() []CatalogDiagnostic {
 }
 
 // Catalog entry by name with an optional official/ prefix, nil when absent
-func GetEntry(name string) (*CatalogEntry, error) {
+func GetEntry(ctx context.Context, name string) (*CatalogEntry, error) {
 	name = strings.TrimPrefix(name, "official/")
-	entries, err := ListCatalog()
+	entries, err := ListCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -680,10 +680,7 @@ func GetEntry(name string) (*CatalogEntry, error) {
 
 // True when mcp_servers holds the name
 func IsInstalled(ctx context.Context, name string) (bool, error) {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		return false, err
-	}
+	servers := StoredServers(ctx)
 	_, ok := servers[name]
 	return ok, nil
 }
@@ -699,10 +696,7 @@ func serverBlockEnabled(cfg any) (bool, error) {
 
 // True when the server block exists, is non empty and its enabled flag reads on
 func IsEnabled(ctx context.Context, name string) (bool, error) {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		return false, err
-	}
+	servers := StoredServers(ctx)
 	cfg := servers[name]
 	if !yTruthy(cfg) {
 		return false, nil
@@ -971,10 +965,7 @@ func buildServerConfig(entry *CatalogEntry, installDir string) (map[string]any, 
 
 // Prior well formed tools include or exclude list of a server, nil when absent or malformed
 func readPriorToolList(ctx context.Context, name, key string) ([]string, error) {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
+	servers := StoredServers(ctx)
 	cfg := yOr(servers[name], map[string]any{})
 	m, _, ok := yDict(cfg)
 	if !ok {
@@ -1001,10 +992,7 @@ func readPriorToolList(ctx context.Context, name, key string) ([]string, error) 
 
 // Tools of a freshly configured server, ok false when the server is missing or the probe failed
 func probeCatalogTools(ctx context.Context, env *tools.Env, ui TerminalUI, name string) ([]ToolSummary, bool, error) {
-	servers, err := getMCPServers(ctx, nil)
-	if err != nil {
-		return nil, false, err
-	}
+	servers := StoredServers(ctx)
 	cfg := servers[name]
 	if !yTruthy(cfg) {
 		return nil, false, nil
@@ -1027,20 +1015,7 @@ func probeCatalogTools(ctx context.Context, env *tools.Env, ui TerminalUI, name 
 
 // Persists tools include or exclude for a server and clears the other mode, nil values drop the block
 func writeToolsFilter(ctx context.Context, name, mode string, values []string) error {
-	h := home.Dir(ctx)
-	cfg, err := config.ReadUser(h)
-	if err != nil {
-		return err
-	}
-	serversRaw, present := cfg["mcp_servers"]
-	if !present {
-		serversRaw = map[string]any{}
-	}
-	servers, _, ok := yDict(serversRaw)
-	if !ok {
-		return fmt.Errorf("config mcp_servers is %s where a mapping was expected", errchain.Kind(serversRaw))
-	}
-	entryRaw := yOr(servers[name], map[string]any{})
+	entryRaw := yOr(StoredServers(ctx)[name], map[string]any{})
 	entry, _, ok := yDict(entryRaw)
 	if !ok {
 		return fmt.Errorf("config mcp_servers.%s is %s where a mapping was expected", name, errchain.Kind(entryRaw))
@@ -1064,9 +1039,8 @@ func writeToolsFilter(ctx context.Context, name, mode string, values []string) e
 		}
 		entry["tools"] = block
 	}
-	servers[name] = entry
-	cfg["mcp_servers"] = servers
-	return config.SaveUser(ctx, h, cfg)
+	_, err := settings.McpServers.SetEntry(ctx, name, entry)
+	return err
 }
 
 func indexSet(n int, keep func(int) bool) map[int]bool {

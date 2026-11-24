@@ -1,13 +1,14 @@
 package manage
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -51,8 +52,8 @@ func finishProfileLayout(ctx context.Context, profileDir string, noSkills, clone
 			"This profile opted out of bundled-skill seeding (`icebath profile create --no-skills`).\n"+
 				"Delete this file to re-enable sync on the next `icebath update`.\n", 0)
 	}
-	if description != nil && pystr.Strip(*description) != "" {
-		desc := pystr.Strip(*description)
+	if description != nil && strings.TrimSpace(*description) != "" {
+		desc := strings.TrimSpace(*description)
 		auto := false
 		profiles.WriteProfileMeta(ctx, profileDir, profiles.MetaUpdate{Description: &desc, DescriptionAuto: &auto})
 	}

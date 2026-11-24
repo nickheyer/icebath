@@ -1,43 +1,21 @@
 package line
 
 import (
+	"strings"
+
 	"context"
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
-
-// Env var, extra key and conversion of every LINE value seeded from an env only setup
-var envSeedKeys = []gateway.EnvSeedRow{
-	{Env: "LINE_PORT", Key: "port", Conv: func(raw string) (any, error) {
-		n, err := coerceStrictInt(raw)
-		if err != nil {
-			return nil, err
-		}
-		return n, nil
-	}},
-	{Env: "LINE_HOST", Key: "host"},
-	{Env: "LINE_PUBLIC_URL", Key: "public_url"},
-}
-
-// Python int of a string, the ValueError int raises for a bad literal
-func coerceStrictInt(raw string) (int64, error) {
-	n, err := pyint.Int64(raw)
-	if pe, ok := err.(*pyint.Error); ok {
-		return 0, &gateway.PyError{Kind: pe.Kind, Msg: pe.Msg}
-	}
-	return n, err
-}
 
 // Whether both channel credentials are set in the profile scoped env
 func envCredentialsPresent(ctx context.Context) bool {
 	for _, k := range []string{"LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"} {
 		v, err := gateway.GetScopedSecret(ctx, k, "", false)
-		if err != nil || pystr.Strip(v) == "" {
+		if err != nil || strings.TrimSpace(v) == "" {
 			return false
 		}
 	}
@@ -61,7 +39,7 @@ func envEnablement(ctx context.Context) map[string]any {
 	if !envCredentialsPresent(ctx) {
 		return nil
 	}
-	seed, err := gateway.SeedExtraFromEnv(ctx, envSeedKeys, "LINE_HOME_CHANNEL", "")
+	seed, err := gateway.SeedExtraFromEnv(ctx, nil, "LINE_HOME_CHANNEL", "")
 	if err != nil {
 		panic(err)
 	}

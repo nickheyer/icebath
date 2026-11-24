@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
@@ -232,7 +234,7 @@ func isCodexTokenExpired(apiError error) bool {
 		return false
 	}
 	reason, ok := provider.ExtractAPIErrorContext(apiError)["reason"].(string)
-	return ok && pystr.Lower(pystr.Strip(reason)) == "token_expired"
+	return ok && strings.ToLower(strings.TrimSpace(reason)) == "token_expired"
 }
 
 // Drops replayed blobs minted elsewhere, else strips every cached reasoning item once, disabling replay on a repeat

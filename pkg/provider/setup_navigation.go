@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -142,7 +141,7 @@ func setupPromptValue(question string, def any, password bool) any {
 		}
 		panic(err)
 	}
-	if trimmed := pystr.Strip(sanitizePastedInput(value)); trimmed != "" {
+	if trimmed := strings.TrimSpace(sanitizePastedInput(value)); trimmed != "" {
 		return trimmed
 	}
 	if pyrepr.Truthy(def) {
@@ -447,7 +446,7 @@ func PromptYesNo(question string, def bool, description string) bool {
 			}
 			panic(err)
 		}
-		switch pystr.Lower(pystr.Strip(value)) {
+		switch strings.ToLower(strings.TrimSpace(value)) {
 		case "":
 			return def
 		case "y", "yes":

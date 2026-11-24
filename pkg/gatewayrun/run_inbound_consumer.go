@@ -1,13 +1,14 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const postAdmissionHook = "post_gateway_admission"
@@ -61,7 +62,7 @@ func runPostAdmissionHook(ctx context.Context, r *GatewayRunner, event *gateway.
 			continue
 		}
 		pkgLog().Info(fmt.Sprintf("%s: a plugin handled the message for session %s", postAdmissionHook, sessionKey))
-		if text, ok := dict["reply"].(string); ok && pystr.Strip(text) != "" {
+		if text, ok := dict["reply"].(string); ok && strings.TrimSpace(text) != "" {
 			return true, &text, nil
 		}
 		return true, nil, nil

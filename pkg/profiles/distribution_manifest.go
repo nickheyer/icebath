@@ -62,7 +62,7 @@ func EnvRequirementFromDict(data any) (EnvRequirement, error) {
 	if !ok {
 		return EnvRequirement{}, distErrorf("env_requires entry must be a mapping, got %s", pyrepr.TypeName(data))
 	}
-	name := pystr.Strip(manifestStr(m, "name", ""))
+	name := strings.TrimSpace(manifestStr(m, "name", ""))
 	if name == "" {
 		return EnvRequirement{}, distErrorf("env_requires entry missing 'name'")
 	}
@@ -114,7 +114,7 @@ func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 	if !ok {
 		return nil, distErrorf("%s must be a mapping, got %s", ManifestFilename, pyrepr.TypeName(data))
 	}
-	name := pystr.Strip(manifestStr(m, "name", ""))
+	name := strings.TrimSpace(manifestStr(m, "name", ""))
 	if name == "" {
 		return nil, distErrorf("%s missing 'name'", ManifestFilename)
 	}
@@ -144,8 +144,8 @@ func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 		out.EnvRequires = append(out.EnvRequires, req)
 	}
 	for _, p := range ownedList {
-		if s := pyStr(p); pystr.Strip(s) != "" {
-			out.DistributionOwned = append(out.DistributionOwned, strings.Trim(pystr.Strip(s), "/"))
+		if s := pyStr(p); strings.TrimSpace(s) != "" {
+			out.DistributionOwned = append(out.DistributionOwned, strings.Trim(strings.TrimSpace(s), "/"))
 		}
 	}
 	out.Source, out.InstalledAt = manifestStr(m, "source", ""), manifestStr(m, "installed_at", "")

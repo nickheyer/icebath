@@ -977,5 +977,3 @@ func (c *CuratorCLI) cmdUsage(ctx context.Context, a CuratorArgs) (int, error) {
 	}
 	return 0, nil
 }
-
-func registerCuratorCommands() {}

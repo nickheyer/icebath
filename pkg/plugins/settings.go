@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 var settingsFieldTypes = map[string]string{
@@ -225,8 +226,7 @@ func PluginSettingsFields(ctx context.Context, h, pluginID, pluginDir string) []
 	if len(schema) == 0 {
 		return []map[string]any{}
 	}
-	entry := pluginSettingsEntry(loadConfigOrEmpty(h), pluginID)
-	current, _ := entry["settings"].(map[string]any)
+	current, _ := pluginEntry(home.WithOverride(ctx, h), pluginID)["settings"].(map[string]any)
 	fields := []map[string]any{}
 	for _, item := range schema {
 		if _, err := PluginRelativeSegments(item.key); err != nil {

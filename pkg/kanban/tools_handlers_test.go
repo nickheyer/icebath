@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -631,8 +632,9 @@ func TestHeartbeatExtendsClaimExpires(t *testing.T) {
 	if after == nil || *after <= *before {
 		t.Fatalf("claim_expires did not advance (%d -> %v); workers would be reclaimed at TTL despite heartbeating", *before, after)
 	}
-	if *after < now+DefaultClaimTTLSeconds/2 {
-		t.Fatalf("claim_expires=%d is suspiciously close to now=%d; expected at least now + %d", *after, now, DefaultClaimTTLSeconds/2)
+	defaultTTL := int64(settings.KanbanClaimTtlSeconds.Default / time.Second)
+	if *after < now+defaultTTL/2 {
+		t.Fatalf("claim_expires=%d is suspiciously close to now=%d; expected at least now + %d", *after, now, defaultTTL/2)
 	}
 }
 

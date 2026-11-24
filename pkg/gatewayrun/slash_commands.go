@@ -87,7 +87,7 @@ func (r *GatewayRunner) handleProfileCommand(ctx context.Context, event *gateway
 	profileName, display := "", ""
 	if r.multiplexing() {
 		if source != nil && source.Profile != nil {
-			profileName = pystr.Strip(*source.Profile)
+			profileName = strings.TrimSpace(*source.Profile)
 		}
 		display = home.Display(home.Dir(ctx))
 		if source != nil {
@@ -124,7 +124,7 @@ func (r *GatewayRunner) handleWhoamiCommand(ctx context.Context, event *gateway.
 		chatType = "dm"
 	}
 	scopeKey := "gateway.whoami.scope_group"
-	switch pystr.Lower(chatType) {
+	switch strings.ToLower(chatType) {
 	case "dm", "direct", "private", "":
 		scopeKey = "gateway.whoami.scope_dm"
 	}

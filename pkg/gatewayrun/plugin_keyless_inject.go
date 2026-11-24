@@ -157,7 +157,7 @@ func keylessAdmit(ctx context.Context, r *GatewayRunner, authority *gateway.Sess
 	}
 	scoped := ctx
 	if r.multiplexOn() {
-		scoped = gateway.ProfileRuntimeScope(ctx, authority.ProfileID, true)
+		scoped = gateway.OwnerScope(ctx, authority, true)
 	}
 	active, err := gateway.ActiveAuthority(scoped, r)
 	if err != nil || active != authority {

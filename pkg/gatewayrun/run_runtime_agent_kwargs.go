@@ -68,12 +68,7 @@ func credentialPoolForProvider(ctx context.Context, providerName string) any {
 // Provider credentials for gateway created agents, a fallback entry's model and switch notice carried when the primary failed
 func resolveRuntimeAgentKwargs(ctx context.Context) (map[string]any, error) {
 	h := home.Dir(ctx)
-	modelCfg := provider.PrimaryModelConfig(ctx, h)
-	text := func(key string) string {
-		s, _ := modelCfg[key].(string)
-		return strings.TrimSpace(s)
-	}
-	primaryModel, primaryProvider := text("default"), text("provider")
+	primaryModel, primaryProvider := provider.PrimaryModelRoute(ctx, h)
 	rt, fallbackEntry, err := provider.ResolveRuntimeWithFallback(ctx, h, "", "", "", "")
 	if err != nil {
 		return nil, errors.New(provider.FormatRuntimeProviderError(err))

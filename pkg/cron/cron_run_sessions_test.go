@@ -18,7 +18,7 @@ import (
 func cronOwnerFixture(t *testing.T, s *Store) (*gateway.SessionAuthority, *state.SessionDB, context.Context) {
 	t.Helper()
 	authority, db, ctx := recoveryOwner(t, s)
-	writeTestFile(t, filepath.Join(s.Home(), "config.yaml"), "model: test-model\n")
+	writeTestFile(t, filepath.Join(s.Home(), "config.yaml"), "model:\n  default: test-model\n")
 	return authority, db, ctx
 }
 

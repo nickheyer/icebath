@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -33,7 +32,7 @@ var imageShrinkOpenSize = tools.RasterSize
 // Image mime named by a data URL header, else the fallback
 func dataURLMIME(header, fallback string) string {
 	if strings.HasPrefix(header, "data:") {
-		candidate := pystr.Strip(strings.SplitN(header[len("data:"):], ";", 2)[0])
+		candidate := strings.TrimSpace(strings.SplitN(header[len("data:"):], ";", 2)[0])
 		if strings.HasPrefix(candidate, "image/") {
 			return candidate
 		}
@@ -146,7 +145,7 @@ func sourceToDataURL(source any) string {
 	}
 	mediaType := "image/jpeg"
 	if pyTruthy(src["media_type"]) {
-		mediaType = pystr.Strip(pyrepr.Str(src["media_type"]))
+		mediaType = strings.TrimSpace(pyrepr.Str(src["media_type"]))
 	}
 	if !strings.HasPrefix(mediaType, "image/") {
 		mediaType = "image/jpeg"

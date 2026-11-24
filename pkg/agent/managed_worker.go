@@ -392,7 +392,7 @@ func (c *WorkerControls) Clarify(ctx context.Context, questions []any) map[strin
 			reply["outcome"] = "timed_out"
 			break
 		}
-		if text := pystr.Strip(answer.(string)); text != "" {
+		if text := strings.TrimSpace(answer.(string)); text != "" {
 			answers[pyrepr.Str(entry["qid"])] = text
 		} else {
 			answers[pyrepr.Str(entry["qid"])] = nil

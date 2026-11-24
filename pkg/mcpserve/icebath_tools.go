@@ -1,6 +1,8 @@
 package mcpserve
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"os"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -59,8 +60,8 @@ func isWebURL(value any, allowData bool) bool {
 	}
 	m, _ := schemeRE.FindStringMatch(text)
 	if m == nil {
-		rest := pystr.Lstrip(text)
-		return pystr.Strip(text) != "" && !strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, "~") &&
+		rest := strings.TrimLeftFunc(text, unicode.IsSpace)
+		return strings.TrimSpace(text) != "" && !strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, "~") &&
 			!strings.HasPrefix(rest, "\\") && !strings.HasPrefix(rest, ".")
 	}
 	scheme := strings.ToLower(m.GroupByNumber(1).String())
@@ -230,19 +231,12 @@ func registerIcebathTools(ctx context.Context, server *provider.MCPToolServer, r
 	return count, nil
 }
 
-// Process setup for --tools, quiet banners and redacted output, the profile shell hooks and outbound webhooks registered
+// Process setup for --tools, redacted output, the profile shell hooks and outbound webhooks registered
 func prepareToolProcess(ctx context.Context, acceptHooks bool) error {
-	if _, set := os.LookupEnv("ICEBATH_QUIET"); !set {
-		os.Setenv("ICEBATH_QUIET", "1")
-	}
 	tools.ForceSecretRedaction()
-	cfg, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
+	if _, err := plugins.RegisterShellHooksFromConfig(ctx, acceptHooks, false); err != nil {
 		return err
 	}
-	if _, err := plugins.RegisterShellHooksFromConfig(ctx, map[string]any(cfg), acceptHooks, false); err != nil {
-		return err
-	}
-	_, err = plugins.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg))
+	_, err := plugins.RegisterOutboundWebhooksFromConfig(ctx)
 	return err
 }

@@ -348,11 +348,11 @@ func renderInlineUnifiedDiff(ctx context.Context, diff string) []string {
 	fromFile, toFile := "", ""
 	for _, raw := range pySplitLines(diff) {
 		if strings.HasPrefix(raw, "--- ") {
-			fromFile = pystr.Strip(raw[4:])
+			fromFile = strings.TrimSpace(raw[4:])
 			continue
 		}
 		if strings.HasPrefix(raw, "+++ ") {
-			toFile = pystr.Strip(raw[4:])
+			toFile = strings.TrimSpace(raw[4:])
 			if fromFile != "" || toFile != "" {
 				from, to := fromFile, toFile
 				if from == "" {

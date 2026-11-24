@@ -84,7 +84,7 @@ type DiscordAdapter struct {
 	voiceState
 	voiceTimeoutSeconds    int
 	playbackTimeoutSeconds int
-	voiceFXCfg             map[string]any
+	voiceFX                voiceFXConfig
 }
 
 // Truncated URL previews stay clickable as Discord markdown links

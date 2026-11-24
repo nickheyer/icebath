@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -46,7 +48,7 @@ func SetupTerminalBackendRows(ctx context.Context, env *Env) (rows []TerminalBac
 	}
 	sort.SliceStable(providers, func(i, j int) bool { return providers[i].Name() < providers[j].Name() })
 	for _, p := range providers {
-		rows = append(rows, TerminalBackendRow{Name: pystr.Lower(pystr.Strip(p.Name())), DisplayName: p.DisplayName(), Description: p.Description()})
+		rows = append(rows, TerminalBackendRow{Name: strings.ToLower(strings.TrimSpace(p.Name())), DisplayName: p.DisplayName(), Description: p.Description()})
 	}
 	return rows
 }
@@ -112,7 +114,7 @@ func vercelProjectIDs(projectFile string) (map[string]string, error) {
 	}
 	for _, key := range []string{"projectId", "orgId"} {
 		if v, held := get(key); held {
-			if str, isStr := v.(string); isStr && pystr.Strip(str) != "" {
+			if str, isStr := v.(string); isStr && strings.TrimSpace(str) != "" {
 				out[key] = str
 			}
 		}
@@ -147,7 +149,7 @@ func TestSSHConnection(ctx context.Context, out io.Writer, host, user, port, key
 		fmt.Fprintln(out, "SSH connection successful!")
 		return true
 	default:
-		fmt.Fprintf(out, "SSH connection failed: %s\n", pystr.Strip(stderr))
+		fmt.Fprintf(out, "SSH connection failed: %s\n", strings.TrimSpace(stderr))
 	}
 	fmt.Fprintln(out, "Check your SSH key and host settings.")
 	return false

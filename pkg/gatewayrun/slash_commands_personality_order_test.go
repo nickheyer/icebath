@@ -19,7 +19,7 @@ func TestPersonalityListBuiltinsThenUserEntriesInFileOrder(t *testing.T) {
 	home.ResetKeyCache()
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)
-	cfg := "personalities:\n  zeta: Zeta prompt\n  alpha: Alpha prompt\nagent:\n  personalities:\n    helpful: Overridden helpful\n    beta: Beta prompt\n"
+	cfg := "personalities:\n  zeta: Zeta prompt\n  alpha: Alpha prompt\n  helpful: Overridden helpful\n  beta: Beta prompt\n"
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}

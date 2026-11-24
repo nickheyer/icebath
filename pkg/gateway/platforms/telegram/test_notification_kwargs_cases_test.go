@@ -1,6 +1,8 @@
 package telegram
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestNotificationKwargs(t *testing.T) {
 	for _, tc := range []struct {

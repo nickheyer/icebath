@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -120,7 +119,6 @@ type CLI struct {
 	ctx     context.Context
 	env     *tools.Env
 	console *cliui.Console
-	config  map[string]any
 
 	toolProgressMode       string
 	bellOnComplete         bool
@@ -274,7 +272,7 @@ func armExitWatchdogOnShutdownSignal(ctx context.Context) {
 	if armed {
 		return
 	}
-	base := exitWatchdogTimeout()
+	base := exitWatchdogTimeout(ctx)
 	if base <= 0 {
 		return
 	}
@@ -296,7 +294,7 @@ func runCleanup(ctx context.Context, env *tools.Env, notifySessionFinalize bool)
 		cleanupInProgress = false
 		cleanupMu.Unlock()
 	}()
-	armExitWatchdog(ctx, exitWatchdogTimeout(), false)
+	armExitWatchdog(ctx, exitWatchdogTimeout(ctx), false)
 	resetTerminalInputModesOnExit()
 	for _, step := range cleanupSteps {
 		runCleanupStep(step, ctx, env)
@@ -382,7 +380,7 @@ func takeSessionEndMessages() []string {
 
 // Builds the skills scope over the active home and the loaded CLI config
 func skillsScope(ctx context.Context) *skills.Scope {
-	return skills.NewScope(home.Dir(ctx), config.Tree(CLIConfig(ctx)))
+	return skills.NewScope(home.Dir(ctx), nil)
 }
 
 // Normalizes repeated or comma separated skills flags into a deduplicated identifier list

@@ -26,7 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -387,7 +386,7 @@ func (s *SMTP) ehlo() (int, []byte, error) {
 		}
 		if m := featureRE.FindStringSubmatch(each); m != nil {
 			feature := strings.ToLower(m[1])
-			params := pystr.Strip(each[len(m[1]):])
+			params := strings.TrimSpace(each[len(m[1]):])
 			if feature == "auth" {
 				s.features[feature] = s.features[feature] + " " + params
 			} else {
@@ -590,7 +589,7 @@ func (s *SMTP) Starttls(ctx context.Context, tlsConfig *tls.Config) error {
 func quoteaddr(addrstring string) string {
 	parsed := pyemail.ParseAddr(addrstring)
 	if parsed.Name == "" && parsed.Addr == "" {
-		if strings.HasPrefix(pystr.Strip(addrstring), "<") {
+		if strings.HasPrefix(strings.TrimSpace(addrstring), "<") {
 			return addrstring
 		}
 		return "<" + addrstring + ">"

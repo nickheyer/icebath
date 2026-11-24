@@ -438,7 +438,7 @@ func (l *sessionLifecycle) startSession(message, title string, keepCurrent, intr
 			return created(nil)
 		}
 		params.RequestID = ptr(uuid.NewString())
-		if cwd := strings.TrimFunc(os.Getenv("ICEBATH_TUI_CWD"), isJSSpace); cwd != "" {
+		if cwd := strings.TrimFunc(l.gw.creationEnv()("ICEBATH_TUI_CWD"), isJSSpace); cwd != "" {
 			params.Cwd = &cwd
 		}
 		params.LoginsFrom = l.inheritLogins(previousSid)

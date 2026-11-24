@@ -108,17 +108,17 @@ func (r *GatewayRunner) handleStopCommand(ctx context.Context, event *gateway.Me
 
 // Lists failed and paused adapters or pauses and resumes the reconnect of one by name
 func (r *GatewayRunner) handlePlatformCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	parts := pystr.SplitWhitespace(pystr.Strip(event.Text), 2)
-	if len(parts) > 0 && strings.HasPrefix(pystr.LstripChars(pystr.Lower(parts[0]), "/"), "platform") {
+	parts := pystr.SplitWhitespace(strings.TrimSpace(event.Text), 2)
+	if len(parts) > 0 && strings.HasPrefix(strings.TrimLeft(strings.ToLower(parts[0]), "/"), "platform") {
 		parts = parts[1:]
 	}
 	action := "list"
 	if len(parts) > 0 {
-		action = pystr.Lower(parts[0])
+		action = strings.ToLower(parts[0])
 	}
 	target := ""
 	if len(parts) > 1 {
-		target = pystr.Lower(parts[1])
+		target = strings.ToLower(parts[1])
 	}
 	failed := map[gateway.Platform]map[string]any{}
 	var failedOrder []gateway.Platform
@@ -172,7 +172,7 @@ func (r *GatewayRunner) handlePlatformCommand(ctx context.Context, event *gatewa
 	}
 	var platform gateway.Platform
 	for _, p := range gateway.PlatformMembers() {
-		if pystr.Lower(string(p)) == target {
+		if strings.ToLower(string(p)) == target {
 			platform = p
 			break
 		}
@@ -268,7 +268,7 @@ func (r *GatewayRunner) handleAutopruneCommand(ctx context.Context, event *gatew
 	if err != nil {
 		return "", err
 	}
-	if pystr.Strip(event.GetCommandArgs()) != "" && state.AutoPruneAnswered(ctx, "") {
+	if strings.TrimSpace(event.GetCommandArgs()) != "" && state.AutoPruneAnswered(ctx, "") {
 		if err := clearLocalAutoPruneNotice(ctx, r, event.Source); err != nil {
 			return "", err
 		}

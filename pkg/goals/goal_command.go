@@ -1,6 +1,8 @@
 package goals
 
 import (
+	"strings"
+
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -83,7 +85,7 @@ func goalWait(m Manager, arg string) (GoalCommandResult, error) {
 	}
 	reason := ""
 	if len(tokens) > 1 {
-		reason = pystr.Strip(tokens[1])
+		reason = strings.TrimSpace(tokens[1])
 	}
 	if pid.IsInt64() {
 		if _, err := m.WaitOn(pid.Int64(), reason); err != nil {
@@ -169,13 +171,13 @@ func goalBareControl(m Manager, verb, rest string, render GoalRender) (GoalComma
 
 // Gate subcommand dispatch, gate creation only after the adapter authorizes it
 func goalGate(m Manager, arg string, authorizeGate func() string) (GoalCommandResult, error) {
-	if arg == "" || pystr.Lower(arg) == "list" {
+	if arg == "" || strings.ToLower(arg) == "list" {
 		return GoalCommandResult{Output: m.RenderGates()}, nil
 	}
 	tokens := splitOnce(arg)
-	verb, rest := pystr.Lower(tokens[0]), ""
+	verb, rest := strings.ToLower(tokens[0]), ""
 	if len(tokens) > 1 {
-		rest = pystr.Strip(tokens[1])
+		rest = strings.TrimSpace(tokens[1])
 	}
 	handler, known := goalGateHandlers[verb]
 	if !known || (verb == "clear" && rest != "") || (verb != "clear" && rest == "") {
@@ -273,7 +275,7 @@ func goalSet(m Manager, arg string, drafting bool, lastUserMessage any, render G
 
 // True when the command controls an existing goal rather than replacing it
 func IsGoalControl(arg string) bool {
-	normalized := pystr.Lower(pystr.Strip(arg))
+	normalized := strings.ToLower(strings.TrimSpace(arg))
 	first := ""
 	if normalized != "" {
 		first = splitOnce(normalized)[0]
@@ -296,21 +298,21 @@ func DispatchGoalCommand(m Manager, arg string, o GoalCommandOptions) (GoalComma
 	if render == nil {
 		render = EnglishGoalRender
 	}
-	arg = pystr.Strip(arg)
+	arg = strings.TrimSpace(arg)
 	tokens := splitOnce(arg)
 	verb, rest := "", ""
 	if len(tokens) > 0 {
-		verb = pystr.Lower(tokens[0])
+		verb = strings.ToLower(tokens[0])
 	}
 	if len(tokens) > 1 {
-		rest = pystr.Strip(tokens[1])
+		rest = strings.TrimSpace(tokens[1])
 	}
 	prefix := "Invalid goal"
 	result, err := func() (GoalCommandResult, error) {
 		if verb == "--" {
 			return goalSet(m, rest, false, o.LastUserMessage, render, o.Progress)
 		}
-		if handler, exact := goalExactHandlers[pystr.Lower(arg)]; exact {
+		if handler, exact := goalExactHandlers[strings.ToLower(arg)]; exact {
 			return handler(m, "", render)
 		}
 		if goalBareControlVerbs[verb] {

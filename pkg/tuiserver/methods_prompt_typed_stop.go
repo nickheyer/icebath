@@ -19,14 +19,14 @@ func sessionVoiceEnabled(sessionID any) (bool, error) {
 }
 
 // Whether text is a voice stop phrase, false and logged when the voice config cannot be read
-func typedStopPhrase(text string) (stop bool) {
+func typedStopPhrase(ctx context.Context, text string) (stop bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLog().Debug("typed stop-phrase check failed; submitting the text", "error", r)
 			stop = false
 		}
 	}()
-	return isVoiceStopPhrase(text)
+	return isVoiceStopPhrase(ctx, text)
 }
 
 // Ends the session's voice chat when text is a bare stop phrase typed while its voice mode is on
@@ -39,7 +39,7 @@ func consumeTypedStopPhrase(ctx context.Context, text any, sessionID string, emi
 	if err != nil || !enabled {
 		return false, err
 	}
-	if !typedStopPhrase(typed) {
+	if !typedStopPhrase(ctx, typed) {
 		return false, nil
 	}
 	endSessionVoiceChat(ctx, sessionID, true, true)

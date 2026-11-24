@@ -1,6 +1,8 @@
 package line
 
 import (
+	"unicode"
+
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -19,18 +21,15 @@ import (
 )
 
 const (
-	linePerBubbleChars        = 5000
-	lineSafeBubbleChars       = 4500
-	lineMaxMessagesPerCall    = 5
-	lineReplyTokenTTLSeconds  = 50
-	webhookBodyMaxBytes       = 1_048_576
-	defaultWebhookPort        = 8646
-	defaultWebhookPath        = "/line/webhook"
-	defaultMediaPathPrefix    = "/line/media"
-	defaultSlowResponseThresh = 45.0
-	mediaTokenTTLSeconds      = 1800
-	lineImageMaxBytes         = 10 * 1024 * 1024
-	lineAVMaxBytes            = 200 * 1024 * 1024
+	linePerBubbleChars       = 5000
+	lineSafeBubbleChars      = 4500
+	lineMaxMessagesPerCall   = 5
+	lineReplyTokenTTLSeconds = 50
+	webhookBodyMaxBytes      = 1_048_576
+	defaultMediaPathPrefix   = "/line/media"
+	mediaTokenTTLSeconds     = 1800
+	lineImageMaxBytes        = 10 * 1024 * 1024
+	lineAVMaxBytes           = 200 * 1024 * 1024
 
 	defaultPendingReplyTextKey = "platform.line.pending.still_thinking"
 	defaultButtonLabelKey      = "platform.line.pending.button_label"
@@ -130,8 +129,8 @@ func splitForLine(text string, maxChars int) []string {
 		if cut <= 0 {
 			cut = maxChars
 		}
-		chunks = append(chunks, pystr.Rstrip(string(remaining[:cut])))
-		remaining = []rune(pystr.Lstrip(string(remaining[cut:])))
+		chunks = append(chunks, strings.TrimRightFunc(string(remaining[:cut]), unicode.IsSpace))
+		remaining = []rune(strings.TrimLeftFunc(string(remaining[cut:]), unicode.IsSpace))
 	}
 	if len(remaining) > 0 && len(chunks) < lineMaxMessagesPerCall {
 		chunks = append(chunks, string(remaining))
@@ -140,7 +139,7 @@ func splitForLine(text string, maxChars int) []string {
 		if len(last) > maxChars-1 {
 			last = last[:maxChars-1]
 		}
-		chunks[len(chunks)-1] = pystr.Rstrip(string(last)) + "…"
+		chunks[len(chunks)-1] = strings.TrimRightFunc(string(last), unicode.IsSpace) + "…"
 	}
 	return chunks
 }
@@ -332,17 +331,6 @@ func isInterimSend(content string, metadata map[string]any) bool {
 		return true
 	}
 	return isSystemBypass(content)
-}
-
-// Comma separated value as a set of its stripped non empty members
-func csvSet(value string) map[string]bool {
-	out := map[string]bool{}
-	for _, x := range strings.Split(value, ",") {
-		if s := pystr.Strip(x); s != "" {
-			out[s] = true
-		}
-	}
-	return out
 }
 
 // URL safe random token of 32 bytes, the secrets.token_urlsafe form

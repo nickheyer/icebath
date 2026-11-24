@@ -149,7 +149,10 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 			fmt.Fprintf(w, "--apply error: %s\n", err.Error())
 			return 1, nil
 		}
-		merged := ApplyProposals(env, proposals, indices)
+		merged, err := ApplyProposals(env, proposals, indices)
+		if err != nil {
+			return 1, err
+		}
 		applied := []any{}
 		for _, i := range indices {
 			applied = append(applied, proposals[i].Pattern)

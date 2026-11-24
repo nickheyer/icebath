@@ -90,10 +90,10 @@ func discoverVenv(ctx context.Context) ([]auditComponent, error) {
 	for _, pin := range pins {
 		name, version := "", ""
 		if pin.Name != nil {
-			name = pystr.Strip(*pin.Name)
+			name = strings.TrimSpace(*pin.Name)
 		}
 		if pin.Version != nil {
-			version = pystr.Strip(*pin.Version)
+			version = strings.TrimSpace(*pin.Version)
 		}
 		if strings.ReplaceAll(strings.ToLower(name), "_", "-") == "icebath-agent" && version == "0.0.0" {
 			info, err := auditVersionInfo()
@@ -131,7 +131,7 @@ func matchPins(specs []string) [][2]string {
 func parseRequirements(text string) [][2]string {
 	var specs []string
 	for _, raw := range pystr.Splitlines(text, false) {
-		line := pystr.Strip(raw)
+		line := strings.TrimSpace(raw)
 		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "-") {
 			specs = append(specs, line)
 		}
@@ -217,7 +217,7 @@ var (
 
 // Component of an MCP server command that pins an auditable version, false otherwise
 func extractMCPComponent(serverName, command string, args []string) (auditComponent, bool) {
-	cmd := strings.ToLower(pystr.Strip(command))
+	cmd := strings.ToLower(strings.TrimSpace(command))
 	var pattern *regexp.Regexp
 	ecosystem := ""
 	switch {
@@ -245,10 +245,7 @@ func extractMCPComponent(serverName, command string, args []string) (auditCompon
 
 // Pinned MCP server packages of the config
 func discoverMCP(ctx context.Context) ([]auditComponent, error) {
-	servers, err := mcp.GetMCPServers(ctx)
-	if err != nil {
-		return nil, err
-	}
+	servers := mcp.StoredServers(ctx)
 	names := make([]string, 0, len(servers))
 	for name := range servers {
 		names = append(names, name)
@@ -370,7 +367,7 @@ func osvSeverityFromRecord(record any) string {
 	}
 	for _, sev := range candidates {
 		if text, ok := sev.(string); ok {
-			tier := strings.ToUpper(pystr.Strip(text))
+			tier := strings.ToUpper(strings.TrimSpace(text))
 			if _, known := severityOrder[tier]; known {
 				return tier
 			}
@@ -441,7 +438,7 @@ func osvFetchDetails(ctx context.Context, ids []string) (map[string]auditVulnera
 			}
 			summary := ""
 			if v := rowValue(rec, "summary"); pyrepr.Truthy(v) {
-				summary = pystr.Strip(pyrepr.Str(v))
+				summary = strings.TrimSpace(pyrepr.Str(v))
 			}
 			results[i] = auditVulnerability{OSVID: vid, Severity: osvSeverityFromRecord(rec), Summary: summary, FixedVersions: osvFixedVersions(rec)}
 		}(i, vid)

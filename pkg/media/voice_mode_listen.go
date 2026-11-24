@@ -3,6 +3,7 @@
 package media
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -10,7 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var voiceWriteWAV = writeRecordingWAV
@@ -74,10 +75,10 @@ func callQuietly(fn func()) (err error) {
 	return nil
 }
 
-// Debug logs a VAD line, echoed to stderr when ICEBATH_VOICE_DEBUG is 1
+// Debug logs a VAD line, echoed to stderr when voice.debug is on for the process home
 func vadLog(msg string) {
 	pkgLog().Debug(msg)
-	if pystr.Strip(os.Getenv("ICEBATH_VOICE_DEBUG")) == "1" {
+	if settings.VoiceDebug.Get(context.Background()) {
 		fmt.Fprintln(os.Stderr, "[voice-vad] "+msg)
 	}
 }

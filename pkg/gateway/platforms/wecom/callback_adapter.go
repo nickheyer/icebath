@@ -291,7 +291,7 @@ func (a *WecomCallbackAdapter) Connect(ctx context.Context, isReconnect bool) (b
 
 // Listener, poll loop and initial token refresh of a connect
 func (a *WecomCallbackAdapter) start(ctx context.Context) error {
-	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
+	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.mu.Lock()
 	a.httpClient = client
 	a.mu.Unlock()
@@ -627,16 +627,16 @@ func (a *WecomCallbackAdapter) buildEvent(ctx context.Context, app map[string]an
 	if err != nil {
 		return nil, err
 	}
-	msgType := pystr.Lower(root.findtext("MsgType", ""))
+	msgType := strings.ToLower(root.findtext("MsgType", ""))
 	if msgType != "text" && msgType != "event" {
 		return nil, nil
 	}
-	if eventName := pystr.Lower(root.findtext("Event", "")); msgType == "event" && (eventName == "enter_agent" || eventName == "subscribe") {
+	if eventName := strings.ToLower(root.findtext("Event", "")); msgType == "event" && (eventName == "enter_agent" || eventName == "subscribe") {
 		return nil, nil
 	}
 	userID := root.findtext("FromUserName", "")
 	corpID := root.findtext("ToUserName", pyrepr.Str(extraOr(app, "corp_id", "")))
-	content := pystr.Strip(root.findtext("Content", ""))
+	content := strings.TrimSpace(root.findtext("Content", ""))
 	if content == "" && msgType == "event" {
 		content = "/start"
 	}

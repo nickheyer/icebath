@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -482,12 +483,6 @@ func TestAgentInitRefusesCheckpointRequiredOnCodexAppServer(t *testing.T) {
 	}
 }
 
-// Error carrying the Python exception class a failing config read raised
-type pyClassError struct{ class, msg string }
-
-func (e pyClassError) Error() string      { return e.msg }
-func (e pyClassError) PyTypeName() string { return e.class }
-
 // Openrouter agent of the config warning fixture with memory on, review fork off and real log files
 func configWarningAgent(t *testing.T) *AIAgent {
 	t.Helper()
@@ -502,115 +497,6 @@ func configWarningAgent(t *testing.T) *AIAgent {
 	}
 	t.Cleanup(func() { a.Close() })
 	return a
-}
-
-func TestConfigFailureWarnsWithoutExposingValuesAndPreservesDefaults(t *testing.T) {
-	const configured = "prompt_caching:\n  cache_ttl: 1h\nagent:\n  reasoning_echo: true\ncompression:\n  enabled: false\nskills:\n  creation_nudge_interval: 99\n"
-	sections := map[string]string{"cache": "prompt_caching.cache_ttl", "sections": "memory"}
-	for _, failureAt := range []string{"import", "load"} {
-		for _, reader := range []string{"cache", "sections", "all"} {
-			t.Run(failureAt+"_"+reader, func(t *testing.T) {
-				h := t.TempDir()
-				t.Setenv("ICEBATH_HOME", h)
-				t.Setenv("OPENROUTER_API_KEY", "test-key")
-				configPath := filepath.Join(h, "config.yaml")
-				if err := os.MkdirAll(filepath.Join(h, "memories"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(filepath.Join(h, "memories", "MEMORY.md"), []byte("The notebook is blue."), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(configPath, []byte(configured), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				affected := map[string]bool{reader: true}
-				if reader == "all" {
-					affected = map[string]bool{"cache": true, "sections": true}
-				}
-				const secret = "private-config-value-do-not-log"
-				class := "RuntimeError"
-				if failureAt == "import" {
-					class = "ModuleNotFoundError"
-				}
-				failure := pyClassError{class: class, msg: "Could not load config.yaml: api_key: " + secret}
-				prevCache, prevSections := promptCacheConfigLoader, agentConfigLoader
-				if affected["cache"] {
-					promptCacheConfigLoader = func(context.Context) (map[string]any, error) { return nil, failure }
-				}
-				if affected["sections"] {
-					agentConfigLoader = func(context.Context) (map[string]any, error) { return nil, failure }
-				}
-				fallback := configWarningAgent(t)
-				promptCacheConfigLoader, agentConfigLoader = prevCache, prevSections
-				if raw, _ := os.ReadFile(configPath); string(raw) != configured {
-					t.Fatalf("config rewritten %q", raw)
-				}
-				logging.FlushLogQueue()
-				persisted, _ := os.ReadFile(filepath.Join(h, "logs", "errors.log"))
-				var warnings []string
-				for _, line := range strings.Split(string(persisted), "\n") {
-					lower := strings.ToLower(line)
-					if strings.Contains(line, " "+logName+": ") && strings.Contains(line, "WARNING") && strings.Contains(lower, "config") && strings.Contains(lower, "default") {
-						warnings = append(warnings, line)
-					}
-				}
-				if len(warnings) != len(affected) {
-					t.Fatalf("warnings %d want %d\n%s", len(warnings), len(affected), persisted)
-				}
-				for scope := range affected {
-					if !strings.Contains(string(persisted), sections[scope]) {
-						t.Fatalf("errors.log lacks %s\n%s", sections[scope], persisted)
-					}
-				}
-				for _, w := range warnings {
-					if !strings.Contains(w, class) {
-						t.Fatalf("warning %q lacks %s", w, class)
-					}
-				}
-				if strings.Contains(string(persisted), secret) {
-					t.Fatal("secret persisted")
-				}
-				healthy := configWarningAgent(t)
-				if err := os.WriteFile(configPath, nil, 0o600); err != nil {
-					t.Fatal(err)
-				}
-				config.ResetCache()
-				defaults := configWarningAgent(t)
-				if healthy.cacheTTL == defaults.cacheTTL || healthy.reasoningEchoFlag == defaults.reasoningEchoFlag ||
-					healthy.compressionEnabled == defaults.compressionEnabled || healthy.skillNudgeInterval == defaults.skillNudgeInterval {
-					t.Fatal("healthy and default agents agree on a configured value")
-				}
-				ref := func(scope string) *AIAgent {
-					if affected[scope] {
-						return defaults
-					}
-					return healthy
-				}
-				if r := ref("cache"); fallback.cacheTTL != r.cacheTTL || fallback.cacheDisabled != r.cacheDisabled || fallback.usePromptCaching != r.usePromptCaching {
-					t.Fatal("cache settings")
-				}
-				if fallback.reasoningEchoFlag != healthy.reasoningEchoFlag {
-					t.Fatal("reasoning echo flag")
-				}
-				if r := ref("sections"); fallback.compressionEnabled != r.compressionEnabled || fallback.skillNudgeInterval != r.skillNudgeInterval {
-					t.Fatal("section settings")
-				}
-				if fallback.memoryManager != nil || healthy.memoryManager != nil || defaults.memoryManager != nil {
-					t.Fatal("memory manager built")
-				}
-				for _, x := range []*AIAgent{healthy, defaults} {
-					if fallback.memoryEnabled != x.memoryEnabled || fallback.userProfileEnabled != x.userProfileEnabled || fallback.memoryNudgeInterval != x.memoryNudgeInterval ||
-						fallback.compressionInPlace != x.compressionInPlace || fallback.maxCompressionAttempts != x.maxCompressionAttempts ||
-						fallback.contextCompressor.Base().ThresholdPercent != x.contextCompressor.Base().ThresholdPercent {
-						t.Fatal("unaffected settings differ")
-					}
-					if fallback.memoryStore == nil || x.memoryStore == nil || !reflect.DeepEqual(fallback.memoryStore.Entries("memory"), x.memoryStore.Entries("memory")) {
-						t.Fatal("memory entries differ")
-					}
-				}
-			})
-		}
-	}
 }
 
 func TestEmptyConfigInitializesMemoryWithoutALoadWarning(t *testing.T) {
@@ -767,7 +653,7 @@ func TestSafeWorkerBypassesRuleReadersEvenWithoutCliFlags(t *testing.T) {
 			preloaded, _, missing := scope.BuildPreloadedSkillsPrompt(ctx, []string{"probe"}, "", nil)
 			hints, _ := tools.NewSubdirectoryHintTrackerFor(env, project, true).CheckToolCall("read_file", map[string]any{"path": filepath.Join(sub, "file.py")})
 			a := &AIAgent{env: env, enabledToolsets: []string{"memory"}, disabledToolsets: []string{}}
-			initMemory(ctx, a, map[string]any{"memory": map[string]any{"memory_enabled": true, "user_profile_enabled": true}}, false, "cli", nil)
+			initMemory(settings.WithFrozen(ctx, map[string]any{"memory": map[string]any{"memory_enabled": true, "user_profile_enabled": true}}), a, false, "cli", nil)
 			var engines []string
 			prevLoad := loadContextEngineFn
 			loadContextEngineFn = func(_ context.Context, name string) *plugins.HostedObject {
@@ -775,7 +661,7 @@ func TestSafeWorkerBypassesRuleReadersEvenWithoutCliFlags(t *testing.T) {
 				return nil
 			}
 			t.Cleanup(func() { loadContextEngineFn = prevLoad })
-			selectContextEngine(ctx, map[string]any{"context": map[string]any{"engine": "sentinel"}})
+			selectContextEngine(settings.WithFrozen(ctx, map[string]any{"context": map[string]any{"engine": "sentinel"}}))
 			if mode == "safe" {
 				if contextText != "" || soul != "" || skillsText != "" || preloaded != "" || !reflect.DeepEqual(missing, []string{"probe"}) ||
 					hints != "" || len(reads) != 0 || len(engines) != 0 || a.memoryStore != nil {
@@ -870,10 +756,10 @@ func TestDefaultCompressorDoesNotActivateAnOfferedPlugin(t *testing.T) {
 	pluginContextEngineFn = func(context.Context) any { return candidate }
 	t.Cleanup(func() { loadContextEngineFn, pluginContextEngineFn = prevLoad, prevPlugin })
 	ctx := context.Background()
-	if got := selectContextEngine(ctx, map[string]any{"context": map[string]any{"engine": "compressor"}}); got != nil {
+	if got := selectContextEngine(settings.WithFrozen(ctx, map[string]any{"context": map[string]any{"engine": "compressor"}})); got != nil {
 		t.Fatalf("compressor activated %v", got)
 	}
-	if got := selectContextEngine(ctx, map[string]any{"context": map[string]any{"engine": "offered"}}); got == nil || got.Name() != "offered" {
+	if got := selectContextEngine(settings.WithFrozen(ctx, map[string]any{"context": map[string]any{"engine": "offered"}})); got == nil || got.Name() != "offered" {
 		t.Fatalf("offered engine %v", got)
 	}
 }
@@ -958,7 +844,7 @@ func TestAgentWhoseProviderInstanceIsRefusedIsToldAndRunsWithoutIt(t *testing.T)
 	records := captureLogger(t, "agent", slog.LevelDebug)
 	a, _ := startupAgent(t, "api_server")
 	a.sessionID = "s-beta"
-	initMemory(home.WithOverride(ctx, beta), a, map[string]any{"memory": map[string]any{"provider": "instancescoped"}}, false, "api_server", nil)
+	initMemory(settings.WithFrozen(home.WithOverride(ctx, beta), map[string]any{"memory": map[string]any{"provider": "instancescoped"}}), a, false, "api_server", nil)
 	if a.memoryManager != nil {
 		t.Fatal("the refused provider still built a memory manager")
 	}
@@ -1001,7 +887,7 @@ func TestColdRefineBuildsNoMemoryProvider(t *testing.T) {
 	}
 	loaded = nil
 	a := &AIAgent{sessionID: "refine-memory-parent", validToolNames: map[string]bool{}}
-	initMemory(ctx, a, map[string]any{"memory": map[string]any{"provider": "fake"}}, true, "local", nil)
+	initMemory(settings.WithFrozen(ctx, map[string]any{"memory": map[string]any{"provider": "fake"}}), a, true, "local", nil)
 	if len(loaded) != 0 {
 		t.Fatalf("the review side agent loaded a memory provider: %v", loaded)
 	}

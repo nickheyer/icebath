@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var roomCommonIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
@@ -31,7 +30,7 @@ func roomIdentifier(value any, spec roomIdentifierSpec, fail roomErrorFunc) (str
 	if !ok {
 		return "", fail(spec.label + " must be a string")
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	maxChars := spec.maxChars
 	if maxChars == 0 {
 		maxChars = 128

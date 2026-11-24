@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -72,7 +71,7 @@ func validateSkillCategory(category any) string {
 	if !ok {
 		return "Category must be a string."
 	}
-	str = pystr.Strip(str)
+	str = strings.TrimSpace(str)
 	if str == "" {
 		return ""
 	}
@@ -85,7 +84,7 @@ func validateSkillCategory(category any) string {
 
 // Error text when frontmatter lacks name or description or the body is empty
 func validateSkillFrontmatter(content string) string {
-	if pystr.Strip(content) == "" {
+	if strings.TrimSpace(content) == "" {
 		return "Content cannot be empty."
 	}
 	for strings.HasPrefix(content, "\xEF\xBB\xBF") {
@@ -114,7 +113,7 @@ func validateSkillFrontmatter(content string) string {
 	if utf8.RuneCountInString(pyStrValue(fm["description"])) > MaxDescriptionLength {
 		return fmt.Sprintf("Description exceeds %d characters.", MaxDescriptionLength)
 	}
-	if pystr.Strip(content[loc[1]+3:]) == "" {
+	if strings.TrimSpace(content[loc[1]+3:]) == "" {
 		return "SKILL.md must have content after the frontmatter (instructions, procedures, etc.)."
 	}
 	return ""
@@ -127,7 +126,7 @@ func descriptionOf(content string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return strings.Trim(pystr.Strip(pyStrValue(v)), "'\""), true
+	return strings.Trim(strings.TrimSpace(pyStrValue(v)), "'\""), true
 }
 
 // Error text when this write sets a description wider than the skill index
@@ -490,7 +489,7 @@ func isTruthyValue(v any, def bool) bool {
 		return def
 	}
 	if str, ok := v.(string); ok {
-		switch strings.ToLower(pystr.Strip(str)) {
+		switch strings.ToLower(strings.TrimSpace(str)) {
 		case "1", "true", "yes", "on":
 			return true
 		}
@@ -742,7 +741,7 @@ func (s *Scope) deleteSkill(ctx context.Context, name string, absorbedInto *stri
 	}
 	target := ""
 	if absorbedInto != nil {
-		target = pystr.Strip(*absorbedInto)
+		target = strings.TrimSpace(*absorbedInto)
 	}
 	if target != "" {
 		if target == name {

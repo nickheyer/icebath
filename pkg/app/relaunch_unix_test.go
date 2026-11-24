@@ -35,12 +35,12 @@ func TestRelaunchCallsExecvp(t *testing.T) {
 	}
 	var calls []call
 	saved := relaunchExecvp
-	relaunchExecvp = func(path string, argv []string) error {
+	relaunchExecvp = func(path string, argv, env []string) error {
 		calls = append(calls, call{path, argv})
 		return nil
 	}
 	t.Cleanup(func() { relaunchExecvp = saved })
-	relaunch([]string{"--resume", "abc"}, true)
+	relaunch([]string{"--resume", "abc"}, true, nil)
 	if len(calls) != 1 || calls[0].path != bin || !slices.Equal(calls[0].argv, []string{bin, "--resume", "abc"}) {
 		t.Fatalf("calls %v", calls)
 	}

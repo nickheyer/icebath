@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,11 +10,9 @@ import (
 	"sync"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -40,24 +40,14 @@ var (
 	askSideQuestion     = askTextOnly
 )
 
-// Profile config the capability grant is read from, swapped by tests
-var sideQuestionGrantConfig = func(ctx context.Context) (map[string]any, error) {
-	h := home.Dir(ctx)
-	return config.Load(h, config.NewSecrets(h).Lookup())
-}
-
 // True when a loaded enabled plugin declares llm.side_question and the user granted it
 func consentedPluginLoaded(ctx context.Context) bool {
 	keys := plugins.GetPluginManager(ctx).EnabledPluginsDeclaring(sideQuestionCapabilityID)
 	if len(keys) == 0 {
 		return false
 	}
-	cfg, err := sideQuestionGrantConfig(ctx)
-	if err != nil {
-		return false
-	}
 	for _, key := range keys {
-		if plugins.CapabilityGranted(cfg, key, sideQuestionCapabilityID) {
+		if plugins.CapabilityGranted(ctx, key, sideQuestionCapabilityID) {
 			return true
 		}
 	}
@@ -124,7 +114,7 @@ func sideQuestionRedeemable(lease *sideQuestionLease, prompt any) string {
 		return "turn_moved_on"
 	}
 	text, ok := prompt.(string)
-	if !ok || pystr.Strip(text) == "" || pyLen(text) > sideQuestionMaxPromptChars {
+	if !ok || strings.TrimSpace(text) == "" || pyLen(text) > sideQuestionMaxPromptChars {
 		return "bad_prompt"
 	}
 	return ""

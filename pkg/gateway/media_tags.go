@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"regexp"
 	"sort"
@@ -9,7 +11,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python re pattern compiled on regexp2 with its group numbers, matched over rune slices
@@ -169,16 +170,16 @@ func runeIndexFrom(hay, needle []rune, from int) int {
 
 // Tag path with its quotes and trailing punctuation removed
 func normalizeMediaTagPath(raw string) string {
-	path := pystr.Strip(raw)
+	path := strings.TrimSpace(raw)
 	if r := []rune(path); len(r) >= 2 && r[0] == r[len(r)-1] && strings.ContainsRune("`\"'", r[0]) {
-		path = pystr.Strip(string(r[1 : len(r)-1]))
+		path = strings.TrimSpace(string(r[1 : len(r)-1]))
 	}
 	return strings.TrimRight(strings.TrimLeft(path, "`\"'"), "`\"',.;:)}]")
 }
 
 // Whether the path has no extension or one outside the deliverable set
 func pathLacksDeliverableExtension(path string) bool {
-	ext := pystr.Lower(pypath.PathSuffix(path))
+	ext := strings.ToLower(pypath.PathSuffix(path))
 	for _, e := range MediaDeliveryExts {
 		if e == ext {
 			return false
@@ -194,7 +195,7 @@ func hasMediaDirectives(text string) bool {
 
 // Rune offset where the run of end of sequence tokens closing the text begins, minus one when absent
 func terminalSentinelStart(text []rune) int {
-	end := len([]rune(pystr.Rstrip(string(text))))
+	end := len([]rune(strings.TrimRightFunc(string(text), unicode.IsSpace)))
 	start := end
 	n := len([]rune(terminalSentinel))
 	for start >= n && string(text[start-n:start]) == terminalSentinel {
@@ -214,7 +215,7 @@ func maskMediaScanText(ctx context.Context, text []rune) ([]rune, error) {
 	}
 	masked := maskJSONStringMedia(protected)
 	if start := terminalSentinelStart(text); start >= 0 {
-		masked = blankSpans(masked, []runeSpan{{start, len([]rune(pystr.Rstrip(string(text))))}})
+		masked = blankSpans(masked, []runeSpan{{start, len([]rune(strings.TrimRightFunc(string(text), unicode.IsSpace)))}})
 	}
 	return masked, nil
 }
@@ -230,7 +231,7 @@ func deliverableTagSpans(ctx context.Context, text []rune) ([]runeSpan, error) {
 		return nil, err
 	}
 	if start := terminalSentinelStart(text); len(spans) > 0 && start >= 0 {
-		spans = append(spans, runeSpan{start, len([]rune(pystr.Rstrip(string(text))))})
+		spans = append(spans, runeSpan{start, len([]rune(strings.TrimRightFunc(string(text), unicode.IsSpace)))})
 	}
 	return spans, nil
 }
@@ -340,8 +341,8 @@ func maskProtectedSpans(ctx context.Context, content []rune) ([]rune, error) {
 		if mediaTrailRE.search(string(content[max(0, start-20):start])) {
 			continue
 		}
-		inner := pystr.Strip(string(content[start+1 : end-1]))
-		if strings.HasPrefix(pystr.Upper(inner), "MEDIA:") {
+		inner := strings.TrimSpace(string(content[start+1 : end-1]))
+		if strings.HasPrefix(strings.ToUpper(inner), "MEDIA:") {
 			if candidate := normalizeMediaTagPath(string([]rune(inner)[6:])); candidate != "" {
 				safe, err := ValidateMediaDeliveryPath(ctx, candidate, "")
 				if err != nil {
@@ -398,7 +399,7 @@ func ExtractMedia(ctx context.Context, content string) ([]MediaRef, string, erro
 		}
 		seen[path] = true
 		_, ext := pypath.Splitext(path)
-		media = append(media, MediaRef{path, hasVoice && audioExts[pystr.Lower(ext)]})
+		media = append(media, MediaRef{path, hasVoice && audioExts[strings.ToLower(ext)]})
 	}
 	for _, m := range mediaTagCleanupRE.finditer(scan) {
 		path := normalizeMediaTagPath(mediaTagCleanupRE.group(m, "path"))
@@ -423,7 +424,7 @@ func ExtractMedia(ctx context.Context, content string) ([]MediaRef, string, erro
 			return nil, "", err
 		}
 		if len(spans) > 0 {
-			cleaned = pystr.Strip(blankLineRunRE.ReplaceAllString(string(deleteSpans([]rune(cleaned), spans)), "\n\n"))
+			cleaned = strings.TrimSpace(blankLineRunRE.ReplaceAllString(string(deleteSpans([]rune(cleaned), spans)), "\n\n"))
 		}
 	}
 	return media, cleaned, nil
@@ -438,5 +439,5 @@ func StripMediaDirectivesForDisplay(ctx context.Context, text string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return pystr.Rstrip(blankLineRunRE.ReplaceAllString(stripped, "\n\n")), nil
+	return strings.TrimRightFunc(blankLineRunRE.ReplaceAllString(stripped, "\n\n"), unicode.IsSpace), nil
 }

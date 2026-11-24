@@ -10,12 +10,13 @@ var Personality = Register(&String{Meta: Meta{Key: "display.personality", Label:
 var MaxTurns = Register(&Int{Meta: Meta{Key: "agent.max_turns", Label: "Max turns",
 	Short: "Stop after this many tool calls for one request.",
 	Group: GroupAgent, Order: 20, Apply: NewSession},
-	Null: "no limit", Min: at(1), Unit: "calls"})
+	Null: "no limit", Min: at(1), Unit: "calls", DefaultBelow: true,
+	Unset: []string{"none", "unlimited", "infinite", "infinity", "inf", "\u221e", "-1", "0"}})
 
 // Extra instructions for coding work
-var CodingInstructions = Register(&String{Meta: Meta{Key: "agent.coding_instructions", Label: "Coding instructions",
+var CodingInstructions = Register(&List{Meta: Meta{Key: "agent.coding_instructions", Label: "Coding instructions",
 	Short: "Your own rules the agent follows when it works on code.",
-	Group: GroupAgent, Order: 30, Apply: NewSession}})
+	Group: GroupAgent, Order: 30, Apply: NewSession}, Whole: true})
 
 // Summaries that shorten long chats
 var AutoCompress = Register(&Bool{Meta: Meta{Key: "compression.enabled", Label: "Shorten long chats",

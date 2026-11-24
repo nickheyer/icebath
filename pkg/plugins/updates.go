@@ -89,7 +89,7 @@ func readManifestField(pluginDir, key string) string {
 		return ""
 	}
 	value, _ := data[key].(string)
-	return pystr.Strip(value)
+	return strings.TrimSpace(value)
 }
 
 // Checks installed provenance and the saved update url tag without any network access
@@ -156,19 +156,19 @@ func parseFeedYml(text string) (map[string]any, error) {
 		return nil, errors.New("feed must be a YAML mapping")
 	}
 	version, _ := data["version"].(string)
-	if pystr.Strip(version) == "" {
+	if strings.TrimSpace(version) == "" {
 		return nil, errors.New("feed missing 'version'")
 	}
-	out := map[string]any{"version": pystr.Strip(version)}
+	out := map[string]any{"version": strings.TrimSpace(version)}
 	floor, _ := data["min_icebath"].(string)
-	if pystr.Strip(floor) == "" {
+	if strings.TrimSpace(floor) == "" {
 		floor, _ = data["min_hermes"].(string)
 	}
-	if pystr.Strip(floor) != "" {
-		out["min_icebath"] = pystr.Strip(floor)
+	if strings.TrimSpace(floor) != "" {
+		out["min_icebath"] = strings.TrimSpace(floor)
 	}
-	if notes, _ := data["notes_url"].(string); pystr.Strip(notes) != "" {
-		out["notes_url"] = pystr.Strip(notes)
+	if notes, _ := data["notes_url"].(string); strings.TrimSpace(notes) != "" {
+		out["notes_url"] = strings.TrimSpace(notes)
 	}
 	if artifacts, ok := data["artifacts"].(map[string]any); ok {
 		if git, present := artifacts["git"]; present && git != nil {
@@ -193,7 +193,7 @@ func httpsUpdateURL(url any) (string, error) {
 	if jsonTruthy(url) {
 		text = pyrepr.Str(url)
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(strings.ToLower(text), "https://") {
 		return "", fmt.Errorf("update_url must be an https:// URL, got %s", errchain.Show(text))
 	}

@@ -69,25 +69,6 @@ func nestedPluginValue(root any, segments []string) (any, bool) {
 	return current, true
 }
 
-// Value wrapped in nested single key mappings with the first segment outermost
-func nestedPluginMapping(segments []string, value any) any {
-	nested := value
-	for i := len(segments) - 1; i >= 0; i-- {
-		nested = map[string]any{segments[i]: nested}
-	}
-	return nested
-}
-
-// The plugins.entries mapping of one plugin, nil when absent or not a mapping
-func pluginSettingsEntry(cfg any, pluginID string) map[string]any {
-	v, ok := nestedPluginValue(cfg, []string{"plugins", "entries", pluginID})
-	if !ok {
-		return nil
-	}
-	m, _ := v.(map[string]any)
-	return m
-}
-
 // Writes one value under plugins.entries.<id>.settings atomically, refusing managed installs and keys
 func SavePluginSetting(ctx context.Context, h, pluginID string, segments []string, value any) error {
 	if config.ManagedSystem(ctx, h) != "" {
@@ -98,16 +79,7 @@ func SavePluginSetting(ctx context.Context, h, pluginID string, segments []strin
 	if config.IsKeyManaged(dotted) {
 		return &PluginPermissionError{Msg: fmt.Sprintf("Plugin setting %s is administrator-managed", errchain.Show(dotted))}
 	}
-	partial := nestedPluginMapping(fullPath[:4], nestedPluginMapping(segments, value)).(map[string]any)
-	configPath := home.ConfigPath(h)
-	return withLockedPluginState(configPath, func() error {
-		ctx, unlock := config.LockConfig(context.Background())
-		defer unlock()
-		if _, err := config.ReadUserConfigRaw(ctx, configPath); err != nil {
-			return err
-		}
-		return config.SaveConfig(ctx, h, partial, config.SaveOptions{PreserveKeys: [][]string{fullPath}, MergeExisting: true})
-	})
+	return setPluginEntryField(home.WithOverride(ctx, h), pluginID, strings.Join(fullPath[3:], "."), value)
 }
 
 // One Windows safe directory component for plugin owned data, portable namespaces kept verbatim

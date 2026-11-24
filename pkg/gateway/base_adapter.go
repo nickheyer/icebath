@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -1043,7 +1045,7 @@ func (b *BasePlatformAdapter) SessionStore() any {
 
 // Declares the owning multiplex profile, default and blank names reading as the primary
 func (b *BasePlatformAdapter) SetOwnerProfile(profileName string) {
-	name := pystr.Strip(profileName)
+	name := strings.TrimSpace(profileName)
 	if name == "default" {
 		name = ""
 	}
@@ -1076,7 +1078,7 @@ func (b *BasePlatformAdapter) SharedListenerProfile() string {
 // Transport profile for identity resolution, empty deriving it from the registry
 func (b *BasePlatformAdapter) ownerTransportProfile() string {
 	owner := b.OwnerProfile()
-	if pystr.Strip(owner) != "" {
+	if strings.TrimSpace(owner) != "" {
 		return owner
 	}
 	return ""
@@ -1120,10 +1122,10 @@ func (b *BasePlatformAdapter) sessionKeyProfile(source *SessionSource) string {
 	if identity := IdentityOf(source); identity != nil {
 		return identity.SessionKeyProfile()
 	}
-	if source != nil && source.Profile != nil && pystr.Strip(*source.Profile) != "" {
+	if source != nil && source.Profile != nil && strings.TrimSpace(*source.Profile) != "" {
 		return *source.Profile
 	}
-	if owner := b.OwnerProfile(); pystr.Strip(owner) != "" {
+	if owner := b.OwnerProfile(); strings.TrimSpace(owner) != "" {
 		return owner
 	}
 	resolver, ok := b.SessionStore().(sessionProfileResolver)
@@ -1134,7 +1136,7 @@ func (b *BasePlatformAdapter) sessionKeyProfile(source *SessionSource) string {
 	if err != nil {
 		return ""
 	}
-	if s, ok := resolved.(string); ok && pystr.Strip(s) != "" {
+	if s, ok := resolved.(string); ok && strings.TrimSpace(s) != "" {
 		return s
 	}
 	return ""

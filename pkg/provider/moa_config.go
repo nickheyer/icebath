@@ -2,6 +2,7 @@ package provider
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -544,7 +546,7 @@ func normalizeMoAConfig(raw any) map[string]any {
 	}
 	config.SetMappingKeys(presets, order)
 	if len(presets) == 0 {
-		presets[DefaultMoAPresetName] = normalizeMoAPreset(m)
+		presets[DefaultMoAPresetName] = normalizeMoAPreset(map[string]any{})
 	}
 	defaultName := pyStripSpace(pyOrStr(m["default_preset"]))
 	if _, has := presets[defaultName]; defaultName == "" || !has {
@@ -582,6 +584,12 @@ func (e *moaPresetMissingError) Error() string { return e.message }
 
 func (e *moaPresetMissingError) Unwrap() error { return &MoAPresetNotFoundError{Preset: e.preset} }
 
+// The moa block a preset lookup reads, built from the mixture settings of ctx
+func moaSettings(ctx context.Context) map[string]any {
+	return map[string]any{"presets": settings.MoaPresets.Get(ctx), "default_preset": settings.MoaDefaultPreset.Get(ctx),
+		"active_preset": settings.MoaActivePreset.Get(ctx), "privacy_filter": settings.MoaPrivacyFilter.Get(ctx)}
+}
+
 // ResolveMoAPreset returns a copy of the named preset, the configured default when name is empty
 func ResolveMoAPreset(raw any, name string) (map[string]any, error) {
 	cfg := normalizeMoAConfig(raw)
@@ -606,23 +614,19 @@ func ResolveMoAPreset(raw any, name string) (map[string]any, error) {
 	return deepCopyAny(preset).(map[string]any), nil
 }
 
-// Aggregator provider and model of a preset in a full config, false when the preset is missing
-func resolveMoaAggregator(cfg map[string]any, preset string) (string, string, bool) {
-	var moa any = map[string]any{}
-	if config.PyTruthy(cfg["moa"]) {
-		moa = cfg["moa"]
-	}
+// Aggregator provider and model of a preset in the mixture settings of ctx, false when the preset is missing
+func resolveMoaAggregator(ctx context.Context, preset string) (string, string, bool) {
+	return moaAggregatorOf(moaSettings(ctx), preset)
+}
+
+// Aggregator provider and model of a preset of a moa block, false when the preset is missing
+func moaAggregatorOf(moa map[string]any, preset string) (string, string, bool) {
 	resolved, err := ResolveMoAPreset(moa, preset)
 	if err != nil {
 		return "", "", false
 	}
 	agg := anyMap(resolved["aggregator"])
 	return pyStripSpace(pyOrStr(agg["provider"])), pyStripSpace(pyOrStr(agg["model"])), true
-}
-
-// SkipDeepMerge reports whether the missing config recursion must not descend into the named preset map
-func SkipDeepMerge(prefix, key string) bool {
-	return prefix == "moa" && key == "presets"
 }
 
 // ApplyUserMoAPresets makes an explicit user preset map authoritative over the merged defaults

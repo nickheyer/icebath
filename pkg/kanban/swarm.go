@@ -64,7 +64,7 @@ func DefaultSwarmOptions() SwarmOptions {
 
 // Stripped required text, a ValueError naming the field when blank
 func swarmRequireText(value, fieldName string) (string, error) {
-	text := pystr.Strip(value)
+	text := strings.TrimSpace(value)
 	if text == "" {
 		return "", &ValueError{fieldName + " is required"}
 	}
@@ -76,7 +76,7 @@ func swarmContext(rootID, goal string) string {
 	return fmt.Sprintf("\n\n## Swarm protocol\n- Swarm root / shared blackboard: `%s`.\n- Read "+
 		"sibling/parent handoffs from Kanban context before working.\n- Put machine-readable "+
 		"facts in completion metadata.\n- Put cross-worker notes on the root task using "+
-		"structured comments.\n- Goal: %s\n", rootID, pystr.Strip(goal))
+		"structured comments.\n- Goal: %s\n", rootID, strings.TrimSpace(goal))
 }
 
 // Flips the blocked swarm root to done inside the caller's transaction, false when it was not blocked
@@ -124,7 +124,7 @@ func CreateSwarm(ctx context.Context, conn state.SQLiteConn, o SwarmOptions) (*S
 		}
 		if root != nil && root.Status == "blocked" {
 			ok, err := activateRootInline(ctx, conn, created.RootID, activationSummary,
-				pyjson.ObjectOf("kind", "kanban_swarm_v1", "goal", pystr.Strip(o.Goal), "worker_count", len(created.WorkerIDs)))
+				pyjson.ObjectOf("kind", "kanban_swarm_v1", "goal", strings.TrimSpace(o.Goal), "worker_count", len(created.WorkerIDs)))
 			if err != nil {
 				return err
 			}
@@ -344,7 +344,7 @@ func ParseWorkerArg(raw string) (SwarmWorkerSpec, error) {
 	split := strings.SplitN(raw, ":", 3)
 	parts := make([]string, len(split))
 	for i, p := range split {
-		parts[i] = pystr.Strip(p)
+		parts[i] = strings.TrimSpace(p)
 	}
 	if len(parts) < 2 {
 		return SwarmWorkerSpec{}, &ValueError{"worker must be profile:title or profile:title:skill,skill"}
@@ -352,7 +352,7 @@ func ParseWorkerArg(raw string) (SwarmWorkerSpec, error) {
 	skills := []string{}
 	if len(parts) == 3 && parts[2] != "" {
 		for _, s := range strings.Split(parts[2], ",") {
-			if s = pystr.Strip(s); s != "" {
+			if s = strings.TrimSpace(s); s != "" {
 				skills = append(skills, s)
 			}
 		}

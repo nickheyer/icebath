@@ -466,26 +466,15 @@ func TestGatewayClientRequests(t *testing.T) {
 			t.Fatalf("logs %q", c.logTail(5))
 		}
 	})
-	t.Run("the timeout floor is thirty seconds", func(t *testing.T) {
-		t.Setenv("ICEBATH_TUI_RPC_TIMEOUT_MS", "5")
-		if requestTimeout() != 30*time.Second {
-			t.Fatal("floor")
+	t.Run("the timeouts are the ones the launcher resolved, two minutes and fifteen seconds by default", func(t *testing.T) {
+		if requestTimeout() != 120*time.Second || startupTimeout() != 15*time.Second {
+			t.Fatalf("defaults %v %v", requestTimeout(), startupTimeout())
 		}
-		t.Setenv("ICEBATH_TUI_RPC_TIMEOUT_MS", "")
-		if requestTimeout() != 120*time.Second {
-			t.Fatal("default")
-		}
-		t.Setenv("ICEBATH_TUI_RPC_TIMEOUT_MS", " 45000ms")
-		if requestTimeout() != 45*time.Second {
-			t.Fatal("parseInt reads the leading digits")
-		}
-		t.Setenv("ICEBATH_TUI_STARTUP_TIMEOUT_MS", "100")
-		if startupTimeout() != 5*time.Second {
-			t.Fatal("startup floor")
-		}
-		t.Setenv("ICEBATH_TUI_STARTUP_TIMEOUT_MS", "")
-		if startupTimeout() != 15*time.Second {
-			t.Fatal("startup default")
+		saved := prefs
+		t.Cleanup(func() { prefs = saved })
+		prefs.RequestTimeout, prefs.StartupTimeout = 45*time.Second, 7*time.Second
+		if requestTimeout() != 45*time.Second || startupTimeout() != 7*time.Second {
+			t.Fatalf("resolved %v %v", requestTimeout(), startupTimeout())
 		}
 	})
 }

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -79,7 +78,7 @@ func agentCacheBaseForEnv(env *tools.Env, e tools.Environment) (string, error) {
 	if backend == "" {
 		backend = "local"
 	}
-	return cacheBaseByBackend[pystr.Lower(pystr.Strip(backend))], nil
+	return cacheBaseByBackend[strings.ToLower(strings.TrimSpace(backend))], nil
 }
 
 // Adds host_image and agent_visible_image to a local success result under a non local backend
@@ -246,8 +245,8 @@ func addProviderKwargs(req *ImageGenRequest, imageURL, referenceImageURLs any, u
 	for k, v := range controls {
 		req.Kwargs[k] = v
 	}
-	if s, ok := imageURL.(string); ok && pystr.Strip(s) != "" {
-		req.ImageURL = pystr.Strip(s)
+	if s, ok := imageURL.(string); ok && strings.TrimSpace(s) != "" {
+		req.ImageURL = strings.TrimSpace(s)
 	}
 	if referenceImageURLs != nil {
 		if refs := normalizeReferenceImages(anyList(referenceImageURLs)); len(refs) > 0 {
@@ -418,7 +417,7 @@ func confineSourceImages(ctx context.Context, env *tools.Env, imageURL, referenc
 	if backend == "" {
 		backend = "local"
 	}
-	if b := pystr.Lower(pystr.Strip(backend)); b == "" || b == "local" {
+	if b := strings.ToLower(strings.TrimSpace(backend)); b == "" || b == "local" {
 		return imageURL, referenceImageURLs, "", nil
 	}
 	resolve := func(ref string) (string, error) {
@@ -431,7 +430,7 @@ func confineSourceImages(ctx context.Context, env *tools.Env, imageURL, referenc
 		}
 		return "", err
 	}
-	if s, ok := imageURL.(string); ok && pystr.Strip(s) != "" {
+	if s, ok := imageURL.(string); ok && strings.TrimSpace(s) != "" {
 		resolved, err := resolve(s)
 		if err != nil {
 			msg, ferr := refusal(err)

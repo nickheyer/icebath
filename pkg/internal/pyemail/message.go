@@ -1,10 +1,10 @@
 package pyemail
 
 import (
+	"unicode"
+
 	"regexp"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -342,7 +342,7 @@ func (m *Message) GetContentType() string {
 		return m.defaultType
 	}
 	ctype, _, _ := strings.Cut(value.Str(), ";")
-	ctype = pystr.Lower(pystr.Strip(ctype))
+	ctype = strings.ToLower(strings.TrimSpace(ctype))
 	if strings.Count(ctype, "/") != 1 {
 		return "text/plain"
 	}
@@ -383,7 +383,7 @@ func (m *Message) GetBoundary() (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return pystr.Rstrip(CollapseRFC2231Value(p)), true
+	return strings.TrimRightFunc(CollapseRFC2231Value(p), unicode.IsSpace), true
 }
 
 // File name of the payload from the Content-Disposition filename, else the Content-Type name
@@ -394,7 +394,7 @@ func (m *Message) GetFilename() (string, bool) {
 			return "", false
 		}
 	}
-	return pystr.Strip(CollapseRFC2231Value(p)), true
+	return strings.TrimSpace(CollapseRFC2231Value(p)), true
 }
 
 // Lowercased charset parameter of the Content-Type header, false when missing or not ASCII
@@ -412,7 +412,7 @@ func (m *Message) GetContentCharset() (string, bool) {
 			return "", false
 		}
 	}
-	return pystr.Lower(charset), true
+	return strings.ToLower(charset), true
 }
 
 // Payload decoded by its Content-Transfer-Encoding, nil for a multipart message
@@ -422,7 +422,7 @@ func (m *Message) GetPayloadDecoded() []byte {
 	}
 	cte := ""
 	if value, ok := m.Get("content-transfer-encoding"); ok {
-		cte = pystr.Lower(pystr.Strip(value.Str()))
+		cte = strings.ToLower(strings.TrimSpace(value.Str()))
 	}
 	payload := []byte(m.payload)
 	switch cte {

@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Listing filters of a rich session page, a nil Limit meaning 20 and a nil ProjectCompressionTips meaning true
@@ -224,8 +223,8 @@ func (d *SessionDB) ListSessionsRich(ctx context.Context, o ListSessionsRichOpti
 	fromSessions := "FROM sessions s\n                " + promptJoin
 	var query string
 	if o.OrderByLastActive {
-		idNeedle := pystr.Lower(pystr.Strip(o.IDQuery))
-		searchNeedle := pystr.Lower(pystr.Strip(o.SearchQuery))
+		idNeedle := strings.ToLower(strings.TrimSpace(o.IDQuery))
+		searchNeedle := strings.ToLower(strings.TrimSpace(o.SearchQuery))
 		seedWhere := where
 		if idNeedle == "" && searchNeedle == "" {
 			seedWhere = whereSQL(append(append([]string{}, whereClauses...),

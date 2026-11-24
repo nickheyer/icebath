@@ -18,7 +18,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -101,7 +100,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 	}
 	isDM := isDMChannel(ch)
 	isVoiceLinkedChannel := false
-	rawContent := pystr.Strip(m.Content)
+	rawContent := strings.TrimSpace(m.Content)
 	normalizedContent := rawContent
 	mentionPrefix := false
 	var snapshotAttachments []*discordgo.MessageAttachment
@@ -112,7 +111,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 				continue
 			}
 			if snap.Message.Content != "" {
-				snapshotText = append(snapshotText, pystr.Strip(snap.Message.Content))
+				snapshotText = append(snapshotText, strings.TrimSpace(snap.Message.Content))
 			}
 			snapshotAttachments = append(snapshotAttachments, snap.Message.Attachments...)
 		}
@@ -124,8 +123,8 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 	if a.selfIsExplicitlyMentioned(m) {
 		mentionPrefix = true
 		if self := a.selfUser(); self != nil {
-			normalizedContent = pystr.Strip(strings.ReplaceAll(normalizedContent, "<@"+self.ID+">", ""))
-			normalizedContent = pystr.Strip(strings.ReplaceAll(normalizedContent, "<@!"+self.ID+">", ""))
+			normalizedContent = strings.TrimSpace(strings.ReplaceAll(normalizedContent, "<@"+self.ID+">", ""))
+			normalizedContent = strings.TrimSpace(strings.ReplaceAll(normalizedContent, "<@!"+self.ID+">", ""))
 		}
 		m.Content = normalizedContent
 	}
@@ -270,7 +269,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 			}
 		}
 	}
-	if pystr.Strip(eventText) == "" && channelContext == nil {
+	if strings.TrimSpace(eventText) == "" && channelContext == nil {
 		if mentionPrefix && len(mediaURLs) == 0 && injection == "" {
 			who := userName
 			if who == "" && m.Author != nil {

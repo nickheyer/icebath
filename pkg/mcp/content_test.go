@@ -15,7 +15,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -205,7 +204,10 @@ func TestNativeImageEnvelope(t *testing.T) {
 	captureLogs(t)
 	p := filepath.Join(h, "shot.png")
 	os.WriteFile(p, pngBytes(t, 64), 0o600)
-	textEnv := &tools.Env{Home: h, Config: config.Tree{"agent": map[string]any{"image_input_mode": "text"}}}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("agent:\n  image_input_mode: text\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	textEnv := &tools.Env{Home: h}
 	if got := resultWithNativeImages(context.Background(), textEnv, "s1", `{"result": "x"}`, []string{p}); got != `{"result": "x"}` {
 		t.Fatalf("text mode must keep the string %v", got)
 	}
@@ -276,8 +278,10 @@ func TestNativeImageEnvelopeOnAVisionRoute(t *testing.T) {
 	captureLogs(t)
 	p := filepath.Join(h, "shot.png")
 	os.WriteFile(p, pngBytes(t, 64), 0o600)
-	env := &tools.Env{Home: h, Values: &sync.Map{}, Config: config.Tree{"agent": map[string]any{"image_input_mode": "native"},
-		"model": map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-5"}}}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("agent:\n  image_input_mode: native\nmodel:\n  provider: anthropic\n  default: claude-sonnet-4-5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := &tools.Env{Home: h, Values: &sync.Map{}}
 	got, ok := resultWithNativeImages(context.Background(), env, "s1", `{"result":"MEDIA:`+p+`"}`, []string{p}).(map[string]any)
 	if !ok || got["_multimodal"] != true || got["text_summary"] != `{"result":"MEDIA:`+p+`"}` {
 		t.Fatalf("envelope %v", got)

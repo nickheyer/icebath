@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -36,7 +35,7 @@ func newExecFix(t *testing.T, section map[string]any) *execFix {
 	if section == nil {
 		section = map[string]any{}
 	}
-	env.Config = config.Tree{"browser": section}
+	writeBrowserSection(t, env.Home, section)
 	for _, k := range []string{"BU_NAME", "BU_AUTOSPAWN", "BROWSER_USE_API_KEY", "BH_AGENT_WORKSPACE", "BROWSER_CDP_URL"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
@@ -181,40 +180,40 @@ func TestVaultEgressRedactionExecRedactsRegisteredVaultSecretFromOutputAndStderr
 	}
 }
 
-func legacyEnv(t *testing.T, section map[string]any) *tools.Env {
+func cloudKeyEnv(t *testing.T, section map[string]any) *tools.Env {
 	t.Helper()
 	return newExecFix(t, section).env
 }
 
-func TestLegacyCloudMigrationDirectAPIConfigMigrates(t *testing.T) {
-	env := legacyEnv(t, map[string]any{"cloud_provider": "browser-use"})
+func TestBrowserUseCloudByKeySelectedWithKey(t *testing.T) {
+	env := cloudKeyEnv(t, map[string]any{"cloud_provider": "browser-use"})
 	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
-	if !isLegacyBrowserUseCloudConfig(env) {
-		t.Fatal("direct API config did not migrate")
+	if !browserUseCloudByKey(env) {
+		t.Fatal("browser-use selected with its key is not Browser Use cloud")
 	}
 }
 
-func TestLegacyCloudMigrationNoAPIKeyStaysOnLegacyPath(t *testing.T) {
-	if isLegacyBrowserUseCloudConfig(legacyEnv(t, map[string]any{"cloud_provider": "browser-use"})) {
-		t.Fatal("keyless config migrated")
+func TestBrowserUseCloudByKeyNeedsTheKey(t *testing.T) {
+	if browserUseCloudByKey(cloudKeyEnv(t, map[string]any{"cloud_provider": "browser-use"})) {
+		t.Fatal("browser-use without its key counted as Browser Use cloud")
 	}
 }
 
-func TestLegacyCloudMigrationOtherCloudProviderDoesNotMigrate(t *testing.T) {
-	env := legacyEnv(t, map[string]any{"cloud_provider": "browserbase"})
+func TestBrowserUseCloudByKeyNotWithAnotherProvider(t *testing.T) {
+	env := cloudKeyEnv(t, map[string]any{"cloud_provider": "browserbase"})
 	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
-	if isLegacyBrowserUseCloudConfig(env) {
-		t.Fatal("browserbase config migrated")
+	if browserUseCloudByKey(env) {
+		t.Fatal("a browserbase selection counted as Browser Use cloud")
 	}
 }
 
-func TestLegacyCloudMigrationAutoDetectWithKeyMigrates(t *testing.T) {
-	env := legacyEnv(t, nil)
+func TestBrowserUseCloudByKeyWhenAutoDetecting(t *testing.T) {
+	env := cloudKeyEnv(t, nil)
 	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
 	t.Setenv("BROWSERBASE_API_KEY", "bb-key")
 	t.Setenv("BROWSERBASE_PROJECT_ID", "bb-project")
-	if !isLegacyBrowserUseCloudConfig(env) {
-		t.Fatal("autodetect with key did not migrate")
+	if !browserUseCloudByKey(env) {
+		t.Fatal("no selection with the key is not Browser Use cloud")
 	}
 }
 

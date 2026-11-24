@@ -1,6 +1,8 @@
 package acp
 
 import (
+	"unicode"
+
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -103,7 +105,7 @@ func argText(args *pyjson.Object, def string, keys ...string) string {
 	return def
 }
 
-func strip(s string) string { return pystr.Strip(s) }
+func strip(s string) string { return strings.TrimSpace(s) }
 
 // Template with its braces replaced by str(value) when value is truthy, else fallback
 func fmtValue(value any, template, fallback string) string {
@@ -239,7 +241,7 @@ func jsonLoadsMaybe(value *string) any {
 	if v, err := pyjson.Loads(*value); err == nil {
 		return v
 	}
-	dec := json.NewDecoder(strings.NewReader(pystr.Lstrip(*value)))
+	dec := json.NewDecoder(strings.NewReader(strings.TrimLeftFunc(*value, unicode.IsSpace)))
 	var raw json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
 		return nil
@@ -470,7 +472,7 @@ var formatSkillViewResult = structured(false, func(toolName string, data, args *
 		if !strings.HasPrefix(s, "#") {
 			continue
 		}
-		if h := strip(pystr.LstripChars(s, "#")); h != "" {
+		if h := strip(strings.TrimLeft(s, "#")); h != "" {
 			headings = append(headings, h)
 		}
 	}

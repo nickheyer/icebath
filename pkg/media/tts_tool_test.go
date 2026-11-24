@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/media/edgetts"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -23,11 +24,31 @@ func swap[T any](t *testing.T, p *T, v T) {
 	t.Cleanup(func() { *p = old })
 }
 
-// Replaces the tts config loader with a fixed section
+// Writes the tts section into the config.yaml of a fresh ICEBATH_HOME, the way a person configures speech
 func fixedTTSConfig(t *testing.T, cfg map[string]any) {
 	t.Helper()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeTTSConfig(t, h, cfg)
+}
+
+// Writes the tts section into the config.yaml of a profile home
+func writeTTSConfig(t *testing.T, h string, cfg map[string]any) {
+	t.Helper()
+	data, err := config.SafeDump(map[string]any{"tts": cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Speech settings a tts section in a fresh home resolves to
+func requestOf(t *testing.T, cfg map[string]any) *ttsRequest {
+	t.Helper()
+	fixedTTSConfig(t, cfg)
+	return loadTTSRequest(context.Background(), nil)
 }
 
 // Decoded tool result envelope of one call without a session env
@@ -46,7 +67,7 @@ func runTTS(t *testing.T, a ttsCallArgs) map[string]any {
 
 // Fake engine writing one byte and recording each chunk
 func recordingEngine(captured *[]string) ttsGenerator {
-	return func(_ context.Context, _ *tools.Env, text, out string, _ map[string]any) (string, error) {
+	return func(_ context.Context, _ *tools.Env, text, out string, _ *ttsRequest) (string, error) {
 		*captured = append(*captured, text)
 		return out, os.WriteFile(out, []byte{0}, 0o644)
 	}
@@ -66,8 +87,8 @@ func byteConcat(paths []string, outputPath string, _ bool) (string, error) {
 }
 
 // Fake OpenAI generator recording each chunk
-func recordingOpenAI(captured *[]string) func(context.Context, *tools.Env, string, string, map[string]any, openAITTSOptions) (string, error) {
-	return func(_ context.Context, _ *tools.Env, text, out string, _ map[string]any, _ openAITTSOptions) (string, error) {
+func recordingOpenAI(captured *[]string) func(context.Context, *tools.Env, string, string, *ttsRequest, openAITTSOptions) (string, error) {
+	return func(_ context.Context, _ *tools.Env, text, out string, _ *ttsRequest, _ openAITTSOptions) (string, error) {
 		*captured = append(*captured, text)
 		return out, os.WriteFile(out, []byte{0}, 0o644)
 	}
@@ -75,12 +96,12 @@ func recordingOpenAI(captured *[]string) func(context.Context, *tools.Env, strin
 
 func TestResolveMaxTextLength(t *testing.T) {
 	t.Run("test_unknown_provider_falls_back", func(t *testing.T) {
-		if got := resolveMaxTextLength("does-not-exist", map[string]any{}); got != fallbackMaxTextLength {
+		if got := resolveMaxTextLength("does-not-exist", requestOf(t, map[string]any{})); got != fallbackMaxTextLength {
 			t.Fatalf("got %d", got)
 		}
 	})
 	t.Run("test_empty_provider_falls_back", func(t *testing.T) {
-		if got := resolveMaxTextLength("", map[string]any{}); got != fallbackMaxTextLength {
+		if got := resolveMaxTextLength("", requestOf(t, map[string]any{})); got != fallbackMaxTextLength {
 			t.Fatalf("got %d", got)
 		}
 		if got := resolveMaxTextLength("", nil); got != fallbackMaxTextLength {
@@ -249,18 +270,18 @@ func TestBuildAudioDeliveryFiles(t *testing.T) {
 func TestMaxTextLengthForCommandProviders(t *testing.T) {
 	t.Run("test_default_for_command_provider", func(t *testing.T) {
 		cfg := map[string]any{"providers": map[string]any{"piper-cli": map[string]any{"type": "command", "command": "x"}}}
-		if got := resolveMaxTextLength("piper-cli", cfg); got != defaultCommandTTSMaxTextLength {
+		if got := resolveMaxTextLength("piper-cli", requestOf(t, cfg)); got != defaultCommandTTSMaxTextLength {
 			t.Fatalf("got %d", got)
 		}
 	})
 	t.Run("test_override_under_legacy_tts_name_block", func(t *testing.T) {
 		cfg := map[string]any{"piper-cli": map[string]any{"type": "command", "command": "x", "max_text_length": 7777}}
-		if got := resolveMaxTextLength("piper-cli", cfg); got != 7777 {
+		if got := resolveMaxTextLength("piper-cli", requestOf(t, cfg)); got != 7777 {
 			t.Fatalf("got %d", got)
 		}
 	})
 	t.Run("test_non_command_unknown_provider_still_falls_back", func(t *testing.T) {
-		if got := resolveMaxTextLength("unknown", map[string]any{}); got <= 0 {
+		if got := resolveMaxTextLength("unknown", requestOf(t, map[string]any{})); got <= 0 {
 			t.Fatalf("got %d", got)
 		}
 	})
@@ -358,7 +379,7 @@ func TestEdgeSpeedBecomesASignedRateAndFailuresSurface(t *testing.T) {
 		return edgetts.ErrNoAudio
 	})
 	out := filepath.Join(t.TempDir(), "x.mp3")
-	_, err := generateEdgeTTS(context.Background(), nil, "hi", out, map[string]any{"speed": 1.5, "edge": map[string]any{"voice": "en-GB-SoniaNeural"}})
+	_, err := generateEdgeTTS(context.Background(), nil, "hi", out, requestOf(t, map[string]any{"speed": 1.5, "edge": map[string]any{"voice": "en-GB-SoniaNeural"}}))
 	if err == nil || !errors.Is(err, edgetts.ErrNoAudio) || spoken.Voice != "en-GB-SoniaNeural" || spoken.Rate != "+50%" {
 		t.Fatalf("err = %v, spoken = %+v", err, spoken)
 	}

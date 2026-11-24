@@ -36,6 +36,12 @@ func ownedUnixSocket(path string) bool {
 	return st.Mode()&os.ModeSocket != 0 && int(sys.Uid) == os.Getuid()
 }
 
+// Whether pid leads a process group of its own, never this process's group
+func leadsOwnGroup(pid int) bool {
+	pgid, err := syscall.Getpgid(pid)
+	return err == nil && pgid == pid && pgid != syscall.Getpgrp()
+}
+
 // The taskkill tree kill is Windows only and never reached behind the isWindowsHost guard
 func terminateHostPidWindows(pid int) {
 	panic("terminateHostPidWindows is Windows only")

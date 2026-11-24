@@ -165,7 +165,7 @@ func (s *Store) staleAgeSeconds(claimedAt string, progressAt any) (float64, erro
 
 // Opens the ledger database with the schema initialised and the cron dir secured
 func (l *Ledger) connect(ctx context.Context) (state.SQLiteConn, error) {
-	if err := ensureCronDir(filepath.Dir(l.path)); err != nil {
+	if err := l.s.ensureStoreDir(filepath.Dir(l.path)); err != nil {
 		return nil, err
 	}
 	return state.OpenDB(ctx, l.path, "cron/executions.db", state.WithSynchronousFull(), state.WithInitialize(initializeExecutionsSchema))

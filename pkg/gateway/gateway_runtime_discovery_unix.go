@@ -3,6 +3,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"errors"
 	"fmt"
 	"io"
@@ -18,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Swappable account database lookups of the home privacy check
@@ -172,7 +173,7 @@ func controlSocketPath(home string) (string, error) {
 	if !utf8.Valid(data) {
 		return "", errors.New("the control pointer is not valid UTF-8")
 	}
-	target := pypath.PosixPurePathStr(pystr.Strip(string(data)))
+	target := pypath.PosixPurePathStr(strings.TrimSpace(string(data)))
 	if !filepath.IsAbs(target) {
 		return "", newDiscoveryError("invalid_control_pointer", "", "")
 	}

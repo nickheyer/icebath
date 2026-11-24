@@ -27,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -149,7 +148,7 @@ func sameIcebathHome(left, right string) (bool, error) {
 // Whether a persisted record names a different home than expected, failing closed when the comparison errors
 func RecordedGatewayHomeConflicts(record *pyjson.Object, expectedHome string) bool {
 	recorded, ok := recHome(record, home.RecordKey).(string)
-	if !ok || pystr.Strip(recorded) == "" {
+	if !ok || strings.TrimSpace(recorded) == "" {
 		return false
 	}
 	base := expectedHome
@@ -188,10 +187,10 @@ func ScopedLockOwnerLabel(record any) string {
 	if !ok {
 		return ""
 	}
-	if profile, ok := recGet(r, "profile").(string); ok && profileLabelRe.MatchString(pystr.Strip(profile)) {
-		return pystr.Strip(profile)
+	if profile, ok := recGet(r, "profile").(string); ok && profileLabelRe.MatchString(strings.TrimSpace(profile)) {
+		return strings.TrimSpace(profile)
 	}
-	if h, ok := recHome(r, home.RecordKey).(string); ok && pystr.Strip(h) != "" {
+	if h, ok := recHome(r, home.RecordKey).(string); ok && strings.TrimSpace(h) != "" {
 		return statusProfileLabelForHome(h)
 	}
 	return ""
@@ -232,7 +231,7 @@ func utcNowISO() string { return pydatetime.ISOFormat(time.Now().UTC().Truncate(
 func NormalizeUpdatedAt(value any) (string, bool, error) {
 	switch t := value.(type) {
 	case string:
-		raw := pystr.Strip(t)
+		raw := strings.TrimSpace(t)
 		if strings.HasSuffix(raw, "Z") || strings.HasSuffix(raw, "z") {
 			raw = raw[:len(raw)-1] + "+00:00"
 		}
@@ -301,9 +300,9 @@ func TerminatePid(pid int, force bool, expectedStartTime any) error {
 		return err
 	}
 	if code != 0 {
-		details := pystr.Strip(stderr)
+		details := strings.TrimSpace(stderr)
 		if stderr == "" {
-			details = pystr.Strip(stdout)
+			details = strings.TrimSpace(stdout)
 		}
 		if details == "" {
 			details = fmt.Sprintf("taskkill failed for PID %d", pid)
@@ -464,7 +463,7 @@ func readJSONFile(path string, barePidOK bool) *pyjson.Object {
 	if !utf8.Valid(data) {
 		return nil
 	}
-	raw := pystr.Strip(string(data))
+	raw := strings.TrimSpace(string(data))
 	if raw == "" {
 		return nil
 	}

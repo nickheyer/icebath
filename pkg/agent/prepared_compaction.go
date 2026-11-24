@@ -184,7 +184,7 @@ func messageIdentity(msg any) PreparedIdentity {
 	if role == "tool" {
 		return PreparedIdentity{Structure: "tool\x1f" + pyStrOr(m["tool_call_id"], ""), UID: uid}
 	}
-	text := pystr.Strip(memory.SanitizeContext(state.FlattenMessageText(m["content"], "\n")))
+	text := strings.TrimSpace(memory.SanitizeContext(state.FlattenMessageText(m["content"], "\n")))
 	digest := hex.EncodeToString(provider.Blake2bSum(pystr.EncodeUTF8Replace(text), 8))
 	parts := []string{role}
 	calls, _ := m["tool_calls"].([]any)

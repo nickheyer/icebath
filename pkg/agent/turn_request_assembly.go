@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -88,7 +89,7 @@ func pyFloat(v any) (float64, error) {
 		}
 		return 0, nil
 	case string:
-		f, err := strconv.ParseFloat(pystr.Strip(n), 64)
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
 		if err != nil {
 			return 0, fmt.Errorf("expected a number, got %s", errchain.Show(n))
 		}
@@ -182,7 +183,7 @@ func assembleAPIRequest(ctx context.Context, a *AIAgent, s *LoopState) error {
 	apiMessages = dropThinkingOnlyAndMergeUsers(apiMessages, crossProtocol, nudge)
 	for _, am := range apiMessages {
 		if text, ok := am["content"].(string); ok {
-			am["content"] = pystr.Strip(text)
+			am["content"] = strings.TrimSpace(text)
 		}
 	}
 	rows := anyRows(apiMessages)

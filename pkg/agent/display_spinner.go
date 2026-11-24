@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -79,7 +78,7 @@ func faced(faces []string, text string) string {
 func catalogThinkingVerbs(ctx context.Context) []string {
 	var verbs []string
 	for _, v := range strings.Split(i18n.T(ctx, "display.thinking_verbs", "", nil), ",") {
-		if s := pystr.Strip(v); s != "" {
+		if s := strings.TrimSpace(v); s != "" {
 			verbs = append(verbs, s)
 		}
 	}

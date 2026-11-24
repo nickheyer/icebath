@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -20,7 +19,7 @@ func acceptLaunchHooks(ctx context.Context, policy *LocalSessionPolicy) error {
 	if !pyTruthy(request["accept_hooks"]) || policy.IgnoreUserConfig {
 		return nil
 	}
-	return plugins.AcceptShellHooksForLaunch(ctx, loadGatewayConfig(ctx, ""))
+	return plugins.AcceptShellHooksForLaunch(ctx)
 }
 
 // Brings the owner's shell hooks in step with the profile's live config on a local session open
@@ -33,7 +32,7 @@ func refreshProfileHooks(ctx context.Context, policy *LocalSessionPolicy) {
 			pkgLog().Warn("shell-hook re-sync failed; keeping the registered hooks", "error", recovered)
 		}
 	}()
-	plugins.SyncShellHooksFromConfig(ctx, func() any { return loadGatewayConfig(ctx, "") })
+	plugins.SyncShellHooksFromConfig(ctx)
 }
 
 // Text equality that takes the same time wherever the texts differ
@@ -44,7 +43,7 @@ func digestEqual(a, b string) bool {
 // Re-supplies a launch only key after an owner restart, only the same key a key launched session was bound with
 func rebindLaunchKey(ctx context.Context, a *SessionAuthority, session SessionRef, apiKey any) error {
 	key, isText := apiKey.(string)
-	if !isText || pystr.Strip(key) == "" {
+	if !isText || strings.TrimSpace(key) == "" {
 		return refuseText("api_key", "must be a non-empty string")
 	}
 	live, err := liveSession(a, session.SessionID)

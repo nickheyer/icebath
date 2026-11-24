@@ -1,15 +1,5 @@
 package tuigateway
 
-type TerminalResizeResult struct {
-	Cols int64 `json:"cols"`
-}
-
-type TerminalResizeParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-	Cols      *int64  `json:"cols,omitzero"`
-}
-
 type SpawnTreeLoadResult struct {
 	SessionID  *string             `json:"session_id,omitzero"`
 	StartedAt  *float64            `json:"started_at,omitzero"`
@@ -55,22 +45,6 @@ type SpawnTreeSaveParams struct {
 	StartedAt  *float64            `json:"started_at,omitzero"`
 	FinishedAt *float64            `json:"finished_at,omitzero"`
 	Label      *string             `json:"label,omitzero"`
-}
-
-type SessionCompressResult struct {
-	Status         *string             `json:"status,omitzero"`
-	Removed        *int64              `json:"removed,omitzero"`
-	BeforeMessages *int64              `json:"before_messages,omitzero"`
-	AfterMessages  *int64              `json:"after_messages,omitzero"`
-	BeforeTokens   *int64              `json:"before_tokens,omitzero"`
-	AfterTokens    *int64              `json:"after_tokens,omitzero"`
-	Summary        *CompressionSummary `json:"summary,omitzero"`
-	Usage          *Usage              `json:"usage,omitzero"`
-	Info           *SessionInfo        `json:"info,omitzero"`
-	Messages       []TranscriptMessage `json:"messages,omitzero"`
-	Compressed     *bool               `json:"compressed,omitzero"`
-	LockHeld       *bool               `json:"lock_held,omitzero"`
-	Message        *string             `json:"message,omitzero"`
 }
 
 type TranscriptMessage struct {
@@ -158,12 +132,6 @@ type CompressionSummary struct {
 	Note             *string `json:"note,omitzero"`
 }
 
-type SessionCompressParams struct {
-	SessionID  string  `json:"session_id"`
-	Profile    *string `json:"profile,omitzero"`
-	FocusTopic *string `json:"focus_topic,omitzero"`
-}
-
 type SessionContextBreakdownResult struct {
 	Categories       []ContextCategory   `json:"categories"`
 	ContextMax       int64               `json:"context_max"`
@@ -196,26 +164,12 @@ type SessionContextBreakdownParams struct {
 	Profile   *string `json:"profile,omitzero"`
 }
 
-type SessionUsageParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-}
-
 type SessionHistoryResult struct {
 	Count    int64               `json:"count"`
 	Messages []TranscriptMessage `json:"messages"`
 }
 
 type SessionHistoryParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-}
-
-type SessionStatusResult struct {
-	Output string `json:"output"`
-}
-
-type SessionStatusParams struct {
 	SessionID string  `json:"session_id"`
 	Profile   *string `json:"profile,omitzero"`
 }
@@ -229,82 +183,10 @@ type SessionSaveParams struct {
 	Profile   *string `json:"profile,omitzero"`
 }
 
-type SessionUndoResult struct {
-	Removed  int64             `json:"removed"`
-	UndoHint *UndoRollbackHint `json:"undo_hint,omitzero"`
-}
-
 // Why a client drops the last exchange, a retry sending the dropped prompt again
 type UndoIntent string
 
 func (UndoIntent) Values() []string { return []string{"undo", "retry"} }
-
-type SessionUndoParams struct {
-	SessionID string     `json:"session_id"`
-	Profile   *string    `json:"profile,omitzero"`
-	Intent    UndoIntent `json:"intent,omitzero"`
-}
-
-type SessionBranchResult struct {
-	SessionID       string              `json:"session_id"`
-	StoredSessionID string              `json:"stored_session_id"`
-	Title           string              `json:"title"`
-	Parent          string              `json:"parent"`
-	MessageCount    int64               `json:"message_count"`
-	Messages        []TranscriptMessage `json:"messages"`
-	Info            SessionInfo         `json:"info"`
-}
-
-type SessionBranchParams struct {
-	SessionID      string  `json:"session_id"`
-	Profile        *string `json:"profile,omitzero"`
-	Name           *string `json:"name,omitzero"`
-	Count          *int64  `json:"count,omitzero"`
-	IdempotencyKey *string `json:"idempotency_key,omitzero"`
-}
-
-type SessionCloseResult struct {
-	Closed   bool     `json:"closed"`
-	Messages []string `json:"messages,omitzero"`
-}
-
-type SessionCloseParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-}
-
-type SessionWorkspaceMoveResult struct {
-	Cwd         string  `json:"cwd"`
-	Branch      *string `json:"branch,omitzero"`
-	GitRepoRoot *string `json:"git_repo_root,omitzero"`
-}
-
-type SessionWorkspaceMoveParams struct {
-	Profile    *string `json:"profile,omitzero"`
-	SessionKey string  `json:"session_key"`
-	Cwd        string  `json:"cwd"`
-}
-
-type SessionTitleResult struct {
-	Title      string  `json:"title"`
-	SessionKey *string `json:"session_key,omitzero"`
-	Pending    *bool   `json:"pending,omitzero"`
-}
-
-type SessionTitleParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-	Title     *string `json:"title,omitzero"`
-}
-
-type SessionDeleteResult struct {
-	Deleted string `json:"deleted"`
-}
-
-type SessionDeleteParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-}
 
 type SessionActiveListResult struct {
 	Sessions []SessionActiveItem `json:"sessions"`
@@ -368,8 +250,6 @@ type SessionListParams struct {
 	IncludeHidden bool    `json:"include_hidden,omitzero"`
 }
 
-type SessionActivateResult = SessionResumeResult
-
 type AutoContinue struct {
 	Attempt       int64   `json:"attempt"`
 	InterruptedAt float64 `json:"interrupted_at"`
@@ -410,13 +290,6 @@ type InflightTurn struct {
 	Status            *string          `json:"status,omitzero"`
 	Recoverable       *bool            `json:"recoverable,omitzero"`
 	ErrorSurface      map[string]any   `json:"error_surface,omitzero"`
-}
-
-type SessionActivateParams struct {
-	SessionID    string  `json:"session_id"`
-	Profile      *string `json:"profile,omitzero"`
-	Cols         *int64  `json:"cols,omitzero"`
-	OmitMessages bool    `json:"omit_messages,omitzero"`
 }
 
 type SessionResumeResult struct {
@@ -1037,9 +910,6 @@ var SessionCreate = NewMethod[SessionCreateParams, SessionCreateResult]("session
 // Resumes a stored session by id or exact title on the method table route
 var SessionResume = NewMethod[SessionResumeParams, SessionResumeResult]("session.resume")
 
-// Switches to a live session the gateway already runs
-var SessionActivate = NewMethod[SessionActivateParams, SessionActivateResult]("session.activate")
-
 // Lists stored sessions, newest first
 var SessionList = NewMethod[SessionListParams, SessionListResult]("session.list")
 
@@ -1049,41 +919,14 @@ var SessionMostRecent = NewMethod[SessionMostRecentParams, SessionMostRecentResu
 // Live sessions of the gateway with their state, the current one marked
 var SessionActiveList = NewMethod[SessionActiveListParams, SessionActiveListResult]("session.active_list")
 
-// Deletes a stored session
-var SessionDelete = NewMethod[SessionDeleteParams, SessionDeleteResult]("session.delete")
-
-// Reads or sets a live session title, a title set before the first turn applied once it exists
-var SessionTitle = NewMethod[SessionTitleParams, SessionTitleResult]("session.title")
-
-// Moves a live session to another working directory
-var SessionWorkspaceMove = NewMethod[SessionWorkspaceMoveParams, SessionWorkspaceMoveResult]("session.workspace.move")
-
-// Closes a live session and returns its closing lines
-var SessionClose = NewMethod[SessionCloseParams, SessionCloseResult]("session.close")
-
-// Forks a live session into a new one
-var SessionBranch = NewMethod[SessionBranchParams, SessionBranchResult]("session.branch")
-
-// Removes the last exchange of a live session
-var SessionUndo = NewMethod[SessionUndoParams, SessionUndoResult]("session.undo")
-
 // Saves the transcript of a live session to a file
 var SessionSave = NewMethod[SessionSaveParams, SessionSaveResult]("session.save")
-
-// Status text of a live session
-var SessionStatus = NewMethod[SessionStatusParams, SessionStatusResult]("session.status")
 
 // Transcript of a live session
 var SessionHistory = NewMethod[SessionHistoryParams, SessionHistoryResult]("session.history")
 
-// Token, context and cost counters of a live session
-var SessionUsage = NewMethod[SessionUsageParams, Usage]("session.usage")
-
 // Context window of a live session by category and by context file
 var SessionContextBreakdown = NewMethod[SessionContextBreakdownParams, SessionContextBreakdownResult]("session.context_breakdown")
-
-// Compresses a live session's transcript, optionally around a focus topic
-var SessionCompress = NewMethod[SessionCompressParams, SessionCompressResult]("session.compress")
 
 // Saves a spawn tree snapshot of a session's subagents
 var SpawnTreeSave = NewMethod[SpawnTreeSaveParams, SpawnTreeSaveResult]("spawn_tree.save")
@@ -1093,9 +936,6 @@ var SpawnTreeList = NewMethod[SpawnTreeListParams, SpawnTreeListResult]("spawn_t
 
 // Loads one saved spawn tree snapshot
 var SpawnTreeLoad = NewMethod[SpawnTreeLoadParams, SpawnTreeLoadResult]("spawn_tree.load")
-
-// Tells a live session the terminal width it renders for
-var TerminalResize = NewMethod[TerminalResizeParams, TerminalResizeResult]("terminal.resize")
 
 // Goal, loop and heartbeat state of a session
 var SessionControlRead = NewMethod[SessionControlReadParams, SessionControlReadResult]("session.control.read")

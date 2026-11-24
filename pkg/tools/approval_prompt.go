@@ -18,7 +18,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
@@ -113,7 +112,7 @@ func askTerminal(ctx context.Context, env *Env, o promptOptions, displayCommand,
 	flushStdout()
 	prompt := t("approval.prompt_"+shape, nil)
 	answered := make(chan string, 1)
-	go func() { answered <- pystr.Lower(pystr.Strip(readTerminalChoice(prompt))) }()
+	go func() { answered <- strings.ToLower(strings.TrimSpace(readTerminalChoice(prompt))) }()
 	var choice string
 	select {
 	case choice = <-answered:

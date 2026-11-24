@@ -1,11 +1,5 @@
 package tuigateway
 
-type ImageAttachParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-	Path      string  `json:"path"`
-}
-
 // Image uploaded as base64 by a remote client, data an older name of content_base64
 type ImageAttachBytesParams struct {
 	SessionID     string  `json:"session_id"`
@@ -37,17 +31,6 @@ type CanonicalAttachedImage struct {
 	Mime string `json:"mime"`
 }
 
-type ImageDetachParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-	Path      string  `json:"path"`
-}
-
-type ImageDetachResult struct {
-	Detached bool  `json:"detached"`
-	Count    int64 `json:"count"`
-}
-
 // Typed or pasted text that may start with a file path, cwd the folder a relative path is read against
 type InputDetectDropParams struct {
 	Text string `json:"text,omitzero"`
@@ -77,20 +60,11 @@ type PasteCollapseResult struct {
 	Lines       int64  `json:"lines"`
 }
 
-// Saves the host clipboard image into the session and queues it for the next turn
-var ClipboardPaste = NewMethod[SessionIDParams, AttachedImageResult]("clipboard.paste")
-
-// Queues an image file the gateway can read for the next turn
-var ImageAttach = NewMethod[ImageAttachParams, AttachedImageResult]("image.attach")
-
 // Queues an image uploaded as base64 for the next turn
 var ImageAttachBytes = NewMethod[ImageAttachBytesParams, AttachedImageResult]("image.attach_bytes")
 
 // Queues an uploaded image on the session authority, answering its mime type too
 var CanonicalImageAttachBytes = NewCanonicalMethod[ImageAttachBytesParams, CanonicalAttachedImage]("image.attach_bytes")
-
-// Drops a queued image before the turn is sent
-var ImageDetach = NewMethod[ImageDetachParams, ImageDetachResult]("image.detach")
 
 // Turns a file path dropped or pasted into the composer into a mention of that file
 var InputDetectDrop = NewMethod[InputDetectDropParams, InputDetectDropResult]("input.detect_drop")

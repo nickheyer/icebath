@@ -313,7 +313,7 @@ func pmTranscript(ctx context.Context, last int) (*pyjson.Object, error) {
 	text := strings.ToValidUTF8(string(raw), "�")
 	var all []string
 	for _, ln := range pystr.Splitlines(text, false) {
-		if pystr.Strip(ln) != "" {
+		if strings.TrimSpace(ln) != "" {
 			all = append(all, ln)
 		}
 	}
@@ -330,7 +330,7 @@ func pmTranscript(ctx context.Context, last int) (*pyjson.Object, error) {
 
 // Appends a say request to the active realtime meeting's queue under the queue lock
 func pmEnqueueSay(ctx context.Context, text string) (*pyjson.Object, error) {
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return pyjson.ObjectOf("ok", false, "reason", "text is required"), nil
 	}

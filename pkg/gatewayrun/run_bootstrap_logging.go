@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -17,8 +16,7 @@ func startGatewayConfigureLogging(ctx context.Context, verbosity *int) error {
 		return err
 	}
 	bestEffort(func() ([]string, error) {
-		raw, _ := bestEffort(func() (map[string]any, error) { return config.ReadRawConfig(ctx, processHome) }, "")
-		return gateway.LogStartupSecurityWarnings(ctx, processHome, raw, false), nil
+		return gateway.LogStartupSecurityWarnings(ctx, processHome, false), nil
 	}, "Startup security audit failed (non-fatal): %s")
 	if verbosity == nil {
 		return nil

@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Secret safe blake2b over the selected entry key, else every pool entry key, empty when no key exists
@@ -68,7 +66,7 @@ func auxPoolCacheHint(ctx context.Context, provider string, mainRuntime map[stri
 	digest := auxPoolCredentialDigest(pool, entry)
 	entryID := ""
 	if entry != nil {
-		entryID = pystr.Strip(entry.ID)
+		entryID = strings.TrimSpace(entry.ID)
 	}
 	if entryID == "" && digest == "" {
 		return ""
@@ -106,7 +104,7 @@ func auxRecoverablePoolProvider(ctx context.Context, resolvedProvider string, cl
 		}
 	}
 	if normalized != "" && normalized != "auto" && normalized != "custom" {
-		if pinned := pystr.Lower(pystr.Strip(resolvedProvider)); strings.HasPrefix(pinned, "custom:") {
+		if pinned := strings.ToLower(strings.TrimSpace(resolvedProvider)); strings.HasPrefix(pinned, "custom:") {
 			return pinned, nil
 		}
 		return normalized, nil
@@ -146,15 +144,7 @@ type auxRecoveryPool interface {
 var auxRecoveryPoolFn = func(ctx context.Context, provider, normalized string) (auxRecoveryPool, error) {
 	var pool *Pool
 	err := auxRecoverRaise(func() {
-		var cfg map[string]any
-		if mayNameCustomEntry(provider) || mayNameCustomEntry(normalized) {
-			tree, err := auxLoadConfigFn(ctx)
-			if err != nil {
-				panic(err)
-			}
-			cfg = tree
-		}
-		pool = PoolForAuxProvider(ctx, provider, normalized, cfg, func(key string) *Pool { return auxLoadProviderPoolFn(ctx, key) })
+		pool = PoolForAuxProvider(ctx, provider, normalized, func(key string) *Pool { return auxLoadProviderPoolFn(ctx, key) })
 	})
 	if err != nil || pool == nil {
 		return nil, err
@@ -363,7 +353,7 @@ func auxRefreshXaiOAuthCredentials(ctx context.Context, _ string) (bool, error) 
 	pool := auxLoadProviderPoolFn(ctx, "xai-oauth")
 	if pool != nil && pool.HasCredentials() {
 		pool.Select("")
-		if refreshed, ok := pool.TryRefreshCurrent(); ok && pystr.Strip(refreshed.RuntimeAPIKey()) != "" {
+		if refreshed, ok := pool.TryRefreshCurrent(); ok && strings.TrimSpace(refreshed.RuntimeAPIKey()) != "" {
 			return true, nil
 		}
 	}
@@ -377,7 +367,7 @@ func auxRefreshXaiOAuthCredentials(ctx context.Context, _ string) (bool, error) 
 // True when a Vertex bearer and base URL can be minted
 func auxRefreshVertexCredentials(ctx context.Context, _ string) (bool, error) {
 	token, baseURL := auxVertexConfigFn(ctx)
-	return pystr.Strip(token) != "" && pystr.Strip(baseURL) != "", nil
+	return strings.TrimSpace(token) != "" && strings.TrimSpace(baseURL) != "", nil
 }
 
 // Refreshers keyed by provider, each true when a usable credential exists afterwards

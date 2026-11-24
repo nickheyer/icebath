@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -178,27 +179,12 @@ func vaultCmdList(ctx context.Context, c *pyrich.Console) error {
 	return nil
 }
 
-// Nested mapping of a config slot, a missing or non mapping value replaced by an empty one
-func ensureConfigDict(parent map[string]any, key string) map[string]any {
-	switch child := parent[key].(type) {
-	case map[string]any:
-		return child
-	case config.Tree:
-		return map[string]any(child)
-	}
-	child := map[string]any{}
-	parent[key] = child
-	return child
-}
-
 // Shows the detected password managers, --enable and --disable flipping the opt out under vault.<name>.enabled
 func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[string]any) error {
 	classes := externalBackendClasses()
 	names := make([]string, 0, len(classes))
-	display := map[string]string{}
 	for _, cls := range classes {
 		names = append(names, cls.name)
-		display[cls.name] = cls.displayName
 	}
 	enable, disable := pyrepr.Truthy(ns["enable"]), pyrepr.Truthy(ns["disable"])
 	if enable || disable {
@@ -206,18 +192,19 @@ func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[st
 		if enable {
 			name = pyrepr.Str(ns["enable"])
 		}
-		if _, known := display[name]; !known {
+		cls, known := externalBackendClass(name)
+		if !known {
 			c.Print(fmt.Sprintf("[red]Unknown password manager %s[/] (expected one of %s)", pyrepr.Repr(name), strings.Join(names, ", ")))
 			return nil
 		}
-		if err := setVaultSource(ctx, h, name, enable); err != nil {
+		if err := setVaultSource(ctx, h, cls, enable); err != nil {
 			return err
 		}
 		state := "off"
 		if enable {
 			state = "on"
 		}
-		c.Print(fmt.Sprintf("[green]%s %s[/] for browser logins.", display[name], state))
+		c.Print(fmt.Sprintf("[green]%s %s[/] for browser logins.", cls.displayName, state))
 		return nil
 	}
 	sources, err := VaultSources(ctx)
@@ -253,15 +240,10 @@ func vaultCmdRm(ctx context.Context, c *pyrich.Console, ns map[string]any) error
 	return nil
 }
 
-// Records vault.key_storage in config.yaml
+// Records vault.key_storage in the profile of the home
 func setVaultKeyStorage(ctx context.Context, h, value string) error {
-	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
-	doc := map[string]any(cfg)
-	ensureConfigDict(doc, "vault")["key_storage"] = value
-	return config.SaveConfig(ctx, h, doc, config.SaveOptions{})
+	_, err := settings.Set(home.WithOverride(ctx, h), settings.VaultKeyStorage.Key, value, settings.Global)
+	return err
 }
 
 func keyLocationText(where *pyjson.Object, key string) string {

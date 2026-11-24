@@ -37,9 +37,9 @@ func homeCredentialSourceIn(ctx context.Context, h string) CredentialSource {
 	return newHomeCredentials(env)
 }
 
-// Pool environment bound to the store, profile env file and config of home h
+// Pool environment bound to the store and profile env file of home h, whose settings reads the store's home names
 func homePoolEnv(h string) PoolEnv {
-	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Config: ConfigLoader(h)}
+	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h)}
 }
 
 // HomePoolEnv is the pool environment of home h for callers outside the package
@@ -52,9 +52,6 @@ func newHomeCredentials(env PoolEnv) *homeCredentials {
 		env.Store = NewStore(h)
 		if env.Secrets == nil {
 			env.Secrets = config.NewSecrets(h)
-		}
-		if env.Config == nil {
-			env.Config = ConfigLoader(h)
 		}
 	}
 	if env.Secrets == nil {

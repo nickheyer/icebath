@@ -51,11 +51,11 @@ func TestFreshProfileRetainsResolvableCustomEndpoint(t *testing.T) {
 			if !reflect.DeepEqual(created["model"], model) {
 				t.Fatalf("model = %#v", created["model"])
 			}
-			copied := provider.ProviderEntries(created)
+			copied := provider.ProviderEntriesOf(config.AsMap(created["providers"]))
 			if len(copied) != 1 || copied[0]["base_url"] != seedCaseURL || copied[0]["api_key"] != "${LAB_TOKEN}" {
 				t.Fatalf("copied = %#v", copied)
 			}
-			resolved := provider.NamedCustomProviderEntry(context.Background(), selected, created)
+			resolved := provider.NamedCustomProviderEntry(provider.WithFrozenRuntimeConfig(context.Background(), created), selected)
 			if resolved == nil || resolved["base_url"] != seedCaseURL {
 				t.Fatalf("resolved = %#v", resolved)
 			}
@@ -72,7 +72,7 @@ func TestBuiltinNameCollisionOnlyCopiesExplicitCustomSelection(t *testing.T) {
 		t.Run(c.provider, func(t *testing.T) {
 			created := createFromLaunch(t, map[string]any{
 				"model": map[string]any{"provider": c.provider, "default": "synthetic-model"}, "providers": map[string]any{"other-endpoint": endpoint}})
-			if got := len(provider.ProviderEntries(created)) > 0; got != c.copied {
+			if got := len(provider.ProviderEntriesOf(config.AsMap(created["providers"]))) > 0; got != c.copied {
 				t.Fatalf("copied = %v", got)
 			}
 		})

@@ -3,23 +3,14 @@ package browser
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"os"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Raw secret value as get_secret returns it, whitespace kept
-func (s settings) rawSecret(name string) string {
-	if s.env != nil && s.env.Secrets != nil {
-		return s.env.Secrets.String(name)
-	}
-	return os.Getenv(name)
-}
-
-// Pre CLI Browser Use cloud config, no other provider with BROWSER_USE_API_KEY set
-func isLegacyBrowserUseCloudConfig(env *tools.Env) bool {
+// Browser Use cloud chosen by its key: BROWSER_USE_API_KEY set and no other cloud provider selected
+func browserUseCloudByKey(env *tools.Env) bool {
 	s := cfgOf(env)
 	sel, _ := s.cloudProviderSelection()
 	if sel != "browser-use" && sel != "" {

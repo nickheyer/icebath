@@ -555,6 +555,3 @@ func setApproval(env *tools.Env, subsystem string, rest []string, setMode func(b
 	}
 	return fmt.Sprintf("%s.write_approval set to '%s'.", subsystem, state)
 }
-
-// Write approval commands and the gate register nothing at import
-func registerWriteApprovalGate() {}

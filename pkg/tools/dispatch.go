@@ -295,7 +295,7 @@ func toolResultObserverFields(toolName, result string) (string, string, string) 
 		}
 	}
 	if failed, suffix := ClassifyToolFailure(toolName, &result); failed {
-		return "error", "tool_error", pystr.StripChars(pystr.Strip(suffix), "[]")
+		return "error", "tool_error", strings.Trim(strings.TrimSpace(suffix), "[]")
 	}
 	return "ok", "", ""
 }

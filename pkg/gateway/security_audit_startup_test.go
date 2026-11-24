@@ -26,7 +26,7 @@ func pinAudit(t *testing.T, root bool, sshd []string) {
 
 func TestRunSecurityAuditAggregates(t *testing.T) {
 	pinAudit(t, true, []string{"PasswordAuthentication yes"})
-	findings := RunSecurityAudit(context.Background(), t.TempDir(), map[string]any{})
+	findings := RunSecurityAudit(context.Background(), t.TempDir())
 	if len(findings) != 2 {
 		t.Fatalf("findings = %q, want root + ssh", findings)
 	}
@@ -34,7 +34,7 @@ func TestRunSecurityAuditAggregates(t *testing.T) {
 
 func TestRunSecurityAuditCleanPosture(t *testing.T) {
 	pinAudit(t, false, []string{"PasswordAuthentication no"})
-	if findings := RunSecurityAudit(context.Background(), t.TempDir(), map[string]any{}); len(findings) != 0 {
+	if findings := RunSecurityAudit(context.Background(), t.TempDir()); len(findings) != 0 {
 		t.Fatalf("findings = %q, want none", findings)
 	}
 }
@@ -43,17 +43,17 @@ func TestLogStartupSecurityWarningsEmitsAndIsIdempotent(t *testing.T) {
 	pinAudit(t, true, []string{})
 	logs := captureLogs(t)
 	ctx := context.Background()
-	first := LogStartupSecurityWarnings(ctx, t.TempDir(), map[string]any{}, false)
+	first := LogStartupSecurityWarnings(ctx, t.TempDir(), false)
 	if len(first) != 1 {
 		t.Fatalf("first = %q", first)
 	}
 	if !strings.Contains(logs.String(), "ROOT") {
 		t.Fatalf("no ROOT warning logged: %s", logs.String())
 	}
-	if second := LogStartupSecurityWarnings(ctx, t.TempDir(), map[string]any{}, false); len(second) != 0 {
+	if second := LogStartupSecurityWarnings(ctx, t.TempDir(), false); len(second) != 0 {
 		t.Fatalf("second = %q, want a no-op", second)
 	}
-	if forced := LogStartupSecurityWarnings(ctx, t.TempDir(), map[string]any{}, true); len(forced) != 1 {
+	if forced := LogStartupSecurityWarnings(ctx, t.TempDir(), true); len(forced) != 1 {
 		t.Fatalf("forced = %q", forced)
 	}
 }

@@ -67,7 +67,7 @@ func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
 			}
 		}
 	}
-	label := pystr.Title(pystr.Strip(strings.ReplaceAll(strings.ReplaceAll(slug, "_", " "), "-", " ")))
+	label := pystr.Title(strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(slug, "_", " "), "-", " ")))
 	if label == "" {
 		label = "your provider"
 	}
@@ -76,8 +76,8 @@ func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
 
 // BuildBillingBlockErr describes a billing classified failure, the urlparse ValueError of a malformed base url returned
 func BuildBillingBlockErr(provider, baseURL, model, message string) (BillingBlock, error) {
-	slug := pystr.Lower(pystr.Strip(provider))
-	model = pystr.Strip(model)
+	slug := strings.ToLower(strings.TrimSpace(provider))
+	model = strings.TrimSpace(model)
 	label, url, err := resolveProviderLinkErr(slug, baseURL)
 	if err != nil {
 		return BillingBlock{}, err

@@ -113,7 +113,6 @@ func (r *GatewayRunner) resyncChangedHookConsent(ctx context.Context, homes []st
 			current[resolved] = sig
 			continue
 		}
-		cfgPath := filepath.Join(resolved, "config.yaml")
 		var scoped context.Context
 		if r.multiplexOn() {
 			scoped = gateway.ProfileRuntimeScope(ctx, resolved, true)
@@ -126,7 +125,7 @@ func (r *GatewayRunner) resyncChangedHookConsent(ctx context.Context, homes []st
 					err = recoveredError(rec)
 				}
 			}()
-			plugins.SyncShellHooksFromConfig(scoped, func() any { return gateway.LoadGatewayConfigMap(scoped, cfgPath) })
+			plugins.SyncShellHooksFromConfig(home.WithOverride(scoped, resolved))
 			return nil
 		}()
 		if failed != nil {

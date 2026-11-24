@@ -1,6 +1,8 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -37,15 +38,14 @@ var (
 
 // Seams of the socket entry, the real functions swapped only where a test installs a fake
 var (
-	wsNewAuthorityConnection    = newWSAuthorityConnection
-	wsCloseSessionsForTransport = closeSessionsForTransport
-	wsReleaseWakeForTransport   = releaseWakeForTransport
-	wsReleaseSetupForTransport  = releaseSetupForTransport
-	wsEnsureSkinWatcher         = ensureSkinWatcher
-	wsEnsureLeaseWatcher        = ensureLeaseWatcher
-	wsStartBackendLiveness      = startBackendLiveness
-	wsStartHeartbeatRefresher   = startBackendHeartbeatRefresher
-	wsResolveSkin               = resolveSkin
+	wsNewAuthorityConnection   = newWSAuthorityConnection
+	wsReleaseWakeForTransport  = releaseWakeForTransport
+	wsReleaseSetupForTransport = releaseSetupForTransport
+	wsEnsureSkinWatcher        = ensureSkinWatcher
+	wsEnsureLeaseWatcher       = ensureLeaseWatcher
+	wsStartBackendLiveness     = startBackendLiveness
+	wsStartHeartbeatRefresher  = startBackendHeartbeatRefresher
+	wsResolveSkin              = resolveSkin
 )
 
 // Whether a frame answers an open server request, settled at once instead of queued
@@ -668,9 +668,6 @@ func (c *wsConnection) receive() (string, error) {
 
 // Runs one WebSocket connection of a client, its requests answered by the session authority under the identity the upgrade verified
 func HandleWS(ctx context.Context, ws ServedSocket, authIdentity map[string]any, subprotocol *string, operator bool) error {
-	if err := loadServerModule(); err != nil {
-		return err
-	}
 	c := &wsConnection{ctx: ctx, ws: ws, peer: wsPeerLabel(ws), disconnectReason: "not_connected",
 		pending:       make(chan any, wsDispatchQueueMax),
 		sendFailed:    make(chan struct{}),
@@ -767,7 +764,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 			pkgLog().Error(fmt.Sprintf("ws receive failed peer=%s: %s", c.peer, err))
 			return nil
 		}
-		line := pystr.Strip(raw)
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
@@ -825,7 +822,6 @@ func (c *wsConnection) teardown() error {
 			return err
 		}
 	}
-	reaped, detached := 0, 0
 	if c.transport != nil {
 		tuihost.UnregisterLiveTransport(c.transport)
 		c.transport.Close()
@@ -846,23 +842,14 @@ func (c *wsConnection) teardown() error {
 			}()
 			wsReleaseSetupForTransport(c.transport)
 		}()
-		func() {
-			defer func() {
-				if failure := recover(); failure != nil {
-					pkgLog().Error(fmt.Sprintf("ws transport teardown failed peer=%s: %s", c.peer, failureText(failure)))
-				}
-			}()
-			reaped, detached = wsCloseSessionsForTransport(ctx, c.transport, "ws_disconnect")
-		}()
 	}
 	if err := c.ws.Close(1000); err != nil {
 		pkgLog().Debug(fmt.Sprintf("ws close failed peer=%s error=%s", c.peer, err))
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	pkgLog().Info(fmt.Sprintf("ws closed peer=%s reason=%s messages=%d parse_errors=%d "+
-		"dispatch_crashes=%d send_failures=%d reaped_sessions=%d detached_sessions=%d",
-		c.peer, c.disconnectReason, c.messages, c.parseErrors, c.dispatchCrashes, c.sendFailures, reaped, detached))
+	pkgLog().Info(fmt.Sprintf("ws closed peer=%s reason=%s messages=%d parse_errors=%d dispatch_crashes=%d send_failures=%d",
+		c.peer, c.disconnectReason, c.messages, c.parseErrors, c.dispatchCrashes, c.sendFailures))
 	return nil
 }
 

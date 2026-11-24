@@ -9,8 +9,6 @@ import (
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Simple value of a state event, the top level key first and then its content
@@ -55,7 +53,7 @@ func (a *MatrixAdapter) getRoomStateValue(ctx context.Context, roomID, eventType
 	if err := client.StateEvent(ctx, id.RoomID(roomID), event.Type{Type: eventType, Class: event.StateEventType}, "", &content); err != nil {
 		return nil
 	}
-	value := pystr.Strip(stateEventValue(content, key))
+	value := strings.TrimSpace(stateEventValue(content, key))
 	if value == "" {
 		return nil
 	}
@@ -94,7 +92,7 @@ func (a *MatrixAdapter) resolveRoomIdentity(ctx context.Context, roomID string, 
 	isLikelyDM := (memberCount != nil && *memberCount <= 2) || (isDirect && !hasExplicitName)
 	var serverName *string
 	if strings.Contains(roomID, ":") {
-		if s := pystr.Strip(roomID[strings.LastIndex(roomID, ":")+1:]); s != "" {
+		if s := strings.TrimSpace(roomID[strings.LastIndex(roomID, ":")+1:]); s != "" {
 			serverName = &s
 		}
 	}

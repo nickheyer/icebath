@@ -50,14 +50,6 @@ func routingParts(t *testing.T, env *Env, text string, paths, urls []string) ([]
 	return parts, skipped
 }
 
-func TestCoerceImageMode(t *testing.T) {
-	for raw, want := range map[any]string{"NATIVE": "native", "Auto": "auto", " text\x1f": "text", "nonsense": "auto", "": "auto", nil: "auto", 42: "auto"} {
-		if got := coerceImageMode(raw); got != want {
-			t.Errorf("coerceImageMode(%#v) = %q want %q", raw, got, want)
-		}
-	}
-}
-
 func TestBuildNativeContentPartsLocal(t *testing.T) {
 	env, dir := imageRoutingEnv(t), t.TempDir()
 	img := writeRoutingFile(t, filepath.Join(dir, "cat.png"), routingPNG)

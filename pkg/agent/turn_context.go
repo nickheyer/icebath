@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -11,9 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -656,15 +653,6 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	}
 }
 
-// Config tree of the active home loaded fresh for the spill settings, nil when it does not load
-func liveSpillTree(ctx context.Context) config.Tree {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return nil
-	}
-	return tree
-}
-
 // Runs pre_llm_call plugins, spilling oversized context and collecting block vetoes into blocks
 func collectPreLLMCallContext(ctx context.Context, a *AIAgent, effectiveTaskID, turnID string, originalUserMessage any, messages []*state.Message, conversationHistory []map[string]any, blocks *[]string) (out string) {
 	if a.persistDisabled {
@@ -685,7 +673,7 @@ func collectPreLLMCallContext(ctx context.Context, a *AIAgent, effectiveTaskID, 
 		"conversation_history": history, "is_first_turn": len(conversationHistory) == 0, "model": a.model,
 		"platform": a.platform, "parent_session_id": a.parentSessionID, "sender_id": a.userID,
 	})
-	spillCfg := tools.SpillConfigFromEnv(&tools.Env{Config: liveSpillTree(ctx)})
+	spillCfg := tools.SpillConfigFromEnv(ctx, a.env)
 	var parts []string
 	for _, r := range results {
 		var piece string

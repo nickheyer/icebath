@@ -10,13 +10,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Consent question before the setup flow installs the gateway service
@@ -32,7 +31,6 @@ type ServiceSetupOptions struct {
 	Context     string
 	Interactive bool
 	Install     bool
-	Config      map[string]any
 }
 
 // ValueError of a service choice that is neither install nor decline
@@ -67,89 +65,33 @@ var (
 	setupPromptConsent    = func(_ context.Context, question string, def bool) bool {
 		return gatewayFacade.promptYesNo(question, def)
 	}
-	setupLoadConfig        = loadSetupConfig
-	setupSaveConfig        = saveSetupConfig
 	setupInstallLinuxScope = installLinuxGatewayFromSetup
 	setupServiceActionFn   = setupServiceAction
 )
 
-// Config of the home in effect as load_config returns it
-func loadSetupConfig(ctx context.Context) (map[string]any, error) {
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	return map[string]any(cfg), err
-}
-
-// Saves a config of the home in effect as save_config does
-func saveSetupConfig(ctx context.Context, cfg map[string]any) error {
-	return config.SaveConfig(ctx, home.Dir(ctx), cfg, config.SaveOptions{})
-}
-
-// Gateway section of a config, created when missing like setdefault
-func gatewaySection(cfg map[string]any) map[string]any {
-	section, ok := cfg["gateway"].(map[string]any)
-	if !ok {
-		if _, present := cfg["gateway"]; present {
-			return nil
-		}
-		section = map[string]any{}
-		cfg["gateway"] = section
-	}
-	return section
-}
-
-// Saves the durable service install choice, mirroring it into the working setup config when one is given
-func RecordServiceChoice(ctx context.Context, choice string, cfg map[string]any) error {
+// Saves the durable service install choice of the profile ctx names, gateway.service_install_choice
+func RecordServiceChoice(ctx context.Context, choice string) error {
 	if choice != "install" && choice != "decline" {
 		return &ServiceChoiceError{"service_install_choice must be install or decline"}
 	}
-	current, err := setupLoadConfig(ctx)
-	if err != nil {
-		return err
-	}
-	section := gatewaySection(current)
-	if section == nil {
-		return fmt.Errorf("the gateway section of the config is %s, expected a mapping", errchain.Kind(current["gateway"]))
-	}
-	section["service_install_choice"] = choice
-	if err := setupSaveConfig(ctx, current); err != nil {
-		return err
-	}
-	if cfg != nil {
-		s := gatewaySection(cfg)
-		if s == nil {
-			return fmt.Errorf("the gateway section of config.yaml is %s, expected a mapping", errchain.Kind(cfg["gateway"]))
-		}
-		s["service_install_choice"] = choice
-	}
-	return nil
+	_, err := settings.Set(ctx, settings.GatewayServiceInstallChoice.Key, choice, settings.Global)
+	return err
 }
 
 // Whether setup may install the service, asking once on an interactive terminal and recording a decline
-func WantsServiceInstall(ctx context.Context, interactive, install bool, cfg map[string]any) (bool, error) {
+func WantsServiceInstall(ctx context.Context, interactive, install bool) (bool, error) {
 	if install {
 		return true, nil
 	}
 	if !interactive || !setupStdinIsTTY() {
 		return false, nil
 	}
-	source := cfg
-	if source == nil {
-		loaded, err := setupLoadConfig(ctx)
-		if err != nil {
-			return false, err
-		}
-		source = loaded
-	}
-	var choice any
-	if section, ok := source["gateway"].(map[string]any); ok {
-		choice = section["service_install_choice"]
-	}
-	if choice == nil {
+	choice := settings.GatewayServiceInstallChoice.Get(ctx)
+	if choice == "" {
 		if setupPromptConsent(ctx, ServiceInstallQuestion, false) {
 			return true, nil
 		}
-		if err := RecordServiceChoice(ctx, "decline", cfg); err != nil {
+		if err := RecordServiceChoice(ctx, "decline"); err != nil {
 			return false, err
 		}
 	}
@@ -184,7 +126,7 @@ func EnsureGatewayService(ctx context.Context, w io.Writer, o ServiceSetupOption
 		if !installed {
 			wants := false
 			if o.Context != "import" {
-				if wants, err = WantsServiceInstall(ctx, o.Interactive, o.Install, o.Config); err != nil {
+				if wants, err = WantsServiceInstall(ctx, o.Interactive, o.Install); err != nil {
 					return err
 				}
 			}
@@ -223,7 +165,7 @@ func EnsureGatewayService(ctx context.Context, w io.Writer, o ServiceSetupOption
 				con.PrintWarning("Gateway service install did not complete. Retry: icebath gateway install")
 				return errServiceDeclined
 			}
-			if err := RecordServiceChoice(ctx, "install", o.Config); err != nil {
+			if err := RecordServiceChoice(ctx, "install"); err != nil {
 				return err
 			}
 		}

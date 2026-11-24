@@ -129,17 +129,17 @@ func (a *PhotonAdapter) sidecarSend(ctx context.Context, spaceID, text string, r
 func (a *PhotonAdapter) sidecarSendPoll(ctx context.Context, spaceID, title string, options []string) gateway.SendResult {
 	var opts []any
 	for _, o := range options {
-		if o = pystr.Strip(o); o != "" {
+		if o = strings.TrimSpace(o); o != "" {
 			opts = append(opts, o)
 		}
 	}
-	if pystr.Strip(title) == "" {
+	if strings.TrimSpace(title) == "" {
 		return gateway.SendResult{Success: false, Error: "poll title is required"}
 	}
 	if len(opts) < 2 {
 		return gateway.SendResult{Success: false, Error: "poll needs at least two options"}
 	}
-	shown := pystr.Slice(pystr.Strip(title), 0, maxMessageLength)
+	shown := pystr.Slice(strings.TrimSpace(title), 0, maxMessageLength)
 	return a.postSend(ctx, "/send-poll", map[string]any{"spaceId": spaceID, "title": shown, "options": opts}, false, shown)
 }
 
@@ -256,7 +256,7 @@ func (a *PhotonAdapter) StopTyping(ctx context.Context, chatID string, metadata 
 // Whether the lifecycle reactions are on, opt in through PHOTON_REACTIONS
 func (a *PhotonAdapter) ReactionsEnabled(ctx context.Context) bool {
 	v, _ := gateway.GetScopedSecret(ctx, "PHOTON_REACTIONS", "false", false)
-	switch strings.ToLower(pystr.Strip(v)) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "true", "1", "yes", "on":
 		return true
 	}

@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var uiHostRegistry = &handlerRegistry{}
@@ -87,7 +86,7 @@ func linesResult(rid any, lines []string) map[string]any {
 	return ok(rid, map[string]any{"lines": lines})
 }
 
-func snapshotList(ctx context.Context, rid any, _ map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func snapshotList(ctx context.Context, rid any, _ map[string]any) (map[string]any, error) {
 	lines, err := snapshotCommand(ctx).List()
 	if err != nil {
 		return nil, err
@@ -95,7 +94,7 @@ func snapshotList(ctx context.Context, rid any, _ map[string]any, _ *tuihost.Ses
 	return linesResult(rid, lines), nil
 }
 
-func snapshotCreate(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func snapshotCreate(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	lines, err := snapshotCommand(ctx).Create(snapshotParts("create", params))
 	if err != nil {
 		return nil, err
@@ -103,7 +102,7 @@ func snapshotCreate(ctx context.Context, rid any, params map[string]any, _ *tuih
 	return linesResult(rid, lines), nil
 }
 
-func snapshotPrune(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func snapshotPrune(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	lines, err := snapshotCommand(ctx).Prune(snapshotParts("prune", params))
 	if err != nil {
 		return nil, err
@@ -111,7 +110,7 @@ func snapshotPrune(ctx context.Context, rid any, params map[string]any, _ *tuiho
 	return linesResult(rid, lines), nil
 }
 
-func snapshotTarget(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func snapshotTarget(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	id, lines, err := snapshotCommand(ctx).RestoreTarget(snapshotParts("restore", params))
 	if err != nil {
 		return nil, err
@@ -124,7 +123,7 @@ func snapshotTarget(ctx context.Context, rid any, params map[string]any, _ *tuih
 }
 
 // Archive of the named or scoped profile at an absolute output path or in the export directory
-func profilesExport(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func profilesExport(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	name := strArg(params, "name")
 	if name == "" {
 		name = profiles.GetActiveProfileName(ctx)
@@ -148,7 +147,7 @@ func profilesExport(ctx context.Context, rid any, params map[string]any, _ *tuih
 }
 
 // New profile from an archive with its wrapper alias unless the name collides with a command
-func profilesImport(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func profilesImport(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	profileDir, err := manage.ImportProfile(strArg(params, "archive"), strArg(params, "name"))
 	if err != nil {
 		return nil, err
@@ -185,7 +184,7 @@ func plainLines(text string) []string {
 	return strings.Split(text, "\n")
 }
 
-func toolsList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func toolsList(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	platform := strArg(params, "platform")
 	if platform == "" {
 		platform = "cli"
@@ -243,12 +242,12 @@ func launchWorktree(ctx context.Context, cwd string, pid int) any {
 	return nil
 }
 
-func worktreeStatus(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func worktreeStatus(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	return ok(rid, map[string]any{"repo_root": repoRootOrNil(tools.GitRepoRootOf(strArg(params, "cwd"))),
 		"launch": launchWorktree(ctx, strArg(params, "launch_cwd"), intParam(params, "pid", 0))}), nil
 }
 
-func worktreeList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func worktreeList(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	root := tools.GitRepoRootOf(strArg(params, "cwd"))
 	lines := []string{}
 	if root != "" {
@@ -262,7 +261,7 @@ func worktreeList(ctx context.Context, rid any, params map[string]any, _ *tuihos
 }
 
 // Reclaims stale trees and merged branches but the kept path, and names the trees kept for a reason
-func worktreePrune(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func worktreePrune(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	root := tools.GitRepoRootOf(strArg(params, "cwd"))
 	out := map[string]any{"repo_root": repoRootOrNil(root), "actions": []string{}, "preserved": []any{}, "error": nil}
 	if root == "" {
@@ -317,7 +316,7 @@ func worktreeSyncBase(ctx context.Context) bool {
 }
 
 // Tree on a new branch of the folder's repository, locked for the asking process, with its creation report
-func worktreeCreate(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func worktreeCreate(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	root := tools.GitRepoRootOf(strArg(params, "cwd"))
 	out := map[string]any{"repo_root": repoRootOrNil(root), "tree": nil, "lines": []string{}}
 	if root == "" {
@@ -337,12 +336,12 @@ func treeParams(params map[string]any) map[string]string {
 	return map[string]string{"path": strArg(params, "path"), "branch": strArg(params, "branch"), "repo_root": strArg(params, "repo_root")}
 }
 
-func worktreeRecord(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func worktreeRecord(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	tools.RecordTUIWorktree(ctx, treeParams(params))
 	return ok(rid, map[string]any{"ok": true}), nil
 }
 
-func worktreeSettle(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func worktreeSettle(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	var report bytes.Buffer
 	SettleWorktree(ctx, treeParams(params), "", func(text string) { fmt.Fprintln(&report, text) })
 	return linesResult(rid, plainLines(strings.TrimLeft(report.String(), "\n"))), nil

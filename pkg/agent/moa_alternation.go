@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -18,12 +17,12 @@ func destinationKey(runtime map[string]any) [2]string {
 	if pyTruthy(raw) {
 		route = pyrepr.Str(raw)
 	}
-	route = strings.TrimRight(pystr.Strip(route), "/")
+	route = strings.TrimRight(strings.TrimSpace(route), "/")
 	model := ""
 	if pyTruthy(runtime["model"]) {
 		model = pyrepr.Str(runtime["model"])
 	}
-	return [2]string{route, pystr.Strip(model)}
+	return [2]string{route, strings.TrimSpace(model)}
 }
 
 // Rows with adjacent user turns folded into one, the input itself and false when nothing merged

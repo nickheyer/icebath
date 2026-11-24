@@ -370,7 +370,7 @@ func TestCheckVoiceRequirementsAllRequirementsMet(t *testing.T) {
 	swapVoice(t, &detectAudioEnv, func() (AudioEnvironment, error) {
 		return AudioEnvironment{Available: true, Warnings: []string{}}, nil
 	})
-	swapVoice(t, &voiceGetSTTProvider, func(context.Context, map[string]any) (string, error) { return "openai", nil })
+	swapVoice(t, &voiceGetSTTProvider, func(context.Context, *sttRequest) (string, error) { return "openai", nil })
 	result, err := CheckVoiceRequirements(context.Background())
 	if err != nil || !result.Available || !result.AudioAvailable || !result.STTAvailable {
 		t.Fatalf("%+v %v", result, err)
@@ -395,9 +395,7 @@ func TestCheckVoiceRequirementsPluginSttProvider(t *testing.T) {
 	swapVoice(t, &detectAudioEnv, func() (AudioEnvironment, error) {
 		return AudioEnvironment{Available: true, Warnings: []string{}}, nil
 	})
-	swapVoice(t, &loadSTTConfig, func(context.Context) map[string]any {
-		return map[string]any{"enabled": true, "provider": "my-plugin-stt"}
-	})
+	withSTTConfig(t, map[string]any{"enabled": true, "provider": "my-plugin-stt"})
 	plugin := &fakePluginSTT{available: true}
 	plugin.TranscriptionProviderDefaults = NewTranscriptionProviderDefaults(plugin)
 	swapVoice(t, &voiceGetSTTPlugin, func(_ context.Context, name, _ string) TranscriptionProvider {

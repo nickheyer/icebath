@@ -232,21 +232,16 @@ func resolveCustomCodexRouteContextLength(ctx context.Context, model, baseURL, a
 
 // MoA virtual provider, resolves the aggregator's real provider and model
 func resolveMoaContextLength(ctx context.Context, model string, customProviders []map[string]any) int {
-	cfg := metadataConfig(ctx)
-	if cfg == nil {
-		pkgLog().Debug("MoA aggregator context-length resolution failed", "reason", "config unreadable")
-		return 0
-	}
 	if customProviders == nil {
-		customProviders = ProviderEntries(cfg)
+		customProviders = CustomProviderEntries(ctx)
 	}
-	aggProvider, aggModel, ok := resolveMoaAggregator(config.Tree(cfg), model)
+	aggProvider, aggModel, ok := resolveMoaAggregator(ctx, model)
 	aggProvider, aggModel = strings.TrimSpace(aggProvider), strings.TrimSpace(aggModel)
 	if !ok || aggModel == "" || aggProvider == "" || strings.ToLower(aggProvider) == "moa" {
 		return 0
 	}
 	h := metadataHome(ctx)
-	rt, err := newResolver(ctx, config.Tree(cfg), config.NewSecrets(h), h, homeCredentialSource(h)).ResolveRuntime(aggProvider, "", "", nil, aggModel)
+	rt, err := newResolver(ctx, config.NewSecrets(h), h, homeCredentialSource(h)).ResolveRuntime(aggProvider, "", "", nil, aggModel)
 	if err != nil || rt == nil {
 		pkgLog().Debug("MoA aggregator context-length resolution failed", "error", err)
 		return 0
@@ -266,10 +261,8 @@ func configOverrideContextLength(ctx context.Context, model, baseURL, providerNa
 		}
 	}
 	if baseURL != "" && model != "" {
-		if cfg := metadataConfig(ctx); cfg != nil {
-			if n := CustomProviderContextLength(model, baseURL, customProviders, cfg); n > 0 {
-				return n
-			}
+		if n := CustomProviderContextLength(model, baseURL, routeEntries(ctx, customProviders)); n > 0 {
+			return n
 		}
 	}
 	return 0

@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -82,7 +81,7 @@ func historyValue(v any) any {
 // Persisted content or reasoning as one stripped string, empty when there is nothing to emit
 func flattenHistoryText(value any) string {
 	if s, ok := value.(string); ok {
-		return pystr.Strip(s)
+		return strings.TrimSpace(s)
 	}
 	items, ok := historyList(value)
 	if !ok {
@@ -102,11 +101,11 @@ func flattenHistoryText(value any) string {
 	}
 	var kept []string
 	for _, part := range parts {
-		if stripped := pystr.Strip(part); stripped != "" {
+		if stripped := strings.TrimSpace(part); stripped != "" {
 			kept = append(kept, stripped)
 		}
 	}
-	return pystr.Strip(strings.Join(kept, "\n"))
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 // First non empty of reasoning_content and reasoning
@@ -207,7 +206,7 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 				id := ""
 				for _, key := range []string{"id", "call_id", "tool_call_id"} {
 					if v := toolCall.GetOr(key, nil); truthy(v) {
-						id = pystr.Strip(pyStr(v))
+						id = strings.TrimSpace(pyStr(v))
 						break
 					}
 				}
@@ -221,10 +220,10 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 		case "tool":
 			id, name := "", ""
 			if truthy(message["tool_call_id"]) {
-				id = pystr.Strip(pyStr(message["tool_call_id"]))
+				id = strings.TrimSpace(pyStr(message["tool_call_id"]))
 			}
 			if truthy(message["tool_name"]) {
-				name = pystr.Strip(pyStr(message["tool_name"]))
+				name = strings.TrimSpace(pyStr(message["tool_name"]))
 			}
 			var args *pyjson.Object
 			if call, ok := active[id]; ok {
@@ -251,7 +250,7 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 
 // Acknowledges only an auth method initialize advertised, nil otherwise
 func authenticate(ctx context.Context, methodID string) *pyacp.AuthenticateResponse {
-	normalized := pystr.Lower(pystr.Strip(methodID))
+	normalized := strings.ToLower(strings.TrimSpace(methodID))
 	providerName := DetectProvider(ctx)
 	if normalized == TerminalSetupAuthMethodID {
 		if providerName != "" {

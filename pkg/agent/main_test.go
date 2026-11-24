@@ -44,6 +44,11 @@ func TestMain(m *testing.M) {
 	}
 	provider.GatewayHooks.ServesHome = func(string) bool { return false }
 	tools.ProfileSecrets = providerProfileSecrets{}
+	tools.RuntimeProviderCredentials = provider.ToolRuntimeCredentials
+	tools.CachedContextLength = func(ctx context.Context, modelID, baseURL string) (int, bool) {
+		return provider.GetCachedContextLength(ctx, modelID, baseURL, false)
+	}
+	tools.ModelContextLength = provider.ToolModelContextLength
 	if tools.ConfigEnvTableKeys == nil {
 		tools.ConfigEnvTableKeys = func() []string { return nil }
 		tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }

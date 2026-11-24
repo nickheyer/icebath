@@ -62,9 +62,9 @@ func seedRoutingView(ctx context.Context, cfg map[string]any) map[string]any {
 	return view
 }
 
-// Resolver over a routing view that never reads credentials
-func seedResolver(ctx context.Context, view map[string]any) *resolver {
-	return newResolver(ctx, config.Tree(view), nil, home.Dir(ctx), nil)
+// Resolver for routing a source document's entries that never reads credentials
+func seedResolver(ctx context.Context) *resolver {
+	return newResolver(ctx, nil, home.Dir(ctx), nil)
 }
 
 // Model block plus the endpoint definition it selects, copied as written, empty when the source has no model
@@ -87,8 +87,8 @@ func selectedModelSeed(ctx context.Context, sourceCfg map[string]any) (map[strin
 	requested := normalizeCustomProviderName(prov)
 	providers, _ := sourceCfg["providers"].(map[string]any)
 	view := seedRoutingView(ctx, sourceCfg)
-	r := seedResolver(ctx, view)
-	found := r.NamedCustomProviderConfigPath(prov, view)
+	r := seedResolver(ctx)
+	found := r.NamedCustomProviderConfigPath(prov, config.AsMap(view["providers"]))
 	if found == nil {
 		exact, isMap := providers[prov].(map[string]any)
 		if isMap && requested != "" && requested != "auto" && (requested == "custom" || r.shadowedByBuiltin(requested)) {
@@ -161,7 +161,7 @@ func MergeEndpointSeed(ctx context.Context, dstCfg, seed map[string]any, claimed
 		claimed = map[string]bool{}
 		if prov, ok := seedRequestedProvider(ctx, seed["model"]); ok && prov != "" {
 			view := seedRoutingView(ctx, seed)
-			if seedResolver(ctx, view).getNamedCustomProvider(prov, view, false) != nil {
+			if seedResolver(ctx).getNamedCustomProvider(prov, config.AsMap(view["providers"]), false) != nil {
 				claimed = seedClaimedAliases(ctx, seed)
 			}
 		}

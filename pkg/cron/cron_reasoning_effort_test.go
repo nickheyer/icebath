@@ -3,11 +3,11 @@ package cron
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 func reasoningJob(t *testing.T, s *Store, effort any) (*Job, error) {
@@ -62,30 +62,35 @@ func TestJobStoreReasoningEffort(t *testing.T) {
 	}
 }
 
-var reasoningCfg = config.Tree{
-	"model": map[string]any{"default": "anthropic/claude-opus-4.5"},
-	"agent": map[string]any{"reasoning_effort": "low", "reasoning_overrides": map[string]any{"anthropic/claude-opus-4.5": "xhigh"}},
-}
+// Profile config.yaml of the reasoning precedence cases: a global effort, a per model override, and the model the override names as the main model
+const reasoningConfigYAML = "model:\n  default: anthropic/claude-opus-4.5\nagent:\n  reasoning_effort: low\n  reasoning_overrides:\n    anthropic/claude-opus-4.5: xhigh\n"
 
 func TestSchedulerJobReasoningPrecedence(t *testing.T) {
 	s, buf := newTestStore(t)
-	if got := s.resolveJobReasoningConfig(&Job{ReasoningEffort: strPtr("high")}, reasoningCfg, "anthropic/claude-opus-4.5"); !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": "high"}) {
+	if err := os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte(reasoningConfigYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if got := s.resolveJobReasoningConfig(ctx, &Job{ReasoningEffort: strPtr("high")}, "anthropic/claude-opus-4.5"); !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": "high"}) {
 		t.Fatalf("job effort %v", got)
 	}
-	if got := s.resolveJobReasoningConfig(&Job{ReasoningEffort: strPtr("none")}, reasoningCfg, "anthropic/claude-opus-4.5"); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
+	if got := s.resolveJobReasoningConfig(ctx, &Job{ReasoningEffort: strPtr("none")}, "anthropic/claude-opus-4.5"); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
 		t.Fatalf("job none %v", got)
 	}
-	for _, model := range []string{"anthropic/claude-opus-4.5", "gpt-5", ""} {
-		want := config.ResolveReasoningConfig(map[string]any(reasoningCfg), model)
-		if got := s.resolveJobReasoningConfig(&Job{}, reasoningCfg, model); !reflect.DeepEqual(got, want) {
+	for model, want := range map[string]map[string]any{
+		"anthropic/claude-opus-4.5": {"enabled": true, "effort": "xhigh"},
+		"gpt-5":                     {"enabled": true, "effort": "low"},
+		"":                          {"enabled": true, "effort": "xhigh"},
+	} {
+		if got := s.resolveJobReasoningConfig(ctx, &Job{}, model); !reflect.DeepEqual(got, want) {
 			t.Fatalf("absent %q %v want %v", model, got, want)
 		}
 	}
-	if got := s.resolveJobReasoningConfig(&Job{ID: "abc123", ReasoningEffort: strPtr("turbo")}, reasoningCfg, "gpt-5"); !reflect.DeepEqual(got, config.ResolveReasoningConfig(map[string]any(reasoningCfg), "gpt-5")) || !strings.Contains(buf.String(), "turbo") {
+	if got := s.resolveJobReasoningConfig(ctx, &Job{ID: "abc123", ReasoningEffort: strPtr("turbo")}, "gpt-5"); !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": "low"}) || !strings.Contains(buf.String(), "turbo") {
 		t.Fatalf("garbage %v log %q", got, buf.String())
 	}
 	for _, model := range []string{"gpt-5.6-sol", "x-ai/grok-4", "gemini-3-pro", ""} {
-		if got := s.resolveJobReasoningConfig(&Job{ReasoningEffort: strPtr("ultra")}, reasoningCfg, model); !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": "ultra"}) {
+		if got := s.resolveJobReasoningConfig(ctx, &Job{ReasoningEffort: strPtr("ultra")}, model); !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": "ultra"}) {
 			t.Fatalf("ultra %q %v", model, got)
 		}
 	}

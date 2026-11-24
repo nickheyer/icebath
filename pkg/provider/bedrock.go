@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -208,7 +207,7 @@ func bedrockMantleURLParts(baseURL string) (string, bool, string) {
 	if err != nil {
 		return "", false, ""
 	}
-	path := pystr.Lower(strings.TrimRight(u.Path, "/"))
+	path := strings.ToLower(strings.TrimRight(u.Path, "/"))
 	m := bedrockOpenAIHostRe.FindStringSubmatch(u.Hostname())
 	if m == nil {
 		return "", false, path

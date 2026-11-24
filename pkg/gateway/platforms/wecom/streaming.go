@@ -310,7 +310,7 @@ func (s *Streamer) resolveStreamReqID(chatID, replyTo string) string {
 	if id := s.Host.ReplyReqIDForMessage(replyTo); id != "" {
 		return id
 	}
-	return s.Host.LastChatReqID(pystr.Strip(chatID))
+	return s.Host.LastChatReqID(strings.TrimSpace(chatID))
 }
 
 func cancelKeepalive(turn *StreamTurn) {
@@ -395,7 +395,7 @@ func (s *Streamer) keepaliveSend(ctx context.Context, turn *StreamTurn, turnID s
 		return
 	}
 	content := turn.AccumulatedText
-	if pystr.Strip(content) == "" {
+	if strings.TrimSpace(content) == "" {
 		s.armKeepalive(turn, turnID)
 		s.mu.Unlock()
 		return
@@ -466,7 +466,7 @@ func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content
 
 // SendStreamFrame seeds, updates or finalizes the turn keyed by turn id and reports false when the caller must fall back
 func (s *Streamer) SendStreamFrame(ctx context.Context, text string, finalize bool, chatID, replyTo, turnID string) (bool, error) {
-	chat := pystr.Strip(chatID)
+	chat := strings.TrimSpace(chatID)
 	if chat == "" {
 		pkgLog().Warn(fmt.Sprintf("[%s] send_stream_frame: chat_id required", s.Host.Name()))
 		return false, nil

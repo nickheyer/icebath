@@ -16,7 +16,6 @@ import (
 // Collaborators the config facade runs from packages that import config
 type FacadeHooks struct {
 	ApplyUserMoAPresets         func(merged map[string]any, raw any)
-	SkipDeepMerge               func(prefix, key string) bool
 	DotenvUnreadable            func(path string) bool
 	ExtraEnvKeys                func() []string
 	MaskedSecretPrompt          func(prompt string) (string, error)

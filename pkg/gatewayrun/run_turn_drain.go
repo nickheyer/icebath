@@ -35,8 +35,8 @@ func isControlInterruptMessage(message any) bool {
 	if !pyrepr.Truthy(message) {
 		return false
 	}
-	normalized := strings.Join(pystr.SplitWhitespace(pystr.Strip(pyrepr.Str(message)), -1), " ")
-	return controlInterruptMessages[pystr.Lower(normalized)]
+	normalized := strings.Join(pystr.SplitWhitespace(strings.TrimSpace(pyrepr.Str(message)), -1), " ")
+	return controlInterruptMessages[strings.ToLower(normalized)]
 }
 
 // Pending event and text of the follow up the finished turn leaves queued, interrupt or leftover steer included
@@ -85,8 +85,8 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 		}
 	}
 	pendingEvent, pending = r.mergeLeftoverSteer(result, adapter, source, sessionKey, pendingEvent, pending)
-	if pending != "" && strings.HasPrefix(pystr.Strip(pending), "/") {
-		cmdWord := pystr.Lower(strings.TrimPrefix(pystr.SplitWhitespace(pystr.Strip(pending), 1)[0], "/"))
+	if pending != "" && strings.HasPrefix(strings.TrimSpace(pending), "/") {
+		cmdWord := strings.ToLower(strings.TrimPrefix(pystr.SplitWhitespace(strings.TrimSpace(pending), 1)[0], "/"))
 		if cmdWord != "" {
 			if _, known := ResolveCommand(cmdWord); known {
 				pkgLog().Info(fmt.Sprintf("Discarding command '/%s' from pending queue — commands must not be passed as agent input", cmdWord))

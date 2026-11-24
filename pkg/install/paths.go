@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Directory name of the install tree under the home
@@ -21,7 +20,7 @@ const BootstrapMarkerName = ".icebath-bootstrap-complete"
 
 // Home the installer works in, the ICEBATH_HOME override first then the platform default
 func Home() string {
-	if v := os.Getenv(home.EnvHome); pystr.Strip(v) != "" {
+	if v := os.Getenv(home.EnvHome); strings.TrimSpace(v) != "" {
 		return v
 	}
 	return home.PlatformDefault()

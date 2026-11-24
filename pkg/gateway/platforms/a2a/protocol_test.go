@@ -37,7 +37,8 @@ func path(t *testing.T, v any, keys ...any) any {
 }
 
 func TestCardShape(t *testing.T) {
-	card := BuildAgentCard(AgentCardOptions{Name: "icebath-test", URL: "http://localhost:9900/", Description: "test"})
+	ctx := home.WithOverride(context.Background(), t.TempDir())
+	card := BuildAgentCard(ctx, AgentCardOptions{Name: "icebath-test", URL: "http://localhost:9900/", Description: "test"})
 	if path(t, card, "name") != "icebath-test" {
 		t.Fatal("name")
 	}
@@ -56,7 +57,7 @@ func TestCardShape(t *testing.T) {
 	if path(t, card, "capabilities", "streaming") != false || len(path(t, card, "skills").([]any)) != 0 {
 		t.Fatal("capabilities")
 	}
-	tenant := BuildAgentCard(AgentCardOptions{Name: "n", URL: "u", Tenant: "acme"})
+	tenant := BuildAgentCard(ctx, AgentCardOptions{Name: "n", URL: "u", Tenant: "acme"})
 	if path(t, tenant, "supportedInterfaces", 0, "tenant") != "acme" {
 		t.Fatal("tenant")
 	}
@@ -65,7 +66,7 @@ func TestCardShape(t *testing.T) {
 func TestCardAuthRequired(t *testing.T) {
 	t.Setenv("A2A_PROVIDER_ORG", "Org")
 	t.Setenv("A2A_PROVIDER_URL", "https://org.example/")
-	card := BuildAgentCard(AgentCardOptions{Name: "n", URL: "u", AuthRequired: true, Streaming: true, PushNotifications: true})
+	card := BuildAgentCard(home.WithOverride(context.Background(), t.TempDir()), AgentCardOptions{Name: "n", URL: "u", AuthRequired: true, Streaming: true, PushNotifications: true})
 	if path(t, card, "securitySchemes", "bearer", "scheme") != "bearer" || path(t, card, "securitySchemes", "bearer", "type") != "http" {
 		t.Fatal("scheme")
 	}
@@ -342,24 +343,25 @@ func TestResetTurnsClears(t *testing.T) {
 }
 
 func TestMaxPingpongTurnsEnvOverride(t *testing.T) {
+	ctx := home.WithOverride(context.Background(), t.TempDir())
 	for _, c := range []struct {
 		env  string
 		want int
 	}{{"10", 10}, {"50", 20}, {"0", 1}, {"junk", 5}} {
 		t.Setenv("A2A_MAX_PINGPONG_TURNS", c.env)
-		if got := MaxPingpongTurns(); got != c.want {
+		if got := MaxPingpongTurns(ctx); got != c.want {
 			t.Fatalf("%s: %d", c.env, got)
 		}
 	}
 	os.Unsetenv("A2A_MAX_PINGPONG_TURNS")
-	if MaxPingpongTurns() != 5 {
+	if MaxPingpongTurns(ctx) != 5 {
 		t.Fatal("default")
 	}
 }
 
 func TestBlocksOverLimit(t *testing.T) {
 	t.Setenv("A2A_RATE_LIMIT", "3")
-	rl := NewRateLimiter()
+	rl := NewRateLimiter(rateLimit(home.WithOverride(context.Background(), t.TempDir())))
 	for i := range 3 {
 		if !rl.Allow("peer-2") {
 			t.Fatalf("request %d", i)
@@ -378,7 +380,7 @@ func TestBlocksOverLimit(t *testing.T) {
 
 func TestSeparatePerIdentity(t *testing.T) {
 	t.Setenv("A2A_RATE_LIMIT", "1")
-	rl := NewRateLimiter()
+	rl := NewRateLimiter(rateLimit(home.WithOverride(context.Background(), t.TempDir())))
 	if !rl.Allow("a") || !rl.Allow("b") || rl.Allow("a") {
 		t.Fatal("buckets per identity")
 	}

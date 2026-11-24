@@ -21,29 +21,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pluginsdk"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Argv prefix the plugin host process runs under from plugins.host.launcher, a sandbox runner
-func HostLauncher(ctx context.Context, cfg map[string]any) ([]string, error) {
-	if cfg == nil {
-		cfg = loadConfigOrEmpty(home.Dir(ctx))
+// Argv prefix the plugin host process runs under from plugins.host.launcher of the profile of ctx, a sandbox runner, a single line split like a shell command line
+func HostLauncher(ctx context.Context) ([]string, error) {
+	items := settings.PluginsHostLauncher.Strings(ctx)
+	if len(items) == 1 {
+		return pyshlex.SplitPOSIX(items[0], false)
 	}
-	host := asMap(pluginsSection(cfg)["host"])
-	if host == nil {
-		return []string{}, nil
-	}
-	launcher := host["launcher"]
-	if !config.PyTruthy(launcher) {
-		return []string{}, nil
-	}
-	if text, ok := launcher.(string); ok {
-		return pyshlex.SplitPOSIX(text, false)
-	}
-	out := []string{}
-	for _, part := range toList(launcher) {
-		out = append(out, config.PyStr(part))
-	}
-	return out, nil
+	return append([]string{}, items...), nil
 }
 
 // Manifest of a plugin directory that declares a guest runtime, nil for any other directory
@@ -267,7 +254,7 @@ func programGuestProfiles(ctx context.Context, spec *guestSpec, resolvedDir, mod
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	launcher, err := HostLauncher(ctx, nil)
+	launcher, err := HostLauncher(ctx)
 	if err != nil {
 		return nil, nil, 0, err
 	}

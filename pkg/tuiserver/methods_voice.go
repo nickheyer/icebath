@@ -39,9 +39,3 @@ func releaseWakeForTransport(transport tuihost.Transport) bool {
 	}()
 	return true
 }
-
-// Releases the wake lease of whichever transport owns it, false when nobody does
-func releaseGatewayWakeOwner() bool {
-	owner, _ := wakeOwnerSnapshot()
-	return owner != nil && releaseWakeForTransport(owner)
-}

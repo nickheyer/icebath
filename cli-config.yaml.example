@@ -2085,6 +2085,11 @@
 # terminal:
 #   degraded_mode: warn
 
+# Disk warning: Space Singularity sandboxes may use before a warning, in GB.
+# The TERMINAL_DISK_WARNING_GB environment variable overrides it.
+# terminal:
+#   disk_warning_gb: 500.0
+
 # Docker variables: Variables set inside Docker sandboxes, as name and value.
 # Applies to new sessions.
 # terminal:
@@ -2165,6 +2170,12 @@
 # terminal:
 #   modal_image: localhost/icebath-sandbox:desktop
 
+# Timeout ceiling: Longest timeout one foreground command may ask for.
+# A longer one runs the command in the background instead.
+# The TERMINAL_MAX_FOREGROUND_TIMEOUT environment variable overrides it.
+# terminal:
+#   max_foreground_timeout: 600
+
 # One-shot wait limit: Longest wait for a one-shot background command to finish.
 # terminal:
 #   oneshot_completion_wait_seconds: 600
@@ -2185,6 +2196,12 @@
 # Applies to new sessions.
 # terminal:
 #   sandbox_dir: null
+
+# Singularity scratch: Folder for Singularity overlays and the image cache.
+# Unset: a writable /scratch, else the sandbox folder.
+# The TERMINAL_SCRATCH_DIR environment variable overrides it.
+# terminal:
+#   scratch_dir: null
 
 # Shell init files: Files sourced before commands run, instead of the usual ones.
 # Empty falls back to the profile and bashrc files.
@@ -2276,6 +2293,13 @@
 # Applies to new sessions.
 # terminal:
 #   local_persistent: true
+
+# Worker memory cap: Most memory a background command worker may use, in MB.
+# It never exceeds this machine's own limit.
+# Unset: half of this machine's memory, at most 4 GB.
+# The TERMINAL_LOCAL_MEMORY_MAX_MB environment variable overrides it.
+# terminal:
+#   local_memory_max_mb: null
 
 # Own work tree: Start each terminal session in its own git work tree.
 # Applies to new sessions.
@@ -2696,6 +2720,12 @@
 # stt:
 #   cloud_trim_threshold_db: -40
 
+# DeepInfra recognition endpoint: Custom endpoint for DeepInfra speech recognition.
+# Unset: the provider endpoint.
+# stt:
+#   deepinfra:
+#     base_url: null
+
 # DeepInfra model: Speech recognition model used with DeepInfra.
 # Empty uses the service's default.
 # stt:
@@ -2742,8 +2772,22 @@
 
 # Recognition language: Language of your speech, as a language code such as en.
 # Used when the chosen service has no language of its own.
+# Unset: detected from the speech.
+# The ICEBATH_LOCAL_STT_LANGUAGE environment variable overrides it.
 # stt:
-#   language: en
+#   language: null
+
+# Local compute type: Number format the on-device recognizer computes in, such as int8.
+# Auto picks one for the device.
+# stt:
+#   local:
+#     compute_type: auto
+
+# Local device: Where on-device recognition runs, such as cpu or cuda.
+# Auto uses the graphics card when it works.
+# stt:
+#   local:
+#     device: auto
 
 # Local prompt: Text that primes the on-device recognizer, such as names or jargon.
 # stt:
@@ -2786,6 +2830,13 @@
 # stt:
 #   local:
 #     vad_min_silence_ms: 500
+
+# Local command: Program that transcribes a recording on this machine.
+# Write {input_path}, {output_dir}, {language} and {model} where they belong; it must leave a .txt file in {output_dir}.
+# Unset: the bundled whisper.cpp engine, else a whisper program on PATH.
+# The ICEBATH_LOCAL_STT_COMMAND environment variable overrides it.
+# stt:
+#   local_command: null
 
 # Mistral language: Language hint for Mistral transcripts.
 # Empty detects it.
@@ -2838,6 +2889,11 @@
 # stt:
 #   prompt: null
 
+# Recognition commands: Your own speech recognition programs, by name.
+# Set Recognition service to a name here to use it. A program may also sit directly under stt by its name.
+# stt:
+#   providers: {}
+
 # Live transcription: Show words as you speak when the chosen service supports it.
 # stt:
 #   streaming: false
@@ -2847,6 +2903,17 @@
 # stt:
 #   xai:
 #     base_url: null
+
+# xAI speakers: Have xAI mark who is speaking in transcripts.
+# stt:
+#   xai:
+#     diarize: false
+
+# xAI formatting: Have xAI tidy numbers and punctuation in transcripts.
+# Applies when a language is set.
+# stt:
+#   xai:
+#     format: true
 
 # xAI language: Language hint for xAI transcripts.
 # Empty detects it.
@@ -2859,6 +2926,19 @@
 # stt:
 #   xai:
 #     model: ''
+
+# DeepInfra endpoint: Custom endpoint for DeepInfra speech.
+# Unset: the provider endpoint.
+# tts:
+#   deepinfra:
+#     base_url: null
+
+# DeepInfra text limit: Most text DeepInfra speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   deepinfra:
+#     max_text_length: null
 
 # DeepInfra model: Speech model used with DeepInfra.
 # Empty uses the service's default.
@@ -2878,6 +2958,18 @@
 #   deepinfra:
 #     voice: default
 
+# Audio upload limits: Largest speech file sent to each chat app, by app name.
+# Longer speech is sent as several files; default covers apps not named.
+# tts:
+#   delivery_profiles: {}
+
+# Edge text limit: Most text Edge speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   edge:
+#     max_text_length: null
+
 # Edge speed: How fast the Edge voice speaks.
 # 1 is normal.
 # Unset: the general speech speed.
@@ -2895,6 +2987,13 @@
 # tts:
 #   elevenlabs:
 #     base_url: null
+
+# ElevenLabs text limit: Most text ElevenLabs speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   elevenlabs:
+#     max_text_length: null
 
 # ElevenLabs model: Speech model used with ElevenLabs.
 # tts:
@@ -2923,6 +3022,13 @@
 #   gemini:
 #     base_url: null
 
+# Gemini text limit: Most text Gemini speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   gemini:
+#     max_text_length: null
+
 # Gemini model: Speech model used with Gemini.
 # tts:
 #   gemini:
@@ -2948,6 +3054,13 @@
 #   kittentts:
 #     clean_text: true
 
+# KittenTTS text limit: Most text KittenTTS speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   kittentts:
+#     max_text_length: null
+
 # KittenTTS model: On-device speech model used with KittenTTS.
 # tts:
 #   kittentts:
@@ -2955,9 +3068,10 @@
 
 # KittenTTS speed: How fast KittenTTS speaks.
 # 1 is normal.
+# Unset: the general speech speed.
 # tts:
 #   kittentts:
-#     speed: 1.0
+#     speed: null
 
 # KittenTTS voice: Voice used with KittenTTS.
 # tts:
@@ -2986,6 +3100,13 @@
 #   minimax:
 #     group_id: null
 
+# MiniMax text limit: Most text MiniMax speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   minimax:
+#     max_text_length: null
+
 # MiniMax model: Speech model used with MiniMax.
 # tts:
 #   minimax:
@@ -3010,9 +3131,10 @@
 
 # MiniMax speed: How fast MiniMax speaks.
 # 1 is normal.
+# Unset: the general speech speed.
 # tts:
 #   minimax:
-#     speed: 1.0
+#     speed: null
 
 # MiniMax voice: Voice used with MiniMax, by its ID.
 # tts:
@@ -3029,6 +3151,13 @@
 # tts:
 #   mistral:
 #     base_url: null
+
+# Mistral text limit: Most text Mistral speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   mistral:
+#     max_text_length: null
 
 # Mistral model: Speech model used with Mistral.
 # tts:
@@ -3049,6 +3178,13 @@
 # tts:
 #   neutts:
 #     device: cpu
+
+# NeuTTS text limit: Most text NeuTTS speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   neutts:
+#     max_text_length: null
 
 # NeuTTS model: On-device speech model used with NeuTTS.
 # tts:
@@ -3084,6 +3220,13 @@
 # tts:
 #   openai:
 #     language: null
+
+# OpenAI text limit: Most text OpenAI speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   openai:
+#     max_text_length: null
 
 # OpenAI model: Speech model used with OpenAI.
 # tts:
@@ -3124,6 +3267,13 @@
 # tts:
 #   piper:
 #     length_scale: null
+
+# Piper text limit: Most text Piper speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
+# tts:
+#   piper:
+#     max_text_length: null
 
 # Piper variation: How much natural variation Piper adds to the voice.
 # Unset: the voice's own value.
@@ -3169,6 +3319,11 @@
 #   piper:
 #     volume: 1.0
 
+# Speech commands: Your own speech programs, by name.
+# Set Speech voice to a name here to use it. A program may also sit directly under tts by its name.
+# tts:
+#   providers: {}
+
 # Speech speed: How fast voices speak.
 # 1 is normal. Services with their own speed setting use that instead.
 # Unset: normal speed.
@@ -3212,11 +3367,19 @@
 #   xai:
 #     language: en
 
-# xAI latency boost: Trade quality for faster start in xAI speech.
-# Zero turns it off.
+# xAI text limit: Most text xAI speaks in one request.
+# Longer text is split into several requests.
+# Unset: the service's own limit.
 # tts:
 #   xai:
-#     optimize_streaming_latency: 0
+#     max_text_length: null
+
+# xAI latency boost: Trade quality for faster start in xAI speech.
+# Zero turns it off.
+# Unset: the general live latency boost.
+# tts:
+#   xai:
+#     optimize_streaming_latency: null
 
 # xAI sample rate: Audio sample rate for xAI speech, in Hz.
 # tts:
@@ -3225,9 +3388,10 @@
 
 # xAI speed: How fast xAI speaks.
 # 1 is normal.
+# Unset: the general speech speed.
 # tts:
 #   xai:
-#     speed: 1.0
+#     speed: null
 
 # xAI live endpoint: Custom endpoint for xAI speech that plays as it arrives.
 # Unset: the provider streaming endpoint.
@@ -3907,6 +4071,11 @@
 # cron:
 #   cleanup_timeout_seconds: 10
 
+# Done job retention: Days a finished one-time job stays in the list before it is removed.
+# Zero keeps them.
+# cron:
+#   completed_retention_days: 7.0
+
 # Delivery notices: Send a notice to the chat when a scheduled result is delivered.
 # cron:
 #   delivery:
@@ -3922,13 +4091,12 @@
 #   failure_repeat_alert_hours: 6
 
 # Stuck job limit: Minimum time a running job gets before it counts as stuck.
-# Unset falls back to the matching environment variable, then 30 minutes.
 # Unset: 30 minutes.
 # cron:
 #   inflight_max_minutes: null
 
 # Parallel jobs: Most scheduled jobs that run at the same time.
-# Zero also means no limit. The matching environment variable wins.
+# Zero also means no limit.
 # Unset: no limit.
 # cron:
 #   max_parallel_jobs: null
@@ -4382,14 +4550,20 @@
 # gateway:
 #   platform_connect_timeout: 30
 
+# Chat disconnect wait: How long each chat app gets to disconnect when the service stops.
+# Zero stops without waiting.
+# gateway:
+#   adapter_disconnect_timeout: 5
+
 # Profile routes: Rules that send particular chats to a particular profile.
 # Each entry names a chat and the profile that handles it.
 # Restart the background service to apply.
 # gateway:
 #   profile_routes: []
 
-# Chat proxy: Proxy address for chat app connections.
-# Empty connects directly.
+# Remote agent: Address of an icebath API server that answers the chats instead.
+# Chat apps still connect from here and every turn runs on that server. Empty answers here.
+# The GATEWAY_PROXY_URL environment variable overrides it.
 # gateway:
 #   proxy_url: ''
 
@@ -4707,6 +4881,11 @@
 # telegram:
 #   extra:
 #     rich_messages: false
+
+# Follow-up grace: Telegram: a follow-up this soon after a reply starts waits for it.
+# Zero lets every message interrupt at once.
+# telegram:
+#   followup_grace_seconds: 3
 
 # Answer bots: Telegram: which messages from other bots it answers.
 # One of: none, mentions, all.
@@ -5116,7 +5295,7 @@
 #   filter_silence_narration: true
 
 # Reset words: Messages that start a new conversation in a chat app.
-# Restart the background service to apply.
+# A message that is exactly one of these, in any letter case, works like /new.
 # gateway:
 #   reset_triggers:
 #     - /new

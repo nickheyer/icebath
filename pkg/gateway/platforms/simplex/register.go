@@ -1,6 +1,8 @@
 package simplex
 
 import (
+	"strings"
+
 	"cmp"
 	"context"
 	"fmt"
@@ -9,22 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
-
-// Env var, extra key and conversion of every SimpleX value seeded from an env only setup
-var envSeedKeys = []gateway.EnvSeedRow{
-	{Env: "SIMPLEX_AUTO_ACCEPT", Key: "auto_accept", Conv: func(raw string) (any, error) {
-		switch pystr.Lower(raw) {
-		case "0", "false", "no":
-			return false, nil
-		}
-		return true, nil
-	}},
-	{Env: "SIMPLEX_GROUP_ALLOWED", Key: "group_allowed"},
-}
 
 // Whether the scoped env names the daemon URL
 func checkRequirements(ctx context.Context) bool {
@@ -58,11 +47,11 @@ func envEnablement(ctx context.Context) map[string]any {
 	if err != nil {
 		panic(err)
 	}
-	wsURL := pystr.Strip(raw)
+	wsURL := strings.TrimSpace(raw)
 	if wsURL == "" {
 		return nil
 	}
-	seed, err := gateway.SeedExtraFromEnv(ctx, envSeedKeys, "SIMPLEX_HOME_CHANNEL", "")
+	seed, err := gateway.SeedExtraFromEnv(ctx, nil, "SIMPLEX_HOME_CHANNEL", "")
 	if err != nil {
 		panic(err)
 	}

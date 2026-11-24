@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fetched thread context of one thread with the root text and author for mention wake checks
@@ -25,9 +24,9 @@ type threadContextCache struct {
 
 // Display text of a message with readable block, attachment, URL and file extras, bot mentions removed
 func renderMessageText(msg map[string]any, botUID string) string {
-	msgText := pystr.Strip(strOrEmpty(msg["text"]))
+	msgText := strings.TrimSpace(strOrEmpty(msg["text"]))
 	if botUID != "" {
-		msgText = pystr.Strip(strings.ReplaceAll(msgText, "<@"+botUID+">", ""))
+		msgText = strings.TrimSpace(strings.ReplaceAll(msgText, "<@"+botUID+">", ""))
 	}
 	blocks := asList(msg["blocks"])
 	var extras []string
@@ -43,7 +42,7 @@ func renderMessageText(msg map[string]any, botUID string) string {
 		return true
 	}
 	if len(blocks) > 0 {
-		if rich := pystr.Strip(extractAdditionalTextFromSlackBlocks(blocks, msgText, botUID)); rich != "" {
+		if rich := strings.TrimSpace(extractAdditionalTextFromSlackBlocks(blocks, msgText, botUID)); rich != "" {
 			extras = append(extras, rich)
 		}
 		for _, raw := range blocks {
@@ -57,12 +56,12 @@ func renderMessageText(msg map[string]any, botUID string) string {
 			if !ok {
 				continue
 			}
-			if sectionText := pystr.Strip(strOrEmpty(textObj["text"])); sectionText != "" && unseen(sectionText, msgText) {
+			if sectionText := strings.TrimSpace(strOrEmpty(textObj["text"])); sectionText != "" && unseen(sectionText, msgText) {
 				extras = append(extras, sectionText)
 			}
 		}
 	}
-	if attachmentsText := pystr.Strip(extractTextFromSlackAttachments(asList(msg["attachments"]))); attachmentsText != "" && unseen(attachmentsText, msgText) {
+	if attachmentsText := strings.TrimSpace(extractTextFromSlackAttachments(asList(msg["attachments"]))); attachmentsText != "" && unseen(attachmentsText, msgText) {
 		extras = append(extras, attachmentsText)
 	}
 	if len(blocks) > 0 {
@@ -90,7 +89,7 @@ func renderMessageText(msg map[string]any, botUID string) string {
 	if len(extras) > 0 {
 		addendum := strings.Join(extras, "\n")
 		if msgText != "" {
-			msgText = pystr.Strip(msgText + "\n" + addendum)
+			msgText = strings.TrimSpace(msgText + "\n" + addendum)
 		} else {
 			msgText = addendum
 		}
@@ -216,7 +215,7 @@ func (a *SlackAdapter) formatThreadContext(ctx context.Context, messages []map[s
 			continue
 		}
 		if botUID != "" {
-			msgText = pystr.Strip(strings.ReplaceAll(msgText, "<@"+botUID+">", ""))
+			msgText = strings.TrimSpace(strings.ReplaceAll(msgText, "<@"+botUID+">", ""))
 		}
 		if isParent {
 			parentText = msgText
@@ -307,7 +306,7 @@ func (a *SlackAdapter) fetchThreadParentText(ctx context.Context, channelID, thr
 			return cached.parentText
 		}
 		if root := threadRootMessage(cached.messages, threadTS); root != nil {
-			return pystr.Strip(strOrEmpty(root["text"]))
+			return strings.TrimSpace(strOrEmpty(root["text"]))
 		}
 	}
 	result, err := a.getClient(channelID, teamID).call(ctx, "conversations.replies", map[string]any{"channel": channelID, "ts": threadTS, "limit": 1, "inclusive": true})
@@ -326,7 +325,7 @@ func (a *SlackAdapter) fetchThreadParentText(ctx context.Context, channelID, thr
 	botUID := a.teamBotUID(teamID)
 	text := renderMessageText(parent, botUID)
 	if stripBotMention && botUID != "" {
-		text = pystr.Strip(strings.ReplaceAll(text, "<@"+botUID+">", ""))
+		text = strings.TrimSpace(strings.ReplaceAll(text, "<@"+botUID+">", ""))
 	}
 	return text
 }
@@ -402,7 +401,7 @@ func (a *SlackAdapter) handleIcebathCommand(ctx context.Context, ack ackFunc, co
 	if a.slashChannelGated(ctx, strOrEmpty(command["channel_id"])) {
 		err = ack(nil)
 	} else {
-		slash := pystr.LstripChars(strOrEmpty(command["command"]), "/")
+		slash := strings.TrimLeft(strOrEmpty(command["command"]), "/")
 		err = ack(map[string]any{"response_type": "ephemeral", "text": i18n.T(ctx, "platform.slack.slash.running", "", map[string]any{"command": slash})})
 	}
 	if err != nil {

@@ -181,7 +181,7 @@ func statusDict(v any) (map[string]any, bool) {
 
 // Configured default model of the status home, or the not set marker
 func (s *statusRun) configuredModelLabel() string {
-	if model := pystr.Strip(settings.Model.Get(home.WithOverride(s.ctx, s.h))); model != "" {
+	if model := strings.TrimSpace(settings.Model.Get(home.WithOverride(s.ctx, s.h))); model != "" {
 		return model
 	}
 	return "(not set)"
@@ -215,7 +215,7 @@ func (s *statusRun) effectiveProviderLabel() (string, error) {
 		}
 	}
 	if effective == "openrouter" {
-		configBaseURL := pystr.Strip(settings.ModelBaseURL.Get(home.WithOverride(s.ctx, s.h)))
+		configBaseURL := strings.TrimSpace(settings.ModelBaseURL.Get(home.WithOverride(s.ctx, s.h)))
 		envBase, err := statusGetEnvValue(s.ctx, s.h, "OPENAI_BASE_URL")
 		if err != nil {
 			return "", err

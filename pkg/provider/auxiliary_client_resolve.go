@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Effective provider an auto routed client carries across cache reuse
@@ -161,7 +162,8 @@ func auxToAsyncClient(ctx context.Context, syncClient AuxClient, model string, i
 
 // Seam for the named custom provider entry lookup tests patch
 var auxGetNamedCustomProviderFn = func(ctx context.Context, name string) map[string]any {
-	return modelsResolver(ctx).getNamedCustomProvider(name, nil, true)
+	r := modelsResolver(ctx)
+	return r.getNamedCustomProvider(name, r.providers(), true)
 }
 
 // Named custom credential from inline api_key, key_env, key_cmd, the credential pool, else no-key-required
@@ -184,12 +186,8 @@ func auxNamedCustomAPIKey(ctx context.Context, entry map[string]any, provider, c
 	}
 	if key == "" {
 		_ = auxRecoverRaise(func() {
-			cfg, err := auxLoadConfigReadonlyFn(ctx)
-			if err != nil {
-				return
-			}
 			poolName := auxFirstNonEmpty(cfgString(entry["provider_key"]), cfgString(entry["name"]), provider)
-			for _, poolKey := range customProviderPoolKeyCandidates(customBase, poolName, cfg) {
+			for _, poolKey := range customProviderPoolKeyCandidates(customBase, poolName, settings.Providers.Get(ctx)) {
 				var pool *Pool
 				if auxRecoverRaise(func() { pool = LoadSelectedPool(modelsPoolEnv(ctx), poolKey) }) != nil {
 					continue
@@ -263,7 +261,7 @@ func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex
 // Vertex Gemini over the OpenAI compatible endpoint with a minted bearer, nil without GCP credentials
 func auxBuildVertexClient(ctx context.Context, provider, model string) (AuxClient, string) {
 	h := home.Dir(ctx)
-	env := vertexEnv{cfg: LoadConfigSafe(ctx, h), secrets: config.NewSecrets(h)}
+	env := vertexEnv{secrets: config.NewSecrets(h)}
 	if !hasVertexCredentials(ctx, env) {
 		pkgLog().Debug("resolve_provider_client: vertex requested but no GCP credentials found")
 		return nil, ""
@@ -542,12 +540,11 @@ func auxResolveCustomBranch(ctx context.Context, req auxResolveRequest) (auxReso
 		if len(query) > 0 {
 			opts.DefaultQuery = query
 		}
-		cfg, _ := auxLoadConfigReadonlyFn(ctx)
 		headers := map[string]string{}
 		for k, v := range auxEndpointDefaultHeaders(ctx, customBase, provider, req.IsVision, false) {
 			headers[k] = v
 		}
-		for k, v := range CustomProviderExtraHeaders(customBase, nil, cfg) {
+		for k, v := range CustomProviderExtraHeaders(customBase, CustomProviderEntries(ctx)) {
 			headers[k] = v
 		}
 		if len(headers) > 0 {

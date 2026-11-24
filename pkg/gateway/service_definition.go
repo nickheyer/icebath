@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -134,7 +136,7 @@ func systemServiceIdentity(runAsUser string) (string, string, string, int, error
 			return "", "", "", 0, err
 		}
 	}
-	username = pystr.Strip(username)
+	username = strings.TrimSpace(username)
 	if username == "" {
 		return "", "", "", 0, &ServiceUserError{"Could not determine which user the gateway service should run as"}
 	}
@@ -179,7 +181,7 @@ func remapPathForUser(p, targetHomeDir string) (string, error) {
 // Caller home in effect remapped under the target account's default home, a custom home kept as is
 func icebathHomeForTargetUser(ctx context.Context, targetHomeDir string) (string, error) {
 	current := home.Dir(ctx)
-	if raw := pystr.Strip(os.Getenv("ICEBATH_HOME")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("ICEBATH_HOME")); raw != "" {
 		expanded, err := pypath.PathExpanduser(raw)
 		if err != nil {
 			return "", err
@@ -242,9 +244,9 @@ func prepareServiceLauncher(ctx context.Context, system bool, runAsUser string) 
 
 // Definition text trimmed with every line right stripped so whitespace drift never reads as stale
 func normalizeServiceDefinition(text string) string {
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	for i, line := range lines {
-		lines[i] = pystr.Rstrip(line)
+		lines[i] = strings.TrimRightFunc(line, unicode.IsSpace)
 	}
 	return strings.Join(lines, "\n")
 }

@@ -81,7 +81,7 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 		pkgLog().Warn("[Feishu] Webhook rate limit exceeded for " + remoteIP)
 		return a.webhookReject(remoteIP, "429", 429, "Too Many Requests", "")
 	}
-	contentType := pystr.Lower(pystr.Strip(strings.Split(request.Header.Get("Content-Type"), ";")[0]))
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(request.Header.Get("Content-Type"), ";")[0]))
 	if contentType != "" && contentType != "application/json" {
 		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook rejected: unexpected Content-Type %s from %s", pyrepr.Repr(contentType), remoteIP))
 		return a.webhookReject(remoteIP, "415", 415, "Unsupported Media Type", "")

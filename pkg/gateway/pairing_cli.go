@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Left aligns text in a column of the given width counted in code points
@@ -101,8 +100,8 @@ func pairingCmdList(ctx context.Context, store *PairingStore, w io.Writer) error
 
 // Approves a request id from the pending list or a code the bot sent the user
 func pairingCmdApprove(ctx context.Context, store *PairingStore, platform, code string, w io.Writer) error {
-	platform = pystr.Strip(strings.ToLower(platform))
-	code = pystr.Strip(code)
+	platform = strings.TrimSpace(strings.ToLower(platform))
+	code = strings.TrimSpace(code)
 	var result *PairingApproval
 	var err error
 	if LooksLikePairingRequestID(code) {
@@ -148,7 +147,7 @@ func pairingCmdApprove(ctx context.Context, store *PairingStore, platform, code 
 
 // Revokes the access of a user on a platform
 func pairingCmdRevoke(ctx context.Context, store *PairingStore, platform, userID string, w io.Writer) error {
-	platform = pystr.Strip(strings.ToLower(platform))
+	platform = strings.TrimSpace(strings.ToLower(platform))
 	found, err := store.Revoke(ctx, platform, userID)
 	if err != nil {
 		return err

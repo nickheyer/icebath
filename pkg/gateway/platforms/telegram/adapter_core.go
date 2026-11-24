@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
@@ -9,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -25,7 +26,7 @@ type runnerDMBehavior interface {
 
 // Whether an inline button caller may run gated actions, the background service's access check deciding and no verdict refusing
 func (g *adapterCore) isCallbackUserAuthorized(userID string, chatID, chatType, threadID *string) bool {
-	normalizedUserID := pystr.Strip(userID)
+	normalizedUserID := strings.TrimSpace(userID)
 	if normalizedUserID == "" {
 		return false
 	}
@@ -223,7 +224,7 @@ func (g *adapterCore) coerceBoolExtra(key string, def bool) bool {
 		return def
 	}
 	if s, ok := value.(string); ok {
-		switch pystr.Lower(pystr.Strip(s)) {
+		switch strings.ToLower(strings.TrimSpace(s)) {
 		case "true", "1", "yes", "on":
 			return true
 		case "false", "0", "no", "off":

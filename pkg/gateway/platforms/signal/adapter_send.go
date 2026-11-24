@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Keyword arguments of one JSON-RPC call beyond its method and params
@@ -257,7 +258,7 @@ func (a *SignalAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 	if err := a.stopTypingIndicator(ctx, chatID); err != nil {
 		return gateway.SendResult{}, err
 	}
-	if pystr.Strip(content) == "" {
+	if strings.TrimSpace(content) == "" {
 		return gateway.SendResult{Success: true}, nil
 	}
 	baseParams, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account), chatID, true)
@@ -589,7 +590,7 @@ func (a *SignalAdapter) sendAttachment(ctx context.Context, chatID, filePath, me
 	if size := info.Size(); size > signalMaxAttachmentSize {
 		return gateway.SendResult{Success: false, Error: fmt.Sprintf("%s too large (%d bytes)", mediaLabel, size)}, nil
 	}
-	return a.sendFile(ctx, chatID, filePath, caption, fmt.Sprintf("RPC send %s failed", pystr.Lower(mediaLabel)))
+	return a.sendFile(ctx, chatID, filePath, caption, fmt.Sprintf("RPC send %s failed", strings.ToLower(mediaLabel)))
 }
 
 // Sends a document as a Signal attachment
@@ -715,34 +716,28 @@ func extractReactionTarget(event *gateway.MessageEvent) (author, timestamp any, 
 	return raw["sender"], raw["timestamp_ms"], true
 }
 
-// Reactions gate, the env switch first and then the DM allowlist so strangers see no listening bot
-func (a *SignalAdapter) reactionsEnabled(ctx context.Context, event *gateway.MessageEvent) (bool, error) {
-	setting, err := gateway.GetScopedSecret(ctx, "SIGNAL_REACTIONS", "true", false)
-	if err != nil {
-		return false, err
-	}
-	switch pystr.Lower(setting) {
-	case "false", "0", "no":
-		return false, nil
+// Reactions gate, the setting first and then the allowed users so strangers see no listening bot
+func (a *SignalAdapter) reactionsEnabled(ctx context.Context, event *gateway.MessageEvent) bool {
+	if !settings.SignalReactions.Get(gateway.SettingsContext(ctx)) {
+		return false
 	}
 	sender := ""
 	if event != nil && event.Source != nil && event.Source.UserID != nil {
 		sender = *event.Source.UserID
 	}
-	return !(sender != "" && !a.dmAllowFrom["*"] && !a.dmAllowFrom[sender]), nil
+	return sender == "" || a.dmAllowFrom["*"] || a.dmAllowFrom[sender]
 }
 
 // Reacts with eyes when processing of an event begins
 func (a *SignalAdapter) OnProcessingStart(ctx context.Context, event *gateway.MessageEvent) error {
-	enabled, err := a.reactionsEnabled(ctx, event)
-	if err != nil || !enabled {
-		return err
+	if !a.reactionsEnabled(ctx, event) {
+		return nil
 	}
 	author, timestamp, ok := extractReactionTarget(event)
 	if !ok {
 		return nil
 	}
-	_, err = a.sendReaction(ctx, event.Source.ChatID, "👀", author, timestamp)
+	_, err := a.sendReaction(ctx, event.Source.ChatID, "👀", author, timestamp)
 	return err
 }
 
@@ -751,9 +746,8 @@ func (a *SignalAdapter) OnProcessingComplete(ctx context.Context, event *gateway
 	if outcome == gateway.ProcessingCancelled {
 		return nil
 	}
-	enabled, err := a.reactionsEnabled(ctx, event)
-	if err != nil || !enabled {
-		return err
+	if !a.reactionsEnabled(ctx, event) {
+		return nil
 	}
 	author, timestamp, ok := extractReactionTarget(event)
 	if !ok {
@@ -763,9 +757,10 @@ func (a *SignalAdapter) OnProcessingComplete(ctx context.Context, event *gateway
 		return err
 	}
 	if emoji := outcomeReaction[outcome]; emoji != "" {
-		_, err = a.sendReaction(ctx, event.Source.ChatID, emoji, author, timestamp)
+		_, err := a.sendReaction(ctx, event.Source.ChatID, emoji, author, timestamp)
+		return err
 	}
-	return err
+	return nil
 }
 
 // Name, type and id of a chat, the contact name looked up for direct chats

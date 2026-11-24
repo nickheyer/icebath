@@ -115,7 +115,7 @@ func (r *GatewayRunner) updatePaths(ctx context.Context) updatePaths {
 
 // Owning profile of a restart or update marker, nil for the default profile
 func markerProfile(data *pyjson.Object) *string {
-	if profile := pystr.Strip(truthyText(rowField(data, "profile"))); profile != "" {
+	if profile := strings.TrimSpace(truthyText(rowField(data, "profile"))); profile != "" {
 		return &profile
 	}
 	parts := strings.Split(truthyText(rowField(data, "session_key")), ":")
@@ -128,7 +128,7 @@ func markerProfile(data *pyjson.Object) *string {
 
 // Seconds since the marker timestamp, false when it carries no parseable stamp
 func markerAgeSeconds(data *pyjson.Object) (float64, bool) {
-	raw := pystr.Strip(truthyText(rowField(data, "timestamp")))
+	raw := strings.TrimSpace(truthyText(rowField(data, "timestamp")))
 	if raw == "" {
 		return 0, false
 	}
@@ -266,7 +266,7 @@ func updateExitCode(paths updatePaths) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" {
 		text = "1"
 	}
@@ -291,7 +291,7 @@ func readUpdateOutputSince(path string, offset int) (string, int) {
 
 // Sends buffered update output as fenced chunks that fit message limits
 func (r *GatewayRunner) sendUpdateOutput(ctx context.Context, target *updateTarget, text string) {
-	clean := []rune(pystr.Strip(tools.StripANSI(text)))
+	clean := []rune(strings.TrimSpace(tools.StripANSI(text)))
 	if len(clean) == 0 {
 		return
 	}
@@ -350,7 +350,7 @@ func (r *GatewayRunner) watchUpdateProgress(ctx context.Context, pollInterval, s
 	flush := func() {
 		text := buffer
 		buffer = ""
-		if pystr.Strip(text) != "" {
+		if strings.TrimSpace(text) != "" {
 			lastStream = time.Now()
 			r.sendUpdateOutput(ctx, target, text)
 		}
@@ -372,7 +372,7 @@ func (r *GatewayRunner) watchUpdateProgress(ctx context.Context, pollInterval, s
 			return r.clearUpdateMarkers(paths, sessionKey)
 		}
 		readNew()
-		if pystr.Strip(buffer) != "" && time.Since(lastStream) >= streamInterval {
+		if strings.TrimSpace(buffer) != "" && time.Since(lastStream) >= streamInterval {
 			flush()
 		}
 		promptPending := false
@@ -530,7 +530,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 	if pyrepr.Truthy(chatID) {
 		chat := pyrepr.Str(chatID)
 		metadata := r.pendingMarkerMetadata(platform, chat, pending, adapter)
-		output = pystr.Strip(tools.StripANSI(output))
+		output = strings.TrimSpace(tools.StripANSI(output))
 		var msg string
 		if code.Sign() == 0 {
 			msg = i18n.T(ctx, "gateway.update.finished_success", "", nil)

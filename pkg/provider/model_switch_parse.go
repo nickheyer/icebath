@@ -7,8 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // ModelSwitchResult is the outcome of one model switch attempt
@@ -101,25 +100,10 @@ func ResolvePersistBehavior(ctx context.Context, isGlobal, isSession, isOnce boo
 	if isGlobal {
 		return true
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return false
+	if settings.Model.Get(ctx) == "" && settings.ModelProvider.Get(ctx) == "" {
+		return true
 	}
-	modelCfg := tree["model"]
-	if m, ok := modelCfg.(map[string]any); ok {
-		if !(pyTruthy(m["default"]) || pyTruthy(m["provider"])) {
-			return true
-		}
-		if pyTruthy(m["persist_switch_by_default"]) {
-			return true
-		}
-		if explicitProvider != "" {
-			return false
-		}
-		return false
-	}
-	return !pyTruthy(modelCfg)
+	return settings.ModelPersistSwitchByDefault.Get(ctx)
 }
 
 // Error codes a model command request can carry

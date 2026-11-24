@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -60,7 +59,7 @@ func isRefCapable(name string) bool {
 // Picks the sprite image provider, the env override, prefer, the active one, then the first available
 func ResolveProvider(ctx context.Context, env *tools.Env, requireReferences bool, prefer string) (*SpriteProvider, error) {
 	discoverImagePlugins(ctx)
-	forced := pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_PET_IMAGE_PROVIDER")))
+	forced := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_PET_IMAGE_PROVIDER")))
 	for _, name := range []string{forced, prefer} {
 		if isRefCapable(name) {
 			if chosen := availableProvider(ctx, name); chosen != nil {
@@ -106,7 +105,7 @@ func saveLocal(ctx context.Context, env *tools.Env, ref, prefix string) (string,
 
 // Whether a provider error is about the transparent background flag
 func rejectedBackground(err string) bool {
-	lowered := pystr.Lower(err)
+	lowered := strings.ToLower(err)
 	return strings.Contains(lowered, "background") && (strings.Contains(lowered, "not supported") || strings.Contains(lowered, "transparent"))
 }
 

@@ -14,7 +14,8 @@ var AgentBotModeProtocol = Register(&Bool{Meta: Meta{Key: "agent.bot_mode_protoc
 var AgentBudgetWarningRatio = Register(&Float{Meta: Meta{Key: "agent.budget_warning_ratio", Label: "Budget warning point", Short: "Warns the agent when this share of its turns is used.", Help: "A number between 0 and 1, such as 0.8 for 80 percent. Other values turn the warning off.", Group: GroupAgent, Order: 1010, Advanced: true, Apply: NewSession}, Null: "no warning"})
 
 // Whether the agent switches to coding guidance in code folders
-var AgentCodingContext = Register(&Enum{Meta: Meta{Key: "agent.coding_context", Label: "Coding mode", Short: "Whether the agent switches to coding guidance in code folders.", Group: GroupAgent, Order: 1020, Advanced: true, Apply: NewSession}, Default: "auto", Values: []Choice{{Value: "auto", Label: "Auto", Meaning: "Use coding guidance inside code projects."}, {Value: "focus", Label: "Focus", Meaning: "Lean coding guidance in code projects."}, {Value: "on", Label: "Always", Meaning: "Always use coding guidance."}, {Value: "off", Label: "Never", Meaning: "Never use coding guidance."}}})
+var AgentCodingContext = Register(&Enum{Meta: Meta{Key: "agent.coding_context", Label: "Coding mode", Short: "Whether the agent switches to coding guidance in code folders.", Group: GroupAgent, Order: 1020, Advanced: true, Apply: NewSession}, Default: "auto", Values: []Choice{{Value: "auto", Label: "Auto", Meaning: "Use coding guidance inside code projects."}, {Value: "focus", Label: "Focus", Meaning: "Lean coding guidance in code projects."}, {Value: "on", Label: "Always", Meaning: "Always use coding guidance."}, {Value: "off", Label: "Never", Meaning: "Never use coding guidance."}},
+	Also: map[string]string{"strict": "focus", "lean": "focus", "true": "on", "yes": "on", "1": "on", "always": "on", "false": "off", "no": "off", "0": "off", "never": "off"}})
 
 // Spend in dollars above which empty replies are not retried
 var AgentEmptyResponseGuardCostThresholdUsd = Register(&Float{Meta: Meta{Key: "agent.empty_response_guard.cost_threshold_usd", Label: "Retry cost limit", Short: "Spend in dollars above which empty replies are not retried.", Help: "Must be above zero or the built-in value is used.", Group: GroupAgent, Order: 1030, Advanced: true, Apply: NewSession}, Default: 0.25})
@@ -92,7 +93,7 @@ var CompressionContextTotalCeilingSeconds = Register(&Duration{Meta: Meta{Key: "
 var CompressionHygieneFailureCooldownSeconds = Register(&Duration{Meta: Meta{Key: "compression.hygiene_failure_cooldown_seconds", Label: "Cleanup retry pause", Short: "Wait before retrying a failed automatic cleanup of a long chat.", Group: GroupAgent, Order: 1270, Advanced: true}, Default: 5 * time.Minute})
 
 // Message count that forces a cleanup of a long chat
-var CompressionHygieneHardMessageLimit = Register(&Int{Meta: Meta{Key: "compression.hygiene_hard_message_limit", Label: "Cleanup message limit", Short: "Message count that forces a cleanup of a long chat.", Group: GroupAgent, Order: 1280, Advanced: true}, Default: 5000, Min: at(1), Unit: "messages"})
+var CompressionHygieneHardMessageLimit = Register(&Int{Meta: Meta{Key: "compression.hygiene_hard_message_limit", Label: "Cleanup message limit", Short: "Message count that forces a cleanup of a long chat.", Group: GroupAgent, Order: 1280, Advanced: true}, Default: 5000, Min: at(1), Unit: "messages", DefaultBelow: true})
 
 // Longest a new message waits while a chat is being cleaned up
 var CompressionHygieneMaxTurnHoldSeconds = Register(&Duration{Meta: Meta{Key: "compression.hygiene_max_turn_hold_seconds", Label: "Cleanup hold time", Short: "Longest a new message waits while a chat is being cleaned up.", Group: GroupAgent, Order: 1290, Advanced: true}, Default: 10 * time.Second})
@@ -104,13 +105,13 @@ var CompressionHygieneTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "compr
 var CompressionHygieneTotalCeilingSeconds = Register(&Duration{Meta: Meta{Key: "compression.hygiene_total_ceiling_seconds", Label: "Cleanup time limit", Short: "Longest a whole automatic cleanup may take.", Group: GroupAgent, Order: 1310, Advanced: true}, Default: 10 * time.Minute})
 
 // Compresses a chat after it has sat idle this long
-var CompressionIdleCompactAfterSeconds = Register(&Duration{Meta: Meta{Key: "compression.idle_compact_after_seconds", Label: "Compact when idle", Short: "Compresses a chat after it has sat idle this long.", Help: "Zero turns it off.", Group: GroupAgent, Order: 1320, Advanced: true}, Default: 0})
+var CompressionIdleCompactAfterSeconds = Register(&Duration{Meta: Meta{Key: "compression.idle_compact_after_seconds", Label: "Compact when idle", Short: "Compresses a chat after it has sat idle this long.", Help: "Zero turns it off.", Group: GroupAgent, Order: 1320, Advanced: true}, Default: 0, Min: at(time.Duration(0))})
 
 // Keeps the same session when old messages are summarised
 var CompressionInPlace = Register(&Bool{Meta: Meta{Key: "compression.in_place", Label: "Compress in place", Short: "Keeps the same session when old messages are summarised.", Group: GroupAgent, Order: 1330, Advanced: true}, Default: true})
 
 // How many times a failed summary is retried
-var CompressionMaxAttempts = Register(&Int{Meta: Meta{Key: "compression.max_attempts", Label: "Summary attempts", Short: "How many times a failed summary is retried.", Help: "Between 1 and 10.", Group: GroupAgent, Order: 1340, Advanced: true}, Default: 3, Min: at(1), Max: at(10)})
+var CompressionMaxAttempts = Register(&Int{Meta: Meta{Key: "compression.max_attempts", Label: "Summary attempts", Short: "How many times a failed summary is retried.", Help: "Between 1 and 10.", Group: GroupAgent, Order: 1340, Advanced: true}, Default: 3, Min: at(1), Max: at(10), DefaultBelow: true})
 
 // Trims old tool output a little at a time instead of all at once
 var CompressionMicroCompact = Register(&Bool{Meta: Meta{Key: "compression.micro_compact", Label: "Micro compaction", Short: "Trims old tool output a little at a time instead of all at once.", Group: GroupAgent, Order: 1350, Advanced: true}, Default: false})
@@ -134,7 +135,7 @@ var CompressionPrepareAhead = Register(&Bool{Meta: Meta{Key: "compression.prepar
 var CompressionProactivePruneMinReclaimTokens = Register(&Int{Meta: Meta{Key: "compression.proactive_prune_min_reclaim_tokens", Label: "Prune minimum gain", Short: "Least tokens a trim must free to be worth doing.", Group: GroupAgent, Order: 1410, Advanced: true}, Default: 4096, Min: at(0), Unit: "tokens"})
 
 // Tool output shorter than this is never trimmed
-var CompressionProactivePruneMinResultChars = Register(&Int{Meta: Meta{Key: "compression.proactive_prune_min_result_chars", Label: "Prune result size", Short: "Tool output shorter than this is never trimmed.", Group: GroupAgent, Order: 1420, Advanced: true}, Default: 8000, Unit: "chars"})
+var CompressionProactivePruneMinResultChars = Register(&Int{Meta: Meta{Key: "compression.proactive_prune_min_result_chars", Label: "Prune result size", Short: "Tool output shorter than this is never trimmed.", Group: GroupAgent, Order: 1420, Advanced: true}, Default: 8000, Min: at(0), Unit: "chars"})
 
 // Token size at which old tool output is trimmed early
 var CompressionProactivePruneTokens = Register(&Int{Meta: Meta{Key: "compression.proactive_prune_tokens", Label: "Early trim size", Short: "Token size at which old tool output is trimmed early.", Help: "Zero turns early trimming off.", Group: GroupAgent, Order: 1430, Advanced: true}, Default: 0, Min: at(0), Unit: "tokens"})
@@ -250,11 +251,38 @@ var KanbanAutoPromoteChildren = Register(&Bool{Meta: Meta{Key: "kanban.auto_prom
 // Follows a task for you when you create it
 var KanbanAutoSubscribeOnCreate = Register(&Bool{Meta: Meta{Key: "kanban.auto_subscribe_on_create", Label: "Follow new tasks", Short: "Follows a task for you when you create it.", Group: GroupAgent, Order: 1800, Advanced: true}, Default: true})
 
+// How long a board database call waits while another holds the lock
+var KanbanBusyTimeoutMs = Register(&Duration{Meta: Meta{Key: "kanban.busy_timeout_ms", Label: "Board lock wait", Short: "How long a board database call waits while another holds the lock.", Group: GroupAgent, Order: 1802, Advanced: true, Env: "ICEBATH_KANBAN_BUSY_TIMEOUT_MS"}, Default: 120 * time.Second, Unit: time.Millisecond, Min: at(time.Millisecond)})
+
+// How long a worker's claim on a task lasts before the worker must renew it
+var KanbanClaimTtlSeconds = Register(&Duration{Meta: Meta{Key: "kanban.claim_ttl_seconds", Label: "Task claim time", Short: "How long a worker's claim on a task lasts before it must renew it.", Group: GroupAgent, Order: 1804, Advanced: true, Env: "ICEBATH_KANBAN_CLAIM_TTL_SECONDS"}, Default: 15 * time.Minute, Min: at(time.Second)})
+
+// How long a new worker gets before a missing process counts as a crash
+var KanbanCrashGraceSeconds = Register(&Duration{Meta: Meta{Key: "kanban.crash_grace_seconds", Label: "Crash grace", Short: "How long a new worker gets before a missing process counts as a crash.", Help: "Zero counts it at once.", Group: GroupAgent, Order: 1806, Advanced: true, Env: "ICEBATH_KANBAN_CRASH_GRACE_SECONDS"}, Default: 30 * time.Second, Min: at(time.Duration(0))})
+
 // Profile that takes tasks nobody was assigned
 var KanbanDefaultAssignee = Register(&String{Meta: Meta{Key: "kanban.default_assignee", Label: "Default assignee", Short: "Profile that takes tasks nobody was assigned.", Group: GroupAgent, Order: 1810, Advanced: true}, Default: ""})
 
-// Custom limits for board health warnings
-var KanbanDiagnostics = Register(&String{Meta: Meta{Key: "kanban.diagnostics", Label: "Board health limits", Short: "Custom limits for board health warnings.", Help: "Leave unset for the built-in limits.", Group: GroupAgent, Order: 1820, Advanced: true}, Null: "the built-in thresholds"})
+// Blocks after an unblock that raise a board health warning
+var KanbanDiagnosticsBlockCycleThreshold = Register(&Int{Meta: Meta{Key: "kanban.diagnostics.block_cycle_threshold", Label: "Block cycle warning", Short: "Times a task is blocked again after an unblock before a warning.", Group: GroupAgent, Order: 1812, Advanced: true}, Default: 3, Min: at(1), DefaultBelow: true})
+
+// Time span the repeated blocks of one task are counted in
+var KanbanDiagnosticsBlockCycleWindowSeconds = Register(&Duration{Meta: Meta{Key: "kanban.diagnostics.block_cycle_window_seconds", Label: "Block cycle window", Short: "Time span in which repeated blocks of one task are counted.", Group: GroupAgent, Order: 1814, Advanced: true}, Default: 24 * time.Hour, Min: at(time.Second), DefaultBelow: true})
+
+// How long a task may stay blocked with no reply before a board health warning
+var KanbanDiagnosticsBlockedStaleHours = Register(&Duration{Meta: Meta{Key: "kanban.diagnostics.blocked_stale_hours", Label: "Blocked task warning", Short: "How long a task may stay blocked with no reply before a warning.", Group: GroupAgent, Order: 1816, Advanced: true}, Default: 24 * time.Hour, Unit: time.Hour, Min: at(time.Duration(0)), DefaultBelow: true})
+
+// Crashed runs in a row that raise a board health warning
+var KanbanDiagnosticsCrashThreshold = Register(&Int{Meta: Meta{Key: "kanban.diagnostics.crash_threshold", Label: "Crash warning", Short: "Crashed runs in a row before a task gets a crash warning.", Group: GroupAgent, Order: 1818, Advanced: true}, Default: 2, Min: at(1), DefaultBelow: true})
+
+// Failed runs in a row that raise a board health warning
+var KanbanDiagnosticsFailureThreshold = Register(&Int{Meta: Meta{Key: "kanban.diagnostics.failure_threshold", Label: "Failure warning", Short: "Failed runs in a row before a task gets a failure warning.", Group: GroupAgent, Order: 1820, Advanced: true}, Min: at(1), Null: "the task failure limit", DefaultBelow: true})
+
+// Time past an expired claim before a running task with no worker gets a board health warning
+var KanbanDiagnosticsStaleRunningGraceSeconds = Register(&Duration{Meta: Meta{Key: "kanban.diagnostics.stale_running_grace_seconds", Label: "Lost worker warning", Short: "Time past an expired claim before a task with no worker is flagged.", Group: GroupAgent, Order: 1822, Advanced: true}, Default: time.Hour, Min: at(time.Duration(0)), DefaultBelow: true})
+
+// How long an assigned ready task may wait unclaimed before a board health warning
+var KanbanDiagnosticsStrandedThresholdSeconds = Register(&Duration{Meta: Meta{Key: "kanban.diagnostics.stranded_threshold_seconds", Label: "Waiting task warning", Short: "How long an assigned ready task may wait unclaimed before a warning.", Group: GroupAgent, Order: 1824, Advanced: true}, Default: 30 * time.Minute, Min: at(time.Duration(0)), DefaultBelow: true})
 
 // Starts board tasks from the background service
 var KanbanDispatchInGateway = Register(&Bool{Meta: Meta{Key: "kanban.dispatch_in_gateway", Label: "Board in service", Short: "Starts board tasks from the background service.", Group: GroupAgent, Order: 1830, Advanced: true, Apply: Restart}, Default: true})
@@ -272,7 +300,7 @@ var KanbanDispatchStaleTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "kanb
 var KanbanDoneSubRetentionDays = Register(&Duration{Meta: Meta{Key: "kanban.done_sub_retention_days", Label: "Keep done follows", Short: "How long follows on finished tasks are kept.", Group: GroupAgent, Order: 1870, Advanced: true}, Default: 30 * 24 * time.Hour, Unit: 24 * time.Hour})
 
 // Failures after which a task stops being retried
-var KanbanFailureLimit = Register(&Int{Meta: Meta{Key: "kanban.failure_limit", Label: "Task failure limit", Short: "Failures after which a task stops being retried.", Group: GroupAgent, Order: 1880, Advanced: true}, Default: 2, Min: at(1)})
+var KanbanFailureLimit = Register(&Int{Meta: Meta{Key: "kanban.failure_limit", Label: "Task failure limit", Short: "Failures after which a task stops being retried.", Group: GroupAgent, Order: 1880, Advanced: true}, Default: 2, Min: at(1), DefaultBelow: true})
 
 // Most board tasks running at the same time
 var KanbanMaxInProgress = Register(&Int{Meta: Meta{Key: "kanban.max_in_progress", Label: "Tasks at once", Short: "Most board tasks running at the same time.", Help: "Must be at least 1.", Group: GroupAgent, Order: 1890, Advanced: true}, Null: "sized to free memory"})
@@ -289,17 +317,59 @@ var KanbanNotifyInGateway = Register(&Bool{Meta: Meta{Key: "kanban.notify_in_gat
 // Profile that plans and splits board tasks
 var KanbanOrchestratorProfile = Register(&String{Meta: Meta{Key: "kanban.orchestrator_profile", Label: "Planner profile", Short: "Profile that plans and splits board tasks.", Group: GroupAgent, Order: 1930, Advanced: true}, Default: ""})
 
+// How long a task stopped by a rate limit waits before it starts again
+var KanbanRateLimitCooldownSeconds = Register(&Duration{Meta: Meta{Key: "kanban.rate_limit_cooldown_seconds", Label: "Rate limit pause", Short: "How long a task stopped by a rate limit waits before it starts again.", Help: "Zero starts it on the next check.", Group: GroupAgent, Order: 1935, Advanced: true, Env: "ICEBATH_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS"}, Default: 5 * time.Minute, Min: at(time.Duration(0))})
+
 // Recovers running tasks whose worker has vanished
 var KanbanReconcileOrphans = Register(&Bool{Meta: Meta{Key: "kanban.reconcile_orphans", Label: "Recover lost tasks", Short: "Recovers running tasks whose worker has vanished.", Group: GroupAgent, Order: 1940, Advanced: true}, Default: true})
 
 // Starts review tasks automatically
 var KanbanReviewDispatch = Register(&Bool{Meta: Meta{Key: "kanban.review_dispatch", Label: "Auto start reviews", Short: "Starts review tasks automatically.", Group: GroupAgent, Order: 1950, Advanced: true}, Default: true})
 
+// Reminds a task worker to report its result before it stops
+var KanbanStopNudge = Register(&Bool{Meta: Meta{Key: "kanban.stop_nudge", Label: "Finish task reminder", Short: "Reminds a task worker to mark its task done before it stops.", Group: GroupAgent, Order: 1955, Advanced: true, Env: "ICEBATH_KANBAN_STOP_NUDGE"}, Default: true})
+
+// Most tokens the triage step may write for one task spec
+var KanbanSpecifyMaxTokens = Register(&Int{Meta: Meta{Key: "kanban.specify_max_tokens", Label: "Spec reply limit", Short: "Most tokens the triage step may write for one task spec.", Group: GroupAgent, Order: 1955, Advanced: true, Env: "ICEBATH_KANBAN_SPECIFY_MAX_TOKENS"}, Default: 6000, Min: at(1500), Unit: "tokens"})
+
+// Words that switch turn retries off
+var turnRecoveryOff = map[string]bool{"0": true, "false": true, "no": true, "off": true}
+
+// Times a board worker retries a turn that failed on a passing error
+var KanbanTurnRecovery = Register(&Enum{Meta: Meta{Key: "kanban.turn_recovery", Label: "Turn retries", Short: "Times a board worker retries a turn that failed on a passing error.", Help: "Off never retries; more than 10 counts as 10.", Group: GroupAgent, Order: 1957, Advanced: true, Env: "ICEBATH_KANBAN_TURN_RECOVERY",
+	Validate: func(v any) error {
+		w, _ := v.(string)
+		w = strings.ToLower(strings.TrimSpace(w))
+		if turnRecoveryOff[w] {
+			return nil
+		}
+		if _, err := strconv.Atoi(w); err == nil || errors.Is(err, strconv.ErrRange) {
+			return nil
+		}
+		return errors.New("takes off or a number of retries")
+	}}, Default: "3", Values: []Choice{{Value: "off", Label: "Off", Meaning: "A failed turn is not retried."}}, Open: true})
+
+// Retries a kanban.turn_recovery word allows, 0 for off, clamped to 0 through 10
+func TurnRecoveryAttempts(word string) int {
+	w := strings.ToLower(strings.TrimSpace(word))
+	if turnRecoveryOff[w] {
+		return 0
+	}
+	n, err := strconv.Atoi(w)
+	switch {
+	case errors.Is(err, strconv.ErrRange) && !strings.HasPrefix(w, "-"):
+		return 10
+	case err != nil:
+		return 0
+	}
+	return max(0, min(10, n))
+}
+
 // Old task log files kept after a log rolls over
-var KanbanWorkerLogBackupCount = Register(&Int{Meta: Meta{Key: "kanban.worker_log_backup_count", Label: "Task log copies", Short: "Old task log files kept after a log rolls over.", Group: GroupAgent, Order: 1960, Advanced: true}, Default: 1, Min: at(0)})
+var KanbanWorkerLogBackupCount = Register(&Int{Meta: Meta{Key: "kanban.worker_log_backup_count", Label: "Task log copies", Short: "Old task log files kept after a log rolls over.", Group: GroupAgent, Order: 1960, Advanced: true}, Default: 1, Min: at(0), DefaultBelow: true})
 
 // Size at which a task log rolls over
-var KanbanWorkerLogRotateBytes = Register(&Int{Meta: Meta{Key: "kanban.worker_log_rotate_bytes", Label: "Task log size", Short: "Size at which a task log rolls over.", Group: GroupAgent, Order: 1970, Advanced: true}, Default: 2097152, Min: at(1), Unit: "bytes"})
+var KanbanWorkerLogRotateBytes = Register(&Int{Meta: Meta{Key: "kanban.worker_log_rotate_bytes", Label: "Task log size", Short: "Size at which a task log rolls over.", Group: GroupAgent, Order: 1970, Advanced: true}, Default: 2097152, Min: at(1), Unit: "bytes", DefaultBelow: true})
 
 // Most runs one loop may make
 var LoopsMaxTicks = Register(&Int{Meta: Meta{Key: "loops.max_ticks", Label: "Loop run limit", Short: "Most runs one loop may make.", Help: "Zero means no limit.", Group: GroupAgent, Order: 1980, Advanced: true}, Default: 100, Min: at(0)})
@@ -350,6 +420,7 @@ func moaSlotFields(what string, withSwitch bool) []Entry {
 // Named groups of models that answer together, with one combining model
 var MoaPresets = Register(&Map{Meta: Meta{Key: "moa.presets", Label: "Mixture presets", Short: "Named groups of models that answer together, with one combining model.", Group: GroupAgent, Order: 2040, Advanced: true},
 	Default: map[string]any{"default": map[string]any{"aggregator": map[string]any{"model": "anthropic/claude-opus-4.8", "provider": "openrouter"}, "enabled": true, "reference_models": []any{map[string]any{"model": "gpt-5.5", "provider": "openai-codex"}, map[string]any{"model": "deepseek/deepseek-v4-pro", "provider": "openrouter"}}}},
+	Replace: true,
 	Value: &Object{Meta: Meta{Key: "moa.presets.*", Label: "Mixture preset", Short: "Models that answer together and the model that combines them."}, Fields: []Entry{
 		&Bool{Meta: Meta{Key: "enabled", Label: "In use", Short: "Whether the preset can be picked."}, Default: true},
 		&List{Meta: Meta{Key: "reference_models", Label: "Answering models", Short: "Models that each answer first, each with a provider and a model."},
@@ -385,11 +456,14 @@ var MoaTraceDir = Register(&String{Meta: Meta{Key: "moa.trace_dir", Label: "Trac
 // Custom personalities you can switch to, by name
 var Personalities = Register(&Map{Meta: Meta{Key: "personalities", Label: "Personalities", Short: "Custom personalities you can switch to, by name.", Group: GroupAgent, Order: 2080, Advanced: true}})
 
+// Your own instructions added to every conversation while no personality is chosen
+var AgentSystemPrompt = Register(&String{Meta: Meta{Key: "agent.system_prompt", Label: "Own instructions", Short: "Your own instructions added to every conversation.", Help: "A chosen personality takes their place.", Group: GroupAgent, Order: 2085, Advanced: true, Apply: NewSession}, Default: ""})
+
 // JSON file of example messages added to every conversation
-var PrefillMessagesFile = Register(&String{Meta: Meta{Key: "prefill_messages_file", Label: "Prefill messages file", Short: "JSON file of example messages added to every conversation.", Help: "A relative path starts from your profile folder.", Group: GroupAgent, Order: 2090, Advanced: true}, Default: ""})
+var PrefillMessagesFile = Register(&String{Meta: Meta{Key: "prefill_messages_file", Label: "Prefill messages file", Short: "JSON file of example messages added to every conversation.", Help: "A relative path starts from your profile folder.", Group: GroupAgent, Order: 2090, Advanced: true, Env: "ICEBATH_PREFILL_MESSAGES_FILE"}, Default: ""})
 
 // Time zone for dates, times and schedules, such as Europe/Berlin
-var Timezone = Register(&String{Meta: Meta{Key: "timezone", Label: "Timezone", Short: "Time zone for dates, times and schedules, such as Europe/Berlin.", Help: "Leave empty to use this computer's time zone.", Group: GroupAgent, Order: 2100, Advanced: true}, Default: ""})
+var Timezone = Register(&String{Meta: Meta{Key: "timezone", Label: "Timezone", Short: "Time zone for dates, times and schedules, such as Europe/Berlin.", Help: "Leave empty to use this computer's time zone.", Group: GroupAgent, Order: 2100, Advanced: true, Env: "ICEBATH_TIMEZONE"}, Default: ""})
 
 // Stops after the same failing call repeats this many times
 var ToolLoopGuardrailsHardStopAfterExactFailure = Register(&Int{Meta: Meta{Key: "tool_loop_guardrails.hard_stop_after.exact_failure", Label: "Stop: same failure", Short: "Stops after the same failing call repeats this many times.", Group: GroupAgent, Order: 2110, Advanced: true}, Default: 5, Min: at(1)})

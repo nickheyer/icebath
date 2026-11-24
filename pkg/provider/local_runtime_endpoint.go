@@ -210,7 +210,7 @@ func ResolveLlamacppEndpoint(ctx context.Context, cfg map[string]any, h string, 
 	if ok {
 		return &LlamacppEndpoint{BaseURL: baseURL, APIKey: endpointAPIKeyText(apiKey)}, nil
 	}
-	ports, err := endpointDetectPorts(cfg)
+	ports, err := endpointDetectPorts(endpointConfig(cfg, h))
 	if err != nil {
 		return nil, err
 	}
@@ -249,9 +249,9 @@ func SwapDetectServerForTests(fn func([]int) (*DetectedServer, error)) func() {
 	return func() { detectServerFn = prev }
 }
 
-// Endpoint with the default eight second boot wait, any resolution error read as no endpoint
-func resolveLlamacppEndpoint(ctx context.Context, cfg map[string]any, h string) (string, string, bool) {
-	return resolveLlamacppEndpointWithin(ctx, cfg, h, 8*time.Second)
+// Endpoint of home h's local runtime settings with the default eight second boot wait, any resolution error read as no endpoint
+func resolveLlamacppEndpoint(ctx context.Context, h string) (string, string, bool) {
+	return resolveLlamacppEndpointWithin(ctx, nil, h, 8*time.Second)
 }
 
 // Endpoint waiting up to waitForBoot, any resolution error silently read as no endpoint as the provider callers do
@@ -278,7 +278,7 @@ func endpointConfig(cfg map[string]any, h string) map[string]any {
 	if cfg != nil {
 		return cfg
 	}
-	return loadConfigTree(h)
+	return localRuntimeSettings(h)
 }
 
 // Starts the managed server in the background under the caller's profile scope unless a kick is running

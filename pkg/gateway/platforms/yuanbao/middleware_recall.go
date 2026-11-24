@@ -1,6 +1,8 @@
 package yuanbao
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -131,7 +133,7 @@ func (m *RecallGuardMiddleware) handleRecall(ctx context.Context, ic *InboundCon
 	if err != nil {
 		return err
 	}
-	groupCode, fromAccount = pystr.Strip(groupCode), pystr.Strip(fromAccount)
+	groupCode, fromAccount = strings.TrimSpace(groupCode), strings.TrimSpace(fromAccount)
 	entries, err := iterOf(seqList)
 	if err != nil {
 		return err

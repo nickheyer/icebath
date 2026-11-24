@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // GitHub App client id of VS Code Copilot, minting ghu_ tokens the Copilot API exchanges
@@ -187,7 +186,7 @@ func cpFloat(v any) (float64, bool) {
 	case int:
 		return float64(n), true
 	case string:
-		f, err := strconv.ParseFloat(pystr.Strip(strings.ReplaceAll(n, "_", "")), 64)
+		f, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(n, "_", "")), 64)
 		return f, err == nil
 	}
 	return 0, false
@@ -313,7 +312,7 @@ func copilotGetJSON(ctx context.Context, rawURL string, timeout time.Duration, h
 
 // Usable token or the reason it cannot reach the Copilot API
 func validateCopilotToken(token string) (bool, string) {
-	token = pystr.Strip(token)
+	token = strings.TrimSpace(token)
 	if token == "" {
 		return false, "Empty token"
 	}
@@ -339,7 +338,7 @@ func resolveCopilotToken(ctx context.Context) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
-		val := pystr.Strip(raw)
+		val := strings.TrimSpace(raw)
 		if val == "" {
 			continue
 		}
@@ -622,7 +621,7 @@ func exchangeCopilotTokenLocked(ctx context.Context, raw, fp string, timeout tim
 	}
 	baseURL := ""
 	if endpoints := cpGetOr(data, "endpoints", nil); cpIsDict(endpoints) {
-		baseURL = strings.TrimRight(pystr.Strip(cpOrStr(cpGetOr(endpoints, "api", nil))), "/")
+		baseURL = strings.TrimRight(strings.TrimSpace(cpOrStr(cpGetOr(endpoints, "api", nil))), "/")
 	}
 	if baseURL == "" {
 		baseURL = deriveCopilotBaseURLFromProxyEp(apiToken)
@@ -711,15 +710,15 @@ func copilotRefreshExchangedToken(ctx context.Context) (string, string, bool, er
 		pkgLog().Debug(fmt.Sprintf("Copilot credential refresh failed: %v", err))
 		return "", "", false, nil
 	}
-	newToken = pystr.Strip(newToken)
+	newToken = strings.TrimSpace(newToken)
 	enterpriseBase := ""
 	if newToken == "" {
 		return "", "", false, nil
 	}
 	evictCachedExchangedToken(ctx, newToken)
 	apiToken, exchangedBase := getCopilotAPIToken(ctx, newToken)
-	if pystr.Strip(apiToken) != "" {
-		newToken, enterpriseBase = pystr.Strip(apiToken), exchangedBase
+	if strings.TrimSpace(apiToken) != "" {
+		newToken, enterpriseBase = strings.TrimSpace(apiToken), exchangedBase
 	}
 	pkgLog().Info("Copilot credentials refreshed from " + tokenSource)
 	return newToken, enterpriseBase, true, nil
@@ -732,13 +731,13 @@ func copilotReexchangeStaleToken(ctx context.Context) (string, string, bool, err
 		pkgLog().Debug(fmt.Sprintf("Copilot stale-credential recovery failed: %v", err))
 		return "", "", false, nil
 	}
-	if pystr.Strip(rawToken) == "" {
+	if strings.TrimSpace(rawToken) == "" {
 		return "", "", false, nil
 	}
-	rawToken = pystr.Strip(rawToken)
+	rawToken = strings.TrimSpace(rawToken)
 	evictCachedExchangedToken(ctx, rawToken)
 	apiToken, enterpriseBase := getCopilotAPIToken(ctx, rawToken)
-	if pystr.Strip(apiToken) == "" {
+	if strings.TrimSpace(apiToken) == "" {
 		return "", "", false, nil
 	}
 	if apiToken == rawToken && enterpriseBase == "" {
@@ -747,7 +746,7 @@ func copilotReexchangeStaleToken(ctx context.Context) (string, string, bool, err
 		return "", "", false, nil
 	}
 	pkgLog().Info(fmt.Sprintf("Copilot credentials re-exchanged after stale-credential 400 (source=%s)", tokenSource))
-	return pystr.Strip(apiToken), enterpriseBase, true, nil
+	return strings.TrimSpace(apiToken), enterpriseBase, true, nil
 }
 
 // Drops only the in process JWT after an auxiliary 401 and exchanges again, failing when the exchange fails
@@ -756,7 +755,7 @@ func copilotRevalidateInMemoryToken(ctx context.Context) (string, string, bool, 
 	if err != nil {
 		return "", "", false, err
 	}
-	if pystr.Strip(rawToken) == "" {
+	if strings.TrimSpace(rawToken) == "" {
 		return "", "", false, nil
 	}
 	copilotStateMu.Lock()
@@ -802,7 +801,7 @@ func copilotRuntimeBaseURL(ctx context.Context, _ string, def, envURL string) st
 	}
 	if rawToken != "" && githubCallsAllowed(ctx) {
 		_, resolved := getCopilotAPIToken(ctx, rawToken)
-		if resolved = pystr.Strip(resolved); resolved != "" {
+		if resolved = strings.TrimSpace(resolved); resolved != "" {
 			baseURL = resolved
 		}
 	}
@@ -932,7 +931,7 @@ func copilotCLIAuthEvidence(ctx context.Context) (bool, string, bool) {
 			pkgLog().Debug(fmt.Sprintf("copilot-acp env token evidence check failed: %v", err))
 			return false, "", true
 		}
-		val := pystr.Strip(raw)
+		val := strings.TrimSpace(raw)
 		if valid, _ := validateCopilotToken(val); val != "" && valid {
 			return true, "env: " + envVar, true
 		}

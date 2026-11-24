@@ -30,7 +30,7 @@ var (
 	shouldUseOllamaNativeCatalogFn           func(ctx context.Context, provider, baseURL string, headers map[string]string) bool
 	getOllamaNativeHeadersFn                 func(ctx context.Context, baseURL string, apiKey any) map[string]string
 	fetchOllamaLocalModelsFn                 func(ctx context.Context, baseURL string, timeout time.Duration, headers map[string]string) ([]string, bool)
-	azureFoundryRuntimeFn                    func(ctx context.Context, normalized string, modelCfg map[string]any) (*Runtime, error)
+	azureFoundryRuntimeFn                    func(ctx context.Context, normalized string) (*Runtime, error)
 	azureProbeOpenAIModelsFn                 func(ctx context.Context, baseURL, apiKey string, tokenProvider func(context.Context) (string, error)) (bool, []string)
 	providerAuthStatusFn                     func(ctx context.Context, provider string) (bool, bool)
 	resolveCodexRuntimeCredentialsReadOnlyFn func(env PoolEnv) (map[string]any, error)
@@ -68,8 +68,8 @@ func bindModelsSeams() {
 	shouldUseOllamaNativeCatalogFn = shouldUseOllamaNativeCatalog
 	getOllamaNativeHeadersFn = getOllamaNativeHeaders
 	fetchOllamaLocalModelsFn = FetchOllamaLocalModels
-	azureFoundryRuntimeFn = func(ctx context.Context, normalized string, modelCfg map[string]any) (*Runtime, error) {
-		return modelsResolver(ctx).resolveAzureFoundryRuntime(normalized, modelCfg, "", nil, "", "")
+	azureFoundryRuntimeFn = func(ctx context.Context, normalized string) (*Runtime, error) {
+		return modelsResolver(ctx).resolveAzureFoundryRuntime(normalized, "", nil, "", "")
 	}
 	azureProbeOpenAIModelsFn = func(ctx context.Context, baseURL, apiKey string, tokenProvider func(context.Context) (string, error)) (bool, []string) {
 		return (&AzureDetector{}).probeOpenAIModels(ctx, baseURL, apiKey, tokenProvider)

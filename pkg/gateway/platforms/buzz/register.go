@@ -1,63 +1,27 @@
 package buzz
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Invalid owner attestation configuration, reported as a fatal config error
 type authTagError struct{ msg string }
 
 func (e *authTagError) Error() string { return e.msg }
-
-// Raw non secret setting: the setting a folded name moved to, else the profile's own secret scope then the extra inside a secondary profile, the process env otherwise
-func scopedPlatformSetting(ctx context.Context, envName string, extra map[string]any, key string) (any, error) {
-	if value, folded := gateway.FoldedEnvValue(ctx, envName); folded {
-		if value == "" {
-			return nil, nil
-		}
-		return value, nil
-	}
-	if gateway.ProfileScoped(ctx) {
-		val, found, err := gateway.LookupScopedSecret(ctx, envName, true)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			return val, nil
-		}
-		return extra[key], nil
-	}
-	if val, ok := os.LookupEnv(envName); ok {
-		return val, nil
-	}
-	return nil, nil
-}
-
-// Scoped setting with an explicit fallback to the extra value, then the default
-func settingOr(ctx context.Context, envName string, extra map[string]any, key string, def any) (any, error) {
-	raw, err := scopedPlatformSetting(ctx, envName, extra, key)
-	if err != nil || raw != nil {
-		return raw, err
-	}
-	if v, ok := extra[key]; ok {
-		return v, nil
-	}
-	return def, nil
-}
 
 // Text of a setting value, empty for nil
 func settingText(v any) string {
@@ -67,75 +31,54 @@ func settingText(v any) string {
 	return pyrepr.Str(v)
 }
 
-// Reply mode first, all or off, env over config and reply_in_thread false meaning off
-func replyToMode(ctx context.Context, cfg *gateway.PlatformConfig, extra map[string]any) (string, error) {
-	var modeEnv string
-	if value, folded := gateway.FoldedEnvValue(ctx, "BUZZ_REPLY_TO_MODE"); folded {
-		modeEnv = value
-	} else if gateway.ProfileScoped(ctx) {
-		v, err := getScopedSecret(ctx, "BUZZ_REPLY_TO_MODE", "")
+// Reply mode first, all or off from buzz.reply_to_mode, buzz.reply_in_thread off meaning off
+func replyToMode(ctx context.Context) string {
+	sctx := gateway.SettingsContext(ctx)
+	if !settings.BuzzReplyInThread.Get(sctx) {
+		return "off"
+	}
+	return settings.BuzzReplyToMode.Get(sctx)
+}
+
+// Relay URL from buzz.relay_url, stripped
+func configuredRelay(ctx context.Context) string {
+	return strings.TrimSpace(settings.BuzzRelayURL.Get(gateway.SettingsContext(ctx)))
+}
+
+// Channels the adapter watches from buzz.channels, blanks dropped
+func configuredChannels(ctx context.Context) []string {
+	var out []string
+	for _, c := range settings.BuzzChannels.Strings(gateway.SettingsContext(ctx)) {
+		if c = strings.TrimSpace(c); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// Home channel from the scoped BUZZ_HOME_CHANNEL, else the home_channel of the connection block, stripped
+func configuredHomeChannel(ctx context.Context, extra map[string]any) (string, error) {
+	var text string
+	if gateway.ProfileScoped(ctx) {
+		val, found, err := gateway.LookupScopedSecret(ctx, "BUZZ_HOME_CHANNEL", true)
 		if err != nil {
 			return "", err
 		}
-		modeEnv = v
+		if found {
+			text = val
+		}
 	} else {
-		modeEnv = os.Getenv("BUZZ_REPLY_TO_MODE")
+		text = os.Getenv("BUZZ_HOME_CHANNEL")
 	}
-	mode := modeEnv
-	if mode == "" && cfg != nil && pyrepr.Truthy(cfg.ReplyToMode) {
-		mode = pyrepr.Str(cfg.ReplyToMode)
-	}
-	if mode == "" {
-		mode = "first"
-	}
-	mode = strings.ToLower(pystr.Strip(mode))
-	rit, err := settingOr(ctx, "BUZZ_REPLY_IN_THREAD", extra, "reply_in_thread", nil)
-	if err != nil {
-		return "", err
-	}
-	if rit != nil && falsy(rit) {
-		return "off", nil
-	}
-	return mode, nil
-}
-
-// Relay URL from the scoped setting or the extra, stripped
-func configuredRelay(ctx context.Context, extra map[string]any) (string, error) {
-	raw, err := scopedPlatformSetting(ctx, "BUZZ_RELAY_URL", extra, "relay_url")
-	if err != nil {
-		return "", err
-	}
-	text := settingText(raw)
-	if text == "" {
-		text = settingText(extra["relay_url"])
-	}
-	return pystr.Strip(text), nil
-}
-
-// Home channel from the scoped setting or the extra, stripped
-func configuredHomeChannel(ctx context.Context, extra map[string]any) (string, error) {
-	raw, err := scopedPlatformSetting(ctx, "BUZZ_HOME_CHANNEL", extra, "home_channel")
-	if err != nil {
-		return "", err
-	}
-	text := settingText(raw)
-	if text == "" {
+	if strings.TrimSpace(text) == "" {
 		text = settingText(extra["home_channel"])
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
-// Resolved buzz binary from the scoped setting or the extra, empty when none exists
-func configuredCLIPath(ctx context.Context, extra map[string]any) (string, error) {
-	raw, err := scopedPlatformSetting(ctx, "BUZZ_CLI_PATH", extra, "cli_path")
-	if err != nil {
-		return "", err
-	}
-	configured := pystr.Strip(settingText(raw))
-	if configured == "" {
-		configured = settingText(extra["cli_path"])
-	}
-	return resolveCLIPath(configured), nil
+// Resolved buzz binary from buzz.cli_path, empty when none exists
+func configuredCLIPath(ctx context.Context) string {
+	return resolveCLIPath(strings.TrimSpace(settings.BuzzCliPath.Get(gateway.SettingsContext(ctx))))
 }
 
 // Validated NIP-OA owner attestation tag as compact JSON, empty when none is configured
@@ -144,8 +87,8 @@ func resolveAuthTag(ctx context.Context, extra map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var raw any = pystr.Strip(rawText)
-	if rawText = pystr.Strip(rawText); rawText == "" {
+	var raw any = strings.TrimSpace(rawText)
+	if rawText = strings.TrimSpace(rawText); rawText == "" {
 		key, err := getScopedSecret(ctx, "BUZZ_PRIVATE_KEY", "")
 		if err != nil {
 			return "", err
@@ -154,7 +97,7 @@ func resolveAuthTag(ctx context.Context, extra map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if pystr.Strip(key) != "" && file == "" {
+		if strings.TrimSpace(key) != "" && file == "" {
 			return "", nil
 		}
 		data, err := resolveCredentialsData(ctx, extra)
@@ -187,11 +130,7 @@ func profileBuzzExtra(ctx context.Context) map[string]any {
 	if err != nil || cfg == nil {
 		return map[string]any{}
 	}
-	var gatewayPlatforms any
-	if gw, ok := cfg["gateway"].(map[string]any); ok {
-		gatewayPlatforms = gw["platforms"]
-	}
-	section, _ := gateway.PlatformSection(cfg, "buzz", gatewayPlatforms)
+	section, _ := gateway.PlatformSection(cfg, "buzz")
 	buzz, ok := section.(map[string]any)
 	if !ok {
 		return map[string]any{}
@@ -208,63 +147,33 @@ func profileBuzzExtra(ctx context.Context) map[string]any {
 
 // Whether a relay URL and a resolvable key are configured for the current profile
 func checkRequirements(ctx context.Context) bool {
-	if gateway.ProfileScoped(ctx) {
-		extra := profileBuzzExtra(ctx)
-		relay, err := configuredRelay(ctx, extra)
-		if err != nil || relay == "" {
-			return false
-		}
-		key, err := resolvePrivateKey(ctx, extra)
-		return err == nil && key != ""
-	}
-	relay, err := getScopedSecret(ctx, "BUZZ_RELAY_URL", "")
-	if err != nil || pystr.Strip(relay) == "" {
+	if configuredRelay(ctx) == "" {
 		return false
 	}
-	key, err := resolvePrivateKey(ctx, nil)
+	var extra map[string]any
+	if gateway.ProfileScoped(ctx) {
+		extra = profileBuzzExtra(ctx)
+	}
+	key, err := resolvePrivateKey(ctx, extra)
 	return err == nil && key != ""
 }
 
-// Whether the platform config has a relay URL and a resolvable key
+// Whether the profile has a relay URL and the platform config a resolvable key
 func validateConfig(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error) {
+	if configuredRelay(ctx) == "" {
+		return false, nil
+	}
 	extra := map[string]any{}
 	if cfg != nil && cfg.Extra != nil {
 		extra = cfg.Extra
-	}
-	var relay string
-	if gateway.ProfileScoped(ctx) {
-		raw, err := scopedPlatformSetting(ctx, "BUZZ_RELAY_URL", extra, "relay_url")
-		if err != nil {
-			return false, err
-		}
-		if raw == nil {
-			raw = extra["relay_url"]
-		}
-		relay = settingText(raw)
-	} else {
-		v, err := getScopedSecret(ctx, "BUZZ_RELAY_URL", "")
-		if err != nil {
-			return false, err
-		}
-		relay = v
-		if relay == "" {
-			relay = settingText(extra["relay_url"])
-		}
-	}
-	if relay == "" {
-		return false, nil
 	}
 	key, err := resolvePrivateKey(ctx, extra)
 	return key != "", err
 }
 
-// Extra seeded from the profile env so env only setups show in gateway status, nil when unconfigured
+// Extra seeded for the gateway status so setups without a config block show there, nil when unconfigured
 func envEnablement(ctx context.Context) map[string]any {
-	relayRaw, err := getScopedSecret(ctx, "BUZZ_RELAY_URL", "")
-	if err != nil {
-		panic(err)
-	}
-	relay := pystr.Strip(relayRaw)
+	relay := configuredRelay(ctx)
 	if relay == "" {
 		return nil
 	}
@@ -273,36 +182,15 @@ func envEnablement(ctx context.Context) map[string]any {
 	} else if key == "" {
 		return nil
 	}
-	seed, err := gateway.SeedExtraFromEnv(ctx, []gateway.EnvSeedRow{
-		{Env: "BUZZ_CHANNELS", Key: "channels", Conv: func(v string) (any, error) {
-			out := []any{}
-			for _, c := range strings.Split(v, ",") {
-				if c = pystr.Strip(c); c != "" {
-					out = append(out, c)
-				}
-			}
-			return out, nil
-		}},
-		{Env: "BUZZ_POLL_INTERVAL", Key: "poll_interval", Conv: func(v string) (any, error) {
-			return strconv.ParseFloat(pystr.Strip(v), 64)
-		}},
-		{Env: "BUZZ_CLI_PATH", Key: "cli_path"},
-	}, "", "")
-	if err != nil {
-		panic(err)
-	}
 	homeDefault := ""
-	if chans, ok := seed["channels"].([]any); ok && len(chans) > 0 {
-		homeDefault = pyrepr.Str(chans[0])
+	if chans := configuredChannels(ctx); len(chans) > 0 {
+		homeDefault = chans[0]
 	}
 	homeSeed, err := gateway.SeedExtraFromEnv(ctx, nil, "BUZZ_HOME_CHANNEL", homeDefault)
 	if err != nil {
 		panic(err)
 	}
 	out := map[string]any{"relay_url": relay}
-	for k, v := range seed {
-		out[k] = v
-	}
 	for k, v := range homeSeed {
 		out[k] = v
 	}
@@ -322,10 +210,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil && pconfig.Extra != nil {
 		extra = pconfig.Extra
 	}
-	relay, err := configuredRelay(ctx, extra)
-	if err != nil {
-		return nil, err
-	}
+	relay := configuredRelay(ctx)
 	privateKey, err := resolvePrivateKey(ctx, extra)
 	if err != nil {
 		return nil, err
@@ -338,17 +223,14 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	cliPath, err := configuredCLIPath(ctx, extra)
-	if err != nil {
-		return nil, err
-	}
+	cliPath := configuredCLIPath(ctx)
 	if relay == "" || privateKey == "" {
 		return gateway.SendError("Buzz standalone send: BUZZ_RELAY_URL and BUZZ_PRIVATE_KEY must be configured"), nil
 	}
 	if cliPath == "" {
 		return gateway.SendError("Buzz standalone send: buzz CLI binary not found"), nil
 	}
-	target := pystr.Strip(chatID)
+	target := strings.TrimSpace(chatID)
 	if target == "" {
 		if target, err = configuredHomeChannel(ctx, extra); err != nil {
 			return nil, err
@@ -359,11 +241,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	args := []string{"messages", "send", "--channel", target, "--content", "-"}
 	if threadID != "" {
-		mode, err := replyToMode(ctx, pconfig, extra)
-		if err != nil {
-			return nil, err
-		}
-		if mode != "off" {
+		if replyToMode(ctx) != "off" {
 			args = append(args, "--reply-to", threadID)
 		}
 	}
@@ -475,6 +353,7 @@ func (buzzPlatformPlugin) Register(ctx *plugins.Context) error {
 	return nil
 }
 
+// Registers the adapter module and the bundled plugin
 func init() {
 	gateway.RegisterAdapterModule(buzzAdapterClass)
 	plugins.RegisterBundled(buzzPlatformPlugin{})

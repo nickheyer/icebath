@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Credential bound for a destination the transport policy forbids, never retryable
@@ -100,9 +99,9 @@ func (p splitURL) hostname() string {
 	host, _ := p.hostinfo()
 	name, zone, found := strings.Cut(host, "%")
 	if found {
-		return pystr.Lower(name) + "%" + zone
+		return strings.ToLower(name) + "%" + zone
 	}
-	return pystr.Lower(name)
+	return strings.ToLower(name)
 }
 
 // Port as an int, -1 when absent, the Python ValueError text when malformed

@@ -17,9 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const liveSessionsMax = 8
@@ -38,7 +38,7 @@ var (
 	voiceMonotonic            = pythread.Monotonic
 	voiceTranscribeAudio      = TranscribeAudio
 	voiceOpenStreamingSession = func(ctx context.Context, onPartial func(string)) (liveSTTSession, error) {
-		session, err := OpenStreamingSession(ctx, onPartial, nil)
+		session, err := OpenStreamingSession(ctx, onPartial)
 		if session == nil {
 			return nil, err
 		}
@@ -210,7 +210,7 @@ type TermuxAudioRecorder struct {
 
 // NewTermuxAudioRecorder is an idle Termux API recorder
 func NewTermuxAudioRecorder() *TermuxAudioRecorder {
-	return &TermuxAudioRecorder{recorderBase: recorderBase{silenceThreshold: silenceRMSThreshold, silenceDuration: silenceDurationSeconds}}
+	return &TermuxAudioRecorder{recorderBase: recorderBase{silenceThreshold: float64(settings.VoiceSilenceThreshold.Default), silenceDuration: settings.VoiceSilenceDuration.Default}}
 }
 
 func (r *TermuxAudioRecorder) SupportsSilenceAutostop() bool { return false }
@@ -249,7 +249,7 @@ func (r *TermuxAudioRecorder) Start(context.Context, func()) error {
 			if details == "" {
 				details = called.Error()
 			}
-			return fmt.Errorf("Termux microphone start failed: %s", pystr.Strip(details))
+			return fmt.Errorf("Termux microphone start failed: %s", strings.TrimSpace(details))
 		}
 		return fmt.Errorf("Termux microphone start failed: %s", err)
 	}
@@ -329,7 +329,7 @@ type AudioRecorder struct {
 
 // NewAudioRecorder is an idle recorder with the default silence parameters
 func NewAudioRecorder() *AudioRecorder {
-	return &AudioRecorder{recorderBase: recorderBase{silenceThreshold: silenceRMSThreshold, silenceDuration: silenceDurationSeconds},
+	return &AudioRecorder{recorderBase: recorderBase{silenceThreshold: float64(settings.VoiceSilenceThreshold.Default), silenceDuration: settings.VoiceSilenceDuration.Default},
 		sampleRate: voiceSampleRate, minSpeechDuration: 0.3, maxDipTolerance: 0.3, maxWait: 15.0}
 }
 
@@ -502,7 +502,7 @@ func (r *AudioRecorder) ensureStream() error {
 			_ = opened.Close(true)
 		}
 		opened = nil
-		if attempt > 0 || !strings.Contains(pystr.Lower(err.Error()), "timed out") {
+		if attempt > 0 || !strings.Contains(strings.ToLower(err.Error()), "timed out") {
 			return fmt.Errorf("Failed to open audio input stream: %s. Check that a microphone is connected and accessible.", err)
 		}
 		pkgLog().Info("Audio input stream start timed out; retrying once")
@@ -672,7 +672,7 @@ func liveResult(wavPath string) map[string]any {
 		return nil
 	}
 	result := session.Finalize(streamingFinalizeTimeout)
-	if pyTruthy(result["success"]) && pyTruthy(result["transcript"]) && pystr.Strip(pyrepr.Str(result["transcript"])) != "" {
+	if pyTruthy(result["success"]) && pyTruthy(result["transcript"]) && strings.TrimSpace(pyrepr.Str(result["transcript"])) != "" {
 		return result
 	}
 	reason := "empty"
@@ -698,7 +698,7 @@ func TranscribeRecording(ctx context.Context, wavPath, model string) (map[string
 		if v, ok := result["transcript"]; ok {
 			raw = pyrepr.Str(v)
 		}
-		if isWhisperHallucination(raw) && !isVoiceStopPhrase(raw, nil) {
+		if isWhisperHallucination(raw) && !isVoiceStopPhrase(ctx, raw, nil) {
 			pkgLog().Info(fmt.Sprintf("Filtered Whisper hallucination: %s", errchain.Show(result["transcript"])))
 			return map[string]any{"success": true, "transcript": "", "filtered": true}, nil
 		}

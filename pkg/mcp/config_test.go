@@ -333,30 +333,23 @@ func TestEnabledReaderCaseTable(t *testing.T) {
 }
 
 func TestTimeoutResolution(t *testing.T) {
-	if got := resolveToolTimeout(map[string]any{}, config.Tree{}); got != defaultToolTimeout {
+	dir := isolateHome(t)
+	ctx := context.Background()
+	if got := resolveToolTimeout(ctx, map[string]any{}); got != defaultToolTimeout || got != 300 {
 		t.Fatalf("default %v", got)
 	}
-	section := config.Tree{"timeouts": map[string]any{"mcp": map[string]any{"tool_call": 120}}}
-	if got := resolveToolTimeout(map[string]any{"timeout": 45}, section); got != 45 {
+	writeStartupConfig(t, dir, "timeouts:\n  mcp:\n    tool_call: 120\n")
+	if got := resolveToolTimeout(ctx, map[string]any{"timeout": 45}); got != 45 {
 		t.Fatalf("per server %v", got)
 	}
-	if got := resolveToolTimeout(map[string]any{}, section); got != 120 {
-		t.Fatalf("section %v", got)
+	if got := resolveToolTimeout(ctx, map[string]any{}); got != 120 {
+		t.Fatalf("setting %v", got)
 	}
-	if got := resolveToolTimeout(map[string]any{}, config.Tree{"timeouts": map[string]any{"mcp": map[string]any{"tool_call": "soon"}}}); got != defaultToolTimeout {
-		t.Fatalf("invalid %v", got)
-	}
-}
-
-func TestTimeoutResolutionFailureFallsBackToDefault(t *testing.T) {
-	if got := resolveToolTimeout(map[string]any{}, nil); got != defaultToolTimeout {
-		t.Fatalf("missing tree %v", got)
-	}
-	if got := resolveToolTimeout(map[string]any{}, config.Tree{"timeouts": "unreadable"}); got != defaultToolTimeout {
-		t.Fatalf("malformed section %v", got)
-	}
-	if got := newServerTask("s", nil).tree(); len(got) != 0 {
-		t.Fatalf("task without env resolved tree %v", got)
+	for _, body := range []string{"timeouts:\n  mcp:\n    tool_call: soon\n", "timeouts:\n  mcp:\n    tool_call: 0\n", "timeouts: unreadable\n"} {
+		writeStartupConfig(t, dir, body)
+		if got := resolveToolTimeout(ctx, map[string]any{}); got != defaultToolTimeout {
+			t.Fatalf("%q resolved %v", body, got)
+		}
 	}
 }
 

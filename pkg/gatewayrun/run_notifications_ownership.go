@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -159,7 +160,7 @@ func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, cu
 			return "deliver", sessionID, row
 		}
 		text, isText := parent.(string)
-		if !isText || pystr.Strip(text) == "" || hops == maxDelegateProvenanceHops {
+		if !isText || strings.TrimSpace(text) == "" || hops == maxDelegateProvenanceHops {
 			return "terminal", sessionID, nil
 		}
 		sessionID = text
@@ -169,7 +170,7 @@ func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, cu
 
 // True when a refused notice is pinned to a permanently gone session, logged once when asked
 func (r *GatewayRunner) watchPinGone(ctx context.Context, evt map[string]any, refusal string, log bool) (bool, error) {
-	pinned := pystr.Strip(truthyText(evt["parent_session_id"]))
+	pinned := strings.TrimSpace(truthyText(evt["parent_session_id"]))
 	if pinned == "" {
 		return false, nil
 	}

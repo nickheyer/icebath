@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -36,7 +35,7 @@ func parseBool(value any, def bool) bool {
 	case bool:
 		return x
 	case string:
-		switch pystr.Lower(pystr.Strip(x)) {
+		switch strings.ToLower(strings.TrimSpace(x)) {
 		case "1", "true", "yes", "on":
 			return true
 		case "0", "false", "no", "off":
@@ -66,7 +65,7 @@ var summaryEnvKeys = [][2]string{
 type staticAccessTokenProvider struct{ accessToken string }
 
 func newStaticAccessTokenProvider(accessToken string) *staticAccessTokenProvider {
-	return &staticAccessTokenProvider{accessToken: pystr.Strip(accessToken)}
+	return &staticAccessTokenProvider{accessToken: strings.TrimSpace(accessToken)}
 }
 
 func (p *staticAccessTokenProvider) GetAccessToken(ctx context.Context, forceRefresh bool) (string, error) {
@@ -117,7 +116,7 @@ func (w *TeamsSummaryWriter) WriteSummary(ctx context.Context, payload SummaryPa
 			break
 		}
 	}
-	mode = pystr.Lower(pystr.Strip(mode))
+	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode == "" && pyrepr.Truthy(merged["incoming_webhook_url"]) {
 		mode = "incoming_webhook"
 	} else if mode == "" && (pyrepr.Truthy(merged["chat_id"]) || (pyrepr.Truthy(merged["team_id"]) && pyrepr.Truthy(merged["channel_id"]))) {
@@ -175,7 +174,7 @@ func configText(value any) string {
 	if !pyrepr.Truthy(value) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(value))
+	return strings.TrimSpace(pyrepr.Str(value))
 }
 
 // Posts the markdown summary to the incoming webhook URL on a fresh client with a twenty second timeout
@@ -292,7 +291,7 @@ func (w *TeamsSummaryWriter) renderSummaryHTML(ctx context.Context, payload Summ
 	for _, section := range summaryListSections {
 		var rendered strings.Builder
 		for _, item := range section.items(payload) {
-			if text := pyrepr.Str(item); pystr.Strip(text) != "" {
+			if text := pyrepr.Str(item); strings.TrimSpace(text) != "" {
 				rendered.WriteString("<li>" + htmlEscape(text) + "</li>")
 			}
 		}
@@ -330,7 +329,7 @@ func summaryText(value any, def string) string {
 func summaryBulletLines(values []any) []string {
 	lines := []string{}
 	for _, item := range values {
-		if text := pystr.Strip(pyrepr.Str(item)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(item)); text != "" {
 			lines = append(lines, "- "+text)
 		}
 	}

@@ -1,13 +1,14 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Lower cased trimmed platform value of an enum or raw string
 func gatewayPlatformValue(platform gateway.Platform) string {
-	return pystr.Lower(pystr.Strip(string(platform)))
+	return strings.ToLower(strings.TrimSpace(string(platform)))
 }
 
 // Marks Discord lifecycle and status sends as non conversational, other platforms unchanged
@@ -126,7 +127,7 @@ func (r *GatewayRunner) threadMetadataForSource(source *gateway.SessionSource, r
 	metadata = sourceRouteMetadata(source, metadata)
 	profile := ""
 	if source.Profile != nil {
-		profile = pystr.Strip(*source.Profile)
+		profile = strings.TrimSpace(*source.Profile)
 	}
 	if profile != "" && metadata != nil {
 		merged := make(map[string]any, len(metadata)+1)

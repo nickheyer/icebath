@@ -20,7 +20,7 @@ var (
 
 // PEP 503 spelling of a name, runs of separators collapsed and lowercased like Python lower
 func pep503Name(name string) string {
-	return pystr.Lower(pep503Runs.ReplaceAllString(name, "-"))
+	return strings.ToLower(pep503Runs.ReplaceAllString(name, "-"))
 }
 
 // Integer a run of Unicode decimal digits spells, as Python int reads it
@@ -143,7 +143,7 @@ func OverriddenVersions(lock string) (map[string]map[string]bool, error) {
 func UnexpectedIncompatibilities(report, lock string) ([]string, error) {
 	var lines []string
 	for _, line := range pystr.Splitlines(report, false) {
-		if stripped := pystr.Strip(line); pipReportLine.MatchString(stripped) {
+		if stripped := strings.TrimSpace(line); pipReportLine.MatchString(stripped) {
 			lines = append(lines, stripped)
 		}
 	}

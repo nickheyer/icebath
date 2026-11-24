@@ -91,14 +91,14 @@ type jobRunOutcome struct {
 func parseWakeGate(scriptOutput string) bool {
 	var lines []string
 	for _, line := range pystr.Splitlines(scriptOutput, false) {
-		if pystr.Strip(line) != "" {
+		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
 	}
 	if len(lines) == 0 {
 		return true
 	}
-	gate, err := pyjson.Loads(pystr.Strip(lines[len(lines)-1]))
+	gate, err := pyjson.Loads(strings.TrimSpace(lines[len(lines)-1]))
 	if err != nil {
 		return true
 	}
@@ -125,7 +125,7 @@ func jobSkillNames(job *Job) []string {
 	}
 	out := []string{}
 	for _, name := range names {
-		if v := pystr.Strip(name); v != "" {
+		if v := strings.TrimSpace(name); v != "" {
 			out = append(out, v)
 		}
 	}
@@ -193,12 +193,12 @@ func archiveAnswer(archive string) *string {
 		if !ok || len(tail) != rlen+1 || tail[len(tail)-1] != '\n' {
 			return nil
 		}
-		answer = pystr.Strip(string(tail[:len(tail)-1]))
+		answer = strings.TrimSpace(string(tail[:len(tail)-1]))
 	} else if !strings.Contains(archive, "## Response") {
-		v := pystr.Strip(archive)
+		v := strings.TrimSpace(archive)
 		return &v
 	} else {
-		answer = pystr.Strip(archive[strings.LastIndex(archive, "## Response")+len("## Response"):])
+		answer = strings.TrimSpace(archive[strings.LastIndex(archive, "## Response")+len("## Response"):])
 	}
 	if answer == "" || isCronSilenceResponse(answer) {
 		return nil
@@ -228,7 +228,7 @@ func cronJobOriginLogSuffix(job *Job) string {
 		if !ok || value == nil {
 			continue
 		}
-		text := pystr.Strip(strings.ReplaceAll(strings.ReplaceAll(config.PyStr(value), "\r", " "), "\n", " "))
+		text := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(config.PyStr(value), "\r", " "), "\n", " "))
 		if text != "" {
 			r := []rune(text)
 			if len(r) > 200 {
@@ -248,7 +248,7 @@ func (s *Store) resolveJobWorkdir(job *Job, jobID string) *string {
 	if job.Workdir == nil {
 		return nil
 	}
-	workdir := pystr.Strip(*job.Workdir)
+	workdir := strings.TrimSpace(*job.Workdir)
 	if workdir == "" {
 		return nil
 	}
@@ -300,7 +300,7 @@ func latestContextOutput(dir string) (string, error) {
 			return "", &contextDecodeError{err}
 		}
 		candidate := pystr.TranslateNewlines(text)
-		if pystr.Strip(candidate) == "" || silentAuditDocument(candidate) {
+		if strings.TrimSpace(candidate) == "" || silentAuditDocument(candidate) {
 			continue
 		}
 		if answer := archiveAnswer(candidate); answer != nil {
@@ -323,7 +323,7 @@ func (s *Store) injectContextFrom(job *Job, prompt string) (string, bool, error)
 	}
 	injected := false
 	for _, sourceID := range job.ContextFrom {
-		if pystr.Lower(pystr.Strip(sourceID)) == "self" {
+		if strings.ToLower(strings.TrimSpace(sourceID)) == "self" {
 			sourceID = job.ID
 		}
 		isSelf := sourceID == job.ID
@@ -356,8 +356,7 @@ func (s *Store) injectContextFrom(job *Job, prompt string) (string, bool, error)
 
 // Loads each named skill or bundle into prompt parts, unknown ones skipped behind a leading notice
 func (s *Store) loadCronSkillParts(ctx context.Context, job *Job, skillNames []string) ([]string, error) {
-	cfg, _ := s.loadConfig()
-	scope := skills.NewScope(s.home, cfg)
+	scope := skills.NewScope(s.home, nil)
 	jobLabel := job.Name
 	taskID := job.ID
 	parts := []string{}
@@ -415,7 +414,7 @@ func (s *Store) loadCronSkillParts(ctx context.Context, job *Job, skillNames []s
 		if config.PyTruthy(loaded["content"]) {
 			content = config.PyStr(loaded["content"])
 		}
-		parts = append(parts, fmt.Sprintf("[IMPORTANT: The user has invoked the \"%s\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]", name), "", pystr.Strip(content))
+		parts = append(parts, fmt.Sprintf("[IMPORTANT: The user has invoked the \"%s\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]", name), "", strings.TrimSpace(content))
 		scope.InjectSkillConfig(loaded, &parts)
 	}
 	if len(skipped) > 0 {
@@ -434,7 +433,7 @@ func (s *Store) runTimeLine() string {
 	if offset != "" {
 		zone = fmt.Sprintf(" (UTC%s:%s)", offset[:3], offset[3:])
 	}
-	return fmt.Sprintf("[CURRENT RUN TIME: %s%s]\n\n", pystr.Strip(config.SafeStrftime(now, "%A, %Y-%m-%d %H:%M %Z")), zone)
+	return fmt.Sprintf("[CURRENT RUN TIME: %s%s]\n\n", strings.TrimSpace(config.SafeStrftime(now, "%A, %Y-%m-%d %H:%M %Z")), zone)
 }
 
 // Effective prompt of a run with script output, context, notepad and skills, nil when the script printed nothing

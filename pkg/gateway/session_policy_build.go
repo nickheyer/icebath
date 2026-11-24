@@ -297,7 +297,7 @@ func withEntryPick(ctx context.Context, params, config map[string]any) (map[stri
 			} else {
 				target, _ := profileTarget(config)
 				keep = strings.ToLower(strings.TrimSpace(model)) == strings.ToLower(target) ||
-					provider.RoutedCustomIdentity("", model, config, "") == ""
+					provider.RoutedCustomIdentity(provider.WithFrozenRuntimeConfig(ctx, config), "", model, "") == ""
 			}
 			if keep {
 				return params, nil
@@ -311,7 +311,7 @@ func withEntryPick(ctx context.Context, params, config map[string]any) (map[stri
 		if hasURL {
 			urlText = pyrepr.Str(url)
 		}
-		healed := provider.RoutedCustomIdentity(urlText, model, config, held)
+		healed := provider.RoutedCustomIdentity(provider.WithFrozenRuntimeConfig(ctx, config), urlText, model, held)
 		if healed == "" && strings.HasPrefix(identity, "custom:") && !hasURL {
 			healed = identity
 		}
@@ -416,8 +416,8 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 	if raw, ok := params["run_budget"]; ok {
 		_, isBool := raw.(bool)
 		seconds, _, isNum := launchNumber(raw)
-		if isBool || !isNum || !(seconds > 0) {
-			return refuseText("run_budget", "must be a positive number of seconds")
+		if isBool || !isNum || !(seconds >= 0) {
+			return refuseText("run_budget", "must be a number of seconds, 0 for no limit")
 		}
 		agent, err := setdefaultMap(cfg, "agent")
 		if err != nil {
@@ -425,14 +425,14 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 		}
 		agent["run_budget_seconds"] = seconds
 	}
-	if pyrepr.Truthy(params["checkpoints"]) {
+	if on, set := params["checkpoints"].(bool); set {
 		section := map[string]any{}
 		if held, isMap := cfg["checkpoints"].(map[string]any); isMap {
 			for k, v := range held {
 				section[k] = v
 			}
 		}
-		section["enabled"] = true
+		section["enabled"] = on
 		cfg["checkpoints"] = section
 	}
 	if raw, ok := params["max_turns"]; ok {
@@ -513,7 +513,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 	}
 	var posture []string
 	if !hasExplicit && codingPosture {
-		posture = tools.FocusToolsets(&tools.Env{Config: tree})
+		posture = tools.FocusToolsets(settings.WithFrozen(ctx, cfg), nil)
 	}
 	var enabled map[string]bool
 	if posture != nil {
@@ -576,7 +576,7 @@ func inCodingWorkspace(ctx context.Context, cfg map[string]any, source, cwd stri
 			inFocus = false
 		}
 	}()
-	return tools.InFocusWorkspace(&tools.Env{Home: home.Dir(ctx), Config: config.Tree(cfg)}, SourceSurface(source), cwd)
+	return tools.InFocusWorkspace(settings.WithFrozen(ctx, cfg), &tools.Env{Home: home.Dir(ctx)}, SourceSurface(source), cwd)
 }
 
 // Validated skill identifiers of a create request, refused on a bypass launch that never reads the profile
@@ -650,9 +650,6 @@ func (p *LocalSessionPolicy) currentToolsets(ctx context.Context, cfg map[string
 	return out, nil
 }
 
-// Agent run budget normalizer cmd/icebath installs from pkg/agent, nil panics on the first read
-var NormalizeRunBudgetSeconds func(value any) *float64
-
 // Frozen run budget seconds of the policy, nil for no budget
 func (p *LocalSessionPolicy) RunBudgetSeconds(ctx context.Context) (*float64, error) {
 	cfg, err := p.config(ctx, nil, true)
@@ -660,5 +657,5 @@ func (p *LocalSessionPolicy) RunBudgetSeconds(ctx context.Context) (*float64, er
 		return nil, err
 	}
 	agent, _ := cfg["agent"].(map[string]any)
-	return NormalizeRunBudgetSeconds(agent["run_budget_seconds"]), nil
+	return config.RunBudgetSeconds(agent["run_budget_seconds"]), nil
 }

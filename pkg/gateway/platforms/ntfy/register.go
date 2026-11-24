@@ -1,6 +1,8 @@
 package ntfy
 
 import (
+	"strings"
+
 	"cmp"
 	"context"
 	"fmt"
@@ -10,14 +12,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Env var, extra key and conversion of every ntfy value seeded from an env only setup
 var envSeedKeys = []gateway.EnvSeedRow{
-	{Env: "NTFY_SERVER_URL", Key: "server", Conv: func(raw string) (any, error) { return pystr.RstripChars(raw, "/"), nil }},
+	{Env: "NTFY_SERVER_URL", Key: "server", Conv: func(raw string) (any, error) { return strings.TrimRight(raw, "/"), nil }},
 	{Env: "NTFY_PUBLISH_TOPIC", Key: "publish_topic"},
 	{Env: "NTFY_TOKEN", Key: "token"},
-	{Env: "NTFY_MARKDOWN", Key: "markdown", Conv: func(raw string) (any, error) { return markdownTruthy[pystr.Lower(raw)], nil }},
 }
 
 // Extra seeded from an env only setup with the home channel defaulting to the topic, nil without a topic
@@ -26,7 +28,7 @@ func envEnablement(ctx context.Context) map[string]any {
 	if err != nil {
 		panic(err)
 	}
-	topic := pystr.Strip(raw)
+	topic := strings.TrimSpace(raw)
 	if topic == "" {
 		return nil
 	}
@@ -53,7 +55,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	scopedStripped := func(name string) (string, error) {
 		val, err := gateway.GetScopedSecret(ctx, name, "", false)
-		return pystr.Strip(val), err
+		return strings.TrimSpace(val), err
 	}
 	var publishTopic any = chatID
 	if !pyrepr.Truthy(publishTopic) {
@@ -79,12 +81,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	markdownEnv, err := scopedStripped("NTFY_MARKDOWN")
-	if err != nil {
-		return nil, err
-	}
-	markdown := pyrepr.Truthy(extra["markdown"]) || markdownTruthy[pystr.Lower(markdownEnv)]
-	headers, err := publishHeaders(token, markdown, false)
+	headers, err := publishHeaders(token, settings.NtfyMarkdown.Get(gateway.SettingsContext(ctx)), false)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +104,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 // Model facing description of ntfy formatting and the per message limit
 const platformHint = "You are communicating via ntfy push notifications. " +
 	"Use plain text by default — ntfy supports optional markdown " +
-	"(set markdown: true in config or NTFY_MARKDOWN=true). " +
+	"(set ntfy.markdown: true in config or NTFY_MARKDOWN=true). " +
 	"Keep responses concise; ntfy is a push notification service " +
 	"with a 4096-character per-message limit."
 

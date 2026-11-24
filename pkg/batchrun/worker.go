@@ -1,6 +1,8 @@
 package batchrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // What one batch reports back to the run
@@ -66,7 +67,7 @@ func strippedText(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Human prompt text of a dataset or trajectory entry, from a flat prompt, from/value or role/content turns, or a discard tombstone

@@ -133,15 +133,16 @@ func onlyKey(t *testing.T) (vertexCacheKey, *vertexCacheEntry) {
 
 func TestVertexHasCredentialsViaConfigProject(t *testing.T) {
 	vertexIsolate(t)
-	e := vertexEnv{cfg: map[string]any{"vertex": map[string]any{"project_id": "p"}}}
-	if !hasVertexCredentials(context.Background(), e) {
+	h := t.TempDir()
+	writeConfig(t, h, map[string]any{"vertex": map[string]any{"project_id": "p"}})
+	if !hasVertexCredentials(ctxForHome(context.Background(), h), vertexEnv{}) {
 		t.Fatal("config project must count as Vertex credentials")
 	}
 }
 
 func TestVertexHasCredentialsFalseWhenNothingSet(t *testing.T) {
 	vertexIsolate(t)
-	if hasVertexCredentials(context.Background(), vertexEnv{cfg: map[string]any{}}) {
+	if hasVertexCredentials(ctxForHome(context.Background(), t.TempDir()), vertexEnv{}) {
 		t.Fatal("nothing configured must report no credentials")
 	}
 }
@@ -158,16 +159,10 @@ func TestVertexMultiplexScopeTakesPrecedenceOverRawEnviron(t *testing.T) {
 func TestVertexMultiplexUnscopedReadFailsClosed(t *testing.T) {
 	vertexIsolate(t)
 	t.Setenv("VERTEX_PROJECT_ID", "leaked-project")
-	ctx := WithMultiplexContext(context.Background(), true)
-	defer func() {
-		r := recover()
-		err, _ := r.(error)
-		var unscoped *UnscopedSecretError
-		if !errors.As(err, &unscoped) {
-			t.Fatalf("want UnscopedSecretError panic, got %v", r)
-		}
-	}()
-	(vertexEnv{}).projectOverride(ctx)
+	ctx := WithMultiplexContext(ctxForHome(context.Background(), t.TempDir()), true)
+	if got := (vertexEnv{}).projectOverride(ctx); got != "" {
+		t.Fatalf("an unscoped multiplexed read must not see another profile's project, got %q", got)
+	}
 }
 
 func TestVertexADCRefusesForeignProfileGoogleApplicationCredentials(t *testing.T) {
@@ -272,8 +267,10 @@ func TestVertexNearExpiryTokenRefreshesAndBaseURLDoesNotMint(t *testing.T) {
 	sa := filepath.Join(t.TempDir(), "sa.json")
 	vertexWriteSA(t, sa, srv.URL, "proj", nil)
 	t.Setenv("VERTEX_CREDENTIALS_PATH", sa)
-	e := vertexEnv{cfg: map[string]any{"vertex": map[string]any{"region": "us-central1"}}}
-	ctx := context.Background()
+	h := t.TempDir()
+	writeConfig(t, h, map[string]any{"vertex": map[string]any{"region": "us-central1"}})
+	e := vertexEnv{}
+	ctx := ctxForHome(context.Background(), h)
 	if base := vertexGetBaseURL(ctx, e, "", ""); base != "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/openapi" {
 		t.Fatalf("base = %q", base)
 	}
@@ -298,7 +295,7 @@ func TestVertexRuntimeConfigMintsUnlessDeferred(t *testing.T) {
 	sa := filepath.Join(h, "sa.json")
 	vertexWriteSA(t, sa, srv.URL, "proj", nil)
 	os.WriteFile(filepath.Join(h, ".env"), []byte("VERTEX_CREDENTIALS_PATH="+sa+"\nVERTEX_REGION=europe-west4\n"), 0o600)
-	src, base, ok := vertexRuntimeConfig(WithDeferredTokenMint(context.Background()), map[string]any{}, nil, h)
+	src, base, ok := vertexRuntimeConfig(WithDeferredTokenMint(context.Background()), nil, h)
 	if !ok || !strings.Contains(base, "europe-west4-aiplatform") || atomic.LoadInt32(&calls) != 0 {
 		t.Fatalf("deferred: ok=%v base=%q calls=%d", ok, base, calls)
 	}
@@ -306,7 +303,7 @@ func TestVertexRuntimeConfigMintsUnlessDeferred(t *testing.T) {
 		t.Fatalf("deferred token = %q, %v", tok, err)
 	}
 	resetVertexCredentialCache()
-	src, base, ok = vertexRuntimeConfig(context.Background(), map[string]any{}, nil, h)
+	src, base, ok = vertexRuntimeConfig(context.Background(), nil, h)
 	if !ok || base == "" || atomic.LoadInt32(&calls) != 2 {
 		t.Fatalf("eager: ok=%v base=%q calls=%d", ok, base, calls)
 	}
@@ -316,7 +313,7 @@ func TestVertexRuntimeConfigMintsUnlessDeferred(t *testing.T) {
 	os.Remove(sa)
 	resetVertexCredentialCache()
 	vertexADCFn = func(context.Context, []string) (*gcpCredentials, string, error) { return nil, "", errors.New("no ADC") }
-	if _, _, ok = vertexRuntimeConfig(context.Background(), map[string]any{}, nil, h); ok {
+	if _, _, ok = vertexRuntimeConfig(context.Background(), nil, h); ok {
 		t.Fatal("unresolvable credentials must report not ok")
 	}
 }
@@ -326,7 +323,8 @@ func TestHasExplicitVertexConfig(t *testing.T) {
 	ga := filepath.Join(t.TempDir(), "ga.json")
 	os.WriteFile(ga, []byte("{}"), 0o600)
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", ga)
-	env := PoolEnv{Config: func() map[string]any { return map[string]any{} }}
+	h := t.TempDir()
+	env := PoolEnv{Store: NewStore(h)}
 	if hasExplicitVertexConfig(env) {
 		t.Fatal("ambient GOOGLE_APPLICATION_CREDENTIALS must not count as explicit")
 	}
@@ -335,7 +333,7 @@ func TestHasExplicitVertexConfig(t *testing.T) {
 		t.Fatal("a readable VERTEX_CREDENTIALS_PATH is explicit")
 	}
 	t.Setenv("VERTEX_CREDENTIALS_PATH", "")
-	env.Config = func() map[string]any { return map[string]any{"vertex": map[string]any{"project_id": "p"}} }
+	writeConfig(t, h, map[string]any{"vertex": map[string]any{"project_id": "p"}})
 	if !hasExplicitVertexConfig(env) {
 		t.Fatal("a configured project is explicit")
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"runtime"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -68,7 +68,7 @@ func validateHAConfig(ctx context.Context, config *gateway.PlatformConfig) (bool
 	if !ok {
 		return false, attrErr(token, "the Home Assistant token", "text")
 	}
-	return pystr.Strip(text) != "", nil
+	return strings.TrimSpace(text) != "", nil
 }
 
 // Domain of an entity id, empty without a dot, the TypeError of a value that is not a str
@@ -105,13 +105,13 @@ func connectErrorDetail(err error) string {
 type HomeAssistantAdapter struct {
 	*gateway.BasePlatformAdapter
 
-	hassURL         string
-	hassToken       any
-	watchDomains    pySet
-	watchEntities   pySet
-	ignoreEntities  pySet
-	watchAll        bool
-	cooldownSeconds *big.Int
+	hassURL        string
+	hassToken      any
+	watchDomains   map[string]bool
+	watchEntities  map[string]bool
+	ignoreEntities map[string]bool
+	watchAll       bool
+	cooldown       time.Duration
 
 	mu            sync.Mutex
 	msgID         int64
@@ -128,15 +128,16 @@ func adapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Extra value of a key with the default for a missing key, the dict get of Python
-func extraOr(extra map[string]any, key string, def any) any {
-	if v, ok := extra[key]; ok {
-		return v
+// Set of the items of a list
+func textSet(items []string) map[string]bool {
+	out := make(map[string]bool, len(items))
+	for _, item := range items {
+		out[item] = true
 	}
-	return def
+	return out
 }
 
-// Adapter reading URL, token, filters and cooldown from the config extra and the scoped env
+// Adapter with the URL and token of the connection and the filters and cooldown of the profile served
 func NewHomeAssistantAdapter(ctx context.Context, config *gateway.PlatformConfig) (*HomeAssistantAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -160,7 +161,7 @@ func NewHomeAssistantAdapter(ctx context.Context, config *gateway.PlatformConfig
 	if !ok {
 		return nil, attrErr(rawURL, "the Home Assistant url", "text")
 	}
-	a.hassURL = pystr.RstripChars(urlText, "/")
+	a.hassURL = strings.TrimRight(urlText, "/")
 	a.hassToken = config.Token
 	if !pyrepr.Truthy(a.hassToken) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_TOKEN", "", false)
@@ -169,20 +170,12 @@ func NewHomeAssistantAdapter(ctx context.Context, config *gateway.PlatformConfig
 		}
 		a.hassToken = scoped
 	}
-	var err error
-	if a.watchDomains, err = newPySet(extraOr(extra, "watch_domains", []any{})); err != nil {
-		return nil, err
-	}
-	if a.watchEntities, err = newPySet(extraOr(extra, "watch_entities", []any{})); err != nil {
-		return nil, err
-	}
-	if a.ignoreEntities, err = newPySet(extraOr(extra, "ignore_entities", []any{})); err != nil {
-		return nil, err
-	}
-	a.watchAll = pyrepr.Truthy(extraOr(extra, "watch_all", false))
-	if a.cooldownSeconds, err = pyIntOf(extraOr(extra, "cooldown_seconds", 30)); err != nil {
-		return nil, err
-	}
+	sctx := gateway.SettingsContext(ctx)
+	a.watchDomains = textSet(settings.HomeassistantWatchDomains.Strings(sctx))
+	a.watchEntities = textSet(settings.HomeassistantWatchEntities.Strings(sctx))
+	a.ignoreEntities = textSet(settings.HomeassistantIgnoreEntities.Strings(sctx))
+	a.watchAll = settings.HomeassistantWatchAll.Get(sctx)
+	a.cooldown = settings.HomeassistantCooldown.Get(sctx)
 	return a, nil
 }
 
@@ -220,10 +213,10 @@ func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (b
 	a.mu.Lock()
 	a.restSession = session
 	a.mu.Unlock()
-	if !(a.watchDomains.truthy() || a.watchEntities.truthy() || a.watchAll) {
+	if len(a.watchDomains) == 0 && len(a.watchEntities) == 0 && !a.watchAll {
 		pkgLog().Warn(fmt.Sprintf("[%s] No watch_domains, watch_entities, or watch_all configured. "+
-			"All state_changed events will be dropped. Configure filters in "+
-			"your HA platform config to receive events.", a.Name()))
+			"All state_changed events will be dropped. Set homeassistant.watch_domains, "+
+			"homeassistant.watch_entities or homeassistant.watch_all to receive events.", a.Name()))
 	}
 	a.SetRunning(true)
 	task := gateway.SpawnAdapterTask(ctx, a.listenLoop)
@@ -426,19 +419,16 @@ func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 
 // Whether an entity passes the ignore list and the domain or entity watch lists, closed by default
 func (a *HomeAssistantAdapter) passesFilters(entityID any) (bool, error) {
-	ignored, err := a.ignoreEntities.has(entityID)
-	if err != nil || ignored {
+	domain, err := domainOf(entityID)
+	if err != nil {
 		return false, err
 	}
-	if a.watchDomains.truthy() || a.watchEntities.truthy() {
-		domain, err := domainOf(entityID)
-		if err != nil {
-			return false, err
-		}
-		if watched, err := a.watchDomains.has(domain); err != nil || watched {
-			return watched, err
-		}
-		return a.watchEntities.has(entityID)
+	id := entityID.(string)
+	if a.ignoreEntities[id] {
+		return false, nil
+	}
+	if len(a.watchDomains) > 0 || len(a.watchEntities) > 0 {
+		return a.watchDomains[domain] || a.watchEntities[id], nil
 	}
 	return a.watchAll, nil
 }
@@ -470,8 +460,7 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 	if seen {
 		lastSeconds = last.(float64)
 	}
-	cooldown, _ := new(big.Float).SetInt(a.cooldownSeconds).Float64()
-	if now-lastSeconds < cooldown {
+	if now-lastSeconds < a.cooldown.Seconds() {
 		return nil
 	}
 	a.mu.Lock()

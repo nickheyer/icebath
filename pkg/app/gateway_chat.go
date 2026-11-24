@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -67,7 +69,7 @@ func gatewayContinueTitle(args map[string]any) (string, bool) {
 // Whether the launch continues the latest session, a bare continue or a resume of the latest keyword
 func gatewayWantsLatest(args map[string]any) bool {
 	if resume, ok := args["resume"].(string); ok {
-		return pystr.Lower(pystr.Strip(resume)) == "latest"
+		return strings.ToLower(strings.TrimSpace(resume)) == "latest"
 	}
 	return args["continue_last"] == true
 }
@@ -593,7 +595,7 @@ func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 				return failed(fmt.Sprintf("cannot read --query-file %s: %s", path, errchain.OSText(err)), 2), nil
 			}
 			args["query"] = query
-			if pystr.Strip(query) == "" {
+			if strings.TrimSpace(query) == "" {
 				return failed(fmt.Sprintf("--query-file %s is empty", path), 2), nil
 			}
 		}
@@ -602,7 +604,7 @@ func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 			if err != nil {
 				return failed(stdinQueryError(err), 2), nil
 			}
-			if pystr.Strip(text) == "" && !pyrepr.Truthy(args["image"]) {
+			if strings.TrimSpace(text) == "" && !pyrepr.Truthy(args["image"]) {
 				return failed(QuerylessChatUsage, 2), nil
 			}
 			args["query"] = text

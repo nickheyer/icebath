@@ -2,9 +2,7 @@ package telegram
 
 import (
 	"fmt"
-	"math"
 	"math/big"
-	"os"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
@@ -44,35 +42,13 @@ func pyTruthy(v any) bool {
 	return true
 }
 
-// Float env var with non finite or unparseable values reading as the default, then clamped to the bounds
-func envFloatClamped(name string, def float64, minValue, maxValue *float64) float64 {
-	value := def
-	if raw, ok := os.LookupEnv(name); ok {
-		parsed, err := pyint.ParseFloat(raw)
-		if err != nil {
-			parsed = def
-		}
-		value = parsed
-	}
-	if math.IsInf(value, 0) || math.IsNaN(value) {
-		value = def
-	}
-	if minValue != nil {
-		value = math.Max(value, *minValue)
-	}
-	if maxValue != nil {
-		value = math.Min(value, *maxValue)
-	}
-	return value
-}
-
 // Telegram chat type mapped to the gateway chat type, private as dm and supergroup as forum or group
 func normalizeChatType(chatType any, isForum bool) string {
 	raw := "dm"
 	if pyTruthy(chatType) {
 		raw = pyrepr.Str(chatType)
 	}
-	normalized := pystr.Lower(pystr.Strip(raw))
+	normalized := strings.ToLower(strings.TrimSpace(raw))
 	if normalized == "" {
 		normalized = "dm"
 	}
@@ -98,7 +74,7 @@ func fullName(first, last string) string {
 
 // Pointer to the stripped text, nil when it strips to nothing
 func nonEmpty(text string) *string {
-	if text = pystr.Strip(text); text == "" {
+	if text = strings.TrimSpace(text); text == "" {
 		return nil
 	}
 	return &text
@@ -258,12 +234,12 @@ func pyIntOf(text string) (int, error) {
 
 // Whether the Bot API rejected the forum or DM thread as missing
 func isThreadNotFoundError(err error) bool {
-	return strings.Contains(pystr.Lower(err.Error()), "thread not found")
+	return strings.Contains(strings.ToLower(err.Error()), "thread not found")
 }
 
 // Whether err is a Bot API BadRequest by class name or type
 func isBadRequestError(err error) bool {
-	name := pystr.Lower(className(err))
+	name := strings.ToLower(className(err))
 	if name == "badrequest" || strings.HasSuffix(name, "badrequest") {
 		return true
 	}
@@ -275,7 +251,7 @@ func shouldRetryWithoutDMTopicReplyAnchor(err error, metadata map[string]any, re
 	if !dmTopicFallback(metadata) || !isBadRequestError(err) {
 		return false
 	}
-	errLower := pystr.Lower(err.Error())
+	errLower := strings.ToLower(err.Error())
 	if replyToMessageID != nil && strings.Contains(errLower, "message to be replied not found") {
 		return true
 	}
@@ -293,14 +269,14 @@ func shouldRetryWithoutDMTopicReplyAnchor(err error, metadata map[string]any, re
 
 // Whether err reports another getUpdates poller holding the bot token
 func looksLikePollingConflict(err error) bool {
-	text := pystr.Lower(err.Error())
-	return pystr.Lower(className(err)) == "conflict" || strings.Contains(text, "terminated by other getupdates request") ||
+	text := strings.ToLower(err.Error())
+	return strings.ToLower(className(err)) == "conflict" || strings.Contains(text, "terminated by other getupdates request") ||
 		strings.Contains(text, "another bot instance is running")
 }
 
 // Whether err is a terminal credential failure by type, InvalidToken or Forbidden
 func looksLikeAuthError(err error) bool {
-	switch pystr.Lower(className(err)) {
+	switch strings.ToLower(className(err)) {
 	case "invalidtoken", "forbidden":
 		return true
 	}
@@ -309,7 +285,7 @@ func looksLikeAuthError(err error) bool {
 
 // Whether err is a transient transport failure that warrants a reconnect
 func looksLikeNetworkError(err error) bool {
-	switch pystr.Lower(className(err)) {
+	switch strings.ToLower(className(err)) {
 	case "badrequest", "invalidtoken", "forbidden", "retryafter":
 		return false
 	case "networkerror", "timedout", "connectionerror":
@@ -329,8 +305,8 @@ func looksLikeNetworkError(err error) bool {
 // Whether any error in the wrapped graph matches the class name marker or one of the text markers
 func exceptionGraphMatches(err error, nameMarker string, textMarkers ...string) bool {
 	for _, cur := range iterExceptionGraph(err) {
-		text := pystr.Lower(cur.Error())
-		if strings.Contains(pystr.Lower(className(cur)), nameMarker) {
+		text := strings.ToLower(cur.Error())
+		if strings.Contains(strings.ToLower(className(cur)), nameMarker) {
 			return true
 		}
 		for _, m := range textMarkers {
@@ -350,8 +326,8 @@ func looksLikeConnectTimeout(err error) bool {
 // Whether a timeout wraps a connection pool timeout, when the request was never sent
 func looksLikePoolTimeout(err error) bool {
 	for _, cur := range iterExceptionGraph(err) {
-		name := pystr.Lower(className(cur))
-		text := pystr.Lower(cur.Error())
+		name := strings.ToLower(className(cur))
+		text := strings.ToLower(cur.Error())
 		if strings.Contains(name, "pooltimeout") || strings.Contains(text, "pool timeout") ||
 			(strings.Contains(text, "connection pool") && strings.Contains(text, "occupied")) {
 			return true
@@ -441,7 +417,7 @@ func regexp2FindAll(re *regexp2.Regexp, text string) []string {
 
 // Whether the rich endpoint itself is unavailable, which latches rich delivery off
 func isRichCapabilityError(err error) bool {
-	switch pystr.Lower(className(err)) {
+	switch strings.ToLower(className(err)) {
 	case "endpointnotfound", "invalidtoken":
 		return true
 	}
@@ -452,7 +428,7 @@ func isRichCapabilityError(err error) bool {
 	if coded, ok := err.(interface{ ErrorCode() int }); ok && coded.ErrorCode() == 404 {
 		return true
 	}
-	s := pystr.Lower(err.Error())
+	s := strings.ToLower(err.Error())
 	if (strings.Contains(s, "method") || strings.Contains(s, "endpoint")) && (strings.Contains(s, "not found") || strings.Contains(s, "does not exist")) {
 		return true
 	}
@@ -464,13 +440,13 @@ func isRichFallbackError(err error) bool {
 	if isBadRequestError(err) || isRichCapabilityError(err) {
 		return true
 	}
-	s := pystr.Lower(err.Error())
+	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "unsupported") || strings.Contains(s, "not implemented")
 }
 
 // Whether err is a TimedOut or carries a timed out message
 func isTimedOut(err error) bool {
-	return isPTBError(err, "TimedOut") || strings.Contains(pystr.Lower(err.Error()), "timed out")
+	return isPTBError(err, "TimedOut") || strings.Contains(strings.ToLower(err.Error()), "timed out")
 }
 
 // Whether a send goes out silently, true in important mode unless the metadata asks to notify or carries an approval prompt

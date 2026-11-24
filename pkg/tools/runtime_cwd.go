@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const sessionCwdKey = "session.cwd"
@@ -106,7 +105,7 @@ func resolveConfiguredCwd(env *Env, overrideIsFinal, includeSessionOverride bool
 	if err != nil {
 		return "", err
 	}
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", nil
 	}

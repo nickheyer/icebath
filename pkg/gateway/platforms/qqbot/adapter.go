@@ -1,6 +1,8 @@
 package qqbot
 
 import (
+	"strings"
+
 	"bytes"
 	"cmp"
 	"context"
@@ -20,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -155,7 +156,7 @@ func textOf(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Adapter configured from the platform extra and the profile scoped QQ env
@@ -179,10 +180,10 @@ func NewQQAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*QQAdapter,
 	}
 	credential := func(key, env string) (string, error) {
 		if v := extra[key]; pyrepr.Truthy(v) {
-			return pystr.Strip(pyrepr.Str(v)), nil
+			return strings.TrimSpace(pyrepr.Str(v)), nil
 		}
 		secret, err := gateway.GetScopedSecret(ctx, env, "", false)
-		return pystr.Strip(secret), err
+		return strings.TrimSpace(secret), err
 	}
 	if a.appID, err = credential("app_id", "QQ_APP_ID"); err != nil {
 		return nil, err
@@ -190,9 +191,10 @@ func NewQQAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*QQAdapter,
 	if a.clientSecret, err = credential("client_secret", "QQ_CLIENT_SECRET"); err != nil {
 		return nil, err
 	}
-	a.markdownSupport = pyrepr.Truthy(getOr(extra, "markdown_support", true))
-	a.DMPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(getOr(extra, "dm_policy", "pairing"))))
-	a.GroupPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(getOr(extra, "group_policy", "pairing"))))
+	sctx := gateway.SettingsContext(ctx)
+	a.markdownSupport = settings.QqbotMarkdownSupport.Get(sctx)
+	a.DMPolicy = strings.ToLower(strings.TrimSpace(settings.QqbotDmPolicy.Get(sctx)))
+	a.GroupPolicy = strings.ToLower(strings.TrimSpace(settings.QqbotGroupPolicy.Get(sctx)))
 	for _, entry := range gateway.SettingList(ctx, settings.QqbotAllowFrom) {
 		a.AllowFrom[entry] = true
 	}
@@ -208,9 +210,9 @@ func NewQQAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*QQAdapter,
 
 // Case insensitive allowlist match where a star entry matches anyone
 func entryMatches(entries map[string]bool, target string) bool {
-	normalizedTarget := pystr.Lower(pystr.Strip(target))
+	normalizedTarget := strings.ToLower(strings.TrimSpace(target))
 	for entry, present := range entries {
-		if n := pystr.Lower(pystr.Strip(entry)); present && (n == "*" || n == normalizedTarget) {
+		if n := strings.ToLower(strings.TrimSpace(entry)); present && (n == "*" || n == normalizedTarget) {
 			return true
 		}
 	}
@@ -412,7 +414,7 @@ func (a *QQAdapter) fetchJSON(ctx context.Context, what, method, rawURL string, 
 		client := a.httpClient
 		a.mu.Unlock()
 		if client == nil {
-			return nil, &pyErr{"AttributeError", "'NoneType' object has no attribute '" + pystr.Lower(method) + "'"}
+			return nil, &pyErr{"AttributeError", "'NoneType' object has no attribute '" + strings.ToLower(method) + "'"}
 		}
 		var body []byte
 		if payload != nil {
@@ -494,7 +496,7 @@ func (a *QQAdapter) getGatewayURL(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := a.fetchJSON(ctx, "gateway URL", http.MethodGet, APIBase+GatewayURLPath,
+	data, err := a.fetchJSON(ctx, "gateway URL", http.MethodGet, apiBase(ctx)+GatewayURLPath,
 		map[string]string{"Authorization": "QQBot " + token, "User-Agent": BuildUserAgent()}, nil)
 	if err != nil {
 		return "", err

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -59,7 +58,7 @@ func resolveCronSurfaceMode(pconfig *gateway.PlatformConfig, logicalPlatform str
 	if raw == nil {
 		raw = extra["cron_continuable_surface"]
 	}
-	if raw != nil && strings.ToLower(pystr.Strip(pyrepr.Str(raw))) == "in_channel" {
+	if raw != nil && strings.ToLower(strings.TrimSpace(pyrepr.Str(raw))) == "in_channel" {
 		return "in_channel"
 	}
 	return "thread"
@@ -77,27 +76,12 @@ func resolveOrigin(job *Job) map[string]any {
 	return origin
 }
 
-// Per job attach_to_session, then cron.mirror_delivery, then off
-func (s *Store) cronMirrorDeliveryEnabled(job *Job, cfg config.Tree) bool {
+// Per job attach_to_session, else cron.mirror_delivery for the profile of ctx
+func (s *Store) cronMirrorDeliveryEnabled(ctx context.Context, job *Job) bool {
 	if job.AttachToSession != nil {
 		return *job.AttachToSession
 	}
-	if cfg == nil {
-		loaded, err := s.loadConfig()
-		if err != nil {
-			return false
-		}
-		cfg = loaded
-	}
-	cronCfg, present := cfg["cron"]
-	if !present || !pyTruthy(cronCfg) {
-		return false
-	}
-	m, ok := cronCfg.(map[string]any)
-	if !ok {
-		return false
-	}
-	return pyTruthy(m["mirror_delivery"])
+	return settings.CronMirrorDelivery.Get(ctx)
 }
 
 // True when the target is the job origin conversation, a pinned origin thread must match
@@ -169,7 +153,7 @@ func (s *Store) maybeMirrorCronDelivery(ctx context.Context, job *Job, platform,
 	if !enabled {
 		return
 	}
-	text := pystr.Strip(mirrorText)
+	text := strings.TrimSpace(mirrorText)
 	if text == "" {
 		return
 	}
@@ -264,7 +248,7 @@ func homeEnvLookup(ctx context.Context, envVar, suffix string, strip bool) strin
 	read := func(name string) string {
 		v := provider.GetSecretStr(ctx, name, "")
 		if strip {
-			return pystr.Strip(v)
+			return strings.TrimSpace(v)
 		}
 		return v
 	}
@@ -488,7 +472,7 @@ func (s *Store) resolveDeliveryTargetsFor(ctx context.Context, job *Job, forFail
 	seen := map[key]int{}
 	var targets []Target
 	for _, raw := range strings.Split(deliver, ",") {
-		raw = pystr.Strip(raw)
+		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
 		}

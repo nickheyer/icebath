@@ -81,7 +81,7 @@ func loadHookDir(hookDir string) (*loadedHookDir, error) {
 		return nil, nil
 	}
 	declared, _ := manifest["command"].(string)
-	if pystr.Strip(declared) == "" {
+	if strings.TrimSpace(declared) == "" {
 		if pathExists(filepath.Join(hookDir, "handler.py")) {
 			skipHook(hookName, "handler.py is Python source, which is not loaded; name the handler in HOOK.yaml as `command:`, it receives the event as JSON on standard input")
 		} else {
@@ -123,10 +123,10 @@ func hookEventNames(events any) ([]string, error) {
 		}
 		return out, nil
 	case string:
-		if pystr.Strip(v) == "" {
+		if strings.TrimSpace(v) == "" {
 			return nil, nil
 		}
-		return []string{pystr.Strip(v)}, nil
+		return []string{strings.TrimSpace(v)}, nil
 	}
 	return nil, &pyTypeError{msg: fmt.Sprintf("hook events are %s where a list was expected", errchain.Kind(events))}
 }

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -26,20 +25,10 @@ func validateConfig(ctx context.Context, config *gateway.PlatformConfig) (bool, 
 	return id != "" && secret != "" && tenant != "", nil
 }
 
-// Python int of an env string, the ValueError int raises for a bad literal
-func intConv(raw string) (any, error) {
-	n, err := pyint.Int64(raw)
-	if pe, ok := err.(*pyint.Error); ok {
-		return nil, &gateway.PyError{Kind: pe.Kind, Msg: pe.Msg}
-	}
-	return n, err
-}
-
 // Env var, extra key and conversion of every Teams value seeded from an env only setup
 var envSeedKeys = []gateway.EnvSeedRow{
 	{Env: "TEAMS_CLIENT_ID", Key: "client_id"}, {Env: "TEAMS_CLIENT_SECRET", Key: "client_secret"},
-	{Env: "TEAMS_TENANT_ID", Key: "tenant_id"}, {Env: "TEAMS_PORT", Key: "port", Conv: intConv},
-	{Env: "TEAMS_SERVICE_URL", Key: "service_url"},
+	{Env: "TEAMS_TENANT_ID", Key: "tenant_id"}, {Env: "TEAMS_SERVICE_URL", Key: "service_url"},
 }
 
 // Extra seeded from the profile env, nil unless identity and secret are set, a scope read failure raising

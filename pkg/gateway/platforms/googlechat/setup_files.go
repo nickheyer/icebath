@@ -4,16 +4,14 @@ import (
 	"context"
 	"errors"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Runs the in chat /setup-files OAuth flow for the sender, reporting whether the message was consumed
 func (a *GoogleChatAdapter) handleSetupFilesCommand(ctx context.Context, chatID, threadID, rawText, senderEmail string) bool {
-	senderKey := strings.ToLower(pystr.Strip(senderEmail))
+	senderKey := strings.ToLower(strings.TrimSpace(senderEmail))
 	arg := ""
 	if fields := strings.Fields(rawText); len(fields) > 1 {
-		arg = pystr.Strip(strings.TrimSpace(rawText)[len(fields[0]):])
+		arg = strings.TrimSpace(strings.TrimSpace(rawText)[len(fields[0]):])
 	}
 	reply := func(text string) {
 		if _, err := a.createMessage(ctx, chatID, threadBody(text, threadID)); err != nil {
@@ -91,11 +89,11 @@ func (a *GoogleChatAdapter) handleSetupFilesCommand(ctx context.Context, chatID,
 				return true
 			}
 			output = tr(ctx, "setup_files.revoke_completed", nil)
-		} else if pystr.Strip(output) == "" {
+		} else if strings.TrimSpace(output) == "" {
 			output = tr(ctx, "setup_files.revoked", nil)
 		}
 		setUserCreds(nil)
-		reply(tr(ctx, "setup_files.done_output", map[string]any{"output": pystr.Strip(output)}))
+		reply(tr(ctx, "setup_files.done_output", map[string]any{"output": strings.TrimSpace(output)}))
 		return true
 	}
 	output, err := exchangeAuthCode(ctx, arg, senderKey)
@@ -109,6 +107,6 @@ func (a *GoogleChatAdapter) handleSetupFilesCommand(ctx context.Context, chatID,
 		return true
 	}
 	pkgLog().Warn("[GoogleChat] post-exchange creds load failed")
-	reply(tr(ctx, "setup_files.exchanged_not_loaded", map[string]any{"token_path": tokenPath(ctx, senderKey), "output": pystr.Strip(output)}))
+	reply(tr(ctx, "setup_files.exchanged_not_loaded", map[string]any{"token_path": tokenPath(ctx, senderKey), "output": strings.TrimSpace(output)}))
 	return true
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -222,9 +221,9 @@ func fasterWhisperImportable() bool {
 	return FasterWhisperImportable()
 }
 
-// Tool env over the profile home, config and secrets for the tool backend readers
+// Tool env over the profile home and secrets for the tool backend readers, which read their settings through the home
 func toolFeatureEnv(env PoolEnv) *tools.Env {
-	return &tools.Env{Home: envHome(env), Config: config.Tree(env.config()), Secrets: env.Secrets, Log: env.log()}
+	return &tools.Env{Home: envHome(env), Secrets: env.Secrets, Log: env.log()}
 }
 
 // Scope aware environment value falling back to the profile .env file

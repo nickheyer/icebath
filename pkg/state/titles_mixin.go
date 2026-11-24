@@ -1,6 +1,8 @@
 package state
 
 import (
+	"strings"
+
 	"context"
 	"math/big"
 	"regexp"
@@ -114,7 +116,7 @@ func SanitizeTitle(title string) (string, error) {
 		return "", nil
 	}
 	cleaned := titleInvisibleRe.ReplaceAllString(titleControlRe.ReplaceAllString(SanitizeSurrogates(title), ""), "")
-	cleaned = pystr.Strip(pySub(titleWhitespaceRe, cleaned, " "))
+	cleaned = strings.TrimSpace(pySub(titleWhitespaceRe, cleaned, " "))
 	if cleaned == "" {
 		return "", nil
 	}

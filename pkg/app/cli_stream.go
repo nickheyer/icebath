@@ -1,6 +1,8 @@
 package app
 
 import (
+	"unicode"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -145,7 +147,7 @@ func (c *CLI) currentReasoningCallback() func(string) {
 
 // Renders a buffered reasoning preview as one thinking block, five lines unless verbose
 func (c *CLI) emitReasoningPreview(reasoningText string) {
-	previewText := pystr.Strip(reasoningText)
+	previewText := strings.TrimSpace(reasoningText)
 	if previewText == "" {
 		return
 	}
@@ -155,7 +157,7 @@ func (c *CLI) emitReasoningPreview(reasoningText string) {
 	for _, paragraph := range reasoningParagraphRe.Split(strings.ReplaceAll(previewText, "\r\n", "\n"), -1) {
 		kept := []string{}
 		for _, line := range pystr.Splitlines(paragraph, false) {
-			if s := pystr.Strip(line); s != "" {
+			if s := strings.TrimSpace(line); s != "" {
 				kept = append(kept, s)
 			}
 		}
@@ -222,7 +224,7 @@ func (c *CLI) flushReasoningPreview(force bool) {
 	}
 	flushText := pystr.FromRunes(flush)
 	if flushed && flushText != "" {
-		c.reasoningPreviewBuf = pystr.Lstrip(pystr.FromRunes(buf))
+		c.reasoningPreviewBuf = strings.TrimLeftFunc(pystr.FromRunes(buf), unicode.IsSpace)
 		c.emitReasoningPreview(flushText)
 		return
 	}
@@ -393,7 +395,7 @@ func (c *CLI) streamDeltaText(text string) {
 	c.streamPrefilt += text
 	if !c.inReasoningBlock {
 		prefilt := pystr.Runes(c.streamPrefilt)
-		lower := pystr.Runes(pystr.Lower(c.streamPrefilt))
+		lower := pystr.Runes(strings.ToLower(c.streamPrefilt))
 		clamp := func(i int) int { return max(0, min(i, len(prefilt))) }
 		for _, tag := range streamOpenTags {
 			searchStart := 0
@@ -410,7 +412,7 @@ func (c *CLI) streamDeltaText(text string) {
 						break
 					}
 				}
-				boundary := pystr.Strip(pystr.FromRunes(preceding[lastNewline+1:])) == "" && (lastNewline != -1 || !c.streamMidLine)
+				boundary := strings.TrimSpace(pystr.FromRunes(preceding[lastNewline+1:])) == "" && (lastNewline != -1 || !c.streamMidLine)
 				if boundary {
 					if len(preceding) > 0 {
 						c.emitStreamText(pystr.FromRunes(preceding))
@@ -446,7 +448,7 @@ func (c *CLI) streamDeltaText(text string) {
 		}
 	}
 	prefilt := pystr.Runes(c.streamPrefilt)
-	lower := pystr.Runes(pystr.Lower(c.streamPrefilt))
+	lower := pystr.Runes(strings.ToLower(c.streamPrefilt))
 	clamp := func(i int) int { return max(0, min(i, len(prefilt))) }
 	for _, tag := range streamCloseTags {
 		idx := runeFind(lower, tag, 0)
@@ -575,7 +577,7 @@ func (c *CLI) renderStreamText(text string) {
 		}
 		c.emitStreamLine(line)
 	}
-	if c.streamBuf != "" && !c.inStreamTable && !strings.HasPrefix(pystr.Lstrip(c.streamBuf), "|") && pystr.Len(c.streamBuf) >= 80 {
+	if c.streamBuf != "" && !c.inStreamTable && !strings.HasPrefix(strings.TrimLeftFunc(c.streamBuf, unicode.IsSpace), "|") && pystr.Len(c.streamBuf) >= 80 {
 		buf := pystr.Runes(c.streamBuf)
 		preview := buf[len(buf)-streamPartialPreviewLen:]
 		cut := -1
@@ -822,8 +824,8 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 		cprint("  " + dimANSI + "┊ ◇ " + header + resetANSI)
 		func() {
 			defer func() {
-				if recover() != nil && pystr.Strip(preview) != "" {
-					cprint("  " + dimANSI + pystr.Strip(preview) + resetANSI)
+				if recover() != nil && strings.TrimSpace(preview) != "" {
+					cprint("  " + dimANSI + strings.TrimSpace(preview) + resetANSI)
 				}
 			}()
 			c.emitReasoningPreview(preview)

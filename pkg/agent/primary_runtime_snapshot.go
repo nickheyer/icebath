@@ -5,7 +5,6 @@ import (
 	"maps"
 	"math/big"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -32,7 +31,7 @@ func (a *AIAgent) SetPrimaryRuntime(rt map[string]any) { a.primaryRuntime = rt }
 
 // Owning custom entry of the route resolved against the config the route runs on, nil for none
 func runtimeEntryOwner(ctx context.Context, a *AIAgent) any {
-	if owner := provider.RuntimeEntryOwner(ctx, a.provider, a.requestedProvider, a.baseURL, provider.LoadConfigSafe(ctx, home.Dir(ctx))); owner != nil {
+	if owner := provider.RuntimeEntryOwner(ctx, a.provider, a.requestedProvider, a.baseURL); owner != nil {
 		return owner
 	}
 	return nil

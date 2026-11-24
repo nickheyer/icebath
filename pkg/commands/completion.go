@@ -6,14 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -140,37 +138,6 @@ func (c *SlashCompleter) ctx() context.Context {
 	return c.src.Ctx
 }
 
-// CLI config loader the personality completer reads, assigned in wiring with the app loader
-var LoadCLIConfig func(ctx context.Context) map[string]any
-
-// Config file whose signature keys the personality memo
-var getConfigPath = func(ctx context.Context) string { return home.ConfigPath(home.Dir(ctx)) }
-
-var (
-	personalitiesMu   sync.Mutex
-	personalitiesMemo *personalitiesMemoEntry
-)
-
-type personalitiesMemoEntry struct {
-	sig           []any
-	personalities map[string]any
-}
-
-// Personalities of the CLI config memoised on config path and cache version so a disk edit reloads them
-func personalitiesFromCLIConfig(ctx context.Context) map[string]any {
-	cfgPath := getConfigPath(ctx)
-	sig := []any{nil, nil, nil, nil, nil}
-	if version, err := config.ConfigCacheVersion(ctx, cfgPath); err == nil {
-		sig = append([]any{cfgPath}, version...)
-	}
-	personalitiesMu.Lock()
-	defer personalitiesMu.Unlock()
-	if personalitiesMemo == nil || !reflect.DeepEqual(personalitiesMemo.sig, sig) {
-		personalitiesMemo = &personalitiesMemoEntry{sig: sig, personalities: AvailablePersonalities(config.Tree(LoadCLIConfig(ctx)))}
-	}
-	return personalitiesMemo.personalities
-}
-
 // Runs a completion generator and keeps what it produced before a panic ended the stream
 func quiet(gen func(sub string, yield func(Completion))) func(string) []Completion {
 	return func(sub string) (out []Completion) {
@@ -219,7 +186,7 @@ func (c *SlashCompleter) skinCompletions(sub string) []Completion {
 
 // None plus the configured personalities matching the typed prefix, described lazily per row
 func personalityCompletions(ctx context.Context, sub string, yield func(Completion)) {
-	personalities := personalitiesFromCLIConfig(ctx)
+	personalities := ConfiguredPersonalities(ctx)
 	lowered := strings.ToLower(sub)
 	emit := func(name, meta string) {
 		if strings.HasPrefix(name, lowered) && name != lowered {
@@ -649,7 +616,7 @@ func (c *SlashCompleter) Complete(text string) []Completion {
 		return nil
 	}
 	parts := pystr.SplitWhitespace(text, 1)
-	base := pystr.Lower(parts[0])
+	base := strings.ToLower(parts[0])
 	if len(parts) > 1 || strings.HasSuffix(text, " ") {
 		sub := ""
 		if len(parts) > 1 {

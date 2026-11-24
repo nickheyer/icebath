@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Relaunch driven completion retries back off after this many consecutive failures
@@ -405,7 +406,7 @@ func globDirOrder(parent, pattern, child string) ([]string, error) {
 // Reports a launcher marked child booted by a manager, an explicit false never suppressing the tail
 func supervisedChild() bool {
 	for _, name := range []string{"ICEBATH_SUPERVISED_CHILD", "ICEBATH_S6_SUPERVISED_CHILD"} {
-		switch pystr.Lower(pystr.Strip(os.Getenv(name))) {
+		switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
 		case "1", "true", "yes", "on":
 			return true
 		}
@@ -549,8 +550,7 @@ func PrepareLaunch(ctx context.Context, projectRoot string, argv []string) (stri
 	for _, arg := range argv {
 		metadata = metadata || metadataFlags[arg]
 	}
-	switch pystr.Lower(os.Getenv(pm.EnvDisableLazyInstalls)) {
-	case "1", "true", "yes":
+	if !settings.SecurityAllowLazyInstalls.Get(ctx) {
 		return "", nil
 	}
 	if (len(command) > 0 && command[0] == "pm") || metadata || isReadOnlyGatewayStatus(command) ||

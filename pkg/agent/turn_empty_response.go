@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -81,7 +82,7 @@ func housekeepingReplyLine(a *AIAgent) *string {
 	if !pyTruthy(a.lastContentWithTools) || !a.lastContentToolsAllHousekeeping {
 		return nil
 	}
-	line := state.SanitizeSurrogates(pystr.Strip(a.stripThinkBlocks(a.lastContentWithTools)))
+	line := state.SanitizeSurrogates(strings.TrimSpace(a.stripThinkBlocks(a.lastContentWithTools)))
 	return &line
 }
 
@@ -117,7 +118,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	s.FinalResponse = finalResponse
 	if partial := a.currentStreamedAssistantText(); a.hasContentAfterThinkBlock(partial) {
 		s.TurnExitReason = "partial_stream_recovery"
-		recovered := pystr.Strip(a.stripThinkBlocks(partial))
+		recovered := strings.TrimSpace(a.stripThinkBlocks(partial))
 		pkgLog().Info(fmt.Sprintf("Partial stream content delivered (%d chars) — using as final response", pyLen(recovered)))
 		a.emitDiagnosticStatus("↻ Stream interrupted — using delivered content as final response")
 		s.FinalResponse = recovered
@@ -163,7 +164,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 		a.setSessionMessages(s.Messages)
 		return PhaseVerdict{Action: "continue"}, nil
 	}
-	trulyEmpty := pystr.Strip(a.stripThinkBlocks(finalResponse)) == ""
+	trulyEmpty := strings.TrimSpace(a.stripThinkBlocks(finalResponse)) == ""
 	candidate := trulyEmpty && (!structured || a.thinkingPrefillRetries >= 2)
 	action, interruptResult, deterministic, err := retryEmpty(ctx, a, s, s.Response, finishReason, candidate, structured)
 	if err != nil {

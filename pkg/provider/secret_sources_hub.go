@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // SecretSourceRefusal is a secret store change refused for what was asked or for what the store answered
@@ -61,11 +60,11 @@ type SecretPreview struct {
 
 // Value of a variable of the home: the environment of this process first, then the env file of the home
 func secretEnvValue(h, name string) string {
-	if v := pystr.Strip(os.Getenv(name)); v != "" {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 		return v
 	}
 	if v, ok := config.NewSecrets(h).Lookup()(name); ok {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
 	return ""
 }
@@ -170,7 +169,7 @@ func BitwardenProjectsFor(ctx context.Context, h, token, serverURL string) ([]Bi
 	if err != nil {
 		return nil, err
 	}
-	if token = pystr.Strip(token); token == "" {
+	if token = strings.TrimSpace(token); token == "" {
 		token = secretEnvValue(h, cfgText(bwCfg(cfg), "access_token_env", bwDefaultTokenEnv))
 	}
 	if token == "" {
@@ -180,7 +179,7 @@ func BitwardenProjectsFor(ctx context.Context, h, token, serverURL string) ([]Bi
 	if err != nil {
 		return nil, err
 	}
-	projects, failure := bitwardenProjects(ctx, binary, token, pystr.Strip(serverURL))
+	projects, failure := bitwardenProjects(ctx, binary, token, strings.TrimSpace(serverURL))
 	if failure != nil {
 		return nil, &SecretSourceRefusal{Message: failure.Text, Cause: failure.Cause}
 	}
@@ -200,7 +199,7 @@ func SetUpBitwarden(h, token, serverURL, projectID string) (*SecretPreview, erro
 	section := secretsSetdefaultMapping(secretsSetdefaultMapping(cfg, "secrets"), "bitwarden")
 	tokenEnv := cfgText(section, "access_token_env", bwDefaultTokenEnv)
 	stored := secretEnvValue(h, tokenEnv)
-	token, serverURL, projectID = pystr.Strip(token), pystr.Strip(serverURL), pystr.Strip(projectID)
+	token, serverURL, projectID = strings.TrimSpace(token), strings.TrimSpace(serverURL), strings.TrimSpace(projectID)
 	if token == "" {
 		token = stored
 	}
@@ -238,7 +237,7 @@ func SetUpBitwarden(h, token, serverURL, projectID string) (*SecretPreview, erro
 
 // RotateBitwardenToken keeps a new access token once Bitwarden accepts it and answers how many projects it sees
 func RotateBitwardenToken(ctx context.Context, h, token string) (int, error) {
-	if token = pystr.Strip(token); token == "" {
+	if token = strings.TrimSpace(token); token == "" {
 		return 0, &SecretSourceRefusal{Message: "Bitwarden needs an access token"}
 	}
 	cfg, err := secretsLoadConfig(h)
@@ -299,7 +298,7 @@ func SetUpOnePassword(ctx context.Context, h, account, tokenEnv, token, binaryPa
 		return "", err
 	}
 	op := opCfgForWrite(cfg)
-	if binaryPath = pystr.Strip(binaryPath); binaryPath == "" {
+	if binaryPath = strings.TrimSpace(binaryPath); binaryPath == "" {
 		binaryPath = cfgStr(op, "binary_path")
 	}
 	binary := findOp(binaryPath)
@@ -309,14 +308,14 @@ func SetUpOnePassword(ctx context.Context, h, account, tokenEnv, token, binaryPa
 	if binaryPath != "" {
 		op["binary_path"] = binaryPath
 	}
-	if account = pystr.Strip(account); account != "" {
+	if account = strings.TrimSpace(account); account != "" {
 		op["account"] = account
 	}
-	if tokenEnv = pystr.Strip(tokenEnv); tokenEnv == "" {
+	if tokenEnv = strings.TrimSpace(tokenEnv); tokenEnv == "" {
 		tokenEnv = cfgText(op, "service_account_token_env", opDefaultTokenEnv)
 	}
 	op["service_account_token_env"] = tokenEnv
-	if token = pystr.Strip(token); token != "" {
+	if token = strings.TrimSpace(token); token != "" {
 		if err := secretsSaveEnvValue(h, tokenEnv, token); err != nil {
 			return "", err
 		}
@@ -332,7 +331,7 @@ func SetUpOnePassword(ctx context.Context, h, account, tokenEnv, token, binaryPa
 
 // RotateOnePasswordToken keeps a new service account token once op accepts it and answers the identity it signs in as
 func RotateOnePasswordToken(ctx context.Context, h, token string) (string, error) {
-	if token = pystr.Strip(token); token == "" {
+	if token = strings.TrimSpace(token); token == "" {
 		return "", &SecretSourceRefusal{Message: "1Password needs a service account token"}
 	}
 	op, err := opCfg(h)
@@ -382,7 +381,7 @@ func mapOnePasswordReference(h, envVar string, reference any) (string, []string,
 
 // MapOnePasswordReference binds an environment variable to the 1Password reference it resolves from
 func MapOnePasswordReference(h, envVar, reference string) error {
-	_, warnings, _, err := mapOnePasswordReference(h, pystr.Strip(envVar), reference)
+	_, warnings, _, err := mapOnePasswordReference(h, strings.TrimSpace(envVar), reference)
 	if err == nil && len(warnings) > 0 {
 		return &SecretSourceRefusal{Message: strings.Join(warnings, "; ")}
 	}

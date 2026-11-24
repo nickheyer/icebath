@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -391,22 +392,7 @@ func hasAnyProviderConfigured(ctx context.Context, strictProfileScope bool) bool
 		cfg = config.Tree{}
 	}
 	modelCfg := cfg["model"]
-	modelName := ""
-	switch m := modelCfg.(type) {
-	case string:
-		modelName = m
-	case map[string]any:
-		switch def := m["default"].(type) {
-		case map[string]any:
-			modelName, _ = config.SplitModelDefault(def)
-		default:
-			modelName = pyStr(def)
-			if def == nil {
-				modelName = ""
-			}
-		}
-	}
-	modelName = strings.TrimSpace(modelName)
+	modelName := strings.TrimSpace(settings.Model.Get(ctx))
 	hasIcebathConfig := modelName != "" && modelName != pyStr(config.Defaults()["model"])
 	providerEnvVars := map[string]bool{"OPENROUTER_API_KEY": true, "OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "ANTHROPIC_TOKEN": true, "OPENAI_BASE_URL": true}
 	rows := provider.CanonicalRegistryRows(ctx)

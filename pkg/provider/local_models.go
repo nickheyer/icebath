@@ -26,9 +26,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Job phases whose byte counter tracks a transfer in flight
@@ -109,10 +109,6 @@ var (
 		tree, err := config.LoadContext(ctx, home.Dir(ctx), config.EnvRefLookupContext(ctx))
 		return map[string]any(tree), err
 	}
-	configLoadReadonlyFn = func(ctx context.Context) (map[string]any, error) {
-		tree, err := config.LoadReadonly(ctx, home.Dir(ctx), config.EnvRefLookupContext(ctx))
-		return map[string]any(tree), err
-	}
 	configSaveFn = func(ctx context.Context, cfg map[string]any) error {
 		return config.SaveConfig(ctx, home.Dir(ctx), cfg, config.SaveOptions{})
 	}
@@ -133,7 +129,6 @@ type localModelsDeps struct {
 	servingEngine        func() *Engine
 	ensureLocalRuntime   func(ctx context.Context, cfg map[string]any, force bool) (localModelsSupervisor, error)
 	refreshLocalRuntime  func(ctx context.Context) (bool, error)
-	adoptLegacyModels    func() ([]string, error)
 	stateEndpoint        func() (map[string]any, error)
 	routerRequest        func(endpoint map[string]any, path string, timeout time.Duration, payload []byte) (any, error)
 	loadConfig           func(ctx context.Context) map[string]any
@@ -194,7 +189,6 @@ func defaultLocalModelsDeps() localModelsDeps {
 			return sup, err
 		},
 		refreshLocalRuntime: func(ctx context.Context) (bool, error) { return refreshLocalRuntimeCtx(ctx), nil },
-		adoptLegacyModels:   adoptLegacyModels,
 		stateEndpoint:       lmStateEndpoint,
 		routerRequest:       lmRouterRequest,
 		loadConfig:          lmLoadConfig,
@@ -705,9 +699,10 @@ func lmIterate(v any) ([]any, error) {
 	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
 
-// Read only config for status paths that render degraded, empty on any failure
+// The local_runtime and model sections the local models paths read, through their settings for ctx
 func lmLoadConfig(ctx context.Context) map[string]any {
-	return lmQuiet(func() (map[string]any, error) { return configLoadReadonlyFn(ctx) }, map[string]any{}, "", "")
+	return map[string]any{"local_runtime": localRuntimeSection(ctx),
+		"model": map[string]any{"provider": settings.ModelProvider.Get(ctx), "default": settings.Model.Get(ctx)}}
 }
 
 // The local_runtime section as the config holds it, an empty mapping when falsy
@@ -731,30 +726,12 @@ func lmSectionBackend(section any) (string, error) {
 	return pyStr(v), nil
 }
 
-// Persists local_runtime.enabled under the config mutation lock and returns the config written
+// Persists local_runtime.enabled through its setting and returns the local_runtime view the server boots from
 func lmSetRuntimeEnabled(ctx context.Context, enabled bool) (map[string]any, error) {
-	ctx, unlock := LockConfigMutation(ctx)
-	defer unlock()
-	cfg, err := configLoadFn(ctx)
-	if err != nil {
+	if _, err := settings.Set(ctx, settings.LocalRuntimeEnabled.Key, enabled, settings.Global); err != nil {
 		return nil, err
 	}
-	section, present := cfg["local_runtime"]
-	if !present {
-		section = map[string]any{}
-		assignKey(cfg, "local_runtime", section)
-	}
-	m, ok := section.(map[string]any)
-	if _, isList := section.([]any); isList {
-		return nil, errors.New("the local_models section of config.yaml is a list, expected a mapping")
-	} else if !ok {
-		return nil, fmt.Errorf("the local_models section of config.yaml is %s, expected a mapping", errchain.Kind(section))
-	}
-	assignKey(m, "enabled", enabled)
-	if err := configSaveFn(ctx, cfg); err != nil {
-		return nil, err
-	}
-	return cfg, nil
+	return map[string]any{"local_runtime": localRuntimeSection(ctx)}, nil
 }
 
 // Pinned tag and resolved backend of the requested or configured backend, a 400 when PM has no reviewed artifact
@@ -1286,11 +1263,11 @@ func lmActiveLlamacppModelID(ctx context.Context) any {
 		if err != nil {
 			return nil, err
 		}
-		if !lmLlamacppProviders[pystr.Lower(pystr.Strip(pyStr(provider)))] {
+		if !lmLlamacppProviders[strings.ToLower(strings.TrimSpace(pyStr(provider)))] {
 			return nil, nil
 		}
 		m := section.(map[string]any)
-		if id := pystr.Strip(pyOrStr(pyOr(m["default"], m["name"], ""))); id != "" {
+		if id := strings.TrimSpace(pyOrStr(pyOr(m["default"], m["name"], ""))); id != "" {
 			return id, nil
 		}
 		return nil, nil
@@ -1344,7 +1321,6 @@ func LocalModelsStatus(ctx context.Context) (map[string]any, error) {
 			return nil, err
 		}
 	}
-	lmQuiet(lmDeps.adoptLegacyModels, nil, "legacy model adoption failed: ", "")
 	mdir := lmDeps.modelsDir()
 	running, err := lmDeps.stateEndpoint()
 	if err != nil {
@@ -1846,10 +1822,7 @@ func LocalModelsActivate(ctx context.Context, modelID string) (map[string]any, e
 	jobID := lmJobID(job)
 	run := func(ctx context.Context) error {
 		sctx := currentProfileScope(ctx)
-		cfg, err := configLoadFn(sctx)
-		if err != nil {
-			return err
-		}
+		cfg := map[string]any{"local_runtime": localRuntimeSection(sctx)}
 		if err := lmDeps.ensureServer(sctx, job, cfg, modelID, lmServerStartFailed, "activate rescan check skipped"); err != nil {
 			return err
 		}

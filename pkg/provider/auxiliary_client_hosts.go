@@ -1,9 +1,9 @@
 package provider
 
 import (
-	"context"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"context"
 )
 
 // Host and provider pair of a credential routing table
@@ -42,5 +42,5 @@ func auxCredsHaveAPIKey(creds map[string]any) bool {
 	if !auxTruthy(v) {
 		return false
 	}
-	return pystr.Strip(auxPyStr(v)) != ""
+	return strings.TrimSpace(auxPyStr(v)) != ""
 }

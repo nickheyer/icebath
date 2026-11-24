@@ -781,7 +781,7 @@ func (a *TelegramAdapter) handleInlineQuery(ctx context.Context, update *Update)
 	b := a.currentBot()
 	userID := ""
 	if iq.From != nil && iq.From.ID != 0 {
-		userID = pystr.Strip(strconv.FormatInt(iq.From.ID, 10))
+		userID = strings.TrimSpace(strconv.FormatInt(iq.From.ID, 10))
 	}
 	private := "private"
 	authorized := userID != "" && a.core.isCallbackUserAuthorized(userID, &userID, &private, nil)
@@ -1178,7 +1178,7 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 			success = true
 			pkgLog().Info(fmt.Sprintf("[%s] gmail-triage callback ok: verb=%s arg=%s", a.Name(), verb, arg))
 		case errors.As(runErr, &exitErr):
-			stderrText := pystr.Strip(strings.ToValidUTF8(stderr.String(), "�"))
+			stderrText := strings.TrimSpace(strings.ToValidUTF8(stderr.String(), "�"))
 			lastLine := tr(ctx, "platform.telegram.gmail_triage.exit_code", "code", strconv.Itoa(exitErr.ExitCode()))
 			if stderrText != "" {
 				lines := pystr.Splitlines(stderrText, false)

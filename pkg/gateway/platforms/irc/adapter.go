@@ -1,6 +1,8 @@
 package irc
 
 import (
+	"unicode"
+
 	"context"
 	"crypto/tls"
 	"errors"
@@ -25,10 +27,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Lowercased env values that read as true
-var truthyValues = map[string]bool{"1": true, "true": true, "yes": true}
 
 // Markdown to plain text rewrites in order, images before links
 var markdownRules = []struct {
@@ -204,8 +206,8 @@ func chunkParagraph(paragraph string, limit int) []string {
 		if space > splitAt/3 {
 			splitAt = space
 		}
-		chunks = append(chunks, pystr.Rstrip(string(rs[:splitAt])))
-		rs = []rune(pystr.Lstrip(string(rs[splitAt:])))
+		chunks = append(chunks, strings.TrimRightFunc(string(rs[:splitAt]), unicode.IsSpace))
+		rs = []rune(strings.TrimLeftFunc(string(rs[splitAt:]), unicode.IsSpace))
 	}
 	return chunks
 }
@@ -316,10 +318,9 @@ type IRCAdapter struct {
 	port             int
 	nickname         any
 	channel          any
-	useTLS           any
+	useTLS           bool
 	serverPassword   any
 	nickservPassword any
-	allowedUsers     any
 	allowedLower     map[string]bool
 	maxMessageLength int
 
@@ -341,34 +342,6 @@ func ircAdapterTraits() gateway.AdapterTraits {
 	traits := gateway.DefaultAdapterTraits()
 	traits.SerialReceiveLoop = true
 	return traits
-}
-
-// Lowercased string members of the allowlist, the TypeError iteration raises for a non iterable value
-func lowerStringMembers(v any) (map[string]bool, error) {
-	out := map[string]bool{}
-	switch t := v.(type) {
-	case string:
-		for _, r := range t {
-			out[pystr.Lower(string(r))] = true
-		}
-	case []string:
-		for _, s := range t {
-			out[pystr.Lower(s)] = true
-		}
-	case []any:
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				out[pystr.Lower(s)] = true
-			}
-		}
-	case map[string]any:
-		for k := range t {
-			out[pystr.Lower(k)] = true
-		}
-	default:
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
-	}
-	return out, nil
 }
 
 // Adapter for a platform config, scoped env values winning over the extra keys
@@ -395,59 +368,21 @@ func NewIRCAdapter(ctx context.Context, config *gateway.PlatformConfig) (*IRCAda
 	if a.channel, err = envOrExtra(ctx, extra, "IRC_CHANNEL", "channel", ""); err != nil {
 		return nil, err
 	}
-	useTLSRaw, err := gateway.GetScopedSecret(ctx, "IRC_USE_TLS", "", false)
-	if err != nil {
-		return nil, err
-	}
-	if useTLSRaw != "" {
-		a.useTLS = truthyValues[pystr.Lower(useTLSRaw)]
-	} else if v, ok := extra["use_tls"]; ok {
-		a.useTLS = v
-	} else {
-		a.useTLS = true
-	}
+	sctx := gateway.SettingsContext(ctx)
+	a.useTLS = settings.IrcUseTLS.Get(sctx)
 	if a.serverPassword, err = envOrExtra(ctx, extra, "IRC_SERVER_PASSWORD", "server_password", ""); err != nil {
 		return nil, err
 	}
 	if a.nickservPassword, err = envOrExtra(ctx, extra, "IRC_NICKSERV_PASSWORD", "nickserv_password", ""); err != nil {
 		return nil, err
 	}
-	if v, ok := extra["allowed_users"]; ok {
-		a.allowedUsers = v
-	} else {
-		a.allowedUsers = []any{}
+	a.allowedLower = map[string]bool{}
+	for _, nick := range settings.IrcAllowedUsers.Strings(sctx) {
+		a.allowedLower[strings.ToLower(nick)] = true
 	}
-	if a.allowedLower, err = lowerStringMembers(a.allowedUsers); err != nil {
-		return nil, err
-	}
-	maxMsg := extra["max_message_length"]
-	if maxMsg == nil {
-		if entry := registryEntry(ctx); entry != nil {
-			maxMsg = entry.MaxMessageLength
-		}
-	}
-	if !pyrepr.Truthy(maxMsg) {
-		maxMsg = 450
-	}
-	n, err := pyint.Int64(maxMsg)
-	if pe, ok := err.(*pyint.Error); ok {
-		return nil, &gateway.PyError{Kind: pe.Kind, Msg: pe.Msg}
-	} else if err != nil {
-		return nil, err
-	}
-	a.maxMessageLength = int(n)
+	a.maxMessageLength = settings.IrcMaxMessageLength.Get(sctx)
 	a.currentNick = a.nickname
 	return a, nil
-}
-
-// Registry entry of the irc platform, nil when the lookup finds none or fails
-func registryEntry(ctx context.Context) (entry *gateway.PlatformEntry) {
-	defer func() {
-		if recover() != nil {
-			entry = nil
-		}
-	}()
-	return gateway.Registry.Get(ctx, "irc")
 }
 
 // Display name of the adapter
@@ -480,7 +415,7 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	if err != nil || !acquired {
 		return false, err
 	}
-	conn, err := openConnection(ctx, a.server, a.port, pyrepr.Truthy(a.useTLS), 30*time.Second)
+	conn, err := openConnection(ctx, a.server, a.port, a.useTLS, 30*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -617,7 +552,7 @@ func (a *IRCAdapter) GetChatInfo(ctx context.Context, chatID string) (map[string
 func (a *IRCAdapter) splitMessage(content, target string) []string {
 	paragraphs := []string{}
 	for _, p := range strings.Split(stripMarkdown(content), "\n") {
-		if pystr.Strip(p) != "" {
+		if strings.TrimSpace(p) != "" {
 			paragraphs = append(paragraphs, p)
 		}
 	}
@@ -736,7 +671,7 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 			if err != nil {
 				return err
 			}
-			next = pystr.RstripChars(base, "_0123456789") + "_" + n.Add(n, big.NewInt(1)).String()
+			next = strings.TrimRight(base, "_0123456789") + "_" + n.Add(n, big.NewInt(1)).String()
 		} else if pyrepr.Equal(current, a.nickname) {
 			next = pyrepr.Str(a.nickname) + "_"
 		} else {
@@ -766,7 +701,7 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 		if err != nil {
 			return err
 		}
-		if pystr.Lower(extractNick(msg.prefix)) == pystr.Lower(currentText) {
+		if strings.ToLower(extractNick(msg.prefix)) == strings.ToLower(currentText) {
 			a.mu.Lock()
 			a.currentNick = params[0]
 			a.mu.Unlock()
@@ -784,7 +719,7 @@ func (a *IRCAdapter) handlePrivmsg(ctx context.Context, senderNick, target, text
 	if err != nil {
 		return err
 	}
-	if pystr.Lower(senderNick) == pystr.Lower(currentNick) {
+	if strings.ToLower(senderNick) == strings.ToLower(currentNick) {
 		return nil
 	}
 	if strings.HasPrefix(text, "\x01ACTION ") && strings.HasSuffix(text, "\x01") {
@@ -802,12 +737,12 @@ func (a *IRCAdapter) handlePrivmsg(ctx context.Context, senderNick, target, text
 	if isChannel {
 		addressed := false
 		for _, prefix := range []string{currentNick + ":", currentNick + ",", currentNick + " "} {
-			if strings.HasPrefix(pystr.Lower(text), pystr.Lower(prefix)) {
+			if strings.HasPrefix(strings.ToLower(text), strings.ToLower(prefix)) {
 				rs, skip := []rune(text), len([]rune(prefix))
 				if skip > len(rs) {
 					skip = len(rs)
 				}
-				text = pystr.Strip(string(rs[skip:]))
+				text = strings.TrimSpace(string(rs[skip:]))
 				addressed = true
 				break
 			}
@@ -816,7 +751,7 @@ func (a *IRCAdapter) handlePrivmsg(ctx context.Context, senderNick, target, text
 			return nil
 		}
 	}
-	if len(a.allowedLower) > 0 && !a.allowedLower[pystr.Lower(senderNick)] {
+	if len(a.allowedLower) > 0 && !a.allowedLower[strings.ToLower(senderNick)] {
 		pkgLog().Debug(fmt.Sprintf("IRC: ignoring message from unauthorized user %s", senderNick))
 		return nil
 	}

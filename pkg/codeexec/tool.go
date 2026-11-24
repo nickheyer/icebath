@@ -10,13 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -160,39 +158,5 @@ func signalTree(pid int, kill func() error, sig syscall.Signal) {
 	killProcessTree(pid, sig)
 }
 
-// Effective code_execution section of the active config, empty when it cannot load
-func loadConfig(env *tools.Env) map[string]any {
-	h := envHome(env)
-	lookup := config.NewSecrets(h).Lookup()
-	if env != nil && env.Secrets != nil {
-		lookup = env.Secrets.Lookup()
-	}
-	tree, err := config.LoadReadonly(context.Background(), h, lookup)
-	if err != nil {
-		return map[string]any{}
-	}
-	if section, ok := tree["code_execution"].(map[string]any); ok {
-		return section
-	}
-	return map[string]any{}
-}
-
-var executionModes = []string{"project", "strict"}
-
-const defaultExecutionMode = "project"
-
-// Configured code_execution.mode, an unknown value warned about and replaced by project
-func getExecutionMode(env *tools.Env) string {
-	raw, ok := loadConfig(env)["mode"]
-	if !ok {
-		raw = defaultExecutionMode
-	}
-	value := pystr.Lower(pystr.Strip(pyrepr.Str(raw)))
-	for _, mode := range executionModes {
-		if value == mode {
-			return value
-		}
-	}
-	pkgLog(env).Warn("Ignoring code_execution.mode=" + errchain.Show(value) + " (expected project or strict), falling back to 'project'")
-	return defaultExecutionMode
-}
+// Configured code_execution.mode, project or strict, an unknown value taking the setting's default
+func getExecutionMode(env *tools.Env) string { return settings.CodeExecutionMode.Get(settingsCtx(env)) }

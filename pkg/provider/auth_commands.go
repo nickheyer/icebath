@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Providers that support OAuth login in addition to API keys
@@ -222,18 +223,10 @@ func (c *authCLI) pluginArgs() []string {
 	return args
 }
 
-func (c *authCLI) loadConfig() map[string]any {
-	cfg := LoadConfigSafe(c.env.ctx(), envHome(c.env))
-	if cfg == nil {
-		return map[string]any{}
-	}
-	return cfg
-}
-
 // Configured provider entries with their legacy custom pool key and runtime slug
 func (c *authCLI) customProviderEntries() []map[string]any {
 	var result []map[string]any
-	for _, entry := range ProviderEntries(c.loadConfig()) {
+	for _, entry := range CustomProviderEntries(c.env.hookContext()) {
 		name, _ := entry["name"].(string)
 		if strings.TrimSpace(name) == "" {
 			continue
@@ -304,7 +297,7 @@ func (c *authCLI) providerBaseURL(provider string) string {
 		return home.OpenRouterBaseURL
 	}
 	if strings.HasPrefix(provider, CustomPoolPrefix) {
-		return strings.TrimSpace(authTextOr(getCustomProviderConfig(provider, c.loadConfig())["base_url"]))
+		return strings.TrimSpace(authTextOr(getCustomProviderConfig(provider, settings.Providers.Get(c.env.hookContext()))["base_url"]))
 	}
 	if configured := c.configuredProviderEntry(provider); configured != nil {
 		return strings.TrimSpace(authTextOr(configured["base_url"]))

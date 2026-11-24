@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -366,7 +367,7 @@ func (a *FeishuAdapter) onCardActionTrigger(e cardActionEvent) *callback.CardAct
 
 // Whether a card operator may answer gated prompts, the gateway authorization deciding when no Feishu list is set
 func (a *FeishuAdapter) isInteractiveOperatorAuthorized(openID, userID, unionID, chatID string) bool {
-	normalized := pystr.Strip(openID)
+	normalized := strings.TrimSpace(openID)
 	if normalized == "" {
 		return false
 	}
@@ -381,14 +382,14 @@ func (a *FeishuAdapter) isInteractiveOperatorAuthorized(openID, userID, unionID,
 		if allowed["*"] {
 			return true
 		}
-		for _, id := range []string{normalized, pystr.Strip(userID), pystr.Strip(unionID)} {
+		for _, id := range []string{normalized, strings.TrimSpace(userID), strings.TrimSpace(unionID)} {
 			if id != "" && allowed[id] {
 				return true
 			}
 		}
 		return false
 	}
-	principal := pystr.Strip(userID)
+	principal := strings.TrimSpace(userID)
 	if principal == "" {
 		principal = normalized
 	}
@@ -517,7 +518,7 @@ func (a *FeishuAdapter) handleUpdatePromptCardAction(e cardActionEvent, value *p
 		pkgLog().Debug(fmt.Sprintf("[Feishu] Update prompt %s already resolved or unknown", pyrepr.Str(raw)))
 		return cardResponse(nil)
 	}
-	answer := pystr.Lower(pystr.Strip(strOr(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, ""))))
+	answer := strings.ToLower(strings.TrimSpace(strOr(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, ""))))
 	if answer != "y" && answer != "n" {
 		pkgLog().Debug("[Feishu] Card action has invalid update prompt answer=" + pyrepr.Repr(answer))
 		return cardResponse(nil)
@@ -761,12 +762,7 @@ func (a *FeishuAdapter) HandleMessageWithGuards(ctx context.Context, event *gate
 
 // Whether processing reactions are on for this profile
 func (a *FeishuAdapter) reactionsEnabled(ctx context.Context) bool {
-	v, _ := gateway.GetScopedSecret(ctx, "FEISHU_REACTIONS", "true", false)
-	switch pystr.Lower(pystr.Strip(v)) {
-	case "false", "0", "no":
-		return false
-	}
-	return true
+	return settings.FeishuReactions.Get(gateway.SettingsContext(ctx))
 }
 
 // Feishu emoji types of common emoji, Feishu reacting only with its own named set
@@ -1260,7 +1256,7 @@ func (a *FeishuAdapter) downloadFeishuMessageResources(ctx context.Context, mess
 
 // Photo, audio or video type of a media type, def otherwise
 func resolveMediaMessageType(mediaType string, def gateway.MessageType) gateway.MessageType {
-	normalized := pystr.Lower(mediaType)
+	normalized := strings.ToLower(mediaType)
 	switch {
 	case strings.HasPrefix(normalized, "image/"):
 		return gateway.MessageTypePhoto
@@ -1467,7 +1463,7 @@ func guessExtension(filename, contentType, def string, allowed map[string]bool) 
 
 // Content type cut at its first semicolon, stripped and lowercased, def when empty
 func normalizeMediaType(contentType, def string) string {
-	normalized := pystr.Lower(pystr.Strip(strings.SplitN(contentType, ";", 2)[0]))
+	normalized := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
 	if normalized == "" {
 		return def
 	}
@@ -1500,7 +1496,7 @@ func displayNameFromCachedPath(path string) string {
 // Media type of a file name from its guessed type or its known media extension
 func guessMediaTypeFromFilename(filename string) string {
 	if t, _, _ := pymimetypes.GuessType(filename, true); t != "" {
-		return pystr.Lower(t)
+		return strings.ToLower(t)
 	}
 	ext := strings.ToLower(pypath.Suffix(filename))
 	switch {
@@ -1516,7 +1512,7 @@ func guessMediaTypeFromFilename(filename string) string {
 
 // Gateway chat type of a Feishu chat type, forums for topic and thread chats
 func mapChatType(raw string) string {
-	normalized := pystr.Lower(pystr.Strip(raw))
+	normalized := strings.ToLower(strings.TrimSpace(raw))
 	if normalized == "p2p" {
 		return "dm"
 	}
@@ -1533,7 +1529,7 @@ func mapChatType(raw string) string {
 
 // Group or forum from the chat info, otherwise dm for p2p events and group for the rest
 func resolveSourceChatType(info map[string]any, eventChatType string) string {
-	resolved := pystr.Lower(pystr.Strip(strOr(info["type"])))
+	resolved := strings.ToLower(strings.TrimSpace(strOr(info["type"])))
 	if resolved == "group" || resolved == "forum" {
 		return resolved
 	}
@@ -1585,7 +1581,7 @@ func (a *FeishuAdapter) resolveSenderNameFromAPI(ctx context.Context, senderID s
 	client := a.currentClient()
 	trimmed := ""
 	if senderID != "" && client != nil {
-		trimmed = pystr.Strip(senderID)
+		trimmed = strings.TrimSpace(senderID)
 	}
 	if trimmed == "" {
 		return nil
@@ -1635,10 +1631,10 @@ func (a *FeishuAdapter) resolveSenderNameFromAPI(ctx context.Context, senderID s
 	}
 	u := resp.Data.User
 	name := firstNonEmpty(sdkStr(u.Name), sdkStr(u.Nickname), sdkStr(u.EnName))
-	if pystr.Strip(name) == "" {
+	if strings.TrimSpace(name) == "" {
 		return nil
 	}
-	name = pystr.Strip(name)
+	name = strings.TrimSpace(name)
 	a.mu.Lock()
 	a.senderNameCache[trimmed] = nameEntry{name: name, expireAt: now + feishuSenderNameTTLSeconds}
 	a.mu.Unlock()
@@ -1714,7 +1710,7 @@ func (a *FeishuAdapter) fetchBotNames(ctx context.Context, botIDs []string) *pyd
 			return fail()
 		}
 		if oid != "" {
-			out.Set(oid, pystr.Strip(strOr(dget(infoObj, "name"))))
+			out.Set(oid, strings.TrimSpace(strOr(dget(infoObj, "name"))))
 		}
 	}
 	return out
@@ -1777,7 +1773,7 @@ func (a *FeishuAdapter) extractTextFromRawContent(msgType, rawContent string, me
 		t := n.TextContent
 		return &t
 	}
-	label := pystr.Strip(pyrepr.Str(n.Metadata["placeholder_text"]))
+	label := strings.TrimSpace(pyrepr.Str(n.Metadata["placeholder_text"]))
 	if label == "" {
 		return nil
 	}
@@ -1786,7 +1782,7 @@ func (a *FeishuAdapter) extractTextFromRawContent(msgType, rawContent string, me
 
 // Image media type of an extension, jpeg for jpg and empty extensions
 func defaultImageMediaType(ext string) string {
-	normalized := pystr.Lower(ext)
+	normalized := strings.ToLower(ext)
 	if normalized == ".jpg" || normalized == ".jpeg" {
 		return "image/jpeg"
 	}
@@ -1869,7 +1865,7 @@ func (a *FeishuAdapter) warnOnceEmptyAllowlistDeny(chatID string) {
 	for u := range a.allowedGroupUsers {
 		users = append(users, u)
 	}
-	if text, ok := emptyAllowlistDropWarning(chatID, rules, a.settings.DefaultGroupPolicy, users); ok {
+	if text, ok := emptyAllowlistDropWarning(chatID, rules, a.settings.GroupPolicy, users); ok {
 		a.warnedEmptyAllowlistDeny = true
 		pkgLog().Warn(text)
 	}
@@ -1903,10 +1899,7 @@ func (a *FeishuAdapter) allowGroupMessage(sender *larkim.UserId, chatID string, 
 	if rule := a.settings.GroupRules[chatID]; chatID != "" && rule != nil {
 		policy, allowlist, blacklist = rule.Policy, rule.Allowlist, rule.Blacklist
 	} else {
-		policy = a.settings.DefaultGroupPolicy
-		if policy == "" {
-			policy = a.settings.GroupPolicy
-		}
+		policy = a.settings.GroupPolicy
 		allowlist, blacklist = a.allowedGroupUsers, map[string]bool{}
 	}
 	switch {
@@ -1944,9 +1937,9 @@ func (a *FeishuAdapter) messageMentionsBot(mentions []*larkim.MentionEvent) bool
 		}
 		var openID, userID string
 		if m.Id != nil {
-			openID, userID = pystr.Strip(sdkStr(m.Id.OpenId)), pystr.Strip(sdkStr(m.Id.UserId))
+			openID, userID = strings.TrimSpace(sdkStr(m.Id.OpenId)), strings.TrimSpace(sdkStr(m.Id.UserId))
 		}
-		if bot.matches(openID, userID, pystr.Strip(sdkStr(m.Name))) {
+		if bot.matches(openID, userID, strings.TrimSpace(sdkStr(m.Name))) {
 			return true
 		}
 	}
@@ -2007,7 +2000,7 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 	if resp.Data == nil || resp.Data.App == nil {
 		return
 	}
-	appName := pystr.Strip(sdkStr(resp.Data.App.AppName))
+	appName := strings.TrimSpace(sdkStr(resp.Data.App.AppName))
 	a.mu.Lock()
 	if appName != "" && a.botName == "" {
 		a.botName = appName
@@ -2032,7 +2025,7 @@ func (a *FeishuAdapter) applyBotInfo(content []byte) {
 		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 		return
 	}
-	openID, name := pystr.Strip(strOr(parsed["bot_open_id"])), pystr.Strip(strOr(parsed["bot_name"]))
+	openID, name := strings.TrimSpace(strOr(parsed["bot_open_id"])), strings.TrimSpace(strOr(parsed["bot_name"]))
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if openID != "" {

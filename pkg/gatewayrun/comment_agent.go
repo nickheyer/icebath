@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Model and provider credentials of a comment agent turn, resolved the way gateway message handling resolves them
@@ -24,7 +24,7 @@ func resolveCommentModelAndRuntime(ctx context.Context) (string, map[string]any,
 			model = provider.GetDefaultModelForProvider(ctx, p)
 		}()
 	}
-	kwargs["reasoning_config"] = config.ResolveReasoningConfig(gateway.LoadGatewayConfigMap(ctx, ""), model)
+	kwargs["reasoning_config"] = settings.ReasoningConfig(gateway.SettingsContext(ctx), model)
 	return model, kwargs, nil
 }
 

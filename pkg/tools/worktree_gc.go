@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"strings"
+
 	"os"
 	"path/filepath"
 	"time"
@@ -12,7 +14,7 @@ import (
 // Directory size in megabytes through du with a bounded wait, nil on failure or timeout
 func TreeSizeMB(path string, timeout time.Duration) *int {
 	r := boundedProbeRun([]string{"du", "-sm", path}, timeout, nil, "", nil)
-	if r == nil || r.Code != 0 || pystr.Strip(r.Stdout) == "" {
+	if r == nil || r.Code != 0 || strings.TrimSpace(r.Stdout) == "" {
 		return nil
 	}
 	n, ok := pyint.Parse(pystr.SplitWhitespace(r.Stdout, -1)[0])

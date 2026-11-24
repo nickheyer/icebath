@@ -17,7 +17,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
@@ -28,15 +27,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// One A2A setting from the active profile scope, a secondary profile miss never reading the default env
+// One A2A credential from the active profile scope, a secondary profile miss never reading the default env
 func startupEnv(ctx context.Context, name string) string {
 	if gateway.ProfileScoped(ctx) {
 		val, _ := provider.SecretScopeFrom(ctx).GetSecret(name)
-		return pystr.Strip(val)
+		return strings.TrimSpace(val)
 	}
-	return pystr.Strip(os.Getenv(name))
+	return strings.TrimSpace(os.Getenv(name))
 }
 
 // Peer token pairs from alice colon tok1 comma bob colon tok2, keyed by token in first seen order
@@ -48,7 +48,7 @@ func parsePeerTokens(raw string) [][2]string {
 		if !ok {
 			continue
 		}
-		name, token = pystr.Strip(name), pystr.Strip(token)
+		name, token = strings.TrimSpace(name), strings.TrimSpace(token)
 		if name == "" || token == "" {
 			continue
 		}
@@ -62,35 +62,11 @@ func parsePeerTokens(raw string) [][2]string {
 	return out
 }
 
-var loadA2AConfig = func(ctx context.Context) (config.Tree, error) {
-	return config.LoadContext(ctx, home.Dir(ctx), nil)
-}
-
-// Trusted peer names from A2A_TRUSTED_PEERS, else the a2a trusted_peers config list, empty on any failure
+// Trusted peer names from a2a.trusted_peers, blank names dropped
 func configuredTrustedPeers(ctx context.Context) map[string]struct{} {
 	out := map[string]struct{}{}
-	if raw := startupEnv(ctx, "A2A_TRUSTED_PEERS"); raw != "" {
-		for _, p := range strings.Split(raw, ",") {
-			if p = pystr.Strip(p); p != "" {
-				out[p] = struct{}{}
-			}
-		}
-		return out
-	}
-	tree, err := loadA2AConfig(ctx)
-	if err != nil {
-		return out
-	}
-	m, ok := tree["a2a"].(map[string]any)
-	if !ok {
-		return out
-	}
-	peers, ok := m["trusted_peers"].([]any)
-	if !ok {
-		return out
-	}
-	for _, peer := range peers {
-		if p := pystr.Strip(pyrepr.Str(peer)); p != "" {
+	for _, peer := range settings.A2aTrustedPeers.Strings(gateway.SettingsContext(ctx)) {
+		if p := strings.TrimSpace(peer); p != "" {
 			out[p] = struct{}{}
 		}
 	}
@@ -116,8 +92,9 @@ type A2ASecurityContext struct {
 
 // Profile scoped security settings resolved once at adapter startup
 func CaptureSecurityContext(ctx context.Context) *A2ASecurityContext {
+	sctx := gateway.SettingsContext(ctx)
 	bearer := startupEnv(ctx, "A2A_BEARER_TOKEN")
-	requested := unbracket(startupEnv(ctx, "A2A_HOST"))
+	requested := unbracket(strings.TrimSpace(settings.A2aHost.Get(sctx)))
 	if requested == "" {
 		requested = "127.0.0.1"
 	}
@@ -125,12 +102,11 @@ func CaptureSecurityContext(ctx context.Context) *A2ASecurityContext {
 	if push == "" {
 		push = bearer
 	}
-	allow := pystr.Lower(startupEnv(ctx, "A2A_ALLOW_ALL_USERS"))
 	return &A2ASecurityContext{
 		BearerToken:   bearer,
 		PeerTokens:    parsePeerTokens(startupEnv(ctx, "A2A_PEER_TOKENS")),
 		TrustedPeers:  configuredTrustedPeers(ctx),
-		AllowAllUsers: allow == "1" || allow == "true" || allow == "yes",
+		AllowAllUsers: settings.A2aAllowAllUsers.Get(sctx),
 		RequestedHost: requested,
 		PushSecret:    push,
 	}
@@ -183,10 +159,10 @@ func (s *A2ASecurityContext) Authenticate(authHeader *string, clientIP string) (
 		header = *authHeader
 	}
 	parts := pystr.SplitWhitespace(header, 1)
-	if len(parts) != 2 || pystr.Lower(parts[0]) != "bearer" {
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 		return "", false, nil
 	}
-	presented := pystr.Strip(parts[1])
+	presented := strings.TrimSpace(parts[1])
 	for _, pair := range s.PeerTokens {
 		eq, err := compareDigest(presented, pair[0])
 		if err != nil {
@@ -264,12 +240,12 @@ func BrowserPostRefusal(headers http.Header) (string, bool) {
 	if site == "" {
 		site = "none"
 	}
-	if site = pystr.Lower(pystr.Strip(site)); site != "none" && site != "same-origin" {
+	if site = strings.ToLower(strings.TrimSpace(site)); site != "none" && site != "same-origin" {
 		return "cross-site request refused (no A2A token configured)", true
 	}
 	contentType, _ := headerGet(headers, "Content-Type")
 	mediaType, _, _ := strings.Cut(contentType, ";")
-	mediaType = pystr.Lower(pystr.Strip(mediaType))
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
 	if mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
 		return "Content-Type must be application/json", true
 	}
@@ -331,7 +307,7 @@ func WrapInbound(peer, text string) string {
 	if peer == "" {
 		peer = "unknown"
 	}
-	return fmt.Sprintf(PrivacyPrefix, pyrepr.StrRepr(peer)) + FilterInbound(pystr.Strip(text))
+	return fmt.Sprintf(PrivacyPrefix, pyrepr.StrRepr(peer)) + FilterInbound(strings.TrimSpace(text))
 }
 
 // Outbound text with credentials scrubbed by the egress redactor and e-mail addresses masked
@@ -352,7 +328,7 @@ var blockedPrefixes = func() []string {
 
 // True when an HTTP Host value names loopback or the public URL host on any port, malformed failing closed
 func IsLoopbackHostHeader(hostHeader, publicURL string) bool {
-	value := pystr.Strip(hostHeader)
+	value := strings.TrimSpace(hostHeader)
 	if value == "" || strings.ContainsAny(value, "@/\\?# \t") {
 		return false
 	}
@@ -367,8 +343,8 @@ func IsLoopbackHostHeader(hostHeader, publicURL string) bool {
 	if err != nil {
 		return false
 	}
-	publicHost := strings.TrimRight(pystr.Lower(public.Hostname()), ".")
-	host := strings.TrimRight(pystr.Lower(parts.Hostname()), ".")
+	publicHost := strings.TrimRight(strings.ToLower(public.Hostname()), ".")
+	host := strings.TrimRight(strings.ToLower(parts.Hostname()), ".")
 	return provider.IsProxyLoopbackHost(host) || (publicHost != "" && host == publicHost)
 }
 
@@ -394,7 +370,7 @@ func IsSafeCallbackURL(ctx context.Context, rawURL string, localhostMode *bool) 
 	if hostname == "" {
 		return false
 	}
-	lower := pystr.Lower(hostname)
+	lower := strings.ToLower(hostname)
 	if lower == "localhost" {
 		return local
 	}

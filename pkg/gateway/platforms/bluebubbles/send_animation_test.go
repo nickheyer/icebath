@@ -16,8 +16,7 @@ func TestSendAnimationGoesThroughTheAdaptersOwnImageSend(t *testing.T) {
 		fetched = append(fetched, url+" "+ext)
 		return t.TempDir() + "/missing.gif", nil
 	}
-	adapter, err := NewBlueBubblesAdapter(context.Background(), &gateway.PlatformConfig{Extra: map[string]any{
-		"server_url": "http://127.0.0.1:1", "password": "local-test"}})
+	adapter, err := NewBlueBubblesAdapter(context.Background(), &gateway.PlatformConfig{Extra: map[string]any{"password": "local-test"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -58,7 +57,7 @@ func skinHex(key, fallback string) string {
 
 // True color foreground escape of a hex color, bold alone or nothing when the color does not parse
 func modernFg(hexColor string, bold bool) string {
-	digits := pystr.LstripChars(hexColor, "#")
+	digits := strings.TrimLeft(hexColor, "#")
 	var rgb [3]string
 	for i, start := range []int{0, 2, 4} {
 		n, ok := pyint.ParseBase(pystr.Slice(digits, start, start+2), 16)
@@ -85,9 +84,9 @@ func brandGlyph() (string, string) {
 	}
 	parts := pystr.SplitWhitespace(label, 1)
 	if len(parts) == 2 {
-		return parts[0], pystr.Strip(parts[1])
+		return parts[0], strings.TrimSpace(parts[1])
 	}
-	name := pystr.Strip(label)
+	name := strings.TrimSpace(label)
 	if name == "" {
 		name = modernDefaultBrandName
 	}
@@ -144,7 +143,7 @@ func reasoningTextLine(line string) string { return modernDim + line + modernRST
 
 // Reasoning block printed after the fact, a dim bar, ten lines unless full, then the thought summary
 func thoughtRows(seconds *float64, text string, full bool) []string {
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	shown := lines
 	if !full && len(lines) > modernReasoningPreviewLines {
 		shown = lines[:modernReasoningPreviewLines]
@@ -181,14 +180,14 @@ func toolRow(ctx context.Context, env *tools.Env, functionName string, args map[
 		if verb == "" {
 			verb = functionName
 		}
-		verb = pystr.Strip(verb)
+		verb = strings.TrimSpace(verb)
 		mark := row.Emoji
 		if row.Failure != nil && !neutral {
 			mark = modernRed + "✗" + modernRST
 		} else if mark == "" {
 			mark = "●"
 		}
-		line := mark + " " + modernBold + pystr.Upper(pystr.Slice(verb, 0, 1)) + pystr.Slice(verb, 1, pystr.Len(verb)) + modernRST
+		line := mark + " " + modernBold + strings.ToUpper(pystr.Slice(verb, 0, 1)) + pystr.Slice(verb, 1, pystr.Len(verb)) + modernRST
 		if row.Detail != "" {
 			line += " " + row.Detail
 		}
@@ -221,11 +220,7 @@ func displayPath(path string) string {
 	if !pypath.IsAbs(path) {
 		return path
 	}
-	cwd := os.Getenv("TERMINAL_CWD")
-	if cwd == "" {
-		cwd, _ = os.Getwd()
-	}
-	base, err := pypath.Abspath(cwd)
+	base, err := pypath.Abspath(localFolder())
 	if err != nil {
 		return path
 	}
@@ -241,10 +236,10 @@ func displayPath(path string) string {
 
 // Wraps a line printer so a diff hangs behind a dim gutter with one relative path as its header
 func gutterPrint(printFn func(string)) func(string) {
-	header := pystr.Strip(modernANSIRe.ReplaceAllString(i18n.T(context.Background(), "display.diff.review_header", "", nil), ""))
+	header := strings.TrimSpace(modernANSIRe.ReplaceAllString(i18n.T(context.Background(), "display.diff.review_header", "", nil), ""))
 	return func(text string) {
 		for _, line := range strings.Split(text, "\n") {
-			plain := pystr.Strip(modernANSIRe.ReplaceAllString(line, ""))
+			plain := strings.TrimSpace(modernANSIRe.ReplaceAllString(line, ""))
 			if plain == header {
 				continue
 			}

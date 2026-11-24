@@ -1281,13 +1281,7 @@ func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) []pyhtt
 	if strings.TrimSpace(baseURL) == "" {
 		return nil
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		pkgLog().Debug("custom-provider extra_headers skipped for Anthropic client", "error", err)
-		return nil
-	}
-	return customProviderExtraHeaderLines(baseURL, nil, map[string]any(tree))
+	return customProviderExtraHeaderLines(baseURL, CustomProviderEntries(ctx))
 }
 
 // Builds the wire body and headers of one request

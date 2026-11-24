@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -44,13 +43,13 @@ var (
 
 // True for user configured custom or local endpoint providers
 func surfaceIsCustomEndpoint(providerName string) bool {
-	p := strings.ToLower(pystr.Strip(providerName))
+	p := strings.ToLower(strings.TrimSpace(providerName))
 	return surfaceCustomEndpointProviders[p] || strings.HasPrefix(p, "custom:")
 }
 
 // True when the error text reads like an SSE stream dropped mid turn
 func surfaceLooksLikeStreamDrop(message string) bool {
-	lower := pystr.Lower(message)
+	lower := strings.ToLower(message)
 	for _, f := range surfaceStreamDropFragments {
 		if strings.Contains(lower, f) {
 			return true
@@ -85,7 +84,7 @@ func errorSurface(layer, code string, retryable bool, providerName, model string
 
 // Env var holding the provider's API key so the client can open that settings row
 func surfaceAPIKeyEnv(providerName string) string {
-	d, ok := provider.ProviderCatalogBySlug()[strings.ToLower(pystr.Strip(providerName))]
+	d, ok := provider.ProviderCatalogBySlug()[strings.ToLower(strings.TrimSpace(providerName))]
 	if !ok || len(d.APIKeyEnvVars) == 0 {
 		return ""
 	}
@@ -94,7 +93,7 @@ func surfaceAPIKeyEnv(providerName string) string {
 
 // oauth for providers whose credential is a sign in grant, api_key for every other provider
 func surfaceAuthKind(providerName string) string {
-	if d, ok := provider.ProviderCatalogBySlug()[strings.ToLower(pystr.Strip(providerName))]; ok && d.OAuth {
+	if d, ok := provider.ProviderCatalogBySlug()[strings.ToLower(strings.TrimSpace(providerName))]; ok && d.OAuth {
 		return "oauth"
 	}
 	return "api_key"
@@ -140,7 +139,7 @@ func buildErrorSurfaceFromResult(result any, providerName, model string) (surfac
 		return nil
 	}
 	errorText := surfaceStr(res["error"])
-	reason := pystr.Strip(surfaceStr(res["failure_reason"]))
+	reason := strings.TrimSpace(surfaceStr(res["failure_reason"]))
 	if errorText == "" && reason == "" {
 		return nil
 	}

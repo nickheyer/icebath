@@ -2,6 +2,7 @@ package tools
 
 import (
 	"archive/tar"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -24,8 +26,6 @@ const (
 	racySyncKey          = "-1:-1:-1:-1"
 	racyMtimeWindow      = 2 * time.Second
 	syncBackMaxRetries   = 3
-	syncBackMaxBytes     = int64(2 * 1024 * 1024 * 1024)
-	syncBackMaxBytesKey  = "sync_back_max_bytes"
 	syncBackTempPrefix   = "icebath-sync-back-"
 	syncBackStaleSeconds = 30 * 60
 )
@@ -38,22 +38,9 @@ type syncFile struct {
 	remote string
 }
 
-// Extraction cap, terminal.sync_back_max_bytes overriding the 2 GiB default
+// Largest archive a sync back extracts
 func syncBackMaxBytesFor(env *Env) int64 {
-	if env == nil || env.Config == nil {
-		return syncBackMaxBytes
-	}
-	raw, ok := env.Config.Lookup("terminal." + syncBackMaxBytesKey)
-	if !ok || raw == nil {
-		return syncBackMaxBytes
-	}
-	if n, ok := pyIntValue(raw); ok {
-		if _, isString := raw.(string); !isString || pyIntLiteralRe.MatchString(strings.TrimSpace(raw.(string))) {
-			return int64(n)
-		}
-	}
-	envLog(env).Warn("sync_back: ignoring non-integer terminal."+syncBackMaxBytesKey, "value", raw)
-	return syncBackMaxBytes
+	return int64(settings.TerminalSyncBackMaxBytes.Get(envHomeCtx(context.Background(), env)))
 }
 
 // Temp prefix embedding the owning pid so the stale sweep tells a dead owner from a live transfer
@@ -471,7 +458,7 @@ func (m *FileSyncManager) syncBackImpl() (err error) {
 	}
 	maxBytes := syncBackMaxBytesFor(m.env)
 	if tarSize > maxBytes {
-		log.Warn("sync_back: remote tar exceeds the extraction cap, skipping extraction", "bytes", tarSize, "cap", maxBytes, "override", "terminal."+syncBackMaxBytesKey)
+		log.Warn("sync_back: remote tar exceeds the extraction cap, skipping extraction", "bytes", tarSize, "cap", maxBytes, "override", settings.TerminalSyncBackMaxBytes.Key)
 		return nil
 	}
 	staging, err := os.MkdirTemp("", syncBackTempPrefixFor())

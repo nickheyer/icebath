@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const relayDiscordLabelsMax = 2048
@@ -263,7 +262,7 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 		if text != "" {
 			options, _ := relayDictGet(data, "options")
 			parts := append([]string{text}, relayRenderInteractionOptions(options)...)
-			text = pystr.Strip(strings.Join(parts, " "))
+			text = strings.TrimSpace(strings.Join(parts, " "))
 			messageType = MessageTypeCommand
 		}
 	case relayJSONIn(itype, 3):
@@ -387,11 +386,11 @@ func relayRenderModalSubmit(data any) (string, error) {
 			}
 			value = strings.Join(texts, ", ")
 		}
-		if value != nil && pystr.Strip(pyrepr.Str(value)) != "" {
+		if value != nil && strings.TrimSpace(pyrepr.Str(value)) != "" {
 			lines = append(lines, fmt.Sprintf("%s: %s", pyrepr.Str(pyrepr.Or(m["custom_id"], "")), pyrepr.Str(value)))
 		}
 	}
-	return pystr.Strip(strings.Join(lines, "\n")), nil
+	return strings.TrimSpace(strings.Join(lines, "\n")), nil
 }
 
 // List of a decoded JSON iterable, the TypeError of Python for a non iterable
@@ -436,14 +435,14 @@ func relayRenderInteractionOptions(options any) []string {
 			continue
 		}
 		if relayJSONIn(m["type"], 1, 2) {
-			if sub := pystr.Strip(pyrepr.Str(pyrepr.Or(m["name"], ""))); sub != "" {
+			if sub := strings.TrimSpace(pyrepr.Str(pyrepr.Or(m["name"], ""))); sub != "" {
 				parts = append(parts, sub)
 			}
 			parts = append(parts, relayRenderInteractionOptions(m["options"])...)
 			continue
 		}
 		if value := m["value"]; value != nil {
-			if s := pystr.Strip(pyrepr.Str(value)); s != "" {
+			if s := strings.TrimSpace(pyrepr.Str(value)); s != "" {
 				parts = append(parts, s)
 			}
 		}

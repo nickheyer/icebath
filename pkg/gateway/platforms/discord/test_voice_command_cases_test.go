@@ -1,9 +1,12 @@
 package discord
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func TestVoiceReceiverFfmpegResolverFindsWingetInstallWhenNotOnPath(t *testing.T) {
@@ -20,7 +23,7 @@ func TestVoiceReceiverFfmpegResolverFindsWingetInstallWhenNotOnPath(t *testing.T
 	prev := sharedFindFFmpeg
 	sharedFindFFmpeg = func() string { return "" }
 	t.Cleanup(func() { sharedFindFFmpeg = prev })
-	if got := resolveFFmpegExecutable(); got != ffmpeg {
+	if got := resolveFFmpegExecutable(home.WithOverride(context.Background(), tmp)); got != ffmpeg {
 		t.Fatalf("resolved %q", got)
 	}
 }

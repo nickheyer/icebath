@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -559,7 +558,7 @@ func egressCmdStart(cli *egressCLI) (int, error) {
 	}
 	if refreshBW {
 		bwAccessEnv := settings.SecretsBitwardenAccessTokenEnv.Get(ctx)
-		if pystr.Strip(os.Getenv(bwAccessEnv)) == "" {
+		if strings.TrimSpace(os.Getenv(bwAccessEnv)) == "" {
 			return egressRefuse(console,
 				fmt.Sprintf("credential_source=bitwarden but %s is not set in the environment.", bwAccessEnv),
 				"Either export the access token, or run "+
@@ -742,7 +741,7 @@ func bitwardenEnvNames(cli *egressCLI) []string {
 		return nil
 	}
 	tokenEnv := settings.SecretsBitwardenAccessTokenEnv.Get(ctx)
-	accessToken := pystr.Strip(os.Getenv(tokenEnv))
+	accessToken := strings.TrimSpace(os.Getenv(tokenEnv))
 	if accessToken == "" {
 		console.Print(fmt.Sprintf("  [red]✗ --from-bitwarden requested but %s is not set in the environment.[/red]", tokenEnv))
 		return nil
@@ -770,10 +769,10 @@ func loadEnvFileIntoEnviron(h string) int {
 	known := append(bearerProviderNames(), ironNonBearerProviders...)
 	added := 0
 	for _, name := range known {
-		if pystr.Strip(os.Getenv(name)) != "" {
+		if strings.TrimSpace(os.Getenv(name)) != "" {
 			continue
 		}
-		if val := pystr.Strip(fileEnv[name]); val != "" {
+		if val := strings.TrimSpace(fileEnv[name]); val != "" {
 			os.Setenv(name, val)
 			added++
 		}
@@ -807,7 +806,7 @@ func egressPrompt(console *pyrich.Console, text string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.ToLower(pystr.Strip(answer))
+	return strings.ToLower(strings.TrimSpace(answer))
 }
 
 // Label and value rows shared by the rich status table and the plain text variant

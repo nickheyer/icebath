@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -265,7 +264,7 @@ func waitForDevtools(p *launchProc, userDataDir string, deadline time.Time) (int
 		if rc, exited := p.poll(); exited {
 			tail := logTail(userDataDir)
 			hint := ""
-			if strings.Contains(pystr.Lower(tail), "sandbox") {
+			if strings.Contains(strings.ToLower(tail), "sandbox") {
 				hint = " Chromium's sandbox could not start; add --no-sandbox to browser.chromium_args."
 			}
 			msg := fmt.Sprintf("Chromium exited with code %d during startup.%s", rc, hint)
@@ -756,7 +755,7 @@ func terminateBrowser(pid, startTime *int64, p *launchProc) {
 	if pid == nil || *pid == 0 {
 		return
 	}
-	tools.TerminateHostPid(nil, int(*pid), startTime)
+	tools.TerminateHostPidLeaderFirst(nil, int(*pid), startTime)
 	if p != nil && !p.wait(5*time.Second) {
 		p.cmd.Process.Kill()
 	}

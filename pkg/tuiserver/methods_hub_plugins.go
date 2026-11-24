@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Curated plugin catalog entries the words match, the in-tree catalog standing in when the live one cannot be read
-func pluginsHubCatalog(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func pluginsHubCatalog(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.PluginsCatalog.Params(params)
 	if err != nil {
 		return nil, err
@@ -30,7 +32,7 @@ func pluginsHubCatalog(ctx context.Context, rid any, params map[string]any, _ *t
 var pluginsRunNeeds = map[string]string{"show": "name", "info": "name", "trust-update-url": "name", "adopt": "name", "pack-show": "source", "validate": "source"}
 
 // Runs one plugins command the way icebath plugins runs it and answers what it printed, the commands that ask questions left to their own RPCs
-func pluginsHubRun(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func pluginsHubRun(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.PluginsHubRun.Params(params)
 	if err != nil {
 		return nil, err
@@ -74,7 +76,7 @@ func pluginsHubRun(ctx context.Context, rid any, params map[string]any, _ *tuiho
 		}
 		err = plugins.CmdPluginDoctor(ctx, target, false, captured)
 	case "validate":
-		err = plugins.CmdValidate(ctx, source, false, false, captured, captured)
+		err = plugins.CmdValidate(ctx, source, false, p.InstallDeps, captured, captured)
 	case "pack-show":
 		err = plugins.CmdPackShow(ctx, source, captured)
 	case "pack-export":
@@ -82,7 +84,23 @@ func pluginsHubRun(ctx context.Context, rid any, params map[string]any, _ *tuiho
 		if packName == "" {
 			packName = "my-icebath-pack"
 		}
-		err = plugins.CmdPackExport(ctx, p.EnabledOnly, packName, captured, captured)
+		output := strings.TrimSpace(p.Output)
+		if output == "" {
+			err = plugins.CmdPackExport(ctx, p.EnabledOnly, packName, captured, captured)
+			break
+		}
+		if !filepath.IsAbs(output) {
+			return rpcErr(rid, 4019, "a pack export needs a full path to write to, got "+output, nil), nil
+		}
+		text, warnings, exportErr := plugins.ExportPack(ctx, p.EnabledOnly, packName)
+		if exportErr != nil {
+			return rpcErr(rid, 4021, exportErr.Error(), nil), nil
+		}
+		if writeErr := os.WriteFile(output, []byte(text), 0o644); writeErr != nil {
+			return rpcErr(rid, 4021, writeErr.Error(), nil), nil
+		}
+		lines := append(slices.Clone(warnings), strings.Split(strings.TrimRight(text, "\n"), "\n")...)
+		return ok(rid, tuigateway.Plain(tuigateway.PluginsHubRunResult{OK: true, Lines: lines})), nil
 	default:
 		return rpcErr(rid, 4017, "unknown plugins action: "+p.Verb, nil), nil
 	}
@@ -104,7 +122,7 @@ func pluginsRunAnswer(rid any, captured *capturedLines, err error) (map[string]a
 }
 
 // Installs every plugin a pack pins once the user reviewed it in the screen, each install with its own capability consent
-func pluginsPackInstall(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func pluginsPackInstall(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.PluginsPackInstall.Params(params)
 	if err != nil {
 		return nil, err

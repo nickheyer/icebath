@@ -7,12 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Adds the wizard steps of the plugins tier backends
@@ -37,14 +38,11 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 	if v := terminal["vercel_image"]; pyrepr.Truthy(v) {
 		currentImage = pyrepr.Str(v)
 	}
-	image := pystr.Strip(s.ui.Prompt("  Image (Vercel managed image or VCR repository[:tag])", currentImage, false))
+	image := strings.TrimSpace(s.ui.Prompt("  Image (Vercel managed image or VCR repository[:tag])", currentImage, false))
 	if image == "" {
 		image = currentImage
 	}
 	terminal["vercel_image"] = image
-	if err := s.saveEnv("TERMINAL_VERCEL_IMAGE", image); err != nil {
-		return err
-	}
 	if runtimeValue := terminal["vercel_runtime"]; pyrepr.Truthy(runtimeValue) {
 		s.ui.PrintWarning(fmt.Sprintf("terminal.vercel_runtime=%s is deprecated by Vercel and overrides the image; unset it to use the image above.", pyrepr.Repr(runtimeValue)))
 	}
@@ -52,7 +50,7 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 	if v, ok := terminal["container_persistent"]; !ok || pyrepr.Truthy(v) {
 		persistLabel = "yes"
 	}
-	persist := pystr.Lower(s.ui.Prompt("  Persist filesystem with snapshots? (yes/no)", persistLabel, false))
+	persist := strings.ToLower(s.ui.Prompt("  Persist filesystem with snapshots? (yes/no)", persistLabel, false))
 	terminal["container_persistent"] = slices.Contains([]string{"yes", "true", "y", "1"}, persist)
 	resources := []struct {
 		key, label string
@@ -259,7 +257,7 @@ func (s *terminalSetup) backendVercel(cfg map[string]any) error {
 	return s.promptVercelSandboxSettings(cfg)
 }
 
-// Collects SSH host, user, port and key, saving the port only when it is not 22, and tests the connection
+// Collects SSH host, user, port and key into the terminal section, keeping the port only when it is not 22, and tests the connection
 func (s *terminalSetup) backendSSH(cfg map[string]any) error {
 	s.ui.PrintSuccess("Terminal backend: SSH")
 	s.ui.PrintInfo("Run commands on a remote machine via SSH.")
@@ -267,32 +265,36 @@ func (s *terminalSetup) backendSSH(cfg map[string]any) error {
 	if err != nil {
 		return err
 	}
-	fields := []struct{ label, envVar, def string }{
-		{"  SSH host (hostname or IP)", "TERMINAL_SSH_HOST", ""},
-		{"  SSH user", "TERMINAL_SSH_USER", os.Getenv("USER")},
-		{"  SSH port", "TERMINAL_SSH_PORT", "22"},
-		{"  SSH private key path", "TERMINAL_SSH_KEY", filepath.Join(homeDir, ".ssh", "id_rsa")},
+	setDefault(cfg, "terminal", map[string]any{})
+	terminal, err := terminalSection(cfg)
+	if err != nil {
+		return err
+	}
+	fields := []struct{ label, key, def string }{
+		{"  SSH host (hostname or IP)", "ssh_host", ""},
+		{"  SSH user", "ssh_user", os.Getenv("USER")},
+		{"  SSH port", "ssh_port", "22"},
+		{"  SSH private key path", "ssh_key", filepath.Join(homeDir, ".ssh", "id_rsa")},
 	}
 	values := make([]string, 0, len(fields))
 	for _, f := range fields {
-		def, err := s.getEnv(f.envVar)
-		if err != nil {
-			return err
+		def := f.def
+		if v := terminal[f.key]; pyrepr.Truthy(v) {
+			def = pyrepr.Str(v)
 		}
-		if def == "" {
-			def = f.def
-		}
-		value := s.ui.Prompt(f.label, def, false)
+		value := strings.TrimSpace(s.ui.Prompt(f.label, def, false))
 		values = append(values, value)
 		switch {
-		case value != "" && (f.envVar != "TERMINAL_SSH_PORT" || value != "22"):
-			if err := s.saveEnv(f.envVar, value); err != nil {
-				return err
+		case f.key == "ssh_port" && value == "22":
+			delete(terminal, f.key)
+		case f.key == "ssh_port" && value != "":
+			port, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("SSH port %q is not a number", value)
 			}
-		case f.envVar == "TERMINAL_SSH_PORT" && value == "22":
-			if _, err := config.RemoveHomeEnvValue(s.ctx, s.h, f.envVar); err != nil {
-				return err
-			}
+			terminal[f.key] = port
+		case value != "":
+			terminal[f.key] = value
 		}
 	}
 	host, user, port, sshKey := values[0], values[1], values[2], values[3]
@@ -308,7 +310,7 @@ func (s *terminalSetup) backendSSH(cfg map[string]any) error {
 		s.ui.PrintSuccess("  SSH connection successful!")
 		return nil
 	}
-	s.ui.PrintWarning(fmt.Sprintf("  SSH connection failed: %s", pystr.Strip(stderr)))
+	s.ui.PrintWarning(fmt.Sprintf("  SSH connection failed: %s", strings.TrimSpace(stderr)))
 	s.ui.PrintInfo("  Check your SSH key and host settings.")
 	return nil
 }

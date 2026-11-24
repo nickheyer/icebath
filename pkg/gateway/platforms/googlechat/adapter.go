@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -54,7 +54,7 @@ type GoogleChatAdapter struct {
 
 	maxMessages              int
 	maxBytes                 int
-	bootstrapSpaces          string
+	bootstrapSpaces          []string
 	debugRaw                 bool
 	httpEventsURL            string
 	httpEventsAudience       string
@@ -91,40 +91,15 @@ func googleChatAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Integer setting from the extra then the scoped env, the default when it does not parse
-func intSetting(ctx context.Context, extra map[string]any, key, env string, def int) int {
-	raw := extra[key]
-	if !pyrepr.Truthy(raw) {
-		v, err := gateway.GetScopedSecret(ctx, env, strconv.Itoa(def), false)
-		if err != nil {
-			return def
-		}
-		raw = v
-	}
-	switch n := raw.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	case string:
-		if i, err := strconv.Atoi(pystr.Strip(n)); err == nil {
-			return i
-		}
-	}
-	return def
-}
-
-// String setting from the extra then the scoped env then the fallback, stripped
+// Text of the connection from its config then the scoped env then the fallback, stripped
 func strSetting(ctx context.Context, extra map[string]any, key, env, fallback string) string {
 	if v, ok := extra[key].(string); ok && v != "" {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
 	if v, err := gateway.GetScopedSecret(ctx, env, "", false); err == nil && v != "" {
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
-	return pystr.Strip(fallback)
+	return strings.TrimSpace(fallback)
 }
 
 // Adapter for a platform config with the profile scoped settings snapshotted now
@@ -143,11 +118,11 @@ func NewGoogleChatAdapter(ctx context.Context, config *gateway.PlatformConfig) (
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.Platform("google_chat"), a)
 	a.Traits = googleChatAdapterTraits()
 	extra := config.Extra
-	a.maxMessages = intSetting(ctx, extra, "max_messages", "GOOGLE_CHAT_MAX_MESSAGES", 1)
-	a.maxBytes = intSetting(ctx, extra, "max_bytes", "GOOGLE_CHAT_MAX_BYTES", 16*1024*1024)
-	a.bootstrapSpaces = strSetting(ctx, extra, "bootstrap_spaces", "GOOGLE_CHAT_BOOTSTRAP_SPACES", "")
-	debug, _ := gateway.GetScopedSecret(ctx, "GOOGLE_CHAT_DEBUG_RAW", "", false)
-	a.debugRaw = pyrepr.Truthy(extra["debug_raw"]) || debug != ""
+	sctx := gateway.SettingsContext(ctx)
+	a.maxMessages = settings.GoogleChatMaxMessages.Get(sctx)
+	a.maxBytes = settings.GoogleChatMaxBytes.Get(sctx)
+	a.bootstrapSpaces = settings.GoogleChatBootstrapSpaces.Strings(sctx)
+	a.debugRaw = settings.GoogleChatDebugRaw.Get(sctx)
 	a.httpEventsURL = strSetting(ctx, extra, "http_events_url", "GOOGLE_CHAT_HTTP_EVENTS_URL", "")
 	a.httpEventsAudience = strSetting(ctx, extra, "http_events_audience", "GOOGLE_CHAT_HTTP_EVENTS_AUDIENCE", a.httpEventsURL)
 	a.httpEventsServiceAccount = strings.ToLower(strSetting(ctx, extra, "http_events_service_account_email", "GOOGLE_CHAT_HTTP_EVENTS_SERVICE_ACCOUNT_EMAIL", ""))
@@ -177,9 +152,9 @@ func (a *GoogleChatAdapter) loadSACredentials(ctx context.Context) (*restClient,
 // Project id and subscription path, the latter empty for HTTP inbound
 func (a *GoogleChatAdapter) validateConfig() (string, string, error) {
 	extra := a.Config.Extra
-	projectID := pystr.Strip(pyrepr.Str(orEmpty(extra["project_id"])))
-	subscription := pystr.Strip(pyrepr.Str(orEmpty(extra["subscription_name"])))
-	httpEventsURL := pystr.Strip(pyrepr.Str(orEmpty(extra["http_events_url"])))
+	projectID := strings.TrimSpace(pyrepr.Str(orEmpty(extra["project_id"])))
+	subscription := strings.TrimSpace(pyrepr.Str(orEmpty(extra["subscription_name"])))
+	httpEventsURL := strings.TrimSpace(pyrepr.Str(orEmpty(extra["http_events_url"])))
 	if subscription != "" {
 		m := subscriptionPathRE.FindStringSubmatch(subscription)
 		if m == nil {
@@ -252,11 +227,7 @@ func (a *GoogleChatAdapter) resolveBotUserID(ctx context.Context) string {
 	if hc := a.Config.HomeChannel; hc != nil && hc.ChatID != "" {
 		spaces = append(spaces, hc.ChatID)
 	}
-	for _, s := range strings.Split(a.bootstrapSpaces, ",") {
-		if s = pystr.Strip(s); s != "" {
-			spaces = append(spaces, s)
-		}
-	}
+	spaces = append(spaces, a.bootstrapSpaces...)
 	for _, space := range spaces {
 		members, err := a.api.listMembers(ctx, space, 50)
 		if err != nil {
@@ -445,7 +416,7 @@ func (a *GoogleChatAdapter) pullOnce(ctx context.Context) error {
 	}
 	path := a.subscriptionPath
 	a.mu.Unlock()
-	messages, err := a.api.pull(ctx, path, max(a.maxMessages, 1))
+	messages, err := a.api.pull(ctx, path, a.maxMessages)
 	if err != nil {
 		return err
 	}
@@ -595,9 +566,9 @@ func extractMessagePayload(envelope map[string]any) (map[string]any, map[string]
 	if pyrepr.Str(orDefault(envelope["event_type"], "MESSAGE")) != "MESSAGE" {
 		return nil, nil, "", false
 	}
-	senderEmail := pystr.Strip(pyrepr.Str(orEmpty(envelope["sender_email"])))
+	senderEmail := strings.TrimSpace(pyrepr.Str(orEmpty(envelope["sender_email"])))
 	text := pyrepr.Str(orEmpty(envelope["text"]))
-	senderType := strings.ToUpper(pystr.Strip(pyrepr.Str(orDefault(nonEmpty(envelope["sender_type"]), "HUMAN"))))
+	senderType := strings.ToUpper(strings.TrimSpace(pyrepr.Str(orDefault(nonEmpty(envelope["sender_type"]), "HUMAN"))))
 	if senderType != "HUMAN" && senderType != "BOT" {
 		senderType = "HUMAN"
 	}

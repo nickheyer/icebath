@@ -132,14 +132,14 @@ func objGet(o *pyjson.Object, key string, def any) any {
 func splitStripped(s string) []any {
 	out := []any{}
 	for _, part := range strings.Split(s, ",") {
-		out = append(out, pystr.Strip(part))
+		out = append(out, strings.TrimSpace(part))
 	}
 	return out
 }
 
 // Validates and writes one route, refusing with status 1 before anything is written
 func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookArgs) (int, error) {
-	name := strings.ReplaceAll(pystr.Lower(pystr.Strip(args.Name)), " ", "-")
+	name := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(args.Name)), " ", "-")
 	if !webhookNameRe.MatchString(name) {
 		fmt.Fprintf(w, "Error: Invalid name '%s'. Use lowercase alphanumeric with hyphens/underscores.\n", name)
 		return 1, nil
@@ -230,7 +230,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	if args.MirrorToSession {
 		route.Set("mirror_to_session", true)
 	}
-	if cronJob := pystr.Strip(args.CronJob); cronJob != "" {
+	if cronJob := strings.TrimSpace(args.CronJob); cronJob != "" {
 		if webhookRouteCronJob == nil {
 			refusal := linktier.Missing("--cron-job", linktier.Extras)
 			fmt.Fprintf(w, "Error: %s\n", refusal)
@@ -250,7 +250,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		}
 		route.Set("cron_job", jobID)
 	}
-	if script := pystr.Strip(args.Script); script != "" {
+	if script := strings.TrimSpace(args.Script); script != "" {
 		route.Set("script", script)
 	}
 	if args.DeliverChatID != "" {
@@ -397,7 +397,7 @@ func webhookList(ctx context.Context, w io.Writer, h string, _ WebhookArgs) (int
 
 // Removes one dynamic subscription under the store lock
 func webhookRemove(_ context.Context, w io.Writer, h string, args WebhookArgs) (int, error) {
-	name := pystr.Lower(pystr.Strip(args.Name))
+	name := strings.ToLower(strings.TrimSpace(args.Name))
 	err := webhooksubs.Mutate(h, func(subs *pyjson.Object) error {
 		if _, ok := subs.Get(name); !ok {
 			return errNoSubscription
@@ -419,7 +419,7 @@ func webhookRemove(_ context.Context, w io.Writer, h string, args WebhookArgs) (
 
 // Posts a signed test payload to a route and prints the response or the failure
 func webhookTest(ctx context.Context, w io.Writer, h string, args WebhookArgs) (int, error) {
-	name := pystr.Lower(pystr.Strip(args.Name))
+	name := strings.ToLower(strings.TrimSpace(args.Name))
 	subs := webhookSubscriptions(h)
 	raw, ok := subs.Get(name)
 	if !ok {

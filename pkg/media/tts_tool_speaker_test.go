@@ -137,8 +137,8 @@ func installSpeakerSD(t *testing.T, sd *speakerSD) {
 }
 
 func patchResolveStreamer(t *testing.T, s StreamingTTSProvider) {
-	swap(t, &speakerResolveStreamingProvider, func(context.Context, *tools.Env, map[string]any, string) (StreamingTTSProvider, error) {
-		return s, nil
+	swap(t, &speakerResolveStreamingProvider, func(context.Context, *tools.Env, *ttsRequest, string) StreamingTTSProvider {
+		return s
 	})
 }
 
@@ -530,7 +530,7 @@ func TestSyncPipelineCleansTempFiles(t *testing.T) {
 
 func TestOpenaiStreamerHonorsEndpointReportedRateInWavPlayback(t *testing.T) {
 	patchOpenAISpeech(t, map[string]string{"content-type": "audio/pcm", "x-audio-sample-rate": "44100"}, nil)
-	streamer, err := newOpenAIStreamer(nil, map[string]any{}, map[string]any{"api_key": "sk-x", "pcm_sample_rate": "22050"})
+	streamer, err := newOpenAIStreamer(nil, &ttsRequest{OpenAI: openAISpeech{APIKey: "sk-x", PCMSampleRate: 22050}})
 	if err != nil {
 		t.Fatal(err)
 	}

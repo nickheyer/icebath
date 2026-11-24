@@ -1,16 +1,17 @@
 package gateway
 
 import (
-	"context"
+	"strings"
+	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"context"
 )
 
 // Text with a terminal run of end of sequence tokens cut and the remainder right stripped
 func TrimTerminalSentinel(text string) string {
 	runes := []rune(text)
 	if start := terminalSentinelStart(runes); start >= 0 {
-		return pystr.Rstrip(string(runes[:start]))
+		return strings.TrimRightFunc(string(runes[:start]), unicode.IsSpace)
 	}
 	return text
 }

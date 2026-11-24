@@ -31,7 +31,7 @@ func TestBuiltinsAvailableWithoutAnyConfig(t *testing.T) {
 }
 
 func TestUserEntriesOverlayBuiltinsByName(t *testing.T) {
-	cfg := config.Tree{"agent": map[string]any{"personalities": map[string]any{"kawaii": "toned down", "custom": "hi"}}}
+	cfg := config.Tree{"personalities": map[string]any{"kawaii": "toned down", "custom": "hi"}}
 	merged := AvailablePersonalities(cfg)
 	if merged["kawaii"] != "toned down" || merged["custom"] != "hi" {
 		t.Fatalf("overlay wrong: %v", merged)
@@ -39,10 +39,9 @@ func TestUserEntriesOverlayBuiltinsByName(t *testing.T) {
 }
 
 func TestRootLevelPersonalitiesAreHonouredBelowAgentBlock(t *testing.T) {
-	cfg := config.Tree{"personalities": map[string]any{"robot": "root", "shared": "root"},
-		"agent": map[string]any{"personalities": map[string]any{"shared": "agent"}}}
+	cfg := config.Tree{"personalities": map[string]any{"robot": "root", "shared": "root"}}
 	merged := AvailablePersonalities(cfg)
-	if merged["robot"] != "root" || merged["shared"] != "agent" {
+	if merged["robot"] != "root" || merged["shared"] != "root" {
 		t.Fatalf("merge wrong: %v", merged)
 	}
 	name, _, err := ResolvePersonality("robot", cfg)

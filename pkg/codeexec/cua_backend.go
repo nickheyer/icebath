@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"os"
 	"os/exec"
@@ -17,16 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const (
-	cuaNativeWaylandEnvVar = "CUA_DRIVER_RS_ENABLE_WAYLAND"
-	defaultAXMaxElements   = 200
-)
+const cuaNativeWaylandEnvVar = "CUA_DRIVER_RS_ENABLE_WAYLAND"
 
 // completedProcess is the subprocess.CompletedProcess of a text mode run
 type completedProcess struct {
@@ -110,38 +106,15 @@ func runDriver(ctx context.Context, env *tools.Env, driverCmd string, timeout fl
 	return runQuiet(append([]string{driverCmd}, args...), timeout, runOpts{Env: sanitizedCuaDriverEnv(ctx, env), HideWindow: true})
 }
 
-// Active profile config through the writable loader, swapped by tests that pin a config
-var loadCUConfig = func(env *tools.Env) (config.Tree, error) {
-	h := envHome(env)
-	lookup := config.NewSecrets(h).Lookup()
-	if env != nil && env.Secrets != nil {
-		lookup = env.Secrets.Lookup()
-	}
-	return config.LoadContext(context.Background(), h, lookup)
-}
+// Context the settings of the env's profile are read under
+func settingsCtx(env *tools.Env) context.Context { return tools.WithEnvHome(context.Background(), env) }
 
-// The computer_use config block of the active profile, empty when config is unreadable
-func computerUseCfg(env *tools.Env) map[string]any {
-	tree, err := loadCUConfig(env)
-	if err != nil || tree == nil {
-		return map[string]any{}
-	}
-	if section, ok := tree["computer_use"].(map[string]any); ok && len(section) > 0 {
-		return section
-	}
-	return map[string]any{}
-}
-
-// Whether --no-overlay is passed, the config value overrides the platform and display auto detection
+// Whether --no-overlay is passed, computer_use.no_overlay overriding the platform and display auto detection
 var cuaNoOverlay = func(env *tools.Env) bool {
-	val, set := computerUseCfg(env)["no_overlay"]
-	if set && val == nil {
-		set = false
+	if off, set := settings.ComputerUseNoOverlay.Lookup(settingsCtx(env)); set {
+		return off
 	}
-	if set || cuPlatform != "linux" {
-		if set {
-			return pyrepr.Truthy(val)
-		}
+	if cuPlatform != "linux" {
 		return cuPlatform == "darwin"
 	}
 	return hostinfo.IsWSL() || os.Getenv("DISPLAY") == "" ||
@@ -149,48 +122,16 @@ var cuaNoOverlay = func(env *tools.Env) bool {
 }
 
 // Telemetry is disabled unless computer_use.cua_telemetry opts in
-var cuaTelemetryDisabled = func(env *tools.Env) bool {
-	val, ok := computerUseCfg(env)["cua_telemetry"]
-	return !(ok && pyrepr.Truthy(val))
-}
+var cuaTelemetryDisabled = func(env *tools.Env) bool { return !settings.ComputerUseCuaTelemetry.Get(settingsCtx(env)) }
 
-// Configured permission mode, bounded or standard with every other value falling closed to standard
+// Configured permission mode, bounded or standard, an unknown value falling closed to standard
 func cuaConfiguredPermissionMode(env *tools.Env) string {
-	raw, ok := computerUseCfg(env)["permission_mode"]
-	if !ok {
-		raw = "standard"
-	}
-	text := ""
-	if pyrepr.Truthy(raw) {
-		text = pyrepr.Str(raw)
-	}
-	if pystr.Lower(pystr.Strip(text)) == "bounded" {
-		return "bounded"
-	}
-	return "standard"
+	return settings.ComputerUsePermissionMode.Get(settingsCtx(env))
 }
 
-// Bound on the driver accessibility walk, zero for no bound, unparseable values fall back to the default
-func cuaConfiguredAXMaxElements(env *tools.Env) (int, error) {
-	raw, ok := computerUseCfg(env)["ax_max_elements"]
-	if !ok {
-		raw = defaultAXMaxElements
-	}
-	n, err := pyint.Of(raw)
-	if err != nil {
-		var pe *pyint.Error
-		if errors.As(err, &pe) && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-			return defaultAXMaxElements, nil
-		}
-		return 0, err
-	}
-	if n.Sign() < 0 {
-		return 0, nil
-	}
-	if !n.IsInt64() || n.Int64() > math.MaxInt {
-		return math.MaxInt, nil
-	}
-	return int(n.Int64()), nil
+// Bound on the driver accessibility walk, zero for no bound and a negative value read as zero
+func cuaConfiguredAXMaxElements(env *tools.Env) int {
+	return max(settings.ComputerUseAxMaxElements.Get(settingsCtx(env)), 0)
 }
 
 // True when the capability manifest declares version three or newer and so suits any permission mode
@@ -221,31 +162,9 @@ func manifestIsModeIndependent(path string) bool {
 	return ok && n.Cmp(big.NewInt(3)) >= 0
 }
 
-// Longest edge cap of captured images, nil when zero or negative
-func computerUseMaxImageDimension(env *tools.Env) (*int, error) {
-	raw, ok := computerUseCfg(env)["max_image_dimension"]
-	if !ok {
-		raw = 1456
-	}
-	dim := 1456
-	n, err := pyint.Of(raw)
-	if err != nil {
-		var pe *pyint.Error
-		if !errors.As(err, &pe) || (pe.Kind != "TypeError" && pe.Kind != "ValueError") {
-			return nil, err
-		}
-	} else if !n.IsInt64() || n.Int64() > math.MaxInt {
-		dim = math.MaxInt
-		if n.Sign() < 0 {
-			dim = -1
-		}
-	} else {
-		dim = int(n.Int64())
-	}
-	if dim > 0 {
-		return &dim, nil
-	}
-	return nil, nil
+// Longest edge cap of captured images, zero or less for no cap
+func computerUseMaxImageDimension(env *tools.Env) int {
+	return settings.ComputerUseMaxImageDimension.Get(settingsCtx(env))
 }
 
 // DISPLAY a backend spawned from childEnv acts on, the fresh driver child env when childEnv is nil
@@ -278,7 +197,7 @@ func cuaDriverChildEnv(env *tools.Env, base map[string]string) map[string]string
 		}
 	}
 	out[botdesktop.CuaUpdateCheckVar] = "false"
-	if cuPlatform == "linux" && out["WAYLAND_DISPLAY"] != "" && pyrepr.Truthy(computerUseCfg(env)["native_wayland"]) {
+	if cuPlatform == "linux" && out["WAYLAND_DISPLAY"] != "" && settings.ComputerUseNativeWayland.Get(settingsCtx(env)) {
 		out[cuaNativeWaylandEnvVar] = "1"
 	}
 	return out
@@ -351,7 +270,7 @@ func cuaDaemonListening(ctx context.Context, env *tools.Env, driverCmd, socketPa
 	if proc.Returncode == 0 {
 		return &t
 	}
-	if strings.Contains(pystr.Lower(proc.Stdout+"\n"+proc.Stderr), "not running") {
+	if strings.Contains(strings.ToLower(proc.Stdout+"\n"+proc.Stderr), "not running") {
 		return &f
 	}
 	return nil

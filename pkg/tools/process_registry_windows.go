@@ -37,6 +37,9 @@ func terminateHostPidWindows(pid int) {
 	}
 }
 
+// Windows ends a whole tree through taskkill, so no POSIX process group is ever signalled here
+func leadsOwnGroup(pid int) bool { return false }
+
 var procCreatePseudoConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("CreatePseudoConsole")
 
 // ConPTY exists from Windows 10 1809 on

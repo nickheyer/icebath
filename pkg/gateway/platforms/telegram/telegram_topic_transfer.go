@@ -1,11 +1,12 @@
 package telegram
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Topic a root DM moves to, created true for a fresh topic and false for the lobby recovery fallback, ok false to decline
@@ -30,7 +31,7 @@ func ApplyRootDMTopicTransfer(ctx context.Context, adapter TopicTransferHost, ev
 	if cmd, _ := event.GetCommand(); event.Internal || cmd != "" {
 		return
 	}
-	if key, ok := event.Metadata["gateway_session_key"]; ok && pystr.Strip(pyrepr.Str(truthyOrEmpty(key))) != "" {
+	if key, ok := event.Metadata["gateway_session_key"]; ok && strings.TrimSpace(pyrepr.Str(truthyOrEmpty(key))) != "" {
 		return
 	}
 	userID := ""

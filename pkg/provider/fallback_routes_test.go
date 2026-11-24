@@ -13,7 +13,7 @@ func TestFallbackChainDedupsCanonicalIDAndAlias(t *testing.T) {
 		map[string]any{"provider": "anthropic", "model": "claude-sonnet-4"},
 	}}
 	var providers []string
-	for _, e := range GetFallbackChain(cfg) {
+	for _, e := range FallbackChainOf(cfg["fallback_providers"]) {
 		providers = append(providers, cfgString(e["provider"]))
 	}
 	if !reflect.DeepEqual(providers, []string{"opencode", "anthropic"}) {
@@ -21,12 +21,11 @@ func TestFallbackChainDedupsCanonicalIDAndAlias(t *testing.T) {
 	}
 }
 
-func TestFallbackChainMergesLegacyAndNormalizesBaseURL(t *testing.T) {
+func TestFallbackChainNormalizesBaseURL(t *testing.T) {
 	cfg := map[string]any{
 		"fallback_providers": []any{map[string]any{"provider": "a", "model": "m", "base_url": " https://x/v1/ "}, map[string]any{"provider": "", "model": "m"}, "junk"},
-		"fallback_model":     map[string]any{"provider": "A", "model": "M", "base_url": "https://x/v1"},
 	}
-	chain := GetFallbackChain(cfg)
+	chain := FallbackChainOf(cfg["fallback_providers"])
 	if len(chain) != 1 || chain[0]["base_url"] != "https://x/v1" {
 		t.Fatalf("got %v", chain)
 	}

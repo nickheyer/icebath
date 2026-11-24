@@ -89,7 +89,7 @@ func isOlderLayout(table, stored string) bool {
 	if table == "messages_fts" {
 		return !strings.Contains(stored, "tool_name")
 	}
-	return strings.Contains(pystr.Lower(stored), "tool_calls")
+	return strings.Contains(strings.ToLower(stored), "tool_calls")
 }
 
 // Reports messages_fts holding a definition this code or an earlier release created

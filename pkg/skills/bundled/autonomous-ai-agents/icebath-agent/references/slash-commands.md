@@ -39,12 +39,12 @@ it. New commands land often; `/help` in-session is always authoritative.
 /model [name] [--global] Switch model (session-scoped by default)
 /personality [name]      Set a personality
 /reasoning [level|show|hide] Reasoning effort/display (none..xhigh|max|ultra)
-/fast [normal|fast]      Priority/fast processing tier
-/verbose                 Cycle tool progress: off → new → all → verbose → log (CLI)
+/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global] Priority/fast processing tier
+/verbose                 Cycle tool progress: off → new → all → verbose (CLI)
 /voice [on|off|tts]      Voice mode
 /yolo                    Toggle approval bypass
 /busy [queue|steer|interrupt] How messages behave while working (CLI + gateway)
-/indicator [style]       TUI busy indicator: kaomoji|emoji|unicode|ascii (CLI)
+/indicator [style]       TUI busy indicator: unicode|emoji|ascii (CLI)
 /footer [on|off]         Gateway runtime-metadata footer on replies
 /skin [name]             Change theme (CLI)
 /statusbar (/sb)         Toggle status bar (CLI)

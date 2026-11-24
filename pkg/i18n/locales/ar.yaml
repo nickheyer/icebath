@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (للدور التالي فقط — يُستعاد بعد ردّ واحد)"
     switch_cancelled: "🟡 أُلغي تبديل النموذج. النموذج الحالي لم يتغيّر ({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_بديل نصي: أرسل `{prefix}approve` للتبديل أو `{prefix}cancel` للإبقاء على النموذج الحالي._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "`--once` غير متاح في هذه الجلسة؛ استخدم `/model <name>` ثم عُد إلى النموذج السابق بعد انتهاء الدور."
+    local_next_turn: "يُطبَّق ابتداءً من رسالتك التالية."
   agents:
 
     header: "🤖 **الوكلاء والمهام النشطة**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast متاح فقط لنماذج OpenAI التي تدعم المعالجة ذات الأولوية."
-    status: "⚡ المعالجة ذات الأولوية\n\nالوضع الحالي: `{mode}`\n\n_الاستخدام:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ وسيط غير معروف: `{arg}`\n\n**الخيارات الصالحة:** normal, fast, status"
+    not_supported: "⚡ يحتاج /fast إلى نموذج يقدّم مزوّده طبقة سريعة، مثل المعالجة ذات الأولوية من OpenAI أو الوضع السريع من Anthropic. بدّل باستخدام /model إلى نموذج يقدّمها."
+    status: "⚡ المعالجة ذات الأولوية\n\nالوضع الحالي: `{mode}`\n\n_الاستخدام:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ وسيط غير معروف: `{arg}`\n\n**الخيارات الصالحة:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ المعالجة ذات الأولوية: **{label}** (حُفظت في الإعدادات)\n_(تسري على الرسالة التالية)_"
     session_only: "⚡ ✓ المعالجة ذات الأولوية: **{label}** (هذه الجلسة فقط)"
     label_fast: "سريع"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — سريع في الدور الأول من الجلسة فقط"
     choice_ultrafast: "ultrafast — ‏OpenAI Ultrafast، السعر ×6"
     ultrafast_not_supported: "⚡ ‏Ultrafast غير متاح لـ `{model}` على هذا الحساب أو المسار."
+  setup_wizard:
+
+    configure_in_config: "  اضبط {platform} في config.yaml تحت platforms.{key}"
   footer:
 
     status: "📎 تذييل التشغيل: **{state}**\nالحقول: `{fields}`\nالمنصّة: `{platform}`"
@@ -255,9 +258,9 @@ gateway:
       status_default: "تغيّرت الحالة"
       status_joiner: "، "
       message: "[kanban] المهمة {task_id} {status}.\nالعنوان: {title}\nالمُكلَّف: @{assignee}\nاللوحة: {board}\n\nراجع النتيجة أو قرّر الخطوة التالية."
-      handoff: "Result: {summary}"
+      handoff: "النتيجة: {summary}"
       review_detail: "ملاحظات المراجعة: {reason}\nافحص البطاقة الحالية وتشغيل المراجعة الجاري؛ أعد العمل إلى مهمة التنفيذ نفسها. لا تعتبر هذا الحجب موافقة ولا تنشئ مهمة مكررة."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      guidance: "هذا إشعار تلقائي بحالة مهمة، وليس طلبًا لتقسيم المهمة من جديد. افحص اللوحة الحالية قبل إنشاء مهام متابعة؛ لا تُعد إنشاء مهام أو مخططات موجودة بالفعل."
     ping:
 
       completed: "✔ {head} تمّت — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "عرض الأوامر المتاحة (/help skills يسرد أوامر المهارات، /help <text> يرشّح النتائج)"
   palette:
 
-    description: "فتح لوحة الأوامر بالبحث التقريبي (أيضًا Ctrl+P)"
+    description: "فتح لوحة الأوامر بالبحث التقريبي"
   restart:
 
     description: "إعادة تشغيل البوّابة بسلاسة بعد إنهاء التشغيلات النشطة"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "أُرشف + أُزيل → {ref}"
     sweep_archived_kept: "أُرشف، واحتُفظ به ({reason}) → {ref}"
     discarded: "تمت إزالة الـ worktree وتجاهل تغييراته: {path}"
+  update:
+
+    held_icebath: "{mark} عمليات icebath أخرى تعمل من هذا التثبيت ({count}):"
+    held_venv: "{mark} عمليات تعمل من بيئة Python الخاصة بهذا التثبيت ({count}):"
+    held_forced: "  → يجري التحديث على أي حال بسبب {flag}."
+    held_refused: "  أغلقها وشغّل `icebath update` مرة أخرى، أو مرّر {flag} للتحديث على أي حال."
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "نافذة سياق النموذج المحلي أصغر من أن تكفي لإتمام العمل. زِد حجم السياق أو استخدم نموذجًا أكبر."
     pending_tool_result: "توقّف الدور بينما كانت نتيجة أداة لا تزال قيد الانتظار، ولم ينتج النموذج أي نص لاحق. أرسل `continue` ليقوم بالتلخيص."
     interrupted_during_api_call: "قُطع الطلب أثناء الاستدعاء قبل تلقّي رد. أرسل `continue` لإعادة المحاولة."
-    max_iterations_reached: "بلغ الحد الأقصى لتكرارات الأدوات قبل الوصول إلى إجابة نهائية. أرسل `continue` للمتابعة، أو ارفع قيمة `max_iterations`."
+    max_iterations_reached: "بلغ الحد الأقصى لتكرارات الأدوات قبل الوصول إلى إجابة نهائية. أرسل `continue` للمتابعة، أو ارفع قيمة `agent.max_turns`."
     error_near_max_iterations: "حدث خطأ قرب حد التكرارات قبل الوصول إلى إجابة نهائية. راجع مخرجات الأداة أعلاه، ثم أرسل `continue`."
     repeated_outer_errors: "ظلّ الدور يفشل بأخطاء متكررة فأُوقف مبكرًا بدلًا من إعادة المحاولة إلى ما لا نهاية. راجع الأخطاء أعلاه، ثم أرسل `continue` لإعادة المحاولة."
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "يحمّل Icebath سياق المشروع من .icebath.md أو AGENTS.md أو CLAUDE.md أو .cursorrules (أول تطابق)."
   t178: "تُكتشف ملفات AGENTS.md في المجلدات الفرعية تدريجيًا أثناء تنقّل الوكيل بين المجلدات."
   t179: "تُحدّ ملفات السياق بـ 20,000 حرف مع اقتطاع ذكي يحتفظ بالبداية والنهاية."
-  t180: "واجهات المتصفح: Chromium المحلي وLightpanda وBrowserbase وBrowser Use وFirecrawl — بالإضافة إلى Camofox المدمج."
-  t181: "Camofox (Firefox مضاد للكشف) مدمج: اضبطه باستخدام icebath camofox setup."
+  t180: "واجهات المتصفح: Chromium المحلي وLightpanda وBrowserbase وBrowser Use وFirecrawl — بالإضافة إلى Camofox كإضافة."
+  t181: "Camofox (Firefox مضاد للكشف) إضافة: ثبّته باستخدام icebath plugins install camofox ثم شغّل icebath camofox setup."
   t182: "يشغّل browser_exec عدة خطوات متصفح في استدعاء Python واحد — التنقل والاستخراج والنقر معًا."
   t183: "يحدد browser.dialog_policy طريقة التعامل مع مربعات الحوار الأصلية في الصفحة: must_respond (يرد الوكيل عبر browser_dialog) أو auto_dismiss أو auto_accept."
   t184: "يفتح icebath mcp منتقيًا تفاعليًا لخوادم MCP في الكتالوج المدمج في icebath يمكنك تثبيتها بضغطة مفتاح واحدة."

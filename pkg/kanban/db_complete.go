@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -259,7 +258,7 @@ func substantiveText(value any) bool {
 	if value == nil {
 		return false
 	}
-	return pystr.Strip(cellStr(value)) != ""
+	return strings.TrimSpace(cellStr(value)) != ""
 }
 
 // Refuses a completion that would leave a non review card without evidence, recording the refusal first
@@ -322,7 +321,7 @@ func cleanedArtifactPaths(metadata any) []string {
 		if !ok {
 			continue
 		}
-		if stripped := pystr.Strip(s); stripped != "" {
+		if stripped := strings.TrimSpace(s); stripped != "" {
 			out = append(out, stripped)
 		}
 	}
@@ -408,7 +407,7 @@ func mergeCompletionProseArtifacts(ctx context.Context, conn state.SQLiteConn, t
 	}
 	var discovered []string
 	for m, err := re.FindStringMatch(text); m != nil && err == nil; m, err = re.FindNextMatch(m) {
-		raw := pystr.RstripChars(m.String(), ".,;:!?)]}")
+		raw := strings.TrimRight(m.String(), ".,;:!?)]}")
 		if isFile(raw) {
 			discovered = append(discovered, pypath.PathStr(raw))
 		}
@@ -473,7 +472,7 @@ func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteCon
 	for _, item := range items {
 		artifact := ""
 		if s, ok := item.(string); ok {
-			artifact = pystr.Strip(s)
+			artifact = strings.TrimSpace(s)
 		}
 		if artifact == "" {
 			continue

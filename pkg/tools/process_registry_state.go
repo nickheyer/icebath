@@ -332,6 +332,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 		s.env = env
 		s.finishInit()
 		if s.OutputLog != "" {
+			s.startMarker = startupMarker(s.ID)
 			r.trackStarted(s, func() { r.logReaderLoop(WithEnvHome(ctx, env), s) })
 		} else {
 			r.mu.Lock()
@@ -362,13 +363,11 @@ func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) 
 	decoder := &utf8Decoder{}
 	proc := s.Process
 	s.readerSelectable = true
-	headNoise := true
+	startup := newStartupFilter(s.startMarker)
 	ingest := func(text string) {
-		if headNoise {
-			text = cleanShellNoise(text)
-			headNoise = strings.TrimSpace(text) == ""
+		if text = startup.feed(text); text != "" {
+			r.ingestOutput(s, text, false)
 		}
-		r.ingestOutput(s, text, false)
 	}
 	running := func() bool {
 		if s.readerFinishRequested.isSet() {
@@ -412,7 +411,7 @@ func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) 
 		stream.Close()
 	}
 	if proc != nil {
-		r.finishReader(WithEnvHome(ctx, s.env), s, decoder, ingest, "Log",
+		r.finishReader(WithEnvHome(ctx, s.env), s, decoder, startup, ingest, "Log",
 			func() error { _, err := proc.Wait(0); return err },
 			func() *int {
 				code, done := proc.Poll()
@@ -425,6 +424,9 @@ func (r *ProcessRegistry) logReaderLoop(ctx context.Context, s *ProcessSession) 
 	}
 	if tail := decoder.finish(); tail != "" {
 		ingest(tail)
+	}
+	if head := startup.flush(); head != "" {
+		ingest(head)
 	}
 	code, ok := recordedExitCode(s.OutputLog)
 	if !ok {
@@ -803,14 +805,9 @@ const waitPolicyStopNote = "The process is still running and has printed nothing
 	"not sleep or loop to wait for it. If you have other work, do it now; otherwise end your turn with a one-line " +
 	"status and report the result when the completion message arrives."
 
-// terminal.process_wait_auto_notify, true unless the config says false
+// Whether a wait on a quiet process turns on its completion notice
 func waitPolicyEnabled(env *Env) bool {
-	v, ok := cfgTree(env).Lookup("terminal.process_wait_auto_notify")
-	if !ok {
-		return true
-	}
-	b, isBool := v.(bool)
-	return !(isBool && !b)
+	return settings.TerminalProcessWaitAutoNotify.Get(envHomeCtx(context.Background(), env))
 }
 
 func waitPolicyForget(sessionID string) {

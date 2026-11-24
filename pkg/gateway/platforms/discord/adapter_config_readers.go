@@ -1,13 +1,14 @@
 package discord
 
 import (
+	"strings"
+
 	"context"
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -20,7 +21,7 @@ var DiscordPromptTimeoutMax = int(tools.MaxSafeTimeoutSeconds)
 
 // Server whose roles also authorize direct messages for this adapter's profile, nil while roles apply only inside servers
 func (a *DiscordAdapter) dmRoleAuthGuild(ctx context.Context) *big.Int {
-	raw := pystr.Strip(settings.DiscordDmRoleAuthGuild.Get(a.sctx(ctx)))
+	raw := strings.TrimSpace(settings.DiscordDmRoleAuthGuild.Get(a.sctx(ctx)))
 	if !isDigitString(raw) {
 		return nil
 	}
@@ -46,7 +47,7 @@ func ResolveExecApprovalAdminGate(configExtra map[string]any) (bool, map[string]
 	if !ok {
 		rawToggle = false
 	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(rawToggle))) {
+	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(rawToggle))) {
 	case "true", "1", "yes":
 	default:
 		return false, map[string]struct{}{}

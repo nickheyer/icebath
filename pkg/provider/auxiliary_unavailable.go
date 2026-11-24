@@ -122,7 +122,7 @@ func PoolBillingMessage(ctx context.Context, providerID, model string, pool inte
 		return "", false
 	}
 	pick := billing[0]
-	detail := pystr.Strip(pick.LastErrorMessage)
+	detail := strings.TrimSpace(pick.LastErrorMessage)
 	scope, codeText := "", ""
 	if model != "" {
 		scope = fmt.Sprintf(" for model '%s'", model)
@@ -156,7 +156,7 @@ func MissingProviderCredentialsMessage(ctx context.Context, providerID string) s
 	case len(envVars) > 0:
 		remedy = fmt.Sprintf("Set the %s environment variable", envVars[0])
 	case pconfig == nil:
-		remedy = fmt.Sprintf("Set the %s_API_KEY environment variable", strings.ReplaceAll(pystr.Upper(providerID), "-", "_"))
+		remedy = fmt.Sprintf("Set the %s_API_KEY environment variable", strings.ReplaceAll(strings.ToUpper(providerID), "-", "_"))
 	case strings.HasPrefix(pconfig.AuthType, "oauth"):
 		problem, remedy = "no credentials were found", fmt.Sprintf("Run `icebath auth add %s` to sign in", providerID)
 	default:

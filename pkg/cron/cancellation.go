@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -26,7 +25,7 @@ func (s *Store) cancelsDir() string { return filepath.Join(s.cronDir, "cancels")
 
 // Marker file of one execution, an error for an id that is not a plain file name
 func (s *Store) cancelMarkerPath(executionID string) (string, error) {
-	id := pystr.Strip(executionID)
+	id := strings.TrimSpace(executionID)
 	if id == "" || strings.ContainsAny(id, "/\\") || id == "." || id == ".." {
 		return "", fmt.Errorf("Not a usable execution id: %s", pyrepr.StrRepr(id))
 	}
@@ -70,7 +69,7 @@ func (s *Store) requestCancel(executionID string, reason *string) (string, error
 		if reason != nil && *reason != "" {
 			text = *reason
 		}
-		if err := publishFirst(path, []byte(pystr.Strip(text))); err != nil {
+		if err := publishFirst(path, []byte(strings.TrimSpace(text))); err != nil {
 			return "", err
 		}
 	}
@@ -214,7 +213,7 @@ func (r *CancelRequest) Reason() string {
 		reason := defaultCancelReason
 		if path, err := r.s.cancelMarkerPath(r.executionID); err == nil {
 			if text, ok := readUTF8Sig(path); ok {
-				if recorded := pystr.Strip(text); recorded != "" {
+				if recorded := strings.TrimSpace(text); recorded != "" {
 					reason = recorded
 				}
 			}

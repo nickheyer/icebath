@@ -1,12 +1,13 @@
 package state
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Refusal detail clients match when the rewind target was summarized by compaction
@@ -121,7 +122,7 @@ func keysExactly(keys map[string]bool, want ...string) bool {
 
 func nonBlankStr(v any) bool {
 	text, ok := v.(string)
-	return ok && pystr.Strip(text) != ""
+	return ok && strings.TrimSpace(text) != ""
 }
 
 // Refuses as invalid_params every operation and payload outside the closed mutation set

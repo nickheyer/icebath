@@ -2,13 +2,13 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func neverMinted(context.Context) (string, error) { panic("the banner invoked the token source") }
@@ -84,7 +84,7 @@ func TestRealAgentResolvesAutoFromItsPlatform(t *testing.T) {
 
 func TestDisabledCacheTTLTurnsPromptCachingOff(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, body := range []string{"prompt_caching:\n  cache_ttl: off\n", "prompt_caching:\n  cache_ttl: false\n", "prompt_caching:\n  cache_ttl: null\n"} {
+	for _, body := range []string{"prompt_caching:\n  cache_ttl: off\n", "prompt_caching:\n  cache_ttl: false\n", "prompt_caching:\n  cache_ttl: none\n"} {
 		writePromptCachingConfig(t, body)
 		a := &AIAgent{provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-fable-5.1", apiMode: "anthropic_messages"}
 		initPromptCacheConfig(context.Background(), a)
@@ -102,18 +102,12 @@ func TestDisabledCacheTTLTurnsPromptCachingOff(t *testing.T) {
 
 func TestPromptCacheConfigFailureKeepsDefaults(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	prev := promptCacheConfigLoader
-	t.Cleanup(func() { promptCacheConfigLoader = prev })
-	for _, load := range []func(context.Context) (map[string]any, error){
-		func(context.Context) (map[string]any, error) { return nil, errors.New("boom") },
-		func(context.Context) (map[string]any, error) { return map[string]any{"prompt_caching": "yes"}, nil },
-		func(context.Context) (map[string]any, error) {
-			return map[string]any{"prompt_caching": map[string]any{"cache_ttl": []any{"1h"}}}, nil
-		},
+	for _, doc := range []map[string]any{
+		{"prompt_caching": "yes"},
+		{"prompt_caching": map[string]any{"cache_ttl": []any{"1h"}}},
 	} {
-		promptCacheConfigLoader = load
 		a := &AIAgent{provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-fable-5.1", apiMode: "anthropic_messages"}
-		initPromptCacheConfig(context.Background(), a)
+		initPromptCacheConfig(settings.WithFrozen(context.Background(), doc), a)
 		if a.cacheTTL != "5m" || a.cacheDisabled || !a.usePromptCaching {
 			t.Fatalf("ttl %q disabled %v caching %v", a.cacheTTL, a.cacheDisabled, a.usePromptCaching)
 		}

@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -28,6 +28,10 @@ type updateOptions struct {
 	SwitchBranch        bool
 	DiscardLocalChanges bool
 	NoGatewayRestart    bool
+	// Windows: update while other icebath processes of this install run
+	Force bool
+	// Windows: update while processes run from this install's Python environment
+	ForceVenv bool
 }
 
 // Snapshots the pre update version and resolves the flags and config the update runs on
@@ -38,25 +42,14 @@ func resolveUpdateOptions(ctx context.Context, w io.Writer, args map[string]any,
 		KeepStash:        pyrepr.Truthy(args["keep_stash"]),
 		SwitchBranch:     pyrepr.Truthy(args["switch_branch"]),
 		NoGatewayRestart: pyrepr.Truthy(args["no_gateway_restart"]),
+		Force:            pyrepr.Truthy(args["force"]),
+		ForceVenv:        pyrepr.Truthy(args["force_venv"]),
 	}
 	if gatewayMode {
 		opts.GwInputFn = func(prompt, def string) (string, error) { return updateGatewayPrompt(ctx, w, prompt, def, 300.0) }
 	}
 	if gatewayMode || opts.AssumeYes || !(updateStdinIsTTY() && updateStdoutIsTTY(w)) {
-		if err := bestEffort(ctx, "Could not read updates.non_interactive_local_changes: %s", func() error {
-			section, err := updatesConfig(ctx)
-			if err != nil {
-				return err
-			}
-			mode, ok := section["non_interactive_local_changes"]
-			if !ok {
-				mode = "stash"
-			}
-			opts.DiscardLocalChanges = strings.ToLower(pyrepr.Str(mode)) == "discard"
-			return nil
-		}); err != nil {
-			return nil, err
-		}
+		opts.DiscardLocalChanges = settings.UpdatesNonInteractiveLocalChanges.Get(ctx) == "discard"
 	}
 	return opts, nil
 }
@@ -117,9 +110,11 @@ func prepareGitCommand(ctx context.Context, w io.Writer, move checkoutMoveFunc) 
 			return false, nil, false, err
 		}
 	}
-	if err := mapSSLCertFileForGit(ctx, gitCmd); err != nil {
+	mapped, err := mapSSLCertFileForGit(ctx, gitCmd)
+	if err != nil {
 		return false, nil, false, err
 	}
+	gitCmd = mapped
 	gitCmd = ensureNonTrampolineGit(ctx, w, gitCmd)
 	if err := discardLockfileChurn(ctx, w, gitCmd, root, move); err != nil {
 		return false, nil, false, err
@@ -277,7 +272,7 @@ func resolveUpdateBranch(args map[string]any) string {
 	if pyrepr.Truthy(args["branch"]) {
 		branch = pyrepr.Str(args["branch"])
 	}
-	if branch = pystr.Strip(branch); branch == "" {
+	if branch = strings.TrimSpace(branch); branch == "" {
 		return "main"
 	}
 	return branch
@@ -334,6 +329,9 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	resume := func() error { return resumeWindowsGatewaysAfterUpdate(ctx, w, token) }
 	if len(token) > 0 {
 		registerUpdateExitHook(resumeWindowsGatewaysHook, resume)
+	}
+	if err := refuseHeldInstall(ctx, w, opts); err != nil {
+		return err
 	}
 	releaseBinary, err := releaseBinaryInstall(ctx, root)
 	if err != nil {

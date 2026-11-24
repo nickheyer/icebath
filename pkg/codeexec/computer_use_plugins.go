@@ -8,8 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -135,13 +135,12 @@ func loadComputerUseProviderFromDir(env *tools.Env, d cuProviderDir) (ComputerUs
 	return newHostedComputerUseProvider(ctx, obj)
 }
 
-// The computer_use.backend value of the active profile, cua when unset or blank
+// The computer_use.backend value of the active profile, the setting's default when blank
 func configuredBackendName(env *tools.Env) string {
-	raw, _ := computerUseCfg(env)["backend"].(string)
-	if s := pystr.Strip(raw); s != "" {
+	if s := strings.TrimSpace(settings.ComputerUseBackend.Get(settingsCtx(env))); s != "" {
 		return s
 	}
-	return defaultComputerUseBackend
+	return settings.ComputerUseBackend.Default
 }
 
 // The one provider computer_use.backend selects, a lookupError naming the available ones otherwise

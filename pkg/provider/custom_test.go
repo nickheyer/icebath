@@ -10,37 +10,37 @@ import (
 
 func TestFindCustomProviderIdentity(t *testing.T) {
 	cfg := map[string]any{"providers": map[string]any{"mimo-v2.5-pro": map[string]any{"name": "MiMo v2.5 Pro", "base_url": "https://api.mimo.example/v1"}}}
-	if got := FindCustomProviderIdentity("https://api.mimo.example/v1", cfg); got != "custom:mimo-v2.5-pro" {
+	if got := FindCustomProviderIdentity("https://api.mimo.example/v1", cfg["providers"].(map[string]any)); got != "custom:mimo-v2.5-pro" {
 		t.Fatalf("by display name: %q", got)
 	}
 	cfg = map[string]any{"providers": map[string]any{"local": map[string]any{"base_url": "http://127.0.0.1:8000/v1"}}}
-	if got := FindCustomProviderIdentity("http://127.0.0.1:8000/v1", cfg); got != "custom:local" {
+	if got := FindCustomProviderIdentity("http://127.0.0.1:8000/v1", cfg["providers"].(map[string]any)); got != "custom:local" {
 		t.Fatalf("providers by key: %q", got)
 	}
 	cfg = map[string]any{"providers": map[string]any{"local-127.0.0.1:8000": map[string]any{"name": "Local Ollama", "base_url": "http://127.0.0.1:8000/v1"}}}
-	slug := FindCustomProviderIdentity("http://127.0.0.1:8000/v1", cfg)
+	slug := FindCustomProviderIdentity("http://127.0.0.1:8000/v1", cfg["providers"].(map[string]any))
 	if slug != "custom:local-127.0.0.1:8000" {
 		t.Fatalf("stable key not display name: %q", slug)
 	}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
-	if entry := r.getNamedCustomProvider(slug, nil, true); entry == nil || entry["name"] != "Local Ollama" {
+	if entry := r.getNamedCustomProvider(slug, r.providers(), true); entry == nil || entry["name"] != "Local Ollama" {
 		t.Fatalf("slug resolves back: %v", entry)
 	}
 	cfg = map[string]any{"providers": map[string]any{"local": map[string]any{"name": "local", "base_url": "http://Localhost:8000/v1/"}}}
-	if got := FindCustomProviderIdentity("http://localhost:8000/v1", cfg); got != "custom:local" {
+	if got := FindCustomProviderIdentity("http://localhost:8000/v1", cfg["providers"].(map[string]any)); got != "custom:local" {
 		t.Fatalf("trailing slash and case: %q", got)
 	}
 	cfg = map[string]any{"providers": map[string]any{"other": map[string]any{"name": "other", "base_url": "https://elsewhere.example/v1"}}}
-	if got := FindCustomProviderIdentity("https://api.mimo.example/v1", cfg); got != "" {
+	if got := FindCustomProviderIdentity("https://api.mimo.example/v1", cfg["providers"].(map[string]any)); got != "" {
 		t.Fatalf("no match: %q", got)
 	}
-	if got := FindCustomProviderIdentity("", map[string]any{"providers": map[string]any{"x": map[string]any{"name": "x"}}}); got != "" {
+	if got := FindCustomProviderIdentity("", map[string]any{"x": map[string]any{"name": "x"}}); got != "" {
 		t.Fatalf("empty url: %q", got)
 	}
 	cfg = map[string]any{"providers": map[string]any{"mimo-v2.5-pro": map[string]any{"name": "mimo-v2.5-pro", "base_url": "https://api.mimo.example/v1", "api_key": "sk-entry"}}}
 	r = testResolver(t, cfg, &fakeCreds{}, "")
-	slug = FindCustomProviderIdentity("https://api.mimo.example/v1", cfg)
-	if entry := r.getNamedCustomProvider(slug, nil, true); slug != "custom:mimo-v2.5-pro" || entry == nil || entry["api_key"] != "sk-entry" {
+	slug = FindCustomProviderIdentity("https://api.mimo.example/v1", cfg["providers"].(map[string]any))
+	if entry := r.getNamedCustomProvider(slug, r.providers(), true); slug != "custom:mimo-v2.5-pro" || entry == nil || entry["api_key"] != "sk-entry" {
 		t.Fatalf("round trip: %q %v", slug, entry)
 	}
 	cfg = map[string]any{"providers": map[string]any{
@@ -48,7 +48,7 @@ func TestFindCustomProviderIdentity(t *testing.T) {
 		"beta":  map[string]any{"base_url": "https://beta.invalid/v1", "api_key": "beta-inline-key"},
 	}}
 	r = testResolver(t, cfg, &fakeCreds{}, "")
-	if entry := r.getNamedCustomProvider("beta", nil, true); entry == nil || entry["name"] != "beta" || entry["api_key"] != "beta-inline-key" {
+	if entry := r.getNamedCustomProvider("beta", r.providers(), true); entry == nil || entry["name"] != "beta" || entry["api_key"] != "beta-inline-key" {
 		t.Fatalf("beta: %v", entry)
 	}
 }
@@ -112,25 +112,25 @@ func TestSessionProviderIdentityAndRoutedIdentity(t *testing.T) {
 	}}
 	testResolver(t, cfg, &fakeCreds{}, "")
 	ctx := WithFrozenRuntimeConfig(context.Background(), cfg)
-	if got := SessionProviderIdentity(ctx, "custom", "custom:b", "https://gw.example/v1", "", nil); got != "custom:b" {
+	if got := SessionProviderIdentity(ctx, "custom", "custom:b", "https://gw.example/v1", ""); got != "custom:b" {
 		t.Fatalf("requested entry still serving the url: %q", got)
 	}
-	if got := SessionProviderIdentity(ctx, "custom", "custom:zzz", "https://gw.example/v1", "", nil); got != "custom:a" {
+	if got := SessionProviderIdentity(ctx, "custom", "custom:zzz", "https://gw.example/v1", ""); got != "custom:a" {
 		t.Fatalf("endpoint owner: %q", got)
 	}
-	if got := SessionProviderIdentity(ctx, "deepseek", "", "", "", nil); got != "deepseek" {
+	if got := SessionProviderIdentity(ctx, "deepseek", "", "", ""); got != "deepseek" {
 		t.Fatalf("builtin adapter: %q", got)
 	}
-	if got := RoutedCustomIdentity("https://gw.example/v1", "m2", cfg, ""); got != "custom:b" {
+	if got := RoutedCustomIdentity(ctx, "https://gw.example/v1", "m2", ""); got != "custom:b" {
 		t.Fatalf("model on url: %q", got)
 	}
-	if got := RoutedCustomIdentity("", "m1", cfg, ""); got != "custom:a" {
+	if got := RoutedCustomIdentity(ctx, "", "m1", ""); got != "custom:a" {
 		t.Fatalf("model alone: %q", got)
 	}
-	if got := RoutedCustomIdentity("https://gw.example/v1", "", cfg, ""); got != "custom:a" {
+	if got := RoutedCustomIdentity(ctx, "https://gw.example/v1", "", ""); got != "custom:a" {
 		t.Fatalf("first on url: %q", got)
 	}
-	if got := FindCustomProviderIdentityByModel("m2", cfg); got != "custom:b" {
+	if got := FindCustomProviderIdentityByModel("m2", cfg["providers"].(map[string]any)); got != "custom:b" {
 		t.Fatalf("by model: %q", got)
 	}
 }
@@ -169,17 +169,17 @@ func TestCustomEntryOwnership(t *testing.T) {
 	if !EntryDeclaresCredential(map[string]any{"key_cmd": "op read x"}) || EntryDeclaresCredential(map[string]any{"base_url": "u"}) || !EntryDeclaresCredential(map[string]any{"declares_credential": true}) {
 		t.Fatal("declares credential")
 	}
-	match := customEntryForEndpoint("http://127.0.0.1:18080/v1", "custom:deepseek", cfg)
+	match := customEntryForEndpoint("http://127.0.0.1:18080/v1", "custom:deepseek", cfg["providers"].(map[string]any))
 	if match == nil || match.name != "deepseek" {
 		t.Fatalf("by name: %+v", match)
 	}
-	if customEntryForEndpoint("http://other/v1", "custom:deepseek", cfg) != nil {
+	if customEntryForEndpoint("http://other/v1", "custom:deepseek", cfg["providers"].(map[string]any)) != nil {
 		t.Fatal("named entry never serves another url")
 	}
-	if match := customEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg); match == nil || match.name != "plain" {
+	if match := customEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg["providers"].(map[string]any)); match == nil || match.name != "plain" {
 		t.Fatalf("by url: %+v", match)
 	}
-	if keys := customProviderPoolKeyCandidates("http://127.0.0.1:18080/v1", "", cfg); !reflect.DeepEqual(keys, []string{"deepseek", "custom:deepseek"}) {
+	if keys := customProviderPoolKeyCandidates("http://127.0.0.1:18080/v1", "", cfg["providers"].(map[string]any)); !reflect.DeepEqual(keys, []string{"deepseek", "custom:deepseek"}) {
 		t.Fatalf("pool keys: %v", keys)
 	}
 }
@@ -290,10 +290,10 @@ func TestConfigPathsAndCodexModelProviderID(t *testing.T) {
 		"providers": map[string]any{"gw": map[string]any{"base_url": "https://gw.example/v1", "name": "Gateway"}},
 	}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
-	if p := r.NamedCustomProviderConfigPath("custom:gw", cfg); p == nil || p.Section != "providers" || p.Key != "gw" {
+	if p := r.NamedCustomProviderConfigPath("custom:gw", cfg["providers"].(map[string]any)); p == nil || p.Section != "providers" || p.Key != "gw" {
 		t.Fatalf("providers path: %+v", p)
 	}
-	if p := CustomProviderConfigPathForURL("https://gw.example/v1/", cfg); p == nil || p.Section != "providers" || p.Key != "gw" {
+	if p := CustomProviderConfigPathForURL(WithFrozenRuntimeConfig(context.Background(), cfg), "https://gw.example/v1/"); p == nil || p.Section != "providers" || p.Key != "gw" {
 		t.Fatalf("url path: %+v", p)
 	}
 	if got := r.CodexModelProviderID("custom:gw"); got != "gw" {
@@ -305,10 +305,10 @@ func TestConfigPathsAndCodexModelProviderID(t *testing.T) {
 	if !r.HasNamedCustomProvider("Gateway") || r.HasNamedCustomProvider("nobody") {
 		t.Fatal("has named custom provider")
 	}
-	if p := r.NamedCustomProviderConfigPath("DeepSeek", map[string]any{"providers": map[string]any{"deepseek": map[string]any{"base_url": "https://x/v1"}}}); p == nil || p.Section != "providers" || p.Key != "deepseek" {
+	if p := r.NamedCustomProviderConfigPath("DeepSeek", map[string]any{"deepseek": map[string]any{"base_url": "https://x/v1"}}); p == nil || p.Section != "providers" || p.Key != "deepseek" {
 		t.Fatalf("a builtin name means its same keyed entry that declares an endpoint: %+v", p)
 	}
-	if p := r.NamedCustomProviderConfigPath("deepseek", map[string]any{"providers": map[string]any{"deepseek": map[string]any{"request_timeout_seconds": 30}, "other": map[string]any{"name": "deepseek", "base_url": "https://x/v1"}}}); p != nil {
+	if p := r.NamedCustomProviderConfigPath("deepseek", map[string]any{"deepseek": map[string]any{"request_timeout_seconds": 30}, "other": map[string]any{"name": "deepseek", "base_url": "https://x/v1"}}); p != nil {
 		t.Fatalf("a tuning only block keeps the builtin and a display name never claims it: %+v", p)
 	}
 }
@@ -378,11 +378,11 @@ func TestNamedCustomProviderExportResolvesTheConfiguredEntry(t *testing.T) {
 func TestNamedCustomProviderEntry(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cfg := map[string]any{"providers": map[string]any{"team": map[string]any{"base_url": "http://127.0.0.1:8001/v1", "api_key": "sk-team"}}}
-	entry := NamedCustomProviderEntry(context.Background(), "custom:team", cfg)
+	entry := NamedCustomProviderEntry(WithFrozenRuntimeConfig(context.Background(), cfg), "custom:team")
 	if entry == nil || entry["base_url"] != "http://127.0.0.1:8001/v1" {
 		t.Fatalf("entry %v", entry)
 	}
-	if got := NamedCustomProviderEntry(context.Background(), "openrouter", cfg); got != nil {
+	if got := NamedCustomProviderEntry(WithFrozenRuntimeConfig(context.Background(), cfg), "openrouter"); got != nil {
 		t.Fatalf("unknown name matched %v", got)
 	}
 }
@@ -396,7 +396,7 @@ func TestEntryURLMatchFormAndNamedCustomProviderPath(t *testing.T) {
 		t.Fatalf("match form %q", got)
 	}
 	cfg := map[string]any{"providers": map[string]any{"gw": map[string]any{"base_url": "http://x/v1"}}}
-	if p := NamedCustomProviderPath(context.Background(), "custom:gw", cfg); p == nil || p.Section != "providers" || p.Key != "gw" {
+	if p := NamedCustomProviderPath(WithFrozenRuntimeConfig(context.Background(), cfg), "custom:gw"); p == nil || p.Section != "providers" || p.Key != "gw" {
 		t.Fatalf("named path %+v", p)
 	}
 }
@@ -426,12 +426,12 @@ func TestExpandDirectAPIAliasReadsTheLiveConfig(t *testing.T) {
 
 func TestCustomEntryForEndpointWrapper(t *testing.T) {
 	cfg := map[string]any{"providers": map[string]any{"plain": map[string]any{"base_url": "http://127.0.0.1:1/v1"}}}
-	name, entry, ok := CustomEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg)
-	match := customEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg)
+	name, entry, ok := CustomEntryForEndpoint(WithFrozenRuntimeConfig(context.Background(), cfg), "http://127.0.0.1:1/v1", "")
+	match := customEntryForEndpoint("http://127.0.0.1:1/v1", "", cfg["providers"].(map[string]any))
 	if !ok || match == nil || name != match.name || entry["base_url"] != match.entry["base_url"] {
 		t.Fatalf("CustomEntryForEndpoint = %q %v %v", name, entry, ok)
 	}
-	if _, _, ok := CustomEntryForEndpoint("", "", cfg); ok {
+	if _, _, ok := CustomEntryForEndpoint(WithFrozenRuntimeConfig(context.Background(), cfg), "", ""); ok {
 		t.Fatal("empty base url matched")
 	}
 }

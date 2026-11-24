@@ -1,6 +1,8 @@
 package signal
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"net/http"
@@ -10,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -43,7 +44,7 @@ func signalLineInput(promptText string) (string, bool) {
 		gateway.WizardPrintln("\n  Setup cancelled.")
 		return "", false
 	}
-	return pystr.Strip(value), true
+	return strings.TrimSpace(value), true
 }
 
 // Prints each line through the wizard info printer
@@ -97,7 +98,7 @@ func InteractiveSetup(ctx context.Context) error {
 		url = defaultURL
 	}
 	w.PrintInfo("  Testing connection...")
-	status, err := wizardCheck(ctx, pystr.RstripChars(url, "/")+"/api/v1/check")
+	status, err := wizardCheck(ctx, strings.TrimRight(url, "/")+"/api/v1/check")
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return ctx.Err()
@@ -190,6 +191,6 @@ func InteractiveSetup(ctx context.Context) error {
 	if groupsSet != "" {
 		groupsState = "enabled"
 	}
-	printInfoLines("  URL: "+url, "  Account: "+account, "  DM auth: via SIGNAL_ALLOWED_USERS + DM pairing", "  Groups: "+groupsState)
+	printInfoLines("  URL: "+url, "  Account: "+account, "  DM auth: allowed users + DM pairing", "  Groups: "+groupsState)
 	return nil
 }

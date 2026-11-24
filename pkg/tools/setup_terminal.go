@@ -173,11 +173,6 @@ var terminalBackendSetup = map[string]func(s *terminalSetup, cfg map[string]any)
 	"local": (*terminalSetup).backendLocal,
 }
 
-// Env var, config key and default mirrored into the home .env after a backend is configured
-var backendEnvMirror = map[string][3]any{
-	"vercel_sandbox": {"TERMINAL_VERCEL_IMAGE", "vercel_image", config.DefaultVercelImage},
-}
-
 // Menu rows for plugin backends, none when discovery fails like the fail soft wizard
 func (s *terminalSetup) pluginBackendRows() (rows [][2]string, names []string) {
 	for _, row := range SetupTerminalBackendRows(s.ctx, s.env) {
@@ -187,7 +182,7 @@ func (s *terminalSetup) pluginBackendRows() (rows [][2]string, names []string) {
 	return rows, names
 }
 
-// SetupTerminalBackend runs the terminal backend wizard, persisting the choice to config and the home .env
+// SetupTerminalBackend runs the terminal backend wizard, persisting the choice to config
 func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) error {
 	if SetupTerminalConsole == nil {
 		return errSetupConsoleUnwired
@@ -234,26 +229,6 @@ func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) err
 		}
 	case slices.Contains(pluginNames, selected):
 		s.backendPlugin(selected)
-	}
-	if err := s.saveEnv("TERMINAL_ENV", selected); err != nil {
-		return err
-	}
-	if mirror, ok := backendEnvMirror[selected]; ok {
-		terminal, err := terminalSection(cfg)
-		if err != nil {
-			return err
-		}
-		value, ok := terminal[mirror[1].(string)]
-		if !ok {
-			value = mirror[2]
-		}
-		text, isStr := value.(string)
-		if !isStr {
-			return fmt.Errorf("terminal.%v is %s, expected text", mirror[1], errchain.Kind(value))
-		}
-		if err := s.saveEnv(mirror[0].(string), text); err != nil {
-			return err
-		}
 	}
 	if err := config.SaveConfig(ctx, s.h, cfg, config.SaveOptions{}); err != nil {
 		return err

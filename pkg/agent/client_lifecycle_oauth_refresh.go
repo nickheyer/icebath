@@ -1,11 +1,12 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -38,9 +39,9 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 	}
 	singletonKey := ""
 	if v := singletonNow["api_key"]; pyrepr.Truthy(v) {
-		singletonKey = pystr.Strip(pyStrValue(v))
+		singletonKey = strings.TrimSpace(pyStrValue(v))
 	}
-	oldKey := pystr.Strip(a.apiKey)
+	oldKey := strings.TrimSpace(a.apiKey)
 	if singletonKey != "" && oldKey != "" && singletonKey != oldKey {
 		pkgLog().Debug(fmt.Sprintf("%s singleton tokens differ from the active api_key; skipping singleton force-refresh to avoid "+
 			"silent account swap. Reactive credential rotation should go through the pool.", a.provider))
@@ -55,7 +56,7 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 		return false
 	}
 	apiKey, baseURL := creds["api_key"].(string), creds["base_url"].(string)
-	if oldKey != "" && pystr.Strip(apiKey) == oldKey {
+	if oldKey != "" && strings.TrimSpace(apiKey) == oldKey {
 		pkgLog().Debug(fmt.Sprintf("%s credential refresh returned the same token; refresh likely failed silently", a.provider))
 		return false
 	}

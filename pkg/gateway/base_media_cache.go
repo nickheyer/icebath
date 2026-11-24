@@ -136,12 +136,12 @@ func resolveMediaExt(filename, mimeType string) string {
 	ext := ""
 	if filename != "" {
 		_, e := pypath.Splitext(filename)
-		ext = pystr.Lower(e)
+		ext = strings.ToLower(e)
 	}
 	if ext != "" {
 		return ext
 	}
-	return mimeToExt[pystr.Lower(mimeType)]
+	return mimeToExt[strings.ToLower(mimeType)]
 }
 
 // Filename with every character outside word characters, dot, dash and space replaced by underscore
@@ -160,7 +160,7 @@ func mediaDisplayName(filename string) string {
 // Classifies attachment bytes by extension, MIME and default kind and caches them, nil only for an image failing validation
 func CacheMediaBytes(ctx context.Context, data []byte, filename, mimeType, defaultKind string) (*CachedMedia, error) {
 	ext := resolveMediaExt(filename, mimeType)
-	mime := pystr.Lower(mimeType)
+	mime := strings.ToLower(mimeType)
 	display := strings.TrimLeft(ext, ".")
 	if filename != "" {
 		display = mediaDisplayName(filename)

@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows/registry"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Prefixes of the icebath owned User PATH entries, the managed bin only when it is about to be deleted
@@ -32,13 +30,13 @@ func icebathPathMarkers(h string, includeManagedBin bool) []string {
 func splitUserPath(pathValue string, markers []string) (kept, removed []string) {
 	lowered := make([]string, len(markers))
 	for i, m := range markers {
-		lowered[i] = pystr.Lower(m)
+		lowered[i] = strings.ToLower(m)
 	}
 	for _, entry := range strings.Split(pathValue, ";") {
 		if entry == "" {
 			continue
 		}
-		probe := pystr.Lower(strings.TrimRight(entry, `\/`))
+		probe := strings.ToLower(strings.TrimRight(entry, `\/`))
 		if slices.ContainsFunc(lowered, func(m string) bool { return strings.HasPrefix(probe, m) }) {
 			removed = append(removed, entry)
 		} else {

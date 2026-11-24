@@ -136,7 +136,7 @@ func strOf(v any) string {
 }
 
 // Stripped str of a falsy defaulted value, like str(value or "").strip()
-func textOf(v any) string { return pystr.Strip(strOf(v)) }
+func textOf(v any) string { return strings.TrimSpace(strOf(v)) }
 
 // Whether a decoded value equals an int the way Python compares numbers
 func equalsInt(v any, n int64) bool { return v != nil && pyjson.Equal(v, n) }
@@ -146,11 +146,11 @@ func zeroOrNone(v any) bool { return v == nil || pyjson.Equal(v, int64(0)) }
 
 // Scoped WEIXIN env of the key first, else the extra value, stripped
 func extraOrSecret(ctx context.Context, extra map[string]any, key, def string) (string, error) {
-	v, err := gateway.ExtraOrSecret(ctx, extra, key, "WEIXIN_"+pystr.Upper(key), def, true)
+	v, err := gateway.ExtraOrSecret(ctx, extra, key, "WEIXIN_"+strings.ToUpper(key), def, true)
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(pyrepr.Str(v)), nil
+	return strings.TrimSpace(pyrepr.Str(v)), nil
 }
 
 // Whether a minus two response is a stale session rather than a real rate limit
@@ -160,7 +160,7 @@ func isStaleSessionRet(ret, errcode, errmsg any) bool {
 	}
 	msg := ""
 	if s, ok := errmsg.(string); ok {
-		msg = pystr.Lower(s)
+		msg = strings.ToLower(s)
 	}
 	return msg == "unknown error" || msg == "prepare failed"
 }
@@ -563,7 +563,7 @@ func requestError(ctx, rctx context.Context, rawURL string, err error) error {
 
 // One iLink call returning its decoded JSON, a RuntimeError for an HTTP error status
 func apiRequest(ctx context.Context, session *ilinkSession, method, baseURL, endpoint string, headers []header, timeoutMS int, body []byte) (*pyjson.Object, error) {
-	resp, err := session.do(ctx, method, pystr.RstripChars(baseURL, "/")+"/"+endpoint, headers, body, float64(timeoutMS)/1000)
+	resp, err := session.do(ctx, method, strings.TrimRight(baseURL, "/")+"/"+endpoint, headers, body, float64(timeoutMS)/1000)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +620,7 @@ func sendItems(ctx context.Context, session *ilinkSession, baseURL, token, to st
 
 // Sends one text message, a ValueError for blank text
 func sendMessage(ctx context.Context, session *ilinkSession, baseURL, token, to, text, contextToken, clientID string) (*pyjson.Object, error) {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return nil, valueError("_send_message: text must not be empty")
 	}
 	itemList := []any{pyjson.ObjectOf("type", int64(itemText), "text_item", pyjson.ObjectOf("text", text))}
@@ -684,7 +684,7 @@ func assertWeixinCDNURL(rawURL string) error {
 	if err != nil {
 		return valueError("Unparseable media URL: " + pyrepr.Repr(rawURL))
 	}
-	scheme, host := pystr.Lower(parsed.Scheme), parsed.Hostname()
+	scheme, host := strings.ToLower(parsed.Scheme), parsed.Hostname()
 	if scheme != "http" && scheme != "https" {
 		return valueError(fmt.Sprintf("Media URL has disallowed scheme %s; only http/https are permitted.", pyrepr.Repr(scheme)))
 	}
@@ -699,7 +699,7 @@ func downloadAndDecryptMedia(ctx context.Context, session *ilinkSession, cdnBase
 	var rawURL string
 	switch {
 	case pyrepr.Truthy(encryptedQueryParam):
-		rawURL = pystr.RstripChars(cdnBaseURL, "/") + "/download?encrypted_query_param=" + pyurl.Quote(pyrepr.Str(encryptedQueryParam), "")
+		rawURL = strings.TrimRight(cdnBaseURL, "/") + "/download?encrypted_query_param=" + pyurl.Quote(pyrepr.Str(encryptedQueryParam), "")
 	case pyrepr.Truthy(fullURL):
 		rawURL = pyrepr.Str(fullURL)
 		if err := assertWeixinCDNURL(rawURL); err != nil {

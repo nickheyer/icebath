@@ -87,7 +87,7 @@ func prompt(out io.Writer, label string) string {
 		fmt.Fprintln(out)
 		return ""
 	}
-	return pystr.Strip(line)
+	return strings.TrimSpace(line)
 }
 
 // Device login that stores the dashboard token, never printing any part of it
@@ -358,7 +358,7 @@ func telemetryEnabled(ctx context.Context) bool {
 	if err != nil {
 		raw = os.Getenv("PHOTON_TELEMETRY")
 	}
-	switch strings.ToLower(pystr.Strip(raw)) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -453,7 +453,7 @@ func installSidecar(ctx context.Context, out, errOut io.Writer) int {
 		fmt.Fprintf(out, "  npm ci failed — falling back to:  %s install\n", npm)
 		code, stderr = run("install")
 	}
-	errText := pystr.Slice(pystr.Strip(stderr), 0, NpmErrorLogMaxChars)
+	errText := pystr.Slice(strings.TrimSpace(stderr), 0, NpmErrorLogMaxChars)
 	if code != 0 {
 		fmt.Fprintln(errOut, "npm install failed")
 	}

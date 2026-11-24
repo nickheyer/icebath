@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Spawn plumbing of the process registry, systemd scopes, output logs, stdin reasons, termination, wsl
@@ -47,16 +47,11 @@ var (
 // Finite per worker cgroup limit that never widens host risk
 func workerMemoryMaxBytes() int64 {
 	var overrideBound int64
-	override := strings.TrimSpace(os.Getenv("TERMINAL_LOCAL_MEMORY_MAX_MB"))
-	if override != "" {
-		parsed := int64(-1)
-		if n, err := strconv.ParseInt(override, 10, 64); err == nil {
-			parsed = n * 1024 * 1024
-		}
-		if parsed >= minWorkerMemoryMaxBytes {
+	if mb, ok := settings.TerminalLocalMemoryMaxMb.Lookup(context.Background()); ok {
+		if parsed := int64(mb) * 1024 * 1024; parsed >= minWorkerMemoryMaxBytes {
 			overrideBound = parsed
 		} else {
-			envLog(nil).Warn(fmt.Sprintf("Ignoring invalid TERMINAL_LOCAL_MEMORY_MAX_MB=%q; expected an integer representing at least %d MiB", override, minWorkerMemoryMaxBytes/(1024*1024)))
+			envLog(nil).Warn(fmt.Sprintf("Ignoring terminal.local_memory_max_mb=%d; it must be at least %d MiB", mb, minWorkerMemoryMaxBytes/(1024*1024)))
 		}
 	}
 	candidates := []int64{}
@@ -545,8 +540,11 @@ func procAlive(pid int) bool {
 	return pid > 0 && identityProber.Running(pid) && !identityProber.Zombie(pid)
 }
 
-// Terminates a host visible pid and its descendants after re validating its start time
-func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int64) {
+// How long the process a tree hangs from gets to act on SIGTERM before the rest of its tree is signalled, for a program that closes its own helpers
+const leaderHeadStart = 200 * time.Millisecond
+
+// Terminates a host visible pid and its descendants after re validating its start time: SIGTERM to the whole job at once, or to pid first with a head start when leaderFirst is set, one grace for all of it, then SIGKILL to what is left
+func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int64, leaderFirst bool) {
 	if expectedStart != nil && !hostPidIsOurs(pid, expectedStart) {
 		envLog(nil).Warn(fmt.Sprintf("Refusing to terminate host pid %d: start-time mismatch — PID was recycled onto an unrelated process.", pid))
 		return
@@ -558,46 +556,28 @@ func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int
 	if !identityProber.Running(pid) {
 		return
 	}
-	descendants := identityProber.Children(pid, true)
-	identityProber.Terminate(pid)
-	grace := r.daemonTermGraceSeconds(env)
-	waitForExit := func(targets []int) {
-		if grace <= 0 {
-			return
+	targets := append([]int{pid}, identityProber.Children(pid, true)...)
+	led := leadsOwnGroup(pid)
+	rest := targets
+	if leaderFirst {
+		identityProber.Terminate(pid)
+		for headStart := time.Now().Add(leaderHeadStart); procAlive(pid) && time.Now().Before(headStart); {
+			time.Sleep(time.Millisecond)
 		}
-		deadline := time.Now().Add(time.Duration(grace * float64(time.Second)))
-		for time.Now().Before(deadline) {
-			anyAlive := false
-			for _, p := range targets {
-				if procAlive(p) {
-					anyAlive = true
-					break
-				}
-			}
-			if !anyAlive {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
+		rest = targets[1:]
 	}
-	waitForExit([]int{pid})
-	remaining := descendants
-	if grace > 0 {
-		remaining = []int{}
-		for _, p := range descendants {
-			if procAlive(p) {
-				remaining = append(remaining, p)
-			}
-		}
-	}
-	for _, p := range remaining {
+	grouped := led && signalProcessGroup(pid, false) == nil
+	for _, p := range rest {
 		identityProber.Terminate(p)
 	}
-	targets := append([]int{pid}, remaining...)
+	grace := r.daemonTermGraceSeconds(env)
 	if grace <= 0 {
 		return
 	}
-	waitForExit(targets)
+	deadline := time.Now().Add(time.Duration(grace * float64(time.Second)))
+	for time.Now().Before(deadline) && anyAlive(targets) {
+		time.Sleep(50 * time.Millisecond)
+	}
 	if procAlive(pid) {
 		known := map[int]bool{}
 		for _, p := range targets {
@@ -609,6 +589,9 @@ func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int
 			}
 		}
 	}
+	if grouped && !processGroupGone(pid) {
+		_ = signalProcessGroup(pid, true)
+	}
 	for _, p := range targets {
 		if procAlive(p) {
 			identityProber.Kill(p)
@@ -617,16 +600,30 @@ func (r *ProcessRegistry) terminateHostPid(env *Env, pid int, expectedStart *int
 	}
 }
 
-// Terminates a host pid and its descendants after revalidating its start time, a nil env reading the process home config
-func TerminateHostPid(env *Env, pid int, expectedStart *int64) {
-	if env == nil {
-		h := home.Process()
-		env = &Env{Home: h}
-		if tree, err := config.Load(h, config.NewSecrets(h).Lookup()); err == nil {
-			env.Config = tree
+// Whether any of the pids is running and not a zombie
+func anyAlive(pids []int) bool {
+	for _, p := range pids {
+		if procAlive(p) {
+			return true
 		}
 	}
-	processRegistry.terminateHostPid(env, pid, expectedStart)
+	return false
+}
+
+// Terminates a host pid and its descendants after revalidating its start time, a nil env reading the process home's settings
+func TerminateHostPid(env *Env, pid int, expectedStart *int64) {
+	if env == nil {
+		env = &Env{Home: home.Process()}
+	}
+	processRegistry.terminateHostPid(env, pid, expectedStart, false)
+}
+
+// Terminates a host pid and its descendants like TerminateHostPid, the pid itself signalled first and given a moment to close its own helpers before they are signalled
+func TerminateHostPidLeaderFirst(env *Env, pid int, expectedStart *int64) {
+	if env == nil {
+		env = &Env{Home: home.Process()}
+	}
+	processRegistry.terminateHostPid(env, pid, expectedStart, true)
 }
 
 // Pids of living non zombie descendants of a host pid

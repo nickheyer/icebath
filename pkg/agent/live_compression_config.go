@@ -3,70 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/big"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
-
-// Compressor integer settings with the minimum each live value is clamped to
-var liveCompressionIntKeys = []struct {
-	key      string
-	minValue int
-}{
-	{"proactive_prune_tokens", 0}, {"proactive_prune_min_result_chars", 0}, {"proactive_prune_min_reclaim_tokens", 0},
-	{"protect_last_n", 0}, {"min_tail_user_messages", 1},
-}
-
-// Default a fresh compressor takes for a constructor argument, read off the construction defaults
-func compressorCtorDefault(name string) any {
-	o := DefaultContextCompressorOptions("")
-	switch name {
-	case "threshold_percent":
-		return o.ThresholdPercent
-	case "tail_mode":
-		return o.TailMode
-	case "summary_target_ratio":
-		return o.SummaryTargetRatio
-	case "proactive_prune_tokens":
-		return o.ProactivePruneTokens
-	case "proactive_prune_min_result_chars":
-		return o.ProactivePruneMinResultChars
-	case "proactive_prune_min_reclaim_tokens":
-		return o.ProactivePruneMinReclaimTokens
-	case "protect_last_n":
-		return o.ProtectLastN
-	case "min_tail_user_messages":
-		return o.MinTailUserMessages
-	}
-	panic("unknown compressor constructor argument " + name)
-}
-
-// Shipped compression threshold_tokens default a fresh build installs when the key is absent
-func defaultThresholdTokensCap() any {
-	v, _ := config.CfgGet(map[string]any(config.Defaults()), "compression", "threshold_tokens")
-	return v
-}
-
-// Threshold percent a fresh build derives when compression threshold is unset, codex autoraise included
-func derivedDefaultThresholdPercent(a *AIAgent, compression map[string]any) (pct float64) {
-	pct = compressorCtorDefault("threshold_percent").(float64)
-	defer func() { _ = recover() }()
-	autoraise := pystr.Lower(pyrepr.Str(cfgValue(compression, "codex_gpt55_autoraise", true)))
-	allow := autoraise == "true" || autoraise == "1" || autoraise == "yes"
-	var modelThreshold *float64
-	if v, ok := compressionThresholdForModel(a.model, a.provider, allow); ok {
-		modelThreshold = &v
-	}
-	isAutoraise := isCodexGPT54OrGPT55(a.model, a.provider) || isCodexSpark(a.model, a.provider)
-	resolved, _ := resolveCompressionThreshold(pct, modelThreshold, a.model, isAutoraise)
-	pct = resolved
-	return pct
-}
 
 // Python exception class of an error a conversion or a hosted attribute access raised
 func liveConfigErrorKind(err error) string {
@@ -80,33 +20,6 @@ func liveConfigErrorKind(err error) string {
 func liveConfigSuppressed(err error) bool {
 	kind := liveConfigErrorKind(err)
 	return kind == "TypeError" || kind == "ValueError"
-}
-
-// Python int saturated into the Go int range
-func liveConfigInt(n *big.Int) int {
-	if n.IsInt64() {
-		return int(n.Int64())
-	}
-	if n.Sign() > 0 {
-		return math.MaxInt
-	}
-	return math.MinInt
-}
-
-// Python min of two floats, the first kept unless the second compares smaller
-func pyMinFloat(a, b float64) float64 {
-	if b < a {
-		return b
-	}
-	return a
-}
-
-// Python max of two floats, the first kept unless the second compares larger
-func pyMaxFloat(a, b float64) float64 {
-	if b > a {
-		return b
-	}
-	return a
 }
 
 // Attribute surface of a live context engine the config hot reload writes through
@@ -185,13 +98,8 @@ func (n nativeLiveCompressor) setContextLength(value int) (err error) {
 
 func (n nativeLiveCompressor) configContextLengthSet() bool { return n.c.configContextLength != nil }
 
-// Positive int cap or nil, an infinite float raising the OverflowError int does
+// Positive int cap or nil
 func (n nativeLiveCompressor) coerceThresholdTokensCap(raw any) (any, error) {
-	if raw != nil {
-		if _, err := pyint.Of(raw); err != nil && liveConfigErrorKind(err) == "OverflowError" {
-			return nil, err
-		}
-	}
 	return coerceMaxTokens(raw), nil
 }
 
@@ -233,37 +141,16 @@ func (h hostedLiveCompressor) coerceThresholdTokensCap(raw any) (any, error) {
 	return h.e.obj.Call(h.e.ctx, "_coerce_threshold_tokens_cap", []any{raw}, nil)
 }
 
-// Adopts the compression config on the live agent and compressor, a removed key restoring its fresh build value
-func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context, cfg map[string]any) error {
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	compression := config.AsMap(cfg["compression"])
-	if compression == nil {
-		compression = map[string]any{}
-	}
-	enabledRaw := cfgValue(compression, "enabled", true)
-	if b, ok := enabledRaw.(bool); ok {
-		a.compressionEnabled = b
-	} else {
-		text := pystr.Lower(pyrepr.Str(enabledRaw))
-		a.compressionEnabled = text == "true" || text == "1" || text == "yes"
-	}
-	appServerAuto, responsesNative, compactThreshold := compressionCodexSettings(compression)
-	a.codexAppServerAutoCompaction, a.codexResponsesNativeCompaction = appServerAuto, responsesNative
+// Adopts the compression settings in effect for ctx on the live agent and compressor, a removed key restoring its fresh build value
+func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context) error {
+	cs, _ := compressionSettingsFor(ctx, a)
+	a.compressionEnabled = cs.Enabled
+	a.codexAppServerAutoCompaction, a.codexResponsesNativeCompaction = cs.CodexAppServerAuto, cs.CodexResponsesNative
 	a.codexResponsesCompactThreshold = 0
-	if compactThreshold != nil {
-		a.codexResponsesCompactThreshold = float64(*compactThreshold)
+	if cs.CodexResponsesCompactThreshold != nil {
+		a.codexResponsesCompactThreshold = float64(*cs.CodexResponsesCompactThreshold)
 	}
-	idleRaw := cfgValue(compression, "idle_compact_after_seconds", 0)
-	if !pyrepr.Truthy(idleRaw) {
-		idleRaw = 0
-	}
-	if n, err := pyint.Of(idleRaw); err == nil {
-		a.compressionIdleCompactAfterSeconds = float64(max(0, liveConfigInt(n)))
-	} else if !liveConfigSuppressed(err) {
-		return err
-	}
+	a.compressionIdleCompactAfterSeconds = float64(cs.IdleCompactAfterSeconds)
 	var cc liveCompressorAttrs
 	switch e := a.contextCompressor.(type) {
 	case *ContextCompressor:
@@ -274,90 +161,39 @@ func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context, cfg map[string
 	default:
 		return nil
 	}
-	return applyLiveCompressorConfig(ctx, a, cc, cfg, compression)
+	return applyLiveCompressorConfig(ctx, a, cc, cs)
 }
 
 // Writes every compressor setting in the order the hot reload does, the first unsuppressed error ending it
-func applyLiveCompressorConfig(ctx context.Context, a *AIAgent, cc liveCompressorAttrs, cfg, compression map[string]any) error {
-	defaultTail := pyrepr.Str(compressorCtorDefault("tail_mode"))
-	modeRaw := cfgValue(compression, "tail_mode", defaultTail)
-	if !pyrepr.Truthy(modeRaw) {
-		modeRaw = defaultTail
-	}
-	mode := pystr.Lower(pystr.Strip(pyrepr.Str(modeRaw)))
-	if mode != "legacy" && mode != "lean" {
-		mode = defaultTail
-	}
-	if err := cc.setAttr("tail_mode", mode); err != nil {
+func applyLiveCompressorConfig(ctx context.Context, a *AIAgent, cc liveCompressorAttrs, cs CompressionSettings) error {
+	if err := cc.setAttr("tail_mode", cs.TailMode); err != nil {
 		return err
 	}
-	for _, spec := range liveCompressionIntKeys {
-		def := compressorCtorDefault(spec.key).(int)
-		raw := cfgValue(compression, spec.key, def)
-		value := def
-		if raw != nil {
-			n, err := pyint.Of(raw)
-			if err != nil {
-				if liveConfigSuppressed(err) {
-					continue
-				}
-				return err
-			}
-			value = liveConfigInt(n)
-		}
-		if err := cc.setAttr(spec.key, max(spec.minValue, value)); err != nil && !liveConfigSuppressed(err) {
+	for _, attr := range []struct {
+		name  string
+		value int
+	}{
+		{"proactive_prune_tokens", cs.ProactivePruneTokens}, {"proactive_prune_min_result_chars", cs.ProactivePruneMinChars},
+		{"proactive_prune_min_reclaim_tokens", cs.ProactivePruneMinReclaim}, {"protect_last_n", cs.ProtectLast},
+		{"min_tail_user_messages", cs.MinTailUsers},
+	} {
+		if err := cc.setAttr(attr.name, attr.value); err != nil && !liveConfigSuppressed(err) {
 			return err
 		}
 	}
-	ratioRaw := cfgValue(compression, "target_ratio", compressorCtorDefault("summary_target_ratio"))
-	if ratio, err := pyint.Float(ratioRaw); err == nil {
-		if err := cc.setAttr("summary_target_ratio", pyMaxFloat(0.10, pyMinFloat(ratio, 0.80))); err != nil && !liveConfigSuppressed(err) {
-			return err
-		}
-	} else if !liveConfigSuppressed(err) {
+	if err := cc.setAttr("summary_target_ratio", cs.TargetRatio); err != nil && !liveConfigSuppressed(err) {
 		return err
 	}
-	thresholds := map[string]float64{}
-	if raw := config.AsMap(compression["model_thresholds"]); raw != nil {
-		for k, v := range raw {
-			if _, isBool := v.(bool); isBool {
-				continue
-			}
-			if _, isInt := pyint.Instance(v); !isInt {
-				if _, isFloat := v.(float64); !isFloat {
-					continue
-				}
-			}
-			f, err := pyint.Float(v)
-			if err != nil {
-				return err
-			}
-			thresholds[k] = f
-		}
-	}
-	if err := cc.setAttr("model_thresholds", thresholds); err != nil {
+	if err := cc.setAttr("model_thresholds", cs.ModelThresholds); err != nil {
 		return err
 	}
-	var pct *float64
-	if raw, present := compression["threshold"]; present {
-		f, err := pyint.Float(raw)
-		if err == nil {
-			pct = &f
-		} else if !liveConfigSuppressed(err) {
-			return err
-		}
-	}
-	if pct == nil {
-		derived := derivedDefaultThresholdPercent(a, compression)
-		pct = &derived
-	}
-	if err := cc.setAttr("_config_threshold_percent", *pct); err != nil {
+	if err := cc.setAttr("_config_threshold_percent", cs.Threshold); err != nil {
 		return err
 	}
-	if err := cc.setAttr("_configured_threshold_percent", *pct); err != nil {
+	if err := cc.setAttr("_configured_threshold_percent", cs.Threshold); err != nil {
 		return err
 	}
-	base := resolveModelThreshold(a.model, thresholds, *pct, a.provider)
+	base := resolveModelThreshold(a.model, cs.ModelThresholds, cs.Threshold, a.provider)
 	if err := cc.setAttr("_base_threshold_percent", base); err != nil {
 		return err
 	}
@@ -366,15 +202,17 @@ func applyLiveCompressorConfig(ctx context.Context, a *AIAgent, cc liveCompresso
 		err = cc.setAttr("threshold_percent", effective)
 	}
 	if err != nil {
-		if err := cc.setAttr("threshold_percent", *pct); err != nil {
+		if err := cc.setAttr("threshold_percent", cs.Threshold); err != nil {
 			return err
 		}
 	}
-	if newCtx := configContextLengthForRuntime(ctx, a, cfg); newCtx != nil {
+	if newCtx := configContextLengthForRuntime(ctx, a); newCtx != nil {
 		if err := setConfigContextLength(ctx, a, newCtx); err != nil {
 			return err
 		}
-		_ = cc.setContextLength(*newCtx)
+		if err := cc.setContextLength(*newCtx); err != nil {
+			pkgLog().Debug(fmt.Sprintf("Live compression config could not set the context length %d: %v", *newCtx, err))
+		}
 	} else if cc.configContextLengthSet() {
 		if err := setConfigContextLength(ctx, a, nil); err != nil {
 			return err
@@ -383,7 +221,11 @@ func applyLiveCompressorConfig(ctx context.Context, a *AIAgent, cc liveCompresso
 			return err
 		}
 	}
-	capValue, err := cc.coerceThresholdTokensCap(cfgValue(compression, "threshold_tokens", defaultThresholdTokensCap()))
+	var tokensCap any
+	if cs.ThresholdTokens != nil {
+		tokensCap = *cs.ThresholdTokens
+	}
+	capValue, err := cc.coerceThresholdTokensCap(tokensCap)
 	if err != nil {
 		return err
 	}

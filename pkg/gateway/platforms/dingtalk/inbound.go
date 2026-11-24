@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var DingTalkTypeMapping = map[string]string{"picture": "image", "voice": "audio"}
@@ -99,7 +98,7 @@ func strip(v any) (string, error) {
 	if !ok {
 		return "", &payloadError{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 func join(items []any) (string, error) {
@@ -155,8 +154,8 @@ func cardText(m *ChatbotMessage) (string, error) {
 	if card, ok := asDict(dictGet(ext, "card", map[string]any{})); ok {
 		title, rawContent := dictGet(card, "title", ""), dictGet(card, "content", "")
 		docURL := urlOf(rawContent)
-		if s, isStr := rawContent.(string); isStr && pystr.Strip(s) != "" {
-			if parsed, err := pyjson.Loads(pystr.Strip(s)); err == nil {
+		if s, isStr := rawContent.(string); isStr && strings.TrimSpace(s) != "" {
+			if parsed, err := pyjson.Loads(strings.TrimSpace(s)); err == nil {
 				docURL = urlOf(loadedDict(parsed))
 			} else {
 				docURL = rawContent
@@ -257,7 +256,7 @@ func ExtractText(m *ChatbotMessage) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			content = pystr.Strip(joined)
+			content = strings.TrimSpace(joined)
 		}
 	}
 	if content == "" {
@@ -293,7 +292,7 @@ func fileNameExt(fname any) (string, error) {
 		if !strings.Contains(s, ".") {
 			return "", nil
 		}
-		return pystr.Lower(s[strings.LastIndex(s, ".")+1:]), nil
+		return strings.ToLower(s[strings.LastIndex(s, ".")+1:]), nil
 	}
 	contains := false
 	switch c := fname.(type) {

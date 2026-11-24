@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -47,7 +46,7 @@ func turnAuthorCleanText(value any) (string, bool) {
 		}
 		i += size
 	}
-	text := pystr.Strip(b.String())
+	text := strings.TrimSpace(b.String())
 	if text == "" {
 		return "", false
 	}
@@ -61,7 +60,7 @@ func turnAuthorCleanText(value any) (string, bool) {
 func turnAuthorBotFlag(value any) bool {
 	switch v := value.(type) {
 	case string:
-		return turnAuthorTruthy[pystr.Lower(pystr.Strip(v))]
+		return turnAuthorTruthy[strings.ToLower(strings.TrimSpace(v))]
 	case bool:
 		return v
 	case int:
@@ -76,7 +75,7 @@ func turnAuthorBotFlag(value any) bool {
 
 // Bot author id, bot:profile on this install and bot:origin/profile for one on another install
 func BotAuthorID(profile, origin string) string {
-	if origin = pystr.Strip(origin); origin != "" {
+	if origin = strings.TrimSpace(origin); origin != "" {
 		return "bot:" + origin + "/" + profile
 	}
 	return "bot:" + profile

@@ -8,9 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const farFutureExpiry = int64(4_102_444_800)
+
+// Retries the registry default of kanban.turn_recovery allows
+var defaultRecoveryAttempts = settings.TurnRecoveryAttempts(settings.KanbanTurnRecovery.Default)
 
 var recoveryKanbanEnv = []string{"ICEBATH_KANBAN_TASK", "ICEBATH_KANBAN_GOAL_MODE", "ICEBATH_KANBAN_TURN_RECOVERY", "ICEBATH_KANBAN_RUN_ID",
 	"ICEBATH_KANBAN_CLAIM_LOCK", "ICEBATH_KANBAN_DB", "ICEBATH_KANBAN_BOARD"}
@@ -161,13 +166,13 @@ func TestEnvZeroDisablesAndBlankIdsAreNotWorkers(t *testing.T) {
 func TestMaxAttemptsParsingAndClamp(t *testing.T) {
 	clearKanbanEnv(t)
 	t.Setenv("ICEBATH_KANBAN_TASK", "t_probe")
-	if got := MaxRecoveryAttempts(); got != DefaultMaxRecoveryAttempts {
+	if got := MaxRecoveryAttempts(); got != defaultRecoveryAttempts {
 		t.Fatalf("unset %d", got)
 	}
 	for _, c := range []struct {
 		raw  string
 		want int
-	}{{"2", 2}, {"99", 10}, {"abc", DefaultMaxRecoveryAttempts}, {"false", 0}} {
+	}{{"2", 2}, {"99", 10}, {"abc", defaultRecoveryAttempts}, {"false", 0}} {
 		t.Setenv("ICEBATH_KANBAN_TURN_RECOVERY", c.raw)
 		if got := MaxRecoveryAttempts(); got != c.want {
 			t.Fatalf("%q gave %d want %d", c.raw, got, c.want)
@@ -382,7 +387,7 @@ func TestRecoveryLoopBoundedWhenResultNeverChanges(t *testing.T) {
 	var delays []float64
 	attempts, err := RecoverFailedKanbanTurnsWith(context.Background(), func(string) {}, anyResult(retryableTimeout),
 		RecoveryOptions{Sleep: func(s float64) { delays = append(delays, s) }, Emit: func(string) {}, ClaimCheck: alwaysLive})
-	if err != nil || attempts != DefaultMaxRecoveryAttempts {
+	if err != nil || attempts != defaultRecoveryAttempts {
 		t.Fatalf("attempts %d err %v", attempts, err)
 	}
 	if !reflect.DeepEqual(delays, []float64{15.0, 45.0, 90.0}) {

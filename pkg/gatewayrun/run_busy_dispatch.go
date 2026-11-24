@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"slices"
@@ -8,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Slash command handler reply, nil, a string or an ephemeral reply
@@ -296,7 +297,7 @@ func (r *GatewayRunner) busyGoalCommand(ctx context.Context, event *gateway.Mess
 
 // Runs a loop control verb mid run, rejecting a new loop
 func (r *GatewayRunner) busyLoopCommand(ctx context.Context, event *gateway.MessageEvent, quickKey string, source *gateway.SessionSource) (any, error) {
-	loopArg := pystr.Lower(pystr.Strip(event.GetCommandArgs()))
+	loopArg := strings.ToLower(strings.TrimSpace(event.GetCommandArgs()))
 	if loopArg == "" || slices.Contains([]string{"status", "pause", "resume", "stop", "clear", "cancel", "help", "--help", "-h"}, loopArg) {
 		if err := busyAccepted(ctx); err != nil {
 			return nil, err

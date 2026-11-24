@@ -88,7 +88,7 @@ func loadClassifyItems(inputFile string, stdin io.Reader, stderr io.Writer) ([]*
 		fmt.Fprintf(stderr, "%sinput is not valid UTF-8\n", classifyErrPrefix)
 		return nil, classifyExitUnreadable
 	}
-	raw := pystr.Strip(pystr.TranslateNewlines(string(data)))
+	raw := strings.TrimSpace(pystr.TranslateNewlines(string(data)))
 	if raw == "" {
 		return nil, classifyExitOK
 	}
@@ -156,9 +156,9 @@ func classifyInt(v any) (*big.Int, bool) {
 
 // Score objects of the model reply by item position, tolerating a markdown fence and prose around the array
 func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[int]*pyjson.Object {
-	text := pystr.Strip(content)
+	text := strings.TrimSpace(content)
 	if strings.HasPrefix(text, "```") {
-		text = pystr.StripChars(text, "`")
+		text = strings.Trim(text, "`")
 		if _, rest, found := strings.Cut(text, "\n"); found {
 			text = rest
 		}

@@ -144,75 +144,6 @@ func stagedIn(modelsDir string, requireComplete bool) []string {
 	return out
 }
 
-// Moves GGUFs from the old per profile models layout into the machine dirs by rename only, returning the new paths
-func adoptLegacyModels() ([]string, error) {
-	profilesRoot := filepath.Join(home.Root(), "profiles")
-	if st, err := os.Stat(profilesRoot); err != nil || !st.IsDir() {
-		return nil, nil
-	}
-	ents, err := os.ReadDir(profilesRoot)
-	if err != nil {
-		return nil, err
-	}
-	var moved []string
-	for _, e := range ents {
-		profile := filepath.Join(profilesRoot, e.Name())
-		old := filepath.Join(profile, "models")
-		if strings.HasPrefix(e.Name(), ".") || !lrIsDir(old) || !home.ProfileHasIdentity(profile) {
-			continue
-		}
-		for _, pair := range [][2]string{{old, localModelsDir()}, {filepath.Join(old, "assets"), localAssetsDir()}} {
-			srcDir, destDir := pair[0], pair[1]
-			for _, src := range lrGlobGGUF(srcDir) {
-				dest := filepath.Join(destDir, filepath.Base(src))
-				if lrPathExists(dest) {
-					pkgLog().Warn(fmt.Sprintf("legacy model %s not moved: %s already exists", src, dest))
-					continue
-				}
-				err := os.MkdirAll(destDir, 0o777)
-				if err == nil {
-					err = os.Rename(src, dest)
-				}
-				if errors.Is(err, os.ErrNotExist) {
-					continue
-				}
-				if err != nil {
-					pkgLog().Warn(fmt.Sprintf("legacy model %s not moved to %s: %s", src, destDir, err))
-					continue
-				}
-				moved = append(moved, dest)
-			}
-		}
-		for _, emptied := range []string{filepath.Join(old, "assets"), old} {
-			_ = lrRmdir(emptied)
-		}
-	}
-	if len(moved) > 0 {
-		pkgLog().Info(fmt.Sprintf("moved %d legacy model file(s) into %s", len(moved), localModelsDir()))
-	}
-	return moved, nil
-}
-
-func lrIsDir(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
-}
-
-// Removes an empty directory, never its contents
-func lrRmdir(p string) error {
-	st, err := os.Lstat(p)
-	if err != nil {
-		return err
-	}
-	if !st.IsDir() {
-		return fmt.Errorf("not a directory: %s", p)
-	}
-	if ents, err := os.ReadDir(p); err != nil || len(ents) > 0 {
-		return fmt.Errorf("directory not empty: %s", p)
-	}
-	return os.Remove(p)
-}
-
 // Servable staged models, continuation parts, incomplete splits and assets never count
 func stagedModels() []string {
 	return stagedIn(localModelsDir(), true)
@@ -499,9 +430,6 @@ func EnsureLocalRuntime(ctx context.Context, cfg map[string]any, force bool) (*L
 	}
 	if sup := getLocalSupervisor(); sup != nil {
 		return sup, nil
-	}
-	if _, err := adoptLegacyModels(); err != nil {
-		pkgLog().Warn(fmt.Sprintf("legacy model adoption failed: %s", err))
 	}
 	if !force && len(stagedModels()) == 0 {
 		pkgLog().Info("local runtime enabled but no models staged; not booting")

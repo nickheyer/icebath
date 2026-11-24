@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -160,51 +160,58 @@ func RunWithSecretEnv(argv []string, env map[string]string, secretEnv, secret st
 	return runVaultCLI(cmd, ctx, timeout, label)
 }
 
-// The vault section of the read only config, empty when absent or not a mapping
-func vaultCfg(ctx context.Context) (map[string]any, error) {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return nil, err
-	}
-	section, _ := cfg.Lookup("vault")
-	switch m := section.(type) {
-	case map[string]any:
-		return m, nil
-	case config.Tree:
-		return map[string]any(m), nil
-	}
-	return map[string]any{}, nil
+// Settings of one external password manager, read from its vault.<name> settings
+type ManagerConfig struct {
+	// Full path of the manager's command-line tool, empty finding it on the search path
+	BinaryPath string
+	// 1Password account, empty for the default one
+	Account string
+	// Environment variable holding the 1Password service account token
+	ServiceAccountTokenEnv string
 }
 
-// Config section reader of the vault, the module attribute tests patch
-var vaultCfgFn = vaultCfg
-
-// Identity and constructor of one external password manager backend
+// Identity, settings and constructor of one external password manager backend
 type externalLoginBackend struct {
 	name, prefix, displayName string
-	new                       func(ctx context.Context, cfg map[string]any) LoginBackend
+	// vault.<name>.enabled, the opt out of an installed manager
+	enabled *settings.Bool
+	config  func(ctx context.Context) ManagerConfig
+	new     func(ctx context.Context, cfg ManagerConfig) LoginBackend
 }
 
 // The external manager backends in their order, 1Password then Bitwarden
 func externalBackendClasses() []externalLoginBackend {
 	return []externalLoginBackend{
-		{name: "onepassword", prefix: "op:", displayName: "1Password", new: func(ctx context.Context, cfg map[string]any) LoginBackend {
-			return NewOnePasswordLoginBackend(ctx, cfg)
-		}},
-		{name: "bitwarden", prefix: "bw:", displayName: "Bitwarden", new: func(ctx context.Context, cfg map[string]any) LoginBackend { return NewBitwardenLoginBackend(ctx, cfg) }},
+		{name: "onepassword", prefix: "op:", displayName: "1Password", enabled: settings.VaultOnepasswordEnabled,
+			config: func(ctx context.Context) ManagerConfig {
+				return ManagerConfig{BinaryPath: strings.TrimSpace(settings.VaultOnepasswordBinaryPath.Get(ctx)),
+					Account:                strings.TrimSpace(settings.VaultOnepasswordAccount.Get(ctx)),
+					ServiceAccountTokenEnv: strings.TrimSpace(settings.VaultOnepasswordServiceAccountTokenEnv.Get(ctx))}
+			},
+			new: func(ctx context.Context, cfg ManagerConfig) LoginBackend { return NewOnePasswordLoginBackend(ctx, cfg) }},
+		{name: "bitwarden", prefix: "bw:", displayName: "Bitwarden", enabled: settings.VaultBitwardenEnabled,
+			config: func(ctx context.Context) ManagerConfig {
+				return ManagerConfig{BinaryPath: strings.TrimSpace(settings.VaultBitwardenBinaryPath.Get(ctx))}
+			},
+			new: func(ctx context.Context, cfg ManagerConfig) LoginBackend { return NewBitwardenLoginBackend(ctx, cfg) }},
 	}
+}
+
+// The external manager backend of a name, false for a name icebath does not know
+func externalBackendClass(name string) (externalLoginBackend, bool) {
+	for _, cls := range externalBackendClasses() {
+		if cls.name == name {
+			return cls, true
+		}
+	}
+	return externalLoginBackend{}, false
 }
 
 // Whether the manager CLI is reachable, a configured binary_path honoured over PATH
 func IsLoginBackendInstalled(ctx context.Context, name string) (bool, error) {
-	cfg, err := vaultCfgFn(ctx)
-	if err != nil {
-		return false, err
-	}
-	section, _ := cfg[name].(map[string]any)
 	explicit := ""
-	if section != nil {
-		explicit = vaultText(section["binary_path"])
+	if cls, known := externalBackendClass(name); known {
+		explicit = cls.config(ctx).BinaryPath
 	}
 	if explicit != "" {
 		info, err := os.Stat(explicit)
@@ -213,20 +220,14 @@ func IsLoginBackendInstalled(ctx context.Context, name string) (bool, error) {
 	if name == "onepassword" {
 		return provider.FindOp("") != "", nil
 	}
-	_, err = exec.LookPath("bw")
+	_, err := exec.LookPath("bw")
 	return err == nil, nil
 }
 
-// An installed manager is a login source unless the profile set vault.<name>.enabled to false
+// An installed manager is a login source unless the profile turned vault.<name>.enabled off
 func IsLoginBackendEnabled(ctx context.Context, name string) (bool, error) {
-	cfg, err := vaultCfgFn(ctx)
-	if err != nil {
-		return false, err
-	}
-	if section, ok := cfg[name].(map[string]any); ok {
-		if enabled, isBool := section["enabled"].(bool); isBool && !enabled {
-			return false, nil
-		}
+	if cls, known := externalBackendClass(name); known && !cls.enabled.Get(ctx) {
+		return false, nil
 	}
 	return isLoginBackendInstalledFn(ctx, name)
 }
@@ -239,10 +240,6 @@ var isLoginBackendEnabledFn = IsLoginBackendEnabled
 
 // Local first, then every detected external manager the user has not turned off, then the enabled plugin backends
 func EnabledLoginBackends(ctx context.Context) ([]LoginBackend, error) {
-	cfg, err := vaultCfgFn(ctx)
-	if err != nil {
-		return nil, err
-	}
 	out := []LoginBackend{NewLocalLoginBackend(ctx)}
 	for _, cls := range externalBackendClasses() {
 		enabled, err := isLoginBackendEnabledFn(ctx, cls.name)
@@ -252,13 +249,9 @@ func EnabledLoginBackends(ctx context.Context) ([]LoginBackend, error) {
 		if !enabled {
 			continue
 		}
-		section, _ := cfg[cls.name].(map[string]any)
-		if section == nil {
-			section = map[string]any{}
-		}
-		out = append(out, cls.new(ctx, section))
+		out = append(out, cls.new(ctx, cls.config(ctx)))
 	}
-	return append(out, EnabledPluginLoginBackends(ctx, cfg)...), nil
+	return append(out, EnabledPluginLoginBackends(ctx)...), nil
 }
 
 // Enabled backend lister, the module attribute tests patch

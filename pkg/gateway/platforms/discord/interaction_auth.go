@@ -9,7 +9,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -145,12 +144,12 @@ func (a *DiscordAdapter) componentCheckAuth(ctx context.Context, i *discordgo.In
 	}
 	userSet := strSet{}
 	for uid := range allowedUserIDs {
-		if s := pystr.Strip(uid); s != "" {
+		if s := strings.TrimSpace(uid); s != "" {
 			userSet[s] = struct{}{}
 		}
 	}
 	for _, uid := range strings.Split(gateway.PlatformGateEnv(ctx, "GATEWAY_ALLOWED_USERS", ""), ",") {
-		if s := pystr.Strip(uid); s != "" {
+		if s := strings.TrimSpace(uid); s != "" {
 			userSet[s] = struct{}{}
 		}
 	}

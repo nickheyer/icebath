@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -214,7 +213,7 @@ func doctorLiveClassifyHTTP(name string, code int, keyHint string) doctorLivePro
 
 // Probes one metadata endpoint authenticated by a single env var, skipped when the var is unset
 func (e *doctorLiveEnv) doctorLiveKeyedProbe(spec doctorLiveKeyedSpec, timeout float64) (doctorLiveProbeResult, error) {
-	key := pystr.Strip(os.Getenv(spec.EnvVar))
+	key := strings.TrimSpace(os.Getenv(spec.EnvVar))
 	if key == "" {
 		return doctorLiveProbeResult{spec.Name, "skip", "(not configured)"}, nil
 	}
@@ -244,7 +243,7 @@ func (e *doctorLiveEnv) doctorLiveProbeBrowser(timeout float64) (doctorLiveProbe
 
 // Probes the voices or models list of the configured TTS or STT provider
 func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, timeout float64) (doctorLiveProbeResult, error) {
-	name := pystr.Upper(kind)
+	name := strings.ToUpper(kind)
 	providerName := ""
 	if section := cfg[kind]; pyrepr.Truthy(section) {
 		block, ok := section.(map[string]any)
@@ -256,7 +255,7 @@ func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, ti
 			if !isStr {
 				return doctorLiveProbeResult{}, fmt.Errorf("config %s provider is %s where text was expected", kind, errchain.Kind(raw))
 			}
-			providerName = pystr.Lower(pystr.Strip(text))
+			providerName = strings.ToLower(strings.TrimSpace(text))
 		}
 	}
 	if doctorLiveLocalAudioProviders[providerName] {
@@ -277,7 +276,7 @@ func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, ti
 	if !known {
 		return doctorLiveProbeResult{name, "skip", "(provider '" + providerName + "' — no live probe implemented)"}, nil
 	}
-	key := pystr.Strip(os.Getenv(spec.EnvVar))
+	key := strings.TrimSpace(os.Getenv(spec.EnvVar))
 	if key == "" {
 		return doctorLiveProbeResult{name, "warn", "(provider '" + providerName + "' configured but " + spec.EnvVar + " is not set)"}, nil
 	}
@@ -332,7 +331,7 @@ func (e *doctorLiveEnv) doctorLiveRunOne(name string, fn func() (doctorLiveProbe
 				}
 				msg = t.Name()
 			}
-			if strings.Contains(pystr.Lower(msg), "time") {
+			if strings.Contains(strings.ToLower(msg), "time") {
 				result = doctorLiveProbeResult{name, "fail", "(timed out: " + msg + ")"}
 			} else {
 				result = doctorLiveProbeResult{name, "fail", "(" + msg + ")"}
@@ -390,7 +389,7 @@ func (e *doctorLiveEnv) doctorRunLiveChecks(issues *[]string) ([]doctorLiveProbe
 		e.doctorLiveReport(results[len(results)-1], issues)
 	}
 	for _, kind := range []string{"tts", "stt"} {
-		results = append(results, e.doctorLiveRunOne(pystr.Upper(kind), func() (doctorLiveProbeResult, error) {
+		results = append(results, e.doctorLiveRunOne(strings.ToUpper(kind), func() (doctorLiveProbeResult, error) {
 			return e.doctorLiveProbeAudio(kind, cfg, timeout)
 		}, issues))
 	}

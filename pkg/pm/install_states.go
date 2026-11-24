@@ -1,6 +1,8 @@
 package pm
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"io/fs"
@@ -9,8 +11,6 @@ import (
 	"runtime"
 	"sort"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -96,7 +96,7 @@ func isOrphan(state, dataRoot string, retention float64, retain bool) (bool, err
 	if err := strictUTF8(trimBOM(data)); err != nil {
 		return false, err
 	}
-	root := pystr.Strip(string(trimBOM(data)))
+	root := strings.TrimSpace(string(trimBOM(data)))
 	if root == "" {
 		return false, nil
 	}

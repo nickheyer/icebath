@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // PlatformDeclarationError is a declaration parse or validation failure
@@ -142,10 +141,10 @@ func platformLocationIsRooted(location, osf string) bool {
 // True for a stripped relative name without empty parts, .., a drive colon, or dirs unless allowed
 func platformIsRelativeName(value any, allowDirs bool) bool {
 	s, ok := value.(string)
-	if !ok || pystr.Strip(s) == "" || strings.Contains(s, "://") {
+	if !ok || strings.TrimSpace(s) == "" || strings.Contains(s, "://") {
 		return false
 	}
-	parts := strings.Split(strings.ReplaceAll(pystr.Strip(s), `\`, "/"), "/")
+	parts := strings.Split(strings.ReplaceAll(strings.TrimSpace(s), `\`, "/"), "/")
 	return !slices.Contains(parts, "..") && !slices.Contains(parts, "") && (allowDirs || len(parts) == 1) && !strings.Contains(parts[0], ":")
 }
 
@@ -160,7 +159,7 @@ func platformLocationKindNames() []string {
 // One location entry, a string path where star stands for a versioned folder or a kind mapping
 func platformParseLocation(where, osf, presence, label string, raw any) (PlatformAppLocation, error) {
 	if s, ok := raw.(string); ok {
-		path := pystr.Strip(s)
+		path := strings.TrimSpace(s)
 		if path == "" {
 			return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s is required", where, label)}
 		}
@@ -192,7 +191,7 @@ func platformParseLocation(where, osf, presence, label string, raw any) (Platfor
 	if spec.NeedsFile && !platformIsRelativeName(file, true) {
 		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s.file must be a relative path inside the install folder", where, label)}
 	}
-	return PlatformAppLocation{Kind: kind, Value: pystr.Strip(value.(string)), File: pystr.Strip(pyrepr.Str(file))}, nil
+	return PlatformAppLocation{Kind: kind, Value: strings.TrimSpace(value.(string)), File: strings.TrimSpace(pyrepr.Str(file))}, nil
 }
 
 // str(value or default) with Python truthiness

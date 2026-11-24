@@ -69,7 +69,7 @@ func runText(timeout time.Duration, name string, args ...string) (string, error)
 func safeInts(tokens []string) []int {
 	out := []int{}
 	for _, tok := range tokens {
-		if n, err := strconv.Atoi(pystr.Strip(tok)); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(tok)); err == nil {
 			out = append(out, n)
 		}
 	}
@@ -84,7 +84,7 @@ func listenerPidsOnPortLive(port int) ([]int, error) {
 		return nil, err
 	}
 	if err == nil {
-		if stripped := pystr.Strip(out); stripped != "" {
+		if stripped := strings.TrimSpace(out); stripped != "" {
 			pids = safeInts(pystr.Splitlines(stripped, false))
 		}
 		if len(pids) > 0 {
@@ -204,15 +204,15 @@ func processName(pid int) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		first, _, _ := strings.Cut(pystr.Strip(out), ",")
+		first, _, _ := strings.Cut(strings.TrimSpace(out), ",")
 		name := strings.Trim(first, `"`)
 		return name, name != "" && !strings.HasPrefix(name, "INFO:")
 	}
 	out, err := runCommand(5*time.Second, "ps", "-o", "comm=", "-p", strconv.Itoa(pid))
-	if err != nil || pystr.Strip(out) == "" {
+	if err != nil || strings.TrimSpace(out) == "" {
 		return "", false
 	}
-	return filepath.Base(pystr.Strip(out)), true
+	return filepath.Base(strings.TrimSpace(out)), true
 }
 
 // Fail closed check that the live process is a node executable before any kill
@@ -221,14 +221,14 @@ func pidLooksLikeNodeBridgeLive(pid int) bool {
 	if !ok {
 		return false
 	}
-	if strings.Contains(pystr.Lower(name), "node") {
+	if strings.Contains(strings.ToLower(name), "node") {
 		return true
 	}
 	argv, err := tools.ProcessCmdline(pid)
 	if err != nil {
 		return false
 	}
-	first, _, _ := strings.Cut(pystr.Lower(strings.Join(argv, " ")), " ")
+	first, _, _ := strings.Cut(strings.ToLower(strings.Join(argv, " ")), " ")
 	return strings.Contains(first, "node")
 }
 
@@ -334,7 +334,7 @@ func readBridgePidfile(sessionPath string) (*int, *int64, *int) {
 	}
 	lines := strings.Split(text, "\n")
 	for i := range lines {
-		lines[i] = pystr.Strip(lines[i])
+		lines[i] = strings.TrimSpace(lines[i])
 	}
 	pid, err := strconv.Atoi(lines[0])
 	if err != nil {

@@ -8,15 +8,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Recovery attempts made when ICEBATH_KANBAN_TURN_RECOVERY is unset
-const DefaultMaxRecoveryAttempts = 3
 
 // Backoff seconds before each recovery attempt, the last entry repeating
 var RecoveryDelaysSeconds = []float64{15.0, 45.0, 90.0}
@@ -25,14 +21,12 @@ var nonRecoverableReasons = map[string]bool{"rate_limit": true, "billing": true,
 
 var terminalTurnExitPrefixes = []string{"max_iterations_reached"}
 
-var recoveryOffValues = map[string]bool{"0": true, "false": true, "no": true, "off": true}
-
 // Wall clock seconds the claim proof compares leases against
 var recoveryNow = func() int64 { return time.Now().Unix() }
 
 // Dispatcher set worker task id stripped once, empty when this process is not a worker run
 func KanbanTaskID() string {
-	return pystr.Strip(os.Getenv("ICEBATH_KANBAN_TASK"))
+	return strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK"))
 }
 
 // Explicit carrier id stripped when given, else the environment pin, empty when neither names a worker
@@ -40,7 +34,7 @@ func resolveRecoveryTaskID(taskID *string) string {
 	if taskID == nil {
 		return KanbanTaskID()
 	}
-	return pystr.Strip(*taskID)
+	return strings.TrimSpace(*taskID)
 }
 
 // True when a worker task id is carried and the attempt budget is above zero
@@ -51,26 +45,9 @@ func KanbanTurnRecoveryEnabled(taskID *string) bool {
 	return MaxRecoveryAttempts() > 0
 }
 
-// Attempt budget from ICEBATH_KANBAN_TURN_RECOVERY clamped to zero through ten, the default when unset or unparseable
+// Attempt budget from kanban.turn_recovery, off as zero and clamped to ten
 func MaxRecoveryAttempts() int {
-	raw := pystr.Strip(os.Getenv("ICEBATH_KANBAN_TURN_RECOVERY"))
-	if raw == "" {
-		return DefaultMaxRecoveryAttempts
-	}
-	if recoveryOffValues[strings.ToLower(raw)] {
-		return 0
-	}
-	value, ok := pyint.Parse(raw)
-	if !ok {
-		return DefaultMaxRecoveryAttempts
-	}
-	if value.Sign() < 0 {
-		return 0
-	}
-	if !value.IsInt64() || value.Int64() > 10 {
-		return 10
-	}
-	return int(value.Int64())
+	return settings.TurnRecoveryAttempts(settings.KanbanTurnRecovery.Get(context.Background()))
 }
 
 // Backoff seconds before the one based recovery attempt
@@ -126,7 +103,7 @@ func ShouldRecoverTurn(result any, attempt int, taskID *string) bool {
 
 // Dispatcher pinned board database path, empty when the pin is absent
 func pinnedKanbanDBPath() string {
-	return pystr.Strip(os.Getenv("ICEBATH_KANBAN_DB"))
+	return strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_DB"))
 }
 
 // Explicit carrier a managed worker passes in place of the environment pins
@@ -167,7 +144,7 @@ func WorkerClaimIsLive(ctx context.Context, proof ClaimProof) (bool, error) {
 	}
 	dbPath := pinnedKanbanDBPath()
 	if proof.DBPath != nil {
-		dbPath = pystr.Strip(*proof.DBPath)
+		dbPath = strings.TrimSpace(*proof.DBPath)
 	}
 	exists := false
 	if dbPath != "" {
@@ -185,13 +162,13 @@ func WorkerClaimIsLive(ctx context.Context, proof ClaimProof) (bool, error) {
 		pkgLog().Warn(fmt.Sprintf("kanban claim check: pinned board db %s not found — not retrying in place", shown))
 		return false, nil
 	}
-	runIDEnv := pystr.Strip(os.Getenv("ICEBATH_KANBAN_RUN_ID"))
+	runIDEnv := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_RUN_ID"))
 	if proof.RunID != nil {
-		runIDEnv = pystr.Strip(*proof.RunID)
+		runIDEnv = strings.TrimSpace(*proof.RunID)
 	}
-	lockEnv := pystr.Strip(os.Getenv("ICEBATH_KANBAN_CLAIM_LOCK"))
+	lockEnv := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_CLAIM_LOCK"))
 	if proof.ClaimLock != nil {
-		lockEnv = pystr.Strip(*proof.ClaimLock)
+		lockEnv = strings.TrimSpace(*proof.ClaimLock)
 	}
 	if runIDEnv == "" || lockEnv == "" {
 		pkgLog().Warn("kanban claim check: missing dispatcher-pinned run-id/claim-lock carrier — no exact authority to re-prove, not retrying in place")
@@ -287,7 +264,7 @@ func leaseIsUnexpired(cell any, now int64) (bool, error) {
 
 // Stripped single line text cut to the limit with an ellipsis
 func truncateRecoveryText(text string, limit int) string {
-	text = strings.ReplaceAll(pystr.Strip(text), "\n", " ")
+	text = strings.ReplaceAll(strings.TrimSpace(text), "\n", " ")
 	runes := []rune(text)
 	if len(runes) > limit {
 		return string(runes[:limit-1]) + "…"

@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -173,8 +172,8 @@ func auxRecoverAuxResponseMessage(response any) any {
 
 // Text of a Responses style output_text or the message output content parts
 func auxExtractAuxResponseText(response any) string {
-	if outputText, ok := auxField(response, "output_text", nil).(string); ok && pystr.Strip(outputText) != "" {
-		return pystr.Strip(outputText)
+	if outputText, ok := auxField(response, "output_text", nil).(string); ok && strings.TrimSpace(outputText) != "" {
+		return strings.TrimSpace(outputText)
 	}
 	output, ok := auxField(response, "output", nil).([]any)
 	if !ok {
@@ -190,13 +189,13 @@ func auxExtractAuxResponseText(response any) string {
 		for _, part := range content {
 			switch auxField(part, "type", nil) {
 			case "output_text", "text", nil:
-				if text, isStr := auxField(part, "text", nil).(string); isStr && pystr.Strip(text) != "" {
-					parts = append(parts, pystr.Strip(text))
+				if text, isStr := auxField(part, "text", nil).(string); isStr && strings.TrimSpace(text) != "" {
+					parts = append(parts, strings.TrimSpace(text))
 				}
 			}
 		}
 	}
-	return pystr.Strip(strings.Join(parts, "\n"))
+	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
 // Adapters that stream inside create or cannot stream, none accept a stream request from the caller
@@ -219,7 +218,7 @@ func auxAsyncClientStreamsInternally(client AuxClient) bool {
 
 // Stream only providers, Tencent Copilot, configured stream only base URL markers and the managed llama server
 func auxProviderRequiresStream(ctx context.Context, baseURL string) bool {
-	url := pystr.Lower(baseURL)
+	url := strings.ToLower(baseURL)
 	if url == "" {
 		return false
 	}
@@ -227,7 +226,7 @@ func auxProviderRequiresStream(ctx context.Context, baseURL string) bool {
 		return true
 	}
 	for _, marker := range settings.AuxiliaryStreamOnlyBaseUrls.Strings(ctx) {
-		if pystr.Strip(marker) != "" && strings.Contains(url, pystr.Lower(pystr.Strip(marker))) {
+		if strings.TrimSpace(marker) != "" && strings.Contains(url, strings.ToLower(strings.TrimSpace(marker))) {
 			return true
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -49,9 +50,9 @@ func sttTestEnv(t *testing.T) context.Context {
 	keep(func() {
 		sttReadSelection, sttPMInstalled, sttFindBinary, sttPlatformSystem, sttNewOpenAIClient, sttGetProvider, sttPrepareAudio = sel, inst, bin, sys, client, getProv, prep
 	})
-	run, ctor, handlers, load, hasCmd, xai := sttRunQuiet, whisperModelCtor, sttBuiltinHandlers, loadSTTConfig, hasLocalCommand, sttResolveXAICredentials
+	run, ctor, handlers, load, hasCmd, xai := sttRunQuiet, whisperModelCtor, sttBuiltinHandlers, loadSTTRequest, hasLocalCommand, sttResolveXAICredentials
 	keep(func() {
-		sttRunQuiet, whisperModelCtor, sttBuiltinHandlers, loadSTTConfig, hasLocalCommand, sttResolveXAICredentials = run, ctor, handlers, load, hasCmd, xai
+		sttRunQuiet, whisperModelCtor, sttBuiltinHandlers, loadSTTRequest, hasLocalCommand, sttResolveXAICredentials = run, ctor, handlers, load, hasCmd, xai
 	})
 	safeFindSpec = func(string) bool { return false }
 	hasFasterWhisper, hasPilk = func() bool { return true }, func() bool { return false }
@@ -85,9 +86,25 @@ func resetLocalModel() {
 	localModel, localModelName = nil, ""
 }
 
-// Fixed config the module loader returns for one test
-func withSTTConfig(cfg map[string]any) {
-	loadSTTConfig = func(context.Context) map[string]any { return cfg }
+// Writes the stt section into the config.yaml of a fresh ICEBATH_HOME, the way a person configures recognition
+func withSTTConfig(t *testing.T, cfg map[string]any) {
+	t.Helper()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	data, err := config.SafeDump(map[string]any{"stt": cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Recognition settings an stt section in a fresh home resolves to
+func sttRequestOf(t *testing.T, cfg map[string]any) *sttRequest {
+	t.Helper()
+	withSTTConfig(t, cfg)
+	return loadSTTRequest(context.Background())
 }
 
 // One second of 16 kHz mono silence as a WAV file
@@ -198,7 +215,7 @@ func TestGetProviderGroqGroqWhenKeySet(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "gsk-test")
 	hasFasterWhisper = func() bool { return false }
 	hasLocalCommand = func(context.Context) bool { return false }
-	if got, err := getProvider(ctx, map[string]any{"provider": "groq"}); err != nil || got != "groq" {
+	if got, err := getProvider(ctx, sttRequestOf(t, map[string]any{"provider": "groq"})); err != nil || got != "groq" {
 		t.Fatalf("getProvider = %q, %v", got, err)
 	}
 }
@@ -229,14 +246,14 @@ func TestProcessErrorDetailMissingOrByteOutputDoesNotMaskTheFailure(t *testing.T
 
 func TestGetProviderFallbackPriorityAutoDetectPrefersLocal(t *testing.T) {
 	ctx := sttTestEnv(t)
-	if got, _ := getProvider(ctx, map[string]any{}); got != "local" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{})); got != "local" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
 
 func TestGetProviderFallbackPriorityUnknownProviderPassedThrough(t *testing.T) {
 	ctx := sttTestEnv(t)
-	if got, _ := getProvider(ctx, map[string]any{"provider": "custom-endpoint"}); got != "custom-endpoint" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{"provider": "custom-endpoint"})); got != "custom-endpoint" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
@@ -246,7 +263,7 @@ func TestExplicitProviderRespectedSeededLocalWithoutStoredSelectionAutodetects(t
 	t.Setenv("GROQ_API_KEY", "gsk-test")
 	hasFasterWhisper = func() bool { return false }
 	hasLocalCommand = func(context.Context) bool { return false }
-	if got, _ := getProvider(ctx, map[string]any{"provider": "local"}); got != "groq" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{"provider": "local"})); got != "groq" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
@@ -255,7 +272,7 @@ func TestExplicitProviderRespectedExplicitLocalUsesLocalCommandFallback(t *testi
 	ctx := sttTestEnv(t)
 	t.Setenv(localSTTCommandEnv, "whisper {input_path} --output_dir {output_dir} --language {language}")
 	hasFasterWhisper = func() bool { return false }
-	if got, _ := getProvider(ctx, map[string]any{"provider": "local"}); got != "local_command" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{"provider": "local"})); got != "local_command" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
@@ -266,7 +283,7 @@ func TestExplicitProviderRespectedAutoDetectPrefersGroqOverOpenai(t *testing.T) 
 	t.Setenv("OPENAI_API_KEY", "sk-real-key")
 	hasFasterWhisper = func() bool { return false }
 	hasLocalCommand = func(context.Context) bool { return false }
-	if got, _ := getProvider(ctx, map[string]any{}); got != "groq" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{})); got != "groq" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
@@ -299,7 +316,7 @@ func TestOpenAIClientConfigNullGroqSubsectionIsSafe(t *testing.T) {
 	t.Setenv("GROQ_API_KEY", "gsk-test")
 	f := &fakeSTTClient{}
 	installFakeSTTClient(f)
-	withSTTConfig(map[string]any{"groq": nil})
+	withSTTConfig(t, map[string]any{"groq": nil})
 	r, _ := transcribeGroq(ctx, sampleWAV(t), "whisper-large-v3-turbo", sttHints{})
 	if r["success"] != true {
 		t.Fatalf("result = %v", r)
@@ -501,7 +518,7 @@ func TestTranscribeLocalExtendedModelReuseOnSecondCall(t *testing.T) {
 func TestTranscribeLocalExtendedConfigDeviceAndComputeTypePassedToWhisper(t *testing.T) {
 	ctx := sttTestEnv(t)
 	calls := scriptWhisperCtor(&fakeWhisperModel{segments: []whisperSegment{{Text: "hi"}}})
-	withSTTConfig(map[string]any{"local": map[string]any{"device": "cpu", "compute_type": "float32"}})
+	withSTTConfig(t, map[string]any{"local": map[string]any{"device": "cpu", "compute_type": "float32"}})
 	r, _ := transcribeLocal(ctx, fakeOGG(t), "base", sttHints{})
 	if r["success"] != true || len(*calls) != 1 || (*calls)[0] != (whisperCtorCall{"base", "cpu", "float32", true}) {
 		t.Fatalf("result %v calls %v", r, *calls)
@@ -596,8 +613,8 @@ func recordHandler(name string, reply map[string]any) *[][2]string {
 
 func TestTranscribeAudioDispatchOversizedLocalFileReachesDispatcher(t *testing.T) {
 	ctx := sttTestEnv(t)
-	withSTTConfig(map[string]any{"provider": "local"})
-	sttGetProvider = func(context.Context, map[string]any) (string, error) { return "local", nil }
+	withSTTConfig(t, map[string]any{"provider": "local"})
+	sttGetProvider = func(context.Context, *sttRequest) (string, error) { return "local", nil }
 	calls := recordHandler("local", map[string]any{"success": true, "transcript": "hi"})
 	r, err := TranscribeAudio(ctx, oversizedWAV(t), "", "")
 	if err != nil || r["success"] != true || len(*calls) != 1 {
@@ -607,8 +624,8 @@ func TestTranscribeAudioDispatchOversizedLocalFileReachesDispatcher(t *testing.T
 
 func TestTranscribeAudioDispatchNoProviderReturnsError(t *testing.T) {
 	ctx := sttTestEnv(t)
-	withSTTConfig(map[string]any{})
-	sttGetProvider = func(context.Context, map[string]any) (string, error) { return "none", nil }
+	withSTTConfig(t, map[string]any{})
+	sttGetProvider = func(context.Context, *sttRequest) (string, error) { return "none", nil }
 	r, _ := TranscribeAudio(ctx, sampleOGG(t), "", "")
 	if r["success"] != false || !strings.Contains(r["error"].(string), "No STT provider") {
 		t.Fatalf("result = %v", r)
@@ -634,8 +651,8 @@ func TestTranscribeAudioDispatchSilkSymlinkIsRejectedBeforePreprocessing(t *test
 
 func TestTranscribeAudioDispatchConfigLocalModelUsed(t *testing.T) {
 	ctx := sttTestEnv(t)
-	withSTTConfig(map[string]any{"local": map[string]any{"model": "small"}})
-	sttGetProvider = func(context.Context, map[string]any) (string, error) { return "local", nil }
+	withSTTConfig(t, map[string]any{"local": map[string]any{"model": "small"}})
+	sttGetProvider = func(context.Context, *sttRequest) (string, error) { return "local", nil }
 	calls := recordHandler("local", map[string]any{"success": true, "transcript": "hi"})
 	TranscribeAudio(ctx, sampleOGG(t), "", "")
 	if len(*calls) != 1 || (*calls)[0][1] != "small" {

@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -177,7 +179,7 @@ func ddgsSpawnWorker(childEnv map[string]string) (*ddgsWorkerProc, *os.File, *os
 
 // Decodes the worker's stdout envelope, a RuntimeError for any malformed shape
 func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, raise("RuntimeError", "DDGS worker exited without a result (code=%s)", p.returncode())
 	}

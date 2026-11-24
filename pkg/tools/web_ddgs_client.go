@@ -580,7 +580,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 			client: newDDGSHTTPClient(proxy, timeout),
 			build: func(e *ddgsEngine, _ context.Context, q ddgsQuery) ([][2]string, error) {
 				payload := [][2]string{{"q", q.query}, {"source", "web"}}
-				country, _, err := ddgsRegion(pystr.Lower(q.region))
+				country, _, err := ddgsRegion(strings.ToLower(q.region))
 				if err != nil {
 					return nil, err
 				}
@@ -638,16 +638,16 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 			client:     newDDGSHTTPClient(proxy, timeout),
 			build: func(e *ddgsEngine, _ context.Context, q ddgsQuery) ([][2]string, error) {
 				e.client.setCookies("google.com", [][2]string{{"CONSENT", "YES+"}})
-				filter, ok := map[string]string{"on": "2", "moderate": "1", "off": "0"}[pystr.Lower(q.safesearch)]
+				filter, ok := map[string]string{"on": "2", "moderate": "1", "off": "0"}[strings.ToLower(q.safesearch)]
 				if !ok {
-					return nil, raise("KeyError", "%s", pyrepr.StrRepr(pystr.Lower(q.safesearch)))
+					return nil, raise("KeyError", "%s", pyrepr.StrRepr(strings.ToLower(q.safesearch)))
 				}
 				payload := [][2]string{{"q", q.query}, {"sca_esv", "1"}, {"filter", filter}, {"start", fmt.Sprint((q.page - 1) * 10)}}
 				country, lang, err := ddgsRegion(q.region)
 				if err != nil {
 					return nil, err
 				}
-				payload = append(payload, [2]string{"hl", lang + "-" + pystr.Upper(country)}, [2]string{"lr", "lang_" + lang}, [2]string{"cr", "country" + pystr.Upper(country)})
+				payload = append(payload, [2]string{"hl", lang + "-" + strings.ToUpper(country)}, [2]string{"lr", "lang_" + lang}, [2]string{"cr", "country" + strings.ToUpper(country)})
 				if q.timelimit != "" {
 					payload = append(payload, [2]string{"tbs", "qdr:" + q.timelimit})
 				}
@@ -692,7 +692,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 			elements:   [][2]string{{"title", ".//h2//text()"}, {"href", ".//h2/a/@href"}, {"body", ".//p[@class='s']//text()"}},
 			client:     newDDGSHTTPClient(proxy, timeout),
 			build: func(e *ddgsEngine, _ context.Context, q ddgsQuery) ([][2]string, error) {
-				country, lang, err := ddgsRegion(pystr.Lower(q.region))
+				country, lang, err := ddgsRegion(strings.ToLower(q.region))
 				if err != nil {
 					return nil, err
 				}
@@ -713,20 +713,20 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 			elements:   [][2]string{{"title", ".//h2//text()"}, {"href", "./a/@href"}, {"body", ".//p//text()"}},
 			client:     newDDGSHTTPClient(proxy, timeout),
 			build: func(e *ddgsEngine, ctx context.Context, q ddgsQuery) ([][2]string, error) {
-				country, lang, err := ddgsRegion(pystr.Lower(q.region))
+				country, lang, err := ddgsRegion(strings.ToLower(q.region))
 				if err != nil {
 					return nil, err
 				}
-				qadf, ok := map[string]string{"on": "heavy", "moderate": "moderate", "off": "none"}[pystr.Lower(q.safesearch)]
+				qadf, ok := map[string]string{"on": "heavy", "moderate": "moderate", "off": "none"}[strings.ToLower(q.safesearch)]
 				if !ok {
-					return nil, raise("KeyError", "%s", pyrepr.StrRepr(pystr.Lower(q.safesearch)))
+					return nil, raise("KeyError", "%s", pyrepr.StrRepr(strings.ToLower(q.safesearch)))
 				}
 				sc, err := ddgsStartpageSC(e, ctx)
 				if err != nil {
 					return nil, err
 				}
 				payload := [][2]string{{"query", q.query}, {"cat", "web"}, {"t", "device"}, {"sc", sc}, {"lui", "english"}, {"language", "english"},
-					{"abp", "1"}, {"abd", "0"}, {"abe", "0"}, {"qsr", lang + "_" + pystr.Upper(country)}, {"qadf", qadf}, {"segment", "organic"}}
+					{"abp", "1"}, {"abd", "0"}, {"abe", "0"}, {"qsr", lang + "_" + strings.ToUpper(country)}, {"qadf", qadf}, {"segment", "organic"}}
 				if q.page > 1 {
 					payload = append(payload, [2]string{"page", fmt.Sprint(q.page)})
 				}
@@ -742,7 +742,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 		return &ddgsEngine{name: "wikipedia", provider: "wikipedia", priority: 2, method: "GET", searchURL: "https://{lang}.wikipedia.org/w/api.php?action=opensearch&search={query}",
 			client: newDDGSHTTPClient(proxy, timeout),
 			build: func(e *ddgsEngine, _ context.Context, q ddgsQuery) ([][2]string, error) {
-				_, lang, err := ddgsRegion(pystr.Lower(q.region))
+				_, lang, err := ddgsRegion(strings.ToLower(q.region))
 				if err != nil {
 					return nil, err
 				}
@@ -1095,7 +1095,7 @@ var ddgsWordSplitRe = sync.OnceValue(func() *regexp2.Regexp {
 
 // Query tokens of three or more code points split on non word runs, SimpleFilterRanker._extract_tokens
 func ddgsTokens(query string) []string {
-	runes := []rune(pystr.Lower(query))
+	runes := []rune(strings.ToLower(query))
 	re := ddgsWordSplitRe()
 	var tokens []string
 	start := 0
@@ -1120,7 +1120,7 @@ func ddgsHasAnyToken(text any, tokens []string) (bool, error) {
 	if !ok {
 		return false, pyAttributeError(text, "lower")
 	}
-	lower := pystr.Lower(s)
+	lower := strings.ToLower(s)
 	for _, t := range tokens {
 		if strings.Contains(lower, t) {
 			return true, nil

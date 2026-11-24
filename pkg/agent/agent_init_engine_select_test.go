@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -35,7 +36,7 @@ func startWithMissingMemoryProvider(t *testing.T, platform string) (*AIAgent, *[
 	t.Setenv(pm.EnvDisableLazyInstalls, "1")
 	a, printed := startupAgent(t, platform)
 	a.env = env
-	initMemory(home.WithOverride(context.Background(), env.Home), a, map[string]any{"memory": map[string]any{"provider": "scout_missing_provider"}}, false, platform, nil)
+	initMemory(home.WithOverride(context.Background(), env.Home), a, false, platform, nil)
 	if a.memoryManager != nil {
 		t.Fatal("a missing provider built a memory manager")
 	}
@@ -116,7 +117,8 @@ func selectRegisteredEngine(t *testing.T, engine ContextEngine) ContextEngine {
 	t.Cleanup(func() { loadContextEngineFn, pluginContextEngineFn = prevLoad, prevPlugin })
 	loadContextEngineFn = func(context.Context, string) *plugins.HostedObject { return nil }
 	pluginContextEngineFn = func(context.Context) any { return engine }
-	return selectContextEngine(tools.WithToolEnv(context.Background(), promptTestEnv(t)), map[string]any{"context": map[string]any{"engine": engine.Name()}})
+	ctx := settings.WithFrozen(tools.WithToolEnv(context.Background(), promptTestEnv(t)), map[string]any{"context": map[string]any{"engine": engine.Name()}})
+	return selectContextEngine(ctx)
 }
 
 func TestEngineWithUncopyableStateIsSelectedViaCloneForAgent(t *testing.T) {

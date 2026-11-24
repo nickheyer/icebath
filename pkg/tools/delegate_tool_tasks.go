@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -29,7 +28,7 @@ func recoverTasksFromJSONString(tasks any) ([]any, string) {
 	if !ok {
 		return nil, ""
 	}
-	raw := pystr.Strip(s)
+	raw := strings.TrimSpace(s)
 	if raw == "" {
 		return nil, "Provide either 'goal' (single task) or 'tasks' (batch)."
 	}
@@ -56,7 +55,7 @@ func validateBatchTasks(taskList []map[string]any) string {
 		if g, ok := task["goal"]; ok {
 			goal = pyrepr.Str(g)
 		}
-		goal = pystr.Strip(goal)
+		goal = strings.TrimSpace(goal)
 		if fillerGoalRe.MatchString(strings.Join(strings.Fields(strings.ToLower(goal)), " ")) {
 			return fmt.Sprintf("Task %d has a placeholder goal (%s). Replace it with a specific, self-contained description of what the subagent should accomplish.", i, pyrepr.Repr(goal))
 		}
@@ -87,7 +86,7 @@ func NormalizeTaskList(goal, context, tasks, outputSchema any, topRole string, m
 			return nil, fmt.Sprintf("Too many tasks: %d provided, but max_concurrent_children is %d. Either reduce the task count, split into multiple delegate_task calls, or increase delegation.max_concurrent_children in config.yaml.", len(list), maxChildren), nil
 		}
 		raw = list
-	case g != "" && pystr.Strip(g) != "":
+	case g != "" && strings.TrimSpace(g) != "":
 		task := map[string]any{"goal": g, "context": context, "role": topRole}
 		if outputSchema != nil {
 			task["output_schema"] = outputSchema
@@ -115,7 +114,7 @@ func NormalizeTaskList(goal, context, tasks, outputSchema any, topRole string, m
 		if !ok {
 			return nil, "", fmt.Errorf("a task goal is %s, expected text", errchain.Kind(g))
 		}
-		if pystr.Strip(gs) == "" {
+		if strings.TrimSpace(gs) == "" {
 			return nil, fmt.Sprintf("Task %d is missing a 'goal'.", i), nil
 		}
 		taskList[i] = task
@@ -168,10 +167,10 @@ func NormalizeTaskImages(task map[string]any, i int) ([]string, string) {
 	var cleaned []string
 	for _, item := range items {
 		s, ok := item.(string)
-		if !ok || pystr.Strip(s) == "" {
+		if !ok || strings.TrimSpace(s) == "" {
 			return nil, fmt.Sprintf("Task %d 'images' entries must be non-empty strings (local file paths or http(s) URLs).", i)
 		}
-		cleaned = append(cleaned, pystr.Strip(s))
+		cleaned = append(cleaned, strings.TrimSpace(s))
 	}
 	if len(cleaned) > MaxTaskImages {
 		return nil, fmt.Sprintf("Task %d has %d images; the per-task limit is %d. Trim to the images the child actually needs to see.", i, len(cleaned), MaxTaskImages)

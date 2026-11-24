@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -55,7 +54,7 @@ func redactedOutputTail(ctx context.Context, fields tools.ProcessWatchFields, ta
 
 // Whether the session that launched the watcher's process is still inside a turn on its adapter
 func (r *GatewayRunner) launchingTurnActive(ctx context.Context, platformName string, watcher map[string]any) (bool, error) {
-	sessionKey := pystr.Strip(truthyText(watcher["session_key"]))
+	sessionKey := strings.TrimSpace(truthyText(watcher["session_key"]))
 	if sessionKey == "" {
 		return false, nil
 	}
@@ -126,7 +125,7 @@ func buildProcessCompletionEvent(ctx context.Context, watcher map[string]any, fi
 		}
 	}
 	var messageID any
-	if id := pystr.Strip(truthyText(watcher["message_id"])); id != "" {
+	if id := strings.TrimSpace(truthyText(watcher["message_id"])); id != "" {
 		messageID = id
 	}
 	var exitCode any
@@ -162,7 +161,7 @@ func formatProcessFinalMessage(ctx context.Context, sessionID string, fields too
 		return formatConciseProcessNotification(ctx, sessionID, command, fields.ExitCode, newOutput, duration)
 	}
 	header := formatConciseProcessNotification(ctx, sessionID, command, fields.ExitCode, "", duration)
-	if stripped := pystr.Strip(newOutput); stripped != "" {
+	if stripped := strings.TrimSpace(newOutput); stripped != "" {
 		return i18n.T(ctx, "gateway.background.final_output", "", map[string]any{"header": header, "output": stripped})
 	}
 	return header
@@ -176,7 +175,7 @@ func formatProcessRunningMessage(ctx context.Context, fields tools.ProcessWatchF
 	if shortCmd != "" {
 		header += " — `" + shortCmd + "`"
 	}
-	if stripped := pystr.Strip(newOutput); stripped != "" {
+	if stripped := strings.TrimSpace(newOutput); stripped != "" {
 		return i18n.T(ctx, "gateway.background.recent_output", "", map[string]any{"header": header, "output": stripped})
 	}
 	return header
@@ -252,11 +251,7 @@ func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any
 			break
 		}
 		fields := session.WatchFields()
-		cfg, loadErr := config.Load(home.Dir(ctx), nil)
-		if loadErr != nil {
-			cfg = config.Defaults()
-		}
-		if !tools.ShouldSurfaceNotification(cfg, map[string]any{"owner_task_id": fields.OwnerTaskID, "task_id": fields.TaskID}) {
+		if !tools.ShouldSurfaceNotification(ctx, map[string]any{"owner_task_id": fields.OwnerTaskID, "task_id": fields.TaskID}) {
 			if fields.Exited {
 				break
 			}

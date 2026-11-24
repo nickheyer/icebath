@@ -99,7 +99,7 @@ const Pasted = "<pasted export>"
 
 // Folder name of a bot, routine or skill, lowercase with hyphens, at most 64 chars
 func slug(name string) string {
-	s := strings.Trim(slugRe.ReplaceAllString(pystr.Lower(pystr.Strip(name)), "-"), "-")
+	s := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-")
 	if len(s) > 64 {
 		s = s[:64]
 	}
@@ -231,7 +231,7 @@ func ParseExport(text string) ([]*pyjson.Object, error) {
 	blocks := findAllGroup(fenceRe, text)
 	candidates := blocks
 	if len(blocks) == 0 {
-		candidates = []string{pystr.Strip(text)}
+		candidates = []string{strings.TrimSpace(text)}
 		if open := strings.Index(text, "{"); open >= 0 {
 			if end := strings.LastIndex(text, "}"); end >= 0 {
 				if end+1 > open {
@@ -249,7 +249,7 @@ func ParseExport(text string) ([]*pyjson.Object, error) {
 		}
 	}
 	if len(blocks) > 0 && len(documents) == 0 {
-		if d := loadDocument(pystr.Strip(text), false); d != nil {
+		if d := loadDocument(strings.TrimSpace(text), false); d != nil {
 			documents = append(documents, d)
 		}
 	}
@@ -356,7 +356,9 @@ func dropTrailingCommas(text string) string {
 }
 
 // Lowercased trimmed name key of a bot
-func botKey(bot *pyjson.Object) string { return pystr.Lower(pystr.Strip(pyStr(bot.Vals["name"]))) }
+func botKey(bot *pyjson.Object) string {
+	return strings.ToLower(strings.TrimSpace(pyStr(bot.Vals["name"])))
+}
 
 // Python emptiness of the values a merge leaves in place
 func emptyValue(v any) bool {
@@ -434,7 +436,7 @@ func pyIter(v any) []any {
 // Identity of a list item, stripped text or sorted JSON
 func unionIdent(item any) string {
 	if s, ok := item.(string); ok {
-		return pystr.Strip(s)
+		return strings.TrimSpace(s)
 	}
 	text, err := pyjson.Dumps(item, pyjson.SortKeys(true))
 	if err != nil {
@@ -471,7 +473,7 @@ func secretKeys(value any, path string) []string {
 			if path != "" {
 				here = path + "." + key
 			}
-			if IsSecretKey(key) || strings.Contains(pystr.Lower(key), "password") {
+			if IsSecretKey(key) || strings.Contains(strings.ToLower(key), "password") {
 				found = append(found, here)
 			}
 			found = append(found, secretKeys(t.Vals[key], here)...)
@@ -523,7 +525,7 @@ func validatedBots(data *pyjson.Object) ([]*pyjson.Object, error) {
 		o, ok := asObject(b)
 		name := ""
 		if ok && truthy(o.Vals["name"]) {
-			name = pystr.Strip(pyStr(o.Vals["name"]))
+			name = strings.TrimSpace(pyStr(o.Vals["name"]))
 		}
 		if name == "" {
 			return nil, &ExportFormatError{fmt.Sprintf("bots[%d] needs a name", i)}
@@ -538,7 +540,7 @@ func stringsOf(value any) []string {
 	list, _ := value.([]any)
 	var out []string
 	for _, v := range list {
-		if s := pystr.Strip(pyStr(v)); s != "" {
+		if s := strings.TrimSpace(pyStr(v)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -591,10 +593,10 @@ func skillMarkdown(skill *pyjson.Object, name string) string {
 	quoted, _ := pyjson.Dumps(description)
 	body := ""
 	if truthy(skill.Vals["instructions"]) {
-		body = pystr.Strip(pyStr(skill.Vals["instructions"]))
+		body = strings.TrimSpace(pyStr(skill.Vals["instructions"]))
 	}
 	if !strings.HasPrefix(body, "# ") {
-		body = "# " + pystr.Strip(pyrepr.Str(skill.Vals["name"])) + "\n\n" + body
+		body = "# " + strings.TrimSpace(pyrepr.Str(skill.Vals["name"])) + "\n\n" + body
 	}
 	return "---\nname: " + name + "\ndescription: " + quoted + "\n---\n\n" + body + "\n"
 }
@@ -638,8 +640,8 @@ func newBotImporter(ctx context.Context, agent, product, category string, export
 	}
 	names := map[string]bool{}
 	for _, n := range o.BotNames {
-		if s := pystr.Strip(n); s != "" {
-			names[pystr.Lower(s)] = true
+		if s := strings.TrimSpace(n); s != "" {
+			names[strings.ToLower(s)] = true
 		}
 	}
 	return &BotImporter{
@@ -691,7 +693,7 @@ func (g *BotImporter) checkAgainstAppCache() error {
 	cache := ReadGrokBotCache()
 	var missing []string
 	for _, b := range cache.Bots {
-		if _, ok := g.exported[pystr.Lower(b)]; !ok {
+		if _, ok := g.exported[strings.ToLower(b)]; !ok {
 			missing = append(missing, b)
 		}
 	}
@@ -699,7 +701,7 @@ func (g *BotImporter) checkAgainstAppCache() error {
 		g.record("bots", "Grok Bot app", "", "skipped", "Not in the export, export these Bots too to bring them over: "+strings.Join(missing, ", "), nil)
 	}
 	for _, bot := range cache.RoutineBots {
-		have, known := g.exported[pystr.Lower(bot)]
+		have, known := g.exported[strings.ToLower(bot)]
 		var leftOut []string
 		for _, r := range cache.Routines[bot] {
 			if known && !have[slug(r)] {
@@ -758,7 +760,7 @@ func (g *BotImporter) loadExportBots() []sourcedBot {
 }
 
 func (g *BotImporter) importBot(path string, bot *pyjson.Object, single bool) error {
-	name := pystr.Strip(pyStr(bot.Vals["name"]))
+	name := strings.TrimSpace(pyStr(bot.Vals["name"]))
 	slugs := map[string]bool{}
 	for _, r := range dictsOf(bot.Vals["routines"]) {
 		label := ""
@@ -767,7 +769,7 @@ func (g *BotImporter) importBot(path string, bot *pyjson.Object, single bool) er
 		}
 		slugs[slug(label)] = true
 	}
-	g.exported[pystr.Lower(name)] = slugs
+	g.exported[strings.ToLower(name)] = slugs
 	source := filepath.Base(path) + ": " + name
 	if err := g.importRole(source, bot, single); err != nil {
 		return err
@@ -805,18 +807,18 @@ func (g *BotImporter) mergeList(kind, source, destination string, entries []stri
 
 // Reports whether SOUL.md still holds a seeded default nobody edited
 func isSeededSoul(text string) bool {
-	return pystr.Strip(text) == pystr.Strip(config.DefaultIdentity) || config.IsLegacyTemplateSoul(text)
+	return strings.TrimSpace(text) == strings.TrimSpace(config.DefaultIdentity) || config.IsLegacyTemplateSoul(text)
 }
 
 // The role becomes SOUL.md while that is seeded and one Bot imports, else its lines join the memory entries
 func (g *BotImporter) importRole(source string, bot *pyjson.Object, single bool) error {
-	name := pystr.Strip(pyStr(bot.Vals["name"]))
+	name := strings.TrimSpace(pyStr(bot.Vals["name"]))
 	title, instructions := "", ""
 	if truthy(bot.Vals["title"]) {
-		title = pystr.Strip(pyStr(bot.Vals["title"]))
+		title = strings.TrimSpace(pyStr(bot.Vals["title"]))
 	}
 	if truthy(bot.Vals["instructions"]) {
-		instructions = pystr.Strip(pyStr(bot.Vals["instructions"]))
+		instructions = strings.TrimSpace(pyStr(bot.Vals["instructions"]))
 	}
 	if instructions == "" {
 		g.record("role", source, "", "skipped", "No instructions found", nil)
@@ -835,13 +837,13 @@ func (g *BotImporter) importRole(source string, bot *pyjson.Object, single bool)
 		g.record("role", source, soul, "skipped", "Already in SOUL.md", nil)
 		return nil
 	}
-	if single && (pystr.Strip(current) == "" || isSeededSoul(current) || g.overwrite) {
+	if single && (strings.TrimSpace(current) == "" || isSeededSoul(current) || g.overwrite) {
 		heading := "# " + name
 		if title != "" {
 			heading += " — " + title
 		}
 		write := func() (string, error) {
-			if pystr.Strip(current) != "" {
+			if strings.TrimSpace(current) != "" {
 				if err := atomicWriteText(g.ctx, soul+".bak."+g.agent, current); err != nil {
 					return "", err
 				}
@@ -868,7 +870,7 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 	for _, skill := range skills {
 		label := ""
 		if truthy(skill.Vals["name"]) {
-			label = pystr.Strip(pyStr(skill.Vals["name"]))
+			label = strings.TrimSpace(pyStr(skill.Vals["name"]))
 		}
 		folder := ""
 		if truthy(skill.Vals["path"]) {
@@ -878,7 +880,7 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 			g.record("skill", source+" / "+label, "", "skipped", "No SKILL.md in "+folder, nil)
 			continue
 		}
-		hasText := truthy(skill.Vals["instructions"]) && pystr.Strip(pyStr(skill.Vals["instructions"])) != ""
+		hasText := truthy(skill.Vals["instructions"]) && strings.TrimSpace(pyStr(skill.Vals["instructions"])) != ""
 		if label == "" || (folder == "" && !hasText) {
 			shown := label
 			if shown == "" {
@@ -891,11 +893,11 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 		if identity == "" {
 			identity = pyrepr.Str(skill.Vals["instructions"])
 		}
-		name := g.uniqueSlug(slug(label), pystr.Lower(label)+"\x00"+identity)
+		name := g.uniqueSlug(slug(label), strings.ToLower(label)+"\x00"+identity)
 		destination := filepath.Join(root, name)
 		if exists(destination) && !g.overwrite {
 			g.record("skill", source+" / "+label, destination, "conflict", "Destination skill already exists", nil)
-			mapped[pystr.Lower(label)] = name
+			mapped[strings.ToLower(label)] = name
 			continue
 		}
 		dst, src, sk := destination, folder, skill
@@ -932,7 +934,7 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 		if err := g.apply("skill", source+" / "+label, destination, would, write, nil); err != nil {
 			return nil, err
 		}
-		mapped[pystr.Lower(label)] = name
+		mapped[strings.ToLower(label)] = name
 	}
 	return mapped, nil
 }
@@ -971,7 +973,7 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 	for _, routine := range routines {
 		label := ""
 		if truthy(routine.Vals["name"]) {
-			label = pystr.Strip(pyStr(routine.Vals["name"]))
+			label = strings.TrimSpace(pyStr(routine.Vals["name"]))
 		}
 		if label == "" {
 			label = "routine"
@@ -987,7 +989,7 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 		where := "cron job '" + jobName + "'"
 		instruction := ""
 		if truthy(routine.Vals["instruction"]) {
-			instruction = pystr.Strip(pyStr(routine.Vals["instruction"]))
+			instruction = strings.TrimSpace(pyStr(routine.Vals["instruction"]))
 		}
 		if instruction == "" {
 			g.record("routine", source+" / "+label, "", "skipped", "Routine has no instruction", nil)
@@ -1005,7 +1007,7 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 		planned[jobName] = true
 		jobSkills := []string{}
 		for _, s := range stringsOf(routine.Vals["skills"]) {
-			if mapped, ok := skills[pystr.Lower(s)]; ok {
+			if mapped, ok := skills[strings.ToLower(s)]; ok {
 				jobSkills = append(jobSkills, mapped)
 			}
 		}
@@ -1056,13 +1058,13 @@ func (g *BotImporter) routineSchedule(routine *pyjson.Object) (string, bool) {
 	if truthy(routine.Vals["trigger"]) {
 		trigger = pyStr(routine.Vals["trigger"])
 	}
-	if !scheduleTrigger[pystr.Lower(pystr.Strip(trigger))] {
+	if !scheduleTrigger[strings.ToLower(strings.TrimSpace(trigger))] {
 		return "", false
 	}
 	for _, key := range []string{"schedule_cron", "schedule_text"} {
 		candidate := ""
 		if truthy(routine.Vals[key]) {
-			candidate = pystr.Strip(pyStr(routine.Vals[key]))
+			candidate = strings.TrimSpace(pyStr(routine.Vals[key]))
 		}
 		if candidate == "" {
 			continue
@@ -1079,7 +1081,7 @@ func (g *BotImporter) routineSchedule(routine *pyjson.Object) (string, bool) {
 func validZone(routine *pyjson.Object) string {
 	tz := ""
 	if truthy(routine.Vals["timezone"]) {
-		tz = pystr.Strip(pyStr(routine.Vals["timezone"]))
+		tz = strings.TrimSpace(pyStr(routine.Vals["timezone"]))
 	}
 	if tz == "" {
 		return ""
@@ -1094,7 +1096,7 @@ func validZone(routine *pyjson.Object) string {
 func zoneNote(routine *pyjson.Object) string {
 	tz := ""
 	if truthy(routine.Vals["timezone"]) {
-		tz = pystr.Strip(pyStr(routine.Vals["timezone"]))
+		tz = strings.TrimSpace(pyStr(routine.Vals["timezone"]))
 	}
 	if tz == "" || validZone(routine) != "" {
 		return ""
@@ -1128,8 +1130,8 @@ func (g *BotImporter) noteEventRoutines(source, botName string, routines []*pyjs
 		if truthy(r.Vals["instruction"]) {
 			instruction = pyStr(r.Vals["instruction"])
 		}
-		lines = append(lines, "## "+pystr.Strip(name), "", "- Trigger: "+trigger, "- Details: "+detail, "",
-			pystr.Strip(instruction), "")
+		lines = append(lines, "## "+strings.TrimSpace(name), "", "- Trigger: "+trigger, "- Details: "+detail, "",
+			strings.TrimSpace(instruction), "")
 	}
 	text := strings.Join(lines, "\n")
 	if isFile(destination) {
@@ -1168,7 +1170,7 @@ func (g *BotImporter) importApps(source string, apps []*pyjson.Object) error {
 			url = pyStr(a.Vals["mcp_url"])
 		}
 		if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-			servers.Set(slug(pyrepr.Str(a.Vals["name"])), pyjson.ObjectOf("url", pystr.Strip(pyStr(a.Vals["mcp_url"]))))
+			servers.Set(slug(pyrepr.Str(a.Vals["name"])), pyjson.ObjectOf("url", strings.TrimSpace(pyStr(a.Vals["mcp_url"]))))
 		}
 	}
 	if servers.Len() > 0 {
@@ -1180,7 +1182,7 @@ func (g *BotImporter) importApps(source string, apps []*pyjson.Object) error {
 	for _, a := range apps {
 		name := ""
 		if truthy(a.Vals["name"]) {
-			name = pystr.Strip(pyStr(a.Vals["name"]))
+			name = strings.TrimSpace(pyStr(a.Vals["name"]))
 		}
 		if _, isServer := servers.Vals[slug(pyrepr.Str(a.Vals["name"]))]; !isServer && name != "" {
 			others = append(others, name)

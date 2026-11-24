@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Transcript label of each message role, unknown roles reading as Context
@@ -41,7 +40,7 @@ func acpFormatMessagesAsPrompt(messages []any, tools []any, toolChoice any) (str
 		if pyrepr.Truthy(roleRaw) {
 			role = pyrepr.Str(roleRaw)
 		}
-		role = pystr.Lower(pystr.Strip(role))
+		role = strings.ToLower(strings.TrimSpace(role))
 		content, _ := bridgeAttr(message, "content")
 		rendered, err := acpRenderMessageContent(content)
 		if err != nil {
@@ -61,7 +60,7 @@ func acpFormatMessagesAsPrompt(messages []any, tools []any, toolChoice any) (str
 	sections = append(sections, "Continue the conversation from the latest user request.")
 	kept := make([]string, 0, len(sections))
 	for _, section := range sections {
-		if stripped := pystr.Strip(section); stripped != "" {
+		if stripped := strings.TrimSpace(section); stripped != "" {
 			kept = append(kept, stripped)
 		}
 	}
@@ -78,11 +77,11 @@ func acpRenderMessageContent(content any) (string, error) {
 			if !pyrepr.Truthy(text) {
 				return "", nil
 			}
-			return pystr.Strip(pyrepr.Str(text)), nil
+			return strings.TrimSpace(pyrepr.Str(text)), nil
 		}
 		if inner, _ := bridgeAttr(content, "content"); inner != nil {
 			if s, ok := inner.(string); ok {
-				return pystr.Strip(s), nil
+				return strings.TrimSpace(s), nil
 			}
 		}
 		return pyjson.Dumps(content, pyjson.EnsureASCII(true))
@@ -97,11 +96,11 @@ func acpRenderMessageContent(content any) (string, error) {
 			if !bridgeIsDict(item) {
 				continue
 			}
-			if text, ok := bridgeAttrOr(item, "text", nil).(string); ok && pystr.Strip(text) != "" {
-				parts = append(parts, pystr.Strip(text))
+			if text, ok := bridgeAttrOr(item, "text", nil).(string); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, strings.TrimSpace(text))
 			}
 		}
-		return pystr.Strip(strings.Join(parts, "\n")), nil
+		return strings.TrimSpace(strings.Join(parts, "\n")), nil
 	}
-	return pystr.Strip(pyrepr.Str(content)), nil
+	return strings.TrimSpace(pyrepr.Str(content)), nil
 }

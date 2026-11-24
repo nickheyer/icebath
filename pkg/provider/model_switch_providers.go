@@ -1291,15 +1291,11 @@ func lapBareCustomRow(b *pickerBuild, customProviders []any) {
 	if b.currentProviderNorm() == "custom" && b.currentBaseURL != "" {
 		baseURL, defaultModel = b.currentBaseURL, b.currentModel
 	} else {
-		cfgModel, ok := LoadConfigSafe(b.ctx, home.Dir(b.ctx))["model"].(map[string]any)
-		if !ok {
+		baseURL = strings.TrimSpace(settings.ModelBaseURL.Get(b.ctx))
+		if strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(b.ctx))) != "custom" || baseURL == "" {
 			return
 		}
-		baseURL = strings.TrimSpace(pyOrStr(cfgModel["base_url"]))
-		if strings.ToLower(strings.TrimSpace(pyOrStr(cfgModel["provider"]))) != "custom" || baseURL == "" {
-			return
-		}
-		defaultModel = strings.TrimSpace(pyOrStr(cfgModel["default"]))
+		defaultModel = strings.TrimSpace(settings.Model.Get(b.ctx))
 	}
 	for _, item := range customProviders {
 		if cp, ok := item.(map[string]any); ok && normURL(entryBaseURL(cp, defaultEntryURLKeys)) == normURL(baseURL) {

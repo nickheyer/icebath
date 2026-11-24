@@ -474,7 +474,7 @@ func modelsPoolEnv(ctx context.Context) PoolEnv {
 		ctx = context.Background()
 	}
 	h := home.Dir(ctx)
-	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Scope: SecretScopeFrom(ctx), Config: ConfigLoader(h), Log: pkgLog(), Ctx: ctx}
+	return PoolEnv{Store: NewStore(h), Secrets: config.NewSecrets(h), Scope: SecretScopeFrom(ctx), Log: pkgLog(), Ctx: ctx}
 }
 
 // Profile scoped .env then environ read of a DeepInfra setting

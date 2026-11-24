@@ -1,13 +1,16 @@
 package a2a
 
 import (
+	"strings"
+
 	"context"
+	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // System prompt hint telling the agent that A2A peers are untrusted external agents
@@ -27,12 +30,18 @@ func checkRequirements() bool { return true }
 // Inbound A2A has no required config because port and host have safe defaults
 func validateConfig(*gateway.PlatformConfig) (bool, error) { return true, nil }
 
-// Connected when explicitly enabled or the profile scope carries A2A_PORT
+// Whether a setting holds a value of its own for the profile ctx serves, from config.yaml or its env override
+func isSet(ctx context.Context, e settings.Entry) bool {
+	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
+	return err == nil && v.Source != settings.SourceDefault
+}
+
+// Connected when explicitly enabled or the profile sets a2a.port
 func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error) {
 	if cfg != nil && pyrepr.Truthy(cfg.Extra["enabled"]) {
 		return true, nil
 	}
-	return gateway.EnvIsConnected("A2A_PORT")(ctx, cfg)
+	return isSet(ctx, settings.A2aPort), nil
 }
 
 // Gateway setup flow asking for the port, the advertised name and the remote peer tokens
@@ -42,33 +51,33 @@ func InteractiveSetup(ctx context.Context) error {
 	cli.PrintInfo("Expose Icebath as an A2A-discoverable agent and call other A2A agents.")
 	cli.PrintInfo("Uses the Go standard library — no extra packages needed.")
 	gateway.WizardPrintln("")
-	ask := func(label, env string) (string, error) {
-		current, err := cfg.GetEnvValue(ctx, env)
-		if err != nil {
-			return "", err
+	sctx := gateway.SettingsContext(ctx)
+	askSetting := func(label string, e *settings.String) error {
+		current := ""
+		if isSet(ctx, e) {
+			current = e.Get(sctx)
 		}
-		value := cli.Prompt(label, current, false)
-		if value != "" {
-			if err := cfg.SaveEnvValue(ctx, env, pystr.Strip(value)); err != nil {
-				return "", err
-			}
+		value := strings.TrimSpace(cli.Prompt(label, current, false))
+		if value == "" || value == current {
+			return nil
 		}
-		return value, nil
-	}
-	currentPort, err := cfg.GetEnvValue(ctx, "A2A_PORT")
-	if err != nil {
+		_, err := settings.Set(sctx, e.Key, value, settings.Global)
 		return err
 	}
-	if port := cli.Prompt("Inbound A2A port (default 9900)", currentPort, false); port != "" {
-		if n, ok := pyint.Parse(port); ok {
-			if err := cfg.SaveEnvValue(ctx, "A2A_PORT", n.String()); err != nil {
+	currentPort := ""
+	if isSet(ctx, settings.A2aPort) {
+		currentPort = strconv.Itoa(settings.A2aPort.Get(sctx))
+	}
+	if port := strings.TrimSpace(cli.Prompt("Inbound A2A port (default 9900)", currentPort, false)); port != "" && port != currentPort {
+		if n, ok := pyint.Parse(port); ok && n.IsInt64() {
+			if _, err := settings.Set(sctx, settings.A2aPort.Key, int(n.Int64()), settings.Global); err != nil {
 				return err
 			}
 		} else {
 			cli.PrintWarning("Invalid port — using default 9900")
 		}
 	}
-	if _, err := ask("Agent name to advertise (blank = hostname-derived)", "A2A_AGENT_NAME"); err != nil {
+	if err := askSetting("Agent name to advertise (blank = hostname-derived)", settings.A2aAgentName); err != nil {
 		return err
 	}
 	gateway.WizardPrintln("")
@@ -80,9 +89,15 @@ func InteractiveSetup(ctx context.Context) error {
 	if !cli.PromptYesNo(ctx, "Configure tokens to allow REMOTE A2A peers?", false) {
 		return nil
 	}
-	peerTokens, err := ask("Per-peer tokens (name:token, comma-separated; blank to skip)", "A2A_PEER_TOKENS")
+	currentTokens, err := cfg.GetEnvValue(ctx, "A2A_PEER_TOKENS")
 	if err != nil {
 		return err
+	}
+	peerTokens := cli.Prompt("Per-peer tokens (name:token, comma-separated; blank to skip)", currentTokens, false)
+	if peerTokens != "" {
+		if err := cfg.SaveEnvValue(ctx, "A2A_PEER_TOKENS", strings.TrimSpace(peerTokens)); err != nil {
+			return err
+		}
 	}
 	token := cli.Prompt("Shared bearer token (blank to skip)", "", true)
 	if token != "" {
@@ -91,8 +106,7 @@ func InteractiveSetup(ctx context.Context) error {
 		}
 	}
 	if peerTokens != "" || token != "" {
-		_, err := ask("Bind host for remote access (e.g. 0.0.0.0)", "A2A_HOST")
-		return err
+		return askSetting("Bind host for remote access (e.g. 0.0.0.0)", settings.A2aHost)
 	}
 	cli.PrintWarning("No tokens entered — staying localhost-only.")
 	return nil
@@ -166,4 +180,7 @@ var (
 	_ plugins.ToolsRegistrar  = a2aPlatformPlugin{}
 )
 
-func init() { plugins.RegisterBundled(a2aPlatformPlugin{}) }
+// Registers the bundled plugin
+func init() {
+	plugins.RegisterBundled(a2aPlatformPlugin{})
+}

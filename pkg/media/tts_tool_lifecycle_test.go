@@ -87,7 +87,7 @@ func fakePiper(t *testing.T) (*fakePiperEngine, map[string]any) {
 		t.Fatal(err)
 	}
 	cfg := map[string]any{"provider": "piper", "piper": map[string]any{"voice": "en_US-test-medium", "voices_dir": voices}}
-	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
+	fixedTTSConfig(t, cfg)
 	return engine, cfg
 }
 
@@ -137,16 +137,16 @@ func putKittenModel(t *testing.T, key string) {
 }
 
 func TestWarmLoadsPiperIntoSynthesisCache(t *testing.T) {
-	engine, cfg := fakePiper(t)
+	engine, _ := fakePiper(t)
 	ctx := context.Background()
-	result := WarmTTSProvider(ctx, nil, cfg, "")
+	result := WarmTTSProvider(ctx, nil, "")
 	if result["warmed"] != true || result["action"] != "loaded" || result["provider"] != "piper" {
 		t.Fatalf("result %v", result)
 	}
 	if engine.loadCount() != 1 || len(piperVoiceCache.Keys()) != 1 {
 		t.Fatalf("loads %d cache %d", engine.loadCount(), len(piperVoiceCache.Keys()))
 	}
-	out, err := generatePiperTTS(ctx, nil, "hello", filepath.Join(t.TempDir(), "out.wav"), cfg)
+	out, err := generatePiperTTS(ctx, nil, "hello", filepath.Join(t.TempDir(), "out.wav"), loadTTSRequest(ctx, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,9 +156,9 @@ func TestWarmLoadsPiperIntoSynthesisCache(t *testing.T) {
 }
 
 func TestWarmTwiceIsACacheHit(t *testing.T) {
-	engine, cfg := fakePiper(t)
-	WarmTTSProvider(context.Background(), nil, cfg, "")
-	second := WarmTTSProvider(context.Background(), nil, cfg, "")
+	engine, _ := fakePiper(t)
+	WarmTTSProvider(context.Background(), nil, "")
+	second := WarmTTSProvider(context.Background(), nil, "")
 	if second["action"] != "cached" || engine.loadCount() != 1 {
 		t.Fatalf("second %v loads %d", second, engine.loadCount())
 	}
@@ -166,7 +166,7 @@ func TestWarmTwiceIsACacheHit(t *testing.T) {
 
 func TestWarmReadsConfiguredProviderWhenNoneGiven(t *testing.T) {
 	fakePiper(t)
-	result := WarmTTSProvider(context.Background(), nil, nil, "")
+	result := WarmTTSProvider(context.Background(), nil, "")
 	if result["provider"] != "piper" || result["action"] != "loaded" {
 		t.Fatalf("result %v", result)
 	}
@@ -177,7 +177,8 @@ func TestWarmNeverRaisesOnEngineFailure(t *testing.T) {
 	swap(t, &resolvePiperVoice, func(context.Context, string, string) (speech.PiperVoice, error) {
 		return speech.PiperVoice{}, errors.New("piper voice archive unreachable")
 	})
-	result := WarmTTSProvider(context.Background(), nil, map[string]any{"provider": "piper"}, "")
+	fixedTTSConfig(t, map[string]any{"provider": "piper"})
+	result := WarmTTSProvider(context.Background(), nil, "")
 	if result["warmed"] != false || result["action"] != "error" || !strings.Contains(result["error"].(string), "piper") {
 		t.Fatalf("result %v", result)
 	}
@@ -188,15 +189,16 @@ func TestWarmNeverRaisesOnEngineFailure(t *testing.T) {
 
 func TestWarmIsNoopForCloudProviderWithoutLazySdk(t *testing.T) {
 	cleanLifecycle(t)
-	result := WarmTTSProvider(context.Background(), nil, map[string]any{"provider": "openai"}, "")
+	fixedTTSConfig(t, map[string]any{"provider": "openai"})
+	result := WarmTTSProvider(context.Background(), nil, "")
 	if !reflect.DeepEqual(result, map[string]any{"provider": "openai", "warmed": false, "action": "noop"}) {
 		t.Fatalf("result %v", result)
 	}
 }
 
 func TestReleaseDropsEveryLocalCache(t *testing.T) {
-	_, cfg := fakePiper(t)
-	WarmTTSProvider(context.Background(), nil, cfg, "")
+	fakePiper(t)
+	WarmTTSProvider(context.Background(), nil, "")
 	putKittenModel(t, "m")
 	if got := ReleaseTTSProvider(context.Background(), nil, ""); !reflect.DeepEqual(got, map[string]any{"released": 2}) {
 		t.Fatalf("released %v", got)
@@ -207,8 +209,8 @@ func TestReleaseDropsEveryLocalCache(t *testing.T) {
 }
 
 func TestReleaseScopedToOneProvider(t *testing.T) {
-	_, cfg := fakePiper(t)
-	WarmTTSProvider(context.Background(), nil, cfg, "")
+	fakePiper(t)
+	WarmTTSProvider(context.Background(), nil, "")
 	putKittenModel(t, "m")
 	if got := ReleaseTTSProvider(context.Background(), nil, "kittentts"); !reflect.DeepEqual(got, map[string]any{"released": 1}) {
 		t.Fatalf("released %v", got)
@@ -227,7 +229,7 @@ func TestReleaseWithNothingResidentIsZero(t *testing.T) {
 
 func TestAcquireWarmsAndCounts(t *testing.T) {
 	fakePiper(t)
-	result := AcquireTTSLease(context.Background(), nil, "tui:read-aloud", nil)
+	result := AcquireTTSLease(context.Background(), nil, "tui:read-aloud")
 	if result["leases"] != 1 || result["action"] != "loaded" {
 		t.Fatalf("result %v", result)
 	}
@@ -240,8 +242,8 @@ func TestLastReleaseUnloadsButEarlierReleaseDoesNot(t *testing.T) {
 	fakePiper(t)
 	timers := fakeTimers(t)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "tui:read-aloud", nil)
-	AcquireTTSLease(ctx, nil, "tui:voice-tts", nil)
+	AcquireTTSLease(ctx, nil, "tui:read-aloud")
+	AcquireTTSLease(ctx, nil, "tui:voice-tts")
 	if len(piperVoiceCache.Keys()) != 1 {
 		t.Fatal("voice not resident")
 	}
@@ -267,9 +269,9 @@ func TestLastReleaseUnloadsButEarlierReleaseDoesNot(t *testing.T) {
 func TestReacquireIsIdempotentAndRehealsCache(t *testing.T) {
 	engine, _ := fakePiper(t)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "cli:voice-tts", nil)
+	AcquireTTSLease(ctx, nil, "cli:voice-tts")
 	ReleaseTTSProvider(ctx, nil, "")
-	result := AcquireTTSLease(ctx, nil, "cli:voice-tts", nil)
+	result := AcquireTTSLease(ctx, nil, "cli:voice-tts")
 	if result["leases"] != 1 || result["action"] != "loaded" || engine.loadCount() != 2 {
 		t.Fatalf("result %v loads %d", result, engine.loadCount())
 	}
@@ -278,7 +280,7 @@ func TestReacquireIsIdempotentAndRehealsCache(t *testing.T) {
 func TestReleaseUnknownLeaseIsNoop(t *testing.T) {
 	fakePiper(t)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "a", nil)
+	AcquireTTSLease(ctx, nil, "a")
 	if got := ReleaseTTSLease(ctx, nil, "never-acquired"); !reflect.DeepEqual(got, map[string]any{"leases": 1, "released": 0}) {
 		t.Fatalf("release %v", got)
 	}
@@ -292,7 +294,8 @@ func TestAcquireFailureStillRegistersLease(t *testing.T) {
 	swap(t, &resolvePiperVoice, func(context.Context, string, string) (speech.PiperVoice, error) {
 		return speech.PiperVoice{}, errors.New("engine missing")
 	})
-	result := AcquireTTSLease(context.Background(), nil, "tui:conversation", map[string]any{"provider": "piper"})
+	fixedTTSConfig(t, map[string]any{"provider": "piper"})
+	result := AcquireTTSLease(context.Background(), nil, "tui:conversation")
 	if result["action"] != "error" || result["leases"] != 1 {
 		t.Fatalf("result %v", result)
 	}
@@ -352,14 +355,13 @@ func TestPluginProviderWarmAndReleaseFollowTheLease(t *testing.T) {
 	if err := RegisterTTSProvider(p, ""); err != nil {
 		t.Fatal(err)
 	}
-	cfg := map[string]any{"provider": "my-server"}
-	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
+	fixedTTSConfig(t, map[string]any{"provider": "my-server"})
 	swap(t, &ttsEnsurePluginsDiscovered, func(context.Context, bool) {})
 	ctx := context.Background()
-	if got := AcquireTTSLease(ctx, nil, "tui:read-aloud", cfg)["action"]; got != "warmed" {
+	if got := AcquireTTSLease(ctx, nil, "tui:read-aloud")["action"]; got != "warmed" {
 		t.Fatalf("action %v", got)
 	}
-	AcquireTTSLease(ctx, nil, "tui:voice-tts", cfg)
+	AcquireTTSLease(ctx, nil, "tui:voice-tts")
 	ReleaseTTSLease(ctx, nil, "tui:read-aloud")
 	if got := p.snapshot(); !reflect.DeepEqual(got, []string{"warm", "warm"}) {
 		t.Fatalf("calls %q", got)
@@ -413,9 +415,9 @@ func TestCommandProviderRunsWarmAndReleaseCommands(t *testing.T) {
 		"release_command": "curl -s localhost:5002/unload",
 		"model":           "kokoro v1",
 	}}}
-	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
+	fixedTTSConfig(t, cfg)
 	ctx := context.Background()
-	if got := AcquireTTSLease(ctx, nil, "tui:read-aloud", cfg)["action"]; got != "warmed" {
+	if got := AcquireTTSLease(ctx, nil, "tui:read-aloud")["action"]; got != "warmed" {
 		t.Fatalf("action %v", got)
 	}
 	waitHook(t, done)
@@ -454,15 +456,15 @@ func TestCommandHookThreadResolvesPassthroughUnderTheCallersScope(t *testing.T) 
 	cfg := map[string]any{"provider": "srv", "providers": map[string]any{"srv": map[string]any{
 		"command": "srv say {input_path} {output_path}", "warm_command": "curl -s localhost:5002/load",
 		"env_passthrough": []any{"MY_TTS_TOKEN"}}}}
-	swap(t, &loadTTSConfig, func(context.Context, *tools.Env) map[string]any { return cfg })
 	profile := t.TempDir()
+	writeTTSConfig(t, profile, cfg)
 	if err := os.WriteFile(filepath.Join(profile, ".env"), []byte("MY_TTS_TOKEN=tok-work\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	env := &tools.Env{Home: profile, Secrets: config.NewSecrets(profile)}
 	tools.SetMultiplexActive(true)
 	t.Cleanup(func() { tools.SetMultiplexActive(false) })
-	if got := AcquireTTSLease(context.Background(), env, "tui:read-aloud", cfg)["action"]; got != "warmed" {
+	if got := AcquireTTSLease(context.Background(), env, "tui:read-aloud")["action"]; got != "warmed" {
 		t.Fatalf("action %v", got)
 	}
 	waitHook(t, done)
@@ -477,8 +479,9 @@ func TestLastReleaseKeepsModelWarmForConfiguredWindow(t *testing.T) {
 	_, cfg := fakePiper(t)
 	timers := fakeTimers(t)
 	cfg["keep_warm_seconds"] = 30
+	fixedTTSConfig(t, cfg)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "tui:conversation", nil)
+	AcquireTTSLease(ctx, nil, "tui:conversation")
 	if got := ReleaseTTSLease(ctx, nil, "tui:conversation"); !reflect.DeepEqual(got, map[string]any{"leases": 0, "released": 0}) {
 		t.Fatalf("release %v", got)
 	}
@@ -499,14 +502,14 @@ func TestReacquireWithinWindowReusesTheLoadedVoice(t *testing.T) {
 	engine, _ := fakePiper(t)
 	timers := fakeTimers(t)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "tui:conversation", nil)
+	AcquireTTSLease(ctx, nil, "tui:conversation")
 	ReleaseTTSLease(ctx, nil, "tui:conversation")
 	pending := pendingTimers(timers)
 	if len(pending) != 1 {
 		t.Fatalf("pending %d", len(pending))
 	}
 	stale := pending[0]
-	again := AcquireTTSLease(ctx, nil, "tui:conversation", nil)
+	again := AcquireTTSLease(ctx, nil, "tui:conversation")
 	if again["action"] != "cached" || engine.loadCount() != 1 || len(pendingTimers(timers)) != 0 {
 		t.Fatalf("again %v loads %d pending %d", again, engine.loadCount(), len(pendingTimers(timers)))
 	}
@@ -521,7 +524,7 @@ func TestReleaseDuringWarmUpStillUnloadsAfterTheWindow(t *testing.T) {
 	timers := fakeTimers(t)
 	ctx := context.Background()
 	engine.onLoad = func() { ReleaseTTSLease(ctx, nil, "tui:voice-tts") }
-	AcquireTTSLease(ctx, nil, "tui:voice-tts", nil)
+	AcquireTTSLease(ctx, nil, "tui:voice-tts")
 	if len(TTSLeaseHolders()) != 0 || len(piperVoiceCache.Keys()) != 1 {
 		t.Fatalf("holders %q cache %d", TTSLeaseHolders(), len(piperVoiceCache.Keys()))
 	}
@@ -539,8 +542,9 @@ func TestZeroKeepWarmUnloadsInline(t *testing.T) {
 	_, cfg := fakePiper(t)
 	timers := fakeTimers(t)
 	cfg["keep_warm_seconds"] = 0
+	fixedTTSConfig(t, cfg)
 	ctx := context.Background()
-	AcquireTTSLease(ctx, nil, "cli:voice-tts", nil)
+	AcquireTTSLease(ctx, nil, "cli:voice-tts")
 	if got := ReleaseTTSLease(ctx, nil, "cli:voice-tts"); !reflect.DeepEqual(got, map[string]any{"leases": 0, "released": 1}) {
 		t.Fatalf("release %v", got)
 	}

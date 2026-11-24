@@ -44,7 +44,7 @@ func HookPayloadMaxChars() int {
 
 // IsSensitiveHookKey reports a credential bearing key such as api_key, authorization, or any _api_key suffix
 func IsSensitiveHookKey(key string) bool {
-	lowered := strings.ReplaceAll(pystr.Lower(key), "-", "_")
+	lowered := strings.ReplaceAll(strings.ToLower(key), "-", "_")
 	return sensitiveHookKeys[lowered] || strings.HasSuffix(lowered, "_api_key")
 }
 

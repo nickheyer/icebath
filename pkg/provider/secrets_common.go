@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -94,7 +93,7 @@ func cfgStr(cfg map[string]any, key string) string {
 	if !ok || !pyTruthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyStr(v))
+	return strings.TrimSpace(pyStr(v))
 }
 
 // One add_argument spec of a subcommand
@@ -176,7 +175,7 @@ func cliVersion(binary string) string {
 	if len(out) == 0 {
 		out = res.Stderr
 	}
-	for _, line := range strings.Split(pystr.Strip(decodeCLIOutput(out)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(decodeCLIOutput(out)), "\n") {
 		return line
 	}
 	return "version unknown"
@@ -208,7 +207,7 @@ type rotateTokenOptions struct {
 
 // Shared token subcommand, prompt, verify when asked, then persist and clear caches
 func rotateToken(console *pyrich.Console, given, tokenEnv string, o rotateTokenOptions) (int, error) {
-	token := pystr.Strip(given)
+	token := strings.TrimSpace(given)
 	if token == "" {
 		if !stdinIsATTY() {
 			console.Print(fmt.Sprintf("[red]No TTY — pass the token with %s.[/red]", o.Flag))
@@ -219,7 +218,7 @@ func rotateToken(console *pyrich.Console, given, tokenEnv string, o rotateTokenO
 		if err != nil {
 			return 1, err
 		}
-		token = pystr.Strip(typed)
+		token = strings.TrimSpace(typed)
 	}
 	if token == "" {
 		console.Print("[red]Empty token, aborting.[/red]")
@@ -247,7 +246,7 @@ func promptIndex(console *pyrich.Console, prompt string, count int, allowEmpty b
 		if err != nil {
 			return 0, err
 		}
-		choice = pystr.Strip(choice)
+		choice = strings.TrimSpace(choice)
 		if choice == "" {
 			if allowEmpty {
 				return 0, nil

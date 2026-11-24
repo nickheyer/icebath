@@ -2,11 +2,16 @@ package gateway
 
 import (
 	"context"
+	"os"
 	"time"
 )
 
-// Points the user systemd environment at this account for the update pause
-func EnsureUserSystemdEnv() { ensureUserSystemdEnv() }
+// Pushes the user manager values onto this process, the env the update pause and fleet restart runners of pkg/selfupdate and the gateway run under systemd hand their children
+func EnsureUserSystemdEnv() {
+	for _, kv := range userSystemdOverrides() {
+		os.Setenv(kv[0], kv[1])
+	}
+}
 
 // Live argv of a running gateway for the update pause, nil when it is not a gateway
 func CaptureGatewayArgv(pid int) []string { return captureGatewayArgv(pid) }

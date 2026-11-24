@@ -28,6 +28,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -121,7 +122,7 @@ func gitStdout(ctx context.Context, gitCmd, args []string, cwd string, network b
 	if err != nil || result == nil || result.ReturnCode != 0 {
 		return "", false
 	}
-	return pystr.Strip(result.Stdout), true
+	return strings.TrimSpace(result.Stdout), true
 }
 
 // Expires old rescue refs, keeping the newest of each kind and dropping any past the age limit
@@ -141,7 +142,7 @@ func pruneOrphanRescueRefs(ctx context.Context, gitCmd []string, cwd, branch str
 		}
 		var refs []string
 		for _, line := range pystr.Splitlines(listed.Stdout, false) {
-			if ref := pystr.Strip(line); ref != "" {
+			if ref := strings.TrimSpace(line); ref != "" {
 				refs = append(refs, ref)
 			}
 		}
@@ -210,7 +211,7 @@ func parkDetachedHead(ctx context.Context, w io.Writer, gitCmd []string, cwd, br
 	if err != nil {
 		return err
 	}
-	sha := pystr.Strip(head.Stdout)
+	sha := strings.TrimSpace(head.Stdout)
 	if head.ReturnCode != 0 || sha == "" {
 		return nil
 	}
@@ -244,7 +245,7 @@ func parkDetachedHead(ctx context.Context, w io.Writer, gitCmd []string, cwd, br
 	if err != nil {
 		return err
 	}
-	count := pystr.Strip(counted.Stdout)
+	count := strings.TrimSpace(counted.Stdout)
 	if count == "" {
 		count = "Some"
 	}
@@ -275,7 +276,7 @@ func branchHeadLabel(ctx context.Context, gitCmd []string, cwd string) (string, 
 	if err != nil {
 		return "", false
 	}
-	branchName, shaText := pystr.Strip(branch.Stdout), pystr.Strip(sha.Stdout)
+	branchName, shaText := strings.TrimSpace(branch.Stdout), strings.TrimSpace(sha.Stdout)
 	if branch.ReturnCode != 0 || sha.ReturnCode != 0 || shaText == "" || branchName == "" {
 		return "", false
 	}
@@ -295,9 +296,7 @@ func branchHeadSuffix(ctx context.Context, gitCmd []string, cwd string) string {
 
 // Whether a parked feature branch may be switched back to the update target, with the reason or unmerged count
 func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, currentBranch, targetBranch string) (bool, string, error) {
-	if cfg, err := updatesConfig(ctx); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Could not read updates.auto_switch_parked_branch: %s", launchErrorText(err)))
-	} else if value, set := cfg["auto_switch_parked_branch"]; set && !pyrepr.Truthy(value) {
+	if !settings.UpdatesAutoSwitchParkedBranch.Get(ctx) {
 		return false, "disabled", nil
 	}
 	status, err := gitRunCaptured(ctx, gitCmd, []string{"status", "--porcelain"}, cwd, false, nil)
@@ -307,14 +306,14 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 	if status.ReturnCode != 0 {
 		return false, "unverifiable", nil
 	}
-	if pystr.Strip(status.Stdout) != "" {
+	if strings.TrimSpace(status.Stdout) != "" {
 		return false, "dirty", nil
 	}
 	ahead, err := gitRunCaptured(ctx, gitCmd, []string{"rev-list", "--count", "origin/" + targetBranch + "..HEAD"}, cwd, false, nil)
 	if err != nil {
 		return false, "", err
 	}
-	aheadText := pystr.Strip(ahead.Stdout)
+	aheadText := strings.TrimSpace(ahead.Stdout)
 	if ahead.ReturnCode != 0 || !pystr.StrIsDigit(aheadText) {
 		return false, "unverifiable", nil
 	}
@@ -334,7 +333,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 		if len(fields) == 0 {
 			return false, "", &pm.PyError{Class: "IndexError", Message: "git printed an empty status line"}
 		}
-		if pystr.Lower(fields[len(fields)-1]) != "false" {
+		if strings.ToLower(fields[len(fields)-1]) != "false" {
 			return true, "unmerged:" + aheadCount.String(), nil
 		}
 	}
@@ -475,7 +474,7 @@ func offerUpstreamRemote(ctx context.Context, w io.Writer, gitCmd []string, cwd 
 		if err != nil {
 			return false, err
 		}
-		response = pystr.Lower(pystr.Strip(answer))
+		response = strings.ToLower(strings.TrimSpace(answer))
 	} else {
 		fmt.Fprint(w, "Add official repo as 'upstream' remote? [Y/n]: ")
 		answer, err := updateInput("")
@@ -483,7 +482,7 @@ func offerUpstreamRemote(ctx context.Context, w io.Writer, gitCmd []string, cwd 
 			fmt.Fprintln(w)
 			response = "n"
 		} else {
-			response = pystr.Lower(pystr.Strip(answer))
+			response = strings.ToLower(strings.TrimSpace(answer))
 		}
 	}
 	if response != "" && response != "y" && response != "yes" {
@@ -703,7 +702,7 @@ func checkoutRejectedByGit(ctx context.Context, stderr string, gitCmd []string, 
 	if top.ReturnCode != 0 {
 		return true, nil
 	}
-	seen, err := pypath.Realpath(pystr.Strip(top.Stdout), pypath.Lax)
+	seen, err := pypath.Realpath(strings.TrimSpace(top.Stdout), pypath.Lax)
 	if err != nil {
 		return false, err
 	}
@@ -716,7 +715,7 @@ func checkoutRejectedByGit(ctx context.Context, stderr string, gitCmd []string, 
 
 // Prints the classified fetch diagnosis and bounded raw stderr, a fresh checkout of branch for a rejected one
 func printFetchFailure(ctx context.Context, w io.Writer, stderr string, gitCmd []string, root, branch string) error {
-	stderr = pystr.Strip(stderr)
+	stderr = strings.TrimSpace(stderr)
 	damaged := false
 	if root != "" {
 		rejected, err := checkoutRejectedByGit(ctx, stderr, gitCmd, pypath.PathStr(root))
@@ -748,7 +747,7 @@ func probeForkBomb(ctx context.Context, argv []string) (guard, ok bool) {
 	if err != nil || result == nil {
 		return false, false
 	}
-	return strings.Contains(pystr.Lower(result.Stdout+result.Stderr), "fork bomb"), true
+	return strings.Contains(strings.ToLower(result.Stdout+result.Stderr), "fork bomb"), true
 }
 
 // Whether gitCmd is a broken Git for Windows trampoline shim, unknown states reporting false
@@ -882,7 +881,7 @@ func lockfileChurnSteps(ctx context.Context, w io.Writer, gitCmd []string, repoR
 	var changed []string
 	dirtyManifests := map[string]bool{}
 	for _, line := range pystr.Splitlines(diff.Stdout, false) {
-		path := pystr.Strip(line)
+		path := strings.TrimSpace(line)
 		changed = append(changed, path)
 		if strings.HasSuffix(path, "package.json") {
 			dirtyManifests[manifestDirKey(pypath.PathParent(path))] = true
@@ -944,7 +943,7 @@ func normalizeManagedEOL(ctx context.Context, w io.Writer, gitCmd []string, repo
 		}
 		content := map[string]bool{}
 		for _, line := range pystr.Splitlines(realDirty.Stdout, false) {
-			if pystr.Strip(line) == "" {
+			if strings.TrimSpace(line) == "" {
 				continue
 			}
 			if parts := strings.SplitN(line, "\t", 3); len(parts) == 3 && parts[2] != "" {
@@ -962,7 +961,7 @@ func normalizeManagedEOL(ctx context.Context, w io.Writer, gitCmd []string, repo
 		return paths, true, nil
 	}
 	autocrlf, err := gitRunCaptured(ctx, gitCmd, []string{"config", "--get", "core.autocrlf"}, repoRoot, false, nil)
-	if err != nil || pystr.Lower(pystr.Strip(autocrlf.Stdout)) != "true" {
+	if err != nil || strings.ToLower(strings.TrimSpace(autocrlf.Stdout)) != "true" {
 		return
 	}
 	churn, known, err := eolOnly()

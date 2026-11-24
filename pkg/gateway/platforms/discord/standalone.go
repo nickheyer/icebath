@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -22,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -266,11 +267,11 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	mediaFiles := standaloneMediaFiles(kwargs["media_files"])
 	token := ""
 	if pconfig != nil && pconfig.Token != nil {
-		token = pystr.Strip(pyrepr.Str(pconfig.Token))
+		token = strings.TrimSpace(pyrepr.Str(pconfig.Token))
 	}
 	if token == "" {
 		secret, _ := gateway.GetScopedSecret(ctx, "DISCORD_BOT_TOKEN", "", false)
-		token = pystr.Strip(secret)
+		token = strings.TrimSpace(secret)
 	}
 	if token == "" {
 		return gateway.SendError("Discord standalone send: DISCORD_BOT_TOKEN is not set"), nil
@@ -395,7 +396,7 @@ func standaloneSendWithToken(ctx context.Context, proxyURL, token, chatID, messa
 		url = discordStandaloneAPIBase + "/channels/" + chatID + "/messages"
 	}
 	client := standaloneClient(session, 30*time.Second)
-	if pystr.Strip(message) != "" || len(mediaFiles) == 0 {
+	if strings.TrimSpace(message) != "" || len(mediaFiles) == 0 {
 		resp, err := standalonePostJSON(ctx, client, url, jsonHeaders, map[string]any{"content": message})
 		if err != nil {
 			return nil, err

@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // HTML escape of the text with quotes escaped when asked, like html.escape
@@ -48,10 +47,10 @@ type matrixHTMLSanitizer struct {
 
 // Link target with control characters removed, empty for a scheme outside http, https, matrix and mailto
 func sanitizerSafeURL(value string) string {
-	stripped := pystr.Strip(reSub(safeURLControlRE, value, func(regexp2.Match) string { return "" }))
+	stripped := strings.TrimSpace(reSub(safeURLControlRE, value, func(regexp2.Match) string { return "" }))
 	scheme := ""
 	if m, ok := reMatch(safeURLSchemeRE, stripped); ok {
-		scheme = pystr.Lower(group(*m, 1))
+		scheme = strings.ToLower(group(*m, 1))
 	}
 	if scheme != "" && scheme != "http" && scheme != "https" && scheme != "matrix" && scheme != "mailto" {
 		return ""
@@ -63,7 +62,7 @@ func sanitizerSafeURL(value string) string {
 func (s *matrixHTMLSanitizer) safeAttrs(tag string, attrs []html.Attribute) string {
 	var safe strings.Builder
 	for _, a := range attrs {
-		attr := pystr.Lower(a.Key)
+		attr := strings.ToLower(a.Key)
 		switch {
 		case tag == "a" && attr == "href":
 			if href := sanitizerSafeURL(a.Val); href != "" {
@@ -80,7 +79,7 @@ func (s *matrixHTMLSanitizer) safeAttrs(tag string, attrs []html.Attribute) stri
 
 // Opening tag kept when allowed, script and style bodies skipped
 func (s *matrixHTMLSanitizer) handleStarttag(tag string, attrs []html.Attribute) {
-	tag = pystr.Lower(tag)
+	tag = strings.ToLower(tag)
 	switch {
 	case tag == "script" || tag == "style":
 		s.skipDepth++
@@ -95,7 +94,7 @@ func (s *matrixHTMLSanitizer) handleStarttag(tag string, attrs []html.Attribute)
 
 // Closing tag kept when allowed and not void, leaving a script or style body
 func (s *matrixHTMLSanitizer) handleEndtag(tag string) {
-	tag = pystr.Lower(tag)
+	tag = strings.ToLower(tag)
 	if (tag == "script" || tag == "style") && s.skipDepth > 0 {
 		s.skipDepth--
 		return
@@ -222,7 +221,7 @@ func renderMarkdown(md goldmark.Markdown, text string) string {
 	if err := md.Convert([]byte(text), &buf); err != nil {
 		return htmlEscape(text, true)
 	}
-	return pystr.Strip(buf.String())
+	return strings.TrimSpace(buf.String())
 }
 
 // Markdown converted to sanitized org.matrix.custom.html with LaTeX math as data-mx-maths markup
@@ -406,7 +405,7 @@ func (a *MatrixAdapter) stripMention(body string) string {
 	}
 	body = reSub(mentionSpacingRE, body, func(regexp2.Match) string { return " " })
 	body = reSub(mentionPunctuationRE, body, func(m regexp2.Match) string { return group(m, 1) })
-	return pystr.Strip(body)
+	return strings.TrimSpace(body)
 }
 
 // Download URL of an mxc URI on the configured homeserver, other URLs unchanged

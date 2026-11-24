@@ -1,6 +1,8 @@
 package whatsapp
 
 import (
+	"strings"
+
 	"fmt"
 	"net"
 	"os"
@@ -34,7 +36,7 @@ func readPortRecord(record string) (int, error) {
 	}
 	text, err := pystr.DecodeUTF8Sig(raw)
 	if err == nil {
-		if port, convErr := strconv.Atoi(pystr.Strip(text)); convErr == nil {
+		if port, convErr := strconv.Atoi(strings.TrimSpace(text)); convErr == nil {
 			return port, nil
 		}
 	}
@@ -136,7 +138,7 @@ func portFromConfig(v any) (int, error) {
 		}
 		return 0, nil
 	case string:
-		if p, err := strconv.Atoi(pystr.Strip(x)); err == nil {
+		if p, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
 			return p, nil
 		}
 		return 0, fmt.Errorf("invalid literal for int() with base 10: '%s'", x)

@@ -765,23 +765,23 @@ func enabledBackendNames(t *testing.T, ctx context.Context) []string {
 }
 
 func TestManagerAutoDetectionInstalledManagerIsASourceWithoutConfigAndConfigCanOptOut(t *testing.T) {
-	ctx, _ := vaultProfile(t)
+	ctx, env := vaultProfile(t)
 	installed := true
 	pin(t, &isLoginBackendInstalledFn, func(context.Context, string) (bool, error) { return installed, nil })
-	cfg := map[string]any{}
-	pin(t, &vaultCfgFn, func(context.Context) (map[string]any, error) { return cfg, nil })
+	configPath := filepath.Join(env.Home, "config.yaml")
 	names := enabledBackendNames(t, ctx)
 	sort.Strings(names)
 	if !reflect.DeepEqual(names, []string{"bitwarden", "local", "onepassword"}) {
 		t.Fatalf("names %v", names)
 	}
-	cfg = map[string]any{"bitwarden": map[string]any{"enabled": false}}
+	writeFile(t, configPath, "vault:\n  bitwarden:\n    enabled: false\n")
 	names = enabledBackendNames(t, ctx)
 	sort.Strings(names)
 	if !reflect.DeepEqual(names, []string{"local", "onepassword"}) {
 		t.Fatalf("names %v", names)
 	}
-	installed, cfg = false, map[string]any{}
+	installed = false
+	writeFile(t, configPath, "vault: {}\n")
 	if names := enabledBackendNames(t, ctx); !reflect.DeepEqual(names, []string{"local"}) {
 		t.Fatalf("names %v", names)
 	}

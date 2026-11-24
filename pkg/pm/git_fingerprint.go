@@ -35,8 +35,8 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 		}
 		for _, line := range pystr.Splitlines(text, false) {
 			key, value, _ := strings.Cut(line, ":")
-			if pystr.Strip(key) == "gitdir" && pystr.Strip(value) != "" {
-				if gitDir, err = pypath.Resolve(pypath.PathJoin(repoRoot, pystr.Strip(value))); err != nil {
+			if strings.TrimSpace(key) == "gitdir" && strings.TrimSpace(value) != "" {
+				if gitDir, err = pypath.Resolve(pypath.PathJoin(repoRoot, strings.TrimSpace(value))); err != nil {
 					return "", err
 				}
 				break
@@ -62,12 +62,12 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	head := pystr.Strip(text)
+	head := strings.TrimSpace(text)
 	if !strings.HasPrefix(head, "ref:") {
 		return "git:HEAD:" + head, nil
 	}
 	_, rest, _ := strings.Cut(head, ":")
-	ref := pystr.Strip(rest)
+	ref := strings.TrimSpace(rest)
 	for _, candidate := range []string{gitDir, commonDir} {
 		refFile := pypath.PathJoin(candidate, ref)
 		fi, err := pypath.PathlibStat(refFile)
@@ -79,7 +79,7 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			return "git:" + ref + ":" + pystr.Strip(sha), nil
+			return "git:" + ref + ":" + strings.TrimSpace(sha), nil
 		}
 	}
 	if packed := readPackedRef(commonDir, ref); packed != "" {
@@ -94,7 +94,7 @@ func readCommonDir(gitDir, commondirFile string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	rel := pystr.Strip(text)
+	rel := strings.TrimSpace(text)
 	if rel == "" {
 		return "", nil
 	}
@@ -112,8 +112,8 @@ func readPackedRef(commonDir, ref string) string {
 			continue
 		}
 		sha, name, ok := strings.Cut(line, " ")
-		if ok && pystr.Strip(name) == ref {
-			return pystr.Strip(sha)
+		if ok && strings.TrimSpace(name) == ref {
+			return strings.TrimSpace(sha)
 		}
 	}
 	return ""

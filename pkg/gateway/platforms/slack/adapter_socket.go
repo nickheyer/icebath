@@ -683,7 +683,7 @@ func (a *SlackAdapter) CreateHandoffThread(ctx context.Context, parentChatID, na
 	if name == "" {
 		name = i18n.T(ctx, "platform.shared.handoff.default_name", "", nil)
 	}
-	seed := i18n.T(ctx, "platform.slack.handoff.seed", "", map[string]any{"name": pystr.Slice(pystr.Strip(name), 0, 80)})
+	seed := i18n.T(ctx, "platform.slack.handoff.seed", "", map[string]any{"name": pystr.Slice(strings.TrimSpace(name), 0, 80)})
 	result, err := client.call(ctx, "chat.postMessage", map[string]any{"channel": parentChatID, "text": seed})
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[%s] Handoff thread: seed-post failed for channel %s: %v", a.Name(), parentChatID, err))

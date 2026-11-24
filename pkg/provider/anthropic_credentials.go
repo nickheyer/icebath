@@ -27,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
@@ -75,7 +74,7 @@ func IsNativeAnthropicHost(baseURL string) bool {
 
 // AnthropicRouteIsOAuth reports the Claude Code OAuth identity for one Anthropic Messages route
 func AnthropicRouteIsOAuth(ctx context.Context, baseURL, credential string, tokenSource func(context.Context) (string, error), provider string) bool {
-	if !(IsNativeAnthropicHost(baseURL) || pystr.Lower(pystr.Strip(provider)) == "anthropic") {
+	if !(IsNativeAnthropicHost(baseURL) || strings.ToLower(strings.TrimSpace(provider)) == "anthropic") {
 		return false
 	}
 	if credential == "" && tokenSource != nil {
@@ -900,7 +899,7 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 	if !ok {
 		return nil
 	}
-	authCode = pystr.Strip(authCode)
+	authCode = strings.TrimSpace(authCode)
 	if authCode == "" {
 		fmt.Fprintln(out, "No code entered.")
 		return nil

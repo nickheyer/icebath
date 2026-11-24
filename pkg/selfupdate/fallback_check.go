@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -109,12 +109,8 @@ func fallbackCheckObject(r *provider.FallbackEntryCheck) *pyjson.Object {
 
 // FallbackCheckCommand is icebath fallback check, the readiness table or JSON of every chain entry without an agent session, 1 when any entry is not ready
 func FallbackCheckCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
-	cfg, err := config.LoadReadonly(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return 1, err
-	}
 	live := pyrepr.Truthy(ns["live"])
-	results, err := RunFallbackChecks(ctx, provider.GetFallbackChain(cfg), live)
+	results, err := RunFallbackChecks(ctx, provider.FallbackChain(home.WithOverride(ctx, h)), live)
 	if err != nil {
 		return 1, err
 	}

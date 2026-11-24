@@ -3,6 +3,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"os"
@@ -240,7 +242,7 @@ func runKanbanGoalTurns(ctx context.Context, a WorkerTurnAgent, kctx any, taskID
 
 // Kanban worker card title or Kanban task id when the board cannot be read, empty outside a dispatched worker
 func boardTaskTitle(ctx context.Context, env *tools.Env) string {
-	taskID := pystr.Strip(os.Getenv("ICEBATH_KANBAN_TASK"))
+	taskID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK"))
 	if taskID == "" || !tools.IsDispatcherOwnedWorkerContext(env) {
 		return ""
 	}
@@ -261,7 +263,7 @@ func boardTaskTitle(ctx context.Context, env *tools.Env) string {
 		pkgLog().Debug(fmt.Sprintf("Kanban task %s unreadable; naming the session after its id", taskID), "error", err)
 		title = ""
 	} else if limit := state.MaxTitleLength - 4; pystr.Len(title) > limit {
-		title = pystr.Rstrip(pystr.Slice(title, 0, limit-1)) + "…"
+		title = strings.TrimRightFunc(pystr.Slice(title, 0, limit-1), unicode.IsSpace) + "…"
 	}
 	if title == "" {
 		return "Kanban task " + taskID

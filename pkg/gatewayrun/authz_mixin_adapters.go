@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"weak"
@@ -9,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -18,7 +19,7 @@ func stripProfile(profile *string) string {
 	if profile == nil {
 		return ""
 	}
-	return pystr.Strip(*profile)
+	return strings.TrimSpace(*profile)
 }
 
 // Live adapter whose intake policy gates authorization, nil when the profile has none for the platform

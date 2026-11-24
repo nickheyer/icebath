@@ -90,7 +90,7 @@ func (a *GatewayAgent) stageContentParts(parts []any) (string, []any, error) {
 					kept = append(kept, line)
 				}
 			}
-			texts = append(texts, pystr.Strip(strings.Join(kept, "\n")))
+			texts = append(texts, strings.TrimSpace(strings.Join(kept, "\n")))
 		case "image_url":
 			image, _ := part["image_url"].(map[string]any)
 			url, isStr := image["url"].(string)

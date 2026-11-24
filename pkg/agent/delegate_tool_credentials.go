@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -27,7 +26,7 @@ func normalizedRuntimeURL(v any) string {
 	if pyrepr.Truthy(v) {
 		s = pyrepr.Str(v)
 	}
-	return strings.TrimRight(pystr.Strip(s), "/")
+	return strings.TrimRight(strings.TrimSpace(s), "/")
 }
 
 // Parent endpoint trust capabilities, inherited only when the child runs the parent's exact route
@@ -123,17 +122,16 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		}
 	}()
 	if effectiveProvider == "custom" {
-		cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-		childKey := provider.GetCustomProviderPoolKey(effectiveBaseURL, effectiveRequestedProvider, cfg)
+		childKey := provider.GetCustomProviderPoolKey(ctx, effectiveBaseURL, effectiveRequestedProvider)
 		if childKey == "" {
 			return nil
 		}
-		parentKey := provider.GetCustomProviderPoolKey(parentBaseURL, parentRequested, cfg)
+		parentKey := provider.GetCustomProviderPoolKey(ctx, parentBaseURL, parentRequested)
 		if parentPool != nil && parentProvider == "custom" && parentKey != "" && parentKey == childKey {
 			return parentPool
 		}
 		var owner map[string]any
-		if _, entry, ok := provider.CustomEntryForEndpoint(effectiveBaseURL, effectiveRequestedProvider, cfg); ok {
+		if _, entry, ok := provider.CustomEntryForEndpoint(ctx, effectiveBaseURL, effectiveRequestedProvider); ok {
 			owner = entry
 		}
 		return provider.EntryScopedPool(loadedPoolFn(ctx, childKey), childKey, owner)
@@ -266,7 +264,7 @@ func runtimeProviderCredentials(ctx context.Context, v delegationValues, explici
 		"Install it or choose a different delegation provider.", configured, pinned)); err != nil {
 		return nil, err
 	}
-	if runtime.BaseURL == "" && pinned == "" && !delegationNativeSDKProviders[strings.ToLower(pystr.Strip(configured))] {
+	if runtime.BaseURL == "" && pinned == "" && !delegationNativeSDKProviders[strings.ToLower(strings.TrimSpace(configured))] {
 		return nil, &tools.DelegationValueError{Message: fmt.Sprintf("Delegation provider '%s' resolved without a base_url. "+
 			"Refusing to build a subagent with an incomplete credential bundle — check the provider's "+
 			"configuration / auth, or set delegation.base_url for a direct endpoint.", configured)}
@@ -295,7 +293,7 @@ func stripOrNone(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Child credential bundle from the delegation config, a direct endpoint, a runtime provider or pure inherit
@@ -303,10 +301,10 @@ func resolveDelegationCredentials(ctx context.Context, cfg map[string]any, paren
 	v := delegationValues{
 		model: stripOrNone(cfg["model"]), providerName: stripOrNone(cfg["provider"]),
 		baseURL: stripOrNone(cfg["base_url"]), apiKey: stripOrNone(cfg["api_key"]),
-		apiMode: pystr.Lower(stripOrNone(cfg["api_mode"])),
+		apiMode: strings.ToLower(stripOrNone(cfg["api_mode"])),
 	}
 	explicit, _ := cfg["request_overrides"].(map[string]any)
-	isNative := delegationNativeSDKProviders[strings.ToLower(pystr.Strip(v.providerName))]
+	isNative := delegationNativeSDKProviders[strings.ToLower(strings.TrimSpace(v.providerName))]
 	if v.baseURL != "" && !isNative {
 		return directEndpointCredentials(ctx, v, explicit), nil
 	}

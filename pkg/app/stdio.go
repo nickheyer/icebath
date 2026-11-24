@@ -1,12 +1,14 @@
 package app
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -17,22 +19,19 @@ var (
 // Reports native Windows, never WSL
 func IsWindows() bool { return runtime.GOOS == "windows" }
 
-// Forces UTF-8 stdio on Windows once, true only when something changed, ICEBATH_DISABLE_WINDOWS_UTF8 opts out
-func ConfigureWindowsStdio() bool {
+// Forces UTF-8 stdio on Windows once, true only when something changed, the Windows UTF-8 setting of ctx opting out
+func ConfigureWindowsStdio(ctx context.Context) bool {
 	stdioMu.Lock()
 	defer stdioMu.Unlock()
 	if stdioConfigured {
 		return false
 	}
-	if !IsWindows() || windowsUTF8Disabled() {
+	if !IsWindows() || windowsUTF8Disabled(ctx) {
 		stdioConfigured = true
 		return false
 	}
 	setenvDefault("PYTHONIOENCODING", "utf-8")
 	setenvDefault("PYTHONUTF8", "1")
-	if editor := defaultWindowsEditor(); editor != "" && os.Getenv("EDITOR") == "" && os.Getenv("VISUAL") == "" {
-		os.Setenv("EDITOR", editor)
-	}
 	augmentPathWithKnownTools()
 	flipConsoleCodePageToUTF8()
 	reconfigureStream()
@@ -40,13 +39,9 @@ func ConfigureWindowsStdio() bool {
 	return true
 }
 
-// Reports the ICEBATH_DISABLE_WINDOWS_UTF8 opt out values 1, true, True and yes
-func windowsUTF8Disabled() bool {
-	switch os.Getenv("ICEBATH_DISABLE_WINDOWS_UTF8") {
-	case "1", "true", "True", "yes":
-		return true
-	}
-	return false
+// Whether the Windows UTF-8 setting of ctx is off
+func windowsUTF8Disabled(ctx context.Context) bool {
+	return !settings.DisplayWindowsUTF8.Get(ctx)
 }
 
 // Sets an environment variable only while the process has none of that name
@@ -54,14 +49,6 @@ func setenvDefault(name, value string) {
 	if _, ok := os.LookupEnv(name); !ok {
 		os.Setenv(name, value)
 	}
-}
-
-// Bare notepad when it is on PATH, empty on installs without it
-func defaultWindowsEditor() string {
-	if _, err := exec.LookPath("notepad"); err == nil {
-		return "notepad"
-	}
-	return ""
 }
 
 // Prepends the installer managed tool directories under LOCALAPPDATA that PATH lacks, nothing off Windows

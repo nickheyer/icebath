@@ -76,7 +76,7 @@ func loadJSONL(path string, onError func(int, error), start int) ([]jsonlEntry, 
 	var entries []jsonlEntry
 	for k, line := range universalLines(string(data)) {
 		n := start + k
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		v, err := pyjson.Loads(line)

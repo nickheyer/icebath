@@ -19,7 +19,7 @@ import (
 
 // ---- test_credential_pool_provider_boundary.py ----
 
-// Config holding one providers block per entry, keyed by provider_key or else by the entry's name
+// Providers mapping holding one block per entry, keyed by provider_key or else by the entry's name
 func customCfg(entries ...map[string]any) map[string]any {
 	providers := map[string]any{}
 	for _, e := range entries {
@@ -29,7 +29,7 @@ func customCfg(entries ...map[string]any) map[string]any {
 		}
 		providers[key] = map[string]any{"name": e["name"], "base_url": e["base_url"]}
 	}
-	return map[string]any{"providers": providers}
+	return providers
 }
 
 func TestProviderMatchRequiresExactNonCustomIdentity(t *testing.T) {

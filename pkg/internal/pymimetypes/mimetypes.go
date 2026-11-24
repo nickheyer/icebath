@@ -171,7 +171,7 @@ func (d *DB) GuessFileType(path string, strict bool) (string, string) {
 func (d *DB) guessFileType(path string, strict bool, splitext func(string) (string, string)) (string, string) {
 	base, ext := splitext(path)
 	for {
-		repl, ok := d.suffixes[pystr.Lower(ext)]
+		repl, ok := d.suffixes[strings.ToLower(ext)]
 		if !ok {
 			break
 		}
@@ -182,7 +182,7 @@ func (d *DB) guessFileType(path string, strict bool, splitext func(string) (stri
 		encoding = enc
 		base, ext = splitext(base)
 	}
-	ext = pystr.Lower(ext)
+	ext = strings.ToLower(ext)
 	if typ, ok := d.types[1][ext]; ok {
 		return typ, encoding
 	}

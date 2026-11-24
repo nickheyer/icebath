@@ -13,7 +13,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Seconds of a Retry-After value or header set, numeric or HTTP date, clamped at zero
@@ -33,7 +32,7 @@ func parseRetryAfterSeconds(raw any) (float64, bool) {
 	case int:
 		return math.Max(0, float64(v)), true
 	case string:
-		text := pystr.Strip(v)
+		text := strings.TrimSpace(v)
 		if text == "" {
 			return 0, false
 		}

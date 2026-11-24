@@ -243,7 +243,7 @@ func (a *DiscordAdapter) SendClarify(ctx context.Context, chatID, question strin
 		pm := promptMessage{embed: newEmbed(truncateDiscordComponentText("❓ "+clarifyTitle, discordEmbedTitleLimit), "", colorOrange)}
 		var clean []string
 		for _, c := range choices {
-			if s := pystr.Strip(c); s != "" {
+			if s := strings.TrimSpace(c); s != "" {
 				clean = append(clean, s)
 			}
 		}
@@ -258,7 +258,7 @@ func (a *DiscordAdapter) SendClarify(ctx context.Context, chatID, question strin
 			}
 			pm.view = &view.icebathView
 		}
-		pm.content = selfContainedPromptContent(ctx, "❓ **"+clarifyTitle+"**", pystr.Strip(question), false, "\n\n"+hint)
+		pm.content = selfContainedPromptContent(ctx, "❓ **"+clarifyTitle+"**", strings.TrimSpace(question), false, "\n\n"+hint)
 		return pm, nil
 	}, "send_clarify"), nil
 }

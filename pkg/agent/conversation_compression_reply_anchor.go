@@ -1,10 +1,11 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -43,7 +44,7 @@ func ensureCompressedKeepsLastAssistantReply(ctx context.Context, original, comp
 		if pyrepr.Truthy(message["tool_calls"]) || state.IsCompactionSummaryMessage(message) {
 			continue
 		}
-		replyText = pystr.Strip(compressionMessageText(message))
+		replyText = strings.TrimSpace(compressionMessageText(message))
 		if replyText == "" {
 			continue
 		}
@@ -108,7 +109,7 @@ func ensureCompressedKeepsLastAssistantReply(ctx context.Context, original, comp
 
 // Normalized text equality when either side has text, raw content equality otherwise
 func sameVisibleContent(left, right map[string]any, rightText string) bool {
-	leftText := pystr.Strip(compressionMessageText(left))
+	leftText := strings.TrimSpace(compressionMessageText(left))
 	if leftText != "" || rightText != "" {
 		return leftText == rightText
 	}
@@ -182,7 +183,7 @@ func replyInsertionIndex(followers, compressed []map[string]any, reusedIDs idSet
 	}
 	ambiguous := false
 	for _, follower := range kept {
-		followerRole, followerText := follower["role"], pystr.Strip(compressionMessageText(follower))
+		followerRole, followerText := follower["role"], strings.TrimSpace(compressionMessageText(follower))
 		followerCallIDs := toolCallIDs(follower)
 		if rowIDs(follower).intersects(reusedIDs) {
 			if !ambiguous {

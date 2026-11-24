@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -774,7 +775,7 @@ func TestVisionAnalyzeNative(t *testing.T) {
 	if r["error"] != "image_url is required" {
 		t.Fatalf("non string url %v", r)
 	}
-	if defaultEmbedTargetBytes > 512*1024 || VisionEmbedMaxDimension > 2048 {
+	if settings.VisionEmbedTargetBytes.Default > 512*1024 || VisionEmbedMaxDimension > 2048 {
 		t.Fatal("embed caps must stay sized for history reuse")
 	}
 }
@@ -784,7 +785,7 @@ func TestVisionNativeOversizedResizedUnderEmbedCap(t *testing.T) {
 	big := writeNoisePNG(t, filepath.Join(t.TempDir(), "big.png"), 1600, 1600, 5)
 	result := visionAnalyzeNative(context.Background(), env, "s", big, "describe", "", nil)
 	u := envelopeURL(t, result)
-	if len(u) > defaultEmbedTargetBytes || !strings.HasPrefix(u, "data:image/jpeg;base64,") {
+	if len(u) > settings.VisionEmbedTargetBytes.Default || !strings.HasPrefix(u, "data:image/jpeg;base64,") {
 		t.Fatalf("embed %d bytes", len(u))
 	}
 	text := decodeResult(t, result)["content"].([]any)[0].(map[string]any)["text"].(string)

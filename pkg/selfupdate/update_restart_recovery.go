@@ -85,7 +85,7 @@ func recoveryStdout(result *recoveryCompleted) string {
 	if result == nil {
 		return ""
 	}
-	return pystr.Strip(result.Stdout)
+	return strings.TrimSpace(result.Stdout)
 }
 
 func recoverySucceeded(result *recoveryCompleted) bool {
@@ -94,7 +94,7 @@ func recoverySucceeded(result *recoveryCompleted) bool {
 
 // Profile this recovery process was launched as, the profiles directory child of the home else default
 func recoveryLaunchProfile() string {
-	if h := pystr.Strip(os.Getenv(home.EnvHome)); h != "" {
+	if h := strings.TrimSpace(os.Getenv(home.EnvHome)); h != "" {
 		path := filepath.Clean(h)
 		if filepath.Base(filepath.Dir(path)) == "profiles" {
 			return filepath.Base(path)

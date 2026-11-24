@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -41,14 +40,14 @@ func CoerceAllowSet(raw any) map[string]bool {
 	raw = DecodeJSONListLiteral(raw)
 	if items, ok := raw.([]any); ok {
 		for _, item := range items {
-			if part := pystr.Strip(pyrepr.Str(item)); part != "" {
+			if part := strings.TrimSpace(pyrepr.Str(item)); part != "" {
 				out[part] = true
 			}
 		}
 		return out
 	}
 	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-		if part = pystr.Strip(part); part != "" {
+		if part = strings.TrimSpace(part); part != "" {
 			out[part] = true
 		}
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -267,7 +266,7 @@ func formatFileMutationFailureFooter(ctx context.Context, failed *FileMutationFa
 	shown := paths[:min(len(paths), 10)]
 	for _, path := range shown {
 		info, _ := failed.Get(path)
-		preview := pystr.Strip(info.ErrorPreview)
+		preview := strings.TrimSpace(info.ErrorPreview)
 		tool := info.Tool
 		if tool == "" {
 			tool = "patch"

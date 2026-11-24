@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -160,19 +161,46 @@ func orImageAPIModelMeta(modelID string) orImageAPIModel {
 	return orUnknownImageAPIModel
 }
 
+// Text knobs of image_gen.openrouter by name
+var orImageTextSettings = map[string]*settings.String{
+	"aspect_ratio": settings.OpenRouterImageAspect, "resolution": settings.OpenRouterImageResolution,
+	"quality": settings.OpenRouterImageQuality, "background": settings.OpenRouterImageBackground,
+	"output_format": settings.OpenRouterImageOutputFormat,
+}
+
+// Whole number knobs of image_gen.openrouter by name
+var orImageIntSettings = map[string]*settings.Int{
+	"output_compression": settings.OpenRouterImageOutputCompression, "seed": settings.OpenRouterImageSeed,
+	orImageCountSetting: settings.OpenRouterImageCount,
+}
+
 // Knob value from the call, then image_gen.openrouter, blanks counting as unset
 func orImageSetting(env *tools.Env, name string, explicit any) any {
 	if s, isStr := explicit.(string); explicit != nil && (!isStr || strings.TrimSpace(s) != "") {
 		return explicit
 	}
-	v := loadImageGenConfig(env, orImageProvider)[name]
-	if s, ok := v.(string); ok {
-		if s = strings.TrimSpace(s); s == "" {
-			return nil
+	ctx := tools.WithEnvHome(context.Background(), env)
+	switch name {
+	case "surface":
+		if v := strings.TrimSpace(settings.OpenRouterImageSurface.Get(ctx)); v != "" {
+			return v
 		}
-		return s
+	case "timeout":
+		if d, ok := settings.OpenRouterImageTimeout.Lookup(ctx); ok {
+			return d.Seconds()
+		}
 	}
-	return v
+	if text, ok := orImageTextSettings[name]; ok {
+		if v := strings.TrimSpace(text.Get(ctx)); v != "" {
+			return v
+		}
+	}
+	if whole, ok := orImageIntSettings[name]; ok {
+		if v, set := whole.Lookup(ctx); set {
+			return v
+		}
+	}
+	return nil
 }
 
 // Integer of a number or numeric string, false for booleans and anything else
@@ -460,9 +488,8 @@ func orLoadReferences(env *tools.Env, refs []string) (parts, unreadable []string
 
 // Model chain from the call, image_gen.openrouter.model, image_gen.model, else the default chain
 func orResolveModelChain(env *tools.Env, explicit any) []string {
-	scoped := loadImageGenConfig(env, orImageProvider)
-	top := loadImageGenConfig(env, "")
-	for _, candidate := range []any{explicit, scoped["model"], top["model"]} {
+	ctx := tools.WithEnvHome(context.Background(), env)
+	for _, candidate := range []any{explicit, settings.OpenRouterImageModel.Get(ctx), settings.ImageGenModel.Get(ctx)} {
 		if s, ok := candidate.(string); ok && strings.TrimSpace(s) != "" {
 			return []string{strings.TrimSpace(s)}
 		}

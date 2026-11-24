@@ -73,7 +73,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		return nil, err
 	}
 	for _, line := range lines {
-		toks := pystr.SplitWhitespace(pystr.Strip(line), -1)
+		toks := pystr.SplitWhitespace(strings.TrimSpace(line), -1)
 		if len(toks) != 2 {
 			return nil, &PyError{Class: "AssertionError", Msg: fmt.Sprint(len(toks))}
 		}
@@ -123,7 +123,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		for _, text := range texts {
 			textList := []string{}
 			flush := func(segment string) error {
-				if pystr.Strip(segment) == "" {
+				if strings.TrimSpace(segment) == "" {
 					return nil
 				}
 				pieces, err := sp.EncodeAsPieces(segment)

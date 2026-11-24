@@ -178,7 +178,7 @@ func fakeBWBackend(t *testing.T) (context.Context, *tools.Env, *BitwardenLoginBa
 	t.Helper()
 	ctx, env := vaultProfile(t)
 	exe, dir := fakeManager(t, "fake-bw")
-	backend := newBitwardenLoginBackend(ctx, map[string]any{"enabled": true, "binary_path": exe})
+	backend := newBitwardenLoginBackend(ctx, ManagerConfig{BinaryPath: exe})
 	pin(t, &enabledLoginBackendsFn, func(context.Context) ([]LoginBackend, error) { return []LoginBackend{backend}, nil })
 	return ctx, env, backend, filepath.Join(dir, "bw.log")
 }
@@ -326,7 +326,7 @@ func TestLockDuringUnlockWinsAndOnlyTheOwningSessionReleaseDropsAToken(t *testin
 }
 
 func TestBitwardenMultiUriItemBindsEverySavedWebOrigin(t *testing.T) {
-	backend := newBitwardenLoginBackend(context.Background(), map[string]any{"enabled": true})
+	backend := newBitwardenLoginBackend(context.Background(), ManagerConfig{})
 	itemsJSON := `[{"id": "multi", "type": 1, "name": "Amazon", "creationDate": "2026-01-01T00:00:00Z",
 		"login": {"username": "jane@example.com", "uris": [
 			{"uri": "https://amazon.co.uk/signin"},
@@ -351,7 +351,7 @@ func TestBitwardenMultiUriItemBindsEverySavedWebOrigin(t *testing.T) {
 }
 
 func TestOnepasswordMultiUrlItemBindsEverySavedWebOrigin(t *testing.T) {
-	backend := newOnePasswordLoginBackend(context.Background(), map[string]any{"enabled": true})
+	backend := newOnePasswordLoginBackend(context.Background(), ManagerConfig{})
 	itemsJSON := `[{"id": "multi", "title": "Amazon", "created_at": "2026-01-01T00:00:00Z",
 		"additional_information": "jane@example.com",
 		"urls": [{"href": "https://amazon.co.uk"}, {"href": "https://www.amazon.co.uk"},
@@ -386,7 +386,7 @@ func TestOnepasswordMultiUrlItemBindsEverySavedWebOrigin(t *testing.T) {
 
 func TestOnepasswordBackendEnvForwardsConfigDirectory(t *testing.T) {
 	t.Setenv("OP_CONFIG_DIR", "/tmp/op-config")
-	backend := newOnePasswordLoginBackend(context.Background(), map[string]any{"enabled": true})
+	backend := newOnePasswordLoginBackend(context.Background(), ManagerConfig{})
 	if got := backend.env("")["OP_CONFIG_DIR"]; got != "/tmp/op-config" {
 		t.Fatalf("OP_CONFIG_DIR %q", got)
 	}
@@ -403,7 +403,7 @@ func fakeOpServiceAccount(t *testing.T) (func() *OnePasswordLoginBackend, string
 		return def
 	})
 	return func() *OnePasswordLoginBackend {
-		return newOnePasswordLoginBackend(context.Background(), map[string]any{"binary_path": exe})
+		return newOnePasswordLoginBackend(context.Background(), ManagerConfig{BinaryPath: exe})
 	}, filepath.Join(dir, "op.log")
 }
 
@@ -472,7 +472,7 @@ func TestOnepasswordServiceAccountRefusalsNameTheRealCause(t *testing.T) {
 func TestSessionTokenReachesOnlyTheManagerCallThatUsesIt(t *testing.T) {
 	ctx, env := vaultProfile(t)
 	exe, dir := fakeManager(t, "fake-bw-env")
-	backend := newBitwardenLoginBackend(ctx, map[string]any{"binary_path": exe})
+	backend := newBitwardenLoginBackend(ctx, ManagerConfig{BinaryPath: exe})
 	if err := backend.Unlock("dummy master password"); err != nil {
 		t.Fatal(err)
 	}

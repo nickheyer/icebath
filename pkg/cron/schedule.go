@@ -69,7 +69,7 @@ func reMatch(re *regexp2.Regexp, s string) *regexp2.Match {
 
 // Minutes in a duration such as 30m, 2h, 1d or a bare unit meaning one
 func parseDuration(text string) (int, error) {
-	s := pystr.Lower(pystr.Strip(text))
+	s := strings.ToLower(strings.TrimSpace(text))
 	m := reMatch(durationRe, s)
 	if m == nil {
 		return 0, fmt.Errorf("Invalid duration: '%s'. Use format like '30m', '2h', '1d', "+
@@ -88,7 +88,7 @@ func parseDuration(text string) (int, error) {
 
 // Hour and minute of 9am, half past forms, 24h clock times, a bare hour, noon or midnight
 func parseClockTime(text string) (int, int, bool) {
-	t := strings.ReplaceAll(pystr.Lower(pystr.Strip(text)), " ", "")
+	t := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(text)), " ", "")
 	switch t {
 	case "":
 		return 0, 0, false
@@ -125,7 +125,7 @@ func parseClockTime(text string) (int, int, bool) {
 
 // Five field cron expression for a day spec plus clock time phrase, false to fall back to intervals
 func naturalEveryToCron(rest string) (string, bool) {
-	tokens := pystr.SplitWhitespace(strings.ReplaceAll(pystr.Lower(rest), ",", " "), -1)
+	tokens := pystr.SplitWhitespace(strings.ReplaceAll(strings.ToLower(rest), ",", " "), -1)
 	if len(tokens) == 0 {
 		return "", false
 	}
@@ -189,13 +189,13 @@ func intervalSchedule(minutes int) *Schedule {
 
 // Schedule record for an interval, natural weekday phrase, cron expression, ISO instant or in duration
 func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
-	schedule = pystr.Strip(schedule)
+	schedule = strings.TrimSpace(schedule)
 	original := schedule
-	lower := pystr.Lower(schedule)
+	lower := strings.ToLower(schedule)
 	isEvery := strings.HasPrefix(lower, "every ")
 	rest := lower
 	if isEvery {
-		rest = pystr.Strip(schedule[6:])
+		rest = strings.TrimSpace(schedule[6:])
 	}
 	if expr, ok := naturalEveryToCron(rest); ok {
 		return cronSchedule(expr, original, "schedule")
@@ -233,7 +233,7 @@ func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
 		return &Schedule{Kind: "once", RunAt: runAt, Display: "once at " + v.Time.Format("2006-01-02 15:04")}, nil
 	}
 	if strings.HasPrefix(lower, "in ") {
-		durationStr := pystr.Strip(schedule[3:])
+		durationStr := strings.TrimSpace(schedule[3:])
 		minutes, err := parseDuration(durationStr)
 		if err != nil {
 			return nil, fmt.Errorf("Invalid duration '%s' after 'in '. Use e.g. 'in 30m', 'in 2h'.", durationStr)
@@ -410,7 +410,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, rec
 		*recent = (*recent)[len(*recent)-telemetryRecentHistory:]
 	}
 	path := filepath.Join(s.cronDir, filename)
-	if err := ensureCronDir(filepath.Dir(path)); err != nil {
+	if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 		return
 	}

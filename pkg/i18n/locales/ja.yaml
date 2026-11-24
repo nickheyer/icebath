@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (次のターンのみ — 1 回応答した後に元へ戻ります)"
     switch_cancelled: "🟡 モデルの切り替えをキャンセルしました。現在のモデルは変わりません ({model})。"
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_テキスト代替: 切り替えるには `{prefix}approve`、現在のモデルを維持するには `{prefix}cancel` と返信してください。_"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "このセッションでは `--once` は使えません。`/model <name>` を使い、ターンの後で元に戻してください。"
+    local_next_turn: "次のメッセージから適用されます。"
   agents:
 
     header: "🤖 **アクティブなエージェントとタスク**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast は Priority Processing をサポートする OpenAI モデルでのみ利用できます。"
-    status: "⚡ Priority Processing\n\n現在のモード: `{mode}`\n\n_使い方:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ 不明な引数: `{arg}`\n\n**有効なオプション:** normal、fast、status"
+    not_supported: "⚡ /fast には、プロバイダーが高速ティア (OpenAI Priority Processing や Anthropic の高速モードなど) を提供するモデルが必要です。/model でそのようなモデルに切り替えてください。"
+    status: "⚡ Priority Processing\n\n現在のモード: `{mode}`\n\n_使い方:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ 不明な引数: `{arg}`\n\n**有効なオプション:** normal、fast、auto、cold、ultrafast、toggle、status、--global"
     saved: "⚡ ✓ Priority Processing: **{label}** (設定に保存しました)\n_(次のメッセージから有効)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (このセッションのみ)"
     label_fast: "高速"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — セッションの最初のターンのみ高速"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast、料金 6 倍"
     ultrafast_not_supported: "⚡ このアカウントまたはルートでは `{model}` の Ultrafast は利用できません。"
+  setup_wizard:
+
+    configure_in_config: "  {platform} は config.yaml の platforms.{key} で設定します"
   footer:
 
     status: "📎 ランタイムフッター: **{state}**\nフィールド: `{fields}`\nプラットフォーム: `{platform}`"
@@ -244,20 +247,20 @@ gateway:
     no_output: "(出力なし)"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
-      status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
-      handoff: "Result: {summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      completed: "完了"
+      gave_up: "断念（再試行回数を使い切りました）"
+      crashed: "クラッシュ（ワーカーが終了、ディスパッチャーが再試行します）"
+      timed_out: "タイムアウト（ディスパッチャーが再試行します）"
+      blocked: "ブロック中（対応が必要です）"
+      review_requested: "レビューに引き渡し済み（実装は完了しています）"
+      changes_requested: "レビューで変更を要求（BLOCK、実装は未承認です）"
+      block_loop_detected: "ブロックの繰り返しによりトリアージへ回送（オーケストレーション側の対応が必要です）"
+      status_default: "ステータス変更"
+      status_joiner: "、"
+      message: "[kanban] タスク {task_id}: {status}。\nタイトル: {title}\n担当: @{assignee}\nボード: {board}\n\n結果を確認するか、次の手順を決めてください。"
+      handoff: "結果: {summary}"
+      review_detail: "レビューのフィードバック: {reason}\n既存のカードと現在のレビュー実行を確認し、作業を同じ実装タスクに戻してください。この BLOCK を承認とみなさず、重複するタスクも作成しないでください。"
+      guidance: "これはタスクの状態を知らせる自動通知であり、タスクを再度分解する依頼ではありません。フォローアップのタスクを作成する前に現在のボードを確認し、すでに存在するタスクやグラフを作り直さないでください。"
     ping:
 
       completed: "✔ {head} 完了 — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "利用可能なコマンドを表示（/help skills でスキルコマンド一覧、/help <text> で絞り込み）"
   palette:
 
-    description: "ファジー検索のコマンドパレットを開く（Ctrl+P でも可）"
+    description: "ファジー検索のコマンドパレットを開く"
   restart:
 
     description: "実行中の処理を完了させてからゲートウェイを安全に再起動"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "アーカイブして削除 → {ref}"
     sweep_archived_kept: "アーカイブ済み、保持 ({reason}) → {ref}"
     discarded: "ワークツリーを削除し、変更を破棄しました: {path}"
+  update:
+
+    held_icebath: "{mark} このインストールから他の icebath プロセスが実行中です（{count}）:"
+    held_venv: "{mark} このインストールの Python 環境からプロセスが実行中です（{count}）:"
+    held_forced: "  → {flag} が指定されているため、そのまま更新します。"
+    held_refused: "  それらを終了して `icebath update` をもう一度実行するか、{flag} を付けてそのまま更新してください。"
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "ローカルモデルのコンテキストウィンドウが小さすぎて完了できませんでした。コンテキストサイズを増やすか、より大きなモデルを使用してください。"
     pending_tool_result: "ツール結果が保留中のままターンが停止し、モデルは後続のテキストを生成しませんでした。`continue` を送信すると要約させることができます。"
     interrupted_during_api_call: "応答を受信する前に、リクエストが呼び出し中に中断されました。`continue` を送信して再試行してください。"
-    max_iterations_reached: "最終回答の前に、ツールイテレーションの上限に達しました。`continue` を送信して続行するか、`max_iterations` を引き上げてください。"
+    max_iterations_reached: "最終回答の前に、ツールイテレーションの上限に達しました。`continue` を送信して続行するか、`agent.max_turns` を引き上げてください。"
     error_near_max_iterations: "最終回答の前、イテレーション上限の付近でエラーが発生しました。上のツール出力を確認してから、`continue` を送信してください。"
     repeated_outer_errors: "繰り返しエラーでターンが失敗し続けたため、無限に再試行せずに早期停止しました。上のエラーを確認してから、`continue` を送信して再試行してください。"
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath は .icebath.md、AGENTS.md、CLAUDE.md、.cursorrules（最初に見つかったもの）からプロジェクトのコンテキストを読み込みます。"
   t178: "サブディレクトリの AGENTS.md ファイルは、エージェントがフォルダーに入るにつれて段階的に検出されます。"
   t179: "コンテキストファイルは 20,000 文字が上限で、先頭と末尾を残すスマートな切り詰めが行われます。"
-  t180: "ブラウザバックエンド: ローカル Chromium、Lightpanda、Browserbase、Browser Use、Firecrawl、さらに組み込みの Camofox。"
-  t181: "Camofox（検出回避 Firefox）は組み込みです: icebath camofox setup で設定します。"
+  t180: "ブラウザバックエンド: ローカル Chromium、Lightpanda、Browserbase、Browser Use、Firecrawl、さらにプラグインとして使える Camofox。"
+  t181: "Camofox（検出回避 Firefox）はプラグインです: icebath plugins install camofox でインストールし、続けて icebath camofox setup を実行します。"
   t182: "browser_exec は複数のブラウザ操作を 1 回の Python 呼び出しで実行します — 移動・抽出・クリックをまとめて。"
   t183: "browser.dialog_policy はページのネイティブダイアログの扱いを決めます: must_respond（エージェントが browser_dialog で応答）、auto_dismiss、auto_accept。"
   t184: "icebath mcp は icebath 組み込みカタログの MCP の対話型ピッカーを開き、キー 1 つでインストールできます。"

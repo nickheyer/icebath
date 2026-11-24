@@ -287,11 +287,11 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 	var accepted []string
 	for _, raw := range items {
 		pattern, ok := raw.(string)
-		if !ok || pystr.Strip(pattern) == "" {
+		if !ok || strings.TrimSpace(pattern) == "" {
 			pkgLog().Warn(fmt.Sprintf("%s: skipping empty/non-string redaction pattern", source))
 			continue
 		}
-		pattern = pystr.Strip(pattern)
+		pattern = strings.TrimSpace(pattern)
 		if _, cerr := pyre.Compile(pattern); cerr != nil {
 			var overflow *pyre.OverflowError
 			if errors.As(cerr, &overflow) {

@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Lines a console prints, kept as plain text for a screen to show
@@ -61,7 +60,7 @@ func (c *capturedLines) text() []string {
 }
 
 // Installed skills with their source, trust and enabled state, the extra sources, the bundles and the trusted projects of the profile
-func skillsHubList(ctx context.Context, rid any, _ map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func skillsHubList(ctx context.Context, rid any, _ map[string]any) (map[string]any, error) {
 	x := skillsHubCLI(ctx)
 	if err := x.Hub.EnsureHubDirs(); err != nil {
 		return nil, err
@@ -148,7 +147,7 @@ func skillsHubList(ctx context.Context, rid any, _ map[string]any, _ *tuihost.Se
 var skillsRunNeedsName = map[string]bool{"uninstall": true, "reset": true, "diff": true, "repair-official": true}
 
 // Runs one skills command the way icebath skills runs it, without its questions, answering what it printed
-func skillsHubRun(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func skillsHubRun(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SkillsHubRun.Params(params)
 	if err != nil {
 		return nil, err
@@ -200,7 +199,7 @@ func skillsHubRun(ctx context.Context, rid any, params map[string]any, _ *tuihos
 }
 
 // Writes a skill bundle through the same save the bundles command uses
-func skillsBundleSave(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func skillsBundleSave(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SkillsBundleSave.Params(params)
 	if err != nil {
 		return nil, err
@@ -222,7 +221,7 @@ func skillsBundleSave(ctx context.Context, rid any, params map[string]any, _ *tu
 }
 
 // Removes a skill bundle
-func skillsBundleDelete(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func skillsBundleDelete(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SkillsBundleDelete.Params(params)
 	if err != nil {
 		return nil, err
@@ -235,7 +234,7 @@ func skillsBundleDelete(ctx context.Context, rid any, params map[string]any, _ *
 }
 
 // Reads the bundles folder again and answers the bundles it found added and removed
-func skillsBundleReload(ctx context.Context, rid any, _ map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func skillsBundleReload(ctx context.Context, rid any, _ map[string]any) (map[string]any, error) {
 	diff, err := skills.NewScope(home.Dir(ctx), nil).ReloadBundles()
 	if err != nil {
 		return nil, err

@@ -27,7 +27,7 @@ func GetActiveProfile(root string) string {
 	if !utf8.Valid(data) {
 		return "default"
 	}
-	name := pystr.Strip(pystr.TranslateNewlines(string(data)))
+	name := strings.TrimSpace(pystr.TranslateNewlines(string(data)))
 	if name == "" {
 		return "default"
 	}
@@ -90,7 +90,7 @@ func GetActiveProfileName(ctx context.Context) string {
 func CurrentProfileName(ctx context.Context) string {
 	if home.Override(ctx) == "" {
 		for _, env := range []string{"ICEBATH_PROFILE_NAME", "ICEBATH_PROFILE"} {
-			if v := pystr.Strip(os.Getenv(env)); v != "" {
+			if v := strings.TrimSpace(os.Getenv(env)); v != "" {
 				return v
 			}
 		}
@@ -100,7 +100,7 @@ func CurrentProfileName(ctx context.Context) string {
 
 // Root named by an exported home, the grandparent of a profile shaped value, defaultRoot when unset
 func ProfileRootForEnvHome(envHome, defaultRoot string) string {
-	envHome = pystr.Strip(envHome)
+	envHome = strings.TrimSpace(envHome)
 	if envHome == "" {
 		return defaultRoot
 	}

@@ -1,6 +1,7 @@
 package kanban
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // SeverityOrder lists diagnostic severities from least to most urgent
@@ -168,15 +170,6 @@ func diagInt(v any) int64 {
 	return n.Int64()
 }
 
-// Python float of a value, raising inside the rule on failure
-func diagFloat(v any) float64 {
-	f, err := pyint.Float(v)
-	if err != nil {
-		diagFail("%s", err.Error())
-	}
-	return f
-}
-
 // Event payload as a dict whether stored decoded or as JSON text, empty otherwise
 func parsePayload(ev any) any {
 	p := diagField(ev, "payload", nil)
@@ -267,7 +260,7 @@ func errorSnippet(lastErr any) string {
 	if !ok {
 		diagFail("last error is %s where text was expected", errchain.Kind(lastErr))
 	}
-	text := pystr.Strip(s)
+	text := strings.TrimSpace(s)
 	if text == "" {
 		return ""
 	}
@@ -345,109 +338,43 @@ func runsNewestFirst(runs []any) []any {
 	return sorted
 }
 
-// Whether an aux slot was user configured, a non auto provider or any model, base_url or api_key
-func auxSlotExplicit(slot any) bool {
-	if !isDict(slot) {
-		return false
-	}
-	text := func(key string) string {
-		v, _ := dictGet(slot, key)
-		if !pyrepr.Truthy(v) {
-			return ""
-		}
-		return pystr.Strip(pyrepr.Str(v))
-	}
-	if provider := pystr.Lower(text("provider")); provider != "" && provider != "auto" {
+// Whether an aux slot was set by hand: a provider other than auto, or any model, address or key
+func auxSlotExplicit(provider string, others ...string) bool {
+	if p := strings.ToLower(strings.TrimSpace(provider)); p != "" && p != "auto" {
 		return true
 	}
-	for _, key := range []string{"model", "base_url", "api_key"} {
-		if text(key) != "" {
+	for _, v := range others {
+		if strings.TrimSpace(v) != "" {
 			return true
 		}
 	}
 	return false
 }
 
-// Whether a main model is visible in the raw config, false when unprovable
-func mainModelVisible(rawConfig any) bool {
-	if !isDict(rawConfig) {
-		return false
-	}
-	modelCfg, _ := dictGet(rawConfig, "model")
-	strOf := func(v any) string {
-		if !pyrepr.Truthy(v) {
-			return ""
-		}
-		return pystr.Strip(pyrepr.Str(v))
-	}
-	if isDict(modelCfg) {
-		provider, _ := dictGet(modelCfg, "provider")
-		var model any
-		for _, key := range []string{"default", "model", "name"} {
-			if v, _ := dictGet(modelCfg, key); pyrepr.Truthy(v) {
-				model = v
-				break
-			}
-		}
-		return strOf(provider) != "" && strOf(model) != ""
-	}
-	return strOf(modelCfg) != ""
+// TriageAux says whether the triage auxiliary models of a profile look configured
+type TriageAux struct {
+	AutoDecompose      bool
+	DecomposerExplicit bool
+	SpecifierExplicit  bool
+	MainModelVisible   bool
 }
 
-// Whether the triage aux paths look configured, nil when no config context is present
-func TriageAuxStatus(config any) any {
-	if !isDict(config) {
-		return nil
+// Triage model status of the profile in ctx from kanban.auto_decompose, the two triage slots and the main model
+func triageAuxFor(ctx context.Context) TriageAux {
+	return TriageAux{
+		AutoDecompose: settings.KanbanAutoDecompose.Get(ctx),
+		DecomposerExplicit: auxSlotExplicit(settings.AuxiliaryKanbanDecomposerProvider.Get(ctx), settings.AuxiliaryKanbanDecomposerModel.Get(ctx),
+			settings.AuxiliaryKanbanDecomposerBaseUrl.Get(ctx), settings.AuxiliaryKanbanDecomposerApiKey.Get(ctx)),
+		SpecifierExplicit: auxSlotExplicit(settings.AuxiliaryTriageSpecifierProvider.Get(ctx), settings.AuxiliaryTriageSpecifierModel.Get(ctx),
+			settings.AuxiliaryTriageSpecifierBaseUrl.Get(ctx), settings.AuxiliaryTriageSpecifierApiKey.Get(ctx)),
+		MainModelVisible: strings.TrimSpace(settings.ModelProvider.Get(ctx)) != "" && strings.TrimSpace(settings.Model.Get(ctx)) != "",
 	}
-	if explicit, _ := dictGet(config, "triage_aux_status"); isDict(explicit) {
-		return explicit
-	}
-	aux, _ := dictGet(config, "auxiliary")
-	kanbanCfg, _ := dictGet(config, "kanban")
-	if !isDict(kanbanCfg) {
-		kanbanCfg = map[string]any{}
-	}
-	_, hasModel := dictGet(config, "model")
-	if !isDict(aux) && !pyrepr.Truthy(kanbanCfg) && !hasModel {
-		return nil
-	}
-	if !isDict(aux) {
-		aux = map[string]any{}
-	}
-	autoDecompose := true
-	if v, ok := dictGet(kanbanCfg, "auto_decompose"); ok {
-		autoDecompose = pyrepr.Truthy(v)
-	}
-	decomposer, _ := dictGet(aux, "kanban_decomposer")
-	specifier, _ := dictGet(aux, "triage_specifier")
-	return pyjson.ObjectOf("auto_decompose", autoDecompose, "decomposer_explicit", auxSlotExplicit(decomposer),
-		"specifier_explicit", auxSlotExplicit(specifier), "main_model_visible", mainModelVisible(config))
 }
 
-// Python int of a value at or above one, the default otherwise
-func diagPositiveInt(value any, def int64) int64 {
-	if _, isBool := value.(bool); !isBool {
-		if n, err := pyint.Of(value); err == nil {
-			if n.Sign() >= 1 {
-				if n.IsInt64() {
-					return n.Int64()
-				}
-				return math.MaxInt64
-			}
-			return def
-		}
-		return def
-	}
-	if value.(bool) {
-		return 1
-	}
-	return def
-}
-
-type diagRule func(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic
+type diagRule func(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic
 
 // Completion blocked for created cards that do not exist, cleared by a later completion or edit
-func ruleHallucinatedCards(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleHallucinatedCards(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	hits := activeHallucinationEvents(events, "completion_blocked_hallucination")
 	if len(hits) == 0 {
 		return nil
@@ -480,17 +407,12 @@ var triageSlots = map[bool]triageSlot{
 }
 
 // Triage task with no usable aux model on its primary slot and no main model to fall back to
-func ruleTriageAuxUnavailable(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleTriageAuxUnavailable(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	if diagField(task, "status", nil) != "triage" {
 		return nil
 	}
-	status := TriageAuxStatus(cfg)
-	if status == nil {
-		return nil
-	}
-	get := func(key string) bool { return pyrepr.Truthy(mustDictGet(status, key, nil)) }
-	autoDecompose, mainVisible := get("auto_decompose"), get("main_model_visible")
-	decomposerExplicit, specifierExplicit := get("decomposer_explicit"), get("specifier_explicit")
+	autoDecompose, mainVisible := cfg.Triage.AutoDecompose, cfg.Triage.MainModelVisible
+	decomposerExplicit, specifierExplicit := cfg.Triage.DecomposerExplicit, cfg.Triage.SpecifierExplicit
 	slot := triageSlots[autoDecompose]
 	primaryExplicit, fallbackExplicit := specifierExplicit, decomposerExplicit
 	if autoDecompose {
@@ -531,7 +453,7 @@ func ruleTriageAuxUnavailable(task any, events, runs []any, now int64, cfg map[s
 }
 
 // Advisory for completion summaries naming task ids that do not resolve
-func ruleProsePhantomRefs(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleProsePhantomRefs(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	hits := activeHallucinationEvents(events, "suspected_hallucinated_references")
 	if len(hits) == 0 {
 		return nil
@@ -548,17 +470,6 @@ func ruleProsePhantomRefs(task any, events, runs []any, now int64, cfg map[strin
 	}}
 }
 
-// failure_threshold with the legacy spawn_failure_threshold alias
-func failureThreshold(cfg map[string]any) any {
-	if v, ok := cfg["failure_threshold"]; ok {
-		return v
-	}
-	if v, ok := cfg["spawn_failure_threshold"]; ok {
-		return v
-	}
-	return 3
-}
-
 var outcomeLabels = map[string]string{"spawn_failed": "spawn", "timed_out": "timeout", "crashed": "crash"}
 
 // Python less than between a failure count and an integer, raising for unorderable values
@@ -573,13 +484,12 @@ func diagLess(v any, threshold int64) bool {
 }
 
 // Consecutive failures at or past the threshold, or a terminal provider trip after one attempt
-func ruleRepeatedFailures(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleRepeatedFailures(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	switch diagField(task, "status", nil) {
 	case "done", "archived", "running":
 		return nil
 	}
-	threshold := diagPositiveInt(failureThreshold(cfg), 3)
-	failureLimit := diagPositiveInt(cfg["failure_limit"], threshold)
+	threshold, failureLimit := cfg.FailureThreshold, cfg.FailureLimit
 	failuresValue := firstField(task, "consecutive_failures", "spawn_failures", 0)
 	terminalTrip := latestGaveUpIsTerminalProvider(events)
 	if !terminalTrip && (failuresValue == nil || diagLess(failuresValue, threshold)) {
@@ -647,7 +557,7 @@ func ruleRepeatedFailures(task any, events, runs []any, now int64, cfg map[strin
 }
 
 // Trailing crashed run outcomes at or past the crash threshold, deferring to the unified rule
-func ruleRepeatedCrashes(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleRepeatedCrashes(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	switch diagField(task, "status", nil) {
 	case "done", "archived", "running":
 		return nil
@@ -656,14 +566,10 @@ func ruleRepeatedCrashes(task any, events, runs []any, now int64, cfg map[string
 	if !pyrepr.Truthy(current) {
 		current = int64(0)
 	}
-	if !diagLess(current, diagInt(failureThreshold(cfg))) {
+	if !diagLess(current, cfg.FailureThreshold) {
 		return nil
 	}
-	var crashThreshold any = 2
-	if v, ok := cfg["crash_threshold"]; ok {
-		crashThreshold = v
-	}
-	threshold := diagInt(crashThreshold)
+	threshold := cfg.CrashThreshold
 	var consecutive int64
 	var lastErr any
 	for _, r := range runsNewestFirst(runs) {
@@ -720,7 +626,7 @@ func graphList(graph any, key string) []any {
 }
 
 // Review required sticky block whose waiting children depend on the blocked implementation
-func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	if diagField(task, "status", nil) != "blocked" {
 		return nil
 	}
@@ -738,11 +644,10 @@ func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg m
 	if !pyrepr.Truthy(reasonValue) {
 		reasonValue = ""
 	}
-	reason := pystr.Strip(pyrepr.Str(reasonValue))
-	if !strings.HasPrefix(pystr.Lower(reason), "review-required:") {
+	reason := strings.TrimSpace(pyrepr.Str(reasonValue))
+	if !strings.HasPrefix(strings.ToLower(reason), "review-required:") {
 		return nil
 	}
-	graph := cfg["_graph"]
 	if !isDict(graph) {
 		return nil
 	}
@@ -790,11 +695,10 @@ func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg m
 }
 
 // Running card with a direct parent that is not done or archived
-func ruleRunningWithOpenParents(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
+func ruleRunningWithOpenParents(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	if diagField(task, "status", nil) != "running" {
 		return nil
 	}
-	graph := cfg["_graph"]
 	if !isDict(graph) {
 		return nil
 	}
@@ -844,17 +748,9 @@ func ruleRunningWithOpenParents(task any, events, runs []any, now int64, cfg map
 	}}
 }
 
-// Config value of key, the default when absent
-func cfgOr(cfg map[string]any, key string, def any) any {
-	if v, ok := cfg[key]; ok {
-		return v
-	}
-	return def
-}
-
 // Blocked past the stale hours with no comment or unblock since the last block
-func ruleStuckInBlocked(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
-	hours := diagFloat(cfgOr(cfg, "blocked_stale_hours", 24))
+func ruleStuckInBlocked(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
+	hours := cfg.BlockedStale.Hours()
 	if diagField(task, "status", nil) != "blocked" {
 		return nil
 	}
@@ -884,9 +780,9 @@ func ruleStuckInBlocked(task any, events, runs []any, now int64, cfg map[string]
 }
 
 // Blocked after unblocked cycles at or past the threshold within the sliding window
-func ruleBlockUnblockCycling(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
-	threshold := diagPositiveInt(cfg["block_cycle_threshold"], 3)
-	windowSeconds := diagFloat(cfgOr(cfg, "block_cycle_window_seconds", 24*3600))
+func ruleBlockUnblockCycling(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
+	threshold := cfg.BlockCycleThreshold
+	windowSeconds := cfg.BlockCycleWindow.Seconds()
 	cutoff := float64(now) - windowSeconds
 	var cycles, initialBlocked, lastCycleBlocked int64
 	seenUnblock := false
@@ -957,8 +853,8 @@ func ageSeverity(age, threshold float64) string {
 }
 
 // Assigned unclaimed ready task left waiting past the stranded threshold
-func ruleStrandedInReady(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
-	thresholdSeconds := diagFloat(cfgOr(cfg, "stranded_threshold_seconds", 30*60))
+func ruleStrandedInReady(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
+	thresholdSeconds := cfg.Stranded.Seconds()
 	if diagField(task, "status", nil) != "ready" {
 		return nil
 	}
@@ -973,7 +869,7 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg map[string
 	if !ok {
 		diagFail("task assignee is %s where text was expected", errchain.Kind(assigneeValue))
 	}
-	if pystr.Strip(assignee) == "" {
+	if strings.TrimSpace(assignee) == "" {
 		return nil
 	}
 	lastReady := latestEventTS(events, "created", "promoted", "reclaimed", "unblocked")
@@ -1008,8 +904,8 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg map[string
 }
 
 // Running card whose claim expired past the grace window with no live recorded worker
-func ruleStaleRunning(task any, events, runs []any, now int64, cfg map[string]any) []*Diagnostic {
-	grace := diagFloat(cfgOr(cfg, "stale_running_grace_seconds", 60*60))
+func ruleStaleRunning(task any, events, runs []any, now int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
+	grace := cfg.StaleRunningGrace.Seconds()
 	if diagField(task, "status", nil) != "running" {
 		return nil
 	}
@@ -1106,144 +1002,63 @@ var diagRules = []diagRule{
 	ruleStaleRunning,
 }
 
-// DiagnosticsDefaultConfig is the rule configuration every computation starts from
-func DiagnosticsDefaultConfig() map[string]any {
-	return map[string]any{
-		"failure_threshold":           int64(2),
-		"spawn_failure_threshold":     int64(2),
-		"crash_threshold":             int64(2),
-		"blocked_stale_hours":         int64(24),
-		"stranded_threshold_seconds":  int64(30 * 60),
-		"stale_running_grace_seconds": int64(60 * 60),
-	}
+// DiagnosticsConfig holds the thresholds and profile facts the diagnostics rules read
+type DiagnosticsConfig struct {
+	// Failed runs in a row that raise the repeated failures diagnostic
+	FailureThreshold int64
+	// Failed runs after which the dispatcher blocks a task
+	FailureLimit int64
+	// Crashed runs in a row that raise the repeated crashes diagnostic
+	CrashThreshold int64
+	// Blocked time with no reply that raises the stuck in blocked diagnostic
+	BlockedStale time.Duration
+	// Blocks after an unblock inside the window that raise the cycling diagnostic
+	BlockCycleThreshold int64
+	// Time span the block cycles are counted in
+	BlockCycleWindow time.Duration
+	// Unclaimed ready time that raises the stranded diagnostic
+	Stranded time.Duration
+	// Time past an expired claim that raises the stale running diagnostic
+	StaleRunningGrace time.Duration
+	// Triage model status of the profile
+	Triage TriageAux
 }
 
-// Whether a config names failure_threshold or its legacy alias
-func hasExplicitThreshold(cfg map[string]any) bool {
-	_, a := cfg["failure_threshold"]
-	_, b := cfg["spawn_failure_threshold"]
-	return a || b
-}
-
-// Mapping of a config value as a plain dict, nil when it is not a dict
-func dictOf(v any) map[string]any {
-	switch m := v.(type) {
-	case map[string]any:
-		return m
-	case *pyjson.Object:
-		if m == nil {
-			return nil
-		}
-		out := make(map[string]any, m.Len())
-		for _, k := range m.Keys {
-			out[k], _ = m.Get(k)
-		}
-		return out
+// Diagnostics config of the profile in ctx from the kanban.diagnostics settings, the failure threshold following kanban.failure_limit when unset
+func DiagnosticsConfigFor(ctx context.Context) *DiagnosticsConfig {
+	limit := int64(settings.KanbanFailureLimit.Get(ctx))
+	threshold := limit
+	if n, set := settings.KanbanDiagnosticsFailureThreshold.Lookup(ctx); set {
+		threshold = int64(n)
 	}
-	return nil
-}
-
-// Python dict of a value, raising the ValueError or TypeError dict raises for non mappings
-func pyDictOf(v any) (map[string]any, error) {
-	if m := dictOf(v); m != nil {
-		return m, nil
+	return &DiagnosticsConfig{
+		FailureThreshold:    threshold,
+		FailureLimit:        limit,
+		CrashThreshold:      int64(settings.KanbanDiagnosticsCrashThreshold.Get(ctx)),
+		BlockedStale:        settings.KanbanDiagnosticsBlockedStaleHours.Get(ctx),
+		BlockCycleThreshold: int64(settings.KanbanDiagnosticsBlockCycleThreshold.Get(ctx)),
+		BlockCycleWindow:    settings.KanbanDiagnosticsBlockCycleWindowSeconds.Get(ctx),
+		Stranded:            settings.KanbanDiagnosticsStrandedThresholdSeconds.Get(ctx),
+		StaleRunningGrace:   settings.KanbanDiagnosticsStaleRunningGraceSeconds.Get(ctx),
+		Triage:              triageAuxFor(ctx),
 	}
-	switch x := v.(type) {
-	case string:
-		return nil, &ValueError{fmt.Sprintf("dictionary update sequence element #0 has length %d; 2 is required", pystr.Len(pystr.Slice(x, 0, 1)))}
-	case []any:
-		out := map[string]any{}
-		for i, item := range x {
-			pair, ok := item.([]any)
-			if !ok {
-				return nil, &TypeError{fmt.Sprintf("cannot convert dictionary update sequence element #%d to a sequence", i)}
-			}
-			if len(pair) != 2 {
-				return nil, &ValueError{fmt.Sprintf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))}
-			}
-			out[pyrepr.Str(pair[0])] = pair[1]
-		}
-		return out, nil
-	}
-	return nil, &TypeError{fmt.Sprintf("expected a mapping or a list of key and value pairs, got %s", errchain.Kind(v))}
-}
-
-// Diagnostics config from the kanban section, the threshold following kanban.failure_limit unless overridden
-func ConfigFromKanbanConfig(kanbanCfg map[string]any) (map[string]any, error) {
-	if kanbanCfg == nil {
-		kanbanCfg = map[string]any{}
-	}
-	diagCfg := map[string]any{}
-	if raw := kanbanCfg["diagnostics"]; pyrepr.Truthy(raw) {
-		m, err := pyDictOf(raw)
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range m {
-			diagCfg[k] = v
-		}
-	}
-	if _, ok := diagCfg["failure_limit"]; !ok {
-		diagCfg["failure_limit"] = cfgOr(kanbanCfg, "failure_limit", DiagnosticsDefaultConfig()["failure_threshold"])
-	}
-	if !hasExplicitThreshold(diagCfg) {
-		diagCfg["failure_threshold"] = diagCfg["failure_limit"]
-	}
-	return diagCfg, nil
-}
-
-// Diagnostics config from the full runtime config, carrying kanban, auxiliary and model for the triage rules
-func ConfigFromRuntimeConfig(rawConfig any) (map[string]any, error) {
-	if !pyrepr.Truthy(rawConfig) {
-		rawConfig = map[string]any{}
-	}
-	raw := dictOf(rawConfig)
-	if raw == nil {
-		return map[string]any{}, nil
-	}
-	cfg := map[string]any{}
-	if kanbanCfg := dictOf(raw["kanban"]); kanbanCfg != nil {
-		folded, err := ConfigFromKanbanConfig(kanbanCfg)
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range folded {
-			cfg[k] = v
-		}
-		cfg["kanban"] = raw["kanban"]
-	}
-	for _, key := range []string{"auxiliary", "model"} {
-		if v, ok := raw[key]; ok && v != nil {
-			cfg[key] = v
-		}
-	}
-	return cfg, nil
 }
 
 // Every rule for one task ordered critical first, ties broken by the most recent last seen
-func ComputeTaskDiagnostics(task any, events, runs []any, now *int64, config map[string]any, graph any) []*Diagnostic {
+func ComputeTaskDiagnostics(task any, events, runs []any, now *int64, cfg *DiagnosticsConfig, graph any) []*Diagnostic {
 	nowTS := time.Now().Unix()
 	if now != nil {
 		nowTS = *now
 	}
-	if config == nil {
-		config = map[string]any{}
-	}
-	cfg := DiagnosticsDefaultConfig()
-	for k, v := range config {
-		cfg[k] = v
-	}
-	if graph != nil {
-		cfg["_graph"] = graph
-	}
-	if _, ok := config["failure_limit"]; ok && !hasExplicitThreshold(config) {
-		cfg["failure_threshold"] = diagPositiveInt(config["failure_limit"], 2)
-	}
 	var out []*Diagnostic
 	for _, rule := range diagRules {
 		func() {
-			defer func() { _ = recover() }()
-			out = append(out, rule(task, events, runs, nowTS, cfg)...)
+			defer func() {
+				if r := recover(); r != nil {
+					pkgLog().Warn(fmt.Sprintf("kanban diagnostics: a rule skipped task %s on a malformed value: %v", pyrepr.Str(diagField(task, "id", nil)), r))
+				}
+			}()
+			out = append(out, rule(task, events, runs, nowTS, cfg, graph)...)
 		}()
 	}
 	severityIdx := func(s string) int { return slices.Index(SeverityOrder, s) }

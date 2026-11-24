@@ -1,18 +1,18 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -30,37 +30,27 @@ func SettingsContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-// Settings that took over env names, keyed by the name
-var envSettings = struct {
-	sync.RWMutex
-	byName map[string]settings.Entry
-}{byName: map[string]settings.Entry{}}
+// Setting an env name is the override of, which platform declarations, access checks and setup flows use as its identifier; nil when the name is no setting
+func envSetting(name string) settings.Entry { return settings.ByEnv(name) }
 
-// Records the settings that took over env names, which platform declarations, access checks and setup flows still use as identifiers
-func RegisterEnvSettings(byName map[string]settings.Entry) {
-	envSettings.Lock()
-	defer envSettings.Unlock()
-	for name, e := range byName {
-		envSettings.byName[name] = e
+// Text an env name reads as when it is the override of a setting, for the profile ctx serves: the setting's text, said the other way round for a switch its env name turns off
+func envText(ctx context.Context, e settings.Entry) string {
+	text := SettingText(ctx, e)
+	if on, isBool := e.(*settings.Bool); isBool && on.EnvInvert && text != "" {
+		return strconv.FormatBool(!on.Get(SettingsContext(ctx)))
 	}
+	return text
 }
 
-// Setting that took over an env name, nil when the name is still read from the env
-func envSetting(name string) settings.Entry {
-	envSettings.RLock()
-	defer envSettings.RUnlock()
-	return envSettings.byName[name]
-}
-
-// Items a list setting holds for the profile ctx serves, a comma separated or JSON list text split the same way
+// Items a list setting holds for the profile ctx serves, each trimmed and blank ones dropped; nil for a setting that is no list
 func SettingList(ctx context.Context, e settings.Entry) []string {
-	v, err := settings.Resolve(SettingsContext(ctx), e.Info().Key)
-	if err != nil {
+	list, ok := e.(*settings.List)
+	if !ok {
 		return nil
 	}
 	var out []string
-	for _, item := range config.AsStrings(DecodeJSONListLiteral(v.Value)) {
-		if item = pystr.Strip(item); item != "" {
+	for _, item := range list.Strings(SettingsContext(ctx)) {
+		if item = strings.TrimSpace(item); item != "" {
 			out = append(out, item)
 		}
 	}
@@ -76,16 +66,16 @@ func SettingSet(ctx context.Context, e settings.Entry) map[string]bool {
 	return out
 }
 
-// Value of an env name folded into a setting, the setting's text for the profile ctx serves, folded false for a name still read from the env
+// Value of an env name that is the override of a setting, the setting's text for the profile ctx serves, folded false for a name that is no setting
 func FoldedEnvValue(ctx context.Context, name string) (value string, folded bool) {
 	e := envSetting(name)
 	if e == nil {
 		return "", false
 	}
-	return SettingText(ctx, e), true
+	return envText(ctx, e), true
 }
 
-// Text of a setting the profile ctx serves set: a list comma joined, a switch true or false, empty while only the default applies
+// Text of a setting the profile ctx serves set: a list comma joined, a switch true or false, a length of time in seconds, empty while only the default applies
 func SettingText(ctx context.Context, e settings.Entry) string {
 	sctx := SettingsContext(ctx)
 	if v, err := settings.Resolve(sctx, e.Info().Key); err != nil || v.Source == settings.SourceDefault {
@@ -98,8 +88,20 @@ func SettingText(ctx context.Context, e settings.Entry) string {
 		return t.Get(sctx)
 	case *settings.Int:
 		return strconv.Itoa(t.Get(sctx))
+	case *settings.Float:
+		return strconv.FormatFloat(t.Get(sctx), 'f', -1, 64)
+	case *settings.Duration:
+		return strconv.FormatFloat(t.Get(sctx).Seconds(), 'f', -1, 64)
+	case *settings.String:
+		return t.Get(sctx)
+	case *settings.Path:
+		return t.Get(sctx)
+	case *settings.Secret:
+		return t.Get(sctx)
+	case *settings.List:
+		return strings.Join(SettingList(ctx, t), ",")
 	}
-	return strings.Join(SettingList(ctx, e), ",")
+	return ""
 }
 
 // Allow or deny gate value of the profile ctx serves: the setting a folded name moved to, else the env isolated per profile
@@ -108,7 +110,7 @@ func PlatformGateEnv(ctx context.Context, name, def string) string {
 		return def
 	}
 	if e := envSetting(name); e != nil {
-		if v := pystr.Strip(SettingText(ctx, e)); v != "" {
+		if v := strings.TrimSpace(envText(ctx, e)); v != "" {
 			return v
 		}
 		return def
@@ -118,19 +120,19 @@ func PlatformGateEnv(ctx context.Context, name, def string) string {
 		if !ok {
 			return def
 		}
-		return pystr.Strip(val)
+		return strings.TrimSpace(val)
 	}
 	val := os.Getenv(name)
 	if val == "" {
 		val = def
 	}
-	return pystr.Strip(val)
+	return strings.TrimSpace(val)
 }
 
 // JSON list literal of an allowlist decoded, anything else returned unchanged
 func DecodeJSONListLiteral(raw any) any {
 	s, ok := raw.(string)
-	if !ok || !strings.HasPrefix(pystr.Lstrip(s), "[") {
+	if !ok || !strings.HasPrefix(strings.TrimLeftFunc(s, unicode.IsSpace), "[") {
 		return raw
 	}
 	loaded, err := pyjson.Loads(s)
@@ -150,34 +152,15 @@ func ExtraOrSecret(ctx context.Context, extra map[string]any, key, env string, d
 		if err != nil {
 			return nil, err
 		}
-		if pystr.Strip(val) != "" {
+		if strings.TrimSpace(val) != "" {
 			return val, nil
 		}
 	}
 	value := extra[key]
-	if s, isStr := value.(string); value == nil || (blankIsUnset && isStr && pystr.Strip(s) == "") {
+	if s, isStr := value.(string); value == nil || (blankIsUnset && isStr && strings.TrimSpace(s) == "") {
 		return def, nil
 	}
 	return value, nil
-}
-
-// Env setter for YAML config hooks that never overrides an explicit env and never writes under a secondary scope
-func YAMLEnvSetter(ctx context.Context) func(name string, value any) {
-	skip := profileScoped(ctx)
-	return func(name string, value any) {
-		if value == nil || skip || os.Getenv(name) != "" {
-			return
-		}
-		if list, ok := value.([]any); ok {
-			parts := make([]string, len(list))
-			for i, v := range list {
-				parts[i] = pyrepr.Str(v)
-			}
-			os.Setenv(name, strings.Join(parts, ","))
-			return
-		}
-		os.Setenv(name, pyrepr.Str(value))
-	}
 }
 
 // Failure envelope of a standalone sender, wired by the message tools package
@@ -194,50 +177,6 @@ func SendError(message any) map[string]any {
 // Active profile's adapter of the in process gateway for a platform, wired by the message tools package
 var SendMessageSendersLiveAdapter func(ctx context.Context, platform Platform) PlatformAdapter
 
-// One YAML key bridged to an env var by its kind, lower, str, csv or json
-type YAMLBridgeRow struct {
-	Key, Env, Kind string
-}
-
-// Whether the kind applies to the key of the config and the env value it encodes to
-func yamlKind(kind string, cfg map[string]any, key string) (applies bool, encode func(any) (any, error)) {
-	_, present := cfg[key]
-	switch kind {
-	case "lower":
-		return present, func(v any) (any, error) { return pystr.Lower(pyrepr.Str(v)), nil }
-	case "str":
-		v := cfg[key]
-		return v != nil && !pyrepr.Equal(v, ""), func(v any) (any, error) { return pyrepr.Str(v), nil }
-	case "csv":
-		return cfg[key] != nil, func(v any) (any, error) { return v, nil }
-	case "json":
-		return present, func(v any) (any, error) { return pyjson.Dumps(v) }
-	}
-	panic(&PyError{"KeyError", pyrepr.Repr(kind)})
-}
-
-// Seeds each matching YAML value into the returned extra and bridges it to env, nil when nothing matched
-func ApplyYAMLBridge(ctx context.Context, cfg map[string]any, spec []YAMLBridgeRow) (map[string]any, error) {
-	setEnv := YAMLEnvSetter(ctx)
-	seeded := map[string]any{}
-	for _, row := range spec {
-		applies, encode := yamlKind(row.Kind, cfg, row.Key)
-		if !applies {
-			continue
-		}
-		seeded[row.Key] = cfg[row.Key]
-		encoded, err := encode(cfg[row.Key])
-		if err != nil {
-			return nil, err
-		}
-		setEnv(row.Env, encoded)
-	}
-	if len(seeded) == 0 {
-		return nil, nil
-	}
-	return seeded, nil
-}
-
 // One env var seeded into an extra key, Conv nil keeping the stripped string and a ValueError skipping it
 type EnvSeedRow struct {
 	Env, Key string
@@ -252,7 +191,7 @@ func SeedExtraFromEnv(ctx context.Context, spec []EnvSeedRow, homeEnv, homeDefau
 		if err != nil {
 			return nil, err
 		}
-		raw := pystr.Strip(val)
+		raw := strings.TrimSpace(val)
 		if raw == "" {
 			continue
 		}
@@ -273,7 +212,7 @@ func SeedExtraFromEnv(ctx context.Context, spec []EnvSeedRow, homeEnv, homeDefau
 		if err != nil {
 			return nil, err
 		}
-		chat := pystr.Strip(val)
+		chat := strings.TrimSpace(val)
 		if chat == "" {
 			chat = homeDefault
 		}
@@ -296,7 +235,7 @@ func EnvIsConnected(names ...string) func(ctx context.Context, cfg *PlatformConf
 			if err != nil {
 				return false, err
 			}
-			if pystr.Strip(val) == "" {
+			if strings.TrimSpace(val) == "" {
 				return false, nil
 			}
 		}
@@ -328,19 +267,21 @@ func CoercePort(value any, def int) int {
 	return int(n.Int64())
 }
 
-// Host and port the api_server platform binds, platform extra winning over the API_SERVER env fallbacks
-func APIServerListenAddress(extra map[string]any) (any, int) {
+// Host and port the api_server platform binds, platform extra winning over API_SERVER_HOST and API_SERVER_PORT of the profile ctx serves
+func APIServerListenAddress(ctx context.Context, extra map[string]any) (any, int) {
+	sctx := SettingsContext(ctx)
+	lookup := config.ProfileEnvLookup(sctx, home.Dir(sctx))
 	host, ok := extra["host"]
 	if !ok {
 		host = "127.0.0.1"
-		if v, set := os.LookupEnv("API_SERVER_HOST"); set {
+		if v, set := lookup("API_SERVER_HOST"); set {
 			host = v
 		}
 	}
 	rawPort, ok := extra["port"]
 	if !ok || rawPort == nil {
 		rawPort = "8642"
-		if v, set := os.LookupEnv("API_SERVER_PORT"); set {
+		if v, set := lookup("API_SERVER_PORT"); set {
 			rawPort = v
 		}
 	}

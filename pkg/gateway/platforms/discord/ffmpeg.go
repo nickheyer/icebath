@@ -1,21 +1,25 @@
 package discord
 
 import (
+	"strings"
+
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Repo wide ffmpeg discovery, empty when not found
 var sharedFindFFmpeg = media.FindFFmpegBinary
 
-// Ffmpeg command honoring FFMPEG_PATH, the shared discovery and Windows winget installs
-func resolveFFmpegExecutable() string {
-	if explicit := pystr.Strip(os.Getenv("FFMPEG_PATH")); explicit != "" {
+// Ffmpeg command from discord.ffmpeg_path, else the shared discovery and Windows winget installs
+func resolveFFmpegExecutable(ctx context.Context) string {
+	if explicit := strings.TrimSpace(settings.DiscordFfmpegPath.Get(gateway.SettingsContext(ctx))); explicit != "" {
 		return pypath.Expandvars(pypath.Expanduser(explicit))
 	}
 	if discovered := sharedFindFFmpeg(); discovered != "" {

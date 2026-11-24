@@ -1,10 +1,11 @@
 package gateway
 
 import (
+	"strings"
+
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type notExplicitMarker struct{}
@@ -41,14 +42,14 @@ func RegexStrippedParser(pattern string) func(ref string) any {
 		if ok, err := full.MatchString(ref); err != nil || !ok {
 			return nil
 		}
-		stripped := pystr.Strip(ref)
+		stripped := strings.TrimSpace(ref)
 		return &TargetRefParse{ChatID: &stripped}
 	}
 }
 
 // Stripped reference as an explicit chat id whenever it is non empty
 func ParseNonempty(ref string) any {
-	stripped := pystr.Strip(ref)
+	stripped := strings.TrimSpace(ref)
 	if stripped == "" {
 		return nil
 	}

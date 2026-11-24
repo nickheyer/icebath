@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Compressor built straight from constructor options over the shipped defaults, quiet
@@ -52,15 +52,14 @@ func neutralSession(edit func(*ContextCompressorOptions)) (*AIAgent, *ContextCom
 // First turn sync of a session, which always applies the config
 func syncLiveCompression(t *testing.T, a *AIAgent, cfg map[string]any) {
 	t.Helper()
-	if err := a.ApplyLiveCompressionConfig(context.Background(), cfg); err != nil {
+	if err := a.ApplyLiveCompressionConfig(settings.WithFrozen(context.Background(), cfg)); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// Shipped compression threshold_tokens default
+// Registry compression threshold_tokens default
 func defaultCap() any {
-	v, _ := config.CfgGet(map[string]any(config.Defaults()), "compression", "threshold_tokens")
-	return v
+	return settings.CompressionThresholdTokens.DefaultValue()
 }
 
 // Trigger under the shipped default cap
@@ -272,7 +271,7 @@ func TestRemovingCodexNativeThresholdRestoresTheAutomaticOne(t *testing.T) {
 func TestApplyLiveCompressionConfigIsSelfContained(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := liveTestAgent("unset-test-model", "", "", nil)
-	if err := a.ApplyLiveCompressionConfig(context.Background(), map[string]any{"compression": map[string]any{"enabled": true}}); err != nil {
+	if err := a.ApplyLiveCompressionConfig(settings.WithFrozen(context.Background(), map[string]any{"compression": map[string]any{"enabled": true}})); err != nil {
 		t.Fatal(err)
 	}
 	if !a.compressionEnabled || a.codexResponsesNativeCompaction {

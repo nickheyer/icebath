@@ -147,7 +147,7 @@ func buildSwitchResult(ctx context.Context, st *modelSwitch) ModelSwitchResult {
 	res.WarningMessage = st.Validation.Message
 	res.RequestOverrides = map[string]any{}
 	r := modelsResolver(ctx)
-	if cp := r.getNamedCustomProvider(st.TargetProvider, r.cfg, true); cp != nil {
+	if cp := r.getNamedCustomProvider(st.TargetProvider, r.providers(), true); cp != nil {
 		for k, v := range customProviderRequestOverrides(cp) {
 			res.RequestOverrides[k] = v
 		}

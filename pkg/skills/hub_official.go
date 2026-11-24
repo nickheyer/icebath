@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var indexIDPrefixes = []string{"skills-sh/", "skills.sh/", "official/", "github/", "clawhub/"}
@@ -46,7 +45,7 @@ func entryProvider(entry any) string {
 	if !pyrepr.Truthy(extra) {
 		extra = pyjson.NewObject()
 	}
-	return pystr.Lower(pyrepr.Str(pyGet(extra, "provider", "")))
+	return strings.ToLower(pyrepr.Str(pyGet(extra, "provider", "")))
 }
 
 const (
@@ -95,7 +94,7 @@ func officialBundle(relID string, files []BundleFile) *SkillBundle {
 func (o *OptionalSkillSource) Search(ctx context.Context, query string, limit int) (out []SkillMeta, err error) {
 	defer hubRecover(&err)
 	results := []SkillMeta{}
-	ql := pystr.Lower(query)
+	ql := strings.ToLower(query)
 	local := map[string]bool{}
 	for _, m := range o.scanAll() {
 		local[m.Identifier[strings.Index(m.Identifier, "/")+1:]] = true
@@ -110,7 +109,7 @@ func (o *OptionalSkillSource) Search(ctx context.Context, query string, limit in
 		remote := slices.Clone(o.listRemoteSkillDirs(ctx).Keys)
 		slices.Sort(remote)
 		for _, rel := range remote {
-			if local[rel] || (ql != "" && !strings.Contains(pystr.Lower(rel), ql)) {
+			if local[rel] || (ql != "" && !strings.Contains(strings.ToLower(rel), ql)) {
 				continue
 			}
 			results = append(results, o.remoteMeta(rel))
@@ -364,7 +363,7 @@ func upstreamPointerFromContent(content []byte) (repo, upath string, ok bool) {
 		if !has {
 			v = ""
 		}
-		return strings.Trim(pystr.Strip(pyrepr.Str(v)), "/")
+		return strings.Trim(strings.TrimSpace(pyrepr.Str(v)), "/")
 	}
 	repo, upath = field("repo"), field("path")
 	if repo == "" || strings.Count(repo, "/") != 1 || upath == "" {
@@ -512,7 +511,7 @@ func (x *IndexSource) Search(ctx context.Context, query string, limit int) ([]Sk
 func (x *IndexSource) SearchProvider(ctx context.Context, query string, limit int, providerFilter string) (out []SkillMeta, err error) {
 	defer hubRecover(&err)
 	skills := x.skills(ctx)
-	if want := pystr.Lower(pystr.Strip(providerFilter)); want != "" {
+	if want := strings.ToLower(strings.TrimSpace(providerFilter)); want != "" {
 		kept := []any{}
 		for _, s := range skills {
 			if entryProvider(s) == want {
@@ -524,28 +523,28 @@ func (x *IndexSource) SearchProvider(ctx context.Context, query string, limit in
 	if len(skills) == 0 {
 		return []SkillMeta{}, nil
 	}
-	if pystr.Strip(query) == "" {
+	if strings.TrimSpace(query) == "" {
 		out = []SkillMeta{}
 		for _, s := range pyHeadAny(skills, limit) {
 			out = append(out, indexToMeta(s))
 		}
 		return out, nil
 	}
-	ql := pystr.Lower(query)
+	ql := strings.ToLower(query)
 	type scored struct {
 		rank, i int
 		s       any
 	}
 	var hits []scored
 	for i, s := range skills {
-		name := pystr.Lower(pyrepr.Str(pyGet(s, "name", "")))
+		name := strings.ToLower(pyrepr.Str(pyGet(s, "name", "")))
 		provider := entryProvider(s)
 		var tags []string
 		for _, t := range pyIterate(pyGet(s, "tags", []any{})) {
-			tags = append(tags, pystr.Lower(pyrepr.Str(t)))
+			tags = append(tags, strings.ToLower(pyrepr.Str(t)))
 		}
-		hay := strings.Join([]string{name, pystr.Lower(pyrepr.Str(pyGet(s, "description", ""))), strings.Join(tags, " "),
-			pystr.Lower(pyrepr.Str(pyGet(s, "identifier", ""))), provider}, " ")
+		hay := strings.Join([]string{name, strings.ToLower(pyrepr.Str(pyGet(s, "description", ""))), strings.Join(tags, " "),
+			strings.ToLower(pyrepr.Str(pyGet(s, "identifier", ""))), provider}, " ")
 		if !strings.Contains(hay, ql) {
 			continue
 		}

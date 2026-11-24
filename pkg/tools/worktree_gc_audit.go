@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -91,12 +93,12 @@ func gcDirtySplit(path string) (bool, []string) {
 	}
 	var lines, untracked []string
 	for _, line := range strings.Split(r.Stdout, "\n") {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		lines = append(lines, line)
 		if strings.HasPrefix(line, "??") {
-			untracked = append(untracked, pystr.Strip(pystr.Slice(line, 3, pystr.Len(line))))
+			untracked = append(untracked, strings.TrimSpace(pystr.Slice(line, 3, pystr.Len(line))))
 		}
 	}
 	if len(untracked) == len(lines) {
@@ -214,7 +216,7 @@ func AuditExternalTrees(repoRoot string) ([]ExternalTreeRecord, error) {
 		records = append(records, ExternalTreeRecord{Path: path, Branch: branch, Locked: locked, Missing: statErr != nil})
 	}
 	for _, line := range strings.Split(r.Stdout, "\n") {
-		line = pystr.Rstrip(line)
+		line = strings.TrimRightFunc(line, unicode.IsSpace)
 		switch {
 		case line == "":
 			flush()
@@ -260,7 +262,7 @@ func PruneMissingRegistrations(repoRoot string, dryRun bool) ([]string, error) {
 		return nil, err
 	}
 	if r.Returncode != 0 {
-		return []string{"failed to prune stale registrations: " + pystr.Strip(r.Stderr)}, nil
+		return []string{"failed to prune stale registrations: " + strings.TrimSpace(r.Stderr)}, nil
 	}
 	for _, s := range stale {
 		actions = append(actions, "pruned stale registration "+s.Path)
@@ -295,7 +297,7 @@ func AuditWorktrees(ctx context.Context, repoRoot string, withSizes bool, olderT
 		ageDays := now.Sub(st.ModTime()).Seconds() / 86400.0
 		branch := ""
 		if r, err := gcGit([]string{"branch", "--show-current"}, path, 5*time.Second); err == nil {
-			branch = pystr.Strip(r.Stdout)
+			branch = strings.TrimSpace(r.Stdout)
 		}
 		verdict, reason, untracked := gcClassifyTree(repoRoot, path, mergeCache, remoteHeads)
 		if olderThanDays != nil && gcReapVerdicts[verdict] && ageDays < *olderThanDays {
@@ -351,7 +353,7 @@ func ReclaimWorktrees(ctx context.Context, repoRoot string, dryRun bool, records
 			continue
 		}
 		if remove.Returncode != 0 {
-			actions = append(actions, fmt.Sprintf("failed to remove %s: %s", record.Name, pystr.Strip(remove.Stderr)))
+			actions = append(actions, fmt.Sprintf("failed to remove %s: %s", record.Name, strings.TrimSpace(remove.Stderr)))
 			continue
 		}
 		if record.Verdict == "reap-keep-branch" {
@@ -372,7 +374,7 @@ func ReclaimWorktrees(ctx context.Context, repoRoot string, dryRun bool, records
 func gcLines(r *worktreeGitResult) []string {
 	var out []string
 	for _, line := range strings.Split(r.Stdout, "\n") {
-		if s := pystr.Strip(line); s != "" {
+		if s := strings.TrimSpace(line); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -403,7 +405,7 @@ func AuditBranches(repoRoot string) ([]BranchRecord, error) {
 	active := map[string]bool{}
 	for _, line := range strings.Split(wt.Stdout, "\n") {
 		if strings.HasPrefix(line, "branch refs/heads/") {
-			active[pystr.Strip(strings.TrimPrefix(line, "branch refs/heads/"))] = true
+			active[strings.TrimSpace(strings.TrimPrefix(line, "branch refs/heads/"))] = true
 		}
 	}
 	mergedOut, err := gcGit([]string{"branch", "--merged", upstream, "--format=%(refname:short)"}, repoRoot, 15*time.Second)
@@ -425,8 +427,8 @@ func AuditBranches(repoRoot string) ([]BranchRecord, error) {
 		if err != nil {
 			return BranchRecord{}, err
 		}
-		aheadCount, convErr := strconv.Atoi(pystr.Strip(ahead.Stdout))
-		if pystr.Strip(ahead.Stdout) == "" {
+		aheadCount, convErr := strconv.Atoi(strings.TrimSpace(ahead.Stdout))
+		if strings.TrimSpace(ahead.Stdout) == "" {
 			aheadCount, convErr = 0, nil
 		}
 		if convErr != nil {
@@ -509,7 +511,7 @@ func ReclaimBranches(repoRoot string, dryRun bool, records []BranchRecord) ([]st
 		if r.Returncode == 0 {
 			actions = append(actions, "deleted branch "+record.Name)
 		} else {
-			actions = append(actions, fmt.Sprintf("failed to delete %s: %s", record.Name, pystr.Strip(r.Stderr)))
+			actions = append(actions, fmt.Sprintf("failed to delete %s: %s", record.Name, strings.TrimSpace(r.Stderr)))
 		}
 	}
 	return actions, nil

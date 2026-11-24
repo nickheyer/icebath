@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"path/filepath"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -128,12 +129,12 @@ func botModeAgentHome(a *AIAgent) string {
 
 // Session title from the hint, else the stored title, empty when neither is readable
 func botModeSessionTitle(a *AIAgent) string {
-	if title := pystr.Strip(a.sessionTitleHint); title != "" {
+	if title := strings.TrimSpace(a.sessionTitleHint); title != "" {
 		return title
 	}
 	if a.sessionDB != nil && a.sessionID != "" {
 		if t, _, err := a.sessionDB.GetSessionTitle(context.Background(), a.sessionID); err == nil {
-			return pystr.Strip(t)
+			return strings.TrimSpace(t)
 		}
 	}
 	return ""

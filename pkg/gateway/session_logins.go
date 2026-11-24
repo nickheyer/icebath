@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -136,9 +137,8 @@ func sessionRoutePoolKey(ctx context.Context, a *SessionAuthority, ref SessionRe
 			return provider.RoutePoolKey(env, name, mapText(block, "base_url"), "")
 		}
 	}
-	block, _ := env.Config()["model"].(map[string]any)
-	if name := mapText(block, "provider"); name != "" && name != "auto" {
-		return provider.RoutePoolKey(env, name, mapText(block, "base_url"), "")
+	if name := strings.TrimSpace(settings.ModelProvider.Get(ctx)); name != "" && name != "auto" {
+		return provider.RoutePoolKey(env, name, strings.TrimSpace(settings.ModelBaseURL.Get(ctx)), "")
 	}
 	return ""
 }
@@ -277,6 +277,14 @@ func loginHandlers(c *AuthorityConnection) map[string]controlHandler {
 		"login.convert": loginVerb(c, tuigateway.LoginConvert.Params, true,
 			func(ctx context.Context, _ tuihost.LoginSessions, p tuigateway.LoginConvertParams) (tuigateway.LoginResult, error) {
 				return tuihost.ConvertLogin(ctx, p)
+			}),
+		"login.set_priority": loginVerb(c, tuigateway.LoginSetPriority.Params, true,
+			func(ctx context.Context, _ tuihost.LoginSessions, p tuigateway.LoginSetPriorityParams) (tuigateway.LoginResult, error) {
+				return tuihost.SetLoginPriority(ctx, p)
+			}),
+		"login.reset": loginVerb(c, tuigateway.LoginReset.Params, true,
+			func(ctx context.Context, _ tuihost.LoginSessions, p tuigateway.LoginResetParams) (tuigateway.LoginResetResult, error) {
+				return tuihost.ResetLogin(ctx, p)
 			}),
 		"session.set_login":  loginVerb(c, tuigateway.SessionSetLogin.Params, true, tuihost.SetSessionLogin),
 		"session.login_wait": loginVerb(c, tuigateway.SessionLoginWait.Params, true, tuihost.SessionLoginWait),

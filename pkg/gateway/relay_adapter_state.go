@@ -1,10 +1,11 @@
 package gateway
 
 import (
+	"strings"
+
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Insertion ordered string set evicting its oldest entries first
@@ -124,7 +125,7 @@ func relayCoerceFlag(raw any, def bool) bool {
 	if b, ok := raw.(bool); ok {
 		return b
 	}
-	return relayTruthyFlags[pystr.Lower(pystr.Strip(pyrepr.Str(raw)))]
+	return relayTruthyFlags[strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))]
 }
 
 // Slack sub block of the relay extras, the whole extras when absent
@@ -142,7 +143,7 @@ func (a *RelayAdapter) dmTopLevelThreadsAsSessions() bool {
 
 // Explicit Slack unfurl link and media hints, empty for other platforms or when unset
 func (a *RelayAdapter) slackUnfurlHints(platform string) map[string]bool {
-	if pystr.Lower(platform) != relaySlack {
+	if strings.ToLower(platform) != relaySlack {
 		return nil
 	}
 	extra := a.relaySlackExtra()
@@ -152,7 +153,7 @@ func (a *RelayAdapter) slackUnfurlHints(platform string) map[string]bool {
 		case bool:
 			hints[knob] = v
 		case string:
-			s := pystr.Lower(pystr.Strip(v))
+			s := strings.ToLower(strings.TrimSpace(v))
 			if relayTruthyFlags[s] || relayFalsyFlags[s] {
 				hints[knob] = relayTruthyFlags[s]
 			}

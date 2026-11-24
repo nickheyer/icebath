@@ -6,10 +6,12 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Profile scoped login backends registered by trusted in process plugins
@@ -106,6 +108,7 @@ func RegisterLoginBackendProvider(ctx context.Context, provider LoginBackend, sc
 		return err
 	}
 	if loginBackendRegistry.SnapshotRegistration(name, scope) == provider {
+		registerPluginLoginSwitch(name)
 		return nil
 	}
 	merged := loginBackendRegistry.Merged(ctx, scope)
@@ -117,17 +120,44 @@ func RegisterLoginBackendProvider(ctx context.Context, provider LoginBackend, sc
 	return &providerregistry.ValueError{Message: "login backend name and prefix must be plain string attributes"}
 }
 
+// Guards the check and registration of the switches plugin login backends are turned on with
+var pluginLoginSwitchMu sync.Mutex
+
+// Key of the switch a plugin login backend is turned on with
+func pluginLoginSwitchKey(name string) string { return "vault." + name + ".enabled" }
+
+// Registers the vault.<name>.enabled switch of a plugin login backend, unless a setting, such as the plugin's own settings block, already takes the key
+func registerPluginLoginSwitch(name string) {
+	key := pluginLoginSwitchKey(name)
+	pluginLoginSwitchMu.Lock()
+	defer pluginLoginSwitchMu.Unlock()
+	if settings.FindKey(key) != nil {
+		return
+	}
+	settings.Register(&settings.Bool{Meta: settings.Meta{Key: key, Label: "Plugin logins",
+		Short: "Offer the " + name + " plugin as a source of website logins.", Group: settings.GroupSafety, Order: 1490, Advanced: true}, Literal: true})
+}
+
+// Whether the profile turned a plugin login backend on with vault.<name>.enabled
+func pluginLoginEnabled(ctx context.Context, name string) bool {
+	key := pluginLoginSwitchKey(name)
+	if on, isSwitch := settings.FindKey(key).(*settings.Bool); isSwitch {
+		return on.Get(ctx)
+	}
+	held, err := settings.Resolve(ctx, key)
+	enabled, _ := held.Value.(bool)
+	return err == nil && enabled
+}
+
 // Registered backends the profile turned on with vault.<name>.enabled true, wrapped for the vault tool
-func EnabledPluginLoginBackends(ctx context.Context, cfg map[string]any) []LoginBackend {
+func EnabledPluginLoginBackends(ctx context.Context) []LoginBackend {
 	merged := loginBackendRegistry.Merged(ctx, "")
 	names := merged.Keys()
 	sort.Strings(names)
 	out := []LoginBackend{}
 	for _, name := range names {
 		provider, _ := merged.Get(name)
-		section, isMap := cfg[name].(map[string]any)
-		enabled, isBool := section["enabled"].(bool)
-		if loginNamespaceError(name) == "" && isMap && isBool && enabled {
+		if loginNamespaceError(name) == "" && pluginLoginEnabled(ctx, name) {
 			out = append(out, NewPluginLoginBackend(name, provider))
 		}
 	}

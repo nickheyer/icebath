@@ -132,7 +132,7 @@ func isGatewayRunArgv(command []string) bool {
 // Env carrying this wrapper's icebath launchd job label to the grandchild, empty for other labels
 func childLaunchdLabelEnv(environ map[string]string) map[string]string {
 	for _, variable := range []string{"XPC_SERVICE_NAME", launchdLabelEnv} {
-		if label := pystr.Strip(environ[variable]); IsIcebathLaunchdLabel(label) {
+		if label := strings.TrimSpace(environ[variable]); IsIcebathLaunchdLabel(label) {
 			return map[string]string{launchdLabelEnv: label}
 		}
 	}
@@ -142,7 +142,7 @@ func childLaunchdLabelEnv(environ map[string]string) map[string]string {
 // Argv to exec, adding the external supervisor flag to a launchd wrapped gateway run that lacks it
 func prepareChildCommand(command []string, environ map[string]string) []string {
 	argv := append([]string(nil), command...)
-	xpc := pystr.Strip(environ["XPC_SERVICE_NAME"])
+	xpc := strings.TrimSpace(environ["XPC_SERVICE_NAME"])
 	hasFlag := false
 	for _, a := range argv {
 		hasFlag = hasFlag || a == externalSupervisorFlag

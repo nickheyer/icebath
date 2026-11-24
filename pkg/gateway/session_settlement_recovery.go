@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"time"
@@ -8,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -183,7 +184,7 @@ func completionPayload(row, settled *pyjson.Object, response any, captured *pyjs
 		if reason := textOf("failure_reason"); reason != "" {
 			complete.Set("failure_reason", reason)
 		}
-		if reasoning := pystr.Strip(textOf("last_reasoning")); reasoning != "" {
+		if reasoning := strings.TrimSpace(textOf("last_reasoning")); reasoning != "" {
 			complete.Set("reasoning", reasoning)
 		}
 	}

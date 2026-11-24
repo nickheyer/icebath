@@ -107,12 +107,8 @@ func TestExplicitSetupConsentIsDurableOnlyAfterSuccess(t *testing.T) {
 				return tc.answer
 			})
 			swapSetup(t, &setupStdinIsTTY, func() bool { return true })
-			cfg, err := loadSetupConfig(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
 			var out bytes.Buffer
-			result, err := EnsureGatewayService(ctx, &out, ServiceSetupOptions{Interactive: true, Config: cfg})
+			result, err := EnsureGatewayService(ctx, &out, ServiceSetupOptions{Interactive: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,15 +119,12 @@ func TestExplicitSetupConsentIsDurableOnlyAfterSuccess(t *testing.T) {
 					expected = "install"
 				}
 			}
-			loaded, err := loadSetupConfig(ctx)
+			loaded, err := config.ReadRawConfig(ctx, s.profile)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := loaded["gateway"].(map[string]any)["service_install_choice"]; got != expected {
+			if got, _ := config.CfgGet(loaded, "gateway", "service_install_choice"); got != expected {
 				t.Fatalf("saved choice %v, want %v\n%s", got, expected, out.String())
-			}
-			if got := cfg["gateway"].(map[string]any)["service_install_choice"]; got != expected {
-				t.Fatalf("working choice %v, want %v", got, expected)
 			}
 			if loaded["custom"] != "keep" || result != (tc.answer && !tc.fail) || len(prompts) != 1 {
 				t.Fatalf("custom %v result %v prompts %v\n%s", loaded["custom"], result, prompts, out.String())

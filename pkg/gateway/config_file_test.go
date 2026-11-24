@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func writeBytes(t *testing.T, path string, data string) {
@@ -38,8 +39,9 @@ func TestGatewayFileLayerPreservesUnicodeAndABrokenFileLeavesDefaults(t *testing
 		yamlPath := filepath.Join(h, "config.yaml")
 		writeBytes(t, yamlPath, bom+"gateway:\n  reset_triggers: [\"/départ\"]\nquick_commands:\n  salut:\n    type: prompt\n    prompt: bonjour 世界\n")
 		cfg := loadFull(t, ctx)
-		if !reflect.DeepEqual(cfg.ResetTriggers, []any{"/départ"}) || quickPrompt(t, cfg, "salut") != "bonjour 世界" {
-			t.Fatalf("yaml layer %v %v", cfg.ResetTriggers, cfg.QuickCommands)
+		words := settings.GatewayResetTriggers.Strings(ctx)
+		if !reflect.DeepEqual(words, []string{"/départ"}) || quickPrompt(t, cfg, "salut") != "bonjour 世界" {
+			t.Fatalf("yaml layer %v %v", words, cfg.QuickCommands)
 		}
 		writeBytes(t, yamlPath, bom+"quick_commands: [")
 		if got := loadFull(t, ctx).QuickCommands; len(got) != 0 {
@@ -251,17 +253,23 @@ func TestLoadGatewayConfigNestedGatewaySection(t *testing.T) {
 	if cfg := loadYAML(t, "gateway:\n  multiplex_profiles: true\n  multiplex_profile_allowlist:\n    - worker\n"); cfg.MultiplexProfiles == nil || !*cfg.MultiplexProfiles {
 		t.Fatal("stale allowlist key")
 	}
-	if cfg := loadYAML(t, "gateway:\n  quick_commands:\n    limits:\n      type: exec\n      command: echo ok\n"); !reflect.DeepEqual(cfg.QuickCommands, map[string]any{"limits": map[string]any{"type": "exec", "command": "echo ok"}}) {
+	if cfg := loadYAML(t, "quick_commands:\n  limits:\n    type: exec\n    command: echo ok\ngateway:\n  quick_commands:\n    nested:\n      type: exec\n      command: echo no\n"); !reflect.DeepEqual(cfg.QuickCommands, map[string]any{"limits": map[string]any{"type": "exec", "command": "echo ok"}}) {
 		t.Fatalf("quick commands %v", cfg.QuickCommands)
 	}
-	if cfg := loadYAML(t, "gateway:\n  stt:\n    enabled: false\n"); cfg.STTEnabled {
-		t.Fatal("nested stt")
+	if cfg := loadYAML(t, "stt:\n  enabled: false\n"); cfg.STTEnabled {
+		t.Fatal("stt section")
+	}
+	if cfg := loadYAML(t, "gateway:\n  stt:\n    enabled: false\n"); !cfg.STTEnabled {
+		t.Fatal("gateway.stt is not the stt section")
 	}
 	clearAPIServerEnv(t)
-	if cfg := loadYAML(t, "gateway:\n  api_server:\n    enabled: true\n"); cfg.Platforms[PlatformAPIServer] == nil || !cfg.Platforms[PlatformAPIServer].Enabled {
-		t.Fatal("nested api_server")
+	if cfg := loadYAML(t, "platforms:\n  api_server:\n    enabled: true\n"); cfg.Platforms[PlatformAPIServer] == nil || !cfg.Platforms[PlatformAPIServer].Enabled {
+		t.Fatal("platforms.api_server")
 	}
-	cfg := loadYAML(t, "gateway:\n  api_server:\n    enabled: true\n    port: 8642\n    host: 0.0.0.0\n    key: sekrit\n    model_name: my-icebath\n")
+	if cfg := loadYAML(t, "gateway:\n  api_server:\n    enabled: true\n"); cfg.Platforms[PlatformAPIServer] != nil && cfg.Platforms[PlatformAPIServer].Enabled {
+		t.Fatal("gateway.api_server is not a platform block")
+	}
+	cfg := loadYAML(t, "platforms:\n  api_server:\n    enabled: true\n    extra:\n      port: 8642\n      host: 0.0.0.0\n      key: sekrit\n      model_name: my-icebath\n")
 	if extra := cfg.Platforms[PlatformAPIServer].Extra; extra["port"] != 8642 || extra["host"] != "0.0.0.0" || extra["key"] != "sekrit" || extra["model_name"] != "my-icebath" {
 		t.Fatalf("api server extra %v", extra)
 	}
@@ -272,7 +280,7 @@ func TestLoadGatewayConfigNestedGatewaySection(t *testing.T) {
 	if again := mustGatewayConfig(t, cfg.ToDict()); again.RoomLinkURL == nil || *again.RoomLinkURL != "https://peer.example.test/icebath" {
 		t.Fatal("room link roundtrip")
 	}
-	cfg = loadYAML(t, "gateway:\n  streaming:\n    enabled: false\n  timeout: 120\n  api_server:\n    enabled: true\n")
+	cfg = loadYAML(t, "streaming:\n  enabled: false\ngateway:\n  timeout: 120\nplatforms:\n  api_server:\n    enabled: true\n")
 	if cfg.Streaming.Enabled || !cfg.Platforms[PlatformAPIServer].Enabled {
 		t.Fatalf("non platform keys %+v", cfg.Platforms)
 	}
@@ -283,9 +291,6 @@ func TestLoadGatewayConfigNestedGatewaySection(t *testing.T) {
 	}
 	if loadYAML(t, "gateway:\n  group_sessions_per_user: false\n").GroupSessionsPerUser {
 		t.Fatal("group_sessions_per_user")
-	}
-	if got := loadYAML(t, "gateway:\n  reset_triggers:\n    - /new\n    - /clear\n").ResetTriggers; !reflect.DeepEqual(got, []any{"/new", "/clear"}) {
-		t.Fatalf("reset triggers %v", got)
 	}
 	if loadYAML(t, "gateway:\n  always_log_local: false\n").AlwaysLogLocal {
 		t.Fatal("always_log_local")
@@ -330,11 +335,11 @@ func TestLoadGatewayConfigPlatformLayers(t *testing.T) {
 	if tg := cfg.Platforms[PlatformTelegram]; !reflect.DeepEqual(tg.Extra["allow_from"], []any{"111222333", "444555666"}) || tg.Extra["require_mention"] != true {
 		t.Fatalf("shared key loop %v", tg.Extra)
 	}
-	cfg = loadYAML(t, "unauthorized_dm_behavior: ignore\nwhatsapp:\n  unauthorized_dm_behavior: pair\n")
+	cfg = loadYAML(t, "gateway:\n  unauthorized_dm_behavior: ignore\nwhatsapp:\n  unauthorized_dm_behavior: pair\n")
 	if cfg.UnauthorizedDMBehavior != "ignore" || cfg.Platforms[PlatformWhatsApp].Extra["unauthorized_dm_behavior"] != "pair" {
 		t.Fatalf("unauthorized dm bridge %s %v", cfg.UnauthorizedDMBehavior, cfg.Platforms[PlatformWhatsApp])
 	}
-	cfg = loadYAML(t, "gateway:\n  platforms:\n    telegram:\n      extra:\n        rich_messages: false\n")
+	cfg = loadYAML(t, "platforms:\n  telegram:\n    extra:\n      rich_messages: false\n")
 	if got, ok := cfg.Platforms[PlatformTelegram].Extra["rich_messages"]; !ok || got != false {
 		t.Fatalf("rich messages %v", cfg.Platforms[PlatformTelegram].Extra)
 	}
@@ -347,14 +352,11 @@ func TestMultiplexProfilesConfigSpellings(t *testing.T) {
 		}
 		return *cfg.MultiplexProfiles
 	}
-	if got := multiplexed(loadYAML(t, "multiplex_profiles: true\n")); got != true {
-		t.Fatalf("config true: %v", got)
-	}
 	if got := multiplexed(loadYAML(t, "gateway:\n  multiplex_profiles: true\n")); got != true {
-		t.Fatalf("nested under gateway: %v", got)
+		t.Fatalf("under gateway: %v", got)
 	}
-	if got := multiplexed(loadYAML(t, "multiplex_profiles: false\ngateway:\n  multiplex_profiles: true\n")); got != false {
-		t.Fatalf("explicit top level false: %v", got)
+	if got := multiplexed(loadYAML(t, "multiplex_profiles: true\ngateway:\n  multiplex_profiles: false\n")); got != false {
+		t.Fatalf("only gateway.multiplex_profiles counts: %v", got)
 	}
 }
 

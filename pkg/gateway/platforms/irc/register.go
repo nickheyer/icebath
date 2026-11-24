@@ -1,13 +1,15 @@
 package irc
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Env var, extra key and conversion of every IRC value seeded from an env only setup
@@ -20,7 +22,6 @@ var envSeedKeys = []gateway.EnvSeedRow{
 		return n, err
 	}},
 	{Env: "IRC_NICKNAME", Key: "nickname"},
-	{Env: "IRC_USE_TLS", Key: "use_tls", Conv: func(raw string) (any, error) { return truthyValues[pystr.Lower(raw)], nil }},
 	{Env: "IRC_SERVER_PASSWORD", Key: "server_password"},
 	{Env: "IRC_NICKSERV_PASSWORD", Key: "nickserv_password"},
 }
@@ -56,7 +57,7 @@ func envEnablement(ctx context.Context) map[string]any {
 		if err != nil {
 			panic(err)
 		}
-		return pystr.Strip(val)
+		return strings.TrimSpace(val)
 	}
 	server, channel := read("IRC_SERVER"), read("IRC_CHANNEL")
 	if server == "" || channel == "" {
@@ -121,7 +122,7 @@ func (ircPlatformPlugin) Register(ctx *plugins.Context) error {
 			"standalone_sender_fn":   standaloneSend,
 			"allowed_users_env":      "IRC_ALLOWED_USERS",
 			"allow_all_env":          "IRC_ALLOW_ALL_USERS",
-			"max_message_length":     450,
+			"max_message_length":     settings.IrcMaxMessageLength.Default,
 			"emoji":                  "💬",
 			"pii_safe":               false,
 			"allow_update_command":   true,

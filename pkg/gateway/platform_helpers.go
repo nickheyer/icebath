@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"log/slog"
@@ -298,7 +300,7 @@ func pyreSub(re *regexp2.Regexp, text, repl string) string {
 
 // Label then the bare http target on its own line, the label alone for other targets
 func keepLinkTarget(m regexp2.Match) string {
-	label, target := pystr.Strip(m.GroupByNumber(1).String()), pystr.Strip(m.GroupByNumber(2).String())
+	label, target := strings.TrimSpace(m.GroupByNumber(1).String()), strings.TrimSpace(m.GroupByNumber(2).String())
 	if hit, _ := httpTargetRE.FindStringMatch(target); hit == nil || hit.RuneIndex != 0 {
 		return m.GroupByNumber(1).String()
 	}
@@ -321,7 +323,7 @@ func StripMarkdown(text string, keepLinkTargets bool) string {
 	if err != nil {
 		panic(err)
 	}
-	return pystr.Strip(pyreSub(newlineSqueezeRE, text, "\n\n"))
+	return strings.TrimSpace(pyreSub(newlineSqueezeRE, text, "\n\n"))
 }
 
 // Default cap on tracked threads of a platform tracker
@@ -490,19 +492,19 @@ func RedactPhone(phone string) string {
 }
 
 // Whether the line could be a table data row
-func IsTableRow(line string) bool { return strings.Contains(pystr.Strip(line), "|") }
+func IsTableRow(line string) bool { return strings.Contains(strings.TrimSpace(line), "|") }
 
 // Stripped cells of a markdown table row
 func SplitMarkdownTableRow(line string) []string { return splitTableRow(line) }
 
 // Cells between the optional outer pipes of a table row, each stripped
 func splitTableRow(row string) []string {
-	s := pystr.Strip(row)
+	s := strings.TrimSpace(row)
 	s = strings.TrimPrefix(s, "|")
 	s = strings.TrimSuffix(s, "|")
 	cells := strings.Split(s, "|")
 	for i, c := range cells {
-		cells[i] = pystr.Strip(c)
+		cells[i] = strings.TrimSpace(c)
 	}
 	return cells
 }
@@ -562,7 +564,7 @@ func ConvertTableToBullets(text string) string {
 	inFence := false
 	for i := 0; i < len(lines); {
 		line := lines[i]
-		isFenceLine := strings.HasPrefix(pystr.Lstrip(line), "```")
+		isFenceLine := strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), "```")
 		inFence = inFence != isFenceLine
 		if !(inFence || isFenceLine) && strings.Contains(line, "|") && i+1 < len(lines) && pyreMatch(TableSeparatorRE, lines[i+1]) {
 			j := i + 2
@@ -625,7 +627,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 		}
 		var texts []string
 		for _, p := range list {
-			if s, ok := p.(string); ok && pystr.Strip(s) != "" {
+			if s, ok := p.(string); ok && strings.TrimSpace(s) != "" {
 				texts = append(texts, s)
 			}
 		}
@@ -644,7 +646,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 			patterns = append(patterns, d)
 		}
 	case string:
-		text := pystr.Strip(r)
+		text := strings.TrimSpace(r)
 		var loaded any
 		if text == "" {
 			loaded = []any{}
@@ -656,7 +658,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 		} else {
 			for _, line := range pystr.Splitlines(text, false) {
 				for _, part := range strings.Split(line, ",") {
-					patterns = append(patterns, pystr.Strip(part))
+					patterns = append(patterns, strings.TrimSpace(part))
 				}
 			}
 		}
@@ -667,7 +669,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 	}
 	var texts []string
 	for _, p := range patterns {
-		if t := pystr.Strip(pyrepr.Str(p)); t != "" {
+		if t := strings.TrimSpace(pyrepr.Str(p)); t != "" {
 			texts = append(texts, t)
 		}
 	}
@@ -688,10 +690,12 @@ func TextHasUnclosedFence(text string) bool {
 }
 
 // True when an atomic block is a code block
-func IsFenceAtom(text string) bool { return strings.HasPrefix(pystr.Lstrip(text), "```") }
+func IsFenceAtom(text string) bool {
+	return strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "```")
+}
 
 func isPipeRow(line string) bool {
-	s := pystr.Strip(line)
+	s := strings.TrimSpace(line)
 	return strings.HasPrefix(s, "|") && strings.HasSuffix(s, "|")
 }
 
@@ -762,7 +766,7 @@ func SplitMarkdownAtoms(text string) []string {
 	flush := func() {
 		if len(current) > 0 {
 			atom := strings.Join(current, "\n")
-			if pystr.Strip(atom) != "" {
+			if strings.TrimSpace(atom) != "" {
 				atoms = append(atoms, atom)
 			}
 			current = current[:0]
@@ -780,7 +784,7 @@ func SplitMarkdownAtoms(text string) []string {
 			flush()
 			inFence = true
 			current = append(current, line)
-		case pystr.Strip(line) == "":
+		case strings.TrimSpace(line) == "":
 			flush()
 		default:
 			if len(current) > 0 && isPipeRow(current[len(current)-1]) != isPipeRow(line) {
@@ -1064,7 +1068,7 @@ func PlatformHTTPClient(ctx context.Context, opts PlatformHTTPClientOptions) *ht
 	}
 	env := urlSafetyEnv(ctx)
 	client := tools.NewSSRFSafeClient(env, timeout, follow)
-	limits := PlatformHTTPXLimits()
+	limits := PlatformHTTPXLimits(ctx)
 	switch {
 	case opts.DefaultLimits:
 		limits = DefaultHTTPXLimits()

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"context"
 	"math"
 	"strconv"
@@ -38,7 +40,7 @@ func timestampOr(value any, def *time.Time) *time.Time {
 	case int64:
 		f = float64(v)
 	case string:
-		parsed, err := strconv.ParseFloat(pystr.Strip(v), 64)
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		if err != nil {
 			return def
 		}
@@ -90,7 +92,7 @@ func buildStatusFields(in statusFieldsInput) map[string]any {
 	created, lastActivity := sessionTimestamps(meta)
 	title := ""
 	if s, ok := meta["title"].(string); ok {
-		title = pystr.Strip(s)
+		title = strings.TrimSpace(s)
 	}
 	return map[string]any{
 		"session_id":    in.sessionID,

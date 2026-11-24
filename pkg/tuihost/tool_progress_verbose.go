@@ -1,11 +1,12 @@
 package tuihost
 
 import (
+	"unicode"
+
 	"fmt"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -37,7 +38,7 @@ func capTUIVerboseText(text string) string {
 			start = next + 1
 		}
 	}
-	tail := pystr.Lstrip(string(runes[start:]))
+	tail := strings.TrimLeftFunc(string(runes[start:]), unicode.IsSpace)
 	omittedChars := max(0, len(runes)-utf8.RuneCountInString(tail))
 	omittedLines := strings.Count(string(runes[:start]), "\n")
 	omitted := fmt.Sprintf("%d chars", omittedChars)

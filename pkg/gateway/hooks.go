@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -41,7 +40,7 @@ func registeredAdapterSecretEnv(env *tools.Env) map[string]bool {
 	}
 	out := map[string]bool{}
 	for n := range Registry.requiredEnvNamesIn(home.Key(h)) {
-		upper := pystr.Upper(n)
+		upper := strings.ToUpper(n)
 		for _, suffix := range tools.PlatformSecretEnvSuffixes {
 			if strings.HasSuffix(upper, suffix) {
 				out[upper] = true

@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"unicode"
+
 	"errors"
 	"fmt"
 	"os"
@@ -106,7 +108,7 @@ func codexImagePartToTurnInput(item any) map[string]any {
 	}
 	text := ""
 	if s, ok := ref.(string); ok {
-		text = pystr.Strip(s)
+		text = strings.TrimSpace(s)
 	}
 	if text == "" {
 		return nil
@@ -133,7 +135,7 @@ func codexBuildTurnInput(userInput any) ([]any, string) {
 			if !cxIsObject(item) {
 				keep := item != nil
 				if s, ok := item.(string); ok {
-					keep = pystr.Strip(s) != ""
+					keep = strings.TrimSpace(s) != ""
 				}
 				if keep {
 					texts = append(texts, pyrepr.Str(item))
@@ -155,7 +157,7 @@ func codexBuildTurnInput(userInput any) ([]any, string) {
 				kept = append(kept, t)
 			}
 		}
-		text := pystr.Strip(strings.Join(kept, "\n\n"))
+		text := strings.TrimSpace(strings.Join(kept, "\n\n"))
 		if text == "" && len(images) > 0 {
 			text = "What do you see in this image?"
 		}
@@ -316,7 +318,7 @@ type CodexAppServerSession struct {
 func NewCodexAppServerSession(opts CodexAppServerSessionOptions) *CodexAppServerSession {
 	s := &CodexAppServerSession{
 		cwd: opts.Cwd, codexBin: opts.CodexBin, codexHome: opts.CodexHome, resumeThreadID: opts.ResumeThreadID,
-		model: pystr.Strip(opts.Model), modelProvider: pystr.Strip(opts.ModelProvider),
+		model: strings.TrimSpace(opts.Model), modelProvider: strings.TrimSpace(opts.ModelProvider),
 		developerInstructions: opts.DeveloperInstructions, historySeed: opts.HistorySeed,
 		permissionProfile: opts.PermissionProfile, approvalCallback: opts.ApprovalCallback, onEvent: opts.OnEvent,
 		clientFactory: opts.ClientFactory, toolEnv: opts.ToolEnv, pendingFileChanges: map[string]string{},
@@ -378,7 +380,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 	params := pyjson.NewObject()
 	params.Set("cwd", s.cwd)
 	params.Set("personality", "none")
-	if s.developerInstructions != "" && pystr.Strip(s.developerInstructions) != "" {
+	if s.developerInstructions != "" && strings.TrimSpace(s.developerInstructions) != "" {
 		params.Set("developerInstructions", s.developerInstructions)
 	}
 	if s.modelProvider != "" {
@@ -481,7 +483,7 @@ func (s *CodexAppServerSession) RequestInterrupt() { s.interrupt.Store(true) }
 
 // Appends user guidance to the active codex turn through turn/steer
 func (s *CodexAppServerSession) RequestSteer(text string) (bool, error) {
-	cleaned := pystr.Strip(text)
+	cleaned := strings.TrimSpace(text)
 	if cleaned == "" {
 		return false, nil
 	}
@@ -554,11 +556,11 @@ func (s *CodexAppServerSession) formatErrorWithStderr(prefix string, detail any,
 	var lines []string
 	for _, line := range tail {
 		if line != "" {
-			lines = append(lines, pystr.Rstrip(line))
+			lines = append(lines, strings.TrimRightFunc(line, unicode.IsSpace))
 		}
 	}
 	joined := strings.Join(lines, "\n")
-	if pystr.Strip(joined) == "" {
+	if strings.TrimSpace(joined) == "" {
 		return base
 	}
 	return fmt.Sprintf("%s\ncodex stderr (last %d lines):\n%s", base, len(tail), tools.RedactSensitiveTextWith(s.toolEnv, joined, tools.RedactOptions{Force: true}))

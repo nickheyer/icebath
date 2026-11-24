@@ -3,6 +3,8 @@
 package selfupdate
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -157,7 +159,7 @@ func isShallowRepository(ctx context.Context, gitCmd []string, root string) (boo
 	if err != nil {
 		return false, err
 	}
-	return pystr.Strip(result.Stdout) == "true", nil
+	return strings.TrimSpace(result.Stdout) == "true", nil
 }
 
 // Refspec that always writes the remote tracking ref of branch, forced for a depth 1 clone
@@ -255,7 +257,7 @@ func reportShallowVerdict(ctx context.Context, w io.Writer, gitCmd []string, roo
 	if err != nil {
 		return err
 	}
-	headSHA, targetSHA := pystr.Strip(head.Stdout), pystr.Strip(target.Stdout)
+	headSHA, targetSHA := strings.TrimSpace(head.Stdout), strings.TrimSpace(target.Stdout)
 	if headSHA != "" && targetSHA != "" && headSHA == targetSHA {
 		fmt.Fprintln(w, "✓ Already up to date.")
 		return nil
@@ -284,9 +286,9 @@ func reportRevListVerdict(ctx context.Context, w io.Writer, gitCmd []string, roo
 	if err != nil {
 		return err
 	}
-	behind, err := strconv.Atoi(pystr.Strip(revResult.Stdout))
+	behind, err := strconv.Atoi(strings.TrimSpace(revResult.Stdout))
 	if err != nil {
-		return &ValueError{Msg: fmt.Sprintf("git rev-list printed %s where a commit count was expected", pystr.Strip(revResult.Stdout))}
+		return &ValueError{Msg: fmt.Sprintf("git rev-list printed %s where a commit count was expected", strings.TrimSpace(revResult.Stdout))}
 	}
 	if behind == 0 {
 		fmt.Fprintln(w, "✓ Already up to date.")
@@ -398,7 +400,7 @@ func fetchReleaseTag(ctx context.Context, w io.Writer, gitCmd []string, root str
 		if fetched.ReturnCode == 0 {
 			return nil, false, nil
 		}
-		lines := pystr.Splitlines(pystr.Strip(fetched.Stderr), false)
+		lines := pystr.Splitlines(strings.TrimSpace(fetched.Stderr), false)
 		if len(lines) > 1 {
 			lines = lines[len(lines)-1:]
 		}

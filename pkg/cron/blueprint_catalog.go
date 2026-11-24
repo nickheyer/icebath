@@ -181,7 +181,7 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 		if !pyrepr.Truthy(timeVal) {
 			return "", &BlueprintFillError{Msg: "a time is required"}
 		}
-		m, _ := blueprintTimeRe.FindStringMatch(pystr.Strip(pyrepr.Str(timeVal)))
+		m, _ := blueprintTimeRe.FindStringMatch(strings.TrimSpace(pyrepr.Str(timeVal)))
 		if m == nil {
 			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid time %s — use HH:MM (24h)", pyrepr.Repr(timeVal))}
 		}
@@ -197,14 +197,14 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 	}
 	if strings.Contains(sched, "{dow}") {
 		if rv, ok := values["recurrence"]; ok {
-			preset := pystr.Lower(pyrepr.Str(rv))
+			preset := strings.ToLower(pyrepr.Str(rv))
 			dow, known := weekdayPresets[preset]
 			if !known {
 				return "", &BlueprintFillError{Msg: fmt.Sprintf("unknown recurrence %s — one of %s", pyrepr.StrRepr(preset), strings.Join(weekdayPresetOrder, ", "))}
 			}
 			repl["dow"] = dow
 		} else if dv, ok := values["day"]; ok {
-			day := pystr.Lower(pyrepr.Str(dv))
+			day := strings.ToLower(pyrepr.Str(dv))
 			dow, known := blueprintDayToDow[day]
 			if !known {
 				return "", &BlueprintFillError{Msg: fmt.Sprintf("unknown day %s", pyrepr.StrRepr(day))}
@@ -219,7 +219,7 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 		if v, ok := values["interval_min"]; ok {
 			iv = pyrepr.Str(v)
 		}
-		iv = pystr.Strip(iv)
+		iv = strings.TrimSpace(iv)
 		if !pystr.StrIsDigit(iv) {
 			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid interval %s — minutes as a positive integer", pyrepr.StrRepr(iv))}
 		}

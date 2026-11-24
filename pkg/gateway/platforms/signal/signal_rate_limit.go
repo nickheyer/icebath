@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -136,7 +135,7 @@ func isSignalRateLimitError(err any) bool {
 		return true
 	}
 	message := errorMessage(err)
-	lower := pystr.Lower(message)
+	lower := strings.ToLower(message)
 	return strings.Contains(message, "[429]") || strings.Contains(lower, "ratelimit") || strings.Contains(lower, "retrylaterexception") || strings.Contains(lower, "retry after")
 }
 

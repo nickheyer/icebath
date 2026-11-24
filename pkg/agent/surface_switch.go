@@ -47,7 +47,7 @@ func runtimeHostValue(prompt, label string) string {
 		}
 		for _, candidate := range lines[idx+1 : min(idx+4, len(lines))] {
 			if strings.HasPrefix(candidate, prefix) {
-				return pystr.Strip(candidate[len(prefix):])
+				return strings.TrimSpace(candidate[len(prefix):])
 			}
 		}
 	}
@@ -65,7 +65,7 @@ func IdentityLineValue(prompt, label string) string {
 	value := ""
 	for _, line := range pystr.Splitlines(trailer, false) {
 		if strings.HasPrefix(line, prefix) {
-			value = pystr.Strip(line[len(prefix):])
+			value = strings.TrimSpace(line[len(prefix):])
 		}
 	}
 	return value
@@ -83,7 +83,7 @@ func lastAnnouncedSurface(history []map[string]any) string {
 		text := sidecar + "\n" + state.FlattenMessageText(msg["content"], "\n")
 		if j := strings.LastIndex(text, surfaceSwitchNotePrefix); j >= 0 {
 			name, _, _ := strings.Cut(text[j+len(surfaceSwitchNotePrefix):], surfaceNameEnd)
-			return pystr.Strip(name)
+			return strings.TrimSpace(name)
 		}
 	}
 	return ""
@@ -114,7 +114,7 @@ func StageSurfaceSwitchNote(ctx context.Context, a *AIAgent, prompt string, hist
 	if a.provider == "moa" || a.apiMode == "codex_app_server" {
 		return false
 	}
-	current := pystr.Strip(a.platform)
+	current := strings.TrimSpace(a.platform)
 	if current == "" {
 		return false
 	}

@@ -48,7 +48,7 @@ var (
 
 // Whether a text stop reads as a collapsed fragment rather than a terse answer
 func looksLikeDegenerateFinal(text string, userMessage any) bool {
-	t := pystr.Strip(text)
+	t := strings.TrimSpace(text)
 	r := []rune(t)
 	if len(r) == 0 || len(r) > degenerateFinalMaxChars {
 		return false
@@ -101,7 +101,7 @@ func toolResultsThisTurn(messages []*state.Message) int {
 
 // Whether a short reply ends on an announced next action
 func trailingContinueIntent(text string) bool {
-	t := pystr.Strip(text)
+	t := strings.TrimSpace(text)
 	if n := len([]rune(t)); n == 0 || n > trailingContinueIntentMaxChars {
 		return false
 	}
@@ -110,7 +110,7 @@ func trailingContinueIntent(text string) bool {
 
 // Whether promoted reasoning ends on a first person plan to act
 func promotedReasoningAnnouncesAction(text string) bool {
-	t := pystr.Strip(text)
+	t := strings.TrimSpace(text)
 	if t == "" {
 		return false
 	}

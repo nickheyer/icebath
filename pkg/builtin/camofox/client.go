@@ -80,7 +80,7 @@ func (s *scope) secret(name string) string {
 	if v == nil {
 		return ""
 	}
-	return pystr.Strip(*v)
+	return strings.TrimSpace(*v)
 }
 
 // Configured Camofox server URL with trailing slashes dropped, empty when unset
@@ -162,12 +162,12 @@ func (s *scope) envOrCfg(envName string, cfg map[string]any, key string) string 
 	if v := s.secret(envName); v != "" {
 		return v
 	}
-	return pystr.Strip(pyOrStr(cfg[key]))
+	return strings.TrimSpace(pyOrStr(cfg[key]))
 }
 
 // Boolean toggle where a valid env spelling wins over the config key
 func (s *scope) flag(envName string, cfg map[string]any, key string) bool {
-	raw := pystr.Lower(s.secret(envName))
+	raw := strings.ToLower(s.secret(envName))
 	switch raw {
 	case "1", "true", "yes", "on":
 		return true
@@ -219,7 +219,7 @@ func isLoopbackHostname(hostname string) bool {
 	if hostname == "" {
 		return false
 	}
-	host := pystr.Lower(strings.Trim(pystr.Strip(hostname), "[]"))
+	host := strings.ToLower(strings.Trim(strings.TrimSpace(hostname), "[]"))
 	if host == "localhost" || host == "localhost.localdomain" {
 		return true
 	}

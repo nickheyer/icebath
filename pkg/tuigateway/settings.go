@@ -42,10 +42,8 @@ type SettingsRow struct {
 	// Slash shortcut that changes the setting, without the slash
 	Slash string `json:"slash,omitzero"`
 	// Environment variable that overrides the setting
-	Env string `json:"env,omitzero"`
-	// Old names the setting was migrated from
-	Was   []string `json:"was,omitzero"`
-	Value any      `json:"value"`
+	Env   string `json:"env,omitzero"`
+	Value any    `json:"value"`
 	// Layer the value comes from: default, global, session, env or managed
 	Source string `json:"source"`
 	// Whether a managed install locks the setting

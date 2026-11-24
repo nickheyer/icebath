@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"fmt"
 	"math/big"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Exit code of a turn stopped by an interrupt, the SIGINT convention
@@ -33,7 +34,7 @@ func oneshotExitCode(response string, result map[string]any) int {
 	if completed, ok := result["completed"]; pyrepr.Truthy(result["failed"]) || pyrepr.Truthy(result["partial"]) || (ok && completed == false) {
 		return 2
 	}
-	if pystr.Strip(response) == "" {
+	if strings.TrimSpace(response) == "" {
 		return 1
 	}
 	return 0

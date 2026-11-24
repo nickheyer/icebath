@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -59,7 +58,7 @@ func apiPartType(part *pyjson.Object) string {
 	if !pyrepr.Truthy(raw) {
 		return ""
 	}
-	return strings.ToLower(pystr.Strip(pyrepr.Str(raw)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
 }
 
 // OpenAI chat content flattened to one plain string, non text parts skipped and depth, size and length bounded
@@ -116,10 +115,10 @@ func apiNormalizeImagePart(part *pyjson.Object) (*pyjson.Object, error) {
 		detail = ref.GetOr("detail", detail)
 	}
 	text, ok := urlValue.(string)
-	if !ok || pystr.Strip(text) == "" {
+	if !ok || strings.TrimSpace(text) == "" {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid_image_url:Image parts must include a non-empty image URL."}
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	lowered := strings.ToLower(text)
 	if strings.HasPrefix(lowered, "data:") {
 		if !strings.HasPrefix(lowered, "data:image/") || !strings.Contains(text, ",") {
@@ -132,10 +131,10 @@ func apiNormalizeImagePart(part *pyjson.Object) (*pyjson.Object, error) {
 	imageURL := pyjson.ObjectOf("url", text)
 	if detail != nil {
 		detailText, isText := detail.(string)
-		if !isText || pystr.Strip(detailText) == "" {
+		if !isText || strings.TrimSpace(detailText) == "" {
 			return nil, &PyError{Kind: "ValueError", Msg: "invalid_content_part:Image detail must be a non-empty string when provided."}
 		}
-		imageURL.Set("detail", pystr.Strip(detailText))
+		imageURL.Set("detail", strings.TrimSpace(detailText))
 	}
 	return pyjson.ObjectOf("type", "image_url", "image_url", imageURL), nil
 }
@@ -361,7 +360,7 @@ func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error
 func apiContentHasVisiblePayload(content any) bool {
 	switch v := content.(type) {
 	case string:
-		return pystr.Strip(v) != ""
+		return strings.TrimSpace(v) != ""
 	case []any:
 		for _, item := range v {
 			part, isDict := item.(*pyjson.Object)
@@ -370,7 +369,7 @@ func apiContentHasVisiblePayload(content any) bool {
 			}
 			partType := apiPartType(part)
 			text := part.GetOr("text", nil)
-			if apiImagePartTypes[partType] || apiFilePartTypes[partType] || (apiTextPartTypes[partType] && pyrepr.Truthy(text) && pystr.Strip(pyrepr.Str(text)) != "") {
+			if apiImagePartTypes[partType] || apiFilePartTypes[partType] || (apiTextPartTypes[partType] && pyrepr.Truthy(text) && strings.TrimSpace(pyrepr.Str(text)) != "") {
 				return true
 			}
 		}

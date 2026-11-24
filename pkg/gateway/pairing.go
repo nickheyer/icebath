@@ -58,7 +58,7 @@ func defaultPairingDir(ctx context.Context) string {
 
 // Allowlist env var name a platform declares, empty when it has none
 func allowlistEnvForPlatform(ctx context.Context, platform string) (name string) {
-	platform = pystr.Strip(strings.ToLower(platform))
+	platform = strings.TrimSpace(strings.ToLower(platform))
 	func() {
 		defer func() { _ = recover() }()
 		plugins.DiscoverPlugins(ctx, false)
@@ -77,7 +77,7 @@ func allowlistEnvForPlatform(ctx context.Context, platform string) (name string)
 func splitAllowlist(raw string) []string {
 	ids := []string{}
 	for _, uid := range strings.Split(raw, ",") {
-		if uid = pystr.Strip(uid); uid != "" {
+		if uid = strings.TrimSpace(uid); uid != "" {
 			ids = append(ids, uid)
 		}
 	}
@@ -86,13 +86,13 @@ func splitAllowlist(raw string) []string {
 
 // True for the bridge and the cloud WhatsApp platforms, which share phone and JID identity rules
 func platformUsesWhatsAppIdentity(platform string) bool {
-	name := strings.ToLower(pystr.Strip(platform))
+	name := strings.ToLower(strings.TrimSpace(platform))
 	return name == "whatsapp" || name == "whatsapp_cloud"
 }
 
 // User id as it is persisted and compared on a platform
 func normalizePairingUserID(platform, userID string) string {
-	raw := pystr.Strip(userID)
+	raw := strings.TrimSpace(userID)
 	if platformUsesWhatsAppIdentity(platform) {
 		if normalized := NormalizeWhatsAppIdentifier(raw); normalized != "" {
 			return normalized
@@ -103,7 +103,7 @@ func normalizePairingUserID(platform, userID string) string {
 
 // Every equivalent user id of a principal for authorization and allowlist matching
 func pairingUserIDAliases(ctx context.Context, platform, userID string) (map[string]bool, error) {
-	raw := pystr.Strip(userID)
+	raw := strings.TrimSpace(userID)
 	aliases := map[string]bool{}
 	if raw == "" {
 		return aliases, nil
@@ -155,16 +155,13 @@ func pairingMatchingIDs(ctx context.Context, platform string, approved *pyjson.O
 	return matching, nil
 }
 
-// Allowlist of a platform: the setting its env name moved to, else the env var through the profile secret scope, a scoped miss reading as empty
+// Allowlist of a platform through the profile secret scope, the setting its env name names when one does, a scoped miss reading as empty
 func readAllowlistEnv(ctx context.Context, envVar string) (string, error) {
-	if e := envSetting(envVar); e != nil {
-		return SettingText(ctx, e), nil
-	}
 	value, err := GetScopedSecret(ctx, envVar, "", false)
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(value), nil
+	return strings.TrimSpace(value), nil
 }
 
 // Env var and ids of a platform whose allowlist is configured, ok false for an open gateway
@@ -247,9 +244,9 @@ func iterLiveGatewayAdapters() (adapters []PlatformAdapter) {
 // Lower case platform value of an adapter, else its name
 func adapterPlatformName(adapter PlatformAdapter) string {
 	if base := adapter.Base(); base != nil && base.Platform != "" {
-		return strings.ToLower(pystr.Strip(string(base.Platform)))
+		return strings.ToLower(strings.TrimSpace(string(base.Platform)))
 	}
-	return strings.ToLower(pystr.Strip(adapter.Name()))
+	return strings.ToLower(strings.TrimSpace(adapter.Name()))
 }
 
 // Adapter keeping allowlist snapshots, a purge keeping only the entries the predicate accepts
@@ -260,7 +257,7 @@ type AllowlistSnapshotAdapter interface {
 // Drops the entries equivalent to a user from an allowlist value while keeping the wildcard
 func purgeAllowlistEntries(ctx context.Context, entries any, platform, userID string) any {
 	keep := func(entry string) bool {
-		if pystr.Strip(entry) == "*" {
+		if strings.TrimSpace(entry) == "*" {
 			return true
 		}
 		same, err := pairingUserIDsMatch(ctx, platform, entry, userID)
@@ -305,12 +302,12 @@ func purgeAllowlistEntries(ctx context.Context, entries any, platform, userID st
 
 // Clears a revoked principal from the allowlist snapshots of the running adapters of a platform
 func syncLiveAdapterAllowlistRemove(ctx context.Context, platform, userID string) {
-	platformName := strings.ToLower(pystr.Strip(platform))
-	if platformName == "" || pystr.Strip(userID) == "" {
+	platformName := strings.ToLower(strings.TrimSpace(platform))
+	if platformName == "" || strings.TrimSpace(userID) == "" {
 		return
 	}
 	keep := func(entry string) bool {
-		if pystr.Strip(entry) == "*" {
+		if strings.TrimSpace(entry) == "*" {
 			return true
 		}
 		same, err := pairingUserIDsMatch(ctx, platformName, entry, userID)
@@ -894,7 +891,7 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 
 // Whether a value is shaped like a pending request id, sixteen hex characters
 func LooksLikePairingRequestID(value string) bool {
-	value = pystr.Strip(value)
+	value = strings.TrimSpace(value)
 	if len(value) != 16 {
 		return false
 	}
@@ -916,7 +913,7 @@ func (s *PairingStore) ApproveRequest(ctx context.Context, platform, requestID s
 	if err := s.cleanupExpired(ctx, platform); err != nil {
 		return nil, err
 	}
-	requestID = strings.ToLower(pystr.Strip(requestID))
+	requestID = strings.ToLower(strings.TrimSpace(requestID))
 	if requestID == "" {
 		return nil, nil
 	}

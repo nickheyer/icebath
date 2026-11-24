@@ -88,17 +88,16 @@ func TestSSHWizardPortHandling(t *testing.T) {
 				yesNo: func(string, bool) bool { return false }}
 			withSetupConsole(t, console, sshKeys...)
 			s := newTerminalSetup(t, env)
+			terminal := map[string]any{}
 			if c.saved != "" {
-				if err := s.saveEnv("TERMINAL_SSH_PORT", c.saved); err != nil {
-					t.Fatal(err)
-				}
+				terminal["ssh_port"] = c.saved
 			}
-			if err := s.backendSSH(map[string]any{}); err != nil {
+			if err := s.backendSSH(map[string]any{"terminal": terminal}); err != nil {
 				t.Fatal(err)
 			}
-			got, ok, err := config.GetEnvValue(s.ctx, s.h, "TERMINAL_SSH_PORT")
-			if err != nil || ok != c.present || got != c.want {
-				t.Fatalf("TERMINAL_SSH_PORT = %q %v %v", got, ok, err)
+			got, ok := terminal["ssh_port"]
+			if ok != c.present || (ok && fmt.Sprint(got) != c.want) {
+				t.Fatalf("terminal.ssh_port = %v %v", got, ok)
 			}
 		})
 	}
@@ -155,7 +154,7 @@ func TestVercelSetupConfiguresAccessTokenAuth(t *testing.T) {
 	if _, ok := os.LookupEnv("VERCEL_OIDC_TOKEN"); ok {
 		t.Fatal("VERCEL_OIDC_TOKEN kept")
 	}
-	for k, want := range map[string]string{"TERMINAL_VERCEL_IMAGE": "vercel/sandbox/python:3.14", "VERCEL_TOKEN": "token", "VERCEL_PROJECT_ID": "project", "VERCEL_TEAM_ID": "team"} {
+	for k, want := range map[string]string{"VERCEL_TOKEN": "token", "VERCEL_PROJECT_ID": "project", "VERCEL_TEAM_ID": "team"} {
 		if got := os.Getenv(k); got != want {
 			t.Fatalf("%s = %q, want %q", k, got, want)
 		}
@@ -248,8 +247,8 @@ func TestSetupSyncFailureHandledMatchesTheWizardClasses(t *testing.T) {
 	}
 }
 
-// Drives the SSH wizard with scripted answers and the connection test declined
-func runSSHWizard(t *testing.T, env *Env, answers []string) {
+// Drives the SSH wizard over a terminal section with scripted answers and the connection test declined
+func runSSHWizard(t *testing.T, env *Env, terminal map[string]any, answers []string) {
 	t.Helper()
 	i := 0
 	console := &fakeSetupConsole{
@@ -257,7 +256,7 @@ func runSSHWizard(t *testing.T, env *Env, answers []string) {
 		yesNo:  func(string, bool) bool { return false },
 	}
 	withSetupConsole(t, console)
-	if err := newTerminalSetup(t, env).backendSSH(map[string]any{}); err != nil {
+	if err := newTerminalSetup(t, env).backendSSH(map[string]any{"terminal": terminal}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -265,24 +264,19 @@ func runSSHWizard(t *testing.T, env *Env, answers []string) {
 func TestSshPortResetTo22RemovesSavedPort(t *testing.T) {
 	env := newTestToolEnv(t)
 	t.Setenv("ICEBATH_HOME", env.Home)
-	t.Setenv("TERMINAL_SSH_PORT", "")
-	os.Unsetenv("TERMINAL_SSH_PORT")
-	if err := config.SaveEnvValue(env.Home, "TERMINAL_SSH_PORT", "2222"); err != nil {
-		t.Fatal(err)
-	}
-	runSSHWizard(t, env, []string{"host.example.com", "me", "22", "/tmp/key"})
-	if v, ok, err := config.GetEnvValue(context.Background(), env.Home, "TERMINAL_SSH_PORT"); err != nil || ok {
-		t.Fatalf("TERMINAL_SSH_PORT = %q %v %v", v, ok, err)
+	terminal := map[string]any{"ssh_port": 2222}
+	runSSHWizard(t, env, terminal, []string{"host.example.com", "me", "22", "/tmp/key"})
+	if v, ok := terminal["ssh_port"]; ok {
+		t.Fatalf("terminal.ssh_port = %v", v)
 	}
 }
 
 func TestSshPortNonDefaultStillSaves(t *testing.T) {
 	env := newTestToolEnv(t)
 	t.Setenv("ICEBATH_HOME", env.Home)
-	t.Setenv("TERMINAL_SSH_PORT", "")
-	os.Unsetenv("TERMINAL_SSH_PORT")
-	runSSHWizard(t, env, []string{"host.example.com", "me", "2222", "/tmp/key"})
-	if v, ok, err := config.GetEnvValue(context.Background(), env.Home, "TERMINAL_SSH_PORT"); err != nil || !ok || v != "2222" {
-		t.Fatalf("TERMINAL_SSH_PORT = %q %v %v", v, ok, err)
+	terminal := map[string]any{}
+	runSSHWizard(t, env, terminal, []string{"host.example.com", "me", "2222", "/tmp/key"})
+	if v, ok := terminal["ssh_port"]; !ok || v != 2222 {
+		t.Fatalf("terminal.ssh_port = %v %v", v, ok)
 	}
 }

@@ -24,8 +24,8 @@ func failedTurnResult(finalResponse string, messages []*state.Message, apiCallCo
 
 // Prepends delivered partial text to a terminal error body, reporting whether the partial is kept
 func withDeliveredPartial(finalResponse, errorSummary, delivered string) (string, bool) {
-	d := pystr.Strip(delivered)
-	if d == "" || d == pystr.Strip(errorSummary) {
+	d := strings.TrimSpace(delivered)
+	if d == "" || d == strings.TrimSpace(errorSummary) {
 		return finalResponse, false
 	}
 	return d + "\n\n" + finalResponse, true
@@ -255,7 +255,7 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 	errorMsg := e.errorMsg
 	isThinkingTimeout := IsThinkingTimeout(classified, model, &errorMsg)
 	if isThinkingTimeout {
-		vlines(a, "   💡 "+pystr.Strip(BuildThinkingTimeoutGuidance(ctx, prov, model, "")))
+		vlines(a, "   💡 "+strings.TrimSpace(BuildThinkingTimeoutGuidance(ctx, prov, model, "")))
 	}
 
 	pkgLog().Error(fmt.Sprintf("%sAPI call failed after %d retries. %s | provider=%s model=%s msgs=%d tokens=~%s",

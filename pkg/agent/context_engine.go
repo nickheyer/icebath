@@ -1,10 +1,11 @@
 package agent
 
 import (
+	"strings"
+
 	"math"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -18,7 +19,7 @@ const (
 
 // Provider memory context redacted with URL credentials and elided in the middle past the cap
 func SanitizeMemoryContext(env *tools.Env, memoryContext string) string {
-	sanitized := tools.RedactSensitiveTextWith(env, pystr.Strip(memoryContext), tools.RedactOptions{Force: true, URLCredentials: true})
+	sanitized := tools.RedactSensitiveTextWith(env, strings.TrimSpace(memoryContext), tools.RedactOptions{Force: true, URLCredentials: true})
 	if len([]rune(sanitized)) <= MemoryContextMaxChars {
 		return sanitized
 	}
@@ -189,7 +190,7 @@ func AutomaticCompactionStatusMessage(e ContextEngine, phase, defaultMessage str
 	if message == nil {
 		return nil
 	}
-	text := pystr.Strip(*message)
+	text := strings.TrimSpace(*message)
 	if text == "" {
 		return nil
 	}

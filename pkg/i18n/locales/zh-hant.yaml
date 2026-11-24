@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    （僅下一輪有效 — 回應一次後即還原）"
     switch_cancelled: "🟡 已取消切換模型。目前模型不變（{model}）。"
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_文字備援：回覆 `{prefix}approve` 以切換，或 `{prefix}cancel` 以保留目前模型。_"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "此工作階段無法使用 `--once`；請使用 `/model <name>`，並在本回合結束後切換回來。"
+    local_next_turn: "從您的下一則訊息開始生效。"
   agents:
 
     header: "🤖 **作用中的代理與任務**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast 僅適用於支援 Priority Processing 的 OpenAI 模型。"
-    status: "⚡ Priority Processing\n\n目前模式：`{mode}`\n\n_用法：_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ 未知參數：`{arg}`\n\n**有效選項：** normal、fast、status"
+    not_supported: "⚡ /fast 需要供應商提供快速層級的模型，例如 OpenAI Priority Processing 或 Anthropic 快速模式。請用 /model 切換到提供它的模型。"
+    status: "⚡ Priority Processing\n\n目前模式：`{mode}`\n\n_用法：_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ 未知參數：`{arg}`\n\n**有效選項：** normal、fast、auto、cold、ultrafast、toggle、status、--global"
     saved: "⚡ ✓ Priority Processing：**{label}**（已儲存到設定）\n_（下一則訊息生效）_"
     session_only: "⚡ ✓ Priority Processing：**{label}**（僅本次工作階段）"
     label_fast: "快速"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — 僅會話的第一輪快速"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast，6 倍價格"
     ultrafast_not_supported: "⚡ 此帳戶或路由無法為 `{model}` 使用 Ultrafast。"
+  setup_wizard:
+
+    configure_in_config: "  在 config.yaml 的 platforms.{key} 下設定 {platform}"
   footer:
 
     status: "📎 執行階段頁尾：**{state}**\n欄位：`{fields}`\n平台：`{platform}`"
@@ -244,19 +247,19 @@ gateway:
     no_output: "（無輸出）"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
-      status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
+      completed: "已完成"
+      gave_up: "已放棄（重試次數用盡）"
+      crashed: "當機（工作者已結束），調度器將重試"
+      timed_out: "逾時，調度器將重試"
+      blocked: "被阻擋，需要處理"
+      review_requested: "已交付審查；實作已完成"
+      changes_requested: "審查要求修改（BLOCK），實作未獲核准"
+      block_loop_detected: "反覆被阻擋後已轉入分診，需要協調方關注"
+      status_default: "狀態變更"
+      status_joiner: "，"
+      message: "[kanban] 任務 {task_id} {status}。\n標題：{title}\n負責人：@{assignee}\n看板：{board}\n\n請檢查結果或決定下一步。"
       handoff: "結果：{summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
+      review_detail: "審查意見：{reason}\n請檢查現有卡片及其目前的審查執行；將工作退回同一個實作任務。不要把此 BLOCK 視為核准，也不要建立重複的任務。"
       guidance: "這是自動任務狀態通知，不是再次分解任務的請求。建立後續任務前請先檢查目前看板；不要重複建立已存在的任務或任務圖。"
     ping:
 
@@ -1978,7 +1981,7 @@ slash:
     description: "顯示可用指令（/help skills 列出技能指令，/help <text> 篩選）"
   palette:
 
-    description: "開啟模糊搜尋指令面板（亦可按 Ctrl+P）"
+    description: "開啟模糊搜尋指令面板"
   restart:
 
     description: "等待進行中的執行完成後，優雅地重新啟動閘道"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "已封存並移除 → {ref}"
     sweep_archived_kept: "已封存，保留（{reason}）→ {ref}"
     discarded: "工作樹已移除，變更已捨棄：{path}"
+  update:
+
+    held_icebath: "{mark} 有其他 icebath 程序正從此安裝執行（{count}）："
+    held_venv: "{mark} 有程序正從此安裝的 Python 環境執行（{count}）："
+    held_forced: "  → 因為 {flag}，仍然進行更新。"
+    held_refused: "  請關閉它們後再執行一次 `icebath update`，或加上 {flag} 仍然更新。"
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "本機模型的上下文視窗太小，無法完成。請加大上下文大小或改用更大的模型。"
     pending_tool_result: "這一輪在工具結果仍待處理時停止，且模型沒有產生後續文字。傳送 `continue` 讓它做總結。"
     interrupted_during_api_call: "請求在呼叫途中被中斷，尚未收到回覆。傳送 `continue` 重試。"
-    max_iterations_reached: "在得出最終答案前已達到工具迭代次數上限。傳送 `continue` 繼續，或調高 `max_iterations`。"
+    max_iterations_reached: "在得出最終答案前已達到工具迭代次數上限。傳送 `continue` 繼續，或調高 `agent.max_turns`。"
     error_near_max_iterations: "在接近迭代上限、尚未得出最終答案時發生錯誤。請檢查上方的工具輸出，然後傳送 `continue`。"
     repeated_outer_errors: "這一輪持續出現重複錯誤，已提前停止，不再無限重試。請檢查上方的錯誤，然後傳送 `continue` 重試。"
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath 會從 .icebath.md、AGENTS.md、CLAUDE.md 或 .cursorrules 載入專案上下文（取第一個符合者）。"
   t178: "當代理進入子資料夾時，會逐步發現其中的 AGENTS.md 檔案。"
   t179: "上下文檔案上限為 20,000 字元，超出時會智慧保留頭尾並截斷中間。"
-  t180: "瀏覽器後端：本機 Chromium、Lightpanda、Browserbase、Browser Use 與 Firecrawl，另有內建的 Camofox。"
-  t181: "Camofox（反偵測 Firefox）已內建：使用 icebath camofox setup 進行設定。"
+  t180: "瀏覽器後端：本機 Chromium、Lightpanda、Browserbase、Browser Use 與 Firecrawl，另有以外掛形式提供的 Camofox。"
+  t181: "Camofox（反偵測 Firefox）是一個外掛：先用 icebath plugins install camofox 安裝，再執行 icebath camofox setup。"
   t182: "browser_exec 在一次 Python 呼叫中執行多個瀏覽器步驟——導覽、擷取與點擊一次完成。"
   t183: "browser.dialog_policy 決定如何處理頁面的原生對話框：must_respond（代理以 browser_dialog 回應）、auto_dismiss 或 auto_accept。"
   t184: "icebath mcp 會開啟互動式選擇器，列出 icebath 內建目錄中的 MCP，按一個鍵即可安裝。"

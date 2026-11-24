@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -35,7 +34,7 @@ type PruneFilters struct {
 }
 
 // Case insensitive substring LIKE pattern with wildcards escaped
-func pruneLike(value string) string { return "%" + EscapeLike(pystr.Lower(value)) + "%" }
+func pruneLike(value string) string { return "%" + EscapeLike(strings.ToLower(value)) + "%" }
 
 // Clauses and params of the cwd prefix filter, the shared prefix clause over alias s
 func cwdPrefixFilter(value string) ([]string, []any) {
@@ -106,7 +105,7 @@ func pruneFilterWhere(f PruneFilters) (string, []any) {
 	num(f.MinMessages, "s.message_count >= ?")
 	num(f.MaxMessages, "s.message_count <= ?")
 	str(f.ModelLike, `LOWER(COALESCE(s.model, '')) LIKE ? ESCAPE '\'`, pruneLike)
-	str(f.Provider, "LOWER(COALESCE(s.billing_provider, '')) = ?", pystr.Lower)
+	str(f.Provider, "LOWER(COALESCE(s.billing_provider, '')) = ?", strings.ToLower)
 	str(f.UserID, "s.user_id = ?", nil)
 	str(f.ChatID, "s.chat_id = ?", nil)
 	str(f.ChatType, "s.chat_type = ?", nil)

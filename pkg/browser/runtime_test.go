@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -31,8 +30,10 @@ func fakePMChromium(t *testing.T, store string, published *string) string {
 	return binary
 }
 
-func pinnedEnv(path string) *tools.Env {
-	return &tools.Env{Config: config.Tree{"browser": map[string]any{"executable_path": path}}}
+// Env of a fresh profile home whose config.yaml pins the browser program
+func pinnedEnv(t *testing.T, path string) *tools.Env {
+	t.Helper()
+	return browserEnv(t, map[string]any{"executable_path": path})
 }
 
 func TestChromiumResolvesInstalledBinaryWithoutMutation(t *testing.T) {
@@ -50,7 +51,7 @@ func TestChromiumResolvesInstalledBinaryWithoutMutation(t *testing.T) {
 func TestConfiguredExecutableWinsWithoutInstalling(t *testing.T) {
 	root, _ := runtimeHomes(t)
 	override := filepath.Join(root, "external browser")
-	env := pinnedEnv(override)
+	env := pinnedEnv(t, override)
 	pin(t, &runtimePMExecutable, func() string { t.Fatal("browser resolution must not read pm for a pinned browser"); return "" })
 	if got := chromiumExecutable(env, true); got != override {
 		t.Fatalf("resolved %q", got)
@@ -74,7 +75,7 @@ func TestAgentBrowserEnvIsNotAnOverride(t *testing.T) {
 
 func TestOverrideIsReadFromTheActiveProfile(t *testing.T) {
 	runtimeHomes(t)
-	a, b := pinnedEnv("/opt/a/chrome"), pinnedEnv("")
+	a, b := pinnedEnv(t, "/opt/a/chrome"), pinnedEnv(t, "")
 	for _, c := range []struct {
 		env  *tools.Env
 		want string

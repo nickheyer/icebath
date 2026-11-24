@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"math"
@@ -106,7 +108,7 @@ func neutraliseReplayEchoGhosts(seq []*state.Message) ([]*state.Message, int) {
 	for i, m := range seq {
 		if m != nil && m.DisplayKind == "hidden" && m.Role == "assistant" {
 			content, isStr := m.Content.(string)
-			if (isStr && hazards[pystr.Strip(content)]) || hazards[pystr.Strip(m.APIContent)] {
+			if (isStr && hazards[strings.TrimSpace(content)]) || hazards[strings.TrimSpace(m.APIContent)] {
 				if out == nil {
 					out = append(make([]*state.Message, 0, len(seq)), seq[:i]...)
 				}

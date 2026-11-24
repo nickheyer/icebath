@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
 )
@@ -150,20 +151,9 @@ type ProjectsDB struct {
 	path string
 }
 
-// Configured database.journal_mode, wal unless delete is set
+// Journal mode of the env's profile databases, wal or delete
 func projectsJournalMode(env *Env) string {
-	doc, err := readRawConfig(env)
-	if err != nil {
-		return "wal"
-	}
-	if database, ok := doc["database"].(map[string]any); ok {
-		if raw, ok := database["journal_mode"].(string); ok {
-			if mode := strings.ToLower(strings.TrimSpace(raw)); mode == "delete" {
-				return mode
-			}
-		}
-	}
-	return "wal"
+	return settings.DatabaseJournalMode.Get(envHomeCtx(context.Background(), env))
 }
 
 // OpenProjectsDB opens and initializes the projects database of the env home

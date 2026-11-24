@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -19,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Rows per agents section before the overflow line
@@ -33,7 +33,7 @@ func cleanStr(v any) string {
 	if !ok {
 		return ""
 	}
-	return pystr.Strip(s)
+	return strings.TrimSpace(s)
 }
 
 // Integer coercion of a value, zero when it does not convert
@@ -42,7 +42,7 @@ func intValue(v any) int {
 		return 0
 	}
 	if s, ok := v.(string); ok {
-		n, ok := pystr.IntText(pystr.Strip(s))
+		n, ok := pystr.IntText(strings.TrimSpace(s))
 		if !ok || !n.IsInt64() {
 			return 0
 		}
@@ -128,11 +128,7 @@ func transcriptEstimate(ctx context.Context, history []map[string]any) (int, int
 
 // Configured model provider of the gateway config, empty when unset
 func configuredProvider(ctx context.Context) string {
-	modelCfg, _ := gateway.LoadGatewayConfigMap(ctx, "")["model"].(map[string]any)
-	if modelCfg == nil {
-		return ""
-	}
-	return cleanStr(modelCfg["provider"])
+	return strings.TrimSpace(settings.ModelProvider.Get(gateway.SettingsContext(ctx)))
 }
 
 // Context engine of an agent, nil without one
@@ -152,8 +148,8 @@ func statusModelRoute(ctx context.Context, statusAgent *agent.AIAgent, activeOve
 	}
 	var routes []route
 	if statusAgent != nil && statusAgent != agentPendingSentinel {
-		routes = append(routes, route{pystr.Strip(statusAgent.Model()), pystr.Strip(statusAgent.Provider()),
-			map[string]any{"base_url": pystr.Strip(statusAgent.BaseURL()), "api_key": pystr.Strip(statusAgent.APIKey())}})
+		routes = append(routes, route{strings.TrimSpace(statusAgent.Model()), strings.TrimSpace(statusAgent.Provider()),
+			map[string]any{"base_url": strings.TrimSpace(statusAgent.BaseURL()), "api_key": strings.TrimSpace(statusAgent.APIKey())}})
 		if engine := statusAgent.ContextCompressor(); engine != nil {
 			contextUsed = max(0, engine.Base().LastPromptTokens)
 			contextTotal = engine.Base().ContextLength
@@ -241,7 +237,7 @@ func gatewayStatusFields(sessionID string, sessionRow *pyjson.Object, title *str
 			rowTitle = s
 		}
 	}
-	return map[string]any{"session_id": sessionID, "title": pystr.Strip(rowTitle), "model": model, "provider": provider,
+	return map[string]any{"session_id": sessionID, "title": strings.TrimSpace(rowTitle), "model": model, "provider": provider,
 		"created": pydatetime.Strftime(entry.CreatedAt.T, statusStampFormat), "last_activity": pydatetime.Strftime(entry.UpdatedAt.T, statusStampFormat),
 		"tokens": fmtThousands(tokens), "agent_running": agentRunning}
 }
@@ -315,10 +311,7 @@ func (r *GatewayRunner) handleStatusCommand(ctx context.Context, event *gateway.
 		lines = append(lines, i18n.T(ctx, "gateway.status.queued", "", map[string]any{"count": queueDepth}))
 	}
 	if source.Platform == gateway.PlatformMatrix {
-		scope, present := os.LookupEnv("MATRIX_SESSION_SCOPE")
-		if !present {
-			scope = "auto"
-		}
+		scope := settings.MatrixSessionScope.Get(settings.WithPlatform(gateway.SettingsContext(ctx), string(gateway.PlatformMatrix)))
 		if r.adapters != nil {
 			if matrix, ok := r.adapters.Get(gateway.PlatformMatrix); ok {
 				if scoped, has := matrix.(matrixScopeAdapter); has {
@@ -391,7 +384,7 @@ func (r *GatewayRunner) handleContextCommand(ctx context.Context, event *gateway
 		return "", err
 	}
 	expanded := false
-	switch pystr.Lower(pystr.Strip(event.GetCommandArgs())) {
+	switch strings.ToLower(strings.TrimSpace(event.GetCommandArgs())) {
 	case "all", "full", "details":
 		expanded = true
 	}
@@ -461,7 +454,7 @@ func (r *GatewayRunner) resolveContextFigures(ctx context.Context, a *agent.AIAg
 	}
 	modelName := ""
 	if a != nil {
-		modelName = pystr.Strip(a.Model())
+		modelName = strings.TrimSpace(a.Model())
 	}
 	if modelName == "" {
 		if asyncDB := r.sessionDB(ctx); asyncDB != nil {

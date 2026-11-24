@@ -184,6 +184,8 @@ type AgentPluginRow struct {
 	PinnedSha       *string              `json:"pinned_sha,omitzero"`
 	SettingsSchema  []PluginSettingField `json:"settings_schema,omitzero"`
 	Tools           []string             `json:"tools,omitzero"`
+	// How the plugin came to be in the plugins folder, self-cloned for a git clone made by hand that no install recorded
+	Provenance string `json:"provenance,omitzero"`
 }
 
 // Whether the plugin is on, the hub's enabled status

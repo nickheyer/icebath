@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func captureStatusStdout(t *testing.T) *bytes.Buffer {
@@ -75,17 +76,20 @@ func TestFallbackChainKeepsProviderAndModelEntriesAndPrintsTheChain(t *testing.T
 
 func TestOllamaNumCtxOverrideAndCompressorClamp(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
+	ollamaCtx := func(numCtx any) context.Context {
+		return settings.WithFrozen(context.Background(), map[string]any{"model": map[string]any{"ollama_num_ctx": numCtx}})
+	}
 	a := &AIAgent{baseURL: "https://api.example.com/v1", model: "m", quietMode: true}
-	configureOllamaNumCtx(context.Background(), a, map[string]any{"ollama_num_ctx": "16384"}, 8192)
+	configureOllamaNumCtx(ollamaCtx("16384"), a, 8192)
 	if a.ollamaNumCtx != 16384 {
 		t.Fatalf("explicit num_ctx is never capped, got %d", a.ollamaNumCtx)
 	}
-	configureOllamaNumCtx(context.Background(), a, map[string]any{"ollama_num_ctx": "lots"}, 0)
+	configureOllamaNumCtx(ollamaCtx("lots"), a, 0)
 	if a.ollamaNumCtx != 0 {
 		t.Fatal("an invalid override leaves num_ctx unset on a remote endpoint")
 	}
 	a.baseURL = "http://127.0.0.1:1/v1"
-	configureOllamaNumCtx(context.Background(), a, map[string]any{"ollama_num_ctx": 0}, 0)
+	configureOllamaNumCtx(ollamaCtx(0), a, 0)
 	if a.ollamaNumCtx != 0 {
 		t.Fatal("a zero override skips detection and stays unset")
 	}

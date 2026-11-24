@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Approval choices to the card action ids their buttons carry
@@ -148,7 +147,7 @@ func (a *TeamsAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gatew
 	body := approvalBody(ctx, cmd, prompt.Description, true)
 	body = append(body, textBlock(gateway.FormatApprovalDeadlineLine(ctx, gateway.ApprovalTimeoutSeconds(ctx)), "", false))
 	if prompt.SmartDenied {
-		body = append(body, textBlock(pystr.Strip(a.EASmartDenyLine(ctx)), "", false))
+		body = append(body, textBlock(strings.TrimSpace(a.EASmartDenyLine(ctx)), "", false))
 	}
 	result, err := a.sendCard(ctx, prompt.ChatID, adaptiveCard(body, actions))
 	if err != nil {

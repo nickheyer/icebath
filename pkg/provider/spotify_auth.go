@@ -74,7 +74,7 @@ func spotifyClean(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Requested scope, whitespace normalized and deduplicated in first seen order
@@ -333,7 +333,7 @@ func spotifyTokenPayloadToState(payload *pyjson.Object, clientID, redirectURI, r
 	state["accounts_base_url"] = accountsBaseURL
 	state["api_base_url"] = apiBaseURL
 	state["scope"] = requestedScope
-	state["granted_scope"] = pystr.Strip(grantedText)
+	state["granted_scope"] = strings.TrimSpace(grantedText)
 	state["token_type"] = cleanedType
 	state["access_token"] = spotifyClean(payload.GetOr("access_token", nil))
 	state["refresh_token"] = spotifyClean(refresh)
@@ -403,7 +403,7 @@ func spotifyPostToken(ctx context.Context, accountsBaseURL string, data [][2]str
 		return nil, spotifyErr(fmt.Sprintf("Spotify %s failed: %s", p.what, err.Error()), p.failedCode, false)
 	}
 	if resp.StatusCode >= 400 {
-		detail := pystr.Strip(resp.Text())
+		detail := strings.TrimSpace(resp.Text())
 		message := fmt.Sprintf("Spotify %s failed.%s", p.what, p.failedSuffix)
 		if detail != "" {
 			message += " Response: " + detail
@@ -592,7 +592,7 @@ func spotifyInteractiveSetup(ctx context.Context, h string, out io.Writer, redir
 		}
 		return "", err
 	}
-	raw := pystr.Strip(line)
+	raw := strings.TrimSpace(line)
 	if raw == "" {
 		fmt.Fprintf(out, "\nNo Client ID entered. See %s for the login options.\n", SpotifyHelpCommand)
 		return "", &AuthExitError{Code: 1, Message: "Spotify setup cancelled: empty Client ID."}

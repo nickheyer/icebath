@@ -1,8 +1,13 @@
 package tools
 
-import "github.com/nickheyer/icebath/pkg/config"
+import (
+	"context"
 
-// Whether a process event surfaces as a notification under the config, subagent events only when enabled
-func ShouldSurfaceNotification(cfg config.Tree, evt map[string]any) bool {
-	return shouldSurfaceNotification(&Env{Config: cfg}, evt, nil)
+	"github.com/nickheyer/icebath/pkg/settings"
+)
+
+// Whether a process event surfaces as a notification in the profile ctx serves, subagent events only when enabled
+func ShouldSurfaceNotification(ctx context.Context, evt map[string]any) bool {
+	surface := settings.DelegationSurfaceChildProcessNotifications.Get(ctx)
+	return shouldSurfaceNotification(nil, evt, &surface)
 }

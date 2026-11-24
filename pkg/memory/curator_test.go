@@ -48,9 +48,6 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 	curWriteConfigDoc(t, h, map[string]any{"curator": cfg})
 	prevLLM := curatorLLMReview
 	curatorLLMReview = func(context.Context, string) *pyjson.Object { return curatorLLMMeta("llm-stub", nil) }
-	curatorWarned.Lock()
-	curatorWarned.seen = map[string]bool{}
-	curatorWarned.Unlock()
 	t.Cleanup(func() { curatorLLMReview = prevLLM })
 	t.Cleanup(curatorReviewThreads.Wait)
 	return context.Background(), h
@@ -189,7 +186,7 @@ func TestCuratorBadBoundedValueWarnsOncePerDistinctValue(t *testing.T) {
 			msgs = append(msgs, l)
 		}
 	}
-	if len(msgs) != 2 || !strings.Contains(msgs[0], "got 0") || !strings.Contains(msgs[1], "got -1") {
+	if len(msgs) != 2 || !strings.Contains(msgs[0], "set to 0,") || !strings.Contains(msgs[1], "set to -1,") {
 		t.Fatalf("warnings %q", msgs)
 	}
 }

@@ -53,7 +53,7 @@ func askIndex(out io.Writer, prompt string, count int, echoCancel bool) (int, bo
 			}
 			return 0, false, true
 		}
-		val = pystr.Strip(val)
+		val = strings.TrimSpace(val)
 		if val == "" {
 			return 0, true, false
 		}

@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"context"
 	"maps"
 	"math/big"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Role allowlist and guild a recovered grant is checked against
@@ -41,7 +42,7 @@ func (a *DiscordAdapter) nativeRolePolicy(ctx context.Context, source *gateway.S
 		return p, nil
 	}
 	if source.ScopeID != nil {
-		if n, ok := pyint.Parse(pystr.Strip(*source.ScopeID)); ok {
+		if n, ok := pyint.Parse(strings.TrimSpace(*source.ScopeID)); ok {
 			p.guildID = n
 		} else {
 			p.guildID = big.NewInt(-1)
@@ -63,7 +64,7 @@ func (a *DiscordAdapter) ReauthorizeNativeRoles(ctx context.Context, source *gat
 	if policy.guildID.Sign() < 0 || source.UserID == nil {
 		return false, nil
 	}
-	uid, ok := pyint.Parse(pystr.Strip(*source.UserID))
+	uid, ok := pyint.Parse(strings.TrimSpace(*source.UserID))
 	if !ok {
 		return false, nil
 	}

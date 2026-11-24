@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -105,7 +107,7 @@ func probeAudioDurationSeconds(ctx context.Context, audioPath string) *float64 {
 	if err != nil {
 		return nil
 	}
-	raw := pystr.Strip(text)
+	raw := strings.TrimSpace(text)
 	if raw == "" {
 		return nil
 	}
@@ -129,15 +131,6 @@ func (a *DiscordAdapter) playbackTimeoutForAudio(ctx context.Context, audioPath 
 	return floor
 }
 
-// Python float of a voice_fx setting, the default when the key is absent
-func (a *DiscordAdapter) voiceFXFloat(key string, def float64) (float64, error) {
-	v, ok := a.voiceFXCfg[key]
-	if !ok {
-		return def, nil
-	}
-	return pyint.Float(v)
-}
-
 // Cached ambient bed PCM, a decodable custom file else the synthesised bed, nil when ambient is off
 func (a *DiscordAdapter) getAmbientPCM(ctx context.Context) ([]byte, error) {
 	a.mu.Lock()
@@ -146,17 +139,10 @@ func (a *DiscordAdapter) getAmbientPCM(ctx context.Context) ([]byte, error) {
 	if cached != nil {
 		return cached, nil
 	}
-	if !pyrepr.Truthy(a.voiceFXCfg["ambient_enabled"]) {
+	if !a.voiceFX.AmbientEnabled {
 		return nil, nil
 	}
-	path := ""
-	if raw := a.voiceFXCfg["ambient_path"]; pyrepr.Truthy(raw) {
-		s, ok := raw.(string)
-		if !ok {
-			return nil, fmt.Errorf("voice ambient_path is %s, expected a path", errchain.Kind(raw))
-		}
-		path = pystr.Strip(s)
-	}
+	path := a.voiceFX.AmbientPath
 	var pcm []byte
 	if path != "" {
 		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
@@ -181,19 +167,7 @@ func (a *DiscordAdapter) getAmbientPCM(ctx context.Context) ([]byte, error) {
 
 // Installs one mixer as the connection's lifelong source, layering speech over the ambient bed
 func (a *DiscordAdapter) installVoiceMixer(ctx context.Context, guildID int64, vc voiceConnection) error {
-	ambientGain, err := a.voiceFXFloat("ambient_gain", 0.18)
-	if err != nil {
-		return err
-	}
-	duckGain, err := a.voiceFXFloat("duck_gain", 0.06)
-	if err != nil {
-		return err
-	}
-	speechGain, err := a.voiceFXFloat("speech_gain", 1.0)
-	if err != nil {
-		return err
-	}
-	mixer := newVoiceMixer(ambientGain, duckGain, speechGain, 400)
+	mixer := newVoiceMixer(a.voiceFX.AmbientGain, a.voiceFX.DuckGain, a.voiceFX.SpeechGain, 400)
 	ambient, err := a.getAmbientPCM(ctx)
 	if err != nil {
 		return err
@@ -223,17 +197,9 @@ func (a *DiscordAdapter) installVoiceMixer(ctx context.Context, guildID int64, v
 	return nil
 }
 
-// Configured lead silence milliseconds, zero when unset or not an integer
+// Configured lead silence in whole milliseconds
 func (a *DiscordAdapter) leadSilenceMS() int64 {
-	raw := a.voiceFXCfg["lead_silence_ms"]
-	if !pyrepr.Truthy(raw) {
-		return 0
-	}
-	ms, err := pyint.Int64(raw)
-	if err != nil {
-		return 0
-	}
-	return ms
+	return a.voiceFX.LeadSilence.Milliseconds()
 }
 
 // Silence prepended to speech clips so the voice socket warm up does not clip their start
@@ -247,31 +213,17 @@ func (a *DiscordAdapter) leadSilenceBytes() []byte {
 
 // One ack phrase drawn from the configured phrases, the localized defaults when none are set
 func (a *DiscordAdapter) pickAckPhrase(ctx context.Context) (string, error) {
-	raw := a.voiceFXCfg["ack_phrases"]
-	if !pyrepr.Truthy(raw) {
-		phrases := defaultVoiceAckPhrases(ctx)
-		return phrases[mrand.IntN(len(phrases))], nil
+	phrases := a.voiceFX.AckPhrases
+	if len(phrases) == 0 {
+		phrases = defaultVoiceAckPhrases(ctx)
 	}
-	switch p := raw.(type) {
-	case []any:
-		item := p[mrand.IntN(len(p))]
-		if s, ok := item.(string); ok {
-			return s, nil
-		}
-		return pyrepr.Str(item), nil
-	case []string:
-		return p[mrand.IntN(len(p))], nil
-	case string:
-		r := []rune(p)
-		return string(r[mrand.IntN(len(r))]), nil
-	}
-	return "", fmt.Errorf("voice ack phrases are %s, expected a list of phrases", errchain.Kind(raw))
+	return phrases[mrand.IntN(len(phrases))], nil
 }
 
 // Speaks a short ack over the ambient bed, false without acks enabled, a mixer or a synthesized clip
 func (a *DiscordAdapter) PlayAckInVoice(ctx context.Context, guildID int, phrase *string) (bool, error) {
 	gid := int64(guildID)
-	if !pyrepr.Truthy(a.voiceFXCfg["ack_enabled"]) {
+	if !a.voiceFX.AckEnabled {
 		return false, nil
 	}
 	a.mu.Lock()
@@ -340,10 +292,7 @@ func (a *DiscordAdapter) PlayAckInVoice(ctx context.Context, guildID int, phrase
 	if len(pcm) == 0 {
 		return false, nil
 	}
-	gain, err := a.voiceFXFloat("speech_gain", 1.0)
-	if err != nil {
-		return fail(err)
-	}
+	gain := a.voiceFX.SpeechGain
 	mixer.playSpeech(append(a.leadSilenceBytes(), pcm...), &gain, 40)
 	a.resetVoiceTimeout(gid)
 	return true, nil
@@ -450,7 +399,7 @@ func (a *DiscordAdapter) joinVoiceChannel(ctx context.Context, channel *discordg
 		a.voiceListenTasks[guildID] = spawnTask(taskCtx, func(lctx context.Context) { a.voiceListenLoop(lctx, guildID) })
 		a.mu.Unlock()
 	}
-	if pyrepr.Truthy(a.voiceFXCfg["enabled"]) {
+	if a.voiceFX.Enabled {
 		if err := a.installVoiceMixer(ctx, guildID, vc); err != nil {
 			pkgLog().Warn(fmt.Sprintf("Voice mixer failed to start: %s", err))
 		}
@@ -510,10 +459,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 	if mixer != nil {
 		pcm := decodeToPCM(ctx, audioPath, 30*time.Second)
 		if len(pcm) > 0 {
-			gain, err := a.voiceFXFloat("speech_gain", 1.0)
-			if err != nil {
-				return false, err
-			}
+			gain := a.voiceFX.SpeechGain
 			mixer.playSpeech(append(a.leadSilenceBytes(), pcm...), &gain, 40)
 			start := time.Now()
 			for mixer.speechIsActive() {
@@ -560,7 +506,7 @@ func (a *DiscordAdapter) playInVoiceChannel(ctx context.Context, guildID int64, 
 	if ms := a.leadSilenceMS(); ms > 0 {
 		options = fmt.Sprintf("-af adelay=%d:all=1", ms)
 	}
-	pcmSource, err := newFFmpegPCMAudio(audioPath, resolveFFmpegExecutable(), options)
+	pcmSource, err := newFFmpegPCMAudio(audioPath, resolveFFmpegExecutable(ctx), options)
 	if err != nil {
 		return false, err
 	}

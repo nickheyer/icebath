@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var contentNonTextPartTypes = map[string]bool{"image": true, "image_url": true, "input_image": true, "audio": true, "input_audio": true}
@@ -125,7 +124,7 @@ func textFromPart(part any) string {
 	if t := partField(part, "type"); pyTruthy(t) {
 		typ = pyrepr.Str(t)
 	}
-	if contentNonTextPartTypes[pystr.Lower(pystr.Strip(typ))] {
+	if contentNonTextPartTypes[strings.ToLower(strings.TrimSpace(typ))] {
 		return ""
 	}
 	for _, key := range contentTextKeys {

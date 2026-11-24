@@ -1,6 +1,8 @@
 package weixin
 
 import (
+	"unicode"
+
 	"context"
 	"path/filepath"
 	"strings"
@@ -40,8 +42,8 @@ func walkMarkdownLines(content string) []markdownLine {
 	var out []markdownLine
 	inCodeBlock := false
 	for _, raw := range pystr.Splitlines(content, false) {
-		line := pystr.Rstrip(raw)
-		isFence := matches(fenceRE, pystr.Strip(line))
+		line := strings.TrimRightFunc(raw, unicode.IsSpace)
+		isFence := matches(fenceRE, strings.TrimSpace(line))
 		out = append(out, markdownLine{line, isFence, inCodeBlock})
 		if isFence {
 			inCodeBlock = !inCodeBlock
@@ -55,7 +57,7 @@ func normalizeMarkdownBlocks(content string) string {
 	var result []string
 	blankRun := 0
 	for _, l := range walkMarkdownLines(content) {
-		if !l.isFence && !l.inCodeBlock && pystr.Strip(l.line) == "" {
+		if !l.isFence && !l.inCodeBlock && strings.TrimSpace(l.line) == "" {
 			blankRun++
 			if blankRun <= 1 {
 				result = append(result, "")
@@ -67,7 +69,7 @@ func normalizeMarkdownBlocks(content string) string {
 		}
 		result = append(result, l.line)
 	}
-	return pystr.Strip(strings.Join(result, "\n"))
+	return strings.TrimSpace(strings.Join(result, "\n"))
 }
 
 // Long display lines wrapped for copying in WeChat clients, code and table lines kept whole
@@ -79,7 +81,7 @@ func wrapCopyFriendlyLinesForWeixin(content string) string {
 	options.BreakLongWords, options.BreakOnHyphens, options.ReplaceWhitespace = false, false, false
 	var wrapped []string
 	for _, l := range walkMarkdownLines(content) {
-		stripped := pystr.Strip(l.line)
+		stripped := strings.TrimSpace(l.line)
 		keep := l.isFence || l.inCodeBlock || pystr.Len(l.line) <= weixinCopyLineWidth || stripped == "" || strings.HasPrefix(stripped, "|")
 		if keep || matches(tableRuleRE, stripped) {
 			wrapped = append(wrapped, l.line)
@@ -91,7 +93,7 @@ func wrapCopyFriendlyLinesForWeixin(content string) string {
 		}
 		wrapped = append(wrapped, parts...)
 	}
-	return pystr.Strip(strings.Join(wrapped, "\n"))
+	return strings.TrimSpace(strings.Join(wrapped, "\n"))
 }
 
 // Paragraph and fenced code blocks of the content, a fence always starting and ending its own block
@@ -99,7 +101,7 @@ func splitMarkdownBlocks(content string) []string {
 	var blocks, current []string
 	flush := func() {
 		if len(current) > 0 {
-			blocks = append(blocks, pystr.Strip(strings.Join(current, "\n")))
+			blocks = append(blocks, strings.TrimSpace(strings.Join(current, "\n")))
 			current = nil
 		}
 	}
@@ -107,7 +109,7 @@ func splitMarkdownBlocks(content string) []string {
 		if l.isFence && !l.inCodeBlock {
 			flush()
 		}
-		if l.isFence || l.inCodeBlock || pystr.Strip(l.line) != "" {
+		if l.isFence || l.inCodeBlock || strings.TrimSpace(l.line) != "" {
 			current = append(current, l.line)
 		} else {
 			flush()
@@ -131,24 +133,24 @@ func splitDeliveryUnitsForWeixin(content string) []string {
 	var units []string
 	for _, block := range splitMarkdownBlocks(content) {
 		lines := pystr.Splitlines(block, false)
-		if matches(fenceRE, pystr.Strip(lines[0])) {
+		if matches(fenceRE, strings.TrimSpace(lines[0])) {
 			units = append(units, block)
 			continue
 		}
 		var current []string
 		for _, raw := range lines {
-			line := pystr.Rstrip(raw)
-			if len(current) > 0 && pystr.Strip(line) != "" && (strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t")) {
+			line := strings.TrimRightFunc(raw, unicode.IsSpace)
+			if len(current) > 0 && strings.TrimSpace(line) != "" && (strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t")) {
 				current = append(current, line)
 				continue
 			}
-			units = append(units, pystr.Strip(strings.Join(current, "\n")))
+			units = append(units, strings.TrimSpace(strings.Join(current, "\n")))
 			current = nil
-			if pystr.Strip(line) != "" {
+			if strings.TrimSpace(line) != "" {
 				current = []string{line}
 			}
 		}
-		units = append(units, pystr.Strip(strings.Join(current, "\n")))
+		units = append(units, strings.TrimSpace(strings.Join(current, "\n")))
 	}
 	out := []string{}
 	for _, unit := range units {
@@ -161,7 +163,7 @@ func splitDeliveryUnitsForWeixin(content string) []string {
 
 // Whether a line reads as a short chat line rather than a list, quote, heading or table row
 func looksLikeChattyLineForWeixin(line string) bool {
-	stripped := pystr.Strip(line)
+	stripped := strings.TrimSpace(line)
 	if stripped == "" || pystr.Len(stripped) > 48 || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 		return false
 	}
@@ -177,14 +179,14 @@ func looksLikeChattyLineForWeixin(line string) bool {
 func shouldSplitShortChatBlockForWeixin(block string) bool {
 	var lines []string
 	for _, line := range pystr.Splitlines(block, false) {
-		if pystr.Strip(line) != "" {
+		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
 	}
 	if len(lines) < 2 || len(lines) > 6 {
 		return false
 	}
-	first := pystr.Strip(lines[0])
+	first := strings.TrimSpace(lines[0])
 	if matches(headerRE, first) || (pystr.Len(first) <= 24 && (strings.HasSuffix(first, ":") || strings.HasSuffix(first, "："))) {
 		return false
 	}
@@ -291,9 +293,9 @@ func extractText(itemList []any) (string, error) {
 		}
 		if isMediaItemType(refItem.Vals["type"]) {
 			if title := ref.Vals["title"]; pyrepr.Truthy(title) {
-				return pystr.Strip("[引用媒体: " + pyrepr.Str(title) + "]\n" + text), nil
+				return strings.TrimSpace("[引用媒体: " + pyrepr.Str(title) + "]\n" + text), nil
 			}
-			return pystr.Strip("[引用媒体]\n" + text), nil
+			return strings.TrimSpace("[引用媒体]\n" + text), nil
 		}
 		if len(refItem.Keys) > 0 {
 			var parts []string
@@ -308,7 +310,7 @@ func extractText(itemList []any) (string, error) {
 				parts = append(parts, quoted)
 			}
 			if len(parts) > 0 {
-				return pystr.Strip("[引用: " + strings.Join(parts, " | ") + "]\n" + text), nil
+				return strings.TrimSpace("[引用: " + strings.Join(parts, " | ") + "]\n" + text), nil
 			}
 		}
 		return text, nil

@@ -7,20 +7,19 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Points the home at a fresh directory and clears the cached CLI config
+// Points the home at a fresh directory with no launch folder handed in
 func tempHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
 	isolateMirroredEnv(t)
-	SetCLIConfig(nil)
-	t.Cleanup(func() { SetCLIConfig(nil) })
 	return dir
 }
 
-// Unsets the working folder the config loader exports for one case and restores it after
+// Unsets the launch folder a parent process may have handed this test process, restored after the case
 func isolateMirroredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("TERMINAL_CWD", "")
@@ -30,31 +29,18 @@ func isolateMirroredEnv(t *testing.T) {
 func TestResolvePrefillMessagesFileUsesTopLevel(t *testing.T) {
 	t.Setenv("ICEBATH_PREFILL_MESSAGES_FILE", "")
 	os.Unsetenv("ICEBATH_PREFILL_MESSAGES_FILE")
-	got := resolvePrefillMessagesFile(context.Background(), map[string]any{
-		"prefill_messages_file": "top.json",
-		"agent":                 map[string]any{"prefill_messages_file": "legacy.json"},
-	})
-	if got != "top.json" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestResolvePrefillMessagesFileAcceptsLegacyAgentKey(t *testing.T) {
-	t.Setenv("ICEBATH_PREFILL_MESSAGES_FILE", "")
-	os.Unsetenv("ICEBATH_PREFILL_MESSAGES_FILE")
-	got := resolvePrefillMessagesFile(context.Background(), map[string]any{"agent": map[string]any{"prefill_messages_file": "legacy.json"}})
-	if got != "legacy.json" {
+	home := tempHome(t)
+	os.WriteFile(filepath.Join(home, "config.yaml"), []byte("prefill_messages_file: top.json\n"), 0o600)
+	if got := resolvePrefillMessagesFile(context.Background()); got != "top.json" {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestResolvePrefillMessagesFilePrefersEnv(t *testing.T) {
+	home := tempHome(t)
+	os.WriteFile(filepath.Join(home, "config.yaml"), []byte("prefill_messages_file: top.json\n"), 0o600)
 	t.Setenv("ICEBATH_PREFILL_MESSAGES_FILE", "env.json")
-	got := resolvePrefillMessagesFile(context.Background(), map[string]any{
-		"prefill_messages_file": "top.json",
-		"agent":                 map[string]any{"prefill_messages_file": "legacy.json"},
-	})
-	if got != "env.json" {
+	if got := resolvePrefillMessagesFile(context.Background()); got != "env.json" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -78,8 +64,8 @@ func TestLoadPrefillMessagesReadsAJSONArrayUnderTheHome(t *testing.T) {
 	}
 }
 
-// Writes the home and managed config files and loads the CLI config fresh
-func loadWithManaged(t *testing.T, userYAML, managedYAML string) map[string]any {
+// Writes the home and managed config files of a fresh home
+func loadWithManaged(t *testing.T, userYAML, managedYAML string) context.Context {
 	t.Helper()
 	home := tempHome(t)
 	managed := t.TempDir()
@@ -87,130 +73,37 @@ func loadWithManaged(t *testing.T, userYAML, managedYAML string) map[string]any 
 	os.WriteFile(filepath.Join(home, "config.yaml"), []byte(userYAML), 0o600)
 	os.WriteFile(filepath.Join(managed, "config.yaml"), []byte(managedYAML), 0o600)
 	config.InvalidateManagedCache()
-	return LoadCLIConfig(context.Background())
+	return context.Background()
 }
 
 func TestCliConfigHonorsManagedSkin(t *testing.T) {
-	cfg := loadWithManaged(t, "display:\n  skin: user_skin\n", "display:\n  skin: cyberpunk\n")
-	if sectionOf(cfg, "display")["skin"] != "cyberpunk" {
-		t.Fatalf("display %v", cfg["display"])
+	ctx := loadWithManaged(t, "display:\n  skin: user_skin\n", "display:\n  skin: cyberpunk\n")
+	if got := settings.Skin.Get(ctx); got != "cyberpunk" {
+		t.Fatalf("skin %q", got)
 	}
 }
 
 func TestCliConfigManagedLeafPreservesUserSiblings(t *testing.T) {
-	cfg := loadWithManaged(t, "display:\n  skin: user_skin\n  show_reasoning: true\n", "display:\n  skin: cyberpunk\n")
-	display := sectionOf(cfg, "display")
-	if display["skin"] != "cyberpunk" || display["show_reasoning"] != true {
-		t.Fatalf("display %v", display)
+	ctx := loadWithManaged(t, "display:\n  skin: user_skin\n  show_reasoning: true\n", "display:\n  skin: cyberpunk\n")
+	if got := settings.Skin.Get(ctx); got != "cyberpunk" {
+		t.Fatalf("skin %q", got)
+	}
+	if !settings.ShowThinking.Get(settings.WithPlatform(ctx, settings.LocalPlatform)) {
+		t.Fatal("user show_reasoning lost under a managed sibling")
 	}
 }
 
-// Writes the sentinel user config the ignore flag tests read
-func writeUserConfig(t *testing.T, home, modelDefault string) {
-	t.Helper()
-	yaml := "model:\n  default: " + modelDefault + "\n  provider: openrouter\nagent:\n  system_prompt: \"from user config\"\n"
-	os.WriteFile(filepath.Join(home, "config.yaml"), []byte(yaml), 0o600)
-}
-
-func TestIgnoreUserConfigEnvGateUserConfigLoadedWhenFlagUnset(t *testing.T) {
-	home := tempHome(t)
-	os.Unsetenv("ICEBATH_IGNORE_USER_CONFIG")
-	writeUserConfig(t, home, "test-vendor/ignore-user-config-sentinel")
-	cfg := LoadCLIConfig(context.Background())
-	if sectionOf(cfg, "model")["default"] != "test-vendor/ignore-user-config-sentinel" || sectionOf(cfg, "agent")["system_prompt"] != "from user config" {
-		t.Fatalf("cfg %v", cfg)
-	}
-}
-
-func TestIgnoreUserConfigEnvGateUserConfigSkippedWhenFlagSet(t *testing.T) {
-	home := tempHome(t)
-	writeUserConfig(t, home, "test-vendor/ignore-user-config-sentinel")
-	t.Setenv("ICEBATH_IGNORE_USER_CONFIG", "1")
-	cfg := LoadCLIConfig(context.Background())
-	if sectionOf(cfg, "agent")["system_prompt"] == "from user config" {
-		t.Fatalf("user system prompt leaked %v", cfg)
-	}
-	if sectionOf(cfg, "model")["default"] == "test-vendor/ignore-user-config-sentinel" {
-		t.Fatalf("user model leaked %v", cfg)
-	}
-}
-
-func TestIgnoreUserConfigEnvGateFlagIgnoredWhenSetToOtherValue(t *testing.T) {
-	home := tempHome(t)
-	writeUserConfig(t, home, "test-vendor/ignore-user-config-sentinel")
-	t.Setenv("ICEBATH_IGNORE_USER_CONFIG", "true")
-	cfg := LoadCLIConfig(context.Background())
-	if sectionOf(cfg, "model")["default"] != "test-vendor/ignore-user-config-sentinel" {
-		t.Fatalf("cfg %v", cfg)
-	}
-}
-
-func TestMergeFileConfigMergesSectionsKeyByKey(t *testing.T) {
-	defaults := cliConfigDefaults()
-	mergeFileConfig(defaults, map[string]any{"model": map[string]any{"default": "m1", "base_url": "http://x"},
-		"display": map[string]any{"compact": true}, "memory": map[string]any{"provider": "p"}, "agent": nil})
-	model := sectionOf(defaults, "model")
-	if model["default"] != "m1" || model["base_url"] != "http://x" || defaults["agent"] == nil {
-		t.Fatalf("defaults %v", defaults)
-	}
-	if sectionOf(defaults, "display")["compact"] != true || sectionOf(defaults, "display")["skin"] != "default" || defaults["memory"] == nil {
-		t.Fatalf("merge %v", defaults)
-	}
-	plain := cliConfigDefaults()
-	mergeFileConfig(plain, map[string]any{"model": "m2", "agent": map[string]any{"max_turns": 3}})
-	if _, isSection := plain["model"].(map[string]any); !isSection || sectionOf(plain, "model")["default"] == "m2" || sectionOf(plain, "agent")["max_turns"] != 3 {
-		t.Fatalf("plain %v", plain)
-	}
-}
-
-// Mirrors a local terminal config from a fresh working directory with the inherited gateway marker set
-func mirrorFromGatewayShell(t *testing.T) (string, string) {
-	t.Helper()
-	dir := t.TempDir()
-	t.Chdir(dir)
-	t.Setenv("_ICEBATH_GATEWAY", "1")
-	t.Setenv("TERMINAL_CWD", "/gateway/terminal/cwd")
-	exportTerminalCwd(map[string]any{"terminal": map[string]any{"backend": "local", "cwd": "/configured/cwd"}})
-	cwd, _ := os.Getwd()
-	return os.Getenv("TERMINAL_CWD"), cwd
-}
-
-func TestInheritedGatewayMarkerDoesNotKeepTheGatewayCwd(t *testing.T) {
-	gatewayProcess.Store(false)
-	if got, want := mirrorFromGatewayShell(t); got != want {
-		t.Fatalf("TERMINAL_CWD %q want %q", got, want)
-	}
-}
-
-func TestGatewayProcessKeepsItsBridgedCwd(t *testing.T) {
-	MarkGatewayProcess()
-	t.Cleanup(func() { gatewayProcess.Store(false) })
-	if got, _ := mirrorFromGatewayShell(t); got != "/gateway/terminal/cwd" {
-		t.Fatalf("TERMINAL_CWD %q", got)
-	}
-	if !InGatewayProcess() {
-		t.Fatal("marker lost")
-	}
-}
-
-// Writes a home config.yaml and loads the CLI config fresh from it
-func loadFromYAML(t *testing.T, yaml string) map[string]any {
+// Writes a home config.yaml of a fresh home
+func loadFromYAML(t *testing.T, yaml string) context.Context {
 	t.Helper()
 	home := tempHome(t)
 	os.WriteFile(filepath.Join(home, "config.yaml"), []byte(yaml), 0o600)
-	return LoadCLIConfig(context.Background())
+	return context.Background()
 }
 
 func TestRootLevelProviderOverrideTerminalVercelRuntimeKept(t *testing.T) {
-	cfg := loadFromYAML(t, "terminal:\n  backend: vercel_sandbox\n  vercel_runtime: python3.13\n")
-	if sectionOf(cfg, "terminal")["vercel_runtime"] != "python3.13" {
-		t.Fatalf("terminal %v", cfg["terminal"])
+	ctx := loadFromYAML(t, "terminal:\n  backend: vercel_sandbox\n  vercel_runtime: python3.13\n")
+	if got := settings.TerminalVercelRuntime.Get(ctx); got != "python3.13" {
+		t.Fatalf("vercel runtime %q", got)
 	}
-}
-
-// Replaces the process wide CLI config, nil forcing the next CLIConfig call to reload
-func SetCLIConfig(cfg map[string]any) {
-	cliConfigMu.Lock()
-	cliConfigLoaded = cfg
-	cliConfigMu.Unlock()
 }

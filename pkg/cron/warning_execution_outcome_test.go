@@ -91,7 +91,7 @@ func realRunPresentation(t *testing.T, mode string, suppress, externalWorker boo
 		}
 		id := execution["id"].(string)
 		job.ExecutionID = &id
-		t.Setenv(externalWorkerEnv, id)
+		ctx = withExternalWorker(ctx, id)
 		enqueueAndWait = func(q *DeliveryQueue, ctx context.Context, executionID string, queued *Job, content string, forFailure bool, timeout *float64) (*string, error) {
 			if _, err := q.Enqueue(ctx, executionID, queued, content, forFailure); err != nil {
 				return nil, err

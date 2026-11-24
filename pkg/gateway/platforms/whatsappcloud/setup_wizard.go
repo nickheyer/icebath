@@ -32,7 +32,7 @@ func rulesValidator(label string, rules ...cloudRule) cloudValidator {
 		if value == "" {
 			return false, label + " is required"
 		}
-		s := pystr.Strip(value)
+		s := strings.TrimSpace(value)
 		for _, rule := range rules {
 			if rule.fails(s) {
 				return false, rule.reason(s)
@@ -61,7 +61,7 @@ var (
 	validateWabaID    = numericIDValidator("WABA ID", 10, 25, "10-25 digits")
 	validateAppID     = numericIDValidator("App ID", 13, 20, "15-16 digits")
 	validateAppSecret = rulesValidator("App Secret",
-		cloudRule{func(s string) bool { return !lowerHex(pystr.Lower(s)) }, fixed("App Secret should be a hex string (only digits 0-9 and " +
+		cloudRule{func(s string) bool { return !lowerHex(strings.ToLower(s)) }, fixed("App Secret should be a hex string (only digits 0-9 and " +
 			"letters a-f). Make sure you copied the 'App secret' from " +
 			"Settings → Basic, not some other token.")},
 		cloudRule{func(s string) bool { return pystr.Len(s) != 32 }, func(s string) string {
@@ -152,13 +152,13 @@ func (wz *cloudWizard) prompt(message, def string, secret bool) string {
 		fmt.Fprintln(wz.out)
 		return ""
 	}
-	return pystr.Strip(value)
+	return strings.TrimSpace(value)
 }
 
 // Repeats the prompt until a valid value, empty when the user gives up
 func (wz *cloudWizard) promptValidated(message string, validator cloudValidator, current, helpText string, secret bool) string {
 	if helpText != "" {
-		for _, line := range pystr.Splitlines(pystr.Strip(helpText), false) {
+		for _, line := range pystr.Splitlines(strings.TrimSpace(helpText), false) {
 			fmt.Fprintf(wz.out, "  %s\n", line)
 		}
 	}
@@ -171,12 +171,12 @@ func (wz *cloudWizard) promptValidated(message string, validator cloudValidator,
 		}
 		ok, reason := validator(value)
 		if ok {
-			return pystr.Strip(value)
+			return strings.TrimSpace(value)
 		}
 		fmt.Fprintf(wz.out, "    ✗ %s\n", reason)
 		if attempts >= 3 {
 			again, err := wz.console.Input("    Try again, or press Enter to skip: ")
-			if err != nil || pystr.Strip(again) == "" {
+			if err != nil || strings.TrimSpace(again) == "" {
 				return ""
 			}
 			attempts = 0
@@ -343,7 +343,7 @@ func (wz *cloudWizard) stepVerifyToken() (string, error) {
 		if err != nil {
 			answer = "n"
 		}
-		regen = pystr.Lower(pystr.Strip(answer))
+		regen = strings.ToLower(strings.TrimSpace(answer))
 	}
 	if regen == "y" || regen == "yes" {
 		label := "Generated"
@@ -392,13 +392,13 @@ func (wz *cloudWizard) stepAllowlist() error {
 	allowed, err := wz.console.LineInput("  → Allowed users" + suffix + ": ")
 	if err != nil {
 		allowed = ""
-	} else if allowed = pystr.Strip(allowed); allowed == "" {
+	} else if allowed = strings.TrimSpace(allowed); allowed == "" {
 		allowed = allowDefault
 	}
 	if allowed != "" {
 		var parts []string
 		for _, part := range strings.Split(allowed, ",") {
-			if pystr.Strip(part) != "" {
+			if strings.TrimSpace(part) != "" {
 				parts = append(parts, cleanRecipient(part))
 			}
 		}

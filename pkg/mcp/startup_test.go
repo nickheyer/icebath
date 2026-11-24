@@ -60,10 +60,10 @@ func TestStartupResolveTimeoutSingleQueryUsesLargerBound(t *testing.T) {
 	dir := isolateHome(t)
 	writeStartupConfig(t, dir, "mcp_discovery_timeout: 1.5\nmcp_single_query_discovery_timeout: 25.0\n")
 	ctx := context.Background()
-	if got := resolveDiscoveryTimeout(ctx, nil, nil, false); got != 1500*time.Millisecond {
+	if got := resolveDiscoveryTimeout(ctx, nil, false); got != 1500*time.Millisecond {
 		t.Fatalf("interactive bound %v", got)
 	}
-	if got := resolveDiscoveryTimeout(ctx, nil, nil, true); got != 25*time.Second {
+	if got := resolveDiscoveryTimeout(ctx, nil, true); got != 25*time.Second {
 		t.Fatalf("single query bound %v", got)
 	}
 }
@@ -73,19 +73,19 @@ func TestStartupResolveTimeoutSingleQueryFallsBack(t *testing.T) {
 	ctx := context.Background()
 	for _, body := range []string{"mcp_single_query_discovery_timeout: 0\n", "mcp_single_query_discovery_timeout: oops\n", "{}\n"} {
 		writeStartupConfig(t, dir, body)
-		if got := resolveDiscoveryTimeout(ctx, nil, nil, true); got != 15*time.Second {
+		if got := resolveDiscoveryTimeout(ctx, nil, true); got != 15*time.Second {
 			t.Fatalf("%q resolved %v", body, got)
 		}
 	}
 	writeStartupConfig(t, dir, "mcp_discovery_timeout: -3\n")
-	if got := resolveDiscoveryTimeout(ctx, nil, nil, false); got != 1500*time.Millisecond {
+	if got := resolveDiscoveryTimeout(ctx, nil, false); got != 1500*time.Millisecond {
 		t.Fatalf("negative bound resolved %v", got)
 	}
 }
 
 func TestStartupResolveTimeoutExplicitOverridesSingleQuery(t *testing.T) {
 	isolateHome(t)
-	if got := resolveDiscoveryTimeout(context.Background(), nil, durp(5*time.Second), true); got != 5*time.Second {
+	if got := resolveDiscoveryTimeout(context.Background(), durp(5*time.Second), true); got != 5*time.Second {
 		t.Fatalf("explicit bound %v", got)
 	}
 }

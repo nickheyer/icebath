@@ -239,7 +239,7 @@ func copilotAccountStatus(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		token := pystr.Strip(raw)
+		token := strings.TrimSpace(raw)
 		if valid, _ := validateCopilotToken(token); token != "" && valid {
 			return pyjson.ObjectOf("logged_in", true, "source", "env_var", "source_label", envVar+SecretSourceLabel(h, envVar),
 				"token_preview", nil, "expires_at", nil, "has_refresh_token", false), nil
@@ -262,7 +262,7 @@ func copilotPyInt(v any) (int, error) {
 		}
 		return int(n), nil
 	case string:
-		i, err := strconv.Atoi(pystr.Strip(strings.ReplaceAll(n, "_", "")))
+		i, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(n, "_", "")))
 		if err != nil {
 			return 0, fmt.Errorf("%s is not a whole number", pyStringRepr(n))
 		}

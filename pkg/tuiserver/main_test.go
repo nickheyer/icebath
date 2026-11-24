@@ -4,17 +4,14 @@ import (
 	"context"
 	"maps"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -44,28 +41,7 @@ func TestMain(m *testing.M) {
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	tools.PoolKeys = provider.PoolKeySource()
-	NormalizePersonalityName = commands.NormalizePersonalityName
-	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
-	Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
-	ResolveCommand = func(name string) (ResolvedCommand, bool) {
-		d := commands.Resolve(name)
-		if d == nil {
-			return ResolvedCommand{}, false
-		}
-		return ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe}, true
-	}
 	gateway.ResolveBoundCommand, gateway.RunBoundCommand = commands.BoundGatewayCommand, commands.RunBoundGatewayCommand
-	CommandsByCategory = func() []HelpCategory {
-		var out []HelpCategory
-		for _, g := range commands.CommandsByCategory(commands.Default) {
-			category := HelpCategory{Category: g.Category}
-			for _, row := range g.Rows {
-				category.Rows = append(category.Rows, [2]string{row.Command, row.Description})
-			}
-			out = append(out, category)
-		}
-		return out
-	}
 	dir, err := os.MkdirTemp("", "tuiserver-home-")
 	if err != nil {
 		panic(err)
@@ -87,21 +63,11 @@ func serverState(t *testing.T) func() {
 	savedDB, savedDBError := sharedDB, dbError
 	dbMu.Unlock()
 	return func() {
-		for _, live := range tuihost.LiveSessions() {
-			closeSessionByID(context.Background(), live.SID, "test_cleanup", nil)
-		}
-		stopNotificationPollers(t)
 		if !gateway.FlushRuntimeStatus(30 * time.Second) {
 			t.Error("gateway runtime status was still being written 30s after the test")
 		}
 		tuihost.ResetForTests()
 		tuihost.ClearParked()
-		childMirrorsMu.Lock()
-		clear(childMirrors)
-		childMirrorsMu.Unlock()
-		activeChildRuns.Lock()
-		clear(activeChildRuns.at)
-		activeChildRuns.Unlock()
 		methodsMu.Lock()
 		methods = savedMethods
 		methodsMu.Unlock()
@@ -128,90 +94,6 @@ func mainContextState(*testing.T) func() { return pyctx.SnapshotMainForTests() }
 
 // Platform default home of each case inside its own temp dir, never the developer's real one
 func isolatedPlatformDefault(t *testing.T) func() { return home.PatchPlatformDefault(t.TempDir()) }
-
-// Stops every notification poller a case left running and waits for each to finish
-func stopNotificationPollers(t *testing.T) { joinNotificationPollers(t, nil) }
-
-// Stop events of the notification pollers registered so far
-func notificationPollerStops() map[*pythread.Event]bool {
-	notificationPollers.mu.Lock()
-	defer notificationPollers.mu.Unlock()
-	stops := make(map[*pythread.Event]bool, len(notificationPollers.pollers))
-	for _, p := range notificationPollers.pollers {
-		stops[p.stop] = true
-	}
-	return stops
-}
-
-// Build goroutine of a session a case dropped, the session marked so no timer starts one after it
-func pendingAgentBuild(record *tuihost.Session) *agentBuildThread {
-	if record == nil {
-		return nil
-	}
-	lock := record.SetDefault("agent_build_lock", &sync.Mutex{}).(*sync.Mutex)
-	lock.Lock()
-	defer lock.Unlock()
-	record.Set("agent_build_started", true)
-	build, _ := record.Get("_agent_build_thread").(*agentBuildThread)
-	return build
-}
-
-// Waits for the build goroutines of dropped sessions so none writes into the home of a finished case
-func joinAgentBuilds(t *testing.T, builds []*agentBuildThread) {
-	deadline := time.After(30 * time.Second)
-	for _, build := range builds {
-		select {
-		case <-build.done:
-		case <-deadline:
-			t.Error("an agent build was still running 30s after its session was dropped")
-			return
-		}
-	}
-}
-
-// Stops every poller whose stop event is not in kept and waits for each to finish
-func joinNotificationPollers(t *testing.T, kept map[*pythread.Event]bool) {
-	notificationPollers.mu.Lock()
-	var pollers, staying []notificationPoller
-	for _, p := range notificationPollers.pollers {
-		if kept[p.stop] {
-			staying = append(staying, p)
-		} else {
-			pollers = append(pollers, p)
-		}
-	}
-	notificationPollers.pollers = staying
-	notificationPollers.mu.Unlock()
-	for _, p := range pollers {
-		p.stop.Set()
-	}
-	deadline := time.After(30 * time.Second)
-	for _, p := range pollers {
-		select {
-		case <-p.done:
-		case <-deadline:
-			t.Error("a notification poller was still running 30s after the test stopped it")
-			return
-		}
-	}
-}
-
-// Real agent on a dead loopback endpoint with the given route and reasoning config
-func testAgent(t *testing.T, o agent.AIAgentOptions) *agent.AIAgent {
-	t.Helper()
-	if o.BaseURL == "" {
-		o.BaseURL = "http://127.0.0.1:9/v1"
-	}
-	if o.APIKey == nil || o.APIKey == "" {
-		o.APIKey = "test"
-	}
-	o.MaxIterations, o.QuietMode, o.SkipContextFiles, o.SkipMemory = new(5), true, true, true
-	a, err := agent.NewAIAgent(context.Background(), o)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return a
-}
 
 // Writes text to a file the test owns
 func writeFile(t *testing.T, path, text string) {

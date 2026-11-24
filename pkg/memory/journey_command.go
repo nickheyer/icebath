@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -721,6 +722,9 @@ func journeyOpenInEditor(w io.Writer, initial, suffix string) (string, bool) {
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = os.Getenv("VISUAL")
+	}
+	if editor == "" && runtime.GOOS == "windows" {
+		editor = "notepad"
 	}
 	if editor == "" {
 		editor = "vi"

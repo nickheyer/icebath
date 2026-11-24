@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func TestForceReloadSymmetryShellHookReRegisterFailureDoesNotAbortReload(t *testing.T) {
@@ -40,7 +41,7 @@ func TestForceReloadSymmetryForceReloadOfOneProfileDoesNotOrphanAnother(t *testi
 		writeFile(t, mustMkdir(t, homes[label])+"/config.yaml", "hooks:\n  on_session_start:\n  - command: /bin/true\n")
 		ctx := home.WithOverride(context.Background(), homes[label])
 		managers[label] = GetPluginManager(ctx)
-		if _, err := RegisterShellHooksFromConfig(ctx, cfg(), true, false); err != nil {
+		if _, err := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg()), true, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -52,7 +53,7 @@ func TestForceReloadSymmetryForceReloadOfOneProfileDoesNotOrphanAnother(t *testi
 	if count("profile-a") != 1 || count("profile-b") != 1 {
 		t.Fatalf("hooks after force reload a=%d b=%d", count("profile-a"), count("profile-b"))
 	}
-	second, err := RegisterShellHooksFromConfig(home.WithOverride(context.Background(), homes["profile-b"]), cfg(), true, false)
+	second, err := RegisterShellHooksFromConfig(settings.WithFrozen(home.WithOverride(context.Background(), homes["profile-b"]), cfg()), true, false)
 	if err != nil || len(second) != 0 {
 		t.Fatalf("second register %v %v", second, err)
 	}

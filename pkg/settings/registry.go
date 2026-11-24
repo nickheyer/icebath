@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"fmt"
 
 	"sort"
@@ -15,8 +16,12 @@ var registry = struct {
 	sync.RWMutex
 	byKey   map[string]Entry
 	bySlash map[string]Entry
-	order   []string
-}{byKey: map[string]Entry{}, bySlash: map[string]Entry{}}
+	// Settings an environment variable name overrides, in registration order
+	byEnv map[string][]Entry
+	order []string
+	// Map settings whose entries may also sit beside them
+	beside []*Map
+}{byKey: map[string]Entry{}, bySlash: map[string]Entry{}, byEnv: map[string][]Entry{}}
 
 // Adds a setting to the registry, panicking on a duplicate key or alias or a missing description
 func Register[E Entry](e E) E {
@@ -33,6 +38,9 @@ func Register[E Entry](e E) E {
 	if m.Scopes == 0 {
 		m.Scopes = Global
 	}
+	if _, isBool := any(e).(*Bool); m.EnvInvert && (!isBool || m.Env == "") {
+		panic(fmt.Sprintf("settings: %s inverts an env override it does not have or that is not on or off", m.Key))
+	}
 	registry.Lock()
 	defer registry.Unlock()
 	if _, dup := registry.byKey[m.Key]; dup {
@@ -40,6 +48,12 @@ func Register[E Entry](e E) E {
 	}
 	registry.byKey[m.Key] = e
 	registry.order = append(registry.order, m.Key)
+	if m.Env != "" {
+		registry.byEnv[m.Env] = append(registry.byEnv[m.Env], e)
+	}
+	if mp, ok := any(e).(*Map); ok && mp.Beside {
+		registry.beside = append(registry.beside, mp)
+	}
 	if m.Slash != "" {
 		if other, dup := registry.bySlash[m.Slash]; dup {
 			panic(fmt.Sprintf("settings: shortcut %q names both %s and %s", m.Slash, other.Info().Key, m.Key))
@@ -71,6 +85,16 @@ func Lookup(key string) Entry {
 	registry.RLock()
 	defer registry.RUnlock()
 	return registry.byKey[key]
+}
+
+// Setting an environment variable name overrides, the first registered when several take the name, nil when it overrides none
+func ByEnv(name string) Entry {
+	registry.RLock()
+	defer registry.RUnlock()
+	if entries := registry.byEnv[name]; len(entries) > 0 {
+		return entries[0]
+	}
+	return nil
 }
 
 // Setting a key, a slash shortcut or an entry of a map setting names, nil when none
@@ -124,7 +148,70 @@ func mapParentOf(key string) (parent *Map, name string, fields []string) {
 		}
 		return p, segs[n], segs[n+1:]
 	}
+	for n := len(segs) - 1; n > 0; n-- {
+		if p := besideMapOf(strings.Join(segs[:n], "."), segs[n]); p != nil {
+			return p, segs[n], segs[n+1:]
+		}
+	}
 	return nil, "", nil
+}
+
+// Section a map setting sits in, empty at the top level
+func parentSection(key string) string {
+	segs := config.SplitPath(key)
+	return strings.Join(segs[:len(segs)-1], ".")
+}
+
+// Map setting that takes entries beside it in section under name, nil when none does or another setting there takes the name
+func besideMapOf(section, name string) *Map {
+	registry.RLock()
+	var found *Map
+	for _, m := range registry.beside {
+		if parentSection(m.Key) == section {
+			found = m
+			break
+		}
+	}
+	registry.RUnlock()
+	if found == nil || name == "" || name != strings.TrimSpace(name) || !besideFree(section+"."+name) {
+		return nil
+	}
+	return found
+}
+
+// Whether a key beside a map is taken by no setting and no section of settings
+func besideFree(key string) bool {
+	return Lookup(key) == nil && !isSection(key)
+}
+
+// Typed entries written beside a map setting in the profile's config.yaml, by name
+func besideEntries(ctx context.Context, m *Map) map[string]any {
+	section := parentSection(m.Key)
+	l := readLayers(ctx)
+	held := config.AsMap(l.doc)
+	if section != "" {
+		v, _ := lookupPath(l.doc, section)
+		held = config.AsMap(v)
+	}
+	out := map[string]any{}
+	for name, raw := range held {
+		key := name
+		if section != "" {
+			key = section + "." + name
+		}
+		if config.AsMap(raw) == nil || !besideFree(key) {
+			continue
+		}
+		v, _ := storedValue(ctx, l.doc, key)
+		if m.Value == nil {
+			out[name] = v
+			continue
+		}
+		if typed, ok := readPart(m.Value, v); ok {
+			out[name] = typed
+		}
+	}
+	return out
 }
 
 // Key of one entry of a map setting, dots in the entry name kept literal

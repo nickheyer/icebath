@@ -693,5 +693,3 @@ func (m *MemorySetup) Run(ctx context.Context, subcommand, provider string) (int
 	}
 	return 0, err
 }
-
-func registerMemorySetupCommands() {}

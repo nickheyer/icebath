@@ -115,7 +115,7 @@ func mapShadow(row map[string]any) map[string]any {
 	role, _ := row["role"].(string)
 	sidecarWins := sidecar != "" && (role == "user" || role == "assistant")
 	rc, _ := row["reasoning_content"].(string)
-	dropReasoningDup := pystr.Strip(rc) != ""
+	dropReasoningDup := strings.TrimSpace(rc) != ""
 	unpriced := unpricedReplayFields()
 	shadow := map[string]any{}
 	for k, v := range row {

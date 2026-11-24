@@ -128,7 +128,7 @@ func textPayload(text string) string {
 }
 
 // Stripped content, Feishu text being plain by default
-func (a *FeishuAdapter) FormatMessage(content string) string { return pystr.Strip(content) }
+func (a *FeishuAdapter) FormatMessage(content string) string { return strings.TrimSpace(content) }
 
 // Sends chunked text or markdown posts, falling back to plain text when the API rejects a post payload
 func (a *FeishuAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
@@ -532,7 +532,7 @@ func (a *FeishuAdapter) GetChatInfo(ctx context.Context, chatID string) (map[str
 	}
 	var rawType, name string
 	if resp.Data != nil {
-		rawType = pystr.Lower(pystr.Strip(sdkStr(resp.Data.ChatType)))
+		rawType = strings.ToLower(strings.TrimSpace(sdkStr(resp.Data.ChatType)))
 		name = sdkStr(resp.Data.Name)
 	}
 	if name == "" {
@@ -883,7 +883,7 @@ func deriveRemoteFilename(fileURL, contentType, defaultName, defaultExt string) 
 		candidate = defaultName
 	}
 	if pypath.Suffix(candidate) == "" {
-		guessed := pymimetypes.GuessExtension(pystr.Lower(pystr.Strip(strings.SplitN(contentType, ";", 2)[0])), true)
+		guessed := pymimetypes.GuessExtension(strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])), true)
 		if guessed == "" {
 			guessed = defaultExt
 		}

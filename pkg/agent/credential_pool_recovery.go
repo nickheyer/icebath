@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -107,8 +106,8 @@ func recoverRateLimit(pool *provider.Pool, hasRetried429 bool, errorContext map[
 	}
 	usageLimitReached := false
 	if len(errorContext) > 0 {
-		reason := pystr.Lower(contextString(errorContext["reason"]))
-		message := pystr.Lower(contextString(errorContext["message"]))
+		reason := strings.ToLower(contextString(errorContext["reason"]))
+		message := strings.ToLower(contextString(errorContext["message"]))
 		for _, t := range usageLimitReasonTokens {
 			usageLimitReached = usageLimitReached || strings.Contains(reason, t)
 		}
@@ -139,8 +138,8 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 	if pool == nil {
 		return false, hasRetried429, nil
 	}
-	currentProvider := pystr.Lower(pystr.Strip(a.provider))
-	poolProvider := pystr.Lower(pystr.Strip(pool.Provider()))
+	currentProvider := strings.ToLower(strings.TrimSpace(a.provider))
+	poolProvider := strings.ToLower(strings.TrimSpace(pool.Provider()))
 	if poolProvider != "" && !provider.CredentialPoolMatchesProvider(ctx, pool.Provider(), currentProvider, a.baseURL) {
 		pkgLog().Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", poolProvider, currentProvider))
 		return false, hasRetried429, nil
@@ -169,7 +168,7 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 		if effectiveReason != "" {
 			req.FailureReason = provider.PoolFailureReason(effectiveReason, errorContext, billingUnverified)
 		}
-		if pystr.Strip(a.model) != "" {
+		if strings.TrimSpace(a.model) != "" {
 			req.Model = a.model
 		}
 		next, ok := pool.MarkExhaustedAndRotate(req)

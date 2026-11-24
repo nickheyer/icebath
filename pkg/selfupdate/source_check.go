@@ -47,7 +47,7 @@ func checkGitStdout(ctx context.Context, args []string, cwd, git string) (string
 	if result == nil || result.ReturnCode != 0 {
 		return "", false
 	}
-	return pystr.Strip(result.Stdout), true
+	return strings.TrimSpace(result.Stdout), true
 }
 
 // Reports whether git ran and exited 0
@@ -62,7 +62,7 @@ func checkGitCount(ctx context.Context, args []string, cwd, git string) (int64, 
 	if result == nil || result.ReturnCode != 0 {
 		return 0, false
 	}
-	value, ok := pystr.IntText(pystr.Strip(result.Stdout))
+	value, ok := pystr.IntText(strings.TrimSpace(result.Stdout))
 	if !ok || !value.IsInt64() {
 		return 0, false
 	}
@@ -81,7 +81,7 @@ func GitStdoutWithin(ctx context.Context, args []string, root string, timeout ti
 	if result == nil || result.ReturnCode != 0 {
 		return "", false
 	}
-	return pystr.Strip(result.Stdout), true
+	return strings.TrimSpace(result.Stdout), true
 }
 
 // Integer a successful count style git query in root prints, false when git failed or printed no integer
@@ -123,7 +123,7 @@ func branchTip(ctx context.Context, repository, branch, root, git, remote string
 	if result.ReturnCode == 2 {
 		return "", true, ""
 	}
-	detail := pystr.Splitlines(pystr.Strip(result.Stderr), false)
+	detail := pystr.Splitlines(strings.TrimSpace(result.Stderr), false)
 	if len(detail) > 0 {
 		return "", false, firstNonEmpty(failure, "`git ls-remote "+remote+"` failed: "+detail[len(detail)-1])
 	}

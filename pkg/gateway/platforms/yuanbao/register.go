@@ -1,6 +1,8 @@
 package yuanbao
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -92,7 +94,7 @@ func parseSendTarget(ref string) any {
 	if parsed := prefixedSendTarget(ref); parsed != nil {
 		return parsed
 	}
-	if stripped := pystr.Strip(ref); pystr.StrIsDigit(stripped) {
+	if stripped := strings.TrimSpace(ref); pystr.StrIsDigit(stripped) {
 		chatID := "group:" + stripped
 		return &gateway.TargetRefParse{ChatID: &chatID}
 	}

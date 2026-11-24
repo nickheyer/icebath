@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -500,7 +501,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 			pkgLog().Error(fmt.Sprintf("[Slack] Model picker callback failed: %v", err))
 			confirmation = i18n.T(ctx, "platform.slack.picker.switch_failed", "", map[string]any{"error": err.Error()})
 			switchFailed = true
-		} else if prefix := pystr.Strip(i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": ""})); prefix != "" && strings.HasPrefix(confirmation, prefix) {
+		} else if prefix := strings.TrimSpace(i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": ""})); prefix != "" && strings.HasPrefix(confirmation, prefix) {
 			switchFailed = true
 		}
 		headerKey := "platform.slack.picker.switched_header"
@@ -517,7 +518,7 @@ func pyIndex(token any) (int, bool) {
 	case int64:
 		return int(v), true
 	case string:
-		i, err := strconv.Atoi(pystr.Strip(v))
+		i, err := strconv.Atoi(strings.TrimSpace(v))
 		return i, err == nil
 	}
 	return 0, false
@@ -537,7 +538,7 @@ func (a *SlackAdapter) SendClarify(ctx context.Context, chatID, question string,
 		}
 		var elements []any
 		for idx, choice := range choices {
-			label := pystr.Strip(choice)
+			label := strings.TrimSpace(choice)
 			if label == "" {
 				label = i18n.T(ctx, "platform.slack.clarify.option_n", "", map[string]any{"n": strconv.Itoa(idx + 1)})
 			}
@@ -567,7 +568,7 @@ func (a *SlackAdapter) SendClarify(ctx context.Context, chatID, question string,
 
 // Whether a Slack interactive caller may perform gated actions, injected check then runner then env
 func (a *SlackAdapter) isInteractiveUserAuthorized(ctx context.Context, userID, channelID string, userName *string, teamID string) bool {
-	normalized := pystr.Strip(userID)
+	normalized := strings.TrimSpace(userID)
 	if normalized == "" {
 		return false
 	}
@@ -587,7 +588,7 @@ func (a *SlackAdapter) isInteractiveUserAuthorized(ctx context.Context, userID, 
 		}
 		source := &gateway.SessionSource{Platform: gateway.PlatformSlack, ChatID: chatID, ChatType: chatType, UserID: &normalized}
 		if userName != nil && *userName != "" {
-			name := pystr.Strip(*userName)
+			name := strings.TrimSpace(*userName)
 			source.UserName = &name
 		}
 		if teamID != "" {
@@ -599,27 +600,18 @@ func (a *SlackAdapter) isInteractiveUserAuthorized(ctx context.Context, userID, 
 		}
 		pkgLog().Debug(fmt.Sprintf("[Slack] Falling back to env-only interactive auth for user %s: %v", normalized, err))
 	}
-	env := func(name string) string { return pystr.Lower(gateway.PlatformGateEnv(ctx, name, "")) }
-	switch env("SLACK_ALLOW_ALL_USERS") {
-	case "true", "1", "yes":
+	sctx := gateway.SettingsContext(ctx)
+	if settings.SlackAllowAllUsers.Get(sctx) {
 		return true
 	}
-	allowed := map[string]bool{}
-	for _, name := range []string{"SLACK_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS"} {
-		for _, uid := range strings.Split(gateway.PlatformGateEnv(ctx, name, ""), ",") {
-			if uid = pystr.Strip(uid); uid != "" {
-				allowed[uid] = true
-			}
-		}
+	allowed := gateway.SettingSet(ctx, settings.SlackAllowedUsers)
+	for uid := range gateway.SettingSet(ctx, settings.GatewayAllowedUsers) {
+		allowed[uid] = true
 	}
 	if len(allowed) > 0 {
 		return allowed["*"] || allowed[normalized]
 	}
-	switch env("GATEWAY_ALLOW_ALL_USERS") {
-	case "true", "1", "yes":
-		return true
-	}
-	return false
+	return settings.GatewayAllowAllUsers.Get(sctx)
 }
 
 // Unpacked Block Kit interaction fields
@@ -823,7 +815,7 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 		a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText, i18n.T(ctx, "platform.slack.clarify.awaiting", "", map[string]any{"user": in.userName}))
 		return
 	}
-	idx, err := strconv.Atoi(pystr.Strip(token))
+	idx, err := strconv.Atoi(strings.TrimSpace(token))
 	if err != nil {
 		pkgLog().Warn("[Slack] Invalid clarify choice token: " + token)
 		return

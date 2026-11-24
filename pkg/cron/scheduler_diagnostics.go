@@ -43,7 +43,7 @@ func externalWorkerStderrTail(s *Store, path string) string {
 	if err != nil {
 		return ""
 	}
-	text := pystr.Strip(pystr.DecodeUTF8SigReplace(raw))
+	text := strings.TrimSpace(pystr.DecodeUTF8SigReplace(raw))
 	if text == "" {
 		return ""
 	}
@@ -124,5 +124,5 @@ func sourceLine(path string, line int) string {
 	if line < 1 || line > len(lines) {
 		return ""
 	}
-	return pystr.Strip(lines[line-1])
+	return strings.TrimSpace(lines[line-1])
 }

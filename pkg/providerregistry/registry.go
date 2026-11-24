@@ -32,7 +32,7 @@ type ValueError struct{ Message string }
 func (e *ValueError) Error() string { return e.Message }
 
 // Registry key of a name stripped of whitespace and lowercased for case insensitive registries
-func LowerKey(name string) string { return pystr.Lower(pystr.Strip(name)) }
+func LowerKey(name string) string { return strings.ToLower(strings.TrimSpace(name)) }
 
 // Construction options of a provider registry, Normalize defaulting to whitespace stripping
 type Options struct {
@@ -85,7 +85,7 @@ func New[P NamedProvider](opts Options) *Registry[P] {
 		r.Logger = pkgLog()
 	}
 	if r.Normalize == nil {
-		r.Normalize = pystr.Strip
+		r.Normalize = strings.TrimSpace
 	}
 	if r.BuiltinNames == nil {
 		r.BuiltinNames = map[string]bool{}
@@ -93,7 +93,7 @@ func New[P NamedProvider](opts Options) *Registry[P] {
 	r.logLabel = opts.Label
 	if !pystr.IsUpper(opts.Label) {
 		first, size := pystr.DecodeRune(opts.Label)
-		r.logLabel = pystr.Lower(string(first)) + opts.Label[size:]
+		r.logLabel = strings.ToLower(string(first)) + opts.Label[size:]
 	}
 	return r
 }
@@ -164,7 +164,7 @@ func (r *Registry[P]) register(provider any, scope string) (bool, error) {
 		return false, &ProviderTypeError{fmt.Sprintf("register_provider() expects %s %s instance, got %s", article, r.ProviderCls, typeName)}
 	}
 	rawName := p.Name()
-	if pystr.Strip(rawName) == "" {
+	if strings.TrimSpace(rawName) == "" {
 		return false, &ValueError{fmt.Sprintf("%s provider .name must be a non-empty string", r.Label)}
 	}
 	key := r.Normalize(rawName)

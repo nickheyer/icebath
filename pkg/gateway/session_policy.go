@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -528,7 +528,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	model, fine := data["model"].(string)
-	if !fine || pystr.Strip(model) == "" {
+	if !fine || strings.TrimSpace(model) == "" {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	p.Model = &model
@@ -889,7 +889,7 @@ func (p *LocalSessionPolicy) ReasoningConfig() map[string]any {
 	if p.Model != nil {
 		model = *p.Model
 	}
-	return config.ResolveReasoningConfig(p.frozenConfig(), model)
+	return settings.ReasoningConfig(settings.WithFrozen(context.Background(), p.frozenConfig()), model)
 }
 
 // Context binding the session's client environment under the rules it was normalised by

@@ -3,29 +3,21 @@ package codeexec
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Loopback TCP replaces unix sockets on Windows so the sandbox runs on every platform, swapped by tests
 var sandboxAvailable = true
-
-const (
-	defaultTimeout      = 300
-	defaultMaxToolCalls = 50
-)
 
 // Available unless the vercel_sandbox backend fails its own checks or the terminal config cannot resolve
 func checkSandboxRequirements(env *tools.Env) bool {
@@ -54,49 +46,13 @@ func sandboxToolsFor(enabledTools []string) []string {
 	return out
 }
 
-// Python number of a config value as seconds plus its str, a TypeError for anything else
-func configSeconds(v any) (float64, string, error) {
-	switch n := v.(type) {
-	case float64:
-		return n, pyrepr.Str(n), nil
-	case float32:
-		return float64(n), pyrepr.Str(float64(n)), nil
-	}
-	if i, err := pyint.Of(v); err == nil && isPyIntLike(v) {
-		f, _ := new(big.Float).SetInt(i).Float64()
-		return f, pyrepr.Str(pyint.Value(i)), nil
-	}
-	return 0, "", fmt.Errorf("the code execution timeout is %s, expected a number of seconds", errchain.Kind(v))
+// Configured per run timeout in seconds and as the number messages show
+func executionTimeout(env *tools.Env) (float64, string) {
+	seconds := settings.CodeExecutionTimeout.Get(settingsCtx(env)).Seconds()
+	return seconds, strconv.FormatFloat(seconds, 'f', -1, 64)
 }
 
-func isPyIntLike(v any) bool {
-	switch v.(type) {
-	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, *big.Int:
-		return true
-	}
-	return false
-}
-
-// Per cell tool call ceiling compared the way Python compares an int counter with the configured number
-func toolCallLimit(v any) int {
-	if f, ok := v.(float64); ok {
-		if f > math.MaxInt32 {
-			return math.MaxInt
-		}
-		return int(math.Ceil(f))
-	}
-	if i, err := pyint.Of(v); err == nil && isPyIntLike(v) {
-		if !i.IsInt64() || i.Int64() > math.MaxInt {
-			if i.Sign() > 0 {
-				return math.MaxInt
-			}
-			return math.MinInt
-		}
-		return int(i.Int64())
-	}
-	panic(fmt.Errorf("the code execution tool call limit is %s, expected a whole number", errchain.Kind(v)))
-}
-
+// Value of a key of a call's arguments, def when absent
 func configValue(cfg map[string]any, key string, def any) any {
 	if v, ok := cfg[key]; ok {
 		return v
@@ -121,14 +77,11 @@ func executeCode(ctx context.Context, env *tools.Env, code, taskID string, enabl
 		return toolError(fmt.Sprintf("execute_code refused: %s ", refusal.Error()) +
 			"(profile terminal policy unresolved; fix the profile's config.yaml / .env and retry)")
 	}
-	if pystr.Strip(code) == "" {
+	if strings.TrimSpace(code) == "" {
 		return toolError("No code provided. execute_code requires a non-empty 'code' " +
 			"parameter containing Python source. To run shell commands, use terminal(command=...) instead.")
 	}
-	configured, configuredText, err := configSeconds(configValue(loadConfig(env), "timeout", defaultTimeout))
-	if err != nil {
-		panic(err)
-	}
+	configured, configuredText := executionTimeout(env)
 	probeSeconds, probeText := configured, configuredText
 	if float64(preExecGuardMinTimeoutS) > configured {
 		probeSeconds, probeText = float64(preExecGuardMinTimeoutS), fmt.Sprint(preExecGuardMinTimeoutS)
@@ -172,7 +125,6 @@ func executeCode(ctx context.Context, env *tools.Env, code, taskID string, enabl
 	if envType != "local" {
 		return executeRemote(ctx, env, code, taskID, enabledTools, reset)
 	}
-	cfg := loadConfig(env)
 	mode := getExecutionMode(env)
 	childPython, err := resolveChildPython(ctx, env, mode)
 	if err != nil {
@@ -182,14 +134,11 @@ func executeCode(ctx context.Context, env *tools.Env, code, taskID string, enabl
 	if err != nil {
 		panic(err)
 	}
-	seconds, secondsText, err := configSeconds(configValue(cfg, "timeout", defaultTimeout))
-	if err != nil {
-		panic(err)
-	}
+	seconds, secondsText := executionTimeout(env)
 	return executeInSessionKernel(ctx, env, code, kernelCell{
 		taskID: taskID, mode: mode, childPython: childPython, childCwd: childCwd,
 		sandboxTools: sandboxToolsFor(enabledTools), timeout: seconds, timeoutText: secondsText,
-		maxToolCalls: toolCallLimit(configValue(cfg, "max_tool_calls", defaultMaxToolCalls)),
+		maxToolCalls: settings.CodeExecutionMaxToolCalls.Get(settingsCtx(env)),
 		reset:        reset, isInterrupted: func() bool { return tools.IsInterrupted(ctx) },
 	})
 }

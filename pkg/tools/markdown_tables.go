@@ -22,19 +22,19 @@ func dispWidth(s string) int {
 
 // Cells of a pipe delimited table row with the outer pipes removed and each cell stripped
 func SplitTableRow(row string) []string {
-	s := pystr.Strip(row)
+	s := strings.TrimSpace(row)
 	s = strings.TrimPrefix(s, "|")
 	s = strings.TrimSuffix(s, "|")
 	cells := strings.Split(s, "|")
 	for i, c := range cells {
-		cells[i] = pystr.Strip(c)
+		cells[i] = strings.TrimSpace(c)
 	}
 	return cells
 }
 
 // True for an optional colon, three or more dashes and an optional colon
 func dividerCell(cell string) bool {
-	c := pystr.Strip(cell)
+	c := strings.TrimSpace(cell)
 	c = strings.TrimPrefix(c, ":")
 	c = strings.TrimSuffix(c, ":")
 	return len(c) >= 3 && strings.Trim(c, "-") == ""
@@ -56,7 +56,7 @@ func IsTableDivider(row string) bool {
 
 // True when the stripped row starts with a pipe or holds at least two pipes
 func LooksLikeTableRow(row string) bool {
-	s := pystr.Strip(row)
+	s := strings.TrimSpace(row)
 	return s != "" && (strings.HasPrefix(s, "|") || strings.Count(s, "|") >= 2)
 }
 
@@ -218,7 +218,7 @@ func renderVertical(rows [][]string, ncols int, availableWidth int) []string {
 			out = append(out, label+": "+wrapped[0])
 			if len(wrapped) > 1 {
 				for _, cl := range wrapToWidth(strings.Join(wrapped[1:], " "), contBudget) {
-					if pystr.Strip(cl) != "" {
+					if strings.TrimSpace(cl) != "" {
 						out = append(out, "  "+cl)
 					}
 				}
@@ -242,7 +242,7 @@ func RealignMarkdownTables(text string, availableWidth *int) string {
 			header := SplitTableRow(line)
 			var body [][]string
 			j := i + 2
-			for j < n && strings.Contains(lines[j], "|") && pystr.Strip(lines[j]) != "" {
+			for j < n && strings.Contains(lines[j], "|") && strings.TrimSpace(lines[j]) != "" {
 				if !IsTableDivider(lines[j]) {
 					body = append(body, SplitTableRow(lines[j]))
 				}

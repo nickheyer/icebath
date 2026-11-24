@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Matrix wizard of icebath gateway setup writing the homeserver, auth, E2EE, allowlist and home room to the home .env
@@ -88,7 +87,7 @@ func InteractiveSetup(ctx context.Context) error {
 		"Leave blank to clear a previously saved home room (cron / notifications)."} {
 		cli.PrintInfo(line)
 	}
-	if room := pystr.Strip(cli.Prompt("Home room ID (leave empty to set later with /set-home)", "", false)); room != "" {
+	if room := strings.TrimSpace(cli.Prompt("Home room ID (leave empty to set later with /set-home)", "", false)); room != "" {
 		return cfg.SaveEnvValue(ctx, "MATRIX_HOME_ROOM", room)
 	}
 	removed, err := cfg.RemoveEnvValue(ctx, "MATRIX_HOME_ROOM")

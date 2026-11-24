@@ -67,7 +67,7 @@ func TestProviderEntriesDedupes(t *testing.T) {
 			"nourl":    map[string]any{"stale_timeout_seconds": 600},
 		},
 	}
-	got := ProviderEntries(cfg)
+	got := ProviderEntriesOf(cfg["providers"].(map[string]any))
 	var names []string
 	for _, e := range got {
 		names = append(names, cfgString(e["name"]))
@@ -75,20 +75,20 @@ func TestProviderEntriesDedupes(t *testing.T) {
 	if !reflect.DeepEqual(names, []string{"Local", "keyed"}) {
 		t.Fatalf("got %v", names)
 	}
-	if CustomProviderAPIMode("http://K/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "api_mode": " anthropic_messages "}}}) != "anthropic_messages" {
+	if CustomProviderAPIMode("http://K/v1", ProviderEntriesOf(map[string]any{"k": map[string]any{"base_url": "http://k/v1", "api_mode": " anthropic_messages "}})) != "anthropic_messages" {
 		t.Fatal("api mode by route")
 	}
-	if n := CustomProviderContextLength("m", "http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "context_length": 9000, "models": map[string]any{"m": map[string]any{"context_length": 100}}}}}); n != 100 {
+	if n := CustomProviderContextLength("m", "http://k/v1", ProviderEntriesOf(map[string]any{"k": map[string]any{"base_url": "http://k/v1", "context_length": 9000, "models": map[string]any{"m": map[string]any{"context_length": 100}}}})); n != 100 {
 		t.Fatalf("context length: %d", n)
 	}
-	if v, known := CustomProviderModelCapability("m", "http://k/v1", "vision", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "models": map[string]any{"m": map[string]any{"vision": false}}}}}); !known || v {
+	if v, known := CustomProviderModelCapability("m", "http://k/v1", "vision", ProviderEntriesOf(map[string]any{"k": map[string]any{"base_url": "http://k/v1", "models": map[string]any{"m": map[string]any{"vision": false}}}})); !known || v {
 		t.Fatalf("capability: %v %v", v, known)
 	}
-	tls := CustomProviderTLSSettings("http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "ssl_verify": "no", "ssl_ca_cert": "/ca.pem"}}})
+	tls := CustomProviderTLSSettings("http://k/v1", ProviderEntriesOf(map[string]any{"k": map[string]any{"base_url": "http://k/v1", "ssl_verify": "no", "ssl_ca_cert": "/ca.pem"}}))
 	if tls.CACert != "/ca.pem" || !tls.HasVerify || tls.Verify {
 		t.Fatalf("tls: %+v", tls)
 	}
-	if CustomProviderSessionAffinityHeader("http://k/v1", nil, map[string]any{"providers": map[string]any{"k": map[string]any{"base_url": "http://k/v1", "session_affinity_header": " X-Session "}}}) != "X-Session" {
+	if CustomProviderSessionAffinityHeader("http://k/v1", ProviderEntriesOf(map[string]any{"k": map[string]any{"base_url": "http://k/v1", "session_affinity_header": " X-Session "}})) != "X-Session" {
 		t.Fatal("affinity header")
 	}
 }
@@ -392,11 +392,11 @@ func TestAPIKeyProvidersExposeACredentialEnvVar(t *testing.T) {
 
 func TestEntriesForRouteMatchesOnlyTheNormalizedRoute(t *testing.T) {
 	entries := []map[string]any{{"name": "local", "base_url": "http://localhost:8000/v1/"}, {"name": "other", "base_url": "http://example.com/v1"}}
-	got := EntriesForRoute("http://localhost:8000/v1", entries, nil)
+	got := EntriesForRoute("http://localhost:8000/v1", entries)
 	if len(got) != 1 || got[0]["name"] != "local" {
 		t.Fatalf("EntriesForRoute = %v", got)
 	}
-	if got := EntriesForRoute("", entries, nil); len(got) != 0 {
+	if got := EntriesForRoute("", entries); len(got) != 0 {
 		t.Fatalf("blank base url matched %v", got)
 	}
 }

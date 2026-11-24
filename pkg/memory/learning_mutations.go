@@ -318,6 +318,3 @@ func EditNode(ctx context.Context, env *tools.Env, nodeID, content string) (map[
 		return map[string]any{"ok": false, "message": msg}, nil
 	})
 }
-
-// Learning mutations register nothing at import, journey callers invoke them
-func registerLearningMutations() {}

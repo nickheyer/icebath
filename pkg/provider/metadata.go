@@ -490,11 +490,7 @@ func isCodexRoute(ctx context.Context, providerName, baseURL string, customProvi
 	if baseURL == "" {
 		return false
 	}
-	cfg := metadataConfig(ctx)
-	if cfg == nil {
-		return false
-	}
-	return CustomProviderAPIMode(baseURL, customProviders, cfg) == string(ModeCodexResponses)
+	return CustomProviderAPIMode(baseURL, routeEntries(ctx, customProviders)) == string(ModeCodexResponses)
 }
 
 func saveUnlessSkipped(ctx context.Context, model, baseURL string, n int, providerName string) {

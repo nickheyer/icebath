@@ -7,7 +7,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubSecretsRegistry = &handlerRegistry{}
@@ -54,7 +53,7 @@ func secretsStateOf(ctx context.Context) (tuigateway.SecretsStateResult, error) 
 }
 
 // Both secret stores of the profile for the secret stores screen
-func secretsState(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func secretsState(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.SecretsState.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -66,7 +65,7 @@ func secretsState(ctx context.Context, rid any, raw map[string]any, _ *tuihost.S
 }
 
 // Bitwarden projects an access token sees
-func secretsProjects(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func secretsProjects(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SecretsProjects.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -145,7 +144,7 @@ func secretsChangeOnePassword(ctx context.Context, h string, p tuigateway.Secret
 }
 
 // One change to a secret store, answered with the stores after it
-func secretsChange(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func secretsChange(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SecretsChange.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

@@ -8,7 +8,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var safeSecretishMetadataKeys = map[string]bool{
@@ -51,7 +50,7 @@ func normalizeSecretKey(key string) string {
 
 // IsBorrowedCredentialSource reports whether a pool source is reference only and must never persist secrets, every source but an owned manual one
 func IsBorrowedCredentialSource(source string) bool {
-	normalized := pystr.Lower(pystr.Strip(source))
+	normalized := strings.ToLower(strings.TrimSpace(source))
 	return normalized != "" && normalized != SourceManual && !strings.HasPrefix(normalized, SourceManual+":")
 }
 

@@ -128,31 +128,22 @@ func (s *Store) relayFrontedDeliveryPlatforms(ctx context.Context, job *Job) map
 	return out
 }
 
-// Base URL of the local api_server following its bind resolution
-func (s *Store) apiServerBaseURL() string {
-	port := 8642
-	if raw := strings.TrimSpace(os.Getenv("API_SERVER_PORT")); raw != "" {
-		if n, ok := pyint.Parse(raw); ok && n.IsInt64() {
-			port = int(n.Int64())
+// Base URL of the profile's api_server: its chat app config, then the API_SERVER_HOST and API_SERVER_PORT fallbacks, a wildcard bind reached on loopback
+func (s *Store) apiServerBaseURL(ctx context.Context) (string, error) {
+	cfg, err := loadGatewayConfig(home.WithOverride(ctx, s.home))
+	if err != nil {
+		return "", err
+	}
+	extra := map[string]any{}
+	if cfg != nil {
+		if pc := cfg.Platforms[gateway.PlatformAPIServer]; pc != nil && pc.Extra != nil {
+			extra = pc.Extra
 		}
 	}
+	hostValue, port := gateway.APIServerListenAddress(home.WithOverride(ctx, s.home), extra)
 	host := ""
-	if cfg, err := s.loadConfig(); err == nil {
-		var node any = map[string]any(cfg)
-		for _, k := range []string{"platforms", "api_server", "extra", "host"} {
-			m, ok := node.(map[string]any)
-			if !ok {
-				node = nil
-				break
-			}
-			node = m[k]
-		}
-		if pyrepr.Truthy(node) {
-			host = strings.TrimSpace(pyrepr.Str(node))
-		}
-	}
-	if host == "" {
-		host = strings.TrimSpace(os.Getenv("API_SERVER_HOST"))
+	if pyrepr.Truthy(hostValue) {
+		host = strings.TrimSpace(pyrepr.Str(hostValue))
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" || host == "*" {
 		host = "127.0.0.1"
@@ -160,7 +151,7 @@ func (s *Store) apiServerBaseURL() string {
 	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
 		host = "[" + host + "]"
 	}
-	return fmt.Sprintf("http://%s:%d", host, port)
+	return fmt.Sprintf("http://%s:%d", host, port), nil
 }
 
 var cronForwardHTTPClient = &http.Client{Timeout: 10 * time.Second}
@@ -178,17 +169,23 @@ func (s *Store) forwardRelayFrontedRun(ctx context.Context, job *Job, extraPromp
 	if extraPrompt != nil && *extraPrompt != "" {
 		body, _ = json.Marshal(map[string]string{"prompt": *extraPrompt})
 	}
-	ok := false
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.apiServerBaseURL()+"/api/jobs/"+job.ID+"/run", bytes.NewReader(body))
+	base, err := s.apiServerBaseURL(ctx)
+	var req *http.Request
+	if err == nil {
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/jobs/"+job.ID+"/run", bytes.NewReader(body))
+	}
 	if err == nil {
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
-		if resp, err := cronForwardHTTPClient.Do(req); err == nil {
+		var resp *http.Response
+		if resp, err = cronForwardHTTPClient.Do(req); err == nil {
 			resp.Body.Close()
-			ok = resp.StatusCode < 300
+			if resp.StatusCode >= 300 {
+				err = fmt.Errorf("the gateway answered %s", resp.Status)
+			}
 		}
 	}
-	if ok {
+	if err == nil {
 		return cronDumps(pyObj("success", true, "forwarded_to_gateway", true,
 			"note", "This job targets a relay-fronted platform; it was dispatched "+
 				"to the running gateway, whose live relay adapter owns that "+
@@ -197,7 +194,8 @@ func (s *Store) forwardRelayFrontedRun(ctx context.Context, job *Job, extraPromp
 	return cronDumps(pyObj("success", false,
 		"error", "This job targets a relay-fronted platform, which has no "+
 			"standalone sender. Start the gateway — its ticker will "+
-			"deliver the job on schedule via the live relay adapter."))
+			"deliver the job on schedule via the live relay adapter. "+
+			"Forwarding to the running gateway failed: "+err.Error()))
 }
 
 // Delivery platforms this satellite reaches only through the primary gateway profile routes

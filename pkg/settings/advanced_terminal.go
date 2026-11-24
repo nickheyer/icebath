@@ -83,6 +83,9 @@ var TerminalDegradedMode = Register(&Enum{Meta: Meta{Key: "terminal.degraded_mod
 	{Value: "fail", Label: "Fail", Meaning: "Stop the turn with an error."},
 }})
 
+// Space Singularity sandboxes may use before a warning
+var TerminalDiskWarningGb = Register(&Float{Meta: Meta{Key: "terminal.disk_warning_gb", Label: "Disk warning", Short: "Space Singularity sandboxes may use before a warning, in GB.", Env: "TERMINAL_DISK_WARNING_GB", Group: GroupTerminal, Order: 1245, Advanced: true}, Default: 500, Unit: "GB"})
+
 // Variables set inside Docker sandboxes, as name and value
 var TerminalDockerEnv = Register(&Map{Meta: Meta{Key: "terminal.docker_env", Label: "Docker variables", Short: "Variables set inside Docker sandboxes, as name and value.", Group: GroupTerminal, Order: 1250, Advanced: true, Apply: NewSession}})
 
@@ -132,6 +135,9 @@ var TerminalHomeMode = Register(&Enum{Meta: Meta{Key: "terminal.home_mode", Labe
 // Image Modal sandboxes start from
 var TerminalModalImage = Register(&String{Meta: Meta{Key: "terminal.modal_image", Label: "Modal image", Short: "Image Modal sandboxes start from.", Group: GroupTerminal, Order: 1390, Advanced: true, Apply: NewSession}, Default: "localhost/icebath-sandbox:desktop"})
 
+// Longest timeout a single foreground command may ask for
+var TerminalMaxForegroundTimeout = Register(&Duration{Meta: Meta{Key: "terminal.max_foreground_timeout", Label: "Timeout ceiling", Short: "Longest timeout one foreground command may ask for.", Help: "A longer one runs the command in the background instead.", Env: "TERMINAL_MAX_FOREGROUND_TIMEOUT", Group: GroupTerminal, Order: 1395, Advanced: true}, Default: 10 * time.Minute})
+
 // Longest wait for a one-shot background command to finish
 var TerminalOneshotCompletionWaitSeconds = Register(&Duration{Meta: Meta{Key: "terminal.oneshot_completion_wait_seconds", Label: "One-shot wait limit", Short: "Longest wait for a one-shot background command to finish.", Group: GroupTerminal, Order: 1400, Advanced: true}, Default: 10 * time.Minute})
 
@@ -144,6 +150,9 @@ var TerminalProcessWaitAutoNotify = Register(&Bool{Meta: Meta{Key: "terminal.pro
 // Host folder where sandbox files are stored
 var TerminalSandboxDir = Register(&String{Meta: Meta{Key: "terminal.sandbox_dir", Label: "Sandbox folder", Short: "Host folder where sandbox files are stored.", Help: "Unset uses the sandboxes folder in the icebath home.", Group: GroupTerminal, Order: 1430, Advanced: true, Apply: NewSession}, Null: "the sandboxes folder in the icebath home"})
 
+// Folder for Singularity overlays and the image cache
+var TerminalScratchDir = Register(&String{Meta: Meta{Key: "terminal.scratch_dir", Label: "Singularity scratch", Short: "Folder for Singularity overlays and the image cache.", Env: "TERMINAL_SCRATCH_DIR", Group: GroupTerminal, Order: 1435, Advanced: true}, Null: "a writable /scratch, else the sandbox folder"})
+
 // Files sourced before commands run, instead of the usual ones
 var TerminalShellInitFiles = Register(&List{Meta: Meta{Key: "terminal.shell_init_files", Label: "Shell init files", Short: "Files sourced before commands run, instead of the usual ones.", Help: "Empty falls back to the profile and bashrc files.", Group: GroupTerminal, Order: 1440, Advanced: true}})
 
@@ -154,7 +163,7 @@ var TerminalSyncBackMaxBytes = Register(&Int{Meta: Meta{Key: "terminal.sync_back
 var TerminalTempDir = Register(&String{Meta: Meta{Key: "terminal.temp_dir", Label: "Temp folder", Short: "Folder commands use for temporary files.", Help: "Empty uses the normal system temp folder.", Group: GroupTerminal, Order: 1460, Advanced: true, Apply: NewSession}, Default: ""})
 
 // Longest a foreground command may run before it is stopped
-var TerminalTimeout = Register(&Duration{Meta: Meta{Key: "terminal.timeout", Label: "Command timeout", Short: "Longest a foreground command may run before it is stopped.", Group: GroupTerminal, Order: 1470, Advanced: true, Apply: NewSession}, Default: 3 * time.Minute})
+var TerminalTimeout = Register(&Duration{Meta: Meta{Key: "terminal.timeout", Label: "Command timeout", Short: "Longest a foreground command may run before it is stopped.", Group: GroupTerminal, Order: 1470, Advanced: true, Apply: NewSession, Env: "TERMINAL_TIMEOUT"}, Default: 3 * time.Minute})
 
 // Image Vercel sandboxes start from
 var TerminalVercelImage = Register(&String{Meta: Meta{Key: "terminal.vercel_image", Label: "Vercel image", Short: "Image Vercel sandboxes start from.", Group: GroupTerminal, Order: 1480, Advanced: true, Apply: NewSession}, Default: "vercel/sandbox/universal:latest"})
@@ -203,3 +212,6 @@ var TerminalSingularityImage = Register(&String{Meta: Meta{Key: "terminal.singul
 
 // One shell kept open between commands on this machine
 var TerminalLocalPersistent = Register(&Bool{Meta: Meta{Key: "terminal.local_persistent", Label: "Persistent local shell", Short: "Keep one shell open between commands run on this machine.", Help: "Off starts a fresh shell for every command.", Group: GroupTerminal, Order: 1560, Advanced: true, Apply: NewSession}, Default: true})
+
+// Most memory a background command worker may use
+var TerminalLocalMemoryMaxMb = Register(&Int{Meta: Meta{Key: "terminal.local_memory_max_mb", Label: "Worker memory cap", Short: "Most memory a background command worker may use, in MB.", Help: "It never exceeds this machine's own limit.", Env: "TERMINAL_LOCAL_MEMORY_MAX_MB", Group: GroupTerminal, Order: 1565, Advanced: true}, Null: "half of this machine's memory, at most 4 GB", Unit: "MB"})

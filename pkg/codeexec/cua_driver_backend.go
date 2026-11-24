@@ -1,16 +1,17 @@
 package codeexec
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -44,10 +45,7 @@ func newCuaDriverBackend(env *tools.Env, permissionMode string) (*CuaDriverBacke
 	}
 	b := &CuaDriverBackend{env: env, PermissionMode: permissionMode}
 	if permissionMode != "standard" {
-		manifest := ""
-		if raw, ok := computerUseCfg(env)["capability_manifest"].(string); ok {
-			manifest = pystr.Strip(raw)
-		}
+		manifest := strings.TrimSpace(settings.ComputerUseCapabilityManifest.Get(settingsCtx(env)))
 		daemon, err := newEmbeddedCuaDaemon(env, "", permissionMode, manifest)
 		if err != nil {
 			return nil, err
@@ -88,7 +86,7 @@ func (b *CuaDriverBackend) Start() error {
 	if err != nil {
 		return err
 	}
-	override := pystr.Strip(os.Getenv(cuaDriverCmdEnv)) != ""
+	override := cuaDriverCmdOverride() != ""
 	ready, reason := true, any(nil)
 	if sandbox == nil {
 		if !override {
@@ -136,13 +134,9 @@ func (b *CuaDriverBackend) Start() error {
 		return err
 	})
 	if b.session.started.Load() {
-		maxDim, err := computerUseMaxImageDimension(b.env)
-		if err != nil {
-			return err
-		}
-		if maxDim != nil && *maxDim != 0 {
+		if maxDim := computerUseMaxImageDimension(b.env); maxDim > 0 {
 			cfg := pyjson.NewObject()
-			cfg.Set("max_image_dimension", *maxDim)
+			cfg.Set("max_image_dimension", maxDim)
 			b.bestEffort("set_config(max_image_dimension) failed", func() error { b.SetConfig(cfg); return nil })
 		}
 		if cuaNoOverlay(b.env) {

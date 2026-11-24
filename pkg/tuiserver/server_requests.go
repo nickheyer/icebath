@@ -10,17 +10,12 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	_ "golang.org/x/image/webp"
 
-	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -83,77 +78,6 @@ func normalizeRequest(req any) (rid any, method string, params map[string]any, e
 	return rid, method, params, nil
 }
 
-// Client safe pending approval with its choices filled in and command and description redacted
-func approvalRequestPayload(ctx context.Context, data map[string]any) map[string]any {
-	payload := map[string]any{}
-	for key, value := range data {
-		payload[key] = value
-	}
-	if _, present := payload["choices"]; !present {
-		choices := []any{"once"}
-		if !truthy(payload["smart_denied"]) && payload["allow_session"] != false {
-			choices = append(choices, "session")
-			if payload["allow_permanent"] != false {
-				choices = append(choices, "always")
-			}
-		}
-		payload["choices"] = append(choices, "deny")
-	}
-	for _, key := range []string{"command", "description"} {
-		if value, present := payload[key]; present {
-			payload[key] = gateway.RedactApprovalCommand(ctx, value)
-		}
-	}
-	return payload
-}
-
-// Sends a queue backed approval server request with the command redacted, withdrawn when no client can answer
-func emitApprovalRequest(ctx context.Context, sid string, data map[string]any) {
-	payload := approvalRequestPayload(ctx, data)
-	requestID := strOr(payload["request_id"])
-	sessionKey := strOr(tuihost.SessionRecord(sid).Get("session_key"))
-	onResult := func(result *pyjson.Object) {
-		if result == nil {
-			if requestID != "" {
-				tools.WithdrawGatewayApproval(sessionKey, requestID,
-					"the attached client cannot answer approval requests (update the Icebath app)")
-			}
-			return
-		}
-		choice := strOr(result.GetOr("choice", nil))
-		if choice == "" {
-			choice = "deny"
-		}
-		tools.ResolveGatewayApproval(sessionKey, choice, truthy(result.GetOr("all", nil)), "", requestID)
-	}
-	settle, err := tuihost.SendAsync("approval", sid, objectOf(payload), onResult)
-	if err != nil {
-		panic(err)
-	}
-	if requestID != "" && !tools.RegisterGatewaySettle(sessionKey, requestID, settle) {
-		settle("resolved")
-	}
-}
-
-// Emits a status update, re-tagging compaction progress lifecycle text as compacting
-func statusUpdate(ctx context.Context, sid, kind string, text *string) {
-	body := kind
-	if text != nil {
-		body = *text
-	}
-	if body = strings.TrimSpace(body); body == "" {
-		return
-	}
-	outKind := "status"
-	if text != nil {
-		outKind = kind
-	}
-	if outKind == "lifecycle" && agent.IsCompactionProgressStatus(body) {
-		outKind = "compacting"
-	}
-	tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": outKind, "text": body})
-}
-
 // Attachment name with its pixel size and a rough tile based token estimate when the image decodes
 func imageMeta(path string) map[string]any {
 	meta := map[string]any{"name": filepath.Base(path)}
@@ -173,72 +97,6 @@ func imageMeta(path string) map[string]any {
 	}
 	meta["width"], meta["height"], meta["token_estimate"] = width, height, tiles*85
 	return meta
-}
-
-// First live record holding the session key
-func sessionForKey(sessionKey string) *tuihost.Session {
-	for _, live := range tuihost.LiveSessions() {
-		if live.Session.Get("session_key") == sessionKey {
-			return live.Session
-		}
-	}
-	return nil
-}
-
-// Session db source of a record, its own source else the resolved platform
-func sessionSource(session *tuihost.Session) string {
-	if source := strings.TrimSpace(strOr(session.Get("source"))); source != "" {
-		return source
-	}
-	return sessionPlatform
-}
-
-// Context carrying a fresh tool env with the session variables of a live session bound, and that env
-func setSessionContext(ctx context.Context, sessionKey string, cwd *string, uiSessionID string) (context.Context, *tools.Env) {
-	var env *tools.Env
-	func() {
-		defer func() {
-			if recover() != nil {
-				env = nil
-			}
-		}()
-		var sess *tuihost.Session
-		if sessionKey != "" {
-			sess = sessionForKey(sessionKey)
-		}
-		resolved := ""
-		if cwd != nil {
-			resolved = *cwd
-		} else if sess != nil {
-			resolved = strOr(sess.Get("cwd"))
-		}
-		source, profile, sessionID := sessionPlatform, currentProfileName(ctx), sessionKey
-		if sess != nil {
-			source = sessionSource(sess)
-			if name := home.ProfileNameFor(strOr(sess.Get("profile_home"))); name != "" {
-				profile = name
-			}
-			if a := sessionAgent(sess); a != nil && a.SessionID() != "" {
-				sessionID = a.SessionID()
-			}
-		}
-		cronSession := ""
-		bound := &tools.Env{Home: home.Dir(ctx), Values: &sync.Map{}, TerminalScope: tools.GetTerminalScope(ctx)}
-		tools.SetSessionVars(bound, tools.SessionVars{SessionKey: sessionKey, SessionID: sessionID, Source: source,
-			Profile: profile, Cwd: resolved, UISessionID: uiSessionID, CronSession: &cronSession})
-		env = bound
-	}()
-	if env == nil {
-		return ctx, nil
-	}
-	return tools.WithToolEnv(ctx, env), env
-}
-
-// Clears the session variables a context bound
-func clearSessionContext(env *tools.Env) {
-	if env != nil {
-		suppress(func() { tools.ClearSessionVars(env) })
-	}
 }
 
 // Blocking server to client string request every bridge goes through
@@ -264,39 +122,6 @@ func ask(ctx context.Context, method, sid string, params map[string]any, timeout
 	return encoded
 }
 
-// Clarify wait from the canonical config, nil for unlimited, 300 seconds when the config cannot be read
-func clarifyTimeoutSeconds(ctx context.Context) (timeout *float64) {
-	fallback := 300.0
-	defer func() {
-		if recover() != nil {
-			timeout = &fallback
-		}
-	}()
-	seconds := tools.GetClarifyTimeout(&tools.Env{Home: home.Dir(ctx)})
-	if seconds <= 0 {
-		return nil
-	}
-	value := float64(seconds)
-	return &value
-}
-
-// Clarify tool callback bridged onto one clarify server request carrying only the wire fields
-func clarifyBlock(ctx context.Context, sid string, questions []map[string]any) map[string]any {
-	wire := make([]any, 0, len(questions))
-	qids := make([]string, 0, len(questions))
-	for _, entry := range questions {
-		wire = append(wire, map[string]any{"qid": entry["qid"], "question": entry["question"], "choices": entry["choices"],
-			"multi_select": truthy(entry["multi_select"])})
-		qids = append(qids, strOr(entry["qid"]))
-	}
-	result := sendResult(ctx, tuihost.Send)("clarify", sid, objectOf(map[string]any{"questions": wire}), clarifyTimeoutSeconds(ctx), qids)
-	if result == nil {
-		return map[string]any{"answers": map[string]any{}, "outcome": "undelivered"}
-	}
-	settled, _ := pyjson.Plain(result).(map[string]any)
-	return settled
-}
-
 // Ordered JSON object of a payload map
 func objectOf(payload map[string]any) *pyjson.Object {
 	raw, err := json.Marshal(payload)
@@ -308,16 +133,6 @@ func objectOf(payload map[string]any) *pyjson.Object {
 		panic(err)
 	}
 	return obj
-}
-
-// Locks the history lock of a session record, creating it on first use, and returns the unlock
-func lockHistory(session *tuihost.Session) func() {
-	lock, _ := session.SetDefault("history_lock", &sync.Mutex{}).(sync.Locker)
-	if lock == nil {
-		return func() {}
-	}
-	lock.Lock()
-	return lock.Unlock
 }
 
 // is_truthy_value of utils, strings truthy only when they spell an affirmative word

@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -57,7 +58,7 @@ func MemoryReset(ctx context.Context, out io.Writer, in io.Reader, target string
 		if err != nil {
 			return err
 		}
-		if pystr.Lower(pystr.Strip(line)) != "yes" {
+		if strings.ToLower(strings.TrimSpace(line)) != "yes" {
 			fmt.Fprint(out, "  Cancelled.\n\n")
 			return nil
 		}

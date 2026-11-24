@@ -75,12 +75,10 @@ func metadataTLSConfig(ctx context.Context, baseURL string) (*tls.Config, error)
 	caCert := ""
 	var sslVerify any
 	if baseURL != "" {
-		if cfg := metadataConfig(ctx); cfg != nil {
-			settings := CustomProviderTLSSettings(baseURL, nil, cfg)
-			caCert = settings.CACert
-			if settings.HasVerify {
-				sslVerify = settings.Verify
-			}
+		entryTLS := CustomProviderTLSSettings(baseURL, CustomProviderEntries(ctx))
+		caCert = entryTLS.CACert
+		if entryTLS.HasVerify {
+			sslVerify = entryTLS.Verify
 		}
 	}
 	return ResolveTLSVerify(nil, caCert, sslVerify, baseURL).Config, nil

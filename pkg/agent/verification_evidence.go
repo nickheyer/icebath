@@ -239,7 +239,7 @@ func splitShellSegments(command string, posix bool) []shellSegment {
 			index++
 			continue
 		}
-		raw := pystr.Strip(command[start:index])
+		raw := strings.TrimSpace(command[start:index])
 		if raw == "" {
 			return nil
 		}
@@ -254,7 +254,7 @@ func splitShellSegments(command string, posix bool) []shellSegment {
 	if quote != 0 || escaped {
 		return nil
 	}
-	if trailing := pystr.Strip(command[start:]); trailing != "" {
+	if trailing := strings.TrimSpace(command[start:]); trailing != "" {
 		raws = append(raws, rawSegment{trailing, ""})
 	} else if len(raws) > 0 && raws[len(raws)-1].operator != ";" {
 		return nil
@@ -339,7 +339,7 @@ func canonicalTokens(canonical string) []string {
 	out := []string{}
 	for _, t := range split {
 		if t != "" {
-			out = append(out, leadingDotSlashRe.ReplaceAllString(pystr.Strip(t), ""))
+			out = append(out, leadingDotSlashRe.ReplaceAllString(strings.TrimSpace(t), ""))
 		}
 	}
 	return out
@@ -526,7 +526,7 @@ func equalStrings(a, b []string) bool {
 
 // Evidence kind of a canonical command, lint typecheck build format check or test
 func kindForCommand(canonical string) string {
-	lowered := pystr.Lower(canonical)
+	lowered := strings.ToLower(canonical)
 	for _, group := range verifyKindKeywords {
 		for _, w := range group.words {
 			if strings.Contains(lowered, w) {
@@ -665,7 +665,7 @@ func findAdHocMatch(command, root string, exitCode int) ([]string, bool, error) 
 
 // Stripped output capped to head and tail with the omitted count between
 func summarizeVerifyOutput(output string) string {
-	runes := pystr.Runes(pystr.Strip(output))
+	runes := pystr.Runes(strings.TrimSpace(output))
 	if len(runes) <= maxVerifyOutputSummaryChars {
 		return pystr.FromRunes(runes)
 	}

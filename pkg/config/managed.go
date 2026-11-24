@@ -49,7 +49,7 @@ func underPytest() bool {
 
 // ManagedDir resolves the managed scope directory, empty when no scope is present
 func ManagedDir() string {
-	override := pystr.Strip(os.Getenv(EnvManagedDir))
+	override := strings.TrimSpace(os.Getenv(EnvManagedDir))
 	dir := defaultManagedDir
 	if override != "" {
 		dir = override

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Label, env var and masking of each Teams credential the wizard asks for
@@ -45,7 +44,7 @@ func InteractiveSetup(ctx context.Context) error {
 			gateway.WizardCLI.PrintWarning(c.label + " is required — skipping Teams setup")
 			return nil
 		}
-		if err := gateway.WizardConfig.SaveEnvValue(ctx, c.env, pystr.Strip(value)); err != nil {
+		if err := gateway.WizardConfig.SaveEnvValue(ctx, c.env, strings.TrimSpace(value)); err != nil {
 			return err
 		}
 	}

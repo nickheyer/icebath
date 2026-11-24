@@ -219,7 +219,7 @@ func runCLILostAndFoundRecover(source, lfPath, sqlite3Bin string, timeout time.D
 		if tail == "" {
 			tail = pyrepr.Str(a.GetOr("load_stderr_tail", ""))
 		}
-		details = append(details, pystr.Strip(fmt.Sprintf("[%s] dump rc=%s load rc=%s %s", pyrepr.Str(a.GetOr("command", "")),
+		details = append(details, strings.TrimSpace(fmt.Sprintf("[%s] dump rc=%s load rc=%s %s", pyrepr.Str(a.GetOr("command", "")),
 			pyrepr.Str(a.GetOr("dump_returncode", nil)), pyrepr.Str(a.GetOr("load_returncode", nil)), tail)))
 	}
 	return nil, &lostAndFoundError{"sqlite3 .recover did not produce a usable lost_and_found database: " + strings.Join(details, "; ")}
@@ -409,7 +409,7 @@ func lfParseSQLDefault(text string) any {
 
 // Python int() of text
 func lfPyInt(text string) (any, bool) {
-	t := pystr.Strip(text)
+	t := strings.TrimSpace(text)
 	if t == "" || strings.HasPrefix(t, "_") || strings.HasSuffix(t, "_") || strings.Contains(t, "__") {
 		return nil, false
 	}
@@ -425,7 +425,7 @@ func lfPyInt(text string) (any, bool) {
 
 // Python float() of text
 func lfPyFloat(text string) (float64, bool) {
-	t := pystr.Strip(text)
+	t := strings.TrimSpace(text)
 	lower := strings.ToLower(strings.TrimLeft(t, "+-"))
 	if lower == "inf" || lower == "infinity" || lower == "nan" {
 		f, err := strconv.ParseFloat(t, 64)

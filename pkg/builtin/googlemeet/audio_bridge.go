@@ -164,11 +164,11 @@ func (b *audioBridge) setupDarwin() (map[string]any, error) {
 
 // Module id pactl load-module prints as the last token of its first line
 func parseModuleID(stdout string) (int, error) {
-	text := pystr.Strip(stdout)
+	text := strings.TrimSpace(stdout)
 	if text == "" {
 		return 0, errors.New("pactl load-module returned empty stdout")
 	}
-	fields := strings.Fields(pystr.Strip(pystr.Splitlines(text, false)[0]))
+	fields := strings.Fields(strings.TrimSpace(pystr.Splitlines(text, false)[0]))
 	token := fields[len(fields)-1]
 	n, ok := pyint.Parse(token)
 	if !ok || !n.IsInt64() {

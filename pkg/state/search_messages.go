@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Keyword arguments of search_messages, NewSearchMessagesOptions giving the Python defaults
@@ -65,7 +64,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 	if err != nil {
 		return nil, err
 	}
-	if pystr.Strip(query) == "" {
+	if strings.TrimSpace(query) == "" {
 		return []*pyjson.Object{}, nil
 	}
 	if query = sanitizeFTS5Query(query); query == "" {
@@ -93,7 +92,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 	if !s.fts.ftsEnabled.Load() {
 		return []*pyjson.Object{}, nil
 	}
-	orderBy, ok := ftsOrderBy[pystr.Lower(pystr.Strip(o.Sort))]
+	orderBy, ok := ftsOrderBy[strings.ToLower(strings.TrimSpace(o.Sort))]
 	if !ok {
 		orderBy = "ORDER BY rank"
 	}
@@ -161,7 +160,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 		return err
 	}
 	if len(matches) == 0 && !isCJK && !wantsTool {
-		fbQuery := quoteFTSTokens(pystr.Strip(strings.Trim(query, `"`)))
+		fbQuery := quoteFTSTokens(strings.TrimSpace(strings.Trim(query, `"`)))
 		if s.fts.ftsCJKAvailable.Load() {
 			if err := retry("messages_fts_cjk", fbQuery, "", ""); err != nil {
 				return nil, err
@@ -188,7 +187,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 
 // CJK routing through the bigram index, then trigram, then a LIKE scan with one clause per non operator token
 func (s *sessionSearch) searchCJK(ctx context.Context, query string, wantsUnindexedRows bool, route searchRoute) ([]*pyjson.Object, error) {
-	rawQuery := pystr.Strip(strings.Trim(stripCJKWildcards(query), `"`))
+	rawQuery := strings.TrimSpace(strings.Trim(stripCJKWildcards(query), `"`))
 	matchQuery := quoteFTSTokens(rawQuery)
 	if s.fts.ftsCJKAvailable.Load() && !wantsUnindexedRows && !hasLoneCJKRun(rawQuery) {
 		rows, ok, err := s.matchRows(ctx, "messages_fts_cjk", matchQuery, route.orderBy, "CJK-bigram",
@@ -235,8 +234,8 @@ func (s *sessionSearch) searchUnindexedGap(ctx context.Context, ftsQuery string,
 	}
 	var terms []string
 	for _, raw := range likeTokenRE.FindAllString(ftsQuery, -1) {
-		tok := pystr.Strip(strings.Trim(strings.Trim(raw, `"`), "*"))
-		if tok != "" && !slices.Contains(likeSkipTokens, pystr.Upper(tok)) {
+		tok := strings.TrimSpace(strings.Trim(strings.Trim(raw, `"`), "*"))
+		if tok != "" && !slices.Contains(likeSkipTokens, strings.ToUpper(tok)) {
 			terms = append(terms, tok)
 		}
 	}

@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -29,7 +31,7 @@ func osPathBasename(p string) string {
 // Exports the current session and sends it to the chat as a document
 func (r *GatewayRunner) handleSaveCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	parts := pystr.SplitWhitespace(event.GetCommandArgs(), -1)
-	redact := len(parts) > 0 && (pystr.Lower(parts[len(parts)-1]) == "redact" || pystr.Lower(parts[len(parts)-1]) == "--redact")
+	redact := len(parts) > 0 && (strings.ToLower(parts[len(parts)-1]) == "redact" || strings.ToLower(parts[len(parts)-1]) == "--redact")
 	if redact {
 		parts = parts[:len(parts)-1]
 	}
@@ -139,7 +141,7 @@ func (r *GatewayRunner) handleTitleCommand(ctx context.Context, event *gateway.M
 		_ = db.CreateSession(state.NewSession{ID: sessionID, Source: platform, UserID: sattr(source.UserID), ChatID: source.ChatID,
 			ChatType: source.ChatType, ThreadID: sattr(source.ThreadID)})
 	}
-	titleArg := pystr.Strip(event.GetCommandArgs())
+	titleArg := strings.TrimSpace(event.GetCommandArgs())
 	if titleArg == "" {
 		title, _, err := db.GetSessionTitle(ctx, sessionID)
 		if err != nil {

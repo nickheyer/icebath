@@ -31,7 +31,6 @@ type (
 	agentBaseURL           interface{ BaseURL() string }
 	agentRequestedProvider interface{ RequestedProvider() string }
 	agentReasoningConfig   interface{ ReasoningConfig() map[string]any }
-	agentServiceTier       interface{ ServiceTier() string }
 )
 
 // Settings verbs of a connection keyed by method name
@@ -167,9 +166,9 @@ func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 		}
 		return map[string]any{"mtime": config.VersionToken(version), "mcp_rev": revision}, nil
 	case "reasoning":
-		return reasoningSetting(sctx, c, ref, agent, policy, cfg)
+		return reasoningSetting(sctx, c, ref, agent, policy)
 	case "fast":
-		return fastSetting(sctx, c, ref, policy, agent)
+		return fastSetting(sctx, c, ref, policy)
 	case "daybreak":
 		return map[string]any{"value": settings.Daybreak.Get(sctx)}, nil
 	case "skin":
@@ -243,37 +242,24 @@ func voiceSetting(c *AuthorityConnection, ref SessionRef) (map[string]any, error
 	return map[string]any{"value": mode}, nil
 }
 
-// Fast tier word of the session's next turn, else the profile's configured tier
-func fastSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy *LocalSessionPolicy, agent any) (map[string]any, error) {
-	var tier string
-	if ref.SessionID != "" {
-		current, err := currentTier(ctx, c, ref, policy)
-		if err != nil {
-			return nil, err
-		}
-		if current != nil {
-			tier = *current
-		}
-	} else {
-		if a, ok := agent.(agentServiceTier); ok {
-			tier = a.ServiceTier()
-		}
-		if tier == "" {
-			tier = provider.ParseServiceTier(settings.FastMode.Get(ctx))
-		}
+// Fast mode word of the session's next turn, else the mode every session starts with
+func fastSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy *LocalSessionPolicy) (map[string]any, error) {
+	if ref.SessionID == "" {
+		return map[string]any{"value": settings.FastMode.Get(ctx)}, nil
 	}
-	word := "normal"
-	switch tier {
-	case "priority":
-		word = "fast"
-	case "ultrafast":
-		word = "ultrafast"
+	current, err := currentTier(ctx, c, ref, policy)
+	if err != nil {
+		return nil, err
 	}
-	return map[string]any{"value": word}, nil
+	tier := ""
+	if current != nil {
+		tier = *current
+	}
+	return map[string]any{"value": provider.ServiceTierWord(tier)}, nil
 }
 
 // Reasoning effort the next turn uses and whether the local display shows it
-func reasoningSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, agent any, policy *LocalSessionPolicy, cfg map[string]any) (map[string]any, error) {
+func reasoningSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, agent any, policy *LocalSessionPolicy) (map[string]any, error) {
 	var value map[string]any
 	if a, ok := agent.(agentReasoningConfig); ok {
 		value = a.ReasoningConfig()
@@ -287,7 +273,7 @@ func reasoningSetting(ctx context.Context, c *AuthorityConnection, ref SessionRe
 			return nil, err
 		}
 	} else if value == nil {
-		value = config.ResolveReasoningConfig(cfg, "")
+		value = settings.ReasoningConfig(ctx, "")
 	}
 	var effort any = "medium"
 	if len(value) > 0 && value["enabled"] == false {

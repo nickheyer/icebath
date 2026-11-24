@@ -41,9 +41,9 @@ const fallbackComment = `
 #
 # For custom OpenAI-compatible endpoints, add base_url and key_env.
 #
-# fallback_model:
-#   provider: openrouter
-#   model: anthropic/claude-sonnet-4
+# fallback_providers:
+#   - provider: openrouter
+#     model: anthropic/claude-sonnet-4
 `
 
 // How a save treats defaults and the file already on disk
@@ -95,7 +95,7 @@ func commentedSectionsForSave(normalized map[string]any) string {
 	if security["redact_secrets"] == nil {
 		parts = append(parts, securityComment)
 	}
-	fb, has := normalized["fallback_model"]
+	fb, has := normalized["fallback_providers"]
 	if !has {
 		fb = map[string]any{}
 	}

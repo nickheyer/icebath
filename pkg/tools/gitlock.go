@@ -293,7 +293,7 @@ func DisableTree0AutoMaintenance(ctx context.Context, repoRoot string) {
 	for _, kv := range tree0MaintenanceOff {
 		res, err := gitlockConfigRun(ctx, repoRoot, false, "config", "--local", "--get", kv[0])
 		if err == nil {
-			if pystr.Strip(pystr.DecodeUTF8Replace(res.Stdout)) == kv[1] {
+			if strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout)) == kv[1] {
 				continue
 			}
 			_, err = gitlockConfigRun(ctx, repoRoot, true, "config", "--local", kv[0], kv[1])
@@ -380,7 +380,7 @@ func GitlockStdoutLines(ctx context.Context, repoRoot string, args []string) []s
 	}
 	var out []string
 	for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(res.Stdout), false) {
-		if s := pystr.Strip(line); s != "" {
+		if s := strings.TrimSpace(line); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -766,14 +766,14 @@ func PartialCloneFilter(ctx context.Context, repoRoot string, kw pysubprocess.Op
 	if err != nil {
 		return "", err
 	}
-	if res.Returncode != 0 || pystr.Lower(pystr.Strip(pystr.DecodeUTF8Replace(res.Stdout))) != "true" {
+	if res.Returncode != 0 || strings.ToLower(strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout))) != "true" {
 		return "", nil
 	}
 	configured, err := gitlockKwRun(ctx, repoRoot, kw, "config", "--get", "remote.origin.partialclonefilter")
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(pystr.DecodeUTF8Replace(configured.Stdout)), nil
+	return strings.TrimSpace(pystr.DecodeUTF8Replace(configured.Stdout)), nil
 }
 
 // Unshallows a stale installer checkout before the bounded fetch, reporting whether it was shallow
@@ -907,7 +907,7 @@ func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw pysubproce
 		if err != nil {
 			return false, err
 		}
-		head := pystr.Strip(pystr.DecodeUTF8Replace(res.Stdout))
+		head := strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout))
 		checked := fetchKw
 		checked.Check = true
 		if _, err := gitlockSubprocessRun(ctx, append(slices.Clone(refetch), head), checked); err != nil {
@@ -965,7 +965,7 @@ func ConvertTreelessCheckoutFirst(ctx context.Context, repoRoot string) {
 			text = pystr.DecodeUTF8Replace(te.Stderr)
 		}
 	}
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	detail := name
 	if len(lines) > 0 {
 		detail = lines[len(lines)-1]

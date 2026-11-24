@@ -1,6 +1,8 @@
 package recap
 
 import (
+	"unicode"
+
 	"fmt"
 	"os"
 	"reflect"
@@ -187,7 +189,7 @@ func latestText(messages []any, role string) (string, bool) {
 			continue
 		}
 		content, _ := mappingGet(messages[i], "content")
-		if text := pystr.Strip(coerceText(content)); text != "" {
+		if text := strings.TrimSpace(coerceText(content)); text != "" {
 			return text, true
 		}
 	}
@@ -286,7 +288,7 @@ func truncate(text string, limit int) string {
 	if pystr.Len(text) <= limit {
 		return text
 	}
-	return pystr.Rstrip(pystr.Slice(text, 0, limit-1)) + "…"
+	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-1), unicode.IsSpace) + "…"
 }
 
 // Plain multi line recap of recent session activity built from in memory history

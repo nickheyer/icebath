@@ -293,7 +293,7 @@ func armTreeMove(ctx context.Context, gitCmd []string, root string, move treeMov
 			return "", err
 		}
 		if named.ReturnCode == 0 {
-			ref = pystr.Strip(named.Stdout)
+			ref = strings.TrimSpace(named.Stdout)
 		}
 	}
 	if move.Pre != "" {
@@ -512,7 +512,7 @@ func treeWholeAt(ctx context.Context, gitCmd []string, root, sha string) (bool, 
 	if err != nil {
 		return false, err
 	}
-	if head.ReturnCode != 0 || pystr.Strip(head.Stdout) != sha || statExists(filepath.Join(filepath.Dir(marker), "index.lock")) {
+	if head.ReturnCode != 0 || strings.TrimSpace(head.Stdout) != sha || statExists(filepath.Join(filepath.Dir(marker), "index.lock")) {
 		return false, nil
 	}
 	status, err := run("status", "--porcelain", "-z", "--untracked-files=no")
@@ -602,7 +602,7 @@ func admittedPython(ctx context.Context, spec string) (string, bool, error) {
 	}
 	for _, python := range candidates {
 		out, _ := runPython(ctx, []string{python, "-I", "-c", pythonVersionProbe}, "", 30*time.Second)
-		version := pystr.Strip(out)
+		version := strings.TrimSpace(out)
 		if version == "" {
 			continue
 		}
@@ -672,7 +672,7 @@ func startupSyntaxError(ctx context.Context, sources []sourceFile, pyproject []b
 			return nil, err
 		}
 		out, _ := runPython(ctx, []string{python, "-I", "-c", compileAll}, payload, 120*time.Second)
-		if lines := pystr.Splitlines(pystr.Strip(out), false); len(lines) > 0 {
+		if lines := pystr.Splitlines(strings.TrimSpace(out), false); len(lines) > 0 {
 			if verdict, err := pyjson.Loads(lines[len(lines)-1]); err == nil {
 				if verdict == nil {
 					return nil, nil
@@ -814,7 +814,7 @@ func headAndBranch(ctx context.Context, gitCmd []string, root string) (string, s
 		if cp.ReturnCode != 0 {
 			return "", nil
 		}
-		return pystr.Strip(cp.Stdout), nil
+		return strings.TrimSpace(cp.Stdout), nil
 	}
 	head, err := out("rev-parse", "HEAD")
 	if err != nil {

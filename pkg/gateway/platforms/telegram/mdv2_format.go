@@ -7,7 +7,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -53,7 +52,7 @@ func FormatMessage(content string) string {
 		return ph("[" + escapeMdv2(firstGroup(m)) + "](" + url + ")")
 	})
 	text = telegramSub(mdHeaderRE, text, func(m *regexp2.Match) string {
-		inner := telegramSub(mdBoldInnerRE, pystr.Strip(firstGroup(m)), firstGroup)
+		inner := telegramSub(mdBoldInnerRE, strings.TrimSpace(firstGroup(m)), firstGroup)
 		return ph("*" + escapeMdv2(inner) + "*")
 	})
 	text = telegramSub(mdBoldInnerRE, text, phWrap("*", "*"))

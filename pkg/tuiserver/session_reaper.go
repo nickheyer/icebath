@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Grace before an orphaned WebSocket session is interrupted and reaped, zero parking it forever
@@ -61,7 +59,7 @@ func orphanReaperEnabled(ctx context.Context) bool {
 	return settings.SessionsStartupOrphanSweep.Get(ctx)
 }
 
-// Ends the tui and subagent rows a dead process left open, sparing every id this process holds
+// Ends the tui and subagent rows a dead process left open, the rows of sessions this process started kept by its heartbeat
 func sweepOrphanedSessionRows(ctx context.Context) []string {
 	if sessionTTLS <= 0 {
 		return []string{}
@@ -71,27 +69,8 @@ func sweepOrphanedSessionRows(ctx context.Context) []string {
 		pkgLog().Warn(fmt.Sprintf("Orphaned session row sweep failed: %s", err))
 		return []string{}
 	}
-	liveIDs := map[string]bool{}
-	for _, live := range tuihost.LiveSessions() {
-		candidates := []any{live.SID}
-		if a := sessionAgent(live.Session); a != nil {
-			candidates = append(candidates, a.SessionID())
-		}
-		candidates = append(candidates, live.Session.Get("session_key"))
-		for _, candidate := range candidates {
-			if text := strOr(candidate); text != "" && truthy(candidate) {
-				liveIDs[text] = true
-			}
-		}
-	}
-	excluded := make([]string, 0, len(liveIDs))
-	for id := range liveIDs {
-		excluded = append(excluded, id)
-	}
-	sort.Strings(excluded)
 	options := state.NewSweepOrphanedOptions(sessionTTLS)
 	options.Sources = orphanSweepSources
-	options.ExcludeIDs = excluded
 	options.ExcludePinned = true
 	swept, err := db.SweepOrphanedSessions(ctx, options)
 	if err != nil {

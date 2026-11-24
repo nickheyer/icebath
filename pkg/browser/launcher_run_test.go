@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -1319,7 +1318,7 @@ func TestEphemeralRecordOutsideTheEphemeralRootIsNeitherSignalledNorDeleted(t *t
 
 func TestHeadedWindowInLocalMode(t *testing.T) {
 	env := launcherTestEnv(t)
-	env.Config = config.Tree{"browser": map[string]any{"headed": true}}
+	writeBrowserSection(t, env.Home, map[string]any{"headed": true})
 	var captured [][]string
 	pin(t, &launcherSpawn, func(argv []string, _ map[string]string, _ string) (*launchProc, error) {
 		captured = append(captured, argv)

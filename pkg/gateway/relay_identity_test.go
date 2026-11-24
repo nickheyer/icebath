@@ -9,11 +9,9 @@ import (
 )
 
 var relayDisableSpellings = map[string]string{
-	"top":              "platforms:\n  relay:\n    enabled: false\n",
-	"nested":           "gateway:\n  platforms:\n    relay:\n      enabled: false\n",
-	"string-false":     "platforms:\n  relay:\n    enabled: 'false'\n",
-	"top-beats-nested": "platforms:\n  relay:\n    enabled: false\ngateway:\n  platforms:\n    relay:\n      enabled: true\n",
-	"managed":          "",
+	"top":          "platforms:\n  relay:\n    enabled: false\n",
+	"string-false": "platforms:\n  relay:\n    enabled: 'false'\n",
+	"managed":      "",
 }
 
 // Temp profile with the relay env of the explicit disable suite

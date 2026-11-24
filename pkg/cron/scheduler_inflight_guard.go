@@ -40,7 +40,7 @@ func (s *Store) recordForcedRelease(jobID, name string, ageSeconds, allowanceSec
 	inflight.Unlock()
 	err := func() error {
 		path := filepath.Join(s.home, "cron", "inflight_forced_releases.jsonl")
-		if err := ensureCronDir(filepath.Dir(path)); err != nil {
+		if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 			return err
 		}
 		line, err := pyjson.Dumps(entry)

@@ -1,12 +1,10 @@
 package tuiserver
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var sessionRegistry = &handlerRegistry{}
@@ -15,9 +13,6 @@ func init() {
 	registerSessionListHandlers()
 	sessionRegistry.install()
 }
-
-// Handler body of a session scoped method, given the resolved live session
-type sessionHandler func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any
 
 // Python int of a param, the default when missing or unparsable and the overflow of an infinite value raised
 func intParam(params map[string]any, key string, def int) int {

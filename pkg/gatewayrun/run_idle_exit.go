@@ -8,13 +8,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
-	DefaultIdleExitSeconds = 600.0
 	// Idle window of a service started by a `go run` build, whose binary may be gone soon after
 	ScratchIdleExitSeconds = 5.0
 	IdleExitReason         = "idle_exit"
@@ -26,38 +25,7 @@ func idleExitSeconds(ctx context.Context) float64 {
 	if gateway.GoRunExecutable() != "" {
 		return ScratchIdleExitSeconds
 	}
-	section, _ := gateway.LoadGatewayConfigMap(ctx, "")["gateway"].(map[string]any)
-	value, present := section["unmanaged_idle_exit_seconds"]
-	if section == nil || !present || value == nil {
-		return DefaultIdleExitSeconds
-	}
-	seconds, ok := pyFloat(value)
-	if !ok {
-		pkgLog().Warn(fmt.Sprintf("gateway.unmanaged_idle_exit_seconds=%s is not a number; using %.0f", errchain.Show(value), DefaultIdleExitSeconds))
-		return DefaultIdleExitSeconds
-	}
-	return math.Max(0, seconds)
-}
-
-// Python float of a config value, ok false where float raises
-func pyFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case float64:
-		return x, true
-	case string:
-		f, err := pyint.ParseFloat(x)
-		return f, err == nil
-	}
-	return 0, false
+	return math.Max(0, settings.GatewayUnmanagedIdleExitSeconds.Get(ctx).Seconds())
 }
 
 // Stamps client activity on the idle clock

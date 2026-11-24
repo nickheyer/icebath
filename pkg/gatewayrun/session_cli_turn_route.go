@@ -36,7 +36,7 @@ func oneTurnRuntime(ctx context.Context, override *pyjson.Object, model string, 
 	explicit, _ := override.GetOr("provider", "").(string)
 	userProviders, _ := cfg["providers"].(map[string]any)
 	custom := []any{}
-	for _, entry := range provider.ProviderEntries(cfg) {
+	for _, entry := range provider.ProviderEntriesOf(userProviders) {
 		custom = append(custom, entry)
 	}
 	result, err := provider.SwitchModel(ctx, provider.SwitchModelOptions{

@@ -332,7 +332,7 @@ func VerifySystemd(props map[string]string, managerEnv, h string, system bool) e
 			delete(env, key)
 		}
 	}
-	configured := pystr.Strip(env["ICEBATH_HOME"])
+	configured := strings.TrimSpace(env["ICEBATH_HOME"])
 	if configured == "" {
 		base := env["HOME"]
 		if base == "" {
@@ -430,10 +430,10 @@ func VerifyLaunchdLoaded(output, h string, uid int, username string) error {
 	}
 	env := map[string]string{}
 	for _, line := range lines {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		key, value, sep := strings.Cut(pystr.Strip(line), " => ")
+		key, value, sep := strings.Cut(strings.TrimSpace(line), " => ")
 		if _, dup := env[key]; !sep || dup {
 			return unverifiedIdentity()
 		}
@@ -451,7 +451,7 @@ func VerifyLaunchdLoaded(output, h string, uid int, username string) error {
 	}
 	argv := make([]string, len(argLines))
 	for i, line := range argLines {
-		argv[i] = pystr.Strip(line)
+		argv[i] = strings.TrimSpace(line)
 	}
 	programs := regexp.MustCompile(`(?m)^\tprogram = (.+)$`).FindAllStringSubmatch(output, -1)
 	if len(programs) != 1 || len(argv) == 0 || programs[0][1] != argv[0] {

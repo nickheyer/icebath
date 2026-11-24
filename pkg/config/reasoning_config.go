@@ -1,12 +1,10 @@
 package config
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Reasoning effort levels a bare string may name
@@ -34,14 +32,14 @@ func ParseReasoningEffort(effort any) map[string]any {
 		}
 		level := ""
 		if v := m["effort"]; pyrepr.Truthy(v) {
-			level = pystr.Strip(pyrepr.Str(v))
+			level = strings.TrimSpace(pyrepr.Str(v))
 		}
 		if level == "" {
 			return nil
 		}
 		return map[string]any{"enabled": true, "effort": level}
 	}
-	text := pystr.Lower(pystr.Strip(pyrepr.Str(effort)))
+	text := strings.ToLower(strings.TrimSpace(pyrepr.Str(effort)))
 	switch text {
 	case "none", "false", "disabled":
 		return map[string]any{"enabled": false}
@@ -156,42 +154,4 @@ func ResolvePerModelProviderRouting(model string, models any) map[string]any {
 		}
 	}
 	return map[string]any{}
-}
-
-// Effective reasoning config of a model, the per model override first and the global effort after
-func ResolveReasoningConfig(cfg any, model string) map[string]any {
-	root, _ := reasoningDict(cfg)
-	agent, _ := reasoningDict(root["agent"])
-	if model == "" {
-		var modelCfg any = root["model"]
-		if mc, ok := reasoningDict(modelCfg); ok {
-			switch {
-			case pyrepr.Truthy(mc["default"]):
-				modelCfg = mc["default"]
-			case pyrepr.Truthy(mc["model"]):
-				modelCfg = mc["model"]
-			default:
-				modelCfg = ""
-			}
-		}
-		if s, ok := modelCfg.(string); ok {
-			model = pystr.Strip(s)
-		}
-	}
-	var overrides any = map[string]any{}
-	if v := agent["reasoning_overrides"]; pyrepr.Truthy(v) {
-		overrides = v
-	}
-	if perModel := ResolvePerModelReasoningEffort(model, overrides); perModel != nil {
-		return perModel
-	}
-	effort, has := agent["reasoning_effort"]
-	if !has {
-		effort = ""
-	}
-	result := ParseReasoningEffort(effort)
-	if pyrepr.Truthy(effort) && pystr.Strip(pyrepr.Str(effort)) != "" && result == nil {
-		pkgLog().Warn(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", pyrepr.Str(effort)))
-	}
-	return result
 }

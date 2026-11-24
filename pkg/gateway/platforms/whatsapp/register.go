@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -36,7 +35,7 @@ func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	switch pystr.Lower(pystr.Strip(value)) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "true", "1", "yes":
 		return true, nil
 	}
@@ -54,7 +53,7 @@ func interactiveSetup(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if v := pystr.Lower(enabled); v == "true" || v == "1" || v == "yes" {
+	if v := strings.ToLower(enabled); v == "true" || v == "1" || v == "yes" {
 		con.PrintInfo("WhatsApp: already enabled")
 		if !con.PromptYesNo(ctx, "Reconfigure WhatsApp?", false) {
 			return nil
@@ -77,7 +76,7 @@ func interactiveSetup(ctx context.Context) error {
 		}
 		con.PrintSuccess("WhatsApp allowlist configured")
 	}
-	if homeChannel := pystr.Strip(con.Prompt("Home chat ID for cron delivery (leave empty to skip)", "", false)); homeChannel != "" {
+	if homeChannel := strings.TrimSpace(con.Prompt("Home chat ID for cron delivery (leave empty to skip)", "", false)); homeChannel != "" {
 		return config.SaveEnvValue(h, "WHATSAPP_HOME_CHANNEL", homeChannel)
 	}
 	removed, err := config.RemoveEnvValue(filepath.Join(h, ".env"), "WHATSAPP_HOME_CHANNEL")

@@ -6,7 +6,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -17,9 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -40,11 +38,9 @@ var (
 
 // Shutdown flush deadline for pending text batches, kept below the per adapter disconnect budget
 func textBatchFlushDeadlineSeconds() float64 {
-	budget := 5.0
-	if raw := pystr.Strip(os.Getenv("ICEBATH_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT")); raw != "" {
-		if parsed, err := pyint.ParseFloat(raw); err == nil && parsed > 0 {
-			budget = parsed
-		}
+	budget := settings.GatewayAdapterDisconnectTimeout.Get(context.Background()).Seconds()
+	if budget <= 0 {
+		budget = settings.GatewayAdapterDisconnectTimeout.Default.Seconds()
 	}
 	headroom := math.Max(0.5, budget*0.2)
 	deadline := math.Max(1.0, budget-headroom)
@@ -53,10 +49,10 @@ func textBatchFlushDeadlineSeconds() float64 {
 
 // Provisional auto thread name with mention tokens stripped, cut to 80 characters
 func deriveAutoThreadName(ctx context.Context, content string) string {
-	content = pystr.Strip(content)
+	content = strings.TrimSpace(content)
 	content = mentionTokenRE.ReplaceAllString(content, "")
 	content = channelTokenRE.ReplaceAllString(content, "")
-	content = pystr.Strip(whitespaceRunRE.ReplaceAllString(content, " "))
+	content = strings.TrimSpace(whitespaceRunRE.ReplaceAllString(content, " "))
 	if content == "" {
 		return i18n.T(ctx, "platform.discord.thread.default_name", "", nil)
 	}

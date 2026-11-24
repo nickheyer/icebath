@@ -34,58 +34,6 @@ const MediaCacheMaxAgeHours = 24
 // Icebath user agent sent to every vendor HTTP endpoint
 const UserAgent = "Icebath-Agent/1.0"
 
-var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
-var falsyStrings = map[string]bool{"0": true, "false": true, "no": true, "off": true, "disabled": true}
-
-// Coerces common YAML and env bool spellings without treating random strings as true
-func configBool(v any, def bool) bool {
-	switch t := v.(type) {
-	case nil:
-		return def
-	case bool:
-		return t
-	case int, int64, float64:
-		f, _ := config.AsFloat(t)
-		return f != 0
-	case string:
-		n := strings.ToLower(strings.TrimSpace(t))
-		if truthyStrings[n] || n == "enabled" {
-			return true
-		}
-		if falsyStrings[n] {
-			return false
-		}
-	}
-	return def
-}
-
-// Section of the merged config as a tree, missing or malformed sections read as empty
-func section(cfg config.Tree, key string) config.Tree {
-	if cfg == nil {
-		return config.Tree{}
-	}
-	sub := cfg.Sub(key)
-	if sub == nil {
-		return config.Tree{}
-	}
-	return sub
-}
-
-// Stripped string value of a config key or empty
-func cfgString(t config.Tree, key string) string {
-	if t == nil {
-		return ""
-	}
-	v, ok := t[key]
-	if !ok || v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return strings.TrimSpace(s)
-	}
-	return ""
-}
-
 // Positive int value of a config key or zero
 func positiveInt(v any) int {
 	if v == nil {
@@ -112,25 +60,6 @@ func logOf(env *tools.Env) *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// Config tree of the environment, else the live config of its home, else an empty tree
-func cfgOf(env *tools.Env) config.Tree {
-	if env == nil || (env.Config == nil && strings.TrimSpace(env.Home) == "") {
-		return config.Tree{}
-	}
-	if env.Config != nil {
-		return env.Config
-	}
-	lookup := config.NewSecrets(env.Home).Lookup()
-	if env.Secrets != nil {
-		lookup = env.Secrets.Lookup()
-	}
-	tree, err := config.LoadReadonly(home.WithOverride(context.Background(), env.Home), env.Home, lookup)
-	if err != nil {
-		return config.Tree{}
-	}
-	return tree
-}
-
 // Home directory of the environment or the process default
 func homeOf(env *tools.Env) string {
 	if env != nil && env.Home != "" {
@@ -139,12 +68,14 @@ func homeOf(env *tools.Env) string {
 	return home.Process()
 }
 
-// Secret from the home .env file then the process environment
+// Secret of the environment's profile: its .env resolver, else the profile .env then the process environment
 func secret(env *tools.Env, name string) string {
 	if env != nil && env.Secrets != nil {
 		return strings.TrimSpace(env.Secrets.String(name))
 	}
-	return strings.TrimSpace(os.Getenv(name))
+	h := homeOf(env)
+	v, _ := config.ProfileEnvLookup(home.WithOverride(context.Background(), h), h)(name)
+	return strings.TrimSpace(v)
 }
 
 // Random lowercase hex of n bytes

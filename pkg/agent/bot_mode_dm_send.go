@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -54,13 +53,13 @@ func botDMArgText(value any) string {
 
 // Local profile folder id a target names, by handle, exact folder id, then one unambiguous friendly name
 func resolveLocalName(target string, roster []string, root *string) (string, bool) {
-	want := pystr.Lower(pystr.Strip(target))
+	want := strings.ToLower(strings.TrimSpace(target))
 	if want == "" {
 		return "", false
 	}
 	want = botmode.ProfileForHandle(want, roster)
 	for _, name := range roster {
-		if pystr.Lower(name) == want {
+		if strings.ToLower(name) == want {
 			return name, true
 		}
 	}
@@ -140,7 +139,7 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 	}
 	rosterErr := func(msg string) string { return botDMErr(msg, &teammates, &peers) }
 
-	body := pystr.Strip(message)
+	body := strings.TrimSpace(message)
 	if body == "" {
 		return botDMErr("message is required — compose what you want to say to that agent.", nil, nil), nil
 	}
@@ -148,7 +147,7 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 		return botDMErr(fmt.Sprintf("message too long (%d chars > %d). "+
 			"Send the essentials; share large content as a file path instead.", n, messageMaxChars), nil, nil), nil
 	}
-	rawTarget := strings.TrimLeft(pystr.Strip(target), "@")
+	rawTarget := strings.TrimLeft(strings.TrimSpace(target), "@")
 	if rawTarget == "" {
 		return rosterErr("target is required."), nil
 	}
@@ -160,8 +159,8 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 	author := pyjson.ObjectOf("id", "bot:"+me, "name", botmode.Handle(me, roster), "is_bot", true)
 
 	peerMatch := botPeerTargetRE.FindStringSubmatch(rawTarget)
-	if peerMatch != nil || slices.Contains(peers, pystr.Lower(rawTarget)) {
-		peerName, peerProfile := pystr.Lower(rawTarget), ""
+	if peerMatch != nil || slices.Contains(peers, strings.ToLower(rawTarget)) {
+		peerName, peerProfile := strings.ToLower(rawTarget), ""
 		if peerMatch != nil {
 			peerName, peerProfile = peerMatch[1], peerMatch[2]
 		}

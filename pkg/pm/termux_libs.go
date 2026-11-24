@@ -109,7 +109,7 @@ func ParseTermuxIndex(text string) map[string]PoolPackage {
 	fields := map[string]string{}
 	lines := append(pystr.Splitlines(text, false), "")
 	for _, line := range lines {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			if row, ok := poolPackage(fields); ok {
 				pool[row.Name] = row
 			}
@@ -118,7 +118,7 @@ func ParseTermuxIndex(text string) map[string]PoolPackage {
 		}
 		if r, _ := utf8.DecodeRuneInString(line); !pystr.IsSpace(r) {
 			if m := debField.FindStringSubmatch(line); m != nil {
-				fields[m[1]] = pystr.Strip(m[2])
+				fields[m[1]] = strings.TrimSpace(m[2])
 			}
 		}
 	}

@@ -3,28 +3,16 @@ package cron
 import (
 	"fmt"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // UnreachableRetryDelaysSeconds is the bounded re run ladder for fires that never reached the model
 var UnreachableRetryDelaysSeconds = []int{300, 900, 1800}
 
-// Config cron.retry_unreachable is anything but false, true when config is unreadable
-func unreachableRetryEnabledIn(cfg map[string]any) bool {
-	cron, ok := cfg["cron"].(map[string]any)
-	if !ok {
-		return true
-	}
-	v, present := cron["retry_unreachable"]
-	return !present || v != false
-}
-
-// Ladder enabled in the store config, the reliability default when config cannot load
+// Whether the re-run ladder is on, cron.retry_unreachable for the store's profile
 func (s *Store) unreachableRetryEnabled() bool {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return true
-	}
-	return unreachableRetryEnabledIn(cfg)
+	return settings.CronRetryUnreachable.Get(s.settingsCtx())
 }
 
 // Transient network failure from a run that completed zero model calls

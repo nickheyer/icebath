@@ -108,8 +108,8 @@ func TestForwardRelayFrontedRunPostsToRunRouteWithBearer(t *testing.T) {
 	if seen.path != "/api/jobs/abc123/run" || seen.auth != "Bearer secret-key-16chars" {
 		t.Fatalf("seen %+v", seen)
 	}
-	if !strings.HasPrefix(s.apiServerBaseURL(), "http://127.0.0.1:") {
-		t.Fatalf("base %q", s.apiServerBaseURL())
+	if base, err := s.apiServerBaseURL(context.Background()); err != nil || !strings.HasPrefix(base, "http://127.0.0.1:") {
+		t.Fatalf("base %q %v", base, err)
 	}
 	forwardOut(t, s, "j1", strPtr("focus on EU numbers"))
 	if len(seen.body) != 1 || seen.body["prompt"] != "focus on EU numbers" {
@@ -120,12 +120,12 @@ func TestForwardRelayFrontedRunPostsToRunRouteWithBearer(t *testing.T) {
 func TestAPIServerBaseURLHonorsHostEnv(t *testing.T) {
 	s, _ := newTestStore(t)
 	t.Setenv("API_SERVER_HOST", "10.9.8.7")
-	if got := s.apiServerBaseURL(); !strings.HasPrefix(got, "http://10.9.8.7:") {
-		t.Fatalf("base %q", got)
+	if got, err := s.apiServerBaseURL(context.Background()); err != nil || !strings.HasPrefix(got, "http://10.9.8.7:") {
+		t.Fatalf("base %q %v", got, err)
 	}
 	t.Setenv("API_SERVER_HOST", "0.0.0.0")
-	if got := s.apiServerBaseURL(); !strings.HasPrefix(got, "http://127.0.0.1:") {
-		t.Fatalf("wildcard base %q", got)
+	if got, err := s.apiServerBaseURL(context.Background()); err != nil || !strings.HasPrefix(got, "http://127.0.0.1:") {
+		t.Fatalf("wildcard base %q %v", got, err)
 	}
 }
 

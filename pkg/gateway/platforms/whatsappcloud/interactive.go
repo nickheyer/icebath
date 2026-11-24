@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Localized text of a key in the active display language
@@ -32,7 +31,7 @@ func (a *WhatsAppCloudAdapter) sendInteractive(ctx context.Context, chatID strin
 
 // Button or list row title stripped and cut to the limit with an ellipsis that counts
 func truncateButtonLabel(text string, limit int) string {
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	runes := []rune(text)
 	if len(runes) <= limit {
 		return text
@@ -65,7 +64,7 @@ func buttonInteractive(bodyText string, buttons ...[2]string) *pyjson.Object {
 
 // Clarify as native buttons for up to three choices, a list with an Other row beyond, plain text without choices
 func (a *WhatsAppCloudAdapter) SendClarify(ctx context.Context, chatID, question string, choices []string, clarifyID, sessionKey string, metadata map[string]any) (gateway.SendResult, error) {
-	question = pystr.Strip(question)
+	question = strings.TrimSpace(question)
 	if len(choices) == 0 {
 		replyTo, _ := replyToFrom(metadata).(string)
 		return a.Send(ctx, chatID, "❓ "+question, replyTo, nil)
@@ -75,7 +74,7 @@ func (a *WhatsAppCloudAdapter) SendClarify(ctx context.Context, chatID, question
 	}
 	var list []string
 	for _, c := range choices {
-		if c = pystr.Strip(c); c != "" {
+		if c = strings.TrimSpace(c); c != "" {
 			list = append(list, c)
 		}
 	}

@@ -140,7 +140,7 @@ func parseResourceID(rawURL string) string {
 	if len(ids) == 0 {
 		return ""
 	}
-	return pystr.Strip(ids[0])
+	return strings.TrimSpace(ids[0])
 }
 
 // URL of the medium image at index one, falling back to index zero, else empty
@@ -211,7 +211,7 @@ func extractText(msgBody []any) (string, error) {
 				if parsed, err := jsonLoads(data); err == nil {
 					if face, isDict := asDict(parsed); isDict {
 						if s, isStr := pyrepr.Or(face["name"], "").(string); isStr {
-							faceName = pystr.Strip(s)
+							faceName = strings.TrimSpace(s)
 						}
 					}
 				}
@@ -259,7 +259,7 @@ func customElemText(dataVal any) any {
 
 // Stripped text with a leading full width slash turned into the ASCII one so commands match
 func rewriteSlashCommand(text string) string {
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if strings.HasPrefix(text, "／") {
 		return "/" + pystr.Slice(text, 1, pystr.Len(text))
 	}
@@ -344,7 +344,7 @@ var skippablePlaceholders = map[string]bool{"[image]": true, "[图片]": true, "
 
 // Whether the text is a bare placeholder and no media came with it
 func isSkippablePlaceholder(text string, mediaCount int) bool {
-	return mediaCount <= 0 && skippablePlaceholders[pystr.Strip(text)]
+	return mediaCount <= 0 && skippablePlaceholders[strings.TrimSpace(text)]
 }
 
 func (m *PlaceholderFilterMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
@@ -395,7 +395,7 @@ func detectOwnerCommand(push *pyjson.Object, msgBody []any, chatType string, fro
 	if !strings.HasPrefix(line, "/") {
 		return "", "", false, nil
 	}
-	name := pystr.Lower(pystr.SplitWhitespace(line, 1)[0])
+	name := strings.ToLower(pystr.SplitWhitespace(line, 1)[0])
 	if !ownerCommandAllowlist[name] {
 		return "", "", false, nil
 	}

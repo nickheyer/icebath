@@ -1,10 +1,11 @@
 package agent
 
 import (
+	"strings"
+
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -32,8 +33,8 @@ func cleanRelayCwd(value any) string {
 	if !ok {
 		return ""
 	}
-	s = pystr.Strip(s)
-	if relayCwdSentinels[pystr.Lower(s)] {
+	s = strings.TrimSpace(s)
+	if relayCwdSentinels[strings.ToLower(s)] {
 		return ""
 	}
 	return s
@@ -105,7 +106,7 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 			if err != nil {
 				return err
 			}
-			backend = pystr.Lower(pystr.Strip(value))
+			backend = strings.ToLower(strings.TrimSpace(value))
 			cwd, err := relayTerminalEnv(env, "TERMINAL_CWD", "")
 			if err != nil {
 				return err

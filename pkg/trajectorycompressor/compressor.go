@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -278,7 +277,7 @@ func (c *Compressor) extractTurnContentForSummary(traj []any, start, end int) (s
 		if !ok {
 			return "", &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'upper'", pyrepr.TypeName(from))}
 		}
-		parts = append(parts, fmt.Sprintf("[Turn %d - %s]:\n%s", i, pystr.Upper(fs), text))
+		parts = append(parts, fmt.Sprintf("[Turn %d - %s]:\n%s", i, strings.ToUpper(fs), text))
 	}
 	return strings.Join(parts, "\n\n"), nil
 }
@@ -344,7 +343,7 @@ func responseFinishReason(response any) string {
 	if !pyrepr.Truthy(reason) {
 		return ""
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(reason)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(reason)))
 }
 
 // Summary text carrying the CONTEXT SUMMARY prefix exactly once, a length stop failing the attempt
@@ -363,7 +362,7 @@ func finishSummary(response any) (string, error) {
 	} else if pyrepr.Truthy(content) {
 		text = pyrepr.Str(content)
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if strings.HasPrefix(text, summaryPrefix) {
 		return text, nil
 	}

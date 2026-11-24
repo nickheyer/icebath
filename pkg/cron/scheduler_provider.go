@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -13,15 +15,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-const (
-	emfileBackoffMaxSeconds    = 15 * 60
-	DefaultMisfireGraceMinutes = 10
-)
+const emfileBackoffMaxSeconds = 15 * 60
 
 // One profile a multiplex ticker serves, the name nil for a bare home entry
 type ProfileHome struct {
@@ -315,21 +313,9 @@ func defaultFireClaimed(ctx context.Context, p CronScheduler, job *Job, o FireOp
 	return true, nil
 }
 
-// Configured misfire grace in minutes, the default when unset or unreadable
+// Misfire grace in minutes from cron.misfire_grace_minutes
 func (s *Store) misfireGraceMinutes() float64 {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return DefaultMisfireGraceMinutes
-	}
-	raw, ok := cfg.Lookup("cron.misfire_grace_minutes")
-	if !ok {
-		return DefaultMisfireGraceMinutes
-	}
-	v, err := pyint.Float(raw)
-	if err != nil {
-		return DefaultMisfireGraceMinutes
-	}
-	return v
+	return settings.CronMisfireGraceMinutes.Get(s.settingsCtx()).Minutes()
 }
 
 // Estop check the agent package registers, unset reading as the Python import guard that skips the check
@@ -418,16 +404,9 @@ func pyFormatFixed0(v float64) string {
 	return out
 }
 
-// Configured cron.provider, the built in ticker when unset, unknown, unavailable or failing to load
+// Scheduler cron.provider names, the built in ticker when unset, unknown, unavailable or failing to load
 func resolveCronScheduler(s *Store) CronScheduler {
-	name := ""
-	if cfg, err := s.loadConfig(); err == nil {
-		if raw, ok := cfg.Lookup("cron.provider"); ok {
-			if text, isStr := raw.(string); isStr {
-				name = pystr.Strip(text)
-			}
-		}
-	}
+	name := strings.TrimSpace(settings.CronProvider.Get(s.settingsCtx()))
 	if name == "" || name == "builtin" || name == "in-process" || name == "inprocess" {
 		return &InProcessCronScheduler{}
 	}

@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -104,7 +103,7 @@ func pySub(re *regexp2.Regexp, text string, repl func(m regexp2.Match) string) s
 // Lowercased extension of a path
 func lowerExt(path string) string {
 	_, ext := pypath.Splitext(path)
-	return pystr.Lower(ext)
+	return strings.ToLower(ext)
 }
 
 func pathExists(path string) bool {
@@ -114,7 +113,7 @@ func pathExists(path string) bool {
 
 // Stripped text as the caption of exactly one captionable non voice file it fits, else nil and the text
 func mediaCaptionSplit(text string, media []gateway.MediaRef, maxCaptionLen int) (*string, string) {
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	if stripped == "" || len(media) != 1 || utf8.RuneCountInString(stripped) > maxCaptionLen || media[0].IsVoice ||
 		!captionableExts[lowerExt(media[0].Path)] {
 		return nil, text
@@ -153,7 +152,7 @@ func telegramRetryDelay(err error, attempt int) (float64, bool) {
 	if errors.As(err, &te) && te.RetryAfter != nil {
 		return max(*te.RetryAfter, 0.0), true
 	}
-	text := pystr.Lower(err.Error())
+	text := strings.ToLower(err.Error())
 	if strings.Contains(text, "timed out") || strings.Contains(text, "timeout") {
 		return 0, false
 	}
@@ -189,7 +188,7 @@ func sendTelegramMessageWithRetry(ctx context.Context, bot telegramBotAPI, attem
 
 // Whether a Telegram error reports a missing forum topic
 func isTelegramThreadNotFound(err error) bool {
-	return strings.Contains(pystr.Lower(err.Error()), "thread not found")
+	return strings.Contains(strings.ToLower(err.Error()), "thread not found")
 }
 
 // Bot honouring TELEGRAM_PROXY, a direct connection when attaching the proxy fails
@@ -292,7 +291,7 @@ func telegramSendTextChunk(ctx context.Context, bot telegramBotAPI, chatID any, 
 		pkgLog().Warn(fmt.Sprintf("Thread %s not found in _send_telegram, retrying without message_thread_id", pyrepr.Str(tid)))
 		return send(chunk, parseMode)
 	}
-	errText := pystr.Lower(err.Error())
+	errText := strings.ToLower(err.Error())
 	if strings.Contains(errText, "parse") || strings.Contains(errText, "markdown") || strings.Contains(errText, "html") {
 		pkgLog().Warn(fmt.Sprintf("Parse mode %s failed in _send_telegram, falling back to plain text: %s",
 			pyrepr.Str(parseMode), sanitizeErrorText(err)))
@@ -346,7 +345,7 @@ func telegramSendOneMedia(ctx context.Context, bot telegramBotAPI, chatID any, m
 	if err == nil {
 		return msg, nil
 	}
-	errText := pystr.Lower(err.Error())
+	errText := strings.ToLower(err.Error())
 	switch {
 	case isTelegramThreadNotFound(err) && pyrepr.Truthy(mediaKwargs["message_thread_id"]):
 		tid := mediaKwargs["message_thread_id"]
@@ -402,7 +401,7 @@ func sendTelegram(ctx context.Context, token any, chatID, message string, mediaF
 			f := formatted
 			tgCaption, formatted = &f, ""
 		}
-		if pystr.Strip(formatted) != "" {
+		if strings.TrimSpace(formatted) != "" {
 			for _, chunk := range gateway.TruncateMessage(formatted, 4096, gateway.UTF16Len) {
 				if lastMsg, err = telegramSendTextChunk(ctx, bot, intChatID, chunk, sendParseMode, hasHTML, textKwargs); err != nil {
 					return nil, err
@@ -600,7 +599,7 @@ func matrixSendCore(ctx context.Context, live any, chatID, message string, media
 		return nil, errors.New("the live Matrix adapter cannot send")
 	}
 	var last *gateway.SendResult
-	if pystr.Strip(message) != "" {
+	if strings.TrimSpace(message) != "" {
 		r, err := adapter.Send(ctx, chatID, message, "", metadata)
 		if err != nil {
 			return nil, err

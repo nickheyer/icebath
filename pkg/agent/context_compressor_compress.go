@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -94,7 +95,7 @@ func (c *ContextCompressor) findLastAssistantMessageIdx(messages []map[string]an
 		}
 		switch content := msg["content"].(type) {
 		case string:
-			if pystr.Strip(content) != "" {
+			if strings.TrimSpace(content) != "" {
 				return i
 			}
 		case []any:
@@ -107,7 +108,7 @@ func (c *ContextCompressor) findLastAssistantMessageIdx(messages []map[string]an
 				if !pyTruthy(t) {
 					t = part["content"]
 				}
-				if s, isStr := t.(string); isStr && pystr.Strip(s) != "" {
+				if s, isStr := t.(string); isStr && strings.TrimSpace(s) != "" {
 					return i
 				}
 			}
@@ -159,8 +160,8 @@ func hasMergedInflightReplay(message map[string]any) bool {
 	if idx < 0 {
 		return false
 	}
-	rest := pystr.Lstrip(text[idx+len(state.SummaryEndMarker):])
-	return strings.HasPrefix(rest, inflightTaskReplayHeader) && pystr.Strip(strings.TrimPrefix(rest, inflightTaskReplayHeader)) != ""
+	rest := strings.TrimLeftFunc(text[idx+len(state.SummaryEndMarker):], unicode.IsSpace)
+	return strings.HasPrefix(rest, inflightTaskReplayHeader) && strings.TrimSpace(strings.TrimPrefix(rest, inflightTaskReplayHeader)) != ""
 }
 
 // User turn still awaiting completion across the whole transcript, nil when the run ended on a reply
@@ -181,7 +182,7 @@ func findInflightUserTask(messages []map[string]any) map[string]any {
 		if msg == nil || msg["role"] != "assistant" || pyTruthy(msg["tool_calls"]) {
 			break
 		}
-		if pystr.Strip(state.ContentTextForContains(msg["content"])) != "" {
+		if strings.TrimSpace(state.ContentTextForContains(msg["content"])) != "" {
 			return nil
 		}
 	}
@@ -211,7 +212,7 @@ func (c *ContextCompressor) reappendInflightUserTask(compressed []map[string]any
 	carrier := compressed[carrierIdx]
 	carrierText := state.ContentTextForContains(carrier["content"])
 	_, after, found := strings.Cut(carrierText, state.SummaryEndMarker)
-	if !found || pystr.Strip(after) != "" {
+	if !found || strings.TrimSpace(after) != "" {
 		return compressed
 	}
 	taskText := restatedRequestText(inflight["content"])
@@ -674,7 +675,7 @@ func summaryPlacement(compressed, tail []map[string]any, start int) (string, boo
 	}
 	hasUserText := false
 	for _, m := range append(slices.Clone(compressed), tail...) {
-		if m["role"] == "user" && pystr.Strip(state.ContentTextForContains(m["content"])) != "" {
+		if m["role"] == "user" && strings.TrimSpace(state.ContentTextForContains(m["content"])) != "" {
 			hasUserText = true
 			break
 		}
@@ -803,7 +804,7 @@ func (c *ContextCompressor) compressPass(ctx context.Context, messages []map[str
 		c.structuralNoOpResult(telemetry, "no_compressible_window", fmt.Sprintf("compress_start (%d) >= compress_end (%d) - transcript fits within tail budget", start, end), nMessages)
 		return canonical, nil
 	}
-	prepared := c.takePreparedSummary(ctx, messages, start, force || (focusTopic != nil && *focusTopic != "") || bypassCooldown, pystr.Strip(memoryContext) != "")
+	prepared := c.takePreparedSummary(ctx, messages, start, force || (focusTopic != nil && *focusTopic != "") || bypassCooldown, strings.TrimSpace(memoryContext) != "")
 	if prepared != nil {
 		end = prepared.CompressEnd
 	}

@@ -3,17 +3,18 @@ package tools
 import (
 	"context"
 	"math"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Characters per token of every rough model estimate, the one ratio provider, media and agent derive theirs from
 const ModelCharsPerToken = 4
 
 const (
-	DefaultResultSizeChars    = 100000
-	DefaultTurnBudgetChars    = 200000
-	DefaultPreviewSizeChars   = 1500
-	DefaultMCPResultSizeChars = 50000
-	MCPToolPrefix             = "mcp_"
+	DefaultResultSizeChars  = 100000
+	DefaultTurnBudgetChars  = 200000
+	DefaultPreviewSizeChars = 1500
+	MCPToolPrefix           = "mcp_"
 	// BudgetUnlimited is the infinite threshold that never persists a result
 	BudgetUnlimited = math.MaxInt
 
@@ -40,21 +41,12 @@ var DefaultBudget = BudgetConfig{
 	DefaultResultSize: DefaultResultSizeChars,
 	TurnBudget:        DefaultTurnBudgetChars,
 	PreviewSize:       DefaultPreviewSizeChars,
-	MCPResultSize:     DefaultMCPResultSizeChars,
+	MCPResultSize:     settings.ToolBudgetMcpResultSizeChars.Default,
 }
 
-// Configured tool_budget.mcp_result_size_chars, the built in default on any issue
+// Largest MCP tool result the env's profile keeps in the chat
 func configuredMCPResultSize(env *Env) int {
-	block := cfgTree(env).Map("tool_budget")
-	if block == nil {
-		return DefaultMCPResultSizeChars
-	}
-	if raw, ok := block["mcp_result_size_chars"]; ok && raw != nil {
-		if n, isInt := asIntValue(raw); isInt && n > 0 {
-			return n
-		}
-	}
-	return DefaultMCPResultSizeChars
+	return settings.ToolBudgetMcpResultSizeChars.Get(envHomeCtx(context.Background(), env))
 }
 
 // Threshold for one tool, pinned then overrides then mcp prefix then registry then default
@@ -79,7 +71,7 @@ func (c BudgetConfig) ResolveThreshold(env *Env, toolName string) int {
 func BudgetForContextWindow(env *Env, contextLength int) BudgetConfig {
 	mcpResultSize := configuredMCPResultSize(env)
 	if contextLength <= 0 {
-		if mcpResultSize == DefaultMCPResultSizeChars {
+		if mcpResultSize == DefaultBudget.MCPResultSize {
 			return DefaultBudget
 		}
 		cfg := DefaultBudget

@@ -1,12 +1,13 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -25,7 +26,7 @@ func rowOr(row *pyjson.Object, key string, fallback any) any {
 
 // Lowered source of a stored row
 func rowSource(row *pyjson.Object) string {
-	return pystr.Lower(pystr.Strip(strOr(rowOr(row, "source", ""))))
+	return strings.ToLower(strings.TrimSpace(strOr(rowOr(row, "source", ""))))
 }
 
 // Whether a row's source is hidden from human listings

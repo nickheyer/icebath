@@ -101,14 +101,14 @@ type devtoolsAddr struct {
 // DevTools port and browser path from DevToolsActivePort text, false when malformed
 func parseDevtoolsLines(stdout []byte) (devtoolsAddr, bool) {
 	lines := pystr.Splitlines(pystr.DecodeUTF8Replace(stdout), false)
-	if len(lines) < 2 || !strIsDigit(pystr.Strip(lines[0])) || !strings.HasPrefix(lines[1], "/devtools/browser/") {
+	if len(lines) < 2 || !strIsDigit(strings.TrimSpace(lines[0])) || !strings.HasPrefix(lines[1], "/devtools/browser/") {
 		return devtoolsAddr{}, false
 	}
-	port, err := strconv.Atoi(pystr.Strip(lines[0]))
+	port, err := strconv.Atoi(strings.TrimSpace(lines[0]))
 	if err != nil {
 		return devtoolsAddr{}, false
 	}
-	return devtoolsAddr{port, pystr.Strip(lines[1])}, true
+	return devtoolsAddr{port, strings.TrimSpace(lines[1])}, true
 }
 
 // str.isdigit of s
@@ -204,7 +204,7 @@ func startSandboxChromium(env *tools.Env, e tools.Environment, user, exe, udd st
 	}
 	var words []string
 	if proc.ReturnCode == 0 {
-		if lines := pystr.Splitlines(pystr.Strip(pystr.DecodeUTF8Replace(proc.Stdout)), false); len(lines) > 0 {
+		if lines := pystr.Splitlines(strings.TrimSpace(pystr.DecodeUTF8Replace(proc.Stdout)), false); len(lines) > 0 {
 			words = strings.FieldsFunc(lines[len(lines)-1], pystr.IsSpace)
 		}
 	}

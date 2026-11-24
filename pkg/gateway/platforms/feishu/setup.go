@@ -601,7 +601,7 @@ func InteractiveSetup(ctx context.Context) error {
 	}
 	cli.PrintInfo(note)
 	cli.PrintInfo("Leave blank to clear a previously saved home channel (cron / notifications).")
-	if home := pystr.Strip(cli.Prompt("Home chat ID (optional, for cron/notifications)", "", false)); home != "" {
+	if home := strings.TrimSpace(cli.Prompt("Home chat ID (optional, for cron/notifications)", "", false)); home != "" {
 		if err := cfg.SaveEnvValue(ctx, "FEISHU_HOME_CHANNEL", home); err != nil {
 			return err
 		}

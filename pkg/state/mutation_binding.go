@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const BindingPrefix = "gateway.history_control.v1."
@@ -66,10 +65,10 @@ func LoginLabel(subject any) (string, bool) {
 		return "", false
 	}
 	provider, issuer, user := parts[0], parts[1], parts[2]
-	if issuer != "" || strings.Contains(provider, ":") || pystr.Strip(provider) == "" || pystr.Strip(user) == "" {
+	if issuer != "" || strings.Contains(provider, ":") || strings.TrimSpace(provider) == "" || strings.TrimSpace(user) == "" {
 		return "", false
 	}
-	label := pystr.Strip(provider) + ":" + pystr.Strip(user)
+	label := strings.TrimSpace(provider) + ":" + strings.TrimSpace(user)
 	if strings.HasPrefix(label, "auth:") {
 		return "", false
 	}

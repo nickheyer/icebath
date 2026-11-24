@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -56,7 +55,7 @@ func hasContentField(value any) bool {
 	switch v := value.(type) {
 	case map[string]any:
 		for k, item := range v {
-			if contentFieldNames[pystr.Lower(pystr.Strip(k))] || hasContentField(item) {
+			if contentFieldNames[strings.ToLower(strings.TrimSpace(k))] || hasContentField(item) {
 				return true
 			}
 		}

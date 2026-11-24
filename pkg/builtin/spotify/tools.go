@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -70,7 +69,7 @@ func required(value any, message string) (any, error) {
 func nonblank(raw any, message string) (string, error) {
 	value := ""
 	if pyrepr.Truthy(raw) {
-		value = pystr.Strip(pyrepr.Str(raw))
+		value = strings.TrimSpace(pyrepr.Str(raw))
 	}
 	if value == "" {
 		return "", &SpotifyError{Msg: message}
@@ -84,7 +83,7 @@ func coerceBool(raw any, def bool) bool {
 	case bool:
 		return t
 	case string:
-		switch pystr.Lower(pystr.Strip(t)) {
+		switch strings.ToLower(strings.TrimSpace(t)) {
 		case "1", "true", "yes", "on":
 			return true
 		case "0", "false", "no", "off":
@@ -105,7 +104,7 @@ func asList(raw any) []string {
 	}
 	out := []string{}
 	for _, item := range items {
-		if s := pystr.Strip(pyrepr.Str(item)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -198,7 +197,7 @@ func actionOf(a toolArgs, def string) string {
 	if !pyrepr.Truthy(raw) {
 		raw = def
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(raw)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
 }
 
 // Builds the client outside the error boundary so an auth failure propagates as the tool exception
@@ -381,7 +380,7 @@ func pbRequiredParam(path, param string, convert func(any) (any, error)) actionH
 func pbRepeatState(a toolArgs) (string, error) {
 	state := ""
 	if pyrepr.Truthy(a["state"]) {
-		state = pystr.Lower(pystr.Strip(pyrepr.Str(a["state"])))
+		state = strings.ToLower(strings.TrimSpace(pyrepr.Str(a["state"])))
 	}
 	if state != "track" && state != "context" && state != "off" {
 		return "", &SpotifyError{Msg: "state must be one of: track, context, off"}
@@ -516,7 +515,7 @@ func handleSpotifySearch(ctx context.Context, call *tools.Call) string {
 	client := mustClient(ctx, call.Env)
 	query := ""
 	if pyrepr.Truthy(a["query"]) {
-		query = pystr.Strip(pyrepr.Str(a["query"]))
+		query = strings.TrimSpace(pyrepr.Str(a["query"]))
 	}
 	if query == "" {
 		return toolError("query is required")
@@ -530,7 +529,7 @@ func handleSpotifySearch(ctx context.Context, call *tools.Call) string {
 	}
 	var selected []string
 	for _, value := range asList(rawTypes) {
-		if lower := pystr.Lower(value); searchTypes[lower] {
+		if lower := strings.ToLower(value); searchTypes[lower] {
 			selected = append(selected, lower)
 		}
 	}
@@ -745,7 +744,7 @@ func handleSpotifyLibrary(ctx context.Context, call *tools.Call) string {
 	a := tools.PythonCallArgs(call)
 	kind := ""
 	if pyrepr.Truthy(a["kind"]) {
-		kind = pystr.Lower(pystr.Strip(pyrepr.Str(a["kind"])))
+		kind = strings.ToLower(strings.TrimSpace(pyrepr.Str(a["kind"])))
 	}
 	if kind != "tracks" && kind != "albums" {
 		return toolError("kind must be one of: tracks, albums")

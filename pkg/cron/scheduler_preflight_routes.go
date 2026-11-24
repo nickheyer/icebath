@@ -4,23 +4,18 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Preflight runs unless cron.preflight is literally false
-func (s *Store) cronPreflightEnabled(cfg config.Tree) bool {
-	cronCfg, ok := cfg["cron"].(map[string]any)
-	if !ok {
-		return true
-	}
-	v, present := cronCfg["preflight"]
-	return !present || v != false
+// Whether the pre-run check runs, cron.preflight for the store's profile
+func (s *Store) cronPreflightEnabled(ctx context.Context) bool {
+	return settings.CronPreflight.Get(home.WithOverride(ctx, s.home))
 }
 
 // Enabled primary gateway profile routes that target the served profile, none when this is the primary home
@@ -30,17 +25,8 @@ func primaryProfileRoutesForCurrentHome(ctx context.Context) []*gateway.ProfileR
 	if errP != nil || errC != nil || primary == current {
 		return nil
 	}
-	layered, err := gateway.ReadYAMLLayers(ctx, pypath.Expanduser(home.Root()))
-	if err != nil {
-		return nil
-	}
-	routesRaw, present := layered["profile_routes"]
-	if (!present || routesRaw == nil) && layered["gateway"] != nil {
-		if gw, ok := layered["gateway"].(map[string]any); ok {
-			routesRaw = gw["profile_routes"]
-		}
-	}
-	if _, ok := routesRaw.([]any); !ok {
+	routesRaw := settings.GatewayProfileRoutes.Get(home.WithOverride(ctx, primary))
+	if len(routesRaw) == 0 {
 		return nil
 	}
 	routes, err := gateway.ParseProfileRoutes(ctx, routesRaw)

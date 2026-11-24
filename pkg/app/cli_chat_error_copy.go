@@ -1,6 +1,9 @@
 package app
 
 import (
+	"strings"
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -46,7 +49,7 @@ func asError(v any) error {
 
 // First line of the text capped at limit cells with an ellipsis, a nil limit keeping the whole line
 func shortText(text string, limit *int) string {
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	first := ""
 	if stripped != "" {
 		first = pystr.Splitlines(stripped, false)[0]
@@ -54,7 +57,7 @@ func shortText(text string, limit *int) string {
 	if limit == nil || pystr.Len(first) <= *limit {
 		return first
 	}
-	return pystr.Rstrip(pystr.Slice(first, 0, *limit-1)) + "…"
+	return strings.TrimRightFunc(pystr.Slice(first, 0, *limit-1), unicode.IsSpace) + "…"
 }
 
 // Text of a truthy value, empty for None, empty strings, zero and false
@@ -78,8 +81,8 @@ func refusalText(ctx context.Context, err any) string {
 			data = rpc.Data
 		}
 	}
-	field := pystr.Strip(truthyText(data["field"]))
-	detail := pystr.Strip(truthyText(data["detail"]))
+	field := strings.TrimSpace(truthyText(data["field"]))
+	detail := strings.TrimSpace(truthyText(data["detail"]))
 	if field == "" && detail == "" {
 		return text
 	}
@@ -94,9 +97,9 @@ func refusalText(ctx context.Context, err any) string {
 
 // Two line panel text, the plain sentence with the fix command then a Details line with the raw error
 func chatErrorResponse(ctx context.Context, err any, providerName, model, failureReason string) string {
-	reason := pystr.Strip(failureReason)
+	reason := strings.TrimSpace(failureReason)
 	if reason != "" {
-		text := pystr.Strip(errorText(err))
+		text := strings.TrimSpace(errorText(err))
 		if agent.SiteFailureCodes[reason] && text != "" {
 			return text
 		}

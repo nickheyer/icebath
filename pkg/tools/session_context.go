@@ -1,12 +1,12 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"os"
 	"sync"
 	"sync/atomic"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Env.Values key of the bound async delivery capability, a bool, absent meaning supported
@@ -221,7 +221,7 @@ func SessionIsMessagingSurface(env *Env) bool {
 		platform = GetSessionEnv(env, "ICEBATH_SESSION_PLATFORM", "")
 	}
 	for _, ident := range []string{platform, GetSessionEnv(env, "ICEBATH_SESSION_SOURCE", "")} {
-		ident = pystr.Lower(pystr.Strip(ident))
+		ident = strings.ToLower(strings.TrimSpace(ident))
 		if ident != "" && !NonMessagingSessionSurfaces[ident] {
 			return true
 		}

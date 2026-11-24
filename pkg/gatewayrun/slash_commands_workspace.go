@@ -33,11 +33,11 @@ func (r *GatewayRunner) handleRollbackCommand(ctx context.Context, event *gatewa
 	if err != nil {
 		return "", err
 	}
-	tokens := pystr.SplitWhitespace(pystr.Strip(event.GetCommandArgs()), -1)
+	tokens := pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1)
 	restoreAll := false
 	var kept []string
 	for _, tok := range tokens {
-		if low := pystr.Lower(tok); low == "--all" || low == "--force" {
+		if low := strings.ToLower(tok); low == "--all" || low == "--force" {
 			restoreAll = true
 		} else {
 			kept = append(kept, tok)
@@ -91,8 +91,8 @@ func (r *GatewayRunner) handleRollbackCommand(ctx context.Context, event *gatewa
 // Git changes of the working directory or the session checkpoint baseline, truncated for chat
 func (r *GatewayRunner) handleDiffCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	var args []string
-	for _, a := range pystr.SplitWhitespace(pystr.Strip(event.GetCommandArgs()), -1) {
-		args = append(args, pystr.Lower(a))
+	for _, a := range pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1) {
+		args = append(args, strings.ToLower(a))
 	}
 	statOnly, mode := false, "working"
 	for _, low := range args {

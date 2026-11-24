@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const drainReportIntervalS = 30.0
@@ -141,7 +140,7 @@ func describeActiveWorkUnit(ctx context.Context, unit any, h string) (string, er
 		}
 		return line, nil
 	case "delegation":
-		goal := pystr.Strip(drainOr(get("goal"), ""))
+		goal := strings.TrimSpace(drainOr(get("goal"), ""))
 		line := "background delegation " + drainOr(get("delegation_id"), "?") + pidPart + elapsedPart
 		if goal != "" {
 			line += " [" + goal + "]"

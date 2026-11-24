@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
@@ -274,7 +273,9 @@ func keylessPinnedEnv(t *testing.T, name string, tiers map[string]any) *Env {
 	if tiers != nil {
 		web["provider_tier"] = tiers
 	}
-	return &Env{Home: t.TempDir(), Config: config.Tree{"web": web}}
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, env, map[string]any{"web": web})
+	return env
 }
 
 func keylessOK(vendor string) func(context.Context, string, int) *WebSearchResponse {

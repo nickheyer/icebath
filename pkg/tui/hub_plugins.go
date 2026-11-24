@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,6 +30,7 @@ func registerPluginsKeys(km *keys.Map) {
 		{ID: "tui.plugins.next", Context: pluginsContext, Label: "next part", Doc: "show the next part: plugins, catalog, skills, skill hub, bundles, sources, trusted projects", Default: []string{"tab"}},
 		{ID: "tui.plugins.prev", Context: pluginsContext, Label: "previous part", Doc: "show the previous part of the screen", Default: []string{"shift+tab"}, Quiet: true},
 		{ID: "tui.plugins.update", Context: pluginsContext, Label: "update all", Doc: "check every installed plugin or skill and update those that can move", Default: []string{"u"}},
+		{ID: "tui.plugins.more", Context: pluginsContext, Label: "more", Doc: "plugin packs, and checking a plugin folder before it is shared", Default: []string{"o"}},
 	} {
 		km.Register(a)
 	}
@@ -305,6 +307,13 @@ func (a *app) installedPluginsPart(hub **cards.Hub, cycle func(from string, d in
 			if len(p.SettingsSchema) > 0 {
 				acts = append(acts, hubAction{key: "hub.edit", label: tr(txt.HubsPluginsActSettings), does: tr(txt.HubsPluginsActSettingsDoes), run: func() tea.Cmd { return settings(list, i) }})
 			}
+			if p.Provenance == "self-cloned" {
+				acts = append(acts, hubAction{label: tr(txt.HubsPluginsActAdopt), does: tr(txt.HubsPluginsActAdoptDoes), run: func() tea.Cmd {
+					return hubCall(a, *hub, tr(txt.HubsPluginsReading, p.Name), tuigateway.PluginsHubRun, tuigateway.PluginsHubRunParams{Verb: "adopt", Name: p.Name}, func(r *tuigateway.PluginsHubRunResult) tea.Cmd {
+						return tea.Batch(a.hubLinesPage(*hub, p.Name, r.Lines), reload())
+					})
+				}})
+			}
 			if p.Source != "bundled" {
 				acts = append(acts,
 					hubAction{label: tr(txt.HubsPluginsActUpdate), does: tr(txt.HubsPluginsActUpdateDoes), run: func() tea.Cmd { return update(p) }},
@@ -359,19 +368,20 @@ func (a *app) installedPluginsPart(hub **cards.Hub, cycle func(from string, d in
 		},
 		Hints: func(_ *cards.List, i int) []wm.Hint {
 			if _, ok := at(i); !ok {
-				return []wm.Hint{{Action: "hub.add", Label: tr(txt.HintsLabelInstall)}}
+				return []wm.Hint{{Action: "hub.add", Label: tr(txt.HintsLabelInstall)}, {Action: "tui.plugins.more"}}
 			}
 			return []wm.Hint{{Action: "hub.use", Label: tr(txt.HintsLabelOpen)}, {Action: "hub.toggle"}, {Action: "hub.add", Label: tr(txt.HintsLabelInstall)}, {Action: "hub.remove"},
-				{Action: "tui.plugins.update"}}
+				{Action: "tui.plugins.update"}, {Action: "tui.plugins.more"}}
 		},
-		Free: map[string]bool{"hub.add": true, "tui.plugins.update": true},
+		Free: map[string]bool{"hub.add": true, "tui.plugins.update": true, "tui.plugins.more": true},
 		Actions: map[string]func(l *cards.List, i int) tea.Cmd{
-			"hub.use":     open,
-			"hub.toggle":  toggle,
-			"hub.remove":  remove,
-			"hub.edit":    settings,
-			"hub.add":     install,
-			"hub.refresh": func(*cards.List, int) tea.Cmd { return reload() },
+			"tui.plugins.more": func(*cards.List, int) tea.Cmd { return a.pluginsMore(*hub, reload) },
+			"hub.use":          open,
+			"hub.toggle":       toggle,
+			"hub.remove":       remove,
+			"hub.edit":         settings,
+			"hub.add":          install,
+			"hub.refresh":      func(*cards.List, int) tea.Cmd { return reload() },
 			"tui.plugins.update": func(*cards.List, int) tea.Cmd {
 				(*hub).Busy(tr(txt.SlashCmdOpsPluginsUpdateRunning))
 				return callWithin(a.gw, tuigateway.PluginsManage, tuigateway.PluginsManageParams{Action: "update_all"}, pluginsUpdateAllTimeout, func(r *tuigateway.PluginsManageResult, err error) tea.Cmd {
@@ -387,6 +397,113 @@ func (a *app) installedPluginsPart(hub **cards.Hub, cycle func(from string, d in
 	}
 	list = cards.NewList(a.hubEnv(), pluginPartSpec(a, "plugins", cycle, spec))
 	return list
+}
+
+// More for plugins: a pack installed once it was reviewed, this setup exported as a pack, and a plugin folder checked the way the catalog
+// checks it; done runs after an install so the installed plugins are read again
+func (a *app) pluginsMore(h *cards.Hub, done func() tea.Cmd) tea.Cmd {
+	cwd := a.store.sessionCwd()
+	run := func(busy string, params tuigateway.PluginsHubRunParams, then func(r *tuigateway.PluginsHubRunResult) tea.Cmd) tea.Cmd {
+		h.Busy(tr(txt.HubsPluginsReading, busy))
+		return callWithin(a.gw, tuigateway.PluginsHubRun, params, pluginsUpdateAllTimeout, func(r *tuigateway.PluginsHubRunResult, err error) tea.Cmd {
+			if err != nil {
+				return h.Fail(rpcErrorMessage(err))
+			}
+			h.Quiet()
+			return then(r)
+		})
+	}
+	installPack := func() tea.Cmd {
+		return a.hubAsk(h, tr(txt.HubsPluginsPackInstall), tr(txt.HubsPluginsPackSource), "", false, func(source string) tea.Cmd {
+			if source == "" {
+				return nil
+			}
+			return run(source, tuigateway.PluginsHubRunParams{Verb: "pack-show", Source: source}, func(r *tuigateway.PluginsHubRunResult) tea.Cmd {
+				if !r.OK {
+					return a.hubLinesPage(h, source, r.Lines)
+				}
+				install := func(force bool) func() tea.Cmd {
+					return func() tea.Cmd {
+						h.Busy(tr(txt.HubsPluginsPackInstalling))
+						params := tuigateway.PluginsPackInstallParams{Source: source, Force: force}
+						return callWithin(a.gw, tuigateway.PluginsPackInstall, params, pluginsUpdateAllTimeout, func(res *tuigateway.PluginsHubRunResult, err error) tea.Cmd {
+							if err != nil {
+								return h.Fail(rpcErrorMessage(err))
+							}
+							h.Quiet()
+							return tea.Batch(h.Pop(), a.hubLinesPage(h, source, res.Lines), done(), a.widgets.rescan(nil))
+						})
+					}
+				}
+				return a.hubActions(h, source, func() []string { return r.Lines }, func() []hubAction {
+					return []hubAction{
+						{label: tr(txt.HubsPluginsPackInstallGo), does: tr(txt.HubsPluginsPackInstallGoDoes), run: install(false)},
+						{label: tr(txt.HubsPluginsPackReinstall), does: tr(txt.HubsPluginsPackReinstallDoes), run: install(true)},
+					}
+				})
+			})
+		})
+	}
+	exportPack := func() tea.Cmd {
+		title := tr(txt.HubsPluginsPackExport)
+		spec := cards.FormSpec{Title: title, Submit: tr(txt.SlashFormRun), Fields: []cards.Field{
+			{ID: "name", Label: tr(txt.HubsPluginsPackName), Kind: cards.FieldText, Value: "my-icebath-pack", Required: true},
+			{ID: "enabled", Label: tr(txt.HubsPluginsPackEnabledOnly), Kind: cards.FieldBool, Value: "false"},
+			{ID: "output", Label: tr(txt.HubsPluginsPackOutput), Kind: cards.FieldText, Value: filepath.Join(cwd, "icebath-pack.yaml"), Help: tr(txt.HubsPluginsPackOutputHelp)},
+		}}
+		return a.hubForm(h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			output := strings.TrimSpace(v["output"])
+			if output != "" && !filepath.IsAbs(output) {
+				return h.Fail(tr(txt.HubsPluginsNeedsFullPath, tr(txt.HubsPluginsPackOutput)))
+			}
+			params := tuigateway.PluginsHubRunParams{Verb: "pack-export", PackName: strings.TrimSpace(v["name"]), EnabledOnly: v["enabled"] == "true", Output: output}
+			return run(title, params, func(r *tuigateway.PluginsHubRunResult) tea.Cmd {
+				page := a.hubLinesPage(h, title, r.Lines)
+				if output != "" && r.OK {
+					return tea.Batch(page, h.Done(tr(txt.HubsPluginsPackSaved, output)))
+				}
+				return page
+			})
+		})
+	}
+	validate := func() tea.Cmd {
+		title := tr(txt.HubsPluginsValidate)
+		spec := cards.FormSpec{Title: title, Submit: tr(txt.SlashFormRun), Fields: []cards.Field{
+			{ID: "path", Label: tr(txt.HubsPluginsValidatePath), Kind: cards.FieldText, Value: cwd, Required: true},
+			{ID: "deps", Label: tr(txt.HubsPluginsValidateDeps), Kind: cards.FieldBool, Value: "false"},
+		}}
+		return a.hubForm(h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			path := strings.TrimSpace(v["path"])
+			if !filepath.IsAbs(path) {
+				return h.Fail(tr(txt.HubsPluginsNeedsFullPath, tr(txt.HubsPluginsValidatePath)))
+			}
+			params := tuigateway.PluginsHubRunParams{Verb: "validate", Source: path, InstallDeps: v["deps"] == "true"}
+			return run(path, params, func(r *tuigateway.PluginsHubRunResult) tea.Cmd { return a.hubLinesPage(h, title, r.Lines) })
+		})
+	}
+	return a.hubActions(h, tr(txt.HubsPluginsMoreTitle), func() []string { return []string{tr(txt.HubsPluginsMoreDetail)} }, func() []hubAction {
+		return []hubAction{
+			{label: tr(txt.HubsPluginsPackInstall), does: tr(txt.HubsPluginsPackInstallDoes), run: installPack},
+			{label: tr(txt.HubsPluginsPackExport), does: tr(txt.HubsPluginsPackExportDoes), run: exportPack},
+			{label: tr(txt.HubsPluginsValidate), does: tr(txt.HubsPluginsValidateDoes), run: validate},
+		}
+	})
+}
+
+// Publishes a skill of this machine to a GitHub skills repository as a pull request, its folder read from the skill first
+func (a *app) skillPublish(h *cards.Hub, name string) tea.Cmd {
+	return hubCall(a, h, "", tuigateway.SkillsManage, tuigateway.SkillsManageParams{Action: "inspect", Query: name}, func(r *tuigateway.SkillsManageResult) tea.Cmd {
+		if r.Info == nil || r.Info.Path == "" {
+			return h.Fail(tr(txt.HubsSkillsPublishNoPath, name))
+		}
+		path, title := r.Info.Path, tr(txt.HubsSkillsPublishTitle, name)
+		spec := cards.FormSpec{Title: title, Intro: []string{tr(txt.HubsSkillsActPublishDoes), tr(txt.HubsSkillsPathLine, path)}, Submit: tr(txt.HubsSkillsActPublish),
+			Fields: []cards.Field{{ID: "repo", Label: tr(txt.HubsSkillsPublishRepo), Kind: cards.FieldText, Help: tr(txt.HubsSkillsPublishRepoHelp), Required: true}}}
+		return a.hubForm(h, spec, func(_ *cards.Form, v map[string]string) tea.Cmd {
+			params := tuigateway.SkillsHubRunParams{Action: "publish", Path: path, To: "github", Repo: strings.TrimSpace(v["repo"])}
+			return a.skillsRun(h, title, params, func() tea.Cmd { return nil })
+		})
+	})
 }
 
 // Lines of a plugin's detail pane: what it adds, where it comes from, its version and updates, its servers and tools
@@ -675,6 +792,8 @@ func (a *app) skillsPart(hub **cards.Hub, cycle func(from string, d int) tea.Cmd
 				}},
 			}
 			switch s.Source {
+			case "local":
+				acts = append(acts, hubAction{label: tr(txt.HubsSkillsActPublish), does: tr(txt.HubsSkillsActPublishDoes), run: func() tea.Cmd { return a.skillPublish(*hub, s.Name) }})
 			case "hub":
 				acts = append(acts,
 					hubAction{label: tr(txt.HubsSkillsActUpdate), does: tr(txt.HubsSkillsActUpdateDoes), run: func() tea.Cmd {

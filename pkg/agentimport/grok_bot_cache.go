@@ -125,7 +125,7 @@ func ReadGrokBotCache() GrokBotCache {
 			}
 			name := ""
 			if truthy(o.Vals["name"]) {
-				name = pystr.Strip(pyStr(o.Vals["name"]))
+				name = strings.TrimSpace(pyStr(o.Vals["name"]))
 			}
 			if name != "" {
 				names.Set(pyStr(o.Vals["id"]), name)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Prompt strings and the config keys the model flows write are behaviour, the key order being the config.yaml key order
@@ -362,7 +363,7 @@ func showCurated(out io.Writer, modelList []string) {
 func pruneReplacedCustomModelConfigCredentials(env PoolEnv, baseURL, providerName string) {
 	defer func() { _ = recover() }()
 	activePoolKeys := map[string]bool{}
-	for _, key := range customProviderPoolKeyCandidates(baseURL, providerName, env.config()) {
+	for _, key := range customProviderPoolKeyCandidates(baseURL, providerName, settings.Providers.Get(env.hookContext())) {
 		activePoolKeys[strings.ToLower(strings.TrimSpace(key))] = true
 	}
 	if len(activePoolKeys) == 0 {

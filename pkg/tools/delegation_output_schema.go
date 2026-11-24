@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"unicode"
+
 	"cmp"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python frames under coerce_output_schema and validate_output when delegate_task runs in the reference tool worker thread
@@ -96,7 +97,7 @@ func AppendOutputContract(context string, schema any) string {
 		"Schema — no prose before or after it, no code fence, no explanation. Anything else " +
 		"costs a correction turn and, if it fails again, is handed to the caller unvalidated.\n" +
 		schemaText
-	base := pystr.Rstrip(context)
+	base := strings.TrimRightFunc(context, unicode.IsSpace)
 	if base != "" {
 		return base + "\n\n" + block
 	}
@@ -105,16 +106,16 @@ func AppendOutputContract(context string, schema any) string {
 
 // Outermost parseable object or array span with code fences and surrounding prose stripped
 func ExtractJSONCandidate(text string) string {
-	raw := pystr.Strip(text)
+	raw := strings.TrimSpace(text)
 	if strings.HasPrefix(raw, "```") {
 		if _, rest, ok := strings.Cut(raw, "\n"); ok {
 			raw = rest
 		}
-		if strings.HasSuffix(pystr.Rstrip(raw), "```") {
-			trimmed := pystr.Rstrip(raw)
+		if strings.HasSuffix(strings.TrimRightFunc(raw, unicode.IsSpace), "```") {
+			trimmed := strings.TrimRightFunc(raw, unicode.IsSpace)
 			raw = trimmed[:len(trimmed)-3]
 		}
-		raw = pystr.Strip(raw)
+		raw = strings.TrimSpace(raw)
 		if strings.HasPrefix(strings.ToLower(raw), "json\n") {
 			_, raw, _ = strings.Cut(raw, "\n")
 		}
@@ -152,7 +153,7 @@ func ValidateOutput(text string, schema any) (bool, []string, error) {
 // ValidateOutput whose validator runs validateDepth Python frames deep, the depth of the reference call site it mirrors
 func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []string, error) {
 	candidate := ExtractJSONCandidate(text)
-	if pystr.Strip(candidate) == "" {
+	if strings.TrimSpace(candidate) == "" {
 		return false, []string{"Response was empty — expected a JSON object matching the schema."}, nil
 	}
 	parsed, err := pyjson.Loads(candidate)

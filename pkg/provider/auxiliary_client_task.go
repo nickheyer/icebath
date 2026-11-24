@@ -26,16 +26,12 @@ const auxCallableKeySentinel = "\x00icebath-callable-api-key\x00"
 
 // Provider, model, base URL, key and api mode for a task, explicit args beating config beating auto
 func auxResolveTaskProviderModel(ctx context.Context, task any, provider, model, baseURL string, apiKey any) auxTaskRoute {
-	var cfg map[string]any
-	if err := auxRecoverRaise(func() { cfg, _ = auxLoadConfigReadonlyFn(ctx) }); err != nil {
-		cfg = nil
-	}
 	keyText, _ := apiKey.(string)
 	callable := apiKey != nil && reflect.TypeOf(apiKey).Kind() == reflect.Func
 	if callable {
 		keyText = auxCallableKeySentinel
 	}
-	route := newResolver(ctx, cfg, nil, "", nil).resolveTaskProviderModel(task, provider, model, baseURL, keyText)
+	route := newResolver(ctx, nil, "", nil).resolveTaskProviderModel(task, provider, model, baseURL, keyText)
 	out := auxTaskRoute{Provider: route.provider, Model: route.model, BaseURL: route.baseURL, APIMode: string(route.apiMode)}
 	switch {
 	case callable && route.apiKey == auxCallableKeySentinel:
@@ -224,17 +220,7 @@ func auxWithCustomEndpointExtraBody(ctx context.Context, extraBody map[string]an
 	if baseURL == "" {
 		return extraBody
 	}
-	var inherited map[string]any
-	if err := auxRecoverRaise(func() {
-		cfg, err := auxLoadConfigReadonlyFn(ctx)
-		if err != nil {
-			panic(err)
-		}
-		inherited = CustomProviderExtraBodyForAgent(provider, model, baseURL, ProviderEntries(cfg))
-	}); err != nil {
-		pkgLog().Debug("custom provider extra_body lookup failed for aux request", "error", err)
-		return extraBody
-	}
+	inherited := CustomProviderExtraBodyForAgent(provider, model, baseURL, CustomProviderEntries(ctx))
 	if len(inherited) == 0 {
 		return extraBody
 	}
@@ -466,11 +452,7 @@ func auxRoutesToCustomEndpoint(ctx context.Context, providerNorm string) bool {
 	if name == "custom" {
 		return true
 	}
-	cfg, err := auxLoadConfigFn(ctx)
-	if err != nil {
-		panic(err)
-	}
-	return newResolver(ctx, cfg, nil, "", nil).HasNamedCustomProvider(name)
+	return newResolver(ctx, nil, "", nil).HasNamedCustomProvider(name)
 }
 
 // Provider profile extra_body and kwargs projection, whatever was built before a raise kept

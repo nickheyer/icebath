@@ -3,6 +3,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -21,9 +23,9 @@ var kanbanCreatedRe = pyre.MustCompile(`Created\s+(t_[0-9a-f]+)\b`)
 
 // Kanban CLI output for the slash arguments, auto subscribing the chat to a task it created
 func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	text := pystr.LstripChars(pystr.Strip(event.Text), "/")
+	text := strings.TrimLeft(strings.TrimSpace(event.Text), "/")
 	if strings.HasPrefix(text, "kanban") {
-		text = pystr.Lstrip(text[len("kanban"):])
+		text = strings.TrimLeftFunc(text[len("kanban"):], unicode.IsSpace)
 	}
 	var requestedBoard *string
 	action := ""
@@ -60,7 +62,7 @@ func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.Mes
 			if err != nil {
 				pkgLog().Warn(fmt.Sprintf("kanban create auto-subscribe failed: %s", pyrepr.ExceptionMessage(err)))
 			} else if subscribed {
-				output = pystr.Rstrip(output) + "\n" + i18n.T(ctx, "gateway.kanban.subscribed_suffix", "", map[string]any{"task_id": taskID})
+				output = strings.TrimRightFunc(output, unicode.IsSpace) + "\n" + i18n.T(ctx, "gateway.kanban.subscribed_suffix", "", map[string]any{"task_id": taskID})
 			}
 		}
 	}
@@ -86,7 +88,7 @@ func (r *GatewayRunner) kanbanAutoSubscribe(ctx context.Context, event *gateway.
 	platformStr, chatType := "", (*string)(nil)
 	var chatID *string
 	if source != nil {
-		platformStr = pystr.Lower(string(source.Platform))
+		platformStr = strings.ToLower(string(source.Platform))
 		chatID = field(&source.ChatID)
 		chatType = field(&source.ChatType)
 	}

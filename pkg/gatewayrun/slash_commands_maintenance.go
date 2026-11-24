@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"errors"
@@ -136,7 +138,7 @@ func (r *GatewayRunner) handleCuratorCommand(ctx context.Context, event *gateway
 	raw, err := r.runInExecutorWithContext(ctx, func(ctx context.Context) (any, error) {
 		var out bytes.Buffer
 		RunCuratorSlash(ctx, slashToolsEnv(ctx), tokens, &out)
-		return pystr.Rstrip(out.String()), nil
+		return strings.TrimRightFunc(out.String(), unicode.IsSpace), nil
 	})
 	if err != nil {
 		return "", err
@@ -148,7 +150,7 @@ func (r *GatewayRunner) handleCuratorCommand(ctx context.Context, event *gateway
 func (r *GatewayRunner) handleDebugCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	wantsLocal := false
 	for _, w := range pystr.SplitWhitespace(event.GetCommandArgs(), -1) {
-		if pystr.Lower(w) == "local" {
+		if strings.ToLower(w) == "local" {
 			wantsLocal = true
 		}
 	}

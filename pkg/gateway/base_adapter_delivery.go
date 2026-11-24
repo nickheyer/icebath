@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -117,7 +119,7 @@ func (b *BasePlatformAdapter) recordDeliveryObligation(ctx context.Context, even
 	if prefix == "" {
 		prefix = "!"
 	}
-	stripped := pystr.Lstrip(event.Text)
+	stripped := strings.TrimLeftFunc(event.Text, unicode.IsSpace)
 	if isEphemeral || strings.HasPrefix(stripped, "/") || strings.HasPrefix(stripped, prefix) {
 		return nil
 	}
@@ -185,7 +187,7 @@ func (b *BasePlatformAdapter) finalizeDeliveryObligation(ctx context.Context, ob
 func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event *MessageEvent, mediaFiles []MediaRef, localFiles []string, forceDocument bool, humanDelay float64, metadata map[string]any, recordDelivery func(SendResult)) error {
 	self := b.Self()
 	asImage := func(path string) bool {
-		return imageExts[pystr.Lower(pypath.PathSuffix(path))] && !forceDocument
+		return imageExts[strings.ToLower(pypath.PathSuffix(path))] && !forceDocument
 	}
 	var images []ImageRef
 	for _, m := range mediaFiles {
@@ -206,7 +208,7 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 	}
 	chatID := event.Source.ChatID
 	sendOne := func(path string, isVoice, mediaTag bool) (SendResult, error) {
-		ext := pystr.Lower(pypath.PathSuffix(path))
+		ext := strings.ToLower(pypath.PathSuffix(path))
 		var result SendResult
 		var err error
 		switch {
@@ -401,7 +403,7 @@ func (b *BasePlatformAdapter) deliverAttachments(ctx context.Context, event *Mes
 		return err
 	}
 	if !(anythingSent || len(extracted.images) > 0 || len(extracted.localFiles) > 0 || len(extracted.mediaFiles) > 0) &&
-		pystr.Strip(extracted.preExtract) != "" {
+		strings.TrimSpace(extracted.preExtract) != "" {
 		pkgLog().Error(fmt.Sprintf("[%s] response_delivery_dropped: non-empty response "+
 			"(%d chars) produced no delivered message or attachment "+
 			"for %s (empty after extract, recovery yielded nothing).", b.Self().Name(),
@@ -442,7 +444,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 		if text, err = stripMediaDirectives(scoped, text); err != nil {
 			return nil, nil, "", nil, rest, err
 		}
-		text = pystr.Strip(text)
+		text = strings.TrimSpace(text)
 		if len(images) > 0 {
 			pkgLog().Info(fmt.Sprintf("[%s] extract_images found %d image(s) in response (%d chars)", name, len(images), pystr.Len(rest)))
 		}
@@ -487,7 +489,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 		if err != nil {
 			return nil, err
 		}
-		if recovered = pystr.Strip(recovered); recovered != "" {
+		if recovered = strings.TrimSpace(recovered); recovered != "" {
 			pkgLog().Warn(fmt.Sprintf("[%s] response_delivery_recovered: extract pipeline "+
 				"reduced a non-empty response (%d chars) to empty with "+
 				"no attachment; delivering recovered original to %s", name, pystr.Len(preExtract), event.Source.ChatID))
@@ -870,7 +872,7 @@ func (b *BasePlatformAdapter) BuildSource(ctx context.Context, chatID string, f 
 	}
 	var topic *string
 	if f.ChatTopic != nil {
-		if s := pystr.Strip(*f.ChatTopic); s != "" {
+		if s := strings.TrimSpace(*f.ChatTopic); s != "" {
 			topic = &s
 		}
 	}

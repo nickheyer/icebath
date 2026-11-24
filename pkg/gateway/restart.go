@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -97,7 +96,7 @@ func environGetter(environ map[string]string) func(string) string {
 func LaunchdJobLabel(environ map[string]string) string {
 	get := environGetter(environ)
 	for _, name := range []string{"XPC_SERVICE_NAME", LaunchdLabelEnv} {
-		if label := pystr.Strip(get(name)); IsIcebathLaunchdLabel(label) {
+		if label := strings.TrimSpace(get(name)); IsIcebathLaunchdLabel(label) {
 			return label
 		}
 	}
@@ -227,7 +226,7 @@ func EffectiveStopWatchdogDelay(runner StopTiming, watchdogDelay any) float64 {
 
 // True for a lock_conflict code or a scoped lock code ending in _lock
 func IsGlobalStartupConflict(errorCode string) bool {
-	code := pystr.Lower(pystr.Strip(errorCode))
+	code := strings.ToLower(strings.TrimSpace(errorCode))
 	return code != "" && (code == "lock_conflict" || strings.HasSuffix(code, "_lock"))
 }
 
@@ -236,7 +235,7 @@ func IsGatewaySupervisorProcess(environ map[string]string) bool {
 	get := environGetter(environ)
 	xpc := get("XPC_SERVICE_NAME")
 	return get("INVOCATION_ID") != "" || get("ICEBATH_S6_SUPERVISED_CHILD") != "" || (xpc != "" && xpc != "0") ||
-		LaunchdJobLabel(environ) != "" || restartTruthy[pystr.Lower(pystr.Strip(get(ExternalGatewaySupervisorEnv)))]
+		LaunchdJobLabel(environ) != "" || restartTruthy[strings.ToLower(strings.TrimSpace(get(ExternalGatewaySupervisorEnv)))]
 }
 
 // True when a generated service or launcher started this gateway rather than a shell
@@ -268,7 +267,7 @@ func restartSeconds(value any, fallback float64) float64 {
 
 // Timeout where 0 disables, None blank or non numeric input and optionally non finite input take the default
 func parseTimeoutKeepingZero(raw any, def float64, finite bool) float64 {
-	if s, ok := raw.(string); raw == nil || ok && pystr.Strip(s) == "" {
+	if s, ok := raw.(string); raw == nil || ok && strings.TrimSpace(s) == "" {
 		return def
 	}
 	value, err := pyint.Float(raw)

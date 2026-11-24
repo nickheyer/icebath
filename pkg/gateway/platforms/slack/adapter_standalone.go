@@ -46,7 +46,7 @@ var wrongWorkspaceTokenErrors = map[string]bool{
 func loadSlackBotTokens(ctx context.Context, rawToken string, quiet bool) []string {
 	var tokens []string
 	for _, t := range strings.Split(rawToken, ",") {
-		if t = pystr.Strip(t); t != "" {
+		if t = strings.TrimSpace(t); t != "" {
 			tokens = append(tokens, t)
 		}
 	}
@@ -256,7 +256,7 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 			textToSend = formatted
 		}
 	}
-	if pystr.Strip(textToSend) != "" {
+	if strings.TrimSpace(textToSend) != "" {
 		payload, err := standalonePostText(ctx, client, chatID, textToSend, unfurlKwargs, threadID)
 		if err != nil {
 			return gateway.SendError("Slack send failed: " + gateway.ProxySafeErrorText(err, proxyURL))
@@ -306,7 +306,7 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 		lastMessageID = firstTruthyValue(uploadResult["message_id"], lastMessageID)
 	}
 	var result map[string]any
-	if lastMessageID == nil && !uploadedAny && pystr.Strip(textToSend) == "" {
+	if lastMessageID == nil && !uploadedAny && strings.TrimSpace(textToSend) == "" {
 		result = map[string]any{"error": "No deliverable text or media remained after processing"}
 	} else {
 		result = map[string]any{"success": true, "platform": "slack", "chat_id": chatID, "message_id": lastMessageID}
@@ -368,7 +368,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if len(mediaFiles) > 0 {
 		return standaloneSendMedia(ctx, token, chatID, mediaFiles, threadID, formatted, formattedCaption, unfurlKwargs), nil
 	}
-	if pystr.Strip(formatted) == "" {
+	if strings.TrimSpace(formatted) == "" {
 		pkgLog().Debug("[Slack] _standalone_send: skipping empty/whitespace message")
 		return map[string]any{"success": true, "platform": "slack", "skipped": "empty_text"}, nil
 	}

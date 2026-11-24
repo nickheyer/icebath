@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -126,7 +125,7 @@ func candidateExists(p string) (bool, error) {
 
 // Resolved host path a raw path or file URL names, an HTTP 400 for an empty or invalid one
 func FsPath(rawPath string, cwd *string, decodeFallback bool) (string, *HTTPError) {
-	raw := pystr.Strip(rawPath)
+	raw := strings.TrimSpace(rawPath)
 	if raw == "" {
 		return "", &HTTPError{400, "Path is required"}
 	}

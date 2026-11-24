@@ -358,7 +358,7 @@ func cmdInstall(ctx context.Context, w io.Writer, ns map[string]any) error {
 			return err
 		}
 		if installed {
-			return gateway.RecordServiceChoice(ctx, "install", nil)
+			return gateway.RecordServiceChoice(ctx, "install")
 		}
 	}
 	return nil
@@ -714,15 +714,6 @@ func cmdStatus(ctx context.Context, w io.Writer, ns map[string]any) error {
 }
 
 func cmdList(ctx context.Context, w io.Writer) error { return gatewayList(ctx, w) }
-
-func cmdMigrateLegacy(ctx context.Context, w io.Writer, ns map[string]any) error {
-	if !gateway.SupportsSystemdServices(ctx) && !gateway.IsMacOS() {
-		fmt.Fprintln(w, "Legacy unit migration only applies to systemd-based Linux hosts.")
-		return nil
-	}
-	_, _, err := gateway.RemoveLegacyIcebathUnits(ctx, w, !nsFlag(ns, "yes"), nsFlag(ns, "dry_run"))
-	return err
-}
 
 // Exit status of a handler error, the SystemExit code or the guidance for a systemd failure
 func gatewayCommandExit(w io.Writer, err error) (int, error) {

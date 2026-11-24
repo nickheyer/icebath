@@ -52,6 +52,7 @@ type SessionInfo struct {
 	GatewayProtocol          *string                     `json:"gateway_protocol,omitzero"`
 	EditApprovalPolicy       *EditApprovalPolicy         `json:"edit_approval_policy,omitzero"`
 	LaunchRequest            map[string]any              `json:"launch_request,omitzero"`
+	LaunchOptions            *SessionLaunchOptions       `json:"launch_options,omitzero"`
 	StartedAt                *float64                    `json:"started_at,omitzero"`
 	LastActiveAt             *float64                    `json:"last_active_at,omitzero"`
 	APIMode                  *string                     `json:"api_mode,omitzero"`
@@ -68,6 +69,23 @@ type SessionInfo struct {
 	ExecutionGeneration      *int64                      `json:"execution_generation,omitzero"`
 	Pending                  []CanonicalPendingAdmission `json:"pending,omitzero"`
 	PendingSubmissions       []PendingSubmission         `json:"pending_submissions,omitzero"`
+}
+
+// How a session runs as its launch options left it, the values its next turn reads
+type SessionLaunchOptions struct {
+	Checkpoints      bool `json:"checkpoints"`
+	PassSessionID    bool `json:"pass_session_id"`
+	IgnoreRules      bool `json:"ignore_rules"`
+	SafeMode         bool `json:"safe_mode"`
+	IgnoreUserConfig bool `json:"ignore_user_config"`
+	// Most tool calls of one request, absent for no limit
+	MaxTurns *int64 `json:"max_turns,omitzero"`
+	// Seconds one run may take, absent for no limit
+	RunBudget *float64 `json:"run_budget,omitzero"`
+	// Skills the launch wrote into the system prompt
+	Skills []string `json:"skills,omitzero"`
+	// Model endpoint the session calls, absent when its provider sets none
+	BaseURL *string `json:"base_url,omitzero"`
 }
 
 // Skills found under a project root the user has not trusted, left unloaded until it is

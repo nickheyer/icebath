@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -49,7 +48,7 @@ func dockerSandboxDirCandidates(ctx context.Context, sessionKey, workspaceKey st
 	if err != nil {
 		return nil, err
 	}
-	if shared = pystr.Strip(shared); shared != "" {
+	if shared = strings.TrimSpace(shared); shared != "" {
 		candidates = append(candidates, tools.SanitizeTaskIDForPath("shared:"+shared))
 	} else if workspaceKeyRE.MatchString(workspaceKey) {
 		mount, err := cwdMountEnabled(ctx)
@@ -138,7 +137,7 @@ func mountedWorkspaceCwd(ctx context.Context, workspaceCwd string) ([]string, er
 
 // Host directory a workspace bound session mounts, empty when its cwd digest names another container
 func sessionMountedWorkspace(ctx context.Context, workspaceKey, workspaceCwd string) ([]string, error) {
-	cwd := pystr.Strip(workspaceCwd)
+	cwd := strings.TrimSpace(workspaceCwd)
 	if cwd == "" || strings.ContainsRune(cwd, 0) || !pypath.IsAbs(pypath.Expanduser(cwd)) {
 		return nil, nil
 	}
@@ -159,7 +158,7 @@ func sharedCwdMountGuess(ctx context.Context, workspaceKey string) ([]string, er
 		return nil, err
 	}
 	shared, err := tenv(ctx, "TERMINAL_DOCKER_SHARED_CONTAINER_KEY", "")
-	if err != nil || pystr.Strip(shared) == "" {
+	if err != nil || strings.TrimSpace(shared) == "" {
 		return nil, err
 	}
 	return mountedWorkspaceCwd(ctx, "")
@@ -185,7 +184,7 @@ func defaultDockerWorkspaceHostRoots(ctx context.Context, sessionKey, workspaceK
 			return nil, err
 		}
 		var more []string
-		if pystr.Strip(shared) != "" {
+		if strings.TrimSpace(shared) != "" {
 			more, err = sharedCwdMountGuess(ctx, workspaceKey)
 		} else {
 			more, err = sessionMountedWorkspace(ctx, workspaceKey, workspaceCwd)

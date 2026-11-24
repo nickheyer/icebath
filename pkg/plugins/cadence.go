@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,16 +12,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const updateCheckMarkersDir = "plugin-update-checks"
-
-const defaultUpdateCheckIntervalHours = 24.0
 
 func updateCheckMarkerPath(h string) string {
 	return filepath.Join(h, updateCheckMarkersDir, "last-run")
@@ -113,56 +110,21 @@ func CachedGitUpdates(ctx context.Context, installMetadata map[string]any) map[s
 	return out
 }
 
-// Reads one plugins config key for the cadence, an error standing for a raising reader
-type CadenceConfigGet func(section, key string) (any, error)
-
-// Config reader over the read only home config, nil for any key it cannot read
-func defaultCadenceConfigGet(ctx context.Context) CadenceConfigGet {
-	return func(section, key string) (any, error) {
-		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-		if err != nil {
-			return nil, nil
-		}
-		value, _ := config.CfgGet(cfg, section, key)
-		return value, nil
-	}
+// Hours between update checks from plugins.auto_update_check_hours of the profile of ctx, zero or less disabling the check
+func CheckIntervalHours(ctx context.Context) float64 {
+	return max(settings.PluginsAutoUpdateCheckHours.Get(ctx).Hours(), 0)
 }
 
-// Hours between update checks from plugins.auto_update_check_hours, zero disabling and 24 by default
-func CheckIntervalHours(ctx context.Context, get CadenceConfigGet) float64 {
-	if get == nil {
-		get = defaultCadenceConfigGet(ctx)
-	}
-	value, err := get("plugins", "auto_update_check_hours")
-	if err != nil || value == nil {
-		return defaultUpdateCheckIntervalHours
-	}
-	hours, ok := pyFloat(value)
-	if !ok {
-		return defaultUpdateCheckIntervalHours
-	}
-	if math.IsNaN(hours) || !(hours > 0) {
-		return 0
-	}
-	return hours
-}
-
-// Whether plugins.auto_apply opts into unattended git updates, false when the reader fails
-func AutoApplyEnabled(ctx context.Context, get CadenceConfigGet) bool {
-	if get == nil {
-		get = defaultCadenceConfigGet(ctx)
-	}
-	value, err := get("plugins", "auto_apply")
-	return err == nil && pyrepr.Truthy(value)
-}
+// Whether plugins.auto_apply of the profile of ctx opts into unattended git updates
+func AutoApplyEnabled(ctx context.Context) bool { return settings.PluginsAutoApply.Get(ctx) }
 
 // Whether the interval has passed since the last run marker, true when no marker exists
-func CheckDue(ctx context.Context, now, intervalHours *float64, get CadenceConfigGet) bool {
+func CheckDue(ctx context.Context, now, intervalHours *float64) bool {
 	interval := 0.0
 	if intervalHours != nil {
 		interval = *intervalHours
 	} else {
-		interval = CheckIntervalHours(ctx, get)
+		interval = CheckIntervalHours(ctx)
 	}
 	if interval <= 0 {
 		return false
@@ -188,7 +150,6 @@ type ScheduledCheckOptions struct {
 	PluginsDir  string
 	ApplyUpdate func(ctx context.Context, name string) error
 	Log         *slog.Logger
-	ConfigGet   CadenceConfigGet
 	Now         *float64
 }
 
@@ -197,7 +158,7 @@ func RunScheduledCheck(ctx context.Context, opts ScheduledCheckOptions) ([]*Chec
 	if opts.Log == nil {
 		opts.Log = Logger
 	}
-	if !CheckDue(ctx, opts.Now, nil, opts.ConfigGet) {
+	if !CheckDue(ctx, opts.Now, nil) {
 		return nil, false
 	}
 	if !cadenceTickMu.TryLock() {
@@ -239,7 +200,7 @@ func runCheckLocked(ctx context.Context, opts ScheduledCheckOptions) []*CheckRes
 		opts.Log.Warn(fmt.Sprintf("plugin update_url mismatches need attention: %s — run "+
 			"`icebath plugins trust-update-url <name>` after review", checkNames(needsFixing)))
 	}
-	if opts.ApplyUpdate != nil && len(updates) > 0 && AutoApplyEnabled(ctx, opts.ConfigGet) {
+	if opts.ApplyUpdate != nil && len(updates) > 0 && AutoApplyEnabled(ctx) {
 		for _, r := range updates {
 			if r.Class == "git" {
 				if err := applyGuarded(ctx, opts.ApplyUpdate, r.Name); err != nil {

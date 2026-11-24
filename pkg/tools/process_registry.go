@@ -289,6 +289,7 @@ type ProcessSession struct {
 	readerFinishRequested   *eventSignal
 	readerSelectable        bool
 	pty                     *ptyProcess
+	startMarker             string
 	ownedPgid               int
 	env                     *Env
 	runSeq                  int64
@@ -580,11 +581,6 @@ const wslChainNote = "Spawned via a wsl[.exe] launcher: the recorded host PID is
 	"launcher, not the Linux-side workers. Inspect them with `wsl -e ps` / " +
 	"`wsl --list --running` from the host."
 
-var shellNoiseSubstrings = []string{
-	"no job control in this shell", "cannot set terminal process group",
-	"tcsetattr: Inappropriate ioctl for device",
-}
-
 // ProcessRegistry tracks running and finished background processes across executor goroutines and the gateway
 type ProcessRegistry struct {
 	mu       sync.Mutex
@@ -759,23 +755,68 @@ func (r *ProcessRegistry) emitHeartbeat(s *ProcessSession, now float64) {
 	r.enqueue(s.env, notification)
 }
 
-// Strips shell startup warnings from the beginning of output
-func cleanShellNoise(text string) string {
-	lines := strings.Split(text, "\n")
-	for len(lines) > 0 {
-		noisy := false
-		for _, noise := range shellNoiseSubstrings {
-			if strings.Contains(lines[0], noise) {
-				noisy = true
-				break
-			}
-		}
-		if !noisy {
-			break
-		}
-		lines = lines[1:]
+// Line a background job prints just before its command, so the start-up output of the person's rc files ahead of it is dropped
+func startupMarker(sessionID string) string { return startupMarkerPrefix + sessionID + "__" }
+
+// Fixed head of every start marker
+const startupMarkerPrefix = "__icebath_start_"
+
+// Most start-up output held while the marker is awaited, released unchanged beyond it
+const startupHeadMaxChars = 256 * 1024
+
+// Output of a background job held back until its start marker, everything up to and including the marker line dropped
+type startupFilter struct {
+	marker  string
+	head    string
+	passing bool
+	// The marker was seen and the line end closing it is still to drop
+	lineEnd bool
+}
+
+// Filter of a session's start marker, passing everything through when the session prints none
+func newStartupFilter(marker string) *startupFilter {
+	return &startupFilter{marker: marker, passing: marker == ""}
+}
+
+// Part of a freshly read chunk to keep: nothing until the marker, everything after its line from then on
+func (f *startupFilter) feed(text string) string {
+	if f.passing {
+		return f.dropLineEnd(text)
 	}
-	return strings.Join(lines, "\n")
+	f.head += text
+	i := strings.Index(f.head, f.marker)
+	if i < 0 {
+		if len(f.head) > startupHeadMaxChars {
+			return f.flush()
+		}
+		return ""
+	}
+	rest := f.head[i+len(f.marker):]
+	f.passing, f.head, f.lineEnd = true, "", true
+	return f.dropLineEnd(rest)
+}
+
+// Text with the carriage returns and the newline that close the marker line dropped from its front
+func (f *startupFilter) dropLineEnd(text string) string {
+	for f.lineEnd && text != "" {
+		switch text[0] {
+		case '\r':
+			text = text[1:]
+		case '\n':
+			text = text[1:]
+			f.lineEnd = false
+		default:
+			f.lineEnd = false
+		}
+	}
+	return text
+}
+
+// Start-up output still held, unchanged, when the marker never came, so a shell that died in its rc files still shows why
+func (f *startupFilter) flush() string {
+	head := f.head
+	f.passing, f.head = true, ""
+	return head
 }
 
 // Forwards a chunk to the live output sink, never panics
@@ -1065,15 +1106,9 @@ func (r *ProcessRegistry) uncollectedGone(s *ProcessSession) bool {
 	return uncollected && s.Detached && s.PidScope == "host" && !isHostPidAlive(s.Pid)
 }
 
-// terminal.<key> as a non negative float, zero disables, fallback when unreadable
-func configSeconds(env *Env, key string, fallback float64) float64 {
-	v := cfgTree(env).Float("terminal."+key, fallback)
-	return max(v, 0)
-}
-
 // Grace between SIGTERM and the escalated SIGKILL, zero disables escalation
 func (r *ProcessRegistry) daemonTermGraceSeconds(env *Env) float64 {
-	return configSeconds(env, "daemon_term_grace_seconds", 2.0)
+	return max(settings.TerminalDaemonTermGraceSeconds.Get(envHomeCtx(context.Background(), env)).Seconds(), 0)
 }
 
 // Session context variable bound for the current task, the process env otherwise
@@ -1111,13 +1146,18 @@ func envTempDir(e Environment) string {
 	return os.TempDir()
 }
 
-// Login shell argv for safeCommand wrapped in a transient systemd scope under the supervised gateway
-func (r *ProcessRegistry) scopeArgv(ctx context.Context, s *ProcessSession, safeCommand, unitSuffix, label string) ([]string, error) {
+// Script printing the session's start marker line, then running command in a subshell so its own exit prints nothing, with the outer shell silenced before it exits; the marker goes out in two pieces so a traced start-up never prints it whole
+func backgroundShellScript(sessionID, command string) string {
+	return "set +m; printf '%s%s\\n' " + shQuote(startupMarkerPrefix) + " " + shQuote(sessionID+"__") + "; ( :\n" + command + "\n)\n__icebath_rc=$?; exec >/dev/null 2>&1; (exit $__icebath_rc)"
+}
+
+// Interactive login shell argv for script wrapped in a transient systemd scope under the supervised gateway
+func (r *ProcessRegistry) scopeArgv(ctx context.Context, s *ProcessSession, script, unitSuffix, label string) ([]string, error) {
 	shell, err := FindShell(ctx)
 	if err != nil {
 		return nil, err
 	}
-	argv := []string{shell, "-lic", "set +m; " + safeCommand}
+	argv := []string{shell, "-lic", script}
 	inSupervisedGateway := isLinuxHost && isSupervisedGatewayProcess()
 	if inSupervisedGateway && systemdRunUserScopeAvailable() {
 		s.SystemdUnit = "icebath-worker-" + unitSuffix + ".scope"
@@ -1166,7 +1206,8 @@ func (r *ProcessRegistry) spawnLocalPty(ctx context.Context, s *ProcessSession, 
 	if !ptyAvailable() {
 		return nil, errPtyUnavailable
 	}
-	ptyArgv, err := r.scopeArgv(ctx, s, safeCommand, s.ID, "PTY")
+	s.startMarker = startupMarker(s.ID)
+	ptyArgv, err := r.scopeArgv(ctx, s, backgroundShellScript(s.ID, safeCommand), s.ID, "PTY")
 	if err != nil {
 		return nil, err
 	}
@@ -1252,9 +1293,10 @@ func (r *ProcessRegistry) SpawnLocal(ctx context.Context, env *Env, command stri
 	if ptyScopeAttempted {
 		unitSuffix = s.ID + "-pipe-fallback"
 	}
-	spawnCommand := safeCommand
+	s.startMarker = startupMarker(s.ID)
+	spawnCommand := backgroundShellScript(s.ID, safeCommand)
 	if log != "" {
-		spawnCommand = recordExitCommand(log, safeCommand)
+		spawnCommand = recordExitCommand(log, spawnCommand)
 	}
 	spawnArgv, err := r.scopeArgv(ctx, s, spawnCommand, unitSuffix, "Local")
 	if err != nil {
@@ -1313,12 +1355,13 @@ func (r *ProcessRegistry) SpawnViaEnv(ctx context.Context, env *Env, e Environme
 	s.EnvRef = e
 	s.PidScope = "sandbox"
 	s.PersistOnRelease = persistOnRelease
+	s.startMarker = startupMarker(s.ID)
 	tempDir := envTempDir(e)
 	logPath := fmt.Sprintf("%s/icebath_bg_%s.log", tempDir, s.ID)
 	pidPath := fmt.Sprintf("%s/icebath_bg_%s.pid", tempDir, s.ID)
 	exitPath := fmt.Sprintf("%s/icebath_bg_%s.exit", tempDir, s.ID)
 	bgCommand := fmt.Sprintf("mkdir -p %s && ( nohup bash -lc %s > %s 2>&1; rc=$?; printf '%%s\\n' \"$rc\" > %s ) & echo $! > %s && cat %s",
-		shQuote(tempDir), shQuote(command), shQuote(logPath), shQuote(exitPath), shQuote(pidPath), shQuote(pidPath))
+		shQuote(tempDir), shQuote(backgroundShellScript(s.ID, command)), shQuote(logPath), shQuote(exitPath), shQuote(pidPath), shQuote(pidPath))
 	result, err := e.Execute(ctx, bgCommand, ExecOptions{Cwd: cwd, Timeout: timeout, NoCompoundRewrite: true})
 	if err != nil {
 		return nil, err
@@ -1344,14 +1387,12 @@ func (r *ProcessRegistry) SpawnViaEnv(ctx context.Context, env *Env, e Environme
 
 // Reads stdout of a local process, stopping shortly after the direct child exits on an orphaned pipe
 func (r *ProcessRegistry) readerLoop(ctx context.Context, s *ProcessSession) {
-	headNoise := true
+	startup := newStartupFilter(s.startMarker)
 	decoder := &utf8Decoder{}
 	appendChunk := func(chunk string) {
-		if headNoise {
-			chunk = cleanShellNoise(chunk)
-			headNoise = strings.TrimSpace(chunk) == ""
+		if chunk = startup.feed(chunk); chunk != "" {
+			r.ingestOutput(s, chunk, false)
 		}
-		r.ingestOutput(s, chunk, false)
 	}
 	proc := s.Process
 	if proc == nil || proc.Stdout() == nil {
@@ -1401,7 +1442,7 @@ func (r *ProcessRegistry) readerLoop(ctx context.Context, s *ProcessSession) {
 		}
 		idleAfterExit = 0
 	}
-	r.finishReader(WithEnvHome(ctx, s.env), s, decoder, appendChunk, "Process",
+	r.finishReader(WithEnvHome(ctx, s.env), s, decoder, startup, appendChunk, "Process",
 		func() error { _, err := proc.Wait(0); return err },
 		func() *int {
 			code, done := proc.Poll()
@@ -1412,10 +1453,13 @@ func (r *ProcessRegistry) readerLoop(ctx context.Context, s *ProcessSession) {
 		})
 }
 
-// Reader teardown, flushes the decoder, reaps the child and records the exit
-func (r *ProcessRegistry) finishReader(ctx context.Context, s *ProcessSession, decoder *utf8Decoder, appendFn func(string), label string, wait func() error, exitCode func() *int) {
+// Reader teardown, flushes the decoder and any start-up output still held, reaps the child and records the exit
+func (r *ProcessRegistry) finishReader(ctx context.Context, s *ProcessSession, decoder *utf8Decoder, startup *startupFilter, appendFn func(string), label string, wait func() error, exitCode func() *int) {
 	if tail := decoder.finish(); tail != "" {
 		appendFn(tail)
+	}
+	if head := startup.flush(); head != "" {
+		appendFn(head)
 	}
 	if err := wait(); err != nil {
 		if exitCode() == nil {
@@ -1431,7 +1475,30 @@ func (r *ProcessRegistry) finishReader(ctx context.Context, s *ProcessSession, d
 func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPath, pidPath, exitPath string) {
 	prevOutputBytes := 0
 	ctx := context.Background()
-	lost := func() { r.finishExited(WithEnvHome(ctx, s.env), s, procIntPtr(-1), "lost", "backend_lost", true) }
+	startup := newStartupFilter(s.startMarker)
+	appendDelta := func(delta string) bool {
+		if delta == "" {
+			return true
+		}
+		s.mu.Lock()
+		if s.Exited {
+			s.mu.Unlock()
+			return false
+		}
+		s.OutputBuffer += delta
+		if utf8.RuneCountInString(s.OutputBuffer) > s.MaxOutputChars {
+			s.OutputBuffer = tailChars(s.OutputBuffer, s.MaxOutputChars)
+		}
+		s.mu.Unlock()
+		r.checkWatchPatterns(s, delta)
+		r.emitOutput(s, delta)
+		return true
+	}
+	finish := func(code *int, reason, source string) {
+		appendDelta(startup.flush())
+		r.finishExited(WithEnvHome(ctx, s.env), s, code, reason, source, true)
+	}
+	lost := func() { finish(procIntPtr(-1), "lost", "backend_lost") }
 	for !s.isExited() {
 		time.Sleep(2 * time.Second)
 		res, err := e.Execute(ctx, logDeltaCommand(shQuote(logPath), prevOutputBytes), ExecOptions{Timeout: 10})
@@ -1463,19 +1530,8 @@ func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPat
 			}
 			prevOutputBytes = newSize
 		}
-		if delta != "" {
-			s.mu.Lock()
-			if s.Exited {
-				s.mu.Unlock()
-				return
-			}
-			s.OutputBuffer += delta
-			if utf8.RuneCountInString(s.OutputBuffer) > s.MaxOutputChars {
-				s.OutputBuffer = tailChars(s.OutputBuffer, s.MaxOutputChars)
-			}
-			s.mu.Unlock()
-			r.checkWatchPatterns(s, delta)
-			r.emitOutput(s, delta)
+		if !appendDelta(startup.feed(delta)) {
+			return
 		}
 		check, err := e.Execute(ctx, fmt.Sprintf("kill -0 \"$(cat %s 2>/dev/null)\" 2>/dev/null; echo $?", shQuote(pidPath)), ExecOptions{Timeout: 5})
 		if err != nil {
@@ -1499,7 +1555,7 @@ func (r *ProcessRegistry) envPollerLoop(s *ProcessSession, e Environment, logPat
 						code = n
 					}
 				}
-				r.finishExited(WithEnvHome(ctx, s.env), s, &code, "exited", "", true)
+				finish(&code, "exited", "")
 				return
 			}
 		}
@@ -1516,7 +1572,12 @@ func (r *ProcessRegistry) ptyReaderLoop(ctx context.Context, s *ProcessSession) 
 	if !isWindowsHost {
 		responder = NewPtyQueryResponder(30, 120)
 	}
-	ingest := func(text string) { r.ingestOutput(s, text, true) }
+	startup := newStartupFilter(s.startMarker)
+	ingest := func(text string) {
+		if text = startup.feed(text); text != "" {
+			r.ingestOutput(s, text, true)
+		}
+	}
 	buf := make([]byte, 4096)
 	for pty.IsAlive() {
 		n, err := pty.Read(buf)
@@ -1545,7 +1606,7 @@ func (r *ProcessRegistry) ptyReaderLoop(ctx context.Context, s *ProcessSession) 
 			ingest(tail)
 		}
 	}
-	r.finishReader(WithEnvHome(ctx, s.env), s, decoder, ingest, "PTY", func() error { pty.Wait(); return nil }, pty.ExitStatus)
+	r.finishReader(WithEnvHome(ctx, s.env), s, decoder, startup, ingest, "PTY", func() error { pty.Wait(); return nil }, pty.ExitStatus)
 }
 
 // Buffers a freshly read chunk, then scans watch patterns and streams it live
@@ -1750,7 +1811,7 @@ func (r *ProcessRegistry) WaitForPendingCompletions(ctx context.Context, env *En
 
 // Linger for one shot exits with pending notify_on_complete processes, zero disables
 func (r *ProcessRegistry) oneshotCompletionWaitSeconds(env *Env) float64 {
-	return configSeconds(env, "oneshot_completion_wait_seconds", 600.0)
+	return max(settings.TerminalOneshotCompletionWaitSeconds.Get(envHomeCtx(context.Background(), env)).Seconds(), 0)
 }
 
 // OneshotCompletionWaitSeconds returns the configured one shot completion linger budget in seconds
@@ -1763,9 +1824,9 @@ func (r *ProcessRegistry) drainShouldSkip(sessionID string, skipPollObserved boo
 	return r.IsCompletionConsumed(sessionID) || (skipPollObserved && r.isPollObserved(sessionID))
 }
 
-// delegation.surface_child_process_notifications, false on any config error
+// Whether background process news of a subagent reaches its parent
 func surfaceChildProcessNotifications(env *Env) bool {
-	return cfgTree(env).Bool("delegation.surface_child_process_notifications", false)
+	return settings.DelegationSurfaceChildProcessNotifications.Get(envHomeCtx(context.Background(), env))
 }
 
 // Routing verdict for one drained event, false means requeue
@@ -2277,7 +2338,7 @@ func (r *ProcessRegistry) signalKill(env *Env, s *ProcessSession, sessionID stri
 	case s.pty != nil:
 		s.pty.Terminate(true)
 	case s.Process != nil:
-		r.terminateHostPid(s.env, s.Process.Pid(), s.HostStartTime)
+		r.terminateHostPid(s.env, s.Process.Pid(), s.HostStartTime, false)
 	case s.EnvRef != nil && s.Pid != 0:
 		s.EnvRef.Execute(context.Background(), fmt.Sprintf("kill %d 2>/dev/null", s.Pid), ExecOptions{Timeout: 5})
 	case s.Detached && s.PidScope == "host" && s.Pid != 0:
@@ -2299,7 +2360,7 @@ func (r *ProcessRegistry) signalKill(env *Env, s *ProcessSession, sessionID stri
 			}
 			return result
 		}
-		r.terminateHostPid(s.env, s.Pid, nil)
+		r.terminateHostPid(s.env, s.Pid, nil, false)
 	default:
 		return Dict(
 			"status", "error",

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var errMoANoMenu = errors.New("curses menu unavailable")
@@ -35,12 +36,7 @@ func moaCmdHome(t *testing.T, answers []string) (context.Context, *[]string) {
 
 func moaLoadedPreset(t *testing.T, ctx context.Context, name string) map[string]any {
 	t.Helper()
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return anyMap(anyMap(anyMap(tree["moa"])["presets"])[name])
+	return anyMap(settings.MoaPresets.Get(ctx)[name])
 }
 
 func TestMoAConfigurePicksSlotsThroughTheFallbackPromptAndSaves(t *testing.T) {
@@ -134,16 +130,20 @@ func TestMoADeleteAndSubcommandRefusals(t *testing.T) {
 
 func TestMoADeleteMovesDefaultAndClearsActive(t *testing.T) {
 	ctx, _ := moaCmdHome(t, nil)
-	cfg := config.Tree{"moa": map[string]any{"default_preset": "b", "active_preset": "b",
-		"presets": map[string]any{"a": map[string]any{}, "b": map[string]any{}, "c": map[string]any{}}}}
+	writeConfigYAML(t, home.Dir(ctx), "model:\n  provider: auto\nmoa:\n  default_preset: b\n  active_preset: b\n  presets:\n    a: {}\n    b: {}\n    c: {}\n")
 	var out strings.Builder
-	if err := moaCmdDelete(ctx, &out, cfg, MoAArgs{Name: "b"}); err != nil {
+	if err := moaCmdDelete(ctx, &out, MoAArgs{Name: "b"}); err != nil {
 		t.Fatal(err)
 	}
-	moa := anyMap(cfg["moa"])
-	if moa["default_preset"] != "a" || moa["active_preset"] != "" {
-		t.Fatalf("moa %v", moa)
+	if got := settings.MoaDefaultPreset.Get(ctx); got != "a" {
+		t.Fatalf("default preset %q", got)
+	}
+	if got := settings.MoaActivePreset.Get(ctx); got != "" {
+		t.Fatalf("active preset %q", got)
+	}
+	if _, kept := settings.MoaPresets.Get(ctx)["b"]; kept {
+		t.Fatal("b survived the delete")
 	}
 	mustEqual(t, moaFormatSlot(map[string]any{"provider": "p", "model": "m", "reasoning_effort": " high "}), "p:m [reasoning=high]", "slot label")
-	mustEqual(t, moaProviderMismatchNotice(map[string]any{"model": map[string]any{"provider": "auto"}}, map[string]any{"provider": "x"}), "", "auto main")
+	mustEqual(t, moaProviderMismatchNotice(ctx, map[string]any{"provider": "x"}), "", "auto main")
 }

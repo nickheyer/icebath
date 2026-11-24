@@ -12,8 +12,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -97,7 +95,7 @@ var EnvWriterLaunchDenylist = func() map[string]bool { return map[string]bool{} 
 // Name used for env policy comparisons, upper cased under the Windows policy
 func envVarPolicyName(key string) string {
 	if envPolicyWindows {
-		return pystr.Upper(key)
+		return strings.ToUpper(key)
 	}
 	return key
 }

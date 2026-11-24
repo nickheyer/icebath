@@ -13,16 +13,6 @@ import (
 // Discovered plugin row the plugin verbs resolve names against, the name version description source dir key tuple
 type discoveredPlugin = PluginEntry
 
-// Writes plugins.entries.<plugin>.<key> as a boolean into config.yaml
-func setPluginEntryFlag(ctx context.Context, h, pluginID, key string, value bool) error {
-	cfg, err := readUserConfig(h)
-	if err != nil {
-		return err
-	}
-	childMap(childMap(childMap(cfg, "plugins"), "entries"), pluginID)[key] = value
-	return saveUserConfig(ctx, h, cfg)
-}
-
 // Normalized capabilities a manifest declares
 func declaredCapabilitiesFromManifest(manifest map[string]any, name string) []string {
 	if name == "" {
@@ -58,11 +48,7 @@ func declaredCapabilitiesForKey(ctx context.Context, key string) ([]string, erro
 // Shows the capability consent screen and records the decision, granted true only on interactive consent
 func capabilityConsent(ctx context.Context, console *Console, pluginID string, declared []string, consentContext string) (bool, error) {
 	h := home.Dir(ctx)
-	cfg, err := readUserConfig(h)
-	if err != nil {
-		return false, err
-	}
-	pending := PendingCapabilities(cfg, pluginID, declared)
+	pending := PendingCapabilities(ctx, pluginID, declared)
 	if len(pending) == 0 {
 		if len(declared) > 0 {
 			if err := RecordConsent(ctx, h, pluginID, nil, declared); err != nil {
@@ -107,7 +93,6 @@ func runCapabilityConsent(ctx context.Context, console *Console, name string, de
 // Prints declared against granted capabilities for one plugin or every plugin holding any
 func CmdCapabilities(ctx context.Context, name *string, out io.Writer) error {
 	console := NewConsole(out)
-	h := home.Dir(ctx)
 	if name != nil {
 		hit, err := findPluginEntry(ctx, *name)
 		if err != nil {
@@ -121,10 +106,6 @@ func CmdCapabilities(ctx context.Context, name *string, out io.Writer) error {
 			resolved = hit.Name
 		}
 		name = &resolved
-	}
-	cfg, err := readUserConfig(h)
-	if err != nil {
-		return err
 	}
 	type row struct {
 		key, source        string
@@ -150,14 +131,14 @@ func CmdCapabilities(ctx context.Context, name *string, out io.Writer) error {
 		}
 		effective := map[string]bool{}
 		for c := range CapabilityRegistry {
-			if CapabilityGranted(cfg, key, c) {
+			if CapabilityGranted(ctx, key, c) {
 				effective[c] = true
 			}
 		}
 		if len(declared) == 0 && len(effective) == 0 && name == nil {
 			continue
 		}
-		rows = append(rows, row{key, entry.Source, declared, GrantedCapabilities(cfg, key), effective})
+		rows = append(rows, row{key, entry.Source, declared, GrantedCapabilities(ctx, key), effective})
 	}
 	if name != nil && len(rows) == 0 {
 		return fail(console, unknownPluginMessage(*name, false))
@@ -212,7 +193,7 @@ func resolveToolOverrideGrant(ctx context.Context, console *Console, key string,
 	} else {
 		granted = *allow
 	}
-	if err := setPluginEntryFlag(ctx, home.Dir(ctx), key, "allow_tool_override", granted); err != nil {
+	if err := setPluginEntryField(ctx, key, "allow_tool_override", granted); err != nil {
 		return err
 	}
 	if granted {

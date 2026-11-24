@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // HookView is one configured shell hook with its consent state
@@ -69,12 +68,8 @@ func ShellHookEvents() []string {
 
 // HooksOverview is every configured shell hook with its consent state and every outbound webhook target of the home in the context
 func HooksOverview(ctx context.Context) ([]HookView, []WebhookView, error) {
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		return nil, nil, err
-	}
-	specs := IterConfiguredShellHooks(cfg)
-	outbound, err := IterConfiguredOutboundWebhooks(ctx, cfg)
+	specs := IterConfiguredShellHooks(ctx)
+	outbound, err := IterConfiguredOutboundWebhooks(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,11 +101,7 @@ func HooksOverview(ctx context.Context) ([]HookView, []WebhookView, error) {
 
 // Configured hook of an event and command in the home in the context, nil when the config holds none
 func configuredShellHook(ctx context.Context, event, command string) (*ShellHookSpec, error) {
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		return nil, err
-	}
-	for _, spec := range IterConfiguredShellHooks(cfg) {
+	for _, spec := range IterConfiguredShellHooks(ctx) {
 		if spec.Event == event && spec.Command == command {
 			return spec, nil
 		}
@@ -201,7 +192,7 @@ func checkShellHook(ctx context.Context, spec *ShellHookSpec) (*HookCheck, error
 		return check, err
 	}
 	check.Run = result
-	switch stdout := pystr.Strip(result.Stdout); {
+	switch stdout := strings.TrimSpace(result.Stdout); {
 	case result.TimedOut, result.Error != "":
 		check.Problems++
 	case stdout == "":
@@ -242,49 +233,39 @@ func AddShellHook(ctx context.Context, event, command, matcher string, timeout i
 	case timeout < 0 || timeout > ShellHookMaxTimeoutSeconds:
 		return &HookRefusal{Message: "a hook may take at most " + pyrepr.Str(int64(ShellHookMaxTimeoutSeconds)) + " seconds"}
 	}
-	return updateUserConfig(ctx, home.Dir(ctx), func(doc map[string]any) error {
-		block := asMap(doc["hooks"])
-		if block == nil {
-			block = map[string]any{}
-		}
-		entry := map[string]any{"command": command}
-		if matcher != "" {
-			entry["matcher"] = matcher
-		}
-		if timeout > 0 {
-			entry["timeout"] = timeout
-		}
-		list, _ := block[event].([]any)
-		block[event] = append(list, entry)
-		doc["hooks"] = block
-		return nil
-	})
+	entry := map[string]any{"command": command}
+	if matcher != "" {
+		entry["matcher"] = matcher
+	}
+	if timeout > 0 {
+		entry["timeout"] = timeout
+	}
+	list, _ := settings.Hooks.Get(ctx)[event].([]any)
+	_, err := settings.Hooks.SetEntry(ctx, event, append(append([]any{}, list...), entry))
+	return err
 }
 
 // RemoveShellHook takes every hook running the command out of the hooks of an event in the user config and reports how many went
 func RemoveShellHook(ctx context.Context, event, command string) (int, error) {
-	removed := 0
-	err := updateUserConfig(ctx, home.Dir(ctx), func(doc map[string]any) error {
-		block := asMap(doc["hooks"])
-		list, _ := block[event].([]any)
-		kept := make([]any, 0, len(list))
-		for _, raw := range list {
-			if text, _ := asMap(raw)["command"].(string); strings.TrimSpace(text) == command {
-				removed++
-				continue
-			}
+	list, _ := settings.Hooks.Get(ctx)[event].([]any)
+	kept := make([]any, 0, len(list))
+	for _, raw := range list {
+		if text, _ := asMap(raw)["command"].(string); strings.TrimSpace(text) != command {
 			kept = append(kept, raw)
 		}
-		if removed == 0 {
-			return nil
-		}
-		if len(kept) == 0 {
-			delete(block, event)
-		} else {
-			block[event] = kept
-		}
-		doc["hooks"] = block
-		return nil
-	})
-	return removed, err
+	}
+	removed := len(list) - len(kept)
+	if removed == 0 {
+		return 0, nil
+	}
+	var err error
+	if len(kept) == 0 {
+		_, err = settings.Hooks.DeleteEntry(ctx, event)
+	} else {
+		_, err = settings.Hooks.SetEntry(ctx, event, kept)
+	}
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
 }

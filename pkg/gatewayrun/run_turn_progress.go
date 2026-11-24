@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"maps"
@@ -210,7 +212,7 @@ func isTruthyValue(value any, def bool) bool {
 		return def
 	}
 	if s, ok := value.(string); ok {
-		switch pystr.Lower(pystr.Strip(s)) {
+		switch strings.ToLower(strings.TrimSpace(s)) {
 		case "1", "true", "yes", "on":
 			return true
 		}
@@ -230,10 +232,10 @@ func previewCap() int {
 // Full and short fenced blocks for a terminal command on a code block platform, empty otherwise
 func (t *TurnRunner) progressTerminalBlocks(adapter gateway.PlatformAdapter, toolName string, args map[string]any, emoji string) (*string, *string) {
 	command, _ := args["command"].(string)
-	if adapter == nil || !adapter.Base().Traits.SupportsCodeBlocks || toolName != "terminal" || args == nil || pystr.Strip(command) == "" {
+	if adapter == nil || !adapter.Base().Traits.SupportsCodeBlocks || toolName != "terminal" || args == nil || strings.TrimSpace(command) == "" {
 		return nil, nil
 	}
-	cmdFull := pystr.Rstrip(command)
+	cmdFull := strings.TrimRightFunc(command, unicode.IsSpace)
 	header := ""
 	if !t.ctx.lastWasTerminalBlock {
 		header = i18n.T(t.turnCtx, "gateway.progress.tool_head", "", map[string]any{"emoji": emoji, "tool": toolName}) + "\n"

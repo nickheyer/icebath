@@ -4,103 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"sync"
-	"testing"
-	"time"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-const connectorRPCSID = "op-rpc-session"
-
-// Frames of a recorder decoded into plain values
-func recordedFrames(r *frameRecorder) []map[string]any {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := make([]map[string]any, 0, len(r.frames))
-	for _, frame := range r.frames {
-		out = append(out, pyjson.Plain(frame).(map[string]any))
-	}
-	return out
-}
-
-// Session RPC through the real dispatcher, a pool handler's reply read back from the client transport
-func connectorRPCCall(t *testing.T, client *frameRecorder, method string, params map[string]any) map[string]any {
-	t.Helper()
-	merged := map[string]any{"owner": map[string]any{"type": "session", "session_id": connectorRPCSID}}
-	for key, value := range params {
-		merged[key] = value
-	}
-	before := client.count()
-	response := Dispatch(context.Background(), map[string]any{"jsonrpc": "2.0", "id": 7, "method": method, "params": merged}, client)
-	if response != nil {
-		return pyjson.Plain(response).(map[string]any)
-	}
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		frames := recordedFrames(client)
-		for i := len(frames) - 1; i >= before; i-- {
-			if id, _ := frames[i]["id"].(int); id == 7 {
-				return frames[i]
-			}
-			if id, _ := frames[i]["id"].(float64); id == 7 {
-				return frames[i]
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("no reply to %s", method)
-	return nil
-}
-
-// Event payloads of one kind the client received, waiting until at least expect arrived
-func connectorEvents(client *frameRecorder, kind string, expect int) []map[string]any {
-	collect := func() []map[string]any {
-		var found []map[string]any
-		for _, frame := range recordedFrames(client) {
-			params, _ := frame["params"].(map[string]any)
-			if frame["method"] == "event" && params["type"] == kind {
-				found = append(found, params)
-			}
-		}
-		return found
-	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if found := collect(); len(found) >= expect {
-			return found
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return collect()
-}
-
-// Two pending MCP authorize targets opened as the session's live operation
-func openConnectorOp(t *testing.T) *tools.ConnectionOperation {
-	t.Helper()
-	operation := tools.NewConnectionOperation([]*tools.ConnTarget{tools.NewConnTarget("gmail", "mcp", "authorize"),
-		tools.NewConnTarget("notion", "mcp", "authorize")}, connectorRPCSID, "", nil)
-	if err := tools.LiveOpen(context.Background(), operation); err != nil {
-		t.Fatal(err)
-	}
-	return operation
-}
-
-// Transition that must be legal for the case to mean anything
-func mustTransition(t *testing.T, operation *tools.ConnectionOperation, name string, to tools.TargetState, actor tools.ConnActor, fields tools.TransitionFields) {
-	t.Helper()
-	if _, err := operation.Transition(name, to, actor, fields); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func strPtr(s string) *string { return &s }
 
 func rpcCode(response map[string]any) int {
 	failure, _ := response["error"].(map[string]any)
@@ -143,10 +52,6 @@ type fakeMCPBackend struct {
 	starts   []string
 	failures map[string]string
 	attempts map[string]*fakeMCPAttempt
-}
-
-func newFakeMCPBackend(base string) *fakeMCPBackend {
-	return &fakeMCPBackend{base: base, failures: map[string]string{}, attempts: map[string]*fakeMCPAttempt{}}
 }
 
 func (b *fakeMCPBackend) RequiredEnv(context.Context, string) ([]*pyjson.Object, error) {
@@ -202,109 +107,4 @@ func (b *fakeMCPBackend) setConnected(name string) {
 	attempt.mu.Lock()
 	attempt.status = "approved"
 	attempt.mu.Unlock()
-}
-
-// Configures gmail and notion as MCP servers of the case home so authorize accepts them
-func configureConnectorServers(t *testing.T) {
-	t.Helper()
-	body := "mcp_servers:\n  gmail:\n    url: https://gmail.example/mcp\n  notion:\n    url: https://notion.example/mcp\n"
-	if err := os.WriteFile(filepath.Join(home.Process(), "config.yaml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// Card authorize of gmail and notion on the RPC session, returned once its card is drawn and settled at cleanup
-func driveConnectorOp(t *testing.T, backend *fakeMCPBackend) *tools.ConnectionOperation {
-	t.Helper()
-	configureConnectorServers(t)
-	drawn, finished := make(chan struct{}), make(chan struct{})
-	ctx, env := setSessionContext(context.Background(), connectorRPCSID, nil, "")
-	go func() {
-		defer close(finished)
-		defer clearSessionContext(env)
-		tools.ManageConnections(ctx, env, map[string]any{"action": "authorize", "connectors": []any{"gmail", "notion"}},
-			tools.ManageOptions{MCPBackend: backend, SessionID: connectorRPCSID, Callback: func(*pyjson.Object) string {
-				close(drawn)
-				return ""
-			}})
-	}()
-	select {
-	case <-drawn:
-	case <-finished:
-		t.Fatal("the operation ended before its card was drawn")
-	case <-time.After(5 * time.Second):
-		t.Fatal("no card drawn")
-	}
-	operation := tools.LiveCurrent(connectorRPCSID, "")
-	t.Cleanup(func() {
-		operation.Settle(tools.SettleContinue)
-		operation.Wake.Set()
-		<-finished
-	})
-	return operation
-}
-
-const connectorE2ESID = "connector-operation-e2e"
-
-// Session RPC of the e2e session through the real dispatcher
-func connectorE2ERPC(t *testing.T, client *frameRecorder, method string, params map[string]any) map[string]any {
-	t.Helper()
-	merged := map[string]any{"owner": map[string]any{"type": "session", "session_id": connectorE2ESID}}
-	for key, value := range params {
-		merged[key] = value
-	}
-	before := client.count()
-	if response := Dispatch(context.Background(), map[string]any{"jsonrpc": "2.0", "id": 7, "method": method, "params": merged}, client); response != nil {
-		return pyjson.Plain(response).(map[string]any)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		frames := recordedFrames(client)
-		for i := len(frames) - 1; i >= before; i-- {
-			if id, _ := frames[i]["id"].(int); id == 7 {
-				return frames[i]
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("no reply to %s", method)
-	return nil
-}
-
-// Event payloads of one kind matching a predicate, waiting up to five seconds for the first
-func connectorE2EEvents(client *frameRecorder, kind string, match func(map[string]any) bool) []map[string]any {
-	collect := func() []map[string]any {
-		var found []map[string]any
-		for _, frame := range recordedFrames(client) {
-			params, _ := frame["params"].(map[string]any)
-			if frame["method"] != "event" || params["type"] != kind {
-				continue
-			}
-			payload, _ := params["payload"].(map[string]any)
-			if payload == nil {
-				payload = map[string]any{}
-			}
-			if match(payload) {
-				found = append(found, payload)
-			}
-		}
-		return found
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if found := collect(); len(found) > 0 {
-			return found
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return collect()
-}
-
-func targetStates(targets any) map[string]any {
-	out := map[string]any{}
-	for _, item := range targets.([]any) {
-		target := item.(map[string]any)
-		out[target["name"].(string)] = target["state"]
-	}
-	return out
 }

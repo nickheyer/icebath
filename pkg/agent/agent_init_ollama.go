@@ -4,24 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Resolves the per request num_ctx from the config override or local server detection, capped by context_length
-func configureOllamaNumCtx(ctx context.Context, a *AIAgent, modelCfg map[string]any, configContextLength int) {
+// Resolves the per request num_ctx from the model.ollama_num_ctx setting of ctx or local server detection, capped by context_length
+func configureOllamaNumCtx(ctx context.Context, a *AIAgent, configContextLength int) {
 	a.ollamaNumCtx = 0
 	var numCtx *int
-	override, hasOverride := modelCfg["ollama_num_ctx"]
-	hasOverride = hasOverride && override != nil
+	override, hasOverride := settings.ModelOllamaNumCtx.Lookup(ctx)
 	if hasOverride {
-		if n, err := pyint.Of(override); err == nil && n.IsInt64() {
-			v := int(n.Int64())
-			numCtx = &v
-		} else {
-			pkgLog().Debug("Invalid ollama_num_ctx config value: " + errchain.Show(override))
-		}
+		numCtx = &override
 	}
 	if numCtx == nil && a.baseURL != "" && provider.IsLocalEndpoint(a.baseURL) {
 		if detected, ok := provider.QueryOllamaNumCtx(ctx, a.model, a.baseURL, a.apiKey); ok && detected > 0 {

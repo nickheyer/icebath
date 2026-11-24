@@ -120,7 +120,7 @@ func safeAttachmentFilename(value string) string {
 			b.WriteRune(r)
 		}
 	}
-	name = pystr.Strip(b.String())
+	name = strings.TrimSpace(b.String())
 	if name == "" || name == "." || name == ".." {
 		return "attachment.bin"
 	}
@@ -154,7 +154,7 @@ type origin struct {
 
 // Exact HTTPS equivalent origin of a configured host or URL, false when it is not one
 func attachmentOrigin(value string) (origin, bool) {
-	raw := pystr.Strip(value)
+	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return origin{}, false
 	}
@@ -242,7 +242,7 @@ func findRelayMediaRefs(text, relayURL string) ([]string, []mediaReplacement) {
 			continue
 		}
 		markdownSpans = append(markdownSpans, [2]int{m[0], m[1]})
-		replacements = append(replacements, mediaReplacement{m[0], m[1], pystr.Strip(text[m[2]:m[3]])})
+		replacements = append(replacements, mediaReplacement{m[0], m[1], strings.TrimSpace(text[m[2]:m[3]])})
 		addURL(u)
 	}
 	for _, m := range bareMediaRE.FindAllStringIndex(text, -1) {
@@ -279,7 +279,7 @@ func replaceMediaRefs(text string, replacements []mediaReplacement) string {
 		text = text[:r.start] + r.text + text[r.end:]
 	}
 	text = trailingSpaceLineRE.ReplaceAllString(text, "\n")
-	return pystr.Strip(manyNewlinesRE.ReplaceAllString(text, "\n\n"))
+	return strings.TrimSpace(manyNewlinesRE.ReplaceAllString(text, "\n\n"))
 }
 
 // Groups of bits regrouped from one width to another, false on leftover bits when padding is off
@@ -334,7 +334,7 @@ func hexToNpub(pubkeyHex string) string {
 
 // Hex public key of an npub, empty for anything that is not a valid npub
 func npubToHex(npub string) string {
-	lowered := strings.ToLower(pystr.Strip(npub))
+	lowered := strings.ToLower(strings.TrimSpace(npub))
 	pos := strings.LastIndex(lowered, "1")
 	if pos < 1 || lowered[:pos] != "npub" || pos+7 > len(lowered) {
 		return ""
@@ -368,7 +368,7 @@ func npubToHex(npub string) string {
 
 // User reference of a hex public key or npub as lowercase hex, empty when it is neither
 func normalizeUserRef(ref string) string {
-	ref = strings.ToLower(pystr.Strip(ref))
+	ref = strings.ToLower(strings.TrimSpace(ref))
 	if ref == "" {
 		return ""
 	}
@@ -535,15 +535,15 @@ func boundedCLIMessage(message, redactPath string) string {
 
 // Bounded human readable message from the CLI error contract on stderr
 func cliErrorMessage(stderr string, code int, redactPath string) string {
-	text := pystr.Strip(stderr)
+	text := strings.TrimSpace(stderr)
 	if data, ok := jsonOr(text, nil).(map[string]any); ok {
 		detail, _ := data["message"].(string)
-		if pystr.Strip(detail) != "" {
+		if strings.TrimSpace(detail) != "" {
 			label := "error"
-			if category, ok := data["error"].(string); ok && pystr.Strip(category) != "" {
-				label = pystr.Strip(category)
+			if category, ok := data["error"].(string); ok && strings.TrimSpace(category) != "" {
+				label = strings.TrimSpace(category)
 			}
-			return boundedCLIMessage(fmt.Sprintf("%s: %s (exit %d)", label, pystr.Strip(detail), code), redactPath)
+			return boundedCLIMessage(fmt.Sprintf("%s: %s (exit %d)", label, strings.TrimSpace(detail), code), redactPath)
 		}
 	}
 	if text == "" {
@@ -560,21 +560,21 @@ func parseSendReceipt(stdout string) (string, string) {
 	}
 	if accepted, isBool := data["accepted"].(bool); isBool && !accepted {
 		detail, _ := data["message"].(string)
-		if pystr.Strip(detail) == "" {
+		if strings.TrimSpace(detail) == "" {
 			detail = "message was not accepted"
 		}
-		return "", boundedCLIMessage(pystr.Strip(detail), "")
+		return "", boundedCLIMessage(strings.TrimSpace(detail), "")
 	}
 	eventID, _ := data["event_id"].(string)
-	if accepted, _ := data["accepted"].(bool); !accepted || pystr.Strip(eventID) == "" {
+	if accepted, _ := data["accepted"].(bool); !accepted || strings.TrimSpace(eventID) == "" {
 		return "", "invalid CLI response"
 	}
-	return pystr.Strip(eventID), ""
+	return strings.TrimSpace(eventID), ""
 }
 
 // Decoded JSON of CLI stdout, the default when empty or malformed
 func jsonOr(text string, def any) any {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return def
 	}
 	var out any
@@ -618,7 +618,7 @@ func intOf(v any) int64 {
 	case int:
 		return int64(n)
 	case string:
-		if i, err := strconv.ParseInt(pystr.Strip(n), 10, 64); err == nil {
+		if i, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64); err == nil {
 			return i
 		}
 	}
@@ -660,7 +660,7 @@ func eTags(event map[string]any) [][2]string {
 func eventReplyParentID(event map[string]any) string {
 	var replyID, rootID, lastE string
 	for _, tag := range eTags(event) {
-		target := pystr.Strip(tag[0])
+		target := strings.TrimSpace(tag[0])
 		if target == "" {
 			continue
 		}

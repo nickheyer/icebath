@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -21,136 +21,94 @@ const Toolset = "browser"
 // Env.Values key the agent runtime sets to a bool saying screenshots may ride inside tool results
 const NativeVisionValueKey = "vision.native"
 
+// Floors the browser applies to its configured waits, in seconds
 const (
-	defaultInactivityTimeout = 120
-	defaultCommandTimeout    = 30
+	minCommandTimeout    = 5
+	minInactivityTimeout = 30
 )
-
-// Valid local engines, chrome reads as auto
-var validEngines = map[string]bool{"auto": true, "lightpanda": true}
 
 // Dialog policies the supervisor accepts
 const (
 	DialogPolicyMustRespond = "must_respond"
 	DialogPolicyAutoDismiss = "auto_dismiss"
 	DialogPolicyAutoAccept  = "auto_accept"
-	DefaultDialogPolicy     = DialogPolicyMustRespond
-	DefaultDialogTimeoutS   = 300.0
 )
 
 var validDialogPolicies = map[string]bool{DialogPolicyMustRespond: true, DialogPolicyAutoDismiss: true, DialogPolicyAutoAccept: true}
 
-// settings reads the browser section of one session's config
-type settings struct {
+// Reader of the browser settings of the profile one tool env is bound to
+type browserConf struct {
 	env *tools.Env
 }
 
-func cfgOf(env *tools.Env) settings { return settings{env: env} }
+func cfgOf(env *tools.Env) browserConf { return browserConf{env: env} }
 
-// The browser section of the session config, read from the home's effective user config when the session carries none
-func (s settings) section() config.Tree {
-	if s.env == nil {
-		return config.Tree{}
-	}
-	if s.env.Config != nil {
-		return s.env.Config.Sub("browser")
-	}
-	lookup := config.Lookup(os.LookupEnv)
-	if s.env.Secrets != nil {
-		lookup = s.env.Secrets.Lookup()
-	}
-	user, err := config.LoadUserEffective(home.ConfigPath(s.homeDir()), lookup)
-	if err != nil {
-		s.logger().Debug("browser config unreadable: " + err.Error())
-		return config.Tree{}
-	}
-	return config.Tree(user).Sub("browser")
-}
+// Context the settings of the env's profile are read under
+func (s browserConf) ctx() context.Context { return tools.WithEnvHome(context.Background(), s.env) }
 
 // Logger of the tool env or the process default, named after this package
-func (s settings) logger() *slog.Logger {
+func (s browserConf) logger() *slog.Logger {
 	if s.env != nil && s.env.Log != nil {
 		return s.env.Log.With("logger", logName)
 	}
 	return pkgLog()
 }
 
-// Secret from the home's .env, then the process environment
-func (s settings) secret(name string) string {
+// Credential from the env's secret resolver, else the profile's secret scope, .env and environment, whitespace trimmed
+func (s browserConf) secret(name string) string { return strings.TrimSpace(s.rawSecret(name)) }
+
+// Credential as the profile holds it, whitespace kept
+func (s browserConf) rawSecret(name string) string {
 	if s.env != nil && s.env.Secrets != nil {
-		return strings.TrimSpace(s.env.Secrets.String(name))
+		return s.env.Secrets.String(name)
 	}
-	return strings.TrimSpace(os.Getenv(name))
+	v, _ := config.ProfileEnvLookup(s.ctx(), s.homeDir())(name)
+	return v
 }
 
-func (s settings) homeDir() string {
+func (s browserConf) homeDir() string {
 	if s.env != nil && s.env.Home != "" {
 		return s.env.Home
 	}
 	return home.Process()
 }
 
-func (s settings) homeKey() string { return home.Key(s.homeDir()) }
+func (s browserConf) homeKey() string { return home.Key(s.homeDir()) }
 
-// Chromium launch timeout floor in seconds, never under five
-func (s settings) commandTimeout() int {
-	v := s.section().Int("command_timeout", defaultCommandTimeout)
-	if v < 5 {
-		return 5
-	}
-	return v
+// Whole seconds of a duration
+func wholeSeconds(d time.Duration) int { return int(d / time.Second) }
+
+// Chromium launch timeout in seconds, never under five
+func (s browserConf) commandTimeout() int {
+	return max(wholeSeconds(settings.BrowserCommandTimeout.Get(s.ctx())), minCommandTimeout)
 }
 
-// Idle seconds before a session is reaped, a configured value floored at thirty, BROWSER_INACTIVITY_TIMEOUT as the legacy default
-func (s settings) inactivityTimeout() int {
-	fallback := defaultInactivityTimeout
-	if raw := strings.TrimSpace(s.secret("BROWSER_INACTIVITY_TIMEOUT")); raw != "" {
-		if n, ok := pyint.Parse(raw); ok && n.IsInt64() {
-			fallback = int(n.Int64())
-		}
-	}
-	sec := s.section()
-	if !sec.Has("inactivity_timeout") {
-		return fallback
-	}
-	v := sec.Get("inactivity_timeout")
-	if v == nil {
-		return fallback
-	}
-	n, err := pyint.Of(v)
-	if err != nil || !n.IsInt64() {
-		return fallback
-	}
-	return max(int(n.Int64()), 30)
+// Idle seconds before a session is reaped, never under thirty
+func (s browserConf) inactivityTimeout() int {
+	return max(wholeSeconds(settings.BrowserInactivityTimeout.Get(s.ctx())), minInactivityTimeout)
 }
 
-// Extra Chromium flags appended to every packaged or shared profile launch
-func (s settings) chromiumArgs() []string {
-	raw := s.section().Get("chromium_args")
-	var parts []string
-	switch v := raw.(type) {
-	case string:
-		parts = strings.Split(strings.ReplaceAll(v, "\n", ","), ",")
-	default:
-		parts = config.AsStrings(v)
-	}
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			out = append(out, t)
+// Extra Chromium flags appended to every packaged or shared profile launch, one per item or per line of an item
+func (s browserConf) chromiumArgs() []string {
+	var out []string
+	for _, item := range settings.BrowserChromiumArgs.Strings(s.ctx()) {
+		for _, line := range strings.Split(item, "\n") {
+			if t := strings.TrimSpace(line); t != "" {
+				out = append(out, t)
+			}
 		}
 	}
 	return out
 }
 
 // Pinned Chromium binary, empty for the packaged one
-func (s settings) executablePath() string {
-	return strings.TrimSpace(s.section().String("executable_path", ""))
+func (s browserConf) executablePath() string {
+	return strings.TrimSpace(settings.BrowserExecutablePath.Get(s.ctx()))
 }
 
 // Persistent profile dir shared by every session, tilde expanded and relative paths anchored at the home
-func (s settings) userDataDir() string {
-	raw := strings.TrimSpace(s.section().String("user_data_dir", ""))
+func (s browserConf) userDataDir() string {
+	raw := strings.TrimSpace(settings.BrowserUserDataDir.Get(s.ctx()))
 	if raw == "" {
 		return ""
 	}
@@ -171,94 +129,58 @@ func expandTilde(path string) string {
 	return path
 }
 
-// Local engine, auto for Chromium or lightpanda, with chrome and unknown values read as auto
-func (s settings) engine() string {
-	engine := strings.ToLower(strings.TrimSpace(s.section().String("engine", "auto")))
-	if engine == "" || engine == "chrome" {
-		return "auto"
+// Local engine, auto for Chromium or lightpanda, chrome naming Chromium as auto does
+func (s browserConf) engine() string {
+	if engine := settings.BrowserEngine.Get(s.ctx()); engine == "lightpanda" {
+		return engine
 	}
-	if !validEngines[engine] {
-		s.logger().Warn("browser: unknown engine, using auto", "engine", engine)
-		return "auto"
-	}
-	return engine
+	return "auto"
 }
 
-func (s settings) usingLightpanda() bool { return s.engine() == "lightpanda" }
+func (s browserConf) usingLightpanda() bool { return s.engine() == "lightpanda" }
 
-func (s settings) headed() bool { return truthy(s.section().Get("headed")) }
+func (s browserConf) headed() bool { return settings.BrowserHeaded.Get(s.ctx()) }
 
-func (s settings) autoLocalForPrivateURLs() bool {
-	return s.section().Bool("auto_local_for_private_urls", true)
+func (s browserConf) autoLocalForPrivateURLs() bool {
+	return settings.BrowserAutoLocalForPrivateUrls.Get(s.ctx())
 }
 
 // Real profile consent, read on every call
-func (s settings) useRealProfile() bool { return pyrepr.Truthy(s.section().Get("use_real_profile")) }
+func (s browserConf) useRealProfile() bool { return settings.BrowserUseRealProfile.Get(s.ctx()) }
 
 // Private address access granted by browser.allow_private_urls
-func (s settings) allowPrivateURLs() bool { return truthy(s.section().Get("allow_private_urls")) }
+func (s browserConf) allowPrivateURLs() bool { return settings.BrowserAllowPrivateUrls.Get(s.ctx()) }
 
-// Configured cdp_url without any network resolution
-func (s settings) configuredCDPURL() string {
-	return strings.TrimSpace(s.section().String("cdp_url", ""))
-}
-
-// Stored cloud provider selection, present reports whether the key was written at all
-func (s settings) cloudProviderSelection() (string, bool) {
-	sec := s.section()
-	if !sec.Has("cloud_provider") {
+// Cloud provider the profile chose, lower case, and whether it chose one at all; unchosen auto detects from credentials
+func (s browserConf) cloudProviderSelection() (string, bool) {
+	ctx := s.ctx()
+	chosen, err := settings.Resolve(ctx, settings.BrowserCloudProvider.Key)
+	if err != nil || chosen.Source == settings.SourceDefault {
 		return "", false
 	}
-	return strings.ToLower(strings.TrimSpace(sec.String("cloud_provider", ""))), true
+	return strings.ToLower(strings.TrimSpace(settings.BrowserCloudProvider.Get(ctx))), true
 }
 
-// Dialog policy and timeout with the supervisor defaults for absent or invalid values
-func (s settings) dialogPolicyConfig() (string, float64) {
-	policy := strings.TrimSpace(s.section().String("dialog_policy", DefaultDialogPolicy))
-	if policy == "" {
-		policy = DefaultDialogPolicy
-	}
-	if !validDialogPolicies[policy] {
-		s.logger().Debug("browser: invalid dialog_policy, using default", "policy", policy)
-		policy = DefaultDialogPolicy
-	}
-	timeout := s.section().Float("dialog_timeout_s", DefaultDialogTimeoutS)
+// Dialog policy and timeout in seconds, a timeout of zero or less taking the setting's default
+func (s browserConf) dialogPolicyConfig() (string, float64) {
+	ctx := s.ctx()
+	timeout := settings.BrowserDialogTimeoutS.Get(ctx)
 	if timeout <= 0 {
-		timeout = DefaultDialogTimeoutS
+		timeout = settings.BrowserDialogTimeoutS.Default
 	}
-	return policy, timeout
+	return settings.BrowserDialogPolicy.Get(ctx), timeout.Seconds()
 }
 
-// Shared truthy reading of config scalars and strings
-func truthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		switch strings.ToLower(strings.TrimSpace(t)) {
-		case "1", "true", "yes", "on", "y", "t":
-			return true
-		}
-		return false
-	}
-	return config.Truthy(v)
-}
-
-// Configured CDP override without network traffic, live connect over BROWSER_CDP_URL over browser.cdp_url
-func (s settings) cdpOverrideRaw() string {
+// Configured CDP override without network traffic, a live connect over browser.cdp_url and its BROWSER_CDP_URL override
+func (s browserConf) cdpOverrideRaw() string {
 	if live := liveCDPOverride(s.env); live != "" {
 		return live
 	}
-	if envURL := s.secret("BROWSER_CDP_URL"); envURL != "" {
-		return envURL
-	}
-	return s.configuredCDPURL()
+	return strings.TrimSpace(settings.BrowserCdpUrl.Get(s.ctx()))
 }
 
 // Resolved CDP override websocket URL, discovering it over HTTP when needed
-func (s settings) cdpOverride(ctx context.Context) string {
+func (s browserConf) cdpOverride(ctx context.Context) string {
 	raw := s.cdpOverrideRaw()
 	if raw == "" {
 		return ""

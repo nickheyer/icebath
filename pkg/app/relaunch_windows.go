@@ -14,6 +14,6 @@ func accessExecutable(p string) bool {
 }
 
 // Windows has no exec that replaces the process image, relaunch spawns there instead
-func execvp(file string, argv []string) error {
+func execvp(file string, argv, env []string) error {
 	return errors.New("exec that replaces the process is unavailable on Windows: " + file)
 }

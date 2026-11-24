@@ -33,6 +33,8 @@ type Row struct {
 	Value    any      `json:"value"`
 	Source   Source   `json:"source"`
 	Locked   bool     `json:"locked,omitempty"`
+	// The env override says the opposite of the setting: on there turns it off
+	EnvInvert bool `json:"env_invert,omitempty"`
 	// The session the row was read for holds its own value
 	SessionSet bool `json:"session_set,omitempty"`
 	// That session's own value, present when SessionSet
@@ -159,7 +161,7 @@ func Describe(ctx context.Context, e Entry) Row {
 	v := resolveEntry(ctx, e)
 	row := Row{Key: m.Key, Label: m.Label, Short: m.Short, Help: m.Help, Group: m.Group, Order: m.Order,
 		Default: e.DefaultValue(), Scopes: m.Scopes.Names(), Apply: m.Apply.String(), Advanced: m.Advanced, Slash: m.Slash,
-		Env: m.Env, Value: v.Value, Source: v.Source, Locked: v.Locked}
+		Env: m.Env, EnvInvert: m.EnvInvert, Value: v.Value, Source: v.Source, Locked: v.Locked}
 	schemaOf(&row, e)
 	if mp, isMap := e.(*Map); isMap {
 		row.Entries = mapEntries(mp, v.Value)
@@ -171,7 +173,7 @@ func Describe(ctx context.Context, e Entry) Row {
 		if sv, ok := sessionValue(ctx, sid, m.Key); ok {
 			row.SessionSet, row.Session = true, sv
 		}
-		profile := resolveEntry(WithSession(ctx, ""), e)
+		profile := resolveEntry(WithoutSession(ctx), e)
 		row.Profile, row.ProfileSource = profile.Value, profile.Source
 	}
 	if masked(e) {

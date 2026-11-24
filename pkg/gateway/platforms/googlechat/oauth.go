@@ -49,7 +49,7 @@ func failOAuth(lines ...string) error { return &oauthFailure{lines} }
 
 // Lowercased file system safe key of an email
 func sanitizeEmail(email string) string {
-	cleaned := emailFSRE.ReplaceAllString(strings.ToLower(pystr.Strip(email)), "_")
+	cleaned := emailFSRE.ReplaceAllString(strings.ToLower(strings.TrimSpace(email)), "_")
 	if cleaned == "" {
 		return "_unknown_"
 	}
@@ -400,7 +400,7 @@ func exchangeAuthCode(ctx context.Context, codeOrURL, email string) (string, err
 	}
 	requested := append([]string(nil), userScopes...)
 	if params != nil {
-		if scope := pystr.Strip(params.Get("scope")); scope != "" {
+		if scope := strings.TrimSpace(params.Get("scope")); scope != "" {
 			requested = strings.Fields(scope)
 		}
 	}
@@ -428,7 +428,7 @@ func exchangeAuthCode(ctx context.Context, codeOrURL, email string) (string, err
 	if expiresIn, ok := data["expires_in"].(float64); ok {
 		payload["expiry"] = time.Now().UTC().Add(time.Duration(expiresIn) * time.Second).Format("2006-01-02T15:04:05.000000Z")
 	}
-	if granted, _ := data["scope"].(string); pystr.Strip(granted) != "" {
+	if granted, _ := data["scope"].(string); strings.TrimSpace(granted) != "" {
 		payload["scopes"] = strings.Fields(granted)
 	}
 	path := tokenPath(ctx, email)

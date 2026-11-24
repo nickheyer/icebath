@@ -31,7 +31,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/linktier"
@@ -111,7 +110,7 @@ func (i webhookDeliveryIdentity) SessionChatID() string {
 
 // Whether a host binds only to the local machine, a blank host reading as a public bind
 func webhookIsLoopbackHost(host *string) bool {
-	return host != nil && *host != "" && webhookLoopbackHosts[strings.ToLower(pystr.Strip(*host))]
+	return host != nil && *host != "" && webhookLoopbackHosts[strings.ToLower(strings.TrimSpace(*host))]
 }
 
 // Timing safe equality of two strings compared as UTF-8 bytes
@@ -129,7 +128,7 @@ func webhookHexHMAC(secret string, data []byte) string {
 // Whether a secret is a string with at least one non space character
 func WebhookIsUsableSecret(secret any) bool {
 	text, ok := secret.(string)
-	return ok && pystr.Strip(text) != ""
+	return ok && strings.TrimSpace(text) != ""
 }
 
 // Whether an integer timestamp header lies within the replay window, a stale one logging the message
@@ -607,7 +606,7 @@ func (a *WebhookAdapter) ToolsetsForSource(source *SessionSource) ([]string, boo
 	}
 	var out []string
 	for _, item := range toolsets {
-		if text := pystr.Strip(pyrepr.Str(item)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(item)); text != "" {
 			out = append(out, text)
 		}
 	}
@@ -736,7 +735,7 @@ func (a *WebhookAdapter) handleProfileIngress(ctx context.Context, request *WebR
 
 // Profile a request prefix names, nil without a prefix or for this gateway's own profile, rejected when not served
 func (a *WebhookAdapter) resolveRequestProfile(ctx context.Context, request *WebRequest) (*string, bool) {
-	profile := pystr.Strip(request.MatchInfo["profile"])
+	profile := strings.TrimSpace(request.MatchInfo["profile"])
 	if profile == "" {
 		return nil, false
 	}
@@ -781,14 +780,14 @@ func webhookRouteAllowsProfile(routeConfig *pyjson.Object, requestProfile *strin
 		configured = "default"
 	}
 	text, ok := configured.(string)
-	if !ok || pystr.Strip(text) == "" {
+	if !ok || strings.TrimSpace(text) == "" {
 		return false
 	}
 	want := "default"
 	if requestProfile != nil && *requestProfile != "" {
 		want = *requestProfile
 	}
-	return pystr.Strip(text) == want
+	return strings.TrimSpace(text) == want
 }
 
 // Runtime scope of a resolved profile prefix, the context unchanged for a bare route

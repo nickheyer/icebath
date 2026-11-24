@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -493,7 +492,7 @@ func localChanges(ctx context.Context, target string) ([]string, []string, error
 		if detail == "" {
 			detail = "git status failed"
 		}
-		return nil, nil, &PluginOperationError{Msg: fmt.Sprintf("Could not inspect local changes for '%s': %s", filepath.Base(target), pystr.Strip(detail))}
+		return nil, nil, &PluginOperationError{Msg: fmt.Sprintf("Could not inspect local changes for '%s': %s", filepath.Base(target), strings.TrimSpace(detail))}
 	}
 	local, modified := []string{}, []string{}
 	for _, item := range strings.Split(status.Stdout, "\x00") {
@@ -970,8 +969,8 @@ func cmdUpdateCatalog(ctx context.Context, name, target string, sidecar map[stri
 		}
 		declared := declaredCapabilitiesFromManifest(newManifest, result.InstalledName)
 		if len(declared) > 0 {
-			cfg := loadConfigOrEmpty(h)
-			if len(PendingCapabilities(cfg, result.InstalledName, declared)) > 0 || DeclaredSetChanged(cfg, result.InstalledName, declared) {
+			hctx := homeContext(h)
+			if len(PendingCapabilities(hctx, result.InstalledName, declared)) > 0 || DeclaredSetChanged(hctx, result.InstalledName, declared) {
 				if interactive {
 					if err := runCapabilityConsent(ctx, console, result.InstalledName, declared, "update"); err != nil {
 						return false, err

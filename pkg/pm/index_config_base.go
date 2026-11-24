@@ -85,7 +85,7 @@ func NPMRegistry(env map[string]string) string {
 	for k, v := range env {
 		lowered[strings.ToLower(k)] = v
 	}
-	value := pystr.Strip(lowered["npm_config_registry"])
+	value := strings.TrimSpace(lowered["npm_config_registry"])
 	if value == "" {
 		npmrc := lowered["npm_config_userconfig"]
 		if npmrc == "" {
@@ -95,8 +95,8 @@ func NPMRegistry(env map[string]string) string {
 		if data, err := os.ReadFile(npmrc); err == nil && utf8.Valid(data) {
 			for _, line := range pystr.Splitlines(string(trimBOM(data)), false) {
 				key, candidate, found := strings.Cut(line, "=")
-				if found && strings.ToLower(pystr.Strip(key)) == "registry" {
-					value = strings.Trim(pystr.Strip(candidate), `"'`)
+				if found && strings.ToLower(strings.TrimSpace(key)) == "registry" {
+					value = strings.Trim(strings.TrimSpace(candidate), `"'`)
 				}
 			}
 		}

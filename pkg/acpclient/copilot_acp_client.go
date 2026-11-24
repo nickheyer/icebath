@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Marker base URL the former Copilot alias exported as ACP_MARKER_BASE_URL
@@ -38,12 +37,12 @@ func copilotDisabled(entry any) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pystr.Lower(strField(enablement)) == "disabled", nil
+	return strings.ToLower(strField(enablement)) == "disabled", nil
 }
 
 // True when stderr names the gh-copilot extension together with one of its deprecation markers
 func isGhExtensionBanner(stderrText string) bool {
-	lower := pystr.Lower(stderrText)
+	lower := strings.ToLower(stderrText)
 	hit := func(needles []string) bool {
 		for _, n := range needles {
 			if strings.Contains(lower, n) {

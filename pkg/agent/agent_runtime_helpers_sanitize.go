@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -114,7 +113,7 @@ func sanitizeToolCallArguments(messages *[]*state.Message, logger *slog.Logger, 
 		for i := range msg.ToolCalls {
 			tc := &msg.ToolCalls[i]
 			arguments := tc.Function.Arguments
-			if pystr.Strip(arguments) == "" {
+			if strings.TrimSpace(arguments) == "" {
 				tc.Function.Arguments = "{}"
 				msg.Persisted = false
 				continue
@@ -496,7 +495,7 @@ func dropResultsWithoutIDs(messages []map[string]any) []map[string]any {
 	for _, m := range messages {
 		if m["role"] == "tool" {
 			id, _ := m["tool_call_id"].(string)
-			if pystr.Strip(id) == "" {
+			if strings.TrimSpace(id) == "" {
 				continue
 			}
 		}
@@ -677,7 +676,7 @@ func realignToolResultNames(messages []map[string]any) []map[string]any {
 			continue
 		}
 		for _, tc := range anyRows(msg["tool_calls"]) {
-			cid, nm := pystr.Strip(getToolCallID(tc)), getToolCallNameStatic(tc)
+			cid, nm := strings.TrimSpace(getToolCallID(tc)), getToolCallNameStatic(tc)
 			if cid != "" && nm != "" {
 				callNames[cid] = nm
 			}
@@ -688,7 +687,7 @@ func realignToolResultNames(messages []map[string]any) []map[string]any {
 	for _, msg := range messages {
 		if msg["role"] == "tool" {
 			id, _ := msg["tool_call_id"].(string)
-			expected := callNames[pystr.Strip(id)]
+			expected := callNames[strings.TrimSpace(id)]
 			current, _ := msg["name"].(string)
 			if expected != "" && current != "" && current != expected {
 				cp := shallowDict(msg)

@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"math"
 	"os"
@@ -10,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -55,7 +56,7 @@ func platformHasBotCredential(ctx context.Context, platform gateway.Platform, pl
 		return true
 	}
 	for _, value := range []any{platformConfig.Token, platformConfig.APIKey} {
-		if text, ok := value.(string); ok && pystr.Strip(text) != "" {
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
 			return true
 		}
 	}
@@ -64,7 +65,7 @@ func platformHasBotCredential(ctx context.Context, platform gateway.Platform, pl
 	}
 	for _, key := range []string{"homeserver", "user_id", "password"} {
 		value := platformConfig.Extra[key]
-		if !pyrepr.Truthy(value) || pystr.Strip(pyrepr.Str(value)) == "" {
+		if !pyrepr.Truthy(value) || strings.TrimSpace(pyrepr.Str(value)) == "" {
 			return false
 		}
 	}

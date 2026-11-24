@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -62,7 +61,7 @@ func labelVisibleEntries(visibleEntries []catalogEntry, skillsByCategory map[str
 		}
 		desc := entry.Description
 		if entry.Tier == TierProject {
-			desc = pystr.Strip("[project] " + desc)
+			desc = strings.TrimSpace("[project] " + desc)
 		}
 		category := entry.Category
 		if category == "" {
@@ -165,7 +164,7 @@ func iterOrEmpty(v any) ([]any, error) {
 func strippedStrs(items []any) []any {
 	out := []any{}
 	for _, it := range items {
-		if s := pystr.Strip(pyrepr.Str(it)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(it)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -257,11 +256,11 @@ func (s *Scope) parseSkillFile(skillFile string) (bool, map[string]any, string) 
 func skillShouldShow(conditions map[string][]string, availableTools, availableToolsets map[string]bool, sessionPlatform string) bool {
 	var wanted []string
 	for _, p := range conditions["session_platforms"] {
-		if v := pystr.Lower(pystr.Strip(p)); pystr.Strip(p) != "" {
+		if v := strings.ToLower(strings.TrimSpace(p)); strings.TrimSpace(p) != "" {
 			wanted = append(wanted, v)
 		}
 	}
-	if len(wanted) > 0 && sessionPlatform != "" && !slices.Contains(wanted, pystr.Lower(pystr.Strip(sessionPlatform))) {
+	if len(wanted) > 0 && sessionPlatform != "" && !slices.Contains(wanted, strings.ToLower(strings.TrimSpace(sessionPlatform))) {
 		return false
 	}
 	if availableTools == nil && availableToolsets == nil {
@@ -319,7 +318,7 @@ func (s *Scope) pluginSkillPromptRows(ctx context.Context, disabled, availableTo
 		if !skillShouldShow(extractSkillConditions(fm), availableTools, availableToolsets, sessionPlatform) {
 			continue
 		}
-		desc := ClipSkillDescription(pystr.Strip(pyStrTruthy(meta["description"])))
+		desc := ClipSkillDescription(strings.TrimSpace(pyStrTruthy(meta["description"])))
 		if desc == "" {
 			desc = extractSkillDescription(fm)
 		}

@@ -68,7 +68,7 @@ func pyreFind(re *regexp2.Regexp, s string) []string {
 
 // Naive wall clock cutoff of a relative time like 1h, 30m or 2d in UTC, false when unparseable
 func parseLogSince(since string) (time.Time, bool, error) {
-	m := pyreFind(logSinceRE, pystr.Lower(pystr.Strip(since)))
+	m := pyreFind(logSinceRE, strings.ToLower(strings.TrimSpace(since)))
 	if m == nil {
 		return time.Time{}, false, nil
 	}
@@ -378,7 +378,7 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 	}
 	minLevel := ""
 	if o.Level != "" {
-		minLevel = pystr.Upper(o.Level)
+		minLevel = strings.ToUpper(o.Level)
 		if _, ok := logLevelOrder[minLevel]; !ok {
 			fmt.Fprintf(w, "Invalid --level: %s. Use DEBUG, INFO, WARNING, ERROR, or CRITICAL.\n", errchain.Show(o.Level))
 			return 1, nil
@@ -386,7 +386,7 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 		f.minLevel = &minLevel
 	}
 	if o.Component != "" {
-		prefixes, ok := logging.ComponentPrefixes[pystr.Lower(o.Component)]
+		prefixes, ok := logging.ComponentPrefixes[strings.ToLower(o.Component)]
 		if !ok {
 			names := make([]string, 0, len(logging.ComponentPrefixes))
 			for k := range logging.ComponentPrefixes {

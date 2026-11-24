@@ -14,12 +14,12 @@ import (
 func TestDispatchInlineRPCDoesNotBlockUnderGilPressure(t *testing.T) {
 	released := &pythread.Event{}
 	t.Cleanup(released.Set)
-	slowSessionList := func(_ context.Context, rid any, _ map[string]any) map[string]any {
+	slowManage := func(_ context.Context, rid any, _ map[string]any) map[string]any {
 		released.Wait(5)
-		return ok(rid, map[string]any{"sessions": []any{}})
+		return ok(rid, map[string]any{})
 	}
-	swapMethod(t, "session.list", slowSessionList)
-	swapMethod(t, "session.save", slowSessionList)
+	swapMethod(t, "browser.manage", slowManage)
+	swapMethod(t, "plugins.manage", slowManage)
 	swapMethod(t, "fast.check", func(_ context.Context, rid any, _ map[string]any) map[string]any {
 		return ok(rid, map[string]any{"ok": true})
 	})
@@ -29,7 +29,7 @@ func TestDispatchInlineRPCDoesNotBlockUnderGilPressure(t *testing.T) {
 	for _, call := range []struct {
 		method string
 		params map[string]any
-	}{{"session.list", map[string]any{}}, {"session.save", map[string]any{"session_id": "s"}}} {
+	}{{"browser.manage", map[string]any{}}, {"plugins.manage", map[string]any{"action": "list"}}} {
 		answers = append(answers, Dispatch(context.Background(), map[string]any{"id": call.method, "method": call.method, "params": call.params}, sink))
 	}
 	if !reflect.DeepEqual(answers, []map[string]any{nil, nil}) {
@@ -41,7 +41,7 @@ func TestDispatchInlineRPCDoesNotBlockUnderGilPressure(t *testing.T) {
 		t.Fatalf("fast.check answered %v", fastResp)
 	}
 	if fastElapsed >= 2*time.Second {
-		t.Fatalf("fast handler blocked for %s behind slow session.list", fastElapsed)
+		t.Fatalf("fast handler blocked for %s behind slow browser.manage", fastElapsed)
 	}
 	released.Set()
 }

@@ -1,12 +1,13 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"net/http"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -40,7 +41,7 @@ func apiHandleIsFree() (free bool) {
 
 // Profile prefix of a request as a canonical profile id, empty without a prefix
 func apiPrefixProfile(request *WebRequest) (string, error) {
-	raw := pystr.Strip(request.MatchInfo["profile"])
+	raw := strings.TrimSpace(request.MatchInfo["profile"])
 	if raw == "" {
 		return "", nil
 	}

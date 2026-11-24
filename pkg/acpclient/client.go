@@ -166,7 +166,7 @@ func (c *Client) IsClosed() bool {
 // Launch command from the first set command env var, else the vendor default
 func (c *Client) resolveCommand() string {
 	for _, name := range c.CommandEnvVars {
-		if v := pystr.Strip(os.Getenv(name)); v != "" {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
 			return v
 		}
 	}
@@ -177,7 +177,7 @@ func (c *Client) resolveCommand() string {
 func (c *Client) resolveArgs() ([]string, error) {
 	override := ""
 	if c.ArgsEnvVar != "" {
-		override = pystr.Strip(os.Getenv(c.ArgsEnvVar))
+		override = strings.TrimSpace(os.Getenv(c.ArgsEnvVar))
 	}
 	split, err := pyshlex.SplitPOSIX(override, false)
 	if err != nil {
@@ -616,7 +616,7 @@ func (s *session) request(ctx context.Context, method string, params any, textPa
 		case <-time.After(time.Second):
 		}
 		s.proc.stderrMu.Lock()
-		stderrText := pystr.Strip(strings.Join(s.proc.stderrTail, "\n"))
+		stderrText := strings.TrimSpace(strings.Join(s.proc.stderrTail, "\n"))
 		s.proc.stderrMu.Unlock()
 		if vendorErr, ok := s.c.EarlyExitError(stderrText); ok {
 			return nil, pyErr("RuntimeError", "%s", vendorErr)
@@ -642,7 +642,7 @@ func (c *Client) ListModels(ctx context.Context, timeoutSeconds float64) ([]stri
 
 // Sends the prompt in a fresh session after selecting the model over ACP, returning text and reasoning
 func (c *Client) runPrompt(ctx context.Context, promptText string, timeoutSeconds float64, model string) (string, string, error) {
-	requestedModel := pystr.Strip(model)
+	requestedModel := strings.TrimSpace(model)
 	var text, reasoning string
 	err := c.withSession(ctx, timeoutSeconds, true, func(s *session) error {
 		sessionID := strField(dictGet(s.result, "sessionId"))

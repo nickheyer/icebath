@@ -155,7 +155,7 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 	} else if len(candidates) > 1 {
 		users := map[string]bool{}
 		for _, e := range candidates {
-			if u := pystr.Strip(originUserID(e)); u != "" {
+			if u := strings.TrimSpace(originUserID(e)); u != "" {
 				users[u] = true
 			}
 		}
@@ -203,7 +203,7 @@ func mirrorEntryMatches(entry *pyjson.Object, platform, chatID string, threadID 
 	if !isStr {
 		return false, mirrorShapeError("a session platform", plat, "text")
 	}
-	if pystr.Lower(platText) != pystr.Lower(platform) {
+	if strings.ToLower(platText) != strings.ToLower(platform) {
 		return false, nil
 	}
 	chat, ok := origin.Get("chat_id")

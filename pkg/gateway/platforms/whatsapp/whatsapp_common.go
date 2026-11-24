@@ -61,9 +61,9 @@ func whatsappStash(re *regexp2.Regexp, text, tag string) (string, []string) {
 
 // Header text as bold, already bolded asterisks stripped so the title shows no literal stars
 func whatsappHeaderToBold(m regexp2.Match) string {
-	inner := pystr.Strip(whatsappGroup(m, 1))
+	inner := strings.TrimSpace(whatsappGroup(m, 1))
 	for pystr.Len(inner) > 1 && strings.HasPrefix(inner, "*") && strings.HasSuffix(inner, "*") {
-		inner = pystr.Strip(pystr.Slice(inner, 1, pystr.Len(inner)-1))
+		inner = strings.TrimSpace(pystr.Slice(inner, 1, pystr.Len(inner)-1))
 	}
 	return "*" + inner + "*"
 }
@@ -192,7 +192,7 @@ func CoerceAllowList(raw any) map[string]bool {
 		parts = strings.Split(pyrepr.Str(raw), ",")
 	}
 	for _, part := range parts {
-		if part = pystr.Strip(part); part != "" {
+		if part = strings.TrimSpace(part); part != "" {
 			out[part] = true
 		}
 	}
@@ -247,7 +247,7 @@ func NormalizeWhatsAppID(value any) string {
 	if !pyrepr.Truthy(value) {
 		return ""
 	}
-	out, err := whatsappDeviceSuffix.Replace(pystr.Strip(pyrepr.Str(value)), "", -1, -1)
+	out, err := whatsappDeviceSuffix.Replace(strings.TrimSpace(pyrepr.Str(value)), "", -1, -1)
 	if err != nil {
 		panic(err)
 	}
@@ -256,7 +256,7 @@ func NormalizeWhatsAppID(value any) string {
 
 // Status updates and channel broadcasts, chats never replied to
 func IsBroadcastChat(chatID string) bool {
-	cid := pystr.Lower(pystr.Strip(chatID))
+	cid := strings.ToLower(strings.TrimSpace(chatID))
 	return cid == "status@broadcast" || strings.HasSuffix(cid, "@broadcast") || strings.HasSuffix(cid, "@newsletter")
 }
 
@@ -320,7 +320,7 @@ func (b *WhatsAppBehaviorMixin) compileMentionPatterns(patterns any) []*regexp2.
 	var compiled []*regexp2.Regexp
 	for _, pattern := range list {
 		text, ok := pattern.(string)
-		if !ok || pystr.Strip(text) == "" {
+		if !ok || strings.TrimSpace(text) == "" {
 			continue
 		}
 		re, err := pyre.CompileIgnoreCase(text)
@@ -370,10 +370,10 @@ func MessageMentionsBot(data map[string]any) bool {
 	if pyrepr.Truthy(data["body"]) {
 		body = pyrepr.Str(data["body"])
 	}
-	lowerBody := pystr.Lower(body)
+	lowerBody := strings.ToLower(body)
 	for botID := range botIDs {
 		bare, _, _ := strings.Cut(botID, "@")
-		if bare = pystr.Lower(bare); bare != "" && (strings.Contains(lowerBody, "@"+bare) || strings.Contains(lowerBody, bare)) {
+		if bare = strings.ToLower(bare); bare != "" && (strings.Contains(lowerBody, "@"+bare) || strings.Contains(lowerBody, bare)) {
 			return true
 		}
 	}
@@ -412,7 +412,7 @@ func CleanBotMentionText(text string, data map[string]any) string {
 		}
 		cleaned = out
 	}
-	if stripped := pystr.Strip(cleaned); stripped != "" {
+	if stripped := strings.TrimSpace(cleaned); stripped != "" {
 		return stripped
 	}
 	return text
@@ -446,7 +446,7 @@ func (b *WhatsAppBehaviorMixin) ShouldProcessMessage(ctx context.Context, data m
 	if pyrepr.Truthy(data["body"]) {
 		body = pyrepr.Str(data["body"])
 	}
-	return strings.HasPrefix(pystr.Strip(body), "/") || MessageIsReplyToBot(data) || MessageMentionsBot(data) ||
+	return strings.HasPrefix(strings.TrimSpace(body), "/") || MessageIsReplyToBot(data) || MessageMentionsBot(data) ||
 		b.MessageMatchesMentionPatterns(ctx, data), nil
 }
 

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -110,7 +109,7 @@ func (i *IncidentStore) transaction(body func(ctx context.Context, conn state.SQ
 	ctx := context.Background()
 	incidentsMu.Lock()
 	defer incidentsMu.Unlock()
-	if err := ensureCronDir(filepath.Dir(i.path)); err != nil {
+	if err := i.s.ensureStoreDir(filepath.Dir(i.path)); err != nil {
 		return err
 	}
 	conn, err := state.OpenDB(ctx, i.path, "cron/executions.db", state.WithSynchronousFull(), state.WithInitialize(initializeIncidentsSchema))
@@ -126,7 +125,7 @@ func normalizeIncidentError(errText string) string {
 	if err != nil {
 		collapsed = errText
 	}
-	return pystr.Lower(pystr.Strip(collapsed))
+	return strings.ToLower(strings.TrimSpace(collapsed))
 }
 
 // First n code points of text

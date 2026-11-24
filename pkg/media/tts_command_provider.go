@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -298,27 +297,12 @@ func terminateCommandProcessTree(p *commandProcess) {
 	}
 }
 
-// Parent environment variables copied back into the secret scrubbed child environment
-func commandEnvPassthrough(cfg map[string]any) []string {
-	raw, ok := cfg["env_passthrough"].([]any)
-	out := []string{}
-	if !ok {
-		return out
-	}
-	for _, x := range raw {
-		if s := pystr.Strip(pyrepr.Str(x)); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // Stderr then stdout of a failed command provider, or a no output marker
 func commandFailureDetail(e *commandExitError) string {
 	var parts []string
 	for _, s := range [][2]string{{"stderr", e.Stderr}, {"stdout", e.Stdout}} {
 		if s[1] != "" {
-			parts = append(parts, s[0]+": "+pystr.Strip(s[1]))
+			parts = append(parts, s[0]+": "+strings.TrimSpace(s[1]))
 		}
 	}
 	if len(parts) == 0 {
@@ -484,19 +468,6 @@ func runCommandProvider(ctx context.Context, env *tools.Env, command string, tim
 	return &commandCompleted{Command: command, Stdout: stdout, Stderr: stderr}, nil
 }
 
-// Mapping under the name, empty when the config or the value is not a mapping
-func getProviderSection(cfg any, name string) map[string]any {
-	m, ok := asStrMap(cfg)
-	if !ok {
-		return map[string]any{}
-	}
-	section, ok := asStrMap(m[name])
-	if !ok {
-		return map[string]any{}
-	}
-	return section
-}
-
 // String keyed mapping view of a decoded config value
 func asStrMap(v any) (map[string]any, bool) {
 	switch m := v.(type) {
@@ -506,78 +477,6 @@ func asStrMap(v any) (map[string]any, bool) {
 		return m, true
 	}
 	return nil, false
-}
-
-// Section providers.name, else the legacy section name block for names that are not built in
-func namedProviderConfig(cfg any, name string, builtins map[string]bool) map[string]any {
-	if section, ok := asStrMap(getProviderSection(cfg, "providers")[name]); ok {
-		return section
-	}
-	if builtins[pystr.Lower(name)] {
-		return map[string]any{}
-	}
-	return getProviderSection(cfg, name)
-}
-
-// Whether the config declares a command type provider with a non empty command
-func isCommandProviderConfig(cfg any) bool {
-	m, ok := asStrMap(cfg)
-	if !ok {
-		return false
-	}
-	ptype := ""
-	if pyTruthy(m["type"]) {
-		ptype = pystr.Lower(pystr.Strip(pyrepr.Str(m["type"])))
-	}
-	command, isStr := m["command"].(string)
-	return (ptype == "" || ptype == "command") && isStr && pystr.Strip(command) != ""
-}
-
-// Config of a user declared command provider, nil for reserved, unknown or non command names
-func resolveCommandConfig(providerName string, cfg any, reserved map[string]bool) map[string]any {
-	key := pystr.Strip(pystr.Lower(providerName))
-	if key == "" || reserved[key] {
-		return nil
-	}
-	named := namedProviderConfig(cfg, key, reserved)
-	if isCommandProviderConfig(named) {
-		return named
-	}
-	return nil
-}
-
-// Timeout seconds from timeout then timeout_seconds, the default for invalid or non positive values
-func commandTimeout(cfg map[string]any, def float64) float64 {
-	raw, ok := cfg["timeout"]
-	if !ok {
-		raw, ok = cfg["timeout_seconds"]
-		if !ok {
-			return def
-		}
-	}
-	value, err := pyint.Float(raw)
-	if err != nil {
-		return def
-	}
-	if value > 0 {
-		return value
-	}
-	return def
-}
-
-// Validated format or output_format, else the default
-func commandOutputFormat(cfg map[string]any, formats map[string]bool, def string) string {
-	raw := any(def)
-	if pyTruthy(cfg["format"]) {
-		raw = cfg["format"]
-	} else if pyTruthy(cfg["output_format"]) {
-		raw = cfg["output_format"]
-	}
-	f := pystr.LstripChars(pystr.Strip(pystr.Lower(pyrepr.Str(raw))), ".")
-	if formats[f] {
-		return f
-	}
-	return def
 }
 
 var builtinTTSProviders = map[string]bool{
@@ -593,64 +492,37 @@ const (
 
 var commandTTSOutputFormats = map[string]bool{"mp3": true, "wav": true, "ogg": true, "flac": true, "m4a": true, "aac": true, "amr": true, "opus": true}
 
-func getNamedTTSProviderConfig(cfg any, name string) map[string]any {
-	return namedProviderConfig(cfg, name, builtinTTSProviders)
-}
-
-func resolveCommandTTSProviderConfig(providerName string, cfg any) map[string]any {
-	return resolveCommandConfig(providerName, cfg, builtinTTSProviders)
-}
-
-func getCommandTTSTimeout(cfg map[string]any) float64 {
-	return commandTimeout(cfg, defaultCommandTTSTimeoutSeconds)
-}
-
-// Output format from the output path suffix when valid, then format or output_format
-func getCommandTTSOutputFormat(cfg map[string]any, outputPath string) string {
+// Output format of a run: the output path's own suffix when the program can write it, else the configured format
+func commandTTSOutputFormat(p *commandProvider, outputPath string) string {
 	suffix := ""
 	if outputPath != "" {
-		suffix = pystr.LstripChars(pystr.Strip(pystr.Lower(pypath.Suffix(outputPath))), ".")
+		suffix = strings.TrimLeft(strings.TrimSpace(strings.ToLower(pypath.Suffix(outputPath))), ".")
 	}
 	if commandTTSOutputFormats[suffix] {
 		return suffix
 	}
-	return commandOutputFormat(cfg, commandTTSOutputFormats, defaultCommandTTSOutputFormat)
+	return p.OutputFormat
 }
 
-// Whether the user explicitly opted the command provider into voice delivery
-func isCommandTTSVoiceCompatible(cfg map[string]any) bool {
-	return isTruthyValue(cfg["voice_compatible"], false)
+// Text of a speed for a command template, empty when no speed is set
+func commandSpeedText(speed float64, set bool) string {
+	if !set {
+		return ""
+	}
+	return pyrepr.Str(speed)
 }
 
-// Bool coercion with the shared truthy string set for strings and the default for None
-func isTruthyValue(v any, def bool) bool {
-	if v == nil {
-		return def
+// Speed a program gets: the call's own, then its own setting, then the general one
+func (r *ttsRequest) commandSpeed(p *commandProvider) string {
+	var own *float64
+	if p.SpeedSet {
+		own = &p.Speed
 	}
-	if s, ok := v.(string); ok {
-		switch pystr.Lower(pystr.Strip(s)) {
-		case "1", "true", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return pyTruthy(v)
+	return commandSpeedText(r.speedFor(own))
 }
 
-// Path whose extension matches the provider output format
-func configuredCommandTTSOutputPath(path string, cfg map[string]any) (string, error) {
-	return pypath.WithSuffix(path, "."+getCommandTTSOutputFormat(cfg, ""))
-}
-
-// Speech written by a user configured shell command, the audio path it produced
-func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath, providerName string, cfg, ttsConfig map[string]any) (string, error) {
-	commandTemplate := ""
-	if pyTruthy(cfg["command"]) {
-		commandTemplate = pystr.Strip(pyrepr.Str(cfg["command"]))
-	}
-	if commandTemplate == "" {
-		return "", &ttsValueError{fmt.Sprintf("tts.providers.%s.command is not configured", providerName)}
-	}
+// Speech written by a program of your own, the audio path it produced
+func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath string, p *commandProvider, req *ttsRequest) (string, error) {
 	output := pypath.Expanduser(outputPath)
 	if err := os.MkdirAll(filepath.Dir(output), 0o777); err != nil {
 		return "", err
@@ -660,7 +532,6 @@ func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath, p
 			return "", err
 		}
 	}
-	timeout := getCommandTTSTimeout(cfg)
 	tmpdir, err := os.MkdirTemp("", "tmp")
 	if err != nil {
 		return "", err
@@ -670,36 +541,26 @@ func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath, p
 	if err := os.WriteFile(textPath, []byte(text), 0o666); err != nil {
 		return "", err
 	}
-	str := func(m map[string]any, k string, def any) string {
-		if v, ok := m[k]; ok {
-			return pyrepr.Str(v)
-		}
-		return pyrepr.Str(def)
-	}
-	speedDefault := any("")
-	if v, ok := ttsConfig["speed"]; ok {
-		speedDefault = v
-	}
 	placeholders := map[string]string{
 		"input_path": textPath, "text_path": textPath, "output_path": output,
-		"format": getCommandTTSOutputFormat(cfg, output),
-		"voice":  str(cfg, "voice", ""), "model": str(cfg, "model", ""), "speed": str(cfg, "speed", speedDefault),
+		"format": commandTTSOutputFormat(p, output), "voice": p.Voice, "model": p.Model, "speed": req.commandSpeed(p),
 	}
-	command := renderCommandTemplate(commandTemplate, placeholders)
-	if _, err := runCommandProvider(tools.WithEnvHome(ctx, env), env, command, timeout, commandEnvPassthrough(cfg)); err != nil {
+	command := renderCommandTemplate(p.Command, placeholders)
+	timeout := p.Timeout.Seconds()
+	if _, err := runCommandProvider(tools.WithEnvHome(ctx, env), env, command, timeout, p.EnvPassthrough); err != nil {
 		var te *commandTimeoutError
 		var ee *commandExitError
 		switch {
 		case errors.As(err, &te):
-			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' timed out after %ss", providerName, strconv.FormatFloat(timeout, 'g', 6, 64)), err}
+			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' timed out after %ss", p.Name, strconv.FormatFloat(timeout, 'g', 6, 64)), err}
 		case errors.As(err, &ee):
-			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' exited with code %d: %s", providerName, ee.Returncode, commandFailureDetail(ee)), err}
+			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' exited with code %d: %s", p.Name, ee.Returncode, commandFailureDetail(ee)), err}
 		}
 		return "", err
 	}
 	st, err := os.Stat(output)
 	if err != nil || st.Size() <= 0 {
-		return "", &ttsRuntimeError{msg: fmt.Sprintf("TTS provider '%s' produced no output at %s", providerName, output)}
+		return "", &ttsRuntimeError{msg: fmt.Sprintf("TTS provider '%s' produced no output at %s", p.Name, output)}
 	}
 	return output, nil
 }

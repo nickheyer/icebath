@@ -36,6 +36,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Longest error body a tool result may carry
@@ -118,9 +119,9 @@ func toolErrorJSON(message string, extra *pyjson.Object) string {
 // Secret from the .env layer and process environment, trimmed
 func secretValue(env *Env, name string) string {
 	if env != nil && env.Secrets != nil {
-		return pystr.Strip(env.Secrets.String(name))
+		return strings.TrimSpace(env.Secrets.String(name))
 	}
-	return pystr.Strip(os.Getenv(name))
+	return strings.TrimSpace(os.Getenv(name))
 }
 
 // Logger of the session or the process default, named after this package
@@ -131,17 +132,22 @@ func envLog(env *Env) *slog.Logger {
 	return pkgLog()
 }
 
-// Web section of the merged configuration
-func webCfg(env *Env) config.Tree {
-	if env == nil || env.Config == nil {
-		return config.Tree{}
-	}
-	return env.Config.Sub("web")
-}
+// Context the web settings of the env's profile are read for
+func webCtx(env *Env) context.Context { return envHomeCtx(context.Background(), env) }
 
-// Lower cased web.<key> selection, empty when unset
+// Lower cased web backend choice the key names (backend, search_backend or extract_backend), empty when unset
 func webBackendKey(env *Env, key string) string {
-	return pystr.Strip(pystr.Lower(webCfg(env).String(key, "")))
+	ctx := webCtx(env)
+	value := ""
+	switch key {
+	case "backend":
+		value = settings.WebSearch.Get(ctx)
+	case "search_backend":
+		value = settings.WebSearchBackend.Get(ctx)
+	case "extract_backend":
+		value = settings.WebExtractBackend.Get(ctx)
+	}
+	return strings.TrimSpace(strings.ToLower(value))
 }
 
 // Module version from build info, dev when unknown
@@ -180,7 +186,7 @@ func webCacheDir(env *Env) (string, error) {
 
 // Reports whether the stripped lower cased string is in the TRUTHY_STRINGS set
 func truthyString(s string) bool {
-	switch pystr.Lower(pystr.Strip(s)) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -556,7 +562,7 @@ func originHTTPError(status any, reason any) (string, error) {
 	if code.Cmp(big.NewInt(400)) < 0 {
 		return "", nil
 	}
-	if detail := pystr.Strip(pyrepr.Str(pyOr(reason, ""))); detail != "" {
+	if detail := strings.TrimSpace(pyrepr.Str(pyOr(reason, ""))); detail != "" {
 		return "HTTP " + code.String() + " from origin: " + detail, nil
 	}
 	return "HTTP " + code.String() + " from origin", nil
@@ -588,7 +594,7 @@ func keenableOriginError(status int, body string) (string, error) {
 	message := ""
 	if d, ok := pyDict(v); ok {
 		m, _ := d.Get("message")
-		message = pystr.Strip(pyrepr.Str(pyOr(m, "")))
+		message = strings.TrimSpace(pyrepr.Str(pyOr(m, "")))
 	}
 	if pyreSearch(keenableOriginMessageRe(), message) == nil {
 		return "", nil
@@ -776,7 +782,7 @@ func disabledWebPluginFor(env *Env, configured, capability string) string {
 		return ""
 	}
 	want := normPluginName(configured)
-	for _, key := range env.Config.Strings("plugins.disabled") {
+	for _, key := range settings.PluginsDisabled.Strings(webCtx(env)) {
 		k := strings.ToLower(strings.TrimSpace(key))
 		if strings.HasPrefix(k, "web/") && normPluginName(k[len("web/"):]) == want {
 			return k
@@ -875,28 +881,14 @@ func activeExtractProvider(env *Env) WebProvider {
 	return resolveWebProvider(env, registryConfiguredBackend(env, "extract"), "extract")
 }
 
-// web.keyless_fallback through bool like the registry, enabled when unset or the web section has no get
+// Whether the free keyless tier may answer when a vendor has no key
 func keylessEnabled(env *Env) bool {
-	if env == nil || env.Config == nil {
-		return true
-	}
-	web, _ := env.Config.Lookup("web")
-	var section map[string]any
-	switch w := web.(type) {
-	case map[string]any:
-		section = w
-	case config.Tree:
-		section = w
-	default:
-		return true
-	}
-	v, present := section["keyless_fallback"]
-	return !present || pyrepr.Truthy(v)
+	return settings.WebKeylessFallback.Get(webCtx(env))
 }
 
 // web.provider_tier.<name>, free, paid, or auto
 func providerTier(env *Env, name string) string {
-	tiers := webCfg(env).Map("provider_tier")
+	tiers := settings.WebProviderTier.Get(webCtx(env))
 	value := strings.ToLower(strings.TrimSpace(asStr(tiers[name])))
 	if value == "free" || value == "paid" {
 		return value
@@ -962,7 +954,7 @@ var keylessVendorHints = map[string]keylessVendorHint{
 
 // Reports whether an error message looks like free tier throttling
 func isRateLimitish(message string) bool {
-	lower := pystr.Lower(message)
+	lower := strings.ToLower(message)
 	for _, marker := range rateLimitMarkers {
 		if strings.Contains(lower, marker) {
 			return true
@@ -991,7 +983,7 @@ func keylessFailMsg(vendor, kind string, err any, otherBackends bool) string {
 // Parses an MCP tools/call body, plain JSON or SSE data frames, into its first text content
 func parseMCPBody(body string) (string, error) {
 	fromPayload := func(payload string) (string, bool, error) {
-		payload = pystr.Strip(payload)
+		payload = strings.TrimSpace(payload)
 		if !strings.HasPrefix(payload, "{") {
 			return "", false, nil
 		}
@@ -1130,7 +1122,7 @@ func keylessHTTP(ctx context.Context, method, target string, params map[string]s
 // Body decoded with the declared charset else UTF-8, undecodable bytes replaced like _response_text
 func keylessResponseText(header http.Header, raw []byte) (string, error) {
 	contentType := strings.Join(header.Values("Content-Type"), ", ")
-	if strings.Contains(pystr.Lower(contentType), "charset=") {
+	if strings.Contains(strings.ToLower(contentType), "charset=") {
 		declared, err := requestsEncodingFromHeaders(contentType)
 		if err != nil {
 			return "", err
@@ -1148,10 +1140,10 @@ func requestsEncodingFromHeaders(contentType string) (string, error) {
 		return "", nil
 	}
 	tokens := strings.Split(contentType, ";")
-	mediaType := pystr.Strip(tokens[0])
+	mediaType := strings.TrimSpace(tokens[0])
 	params := map[string]any{}
 	for _, param := range tokens[1:] {
-		param = pystr.Strip(param)
+		param = strings.TrimSpace(param)
 		if param == "" {
 			continue
 		}
@@ -1160,7 +1152,7 @@ func requestsEncodingFromHeaders(contentType string) (string, error) {
 			key = strings.Trim(param[:i], "\"' ")
 			value = strings.Trim(param[i+1:], "\"' ")
 		}
-		params[pystr.Lower(key)] = value
+		params[strings.ToLower(key)] = value
 	}
 	if v, ok := params["charset"]; ok {
 		s, isStr := v.(string)
@@ -1358,12 +1350,12 @@ func parseExaSearchText(text string, limit int) []WebSearchHit {
 		highlights := []string{}
 		inHighlights := false
 		for _, line := range pystr.Splitlines(block, false) {
-			stripped := pystr.Strip(line)
+			stripped := strings.TrimSpace(line)
 			switch {
 			case strings.HasPrefix(stripped, "Title:"):
-				title = pystr.Strip(stripped[len("Title:"):])
+				title = strings.TrimSpace(stripped[len("Title:"):])
 			case strings.HasPrefix(stripped, "URL:"):
-				u = pystr.Strip(stripped[len("URL:"):])
+				u = strings.TrimSpace(stripped[len("URL:"):])
 			case inHighlights && stripped != "" && !hasAnyPrefix(stripped, exaLabels):
 				highlights = append(highlights, stripped)
 			}
@@ -1415,13 +1407,13 @@ func exaExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, error) {
 		}
 		title := ""
 		for _, line := range pystr.Splitlines(text, false) {
-			s := pystr.Strip(line)
+			s := strings.TrimSpace(line)
 			if strings.HasPrefix(s, "# ") {
-				title = pystr.Strip(s[2:])
+				title = strings.TrimSpace(s[2:])
 				break
 			}
 			if strings.HasPrefix(s, "Title:") {
-				title = pystr.Strip(s[len("Title:"):])
+				title = strings.TrimSpace(s[len("Title:"):])
 				break
 			}
 		}
@@ -1480,7 +1472,7 @@ func keenableRequest(ctx context.Context, method, path string, params map[string
 		if err != nil {
 			return nil, err
 		}
-		body := pystr.Strip(text)
+		body := strings.TrimSpace(text)
 		origin, err := keenableOriginError(status, body)
 		if err != nil {
 			return nil, err

@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -632,7 +631,7 @@ func lightpandaStatusEnv(t *testing.T, browser map[string]any) *tools.Env {
 	for k, v := range browser {
 		section[k] = v
 	}
-	env.Config = config.Tree{"browser": section}
+	writeBrowserSection(t, env.Home, section)
 	pin(t, &lightpandaCloudProvider, func(*tools.Env) (BrowserProvider, error) { return nil, nil })
 	return env
 }
@@ -670,7 +669,7 @@ func TestLightpandaEngineStatus(t *testing.T) {
 			t.Fatal("unknown provider shadowed lightpanda")
 		}
 	})
-	t.Run("shadowed by legacy browser use cloud", func(t *testing.T) {
+	t.Run("shadowed by browser use cloud key", func(t *testing.T) {
 		env := lightpandaStatusEnv(t, nil)
 		t.Setenv("BROWSER_USE_API_KEY", "bu-key")
 		if used, reason := lightpandaEngineStatus(env); used || !strings.Contains(reason, "Browser Use cloud") {
@@ -692,7 +691,7 @@ func TestLightpandaEngineStatus(t *testing.T) {
 	})
 }
 
-func TestLegacyBrowserUseCloudConfig(t *testing.T) {
+func TestBrowserUseCloudByKey(t *testing.T) {
 	for _, c := range []struct {
 		browser map[string]any
 		key     string
@@ -704,9 +703,9 @@ func TestLegacyBrowserUseCloudConfig(t *testing.T) {
 		{map[string]any{}, "", false},
 	} {
 		env := testEnv(t)
-		env.Config = config.Tree{"browser": c.browser}
+		writeBrowserSection(t, env.Home, c.browser)
 		t.Setenv("BROWSER_USE_API_KEY", c.key)
-		if got := isLegacyBrowserUseCloudConfig(env); got != c.want {
+		if got := browserUseCloudByKey(env); got != c.want {
 			t.Fatalf("%v key %q got %v", c.browser, c.key, got)
 		}
 	}

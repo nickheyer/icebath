@@ -334,8 +334,8 @@ func checkDirectoryStructure(ctx context.Context, d *Doctor, shouldFix bool) (*F
 				return err
 			}
 			configured := false
-			for _, line := range pystr.Splitlines(pystr.Strip(text), false) {
-				stripped := pystr.Strip(line)
+			for _, line := range pystr.Splitlines(strings.TrimSpace(text), false) {
+				stripped := strings.TrimSpace(line)
 				if stripped != "" && !strings.HasPrefix(stripped, "<!--") && !strings.HasPrefix(stripped, "-->") && !strings.HasPrefix(stripped, "#") {
 					configured = true
 					break
@@ -387,7 +387,7 @@ func checkDirectoryStructure(ctx context.Context, d *Doctor, shouldFix bool) (*F
 			if err != nil {
 				return err
 			}
-			doctorCheckOK(w, fmt.Sprintf("%s exists (%d chars)", store.name, len([]rune(pystr.Strip(text)))), "")
+			doctorCheckOK(w, fmt.Sprintf("%s exists (%d chars)", store.name, len([]rune(strings.TrimSpace(text)))), "")
 		}
 		return nil
 	})

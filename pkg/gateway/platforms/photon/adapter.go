@@ -239,7 +239,7 @@ func checkRequirements(ctx context.Context) bool {
 	}
 	npmError := ""
 	if raw, err := os.ReadFile(NpmErrorLog(ctx)); err == nil {
-		npmError = pystr.Slice(pystr.Strip(string(raw)), 0, NpmErrorLogMaxChars)
+		npmError = pystr.Slice(strings.TrimSpace(string(raw)), 0, NpmErrorLogMaxChars)
 	}
 	if npmError != "" {
 		pkgLog().Debug(fmt.Sprintf("photon: spectrum-ts not installed at %s (last npm error: %s) — run: icebath photon setup", SidecarDir(ctx), npmError))
@@ -285,7 +285,7 @@ func reinstallSidecarDeps(ctx context.Context) {
 		pkgLog().Info("[photon] sidecar dependencies reinstalled from lockfile")
 		return
 	}
-	detail := pystr.Strip(out)
+	detail := strings.TrimSpace(out)
 	if err != nil && detail == "" {
 		detail = err.Error()
 	}
@@ -307,7 +307,7 @@ func envList(env map[string]string) []string {
 // Whether replies go out as markdown, PHOTON_MARKDOWN=false switching to plain text
 func markdownEnabled(ctx context.Context) bool {
 	v, _ := gateway.GetScopedSecret(ctx, "PHOTON_MARKDOWN", "true", false)
-	switch strings.ToLower(pystr.Strip(v)) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "false", "0", "no":
 		return false
 	}
@@ -324,7 +324,7 @@ func sidecarPayloadText(text string, sendMarkdown bool) string {
 
 // URL of a message that is exactly one http(s) URL
 func urlOnlyCandidate(text string) string {
-	candidate := pystr.Strip(text)
+	candidate := strings.TrimSpace(text)
 	if !urlOnlyRE.MatchString(candidate) {
 		return ""
 	}
@@ -348,7 +348,7 @@ func richlinkCandidate(ctx context.Context, text string) string {
 
 // Title, summary and URL lines of a rich link payload
 func formatRichlinkContent(content map[string]any) string {
-	get := func(k string) string { return pystr.Strip(pyrepr.Str(orEmpty(content[k]))) }
+	get := func(k string) string { return strings.TrimSpace(pyrepr.Str(orEmpty(content[k]))) }
 	urlText, title, summary := get("url"), get("title"), get("summary")
 	if summary == title {
 		summary = ""
@@ -620,7 +620,7 @@ func normalizeGroupContent(ctx context.Context, content map[string]any) normaliz
 			kept = append(kept, p)
 		}
 	}
-	out.text = pystr.Strip(strings.Join(kept, "\n"))
+	out.text = strings.TrimSpace(strings.Join(kept, "\n"))
 	if out.text == "" {
 		out.text = "[Photon empty group received]"
 		if len(out.mediaURLs) > 0 {
@@ -844,7 +844,7 @@ func NewPhotonAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Pho
 	if requireMention == nil {
 		requireMention = secret("PHOTON_REQUIRE_MENTION")
 	}
-	switch strings.ToLower(pystr.Strip(pyrepr.Str(orEmpty(requireMention)))) {
+	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(requireMention)))) {
 	case "true", "1", "yes", "on":
 		a.requireMention = true
 	}
@@ -878,7 +878,7 @@ func floatSetting(v any, def float64) float64 {
 	case int64:
 		return float64(n)
 	case string:
-		if f, err := strconv.ParseFloat(pystr.Strip(n), 64); err == nil {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
 			return f
 		}
 	}
@@ -1037,7 +1037,7 @@ func (a *PhotonAdapter) consumeInbound(ctx context.Context, backoff *float64) er
 	reader := bufio.NewReaderSize(resp.Body, 64*1024)
 	for a.running() {
 		line, err := reader.ReadString('\n')
-		if trimmed := pystr.Strip(line); trimmed != "" {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			a.onInboundLine(ctx, trimmed)
 		}
 		if err != nil {
@@ -1208,7 +1208,7 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 		}
 		return a.HandleMessage(ctx, ev)
 	}
-	if ctype == "text" && pystr.Strip(pyrepr.Str(orEmpty(content["text"]))) == "￼" {
+	if ctype == "text" && strings.TrimSpace(pyrepr.Str(orEmpty(content["text"]))) == "￼" {
 		a.cancelPendingFFFC(spaceID)
 		waitCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		a.mu.Lock()
@@ -1244,7 +1244,7 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 			pkgLog().Debug("[photon] ignoring poll deselection")
 			return nil
 		}
-		choice := pystr.Strip(pyrepr.Str(orEmpty(content["title"])))
+		choice := strings.TrimSpace(pyrepr.Str(orEmpty(content["title"])))
 		if choice == "" {
 			pkgLog().Debug("[photon] ignoring poll vote with empty title")
 			return nil
@@ -1443,14 +1443,14 @@ func (a *PhotonAdapter) applySpectrumPatch(ctx context.Context, nodeBin string) 
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if err != nil {
-		detail := pystr.Strip(firstNonEmpty(stderr.String(), stdout.String()))
+		detail := strings.TrimSpace(firstNonEmpty(stderr.String(), stdout.String()))
 		if detail == "" {
 			detail = err.Error()
 		}
 		pkgLog().Warn("[photon] failed to apply Spectrum mixed attachment patch: " + detail)
 		return
 	}
-	if s := pystr.Strip(stderr.String()); s != "" {
+	if s := strings.TrimSpace(stderr.String()); s != "" {
 		pkgLog().Debug("[photon] " + s)
 	}
 }

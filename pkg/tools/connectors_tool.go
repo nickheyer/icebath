@@ -1,9 +1,9 @@
 package tools
 
 import (
-	"context"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"context"
 )
 
 // ManageOptions are manage_connections' keyword arguments, empty strings standing for None
@@ -16,7 +16,7 @@ type ManageOptions struct {
 
 // Runs one manage_connections call over the named MCP servers
 func ManageConnections(ctx context.Context, env *Env, args map[string]any, opts ManageOptions) string {
-	action := pystr.Lower(pystr.Strip(connStrOr(args["action"])))
+	action := strings.ToLower(strings.TrimSpace(connStrOr(args["action"])))
 	names, targetErr := NormalizeTargets(args["connectors"])
 	if targetErr != "" {
 		return toolErrorJSON(targetErr, nil)

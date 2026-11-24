@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // executionStamp is one completed executions ledger row for a scheduled instant
@@ -107,7 +106,7 @@ func (s *Store) CatchUpOccurrenceCount() int {
 	if err != nil {
 		return 0
 	}
-	n, ok := pyint.Parse(pystr.Strip(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
+	n, ok := pyint.Parse(strings.TrimSpace(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
 	if !ok || n.Sign() < 0 || !n.IsInt64() {
 		return 0
 	}

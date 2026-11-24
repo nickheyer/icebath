@@ -1,6 +1,8 @@
 package state
 
 import (
+	"strings"
+
 	"context"
 	"os"
 	"path/filepath"
@@ -8,12 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Appends pending messages to sessions/<id>.jsonl under the home, returning the path or empty when nothing was written
 func DivertSessionTranscriptJSONL(ctx context.Context, sessionID string, messages []any) (string, error) {
-	sid := pystr.Strip(sessionID)
+	sid := strings.TrimSpace(sessionID)
 	if sid == "" || len(messages) == 0 {
 		return "", nil
 	}

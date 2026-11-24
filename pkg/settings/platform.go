@@ -206,7 +206,7 @@ func PlatformOverrides(ctx context.Context, e Entry) map[string]any {
 		return nil
 	}
 	out := map[string]any{}
-	platforms, _ := lookupPath(layersOf(ctx, homeDir(ctx)).doc, PlatformDisplay.Key)
+	platforms, _ := lookupPath(readLayers(ctx).doc, PlatformDisplay.Key)
 	for name, block := range config.AsMap(platforms) {
 		if v, set := lookupPath(config.AsMap(block), leaf); set && v != nil {
 			out[name] = v

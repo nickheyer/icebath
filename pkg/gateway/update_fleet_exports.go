@@ -2,12 +2,6 @@ package gateway
 
 import "context"
 
-// LegacyGatewayUnit is one pre rename gateway unit file on disk with the scope that holds it
-type LegacyGatewayUnit struct {
-	Name, Path string
-	System     bool
-}
-
 // Directory system scope unit files live in
 func SystemUnitDir() string { return systemUnitDir }
 
@@ -33,17 +27,4 @@ func WaitForGatewayExit(timeout float64) bool { return waitForGatewayExit(timeou
 // Rewrites the installed systemd unit when its definition is out of date, true when it was rewritten
 func RefreshSystemdUnitIfNeeded(ctx context.Context, system bool) (bool, error) {
 	return refreshSystemdUnitIfNeeded(ctx, system)
-}
-
-// True when a pre rename gateway unit file exists in either scope
-func HasLegacyIcebathUnits(ctx context.Context) bool { return hasLegacyIcebathUnits(ctx) }
-
-// Pre rename gateway unit files on disk in discovery order
-func FindLegacyIcebathUnits(ctx context.Context) []LegacyGatewayUnit {
-	found := findLegacyIcebathUnits(ctx)
-	out := make([]LegacyGatewayUnit, len(found))
-	for i, unit := range found {
-		out[i] = LegacyGatewayUnit{Name: unit.name, Path: unit.path, System: unit.system}
-	}
-	return out
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -24,7 +23,7 @@ var (
 
 // Seconds of a duration like 5h, 2d, 1w or a bare number of days, false for anything else
 func parseDurationSeconds(value string) (float64, bool) {
-	s := pystr.Lower(pystr.Strip(value))
+	s := strings.ToLower(strings.TrimSpace(value))
 	if m, _ := bareDaysRE.FindStringMatch(s); m != nil {
 		days, err := pyint.ParseFloat(s)
 		return days * 86400, err == nil
@@ -42,7 +41,7 @@ func parseDurationSeconds(value string) (float64, bool) {
 
 // Epoch of a CLI time value, a duration meaning that long ago and an ISO timestamp taken as written
 func parsePointInTime(value any, flag string) (float64, error) {
-	s := pystr.Strip(pyrepr.Str(value))
+	s := strings.TrimSpace(pyrepr.Str(value))
 	if dur, ok := parseDurationSeconds(s); ok {
 		return float64(time.Now().UnixNano())/1e9 - dur, nil
 	}

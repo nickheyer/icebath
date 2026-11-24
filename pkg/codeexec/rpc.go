@@ -383,13 +383,13 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 		if err != nil {
 			return err
 		}
-		output := pystr.Strip(ls.Output)
+		output := strings.TrimSpace(ls.Output)
 		if output == "" {
 			return nil
 		}
 		var reqFiles []string
 		for _, line := range strings.Split(output, "\n") {
-			f := pystr.Strip(line)
+			f := strings.TrimSpace(line)
 			if f != "" && !strings.HasSuffix(f, ".tmp") && strings.Contains(f, "/req_") {
 				reqFiles = append(reqFiles, f)
 			}

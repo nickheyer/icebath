@@ -29,7 +29,6 @@ func facadeHome(t *testing.T, text string) (string, string) {
 	t.Cleanup(ResetCache)
 	prev := hooks()
 	RegisterConfigFacade(FacadeHooks{
-		SkipDeepMerge: func(prefix, key string) bool { return prefix == "moa" && key == "presets" },
 		ApplyUserMoAPresets: func(merged map[string]any, raw any) {
 			rawMoA, _ := AsMap(raw)["moa"].(map[string]any)
 			presets, ok := rawMoA["presets"].(map[string]any)

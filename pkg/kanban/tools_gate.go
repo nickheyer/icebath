@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -54,7 +53,7 @@ func (k *kanbanCall) get(name string) any { return k.args[name] }
 
 // Profile home a tool environment is bound to, else the home of the context
 func kanbanToolHome(ctx context.Context, env *tools.Env) string {
-	if env != nil && pystr.Strip(env.Home) != "" {
+	if env != nil && strings.TrimSpace(env.Home) != "" {
 		return env.Home
 	}
 	if ctx == nil {
@@ -360,7 +359,7 @@ func rejectDelegatedChildMutation(k *kanbanCall, toolName string) error {
 // Task id argument, else the task the dispatcher spawned this worker for, not ok when neither applies
 func defaultTaskID(k *kanbanCall, arg any) (string, bool) {
 	if arg != nil {
-		if val := pystr.Strip(pyrepr.Str(arg)); val != "" {
+		if val := strings.TrimSpace(pyrepr.Str(arg)); val != "" {
 			return val, true
 		}
 	}
@@ -370,7 +369,7 @@ func defaultTaskID(k *kanbanCall, arg any) (string, bool) {
 	if !isDispatcherOwnedWorker(k.ctx, k.env) {
 		return "", false
 	}
-	if val := pystr.Strip(os.Getenv("ICEBATH_KANBAN_TASK")); val != "" {
+	if val := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_TASK")); val != "" {
 		return val, true
 	}
 	return "", false
@@ -587,7 +586,7 @@ func coerceStrList(value any, name, what string, strip bool) ([]any, bool, error
 	}
 	out := []any{}
 	for _, x := range items {
-		if s := pystr.Strip(pyrepr.Str(x)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(x)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -636,7 +635,7 @@ func mergeArtifacts(metadata any, artifacts []any) (*pyjson.Object, error) {
 	}
 	merged, seen := []any{}, map[string]bool{}
 	for _, item := range append(append([]any{}, prior...), artifacts...) {
-		if s := pystr.Strip(pyrepr.Str(item)); s != "" && !seen[s] {
+		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" && !seen[s] {
 			seen[s] = true
 			merged = append(merged, s)
 		}
@@ -651,7 +650,7 @@ func requireText(k *kanbanCall, name, message string) (any, error) {
 	if message == "" {
 		message = name + " is required"
 	}
-	if !pyrepr.Truthy(value) || pystr.Strip(pyrepr.Str(value)) == "" {
+	if !pyrepr.Truthy(value) || strings.TrimSpace(pyrepr.Str(value)) == "" {
 		return nil, reject(message)
 	}
 	return value, nil
@@ -668,7 +667,7 @@ func parseBoolArg(k *kanbanCall, name string) (bool, error) {
 	if b, isBool := value.(bool); isBool {
 		return b, nil
 	}
-	parsed, known := boolWords[pystr.Lower(pystr.Strip(pyrepr.Str(value)))]
+	parsed, known := boolWords[strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))]
 	if !known {
 		return false, reject(name + " must be a boolean or 'true'/'false'")
 	}

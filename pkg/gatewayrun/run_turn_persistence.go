@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -149,7 +148,7 @@ func (r *GatewayRunner) hmwaShapeAgentResponse(ctx context.Context, agentResult 
 		pkgLog().Debug(fmt.Sprintf("silence marker suppressed on an unaddressed or opted-in turn: platform=%s chat=%s", platformName, chatOrUnknown))
 	}
 	if response == "(empty)" && !silent {
-		model := pystr.Strip(noneText(agentResult["model"]))
+		model := strings.TrimSpace(noneText(agentResult["model"]))
 		if model == "" {
 			model = i18n.T(ctx, "gateway.errors.empty_response_model_label", "", nil)
 		}
@@ -229,8 +228,8 @@ func (r *GatewayRunner) hmwaPrependReasoning(ctx context.Context, agentResult ma
 	if !(show && response != "" && !silent && lastReasoning != "") {
 		return response, nil
 	}
-	lines := strings.Split(strings.ReplaceAll(pystr.Strip(lastReasoning), "\r\n", "\n"), "\n")
-	display := pystr.Strip(lastReasoning)
+	lines := strings.Split(strings.ReplaceAll(strings.TrimSpace(lastReasoning), "\r\n", "\n"), "\n")
+	display := strings.TrimSpace(lastReasoning)
 	if len(lines) > 15 {
 		display = strings.Join(lines[:15], "\n") + i18n.T(ctx, "gateway.reasoning.more_lines", "", map[string]any{"count": len(lines) - 15})
 	}
@@ -309,7 +308,7 @@ func (r *GatewayRunner) hmwaPostTurnHooks(ctx context.Context, hookCtx map[strin
 
 // Failed turn notice appended to the provider specific guidance, or the notice alone
 func hmwaAddFailedTurnNotice(response, notice string) string {
-	response = pystr.Strip(response)
+	response = strings.TrimSpace(response)
 	if response != "" {
 		return response + "\n\n" + notice
 	}

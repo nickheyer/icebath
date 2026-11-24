@@ -18,11 +18,7 @@ func init() {
 	SpeechReady = media.CheckTTSRequirements
 	SpeechToFile = media.TextToSpeechTool
 	OpenTTSStream = func(ctx context.Context, env *tools.Env, adapter PlatformAdapter, chatID string, metadata map[string]any) (TTSStream, error) {
-		c, err := NewStreamingTTSConsumer(ctx, env, adapter, chatID, media.LoadTTSConfig(ctx, env), metadata, nil)
-		if err != nil {
-			return nil, err
-		}
-		return c, nil
+		return NewStreamingTTSConsumer(ctx, env, adapter, chatID, metadata, nil), nil
 	}
 }
 
@@ -61,18 +57,14 @@ type StreamingTTSConsumer struct {
 }
 
 // Consumer resolving the configured chunked streamer, inactive when the provider has no streaming API
-func NewStreamingTTSConsumer(ctx context.Context, env *tools.Env, adapter PlatformAdapter, chatID string, ttsConfig map[string]any, metadata map[string]any, audioFormat *AudioFormat) (*StreamingTTSConsumer, error) {
-	streamer, err := media.ResolveStreamingProvider(ctx, env, ttsConfig, "")
-	if err != nil {
-		return nil, err
-	}
-	return newStreamingTTSConsumerWith(ctx, adapter, chatID, ttsConfig, metadata, audioFormat, streamer), nil
+func NewStreamingTTSConsumer(ctx context.Context, env *tools.Env, adapter PlatformAdapter, chatID string, metadata map[string]any, audioFormat *AudioFormat) *StreamingTTSConsumer {
+	return newStreamingTTSConsumerWith(ctx, env, adapter, chatID, metadata, audioFormat, media.ResolveStreamingProvider(ctx, env, ""))
 }
 
-// Consumer over an already resolved streamer with its chunker taken from tts.streaming
-func newStreamingTTSConsumerWith(ctx context.Context, adapter PlatformAdapter, chatID string, ttsConfig map[string]any, metadata map[string]any, audioFormat *AudioFormat, streamer media.StreamingTTSProvider) *StreamingTTSConsumer {
+// Consumer over an already resolved streamer with its chunker taken from tts.streaming.min_len of the env's profile
+func newStreamingTTSConsumerWith(ctx context.Context, env *tools.Env, adapter PlatformAdapter, chatID string, metadata map[string]any, audioFormat *AudioFormat, streamer media.StreamingTTSProvider) *StreamingTTSConsumer {
 	c := &StreamingTTSConsumer{adapter: adapter, chatID: chatID, ctx: ctx, metadata: metadata, streamer: streamer,
-		chunker: media.SentenceChunkerFromConfig(ttsConfig), queue: make(chan any, 256)}
+		chunker: media.StreamingSentenceChunker(ctx, env), queue: make(chan any, 256)}
 	switch {
 	case streamer != nil:
 		c.audioFormat = c.streamerFormat()

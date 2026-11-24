@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -75,7 +74,7 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	if out = discordRunAction(ctx, env, "list_roles", true, "discord", nil); !strings.Contains(out, "Unknown action: list_roles") || !strings.Contains(out, `"available_actions": ["search_members", "fetch_messages", "create_thread"]`) {
 		t.Fatalf("unknown %s", out)
 	}
-	env.Config = config.Tree{"discord": map[string]any{"server_actions": "fetch_messages, bogus"}}
+	setHomeConfigKey(t, env, "discord.server_actions", "fetch_messages, bogus")
 	if out = discordRunAction(ctx, env, "search_members", true, "discord", map[string]any{"guild_id": "g", "query": "a"}); !strings.Contains(out, "Action 'search_members' is disabled by config (discord.server_actions). Allowed: fetch_messages") {
 		t.Fatalf("allowlist %s", out)
 	}
@@ -90,7 +89,7 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	if schema := discordGetDynamicSchema(env, true, "discord"); schema == nil || !strings.Contains(schema.Vals["description"].(string), "fetch_messages(channel_id)") || strings.Contains(schema.Vals["description"].(string), "search_members(") {
 		t.Fatalf("allowlisted schema %#v", schema)
 	}
-	env.Config = nil
+	writeHomeConfig(t, env, "{}\n")
 
 	t.Setenv("DISCORD_BOT_TOKEN", "bot-b")
 	cache := `{"` + discordTokenCacheKey("bot-b") + `": {"caps": {"has_members_intent": false, "has_message_content": false, "detected": true}, "ts": 9999999999}}`

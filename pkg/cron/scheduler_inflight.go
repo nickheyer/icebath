@@ -1,6 +1,8 @@
 package cron
 
 import (
+	"strings"
+
 	"context"
 	"math"
 	"runtime"
@@ -10,8 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -287,27 +288,10 @@ func (s *Store) releaseRunningJob(jobID, h string, owner any) {
 	delete(inflight.scopeIsolated, k)
 }
 
-// Stale allowance floor in minutes from cron.inflight_max_minutes, the env escape hatch, then thirty
+// Stale allowance floor in minutes from cron.inflight_max_minutes, thirty when unset or not positive
 func (s *Store) inflightMinAllowanceMinutes() float64 {
-	if cfg, err := s.loadConfig(); err == nil {
-		if cron, ok := cfg["cron"].(map[string]any); ok {
-			if raw, present := cron["inflight_max_minutes"]; present && raw != nil {
-				if v, err := pyint.Float(raw); err == nil && v > 0 {
-					return v
-				}
-			}
-		}
-	}
-	raw := pystr.Strip(s.cronEnvSetting(context.Background(), "ICEBATH_CRON_INFLIGHT_MAX_MINUTES", ""))
-	if raw != "" {
-		v, err := pyint.ParseFloat(raw)
-		if err == nil {
-			if v > 0 {
-				return v
-			}
-		} else {
-			s.log.Warn("Invalid ICEBATH_CRON_INFLIGHT_MAX_MINUTES=" + pyrepr.StrRepr(raw) + "; using default 30.0")
-		}
+	if v, ok := settings.CronInflightMaxMinutes.Lookup(s.settingsCtx()); ok && v > 0 {
+		return v.Minutes()
 	}
 	return inflightMinAllowanceMinutes
 }
@@ -354,7 +338,7 @@ func (s *Store) jobIntervalMinutes(job *Job) (float64, bool) {
 		return 0, false
 	}
 	schedule := job.Schedule
-	if schedule.Kind == "" && pystr.Strip(schedule.Raw) != "" {
+	if schedule.Kind == "" && strings.TrimSpace(schedule.Raw) != "" {
 		parsed, err := s.parseSchedule(schedule.Raw)
 		if err != nil || parsed == nil {
 			return 0, false

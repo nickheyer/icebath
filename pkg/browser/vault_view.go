@@ -5,9 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -171,28 +172,25 @@ func VaultSources(ctx context.Context) ([]VaultSourceView, error) {
 	return out, nil
 }
 
-// Turns a password manager on or off for browser logins in the config of the home, on being the absence of the opt out
-func setVaultSource(ctx context.Context, h, name string, on bool) error {
-	cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
-	doc := map[string]any(cfg)
-	section := ensureConfigDict(ensureConfigDict(doc, "vault"), name)
+// Turns a known password manager on or off for browser logins in the profile of the home, on being the absence of the opt out
+func setVaultSource(ctx context.Context, h string, cls externalLoginBackend, on bool) error {
+	ctx = home.WithOverride(ctx, h)
+	var err error
 	if on {
-		delete(section, "enabled")
+		_, err = settings.Reset(ctx, cls.enabled.Key, settings.Global)
 	} else {
-		section["enabled"] = false
+		_, err = settings.Set(ctx, cls.enabled.Key, false, settings.Global)
 	}
-	return config.SaveConfig(ctx, h, doc, config.SaveOptions{})
+	return err
 }
 
 // SetVaultSource turns a password manager icebath knows on or off for browser logins
 func SetVaultSource(ctx context.Context, h, name string, on bool) error {
-	if !slices.ContainsFunc(externalBackendClasses(), func(cls externalLoginBackend) bool { return cls.name == name }) {
+	cls, known := externalBackendClass(name)
+	if !known {
 		return &vault.VaultError{Msg: "unknown password manager: " + name}
 	}
-	return setVaultSource(ctx, h, name, on)
+	return setVaultSource(ctx, h, cls, on)
 }
 
 // Where the key lives, read from the location the store reports

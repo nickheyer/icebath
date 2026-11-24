@@ -12,7 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Env copy telling availability checks whether kanban was named explicitly in this schema build
@@ -507,33 +507,10 @@ func (r *Registry) computeToolDefinitions(ctx context.Context, env *Env, opts De
 	return filtered
 }
 
-// Model id and model section of the env config, the id empty when unset
-func activeModelConfig(env *Env) (string, map[string]any) {
-	if env == nil || env.Config == nil {
-		return "", nil
-	}
-	modelCfg, _ := env.Config.Get("model").(map[string]any)
-	if modelCfg == nil {
-		return "", nil
-	}
-	rawModelID := modelCfg["model"]
-	if rawModelID == nil || rawModelID == "" {
-		rawModelID = modelCfg["default"]
-	}
-	modelID := ""
-	switch t := rawModelID.(type) {
-	case map[string]any:
-		modelID, _ = config.SplitModelDefault(t)
-	case nil:
-	default:
-		modelID = fmt.Sprint(t)
-	}
-	return strings.TrimSpace(modelID), modelCfg
-}
-
 // Active model's context length for the tool search gate, zero when unresolvable
 func resolveActiveContextLength(ctx context.Context, env *Env) int {
-	modelID, modelCfg := activeModelConfig(env)
+	sctx := envHomeCtx(ctx, env)
+	modelID := strings.TrimSpace(settings.Model.Get(sctx))
 	if modelID == "" {
 		return 0
 	}
@@ -541,18 +518,11 @@ func resolveActiveContextLength(ctx context.Context, env *Env) int {
 		panic("tools: the provider metadata wiring must install RuntimeProviderCredentials, CachedContextLength and ModelContextLength before tool definitions resolve a model window")
 	}
 	configCtx := 0
-	switch n := modelCfg["context_length"].(type) {
-	case int:
+	if n, ok := settings.ModelContextLength.Lookup(sctx); ok {
 		configCtx = max(n, 0)
-	case int64:
-		configCtx = int(max(n, 0))
-	case bool:
-		if n {
-			configCtx = 1
-		}
 	}
-	provider := strings.TrimSpace(configStr(modelCfg["provider"]))
-	baseURL := strings.TrimSpace(configStr(modelCfg["base_url"]))
+	provider := strings.TrimSpace(settings.ModelProvider.Get(sctx))
+	baseURL := strings.TrimSpace(settings.ModelBaseURL.Get(sctx))
 	apiKey := ""
 	if provider != "" {
 		rtBase, rtKey, err := RuntimeProviderCredentials(ctx, env, provider, modelID)
@@ -572,14 +542,6 @@ func resolveActiveContextLength(ctx context.Context, env *Env) int {
 		}
 	}
 	return max(ModelContextLength(ctx, ContextLengthQuery{Model: modelID, BaseURL: baseURL, APIKey: apiKey, Provider: provider, ConfigContextLength: configCtx}), 0)
-}
-
-// Python str of a config value with falsy values read as empty
-func configStr(v any) string {
-	if !pyrepr.Truthy(v) {
-		return ""
-	}
-	return pyrepr.Str(v)
 }
 
 // ContextLengthQuery carries the routing a provider aware context window lookup needs, zero ConfigContextLength means unset

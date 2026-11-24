@@ -242,7 +242,7 @@ func TestEachNewSessionReadsItsProfilesPrefillOnceAndWorkersMatch(t *testing.T) 
 	if got := configLoadersFirst(t, o.inProcess(t, first, "sid-2")); got != "EDITED" {
 		t.Fatalf("new session prefill %v", got)
 	}
-	moved := configLoadersBuilt(t, ctx, launch, map[string]any{"agent": map[string]any{"prefill_messages_file": filepath.Join(home, "moved.json")}})
+	moved := configLoadersBuilt(t, ctx, launch, map[string]any{"prefill_messages_file": filepath.Join(home, "moved.json")})
 	if got := configLoadersFirst(t, o.worker(t, moved, "sid-3")); got != "MOVED" {
 		t.Fatalf("moved session prefill %v", got)
 	}

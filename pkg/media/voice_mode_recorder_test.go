@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 type fakeClock struct {
@@ -519,7 +520,7 @@ func TestStopUsesConfiguredSilenceThresholdStopThresholdTracksReconfiguredThresh
 func TestStopUsesConfiguredSilenceThresholdStopStillDiscardsBelowDefaultThresholdWithoutConfig(t *testing.T) {
 	withVoiceTempDir(t)
 	r := NewAudioRecorder()
-	if r.silenceThreshold != silenceRMSThreshold {
+	if r.silenceThreshold != float64(settings.VoiceSilenceThreshold.Default) {
 		t.Fatalf("default threshold %v", r.silenceThreshold)
 	}
 	armRecorder(r, [][]int16{make([]int16, 16000)}, 160)

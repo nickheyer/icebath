@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -75,7 +74,7 @@ type patchedRun struct {
 	constructed bool
 }
 
-func runJobPatched(t *testing.T, s *Store, job *Job, resolve runtimeResolve, skillView func(context.Context, string, config.Tree, string) string) patchedRun {
+func runJobPatched(t *testing.T, s *Store, job *Job, resolve runtimeResolve, skillView func(context.Context, string, string) string) patchedRun {
 	t.Helper()
 	if resolve == nil {
 		resolve = func(context.Context, string, string, string, string, string) (*provider.Runtime, error) {
@@ -229,9 +228,9 @@ func TestOptOutPreflightFalseRestoresOldBehavior(t *testing.T) {
 }
 
 // Skill view answering one fixed payload for every name
-func fixedSkillView(payload map[string]any) func(context.Context, string, config.Tree, string) string {
+func fixedSkillView(payload map[string]any) func(context.Context, string, string) string {
 	raw, _ := json.Marshal(payload)
-	return func(context.Context, string, config.Tree, string) string { return string(raw) }
+	return func(context.Context, string, string) string { return string(raw) }
 }
 
 func TestSkillReadinessUnreadySkillBlocks(t *testing.T) {

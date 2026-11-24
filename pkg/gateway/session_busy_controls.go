@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -185,7 +184,7 @@ func verboseConfig(ctx context.Context, a *SessionAuthority, actor Principal, re
 // Session scoped reasoning display, the launch default when the session never set it
 func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, write bool) (*pyjson.Object, error) {
 	value, _ := params.Get("value")
-	word := pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+	word := strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	setting, known := yoloWords[word]
 	if write && !known {
 		return nil, runtimeRefusal("invalid_params")
@@ -235,7 +234,7 @@ func launchShowsReasoning(ctx context.Context, policy *LocalSessionPolicy) bool 
 	if policy == nil || !configDefaultSources[policy.Source] {
 		return false
 	}
-	return settings.ShowThinking.Get(settings.WithPlatform(settings.WithSession(ctx, ""), settings.LocalPlatform))
+	return settings.ShowThinking.Get(settings.WithPlatform(settings.WithoutSession(ctx), settings.LocalPlatform))
 }
 
 // Session scoped fast tier pick the next turn reads, normal pinning the normal tier
@@ -278,7 +277,7 @@ func serviceTierConfig(ctx context.Context, a *SessionAuthority, actor Principal
 // Session scoped approval bypass, persisted on the route before the live flip
 func yoloConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, write bool) (*pyjson.Object, error) {
 	value, _ := params.Get("value")
-	word := pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+	word := strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	if _, known := yoloWords[word]; write && value != nil && !known {
 		return nil, runtimeRefusal("invalid_params")
 	}

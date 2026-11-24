@@ -134,7 +134,7 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 			return "", err
 		}
 		var roleClass strings.Builder
-		for _, c := range pystr.Lower(pyrepr.Str(role)) {
+		for _, c := range strings.ToLower(pyrepr.Str(role)) {
 			if pystr.IsAlnum(c) || c == '-' || c == '_' {
 				roleClass.WriteRune(c)
 			} else {

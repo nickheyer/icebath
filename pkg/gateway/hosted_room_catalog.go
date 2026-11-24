@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -369,7 +368,7 @@ func localRoomLinkEndpoint(ctx context.Context, value any) (*pyjson.Object, erro
 	if pyrepr.Truthy(configured) {
 		text = pyrepr.Str(configured)
 	}
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return pyjson.ObjectOf("available", false, "reason", "not_configured"), nil
 	}
 	url, security, err := ValidateRoomLinkURL(configured)
@@ -384,7 +383,7 @@ func localRoomLinkEndpoint(ctx context.Context, value any) (*pyjson.Object, erro
 
 // Room link address a home's settings give, nil when none is set
 func roomLinkURLFromConfig(ctx context.Context, homeDir string) *string {
-	if value := pystr.Strip(settings.GatewayRoomLinkURL.Get(home.WithOverride(ctx, homeDir))); value != "" {
+	if value := strings.TrimSpace(settings.GatewayRoomLinkURL.Get(home.WithOverride(ctx, homeDir))); value != "" {
 		return &value
 	}
 	return nil
@@ -410,13 +409,13 @@ func ValidateRoomLinkURL(value any) (string, string, error) {
 	if pyrepr.Truthy(value) {
 		raw = pyrepr.Str(value)
 	}
-	raw = strings.TrimRight(pystr.Strip(raw), "/")
+	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	invalid := &HostedRoomPeerError{"target_url is invalid"}
 	parsed, err := pyurl.Split(raw)
 	if err != nil {
 		return "", "", invalid
 	}
-	hostname := pystr.Lower(strings.TrimRight(parsed.Hostname(), "."))
+	hostname := strings.ToLower(strings.TrimRight(parsed.Hostname(), "."))
 	if _, _, err := parsed.Port(); err != nil {
 		return "", "", invalid
 	}
@@ -426,7 +425,7 @@ func ValidateRoomLinkURL(value any) (string, string, error) {
 	if parsed.Query != "" || parsed.Fragment != "" {
 		return "", "", &HostedRoomPeerError{"target_url must not include query or fragment"}
 	}
-	scheme := pystr.Lower(parsed.Scheme)
+	scheme := strings.ToLower(parsed.Scheme)
 	if scheme == "https" {
 		return raw, "tls", nil
 	}

@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -96,7 +97,7 @@ func (r *GatewayRunner) sessionHasCompressionInFlight(ctx context.Context, sessi
 
 // Steerable text of a busy follow up with its voice media transcribed first, the caption kept on failure
 func (r *GatewayRunner) prepareBusySteerText(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	text := pystr.Strip(event.Text)
+	text := strings.TrimSpace(event.Text)
 	if len(pendingEventAudioPaths(event)) == 0 {
 		return text, nil
 	}
@@ -111,7 +112,7 @@ func (r *GatewayRunner) prepareBusySteerText(ctx context.Context, event *gateway
 	if enriched == "" {
 		enriched = text
 	}
-	return pystr.Strip(enriched), nil
+	return strings.TrimSpace(enriched), nil
 }
 
 // Origin source fields carried into a steer injection in their upstream order
@@ -166,7 +167,7 @@ func steerOriginHasher(field string) func(string) string {
 
 // Prefixes the steer text with the event origin as JSON data, hashed where the platform redacts PII
 func (r *GatewayRunner) steerTextWithOrigin(ctx context.Context, text string, event *gateway.MessageEvent) (string, error) {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return text, nil
 	}
 	source := event.Source
@@ -292,11 +293,11 @@ func (r *GatewayRunner) routePlaintextApprovalWhileBusy(ctx context.Context, eve
 	if !event.AllowGatewayControl || !tools.HasBlockingApproval(sessionKey) {
 		return false
 	}
-	match, ok := plaintextApprovalWords(ctx)[strings.ToLower(pystr.Strip(event.Text))]
+	match, ok := plaintextApprovalWords(ctx)[strings.ToLower(strings.TrimSpace(event.Text))]
 	if !ok {
 		return false
 	}
-	event.Text = pystr.Rstrip("/" + match.verb + " " + match.args)
+	event.Text = strings.TrimRightFunc("/"+match.verb+" "+match.args, unicode.IsSpace)
 	handler := r.handleDenyCommand
 	if match.verb == "approve" {
 		handler = r.handleApproveCommand
@@ -355,7 +356,7 @@ func (r *GatewayRunner) resolveBusySteerOrRedirect(ctx context.Context, event *g
 			effectiveMode = "queue"
 		}
 	} else if effectiveMode == "interrupt" && plainText && agentLive && runningAgent.SupportsActiveTurnRedirect() {
-		redirected = r.redirectActiveTurn(ctx, runningAgent, pystr.Strip(event.Text), sessionKey, event)
+		redirected = r.redirectActiveTurn(ctx, runningAgent, strings.TrimSpace(event.Text), sessionKey, event)
 	}
 	return busySteerOutcome{effectiveMode: effectiveMode, demotedForSubagents: demotedForSubagents,
 		demotedForCompression: demotedForCompression, steered: steered, redirected: redirected}, nil

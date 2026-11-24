@@ -227,7 +227,7 @@ func croniterHashExpand(field int, expr string) (string, error) {
 
 // Expands an expression the way croniter does constructing an iterator, raising its exact messages
 func croniterExpand(exprFormat string) (*croniterSpec, error) {
-	efl := pystr.Lower(exprFormat)
+	efl := strings.ToLower(exprFormat)
 	if alias, ok := croniterAliases[efl]; ok {
 		efl = alias
 	}

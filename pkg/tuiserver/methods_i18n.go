@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -60,7 +59,7 @@ func i18nLanguages(ctx context.Context, rid any, params map[string]any) (resp ma
 		languages = append(languages, map[string]any{"id": opt.ID, "endonym": opt.Endonym, "rtl": opt.RTL, "source": opt.Source, "surfaces": surfaces})
 	}
 	result := map[string]any{"languages": languages, "current": i18n.GetLanguage(ctx)}
-	if asked := pystr.Strip(strOr(params["resolve"])); asked != "" {
+	if asked := strings.TrimSpace(strOr(params["resolve"])); asked != "" {
 		result["resolved"] = i18n.ResolveLanguageID(ctx, asked, "")
 	}
 	return ok(rid, result)

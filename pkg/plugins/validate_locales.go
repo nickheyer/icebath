@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,9 +18,9 @@ import (
 
 var localeKeyExports = map[string]string{"tui": "_keys.tui.json"}
 
-// English key set of a surface, nil when the bundled reference is unavailable
-func ReferenceKeys(surface string) map[string]bool {
-	keys, err := referenceKeys(surface)
+// English key set of a surface in the catalogs of the profile of ctx, nil when the bundled reference is unavailable
+func ReferenceKeys(ctx context.Context, surface string) map[string]bool {
+	keys, err := referenceKeys(ctx, surface)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("i18n reference keys for %s unavailable: %v", surface, err))
 		return nil
@@ -27,8 +28,9 @@ func ReferenceKeys(surface string) map[string]bool {
 	return keys
 }
 
-func referenceKeys(surface string) (map[string]bool, error) {
-	locales := i18n.LocalesDir()
+// English key set of a surface in the catalogs of the profile of ctx, nil without an error when the tree carries no key list for it
+func referenceKeys(ctx context.Context, surface string) (map[string]bool, error) {
+	locales := i18n.LocalesDir(ctx)
 	if surface == i18n.CoreSurface {
 		raw, err := fs.ReadFile(locales.FS, "en.yaml")
 		if err != nil {
@@ -79,7 +81,7 @@ func referenceKeys(surface string) (map[string]bool, error) {
 }
 
 // Locale pack admission checks, nothing when provides_locales is absent
-func checkLanguagePacks(report *ValidationReport, manifest map[string]any, pluginDir string) {
+func checkLanguagePacks(ctx context.Context, report *ValidationReport, manifest map[string]any, pluginDir string) {
 	raw, present := manifest["provides_locales"]
 	key := filepath.Base(pluginDir)
 	if config.PyTruthy(manifest["name"]) {
@@ -111,7 +113,7 @@ func checkLanguagePacks(report *ValidationReport, manifest map[string]any, plugi
 			continue
 		}
 		for _, f := range files {
-			checkLocaleFile(report, lang, f.Surface, f.Path)
+			checkLocaleFile(ctx, report, lang, f.Surface, f.Path)
 		}
 	}
 	declaredSet := toSet(declared)
@@ -140,7 +142,7 @@ func loadLocaleDocument(path string) (any, error) {
 	return config.FastSafeLoad(raw)
 }
 
-func checkLocaleFile(report *ValidationReport, lang, surface, path string) {
+func checkLocaleFile(ctx context.Context, report *ValidationReport, lang, surface, path string) {
 	label := "locale " + lang
 	if surface != i18n.CoreSurface {
 		label = fmt.Sprintf("locale %s.%s", lang, surface)
@@ -166,7 +168,7 @@ func checkLocaleFile(report *ValidationReport, lang, surface, path string) {
 		return
 	}
 	flat := i18n.Flatten(mapping, "", nil)
-	reference := ReferenceKeys(surface)
+	reference := ReferenceKeys(ctx, surface)
 	if reference == nil {
 		report.add(label, true, fmt.Sprintf("%s: %d key(s); no %s key reference available, key check skipped", name, len(flat), surface))
 		return

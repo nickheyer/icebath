@@ -1,13 +1,13 @@
 package wecom
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -72,7 +72,7 @@ func NewChatSendQueue(name string) *ChatSendQueue {
 
 // Token usage of a chat, created with the window starting now
 func (q *ChatSendQueue) getTokenUsage(chatID string) *tokenUsage {
-	key := pystr.Strip(chatID)
+	key := strings.TrimSpace(chatID)
 	u, ok := q.tokenUsage[key]
 	if !ok {
 		u = &tokenUsage{lastReset: monotonic()}
@@ -111,7 +111,7 @@ func (q *ChatSendQueue) lane(isControl bool) (map[string]*sendLane, string) {
 
 // Queues a send for the chat and waits for its result, FIFO per chat and lane
 func (q *ChatSendQueue) EnqueueChatSend(ctx context.Context, chatID string, send func(ctx context.Context) (any, error), isControl bool) (any, error) {
-	key := pystr.Strip(chatID)
+	key := strings.TrimSpace(chatID)
 	q.mu.Lock()
 	queues, laneName := q.lane(isControl)
 	l, ok := queues[key]

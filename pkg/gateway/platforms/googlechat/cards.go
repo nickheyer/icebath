@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Compiled Python pattern, panicking at init on a malformed constant
@@ -55,7 +54,7 @@ func FormatMessage(content string) string {
 	}
 	text := sub(fencedRe, content, func(m regexp2.Match) string { return ph(m.String()) })
 	text = sub(inlineRe, text, func(m regexp2.Match) string { return ph(m.String()) })
-	text = sub(headerRe, text, func(m regexp2.Match) string { return ph("*" + pystr.Strip(group(m, 1)) + "*") })
+	text = sub(headerRe, text, func(m regexp2.Match) string { return ph("*" + strings.TrimSpace(group(m, 1)) + "*") })
 	text = sub(boldItalRe, text, func(m regexp2.Match) string { return ph("*_" + group(m, 1) + "_*") })
 	text = sub(boldRe, text, func(m regexp2.Match) string { return ph("*" + group(m, 1) + "*") })
 	text = sub(linkRe, text, func(m regexp2.Match) string { return ph("<" + group(m, 2) + "|" + group(m, 1) + ">") })
@@ -88,7 +87,7 @@ func getOr(d map[string]any, key string, def any) any {
 func requiredStr(m map[string]any, key, context string) (string, error) {
 	value := ""
 	if v := m[key]; v != nil {
-		value = pystr.Strip(pyrepr.Str(v))
+		value = strings.TrimSpace(pyrepr.Str(v))
 	}
 	if value == "" {
 		return "", fmt.Errorf("%s.%s is required", context, key)
@@ -295,7 +294,7 @@ func widgetToChat(widget any) (*pyjson.Object, error) {
 	if !ok {
 		return nil, fmt.Errorf("card widgets must be objects")
 	}
-	widgetType := pystr.Strip(strOr(d["type"], ""))
+	widgetType := strings.TrimSpace(strOr(d["type"], ""))
 	renderer, ok := widgetRenderers[widgetType]
 	if !ok {
 		shown := widgetType

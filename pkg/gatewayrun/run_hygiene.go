@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"math"
@@ -10,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -224,7 +225,7 @@ func stampHygieneCompressionProvenance(a *agent.AIAgent, desc, provenance, debug
 func seedHygieneSystemPrompt(a *agent.AIAgent, sessionRow *pyjson.Object) bool {
 	stored := ""
 	if sessionRow != nil {
-		if raw, ok := sessionRow.GetOr("system_prompt", nil).(string); ok && pystr.Strip(raw) != "" {
+		if raw, ok := sessionRow.GetOr("system_prompt", nil).(string); ok && strings.TrimSpace(raw) != "" {
 			stored = raw
 		}
 	}

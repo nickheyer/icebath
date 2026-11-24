@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Existing text and the new text joined by a newline when both are set, else the set one
@@ -33,7 +32,7 @@ func CoercePlaintextGatewayCommand(event *MessageEvent) {
 	if event == nil || event.MessageType != MessageTypeText {
 		return
 	}
-	text := pystr.Strip(event.Text)
+	text := strings.TrimSpace(event.Text)
 	if text == "" || strings.HasPrefix(text, "/") {
 		return
 	}
@@ -102,13 +101,13 @@ func mergeCaption(existingText, newText string) string {
 	if existingText == "" {
 		return newText
 	}
-	stripped := pystr.Strip(newText)
+	stripped := strings.TrimSpace(newText)
 	for _, c := range strings.Split(existingText, "\n\n") {
-		if pystr.Strip(c) == stripped {
+		if strings.TrimSpace(c) == stripped {
 			return existingText
 		}
 	}
-	return pystr.Strip(existingText + "\n\n" + newText)
+	return strings.TrimSpace(existingText + "\n\n" + newText)
 }
 
 // Inline flags padded with unset entries up to the attachment count
@@ -165,7 +164,7 @@ func MergePendingMessageEvent(pending map[string]*MessageEvent, sessionKey strin
 
 // Reports whether the error text looks like a transient network failure
 func isRetryableError(errText string) bool {
-	lowered := pystr.Lower(errText)
+	lowered := strings.ToLower(errText)
 	for _, pat := range retryableErrorPatterns {
 		if strings.Contains(lowered, pat) {
 			return true
@@ -181,7 +180,7 @@ func isRateLimitedError(errText string) bool {
 
 // Reports read and write timeouts, which are neither retried nor sent again as plain text
 func isTimeoutError(errText string) bool {
-	lowered := pystr.Lower(errText)
+	lowered := strings.ToLower(errText)
 	for _, pat := range []string{"timed out", "readtimeout", "writetimeout"} {
 		if strings.Contains(lowered, pat) {
 			return true
@@ -208,7 +207,7 @@ func ResolveChannelPrompt(configExtra map[string]any, channelID string, parentID
 		if !present || prompt == nil {
 			continue
 		}
-		if text := pystr.Strip(pyrepr.Str(prompt)); text != "" {
+		if text := strings.TrimSpace(pyrepr.Str(prompt)); text != "" {
 			return text, true
 		}
 	}
@@ -243,7 +242,7 @@ func ResolveChannelSkills(configExtra map[string]any, channelID string, parentID
 			}
 			switch v := skills.(type) {
 			case string:
-				if s := pystr.Strip(v); s != "" {
+				if s := strings.TrimSpace(v); s != "" {
 					return []string{s}, true
 				}
 				return nil, false
@@ -258,7 +257,7 @@ func ResolveChannelSkills(configExtra map[string]any, channelID string, parentID
 					if !isStr {
 						continue
 					}
-					if nm := pystr.Strip(s); nm != "" && !seen[nm] {
+					if nm := strings.TrimSpace(s); nm != "" && !seen[nm] {
 						seen[nm] = true
 						out = append(out, nm)
 					}

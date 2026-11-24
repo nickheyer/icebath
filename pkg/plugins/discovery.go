@@ -171,14 +171,14 @@ func intersects(a, b map[string]bool) bool {
 }
 
 // Decides how one winning manifest is handled by the enable gate
-func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[string]bool, enabledPresent bool) ManifestGate {
+func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[string]bool) ManifestGate {
 	key := m.ID()
 	names := manifestNames(m)
 	placeholder := func(err, level, log string, enabledFlag bool) ManifestGate {
 		return ManifestGate{Action: "placeholder", Enabled: enabledFlag, Error: err, Log: log, Level: level}
 	}
 	if intersects(names, disabled) {
-		if enabledPresent && intersects(names, enabled) {
+		if intersects(names, enabled) {
 			return placeholder(InBothLists, "warn", fmt.Sprintf("Plugin '%s' is listed in both plugins.enabled and plugins.disabled; the disable "+
 				"wins and it will not load — remove it from one of the two lists", key), false)
 		}
@@ -198,7 +198,7 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 			return ManifestGate{Action: "defer"}
 		}
 	}
-	if !enabledPresent || !intersects(names, enabled) {
+	if !intersects(names, enabled) {
 		return placeholder(fmt.Sprintf("not enabled in config (run `icebath plugins enable %s` to activate)", key), "debug", fmt.Sprintf("Skipping '%s' (not in plugins.enabled)", key), false)
 	}
 	if m.Source != "bundled" {
@@ -214,29 +214,12 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 	return ManifestGate{Action: "load"}
 }
 
-// The plugins.disabled deny list of a home
-func disabledPlugins(cfg map[string]any) map[string]bool {
-	list, _ := pluginNameList(cfg, "disabled")
-	return toSet(list)
-}
-
-// The plugins.enabled allow list of a home and whether the key exists
-func enabledPlugins(cfg map[string]any) (map[string]bool, bool) {
-	list, ok := pluginNameList(cfg, "enabled")
-	if !ok {
-		return nil, false
-	}
-	return toSet(list), true
-}
-
 // Keys the loader skips because both config lists name them
 func PluginsInBothLists(h string) []string {
-	cfg := loadConfigOrEmpty(h)
-	disabled := disabledPlugins(cfg)
-	enabled, present := enabledPlugins(cfg)
+	disabled, enabled := getDisabledSet(h), getEnabledSet(h)
 	var out []string
 	for key, m := range ResolveManifestWinners(CollectDirectoryManifests(h)) {
-		if GateManifest(h, m, disabled, enabled, present).Error == InBothLists {
+		if GateManifest(h, m, disabled, enabled).Error == InBothLists {
 			out = append(out, key)
 		}
 	}

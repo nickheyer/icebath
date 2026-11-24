@@ -3,15 +3,14 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -22,9 +21,6 @@ var (
 		return err
 	}
 	agentSetupVerboseLogging = logging.SetupVerboseLogging
-	promptCacheConfigLoader  = func(ctx context.Context) (map[string]any, error) {
-		return config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	}
 )
 
 // Fresh control flow state for interrupts, steer, redirect, delegation and background review
@@ -104,49 +100,17 @@ func (a *AIAgent) anthropicPromptCachePolicy(ctx context.Context) (bool, bool) {
 	}, provider.CacheDestination{})
 }
 
-// Resolves the prompt caching policy and the cache ttl tier, auto by session pace, disabled ttls off
+// Resolves the prompt caching policy and the cache ttl tier in effect for ctx, auto by session pace, disabled ttls off
 func initPromptCacheConfig(ctx context.Context, a *AIAgent) {
 	a.usePromptCaching, a.useNativeCacheLayout = a.anthropicPromptCachePolicy(ctx)
 	a.cacheDisabled = false
-	a.cacheTTL = "5m"
-	cfg, err := promptCacheConfigLoader(ctx)
-	errClass := ""
-	var pcCfg map[string]any
-	if err != nil {
-		errClass = pyErrorClass(err)
-	} else {
-		switch v := cfg["prompt_caching"].(type) {
-		case map[string]any:
-			pcCfg = v
-		default:
-			if pyTruthy(v) {
-				errClass = "AttributeError"
-			}
-		}
-	}
-	ttl, ok := pcCfg["cache_ttl"]
-	if !ok {
-		ttl = "5m"
-	}
-	switch ttl.(type) {
-	case []any, map[string]any:
-		if errClass == "" {
-			errClass = "TypeError"
-		}
-	}
-	if errClass != "" {
-		pkgLog().Warn(fmt.Sprintf("Agent configuration for prompt_caching.cache_ttl could not be loaded (%s); "+
-			"using default prompt caching settings. Run 'icebath config check' "+
-			"and correct the reported configuration.", errClass))
-		return
-	}
-	s, isStr := ttl.(string)
-	switch {
-	case isStr && (s == "5m" || s == "1h"):
-		a.cacheTTL = s
-	case isStr && s == "auto":
+	a.cacheTTL = settings.PromptCachingCacheTtl.Default
+	switch ttl := settings.PromptCachingCacheTtl.Get(ctx); ttl {
+	case "5m", "1h":
+		a.cacheTTL = ttl
+	case "auto":
 		a.cacheTTL = provider.AutoCacheTTLForSource(provider.SessionSourceFor(a.env, a.platform))
-	case provider.CacheTTLMeansDisabled(ttl):
+	case "off":
 		a.usePromptCaching = false
 		a.useNativeCacheLayout = false
 		a.cacheTTL = ""

@@ -1,12 +1,13 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -79,7 +80,7 @@ func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
 		if raw != nil {
 			text = pyrepr.Str(raw)
 		}
-		rest, preview, aggressive := provider.ExtractCompressFlags(pystr.Strip(text))
+		rest, preview, aggressive := provider.ExtractCompressFlags(strings.TrimSpace(text))
 		partial, keepLast, focus := provider.ParsePartialCompressArgs(rest)
 		if focus != nil && *focus == "" {
 			focus = nil
@@ -246,7 +247,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 	inPlace := true
 	if raw, has := options["in_place"]; has && raw != nil {
 		if text, isText := raw.(string); isText {
-			lowered := pystr.Lower(pystr.Strip(text))
+			lowered := strings.ToLower(strings.TrimSpace(text))
 			inPlace = lowered == "1" || lowered == "true" || lowered == "yes" || lowered == "on"
 		} else {
 			inPlace = pyTruthy(raw)

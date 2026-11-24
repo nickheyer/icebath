@@ -14,19 +14,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Spawn metadata a Windows launcher sets on a breakaway gateway child
@@ -34,7 +32,7 @@ const windowsGatewayBreakawayEnv = "_ICEBATH_GATEWAY_BREAKAWAY"
 
 // Environment flag value read the truthy way, 1 true yes or on
 func truthyEnv(name string) bool {
-	switch pystr.Lower(pystr.Strip(os.Getenv(name))) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -210,28 +208,13 @@ func guardOfficialDockerRootGateway(w io.Writer) error {
 	return exitWith(1)
 }
 
-// Arms the startup liveness watchdog after the conflict guards, bridging the gateway config into its env knobs
+// Arms the startup liveness watchdog after the conflict guards, re-arming it when this profile's time limit differs from the one armed at launch
 func applyStartupWatchdogConfig(ctx context.Context) {
-	timeoutBridged := false
-	if cfg, err := config.Load(home.Dir(ctx), nil); err == nil {
-		gw, _ := cfg["gateway"].(map[string]any)
-		if _, set := os.LookupEnv(gateway.EnvStartupWatchdog); !set {
-			if enabled, present := gw["startup_watchdog"]; present && !pyrepr.Truthy(enabled) {
-				os.Setenv(gateway.EnvStartupWatchdog, "0")
-			}
-		}
-		if timeout, present := gw["startup_watchdog_timeout_seconds"]; present && timeout != nil {
-			if _, set := os.LookupEnv(gateway.EnvStartupWatchdogTimeoutS); !set {
-				os.Setenv(gateway.EnvStartupWatchdogTimeoutS, pyrepr.Str(timeout))
-				timeoutBridged = true
-			}
-		}
-	}
-	if gateway.StartupWatchdogDisabled() {
+	if gateway.StartupWatchdogDisabled(ctx) {
 		gateway.DisarmStartupWatchdog()
 		return
 	}
-	if timeoutBridged {
+	if gateway.ResolveStartupWatchdogTimeout(ctx) != gateway.ResolveStartupWatchdogTimeout(context.Background()) {
 		gateway.DisarmStartupWatchdog()
 	}
 	gateway.ArmStartupWatchdog(ctx)
@@ -239,32 +222,11 @@ func applyStartupWatchdogConfig(ctx context.Context) {
 
 // Respawn storm breaker for supervisors without a restart floor, never blocking startup on its own failure
 func respawnStormBackoff(ctx context.Context) {
-	maxStarts, window := 5, 120.0
-	if cfg, err := config.Load(home.Dir(ctx), nil); err == nil {
-		if gw, ok := cfg["gateway"].(map[string]any); ok {
-			if rs, ok := gw["respawn_storm"].(map[string]any); ok {
-				if n, isInt := pyIntExact(rs["max_starts"]); isInt {
-					maxStarts = n
-				}
-				if f, isNum := pyNumber(rs["window_seconds"]); isNum {
-					window = f
-				}
-			}
-		}
-	}
-	if raw, ok := os.LookupEnv("ICEBATH_GATEWAY_MAX_STARTS"); ok {
-		if n, ok := pyint.Parse(pystr.Strip(raw)); ok {
-			maxStarts = int(n.Int64())
-		}
-	}
-	if raw, ok := os.LookupEnv("ICEBATH_GATEWAY_START_WINDOW_S"); ok {
-		if f, err := pyint.ParseFloat(raw); err == nil {
-			window = f
-		}
-	}
+	maxStarts := settings.GatewayRespawnStormMaxStarts.Get(ctx)
 	if maxStarts <= 0 {
 		return
 	}
+	window := settings.GatewayRespawnStormWindowSeconds.Get(ctx).Seconds()
 	storm := gateway.RecordStartAndCheckStorm(ctx, home.Process(), maxStarts, window, 300.0)
 	if storm == nil {
 		return
@@ -277,7 +239,7 @@ func respawnStormBackoff(ctx context.Context) {
 // Recorder of every way the runner returns, one JSON line per event in logs/gateway-exit-diag.log
 func makeExitDiag(ctx context.Context) func(tag string, extra ...[2]any) {
 	return func(tag string, extra ...[2]any) {
-		if v, ok := os.LookupEnv("ICEBATH_GATEWAY_EXIT_DIAG"); ok && v != "1" {
+		if !settings.GatewayExitRecords.Get(ctx) {
 			return
 		}
 		logDir := filepath.Join(home.Dir(ctx), "logs")
@@ -403,11 +365,7 @@ func runGateway(ctx context.Context, w io.Writer, verbose int, quiet, replace, f
 
 // Upgrades a bare gateway run inside an s6 container to the supervised longrun, true when dispatched
 func maybeRedirectRunToS6Supervision(ctx context.Context, w, errw io.Writer, ns map[string]any) (bool, error) {
-	noSupervise := nsFlag(ns, "no_supervise")
-	switch pystr.Lower(os.Getenv("ICEBATH_GATEWAY_NO_SUPERVISE")) {
-	case "1", "true", "yes":
-		noSupervise = true
-	}
+	noSupervise := nsFlag(ns, "no_supervise") || !settings.GatewayContainerSupervision.Get(ctx)
 	if noSupervise || os.Getenv("ICEBATH_S6_SUPERVISED_CHILD") != "" {
 		return false, nil
 	}
@@ -656,8 +614,6 @@ func gatewayCommandInner(ctx context.Context, ns map[string]any, w, errw io.Writ
 		return cmdStatus(ctx, w, ns)
 	case "list":
 		return cmdList(ctx, w)
-	case "migrate-legacy":
-		return cmdMigrateLegacy(ctx, w, ns)
 	case "migrate":
 		return gatewayrun.CmdMigrate(ctx, w, ns)
 	}
@@ -667,31 +623,6 @@ func gatewayCommandInner(ctx context.Context, ns map[string]any, w, errw io.Writ
 // Handles the gateway subcommands, systemd failures ending as guidance instead of a traceback
 func GatewayCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) (int, error) {
 	return gatewayCommandExit(w, gatewayCommandInner(ctx, ns, w, errw))
-}
-
-// Value of a config entry Python counts as an int, a bool included as one or zero
-func pyIntExact(v any) (int, bool) {
-	switch n := v.(type) {
-	case bool:
-		if n {
-			return 1, true
-		}
-		return 0, true
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	}
-	return 0, false
-}
-
-// Float of a config entry Python counts as an int or a float
-func pyNumber(v any) (float64, bool) {
-	if f, isFloat := v.(float64); isFloat {
-		return f, true
-	}
-	n, isInt := pyIntExact(v)
-	return float64(n), isInt
 }
 
 // JSON value of an optional flag, null when unknown

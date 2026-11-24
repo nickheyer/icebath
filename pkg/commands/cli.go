@@ -55,7 +55,9 @@ type CLI struct {
 	handlers    map[string]CLIHandler
 	positionals map[*cobra.Command][]posSpec
 	flagAliases map[*cobra.Command]map[string]string
-	argv        []string
+	// Commands whose RunE does its own work instead of dispatching their path, which never take a handler
+	selfRun map[*cobra.Command]bool
+	argv    []string
 	// Whether the parsed separator of an mcp add line came from its --args remainder option
 	mcpAddArgs bool
 }
@@ -165,7 +167,8 @@ For more help on a command:
 
 // NewCLI builds the full icebath command tree with every handler unbound
 func NewCLI() *CLI {
-	c := &CLI{handlers: map[string]CLIHandler{}, positionals: map[*cobra.Command][]posSpec{}, flagAliases: map[*cobra.Command]map[string]string{}}
+	c := &CLI{handlers: map[string]CLIHandler{}, positionals: map[*cobra.Command][]posSpec{}, flagAliases: map[*cobra.Command]map[string]string{},
+		selfRun: map[*cobra.Command]bool{}}
 	root := &cobra.Command{
 		Use:              "icebath",
 		Short:            "Icebath Agent - AI assistant with tool-calling capabilities",
@@ -335,7 +338,7 @@ func (c *CLI) newCmd(parent *cobra.Command, name, short, long string, aliases ..
 // Creates a subcommand that prints its help when run without a subcommand
 func (c *CLI) helpCmd(parent *cobra.Command, name, short, long string, exitCode int, aliases ...string) *cobra.Command {
 	cmd := c.newCmd(parent, name, short, long, aliases...)
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	c.runSelf(cmd, func(cmd *cobra.Command, args []string) error {
 		if err := cmd.Help(); err != nil {
 			return err
 		}
@@ -343,8 +346,14 @@ func (c *CLI) helpCmd(parent *cobra.Command, name, short, long string, exitCode 
 			return &ExitError{Code: exitCode}
 		}
 		return nil
-	}
+	})
 	return cmd
+}
+
+// Gives a command a RunE of its own in place of dispatching its path, so it never waits for a handler
+func (c *CLI) runSelf(cmd *cobra.Command, run func(cmd *cobra.Command, args []string) error) {
+	cmd.RunE = run
+	c.selfRun[cmd] = true
 }
 
 func (c *CLI) epilog(cmd *cobra.Command, text string) {
@@ -652,12 +661,12 @@ func (c *CLI) find(path string) *cobra.Command {
 	return cmd
 }
 
-// Unbound lists every runnable command path without a handler
+// Unbound lists every runnable command path that dispatches to a handler and has none
 func (c *CLI) Unbound() []string {
 	var out []string
 	var walk func(cmd *cobra.Command)
 	walk = func(cmd *cobra.Command) {
-		if cmd != c.Root && cmd.Runnable() {
+		if cmd != c.Root && cmd.Runnable() && !c.selfRun[cmd] {
 			if _, ok := c.handlers[c.pathOf(cmd)]; !ok {
 				out = append(out, c.pathOf(cmd))
 			}

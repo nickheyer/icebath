@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -104,7 +103,7 @@ func doctorConnectivitySkip(name string) doctorProbeResult {
 func doctorHasHealthyOAuthFallbackForAPIKeyProvider(ctx context.Context, h, providerLabel string) bool {
 	env := doctorPoolEnv(ctx, h)
 	var status map[string]any
-	switch pystr.Lower(pystr.Strip(providerLabel)) {
+	switch strings.ToLower(strings.TrimSpace(providerLabel)) {
 	case "minimax":
 		status = provider.GetMinimaxOAuthAuthStatus(env)
 	case "xai":
@@ -252,7 +251,7 @@ func (e *doctorProbeEnv) probeAnthropic() (doctorProbeResult, error) {
 	target := "https://api.anthropic.com/v1/models"
 	r, err := e.send(http.MethodGet, target, headers(full), nil)
 	if err == nil && isOAuth && r.StatusCode == 400 {
-		if text := pystr.Lower(r.Text()); strings.Contains(text, "long context beta") && strings.Contains(text, "not yet available") {
+		if text := strings.ToLower(r.Text()); strings.Contains(text, "long context beta") && strings.Contains(text, "not yet available") {
 			r, err = e.send(http.MethodGet, target, headers(reduced), nil)
 		}
 	}
@@ -345,8 +344,8 @@ func (e *doctorProbeEnv) doctorAnthropicMessagesProbe(base, key string) (*pyhttp
 		headers = append(headers, [2]string{"x-api-key", key})
 	}
 	model := "claude-sonnet-4-5"
-	if cfgModel := e.doctorModelCfg()["default"]; pyrepr.Truthy(cfgModel) && pystr.Strip(pyrepr.Str(cfgModel)) != "" {
-		model = pystr.Strip(pyrepr.Str(cfgModel))
+	if cfgModel := e.doctorModelCfg()["default"]; pyrepr.Truthy(cfgModel) && strings.TrimSpace(pyrepr.Str(cfgModel)) != "" {
+		model = strings.TrimSpace(pyrepr.Str(cfgModel))
 	}
 	var body bytes.Buffer
 	enc := json.NewEncoder(&body)
@@ -389,9 +388,9 @@ func (e *doctorProbeEnv) doctorAPIKeyRequest(key, baseEnv, defaultURL string) (s
 		if !pyrepr.Truthy(v) {
 			return ""
 		}
-		return pystr.Strip(pyrepr.Str(v))
+		return strings.TrimSpace(pyrepr.Str(v))
 	}
-	if base == "" && baseEnv == "AZURE_FOUNDRY_BASE_URL" && pystr.Lower(text(e.doctorModelCfg()["provider"])) == "azure-foundry" {
+	if base == "" && baseEnv == "AZURE_FOUNDRY_BASE_URL" && strings.ToLower(text(e.doctorModelCfg()["provider"])) == "azure-foundry" {
 		base = text(e.doctorModelCfg()["base_url"])
 	}
 	if base == "" && strings.HasPrefix(key, "sk-kimi-") {
@@ -469,14 +468,14 @@ func (e *doctorProbeEnv) probeAzureEntra() (doctorProbeResult, error) {
 		if !pyrepr.Truthy(v) {
 			return ""
 		}
-		return pystr.Strip(pyrepr.Str(v))
+		return strings.TrimSpace(pyrepr.Str(v))
 	}
 	cfg, err := config.LoadContext(e.ctx, e.d.Home, nil)
 	if err != nil {
 		return doctorConnectivitySkip(name), nil
 	}
 	modelCfg, ok := cfg["model"].(map[string]any)
-	if !ok || pystr.Lower(text(modelCfg["provider"])) != "azure-foundry" || pystr.Lower(text(modelCfg["auth_mode"])) != "entra_id" {
+	if !ok || strings.ToLower(text(modelCfg["provider"])) != "azure-foundry" || strings.ToLower(text(modelCfg["auth_mode"])) != "entra_id" {
 		return doctorConnectivitySkip(name), nil
 	}
 	scope := ""

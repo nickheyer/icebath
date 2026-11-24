@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -429,19 +430,14 @@ func (s *Store) customStoredKeyError(ctx context.Context, bu string) (string, er
 	if !usable {
 		return "", nil
 	}
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return "", err
-	}
+	sctx := home.WithOverride(ctx, s.home)
 	var configured []string
-	if m, ok := cfg["model"].(map[string]any); ok {
-		if u, ok := m["base_url"]; ok && pyrepr.Truthy(u) {
-			configured = append(configured, pyrepr.Str(u))
-		}
+	if u := strings.TrimSpace(settings.ModelBaseURL.Get(sctx)); u != "" {
+		configured = append(configured, u)
 	}
 	configured = append(configured, provider.GetSecretStr(ctx, "OPENAI_BASE_URL", ""), provider.OpenRouterBaseURL)
 	configured = append(configured, cronProviderResolver.registryURLs()...)
-	for _, entry := range provider.ProviderEntries(map[string]any(cfg)) {
+	for _, entry := range provider.CustomProviderEntries(sctx) {
 		if u, ok := entry["base_url"]; ok && pyrepr.Truthy(u) {
 			configured = append(configured, pyrepr.Str(u))
 		}

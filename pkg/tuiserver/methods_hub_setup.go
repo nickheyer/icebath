@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubSetupRegistry = &handlerRegistry{}
@@ -77,7 +76,7 @@ func setupKeyEntry(name string) (config.EnvVar, bool, bool) {
 }
 
 // Keys of the catalog the params ask for, required ones first, names the catalog does not know left out
-func setupKeys(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func setupKeys(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SetupKeys.Params(params)
 	if err != nil {
 		return rpcErr(rid, 4001, err.Error(), nil), nil
@@ -110,7 +109,7 @@ func setupKeys(ctx context.Context, rid any, params map[string]any, _ *tuihost.S
 }
 
 // Keeps a key of the catalog in the home's .env, or takes it out for an empty value
-func setupSaveKey(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func setupSaveKey(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SetupSaveKey.Params(params)
 	if err != nil {
 		return rpcErr(rid, 4001, err.Error(), nil), nil
@@ -139,7 +138,7 @@ func setupSaveKey(ctx context.Context, rid any, params map[string]any, _ *tuihos
 }
 
 // Facts of this computer and home by name
-func setupFacts(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func setupFacts(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SetupFacts.Params(params)
 	if err != nil {
 		return rpcErr(rid, 4001, err.Error(), nil), nil
@@ -161,7 +160,7 @@ func setupFacts(ctx context.Context, rid any, params map[string]any, _ *tuihost.
 }
 
 // Tool groups of a platform with which are on and whether the keys of each are there
-func setupToolsets(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func setupToolsets(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	p, err := tuigateway.SetupToolsets.Params(params)
 	if err != nil {
 		return rpcErr(rid, 4001, err.Error(), nil), nil

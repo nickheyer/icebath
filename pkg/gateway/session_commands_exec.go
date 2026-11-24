@@ -150,7 +150,7 @@ func (c *AuthorityConnection) localOwner() bool {
 
 // Argument split as a shlex splitting handler parses it, an unclosed quote refused on the arg field
 func splitCommandArg(arg string) ([]string, error) {
-	if pystr.Strip(arg) == "" {
+	if strings.TrimSpace(arg) == "" {
 		return []string{}, nil
 	}
 	tokens, err := pyshlex.SplitPOSIX(arg, false)
@@ -172,7 +172,7 @@ func kanbanFirstToken(arg string) (string, error) {
 		if token == "--board" {
 			i++
 		} else if !strings.HasPrefix(token, "--board=") {
-			return pystr.Lower(token), nil
+			return strings.ToLower(token), nil
 		}
 	}
 	return "", nil
@@ -184,7 +184,7 @@ func commandFirstWord(arg string) string {
 	if len(words) == 0 {
 		return ""
 	}
-	return pystr.Lower(words[0])
+	return strings.ToLower(words[0])
 }
 
 // Whether the argument form of a read command only reads
@@ -194,7 +194,7 @@ func readArgument(name, arg string) (bool, error) {
 		word := commandFirstWord(arg)
 		return word == "" || word == "pending" || word == "diff", nil
 	case "usage", "suggestions":
-		return pystr.Strip(arg) == "", nil
+		return strings.TrimSpace(arg) == "", nil
 	case "memory":
 		word := commandFirstWord(arg)
 		return word == "" || word == "pending", nil
@@ -222,7 +222,7 @@ func controlArgument(name, arg string) bool {
 
 // Read, control or refused for a canonical registry command on a local session
 func CommandVerdict(name, arg string) (string, error) {
-	if name == "voice" && pystr.Lower(pystr.Strip(arg)) == "tts" {
+	if name == "voice" && strings.ToLower(strings.TrimSpace(arg)) == "tts" {
 		return "refused", nil
 	}
 	if sessionOwnerCommands[name] {
@@ -314,7 +314,7 @@ func pluginsToggleArgs(arg string) (bool, string, bool) {
 	if len(words) != 2 {
 		return false, "", false
 	}
-	switch pystr.Lower(words[0]) {
+	switch strings.ToLower(words[0]) {
 	case "enable":
 		return true, words[1], true
 	case "disable":
@@ -378,7 +378,7 @@ func parseCommandParams(params *pyjson.Object, dispatch bool) (string, string, e
 		field = "name"
 	}
 	text, _ := params.GetOr(field, "").(string)
-	parts := pystr.SplitWhitespace(pystr.LstripChars(pystr.Strip(text), "/"), 1)
+	parts := pystr.SplitWhitespace(strings.TrimLeft(strings.TrimSpace(text), "/"), 1)
 	if len(parts) == 0 || (dispatch && len(parts) != 1) {
 		return "", "", runtimeRefusal("invalid_params")
 	}
@@ -439,10 +439,10 @@ func resolveCommandAlias(ctx context.Context, name, arg string) (string, string,
 			return name, arg, nil
 		}
 		target, isStr := obj["target"].(string)
-		if !isStr || pystr.Strip(target) == "" {
+		if !isStr || strings.TrimSpace(target) == "" {
 			return "", "", runtimeRefusal("invalid_params")
 		}
-		parts := pystr.SplitWhitespace(pystr.LstripChars(pystr.Strip(target), "/"), 1)
+		parts := pystr.SplitWhitespace(strings.TrimLeft(strings.TrimSpace(target), "/"), 1)
 		if len(parts) == 0 {
 			return "", "", &PyError{Kind: "IndexError", Msg: fmt.Sprintf("quick command %s is an alias with an empty target", name)}
 		}
@@ -598,7 +598,7 @@ func boundCommandReply(ctx context.Context, a *SessionAuthority, ref SessionRef,
 		if !ok {
 			return nil, runnerLacks("run a slash command while a turn is busy")
 		}
-		event := NewMessageEvent(pystr.Strip("/" + bound.Name + " " + arg))
+		event := NewMessageEvent(strings.TrimSpace("/" + bound.Name + " " + arg))
 		event.Source = live.Source
 		captured, sink := CaptureCommandSink(ctx)
 		output, err := runner.LocalBusySlashCommand(WithBusyAccepted(captured, before), event, bound, live.Route, live.Source)
@@ -768,7 +768,7 @@ func observeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if !known {
 		return nil, runtimeRefusal("unsupported_command")
 	}
-	done, err := queuePreCommand(ctx, a, ref, definition.Name, pystr.Lower(name), arg)
+	done, err := queuePreCommand(ctx, a, ref, definition.Name, strings.ToLower(name), arg)
 	if err != nil {
 		return nil, err
 	}
@@ -876,7 +876,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 			return nil
 		}
 		fired = true
-		return preCommandBefore(ctx, a, ref, canonical, pystr.Lower(name), arg)
+		return preCommandBefore(ctx, a, ref, canonical, strings.ToLower(name), arg)
 	}
 	if known {
 		tui, err := tuiReadCommand(ctx, a, actor, ref, canonical, arg, before)

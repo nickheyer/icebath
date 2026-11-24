@@ -48,7 +48,7 @@ const ffmpegMissing = "ffmpeg not found — install via `brew install ffmpeg` fo
 
 // True for a Google Meet URL the bot is willing to navigate to
 func isSafeMeetURL(url string) bool {
-	return meetURLRe.MatchString(pystr.Strip(url))
+	return meetURLRe.MatchString(strings.TrimSpace(url))
 }
 
 // Three segment meeting code, or a timestamped id for lookup and new URLs
@@ -106,7 +106,7 @@ func (s *botState) get(key string) any {
 
 // Appends a caption line unless this exact speaker and text pair was already seen
 func (s *botState) recordCaption(ctx context.Context, speaker, text string) error {
-	speaker, text = pystr.Strip(speaker), pystr.Strip(text)
+	speaker, text = strings.TrimSpace(speaker), strings.TrimSpace(text)
 	if speaker == "" {
 		speaker = "Unknown"
 	}
@@ -484,9 +484,9 @@ func macAudioDeviceIndex(deviceName string) string {
 	if runErr != nil && !errors.As(runErr, &exitErr) || ctx.Err() != nil {
 		return "0"
 	}
-	needle := pystr.Lower(pystr.Strip(deviceName))
+	needle := strings.ToLower(strings.TrimSpace(deviceName))
 	for _, line := range pystr.Splitlines(strings.ToValidUTF8(stderr.String(), "�"), false) {
-		if m := avfoundationDeviceRe.FindStringSubmatch(line); m != nil && pystr.Lower(pystr.Strip(m[2])) == needle {
+		if m := avfoundationDeviceRe.FindStringSubmatch(line); m != nil && strings.ToLower(strings.TrimSpace(m[2])) == needle {
 			return m[1]
 		}
 	}
@@ -574,15 +574,15 @@ func configFromEnv() (botConfig, error) {
 	if err != nil {
 		return botConfig{}, fmt.Errorf("ICEBATH_MEET_LOBBY_TIMEOUT %s is not a number of seconds", lobbyRaw)
 	}
-	headed := pystr.Lower(envOr("ICEBATH_MEET_HEADED", ""))
+	headed := strings.ToLower(envOr("ICEBATH_MEET_HEADED", ""))
 	return botConfig{
-		URL:                  pystr.Strip(envOr("ICEBATH_MEET_URL", "")),
-		OutDir:               pystr.Strip(envOr("ICEBATH_MEET_OUT_DIR", "")),
+		URL:                  strings.TrimSpace(envOr("ICEBATH_MEET_URL", "")),
+		OutDir:               strings.TrimSpace(envOr("ICEBATH_MEET_OUT_DIR", "")),
 		Headed:               headed == "1" || headed == "true" || headed == "yes",
-		AuthState:            pystr.Strip(envOr("ICEBATH_MEET_AUTH_STATE", "")),
+		AuthState:            strings.TrimSpace(envOr("ICEBATH_MEET_AUTH_STATE", "")),
 		GuestName:            envOr("ICEBATH_MEET_GUEST_NAME", "Icebath Agent"),
 		DurationS:            duration,
-		Realtime:             pystr.Lower(pystr.Strip(envOr("ICEBATH_MEET_MODE", "transcribe"))) == "realtime",
+		Realtime:             strings.ToLower(strings.TrimSpace(envOr("ICEBATH_MEET_MODE", "transcribe"))) == "realtime",
 		RealtimeAPIKey:       key,
 		RealtimeModel:        envOr("ICEBATH_MEET_REALTIME_MODEL", "gpt-realtime"),
 		RealtimeVoice:        envOr("ICEBATH_MEET_REALTIME_VOICE", "alloy"),
@@ -817,12 +817,12 @@ func runBotBrowser(ctx context.Context, cfg botConfig, state *botState, rt *real
 
 // Whether a caption speaker is probably a human rather than the bot's own echo or an unknown label
 func looksLikeHumanSpeaker(speaker, botGuestName string) bool {
-	s := pystr.Strip(speaker)
+	s := strings.TrimSpace(speaker)
 	if s == "" {
 		return false
 	}
-	l := pystr.Lower(s)
-	return l != "unknown" && l != "you" && l != pystr.Lower(pystr.Strip(botGuestName))
+	l := strings.ToLower(s)
+	return l != "unknown" && l != "you" && l != strings.ToLower(strings.TrimSpace(botGuestName))
 }
 
 var durationUnits = map[string]float64{"h": 3600.0, "m": 60.0, "s": 1.0}
@@ -832,7 +832,7 @@ func parseDuration(raw string) (float64, bool) {
 	if raw == "" {
 		return 0, false
 	}
-	raw = pystr.Lower(pystr.Strip(raw))
+	raw = strings.ToLower(strings.TrimSpace(raw))
 	r := []rune(raw)
 	last := ""
 	if len(r) > 0 {

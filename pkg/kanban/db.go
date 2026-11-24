@@ -3,8 +3,6 @@ package kanban
 import (
 	"context"
 	"fmt"
-	"math"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -14,12 +12,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -167,28 +165,6 @@ func jsonDict(value any) *pyjson.Object {
 	return pyjson.NewObject()
 }
 
-// Integer env override where absent, empty, non integer or below minimum yields def
-func envInt(name string, def, minimum int64) int64 {
-	raw := pystr.Strip(os.Getenv(name))
-	if raw == "" {
-		return def
-	}
-	parsed, ok := pyint.Parse(raw)
-	if !ok {
-		return def
-	}
-	n := int64(math.MaxInt64)
-	if parsed.IsInt64() {
-		n = parsed.Int64()
-	} else if parsed.Sign() < 0 {
-		return def
-	}
-	if n >= minimum {
-		return n
-	}
-	return def
-}
-
 // Stripped stdout of git -C cwd args, nil on any failure or empty output
 func gitOut(cwd string, timeout time.Duration, args ...string) *string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -199,7 +175,7 @@ func gitOut(cwd string, timeout time.Duration, args ...string) *string {
 	if err := cmd.Run(); err != nil {
 		return nil
 	}
-	out := pystr.Strip(pystr.DecodeUTF8Replace([]byte(stdout.String())))
+	out := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(stdout.String())))
 	if out == "" {
 		return nil
 	}
@@ -212,7 +188,7 @@ func NormalizeReasoningEffort(effort *string) (*string, error) {
 	if effort != nil {
 		raw = *effort
 	}
-	value := pystr.Lower(pystr.Strip(raw))
+	value := strings.ToLower(strings.TrimSpace(raw))
 	if value == "" {
 		return nil, nil
 	}
@@ -374,30 +350,28 @@ func fireDispatchTickHook(ctx context.Context, result *DispatchResult, board *st
 }
 
 const (
-	DefaultClaimTTLSeconds               = 15 * 60
 	DefaultClaimHeartbeatMaxStaleSeconds = 60 * 60
 	ReclaimDeferGraceSeconds             = 120
-	DefaultCrashGraceSeconds             = 30
 	KanbanRateLimitExitCode              = tools.KanbanRateLimitExitCode
 	KanbanTerminalProviderExitCode       = tools.KanbanTerminalProviderExitCode
 )
 
-// Explicit ttl, then ICEBATH_KANBAN_CLAIM_TTL_SECONDS, then the default
+// Explicit ttl, else kanban.claim_ttl_seconds of the profile this process serves
 func resolveClaimTTLSeconds(ttlSeconds *int64) int64 {
 	if ttlSeconds != nil {
 		return max(1, *ttlSeconds)
 	}
-	return envInt("ICEBATH_KANBAN_CLAIM_TTL_SECONDS", DefaultClaimTTLSeconds, 1)
+	return max(1, int64(settings.KanbanClaimTtlSeconds.Get(context.Background())/time.Second))
 }
 
-// ICEBATH_KANBAN_CRASH_GRACE_SECONDS where 0 means immediate, else the default
+// Seconds from kanban.crash_grace_seconds, zero meaning immediate
 func resolveCrashGraceSeconds() int64 {
-	return envInt("ICEBATH_KANBAN_CRASH_GRACE_SECONDS", DefaultCrashGraceSeconds, 0)
+	return int64(settings.KanbanCrashGraceSeconds.Get(context.Background()) / time.Second)
 }
 
-// ICEBATH_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS where 0 means next tick, else the default
+// Seconds from kanban.rate_limit_cooldown_seconds, zero meaning the next tick
 func resolveRateLimitCooldownSeconds() int64 {
-	return envInt("ICEBATH_KANBAN_RATE_LIMIT_COOLDOWN_SECONDS", DefaultRateLimitCooldownSeconds, 0)
+	return int64(settings.KanbanRateLimitCooldownSeconds.Get(context.Background()) / time.Second)
 }
 
 // Hook payload value of an optional string

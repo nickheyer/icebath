@@ -95,7 +95,7 @@ func archiveRun(args []string, cwd string, env map[string]string, timeout time.D
 
 // Last three hundred characters of stripped stderr as the archive failure text
 func archiveStderrTail(stderr []byte) string {
-	s := pystr.Strip(pystr.SurrogateEscapeDecode(stderr))
+	s := strings.TrimSpace(pystr.SurrogateEscapeDecode(stderr))
 	return pystr.Slice(s, -300, pystr.Len(s))
 }
 
@@ -196,7 +196,7 @@ func archiveRehashRaw(wt string, tenv map[string]string) error {
 		if err != nil {
 			return err
 		}
-		byPath[e.path] = pystr.Strip(out)
+		byPath[e.path] = strings.TrimSpace(out)
 	}
 	var info bytes.Buffer
 	for _, e := range entries {
@@ -299,7 +299,7 @@ func SubmoduleWork(wtPath string, gitlinks bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	modules := filepath.Join(pystr.Strip(gitDir), "modules")
+	modules := filepath.Join(strings.TrimSpace(gitDir), "modules")
 	if ents, err := os.ReadDir(modules); err == nil && len(ents) > 0 {
 		return fmt.Sprintf("%srepository in %s would be deleted with the tree", SubmoduleReason, modules), nil
 	}
@@ -416,20 +416,20 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 	if err != nil {
 		return nil, err
 	}
-	head = pystr.Strip(head)
+	head = strings.TrimSpace(head)
 	br, err := archiveRun([]string{"symbolic-ref", "--short", "-q", "HEAD"}, wtPath, env, 0, nil)
 	if err != nil {
 		return nil, err
 	}
 	var branch any
-	if b := pystr.Strip(string(br.Stdout)); b != "" {
+	if b := strings.TrimSpace(string(br.Stdout)); b != "" {
 		branch = b
 	}
 	gitDirOut, err := archiveOK([]string{"rev-parse", "--absolute-git-dir"}, wtPath, env, 0, nil)
 	if err != nil {
 		return nil, err
 	}
-	gitDir := pystr.Strip(gitDirOut)
+	gitDir := strings.TrimSpace(gitDirOut)
 	untracked, err := archiveUntracked(wtPath, env)
 	if err != nil {
 		return nil, err
@@ -484,7 +484,7 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 		if err := os.WriteFile(pathspec, []byte(strings.Join(specs, "\x00")+"\x00"), 0o666); err != nil {
 			return err
 		}
-		if _, err := archiveRawAttrs([]string{"add", "-A", "--pathspec-from-file", pathspec, "--pathspec-file-nul"}, wtPath, tenv, pystr.Strip(emptyTree)); err != nil {
+		if _, err := archiveRawAttrs([]string{"add", "-A", "--pathspec-from-file", pathspec, "--pathspec-file-nul"}, wtPath, tenv, strings.TrimSpace(emptyTree)); err != nil {
 			return err
 		}
 		if err := archiveRehashRaw(wtPath, tenv); err != nil {
@@ -494,11 +494,11 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 		if err != nil {
 			return err
 		}
-		indexCommit, err := archiveOK([]string{"commit-tree", pystr.Strip(indexTree), "-p", head, "-m", "index of " + name}, wtPath, env, 0, nil)
+		indexCommit, err := archiveOK([]string{"commit-tree", strings.TrimSpace(indexTree), "-p", head, "-m", "index of " + name}, wtPath, env, 0, nil)
 		if err != nil {
 			return err
 		}
-		indexCommit = pystr.Strip(indexCommit)
+		indexCommit = strings.TrimSpace(indexCommit)
 		skippedList := []any{}
 		for _, s := range skipped {
 			o := pyjson.NewObject()
@@ -520,8 +520,8 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 			return err
 		}
 		message := archiveSubject + name + "\n\n" + body + "\n"
-		out, err := archiveOK([]string{"commit-tree", pystr.Strip(workTree), "-p", head, "-p", indexCommit}, wtPath, env, 0, []byte(message))
-		sha = pystr.Strip(out)
+		out, err := archiveOK([]string{"commit-tree", strings.TrimSpace(workTree), "-p", head, "-p", indexCommit}, wtPath, env, 0, []byte(message))
+		sha = strings.TrimSpace(out)
 		return err
 	}()
 	if err != nil {
@@ -649,7 +649,7 @@ func archiveBranchTip(repoRoot, branch string, env map[string]string) (string, b
 	if err != nil || r.Returncode != 0 {
 		return "", false, err
 	}
-	return pystr.Strip(string(r.Stdout)), true, nil
+	return strings.TrimSpace(string(r.Stdout)), true, nil
 }
 
 func archiveCheckedOutBranches(repoRoot string, env map[string]string) (map[string]bool, error) {
@@ -769,7 +769,7 @@ func RestoreArchive(ctx context.Context, repoRoot, name, target string) (*Restor
 	if _, err := archiveOK([]string{"read-tree", arc.Sha + "^{tree}"}, dest, wenv, 0, nil); err != nil {
 		return nil, err
 	}
-	if _, err := archiveRawAttrs([]string{"checkout-index", "-a", "-f"}, dest, wenv, pystr.Strip(emptyTree)); err != nil {
+	if _, err := archiveRawAttrs([]string{"checkout-index", "-a", "-f"}, dest, wenv, strings.TrimSpace(emptyTree)); err != nil {
 		return nil, err
 	}
 	if err := archiveWriteRaw(dest, wenv); err != nil {

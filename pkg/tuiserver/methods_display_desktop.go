@@ -3,6 +3,8 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -135,7 +136,7 @@ func displayThumbnail(ctx context.Context, rid any, params map[string]any) map[s
 
 // A person takes the screen under the viewer id of their client, the agent's actions on it refused until it is handed back
 func displayLeaseAcquire(ctx context.Context, rid any, params map[string]any) map[string]any {
-	viewerID := pystr.Strip(strOr(params["viewer_id"]))
+	viewerID := strings.TrimSpace(strOr(params["viewer_id"]))
 	if viewerID == "" {
 		return rpcErr(rid, displayErr, "viewer_id required", nil)
 	}
@@ -151,7 +152,7 @@ func displayLeaseAcquire(ctx context.Context, rid any, params map[string]any) ma
 func displayLeaseRelease(ctx context.Context, rid any, params map[string]any) map[string]any {
 	opts := botdesktop.LeaseReleaseOptions{ProfileKey: home.Dir(ctx)}
 	if !truthy(params["force"]) {
-		viewerID := pystr.Strip(strOr(params["viewer_id"]))
+		viewerID := strings.TrimSpace(strOr(params["viewer_id"]))
 		if viewerID == "" {
 			return rpcErr(rid, displayErr, "viewer_id required to hand the screen back (or pass force: true)", nil)
 		}

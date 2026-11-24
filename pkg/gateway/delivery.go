@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // MaxPlatformOutput caps cron output before truncation for adapters that do not split long messages
@@ -30,7 +29,7 @@ var threadRoutingKeys = []string{"thread_id", "message_thread_id", "direct_messa
 
 // True when the content is only a short silence narration token
 func isSilenceNarration(content string) bool {
-	stripped := pystr.Strip(content)
+	stripped := strings.TrimSpace(content)
 	if stripped == "" || len([]rune(stripped)) > 64 {
 		return false
 	}
@@ -123,13 +122,13 @@ func ResolveDeliveryTransport(ctx context.Context, platform Platform, config *Ga
 
 // True when the chat id is a positive integer, the Telegram private chat shape
 func LooksLikeTelegramPrivateChatID(chatID string) bool {
-	n, ok := pyint.Parse(pystr.Strip(chatID))
+	n, ok := pyint.Parse(strings.TrimSpace(chatID))
 	return ok && n.Sign() > 0
 }
 
 // True when Python int accepts the value
 func LooksLikeInt(value string) bool {
-	_, ok := pyint.Parse(pystr.Strip(value))
+	_, ok := pyint.Parse(strings.TrimSpace(value))
 	return ok
 }
 

@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -29,7 +29,7 @@ func isTruthyValue(v any, def bool) bool {
 	case nil:
 		return def
 	case string:
-		switch pystr.Lower(pystr.Strip(x)) {
+		switch strings.ToLower(strings.TrimSpace(x)) {
 		case "1", "true", "yes", "on":
 			return true
 		}
@@ -54,74 +54,93 @@ func configPositiveInt(raw any, rejectBoolFloat bool) *int {
 	return &v
 }
 
-// Python int of a config value, its TypeError or ValueError returned
-func configInt(cfg map[string]any, key string, def int) (int, error) {
-	raw, ok := cfg[key]
-	if !ok {
-		raw = def
-	}
-	n, err := pyint.Of(raw)
-	if err != nil {
-		return 0, err
-	}
-	return int(n.Int64()), nil
-}
-
-// Python float of a config value, its TypeError or ValueError returned
-func configFloat(cfg map[string]any, key string, def float64) (float64, error) {
-	raw, ok := cfg[key]
-	if !ok {
-		raw = def
-	}
-	return pyint.Float(raw)
-}
-
-// Global threshold merged with the per model override, stashing the codex autoraise record on the agent
-func compressionThreshold(a *AIAgent, cfg map[string]any) (float64, bool, error) {
-	threshold, err := configFloat(cfg, "threshold", 0.50)
-	if err != nil {
-		return 0, false, err
-	}
-	autoraise := cfgFlag(cfg, "codex_gpt55_autoraise", true)
-	noticeEnabled := cfgFlag(cfg, "codex_gpt55_autoraise_notice", true)
-	a.compressionThresholdAutoraised = nil
-	func() {
-		defer func() { _ = recover() }()
-		var modelThreshold *float64
-		if v, ok := compressionThresholdForModel(a.model, a.provider, autoraise); ok {
-			modelThreshold = &v
+// Compression threshold in effect for ctx raised to the agent model's own threshold where one applies, with the codex autoraise record
+func resolvedCompressionThreshold(ctx context.Context, a *AIAgent) (threshold float64, autoraised map[string]any) {
+	threshold = settings.CompressAt.Get(ctx)
+	defer func() {
+		if recover() != nil {
+			autoraised = nil
 		}
-		isAutoraise := isCodexGPT54OrGPT55(a.model, a.provider) || isCodexSpark(a.model, a.provider)
-		threshold, a.compressionThresholdAutoraised = resolveCompressionThreshold(threshold, modelThreshold, a.model, isAutoraise)
 	}()
-	return threshold, noticeEnabled, nil
+	var modelThreshold *float64
+	if v, ok := compressionThresholdForModel(a.model, a.provider, settings.CompressionCodexGpt55Autoraise.Get(ctx)); ok {
+		modelThreshold = &v
+	}
+	isAutoraise := isCodexGPT54OrGPT55(a.model, a.provider) || isCodexSpark(a.model, a.provider)
+	return resolveCompressionThreshold(threshold, modelThreshold, a.model, isAutoraise)
 }
 
-// Codex app server auto mode, native Responses compaction opt in and its compact threshold
-func compressionCodexSettings(cfg map[string]any) (string, bool, *int) {
-	raw, ok := cfg["codex_app_server_auto"]
-	if !ok || !pyrepr.Truthy(raw) {
-		raw = "native"
+// Codex app server auto mode, native Responses compaction opt in and its compact threshold in effect for ctx, nil for the automatic threshold
+func compressionCodexSettings(ctx context.Context) (string, bool, *int) {
+	var threshold *int
+	if n, ok := settings.CompressionCodexResponsesCompactThreshold.Lookup(ctx); ok {
+		if n > 0 {
+			threshold = &n
+		} else {
+			pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%d; using the automatic threshold derived from local compression.", n))
+		}
 	}
-	appServerAuto, valid := CodexAppServerAutoMode(pyrepr.Str(raw))
-	if !valid {
-		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, icebath, off.", errchain.Show(strings.ToLower(pyrepr.Str(raw)))))
-	}
-	responsesNative := isTruthyValue(cfgValue(cfg, "codex_responses_native", false), false)
-	return appServerAuto, responsesNative, codexCompactThreshold(cfg)
+	return settings.CompressionCodexAppServerAuto.Get(ctx), settings.CompressionCodexResponsesNative.Get(ctx), threshold
 }
 
-// Native Responses compact threshold of a compression section, nil for the automatic one, an unusable value warned about and read as automatic
-func codexCompactThreshold(cfg map[string]any) *int {
-	raw := cfg["codex_responses_compact_threshold"]
-	if raw == nil {
-		return nil
+// Per model compression thresholds in effect for ctx, entries that are not numbers left out
+func compressionModelThresholds(ctx context.Context) map[string]float64 {
+	out := map[string]float64{}
+	for k, v := range settings.CompressionModelThresholds.Get(ctx) {
+		switch n := v.(type) {
+		case int:
+			out[k] = float64(n)
+		case int64:
+			out[k] = float64(n)
+		case float64:
+			out[k] = n
+		}
 	}
-	threshold := configPositiveInt(raw, true)
-	if threshold == nil {
-		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", errchain.Show(raw)))
+	return out
+}
+
+// Token count compression starts at in effect for ctx, nil when the share of the window decides
+func compressionThresholdTokens(ctx context.Context) *int {
+	if n, ok := settings.CompressionThresholdTokens.Lookup(ctx); ok && n > 0 {
+		return &n
 	}
-	return threshold
+	return nil
+}
+
+// Seconds of idle time after which a chat is compacted, zero for never
+func compressionIdleSeconds(ctx context.Context) int {
+	return int(settings.CompressionIdleCompactAfterSeconds.Get(ctx) / time.Second)
+}
+
+// Compression settings in effect for ctx with every value inside the bounds the compressor takes, the threshold raised to the model's own, and the codex autoraise record
+func compressionSettingsFor(ctx context.Context, a *AIAgent) (CompressionSettings, map[string]any) {
+	cs := CompressionSettings{
+		AutoraiseNoticeEnabled:   settings.CompressionCodexGpt55AutoraiseNotice.Get(ctx),
+		Enabled:                  settings.AutoCompress.Get(ctx),
+		TargetRatio:              settings.CompressionTargetRatio.Get(ctx),
+		ProtectLast:              settings.CompressionProtectLastN.Get(ctx),
+		TailMode:                 settings.CompressionTailMode.Get(ctx),
+		MinTailUsers:             settings.CompressionMinTailUserMessages.Get(ctx),
+		MaxAttempts:              settings.CompressionMaxAttempts.Get(ctx),
+		ProactivePruneTokens:     settings.CompressionProactivePruneTokens.Get(ctx),
+		ProactivePruneMinChars:   settings.CompressionProactivePruneMinResultChars.Get(ctx),
+		ProactivePruneMinReclaim: settings.CompressionProactivePruneMinReclaimTokens.Get(ctx),
+		ProtectFirst:             settings.CompressionProtectFirstN.Get(ctx),
+		AbortOnSummaryFailure:    settings.CompressionAbortOnSummaryFailure.Get(ctx),
+		ModelThresholds:          compressionModelThresholds(ctx),
+		ThresholdTokens:          compressionThresholdTokens(ctx),
+		CheckpointRequired:       settings.CompressionCheckpointRequired.Get(ctx),
+		InPlace:                  settings.CompressionInPlace.Get(ctx),
+		MicroCompact:             settings.CompressionMicroCompact.Get(ctx),
+		MicroCompactEveryNTurns:  max(1, settings.CompressionMicroCompactEveryNTurns.Get(ctx)),
+		MicroCompactDefragTokens: max(1, settings.CompressionMicroCompactDefragThresholdTokens.Get(ctx)),
+		IdleCompactAfterSeconds:  compressionIdleSeconds(ctx),
+		PrepareAhead:             settings.CompressionPrepareAhead.Get(ctx),
+	}
+	cs.CodexAppServerAuto, cs.CodexResponsesNative, cs.CodexResponsesCompactThreshold = compressionCodexSettings(ctx)
+	threshold, autoraised := resolvedCompressionThreshold(ctx, a)
+	cs.Threshold = threshold
+	return cs, autoraised
 }
 
 // Codex app server compaction mode in lower case, native and false when unknown
@@ -134,75 +153,13 @@ func CodexAppServerAutoMode(raw string) (string, bool) {
 	return "native", false
 }
 
-// Config value or its default when the key is absent
-func cfgValue(cfg map[string]any, key string, def any) any {
-	if v, ok := cfg[key]; ok {
-		return v
-	}
-	return def
-}
-
-// Parses the compression section with every default matching the shipped config, garbage numbers returned as errors
-func parseCompressionConfig(a *AIAgent, agentCfg map[string]any) (CompressionSettings, error) {
-	cfg := cfgDict(agentCfg, "compression")
-	var cs CompressionSettings
-	var err error
-	if cs.Threshold, cs.AutoraiseNoticeEnabled, err = compressionThreshold(a, cfg); err != nil {
-		return cs, err
-	}
-	if cs.TargetRatio, err = configFloat(cfg, "target_ratio", 0.20); err != nil {
-		return cs, err
-	}
-	if cs.ProtectLast, err = configInt(cfg, "protect_last_n", 20); err != nil {
-		return cs, err
-	}
-	maxAttempts := parseConfigInt(cfgValue(cfg, "max_attempts", 3), 3)
-	if maxAttempts < 1 {
-		maxAttempts = 3
-	}
-	defaultTokens, _ := config.CfgGet(map[string]any(config.Defaults()), "compression", "threshold_tokens")
-	if tokens := cfgValue(cfg, "threshold_tokens", defaultTokens); tokens != nil {
-		cs.ThresholdTokens = configPositiveInt(tokens, false)
-	}
-	protectFirst, err := configInt(cfg, "protect_first_n", 3)
-	if err != nil {
-		return cs, err
-	}
-	cs.ProtectFirst = max(0, protectFirst)
-	cs.CheckpointRequired = isTruthyValue(cfg["checkpoint_required"], false)
+// Compression settings the agent builds its compressor from, stashing the codex autoraise record and refusing a checkpoint requirement the Codex app server cannot keep
+func parseCompressionConfig(ctx context.Context, a *AIAgent) (CompressionSettings, error) {
+	cs, autoraised := compressionSettingsFor(ctx, a)
+	a.compressionThresholdAutoraised = autoraised
 	if err := refuseCheckpointRequiredOnCodexAppServer(cs.CheckpointRequired, a.apiMode); err != nil {
 		return cs, err
 	}
-	cs.CodexAppServerAuto, cs.CodexResponsesNative, cs.CodexResponsesCompactThreshold = compressionCodexSettings(cfg)
-	idle, err := configInt(cfg, "idle_compact_after_seconds", 0)
-	if err != nil {
-		return cs, err
-	}
-	cs.IdleCompactAfterSeconds = max(0, idle)
-	cs.Enabled = cfgFlag(cfg, "enabled", true)
-	cs.TailMode = strings.ToLower(pystr.Strip(pyrepr.Str(cfgValue(cfg, "tail_mode", "lean"))))
-	cs.MinTailUsers = max(1, parseConfigInt(cfgValue(cfg, "min_tail_user_messages", 1), 1))
-	cs.MaxAttempts = min(maxAttempts, 10)
-	cs.ProactivePruneTokens = max(0, parseConfigInt(cfgValue(cfg, "proactive_prune_tokens", 0), 0))
-	cs.ProactivePruneMinChars = parseConfigInt(cfgValue(cfg, "proactive_prune_min_result_chars", 8000), 8000)
-	cs.ProactivePruneMinReclaim = max(0, parseConfigInt(cfgValue(cfg, "proactive_prune_min_reclaim_tokens", 4096), 4096))
-	cs.AbortOnSummaryFailure = cfgFlag(cfg, "abort_on_summary_failure", false)
-	cs.ModelThresholds = map[string]float64{}
-	for k, v := range cfgDict(cfg, "model_thresholds") {
-		switch n := v.(type) {
-		case int:
-			cs.ModelThresholds[k] = float64(n)
-		case int64:
-			cs.ModelThresholds[k] = float64(n)
-		case float64:
-			cs.ModelThresholds[k] = n
-		}
-	}
-	cs.InPlace = isTruthyValue(cfg["in_place"], true)
-	cs.MicroCompact = isTruthyValue(cfg["micro_compact"], false)
-	cs.MicroCompactEveryNTurns = max(1, parseConfigInt(cfgValue(cfg, "micro_compact_every_n_turns", 1), 1))
-	cs.MicroCompactDefragTokens = max(1, parseConfigInt(cfgValue(cfg, "micro_compact_defrag_threshold_tokens", 2000), 2000))
-	cs.PrepareAhead = isTruthyValue(cfg["prepare_ahead"], false)
 	return cs, nil
 }
 
@@ -224,7 +181,7 @@ func warnInvalidConfigInt(ctx context.Context, what string, value any, requireme
 	if printFallback == "" {
 		printFallback = fallback
 	}
-	fmt.Fprintf(scopedInvalidConfigStderr(ctx), "\n⚠ Invalid %s: %s\n  %s.\n  Falling back to %s.\n\n", what, errchain.Show(value), pystr.Upper(requirement[:1])+requirement[1:], printFallback)
+	fmt.Fprintf(scopedInvalidConfigStderr(ctx), "\n⚠ Invalid %s: %s\n  %s.\n  Falling back to %s.\n\n", what, errchain.Show(value), strings.ToUpper(requirement[:1])+requirement[1:], printFallback)
 }
 
 // Stderr of the invalid config warning as work under ctx sees it, the process stderr routed by ctx or the writer a redirect put in its place

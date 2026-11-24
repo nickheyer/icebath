@@ -70,10 +70,7 @@ func openWorkerLog(ctx context.Context, task *Task, board *string) (*os.File, er
 		return nil, err
 	}
 	logPath := filepath.Join(logDir, task.ID+".log")
-	maxBytes, backupCount, err := WorkerLogRotationConfig(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
+	maxBytes, backupCount := workerLogRotation(ctx)
 	RotateWorkerLog(logPath, maxBytes, backupCount)
 	return os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o666)
 }
@@ -158,14 +155,8 @@ func defaultSpawn(ctx context.Context, task *Task, workspace string, board *stri
 			env["ICEBATH_KANBAN_GOAL_MAX_TURNS"] = strconv.FormatInt(*task.GoalMaxTurns, 10)
 		}
 	}
-	for _, name := range []string{"TERMINAL_TIMEOUT", "TERMINAL_MAX_FOREGROUND_TIMEOUT"} {
-		var current *string
-		if v, ok := env[name]; ok {
-			current = &v
-		}
-		if override := workerTerminalTimeoutEnv(task.MaxRuntimeSeconds, current); override != nil {
-			env[name] = *override
-		}
+	for name, raised := range workerTerminalTimeouts(scoped, task.MaxRuntimeSeconds) {
+		env[name] = raised
 	}
 	dbPath, err := KanbanDBPath(ctx, board)
 	if err != nil {
@@ -279,11 +270,15 @@ func daemonTick(ctx context.Context, o DaemonOptions) {
 			pkgLog().Error(fmt.Sprintf("kanban dispatcher tick failed: %v", r), "stack", string(debug.Stack()))
 		}
 	}()
-	maxInProgress := ResolveMaxInProgress(ConfiguredMaxInProgress(ctx))
 	var res *DispatchResult
 	err := ConnectClosing(ctx, "", nil, func(conn state.SQLiteConn) error {
-		opts := DefaultDispatchOptions()
-		opts.MaxSpawn, opts.MaxInProgress, opts.FailureLimit = o.MaxSpawn, maxInProgress, o.FailureLimit
+		opts := ConfiguredDispatchOptions(ctx)
+		if o.MaxSpawn != nil {
+			opts.MaxSpawn = o.MaxSpawn
+		}
+		if o.FailureLimit > 0 {
+			opts.FailureLimit = o.FailureLimit
+		}
 		var err error
 		res, err = DispatchOnce(ctx, conn, opts)
 		return err

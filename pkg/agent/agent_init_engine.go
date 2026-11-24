@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 
@@ -23,18 +22,13 @@ var (
 	pluginContextEngineFn = plugins.GetPluginContextEngine
 )
 
-// Plugin context engine named by context.engine, nil for the built in compressor or when none loads
-func selectContextEngine(ctx context.Context, agentCfg map[string]any) ContextEngine {
+// Plugin context engine the context.engine setting of ctx names, nil for the built in compressor or when none loads
+func selectContextEngine(ctx context.Context) ContextEngine {
 	if config.SafeWorkerEnabled() {
 		return nil
 	}
-	name := "compressor"
-	if section, ok := agentCfg["context"].(map[string]any); ok {
-		if v := cfgText(firstTruthy(section["engine"], "compressor")); v != "" {
-			name = v
-		}
-	}
-	if name == "compressor" {
+	name := strings.TrimSpace(settings.ContextEngine.Get(ctx))
+	if name == "" || name == settings.ContextEngine.Default {
 		return nil
 	}
 	var selected ContextEngine
@@ -90,8 +84,8 @@ func compressorMaxTokens(a *AIAgent) any {
 }
 
 // Selected plugin engine or the built in compressor, with the compression switches and native compaction caps
-func buildContextEngine(ctx context.Context, a *AIAgent, agentCfg map[string]any, cs CompressionSettings, customProviders []map[string]any, effectiveContextLength int) {
-	if selected := selectContextEngine(ctx, agentCfg); selected != nil {
+func buildContextEngine(ctx context.Context, a *AIAgent, cs CompressionSettings, customProviders []map[string]any, effectiveContextLength int) {
+	if selected := selectContextEngine(ctx); selected != nil {
 		a.contextCompressor = selected
 		a.compressionThresholdAutoraised = nil
 		pluginCtxLen := provider.GetModelContextLength(ctx, provider.ContextLengthRequest{
@@ -271,22 +265,6 @@ func initUsageState(a *AIAgent) {
 	a.apiLatencyHistory, a.apiOutputHistory = make([]float64, 0, 10), make([]int, 0, 10)
 }
 
-// Readonly config the agent sections read, the load_config_readonly init_agent imports
-var agentConfigLoader = func(ctx context.Context) (map[string]any, error) {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	return map[string]any(tree), err
-}
-
-// Agent config read once for memory, skills and compression, empty with a class only warning when it fails
-func loadAgentConfig(ctx context.Context) map[string]any {
-	tree, err := agentConfigLoader(ctx)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Run 'icebath config check' and correct the reported configuration.", pyErrorClass(err)))
-		return map[string]any{}
-	}
-	return tree
-}
-
 // Constructs the agent in order from routing through the primary runtime snapshot
 func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if config.SafeWorkerEnabled() {
@@ -381,24 +359,21 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if err := initSessionState(ctx, a, o); err != nil {
 		return err
 	}
-	agentCfg := loadAgentConfig(ctx)
-	if err := applyDisplayConfig(a, agentCfg, o.Platform); err != nil {
-		return err
-	}
+	applyDisplayConfig(ctx, a, o.Platform)
 	a.skipMemory = o.SkipMemory
-	initMemory(ctx, a, agentCfg, o.SkipMemory, o.Platform, o.MemoryManager)
-	applyAgentSection(a, agentCfg)
-	cs, err := parseCompressionConfig(a, agentCfg)
+	initMemory(ctx, a, o.SkipMemory, o.Platform, o.MemoryManager)
+	applyAgentSection(ctx, a)
+	cs, err := parseCompressionConfig(ctx, a)
 	if err != nil {
 		return err
 	}
-	configContextLength, customProviders, effectiveContextLength, modelCfg := resolveContextLength(ctx, a, agentCfg, baseURL)
-	buildContextEngine(ctx, a, agentCfg, cs, customProviders, effectiveContextLength)
+	configContextLength, customProviders, effectiveContextLength := resolveContextLength(ctx, a, baseURL)
+	buildContextEngine(ctx, a, cs, customProviders, effectiveContextLength)
 	pinned := 0
 	if configContextLength != nil {
 		pinned = *configContextLength
 	}
-	configureOllamaNumCtx(ctx, a, modelCfg, pinned)
+	configureOllamaNumCtx(ctx, a, pinned)
 	if err := enforceMinimumContext(a); err != nil {
 		return err
 	}

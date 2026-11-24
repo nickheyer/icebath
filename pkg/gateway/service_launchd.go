@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -776,16 +775,16 @@ func tempHomeInServiceDefinition(definition string) string {
 		roots[r] = true
 	}
 	for _, raw := range tools.ServiceDefinitionHomes(definition) {
-		resolved, err := pypath.Resolve(strings.Trim(pystr.Strip(raw), `"`))
+		resolved, err := pypath.Resolve(strings.Trim(strings.TrimSpace(raw), `"`))
 		if err != nil {
 			continue
 		}
 		if roots[resolved] {
-			return pystr.Strip(raw)
+			return strings.TrimSpace(raw)
 		}
 		for _, parent := range pypath.PathParents(resolved) {
 			if roots[parent] {
-				return pystr.Strip(raw)
+				return strings.TrimSpace(raw)
 			}
 		}
 	}
@@ -1046,7 +1045,7 @@ func waitForAPIServerPortFree(ctx context.Context, timeout float64) (bool, error
 	if extra == nil {
 		extra = map[string]any{}
 	}
-	hostValue, port := APIServerListenAddress(extra)
+	hostValue, port := APIServerListenAddress(ctx, extra)
 	host := pyStrValue(hostValue)
 	freed := waitForTCPPortFree(host, port, timeout)
 	if !freed {

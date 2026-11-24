@@ -7,7 +7,7 @@ import (
 
 // Endpoint the main runtime would use, model.base_url for this provider or the registered profile's own
 func auxConfiguredEndpoint(ctx context.Context, provider string) string {
-	if u := configBaseURLForProviderCtx(ctx, getModelConfigDict(ctx), provider); u != "" {
+	if u := configBaseURLForProvider(ctx, provider); u != "" {
 		return u
 	}
 	if p, ok := registryProfileCtx(ctx, provider); ok {

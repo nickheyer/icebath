@@ -1,6 +1,8 @@
 package acp
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -169,7 +171,7 @@ func gatewayDiscardUnknown(ctx context.Context, a *GatewayACPAgent, sessionID, c
 
 // Owner's slash.exec answer, its report, a turn to submit after its notice, or the shared refusal
 func gatewayForward(ctx context.Context, a *GatewayACPAgent, link gatewayLink, sessionID, command, arg string) (string, *string, error) {
-	reply, err := a.rpc(ctx, link, "slash.exec", map[string]any{"session_id": sessionID, "command": pystr.Strip("/" + command + " " + arg)})
+	reply, err := a.rpc(ctx, link, "slash.exec", map[string]any{"session_id": sessionID, "command": strings.TrimSpace("/" + command + " " + arg)})
 	if err != nil {
 		var refused *gateway.GatewayRPCError
 		if errors.As(err, &refused) && refused.Msg == "unsupported_command" {
@@ -270,7 +272,7 @@ func gatewayRewind(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 		if err != nil {
 			return "", nil, &CommandRefused{Msg: "/retry: " + err.Error()}
 		}
-		if pystr.Strip(text) == "" {
+		if strings.TrimSpace(text) == "" {
 			return i18n.T(ctx, "cli.session.retry_no_user_message", "", nil), nil, nil
 		}
 		return "", &text, nil
@@ -284,7 +286,7 @@ func gatewayRewind(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 	if removed != "" {
 		reply += "Removed message: " + removed
 	}
-	return pystr.Rstrip(reply), nil, nil
+	return strings.TrimRightFunc(reply, unicode.IsSpace), nil, nil
 }
 
 // Guidance for this editor's running turn, empty when there is none to steer

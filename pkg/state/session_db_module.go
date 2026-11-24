@@ -1,6 +1,8 @@
 package state
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"math"
@@ -15,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -215,7 +216,7 @@ func isBackgroundReviewHarnessMessage(msg any) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	text = pystr.Lstrip(text)
+	text = strings.TrimLeftFunc(text, unicode.IsSpace)
 	for _, prefix := range reviewHarnessPrefixes {
 		if strings.HasPrefix(text, prefix) {
 			return true, nil
@@ -269,7 +270,7 @@ func isStaleToolCallMarkerMessage(msg any) bool {
 	}
 	content, _ := mappingGet(msg, "content")
 	text, ok := content.(string)
-	return ok && staleToolCallMarkerRe.MatchString(pystr.Strip(text))
+	return ok && staleToolCallMarkerRe.MatchString(strings.TrimSpace(text))
 }
 
 // Blanks stale marker assistant content in place, keeping tool call and result pairing

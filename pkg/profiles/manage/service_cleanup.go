@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Runs a supervisor command with output discarded, returning its exit code, errors for a timeout or a missing binary
@@ -116,7 +115,7 @@ func removeWindowsTask(ctx context.Context) (bool, error) {
 			removed = true
 			fmt.Fprintf(stdout, "✓ Removed Scheduled Task %s\n", pyrepr.Repr(task))
 		} else {
-			fmt.Fprintf(stdout, "⚠ Scheduled Task %s remains (schtasks code %d): %s\n", pyrepr.Repr(task), code, pystr.Strip(errText))
+			fmt.Fprintf(stdout, "⚠ Scheduled Task %s remains (schtasks code %d): %s\n", pyrepr.Repr(task), code, strings.TrimSpace(errText))
 		}
 	}
 	for _, path := range []string{serviceFacts.WindowsStartupEntryPath(ctx), serviceFacts.WindowsLegacyStartupEntryPath(ctx)} {

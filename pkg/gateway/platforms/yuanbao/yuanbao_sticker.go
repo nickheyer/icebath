@@ -8,7 +8,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -117,7 +116,7 @@ func GetStickerByName(name string) *pyjson.Object {
 	if name == "" {
 		return nil
 	}
-	query := pystr.Strip(name)
+	query := strings.TrimSpace(name)
 	if v, ok := StickerMap.Get(query); ok {
 		return v.(*pyjson.Object)
 	}
@@ -158,7 +157,7 @@ func GetStickerByID(stickerID string) *pyjson.Object {
 	if stickerID == "" {
 		return nil
 	}
-	sid := pystr.Strip(stickerID)
+	sid := strings.TrimSpace(stickerID)
 	for _, s := range stickers() {
 		if stickerField(s, "sticker_id") == sid {
 			return s
@@ -176,7 +175,7 @@ var punctRe = func() *regexp2.Regexp {
 }()
 
 func normalizeText(raw string) string {
-	return pystr.Lower(pystr.Strip(norm.NFKC.String(raw)))
+	return strings.ToLower(strings.TrimSpace(norm.NFKC.String(raw)))
 }
 
 func compactText(raw string) string {
@@ -284,7 +283,7 @@ func SearchStickers(query string, limit int) []*pyjson.Object {
 	}
 	scored := make([]scoredSticker, 0, len(all))
 	for _, s := range all {
-		sidNorm := normalizeText(pystr.Strip(stickerField(s, "sticker_id")))
+		sidNorm := normalizeText(strings.TrimSpace(stickerField(s, "sticker_id")))
 		idScore := 0.0
 		if sidNorm == qNorm {
 			idScore = 100

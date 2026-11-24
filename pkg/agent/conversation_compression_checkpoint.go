@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -22,7 +21,7 @@ func activeMemoryProviderLabel(mm *memory.MemoryManager) string {
 		if p == nil {
 			continue
 		}
-		if name := pystr.Strip(p.Name()); name != "" {
+		if name := strings.TrimSpace(p.Name()); name != "" {
 			names = append(names, name)
 		}
 	}

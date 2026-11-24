@@ -376,7 +376,7 @@ func TestAFailedRelayProbeNeverFallsBackToTheVendorHost(t *testing.T) {
 func TestAzureFoundryPickerCatalog(t *testing.T) {
 	ctx := modelsTestHome(t)
 	var seen [2]string
-	azureFoundryRuntimeFn = func(context.Context, string, map[string]any) (*Runtime, error) {
+	azureFoundryRuntimeFn = func(context.Context, string) (*Runtime, error) {
 		return &Runtime{BaseURL: "https://r.openai.azure.com/openai/v1/", APIKey: "k"}, nil
 	}
 	azureProbeOpenAIModelsFn = func(_ context.Context, baseURL, apiKey string, _ func(context.Context) (string, error)) (bool, []string) {
@@ -392,13 +392,13 @@ func TestAzureFoundryPickerCatalog(t *testing.T) {
 	azureProbeOpenAIModelsFn = func(context.Context, string, string, func(context.Context) (string, error)) (bool, []string) {
 		return false, nil
 	}
-	azureFoundryRuntimeFn = func(context.Context, string, map[string]any) (*Runtime, error) {
+	azureFoundryRuntimeFn = func(context.Context, string) (*Runtime, error) {
 		return &Runtime{BaseURL: "https://r.services.ai.azure.com/anthropic", APIKey: "k"}, nil
 	}
 	if got := ProviderModelIDs(ctx, "azure-foundry", true); len(got.IDs) != 0 {
 		t.Fatalf("probe miss keeps the empty static catalog: %v", got.IDs)
 	}
-	azureFoundryRuntimeFn = func(context.Context, string, map[string]any) (*Runtime, error) {
+	azureFoundryRuntimeFn = func(context.Context, string) (*Runtime, error) {
 		return nil, errors.New("Azure Foundry requires a base URL")
 	}
 	if got := ProviderModelIDs(ctx, "azure-foundry", true); len(got.IDs) != 0 {
@@ -408,13 +408,9 @@ func TestAzureFoundryPickerCatalog(t *testing.T) {
 
 func TestDiskCacheFingerprintTracksTheConfiguredAzureResource(t *testing.T) {
 	ctx := modelsTestHome(t)
-	modelConfigDictFn = func(context.Context) map[string]any {
-		return map[string]any{"provider": "azure-foundry", "base_url": "https://a.openai.azure.com/openai/v1"}
-	}
+	writeConfigYAML(t, home.Dir(ctx), "model:\n  provider: azure-foundry\n  base_url: https://a.openai.azure.com/openai/v1\n")
 	fpA := credentialFingerprint(ctx, "azure-foundry")
-	modelConfigDictFn = func(context.Context) map[string]any {
-		return map[string]any{"provider": "azure-foundry", "base_url": "https://b.openai.azure.com/openai/v1"}
-	}
+	writeConfigYAML(t, home.Dir(ctx), "model:\n  provider: azure-foundry\n  base_url: https://b-resource.openai.azure.com/openai/v1\n")
 	if credentialFingerprint(ctx, "azure-foundry") == fpA {
 		t.Fatal("a resource switch must change the fingerprint")
 	}

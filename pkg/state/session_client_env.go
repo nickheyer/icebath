@@ -125,8 +125,8 @@ func ClientEnvConfiguredNames(config any) map[string]bool {
 		return out
 	}
 	for _, item := range items {
-		if s, ok := item.(string); ok && pystr.Strip(s) != "" {
-			out[pystr.Strip(s)] = true
+		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+			out[strings.TrimSpace(s)] = true
 		}
 	}
 	return out
@@ -138,7 +138,7 @@ func clientEnvTravels(name string, secret []string, useLive bool) bool {
 	if useLive {
 		hidden = secretEnvNameLive(name)
 	} else {
-		upper := pystr.Upper(name)
+		upper := strings.ToUpper(name)
 		for _, s := range secret {
 			if strings.Contains(upper, s) {
 				hidden = true
@@ -155,7 +155,7 @@ var SecretSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIA
 
 // Reports whether a variable name contains a credential fragment in any letter case
 func IsSecretEnvName(name string) bool {
-	upper := pystr.Upper(name)
+	upper := strings.ToUpper(name)
 	for _, s := range SecretSubstrings {
 		if strings.Contains(upper, s) {
 			return true

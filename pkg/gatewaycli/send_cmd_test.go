@@ -97,20 +97,6 @@ func clearEnv(t *testing.T, names ...string) {
 	unsetEnv(t, names...)
 }
 
-func TestLoadIcebathEnvBridgesConfigYamlScalars(t *testing.T) {
-	h := sendHome(t)
-	writeHomeFile(t, h, ".env", []byte("SOME_TOKEN=abc123\n"))
-	writeHomeFile(t, h, "config.yaml", []byte("TELEGRAM_HOME_CHANNEL: '5550001111'\nnested:\n  ignored: true\n"))
-	clearEnv(t, "TELEGRAM_HOME_CHANNEL", "SOME_TOKEN", "nested")
-	loadIcebathEnv(context.Background(), h)
-	if got := os.Getenv("SOME_TOKEN"); got != "abc123" {
-		t.Fatalf("SOME_TOKEN %q", got)
-	}
-	if got := os.Getenv("TELEGRAM_HOME_CHANNEL"); got != "5550001111" {
-		t.Fatalf("TELEGRAM_HOME_CHANNEL %q", got)
-	}
-}
-
 func TestLoadIcebathEnvUtf8BomPreservesFirstKey(t *testing.T) {
 	h := sendHome(t)
 	writeHomeFile(t, h, ".env", []byte("\xef\xbb\xbfSEND_BOM_BOT_TOKEN=tok-first\nSEND_BOM_SECOND=two\n"))

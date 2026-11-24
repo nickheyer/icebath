@@ -111,7 +111,7 @@ func TestEveryTaggedMinterKeepsItsSourceOnTheRoute(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, ".env"), []byte("VERTEX_CREDENTIALS_PATH="+sa+"\nVERTEX_REGION=europe-west4\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	src, _, ok := vertexRuntimeConfig(WithDeferredTokenMint(context.Background()), map[string]any{}, nil, h)
+	src, _, ok := vertexRuntimeConfig(WithDeferredTokenMint(context.Background()), nil, h)
 	if !ok || CredentialSourceOf(src) != CredentialSourceVertexOAuth || CredentialLabel(src) != "Google OAuth (Vertex AI)" || atomic.LoadInt32(&calls) != 0 {
 		t.Fatalf("vertex minter tag %q label %q calls %d", CredentialSourceOf(src), CredentialLabel(src), calls)
 	}

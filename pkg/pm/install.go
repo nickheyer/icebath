@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // InstallProgress reports download, unpack and verify stages, an error aborting the install
@@ -1352,11 +1351,11 @@ func StoreFirstPath(ctx context.Context, path string) (string, error) {
 	}
 	store := map[string]bool{}
 	for _, d := range dirs {
-		store[pystr.Lower(d)] = true
+		store[strings.ToLower(d)] = true
 	}
 	parts := append([]string{}, dirs...)
 	for _, p := range strings.Split(path, string(os.PathListSeparator)) {
-		if p != "" && !store[pystr.Lower(p)] {
+		if p != "" && !store[strings.ToLower(p)] {
 			parts = append(parts, p)
 		}
 	}

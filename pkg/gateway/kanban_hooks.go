@@ -15,6 +15,7 @@ var (
 	kanbanBindWorker   func(ctx context.Context, frame *pyjson.Object) error
 	kanbanStartFailure func(ctx context.Context, frame *pyjson.Object, cause error) error
 	kanbanWorkerLoss   func(ctx context.Context, policy *LocalSessionPolicy, reason string, pid any, bound bool)
+	kanbanSpawnEnv     func(ctx context.Context, policy *LocalSessionPolicy) (map[string]string, error)
 )
 
 // Store refusal of a verb whose tier this binary leaves out, its wire message the line naming the build that has it

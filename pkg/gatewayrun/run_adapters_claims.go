@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Attributes an adapter may hold its credential under, in lookup order
@@ -42,14 +41,14 @@ func adapterCredentialClaim(platform gateway.Platform, adapter any) *[2]string {
 // Exclusive Photon sidecar bind and port claim, nil for other platforms or an unusable port
 func adapterListenerClaim(platform gateway.Platform, adapter any) *[4]any {
 	bind, ok := adapterAttr(adapter, "_sidecar_bind").(string)
-	if platform != "photon" || !ok || pystr.Strip(bind) == "" {
+	if platform != "photon" || !ok || strings.TrimSpace(bind) == "" {
 		return nil
 	}
 	port, err := pyint.Int64(adapterAttr(adapter, "_sidecar_port"))
 	if err != nil {
 		return nil
 	}
-	return &[4]any{"listener", "photon", strings.ToLower(pystr.Strip(bind)), port}
+	return &[4]any{"listener", "photon", strings.ToLower(strings.TrimSpace(bind)), port}
 }
 
 // Salt of the credential fingerprint, and the one an older icebath hashed stored connectors with
@@ -72,10 +71,10 @@ func saltedCredentialFingerprint(adapter any, salt string) string {
 	values = append(values, adapterConfigToken(adapter))
 	for _, value := range values {
 		text, ok := value.(string)
-		if !ok || pystr.Strip(text) == "" {
+		if !ok || strings.TrimSpace(text) == "" {
 			continue
 		}
-		digest := sha256.Sum256([]byte(salt + pystr.Strip(text)))
+		digest := sha256.Sum256([]byte(salt + strings.TrimSpace(text)))
 		return hex.EncodeToString(digest[:])[:16]
 	}
 	return ""

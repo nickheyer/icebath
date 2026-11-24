@@ -1,12 +1,13 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Stable config.yaml keys under onboarding.seen
@@ -67,7 +68,7 @@ func onboardingSection(cfg any) map[string]any {
 
 // off never offers the profile build, every other onboarding.profile_build value asks
 func ProfileBuildMode(cfg any) string {
-	if mode, ok := onboardingSection(cfg)["profile_build"].(string); ok && pystr.Lower(pystr.Strip(mode)) == "off" {
+	if mode, ok := onboardingSection(cfg)["profile_build"].(string); ok && strings.ToLower(strings.TrimSpace(mode)) == "off" {
 		return "off"
 	}
 	return "ask"
@@ -92,7 +93,7 @@ func FirstContactTurnNote(ctx context.Context, cfg any, configPath string, sessi
 	}
 	if ProfileBuildMode(cfg) == "ask" && !IsSeen(cfg, OnboardingProfileBuildFlag) {
 		MarkSeen(ctx, configPath, OnboardingProfileBuildFlag)
-		note := pystr.Strip(ProfileBuildDirective())
+		note := strings.TrimSpace(ProfileBuildDirective())
 		return &note
 	}
 	note := OnboardingPlainIntroNote

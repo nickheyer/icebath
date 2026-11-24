@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Python PermissionError analog carrying its own message
@@ -846,14 +844,14 @@ func TestFileToolsReadSchemaHostedOCRGateStates(t *testing.T) {
 		}
 	}
 	t.Setenv("FIRECRAWL_API_KEY", "fc-x")
-	env.Config = config.Tree{}
+	setHomeConfigKey(t, env, "file_tools", map[string]any{})
 	check("direct key", true)
-	env.Config = config.Tree{"file_tools": map[string]any{"hosted_ocr": false}}
+	setHomeConfigKey(t, env, "file_tools.hosted_ocr", false)
 	check("config false beats key", false)
 	os.Unsetenv("FIRECRAWL_API_KEY")
-	env.Config = config.Tree{"file_tools": map[string]any{"hosted_ocr": true}}
+	setHomeConfigKey(t, env, "file_tools.hosted_ocr", true)
 	check("config true without key", false)
-	env.Config = config.Tree{}
+	setHomeConfigKey(t, env, "file_tools", map[string]any{})
 	check("nothing", false)
 }
 

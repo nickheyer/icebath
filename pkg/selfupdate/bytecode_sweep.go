@@ -3,6 +3,8 @@
 package selfupdate
 
 import (
+	"strings"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +27,7 @@ func SweepStaleBytecodeIfCheckoutChanged() {
 			pkgLog().Debug(fmt.Sprintf("Stale-bytecode launch sweep failed: %s", err.Error()))
 			return
 		}
-		recorded = pystr.Strip(text)
+		recorded = strings.TrimSpace(text)
 	}
 	if recorded == fingerprint {
 		return

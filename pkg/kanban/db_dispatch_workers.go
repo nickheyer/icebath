@@ -17,11 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-const (
-	DefaultFailureLimit             = 2
-	DefaultRateLimitCooldownSeconds = 300
-	UnverifiedWorkerFingerprint     = "unverified"
-)
+const UnverifiedWorkerFingerprint = "unverified"
 
 // SignalFunc delivers sig to pid the way os.kill does, an error standing for the OSError reclaim absorbs
 type SignalFunc func(pid int, sig syscall.Signal) error

@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -34,7 +35,6 @@ const (
 	// TickerIntervalSeconds is the scheduler loop period
 	TickerIntervalSeconds = 60
 	oneshotGraceSeconds   = 120
-	cronOutputDefaultKeep = 50
 	saveJobsMergeAttempts = 5
 )
 
@@ -79,7 +79,7 @@ var (
 	epochNow       = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 )
 
-// Store rooted at home with now as its clock source and the zone read from config and environment
+// Store rooted at home with now as its clock source and the zone of its profile's timezone setting
 func openCronStore(home string, now func() time.Time) *Store {
 	resolved, err := pypath.Realpath(pypath.Expanduser(home), pypath.Lax)
 	if err != nil {
@@ -91,11 +91,7 @@ func openCronStore(home string, now func() time.Time) *Store {
 	s.outputDir = filepath.Join(s.cronDir, "output")
 	s.loadConfig = func() (config.Tree, error) { return config.Load(resolved, nil) }
 	s.knobs = newKnobWarner(s.log)
-	s.clk = &clock{nowFn: now, zoneFn: func() *time.Location {
-		cfg, _ := s.loadConfig()
-		loc, _ := ResolveZone(cfg, nil)
-		return loc
-	}}
+	s.clk = &clock{nowFn: now, zoneFn: func() *time.Location { return configuredZoneOf(s.settingsCtx()) }}
 	return s
 }
 
@@ -319,7 +315,7 @@ func (s *Store) selfRemovalDeliveryAllowed(ctx context.Context, tx *jobsTx, jobI
 
 // Output directory of one job, refusing ids that are not a single safe path component
 func (s *Store) jobOutputDir(jobID string) (string, error) {
-	text := pystr.Strip(jobID)
+	text := strings.TrimSpace(jobID)
 	if text == "" || text == "." || text == ".." || strings.ContainsAny(text, "/\\") || filepath.IsAbs(text) || filepath.VolumeName(text) != "" {
 		return "", fmt.Errorf("Invalid cron job id for output path: %s", pyrepr.Repr(jobID))
 	}
@@ -355,6 +351,14 @@ func ensureCronDir(dir string) error {
 		}
 	}
 	return err
+}
+
+// Creates a directory the store writes into, the cron and output directories first so they carry the owner only policy on a home nothing has set up yet
+func (s *Store) ensureStoreDir(dir string) error {
+	if err := s.ensureDirs(home.WithOverride(context.Background(), s.home)); err != nil {
+		return err
+	}
+	return ensureCronDir(dir)
 }
 
 // Cron and output directories exist with owner only permissions
@@ -899,7 +903,7 @@ func (s *Store) TickerSuccessAge() (float64, bool) { return s.epochFileAge("tick
 
 // RecordTickerError persists the latest tick failure for status readers in other processes
 func (s *Store) RecordTickerError(ctx context.Context, message string) {
-	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_error", fmt.Sprintf("%s\n%s\n", pyrepr.Float(epochNow()), pystr.Strip(message)), ".terr_")
+	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_error", fmt.Sprintf("%s\n%s\n", pyrepr.Float(epochNow()), strings.TrimSpace(message)), ".terr_")
 }
 
 // ClearTickerError removes the last tick error marker, ignoring failures
@@ -915,53 +919,16 @@ func (s *Store) TickerLastError() (string, bool) {
 	if len(lines) < 2 {
 		return "", false
 	}
-	msg := pystr.Strip(strings.Join(lines[1:], "\n"))
+	msg := strings.TrimSpace(strings.Join(lines[1:], "\n"))
 	return msg, msg != ""
 }
 
-// Value of cron.<key> from config, the default when config or the key is unusable
-func (s *Store) cronConfigValue(key string, def any) any {
-	cfg, err := s.loadConfig()
-	if err != nil || cfg == nil {
-		return def
-	}
-	cron, ok := cfg["cron"].(map[string]any)
-	if !ok {
-		return def
-	}
-	if v, ok := cron[key]; ok {
-		return v
-	}
-	return def
-}
-
-// Integer cron.<key> through Python int, the default when the value does not convert
-func (s *Store) cronConfigInt(key string, def int64) int64 {
-	v, err := pyint.Of(s.cronConfigValue(key, def))
-	if err != nil || !v.IsInt64() {
-		if err == nil && v.Sign() > 0 {
-			return math.MaxInt64
-		}
-		if err == nil {
-			return math.MinInt64
-		}
-		return def
-	}
-	return v.Int64()
-}
-
-// Float cron.<key> through Python float, the default when the value does not convert
-func (s *Store) cronConfigFloat(key string, def float64) float64 {
-	v, err := pyint.Float(s.cronConfigValue(key, def))
-	if err != nil {
-		return def
-	}
-	return v
-}
+// Context whose settings reads resolve in this store's profile
+func (s *Store) settingsCtx() context.Context { return home.WithOverride(context.Background(), s.home) }
 
 // Per job output file cap from cron.output_retention
 func (s *Store) cronOutputKeep() int64 {
-	return s.cronConfigInt("output_retention", cronOutputDefaultKeep)
+	return int64(settings.CronOutputRetention.Get(s.settingsCtx()))
 }
 
 // Deletes the oldest timestamp named markdown outputs beyond keep, returning how many went

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -228,7 +227,7 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 		}
 		text := ""
 		if t := result["transcript"]; pyTruthy(t) {
-			text = pystr.Strip(pyrepr.Str(t))
+			text = strings.TrimSpace(pyrepr.Str(t))
 		}
 		if text != "" && !isWhisperHallucination(text) {
 			transcripts = append(transcripts, text)

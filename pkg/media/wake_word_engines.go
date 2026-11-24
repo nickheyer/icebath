@@ -17,8 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/fetch"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -58,14 +57,6 @@ func looksLikePath(value string) bool {
 	return value != "" && err == nil
 }
 
-// Engine sub section of the wake config, empty unless a mapping
-func wakeSub(cfg map[string]any, key string) map[string]any {
-	if sub, ok := asStrMap(cfg[key]); ok {
-		return sub
-	}
-	return map[string]any{}
-}
-
 // The openWakeWord feature pipeline pyopen-wakeword exposes
 type owwFeatures interface {
 	ProcessStreaming(audioChunk []byte, yield func(embedding []float32) bool) error
@@ -99,12 +90,12 @@ type openWakeWordEngine struct {
 }
 
 // Builds the openWakeWord engine on the configured model file, a ValueError naming the setting when none is set
-func newOpenWakeWordEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	modelRef := wakeOpenWakeWordModel(cfg)
+func newOpenWakeWordEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error) {
+	modelRef := cfg.OpenWakeWordModel
 	if modelRef == "" {
 		return nil, &WakeWordError{Class: "ValueError", Msg: "wake_word.openwakeword.model is not set. openWakeWord detects only the phrase " +
 			"its model file was trained for; set the path of that file, or set wake_word.provider to auto so the open vocabulary engine detects " +
-			errchain.Show(WakePhrase(ctx, cfg)) + "."}
+			errchain.Show(cfg.Phrase) + "."}
 	}
 	if err := wakeRequireExtra(ctx, "wake-openwakeword"); err != nil {
 		return nil, err
@@ -113,13 +104,7 @@ func newOpenWakeWordEngine(ctx context.Context, cfg map[string]any) (WakeEngine,
 	if err != nil {
 		return nil, err
 	}
-	e := &openWakeWordEngine{wakeEngineBase: wakeEngineBase{frameLength: 1280}}
-	if e.threshold, err = wakeSensitivity(cfg); err != nil {
-		return nil, err
-	}
-	if e.confirmNeeded, err = wakeConfirmationFrames(cfg); err != nil {
-		return nil, err
-	}
+	e := &openWakeWordEngine{wakeEngineBase: wakeEngineBase{frameLength: 1280}, threshold: cfg.Sensitivity, confirmNeeded: max(1, cfg.ConfirmationFrames)}
 	if e.features, err = lib.FeaturesFromBuiltin(); err != nil {
 		return nil, err
 	}
@@ -258,17 +243,12 @@ type sherpaKwsEngine struct {
 }
 
 // Builds the sherpa engine, tokenizing every phrase against the model vocabulary into a keywords file
-func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	sub := wakeSub(cfg, "sherpa")
+func newSherpaKwsEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error) {
 	sherpa, err := wakeImportSherpaOnnx(ctx)
 	if err != nil {
 		return nil, err
 	}
-	modelDir := ""
-	if pyTruthy(sub["model_dir"]) {
-		modelDir = pyrepr.Str(sub["model_dir"])
-	}
-	d := pystr.Strip(modelDir)
+	d := strings.TrimSpace(cfg.SherpaModelDir)
 	if d == "" {
 		if d, err = ensureSherpaModel(ctx, ""); err != nil {
 			return nil, err
@@ -277,11 +257,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, er
 	if _, err := os.Stat(filepath.Join(d, "tokens.txt")); err != nil {
 		return nil, &WakeWordError{Class: "RuntimeError", Msg: "sherpa KWS model not found at " + d}
 	}
-	phraseValue := wakeGet(cfg, "phrase")
-	if !pyTruthy(phraseValue) {
-		phraseValue = wakeDefaultPhrase
-	}
-	phrase := pystr.Strip(pyrepr.Str(phraseValue))
+	phrase := strings.TrimSpace(cfg.Phrase)
 	var phrases []string
 	phraseMap := map[string]string{}
 	setdefault := func(p, profile string) {
@@ -291,15 +267,14 @@ func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, er
 		}
 	}
 	setdefault(phrase, wakeActiveProfileName(ctx))
-	routing, present := cfg["profile_routing"]
-	if !present || pyTruthy(routing) {
+	if cfg.ProfileRouting {
 		for _, enrolled := range EnrolledProfilePhrases(ctx) {
-			setdefault(pystr.Strip(enrolled.Phrase), enrolled.Profile)
+			setdefault(strings.TrimSpace(enrolled.Phrase), enrolled.Profile)
 		}
 	}
 	upper := make([]string, len(phrases))
 	for i, p := range phrases {
-		upper[i] = pystr.Upper(p)
+		upper[i] = strings.ToUpper(p)
 	}
 	tokens, err := sherpa.Text2Token(upper, filepath.Join(d, "tokens.txt"), "bpe", filepath.Join(d, "bpe.model"))
 	if err != nil {
@@ -319,7 +294,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, er
 		newline = "\r\n"
 	}
 	for i := 0; i < len(phrases) && i < len(tokens); i++ {
-		display := strings.ReplaceAll(pystr.Upper(phrases[i]), " ", "_")
+		display := strings.ReplaceAll(strings.ToUpper(phrases[i]), " ", "_")
 		e.displayToProfile[display] = phraseMap[phrases[i]]
 		if _, err := kw.WriteString(strings.Join(tokens[i], " ") + " @" + display + newline); err != nil {
 			kw.Close()
@@ -330,10 +305,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, er
 		return nil, err
 	}
 	e.keywordsFile = kw.Name()
-	sensitivity, err := wakeSensitivity(cfg)
-	if err != nil {
-		return nil, err
-	}
+	sensitivity := cfg.Sensitivity
 	modelFile := func(part string) (string, error) {
 		hits := sherpaModelGlob(d, part)
 		if len(hits) == 0 {
@@ -402,7 +374,7 @@ func (e *sherpaKwsEngine) Process(frame []int16) (bool, error) {
 		if display := e.spotter.GetResult(e.stream); display != "" {
 			fired = true
 			e.matchMu.Lock()
-			e.lastMatch = &[2]string{pystr.Lower(strings.ReplaceAll(display, "_", " ")), e.displayToProfile[display]}
+			e.lastMatch = &[2]string{strings.ToLower(strings.ReplaceAll(display, "_", " ")), e.displayToProfile[display]}
 			e.matchMu.Unlock()
 			if err := e.spotter.ResetStream(e.stream); err != nil {
 				return fired, err
@@ -452,30 +424,25 @@ type porcupineEngine struct {
 	porcupine pvPorcupine
 }
 
-// Builds the Porcupine engine from PORCUPINE_ACCESS_KEY and a built in keyword or keyword file
-func newPorcupineEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
+// Builds the Porcupine engine from the profile's PORCUPINE_ACCESS_KEY and a built in keyword or keyword file
+func newPorcupineEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error) {
 	if err := wakeRequireExtra(ctx, "wake-porcupine"); err != nil {
 		return nil, err
 	}
-	sub := wakeSub(cfg, "porcupine")
 	pv, err := wakeImportPvporcupine(ctx)
 	if err != nil {
 		return nil, err
 	}
-	accessKey := pystr.Strip(os.Getenv("PORCUPINE_ACCESS_KEY"))
+	accessKey := wakeAccessKey(ctx)
 	if accessKey == "" {
 		return nil, &WakeWordError{Class: "RuntimeError", Msg: "Porcupine wake word requires PORCUPINE_ACCESS_KEY " +
 			"(get a free key at https://console.picovoice.ai)."}
 	}
-	keywordValue := any("jarvis")
-	if pyTruthy(sub["keyword"]) {
-		keywordValue = sub["keyword"]
+	keyword := strings.TrimSpace(cfg.PorcupineKeyword)
+	if keyword == "" {
+		keyword = settings.WakeWordPorcupineKeyword.Default
 	}
-	keyword := pystr.Strip(pyrepr.Str(keywordValue))
-	sensitivity, err := wakeSensitivity(cfg)
-	if err != nil {
-		return nil, err
-	}
+	sensitivity := cfg.Sensitivity
 	var keywordPaths, keywords []string
 	if looksLikePath(keyword) {
 		keywordPaths = []string{keyword}

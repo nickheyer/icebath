@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -182,6 +183,35 @@ func layersOf(ctx context.Context, h string) *layers {
 	layerCache.Unlock()
 	tellUnknownKeys(h, next)
 	return next
+}
+
+type frozenCtxKey struct{}
+
+// A session's frozen launch config standing in for config.yaml, with the values its derived settings give the keys they stand for
+type frozenLayer struct {
+	doc     map[string]any
+	derived map[string]any
+}
+
+// Context whose reads answer the global and platform layers from doc, a session's frozen launch config, instead of config.yaml; the session, env and managed layers stay as they are
+func WithFrozen(ctx context.Context, doc map[string]any) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if doc == nil {
+		doc = map[string]any{}
+	}
+	return context.WithValue(ctx, frozenCtxKey{}, &frozenLayer{doc: doc, derived: derivedCompanions(ctx, doc)})
+}
+
+// Layers a read of ctx resolves through: the home's, with the frozen launch config in place of config.yaml when ctx carries one
+func readLayers(ctx context.Context) *layers {
+	l := layersOf(ctx, homeDir(ctx))
+	frozen, _ := ctx.Value(frozenCtxKey{}).(*frozenLayer)
+	if frozen == nil {
+		return l
+	}
+	return &layers{sig: l.sig, doc: frozen.doc, managed: l.managed, state: l.state, derived: frozen.derived}
 }
 
 // Notices already given, so a person hears of each problem once per home
@@ -382,11 +412,40 @@ func defaultText(e Entry) string {
 	return valueText(row)
 }
 
+// The bound a number outside a setting's limits is brought to, as the setting stores it and as text; false for a value inside them or of another kind
+func boundedTo(e Entry, v any) (any, string, bool) {
+	switch e.(type) {
+	case *Int, *Float, *Duration:
+	default:
+		return nil, "", false
+	}
+	typed, fits := readPart(e, v)
+	if !fits || typed == nil {
+		return nil, "", false
+	}
+	if _, err := coercePart(e, v); err == nil {
+		return nil, "", false
+	}
+	if length, isDuration := e.(*Duration); isDuration {
+		typed = length.stored(typed.(time.Duration))
+	}
+	row := Row{Value: typed}
+	schemaOf(&row, e)
+	return typed, valueText(row), true
+}
+
 // Tells the person once about every stored value of a home a setting does not take: where it is, the key, the value, what the setting takes and what is used instead
 func tellMisfits(ctx context.Context, h string, l *layers) {
 	tell := func(place string) func(e Entry, key string, v any) {
 		return func(e Entry, key string, v any) {
-			eachMisfit(e, key, config.Expand(v, config.EnvRefLookupContext(ctx)), func(part string, bad any, field Entry) {
+			stored := config.Expand(v, config.ProfileEnvLookup(ctx, h))
+			if _, used, bounded := boundedTo(e, stored); bounded {
+				if shown := storedText(stored); firstNotice(h, place, key, shown) {
+					pkgLog().Warn(fmt.Sprintf("%s has %s set to %s, but it %s. Using %s instead.", place, key, shown, takes(e, stored), used))
+				}
+				return
+			}
+			eachMisfit(e, key, stored, func(part string, bad any, field Entry) {
 				shown := storedText(bad)
 				if !firstNotice(h, place, part, shown) {
 					return
@@ -456,13 +515,34 @@ func forgetLayers() {
 	layerCache.Unlock()
 }
 
-// Stored value at a key of the user's config.yaml with references expanded for ctx
+// Stored value at a key of the user's config.yaml with references expanded for the profile of ctx
 func storedValue(ctx context.Context, doc map[string]any, key string) (any, bool) {
 	v, ok := lookupPath(doc, key)
 	if !ok {
 		return nil, false
 	}
-	return config.Expand(v, config.EnvRefLookupContext(ctx)), true
+	return config.Expand(v, config.ProfileEnvLookup(ctx, homeDir(ctx))), true
+}
+
+// Value the profile of ctx stores for a setting as written, references unexpanded, so a flow can put it back unchanged; false when none is stored or the setting is a credential kept in .env
+func Stored(ctx context.Context, key string) (any, bool) {
+	e := FindKey(key)
+	if e == nil {
+		return nil, false
+	}
+	if _, isSecret := e.(*Secret); isSecret {
+		return nil, false
+	}
+	l := layersOf(ctx, homeDir(ctx))
+	doc := l.doc
+	if e.Info().State {
+		doc = l.state
+	}
+	v, ok := lookupPath(doc, e.Info().Key)
+	if !ok {
+		return nil, false
+	}
+	return config.Clone(v), true
 }
 
 // Stored value of an entry in the profile layer and whether the user set it
@@ -480,7 +560,7 @@ func globalValue(ctx context.Context, e Entry, l *layers) (any, bool) {
 		stored = l.state
 	}
 	if v, set := storedValue(ctx, stored, m.Key); set {
-		if mp, isMap := e.(*Map); isMap && len(mp.Default) > 0 {
+		if mp, isMap := e.(*Map); isMap && len(mp.Default) > 0 && !mp.Replace {
 			if user := config.AsMap(v); user != nil {
 				return config.DeepMerge(config.Clone(mp.Default).(map[string]any), user), true
 			}
@@ -520,7 +600,7 @@ func resolveEntry(ctx context.Context, e Entry) Value {
 		}
 		return Value{Key: m.Key, Value: e.DefaultValue(), Source: SourceDefault}
 	}
-	l := layersOf(ctx, homeDir(ctx))
+	l := readLayers(ctx)
 	pin, whole, pinned := managedPin(l, e)
 	if pinned && whole {
 		return Value{Key: m.Key, Value: pin, Source: SourceManaged, Locked: true}
@@ -536,10 +616,23 @@ func resolveEntry(ctx context.Context, e Entry) Value {
 func resolveUnpinned(ctx context.Context, e Entry, l *layers) Value {
 	m := e.Info()
 	if _, isSecret := e.(*Secret); !isSecret && m.Env != "" {
-		if v, ok := os.LookupEnv(m.Env); ok && strings.TrimSpace(v) != "" {
-			coerced, err := e.Coerce(v)
+		if v, ok := config.ProfileEnvLookup(ctx, homeDir(ctx))(m.Env); ok && strings.TrimSpace(v) != "" {
+			var written any = v
+			if list, isList := e.(*List); isList && list.EnvSplit {
+				written = list.envItems(v)
+			}
+			coerced, err := e.Coerce(written)
 			if err == nil {
+				if on, isBool := coerced.(bool); isBool && m.EnvInvert {
+					coerced = !on
+				}
 				return Value{Key: m.Key, Value: coerced, Source: SourceEnv}
+			}
+			if bound, used, bounded := boundedTo(e, written); bounded {
+				if firstNotice("env", m.Env, v) {
+					pkgLog().Warn(fmt.Sprintf("The %s environment variable is set to %q, but %s %s. Using %s instead.", m.Env, v, m.Key, reasonOf(err), used))
+				}
+				return Value{Key: m.Key, Value: bound, Source: SourceEnv}
 			}
 			if firstNotice("env", m.Env, v) {
 				pkgLog().Warn(fmt.Sprintf("The %s environment variable is set to %q, but %s %s. It is ignored.", m.Env, v, m.Key, reasonOf(err)))
@@ -561,14 +654,26 @@ func resolveUnpinned(ctx context.Context, e Entry, l *layers) Value {
 		return Value{Key: m.Key, Value: v, Source: SourceGlobal}
 	}
 	if secret, isSecret := e.(*Secret); isSecret && secret.Env != "" {
-		if v, ok := os.LookupEnv(secret.Env); ok && v != "" {
+		if v, ok := config.ProfileEnvLookup(ctx, homeDir(ctx))(secret.Env); ok && v != "" {
 			return Value{Key: m.Key, Value: v, Source: SourceEnv}
 		}
 	}
 	if v, ok := platformDefault(ctx, m, platform); ok {
 		return Value{Key: m.Key, Value: v, Source: SourceDefault}
 	}
-	return Value{Key: m.Key, Value: e.DefaultValue(), Source: SourceDefault}
+	return Value{Key: m.Key, Value: unsetValue(ctx, e, l), Source: SourceDefault}
+}
+
+// Value of an entry no layer sets: its default, except that an entry of a map whose stored mapping replaces the map's default takes only its schema's default once a layer holds that mapping
+func unsetValue(ctx context.Context, e Entry, l *layers) any {
+	child, isChild := e.(*mapChild)
+	if !isChild || !child.parent.Replace {
+		return e.DefaultValue()
+	}
+	if resolveUnpinned(ctx, child.parent, l).Source == SourceDefault {
+		return e.DefaultValue()
+	}
+	return child.Entry.DefaultValue()
 }
 
 // Typed value of an entry in effect for ctx

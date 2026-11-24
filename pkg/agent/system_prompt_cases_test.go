@@ -187,13 +187,16 @@ func TestCodingContextBlock(t *testing.T) {
 		}
 	})
 	t.Run("test_absent_when_off", func(t *testing.T) {
-		t.Setenv("ICEBATH_HOME", t.TempDir())
+		h := t.TempDir()
+		t.Setenv("ICEBATH_HOME", h)
 		dir := t.TempDir()
 		initCodeRepo(t, dir)
 		t.Setenv("TERMINAL_CWD", dir)
 		a := spAgent(t, "read_file")
 		a.platform = "cli"
-		a.env.Config = config.Tree{"agent": map[string]any{"coding_context": "off"}}
+		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("agent:\n  coding_context: \"off\"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		if strings.Contains(stablePrompt(t, a), "coding agent") {
 			t.Fatal("coding posture with the mode off")
 		}
@@ -487,7 +490,7 @@ func TestSessionStartLike(t *testing.T) {
 func fixedCodingParts(t *testing.T, prefix, workspace, trailing []string) {
 	t.Helper()
 	prev := codingSystemPromptPartsFn
-	codingSystemPromptPartsFn = func(*tools.Env, string, string, string, map[string]bool, *string) ([]string, []string, []string) {
+	codingSystemPromptPartsFn = func(context.Context, *tools.Env, string, string, string, map[string]bool, *string) ([]string, []string, []string) {
 		return prefix, workspace, trailing
 	}
 	t.Cleanup(func() { codingSystemPromptPartsFn = prev })
@@ -722,7 +725,9 @@ func profilePrompt(t *testing.T) SystemPromptParts {
 	t.Setenv("TERMINAL_CWD", "")
 	os.Unsetenv("TERMINAL_CWD")
 	a := spAgent(t, "read_file")
-	a.env.Config = config.Tree{"agent": map[string]any{"coding_context": "off"}}
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte("agent:\n  coding_context: \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	emptyPromptProbes(t)
 	return promptParts(t, a, nil)
 }

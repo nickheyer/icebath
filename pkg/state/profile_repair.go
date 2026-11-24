@@ -29,7 +29,7 @@ func SessionKeyProfile(sessionKey any) (string, bool) {
 func storedProfile(value any) (string, bool) {
 	name := ""
 	if value != nil {
-		name = pystr.Strip(pyStr(value))
+		name = strings.TrimSpace(pyStr(value))
 	}
 	return name, name != ""
 }

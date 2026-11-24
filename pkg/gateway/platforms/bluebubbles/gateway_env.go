@@ -1,6 +1,8 @@
 package bluebubbles
 
-import "github.com/nickheyer/icebath/pkg/gateway"
+import (
+	"github.com/nickheyer/icebath/pkg/gateway"
+)
 
 var envEnableCredentials = []string{"BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD"}
 

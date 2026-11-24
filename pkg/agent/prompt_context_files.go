@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -138,7 +137,7 @@ func readContextFile(env *tools.Env, path string) string {
 		pkgLog().Debug(fmt.Sprintf("Could not read %s: %v", path, err))
 		return ""
 	}
-	return pystr.Strip(text)
+	return strings.TrimSpace(text)
 }
 
 // One discovered context file, an empty content meaning empty or unreadable
@@ -340,9 +339,9 @@ func LoadSoulMD(ctx context.Context, env *tools.Env, contextLength *int, homeOve
 		pkgLog().Debug(fmt.Sprintf("Could not read SOUL.md from %s: %v", soulPath, err))
 		return "", false
 	}
-	content := pystr.Strip(text)
+	content := strings.TrimSpace(text)
 	if content != "" {
-		content = pystr.Strip(tools.StripLegacyBotProtocol(content))
+		content = strings.TrimSpace(tools.StripLegacyBotProtocol(content))
 	}
 	if content == "" {
 		return "", false

@@ -136,7 +136,7 @@ func recordServesProfile(record *pyjson.Object, h string) bool {
 	same, err := probeResult(func() (bool, error) {
 		recordHome, _ := home.RecordValue(record.Get, home.RecordKey)
 		text, ok := recordHome.(string)
-		if !ok || pystr.Strip(text) == "" {
+		if !ok || strings.TrimSpace(text) == "" {
 			text = home.Process()
 		}
 		return gatewayProbes.sameIcebathHome(text, target)

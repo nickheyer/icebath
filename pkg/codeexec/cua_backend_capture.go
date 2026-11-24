@@ -106,7 +106,7 @@ func cuStrField(w *pyjson.Object, key, def string) string {
 
 // True for the authorization daemon's own window under its normalized app name
 func isCuaDriverSelfWindow(w *pyjson.Object) bool {
-	name := strings.ToLower(pystr.Strip(cuStrField(w, "app_name", "")))
+	name := strings.ToLower(strings.TrimSpace(cuStrField(w, "app_name", "")))
 	var b strings.Builder
 	for _, r := range name {
 		if !pystr.IsSpace(r) && r != '_' && r != '-' {
@@ -210,7 +210,7 @@ func gwsIsEmpty(out *pyjson.Object) bool {
 	sc := scObject(out)
 	tree, _ := treeAndTitle(out)
 	return !(pyrepr.Truthy(cuGet(out, "images")) || pyrepr.Truthy(cuGet(sc, "elements")) ||
-		pyrepr.Truthy(cuGet(sc, "screenshot_png_b64")) || pystr.Strip(tree) != "")
+		pyrepr.Truthy(cuGet(sc, "screenshot_png_b64")) || strings.TrimSpace(tree) != "")
 }
 
 // base64.b64decode without validation, skipping non alphabet characters and failing on bad padding
@@ -345,11 +345,11 @@ func (b *CuaDriverBackend) ListWindows() ([]*pyjson.Object, error) {
 
 // Windows of app by exact name, then exact list_apps alias, then substrings, then nameless titles
 func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app string) []*pyjson.Object {
-	appLower := strings.ToLower(pystr.Strip(app))
+	appLower := strings.ToLower(strings.TrimSpace(app))
 	name := func(w *pyjson.Object) string { return strings.ToLower(cuStrField(w, "app_name", "")) }
 	var directExact []*pyjson.Object
 	for _, w := range windows {
-		if appLower != "" && appLower == pystr.Strip(name(w)) {
+		if appLower != "" && appLower == strings.TrimSpace(name(w)) {
 			directExact = append(directExact, w)
 		}
 	}
@@ -373,8 +373,8 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 		}
 		aliases := map[string]bool{}
 		for _, key := range []string{"bundle_id", "bundleId", "name", "app_name", "display_name"} {
-			if v, ok := cuGet(a, key).(string); ok && pystr.Strip(v) != "" {
-				aliases[strings.ToLower(pystr.Strip(v))] = true
+			if v, ok := cuGet(a, key).(string); ok && strings.TrimSpace(v) != "" {
+				aliases[strings.ToLower(strings.TrimSpace(v))] = true
 			}
 		}
 		if aliases[appLower] {
@@ -397,7 +397,7 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 		func(w *pyjson.Object) bool { return strings.Contains(name(w), appLower) },
 		func(w *pyjson.Object) bool { return pidIn(w, partialPIDs) },
 		func(w *pyjson.Object) bool {
-			return pystr.Strip(name(w)) == "" && strings.Contains(strings.ToLower(cuStrField(w, "title", "")), appLower)
+			return strings.TrimSpace(name(w)) == "" && strings.Contains(strings.ToLower(cuStrField(w, "title", "")), appLower)
 		},
 	}
 	for _, tier := range tiers {
@@ -448,7 +448,7 @@ func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, 
 	if app == nil || *app == "" {
 		return windows, nil, nil
 	}
-	if desktopShellSentinels[strings.ToLower(pystr.Strip(*app))] {
+	if desktopShellSentinels[strings.ToLower(strings.TrimSpace(*app))] {
 		var desktop []*pyjson.Object
 		for _, w := range windows {
 			if isDesktopWindow(w, desktopWindowNames) {
@@ -475,11 +475,7 @@ func (b *CuaDriverBackend) gwsArgs() (*pyjson.Object, error) {
 	args.Set("pid", intPtrValue(b.activePID))
 	args.Set("window_id", intPtrValue(b.activeWindowID))
 	args.Set("session", b.sessionID)
-	capped, err := cuaConfiguredAXMaxElements(b.env)
-	if err != nil {
-		return nil, err
-	}
-	if capped != 0 {
+	if capped := cuaConfiguredAXMaxElements(b.env); capped != 0 {
 		args.Set("max_elements", capped)
 	}
 	return args, nil
@@ -584,7 +580,7 @@ func (b *CuaDriverBackend) Capture(mode string, app *string, pid, windowID *int)
 		windowID = nil
 	}
 	exactTarget := pid != nil || windowID != nil
-	if !exactTarget && app != nil && *app != "" && fullScreenSentinels[strings.ToLower(pystr.Strip(*app))] {
+	if !exactTarget && app != nil && *app != "" && fullScreenSentinels[strings.ToLower(strings.TrimSpace(*app))] {
 		return b.captureFullScreen(mode)
 	}
 	windows, failed, err := b.resolveCaptureWindows(mode, app, pid, windowID)
@@ -773,7 +769,7 @@ func (b *CuaDriverBackend) ListApps() ([]any, error) {
 		}
 		pid, _ := pyint.Parse(m[2])
 		app := pyjson.NewObject()
-		app.Set("name", pystr.Strip(m[1]))
+		app.Set("name", strings.TrimSpace(m[1]))
 		app.Set("pid", int(pid.Int64()))
 		apps = append(apps, app)
 	}

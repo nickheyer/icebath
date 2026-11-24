@@ -129,7 +129,7 @@ func (s *Store) loadSuggestionsRaw() ([]any, error) {
 // Writes the records with a fresh updated_at as a private atomic file
 func (s *Store) saveSuggestionsRaw(suggestions []any) error {
 	path := s.suggestionsFile()
-	if err := ensureCronDir(filepath.Dir(path)); err != nil {
+	if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 		return err
 	}
 	payload := pyjson.NewObject()
@@ -179,7 +179,7 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 	if !validSuggestionSources[source] {
 		return nil, fmt.Errorf("unknown suggestion source: %s", pyrepr.Repr(source))
 	}
-	if pystr.Strip(title) == "" || pystr.Strip(dedupKey) == "" {
+	if strings.TrimSpace(title) == "" || strings.TrimSpace(dedupKey) == "" {
 		return nil, errors.New("title and dedup_key are required")
 	}
 	suggestionsMu.Lock()
@@ -211,11 +211,11 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 	}
 	record := pyjson.NewObject()
 	record.Set("id", uuid4Hex()[:12])
-	record.Set("title", pystr.Strip(title))
-	record.Set("description", pystr.Strip(description))
+	record.Set("title", strings.TrimSpace(title))
+	record.Set("description", strings.TrimSpace(description))
 	record.Set("source", source)
 	record.Set("job_spec", jobSpec)
-	record.Set("dedup_key", pystr.Strip(dedupKey))
+	record.Set("dedup_key", strings.TrimSpace(dedupKey))
 	record.Set("status", suggestionPending)
 	record.Set("created_at", FormatISO(s.clk.now()))
 	if err := s.saveSuggestionsRaw(append(suggestions, record)); err != nil {
@@ -275,7 +275,7 @@ func (s *Store) GetSuggestion(ref string) (*pyjson.Object, error) {
 		if !ok {
 			return nil, fmt.Errorf("a cron suggestion id is %s, expected text", errchain.Kind(raw))
 		}
-		if pystr.Lower(title) == pystr.Lower(ref) {
+		if strings.ToLower(title) == strings.ToLower(ref) {
 			return obj, nil
 		}
 	}

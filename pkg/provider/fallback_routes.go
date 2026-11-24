@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Trimmed base URL with the trailing slash removed, empty for non strings
@@ -121,21 +123,24 @@ func fallbackEntryIdentity(entry map[string]any) [3]string {
 	}
 }
 
-// GetFallbackChain merges fallback_providers then legacy fallback_model entries, dropping same route duplicates
-func GetFallbackChain(cfg map[string]any) []map[string]any {
+// FallbackChainOf is the chain a fallback_providers value names, same route duplicates dropped
+func FallbackChainOf(value any) []map[string]any {
 	var chain []map[string]any
 	seen := map[[3]string]bool{}
-	for _, key := range []string{"fallback_providers", "fallback_model"} {
-		for _, entry := range iterFallbackEntries(cfg[key]) {
-			identity := fallbackEntryIdentity(entry)
-			if seen[identity] {
-				continue
-			}
-			seen[identity] = true
-			chain = append(chain, entry)
+	for _, entry := range iterFallbackEntries(value) {
+		identity := fallbackEntryIdentity(entry)
+		if seen[identity] {
+			continue
 		}
+		seen[identity] = true
+		chain = append(chain, entry)
 	}
 	return chain
+}
+
+// Fallback chain in effect for ctx, same route duplicates dropped
+func FallbackChain(ctx context.Context) []map[string]any {
+	return FallbackChainOf(settings.FallbackModels.Get(ctx))
 }
 
 // ScopedFallbackChain picks the chain for a route owner that can pin its own primary, nil disabling fallback
@@ -150,7 +155,7 @@ func ScopedFallbackChain(inherited []map[string]any, declared any, declaredSet b
 	if list, ok := asList(declared); ok && len(list) == 0 {
 		return nil
 	}
-	normalized := GetFallbackChain(map[string]any{"fallback_providers": declared})
+	normalized := FallbackChainOf(declared)
 	if len(normalized) == 0 {
 		which := "inherited"
 		if pinned {

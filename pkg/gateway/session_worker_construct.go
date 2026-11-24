@@ -50,7 +50,7 @@ func fallbackChain(ctx context.Context, a *SessionAuthority, policy *LocalSessio
 		if err != nil {
 			return nil, err
 		}
-		if chain := provider.GetFallbackChain(cfg); len(chain) > 0 {
+		if chain := provider.FallbackChainOf(cfg["fallback_providers"]); len(chain) > 0 {
 			return chain, nil
 		}
 		return nil, nil

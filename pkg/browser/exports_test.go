@@ -12,7 +12,7 @@ import (
 func TestChromiumExecutableExport(t *testing.T) {
 	root, _ := runtimeHomes(t)
 	override := filepath.Join(root, "external browser")
-	env := pinnedEnv(override)
+	env := pinnedEnv(t, override)
 	pin(t, &runtimePMExecutable, func() string { return "/pm/chromium" })
 	if got := ChromiumExecutable(env, true); got != override {
 		t.Fatalf("resolved %q", got)

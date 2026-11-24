@@ -3,13 +3,14 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const feishuRawContentURI = "/open-apis/docx/v1/documents/:document_id/raw_content"
@@ -40,7 +41,7 @@ func feishuArgStrip(args map[string]any, key string) string {
 	if !isStr {
 		panic(pyAttributeError(v, "strip"))
 	}
-	return pystr.Strip(s)
+	return strings.TrimSpace(s)
 }
 
 // Plain text content of a Feishu document through the raw content API of the comment turn client

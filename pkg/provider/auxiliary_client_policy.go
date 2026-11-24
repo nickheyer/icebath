@@ -76,9 +76,9 @@ func auxNormalizeAuxProvider(ctx context.Context, provider string) string {
 	if provider == "" {
 		provider = "auto"
 	}
-	normalized := pystr.Lower(pystr.Strip(provider))
+	normalized := strings.ToLower(strings.TrimSpace(provider))
 	if strings.HasPrefix(normalized, "custom:") {
-		suffix := pystr.Strip(normalized[len("custom:"):])
+		suffix := strings.TrimSpace(normalized[len("custom:"):])
 		if suffix == "" {
 			return "custom"
 		}
@@ -88,7 +88,7 @@ func auxNormalizeAuxProvider(ctx context.Context, provider string) string {
 		return "openai-codex"
 	}
 	if normalized == "main" {
-		mainProv := pystr.Lower(pystr.Strip(auxReadMainProvider(ctx)))
+		mainProv := strings.ToLower(strings.TrimSpace(auxReadMainProvider(ctx)))
 		if mainProv == "" || mainProv == "auto" || mainProv == "main" {
 			return "custom"
 		}
@@ -107,7 +107,7 @@ func NormalizeAuxProvider(ctx context.Context, provider string) string {
 
 // Lowercased model slug with any vendor prefix dropped
 func bareModel(model string) string {
-	m := pystr.Lower(pystr.Strip(model))
+	m := strings.ToLower(strings.TrimSpace(model))
 	if i := strings.LastIndex(m, "/"); i >= 0 {
 		return m[i+1:]
 	}
@@ -167,7 +167,7 @@ func IsCodexGPT54OrGPT55(model, provider string) bool { return auxIsCodexGPT54Or
 
 // Bare model slug when the provider is the Codex OAuth route, false otherwise
 func auxCodexRouteBareModel(model, provider string) (string, bool) {
-	if pystr.Lower(pystr.Strip(provider)) != "openai-codex" {
+	if strings.ToLower(strings.TrimSpace(provider)) != "openai-codex" {
 		return "", false
 	}
 	return bareModel(model), true
@@ -286,7 +286,7 @@ var auxRecencySplitRe = regexp.MustCompile(`\p{Nd}+(?:\.\p{Nd}+)?`)
 
 // Sort key comparing digit runs numerically so a family's newest release sorts last
 func auxModelRecencyKey(modelID string) []auxRecencyPart {
-	lowered := pystr.Lower(modelID)
+	lowered := strings.ToLower(modelID)
 	var parts []auxRecencyPart
 	pos := 0
 	for _, m := range auxRecencySplitRe.FindAllStringIndex(lowered, -1) {
@@ -348,7 +348,7 @@ func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
 	if creds, err := auxResolveAPIKeyProviderCredentialsFn(ctx, providerID); err != nil {
 		pkgLog().Debug("No credentials for "+providerID+" catalog", "err", err)
 	} else {
-		apiKey, baseURL = pystr.Strip(creds.APIKey), pystr.Strip(creds.BaseURL)
+		apiKey, baseURL = strings.TrimSpace(creds.APIKey), strings.TrimSpace(creds.BaseURL)
 	}
 	if baseURL == "" {
 		if profile, ok := GetProviderProfile(ctx, providerID); ok {
@@ -373,7 +373,7 @@ func auxFastModelFromCatalog(ctx context.Context, providerID string) string {
 	sort.SliceStable(ids, func(i, j int) bool { return auxCompareRecency(keys[ids[i]], keys[ids[j]]) > 0 })
 	for _, family := range auxFastModelFamilies {
 		for _, modelID := range ids {
-			lowered := pystr.Lower(modelID)
+			lowered := strings.ToLower(modelID)
 			if strings.Contains(lowered, family) && !auxContainsAny(lowered, auxFastModelExclude) {
 				return modelID
 			}
@@ -453,17 +453,14 @@ func auxTaskPrefersFastModel(ctx context.Context, task any) (bool, error) {
 	return ok && v != nil && isTruthyValue(v), nil
 }
 
-// Task config read from the session scope or the bound home's readonly config.yaml
+// Task config read from the session scope or the bound home's readonly config.yaml, the read error of an unreadable config returned
 func auxGetAuxiliaryTaskConfig(ctx context.Context, task any) (map[string]any, error) {
-	var cfg map[string]any
 	if _, scoped := auxSessionAuxiliary(ctx); !scoped && auxTaskName(task) != "" {
-		tree, err := auxLoadConfigReadonlyFn(ctx)
-		if err != nil {
+		if _, err := auxLoadConfigReadonlyFn(ctx); err != nil {
 			return nil, err
 		}
-		cfg = tree
 	}
-	return newResolver(ctx, cfg, nil, "", nil).auxiliaryTaskConfig(task, map[string]bool{}), nil
+	return newResolver(ctx, nil, "", nil).auxiliaryTaskConfig(task, map[string]bool{}), nil
 }
 
 // Merged auxiliary task config block for a task name

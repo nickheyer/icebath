@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"database/sql"
 	"errors"
@@ -18,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -428,7 +429,7 @@ func botDeliveryParams(a *SessionAuthority, actor Principal, params map[string]a
 		limit = botDMMaxChars
 	}
 	message, ok := params["message"].(string)
-	if !ok || pystr.Strip(message) == "" || utf8.RuneCountInString(message) > limit {
+	if !ok || strings.TrimSpace(message) == "" || utf8.RuneCountInString(message) > limit {
 		return botDeliveryRequest{}, runtimeRefusal("invalid_params")
 	}
 	var author any

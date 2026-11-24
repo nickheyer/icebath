@@ -128,10 +128,8 @@ func TestMainModelPinReadsEveryModelShape(t *testing.T) {
 		resolved               int
 	}{
 		{"default key", "model:\n  default: m1\n", " OpenRouter ", [2]*string{prompt("openrouter"), prompt("m1")}, 1},
-		{"model key fallback", "model:\n  default: ''\n  model: m2\n", "openrouter", [2]*string{prompt("openrouter"), prompt("m2")}, 1},
-		{"bare string", "model: '  m3  '\n", "", [2]*string{nil, prompt("m3")}, 1},
 		{"nothing configured", "agent:\n  max_turns: 3\n", "openrouter", [2]*string{nil, nil}, 0},
-		{"non text model", "model:\n  default: 5\n", "openrouter", [2]*string{nil, nil}, 0},
+		{"number model", "model:\n  default: 5\n", "openrouter", [2]*string{prompt("openrouter"), prompt("5")}, 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1,11 +1,12 @@
 package config
 
 import (
+	"strings"
+
 	"math"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Bool-ish spellings the shared truthy check accepts after stripping and lowercasing
@@ -13,12 +14,12 @@ var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": 
 
 // Whether a string is one of the shared truthy spellings once stripped and lowercased
 func isTruthyString(value string) bool {
-	return truthyStrings[pystr.Lower(pystr.Strip(value))]
+	return truthyStrings[strings.ToLower(strings.TrimSpace(value))]
 }
 
 // Stripped environment variable passed through cast, def when unset, blank or rejected by cast
 func envNumber[T any](key string, def T, cast func(string) (T, bool)) T {
-	raw := pystr.Strip(os.Getenv(key))
+	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
 		return def
 	}

@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Marks the test binary a minted launcher runs as the install binary of the fixture tree
@@ -166,7 +165,7 @@ func TestMintedLauncherReadsCurrentSelectionAndEditableMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("launcher exited %d\n%s%s", exit.ExitCode(), stdout.String(), stderr.String())
 	}
-	if got := pystr.Strip(stdout.String()); got != "selected editable" {
+	if got := strings.TrimSpace(stdout.String()); got != "selected editable" {
 		t.Fatalf("launched program loaded %q", got)
 	}
 }

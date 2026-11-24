@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -92,7 +94,7 @@ func (r *GatewayRunner) retryAuthorityRefusal(ctx context.Context, source *gatew
 func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	source := event.Source
 	n := 1
-	rawArgs := pystr.Strip(event.GetCommandArgs())
+	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	if rawArgs != "" {
 		first := pystr.SplitWhitespace(rawArgs, -1)[0]
 		parsed, ok := pystr.IntText(first)

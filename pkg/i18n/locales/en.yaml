@@ -196,9 +196,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast is only available for OpenAI models that support Priority Processing."
-    status: "⚡ Priority Processing\n\nCurrent mode: `{mode}`\n\n_Usage:_ `/fast <normal|fast|auto|cold|ultrafast|status>`"
-    unknown_arg: "⚠️ Unknown argument: `{arg}`\n\n**Valid options:** normal, fast, auto, cold, ultrafast, status"
+    not_supported: "⚡ /fast needs a model whose provider offers a fast tier, such as OpenAI Priority Processing or Anthropic fast mode. Switch with /model to one that does."
+    status: "⚡ Priority Processing\n\nCurrent mode: `{mode}`\n\n_Usage:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ Unknown argument: `{arg}`\n\n**Valid options:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (saved to config)\n_(takes effect on next message)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (this session only)"
     label_fast: "FAST"
@@ -212,6 +212,9 @@ gateway:
     choice_cold: "cold — fast for the first turn of a session only"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, 6x price"
     ultrafast_not_supported: "⚡ Ultrafast isn't available for `{model}` on this account or route."
+  setup_wizard:
+
+    configure_in_config: "  Configure {platform} in config.yaml under platforms.{key}"
   footer:
 
     status: "📎 Runtime footer: **{state}**\nFields: `{fields}`\nPlatform: `{platform}`"
@@ -2047,7 +2050,7 @@ slash:
     description: "Show available commands (/help skills lists skill commands, /help <text> filters)"
   palette:
 
-    description: "Open the fuzzy command palette (also Ctrl+P)"
+    description: "Open the fuzzy command palette"
   restart:
 
     description: "Gracefully restart the gateway after draining active runs"
@@ -2576,6 +2579,12 @@ cli:
     sweep_archived_removed: "archived + removed → {ref}"
     sweep_archived_kept: "archived, kept ({reason}) → {ref}"
     discarded: "Worktree removed and its changes discarded: {path}"
+  update:
+
+    held_icebath: "{mark} Other icebath processes are running from this install ({count}):"
+    held_venv: "{mark} Processes are running from this install's Python environment ({count}):"
+    held_forced: "  → Updating anyway because of {flag}."
+    held_refused: "  Close them and run `icebath update` again, or pass {flag} to update anyway."
 
 display:
 
@@ -2767,7 +2776,7 @@ explainer:
     ollama_runtime_context_too_small: "the local model's context window was too small to finish. Increase the context size or use a larger model."
     pending_tool_result: "the turn stopped while a tool result was still pending and the model produced no follow-up text. Send `continue` to let it summarize."
     interrupted_during_api_call: "the request was interrupted mid-call before a reply was received. Send `continue` to retry."
-    max_iterations_reached: "the maximum tool-iteration limit was reached before a final answer. Send `continue` to keep going, or raise `max_iterations`."
+    max_iterations_reached: "the maximum tool-iteration limit was reached before a final answer. Send `continue` to keep going, or raise `agent.max_turns`."
     error_near_max_iterations: "an error occurred near the iteration limit before a final answer. Check the tool output above, then send `continue`."
     repeated_outer_errors: "the turn kept failing with repeated errors and was stopped early instead of retrying forever. Check the errors above, then send `continue` to retry."
   persistence:
@@ -2976,8 +2985,8 @@ tips:
   t177: "Icebath loads project context from .icebath.md, AGENTS.md, CLAUDE.md, or .cursorrules (first match)."
   t178: "Subdirectory AGENTS.md files are discovered progressively as the agent navigates into folders."
   t179: "Context files are capped at 20,000 characters with smart head/tail truncation."
-  t180: "Browser backends: local Chromium, Lightpanda, Browserbase, Browser Use and Firecrawl — plus Camofox, built in."
-  t181: "Camofox (anti-detection Firefox) is built in: set it up with icebath camofox setup."
+  t180: "Browser backends: local Chromium, Lightpanda, Browserbase, Browser Use and Firecrawl — plus Camofox as a plugin."
+  t181: "Camofox (anti-detection Firefox) is a plugin: install it with icebath plugins install camofox, then run icebath camofox setup."
   t182: "browser_exec runs several browser steps in one Python call — navigate, extract and click together."
   t183: "browser.dialog_policy sets how native page dialogs are handled: must_respond (the agent answers with browser_dialog), auto_dismiss or auto_accept."
   t184: "icebath mcp opens an interactive picker of the MCPs in icebath's built-in catalog you can install in one keystroke."

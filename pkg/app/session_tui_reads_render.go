@@ -63,7 +63,7 @@ func TUIStatusRead(ctx context.Context, a *gateway.SessionAuthority, ref gateway
 			baseURL = pyrepr.Str(policy.BaseURL())
 		}
 		scoped := gateway.ProfileRuntimeScope(ctx, a.ProfileID, true)
-		fields["provider"] = provider.SessionProviderIdentity(scoped, "custom", requested, baseURL, pyrepr.Str(fields["model"]), nil)
+		fields["provider"] = provider.SessionProviderIdentity(scoped, "custom", requested, baseURL, pyrepr.Str(fields["model"]))
 	}
 	lines := []string{"Icebath TUI Status", ""}
 	lines = append(lines, statusLines(fields, "session_id", "path")...)
@@ -108,7 +108,7 @@ func TUIContextRead(ctx context.Context, a *gateway.SessionAuthority, ref gatewa
 		if history, err := gateway.TUIModelHistory(ctx, a.DB, stored); err == nil {
 			if payload, err := agent.ComputeSessionContextBreakdown(ctx, resident, history); err == nil {
 				var details *agent.ContextDetails
-				switch pystr.Lower(pystr.Strip(arg)) {
+				switch strings.ToLower(strings.TrimSpace(arg)) {
 				case "all", "full", "details":
 					if found, err := agent.ComputeContextDetails(ctx, resident); err == nil {
 						details = &found

@@ -1203,8 +1203,12 @@ func parseMCPBoolish(value any, def bool) bool {
 
 // EnabledMCPServerNames lists MCP servers enabled in config plus portable plugin servers
 func EnabledMCPServerNames(cfg config.Tree, portable map[string]bool) map[string]bool {
+	return enabledServerNames(cfg.Map("mcp_servers"), portable)
+}
+
+// Names of the enabled entries of an mcp_servers mapping plus the portable servers it does not name
+func enabledServerNames(servers map[string]any, portable map[string]bool) map[string]bool {
 	names := map[string]bool{}
-	servers := cfg.Map("mcp_servers")
 	for name, raw := range servers {
 		if m := config.AsMap(raw); m != nil && MCPServerEnabled(m) {
 			names[name] = true

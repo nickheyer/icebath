@@ -186,7 +186,7 @@ type cronFlags struct {
 func cliNormalizeSkills(values []string) []string {
 	var out []string
 	for _, v := range values {
-		text := pystr.Strip(v)
+		text := strings.TrimSpace(v)
 		if text != "" && !containsString(out, text) {
 			out = append(out, text)
 		}

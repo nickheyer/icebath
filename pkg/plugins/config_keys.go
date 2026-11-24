@@ -14,7 +14,7 @@ import (
 
 // Names the plugins.disabled list of a home parks
 func DisabledPlugins(h string) map[string]bool {
-	return disabledPlugins(loadConfigOrEmpty(h))
+	return getDisabledSet(h)
 }
 
 // Registers the settings blocks every discovered plugin and the selected memory provider declare
@@ -30,16 +30,14 @@ func RegisterActiveSettings(h string) {
 		}
 	}
 	ResolveManifestWinners(manifests)
-	if m := selectedMemoryProviderManifest(h, loadConfigOrEmpty(h)); m != nil {
+	if m := selectedMemoryProviderManifest(h); m != nil {
 		settings.RegisterPluginKeys(m.Name, m.ConfigKeys)
 	}
 }
 
 // Manifest of the memory provider memory.provider selects unless missing or parked in plugins.disabled
-func selectedMemoryProviderManifest(h string, cfg map[string]any) *Manifest {
-	section, _ := cfg["memory"].(map[string]any)
-	name, _ := section["provider"].(string)
-	name = strings.TrimSpace(name)
+func selectedMemoryProviderManifest(h string) *Manifest {
+	name := strings.TrimSpace(settings.MemoryProvider.Get(homeContext(h)))
 	if name == "" {
 		return nil
 	}
@@ -48,7 +46,7 @@ func selectedMemoryProviderManifest(h string, cfg map[string]any) *Manifest {
 		panic(&ServiceMissingError{Name: "MemoryProviderDir"})
 	}
 	dir, usable := s.MemoryProviderDir(h, name)
-	if !usable || memoryProviderExplicitlyDisabled(cfg, name, dir) {
+	if !usable || memoryProviderExplicitlyDisabled(h, name, dir) {
 		return nil
 	}
 	for _, file := range []string{"plugin.yaml", "plugin.yml"} {
@@ -78,25 +76,19 @@ func bundledMemoryProviderDir(pluginDir string) bool {
 }
 
 // True when a non bundled provider directory is parked in plugins.disabled under any spelling the plugin commands write
-func memoryProviderExplicitlyDisabled(cfg map[string]any, name, dir string) bool {
+func memoryProviderExplicitlyDisabled(h, name, dir string) bool {
 	if bundledMemoryProviderDir(dir) {
 		return false
 	}
-	section, _ := cfg["plugins"].(map[string]any)
-	disabled, ok := section["disabled"].([]any)
-	if !ok {
+	disabled := getDisabledSet(h)
+	if len(disabled) == 0 {
 		return false
 	}
 	spellings, err := pm.PluginSpellings(dir, name)
 	if err != nil {
 		panic(err)
 	}
-	for _, v := range disabled {
-		if s, ok := v.(string); ok && spellings[s] {
-			return true
-		}
-	}
-	return false
+	return intersects(spellings, disabled)
 }
 
 // MCP servers the enabled portable plugins of a home declare, after discovery of that home

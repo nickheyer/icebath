@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Fallback command seams, swappable so tests script the picker, the terminal check and the menus
@@ -31,26 +34,6 @@ func FallbackEntryIdentity(entry map[string]any) BackendIdentity {
 	return BuildBackendIdentity(stringField(entry, "provider"), stringField(entry, "model"), stringField(entry, "base_url"))
 }
 
-// ReadFallbackChain is the normalized chain merged with the legacy fallback_model, always fresh copies
-func ReadFallbackChain(cfg map[string]any) []map[string]any {
-	chain := GetFallbackChain(cfg)
-	out := make([]map[string]any, 0, len(chain))
-	for _, entry := range chain {
-		out = append(out, cloneMap(entry))
-	}
-	return out
-}
-
-// WriteFallbackChain stores the chain under fallback_providers and drops the legacy fallback_model key
-func WriteFallbackChain(cfg map[string]any, chain []map[string]any) {
-	list := make([]any, 0, len(chain))
-	for _, entry := range chain {
-		list = append(list, map[string]any(entry))
-	}
-	pyDictSet(cfg, "fallback_providers", list)
-	delete(cfg, "fallback_model")
-}
-
 // FormatFallbackEntry renders one chain entry as model (via provider) with the base URL when set
 func FormatFallbackEntry(entry map[string]any) string {
 	out := fmt.Sprintf("%s  (via %s)", pyStr(dictGet(entry, "model", "?")), pyStr(dictGet(entry, "provider", "?")))
@@ -60,54 +43,66 @@ func FormatFallbackEntry(entry map[string]any) string {
 	return out
 }
 
-// ExtractFallbackFromModelCfg pulls provider, model, base_url and api_mode out of a config model snapshot
-func ExtractFallbackFromModelCfg(modelCfg any) (map[string]any, bool, error) {
-	m, ok := modelCfg.(map[string]any)
-	if !ok {
-		return nil, false, nil
-	}
-	rawProvider, err := pyOrEmptyStr(m["provider"], "model.provider")
-	if err != nil {
-		return nil, false, err
-	}
-	rawModel := m["default"]
-	if !pyTruthy(rawModel) {
-		rawModel = m["model"]
-	}
-	modelText, err := pyOrEmptyStr(rawModel, "model.default")
-	if err != nil {
-		return nil, false, err
-	}
-	provider, model := pystr.Strip(rawProvider), pystr.Strip(modelText)
+// Primary route of the profile of ctx as a chain entry with its base_url and api_mode, nil when no provider or model is set
+func primaryFallbackEntry(ctx context.Context) map[string]any {
+	provider, model := strings.TrimSpace(settings.ModelProvider.Get(ctx)), strings.TrimSpace(settings.Model.Get(ctx))
 	if provider == "" || model == "" {
-		return nil, false, nil
+		return nil
 	}
 	entry := map[string]any{"provider": provider, "model": model}
-	config.SetMappingKeys(entry, []string{"provider", "model"})
-	for _, key := range []string{"base_url", "api_mode"} {
-		raw, err := pyOrEmptyStr(m[key], "model."+key)
-		if err != nil {
-			return nil, false, err
-		}
-		if v := pystr.Strip(raw); v != "" {
-			pyDictSet(entry, key, v)
+	keys := []string{"provider", "model"}
+	for _, field := range []struct{ key, value string }{{"base_url", settings.ModelBaseURL.Get(ctx)}, {"api_mode", settings.ModelAPIMode.Get(ctx)}} {
+		if v := strings.TrimSpace(field.value); v != "" {
+			entry[field.key] = v
+			keys = append(keys, field.key)
 		}
 	}
-	return entry, true, nil
+	config.SetMappingKeys(entry, keys)
+	return entry
 }
 
-// RestoreModelCfg puts the config model section back to a captured snapshot, re inserted last like a dict
-func RestoreModelCfg(ctx context.Context, h string, modelBefore any) error {
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
+// Model settings the profile's config.yaml holds as written, by key, taken before the picker runs so the primary route can be put back
+type modelSnapshot map[string]any
+
+// Keys of every registered model setting
+func modelSettingKeys() []string {
+	var keys []string
+	for _, e := range settings.All() {
+		if key := e.Info().Key; strings.HasPrefix(key, "model.") && !e.Info().State {
+			keys = append(keys, key)
+		}
 	}
-	delete(cfg, "model")
-	if modelBefore != nil {
-		cfg["model"] = config.Clone(modelBefore)
-		config.AppendMappingKey(cfg, "model")
+	return keys
+}
+
+// Snapshot of every model setting the profile of ctx stores
+func snapshotModelSettings(ctx context.Context) modelSnapshot {
+	out := modelSnapshot{}
+	for _, key := range modelSettingKeys() {
+		if v, ok := settings.Stored(ctx, key); ok {
+			out[key] = v
+		}
 	}
-	return config.Save(h, cfg)
+	return out
+}
+
+// Puts the profile's model settings back to a snapshot, writing through the settings writer only the keys that differ from it
+func restoreModelSettings(ctx context.Context, before modelSnapshot) error {
+	for _, key := range modelSettingKeys() {
+		want, held := before[key]
+		now, stored := settings.Stored(ctx, key)
+		if held == stored && (!held || reflect.DeepEqual(now, want)) {
+			continue
+		}
+		var value any
+		if held {
+			value = want
+		}
+		if _, err := settings.Set(ctx, key, value, settings.Global); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Picker failure with the note a failed primary route restore attached, the picker error kept as the cause
@@ -137,72 +132,41 @@ func printChain(w io.Writer, heading string, chain []map[string]any) {
 	fmt.Fprintln(w, text)
 }
 
-// Loads the config and its chain, printing the empty message block and a nil chain when empty
-func loadChain(ctx context.Context, w io.Writer, h string, emptyMessage string) (config.Tree, []map[string]any, error) {
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil, nil, err
-	}
-	chain := ReadFallbackChain(cfg)
+// Chain the profile of ctx stores, printing the empty message block and answering nil when it is empty
+func loadChain(ctx context.Context, w io.Writer, emptyMessage string) []map[string]any {
+	chain := StoredFallbackChain(ctx)
 	if len(chain) == 0 {
 		fmt.Fprintf(w, "\n%s\n\n", emptyMessage)
-		return cfg, nil, nil
+		return nil
 	}
-	return cfg, chain, nil
+	return chain
 }
 
-// DescribePrimary is the one line model (via provider) of the configured primary, empty for none
-func DescribePrimary(cfg map[string]any) (string, error) {
-	switch m := cfg["model"].(type) {
-	case map[string]any:
-		rawProvider := m["provider"]
-		if !pyTruthy(rawProvider) {
-			rawProvider = "?"
-		}
-		provider, err := pyOrEmptyStr(rawProvider, "model.provider")
-		if err != nil {
-			return "", err
-		}
-		if provider = pystr.Strip(provider); provider == "" {
-			provider = "?"
-		}
-		rawModel := m["default"]
-		if !pyTruthy(rawModel) {
-			rawModel = m["model"]
-		}
-		if !pyTruthy(rawModel) {
-			rawModel = "?"
-		}
-		model, err := pyOrEmptyStr(rawModel, "model.default")
-		if err != nil {
-			return "", err
-		}
-		if model = pystr.Strip(model); model == "" {
-			model = "?"
-		}
-		return fmt.Sprintf("%s  (via %s)", model, provider), nil
-	case string:
-		return pystr.Strip(m), nil
+// DescribePrimary is the one line model (via provider) of the primary route of ctx, a question mark for the half not set, empty when neither is
+func DescribePrimary(ctx context.Context) string {
+	provider, model := strings.TrimSpace(settings.ModelProvider.Get(ctx)), strings.TrimSpace(settings.Model.Get(ctx))
+	if provider == "" && model == "" {
+		return ""
 	}
-	return "", nil
+	if provider == "" {
+		provider = "?"
+	}
+	if model == "" {
+		model = "?"
+	}
+	return fmt.Sprintf("%s  (via %s)", model, provider)
 }
 
 // FallbackList prints the primary and the fallback chain in order
 func FallbackList(ctx context.Context, w io.Writer, h string) error {
-	cfg, chain, err := loadChain(ctx, w, h, "  No fallback providers configured.")
-	if err != nil {
-		return err
-	}
+	ctx = home.WithOverride(ctx, h)
+	chain := loadChain(ctx, w, "  No fallback providers configured.")
 	if chain == nil {
 		fmt.Fprint(w, "  Add one with:  icebath fallback add\n\n")
 		return nil
 	}
 	fmt.Fprintln(w)
-	primary, err := DescribePrimary(cfg)
-	if err != nil {
-		return err
-	}
-	if primary != "" {
+	if primary := DescribePrimary(ctx); primary != "" {
 		fmt.Fprintf(w, "  Primary:   %s\n\n", primary)
 	}
 	printChain(w, "Fallback chain", chain)
@@ -212,18 +176,12 @@ func FallbackList(ctx context.Context, w io.Writer, h string) error {
 }
 
 // Runs the picker then reads the picked entry, restoring the primary route and re raising on any failure
-func runFallbackPicker(ctx context.Context, h string, picker func() error, modelBefore any) (entry map[string]any, err error) {
+func runFallbackPicker(ctx context.Context, picker func() error, before modelSnapshot) (entry map[string]any, err error) {
 	failed := true
-	restoreOnFailure := func(cause error) error {
-		if rerr := RestoreModelCfg(ctx, h, modelBefore); rerr != nil {
-			return &fallbackPickerError{err: cause, note: "Could not fully restore the primary route after fallback selection failed: " + rerr.Error()}
-		}
-		return cause
-	}
 	defer func() {
 		if failed {
 			if p := recover(); p != nil {
-				if rerr := RestoreModelCfg(ctx, h, modelBefore); rerr != nil {
+				if rerr := restoreModelSettings(ctx, before); rerr != nil {
 					if _, exiting := p.(SetupExit); !exiting {
 						if cause, isErr := p.(error); isErr {
 							p = &fallbackPickerError{err: cause, note: "Could not fully restore the primary route after fallback selection failed: " + rerr.Error()}
@@ -234,39 +192,27 @@ func runFallbackPicker(ctx context.Context, h string, picker func() error, model
 			}
 		}
 	}()
-	if err := picker(); err != nil {
+	if perr := picker(); perr != nil {
 		failed = false
-		return nil, restoreOnFailure(err)
+		if rerr := restoreModelSettings(ctx, before); rerr != nil {
+			return nil, &fallbackPickerError{err: perr, note: "Could not fully restore the primary route after fallback selection failed: " + rerr.Error()}
+		}
+		return nil, perr
 	}
-	after, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		failed = false
-		return nil, restoreOnFailure(err)
-	}
-	entry, _, err = ExtractFallbackFromModelCfg(after["model"])
 	failed = false
-	if err != nil {
-		return nil, restoreOnFailure(err)
-	}
-	return entry, nil
+	return primaryFallbackEntry(ctx), nil
 }
 
 // FallbackAdd runs the model picker, restores the primary route, then appends the pick to the chain
 func FallbackAdd(ctx context.Context, w io.Writer, h string, picker func() error) error {
-	before, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
-	var modelBefore any
-	if v, ok := before["model"]; ok {
-		modelBefore = config.Clone(v)
-	}
+	ctx = home.WithOverride(ctx, h)
+	before := snapshotModelSettings(ctx)
 	fmt.Fprint(w, "\n  Adding a fallback provider.  The picker below is the same one used by\n  `icebath model` — select the provider + model you want as a fallback.\n\n")
-	newEntry, err := runFallbackPicker(ctx, h, picker, modelBefore)
+	newEntry, err := runFallbackPicker(ctx, picker, before)
 	if err != nil {
 		return err
 	}
-	if err := RestoreModelCfg(ctx, h, modelBefore); err != nil {
+	if err := restoreModelSettings(ctx, before); err != nil {
 		return fmt.Errorf("Could not restore the primary route: %w", err)
 	}
 	if newEntry == nil {
@@ -293,9 +239,9 @@ func FallbackAdd(ctx context.Context, w io.Writer, h string, picker func() error
 
 // FallbackRemove lets the chooser pick an entry, a cancel or out of range answer leaving the chain alone
 func FallbackRemove(ctx context.Context, w io.Writer, h string, choose func(question string, choices []string, def int, description string) (int, error)) error {
-	_, chain, err := loadChain(ctx, w, h, "  No fallback providers configured — nothing to remove.")
-	if err != nil || chain == nil {
-		return err
+	chain := loadChain(home.WithOverride(ctx, h), w, "  No fallback providers configured — nothing to remove.")
+	if chain == nil {
+		return nil
 	}
 	options := make([]string, 0, len(chain)+1)
 	for _, entry := range chain {
@@ -325,9 +271,9 @@ func FallbackRemove(ctx context.Context, w io.Writer, h string, choose func(ques
 
 // FallbackClear empties the chain after a y or yes confirmation, an interrupted prompt cancelling
 func FallbackClear(ctx context.Context, w io.Writer, h string, confirm func(out io.Writer, prompt string) (string, error)) error {
-	_, chain, err := loadChain(ctx, w, h, "  No fallback providers configured — nothing to clear.")
-	if err != nil || chain == nil {
-		return err
+	chain := loadChain(home.WithOverride(ctx, h), w, "  No fallback providers configured — nothing to clear.")
+	if chain == nil {
+		return nil
 	}
 	fmt.Fprintln(w)
 	printChain(w, "Current fallback chain", chain)
@@ -339,7 +285,7 @@ func FallbackClear(ctx context.Context, w io.Writer, h string, confirm func(out 
 		fmt.Fprintln(w, "\n  Cancelled.")
 		return nil
 	}
-	switch pystr.Lower(pystr.Strip(resp)) {
+	switch strings.ToLower(strings.TrimSpace(resp)) {
 	case "y", "yes":
 	default:
 		fmt.Fprintln(w, "  Cancelled — no change.")

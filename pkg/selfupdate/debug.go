@@ -218,7 +218,7 @@ var debugBestEffortSweep = func(ctx context.Context) {
 
 // Paste id of a paste.rs url, empty for any other service
 func debugExtractPasteID(raw string) string {
-	trimmed := strings.TrimRight(pystr.Strip(raw), "/")
+	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
 	for _, prefix := range []string{"https://paste.rs/", "http://paste.rs/"} {
 		if strings.HasPrefix(trimmed, prefix) {
 			return trimmed[len(prefix):]
@@ -229,7 +229,7 @@ func debugExtractPasteID(raw string) string {
 
 // Whether a url is a dpaste.com paste, which has no unauthenticated delete
 func debugIsDpasteURL(raw string) bool {
-	s := pystr.Strip(raw)
+	s := strings.TrimSpace(raw)
 	return strings.HasPrefix(s, "https://dpaste.com/") || strings.HasPrefix(s, "http://dpaste.com/")
 }
 
@@ -341,7 +341,7 @@ func debugPostPaste(ctx context.Context, service, endpoint string, body []byte, 
 	if err != nil {
 		return "", &pm.PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
-	got := pystr.Strip(text)
+	got := strings.TrimSpace(text)
 	if !strings.HasPrefix(got, "http") {
 		return "", &pm.PyError{Class: "ValueError", Message: "Unexpected response from " + service + ": " + RedactDebugSupportTextCapped(got, 200)}
 	}
@@ -739,7 +739,7 @@ func debugConfirmUpload(ns map[string]any, w io.Writer) (bool, int) {
 	if err != nil {
 		answer = ""
 	}
-	answer = strings.ToLower(pystr.Strip(answer))
+	answer = strings.ToLower(strings.TrimSpace(answer))
 	if answer == "y" || answer == "yes" {
 		return true, 0
 	}

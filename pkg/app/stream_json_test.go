@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -177,7 +178,8 @@ func TestConfigureWindowsStdioIsIdempotentAndQuietOffWindows(t *testing.T) {
 	if IsWindows() {
 		t.Setenv("ICEBATH_DISABLE_WINDOWS_UTF8", "1")
 	}
-	if ConfigureWindowsStdio() || ConfigureWindowsStdio() {
+	ctx := context.Background()
+	if ConfigureWindowsStdio(ctx) || ConfigureWindowsStdio(ctx) {
 		t.Fatal("nothing should change off Windows or when opted out")
 	}
 	t.Setenv("LOCALAPPDATA", t.TempDir())
@@ -188,12 +190,12 @@ func TestConfigureWindowsStdioIsIdempotentAndQuietOffWindows(t *testing.T) {
 	}
 	for _, v := range []string{"1", "true", "True", "yes"} {
 		t.Setenv("ICEBATH_DISABLE_WINDOWS_UTF8", v)
-		if !windowsUTF8Disabled() {
+		if !windowsUTF8Disabled(ctx) {
 			t.Fatalf("%q should opt out", v)
 		}
 	}
 	t.Setenv("ICEBATH_DISABLE_WINDOWS_UTF8", "0")
-	if windowsUTF8Disabled() {
+	if windowsUTF8Disabled(ctx) {
 		t.Fatal("0 should not opt out")
 	}
 }

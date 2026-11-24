@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 const seedURL = "http://127.0.0.1:11434/v1"
@@ -11,7 +13,7 @@ const seedURL = "http://127.0.0.1:11434/v1"
 // Named endpoint the runtime resolves from cfg without reading credentials
 func seedResolved(t *testing.T, cfg map[string]any, prov string) map[string]any {
 	t.Helper()
-	return seedResolver(context.Background(), cfg).getNamedCustomProvider(prov, cfg, false)
+	return seedResolver(context.Background()).getNamedCustomProvider(prov, config.AsMap(cfg["providers"]), false)
 }
 
 func seedHome(t *testing.T) {
@@ -29,7 +31,7 @@ func TestModelSeedRetainsResolvableCustomEndpoint(t *testing.T) {
 		if !reflect.DeepEqual(seed["model"], model) {
 			t.Fatalf("%s: model = %v", provider, seed["model"])
 		}
-		copied := ProviderEntries(seed)
+		copied := ProviderEntriesOf(config.AsMap(seed["providers"]))
 		if len(copied) != 1 || copied[0]["base_url"] != seedURL || copied[0]["api_key"] != "${LAB_TOKEN}" {
 			t.Fatalf("%s: copied = %v", provider, copied)
 		}
@@ -45,7 +47,7 @@ func TestModelSeedBuiltinNameCollisionOnlyCopiesExplicitCustomSelection(t *testi
 	for provider, copied := range map[string]bool{"openrouter": false, "custom:openrouter": true} {
 		seed := LaunchModelSeed(context.Background(), map[string]any{
 			"model": map[string]any{"provider": provider, "default": "synthetic-model"}, "providers": providers})
-		if got := len(ProviderEntries(seed)) > 0; got != copied {
+		if got := len(ProviderEntriesOf(config.AsMap(seed["providers"]))) > 0; got != copied {
 			t.Fatalf("%s: copied = %v", provider, got)
 		}
 	}

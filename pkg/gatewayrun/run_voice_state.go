@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -15,7 +14,7 @@ func voiceKey(platform gateway.Platform, chatID string, profile *string) string 
 	base := fmt.Sprintf("%s:%s", platform, chatID)
 	name := ""
 	if profile != nil {
-		name = pystr.Strip(*profile)
+		name = strings.TrimSpace(*profile)
 	}
 	if name == "" || name == "default" {
 		return base

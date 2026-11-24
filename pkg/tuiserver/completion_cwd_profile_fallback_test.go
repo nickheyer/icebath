@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Writes a profile home whose config.yaml sets terminal cwd, or an empty config for none
@@ -20,19 +22,6 @@ func writeProfileCfg(t *testing.T, h string, cwd *string) string {
 		t.Fatal(err)
 	}
 	return h
-}
-
-// Swaps the profile home resolver for one answering the given home for any named profile
-func fakeProfileHome(t *testing.T, h string) {
-	t.Helper()
-	saved := resolveProfileHome
-	resolveProfileHome = func(name string) (string, error) {
-		if name != "" {
-			return h, nil
-		}
-		return "", nil
-	}
-	t.Cleanup(func() { resolveProfileHome = saved })
 }
 
 // Points the launch home at a directory for the test under the lock the lease watcher reads it with
@@ -59,9 +48,10 @@ func mustMkdir(t *testing.T, p string) string {
 	return p
 }
 
-func completionCwdOf(t *testing.T, params map[string]any) string {
+// Completion cwd of a request served in the profile at h
+func completionCwdOf(t *testing.T, h string) string {
 	t.Helper()
-	cwd, err := completionCwd(t.Context(), params)
+	cwd, err := completionCwd(home.WithOverride(t.Context(), h))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +66,10 @@ func TestNamedProfilePlaceholderCwdFallsBackToOwnHome(t *testing.T) {
 	staleEnv := mustMkdir(t, filepath.Join(tmp, "stale-env"))
 	t.Setenv("TERMINAL_CWD", staleEnv)
 	setLaunchHome(t, launchHomeDir)
-	fakeProfileHome(t, h)
-	if got := completionCwdOf(t, map[string]any{"profile": "beta"}); got != h {
+	if got := completionCwdOf(t, h); got != h {
 		t.Fatalf("named profile cwd = %q want %q", got, h)
 	}
-	if got := completionCwdOf(t, map[string]any{}); got != launchWS {
+	if got := completionCwdOf(t, launchHomeDir); got != launchWS {
 		t.Fatalf("launch cwd = %q want %q", got, launchWS)
 	}
 }
@@ -90,19 +79,8 @@ func TestNamedProfileUnsetCwdFallsBackToOwnHome(t *testing.T) {
 	h := writeProfileCfg(t, filepath.Join(tmp, "home-plain"), nil)
 	launchWS := mustMkdir(t, filepath.Join(tmp, "launch-repo"))
 	t.Setenv("TERMINAL_CWD", launchWS)
-	fakeProfileHome(t, h)
-	if got := completionCwdOf(t, map[string]any{"profile": "plain"}); got != h {
+	if got := completionCwdOf(t, h); got != h {
 		t.Fatalf("cwd = %q want %q", got, h)
-	}
-}
-
-func TestNamedProfileExplicitPickStillWins(t *testing.T) {
-	tmp := t.TempDir()
-	h := writeProfileCfg(t, filepath.Join(tmp, "home-beta"), strp("."))
-	explicit := mustMkdir(t, filepath.Join(tmp, "explicit"))
-	fakeProfileHome(t, h)
-	if got := completionCwdOf(t, map[string]any{"profile": "beta", "cwd": explicit, "cwd_explicit": true}); got != explicit {
-		t.Fatalf("cwd = %q want %q", got, explicit)
 	}
 }
 
@@ -112,8 +90,7 @@ func TestNamedProfileConfiguredCwdStillWins(t *testing.T) {
 	h := writeProfileCfg(t, filepath.Join(tmp, "home-dev"), strp(profileWS))
 	launchWS := mustMkdir(t, filepath.Join(tmp, "launch-repo"))
 	t.Setenv("TERMINAL_CWD", launchWS)
-	fakeProfileHome(t, h)
-	if got := completionCwdOf(t, map[string]any{"profile": "dev"}); got != profileWS {
+	if got := completionCwdOf(t, h); got != profileWS {
 		t.Fatalf("cwd = %q want %q", got, profileWS)
 	}
 }

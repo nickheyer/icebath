@@ -1,6 +1,8 @@
 package dingtalk
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"errors"
@@ -156,24 +158,6 @@ func (g *sdkLogGuard) filter(record *slog.Record) (emit bool) {
 	return true
 }
 
-// Stripped non blank items of a list, a JSON list literal or a comma separated value
-func csvSet(raw any) map[string]bool {
-	raw = gateway.DecodeJSONListLiteral(raw)
-	parts, ok := raw.([]any)
-	if !ok {
-		for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-			parts = append(parts, part)
-		}
-	}
-	out := map[string]bool{}
-	for _, part := range parts {
-		if s := pystr.Strip(pyrepr.Str(part)); s != "" {
-			out[s] = true
-		}
-	}
-	return out
-}
-
 // The stream and HTTP clients are compiled in, a passive probe that never installs
 func DingTalkDepsPresent() bool { return true }
 
@@ -262,19 +246,16 @@ func NewDingTalkAdapter(ctx context.Context, config *gateway.PlatformConfig) (*D
 	if a.mentionPatterns, err = a.compileMentionPatterns(ctx); err != nil {
 		return nil, err
 	}
-	allowed, err := chatSetting(ctx, settings.DingtalkAllowedUsers)
-	if err != nil {
-		return nil, err
-	}
 	a.allowedUsers = map[string]bool{}
-	for item := range allowed {
-		a.allowedUsers[pystr.Lower(item)] = true
+	for item := range chatSetting(ctx, settings.DingtalkAllowedUsers) {
+		a.allowedUsers[strings.ToLower(item)] = true
 	}
-	a.robotCode = extra["robot_code"]
+	sctx := gateway.SettingsContext(ctx)
+	a.robotCode = strings.TrimSpace(settings.DingtalkRobotCode.Get(sctx))
 	if !pyrepr.Truthy(a.robotCode) {
 		a.robotCode = a.clientID
 	}
-	a.cardTemplateID = extra["card_template_id"]
+	a.cardTemplateID = strings.TrimSpace(settings.DingtalkCardTemplateID.Get(sctx))
 	return a, nil
 }
 
@@ -293,7 +274,7 @@ func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 	}
 	client := newStreamClient(a.clientID, a.clientSecret)
 	a.mu.Lock()
-	a.httpClient = gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
+	a.httpClient = gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.streamClient = client
 	if pyrepr.Truthy(a.cardTemplateID) {
 		a.cardSDK = newOpenAPIClient()
@@ -484,26 +465,24 @@ func (a *DingTalkAdapter) requireMention(ctx context.Context) (bool, error) {
 }
 
 // Group chat whitelist, a non empty one a hard gate even for a mention
-func (a *DingTalkAdapter) allowedChats(ctx context.Context) (map[string]bool, error) {
+func (a *DingTalkAdapter) allowedChats(ctx context.Context) map[string]bool {
 	return chatSetting(ctx, settings.DingtalkAllowedChats)
 }
 
-// Chat ids a list setting holds, written as a list or as comma separated text
-func chatSetting(ctx context.Context, e settings.Entry) (map[string]bool, error) {
-	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
-	if err != nil || v.Value == nil {
-		return map[string]bool{}, err
+// Stripped non blank items a list setting holds for the profile ctx serves
+func chatSetting(ctx context.Context, l *settings.List) map[string]bool {
+	out := map[string]bool{}
+	for _, item := range l.Strings(gateway.SettingsContext(ctx)) {
+		if s := strings.TrimSpace(item); s != "" {
+			out[s] = true
+		}
 	}
-	return csvSet(v.Value), nil
+	return out
 }
 
-// Wake word patterns from the settings list
+// Wake word patterns from dingtalk.mention_patterns, none while the setting is unset
 func (a *DingTalkAdapter) compileMentionPatterns(ctx context.Context) ([]*regexp2.Regexp, error) {
-	v, err := settings.Resolve(gateway.SettingsContext(ctx), settings.DingtalkMentionPatterns.Key)
-	if err != nil {
-		return nil, err
-	}
-	patterns := v.Value
+	patterns := settings.DingtalkMentionPatterns.Get(gateway.SettingsContext(ctx))
 	if patterns == nil {
 		return nil, nil
 	}
@@ -521,7 +500,7 @@ func lowerID(v any) (string, error) {
 	if !ok {
 		return "", attributeError(v, "lower")
 	}
-	return pystr.Lower(s), nil
+	return strings.ToLower(s), nil
 }
 
 // Whether the sender or their staff id is on the allowlist, an empty or starred allowlist allowing everyone
@@ -563,17 +542,11 @@ func (a *DingTalkAdapter) shouldProcessMessage(ctx context.Context, message *Inc
 	if !isGroup {
 		return true, nil
 	}
-	allowed, err := a.allowedChats(ctx)
-	if err != nil {
-		return false, err
-	}
+	allowed := a.allowedChats(ctx)
 	if len(allowed) > 0 && chatID != "" && !allowed[chatID] {
 		return false, nil
 	}
-	free, err := chatSetting(ctx, settings.DingtalkFreeResponseChats)
-	if err != nil {
-		return false, err
-	}
+	free := chatSetting(ctx, settings.DingtalkFreeResponseChats)
 	if chatID != "" && free[chatID] {
 		return true, nil
 	}
@@ -907,7 +880,7 @@ func (a *DingTalkAdapter) SendDocument(ctx context.Context, chatID, filePath, ca
 // Name and chat type of a conversation id
 func (a *DingTalkAdapter) GetChatInfo(ctx context.Context, chatID string) (map[string]any, error) {
 	chatType := "dm"
-	if strings.Contains(pystr.Lower(chatID), "group") {
+	if strings.Contains(strings.ToLower(chatID), "group") {
 		chatType = "group"
 	}
 	return map[string]any{"name": chatID, "type": chatType}, nil
@@ -1177,13 +1150,13 @@ func normalizeMarkdown(text string) string {
 	for i, line := range lines {
 		prev := ""
 		if i > 0 {
-			prev = pystr.Strip(lines[i-1])
+			prev = strings.TrimSpace(lines[i-1])
 		}
-		if prev != "" && numbered(pystr.Strip(line)) && !numbered(prev) {
+		if prev != "" && numbered(strings.TrimSpace(line)) && !numbered(prev) {
 			out = append(out, "")
 		}
-		if strings.HasPrefix(pystr.Strip(line), "```") {
-			out = append(out, pystr.Lstrip(line))
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			out = append(out, strings.TrimLeftFunc(line, unicode.IsSpace))
 		} else {
 			out = append(out, line)
 		}

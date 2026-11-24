@@ -174,7 +174,7 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	}
 	name := catalogField(data, "name", "")
 	repo := catalogField(data, "repo", "")
-	sha := strings.ToLower(pystr.Strip(catalogField(data, "sha", "")))
+	sha := strings.ToLower(strings.TrimSpace(catalogField(data, "sha", "")))
 	tier := catalogField(data, "tier", "community")
 	category := catalogField(data, "category", "general")
 	problem := ""
@@ -195,12 +195,12 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 		return nil
 	}
 	caps, _ := asStringMap(data["capabilities"])
-	version := pystr.Strip(catalogField(data, "version", ""))
+	version := strings.TrimSpace(catalogField(data, "version", ""))
 	if version != "" && !catalogVersionRe.MatchString(version) {
 		pkgLog().Warn("Plugin catalog: " + label + ": ignoring version " + errchain.Show(version) + " (max 32 chars of [A-Za-z0-9._+-])")
 		version = ""
 	}
-	image := pystr.Strip(catalogField(data, "image", ""))
+	image := strings.TrimSpace(catalogField(data, "image", ""))
 	if image != "" && !IsAllowedImageURL(image) {
 		pkgLog().Warn("Plugin catalog: " + label + ": ignoring image " + errchain.Show(image) + " (must be https on a GitHub host)")
 		image = ""
@@ -223,17 +223,17 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	requires := data["requires_icebath"]
 	requiresText := ""
 	if jsonTruthy(requires) {
-		requiresText = pystr.Strip(pyrepr.Str(requires))
+		requiresText = strings.TrimSpace(pyrepr.Str(requires))
 	}
 	return &PluginCatalogEntry{
 		Name: name, Repo: repo, Sha: sha,
-		Description: pystr.Strip(catalogField(data, "description", "")),
-		Maintainer:  pystr.Strip(catalogField(data, "maintainer", "")), Tier: tier, Category: category,
+		Description: strings.TrimSpace(catalogField(data, "description", "")),
+		Maintainer:  strings.TrimSpace(catalogField(data, "maintainer", "")), Tier: tier, Category: category,
 		RequiresIcebath: requiresText,
-		Subdir:          pystr.Strip(catalogField(data, "subdir", "")), DocsURL: pystr.Strip(catalogField(data, "docs_url", "")),
+		Subdir:          strings.TrimSpace(catalogField(data, "subdir", "")), DocsURL: strings.TrimSpace(catalogField(data, "docs_url", "")),
 		Version: version, Image: image, Screenshots: screenshots, Readme: !isPyBool(data["readme"], false),
 		Platforms: catalogStrList(data["platforms"]),
-		Title:     pystr.Strip(catalogField(data, "title", "")), Onboarding: isPyBool(data["onboarding"], true),
+		Title:     strings.TrimSpace(catalogField(data, "title", "")), Onboarding: isPyBool(data["onboarding"], true),
 		Default:     isDefault,
 		KnownIssues: catalogStrList(data["known_issues"]),
 		Capabilities: CatalogCapabilities{
@@ -388,7 +388,7 @@ func GetPluginCatalogEntry(name string) (*PluginCatalogEntry, error) {
 
 // Entries whose name, description or declared tools contain the query case insensitively, all for an empty query
 func FilterEntries(entries []*PluginCatalogEntry, query string) []*PluginCatalogEntry {
-	q := pystr.Lower(pystr.Strip(query))
+	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return entries
 	}
@@ -396,7 +396,7 @@ func FilterEntries(entries []*PluginCatalogEntry, query string) []*PluginCatalog
 	for _, e := range entries {
 		hay := append([]string{e.Name, e.Description}, e.Capabilities.ProvidesTools...)
 		for _, h := range hay {
-			if strings.Contains(pystr.Lower(h), q) {
+			if strings.Contains(strings.ToLower(h), q) {
 				out = append(out, e)
 				break
 			}

@@ -22,15 +22,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // JWT of three or more dotted segments or a long opaque base64url bearer, the ambient endpoint body shape
 var relayAmbientTokenShape = regexp.MustCompile(`^(?:[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2,}|[A-Za-z0-9_-]{32,})$`)
 
 const relayHTTPTimeout = 15 * time.Second
-
-// gateway.idp keys and their GATEWAY_RELAY_IDP env mirrors read by the identity resolver
-var relayIdpKeys = []string{"token_url", "client_id", "client_secret", "scope"}
 
 // RelayHTTPError is the urllib HTTPError of a relay request with its status, reason and error body
 type RelayHTTPError struct {
@@ -121,19 +119,8 @@ func relayURLOpenResponse(req *http.Request, timeout time.Duration) (*http.Respo
 
 // Caller identity bearer the connector introspects, client credentials or an ambient endpoint of the configured IdP
 func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
-	env := map[string]string{}
-	for _, k := range relayIdpKeys {
-		env[k] = pystr.Strip(os.Getenv("GATEWAY_RELAY_IDP_" + pystr.Upper(k)))
-	}
-	if env["token_url"] == "" {
-		idp, _ := relayGatewayCfg(ctx)["idp"].(map[string]any)
-		for _, k := range relayIdpKeys {
-			if env[k] == "" && pyrepr.Truthy(idp[k]) {
-				env[k] = pystr.Strip(pyrepr.Str(idp[k]))
-			}
-		}
-	}
-	tokenURL, clientID, clientSecret, scope := env["token_url"], env["client_id"], env["client_secret"], env["scope"]
+	tokenURL, clientID := relaySetting(ctx, settings.GatewayIdpTokenURL), relaySetting(ctx, settings.GatewayIdpClientID)
+	clientSecret, scope := relaySetting(ctx, settings.GatewayIdpClientSecret), relaySetting(ctx, settings.GatewayIdpScope)
 	if tokenURL == "" {
 		return "", errors.New("the relay needs a caller identity: set gateway.idp.token_url (or GATEWAY_RELAY_IDP_TOKEN_URL) " +
 			"with client_id and client_secret for the OAuth2 client_credentials grant, or token_url alone for an ambient token endpoint.")
@@ -182,10 +169,10 @@ func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
 		accessToken = obj.GetOr("access_token", nil)
 	}
 	s, ok := accessToken.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return "", errors.New("IdP client_credentials response had no access_token")
 	}
-	return pystr.Strip(s), nil
+	return strings.TrimSpace(s), nil
 }
 
 // Token from a plain GET of a metadata style endpoint, a raw JWT or opaque body or a JSON envelope
@@ -203,13 +190,13 @@ func relayAmbientToken(ctx context.Context, tokenURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	body := pystr.Strip(decoded)
+	body := strings.TrimSpace(decoded)
 	token := ""
 	if strings.HasPrefix(body, "{") {
 		if parsed, err := pyjson.Loads(body); err == nil {
 			if obj, ok := parsed.(*pyjson.Object); ok {
 				if s, ok := obj.GetOr("access_token", nil).(string); ok {
-					token = pystr.Strip(s)
+					token = strings.TrimSpace(s)
 				}
 			}
 		}

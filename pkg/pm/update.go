@@ -443,7 +443,7 @@ func urlOrigin(raw string) (indexOrigin, error) {
 	if err != nil {
 		return indexOrigin{}, err
 	}
-	scheme := pystr.Lower(parts.Scheme)
+	scheme := strings.ToLower(parts.Scheme)
 	_, hostinfo := reverseCut(parts.Netloc, "@")
 	hostname, port := "", ""
 	if _, bracketed, found := strings.Cut(hostinfo, "["); found {
@@ -455,12 +455,12 @@ func urlOrigin(raw string) (indexOrigin, error) {
 	}
 	if hostname != "" {
 		name, zone, percent := strings.Cut(hostname, "%")
-		hostname = pystr.Lower(name)
+		hostname = strings.ToLower(name)
 		if percent {
 			hostname += "%" + zone
 		}
 	}
-	origin := indexOrigin{Scheme: scheme, Host: strings.TrimRight(pystr.Lower(hostname), ".")}
+	origin := indexOrigin{Scheme: scheme, Host: strings.TrimRight(strings.ToLower(hostname), ".")}
 	if port != "" {
 		value, ok := asciiPort(port)
 		if !ok {

@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -391,7 +390,7 @@ func TestSwitchingClearsCodexResponsesAPIMode(t *testing.T) {
 
 func TestUpdateConfigForProviderDefaultModelAndClearDefault(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeConfigYAML(t, h, "model: anthropic/claude-opus-4.6\n")
+	writeConfigYAML(t, h, "model:\n  default: anthropic/claude-opus-4.6\n  base_url: https://openrouter.ai/api/v1\n")
 	if _, err := updateConfigForProvider(env, "openai-codex", "", "gpt-5.5", false); err != nil {
 		t.Fatal(err)
 	}
@@ -411,28 +410,26 @@ func TestUpdateConfigForProviderDefaultModelAndClearDefault(t *testing.T) {
 }
 
 func TestRequireReadableConfigRefusesABrokenFile(t *testing.T) {
-	h, _ := codexTestEnv(t)
+	h, env := codexTestEnv(t)
 	writeConfigYAML(t, h, "model: [unclosed\n")
-	_, err := requireReadableConfigBeforeWrite(h)
-	var refused *ConfigWriteRefusedError
+	_, err := updateConfigForProvider(env, "openrouter", "https://openrouter.ai/api/v1", "", false)
 	if err == nil || !strings.Contains(err.Error(), "formatting error") {
 		t.Fatalf("expected a refusal, got %v", err)
 	}
-	if !errors.As(err, &refused) {
-		t.Fatalf("wrong error type %T", err)
-	}
-	if _, err := os.Stat(filepath.Join(h, "config.yaml")); err != nil {
-		t.Fatal("config removed")
+	if raw, rerr := os.ReadFile(filepath.Join(h, "config.yaml")); rerr != nil || string(raw) != "model: [unclosed\n" {
+		t.Fatalf("a broken config was replaced: %q %v", raw, rerr)
 	}
 	writeConfigYAML(t, h, "- a list\n")
-	if _, err := requireReadableConfigBeforeWrite(h); err == nil {
+	if _, err := updateConfigForProvider(env, "openrouter", "https://openrouter.ai/api/v1", "", false); err == nil {
 		t.Fatal("a non mapping root was accepted")
 	}
 	_ = os.Remove(filepath.Join(h, "config.yaml"))
 	config.ResetCache()
-	loaded, err := requireReadableConfigBeforeWrite(h)
-	if err != nil || len(loaded) != 0 {
-		t.Fatalf("missing file must read as empty: %v %v", loaded, err)
+	if _, err := updateConfigForProvider(env, "openrouter", "https://openrouter.ai/api/v1", "", false); err != nil {
+		t.Fatalf("a missing file must be written fresh: %v", err)
+	}
+	if readModelCfg(t, h)["provider"] != "openrouter" {
+		t.Fatal("the provider was not written into a fresh config")
 	}
 }
 

@@ -250,7 +250,6 @@ func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*pyjson.Object)
 		return rows
 	})
 	installFleetClock(t)
-	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
 	vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { return nil })
 	cleared := 0
 	vsSwap(t, &fleetClearMarker, func(context.Context) { cleared++ })
@@ -430,7 +429,6 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 			restart := newGatewayRestartOutcome()
 			restart.PreRestartGatewayPIDs = []int{1234}
 			restart.RestartedServices = []string{"icebath-gateway"}
-			vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
 			vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { migrated++; return nil })
 			// The drain signal is withheld so a live pid 1234 of the test host is never signalled
 			vsSwap(t, &fleetGracefulRestart, func(int, float64, func()) bool { return false })
@@ -479,7 +477,6 @@ func TestVerifyFleetHandsStaleRowsToSurvivorSignalling(t *testing.T) {
 	h := newFleetHarness(t)
 	staleFleet := []*pyjson.Object{fleetObject("profile", "default", "pid", int64(4242), "state", "stale", "code_sha", strings.Repeat("a", 40))}
 	var seen []any
-	vsSwap(t, &fleetPrintLegacyUnits, func(context.Context, io.Writer) {})
 	vsSwap(t, &fleetCollectSnapshot, func(context.Context, *gatewayRestartOutcome, bool) ([]*pyjson.Object, error) { return staleFleet, nil })
 	vsSwap(t, &fleetSignalStaleSurvivors, func(_ context.Context, _ io.Writer, fleet []any, _ *gatewayRestartOutcome, _ float64) []int {
 		if seen == nil {

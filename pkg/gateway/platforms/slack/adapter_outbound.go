@@ -173,7 +173,7 @@ func (a *SlackAdapter) dmTopLevelThreadsAsSessions() bool {
 
 // Continuable cron surface, in_channel when configured, thread otherwise
 func (a *SlackAdapter) CronContinuableSurface() string {
-	if pystr.Lower(pystr.Strip(pyrepr.Str(a.extra()["cron_continuable_surface"]))) == "in_channel" {
+	if strings.ToLower(strings.TrimSpace(pyrepr.Str(a.extra()["cron_continuable_surface"]))) == "in_channel" {
 		return "in_channel"
 	}
 	return "thread"
@@ -196,7 +196,7 @@ func (a *SlackAdapter) slackAllowBots(ctx context.Context) string {
 	return settings.SlackAllowBots.Get(gateway.SettingsContext(ctx))
 }
 
-// User ids whose Web API posts count as human, from config or SLACK_API_HUMAN_USERS
+// User ids whose Web API posts count as human, slack.api_human_users
 func (a *SlackAdapter) slackAPIHumanUsers(ctx context.Context) map[string]bool {
 	a.mu.Lock()
 	cached := a.apiHumanUsersCache
@@ -204,24 +204,7 @@ func (a *SlackAdapter) slackAPIHumanUsers(ctx context.Context) map[string]bool {
 	if cached != nil {
 		return cached
 	}
-	raw, present := a.extra()["api_human_users"]
-	if !present || raw == nil {
-		raw, _ = gateway.GetScopedSecret(ctx, "SLACK_API_HUMAN_USERS", "", false)
-	}
-	var parts []any
-	if list, ok := raw.([]any); ok {
-		parts = list
-	} else {
-		for _, p := range strings.Split(pyrepr.Str(raw), ",") {
-			parts = append(parts, p)
-		}
-	}
-	out := map[string]bool{}
-	for _, p := range parts {
-		if s := pystr.Strip(pyrepr.Str(p)); s != "" {
-			out[s] = true
-		}
-	}
+	out := gateway.SettingSet(ctx, settings.SlackAPIHumanUsers)
 	a.mu.Lock()
 	a.apiHumanUsersCache = out
 	a.mu.Unlock()
@@ -445,7 +428,7 @@ func (a *SlackAdapter) isRetryableUploadError(err error) bool {
 	if status := errorStatusCode(err); status != 0 {
 		return status == 429 || status >= 500
 	}
-	body := pystr.Lower(err.Error())
+	body := strings.ToLower(err.Error())
 	for _, m := range transientUploadMarkers {
 		if strings.Contains(body, m) {
 			return true
@@ -460,7 +443,7 @@ func (a *SlackAdapter) extraFlag(key string, def bool) bool {
 	if !ok || raw == nil {
 		return def
 	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(raw))) {
+	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(raw))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -701,7 +684,7 @@ func (a *SlackAdapter) humanizeUserMentions(ctx context.Context, text, chatID, t
 		if name == "" {
 			name = uid
 		}
-		display := pystr.Strip(name)
+		display := strings.TrimSpace(name)
 		if display == "" {
 			display = uid
 		}
@@ -722,7 +705,7 @@ func (a *SlackAdapter) buildIdentityPrompt(teamID string) string {
 		name = *a.botDisplayName
 	}
 	a.mu.Unlock()
-	name = pystr.Strip(name)
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return ""
 	}

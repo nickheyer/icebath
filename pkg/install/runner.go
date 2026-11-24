@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Install options, the flags of the install scripts after renames
@@ -76,13 +75,13 @@ func NewRunner(opts Options, sink func(Event)) (*Runner, error) {
 		return nil, fmt.Errorf("--channel must be stable or main, not %s", opts.Channel)
 	}
 	if opts.RepoURL == "" {
-		opts.RepoURL = pystr.Strip(os.Getenv("ICEBATH_REPO_URL"))
+		opts.RepoURL = strings.TrimSpace(os.Getenv("ICEBATH_REPO_URL"))
 	}
 	if opts.RepoURL == "" {
 		opts.RepoURL = DefaultRepoURL
 	}
 	if opts.Channel == "" {
-		opts.Channel = pystr.Strip(os.Getenv("ICEBATH_INSTALL_CHANNEL"))
+		opts.Channel = strings.TrimSpace(os.Getenv("ICEBATH_INSTALL_CHANNEL"))
 		switch opts.Channel {
 		case "", "stable", "main":
 		default:

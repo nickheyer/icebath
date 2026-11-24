@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -448,17 +449,12 @@ func (p *openRouterVideoGenProvider) entry(ctx context.Context, modelID string) 
 	return map[string]any{}
 }
 
-// Stripped video_gen.model from the profile config, the default model otherwise
+// Stripped video_gen.model of the profile ctx serves, the default model otherwise
 func openRouterConfiguredModel(ctx context.Context) string {
-	if v := readVideoGenKey(ctx, "model"); v != "" {
+	if v := strings.TrimSpace(settings.VideoGenModel.Get(ctx)); v != "" {
 		return v
 	}
 	return openRouterVideoDefaultModel
-}
-
-// Stripped video_gen key from the active profile config.yaml, empty when unset or unreadable
-func readVideoGenKey(ctx context.Context, key string) string {
-	return cfgString(videoGenConfig(ctx), key)
 }
 
 // Picker rows of the generative catalog entries with duration, resolution, audio and i2v hints

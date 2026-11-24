@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -17,7 +18,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
@@ -55,35 +55,20 @@ var (
 // Whether an open file is a terminal the way isatty reports one
 func fileIsTTY(f *os.File) bool { return pysys.Isatty(f) }
 
-// The updates section of the config, empty when absent or not a mapping
-func updatesConfig(ctx context.Context) (map[string]any, error) {
-	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return nil, err
-	}
-	switch section := cfg["updates"].(type) {
-	case map[string]any:
-		return section, nil
-	case config.Tree:
-		return section, nil
-	}
-	return map[string]any{}, nil
-}
-
-// Points git at the CA bundle SSL_CERT_FILE names unless git already has one configured
-func mapSSLCertFileForGit(ctx context.Context, gitCmd []string) error {
+// Git argv that points every git the update runs at the CA bundle SSL_CERT_FILE names, unchanged when GIT_SSL_CAINFO or git's own config already names one
+func mapSSLCertFileForGit(ctx context.Context, gitCmd []string) ([]string, error) {
 	bundle := os.Getenv("SSL_CERT_FILE")
 	if bundle == "" || os.Getenv("GIT_SSL_CAINFO") != "" {
-		return nil
+		return gitCmd, nil
 	}
 	configured, err := updateGitRun(ctx, gitCmd, []string{"config", "--get", "http.sslCAInfo"}, "", false, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if configured.ReturnCode == 0 && pystr.Strip(configured.Stdout) != "" {
-		return nil
+	if configured.ReturnCode == 0 && strings.TrimSpace(configured.Stdout) != "" {
+		return gitCmd, nil
 	}
-	return os.Setenv("GIT_SSL_CAINFO", bundle)
+	return append(slices.Clone(gitCmd), "-c", "http.sslCAInfo="+bundle), nil
 }
 
 // Records one step on the open receipt, never failing the update
@@ -195,7 +180,7 @@ func healStaleShallowCheckout(ctx context.Context, w io.Writer, repoRoot, branch
 			text = launchErrorText(err)
 		}
 		detail := launchErrorClass(err)
-		if lines := pystr.Splitlines(pystr.Strip(text), false); len(lines) > 0 {
+		if lines := pystr.Splitlines(strings.TrimSpace(text), false); len(lines) > 0 {
 			detail = lines[len(lines)-1]
 		}
 		fmt.Fprintf(w, "  ⚠ Could not fetch the missing commit history (%s); a very stale install may time out\n", detail)
@@ -265,7 +250,7 @@ func validateCriticalFilesSyntax(root string) (bool, string, string) {
 	return validatePythonFilesSyntax(root, updateCriticalFiles)
 }
 
-// The gateway prompt the config migration and stash restore ask through, replaced by tests
+// The gateway prompt the stash restore and the fork upstream question ask through, replaced by tests
 var updateGatewayPrompt = gatewayPrompt
 
 // Asks the gateway to relay a prompt through marker files and polls for the answer, the default on timeout
@@ -330,7 +315,7 @@ func readGatewayResponse(responsePath, promptPath string) (string, bool) {
 	if unlinkMissingOK(responsePath) != nil || unlinkMissingOK(promptPath) != nil {
 		return "", false
 	}
-	return pystr.Strip(text), true
+	return strings.TrimSpace(text), true
 }
 
 // Removes a file, a missing one counting as removed
@@ -440,7 +425,7 @@ func printCalledProcessErrorTail(w io.Writer, exc error, limit int) {
 	}
 	var lines []string
 	for _, line := range pystr.Splitlines(blob, false) {
-		if pystr.Strip(line) != "" {
+		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
 	}

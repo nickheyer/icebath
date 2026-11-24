@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const maxCountedSlots = 1000
@@ -21,8 +22,7 @@ func (s *Store) jobCatchesUp(job *Job) bool {
 	if s.knobs.graceSecondsOverride(job.GraceMinutes, rawGraceMinutes(job)) != nil {
 		return false
 	}
-	b, isBool := s.cronConfigValue("catch_up_missed", true).(bool)
-	return !isBool || b
+	return settings.CronCatchUpMissed.Get(s.settingsCtx())
 }
 
 // Scheduled slots from first up to now, stopping at the counting cap

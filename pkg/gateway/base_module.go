@@ -34,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -72,7 +73,7 @@ func threadMetadataForSource(source *SessionSource, replyTo *string) map[string]
 		}
 	}
 	if source.Profile != nil {
-		if profile := pystr.Strip(*source.Profile); profile != "" {
+		if profile := strings.TrimSpace(*source.Profile); profile != "" {
 			metadata["icebath_profile"] = profile
 		}
 	}
@@ -248,8 +249,8 @@ func detectMacOSSystemProxy(ctx context.Context) string {
 func parseScutilProxy(out string) string {
 	props := map[string]string{}
 	for _, line := range pystr.Splitlines(out, false) {
-		if key, val, ok := strings.Cut(pystr.Strip(line), " : "); ok {
-			props[pystr.Strip(key)] = pystr.Strip(val)
+		if key, val, ok := strings.Cut(strings.TrimSpace(line), " : "); ok {
+			props[strings.TrimSpace(key)] = strings.TrimSpace(val)
 		}
 	}
 	for _, keys := range [][3]string{{"HTTPSEnable", "HTTPSProxy", "HTTPSPort"}, {"HTTPEnable", "HTTPProxy", "HTTPPort"}} {
@@ -273,10 +274,10 @@ func ResolveProxyURL(ctx context.Context, platformEnvVar string, targetHosts []s
 		if err != nil {
 			return "", err
 		}
-		value = pystr.Strip(scoped)
+		value = strings.TrimSpace(scoped)
 	}
 	if value == "" {
-		value = pystr.Strip(configured)
+		value = strings.TrimSpace(configured)
 	}
 	if value == "" {
 		if !GatewayTrustEnv(ctx) {
@@ -309,7 +310,7 @@ func NewProxyConnector(proxyURL string) (*ProxyConnector, error) {
 	if err != nil {
 		return nil, err
 	}
-	scheme := pystr.Lower(parsed.Scheme)
+	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "socks5" && scheme != "socks4" && scheme != "http" {
 		return nil, &mediacache.ValueError{Msg: "Invalid scheme component: " + scheme}
 	}
@@ -451,7 +452,7 @@ func ProxyKwargsForBot(proxyURL string) (ProxyKwargs, error) {
 	if proxyURL == "" {
 		return ProxyKwargs{}, nil
 	}
-	if strings.HasPrefix(pystr.Lower(proxyURL), "socks") {
+	if strings.HasPrefix(strings.ToLower(proxyURL), "socks") {
 		c, err := NewProxyConnector(proxyURL)
 		if err != nil {
 			return ProxyKwargs{}, err
@@ -473,32 +474,9 @@ func ProxyKwargsForAiohttp(proxyURL string) (session, request ProxyKwargs, err e
 	return ProxyKwargs{Connector: c}, ProxyKwargs{}, nil
 }
 
-// Read only config section by name, empty when unreadable or not a mapping
-func configSection(ctx context.Context, name string) map[string]any {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return map[string]any{}
-	}
-	if section, ok := tree[name].(map[string]any); ok {
-		return section
-	}
-	return map[string]any{}
-}
-
-// Whether gateway HTTP clients honor proxy and certificate env, true unless gateway.trust_env says off
+// Whether gateway HTTP clients of the profile ctx serves honor proxy and certificate env, gateway.trust_env
 func GatewayTrustEnv(ctx context.Context) bool {
-	value, ok := configSection(ctx, "gateway")["trust_env"]
-	if !ok || value == nil {
-		return true
-	}
-	if s, isStr := value.(string); isStr {
-		switch pystr.Lower(pystr.Strip(s)) {
-		case "0", "false", "no", "off":
-			return false
-		}
-		return true
-	}
-	return pyrepr.Truthy(value)
+	return settings.GatewayTrustEnv.Get(SettingsContext(ctx))
 }
 
 // HTTP client with a total timeout reading proxy env vars only when the gateway trusts the environment
@@ -531,10 +509,9 @@ func UnauthorizedActionNoticeFor(ctx context.Context, platform Platform) string 
 	return i18n.T(ctx, "gateway.unauthorized.action_notice", "", map[string]any{"platform": name})
 }
 
-// URL safety env carrying the readonly config so private URL allowances apply
+// URL safety env of the profile ctx serves, the tools reading that home's settings so private URL allowances apply
 func urlSafetyEnv(ctx context.Context) *tools.Env {
-	tree, _ := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	return &tools.Env{Home: home.Dir(ctx), Config: tree, TerminalScope: tools.GetTerminalScope(ctx)}
+	return &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
 }
 
 // Refuses a redirect whose target is a private or internal address

@@ -28,8 +28,10 @@ func TestLSPOwnerHelperProcess(t *testing.T) {
 			return &lsp.SpawnSpec{Command: []string{mock}, WorkspaceRoot: root, Cwd: root,
 				Env: map[string]string{"MOCK_LSP_SCRIPT": "slow_tree", "MOCK_LSP_CHILD_PID": pidFile}}, nil
 		}}
-	env := &Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}, Config: config.Tree{"lsp": map[string]any{
-		"wait_timeout": 1.0, "install_strategy": "manual", "idle_timeout": 0}}}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("lsp:\n  wait_timeout: 1.0\n  install_strategy: manual\n  idle_timeout: 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := &Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
 	svc, err := LSPServiceFor(env)
 	if err != nil || svc == nil {
 		t.Fatal(svc, err)

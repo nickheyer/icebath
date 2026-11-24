@@ -1,16 +1,14 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"regexp"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -151,11 +149,7 @@ func buildSwitchedClient(ctx context.Context, a *AIAgent, newProvider, apiKey, b
 	}
 	effectiveBase := stringOr(baseURL, a.baseURL)
 	a.clientKwargs = map[string]any{"api_key": stringOr(apiKey, a.apiKey), "base_url": effectiveBase}
-	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv); err != nil {
-		pkgLog().Debug("custom-provider TLS resolution skipped on switch_model")
-	} else {
-		provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, effectiveBase, provider.ProviderEntries(cfg), nil)
-	}
+	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, effectiveBase, provider.CustomProviderEntries(ctx))
 	if hasTimeout {
 		a.clientKwargs["timeout"] = timeout
 	}
@@ -203,27 +197,21 @@ func swapSwitchRuntime(ctx context.Context, a *AIAgent, newModel, newProvider, a
 	return nil
 }
 
-// Destination context length with the LM Studio preload, and the live custom providers when config loaded
-func resolveSwitchContextLength(ctx context.Context, a *AIAgent, snapshot *switchSnapshot) ([]map[string]any, bool, int, error) {
-	var customProviders []map[string]any
-	loaded := false
-	var intent *int
-	if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err == nil {
-		switchCfg := map[string]any(cfg)
-		customProviders, loaded = provider.ProviderEntries(switchCfg), true
-		intent = configContextLengthForRuntime(ctx, a, switchCfg)
-		if intent == nil {
-			if n := provider.CustomProviderContextLength(a.model, a.baseURL, customProviders, switchCfg); n != 0 {
-				intent = &n
-			}
+// Destination context length with the LM Studio preload, and the custom providers in effect for ctx
+func resolveSwitchContextLength(ctx context.Context, a *AIAgent, snapshot *switchSnapshot) ([]map[string]any, int, error) {
+	customProviders := provider.CustomProviderEntries(ctx)
+	intent := configContextLengthForRuntime(ctx, a)
+	if intent == nil {
+		if n := provider.CustomProviderContextLength(a.model, a.baseURL, customProviders); n != 0 {
+			intent = &n
 		}
 	}
 	if err := setConfigContextLength(ctx, a, intent); err != nil {
-		return nil, false, 0, err
+		return nil, 0, err
 	}
 	var runtime *provider.LMStudioLoadResult
 	if err := rollbackSwitchOnFailure(a, snapshot, func() error { runtime = a.ensureLMStudioRuntimeLoaded(ctx, intent); return nil }); err != nil {
-		return nil, false, 0, err
+		return nil, 0, err
 	}
 	if lmstudioLoadWasUnverified(runtime) {
 		pkgLog().Warn("LM Studio model activation was rejected or completed without a verifiable active context length during model switch; continuing with configured context")
@@ -232,16 +220,11 @@ func resolveSwitchContextLength(ctx context.Context, a *AIAgent, snapshot *switc
 	if intent != nil {
 		intentValue = *intent
 	}
-	return customProviders, loaded, effectiveLMStudioContextLength(intentValue, runtime), nil
+	return customProviders, effectiveLMStudioContextLength(intentValue, runtime), nil
 }
 
 // Points the context compressor at the switched model and rechecks compression feasibility
-func updateSwitchCompressor(ctx context.Context, a *AIAgent, customProviders []map[string]any, loaded bool, effectiveContextLength int, snapshot *switchSnapshot) error {
-	if !loaded {
-		if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err == nil {
-			customProviders = provider.ProviderEntries(cfg)
-		}
-	}
+func updateSwitchCompressor(ctx context.Context, a *AIAgent, customProviders []map[string]any, effectiveContextLength int, snapshot *switchSnapshot) error {
 	probeKey := a.apiKey
 	if a.anthropicTokenSource != nil {
 		probeKey = ""
@@ -268,7 +251,7 @@ func finishSwitch(ctx context.Context, a *AIAgent, newProvider, oldNorm, newNorm
 	if oldNorm != "" && newNorm != "" && oldNorm != newNorm {
 		kept := chain[:0:0]
 		for _, entry := range chain {
-			if p := pystr.Lower(pystr.Strip(pyStrOr(entry["provider"], ""))); p != oldNorm && p != newNorm {
+			if p := strings.ToLower(strings.TrimSpace(pyStrOr(entry["provider"], ""))); p != oldNorm && p != newNorm {
 				kept = append(kept, entry)
 			}
 		}
@@ -284,10 +267,7 @@ func finishSwitch(ctx context.Context, a *AIAgent, newProvider, oldNorm, newNorm
 func applySwitchedProviderRequestOverrides(ctx context.Context, a *AIAgent, newProvider string) {
 	customProviders := a.customProviderEntries
 	if a.customProviders == nil {
-		customProviders = nil
-		if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err == nil {
-			customProviders = provider.ProviderEntries(cfg)
-		}
+		customProviders = provider.CustomProviderEntries(ctx)
 	}
 	newExtraBody := customProviderExtraBodyForAgent(newProvider, a.model, a.baseURL, customProviders)
 	overrides := maps.Clone(a.requestOverrides)
@@ -316,7 +296,7 @@ func persistSwitchBillingRoute(ctx context.Context, a *AIAgent) {
 func (a *AIAgent) switchModel(ctx context.Context, newModel, newProvider, apiKey, baseURL, apiMode string, capabilities map[string]bool) error {
 	log := pkgLog()
 	oldModel, oldProvider := a.model, a.provider
-	oldNorm, newNorm := pystr.Lower(pystr.Strip(oldProvider)), pystr.Lower(pystr.Strip(newProvider))
+	oldNorm, newNorm := strings.ToLower(strings.TrimSpace(oldProvider)), strings.ToLower(strings.TrimSpace(newProvider))
 	apiMode, baseURL, destination := resolveSwitchDestination(ctx, a, newModel, newProvider, baseURL, apiMode, capabilities, oldNorm, newNorm)
 	snapshot := snapshotSwitchState(a)
 	if err := rollbackSwitchOnFailure(a, snapshot, func() error {
@@ -324,32 +304,26 @@ func (a *AIAgent) switchModel(ctx context.Context, newModel, newProvider, apiKey
 	}); err != nil {
 		return err
 	}
-	customProviders, loaded, effectiveContextLength, err := resolveSwitchContextLength(ctx, a, snapshot)
+	customProviders, effectiveContextLength, err := resolveSwitchContextLength(ctx, a, snapshot)
 	if err != nil {
 		return err
 	}
-	if loaded {
-		a.customProviderEntries = customProviders
-		a.customProviders = make([]any, len(customProviders))
-		for i, entry := range customProviders {
-			a.customProviders[i] = entry
-		}
+	a.customProviderEntries = customProviders
+	a.customProviders = make([]any, len(customProviders))
+	for i, entry := range customProviders {
+		a.customProviders[i] = entry
 	}
 	a.usePromptCaching, a.useNativeCacheLayout = provider.ResolveAnthropicPromptCachePolicy(ctx, &provider.CachePolicyAgent{
 		Provider: a.provider, BaseURL: a.baseURL, APIMode: a.apiMode, Model: a.model,
 		CacheDisabled: a.cacheDisabled, CustomProviders: a.customProviderEntries,
 	}, provider.CacheDestination{Provider: &newProvider, BaseURL: &a.baseURL, APIMode: &apiMode, Model: &newModel})
 	if a.contextCompressor != nil {
-		if err := updateSwitchCompressor(ctx, a, customProviders, loaded, effectiveContextLength, snapshot); err != nil {
+		if err := updateSwitchCompressor(ctx, a, customProviders, effectiveContextLength, snapshot); err != nil {
 			return err
 		}
 	}
-	if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err != nil {
-		log.Debug(fmt.Sprintf("switch_model: could not re-resolve reasoning_config: %s", err.Error()))
-	} else {
-		a.reasoningConfig = config.ResolveReasoningConfig(map[string]any(cfg), a.model)
-		log.Info(fmt.Sprintf("switch_model: reasoning_config resolved for %s: %s", a.model, errchain.Show(dictOrNone(a.reasoningConfig))))
-	}
+	a.reasoningConfig = settings.ReasoningConfig(ctx, a.model)
+	log.Info(fmt.Sprintf("switch_model: reasoning_config resolved for %s: %s", a.model, errchain.Show(dictOrNone(a.reasoningConfig))))
 	a.cachedSystemPrompt = ""
 	a.runtimeCapabilities = destination
 	a.RetrySession().ResetStaleStreak()

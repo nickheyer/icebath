@@ -1,13 +1,14 @@
 package provider
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -18,10 +19,10 @@ var auxLoadConfigFn = func(ctx context.Context) (config.Tree, error) {
 
 // Main model field from the live runtime binding first, then config.yaml, empty when neither sets it
 func auxReadMainField(ctx context.Context, field string, readonly, lower bool) string {
-	if override, ok := auxRuntimeMainValue(ctx, field).(string); ok && pystr.Strip(override) != "" {
-		value := pystr.Strip(override)
+	if override, ok := auxRuntimeMainValue(ctx, field).(string); ok && strings.TrimSpace(override) != "" {
+		value := strings.TrimSpace(override)
 		if lower {
-			return pystr.Lower(value)
+			return strings.ToLower(value)
 		}
 		return value
 	}
@@ -37,18 +38,18 @@ func auxReadMainField(ctx context.Context, field string, readonly, lower bool) s
 	if !present {
 		modelCfg = map[string]any{}
 	}
-	if s, ok := modelCfg.(string); ok && field == "model" && pystr.Strip(s) != "" {
-		return pystr.Strip(s)
+	if s, ok := modelCfg.(string); ok && field == "model" && strings.TrimSpace(s) != "" {
+		return strings.TrimSpace(s)
 	}
 	if m, ok := modelCfg.(map[string]any); ok {
 		key := field
 		if field == "model" {
 			key = "default"
 		}
-		if s, ok := m[key].(string); ok && pystr.Strip(s) != "" {
-			value := pystr.Strip(s)
+		if s, ok := m[key].(string); ok && strings.TrimSpace(s) != "" {
+			value := strings.TrimSpace(s)
 			if lower {
-				return pystr.Lower(value)
+				return strings.ToLower(value)
 			}
 			return value
 		}
@@ -72,21 +73,16 @@ func AuxReadMainModel(ctx context.Context) string { return auxReadMainModel(ctx)
 
 // Aggregator provider and model of a MoA preset, empty when the preset cannot be resolved
 func auxResolveMoaAggregator(ctx context.Context, presetName string) (string, string) {
-	var cfg config.Tree
 	var provider, model string
 	ok := false
 	err := auxRecoverRaise(func() {
-		var lerr error
-		if cfg, lerr = auxLoadConfigFn(ctx); lerr != nil {
-			panic(lerr)
-		}
-		provider, model, ok = resolveMoaAggregator(map[string]any(cfg), presetName)
+		provider, model, ok = resolveMoaAggregator(ctx, presetName)
 	})
 	if err != nil || !ok {
 		pkgLog().Debug(fmt.Sprintf("MoA aggregator resolution failed for preset %s", pyrepr.Repr(presetName)), "error", err)
 		return "", ""
 	}
-	if provider != "" && model != "" && pystr.Lower(provider) != "moa" {
+	if provider != "" && model != "" && strings.ToLower(provider) != "moa" {
 		return provider, model
 	}
 	return "", ""
@@ -95,7 +91,7 @@ func auxResolveMoaAggregator(ctx context.Context, presetName string) (string, st
 // Main model with a MoA preset unwrapped to its aggregator model, empty when that cannot be resolved
 func auxReadMainModelForAux(ctx context.Context) string {
 	model := auxReadMainModel(ctx)
-	if pystr.Lower(pystr.Strip(auxReadMainProvider(ctx))) == "moa" {
+	if strings.ToLower(strings.TrimSpace(auxReadMainProvider(ctx))) == "moa" {
 		_, aggModel := auxResolveMoaAggregator(ctx, model)
 		return aggModel
 	}

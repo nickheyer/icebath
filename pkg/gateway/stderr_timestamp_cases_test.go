@@ -87,7 +87,7 @@ func TestWrapperTimestampsChildStdoutIntoItsOwnStdout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`^` + stampedLineRe + ` stderr line$`).MatchString(pystr.Strip(string(data))) {
+	if !regexp.MustCompile(`^` + stampedLineRe + ` stderr line$`).MatchString(strings.TrimSpace(string(data))) {
 		t.Fatalf("error log = %q", data)
 	}
 }

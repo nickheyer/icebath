@@ -423,6 +423,41 @@ var (
 	HubsAgentsPanelProcs                                   = Key{"hubs.agentsPanel.procs"}
 	HubsAgentsPanelProcsDone                               = Key{"hubs.agentsPanel.procsDone"}
 	HubsAgentsPanelRunning                                 = Key{"hubs.agentsPanel.running"}
+	HubsApprovalsAllowConfirm                              = Key{"hubs.approvals.allowConfirm"}
+	HubsApprovalsAllowLabel                                = Key{"hubs.approvals.allowLabel"}
+	HubsApprovalsAllowed                                   = Key{"hubs.approvals.allowed"}
+	HubsApprovalsAllowedCount                              = Key{"hubs.approvals.allowedCount"}
+	HubsApprovalsApprovedTimes                             = Key{"hubs.approvals.approvedTimes"}
+	HubsApprovalsCheckCommand                              = Key{"hubs.approvals.checkCommand"}
+	HubsApprovalsCheckLabel                                = Key{"hubs.approvals.checkLabel"}
+	HubsApprovalsCheckRule                                 = Key{"hubs.approvals.checkRule"}
+	HubsApprovalsCheckTitle                                = Key{"hubs.approvals.checkTitle"}
+	HubsApprovalsCheckVariants                             = Key{"hubs.approvals.checkVariants"}
+	HubsApprovalsCheckVerdict                              = Key{"hubs.approvals.checkVerdict"}
+	HubsApprovalsCheckWhere                                = Key{"hubs.approvals.checkWhere"}
+	HubsApprovalsClassesTitle                              = Key{"hubs.approvals.classesTitle"}
+	HubsApprovalsColApproved                               = Key{"hubs.approvals.colApproved"}
+	HubsApprovalsColExample                                = Key{"hubs.approvals.colExample"}
+	HubsApprovalsColPattern                                = Key{"hubs.approvals.colPattern"}
+	HubsApprovalsDaysHelp                                  = Key{"hubs.approvals.daysHelp"}
+	HubsApprovalsDaysLabel                                 = Key{"hubs.approvals.daysLabel"}
+	HubsApprovalsEmpty                                     = Key{"hubs.approvals.empty"}
+	HubsApprovalsExamplesTitle                             = Key{"hubs.approvals.examplesTitle"}
+	HubsApprovalsKindClass                                 = Key{"hubs.approvals.kindClass"}
+	HubsApprovalsKindGlob                                  = Key{"hubs.approvals.kindGlob"}
+	HubsApprovalsLimitLabel                                = Key{"hubs.approvals.limitLabel"}
+	HubsApprovalsMinCountLabel                             = Key{"hubs.approvals.minCountLabel"}
+	HubsApprovalsNotSaved                                  = Key{"hubs.approvals.notSaved"}
+	HubsApprovalsReading                                   = Key{"hubs.approvals.reading"}
+	HubsApprovalsTitle                                     = Key{"hubs.approvals.title"}
+	HubsApprovalsVerdictAllow                              = Key{"hubs.approvals.verdictAllow"}
+	HubsApprovalsVerdictAsk                                = Key{"hubs.approvals.verdictAsk"}
+	HubsApprovalsVerdictHardline                           = Key{"hubs.approvals.verdictHardline"}
+	HubsApprovalsVerdictUserDeny                           = Key{"hubs.approvals.verdictUserDeny"}
+	HubsApprovalsWindowAll                                 = Key{"hubs.approvals.windowAll"}
+	HubsApprovalsWindowDays                                = Key{"hubs.approvals.windowDays"}
+	HubsApprovalsWindowSubmit                              = Key{"hubs.approvals.windowSubmit"}
+	HubsApprovalsWindowTitle                               = Key{"hubs.approvals.windowTitle"}
 	HubsBundlesDescriptionLabel                            = Key{"hubs.bundles.descriptionLabel"}
 	HubsBundlesEmpty                                       = Key{"hubs.bundles.empty"}
 	HubsBundlesFormTitle                                   = Key{"hubs.bundles.formTitle"}
@@ -460,6 +495,19 @@ var (
 	HubsChatappsEdit                                       = Key{"hubs.chatapps.edit"}
 	HubsChatappsEmpty                                      = Key{"hubs.chatapps.empty"}
 	HubsChatappsEveryEvent                                 = Key{"hubs.chatapps.everyEvent"}
+	HubsChatappsFeishuApprove                              = Key{"hubs.chatapps.feishuApprove"}
+	HubsChatappsFeishuApproveDoes                          = Key{"hubs.chatapps.feishuApproveDoes"}
+	HubsChatappsFeishuCheck                                = Key{"hubs.chatapps.feishuCheck"}
+	HubsChatappsFeishuCheckDoes                            = Key{"hubs.chatapps.feishuCheckDoes"}
+	HubsChatappsFeishuDocument                             = Key{"hubs.chatapps.feishuDocument"}
+	HubsChatappsFeishuDocumentHelp                         = Key{"hubs.chatapps.feishuDocumentHelp"}
+	HubsChatappsFeishuList                                 = Key{"hubs.chatapps.feishuList"}
+	HubsChatappsFeishuListDoes                             = Key{"hubs.chatapps.feishuListDoes"}
+	HubsChatappsFeishuRevoke                               = Key{"hubs.chatapps.feishuRevoke"}
+	HubsChatappsFeishuRevokeDoes                           = Key{"hubs.chatapps.feishuRevokeDoes"}
+	HubsChatappsFeishuRules                                = Key{"hubs.chatapps.feishuRules"}
+	HubsChatappsFeishuRulesDoes                            = Key{"hubs.chatapps.feishuRulesDoes"}
+	HubsChatappsFeishuUser                                 = Key{"hubs.chatapps.feishuUser"}
 	HubsChatappsFieldAddress                               = Key{"hubs.chatapps.fieldAddress"}
 	HubsChatappsFieldAgent                                 = Key{"hubs.chatapps.fieldAgent"}
 	HubsChatappsFieldChat                                  = Key{"hubs.chatapps.fieldChat"}
@@ -478,6 +526,21 @@ var (
 	HubsChatappsFieldSkills                                = Key{"hubs.chatapps.fieldSkills"}
 	HubsChatappsFieldSubject                               = Key{"hubs.chatapps.fieldSubject"}
 	HubsChatappsFieldTo                                    = Key{"hubs.chatapps.fieldTo"}
+	HubsChatappsGchatCheck                                 = Key{"hubs.chatapps.gchatCheck"}
+	HubsChatappsGchatCheckDoes                             = Key{"hubs.chatapps.gchatCheckDoes"}
+	HubsChatappsGchatCode                                  = Key{"hubs.chatapps.gchatCode"}
+	HubsChatappsGchatCodeDoes                              = Key{"hubs.chatapps.gchatCodeDoes"}
+	HubsChatappsGchatCodeLabel                             = Key{"hubs.chatapps.gchatCodeLabel"}
+	HubsChatappsGchatEmail                                 = Key{"hubs.chatapps.gchatEmail"}
+	HubsChatappsGchatEmailHelp                             = Key{"hubs.chatapps.gchatEmailHelp"}
+	HubsChatappsGchatLink                                  = Key{"hubs.chatapps.gchatLink"}
+	HubsChatappsGchatLinkDoes                              = Key{"hubs.chatapps.gchatLinkDoes"}
+	HubsChatappsGchatRevoke                                = Key{"hubs.chatapps.gchatRevoke"}
+	HubsChatappsGchatRevokeConfirm                         = Key{"hubs.chatapps.gchatRevokeConfirm"}
+	HubsChatappsGchatRevokeDoes                            = Key{"hubs.chatapps.gchatRevokeDoes"}
+	HubsChatappsGchatSecret                                = Key{"hubs.chatapps.gchatSecret"}
+	HubsChatappsGchatSecretDoes                            = Key{"hubs.chatapps.gchatSecretDoes"}
+	HubsChatappsGchatSecretPath                            = Key{"hubs.chatapps.gchatSecretPath"}
 	HubsChatappsHome                                       = Key{"hubs.chatapps.home"}
 	HubsChatappsHomeOf                                     = Key{"hubs.chatapps.homeOf"}
 	HubsChatappsKeySet                                     = Key{"hubs.chatapps.keySet"}
@@ -503,6 +566,14 @@ var (
 	HubsChatappsPeerRemoveConfirm                          = Key{"hubs.chatapps.peerRemoveConfirm"}
 	HubsChatappsPeerRemoveDoes                             = Key{"hubs.chatapps.peerRemoveDoes"}
 	HubsChatappsPendingDetail                              = Key{"hubs.chatapps.pendingDetail"}
+	HubsChatappsPhotonSetup                                = Key{"hubs.chatapps.photonSetup"}
+	HubsChatappsPhotonSetupDoes                            = Key{"hubs.chatapps.photonSetupDoes"}
+	HubsChatappsPhotonSidecar                              = Key{"hubs.chatapps.photonSidecar"}
+	HubsChatappsPhotonSidecarDoes                          = Key{"hubs.chatapps.photonSidecarDoes"}
+	HubsChatappsPhotonStatus                               = Key{"hubs.chatapps.photonStatus"}
+	HubsChatappsPhotonStatusDoes                           = Key{"hubs.chatapps.photonStatusDoes"}
+	HubsChatappsPhotonTelemetry                            = Key{"hubs.chatapps.photonTelemetry"}
+	HubsChatappsPhotonTelemetryDoes                        = Key{"hubs.chatapps.photonTelemetryDoes"}
 	HubsChatappsRemove                                     = Key{"hubs.chatapps.remove"}
 	HubsChatappsRevoke                                     = Key{"hubs.chatapps.revoke"}
 	HubsChatappsRevokeConfirm                              = Key{"hubs.chatapps.revokeConfirm"}
@@ -528,6 +599,9 @@ var (
 	HubsChatappsStateFailed                                = Key{"hubs.chatapps.stateFailed"}
 	HubsChatappsStateRetrying                              = Key{"hubs.chatapps.stateRetrying"}
 	HubsChatappsStateUnknown                               = Key{"hubs.chatapps.stateUnknown"}
+	HubsChatappsTelemetryOff                               = Key{"hubs.chatapps.telemetryOff"}
+	HubsChatappsTelemetryOn                                = Key{"hubs.chatapps.telemetryOn"}
+	HubsChatappsTelemetryShow                              = Key{"hubs.chatapps.telemetryShow"}
 	HubsChatappsTesting                                    = Key{"hubs.chatapps.testing"}
 	HubsChatappsUrlWord                                    = Key{"hubs.chatapps.urlWord"}
 	HubsChatappsUserDetail                                 = Key{"hubs.chatapps.userDetail"}
@@ -547,6 +621,10 @@ var (
 	HubsChatappsWebhookTest                                = Key{"hubs.chatapps.webhookTest"}
 	HubsChatappsWebhookTestDoes                            = Key{"hubs.chatapps.webhookTestDoes"}
 	HubsChatappsWebhooksOff                                = Key{"hubs.chatapps.webhooksOff"}
+	HubsChatappsWhatsappCloud                              = Key{"hubs.chatapps.whatsappCloud"}
+	HubsChatappsWhatsappCloudDoes                          = Key{"hubs.chatapps.whatsappCloudDoes"}
+	HubsChatappsWhatsappPair                               = Key{"hubs.chatapps.whatsappPair"}
+	HubsChatappsWhatsappPairDoes                           = Key{"hubs.chatapps.whatsappPairDoes"}
 	HubsColAccount                                         = Key{"hubs.col.account"}
 	HubsColAction                                          = Key{"hubs.col.action"}
 	HubsColCategory                                        = Key{"hubs.col.category"}
@@ -784,6 +862,8 @@ var (
 	HubsKanbanActMoveDoes                                  = Key{"hubs.kanban.act.moveDoes"}
 	HubsKanbanActReopen                                    = Key{"hubs.kanban.act.reopen"}
 	HubsKanbanActReopenDoes                                = Key{"hubs.kanban.act.reopenDoes"}
+	HubsKanbanActEvents                                    = Key{"hubs.kanban.actEvents"}
+	HubsKanbanActEventsDoes                                = Key{"hubs.kanban.actEventsDoes"}
 	HubsKanbanAdded                                        = Key{"hubs.kanban.added"}
 	HubsKanbanArchiveConfirm                               = Key{"hubs.kanban.archiveConfirm"}
 	HubsKanbanArchivedColumn                               = Key{"hubs.kanban.archivedColumn"}
@@ -794,7 +874,10 @@ var (
 	HubsKanbanBoardCreated                                 = Key{"hubs.kanban.boardCreated"}
 	HubsKanbanBoardTitle                                   = Key{"hubs.kanban.boardTitle"}
 	HubsKanbanColAge                                       = Key{"hubs.kanban.colAge"}
+	HubsKanbanColDetail                                    = Key{"hubs.kanban.colDetail"}
+	HubsKanbanColEvent                                     = Key{"hubs.kanban.colEvent"}
 	HubsKanbanColTask                                      = Key{"hubs.kanban.colTask"}
+	HubsKanbanColWhen                                      = Key{"hubs.kanban.colWhen"}
 	HubsKanbanColWho                                       = Key{"hubs.kanban.colWho"}
 	HubsKanbanCommented                                    = Key{"hubs.kanban.commented"}
 	HubsKanbanCompleted                                    = Key{"hubs.kanban.completed"}
@@ -808,6 +891,21 @@ var (
 	HubsKanbanDetailResult                                 = Key{"hubs.kanban.detail.result"}
 	HubsKanbanDetailRuns                                   = Key{"hubs.kanban.detail.runs"}
 	HubsKanbanEmpty                                        = Key{"hubs.kanban.empty"}
+	HubsKanbanEventsAnyone                                 = Key{"hubs.kanban.eventsAnyone"}
+	HubsKanbanEventsApply                                  = Key{"hubs.kanban.eventsApply"}
+	HubsKanbanEventsAssignee                               = Key{"hubs.kanban.eventsAssignee"}
+	HubsKanbanEventsFilterTitle                            = Key{"hubs.kanban.eventsFilterTitle"}
+	HubsKanbanEventsFollowing                              = Key{"hubs.kanban.eventsFollowing"}
+	HubsKanbanEventsForAssignee                            = Key{"hubs.kanban.eventsForAssignee"}
+	HubsKanbanEventsForKinds                               = Key{"hubs.kanban.eventsForKinds"}
+	HubsKanbanEventsForTenant                              = Key{"hubs.kanban.eventsForTenant"}
+	HubsKanbanEventsKinds                                  = Key{"hubs.kanban.eventsKinds"}
+	HubsKanbanEventsKindsHelp                              = Key{"hubs.kanban.eventsKindsHelp"}
+	HubsKanbanEventsNone                                   = Key{"hubs.kanban.eventsNone"}
+	HubsKanbanEventsOf                                     = Key{"hubs.kanban.eventsOf"}
+	HubsKanbanEventsShowAll                                = Key{"hubs.kanban.eventsShowAll"}
+	HubsKanbanEventsTenant                                 = Key{"hubs.kanban.eventsTenant"}
+	HubsKanbanEventsTenantHelp                             = Key{"hubs.kanban.eventsTenantHelp"}
 	HubsKanbanFailed                                       = Key{"hubs.kanban.failed"}
 	HubsKanbanFormAssigneeHelp                             = Key{"hubs.kanban.form.assigneeHelp"}
 	HubsKanbanFormBoardCreate                              = Key{"hubs.kanban.form.boardCreate"}
@@ -863,6 +961,8 @@ var (
 	HubsLoginsAddTool                                      = Key{"hubs.logins.addTool"}
 	HubsLoginsAddToolDetail                                = Key{"hubs.logins.addToolDetail"}
 	HubsLoginsAdded                                        = Key{"hubs.logins.added"}
+	HubsLoginsAlreadyFirst                                 = Key{"hubs.logins.alreadyFirst"}
+	HubsLoginsAlreadyLast                                  = Key{"hubs.logins.alreadyLast"}
 	HubsLoginsBrowserDidNotOpen                            = Key{"hubs.logins.browserDidNotOpen"}
 	HubsLoginsConvertConfirm                               = Key{"hubs.logins.convertConfirm"}
 	HubsLoginsConverted                                    = Key{"hubs.logins.converted"}
@@ -875,6 +975,7 @@ var (
 	HubsLoginsDetailCount                                  = Key{"hubs.logins.detailCount"}
 	HubsLoginsDetailFingerprint                            = Key{"hubs.logins.detailFingerprint"}
 	HubsLoginsDetailFrom                                   = Key{"hubs.logins.detailFrom"}
+	HubsLoginsDetailOrder                                  = Key{"hubs.logins.detailOrder"}
 	HubsLoginsDetailSelection                              = Key{"hubs.logins.detailSelection"}
 	HubsLoginsDetailShared                                 = Key{"hubs.logins.detailShared"}
 	HubsLoginsDetailUsage                                  = Key{"hubs.logins.detailUsage"}
@@ -919,6 +1020,7 @@ var (
 	HubsLoginsMakeDefault                                  = Key{"hubs.logins.makeDefault"}
 	HubsLoginsMakeDefaultHelp                              = Key{"hubs.logins.makeDefaultHelp"}
 	HubsLoginsMissing                                      = Key{"hubs.logins.missing"}
+	HubsLoginsMoved                                        = Key{"hubs.logins.moved"}
 	HubsLoginsNameHint                                     = Key{"hubs.logins.nameHint"}
 	HubsLoginsNameLabel                                    = Key{"hubs.logins.nameLabel"}
 	HubsLoginsNoSession                                    = Key{"hubs.logins.noSession"}
@@ -930,6 +1032,10 @@ var (
 	HubsLoginsRenameTitle                                  = Key{"hubs.logins.renameTitle"}
 	HubsLoginsRenamed                                      = Key{"hubs.logins.renamed"}
 	HubsLoginsReplaceKeyTitle                              = Key{"hubs.logins.replaceKeyTitle"}
+	HubsLoginsResetCountMany                               = Key{"hubs.logins.resetCountMany"}
+	HubsLoginsResetCountOne                                = Key{"hubs.logins.resetCountOne"}
+	HubsLoginsResetNothing                                 = Key{"hubs.logins.resetNothing"}
+	HubsLoginsResetOne                                     = Key{"hubs.logins.resetOne"}
 	HubsLoginsRotationOff                                  = Key{"hubs.logins.rotationOff"}
 	HubsLoginsRotationOn                                   = Key{"hubs.logins.rotationOn"}
 	HubsLoginsSave                                         = Key{"hubs.logins.save"}
@@ -1020,6 +1126,8 @@ var (
 	HubsPickOtherModel                                     = Key{"hubs.pick.otherModel"}
 	HubsPluginsAccept                                      = Key{"hubs.plugins.accept"}
 	HubsPluginsAcceptDoes                                  = Key{"hubs.plugins.acceptDoes"}
+	HubsPluginsActAdopt                                    = Key{"hubs.plugins.actAdopt"}
+	HubsPluginsActAdoptDoes                                = Key{"hubs.plugins.actAdoptDoes"}
 	HubsPluginsActCapabilities                             = Key{"hubs.plugins.actCapabilities"}
 	HubsPluginsActCapabilitiesDoes                         = Key{"hubs.plugins.actCapabilitiesDoes"}
 	HubsPluginsActDoctor                                   = Key{"hubs.plugins.actDoctor"}
@@ -1057,8 +1165,26 @@ var (
 	HubsPluginsInstalled                                   = Key{"hubs.plugins.installed"}
 	HubsPluginsInstalling                                  = Key{"hubs.plugins.installing"}
 	HubsPluginsMissingEnv                                  = Key{"hubs.plugins.missingEnv"}
+	HubsPluginsMoreDetail                                  = Key{"hubs.plugins.moreDetail"}
+	HubsPluginsMoreTitle                                   = Key{"hubs.plugins.moreTitle"}
+	HubsPluginsNeedsFullPath                               = Key{"hubs.plugins.needsFullPath"}
 	HubsPluginsNoSettings                                  = Key{"hubs.plugins.noSettings"}
 	HubsPluginsNothingAsked                                = Key{"hubs.plugins.nothingAsked"}
+	HubsPluginsPackEnabledOnly                             = Key{"hubs.plugins.packEnabledOnly"}
+	HubsPluginsPackExport                                  = Key{"hubs.plugins.packExport"}
+	HubsPluginsPackExportDoes                              = Key{"hubs.plugins.packExportDoes"}
+	HubsPluginsPackInstall                                 = Key{"hubs.plugins.packInstall"}
+	HubsPluginsPackInstallDoes                             = Key{"hubs.plugins.packInstallDoes"}
+	HubsPluginsPackInstallGo                               = Key{"hubs.plugins.packInstallGo"}
+	HubsPluginsPackInstallGoDoes                           = Key{"hubs.plugins.packInstallGoDoes"}
+	HubsPluginsPackInstalling                              = Key{"hubs.plugins.packInstalling"}
+	HubsPluginsPackName                                    = Key{"hubs.plugins.packName"}
+	HubsPluginsPackOutput                                  = Key{"hubs.plugins.packOutput"}
+	HubsPluginsPackOutputHelp                              = Key{"hubs.plugins.packOutputHelp"}
+	HubsPluginsPackReinstall                               = Key{"hubs.plugins.packReinstall"}
+	HubsPluginsPackReinstallDoes                           = Key{"hubs.plugins.packReinstallDoes"}
+	HubsPluginsPackSaved                                   = Key{"hubs.plugins.packSaved"}
+	HubsPluginsPackSource                                  = Key{"hubs.plugins.packSource"}
 	HubsPluginsPartBundles                                 = Key{"hubs.plugins.partBundles"}
 	HubsPluginsPartCatalog                                 = Key{"hubs.plugins.partCatalog"}
 	HubsPluginsPartHub                                     = Key{"hubs.plugins.partHub"}
@@ -1081,6 +1207,10 @@ var (
 	HubsPluginsTrustURLConfirm                             = Key{"hubs.plugins.trustURLConfirm"}
 	HubsPluginsUpdated                                     = Key{"hubs.plugins.updated"}
 	HubsPluginsUpdating                                    = Key{"hubs.plugins.updating"}
+	HubsPluginsValidate                                    = Key{"hubs.plugins.validate"}
+	HubsPluginsValidateDeps                                = Key{"hubs.plugins.validateDeps"}
+	HubsPluginsValidateDoes                                = Key{"hubs.plugins.validateDoes"}
+	HubsPluginsValidatePath                                = Key{"hubs.plugins.validatePath"}
 	HubsProfilesAddTitle                                   = Key{"hubs.profiles.addTitle"}
 	HubsProfilesAliasAdd                                   = Key{"hubs.profiles.aliasAdd"}
 	HubsProfilesAliasAddDoes                               = Key{"hubs.profiles.aliasAddDoes"}
@@ -1275,6 +1405,49 @@ var (
 	HubsSecretsTurnOffDoes                                 = Key{"hubs.secrets.turnOffDoes"}
 	HubsSecretsUnmapConfirm                                = Key{"hubs.secrets.unmapConfirm"}
 	HubsSecretsVariable                                    = Key{"hubs.secrets.variable"}
+	HubsSessionOptionsApplied                              = Key{"hubs.sessionOptions.applied"}
+	HubsSessionOptionsBudgetCheck                          = Key{"hubs.sessionOptions.budgetCheck"}
+	HubsSessionOptionsCheckpoints                          = Key{"hubs.sessionOptions.checkpoints"}
+	HubsSessionOptionsCheckpointsDoes                      = Key{"hubs.sessionOptions.checkpointsDoes"}
+	HubsSessionOptionsColOption                            = Key{"hubs.sessionOptions.colOption"}
+	HubsSessionOptionsCwd                                  = Key{"hubs.sessionOptions.cwd"}
+	HubsSessionOptionsCwdCheck                             = Key{"hubs.sessionOptions.cwdCheck"}
+	HubsSessionOptionsCwdDoes                              = Key{"hubs.sessionOptions.cwdDoes"}
+	HubsSessionOptionsCwdHelp                              = Key{"hubs.sessionOptions.cwdHelp"}
+	HubsSessionOptionsEndpoint                             = Key{"hubs.sessionOptions.endpoint"}
+	HubsSessionOptionsEndpointDoes                         = Key{"hubs.sessionOptions.endpointDoes"}
+	HubsSessionOptionsEndpointKey                          = Key{"hubs.sessionOptions.endpointKey"}
+	HubsSessionOptionsEndpointKeyHelp                      = Key{"hubs.sessionOptions.endpointKeyHelp"}
+	HubsSessionOptionsEndpointProfile                      = Key{"hubs.sessionOptions.endpointProfile"}
+	HubsSessionOptionsEndpointURL                          = Key{"hubs.sessionOptions.endpointURL"}
+	HubsSessionOptionsFixed                                = Key{"hubs.sessionOptions.fixed"}
+	HubsSessionOptionsHelp                                 = Key{"hubs.sessionOptions.help"}
+	HubsSessionOptionsIgnoreRules                          = Key{"hubs.sessionOptions.ignoreRules"}
+	HubsSessionOptionsIgnoreRulesDoes                      = Key{"hubs.sessionOptions.ignoreRulesDoes"}
+	HubsSessionOptionsMaxTurns                             = Key{"hubs.sessionOptions.maxTurns"}
+	HubsSessionOptionsMaxTurnsDoes                         = Key{"hubs.sessionOptions.maxTurnsDoes"}
+	HubsSessionOptionsMaxTurnsHelp                         = Key{"hubs.sessionOptions.maxTurnsHelp"}
+	HubsSessionOptionsNoLimit                              = Key{"hubs.sessionOptions.noLimit"}
+	HubsSessionOptionsNoSession                            = Key{"hubs.sessionOptions.noSession"}
+	HubsSessionOptionsNoUserConfig                         = Key{"hubs.sessionOptions.noUserConfig"}
+	HubsSessionOptionsNoUserConfigConfirm                  = Key{"hubs.sessionOptions.noUserConfigConfirm"}
+	HubsSessionOptionsNoUserConfigDoes                     = Key{"hubs.sessionOptions.noUserConfigDoes"}
+	HubsSessionOptionsNone                                 = Key{"hubs.sessionOptions.none"}
+	HubsSessionOptionsNotLocal                             = Key{"hubs.sessionOptions.notLocal"}
+	HubsSessionOptionsOnUntilNew                           = Key{"hubs.sessionOptions.onUntilNew"}
+	HubsSessionOptionsPassSessionID                        = Key{"hubs.sessionOptions.passSessionID"}
+	HubsSessionOptionsPassSessionIDDoes                    = Key{"hubs.sessionOptions.passSessionIDDoes"}
+	HubsSessionOptionsRunBudget                            = Key{"hubs.sessionOptions.runBudget"}
+	HubsSessionOptionsRunBudgetDoes                        = Key{"hubs.sessionOptions.runBudgetDoes"}
+	HubsSessionOptionsRunBudgetHelp                        = Key{"hubs.sessionOptions.runBudgetHelp"}
+	HubsSessionOptionsSafeMode                             = Key{"hubs.sessionOptions.safeMode"}
+	HubsSessionOptionsSafeModeConfirm                      = Key{"hubs.sessionOptions.safeModeConfirm"}
+	HubsSessionOptionsSafeModeDoes                         = Key{"hubs.sessionOptions.safeModeDoes"}
+	HubsSessionOptionsSkills                               = Key{"hubs.sessionOptions.skills"}
+	HubsSessionOptionsSkillsDoes                           = Key{"hubs.sessionOptions.skillsDoes"}
+	HubsSessionOptionsSkillsHelp                           = Key{"hubs.sessionOptions.skillsHelp"}
+	HubsSessionOptionsTurnsCheck                           = Key{"hubs.sessionOptions.turnsCheck"}
+	HubsSessionOptionsUrlCheck                             = Key{"hubs.sessionOptions.urlCheck"}
 	HubsSessionsArchiveOpen                                = Key{"hubs.sessions.archiveOpen"}
 	HubsSessionsArchived                                   = Key{"hubs.sessions.archived"}
 	HubsSessionsArchivedShown                              = Key{"hubs.sessions.archivedShown"}
@@ -1346,6 +1519,25 @@ var (
 	HubsSettingsEntryRemoved                               = Key{"hubs.settings.entryRemoved"}
 	HubsSettingsEntrySaved                                 = Key{"hubs.settings.entrySaved"}
 	HubsSettingsEntryValue                                 = Key{"hubs.settings.entryValue"}
+	HubsSettingsFilesAbout                                 = Key{"hubs.settings.filesAbout"}
+	HubsSettingsFilesCheck                                 = Key{"hubs.settings.filesCheck"}
+	HubsSettingsFilesCheckDoes                             = Key{"hubs.settings.filesCheckDoes"}
+	HubsSettingsFilesConfig                                = Key{"hubs.settings.filesConfig"}
+	HubsSettingsFilesCopy                                  = Key{"hubs.settings.filesCopy"}
+	HubsSettingsFilesCopyDoes                              = Key{"hubs.settings.filesCopyDoes"}
+	HubsSettingsFilesCopyEnv                               = Key{"hubs.settings.filesCopyEnv"}
+	HubsSettingsFilesCopyEnvDoes                           = Key{"hubs.settings.filesCopyEnvDoes"}
+	HubsSettingsFilesEdit                                  = Key{"hubs.settings.filesEdit"}
+	HubsSettingsFilesEditDoes                              = Key{"hubs.settings.filesEditDoes"}
+	HubsSettingsFilesEditEnv                               = Key{"hubs.settings.filesEditEnv"}
+	HubsSettingsFilesEditEnvDoes                           = Key{"hubs.settings.filesEditEnvDoes"}
+	HubsSettingsFilesEnv                                   = Key{"hubs.settings.filesEnv"}
+	HubsSettingsFilesManaged                               = Key{"hubs.settings.filesManaged"}
+	HubsSettingsFilesMissing                               = Key{"hubs.settings.filesMissing"}
+	HubsSettingsFilesNoFile                                = Key{"hubs.settings.filesNoFile"}
+	HubsSettingsFilesPathWord                              = Key{"hubs.settings.filesPathWord"}
+	HubsSettingsFilesSeeded                                = Key{"hubs.settings.filesSeeded"}
+	HubsSettingsFilesTitle                                 = Key{"hubs.settings.filesTitle"}
 	HubsSettingsHelp                                       = Key{"hubs.settings.help"}
 	HubsSettingsLegend                                     = Key{"hubs.settings.legend"}
 	HubsSettingsListHelp                                   = Key{"hubs.settings.listHelp"}
@@ -1463,6 +1655,7 @@ var (
 	HubsShortProfiles                                      = Key{"hubs.short.profiles"}
 	HubsShortProjects                                      = Key{"hubs.short.projects"}
 	HubsShortSecrets                                       = Key{"hubs.short.secrets"}
+	HubsShortSessionOptions                                = Key{"hubs.short.sessionOptions"}
 	HubsShortSessions                                      = Key{"hubs.short.sessions"}
 	HubsShortSettings                                      = Key{"hubs.short.settings"}
 	HubsShortSystem                                        = Key{"hubs.short.system"}
@@ -1484,6 +1677,8 @@ var (
 	HubsSkillsActOptDoes                                   = Key{"hubs.skills.actOptDoes"}
 	HubsSkillsActOptIn                                     = Key{"hubs.skills.actOptIn"}
 	HubsSkillsActOptOut                                    = Key{"hubs.skills.actOptOut"}
+	HubsSkillsActPublish                                   = Key{"hubs.skills.actPublish"}
+	HubsSkillsActPublishDoes                               = Key{"hubs.skills.actPublishDoes"}
 	HubsSkillsActRepair                                    = Key{"hubs.skills.actRepair"}
 	HubsSkillsActRepairDoes                                = Key{"hubs.skills.actRepairDoes"}
 	HubsSkillsActReset                                     = Key{"hubs.skills.actReset"}
@@ -1514,6 +1709,10 @@ var (
 	HubsSkillsNotFromHub                                   = Key{"hubs.skills.notFromHub"}
 	HubsSkillsPage                                         = Key{"hubs.skills.page"}
 	HubsSkillsPathLine                                     = Key{"hubs.skills.pathLine"}
+	HubsSkillsPublishNoPath                                = Key{"hubs.skills.publishNoPath"}
+	HubsSkillsPublishRepo                                  = Key{"hubs.skills.publishRepo"}
+	HubsSkillsPublishRepoHelp                              = Key{"hubs.skills.publishRepoHelp"}
+	HubsSkillsPublishTitle                                 = Key{"hubs.skills.publishTitle"}
 	HubsSkillsRan                                          = Key{"hubs.skills.ran"}
 	HubsSkillsResetConfirm                                 = Key{"hubs.skills.resetConfirm"}
 	HubsSkillsRunFailed                                    = Key{"hubs.skills.runFailed"}
@@ -1566,6 +1765,7 @@ var (
 	HubsTitleProjects                                      = Key{"hubs.title.projects"}
 	HubsTitleRewind                                        = Key{"hubs.title.rewind"}
 	HubsTitleSecrets                                       = Key{"hubs.title.secrets"}
+	HubsTitleSessionOptions                                = Key{"hubs.title.sessionOptions"}
 	HubsTitleSessions                                      = Key{"hubs.title.sessions"}
 	HubsTitleSettings                                      = Key{"hubs.title.settings"}
 	HubsTitleSetup                                         = Key{"hubs.title.setup"}
@@ -2143,12 +2343,20 @@ var (
 	KeysTuiKanbanBoardLabel                                = Key{"keys.tui.kanban.board.label"}
 	KeysTuiKanbanCommentDoc                                = Key{"keys.tui.kanban.comment.doc"}
 	KeysTuiKanbanCommentLabel                              = Key{"keys.tui.kanban.comment.label"}
+	KeysTuiKanbanEventsDoc                                 = Key{"keys.tui.kanban.events.doc"}
+	KeysTuiKanbanEventsLabel                               = Key{"keys.tui.kanban.events.label"}
 	KeysTuiKanbanMoveDoc                                   = Key{"keys.tui.kanban.move.doc"}
 	KeysTuiKanbanMoveLabel                                 = Key{"keys.tui.kanban.move.label"}
 	KeysTuiLanguageUseDoc                                  = Key{"keys.tui.language.use.doc"}
 	KeysTuiLanguageUseLabel                                = Key{"keys.tui.language.use.label"}
 	KeysTuiLoginsConvertDoc                                = Key{"keys.tui.logins.convert.doc"}
 	KeysTuiLoginsConvertLabel                              = Key{"keys.tui.logins.convert.label"}
+	KeysTuiLoginsDownDoc                                   = Key{"keys.tui.logins.down.doc"}
+	KeysTuiLoginsDownLabel                                 = Key{"keys.tui.logins.down.label"}
+	KeysTuiLoginsResetDoc                                  = Key{"keys.tui.logins.reset.doc"}
+	KeysTuiLoginsResetLabel                                = Key{"keys.tui.logins.reset.label"}
+	KeysTuiLoginsUpDoc                                     = Key{"keys.tui.logins.up.doc"}
+	KeysTuiLoginsUpLabel                                   = Key{"keys.tui.logins.up.label"}
 	KeysTuiMcpSigninDoc                                    = Key{"keys.tui.mcp.signin.doc"}
 	KeysTuiMcpSigninLabel                                  = Key{"keys.tui.mcp.signin.label"}
 	KeysTuiMcpTestDoc                                      = Key{"keys.tui.mcp.test.doc"}
@@ -2163,6 +2371,8 @@ var (
 	KeysTuiPasteExpandLabel                                = Key{"keys.tui.paste.expand.label"}
 	KeysTuiPasteImageDoc                                   = Key{"keys.tui.paste.image.doc"}
 	KeysTuiPasteImageLabel                                 = Key{"keys.tui.paste.image.label"}
+	KeysTuiPluginsMoreDoc                                  = Key{"keys.tui.plugins.more.doc"}
+	KeysTuiPluginsMoreLabel                                = Key{"keys.tui.plugins.more.label"}
 	KeysTuiPluginsNextDoc                                  = Key{"keys.tui.plugins.next.doc"}
 	KeysTuiPluginsNextLabel                                = Key{"keys.tui.plugins.next.label"}
 	KeysTuiPluginsPrevDoc                                  = Key{"keys.tui.plugins.prev.doc"}
@@ -2245,8 +2455,14 @@ var (
 	KeysTuiSessionsSpaceLabel                              = Key{"keys.tui.sessions.space.label"}
 	KeysTuiSettingsAdvancedDoc                             = Key{"keys.tui.settings.advanced.doc"}
 	KeysTuiSettingsAdvancedLabel                           = Key{"keys.tui.settings.advanced.label"}
+	KeysTuiSettingsCheckDoc                                = Key{"keys.tui.settings.check.doc"}
+	KeysTuiSettingsCheckLabel                              = Key{"keys.tui.settings.check.label"}
+	KeysTuiSettingsFilesDoc                                = Key{"keys.tui.settings.files.doc"}
+	KeysTuiSettingsFilesLabel                              = Key{"keys.tui.settings.files.label"}
 	KeysTuiSettingsSearchDoc                               = Key{"keys.tui.settings.search.doc"}
 	KeysTuiSettingsSearchLabel                             = Key{"keys.tui.settings.search.label"}
+	KeysTuiSettingsSuggestDoc                              = Key{"keys.tui.settings.suggest.doc"}
+	KeysTuiSettingsSuggestLabel                            = Key{"keys.tui.settings.suggest.label"}
 	KeysTuiSigninCodeDoc                                   = Key{"keys.tui.signin.code.doc"}
 	KeysTuiSigninCodeLabel                                 = Key{"keys.tui.signin.code.label"}
 	KeysTuiSigninCopyDoc                                   = Key{"keys.tui.signin.copy.doc"}
@@ -3202,6 +3418,10 @@ var (
 	SlashCmdSessionBusyMode                                = Key{"slashCmd.session.busy.mode"}
 	SlashCmdSessionBusyUsage                               = Key{"slashCmd.session.busy.usage"}
 	SlashCmdSessionFastMode                                = Key{"slashCmd.session.fast.mode"}
+	SlashCmdSessionFastModeGlobal                          = Key{"slashCmd.session.fast.modeGlobal"}
+	SlashCmdSessionFastNoSession                           = Key{"slashCmd.session.fast.noSession"}
+	SlashCmdSessionFastSetGlobal                           = Key{"slashCmd.session.fast.setGlobal"}
+	SlashCmdSessionFastSetSession                          = Key{"slashCmd.session.fast.setSession"}
 	SlashCmdSessionFastUsage                               = Key{"slashCmd.session.fast.usage"}
 	SlashCmdSessionHatchBaseFailed                         = Key{"slashCmd.session.hatch.baseFailed"}
 	SlashCmdSessionHatchBoxCancel                          = Key{"slashCmd.session.hatch.boxCancel"}
@@ -3634,6 +3854,13 @@ var (
 	SystemStorageAbout                                     = Key{"system.storage.about"}
 	SystemStorageAdopt                                     = Key{"system.storage.adopt"}
 	SystemStorageAdoptDoes                                 = Key{"system.storage.adoptDoes"}
+	SystemStorageBackup                                    = Key{"system.storage.backup"}
+	SystemStorageBackupDoes                                = Key{"system.storage.backupDoes"}
+	SystemStorageBackupIntro                               = Key{"system.storage.backupIntro"}
+	SystemStorageBackupKeep                                = Key{"system.storage.backupKeep"}
+	SystemStorageBackupKeepHelp                            = Key{"system.storage.backupKeepHelp"}
+	SystemStorageBackupOutput                              = Key{"system.storage.backupOutput"}
+	SystemStorageBackupOutputHelp                          = Key{"system.storage.backupOutputHelp"}
 	SystemStorageCheckpoints                               = Key{"system.storage.checkpoints"}
 	SystemStorageCheckpointsDoes                           = Key{"system.storage.checkpointsDoes"}
 	SystemStorageCleanMarkers                              = Key{"system.storage.cleanMarkers"}
@@ -3675,6 +3902,15 @@ var (
 	SystemStoragePrune                                     = Key{"system.storage.prune"}
 	SystemStoragePruneConfirm                              = Key{"system.storage.pruneConfirm"}
 	SystemStoragePruneDoes                                 = Key{"system.storage.pruneDoes"}
+	SystemStorageRecover                                   = Key{"system.storage.recover"}
+	SystemStorageRecoverDoes                               = Key{"system.storage.recoverDoes"}
+	SystemStorageRecoverInspect                            = Key{"system.storage.recoverInspect"}
+	SystemStorageRecoverIntro                              = Key{"system.storage.recoverIntro"}
+	SystemStorageRecoverOutput                             = Key{"system.storage.recoverOutput"}
+	SystemStorageRecoverOutputHelp                         = Key{"system.storage.recoverOutputHelp"}
+	SystemStorageRecoverPartial                            = Key{"system.storage.recoverPartial"}
+	SystemStorageRecoverReason                             = Key{"system.storage.recoverReason"}
+	SystemStorageRecoverSource                             = Key{"system.storage.recoverSource"}
 	SystemStorageRefresh                                   = Key{"system.storage.refresh"}
 	SystemStorageRefreshDoes                               = Key{"system.storage.refreshDoes"}
 	SystemStorageRepair                                    = Key{"system.storage.repair"}
@@ -3692,6 +3928,24 @@ var (
 	SystemStorageStats                                     = Key{"system.storage.stats"}
 	SystemStorageStatsDoes                                 = Key{"system.storage.statsDoes"}
 	SystemStorageTitle                                     = Key{"system.storage.title"}
+	SystemUninstallAbout                                   = Key{"system.uninstall.about"}
+	SystemUninstallCovers                                  = Key{"system.uninstall.covers"}
+	SystemUninstallData                                    = Key{"system.uninstall.data"}
+	SystemUninstallDataConfirm                             = Key{"system.uninstall.dataConfirm"}
+	SystemUninstallDataDoes                                = Key{"system.uninstall.dataDoes"}
+	SystemUninstallFull                                    = Key{"system.uninstall.full"}
+	SystemUninstallFullConfirm                             = Key{"system.uninstall.fullConfirm"}
+	SystemUninstallFullDoes                                = Key{"system.uninstall.fullDoes"}
+	SystemUninstallKeep                                    = Key{"system.uninstall.keep"}
+	SystemUninstallKeepConfirm                             = Key{"system.uninstall.keepConfirm"}
+	SystemUninstallKeepDoes                                = Key{"system.uninstall.keepDoes"}
+	SystemUninstallShowData                                = Key{"system.uninstall.showData"}
+	SystemUninstallShowDataDoes                            = Key{"system.uninstall.showDataDoes"}
+	SystemUninstallShowFull                                = Key{"system.uninstall.showFull"}
+	SystemUninstallShowFullDoes                            = Key{"system.uninstall.showFullDoes"}
+	SystemUninstallShowKeep                                = Key{"system.uninstall.showKeep"}
+	SystemUninstallShowKeepDoes                            = Key{"system.uninstall.showKeepDoes"}
+	SystemUninstallTitle                                   = Key{"system.uninstall.title"}
 	SystemUnknownSection                                   = Key{"system.unknownSection"}
 	SystemUpdatesAbout                                     = Key{"system.updates.about"}
 	SystemUpdatesCheck                                     = Key{"system.updates.check"}
@@ -3705,6 +3959,27 @@ var (
 	SystemUpdatesQuitDoes                                  = Key{"system.updates.quitDoes"}
 	SystemUpdatesReason                                    = Key{"system.updates.reason"}
 	SystemUpdatesTitle                                     = Key{"system.updates.title"}
+	SystemVerifyAbout                                      = Key{"system.verify.about"}
+	SystemVerifyCovers                                     = Key{"system.verify.covers"}
+	SystemVerifyDetect                                     = Key{"system.verify.detect"}
+	SystemVerifyDetectDoes                                 = Key{"system.verify.detectDoes"}
+	SystemVerifyNoStart                                    = Key{"system.verify.noStart"}
+	SystemVerifyNoStartDoes                                = Key{"system.verify.noStartDoes"}
+	SystemVerifyPhaseBootstrap                             = Key{"system.verify.phaseBootstrap"}
+	SystemVerifyPhaseBuild                                 = Key{"system.verify.phaseBuild"}
+	SystemVerifyPhaseStart                                 = Key{"system.verify.phaseStart"}
+	SystemVerifyPhaseTest                                  = Key{"system.verify.phaseTest"}
+	SystemVerifyPhases                                     = Key{"system.verify.phases"}
+	SystemVerifyPhasesDoes                                 = Key{"system.verify.phasesDoes"}
+	SystemVerifyPort                                       = Key{"system.verify.port"}
+	SystemVerifyPortHelp                                   = Key{"system.verify.portHelp"}
+	SystemVerifyReadyTimeout                               = Key{"system.verify.readyTimeout"}
+	SystemVerifyRun                                        = Key{"system.verify.run"}
+	SystemVerifyRunDoes                                    = Key{"system.verify.runDoes"}
+	SystemVerifySave                                       = Key{"system.verify.save"}
+	SystemVerifySaveDoes                                   = Key{"system.verify.saveDoes"}
+	SystemVerifyTimeout                                    = Key{"system.verify.timeout"}
+	SystemVerifyTitle                                      = Key{"system.verify.title"}
 	ToolAnalyzing                                          = Key{"tool.analyzing"}
 	ToolDrafting                                           = Key{"tool.drafting"}
 	ToolOutputRisk                                         = Key{"tool.outputRisk"}
@@ -4242,6 +4517,41 @@ var all = []Key{
 	HubsAgentsPanelProcs,
 	HubsAgentsPanelProcsDone,
 	HubsAgentsPanelRunning,
+	HubsApprovalsAllowConfirm,
+	HubsApprovalsAllowLabel,
+	HubsApprovalsAllowed,
+	HubsApprovalsAllowedCount,
+	HubsApprovalsApprovedTimes,
+	HubsApprovalsCheckCommand,
+	HubsApprovalsCheckLabel,
+	HubsApprovalsCheckRule,
+	HubsApprovalsCheckTitle,
+	HubsApprovalsCheckVariants,
+	HubsApprovalsCheckVerdict,
+	HubsApprovalsCheckWhere,
+	HubsApprovalsClassesTitle,
+	HubsApprovalsColApproved,
+	HubsApprovalsColExample,
+	HubsApprovalsColPattern,
+	HubsApprovalsDaysHelp,
+	HubsApprovalsDaysLabel,
+	HubsApprovalsEmpty,
+	HubsApprovalsExamplesTitle,
+	HubsApprovalsKindClass,
+	HubsApprovalsKindGlob,
+	HubsApprovalsLimitLabel,
+	HubsApprovalsMinCountLabel,
+	HubsApprovalsNotSaved,
+	HubsApprovalsReading,
+	HubsApprovalsTitle,
+	HubsApprovalsVerdictAllow,
+	HubsApprovalsVerdictAsk,
+	HubsApprovalsVerdictHardline,
+	HubsApprovalsVerdictUserDeny,
+	HubsApprovalsWindowAll,
+	HubsApprovalsWindowDays,
+	HubsApprovalsWindowSubmit,
+	HubsApprovalsWindowTitle,
 	HubsBundlesDescriptionLabel,
 	HubsBundlesEmpty,
 	HubsBundlesFormTitle,
@@ -4279,6 +4589,19 @@ var all = []Key{
 	HubsChatappsEdit,
 	HubsChatappsEmpty,
 	HubsChatappsEveryEvent,
+	HubsChatappsFeishuApprove,
+	HubsChatappsFeishuApproveDoes,
+	HubsChatappsFeishuCheck,
+	HubsChatappsFeishuCheckDoes,
+	HubsChatappsFeishuDocument,
+	HubsChatappsFeishuDocumentHelp,
+	HubsChatappsFeishuList,
+	HubsChatappsFeishuListDoes,
+	HubsChatappsFeishuRevoke,
+	HubsChatappsFeishuRevokeDoes,
+	HubsChatappsFeishuRules,
+	HubsChatappsFeishuRulesDoes,
+	HubsChatappsFeishuUser,
 	HubsChatappsFieldAddress,
 	HubsChatappsFieldAgent,
 	HubsChatappsFieldChat,
@@ -4297,6 +4620,21 @@ var all = []Key{
 	HubsChatappsFieldSkills,
 	HubsChatappsFieldSubject,
 	HubsChatappsFieldTo,
+	HubsChatappsGchatCheck,
+	HubsChatappsGchatCheckDoes,
+	HubsChatappsGchatCode,
+	HubsChatappsGchatCodeDoes,
+	HubsChatappsGchatCodeLabel,
+	HubsChatappsGchatEmail,
+	HubsChatappsGchatEmailHelp,
+	HubsChatappsGchatLink,
+	HubsChatappsGchatLinkDoes,
+	HubsChatappsGchatRevoke,
+	HubsChatappsGchatRevokeConfirm,
+	HubsChatappsGchatRevokeDoes,
+	HubsChatappsGchatSecret,
+	HubsChatappsGchatSecretDoes,
+	HubsChatappsGchatSecretPath,
 	HubsChatappsHome,
 	HubsChatappsHomeOf,
 	HubsChatappsKeySet,
@@ -4322,6 +4660,14 @@ var all = []Key{
 	HubsChatappsPeerRemoveConfirm,
 	HubsChatappsPeerRemoveDoes,
 	HubsChatappsPendingDetail,
+	HubsChatappsPhotonSetup,
+	HubsChatappsPhotonSetupDoes,
+	HubsChatappsPhotonSidecar,
+	HubsChatappsPhotonSidecarDoes,
+	HubsChatappsPhotonStatus,
+	HubsChatappsPhotonStatusDoes,
+	HubsChatappsPhotonTelemetry,
+	HubsChatappsPhotonTelemetryDoes,
 	HubsChatappsRemove,
 	HubsChatappsRevoke,
 	HubsChatappsRevokeConfirm,
@@ -4347,6 +4693,9 @@ var all = []Key{
 	HubsChatappsStateFailed,
 	HubsChatappsStateRetrying,
 	HubsChatappsStateUnknown,
+	HubsChatappsTelemetryOff,
+	HubsChatappsTelemetryOn,
+	HubsChatappsTelemetryShow,
 	HubsChatappsTesting,
 	HubsChatappsUrlWord,
 	HubsChatappsUserDetail,
@@ -4366,6 +4715,10 @@ var all = []Key{
 	HubsChatappsWebhookTest,
 	HubsChatappsWebhookTestDoes,
 	HubsChatappsWebhooksOff,
+	HubsChatappsWhatsappCloud,
+	HubsChatappsWhatsappCloudDoes,
+	HubsChatappsWhatsappPair,
+	HubsChatappsWhatsappPairDoes,
 	HubsColAccount,
 	HubsColAction,
 	HubsColCategory,
@@ -4603,6 +4956,8 @@ var all = []Key{
 	HubsKanbanActMoveDoes,
 	HubsKanbanActReopen,
 	HubsKanbanActReopenDoes,
+	HubsKanbanActEvents,
+	HubsKanbanActEventsDoes,
 	HubsKanbanAdded,
 	HubsKanbanArchiveConfirm,
 	HubsKanbanArchivedColumn,
@@ -4613,7 +4968,10 @@ var all = []Key{
 	HubsKanbanBoardCreated,
 	HubsKanbanBoardTitle,
 	HubsKanbanColAge,
+	HubsKanbanColDetail,
+	HubsKanbanColEvent,
 	HubsKanbanColTask,
+	HubsKanbanColWhen,
 	HubsKanbanColWho,
 	HubsKanbanCommented,
 	HubsKanbanCompleted,
@@ -4627,6 +4985,21 @@ var all = []Key{
 	HubsKanbanDetailResult,
 	HubsKanbanDetailRuns,
 	HubsKanbanEmpty,
+	HubsKanbanEventsAnyone,
+	HubsKanbanEventsApply,
+	HubsKanbanEventsAssignee,
+	HubsKanbanEventsFilterTitle,
+	HubsKanbanEventsFollowing,
+	HubsKanbanEventsForAssignee,
+	HubsKanbanEventsForKinds,
+	HubsKanbanEventsForTenant,
+	HubsKanbanEventsKinds,
+	HubsKanbanEventsKindsHelp,
+	HubsKanbanEventsNone,
+	HubsKanbanEventsOf,
+	HubsKanbanEventsShowAll,
+	HubsKanbanEventsTenant,
+	HubsKanbanEventsTenantHelp,
 	HubsKanbanFailed,
 	HubsKanbanFormAssigneeHelp,
 	HubsKanbanFormBoardCreate,
@@ -4682,6 +5055,8 @@ var all = []Key{
 	HubsLoginsAddTool,
 	HubsLoginsAddToolDetail,
 	HubsLoginsAdded,
+	HubsLoginsAlreadyFirst,
+	HubsLoginsAlreadyLast,
 	HubsLoginsBrowserDidNotOpen,
 	HubsLoginsConvertConfirm,
 	HubsLoginsConverted,
@@ -4694,6 +5069,7 @@ var all = []Key{
 	HubsLoginsDetailCount,
 	HubsLoginsDetailFingerprint,
 	HubsLoginsDetailFrom,
+	HubsLoginsDetailOrder,
 	HubsLoginsDetailSelection,
 	HubsLoginsDetailShared,
 	HubsLoginsDetailUsage,
@@ -4738,6 +5114,7 @@ var all = []Key{
 	HubsLoginsMakeDefault,
 	HubsLoginsMakeDefaultHelp,
 	HubsLoginsMissing,
+	HubsLoginsMoved,
 	HubsLoginsNameHint,
 	HubsLoginsNameLabel,
 	HubsLoginsNoSession,
@@ -4749,6 +5126,10 @@ var all = []Key{
 	HubsLoginsRenameTitle,
 	HubsLoginsRenamed,
 	HubsLoginsReplaceKeyTitle,
+	HubsLoginsResetCountMany,
+	HubsLoginsResetCountOne,
+	HubsLoginsResetNothing,
+	HubsLoginsResetOne,
 	HubsLoginsRotationOff,
 	HubsLoginsRotationOn,
 	HubsLoginsSave,
@@ -4839,6 +5220,8 @@ var all = []Key{
 	HubsPickOtherModel,
 	HubsPluginsAccept,
 	HubsPluginsAcceptDoes,
+	HubsPluginsActAdopt,
+	HubsPluginsActAdoptDoes,
 	HubsPluginsActCapabilities,
 	HubsPluginsActCapabilitiesDoes,
 	HubsPluginsActDoctor,
@@ -4876,8 +5259,26 @@ var all = []Key{
 	HubsPluginsInstalled,
 	HubsPluginsInstalling,
 	HubsPluginsMissingEnv,
+	HubsPluginsMoreDetail,
+	HubsPluginsMoreTitle,
+	HubsPluginsNeedsFullPath,
 	HubsPluginsNoSettings,
 	HubsPluginsNothingAsked,
+	HubsPluginsPackEnabledOnly,
+	HubsPluginsPackExport,
+	HubsPluginsPackExportDoes,
+	HubsPluginsPackInstall,
+	HubsPluginsPackInstallDoes,
+	HubsPluginsPackInstallGo,
+	HubsPluginsPackInstallGoDoes,
+	HubsPluginsPackInstalling,
+	HubsPluginsPackName,
+	HubsPluginsPackOutput,
+	HubsPluginsPackOutputHelp,
+	HubsPluginsPackReinstall,
+	HubsPluginsPackReinstallDoes,
+	HubsPluginsPackSaved,
+	HubsPluginsPackSource,
 	HubsPluginsPartBundles,
 	HubsPluginsPartCatalog,
 	HubsPluginsPartHub,
@@ -4900,6 +5301,10 @@ var all = []Key{
 	HubsPluginsTrustURLConfirm,
 	HubsPluginsUpdated,
 	HubsPluginsUpdating,
+	HubsPluginsValidate,
+	HubsPluginsValidateDeps,
+	HubsPluginsValidateDoes,
+	HubsPluginsValidatePath,
 	HubsProfilesAddTitle,
 	HubsProfilesAliasAdd,
 	HubsProfilesAliasAddDoes,
@@ -5094,6 +5499,49 @@ var all = []Key{
 	HubsSecretsTurnOffDoes,
 	HubsSecretsUnmapConfirm,
 	HubsSecretsVariable,
+	HubsSessionOptionsApplied,
+	HubsSessionOptionsBudgetCheck,
+	HubsSessionOptionsCheckpoints,
+	HubsSessionOptionsCheckpointsDoes,
+	HubsSessionOptionsColOption,
+	HubsSessionOptionsCwd,
+	HubsSessionOptionsCwdCheck,
+	HubsSessionOptionsCwdDoes,
+	HubsSessionOptionsCwdHelp,
+	HubsSessionOptionsEndpoint,
+	HubsSessionOptionsEndpointDoes,
+	HubsSessionOptionsEndpointKey,
+	HubsSessionOptionsEndpointKeyHelp,
+	HubsSessionOptionsEndpointProfile,
+	HubsSessionOptionsEndpointURL,
+	HubsSessionOptionsFixed,
+	HubsSessionOptionsHelp,
+	HubsSessionOptionsIgnoreRules,
+	HubsSessionOptionsIgnoreRulesDoes,
+	HubsSessionOptionsMaxTurns,
+	HubsSessionOptionsMaxTurnsDoes,
+	HubsSessionOptionsMaxTurnsHelp,
+	HubsSessionOptionsNoLimit,
+	HubsSessionOptionsNoSession,
+	HubsSessionOptionsNoUserConfig,
+	HubsSessionOptionsNoUserConfigConfirm,
+	HubsSessionOptionsNoUserConfigDoes,
+	HubsSessionOptionsNone,
+	HubsSessionOptionsNotLocal,
+	HubsSessionOptionsOnUntilNew,
+	HubsSessionOptionsPassSessionID,
+	HubsSessionOptionsPassSessionIDDoes,
+	HubsSessionOptionsRunBudget,
+	HubsSessionOptionsRunBudgetDoes,
+	HubsSessionOptionsRunBudgetHelp,
+	HubsSessionOptionsSafeMode,
+	HubsSessionOptionsSafeModeConfirm,
+	HubsSessionOptionsSafeModeDoes,
+	HubsSessionOptionsSkills,
+	HubsSessionOptionsSkillsDoes,
+	HubsSessionOptionsSkillsHelp,
+	HubsSessionOptionsTurnsCheck,
+	HubsSessionOptionsUrlCheck,
 	HubsSessionsArchiveOpen,
 	HubsSessionsArchived,
 	HubsSessionsArchivedShown,
@@ -5165,6 +5613,25 @@ var all = []Key{
 	HubsSettingsEntryRemoved,
 	HubsSettingsEntrySaved,
 	HubsSettingsEntryValue,
+	HubsSettingsFilesAbout,
+	HubsSettingsFilesCheck,
+	HubsSettingsFilesCheckDoes,
+	HubsSettingsFilesConfig,
+	HubsSettingsFilesCopy,
+	HubsSettingsFilesCopyDoes,
+	HubsSettingsFilesCopyEnv,
+	HubsSettingsFilesCopyEnvDoes,
+	HubsSettingsFilesEdit,
+	HubsSettingsFilesEditDoes,
+	HubsSettingsFilesEditEnv,
+	HubsSettingsFilesEditEnvDoes,
+	HubsSettingsFilesEnv,
+	HubsSettingsFilesManaged,
+	HubsSettingsFilesMissing,
+	HubsSettingsFilesNoFile,
+	HubsSettingsFilesPathWord,
+	HubsSettingsFilesSeeded,
+	HubsSettingsFilesTitle,
 	HubsSettingsHelp,
 	HubsSettingsLegend,
 	HubsSettingsListHelp,
@@ -5282,6 +5749,7 @@ var all = []Key{
 	HubsShortProfiles,
 	HubsShortProjects,
 	HubsShortSecrets,
+	HubsShortSessionOptions,
 	HubsShortSessions,
 	HubsShortSettings,
 	HubsShortSystem,
@@ -5303,6 +5771,8 @@ var all = []Key{
 	HubsSkillsActOptDoes,
 	HubsSkillsActOptIn,
 	HubsSkillsActOptOut,
+	HubsSkillsActPublish,
+	HubsSkillsActPublishDoes,
 	HubsSkillsActRepair,
 	HubsSkillsActRepairDoes,
 	HubsSkillsActReset,
@@ -5333,6 +5803,10 @@ var all = []Key{
 	HubsSkillsNotFromHub,
 	HubsSkillsPage,
 	HubsSkillsPathLine,
+	HubsSkillsPublishNoPath,
+	HubsSkillsPublishRepo,
+	HubsSkillsPublishRepoHelp,
+	HubsSkillsPublishTitle,
 	HubsSkillsRan,
 	HubsSkillsResetConfirm,
 	HubsSkillsRunFailed,
@@ -5385,6 +5859,7 @@ var all = []Key{
 	HubsTitleProjects,
 	HubsTitleRewind,
 	HubsTitleSecrets,
+	HubsTitleSessionOptions,
 	HubsTitleSessions,
 	HubsTitleSettings,
 	HubsTitleSetup,
@@ -5962,12 +6437,20 @@ var all = []Key{
 	KeysTuiKanbanBoardLabel,
 	KeysTuiKanbanCommentDoc,
 	KeysTuiKanbanCommentLabel,
+	KeysTuiKanbanEventsDoc,
+	KeysTuiKanbanEventsLabel,
 	KeysTuiKanbanMoveDoc,
 	KeysTuiKanbanMoveLabel,
 	KeysTuiLanguageUseDoc,
 	KeysTuiLanguageUseLabel,
 	KeysTuiLoginsConvertDoc,
 	KeysTuiLoginsConvertLabel,
+	KeysTuiLoginsDownDoc,
+	KeysTuiLoginsDownLabel,
+	KeysTuiLoginsResetDoc,
+	KeysTuiLoginsResetLabel,
+	KeysTuiLoginsUpDoc,
+	KeysTuiLoginsUpLabel,
 	KeysTuiMcpSigninDoc,
 	KeysTuiMcpSigninLabel,
 	KeysTuiMcpTestDoc,
@@ -5982,6 +6465,8 @@ var all = []Key{
 	KeysTuiPasteExpandLabel,
 	KeysTuiPasteImageDoc,
 	KeysTuiPasteImageLabel,
+	KeysTuiPluginsMoreDoc,
+	KeysTuiPluginsMoreLabel,
 	KeysTuiPluginsNextDoc,
 	KeysTuiPluginsNextLabel,
 	KeysTuiPluginsPrevDoc,
@@ -6064,8 +6549,14 @@ var all = []Key{
 	KeysTuiSessionsSpaceLabel,
 	KeysTuiSettingsAdvancedDoc,
 	KeysTuiSettingsAdvancedLabel,
+	KeysTuiSettingsCheckDoc,
+	KeysTuiSettingsCheckLabel,
+	KeysTuiSettingsFilesDoc,
+	KeysTuiSettingsFilesLabel,
 	KeysTuiSettingsSearchDoc,
 	KeysTuiSettingsSearchLabel,
+	KeysTuiSettingsSuggestDoc,
+	KeysTuiSettingsSuggestLabel,
 	KeysTuiSigninCodeDoc,
 	KeysTuiSigninCodeLabel,
 	KeysTuiSigninCopyDoc,
@@ -7021,6 +7512,10 @@ var all = []Key{
 	SlashCmdSessionBusyMode,
 	SlashCmdSessionBusyUsage,
 	SlashCmdSessionFastMode,
+	SlashCmdSessionFastModeGlobal,
+	SlashCmdSessionFastNoSession,
+	SlashCmdSessionFastSetGlobal,
+	SlashCmdSessionFastSetSession,
 	SlashCmdSessionFastUsage,
 	SlashCmdSessionHatchBaseFailed,
 	SlashCmdSessionHatchBoxCancel,
@@ -7453,6 +7948,13 @@ var all = []Key{
 	SystemStorageAbout,
 	SystemStorageAdopt,
 	SystemStorageAdoptDoes,
+	SystemStorageBackup,
+	SystemStorageBackupDoes,
+	SystemStorageBackupIntro,
+	SystemStorageBackupKeep,
+	SystemStorageBackupKeepHelp,
+	SystemStorageBackupOutput,
+	SystemStorageBackupOutputHelp,
 	SystemStorageCheckpoints,
 	SystemStorageCheckpointsDoes,
 	SystemStorageCleanMarkers,
@@ -7494,6 +7996,15 @@ var all = []Key{
 	SystemStoragePrune,
 	SystemStoragePruneConfirm,
 	SystemStoragePruneDoes,
+	SystemStorageRecover,
+	SystemStorageRecoverDoes,
+	SystemStorageRecoverInspect,
+	SystemStorageRecoverIntro,
+	SystemStorageRecoverOutput,
+	SystemStorageRecoverOutputHelp,
+	SystemStorageRecoverPartial,
+	SystemStorageRecoverReason,
+	SystemStorageRecoverSource,
 	SystemStorageRefresh,
 	SystemStorageRefreshDoes,
 	SystemStorageRepair,
@@ -7511,6 +8022,24 @@ var all = []Key{
 	SystemStorageStats,
 	SystemStorageStatsDoes,
 	SystemStorageTitle,
+	SystemUninstallAbout,
+	SystemUninstallCovers,
+	SystemUninstallData,
+	SystemUninstallDataConfirm,
+	SystemUninstallDataDoes,
+	SystemUninstallFull,
+	SystemUninstallFullConfirm,
+	SystemUninstallFullDoes,
+	SystemUninstallKeep,
+	SystemUninstallKeepConfirm,
+	SystemUninstallKeepDoes,
+	SystemUninstallShowData,
+	SystemUninstallShowDataDoes,
+	SystemUninstallShowFull,
+	SystemUninstallShowFullDoes,
+	SystemUninstallShowKeep,
+	SystemUninstallShowKeepDoes,
+	SystemUninstallTitle,
 	SystemUnknownSection,
 	SystemUpdatesAbout,
 	SystemUpdatesCheck,
@@ -7524,6 +8053,27 @@ var all = []Key{
 	SystemUpdatesQuitDoes,
 	SystemUpdatesReason,
 	SystemUpdatesTitle,
+	SystemVerifyAbout,
+	SystemVerifyCovers,
+	SystemVerifyDetect,
+	SystemVerifyDetectDoes,
+	SystemVerifyNoStart,
+	SystemVerifyNoStartDoes,
+	SystemVerifyPhaseBootstrap,
+	SystemVerifyPhaseBuild,
+	SystemVerifyPhaseStart,
+	SystemVerifyPhaseTest,
+	SystemVerifyPhases,
+	SystemVerifyPhasesDoes,
+	SystemVerifyPort,
+	SystemVerifyPortHelp,
+	SystemVerifyReadyTimeout,
+	SystemVerifyRun,
+	SystemVerifyRunDoes,
+	SystemVerifySave,
+	SystemVerifySaveDoes,
+	SystemVerifyTimeout,
+	SystemVerifyTitle,
 	ToolAnalyzing,
 	ToolDrafting,
 	ToolOutputRisk,

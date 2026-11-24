@@ -35,7 +35,7 @@ func GithubTokenFromEnv(getenv func(string) string) (string, bool) {
 		getenv = os.Getenv
 	}
 	for _, name := range GithubTokenEnvVars {
-		if value := pystr.Strip(getenv(name)); value != "" {
+		if value := strings.TrimSpace(getenv(name)); value != "" {
 			return value, true
 		}
 	}
@@ -66,7 +66,7 @@ func probeGhCLIToken() (string, bool) {
 	}
 	token := ""
 	if err == nil {
-		token = pystr.Strip(pystr.DecodeUTF8Replace(out))
+		token = strings.TrimSpace(pystr.DecodeUTF8Replace(out))
 	}
 	ghCLICache = token
 	return token, token != ""
@@ -134,7 +134,7 @@ func DescribeGithubFailure(err error, authenticated bool, now *float64) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		reason := urlErr.Err
-		if isTimeoutError(reason) || strings.Contains(pystr.Lower(fmt.Sprint(reason)), "timed out") {
+		if isTimeoutError(reason) || strings.Contains(strings.ToLower(fmt.Sprint(reason)), "timed out") {
 			return "api.github.com did not answer within 10 seconds."
 		}
 		return fmt.Sprintf("Connection to api.github.com failed (%v) — check your connection, firewall or proxy.", reason)
@@ -156,7 +156,7 @@ func isTimeoutError(err error) bool {
 
 // Integer value of a header as int(str(value).strip()) reads it, false where that raises
 func githubHeaderInt(header http.Header, name string) (int64, bool) {
-	n, ok := pystr.IntText(pystr.Strip(header.Get(name)))
+	n, ok := pystr.IntText(strings.TrimSpace(header.Get(name)))
 	if !ok || !n.IsInt64() {
 		return 0, false
 	}

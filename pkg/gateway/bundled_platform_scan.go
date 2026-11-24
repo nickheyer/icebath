@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"bytes"
 	"io/fs"
 	"path"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -38,9 +39,9 @@ func bundledPlatformManifestName(tree fs.FS, pluginDir string) string {
 	}
 	m, ok := data.(map[string]any)
 	if !ok {
-		return pystr.Lower(pystr.Strip(pyrepr.Str(nil)))
+		return strings.ToLower(strings.TrimSpace(pyrepr.Str(nil)))
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(m["name"])))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(m["name"])))
 }
 
 // Bundled platform plugin directories holding a manifest, plus manifest names that differ from their directory
@@ -65,13 +66,13 @@ func scanBundledPluginPlatforms() (map[string]bool, map[string]string) {
 	}
 	names := map[string]bool{}
 	for _, d := range dirs {
-		names[pystr.Lower(d)] = true
+		names[strings.ToLower(d)] = true
 	}
 	aliases := map[string]string{}
 	for _, d := range dirs {
 		name := bundledPlatformManifestName(tree, path.Join("platforms", d))
 		if _, taken := aliases[name]; name != "" && !names[name] && !taken {
-			aliases[name] = pystr.Lower(d)
+			aliases[name] = strings.ToLower(d)
 		}
 	}
 	return names, aliases

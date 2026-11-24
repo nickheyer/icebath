@@ -560,7 +560,7 @@ func rankAndPage(all []SkillMeta, page, pageSize int) (deduped, items []SkillMet
 		if (a.Source != "official") != (b.Source != "official") {
 			return a.Source == "official"
 		}
-		return pystr.Lower(a.Name) < pystr.Lower(b.Name)
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
 	totalPages = max(1, (len(deduped)+pageSize-1)/pageSize)
 	outPage = max(1, min(page, totalPages))

@@ -56,39 +56,44 @@ func runFallback(t *testing.T, ctx context.Context, h string, sub any) (string, 
 }
 
 func TestReadChainReadsNewListFormat(t *testing.T) {
-	cfg := map[string]any{"fallback_providers": []any{
+	h, ctx := fallbackTestHome(t)
+	writeConfig(t, h, map[string]any{"fallback_providers": []any{
 		map[string]any{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
 		map[string]any{"provider": "deepseek", "model": "deepseek-v4-pro"},
-	}}
+	}})
 	want := []map[string]any{
 		{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"},
 		{"provider": "deepseek", "model": "deepseek-v4-pro"},
 	}
-	if got := ReadFallbackChain(cfg); !reflect.DeepEqual(got, want) {
+	if got := StoredFallbackChain(ctx); !reflect.DeepEqual(got, want) {
 		t.Fatalf("chain %v", got)
 	}
 }
 
 func TestReadChainReturnsCopiesNotAliases(t *testing.T) {
-	cfg := map[string]any{"fallback_providers": []any{map[string]any{"provider": "deepseek", "model": "foo"}}}
-	result := ReadFallbackChain(cfg)
+	h, ctx := fallbackTestHome(t)
+	writeConfig(t, h, map[string]any{"fallback_providers": []any{map[string]any{"provider": "deepseek", "model": "foo"}}})
+	result := StoredFallbackChain(ctx)
 	result[0]["provider"] = "mutated"
-	if cfg["fallback_providers"].([]any)[0].(map[string]any)["provider"] != "deepseek" {
-		t.Fatal("chain aliases the config entry")
+	if again := StoredFallbackChain(ctx); again[0]["provider"] != "deepseek" {
+		t.Fatal("chain aliases the stored entry")
 	}
 }
 
 func TestExtractFallbackExtractsFromDefaultField(t *testing.T) {
-	entry, ok, err := ExtractFallbackFromModelCfg(map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6"})
+	h, ctx := fallbackTestHome(t)
+	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6"}})
 	want := map[string]any{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"}
-	if err != nil || !ok || !reflect.DeepEqual(entry, want) {
-		t.Fatalf("entry %v %v %v", entry, ok, err)
+	if entry := primaryFallbackEntry(ctx); !reflect.DeepEqual(entry, want) {
+		t.Fatalf("entry %v", entry)
 	}
 }
 
 func TestExtractFallbackReturnsNoneWithoutModel(t *testing.T) {
-	if entry, ok, err := ExtractFallbackFromModelCfg(map[string]any{"provider": "openrouter"}); err != nil || ok || entry != nil {
-		t.Fatalf("entry %v %v %v", entry, ok, err)
+	h, ctx := fallbackTestHome(t)
+	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter"}})
+	if entry := primaryFallbackEntry(ctx); entry != nil {
+		t.Fatalf("entry %v", entry)
 	}
 }
 
@@ -369,35 +374,34 @@ func TestFallbackEntryFormattingAndPrimaryDescription(t *testing.T) {
 	if EntriesLabel(1) != "1 entry" || EntriesLabel(3) != "3 entries" {
 		t.Fatal("entries label")
 	}
+	h, ctx := fallbackTestHome(t)
 	for _, tc := range []struct {
 		cfg  map[string]any
 		want string
 	}{
-		{map[string]any{"model": "  bare  "}, "bare"},
 		{map[string]any{"model": map[string]any{"provider": "p"}}, "?  (via p)"},
-		{map[string]any{"model": map[string]any{"model": "m", "provider": " "}}, "m  (via ?)"},
+		{map[string]any{"model": map[string]any{"default": "m", "provider": " "}}, "m  (via ?)"},
+		{map[string]any{"model": map[string]any{"default": " m ", "provider": "p"}}, "m  (via p)"},
 		{map[string]any{}, ""},
 	} {
-		if got, err := DescribePrimary(tc.cfg); err != nil || got != tc.want {
-			t.Fatalf("%v gave %q %v", tc.cfg, got, err)
+		writeConfig(t, h, tc.cfg)
+		if got := DescribePrimary(ctx); got != tc.want {
+			t.Fatalf("%v gave %q", tc.cfg, got)
 		}
-	}
-	if _, err := DescribePrimary(map[string]any{"model": map[string]any{"provider": 5}}); err == nil || err.Error() != "model.provider is a number, expected text" {
-		t.Fatalf("err %v", err)
 	}
 }
 
-func TestRestoreModelCfgPutsTheSnapshotBack(t *testing.T) {
+func TestRestoreModelSettingsPutsTheSnapshotBack(t *testing.T) {
 	h, ctx := fallbackTestHome(t)
 	writeConfig(t, h, map[string]any{"model": map[string]any{"provider": "openrouter", "default": "changed"}, "theme": "x"})
-	if err := RestoreModelCfg(ctx, h, map[string]any{"provider": "deepseek", "default": "deepseek-v4"}); err != nil {
+	if err := restoreModelSettings(ctx, modelSnapshot{"model.provider": "deepseek", "model.default": "deepseek-v4"}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := readConfig(t, h)
 	if !reflect.DeepEqual(cfg["model"], map[string]any{"provider": "deepseek", "default": "deepseek-v4"}) || cfg["theme"] != "x" {
 		t.Fatalf("cfg %v", cfg)
 	}
-	if err := RestoreModelCfg(ctx, h, nil); err != nil {
+	if err := restoreModelSettings(ctx, modelSnapshot{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, has := readConfig(t, h)["model"]; has {

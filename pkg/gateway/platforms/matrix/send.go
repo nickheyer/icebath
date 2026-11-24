@@ -24,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -83,7 +82,7 @@ func (a *MatrixAdapter) CreateHandoffThread(ctx context.Context, parentChatID, n
 	if a.currentClient() == nil {
 		return "", false, nil
 	}
-	title := pystr.Strip(name)
+	title := strings.TrimSpace(name)
 	if title == "" {
 		title = i18n.T(ctx, "platform.matrix.handoff.default_name", "", nil)
 	}

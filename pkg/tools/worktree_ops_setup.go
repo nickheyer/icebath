@@ -124,7 +124,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 		if err != nil || gd.Returncode != 0 {
 			return 0, false
 		}
-		gitDir := pystr.Strip(gd.Stdout)
+		gitDir := strings.TrimSpace(gd.Stdout)
 		if !filepath.IsAbs(gitDir) {
 			gitDir = filepath.Join(repoRoot, gitDir)
 		}
@@ -161,7 +161,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 	if err != nil {
 		envLog(nil).Debug(fmt.Sprintf("worktree base: upstream resolution failed: %s", err))
 	} else if up.Returncode == 0 {
-		if upstream := pystr.Strip(up.Stdout); upstream != "" && strings.Contains(upstream, "/") {
+		if upstream := strings.TrimSpace(up.Stdout); upstream != "" && strings.Contains(upstream, "/") {
 			remote, branch, _ := strings.Cut(upstream, "/")
 			return refresh(remote, branch, upstream)
 		}
@@ -173,7 +173,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 	}
 	defaultRef := ""
 	if headRef.Returncode == 0 {
-		defaultRef = strings.Replace(pystr.Strip(headRef.Stdout), "refs/remotes/", "", 1)
+		defaultRef = strings.Replace(strings.TrimSpace(headRef.Stdout), "refs/remotes/", "", 1)
 	}
 	if defaultRef == "" {
 		show, err := run([]string{"remote", "show", "origin"}, max(fetchTimeout, 5))
@@ -182,10 +182,10 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 			return "HEAD", "HEAD (local — could not reach remote)"
 		}
 		for _, line := range pystr.Splitlines(show.Stdout, false) {
-			line = pystr.Strip(line)
+			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "HEAD branch:") {
 				_, rest, _ := strings.Cut(line, ":")
-				if branch := pystr.Strip(rest); branch != "" && branch != "(unknown)" {
+				if branch := strings.TrimSpace(rest); branch != "" && branch != "(unknown)" {
 					defaultRef = "origin/" + branch
 				}
 				break
@@ -248,14 +248,14 @@ func worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel string, cprint
 	result, err := create([]string{"-c", "checkout.workers=8", "-c", "checkout.thresholdForParallelism=100"})
 	if err == nil && result.Returncode != 0 {
 		if baseRef != "HEAD" {
-			envLog(nil).Warn(fmt.Sprintf("worktree add from %s failed (%s); retrying from local HEAD", baseRef, pystr.Strip(result.Stderr)))
+			envLog(nil).Warn(fmt.Sprintf("worktree add from %s failed (%s); retrying from local HEAD", baseRef, strings.TrimSpace(result.Stderr)))
 			cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
 			baseRef, baseLabel = "HEAD", "HEAD (fallback — remote base failed)"
 			result, err = create(nil)
 		}
 		if err == nil && result.Returncode != 0 {
 			cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
-			cprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", pystr.Strip(result.Stderr)))
+			cprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", strings.TrimSpace(result.Stderr)))
 			return "", "", false
 		}
 	}

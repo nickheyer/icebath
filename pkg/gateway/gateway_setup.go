@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -72,6 +71,11 @@ func GatewaySetup(ctx context.Context, w io.Writer) error {
 		}
 	}
 	if progress {
+		WizardPrintln("")
+		gatewayFacade.printSuccess("Messaging platforms configured!")
+		if err := warnMissingHomeChannels(ctx); err != nil {
+			return err
+		}
 		if err := wizardPostSetup(ctx); err != nil {
 			return err
 		}
@@ -85,7 +89,7 @@ func GatewaySetup(ctx context.Context, w io.Writer) error {
 
 // Meaningful platform progress, neither unconfigured nor partial nor a disabled plugin
 func wizardStatusIsProgress(status string) bool {
-	s := pystr.Lower(status)
+	s := strings.ToLower(status)
 	return !(s == "not configured" || strings.HasPrefix(s, "partially") || strings.HasPrefix(s, "plugin disabled"))
 }
 
@@ -112,10 +116,6 @@ func wizardServiceStatusBlock(ctx context.Context) error {
 			}
 			WizardPrintln("")
 		}
-	}
-	if setupSupportsSystemd(ctx) && installHooks.hasLegacy(ctx) {
-		installHooks.legacyWarning(ctx, w)
-		WizardPrintln("")
 	}
 	switch {
 	case installed && running:

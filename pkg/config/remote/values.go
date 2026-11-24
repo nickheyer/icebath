@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const MaxSafeInteger = 1<<53 - 1
@@ -182,7 +181,7 @@ func isEnvConfigKey(key string, rules *secretRules) bool {
 	if strings.Contains(key, ".") {
 		return false
 	}
-	up := pystr.Upper(key)
+	up := strings.ToUpper(key)
 	return rules.envKeys[up] || hasAnySuffix(up, rules.envSuffixes) ||
 		slices.ContainsFunc(rules.envPrefix, func(p string) bool { return strings.HasPrefix(up, p) })
 }
@@ -196,7 +195,7 @@ func IsSecretPath(segments []string) bool {
 		}
 	}
 	last := segments[len(segments)-1]
-	leaf := strings.ReplaceAll(pystr.Lower(last), "-", "_")
+	leaf := strings.ReplaceAll(strings.ToLower(last), "-", "_")
 	if len(segments) == 1 && isEnvConfigKey(last, rules) {
 		return !hasAnySuffix(leaf, rules.nonSecretSuffixes)
 	}

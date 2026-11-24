@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Argv sentinels of a branch switch that never ran git, the refused arm and the moved ref
@@ -153,7 +153,7 @@ func refuseBeforeCommitPoint(ctx context.Context, w io.Writer, gitCmd []string, 
 func exitAfterFailedBranchSwitch(ctx context.Context, w io.Writer, gitCmd []string, branch string, trackResult *CompletedProcess, autoStashRef string,
 	gwInputFn func(prompt, def string) (string, error), token map[string]any) error {
 	root := fleetProjectRoot()
-	detail := pystr.Strip(trackResult.Stderr)
+	detail := strings.TrimSpace(trackResult.Stderr)
 	marker, err := pm.InterruptedPullMarkerPath(root)
 	if err != nil {
 		return err
@@ -248,22 +248,7 @@ func applyParkedBranchGuard(ctx context.Context, w io.Writer, gitCmd []string, b
 		fmt.Fprintf(w, "  ⚠ Checkout was parked on '%s' (fully merged) — switching back to %s...\n", currentBranch, branch)
 		return true, false, switchBlockReason, nil
 	}
-	inPlaceConfigured := false
-	if err := bestEffort(ctx, "Could not read updates.parked_branch_strategy: %s", func() error {
-		section, err := updatesConfig(ctx)
-		if err != nil {
-			return err
-		}
-		strategy, ok := section["parked_branch_strategy"]
-		if !ok {
-			strategy = "switch"
-		}
-		inPlaceConfigured = pyrepr.Equal(strategy, "update_in_place")
-		return nil
-	}); err != nil {
-		return false, false, "", err
-	}
-	if !inPlaceConfigured || switchBranch {
+	if settings.UpdatesParkedBranchStrategy.Get(ctx) != "update_in_place" || switchBranch {
 		printParkedBranchKeptNotice(w, currentBranch, branch, strings.SplitN(switchBlockReason, ":", 2)[1])
 		return true, false, switchBlockReason, nil
 	}
@@ -380,9 +365,9 @@ func prepareCheckoutForUpdate(ctx context.Context, w io.Writer, gitCmd []string,
 	if err != nil {
 		return nil, err
 	}
-	commitCount, err := strconv.Atoi(pystr.Strip(result.Stdout))
+	commitCount, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
 	if err != nil {
-		return nil, &ValueError{Msg: "git rev-list printed " + pystr.Strip(result.Stdout) + " where a commit count was expected"}
+		return nil, &ValueError{Msg: "git rev-list printed " + strings.TrimSpace(result.Stdout) + " where a commit count was expected"}
 	}
 	applyIsShallow, err := isShallowCheckout(ctx, gitCmd)
 	if err != nil {
@@ -474,5 +459,5 @@ func currentBranchName(ctx context.Context, gitCmd []string, check bool) (string
 	if err != nil {
 		return "", err
 	}
-	return pystr.Strip(result.Stdout), nil
+	return strings.TrimSpace(result.Stdout), nil
 }

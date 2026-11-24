@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -32,7 +31,7 @@ func FormatSessionDBUnavailable(ctx context.Context, prefix string, details bool
 	}
 	failure := DescribeStorageFailure(ctx, cause)
 	gloss, action, hint := failure.Gloss, failure.Action, ""
-	if containsAny(pystr.Lower(cause), walIncompatMarkers) {
+	if containsAny(strings.ToLower(cause), walIncompatMarkers) {
 		if failure.Cause == "unknown" {
 			gloss, action = networkDriveGloss, strings.ReplaceAll(networkDriveAction, "{profile_arg}", profileArg)
 		} else {
@@ -114,8 +113,8 @@ func sessionRowDict(row *pyjson.Object) *pyjson.Object {
 		if current, _ := data.Get(key); pyTruthy(current) {
 			continue
 		}
-		if value, ok := cfg.Vals[key].(string); ok && pystr.Strip(value) != "" {
-			data.Set(key, pystr.Strip(value))
+		if value, ok := cfg.Vals[key].(string); ok && strings.TrimSpace(value) != "" {
+			data.Set(key, strings.TrimSpace(value))
 		}
 	}
 	return data

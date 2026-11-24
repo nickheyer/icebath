@@ -40,7 +40,6 @@ func main() {
 	bootLaunch()
 	argv := os.Args[1:]
 	if argvIsGatewayRun(argv) {
-		app.MarkGatewayProcess()
 		armStartupWatchdog()
 	}
 	suppressMouseResidueEarly(argv)

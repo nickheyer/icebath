@@ -349,12 +349,12 @@ func (s *Scope) readManifest() (map[string]string, error) {
 	}
 	out := map[string]string{}
 	for _, line := range pystr.Splitlines(text, false) {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
 		if name, hash, ok := strings.Cut(line, ":"); ok {
-			out[pystr.Strip(name)] = pystr.Strip(hash)
+			out[strings.TrimSpace(name)] = strings.TrimSpace(hash)
 		} else {
 			out[line] = ""
 		}
@@ -394,7 +394,7 @@ func (s *Scope) syncSuppressedNames() map[string]bool {
 		return names
 	}
 	for _, line := range pystr.Splitlines(text, false) {
-		if line = pystr.Strip(line); line != "" && !strings.HasPrefix(line, "#") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
 			names[line] = true
 		}
 	}
@@ -1261,7 +1261,7 @@ var ownRepoPrefixes = []string{"nickheyer/icebath/pkg/skills/bundled/", "skills-
 
 // Bundled skill name an install identifier means, empty when it names none
 func (s *Scope) BundledSkillForInstall(identifier string) (string, error) {
-	ident := strings.Trim(pystr.Strip(identifier), "/")
+	ident := strings.Trim(strings.TrimSpace(identifier), "/")
 	lowered := strings.ToLower(ident)
 	if strings.Contains(ident, "/") && !slices.ContainsFunc(ownRepoPrefixes, func(p string) bool { return strings.HasPrefix(lowered, p) }) {
 		return "", nil

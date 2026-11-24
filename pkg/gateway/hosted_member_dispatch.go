@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Largest UTF-8 prompt one hosted room dispatch may carry
@@ -102,7 +101,7 @@ func hostedIdentifier(value any, field string) (string, error) {
 	if !ok {
 		return "", &HostedRoomPeerError{field + " must be a string"}
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > 256 || !hostedIdentifierRE.MatchString(text) {
 		return "", &HostedRoomPeerError{field + " is invalid"}
 	}
@@ -194,7 +193,7 @@ func HostedMemberDispatchFromMapping(value any) (*HostedMemberDispatch, error) {
 		return nil, err
 	}
 	prompt, ok := fields["prompt"].(string)
-	if !ok || pystr.Strip(prompt) == "" {
+	if !ok || strings.TrimSpace(prompt) == "" {
 		return nil, &HostedRoomPeerError{"prompt must be a non-empty string"}
 	}
 	if len(prompt) > hostedMaxPromptBytes {

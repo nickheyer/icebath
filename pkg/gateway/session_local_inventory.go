@@ -259,7 +259,10 @@ func sessionProviderOf(ctx context.Context, agent any, cfg map[string]any) strin
 			model = m.Model()
 		}
 	}
-	return provider.SessionProviderIdentity(ctx, providerName, requested, baseURL, model, cfg)
+	if cfg != nil {
+		ctx = provider.WithFrozenRuntimeConfig(ctx, cfg)
+	}
+	return provider.SessionProviderIdentity(ctx, providerName, requested, baseURL, model)
 }
 
 // Tool definitions an agent loaded, nil when it exposes none

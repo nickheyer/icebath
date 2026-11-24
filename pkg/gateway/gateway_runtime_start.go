@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -35,6 +37,9 @@ var DaemonStrippedEnv = []string{
 	"ICEBATH_INTERACTIVE", "ICEBATH_GATEWAY_SESSION", "ICEBATH_SINGLE_QUERY_SESSION",
 	"ICEBATH_EPHEMERAL_SYSTEM_PROMPT", "ICEBATH_PREFILL_MESSAGES_FILE", "ICEBATH_INFERENCE_PROVIDER",
 	"ICEBATH_ENABLE_PROJECT_PLUGINS", "ICEBATH_TUI_CLIENT_ENV",
+	"ICEBATH_MODEL", "ICEBATH_INFERENCE_MODEL", "ICEBATH_TUI_PROVIDER", "ICEBATH_TUI_TOOLSETS", "ICEBATH_TUI_SKILLS",
+	"ICEBATH_CWD", "ICEBATH_YOLO", "ICEBATH_TUI_CHECKPOINTS", "ICEBATH_TUI_PASS_SESSION_ID", "ICEBATH_TUI_BASE_URL",
+	"ICEBATH_TUI_API_KEY", "ICEBATH_TUI_REASONING",
 	"INVOCATION_ID", "JOURNAL_STREAM",
 	"XPC_SERVICE_NAME", "LAUNCHD_SOCKET", "ICEBATH_LAUNCHD_LABEL",
 	"ICEBATH_GATEWAY_EXTERNAL_SUPERVISOR", "ICEBATH_SUPERVISED_CHILD",
@@ -274,16 +279,16 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 	}
 	var lines []string
 	for _, line := range pystr.Splitlines(text, false) {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		stripped := pystr.Lstrip(line)
+		stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 		banner := false
 		for _, prefix := range bannerPrefixes {
 			banner = banner || strings.HasPrefix(stripped, prefix)
 		}
 		if !banner {
-			lines = append(lines, pystr.Rstrip(line))
+			lines = append(lines, strings.TrimRightFunc(line, unicode.IsSpace))
 		}
 	}
 	if len(lines) > startupTailLines {

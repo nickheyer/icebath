@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // SkillRefRewrite is one job whose skill references a curator pass rewrote
@@ -31,15 +30,14 @@ type SkillRefRewriteReport struct {
 
 // Bare skill name a reference resolves to the way the scheduler resolves it
 func (s *Store) canonicalSkillRef(raw string) string {
-	value := pystr.Strip(raw)
+	value := strings.TrimSpace(raw)
 	if value == "" {
 		return ""
 	}
-	cfg, _ := s.loadConfig()
-	if n := skills.NewScope(s.home, cfg).NormalizeSkillLookupName(value); n != "" {
+	if n := skills.NewScope(s.home, nil).NormalizeSkillLookupName(value); n != "" {
 		value = n
 	}
-	return strings.TrimLeft(pystr.Strip(value), "/")
+	return strings.TrimLeft(strings.TrimSpace(value), "/")
 }
 
 // Skill names referenced by any job including paused ones, empty when the store is unreadable

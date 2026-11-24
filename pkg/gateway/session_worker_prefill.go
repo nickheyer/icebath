@@ -6,12 +6,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Prefill file resolver and loader of the CLI config loader, installed by the process wiring
 var (
-	ResolvePrefillMessagesFile func(ctx context.Context, cfg map[string]any) string
+	ResolvePrefillMessagesFile func(ctx context.Context) string
 	LoadPrefillMessages        func(ctx context.Context, filePath, baseDir string) []any
 )
 
@@ -37,7 +38,7 @@ func readPrefill(ctx context.Context, a *SessionAuthority, policy *LocalSessionP
 	if err != nil {
 		return nil, err
 	}
-	messages := LoadPrefillMessages(ctx, ResolvePrefillMessagesFile(scoped, cfg), base)
+	messages := LoadPrefillMessages(ctx, ResolvePrefillMessagesFile(settings.WithFrozen(scoped, cfg)), base)
 	if len(messages) == 0 {
 		return nil, nil
 	}

@@ -132,7 +132,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	}
 	userProviders, _ := resolution["providers"].(map[string]any)
 	var customProviders []any
-	for _, entry := range provider.ProviderEntries(resolution) {
+	for _, entry := range provider.ProviderEntriesOf(userProviders) {
 		customProviders = append(customProviders, entry)
 	}
 	explicit := ""
@@ -426,7 +426,7 @@ func providerResolutionConfig(ctx context.Context, a *SessionAuthority, cfg map[
 func selectedProviderKeyEnv(ctx context.Context, cfg map[string]any, name string) string {
 	providers, _ := cfg["providers"].(map[string]any)
 	key := name
-	if path := provider.NamedCustomProviderPath(ctx, name, cfg); path != nil {
+	if path := provider.NamedCustomProviderPath(provider.WithFrozenRuntimeConfig(ctx, cfg), name); path != nil {
 		key = path.Key
 	}
 	entry, ok := providers[key].(map[string]any)
@@ -445,7 +445,7 @@ func providerKeySlug(key any) string {
 // Copies only the picked providers entry into the frozen route, returning its private values, retired paths and moved entries
 func freezeSelectedProvider(ctx context.Context, cfg, frozen map[string]any, name string) (*RecoveredSecrets, map[string]bool, map[string]secretPath, error) {
 	secrets, retired, moved := &RecoveredSecrets{}, map[string]bool{}, map[string]secretPath{}
-	path := provider.NamedCustomProviderPath(ctx, name, cfg)
+	path := provider.NamedCustomProviderPath(provider.WithFrozenRuntimeConfig(ctx, cfg), name)
 	if path == nil {
 		return secrets, retired, moved, nil
 	}

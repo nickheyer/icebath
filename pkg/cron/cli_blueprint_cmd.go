@@ -49,8 +49,8 @@ func blueprintParseKV(tokens []string) (map[string]any, []string) {
 	var leftovers []string
 	for _, tok := range tokens {
 		k, v, sep := strings.Cut(tok, "=")
-		if sep && pystr.Strip(k) != "" {
-			values[pystr.Strip(k)] = pystr.Strip(v)
+		if sep && strings.TrimSpace(k) != "" {
+			values[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		} else {
 			leftovers = append(leftovers, tok)
 		}
@@ -71,7 +71,7 @@ func blueprintPick(candidates []AutomationBlueprint) (*AutomationBlueprint, []Au
 
 // Exact key, then key or title word prefix, then substring, then close key matches
 func matchBlueprint(ctx context.Context, query string) (*AutomationBlueprint, []AutomationBlueprint) {
-	q := pystr.Lower(pystr.Strip(query))
+	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return nil, nil
 	}
@@ -79,7 +79,7 @@ func matchBlueprint(ctx context.Context, query string) (*AutomationBlueprint, []
 	byKey := map[string]AutomationBlueprint{}
 	var order []string
 	for _, r := range catalog {
-		k := pystr.Lower(r.Key)
+		k := strings.ToLower(r.Key)
 		if _, seen := byKey[k]; !seen {
 			order = append(order, k)
 		}
@@ -91,10 +91,10 @@ func matchBlueprint(ctx context.Context, query string) (*AutomationBlueprint, []
 	prefix := func() []AutomationBlueprint {
 		var out []AutomationBlueprint
 		for _, r := range catalog {
-			key := pystr.Lower(r.Key)
+			key := strings.ToLower(r.Key)
 			hit := strings.HasPrefix(key, q) || strings.HasPrefix(key[strings.LastIndex(key, ":")+1:], q)
 			for _, w := range pystr.SplitWhitespace(r.Title, -1) {
-				hit = hit || strings.HasPrefix(pystr.Lower(w), q)
+				hit = hit || strings.HasPrefix(strings.ToLower(w), q)
 			}
 			if hit {
 				out = append(out, r)
@@ -105,7 +105,7 @@ func matchBlueprint(ctx context.Context, query string) (*AutomationBlueprint, []
 	substring := func() []AutomationBlueprint {
 		var out []AutomationBlueprint
 		for _, r := range catalog {
-			if strings.Contains(pystr.Lower(r.Key), q) || strings.Contains(pystr.Lower(r.Title), q) || strings.Contains(pystr.Lower(r.Description), q) {
+			if strings.Contains(strings.ToLower(r.Key), q) || strings.Contains(strings.ToLower(r.Title), q) || strings.Contains(strings.ToLower(r.Description), q) {
 				out = append(out, r)
 			}
 		}
@@ -206,7 +206,7 @@ func blueprintFmtNoMatch(ctx context.Context, query string) string {
 		keys = append(keys, r.Key)
 	}
 	msg := "No automation blueprint matches '" + query + "'."
-	if near := pydifflib.GetCloseMatches(pystr.Lower(query), keys, 3, 0.4); len(near) > 0 {
+	if near := pydifflib.GetCloseMatches(strings.ToLower(query), keys, 3, 0.4); len(near) > 0 {
 		msg += " Did you mean: " + strings.Join(near, ", ") + "?"
 	}
 	return msg + " Run /blueprint to see the catalog."

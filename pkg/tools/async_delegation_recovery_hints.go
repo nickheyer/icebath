@@ -39,7 +39,7 @@ func TranscriptTail(path string, lines, chars int) string {
 		return ""
 	}
 	all := pystr.Splitlines(pystr.DecodeUTF8Replace(data), false)
-	tail := pystr.Strip(strings.Join(all[max(0, len(all)-lines):], "\n"))
+	tail := strings.TrimSpace(strings.Join(all[max(0, len(all)-lines):], "\n"))
 	if rs := []rune(tail); len(rs) > chars {
 		tail = "…" + string(rs[len(rs)-chars:])
 	}
@@ -89,10 +89,10 @@ func GitStateHint(cwd string) string {
 	if b, ok := run("rev-parse", "--abbrev-ref", "HEAD"); ok && b != "" {
 		branch = b
 	}
-	branch = pystr.Strip(branch)
+	branch = strings.TrimSpace(branch)
 	dirty := "?"
 	if status, ok := run("status", "--porcelain"); ok {
 		dirty = strconv.Itoa(len(pystr.Splitlines(status, false)))
 	}
-	return fmt.Sprintf("%s @ %s (%s uncommitted file(s)) in %s", branch, pystr.Strip(head), dirty, cwd)
+	return fmt.Sprintf("%s @ %s (%s uncommitted file(s)) in %s", branch, strings.TrimSpace(head), dirty, cwd)
 }

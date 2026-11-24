@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // The connector search route answers 7 use cases per request and fails on 8 or more
@@ -43,29 +44,12 @@ func (c ToolSearchConfig) EffectiveDeferTools() map[string]bool {
 // DefaultDeferredTools is the curated deferral set kept in the config defaults so discovery and runtime agree
 func DefaultDeferredTools() map[string]bool {
 	out := map[string]bool{}
-	for _, n := range config.AsStrings(config.Defaults().Get("tools.tool_search.defer")) {
+	for _, n := range config.AsStrings(settings.ToolsToolSearchDefer.Default) {
 		if strings.TrimSpace(n) != "" {
 			out[strings.TrimSpace(n)] = true
 		}
 	}
 	return out
-}
-
-var toolSearchTriStateAliases = map[string]string{
-	"true": "on", "1": "on", "yes": "on", "false": "off", "0": "off", "no": "off",
-}
-
-// Normalizes an auto, on, or off setting accepting bool like aliases
-func toolSearchTriState(value any) string {
-	text := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
-	if v, ok := toolSearchTriStateAliases[text]; ok {
-		return v
-	}
-	switch text {
-	case "auto", "on", "off":
-		return text
-	}
-	return "auto"
 }
 
 // Integer value or the fallback when unparseable, clamped to the range
@@ -74,13 +58,7 @@ func toolSearchClampedInt(value any, fallback, lo, hi int) int {
 	if !ok {
 		v = fallback
 	}
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
+	return min(max(v, lo), hi)
 }
 
 // Python int() semantics over JSON and YAML scalars
@@ -112,67 +90,6 @@ func toolSearchAsInt(value any) (int, bool) {
 	return config.AsInt(value)
 }
 
-func toolSearchSafeFloat(value any, fallback float64) float64 {
-	switch t := value.(type) {
-	case nil:
-		return fallback
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
-		if err != nil {
-			return fallback
-		}
-		return f
-	}
-	if f, ok := config.AsFloat(value); ok {
-		return f
-	}
-	return fallback
-}
-
-// ToolSearchConfigFromRaw builds the config from a raw map, legacy bool, or nil with every field clamped
-func ToolSearchConfigFromRaw(raw any) ToolSearchConfig {
-	m, ok := raw.(map[string]any)
-	if !ok {
-		enabled := "auto"
-		if b, isBool := raw.(bool); isBool && !b {
-			enabled = "off"
-		}
-		m = map[string]any{"enabled": enabled}
-	}
-	maxSearchLimit := toolSearchClampedInt(m["max_search_limit"], 25, 1, 50)
-	var deferTools map[string]bool
-	if deferRaw, present := m["defer"]; present && deferRaw != nil {
-		list, isList := toolSearchAsList(deferRaw)
-		if !isList {
-			pkgLog().Warn(fmt.Sprintf("tools.tool_search.defer is %v, expected a YAML list of tool names (e.g. [todo_list, computer_use]; [] keeps every tool eager) - using the curated default set.", deferRaw))
-		} else {
-			deferTools = map[string]bool{}
-			for _, n := range list {
-				if s := strings.TrimSpace(fmt.Sprint(n)); s != "" {
-					deferTools[s] = true
-				}
-			}
-		}
-	}
-	enabledRaw, has := m["enabled"]
-	if !has {
-		enabledRaw = "auto"
-	}
-	listingRaw, has := m["listing"]
-	if !has {
-		listingRaw = "auto"
-	}
-	return ToolSearchConfig{
-		Enabled:            toolSearchTriState(enabledRaw),
-		ThresholdPct:       math.Max(0, math.Min(100, toolSearchSafeFloat(m["threshold_pct"], 5.0))),
-		SearchDefaultLimit: toolSearchClampedInt(m["search_default_limit"], 5, 1, maxSearchLimit),
-		MaxSearchLimit:     maxSearchLimit,
-		Listing:            toolSearchTriState(listingRaw),
-		ListingMaxTokens:   toolSearchClampedInt(m["listing_max_tokens"], 4000, 200, 60000),
-		DeferTools:         deferTools,
-	}
-}
-
 func toolSearchAsList(v any) ([]any, bool) {
 	switch t := v.(type) {
 	case []any:
@@ -193,16 +110,25 @@ func toolSearchAsList(v any) ([]any, bool) {
 	return nil, false
 }
 
-// LoadToolSearchConfig reads tools.tool_search from the session config with defaults on any failure
+// LoadToolSearchConfig reads the tools.tool_search settings of the env's profile, each within its bounds
 func LoadToolSearchConfig(env *Env) ToolSearchConfig {
-	if env == nil || env.Config == nil {
-		return ToolSearchConfigFromRaw(nil)
+	ctx := envHomeCtx(context.Background(), env)
+	maxSearch := settings.ToolsToolSearchMaxSearchLimit.Get(ctx)
+	deferTools := map[string]bool{}
+	for _, n := range settings.ToolsToolSearchDefer.Strings(ctx) {
+		if s := strings.TrimSpace(n); s != "" {
+			deferTools[s] = true
+		}
 	}
-	tools, ok := env.Config.Get("tools").(map[string]any)
-	if !ok {
-		return ToolSearchConfigFromRaw(nil)
+	return ToolSearchConfig{
+		Enabled:            settings.ToolsToolSearchEnabled.Get(ctx),
+		ThresholdPct:       math.Max(0, math.Min(100, settings.ToolsToolSearchThresholdPct.Get(ctx))),
+		SearchDefaultLimit: min(settings.ToolsToolSearchSearchDefaultLimit.Get(ctx), maxSearch),
+		MaxSearchLimit:     maxSearch,
+		Listing:            settings.ToolsToolSearchListing.Get(ctx),
+		ListingMaxTokens:   settings.ToolsToolSearchListingMaxTokens.Get(ctx),
+		DeferTools:         deferTools,
 	}
-	return ToolSearchConfigFromRaw(tools["tool_search"])
 }
 
 // Names that never defer by default

@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -315,27 +314,12 @@ func pyUTF8Replace(s string) []byte {
 
 var validCacheTTLs = map[string]bool{"5m": true, "1h": true}
 
-// CacheTTLMeansDisabled reports whether a configured cache_ttl value turns prompt caching off, unknown values never do
-func CacheTTLMeansDisabled(ttl any) bool {
-	if s, ok := ttl.(string); ok && validCacheTTLs[s] {
-		return false
-	}
-	if ttl == nil || ttl == false {
-		return true
-	}
-	switch strings.ToLower(pyrepr.Str(ttl)) {
-	case "off", "false", "disabled", "no", "none":
-		return true
-	}
-	return false
-}
-
 // PromptCachingDisabledFromConfig reports whether the bound home's prompt_caching.cache_ttl turns prompt caching off
 func PromptCachingDisabledFromConfig(ctx context.Context) bool {
-	return CacheTTLMeansDisabled(settings.PromptCachingCacheTtl.Get(ctx))
+	return settings.PromptCachingCacheTtl.Get(ctx) == "off"
 }
 
-// Configured 5m or 1h cache tier, empty for a disabled or unknown value
+// Configured 5m or 1h cache tier, empty when prompt caching is off or follows the session's pace
 func configuredCacheTTL(ctx context.Context) string {
 	if s := settings.PromptCachingCacheTtl.Get(ctx); validCacheTTLs[s] {
 		return s
@@ -386,15 +370,7 @@ func directNativeAnthropicToolCacheCapability(agent *CachePolicyAgent, dest Cach
 
 // Cache policy of the MoA preset aggregator slot, false false when it cannot be resolved
 func moaAggregatorCachePolicy(ctx context.Context, agent *CachePolicyAgent, effModel string) (bool, bool) {
-	cfg := LoadConfigSafe(ctx, home.Dir(ctx))
-	if cfg == nil {
-		return false, false
-	}
-	var moaCfg any = map[string]any{}
-	if pyTruthy(cfg["moa"]) {
-		moaCfg = cfg["moa"]
-	}
-	preset, err := ResolveMoAPreset(moaCfg, effModel)
+	preset, err := ResolveMoAPreset(moaSettings(ctx), effModel)
 	if err != nil {
 		pkgLog().Debug("MoA aggregator cache-policy resolution failed", "err", err)
 		return false, false
@@ -483,14 +459,12 @@ func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, de
 	supportsCacheMarkers := effAPIMode == "anthropic_messages" || effAPIMode == "chat_completions"
 	litellmOpenAIWire := effAPIMode == "chat_completions" && isClaude && isLitellmRoute(providerLower, effBaseURL)
 	if supportsCacheMarkers && (isAnthropicWire || litellmOpenAIWire || routeMayBeCustom(ctx, agent, effProvider, providerLower, effBaseURL)) {
-		var cfg map[string]any
-		if agent.CustomProviders == nil {
-			cfg = LoadConfigSafe(ctx, home.Dir(ctx))
+		entries := agent.CustomProviders
+		if entries == nil {
+			entries = CustomProviderEntries(ctx)
 		}
-		if cfg != nil || agent.CustomProviders != nil {
-			if value, known := cachePolicyCapabilityLookup(effModel, effBaseURL, "prompt_caching", agent.CustomProviders, cfg); known {
-				return value, value && isAnthropicWire
-			}
+		if value, known := cachePolicyCapabilityLookup(effModel, effBaseURL, "prompt_caching", entries); known {
+			return value, value && isAnthropicWire
 		}
 	}
 	isMinimaxRoute := providerLower == "minimax" || providerLower == "minimax-cn" ||

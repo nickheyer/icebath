@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // File tool env whose terminal pool, cwd records, and task overrides are wiped when the test ends
@@ -340,8 +341,8 @@ func TestFileToolsGuardOversizedMultilineReadTruncatedWithContinuation(t *testin
 
 func TestFileToolsGuardContentUnderLimitPasses(t *testing.T) {
 	env, ws := ftgEnv(t)
-	body := strings.Repeat("y", defaultMaxReadChars-1)
-	installScriptedFileOps(t, env, &scriptedFileOps{readFileFn: ftgFakeRead(body, 1, int64(defaultMaxReadChars-1))}, nil)
+	body := strings.Repeat("y", settings.FileReadMaxChars.Default-1)
+	installScriptedFileOps(t, env, &scriptedFileOps{readFileFn: ftgFakeRead(body, 1, int64(settings.FileReadMaxChars.Default-1))}, nil)
 	r := ftgRead(t, env, filepath.Join(ws, "justunder.txt"), nil, nil, "under")
 	if _, ok := r["error"]; ok {
 		t.Fatalf("unexpected error %v", r)

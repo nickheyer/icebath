@@ -13,7 +13,7 @@ func PathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 	if root == "" {
 		local = effectiveTerminalBackend(ctx) == "local"
 		if local {
-			cwd, err := completionCwd(ctx, nil)
+			cwd, err := completionCwd(ctx)
 			if err != nil {
 				return nil, err
 			}

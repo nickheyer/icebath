@@ -1,6 +1,8 @@
 package agentimport
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -71,7 +73,7 @@ func StripFrontmatter(text string) string {
 
 // NormalizeText collapses whitespace runs to one space and lowercases
 func NormalizeText(text string) string {
-	return pystr.Lower(strings.Join(pystr.SplitWhitespace(pystr.Strip(text), -1), " "))
+	return strings.ToLower(strings.Join(pystr.SplitWhitespace(strings.TrimSpace(text), -1), " "))
 }
 
 // Reads a file as utf-8-sig text with undecodable bytes replaced and line endings unified like text mode
@@ -128,9 +130,9 @@ func ExtractMarkdownEntries(text string) []string {
 	flush := func() {
 		parts := make([]string, len(paragraph))
 		for i, l := range paragraph {
-			parts[i] = pystr.Strip(l)
+			parts[i] = strings.TrimSpace(l)
 		}
-		block := pystr.Strip(strings.Join(parts, " "))
+		block := strings.TrimSpace(strings.Join(parts, " "))
 		paragraph = paragraph[:0]
 		if block != "" {
 			addEntry(block)
@@ -138,8 +140,8 @@ func ExtractMarkdownEntries(text string) []string {
 	}
 	inCode := false
 	for _, raw := range pystr.Splitlines(text, false) {
-		line := pystr.Rstrip(raw)
-		stripped := pystr.Strip(line)
+		line := strings.TrimRightFunc(raw, unicode.IsSpace)
+		stripped := strings.TrimSpace(line)
 		if strings.HasPrefix(stripped, "```") {
 			inCode = !inCode
 			flush()
@@ -154,12 +156,12 @@ func ExtractMarkdownEntries(text string) []string {
 			if level-1 < len(headings) {
 				headings = headings[:level-1]
 			}
-			headings = append(headings, pystr.Strip(m.GroupByNumber(2).String()))
+			headings = append(headings, strings.TrimSpace(m.GroupByNumber(2).String()))
 			continue
 		}
 		if m, _ := bulletRe.FindStringMatch(line); m != nil {
 			flush()
-			addEntry(pystr.Strip(m.GroupByNumber(1).String()))
+			addEntry(strings.TrimSpace(m.GroupByNumber(1).String()))
 			continue
 		}
 		if stripped == "" || (strings.HasPrefix(stripped, "|") && strings.HasSuffix(stripped, "|")) {
@@ -175,7 +177,7 @@ func ExtractMarkdownEntries(text string) []string {
 		n := NormalizeText(e)
 		if n != "" && !seen[n] {
 			seen[n] = true
-			out = append(out, pystr.Strip(e))
+			out = append(out, strings.TrimSpace(e))
 		}
 	}
 	return out
@@ -195,7 +197,7 @@ func parseExistingMemoryEntries(path string) ([]string, error) {
 	}
 	var out []string
 	for _, e := range strings.Split(text, EntryDelimiter) {
-		if s := pystr.Strip(e); s != "" {
+		if s := strings.TrimSpace(e); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -210,7 +212,7 @@ func mergeEntries(existing, incoming []string, limit int) ([]string, mergeStats)
 	merged := append([]string(nil), existing...)
 	seen := map[string]bool{}
 	for _, e := range existing {
-		if pystr.Strip(e) != "" {
+		if strings.TrimSpace(e) != "" {
 			seen[NormalizeText(e)] = true
 		}
 	}
@@ -245,11 +247,11 @@ func mergeEntries(existing, incoming []string, limit int) ([]string, mergeStats)
 
 // ClaudeRuleToCommandPattern maps a Bash rule to its command pattern, a trailing prefix marker becoming a star, else empty
 func ClaudeRuleToCommandPattern(rule string) string {
-	m, _ := bashRuleRe.FindStringMatch(pystr.Strip(rule))
+	m, _ := bashRuleRe.FindStringMatch(strings.TrimSpace(rule))
 	if m == nil {
 		return ""
 	}
-	inner := pystr.Strip(m.GroupByNumber(1).String())
+	inner := strings.TrimSpace(m.GroupByNumber(1).String())
 	if strings.HasSuffix(inner, ":*") {
 		return inner[:len(inner)-2] + "*"
 	}
@@ -414,7 +416,7 @@ func translateMCPServer(name string, srv *pyjson.Object) (map[string]any, []stri
 		if headers, ok := asObject(srv.Vals["headers"]); ok {
 			kept := pyjson.NewObject()
 			for _, k := range headers.Keys {
-				if !IsSecretKey(k) && !strings.Contains(pystr.Lower(k), "authorization") {
+				if !IsSecretKey(k) && !strings.Contains(strings.ToLower(k), "authorization") {
 					kept.Set(k, headers.Vals[k])
 				}
 			}

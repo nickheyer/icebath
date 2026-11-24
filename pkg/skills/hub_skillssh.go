@@ -13,7 +13,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
@@ -98,7 +97,7 @@ func (s *SkillsShSource) sleep(seconds float64) {
 // Search API matches, the full sitemap catalog for an empty query
 func (s *SkillsShSource) Search(ctx context.Context, query string, limit int) (out []SkillMeta, err error) {
 	defer hubRecover(&err)
-	if pystr.Strip(query) == "" {
+	if strings.TrimSpace(query) == "" {
 		return s.sitemapCatalog(ctx, limit), nil
 	}
 	key := fmt.Sprintf("skills_sh_search_%x", md5.Sum([]byte(fmt.Sprintf("%s|%d", query, limit))))
@@ -221,7 +220,7 @@ func (s *SkillsShSource) sitemapCatalog(ctx context.Context, limit int) []SkillM
 	var shards []string
 	for _, loc := range reGroups(skillsShLocRe, indexXML) {
 		if strings.Contains(loc, skillsShSitemapPrefix) {
-			shards = append(shards, pystr.Strip(loc))
+			shards = append(shards, strings.TrimSpace(loc))
 		}
 	}
 	if len(shards) == 0 {
@@ -245,7 +244,7 @@ func (s *SkillsShSource) sitemapCatalog(ctx context.Context, limit int) []SkillM
 			continue
 		}
 		for _, loc := range reGroups(skillsShLocRe, xml) {
-			m, err := skillsShSitemapSkill.FindStringMatch(pystr.Strip(loc))
+			m, err := skillsShSitemapSkill.FindStringMatch(strings.TrimSpace(loc))
 			if err != nil || m == nil {
 				continue
 			}
@@ -417,12 +416,12 @@ func (s *SkillsShSource) parseDetailPage(identifier, html string) *pyjson.Object
 	}
 	var installCommand any
 	if m, err := skillsShInstallCmdRe.FindStringMatch(html); err == nil && m != nil {
-		installCommand = pystr.Strip(m.String())
+		installCommand = strings.TrimSpace(m.String())
 		if g := skillsShInstallCmdRe.group(m, "skill"); g != "" {
 			installSkill = g
 		}
-		installSkill = pystr.Strip(installSkill)
-		if slug, ok := skillsShExtractRepoSlug(pystr.Strip(skillsShInstallCmdRe.group(m, "repo"))); ok {
+		installSkill = strings.TrimSpace(installSkill)
+		if slug, ok := skillsShExtractRepoSlug(strings.TrimSpace(skillsShInstallCmdRe.group(m, "repo"))); ok {
 			repo = slug
 		}
 	}
@@ -450,7 +449,7 @@ func (s *SkillsShSource) parseDetailPage(identifier, html string) *pyjson.Object
 
 // Owner and repo of an install command repo value
 func skillsShExtractRepoSlug(repoValue string) (string, bool) {
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(pystr.Strip(repoValue), "https://github.com/"), "/"), "/")
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(strings.TrimSpace(repoValue), "https://github.com/"), "/"), "/")
 	if len(parts) >= 2 {
 		return parts[0] + "/" + parts[1], true
 	}
@@ -465,7 +464,7 @@ func skillsShExtractFirstMatch(re *regexp2.Regexp, text string) (string, bool) {
 	}
 	for _, g := range m.Groups()[1:] {
 		if g.String() != "" {
-			v := pystr.Strip(stripHTML(g.String()))
+			v := strings.TrimSpace(stripHTML(g.String()))
 			return v, v != ""
 		}
 	}
@@ -647,7 +646,7 @@ func skillsShTokenVariants(value any) map[string]bool {
 	if !pyrepr.Truthy(value) {
 		return out
 	}
-	plain := pystr.Lower(strings.Trim(pystr.Strip(stripHTML(pyrepr.Str(value))), "/"))
+	plain := strings.ToLower(strings.Trim(strings.TrimSpace(stripHTML(pyrepr.Str(value))), "/"))
 	if plain == "" {
 		return out
 	}

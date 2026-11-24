@@ -6,9 +6,9 @@ import (
 	"math"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -62,13 +62,10 @@ func formatDeepInfraCatalogRow(item map[string]any) map[string]any {
 	return row
 }
 
-// Env override, then the scoped config model, then the first live catalog id, else empty
-func resolveDeepInfraImageModel(env *tools.Env, catalog []map[string]any, cfg map[string]any) string {
-	if v := strings.TrimSpace(rawEnvValue(env, "DEEPINFRA_IMAGE_MODEL")); v != "" {
+// image_gen.deepinfra.model with its DEEPINFRA_IMAGE_MODEL override, then the first live catalog id, else empty
+func resolveDeepInfraImageModel(env *tools.Env, catalog []map[string]any) string {
+	if v := strings.TrimSpace(settings.DeepInfraImageModel.Get(tools.WithEnvHome(context.Background(), env))); v != "" {
 		return v
-	}
-	if s, ok := cfg["model"].(string); ok && strings.TrimSpace(s) != "" {
-		return strings.TrimSpace(s)
 	}
 	if len(catalog) > 0 {
 		if first, ok := catalog[0]["id"].(string); ok && first != "" {
@@ -146,8 +143,7 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 		return fail("DEEPINFRA_API_KEY not set. Add it with /setup tools, "+
 			"or pick another image service in /settings → Images & media.", "auth_required"), nil
 	}
-	diCfg := loadImageGenConfig(env, "deepinfra")
-	modelID := resolveDeepInfraImageModel(env, deepInfraImageLiveModels(ctx, env), diCfg)
+	modelID := resolveDeepInfraImageModel(env, deepInfraImageLiveModels(ctx, env))
 	if modelID == "" {
 		return fail("No DeepInfra image-gen model available. Pin one in "+
 			"config.yaml under image_gen.deepinfra.model, set "+
@@ -157,7 +153,7 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 	size := sizeFor(aspect)
 	newClient := newOpenAIClientHook
 	fail = errorFactory("deepinfra", aspect, modelID, prompt)
-	baseURL := deepInfraBaseURL(env, config.Tree(diCfg))
+	baseURL := deepInfraBaseURL(env, settings.DeepInfraImageBaseURL.Get(tools.WithEnvHome(ctx, env)))
 	client, err := newClient(env, openAIClientOptions{APIKey: &apiKey, BaseURL: &baseURL})
 	if err != nil {
 		return nil, err

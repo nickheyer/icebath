@@ -2,6 +2,8 @@
 package pywebbrowser
 
 import (
+	"unicode"
+
 	"fmt"
 	"os"
 	"os/exec"
@@ -103,7 +105,7 @@ func xdgDefaultBrowser() string {
 	if err != nil {
 		return ""
 	}
-	return pystr.Strip(string(out))
+	return strings.TrimSpace(string(out))
 }
 
 // ScriptForTests builds the registry anew from a scripted environment and search path until the returned restore runs
@@ -169,7 +171,7 @@ func newChrome(name string) *browser {
 
 // Records a controller under its lowered name, preferred ones and the desktop default first in the try order
 func register(name string, klass func() *browser, instance *browser, preferred bool) {
-	browsers[pystr.Lower(name)] = entry{klass: klass, instance: instance}
+	browsers[strings.ToLower(name)] = entry{klass: klass, instance: instance}
 	if preferred || (osPreferred != "" && name+".desktop" == osPreferred) {
 		tryorder = append([]string{name}, tryorder...)
 		return
@@ -188,11 +190,11 @@ func synthesize(name string, preferred bool) (entry, error) {
 		return entry{}, nil
 	}
 	base := pypath.Basename(cmd)
-	command, ok := browsers[pystr.Lower(base)]
+	command, ok := browsers[strings.ToLower(base)]
 	if !ok {
 		return entry{}, nil
 	}
-	if command.instance != nil && pystr.Lower(base) == command.instance.basename {
+	if command.instance != nil && strings.ToLower(base) == command.instance.basename {
 		controller := *command.instance
 		controller.name, controller.basename = name, pypath.Basename(name)
 		register(name, nil, &controller, preferred)
@@ -213,7 +215,7 @@ func get(name string) (*browser, error) {
 		}
 		return newGenericList(kindGeneric, parts), nil
 	}
-	command, ok := browsers[pystr.Lower(name)]
+	command, ok := browsers[strings.ToLower(name)]
 	if !ok {
 		var err error
 		if command, err = synthesize(name, false); err != nil {
@@ -244,9 +246,9 @@ func ensureRegistered() error {
 	for i := len(choices) - 1; i >= 0; i-- {
 		cmdline := choices[i]
 		if !strings.ContainsAny(cmdline, " \t") {
-			if command, known := browsers[pystr.Lower(cmdline)]; known {
+			if command, known := browsers[strings.ToLower(cmdline)]; known {
 				if command.instance == nil || (command.instance.kind != kindGeneric && command.instance.kind != kindBackground) {
-					tryorder = append([]string{pystr.Lower(cmdline)}, tryorder...)
+					tryorder = append([]string{strings.ToLower(cmdline)}, tryorder...)
 					continue
 				}
 			}
@@ -316,7 +318,7 @@ func Open(url string, new int) (bool, error) {
 
 // Refuses a url that a browser command line would read as an option
 func checkURL(url string) error {
-	if url != "" && strings.HasPrefix(pystr.Lstrip(url), "-") {
+	if url != "" && strings.HasPrefix(strings.TrimLeftFunc(url, unicode.IsSpace), "-") {
 		return &ValueError{Msg: "Invalid URL (leading dash disallowed): " + pyrepr.StrRepr(url)}
 	}
 	return nil

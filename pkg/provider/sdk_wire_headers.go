@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -265,8 +264,8 @@ func orderedExtraHeaders(raw any) []pyhttpx.HeaderLine {
 }
 
 // extra_headers of the first route matching custom provider entry declaring any, in declaration order
-func customProviderExtraHeaderLines(baseURL string, customProviders []map[string]any, cfg map[string]any) []pyhttpx.HeaderLine {
-	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
+func customProviderExtraHeaderLines(baseURL string, customProviders []map[string]any) []pyhttpx.HeaderLine {
+	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if lines := orderedExtraHeaders(entry["extra_headers"]); len(lines) > 0 {
 			return lines
 		}
@@ -345,7 +344,7 @@ func anthropicCustomHeadersEnv() (*pyHeaderDict, bool) {
 	d := &pyHeaderDict{}
 	for _, line := range strings.Split(raw, "\n") {
 		if name, value, found := strings.Cut(line, ":"); found {
-			d.set(pystr.Strip(name), pystr.Strip(value))
+			d.set(strings.TrimSpace(name), strings.TrimSpace(value))
 		}
 	}
 	return d, true

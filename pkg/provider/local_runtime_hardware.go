@@ -127,7 +127,7 @@ var (
 	hwProbeDevices        = ProbeDevices
 	hwWindowsGPUAdapters  = hostinfo.WindowsGPUAdapters
 	hwGPUClass            = hostinfo.GPUClass
-	hwLoadConfig          = func() map[string]any { return loadConfigTree(home.Process()) }
+	hwLoadConfig          = func() map[string]any { return localRuntimeSettings(home.Process()) }
 	hwCacheMu             sync.Mutex
 	hwPoolProbeCache      *hwTimedPool
 	hwAcceleratorCache    = map[string]hwTimedDevice{}

@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -25,7 +24,7 @@ func PrincipalSubject(identity map[string]any) (string, error) {
 	}
 	provider := ""
 	if pyTruthy(identity["provider"]) {
-		provider = pystr.Strip(pyrepr.Str(identity["provider"]))
+		provider = strings.TrimSpace(pyrepr.Str(identity["provider"]))
 	}
 	if provider == "local" {
 		login, ok := ParseAuthenticatedSubject(subject)
@@ -50,7 +49,7 @@ func loginProvider(provider string) bool {
 // True when a stored provider and user stamp names the host owner
 func ownerLogin(provider, user string) bool {
 	if provider == "local" {
-		return pystr.Strip(user) == HostOwnerSubject()
+		return strings.TrimSpace(user) == HostOwnerSubject()
 	}
 	return loginProvider(provider)
 }
@@ -58,13 +57,13 @@ func ownerLogin(provider, user string) bool {
 // True for a sign in provider and user label naming the owner
 func ownerLoginLabel(value string) bool {
 	provider, user, sep := strings.Cut(value, ":")
-	return sep && pystr.Strip(user) != "" && ownerLogin(provider, user)
+	return sep && strings.TrimSpace(user) != "" && ownerLogin(provider, user)
 }
 
 // True for an auth v1 subject a sign in stored that names the owner
 func ownerLoginSubject(value any) bool {
 	parts, ok := ParseAuthenticatedSubject(value)
-	return ok && pystr.Strip(parts[2]) != "" && ownerLogin(parts[0], parts[2])
+	return ok && strings.TrimSpace(parts[2]) != "" && ownerLogin(parts[0], parts[2])
 }
 
 // True when a stored owner stamp belongs to subject, older sign in stamps reading as the host owner's

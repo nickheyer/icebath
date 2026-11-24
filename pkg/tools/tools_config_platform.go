@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Logger the platform toolset warnings go to, swapped by tests capturing records
@@ -99,7 +98,7 @@ func ParseEnabledFlag(value any, def bool) bool {
 	case *big.Int:
 		return v.Sign() != 0
 	case string:
-		lowered := pystr.Lower(pystr.Strip(v))
+		lowered := strings.ToLower(strings.TrimSpace(v))
 		switch lowered {
 		case "true", "1", "yes", "on":
 			return true
@@ -133,7 +132,7 @@ func xaiCredentialsPresent(ctx context.Context) bool {
 	if err != nil {
 		panic(err)
 	}
-	return pystr.Strip(v) != ""
+	return strings.TrimSpace(v) != ""
 }
 
 // Plugin toolsets on unless default off or known for the platform and absent from the saved list
@@ -179,7 +178,7 @@ func contextEngineActive(cfg config.Tree) bool {
 	if !pyTruthy(engine) {
 		return false
 	}
-	name := pystr.Lower(pystr.Strip(pyrepr.Str(engine)))
+	name := strings.ToLower(strings.TrimSpace(pyrepr.Str(engine)))
 	return name != "" && name != "compressor"
 }
 

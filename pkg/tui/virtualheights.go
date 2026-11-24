@@ -2,7 +2,6 @@ package tui
 
 import (
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -12,11 +11,6 @@ const (
 	maxEstimateLines  = 800
 	blankScanUnits    = 16_000
 	maxBlankBlockRows = 6
-)
-
-var (
-	truthyToggle  = regexp.MustCompile(`(?i)^(?:1|true|yes|on)$`)
-	termuxTUIMode = isTermuxTUIMode(os.Getenv)
 )
 
 // Section of a slash command panel row
@@ -38,16 +32,13 @@ func isTermuxEnv(env func(string) string) bool {
 	return env("TERMUX_VERSION") != "" || strings.Contains(env("PREFIX"), termuxPrefix)
 }
 
-// Whether Termux layout defaults apply, on inside Termux unless ICEBATH_TUI_TERMUX_MODE turns them off
-func isTermuxTUIMode(env func(string) string) bool {
-	if !isTermuxEnv(env) {
-		return false
-	}
-	if override := strings.ToLower(strings.TrimFunc(env("ICEBATH_TUI_TERMUX_MODE"), isJSSpace)); override != "" {
-		return truthyToggle.MatchString(override)
-	}
-	return true
+// Whether Termux layout defaults apply, inside Termux while the setting leaves them on
+func isTermuxTUIMode(env func(string) string, layout bool) bool {
+	return layout && isTermuxEnv(env)
 }
+
+// Whether Termux layout defaults apply to this window
+func termuxTUIMode() bool { return isTermuxTUIMode(os.Getenv, prefs.TermuxLayout) }
 
 // Base 36 djb2 xor hash over UTF-16 units with JavaScript 32 bit wrapping
 func hashText(text string) string {

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,12 +15,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-const (
-	DefaultLoopSelfPacedCeilingSeconds = 15 * 60
-	LoopCompleteMarker                 = "LOOP_COMPLETE"
-)
+const LoopCompleteMarker = "LOOP_COMPLETE"
 
 var (
 	loopCompleteRe   = pyre.MustCompile(`(?im)^\s*LOOP_COMPLETE\s*[.!]?\s*$`)
@@ -52,10 +52,9 @@ const loopWakeupPromptWithUntilTemplate = "[/loop wakeup #%[1]d%[2]s]\n" +
 	"so and end your reply with " + LoopCompleteMarker + " on its own line — " +
 	"that stops the loop."
 
-// Self paced ceiling from loops config, never below the floor
+// Self paced ceiling in effect for ctx, never below the floor
 func loopSelfPacedCeilingSeconds(ctx context.Context) int64 {
-	floor := loopSelfPacedFloorSeconds(ctx)
-	return loopsConfigInt(ctx, "self_paced_ceiling_seconds", max(floor, DefaultLoopSelfPacedCeilingSeconds), floor)
+	return loopsSeconds(ctx, settings.LoopsSelfPacedCeilingSeconds, loopSelfPacedFloorSeconds(ctx))
 }
 
 // Compact hours minutes seconds rendering of a duration, 90 becoming 1m30s
@@ -135,7 +134,7 @@ func ResponseSignalsComplete(response string) bool {
 
 // SHA256 of the lowered reply with clock, date and duration tokens and extra whitespace removed
 func digestLoopResponse(response string) string {
-	text := pystr.Lower(pystr.Strip(response))
+	text := strings.ToLower(strings.TrimSpace(response))
 	for _, re := range []struct {
 		pattern interface {
 			Replace(string, string, int, int) (string, error)
@@ -224,8 +223,8 @@ func (m *LoopManager) FireTick(ctx context.Context) (string, bool) {
 	s.NextDueAt = s.LastFiredAt + delay
 	m.save(ctx)
 	prompt := loopText(s.Prompt)
-	if strings.HasPrefix(pystr.Lstrip(prompt), "/") {
-		return pystr.Strip(prompt), true
+	if strings.HasPrefix(strings.TrimLeftFunc(prompt, unicode.IsSpace), "/") {
+		return strings.TrimSpace(prompt), true
 	}
 	cadence := ", self-paced"
 	if s.Mode == "interval" {
@@ -286,7 +285,7 @@ func (m *LoopManager) CompleteTick(ctx context.Context, lastResponse string) Loo
 		return m.stop(ctx, "done", "agent signaled the task is complete",
 			fmt.Sprintf("✓ Loop finished after %s — task complete.", ticks))
 	}
-	if s.Until != "" && pystr.Strip(lastResponse) != "" {
+	if s.Until != "" && strings.TrimSpace(lastResponse) != "" {
 		verdict, reason := loopJudgeUntil(ctx, s.Until, lastResponse)
 		if verdict == "done" {
 			return m.stop(ctx, "done", "stop condition met: "+reason,

@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -34,39 +33,20 @@ var reconnectingWarned = struct {
 // Seams tests replace the way pytest patches the resolver, skill view and MCP reconnect probe
 var (
 	preflightResolveRuntime = provider.ResolveRuntimeProvider
-	preflightSkillView      = func(ctx context.Context, home string, cfg config.Tree, name string) string {
-		return skills.NewScope(home, cfg).SkillView(ctx, name, "", "", true)
+	preflightSkillView      = func(ctx context.Context, home string, name string) string {
+		return skills.NewScope(home, nil).SkillView(ctx, name, "", "", true)
 	}
 	preflightResolveToolset  = func(ctx context.Context, name string) []string { return tools.Default.ResolveToolset(ctx, "", name) }
 	preflightMCPReconnecting = mcp.ServerReconnecting
 )
 
-// Stripped cron.model_provider, empty when absent
-func cronDefaultProvider(cfg config.Tree) string {
-	cronCfg, ok := cfg["cron"].(map[string]any)
-	if !ok || !pyTruthy(cronCfg["model_provider"]) {
-		return ""
-	}
-	return pystr.Strip(pyrepr.Str(cronCfg["model_provider"]))
-}
-
 // Missing provider credential reason, nil with a fallback chain, rate limiting or any other failure
-func (s *Store) preflightCheckProviderKey(ctx context.Context, job *Job, cfg config.Tree) *string {
-	if len(jobFallbackChain(job, cfg)) > 0 {
+func (s *Store) preflightCheckProviderKey(ctx context.Context, job *Job) *string {
+	if len(s.jobFallbackChain(ctx, job)) > 0 {
 		return nil
 	}
-	requested := ""
-	if job.Provider != nil && *job.Provider != "" {
-		requested = *job.Provider
-	} else {
-		requested = cronDefaultProvider(cfg)
-	}
-	model := ""
-	if job.Model != nil && *job.Model != "" {
-		model = *job.Model
-	} else {
-		model = s.cronEnvSetting(ctx, "ICEBATH_MODEL", "")
-	}
+	requested := s.jobRequestedProvider(ctx, job)
+	model := s.jobModel(ctx, job)
 	baseURL := ""
 	if job.BaseURL != nil {
 		baseURL = *job.BaseURL
@@ -118,7 +98,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 	var parts []string
 	for _, lane := range lanes {
 		for _, part := range strings.Split(lane, ",") {
-			part = pystr.Strip(part)
+			part = strings.TrimSpace(part)
 			if part == "" || map[string]bool{"local": true, "origin": true, "all": true}[strings.ToLower(part)] {
 				continue
 			}
@@ -126,7 +106,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 				continue
 			}
 			head, _, _ := strings.Cut(part, ":")
-			parts = append(parts, pystr.Strip(head))
+			parts = append(parts, strings.TrimSpace(head))
 		}
 	}
 	if len(parts) == 0 {
@@ -161,10 +141,10 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 }
 
 // Reason an attached skill still needs setup, nil when every skill is ready or unreadable
-func (s *Store) preflightCheckSkills(ctx context.Context, job *Job, cfg config.Tree) *string {
+func (s *Store) preflightCheckSkills(ctx context.Context, job *Job) *string {
 	for _, name := range jobSkillNames(job) {
 		var payload map[string]any
-		if json.Unmarshal([]byte(preflightSkillView(ctx, s.home, cfg, name)), &payload) != nil || payload == nil || !pyTruthy(payload["success"]) {
+		if json.Unmarshal([]byte(preflightSkillView(ctx, s.home, name)), &payload) != nil || payload == nil || !pyTruthy(payload["success"]) {
 			continue
 		}
 		if !pyTruthy(payload["setup_needed"]) && payload["readiness_status"] != "setup_needed" {
@@ -240,13 +220,13 @@ func (s *Store) emptyRequestedMCPToolsets(ctx context.Context, job *Job, cfg con
 }
 
 // First failing config check reason, a panicking check fails open
-func (s *Store) preflightJobConfig(ctx context.Context, job *Job, cfg config.Tree) (string, error) {
+func (s *Store) preflightJobConfig(ctx context.Context, job *Job) (string, error) {
 	checks := []struct {
 		name string
 		run  func() *string
 	}{
-		{"provider_key", func() *string { return s.preflightCheckProviderKey(ctx, job, cfg) }},
-		{"skills", func() *string { return s.preflightCheckSkills(ctx, job, cfg) }},
+		{"provider_key", func() *string { return s.preflightCheckProviderKey(ctx, job) }},
+		{"skills", func() *string { return s.preflightCheckSkills(ctx, job) }},
 		{"delivery", func() *string { return s.preflightCheckDelivery(ctx, job) }},
 	}
 	for _, c := range checks {

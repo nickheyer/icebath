@@ -97,9 +97,15 @@ func TestVoiceIDReachesElevenlabsAndIsIgnoredElsewhere(t *testing.T) {
 	if cfg["elevenlabs"].(map[string]any)["voice_id"] != "configuredVoice001" {
 		t.Fatal("cached config mutated")
 	}
-	config, errJSON := applyVoiceOverride(map[string]any{"provider": "edge"}, "edge", "pickedVoice0042")
-	if _, has := config["elevenlabs"]; errJSON != "" || has {
-		t.Fatalf("config=%v err=%q", config, errJSON)
+	edge := requestOf(t, map[string]any{"provider": "edge"})
+	got, errJSON := applyVoiceOverride(edge, "pickedVoice0042")
+	if errJSON != "" || got.ElevenLabs.VoiceID == "pickedVoice0042" {
+		t.Fatalf("request=%+v err=%q", got.ElevenLabs, errJSON)
+	}
+	elevenlabs := requestOf(t, cfg)
+	picked, errJSON := applyVoiceOverride(elevenlabs, "pickedVoice0042")
+	if errJSON != "" || picked.ElevenLabs.VoiceID != "pickedVoice0042" || elevenlabs.ElevenLabs.VoiceID != "configuredVoice001" {
+		t.Fatalf("picked=%+v loaded=%+v err=%q", picked.ElevenLabs, elevenlabs.ElevenLabs, errJSON)
 	}
 }
 

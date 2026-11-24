@@ -6,33 +6,18 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Integer environment value with the default for unset or unparseable text
-func utilsEnvInt(name string, def int64) int64 {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return def
-	}
-	n, ok := pyint.Parse(raw)
-	if !ok || !n.IsInt64() {
-		return def
-	}
-	return n.Int64()
-}
-
-// KanbanSpecifyMaxTokens is the specifier reply budget, at least 1500
-var KanbanSpecifyMaxTokens = max(1500, utilsEnvInt("ICEBATH_KANBAN_SPECIFY_MAX_TOKENS", 6000))
 
 const specifySystemPrompt = `You are the Kanban triage specifier for the Icebath Agent board.
 A user dropped a rough idea into the Triage column. Your job is to turn it
@@ -93,7 +78,7 @@ func extractJSONBlob(raw string, fenceRE *regexp2.Regexp) *pyjson.Object {
 	if raw == "" {
 		return nil
 	}
-	stripped, err := fenceRE.Replace(pystr.Strip(raw), "", -1, -1)
+	stripped, err := fenceRE.Replace(strings.TrimSpace(raw), "", -1, -1)
 	if err != nil {
 		return nil
 	}
@@ -112,7 +97,7 @@ func extractJSONBlob(raw string, fenceRE *regexp2.Regexp) *pyjson.Object {
 // String value when it has non whitespace text, nil otherwise
 func nonblank(v any) *string {
 	s, ok := v.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return nil
 	}
 	return &s
@@ -122,7 +107,7 @@ func nonblank(v any) *string {
 func titleBody(parsed *pyjson.Object) (*string, *string) {
 	title := nonblank(parsed.GetOr("title", nil))
 	if title != nil {
-		t := pystr.Strip(*title)
+		t := strings.TrimSpace(*title)
 		title = &t
 	}
 	return title, nonblank(parsed.GetOr("body", nil))
@@ -183,8 +168,8 @@ func auxReplyContent(resp any) string {
 	return content
 }
 
-// One auxiliary LLM call under a per task affinity scope, the reply or nil with a reason
-func callAux(ctx context.Context, verb, taskID, auxTask, system, user string, maxTokens, timeout int64, logger *slog.Logger) (*string, string) {
+// One auxiliary LLM call under a per task affinity scope and the task's configured time limit, the reply or nil with a reason
+func callAux(ctx context.Context, verb, taskID, auxTask, system, user string, maxTokens int64, timeout time.Duration, logger *slog.Logger) (*string, string) {
 	if provider.AffinityScope(ctx) == "" {
 		ctx = provider.WithAffinityScope(ctx, "kanban:"+taskID)
 	}
@@ -193,7 +178,7 @@ func callAux(ctx context.Context, verb, taskID, auxTask, system, user string, ma
 		"messages":    []any{map[string]any{"role": "system", "content": system}, map[string]any{"role": "user", "content": user}},
 		"temperature": 0.3,
 		"max_tokens":  maxTokens,
-		"timeout":     float64(timeout),
+		"timeout":     timeout.Seconds(),
 	})
 	if err != nil {
 		suffix := ""
@@ -208,7 +193,7 @@ func callAux(ctx context.Context, verb, taskID, auxTask, system, user string, ma
 }
 
 // Specifies one triage task through the aux model and promotes it to the backlog, expected failures as not ok
-func SpecifyTask(ctx context.Context, taskID string, author *string, timeout *int64) (*SpecifyOutcome, error) {
+func SpecifyTask(ctx context.Context, taskID string, author *string) (*SpecifyOutcome, error) {
 	task, reason, err := loadTriageTask(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -216,16 +201,12 @@ func SpecifyTask(ctx context.Context, taskID string, author *string, timeout *in
 	if task == nil {
 		return &SpecifyOutcome{TaskID: taskID, Reason: reason}, nil
 	}
-	limit := int64(120)
-	if timeout != nil && *timeout != 0 {
-		limit = *timeout
-	}
 	raw, reason := callAux(ctx, "specify", taskID, "triage_specifier", specifySystemPrompt, specifyUserPrompt(promptFieldsOf(task)),
-		KanbanSpecifyMaxTokens, limit, pkgLog())
+		int64(settings.KanbanSpecifyMaxTokens.Get(ctx)), settings.AuxiliaryTriageSpecifierTimeout.Get(ctx), pkgLog())
 	if raw == nil {
 		return &SpecifyOutcome{TaskID: taskID, Reason: reason}, nil
 	}
-	text := pystr.Strip(*raw)
+	text := strings.TrimSpace(*raw)
 	var newTitle, newBody *string
 	if parsed := extractJSONBlob(text, specifyFenceRE); parsed == nil {
 		if text == "" {

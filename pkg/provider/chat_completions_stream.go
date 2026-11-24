@@ -466,7 +466,7 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 		if p, ok := chunk["provider"].(string); ok && p != "" {
 			s.upstreamProvider = p
 			if s.diag != nil {
-				s.diag.ServingProvider = pystr.Slice(pystr.Strip(p), 0, 64)
+				s.diag.ServingProvider = pystr.Slice(strings.TrimSpace(p), 0, 64)
 			}
 		}
 	}

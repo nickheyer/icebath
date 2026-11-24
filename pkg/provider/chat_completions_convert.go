@@ -27,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -748,7 +747,7 @@ func inlineReasoning(content string) string {
 	for _, pattern := range inlineReasoningPatterns {
 		m, _ := pattern.FindStringMatch(content)
 		for m != nil {
-			if text := pystr.Strip(m.GroupByNumber(1).String()); text != "" && !slices.Contains(parts, text) {
+			if text := strings.TrimSpace(m.GroupByNumber(1).String()); text != "" && !slices.Contains(parts, text) {
 				parts = append(parts, text)
 			}
 			m, _ = pattern.FindNextMatch(m)
@@ -2701,7 +2700,7 @@ func validatedOpenRouterProviderSort(raw any) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	value := pystr.Lower(pystr.Strip(text))
+	value := strings.ToLower(strings.TrimSpace(text))
 	if value == "" {
 		return "", false
 	}

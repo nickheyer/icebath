@@ -8,7 +8,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -90,7 +89,7 @@ func ackProviderTailRE(ctx context.Context) *regexp2.Regexp {
 		}
 		for _, n := range append(append([]string{p.Name}, p.Aliases...), p.ProcessCommand) {
 			if n != "" {
-				seen[pystr.Lower(n)] = true
+				seen[strings.ToLower(n)] = true
 			}
 		}
 	}
@@ -132,7 +131,7 @@ func hasPronounlessAction(ctx context.Context, text string) bool {
 			tailRunes := []rune(rawTail)
 			clauseTail, remaining = string(tailRunes[:b.RuneIndex]), string(tailRunes[b.RuneIndex+b.RuneLength:])
 		}
-		if pystr.Strip(remaining) != "" && !pyReSearch(ackAllowedTrailingRE, remaining) {
+		if strings.TrimSpace(remaining) != "" && !pyReSearch(ackAllowedTrailingRE, remaining) {
 			continue
 		}
 		word := action.String()
@@ -164,7 +163,7 @@ func (a *AIAgent) looksLikeCodexIntermediateAck(userMessage any, assistantConten
 			return false
 		}
 	}
-	text := pystr.Lower(pystr.Strip(a.stripThinkBlocks(assistantContent)))
+	text := strings.ToLower(strings.TrimSpace(a.stripThinkBlocks(assistantContent)))
 	if text == "" || pyLen(text) > 1200 {
 		return false
 	}
@@ -178,7 +177,7 @@ func (a *AIAgent) looksLikeCodexIntermediateAck(userMessage any, assistantConten
 	if !requireWorkspace {
 		return true
 	}
-	userText := pystr.Lower(pystr.Strip(provider.SummarizeUserMessageForLog(userMessage, " ")))
+	userText := strings.ToLower(strings.TrimSpace(provider.SummarizeUserMessageForLog(userMessage, " ")))
 	return containsAny(userText, ackWorkspaceMarker...) || strings.Contains(userText, "~/") || strings.Contains(userText, "/") ||
 		containsAny(text, ackWorkspaceMarker...)
 }

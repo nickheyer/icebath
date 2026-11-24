@@ -4,35 +4,29 @@ package media
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // WakeSampleRate is the 16 kHz mono int16 rate every wake engine consumes
 const WakeSampleRate = 16000
 
-const (
-	wakeDefaultConfirmationFrames = 3
-	wakeSilencePeak               = 10
-	// Phrase the open vocabulary keyword spotter detects unless the config names another
-	wakeDefaultPhrase = "hey icebath"
-)
+// Loudness under which a captured block counts as silence
+const wakeSilencePeak = 10
 
 var (
 	wakeFireCooldownSeconds      = 2.0
@@ -86,16 +80,7 @@ type WakeWordError struct {
 func (e *WakeWordError) Error() string { return e.Msg }
 func (e *WakeWordError) Unwrap() error { return e.Cause }
 
-var wakeDefaults = map[string]any{
-	"enabled": false, "surface": "auto", "input_device": nil,
-	"provider": "auto", "phrase": wakeDefaultPhrase, "sensitivity": 0.6,
-	"confirmation_frames": wakeDefaultConfirmationFrames, "start_new_session": true,
-}
-
 var (
-	wakeLoadConfig = func(ctx context.Context) (config.Tree, error) {
-		return config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
-	}
 	wakeExtraSupported  = wakeEngineSupported
 	wakePMAvailable     = wakeEngineAvailable
 	wakeRequireExtra    = requireWakeExtra
@@ -104,28 +89,83 @@ var (
 	wakeLocalInputReady = localInputDeviceReady
 	wakeSTTReady        = sttReady
 	wakeTTSReady        = ttsReady
-	wakeLoadTTSConfig   = func(ctx context.Context) map[string]any { return loadTTSConfig(ctx, nil) }
-	wakeGetTTSProvider  = func(cfg map[string]any) (string, error) { return getTTSProvider(cfg), nil }
 	wakeCheckTTS        = func(ctx context.Context) (bool, error) { return checkTTSRequirements(ctx, nil), nil }
 )
 
-// LoadWakeWordConfig returns the wake_word config section shape guarded to a dict
-func LoadWakeWordConfig(ctx context.Context) map[string]any {
-	tree, err := wakeLoadConfig(ctx)
-	if err != nil {
-		return map[string]any{}
-	}
-	if sec, ok := asStrMap(tree["wake_word"]); ok {
-		return sec
-	}
-	return map[string]any{}
+// Wake word settings of one profile, read from the registry
+type WakeConfig struct {
+	// The listener may run
+	Enabled bool
+	// Screen allowed to host the listener, auto for any
+	Surface string
+	// PortAudio input selector: a device number, a device name, nil for the default microphone
+	InputDevice any
+	// Engine alias as configured, lower case, auto when blank
+	Provider string
+	// Phrase the open vocabulary engine detects
+	Phrase string
+	// How easily an engine fires, 0 to 1
+	Sensitivity float64
+	// Over threshold frames in a row that fire the openWakeWord engine, 1 to 10
+	ConfirmationFrames int
+	// A detection starts a new session
+	StartNewSession bool
+	// The phrases other wake enabled profiles chose are heard too
+	ProfileRouting bool
+	// openWakeWord model file, empty when none is set since the engine ships without one
+	OpenWakeWordModel string
+	// Folder of the sherpa keyword model, empty for the one fetched on first use
+	SherpaModelDir string
+	// Porcupine built in keyword or keyword file
+	PorcupineKeyword string
 }
 
-func wakeGet(cfg map[string]any, key string) any {
-	if v := cfg[key]; v != nil {
-		return v
+// Wake word settings in effect for ctx
+func LoadWakeWordConfig(ctx context.Context) *WakeConfig {
+	cfg := &WakeConfig{
+		Enabled:            settings.WakeWord.Get(ctx),
+		Surface:            settings.WakeWordSurface.Get(ctx),
+		InputDevice:        wakeInputSelector(settings.WakeWordInputDevice.Get(ctx)),
+		Provider:           strings.ToLower(strings.TrimSpace(settings.WakeWordProvider.Get(ctx))),
+		Phrase:             strings.TrimSpace(settings.WakeWordPhrase.Get(ctx)),
+		Sensitivity:        settings.WakeWordSensitivity.Get(ctx),
+		ConfirmationFrames: min(10, max(1, settings.WakeWordConfirmationFrames.Get(ctx))),
+		StartNewSession:    settings.WakeWordStartNewSession.Get(ctx),
+		ProfileRouting:     settings.WakeWordProfileRouting.Get(ctx),
+		OpenWakeWordModel:  strings.TrimSpace(settings.WakeWordOpenwakewordModel.Get(ctx)),
+		SherpaModelDir:     strings.TrimSpace(settings.WakeWordSherpaModelDir.Get(ctx)),
+		PorcupineKeyword:   strings.TrimSpace(settings.WakeWordPorcupineKeyword.Get(ctx)),
 	}
-	return wakeDefaults[key]
+	if cfg.Provider == "" {
+		cfg.Provider = "auto"
+	}
+	if cfg.Phrase == "" {
+		cfg.Phrase = settings.WakeWordPhrase.Default
+	}
+	switch {
+	case math.IsNaN(cfg.Sensitivity):
+		cfg.Sensitivity = settings.WakeWordSensitivity.Default
+	case cfg.Sensitivity < 0:
+		cfg.Sensitivity = 0
+	case cfg.Sensitivity > 1:
+		cfg.Sensitivity = 1
+	}
+	if cfg.PorcupineKeyword == "" {
+		cfg.PorcupineKeyword = settings.WakeWordPorcupineKeyword.Default
+	}
+	return cfg
+}
+
+// PortAudio input selector a setting's text names: a whole number is a device number, true, false and blank the default microphone, other text a device name
+func wakeInputSelector(text string) any {
+	text = strings.TrimSpace(text)
+	if text == "" || strings.EqualFold(text, "true") || strings.EqualFold(text, "false") {
+		return nil
+	}
+	if index, err := strconv.Atoi(text); err == nil {
+		return index
+	}
+	return text
 }
 
 // Python max then min clamp keeping the first operand on ties and NaN
@@ -139,71 +179,12 @@ func pyClampFloat(n, lo, hi float64) float64 {
 	return n
 }
 
-// Numeric config value through cast, the default on junk, clamped to lo..hi as Python min of max
-func wakeClamped[T any](cfg map[string]any, key string, cast func(any) (T, error), less func(a, b T) bool, lo, hi T) (T, error) {
-	n, err := cast(wakeGet(cfg, key))
-	if err != nil {
-		var zero T
-		if !pyCastFallback(err) {
-			return zero, err
-		}
-		if n, err = cast(wakeDefaults[key]); err != nil {
-			return zero, err
-		}
-	}
-	if less(n, lo) {
-		n = lo
-	}
-	if less(hi, n) {
-		n = hi
-	}
-	return n, nil
-}
-
-// Wake sensitivity as a float clamped to 0..1, the default on junk
-func wakeSensitivity(cfg map[string]any) (float64, error) {
-	return wakeClamped(cfg, "sensitivity", pyint.Float, func(a, b float64) bool { return a < b }, 0, 1)
-}
-
-// Consecutive over threshold frames required to fire, clamped to 1..10 with the default on junk
-func wakeConfirmationFrames(cfg map[string]any) (int, error) {
-	n, err := wakeClamped(cfg, "confirmation_frames", pyint.Of, func(a, b *big.Int) bool { return a.Cmp(b) < 0 }, big.NewInt(1), big.NewInt(10))
-	if err != nil {
-		return 0, err
-	}
-	return int(n.Int64()), nil
-}
-
-// Whether a cast error is the TypeError or ValueError the clamp falls back on
-func pyCastFallback(err error) bool {
-	var e *pyint.Error
-	return errors.As(err, &e) && (e.Kind == "TypeError" || e.Kind == "ValueError")
-}
-
-// Provider alias as configured, auto when blank
-func wakeConfiguredProvider(cfg map[string]any) string {
-	if provider := pystr.Lower(pystr.Strip(pyrepr.Str(wakeGet(cfg, "provider")))); provider != "" {
-		return provider
-	}
-	return "auto"
-}
-
-// Configured openWakeWord model file, empty when none is set since the engine ships without a model
-func wakeOpenWakeWordModel(cfg map[string]any) string {
-	sub := wakeSub(cfg, "openwakeword")
-	if !pyTruthy(sub["model"]) {
-		return ""
-	}
-	return pystr.Strip(pyrepr.Str(sub["model"]))
-}
-
 // Configured provider, auto taking sherpa unless an openWakeWord model is configured, else the first supported engine
-func wakeProvider(ctx context.Context, cfg map[string]any, supported func(string) (bool, error)) (string, error) {
-	provider := wakeConfiguredProvider(cfg)
-	if provider != "auto" {
-		return provider, nil
+func wakeProvider(ctx context.Context, cfg *WakeConfig, supported func(string) (bool, error)) (string, error) {
+	if cfg.Provider != "" && cfg.Provider != "auto" {
+		return cfg.Provider, nil
 	}
-	if wakeOpenWakeWordModel(cfg) == "" {
+	if cfg.OpenWakeWordModel == "" {
 		return "sherpa", nil
 	}
 	if supported == nil {
@@ -221,30 +202,10 @@ func wakeProvider(ctx context.Context, cfg map[string]any, supported func(string
 	return "porcupine", nil
 }
 
-// Configured PortAudio input selector, keeping indices and stripped names, nil for blanks and bools
-func wakeInputDevice(cfg map[string]any) any {
-	raw := wakeGet(cfg, "input_device")
-	if _, ok := raw.(bool); ok || raw == nil {
-		return nil
-	}
-	if _, ok := pyrepr.Int(raw); ok {
-		return raw
-	}
-	if s := pystr.Strip(pyrepr.Str(raw)); s != "" {
-		return s
-	}
-	return nil
-}
-
-// Wake phrase of the config, the icebath default when blank
-func WakePhrase(ctx context.Context, cfg map[string]any) string {
-	if cfg == nil {
-		cfg = LoadWakeWordConfig(ctx)
-	}
-	if s := pyrepr.Str(wakeGet(cfg, "phrase")); s != "" {
-		return s
-	}
-	return wakeDefaultPhrase
+// Picovoice access key of the profile ctx serves, empty when none is set
+func wakeAccessKey(ctx context.Context) string {
+	key, _ := config.ProfileEnvLookup(ctx, home.Dir(ctx))("PORCUPINE_ACCESS_KEY")
+	return strings.TrimSpace(key)
 }
 
 // Input channel count of a PortAudio device record
@@ -269,16 +230,10 @@ func localInputDeviceReady() bool {
 	return err == nil && inputChannels(dev) > 0
 }
 
-// WakeSurfaceEnabled reports whether a cli, tui or gui surface may host the enabled listener
-func WakeSurfaceEnabled(ctx context.Context, surface string, cfg map[string]any) bool {
-	if cfg == nil {
-		cfg = LoadWakeWordConfig(ctx)
-	}
-	want := pystr.Lower(pystr.Strip(pyrepr.Str(wakeGet(cfg, "surface"))))
-	if want == "" {
-		want = "auto"
-	}
-	return pyTruthy(cfg["enabled"]) && (want == "auto" || want == pystr.Lower(pystr.Strip(surface)))
+// Whether a cli, tui or gui surface may host the enabled listener
+func (c *WakeConfig) SurfaceEnabled(surface string) bool {
+	want := strings.ToLower(strings.TrimSpace(c.Surface))
+	return c.Enabled && (want == "" || want == "auto" || want == strings.ToLower(strings.TrimSpace(surface)))
 }
 
 // Active profile name, default when unset
@@ -331,7 +286,7 @@ func wakeListProfileNames(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// EnrolledProfilePhrases maps every wake enabled profile to its phrase read raw from its own config
+// EnrolledProfilePhrases maps every wake enabled profile to the phrase its own settings name, hey and the profile name when it names none
 func EnrolledProfilePhrases(ctx context.Context) []WakeProfilePhrase {
 	var out []WakeProfilePhrase
 	names, err := wakeListProfileNames(ctx)
@@ -345,24 +300,17 @@ func EnrolledProfilePhrases(ctx context.Context) []WakeProfilePhrase {
 			pkgLog().Warn("wake word: profile " + name + " left out of routing: " + err.Error())
 			continue
 		}
-		raw, err := config.ReadUserConfigRaw(ctx, filepath.Join(dir, "config.yaml"))
-		if err != nil {
-			pkgLog().Warn("wake word: profile " + name + " left out of routing: " + err.Error())
-			continue
-		}
-		wc := raw["wake_word"]
-		if !pyTruthy(wc) {
-			continue
-		}
-		sec, ok := asStrMap(wc)
-		if !ok || !pyTruthy(sec["enabled"]) {
+		pctx := settings.WithoutSession(home.WithOverride(ctx, dir))
+		if !settings.WakeWord.Get(pctx) {
 			continue
 		}
 		phrase := "hey " + name
-		if pyTruthy(sec["phrase"]) {
-			phrase = pyrepr.Str(sec["phrase"])
+		if chosen, err := settings.Resolve(pctx, settings.WakeWordPhrase.Key); err == nil && chosen.Source != settings.SourceDefault {
+			if own := strings.TrimSpace(settings.WakeWordPhrase.Get(pctx)); own != "" {
+				phrase = own
+			}
 		}
-		if phrase = pystr.Strip(phrase); phrase != "" {
+		if phrase = strings.TrimSpace(phrase); phrase != "" {
 			out = setPhrase(out, name, phrase)
 		}
 	}
@@ -504,7 +452,7 @@ func SilentAudioHint(details WakeInputDeviceDetails) string {
 	}
 	label := ""
 	if details.Name != nil {
-		label = pystr.Strip(*details.Name)
+		label = strings.TrimSpace(*details.Name)
 	}
 	if label == "" {
 		if details.Selector == nil {
@@ -514,7 +462,7 @@ func SilentAudioHint(details WakeInputDeviceDetails) string {
 		}
 	}
 	if details.HostAPI != nil {
-		if hostapi := pystr.Strip(*details.HostAPI); hostapi != "" {
+		if hostapi := strings.TrimSpace(*details.HostAPI); hostapi != "" {
 			label = label + " (" + hostapi + ")"
 		}
 	}
@@ -522,14 +470,14 @@ func SilentAudioHint(details WakeInputDeviceDetails) string {
 }
 
 // Wake engine constructors by class name, the table a test or plugin swaps one engine in
-var wakeEngineClasses = map[string]func(ctx context.Context, cfg map[string]any) (WakeEngine, error){
+var wakeEngineClasses = map[string]func(ctx context.Context, cfg *WakeConfig) (WakeEngine, error){
 	"_OpenWakeWordEngine": newOpenWakeWordEngine,
 	"_SherpaKwsEngine":    newSherpaKwsEngine,
 	"_PorcupineEngine":    newPorcupineEngine,
 }
 
 // Builds the engine of the resolved provider, a ValueError for an unknown alias
-var wakeBuildEngine = func(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
+var wakeBuildEngine = func(ctx context.Context, cfg *WakeConfig) (WakeEngine, error) {
 	provider, err := wakeProvider(ctx, cfg, nil)
 	if err != nil {
 		return nil, err
@@ -543,19 +491,16 @@ var wakeBuildEngine = func(ctx context.Context, cfg map[string]any) (WakeEngine,
 
 // Whether an enabled speech to text provider is configured
 func sttReady(ctx context.Context) bool {
-	sttConfig := loadSTTConfig(ctx)
-	if !isSTTEnabled(ctx, sttConfig) {
+	req := loadSTTRequest(ctx)
+	if !req.Enabled {
 		return false
 	}
-	provider, err := getProvider(ctx, sttConfig)
+	provider, err := getProvider(ctx, req)
 	return err == nil && provider != "none"
 }
 
 // Whether the configured text to speech provider can run
 func ttsReady(ctx context.Context) bool {
-	if _, err := wakeGetTTSProvider(wakeLoadTTSConfig(ctx)); err != nil {
-		return false
-	}
 	ok, err := wakeCheckTTS(ctx)
 	return err == nil && ok
 }
@@ -600,7 +545,7 @@ func wakeEngineAvailable(ctx context.Context, extra string) (bool, error) {
 }
 
 // CheckWakeWordRequirements probes engine support, deps, key, mic, STT and TTS without installing anything
-func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supported func(string) (bool, error)) (WakeRequirements, error) {
+func CheckWakeWordRequirements(ctx context.Context, cfg *WakeConfig, supported func(string) (bool, error)) (WakeRequirements, error) {
 	if cfg == nil {
 		cfg = LoadWakeWordConfig(ctx)
 	}
@@ -635,13 +580,13 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		}
 	}
 	keyOK := true
-	modelOK := WakeProviders[provider].Engine != "_OpenWakeWordEngine" || wakeOpenWakeWordModel(cfg) != ""
+	modelOK := WakeProviders[provider].Engine != "_OpenWakeWordEngine" || cfg.OpenWakeWordModel != ""
 	sttOK := wakeSTTReady(ctx)
 	ttsOK := wakeTTSReady(ctx)
 	hint := ""
 	switch {
-	case !platformOK && wakeConfiguredProvider(cfg) == "auto" && wakeOpenWakeWordModel(cfg) == "":
-		hint = fmt.Sprintf("The %s wake engine that detects %s is not supported on this platform.", provider, errchain.Show(WakePhrase(ctx, cfg)))
+	case !platformOK && (cfg.Provider == "" || cfg.Provider == "auto") && cfg.OpenWakeWordModel == "":
+		hint = fmt.Sprintf("The %s wake engine that detects %s is not supported on this platform.", provider, errchain.Show(cfg.Phrase))
 		owwOK, err := supported(WakeProviders["openwakeword"].Extra)
 		if err != nil {
 			return WakeRequirements{}, err
@@ -666,8 +611,8 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		}
 	case !modelOK:
 		hint = "Set wake_word.openwakeword.model to an openWakeWord model file trained for your wake phrase, " +
-			"or set wake_word.provider to auto so the open vocabulary engine detects " + errchain.Show(WakePhrase(ctx, cfg)) + "."
-	case provider == "porcupine" && pystr.Strip(os.Getenv("PORCUPINE_ACCESS_KEY")) == "":
+			"or set wake_word.provider to auto so the open vocabulary engine detects " + errchain.Show(cfg.Phrase) + "."
+	case provider == "porcupine" && wakeAccessKey(ctx) == "":
 		keyOK = false
 		hint = "Set PORCUPINE_ACCESS_KEY (free key at https://console.picovoice.ai)."
 	case !depsOK:
@@ -689,6 +634,6 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		Available: platformOK && keyOK && modelOK && sttOK && ttsOK && micOK, Provider: provider,
 		DepsAvailable: depsOK, AudioAvailable: audioOK, LocalInputAvailable: depsOK && wakeLocalInputReady(),
 		AccessKeySet: keyOK, STTAvailable: sttOK, TTSAvailable: ttsOK,
-		Phrase: WakePhrase(ctx, cfg), Hint: hint,
+		Phrase: cfg.Phrase, Hint: hint,
 	}, nil
 }

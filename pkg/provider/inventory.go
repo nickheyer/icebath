@@ -112,15 +112,10 @@ func loadPickerContext(ctx context.Context) (PickerConfigContext, error) {
 	pc := PickerConfigContext{CurrentModel: settings.Model.Get(ctx), CurrentProvider: CoerceProviderID(settings.ModelProvider.Get(ctx)),
 		CurrentBaseURL: settings.ModelBaseURL.Get(ctx), ExcludedProviders: settings.ModelCatalogExcludedProviders.Strings(ctx),
 		UserProviders: StringifyProviderMap(settings.Providers.Get(ctx))}
-	for _, entry := range ProviderEntries(customProviderSettings(ctx)) {
+	for _, entry := range CustomProviderEntries(ctx) {
 		pc.CustomProviders = append(pc.CustomProviders, entry)
 	}
 	return pc, nil
-}
-
-// Providers of the home in ctx, shaped like the config document the custom provider helpers read
-func customProviderSettings(ctx context.Context) map[string]any {
-	return map[string]any{"providers": settings.Providers.Get(ctx)}
 }
 
 // Lowercased trimmed slug of a row
@@ -921,7 +916,7 @@ func filterExplicitProviderRows(ctx context.Context, rows []map[string]any, pc P
 			return true
 		}
 		if slug == "moa" {
-			return rawConfigHasEnabledMoAPreset(ctx)
+			return ownMoAPresetEnabled(ctx)
 		}
 		return (slug == "anthropic" && inventoryAnthropicOAuthFn(ctx)) || externalProcessSignedIn(ctx, slug) ||
 			inventoryExplicitFn(env, slug)
@@ -942,34 +937,18 @@ func externalProcessSignedIn(ctx context.Context, slug string) bool {
 		pyTruthy(GetExternalProcessProviderStatus(modelsPoolEnv(ctx), slug)["auth_verified"])
 }
 
-var legacyMoAKeys = []string{"reference_models", "aggregator", "reference_temperature", "aggregator_temperature",
-	"max_tokens", "reference_max_tokens", "fanout"}
-
-// True when the raw user config enables a MoA preset or saves the legacy flat MoA config
-func rawConfigHasEnabledMoAPreset(ctx context.Context) bool {
-	raw, err := config.ReadRawConfig(ctx, home.Dir(ctx))
-	if err != nil {
+// True when the person's own mixture presets, not the built-in one, hold an enabled preset
+func ownMoAPresetEnabled(ctx context.Context) bool {
+	if settings.MoaPresets.Source(ctx) == settings.SourceDefault {
 		return false
 	}
-	moa, ok := raw["moa"].(map[string]any)
-	if !ok {
-		return false
-	}
-	if presets, ok := moa["presets"].(map[string]any); ok {
-		for name, preset := range presets {
-			if strings.TrimSpace(name) == "" {
-				continue
-			}
-			p, isMap := preset.(map[string]any)
-			if !isMap || pyTruthy(pyGetAny(p, "enabled", true)) {
-				return true
-			}
+	for name, preset := range settings.MoaPresets.Get(ctx) {
+		if strings.TrimSpace(name) == "" {
+			continue
 		}
-		return false
-	}
-	for _, key := range legacyMoAKeys {
-		if _, has := moa[key]; has {
-			return pyTruthy(pyGetAny(moa, "enabled", true))
+		p, isMap := preset.(map[string]any)
+		if !isMap || pyTruthy(pyGetAny(p, "enabled", true)) {
+			return true
 		}
 	}
 	return false
@@ -1144,20 +1123,15 @@ func prewarmPricingAsync(ctx context.Context, rows []map[string]any) <-chan stru
 	return done
 }
 
-// Virtual Mixture of Agents row listing the presets, nil unless the raw config enables one
+// Virtual Mixture of Agents row listing the presets, nil unless the person's own presets enable one
 func moaProviderRow(ctx context.Context, currentProvider string) map[string]any {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if !rawConfigHasEnabledMoAPreset(ctx) {
+	if !ownMoAPresetEnabled(ctx) {
 		return nil
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return nil
-	}
-	models := moaPresetOrder(anyMap(normalizeMoAConfig(tree["moa"])["presets"]))
+	models := moaPresetOrder(anyMap(normalizeMoAConfig(moaSettings(ctx))["presets"]))
 	if len(models) == 0 {
 		return nil
 	}

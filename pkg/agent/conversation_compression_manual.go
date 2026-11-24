@@ -1,9 +1,10 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -38,7 +39,7 @@ func (r CompressResult) Removed() int { return len(r.BeforeMessages) - len(r.Aft
 
 // Parses /compress flags anywhere, then the boundary aware and focus positional forms, aggressive keeping only the last exchange
 func ParseCompressArgs(rawArgs string) CompressRequest {
-	rest, preview, aggressive := provider.ExtractCompressFlags(pystr.Strip(rawArgs))
+	rest, preview, aggressive := provider.ExtractCompressFlags(strings.TrimSpace(rawArgs))
 	partial, keepLast, focus := provider.ParsePartialCompressArgs(rest)
 	if focus != nil && *focus == "" {
 		focus = nil

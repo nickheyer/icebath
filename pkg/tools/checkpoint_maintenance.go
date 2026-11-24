@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Counts what one prune scanned, deleted and reclaimed
@@ -472,68 +473,17 @@ func MaybeAutoPruneCheckpoints(env *Env, o CheckpointAutoPruneOptions) Checkpoin
 	return out
 }
 
-// Fresh checkpoints section of the profile config, a type error when it is not a mapping
-func checkpointConfigSection(env *Env) (map[string]any, error) {
-	doc, err := config.Load(envHome(env), configLookup(env))
-	if err != nil {
-		return nil, err
-	}
-	raw := doc.Get("checkpoints")
-	if !truthy(raw) {
-		return map[string]any{}, nil
-	}
-	section, ok := raw.(map[string]any)
-	if !ok {
-		return nil, &checkpointValueError{msg: "the checkpoints section of config.yaml is " + errchain.Kind(raw) + ", expected a mapping"}
-	}
-	return section, nil
-}
-
-// Config integer the way Python int() reads it, with the int() error text on failure
-func checkpointConfigInt(section map[string]any, key string, fallback int) (int, error) {
-	v, ok := section[key]
-	if !ok {
-		return fallback, nil
-	}
-	if n, ok := pyIntValue(v); ok {
-		return n, nil
-	}
-	if s, ok := v.(string); ok {
-		return 0, &checkpointValueError{msg: "checkpoint setting " + pyReprStr(s) + " is not a whole number"}
-	}
-	return 0, &checkpointValueError{msg: "a checkpoint setting is " + errchain.Kind(v) + ", expected a whole number"}
-}
-
-// Runs the startup prune from the checkpoints config section, never deleting orphans unattended
+// Runs the startup prune from the checkpoints settings, never deleting orphans unattended
 func AutoPruneCheckpointsFromConfig(env *Env) CheckpointAutoPruneOutcome {
-	fail := func(err error) CheckpointAutoPruneOutcome {
-		envLog(env).Debug(fmt.Sprintf("checkpoint auto-maintenance skipped: %v", err))
-		return CheckpointAutoPruneOutcome{Skipped: true, Error: err.Error()}
-	}
-	cfg, err := checkpointConfigSection(env)
-	if err != nil {
-		return fail(err)
-	}
-	if !truthy(cfg["auto_prune"]) {
+	ctx := envHomeCtx(context.Background(), env)
+	if !settings.CheckpointsAutoPrune.Get(ctx) {
 		return CheckpointAutoPruneOutcome{Skipped: true}
 	}
-	retention, err := checkpointConfigInt(cfg, "retention_days", 7)
-	if err != nil {
-		return fail(err)
-	}
-	interval, err := checkpointConfigInt(cfg, "min_interval_hours", 24)
-	if err != nil {
-		return fail(err)
-	}
-	capMB, err := checkpointConfigInt(cfg, "max_total_size_mb", 500)
-	if err != nil {
-		return fail(err)
-	}
 	return MaybeAutoPruneCheckpoints(env, CheckpointAutoPruneOptions{
-		RetentionDays:    retention,
-		MinIntervalHours: interval,
+		RetentionDays:    int(settings.CheckpointsRetentionDays.Get(ctx) / (24 * time.Hour)),
+		MinIntervalHours: int(settings.CheckpointsMinIntervalHours.Get(ctx) / time.Hour),
 		DeleteOrphans:    false,
-		MaxTotalSizeMB:   capMB,
+		MaxTotalSizeMB:   settings.CheckpointsMaxTotalSizeMb.Get(ctx),
 	})
 }
 
@@ -557,22 +507,11 @@ func SizefmtBytes(n int64) string { return sizefmtBytes(n) }
 
 // Names the opt out when checkpoints are on and the store sits at or above its cap, empty otherwise
 func CheckpointFootprintNotice(env *Env) string {
-	cfg, err := checkpointConfigSection(env)
-	if err != nil {
-		envLog(env).Debug(fmt.Sprintf("checkpoint footprint notice skipped: %v", err))
+	ctx := envHomeCtx(context.Background(), env)
+	if !settings.CheckpointsEnabled.Get(ctx) {
 		return ""
 	}
-	if !truthy(cfg["enabled"]) {
-		return ""
-	}
-	capMB := 0
-	if raw, ok := cfg["max_total_size_mb"]; !ok || truthy(raw) {
-		capMB, err = checkpointConfigInt(cfg, "max_total_size_mb", 500)
-		if err != nil {
-			envLog(env).Debug(fmt.Sprintf("checkpoint footprint notice skipped: %v", err))
-			return ""
-		}
-	}
+	capMB := settings.CheckpointsMaxTotalSizeMb.Get(ctx)
 	if capMB <= 0 {
 		return ""
 	}

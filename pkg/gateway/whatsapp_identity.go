@@ -28,7 +28,7 @@ func NormalizeWhatsAppIdentifier(value any) string {
 	if pyrepr.Truthy(value) {
 		s = pyrepr.Str(value)
 	}
-	s = strings.Replace(pystr.Strip(s), "+", "", 1)
+	s = strings.Replace(strings.TrimSpace(s), "+", "", 1)
 	s, _, _ = strings.Cut(s, ":")
 	s, _, _ = strings.Cut(s, "@")
 	return s
@@ -53,7 +53,7 @@ func ToWhatsAppJID(value string) string {
 	if value == "" {
 		return ""
 	}
-	normalized := pystr.Strip(value)
+	normalized := strings.TrimSpace(value)
 	if strings.Contains(normalized, ":") && strings.Contains(normalized, "@") {
 		prefix, domain, _ := strings.Cut(normalized, "@")
 		user, _, _ := strings.Cut(prefix, ":")

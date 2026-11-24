@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -124,9 +125,9 @@ func recordReviewUsageToParent(ctx context.Context, parent *AIAgent, usage map[s
 
 // Maps review action lines to none, skill, memory or skill+memory by their localized or English prefixes
 func classifyReviewResult(ctx context.Context, actions []string) string {
-	skillPrefixes := []string{"skill", pystr.Lower(i18n.T(ctx, "display.review.label.skill", "", nil))}
-	memoryPrefixes := []string{"memory", "user profile", pystr.Lower(i18n.T(ctx, "display.review.label.memory", "", nil)),
-		pystr.Lower(i18n.T(ctx, "display.review.label.user", "", nil))}
+	skillPrefixes := []string{"skill", strings.ToLower(i18n.T(ctx, "display.review.label.skill", "", nil))}
+	memoryPrefixes := []string{"memory", "user profile", strings.ToLower(i18n.T(ctx, "display.review.label.memory", "", nil)),
+		strings.ToLower(i18n.T(ctx, "display.review.label.user", "", nil))}
 	hasPrefix := func(line string, prefixes []string) bool {
 		for _, p := range prefixes {
 			if strings.HasPrefix(line, p) {
@@ -137,7 +138,7 @@ func classifyReviewResult(ctx context.Context, actions []string) string {
 	}
 	hasSkill, hasMemory := false, false
 	for _, action := range actions {
-		line := pystr.Lower(pystr.Lstrip(strings.TrimPrefix(pystr.Lstrip(action), "📝")))
+		line := strings.ToLower(strings.TrimLeftFunc(strings.TrimPrefix(strings.TrimLeftFunc(action, unicode.IsSpace), "📝"), unicode.IsSpace))
 		hasSkill = hasSkill || hasPrefix(line, skillPrefixes)
 		hasMemory = hasMemory || hasPrefix(line, memoryPrefixes)
 	}
@@ -192,7 +193,7 @@ func sameModelParityKwargs(a *AIAgent, o *AIAgentOptions) {
 
 // Tells the user once per parent that the configured review reasoning effort is ignored on the same model path
 func warnIgnoredReasoningEffort(ctx context.Context, a *AIAgent, taskCfg map[string]any) {
-	effort := pystr.Strip(pyStrOr(backgroundReviewTaskConfig(ctx, taskCfg)["reasoning_effort"], ""))
+	effort := strings.TrimSpace(pyStrOr(backgroundReviewTaskConfig(ctx, taskCfg)["reasoning_effort"], ""))
 	if effort == "" || a.warnedBgReviewReasoningEffort {
 		return
 	}

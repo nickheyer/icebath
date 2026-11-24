@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -35,14 +34,7 @@ var (
 	lifecycleCleanupSingle = func(ctx context.Context, env *tools.Env, key string) error {
 		return cleanupSingleSession(tools.WithEnvHome(ctx, env), env, key)
 	}
-	processEnvOnce = sync.OnceValue(func() *tools.Env {
-		h := home.Process()
-		tree, err := config.Load(h, nil)
-		if err != nil {
-			tree = config.Tree{}
-		}
-		return &tools.Env{Home: h, Config: tree}
-	})
+	processEnvOnce = sync.OnceValue(func() *tools.Env { return &tools.Env{Home: home.Process()} })
 )
 
 // Process profile env the janitor and the exit sweep run under, as the Python thread runs unscoped
@@ -402,29 +394,30 @@ func cleanupOneInactive(ctx context.Context, key string, elapsed int) {
 	}
 }
 
-// Closes sessions idle past the inactivity timeout, a human holding the shared screen counting as activity
+// Closes sessions idle past the inactivity timeout of their owner's profile, a human holding the shared screen counting as activity
 func cleanupInactiveSessions(ctx context.Context) {
 	now := sessionNow()
-	limit := float64(sessionInactivity())
-	type idleKey struct {
-		key     string
-		elapsed int
+	type trackedKey struct {
+		key  string
+		last float64
 	}
-	var idle []idleKey
+	var tracked []trackedKey
 	sessionsMu.Lock()
 	for key, last := range sessionLastActivity.All() {
-		if now-last > limit {
-			idle = append(idle, idleKey{key, int(now - last)})
-		}
+		tracked = append(tracked, trackedKey{key, last})
 	}
 	sessionsMu.Unlock()
-	for _, it := range idle {
+	for _, it := range tracked {
 		owner := sessionOwnerEnv(processBrowserEnv(), it.key)
+		elapsed := now - it.last
+		if elapsed <= float64(sessionInactivity(owner)) {
+			continue
+		}
 		if humanHoldsSharedBrowserKey(owner, it.key) {
 			updateSessionActivity(owner, it.key)
 			continue
 		}
-		cleanupOneInactive(tools.WithEnvHome(ctx, owner), it.key, it.elapsed)
+		cleanupOneInactive(tools.WithEnvHome(ctx, owner), it.key, int(elapsed))
 	}
 }
 
@@ -464,7 +457,7 @@ func startCleanupThread(ctx context.Context, env *tools.Env) {
 	janitorRunning = true
 	janitorStop, janitorDone = make(chan struct{}), make(chan struct{})
 	go janitor(tools.WithEnvHome(ctx, env), janitorStop, janitorDone)
-	cfgOf(env).logger().Info(fmt.Sprintf("Started browser inactivity janitor (timeout: %ds)", sessionInactivity()))
+	cfgOf(env).logger().Info(fmt.Sprintf("Started browser inactivity janitor (timeout: %ds)", sessionInactivity(env)))
 }
 
 // Stops the janitor and waits up to five seconds for it to finish

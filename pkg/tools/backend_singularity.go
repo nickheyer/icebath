@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -56,7 +55,7 @@ func singularityTimeoutText(argv []string, seconds int) string {
 
 // Image from the Apptainer image setting, else the default sandbox image as a docker reference
 func singularityConfiguredImage(ctx context.Context, env *Env) (string, error) {
-	if text := pystr.Strip(settings.TerminalSingularityImage.Get(envHomeCtx(ctx, env))); text != "" {
+	if text := strings.TrimSpace(settings.TerminalSingularityImage.Get(envHomeCtx(ctx, env))); text != "" {
 		return text, nil
 	}
 	return "docker://" + defaultSandboxImage, nil
@@ -75,7 +74,7 @@ func asApptainerRef(image string) string {
 
 // Image of a new instance, the per task override first then the configured image
 func resolveSingularityImage(ctx context.Context, env *Env, image string) (string, error) {
-	if image = pystr.Strip(image); image != "" {
+	if image = strings.TrimSpace(image); image != "" {
 		return asApptainerRef(image), nil
 	}
 	configured, err := singularityConfiguredImage(ctx, env)
@@ -111,14 +110,14 @@ func ensureSingularityAvailable(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if code := singularityReturncode(res, state); code != 0 {
-		return "", fmt.Errorf("'%s version' failed (exit code %d): %s", exe, code, runePrefix(pystr.Strip(res.Stderr), 200))
+		return "", fmt.Errorf("'%s version' failed (exit code %d): %s", exe, code, runePrefix(strings.TrimSpace(res.Stderr), 200))
 	}
 	return exe, nil
 }
 
 // Scratch root of overlays and the SIF cache, TERMINAL_SCRATCH_DIR, else a writable /scratch, else sandboxes/singularity
 func singularityScratchDir(env *Env) (string, error) {
-	scratchPath := os.Getenv("TERMINAL_SCRATCH_DIR")
+	scratchPath := strings.TrimSpace(settings.TerminalScratchDir.Get(envHomeCtx(context.Background(), env)))
 	if scratchPath == "" {
 		sandbox, err := SandboxDir(env)
 		if err != nil {
@@ -188,18 +187,9 @@ func pyPercentF(f float64, prec int) string {
 	return strconv.FormatFloat(f, 'f', prec, 64)
 }
 
-// Warning threshold in GB from TERMINAL_DISK_WARNING_GB, 500 when unset or not a number
+// Warning threshold in GB from terminal.disk_warning_gb
 func singularityDiskWarningThresholdGB(env *Env) float64 {
-	raw, ok := os.LookupEnv("TERMINAL_DISK_WARNING_GB")
-	if !ok {
-		raw = "500"
-	}
-	value, err := pyFloatFromString(raw)
-	if err != nil {
-		envLog(env).Warn(fmt.Sprintf("TERMINAL_DISK_WARNING_GB=%s is not a number; using 500", pyrepr.Repr(raw)))
-		return 500
-	}
-	return value
+	return settings.TerminalDiskWarningGb.Get(envHomeCtx(context.Background(), env))
 }
 
 // Bytes of every regular file below root, symlinks followed for files the way Path.rglob and is_file see them

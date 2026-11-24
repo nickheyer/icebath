@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -54,25 +53,6 @@ func TestBoundedSessionDBRaisesCallFailuresAndDisablesAfterATimeout(t *testing.T
 	close(db.release)
 	if err := b.UpdateSessionCwd("s1", "/tmp"); err == nil || err.Error() != "session finalization disabled after prior cleanup failure" {
 		t.Fatalf("call after timeout gave %v", err)
-	}
-}
-
-func TestRunJobFailsOnANonMappingProviderRouting(t *testing.T) {
-	s, _ := newTestStore(t)
-	resetDeliver(t)
-	if err := os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte("provider_routing: fastest\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	job := mustCreate(t, s, CreateJobOptions{Prompt: strPtr("hi"), Schedule: "every 1h", Name: strPtr("routed"), Model: "m1"})
-	fake := &fakeCronAgent{result: map[string]any{"final_response": "never", "completed": true}}
-	ctx, execID := ownerRun(t, s, job, fake)
-	out, err := s.runJob(ctx, job, runJobOptions{ExecutionID: &execID})
-	text := deref(out.Error)
-	if err != nil {
-		text = err.Error()
-	}
-	if out.Success || !strings.Contains(text, "the provider_routing section of config.yaml is text, expected a mapping") || fake.spec.Platform != "" {
-		t.Fatalf("outcome %+v err %v spec %+v", out, err, fake.spec)
 	}
 }
 

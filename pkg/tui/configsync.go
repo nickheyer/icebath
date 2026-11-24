@@ -32,7 +32,7 @@ var (
 // Mouse tracking of the first frame, as the launcher read it from the home's settings and handed it on; off under Termux or the native
 // terminal mode. The config the background service sends replaces it once it arrives
 func bootMouseTracking() string {
-	if termuxTUIMode || os.Getenv("ICEBATH_TUI_NATIVE") == "1" {
+	if termuxTUIMode() || os.Getenv("ICEBATH_TUI_NATIVE") == "1" {
 		return "off"
 	}
 	if mode := os.Getenv("ICEBATH_TUI_MOUSE"); mode != "" {

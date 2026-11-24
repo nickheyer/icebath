@@ -11,7 +11,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ---- message content flattening ----
@@ -908,7 +907,7 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 	if toolName == "" {
 		toolName = "?"
 	}
-	stripped := pystr.Strip(rawArgs)
+	stripped := strings.TrimSpace(rawArgs)
 	if stripped == "" {
 		pkgLog().Warn(fmt.Sprintf("Sanitized empty tool_call arguments for %s", toolName))
 		return "{}"

@@ -2,9 +2,9 @@ package app
 
 import "context"
 
-// Prefill file path from the session env, then the top level key, then the legacy agent key
-func ResolvePrefillMessagesFile(ctx context.Context, cfg map[string]any) string {
-	return resolvePrefillMessagesFile(ctx, cfg)
+// Prefill file path for ctx: the session's client env, then the prefill messages setting
+func ResolvePrefillMessagesFile(ctx context.Context) string {
+	return resolvePrefillMessagesFile(ctx)
 }
 
 // Prefill messages of a JSON array file, relative paths under baseDir or the home, missing or invalid giving none

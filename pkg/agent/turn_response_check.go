@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -17,11 +16,11 @@ import (
 func codexFinishReason(response any) string {
 	var status string
 	if s, ok := state.ToolCallField(response, "status").(string); ok {
-		status = strings.ToLower(pystr.Strip(s))
+		status = strings.ToLower(strings.TrimSpace(s))
 	}
 	var reason *string
 	if raw := state.ToolCallField(state.ToolCallField(response, "incomplete_details"), "reason"); raw != nil {
-		r := strings.ToLower(pystr.Strip(pyrepr.Str(raw)))
+		r := strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
 		reason = &r
 	}
 	if status == "incomplete" && reason != nil && (*reason == "max_output_tokens" || *reason == "length") {

@@ -360,7 +360,7 @@ func sessionVoiceToggle(ctx context.Context, rid any, sid, mode, action string) 
 			}
 		}
 		stopHint := ""
-		suppress(func() { stopHint = media.VoiceStopHint() })
+		suppress(func() { stopHint = media.VoiceStopHint(ctx) })
 		extra["stop_hint"] = stopHint
 		if mode == "all" {
 			sessionTTSLease(ctx, sid, caller, true)

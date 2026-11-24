@@ -1,18 +1,19 @@
 package state
 
 import (
+	"strings"
+
 	"context"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Workspace grouping key of a session row, git repo root else cwd, the branch never fragmenting history
 func WorkspaceKey(row any) (string, bool) {
 	for _, key := range []string{"git_repo_root", "cwd"} {
 		if v, ok := mappingGet(row, key); ok && pyTruthy(v) {
-			if s := pystr.Strip(pyStr(v)); s != "" {
+			if s := strings.TrimSpace(pyStr(v)); s != "" {
 				return s, true
 			}
 		}

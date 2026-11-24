@@ -276,7 +276,7 @@ func detectDefaultWindows() string {
 	if progID == "" {
 		return ""
 	}
-	return classifyDefault(pystr.Lower(progID), windowsChannelProgIDs, windowsProgIDMap, strings.HasPrefix)
+	return classifyDefault(strings.ToLower(progID), windowsChannelProgIDs, windowsProgIDMap, strings.HasPrefix)
 }
 
 // Captured stdout of a short command, absent when it cannot run or exceeds five seconds
@@ -323,7 +323,7 @@ func launchServicesHTTPSHandler(dump string) string {
 		}
 	}
 	for _, entry := range entries {
-		low := pystr.Lower(entry)
+		low := strings.ToLower(entry)
 		if !reLSHandlerHTTPS.MatchString(low) {
 			continue
 		}
@@ -348,12 +348,12 @@ func detectDefaultDarwin() string {
 	if bundle == "" {
 		return ""
 	}
-	return classifyDefault(pystr.Lower(bundle), darwinChannelBundles, darwinBundleMap, func(value, fragment string) bool { return value == fragment })
+	return classifyDefault(strings.ToLower(bundle), darwinChannelBundles, darwinBundleMap, func(value, fragment string) bool { return value == fragment })
 }
 
 func detectDefaultLinux() string {
 	out, _ := connectRunStdout([]string{"xdg-settings", "get", "default-web-browser"})
-	return classifyDefault(pystr.Lower(pystr.Strip(out)), linuxChannelFragments, linuxDesktopMap, strings.Contains)
+	return classifyDefault(strings.ToLower(strings.TrimSpace(out)), linuxChannelFragments, linuxDesktopMap, strings.Contains)
 }
 
 // Canonical key of the default Chromium browser, empty when the default is not one

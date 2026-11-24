@@ -8,7 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -37,7 +36,7 @@ func cuPluginHome(t *testing.T, dir string, plugins []string, backend string) *t
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(cfg.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return &tools.Env{Home: dir, Config: config.Tree{}, Values: &sync.Map{}, Cwd: dir}
+	return &tools.Env{Home: dir, Values: &sync.Map{}, Cwd: dir}
 }
 
 func TestUnknownBackendErrorsNamingConfiguredAndAvailable(t *testing.T) {

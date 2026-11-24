@@ -1,6 +1,8 @@
 package pyurl
 
-import "github.com/nickheyer/icebath/pkg/internal/pystr"
+import (
+	"strings"
+)
 
 // Scheme, lowercased hostname and effective port of a base URL, empty with port 0 on no host or a bad port
 func BaseURLOrigin(baseURL string) (string, string, int, error) {
@@ -12,7 +14,7 @@ func BaseURLOrigin(baseURL string) (string, string, int, error) {
 	if host == "" {
 		return "", "", 0, nil
 	}
-	scheme := pystr.Lower(u.Scheme)
+	scheme := strings.ToLower(u.Scheme)
 	port, ok, perr := u.Port()
 	if perr != nil {
 		return "", "", 0, nil

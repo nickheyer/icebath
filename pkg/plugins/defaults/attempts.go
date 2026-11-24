@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -95,17 +94,4 @@ func homeLabel(h string) string {
 		return fmt.Sprintf("profile '%s'", profile)
 	}
 	return h
-}
-
-// User config.yaml of a home with env references expanded and the administrator's pins applied, empty when it has none
-func yamlLayers(h string) (map[string]any, error) {
-	doc, err := config.ReadDocument(home.ConfigPath(h))
-	if err != nil {
-		return nil, err
-	}
-	expanded, _ := config.Expand(doc, os.LookupEnv).(map[string]any)
-	if expanded == nil {
-		expanded = map[string]any{}
-	}
-	return config.ApplyManagedOverlay(expanded), nil
 }

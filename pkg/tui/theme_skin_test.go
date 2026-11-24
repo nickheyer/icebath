@@ -62,12 +62,12 @@ func builtinSkinTheme(t *testing.T, name string) (theme, catalogSkin) {
 		t.Fatalf("no built in skin %s", name)
 	}
 	return themeForSkin(&gatewaySkin{Name: skin.Name, Source: "builtin", Colors: skin.Colors, LightColors: skin.LightColors,
-		DarkColors: skin.DarkColors, Branding: skin.Branding}), skin
+		DarkColors: skin.DarkColors, Branding: skin.Branding}, os.Getenv), skin
 }
 
 func darkTerminal(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"ICEBATH_TUI_LIGHT", "ICEBATH_TUI_BACKGROUND", "COLORFGBG", "TERM_PROGRAM", "NO_COLOR"} {
+	for _, k := range []string{"ICEBATH_TUI_BACKGROUND", "COLORFGBG", "TERM_PROGRAM", "NO_COLOR"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("ICEBATH_TUI_THEME", "dark")
@@ -143,7 +143,7 @@ func TestDefaultSkinFollowsTheTerminal(t *testing.T) {
 func TestUserSkinsLayTheirTonesOverABaseTheme(t *testing.T) {
 	darkTerminal(t)
 	custom := themeForSkin(&gatewaySkin{Name: "mine", Source: "user", Colors: map[string]string{"banner_title": "#112233", "ui_accent": "#445566"},
-		Branding: map[string]string{"prompt_symbol": "λ"}})
+		Branding: map[string]string{"prompt_symbol": "λ"}}, os.Getenv)
 	got := toolkitTheme(custom, false)
 	if custom.Builtin || hexOf(got.Bg) != "#05070a" || got.Glyphs.Prompt != "λ" {
 		t.Fatalf("an unknown user skin does not start from Blackwall: %s %q", hexOf(got.Bg), got.Glyphs.Prompt)
@@ -151,7 +151,7 @@ func TestUserSkinsLayTheirTonesOverABaseTheme(t *testing.T) {
 	if hexOf(got.Accent) != themeToneHex(custom.Color.Primary) || hexOf(got.Ice) != themeToneHex(custom.Color.Accent) {
 		t.Fatalf("user tones were not laid over the base: %s %s", hexOf(got.Accent), hexOf(got.Ice))
 	}
-	shadow := themeForSkin(&gatewaySkin{Name: "dracula", Source: "user", Colors: map[string]string{"banner_title": "#00ff00", "background": "#282a36"}})
+	shadow := themeForSkin(&gatewaySkin{Name: "dracula", Source: "user", Colors: map[string]string{"banner_title": "#00ff00", "background": "#282a36"}}, os.Getenv)
 	over := toolkitTheme(shadow, false)
 	if hexOf(over.Bg) != "#282a36" || hexOf(over.Accent) != themeToneHex(shadow.Color.Primary) || hexOf(over.Accent) == hexOf(uitheme.Dracula().Accent) {
 		t.Fatalf("a user file shadowing a built in skin keeps the built in accent: %s", hexOf(over.Accent))

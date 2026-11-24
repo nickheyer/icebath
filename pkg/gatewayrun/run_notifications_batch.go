@@ -10,11 +10,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -33,11 +31,7 @@ type sessionDBEnsurer interface {
 
 // Whether the event clears the child process surfacing policy of the active profile
 func surfacesNotification(ctx context.Context, evt map[string]any) bool {
-	cfg, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
-		cfg = config.Defaults()
-	}
-	return tools.ShouldSurfaceNotification(cfg, evt)
+	return tools.ShouldSurfaceNotification(ctx, evt)
 }
 
 // Route key of an event from the named fields, absent and empty values alike
@@ -109,7 +103,7 @@ func formatCoalescedProcessCompletions(ctx context.Context, entries []completion
 		evt := entry.evt
 		sessionID := pyrepr.Str(pyrepr.Or(evt["session_id"], "unknown"))
 		reason := pyrepr.Str(pyrepr.Or(evt["completion_reason"], "exited"))
-		output := []rune(pystr.Strip(redactGatewayUserFacingSecrets(ctx, pyrepr.Str(pyrepr.Or(evt["output"], "")))))
+		output := []rune(strings.TrimSpace(redactGatewayUserFacingSecrets(ctx, pyrepr.Str(pyrepr.Or(evt["output"], "")))))
 		text := string(output)
 		if len(output) > 800 {
 			text = "[… truncated …]\n" + string(output[len(output)-800:])
@@ -379,7 +373,7 @@ func (r *GatewayRunner) deliverCompletionNotificationScoped(ctx context.Context,
 
 // Whether an async completion owner and transport are available, so an outage spends no durable attempt
 func (r *GatewayRunner) completionDeliveryReady(ctx context.Context, evt map[string]any) (bool, error) {
-	if parent := pystr.Strip(truthyText(evt["parent_session_id"])); parent != "" {
+	if parent := strings.TrimSpace(truthyText(evt["parent_session_id"])); parent != "" {
 		verdict, err := r.classifyCompletionTarget(ctx, parent, truthyText(evt["session_key"]))
 		if err != nil {
 			return false, err
@@ -481,7 +475,7 @@ func (r *GatewayRunner) preflightCompletionDelivery(ctx context.Context, evt map
 	} else if evtType != "completion" {
 		return claim, nil
 	}
-	parent := pystr.Strip(truthyText(evt["parent_session_id"]))
+	parent := strings.TrimSpace(truthyText(evt["parent_session_id"]))
 	if parent == "" {
 		return claim, nil
 	}

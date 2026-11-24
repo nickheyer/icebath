@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // SessionDB members the search mixin calls beyond the FTS lifecycle ones, provided by the SessionDB
@@ -646,7 +645,7 @@ func teardownPrimaryKey(ctx context.Context, conn SQLiteConn, tbl string) ([]str
 				declared = errText(typ)
 			}
 			names = append(names, name)
-			types = append(types, pystr.Upper(declared))
+			types = append(types, strings.ToUpper(declared))
 		}
 	}
 	return names, types, rows.Err()

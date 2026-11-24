@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -11,18 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-func TestSetRuntimeEnabledRefusesAListSectionLikePython(t *testing.T) {
-	lmRoutesClient(t)
-	configLoadFn = func(context.Context) (map[string]any, error) { return map[string]any{"local_runtime": []any{}}, nil }
-	if _, err := lmSetRuntimeEnabled(context.Background(), true); err == nil || err.Error() != "the local_models section of config.yaml is a list, expected a mapping" {
-		t.Fatalf("list section %v", err)
-	}
-	configLoadFn = func(context.Context) (map[string]any, error) { return map[string]any{"local_runtime": nil}, nil }
-	if _, err := lmSetRuntimeEnabled(context.Background(), true); err == nil || err.Error() != "the local_models section of config.yaml is nothing, expected a mapping" {
-		t.Fatalf("null section %v", err)
-	}
-}
 
 func TestRouterRequestFollowsRedirectsAsUrllibDoes(t *testing.T) {
 	var mu sync.Mutex

@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var toolsConfigRegistry = &handlerRegistry{}
@@ -16,7 +15,7 @@ func init() {
 }
 
 // Pre rendered journey timeline frames with their legend and summary metadata
-func learningFrames(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func learningFrames(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	sizes := []int64{80, 24, 48}
 	for i, key := range []string{"cols", "rows", "frames"} {
 		raw, present := params[key]

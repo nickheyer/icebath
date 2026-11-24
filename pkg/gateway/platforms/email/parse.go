@@ -28,8 +28,8 @@ var (
 		lowers bool
 		check  func(v string) bool
 	}{
-		{"Auto-Submitted", true, func(v string) bool { return pystr.Lower(v) != "no" }},
-		{"Precedence", true, func(v string) bool { l := pystr.Lower(v); return l == "bulk" || l == "list" || l == "junk" }},
+		{"Auto-Submitted", true, func(v string) bool { return strings.ToLower(v) != "no" }},
+		{"Precedence", true, func(v string) bool { l := strings.ToLower(v); return l == "bulk" || l == "list" || l == "junk" }},
 		{"X-Auto-Response-Suppress", false, func(v string) bool { return v != "" }},
 		{"List-Unsubscribe", false, func(v string) bool { return v != "" }},
 	}
@@ -64,15 +64,15 @@ const (
 	noAuthResultsReason     = "no Authentication-Results header"
 	untrustedAuthservReason = "no Authentication-Results from trusted authserv-id"
 	missingAuthservReason   = "authserv-id is not configured; refusing to trust Authentication-Results"
-	optOutHint              = "set platforms.email.require_authenticated_sender: false (or EMAIL_TRUST_FROM_HEADER=true) to accept the risk."
-	missingAuthservHint     = " Set EMAIL_AUTHSERV_ID (or platforms.email.authserv_id) to the receiving MTA's exact authserv-id, " +
+	optOutHint              = "set email.require_authenticated_sender to false (or EMAIL_TRUST_FROM_HEADER=true) to accept the risk."
+	missingAuthservHint     = " Set email.authserv_id (or EMAIL_AUTHSERV_ID) to the receiving MTA's exact authserv-id, " +
 		"or " + optOutHint
 )
 
 // Operator fixable reasons a granted sender fails authentication and the fix each log line names
 var dropHints = map[string]string{
 	noAuthResultsReason:     " If your mail server does not stamp Authentication-Results, " + optOutHint,
-	untrustedAuthservReason: " Check that platforms.email.authserv_id (EMAIL_AUTHSERV_ID) names your mail server.",
+	untrustedAuthservReason: " Check that email.authserv_id (EMAIL_AUTHSERV_ID) names your mail server.",
 }
 
 func mustFullmatch(pattern string) *regexp2.Regexp {
@@ -93,7 +93,7 @@ func mustIgnoreCase(pattern string) *regexp2.Regexp {
 
 // Whether an address or its bulk mail headers mark an automated sender, the error a non text header value raises
 func isAutomatedSender(address string, headers map[string]pyemail.HeaderValue) (bool, error) {
-	addr := pystr.Lower(address)
+	addr := strings.ToLower(address)
 	for _, pattern := range noreplyPatterns {
 		if strings.Contains(addr, pattern) {
 			return true, nil
@@ -116,7 +116,7 @@ func isAutomatedSender(address string, headers map[string]pyemail.HeaderValue) (
 
 // Text of a payload decoded with its charset label, an unknown label falling to its alias, utf-8, then latin-1
 func safeDecode(payload []byte, charset string) string {
-	label := pystr.Lower(pystr.StripChars(pystr.Strip(charset), "\"'"))
+	label := strings.ToLower(strings.Trim(strings.TrimSpace(charset), "\"'"))
 	if charset == "" || label == "" {
 		label = "utf-8"
 	}
@@ -202,7 +202,7 @@ func stripHTML(html string) string {
 		}
 		html = out
 	}
-	return pystr.Strip(html)
+	return strings.TrimSpace(html)
 }
 
 // Text with every comment removed, innermost first, until nothing changes
@@ -228,15 +228,15 @@ func extractEmailAddress(raw string) string {
 	addr := pyemail.ParseAddr(value).Addr
 	if addr == "" {
 		if m, _ := singleBracketFromRE.FindStringMatch(value); m != nil {
-			display, bracketed := pystr.Strip(stripComments(m.GroupByNumber(1).String())), m.GroupByNumber(2).String()
+			display, bracketed := strings.TrimSpace(stripComments(m.GroupByNumber(1).String())), m.GroupByNumber(2).String()
 			inner := pystr.Slice(bracketed, 1, -1)
 			if strings.Contains(inner, "@") && !strings.ContainsAny(display, ";:()") &&
-				(!strings.Contains(display, "@") || pystr.Lower(display) == pystr.Lower(bracketed)) {
+				(!strings.Contains(display, "@") || strings.ToLower(display) == strings.ToLower(bracketed)) {
 				addr = bracketed
 			}
 		}
 	}
-	addr = pystr.Lower(pystr.Strip(addr))
+	addr = strings.ToLower(strings.TrimSpace(addr))
 	if !strings.Contains(addr, "@") {
 		return ""
 	}
@@ -296,7 +296,7 @@ func authProps(text string) [][2]string {
 	var out [][2]string
 	for m, _ := authPropRE.FindStringMatch(text); m != nil; m, _ = authPropRE.FindNextMatch(m) {
 		if prop := m.GroupByNumber(1).String(); prop != "" {
-			out = append(out, [2]string{pystr.Lower(prop), pystr.StripChars(m.GroupByNumber(2).String(), `"`)})
+			out = append(out, [2]string{strings.ToLower(prop), strings.Trim(m.GroupByNumber(2).String(), `"`)})
 		}
 	}
 	return out
@@ -307,13 +307,13 @@ func domainOf(address string) string {
 	if i := strings.LastIndex(address, "@"); i >= 0 {
 		address = address[i+1:]
 	}
-	return pystr.Lower(pystr.Strip(address))
+	return strings.ToLower(strings.TrimSpace(address))
 }
 
 // Relaxed DMARC alignment, equal domains or one a dot suffix of the other
 func domainsAligned(a, b string) bool {
-	a = pystr.RstripChars(pystr.Lower(pystr.Strip(a)), ".")
-	b = pystr.RstripChars(pystr.Lower(pystr.Strip(b)), ".")
+	a = strings.TrimRight(strings.ToLower(strings.TrimSpace(a)), ".")
+	b = strings.TrimRight(strings.ToLower(strings.TrimSpace(b)), ".")
 	return a != "" && b != "" && (a == b || strings.HasSuffix(a, "."+b) || strings.HasSuffix(b, "."+a))
 }
 
@@ -341,14 +341,14 @@ func verifySenderAuthentication(msg *pyemail.Message, fromAddr, authservID strin
 	if authservID == "" {
 		return false, missingAuthservReason
 	}
-	if pystr.Lower(pystr.Strip(clauses[0])) != authservID {
+	if strings.ToLower(strings.TrimSpace(clauses[0])) != authservID {
 		return false, untrustedAuthservReason
 	}
 	results := map[string][]authResult{}
 	for _, clause := range clauses {
 		if m, _ := authMethodRE.FindStringMatch(clause); m != nil {
-			method := pystr.Lower(m.GroupByNumber(1).String())
-			results[method] = append(results[method], authResult{pystr.Lower(m.GroupByNumber(2).String()), authProps(clause)})
+			method := strings.ToLower(m.GroupByNumber(1).String())
+			results[method] = append(results[method], authResult{strings.ToLower(m.GroupByNumber(2).String()), authProps(clause)})
 		}
 	}
 	aligned := func(props [][2]string, required bool, names ...string) bool {
@@ -427,7 +427,7 @@ func extractAttachments(ctx context.Context, msg *pyemail.Message, skipAttachmen
 			continue
 		}
 		var cachedPath, kind string
-		if ext := pystr.Lower(pypath.PathSuffix(filename)); imageExts[ext] {
+		if ext := strings.ToLower(pypath.PathSuffix(filename)); imageExts[ext] {
 			path, err := mediacache.CacheImageFromBytes(ctx, home.Dir(ctx), payload, ext)
 			if _, invalid := err.(*mediacache.ValueError); invalid {
 				pkgLog().Debug(fmt.Sprintf("Skipping non-image attachment %s (invalid magic bytes)", filename))

@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,38 +17,25 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var webLimitBuckets = []int{10, 20, 50, 100}
 
 const (
-	defaultWebCacheTTLMinutes = 20
-	extractIndexFilename      = "extract-index.json"
-	extractIndexMaxEntries    = 500
+	extractIndexFilename   = "extract-index.json"
+	extractIndexMaxEntries = 500
 )
 
-// Reports whether web.cache_enabled allows both caches, on by default
+// Reports whether the env's profile keeps the search and extract caches
 func webCacheEnabled(env *Env) bool {
-	v, ok := webCfg(env).Lookup("cache_enabled")
-	if !ok || v == nil {
-		return true
-	}
-	return truthy(v)
+	return settings.WebCacheEnabled.Get(webCtx(env))
 }
 
-// TTL from web.cache_ttl_minutes clamped to 1 to 1440 minutes
+// Cache lifetime of the env's profile, within the bounds of its setting
 func webCacheTTL(env *Env) time.Duration {
-	minutes := float64(defaultWebCacheTTLMinutes)
-	if v, ok := webCfg(env).Lookup("cache_ttl_minutes"); ok && v != nil {
-		if f, ok := pyFloatValue(v); ok {
-			minutes = f
-		} else if s, isString := v.(string); isString {
-			if parsed, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
-				minutes = parsed
-			}
-		}
-	}
-	return time.Duration(max(1.0, min(minutes, 1440.0)) * float64(time.Minute))
+	s := settings.WebCacheTtlMinutes
+	return min(max(s.Get(webCtx(env)), *s.Min), *s.Max)
 }
 
 // BucketLimit rounds a requested result count up to the nearest bucket
@@ -294,8 +280,7 @@ func hostMatchesPattern(host, pattern string) bool {
 
 // True when the host matches web.cache_exempt_hosts
 func isCacheExemptHost(env *Env, raw string) bool {
-	patterns := webCfg(env).Get("cache_exempt_hosts")
-	list := toAnyList(patterns)
+	list := settings.WebCacheExemptHosts.Get(webCtx(env))
 	u, err := url.Parse(raw)
 	if err != nil || len(list) == 0 {
 		return false
@@ -437,9 +422,6 @@ func ExtractCachePut(ctx context.Context, env *Env, u, content, title, format, p
 	saveExtractIndex(WithEnvHome(ctx, env), env, index)
 	return true
 }
-
-// Python float() of a string, trimmed
-func parseFloatText(s string) (float64, error) { return strconv.ParseFloat(strings.TrimSpace(s), 64) }
 
 // Float the way Python float() reads a JSON value
 func pyFloatValue(v any) (float64, bool) {

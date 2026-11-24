@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var delegationParamNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
@@ -112,7 +111,7 @@ func SchemaExtension(ctx context.Context, config map[string]any) (*pyjson.Object
 		}()
 		return p.Description(config)
 	}()
-	return declaredDelegationParameters(p, config), pystr.Strip(addendum)
+	return declaredDelegationParameters(p, config), strings.TrimSpace(addendum)
 }
 
 // Enum violation text for one provider task parameter, empty when the value is allowed

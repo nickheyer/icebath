@@ -189,7 +189,7 @@ func TestAnthropicPromptCachePolicyConfigAndProbes(t *testing.T) {
 		agent.CustomProviders = pcpCustom("edge-router", pcpEdge, "vendor-agnostic-model", map[string]any{"prompt_caching": true})
 		orig := cachePolicyCapabilityLookup
 		t.Cleanup(func() { cachePolicyCapabilityLookup = orig })
-		cachePolicyCapabilityLookup = func(string, string, string, []map[string]any, map[string]any) (bool, bool) {
+		cachePolicyCapabilityLookup = func(string, string, string, []map[string]any) (bool, bool) {
 			t.Fatal("unrelated built-in route performed custom capability lookup")
 			return false, false
 		}

@@ -27,12 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const (
-	vadMinSilenceMSDefault       = 500
-	noSpeechProbThresholdDefault = 0.6
-	logprobThresholdDefault      = -1.0
-)
-
 var (
 	localLanguageAliases     = map[string]string{"繁體中文": "zh", "繁体中文": "zh", "简体中文": "zh", "簡體中文": "zh"}
 	threeLetterWhisperCodes  = sttSet("haw", "yue")
@@ -53,10 +47,10 @@ var (
 // Whisper language code of a hint, empty so the caller falls back when it is not a supported code
 func normalizeLocalSTTLanguage(language any, supported []string) string {
 	s, ok := language.(string)
-	if !ok || pystr.Strip(s) == "" {
+	if !ok || strings.TrimSpace(s) == "" {
 		return ""
 	}
-	raw := pystr.Strip(s)
+	raw := strings.TrimSpace(s)
 	folded := strings.ReplaceAll(pystr.Casefold(raw), "_", "-")
 	candidate, aliased := localLanguageAliases[raw]
 	if !aliased {
@@ -168,7 +162,7 @@ func (e *sttValueError) Error() string { return e.msg }
 
 // Local command template from the env, the managed whisper.cpp engine, or a whisper CLI, empty when none
 func localCommandTemplate(ctx context.Context) (string, error) {
-	if configured := pystr.Strip(os.Getenv(localSTTCommandEnv)); configured != "" {
+	if configured := loadSTTRequest(ctx).LocalCommand; configured != "" {
 		return configured, nil
 	}
 	managed, err := whisperCppCommand(ctx)
@@ -238,7 +232,7 @@ var sttSysctlValue = func(name string) string {
 		return ""
 	}
 	s, _ := pycodecs.DecodeReplace(out, "utf-8")
-	return pystr.Strip(s)
+	return strings.TrimSpace(s)
 }
 
 // CPU forced on Apple Silicon including x86_64 under Rosetta
@@ -250,11 +244,6 @@ func shouldForceFasterWhisperCPU() bool {
 		return true
 	}
 	return sttSysctlValue("sysctl.proc_translated") == "1" || sttSysctlValue("hw.optional.arm64") == "1"
-}
-
-// Idle unload timeout of stt.local, zero meaning never and negatives clamped
-func getIdleUnloadSeconds(localCfg map[string]any) int {
-	return max(configNumberInt(localCfg, "unload_after_idle_seconds", 0), 0)
 }
 
 // One decoded faster-whisper segment
@@ -395,6 +384,9 @@ var whisperModelCtor = func(ctx context.Context, modelName string, device, compu
 	}
 	cmd := exec.Command(python[0], append(python[1:], "-c", fasterWhisperWorkerScript)...)
 	hideConsoleWindow(cmd)
+	if _, set := os.LookupEnv("KMP_DUPLICATE_LIB_OK"); !set && shouldForceFasterWhisperCPU() {
+		cmd.Env = append(os.Environ(), "KMP_DUPLICATE_LIB_OK=TRUE")
+	}
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -456,9 +448,6 @@ func createWhisperModel(ctx context.Context, modelName string, device, computeTy
 // faster-whisper load with the requested device, falling back to CPU int8 on a CUDA library failure
 func loadLocalWhisperModel(ctx context.Context, modelName string, device, computeType any) (localWhisperModel, error) {
 	if shouldForceFasterWhisperCPU() {
-		if _, ok := os.LookupEnv("KMP_DUPLICATE_LIB_OK"); !ok {
-			os.Setenv("KMP_DUPLICATE_LIB_OK", "TRUE")
-		}
 		pkgLog().Info("Apple Silicon/Rosetta detected — loading faster-whisper on CPU (int8) to avoid native device autodetection crashes")
 		return createWhisperModel(ctx, modelName, "cpu", "int8")
 	}
@@ -472,34 +461,20 @@ func loadLocalWhisperModel(ctx context.Context, modelName string, device, comput
 }
 
 // Keyword arguments of every local faster-whisper transcribe call with the anti hallucination hardening
-func buildLocalTranscribeKwargs(ctx context.Context, sttConfig map[string]any) (map[string]any, error) {
-	if sttConfig == nil {
-		sttConfig = loadSTTConfig(ctx)
+func buildLocalTranscribeKwargs(ctx context.Context, req *sttRequest) map[string]any {
+	local := req.Local
+	kwargs := map[string]any{"beam_size": 5, "condition_on_previous_text": false, "vad_filter": local.VAD}
+	if local.VAD {
+		kwargs["vad_parameters"] = map[string]any{"min_silence_duration_ms": local.VADMinSilenceMS}
 	}
-	localCfg, err := orEmptyDict(sttConfig, "local")
-	if err != nil {
-		return nil, err
-	}
-	vad, present := localCfg["vad"]
-	vadFilter := !present || vad == nil || pyTruthy(vad)
-	kwargs := map[string]any{"beam_size": 5, "condition_on_previous_text": false, "vad_filter": vadFilter}
-	if vadFilter {
-		kwargs["vad_parameters"] = map[string]any{"min_silence_duration_ms": configNumberInt(localCfg, "vad_min_silence_ms", vadMinSilenceMSDefault)}
-	}
-	kwargs["no_speech_threshold"], kwargs["log_prob_threshold"] = confidenceThresholds(localCfg)
-	if forced := resolveSTTLanguage(ctx, "local", sttConfig); forced != "" {
+	kwargs["no_speech_threshold"], kwargs["log_prob_threshold"] = local.NoSpeechProb, local.Logprob
+	if forced := resolveSTTLanguage(ctx, "local", req); forced != "" {
 		kwargs["language"] = forced
 	}
-	if prompt, ok := localCfg["initial_prompt"].(string); ok && pystr.Strip(prompt) != "" {
-		kwargs["initial_prompt"] = prompt
+	if strings.TrimSpace(local.InitialPrompt) != "" {
+		kwargs["initial_prompt"] = local.InitialPrompt
 	}
-	return kwargs, nil
-}
-
-// No speech probability and average logprob gate thresholds of stt.local
-func confidenceThresholds(localCfg map[string]any) (float64, float64) {
-	return configNumberFloat(localCfg, "no_speech_prob_threshold", noSpeechProbThresholdDefault),
-		configNumberFloat(localCfg, "logprob_threshold", logprobThresholdDefault)
+	return kwargs
 }
 
 // Whether a segment is non speech with low decode confidence, unknown shapes never dropped
@@ -511,8 +486,8 @@ func isHallucinatedSegment(s whisperSegment, noSpeechThreshold, logprobThreshold
 }
 
 // Segment texts joined with probable silence hallucinations dropped
-func joinConfidentSegments(segments []whisperSegment, localCfg map[string]any) string {
-	noSpeech, logprob := confidenceThresholds(localCfg)
+func joinConfidentSegments(segments []whisperSegment, local localSTTSettings) string {
+	noSpeech, logprob := local.NoSpeechProb, local.Logprob
 	kept := []string{}
 	for _, s := range segments {
 		if isHallucinatedSegment(s, noSpeech, logprob) {
@@ -520,9 +495,9 @@ func joinConfidentSegments(segments []whisperSegment, localCfg map[string]any) s
 				errchain.Show(s.Text), *s.NoSpeechProb, *s.AvgLogprob))
 			continue
 		}
-		kept = append(kept, pystr.Strip(s.Text))
+		kept = append(kept, strings.TrimSpace(s.Text))
 	}
-	return pystr.Strip(strings.Join(kept, " "))
+	return strings.TrimSpace(strings.Join(kept, " "))
 }
 
 // Environment map as KEY=VALUE pairs
@@ -549,7 +524,7 @@ func transcribeLocalCommand(ctx context.Context, filePath, modelName string, h s
 	}
 	configured := h.Language
 	if configured == "" {
-		configured = resolveSTTLanguage(ctx, "local", nil)
+		configured = resolveSTTLanguage(ctx, "local", loadSTTRequest(ctx))
 	}
 	language := normalizeLocalSTTLanguage(configured, nil)
 	if language == "" {
@@ -576,7 +551,7 @@ func transcribeLocalCommand(ctx context.Context, filePath, modelName string, h s
 
 // Body of the local command transcription whose failures the caller maps to envelopes
 func runLocalCommand(ctx context.Context, filePath, template, language, model string) (map[string]any, error) {
-	if pystr.Strip(os.Getenv(localSTTCommandEnv)) == "" {
+	if loadSTTRequest(ctx).LocalCommand == "" {
 		managed, err := whisperCppCommand(ctx)
 		if err != nil {
 			return nil, err
@@ -628,7 +603,7 @@ func runLocalCommand(ctx context.Context, filePath, template, language, model st
 	if err != nil {
 		return nil, err
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	pkgLog().Info(fmt.Sprintf("Transcribed %s via local STT command (%s, %d chars)", filepath.Base(filePath), model, utf8.RuneCountInString(text)))
 	return sttOK(text, "local_command"), nil
 }

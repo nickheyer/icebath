@@ -134,7 +134,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 	if err != nil {
 		return "", err
 	}
-	if o.Title == "" || pystr.Strip(o.Title) == "" {
+	if o.Title == "" || strings.TrimSpace(o.Title) == "" {
 		return "", &ValueError{"title is required"}
 	}
 	initialStatus := o.InitialStatus
@@ -148,7 +148,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 	if projectID == nil && (o.WorkspaceKind == nil || *o.WorkspaceKind != "scratch") {
 		if meta, merr := boardMetaFor(ctx, o.Board); merr == nil {
 			if s, ok := objGet(meta, "project_id").(string); ok {
-				projectID = nonEmpty(pystr.Strip(s))
+				projectID = nonEmpty(strings.TrimSpace(s))
 			}
 		}
 	}
@@ -161,7 +161,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 	}
 	branchName := o.BranchName
 	if branchName != nil {
-		branchName = nonEmpty(pystr.Strip(*branchName))
+		branchName = nonEmpty(strings.TrimSpace(*branchName))
 	}
 	if branchName != nil && workspaceKind != "worktree" {
 		return "", &ValueError{"branch_name is only valid for worktree workspaces"}
@@ -256,7 +256,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
                         reasoning_effort,
                         goal_mode, goal_max_turns, session_id, completion_contract
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    `, taskID, pystr.Strip(o.Title), optStrValue(o.Body), optStrValue(assignee), taskStatus, o.Priority,
+                    `, taskID, strings.TrimSpace(o.Title), optStrValue(o.Body), optStrValue(assignee), taskStatus, o.Priority,
 				optStrValue(o.CreatedBy), now, workspaceKind, optStrValue(workspacePath),
 				optStrValue(branchName), optStrValue(projectID), optStrValue(tenant), optStrValue(o.IdempotencyKey),
 				optIntValue(o.MaxRuntimeSeconds), skillsJSON, optIntValue(o.MaxRetries), optStrValue(modelOverride),
@@ -485,7 +485,7 @@ func ListTasks(ctx context.Context, conn state.SQLiteConn, o ListTasksOptions) (
 		query += " AND status != 'archived'"
 	}
 	if o.OrderBy != nil {
-		key := pystr.Lower(pystr.Strip(*o.OrderBy))
+		key := strings.ToLower(strings.TrimSpace(*o.OrderBy))
 		clause, ok := ValidSortOrders[key]
 		if !ok {
 			keys := map[string]bool{}
@@ -766,10 +766,10 @@ func TaskGraphContext(ctx context.Context, conn state.SQLiteConn, taskID string)
 
 // Adds a stripped comment with a commented event and returns its id
 func AddComment(ctx context.Context, conn state.SQLiteConn, taskID, author, body string) (int64, error) {
-	if body == "" || pystr.Strip(body) == "" {
+	if body == "" || strings.TrimSpace(body) == "" {
 		return 0, &ValueError{"comment body is required"}
 	}
-	if author == "" || pystr.Strip(author) == "" {
+	if author == "" || strings.TrimSpace(author) == "" {
 		return 0, &ValueError{"comment author is required"}
 	}
 	now := time.Now().Unix()
@@ -778,7 +778,7 @@ func AddComment(ctx context.Context, conn state.SQLiteConn, taskID, author, body
 		if err := requireTask(ctx, conn, taskID); err != nil {
 			return err
 		}
-		res, err := conn.ExecContext(ctx, "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)", taskID, pystr.Strip(author), pystr.Strip(body), now)
+		res, err := conn.ExecContext(ctx, "INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)", taskID, strings.TrimSpace(author), strings.TrimSpace(body), now)
 		if err != nil {
 			return err
 		}
@@ -838,14 +838,14 @@ func (e *AttachmentTooLarge) Unwrap() error { return &ValueError{e.Msg} }
 // Safe basename of a client filename without directories, control characters or leading dots
 func safeAttachmentName(raw string) (string, error) {
 	parts := strings.Split(strings.ReplaceAll(raw, "\\", "/"), "/")
-	name := pystr.Strip(parts[len(parts)-1])
+	name := strings.TrimSpace(parts[len(parts)-1])
 	var b strings.Builder
 	for _, r := range name {
 		if pystr.IsPrintable(r) && r != 0 {
 			b.WriteRune(r)
 		}
 	}
-	name = pystr.Strip(pystr.LstripChars(pystr.Strip(b.String()), "."))
+	name = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(b.String()), "."))
 	if name == "" {
 		return "", &ValueError{"invalid attachment filename"}
 	}
@@ -923,10 +923,10 @@ func StoreAttachmentBytes(ctx context.Context, conn state.SQLiteConn, taskID, fi
 
 // Row insert of an attachment, a content type binding failure raised where the insert binds it
 func addAttachment(ctx context.Context, conn state.SQLiteConn, taskID, filename, storedPath string, contentType *string, size int64, uploadedBy *string, bindErr error) (int64, error) {
-	if filename == "" || pystr.Strip(filename) == "" {
+	if filename == "" || strings.TrimSpace(filename) == "" {
 		return 0, &ValueError{"attachment filename is required"}
 	}
-	if storedPath == "" || pystr.Strip(storedPath) == "" {
+	if storedPath == "" || strings.TrimSpace(storedPath) == "" {
 		return 0, &ValueError{"attachment stored_path is required"}
 	}
 	now := time.Now().Unix()
@@ -939,12 +939,12 @@ func addAttachment(ctx context.Context, conn state.SQLiteConn, taskID, filename,
 			return bindErr
 		}
 		res, err := conn.ExecContext(ctx, "INSERT INTO task_attachments (task_id, filename, stored_path, content_type, size, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			taskID, pystr.Strip(filename), storedPath, optStrValue(contentType), size, optStrValue(uploadedBy), now)
+			taskID, strings.TrimSpace(filename), storedPath, optStrValue(contentType), size, optStrValue(uploadedBy), now)
 		if err != nil {
 			return err
 		}
 		id = lastRowID(res)
-		return appendEvent(ctx, conn, taskID, "attached", payload("filename", pystr.Strip(filename), "size", size, "by", uploadedBy), nil)
+		return appendEvent(ctx, conn, taskID, "attached", payload("filename", strings.TrimSpace(filename), "size", size, "by", uploadedBy), nil)
 	})
 	if err != nil {
 		return 0, err
@@ -1075,7 +1075,7 @@ func firstLine(text *string, limit int) string {
 	if text != nil {
 		s = *text
 	}
-	lines := pystr.Splitlines(pystr.Strip(s), false)
+	lines := pystr.Splitlines(strings.TrimSpace(s), false)
 	if len(lines) == 0 {
 		return ""
 	}
@@ -1216,7 +1216,7 @@ func toEpoch(val any) *int64 {
 		n := int64(v)
 		return &n
 	}
-	s := pystr.Strip(pyrepr.Str(val))
+	s := strings.TrimSpace(pyrepr.Str(val))
 	if s == "" {
 		return nil
 	}

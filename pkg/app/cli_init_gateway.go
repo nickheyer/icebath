@@ -7,9 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -140,11 +138,7 @@ func recordShellHookConsent(c *CLI) {
 	if strings.TrimSpace(os.Getenv("ICEBATH_TUI_GATEWAY_URL")) != "" || safe || ignoreUser {
 		return
 	}
-	cfg, err := config.Load(home.Dir(c.ctx), nil)
-	if err == nil {
-		_, err = plugins.RecordShellHookConsentFromConfig(c.ctx, map[string]any(cfg), false)
-	}
-	if err != nil {
+	if _, err := plugins.RecordShellHookConsentFromConfig(c.ctx, false); err != nil {
 		pkgLog().Warn(fmt.Sprintf("shell-hook consent check failed: %v", err))
 	}
 }

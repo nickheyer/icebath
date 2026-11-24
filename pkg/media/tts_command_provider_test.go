@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
@@ -49,26 +50,27 @@ func TestTTSResolveCommandProviderConfig(t *testing.T) {
 			"openai": map[string]any{"type": "command", "command": "echo hi"},
 			"edge":   map[string]any{"type": "command", "command": "echo hi"},
 		}}
+		req := requestOf(t, cfg)
 		for name := range builtinTTSProviders {
-			if resolveCommandTTSProviderConfig(name, cfg) != nil {
+			if req.command(name) != nil {
 				t.Fatalf("%s resolved as a command provider", name)
 			}
 		}
 	})
 	t.Run("test_missing_provider_returns_none", func(t *testing.T) {
-		if resolveCommandTTSProviderConfig("nope", map[string]any{"providers": map[string]any{}}) != nil {
+		if requestOf(t, map[string]any{"providers": map[string]any{}}).command("nope") != nil {
 			t.Fatal("missing provider resolved")
 		}
 	})
 	t.Run("test_case_insensitive_lookup", func(t *testing.T) {
 		cfg := map[string]any{"providers": map[string]any{"piper-cli": map[string]any{"type": "command", "command": "x"}}}
-		if resolveCommandTTSProviderConfig("PIPER-CLI", cfg) == nil {
+		if requestOf(t, cfg).command("PIPER-CLI") == nil {
 			t.Fatal("case insensitive lookup failed")
 		}
 	})
 	t.Run("test_native_piper_cannot_be_shadowed_by_command_entry", func(t *testing.T) {
 		cfg := map[string]any{"providers": map[string]any{"piper": map[string]any{"type": "command", "command": "some-script"}}}
-		if resolveCommandTTSProviderConfig("piper", cfg) != nil {
+		if requestOf(t, cfg).command("piper") != nil {
 			t.Fatal("native piper shadowed")
 		}
 	})
@@ -117,41 +119,42 @@ func TestTTSCommandEnv(t *testing.T) {
 func TestTTSGetNamedProviderConfig(t *testing.T) {
 	t.Run("test_providers_block_wins", func(t *testing.T) {
 		cfg := map[string]any{"providers": map[string]any{"voxcpm": map[string]any{"command": "new"}}, "voxcpm": map[string]any{"command": "legacy"}}
-		if got := getNamedTTSProviderConfig(cfg, "voxcpm"); !reflect.DeepEqual(got, map[string]any{"command": "new"}) {
-			t.Fatalf("got %v", got)
+		if got := requestOf(t, cfg).command("voxcpm"); got == nil || got.Command != "new" {
+			t.Fatalf("got %+v", got)
 		}
 	})
 	t.Run("test_legacy_tts_name_block_still_resolves", func(t *testing.T) {
 		cfg := map[string]any{"voxcpm": map[string]any{"type": "command", "command": "legacy"}}
-		if got := getNamedTTSProviderConfig(cfg, "voxcpm"); !reflect.DeepEqual(got, map[string]any{"type": "command", "command": "legacy"}) {
-			t.Fatalf("got %v", got)
+		if got := requestOf(t, cfg).command("voxcpm"); got == nil || got.Command != "legacy" {
+			t.Fatalf("got %+v", got)
 		}
 	})
 	t.Run("test_builtin_names_do_not_leak_through_legacy_path", func(t *testing.T) {
 		cfg := map[string]any{"openai": map[string]any{"command": "oops", "type": "command"}}
-		if got := getNamedTTSProviderConfig(cfg, "openai"); len(got) != 0 {
-			t.Fatalf("got %v", got)
+		if got := requestOf(t, cfg).command("openai"); got != nil {
+			t.Fatalf("got %+v", got)
 		}
 	})
 }
 
 func TestTTSIsCommandProviderConfig(t *testing.T) {
 	t.Run("test_type_mismatch_is_false", func(t *testing.T) {
-		if isCommandProviderConfig(map[string]any{"type": "native", "command": "x"}) {
+		if requestOf(t, map[string]any{"providers": map[string]any{"x": map[string]any{"type": "native", "command": "x"}}}).command("x") != nil {
 			t.Fatal("native type accepted")
 		}
 	})
 }
 
 func TestTTSCommandConfigGetters(t *testing.T) {
+	only := map[string]any{"providers": map[string]any{"x": map[string]any{"command": "x"}}}
 	t.Run("test_timeout_defaults", func(t *testing.T) {
-		if getCommandTTSTimeout(map[string]any{}) != float64(defaultCommandTTSTimeoutSeconds) {
-			t.Fatal("timeout default")
+		if p := requestOf(t, only).command("x"); p == nil || p.Timeout != defaultCommandTTSTimeoutSeconds*time.Second {
+			t.Fatalf("timeout default %+v", p)
 		}
 	})
 	t.Run("test_output_format_defaults", func(t *testing.T) {
-		if getCommandTTSOutputFormat(map[string]any{}, "") != defaultCommandTTSOutputFormat {
-			t.Fatal("format default")
+		if p := requestOf(t, only).command("x"); p == nil || commandTTSOutputFormat(p, "") != defaultCommandTTSOutputFormat {
+			t.Fatalf("format default %+v", p)
 		}
 	})
 }
@@ -230,7 +233,9 @@ func TestTTSRunCommand(t *testing.T) {
 func TestTTSGenerateCommand(t *testing.T) {
 	t.Run("test_writes_output_file", func(t *testing.T) {
 		out := filepath.Join(t.TempDir(), "clip.mp3")
-		got, err := generateCommandTTS(context.Background(), nil, "hello world", out, "py-copy", map[string]any{"command": "cp {input_path} {output_path}"}, map[string]any{})
+		p := commandTTSDefaults
+		p.Name, p.Command = "py-copy", "cp {input_path} {output_path}"
+		got, err := generateCommandTTS(context.Background(), nil, "hello world", out, &p, &ttsRequest{})
 		if err != nil || got != out {
 			t.Fatalf("generate = %q, %v", got, err)
 		}
@@ -243,7 +248,9 @@ func TestTTSGenerateCommand(t *testing.T) {
 		if hostOSName() == "nt" {
 			return
 		}
-		_, err := generateCommandTTS(context.Background(), nil, "hello", filepath.Join(t.TempDir(), "x.mp3"), "slow", map[string]any{"command": "sleep 10", "timeout": 1}, map[string]any{})
+		p := commandTTSDefaults
+		p.Name, p.Command, p.Timeout = "slow", "sleep 10", time.Second
+		_, err := generateCommandTTS(context.Background(), nil, "hello", filepath.Join(t.TempDir(), "x.mp3"), &p, &ttsRequest{})
 		var re *ttsRuntimeError
 		if !errors.As(err, &re) || !strings.Contains(re.Error(), "timed out") {
 			t.Fatalf("err = %v", err)
@@ -269,14 +276,25 @@ func TestTTSCommandEnvPassthrough(t *testing.T) {
 		}
 	})
 	t.Run("test_allowlist_parsed_from_provider_config", func(t *testing.T) {
-		if got := commandEnvPassthrough(map[string]any{"env_passthrough": []any{"A_KEY", " B_KEY ", ""}}); !reflect.DeepEqual(got, []string{"A_KEY", "B_KEY"}) {
+		passthrough := func(v any) []string {
+			entry := map[string]any{"command": "x"}
+			if v != nil {
+				entry["env_passthrough"] = v
+			}
+			p := requestOf(t, map[string]any{"providers": map[string]any{"x": entry}}).command("x")
+			if p == nil {
+				t.Fatal("provider missing")
+			}
+			return p.EnvPassthrough
+		}
+		if got := passthrough([]any{"A_KEY", " B_KEY ", ""}); !reflect.DeepEqual(got, []string{"A_KEY", "B_KEY"}) {
 			t.Fatalf("got %v", got)
 		}
-		if got := commandEnvPassthrough(map[string]any{}); len(got) != 0 {
+		if got := passthrough(nil); len(got) != 0 {
 			t.Fatalf("got %v", got)
 		}
-		if got := commandEnvPassthrough(map[string]any{"env_passthrough": "A_KEY"}); len(got) != 0 {
-			t.Fatalf("got %v", got)
+		if got := passthrough("A_KEY"); !reflect.DeepEqual(got, []string{"A_KEY"}) {
+			t.Fatalf("one name written as text: got %v", got)
 		}
 	})
 }

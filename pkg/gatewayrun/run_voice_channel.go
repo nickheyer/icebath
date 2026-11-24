@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Discord voice channel a member sits in
@@ -102,7 +103,7 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 		joiner.SetVoiceInputCallback(nil)
 		return i18n.T(ctx, "gateway.voice.channel_join_permissions", "", nil), nil
 	}
-	textChannelID, err := strconv.ParseInt(pystr.Strip(event.Source.ChatID), 10, 64)
+	textChannelID, err := strconv.ParseInt(strings.TrimSpace(event.Source.ChatID), 10, 64)
 	if err != nil {
 		return "", fmt.Errorf("channel id %s is not a whole number", event.Source.ChatID)
 	}

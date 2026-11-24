@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -107,14 +106,14 @@ func csvOrListToSet(raw any) map[string]bool {
 	}
 	if items, ok := raw.([]any); ok {
 		for _, part := range items {
-			if text := pystr.Strip(pyrepr.Str(part)); text != "" {
+			if text := strings.TrimSpace(pyrepr.Str(part)); text != "" {
 				out[text] = true
 			}
 		}
 		return out
 	}
 	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-		if text := pystr.Strip(part); text != "" {
+		if text := strings.TrimSpace(part); text != "" {
 			out[text] = true
 		}
 	}
@@ -184,8 +183,8 @@ func heldReason(source *gateway.SessionSource, platform string, multiplexed bool
 
 // Session id of a raw API route event, empty for structured or partial messaging routes
 func rawProcessEventSessionID(evt map[string]any) string {
-	sessionKey := pystr.Strip(truthyText(evt["session_key"]))
-	platform := pystr.Lower(pystr.Strip(truthyText(evt["platform"])))
+	sessionKey := strings.TrimSpace(truthyText(evt["session_key"]))
+	platform := strings.ToLower(strings.TrimSpace(truthyText(evt["platform"])))
 	if strings.HasPrefix(sessionKey, "agent:") || (platform != "" && platform != "api_server") {
 		return ""
 	}
@@ -197,9 +196,9 @@ func rawProcessEventSessionID(evt map[string]any) string {
 		}
 	}
 	if origin := truthyText(evt["origin_session_id"]); origin != "" {
-		return pystr.Strip(origin)
+		return strings.TrimSpace(origin)
 	}
-	return pystr.Strip(sessionKey)
+	return strings.TrimSpace(sessionKey)
 }
 
 // Card of a local process notice, empty for a watch match
@@ -226,14 +225,14 @@ func localCompletionCard(evt map[string]any) map[string]string {
 // Synthetic event metadata of a watch or completion notification
 func watchNotificationMetadata(evt map[string]any, source *gateway.SessionSource) map[string]any {
 	metadata := map[string]any{"notification_origin": "process_registry_synthetic"}
-	sessionKey := pystr.Strip(truthyText(evt["session_key"]))
+	sessionKey := strings.TrimSpace(truthyText(evt["session_key"]))
 	if agent.DiagnosticProcessEvent(evt) {
 		metadata["notification_category"] = "diagnostic"
 	}
 	if strings.HasPrefix(sessionKey, "agent:") {
 		metadata["gateway_session_key"] = sessionKey
 	}
-	if parent := pystr.Strip(truthyText(evt["parent_session_id"])); parent != "" {
+	if parent := strings.TrimSpace(truthyText(evt["parent_session_id"])); parent != "" {
 		metadata["gateway_session_id"] = parent
 	}
 	if pyrepr.Truthy(evt["_automation_identities"]) {
@@ -244,7 +243,7 @@ func watchNotificationMetadata(evt map[string]any, source *gateway.SessionSource
 			metadata[k] = v
 		}
 	}
-	if proven := pystr.Strip(truthyText(evt["proven_session_id"])); proven != "" {
+	if proven := strings.TrimSpace(truthyText(evt["proven_session_id"])); proven != "" {
 		metadata["gateway_proven_session_id"] = proven
 	}
 	if ids := evt["completion_ids"]; pyrepr.Truthy(ids) {
@@ -387,7 +386,7 @@ func stripResponseAttachmentsForDirectSend(ctx context.Context, response string)
 	}
 	_, cleaned = gateway.ExtractImages(cleaned)
 	cleaned = strings.ReplaceAll(strings.ReplaceAll(cleaned, "[[audio_as_voice]]", ""), "[[as_document]]", "")
-	return pystr.Strip(cleaned), nil
+	return strings.TrimSpace(cleaned), nil
 }
 
 // Stream consumer state a queued final reconciles against, the message it sealed and its split delivery flag

@@ -203,14 +203,8 @@ func ResolveAgentCacheBounds(ctx context.Context) AgentCacheBounds {
 		MaxSize:             positiveInt(settings.AgentAgentCacheMaxSize.Get(ctx)),
 		IdleTTLSecs:         positiveFloat(settings.AgentAgentCacheIdleTtlSecs.Get(ctx).Seconds()),
 		MemoryHighMB:        ResolveMemoryHighMB(settings.AgentAgentCacheMemoryHighMb.Get(ctx)),
-		MaxEvictionsPerPass: settings.AgentAgentCacheMaxEvictionsPerPass.Default,
-		ProtectRecent:       settings.AgentAgentCacheProtectRecent.Default,
-	}
-	if n := settings.AgentAgentCacheMaxEvictionsPerPass.Get(ctx); n > 0 {
-		bounds.MaxEvictionsPerPass = n
-	}
-	if n := settings.AgentAgentCacheProtectRecent.Get(ctx); n >= 0 {
-		bounds.ProtectRecent = n
+		MaxEvictionsPerPass: settings.AgentAgentCacheMaxEvictionsPerPass.Get(ctx),
+		ProtectRecent:       settings.AgentAgentCacheProtectRecent.Get(ctx),
 	}
 	return bounds
 }

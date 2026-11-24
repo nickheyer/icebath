@@ -51,14 +51,14 @@ func psCommandLive(pid int) (int, string, error) {
 func readProcessCmdlineLive(pid int) (string, bool) {
 	if raw, err := statusProcRead(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil && len(raw) > 0 {
 		text := strings.ToValidUTF8(string(bytes.ReplaceAll(raw, []byte{0}, []byte{' '})), "")
-		return pystr.Strip(text), true
+		return strings.TrimSpace(text), true
 	}
 	if parts, err := statusPsutilCmdline(pid); err == nil && len(parts) > 0 {
 		return strings.Join(parts, " "), true
 	}
 	if !statusIsWindows {
-		if code, out, err := statusPsCommand(pid); err == nil && code == 0 && pystr.Strip(out) != "" {
-			return pystr.Strip(out), true
+		if code, out, err := statusPsCommand(pid); err == nil && code == 0 && strings.TrimSpace(out) != "" {
+			return strings.TrimSpace(out), true
 		}
 	}
 	return "", false
@@ -84,7 +84,7 @@ func casedTokens(raw []string) []string {
 func lowerAll(tokens []string) []string {
 	out := make([]string, len(tokens))
 	for i, t := range tokens {
-		out[i] = pystr.Lower(t)
+		out[i] = strings.ToLower(t)
 	}
 	return out
 }
@@ -240,12 +240,12 @@ func CommandLineNamesIcebathHome(commandLC, homeLC string) bool {
 
 // Whether a gateway command line belongs to the profile home by flag or ICEBATH_HOME assignment
 func commandLineBelongsToProfile(command, profileHome string) bool {
-	commandLC := strings.ReplaceAll(pystr.Lower(command), `\`, "/")
+	commandLC := strings.ReplaceAll(strings.ToLower(command), `\`, "/")
 	profileName, named := profileNameForHomeDir(profileHome)
-	homeLC := strings.TrimRight(strings.ReplaceAll(pystr.Lower(pypath.PathStr(profileHome)), `\`, "/"), "/")
+	homeLC := strings.TrimRight(strings.ReplaceAll(strings.ToLower(pypath.PathStr(profileHome)), `\`, "/"), "/")
 	flag, hasFlag := ProfileFlagValue(command)
 	if named && profileName != "default" {
-		if hasFlag && flag == pystr.Lower(profileName) {
+		if hasFlag && flag == strings.ToLower(profileName) {
 			return true
 		}
 		return CommandLineNamesIcebathHome(commandLC, homeLC)

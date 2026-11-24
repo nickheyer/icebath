@@ -258,7 +258,7 @@ func (r *GatewayRunner) telegramTopicRootStatusMessage(ctx context.Context, sour
 	}
 	lines = append(lines, i18n.T(ctx, "gateway.topic.previous_unlinked", "", nil))
 	for _, session := range sessions {
-		preview := pystr.Strip(rowStr(session, "preview"))
+		preview := strings.TrimSpace(rowStr(session, "preview"))
 		title := rowStr(session, "title")
 		if title == "" {
 			title = i18n.T(ctx, "gateway.topic.untitled_session", "", nil)
@@ -284,7 +284,7 @@ func (r *GatewayRunner) restoreTelegramTopicSession(ctx context.Context, event *
 		return "", errors.New("the session database is not open, so the topic session cannot be resolved")
 	}
 	db := asyncDB.DB()
-	wanted := pystr.Strip(rawSessionID)
+	wanted := strings.TrimSpace(rawSessionID)
 	sessionID, err := db.ResolveSessionID(wanted)
 	if err != nil {
 		return "", err

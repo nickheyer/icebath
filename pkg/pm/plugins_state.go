@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -49,7 +48,7 @@ func profilesRoot(ctx context.Context) string {
 
 // Version and document readers of a home selection, the selected backend except inside the dependency runtime of a deployment with no local config layer, which reads the file it publishes to
 func selectionReaders(ctx context.Context, configPath string) (version func(context.Context, string) ([]any, error), read func(context.Context, string) (any, error)) {
-	kind := pystr.Lower(pystr.Strip(os.Getenv(config.BackendEnv)))
+	kind := strings.ToLower(strings.TrimSpace(os.Getenv(config.BackendEnv)))
 	if inRuntime, _ := ctx.Value(runtimeKey{}).(bool); kind == "" || kind == "file" || !inRuntime {
 		return config.ConfigVersion, config.ReadConfigDoc
 	}
@@ -263,7 +262,7 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 func providerFromConfig(homeDir string, selection map[string]any, installing string) (string, error) {
 	memory, _ := selection["memory"].(map[string]any)
 	provider, _ := memory["provider"].(string)
-	name := pystr.Strip(provider)
+	name := strings.TrimSpace(provider)
 	if name == "" {
 		return "", nil
 	}

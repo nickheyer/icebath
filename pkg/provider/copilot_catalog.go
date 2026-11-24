@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -65,7 +64,7 @@ var copilotModelAliases = map[string]string{
 // First stored GitHub token that validates and exchanges, every entry tried in order
 func firstExchangeableCopilotToken(ctx context.Context, raws []any) string {
 	for _, r := range raws {
-		raw := pystr.Strip(cpOrStr(r))
+		raw := strings.TrimSpace(cpOrStr(r))
 		if raw == "" {
 			continue
 		}
@@ -142,14 +141,14 @@ func copilotPayloadItems(payload any) []any {
 
 // Chat capable catalog row, the picker flag ignored when asked
 func copilotCatalogItemIsTextModel(item any, ignorePickerFlag bool) bool {
-	if pystr.Strip(cpOrStr(cpGetOr(item, "id", nil))) == "" {
+	if strings.TrimSpace(cpOrStr(cpGetOr(item, "id", nil))) == "" {
 		return false
 	}
 	if flag, ok := cpGet(item, "model_picker_enabled"); !ignorePickerFlag && ok && flag == false {
 		return false
 	}
 	if caps := cpGetOr(item, "capabilities", nil); cpIsDict(caps) {
-		modelType := strings.ToLower(pystr.Strip(cpOrStr(cpGetOr(caps, "type", nil))))
+		modelType := strings.ToLower(strings.TrimSpace(cpOrStr(cpGetOr(caps, "type", nil))))
 		if modelType != "" && modelType != "chat" {
 			return false
 		}
@@ -157,7 +156,7 @@ func copilotCatalogItemIsTextModel(item any, ignorePickerFlag bool) bool {
 	if endpoints, ok := cpGetOr(item, "supported_endpoints", nil).([]any); ok {
 		any_, chat := false, false
 		for _, e := range endpoints {
-			if s := pystr.Strip(pyStr(e)); s != "" {
+			if s := strings.TrimSpace(pyStr(e)); s != "" {
 				any_ = true
 				chat = chat || copilotChatEndpoints[s]
 			}
@@ -174,7 +173,7 @@ func copilotTextModels(items []any, ignorePickerFlag bool) []any {
 	models := []any{}
 	seen := map[string]bool{}
 	for _, item := range items {
-		id := pystr.Strip(cpOrStr(cpGetOr(item, "id", nil)))
+		id := strings.TrimSpace(cpOrStr(cpGetOr(item, "id", nil)))
 		if seen[id] {
 			continue
 		}
@@ -268,7 +267,7 @@ func copilotPickerCatalog(ctx context.Context, _ bool) (live []string, ok bool) 
 // Reports a base url whose host shares the Copilot catalog
 func isGithubModelsBaseURL(baseURL string) bool {
 	for _, host := range copilotCatalogHosts {
-		if HostMatches(pystr.Strip(baseURL), host) {
+		if HostMatches(strings.TrimSpace(baseURL), host) {
 			return true
 		}
 	}
@@ -323,7 +322,7 @@ func getCopilotModelContext(ctx context.Context, modelID, apiKey string) int {
 	}
 	cache := map[string]int{}
 	for _, item := range catalog {
-		mid := pystr.Strip(cpOrStr(cpGetOr(item, "id", nil)))
+		mid := strings.TrimSpace(cpOrStr(cpGetOr(item, "id", nil)))
 		caps := cpGetOr(item, "capabilities", nil)
 		if !cpTruthy(caps) {
 			caps = pyjson.NewObject()
@@ -357,7 +356,7 @@ func copilotCatalogIDs(ctx context.Context, catalog []any, apiKey string) map[st
 	}
 	out := map[string]bool{}
 	for _, item := range catalog {
-		if mid := pystr.Strip(cpOrStr(cpGetOr(item, "id", nil))); mid != "" {
+		if mid := strings.TrimSpace(cpOrStr(cpGetOr(item, "id", nil))); mid != "" {
 			out[mid] = true
 		}
 	}
@@ -366,7 +365,7 @@ func copilotCatalogIDs(ctx context.Context, catalog []any, apiKey string) map[st
 
 // Copilot native id of a model id, aliases then catalog matches then a stripped vendor prefix
 func normalizeCopilotModelID(ctx context.Context, modelID string, catalog []any, apiKey string) string {
-	raw := pystr.Strip(modelID)
+	raw := strings.TrimSpace(modelID)
 	if raw == "" {
 		return ""
 	}
@@ -376,7 +375,7 @@ func normalizeCopilotModelID(ctx context.Context, modelID string, catalog []any,
 	}
 	candidates := []string{raw}
 	if strings.Contains(raw, "/") {
-		candidates = append(candidates, pystr.Strip(strings.SplitN(raw, "/", 2)[1]))
+		candidates = append(candidates, strings.TrimSpace(strings.SplitN(raw, "/", 2)[1]))
 	}
 	if strings.HasSuffix(raw, "-mini") || strings.HasSuffix(raw, "-nano") || strings.HasSuffix(raw, "-chat") {
 		candidates = append(candidates, raw[:len(raw)-5])
@@ -395,7 +394,7 @@ func normalizeCopilotModelID(ctx context.Context, modelID string, catalog []any,
 		}
 	}
 	if strings.Contains(raw, "/") {
-		stripped := pystr.Strip(strings.SplitN(raw, "/", 2)[1])
+		stripped := strings.TrimSpace(strings.SplitN(raw, "/", 2)[1])
 		if stripped != "" && !strings.Contains(stripped, "/") {
 			return stripped
 		}
@@ -408,7 +407,7 @@ func clampGithubReasoningEffort(effort string, supported []string) string {
 	if effort == "" {
 		effort = "medium"
 	}
-	effort = strings.ToLower(pystr.Strip(effort))
+	effort = strings.ToLower(strings.TrimSpace(effort))
 	if !containsStr(supported, effort) {
 		effort = clampEffort(effort, supported, nil)
 		if !containsStr(supported, effort) {
@@ -424,7 +423,7 @@ func clampGithubReasoningEffort(effort string, supported []string) string {
 
 // Pattern efforts of a model id, o series, Astra and GPT-5 families
 func githubReasoningEffortsForModelID(ctx context.Context, modelID string) []string {
-	raw := strings.ToLower(pystr.Strip(modelID))
+	raw := strings.ToLower(strings.TrimSpace(modelID))
 	for _, p := range []string{"openai/o1", "openai/o3", "openai/o4", "o1", "o3", "o4"} {
 		if strings.HasPrefix(raw, p) {
 			return append([]string(nil), copilotEffortsOSeries...)
@@ -486,7 +485,7 @@ func githubModelReasoningEfforts(ctx context.Context, modelID string, catalog []
 			out := []string{}
 			seen := map[string]bool{}
 			for _, e := range list {
-				if s := strings.ToLower(pystr.Strip(pyStr(e))); s != "" && !seen[s] {
+				if s := strings.ToLower(strings.TrimSpace(pyStr(e))); s != "" && !seen[s] {
 					seen[s] = true
 					out = append(out, s)
 				}
@@ -495,7 +494,7 @@ func githubModelReasoningEfforts(ctx context.Context, modelID string, catalog []
 		}
 		reasoning := false
 		for _, c := range copilotIterCapabilities(cpGetOr(entry, "capabilities", []any{})) {
-			reasoning = reasoning || strings.ToLower(pystr.Strip(pyStr(c))) == "reasoning"
+			reasoning = reasoning || strings.ToLower(strings.TrimSpace(pyStr(c))) == "reasoning"
 		}
 		if !reasoning {
 			return []string{}

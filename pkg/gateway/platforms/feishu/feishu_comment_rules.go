@@ -172,7 +172,7 @@ func parseFrozenset(raw any) StringSet {
 	}
 	out := StringSet{}
 	for _, u := range items {
-		if s := pystr.Strip(pyrepr.Str(u)); s != "" {
+		if s := strings.TrimSpace(pyrepr.Str(u)); s != "" {
 			out[s] = struct{}{}
 		}
 	}
@@ -184,7 +184,7 @@ func parsePolicy(raw any, def *string) *string {
 	if raw == nil {
 		return def
 	}
-	policy := pystr.Lower(pystr.Strip(pyrepr.Str(raw)))
+	policy := strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
 	for _, p := range validPolicies {
 		if p == policy {
 			return &policy

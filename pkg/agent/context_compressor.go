@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"maps"
@@ -475,13 +477,13 @@ func (c *ContextCompressor) DeriveAutoFocusTopic(messages []map[string]any) *str
 		if msg["role"] != "user" || state.IsSyntheticCompressionUserTurn(msg) || truthyField(msg, "display_kind") {
 			continue
 		}
-		text := redactCompactionText(pystr.Strip(typedUserText(contentTextForContains(msg["content"]))))
+		text := redactCompactionText(strings.TrimSpace(typedUserText(contentTextForContains(msg["content"]))))
 		if text == "" {
 			continue
 		}
 		text = strings.Join(pystr.SplitWhitespace(text, -1), " ")
 		if pystr.Len(text) > autoFocusTurnMaxChars {
-			text = pystr.Rstrip(pystr.Slice(text, 0, autoFocusTurnMaxChars-1)) + "…"
+			text = strings.TrimRightFunc(pystr.Slice(text, 0, autoFocusTurnMaxChars-1), unicode.IsSpace) + "…"
 		}
 		candidates = append(candidates, text)
 		if len(candidates) >= autoFocusMaxTurns {
@@ -497,7 +499,7 @@ func (c *ContextCompressor) DeriveAutoFocusTopic(messages []map[string]any) *str
 	}
 	focus := "Recent user focus:\n" + strings.Join(lines, "\n")
 	if pystr.Len(focus) > autoFocusMaxChars {
-		focus = pystr.Rstrip(pystr.Slice(focus, 0, autoFocusMaxChars-1)) + "…"
+		focus = strings.TrimRightFunc(pystr.Slice(focus, 0, autoFocusMaxChars-1), unicode.IsSpace) + "…"
 	}
 	return &focus
 }

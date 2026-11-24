@@ -26,7 +26,7 @@ type BoundaryPeer interface {
 
 // Lowered hostname of a valid Host authority, empty for ambiguous ports, bad brackets or URL syntax
 func HostHeaderHostname(hostHeader string) string {
-	value := pystr.Strip(hostHeader)
+	value := strings.TrimSpace(hostHeader)
 	if value == "" || strings.Contains(value, "://") || strings.ContainsAny(value, "\"'<> \n\r\t/?#@") {
 		return ""
 	}
@@ -43,7 +43,7 @@ func HostHeaderHostname(hostHeader string) string {
 		if suffix != "" && !(len(suffix) > 1 && suffix[0] == ':' && pystr.All(suffix[1:], pystr.IsDecimal)) {
 			return ""
 		}
-		return pystr.Lower(hostname)
+		return strings.ToLower(hostname)
 	}
 	if strings.Count(value, ":") > 1 {
 		return ""
@@ -53,9 +53,9 @@ func HostHeaderHostname(hostHeader string) string {
 		if hostname == "" || !pystr.StrIsDigit(port) {
 			return ""
 		}
-		return pystr.Lower(hostname)
+		return strings.ToLower(hostname)
 	}
-	return pystr.Lower(value)
+	return strings.ToLower(value)
 }
 
 // Whether the Host header targets the bound interface or a loopback alias of a loopback bind
@@ -64,7 +64,7 @@ func IsAcceptedHost(hostHeader, boundHost string) bool {
 	if hostOnly == "" {
 		return false
 	}
-	boundLC := pystr.Lower(boundHost)
+	boundLC := strings.ToLower(boundHost)
 	if LoopbackHostValues[boundLC] {
 		return LoopbackHostValues[hostOnly]
 	}
@@ -75,7 +75,7 @@ func IsAcceptedHost(hostHeader, boundHost string) bool {
 func GatewayWSTicketFromSubprotocol(ws BoundaryPeer) (string, string) {
 	var protocols, tickets []string
 	for _, value := range strings.Split(ws.BoundaryHeader("sec-websocket-protocol"), ",") {
-		if v := pystr.Strip(value); v != "" {
+		if v := strings.TrimSpace(value); v != "" {
 			protocols = append(protocols, v)
 			if strings.HasPrefix(v, GatewayWSTicketPrefix) {
 				tickets = append(tickets, v)
@@ -100,7 +100,7 @@ func GatewayWSTicketFromSubprotocol(ws BoundaryPeer) (string, string) {
 
 // Rejection token for the WebSocket peer address under the listener state, empty when allowed
 func WSClientReason(ws BoundaryPeer, state *ListenerState) string {
-	boundHost := pystr.Lower(pystr.Strip(state.BoundHost))
+	boundHost := strings.ToLower(strings.TrimSpace(state.BoundHost))
 	if boundHost != "" && !loopbackPeerHosts[boundHost] {
 		return ""
 	}

@@ -5,8 +5,6 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 func TestBrowserSafetyExportsMatchTheURLSafetyFloor(t *testing.T) {
@@ -25,7 +23,8 @@ func TestBrowserSafetyExportsMatchTheURLSafetyFloor(t *testing.T) {
 	if got := NormalizeURLForRequest("http://example.com/a b"); got != normalizeURLForRequest("http://example.com/a b") || !strings.Contains(got, "%20") {
 		t.Fatalf("normalized %q", got)
 	}
-	env := &Env{Home: t.TempDir(), Config: config.Tree{"security": map[string]any{"fake_ip_ranges": []any{"198.18.0.0/15"}}}}
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfig(t, env, "security:\n  fake_ip_ranges: [198.18.0.0/15]\n")
 	fake := netip.MustParseAddr("198.18.0.7")
 	if !IsDeclaredFakeIP(env, fake) || IsDeclaredFakeIP(nil, fake) || IsDeclaredFakeIP(env, public) {
 		t.Fatal("declared fake ip classification")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -34,7 +35,7 @@ func TestMemoryManager(t *testing.T) {
 					}
 				}
 				write(map[string]any{"memory": tc.memory, "hooks": map[string]any{"output_spill": spill}})
-				text := "start\n" + strings.Repeat("ranked middle\n", tools.SpillDefaultMaxChars/2) + "end\n"
+				text := "start\n" + strings.Repeat("ranked middle\n", settings.HooksOutputSpillMaxChars.Default/2) + "end\n"
 				p := &prologueMemory{prefetch: text}
 				mgr := memory.NewMemoryManager(ctx, env, nil)
 				if err := mgr.AddProvider(ctx, p); err != nil {

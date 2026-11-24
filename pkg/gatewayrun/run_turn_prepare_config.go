@@ -95,7 +95,7 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 	}
 	runtime := pyjson.NewObject()
 	for _, kv := range [][2]any{
-		{"provider", provider.SessionProviderIdentity(ctx, a.Provider(), a.RequestedProvider(), a.BaseURL(), model, nil)},
+		{"provider", provider.SessionProviderIdentity(ctx, a.Provider(), a.RequestedProvider(), a.BaseURL(), model)},
 		{"base_url", a.BaseURL()},
 		{"api_mode", a.APIMode()},
 		{"fallback_active", a.FallbackActivated()},

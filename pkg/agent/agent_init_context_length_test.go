@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func swapAdvertisedContextLength(t *testing.T, n int) {
@@ -68,14 +68,14 @@ func TestSwitchBackToConfiguredDefaultRouteRestoresContextPin(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cc := &ContextCompressor{}
 	a := &AIAgent{model: "other-model", provider: "openrouter", baseURL: pinTestOtherRoute, contextCompressor: cc}
-	if err := setConfigContextLength(t.Context(), a, configContextLengthForRuntime(t.Context(), a, pinTestConfig())); err != nil {
+	if err := setConfigContextLength(t.Context(), a, configContextLengthForRuntime(settings.WithFrozen(t.Context(), pinTestConfig()), a)); err != nil {
 		t.Fatal(err)
 	}
 	if a.configContextLength != 0 || cc.configContextLength != nil {
 		t.Fatalf("the pin described another route: agent %d engine %v", a.configContextLength, cc.configContextLength)
 	}
 	a.model, a.provider, a.baseURL = "model-b", "custom:acme", pinTestRoute
-	if err := setConfigContextLength(t.Context(), a, configContextLengthForRuntime(t.Context(), a, pinTestConfig())); err != nil {
+	if err := setConfigContextLength(t.Context(), a, configContextLengthForRuntime(settings.WithFrozen(t.Context(), pinTestConfig()), a)); err != nil {
 		t.Fatal(err)
 	}
 	if a.configContextLength != pinTestPin || cc.configContextLength == nil || *cc.configContextLength != pinTestPin {
@@ -88,7 +88,7 @@ func TestSwitchToOtherRouteDoesNotInheritContextPin(t *testing.T) {
 	pin := pinTestPin
 	cc := &ContextCompressor{configContextLength: &pin}
 	a := &AIAgent{model: "unrelated-model", provider: "openrouter", baseURL: pinTestOtherRoute, contextCompressor: cc, configContextLength: pin}
-	got := configContextLengthForRuntime(t.Context(), a, pinTestConfig())
+	got := configContextLengthForRuntime(settings.WithFrozen(t.Context(), pinTestConfig()), a)
 	if got != nil {
 		t.Fatalf("unrelated runtime inherited %d", *got)
 	}
@@ -97,23 +97,16 @@ func TestSwitchToOtherRouteDoesNotInheritContextPin(t *testing.T) {
 	}
 }
 
-func TestResolveContextLengthWarnsOnUnitSuffixAndReadsAuxPin(t *testing.T) {
+func TestResolveContextLengthRefusesUnitSuffixAndReadsAuxPin(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	var errOut bytes.Buffer
-	prev := invalidConfigStderr
-	invalidConfigStderr = &errOut
-	t.Cleanup(func() { invalidConfigStderr = prev })
 	a := &AIAgent{model: "m", platform: "cli"}
 	cfg := map[string]any{"model": map[string]any{"context_length": "256K"}, "auxiliary": map[string]any{"compression": map[string]any{"context_length": "64000"}}}
-	pin, cps, effective, modelCfg := resolveContextLength(t.Context(), a, cfg, "")
-	if pin != nil || effective != 0 || len(cps) != 0 || modelCfg["context_length"] != "256K" {
-		t.Fatalf("pin %v effective %d providers %v model %v", pin, effective, cps, modelCfg)
+	pin, cps, effective := resolveContextLength(settings.WithFrozen(t.Context(), cfg), a, "")
+	if pin != nil || effective != 0 || len(cps) != 0 {
+		t.Fatalf("pin %v effective %d providers %v", pin, effective, cps)
 	}
 	if a.auxCompressionContextLengthConfig == nil || *a.auxCompressionContextLengthConfig != 64000 || a.configContextLength != 0 {
 		t.Fatalf("aux %v agent pin %d", a.auxCompressionContextLengthConfig, a.configContextLength)
-	}
-	if !strings.Contains(errOut.String(), "Invalid model.context_length in config.yaml: 256K") {
-		t.Fatalf("stderr %q", errOut.String())
 	}
 }
 
@@ -121,7 +114,7 @@ func TestResolveContextLengthKeepsTheScopedPinAndRecordsCustomProviders(t *testi
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	swapAdvertisedContextLength(t, 0)
 	a := &AIAgent{model: "model-b", provider: "custom:acme", baseURL: pinTestRoute}
-	pin, cps, effective, _ := resolveContextLength(t.Context(), a, pinTestConfig(), pinTestRoute)
+	pin, cps, effective := resolveContextLength(settings.WithFrozen(t.Context(), pinTestConfig()), a, pinTestRoute)
 	if pin == nil || *pin != pinTestPin || effective != pinTestPin || a.configContextLength != pinTestPin {
 		t.Fatalf("pin %v effective %d agent %d", pin, effective, a.configContextLength)
 	}
@@ -133,7 +126,7 @@ func TestResolveContextLengthKeepsTheScopedPinAndRecordsCustomProviders(t *testi
 func TestConfiguredProviderRouteComesFromItsEnabledProvidersEntry(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	entries := func(block map[string]any) []map[string]any {
-		return provider.ProviderEntries(map[string]any{"providers": map[string]any{"acme": block}})
+		return provider.ProvidersDictToCustomProviders(map[string]any{"acme": block})
 	}
 	if got := customProviderConfiguredBaseURL("acme", entries(map[string]any{"enabled": false, "base_url": "http://a.example/v1"})); got != "" {
 		t.Fatalf("disabled provider resolved %q", got)

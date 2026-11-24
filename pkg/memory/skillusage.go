@@ -63,7 +63,3 @@ func plainUsageValue(v any) any {
 	}
 	return v
 }
-
-func registerSkillUsageSidecar() {}
-
-func registerSkillLedger() {}

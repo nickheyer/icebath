@@ -244,9 +244,9 @@ func readLightpandaLogTail(path string) string {
 	if len(data) > lightpandaStderrTailLimit {
 		data = data[len(data)-lightpandaStderrTailLimit:]
 	}
-	lines := pystr.Splitlines(pystr.Strip(pystr.DecodeUTF8Replace(data)), false)
+	lines := pystr.Splitlines(strings.TrimSpace(pystr.DecodeUTF8Replace(data)), false)
 	for i := len(lines) - 1; i >= 0; i-- {
-		if pystr.Strip(lines[i]) != "" {
+		if strings.TrimSpace(lines[i]) != "" {
 			return lines[i]
 		}
 	}
@@ -471,7 +471,7 @@ func stopAllLightpanda(env *tools.Env) {
 // True only when pid is verifiably the lightpanda serve recorded on that port with that start time
 func isLightpandaProcess(pid int, port, startTime any) bool {
 	name, err := lightpandaProcName(pid)
-	if err != nil || !strings.Contains(pystr.Lower(name), "lightpanda") {
+	if err != nil || !strings.Contains(strings.ToLower(name), "lightpanda") {
 		return false
 	}
 	cmdline, err := lightpandaProcCmdline(pid)
@@ -623,7 +623,7 @@ func lightpandaEngineStatus(env *tools.Env) (bool, string) {
 		}
 		return false, "cloud provider " + name + " is selected (browser.cloud_provider, or auto-detected from credentials)"
 	}
-	if isLegacyBrowserUseCloudConfig(env) {
+	if browserUseCloudByKey(env) {
 		return false, "Browser Use cloud (BROWSER_USE_API_KEY) is selected"
 	}
 	return true, "Icebath spawns `lightpanda serve` per browser session"

@@ -7,8 +7,9 @@ import (
 
 func ephemeralPromptConfig(personality string, personalities map[string]any) map[string]any {
 	return map[string]any{
-		"display": map[string]any{"personality": personality},
-		"agent":   map[string]any{"system_prompt": "manual forever", "personalities": personalities},
+		"display":       map[string]any{"personality": personality},
+		"agent":         map[string]any{"system_prompt": "manual forever"},
+		"personalities": personalities,
 	}
 }
 

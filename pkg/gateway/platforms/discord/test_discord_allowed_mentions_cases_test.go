@@ -24,10 +24,7 @@ func mentionAllows(am *discordgo.MessageAllowedMentions, kind discordgo.AllowedM
 
 func TestSafeDefaultsBlockEveryoneAndRoles(t *testing.T) {
 	clearAllowedMentionEnv(t)
-	am, err := buildAllowedMentions(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	am := buildAllowedMentions(context.Background())
 	if mentionAllows(am, discordgo.AllowedMentionTypeEveryone) {
 		t.Fatal("default must NOT allow @everyone/@here pings")
 	}
@@ -45,10 +42,7 @@ func TestSafeDefaultsBlockEveryoneAndRoles(t *testing.T) {
 func TestEnvVarOptsBackIntoEveryone(t *testing.T) {
 	clearAllowedMentionEnv(t)
 	t.Setenv("DISCORD_ALLOW_MENTION_EVERYONE", "true")
-	am, err := buildAllowedMentions(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	am := buildAllowedMentions(context.Background())
 	if !mentionAllows(am, discordgo.AllowedMentionTypeEveryone) || mentionAllows(am, discordgo.AllowedMentionTypeRoles) ||
 		!mentionAllows(am, discordgo.AllowedMentionTypeUsers) || !am.RepliedUser {
 		t.Fatalf("unexpected mentions %+v", am)

@@ -45,17 +45,6 @@ func TestStatusShapeAndDefaults(t *testing.T) {
 	}
 }
 
-func TestStatusRendersDegradedWhenConfigCannotBeRead(t *testing.T) {
-	lmRoutesClient(t)
-	configLoadReadonlyFn = func(context.Context) (map[string]any, error) {
-		return nil, &os.PathError{Op: "open", Path: "profile home", Err: errors.New("profile home is gone")}
-	}
-	data, err := LocalModelsStatus(context.Background())
-	if err != nil || data["enabled"] != false {
-		t.Fatalf("status %v %v", data, err)
-	}
-}
-
 // Status rows keyed by model id
 func lmStatusRows(t *testing.T) map[string]map[string]any {
 	t.Helper()

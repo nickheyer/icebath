@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // icebath auth list, every pooled provider or the one named, free tier rows rendered as the upgrade hint
@@ -324,16 +326,12 @@ func authStrings(v any) []string {
 
 // Shows the Azure Foundry Entra ID status when model.provider is azure-foundry with entra_id auth
 func (c *authCLI) printAzureEntraStatus() {
-	modelCfg, ok := c.loadConfig()["model"].(map[string]any)
-	if !ok || strings.ToLower(strings.TrimSpace(authTextOr(modelCfg["provider"]))) != "azure-foundry" ||
-		strings.ToLower(strings.TrimSpace(authTextOr(modelCfg["auth_mode"]))) != "entra_id" {
+	ctx := c.env.hookContext()
+	if strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx))) != "azure-foundry" || settings.ModelAuthMode.Get(ctx) != "entra_id" {
 		return
 	}
-	baseURL := strings.TrimSpace(authTextOr(modelCfg["base_url"]))
-	scope := ""
-	if entra, ok := modelCfg["entra"].(map[string]any); ok {
-		scope = strings.TrimSpace(authTextOr(entra["scope"]))
-	}
+	baseURL := strings.TrimSpace(settings.ModelBaseURL.Get(ctx))
+	scope := strings.TrimSpace(authTextOr(settings.ModelEntra.Get(ctx)["scope"]))
 	if scope == "" {
 		scope = ScopeAIAzureDefault
 	}

@@ -15,24 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 )
-
-// The tts key as a mapping, null or non mapping sections read as empty
-func ttsSection(ttsConfig any, key string) map[string]any {
-	m, ok := asStrMap(ttsConfig)
-	if !ok {
-		return map[string]any{}
-	}
-	sec, ok := asStrMap(m[key])
-	if !ok {
-		return map[string]any{}
-	}
-	return sec
-}
 
 const fallbackMaxTextLength = 4000
 
@@ -75,39 +61,28 @@ func ttsPositiveInt(v any) int {
 	return 0
 }
 
-// Input character cap from the override, ElevenLabs model table, provider table, then command provider config
-func resolveMaxTextLength(provider string, ttsConfig map[string]any) int {
-	if provider == "" {
+// Input character cap from the service's setting, the ElevenLabs model table, the service table, then the program's own cap
+func resolveMaxTextLength(provider string, req *ttsRequest) int {
+	key := strings.TrimSpace(strings.ToLower(provider))
+	if key == "" {
 		return fallbackMaxTextLength
 	}
-	key := pystr.Strip(pystr.Lower(provider))
-	cfg := ttsConfig
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	provCfg := ttsSection(cfg, key)
-	if override := ttsPositiveInt(provCfg["max_text_length"]); override > 0 {
-		return override
-	}
-	if key == "elevenlabs" {
-		modelID := any(defaultElevenLabsModelID)
-		if pyTruthy(provCfg["model_id"]) {
-			modelID = provCfg["model_id"]
+	if req != nil {
+		if n := req.MaxTextLength[key]; n > 0 {
+			return n
 		}
-		if mapped := elevenLabsModelMaxTextLength[pystr.Strip(pyrepr.Str(modelID))]; mapped > 0 {
-			return mapped
+		if key == "elevenlabs" {
+			if mapped := elevenLabsModelMaxTextLength[textOr(req.ElevenLabs.ModelID, defaultElevenLabsModelID)]; mapped > 0 {
+				return mapped
+			}
 		}
 	}
 	if n, ok := providerMaxTextLength[key]; ok {
 		return n
 	}
-	if !builtinTTSProviders[key] {
-		named := getNamedTTSProviderConfig(cfg, key)
-		if isCommandProviderConfig(named) {
-			if n := ttsPositiveInt(named["max_text_length"]); n > 0 {
-				return n
-			}
-			return defaultCommandTTSMaxTextLength
+	if req != nil {
+		if p := req.command(key); p != nil {
+			return p.MaxTextLength
 		}
 	}
 	return fallbackMaxTextLength
@@ -133,17 +108,18 @@ func (p audioDeliveryProfile) targetFileBytes() int {
 	return max(1, int(float64(p.MaxFileBytes)*p.SafetyRatio))
 }
 
-var platformAudioDefaults = map[string]map[string]any{
-	"discord":  {"max_file_bytes": 10 * 1024 * 1024, "safety_ratio": 0.85},
-	"telegram": {"max_file_bytes": 50 * 1024 * 1024, "safety_ratio": 0.85},
-	"default":  {"max_file_bytes": 10 * 1024 * 1024, "safety_ratio": 0.85},
+// Built in upload limits by chat app, default covering the apps not named
+var platformAudioDefaults = map[string]deliveryLimit{
+	"discord":  {MaxFileBytes: 10 * 1024 * 1024, SafetyRatio: 0.85},
+	"telegram": {MaxFileBytes: 50 * 1024 * 1024, SafetyRatio: 0.85},
+	"default":  {MaxFileBytes: 10 * 1024 * 1024, SafetyRatio: 0.85},
 }
 
-// Upload constraints of the platform with tts.delivery_profiles overrides applied
-func resolveAudioDeliveryProfile(platform string, ttsConfig map[string]any) audioDeliveryProfile {
+// Upload constraints of the platform with its tts.delivery_profiles entry laid over
+func resolveAudioDeliveryProfile(platform string, req *ttsRequest) audioDeliveryProfile {
 	key := "default"
 	if platform != "" {
-		key = pystr.Strip(pystr.Lower(platform))
+		key = strings.TrimSpace(strings.ToLower(platform))
 	}
 	if key == "" {
 		key = "default"
@@ -152,26 +128,17 @@ func resolveAudioDeliveryProfile(platform string, ttsConfig map[string]any) audi
 	if !ok {
 		base = platformAudioDefaults["default"]
 	}
-	defaults := map[string]any{}
-	for k, v := range base {
-		defaults[k] = v
-	}
-	for k, v := range ttsSection(ttsSection(ttsConfig, "delivery_profiles"), key) {
-		if v != nil {
-			defaults[k] = v
+	if req != nil {
+		if own, ok := req.Delivery[key]; ok {
+			if own.MaxFileBytes > 0 {
+				base.MaxFileBytes = own.MaxFileBytes
+			}
+			if own.SafetyRatio > 0 && own.SafetyRatio <= 1 {
+				base.SafetyRatio = own.SafetyRatio
+			}
 		}
 	}
-	maxFileBytes := ttsPositiveInt(defaults["max_file_bytes"])
-	if maxFileBytes == 0 {
-		maxFileBytes = platformAudioDefaults["default"]["max_file_bytes"].(int)
-	}
-	ratio := 0.85
-	if v, present := defaults["safety_ratio"]; present {
-		if f, isNum := pyRealNumber(v); isNum && f > 0 && f <= 1 {
-			ratio = f
-		}
-	}
-	return audioDeliveryProfile{Platform: key, MaxFileBytes: maxFileBytes, SafetyRatio: ratio}
+	return audioDeliveryProfile{Platform: key, MaxFileBytes: base.MaxFileBytes, SafetyRatio: base.SafetyRatio}
 }
 
 // Float of a Python int or float value, false for bools and every other type
@@ -209,7 +176,7 @@ func packUnderCap(pieces []string, maxChars int, sliceOversized bool) []string {
 			}
 			continue
 		}
-		candidate := pystr.Strip(current + " " + piece)
+		candidate := strings.TrimSpace(current + " " + piece)
 		if current != "" && utf8.RuneCountInString(candidate) > maxChars {
 			chunks = append(chunks, current)
 			current = piece
@@ -253,7 +220,7 @@ func splitTextForTTS(text string, maxChars int) []string {
 	sentences = append(sentences, normalized[start:])
 	var expanded []string
 	for _, s := range sentences {
-		sentence := pystr.Strip(s)
+		sentence := strings.TrimSpace(s)
 		if sentence == "" {
 			continue
 		}
@@ -276,7 +243,7 @@ func packAudioFilesForDelivery(audioPaths []string, profile audioDeliveryProfile
 		if err != nil {
 			return nil, err
 		}
-		size, suffix := int(info.Size()), pystr.Lower(pypath.Suffix(path))
+		size, suffix := int(info.Size()), strings.ToLower(pypath.Suffix(path))
 		if len(current) > 0 && (currentSize+size > profile.targetFileBytes() || suffix != currentSuffix) {
 			groups = append(groups, current)
 			current, currentSize = nil, 0
@@ -408,7 +375,7 @@ func wrapPCMAsWAV(pcm []byte, sampleRate, channels, sampleWidth int) []byte {
 
 // Writes in memory WAV under the output path, ffmpeg converting to its container and Opus for ogg
 func writeWAVBytesAs(wavBytes []byte, outputPath string) (string, error) {
-	if strings.HasSuffix(pystr.Lower(outputPath), ".wav") {
+	if strings.HasSuffix(strings.ToLower(outputPath), ".wav") {
 		if err := os.WriteFile(outputPath, wavBytes, 0o666); err != nil {
 			return "", err
 		}
@@ -429,7 +396,7 @@ func writeWAVBytesAs(wavBytes []byte, outputPath string) (string, error) {
 	}
 	if ffmpeg := ttsWhich("ffmpeg"); ffmpeg != "" {
 		var opus []string
-		if strings.HasSuffix(pystr.Lower(outputPath), ".ogg") {
+		if strings.HasSuffix(strings.ToLower(outputPath), ".ogg") {
 			opus = opusVoiceArgs
 		}
 		args := append(append([]string{"-i", wavPath}, opus...), "-y", "-loglevel", "error", outputPath)
@@ -571,10 +538,10 @@ func concatAudioFiles(audioPaths []string, outputPath string, voiceCompatible bo
 		return "", nil
 	}
 	args := []string{"-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatPath, "-vn"}
-	suffix := pystr.Lower(pypath.Suffix(destination))
+	suffix := strings.ToLower(pypath.Suffix(destination))
 	allMP3 := true
 	for _, p := range audioPaths {
-		allMP3 = allMP3 && pystr.Lower(pypath.Suffix(p)) == ".mp3"
+		allMP3 = allMP3 && strings.ToLower(pypath.Suffix(p)) == ".mp3"
 	}
 	if voiceCompatible || suffix == ".ogg" || suffix == ".opus" {
 		args = append(args, "-c:a", "libopus", "-ac", "1", "-b:a", "64k", "-vbr", "off")

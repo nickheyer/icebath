@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -26,19 +25,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const defaultSTTTimeout = 60.0
-
 var voiceExtensions = []string{".silk", ".amr", ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".speex", ".flac"}
 
-// Direct REST endpoints of the STT provider names users write
-var sttProviderBaseURLs = map[string]string{
-	"zai":    "https://open.bigmodel.cn/api/coding/paas/v4",
-	"openai": "https://api.openai.com/v1",
-	"glm":    "https://open.bigmodel.cn/api/coding/paas/v4",
-}
+// Direct REST endpoint and usual model of each voice to text service qqbot.stt.provider offers
+var (
+	sttProviderBaseURLs = map[string]string{"zai": "https://open.bigmodel.cn/api/coding/paas/v4", "openai": "https://api.openai.com/v1"}
+	sttProviderModels   = map[string]string{"zai": "glm-asr", "openai": "whisper-1"}
+)
 
 var audioURLExtensions = map[string]bool{".silk": true, ".amr": true, ".mp3": true, ".wav": true, ".ogg": true, ".m4a": true, ".aac": true, ".flac": true}
 
@@ -127,14 +124,14 @@ func (a *QQAdapter) downloadAndCache(ctx context.Context, url, contentType, orig
 
 // Whether an attachment is voice by its content type, else by its file name unless it is an explicit file upload
 func isVoiceContentType(contentType, filename string) bool {
-	ct := pystr.Lower(pystr.Strip(contentType))
+	ct := strings.ToLower(strings.TrimSpace(contentType))
 	if ct == "voice" || strings.HasPrefix(ct, "audio/") {
 		return true
 	}
 	if ct == "file" {
 		return false
 	}
-	name := pystr.Lower(pystr.Strip(filename))
+	name := strings.ToLower(strings.TrimSpace(filename))
 	for _, ext := range voiceExtensions {
 		if strings.HasSuffix(name, ext) {
 			return true
@@ -282,7 +279,7 @@ func tempPair(audioData []byte, ext string) (string, string, error) {
 
 // Converts audio bytes to a temporary WAV through pilk, then ffmpeg, then the raw PCM wrap, empty when all fail
 func (a *QQAdapter) convertAudioToWAVFile(ctx context.Context, audioData []byte, filename string) (string, error) {
-	ext := pystr.Lower(pypath.Suffix(filename))
+	ext := strings.ToLower(pypath.Suffix(filename))
 	if ext == "" {
 		ext = guessExtFromData(audioData)
 	}
@@ -404,51 +401,26 @@ type sttConfig struct {
 	timeout                float64
 }
 
-// STT backend from the stt block of the extra, then from the QQ_STT env vars, nil when neither is configured
+// STT backend from the qqbot.stt settings and the QQ_STT_API_KEY credential, nil when voice to text is off or no key is set
 func (a *QQAdapter) resolveSTTConfig(ctx context.Context) (*sttConfig, error) {
-	if cfg, ok := a.Config.Extra["stt"].(map[string]any); ok && cfg["enabled"] != false {
-		baseURL := pyrepr.Or(cfg["baseUrl"], getOr(cfg, "base_url", ""))
-		apiKey := pyrepr.Or(cfg["apiKey"], getOr(cfg, "api_key", ""))
-		model := getOr(cfg, "model", "")
-		timeout := defaultSTTTimeout
-		if raw, present := cfg["timeout"]; present {
-			if f, err := pyint.Float(raw); err == nil {
-				timeout = f
-			}
-		}
-		modelOr := func(def string) string {
-			if pyrepr.Truthy(model) {
-				return pyrepr.Str(model)
-			}
-			return def
-		}
-		if pyrepr.Truthy(baseURL) && pyrepr.Truthy(apiKey) {
-			return &sttConfig{pystr.RstripChars(pyrepr.Str(baseURL), "/"), pyrepr.Str(apiKey), modelOr("whisper-1"), timeout}, nil
-		}
-		if pyrepr.Truthy(apiKey) {
-			provider := pyrepr.Str(getOr(cfg, "provider", "zai"))
-			if providerURL := sttProviderBaseURLs[provider]; providerURL != "" {
-				defaultModel := "whisper-1"
-				if provider == "zai" || provider == "glm" {
-					defaultModel = "glm-asr"
-				}
-				return &sttConfig{providerURL, pyrepr.Str(apiKey), modelOr(defaultModel), timeout}, nil
-			}
-		}
+	sctx := gateway.SettingsContext(ctx)
+	if !settings.QqbotSttEnabled.Get(sctx) {
+		return nil, nil
 	}
 	key, err := gateway.GetScopedSecret(ctx, "QQ_STT_API_KEY", "", false)
 	if err != nil || key == "" {
 		return nil, err
 	}
-	baseURL, err := gateway.GetScopedSecret(ctx, "QQ_STT_BASE_URL", sttProviderBaseURLs["zai"], false)
-	if err != nil {
-		return nil, err
+	provider := settings.QqbotSttProvider.Get(sctx)
+	baseURL := strings.TrimSpace(settings.QqbotSttBaseURL.Get(sctx))
+	if baseURL == "" {
+		baseURL = sttProviderBaseURLs[provider]
 	}
-	model, err := gateway.GetScopedSecret(ctx, "QQ_STT_MODEL", "glm-asr", false)
-	if err != nil {
-		return nil, err
+	model := strings.TrimSpace(settings.QqbotSttModel.Get(sctx))
+	if model == "" {
+		model = sttProviderModels[provider]
 	}
-	return &sttConfig{pystr.RstripChars(baseURL, "/"), key, model, defaultSTTTimeout}, nil
+	return &sttConfig{strings.TrimRight(baseURL, "/"), key, model, settings.QqbotSttTimeout.Get(sctx).Seconds()}, nil
 }
 
 // Transcribes a WAV through an OpenAI compatible STT API, empty when STT is unconfigured or the call fails
@@ -458,7 +430,7 @@ func (a *QQAdapter) callSTT(ctx context.Context, wavPath string) (string, error)
 		return "", err
 	}
 	if cfg == nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] STT not configured (no stt config or QQ_STT_API_KEY)", a.logTag()))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT not configured (voice to text is off or QQ_STT_API_KEY is not set)", a.logTag()))
 		return "", nil
 	}
 	transcript, err := a.postTranscription(ctx, cfg, wavPath)
@@ -536,14 +508,14 @@ func (a *QQAdapter) postTranscription(ctx context.Context, cfg *sttConfig, wavPa
 		}
 		content = text
 	}
-	if stripped := pystr.Strip(content); stripped != "" {
+	if stripped := strings.TrimSpace(content); stripped != "" {
 		return stripped, nil
 	}
 	text, isStr := getOr(result, "text", "").(string)
 	if !isStr {
 		return "", &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(result["text"]))}
 	}
-	return pystr.Strip(text), nil
+	return strings.TrimSpace(text), nil
 }
 
 // Converts voice bytes to WAV and caches the result, the original bytes cached under their extension when conversion fails
@@ -552,7 +524,7 @@ func (a *QQAdapter) convertAudioToWAV(ctx context.Context, audioData []byte, sou
 	if err != nil {
 		return "", err
 	}
-	ext := pystr.Lower(pypath.Suffix(parsed.Path))
+	ext := strings.ToLower(pypath.Suffix(parsed.Path))
 	if !audioURLExtensions[ext] {
 		ext = guessExtFromData(audioData)
 	}

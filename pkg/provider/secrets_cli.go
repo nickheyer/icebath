@@ -94,7 +94,7 @@ func setupBinary(bw bitwardenBackend, console *pyrich.Console) string {
 
 // Setup flags a no TTY run must supply, BWS_SERVER_URL standing in for --server-url
 func missingNoninteractiveFlags(ns map[string]any) []string {
-	serverURL := pystr.Strip(nsText(ns, "server_url"))
+	serverURL := strings.TrimSpace(nsText(ns, "server_url"))
 	if serverURL == "" {
 		serverURL = os.Getenv("BWS_SERVER_URL")
 	}
@@ -105,7 +105,7 @@ func missingNoninteractiveFlags(ns map[string]any) []string {
 	}
 	var missing []string
 	for _, entry := range provided {
-		if pystr.Strip(entry[1]) == "" {
+		if strings.TrimSpace(entry[1]) == "" {
 			missing = append(missing, entry[0])
 		}
 	}
@@ -115,13 +115,13 @@ func missingNoninteractiveFlags(ns map[string]any) []string {
 // Step 2, the token from --access-token or a masked prompt persisted to .env, empty when aborted
 func setupToken(cli *secretsCLI, ns map[string]any, tokenEnv string) (string, error) {
 	step(cli.console, 2, "Provide your access token")
-	token := pystr.Strip(nsText(ns, "access_token"))
+	token := strings.TrimSpace(nsText(ns, "access_token"))
 	if token == "" {
 		typed, err := maskedSecretPrompt(fmt.Sprintf("  Paste access token (%s): ", tokenEnv))
 		if err != nil {
 			return "", err
 		}
-		token = pystr.Strip(typed)
+		token = strings.TrimSpace(typed)
 	}
 	if token == "" {
 		cli.console.Print("  [red]Empty token, aborting.[/red]")
@@ -220,7 +220,7 @@ func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	} else {
 		console.Print("  [green]✓[/green] using bws default (US Cloud, https://vault.bitwarden.com)")
 	}
-	projectID := pystr.Strip(nsText(ns, "project_id"))
+	projectID := strings.TrimSpace(nsText(ns, "project_id"))
 	projectGiven := projectID != ""
 	if !projectGiven {
 		projectID, err = setupProject(cli, binary, token, serverURL)
@@ -306,7 +306,7 @@ func bwCmdStatus(cli *secretsCLI, ns map[string]any) (int, error) {
 	tokenEnv := cfgText(bw, "access_token_env", bwDefaultTokenEnv)
 	projectID := cfgText(bw, "project_id", "")
 	serverURL := cfgStr(bw, "server_url")
-	token := pystr.Strip(os.Getenv(tokenEnv))
+	token := strings.TrimSpace(os.Getenv(tokenEnv))
 	binary := backend.find(false)
 	tokenValidation, validationMessages := tokenValidationStatus(cli, enabled, binary, token, serverURL)
 	projectCell := projectID
@@ -436,7 +436,7 @@ func bwCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 		return 1, nil
 	}
 	tokenEnv := cfgText(bw, "access_token_env", bwDefaultTokenEnv)
-	token := pystr.Strip(os.Getenv(tokenEnv))
+	token := strings.TrimSpace(os.Getenv(tokenEnv))
 	if token == "" {
 		console.Print(fmt.Sprintf("[red]%s is not set.[/red]", tokenEnv))
 		return 1, nil
@@ -530,7 +530,7 @@ func tokenValidationStatus(cli *secretsCLI, enabled bool, binary, token, serverU
 	probeConsole := pyrich.NewConsole(&recorded)
 	probeConsole.Width = 200
 	if _, ok := listProjects(cli, binary, token, probeConsole, serverURL); !ok {
-		if details := pystr.Strip(recorded.String()); details != "" {
+		if details := strings.TrimSpace(recorded.String()); details != "" {
 			for _, line := range strings.Split(details, "\n") {
 				messages = append(messages, strings.TrimRightFunc(line, pystr.IsSpace))
 			}
@@ -606,7 +606,7 @@ func bitwardenProjects(ctx context.Context, binary, token, serverURL string) ([]
 		if output == "" {
 			output = stdout
 		}
-		failure := headRunes(pystr.Strip(output), 300)
+		failure := headRunes(strings.TrimSpace(output), 300)
 		return nil, &bitwardenProjectsFailure{Text: "bws project list failed: " + failure, Cause: projectListCause(failure)}
 	}
 	if stdout == "" {
@@ -651,10 +651,10 @@ var regionPresets = [][2]string{
 // Server URL from the flag, BWS_SERVER_URL, the existing config or the region menu, false for an empty custom URL
 func resolveServerURL(cli *secretsCLI, ns map[string]any, secretsCfg map[string]any) (string, bool, error) {
 	console := cli.console
-	if given := pystr.Strip(nsText(ns, "server_url")); given != "" {
+	if given := strings.TrimSpace(nsText(ns, "server_url")); given != "" {
 		return given, true, nil
 	}
-	if envURL := pystr.Strip(os.Getenv("BWS_SERVER_URL")); envURL != "" {
+	if envURL := strings.TrimSpace(os.Getenv("BWS_SERVER_URL")); envURL != "" {
 		console.Print(fmt.Sprintf("  Detected [cyan]BWS_SERVER_URL[/cyan]=%s in your shell — using it.", envURL))
 		return envURL, true, nil
 	}
@@ -688,7 +688,7 @@ func resolveServerURL(cli *secretsCLI, ns map[string]any, secretsCfg map[string]
 	if err != nil {
 		return "", false, err
 	}
-	custom = pystr.Strip(custom)
+	custom = strings.TrimSpace(custom)
 	if custom == "" {
 		console.Print("  [red]Empty URL, aborting.[/red]")
 		return "", false, nil

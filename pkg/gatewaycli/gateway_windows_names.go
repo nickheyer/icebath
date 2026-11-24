@@ -1,6 +1,8 @@
 package gatewaycli
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"os"
@@ -9,7 +11,6 @@ import (
 	"runtime"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -78,12 +79,12 @@ func sanitizeFilename(value string) string {
 // Startup folder under APPDATA, else under USERPROFILE or HOME AppData Roaming
 func startupDir() (string, error) {
 	tail := []string{"Microsoft", "Windows", "Start Menu", "Programs", "Startup"}
-	if appdata := pystr.Strip(os.Getenv("APPDATA")); appdata != "" {
+	if appdata := strings.TrimSpace(os.Getenv("APPDATA")); appdata != "" {
 		return filepath.Join(append([]string{appdata}, tail...)...), nil
 	}
-	profile := pystr.Strip(os.Getenv("USERPROFILE"))
+	profile := strings.TrimSpace(os.Getenv("USERPROFILE"))
 	if profile == "" {
-		profile = pystr.Strip(os.Getenv("HOME"))
+		profile = strings.TrimSpace(os.Getenv("HOME"))
 	}
 	if profile == "" {
 		return "", errors.New("neither APPDATA nor USERPROFILE is set \u2014 cannot resolve Startup folder")

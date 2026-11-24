@@ -22,20 +22,10 @@ func DefaultBotLoopGuardSettings() BotLoopGuardSettings {
 		WindowSeconds: settings.GatewayBotLoopGuardWindowSeconds.Default.Seconds(), CooldownSeconds: settings.GatewayBotLoopGuardCooldownSeconds.Default.Seconds()}
 }
 
-// Bot loop guard budget of the profile in ctx, a non positive count or span keeping its default
+// Bot loop guard budget of the profile in ctx
 func LoadBotLoopGuardSettings(ctx context.Context) BotLoopGuardSettings {
-	out := DefaultBotLoopGuardSettings()
-	out.Enabled = settings.GatewayBotLoopGuardEnabled.Get(ctx)
-	if n := settings.GatewayBotLoopGuardMaxEvents.Get(ctx); n > 0 {
-		out.MaxEvents = n
-	}
-	if d := settings.GatewayBotLoopGuardWindowSeconds.Get(ctx); d > 0 {
-		out.WindowSeconds = d.Seconds()
-	}
-	if d := settings.GatewayBotLoopGuardCooldownSeconds.Get(ctx); d > 0 {
-		out.CooldownSeconds = d.Seconds()
-	}
-	return out
+	return BotLoopGuardSettings{Enabled: settings.GatewayBotLoopGuardEnabled.Get(ctx), MaxEvents: settings.GatewayBotLoopGuardMaxEvents.Get(ctx),
+		WindowSeconds: settings.GatewayBotLoopGuardWindowSeconds.Get(ctx).Seconds(), CooldownSeconds: settings.GatewayBotLoopGuardCooldownSeconds.Get(ctx).Seconds()}
 }
 
 var botGuardEpoch = time.Now()

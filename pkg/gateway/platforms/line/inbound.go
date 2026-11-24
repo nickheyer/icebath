@@ -181,7 +181,7 @@ func (a *LineAdapter) handleMessageEvent(ctx context.Context, event map[string]a
 			text = "[sticker: " + words + "]"
 		}
 	case msgType == "location":
-		text = pystr.Strip("[location: " + getStr(msg, "title", "") + " " + getStr(msg, "address", "") + "]")
+		text = strings.TrimSpace("[location: " + getStr(msg, "title", "") + " " + getStr(msg, "address", "") + "]")
 	default:
 		text = "[unsupported message type: " + msgType + "]"
 	}

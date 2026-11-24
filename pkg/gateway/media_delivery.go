@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -116,22 +116,9 @@ func credentialHomeRoots(ctx context.Context) []string {
 	return out
 }
 
-// Root shared kanban home, ICEBATH_KANBAN_HOME over the default root
-func kanbanRoot() (string, error) {
-	root := pystr.Strip(os.Getenv("ICEBATH_KANBAN_HOME"))
-	if root == "" {
-		root = home.Root()
-	}
-	return pypath.PathExpanduser(root)
-}
-
 // Every directory under the kanban boards root
 func kanbanBoardDirs() ([]string, error) {
-	root, err := kanbanRoot()
-	if err != nil {
-		return nil, err
-	}
-	dir := filepath.Join(root, "kanban", "boards")
+	dir := kanban.BoardsRoot()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, nil
@@ -147,22 +134,18 @@ func kanbanBoardDirs() ([]string, error) {
 
 // Durable kanban attachment roots, the override alone when set
 func kanbanAttachmentRoots() ([]string, error) {
-	if override := pystr.Strip(os.Getenv("ICEBATH_KANBAN_ATTACHMENTS_ROOT")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_ATTACHMENTS_ROOT")); override != "" {
 		expanded, err := pypath.PathExpanduser(override)
 		if err != nil {
 			return nil, err
 		}
 		return []string{expanded}, nil
 	}
-	root, err := kanbanRoot()
-	if err != nil {
-		return nil, err
-	}
 	boards, err := kanbanBoardDirs()
 	if err != nil {
 		return nil, err
 	}
-	roots := []string{filepath.Join(root, "kanban", "attachments")}
+	roots := []string{filepath.Join(kanban.KanbanHome(), "kanban", "attachments")}
 	for _, board := range boards {
 		if st, err := os.Lstat(board); err == nil && st.Mode()&os.ModeSymlink != 0 {
 			continue
@@ -177,14 +160,14 @@ func kanbanAttachmentRoots() ([]string, error) {
 // Roots from which model emitted local media may be delivered
 func mediaDeliveryAllowedRoots(ctx context.Context) ([]string, error) {
 	roots := append(mediaDeliverySafeRoots(), profileCacheRoots(ctx)...)
-	kanban, err := kanbanAttachmentRoots()
+	attachments, err := kanbanAttachmentRoots()
 	if err != nil {
 		return nil, err
 	}
-	roots = append(roots, kanban...)
-	for _, chunk := range strings.Split(MediaDeliveryAllowDirs(ctx), string(os.PathListSeparator)) {
-		for _, raw := range strings.Split(chunk, ",") {
-			raw = pystr.Strip(raw)
+	roots = append(roots, attachments...)
+	for _, item := range settings.GatewayMediaDeliveryAllowDirs.Strings(ctx) {
+		for _, raw := range strings.FieldsFunc(item, func(r rune) bool { return r == os.PathListSeparator || r == ',' }) {
+			raw = strings.TrimSpace(raw)
 			if err := expanduserRaises(raw); err != nil {
 				return nil, err
 			}
@@ -313,7 +296,7 @@ func parseDockerVolumeMounts(ctx context.Context) ([][2]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
 	}
@@ -326,7 +309,7 @@ func parseDockerVolumeMounts(ctx context.Context) ([][2]string, error) {
 	for _, entry := range list {
 		spec := ""
 		if s, ok := entry.(string); ok {
-			spec = pystr.Strip(s)
+			spec = strings.TrimSpace(s)
 		}
 		start := 0
 		if dockerDriveRE.MatchString(spec) {
@@ -357,7 +340,7 @@ func parseDockerVolumeMounts(ctx context.Context) ([][2]string, error) {
 // Whether the active terminal backend is Docker
 func dockerEnvActive(ctx context.Context) (bool, error) {
 	v, err := tenv(ctx, "TERMINAL_ENV", "")
-	return pystr.Lower(pystr.Strip(v)) == "docker", err
+	return strings.ToLower(strings.TrimSpace(v)) == "docker", err
 }
 
 // Words a terminal policy value turns a switch on with
@@ -370,7 +353,7 @@ func dockerPersistentActive(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	v, err := tenv(ctx, "TERMINAL_CONTAINER_PERSISTENT", "true")
-	return mediaTruthy[pystr.Lower(pystr.Strip(v))], err
+	return mediaTruthy[strings.ToLower(strings.TrimSpace(v))], err
 }
 
 // Host and container pairs of the auto mounted cache directories under Docker

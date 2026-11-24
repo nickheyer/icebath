@@ -28,12 +28,6 @@ func setupSectionHome(t *testing.T, cfgText, envText string) string {
 	return h
 }
 
-// Response of one request routed through its contract, params and result checked
-func contractCall(t *testing.T, method string, params map[string]any) map[string]any {
-	t.Helper()
-	return handleRequest(context.Background(), map[string]any{"jsonrpc": "2.0", "id": 7, "method": method, "params": params})
-}
-
 func TestSetupActionStartBindsTheParametersOfTheWalk(t *testing.T) {
 	setupSectionHome(t, "model:\n  default: m\n", "")
 	got := make(chan map[string]string, 1)

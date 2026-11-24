@@ -20,16 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 const (
-	cloudTrimThresholdDBDefault = -40
-	cloudTrimKeepMSDefault      = 300
-	cloudTrimMinSaving          = 0.10
-	cloudTrimMinResultSeconds   = 0.3
-	cloudTrimMinInputSeconds    = 12.0
+	cloudTrimMinSaving        = 0.10
+	cloudTrimMinResultSeconds = 0.3
+	cloudTrimMinInputSeconds  = 12.0
 )
 
 var sttM4AEncodeArgs = []string{"-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac", "-b:a", "32k", "-movflags", "+faststart"}
@@ -346,29 +343,17 @@ func probeAudioDuration(filePath string) (float64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	f, err := strconv.ParseFloat(pystr.Strip(stdout), 64)
+	f, err := strconv.ParseFloat(strings.TrimSpace(stdout), 64)
 	if err != nil {
 		return 0, false
 	}
 	return f, true
 }
 
-// Enabled flag, threshold dB and keep milliseconds of the cloud silence trim
-func cloudTrimSettings(sttConfig map[string]any) (bool, int, int) {
-	cfg := sttConfig
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	enabled := isTruthyValue(dictGetDefault(cfg, "cloud_trim_silence", true), true)
-	threshold := configNumberInt(cfg, "cloud_trim_threshold_db", cloudTrimThresholdDBDefault)
-	keep := configNumberInt(cfg, "cloud_trim_keep_ms", cloudTrimKeepMSDefault)
-	return enabled, threshold, max(keep, 0)
-}
-
 // Silence trimmed copy for cloud upload, empty meaning upload the original, the caller owns its parent dir
-func trimSilenceForCloudSTT(filePath string, sttConfig map[string]any) string {
-	enabled, thresholdDB, keepMS := cloudTrimSettings(sttConfig)
-	if !enabled {
+func trimSilenceForCloudSTT(filePath string, req *sttRequest) string {
+	thresholdDB, keepMS := req.CloudTrimDB, req.CloudTrimKeepMS
+	if !req.CloudTrim {
 		return ""
 	}
 	ffmpeg := findFFmpegBinary()

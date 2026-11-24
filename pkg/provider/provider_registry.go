@@ -1,13 +1,14 @@
 package provider
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
@@ -55,8 +56,8 @@ func ConfiguredProviderName(ctx context.Context, section string, logger *slog.Lo
 			logger = pkgLog()
 		}
 		logger.Debug(fmt.Sprintf("Could not read %s.provider from config: %s", section, err))
-	} else if raw, ok := configBlock(configBlock(map[string]any(cfg))[section])["provider"].(string); ok && pystr.Strip(raw) != "" {
-		configured = pystr.Strip(raw)
+	} else if raw, ok := configBlock(configBlock(map[string]any(cfg))[section])["provider"].(string); ok && strings.TrimSpace(raw) != "" {
+		configured = strings.TrimSpace(raw)
 	}
 	return configured
 }

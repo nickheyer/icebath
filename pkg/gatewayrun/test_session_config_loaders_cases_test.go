@@ -64,9 +64,6 @@ func newConfigLoadersOwner(t *testing.T) *configLoadersOwner {
 		return nil, errAgentBuilt
 	}
 	t.Cleanup(func() { newAIAgent = prev })
-	prevBudget := gateway.NormalizeRunBudgetSeconds
-	gateway.NormalizeRunBudgetSeconds = agent.NormalizeRunBudgetSeconds
-	t.Cleanup(func() { gateway.NormalizeRunBudgetSeconds = prevBudget })
 	runner, err := NewGatewayRunner(o.ctx, gateway.DefaultGatewayConfig(o.ctx))
 	if err != nil {
 		t.Fatal(err)

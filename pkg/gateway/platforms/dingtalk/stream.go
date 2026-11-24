@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -32,13 +33,10 @@ const (
 	contentTypeJSON       = "application/json"
 )
 
-// DingTalk OpenAPI base URL, the public endpoint unless DINGTALK_OPENAPI_ENDPOINT overrides it
-var openAPIEndpoint = sync.OnceValue(func() string {
-	if v, ok := os.LookupEnv("DINGTALK_OPENAPI_ENDPOINT"); ok {
-		return v
-	}
-	return "https://api.dingtalk.com"
-})
+// DingTalk OpenAPI base URL from dingtalk.openapi_endpoint
+func openAPIEndpoint(ctx context.Context) string {
+	return strings.TrimRight(strings.TrimSpace(settings.DingtalkOpenapiEndpoint.Get(gateway.SettingsContext(ctx))), "/")
+}
 
 // Frame headers of a stream message, the names the SDK maps kept apart from the extension names
 type streamHeaders struct {
@@ -416,7 +414,7 @@ func sdkPost(ctx context.Context, target string, headers map[string]string, body
 
 // Asks the gateway for a WebSocket endpoint and ticket for the registered topics, nil when the request fails
 func (c *streamClient) openConnection(ctx context.Context) (*pyjson.Object, error) {
-	target := openAPIEndpoint() + "/v1.0/gateway/connections/open"
+	target := openAPIEndpoint(ctx) + "/v1.0/gateway/connections/open"
 	c.log().Info("open connection, url=" + target)
 	headers := map[string]string{"Content-Type": contentTypeJSON, "Accept": contentTypeJSON,
 		"User-Agent": fmt.Sprintf("DingTalkStream/1.0 SDK/%s Go/%s (+https://github.com/open-dingtalk/dingtalk-stream-sdk-python)",
@@ -476,7 +474,7 @@ func (c *streamClient) getAccessToken(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	target := openAPIEndpoint() + "/v1.0/oauth2/accessToken"
+	target := openAPIEndpoint(ctx) + "/v1.0/oauth2/accessToken"
 	resp, text, err := sdkPost(ctx, target, map[string]string{"Content-Type": contentTypeJSON, "Accept": contentTypeJSON}, values)
 	if err != nil {
 		if ctx.Err() != nil {

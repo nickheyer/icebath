@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -109,7 +108,7 @@ type GraphCredentials struct {
 
 // OAuth v2 token endpoint of the tenant under the authority
 func (c GraphCredentials) TokenURL() string {
-	return strings.TrimRight(c.AuthorityURL, "/") + "/" + strings.Trim(pystr.Strip(c.TenantID), "/") + "/oauth2/v2.0/token"
+	return strings.TrimRight(c.AuthorityURL, "/") + "/" + strings.Trim(strings.TrimSpace(c.TenantID), "/") + "/oauth2/v2.0/token"
 }
 
 // Credentials read from the MSGRAPH variables of environ or the process environment, nil when absent and optional
@@ -123,7 +122,7 @@ func GraphCredentialsFromEnv(environ map[string]string, required bool) (*GraphCr
 	values := make([]string, len(graphRequiredEnv))
 	var missing []string
 	for i, name := range graphRequiredEnv {
-		values[i] = pystr.Strip(get(name))
+		values[i] = strings.TrimSpace(get(name))
 		if values[i] == "" {
 			missing = append(missing, name)
 		}
@@ -141,8 +140,8 @@ func GraphCredentialsFromEnv(environ map[string]string, required bool) (*GraphCr
 		return v
 	}
 	return &GraphCredentials{TenantID: values[0], ClientID: values[1], ClientSecret: values[2],
-		Scope:        pystr.Strip(orDefault(get("MSGRAPH_SCOPE"), DefaultGraphScope)),
-		AuthorityURL: pystr.Strip(orDefault(get("MSGRAPH_AUTHORITY_URL"), DefaultGraphAuthorityURL))}, nil
+		Scope:        strings.TrimSpace(orDefault(get("MSGRAPH_SCOPE"), DefaultGraphScope)),
+		AuthorityURL: strings.TrimSpace(orDefault(get("MSGRAPH_AUTHORITY_URL"), DefaultGraphAuthorityURL))}, nil
 }
 
 // Cached app only Graph access token
@@ -307,7 +306,7 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 	}
 	accessToken := ""
 	if v := get("access_token"); pyrepr.Truthy(v) {
-		accessToken = pystr.Strip(pyrepr.Str(v))
+		accessToken = strings.TrimSpace(pyrepr.Str(v))
 	}
 	if accessToken == "" {
 		return nil, tokenError("Microsoft Graph token response did not include access_token.", nil)
@@ -328,7 +327,7 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 	}
 	tokenType := "Bearer"
 	if v := get("token_type"); pyrepr.Truthy(v) {
-		tokenType = pystr.Strip(pyrepr.Str(v))
+		tokenType = strings.TrimSpace(pyrepr.Str(v))
 	}
 	if tokenType == "" {
 		tokenType = "Bearer"
@@ -340,7 +339,7 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 func extractErrorDetail(resp *pyhttpx.Response) string {
 	payload, err := resp.JSON()
 	if err != nil {
-		if text := pystr.Strip(resp.Text()); text != "" {
+		if text := strings.TrimSpace(resp.Text()); text != "" {
 			return text
 		}
 		return "unknown error"

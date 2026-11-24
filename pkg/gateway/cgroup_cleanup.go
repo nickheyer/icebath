@@ -1,6 +1,9 @@
 package gateway
 
 import (
+	"strings"
+
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -43,7 +46,7 @@ func ownCgroupPath() (string, error) {
 		return "", err
 	}
 	if m := cgroupV2Line.FindStringSubmatch(text); m != nil {
-		return pystr.Strip(m[1]), nil
+		return strings.TrimSpace(m[1]), nil
 	}
 	return "", nil
 }
@@ -74,7 +77,7 @@ func parentIsSystemd() (bool, error) {
 	if !ok {
 		return false, err
 	}
-	return pystr.Strip(text) == "systemd", nil
+	return strings.TrimSpace(text) == "systemd", nil
 }
 
 // Whether one of the pids has a readable gateway runtime command line
@@ -164,7 +167,7 @@ func CgroupCleanupMain() int {
 
 // Runs the cgroup reaper and exits when the process was started with the hidden entry argument
 func DispatchCgroupCleanupEntry() {
-	args := pinnedEntryArgs(os.Args[1:])
+	_, args := pinnedEntryArgs(context.Background(), os.Args[1:])
 	if len(args) > 0 && args[0] == CgroupCleanupEntry {
 		os.Exit(CgroupCleanupMain())
 	}

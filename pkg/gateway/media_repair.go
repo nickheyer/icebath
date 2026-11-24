@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -135,10 +134,10 @@ func computerUseCaptureBasename(path any) string {
 	if pyrepr.Truthy(path) {
 		text = pyrepr.Str(path)
 	}
-	text = strings.Trim(pystr.Strip(text), "`\"'")
+	text = strings.Trim(strings.TrimSpace(text), "`\"'")
 	basename := text[strings.LastIndexAny(text, `/\`)+1:]
 	if ok, _ := captureBasenameRE.MatchString(basename); ok {
-		return pystr.Lower(basename)
+		return strings.ToLower(basename)
 	}
 	return ""
 }
@@ -147,11 +146,11 @@ func computerUseCaptureBasename(path any) string {
 func iterComputerUseCapturePaths(content any) ([]string, error) {
 	switch t := content.(type) {
 	case string:
-		stripped := pystr.Strip(t)
+		stripped := strings.TrimSpace(t)
 		if !strings.HasPrefix(stripped, "{") && !strings.HasPrefix(stripped, "[") {
 			var out []string
 			for _, m := range captureSummaryRE.finditer([]rune(t)) {
-				out = append(out, pystr.Strip(captureSummaryRE.group(m, "path")))
+				out = append(out, strings.TrimSpace(captureSummaryRE.group(m, "path")))
 			}
 			return out, nil
 		}

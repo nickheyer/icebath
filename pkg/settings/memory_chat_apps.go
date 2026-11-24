@@ -16,7 +16,7 @@ var LearnAboutMe = Register(&Bool{Meta: Meta{Key: "memory.user_profile_enabled",
 var AskBeforeMemory = Register(&Bool{Meta: Meta{Key: "memory.write_approval", Label: "Ask before saving",
 	Short: "Ask you before the agent saves or changes a memory.",
 	Group: GroupMemory, Order: 30},
-	Default: false})
+	Default: false, Also: map[string]bool{"approve": true}})
 
 // Reopening the last session at start
 var ResumeLast = Register(&Bool{Meta: Meta{Key: "display.tui_auto_resume_recent", Label: "Resume last session",

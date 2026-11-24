@@ -19,11 +19,7 @@ import (
 func acquireTurnLock(ctx context.Context, root, profile string, timeoutSeconds *float64) (func(), error) {
 	var budget float64
 	if timeoutSeconds == nil {
-		configured, err := TurnWaitSeconds(ctx)
-		if err != nil {
-			return nil, err
-		}
-		budget = configured
+		budget = TurnWaitSeconds(ctx)
 	} else {
 		budget = math.Max(0, *timeoutSeconds)
 	}

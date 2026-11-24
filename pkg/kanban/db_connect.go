@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -31,9 +32,6 @@ var (
 )
 
 const sqliteHeader = "SQLite format 3\x00"
-
-// Busy timeout kanban connections use unless ICEBATH_KANBAN_BUSY_TIMEOUT_MS overrides it
-const DefaultBusyTimeoutMS = 120_000
 
 var corruptBackupRetention = 10
 
@@ -56,9 +54,9 @@ func forgetInitialized(resolved string) {
 	initMu.Unlock()
 }
 
-// Busy timeout for kanban connections, long so WAL serializes worker stampedes
+// Busy timeout for kanban connections in milliseconds from kanban.busy_timeout_ms, long so WAL serializes worker stampedes
 func resolveBusyTimeoutMS() int64 {
-	return envInt("ICEBATH_KANBAN_BUSY_TIMEOUT_MS", DefaultBusyTimeoutMS, 1)
+	return max(1, int64(settings.KanbanBusyTimeoutMs.Get(context.Background())/time.Millisecond))
 }
 
 // Opens a tracked kanban connection with its busy timeout, closing it again when the pragma fails
@@ -315,7 +313,7 @@ var repairableIndexErrorPatterns = []*regexp.Regexp{
 
 // Reports whether integrity_check output is the single ok row
 func integrityMessagesOK(messages []string) bool {
-	return len(messages) == 1 && pystr.Lower(pystr.Strip(messages[0])) == "ok"
+	return len(messages) == 1 && strings.ToLower(strings.TrimSpace(messages[0])) == "ok"
 }
 
 // Every integrity_check message row as a string
@@ -347,7 +345,7 @@ func probeIntegrity(ctx context.Context, path string) ([]string, error) {
 func repairableIndexNames(messages []string) []string {
 	var names []string
 	for _, raw := range messages {
-		message := pystr.Strip(raw)
+		message := strings.TrimSpace(raw)
 		if message == "" {
 			continue
 		}
@@ -361,7 +359,7 @@ func repairableIndexNames(messages []string) []string {
 		if m == nil {
 			return nil
 		}
-		name := pystr.Strip(m[re.SubexpIndex("index")])
+		name := strings.TrimSpace(m[re.SubexpIndex("index")])
 		if name != "" && !slices.Contains(names, name) {
 			names = append(names, name)
 		}

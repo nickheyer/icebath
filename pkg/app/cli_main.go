@@ -36,7 +36,7 @@ var ErrSetupCancelled = errors.New("provider setup cancelled")
 
 // Runs one query or image turn in process and returns the exit code with the error it raises
 func Main(ctx context.Context, o MainOptions) (code int, err error) {
-	ConfigureWindowsStdio()
+	ConfigureWindowsStdio(ctx)
 	_ = os.Setenv("ICEBATH_INTERACTIVE", "1")
 	defer func() {
 		if r := recover(); r != nil {
@@ -62,7 +62,7 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 	}
 	config.InstallSkinColorFilter(maybeRemapForLightMode)
 	if c := console(); c.StdinIsTTY() && c.StdoutIsTTY() {
-		detectLightMode()
+		detectLightMode(ctx)
 	}
 	query := o.Query
 	quiet := o.Quiet
@@ -166,7 +166,7 @@ func buildCLIFromArgs(ctx context.Context, o CLIOptions, typedToolsets bool, ski
 		if env != nil && env.Cwd != "" {
 			cwd = env.Cwd
 		}
-		toolsetsList = tools.CodingSelection(env, "cli", cwd)
+		toolsetsList = tools.CodingSelection(ctx, env, "cli", cwd)
 		o.Toolsets = toolsetsList
 	}
 	parsedSkills := parseSkillsArgument(skillsArg)
@@ -182,7 +182,7 @@ func buildCLIFromArgs(ctx context.Context, o CLIOptions, typedToolsets bool, ski
 	}
 	var autoLoadNames []string
 	if !c.ignoreRules {
-		autoLoadNames = skillsScope(c.ctx).ResolveAutoLoadSkills(c.config)
+		autoLoadNames = skillsScope(c.ctx).ResolveAutoLoadSkills(nil)
 	}
 	if len(autoLoadNames) == 0 {
 		c.autoLoadSkillsResult = &skillsPromptResult{Prompt: "", Loaded: []string{}, Missing: []string{}}
@@ -206,7 +206,7 @@ func buildCLIFromArgs(ctx context.Context, o CLIOptions, typedToolsets bool, ski
 				}
 			}()
 			if len(autoLoadNames) > 0 {
-				prompt, loaded, missing := scope.BuildAutoLoadPrompt(c.ctx, c.sessionID, c.config)
+				prompt, loaded, missing := scope.BuildAutoLoadPrompt(c.ctx, c.sessionID, nil)
 				c.autoLoadSkillsResult = &skillsPromptResult{Prompt: prompt, Loaded: loaded, Missing: missing}
 			}
 			if len(parsedSkills) > 0 {
@@ -280,7 +280,7 @@ func (c *CLI) claimActiveSession(surface string, stderr bool) bool {
 	if c.activeSessionLease != nil {
 		return true
 	}
-	lease, message, err := TryAcquireActiveSession(c.ctx, c.sessionID, surface, c.config, map[string]any{"live_session_id": c.sessionID})
+	lease, message, err := TryAcquireActiveSession(c.ctx, c.sessionID, surface, map[string]any{"live_session_id": c.sessionID})
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to claim active session slot: %v", err))
 		return true
@@ -354,7 +354,7 @@ func startWorktreeSetup(ctx context.Context, worktree bool) func() map[string]st
 		activeWorktreeMu.Lock()
 		activeWorktree = info
 		activeWorktreeMu.Unlock()
-		_ = os.Setenv("TERMINAL_CWD", info["path"])
+		moveCLIFolder(info["path"])
 		if repo := tools.GitRepoRoot(); repo != "" {
 			go func() {
 				_ = tools.PruneStaleWorktrees(ctx, repo, 24)

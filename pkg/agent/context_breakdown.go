@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -173,7 +172,7 @@ func stripBlocks(text string, blocks ...string) string {
 			text = strings.ReplaceAll(text, b, "")
 		}
 	}
-	return pystr.Strip(text)
+	return strings.TrimSpace(text)
 }
 
 // Non empty parts joined by blank lines and stripped
@@ -184,7 +183,7 @@ func joinBlocks(parts ...string) string {
 			kept = append(kept, p)
 		}
 	}
-	return pystr.Strip(strings.Join(kept, "\n\n"))
+	return strings.TrimSpace(strings.Join(kept, "\n\n"))
 }
 
 // Grid glyph of a category id, a small square for unknown ids

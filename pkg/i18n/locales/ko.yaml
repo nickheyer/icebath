@@ -83,8 +83,8 @@ gateway:
     next_turn_only: "    (다음 턴에만 적용 — 응답 한 번 후 복원돼요)"
     switch_cancelled: "🟡 모델 전환이 취소됐어요. 현재 모델은 그대로예요({model})."
     guard_confirm: "⚠️ **{title}**\n\n{message}\n\n_텍스트로 답하려면: 전환은 `{prefix}approve`, 현재 모델 유지는 `{prefix}cancel`이라고 답해 주세요._"
-    err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
-    local_next_turn: "Applies from your next message."
+    err_once_local: "이 세션에서는 `--once`를 사용할 수 없어요. `/model <name>`을 사용하고 턴이 끝난 뒤 다시 바꿔 주세요."
+    local_next_turn: "다음 메시지부터 적용돼요."
   agents:
 
     header: "🤖 **활성 에이전트 및 작업**"
@@ -193,9 +193,9 @@ gateway:
 
   fast:
 
-    not_supported: "⚡ /fast는 Priority Processing을 지원하는 OpenAI 모델에서만 사용할 수 있습니다."
-    status: "⚡ Priority Processing\n\n현재 모드: `{mode}`\n\n_사용법:_ `/fast <normal|fast|status>`"
-    unknown_arg: "⚠️ 알 수 없는 인수: `{arg}`\n\n**유효한 옵션:** normal, fast, status"
+    not_supported: "⚡ /fast를 쓰려면 제공자가 빠른 등급(OpenAI Priority Processing이나 Anthropic 빠른 모드 등)을 제공하는 모델이 필요해요. /model로 그런 모델로 바꾸세요."
+    status: "⚡ Priority Processing\n\n현재 모드: `{mode}`\n\n_사용법:_ `/fast [normal|fast|auto|cold|ultrafast|toggle|status] [--global]`"
+    unknown_arg: "⚠️ 알 수 없는 인수: `{arg}`\n\n**유효한 옵션:** normal, fast, auto, cold, ultrafast, toggle, status, --global"
     saved: "⚡ ✓ Priority Processing: **{label}** (설정에 저장됨)\n_(다음 메시지부터 적용됩니다)_"
     session_only: "⚡ ✓ Priority Processing: **{label}** (이 세션에만 적용)"
     label_fast: "빠름"
@@ -209,6 +209,9 @@ gateway:
     choice_cold: "cold — 세션의 첫 턴에만 빠름"
     choice_ultrafast: "ultrafast — OpenAI Ultrafast, 가격 6배"
     ultrafast_not_supported: "⚡ 이 계정 또는 경로에서는 `{model}`에 Ultrafast를 사용할 수 없습니다."
+  setup_wizard:
+
+    configure_in_config: "  config.yaml의 platforms.{key} 아래에서 {platform}을(를) 설정하세요"
   footer:
 
     status: "📎 런타임 푸터: **{state}**\n필드: `{fields}`\n플랫폼: `{platform}`"
@@ -244,20 +247,20 @@ gateway:
     no_output: "(출력 없음)"
     wake:
 
-      completed: "completed"
-      gave_up: "gave up (retries exhausted)"
-      crashed: "crashed (worker exited); dispatcher will retry"
-      timed_out: "timed out; dispatcher will retry"
-      blocked: "blocked; needs attention"
-      review_requested: "handed off for review; the implementation is done"
-      changes_requested: "review requested changes (BLOCK); implementation is not approved"
-      block_loop_detected: "routed to triage after repeated blocks; orchestration attention needed"
-      status_default: "status changed"
+      completed: "완료됨"
+      gave_up: "포기함(재시도 횟수 소진)"
+      crashed: "비정상 종료됨(워커 종료), 디스패처가 다시 시도합니다"
+      timed_out: "시간 초과, 디스패처가 다시 시도합니다"
+      blocked: "차단됨, 확인이 필요합니다"
+      review_requested: "리뷰로 넘어감, 구현은 완료되었습니다"
+      changes_requested: "리뷰에서 변경을 요청함(BLOCK), 구현이 승인되지 않았습니다"
+      block_loop_detected: "차단이 반복되어 트리아지로 이동됨, 오케스트레이션 확인이 필요합니다"
+      status_default: "상태 변경됨"
       status_joiner: ", "
-      message: "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
-      handoff: "Result: {summary}"
-      review_detail: "Review feedback: {reason}\nInspect the existing card and its current review run; return work to the same implementation task. Do not treat this BLOCK as approval and do not create a duplicate task."
-      guidance: "This is an automatic task-status notification, not a request to decompose the task again. Inspect the current board before creating follow-up tasks; do not recreate tasks or graphs that already exist."
+      message: "[kanban] 작업 {task_id}: {status}.\n제목: {title}\n담당: @{assignee}\n보드: {board}\n\n결과를 확인하거나 다음 단계를 결정하세요."
+      handoff: "결과: {summary}"
+      review_detail: "리뷰 피드백: {reason}\n기존 카드와 현재 리뷰 실행을 살펴보고, 작업을 같은 구현 작업으로 되돌리세요. 이 BLOCK을 승인으로 여기지 말고 중복 작업을 만들지 마세요."
+      guidance: "이것은 작업 상태를 알리는 자동 알림이며, 작업을 다시 분해하라는 요청이 아닙니다. 후속 작업을 만들기 전에 현재 보드를 확인하고, 이미 있는 작업이나 그래프를 다시 만들지 마세요."
     ping:
 
       completed: "✔ {head} 완료 — {title}{handoff}"
@@ -1978,7 +1981,7 @@ slash:
     description: "사용 가능한 명령 표시 (/help skills는 스킬 명령 목록, /help <text>는 필터)"
   palette:
 
-    description: "퍼지 명령 팔레트 열기 (Ctrl+P로도 가능)"
+    description: "퍼지 명령 팔레트 열기"
   restart:
 
     description: "활성 실행을 마무리한 뒤 게이트웨이를 안전하게 재시작"
@@ -2499,6 +2502,12 @@ cli:
     sweep_archived_removed: "보관 후 제거 → {ref}"
     sweep_archived_kept: "보관됨, 유지 ({reason}) → {ref}"
     discarded: "워크트리를 제거하고 변경 사항을 버렸어요: {path}"
+  update:
+
+    held_icebath: "{mark} 이 설치에서 다른 icebath 프로세스가 실행 중입니다 ({count}):"
+    held_venv: "{mark} 이 설치의 Python 환경에서 프로세스가 실행 중입니다 ({count}):"
+    held_forced: "  → {flag} 때문에 그대로 업데이트합니다."
+    held_refused: "  해당 프로세스를 종료하고 `icebath update`를 다시 실행하거나, {flag}를 붙여 그대로 업데이트하세요."
 display:
 
   verb:
@@ -2680,7 +2689,7 @@ explainer:
     ollama_runtime_context_too_small: "로컬 모델의 컨텍스트 창이 너무 작아 작업을 끝낼 수 없었어요. 컨텍스트 크기를 늘리거나 더 큰 모델을 사용하세요."
     pending_tool_result: "도구 결과가 아직 대기 중인 상태에서 턴이 멈췄고 모델이 후속 텍스트를 만들지 않았어요. `continue`를 보내면 요약해 드려요."
     interrupted_during_api_call: "응답을 받기 전에 요청이 호출 도중 중단됐어요. `continue`를 보내 다시 시도하세요."
-    max_iterations_reached: "최종 답변 전에 도구 반복 최대 한도에 도달했어요. `continue`를 보내 계속 진행하거나 `max_iterations`를 늘려 보세요."
+    max_iterations_reached: "최종 답변 전에 도구 반복 최대 한도에 도달했어요. `continue`를 보내 계속 진행하거나 `agent.max_turns`를 늘려 보세요."
     error_near_max_iterations: "최종 답변 전에 반복 한도 근처에서 오류가 발생했어요. 위의 도구 출력을 확인한 뒤 `continue`를 보내세요."
     repeated_outer_errors: "턴이 반복되는 오류로 계속 실패해서 무한히 재시도하지 않고 일찍 멈췄어요. 위의 오류를 확인한 뒤 `continue`를 보내 다시 시도하세요."
   persistence:
@@ -2886,8 +2895,8 @@ tips:
   t177: "Icebath는 .icebath.md, AGENTS.md, CLAUDE.md, .cursorrules 중 먼저 발견되는 파일에서 프로젝트 컨텍스트를 불러와요."
   t178: "하위 디렉터리의 AGENTS.md 파일은 에이전트가 폴더로 이동할 때마다 점진적으로 발견돼요."
   t179: "컨텍스트 파일은 20,000자로 제한되며, 앞뒤를 남기는 스마트 잘라내기가 적용돼요."
-  t180: "브라우저 백엔드: 로컬 Chromium, Lightpanda, Browserbase, Browser Use, Firecrawl, 그리고 내장된 Camofox."
-  t181: "Camofox(탐지 회피 Firefox)는 내장되어 있습니다: icebath camofox setup 으로 설정하세요."
+  t180: "브라우저 백엔드: 로컬 Chromium, Lightpanda, Browserbase, Browser Use, Firecrawl, 그리고 플러그인으로 제공되는 Camofox."
+  t181: "Camofox(탐지 회피 Firefox)는 플러그인입니다: icebath plugins install camofox 로 설치한 다음 icebath camofox setup 을 실행하세요."
   t182: "browser_exec는 여러 브라우저 단계를 한 번의 Python 호출로 실행합니다 — 이동, 추출, 클릭을 한꺼번에."
   t183: "browser.dialog_policy는 페이지의 기본 대화 상자 처리 방식을 정해요: must_respond(에이전트가 browser_dialog로 응답), auto_dismiss, auto_accept."
   t184: "icebath mcp는 icebath 내장 카탈로그의 MCP를 키 한 번으로 설치할 수 있는 대화형 선택기를 열어요."

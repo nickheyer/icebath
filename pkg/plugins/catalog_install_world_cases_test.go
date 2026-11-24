@@ -46,14 +46,14 @@ func TestKillListCoversUpdateEnableAndLoadOfAnInstalledPlugin(t *testing.T) {
 		t.Fatal("killed plugin enabled")
 	}
 	manifest := &Manifest{Name: "killed", Source: "user", Path: target, Key: "killed"}
-	if gate := GateManifest(w.h, manifest, map[string]bool{}, map[string]bool{"killed": true}, true); gate.Action == "load" {
+	if gate := GateManifest(w.h, manifest, map[string]bool{}, map[string]bool{"killed": true}); gate.Action == "load" {
 		t.Fatalf("killed plugin gate %+v", gate)
 	}
 	disable := false
 	if err := CmdInstall(w.ctx, InstallCommandOptions{Identifier: refURI(repo), Force: true, Enable: &disable, AllowRemoved: true}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if gate := GateManifest(w.h, manifest, map[string]bool{}, map[string]bool{"killed": true}, true); gate.Action != "load" {
+	if gate := GateManifest(w.h, manifest, map[string]bool{}, map[string]bool{"killed": true}); gate.Action != "load" {
 		t.Fatalf("allow removed install gate %+v", gate)
 	}
 }

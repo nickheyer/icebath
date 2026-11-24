@@ -73,9 +73,9 @@ func checkoutGitDir(root string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		text = pystr.Strip(text)
+		text = strings.TrimSpace(text)
 		if strings.HasPrefix(text, "gitdir:") {
-			target := pystr.Strip(text[len("gitdir:"):])
+			target := strings.TrimSpace(text[len("gitdir:"):])
 			if filepath.IsAbs(target) {
 				return target, nil
 			}

@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Per session pending follow up cap for busy queue mode and the paths sharing its entry point
@@ -111,7 +110,7 @@ func resultPendingSteer(result map[string]any) string {
 	if result == nil {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(pyrepr.Or(result["pending_steer"], "")))
+	return strings.TrimSpace(pyrepr.Str(pyrepr.Or(result["pending_steer"], "")))
 }
 
 // Parks the queued event in the head slot so the fresh session after a compression exhausted reset runs it

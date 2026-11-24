@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -246,7 +247,7 @@ func maximalSubpart(b []byte) int {
 }
 
 // Seconds an MCP tool call may run when nothing more specific is configured
-const defaultToolTimeout = 300.0
+var defaultToolTimeout = settings.TimeoutsMcpToolCall.Default.Seconds()
 
 // Seconds the first connection to a server may take
 const defaultConnectTimeout = 60.0
@@ -257,15 +258,15 @@ const (
 	minKeepaliveInterval     = 5.0
 )
 
-// Per server tool call timeout, the server key over timeouts.mcp.tool_call over the 300 second default
-func resolveToolTimeout(cfg map[string]any, tree config.Tree) float64 {
+// Per server tool call timeout in seconds, the server's own timeout over timeouts.mcp.tool_call, a limit of zero or less using the shipped default
+func resolveToolTimeout(ctx context.Context, cfg map[string]any) float64 {
 	if perServer, ok := cfg["timeout"]; ok && perServer != nil {
 		if f, ok := config.AsFloat(perServer); ok {
 			return f
 		}
 		pkgLog().Warn(fmt.Sprintf("MCP config timeout must be a number of seconds; ignoring %s", pyRepr(perServer)))
 	}
-	if d, ok := resolveConfiguredTimeout(tree, "mcp.tool_call", time.Duration(defaultToolTimeout*float64(time.Second))); ok {
+	if d, ok := clampTimeout(settings.TimeoutsMcpToolCall.Get(ctx).Seconds()); ok {
 		return d.Seconds()
 	}
 	return defaultToolTimeout
@@ -1757,14 +1758,6 @@ func mergePortableServers(portable map[string]map[string]any, safe map[string]*R
 // Truthy spellings env flags accept
 var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
-// Secret lookup over the session's secrets or the home's .env layered over the process environment
-func secretsLookup(env *tools.Env, h string) config.Lookup {
-	if env != nil && env.Secrets != nil {
-		return env.Secrets.Lookup()
-	}
-	return config.NewSecrets(h).Lookup()
-}
-
 // Every mcp_servers entry of the active profile rendered, suspicious and malformed ones dropped, empty in safe mode
 func LoadServerConfigs(ctx context.Context, env *tools.Env) map[string]*Rendered {
 	if config.SafeWorkerEnabled() {
@@ -1773,16 +1766,7 @@ func LoadServerConfigs(ctx context.Context, env *tools.Env) map[string]*Rendered
 	if truthyStrings[strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_SAFE_MODE")))] {
 		return map[string]*Rendered{}
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, secretsLookup(env, h))
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Failed to load MCP config: %v", err))
-		return map[string]*Rendered{}
-	}
-	servers, _ := tree["mcp_servers"].(map[string]any)
-	if servers == nil {
-		servers = map[string]any{}
-	}
+	servers := settings.McpServers.Get(ctx)
 	kept := filterSuspiciousServers(servers)
 	safe := map[string]*Rendered{}
 	for _, name := range orderedKeys(kept) {

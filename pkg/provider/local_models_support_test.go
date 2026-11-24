@@ -23,7 +23,7 @@ func lmTestHome(t *testing.T, homeName string) string {
 	dir := t.TempDir()
 	h := filepath.Join(dir, homeName)
 	t.Setenv("ICEBATH_HOME", h)
-	savedDeps, savedLoad, savedReadonly, savedSave := lmDeps, configLoadFn, configLoadReadonlyFn, configSaveFn
+	savedDeps, savedLoad, savedSave := lmDeps, configLoadFn, configSaveFn
 	savedSelect, savedSwitch, savedOut, savedWatcher := catalogSelectVariantFn, assignmentSwitchModel, assignmentOut, loadEnsureWatcher
 	savedCatalog := Catalog()
 	loadEnsureWatcher = func() {}
@@ -36,7 +36,7 @@ func lmTestHome(t *testing.T, homeName string) string {
 		lmJobsMu.Lock()
 		lmJobs, lmJobOrder, lmRunning = savedJobs, savedOrder, savedRunning
 		lmJobsMu.Unlock()
-		lmDeps, configLoadFn, configLoadReadonlyFn, configSaveFn = savedDeps, savedLoad, savedReadonly, savedSave
+		lmDeps, configLoadFn, configSaveFn = savedDeps, savedLoad, savedSave
 		catalogSelectVariantFn, assignmentSwitchModel, assignmentOut, loadEnsureWatcher = savedSelect, savedSwitch, savedOut, savedWatcher
 		setCatalog(savedCatalog)
 	})

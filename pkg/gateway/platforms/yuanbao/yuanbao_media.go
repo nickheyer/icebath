@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -58,7 +57,7 @@ var imageExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif
 
 func ext(filename string) string {
 	_, e := pypath.Splitext(filename)
-	return pystr.Lower(e)
+	return strings.ToLower(e)
 }
 
 // GuessMIMEType maps a file extension to its MIME type, octet-stream when unknown
@@ -76,7 +75,7 @@ func IsImage(filename, mimeType string) bool {
 
 // GetImageFormat is the TIM image format number, 255 when unknown
 func GetImageFormat(mimeType string) int64 {
-	if f, ok := mimeToImageFormat[pystr.Lower(mimeType)]; ok {
+	if f, ok := mimeToImageFormat[strings.ToLower(mimeType)]; ok {
 		return f
 	}
 	return 255
@@ -212,7 +211,7 @@ func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB i
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
 	}
-	contentType := pystr.Strip(strings.SplitN(pyhttpx.HeaderGet(resp.Header, "content-type", ""), ";", 2)[0])
+	contentType := strings.TrimSpace(strings.SplitN(pyhttpx.HeaderGet(resp.Header, "content-type", ""), ";", 2)[0])
 	var out []byte
 	buf := make([]byte, 65536)
 	for {
@@ -243,7 +242,7 @@ func hmacSHA1Hex(key, msg string) string {
 func sortedKV(d [][2]string) [][2]string {
 	out := make([][2]string, len(d))
 	for i, kv := range d {
-		out[i] = [2]string{pystr.Lower(kv[0]), pyurl.Quote(kv[1], "")}
+		out[i] = [2]string{strings.ToLower(kv[0]), pyurl.Quote(kv[1], "")}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i][0] != out[j][0] {
@@ -273,7 +272,7 @@ func CosSign(method, signPath string, params, headers [][2]string, secretID, sec
 		}
 		return strings.Join(parts, ";")
 	}
-	httpString := strings.Join([]string{pystr.Lower(method), signPath, kv(sortedParams), kv(sortedHeaders), ""}, "\n")
+	httpString := strings.Join([]string{strings.ToLower(method), signPath, kv(sortedParams), kv(sortedHeaders), ""}, "\n")
 	digest := sha1.Sum([]byte(httpString))
 	stringToSign := strings.Join([]string{"sha1", qSignTime, hex.EncodeToString(digest[:]), ""}, "\n")
 	return fmt.Sprintf("q-sign-algorithm=sha1&q-ak=%s&q-sign-time=%s&q-key-time=%s&q-header-list=%s&q-url-param-list=%s&q-signature=%s",
@@ -311,7 +310,7 @@ func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename s
 	if err != nil {
 		return nil, err
 	}
-	target := pystr.RstripChars(apiDomain, "/") + UploadInfoPath
+	target := strings.TrimRight(apiDomain, "/") + UploadInfoPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -401,7 +400,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 			pyrepr.Str(secretID != ""), pyrepr.Str(secretKey != ""), pyrepr.Str(cosKey != ""))}
 	}
 	cosHost := bucket + ".cos.accelerate.myqcloud.com"
-	encodedKey := pystr.LstripChars(pyurl.Quote(cosKey, "/"), "/")
+	encodedKey := strings.TrimLeft(pyurl.Quote(cosKey, "/"), "/")
 	cosURL := "https://" + cosHost + "/" + encodedKey
 	if contentType == "" || contentType == "application/octet-stream" {
 		contentType = "application/octet-stream"

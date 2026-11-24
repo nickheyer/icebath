@@ -26,17 +26,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -45,8 +43,6 @@ const (
 	voiceChannels              = 1
 	voiceSampleWidth           = 2
 	silenceRMSThreshold        = 200
-	silenceDurationSeconds     = 3.0
-	defaultBeepVolume          = 0.3
 	termuxAPIAppMissingWarning = "Termux:API Android app is not installed. Install/update the Termux:API app to use termux-microphone-record."
 )
 
@@ -239,7 +235,7 @@ func termuxAPIAppInstalled() bool {
 			inconclusive = true
 			continue
 		}
-		if strings.Contains(pystr.Lower(string(result.Stdout)), "package:com.termux.api") {
+		if strings.Contains(strings.ToLower(string(result.Stdout)), "package:com.termux.api") {
 			return true
 		}
 	}
@@ -258,7 +254,7 @@ func termuxVoiceCaptureAvailable() bool {
 func pulseSocketCandidates() []string {
 	var candidates []string
 	for _, part := range strings.Split(os.Getenv("PULSE_SERVER"), ";") {
-		if p := pystr.Strip(part); strings.HasPrefix(p, "unix:") {
+		if p := strings.TrimSpace(part); strings.HasPrefix(p, "unix:") {
 			candidates = append(candidates, p[len("unix:"):])
 		}
 	}
@@ -399,20 +395,9 @@ func DetectAudioEnvironment() (AudioEnvironment, error) {
 	return AudioEnvironment{Available: len(warnings) == 0, Warnings: warnings, Notices: notices}, nil
 }
 
-// Configured voice.beep_volume in 0..1, the default for a missing, non numeric, boolean or out of range value
+// Configured voice.beep_volume in 0..1
 func getBeepVolume(ctx context.Context) float64 {
-	raw, ok := voiceConfig(ctx)["beep_volume"]
-	if !ok {
-		raw = defaultBeepVolume
-	}
-	volume, err := pyint.Float(raw)
-	if err != nil {
-		return defaultBeepVolume
-	}
-	if _, isBool := raw.(bool); isBool || volume < 0.0 || volume > 1.0 || math.IsNaN(volume) {
-		return defaultBeepVolume
-	}
-	return volume
+	return settings.VoiceBeepVolume.Get(ctx)
 }
 
 // Plays through sounddevice and polls until the stream goes idle or the timeout passes, then stops it
@@ -562,18 +547,9 @@ func IsAudioOutputActive() bool {
 	return audioOutputActive > 0
 }
 
-// Whether voice.thinking_sound allows the ambient thinking blips, true by default
-func thinkingSoundEnabled(ctx context.Context) (enabled bool) {
-	defer func() {
-		if recover() != nil {
-			enabled = true
-		}
-	}()
-	value, ok := voiceConfig(ctx)["thinking_sound"]
-	if !ok || value == nil {
-		return true
-	}
-	return provider.IsTruthyValue(value)
+// Whether voice.thinking_sound allows the ambient thinking blips
+func thinkingSoundEnabled(ctx context.Context) bool {
+	return settings.VoiceThinkingSound.Get(ctx)
 }
 
 // A soft falling water drop blip at a quieter volume than the beeps
@@ -889,7 +865,7 @@ func wslPowershellPlayerCmd(filePath string) []string {
 			return "", err
 		}
 		text, _ := pycodecs.DecodeReplace(raw, "utf-8")
-		return pystr.Strip(text), nil
+		return strings.TrimSpace(text), nil
 	}
 	winTemp, err := out([]string{"cmd.exe", "/c", "echo %TEMP%"})
 	if err != nil {
@@ -995,7 +971,7 @@ func playAudioFileFromDisk(filePath string) bool {
 
 // Whether a plugin STT provider of that name is registered and available, discovery retried once
 func checkPluginSTTProvider(ctx context.Context, name string) bool {
-	key := pystr.Strip(pystr.Lower(name))
+	key := strings.TrimSpace(strings.ToLower(name))
 	if key == "" || key == "none" {
 		return false
 	}
@@ -1037,16 +1013,16 @@ type VoiceRequirements struct {
 
 // CheckVoiceRequirements reports whether capture, an STT provider and the host environment allow voice mode
 func CheckVoiceRequirements(ctx context.Context) (VoiceRequirements, error) {
-	sttConfig := loadSTTConfig(ctx)
-	sttEnabled := isSTTEnabled(ctx, sttConfig)
-	sttProvider, err := voiceGetSTTProvider(ctx, sttConfig)
+	req := loadSTTRequest(ctx)
+	sttEnabled := req.Enabled
+	sttProvider, err := voiceGetSTTProvider(ctx, req)
 	if err != nil {
 		return VoiceRequirements{}, err
 	}
 	sttLabel := ""
 	if label, ok := nativeSTTLabels[sttProvider]; ok {
 		sttLabel = "OK (" + label + ")"
-	} else if sttEnabled && resolveCommandSTTProviderConfig(sttProvider, sttConfig) != nil {
+	} else if sttEnabled && req.command(sttProvider) != nil {
 		sttLabel = "OK (command: " + sttProvider + ")"
 	} else if sttEnabled && checkPluginSTTProvider(ctx, sttProvider) {
 		sttLabel = "OK (plugin: " + sttProvider + ")"

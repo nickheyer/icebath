@@ -1,6 +1,8 @@
 package plugins
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -512,7 +513,7 @@ func runCompositeFallback(ctx context.Context, ui *cliui.Console, out io.Writer,
 			if err != nil {
 				return nil
 			}
-			val := pystr.Strip(answer)
+			val := strings.TrimSpace(answer)
 			if val == "" {
 				break
 			}
@@ -540,7 +541,7 @@ func runCompositeFallback(ctx context.Context, ui *cliui.Console, out io.Writer,
 		}
 		fmt.Fprintln(out)
 		if answer, err := inputLine(ui.Color("  Configure # (or Enter to skip): ", cliui.Dim)); err == nil {
-			if val := pystr.Strip(answer); val != "" {
+			if val := strings.TrimSpace(answer); val != "" {
 				if n, ok := pyIntAnswer(val); ok {
 					if ci := n - 1; ci >= 0 && ci < len(categories) {
 						if _, err := categories[ci].Configure(); err != nil && !errors.Is(err, cliui.ErrInterrupt) && !errors.Is(err, cliui.ErrEOF) {

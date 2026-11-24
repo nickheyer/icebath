@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func TestPreCommandShellHookUnderMultiplexRunsWithTheServedProfilesSecretsWithoutFailingClosed(t *testing.T) {
@@ -30,7 +31,7 @@ func TestPreCommandShellHookUnderMultiplexRunsWithTheServedProfilesSecretsWithou
 		plugins.ResetShellHooksForTests()
 	})
 	hooks := map[string]any{"hooks": map[string]any{"pre_command": []any{map[string]any{"command": hook}}}}
-	if registered, err := plugins.RegisterShellHooksFromConfig(ProfileRuntimeScope(ctx, served, true), hooks, true, false); err != nil || len(registered) != 1 {
+	if registered, err := plugins.RegisterShellHooksFromConfig(settings.WithFrozen(ProfileRuntimeScope(ctx, served, true), hooks), true, false); err != nil || len(registered) != 1 {
 		t.Fatalf("registered %v %v", registered, err)
 	}
 	done, err := queuePreCommand(ctx, owner.authority, SessionRef{ProfileID: owner.authority.ProfileID, SessionID: sid}, "status", "status", "")

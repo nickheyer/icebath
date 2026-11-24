@@ -1,6 +1,8 @@
 package weixin
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -30,7 +31,7 @@ func deliverDirect(ctx context.Context, adapter *WeixinAdapter, chatID, message 
 	for _, media := range mediaFiles {
 		var result gateway.SendResult
 		var err error
-		if directImageExts[pystr.Lower(pypath.Suffix(media.Path))] {
+		if directImageExts[strings.ToLower(pypath.Suffix(media.Path))] {
 			result, err = adapter.SendImageFile(ctx, chatID, media.Path, "", "", nil, nil)
 		} else {
 			result, err = adapter.SendDocument(ctx, chatID, media.Path, "", "", "", nil, nil)
@@ -56,14 +57,14 @@ func sendWeixinDirect(ctx context.Context, extra map[string]any, token any, chat
 	if err != nil {
 		return nil, err
 	}
-	baseURL, cdnBaseURL := pystr.RstripChars(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/"), pystr.RstripChars(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
+	baseURL, cdnBaseURL := strings.TrimRight(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/"), strings.TrimRight(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
 	tokenRaw := pyrepr.Or(token, extra["token"])
 	if !pyrepr.Truthy(tokenRaw) {
 		if tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false); err != nil {
 			return nil, err
 		}
 	}
-	resolvedToken := pystr.Strip(pyrepr.Str(tokenRaw))
+	resolvedToken := strings.TrimSpace(pyrepr.Str(tokenRaw))
 	if resolvedToken == "" {
 		return map[string]any{"error": "Weixin token missing. Configure WEIXIN_TOKEN or platforms.weixin.token."}, nil
 	}
@@ -136,7 +137,7 @@ func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error)
 			return false, err
 		}
 	}
-	if account != "" && pystr.Strip(pyrepr.Str(tokenRaw)) != "" {
+	if account != "" && strings.TrimSpace(pyrepr.Str(tokenRaw)) != "" {
 		return true, nil
 	}
 	return envConfigured(ctx, cfg)

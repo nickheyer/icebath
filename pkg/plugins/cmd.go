@@ -10,17 +10,16 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-const (
-	defaultCloneTimeoutSeconds = 300
-	maxCloneTimeoutSeconds     = 3600
-	CloneTimeoutHint           = "On a slow connection, raise plugins.clone_timeout_seconds in config.yaml."
-)
+// Advice a clone timeout ends with
+const CloneTimeoutHint = "On a slow connection, raise plugins.clone_timeout_seconds in config.yaml."
 
 var urlSchemes = []string{"https://", "http://", "git@", "ssh://", "file://"}
 
@@ -109,64 +108,9 @@ func envOr(name, def string) string {
 	return def
 }
 
-// Config value at the key path, the default on a missing key or a config load failure
-func configValue(h string, def any, keys ...string) any {
-	cfg, err := loadConfig(h)
-	if err != nil {
-		return def
-	}
-	var cur any = cfg
-	for _, k := range keys {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return def
-		}
-		if cur, ok = m[k]; !ok {
-			return def
-		}
-	}
-	return cur
-}
-
-// Clone and pinned fetch deadline in seconds from the profile config, defaulted and clamped
-func cloneTimeoutSeconds(h string) int {
-	value := configValue(h, defaultCloneTimeoutSeconds, "plugins", "clone_timeout_seconds")
-	n, ok := pyIntValue(value)
-	if !ok || n < 1 {
-		pkgLog().Warn(fmt.Sprintf("plugins.clone_timeout_seconds must be a positive integer; using %ds", defaultCloneTimeoutSeconds))
-		return defaultCloneTimeoutSeconds
-	}
-	if n > maxCloneTimeoutSeconds {
-		pkgLog().Warn(fmt.Sprintf("plugins.clone_timeout_seconds exceeds %ds; clamping", maxCloneTimeoutSeconds))
-		return maxCloneTimeoutSeconds
-	}
-	return int(n)
-}
-
-// Integer value of a decoded config scalar, refusing bools and floats like an isinstance int check
-func pyIntValue(v any) (int64, bool) {
-	switch n := v.(type) {
-	case int:
-		return int64(n), true
-	case int64:
-		return n, true
-	case int32:
-		return int64(n), true
-	case uint64:
-		return int64(n), true
-	}
-	return 0, false
-}
-
-// List valued config key as a set, empty on a failure or a non list
-func configNameSet(h string, keys ...string) map[string]bool {
-	out := map[string]bool{}
-	if list, ok := configValue(h, []any{}, keys...).([]any); ok {
-		for _, v := range list {
-			out[scalarString(v)] = true
-		}
-	}
-	return out
+// Clone and pinned fetch deadline from plugins.clone_timeout_seconds of the home's profile
+func cloneTimeout(h string) time.Duration {
+	return settings.PluginsCloneTimeoutSeconds.Get(homeContext(h))
 }
 
 // Plain words clone failure naming what to check, with the escaped git output last

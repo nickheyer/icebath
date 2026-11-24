@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -14,11 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 const (
-	DefaultStartupWatchdogTimeoutS  = 300.0
 	startupWatchdogMinTimeoutS      = 30.0
 	StartupWatchdogRestartExitCode  = 75
 	EnvStartupWatchdog              = "ICEBATH_STARTUP_WATCHDOG"
@@ -68,31 +67,18 @@ func GetStartupWatchdogDumpPath(h string) string {
 	return filepath.Join(h, "logs", "gateway-startup-watchdog.log")
 }
 
-// True when the watchdog environment switch opts out with 0, false, no or off
-func StartupWatchdogDisabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvStartupWatchdog))) {
-	case "0", "false", "no", "off":
-		return true
-	}
-	return false
+// Whether gateway.startup_watchdog (or its ICEBATH_STARTUP_WATCHDOG override) is off for the profile ctx serves
+func StartupWatchdogDisabled(ctx context.Context) bool {
+	return !settings.GatewayStartupWatchdog.Get(ctx)
 }
 
-// Deadline seconds from the environment, floor clamped, the default for unset, garbage and non positive values
-func ResolveStartupWatchdogTimeout() float64 {
-	raw := strings.TrimSpace(os.Getenv(EnvStartupWatchdogTimeoutS))
-	if raw == "" {
-		return DefaultStartupWatchdogTimeoutS
+// Startup deadline seconds of the profile ctx serves, floor clamped, the default for a value of zero or below
+func ResolveStartupWatchdogTimeout(ctx context.Context) float64 {
+	timeout := settings.GatewayStartupWatchdogTimeoutSeconds.Get(ctx)
+	if timeout <= 0 {
+		timeout = settings.GatewayStartupWatchdogTimeoutSeconds.Default
 	}
-	value, err := pyint.ParseFloat(raw)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Ignoring non-numeric %s=%s; using default %.0fs",
-			EnvStartupWatchdogTimeoutS, pyrepr.Repr(raw), DefaultStartupWatchdogTimeoutS))
-		return DefaultStartupWatchdogTimeoutS
-	}
-	if value <= 0 {
-		return DefaultStartupWatchdogTimeoutS
-	}
-	return max(value, startupWatchdogMinTimeoutS)
+	return max(timeout.Seconds(), startupWatchdogMinTimeoutS)
 }
 
 // Appends to the dump file through write, a failure only logged at debug
@@ -388,20 +374,20 @@ func startupWatchdogISONow() string {
 	return now.Format("2006-01-02T15:04:05.000000+00:00")
 }
 
-// Arms the process wide startup watchdog with the environment timeout and the service restart exit code
+// Arms the process wide startup watchdog with the configured timeout and the service restart exit code
 func ArmStartupWatchdog(ctx context.Context) {
-	armStartupWatchdog(nil, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(ctx, nil, StartupWatchdogRestartExitCode)
 }
 
 // Arms the singleton watchdog and returns it, the live one when already armed, nil when disabled
-func armStartupWatchdog(timeoutS any, exitCode int) (handle *StartupWatchdogHandle) {
+func armStartupWatchdog(ctx context.Context, timeoutS any, exitCode int) (handle *StartupWatchdogHandle) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLog().Debug("Failed to arm gateway startup watchdog", "exc_info", fmt.Errorf("%v", r))
 			handle = nil
 		}
 	}()
-	if StartupWatchdogDisabled() {
+	if StartupWatchdogDisabled(ctx) {
 		return nil
 	}
 	startupWatchdogHandleMu.Lock()
@@ -419,7 +405,7 @@ func armStartupWatchdog(timeoutS any, exitCode int) (handle *StartupWatchdogHand
 		resolved = value
 	}
 	if !(resolved > 0) {
-		resolved = ResolveStartupWatchdogTimeout()
+		resolved = ResolveStartupWatchdogTimeout(ctx)
 	}
 	handle = newStartupWatchdogHandle(resolved, exitCode)
 	if !handle.start() {

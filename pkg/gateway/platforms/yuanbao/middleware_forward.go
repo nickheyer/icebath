@@ -1,6 +1,8 @@
 package yuanbao
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -51,7 +53,7 @@ func mediaMarker(media map[string]any, plainText any) (string, *InboundMediaRef,
 	if err != nil {
 		return "", nil, err
 	}
-	mediaType := pystr.Lower(pystr.Strip(typeText))
+	mediaType := strings.ToLower(strings.TrimSpace(typeText))
 	url := stripOrEmpty(media["url"])
 	name := stripOrEmpty(media["file_name"])
 	rid := stripOrEmpty(media["media_id"])
@@ -65,19 +67,19 @@ func mediaMarker(media map[string]any, plainText any) (string, *InboundMediaRef,
 			refName = name
 		}
 		ref := mediaRef(kind, url, refName)
-		return pystr.Rstrip("[" + kind + "|ybres:" + rid + "] " + name), &ref, nil
+		return strings.TrimRightFunc("["+kind+"|ybres:"+rid+"] "+name, unicode.IsSpace), &ref, nil
 	}
 	switch {
 	case kind == "image":
-		return pystr.Rstrip("[image] " + pyrepr.Str(pyrepr.Or(name, plainText))), nil, nil
+		return strings.TrimRightFunc("[image] "+pyrepr.Str(pyrepr.Or(name, plainText)), unicode.IsSpace), nil, nil
 	case kind == "file":
-		return pystr.Rstrip("[file] " + name), nil, nil
+		return strings.TrimRightFunc("[file] "+name, unicode.IsSpace), nil, nil
 	case kind == "video":
-		return pystr.Rstrip("[video] " + pyrepr.Str(pyrepr.Or(name, url))), nil, nil
+		return strings.TrimRightFunc("[video] "+pyrepr.Str(pyrepr.Or(name, url)), unicode.IsSpace), nil, nil
 	case mediaType == "url":
-		return pystr.Rstrip("[link] " + pyrepr.Str(pyrepr.Or(name, strOrEmpty(media["title"]))) + " " + url), nil, nil
+		return strings.TrimRightFunc("[link] "+pyrepr.Str(pyrepr.Or(name, strOrEmpty(media["title"])))+" "+url, unicode.IsSpace), nil, nil
 	}
-	return pystr.Rstrip("[" + pyrepr.Str(pyrepr.Or(mediaType, "media")) + "] " + pyrepr.Str(pyrepr.Or(url, name))), nil, nil
+	return strings.TrimRightFunc("["+pyrepr.Str(pyrepr.Or(mediaType, "media"))+"] "+pyrepr.Str(pyrepr.Or(url, name)), unicode.IsSpace), nil, nil
 }
 
 // Visits the sender, capped body and media refs of each forwarded record in order
@@ -182,7 +184,7 @@ func buildForwardText(forwardData *pyjson.Object, ic *InboundContext, isDispatch
 		return "", err
 	}
 	text := strings.Join(lines, "\n")
-	if note := pystr.Strip(ic.RawText); isDispatch && note != "" {
+	if note := strings.TrimSpace(ic.RawText); isDispatch && note != "" {
 		text += "\n\n用户附言：" + note
 	}
 	return text, nil

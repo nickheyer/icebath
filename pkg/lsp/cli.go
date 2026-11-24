@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Help and description of the icebath lsp command
@@ -54,7 +55,6 @@ type CommandArgs struct {
 // CommandContext is what the command reads from the running profile
 type CommandContext struct {
 	Runtime *Runtime
-	Config  func() map[string]any
 	Service func() (*Service, error)
 }
 
@@ -117,11 +117,7 @@ func RunCommand(ctx context.Context, cc CommandContext, args CommandArgs, stdout
 
 // Config declared servers ahead of the built in registry
 func allServers(cc CommandContext) []*ServerDef {
-	var cfg map[string]any
-	if cc.Config != nil {
-		cfg = cc.Config()
-	}
-	return append(CustomServers(cc.Runtime, cfg["servers"]), Servers...)
+	return append(CustomServers(cc.Runtime, settings.LspServers.Get(cc.Runtime.settingsCtx())), Servers...)
 }
 
 func isBuiltin(s *ServerDef) bool {
@@ -302,13 +298,9 @@ func statusJSON(st Status) jsonObj {
 	if st.ExcludeRootsInvalid {
 		exclude = "INVALID"
 	}
-	var installStrategy any = st.InstallStrategy
-	if st.InstallStrategySet {
-		installStrategy = st.InstallStrategyRaw
-	}
 	return jsonObj{
 		{"enabled", st.Enabled}, {"wait_mode", st.WaitMode}, {"wait_timeout", st.WaitTimeout},
-		{"install_strategy", installStrategy}, {"clients", clients}, {"broken", pairs(st.Broken)},
+		{"install_strategy", st.InstallStrategy}, {"clients", clients}, {"broken", pairs(st.Broken)},
 		{"disabled_servers", strs(st.DisabledServers)}, {"broken_retry_seconds", st.BrokenRetrySeconds},
 		{"warmup_timeout", st.WarmupTimeout}, {"exclude_roots", exclude},
 		{"trusted_workspaces", strs(st.TrustedWorkspaces)}, {"untrusted_skipped", pairs(st.UntrustedSkipped)},

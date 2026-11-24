@@ -224,12 +224,7 @@ func gatewayCfgSection(ctx context.Context, name string) map[string]any {
 
 // Configured scale to zero idle timeout in seconds
 func (r *GatewayRunner) scaleToZeroIdleTimeoutSeconds(ctx context.Context) float64 {
-	stz := gatewayCfgSection(ctx, "scale_to_zero")
-	var value any
-	if stz != nil {
-		value = stz["idle_timeout_minutes"]
-	}
-	return gateway.ParseIdleTimeoutSeconds(value, gateway.DefaultIdleTimeoutMinutes)
+	return gateway.ScaleToZeroIdleTimeoutSeconds(ctx)
 }
 
 // Max restarts, window seconds and max gap seconds of the restart loop breaker
@@ -318,7 +313,7 @@ func relayWakeURLOrNone(ctx context.Context) (wake *string) {
 
 // Whether the idle watcher should start
 func (r *GatewayRunner) scaleToZeroShouldArm(ctx context.Context) bool {
-	return gateway.ShouldArm(gateway.ScaleToZeroEnabled(nil),
+	return gateway.ShouldArm(gateway.ScaleToZeroEnabled(ctx),
 		gateway.MessagingIsRelayOnlyOrAbsent(r.scaleToZeroActiveMessagingPlatforms()), relayWakeURLOrNone(ctx))
 }
 
@@ -329,7 +324,7 @@ func (r *GatewayRunner) logScaleToZeroNotArmedReason(ctx context.Context) {
 			pkgLog().Debug("scale-to-zero: not-armed reason logging failed", "exc_info", rec)
 		}
 	}()
-	if !gateway.ScaleToZeroEnabled(nil) {
+	if !gateway.ScaleToZeroEnabled(ctx) {
 		return
 	}
 	active := r.scaleToZeroActiveMessagingPlatforms()

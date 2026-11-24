@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"strings"
+
 	"context"
 	"os"
 	"sync"
@@ -78,7 +80,7 @@ func RunGatewayExecQuickCommand(ctx context.Context, env *tools.Env, execCmd any
 	if err != nil {
 		return gatewayQuickError(ctx, err.Error()), nil
 	}
-	output := pystr.Strip(text)
+	output := strings.TrimSpace(text)
 	if output != "" {
 		output = tools.RedactSensitiveTextWith(env, output, tools.RedactOptions{})
 	}

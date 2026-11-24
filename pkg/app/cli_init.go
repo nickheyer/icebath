@@ -37,7 +37,6 @@ type CLIOptions struct {
 // Reads display config for compact, tool progress, bells, streaming, previews and stream buffers
 func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.console = console()
-	c.config = CLIConfig(c.ctx)
 	c.toolProgressMode = settings.ToolProgress.Get(c.ctx)
 	c.bellOnComplete = settings.BellOnComplete.Get(c.ctx)
 	c.showReasoning = settings.ShowThinking.Get(settings.WithPlatform(c.ctx, settings.LocalPlatform))
@@ -73,7 +72,7 @@ func (c *CLI) initModelRouting(o CLIOptions) error {
 
 // Picks the model route with CLI args over env vars over the config file
 func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) error {
-	configModel, nestedProvider := config.SplitModelDefault(settings.Model.Get(c.ctx))
+	configModel := strings.TrimSpace(settings.Model.Get(c.ctx))
 	c.explicitModelOverride = model != ""
 	c.model = model
 	if c.model == "" {
@@ -85,9 +84,13 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	}
 	startupProviderOverride, startupBaseURLOverride, startupAPIKeyOverride := "", "", ""
 	if c.model != "" {
-		current := firstNonEmpty(providerArg, nestedProvider, cfgProvider)
+		current := firstNonEmpty(providerArg, cfgProvider)
 		userProviders := settings.Providers.Get(c.ctx)
-		customProviders := provider.ProviderEntryList(c.config)
+		entries := provider.CustomProviderEntries(c.ctx)
+		customProviders := make([]any, len(entries))
+		for i, entry := range entries {
+			customProviders[i] = entry
+		}
 		route, err := provider.ResolveStartupModelRoute(c.ctx, c.model, provider.StartupRouteOptions{
 			ExplicitProvider: providerArg, CurrentProvider: current, UserProviders: userProviders, CustomProviders: customProviders})
 		if err != nil {
@@ -114,7 +117,7 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	c.explicitAPIKey = firstNonEmpty(apiKey, startupAPIKeyOverride)
 	c.typedAPIKey = apiKey
 	c.explicitBaseURL = firstNonEmpty(baseURL, startupBaseURLOverride)
-	c.requestedProvider = firstNonEmpty(moaProviderOverride, providerArg, startupProviderOverride, nestedProvider, cfgProvider, "auto")
+	c.requestedProvider = firstNonEmpty(moaProviderOverride, providerArg, startupProviderOverride, cfgProvider, "auto")
 	c.explicitProvider = firstNonEmpty(moaProviderOverride, providerArg, startupProviderOverride)
 	if model == "" && providerArg != "" {
 		namedCustom := provider.GetNamedCustomProvider(c.ctx, providerArg)
@@ -127,8 +130,18 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	c.apiMode = "chat_completions"
 	c.acpCommand = ""
 	c.acpArgs = []string{}
-	c.baseURL = firstNonEmpty(baseURL, startupBaseURLOverride, settings.ModelBaseURL.Get(c.ctx), os.Getenv("OPENROUTER_BASE_URL"))
-	keys := []string{os.Getenv("OPENROUTER_API_KEY"), os.Getenv("OPENAI_API_KEY")}
+	keys := make([]string, 3)
+	for i, name := range []string{"OPENROUTER_BASE_URL", "OPENROUTER_API_KEY", "OPENAI_API_KEY"} {
+		v, set, err := provider.GetSecret(c.ctx, name)
+		if err != nil {
+			return err
+		}
+		if set {
+			keys[i] = v
+		}
+	}
+	c.baseURL = firstNonEmpty(baseURL, startupBaseURLOverride, settings.ModelBaseURL.Get(c.ctx), keys[0])
+	keys = keys[1:]
 	matches := false
 	if c.baseURL != "" {
 		matches, _ = pyurl.BaseURLHostMatches(c.baseURL, "openrouter.ai")
@@ -190,10 +203,10 @@ func (c *CLI) initCheckpointsAndRules(checkpoints, passSessionID, ignoreRules bo
 func (c *CLI) initPromptAndReasoning(reasoning string) {
 	c.systemPrompt = os.Getenv("ICEBATH_EPHEMERAL_SYSTEM_PROMPT")
 	if c.systemPrompt == "" {
-		c.systemPrompt = commands.ResolveEphemeralSystemPrompt(c.config)
+		c.systemPrompt = commands.EphemeralSystemPrompt(c.ctx)
 	}
-	c.prefillMessages = loadPrefillMessages(c.ctx, resolvePrefillMessagesFile(c.ctx, c.config), "")
-	c.reasoningConfig = config.ResolveReasoningConfig(c.config, c.model)
+	c.prefillMessages = loadPrefillMessages(c.ctx, resolvePrefillMessagesFile(c.ctx), "")
+	c.reasoningConfig = configuredReasoning(c.ctx, c.model)
 	c.explicitReasoningConfig = nil
 	c.explicitReasoning = ""
 	if strings.TrimSpace(reasoning) != "" {
@@ -207,7 +220,7 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 		}
 	}
 	c.serviceTier = parseServiceTierConfig(settings.FastMode.Get(c.ctx))
-	c.fallbackModel = provider.GetFallbackChain(c.config)
+	c.fallbackModel = provider.FallbackChain(c.ctx)
 }
 
 // Opens the session store and sets every per run mutable field, queues, overlays, pet, voice and status bar

@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // ModelsDevURL is the live registry endpoint
@@ -250,13 +251,21 @@ func cfgGet(cfg map[string]any, keys ...string) (any, bool) {
 	return node, true
 }
 
-// Effective config tree of a home, nil when unreadable
-func loadConfigTree(h string) map[string]any {
-	tree, err := config.Load(h, nil)
-	if err != nil {
-		return nil
-	}
-	return map[string]any(tree)
+// The providers and model_overrides sections a model catalog lookup reads, through their settings for home h
+func modelCatalogConfig(h string) map[string]any {
+	ctx := ctxForHome(context.Background(), h)
+	return map[string]any{"providers": settings.Providers.Get(ctx), "model_overrides": settings.ModelOverrides.Get(ctx)}
+}
+
+// The local_runtime section the managed server and its endpoint read, through its settings for ctx
+func localRuntimeSection(ctx context.Context) map[string]any {
+	return map[string]any{"enabled": settings.LocalRuntimeEnabled.Get(ctx), "backend": settings.LocalRuntimeBackend.Get(ctx),
+		"detect_ports": settings.LocalRuntimeDetectPorts.Get(ctx)}
+}
+
+// A config view holding only the local_runtime section of home h
+func localRuntimeSettings(h string) map[string]any {
+	return map[string]any{"local_runtime": localRuntimeSection(ctxForHome(context.Background(), h))}
 }
 
 // catalog_provider declared on a providers entry
@@ -388,11 +397,10 @@ func clearModelsDevETag(h string) {
 	}
 }
 
-// Registry URL honouring the models_dev.url config override
+// Registry URL honouring the models_dev.url setting of home h
 func modelsDevURL(h string) string {
-	v, _ := cfgGet(loadConfigTree(h), "models_dev", "url")
-	if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-		return strings.TrimSpace(s)
+	if s := strings.TrimSpace(settings.ModelsDevUrl.Get(ctxForHome(context.Background(), h))); s != "" {
+		return s
 	}
 	return ModelsDevURL
 }
@@ -858,7 +866,7 @@ func extractModelsDevContext(entry map[string]any) int {
 // LookupModelsDevContext returns the context window with explicit overrides first and _default filling catalog misses
 func LookupModelsDevContext(ctx context.Context, provider, model string, allowNetwork bool) (int, bool) {
 	h := home.Dir(ctx)
-	cfg := loadConfigTree(h)
+	cfg := modelCatalogConfig(h)
 	if n, ok := overrideContextWindow(provider, model, cfg); ok {
 		return n, true
 	}
@@ -1055,7 +1063,7 @@ func defaultOverrideContext(provider string, cfg map[string]any) (int, bool) {
 
 // OverrideContextWindow is the explicit model_overrides context window for the bound home
 func OverrideContextWindow(ctx context.Context, provider, model string) (int, bool) {
-	return overrideContextWindow(provider, model, loadConfigTree(home.Dir(ctx)))
+	return overrideContextWindow(provider, model, modelCatalogConfig(home.Dir(ctx)))
 }
 
 // Translates canonical override keys into a models.dev shaped patch plus an out of band vision flag
@@ -1231,7 +1239,7 @@ func entrySupportsVision(entry map[string]any) bool {
 // ModelsDevCapabilities returns the capability view with overrides applied, false when nothing knows the model
 func ModelsDevCapabilities(ctx context.Context, provider, model string, allowNetwork bool) (ModelCapabilities, bool) {
 	h := home.Dir(ctx)
-	cfg := loadConfigTree(h)
+	cfg := modelCatalogConfig(h)
 	return modelsDevCapabilitiesIn(h, provider, model, allowNetwork, cfg)
 }
 
@@ -1282,7 +1290,7 @@ func ListModelsDevModels(ctx context.Context, provider string, allowNetwork bool
 	if normalized == "" {
 		normalized = provider
 	}
-	models := modelsDevProviderModels(h, normalized, allowNetwork, loadConfigTree(h))
+	models := modelsDevProviderModels(h, normalized, allowNetwork, modelCatalogConfig(h))
 	if models == nil {
 		return []string{}
 	}
@@ -1315,7 +1323,7 @@ func shouldHideFromProviderCatalog(provider, modelID string) bool {
 // ListAgenticModels returns tool calling model ids minus hidden and noise entries
 func ListAgenticModels(ctx context.Context, provider string, allowNetwork bool) []string {
 	h := home.Dir(ctx)
-	models := modelsDevProviderModels(h, provider, allowNetwork, loadConfigTree(h))
+	models := modelsDevProviderModels(h, provider, allowNetwork, modelCatalogConfig(h))
 	if models == nil {
 		return []string{}
 	}
@@ -1400,7 +1408,7 @@ func parseModelsDevProvider(providerID string, raw map[string]any) ModelsDevProv
 // Provider metadata by icebath or models.dev id
 func ModelsDevProviderInfo(ctx context.Context, providerID string, allowNetwork bool) (ModelsDevProvider, bool) {
 	h := home.Dir(ctx)
-	return modelsDevProviderInfoIn(h, providerID, allowNetwork, loadConfigTree(h))
+	return modelsDevProviderInfoIn(h, providerID, allowNetwork, modelCatalogConfig(h))
 }
 
 func modelsDevProviderInfoIn(h, providerID string, allowNetwork bool, cfg map[string]any) (ModelsDevProvider, bool) {
@@ -1418,7 +1426,7 @@ func modelsDevProviderInfoIn(h, providerID string, allowNetwork bool, cfg map[st
 // ModelsDevModelInfo returns full model metadata with overrides applied, exact then case insensitive
 func ModelsDevModelInfo(ctx context.Context, providerID, modelID string, allowNetwork bool) (ModelsDevEntry, bool) {
 	h := home.Dir(ctx)
-	return modelsDevModelInfoIn(h, providerID, modelID, allowNetwork, loadConfigTree(h))
+	return modelsDevModelInfoIn(h, providerID, modelID, allowNetwork, modelCatalogConfig(h))
 }
 
 func modelsDevModelInfoIn(h, providerID, modelID string, allowNetwork bool, cfg map[string]any) (ModelsDevEntry, bool) {
@@ -1454,7 +1462,7 @@ func modelsDevProfileOffline(name string) (Profile, bool) {
 		return Profile{}, false
 	}
 	h := home.Process()
-	info, ok := modelsDevProviderInfoIn(h, canonical, false, loadConfigTree(h))
+	info, ok := modelsDevProviderInfoIn(h, canonical, false, modelCatalogConfig(h))
 	if !ok {
 		return Profile{}, false
 	}

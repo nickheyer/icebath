@@ -226,7 +226,7 @@ func hfParseRatelimit(h http.Header) *hfRatelimitInfo {
 
 // Retry-After seconds when given as digits
 func hfParseRetryAfter(h http.Header) (int, bool) {
-	value := pystr.Strip(h.Get("Retry-After"))
+	value := strings.TrimSpace(h.Get("Retry-After"))
 	if value == "" || strings.Trim(value, "0123456789") != "" {
 		return 0, false
 	}
@@ -241,9 +241,9 @@ func hfWarnOnWarningHeaders(h http.Header) {
 		if strings.Contains(w, ";") {
 			topic, message, _ = strings.Cut(w, ";")
 		}
-		topic = pystr.Strip(topic)
+		topic = strings.TrimSpace(topic)
 		if !hfWarnedTopics[topic] {
-			if message = pystr.Strip(message); message != "" {
+			if message = strings.TrimSpace(message); message != "" {
 				hfWarnedTopics[topic] = true
 				pkgLog().Warn(message)
 			}
@@ -352,7 +352,7 @@ func hfFormat(class, custom string, resp *pyhttpx.Response) error {
 	seen := map[string]bool{}
 	var unique []string
 	for _, line := range serverErrors {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if line != "" && !seen[line] {
 			seen[line] = true
 			unique = append(unique, line)
@@ -360,7 +360,7 @@ func hfFormat(class, custom string, resp *pyhttpx.Response) error {
 	}
 	serverMessage := strings.Join(unique, "\n")
 	final := custom
-	if serverMessage != "" && !strings.Contains(pystr.Lower(custom), pystr.Lower(serverMessage)) {
+	if serverMessage != "" && !strings.Contains(strings.ToLower(custom), strings.ToLower(serverMessage)) {
 		if strings.Contains(custom, "\n\n") {
 			final += "\n" + serverMessage
 		} else {
@@ -372,7 +372,7 @@ func hfFormat(class, custom string, resp *pyhttpx.Response) error {
 		if value == "" {
 			continue
 		}
-		if !strings.Contains(pystr.Lower(final), pystr.Lower(value)) {
+		if !strings.Contains(strings.ToLower(final), strings.ToLower(value)) {
 			idMsg := " (" + pair[1] + ": " + value + ")"
 			if i := strings.Index(final, "\n"); i >= 0 {
 				final = final[:i] + idMsg + final[i:]
@@ -382,7 +382,7 @@ func hfFormat(class, custom string, resp *pyhttpx.Response) error {
 		}
 		break
 	}
-	return &hfHubHTTPError{class: class, msg: pystr.Strip(final), status: resp.StatusCode}
+	return &hfHubHTTPError{class: class, msg: strings.TrimSpace(final), status: resp.StatusCode}
 }
 
 // Account of the token from the whoami endpoint
@@ -424,7 +424,7 @@ func hfWhoami(ctx context.Context, token string) (any, error) {
 
 // Token with carriage returns and newlines removed and whitespace stripped, false when nothing remains
 func hfCleanToken(token string) (string, bool) {
-	token = pystr.Strip(strings.ReplaceAll(strings.ReplaceAll(token, "\r", ""), "\n", ""))
+	token = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(token, "\r", ""), "\n", ""))
 	return token, token != ""
 }
 

@@ -26,6 +26,7 @@ func runServiceInherited(ctx context.Context, w io.Writer, timeout time.Duration
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
+	cmd.Env = UserSystemdEnv()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, w, os.Stderr
 	cmd.WaitDelay = time.Second
 	err := cmd.Run()
@@ -72,10 +73,6 @@ func SystemdStatus(ctx context.Context, w io.Writer, deep, system, full bool, pr
 		}
 		fmt.Fprintln(w)
 	}
-	if hasLegacyIcebathUnits(ctx) {
-		printLegacyUnitWarning(ctx, w)
-		fmt.Fprintln(w)
-	}
 	current, err := SystemdUnitIsCurrent(ctx, system)
 	if err != nil {
 		return err
@@ -99,7 +96,7 @@ func SystemdStatus(ctx context.Context, w io.Writer, deep, system, full bool, pr
 	if err != nil {
 		return err
 	}
-	if pystr.Strip(result.Stdout) == "active" {
+	if strings.TrimSpace(result.Stdout) == "active" {
 		fmt.Fprintf(w, "✓ %s gateway service is running\n", scopeLabel)
 	} else {
 		fmt.Fprintf(w, "✗ %s gateway service is stopped\n", scopeLabel)
@@ -268,12 +265,12 @@ func queryWindowsTaskStatus(ctx context.Context) (map[string]string, error) {
 		return info, nil
 	}
 	for _, raw := range pystr.Splitlines(out, false) {
-		line := pystr.Strip(raw)
+		line := strings.TrimSpace(raw)
 		if line == "" || !strings.Contains(line, ":") {
 			continue
 		}
 		key, value, _ := strings.Cut(line, ":")
-		key, value = pystr.Lower(pystr.Strip(key)), pystr.Strip(value)
+		key, value = strings.ToLower(strings.TrimSpace(key)), strings.TrimSpace(value)
 		switch key {
 		case "last result":
 			if _, ok := info["last run result"]; !ok {
@@ -366,7 +363,7 @@ func pyIntArg(v any) (int, error) {
 		}
 		return 0, nil
 	case string:
-		parsed, err := strconv.Atoi(pystr.Strip(n))
+		parsed, err := strconv.Atoi(strings.TrimSpace(n))
 		if err != nil {
 			return 0, fmt.Errorf("%v is not a whole number", n)
 		}
@@ -455,7 +452,7 @@ func windowsProbeExitDiag(w io.Writer, diagPath string) {
 	tail := pystr.Splitlines(pystr.DecodeUTF8Replace(raw), false)
 	lastEvent := ""
 	for i := len(tail) - 1; i >= 0; i-- {
-		if pystr.Strip(tail[i]) != "" {
+		if strings.TrimSpace(tail[i]) != "" {
 			lastEvent = tail[i]
 			break
 		}

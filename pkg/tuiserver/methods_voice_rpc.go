@@ -55,7 +55,7 @@ func ownerResult(rid any, field string, done bool, extra map[string]any) map[str
 }
 
 // Requirements the listener would arm with, panicking when the probe fails
-func wakeProbe(ctx context.Context, cfg map[string]any) media.WakeRequirements {
+func wakeProbe(ctx context.Context, cfg *media.WakeConfig) media.WakeRequirements {
 	reqs, err := media.CheckWakeWordRequirements(ctx, cfg, nil)
 	if err != nil {
 		panic(err)
@@ -122,21 +122,18 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		pkgLog().Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, reqs.Hint))
 		return refused("unavailable", map[string]any{"hint": reqs.Hint})
 	}
-	enabledPersisted := truthy(params["persist"]) && !truthy(cfg["enabled"]) && persistWakeEnabled(ctx, true)
+	enabledPersisted := truthy(params["persist"]) && !cfg.Enabled && persistWakeEnabled(ctx, true)
 	if enabledPersisted {
-		next := make(map[string]any, len(cfg)+1)
-		for key, value := range cfg {
-			next[key] = value
-		}
-		next["enabled"] = true
-		cfg = next
+		next := *cfg
+		next.Enabled = true
+		cfg = &next
 	}
-	if !media.WakeSurfaceEnabled(ctx, surface, cfg) {
+	if !cfg.SurfaceEnabled(surface) {
 		reason := "disabled_for_surface"
-		if !truthy(cfg["enabled"]) {
+		if !cfg.Enabled {
 			reason = "disabled"
 		}
-		pkgLog().Info(fmt.Sprintf("wake.start(%s): %s (enabled=%s, surface=%s)", surface, reason, pyrepr.Repr(cfg["enabled"]), pyrepr.Repr(cfg["surface"])))
+		pkgLog().Info(fmt.Sprintf("wake.start(%s): %s (enabled=%s, surface=%s)", surface, reason, pyrepr.Repr(cfg.Enabled), pyrepr.Repr(cfg.Surface)))
 		return refused(reason, nil)
 	}
 	existingOwner, existingSurface := wakeOwnerSnapshot()
@@ -147,11 +144,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 	if existingOwner != nil && existingOwner != transport {
 		return refused("owned", map[string]any{"owner_surface": existingSurface})
 	}
-	newSession := true
-	if raw, present := cfg["start_new_session"]; present {
-		newSession = truthy(raw)
-	}
-	onDetect := wakeDetectHandler(context.WithoutCancel(ctx), transport, relayString(params["session_id"]), media.WakePhrase(ctx, cfg), newSession)
+	onDetect := wakeDetectHandler(context.WithoutCancel(ctx), transport, relayString(params["session_id"]), cfg.Phrase, cfg.StartNewSession)
 	if _, err := media.StartListening(context.WithoutCancel(ctx), onDetect, transport, cfg); err != nil {
 		var inUse *media.WakeWordInUse
 		if errors.As(err, &inUse) {
@@ -184,11 +177,11 @@ func wakeStop(ctx context.Context, rid any, params map[string]any) map[string]an
 	disabledPersisted := false
 	if truthy(params["persist"]) {
 		currentlyEnabled := true
-		suppress(func() { currentlyEnabled = truthy(media.LoadWakeWordConfig(ctx)["enabled"]) })
+		suppress(func() { currentlyEnabled = media.LoadWakeWordConfig(ctx).Enabled })
 		disabledPersisted = currentlyEnabled && persistWakeEnabled(ctx, false)
 	}
 	if !running {
-		phrase, provider = media.WakePhrase(ctx, nil), ""
+		phrase, provider = media.LoadWakeWordConfig(ctx).Phrase, ""
 	}
 	return ownerResult(rid, "stopped", stopped, map[string]any{"disabled_persisted": disabledPersisted,
 		"phrase": phrase, "provider": provider})
@@ -242,13 +235,13 @@ func wakeStatus(ctx context.Context, rid any, _ map[string]any) (response map[st
 	if owner != nil {
 		surfaceOut = ownerSurface
 	}
-	configuredSurface := "auto"
-	if truthy(cfg["surface"]) {
-		configuredSurface = relayString(cfg["surface"])
+	configuredSurface := cfg.Surface
+	if configuredSurface == "" {
+		configuredSurface = "auto"
 	}
 	return ok(rid, map[string]any{"listening": listening, "owned_by_caller": ownedByCaller, "owner_surface": surfaceOut,
 		"phrase": reqs.Phrase, "provider": reqs.Provider, "configured_surface": configuredSurface,
-		"input_device": jsonMapping(inputDevice), "available": reqs.Available, "hint": hint, "enabled": truthy(cfg["enabled"]),
+		"input_device": jsonMapping(inputDevice), "available": reqs.Available, "hint": hint, "enabled": cfg.Enabled,
 		"audio_silent": silent, "local_input_available": reqs.LocalInputAvailable})
 }
 
@@ -272,7 +265,7 @@ func ttsLeaseAsync(ctx context.Context, lease string, active bool) {
 			}
 		}()
 		if active {
-			media.AcquireTTSLease(detached, env, lease, nil)
+			media.AcquireTTSLease(detached, env, lease)
 		} else {
 			media.ReleaseTTSLease(detached, env, lease)
 		}
@@ -337,7 +330,7 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 		setVoiceFlag(ctx, settings.VoiceInput.Key, enabled)
 		stopHint := ""
 		if enabled {
-			suppress(func() { stopHint = media.VoiceStopHint() })
+			suppress(func() { stopHint = media.VoiceStopHint(ctx) })
 			if voiceTTSEnabled() {
 				ttsLeaseAsync(ctx, "tui:voice-tts", true)
 			}
@@ -444,7 +437,7 @@ func voiceRecord(ctx context.Context, rid any, params map[string]any) (response 
 		return ok(rid, map[string]any{"status": "stopped"})
 	}
 	ttsStreamStop(true)
-	suppress(func() { media.SetVoiceBusyProbe(anySessionRunning) })
+	suppress(func() { media.SetVoiceBusyProbe(sessionVoiceLive) })
 	maxRec := settings.VoiceMaxRecordingSeconds.Get(ctx).Seconds()
 	suppress(func() { wakePaused = media.PauseListening(transport) })
 	if wakePaused {

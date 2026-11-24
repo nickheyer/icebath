@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -69,7 +68,7 @@ func (a *AIAgent) lmstudioReasoningOptionsCached(ctx context.Context) []string {
 // Profile claiming this endpoint that gates its reasoning, nil for endpoints core gates itself
 func (a *AIAgent) reasoningEndpointProfile(ctx context.Context) *provider.Profile {
 	url := a.baseURLLower
-	if pystr.Lower(pystr.Strip(a.provider)) == "lmstudio" || a.isOpenRouterURL() {
+	if strings.ToLower(strings.TrimSpace(a.provider)) == "lmstudio" || a.isOpenRouterURL() {
 		return nil
 	}
 	for _, host := range coreReasoningGatedHosts {
@@ -100,7 +99,7 @@ func (a *AIAgent) supportsReasoningExtraBody(ctx context.Context) bool {
 		return provider.AskProfile(ctx, profile, "reasoning_payload", nil, a,
 			[]any{a.model, nil}, map[string]any{"base_url": a.baseURL}) != nil
 	}
-	if pystr.Lower(pystr.Strip(a.provider)) == "lmstudio" {
+	if strings.ToLower(strings.TrimSpace(a.provider)) == "lmstudio" {
 		for _, opt := range a.lmstudioReasoningOptionsCached(ctx) {
 			if opt != "" && opt != "off" {
 				return true
@@ -129,7 +128,7 @@ func (a *AIAgent) supportsReasoningExtraBody(ctx context.Context) bool {
 	if known {
 		return caps.SupportsReasoning
 	}
-	model := pystr.Lower(a.model)
+	model := strings.ToLower(a.model)
 	for _, prefix := range openrouterReasoningPrefixes {
 		if strings.HasPrefix(model, prefix) {
 			return true

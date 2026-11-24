@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -115,7 +116,7 @@ func GatewayDelegationInline(ctx context.Context, platformKey string, interimEna
 	if inline, ok := gatewayDelegationModes[settings.DelegationGatewayMode.Get(ctx)]; ok {
 		return inline
 	}
-	return !interimEnabled && !NonMessagingSessionSurfaces[pystr.Lower(platformKey)]
+	return !interimEnabled && !NonMessagingSessionSurfaces[strings.ToLower(platformKey)]
 }
 
 type gatewayDelegationInlineKey struct{}

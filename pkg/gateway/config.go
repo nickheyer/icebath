@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -45,7 +47,7 @@ func normalizeTransportToken(value any) string {
 		}
 		return "off"
 	}
-	if t := pystr.Lower(pystr.Strip(pyrepr.Str(value))); t != "" {
+	if t := strings.ToLower(strings.TrimSpace(pyrepr.Str(value))); t != "" {
 		return t
 	}
 	return "auto"
@@ -71,7 +73,7 @@ func normalizeChoice(value any, choices map[string]bool, def string) string {
 	if !ok {
 		return def
 	}
-	if n := pystr.Lower(pystr.Strip(s)); choices[n] {
+	if n := strings.ToLower(strings.TrimSpace(s)); choices[n] {
 		return n
 	}
 	return def
@@ -119,7 +121,7 @@ func PlatformBindsPort(platformValue string, extra map[string]any) bool {
 	if !ok {
 		mode = "websocket"
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(mode))) == expected
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(mode))) == expected
 }
 
 var discordChannelLinkRE = regexp.MustCompile(`^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/channels/(?:[0-9]+|@me)/([0-9]+)/?$`)

@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -76,7 +75,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 	if o.LogLevel != "" {
 		levelName = o.LogLevel
 	}
-	level, known := levelByName[pystr.Upper(levelName)]
+	level, known := levelByName[strings.ToUpper(levelName)]
 	if !known {
 		level = LevelInfo
 	}

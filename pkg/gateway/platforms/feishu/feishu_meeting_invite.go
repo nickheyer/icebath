@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type MeetingInviteUser struct {
@@ -99,7 +98,7 @@ func contentPayload(container map[string]any) map[string]any {
 	content, _ := asDict(container["body"])["content"].([]any)
 	for _, raw := range content {
 		item := asDict(raw)
-		ctype := pystr.Lower(pyrepr.Str(truthyOr(item["contentType"], truthyOr(item["content_type"], ""))))
+		ctype := strings.ToLower(pyrepr.Str(truthyOr(item["contentType"], truthyOr(item["content_type"], ""))))
 		if ctype != "" && ctype != "application/json" {
 			continue
 		}
@@ -115,7 +114,7 @@ func contentPayload(container map[string]any) map[string]any {
 func strField(raw map[string]any, key string, strip bool) string {
 	s := pyrepr.Str(truthyOr(raw[key], ""))
 	if strip {
-		return pystr.Strip(s)
+		return strings.TrimSpace(s)
 	}
 	return s
 }
@@ -125,7 +124,7 @@ func intField(value any) *big.Int {
 	if value == nil || value == "" {
 		return new(big.Int)
 	}
-	if n, ok := pyint.Parse(pystr.Strip(pyrepr.Str(value))); ok {
+	if n, ok := pyint.Parse(strings.TrimSpace(pyrepr.Str(value))); ok {
 		return n
 	}
 	return new(big.Int)

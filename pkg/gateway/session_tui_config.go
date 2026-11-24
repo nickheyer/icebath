@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -21,13 +20,16 @@ import (
 
 var sessionControlKeys = map[string]bool{"busy": true, "yolo": true, "show_reasoning": true, "service_tier": true, "model": true}
 
-var boolWords = map[string]bool{"on": true, "true": true, "yes": true, "off": false, "false": false, "no": false}
+var boolWords = map[string]bool{"1": true, "on": true, "true": true, "yes": true, "0": false, "off": false, "false": false, "no": false}
 
 // Aliases whose answer reports the setting as on or off
 var onOffSettings = map[string]bool{"density": true, "battery": true, "timestamps": true}
 
 // Show and hide words of the reasoning command that toggle display rather than effort
 var ReasoningDisplayToggles = map[string]bool{"show": true, "on": true, "hide": false, "off": false}
+
+// Words of the reasoning command that show the whole thinking text or clamp it to a few lines
+var ReasoningFullWords = map[string]bool{"full": true, "all": true, "clamp": false, "collapse": false, "short": false}
 
 // Resolves a personality name against the config, assigned in cmd/icebath/wiring.go
 var ResolvePersonality func(value any, cfg config.Tree) (string, string, error)
@@ -50,7 +52,7 @@ func settingWord(value any) string {
 	if value == nil {
 		return ""
 	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+	return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 }
 
 // Refusal of a settings write: a bad value invalid_params, a pinned setting permission_denied, else storage_unavailable
@@ -182,26 +184,31 @@ func (e *runnerCapabilityError) Error() string {
 	return "the gateway runner cannot " + e.capability
 }
 
-// Session scoped fast pick validated against the session's route, never a config write
-func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy *LocalSessionPolicy, value any) (map[string]any, error) {
-	if ref.SessionID == "" {
+// Fast mode pick, status saying the mode in effect and a bare or toggle value flipping it: pinned on the session after a check of its route,
+// or at global scope written for every session and pinned on the session it came from
+func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy *LocalSessionPolicy, value any, scope string) (map[string]any, error) {
+	if (scope != "session" && scope != "global") || (scope == "session" && ref.SessionID == "") {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	raw := settingWord(value)
-	current, err := currentTier(ctx, c, ref, policy)
-	if err != nil {
-		return nil, err
-	}
-	currentWord := ""
-	if current != nil {
-		currentWord = *current
-	}
-	if raw == "status" {
-		return map[string]any{"key": "fast", "value": provider.ServiceTierWord(currentWord)}, nil
-	}
-	if raw == "" || raw == "toggle" {
+	if raw == "" || raw == "toggle" || raw == "status" {
+		current := ""
+		if scope == "global" {
+			current = provider.ParseServiceTier(settings.FastMode.Get(settings.WithoutSession(profileRuntimeScope(ctx, c.authority.ProfileID, true))))
+		} else {
+			pinned, err := currentTier(ctx, c, ref, policy)
+			if err != nil {
+				return nil, err
+			}
+			if pinned != nil {
+				current = *pinned
+			}
+		}
+		if raw == "status" {
+			return map[string]any{"key": "fast", "value": provider.ServiceTierWord(current), "scope": scope}, nil
+		}
 		raw = "fast"
-		if current != nil && provider.StaticTiers[*current] {
+		if provider.StaticTiers[current] {
 			raw = "normal"
 		}
 	}
@@ -209,7 +216,17 @@ func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy
 	if err != nil {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	if provider.StaticTiers[tier] {
+	word := provider.ServiceTierWord(tier)
+	if scope == "global" {
+		if _, err := forwardOffThread(ctx, func() (settings.Change, error) {
+			return setOwnerSetting(profileRuntimeScope(ctx, c.authority.ProfileID, true), settings.FastMode.Key, word)
+		}); err != nil {
+			return nil, err
+		}
+		if ref.SessionID == "" {
+			return map[string]any{"key": "fast", "value": word, "scope": "global"}, nil
+		}
+	} else if tier != "" {
 		agent, err := c.authority.agent(ref)
 		if err != nil {
 			return nil, err
@@ -272,12 +289,15 @@ func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy
 	if err != nil {
 		return nil, err
 	}
+	if err := storeSessionSetting(ctx, c.authority, ref.SessionID, settings.FastMode.Key, word); err != nil {
+		return nil, err
+	}
 	var picked *string
 	if tier != "" {
 		picked = &tier
 	}
 	runner.SetSessionServiceTierOverride(live.Route, picked, false)
-	return map[string]any{"key": "fast", "value": provider.ServiceTierWord(tier)}, nil
+	return map[string]any{"key": "fast", "value": word, "scope": scope}, nil
 }
 
 // Validates and persists the profile personality the next turn of each session resolves
@@ -370,6 +390,18 @@ func setCommandSetting(ctx context.Context, c *AuthorityConnection, ref SessionR
 	}
 	if value == "" {
 		return nil, runtimeRefusal("invalid_params")
+	}
+	if full, known := ReasoningFullWords[value]; known {
+		if _, err := forwardOffThread(ctx, func() (settings.Change, error) {
+			return setOwnerSetting(profileRuntimeScope(ctx, c.authority.ProfileID, true), settings.FullThinking.Key, full)
+		}); err != nil {
+			return nil, err
+		}
+		reported := "clamp"
+		if full {
+			reported = "full"
+		}
+		return map[string]any{"key": "reasoning", "value": reported, "scope": scope}, nil
 	}
 	if _, toggle := ReasoningDisplayToggles[value]; !toggle && value != "reset" && config.ParseReasoningEffort(value) == nil {
 		return nil, runtimeRefusal("invalid_params")
@@ -552,7 +584,11 @@ func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if sessionControlKeys[key] || !isStr {
 		return busyConfig(ctx, c.authority, c.actor, ref, params, true)
 	}
-	if paramsOutside(params, "session_id", "profile", "key", "value") {
+	allowed := []string{"session_id", "profile", "key", "value"}
+	if key == "fast" {
+		allowed = append(allowed, "scope")
+	}
+	if paramsOutside(params, allowed...) {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	policy, err := authorizeSettingsWrite(ctx, c, ref, params)
@@ -572,7 +608,7 @@ func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	}
 	switch {
 	case key == "fast":
-		return setFast(ctx, c, ref, policy, value)
+		return setFast(ctx, c, ref, policy, value, settingWord(params.GetOr("scope", "session")))
 	case key == "personality":
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setPersonality(ctx, c, value) })
 	case key == "approvals.mode":

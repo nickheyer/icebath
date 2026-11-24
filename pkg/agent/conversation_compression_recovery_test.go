@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -526,7 +525,6 @@ func TestConversationHistoryAfterCompression(t *testing.T) {
 }
 
 func TestRecoverRotatedCompressionSessionAdoptsTheLiveChild(t *testing.T) {
-	t.Setenv("ICEBATH_SESSION_ID", "parent")
 	db := newRecoveryDB(t)
 	for _, err := range []error{
 		db.CreateSession(state.NewSession{ID: "parent", Source: "cli"}),
@@ -561,9 +559,6 @@ func TestRecoverRotatedCompressionSessionAdoptsTheLiveChild(t *testing.T) {
 	if len(engine.starts) != 1 || engine.starts[0]["session_id"] != "child" || engine.starts[0]["old_session_id"] != "parent" ||
 		engine.starts[0]["boundary_reason"] != "compression" || engine.starts[0]["platform"] != "telegram" {
 		t.Fatalf("engine start %v", engine.starts)
-	}
-	if v := strings.TrimSpace(os.Getenv("ICEBATH_SESSION_ID")); v != "child" {
-		t.Fatalf("session context not rebound: %q", v)
 	}
 	lg.Info("after adopt")
 	h.mu.Lock()

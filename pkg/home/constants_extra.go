@@ -18,7 +18,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
@@ -42,13 +41,13 @@ func RootForEnvironment(environ map[string]string) string {
 	sort.Strings(keys)
 	names := make(map[string]string, len(environ))
 	for _, k := range keys {
-		names[pystr.Upper(k)] = environ[k]
+		names[strings.ToUpper(k)] = environ[k]
 	}
 	profileVar := "HOME"
 	if runtime.GOOS == "windows" {
 		profileVar = "USERPROFILE"
 	}
-	profile := pystr.Strip(names[profileVar])
+	profile := strings.TrimSpace(names[profileVar])
 	errNoProfile := errors.New("no user profile folder")
 	userHome := func() (string, error) {
 		if profile == "" {
@@ -60,13 +59,13 @@ func RootForEnvironment(environ map[string]string) string {
 	if err != nil {
 		return ""
 	}
-	raw := pystr.Strip(names[EnvHome])
+	raw := strings.TrimSpace(names[EnvHome])
 	if raw == "" {
 		return native
 	}
 	undefined := false
 	expanded := replaceLastGroup(envReference, raw, func(name string) string {
-		v, ok := names[pystr.Upper(name)]
+		v, ok := names[strings.ToUpper(name)]
 		undefined = undefined || !ok
 		return v
 	})
@@ -114,7 +113,7 @@ func SudoInvokerDefaultHome() string {
 	if runtime.GOOS == "windows" || geteuid() != 0 {
 		return ""
 	}
-	sudoUser := pystr.Strip(os.Getenv("SUDO_USER"))
+	sudoUser := strings.TrimSpace(os.Getenv("SUDO_USER"))
 	if sudoUser == "" || sudoUser == "root" {
 		return ""
 	}
@@ -150,7 +149,7 @@ func warnProfileFallbackOnce() {
 	active := ""
 	if data, err := os.ReadFile(pypath.PathJoin(fallback, "active_profile")); err == nil && utf8.Valid(data) {
 		text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
-		active = pystr.Strip(text)
+		active = strings.TrimSpace(text)
 	}
 	if active == "" || active == "default" {
 		return
@@ -194,7 +193,7 @@ func RoutingProcess() string {
 
 // Package manager relocatable directory from envVar, then def, then the subdir of the active home
 func PackagedDir(ctx context.Context, envVar, def, subdir string) string {
-	if override := pystr.Strip(os.Getenv(envVar)); override != "" {
+	if override := strings.TrimSpace(os.Getenv(envVar)); override != "" {
 		return pypath.PathStr(override)
 	}
 	if def != "" {
@@ -230,7 +229,7 @@ func CandidateNodeCommandNames(command string) []string {
 	if runtime.GOOS != "windows" || strings.Contains(base, ".") {
 		return []string{base}
 	}
-	if names, ok := windowsNodeShims[pystr.Lower(base)]; ok {
+	if names, ok := windowsNodeShims[strings.ToLower(base)]; ok {
 		return append([]string(nil), names...)
 	}
 	return []string{base + ".cmd", base + ".exe", base}

@@ -109,7 +109,7 @@ func TestWakeLibraryImportsFromTheSelectedEnvironment(t *testing.T) {
 
 func TestSherpaWakeEngineRunsOnTheNativeSpeechEngine(t *testing.T) {
 	ctx := context.Background()
-	swap(t, &wakeLoadTTSConfig, func(context.Context) map[string]any { return map[string]any{"piper": map[string]any{"use_cuda": true}} })
+	fixedTTSConfig(t, map[string]any{"piper": map[string]any{"use_cuda": true}})
 	if !speechOnGPU(ctx) {
 		t.Fatal("the wake engine ignores the device the speech engine is configured for")
 	}

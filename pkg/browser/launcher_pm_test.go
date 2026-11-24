@@ -8,19 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 func TestFirstOpenUsesLongerFloor(t *testing.T) {
-	env := &tools.Env{Config: config.Tree{"browser": map[string]any{"command_timeout": 30}}}
+	env := browserEnv(t, map[string]any{"command_timeout": 30})
 	if got := launchTimeout(env, nil); got != minFirstLaunchTimeout {
 		t.Fatalf("timeout %v", got)
 	}
 }
 
 func TestRespectsConfigAboveFloor(t *testing.T) {
-	env := &tools.Env{Config: config.Tree{"browser": map[string]any{"command_timeout": 180}}}
+	env := browserEnv(t, map[string]any{"command_timeout": 180})
 	if got := launchTimeout(env, nil); got != 180*time.Second {
 		t.Fatalf("timeout %v", got)
 	}
@@ -81,7 +80,7 @@ func (s *pmStore) publish() string {
 }
 
 func (s *pmStore) pinExecutable(path string) {
-	s.env.Config = config.Tree{"browser": map[string]any{"executable_path": path}}
+	writeBrowserSection(s.t, s.env.Home, map[string]any{"executable_path": path})
 }
 
 func TestUnrecordedPlaywrightCacheIsNotAPMBrowser(t *testing.T) {

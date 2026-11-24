@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Discord's cap on global application commands
@@ -100,7 +100,7 @@ func (a *DiscordAdapter) slashProxy(template string, followup string, strip bool
 			text = strings.ReplaceAll(text, "{"+k+"}", pyrepr.Str(v))
 		}
 		if strip {
-			text = pystr.Strip(text)
+			text = strings.TrimSpace(text)
 		}
 		a.runSimpleSlash(ctx, i, text, followup)
 	}
@@ -243,8 +243,7 @@ func (a *DiscordAdapter) registerSlashCommands(ctx context.Context) {
 		pkgLog().Warn(fmt.Sprintf("[%s] Reached Discord's limit of %d slash commands; skipped %d lower-priority command(s) to keep the command sync working. "+
 			"Disable slash commands you don't need or trim installed plugins to surface them all.", a.Name(), discordMaxAppCommands, droppedOverCap))
 	}
-	switch pystr.Lower(gateway.PlatformGateEnv(ctx, "DISCORD_HIDE_SLASH_COMMANDS", "false")) {
-	case "true", "1", "yes", "on":
+	if settings.DiscordHideSlashCommands.Get(gateway.SettingsContext(a.sctx(ctx))) {
 		a.applyOwnerOnlyVisibility()
 	}
 	a.syncDesiredCommands()
@@ -298,13 +297,13 @@ func (a *DiscordAdapter) registerSkillGroup(ctx context.Context) {
 		if allowed, _ := a.evaluateSlashAuthorization(ctx, i); !allowed {
 			return []*discordgo.ApplicationCommandOptionChoice{}
 		}
-		q := pystr.Lower(pystr.Strip(current))
+		q := strings.ToLower(strings.TrimSpace(current))
 		a.mu.Lock()
 		entries := a.skillEntries
 		a.mu.Unlock()
 		choices := []*discordgo.ApplicationCommandOptionChoice{}
 		for _, e := range entries {
-			if q == "" || strings.Contains(pystr.Lower(e.name), q) || (e.desc != "" && strings.Contains(pystr.Lower(e.desc), q)) {
+			if q == "" || strings.Contains(strings.ToLower(e.name), q) || (e.desc != "" && strings.Contains(strings.ToLower(e.desc), q)) {
 				label := e.name
 				if e.desc != "" {
 					label = e.name + " — " + e.desc
@@ -339,7 +338,7 @@ func (a *DiscordAdapter) registerSkillGroup(ctx context.Context) {
 				a.respondEphemeral(ctx, i, i18n.T(ctx, "platform.discord.command.skill.unknown", "", map[string]any{"name": name}))
 				return
 			}
-			a.runSimpleSlash(ctx, i, pystr.Strip(entry[1]+" "+pyrepr.Str(opts["args"])), "")
+			a.runSimpleSlash(ctx, i, strings.TrimSpace(entry[1]+" "+pyrepr.Str(opts["args"])), "")
 		}})
 	pkgLog().Info(fmt.Sprintf("[%s] Registered /skill command with %d skill(s) via autocomplete", a.Name(), count))
 	if hidden > 0 {
@@ -556,7 +555,7 @@ func (a *DiscordAdapter) handleThreadCreateSlash(ctx context.Context, i *discord
 			pkgLog().Debug(fmt.Sprintf("[%s] Thread participation save failed: %s", a.Name(), err))
 		}
 	}
-	if starter := pystr.Strip(message); starter != "" && threadID != "" {
+	if starter := strings.TrimSpace(message); starter != "" && threadID != "" {
 		th, _ := result["thread"].(*discordgo.Channel)
 		a.dispatchThreadSession(ctx, i, th, starter)
 	}

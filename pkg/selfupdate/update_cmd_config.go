@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Snapshot id the pre update backup took for each sibling profile, by profile name
@@ -129,7 +128,7 @@ func printItems(w io.Writer, items []any, label, key, fallbackKey string) {
 				name = pyrepr.Str(dict[fallbackKey])
 			}
 			if pyrepr.Truthy(dict["description"]) {
-				desc = pystr.Strip(pyrepr.Str(dict["description"]))
+				desc = strings.TrimSpace(pyrepr.Str(dict["description"]))
 			}
 		}
 		if desc != "" {

@@ -1,6 +1,8 @@
 package manage
 
 import (
+	"unicode"
+
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -22,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -80,7 +81,7 @@ var semverSplitRe = regexp.MustCompile(`[-+]`)
 
 // Major, minor and patch of a version with any pre-release or build suffix dropped
 func parseSemver(v string) ([3]*big.Int, error) {
-	head := strings.TrimLeft(pystr.Strip(v), "v")
+	head := strings.TrimLeft(strings.TrimSpace(v), "v")
 	if loc := semverSplitRe.FindStringIndex(head); loc != nil {
 		head = head[:loc[0]]
 	}
@@ -101,10 +102,10 @@ func parseSemver(v string) ([3]*big.Int, error) {
 
 // Errors when current does not satisfy spec, a bare version meaning at least that version
 func CheckIcebathRequires(spec, current string) error {
-	if pystr.Strip(spec) == "" {
+	if strings.TrimSpace(spec) == "" {
 		return nil
 	}
-	op, target := ">=", pystr.Strip(spec)
+	op, target := ">=", strings.TrimSpace(spec)
 	if m := versionOpRe.FindStringSubmatch(spec); m != nil {
 		op, target = m[1], m[2]
 	}
@@ -147,14 +148,14 @@ func envTemplateFromManifest(m *profiles.DistributionManifest) string {
 			lines = append(lines, "# (optional)", "# "+req.Name+"="+def, "")
 		}
 	}
-	return pystr.Rstrip(strings.Join(lines, "\n")) + "\n"
+	return strings.TrimRightFunc(strings.Join(lines, "\n"), unicode.IsSpace) + "\n"
 }
 
 var githubShorthandRe = regexp.MustCompile(`^github\.com/[\p{L}\p{N}_.-]+/[\p{L}\p{N}_.-]+/?\n?$`)
 
 // Whether a source is a git remote, every http URL included since git is the only remote transport
 func looksLikeGitURL(s string) bool {
-	s = pystr.Strip(s)
+	s = strings.TrimSpace(s)
 	for _, p := range []string{"git@", "ssh://", "git://", "http://", "https://"} {
 		if strings.HasPrefix(s, p) {
 			return true
@@ -178,7 +179,7 @@ func gitClone(ctx context.Context, url, dest string) error {
 		return err
 	}
 	if code != 0 {
-		return distErr("git clone failed: %s", pystr.Strip(stderr))
+		return distErr("git clone failed: %s", strings.TrimSpace(stderr))
 	}
 	return nil
 }
@@ -187,7 +188,7 @@ var distGitClone = gitClone
 
 // Staged dir and provenance of a source, git URLs cloned into workdir without .git, local dirs used in place
 func stageSource(ctx context.Context, source, workdir string) (string, string, error) {
-	src := pystr.Strip(source)
+	src := strings.TrimSpace(source)
 	var staged, provenance, missing string
 	if looksLikeGitURL(src) {
 		staged, provenance = filepath.Join(workdir, "clone"), src
@@ -306,7 +307,7 @@ func PlanInstall(ctx context.Context, source, workdir, overrideName string) (*In
 func ownedEntries(staged string, m *profiles.DistributionManifest) ([]ownedEntry, error) {
 	var explicit []string
 	for _, p := range m.DistributionOwned {
-		if p = strings.Trim(pystr.Strip(p), "/"); p != "" {
+		if p = strings.Trim(strings.TrimSpace(p), "/"); p != "" {
 			explicit = append(explicit, p)
 		}
 	}

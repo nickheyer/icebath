@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -22,8 +21,8 @@ var auxResolveRuntimeProviderFn = func(ctx context.Context, requested string) (*
 }
 
 // Azure Foundry runtime resolution seam over the main resolver
-var auxResolveAzureFoundryRuntimeFn = func(ctx context.Context, modelCfg map[string]any, explicitAPIKey string, forwardedToken func(context.Context) (string, error), explicitBaseURL, targetModel string) (*Runtime, error) {
-	return modelsResolver(ctx).resolveAzureFoundryRuntime("azure-foundry", modelCfg, explicitAPIKey, forwardedToken, explicitBaseURL, targetModel)
+var auxResolveAzureFoundryRuntimeFn = func(ctx context.Context, explicitAPIKey string, forwardedToken func(context.Context) (string, error), explicitBaseURL, targetModel string) (*Runtime, error) {
+	return modelsResolver(ctx).resolveAzureFoundryRuntime("azure-foundry", explicitAPIKey, forwardedToken, explicitBaseURL, targetModel)
 }
 
 // Static explicit key or the Entra token provider callable passed through intact, never stringified
@@ -81,20 +80,20 @@ func auxResolveCustomRuntime(ctx context.Context) (string, any, string, error) {
 	} else {
 		base, key, mode = rt.BaseURL, rt.APIKey, string(rt.APIMode)
 	}
-	if pystr.Strip(base) == "" {
+	if strings.TrimSpace(base) == "" {
 		return "", "", "", nil
 	}
-	base = strings.TrimRight(pystr.Strip(base), "/")
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if baseURLHostMatches(base, "openrouter.ai") {
 		return "", "", "", nil
 	}
-	if pystr.Strip(key) == "" {
+	if strings.TrimSpace(key) == "" {
 		key = "no-key-required"
 	}
-	if pystr.Strip(mode) == "" {
+	if strings.TrimSpace(mode) == "" {
 		mode = ""
 	}
-	return base, pystr.Strip(key), mode, nil
+	return base, strings.TrimSpace(key), mode, nil
 }
 
 // Base URL of the active custom endpoint, empty when none, a scope failure raising as GetSecret does
@@ -112,7 +111,7 @@ var auxProxyEnvKeys = []string{"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_
 func auxValidateProxyEnvURLs() error {
 	config.NormalizeProxyEnvVars()
 	for _, key := range auxProxyEnvKeys {
-		value := pystr.Strip(os.Getenv(key))
+		value := strings.TrimSpace(os.Getenv(key))
 		if value == "" {
 			continue
 		}
@@ -133,7 +132,7 @@ func ValidateProxyEnvURLs() error { return auxValidateProxyEnvURLs() }
 
 // Rejects an http or https custom endpoint URL whose port cannot be parsed
 func auxValidateBaseURL(baseURL string) error {
-	candidate := pystr.Strip(baseURL)
+	candidate := strings.TrimSpace(baseURL)
 	if candidate == "" || strings.HasPrefix(candidate, "acp://") {
 		return nil
 	}
@@ -253,17 +252,11 @@ func auxBuildCodexClient(ctx context.Context, model string) (AuxClient, string, 
 
 // Azure Foundry client from the main runtime resolver on its per model wire, nil when unresolvable
 func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, explicitBaseURL, apiMode string) (AuxClient, string, error) {
-	modelCfg := map[string]any{}
-	if cfg, err := auxLoadConfigReadonlyFn(ctx); err == nil {
-		if m, ok := cfg["model"].(map[string]any); ok {
-			modelCfg = m
-		}
-	}
 	var rt *Runtime
 	var rerr error
 	if perr := auxRecoverRaise(func() {
 		staticKey, forwardedToken := auxAzureExplicitKey(explicitAPIKey)
-		rt, rerr = auxResolveAzureFoundryRuntimeFn(ctx, modelCfg, staticKey, forwardedToken, explicitBaseURL, model)
+		rt, rerr = auxResolveAzureFoundryRuntimeFn(ctx, staticKey, forwardedToken, explicitBaseURL, model)
 	}); perr != nil {
 		rerr = perr
 	}
@@ -363,13 +356,13 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	if poolPresent {
 		baseURL = auxPoolRuntimeBaseURL(ctx, entry, auxAnthropicDefaultBaseURL)
 	}
-	if pystr.Lower(pystr.Strip(settings.ModelProvider.Get(ctx))) == "anthropic" {
-		cfgBaseURL := strings.TrimRight(pystr.Strip(settings.ModelBaseURL.Get(ctx)), "/")
+	if strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx))) == "anthropic" {
+		cfgBaseURL := strings.TrimRight(strings.TrimSpace(settings.ModelBaseURL.Get(ctx)), "/")
 		if cfgBaseURL != "" && auxIsAnthropicCompatibleHost(cfgBaseURL) {
 			baseURL = cfgBaseURL
 		}
 	}
-	if overrideURL := strings.TrimRight(pystr.Strip(explicitBaseURL), "/"); overrideURL != "" {
+	if overrideURL := strings.TrimRight(strings.TrimSpace(explicitBaseURL), "/"); overrideURL != "" {
 		if !auxIsAnthropicCompatibleHost(overrideURL) {
 			pkgLog().Warn(fmt.Sprintf("Auxiliary client: refusing anthropic explicit base_url %s — not an "+
 				"Anthropic-compatible host; no client built and no request sent.", pyrepr.Repr(overrideURL)))

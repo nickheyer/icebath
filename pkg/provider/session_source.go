@@ -1,7 +1,8 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"strings"
+
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -13,7 +14,7 @@ const OneshotSource = "oneshot"
 
 // Session row source from the bound session context, a one shot run getting oneshot, else the platform or cli
 func SessionSourceFor(env *tools.Env, platform string) string {
-	source := pystr.Strip(tools.SessionEnvValue(env, "ICEBATH_SESSION_SOURCE"))
+	source := strings.TrimSpace(tools.SessionEnvValue(env, "ICEBATH_SESSION_SOURCE"))
 	singleQuery := tools.SessionEnvValue(env, "ICEBATH_SINGLE_QUERY_SESSION") == "1"
 	explicit := tools.SessionEnvValue(env, "ICEBATH_SESSION_SOURCE_EXPLICIT") == "1"
 	if singleQuery && !explicit && UITransportSources[source] {

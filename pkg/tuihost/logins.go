@@ -223,7 +223,7 @@ func managedRefusal(ctx context.Context) error {
 // Pool key a client's provider names, the session's current one when it names none
 func requestPoolKey(ctx context.Context, named string, session *LoginSession) (string, error) {
 	if strings.TrimSpace(named) != "" {
-		return provider.LoginPoolKey(provider.LoginEnv(ctx).Config(), named), nil
+		return provider.LoginPoolKey(ctx, named), nil
 	}
 	if session != nil && session.PoolKey != "" {
 		return session.PoolKey, nil
@@ -262,7 +262,7 @@ func ListLogins(ctx context.Context, sessions LoginSessions, p tuigateway.LoginL
 	env := provider.LoginEnv(provider.WithSessionLogins(ctx, choices))
 	filter := ""
 	if p.Provider != "" {
-		filter = provider.LoginPoolKey(env.Config(), p.Provider)
+		filter = provider.LoginPoolKey(ctx, p.Provider)
 	}
 	for _, group := range provider.ListAllLogins(env, filter) {
 		wired := wireLoginGroup(group)
@@ -279,7 +279,7 @@ func ListLogins(ctx context.Context, sessions LoginSessions, p tuigateway.LoginL
 	listed := &tuigateway.LoginListSession{SessionID: p.SessionID, PoolKey: session.PoolKey, Pins: choices.Pins, OnExhausted: choices.OnExhausted,
 		Login: SessionLoginInfo(ctx, session.PoolKey, choices, session.ActiveLoginID)}
 	if session.PoolKey != "" {
-		listed.Slug = provider.LoginPoolSlug(env.Config(), session.PoolKey)
+		listed.Slug = provider.LoginPoolSlug(ctx, session.PoolKey)
 	}
 	if wait := pendingLoginWait(ctx, session); wait != nil {
 		listed.Wait = wait
@@ -304,8 +304,7 @@ func pinForRequestSession(ctx context.Context, sessions LoginSessions, sessionID
 // Refusal of an API key for a provider that signs in another way, nil when keys fit
 func apiKeyProviderRefusal(ctx context.Context, slug string) error {
 	key := strings.ToLower(strings.TrimSpace(slug))
-	cfg := provider.LoginEnv(ctx).Config()
-	if key == "openrouter" || provider.IsCustomPoolKey(cfg, provider.LoginPoolKey(cfg, key)) {
+	if key == "openrouter" || provider.IsCustomPoolKey(ctx, provider.LoginPoolKey(ctx, key)) {
 		return nil
 	}
 	row := provider.RegistryRow(ctx, key)
@@ -329,7 +328,7 @@ func AddKeyLogin(ctx context.Context, sessions LoginSessions, p tuigateway.Login
 	if err := apiKeyProviderRefusal(ctx, p.Provider); err != nil {
 		return tuigateway.LoginResult{}, err
 	}
-	poolKey := provider.LoginPoolKey(provider.LoginEnv(ctx).Config(), p.Provider)
+	poolKey := provider.LoginPoolKey(ctx, p.Provider)
 	login, created, err := provider.AddKeyLogin(provider.LoginEnv(ctx), poolKey, p.APIKey,
 		provider.AddLoginOptions{Name: strings.TrimSpace(p.Name), Rotate: p.Rotate, MakeDefault: p.MakeDefault})
 	if err != nil {
@@ -403,7 +402,7 @@ func LinkLogin(ctx context.Context, sessions LoginSessions, p tuigateway.LoginLi
 		return tuigateway.LoginResult{}, err
 	}
 	env := provider.LoginEnv(ctx)
-	poolKey := provider.LoginPoolKey(env.Config(), p.Provider)
+	poolKey := provider.LoginPoolKey(ctx, p.Provider)
 	var login provider.Login
 	var created bool
 	var err error
@@ -431,7 +430,7 @@ func RenameLogin(ctx context.Context, p tuigateway.LoginRenameParams) (tuigatewa
 		return tuigateway.LoginResult{}, err
 	}
 	env := provider.LoginEnv(ctx)
-	login, err := provider.RenameLogin(env, provider.LoginPoolKey(env.Config(), p.Provider), p.Login, p.Name)
+	login, err := provider.RenameLogin(env, provider.LoginPoolKey(ctx, p.Provider), p.Login, p.Name)
 	if err != nil {
 		return tuigateway.LoginResult{}, LoginFailure(err)
 	}
@@ -444,7 +443,7 @@ func RemoveLogin(ctx context.Context, p tuigateway.LoginRemoveParams) (tuigatewa
 		return tuigateway.LoginRemoveResult{}, err
 	}
 	env := provider.LoginEnv(ctx)
-	removal, err := provider.RemoveLogin(env, provider.LoginPoolKey(env.Config(), p.Provider), p.Login)
+	removal, err := provider.RemoveLogin(env, provider.LoginPoolKey(ctx, p.Provider), p.Login)
 	if err != nil {
 		return tuigateway.LoginRemoveResult{}, LoginFailure(err)
 	}
@@ -457,7 +456,7 @@ func SetLoginDefault(ctx context.Context, p tuigateway.LoginSetDefaultParams) (t
 		return tuigateway.LoginSetDefaultResult{}, err
 	}
 	env := provider.LoginEnv(ctx)
-	key := provider.LoginPoolKey(env.Config(), p.Provider)
+	key := provider.LoginPoolKey(ctx, p.Provider)
 	if key == "" {
 		return tuigateway.LoginSetDefaultResult{}, loginRefusal(LoginCodeMissing, "invalid_params", "provider is required")
 	}
@@ -486,7 +485,7 @@ func SetLoginRotation(ctx context.Context, p tuigateway.LoginSetRotationParams) 
 		return tuigateway.LoginResult{}, err
 	}
 	env := provider.LoginEnv(ctx)
-	login, err := provider.SetLoginRotation(env, provider.LoginPoolKey(env.Config(), p.Provider), p.Login, p.Rotate)
+	login, err := provider.SetLoginRotation(env, provider.LoginPoolKey(ctx, p.Provider), p.Login, p.Rotate)
 	if err != nil {
 		return tuigateway.LoginResult{}, LoginFailure(err)
 	}
@@ -499,11 +498,72 @@ func ConvertLogin(ctx context.Context, p tuigateway.LoginConvertParams) (tuigate
 		return tuigateway.LoginResult{}, err
 	}
 	env := provider.LoginEnv(ctx)
-	login, err := provider.ConvertLinkedLogin(env, provider.LoginPoolKey(env.Config(), p.Provider), p.Login)
+	login, err := provider.ConvertLinkedLogin(env, provider.LoginPoolKey(ctx, p.Provider), p.Login)
 	if err != nil {
 		return tuigateway.LoginResult{}, LoginFailure(err)
 	}
 	return tuigateway.LoginResult{Login: WireLogin(login), Created: true}, nil
+}
+
+// Wire row of one login of a provider as the logins list shows it now, nil when the provider no longer holds it
+func listedLogin(env provider.PoolEnv, poolKey, id string) *tuigateway.LoginRow {
+	for _, l := range provider.ListLogins(env, poolKey).Logins {
+		if l.ID == id {
+			row := WireLogin(l)
+			return &row
+		}
+	}
+	return nil
+}
+
+// SetLoginPriority answers login.set_priority, a login moved to a place in the order its provider's logins are tried
+func SetLoginPriority(ctx context.Context, p tuigateway.LoginSetPriorityParams) (tuigateway.LoginResult, error) {
+	if err := managedRefusal(ctx); err != nil {
+		return tuigateway.LoginResult{}, err
+	}
+	env := provider.LoginEnv(ctx)
+	key := provider.LoginPoolKey(ctx, p.Provider)
+	if key == "" {
+		return tuigateway.LoginResult{}, loginRefusal(LoginCodeMissing, "invalid_params", "provider is required")
+	}
+	target, err := provider.FindLogin(env, key, p.Login)
+	if err != nil {
+		return tuigateway.LoginResult{}, LoginFailure(err)
+	}
+	if _, moved := provider.LoadPool(env, key).MoveEntry(target.ID, int(max(p.Priority, 0))); !moved {
+		return tuigateway.LoginResult{}, loginRefusal(LoginCodeUnknownLogin, provider.LoginFaultUnknown, "no %s login matches %q", key, p.Login)
+	}
+	row := listedLogin(env, key, target.ID)
+	if row == nil {
+		return tuigateway.LoginResult{}, loginRefusal(LoginCodeUnknownLogin, provider.LoginFaultUnknown, "no %s login matches %q", key, p.Login)
+	}
+	return tuigateway.LoginResult{Login: *row}, nil
+}
+
+// ResetLogin answers login.reset, the limit one login or every login of a provider ran into forgotten
+func ResetLogin(ctx context.Context, p tuigateway.LoginResetParams) (tuigateway.LoginResetResult, error) {
+	if err := managedRefusal(ctx); err != nil {
+		return tuigateway.LoginResetResult{}, err
+	}
+	env := provider.LoginEnv(ctx)
+	key := provider.LoginPoolKey(ctx, p.Provider)
+	if key == "" {
+		return tuigateway.LoginResetResult{}, loginRefusal(LoginCodeMissing, "invalid_params", "provider is required")
+	}
+	result := tuigateway.LoginResetResult{Provider: key}
+	if strings.TrimSpace(p.Login) == "" {
+		result.Cleared = int64(provider.LoadPool(env, key).ResetStatuses())
+		return result, nil
+	}
+	target, err := provider.FindLogin(env, key, p.Login)
+	if err != nil {
+		return result, LoginFailure(err)
+	}
+	if _, cleared := provider.LoadPool(env, key).ResetStatus(target.ID); !cleared {
+		return result, loginRefusal(LoginCodeUnknownLogin, provider.LoginFaultUnknown, "no %s login matches %q", key, p.Login)
+	}
+	result.Cleared, result.Login = 1, listedLogin(env, key, target.ID)
+	return result, nil
 }
 
 // SetSessionLogin answers session.set_login, one provider's login pin and exhaustion reaction stored with the session
@@ -524,7 +584,7 @@ func SetSessionLogin(ctx context.Context, sessions LoginSessions, p tuigateway.S
 		return result, err
 	}
 	env := provider.LoginEnv(ctx)
-	result.Provider, result.Slug, result.Current = poolKey, provider.LoginPoolSlug(env.Config(), poolKey), poolKey == session.PoolKey
+	result.Provider, result.Slug, result.Current = poolKey, provider.LoginPoolSlug(ctx, poolKey), poolKey == session.PoolKey
 	var pin *string
 	var row provider.PooledCredential
 	if p.Login != nil {

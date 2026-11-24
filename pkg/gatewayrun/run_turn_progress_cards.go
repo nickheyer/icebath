@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"strings"
 
@@ -56,7 +58,7 @@ func taskCardCompact(value any, limit int) string {
 	if pystr.Len(text) <= limit {
 		return text
 	}
-	return pystr.Rstrip(pystr.Slice(text, 0, limit-3)) + "..."
+	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-3), unicode.IsSpace) + "..."
 }
 
 // The last eight tasks in start order

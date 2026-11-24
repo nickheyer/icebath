@@ -108,7 +108,8 @@ func runServiceProbe(ctx context.Context, argv []string, deadline float64, text 
 	if err != nil {
 		return nil, "", err
 	}
-	res, err := serviceProbeRun(ctx, argv, pysubprocess.Options{Timeout: time.Duration(budget * float64(time.Second)), Attr: hiddenServiceProbeAttr()})
+	res, err := serviceProbeRun(ctx, argv, pysubprocess.Options{Env: UserSystemdEnv(), Timeout: time.Duration(budget * float64(time.Second)),
+		Attr: hiddenServiceProbeAttr()})
 	if err != nil {
 		return nil, "", err
 	}

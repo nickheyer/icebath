@@ -248,7 +248,7 @@ func searchIsCJK(cp rune) bool {
 func nonOperatorTokens(rawQuery string) []string {
 	out := []string{}
 	for _, tok := range pystr.SplitWhitespace(rawQuery, -1) {
-		if !slices.Contains(ftsOperators, pystr.Upper(tok)) {
+		if !slices.Contains(ftsOperators, strings.ToUpper(tok)) {
 			out = append(out, tok)
 		}
 	}
@@ -260,7 +260,7 @@ func quoteFTSTokens(rawQuery string) string {
 	tokens := pystr.SplitWhitespace(rawQuery, -1)
 	out := make([]string, len(tokens))
 	for i, tok := range tokens {
-		if slices.Contains(ftsOperators, pystr.Upper(tok)) {
+		if slices.Contains(ftsOperators, strings.ToUpper(tok)) {
 			out[i] = tok
 		} else {
 			out[i] = `"` + strings.ReplaceAll(tok, `"`, `""`) + `"`
@@ -282,7 +282,7 @@ func stripCJKWildcards(rawQuery string) string {
 	}
 	var stripped []string
 	for _, tok := range pystr.SplitWhitespace(rawQuery, -1) {
-		if slices.Contains(ftsOperators, pystr.Upper(tok)) {
+		if slices.Contains(ftsOperators, strings.ToUpper(tok)) {
 			stripped = append(stripped, tok)
 			continue
 		}
@@ -331,7 +331,7 @@ func flattenText(decoded any) (string, error) {
 		}
 		texts = append(texts, s)
 	}
-	if joined := pystr.Strip(strings.Join(texts, " ")); joined != "" {
+	if joined := strings.TrimSpace(strings.Join(texts, " ")); joined != "" {
 		return joined, nil
 	}
 	return "[multimodal content]", nil

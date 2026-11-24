@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -64,7 +63,7 @@ func (e *TransportError) Error() string { return e.Message }
 
 // Configured plane origin and path prefix with trailing slashes dropped, empty when none is set
 func BaseURL() string {
-	return strings.TrimRight(pystr.Strip(os.Getenv(URLEnv)), "/")
+	return strings.TrimRight(strings.TrimSpace(os.Getenv(URLEnv)), "/")
 }
 
 // Plane URL without user info for messages, describe and provenance, naming the unset variable when there is none
@@ -84,7 +83,7 @@ func planeURL() (string, error) {
 	return CheckedURL(BaseURL(), URLEnv)
 }
 
-func InstanceID() string { return pystr.Strip(os.Getenv(InstanceEnv)) }
+func InstanceID() string { return strings.TrimSpace(os.Getenv(InstanceEnv)) }
 
 // Strict UTF-8 JSON in Python json.loads shapes with objects as string keyed maps
 func loadJSON(raw []byte) (any, error) {

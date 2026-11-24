@@ -4,7 +4,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -17,9 +16,9 @@ func (s *GatewayStreamConsumer) atBlockBoundary(buf []rune, idx int) bool {
 	preceding := buf[:idx]
 	lastNL := lastRuneIndex(preceding, '\n')
 	if lastNL == -1 {
-		return accBoundary && pystr.Strip(string(preceding)) == ""
+		return accBoundary && strings.TrimSpace(string(preceding)) == ""
 	}
-	return pystr.Strip(string(preceding[lastNL+1:])) == ""
+	return strings.TrimSpace(string(preceding[lastNL+1:])) == ""
 }
 
 // Index and length of the earliest block boundary opening think tag, minus one and zero when none

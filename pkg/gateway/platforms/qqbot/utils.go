@@ -28,13 +28,13 @@ func BuildUserAgent() string {
 // Kind of a connect or reconnect failure and the proxy's host when a proxy URL holds a secret the raw error text could repeat, empty otherwise: the
 // token and gateway URL client reads the proxy environment itself while the websocket dials the proxy given
 func describeConnectProxyError(err error, websocketProxy string) string {
-	return cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(TokenURL, APIBase)), gateway.DescribeProxyError(err, websocketProxy))
+	return cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(TokenURL, APIBase, SandboxAPIBase)), gateway.DescribeProxyError(err, websocketProxy))
 }
 
 // Kind of a failed standalone request and the proxy's host when the proxy URL its client reads from the environment holds a secret the raw error text
 // could repeat, empty otherwise
 func describeSendProxyError(err error) string {
-	return gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction("https://bots.qq.com", "https://api.sgroup.qq.com"))
+	return gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(TokenURL, APIBase, SandboxAPIBase))
 }
 
 // GetAPIHeaders returns the JSON content headers q.qq.com needs to skip its anti bot page

@@ -8,7 +8,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -69,7 +69,7 @@ func resumeStatusFromEvents(ctx context.Context, conn state.SQLiteConn, taskID s
 
 // Promotes todo and non sticky blocked tasks whose parents are all done or archived and returns the count
 func RecomputeReady(ctx context.Context, conn state.SQLiteConn, failureLimit *int64) (int, error) {
-	limit := int64(DefaultFailureLimit)
+	limit := int64(settings.KanbanFailureLimit.Get(ctx))
 	if failureLimit != nil {
 		limit = *failureLimit
 	}
@@ -612,7 +612,7 @@ func verifyCreatedCards(ctx context.Context, conn state.SQLiteConn, completingTa
 	var ordered []any
 	seen := map[string]bool{}
 	for _, x := range claimedIDs {
-		if s := pystr.Strip(x); s != "" && !seen[s] {
+		if s := strings.TrimSpace(x); s != "" && !seen[s] {
 			seen[s] = true
 			ordered = append(ordered, s)
 		}

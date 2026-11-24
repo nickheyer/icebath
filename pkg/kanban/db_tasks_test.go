@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -481,17 +482,18 @@ func TestRecomputeReadyHonoursDispatcherFailureLimit(t *testing.T) {
 	conn := mustConnect(t, "", nil)
 	defer conn.Close()
 	id := mustCreate(t, conn, CreateTaskOptions{Title: "lenient", Assignee: sp("a")})
-	if _, err := conn.ExecContext(ctx, "UPDATE tasks SET status='blocked', consecutive_failures=? WHERE id=?", DefaultFailureLimit, id); err != nil {
+	limit := int64(settings.KanbanFailureLimit.Default)
+	if _, err := conn.ExecContext(ctx, "UPDATE tasks SET status='blocked', consecutive_failures=? WHERE id=?", limit, id); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := RecomputeReady(ctx, conn, nil); err != nil || n != 0 || mustTask(t, conn, id).Status != "blocked" {
 		t.Fatal("default limit promoted a tripped task", n, err)
 	}
-	lenient := int64(DefaultFailureLimit + 2)
+	lenient := limit + 2
 	if n, err := RecomputeReady(ctx, conn, &lenient); err != nil || n != 1 {
 		t.Fatal("raised limit did not promote", n, err)
 	}
-	if task := mustTask(t, conn, id); task.Status != "ready" || task.ConsecutiveFailures != DefaultFailureLimit {
+	if task := mustTask(t, conn, id); task.Status != "ready" || task.ConsecutiveFailures != limit {
 		t.Fatal("promotion changed the counter", task.Status, task.ConsecutiveFailures)
 	}
 	strictID := mustCreate(t, conn, CreateTaskOptions{Title: "strict", Assignee: sp("a")})

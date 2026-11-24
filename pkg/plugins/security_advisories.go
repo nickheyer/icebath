@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	xterm "github.com/charmbracelet/x/term"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -20,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // One package of an advisory with its compromised versions, an empty set flagging any installed version
@@ -108,59 +108,30 @@ func DetectCompromised(ctx context.Context, advisories []Advisory) []AdvisoryHit
 	return hits
 }
 
-// Advisory ids dismissed under security.acked_advisories, empty when the config does not load
+// Advisory ids dismissed under security.acked_advisories of the profile of ctx
 func GetAckedAdvisoryIDs(ctx context.Context) map[string]bool {
 	out := map[string]bool{}
-	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		pkgLog().Debug("Could not load config for advisory acks", "error", err)
-		return out
-	}
-	security, ok := cfg["security"].(map[string]any)
-	if cfg["security"] != nil && pyrepr.Truthy(cfg["security"]) && !ok {
-		pkgLog().Debug("Could not load config for advisory acks", "error", "security is not a mapping")
-		return out
-	}
-	raw, _ := security["acked_advisories"].([]any)
-	for _, x := range raw {
-		if id := pystr.Strip(pyrepr.Str(x)); id != "" {
+	for _, x := range settings.SecurityAckedAdvisories.Strings(ctx) {
+		if id := strings.TrimSpace(x); id != "" {
 			out[id] = true
 		}
 	}
 	return out
 }
 
-// Persists the dismissal of an advisory id in config.yaml, true when it is stored
+// Persists the dismissal of an advisory id in security.acked_advisories of the profile of ctx, true when it is stored
 func AckAdvisory(ctx context.Context, advisoryID string) bool {
-	advisoryID = pystr.Strip(advisoryID)
+	advisoryID = strings.TrimSpace(advisoryID)
 	if advisoryID == "" {
 		return false
 	}
-	fail := func(err error) bool {
+	existing := settings.SecurityAckedAdvisories.Strings(ctx)
+	if slices.Contains(existing, advisoryID) {
+		return true
+	}
+	if _, err := settings.Set(ctx, settings.SecurityAckedAdvisories.Key, anyList(append(existing, advisoryID)), settings.Global); err != nil {
 		pkgLog().Error(fmt.Sprintf("Failed to persist advisory ack for %s", advisoryID), "error", err)
 		return false
-	}
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, nil)
-	if err != nil {
-		return fail(err)
-	}
-	if _, has := cfg["security"]; !has {
-		cfg["security"] = map[string]any{}
-	}
-	sec, ok := cfg["security"].(map[string]any)
-	if !ok {
-		return fail(fmt.Errorf("config security section is %s where a mapping was expected", errchain.Kind(cfg["security"])))
-	}
-	existing, _ := sec["acked_advisories"].([]any)
-	for _, x := range existing {
-		if pyrepr.Equal(x, advisoryID) {
-			return true
-		}
-	}
-	sec["acked_advisories"] = append(append([]any{}, existing...), advisoryID)
-	if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-		return fail(err)
 	}
 	return true
 }

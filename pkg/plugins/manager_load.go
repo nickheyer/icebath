@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -113,6 +114,7 @@ func (m *Manager) MarkDiscoveredForTests() { m.setDiscovered(true) }
 func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[string]bool, bool) {
 	ctx, unlock := m.lockDiscovery(ctx)
 	defer unlock()
+	installPluginDebugHandler(homeContext(m.home), false)
 	m.mu.Lock()
 	if m.discovered && !force {
 		m.mu.Unlock()
@@ -128,7 +130,7 @@ func (m *Manager) discoverAndLoadLocked(ctx context.Context, force bool) (map[st
 	if force {
 		m.unloadScoped(nil)
 	}
-	if envEnabled("ICEBATH_SAFE_MODE") {
+	if envEnabled(EnvSafeMode) {
 		pkgLog().Info("ICEBATH_SAFE_MODE=1 — plugin discovery skipped")
 		m.setDiscovered(true)
 		return nil, false
@@ -180,17 +182,10 @@ func (m *Manager) refreshSecretSourcesAfterDiscovery(ctx context.Context) {
 	sources := s.SecretSources.ListPluginSources()
 	var enabledNames []string
 	if len(sources) > 0 {
-		secrets := map[string]any{}
-		if cfg, err := loadConfig(m.home); err == nil {
-			if sec, ok := cfg["secrets"].(map[string]any); ok {
-				secrets = sec
-			}
-		}
+		hctx := homeContext(m.home)
 		for _, src := range sources {
-			section, _ := secrets[src.Name].(map[string]any)
-			if section == nil {
-				section = map[string]any{}
-			}
+			settings.RegisterPluginKeys(src.Name, []string{"secrets." + src.Name})
+			section := pluginBlock(hctx, "secrets."+src.Name)
 			var on bool
 			if src.IsEnabled != nil && callGuarded(func() error {
 				var err error
@@ -252,9 +247,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 		}
 	}
 	pkgLog().Debug(fmt.Sprintf("  entrypoints: %d manifest(s)", entryPoints))
-	cfg := loadConfigOrEmpty(m.home)
-	disabled := DisabledPlugins(m.home)
-	enabled, enabledPresent := enabledPlugins(cfg)
+	disabled, enabled := getDisabledSet(m.home), getEnabledSet(m.home)
 	winners := ResolveManifestWinners(manifests)
 	var order []string
 	seen := map[string]bool{}
@@ -270,7 +263,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		load, err := m.gateManifest(ctx, mf, disabled, enabled, enabledPresent)
+		load, err := m.gateManifest(ctx, mf, disabled, enabled)
 		if err != nil {
 			return err
 		}
@@ -301,8 +294,8 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 }
 
 // Routes one winning manifest to load now, defer or a skipped placeholder, true only for the ordered pass
-func (m *Manager) gateManifest(ctx context.Context, mf *Manifest, disabled, enabled map[string]bool, enabledPresent bool) (bool, error) {
-	verdict := GateManifest(m.home, mf, disabled, enabled, enabledPresent)
+func (m *Manager) gateManifest(ctx context.Context, mf *Manifest, disabled, enabled map[string]bool) (bool, error) {
+	verdict := GateManifest(m.home, mf, disabled, enabled)
 	var err error
 	switch verdict.Action {
 	case "load":
@@ -407,7 +400,7 @@ func init() {
 
 // Whether config enables a portable package with MCP servers, probed without loading plugins
 func (m *Manager) HasEnabledPortableMCP(rawConfig map[string]any) bool {
-	if envEnabled("ICEBATH_SAFE_MODE") {
+	if envEnabled(EnvSafeMode) {
 		return false
 	}
 	pluginsConfig, ok := rawConfig["plugins"].(map[string]any)

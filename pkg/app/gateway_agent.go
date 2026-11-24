@@ -67,8 +67,8 @@ func (t *gatewayTurn) spokenText() string { return strings.Join(t.spoken, "") }
 
 // Moves the current segment into the seen set and starts a fresh one
 func (t *gatewayTurn) closeSegment() {
-	t.seen[pystr.Strip(t.shownText())] = true
-	t.seen[pystr.Strip(t.spokenText())] = true
+	t.seen[strings.TrimSpace(t.shownText())] = true
+	t.seen[strings.TrimSpace(t.spokenText())] = true
 	t.shown, t.spoken = nil, nil
 }
 

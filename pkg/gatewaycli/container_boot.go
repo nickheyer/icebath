@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	homepkg "github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -89,11 +91,11 @@ func ReconcileProfileGateways(ctx context.Context, home, scandir string, dryRun 
 			standalone[n.name] = true
 		}
 	}
-	legacy, err := maybeMigrateLegacyGatewayRunState(home, containerArgv, dryRun)
+	seeded, err := seedGatewayRunState(ctx, home, containerArgv, dryRun)
 	if err != nil {
 		return nil, err
 	}
-	defaultPrior := legacy
+	defaultPrior := seeded
 	if defaultPrior == nil {
 		defaultPrior = readDesiredState(home)
 	}
@@ -145,26 +147,25 @@ func BootNotice(folded []string) string {
 		"slot (gateway-default) was started instead and multiplexes them."
 }
 
-// Seeds the root gateway state for a container whose command is gateway run, nil when nothing was seeded
-func maybeMigrateLegacyGatewayRunState(home string, containerArgv []string, dryRun bool) (*string, error) {
-	stateFile := filepath.Join(home, "gateway_state.json")
+// Seeds the root gateway state for a container whose command is gateway run under supervision, nil when nothing was seeded
+func seedGatewayRunState(ctx context.Context, rootHome string, containerArgv []string, dryRun bool) (*string, error) {
+	stateFile := filepath.Join(rootHome, "gateway_state.json")
 	if _, err := os.Stat(stateFile); err == nil {
 		return nil, nil
 	}
-	switch strings.ToLower(os.Getenv("ICEBATH_GATEWAY_NO_SUPERVISE")) {
-	case "1", "true", "yes":
+	if !settings.GatewayContainerSupervision.Get(homepkg.WithOverride(ctx, rootHome)) {
 		return nil, nil
 	}
 	argv := containerArgv
 	if argv == nil {
 		argv = readContainerArgv()
 	}
-	if !isLegacyGatewayRunRequest(argv) {
+	if !isGatewayRunRequest(argv) {
 		return nil, nil
 	}
 	if !dryRun {
 		text, err := pyjson.Dumps(pyjson.ObjectOf("gateway_state", "running", "desired_state", "running",
-			"timestamp", time.Now().Unix(), "migrated_from", "legacy-container-cmd"))
+			"timestamp", time.Now().Unix()))
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +244,8 @@ func StripContainerArgvPrefix(argv []string) []string {
 	return args
 }
 
-func isLegacyGatewayRunRequest(argv []string) bool {
+// Whether a container command asks for gateway run without opting out of supervision
+func isGatewayRunRequest(argv []string) bool {
 	args := StripContainerArgvPrefix(argv)
 	for _, a := range args {
 		if a == "--no-supervise" {

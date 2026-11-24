@@ -244,7 +244,7 @@ func mostCommon(values []string) string {
 
 // Friendly actionable sentence for a raw provider error, else its first line
 func humanizeImageError(errText string) string {
-	low := pystr.Lower(errText)
+	low := strings.ToLower(errText)
 	for _, hint := range imageErrorHints {
 		for _, needle := range hint.needles {
 			if strings.Contains(low, needle) {
@@ -255,7 +255,7 @@ func humanizeImageError(errText string) string {
 	lines := pystr.Splitlines(errText, false)
 	first := ""
 	if len(lines) > 0 {
-		first = pystr.Strip(lines[0])
+		first = strings.TrimSpace(lines[0])
 	}
 	return pystr.Slice(first, 0, 200)
 }

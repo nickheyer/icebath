@@ -90,7 +90,7 @@ func (s *Scope) Tier1AdvisoryEnabled() (enabled bool) {
 		return true
 	}
 	if text, isStr := value.(string); isStr {
-		return !slices.Contains([]string{"false", "0", "no", "off"}, pystr.Lower(pystr.Strip(text)))
+		return !slices.Contains([]string{"false", "0", "no", "off"}, strings.ToLower(strings.TrimSpace(text)))
 	}
 	return pyrepr.Truthy(value)
 }
@@ -119,7 +119,7 @@ func parseTier1Report(report *pyjson.Object) (out Tier1Report, err error) {
 	findings, incomplete, failed := []Tier1Finding{}, []string{}, false
 	for _, res := range pyIterate(pyOr(pyGet(report, "results", []any{}), []any{})) {
 		validator := pyrepr.Str(pyGet(res, "validator", "unknown"))
-		if pystr.Lower(pyrepr.Str(pyGet(res, "status", ""))) == "incomplete" {
+		if strings.ToLower(pyrepr.Str(pyGet(res, "status", ""))) == "incomplete" {
 			incomplete = append(incomplete, validator)
 		} else {
 			failed = failed || !pyrepr.Truthy(pyGet(res, "passed", true))
@@ -134,7 +134,7 @@ func parseTier1Report(report *pyjson.Object) (out Tier1Report, err error) {
 			}
 			findings = append(findings, Tier1Finding{
 				Check: pyrepr.Str(pyGet(f, "check_name", "")), Validator: validator,
-				Severity: pystr.Lower(pyrepr.Str(pyGet(f, "severity", "info"))), Message: pyCut200(pyrepr.Str(pyGet(f, "message", ""))),
+				Severity: strings.ToLower(pyrepr.Str(pyGet(f, "severity", "info"))), Message: pyCut200(pyrepr.Str(pyGet(f, "message", ""))),
 				File: pyrepr.Str(pyGet(f, "file_path", "")), Line: line, Suggestion: pyCut200(pyrepr.Str(pyGet(f, "suggestion", ""))),
 			})
 		}
@@ -227,7 +227,7 @@ func FormatTier1Report(report Tier1Report, limit int) string {
 			"verify before relying on this skill.", len(report.Findings)))
 		shown := append(report.SecretsFindings(), report.AdvisoryFindings()...)
 		for _, f := range pyHeadFindings(shown, limit) {
-			label := pystr.Upper(f.Severity)
+			label := strings.ToUpper(f.Severity)
 			if f.IsSecretsClass() {
 				label = "SECRETS"
 			}

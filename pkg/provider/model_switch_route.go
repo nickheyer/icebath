@@ -391,10 +391,7 @@ func customEndpointSource(ctx context.Context) string {
 		return envURL
 	}
 	r := modelsResolver(ctx)
-	modelCfg := r.modelConfig()
-	base, _ := modelCfg["base_url"].(string)
-	provider, _ := modelCfg["provider"].(string)
-	if base = pyStripSpace(base); base != "" && r.configBaseURLTrustworthyForBareCustom(base, provider) {
+	if base := r.cfgBaseURL(); base != "" && r.configBaseURLTrustworthyForBareCustom(base, r.cfgProvider()) {
 		return base
 	}
 	return ""

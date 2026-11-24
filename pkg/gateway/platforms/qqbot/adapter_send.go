@@ -46,7 +46,7 @@ func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *p
 			return nil, err
 		}
 	}
-	resp, err := httpRequest(ctx, client, method, APIBase+path, headers, payload, timeout)
+	resp, err := httpRequest(ctx, client, method, apiBase(ctx)+path, headers, payload, timeout)
 	if err != nil {
 		var pe *pyErr
 		if errors.As(err, &pe) && pe.kind == "ReadTimeout" {
@@ -142,7 +142,7 @@ func (a *QQAdapter) Send(ctx context.Context, chatID, content, replyTo string, m
 	if !connected {
 		return notConnected(), nil
 	}
-	if pystr.Strip(content) == "" {
+	if strings.TrimSpace(content) == "" {
 		return gateway.SendResult{Success: true}, nil
 	}
 	lastResult := gateway.SendResult{Success: false, Error: "No chunks"}
@@ -174,7 +174,7 @@ func (a *QQAdapter) sendChunk(ctx context.Context, chatID, content, replyTo stri
 			return gateway.SendResult{}, ctx.Err()
 		}
 		lastErr = err
-		if containsAny(pystr.Lower(errText(err)), append(append([]string{}, permanentSendErrors...), "bad request")...) {
+		if containsAny(strings.ToLower(errText(err)), append(append([]string{}, permanentSendErrors...), "bad request")...) {
 			break
 		}
 		if attempt < 2 {
@@ -187,7 +187,7 @@ func (a *QQAdapter) sendChunk(ctx context.Context, chatID, content, replyTo stri
 	}
 	errorMsg := errTextOrName(lastErr)
 	pkgLog().Error(fmt.Sprintf("[%s] Send failed: %s", a.logTag(), errorMsg))
-	return gateway.SendResult{Success: false, Error: errorMsg, Retryable: !containsAny(pystr.Lower(errorMsg), permanentSendErrors...)}, nil
+	return gateway.SendResult{Success: false, Error: errorMsg, Retryable: !containsAny(strings.ToLower(errorMsg), permanentSendErrors...)}, nil
 }
 
 // REST path of an endpoint under a c2c user or a group

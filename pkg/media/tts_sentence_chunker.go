@@ -1,14 +1,14 @@
 package media
 
 import (
+	"context"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var (
@@ -34,25 +34,9 @@ type SentenceChunker struct {
 // NewSentenceChunker merges fragments shorter than minLen into the next sentence
 func NewSentenceChunker(minLen int) *SentenceChunker { return &SentenceChunker{MinLen: minLen} }
 
-// SentenceChunkerFromConfig honours tts.streaming.min_len with a floor of 1, the default 20 for a bad value
-func SentenceChunkerFromConfig(ttsConfig map[string]any) *SentenceChunker {
-	streaming := ttsConfig["streaming"]
-	if !pyTruthy(streaming) {
-		return NewSentenceChunker(20)
-	}
-	section, ok := asStrMap(streaming)
-	if !ok {
-		return NewSentenceChunker(20)
-	}
-	raw, ok := section["min_len"]
-	if !ok {
-		raw = 20
-	}
-	n, err := pyint.Int64(raw)
-	if err != nil {
-		return NewSentenceChunker(20)
-	}
-	return NewSentenceChunker(max(1, int(n)))
+// StreamingSentenceChunker honours tts.streaming.min_len of the tool env's profile
+func StreamingSentenceChunker(ctx context.Context, env *tools.Env) *SentenceChunker {
+	return NewSentenceChunker(loadTTSRequest(ctx, env).StreamingMinLen)
 }
 
 func stripThinkBlocks(text string) string {
@@ -79,7 +63,7 @@ func (c *SentenceChunker) Feed(delta string) []string {
 		}
 		end := m.RuneIndex + m.RuneLength
 		head := string(runes[:end])
-		if utf8.RuneCountInString(pystr.Strip(head)) < c.MinLen {
+		if utf8.RuneCountInString(strings.TrimSpace(head)) < c.MinLen {
 			start = end
 			continue
 		}
@@ -96,7 +80,7 @@ func (c *SentenceChunker) Flush() []string {
 	if m, _ := thinkOpenRE.FindStringMatch(tail); m != nil {
 		tail = string([]rune(tail)[:m.RuneIndex])
 	}
-	if tail = pystr.Strip(tail); tail != "" {
+	if tail = strings.TrimSpace(tail); tail != "" {
 		return []string{tail}
 	}
 	return []string{}

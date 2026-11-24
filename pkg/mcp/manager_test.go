@@ -172,11 +172,11 @@ func TestDiscoveryConcurrencyConfig(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got := discoveryConnectConcurrency(ctx, nil); got != want {
+		if got := discoveryConnectConcurrency(ctx); got != want {
 			t.Fatalf("%q gave %d want %d", body, got, want)
 		}
 	}
-	if logs.count("is not a non-negative integer") != 3 {
+	if logs.count("mcp.discovery_concurrency") != 3 {
 		t.Fatalf("warnings %s", logs.text())
 	}
 }

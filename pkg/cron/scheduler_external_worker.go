@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -167,7 +168,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 	}
 	command := []string{exe, ExternalWorkerEntry, "--external-worker-file", payloadPath, "--ack-file", ackPath}
 	multiplexActive := provider.IsMultiplexActive(ctx) || routedProfileFire(ctx, nil)
-	requireScope := pyTruthy(s.cronConfigValue("require_restart_safe_scope", false))
+	requireScope := settings.CronRequireRestartSafeScope.Get(s.settingsCtx())
 	dispatch, err := restartSafeChildArgv(command, fmt.Sprintf("cron-%s-exec-%s", jobID, executionID), requireScope, false)
 	if err != nil {
 		return false, err
@@ -185,7 +186,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 	if pending == nil {
 		return false, errors.New("cron execution claim changed before external worker handoff")
 	}
-	if err := ensureCronDir(handoffDir); err != nil {
+	if err := s.ensureStoreDir(handoffDir); err != nil {
 		return false, err
 	}
 	_ = os.Chmod(handoffDir, 0o700)
@@ -466,16 +467,7 @@ func runExternalWorkerPayload(ctx context.Context, payloadPath, ackPath string) 
 		s.log.Error(fmt.Sprintf("Cron external worker could not publish ready acknowledgement for %s: %s", executionID, err))
 		return false
 	}
-	old, had := os.LookupEnv(externalWorkerEnv)
-	_ = os.Setenv(externalWorkerEnv, executionID)
-	defer func() {
-		if had {
-			_ = os.Setenv(externalWorkerEnv, old)
-		} else {
-			_ = os.Unsetenv(externalWorkerEnv)
-		}
-	}()
-	completed, err := runOneJobSeam(ctx, s, job, runOneJobOptions{ExtraPrompt: extra})
+	completed, err := runOneJobSeam(withExternalWorker(ctx, executionID), s, job, runOneJobOptions{ExtraPrompt: extra})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cron external worker run of execution %s raised: %s\n", executionID, err)
 		return false

@@ -62,10 +62,10 @@ func bech32HRPExpand(hrp string) []int {
 
 // Thirty two key bytes of a checksummed lowercase or uppercase nsec string
 func decodeNsec(value string) ([]byte, error) {
-	if pystr.Lower(value) != value && pystr.Upper(value) != value {
+	if strings.ToLower(value) != value && strings.ToUpper(value) != value {
 		return nil, errors.New("nsec cannot mix upper- and lowercase")
 	}
-	normalized := []rune(pystr.Lower(value))
+	normalized := []rune(strings.ToLower(value))
 	separator := strings.LastIndex(string(normalized), "1")
 	if separator >= 0 {
 		separator = len([]rune(string(normalized)[:separator]))
@@ -113,9 +113,9 @@ func decodeNsec(value string) ([]byte, error) {
 
 // Secret scalar of a 64 hex character or nsec key inside the secp256k1 range
 func decodePrivateKey(value string) (*big.Int, error) {
-	raw := pystr.Strip(value)
+	raw := strings.TrimSpace(value)
 	var keyBytes []byte
-	if strings.HasPrefix(pystr.Lower(raw), "nsec1") {
+	if strings.HasPrefix(strings.ToLower(raw), "nsec1") {
 		b, err := decodeNsec(raw)
 		if err != nil {
 			return nil, err
@@ -316,7 +316,7 @@ type AuthEventParams struct {
 // NIP-42 auth event for the relay challenge, with the owner attestation tag when configured
 func BuildAuthEvent(p AuthEventParams) (AuthEvent, error) {
 	tags := [][]string{{"relay", p.RelayURL}, {"challenge", p.Challenge}}
-	if pystr.Strip(p.AuthTagJSON) != "" {
+	if strings.TrimSpace(p.AuthTagJSON) != "" {
 		tag, err := ParseAuthTag(p.AuthTagJSON, "BUZZ_AUTH_TAG")
 		if err != nil {
 			return AuthEvent{}, err

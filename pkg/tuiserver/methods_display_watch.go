@@ -14,11 +14,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -74,7 +74,7 @@ func mtime(path string) fileMtime {
 	return fileMtime{ns: info.ModTime().UnixNano()}
 }
 
-// Stages the Bot Screen line as a per turn note on every live agent session of the profile
+// Stages the Bot Screen line as a note for the next turn of every open chat of the profile
 func notifyAgentsOfScreenChange(profileKey string, payload *pyjson.Object) {
 	line, built := func() (line string, built bool) {
 		defer func() {
@@ -89,30 +89,10 @@ func notifyAgentsOfScreenChange(profileKey string, payload *pyjson.Object) {
 		display, _ := payload.GetOr("display", nil).(string)
 		return agent.BotScreenNote(pyrepr.Truthy(payload.GetOr("running", nil)), display, holder), true
 	}()
-	if !built || line == "" {
+	if !built || line == "" || gateway.StageProfileTurnNote == nil {
 		return
 	}
-	var targets []*agent.AIAgent
-	for _, live := range tuihost.LiveSessions() {
-		a := sessionAgent(live.Session)
-		if a == nil {
-			continue
-		}
-		owner := strOr(live.Session.Get("profile_home"))
-		if owner == "" {
-			owner = home.Process()
-		}
-		if home.Key(owner) == profileKey {
-			targets = append(targets, a)
-		}
-	}
-	for _, a := range targets {
-		if prior := a.GatewayTurnContextNotes(); prior != "" {
-			a.SetGatewayTurnContextNotes(prior + "\n\n" + line)
-		} else {
-			a.SetGatewayTurnContextNotes(line)
-		}
-	}
+	gateway.StageProfileTurnNote(profileKey, line)
 }
 
 // Shallow map of an ordered snapshot for a global event payload

@@ -1024,7 +1024,7 @@ func (t *WebSocketRelayTransport) readFrames(ctx context.Context, conn *relayCon
 		lines := strings.Split(buf, "\n")
 		buf = lines[len(lines)-1]
 		for _, line := range lines[:len(lines)-1] {
-			if pystr.Strip(line) == "" {
+			if strings.TrimSpace(line) == "" {
 				continue
 			}
 			if err := t.handleFrame(ctx, line); err != nil {

@@ -31,11 +31,11 @@ func configuredCredentialsFile(ctx context.Context, extra map[string]any) (strin
 	if err != nil {
 		return "", err
 	}
-	if configured = pystr.Strip(configured); configured != "" {
+	if configured = strings.TrimSpace(configured); configured != "" {
 		return configured, nil
 	}
 	file, _ := extra["credentials_file"].(string)
-	return pystr.Strip(file), nil
+	return strings.TrimSpace(file), nil
 }
 
 // Credentials files to read, the configured one or the buzz CLI records unless multiplexing
@@ -61,8 +61,8 @@ func credentialsCandidates(ctx context.Context, extra map[string]any) ([]string,
 // First non empty private key field of a credentials record, stripped
 func credentialsKey(data *pyjson.Object) string {
 	for _, field := range keyFields {
-		if value, ok := data.Vals[field].(string); ok && pystr.Strip(value) != "" {
-			return pystr.Strip(value)
+		if value, ok := data.Vals[field].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
 		}
 	}
 	return ""
@@ -100,7 +100,7 @@ func resolvePrivateKey(ctx context.Context, extra map[string]any) (string, error
 	if err != nil {
 		return "", err
 	}
-	if key = pystr.Strip(key); key != "" {
+	if key = strings.TrimSpace(key); key != "" {
 		return key, nil
 	}
 	data, err := resolveCredentialsData(ctx, extra)
@@ -110,7 +110,7 @@ func resolvePrivateKey(ctx context.Context, extra map[string]any) (string, error
 	return credentialsKey(data), nil
 }
 
-// Buzz wizard of icebath gateway setup writing the relay, key, channels and access settings to the home .env
+// Buzz wizard of icebath gateway setup writing the relay, channels and access settings and the key to the home .env
 func InteractiveSetup(ctx context.Context) error {
 	s := gateway.WizardSetup
 	ask := func(label, env string) (string, error) {
@@ -137,11 +137,11 @@ func InteractiveSetup(ctx context.Context) error {
 		s.PrintWarning("Relay URL is required — skipping Buzz setup")
 		return nil
 	}
-	if err := s.SaveEnvValue(ctx, "BUZZ_RELAY_URL", pystr.Strip(relay)); err != nil {
+	if err := s.SaveEnvValue(ctx, "BUZZ_RELAY_URL", strings.TrimSpace(relay)); err != nil {
 		return err
 	}
 	if key := s.Prompt("Nostr private key (nsec or hex; leave blank to keep current)", "", true); key != "" {
-		if err := s.SaveEnvValue(ctx, "BUZZ_PRIVATE_KEY", pystr.Strip(key)); err != nil {
+		if err := s.SaveEnvValue(ctx, "BUZZ_PRIVATE_KEY", strings.TrimSpace(key)); err != nil {
 			return err
 		}
 	} else if resolved, err := resolvePrivateKey(ctx, nil); err != nil {
@@ -163,7 +163,7 @@ func InteractiveSetup(ctx context.Context) error {
 		return err
 	}
 	if homeChannel != "" {
-		if err := s.SaveEnvValue(ctx, "BUZZ_HOME_CHANNEL", pystr.Strip(homeChannel)); err != nil {
+		if err := s.SaveEnvValue(ctx, "BUZZ_HOME_CHANNEL", strings.TrimSpace(homeChannel)); err != nil {
 			return err
 		}
 	}
@@ -190,7 +190,7 @@ func InteractiveSetup(ctx context.Context) error {
 		}
 	}
 	gateway.WizardPrintln("")
-	s.PrintSuccess("Buzz configuration saved to ~/.icebath/.env")
+	s.PrintSuccess("Buzz configuration saved")
 	s.PrintInfo("Restart the gateway for changes to take effect: icebath gateway restart")
 	return nil
 }

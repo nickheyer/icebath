@@ -127,11 +127,7 @@ func applyToolsChange(ctx context.Context, action, platform string, targets []st
 			toolsetTargets = append(toolsetTargets, name)
 		}
 	}
-	configServers, err := mcp.GetMCPServers(ctx)
-	if err != nil {
-		return out, err
-	}
-	_, owners := mcp.ServerConfigsWithSources(ctx, configServers)
+	_, owners := mcp.ServerConfigsWithSources(ctx, mcp.StoredServers(ctx))
 	for _, target := range mcpTargets {
 		server, _, _ := strings.Cut(target, ":")
 		if plugin := owners[server]; plugin != nil {

@@ -101,15 +101,10 @@ func autodetectProvider(env *tools.Env) (found BrowserProvider) {
 
 // Provider and whether the answer is definitive, explicit local or camofox and resolved providers being cached
 func resolveProviderUncached(env *tools.Env) (BrowserProvider, bool, error) {
-	section := cfgOf(env).section()
-	providerKey, present := "", false
-	if section.Has("cloud_provider") {
-		raw := section.Get("cloud_provider")
-		value := ""
-		if pyrepr.Truthy(raw) {
-			value = pyrepr.Str(raw)
-		}
-		providerKey, present = tools.NormalizeBrowserCloudProvider(value), true
+	providerKey := ""
+	selected, present := cfgOf(env).cloudProviderSelection()
+	if present {
+		providerKey = tools.NormalizeBrowserCloudProvider(selected)
 	}
 	if present && (providerKey == "local" || providerKey == "camofox") {
 		return nil, true, nil

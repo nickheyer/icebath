@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/spf13/cobra"
 )
@@ -116,6 +117,14 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 	if cmd != cli.Root {
 		read(cmd.Flags(), cmd)
 	}
+	for _, launch := range []struct {
+		env string
+		dst *bool
+	}{{"ICEBATH_SAFE_MODE", &a.SafeMode}, {"ICEBATH_IGNORE_USER_CONFIG", &a.IgnoreUserConfig}} {
+		if provider.IsTruthyValue(os.Getenv(launch.env)) {
+			*launch.dst = true
+		}
+	}
 	if a.OutputFormat == "" {
 		a.OutputFormat = "text"
 	}
@@ -155,8 +164,8 @@ func secondWord(s string) string {
 	return firstWord(s[len(first)+1:])
 }
 
-// Commands that can run an agent turn, bare chat, acp and rl, plus cron run or tick and gateway run
-var agentCommands = map[string]bool{"": true, "chat": true, "acp": true, "rl": true}
+// Commands that can run an agent turn, bare chat and acp, plus cron run or tick and gateway run
+var agentCommands = map[string]bool{"": true, "chat": true, "acp": true}
 
 var agentSubcommands = map[string]map[string]bool{
 	"cron":    {"run": true, "tick": true},
@@ -185,7 +194,7 @@ func isTUIChatLaunch(a *chatArgs) bool {
 }
 
 func shouldBackgroundMCPStartup(a *chatArgs) bool {
-	return !isTUIChatLaunch(a) && (a.Command == "" || a.Command == "chat" || a.Command == "rl")
+	return !isTUIChatLaunch(a) && (a.Command == "" || a.Command == "chat")
 }
 
 // Every bare chat turn executes in the gateway, which owns MCP discovery itself
@@ -259,20 +268,15 @@ func prepareAgentStartup(a *chatArgs) {
 	if shouldBackgroundMCPStartup(a) {
 		mcp.StartBackgroundDiscovery(ctx, processToolsEnv(ctx), pkgLog(), "cli-mcp-discovery")
 	}
-	cfg, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
-		return
-	}
-	interactive := a.Command == "" || a.Command == "chat" || a.Command == "rl"
-	if _, err := plugins.RegisterShellHooksFromConfig(ctx, map[string]any(cfg), a.AcceptHooks, interactive); err != nil {
+	interactive := a.Command == "" || a.Command == "chat"
+	if _, err := plugins.RegisterShellHooksFromConfig(ctx, a.AcceptHooks, interactive); err != nil {
 		pkgLog().Debug(fmt.Sprintf("shell-hook registration failed at CLI startup: %v", err))
 		return
 	}
 	if a.AcceptHooks && a.Command == "gateway" {
 		plugins.AcceptShellHooksForProcess()
 	}
-	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx, map[string]any(cfg)); err != nil {
+	if _, err := plugins.RegisterOutboundWebhooksFromConfig(ctx); err != nil {
 		pkgLog().Debug(fmt.Sprintf("outbound-webhook registration failed at CLI startup: %v", err))
 	}
 }

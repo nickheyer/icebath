@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -271,7 +270,7 @@ func installPkgs(assumeYes bool, prompt string, argv []string, failMsg string) e
 	ok := assumeYes
 	if !ok {
 		answer, err := readLine(prompt + " [y/N] ")
-		ok = err == nil && (pystr.Lower(pystr.Strip(answer)) == "y" || pystr.Lower(pystr.Strip(answer)) == "yes")
+		ok = err == nil && (strings.ToLower(strings.TrimSpace(answer)) == "y" || strings.ToLower(strings.TrimSpace(answer)) == "yes")
 	}
 	if !ok {
 		fmt.Fprintln(cliOut, "  skipped (you can run it manually later)")
@@ -453,7 +452,7 @@ func cmdJoin(ctx context.Context, url, guestName string, duration *string, heade
 
 // Queues non blank text locally or on the named node
 func cmdSay(ctx context.Context, text string, node any) int {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		fmt.Fprintln(cliOut, "refusing: empty text")
 		return 2
 	}

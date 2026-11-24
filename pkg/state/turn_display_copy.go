@@ -32,7 +32,7 @@ func UntypedFailedTurnDisplayKind(role, content any) (string, bool) {
 	if role != "assistant" || !ok {
 		return "", false
 	}
-	switch pystr.Strip(text) {
+	switch strings.TrimSpace(text) {
 	case FailedTurnNotice, PartialFailedTurnNotice, AutomationInterruptedNotice:
 		return FailedTurnDisplayKind, true
 	}
@@ -110,6 +110,6 @@ func ExtractSteerTextFromMessage(message map[string]any) (string, bool) {
 			return "", false
 		}
 	}
-	inner := pystr.Strip(text[start : start+end])
+	inner := strings.TrimSpace(text[start : start+end])
 	return inner, inner != ""
 }

@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
@@ -55,7 +57,7 @@ func (t *nonConversationalTracker) load() []string {
 			if items, ok := data.([]any); ok {
 				out := []string{}
 				for _, item := range items {
-					if s := pyrepr.Str(item); pystr.Strip(s) != "" {
+					if s := pyrepr.Str(item); strings.TrimSpace(s) != "" {
 						out = append(out, s)
 					}
 				}
@@ -94,7 +96,7 @@ func (t *nonConversationalTracker) markMany(ctx context.Context, messageIDs []st
 	changed := false
 	t.mu.Lock()
 	for _, messageID := range messageIDs {
-		key := pystr.Strip(messageID)
+		key := strings.TrimSpace(messageID)
 		if _, seen := t.ids[key]; key != "" && !seen {
 			t.ids[key] = struct{}{}
 			t.order = append(t.order, key)

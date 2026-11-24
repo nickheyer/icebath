@@ -215,10 +215,10 @@ func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.M
 	if err != nil {
 		return "", err
 	}
-	rawArgs := pystr.Strip(event.GetCommandArgs())
+	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	var args []string
 	for _, a := range pystr.SplitWhitespace(rawArgs, -1) {
-		args = append(args, pystr.Lower(a))
+		args = append(args, strings.ToLower(a))
 	}
 	wantsReset := len(args) > 0 && args[0] == "reset"
 	if len(args) > 0 && !wantsReset {
@@ -243,7 +243,7 @@ func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.M
 		}()
 	}
 	if wantsReset {
-		if pystr.Lower(pystr.Strip(providerName)) != "openai-codex" {
+		if strings.ToLower(strings.TrimSpace(providerName)) != "openai-codex" {
 			return i18n.T(ctx, "gateway.usage.reset_wrong_provider", "", nil), nil
 		}
 		return provider.RedeemCodexResetCredit(ctx, baseURL, apiKey, slices.Contains(args[1:], "--force")).Message, nil
@@ -341,7 +341,7 @@ func (r *GatewayRunner) persistedBillingRoute(ctx context.Context, source *gatew
 
 // Usage insights and analytics over the last N days, optionally for one source
 func (r *GatewayRunner) handleInsightsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := insightsDashFlagRe.ReplaceAllString(pystr.Strip(event.GetCommandArgs()), "--$1")
+	args := insightsDashFlagRe.ReplaceAllString(strings.TrimSpace(event.GetCommandArgs()), "--$1")
 	days, source := 30, ""
 	parts := pystr.SplitWhitespace(args, -1)
 	for i := 0; i < len(parts); {

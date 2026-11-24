@@ -17,20 +17,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Whether the sender is the bot itself, also true while the bot user id is unresolved
 func (a *MatrixAdapter) isSelfSender(sender string) bool {
 	a.mu.Lock()
-	own := pystr.Lower(pystr.Strip(a.userID))
+	own := strings.ToLower(strings.TrimSpace(a.userID))
 	a.mu.Unlock()
-	return own == "" || pystr.Lower(pystr.Strip(sender)) == own
+	return own == "" || strings.ToLower(strings.TrimSpace(sender)) == own
 }
 
 // Whether the sender is an appservice, bridge or system identity, or a malformed id
 func isSystemOrBridgeSender(sender string) bool {
-	localpart, _, _ := strings.Cut(strings.TrimLeft(pystr.Strip(sender), "@"), ":")
+	localpart, _, _ := strings.Cut(strings.TrimLeft(strings.TrimSpace(sender), "@"), ":")
 	return localpart == "" || strings.HasPrefix(localpart, "_")
 }
 
@@ -306,7 +305,7 @@ func (a *MatrixAdapter) handleTextMessage(ctx context.Context, roomID, sender, e
 	if body == "" {
 		return nil
 	}
-	if a.parkedVoices.Pending(roomID, sender) && pystr.Strip(a.stripMention(body)) == "" && a.contentMentionsBot(body, sourceContent) {
+	if a.parkedVoices.Pending(roomID, sender) && strings.TrimSpace(a.stripMention(body)) == "" && a.contentMentionsBot(body, sourceContent) {
 		limit := a.parkedVoices.Mark()
 		a.parkedVoices.Settle(ctx, roomID, sender)
 		if parked, ok := a.parkedVoices.Claim(roomID, sender, limit); ok {
@@ -574,7 +573,7 @@ func (a *MatrixAdapter) joinRoomByID(ctx context.Context, roomID string) (bool, 
 			return false, ctx.Err()
 		}
 		pkgLog().Warn(fmt.Sprintf("Matrix: error joining %s: %v", roomID, err))
-		msg := pystr.Lower(err.Error())
+		msg := strings.ToLower(err.Error())
 		if strings.Contains(msg, "no servers") || strings.Contains(msg, "room not found") {
 			if _, lerr := client.LeaveRoom(ctx, id.RoomID(roomID)); lerr == nil {
 				pkgLog().Info(fmt.Sprintf("Matrix: declined dead invite to %s", roomID))

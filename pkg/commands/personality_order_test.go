@@ -10,17 +10,14 @@ import (
 // Merged personalities keep the dict order of the merge, an overridden builtin staying in its builtin slot
 func TestAvailablePersonalitiesKeepDictOrder(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	user := map[string]any{"Zeta": "z", "alpha": "a", "helpful": "h"}
-	config.SetMappingKeys(user, []string{"Zeta", "alpha", "helpful"})
-	agentUser := map[string]any{"beta": "b", "none": "ignored", "zeta": "z2"}
-	config.SetMappingKeys(agentUser, []string{"beta", "none", "zeta"})
-	cfg := config.Tree{"personalities": user, "agent": map[string]any{"personalities": agentUser}}
-	merged := AvailablePersonalities(cfg)
+	user := map[string]any{"Zeta": "z", "alpha": "a", "helpful": "h", "none": "ignored", "beta": "b"}
+	config.SetMappingKeys(user, []string{"Zeta", "alpha", "helpful", "none", "beta"})
+	merged := AvailablePersonalities(config.Tree{"personalities": user})
 	want := append(append([]string{}, builtinPersonalityOrder...), "zeta", "alpha", "beta")
 	if got := PersonalityNames(merged); !reflect.DeepEqual(got, want) {
 		t.Fatalf("order = %v", got)
 	}
-	if merged["zeta"] != "z2" || merged["helpful"] != "h" {
+	if merged["zeta"] != "z" || merged["helpful"] != "h" || merged["none"] != nil {
 		t.Fatalf("merged = %v", merged)
 	}
 }

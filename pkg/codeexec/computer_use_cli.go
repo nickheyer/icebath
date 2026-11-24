@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -13,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -151,7 +149,7 @@ func cuStatus(ctx context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int,
 	if err != nil {
 		return 0, err
 	}
-	override := pystr.Strip(os.Getenv(cuaDriverCmdEnv))
+	override := cuaDriverCmdOverride()
 	if path == "" {
 		cli.println("cua-driver: not installed")
 		cli.println("  Run: icebath computer-use install")

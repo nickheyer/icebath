@@ -98,15 +98,15 @@ func TestGetProviderMistralAutoDetectMistralAfterOpenai(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("MISTRAL_API_KEY", "test-key")
 	noLocalNoOpenAI()
-	if got, _ := getProvider(ctx, map[string]any{}); got != "mistral" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{})); got != "mistral" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
 
 // Dispatches a sample through TranscribeAudio to a recorded handler and returns the model it received
 func dispatchedModel(t *testing.T, ctx context.Context, providerName string, cfg map[string]any) string {
-	withSTTConfig(cfg)
-	sttGetProvider = func(context.Context, map[string]any) (string, error) { return providerName, nil }
+	withSTTConfig(t, cfg)
+	sttGetProvider = func(context.Context, *sttRequest) (string, error) { return providerName, nil }
 	calls := recordHandler(providerName, map[string]any{"success": true, "transcript": "hi"})
 	TranscribeAudio(ctx, sampleOGG(t), "", "")
 	if len(*calls) != 1 {
@@ -125,7 +125,7 @@ func TestTranscribeAudioMistralDispatchConfigMistralModelUsed(t *testing.T) {
 func TestTranscribeXAISuccessfulTranscription(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("XAI_API_KEY", "xai-test-key")
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	fakeSTTPosts(t, [2]any{200, map[string]any{"text": "bonjour le monde", "language": "fr", "duration": 3.2}})
 	r, _ := transcribeXAI(ctx, sampleOGG(t), "grok-stt", sttHints{})
 	if r["success"] != true || r["transcript"] != "bonjour le monde" || r["provider"] != "xai" {
@@ -147,8 +147,8 @@ func TestTranscribeXAIRetriesAuthRejectionWithRefreshedOauthCredentials(t *testi
 		}
 		calls := fakeSTTPosts(t, [2]any{rejected, map[string]any{"error": map[string]any{"message": "OAuth2 access token could not be validated"}}},
 			[2]any{200, map[string]any{"text": "fleet speech transcription proof", "language": "en", "duration": 2.1}})
-		withSTTConfig(map[string]any{"provider": "xai"})
-		sttGetProvider = func(context.Context, map[string]any) (string, error) { return "xai", nil }
+		withSTTConfig(t, map[string]any{"provider": "xai"})
+		sttGetProvider = func(context.Context, *sttRequest) (string, error) { return "xai", nil }
 		r, err := TranscribeAudio(ctx, sampleOGG(t), "", "")
 		want := map[string]any{"success": true, "transcript": "fleet speech transcription proof", "provider": "xai"}
 		if err != nil || !reflect.DeepEqual(r, want) || len(*calls) != 2 {
@@ -167,7 +167,7 @@ func TestTranscribeXAISendsLanguageAndFormat(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("XAI_API_KEY", "xai-test-key")
 	t.Setenv(localSTTLanguageEnv, "fr")
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	calls := fakeSTTPosts(t, [2]any{200, map[string]any{"text": "test", "language": "fr", "duration": 1.0}})
 	transcribeXAI(ctx, sampleOGG(t), "grok-stt", sttHints{})
 	d := (*calls)[0].data
@@ -179,7 +179,7 @@ func TestTranscribeXAISendsLanguageAndFormat(t *testing.T) {
 func TestTranscribeXAIOmittedModelPinsTranscribe2(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("XAI_API_KEY", "xai-test-key")
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	calls := fakeSTTPosts(t, [2]any{200, map[string]any{"text": "test", "language": "en", "duration": 1.0}})
 	transcribeXAI(ctx, sampleOGG(t), "", sttHints{})
 	if m := (*calls)[0].data["model"]; m != "grok-voice-transcribe-2.0" {
@@ -193,7 +193,7 @@ func TestTranscribeXAIOauthCredentialsIgnoreSttBaseUrlOverride(t *testing.T) {
 	sttResolveXAICredentials = func(context.Context) (string, string, string) {
 		return "xai-oauth", "oauth-bearer-token", "https://api.x.ai/v1"
 	}
-	withSTTConfig(map[string]any{"xai": map[string]any{"base_url": "https://attacker.example/config"}})
+	withSTTConfig(t, map[string]any{"xai": map[string]any{"base_url": "https://attacker.example/config"}})
 	calls := fakeSTTPosts(t, [2]any{200, map[string]any{"text": "test", "language": "en", "duration": 1.0}})
 	r, _ := transcribeXAI(ctx, sampleOGG(t), "grok-stt", sttHints{})
 	if r["success"] != true || (*calls)[0].url != "https://api.x.ai/v1/stt" || (*calls)[0].headers["Authorization"] != "Bearer oauth-bearer-token" {
@@ -208,7 +208,7 @@ func TestGetProviderXAIAutoDetectXaiAfterMistral(t *testing.T) {
 	sttResolveXAICredentials = func(ctx context.Context) (string, string, string) {
 		return tools.ResolveXAIHTTPCredentials(sttCredentialEnv(ctx), false)
 	}
-	if got, _ := getProvider(ctx, map[string]any{}); got != "xai" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{})); got != "xai" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
@@ -237,7 +237,7 @@ func TestTranscribeAudioXAIDispatchLegacyGrokSttAliasUsesCurrentDefault(t *testi
 func TestTranscribeElevenLabsSuccessfulTranscription(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("ELEVENLABS_API_KEY", "eleven-test-key")
-	withSTTConfig(map[string]any{"elevenlabs": map[string]any{"language_code": "eng", "tag_audio_events": true, "diarize": true}})
+	withSTTConfig(t, map[string]any{"elevenlabs": map[string]any{"language_code": "eng", "tag_audio_events": true, "diarize": true}})
 	calls := fakeSTTPosts(t, [2]any{200, map[string]any{"text": "hello from elevenlabs"}})
 	r, _ := transcribeElevenLabs(ctx, sampleOGG(t), "scribe_v2", sttHints{})
 	c := (*calls)[0]
@@ -251,7 +251,7 @@ func TestGetProviderElevenLabsAutoDetectElevenlabsAfterXai(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("ELEVENLABS_API_KEY", "eleven-test")
 	noLocalNoOpenAI()
-	if got, _ := getProvider(ctx, map[string]any{}); got != "elevenlabs" {
+	if got, _ := getProvider(ctx, sttRequestOf(t, map[string]any{})); got != "elevenlabs" {
 		t.Fatalf("getProvider = %q", got)
 	}
 }
@@ -357,7 +357,7 @@ func TestStructuredTranscriptionErrorsMistralErrorObjectReturnsFailureEnvelope(t
 func TestStructuredTranscriptionErrorsElevenlabsErrorBodyReturnsFailureEnvelope(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("ELEVENLABS_API_KEY", "eleven-test-key")
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	fakeSTTPosts(t, [2]any{200, map[string]any{"text": nil, "error": "Transcription failed"}})
 	r, _ := transcribeElevenLabs(ctx, sampleOGG(t), "scribe_v2", sttHints{})
 	wantProviderFailure(t, r)
@@ -421,7 +421,7 @@ func TestShellSafetyLocalCommandNormalizesLanguageOrUsesDefault(t *testing.T) {
 	for _, c := range [][2]string{{"ZH", "zh"}, {"zh-Hant", "zh"}, {"繁體中文", "zh"}, {"not-a-language", "en"}} {
 		ctx := keepSTTSeams(t)
 		t.Setenv(localSTTCommandEnv, "whisper {input_path} --language {language} --output_dir {output_dir}")
-		withSTTConfig(map[string]any{"local": map[string]any{"language": c[0]}})
+		withSTTConfig(t, map[string]any{"local": map[string]any{"language": c[0]}})
 		argv, _ := recordLocalRun(t)
 		r, _ := transcribeLocalCommand(ctx, sampleWAV(t), "base", sttHints{})
 		idx := -1
@@ -438,7 +438,7 @@ func TestShellSafetyLocalCommandNormalizesLanguageOrUsesDefault(t *testing.T) {
 
 func TestLocalModelLockConcurrentTranscribeLoadsModelOnce(t *testing.T) {
 	ctx := keepSTTSeams(t)
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	var mu sync.Mutex
 	loads := 0
 	whisperModelCtor = func(context.Context, string, any, any, bool) (localWhisperModel, error) {
@@ -462,7 +462,7 @@ func TestLocalModelLockConcurrentTranscribeLoadsModelOnce(t *testing.T) {
 
 func TestLocalBaseUrlNoApiKeyLocalBaseUrlReturnsPlaceholderKey(t *testing.T) {
 	ctx := keepSTTSeams(t)
-	withSTTConfig(map[string]any{"openai": map[string]any{"base_url": "http://localhost:8504/v1"}})
+	withSTTConfig(t, map[string]any{"openai": map[string]any{"base_url": "http://localhost:8504/v1"}})
 	key, base, err := resolveSTTOpenAIAudioClientConfig(ctx)
 	if err != nil || key == "" || base != "http://localhost:8504/v1" {
 		t.Fatalf("key %q base %q err %v", key, base, err)
@@ -513,8 +513,8 @@ func TestCafConversionConvertCafWithFfmpeg(t *testing.T) {
 func TestCafConversionTranscribeCafNotConvertedForLocal(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	caf := cafFixture(t, []byte(strings.Repeat("caff\x00", 20)))
-	withSTTConfig(map[string]any{"provider": "local"})
-	sttGetProvider = func(context.Context, map[string]any) (string, error) { return "local", nil }
+	withSTTConfig(t, map[string]any{"provider": "local"})
+	sttGetProvider = func(context.Context, *sttRequest) (string, error) { return "local", nil }
 	converted := false
 	sttConvertCAF = func(string, string) (string, error) { converted = true; return "", nil }
 	recordHandler("local", map[string]any{"success": true, "transcript": "hi"})
@@ -530,7 +530,7 @@ func TestCafConversionCafConversionPreservesNeighborsAndRemovesOwnedOutput(t *te
 		source := cafFixture(t, []byte("caff fixture"))
 		neighbor := strings.TrimSuffix(source, ".caf") + ".wav"
 		os.WriteFile(neighbor, []byte("existing recording"), 0o644)
-		withSTTConfig(map[string]any{"provider": "groq", "cloud_trim_silence": false})
+		withSTTConfig(t, map[string]any{"provider": "groq", "cloud_trim_silence": false})
 		sttFindBinary = func(name string) string {
 			if name == "ffmpeg" {
 				return "ffmpeg"
@@ -543,7 +543,7 @@ func TestCafConversionCafConversionPreservesNeighborsAndRemovesOwnedOutput(t *te
 			outputs = append(outputs, out)
 			return "", "", os.WriteFile(out, []byte("converted recording"), 0o644)
 		}
-		sttDispatchProvider = func(_ context.Context, path, _ string, _ map[string]any, _, _ string) (map[string]any, error) {
+		sttDispatchProvider = func(_ context.Context, path, _ string, _ *sttRequest, _, _ string) (map[string]any, error) {
 			if b, _ := os.ReadFile(path); string(b) != "converted recording" {
 				t.Fatalf("dispatched %q", b)
 			}
@@ -606,8 +606,9 @@ func TestCommandSttIdleTimeoutPreservesTranscriptionContract(t *testing.T) {
 		}
 		script := filepath.Join(dir, "transcribe.sh")
 		os.WriteFile(script, []byte("[ \"$(cat \"$1\")\" = 'fixture audio' ] || exit 3\n"+body+"printf 'actual transcript' > \"$2\"\n"), 0o755)
-		r := transcribeCommandSTT(ctx, audio, "probe", map[string]any{"command": "sh " + pyshlex.Quote(script) + " {input_path} {output_path}", "timeout": 2},
-			map[string]any{}, "", "", "")
+		p := commandSTTDefaults
+		p.Name, p.Command, p.Timeout = "probe", "sh "+pyshlex.Quote(script)+" {input_path} {output_path}", 2*time.Second
+		r := transcribeCommandSTT(ctx, audio, &p, sttRequestOf(t, map[string]any{}), "", "", "")
 		if r["success"] != progress || r["provider"] != "probe" {
 			t.Fatalf("progress %v result %v", progress, r)
 		}
@@ -628,9 +629,9 @@ func noOpenAICredentials() {
 func TestExplicitOpenaiSelectionErrorDispatchReturnsSelectionSpecificError(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	noOpenAICredentials()
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	hasFasterWhisper = func() bool { return false }
-	r, _ := dispatchSTTProvider(ctx, "/tmp/nonexistent.wav", "none", map[string]any{"provider": "openai"}, "", "")
+	r, _ := dispatchSTTProvider(ctx, "/tmp/nonexistent.wav", "none", sttRequestOf(t, map[string]any{"provider": "openai"}), "", "")
 	e := r["error"].(string)
 	if r["success"] != false || !strings.Contains(e, "VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY") || strings.Contains(e, "No STT provider available") {
 		t.Fatalf("result = %v", r)
@@ -640,10 +641,10 @@ func TestExplicitOpenaiSelectionErrorDispatchReturnsSelectionSpecificError(t *te
 func TestExplicitOpenaiSelectionErrorAutoDetectNoneKeepsGenericHint(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	noOpenAICredentials()
-	withSTTConfig(map[string]any{})
+	withSTTConfig(t, map[string]any{})
 	hasFasterWhisper = func() bool { return false }
 	hasLocalCommand = func(context.Context) bool { return false }
-	r, _ := dispatchSTTProvider(ctx, "/tmp/x.wav", "none", map[string]any{}, "", "")
+	r, _ := dispatchSTTProvider(ctx, "/tmp/x.wav", "none", sttRequestOf(t, map[string]any{}), "", "")
 	if r["success"] != false || !strings.Contains(r["error"].(string), "No STT provider available") {
 		t.Fatalf("result = %v", r)
 	}

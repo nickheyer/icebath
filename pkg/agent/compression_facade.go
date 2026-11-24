@@ -207,7 +207,7 @@ func mirrorResultOntoLiveLists(a *AIAgent, result, messages []map[string]any, di
 func rebindCallerSessionContext(ctx context.Context, a *AIAgent) {
 	setLoggingSessionContext(a.sessionID)
 	if a.sessionID != "" {
-		bindCurrentSessionID(ctx, a, a.sessionID)
+		bindCurrentSessionID(a, a.sessionID)
 	}
 }
 

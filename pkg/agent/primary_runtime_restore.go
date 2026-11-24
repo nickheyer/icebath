@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -65,8 +66,8 @@ func (a *AIAgent) restorePrimaryRuntime(ctx context.Context) (bool, error) {
 	}
 	rt := a.primaryRuntime
 	route := primaryRestoreRoute{rt: rt,
-		provider: pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(rt["provider"])))),
-		model:    pystr.Strip(pyrepr.Str(orEmpty(rt["model"]))),
+		provider: strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(rt["provider"])))),
+		model:    strings.TrimSpace(pyrepr.Str(orEmpty(rt["model"]))),
 		baseURL:  pyrepr.Str(orEmpty(rt["base_url"]))}
 	if route.model != "" && (isEntitlementRejected(ctx, a, route.provider, route.model) || provider.IsKnownNonChatModel(route.model)) {
 		return false, nil
@@ -122,7 +123,7 @@ func reinstallPrimaryRuntime(ctx context.Context, a *AIAgent, route primaryResto
 // Reloads the primary pool over a cross provider one and reselects its best entry with a usable key
 func (a *AIAgent) rebindPrimaryCredentialPool(ctx context.Context, route primaryRestoreRoute, prefetchedPool *provider.Pool, prefetched bool) error {
 	log := pkgLog()
-	if pool := a.credentialPool; pool != nil && pystr.Lower(pystr.Strip(pool.Provider())) != "" && !route.matchesPool(ctx, pool) {
+	if pool := a.credentialPool; pool != nil && strings.ToLower(strings.TrimSpace(pool.Provider())) != "" && !route.matchesPool(ctx, pool) {
 		a.credentialPool, a.credentialPoolEntryID = nil, ""
 		if prefetched {
 			a.credentialPool = prefetchedPool
@@ -141,7 +142,7 @@ func (a *AIAgent) rebindPrimaryCredentialPool(ctx context.Context, route primary
 	}
 	if !route.matchesEntry(ctx, entry) {
 		log.Info(fmt.Sprintf("Restore skipped pool entry %s (%s): provider %s does not match primary provider %s",
-			entry.ID, entry.Label, pyStrOr(pystr.Lower(pystr.Strip(entry.Provider)), "?"), pyStrOr(route.provider, "?")))
+			entry.ID, entry.Label, pyStrOr(strings.ToLower(strings.TrimSpace(entry.Provider)), "?"), pyStrOr(route.provider, "?")))
 		return nil
 	}
 	if _, err := swapPoolCredential(ctx, a, entry); err != nil {

@@ -290,7 +290,7 @@ func repairFailureConsumesAttempt(err error) bool {
 		primary := code & 0xFF
 		return primary == 11 || primary == 26
 	}
-	text := pystr.Lower(errText(err))
+	text := strings.ToLower(errText(err))
 	return strings.Contains(text, "file is not a database") || strings.Contains(text, "database disk image is malformed")
 }
 
@@ -817,7 +817,7 @@ func copyDatabaseSnapshot(ctx context.Context, sourcePath, destinationPath strin
 
 // Whether an error says the core or FTS tables are not built yet
 func schemaNotBuilt(err error) bool {
-	text := pystr.Lower(errText(err))
+	text := strings.ToLower(errText(err))
 	return strings.Contains(text, "no such table") || strings.Contains(text, "no such column")
 }
 
@@ -951,7 +951,7 @@ func dbProbeOn(ctx context.Context, conn SQLiteConn) (string, bool, error) {
 			rows.Close()
 			return "", false, err
 		}
-		if text := pyStr(v); pystr.Lower(text) != "ok" {
+		if text := pyStr(v); strings.ToLower(text) != "ok" {
 			problems = append(problems, text)
 		}
 	}
@@ -1006,7 +1006,7 @@ func dbProbeOn(ctx context.Context, conn SQLiteConn) (string, bool, error) {
 		if !isDatabaseError(err) {
 			return "", false, err
 		}
-		if schemaNotBuilt(err) || strings.Contains(pystr.Lower(errText(err)), "no such tokenizer: cjk_unicode61") {
+		if schemaNotBuilt(err) || strings.Contains(strings.ToLower(errText(err)), "no such tokenizer: cjk_unicode61") {
 			return "", false, nil
 		}
 		return fmt.Sprintf("fts5 write probe failed: %s", errText(err)), true, nil

@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -64,33 +63,6 @@ var ttsDefaultOutputDir = func(ctx context.Context, env *tools.Env) string {
 	return home.IcebathDir(ttsHome(ctx, env), "cache/audio", "audio_cache")
 }
 
-// The tts config section of the effective home config, empty when unavailable
-var loadTTSConfig = func(ctx context.Context, env *tools.Env) map[string]any {
-	lookup := config.Lookup(os.LookupEnv)
-	if env != nil && env.Secrets != nil {
-		lookup = env.Secrets.Lookup()
-	}
-	tree, err := config.LoadContext(ctx, ttsHome(ctx, env), lookup)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to load TTS config: %v", err))
-		return map[string]any{}
-	}
-	sec, ok := asStrMap(tree["tts"])
-	if !ok || !pyTruthy(tree["tts"]) {
-		return map[string]any{}
-	}
-	return sec
-}
-
-// Configured provider or the free default
-func getTTSProvider(ttsConfig map[string]any) string {
-	p := ttsConfig["provider"]
-	if !pyTruthy(p) {
-		p = defaultTTSProvider
-	}
-	return pystr.Strip(pystr.Lower(pyrepr.Str(p)))
-}
-
 var opusVoicePlatforms = map[string]bool{"telegram": true, "matrix": true, "feishu": true, "whatsapp": true, "signal": true}
 
 var mediaDirectiveRe = regexp.MustCompile("(?i)media:\\s*[`'\"*_]*(?:[`'\"]|[a-z]:[/\\\\]|~?/)")
@@ -99,7 +71,7 @@ var nativeOpusProviders = map[string]bool{"openai": true, "elevenlabs": true, "m
 var ffmpegOpusProviders = map[string]bool{"edge": true, "neutts": true, "minimax": true, "xai": true, "kittentts": true, "piper": true}
 
 // Built in engine generator signature
-type ttsGenerator func(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error)
+type ttsGenerator func(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error)
 
 // One built in dispatch row, availability nil when the engine needs no package
 type builtinTTSEntry struct {
@@ -168,7 +140,7 @@ func selectBuiltinEngine(ctx context.Context, provider string) (string, string) 
 }
 
 // Runs the already selected built in engine
-func synthesizeBuiltin(ctx context.Context, env *tools.Env, engine, text, fileStr string, ttsConfig map[string]any, instructions string) error {
+func synthesizeBuiltin(ctx context.Context, env *tools.Env, engine, text, fileStr string, req *ttsRequest, instructions string) error {
 	entry, ok := builtinTTSDispatch[engine]
 	label := "Edge TTS"
 	if ok {
@@ -178,21 +150,21 @@ func synthesizeBuiltin(ctx context.Context, env *tools.Env, engine, text, fileSt
 	var err error
 	switch {
 	case !ok:
-		_, err = ttsGenerateEdge(ctx, env, text, fileStr, ttsConfig)
+		_, err = ttsGenerateEdge(ctx, env, text, fileStr, req)
 	case engine == "openai":
-		_, err = ttsGenerateOpenAI(ctx, env, text, fileStr, ttsConfig, openAITTSOptions{Instructions: instructions})
+		_, err = ttsGenerateOpenAI(ctx, env, text, fileStr, req, openAITTSOptions{Instructions: instructions})
 	default:
-		_, err = entry.generator()(ctx, env, text, fileStr, ttsConfig)
+		_, err = entry.generator()(ctx, env, text, fileStr, req)
 	}
 	return err
 }
 
 // Voice bubble eligibility, converting to Opus when the provider and platform need it
-func finalizeVoiceDelivery(ctx context.Context, fileStr, provider string, commandProviderConfig map[string]any, wantOpus bool) (string, bool, error) {
+func finalizeVoiceDelivery(ctx context.Context, fileStr, provider string, command *commandProvider, wantOpus bool) (string, bool, error) {
 	var optedIn bool
 	switch {
-	case commandProviderConfig != nil:
-		optedIn = isCommandTTSVoiceCompatible(commandProviderConfig)
+	case command != nil:
+		optedIn = command.VoiceCompatible
 	case !builtinTTSProviders[provider]:
 		optedIn = pluginProviderIsVoiceCompatible(ctx, provider)
 	case wantOpus && ffmpegOpusProviders[provider] && !strings.HasSuffix(fileStr, ".ogg"):
@@ -235,63 +207,44 @@ func warnIgnoredTTSProviderOverride(requested, configured string) {
 	pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS provider override %s; tts.provider is %s", errchain.Show(requested), errchain.Show(configured)))
 }
 
-// Per call speed on a copy of the config and the configured provider, a disagreeing override ignored
-func applyCallOverrides(ttsConfig map[string]any, speed any, provider string) (map[string]any, string, error) {
+// Request with a call's own speed laid over, a provider override that disagrees with the configured one ignored
+func applyCallOverrides(req *ttsRequest, speed any, provider string) (*ttsRequest, error) {
 	if speed != nil {
 		f, err := ttsFloat(speed)
 		if err != nil {
-			return nil, "", err
+			return nil, err
 		}
-		copied := make(map[string]any, len(ttsConfig)+1)
-		for k, v := range ttsConfig {
-			copied[k] = v
-		}
-		copied["speed"] = max(0.25, min(4.0, f))
-		ttsConfig = copied
+		req = req.withCallSpeed(f)
 	}
-	configured := getTTSProvider(ttsConfig)
-	if provider != "" {
-		requested := pystr.Strip(pystr.Lower(provider))
-		if requested != "" && requested != configured {
-			warnIgnoredTTSProviderOverride(requested, configured)
-		}
+	if requested := strings.TrimSpace(strings.ToLower(provider)); requested != "" && requested != req.Provider {
+		warnIgnoredTTSProviderOverride(requested, req.Provider)
 	}
-	return ttsConfig, configured, nil
+	return req, nil
 }
 
 var elevenLabsVoiceIDRe = regexp.MustCompile(`^[A-Za-z0-9]{8,64}$`)
 
 // Whether built in ElevenLabs is the configured provider so the model may pick voices
-func elevenLabsVoiceSelectionActive(ttsConfig map[string]any) bool {
-	return getTTSProvider(ttsConfig) == "elevenlabs" && resolveCommandTTSProviderConfig("elevenlabs", ttsConfig) == nil
+func elevenLabsVoiceSelectionActive(req *ttsRequest) bool {
+	return req.Provider == "elevenlabs"
 }
 
-// Per call ElevenLabs voice id on a copy of the config, ignored with a warning on other providers
-func applyVoiceOverride(ttsConfig map[string]any, provider, voiceID string) (map[string]any, string) {
-	voiceID = pystr.Strip(voiceID)
+// Request with a call's own ElevenLabs voice laid over, ignored with a warning on other providers
+func applyVoiceOverride(req *ttsRequest, voiceID string) (*ttsRequest, string) {
+	voiceID = strings.TrimSpace(voiceID)
 	if voiceID == "" {
-		return ttsConfig, ""
+		return req, ""
 	}
-	if provider != "elevenlabs" || !elevenLabsVoiceSelectionActive(ttsConfig) {
-		pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS voice_id; tts.provider is %s", errchain.Show(provider)))
-		return ttsConfig, ""
+	if !elevenLabsVoiceSelectionActive(req) {
+		pkgLog().Warn(fmt.Sprintf("Ignoring per-call TTS voice_id; tts.provider is %s", errchain.Show(req.Provider)))
+		return req, ""
 	}
 	if !elevenLabsVoiceIDRe.MatchString(voiceID) {
-		return ttsConfig, ttsToolError(fmt.Sprintf("Invalid ElevenLabs voice_id %s: use a voice_id returned by find_voices.", errchain.Show(voiceID)))
+		return req, ttsToolError(fmt.Sprintf("Invalid ElevenLabs voice_id %s: use a voice_id returned by find_voices.", errchain.Show(voiceID)))
 	}
-	section := map[string]any{}
-	if existing, err := orEmptyDict(ttsConfig, "elevenlabs"); err == nil {
-		for k, v := range existing {
-			section[k] = v
-		}
-	}
-	section["voice_id"] = voiceID
-	copied := make(map[string]any, len(ttsConfig)+1)
-	for k, v := range ttsConfig {
-		copied[k] = v
-	}
-	copied["elevenlabs"] = section
-	return copied, ""
+	out := *req
+	out.ElevenLabs.VoiceID = voiceID
+	return &out, ""
 }
 
 // One page of ElevenLabs voices for the find_voices argument
@@ -300,25 +253,25 @@ func findVoices(ctx context.Context, env *tools.Env, find any) string {
 	if !ok {
 		return ttsToolError("find_voices must be an object, e.g. {\"query\": \"orc\"}")
 	}
-	ttsConfig := loadTTSConfig(ctx, env)
-	if !elevenLabsVoiceSelectionActive(ttsConfig) {
+	req := loadTTSRequest(ctx, env)
+	if !elevenLabsVoiceSelectionActive(req) {
 		return ttsToolError("find_voices needs tts.provider: elevenlabs")
 	}
 	apiKey := ttsResolveProviderKey(env, "ELEVENLABS_API_KEY", "elevenlabs")
 	if apiKey == "" {
 		return ttsToolError("ELEVENLABS_API_KEY not set. Get one at https://elevenlabs.io/")
 	}
-	return searchVoices(ctx, m, ttsConfig, apiKey)
+	return searchVoices(ctx, m, req, apiKey)
 }
 
 // Session platform and whether it wants Ogg Opus voice bubbles
 func sessionPlatform(env *tools.Env) (string, bool) {
-	platform := pystr.Lower(tools.GetSessionEnv(env, "ICEBATH_SESSION_PLATFORM", ""))
+	platform := strings.ToLower(tools.GetSessionEnv(env, "ICEBATH_SESSION_PLATFORM", ""))
 	return platform, opusVoicePlatforms[platform]
 }
 
 // Output file of a call, an error envelope for unsafe caller paths, the timestamped cache default otherwise
-func resolveOutputBase(ctx context.Context, env *tools.Env, outputPath, provider string, commandProviderConfig map[string]any, wantOpus bool) (string, string, error) {
+func resolveOutputBase(ctx context.Context, env *tools.Env, outputPath, provider string, command *commandProvider, wantOpus bool) (string, string, error) {
 	var filePath string
 	if outputPath != "" {
 		if tools.HasUnsafePathChars(outputPath) {
@@ -331,8 +284,8 @@ func resolveOutputBase(ctx context.Context, env *tools.Env, outputPath, provider
 			return "", ttsErrorJSON(fmt.Sprintf("output_path contains '..' traversal component: %s. Use an absolute path or one relative to the current directory without '..'.", outputPath)), nil
 		}
 		filePath = pypath.Expanduser(outputPath)
-		if commandProviderConfig != nil {
-			p, err := configuredCommandTTSOutputPath(filePath, commandProviderConfig)
+		if command != nil {
+			p, err := pypath.WithSuffix(filePath, "."+command.OutputFormat)
 			if err != nil {
 				return "", "", err
 			}
@@ -343,8 +296,8 @@ func resolveOutputBase(ctx context.Context, env *tools.Env, outputPath, provider
 		}
 	} else {
 		ext := "mp3"
-		if commandProviderConfig != nil {
-			ext = getCommandTTSOutputFormat(commandProviderConfig, "")
+		if command != nil {
+			ext = command.OutputFormat
 		} else if wantOpus && nativeOpusProviders[provider] {
 			ext = "ogg"
 		}
@@ -418,25 +371,25 @@ func ttsToolFailure(prefix, provider string, err error) string {
 
 // Options of one chunk synthesis
 type ttsSingleOptions struct {
-	Provider              string
-	TTSConfig             map[string]any
-	CommandProviderConfig map[string]any
-	WantOpus              bool
-	Instructions          string
+	Provider     string
+	Request      *ttsRequest
+	Command      *commandProvider
+	WantOpus     bool
+	Instructions string
 }
 
 // Synthesizes one provider safe chunk into the path and returns its result envelope
 func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr string, o ttsSingleOptions) string {
 	provider := o.Provider
 	result, err := func() (string, error) {
-		if o.CommandProviderConfig != nil {
+		if o.Command != nil {
 			pkgLog().Info(fmt.Sprintf("Generating speech with command TTS provider '%s'...", provider))
-			p, err := ttsGenerateCommand(tools.WithEnvHome(ctx, env), env, text, fileStr, provider, o.CommandProviderConfig, o.TTSConfig)
+			p, err := ttsGenerateCommand(tools.WithEnvHome(ctx, env), env, text, fileStr, o.Command, o.Request)
 			if err != nil {
 				return "", err
 			}
 			fileStr = p
-		} else if pluginPath, err := ttsDispatchPlugin(ctx, text, fileStr, provider, o.TTSConfig, builtinTTSProviders[provider]); err != nil {
+		} else if pluginPath, err := ttsDispatchPlugin(ctx, text, fileStr, provider, o.Request, builtinTTSProviders[provider]); err != nil {
 			return "", err
 		} else if pluginPath != "" {
 			fileStr = pluginPath
@@ -446,7 +399,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 			if errJSON != "" {
 				return errJSON, nil
 			}
-			if err := synthesizeBuiltin(ctx, env, engine, text, fileStr, o.TTSConfig, o.Instructions); err != nil {
+			if err := synthesizeBuiltin(ctx, env, engine, text, fileStr, o.Request, o.Instructions); err != nil {
 				return "", err
 			}
 		}
@@ -457,7 +410,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 		if err != nil {
 			return "", err
 		}
-		final, voiceCompatible, err := finalizeVoiceDelivery(ctx, repaired, provider, o.CommandProviderConfig, o.WantOpus)
+		final, voiceCompatible, err := finalizeVoiceDelivery(ctx, repaired, provider, o.Command, o.WantOpus)
 		if err != nil {
 			return "", err
 		}
@@ -485,11 +438,11 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 var ttsGenerateCommand = generateCommandTTS
 
 // Plugin dispatch for names that are not built in, empty when no plugin services the provider
-func ttsDispatchPlugin(ctx context.Context, text, fileStr, provider string, ttsConfig map[string]any, builtin bool) (string, error) {
+func ttsDispatchPlugin(ctx context.Context, text, fileStr, provider string, req *ttsRequest, builtin bool) (string, error) {
 	if builtin {
 		return "", nil
 	}
-	return ttsDispatchToPlugin(ctx, text, fileStr, provider, ttsConfig)
+	return ttsDispatchToPlugin(ctx, text, fileStr, provider, req)
 }
 
 // Plugin dispatcher, the seam tests replace
@@ -552,23 +505,24 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 	if a.FindVoices != nil {
 		return findVoices(ctx, env, a.FindVoices), nil
 	}
-	if pystr.Strip(a.Text) == "" {
+	if strings.TrimSpace(a.Text) == "" {
 		return ttsToolError("Text is required"), nil
 	}
 	text := tools.PrepareSpokenText(a.Text, nil)
 	if text == "" {
 		return ttsToolError("Text is empty after TTS cleanup"), nil
 	}
-	ttsConfig, provider, err := applyCallOverrides(loadTTSConfig(ctx, env), a.Speed, a.Provider)
+	req, err := applyCallOverrides(loadTTSRequest(ctx, env), a.Speed, a.Provider)
 	if err != nil {
 		return "", err
 	}
-	ttsConfig, errJSON := applyVoiceOverride(ttsConfig, provider, a.VoiceID)
+	req, errJSON := applyVoiceOverride(req, a.VoiceID)
 	if errJSON != "" {
 		return errJSON, nil
 	}
-	commandProviderConfig := resolveCommandTTSProviderConfig(provider, ttsConfig)
-	maxLen := resolveMaxTextLength(provider, ttsConfig)
+	provider := req.Provider
+	command := req.command(provider)
+	maxLen := resolveMaxTextLength(provider, req)
 	chunks := splitTextForTTS(text, maxLen)
 	if len(chunks) == 0 {
 		return ttsToolError("Text is required"), nil
@@ -577,8 +531,8 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		pkgLog().Info(fmt.Sprintf("TTS text for provider %s split into %d chunks (input=%d chars, cap=%d)", provider, len(chunks), pystr.Len(text), maxLen))
 	}
 	platform, wantOpus := sessionPlatform(env)
-	profile := resolveAudioDeliveryProfile(platform, ttsConfig)
-	basePath, errJSON, err := resolveOutputBase(ctx, env, a.OutputPath, provider, commandProviderConfig, wantOpus)
+	profile := resolveAudioDeliveryProfile(platform, req)
+	basePath, errJSON, err := resolveOutputBase(ctx, env, a.OutputPath, provider, command, wantOpus)
 	if err != nil {
 		return "", err
 	}
@@ -599,8 +553,8 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		}
 	}()
 	result, err := func() (string, error) {
-		encoded, results, err := synthesizeChunks(ctx, env, chunks, basePath, generated, ttsSingleOptions{Provider: provider, TTSConfig: ttsConfig,
-			CommandProviderConfig: commandProviderConfig, WantOpus: wantOpus, Instructions: a.Instructions})
+		encoded, results, err := synthesizeChunks(ctx, env, chunks, basePath, generated, ttsSingleOptions{Provider: provider, Request: req,
+			Command: command, WantOpus: wantOpus, Instructions: a.Instructions})
 		if err != nil {
 			return "", err
 		}
@@ -659,7 +613,7 @@ func TextToSpeechTool(ctx context.Context, text, outputPath string) (string, err
 
 // Whether the MiniMax region and credential resolve
 func miniMaxRequirements(ctx context.Context, env *tools.Env) bool {
-	_, err := resolveMiniMaxTTSRuntime(env, loadTTSConfig(ctx, env))
+	_, err := resolveMiniMaxTTSRuntime(env, loadTTSRequest(ctx, env))
 	return err == nil
 }
 
@@ -701,9 +655,9 @@ var builtinTTSRequirements = map[string]func(ctx context.Context, env *tools.Env
 
 // Whether the resolved provider can run now
 func checkTTSRequirements(ctx context.Context, env *tools.Env) bool {
-	ttsConfig := loadTTSConfig(ctx, env)
-	provider := getTTSProvider(ttsConfig)
-	if resolveCommandTTSProviderConfig(provider, ttsConfig) != nil {
+	req := loadTTSRequest(ctx, env)
+	provider := req.Provider
+	if req.command(provider) != nil {
 		return true
 	}
 	if check, ok := builtinTTSRequirements[provider]; ok {
@@ -753,7 +707,7 @@ func ttsSchemaOverrides(env *tools.Env) *pyjson.Object {
 	params := pyjson.Clone(schema.Vals["parameters"]).(*pyjson.Object)
 	props := params.Vals["properties"].(*pyjson.Object)
 	props.Vals["output_path"].(*pyjson.Object).Set("description", outputPathDescription(home.Display(ttsHome(ctx, env))))
-	if !elevenLabsVoiceSelectionActive(loadTTSConfig(ctx, env)) {
+	if !elevenLabsVoiceSelectionActive(loadTTSRequest(ctx, env)) {
 		return pyjson.ObjectOf("parameters", params)
 	}
 	props.Set("voice_id", pyjson.ObjectOf("type", "string", "description", "ElevenLabs voice for this audio (a voice_id from find_voices). Omit to use the user's configured voice."))

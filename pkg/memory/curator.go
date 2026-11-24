@@ -213,7 +213,7 @@ func CuratorIsEnabled(ctx context.Context) bool {
 	return settings.CuratorEnabled.Get(ctx)
 }
 
-// Hours between automatic passes, floored at one
+// Hours between automatic passes
 func CuratorIntervalHours(ctx context.Context) int {
 	return curatorBoundedCount(ctx, settings.CuratorIntervalHours, time.Hour)
 }
@@ -223,27 +223,9 @@ func CuratorMinIdleHours(ctx context.Context) float64 {
 	return settings.CuratorMinIdleHours.Get(ctx).Hours()
 }
 
-var curatorWarned = struct {
-	sync.Mutex
-	seen map[string]bool
-}{seen: map[string]bool{}}
-
-// Whole day or hour count of a duration setting, the default with one warning per bad value when below one unit
+// Whole day or hour count of a duration setting, which the registry keeps at one unit or more
 func curatorBoundedCount(ctx context.Context, e *settings.Duration, unit time.Duration) int {
-	value := int(e.Get(ctx) / unit)
-	def := int(e.Default / unit)
-	if value < 1 {
-		mark := fmt.Sprintf("%s\x00%d", e.Key, value)
-		curatorWarned.Lock()
-		first := !curatorWarned.seen[mark]
-		curatorWarned.seen[mark] = true
-		curatorWarned.Unlock()
-		if first {
-			pkgLog().Warn(fmt.Sprintf("%s must be >= 1 (got %d); using the default of %d", e.Key, value, def))
-		}
-		return def
-	}
-	return value
+	return int(e.Get(ctx) / unit)
 }
 
 // Days of inactivity before a skill turns stale
@@ -1458,27 +1440,22 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 	rt, model, prov, overrides := curatorResolveReviewProvider(ctx)
 	meta.Set("model", model)
 	meta.Set("provider", prov)
-	h := home.Dir(ctx)
-	cfg, err := config.LoadReadonly(ctx, h, configLookup(&tools.Env{Home: h}))
-	var res *CuratorReviewResult
-	if err == nil {
-		// A curation run can compact, so under compression.checkpoint_required it keeps the provider it checkpoints with, scoped as a fork
-		req := CuratorReviewRequest{
-			Prompt: prompt, Model: model, Provider: prov, RequestOverrides: overrides,
-			ReasoningConfig: config.ResolveReasoningConfig(map[string]any(cfg), model), EnabledToolsets: []string{"skills"},
-			MaxIterations: 9999, Platform: "curator", WriteOrigin: backgroundReviewOrigin, QuietMode: true, SkipContextFiles: true,
-			SkipMemory: !settings.CompressionCheckpointRequired.Get(ctx), MemoryAgentContext: "subagent",
-		}
-		if rt != nil {
-			route := rt.Route()
-			req.Route = &route
-			req.CredentialPool = rt.CredentialPool
-			if rt.Command != "" {
-				req.ACPCommand, req.ACPArgs = rt.Command, append([]string{}, rt.Args...)
-			}
-		}
-		res, err = CuratorHooks.RunReview(ctx, req)
+	// A curation run can compact, so under compression.checkpoint_required it keeps the provider it checkpoints with, scoped as a fork
+	req := CuratorReviewRequest{
+		Prompt: prompt, Model: model, Provider: prov, RequestOverrides: overrides,
+		ReasoningConfig: settings.TaskReasoningConfig(ctx, "curator", model), EnabledToolsets: []string{"skills"},
+		MaxIterations: 9999, Platform: "curator", WriteOrigin: backgroundReviewOrigin, QuietMode: true, SkipContextFiles: true,
+		SkipMemory: !settings.CompressionCheckpointRequired.Get(ctx), MemoryAgentContext: "subagent",
 	}
+	if rt != nil {
+		route := rt.Route()
+		req.Route = &route
+		req.CredentialPool = rt.CredentialPool
+		if rt.Command != "" {
+			req.ACPCommand, req.ACPArgs = rt.Command, append([]string{}, rt.Args...)
+		}
+	}
+	res, err := CuratorHooks.RunReview(ctx, req)
 	if err != nil {
 		msg := "error: " + err.Error()
 		meta.Set("error", msg)
@@ -1582,8 +1559,6 @@ func MaybeRunCurator(ctx context.Context, idleForSeconds *float64, onSummary fun
 	}
 	return res
 }
-
-func registerCurator() {}
 
 // Runtime the review fork runs on, the curator binding standing in as the explicit request, replaced by tests
 var curatorResolveRuntime = func(ctx context.Context, h string, b curatorReviewBinding) (*provider.Runtime, error) {

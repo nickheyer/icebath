@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -106,20 +105,11 @@ func (systemClock) Now() time.Time { return time.Now() }
 
 func (systemClock) AfterFunc(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 
-// Milliseconds of an env value, a whole number with an optional ms unit, with its floor and the fallback when unset, zero or malformed
-func envMillis(name string, fallback, floor int) time.Duration {
-	ms, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(os.Getenv(name)), "ms"))
-	if err != nil || ms == 0 {
-		ms = fallback
-	}
-	return time.Duration(max(floor, ms)) * time.Millisecond
-}
+// Request timeout of the settings
+func requestTimeout() time.Duration { return prefs.RequestTimeout }
 
-// Request timeout, ICEBATH_TUI_RPC_TIMEOUT_MS with a thirty second floor and two minutes by default
-func requestTimeout() time.Duration { return envMillis("ICEBATH_TUI_RPC_TIMEOUT_MS", 120000, 30000) }
-
-// Wait for gateway.ready, ICEBATH_TUI_STARTUP_TIMEOUT_MS with a five second floor and fifteen by default
-func startupTimeout() time.Duration { return envMillis("ICEBATH_TUI_STARTUP_TIMEOUT_MS", 15000, 5000) }
+// Wait for gateway.ready of the settings
+func startupTimeout() time.Duration { return prefs.StartupTimeout }
 
 // Explicit gateway WebSocket the TUI attaches to instead of the local owner, empty when unset
 func attachURLEnv() string { return strings.TrimFunc(os.Getenv("ICEBATH_TUI_GATEWAY_URL"), isJSSpace) }

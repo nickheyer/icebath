@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const ProtocolVersion = "1.0"
@@ -44,22 +45,19 @@ const (
 const InputRequiredMarker = "[INPUT_REQUIRED]"
 
 const (
-	ErrParse              = -32700
-	ErrInvalidParams      = -32602
-	ErrMethodNotFound     = -32601
-	ErrTaskNotFound       = -32001
-	ErrTaskNotCancelable  = -32002
-	ErrUnauthorized       = -32050
-	ErrRateLimited        = -32051
-	ErrUntrustedPeer      = -32052
-	defaultMaxPingpong    = 5
-	hardMaxPingpong       = 20
-	rateLimitDefault      = 60
-	rateWindowSeconds     = 60.0
-	turnTTLSeconds        = 3600
-	maxTerminalTasks      = 500
-	orphanedTaskReply     = "[task orphaned — no reply produced]"
-	defaultProviderOrgEnv = "Icebath Agent"
+	ErrParse             = -32700
+	ErrInvalidParams     = -32602
+	ErrMethodNotFound    = -32601
+	ErrTaskNotFound      = -32001
+	ErrTaskNotCancelable = -32002
+	ErrUnauthorized      = -32050
+	ErrRateLimited       = -32051
+	ErrUntrustedPeer     = -32052
+	hardMaxPingpong      = 20
+	rateWindowSeconds    = 60.0
+	turnTTLSeconds       = 3600
+	maxTerminalTasks     = 500
+	orphanedTaskReply    = "[task orphaned — no reply produced]"
 )
 
 // Whether the state ends the task lifecycle
@@ -71,16 +69,14 @@ func IsTerminalState(state string) bool {
 	return false
 }
 
-func envInt(name string, def int) int {
-	if v, ok := os.LookupEnv(name); ok {
-		return gateway.CoercePort(v, def)
-	}
-	return gateway.CoercePort(def, def)
+// Inbound turns allowed per context from a2a.max_pingpong_turns, between one and twenty
+func MaxPingpongTurns(ctx context.Context) int {
+	return max(1, min(settings.A2aMaxPingpongTurns.Get(gateway.SettingsContext(ctx)), hardMaxPingpong))
 }
 
-// Inbound turns allowed per context from A2A_MAX_PINGPONG_TURNS, between one and twenty
-func MaxPingpongTurns() int {
-	return max(1, min(envInt("A2A_MAX_PINGPONG_TURNS", defaultMaxPingpong), hardMaxPingpong))
+// Requests per minute one identity may send from a2a.rate_limit, at least one
+func rateLimit(ctx context.Context) int {
+	return max(1, settings.A2aRateLimit.Get(gateway.SettingsContext(ctx)))
 }
 
 var nowTime = time.Now
@@ -149,16 +145,14 @@ type AgentCardOptions struct {
 }
 
 // A2A v1.0 Agent Card with its JSONRPC interface, capabilities and the bearer scheme when auth is required
-func BuildAgentCard(o AgentCardOptions) *pyjson.Object {
+func BuildAgentCard(ctx context.Context, o AgentCardOptions) *pyjson.Object {
 	iface := obj("url", o.URL, "protocolBinding", "JSONRPC", "protocolVersion", ProtocolVersion)
 	if o.Tenant != "" {
 		iface.Set("tenant", o.Tenant)
 	}
-	org := defaultProviderOrgEnv
-	if v, ok := os.LookupEnv("A2A_PROVIDER_ORG"); ok {
-		org = v
-	}
-	providerURL := os.Getenv("A2A_PROVIDER_URL")
+	sctx := gateway.SettingsContext(ctx)
+	org := settings.A2aProviderOrg.Get(sctx)
+	providerURL := settings.A2aProviderURL.Get(sctx)
 	if providerURL == "" {
 		providerURL = o.URL
 	}
@@ -367,7 +361,7 @@ func ExtractText(messageOrParams *pyjson.Object) string {
 			chunks = append(chunks, fmt.Sprintf("[data (%s)]\n%s", pyrepr.Str(orValue(getOr(part, "mediaType"), "application/json")), jsonOrStr(data)))
 		}
 	}
-	return pystr.Strip(strings.Join(chunks, "\n"))
+	return strings.TrimSpace(strings.Join(chunks, "\n"))
 }
 
 func isString(v any) bool {
@@ -481,16 +475,20 @@ func (t *TurnTracker) Reset(contextID string) {
 // Sliding window request limiter with one bucket per authenticated identity
 type RateLimiter struct {
 	mu      sync.Mutex
+	limit   int
 	buckets map[string][]float64
 }
 
-func NewRateLimiter() *RateLimiter { return &RateLimiter{buckets: map[string][]float64{}} }
+// Limiter admitting limit requests per identity a minute, at least one
+func NewRateLimiter(limit int) *RateLimiter {
+	return &RateLimiter{limit: max(1, limit), buckets: map[string][]float64{}}
+}
 
-// Admits the request while the identity stays under A2A_RATE_LIMIT requests per minute
+// Admits the request while the identity stays under the limit of requests per minute
 func (r *RateLimiter) Allow(identity string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	limit := max(1, envInt("A2A_RATE_LIMIT", rateLimitDefault))
+	limit := r.limit
 	now := nowSeconds()
 	bucket := r.buckets[identity]
 	for len(bucket) > 0 && now-bucket[0] > rateWindowSeconds {
@@ -937,7 +935,7 @@ func LoadConversation(ctx context.Context, contextID string, limit int) []*pyjso
 	}
 	out := []*pyjson.Object{}
 	for _, line := range pystr.Splitlines(string(raw), false) {
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		entry, err := pyjson.Loads(line)

@@ -50,16 +50,16 @@ func dotenvKeyNames(h string) map[string]bool {
 		return names
 	}
 	for _, line := range pystr.Splitlines(pystr.DecodeUTF8SigIgnore(raw), false) {
-		line = pystr.Strip(line)
+		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
 			continue
 		}
-		if strings.HasPrefix(pystr.Lower(line), "export ") {
+		if strings.HasPrefix(strings.ToLower(line), "export ") {
 			line = strings.TrimLeftFunc(line[len("export "):], unicode.IsSpace)
 		}
 		name, value, _ := strings.Cut(line, "=")
-		if pystr.Strip(name) != "" && strings.Trim(pystr.Strip(value), "'\"") != "" {
-			names[pystr.Strip(name)] = true
+		if strings.TrimSpace(name) != "" && strings.Trim(strings.TrimSpace(value), "'\"") != "" {
+			names[strings.TrimSpace(name)] = true
 		}
 	}
 	return names
@@ -71,7 +71,7 @@ func dumpGitOutput(projectRoot string, args ...string) string {
 	if err != nil || res.Returncode != 0 {
 		return ""
 	}
-	return pystr.Strip(pystr.DecodeUTF8Replace(res.Stdout))
+	return strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout))
 }
 
 // Reports whether root resolves to the running install the version stamp describes

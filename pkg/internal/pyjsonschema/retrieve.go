@@ -60,12 +60,12 @@ var (
 )
 
 func unwrapURL(u string) string {
-	u = pystr.Strip(u)
+	u = strings.TrimSpace(u)
 	if strings.HasPrefix(u, "<") && strings.HasSuffix(u, ">") && len(u) >= 2 {
-		u = pystr.Strip(u[1 : len(u)-1])
+		u = strings.TrimSpace(u[1 : len(u)-1])
 	}
 	if strings.HasPrefix(u, "URL:") {
-		u = pystr.Strip(u[4:])
+		u = strings.TrimSpace(u[4:])
 	}
 	return u
 }

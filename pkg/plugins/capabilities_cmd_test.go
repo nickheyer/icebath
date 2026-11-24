@@ -31,11 +31,8 @@ func capConsentRun(t *testing.T, tty bool, answers ...string) (bool, string, int
 }
 
 func capGranted(t *testing.T, h, capability string) bool {
-	cfg, err := readUserConfig(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return CapabilityGranted(cfg, "capplug", capability)
+	t.Helper()
+	return CapabilityGranted(homeCtx(h), "capplug", capability)
 }
 
 func TestConsentFlow(t *testing.T) {
@@ -76,16 +73,14 @@ func TestToolOverrideGrantAndDeclaredCapabilities(t *testing.T) {
 	if err := resolveToolOverrideGrant(context.Background(), &Console{Out: &out}, "web/exa", &yes); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ := readUserConfig(h)
-	if pluginEntry(cfg, "web/exa")["allow_tool_override"] != true || !strings.Contains(out.String(), "plugins.entries.web/exa.allow_tool_override: true") {
-		t.Fatalf("%v %q", cfg, out.String())
+	if entry := pluginEntry(homeCtx(h), "web/exa"); entry["allow_tool_override"] != true || !strings.Contains(out.String(), "plugins.entries.web/exa.allow_tool_override: true") {
+		t.Fatalf("%v %q", entry, out.String())
 	}
 	no := false
 	out.Reset()
 	resolveToolOverrideGrant(context.Background(), &Console{Out: &out}, "web/exa", &no)
-	cfg, _ = readUserConfig(h)
-	if pluginEntry(cfg, "web/exa")["allow_tool_override"] != false || !strings.Contains(out.String(), "--allow-tool-override") {
-		t.Fatalf("%v %q", cfg, out.String())
+	if entry := pluginEntry(homeCtx(h), "web/exa"); entry["allow_tool_override"] != false || !strings.Contains(out.String(), "--allow-tool-override") {
+		t.Fatalf("%v %q", entry, out.String())
 	}
 	if got := declaredCapabilitiesFromManifest(map[string]any{"capabilities": []any{"tools.override"}}, ""); strings.Join(got, ",") != "tools.override" {
 		t.Fatalf("%v", got)

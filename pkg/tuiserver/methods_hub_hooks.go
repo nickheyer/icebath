@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 var hubHooksRegistry = &handlerRegistry{}
@@ -49,7 +48,7 @@ func hooksListing(ctx context.Context) (tuigateway.HooksListResult, error) {
 }
 
 // Shell hooks and outbound webhooks of the profile for the hooks screen
-func hooksList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func hooksList(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.HooksList.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -61,7 +60,7 @@ func hooksList(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Sess
 }
 
 // One change to the hooks, answered with the hooks after it
-func hooksChange(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func hooksChange(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.HooksChange.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -105,7 +104,7 @@ func hookRun(result *plugins.ShellHookResult) (*tuigateway.HookRun, error) {
 }
 
 // Runs one hook on a sample event
-func hooksTest(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func hooksTest(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.HooksTest.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -122,7 +121,7 @@ func hooksTest(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Sess
 }
 
 // Checks one hook: whether its script can run, is allowed, is unchanged and answers well
-func hooksCheck(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func hooksCheck(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.HooksCheck.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

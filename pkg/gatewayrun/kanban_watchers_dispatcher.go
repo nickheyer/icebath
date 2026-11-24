@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -50,7 +49,7 @@ func resolveDispatcherSettings(ctx context.Context) dispatcherSettings {
 		pkgLog().Info(fmt.Sprintf("kanban dispatcher: no in-progress limit set; using the memory-derived limit %d", *effectiveMaxInProgress))
 	}
 	var defaultAssignee *string
-	if assignee := pystr.Strip(settings.KanbanDefaultAssignee.Get(ctx)); assignee != "" {
+	if assignee := strings.TrimSpace(settings.KanbanDefaultAssignee.Get(ctx)); assignee != "" {
 		defaultAssignee = &assignee
 		pkgLog().Info(fmt.Sprintf("kanban dispatcher: default_assignee=%s (unassigned ready tasks "+
 			"will route to this profile)", pyrepr.StrRepr(assignee)))
@@ -265,29 +264,19 @@ func (d *kanbanDispatcher) autoDecomposeTick(ctx context.Context, perTick int) (
 		if attempted >= perTick {
 			break
 		}
-		func() {
-			prev, hadPrev := os.LookupEnv("ICEBATH_KANBAN_BOARD")
-			defer func() {
-				if !hadPrev {
-					os.Unsetenv("ICEBATH_KANBAN_BOARD")
-				} else {
-					os.Setenv("ICEBATH_KANBAN_BOARD", prev)
-				}
-			}()
-			os.Setenv("ICEBATH_KANBAN_BOARD", slug)
-			triageIDs, err := kanbanDecomposeListTriageIDs(scoped, nil)
-			if err != nil {
-				pkgLog().Debug(fmt.Sprintf("kanban auto-decompose: list_triage_ids failed on board %s (%s)", slug, pyrepr.Str(err)))
-				triageIDs = nil
+		boardCtx := kanban.ScopedCurrentBoard(scoped, slug)
+		triageIDs, err := kanbanDecomposeListTriageIDs(boardCtx, nil)
+		if err != nil {
+			pkgLog().Debug(fmt.Sprintf("kanban auto-decompose: list_triage_ids failed on board %s (%s)", slug, pyrepr.Str(err)))
+			triageIDs = nil
+		}
+		for _, tid := range triageIDs {
+			if attempted >= perTick {
+				break
 			}
-			for _, tid := range triageIDs {
-				if attempted >= perTick {
-					break
-				}
-				attempted++
-				successes += decomposeOne(scoped, slug, tid)
-			}
-		}()
+			attempted++
+			successes += decomposeOne(boardCtx, slug, tid)
+		}
 	}
 	return successes, nil
 }
@@ -301,7 +290,7 @@ func decomposeOne(ctx context.Context, slug, tid string) (n int) {
 				err = fmt.Errorf("%v", rec)
 			}
 		}()
-		return kanbanDecomposeTask(ctx, tid, &author, nil)
+		return kanbanDecomposeTask(ctx, tid, &author)
 	}()
 	if err != nil {
 		pkgLog().Error(fmt.Sprintf("kanban auto-decompose: decompose_task crashed on %s", tid), "exc_info", err)

@@ -1414,7 +1414,7 @@ func fireworksPricingFromModelsDev(ctx context.Context, forceRefresh bool) Prici
 	}
 	result := PricingTable{}
 	h := home.Dir(ctx)
-	for mid, entry := range modelsDevProviderModels(h, "fireworks", false, loadConfigTree(h)) {
+	for mid, entry := range modelsDevProviderModels(h, "fireworks", false, modelCatalogConfig(h)) {
 		em, ok := asMap(entry)
 		if !ok {
 			continue

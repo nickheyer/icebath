@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type openDBConfig struct {
@@ -82,7 +80,7 @@ var OpenDB = func(ctx context.Context, path, dbLabel string, opts ...OpenDBOptio
 			if err == nil {
 				break
 			}
-			if !isOperationalError(err) || pystr.Lower(errText(err)) != "database is locked" || attempt+1 == cfg.walLockRetries {
+			if !isOperationalError(err) || strings.ToLower(errText(err)) != "database is locked" || attempt+1 == cfg.walLockRetries {
 				return nil, err
 			}
 			openDBSleep(time.Duration(float64(10*time.Millisecond) * float64(int64(1)<<attempt)))
@@ -110,7 +108,7 @@ var OpenDB = func(ctx context.Context, path, dbLabel string, opts ...OpenDBOptio
 // Ends the open transaction with COMMIT or ROLLBACK, a no op like sqlite3 commit and rollback when none is open
 func endTransaction(ctx context.Context, conn SQLiteConn, verb string) error {
 	_, err := conn.ExecContext(ctx, verb)
-	if err != nil && errText(err) == "cannot "+pystr.Lower(verb)+" - no transaction is active" {
+	if err != nil && errText(err) == "cannot "+strings.ToLower(verb)+" - no transaction is active" {
 		return nil
 	}
 	return err
@@ -248,7 +246,7 @@ func AddColumnIfMissing(ctx context.Context, conn SQLiteConn, table, column, ddl
 	if err == nil {
 		return true, nil
 	}
-	if isOperationalError(err) && strings.Contains(pystr.Lower(errText(err)), "duplicate column name") {
+	if isOperationalError(err) && strings.Contains(strings.ToLower(errText(err)), "duplicate column name") {
 		return false, nil
 	}
 	return false, err

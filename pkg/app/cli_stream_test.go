@@ -95,13 +95,6 @@ func configuredCLI(t *testing.T, display map[string]any, o CLIOptions) *CLI {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), append(section, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	SetCLIConfig(map[string]any{
-		"model":    map[string]any{"default": "anthropic/claude-opus-4.6", "base_url": "https://openrouter.ai/api/v1", "provider": "auto"},
-		"display":  full,
-		"agent":    map[string]any{},
-		"terminal": map[string]any{"env_type": "local"},
-	})
-	t.Cleanup(func() { SetCLIConfig(nil) })
 	c, err := NewCLI(context.Background(), o)
 	if err != nil {
 		t.Fatalf("NewCLI: %v", err)

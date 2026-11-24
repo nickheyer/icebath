@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -50,7 +49,7 @@ func pairingRateLimitedReply(ctx context.Context) string {
 // Owner hint naming the dropped sender with mention and link sigils stripped and the allowlist fix
 func unauthorizedOwnerHint(ctx context.Context, platformName, userID, userName, icebathHome string) string {
 	safeName := gateway.NeutralizeUntrustedInlineText(userName, maxSenderNameChars)
-	safeName = pystr.Strip(strings.Map(func(r rune) rune {
+	safeName = strings.TrimSpace(strings.Map(func(r rune) rune {
 		if strings.ContainsRune(unauthorizedSigils, r) {
 			return -1
 		}

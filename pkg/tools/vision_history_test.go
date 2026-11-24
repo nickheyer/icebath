@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Clears the process wide embed counters around a test
@@ -175,7 +177,7 @@ func TestRepeatCapMainAgentUnlimitedUnlessConfigured(t *testing.T) {
 			t.Fatal("main agent must be unlimited")
 		}
 	}
-	env.Config.Set("vision.max_calls_per_image", 1)
+	setHomeConfigKey(t, env, "vision.max_calls_per_image", 1)
 	freshRepeatCounts(t)
 	if !embeddedResult(t, nativeLoad(env, "main", shot, nil)) {
 		t.Fatal("first configured load must embed")
@@ -203,15 +205,16 @@ func TestEmbedTargetBytesFollowsConfig(t *testing.T) {
 	freshRepeatCounts(t)
 	env := isrcEnv(t, "local")
 	dense := writeFixturePNG(t, filepath.Join(t.TempDir(), "dense.png"), 400, 400, true)
-	if n := embedLen(t, nativeLoad(env, "s", dense, nil)); n <= 65536 || n > defaultEmbedTargetBytes {
+	budget := settings.VisionEmbedTargetBytes
+	if n := embedLen(t, nativeLoad(env, "s", dense, nil)); n <= 65536 || n > budget.Default {
 		t.Fatalf("default embed %d", n)
 	}
-	env.Config.Set("vision.embed_target_bytes", 65536)
+	setHomeConfigKey(t, env, "vision.embed_target_bytes", 65536)
 	if n := embedLen(t, nativeLoad(env, "s", dense, nil)); n > 65536 {
 		t.Fatalf("configured embed %d", n)
 	}
-	for raw, want := range map[any]int{"not-a-number": defaultEmbedTargetBytes, true: defaultEmbedTargetBytes, 1: minEmbedTargetBytes, 64 * 1024 * 1024: maxEmbedTargetBytes} {
-		env.Config.Set("vision.embed_target_bytes", raw)
+	for raw, want := range map[any]int{"not-a-number": budget.Default, true: budget.Default, 1: *budget.Min, 64 * 1024 * 1024: *budget.Max} {
+		setHomeConfigKey(t, env, "vision.embed_target_bytes", raw)
 		if got := resolveEmbedTargetBytes(env); got != want {
 			t.Errorf("%v: got %d want %d", raw, got, want)
 		}

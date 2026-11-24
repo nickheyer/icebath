@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -38,7 +37,7 @@ func truthyText(v any) string {
 
 // Ephemeral prefill messages from the configured prefill file
 func loadPrefillMessages(ctx context.Context) []any {
-	filePath := pystr.Strip(settings.PrefillMessagesFile.Get(ctx))
+	filePath := strings.TrimSpace(settings.PrefillMessagesFile.Get(ctx))
 	if filePath == "" {
 		return nil
 	}
@@ -121,18 +120,14 @@ func (r *GatewayRunner) roomAllowSilence(ctx context.Context, source *gateway.Se
 				return nil, err
 			}
 			raw := gateway.LoadGatewayConfigMap(ctx, filepath.Join(profileHome, "config.yaml"))
-			name, gatewaySection := string(source.Platform), raw["gateway"]
-			merged, err := gateway.MergePlatformSections(ctx, raw, gatewaySection, map[string]any{}, nil)
+			name := string(source.Platform)
+			merged, err := gateway.MergePlatformSections(raw, map[string]any{})
 			if err != nil {
 				return nil, err
 			}
 			block, _ := merged[name].(map[string]any)
 			overrides := block["channel_overrides"]
-			var gatewayPlatforms any
-			if section, ok := gatewaySection.(map[string]any); ok {
-				gatewayPlatforms = section["platforms"]
-			}
-			section, _ := gateway.PlatformSection(raw, name, gatewayPlatforms)
+			section, _ := gateway.PlatformSection(raw, name)
 			if sectionMap, ok := section.(map[string]any); ok {
 				if own, ok := sectionMap["channel_overrides"].(map[string]any); ok {
 					overrides = own
@@ -176,19 +171,19 @@ func (r *GatewayRunner) resolveModelForChannel(ctx context.Context, platform gat
 func (r *GatewayRunner) getSystemPromptForChannel(ctx context.Context, platform gateway.Platform, chatID string, threadID, parentID *string) string {
 	override := r.channelOverride(platform, chatID, threadID, parentID)
 	if override != nil && pyrepr.Truthy(override.SystemPrompt) {
-		return pystr.Strip(pyrepr.Str(override.SystemPrompt))
+		return strings.TrimSpace(pyrepr.Str(override.SystemPrompt))
 	}
 	return loadEphemeralSystemPrompt(ctx)
 }
 
 // Reasoning effort from the gateway config, the per model override before the global one
 func loadReasoningConfig(ctx context.Context, model string) map[string]any {
-	return config.ResolveReasoningConfig(gateway.LoadGatewayConfigMap(ctx, ""), model)
+	return settings.ReasoningConfig(gateway.SettingsContext(ctx), model)
 }
 
 // Value and global flag of /reasoning arguments, a dash pair of the em dash reading as two dashes
 func parseReasoningCommandArgs(rawArgs string) (string, bool) {
-	text := strings.ReplaceAll(pystr.Strip(rawArgs), "—", "--")
+	text := strings.ReplaceAll(strings.TrimSpace(rawArgs), "—", "--")
 	if text == "" {
 		return "", false
 	}
@@ -205,7 +200,7 @@ func parseReasoningCommandArgs(rawArgs string) (string, bool) {
 		}
 		kept = append(kept, token)
 	}
-	return strings.ToLower(pystr.Strip(strings.Join(kept, " "))), global
+	return strings.ToLower(strings.TrimSpace(strings.Join(kept, " "))), global
 }
 
 // Sets or clears the session scoped reasoning override
@@ -302,14 +297,14 @@ func (r *GatewayRunner) busyProfileNameForSource(ctx context.Context, source *ga
 	if !r.multiplexing() {
 		return ""
 	}
-	if name := pystr.Strip(optText(source.Profile)); name != "" {
+	if name := strings.TrimSpace(optText(source.Profile)); name != "" {
 		return name
 	}
 	routed, err := r.profileNameForSource(ctx, source, nil)
 	if err != nil {
 		return ""
 	}
-	return pystr.Strip(optText(routed))
+	return strings.TrimSpace(optText(routed))
 }
 
 // Busy mode of the routed profile snapshot, else the runner mode
@@ -393,9 +388,9 @@ func loadProviderRouting(ctx context.Context) map[string]any {
 	return settings.ProviderRouting.Get(ctx)
 }
 
-// Fallback chain of fallback_providers merged with the legacy fallback_model, nil when empty
+// Fallback chain of fallback_providers in effect for ctx, nil when empty
 func loadFallbackModel(ctx context.Context) []map[string]any {
-	chain := provider.GetFallbackChain(gateway.LoadGatewayConfigMap(ctx, ""))
+	chain := provider.FallbackChain(ctx)
 	if len(chain) == 0 {
 		return nil
 	}
@@ -416,9 +411,8 @@ func (r *GatewayRunner) refreshFallbackModel(ctx context.Context) []map[string]a
 		r.fallbackModelByHome[homeKey] = nil
 		return nil
 	}
-	var cfg map[string]any
 	if err == nil {
-		cfg, err = config.LoadUserEffectiveFailClosed(cfgPath, os.LookupEnv)
+		_, err = config.LoadUserEffectiveFailClosed(cfgPath, os.LookupEnv)
 	}
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("fallback_providers refresh: config.yaml read failed; keeping last known-good chain: %v", err))
@@ -427,7 +421,7 @@ func (r *GatewayRunner) refreshFallbackModel(ctx context.Context) []map[string]a
 		}
 		return r.fallbackModel
 	}
-	chain := provider.GetFallbackChain(cfg)
+	chain := provider.FallbackChain(ctx)
 	if len(chain) == 0 {
 		chain = nil
 	}

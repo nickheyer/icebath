@@ -39,14 +39,10 @@ func (a *auxTaskHome) set(blocks map[string]any) {
 	}
 }
 
-// Reads the effective task config through a resolver over the freshly loaded config
+// Reads the effective task config through a resolver over the home's config
 func (a *auxTaskHome) resolve(ctx context.Context, task any) map[string]any {
 	a.t.Helper()
-	tree, err := config.Load(a.h, os.LookupEnv)
-	if err != nil {
-		a.t.Fatal(err)
-	}
-	return newResolver(ctx, tree, nil, a.h, &fakeCreds{}).auxiliaryTaskConfig(task, map[string]bool{})
+	return newResolver(ctx, nil, a.h, &fakeCreds{}).auxiliaryTaskConfig(task, map[string]bool{})
 }
 
 // Installs plugin task registrations shaped as the plugins registrar stores them

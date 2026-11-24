@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Ceiling on live trace state, the least recently updated turns evicted past it
@@ -202,7 +201,7 @@ type rootArgs struct {
 
 // Content free root tags naming the platform, the trigger and a cron run's stable job id
 func traceTags(ctx context.Context, platform string) []any {
-	p := pystr.Lower(pystr.Strip(platform))
+	p := strings.ToLower(strings.TrimSpace(platform))
 	var cron any
 	if pc := pluginContext(); pc != nil {
 		exec, err := pc.CurrentCronExecution(ctx)

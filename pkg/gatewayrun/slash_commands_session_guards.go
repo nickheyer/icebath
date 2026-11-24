@@ -1,12 +1,13 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -70,7 +71,7 @@ func (r *GatewayRunner) sameOriginChat(current, origin *gateway.SessionSource) b
 	if sattr(current.ThreadID) != sattr(origin.ThreadID) {
 		return false
 	}
-	if dmChatTypes[pystr.Lower(current.ChatType)] {
+	if dmChatTypes[strings.ToLower(current.ChatType)] {
 		if current.ChatID != "" {
 			return true
 		}
@@ -112,7 +113,7 @@ func (r *GatewayRunner) persistedRowProvesOwner(source *gateway.SessionSource, r
 	rowChat := rowStr(row, "chat_id")
 	callerChat := source.ChatID
 	callerKeysOnAlt := sattr(source.UserIDAlt) != ""
-	if dmChatTypes[pystr.Lower(source.ChatType)] {
+	if dmChatTypes[strings.ToLower(source.ChatType)] {
 		if callerKeysOnAlt && !(rowChat != "" && callerChat != "") {
 			return false
 		}

@@ -4,17 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"reflect"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -76,8 +73,8 @@ func (a *AIAgent) rewritePromptModelIdentity(model, providerName string) {
 
 // Normalized provider, model and base url identity of a chain entry
 func fallbackEntryKey(fb map[string]any) [3]string {
-	return [3]string{pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(fb["provider"])))), pystr.Strip(pyrepr.Str(orEmpty(fb["model"]))),
-		strings.TrimRight(pystr.Strip(pyrepr.Str(orEmpty(fb["base_url"]))), "/")}
+	return [3]string{strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(fb["provider"])))), strings.TrimSpace(pyrepr.Str(orEmpty(fb["model"]))),
+		strings.TrimRight(strings.TrimSpace(pyrepr.Str(orEmpty(fb["base_url"]))), "/")}
 }
 
 // Value or the empty string when falsy, Python's value or ""
@@ -123,7 +120,7 @@ func (a *AIAgent) fallbackAPIModeResolved(ctx context.Context, fbProvider, fbMod
 // Clears a cross provider pool and attaches the fallback provider's own pool when it has credentials
 func (a *AIAgent) rebindFallbackCredentialPool(ctx context.Context, fbProvider, fbModel string) {
 	if a.credentialPool != nil {
-		poolProvider := pystr.Lower(pystr.Strip(a.credentialPool.Provider()))
+		poolProvider := strings.ToLower(strings.TrimSpace(a.credentialPool.Provider()))
 		if poolProvider != "" && poolProvider != fbProvider {
 			pkgLog().Info(fmt.Sprintf("Fallback to %s/%s: clearing primary credential pool (pool_provider=%s) to prevent cross-provider contamination", fbProvider, fbModel, poolProvider))
 			a.credentialPool, a.credentialPoolEntryID = nil, ""
@@ -174,7 +171,7 @@ func (a *AIAgent) fallbackChainExhausted(reason provider.FailoverReason) bool {
 // True when every credential the candidate would use sits in a cooldown longer than the retry loop's cap
 func (a *AIAgent) candidatePoolExhausted(ctx context.Context, fbProvider, fbModel string) bool {
 	pool := a.credentialPool
-	if pool == nil || pystr.Lower(pystr.Strip(pool.Provider())) != fbProvider {
+	if pool == nil || strings.ToLower(strings.TrimSpace(pool.Provider())) != fbProvider {
 		loaded, ok := func() (p *provider.Pool, ok bool) {
 			defer func() {
 				if recover() != nil {
@@ -256,14 +253,9 @@ func (a *AIAgent) updateFallbackContextCompressor(ctx context.Context) {
 	}
 }
 
-// Re-resolves reasoning_config for the fallback model, keeping the current one when config fails to load
+// Re-resolves reasoning_config for the fallback model from the settings of ctx
 func (a *AIAgent) reresolveFallbackReasoningConfig(ctx context.Context) {
-	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Failed to resolve reasoning_config for fallback %s; keeping current: %v", a.model, err))
-		return
-	}
-	a.reasoningConfig = config.ResolveReasoningConfig(map[string]any(cfg), a.model)
+	a.reasoningConfig = settings.ReasoningConfig(ctx, a.model)
 	pkgLog().Info(fmt.Sprintf("Fallback %s: reasoning_config resolved: %s", a.model, errchain.Show(dictOrNone(a.reasoningConfig))))
 }
 
@@ -326,8 +318,8 @@ func (a *AIAgent) armRateLimitCooldown(reason provider.FailoverReason, resetAt a
 	if !provider.RateLimitFailoverReasons[reason] {
 		return nil
 	}
-	current := pystr.Lower(pystr.Strip(a.provider))
-	primary := pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(a.primaryRuntime["provider"]))))
+	current := strings.ToLower(strings.TrimSpace(a.provider))
+	primary := strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(a.primaryRuntime["provider"]))))
 	if a.fallbackActivated && !(primary != "" && current == primary) {
 		return nil
 	}
@@ -414,8 +406,8 @@ func (a *AIAgent) tryActivateFallbackAt(ctx context.Context, reason provider.Fai
 		if a.unavailableFallbackKeys == nil {
 			a.unavailableFallbackKeys = map[[3]string]bool{}
 		}
-		fbProvider := pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(fb["provider"]))))
-		fbModel := pystr.Strip(pyrepr.Str(orEmpty(fb["model"])))
+		fbProvider := strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(fb["provider"]))))
+		fbModel := strings.TrimSpace(pyrepr.Str(orEmpty(fb["model"])))
 		if a.shouldSkipFallbackCandidate(ctx, fb, key, fbProvider, fbModel) {
 			continue
 		}

@@ -3,7 +3,7 @@ package settings
 // Light, dark or match the terminal
 var Theme = Register(&Enum{Meta: Meta{Key: "display.tui_theme", Label: "Theme",
 	Short: "Light, dark, or match the terminal.",
-	Group: GroupAppearance, Order: 10, Slash: "theme"},
+	Group: GroupAppearance, Order: 10, Slash: "theme", Env: "ICEBATH_TUI_THEME"},
 	Default: "auto",
 	Values: []Choice{
 		{"auto", "Match terminal", "Follow the terminal's background."},

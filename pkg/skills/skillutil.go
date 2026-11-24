@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -98,7 +97,7 @@ func skillMatchesPlatformList(platforms any) bool {
 	}
 	current := hostinfo.OSFamily()
 	for _, p := range items {
-		norm := pystr.Strip(pystr.Lower(pyrepr.Str(p)))
+		norm := strings.TrimSpace(strings.ToLower(pyrepr.Str(p)))
 		mapped, ok := platformMap[norm]
 		if !ok {
 			mapped = norm
@@ -260,7 +259,7 @@ func skillMatchesApps(fm map[string]any) bool {
 func parseConfigStringList(v any) []string {
 	switch t := v.(type) {
 	case string:
-		if strings.HasPrefix(pystr.Strip(t), "[") {
+		if strings.HasPrefix(strings.TrimSpace(t), "[") {
 			items, ok, err := pyast.LiteralStrList(t)
 			if err != nil {
 				panic(err)
@@ -1059,7 +1058,7 @@ func normalizeSkillDescription(fm map[string]any) string {
 	if !pyrepr.Truthy(raw) {
 		return ""
 	}
-	return strings.Trim(pystr.Strip(pyrepr.Str(raw)), "'\"")
+	return strings.Trim(strings.TrimSpace(pyrepr.Str(raw)), "'\"")
 }
 
 // Description fitted to the index budget and cut at a word boundary

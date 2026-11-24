@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -35,19 +34,11 @@ type openAIAudioRoute struct {
 }
 
 // OpenAI audio route from the config key then the env key, the stored tts selection named when neither is set
-func resolveOpenAIAudioClientConfig(ctx context.Context, env *tools.Env) (*openAIAudioRoute, error) {
-	openaiCfg := ttsSection(loadTTSConfig(ctx, env), "openai")
+func resolveOpenAIAudioClientConfig(ctx context.Context, env *tools.Env, req *ttsRequest) (*openAIAudioRoute, error) {
 	selected := tools.ReadSelection(env, "tts")
-	direct := openaiCfg["api_key"]
-	if !pyTruthy(direct) {
-		direct = tools.ResolveOpenAIAudioAPIKey(env)
-	}
-	if pyTruthy(direct) {
-		base := openaiCfg["base_url"]
-		if !pyTruthy(base) {
-			base = defaultOpenAITTSBaseURL
-		}
-		return &openAIAudioRoute{APIKey: pyrepr.Str(direct), BaseURL: pyrepr.Str(base)}, nil
+	direct := textOr(req.OpenAI.APIKey, tools.ResolveOpenAIAudioAPIKey(env))
+	if direct != "" {
+		return &openAIAudioRoute{APIKey: direct, BaseURL: textOr(req.OpenAI.BaseURL, defaultOpenAITTSBaseURL)}, nil
 	}
 	if selected != "" {
 		return nil, &ttsValueError{msg: tools.SelectionError("tts", selected, "neither tts.openai.api_key in config nor VOICE_TOOLS_OPENAI_KEY/OPENAI_API_KEY is set")}
@@ -57,7 +48,7 @@ func resolveOpenAIAudioClientConfig(ctx context.Context, env *tools.Env) (*openA
 
 // Whether the selected OpenAI audio route resolves without a configuration error
 func hasOpenAIAudioBackend(ctx context.Context, env *tools.Env) bool {
-	_, err := resolveOpenAIAudioClientConfig(ctx, env)
+	_, err := resolveOpenAIAudioClientConfig(ctx, env, loadTTSRequest(ctx, env))
 	var ve *ttsValueError
 	if errors.As(err, &ve) {
 		return false
@@ -66,33 +57,33 @@ func hasOpenAIAudioBackend(ctx context.Context, env *tools.Env) bool {
 }
 
 // Optional OpenAI compatible body fields, language sent as lang_code and consent_attestation
-func openAIExtraBody(oaiConfig map[string]any) map[string]any {
+func openAIExtraBody(oai openAISpeech) map[string]any {
 	extra := map[string]any{}
-	if pyTruthy(oaiConfig["language"]) {
-		extra["lang_code"] = oaiConfig["language"]
+	if v := strings.TrimSpace(oai.Language); v != "" {
+		extra["lang_code"] = v
 	}
-	if pyTruthy(oaiConfig["consent_attestation"]) {
-		extra["consent_attestation"] = oaiConfig["consent_attestation"]
+	if v := strings.TrimSpace(oai.ConsentAttestation); v != "" {
+		extra["consent_attestation"] = v
 	}
 	return extra
 }
 
-// Explicit OpenAI speech request overrides, nil fields resolved from the auth chain and config
+// Explicit OpenAI speech request overrides, empty fields resolved from the auth chain and the settings
 type openAITTSOptions struct {
 	APIKey       *string
 	BaseURL      *string
-	Model        any
-	Voice        any
+	Model        string
+	Voice        string
 	Speed        *float64
 	Instructions string
 }
 
 // Speech through the OpenAI audio.speech.create shape
-func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any, opts openAITTSOptions) (string, error) {
+func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest, opts openAITTSOptions) (string, error) {
 	fallbackBase := ""
 	apiKey := ""
 	if opts.APIKey == nil {
-		route, err := resolveOpenAIAudioClientConfig(ctx, env)
+		route, err := resolveOpenAIAudioClientConfig(ctx, env, req)
 		if err != nil {
 			return "", err
 		}
@@ -100,36 +91,20 @@ func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath str
 	} else {
 		apiKey = *opts.APIKey
 	}
-	oaiConfig := ttsSection(ttsConfig, "openai")
-	model := opts.Model
-	if model == nil {
-		model = dictGetDefault(oaiConfig, "model", defaultOpenAITTSModel)
-	}
-	voice := opts.Voice
-	if voice == nil {
-		voice = dictGetDefault(oaiConfig, "voice", defaultOpenAITTSVoice)
-	}
-	configBaseURL := oaiConfig["base_url"]
+	model := textOr(opts.Model, textOr(req.OpenAI.Model, defaultOpenAITTSModel))
+	voice := textOr(opts.Voice, textOr(req.OpenAI.Voice, defaultOpenAITTSVoice))
 	baseURL := ""
-	if opts.BaseURL != nil {
+	switch {
+	case opts.BaseURL != nil:
 		baseURL = *opts.BaseURL
-	} else if pyTruthy(configBaseURL) {
-		baseURL = pyrepr.Str(configBaseURL)
-	} else if fallbackBase != "" {
-		baseURL = fallbackBase
-	} else {
-		baseURL = defaultOpenAITTSBaseURL
+	case strings.TrimSpace(req.OpenAI.BaseURL) != "":
+		baseURL = req.OpenAI.BaseURL
+	default:
+		baseURL = textOr(fallbackBase, defaultOpenAITTSBaseURL)
 	}
-	var speed float64
+	speed, _ := req.speedFor(req.OpenAI.Speed)
 	if opts.Speed != nil {
 		speed = *opts.Speed
-	} else {
-		speedDefault := dictGetDefault(ttsConfig, "speed", 1.0)
-		f, err := ttsFloat(dictGetDefault(oaiConfig, "speed", speedDefault))
-		if err != nil {
-			return "", err
-		}
-		speed = f
 	}
 	body := map[string]any{"model": model, "voice": voice, "input": text, "response_format": ttsResponseFormatFromPath(outputPath)}
 	if speed != 1.0 {
@@ -138,7 +113,7 @@ func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath str
 	if opts.Instructions != "" {
 		body["instructions"] = opts.Instructions
 	}
-	for k, v := range openAIExtraBody(oaiConfig) {
+	for k, v := range openAIExtraBody(req.OpenAI) {
 		body[k] = v
 	}
 	client := newOpenAISpeechClient(apiKey, baseURL)
@@ -315,27 +290,23 @@ func retryDelay(h http.Header, attempt int) time.Duration {
 var ttsOpenAISleep = time.Sleep
 
 // DeepInfra speech through the OpenAI compatible handler with a live catalog model when none is pinned
-func generateDeepInfraTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
+func generateDeepInfraTTS(ctx context.Context, env *tools.Env, text, outputPath string, req *ttsRequest) (string, error) {
 	apiKey := ttsResolveProviderKey(env, "DEEPINFRA_API_KEY", "deepinfra")
 	if apiKey == "" {
 		return "", &ttsValueError{msg: "DEEPINFRA_API_KEY not set. Start `icebath` and type `/setup voice` to configure, or set the env var directly."}
 	}
-	diConfig := ttsSection(ttsConfig, "deepinfra")
-	model, ok := diConfig["model"].(string)
-	if !ok || pystr.Strip(model) == "" {
+	model := strings.TrimSpace(req.DeepInfra.Model)
+	if model == "" {
 		candidates := ttsDeepInfraModelIDs(ctx, env, "tts")
 		if len(candidates) == 0 {
 			return "", &ttsValueError{msg: "No DeepInfra TTS model available. Pin one in config.yaml under tts.deepinfra.model, or check connectivity to api.deepinfra.com so the live catalog can be fetched."}
 		}
 		model = candidates[0]
 	}
-	speed, err := ttsFloat(dictGetDefault(diConfig, "speed", dictGetDefault(ttsConfig, "speed", 1.0)))
-	if err != nil {
-		return "", err
-	}
-	baseURL := deepInfraBaseURL(env, diConfig)
-	return ttsGenerateOpenAI(ctx, env, text, outputPath, ttsConfig, openAITTSOptions{
-		APIKey: &apiKey, BaseURL: &baseURL, Model: model, Voice: dictGetDefault(diConfig, "voice", defaultDeepInfraTTSVoice), Speed: &speed,
+	speed, _ := req.speedFor(req.DeepInfra.Speed)
+	baseURL := deepInfraBaseURL(env, req.DeepInfra.BaseURL)
+	return ttsGenerateOpenAI(ctx, env, text, outputPath, req, openAITTSOptions{
+		APIKey: &apiKey, BaseURL: &baseURL, Model: model, Voice: textOr(req.DeepInfra.Voice, defaultDeepInfraTTSVoice), Speed: &speed,
 	})
 }
 

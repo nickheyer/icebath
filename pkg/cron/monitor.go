@@ -87,7 +87,7 @@ func (s *Store) readLastMonitorOutput(jobID string) string {
 func (s *Store) writeLastMonitorOutput(jobID, output string) {
 	path, err := s.monitorSnapshotPath(jobID)
 	if err == nil {
-		if err = ensureCronDir(filepath.Dir(path)); err == nil {
+		if err = s.ensureStoreDir(filepath.Dir(path)); err == nil {
 			err = os.WriteFile(path, []byte(output), 0o666)
 		}
 	}
@@ -101,7 +101,7 @@ var monitorHTTPClient = &http.Client{Timeout: monitorURLTimeout}
 
 // Bounded GET of a monitor URL returning ok and the body or the error text
 func fetchMonitorURL(ctx context.Context, url string) (bool, string) {
-	lower := pystr.Lower(url)
+	lower := strings.ToLower(url)
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		return false, "monitor_url must be http(s): " + pyrepr.Repr(url)
 	}
@@ -135,7 +135,7 @@ func monitorField(v *string) string {
 	if v == nil {
 		return ""
 	}
-	return pystr.Strip(*v)
+	return strings.TrimSpace(*v)
 }
 
 // Runs the job's monitor script or URL and returns ok and its output

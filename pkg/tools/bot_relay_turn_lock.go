@@ -7,15 +7,12 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
 	BotRelayDirName           = "bot_relay"
 	botRelayLocksDir          = "locks"
-	TurnWaitSecondsFallback   = 120
 	botRelayTurnLockSleepMax  = 0.1
 	botRelayTurnLockSleepMin  = 0.005
 	botRelayTurnBusyReason    = "target_busy"
@@ -45,29 +42,9 @@ func (e *TurnBusyError) Reason() string { return botRelayTurnBusyReason }
 // Relay directory under the root
 func BotRelayRoot(root string) string { return filepath.Join(root, BotRelayDirName) }
 
-// Bot mode config value of the key, nil when absent or the config is unreadable
-func botModeCfg(ctx context.Context, key string) any {
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("bot_mode.%s config read failed", key), "exc_info", err)
-		return nil
-	}
-	botMode, _ := cfg["bot_mode"].(map[string]any)
-	return botMode[key]
-}
-
-// Wait budget of a queued delivery turn from config
-func TurnWaitSeconds(ctx context.Context) (float64, error) {
-	value := botModeCfg(ctx, "turn_wait_seconds")
-	if value == nil {
-		return TurnWaitSecondsFallback, nil
-	}
-	f, err := pyint.Float(value)
-	if err != nil {
-		return 0, err
-	}
-	return math.Max(0, f), nil
+// Seconds a queued delivery turn waits for the busy one, never below zero
+func TurnWaitSeconds(ctx context.Context) float64 {
+	return math.Max(0, settings.BotModeTurnWaitSeconds.Get(ctx).Seconds())
 }
 
 // Per profile lockfile path, short enough for macOS temp roots

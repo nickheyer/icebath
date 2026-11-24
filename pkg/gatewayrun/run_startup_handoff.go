@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Resolved destination of one handoff row
@@ -54,7 +53,7 @@ func (r *GatewayRunner) handoffResolveDestination(ctx context.Context, row map[s
 	cliSessionID := pyrepr.Str(row["id"])
 	platformName := ""
 	if value := row["handoff_platform"]; pyrepr.Truthy(value) {
-		platformName = pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+		platformName = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	}
 	if platformName == "" {
 		return nil, fmt.Errorf("handoff_platform is empty")
@@ -172,7 +171,7 @@ func (r *GatewayRunner) handoffSessionKey(ctx context.Context, dest *handoffDest
 		resolved, err := r.sessionStore.ResolveProfileForKey(dest.source)
 		if err != nil {
 			pkgLog().Debug("Handoff: could not resolve profile namespace", "exc_info", err)
-		} else if text, ok := resolved.(string); ok && pystr.Strip(text) != "" {
+		} else if text, ok := resolved.(string); ok && strings.TrimSpace(text) != "" {
 			handoffProfile = text
 		}
 	}

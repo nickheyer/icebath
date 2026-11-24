@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -62,8 +63,8 @@ func TestCacheHitReturnsSameInstanceWhenHealthy(t *testing.T) {
 	env := testEnv(t)
 	reg := newSupervisorRegistry()
 	created := fakeSupervisorStart(t)
-	first, _ := reg.getOrStart(env, "t1", "http://h/1", DefaultDialogPolicy, DefaultDialogTimeoutS, 15)
-	second, _ := reg.getOrStart(env, "t1", "http://h/1", DefaultDialogPolicy, DefaultDialogTimeoutS, 15)
+	first, _ := reg.getOrStart(env, "t1", "http://h/1", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds(), 15)
+	second, _ := reg.getOrStart(env, "t1", "http://h/1", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds(), 15)
 	if first != second || len(*created) != 1 {
 		t.Fatalf("recreated a healthy supervisor: %d", len(*created))
 	}
@@ -76,7 +77,7 @@ func TestMissingThreadAndLoopAttrsTriggerRecreate(t *testing.T) {
 	fakeSupervisorStart(t)
 	broken := &cdpSupervisor{cdpURL: "http://h/4"}
 	reg.byTask["t4"] = broken
-	fresh, err := reg.getOrStart(env, "t4", "http://h/4", DefaultDialogPolicy, DefaultDialogTimeoutS, 15)
+	fresh, err := reg.getOrStart(env, "t4", "http://h/4", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds(), 15)
 	if err != nil || fresh == broken || reg.byTask["t4"] != fresh {
 		t.Fatalf("broken entry kept: %v", err)
 	}
@@ -102,7 +103,7 @@ func warningLog(t *testing.T) (*tools.Env, *bytes.Buffer) {
 
 func TestPostAttachReconnectsStopAtBudgetAndUnregister(t *testing.T) {
 	env, logs := warningLog(t)
-	sup, _ := newCDPSupervisor(env, "bounded-reconnect", "ws://127.0.0.1:9222", DefaultDialogPolicy, DefaultDialogTimeoutS)
+	sup, _ := newCDPSupervisor(env, "bounded-reconnect", "ws://127.0.0.1:9222", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds())
 	supervisors.mu.Lock()
 	supervisors.byTask[sup.taskID] = sup
 	supervisors.mu.Unlock()
@@ -145,7 +146,7 @@ func TestPostAttachReconnectsStopAtBudgetAndUnregister(t *testing.T) {
 
 func TestInitialConnectFailureStaysFatalForStart(t *testing.T) {
 	env := testEnv(t)
-	sup, _ := newCDPSupervisor(env, "initial-failure", "ws://127.0.0.1:9222", DefaultDialogPolicy, DefaultDialogTimeoutS)
+	sup, _ := newCDPSupervisor(env, "initial-failure", "ws://127.0.0.1:9222", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds())
 	pin(t, &supervisorDial, func(string) (supervisorWS, error) {
 		return nil, pyError("ConnectionError", "CDP endpoint is unavailable")
 	})
@@ -158,7 +159,7 @@ func TestInitialConnectFailureStaysFatalForStart(t *testing.T) {
 // Supervisor with a running loop and an attached page whose CDP replies come from fn
 func evalSupervisor(t *testing.T, sessionID string, fn func(method string, params any) (*pyjson.Object, error)) *cdpSupervisor {
 	t.Helper()
-	sup, _ := newCDPSupervisor(testEnv(t), "eval", "ws://x", DefaultDialogPolicy, DefaultDialogTimeoutS)
+	sup, _ := newCDPSupervisor(testEnv(t), "eval", "ws://x", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds())
 	sup.active, sup.pageSessionID = true, sessionID
 	loop, quit := newSupervisorLoop(), make(chan struct{})
 	sup.loop = loop
@@ -327,7 +328,7 @@ func chromeSupervisor(t *testing.T, taskID string) (*cdpSupervisor, string) {
 	t.Helper()
 	cdpURL := chromeCDP(t)
 	t.Cleanup(supervisors.stopAll)
-	sup, err := supervisors.getOrStart(testEnv(t), taskID, cdpURL, DefaultDialogPolicy, DefaultDialogTimeoutS, supervisorStartTimeoutS)
+	sup, err := supervisors.getOrStart(testEnv(t), taskID, cdpURL, settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds(), supervisorStartTimeoutS)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,19 +1,17 @@
 package media
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-const defaultKeepWarmSeconds = 60.0
 
 // Pending keep warm unload, a stopped timer never fires
 type keepWarmTimerHandle interface{ Stop() bool }
@@ -32,48 +30,42 @@ var lifecycleRunCommandProvider = runCommandProvider
 var makeKeepWarmTimer = func(delay time.Duration, fn func()) keepWarmTimerHandle { return time.AfterFunc(delay, fn) }
 
 // Provider name to the loader filling that engine's cache slot under the key synthesis uses
-func localTTSWarmers() map[string]func(ctx context.Context, env *tools.Env, cfg map[string]any) error {
-	return map[string]func(ctx context.Context, env *tools.Env, cfg map[string]any) error{
-		"piper": func(ctx context.Context, env *tools.Env, cfg map[string]any) error {
-			_, _, err := loadPiperVoiceForConfig(ctx, env, cfg)
+func localTTSWarmers() map[string]func(ctx context.Context, env *tools.Env, req *ttsRequest) error {
+	return map[string]func(ctx context.Context, env *tools.Env, req *ttsRequest) error{
+		"piper": func(ctx context.Context, env *tools.Env, req *ttsRequest) error {
+			_, err := loadPiperVoiceForConfig(ctx, env, req)
 			return err
 		},
-		"kittentts": func(ctx context.Context, _ *tools.Env, cfg map[string]any) error {
-			_, _, err := loadKittenTTSModelForConfig(ctx, cfg)
+		"kittentts": func(ctx context.Context, _ *tools.Env, req *ttsRequest) error {
+			_, err := loadKittenTTSModelForConfig(ctx, req)
 			return err
 		},
 	}
 }
 
 // Runs a user provider's warm or release hook, the hook name when signalled, error on failure, empty when none
-func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, ttsConfig map[string]any, hook string) string {
+func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, req *ttsRequest, hook string) string {
 	if name == "" || builtinTTSProviders[name] {
 		return ""
 	}
-	cfg := namedProviderConfig(ttsConfig, name, builtinTTSProviders)
 	out, err := func() (out string, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("%v", r)
 			}
 		}()
-		if isCommandProviderConfig(cfg) {
-			template := pystr.Strip(pyrepr.Str(pyrepr.Or(cfg[hook+"_command"], "")))
-			if template == "" {
+		if p := req.command(name); p != nil {
+			template := p.WarmCommand
+			if hook == "release" {
+				template = p.ReleaseCommand
+			}
+			if template = strings.TrimSpace(template); template == "" {
 				return "", nil
 			}
-			speed, ok := cfg["speed"]
-			if !ok {
-				speed = ttsConfig["speed"]
-				if _, has := ttsConfig["speed"]; !has {
-					speed = ""
-				}
-			}
-			command := renderCommandTemplate(template, map[string]string{
-				"voice": pyrepr.Str(mapGetOr(cfg, "voice", "")), "model": pyrepr.Str(mapGetOr(cfg, "model", "")), "speed": pyrepr.Str(speed)})
+			command := renderCommandTemplate(template, map[string]string{"voice": p.Voice, "model": p.Model, "speed": req.commandSpeed(p)})
 			bound := context.WithoutCancel(ctx)
 			go func() {
-				if _, err := lifecycleRunCommandProvider(bound, env, command, getCommandTTSTimeout(cfg), commandEnvPassthrough(cfg)); err != nil {
+				if _, err := lifecycleRunCommandProvider(bound, env, command, p.Timeout.Seconds(), p.EnvPassthrough); err != nil {
 					pkgLog().Debug(fmt.Sprintf("[TTS] %s_command for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
 				}
 			}()
@@ -103,24 +95,14 @@ func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, tts
 	return out
 }
 
-// Value of key in a map, def when absent
-func mapGetOr(m map[string]any, key string, def any) any {
-	if v, ok := m[key]; ok {
-		return v
-	}
-	return def
-}
-
 // Warms the configured or named TTS provider, loading local engines and signalling user providers
-func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]any, providerName string) map[string]any {
-	if ttsConfig == nil {
-		ttsConfig = loadTTSConfig(ctx, env)
-	}
+func WarmTTSProvider(ctx context.Context, env *tools.Env, providerName string) map[string]any {
+	req := loadTTSRequest(ctx, env)
 	name := providerName
 	if name == "" {
-		name = getTTSProvider(ttsConfig)
+		name = req.Provider
 	}
-	name = pystr.Strip(pystr.Lower(name))
+	name = strings.TrimSpace(strings.ToLower(name))
 	result := map[string]any{"provider": name, "warmed": false, "action": "noop"}
 	if warmer := localTTSWarmers()[name]; warmer != nil {
 		cache := localTTSModelCaches[name]
@@ -129,7 +111,7 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]a
 			before = len(cache.Keys())
 		}
 		started := time.Now()
-		if err := warmer(ctx, env, ttsConfig); err != nil {
+		if err := warmer(ctx, env, req); err != nil {
 			pkgLog().Warn(fmt.Sprintf("[TTS] warm-up for %s failed: %s", name, pyrepr.ExceptionMessage(err)))
 			result["action"], result["error"] = "error", pyrepr.ExceptionMessage(err)
 			return result
@@ -147,7 +129,7 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]a
 		pkgLog().Info(fmt.Sprintf("[TTS] warm-up %s: %s in %dms", name, result["action"], result["elapsed_ms"]))
 		return result
 	}
-	if signalled := signalUserTTSProvider(ctx, env, name, ttsConfig, "warm"); signalled != "" {
+	if signalled := signalUserTTSProvider(ctx, env, name, req, "warm"); signalled != "" {
 		ok := signalled != "error"
 		result["warmed"] = ok
 		result["action"] = "error"
@@ -161,10 +143,10 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]a
 
 // Clears the resident local model caches, one named provider or all and the configured user provider signalled
 func ReleaseTTSProvider(ctx context.Context, env *tools.Env, providerName string) map[string]any {
-	name := pystr.Strip(pystr.Lower(providerName))
+	name := strings.TrimSpace(strings.ToLower(providerName))
 	if name == "" {
-		cfg := loadTTSConfig(ctx, env)
-		signalUserTTSProvider(ctx, env, getTTSProvider(cfg), cfg, "release")
+		req := loadTTSRequest(ctx, env)
+		signalUserTTSProvider(ctx, env, req.Provider, req, "release")
 	}
 	released := 0
 	names := make([]string, 0, len(localTTSModelCaches))
@@ -187,12 +169,7 @@ func ReleaseTTSProvider(ctx context.Context, env *tools.Env, providerName string
 
 // Keep warm window from tts.keep_warm_seconds, zero meaning unload at once
 func keepWarmSeconds(ctx context.Context, env *tools.Env) float64 {
-	raw := mapGetOr(loadTTSConfig(ctx, env), "keep_warm_seconds", defaultKeepWarmSeconds)
-	f, err := pyint.Float(raw)
-	if err != nil {
-		return defaultKeepWarmSeconds
-	}
-	return max(0.0, f)
+	return loadTTSRequest(ctx, env).KeepWarm.Seconds()
 }
 
 // Cancels a pending keep warm unload, lock held
@@ -229,13 +206,13 @@ func releaseAfterKeepWarm(ctx context.Context, env *tools.Env, generation int) {
 }
 
 // Registers a lease and warms the provider, cancelling any pending unload
-func AcquireTTSLease(ctx context.Context, env *tools.Env, lease string, ttsConfig map[string]any) map[string]any {
+func AcquireTTSLease(ctx context.Context, env *tools.Env, lease string) map[string]any {
 	ttsLeaseMu.Lock()
 	cancelKeepWarmLocked()
 	ttsLeases[lease] = true
 	holders := len(ttsLeases)
 	ttsLeaseMu.Unlock()
-	result := WarmTTSProvider(ctx, env, ttsConfig, "")
+	result := WarmTTSProvider(ctx, env, "")
 	ttsLeaseMu.Lock()
 	if len(ttsLeases) == 0 {
 		scheduleReleaseLocked(ctx, env)

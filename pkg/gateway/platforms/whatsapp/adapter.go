@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -182,7 +181,7 @@ func NewWhatsAppAdapter(ctx context.Context, config *gateway.PlatformConfig) (*W
 	case nil:
 		a.sendReadReceipts = false
 	default:
-		a.sendReadReceipts = whatsappTruthy[pystr.Lower(pystr.Strip(pyrepr.Str(rr)))] && pyrepr.Truthy(rr)
+		a.sendReadReceipts = whatsappTruthy[strings.ToLower(strings.TrimSpace(pyrepr.Str(rr)))] && pyrepr.Truthy(rr)
 	}
 	a.ConfigureTextBatchDelays()
 	return a, nil
@@ -763,7 +762,7 @@ func (a *WhatsAppAdapter) Send(ctx context.Context, chatID, content, replyTo str
 	if unavailable := a.bridgeUnavailable(ctx); unavailable != "" {
 		return gateway.SendResult{Success: false, Error: unavailable}, nil
 	}
-	if content == "" || pystr.Strip(content) == "" {
+	if content == "" || strings.TrimSpace(content) == "" {
 		return gateway.SendResult{Success: true}, nil
 	}
 	chatID = gateway.ToWhatsAppJID(chatID)
@@ -882,12 +881,12 @@ func (a *WhatsAppAdapter) SendPoll(ctx context.Context, chatID, question string,
 func (a *WhatsAppAdapter) SendClarify(ctx context.Context, chatID, question string, choices []string, clarifyID, sessionKey string, metadata map[string]any) (gateway.SendResult, error) {
 	clean := []string{}
 	for _, c := range choices {
-		if s := pystr.Strip(c); s != "" {
+		if s := strings.TrimSpace(c); s != "" {
 			clean = append(clean, s)
 		}
 	}
 	if len(clean) >= 2 && len(clean) <= 12 {
-		result := a.SendPoll(ctx, chatID, pystr.Strip(question), clean, 1)
+		result := a.SendPoll(ctx, chatID, strings.TrimSpace(question), clean, 1)
 		if result.Success {
 			return result, nil
 		}
@@ -1098,7 +1097,7 @@ func (a *WhatsAppAdapter) collectBridgeMedia(ctx context.Context, data *pyjson.O
 	label, defaultMime := info[0], info[1]
 	bridgeMime := ""
 	if v := data.GetOr("mime", nil); pyrepr.Truthy(v) {
-		bridgeMime = pystr.Strip(pyrepr.Str(v))
+		bridgeMime = strings.TrimSpace(pyrepr.Str(v))
 	}
 	list, _ := data.GetOr("mediaUrls", []any{}).([]any)
 	for _, raw := range list {
@@ -1189,7 +1188,7 @@ func (a *WhatsAppAdapter) injectDocumentText(cachedURLs []string, body string) (
 func (a *WhatsAppAdapter) quotedMedia(ctx context.Context, data *pyjson.Object, rawReplyID any) [][2]string {
 	quotedType := ""
 	if v := data.GetOr("quotedMediaType", nil); pyrepr.Truthy(v) {
-		quotedType = pystr.Strip(pyrepr.Str(v))
+		quotedType = strings.TrimSpace(pyrepr.Str(v))
 	}
 	accepted := [][2]string{}
 	list, _ := data.GetOr("quotedMediaUrls", nil).([]any)
@@ -1251,7 +1250,7 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 	if pyrepr.Truthy(data.GetOr("isGroup", nil)) {
 		body = CleanBotMentionText(body, raw)
 	}
-	if msgType == gateway.MessageTypeVoice && len(cachedURLs) > 0 && pystr.Lower(pystr.Strip(body)) == "[ptt received]" {
+	if msgType == gateway.MessageTypeVoice && len(cachedURLs) > 0 && strings.ToLower(strings.TrimSpace(body)) == "[ptt received]" {
 		body = ""
 	}
 	quoted := pyrepr.Truthy(data.GetOr("hasQuotedMessage", nil))
@@ -1268,7 +1267,7 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 		body, inlined = a.injectDocumentText(cachedURLs, body)
 	}
 	metadata := map[string]any{}
-	if nt := pystr.Strip(pyrepr.Str(orEmpty(data.GetOr("nativeType", nil)))); nt != "" {
+	if nt := strings.TrimSpace(pyrepr.Str(orEmpty(data.GetOr("nativeType", nil)))); nt != "" {
 		metadata["whatsapp_native_type"] = nt
 	}
 	if native, ok := data.GetOr("nativeMetadata", nil).(*pyjson.Object); ok && native.Len() > 0 {
@@ -1298,7 +1297,7 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 		s := pyrepr.Str(rawReplyID)
 		ev.ReplyToMessageID = &s
 	}
-	if qt := pystr.Strip(pyrepr.Str(orEmpty(data.GetOr("quotedText", nil)))); qt != "" {
+	if qt := strings.TrimSpace(pyrepr.Str(orEmpty(data.GetOr("quotedText", nil)))); qt != "" {
 		ev.ReplyToText = &qt
 	}
 	if quoted {

@@ -505,13 +505,11 @@ func (r *GatewayRunner) stopImpl(ctx context.Context) error {
 	r.shutdownWatchdogDone = watchdogDone
 	sc := &stopContext{deferredCount: r.activeDeferredAgentWorkerCount}
 	defer watchdogDone.Set()
-	if os.Getenv("PYTEST_CURRENT_TEST") == "" {
-		exitCode := 1
-		gateway.ArmShutdownWatchdog(ctx, effectiveWatchdogLeash(r), gateway.ShutdownWatchdogOptions{
-			Done: watchdogDone, ExitCode: &exitCode,
-			SnapshotFn: func() (any, error) { return r.shutdownWatchdogSnapshot(sc), nil },
-		})
-	}
+	exitCode := 1
+	gateway.ArmShutdownWatchdog(ctx, effectiveWatchdogLeash(r), gateway.ShutdownWatchdogOptions{
+		Done: watchdogDone, ExitCode: &exitCode,
+		SnapshotFn: func() (any, error) { return r.shutdownWatchdogSnapshot(sc), nil },
+	})
 	r.awaitReadyTail()
 	if err := r.stopBeginTeardown(ctx, sc); err != nil {
 		return err

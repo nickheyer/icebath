@@ -18,7 +18,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -26,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -78,18 +78,15 @@ func NewOutboundWebhookTarget(url string, events []string, name, secret, matcher
 }
 
 // RegisterOutboundWebhooksFromConfig wires every configured target once per home and event, the targets newly wired
-func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*OutboundWebhookTarget, error) {
+func RegisterOutboundWebhooksFromConfig(ctx context.Context) ([]*OutboundWebhookTarget, error) {
 	if config.SafeWorkerEnabled() {
 		return nil, nil
 	}
-	if _, ok := cfg.(map[string]any); !ok {
-		return nil, nil
-	}
-	if config.EnvVarEnabled("ICEBATH_SAFE_MODE") {
+	if envEnabled(EnvSafeMode) {
 		pkgLog().Info("ICEBATH_SAFE_MODE=1 — outbound webhook registration skipped")
 		return nil, nil
 	}
-	targets, err := IterConfiguredOutboundWebhooks(ctx, cfg)
+	targets, err := IterConfiguredOutboundWebhooks(ctx)
 	if err != nil || len(targets) == 0 {
 		return nil, err
 	}
@@ -125,16 +122,9 @@ func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*Outbou
 	return registered, nil
 }
 
-// IterConfiguredOutboundWebhooks parses hooks.outbound without registering anything, the error an unscoped secret read
-func IterConfiguredOutboundWebhooks(ctx context.Context, cfg any) ([]*OutboundWebhookTarget, error) {
-	m, ok := cfg.(map[string]any)
-	if !ok {
-		return nil, nil
-	}
-	var raw any
-	if hooks, ok := m["hooks"].(map[string]any); ok {
-		raw = hooks["outbound"]
-	}
+// IterConfiguredOutboundWebhooks parses hooks.outbound of the hooks setting of ctx without registering anything, the error an unscoped secret read
+func IterConfiguredOutboundWebhooks(ctx context.Context) ([]*OutboundWebhookTarget, error) {
+	raw := settings.Hooks.Get(ctx)["outbound"]
 	if raw == nil {
 		return nil, nil
 	}
@@ -169,11 +159,7 @@ func FlushOutboundWebhooks(timeout time.Duration) bool {
 // ReRegisterOutboundWebhooks drops the current home's wired keys and registers the saved config again after a force reload
 func ReRegisterOutboundWebhooks(ctx context.Context) error {
 	forgetHomeRegistrations(ctx, outboundRegistered, &outboundRegisteredMu, func(k outboundWebhookKey) string { return k.home })
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		return err
-	}
-	_, err = RegisterOutboundWebhooksFromConfig(ctx, cfg)
+	_, err := RegisterOutboundWebhooksFromConfig(ctx)
 	return err
 }
 

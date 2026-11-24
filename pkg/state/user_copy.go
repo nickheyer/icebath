@@ -1,6 +1,8 @@
 package state
 
 import (
+	"unicode"
+
 	"context"
 	"fmt"
 	"strings"
@@ -164,5 +166,5 @@ func StorageFailureDetails(excOrStr any, limit int) string {
 	if cut < 0 {
 		cut = max(len(runes)+cut, 0)
 	}
-	return pystr.Rstrip(pystr.FromRunes(runes[:min(cut, len(runes))])) + "..."
+	return strings.TrimRightFunc(pystr.FromRunes(runes[:min(cut, len(runes))]), unicode.IsSpace) + "..."
 }

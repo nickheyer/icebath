@@ -47,7 +47,7 @@ func codexSeedTextOf(content any) string {
 // One transcript row of the seed, empty for system rows and rows without text
 func codexSeedRenderRow(msg map[string]any) string {
 	role := msg["role"]
-	text := pystr.Strip(codexSeedTextOf(msg["content"]))
+	text := strings.TrimSpace(codexSeedTextOf(msg["content"]))
 	switch role {
 	case "user":
 		if text != "" {

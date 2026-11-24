@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -161,7 +161,7 @@ func cuPyFloat(v any) (float64, error) {
 	case float64:
 		return n, nil
 	case string:
-		f, err := strconv.ParseFloat(strings.ReplaceAll(pystr.Strip(n), "_", ""), 64)
+		f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(n), "_", ""), 64)
 		if err != nil {
 			return 0, fmt.Errorf("%s is not a number", n)
 		}
@@ -182,7 +182,7 @@ func cuPyInt(v any) (int, error) {
 		}
 		return int(n), nil
 	case string:
-		i, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(n), "_", ""), 10, 64)
+		i, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(n), "_", ""), 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("%s is not a whole number", n)
 		}
@@ -397,9 +397,9 @@ func dispatchComputerUse(ctx context.Context, env *tools.Env, backend ComputerUs
 		}
 		return cuDumps(map[string]any{"error": msg}, "error"), nil
 	}
-	if requested, isStr := args["app"].(string); spec.input && isStr && pystr.Strip(requested) != "" {
+	if requested, isStr := args["app"].(string); spec.input && isStr && strings.TrimSpace(requested) != "" {
 		if mismatch := inputTargetMismatch(backend, requested); mismatch != nil {
-			want := errchain.Show(pystr.Strip(requested))
+			want := errchain.Show(strings.TrimSpace(requested))
 			return cuDumps(map[string]any{"ok": false, "action": action, "code": "input_target_mismatch",
 				"error": fmt.Sprintf("%s would go to the current target %s, not %s — input actions always hit the sticky "+
 					"target from the last capture/focus_app. Call capture(app=%s) or focus_app first, then retry.",
@@ -505,20 +505,9 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 	return out, err
 }
 
-// Mode of capture_after follow ups from computer_use.capture_after_mode, som unless som, vision or ax
+// Mode of capture_after follow ups from computer_use.capture_after_mode: som, vision or ax
 func captureAfterMode(env *tools.Env) string {
-	raw := computerUseCfg(env)["capture_after_mode"]
-	mode := "som"
-	if v, ok := raw.(string); ok && v != "" {
-		mode = v
-	} else if raw != nil && pyrepr.Truthy(raw) {
-		mode = pyrepr.Str(raw)
-	}
-	switch mode = strings.ToLower(pystr.Strip(mode)); mode {
-	case "som", "vision", "ax":
-		return mode
-	}
-	return "som"
+	return settings.ComputerUseCaptureAfterMode.Get(settingsCtx(env))
 }
 
 // True when the driver acts on the agent's own screen, where foreground input steals no user focus
@@ -540,7 +529,7 @@ func handleComputerUse(ctx context.Context, env *tools.Env, args map[string]any,
 			return nil, &AttributeError{fmt.Sprintf("action is %s where text was expected", errchain.Kind(rawAction))}
 		}
 	}
-	action := strings.ToLower(pystr.Strip(cuArgStr(args, "action")))
+	action := strings.ToLower(strings.TrimSpace(cuArgStr(args, "action")))
 	if action == "" {
 		return cuDumps(map[string]any{"error": "missing `action`"}, "error"), nil
 	}

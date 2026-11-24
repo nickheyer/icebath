@@ -28,7 +28,7 @@ func init() {
 	}
 	tools.ProcessAux = AuxAdapter{}
 	tools.ModelNotFoundPatterns = func() []string { return append([]string(nil), modelNotFoundPatterns...) }
-	tools.DelegationFallbackChain = GetFallbackChain
+	tools.DelegationFallbackChain = func(cfg map[string]any) []map[string]any { return FallbackChainOf(cfg["fallback_providers"]) }
 	installToolsConfigHooks()
 }
 

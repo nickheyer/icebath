@@ -348,7 +348,7 @@ func (c *Context) registerTool(ctx context.Context, spec ToolSpec) (*Registratio
 // Calls a tool on an allowlisted MCP server through the native client and wraps the result in an envelope
 func (c *Context) CallMCP(ctx context.Context, server, tool string, arguments map[string]any, timeout any) (map[string]any, error) {
 	allowed := false
-	for _, s := range mcpAllowlist(home.Dir(ctx), c.PluginID()) {
+	for _, s := range mcpAllowlist(ctx, c.PluginID()) {
 		allowed = allowed || s == server
 	}
 	if !allowed {
@@ -431,13 +431,9 @@ func mcpEnvelope(raw string) map[string]any {
 	return envelope
 }
 
-// Operator granted MCP server allowlist of a plugin, empty when missing or unreadable
-func mcpAllowlist(h, pluginID string) []string {
-	cfg, err := loadConfig(h)
-	if err != nil {
-		return nil
-	}
-	list, ok := pluginSettingsEntry(cfg, pluginID)["mcp_allowlist"].([]any)
+// Operator granted MCP server allowlist of a plugin in the profile of ctx, empty when missing
+func mcpAllowlist(ctx context.Context, pluginID string) []string {
+	list, ok := pluginEntry(ctx, pluginID)["mcp_allowlist"].([]any)
 	if !ok {
 		return nil
 	}
@@ -453,11 +449,7 @@ func (c *Context) toolOverrideAllowed(string) bool {
 	if c.manifest.Source == "bundled" {
 		return true
 	}
-	cfg, err := loadConfig(c.manager.home)
-	if err != nil {
-		return false
-	}
-	return CapabilityGranted(cfg, c.PluginID(), "tools.override")
+	return CapabilityGranted(homeContext(c.manager.home), c.PluginID(), "tools.override")
 }
 
 // Whether a capability is live for this plugin under the context profile, bundled plugins trusted for overrides
@@ -465,15 +457,14 @@ func (c *Context) HasCapability(ctx context.Context, capability string) bool {
 	if c.manifest.Source == "bundled" && capability == "tools.override" {
 		return true
 	}
-	return CapabilityGranted(loadConfigOrEmpty(home.Dir(ctx)), c.PluginID(), capability)
+	return CapabilityGranted(ctx, c.PluginID(), capability)
 }
 
 const sideQuestionCapability = "llm.side_question"
 
 // Asks the session agent about the turn that just ended, nil without the side question capability
 func (c *Context) SideQuestion(ctx context.Context, token, prompt, timeout any) (*string, error) {
-	cfg, err := loadConfig(c.manager.home)
-	if err != nil || !CapabilityGranted(cfg, c.PluginID(), sideQuestionCapability) {
+	if !CapabilityGranted(homeContext(c.manager.home), c.PluginID(), sideQuestionCapability) {
 		if !c.sideQuestionDenialLogged.Swap(true) {
 			pkgLog().Info(fmt.Sprintf("Plugin %s called ctx.side_question without the %s capability; returning None", c.PluginID(), sideQuestionCapability))
 		}
@@ -488,16 +479,9 @@ func (c *Context) SideQuestion(ctx context.Context, token, prompt, timeout any) 
 	return redeem(ctx, token, prompt, c.PluginID(), c.manager.home, timeout)
 }
 
-// Profile config reader of the injection gate, swapped by tests for a raising loader
-var injectionConfigLoader = loadConfig
-
 // Whether this plugin may trigger gateway session turns under its own profile config
 func (c *Context) gatewayInjectionAllowed() bool {
-	cfg, err := injectionConfigLoader(c.manager.home)
-	if err != nil {
-		return false
-	}
-	allowed, ok := pluginSettingsEntry(cfg, c.PluginID())["allow_gateway_injection"].(bool)
+	allowed, ok := pluginEntry(homeContext(c.manager.home), c.PluginID())["allow_gateway_injection"].(bool)
 	return ok && allowed
 }
 

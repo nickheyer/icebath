@@ -30,7 +30,7 @@ func utcnowISOms() string {
 func (s *Store) writeUsageAudit(record *pyjson.Object) {
 	err := func() error {
 		path := s.usageAuditPath()
-		if err := ensureCronDir(filepath.Dir(path)); err != nil {
+		if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 			return err
 		}
 		line, err := pyjson.Dumps(record, pyjson.EnsureASCII(false))

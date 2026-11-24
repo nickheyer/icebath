@@ -1,12 +1,13 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -76,7 +77,7 @@ func (r *GatewayRunner) runAgentInner(ctx context.Context, p runAgentParams) (ma
 		titleUserMessage: p.titleUserMessage, persistUserMessage: p.persistUserMessage, persistUserTimestamp: p.persistUserTimestamp,
 		persistUserDisplayKind: p.persistUserDisplayKind, replyExpected: p.replyExpected,
 		persistUserDisplayMetadata: p.persistUserDisplayMetadata, scheduledHeartbeat: p.scheduledHeartbeat, sessionEnv: p.sessionEnv,
-		voiceTurn: pystr.Lower(string(p.messageType)) == "voice",
+		voiceTurn: strings.ToLower(string(p.messageType)) == "voice",
 	})
 	if err != nil {
 		return nil, err

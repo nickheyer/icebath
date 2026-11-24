@@ -82,8 +82,6 @@ func TestFindNodeExecutableReadsTheInstalledBinaryHook(t *testing.T) {
 func TestLSPPackageManagerConfigSelectsInstallerArgvAndNeverFallsBackSilently(t *testing.T) {
 	rt, h, _ := testRuntime(t)
 	staging := filepath.Join(rt.Home, "lsp")
-	cfg := map[string]any{}
-	rt.Config = func() map[string]any { return cfg }
 	var runs [][]string
 	prevRun, prevFind := runInstallCommand, findNodeExecutable
 	t.Cleanup(func() { runInstallCommand, findNodeExecutable = prevRun, prevFind })
@@ -94,17 +92,17 @@ func TestLSPPackageManagerConfigSelectsInstallerArgvAndNeverFallsBackSilently(t 
 	present := map[string]string{"npm": "/usr/bin/npm", "pnpm": "/usr/bin/pnpm", "yarn": "/usr/bin/yarn"}
 	findNodeExecutable = func(_ *Runtime, name string) (string, error) { return present[name], nil }
 
-	cfg["package_manager"] = "pnpm"
+	lspSettings(t, rt, map[string]any{"package_manager": "pnpm"})
 	installNpm(rt, "pyright", "pyright-langserver", nil)
 	if !reflect.DeepEqual(runs[len(runs)-1], []string{"/usr/bin/pnpm", "add", "--dir", staging, "pyright"}) {
 		t.Fatalf("pnpm argv %v", runs[len(runs)-1])
 	}
-	cfg["package_manager"] = "yarn"
+	lspSettings(t, rt, map[string]any{"package_manager": "yarn"})
 	installNpm(rt, "pyright", "pyright-langserver", nil)
 	if !reflect.DeepEqual(runs[len(runs)-1], []string{"/usr/bin/yarn", "--cwd", staging, "add", "pyright"}) {
 		t.Fatalf("yarn argv %v", runs[len(runs)-1])
 	}
-	cfg["package_manager"] = "pnmp"
+	lspSettings(t, rt, map[string]any{"package_manager": "pnmp"})
 	if got, err := installNpm(rt, "pyright", "pyright-langserver", nil); got != "" || err != nil {
 		t.Fatalf("unknown manager must fail closed, got %q %v", got, err)
 	}
@@ -112,7 +110,7 @@ func TestLSPPackageManagerConfigSelectsInstallerArgvAndNeverFallsBackSilently(t 
 		t.Fatal("unknown manager warning")
 	}
 	delete(present, "yarn")
-	cfg["package_manager"] = "yarn"
+	lspSettings(t, rt, map[string]any{"package_manager": "yarn"})
 	if got, err := installNpm(rt, "pyright", "pyright-langserver", nil); got != "" || err != nil {
 		t.Fatalf("absent manager must not install, got %q %v", got, err)
 	}

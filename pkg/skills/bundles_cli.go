@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Namespace of one icebath bundles command line, the action empty when no subcommand was given
@@ -125,7 +126,7 @@ func (b *BundlesCLI) cmdCreate(ctx context.Context, a BundlesArgs) (int, error) 
 			if err != nil {
 				return 0, err
 			}
-			if line = pystr.Strip(line); line == "" {
+			if line = strings.TrimSpace(line); line == "" {
 				break
 			}
 			skills = append(skills, line)

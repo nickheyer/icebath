@@ -1572,7 +1572,7 @@ func DiagnosticKey(d map[string]any) (string, error) {
 	}
 	return strings.Join([]string{
 		pyrepr.Str(pyOr(d["severity"], int64(1))), code, pyrepr.Str(pyOr(d["source"], "")),
-		pystr.Strip(pyrepr.Str(pyOr(d["message"], ""))),
+		strings.TrimSpace(pyrepr.Str(pyOr(d["message"], ""))),
 		pyrepr.Str(dgetOr(start, "line", int64(0))) + ":" + pyrepr.Str(dgetOr(start, "character", int64(0))) + "-" +
 			pyrepr.Str(dgetOr(end, "line", int64(0))) + ":" + pyrepr.Str(dgetOr(end, "character", int64(0))),
 	}, "\x00"), nil

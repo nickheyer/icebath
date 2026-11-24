@@ -336,14 +336,13 @@ func applyOpenAIHeaderPolicy(ctx context.Context, a *AIAgent, kwargs map[string]
 		}
 	}
 	a.applyUserDefaultHeaders(ctx)
-	cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-	entries := provider.ProviderEntries(cfg)
+	entries := provider.CustomProviderEntries(ctx)
 	cpBaseURL, _ := kwargs["base_url"].(string)
 	if cpBaseURL == "" {
 		cpBaseURL = a.baseURL
 	}
-	provider.ApplyCustomProviderTLSToClientKwargs(kwargs, cpBaseURL, entries, cfg)
-	provider.ApplyCustomProviderExtraHeadersToClientKwargs(kwargs, cpBaseURL, entries, cfg)
+	provider.ApplyCustomProviderTLSToClientKwargs(kwargs, cpBaseURL, entries)
+	provider.ApplyCustomProviderExtraHeadersToClientKwargs(kwargs, cpBaseURL, entries)
 }
 
 // Config model.default_headers merged onto the OpenAI client kwargs, user values winning, never on Anthropic or Bedrock

@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const historyMediaLookupMaxWorkers = 2
@@ -52,7 +51,7 @@ func collectHistoryMediaPaths(ctx context.Context, history []any) (map[string]st
 	}
 	addTextMediaPaths := func(content string) error {
 		for _, m := range toolMediaRE.finditer([]rune(content)) {
-			if p := pystr.RstripChars(pystr.Strip(toolMediaRE.group(m, "path")), `",}`); p != "" {
+			if p := strings.TrimRight(strings.TrimSpace(toolMediaRE.group(m, "path")), `",}`); p != "" {
 				paths[p] = struct{}{}
 			}
 		}
@@ -272,7 +271,7 @@ func ExtractLocalFiles(ctx context.Context, content string) ([]string, string) {
 	for _, p := range order {
 		cleaned = strings.ReplaceAll(cleaned, unique[p], "")
 	}
-	return order, pystr.Strip(threePlusNewlinesRE.ReplaceAllString(cleaned, "\n\n"))
+	return order, strings.TrimSpace(threePlusNewlinesRE.ReplaceAllString(cleaned, "\n\n"))
 }
 
 // Removes MEDIA directives from a message body, the module alias of the tag stripper

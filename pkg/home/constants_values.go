@@ -2,8 +2,6 @@ package home
 
 import (
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Busy indicator styles the TUI accepts and the one it starts with
@@ -32,7 +30,7 @@ func OpenRouterVariantBase(modelID string) string {
 	if i <= 0 {
 		return ""
 	}
-	if OpenRouterVariantSuffixes[pystr.Lower(modelID[i+1:])] {
+	if OpenRouterVariantSuffixes[strings.ToLower(modelID[i+1:])] {
 		return modelID[:i]
 	}
 	return ""

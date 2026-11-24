@@ -47,7 +47,7 @@ func unitStopStartBudgets(ctx context.Context, scopeCmd []string, svcName string
 			if _, known := budgets[key]; !known {
 				continue
 			}
-			raw = pystr.Strip(raw)
+			raw = strings.TrimSpace(raw)
 			var duration *big.Int
 			if raw != "" && strings.Trim(raw, "0123456789") == "" {
 				duration, _ = new(big.Int).SetString(raw, 10)
@@ -180,7 +180,7 @@ func serviceRestartSec(ctx context.Context, scopeCmd []string, svcName string, f
 		}
 		return 0, err
 	}
-	raw := pystr.Strip(completedStdout(show))
+	raw := strings.TrimSpace(completedStdout(show))
 	if raw == "" || raw == "infinity" {
 		return fallback, nil
 	}

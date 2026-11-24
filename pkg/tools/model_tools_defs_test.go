@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Provider metadata doubles answering with the configured window and no runtime override
@@ -412,17 +410,21 @@ func captureContextLength(t *testing.T, rtBase, rtKey string, rtErr error, answe
 	return c
 }
 
-func codexModelEnv(overrides map[string]any) *Env {
-	model := map[string]any{"model": "gpt-5.6-sol", "provider": "openai-codex", "base_url": ""}
+// Env whose home config.yaml names the Codex model, with overrides of its model section
+func codexModelEnv(t *testing.T, overrides map[string]any) *Env {
+	t.Helper()
+	model := map[string]any{"default": "gpt-5.6-sol", "provider": "openai-codex", "base_url": ""}
 	for k, v := range overrides {
 		model[k] = v
 	}
-	return &Env{Config: config.Tree{"model": model}}
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, env, map[string]any{"model": model})
+	return env
 }
 
 func TestPassesProviderBaseUrlAndKeyFromRuntime(t *testing.T) {
 	c := captureContextLength(t, "https://chatgpt.com/backend-api/codex", "tok-live", nil, func(ContextLengthQuery) int { return 272_000 })
-	if got := resolveActiveContextLength(context.Background(), codexModelEnv(nil)); got != 272_000 {
+	if got := resolveActiveContextLength(context.Background(), codexModelEnv(t, nil)); got != 272_000 {
 		t.Fatalf("context length %d", got)
 	}
 	want := ContextLengthQuery{Model: "gpt-5.6-sol", BaseURL: "https://chatgpt.com/backend-api/codex", APIKey: "tok-live", Provider: "openai-codex"}
@@ -433,7 +435,7 @@ func TestPassesProviderBaseUrlAndKeyFromRuntime(t *testing.T) {
 
 func TestOfflineCredentialFailureDegradesToConfigValues(t *testing.T) {
 	c := captureContextLength(t, "", "", errors.New("no credentials"), func(ContextLengthQuery) int { return 272_000 })
-	env := codexModelEnv(map[string]any{"base_url": "https://chatgpt.com/backend-api/codex"})
+	env := codexModelEnv(t, map[string]any{"base_url": "https://chatgpt.com/backend-api/codex"})
 	if got := resolveActiveContextLength(context.Background(), env); got != 272_000 {
 		t.Fatalf("context length %d", got)
 	}
@@ -444,7 +446,8 @@ func TestOfflineCredentialFailureDegradesToConfigValues(t *testing.T) {
 
 func TestNoProviderConfiguredSkipsRuntimeResolution(t *testing.T) {
 	c := captureContextLength(t, "x", "y", nil, func(ContextLengthQuery) int { return 200_000 })
-	env := &Env{Config: config.Tree{"model": map[string]any{"model": "some-model"}}}
+	env := &Env{Home: t.TempDir()}
+	writeHomeConfigDoc(t, env, map[string]any{"model": map[string]any{"default": "some-model"}})
 	if got := resolveActiveContextLength(context.Background(), env); got != 200_000 {
 		t.Fatalf("context length %d", got)
 	}
@@ -455,7 +458,7 @@ func TestNoProviderConfiguredSkipsRuntimeResolution(t *testing.T) {
 
 func TestConfigContextLengthStillShortCircuits(t *testing.T) {
 	c := captureContextLength(t, "https://chatgpt.com/backend-api/codex", "tok", nil, func(q ContextLengthQuery) int { return q.ConfigContextLength })
-	if got := resolveActiveContextLength(context.Background(), codexModelEnv(map[string]any{"context_length": 150_000})); got != 150_000 {
+	if got := resolveActiveContextLength(context.Background(), codexModelEnv(t, map[string]any{"context_length": 150_000})); got != 150_000 {
 		t.Fatalf("context length %d", got)
 	}
 	if c.query.ConfigContextLength != 150_000 || len(c.cachedAt) != 0 {

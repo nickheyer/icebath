@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -35,16 +36,9 @@ func baseURLOrigin(raw string) (string, string, string) {
 
 // Terminal resolver, OpenRouter or a bare and aliased custom endpoint
 func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, explicitBaseURL string) *Runtime {
-	modelCfg := r.modelConfig()
-	cfgBaseURL, _ := modelCfg["base_url"].(string)
-	cfgProvider := ""
-	if s, ok := modelCfg["provider"].(string); ok {
-		cfgProvider = strings.ToLower(strings.TrimSpace(s))
-	}
-	cfgAPIKey := ""
-	if s, ok := modelCfg["api_key"].(string); ok {
-		cfgAPIKey = strings.TrimSpace(s)
-	}
+	cfgBaseURL := r.cfgBaseURL()
+	cfgProvider := r.cfgProvider()
+	cfgAPIKey := strings.TrimSpace(settings.ModelAPIKey.Get(r.hookCtx()))
 	requestedNorm := strings.ToLower(strings.TrimSpace(requestedProvider))
 	if requestedNorm != "" && requestedNorm != "custom" && r.resolvesToCustom(requestedNorm) {
 		requestedNorm = "custom"
@@ -100,7 +94,7 @@ func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, e
 	} else {
 		candidates = []string{explicitAPIKey}
 		if useConfigBaseURL {
-			candidates = append(candidates, cfgAPIKey, r.modelCfgKeyEnvFor(modelCfg, baseURL))
+			candidates = append(candidates, cfgAPIKey, r.modelKeyEnvFor(baseURL))
 		} else {
 			candidates = append(candidates, "", "")
 		}
@@ -122,7 +116,7 @@ func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, e
 	if explicitAPIKey != "" || explicitBaseURL != "" {
 		source = "explicit"
 	}
-	cfgAPIMode := r.parseAPIMode(modelCfg["api_mode"])
+	cfgAPIMode := r.cfgAPIMode()
 	if requestedNorm != "custom" {
 		mode := cfgAPIMode
 		if mode == "" {
@@ -141,7 +135,7 @@ func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, e
 	if apiKey == "" && entrySrc == nil && !isOpenRouterURL {
 		apiKey = NoKeyPlaceholder
 	}
-	rt := r.runtime("custom", r.resolvePlainCustomAPIMode(modelCfg, baseURL), baseURL, apiKey, source)
+	rt := r.runtime("custom", r.resolvePlainCustomAPIMode(baseURL), baseURL, apiKey, source)
 	if apiKey == "" && entrySrc != nil {
 		rt.TokenSource = TagCredentialSource(entrySrc.Token, CredentialSourceKeyCmd).Func()
 		rt.KeyCmd = entrySrc.Command
@@ -154,7 +148,7 @@ func (r *resolver) resolveOpenRouterRuntime(requestedProvider, explicitAPIKey, e
 var explicitBedrockNames = map[string]bool{"bedrock": true, "aws": true, "aws-bedrock": true, "amazon-bedrock": true, "amazon": true}
 
 // AWS Bedrock with Mantle Responses for bare OpenAI ids, Anthropic Messages for Claude, else Converse
-func (r *resolver) resolveBedrockRuntime(requestedProvider string, modelCfg map[string]any, targetModel string) (*Runtime, error) {
+func (r *resolver) resolveBedrockRuntime(requestedProvider string, targetModel string) (*Runtime, error) {
 	isExplicit := explicitBedrockNames[requestedProvider]
 	if !isExplicit && !hasAWSCredentials(r.ctx, false) {
 		return nil, newAuthErr("bedrock", "No AWS credentials found for Bedrock. Configure one of:\n"+
@@ -171,7 +165,7 @@ func (r *resolver) resolveBedrockRuntime(requestedProvider string, modelCfg map[
 	guardrail := bedrockGuardrailConfig(r.ctx)
 	currentModel := strings.TrimSpace(targetModel)
 	if currentModel == "" {
-		currentModel = strings.TrimSpace(cfgString(modelCfg["default"]))
+		currentModel = r.cfgModel()
 	}
 	bearer := resolveBedrockBearerTokenCtx(r.ctx)
 	hasBearer := bearer != ""

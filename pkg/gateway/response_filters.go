@@ -40,7 +40,7 @@ func bracketedMarkers() []string {
 
 // Upper cased text with whitespace runs collapsed to single spaces
 func canonicalSilenceCandidate(text string) string {
-	return strings.Join(pystr.SplitWhitespace(pystr.Upper(pystr.Strip(text)), -1), " ")
+	return strings.Join(pystr.SplitWhitespace(strings.ToUpper(strings.TrimSpace(text)), -1), " ")
 }
 
 // Punctuation other than square brackets
@@ -56,13 +56,13 @@ func stripEdgeSilencePunctuation(text string) string {
 	for end > start && isEdgePunctuation(r[end-1]) {
 		end--
 	}
-	return pystr.Strip(string(r[start:end]))
+	return strings.TrimSpace(string(r[start:end]))
 }
 
 // Canonical forms of a marker sized response, none when it is blank or too long
 func canonicalSilenceCandidates(text any) []string {
 	s, _ := text.(string)
-	stripped := pystr.Strip(s)
+	stripped := strings.TrimSpace(s)
 	if n := len([]rune(stripped)); n == 0 || n > markerLengthCap {
 		return nil
 	}
@@ -85,12 +85,12 @@ func IsIntentionalSilenceResponse(response any) bool {
 
 // Head and last line of the text with trailing blank space ignored, head empty for one line
 func splitTrailingLine(text string) (string, string) {
-	t := pystr.Rstrip(text)
+	t := strings.TrimRightFunc(text, unicode.IsSpace)
 	i := strings.LastIndex(t, "\n")
 	if i < 0 {
 		return "", t
 	}
-	return pystr.Rstrip(t[:i]), t[i+1:]
+	return strings.TrimRightFunc(t[:i], unicode.IsSpace), t[i+1:]
 }
 
 // Reply without a silence marker that closes it on its own line, a bare marker unchanged
@@ -100,7 +100,7 @@ func StripTrailingSilenceMarker(response any) any {
 		return response
 	}
 	head, tail := splitTrailingLine(s)
-	if pystr.Strip(head) != "" && IsIntentionalSilenceResponse(tail) {
+	if strings.TrimSpace(head) != "" && IsIntentionalSilenceResponse(tail) {
 		return head
 	}
 	return s
@@ -113,7 +113,7 @@ func EndsWithPartialSilenceMarker(text any) bool {
 		return false
 	}
 	head, tail := splitTrailingLine(s)
-	return pystr.Strip(head) != "" && IsPartialSilenceMarker(tail)
+	return strings.TrimSpace(head) != "" && IsPartialSilenceMarker(tail)
 }
 
 // SilenceMarkerStreamHold gates live reply deltas that may be or end in a silence marker
@@ -158,17 +158,17 @@ func (h *SilenceMarkerStreamHold) release(upto int) string {
 // Loose silence match for cron and webhook lanes, a marker line at either end or a bracketed opener
 func IsAutonomousSilenceResponse(response any) bool {
 	s, _ := response.(string)
-	stripped := pystr.Strip(s)
+	stripped := strings.TrimSpace(s)
 	if stripped == "" {
 		return false
 	}
 	var lines []string
 	for _, ln := range pystr.Splitlines(stripped, false) {
-		if pystr.Strip(ln) != "" {
+		if strings.TrimSpace(ln) != "" {
 			lines = append(lines, ln)
 		}
 	}
-	upper := pystr.Upper(stripped)
+	upper := strings.ToUpper(stripped)
 	for _, m := range bracketedSilenceMarkers {
 		if strings.HasPrefix(upper, m) {
 			return true
@@ -220,7 +220,7 @@ func producerCard(event DisplayEvent) map[string]any {
 	metadata := event.EventMetadata()
 	text, isStr := metadata["display_text"].(string)
 	kind, _ := metadata["display_kind"].(string)
-	if event.IsInternal() && ProducerNoticeDisplayKinds[kind] && isStr && pystr.Strip(text) != "" {
+	if event.IsInternal() && ProducerNoticeDisplayKinds[kind] && isStr && strings.TrimSpace(text) != "" {
 		return map[string]any{"display_text": text}
 	}
 	return map[string]any{}

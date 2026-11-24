@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/vault"
@@ -626,7 +625,7 @@ func (s *cdpSupervisor) evaluateRuntime(expression string, returnByValue, awaitP
 	}
 	response, err := runEval(returnByValue)
 	if err != nil {
-		if !(returnByValue && strings.Contains(pystr.Lower(pyrepr.ExceptionMessage(err)), "reference chain is too long")) {
+		if !(returnByValue && strings.Contains(strings.ToLower(pyrepr.ExceptionMessage(err)), "reference chain is too long")) {
 			return supervisorErr(err)
 		}
 		if response, err = runEval(false); err != nil {
@@ -1382,7 +1381,7 @@ func (s *cdpSupervisor) onFrameDetached(params *pyjson.Object, _ string) func() 
 	if reason == "" {
 		reason = "remove"
 	}
-	if frameID == "" || pystr.Lower(reason) == "swap" {
+	if frameID == "" || strings.ToLower(reason) == "swap" {
 		return nil
 	}
 	s.stateMu.Lock()

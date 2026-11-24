@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -57,7 +56,7 @@ func (a *AIAgent) assistantReasoningText(resp *provider.Response) any {
 		content := state.FlattenMessageText(resp.Message.Content, "\n")
 		var parts []string
 		for _, block := range inlineThinkBlockRe.FindAllStringSubmatch(content, -1) {
-			if s := pystr.Strip(block[1]); s != "" {
+			if s := strings.TrimSpace(block[1]); s != "" {
 				parts = append(parts, s)
 			}
 		}
@@ -81,7 +80,7 @@ func (a *AIAgent) assistantContentForStorage(m *state.Message) string {
 	if content == "" {
 		return content
 	}
-	content = pystr.Strip(a.stripThinkBlocks(content))
+	content = strings.TrimSpace(a.stripThinkBlocks(content))
 	if content != "" {
 		content = tools.RedactSensitiveTextWith(a.env, content, tools.RedactOptions{})
 	}
@@ -91,7 +90,7 @@ func (a *AIAgent) assistantContentForStorage(m *state.Message) string {
 // Nonblank string value, empty for anything else
 func nonblankString(v any) (string, bool) {
 	s, ok := v.(string)
-	return s, ok && pystr.Strip(s) != ""
+	return s, ok && strings.TrimSpace(s) != ""
 }
 
 // Replayable tool call dict with resolved call and response item ids, arguments kept unredacted for replay
@@ -103,13 +102,13 @@ func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) *pyjson.Ob
 		_, ok = nonblankString(callID)
 	}
 	if !ok {
-		if pystr.Strip(rawID) != "" {
-			callID = pystr.Strip(rawID)
+		if strings.TrimSpace(rawID) != "" {
+			callID = strings.TrimSpace(rawID)
 		} else {
 			callID = tools.DeterministicCallID(tc.Function.Name, tc.Function.Arguments, index)
 		}
 	}
-	callID = pystr.Strip(callID)
+	callID = strings.TrimSpace(callID)
 	responseItemID, ok := nonblankString(tc.Extra["response_item_id"])
 	if !ok {
 		_, responseItemID = provider.SplitResponsesToolID(rawID)

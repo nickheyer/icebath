@@ -35,7 +35,7 @@ const relayMediaUserAgent = "IcebathAgent-Relay/1.0 (+https://github.com/nickhey
 
 // HTTP connector base of a ws or wss relay dial URL
 func RelayMediaBaseURL(relayDialURL string) string {
-	raw := pystr.RstripChars(pystr.Strip(relayDialURL), "/")
+	raw := strings.TrimRight(strings.TrimSpace(relayDialURL), "/")
 	if strings.HasPrefix(raw, "ws://") {
 		raw = "http://" + raw[len("ws://"):]
 	} else if strings.HasPrefix(raw, "wss://") {
@@ -53,7 +53,7 @@ type RelayMediaClient struct {
 
 // Client for the connector base with the gateway credentials, absent ones empty
 func NewRelayMediaClient(baseURL, gatewayID, secret string) *RelayMediaClient {
-	return &RelayMediaClient{baseURL: pystr.RstripChars(baseURL, "/"), gatewayID: gatewayID, secret: secret}
+	return &RelayMediaClient{baseURL: strings.TrimRight(baseURL, "/"), gatewayID: gatewayID, secret: secret}
 }
 
 // True when the base URL and both per gateway credentials are present
@@ -317,7 +317,7 @@ func relayContentDispositionFilename(header string) string {
 	}
 	plain, extended := "", ""
 	for _, p := range params[1:] {
-		if pystr.Lower(p.Name) != "filename" {
+		if strings.ToLower(p.Name) != "filename" {
 			continue
 		}
 		if p.RFC2231 {

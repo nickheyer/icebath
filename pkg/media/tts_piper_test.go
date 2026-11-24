@@ -53,7 +53,7 @@ func TestPiperSynthesisShapesAudioAndCarriesEveryKnob(t *testing.T) {
 		return scriptedVoice{samples: []float32{0.1, -0.2}, speaker: &speaker}, nil
 	})
 	ctx, dir := context.Background(), t.TempDir()
-	out, err := generatePiperTTS(ctx, nil, "hi", filepath.Join(dir, "a.wav"), map[string]any{"piper": map[string]any{"volume": 0.5}})
+	out, err := generatePiperTTS(ctx, nil, "hi", filepath.Join(dir, "a.wav"), requestOf(t, map[string]any{"piper": map[string]any{"volume": 0.5}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestPiperSynthesisShapesAudioAndCarriesEveryKnob(t *testing.T) {
 	}
 	knobs := map[string]any{"voice": "de_DE-thorsten-high", "normalize_audio": false, "volume": 2.0, "speaker_id": 3, "length_scale": 1.5, "noise_scale": 0.3,
 		"noise_w_scale": 0.9, "use_cuda": true}
-	out, err = generatePiperTTS(ctx, nil, "hi", filepath.Join(dir, "b.wav"), map[string]any{"piper": knobs})
+	out, err = generatePiperTTS(ctx, nil, "hi", filepath.Join(dir, "b.wav"), requestOf(t, map[string]any{"piper": knobs}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestPiperSynthesisShapesAudioAndCarriesEveryKnob(t *testing.T) {
 	if !reflect.DeepEqual(loadedFiles, want) || !reflect.DeepEqual(devices, []bool{false, true}) {
 		t.Fatalf("loaded %+v on %v", loadedFiles, devices)
 	}
-	if _, err := generatePiperTTS(ctx, nil, "again", filepath.Join(dir, "c.wav"), map[string]any{"piper": knobs}); err != nil || len(loadedFiles) != 2 {
+	if _, err := generatePiperTTS(ctx, nil, "again", filepath.Join(dir, "c.wav"), requestOf(t, map[string]any{"piper": knobs})); err != nil || len(loadedFiles) != 2 {
 		t.Fatalf("an unchanged voice loaded again: %v, %d loads", err, len(loadedFiles))
 	}
 	if got := shapePiperAudio([]float32{0, 0}, true, 1); !reflect.DeepEqual(got, []float32{0, 0}) {

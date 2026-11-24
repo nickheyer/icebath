@@ -66,7 +66,7 @@ func (a *QQAdapter) onMessage(ctx context.Context, eventType string, raw any) er
 	if !isDict {
 		author = map[string]any{}
 	}
-	return handler(a, ctx, d, msgID, pystr.Strip(strAt(d, "content")), author, strAt(d, "timestamp"))
+	return handler(a, ctx, d, msgID, strings.TrimSpace(strAt(d, "content")), author, strAt(d, "timestamp"))
 }
 
 // Installs or clears the callback run for every acknowledged button interaction
@@ -123,7 +123,7 @@ func (a *QQAdapter) acknowledgeInteraction(ctx context.Context, interactionID st
 	if err != nil {
 		return err
 	}
-	resp, err := httpRequest(ctx, client, "PUT", APIBase+"/interactions/"+interactionID, headers, body, DefaultAPITimeout)
+	resp, err := httpRequest(ctx, client, "PUT", apiBase(ctx)+"/interactions/"+interactionID, headers, body, DefaultAPITimeout)
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func parseGatewaySessionKey(sessionKey string) (map[string]string, bool) {
 // Whether the operator of a button click owns the session the click is aimed at
 func isAuthorizedInteractionForSession(event InteractionEvent, sessionKey string) bool {
 	parsed, ok := parseGatewaySessionKey(sessionKey)
-	operator := pystr.Strip(event.OperatorOpenID())
+	operator := strings.TrimSpace(event.OperatorOpenID())
 	if !ok || parsed["platform"] != "qqbot" || operator == "" {
 		return false
 	}
@@ -162,10 +162,10 @@ func isAuthorizedInteractionForSession(event InteractionEvent, sessionKey string
 		if eventChat == "" {
 			eventChat = event.GuildID
 		}
-		if eventChat = pystr.Strip(eventChat); eventChat == "" || eventChat != chatID {
+		if eventChat = strings.TrimSpace(eventChat); eventChat == "" || eventChat != chatID {
 			return false
 		}
-		sessionUser := pystr.Strip(parsed["user_id"])
+		sessionUser := strings.TrimSpace(parsed["user_id"])
 		return sessionUser != "" && operator == sessionUser
 	}
 	return false
@@ -340,10 +340,10 @@ func (a *QQAdapter) handleDMMessage(ctx context.Context, d map[string]any, msgID
 
 // Block appended to text after a blank line, the block alone when the text is blank
 func appendBlock(text, block string) string {
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return block
 	}
-	return pystr.Strip(text + "\n\n" + block)
+	return strings.TrimSpace(text + "\n\n" + block)
 }
 
 // Shared inbound tail that folds transcripts, file info and quoted context into the text and dispatches the event
@@ -372,7 +372,7 @@ func (a *QQAdapter) ingest(ctx context.Context, d map[string]any, msgID, content
 		imageURLs = append(append([]string{}, imageURLs...), quoted.imageURLs...)
 		imageMediaTypes = append(append([]string{}, imageMediaTypes...), quoted.imageMediaTypes...)
 	}
-	if pystr.Strip(text) == "" && len(imageURLs) == 0 {
+	if strings.TrimSpace(text) == "" && len(imageURLs) == 0 {
 		return nil
 	}
 	a.mu.Lock()
@@ -414,7 +414,7 @@ func (a *QQAdapter) processQuotedContext(ctx context.Context, d map[string]any) 
 		if !ok {
 			continue
 		}
-		if text := pystr.Strip(strAt(element, "content")); text != "" {
+		if text := strings.TrimSpace(strAt(element, "content")); text != "" {
 			quotedTextParts = append(quotedTextParts, text)
 		}
 	}
@@ -458,10 +458,10 @@ func mergeQuoteInto(text, quoteBlock string) string {
 	if quoteBlock == "" {
 		return text
 	}
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return quoteBlock
 	}
-	return pystr.Strip(quoteBlock + "\n\n" + text)
+	return strings.TrimSpace(quoteBlock + "\n\n" + text)
 }
 
 // Message type from the first media type, text when there is no media
@@ -472,7 +472,7 @@ func detectMessageType(mediaURLs, mediaTypes []string) gateway.MessageType {
 	if len(mediaTypes) == 0 {
 		return gateway.MessageTypePhoto
 	}
-	firstType := pystr.Lower(mediaTypes[0])
+	firstType := strings.ToLower(mediaTypes[0])
 	contains := func(parts ...string) bool {
 		for _, part := range parts {
 			if strings.Contains(firstType, part) {
@@ -504,7 +504,7 @@ type processedAttachments struct {
 // Stripped string value, empty for anything that is not a non blank string
 func optStr(value any) string {
 	s, _ := value.(string)
-	return pystr.Strip(s)
+	return strings.TrimSpace(s)
 }
 
 // Transcribes voice attachments, caches images and files and describes the files in text
@@ -517,8 +517,8 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 		if !ok {
 			continue
 		}
-		ct := pystr.Lower(pystr.Strip(strAt(att, "content_type")))
-		url := pystr.Strip(strAt(att, "url"))
+		ct := strings.ToLower(strings.TrimSpace(strAt(att, "content_type")))
+		url := strings.TrimSpace(strAt(att, "url"))
 		filename := strAt(att, "filename")
 		if url == "" {
 			continue
@@ -591,9 +591,9 @@ func isRegularFile(path string) bool {
 
 // Leading at mention removed from stripped group content
 func stripAtMention(content string) string {
-	out, err := atMentionRE.Replace(pystr.Strip(content), "", -1, -1)
+	out, err := atMentionRE.Replace(strings.TrimSpace(content), "", -1, -1)
 	if err != nil {
-		return pystr.Strip(content)
+		return strings.TrimSpace(content)
 	}
 	return out
 }

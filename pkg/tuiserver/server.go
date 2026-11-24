@@ -4,29 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -186,76 +179,6 @@ func currentProfileName(ctx context.Context) (name string) {
 	return "default"
 }
 
-// Token counters, context occupancy, cache hit share, rolling latency and plan gauge of a live agent
-func getUsage(ctx context.Context, a *agent.AIAgent) map[string]any {
-	or := func(v, fallback int) int {
-		if v != 0 {
-			return v
-		}
-		return fallback
-	}
-	usage := map[string]any{
-		"model":     a.Model(),
-		"input":     or(a.SessionInputTokens(), a.SessionPromptTokens()),
-		"output":    or(a.SessionOutputTokens(), a.SessionCompletionTokens()),
-		"reasoning": a.SessionReasoningTokens(), "prompt": a.SessionPromptTokens(),
-		"completion": a.SessionCompletionTokens(), "total": a.SessionTotalTokens(),
-		"calls": a.SessionAPICalls(),
-	}
-	if comp := a.ContextCompressor(); comp != nil {
-		if fields, ok := agent.ContextUsageFieldsOf(comp); ok {
-			usage["context_used"], usage["context_max"] = fields.ContextUsed, fields.ContextMax
-			usage["context_percent"], usage["context_source"] = fields.ContextPercent, fields.ContextSource
-			usage["context_estimated"] = fields.ContextEstimated
-		}
-		usage["compressions"] = comp.Base().CompressionCount
-	}
-	if limits := agent.UsageRateLimit(a); limits != nil {
-		usage["rate_limit"] = limits
-	}
-	promptTotal, cacheRead := a.SessionPromptTokens(), a.SessionCacheReadTokens()
-	if promptTotal > 0 && cacheRead > 0 {
-		usage["cache_hit_pct"] = max(0, min(100, int(math.RoundToEven(float64(cacheRead)/float64(promptTotal)*100))))
-	}
-	latencies, outputs := a.APILatencyHistory(), a.APIOutputHistory()
-	if n := min(len(latencies), len(outputs)); n > 0 {
-		totalLatency, totalOutput := 0.0, 0
-		for _, v := range latencies[len(latencies)-n:] {
-			totalLatency += v
-		}
-		for _, v := range outputs[len(outputs)-n:] {
-			totalOutput += v
-		}
-		readouts := map[string]float64{"avg_latency_s": totalLatency / float64(n)}
-		if totalLatency > 0 {
-			readouts["avg_tps"] = float64(totalOutput) / totalLatency
-		}
-		for key, value := range readouts {
-			if !math.IsNaN(value) && value > 0 && value < 1e6 {
-				usage[key] = pyint.Round(value, 1)
-			}
-		}
-	}
-	usage["active_subagents"] = tools.AsyncDelegationActiveCount()
-	return usage
-}
-
-// Missing key warning for the agent provider, empty when a key is configured
-func probeCredentials(a *agent.AIAgent) string {
-	if a.APIKey() == "" {
-		return fmt.Sprintf("No API key configured for provider '%s'. First message will fail.", agent.SessionRuntimeView(a).Provider())
-	}
-	return ""
-}
-
-// Usage of the live agent, else empty
-func sessionUsageSnapshot(ctx context.Context, session *tuihost.Session) map[string]any {
-	if a := sessionAgent(session); a != nil {
-		return getUsage(ctx, a)
-	}
-	return map[string]any{}
-}
-
 // Named project owning the cwd in the profile projects db, nil when none or on failure
 func projectInfoForCwd(ctx context.Context, cwd string) any {
 	if strings.TrimSpace(cwd) == "" {
@@ -282,223 +205,6 @@ func projectInfoForCwd(ctx context.Context, cwd string) any {
 	return map[string]any{"id": project.ID, "slug": project.Slug, "name": project.Name, "primary_path": primary}
 }
 
-// Epoch seconds the running turn started, nil when idle
-func turnStartedAt(session *tuihost.Session) any {
-	inflight, _ := session.Get("inflight_turn").(map[string]any)
-	if inflight == nil || !truthy(inflight["started_at"]) {
-		return nil
-	}
-	started, err := pyint.Float(inflight["started_at"])
-	if err != nil {
-		return nil
-	}
-	return started
-}
-
-// Whether a priority tier reaches the session route, the base URL known only while no switch is pending
-func fastTierApplies(view agent.SessionRuntime, model, providerName string, routeKnown bool, tier string) (applies bool) {
-	defer func() {
-		if recover() != nil {
-			applies = false
-		}
-	}()
-	baseURL := ""
-	if routeKnown && view != nil {
-		if view.APIMode() == "anthropic_messages" {
-			baseURL = view.AnthropicBaseURL()
-		}
-		if baseURL == "" {
-			baseURL = view.BaseURL()
-		}
-	}
-	return provider.ResolveFastModeOverrides(model, providerName, baseURL, tier) != nil
-}
-
-// Session info payload of the status bar, model route, approvals, workspace, usage and inventory
-func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuihost.Session) map[string]any {
-	if session == nil {
-		for _, live := range tuihost.LiveSessions() {
-			if sessionAgent(live.Session) == a {
-				session = live.Session
-				break
-			}
-		}
-	}
-	view := agent.SessionRuntimeView(a)
-	cwd := displaySessionCwd(ctx, session)
-	sessionKey := strOr(session.Get("session_key"))
-	if sessionKey == "" && a != nil {
-		sessionKey = a.SessionID()
-	}
-	defaultPersonality := pyrepr.Or(displayCfg(ctx)["personality"], "")
-	personality, present := session.Lookup("personality")
-	if !present {
-		personality = defaultPersonality
-	}
-	reasoningEffort := ""
-	if view != nil {
-		if rc := view.ReasoningConfig(); rc != nil {
-			if enabled, ok := rc["enabled"].(bool); ok && !enabled {
-				reasoningEffort = "none"
-			} else {
-				reasoningEffort = strOr(rc["effort"])
-			}
-		}
-	}
-	var serviceTier any = ""
-	if a != nil && a.ServiceTier() != "" {
-		serviceTier = a.ServiceTier()
-	}
-	yolo, approvalMode := func() (yolo bool, mode string) {
-		defer func() {
-			if recover() != nil {
-				yolo, mode = false, "manual"
-			}
-		}()
-		sessionYolo := sessionKey != "" && tools.IsSessionYoloEnabled(sessionKey)
-		mode = loadApprovalMode(ctx)
-		return tools.YoloModeFrozen() || sessionYolo || mode == "off", mode
-	}()
-	pendingSwitch, _ := session.Get("pending_model_switch").(map[string]any)
-	pendingModel := strings.TrimSpace(strOr(pendingSwitch["display_model"]))
-	pendingProvider := strings.TrimSpace(strOr(pendingSwitch["display_provider"]))
-	var providerValue any = ""
-	if view != nil {
-		providerValue = view.Provider()
-	}
-	if providerValue == "custom" && a != nil {
-		providerValue = scopedSessionProvider(ctx, a, session)
-	}
-	var model any = pendingModel
-	if pendingModel == "" && view != nil {
-		model = view.Model()
-	}
-	var reportedProvider any = pendingProvider
-	if pendingProvider == "" {
-		reportedProvider = providerValue
-	}
-	apiMode := ""
-	if view != nil {
-		apiMode = view.APIMode()
-	}
-	reasoningEffortWire := ""
-	if reasoningEffort != "" && reasoningEffort != "none" {
-		reasoningEffortWire = provider.ClampEffort(reasoningEffort, provider.RouteSupportedEfforts(strOr(reportedProvider), strOr(model), apiMode))
-	}
-	tierText := strOr(serviceTier)
-	info := map[string]any{
-		"model":                 model,
-		"provider":              reportedProvider,
-		"reasoning_effort":      reasoningEffort,
-		"reasoning_effort_wire": reasoningEffortWire,
-		"service_tier":          serviceTier,
-		"fast":                  provider.StaticTiers[tierText] && fastTierApplies(view, strOr(model), strOr(reportedProvider), pendingProvider == "", tierText),
-		"yolo":                  yolo,
-		"approval_mode":         approvalMode,
-		"tools":                 map[string]any{},
-		"skills":                map[string]any{},
-		"cwd":                   cwd,
-		"branch":                tuihost.Branch(cwd),
-		"project":               projectInfoForCwd(ctx, cwd),
-		"terminal_backend":      effectiveTerminalBackend(ctx),
-		"personality":           strOr(personality),
-		"running":               truthy(session.Get("running")),
-		"turn_started_at":       turnStartedAt(session),
-		"title":                 "",
-		"stored_session_id":     sessionKey,
-		"version":               "",
-		"release_date":          "",
-		"update_behind":         nil,
-		"update_command":        "",
-		"usage":                 sessionUsageSnapshot(ctx, session),
-	}
-	if sessionKey != "" {
-		info["title"] = sessionLiveTitle(ctx, session, sessionKey)
-	}
-	if name := home.ProfileNameFor(strOr(session.Get("profile_home"))); name != "" {
-		info["profile_name"] = name
-	} else {
-		info["profile_name"] = currentProfileName(ctx)
-	}
-	info["redact_secrets"] = tools.RedactEnabled(ctx)
-	if poolKey, login := sessionInfoLogin(ctx, session); poolKey != "" {
-		info["pool_key"] = poolKey
-		if login != nil {
-			info["login"] = tuigateway.Plain(*login)
-		}
-	}
-	if versionInfo, err := updaterecord.GetVersionInfo(); err == nil {
-		info["version"], info["release_date"] = versionInfo.BaseVersion, Banner.ReleaseDate
-	}
-	if a != nil {
-		suppress(func() {
-			grouped := map[string]any{}
-			info["tools"] = grouped
-			scope := tools.ScopeKey(home.Dir(ctx))
-			for _, def := range a.ToolDefs() {
-				function, _ := pyjson.Dict(def["function"])
-				name := function["name"].(string)
-				toolset := tools.Default.ToolsetForTool(ctx, scope, name)
-				if toolset == "" {
-					toolset = "other"
-				}
-				names, _ := grouped[toolset].([]any)
-				grouped[toolset] = append(names, name)
-			}
-		})
-		suppress(func() { info["skills"] = Banner.AvailableSkills(ctx) })
-	}
-	info["mcp_servers"] = []any{}
-	suppress(func() { info["mcp_servers"] = mcpStatusRows(ctx) })
-	suppress(func() {
-		if a != nil {
-			info["system_prompt"] = a.CachedSystemPrompt()
-		} else {
-			info["system_prompt"] = ""
-		}
-	})
-	suppress(func() {
-		if behind := Banner.UpdateResult(500 * time.Millisecond); behind != nil {
-			info["update_behind"] = *behind
-		} else {
-			info["update_behind"] = nil
-		}
-		command, err := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
-		if err != nil {
-			panic(err)
-		}
-		info["update_command"] = command
-	})
-	if a != nil {
-		if warning := probeCredentials(a); warning != "" {
-			info["credential_warning"] = warning
-		}
-	}
-	return info
-}
-
-// MCP server status rows as the JSON objects the client reads
-func mcpStatusRows(ctx context.Context) []any {
-	env := tools.ToolEnvFrom(ctx)
-	if env == nil {
-		env = &tools.Env{Home: home.Dir(ctx)}
-	}
-	return gateway.MCPStatusRows(mcp.Status(ctx, env, nil, true))
-}
-
-// Emits session info for a session holding an agent, swallowing any failure
-func emitSessionInfoForSession(ctx context.Context, sid string, session *tuihost.Session) {
-	if sessionAgent(session) != nil {
-		suppress(func() { tuihost.Emit(ctx, "session.info", sid, sessionInfo(ctx, sessionAgent(session), session)) })
-	}
-}
-
-// Live agent a session record holds, nil before its build
-func sessionAgent(session *tuihost.Session) *agent.AIAgent {
-	a, _ := session.Get("agent").(*agent.AIAgent)
-	return a
-}
-
 // Runs a body and swallows any panic it raises
 func suppress(body func()) {
 	defer func() { _ = recover() }()
@@ -517,17 +223,6 @@ func strOr(v any) string {
 		return s
 	}
 	return pyrepr.Str(v)
-}
-
-// Shallow copy of a dict value, empty for anything else
-func copyDict(v any) map[string]any {
-	out := map[string]any{}
-	if source, ok := v.(map[string]any); ok {
-		for key, value := range source {
-			out[key] = value
-		}
-	}
-	return out
 }
 
 // Whether a path names an existing directory
@@ -576,32 +271,16 @@ func storeFailure(ctx context.Context, rid any, code int, err error) map[string]
 	return nil
 }
 
-// What Enter does while the agent works, queue unless the profile sets steer or interrupt
-func loadBusyInputMode(ctx context.Context) string { return settings.BusyMode.Get(ctx) }
-
-// Whether interim assistant commentary reaches the client, display interim_assistant_messages defaulting on
-func loadInterimAssistantMessages(ctx context.Context) bool {
-	raw, present := displayCfg(ctx)["interim_assistant_messages"]
-	if !present {
-		raw = true
-	}
-	return isTruthyValue(raw)
-}
-
-// Wraps a handler in the runtime scope of the params profile, else the named live session's, else the ticket's
+// Wraps a handler in the runtime scope of the params profile, else the ticket's
 func profileScoped(handler Handler) Handler {
 	return func(ctx context.Context, rid any, params map[string]any) map[string]any {
-		scopeHome := ""
+		scopeHome := connectionProfileHome(ctx)
 		if strings.TrimSpace(strOr(params["profile"])) != "" {
 			h, err := profileHome(strOr(params["profile"]))
 			if err != nil {
 				panic(err)
 			}
 			scopeHome = h
-		} else if session := tuihost.SessionRecord(strOr(params["session_id"])); session != nil {
-			scopeHome = strOr(session.Get("profile_home"))
-		} else {
-			scopeHome = connectionProfileHome(ctx)
 		}
 		return handler(profileRuntimeScope(ctx, scopeHome, true), rid, params)
 	}

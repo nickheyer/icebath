@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"math/big"
 	"time"
 
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const timestampPrefixPattern = `^\[(?:` +
@@ -129,7 +130,7 @@ func CoerceMessageTimestamp(value any, tz *time.Location) (float64, bool, error)
 		}
 	}
 	text, _ := value.(string)
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if text == "" {
 		return 0, false, nil
 	}

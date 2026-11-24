@@ -1,13 +1,14 @@
 package cron
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // MarkOptions carries the optional outcome fields of one finished run
@@ -35,7 +36,7 @@ type FireClaimOptions struct {
 func recordRunOutcome(job *Job, success bool, errText, deliveryError, status *string, now string) {
 	job.LastRunAt = strPtr(now)
 	job.ManualRunAt, job.ManualRunRestoreAt, job.ManualRunPrompt = nil, nil, nil
-	deliveryFailed := deliveryError != nil && pystr.Strip(*deliveryError) != ""
+	deliveryFailed := deliveryError != nil && strings.TrimSpace(*deliveryError) != ""
 	switch {
 	case deref(status) != "":
 		job.LastStatus = strPtr(*status)
@@ -286,7 +287,7 @@ func (s *Store) advanceNextRuns(ctx context.Context, jobIDs []string) (int, erro
 
 // Claim attribution id from ICEBATH_MACHINE_ID, else host and pid
 func machineID() string {
-	if explicit := pystr.Strip(os.Getenv("ICEBATH_MACHINE_ID")); explicit != "" {
+	if explicit := strings.TrimSpace(os.Getenv("ICEBATH_MACHINE_ID")); explicit != "" {
 		return explicit
 	}
 	host, err := os.Hostname()

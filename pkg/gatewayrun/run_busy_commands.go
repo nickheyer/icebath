@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"slices"
@@ -9,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -24,8 +25,8 @@ func busyAccepted(ctx context.Context) error {
 
 // Engages the global emergency stop with an optional reason, or lifts it with off
 func (r *GatewayRunner) handlePauseCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	args := pystr.Strip(event.GetCommandArgs())
-	if slices.Contains([]string{"off", "resume", "stop", "disengage"}, pystr.Lower(args)) {
+	args := strings.TrimSpace(event.GetCommandArgs())
+	if slices.Contains([]string{"off", "resume", "stop", "disengage"}, strings.ToLower(args)) {
 		if tools.Disengage(ctx) {
 			return i18n.T(ctx, "gateway.pause.resumed", "", nil), nil
 		}
@@ -81,7 +82,7 @@ func (r *GatewayRunner) busyStopCommand(ctx context.Context, event *gateway.Mess
 
 // Queues the payload as its own full turn after the current run, never merged
 func (r *GatewayRunner) busyQueueCommand(ctx context.Context, event *gateway.MessageEvent, quickKey string, source *gateway.SessionSource) (any, error) {
-	queuedText := pystr.Strip(event.GetCommandArgs())
+	queuedText := strings.TrimSpace(event.GetCommandArgs())
 	hasMedia := len(event.MediaURLs) > 0
 	if queuedText == "" && !hasMedia {
 		return i18n.T(ctx, "gateway.queue.usage", "", nil), nil
@@ -126,7 +127,7 @@ func (r *GatewayRunner) busyQueueCommand(ctx context.Context, event *gateway.Mes
 
 // Steers the running agent between tool iterations, queueing a follow up turn when no agent can take it
 func (r *GatewayRunner) busySteerCommand(ctx context.Context, event *gateway.MessageEvent, quickKey string, source *gateway.SessionSource) (any, error) {
-	steerText := pystr.Strip(event.GetCommandArgs())
+	steerText := strings.TrimSpace(event.GetCommandArgs())
 	if steerText == "" {
 		return i18n.T(ctx, "gateway.steer.usage", "", nil), nil
 	}

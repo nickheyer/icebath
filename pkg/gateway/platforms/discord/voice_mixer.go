@@ -249,7 +249,7 @@ func pyReturnCode(ps *os.ProcessState) int {
 func decodeToPCM(ctx context.Context, path string, timeout time.Duration) []byte {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	exe := resolveFFmpegExecutable()
+	exe := resolveFFmpegExecutable(ctx)
 	args := []string{"-y", "-loglevel", "error", "-i", path, "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1"}
 	cmd := ffmpegCommand(cctx, exe, args...)
 	cmd.Stdin = nil

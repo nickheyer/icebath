@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // First n code points of s, Python slicing
@@ -33,7 +32,7 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 	if messagingExperience != nil {
 		experience = *messagingExperience
 	}
-	experience = pystr.Lower(pystr.Strip(experience))
+	experience = strings.ToLower(strings.TrimSpace(experience))
 	if experience != "assistant" && experience != "agent" && experience != "none" {
 		return nil, errors.New("messaging_experience must be assistant, agent or none")
 	}
@@ -224,7 +223,7 @@ func InteractiveSetup(ctx context.Context) error {
 	for _, line := range setupHomeChannelHelp {
 		cli.PrintInfo(line)
 	}
-	if channel := pystr.Strip(cli.Prompt("Home channel ID (leave empty to set later with /set-home)", "", false)); channel != "" {
+	if channel := strings.TrimSpace(cli.Prompt("Home channel ID (leave empty to set later with /set-home)", "", false)); channel != "" {
 		return cfg.SaveEnvValue(ctx, "SLACK_HOME_CHANNEL", channel)
 	}
 	removed, err := cfg.RemoveEnvValue(ctx, "SLACK_HOME_CHANNEL")

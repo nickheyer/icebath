@@ -507,7 +507,7 @@ func (c *safeConstructor) constructSafeScalar(n *ry.Node, tag string) any {
 		return nil
 	case yamlTagPrefix + "bool":
 		value := c.constructScalar(n)
-		low := pystr.Lower(value)
+		low := strings.ToLower(value)
 		b, ok := boolValues[low]
 		if !ok {
 			panic(pyErr("KeyError", pyrepr.StrRepr(low)))
@@ -783,7 +783,7 @@ or alternatively include the following in your code:
 
 func (c *safeConstructor) constructFloat(n *ry.Node) any {
 	valueSO := c.constructScalar(n)
-	valueS := pystr.Lower(strings.ReplaceAll(valueSO, "_", ""))
+	valueS := strings.ToLower(strings.ReplaceAll(valueSO, "_", ""))
 	sign := 1.0
 	if strIndex0(valueS) == '-' {
 		sign = -1

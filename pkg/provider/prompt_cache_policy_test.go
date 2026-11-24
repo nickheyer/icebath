@@ -156,23 +156,12 @@ func TestConfiguredCacheTTLReadsValidTiers(t *testing.T) {
 	}
 }
 
-func TestConfiguredCacheTTLNoneForDisabledOrUnknown(t *testing.T) {
-	for _, value := range []any{"off", false, "2h"} {
+func TestConfiguredCacheTTLNoneForDisabledAndTheDefaultForUnknown(t *testing.T) {
+	for value, want := range map[any]string{"off": "", false: "", "2h": "5m"} {
 		cacheTestHome(t, value)
-		if got := configuredCacheTTL(context.Background()); got != "" {
+		if got := configuredCacheTTL(context.Background()); got != want {
 			t.Fatalf("%v gave %q", value, got)
 		}
-	}
-}
-
-func TestCacheTTLMeansDisabled(t *testing.T) {
-	for v, want := range map[any]bool{"5m": false, "1h": false, "off": true, "OFF": true, "none": true, "no": true, "disabled": true, "2h": false, 0: false, true: false} {
-		if CacheTTLMeansDisabled(v) != want {
-			t.Fatalf("%v want %v", v, want)
-		}
-	}
-	if !CacheTTLMeansDisabled(nil) || !CacheTTLMeansDisabled(false) {
-		t.Fatal("None and False disable caching")
 	}
 }
 

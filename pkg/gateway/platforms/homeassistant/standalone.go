@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // A notify service name, the form cron delivery targets take
@@ -45,7 +44,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if !ok {
 		return nil, attrErr(rawURL, "the Home Assistant url", "text")
 	}
-	hassURL := pystr.RstripChars(urlText, "/")
+	hassURL := strings.TrimRight(urlText, "/")
 	if !pyrepr.Truthy(token) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_TOKEN", "", false)
 		if err != nil {
@@ -57,7 +56,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if !ok {
 		return nil, attrErr(token, "the Home Assistant token", "text")
 	}
-	tokenText = pystr.Strip(tokenText)
+	tokenText = strings.TrimSpace(tokenText)
 	if hassURL == "" || tokenText == "" {
 		return gateway.SendError("Home Assistant standalone send: HASS_URL and HASS_TOKEN must both be set"), nil
 	}
@@ -77,7 +76,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if !ok {
 		return nil, attrErr(serviceRef, "the service", "text")
 	}
-	service := strings.TrimPrefix(pystr.Strip(serviceText), "notify.")
+	service := strings.TrimPrefix(strings.TrimSpace(serviceText), "notify.")
 	if matched, err := notifyServiceRE.MatchString(service); err != nil {
 		panic(err)
 	} else if matched {

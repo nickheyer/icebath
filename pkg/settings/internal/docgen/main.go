@@ -77,7 +77,10 @@ func description(r settings.Row) []string {
 	if note := applyNote(r); note != "" {
 		lines = append(lines, note)
 	}
-	if r.Env != "" {
+	switch {
+	case r.Env != "" && r.EnvInvert:
+		lines = append(lines, "The "+r.Env+" environment variable, when on, turns it off.")
+	case r.Env != "":
 		lines = append(lines, "The "+r.Env+" environment variable overrides it.")
 	}
 	return lines

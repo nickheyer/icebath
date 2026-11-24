@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const slackDirectoryWarningInterval = 3600 * time.Second
@@ -266,8 +265,8 @@ func normalizeAdapterChannels(raw any) []any {
 			}
 		}
 		field := func(key string) any { v, _ := slackGetOr(item, key, nil); return v }
-		channelID := pystr.Strip(pyrepr.Str(pyrepr.Or(field("id"), "")))
-		name := pystr.Strip(pyrepr.Str(pyrepr.Or(field("name"), channelID)))
+		channelID := strings.TrimSpace(pyrepr.Str(pyrepr.Or(field("id"), "")))
+		name := strings.TrimSpace(pyrepr.Str(pyrepr.Or(field("name"), channelID)))
 		if channelID == "" || name == "" || seen[channelID] {
 			continue
 		}

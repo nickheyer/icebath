@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -83,9 +84,9 @@ func TestCommandSTTUnderMultiplexRunsWithTheScopedProfilesToken(t *testing.T) {
 	if err := os.WriteFile(audio, []byte("fixture audio"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	r := transcribeCommandSTT(scoped, audio, "probe",
-		map[string]any{"command": "sh " + pyshlex.Quote(script) + " {output_path}", "timeout": 5, "env_passthrough": []any{"MY_STT_TOKEN"}},
-		map[string]any{}, "", "", "")
+	p := commandSTTDefaults
+	p.Name, p.Command, p.Timeout, p.EnvPassthrough = "probe", "sh "+pyshlex.Quote(script)+" {output_path}", 5*time.Second, []string{"MY_STT_TOKEN"}
+	r := transcribeCommandSTT(scoped, audio, &p, loadSTTRequest(scoped), "", "", "")
 	if r["success"] != true || r["transcript"] != "served-token" {
 		t.Fatalf("command stt result %v", r)
 	}

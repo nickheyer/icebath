@@ -30,11 +30,6 @@ func SessionSteerAuthority(ctx context.Context, sessionID string) (any, any) {
 
 type runtimeSessionRecordKey struct{}
 
-// Context whose turn executes on the given in memory session record
-func withRuntimeSessionRecord(ctx context.Context, session *tuihost.Session) context.Context {
-	return context.WithValue(ctx, runtimeSessionRecordKey{}, session)
-}
-
 // Exact session record the current turn executes on, nil outside a turn
 func currentRuntimeSessionRecord(ctx context.Context) *tuihost.Session {
 	session, _ := ctx.Value(runtimeSessionRecordKey{}).(*tuihost.Session)
@@ -42,9 +37,3 @@ func currentRuntimeSessionRecord(ctx context.Context) *tuihost.Session {
 }
 
 type currentRPCMethodKey struct{}
-
-// Method being dispatched on this context, empty outside a dispatch
-func currentRPCMethod(ctx context.Context) string {
-	method, _ := ctx.Value(currentRPCMethodKey{}).(string)
-	return method
-}

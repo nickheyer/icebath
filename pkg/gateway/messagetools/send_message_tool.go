@@ -1,6 +1,8 @@
 package messagetools
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const mediaPlatformsNote = "telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp, slack and qqbot"
@@ -67,7 +68,7 @@ func sendLiveAdapterMedia(ctx context.Context, live any, chatID, message string,
 	}
 	caption, separateText := mediaCaptionSplit(message, mediaFiles, defaultCaptionLimit)
 	var last *gateway.SendResult
-	if separateText != "" && pystr.Strip(separateText) != "" {
+	if separateText != "" && strings.TrimSpace(separateText) != "" {
 		r, err := adapter.Send(ctx, chatID, separateText, "", metadata)
 		if err != nil {
 			return nil, err
@@ -443,7 +444,7 @@ func SendToPlatform(ctx context.Context, platform gateway.Platform, pconfig *gat
 	}
 	warning := ""
 	if len(mediaFiles) > 0 && platformName != "buzz" {
-		if pystr.Strip(message) == "" {
+		if strings.TrimSpace(message) == "" {
 			return map[string]any{"error": fmt.Sprintf("send_message MEDIA delivery is currently only supported for %s; "+
 				"target %s had only media attachments", mediaPlatformsNote, platformName)}, nil
 		}

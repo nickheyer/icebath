@@ -33,6 +33,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -49,7 +50,6 @@ const (
 var (
 	shellHookBlockingEvents   = map[string]bool{"pre_tool_call": true}
 	shellHookToolEvents       = map[string]bool{"pre_tool_call": true, "post_tool_call": true}
-	shellHookTruthy           = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 	shellHookTopLevelKeys     = map[string]bool{"tool_name": true, "args": true, "session_id": true, "parent_session_id": true}
 	shellHookWindowsInterp    = map[string]string{".sh": "bash", ".bash": "bash", ".py": "python"}
 	shellHookScriptExtensions = []string{".sh", ".bash", ".zsh", ".fish", ".py", ".pyw", ".rb", ".pl", ".lua", ".js", ".mjs", ".cjs", ".ts"}
@@ -242,8 +242,8 @@ func serializeShellHookPayload(ctx context.Context, event string, kwargs map[str
 }
 
 // Registers every consented configured hook once per home and returns the newly wired specs
-func RegisterShellHooksFromConfig(ctx context.Context, cfg any, acceptHooks, interactive bool) ([]*ShellHookSpec, error) {
-	specs, _, _ := shellHookSpecs(cfg)
+func RegisterShellHooksFromConfig(ctx context.Context, acceptHooks, interactive bool) ([]*ShellHookSpec, error) {
+	specs, _, _ := shellHookSpecs(ctx)
 	if len(specs) == 0 {
 		return []*ShellHookSpec{}, nil
 	}
@@ -256,8 +256,7 @@ func RegisterShellHooksFromConfig(ctx context.Context, cfg any, acceptHooks, int
 		}
 	}
 	shellHooksRegisteredMu.Unlock()
-	cfgDict, _ := shellHookDict(cfg)
-	accept, allowed := resolveShellHookAccept(cfgDict, acceptHooks), AllowlistedShellHookPairs(ctx)
+	accept, allowed := resolveShellHookAccept(ctx, acceptHooks), AllowlistedShellHookPairs(ctx)
 	consented := []*ShellHookSpec{}
 	for _, spec := range pending {
 		ok, err := shellHookConsented(ctx, spec, accept, allowed, interactive)
@@ -277,13 +276,11 @@ func RegisterShellHooksFromConfig(ctx context.Context, cfg any, acceptHooks, int
 	return wireShellHooks(manager, homeKey, consented), nil
 }
 
-// Brings this home's wired hooks in step with config and consent, never prompting and never disarming on bad input
-func SyncShellHooksFromConfig(ctx context.Context, loadCfg func() any) {
+// Brings this home's wired hooks in step with the hooks setting of ctx and consent, never prompting and never disarming on bad input
+func SyncShellHooksFromConfig(ctx context.Context) {
 	shellHooksSyncMu.Lock()
-	cfg := loadCfg()
-	specs, run, complete := shellHookSpecs(cfg)
-	cfgDict, _ := shellHookDict(cfg)
-	if !run || len(cfgDict) == 0 {
+	specs, run, complete := shellHookSpecs(ctx)
+	if !run {
 		shellHooksSyncMu.Unlock()
 		return
 	}
@@ -298,7 +295,7 @@ func SyncShellHooksFromConfig(ctx context.Context, loadCfg func() any) {
 			allowed[[2]string{c[1], c[2]}] = true
 		}
 	}
-	accept := resolveShellHookAccept(cfgDict, false)
+	accept := resolveShellHookAccept(ctx, false)
 	var wanted []*ShellHookSpec
 	for _, spec := range specs {
 		if accept || allowed[[2]string{spec.Event, spec.Command}] {
@@ -375,13 +372,12 @@ func SyncShellHooksFromConfig(ctx context.Context, loadCfg func() any) {
 }
 
 // First use consent for every configured hook without wiring any, returning the consented specs
-func RecordShellHookConsentFromConfig(ctx context.Context, cfg any, acceptHooks bool) ([]*ShellHookSpec, error) {
-	specs, _, _ := shellHookSpecs(cfg)
+func RecordShellHookConsentFromConfig(ctx context.Context, acceptHooks bool) ([]*ShellHookSpec, error) {
+	specs, _, _ := shellHookSpecs(ctx)
 	if len(specs) == 0 {
 		return []*ShellHookSpec{}, nil
 	}
-	cfgDict, _ := shellHookDict(cfg)
-	accept, allowed := resolveShellHookAccept(cfgDict, acceptHooks), AllowlistedShellHookPairs(ctx)
+	accept, allowed := resolveShellHookAccept(ctx, acceptHooks), AllowlistedShellHookPairs(ctx)
 	out := []*ShellHookSpec{}
 	for _, spec := range specs {
 		ok, err := shellHookConsented(ctx, spec, accept, allowed, true)
@@ -396,8 +392,8 @@ func RecordShellHookConsentFromConfig(ctx context.Context, cfg any, acceptHooks 
 }
 
 // Records a launch's --accept-hooks in the allowlist and holds in memory each approval the write lost
-func AcceptShellHooksForLaunch(ctx context.Context, cfg any) error {
-	specs, err := RecordShellHookConsentFromConfig(ctx, cfg, true)
+func AcceptShellHooksForLaunch(ctx context.Context) error {
+	specs, err := RecordShellHookConsentFromConfig(ctx, true)
 	if err != nil || len(specs) == 0 {
 		return err
 	}
@@ -415,17 +411,16 @@ func AcceptShellHooksForLaunch(ctx context.Context, cfg any) error {
 // Opts this process into every configured hook for its lifetime without exporting the variable
 func AcceptShellHooksForProcess() { shellHookProcessAccept.Store(true) }
 
-// Configured specs, run false inside a safe worker, safe mode or without a config mapping
-func shellHookSpecs(cfg any) (specs []*ShellHookSpec, run bool, complete bool) {
-	cfgDict, ok := shellHookDict(cfg)
-	if config.SafeWorkerEnabled() || !ok {
+// Specs of the hooks setting of ctx, run false inside a safe worker or in safe mode
+func shellHookSpecs(ctx context.Context) (specs []*ShellHookSpec, run bool, complete bool) {
+	if config.SafeWorkerEnabled() {
 		return nil, false, true
 	}
-	if envEnabled("ICEBATH_SAFE_MODE") {
+	if envEnabled(EnvSafeMode) {
 		pkgLog().Info("ICEBATH_SAFE_MODE=1 — shell-hook registration skipped")
 		return nil, false, true
 	}
-	specs, complete = parseShellHooks(cfgDict["hooks"])
+	specs, complete = parseShellHooks(settings.Hooks.Get(ctx))
 	return specs, true, complete
 }
 
@@ -498,23 +493,15 @@ func shellHookConsented(ctx context.Context, spec *ShellHookSpec, accept bool, a
 	return true, nil
 }
 
-// Parsed hooks of a config without wiring any, for the hooks list command and doctor
-func IterConfiguredShellHooks(cfg any) []*ShellHookSpec {
-	cfgDict, ok := shellHookDict(cfg)
-	if !ok {
-		return []*ShellHookSpec{}
-	}
-	return parseShellHooksBlock(cfgDict["hooks"])
+// Parsed hooks of the hooks setting of ctx without wiring any, for the hooks list command and doctor
+func IterConfiguredShellHooks(ctx context.Context) []*ShellHookSpec {
+	return parseShellHooksBlock(settings.Hooks.Get(ctx))
 }
 
 // Rewires this home's config hooks after a force reload cleared the manager, never prompting
 func reRegisterConfigHooks(ctx context.Context) error {
 	forgetHomeRegistrations(ctx, shellHooksRegistered, &shellHooksRegisteredMu, func(k shellHookKey) string { return k.home })
-	cfg, err := loadConfig(home.Dir(ctx))
-	if err != nil {
-		return err
-	}
-	_, err = RegisterShellHooksFromConfig(ctx, cfg, false, false)
+	_, err := RegisterShellHooksFromConfig(ctx, false, false)
 	return err
 }
 
@@ -791,7 +778,7 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 		}
 		return shellHookFailClosedBlock(spec, reason)
 	}
-	stderr := pystr.Strip(r.Stderr)
+	stderr := strings.TrimSpace(r.Stderr)
 	limited := pystr.Slice(stderr, 0, shellHookStderrLimit)
 	if stderr != "" {
 		pkgLog().Debug(fmt.Sprintf("shell hook stderr (event=%s command=%s): %s", spec.Event, spec.Command, limited))
@@ -814,7 +801,7 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 	if code != 0 {
 		pkgLog().Warn(fmt.Sprintf("shell hook exited %d (event=%s command=%s); stderr=%s", code, spec.Event, spec.Command, limited))
 	}
-	stdout := pystr.Strip(r.Stdout)
+	stdout := strings.TrimSpace(r.Stdout)
 	parsed := parseShellHookResponse(spec.Event, stdout)
 	if parsed == nil && failClosed && code != 0 {
 		return shellHookFailClosedBlock(spec, fmt.Sprintf("hook exited %d with no directive", code))
@@ -858,8 +845,8 @@ func parseShellPreToolCall(data map[string]any) map[string]any {
 	if data["action"] == "approve" {
 		directive := map[string]any{"action": "approve"}
 		for _, key := range []string{"message", "rule_key"} {
-			if v, ok := data[key].(string); ok && pystr.Strip(v) != "" {
-				directive[key] = pystr.Strip(v)
+			if v, ok := data[key].(string); ok && strings.TrimSpace(v) != "" {
+				directive[key] = strings.TrimSpace(v)
 			}
 		}
 		return directive
@@ -875,20 +862,20 @@ func parseShellPreVerify(data map[string]any) map[string]any {
 	}
 	action := ""
 	if pyrepr.Truthy(actionRaw) {
-		action = strings.ToLower(pystr.Strip(pyrepr.Str(actionRaw)))
+		action = strings.ToLower(strings.TrimSpace(pyrepr.Str(actionRaw)))
 	}
 	message := data["message"]
 	if !pyrepr.Truthy(message) {
 		message = data["reason"]
 	}
-	if m, ok := message.(string); ok && (action == "continue" || action == "block") && pystr.Strip(m) != "" {
-		return map[string]any{"action": "continue", "message": pystr.Strip(m)}
+	if m, ok := message.(string); ok && (action == "continue" || action == "block") && strings.TrimSpace(m) != "" {
+		return map[string]any{"action": "continue", "message": strings.TrimSpace(m)}
 	}
 	return nil
 }
 
 func parseShellContext(data map[string]any) map[string]any {
-	if c, ok := data["context"].(string); ok && pystr.Strip(c) != "" {
+	if c, ok := data["context"].(string); ok && strings.TrimSpace(c) != "" {
 		return map[string]any{"context": c}
 	}
 	return nil
@@ -906,7 +893,7 @@ func parseShellPreLLMCall(data map[string]any) map[string]any {
 
 // Wire shaped directive of a hook's stdout JSON, nil when empty, invalid or not an object
 func parseShellHookResponse(event, stdout string) map[string]any {
-	stdout = pystr.Strip(stdout)
+	stdout = strings.TrimSpace(stdout)
 	if stdout == "" {
 		return nil
 	}
@@ -1018,7 +1005,7 @@ func promptAndRecordShellHook(ctx context.Context, event, command string, accept
 		fmt.Fprintln(shellHookStdout)
 		return false, nil
 	}
-	answer := strings.ToLower(pystr.Strip(line))
+	answer := strings.ToLower(strings.TrimSpace(line))
 	if answer != "y" && answer != "yes" {
 		return false, nil
 	}
@@ -1088,18 +1075,9 @@ func shellHookScriptPath(command string) string {
 	return parts[0]
 }
 
-// Whether any opt in channel approves every hook, argument, process flag, environment or config
-func resolveShellHookAccept(cfg map[string]any, acceptArg bool) bool {
-	if acceptArg || shellHookProcessAccept.Load() || envEnabled("ICEBATH_ACCEPT_HOOKS") {
-		return true
-	}
-	switch v := cfg["hooks_auto_accept"].(type) {
-	case bool:
-		return v
-	case string:
-		return shellHookTruthy[strings.ToLower(pystr.Strip(v))]
-	}
-	return false
+// Whether any opt in channel approves every hook: the argument, the process flag, or hooks_auto_accept of ctx with its ICEBATH_ACCEPT_HOOKS override
+func resolveShellHookAccept(ctx context.Context, acceptArg bool) bool {
+	return acceptArg || shellHookProcessAccept.Load() || settings.HooksAutoAccept.Get(ctx)
 }
 
 // Allowlist record of the pair, nil when none

@@ -68,7 +68,7 @@ func gitOriginURL(ctx context.Context, pluginDir string) string {
 		out, err := cmd.Output()
 		cancel()
 		if err == nil {
-			if url := pystr.Strip(strings.ToValidUTF8(string(out), "\uFFFD")); url != "" {
+			if url := strings.TrimSpace(strings.ToValidUTF8(string(out), "\uFFFD")); url != "" {
 				return url
 			}
 		}
@@ -83,7 +83,7 @@ func gitOriginURL(ctx context.Context, pluginDir string) string {
 	}
 	inOrigin := false
 	for _, line := range pystr.Splitlines(strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\uFFFD"), "\uFEFF"), false) {
-		stripped := pystr.Strip(line)
+		stripped := strings.TrimSpace(line)
 		if stripped == `[remote "origin"]` {
 			inOrigin = true
 			continue
@@ -94,7 +94,7 @@ func gitOriginURL(ctx context.Context, pluginDir string) string {
 		}
 		if inOrigin && strings.HasPrefix(stripped, "url") {
 			_, value, _ := strings.Cut(stripped, "=")
-			return pystr.Strip(value)
+			return strings.TrimSpace(value)
 		}
 	}
 	return ""

@@ -56,11 +56,14 @@ func migrateFail(errw io.Writer, message string) (int, error) {
 func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (int, error) {
 	apply := nsFlag(ns, "apply")
 	noBackup := nsFlag(ns, "no_backup")
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
+	stored, err := config.ReadRawConfigReadonly(ctx, h)
 	if err != nil {
 		return 1, err
 	}
-	issues := FindRetiredXAIRefs(map[string]any(tree))
+	if failed := config.FailedReadError(stored); failed != nil {
+		return migrateFail(errw, fmt.Sprintf("Could not read config.yaml: %s", failed))
+	}
+	issues := FindRetiredXAIRefs(stored)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, cliui.Color(fmt.Sprintf("◆ xAI Model Retirement Migration (%s)", XAIRetirementDate), cliui.Cyan, cliui.Bold))
 	fmt.Fprintln(w)

@@ -1,17 +1,15 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // One required param with the test its value must pass
@@ -20,20 +18,19 @@ type requiredParam struct {
 	present func(v any) bool
 }
 
-// Body of a guarded RPC, the live session given when the RPC resolves one
-type rpcBody func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error)
+// Body of a guarded RPC, answering a response or raising an error the guard maps to a refusal
+type rpcBody func(ctx context.Context, rid any, params map[string]any) (map[string]any, error)
 
-// Shape of a guarded RPC, its required params, live session, profile scope and failure prefix
+// Shape of a guarded RPC, its required params, profile scope and failure prefix
 type rpcShape struct {
 	required         []requiredParam
 	propagateResolve bool
 	prefix           string
 	unscoped         bool
-	liveSession      bool
 }
 
 // Whether a value reads as a non blank string
-func strippedPresent(v any) bool { return pystr.Strip(strOr(v)) != "" }
+func strippedPresent(v any) bool { return strings.TrimSpace(strOr(v)) != "" }
 
 // Whether a value is neither None nor the empty string
 func nonemptyPresent(v any) bool { return v != nil && pyrepr.Str(v) != "" }
@@ -45,7 +42,7 @@ var nameParam = []requiredParam{{"name", strippedPresent}}
 var nameSessionParams = []requiredParam{{"name", strippedPresent}, {"session_id", strippedPresent}}
 
 // Stripped text of a param with None and falsy values read as empty
-func strArg(params map[string]any, key string) string { return pystr.Strip(strOr(params[key])) }
+func strArg(params map[string]any, key string) string { return strings.TrimSpace(strOr(params[key])) }
 
 // Wraps a body in the optional profile runtime scope, its failures answered under the fail code
 func profileScopedRPC(failCode int, shape rpcShape, body rpcBody) Handler {
@@ -54,14 +51,6 @@ func profileScopedRPC(failCode int, shape rpcShape, body rpcBody) Handler {
 			if !req.present(params[req.key]) {
 				return rpcErr(rid, 4063, req.key+" required", nil)
 			}
-		}
-		var session *tuihost.Session
-		if shape.liveSession {
-			s, errResp := sess(ctx, params, rid)
-			if errResp != nil {
-				return errResp
-			}
-			session = s
 		}
 		if !shape.unscoped {
 			profile := strArg(params, "profile")
@@ -92,7 +81,7 @@ func profileScopedRPC(failCode int, shape rpcShape, body rpcBody) Handler {
 				resp = rpcErr(rid, failCode, shape.prefix+panicMessage(r), nil)
 			}
 		}()
-		out, err := body(ctx, rid, params, session)
+		out, err := body(ctx, rid, params)
 		if err != nil {
 			panic(err)
 		}
@@ -139,13 +128,3 @@ func systemBattery(ctx context.Context, rid any, params map[string]any) map[stri
 	}
 	return ok(rid, tuigateway.Plain(out))
 }
-
-// MCP shutdown, discovery and revision hash a reload drives, swapped by tests
-var (
-	reloadShutdownMCP = func(ctx context.Context) { mcp.ShutdownMCPServers(ctx, nil, nil, 15*time.Second) }
-	reloadDiscoverMCP = func(ctx context.Context) error {
-		_, err := mcp.ConnectAll(ctx, nil, nil)
-		return err
-	}
-	reloadMCPRev = computeMCPRev
-)

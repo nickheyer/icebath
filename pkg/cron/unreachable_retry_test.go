@@ -145,16 +145,16 @@ func TestReachingTheModelResetsLadderAndOneshotsNeverRetry(t *testing.T) {
 }
 
 func TestUnreachableRetryDisabledByConfig(t *testing.T) {
-	if !unreachableRetryEnabledIn(map[string]any{}) || !unreachableRetryEnabledIn(map[string]any{"cron": "x"}) {
-		t.Fatal("missing or malformed cron section disables the ladder")
-	}
-	if !unreachableRetryEnabledIn(map[string]any{"cron": map[string]any{"retry_unreachable": 0}}) {
-		t.Fatal("only false disables the ladder")
-	}
-	if unreachableRetryEnabledIn(map[string]any{"cron": map[string]any{"retry_unreachable": false}}) {
-		t.Fatal("false kept the ladder on")
-	}
 	s := newClockStore(t, nil, time.UTC)
+	for _, c := range []struct {
+		cfg  string
+		want bool
+	}{{"", true}, {"cron: x\n", true}, {"cron:\n  retry_unreachable: 0\n", false}, {"cron:\n  retry_unreachable: false\n", false}} {
+		writeHomeConfig(t, s, c.cfg)
+		if got := s.unreachableRetryEnabled(); got != c.want {
+			t.Fatalf("%q -> %v", c.cfg, got)
+		}
+	}
 	if err := os.WriteFile(s.Home()+"/config.yaml", []byte("cron:\n  retry_unreachable: false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

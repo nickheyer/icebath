@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -106,29 +102,9 @@ func (r *GatewayRunner) boundedAdapterTeardown(ctx context.Context, adapter gate
 	pkgLog().Warn(fmt.Sprintf("✗ %s disconnect timed out after %.1fs - forcing continue%s", platform, timeout, suffix))
 }
 
-// Non negative float of an environment variable, nil when unset or unparseable with a warning
-func envTimeoutOverride(name string) *float64 {
-	raw := pystr.Strip(os.Getenv(name))
-	if raw == "" {
-		return nil
-	}
-	value, err := pyint.ParseFloat(raw)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s", name, errchain.Show(raw)))
-		return nil
-	}
-	if !(value > 0) {
-		value = 0
-	}
-	return &value
-}
-
 // Per adapter disconnect timeout of the shutdown path
 func (r *GatewayRunner) adapterDisconnectTimeoutSecs() float64 {
-	if override := envTimeoutOverride("ICEBATH_GATEWAY_ADAPTER_DISCONNECT_TIMEOUT"); override != nil {
-		return *override
-	}
-	return adapterDisconnectTimeoutSecsDefault
+	return max(0, settings.GatewayAdapterDisconnectTimeout.Get(context.Background()).Seconds())
 }
 
 // Per platform connect timeout, a configured timeout for every platform, else the capped Telegram budget on the cold start connect

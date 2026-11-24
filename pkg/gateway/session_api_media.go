@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -39,9 +38,9 @@ func apiDataURLBytes(url string) (string, []byte, bool) {
 		rest = string(runes[len("data:"):])
 	}
 	mimeText, _, _ := strings.Cut(rest, ";")
-	mime := pystr.Lower(pystr.Strip(mimeText))
+	mime := strings.ToLower(strings.TrimSpace(mimeText))
 	_, known := apiMimeExt[mime]
-	if !strings.HasPrefix(pystr.Lower(url), "data:") || !known || !strings.Contains(pystr.Lower(header), ";base64") {
+	if !strings.HasPrefix(strings.ToLower(url), "data:") || !known || !strings.Contains(strings.ToLower(header), ";base64") {
 		return "", nil, false
 	}
 	decoded, err := pybase64.B64DecodeValidate(encoded)

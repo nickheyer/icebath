@@ -400,7 +400,7 @@ var subcommands = map[string]func(context.Context, []string) (string, error){
 
 // Dispatches a /disk-cleanup invocation to its subcommand, help for none or an unknown one
 func (h *hooks) handleSlash(ctx context.Context, rawArgs string) (any, error) {
-	argv := pystr.SplitWhitespace(pystr.Strip(rawArgs), -1)
+	argv := pystr.SplitWhitespace(strings.TrimSpace(rawArgs), -1)
 	if len(argv) == 0 || argv[0] == "help" || argv[0] == "-h" || argv[0] == "--help" {
 		return helpText, nil
 	}

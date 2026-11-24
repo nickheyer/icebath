@@ -119,7 +119,7 @@ var slackToolsLoaded = func(ctx context.Context) bool {
 		}
 		token = os.Getenv("SLACK_BOT_TOKEN")
 	}
-	if pystr.Strip(token) == "" {
+	if strings.TrimSpace(token) == "" {
 		return false
 	}
 	return platformToolsFromConfig(ctx, "slack", true)["slack"]
@@ -128,7 +128,7 @@ var slackToolsLoaded = func(ctx context.Context) bool {
 // True when the discord or discord_admin toolset is on and the scoped bot token is set
 var discordToolsLoaded = func(ctx context.Context) bool {
 	token, _, err := provider.GetSecret(ctx, "DISCORD_BOT_TOKEN")
-	if err != nil || pystr.Strip(token) == "" {
+	if err != nil || strings.TrimSpace(token) == "" {
 		return false
 	}
 	enabled := platformToolsFromConfig(ctx, "discord", false)
@@ -162,7 +162,7 @@ func blankControlChars(text string, keep string) string {
 // Untrusted gateway metadata rendered as an inert JSON quoted string
 func formatUntrustedPromptValue(value any, maxChars int) string {
 	text := strings.ReplaceAll(strings.ReplaceAll(pyrepr.Str(value), "\r\n", "\n"), "\r", "\n")
-	text = blankControlChars(pystr.Strip(text), "\n\t")
+	text = blankControlChars(strings.TrimSpace(text), "\n\t")
 	text = truncatePromptChars(text, maxChars)
 	out, _ := pyjson.Dumps(text, pyjson.EnsureASCII(false))
 	return out

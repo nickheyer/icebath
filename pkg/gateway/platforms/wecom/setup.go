@@ -90,7 +90,7 @@ func textOf(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Fetches and renders a WeCom QR code then polls until scanned, the bot id and secret when it succeeds
@@ -159,7 +159,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 		if err != nil {
 			return "", "", false, err
 		}
-		if pystr.Lower(textOf(status)) != "success" {
+		if strings.ToLower(textOf(status)) != "success" {
 			if err := qrSleep(watch, qrPollInterval); err != nil {
 				return "", "", false, err
 			}
@@ -292,7 +292,7 @@ func InteractiveSetup(ctx context.Context) error {
 			map[string]func(string){"warning": cli.PrintWarning, "success": cli.PrintSuccess, "info": cli.PrintInfo}[m[0]](m[1])
 		}
 	}
-	if home := pystr.Strip(cli.Prompt("Home chat ID (optional, for cron/notifications)", "", false)); home != "" {
+	if home := strings.TrimSpace(cli.Prompt("Home chat ID (optional, for cron/notifications)", "", false)); home != "" {
 		if err := cfg.SaveEnvValue(ctx, "WECOM_HOME_CHANNEL", home); err != nil {
 			return err
 		}

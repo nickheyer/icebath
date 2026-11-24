@@ -3,8 +3,6 @@ package media
 import (
 	"regexp"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var whisperHallucinations = map[string]bool{
@@ -22,6 +20,6 @@ func IsWhisperHallucination(transcript string) bool { return isWhisperHallucinat
 
 // Whether a transcript is empty or a known Whisper hallucination on silence
 func isWhisperHallucination(transcript string) bool {
-	cleaned := pystr.Lower(pystr.Strip(transcript))
+	cleaned := strings.ToLower(strings.TrimSpace(transcript))
 	return cleaned == "" || whisperHallucinations[strings.TrimRight(cleaned, ".!")] || hallucinationRepeatRe.MatchString(cleaned)
 }

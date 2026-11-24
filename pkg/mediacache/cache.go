@@ -240,7 +240,7 @@ func CacheDocumentFromBytes(ctx context.Context, h string, data []byte, filename
 	if filename != "" {
 		safeName = pypath.PathName(filename)
 	}
-	safeName = pystr.Strip(strings.ReplaceAll(safeName, "\x00", ""))
+	safeName = strings.TrimSpace(strings.ReplaceAll(safeName, "\x00", ""))
 	if safeName == "" || safeName == "." || safeName == ".." {
 		safeName = "document"
 	}

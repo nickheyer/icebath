@@ -107,8 +107,8 @@ func cachedWhoamiSID() (string, error) {
 		return "", err
 	}
 	text := strings.ReplaceAll(strings.ReplaceAll(pystr.DecodeUTF8Replace(out), "\r\n", "\n"), "\r", "\n")
-	stripped := pystr.Strip(text)
-	sid := strings.Trim(pystr.Strip(stripped[strings.LastIndex(stripped, ",")+1:]), `"`)
+	stripped := strings.TrimSpace(text)
+	sid := strings.Trim(strings.TrimSpace(stripped[strings.LastIndex(stripped, ",")+1:]), `"`)
 	if !strings.HasPrefix(strings.ToUpper(sid), "S-1-") {
 		return "", fmt.Errorf("could not resolve the current user SID from whoami: %s", pyrepr.StrRepr(text))
 	}
@@ -275,7 +275,7 @@ type treeEntry struct {
 func siblingKey(p string) string {
 	name := pypath.PathName(p)
 	if runtime.GOOS == "windows" {
-		return pystr.Lower(name)
+		return strings.ToLower(name)
 	}
 	return pystr.SurrogateEscapeDecode([]byte(name))
 }

@@ -89,7 +89,7 @@ var oneOffCopy = map[string]string{
 	"local_processing_error": "Icebath hit an internal error while handling the model's reply and stopped this turn. " +
 		failureNextStepsLoop + "\n\nDetails: {detail}",
 	"max_iterations_no_summary": "I ran out of steps for this turn ({limit} tool calls) before finishing, and couldn't " +
-		"produce a summary. Send `continue` to keep going, or raise `max_iterations` in your config.",
+		"produce a summary. Send `continue` to keep going, or raise `agent.max_turns` in your settings.",
 }
 
 // SiteCopyTable is the chat copy for every failure code and one off loop outcome a loop site renders

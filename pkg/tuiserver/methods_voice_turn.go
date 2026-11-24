@@ -3,6 +3,8 @@
 package tuiserver
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -152,27 +153,6 @@ func voiceEndSessionChat(ctx context.Context, sessionID string, stopLoop, stopTT
 	}
 }
 
-// Live sessions with a turn running
-func runningSessions() []*tuihost.Session {
-	var out []*tuihost.Session
-	for _, live := range tuihost.LiveSessions() {
-		if truthy(live.Session.Get("running")) {
-			out = append(out, live.Session)
-		}
-	}
-	return out
-}
-
-// Whether any turn runs, false when the probe fails
-func anySessionRunning() (running bool) {
-	defer func() {
-		if recover() != nil {
-			running = false
-		}
-	}()
-	return len(runningSessions()) > 0
-}
-
 // Binds the voice mode operations the turn and session code reaches
 func init() {
 	voiceModeOps.endSessionChat = voiceEndSessionChat
@@ -283,7 +263,7 @@ func fullDuplexListener(ctx context.Context) {
 		fdListenerMu.Unlock()
 	}()
 	shouldStop := func() bool {
-		direct := voiceModeEnabled() && (anySessionRunning() || fdTTSPending() || media.IsAudioOutputActive())
+		direct := voiceModeEnabled() && (fdTTSPending() || media.IsAudioOutputActive())
 		return !direct && !sessionVoiceLive()
 	}
 	tripped := &pythread.Event{}
@@ -306,7 +286,7 @@ func fullDuplexListener(ctx context.Context) {
 		panic(err)
 	}
 	if truthy(result["success"]) {
-		if text := pystr.Strip(strOr(result["transcript"])); text != "" {
+		if text := strings.TrimSpace(strOr(result["transcript"])); text != "" {
 			if phase, _ := trippedDuring.Load().(string); phase == "playback" && media.IsTTSEcho(text, spokenText()) {
 				pkgLog().Debug("full-duplex listener: capture during playback repeats the spoken reply, dropped as speaker bleed")
 				return
@@ -316,7 +296,7 @@ func fullDuplexListener(ctx context.Context) {
 	}
 }
 
-// Latches the interruption, cuts every TTS path and interrupts running turns when tripped during generation
+// Latches the interruption and cuts every TTS path, each cut session announcing the interruption so its window stops the turn
 func fdTrip(ctx context.Context, phase string) {
 	media.MarkSpeechInterrupted()
 	if phase == "playback" {
@@ -331,19 +311,7 @@ func fdTrip(ctx context.Context, phase string) {
 	}
 	fdListenerMu.Unlock()
 	media.StopPlayback()
-	sharedCut := cutAllSessionSpeech()
-	if phase != "playback" {
-		if failure := catchPanic(func() {
-			for _, s := range runningSessions() {
-				if a := sessionAgent(s); a != nil {
-					suppress(func() { a.Interrupt("") })
-				}
-			}
-		}); failure != nil {
-			pkgLog().Debug(fmt.Sprintf("voice interjection interrupt failed: %s", panicMessage(failure)))
-		}
-	}
-	if !sharedCut {
+	if !cutAllSessionSpeech() {
 		voiceEmit(ctx, "voice.interrupted", nil)
 	}
 }
@@ -351,7 +319,7 @@ func fdTrip(ctx context.Context, phase string) {
 // Emits the captured interjection, a bare stop phrase also ending the voice chat
 func deliverFDTranscript(ctx context.Context, text string) {
 	isStop := false
-	suppress(func() { isStop = media.IsVoiceStopPhrase(text) })
+	suppress(func() { isStop = media.IsVoiceStopPhrase(ctx, text) })
 	if isStop {
 		voiceSidMu.Lock()
 		sid := voiceEventSID

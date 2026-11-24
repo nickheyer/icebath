@@ -576,8 +576,8 @@ func (v *GatewayChatView) notice(admission any, payload map[string]any) {
 	if pyrepr.Truthy(payload["text"]) {
 		text = pyrepr.Str(payload["text"])
 	}
-	if !v.quiet && pystr.Strip(text) != "" {
-		v.println(v.errOut, pystr.Strip(text))
+	if !v.quiet && strings.TrimSpace(text) != "" {
+		v.println(v.errOut, strings.TrimSpace(text))
 	}
 }
 
@@ -685,15 +685,15 @@ func (v *GatewayChatView) complete(ctx context.Context, admission any, payload m
 			v.println(v.out, text)
 		case strings.HasPrefix(text, streamed):
 			v.println(v.out, text[len(streamed):])
-		case pystr.Strip(text) == pystr.Strip(streamed):
+		case strings.TrimSpace(text) == strings.TrimSpace(streamed):
 			v.println(v.out, "")
 		default:
 			v.println(v.out, "\n"+text)
 		}
 	}
 	warning, isStr := payload["warning"].(string)
-	if pyrepr.Equal(payload["status"], "interrupted") && isStr && pystr.Strip(warning) != "" {
-		v.println(v.errOut, pystr.Strip(warning))
+	if pyrepr.Equal(payload["status"], "interrupted") && isStr && strings.TrimSpace(warning) != "" {
+		v.println(v.errOut, strings.TrimSpace(warning))
 	}
 	v.completions.Set(admission, payload)
 }

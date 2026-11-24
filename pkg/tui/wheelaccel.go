@@ -1,11 +1,6 @@
 package tui
 
-import (
-	"math"
-	"regexp"
-	"strconv"
-	"strings"
-)
+import "math"
 
 // Pacing of the wheel in milliseconds and rows, the windows events are told apart by and the caps the rows of one event grow to
 const (
@@ -27,11 +22,7 @@ const (
 	wheelBurstEvents         = 5
 	precisionWheelFrameMs    = 16
 	precisionWheelStickyMs   = 80
-	scrollSpeedMax           = 20
 )
-
-// Number a setting starts with, the way a script reads a decimal
-var leadingNumber = regexp.MustCompile(`^\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?`)
 
 // Wheel acceleration between events, the rows one event scrolls growing with how closely events follow each other
 type wheelAccel struct {
@@ -56,17 +47,12 @@ func newWheelAccel(xtermJS bool, base float64) wheelAccel {
 	return wheelAccel{base: base, mult: base, xtermJS: xtermJS}
 }
 
-// Rows of one wheel event before acceleration, ICEBATH_TUI_SCROLL_SPEED or else CLAUDE_CODE_SCROLL_SPEED above zero and at most twenty, one otherwise
-func scrollSpeedBase(lookup func(string) (string, bool)) float64 {
-	raw, set := lookup("ICEBATH_TUI_SCROLL_SPEED")
-	if !set {
-		raw, _ = lookup("CLAUDE_CODE_SCROLL_SPEED")
-	}
-	n, err := strconv.ParseFloat(strings.TrimSpace(leadingNumber.FindString(raw)), 64)
-	if err != nil || math.IsInf(n, 0) || math.IsNaN(n) || n <= 0 {
+// Rows of one wheel event before acceleration, the speed of the settings when it is above zero and one otherwise
+func scrollSpeedBase() float64 {
+	if prefs.ScrollSpeed <= 0 {
 		return 1
 	}
-	return math.Min(n, scrollSpeedMax)
+	return prefs.ScrollSpeed
 }
 
 // Rows a wheel event scrolls in its direction, zero while a turn of direction waits to be told from a bounce

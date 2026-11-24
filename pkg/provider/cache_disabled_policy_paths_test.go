@@ -5,19 +5,6 @@ import (
 	"testing"
 )
 
-func TestSharedPredicateMatchesAgentInitSemantics(t *testing.T) {
-	for _, ttl := range []any{false, nil, "off", "false", "disabled", "no", "none", "OFF"} {
-		if !CacheTTLMeansDisabled(ttl) {
-			t.Fatalf("%v must disable caching", ttl)
-		}
-	}
-	for _, ttl := range []any{"5m", "1h", "2h", 5, true, "weird"} {
-		if CacheTTLMeansDisabled(ttl) {
-			t.Fatalf("%v must keep caching", ttl)
-		}
-	}
-}
-
 // System prompt and one user turn on the native Anthropic destination
 func nativePlanMessages() []map[string]any {
 	return []map[string]any{{"role": "system", "content": "You are helpful."}, {"role": "user", "content": "hello"}}

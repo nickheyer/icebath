@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"unicode"
+
 	"bufio"
 	"bytes"
 	"errors"
@@ -624,7 +626,7 @@ func (c *CodexAppServerClient) readStderr(r io.ReadCloser) {
 	for {
 		raw, err := reader.ReadBytes('\n')
 		if len(raw) > 0 {
-			c.appendStderr(pystr.Rstrip(pystr.DecodeUTF8Replace(raw)))
+			c.appendStderr(strings.TrimRightFunc(pystr.DecodeUTF8Replace(raw), unicode.IsSpace))
 		}
 		if err != nil {
 			return
@@ -677,7 +679,7 @@ func CheckCodexBinary(codexBin string, minVersion [3]int) (bool, string, error) 
 	case errors.As(err, &timeout):
 		return false, "codex --version timed out", nil
 	case errors.As(err, &called):
-		return false, fmt.Sprintf("codex --version exited %d: %s", called.Returncode, pystr.Strip(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stderr)))), nil
+		return false, fmt.Sprintf("codex --version exited %d: %s", called.Returncode, strings.TrimSpace(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stderr)))), nil
 	case err != nil:
 		return false, "", err
 	}

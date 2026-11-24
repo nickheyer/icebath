@@ -68,13 +68,12 @@ func TestListPendingSkipsNonDictRecord(t *testing.T) {
 }
 
 func TestNormalizeEnabledCoercesValues(t *testing.T) {
-	for v, want := range map[any]bool{true: true, false: false, "on": true, "approve": true, "true": true, "off": false, "garbage": false} {
-		if got := normalizeWriteApprovalEnabled(v); got != want {
+	for v, want := range map[any]bool{true: true, false: false, "on": true, "approve": true, "true": true, "off": false, "garbage": false, nil: false} {
+		env := &Env{Home: t.TempDir()}
+		writeHomeConfigDoc(t, env, map[string]any{"memory": map[string]any{"write_approval": v}})
+		if got := WriteApprovalEnabled(env, WriteApprovalMemory); got != want {
 			t.Fatalf("%v: got %v", v, got)
 		}
-	}
-	if normalizeWriteApprovalEnabled(nil) {
-		t.Fatal("nil must be off")
 	}
 }
 

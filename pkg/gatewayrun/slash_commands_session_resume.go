@@ -23,12 +23,12 @@ func stripResumeName(parts []string) string {
 			kept = append(kept, p)
 		}
 	}
-	name := pystr.Strip(strings.Join(kept, " "))
+	name := strings.TrimSpace(strings.Join(kept, " "))
 	runes := []rune(name)
 	if len(runes) >= 2 {
 		switch string([]rune{runes[0], runes[len(runes)-1]}) {
 		case "<>", "[]", `""`, "''":
-			name = pystr.Strip(string(runes[1 : len(runes)-1]))
+			name = strings.TrimSpace(string(runes[1 : len(runes)-1]))
 		}
 	}
 	return name
@@ -146,7 +146,7 @@ func (r *GatewayRunner) handleResumeCommand(ctx context.Context, event *gateway.
 	if err != nil {
 		return "", err
 	}
-	parts, err := pyshlex.SplitPOSIX(pystr.Strip(event.GetCommandArgs()), false)
+	parts, err := pyshlex.SplitPOSIX(strings.TrimSpace(event.GetCommandArgs()), false)
 	if err != nil {
 		return i18n.T(ctx, "gateway.resume.parse_error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
@@ -299,7 +299,7 @@ func (r *GatewayRunner) handleSessionsCommand(ctx context.Context, event *gatewa
 	if asyncDB == nil {
 		return sessionDBUnavailableReply(ctx), nil
 	}
-	includeAll, includeUnnamed, target, searchQuery, err := state.ParseSessionListingArgs(pystr.Strip(event.GetCommandArgs()))
+	includeAll, includeUnnamed, target, searchQuery, err := state.ParseSessionListingArgs(strings.TrimSpace(event.GetCommandArgs()))
 	if err != nil {
 		return i18n.T(ctx, "gateway.resume.parse_error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}

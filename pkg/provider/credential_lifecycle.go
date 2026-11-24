@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // EnvCredentialPurge names the providers whose env seeded pool rows were pruned and every provider the purge touched
@@ -122,57 +124,58 @@ func sortedAnyKeys(m map[string]any) []string {
 	return keys
 }
 
-// Rewrites or removes config.yaml api key mirrors holding the old value on the raw user config and returns the paths touched
+// One api key setting that may mirror a credential: the key it is written at and the path the report names
+type apiKeyMirror struct {
+	key, shown string
+}
+
+// Every api key setting of the profile of ctx that may hold a copy of a credential: the model's, each helper task's and each named provider's
+func apiKeyMirrors(ctx context.Context) []apiKeyMirror {
+	mirrors := []apiKeyMirror{{key: settings.ModelAPIKey.Key, shown: settings.ModelAPIKey.Key}}
+	var tasks []string
+	for _, e := range settings.All() {
+		task, ok := strings.CutPrefix(e.Info().Key, "auxiliary.")
+		if !ok {
+			continue
+		}
+		if name, isKey := strings.CutSuffix(task, ".api_key"); isKey && !strings.Contains(name, ".") {
+			tasks = append(tasks, name)
+		} else if _, isBlock := e.(*settings.Map); isBlock && !strings.Contains(task, ".") {
+			tasks = append(tasks, task)
+		}
+	}
+	sort.Strings(tasks)
+	for _, task := range tasks {
+		key := "auxiliary." + task + ".api_key"
+		mirrors = append(mirrors, apiKeyMirror{key: key, shown: key})
+	}
+	providers := settings.Providers.Stored(ctx)
+	for _, id := range sortedAnyKeys(providers) {
+		mirrors = append(mirrors, apiKeyMirror{key: settings.Providers.EntryKey(id) + ".api_key", shown: "providers." + id + ".api_key"})
+	}
+	return mirrors
+}
+
+// Rewrites or removes the api key settings of the profile that hold the old value, through the settings writer, and returns the paths touched
 func scrubConfigYAMLMirrors(ctx context.Context, h, oldValue string, newValue *string) ([]string, error) {
 	touched := []string{}
 	if oldValue == "" {
 		return touched, nil
 	}
-	ctx, unlock := config.LockConfig(home.WithOverride(ctx, h))
-	defer unlock()
-	path := home.ConfigPath(h)
-	exists, err := config.ConfigExists(ctx, path)
-	if err != nil {
-		return nil, err
+	ctx = home.WithOverride(ctx, h)
+	var replacement any
+	if newValue != nil && *newValue != "" {
+		replacement = *newValue
 	}
-	if !exists {
-		return touched, nil
-	}
-	user, err := config.ReadUserConfigRaw(ctx, path)
-	if err != nil || len(user) == 0 {
-		return touched, nil
-	}
-	fix := func(section any, keyPath string, fields ...string) {
-		m, ok := section.(map[string]any)
-		if !ok {
-			return
+	for _, mirror := range apiKeyMirrors(ctx) {
+		current, held := settings.Stored(ctx, mirror.key)
+		if text, isText := current.(string); !held || !isText || text != oldValue {
+			continue
 		}
-		for _, field := range fields {
-			if current, ok := m[field].(string); ok && current == oldValue {
-				if newValue != nil && *newValue != "" {
-					m[field] = *newValue
-				} else {
-					delete(m, field)
-				}
-				touched = append(touched, keyPath+"."+field)
-			}
-		}
-	}
-	fix(user["model"], "model", "api_key")
-	if aux, ok := user["auxiliary"].(map[string]any); ok {
-		for _, task := range sortedAnyKeys(aux) {
-			fix(aux[task], "auxiliary."+task, "api_key")
-		}
-	}
-	if providers, ok := user["providers"].(map[string]any); ok {
-		for _, id := range sortedAnyKeys(providers) {
-			fix(providers[id], "providers."+id, "api_key")
-		}
-	}
-	if len(touched) > 0 {
-		if err := config.AtomicConfigReplace(ctx, h, path, user, ""); err != nil {
+		if _, err := settings.Set(ctx, mirror.key, replacement, settings.Global); err != nil {
 			return nil, err
 		}
+		touched = append(touched, mirror.shown)
 	}
 	return touched, nil
 }

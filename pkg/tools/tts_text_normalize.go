@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"unicode"
+
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
@@ -132,7 +134,9 @@ func StripMarkdownForTTS(text string) string {
 	for _, re := range []*regexp2.Regexp{ttsMDInlineCodeRe, ttsMDBoldRe, ttsMDUnderscoreBoldRe, ttsMDItalicRe, ttsMDUnderscoreItalicRe, ttsMDStrikeRe} {
 		text = ttsSub(re, text, func(m regexp2.Match) string { return ttsGroup(m, 1) })
 	}
-	text = ttsSub(ttsMDHeadingLineRe, text, func(m regexp2.Match) string { return pystr.Rstrip(ttsGroup(m, 1)) + spokenHeadingMark })
+	text = ttsSub(ttsMDHeadingLineRe, text, func(m regexp2.Match) string {
+		return strings.TrimRightFunc(ttsGroup(m, 1), unicode.IsSpace) + spokenHeadingMark
+	})
 	text = ttsSubLiteral(ttsMDBlockquoteRe, text, "")
 	text = ttsSubLiteral(ttsMDListItemRe, text, "")
 	text = ttsSubLiteral(ttsMDHRRe, text, "")
@@ -251,7 +255,7 @@ func SmoothWhitespaceForTTS(text string) string {
 	rawLines := pystr.Splitlines(text, false)
 	contentLines := 0
 	for _, raw := range rawLines {
-		if pystr.Strip(strings.ReplaceAll(raw, spokenHeadingMark, "")) != "" {
+		if strings.TrimSpace(strings.ReplaceAll(raw, spokenHeadingMark, "")) != "" {
 			contentLines++
 		}
 	}
@@ -260,13 +264,13 @@ func SmoothWhitespaceForTTS(text string) string {
 	var pending *string
 	flushPending := func() {
 		if pending != nil {
-			lines = append(lines, pystr.RstripChars(*pending, ".:;,")+".")
+			lines = append(lines, strings.TrimRight(*pending, ".:;,")+".")
 			pending = nil
 		}
 	}
 	for _, raw := range rawLines {
-		isHeading := strings.HasSuffix(pystr.Rstrip(raw), spokenHeadingMark)
-		line := pystr.Strip(strings.ReplaceAll(raw, spokenHeadingMark, ""))
+		isHeading := strings.HasSuffix(strings.TrimRightFunc(raw, unicode.IsSpace), spokenHeadingMark)
+		line := strings.TrimSpace(strings.ReplaceAll(raw, spokenHeadingMark, ""))
 		if line == "" {
 			if pending == nil && len(lines) > 0 && lines[len(lines)-1] != "" {
 				lines = append(lines, "")
@@ -275,17 +279,17 @@ func SmoothWhitespaceForTTS(text string) string {
 		}
 		if isHeading {
 			flushPending()
-			heading := pystr.RstripChars(line, ".:;,")
+			heading := strings.TrimRight(line, ".:;,")
 			pending = &heading
 			continue
 		}
 		if pending != nil {
-			line = pystr.RstripChars(*pending, ".:;,") + ", " + line
+			line = strings.TrimRight(*pending, ".:;,") + ", " + line
 			pending = nil
 		}
 		if addSentencePauses {
 			if lastRuneIn(line, ":;") {
-				line = pystr.Rstrip(pystr.RstripChars(line, ":;")) + "."
+				line = strings.TrimRightFunc(strings.TrimRight(line, ":;"), unicode.IsSpace) + "."
 			} else if !lastRuneIn(line, ".!?") {
 				line += "."
 			}
@@ -299,7 +303,7 @@ func SmoothWhitespaceForTTS(text string) string {
 	text = ttsSub(ttsSmoothSpaceBeforeRe, text, func(m regexp2.Match) string { return ttsGroup(m, 1) })
 	text = ttsSub(ttsSmoothMarkGapRe, text, func(m regexp2.Match) string { return m.String() + " " })
 	text = ttsSubLiteral(ttsSmoothEllipsisRunRe, text, "...")
-	return pystr.Strip(closeTrailingColon(text))
+	return strings.TrimSpace(closeTrailingColon(text))
 }
 
 // Final colon or semicolon run closed with a period unless a digit precedes it
@@ -328,7 +332,7 @@ func FlattenNewlinesForPayload(text string) string {
 	text = ttsSubLiteral(ttsFlattenNewlineRe, text, ". ")
 	text = ttsSubLiteral(ttsFlattenDoubleStopRe, text, ".")
 	text = ttsSubLiteral(ttsSmoothSpaceRunRe, text, " ")
-	return pystr.Strip(closeTrailingColon(text))
+	return strings.TrimSpace(closeTrailingColon(text))
 }
 
 // Spoken script of assistant text cut to maxChars code points, nil or non positive leaving it uncut
@@ -339,7 +343,7 @@ func PrepareSpokenText(text string, maxChars *int) string {
 	}
 	if maxChars != nil && *maxChars > 0 {
 		if rs := pystr.Runes(spoken); len(rs) > *maxChars {
-			spoken = pystr.Rstrip(pystr.FromRunes(rs[:*maxChars]))
+			spoken = strings.TrimRightFunc(pystr.FromRunes(rs[:*maxChars]), unicode.IsSpace)
 		}
 	}
 	return spoken

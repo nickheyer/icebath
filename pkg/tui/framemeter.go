@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,22 +39,13 @@ type frameMeter struct {
 	log     *os.File
 }
 
-// Frame meter the environment asks for, nil when it asks for neither the readout (ICEBATH_TUI_FPS) nor the timing log (ICEBATH_DEV_PERF)
+// Frame meter the settings ask for, nil when they ask for neither the frame rate readout nor the frame timing log
 func newFrameMeter() *frameMeter {
-	on := func(name string) bool { return trueRe.MatchString(strings.ToLower(strings.TrimSpace(os.Getenv(name)))) }
-	m := &frameMeter{shown: on("ICEBATH_TUI_FPS"), logging: on("ICEBATH_DEV_PERF"), floor: 2 * time.Millisecond}
+	m := &frameMeter{shown: prefs.FrameRate, logging: prefs.FrameLog, floor: max(prefs.FrameLogFloor, 0)}
 	if !m.shown && !m.logging {
 		return nil
 	}
-	if raw, set := os.LookupEnv("ICEBATH_DEV_PERF_MS"); set {
-		// Anything that is no number captures every frame, as a threshold of zero does
-		ms, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-		if err != nil || math.IsNaN(ms) || math.IsInf(ms, 0) {
-			ms = 0
-		}
-		m.floor = time.Duration(ms * float64(time.Millisecond))
-	}
-	if m.logPath = strings.TrimSpace(os.Getenv("ICEBATH_DEV_PERF_LOG")); m.logPath == "" {
+	if m.logPath = strings.TrimSpace(prefs.FrameLogFile); m.logPath == "" {
 		m.logPath = filepath.Join(home.Process(), "perf.log")
 	}
 	return m

@@ -9,14 +9,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func discoveryEnv(t *testing.T, logs *bytes.Buffer) *Env {
-	cfg := config.Defaults()
-	cfg.Set("web.backend", "nonexistent-backend")
-	return &Env{Home: t.TempDir(), Config: cfg, Values: &sync.Map{}, Log: slog.New(slog.NewTextHandler(logs, nil))}
+	env := &Env{Home: t.TempDir(), Values: &sync.Map{}, Log: slog.New(slog.NewTextHandler(logs, nil))}
+	setHomeConfigKey(t, env, "web.backend", "nonexistent-backend")
+	return env
 }
 
 func TestEnsureWebPluginsLoadedRunsDiscoveryFirst(t *testing.T) {

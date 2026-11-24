@@ -6,9 +6,9 @@ import (
 	"encoding/base64"
 	"os"
 	"os/exec"
-	"regexp"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,13 +20,11 @@ const toolTimeout = 2 * time.Second
 // Clipboard query of the terminal, answered with the clipboard sequence holding the text
 const querySequence = "\x1b]52;c;?\x07"
 
-var (
-	envOn  = regexp.MustCompile(`(?i)^(?:1|true|yes|on)$`)
-	envOff = regexp.MustCompile(`(?i)^(?:0|false|no|off)$`)
-)
+// Whether copies write the terminal's clipboard sequence whatever the connection, as the window's settings say; nil leaves it to the connection
+var forcedSequence atomic.Pointer[bool]
 
-// Switches that force the clipboard sequence on or off, the first one set deciding
-var sequenceSwitches = []string{"ICEBATH_TUI_FORCE_OSC52", "ICEBATH_TUI_CLIPBOARD_OSC52", "ICEBATH_TUI_COPY_OSC52"}
+// Sets whether copies write the terminal's clipboard sequence whatever the connection, nil leaving that to the connection
+func ForceSequence(on *bool) { forcedSequence.Store(on) }
 
 // Terminals whose own clipboard sequence is reliable, where a clipboard tool beside it races the terminal's write
 var sequenceCapable = map[string]bool{"ghostty": true, "kitty": true, "WezTerm": true, "windows-terminal": true, "vscode": true}
@@ -131,20 +129,10 @@ func terminalName(env Lookup) string {
 	return term
 }
 
-// Whether a copy writes the terminal's clipboard sequence: always over SSH, never inside a multiplexer on this machine, unless a switch says otherwise
+// Whether a copy writes the terminal's clipboard sequence: always over SSH, never inside a multiplexer on this machine, unless the settings say otherwise
 func emitsSequence(env Lookup) bool {
-	override := ""
-	for _, name := range sequenceSwitches {
-		if v, set := env(name); set {
-			override = strings.TrimSpace(v)
-			break
-		}
-	}
-	switch {
-	case envOn.MatchString(override):
-		return true
-	case envOff.MatchString(override):
-		return false
+	if on := forcedSequence.Load(); on != nil {
+		return *on
 	}
 	return env.get("SSH_CONNECTION") != "" || (env.get("TMUX") == "" && env.get("STY") == "")
 }

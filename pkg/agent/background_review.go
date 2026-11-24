@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
@@ -183,29 +182,31 @@ func (a *AIAgent) CancelBackgroundReview(message, toolReason string) {
 	}
 }
 
-// The auxiliary background_review block of a config tree, empty on any shape mismatch
-func reviewTaskBlock(cfg map[string]any) map[string]any {
-	aux, ok := cfg["auxiliary"].(map[string]any)
-	if !ok {
-		return map[string]any{}
+// Auxiliary task the background review settings live under
+const backgroundReviewTask = "background_review"
+
+// Block of an auxiliary task as the provider's task resolver gives it for ctx: the session's frozen auxiliary section, else the profile's, over plugin task defaults
+func auxiliaryTaskBlock(ctx context.Context, task string) (map[string]any, error) {
+	block, err := provider.AuxiliaryTaskConfig(ctx, task)
+	if err != nil {
+		return map[string]any{}, err
 	}
-	task, ok := aux["background_review"].(map[string]any)
-	if !ok {
-		return map[string]any{}
+	if block == nil {
+		block = map[string]any{}
 	}
-	return task
+	return block, nil
 }
 
-// Preloaded task config when given, else the background_review block read from config, empty on failure
+// Preloaded task config when given, else the resolved background_review block, empty when it cannot be read
 func backgroundReviewTaskConfig(ctx context.Context, taskCfg map[string]any) map[string]any {
 	if taskCfg != nil {
 		return taskCfg
 	}
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	block, err := auxiliaryTaskBlock(ctx, backgroundReviewTask)
 	if err != nil {
-		return map[string]any{}
+		pkgLog().Debug(fmt.Sprintf("auxiliary.background_review could not be read; using the review defaults: %v", err))
 	}
-	return reviewTaskBlock(tree)
+	return block
 }
 
 // Seventy five percent of the review fork context window capped at the historical ceiling, a fixed fallback when unknown
@@ -250,12 +251,11 @@ var loadBackgroundReviewSettings = func(ctx context.Context) (bool, map[string]a
 			return false, map[string]any{}
 		}
 	}
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	task, err := auxiliaryTaskBlock(ctx, backgroundReviewTask)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to read background_review.enabled; leaving automatic review enabled (fail-open): %v", err))
 		return true, map[string]any{}
 	}
-	task := reviewTaskBlock(tree)
 	return isTruthyValue(task["enabled"], true), task
 }
 

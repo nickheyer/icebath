@@ -254,6 +254,3 @@ func BuildMemoryContextBlock(rawContext string) string {
 		clean + "\n" +
 		"</memory-context>"
 }
-
-// Memory context fencing registers nothing at import
-func registerMemoryContextFencing() {}

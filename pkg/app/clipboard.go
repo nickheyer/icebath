@@ -197,7 +197,7 @@ func macosHasBitmap(info string) bool {
 
 // Local image path of a Finder file url on the clipboard, empty when it is not an image file
 func macosClipboardFileImage() string {
-	path := pystr.Strip(osascript("POSIX path of (the clipboard as «class furl»)", 3))
+	path := strings.TrimSpace(osascript("POSIX path of (the clipboard as «class furl»)", 3))
 	if !fileImageExts[strings.ToLower(filepath.Ext(path))] {
 		return ""
 	}
@@ -339,7 +339,7 @@ func psClipboard(exe string, timeoutSeconds int, label, dest string) bool {
 				}
 				return nil
 			}
-			if out := pystr.Strip(r.stdout); r.code == 0 && out != "" {
+			if out := strings.TrimSpace(r.stdout); r.code == 0 && out != "" {
 				data, err := base64.StdEncoding.Strict().DecodeString(out)
 				if err != nil {
 					return err

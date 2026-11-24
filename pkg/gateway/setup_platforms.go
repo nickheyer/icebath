@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -52,25 +50,35 @@ var WizardSetup = SetupFns{
 	IcebathHome:     home.Dir,
 }
 
-// Value a setup flow reads under an env name: the setting the name moved to, else the profile .env
+// Value a setup flow reads under an env name: the setting the name overrides, else the profile .env
 func setupValue(ctx context.Context, key string) (string, error) {
 	if e := envSetting(key); e != nil {
-		return SettingText(ctx, e), nil
+		return envText(ctx, e), nil
 	}
 	v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)
 	return v, err
 }
 
-// Saves a value a setup flow asked for under an env name: the setting the name moved to, else the profile .env
+// Saves a value a setup flow asked for under an env name: the setting the name overrides, else the profile .env
 func saveSetupValue(ctx context.Context, key, value string) error {
 	if e := envSetting(key); e != nil {
-		_, err := settings.Set(SettingsContext(ctx), e.Info().Key, value, settings.Global)
+		var stored any = value
+		if on, isBool := e.(*settings.Bool); isBool && on.EnvInvert {
+			coerced, err := on.Coerce(value)
+			if err != nil {
+				return err
+			}
+			if said, ok := coerced.(bool); ok {
+				stored = !said
+			}
+		}
+		_, err := settings.Set(SettingsContext(ctx), e.Info().Key, stored, settings.Global)
 		return err
 	}
 	return config.SaveEnvValueContext(ctx, home.Dir(ctx), key, value)
 }
 
-// Removes a value a setup flow names by env name: the setting the name moved to goes back to its default, else the .env line goes
+// Removes a value a setup flow names by env name: the setting the name overrides goes back to its default, else the .env line goes
 func removeSetupValue(ctx context.Context, key string) (bool, error) {
 	if e := envSetting(key); e != nil {
 		change, err := settings.Reset(SettingsContext(ctx), e.Info().Key, settings.Global)
@@ -112,7 +120,8 @@ func setupColor(text string, codes ...string) string {
 
 var (
 	telegramBotTokenRE = regexp.MustCompile(`^\p{Nd}+:[A-Za-z0-9_-]{30,}\n?$`)
-	setupRule          = strings.Repeat("━", 50)
+	// Whether a system scope service action of the wizard needs root, the seam tests replace
+	setupScopeNeedsRoot = systemScopeWizardWouldNeedRoot
 )
 
 // Whether a token has the Telegram bot token shape
@@ -299,7 +308,7 @@ func setupTelegram(ctx context.Context) error {
 	first := ""
 	if allowed != "" {
 		head, _, _ := strings.Cut(allowed, ",")
-		first = pystr.Strip(head)
+		first = strings.TrimSpace(head)
 	}
 	switch {
 	case first == "":
@@ -365,12 +374,6 @@ var homeChannelChecks = []struct {
 	{"QQBot", "QQ_APP_ID", []string{"QQBOT_HOME_CHANNEL", "QQ_HOME_CHANNEL"}},
 }
 
-// Whether a platform status counts as configured
-func isProgress(status string) bool {
-	s := pystr.Lower(status)
-	return !(s == "not configured" || strings.HasPrefix(s, "partially") || strings.HasPrefix(s, "plugin disabled"))
-}
-
 // Warns about platforms with a credential but no home channel
 func warnMissingHomeChannels(ctx context.Context) error {
 	var missing []string
@@ -406,151 +409,10 @@ func warnMissingHomeChannels(ctx context.Context) error {
 		"   messages can't be delivered to those platforms.",
 		"   Set one later with /set-home in your chat, or:"}
 	for _, label := range missing {
-		lines = append(lines, fmt.Sprintf("     icebath config set %s_HOME_CHANNEL <channel_id>", pystr.Upper(label)))
+		lines = append(lines, fmt.Sprintf("     icebath config set %s_HOME_CHANNEL <channel_id>", strings.ToUpper(label)))
 	}
 	WizardSetup.Info(lines...)
 	return nil
-}
-
-// Restart and platform seams of the setup flow, the gateway module names its tests replace
-var (
-	setupSystemdRestart = SystemdRestart
-	setupLaunchdRestart = LaunchdRestart
-	setupWindowsRestart = WindowsRestart
-	setupScopeNeedsRoot = systemScopeWizardWouldNeedRoot
-	setupPlatformSystem = func() string {
-		switch serviceGOOS {
-		case "darwin":
-			return "Darwin"
-		case "windows":
-			return "Windows"
-		case "linux":
-			return "Linux"
-		}
-		return serviceGOOS
-	}
-)
-
-// Offers a restart of the running gateway after a pass that may have changed platform config
-func restartRunningGateway(ctx context.Context, anyMessaging, supportsSystemd bool) error {
-	con := serviceConsole(provider.SetupOutput())
-	if supportsSystemd {
-		needsRoot, err := setupScopeNeedsRoot(ctx, false)
-		if err != nil {
-			return err
-		}
-		if needsRoot {
-			return printSystemScopeRemediation(ctx, con, "restart")
-		}
-	}
-	if !(anyMessaging && WizardSetup.PromptYesNo("  Restart the gateway to pick up changes?", true)) {
-		return nil
-	}
-	var err error
-	switch {
-	case supportsSystemd:
-		err = setupSystemdRestart(ctx, false)
-	case setupPlatformSystem() == "Darwin":
-		err = setupLaunchdRestart(ctx)
-	case setupPlatformSystem() == "Windows":
-		err = setupWindowsRestart(ctx)
-	}
-	if err == nil {
-		return nil
-	}
-	var unavailable *UserSystemdUnavailableError
-	var needsRoot *SystemScopeRequiresRootError
-	var exit *SystemExitError
-	switch {
-	case errors.As(err, &exit):
-		return err
-	case errors.As(err, &unavailable):
-		WizardSetup.PrintError("  Restart failed — user systemd not reachable:")
-		for _, line := range pystr.Splitlines(unavailable.Error(), false) {
-			setupPrintln("  " + line)
-		}
-	case errors.As(err, &needsRoot):
-		WizardSetup.PrintError("  Restart failed: " + needsRoot.Error())
-		return printSystemScopeRemediation(ctx, con, "restart")
-	default:
-		WizardSetup.PrintError("  Restart failed: " + err.Error())
-	}
-	return nil
-}
-
-// Configures messaging platforms from a checklist, then restarts or offers to install the gateway service
-func SetupGateway(ctx context.Context, cfg config.Tree) error {
-	WizardSetup.PrintHeader("Messaging Platforms")
-	WizardSetup.Info("Connect to messaging platforms to chat with Icebath from anywhere.", "Toggle with Space, confirm with Enter.", nil)
-	platforms := AllPlatforms(ctx)
-	items := make([]string, 0, len(platforms))
-	var preSelected []int
-	for i, p := range platforms {
-		status, err := PlatformStatus(ctx, p)
-		if err != nil {
-			return err
-		}
-		items = append(items, fmt.Sprintf("%s %s  (%s)", p.Emoji, p.Label, status))
-		if status == "configured" {
-			preSelected = append(preSelected, i)
-		}
-	}
-	selected := WizardSetup.PromptChecklist("Select platforms to configure:", items, preSelected)
-	if len(selected) == 0 {
-		WizardSetup.PrintInfo("No platforms selected. Type '/setup chat-apps' in icebath later to configure.")
-	}
-	for _, idx := range selected {
-		at, ok := pyIndex(idx, len(platforms))
-		if !ok {
-			return errors.New("a selected platform number is past the end of the platform list")
-		}
-		if err := configurePlatform(ctx, platforms[at]); err != nil {
-			return err
-		}
-	}
-	anyMessaging := false
-	for _, p := range AllPlatforms(ctx) {
-		status, err := PlatformStatus(ctx, p)
-		if err != nil {
-			return err
-		}
-		if isProgress(status) {
-			anyMessaging = true
-			break
-		}
-	}
-	if anyMessaging {
-		setupPrintln("")
-		WizardSetup.PrintInfo(setupRule)
-		WizardSetup.PrintSuccess("Messaging platforms configured!")
-		if err := warnMissingHomeChannels(ctx); err != nil {
-			return err
-		}
-	}
-	supportsSystemd := setupSupportsSystemd(ctx)
-	setupPrintln("")
-	running, err := setupServiceRunning(ctx)
-	if err != nil {
-		return err
-	}
-	if running {
-		if err := restartRunningGateway(ctx, anyMessaging, supportsSystemd); err != nil {
-			return err
-		}
-	} else if _, err := EnsureGatewayService(ctx, provider.SetupOutput(), ServiceSetupOptions{Context: "setup", Interactive: true,
-		Config: map[string]any(cfg)}); err != nil {
-		return err
-	}
-	WizardSetup.PrintInfo(setupRule)
-	return nil
-}
-
-// Python sequence index of a menu answer, negative counting from the end, false past either end
-func pyIndex(idx, n int) (int, bool) {
-	if idx < 0 {
-		idx += n
-	}
-	return idx, idx >= 0 && idx < n
 }
 
 // Telegram credentials and allowlist wizard of the CLI setup

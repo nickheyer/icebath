@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -24,7 +24,6 @@ const (
 	xaiEditFallbackModel    = "grok-imagine-image-quality"
 	xaiLiveCacheTTL         = 300 * time.Second
 	xaiLiveTimeout          = 10 * time.Second
-	xaiDefaultResolution    = "1k"
 	xaiMaxSourceImages      = 3
 	xaiImageMissingKeyError = "No xAI credentials found. Configure xAI OAuth in `icebath model` or set XAI_API_KEY."
 )
@@ -40,8 +39,6 @@ var xaiImageModels = imageModelCatalog{order: []string{"grok-imagine-image", "gr
 
 var xaiAspectRatios = map[string]string{"landscape": "16:9", "square": "1:1", "portrait": "9:16",
 	"4:3": "4:3", "3:4": "3:4", "3:2": "3:2", "2:3": "2:3"}
-
-var xaiResolutions = map[string]bool{"1k": true, "2k": true}
 
 var xaiRemotePrefixes = []string{"http://", "https://", "data:"}
 
@@ -64,7 +61,7 @@ func xaiImageBaseURL(c xaiImageCreds) string {
 	if b == "" {
 		b = DefaultXAIBaseURL
 	}
-	return strings.TrimRight(pystr.Strip(b), "/")
+	return strings.TrimRight(strings.TrimSpace(b), "/")
 }
 
 // Live model ids in endpoint order with their input modalities and aliases
@@ -79,7 +76,7 @@ var fetchXAILiveImageModels = func(ctx context.Context, env *tools.Env, creds *x
 		c := resolveXAIImageCreds(env)
 		creds = &c
 	}
-	apiKey := pystr.Strip(creds.APIKey)
+	apiKey := strings.TrimSpace(creds.APIKey)
 	if apiKey == "" {
 		return xaiLiveCatalog{}, fmt.Errorf("no xAI credentials")
 	}
@@ -103,10 +100,10 @@ var fetchXAILiveImageModels = func(ctx context.Context, env *tools.Env, creds *x
 			id = entry["name"]
 		}
 		s, ok := id.(string)
-		if !ok || pystr.Strip(s) == "" {
+		if !ok || strings.TrimSpace(s) == "" {
 			continue
 		}
-		s = pystr.Strip(s)
+		s = strings.TrimSpace(s)
 		mods, aliases := entry["input_modalities"], entry["aliases"]
 		if !pyTruthy(mods) {
 			mods = []any{}
@@ -212,10 +209,9 @@ func xaiImageCatalog(ctx context.Context, env *tools.Env) imageModelCatalog {
 	return merged
 }
 
-// String image_gen.xai.model, empty for any other type
+// image_gen.xai.model with its XAI_IMAGE_MODEL override, empty when unset
 func xaiConfiguredModel(env *tools.Env) string {
-	s, _ := loadImageGenConfig(env, "xai")["model"].(string)
-	return s
+	return strings.TrimSpace(settings.XAIImageModel.Get(tools.WithEnvHome(context.Background(), env)))
 }
 
 // Caller model of a kind that cannot name a model, a TypeError
@@ -243,7 +239,7 @@ func resolveXAIImageModel(ctx context.Context, env *tools.Env, caller any) (stri
 	if err != nil {
 		return "", nil, err
 	}
-	for _, candidate := range []string{c, rawEnvValue(env, "XAI_IMAGE_MODEL"), xaiConfiguredModel(env)} {
+	for _, candidate := range []string{c, xaiConfiguredModel(env)} {
 		if meta, ok := cat.meta[candidate]; candidate != "" && ok {
 			return candidate, meta, nil
 		}
@@ -263,10 +259,7 @@ func resolveXAIEditModel(ctx context.Context, env *tools.Env, caller any) (strin
 	}
 	explicit := c
 	if !truthy {
-		explicit = rawEnvValue(env, "XAI_IMAGE_MODEL")
-		if explicit == "" {
-			explicit = xaiConfiguredModel(env)
-		}
+		explicit = xaiConfiguredModel(env)
 	}
 	if meta, ok := cat.meta[explicit]; explicit != "" && ok {
 		if mods, _ := meta["input_modalities"].([]any); listContains(mods, "image") {
@@ -296,12 +289,9 @@ func listContains(items []any, want string) bool {
 	return false
 }
 
-// Configured 1k or 2k resolution, 1k for anything else
+// Configured 1k or 2k resolution
 func resolveXAIResolution(env *tools.Env) string {
-	if r, ok := loadImageGenConfig(env, "xai")["resolution"].(string); ok && xaiResolutions[r] {
-		return r
-	}
-	return xaiDefaultResolution
+	return settings.XAIImageResolution.Get(tools.WithEnvHome(context.Background(), env))
 }
 
 func hasXAIRemotePrefix(s string) bool {
@@ -316,7 +306,7 @@ func hasXAIRemotePrefix(s string) bool {
 
 // Edit image field, URLs and data URIs passing through and local paths inlined as data URIs after the read guard
 func xaiImageField(env *tools.Env, source string) (map[string]any, error) {
-	source = pystr.Strip(source)
+	source = strings.TrimSpace(source)
 	if hasXAIRemotePrefix(source) {
 		return map[string]any{"url": source, "type": "image_url"}, nil
 	}
@@ -353,7 +343,7 @@ func checkXAISourceImages(sources []string, imageURL string, fail errorFn) map[s
 			}
 		}
 		field := "reference_image_urls"
-		if index == 0 && imageURL != "" && pystr.Strip(imageURL) == source {
+		if index == 0 && imageURL != "" && strings.TrimSpace(imageURL) == source {
 			field = "image_url"
 		}
 		return fail(field+" must be a public HTTPS URL or data URI "+
@@ -415,8 +405,8 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 		env = p.env(ctx)
 	}
 	creds := resolveXAIImageCreds(env)
-	apiKey := pystr.Strip(creds.APIKey)
-	providerName := pystr.Strip(creds.Provider)
+	apiKey := strings.TrimSpace(creds.APIKey)
+	providerName := strings.TrimSpace(creds.Provider)
 	if providerName == "" {
 		providerName = "xai"
 	}

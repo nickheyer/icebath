@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -54,7 +55,7 @@ func FormatSteerMarker(steerText string) string {
 
 // Standalone user row a mid turn steer is delivered as, typed with the steer display kind
 func SteerUserRow(steerText string) map[string]any {
-	return map[string]any{"role": "user", "content": pystr.Lstrip(FormatSteerMarker(steerText)), "display_kind": SteerDisplayKind}
+	return map[string]any{"role": "user", "content": strings.TrimLeftFunc(FormatSteerMarker(steerText), unicode.IsSpace), "display_kind": SteerDisplayKind}
 }
 
 // System prompt note naming the steer marker as the only trusted mid turn user channel
@@ -204,7 +205,7 @@ func remoteBackendHint(ctx context.Context, env *tools.Env, backend string) (str
 
 // Embedder environment description from agent.environment_hint
 func embedderEnvironmentHint(ctx context.Context) string {
-	return pystr.Strip(settings.AgentEnvironmentHint.Get(ctx))
+	return strings.TrimSpace(settings.AgentEnvironmentHint.Get(ctx))
 }
 
 // Host OS, home, cwd and scratch block for a local backend, plus the bash hint on native Windows
@@ -239,7 +240,7 @@ func BuildEnvironmentHints(ctx context.Context, env *tools.Env) (string, error) 
 	if raw == "" {
 		raw = "local"
 	}
-	backend := strings.ToLower(pystr.Strip(raw))
+	backend := strings.ToLower(strings.TrimSpace(raw))
 	remote := tools.IsRemoteTerminalBackend(backend) || tools.PluginBackendIsRemote(backend)
 	var hints []string
 	if remote {

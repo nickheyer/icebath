@@ -30,26 +30,34 @@ func kanbanContextItem(context *pyjson.Object, key string) (any, error) {
 	return v, nil
 }
 
-// Binds the adopted worker to its Kanban claim before tool discovery, refusing a stale claim and following the submitter
-func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
-	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
-	text, _ := policy.GetOr("kanban_json", nil).(string)
-	if text == "" {
-		text = "null"
+// Decoded kanban context of a policy's kanban_json text, nil for a chat turn, refusing a policy whose source is not kanban
+func decodeKanbanWorkerContext(text, source any) (*pyjson.Object, error) {
+	raw, _ := text.(string)
+	if raw == "" {
+		raw = "null"
 	}
-	decoded, err := pyjson.Loads(text)
-	if err != nil {
-		return err
+	decoded, err := pyjson.Loads(raw)
+	if err != nil || decoded == nil {
+		return nil, err
 	}
-	if decoded == nil {
-		return nil
-	}
-	if !pyjson.Equal(policy.GetOr("source", nil), "kanban") {
-		return &PyError{Kind: "ValueError", Msg: "invalid_kanban_policy"}
+	if !pyjson.Equal(source, "kanban") {
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid_kanban_policy"}
 	}
 	kctx, ok := decoded.(*pyjson.Object)
 	if !ok {
-		return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
+		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
+	}
+	return kctx, nil
+}
+
+// Worker protocol env a kanban attempt's worker child starts with, nil for a chat turn; the claim lifetime comes from the board's claimed event
+func kanbanWorkerSpawnEnv(ctx context.Context, policy *LocalSessionPolicy) (map[string]string, error) {
+	if policy == nil || policy.KanbanJSON == nil {
+		return nil, nil
+	}
+	kctx, err := decodeKanbanWorkerContext(*policy.KanbanJSON, policy.Source)
+	if err != nil || kctx == nil {
+		return nil, err
 	}
 	item := func(key string) any {
 		if err != nil {
@@ -59,11 +67,11 @@ func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 		v, err = kanbanContextItem(kctx, key)
 		return v
 	}
-	text2 := func(key string) string { return pyrepr.Str(item(key)) }
-	env := map[string]string{"ICEBATH_KANBAN_TASK": text2("task_id"), "ICEBATH_KANBAN_BOARD": text2("board"),
-		"ICEBATH_KANBAN_DB": text2("db"), "ICEBATH_KANBAN_RUN_ID": text2("run_id"),
-		"ICEBATH_KANBAN_CLAIM_LOCK": text2("claim_lock"), "ICEBATH_KANBAN_WORKSPACE": text2("workspace"),
-		"ICEBATH_KANBAN_WORKSPACES_ROOT": text2("workspaces_root"), "ICEBATH_PROFILE": text2("profile"),
+	text := func(key string) string { return pyrepr.Str(item(key)) }
+	env := map[string]string{"ICEBATH_KANBAN_TASK": text("task_id"), "ICEBATH_KANBAN_BOARD": text("board"),
+		"ICEBATH_KANBAN_DB": text("db"), "ICEBATH_KANBAN_RUN_ID": text("run_id"),
+		"ICEBATH_KANBAN_CLAIM_LOCK": text("claim_lock"), "ICEBATH_KANBAN_WORKSPACE": text("workspace"),
+		"ICEBATH_KANBAN_WORKSPACES_ROOT": text("workspaces_root"), "ICEBATH_PROFILE": text("profile"),
 		"ICEBATH_SESSION_SOURCE": "kanban"}
 	for _, pair := range [][2]string{{"ICEBATH_KANBAN_BRANCH", "branch"}, {"ICEBATH_TENANT", "tenant"}} {
 		if v := item(pair[1]); pyrepr.Truthy(v) {
@@ -74,29 +82,86 @@ func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 		env["ICEBATH_KANBAN_GOAL_MODE"] = "1"
 	}
 	maxRuntime := item("max_runtime_seconds")
+	runID, _ := item("run_id").(int64)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var budget *int64
 	if n, isInt := maxRuntime.(int64); isInt {
 		budget = &n
 	}
-	for _, key := range []string{"TERMINAL_TIMEOUT", "TERMINAL_MAX_FOREGROUND_TIMEOUT"} {
-		var current *string
-		if v, has := os.LookupEnv(key); has {
-			current = &v
-		}
-		if value := kanban.WorkerTerminalTimeoutEnv(budget, current); value != nil && *value != "" {
-			env[key] = *value
-		}
+	for key, value := range kanban.WorkerTerminalTimeouts(ctx, budget) {
+		env[key] = value
 	}
-	dbPath, taskID, claimLock := text2("db"), text2("task_id"), item("claim_lock")
+	ttl, known, err := kanbanClaimTTL(ctx, env["ICEBATH_KANBAN_DB"], env["ICEBATH_KANBAN_TASK"], runID)
+	if err != nil {
+		return nil, err
+	}
+	if known {
+		env["ICEBATH_KANBAN_CLAIM_TTL_SECONDS"] = strconv.FormatInt(ttl, 10)
+	}
+	return env, nil
+}
+
+// Seconds the run's claim was granted for, from its latest claimed event, false when the event carries no expiry
+func kanbanClaimTTL(ctx context.Context, dbPath, taskID string, runID int64) (int64, bool, error) {
+	var claimedPayload sql.NullString
+	var claimedAt any
+	found := false
+	err := kanban.ConnectClosing(ctx, dbPath, nil, func(conn state.SQLiteConn) error {
+		row := conn.QueryRowContext(ctx, "SELECT payload, created_at FROM task_events WHERE task_id=? AND run_id=? AND kind='claimed' ORDER BY id DESC LIMIT 1", taskID, runID)
+		switch scanErr := row.Scan(&claimedPayload, &claimedAt); scanErr {
+		case nil:
+			found = true
+		case sql.ErrNoRows:
+		default:
+			return scanErr
+		}
+		return nil
+	})
+	if err != nil || !found {
+		return 0, false, err
+	}
+	decoded, err := pyjson.Loads(claimedPayload.String)
+	if err != nil {
+		return 0, false, err
+	}
+	obj, ok := decoded.(*pyjson.Object)
+	if !ok {
+		return 0, false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the kanban claimed event is %s, expected a mapping", errchain.Kind(decoded))}
+	}
+	expires, isInt := obj.GetOr("expires", nil).(int64)
+	if !isInt || !pyrepr.Truthy(claimedAt) {
+		return 0, false, nil
+	}
+	created, err := claimInt(claimedAt)
+	if err != nil {
+		return 0, false, err
+	}
+	return max(1, expires-created), true, nil
+}
+
+// Binds the adopted worker to its Kanban claim before tool discovery, refusing a stale claim and following the submitter; its worker protocol env came with its spawn
+func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
+	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
+	kctx, err := decodeKanbanWorkerContext(policy.GetOr("kanban_json", nil), policy.GetOr("source", nil))
+	if err != nil || kctx == nil {
+		return err
+	}
+	item := func(key string) any {
+		if err != nil {
+			return nil
+		}
+		var v any
+		v, err = kanbanContextItem(kctx, key)
+		return v
+	}
+	dbPath, taskID, claimLock := pyrepr.Str(item("db")), pyrepr.Str(item("task_id")), item("claim_lock")
 	runID, _ := item("run_id").(int64)
-	workspace := text2("workspace")
+	workspace := pyrepr.Str(item("workspace"))
 	if err != nil {
 		return err
 	}
-	var claimedPayload, claimedAt any
 	err = kanban.ConnectClosing(ctx, dbPath, nil, func(conn state.SQLiteConn) error {
 		return kanban.WriteTxn(ctx, conn, false, func() error {
 			task, err := kanban.GetTask(ctx, conn, taskID)
@@ -112,49 +177,14 @@ func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 				fingerprint = *fp
 			}
 			run := runID
-			if err := kanban.AppendTaskEvent(ctx, conn, task.ID, "worker_bound", map[string]any{"pid": int64(os.Getpid()),
-				"claim_lock": claimLock, "started_at": fingerprint}, &run); err != nil {
-				return err
-			}
-			row := conn.QueryRowContext(ctx, "SELECT payload, created_at FROM task_events WHERE task_id=? AND run_id=? AND kind='claimed' ORDER BY id DESC LIMIT 1", task.ID, runID)
-			var payload sql.NullString
-			var created any
-			switch scanErr := row.Scan(&payload, &created); scanErr {
-			case nil:
-				claimedPayload, claimedAt = payload, created
-			case sql.ErrNoRows:
-			default:
-				return scanErr
-			}
-			return nil
+			return kanban.AppendTaskEvent(ctx, conn, task.ID, "worker_bound", map[string]any{"pid": int64(os.Getpid()),
+				"claim_lock": claimLock, "started_at": fingerprint}, &run)
 		})
 	})
 	if err != nil {
 		return err
 	}
-	if claimedPayload != nil {
-		text := claimedPayload.(sql.NullString)
-		decoded, err := pyjson.Loads(text.String)
-		if err != nil {
-			return err
-		}
-		obj, ok := decoded.(*pyjson.Object)
-		if !ok {
-			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
-		}
-		expires, isInt := obj.GetOr("expires", nil).(int64)
-		if isInt && pyrepr.Truthy(claimedAt) {
-			created, err := claimInt(claimedAt)
-			if err != nil {
-				return err
-			}
-			env["ICEBATH_KANBAN_CLAIM_TTL_SECONDS"] = strconv.FormatInt(max(1, expires-created), 10)
-		}
-	}
 	watchSubmitter(dbPath, runID)
-	for k, v := range env {
-		os.Setenv(k, v)
-	}
 	return os.Chdir(workspace)
 }
 

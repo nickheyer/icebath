@@ -1,6 +1,8 @@
 package skills
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"errors"
@@ -140,8 +142,8 @@ func readSkillMDStrict(path string) (string, error) {
 
 // First non heading body line clipped to 80 characters, empty when none
 func firstBodyLine(body string) string {
-	for _, line := range strings.Split(pystr.Strip(body), "\n") {
-		if l := pystr.Strip(line); l != "" && !strings.HasPrefix(l, "#") {
+	for _, line := range strings.Split(strings.TrimSpace(body), "\n") {
+		if l := strings.TrimSpace(line); l != "" && !strings.HasPrefix(l, "#") {
 			return runeHead(l, 80)
 		}
 	}
@@ -401,7 +403,7 @@ func pyStrTruthy(v any) string {
 func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[string]any, tag pluginCommandsTag) SkillCommands {
 	commands := SkillCommands{}
 	for _, entry := range metadata {
-		qualified := pystr.Strip(pyStrTruthy(entry["name"]))
+		qualified := strings.TrimSpace(pyStrTruthy(entry["name"]))
 		if !strings.Contains(qualified, ":") {
 			continue
 		}
@@ -420,7 +422,7 @@ func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[str
 		if !skillMatchesPlatform(parsed) || !s.skillMatchesEnvironment(parsed) || !skillMatchesApps(parsed) {
 			continue
 		}
-		key := "/" + pystr.Lower(qualified)
+		key := "/" + strings.ToLower(qualified)
 		_, collides := SkillCommandCollisionNote(qualified)
 		if _, taken := commands[key]; collides || taken {
 			s.logger().Warn(fmt.Sprintf("Plugin skill %s collides with an existing slash command; skipping", errchain.Show(qualified)))
@@ -435,7 +437,7 @@ func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[str
 		}
 		mdPath := pypath.PathStr(md)
 		commands[key] = map[string]any{
-			"name": qualified, "description": pystr.Strip(pyrepr.Str(desc)),
+			"name": qualified, "description": strings.TrimSpace(pyrepr.Str(desc)),
 			"skill_identifier": qualified, "skill_md_path": mdPath,
 			"skill_dir": pypath.PathParent(mdPath), "source": "plugin",
 		}
@@ -575,11 +577,11 @@ func ResolveSlashKey[V any](command string, table map[string]V) (string, bool) {
 	if command == "" {
 		return "", false
 	}
-	exact := "/" + pystr.Lower(command)
+	exact := "/" + strings.ToLower(command)
 	if _, ok := table[exact]; ok {
 		return exact, true
 	}
-	key := "/" + pystr.Lower(strings.ReplaceAll(command, "_", "-"))
+	key := "/" + strings.ToLower(strings.ReplaceAll(command, "_", "-"))
 	_, ok := table[key]
 	return key, ok
 }
@@ -617,7 +619,7 @@ func (s *Scope) SplitStackedSkillCommands(ctx context.Context, rest string, inte
 	var keys []string
 	remaining := rest
 	for len(keys) < maxStackedSkills-1 {
-		stripped := pystr.Lstrip(remaining)
+		stripped := strings.TrimLeftFunc(remaining, unicode.IsSpace)
 		if !strings.HasPrefix(stripped, "/") {
 			break
 		}
@@ -640,7 +642,7 @@ func (s *Scope) SplitStackedSkillCommands(ctx context.Context, rest string, inte
 		keys = append(keys, key)
 		remaining = tail
 	}
-	return keys, pystr.Strip(remaining), nil
+	return keys, strings.TrimSpace(remaining), nil
 }
 
 // Message, loaded names and missing names of a stacked invocation, false when no skill loaded
@@ -734,7 +736,7 @@ func (s *Scope) BuildPreloadedSkillsPrompt(ctx context.Context, identifiers []st
 	}
 	ids := make([]string, len(identifiers))
 	for i, raw := range identifiers {
-		ids[i] = pystr.Strip(raw)
+		ids[i] = strings.TrimSpace(raw)
 	}
 	loadedNames, missing, _, parts := s.loadSkillBlocks(ctx, ids,
 		func(id string) (loadedSkill, bool) {
@@ -775,7 +777,7 @@ func (s *Scope) ResolveAutoLoadSkills(userConfig map[string]any) []string {
 	seen := map[string]bool{}
 	for _, e := range entries {
 		if str, ok := e.(string); ok {
-			if n := pystr.Strip(str); n != "" && !seen[n] {
+			if n := strings.TrimSpace(str); n != "" && !seen[n] {
 				seen[n] = true
 				names = append(names, n)
 			}
@@ -804,7 +806,7 @@ func (s *Scope) BuildAutoLoadPrompt(ctx context.Context, taskID string, userConf
 
 // Message for a typed skill slash line, stacked skills included, false when the line names no skill
 func (s *Scope) Command(ctx context.Context, line, taskID string) (string, bool, error) {
-	trimmed := pystr.Strip(line)
+	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "/") {
 		return "", false, nil
 	}

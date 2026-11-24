@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -38,16 +37,6 @@ var (
 	sttEnsurePluginsDiscovered    = func(ctx context.Context, force bool) { ensurePluginsDiscoveredHook(ctx, force) }
 )
 
-// stt.providers entry of a name, else stt.<name> for non built in names
-func getNamedSTTProviderConfig(sttConfig any, name string) map[string]any {
-	return namedProviderConfig(sttConfig, name, builtinSTTProviders)
-}
-
-// Command type provider config of a name, nil for built ins, none and unknown names
-func resolveCommandSTTProviderConfig(providerName string, sttConfig any) map[string]any {
-	return resolveCommandConfig(providerName, sttConfig, nonCommandSTTNames)
-}
-
 // Python RuntimeError raised by the command STT flow
 type sttRuntimeError struct{ msg string }
 
@@ -58,12 +47,12 @@ func readCommandSTTOutput(outputPath, stdout string) (string, error) {
 	content := ""
 	if raw, err := os.ReadFile(outputPath); err == nil {
 		s, _ := pycodecs.DecodeReplace(raw, "utf-8-sig")
-		content = pystr.Strip(s)
+		content = strings.TrimSpace(s)
 	}
 	if content != "" {
 		return content, nil
 	}
-	if s := pystr.Strip(stdout); s != "" {
+	if s := strings.TrimSpace(stdout); s != "" {
 		return s, nil
 	}
 	return "", &sttRuntimeError{msg: fmt.Sprintf("Command STT provider wrote no output file at %s and produced no stdout", outputPath)}
@@ -82,8 +71,8 @@ func sttResolvePath(p string) string {
 }
 
 // File handed to a command provider, transcoded to 16 kHz mono when normalize is on, or the error text
-func normalizeCommandSTTInput(audio, tmpdir, providerName string, cfg map[string]any) (string, string) {
-	if !isTruthyValue(cfg["normalize"], false) {
+func normalizeCommandSTTInput(audio, tmpdir, providerName string, p *commandProvider) (string, string) {
+	if !p.Normalize {
 		return sttResolvePath(audio), ""
 	}
 	converted, transcodeError := transcodeAudioForSTT(sttResolvePath(audio), tmpdir)
@@ -108,55 +97,42 @@ func sttExpandUser(p string) string {
 }
 
 // Transcription through a user declared stt.providers command with quote aware placeholders
-func transcribeCommandSTT(ctx context.Context, filePath, providerName string, cfg, sttConfig map[string]any, modelOverride, languageOverride, prompt string) map[string]any {
+func transcribeCommandSTT(ctx context.Context, filePath string, p *commandProvider, req *sttRequest, modelOverride, languageOverride, prompt string) map[string]any {
+	providerName := p.Name
 	if prompt != "" {
 		logPromptUnsupported(fmt.Sprintf("Command STT provider '%s'", providerName))
 	}
 	fail := func(message string) map[string]any { return sttError(message, "provider", providerName) }
-	template := ""
-	if v := cfg["command"]; pyTruthy(v) {
-		template = pystr.Strip(pyrepr.Str(v))
-	}
-	if template == "" {
-		return fail(fmt.Sprintf("stt.providers.%s.command is not configured", providerName))
-	}
+	template := p.Command
 	audio := sttExpandUser(filePath)
 	if _, err := os.Stat(audio); err != nil {
 		return fail("Audio file not found: " + filePath)
 	}
-	timeout := commandTimeout(cfg, defaultCommandSTTTimeoutSeconds)
-	outputFormat := commandOutputFormat(cfg, commandSTTOutputFormats, defaultCommandSTTOutputFormat)
-	var language any = languageOverride
-	if languageOverride == "" {
-		language = cfg["language"]
-		if !pyTruthy(language) {
-			language = resolveSTTLanguage(ctx, providerName, sttConfig)
-		}
-		if !pyTruthy(language) {
-			language = defaultCommandSTTLanguage
-		}
+	timeout := p.Timeout.Seconds()
+	outputFormat := p.OutputFormat
+	if !commandSTTOutputFormats[outputFormat] {
+		outputFormat = defaultCommandSTTOutputFormat
 	}
-	model := modelOverride
-	if model == "" {
-		if v := cfg["model"]; pyTruthy(v) {
-			model = pyrepr.Str(v)
-		}
+	language := languageOverride
+	if language == "" {
+		language = textOr(resolveSTTLanguage(ctx, providerName, req), defaultCommandSTTLanguage)
 	}
+	model := textOr(modelOverride, p.Model)
 	transcript, err := func() (string, error) {
 		tmpdir, err := os.MkdirTemp("", "icebath-cmd-stt-"+providerName+"-")
 		if err != nil {
 			return "", err
 		}
 		defer os.RemoveAll(tmpdir)
-		inputPath, normalizeError := normalizeCommandSTTInput(audio, tmpdir, providerName, cfg)
+		inputPath, normalizeError := normalizeCommandSTTInput(audio, tmpdir, providerName, p)
 		if normalizeError != "" {
 			return "", &sttNormalizeError{msg: normalizeError}
 		}
 		outputPath := filepath.Join(tmpdir, "transcript."+outputFormat)
 		command := renderCommandTemplate(template, map[string]string{"input_path": inputPath, "output_path": outputPath,
-			"output_dir": filepath.Dir(outputPath), "format": outputFormat, "language": pyrepr.Str(language), "model": model})
+			"output_dir": filepath.Dir(outputPath), "format": outputFormat, "language": language, "model": model})
 		pkgLog().Info(fmt.Sprintf("Transcribing %s via command STT provider '%s'...", filepath.Base(audio), providerName))
-		result, err := runCommandSTT(ctx, scopedToolEnv(ctx), command, timeout, commandEnvPassthrough(cfg))
+		result, err := runCommandSTT(ctx, scopedToolEnv(ctx), command, timeout, p.EnvPassthrough)
 		if err != nil {
 			return "", err
 		}
@@ -199,19 +175,19 @@ func sttOSErrorText(err error) string {
 
 // Envelope naming a configured provider no backend registered
 func unregisteredSTTProviderError(providerName string) map[string]any {
-	key := pystr.Strip(providerName)
+	key := strings.TrimSpace(providerName)
 	return sttError(fmt.Sprintf("stt.provider='%s' is set but no built-in, command, or plugin provider registered that name. "+
 		"Run `icebath plugins list` to see installed STT plugins, or configure a command provider under `stt.providers.%s.command`.", key, key),
 		"provider", key, "error_type", "provider_not_registered")
 }
 
 // Plugin transcription of a provider name, nil when no plugin claims it
-func dispatchToSTTPluginProvider(ctx context.Context, filePath, providerName string, sttConfig map[string]any, model, language any, prompt string) map[string]any {
-	key := pystr.Strip(pystr.Lower(providerName))
+func dispatchToSTTPluginProvider(ctx context.Context, filePath, providerName string, req *sttRequest, model, language any, prompt string) map[string]any {
+	key := strings.TrimSpace(strings.ToLower(providerName))
 	if key == "" || nonCommandSTTNames[key] {
 		return nil
 	}
-	if sttConfig != nil && isCommandProviderConfig(getNamedSTTProviderConfig(sttConfig, key)) {
+	if req != nil && req.command(key) != nil {
 		return nil
 	}
 	var p TranscriptionProvider

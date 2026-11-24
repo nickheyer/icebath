@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 //go:embed builtin_skins.json
@@ -207,7 +206,7 @@ func buildSkinConfig(data map[string]any, source string) *SkinConfig {
 		base, _ := def[key].(map[string]any)
 		return mergeOrdered(base, section(key))
 	}
-	css := []rune(pystr.Strip(PyStr(getOr(data, "customCSS", ""))))
+	css := []rune(strings.TrimSpace(PyStr(getOr(data, "customCSS", ""))))
 	if len(css) > 32768 {
 		css = css[:32768]
 	}
@@ -333,8 +332,8 @@ func SetActiveSkin(ctx context.Context, name string) *SkinConfig {
 func InitSkinFromConfig(ctx context.Context, cfg map[string]any) {
 	name := "default"
 	if display, ok := cfg["display"].(map[string]any); ok {
-		if s, isStr := getOr(display, "skin", "default").(string); isStr && pystr.Strip(s) != "" {
-			name = pystr.Strip(s)
+		if s, isStr := getOr(display, "skin", "default").(string); isStr && strings.TrimSpace(s) != "" {
+			name = strings.TrimSpace(s)
 		}
 	}
 	SetActiveSkin(ctx, name)

@@ -154,7 +154,6 @@ func TestMirrorEligibilityResolution(t *testing.T) {
 func TestBotChatTargetWithoutLiveOwnerIsParkedAndAdmittedLater(t *testing.T) {
 	s, _ := newTestStore(t)
 	useRealDelivery(t)
-	t.Setenv(externalWorkerEnv, "")
 	if err := os.WriteFile(filepath.Join(s.home, "state.db"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -133,6 +133,22 @@ func SnapshotCurrent(snap map[string]*string, lookup Lookup) bool {
 	return true
 }
 
+// Lookup of an env name for the profile a home belongs to: the bound profile secret scope when ctx carries one, else the home's .env and then the env an unscoped read may see
+func ProfileEnvLookup(ctx context.Context, h string) Lookup {
+	return func(name string) (string, bool) {
+		hk := hooks()
+		if hk.SecretScopeBound != nil && hk.SecretScopeBound(ctx) {
+			v, ok, err := hk.ScopedSecret(ctx, name)
+			return v, ok && err == nil
+		}
+		if v, ok := LoadEnv(h)[name]; ok {
+			return v, true
+		}
+		v, ok, err := ScopedEnvironGet(ctx, name)
+		return v, ok && err == nil
+	}
+}
+
 // Lookup a config reference expands through, the bound profile secret scope when one is installed and the process env otherwise
 func EnvRefLookupContext(ctx context.Context) Lookup {
 	return func(name string) (string, bool) {

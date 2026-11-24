@@ -157,7 +157,7 @@ func defaultLsRemote(ctx context.Context, source string) (string, error) {
 		return "", err
 	}
 	if err != nil {
-		msg := pystr.Strip(pystr.DecodeUTF8Replace([]byte(stderr.String())))
+		msg := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(stderr.String())))
 		if msg == "" {
 			msg = "ls-remote failed"
 		}
@@ -166,7 +166,7 @@ func defaultLsRemote(ctx context.Context, source string) (string, error) {
 		}
 		return "", errors.New(msg)
 	}
-	out := pystr.Strip(pystr.DecodeUTF8Replace([]byte(stdout.String())))
+	out := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(stdout.String())))
 	if out == "" {
 		return "", nil
 	}

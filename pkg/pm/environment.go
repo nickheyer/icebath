@@ -17,8 +17,6 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var uvLabels = map[string]string{
@@ -97,7 +95,7 @@ func isBytecodeCompileFailure(r uvResult) bool {
 	if r.Code == 0 {
 		return false
 	}
-	return strings.Contains(pystr.Lower(r.Stderr+"\n"+r.Stdout), bytecodeCompileMarker)
+	return strings.Contains(strings.ToLower(r.Stderr+"\n"+r.Stdout), bytecodeCompileMarker)
 }
 
 // Last characters of output starting at a line, a line cut by the limit left out
@@ -114,8 +112,8 @@ func lineTail(output string, n int) string {
 
 // Classified error of a failed uv stage, a resolver conflict, a build failure or a plain install error
 func ClassifyUVFailure(stage string, code int, output string) error {
-	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, lineTail(pystr.Strip(output), 600))
-	lowered := pystr.Lower(output)
+	cause := fmt.Sprintf("uv %s exited %d: %s", stage, code, lineTail(strings.TrimSpace(output), 600))
+	lowered := strings.ToLower(output)
 	undated := true
 	for _, marker := range undatedFile {
 		if !strings.Contains(lowered, marker) {
@@ -730,7 +728,7 @@ func runStreaming(ctx context.Context, command []string, cwd string, env map[str
 		return uvResult{}, err
 	}
 	retained := tail.String()
-	if conflict != "" && !strings.Contains(pystr.Lower(retained), conflict) {
+	if conflict != "" && !strings.Contains(strings.ToLower(retained), conflict) {
 		keep := streamTailChars - len([]rune(conflict)) - 1
 		retained = conflict + "\n" + lastChars(retained, max(keep, 0))
 	}
@@ -985,7 +983,7 @@ func (e *PythonEnvironment) withCacheRecovery(ctx context.Context, stage string,
 		if err := e.PurgeCachedPackages(ctx, names); err != nil {
 			var ie *InstallError
 			if errors.As(err, &ie) {
-				original := lastChars(pystr.Strip(result.Stderr+"\n"+result.Stdout), 600)
+				original := lastChars(strings.TrimSpace(result.Stderr+"\n"+result.Stdout), 600)
 				return result, NewInstallError(ie.Package, fmt.Sprintf("%s; uv %s had failed with: %s", ie.Cause, stage, original), ie.Remedy)
 			}
 			return result, err
@@ -1008,11 +1006,11 @@ func (e *PythonEnvironment) withCacheRecovery(ctx context.Context, stage string,
 			remedy = "the package source is serving a broken wheel; retry later or pin another version"
 		}
 		return result, NewInstallError("venv", fmt.Sprintf("uv %s exited %d: the cached copy of %s is still invalid after removing %s from the uv cache at %s: %s",
-			stage, result.Code, strings.Join(sortedNames(still), ", "), strings.Join(sortedNames(purged), ", "), cache, lastChars(pystr.Strip(text), 600)), remedy)
+			stage, result.Code, strings.Join(sortedNames(still), ", "), strings.Join(sortedNames(purged), ", "), cache, lastChars(strings.TrimSpace(text), 600)), remedy)
 	}
 	if e.Offline {
 		return result, NewInstallError("venv", fmt.Sprintf("uv %s exited %d: removed the corrupt cached copy of %s from %s, and offline mode cannot fetch it again: %s",
-			stage, result.Code, strings.Join(sortedNames(purged), ", "), cache, lastChars(pystr.Strip(text), 600)), "retry with network access")
+			stage, result.Code, strings.Join(sortedNames(purged), ", "), cache, lastChars(strings.TrimSpace(text), 600)), "retry with network access")
 	}
 	return result, nil
 }

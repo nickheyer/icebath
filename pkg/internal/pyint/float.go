@@ -9,7 +9,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -19,7 +18,7 @@ var (
 
 // Python float of a string, any script's decimal digits, underscores between digits, inf and nan spellings
 func ParseFloat(text string) (float64, error) {
-	stripped := pystr.Strip(text)
+	stripped := strings.TrimSpace(text)
 	var ascii strings.Builder
 	for _, r := range stripped {
 		if r > unicode.MaxASCII && unicode.Is(unicode.Nd, r) {

@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Longest an automatic description may take the auxiliary model
@@ -36,7 +35,7 @@ func profileText(v any) string {
 }
 
 // Every profile of the install with the sticky default marked, as the profiles screen shows it
-func profilesOverview(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func profilesOverview(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	if _, err := tuigateway.ProfilesOverview.Params(raw); err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
 	}
@@ -61,7 +60,7 @@ func profilesOverview(ctx context.Context, rid any, raw map[string]any, _ *tuiho
 }
 
 // Sets a profile's description from the text, or has the auxiliary model write one
-func profilesDescribe(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func profilesDescribe(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ProfilesDescribe.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil
@@ -92,7 +91,7 @@ func profilesDescribe(ctx context.Context, rid any, raw map[string]any, _ *tuiho
 }
 
 // Writes the shell alias that opens a profile, or removes it
-func profilesAlias(ctx context.Context, rid any, raw map[string]any, _ *tuihost.Session) (map[string]any, error) {
+func profilesAlias(ctx context.Context, rid any, raw map[string]any) (map[string]any, error) {
 	p, err := tuigateway.ProfilesAlias.Params(raw)
 	if err != nil {
 		return rpcErr(rid, 4000, err.Error(), nil), nil

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Reporter caps on diagnostics per file, block size and attacker controlled fields
@@ -44,7 +43,7 @@ func sanitizeField(v any, limit int, isPrintable func(rune) bool) string {
 			b.WriteRune(r)
 		}
 	}
-	return htmlEscape(runePrefix(pystr.Strip(b.String()), limit), false)
+	return htmlEscape(runePrefix(strings.TrimSpace(b.String()), limit), false)
 }
 
 // Severity name of a value the way a dict lookup by number finds it, the TypeError for unhashable values

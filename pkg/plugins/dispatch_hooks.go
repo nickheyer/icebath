@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,11 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
-	hookCallbackTimeoutSecs        = 30.0
-	maxHookCallbackTimeoutSecs     = 600.0
 	hookTimeoutSuppressionDefault  = 60 * time.Second
 	hookMaxAbandonedWorkers        = 3
 	preToolCallTimeoutBlockMessage = "pre_tool_call plugin callback timed out or is still running"
@@ -153,27 +151,9 @@ func pyFloat(v any) (float64, bool) {
 // Python percent g rendering of a float
 func pyG(v float64) string { return strconv.FormatFloat(v, 'g', 6, 64) }
 
-// Effective hook callback timeout in seconds from plugins.hook_callback_timeout, clamped to the maximum
+// Effective hook callback timeout in seconds from plugins.hook_callback_timeout
 func (m *Manager) resolveHookCallbackTimeout() float64 {
-	def := hookCallbackTimeoutSecs
-	section, ok := loadConfigOrEmpty(m.home)["plugins"].(map[string]any)
-	if !ok || section["hook_callback_timeout"] == nil {
-		return def
-	}
-	timeout, ok := pyFloat(section["hook_callback_timeout"])
-	if !ok || math.IsNaN(timeout) {
-		pkgLog().Warn(fmt.Sprintf("plugins.hook_callback_timeout is not a number; using default %ss", pyG(def)))
-		return def
-	}
-	if timeout < 0 {
-		pkgLog().Warn(fmt.Sprintf("plugins.hook_callback_timeout=%s is negative; using default %ss", pyG(timeout), pyG(def)))
-		return def
-	}
-	if timeout > maxHookCallbackTimeoutSecs {
-		pkgLog().Warn(fmt.Sprintf("plugins.hook_callback_timeout=%s exceeds max %ss; clamping", pyG(timeout), pyG(maxHookCallbackTimeoutSecs)))
-		return maxHookCallbackTimeoutSecs
-	}
-	return timeout
+	return settings.PluginsHookCallbackTimeout.Get(homeContext(m.home)).Seconds()
 }
 
 // Block directive naming the callback and its truncated error for a fail closed hook

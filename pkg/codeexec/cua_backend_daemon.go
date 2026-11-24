@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -53,13 +54,13 @@ func validateCuaDriverAppSignature(env *tools.Env, appPath string) error {
 		return fmt.Errorf("could not verify CuaDriver.app signature: %v", err)
 	}
 	if proc.Returncode != 0 {
-		return fmt.Errorf("CuaDriver.app at %s is not code-signed; refusing to launch it (%s)", appPath, pystr.Strip(proc.Stderr))
+		return fmt.Errorf("CuaDriver.app at %s is not code-signed; refusing to launch it (%s)", appPath, strings.TrimSpace(proc.Stderr))
 	}
 	fields := map[string]string{}
 	lines := pystr.Splitlines(proc.Stderr, false)
 	for i := len(lines) - 1; i >= 0; i-- {
 		if k, v, ok := strings.Cut(lines[i], "="); ok {
-			fields[pystr.Strip(k)] = pystr.Strip(v)
+			fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
 	}
 	identifier, team := fields["Identifier"], fields["TeamIdentifier"]
@@ -72,7 +73,7 @@ func validateCuaDriverAppSignature(env *tools.Env, appPath string) error {
 			return nil
 		}
 	}
-	if (team == "" || team == "not set") && computerUseCfg(env)["allow_unsigned_driver"] == true {
+	if (team == "" || team == "not set") && settings.ComputerUseAllowUnsignedDriver.Get(settingsCtx(env)) {
 		return nil
 	}
 	return fmt.Errorf("CuaDriver.app at %s is signed by team %s, expected one of ('4YEC26S9KF', 'YCK386LBJ7'); "+
@@ -180,7 +181,7 @@ func (t *stderrTail) Write(b []byte) (int, error) {
 }
 
 func (t *stderrTail) add(line string) {
-	if text := pystr.Strip(line); text != "" {
+	if text := strings.TrimSpace(line); text != "" {
 		t.lines = append(t.lines, text)
 		if len(t.lines) > 20 {
 			t.lines = t.lines[len(t.lines)-20:]
@@ -254,7 +255,7 @@ func newEmbeddedCuaDaemon(env *tools.Env, driverCmd, permissionMode, capabilityM
 	if permissionMode != "unrestricted" && permissionMode != "bounded" {
 		return nil, errors.New("embedded permission override supports unrestricted or bounded only")
 	}
-	manifest := pystr.Strip(capabilityManifest)
+	manifest := strings.TrimSpace(capabilityManifest)
 	if manifest == "" && permissionMode == "bounded" {
 		return nil, errors.New("bounded permission mode requires computer_use.capability_manifest")
 	}

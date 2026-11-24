@@ -232,7 +232,7 @@ func bullet(handle string, parts ...string) string {
 // Title and display name of a Bot Mode block, stripped, empty when unset
 func friendlyFields(data map[string]any) (string, string) {
 	meta, _ := botsMeta(data)
-	return pystr.Strip(strOr(meta["title"])), pystr.Strip(strOr(data["display_name"]))
+	return strings.TrimSpace(strOr(meta["title"])), strings.TrimSpace(strOr(data["display_name"]))
 }
 
 // One line teammate role of a profile, display name, title and description, at most 160 characters
@@ -240,11 +240,11 @@ func profileRole(profileDir string) string {
 	return swallow(func() (string, error) {
 		data := readYAMLDict(pypath.PathJoin(profileDir, "profile.yaml"), "")
 		title, display := friendlyFields(data)
-		lowered := pystr.Lower(display)
-		if lowered == pystr.Lower(pypath.PathName(profileDir)) || lowered == pystr.Lower(title) {
+		lowered := strings.ToLower(display)
+		if lowered == strings.ToLower(pypath.PathName(profileDir)) || lowered == strings.ToLower(title) {
 			display = ""
 		}
-		line := roleLine(display, title, pystr.Strip(strOr(data["description"])))
+		line := roleLine(display, title, strings.TrimSpace(strOr(data["description"])))
 		return headRunes(strings.Join(pystr.SplitWhitespace(line, -1), " "), 160), nil
 	}, "")
 }
@@ -274,7 +274,7 @@ var (
 
 // AliasForms gives the lower cased slug and collapsed mention forms of a friendly name, reserved and empty dropped
 func AliasForms(value string) map[string]bool {
-	name := pystr.Lower(pystr.Strip(value))
+	name := strings.ToLower(strings.TrimSpace(value))
 	slug := strings.Trim(aliasNonSlugRe.ReplaceAllString(name, "-"), "-")
 	collapsed := aliasNonSlugRe.ReplaceAllString(name, "")
 	out := map[string]bool{}
@@ -335,7 +335,7 @@ func peers(root string) []string {
 	}
 	var out []string
 	for name := range table {
-		if pystr.Strip(name) != "" {
+		if strings.TrimSpace(name) != "" {
 			out = append(out, name)
 		}
 	}
@@ -437,7 +437,7 @@ func modelPromptCapabilitySurface(modelCfg any) (map[string]any, error) {
 	switch raw := cfg["context_length"].(type) {
 	case bool:
 	case string:
-		stripped := pystr.Strip(raw)
+		stripped := strings.TrimSpace(raw)
 		if stripped != "" && allDigits(stripped) {
 			n, ok := pyint.Parse(stripped)
 			if !ok {
@@ -519,7 +519,7 @@ func configSurface(resolved string, surface map[string]any) error {
 	}
 	disabled := make([]string, 0, len(disabledRaw))
 	for _, s := range disabledRaw {
-		disabled = append(disabled, pystr.Lower(pyrepr.Str(s)))
+		disabled = append(disabled, strings.ToLower(pyrepr.Str(s)))
 	}
 	sort.Strings(disabled)
 	surface["disabled_skills"] = disabled

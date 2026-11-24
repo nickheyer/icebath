@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -21,7 +20,7 @@ func isWhatsAppNonUserChat(chatID *string) bool {
 	if chatID == nil || *chatID == "" {
 		return false
 	}
-	lowered := pystr.Lower(pystr.Strip(*chatID))
+	lowered := strings.ToLower(strings.TrimSpace(*chatID))
 	for _, s := range whatsappNonUserSuffixes {
 		if strings.HasSuffix(lowered, s) {
 			return true
@@ -32,7 +31,7 @@ func isWhatsAppNonUserChat(chatID *string) bool {
 
 // True when two WhatsApp user chat ids name the same person across number, JID and LID forms
 func whatsappUserChatIDsMatch(ctx context.Context, platform string, left, right *string) (bool, error) {
-	if !whatsappIdentityPlatforms[pystr.Lower(pystr.Strip(platform))] || left == nil || *left == "" || right == nil || *right == "" ||
+	if !whatsappIdentityPlatforms[strings.ToLower(strings.TrimSpace(platform))] || left == nil || *left == "" || right == nil || *right == "" ||
 		isWhatsAppNonUserChat(left) || isWhatsAppNonUserChat(right) {
 		return false, nil
 	}
@@ -119,7 +118,7 @@ func (r *ProfileRoute) Matches(ctx context.Context, q RouteQuery) (bool, error) 
 	if !strPtrEq(botProfileKey(r.BotProfile), botProfileKey(q.AdapterProfile)) {
 		return false, nil
 	}
-	if r.UserID != nil && (pystr.Strip(*r.UserID) == "" || !strPtrEq(r.UserID, q.UserID)) {
+	if r.UserID != nil && (strings.TrimSpace(*r.UserID) == "" || !strPtrEq(r.UserID, q.UserID)) {
 		return false, nil
 	}
 	if nonEmpty(r.ThreadID) && !strPtrEq(r.ThreadID, q.ThreadID) {
@@ -164,7 +163,7 @@ func botProfileKey(name *string) *string {
 	if name == nil {
 		return nil
 	}
-	s := pystr.Strip(*name)
+	s := strings.TrimSpace(*name)
 	if s == "" || s == "default" {
 		return nil
 	}
@@ -234,7 +233,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 			continue
 		}
 		userID, hasUser := entry["user_id"]
-		if s, isStr := userID.(string); hasUser && (userID == nil || isStr && pystr.Strip(s) == "") {
+		if s, isStr := userID.(string); hasUser && (userID == nil || isStr && strings.TrimSpace(s) == "") {
 			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: user_id cannot be null or empty", pyrepr.Str(name)))
 			continue
 		}

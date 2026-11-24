@@ -202,7 +202,7 @@ func lockIn(t *testing.T) string {
 
 func buildWith(t *testing.T, engine WakeEngine) {
 	t.Helper()
-	swap(t, &wakeBuildEngine, func(context.Context, map[string]any) (WakeEngine, error) { return engine, nil })
+	swap(t, &wakeBuildEngine, func(context.Context, *WakeConfig) (WakeEngine, error) { return engine, nil })
 }
 
 func noWake() error { return nil }
@@ -362,7 +362,7 @@ func TestDetectionCallbackCanPauseAndCloseStream(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := StartListening(context.Background(), onWake, owner, map[string]any{}); err != nil {
+	if _, err := StartListening(context.Background(), onWake, owner, &WakeConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -598,7 +598,7 @@ func TestStartupFailureReleasesOwnerAndMachineLock(t *testing.T) {
 	buildWith(t, newFakeWakeEngine(false))
 	path := lockIn(t)
 	owner := new(int)
-	_, err := StartListening(context.Background(), noWake, owner, map[string]any{})
+	_, err := StartListening(context.Background(), noWake, owner, &WakeConfig{})
 	var we *WakeWordError
 	if !errors.As(err, &we) || we.Class != "RuntimeError" || !strings.Contains(we.Msg, "Failed to open") {
 		t.Fatalf("start error %v", err)
@@ -621,7 +621,7 @@ func TestStreamFailureReleasesOwnerAndMachineLock(t *testing.T) {
 	buildWith(t, engine)
 	path := lockIn(t)
 	owner := new(int)
-	det, err := StartListening(context.Background(), noWake, owner, map[string]any{})
+	det, err := StartListening(context.Background(), noWake, owner, &WakeConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}

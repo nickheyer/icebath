@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -21,9 +20,6 @@ var installHooks = struct {
 	unitPath           func(ctx context.Context, system bool) (string, error)
 	generateUnit       func(ctx context.Context, system bool, runAsUser string) (string, error)
 	requireRoot        func(action string) error
-	hasLegacy          func(ctx context.Context) bool
-	removeLegacy       func(ctx context.Context, w io.Writer, interactive, dryRun bool) (int, []string, error)
-	legacyWarning      func(ctx context.Context, w io.Writer)
 	conflictWarning    func(ctx context.Context, w io.Writer) error
 	prepareLauncher    func(ctx context.Context, system bool, runAsUser string) error
 	ensureLinger       func(ctx context.Context, w io.Writer, username string, system bool) (bool, error)
@@ -48,7 +44,6 @@ var installHooks = struct {
 	refreshPlist       func(ctx context.Context) (bool, error)
 }{
 	unitPath: GetSystemdUnitPath, generateUnit: GenerateSystemdUnit, requireRoot: requireRootForSystemService,
-	hasLegacy: hasLegacyIcebathUnits, removeLegacy: removeLegacyIcebathUnits, legacyWarning: printLegacyUnitWarning,
 	conflictWarning: printSystemdScopeConflictWarning, prepareLauncher: prepareServiceLauncher,
 	syncHome: SyncIcebathHomeFromSystemdUnit, unitIsCurrent: SystemdUnitIsCurrent, refreshUnit: refreshSystemdUnitIfNeeded,
 	readUser: readSystemdUserFromUnit, getpwnam: pypwd.Getpwnam, waitUserBus: waitForTargetUserBus, unitIsActive: SystemdUnitIsActive,
@@ -118,142 +113,6 @@ func findLegacyIcebathUnits(ctx context.Context) []legacyUnit {
 		}
 	}
 	return out
-}
-
-// Whether any legacy gateway unit file exists
-func hasLegacyIcebathUnits(ctx context.Context) bool { return len(findLegacyIcebathUnits(ctx)) > 0 }
-
-// Warns about installed legacy gateway units, printing nothing when there are none
-func printLegacyUnitWarning(ctx context.Context, w io.Writer) {
-	legacy := findLegacyIcebathUnits(ctx)
-	if len(legacy) == 0 {
-		return
-	}
-	con := serviceConsole(w)
-	con.PrintWarning("Legacy Icebath gateway unit(s) detected from an older install:")
-	for _, u := range legacy {
-		con.PrintInfo(fmt.Sprintf("    %s  (%s scope)", u.path, ServiceScopeLabel(u.system)))
-	}
-	con.PrintInfo("  These run alongside the current icebath-gateway service and")
-	con.PrintInfo("  cause SIGTERM flap loops — both try to use the same bot token.")
-	con.PrintInfo("  Remove them with:")
-	con.PrintInfo("    icebath gateway migrate-legacy")
-}
-
-// Stops, disables and removes legacy units, returning the removed count and the paths left behind
-func removeLegacyIcebathUnits(ctx context.Context, w io.Writer, interactive, dryRun bool) (int, []string, error) {
-	legacy := findLegacyIcebathUnits(ctx)
-	if len(legacy) == 0 {
-		fmt.Fprintln(w, "No legacy Icebath gateway units found.")
-		return 0, nil, nil
-	}
-	paths := func() []string {
-		out := make([]string, 0, len(legacy))
-		for _, u := range legacy {
-			out = append(out, u.path)
-		}
-		return out
-	}
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Legacy Icebath gateway unit(s) found:")
-	for _, u := range legacy {
-		fmt.Fprintf(w, "  %s  (%s scope)\n", u.path, ServiceScopeLabel(u.system))
-	}
-	fmt.Fprintln(w)
-	if dryRun {
-		fmt.Fprintln(w, "(dry-run — nothing removed)")
-		return 0, paths(), nil
-	}
-	if interactive && !gatewayFacade.promptYesNo("Remove these legacy units?", true) {
-		fmt.Fprintln(w, "Skipped. Run again with: icebath gateway migrate-legacy")
-		return 0, paths(), nil
-	}
-	removed := 0
-	var remaining []string
-	removeUnits := func(units []legacyUnit, system bool) error {
-		for _, u := range units {
-			err := func() error {
-				if _, err := lifecycleRunSystemctl(ctx, []string{"stop", u.name}, system, 90*time.Second); err != nil {
-					return err
-				}
-				if _, err := lifecycleRunSystemctl(ctx, []string{"disable", u.name}, system, 30*time.Second); err != nil {
-					return err
-				}
-				if err := os.Remove(u.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-					return err
-				}
-				return nil
-			}()
-			if err != nil {
-				if !legacyRemovalHandled(err) {
-					return err
-				}
-				fmt.Fprintf(w, "  ⚠ Could not remove %s: %s\n", u.path, legacyRemovalText(err))
-				remaining = append(remaining, u.path)
-				continue
-			}
-			fmt.Fprintf(w, "  ✓ Removed %s\n", u.path)
-			removed++
-		}
-		if _, err := lifecycleRunSystemctl(ctx, []string{"daemon-reload"}, system, 30*time.Second); err != nil && !runtimeErrorClass(err) {
-			return err
-		}
-		return nil
-	}
-	var userUnits, systemUnits []legacyUnit
-	for _, u := range legacy {
-		if u.system {
-			systemUnits = append(systemUnits, u)
-		} else {
-			userUnits = append(userUnits, u)
-		}
-	}
-	if len(userUnits) > 0 {
-		if err := removeUnits(userUnits, false); err != nil {
-			return removed, remaining, err
-		}
-	}
-	con := serviceConsole(w)
-	if len(systemUnits) > 0 {
-		if serviceGeteuid() != 0 {
-			fmt.Fprintln(w)
-			con.PrintWarning("System-scope legacy units require root to remove.")
-			con.PrintInfo("  Re-run with: sudo icebath gateway migrate-legacy")
-			for _, u := range systemUnits {
-				remaining = append(remaining, u.path)
-			}
-		} else if err := removeUnits(systemUnits, true); err != nil {
-			return removed, remaining, err
-		}
-	}
-	fmt.Fprintln(w)
-	if len(remaining) > 0 {
-		con.PrintWarning(fmt.Sprintf("%d legacy unit(s) still present — see messages above.", len(remaining)))
-	} else {
-		con.PrintSuccess(fmt.Sprintf("Removed %d legacy unit(s).", removed))
-	}
-	return removed, remaining, nil
-}
-
-// Whether a unit removal failure is the OSError or RuntimeError class the removal reports and survives
-func legacyRemovalHandled(err error) bool {
-	var pathErr *os.PathError
-	return errors.As(err, &pathErr) || runtimeErrorClass(err)
-}
-
-// Python str of a handled removal failure, the OSError text of a file error
-func legacyRemovalText(err error) string {
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
-		return errchain.OSText(err)
-	}
-	return err.Error()
-}
-
-// Whether an error is a RuntimeError subclass of the service helpers, the missing systemctl or a timeout
-func runtimeErrorClass(err error) bool {
-	var unavailable SystemctlUnavailableError
-	return errors.As(err, &unavailable)
 }
 
 // Prints the manual linger guidance after an automatic enable could not run or failed
@@ -389,17 +248,6 @@ func systemdInstall(ctx context.Context, w io.Writer, force, system bool, runAsU
 			return &SystemExitError{Code: 1}
 		}
 	}
-	if installHooks.hasLegacy(ctx) {
-		fmt.Fprintln(w)
-		installHooks.legacyWarning(ctx, w)
-		fmt.Fprintln(w)
-		if nonInteractive || gatewayFacade.promptYesNo("Remove the legacy unit(s) before installing?", true) {
-			if _, _, err := installHooks.removeLegacy(ctx, w, false, false); err != nil {
-				return err
-			}
-			fmt.Fprintln(w)
-		}
-	}
 	scopeLabel := ServiceScopeLabel(system)
 	sudo, scopeFlag, userFlag := systemdCLIBits(system)
 	exists := pathExistsSafe(unitPath)
@@ -508,11 +356,7 @@ func systemdInstall(ctx context.Context, w io.Writer, force, system bool, runAsU
 	} else if _, err := installHooks.ensureLinger(ctx, w, "", false); err != nil {
 		return err
 	}
-	if err := installHooks.conflictWarning(ctx, w); err != nil {
-		return err
-	}
-	installHooks.legacyWarning(ctx, w)
-	return nil
+	return installHooks.conflictWarning(ctx, w)
 }
 
 // Installs or repairs the launchd LaunchAgent, loading it unless the install was asked not to start the gateway

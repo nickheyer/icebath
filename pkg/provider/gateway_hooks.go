@@ -1,9 +1,9 @@
 package provider
 
 import (
-	"unicode/utf8"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode/utf8"
 )
 
 // Gateway functions provider reads, installed by the gateway package at init, each answering for no gateway while unset
@@ -25,6 +25,6 @@ func HasUsableSecret(value any, minLength int) bool {
 	if !ok {
 		return false
 	}
-	cleaned := pystr.Strip(s)
-	return utf8.RuneCountInString(cleaned) >= minLength && !placeholderSecretValues[pystr.Lower(cleaned)] && !isPlaceholderShape(cleaned)
+	cleaned := strings.TrimSpace(s)
+	return utf8.RuneCountInString(cleaned) >= minLength && !placeholderSecretValues[strings.ToLower(cleaned)] && !isPlaceholderShape(cleaned)
 }

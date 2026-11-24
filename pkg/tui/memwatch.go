@@ -7,8 +7,6 @@ import (
 	"runtime/debug"
 	"runtime/metrics"
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,7 +25,7 @@ const (
 	memoryHighShare = 0.70
 	// Share of the heap budget at which the watchdog sheds every render cache, dumps and ends the process
 	memoryCriticalShare = 0.88
-	// Wait between two automatic dumps of the high level, unless the environment sets another
+	// Wait between two automatic dumps of the high level, unless the settings give another
 	memoryDumpCooldown = 10 * time.Minute
 	// Exit status of a process that ended itself before the system ran out of memory, the one a kill by the system leaves
 	memoryExitStatus = 137
@@ -88,15 +86,6 @@ func resolveMemoryThresholds() memoryThresholds {
 	t.warn = min(memoryWarnFloor, t.high/2)
 	t.step = max(t.warn/4, 1)
 	return t
-}
-
-// Wait between two automatic dumps of the high level, the milliseconds the environment names when they are a number of zero or more
-func memoryCooldown() time.Duration {
-	ms, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv("ICEBATH_AUTO_HEAPDUMP_COOLDOWN_MS")), 64)
-	if err != nil || math.IsNaN(ms) || math.IsInf(ms, 0) || ms < 0 {
-		return memoryDumpCooldown
-	}
-	return time.Duration(ms * float64(time.Millisecond))
 }
 
 // Watchdog that samples the live heap, warns once on fast growth, sheds caches and dumps at its high level and ends the process at its critical one
@@ -184,16 +173,16 @@ func (s *inlineImages) evict(all bool) {
 	s.gen++
 }
 
-// Notes the memory the UI starts with, writes the dump the environment asks for at the start, starts the memory watchdog beside the UI and returns what stops it
+// Notes the memory the UI starts with, writes the dump the settings ask for at the start, starts the memory watchdog beside the UI and returns what stops it
 func (a *app) startMemoryWatch() func() {
 	markMemoryBaseline()
-	if os.Getenv("ICEBATH_HEAPDUMP_ON_START") == "1" {
+	if prefs.HeapDumpOnStart {
 		go func() {
 			dump := performHeapDump(dumpManual)
 			a.post(asyncDoneMsg{run: func() tea.Cmd { return a.onceSessionStands(sessionWaitTries, func() { a.showHeapDump(dump) }) }})
 		}()
 	}
-	w := &memoryWatch{limits: resolveMemoryThresholds(), cooldown: memoryCooldown(), lastHeap: -1, dumped: map[string]bool{},
+	w := &memoryWatch{limits: resolveMemoryThresholds(), cooldown: max(prefs.HeapDumpCooldown, 0), lastHeap: -1, dumped: map[string]bool{},
 		warn: a.memoryWarned, shed: a.shedRenderCaches, high: a.memoryHigh, critical: a.memoryCritical}
 	stop := make(chan struct{})
 	go w.run(stop)

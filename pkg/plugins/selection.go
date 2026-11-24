@@ -11,11 +11,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -25,49 +24,27 @@ var bundledDefaultOnKinds = map[string]bool{"backend": true, "platform": true, "
 // One selection lock per home so concurrent enables never submit the same config version
 var selectionLocks sync.Map
 
-// String config value, empty missing or falsy values coerced to the default
-func configStr(h, def string, keys ...string) string {
-	v := configValue(h, def, keys...)
-	if !pyrepr.Truthy(v) {
-		return def
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return pyrepr.Str(v)
-}
-
-// Persists config section key to config.yaml, creating the section
-func writeConfigValue(ctx context.Context, h, section, key string, value any) error {
-	return updateUserConfig(ctx, h, func(doc map[string]any) error {
-		existing, present := doc[section]
-		if !present {
-			existing = map[string]any{}
-			doc[section] = existing
-		}
-		m, ok := existing.(map[string]any)
-		if !ok {
-			return fmt.Errorf("config %s is %s where a mapping was expected", section, errchain.Kind(existing))
-		}
-		m[key] = value
-		return nil
-	})
-}
-
 // Live memory provider name, empty for the built in one
-func getCurrentMemoryProvider(h string) string { return configStr(h, "", "memory", "provider") }
+func getCurrentMemoryProvider(h string) string { return settings.MemoryProvider.Get(homeContext(h)) }
 
 // Selects a memory provider in config.yaml
 func saveMemoryProvider(ctx context.Context, h, name string) error {
-	return writeConfigValue(ctx, h, "memory", "provider", name)
+	_, err := settings.Set(home.WithOverride(ctx, h), settings.MemoryProvider.Key, name, settings.Global)
+	return err
 }
 
-// Configured context engine, compressor when unset
-func getCurrentContextEngine(h string) string { return configStr(h, "compressor", "context", "engine") }
+// Configured context engine, the registry default when unset or blank
+func getCurrentContextEngine(h string) string {
+	if engine := settings.ContextEngine.Get(homeContext(h)); engine != "" {
+		return engine
+	}
+	return settings.ContextEngine.Default
+}
 
 // Selects a context engine in config.yaml
 func saveContextEngine(ctx context.Context, h, name string) error {
-	return writeConfigValue(ctx, h, "context", "engine", name)
+	_, err := settings.Set(home.WithOverride(ctx, h), settings.ContextEngine.Key, name, settings.Global)
+	return err
 }
 
 // Installed plugin path for a name, else exit 1 with the invalid name or the unknown plugin message
@@ -180,46 +157,39 @@ func disabledByUpdate(ctx context.Context, h, key string, aliases map[string]boo
 
 // Drops every trace of a removed plugin from config.yaml, reporting a cleared memory provider selection
 func forgetPluginConfig(ctx context.Context, h string, aliases map[string]bool) (map[string]any, error) {
-	result := map[string]any{}
-	err := updateUserConfig(ctx, h, func(cfg map[string]any) error {
-		if pluginsCfg, ok := cfg["plugins"].(map[string]any); ok {
-			for _, listKey := range []string{"enabled", "disabled"} {
-				names, ok := pluginsCfg[listKey].([]any)
-				if !ok {
-					continue
-				}
-				kept, hit := map[string]bool{}, false
-				for _, v := range names {
-					name := scalarString(v)
-					if aliases[name] {
-						hit = true
-					} else {
-						kept[name] = true
-					}
-				}
-				if hit {
-					pluginsCfg[listKey] = anyList(sortedSet(kept))
-				}
-			}
-			if entries, ok := pluginsCfg["entries"].(map[string]any); ok {
-				for alias := range aliases {
-					delete(entries, alias)
-				}
+	hctx := home.WithOverride(ctx, h)
+	for _, list := range []*settings.List{settings.PluginsEnabled, settings.PluginsDisabled} {
+		kept, hit := map[string]bool{}, false
+		for _, name := range list.Strings(hctx) {
+			if aliases[name] {
+				hit = true
+			} else {
+				kept[name] = true
 			}
 		}
-		if memoryCfg, ok := cfg["memory"].(map[string]any); ok {
-			provider := ""
-			if v := memoryCfg["provider"]; pyrepr.Truthy(v) {
-				provider = pystr.Strip(pyrepr.Str(v))
-			}
-			if aliases[provider] {
-				memoryCfg["provider"] = ""
-				result = map[string]any{"cleared_memory_provider": true}
-			}
+		if !hit {
+			continue
 		}
-		return nil
-	})
-	return result, err
+		if _, err := settings.Set(hctx, list.Key, anyList(sortedSet(kept)), settings.Global); err != nil {
+			return nil, err
+		}
+	}
+	entries := settings.PluginsEntries.Get(hctx)
+	for _, alias := range sortedSet(aliases) {
+		if _, held := entries[alias]; !held {
+			continue
+		}
+		if _, err := settings.PluginsEntries.DeleteEntry(hctx, alias); err != nil {
+			return nil, err
+		}
+	}
+	if !aliases[strings.TrimSpace(settings.MemoryProvider.Get(hctx))] {
+		return map[string]any{}, nil
+	}
+	if _, err := settings.Set(hctx, settings.MemoryProvider.Key, "", settings.Global); err != nil {
+		return nil, err
+	}
+	return map[string]any{"cleared_memory_provider": true}, nil
 }
 
 // Per home selection lock keyed by the resolved home
@@ -388,10 +358,7 @@ func CmdDisable(ctx context.Context, name string, out io.Writer) error {
 	if key == "" {
 		return fail(console, unknownPluginMessage(name, false))
 	}
-	toolsetKey, err := savedListToolsetKey(ctx, h, key)
-	if err != nil {
-		return err
-	}
+	toolsetKey := savedListToolsetKey(ctx, h, key)
 	changed, err := activateKey(ctx, h, key, false, console)
 	if err != nil {
 		return reportedRefusal(err)
@@ -468,7 +435,7 @@ func defaultOn(h, dir, source, key string) (bool, error) {
 	if v, ok := manifest["kind"]; ok {
 		rawKind = v
 	}
-	kind := strings.ToLower(pystr.Strip(pyrepr.Str(rawKind)))
+	kind := strings.ToLower(strings.TrimSpace(pyrepr.Str(rawKind)))
 	return kind == "model-provider" || (source == "bundled" && bundledDefaultOnKinds[kind]), nil
 }
 
@@ -574,67 +541,75 @@ func safeLookup(lookup func() string) (out string) {
 }
 
 // Toolset key of a plugin, empty without loading anything when no platform has a saved list
-func savedListToolsetKey(ctx context.Context, h, name string) (string, error) {
-	cfg, err := loadConfig(h)
-	if err != nil {
-		return "", err
+func savedListToolsetKey(ctx context.Context, h, name string) string {
+	if len(settings.ToolGroups.Get(home.WithOverride(ctx, h))) == 0 {
+		return ""
 	}
-	saved, ok := cfg["platform_toolsets"].(map[string]any)
-	if !ok {
-		return "", nil
-	}
-	for _, v := range saved {
-		if _, parsed := tools.ParsePlatformToolsetsValue(v); parsed {
-			return getPluginToolsetKey(ctx, h, name), nil
-		}
-	}
-	return "", nil
+	return getPluginToolsetKey(ctx, h, name)
 }
 
 // Adds or removes a plugin toolset in every saved platform_toolsets list
 func togglePluginToolset(ctx context.Context, h, name string, enable bool, toolsetKey string) error {
 	if toolsetKey == "" {
-		var err error
-		if toolsetKey, err = savedListToolsetKey(ctx, h, name); err != nil {
-			return err
-		}
+		toolsetKey = savedListToolsetKey(ctx, h, name)
 	}
 	if toolsetKey == "" {
 		return nil
 	}
-	return updateUserConfig(ctx, h, func(cfg map[string]any) error {
-		platformToolsets := childMap(cfg, "platform_toolsets")
-		for _, platform := range sortedKeys(platformToolsets) {
-			list, ok := tools.ParsePlatformToolsetsValue(platformToolsets[platform])
-			if !ok || enable == slices.Contains(list, toolsetKey) {
-				continue
-			}
-			if enable {
-				list = append(list, toolsetKey)
-			} else if i := slices.Index(list, toolsetKey); i >= 0 {
-				list = slices.Delete(list, i, i+1)
-			}
-			platformToolsets[platform] = anyList(list)
+	hctx := home.WithOverride(ctx, h)
+	saved := settings.ToolGroups.Get(hctx)
+	for _, platform := range sortedKeys(saved) {
+		list, ok := tools.ParsePlatformToolsetsValue(saved[platform])
+		if !ok || enable == slices.Contains(list, toolsetKey) {
+			continue
 		}
-		return nil
-	})
+		if enable {
+			list = append(list, toolsetKey)
+		} else if i := slices.Index(list, toolsetKey); i >= 0 {
+			list = slices.Delete(list, i, i+1)
+		}
+		if _, err := settings.ToolGroups.SetEntry(hctx, platform, anyList(list)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Enables or disables a plugin without prompts, loading an enabled plugin live
 func SetAgentPluginEnabled(ctx context.Context, name string, enabled bool) (map[string]any, error) {
 	h := home.Dir(ctx)
-	key, err := resolveNamedPluginKey(ctx, name)
+	key, source, err := resolvePluginKeyAndSource(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 	if key == "" {
 		return map[string]any{"ok": false, "error": fmt.Sprintf("Plugin '%s' is not installed or bundled.", name)}, nil
 	}
+	if enabled {
+		refusal := func(text string) map[string]any {
+			return map[string]any{"ok": false, "error": text, "name": key, "unchanged": true, "restart_required": false}
+		}
+		if line, absent := catalogTierRefusal(filepath.Base(key)); absent {
+			return refusal(line), nil
+		}
+		if source != "bundled" {
+			parts := strings.Split(key, "/")
+			dir, err := userInstalledPluginDir(ctx, parts[len(parts)-1])
+			if err != nil {
+				return nil, err
+			}
+			if err := refuseIfInstalledRemoved(h, key, dir); err != nil {
+				var opErr *PluginOperationError
+				if errors.As(err, &opErr) {
+					return refusal(opErr.Error()), nil
+				}
+				return nil, err
+			}
+		}
+	}
 	toolsetKey := ""
 	if !enabled {
-		if toolsetKey, err = savedListToolsetKey(ctx, h, key); err != nil {
-			return nil, err
-		}
+		toolsetKey = savedListToolsetKey(ctx, h, key)
 	}
 	changed, err := activateKey(ctx, h, key, enabled, nil)
 	var refused *AdmissionRefused

@@ -12,7 +12,6 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -36,7 +35,7 @@ func isPetdexHost(raw string) bool {
 	if err != nil {
 		return false
 	}
-	host := pystr.Lower(u.Hostname())
+	host := strings.ToLower(u.Hostname())
 	return host == "petdex.dev" || strings.HasSuffix(host, ".petdex.dev")
 }
 
@@ -89,7 +88,7 @@ func InstallPet(ctx context.Context, env *tools.Env, h, slug string, force bool)
 		return nil, err
 	}
 	ext := ".webp"
-	if head, _, _ := strings.Cut(pystr.Lower(entry.SpritesheetURL), "?"); strings.HasSuffix(head, ".png") {
+	if head, _, _ := strings.Cut(strings.ToLower(entry.SpritesheetURL), "?"); strings.HasSuffix(head, ".png") {
 		ext = ".png"
 	}
 	spritePath := filepath.Join(directory, "spritesheet"+ext)
@@ -131,7 +130,7 @@ func ExportPet(h, slug string) (string, []byte, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	directory := filepath.Join(root, pystr.Strip(slug))
+	directory := filepath.Join(root, strings.TrimSpace(slug))
 	resolvedParent, _ := filepath.Abs(filepath.Dir(directory))
 	resolvedRoot, _ := filepath.Abs(root)
 	if real, err := filepath.EvalSymlinks(filepath.Dir(directory)); err == nil {
@@ -210,7 +209,7 @@ func RemovePet(h, slug string) (bool, error) {
 // Renames a pet's display name and moves its directory and thumb to the slug of that name when free, empty on failure
 func RenamePet(h, slug, displayName string) (string, error) {
 	slug = safeSlug(slug)
-	displayName = pystr.Strip(displayName)
+	displayName = strings.TrimSpace(displayName)
 	root, err := PetsDir(h)
 	if err != nil {
 		return "", err

@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -126,7 +125,7 @@ func normalizeDelegateRole(r any) string {
 		if !ok {
 			s = fmt.Sprint(r)
 		}
-		norm = strings.ToLower(pystr.Strip(s))
+		norm = strings.ToLower(strings.TrimSpace(s))
 	}
 	if !delegateRoles[norm] {
 		pkgLog().Warn(fmt.Sprintf("Unknown delegate_task role=%s, coercing to 'leaf'", errchain.Show(r)))
@@ -371,7 +370,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		}
 		actionText = s
 	}
-	normalized := strings.ToLower(pystr.Strip(actionText))
+	normalized := strings.ToLower(strings.TrimSpace(actionText))
 	if delegateControlActions[normalized] {
 		return handleDelegateControlAction(normalized, kwargs["subagent_id"], kwargs["message"], parent)
 	}

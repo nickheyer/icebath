@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -331,7 +330,7 @@ func autoPruneRowBytesSQL(ctx context.Context, db *SessionDB) (string, error) {
 	var parts []string
 	for _, r := range rows {
 		typ, _ := r.Get("type")
-		switch pystr.Upper(pyrepr.Str(typ)) {
+		switch strings.ToUpper(pyrepr.Str(typ)) {
 		case "TEXT", "BLOB", "":
 			name, _ := r.Get("name")
 			parts = append(parts, `COALESCE(LENGTH(CAST(m."`+pyrepr.Str(name)+`" AS BLOB)), 0)`)
@@ -437,7 +436,7 @@ func AutoPruneDecide(ctx context.Context, enable bool, h string) bool {
 
 // Reply of the autoprune command with on, off, later or status, the one handler every surface shares
 func AutoPruneCommand(ctx context.Context, args, h string) (string, error) {
-	arg := pystr.Lower(pystr.Strip(args))
+	arg := strings.ToLower(strings.TrimSpace(args))
 	on, set := autoPruneSetting(ctx, h)
 	state := "off"
 	if on {

@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Directories bootstrapped inside every new profile
@@ -116,7 +115,7 @@ func ProfileExistsError(canon string) error {
 
 // Valid profile id derived from a typed name, my-work when nothing usable remains
 func SuggestProfileName(name string) string {
-	candidate := strings.Trim(suggestRe.ReplaceAllString(pystr.Lower(pystr.Strip(name)), "-"), "-_")
+	candidate := strings.Trim(suggestRe.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-_")
 	if r := []rune(candidate); len(r) > 64 {
 		candidate = string(r[:64])
 	}
@@ -140,14 +139,14 @@ func InvalidProfileNameError(name string) error {
 
 // Canonical profile id, lowercase with default matched case insensitively
 func NormalizeProfileName(name string) (string, error) {
-	stripped := pystr.Strip(name)
+	stripped := strings.TrimSpace(name)
 	if stripped == "" {
 		return "", &ValueError{"profile name cannot be empty"}
 	}
 	if casefold(stripped) == "default" {
 		return "default", nil
 	}
-	return pystr.Lower(stripped), nil
+	return strings.ToLower(stripped), nil
 }
 
 // Canonical profile id of an untyped value, refusing anything but a string so numeric ids never become directories

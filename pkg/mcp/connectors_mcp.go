@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -47,8 +48,8 @@ func init() {
 }
 
 // Sorted catalog entry names
-func connCatalogNamesList() ([]string, error) {
-	entries, err := ListCatalog()
+func connCatalogNamesList(ctx context.Context) ([]string, error) {
+	entries, err := ListCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +63,9 @@ func connCatalogNamesList() ([]string, error) {
 
 // Catalog and configured name readers, swapped by tests
 var (
-	connCatalogNames    = func(ctx context.Context) ([]string, error) { return connCatalogNamesList() }
+	connCatalogNames    = connCatalogNamesList
 	connConfiguredNames = func(ctx context.Context) ([]string, error) {
-		servers, err := getMCPServers(ctx, nil)
-		if err != nil {
-			return nil, err
-		}
+		servers := StoredServers(ctx)
 		out := make([]string, 0, len(servers))
 		for k := range servers {
 			out = append(out, k)
@@ -124,8 +122,8 @@ func orText(s, alt string) string {
 }
 
 // The catalog entry or a config_invalid error naming the miss
-func connCatalogEntry(name string) (*CatalogEntry, error) {
-	entry, err := GetEntry(name)
+func connCatalogEntry(ctx context.Context, name string) (*CatalogEntry, error) {
+	entry, err := GetEntry(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +163,7 @@ type catalogBackend struct{ env *tools.Env }
 
 // The declared credentials of the entry that have no value yet
 func (b catalogBackend) RequiredEnv(ctx context.Context, name string) ([]*pyjson.Object, error) {
-	entry, err := connCatalogEntry(name)
+	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +193,7 @@ func (b catalogBackend) StartOAuth(ctx context.Context, name string) (ConnectorA
 
 // Whether the card must run the entry's own OAuth, provider mediated OAuth being a plain probe
 func (b catalogBackend) InstallsWithOAuth(ctx context.Context, name string) (bool, error) {
-	entry, err := connCatalogEntry(name)
+	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
 		return false, err
 	}
@@ -205,7 +203,7 @@ func (b catalogBackend) InstallsWithOAuth(ctx context.Context, name string) (boo
 // Installs an OAuth entry through the card flow, the config and setup values landing when the token is accepted
 func (b catalogBackend) StartInstallOAuth(ctx context.Context, name string, env *pyjson.Object) (ConnectorAttempt, error) {
 	commit := func(cctx context.Context) error { return connSaveEnv(cctx, env, nil) }
-	entry, err := connCatalogEntry(name)
+	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +223,7 @@ func (b catalogBackend) Install(ctx context.Context, name string, env *pyjson.Ob
 }
 
 func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Object) ([]string, error) {
-	entry, err := connCatalogEntry(name)
+	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -280,21 +278,14 @@ func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Ob
 func (b catalogBackend) Enable(ctx context.Context, name string) error {
 	wctx, release := ConfigWriteScope(ctx, "")
 	defer release()
-	h := home.Dir(wctx)
-	doc, err := config.ReadUser(h)
-	if err != nil {
-		return err
-	}
-	servers, ok := doc["mcp_servers"].(map[string]any)
-	var entry map[string]any
-	if ok {
-		entry, ok = servers[name].(map[string]any)
-	}
+	sctx := home.WithOverride(tools.WithEnvHome(wctx, b.env), home.Dir(wctx))
+	entry, ok := StoredServers(sctx)[name].(map[string]any)
 	if !ok {
 		return fmt.Errorf("'%s' is not a configured MCP server", name)
 	}
 	entry["enabled"] = true
-	return config.SaveUser(tools.WithEnvHome(ctx, b.env), h, doc)
+	_, err := settings.McpServers.SetEntry(sctx, name, entry)
+	return err
 }
 
 // ConfigWriteScope enters the profile scope then the one process wide config mutation lock
@@ -691,8 +682,8 @@ func connDetail(r *connRunner, t *tools.ConnTarget, cause any) string {
 }
 
 // The manifest's post_install text for a catalog name, empty for a custom server
-func connCatalogInstructions(name string) string {
-	entry, err := GetEntry(name)
+func connCatalogInstructions(ctx context.Context, name string) string {
+	entry, err := GetEntry(ctx, name)
 	if err != nil || entry == nil {
 		return ""
 	}
@@ -791,7 +782,7 @@ func connActorFor(op *tools.ConnectionOperation, t *tools.ConnTarget) tools.Conn
 
 func connStartOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
 	actor := connActorFor(op, t)
-	instructions := connCatalogInstructions(t.Name)
+	instructions := connCatalogInstructions(ctx, t.Name)
 	op.UpdateTarget(t, func(t *tools.ConnTarget) { t.Instructions = instructions })
 	attempt, err := r.backend.StartOAuth(ctx, t.Name)
 	if err != nil {
@@ -805,7 +796,7 @@ func connStartOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOper
 
 // The install row waits pending while the card draws a field per credential it still needs
 func connDeclareEnv(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
-	instructions := connCatalogInstructions(t.Name)
+	instructions := connCatalogInstructions(ctx, t.Name)
 	op.UpdateTarget(t, func(t *tools.ConnTarget) { t.Instructions = instructions })
 	required, err := r.backend.RequiredEnv(ctx, t.Name)
 	if err != nil {

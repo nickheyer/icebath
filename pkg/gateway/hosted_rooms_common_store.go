@@ -1,13 +1,14 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -25,11 +26,11 @@ func roomText(value any, label string, maxBytes int, strip bool, fail roomErrorF
 	if !ok {
 		return "", fail(label + " must be a string")
 	}
-	if pystr.Strip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return "", fail(label + " must not be empty")
 	}
 	if strip {
-		text = pystr.Strip(text)
+		text = strings.TrimSpace(text)
 	}
 	if len(text) > maxBytes {
 		return "", fail(label + " is too large")

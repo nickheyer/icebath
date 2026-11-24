@@ -98,7 +98,7 @@ func matchesQuery(queryLower string, fields ...any) bool {
 			parts[i] = pyrepr.Str(f)
 		}
 	}
-	return strings.Contains(pystr.Lower(strings.Join(parts, " ")), queryLower)
+	return strings.Contains(strings.ToLower(strings.Join(parts, " ")), queryLower)
 }
 
 // Items matching the query in order converted to results until limit hits
@@ -235,7 +235,7 @@ func sourceURLForBundle(b *SkillBundle) string {
 
 // Normalized slash path of a bundle controlled value, an error for absolute, traversal, colon or empty paths
 func normalizeBundlePath(pathValue, fieldName string, allowNested bool) (string, error) {
-	raw := pystr.Strip(pathValue)
+	raw := strings.TrimSpace(pathValue)
 	if raw == "" {
 		return "", fmt.Errorf("Unsafe %s: empty path", fieldName)
 	}
@@ -372,7 +372,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 	}
 	paths = map[string]bool{}
 	for _, group := range reGroups(localLinkRe, normalized) {
-		candidate := pystr.RstripChars(group, ".,;:")
+		candidate := strings.TrimRight(group, ".,;:")
 		parsed, err := pyurl.Split(candidate)
 		if err != nil {
 			return nil, false, err
@@ -394,7 +394,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 		}
 	}
 	for _, group := range reGroups(samedirLinkRe, normalized) {
-		raw := pystr.RstripChars(group, ".,;:")
+		raw := strings.TrimRight(group, ".,;:")
 		parsed, err := pyurl.Split(raw)
 		if err != nil {
 			return nil, false, err

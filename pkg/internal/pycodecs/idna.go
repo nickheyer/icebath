@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // IDNA section 3.1 label separators
@@ -62,7 +61,7 @@ func idnaToASCII(label []rune) ([]byte, *idnaFail) {
 	if allASCIIRunes(label) {
 		return asciiResult(label)
 	}
-	if strings.HasPrefix(pystr.Lower(runesText(label)), "xn--") {
+	if strings.HasPrefix(strings.ToLower(runesText(label)), "xn--") {
 		return nil, &idnaFail{0, 4, "Label starts with ACE prefix"}
 	}
 	out := []byte("xn--" + encodePunycode(runesText(label)))

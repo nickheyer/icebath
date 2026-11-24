@@ -50,6 +50,12 @@ func resolveEditor(lookup func(string) (string, bool), platform string) []string
 	return []string{"vi"}
 }
 
+// Suspends the screen for the user's editor on a file in place, handing done the run failure
+func editFile(path string, done func(runErr error) tea.Msg) tea.Cmd {
+	argv := resolveEditor(os.LookupEnv, runtime.GOOS)
+	return tty.Exec(exec.Command(argv[0], append(argv[1:], path)...), done)
+}
+
 // Suspends the screen for the user's editor, handing done the saved text, the run failure and the temp file failure
 func editText(initial, suffix string, done func(text string, runErr, fileErr error) tea.Msg) tea.Cmd {
 	dir, err := os.MkdirTemp("", "icebath-edit-")

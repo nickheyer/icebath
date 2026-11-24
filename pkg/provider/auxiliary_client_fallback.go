@@ -563,7 +563,7 @@ func TryConfiguredFallbackForUnavailableClient(ctx context.Context, task, failed
 // Inline or env backed key of a fallback entry through the secret scope aware resolver
 func auxFallbackEntryAPIKey(ctx context.Context, entry map[string]any) string {
 	h := home.Dir(ctx)
-	return newResolver(ctx, config.Tree(LoadConfigSafe(ctx, h)), config.NewSecrets(h), h, nil).ResolveEntryAPIKey(entry)
+	return newResolver(ctx, config.NewSecrets(h), h, nil).ResolveEntryAPIKey(entry)
 }
 
 // Inline or env backed key of a fallback entry through the secret scope aware resolver
@@ -600,17 +600,7 @@ func auxResolveFallbackEntry(ctx context.Context, entry map[string]any) (AuxClie
 
 // Main agent fallback_providers chain for an auto task, in the main agent's order
 func auxTryMainFallbackChain(ctx context.Context, task, failedProvider, reason, failedModel, failedBaseURL string, scope FailureScope) (AuxClient, string, string, error) {
-	var chain []map[string]any
-	if err := auxRecoverRaise(func() {
-		cfg, err := auxLoadConfigReadonlyFn(ctx)
-		if err != nil {
-			panic(err)
-		}
-		chain = GetFallbackChain(map[string]any(cfg))
-	}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Auxiliary %s: could not load main fallback chain: %v", auxTaskOrCall(task), err))
-		return nil, "", "", nil
-	}
+	chain := FallbackChain(ctx)
 	if len(chain) == 0 {
 		return nil, "", "", nil
 	}

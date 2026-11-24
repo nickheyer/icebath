@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Connector relevance policy of a fronted platform, nil when relay is generic or nothing non default is configured
@@ -25,7 +23,7 @@ func RelayRelevancePolicy(ctx context.Context, platform *string) *pyjson.Object 
 		return nil
 	}
 	requireMention, freeResponse := relayPolicyConfig(ctx, name)
-	allowBotsEnv := pystr.Strip(pystr.Lower(os.Getenv(pystr.Upper(name) + "_ALLOW_BOTS")))
+	allowBotsEnv := strings.TrimSpace(strings.ToLower(getenvStr(SettingsContext(ctx), strings.ToUpper(name)+"_ALLOW_BOTS", "")))
 	allowOtherBots := allowBotsEnv == "mentions" || allowBotsEnv == "all"
 	if requireMention == nil && len(freeResponse) == 0 && !allowOtherBots {
 		return nil
@@ -57,14 +55,14 @@ func relayPolicyConfig(ctx context.Context, platform string) (requireMention any
 	switch v := frc.(type) {
 	case []any:
 		for _, c := range v {
-			if s := pystr.Strip(pyrepr.Str(c)); s != "" {
+			if s := strings.TrimSpace(pyrepr.Str(c)); s != "" {
 				freeResponse = append(freeResponse, s)
 			}
 		}
 	case string:
-		if pystr.Strip(v) != "" {
+		if strings.TrimSpace(v) != "" {
 			for _, c := range strings.Split(v, ",") {
-				if s := pystr.Strip(c); s != "" {
+				if s := strings.TrimSpace(c); s != "" {
 					freeResponse = append(freeResponse, s)
 				}
 			}
@@ -73,23 +71,10 @@ func relayPolicyConfig(ctx context.Context, platform string) (requireMention any
 	return requireMention, freeResponse
 }
 
-// First mapping among the top level, gateway.platforms and platforms blocks, ok false where Python raises AttributeError
+// The top level block of a platform, else its platforms block, ok false when platforms is set but not a mapping
 func relayPolicyPlatformBlock(cfg map[string]any, platform string) (map[string]any, bool) {
 	if block, ok := cfg[platform].(map[string]any); ok {
 		return block, true
-	}
-	gwRaw := cfg["gateway"]
-	if !pyrepr.Truthy(gwRaw) {
-		gwRaw = map[string]any{}
-	}
-	gw, ok := gwRaw.(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	if gwPlatforms, ok := gw["platforms"].(map[string]any); ok {
-		if block, ok := gwPlatforms[platform].(map[string]any); ok {
-			return block, true
-		}
 	}
 	platsRaw := cfg["platforms"]
 	if !pyrepr.Truthy(platsRaw) {

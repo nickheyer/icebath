@@ -79,7 +79,7 @@ func (r *GatewayRunner) hmQuickCommands() map[string]any {
 func hmExpandAliasQuickCommand(event *gateway.MessageEvent, qcmd map[string]any) (string, bool) {
 	target := ""
 	if raw := qcmd["target"]; pyrepr.Truthy(raw) {
-		target = pystr.Strip(pyrepr.Str(raw))
+		target = strings.TrimSpace(pyrepr.Str(raw))
 	}
 	if target == "" {
 		return "", false
@@ -87,7 +87,7 @@ func hmExpandAliasQuickCommand(event *gateway.MessageEvent, qcmd map[string]any)
 	if !strings.HasPrefix(target, "/") {
 		target = "/" + target
 	}
-	event.Text = pystr.Strip(target + " " + pystr.Strip(event.GetCommandArgs()))
+	event.Text = strings.TrimSpace(target + " " + strings.TrimSpace(event.GetCommandArgs()))
 	targetCommand := strings.TrimLeft(target, "/")
 	if targetCommand == "" {
 		return targetCommand, true

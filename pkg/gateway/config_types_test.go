@@ -258,26 +258,25 @@ func TestConnectedPlatformsAndValidation(t *testing.T) {
 
 func TestMergePlatformSectionsOrder(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := context.Background()
 	gw := map[string]any{"platforms": map[string]any{"telegram": map[string]any{"extra": map[string]any{"a": 1, "b": 1}}}}
 	yamlCfg := map[string]any{
-		"platforms": map[string]any{"telegram": map[string]any{"enabled": false, "extra": map[string]any{"b": 2}}},
-		"gateway": map[string]any{"platforms": map[string]any{"telegram": map[string]any{"token": "t"}},
-			"telegram": map[string]any{"enabled": true}, "custom": map[string]any{"enabled": true}, "streaming": map[string]any{}},
+		"platforms": map[string]any{"telegram": map[string]any{"enabled": false, "token": "t", "extra": map[string]any{"b": 2}}},
+		"gateway": map[string]any{"platforms": map[string]any{"telegram": map[string]any{"token": "nested"}},
+			"telegram": map[string]any{"enabled": true}, "custom": map[string]any{"enabled": true}},
 	}
-	out, err := MergePlatformSections(ctx, yamlCfg, yamlCfg["gateway"], gw, map[string]bool{"custom": true})
+	out, err := MergePlatformSections(yamlCfg, gw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tg := out["telegram"].(map[string]any)
-	if tg["enabled"] != true || tg["token"] != "t" || !reflect.DeepEqual(tg["extra"], map[string]any{"a": 1, "b": 2, "_enabled_explicit": true}) {
+	if tg["enabled"] != false || tg["token"] != "t" || !reflect.DeepEqual(tg["extra"], map[string]any{"a": 1, "b": 2, "_enabled_explicit": true}) {
 		t.Fatalf("merged %v", tg)
 	}
-	if _, ok := out["custom"]; !ok || out["streaming"] != nil {
-		t.Fatalf("also and platform names only %v", out)
+	if _, ok := out["custom"]; ok {
+		t.Fatalf("only platforms.<name> blocks merge %v", out)
 	}
 	bad := map[string]any{"platforms": map[string]any{"slack": map[string]any{"extra": nil}}}
-	if _, err := MergePlatformSections(ctx, bad, nil, map[string]any{}, nil); err == nil || err.Error() != "expected a mapping, got nothing" {
+	if _, err := MergePlatformSections(bad, map[string]any{}); err == nil || err.Error() != "expected a mapping, got nothing" {
 		t.Fatalf("extra None %v", err)
 	}
 }

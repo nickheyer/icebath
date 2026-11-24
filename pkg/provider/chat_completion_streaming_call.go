@@ -281,7 +281,7 @@ func (c *streamingCall) observeChunkIdentity(diag *StreamDiag, chunk map[string]
 	if p, ok := chunk["provider"].(string); ok && p != "" && id.upstream == "" {
 		id.upstream = p
 		c.mu.Lock()
-		diag.ServingProvider = pystr.Slice(pystr.Strip(p), 0, 64)
+		diag.ServingProvider = pystr.Slice(strings.TrimSpace(p), 0, 64)
 		c.mu.Unlock()
 	}
 }

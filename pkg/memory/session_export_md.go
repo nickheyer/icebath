@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"unicode"
+
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
@@ -201,7 +203,7 @@ func renderMessages(session *pyjson.Object) (string, error) {
 			switch content := exportGet(message, "content").(type) {
 			case nil:
 			case string:
-				rendered = pystr.Rstrip(content)
+				rendered = strings.TrimRightFunc(content, unicode.IsSpace)
 			default:
 				block, err := jsonBlock(content)
 				if err != nil {
@@ -222,7 +224,7 @@ func renderMessages(session *pyjson.Object) (string, error) {
 			parts = append(parts, "")
 		}
 	}
-	return pystr.Rstrip(strings.Join(parts, "\n")) + "\n", nil
+	return strings.TrimRightFunc(strings.Join(parts, "\n"), unicode.IsSpace) + "\n", nil
 }
 
 // Export text with the frontmatter, the messages and a verification section whose digest is a marker
@@ -281,7 +283,7 @@ func exportBodyWithoutHash(session *pyjson.Object, format string, exportedAt flo
 	parts = append(parts, messages, exportVerificationHeader+"\n", "- Session id: `"+sessionID+"`",
 		"- Exported messages: `"+pyrepr.Str(messageCount)+"`", "- Source DB message count at export: `"+sourceCount+"`",
 		"- Exported at: `"+exportedISO+"`", "- SHA256 of exported body: `"+exportSHAMarker+"`")
-	return pystr.Rstrip(strings.Join(parts, "\n")) + "\n", nil
+	return strings.TrimRightFunc(strings.Join(parts, "\n"), unicode.IsSpace) + "\n", nil
 }
 
 // ValueError for an export format other than md or qmd
@@ -309,7 +311,7 @@ func RenderSessionMarkdown(session *pyjson.Object, format string, includeVerific
 	}
 	if !includeVerification {
 		head, _, _ := strings.Cut(body, "\n"+exportVerificationHeader+"\n")
-		return pystr.Rstrip(head) + "\n", nil
+		return strings.TrimRightFunc(head, unicode.IsSpace) + "\n", nil
 	}
 	digestBody := strings.ReplaceAll(body, "`"+exportSHAMarker+"`", "`pending`")
 	return strings.ReplaceAll(body, exportSHAMarker, textSHA256(digestBody)), nil

@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -70,9 +71,9 @@ func askYes(prompt string, reader func(prompt string) (string, error)) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// Install and update time scanning, on unless plugins.scan_on_install is falsy
+// Install and update time scanning, on unless plugins.scan_on_install is off for the profile of the home
 var scanOnInstallEnabled = func(h string) bool {
-	return jsonTruthy(configValue(h, true, "plugins", "scan_on_install"))
+	return settings.PluginsScanOnInstall.Get(homeContext(h))
 }
 
 // How a caution scan verdict may be accepted
@@ -319,10 +320,12 @@ func missingEnvSpecs(ctx context.Context, h string, manifest map[string]any) ([]
 }
 
 // Explicit deny list that wins over the allow list
-func getDisabledSet(h string) map[string]bool { return configNameSet(h, "plugins", "disabled") }
+func getDisabledSet(h string) map[string]bool {
+	return nameSet(homeContext(h), settings.PluginsDisabled)
+}
 
 // Allow list of enabled plugin keys
-func getEnabledSet(h string) map[string]bool { return configNameSet(h, "plugins", "enabled") }
+func getEnabledSet(h string) map[string]bool { return nameSet(homeContext(h), settings.PluginsEnabled) }
 
 // Digest of the home config the admission compares against, missing when absent
 func pluginSelectionVersion(h string) (string, error) {

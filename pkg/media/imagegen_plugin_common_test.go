@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -38,7 +39,7 @@ func TestPluginCommonSizeAndCatalogRows(t *testing.T) {
 
 func TestPluginCommonResolveStaticModel(t *testing.T) {
 	env := imageEnv(t, config.Tree{"image_gen": map[string]any{"model": "gpt-image-2-high", "openai": map[string]any{"model": "gpt-image-2-low"}}})
-	o := staticModelOptions{EnvVar: "TEST_IMAGE_MODEL", ConfigKey: "openai"}
+	o := staticModelOptions{Scoped: settings.OpenAIImageModel}
 	if id, _ := resolveStaticModel(env, gptImage2Tiers, gptImage2Default, o); id != "gpt-image-2-low" {
 		t.Fatalf("scoped %s", id)
 	}
@@ -47,11 +48,11 @@ func TestPluginCommonResolveStaticModel(t *testing.T) {
 		t.Fatalf("explicit %s", id)
 	}
 	o.Explicit = ""
-	t.Setenv("TEST_IMAGE_MODEL", "gpt-image-2-medium")
+	t.Setenv("OPENAI_IMAGE_MODEL", "gpt-image-2-medium")
 	if id, _ := resolveStaticModel(env, gptImage2Tiers, gptImage2Default, o); id != "gpt-image-2-medium" {
 		t.Fatalf("env %s", id)
 	}
-	t.Setenv("TEST_IMAGE_MODEL", "")
+	t.Setenv("OPENAI_IMAGE_MODEL", "")
 	setImageConfig(t, env, config.Tree{"image_gen": map[string]any{"model": "gpt-image-2-high", "openai": map[string]any{"model": "custom-gw-model"}}})
 	if id, _ := resolveStaticModel(env, gptImage2Tiers, gptImage2Default, o); id != "gpt-image-2-high" {
 		t.Fatalf("top level %s", id)
@@ -65,7 +66,7 @@ func TestPluginCommonResolveStaticModel(t *testing.T) {
 	if id != "custom-gw-model" || !jsonEqual(meta, map[string]any{"display": "custom-gw-model", "api_model": "custom-gw-model", "quality": nil}) {
 		t.Fatalf("passthrough %s %v", id, meta)
 	}
-	o.Config = map[string]any{"model": "other-provider-model"}
+	setImageConfig(t, env, config.Tree{"image_gen": map[string]any{"model": "other-provider-model"}})
 	if id, _ := resolveStaticModel(env, gptImage2Tiers, gptImage2Default, o); id != gptImage2Default {
 		t.Fatalf("top level never passes through %s", id)
 	}

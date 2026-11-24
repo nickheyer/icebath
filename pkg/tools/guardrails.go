@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"unicode"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -17,7 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -366,6 +368,28 @@ var guardThresholdSources = map[string]guardThresholdSource{
 	"exact_failure_block_after":    {"hard_stop_after", "exact_failure"},
 	"same_tool_failure_halt_after": {"hard_stop_after", "same_tool_failure"},
 	"no_progress_block_after":      {"hard_stop_after", "idempotent_no_progress"},
+}
+
+// ToolCallGuardrailConfigFor builds the config from the tool_loop_guardrails settings in effect for ctx, unattended platforms always stopping a loop unless that is turned off
+func ToolCallGuardrailConfigFor(ctx context.Context, platform string) ToolCallGuardrailConfig {
+	d := DefaultToolCallGuardrailConfig()
+	d.WarningsEnabled = settings.ToolLoopGuardrailsWarningsEnabled.Get(ctx)
+	d.HardStopEnabled = settings.ToolLoopGuardrailsHardStopEnabled.Get(ctx)
+	d.NonInteractiveHardStopEnabled = settings.ToolLoopGuardrailsNonInteractiveHardStopEnabled.Get(ctx)
+	if d.NonInteractiveHardStopEnabled && isNonInteractivePlatform(platform) {
+		d.HardStopEnabled = true
+	}
+	d.ExactFailureWarnAfter = max(1, settings.ToolLoopGuardrailsWarnAfterExactFailure.Get(ctx))
+	d.SameToolFailureWarnAfter = max(1, settings.ToolLoopGuardrailsWarnAfterSameToolFailure.Get(ctx))
+	d.NoProgressWarnAfter = max(1, settings.ToolLoopGuardrailsWarnAfterIdempotentNoProgress.Get(ctx))
+	d.ExactFailureBlockAfter = max(1, settings.ToolLoopGuardrailsHardStopAfterExactFailure.Get(ctx))
+	d.SameToolFailureHaltAfter = max(1, settings.ToolLoopGuardrailsHardStopAfterSameToolFailure.Get(ctx))
+	d.NoProgressBlockAfter = max(1, settings.ToolLoopGuardrailsHardStopAfterIdempotentNoProgress.Get(ctx))
+	d.LoopCaps = LoopCapConfig{
+		MaxWebSearches: max(0, settings.ToolLoopGuardrailsLoopCapsMaxWebSearches.Get(ctx)),
+		MaxSubagents:   max(0, settings.ToolLoopGuardrailsLoopCapsMaxSubagents.Get(ctx)),
+	}
+	return d
 }
 
 // ToolCallGuardrailConfigFromMap builds the config from tool_loop_guardrails with nested keys winning
@@ -1081,7 +1105,7 @@ func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []st
 			raw = state.ToolCallField(tc, "id")
 		}
 		text, _ := raw.(string)
-		cid, _, _ := strings.Cut(pystr.Strip(text), "|")
+		cid, _, _ := strings.Cut(strings.TrimSpace(text), "|")
 		if cid == "" {
 			continue
 		}
@@ -2101,7 +2125,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			if !invalidNames[tc.Function.Name] {
 				continue
 			}
-			trimmed := pystr.Rstrip(tc.Function.Arguments)
+			trimmed := strings.TrimRightFunc(tc.Function.Arguments, unicode.IsSpace)
 			if !strings.HasSuffix(trimmed, "}") && !strings.HasSuffix(trimmed, "]") {
 				truncated = true
 				break
@@ -2165,8 +2189,8 @@ func NormalizeProviderToolCallIDs(toolCalls []state.ToolCall) []state.ToolCall {
 			if !ok {
 				continue
 			}
-			primary, item, hasItem := strings.Cut(pystr.Strip(value), "|")
-			primary = pystr.Strip(primary)
+			primary, item, hasItem := strings.Cut(strings.TrimSpace(value), "|")
+			primary = strings.TrimSpace(primary)
 			if !hasProviderToolIDPrefix(primary) {
 				continue
 			}

@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
@@ -21,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -71,8 +71,6 @@ var (
 	kreaMaxLocalReferenceBytes = 3 * 1024 * 1024
 	kreaSleep                  = time.Sleep
 	kreaNow                    = time.Now
-	// The image_gen section the krea subsection lives under, swapped by tests
-	kreaLoadConfig = func(env *tools.Env) map[string]any { return loadImageGenConfig(env, "") }
 	// Local cache path of a result URL with the save_url_image defaults
 	kreaSaveURLImage = func(ctx context.Context, env *tools.Env, rawURL, prefix string) (string, error) {
 		return saveURLImage(ctx, env, rawURL, prefix, 60*time.Second, 25*1024*1024, kreaBaseURL)
@@ -96,31 +94,17 @@ var kreaPollFailures = map[string]struct {
 	}},
 }
 
-// The image_gen.krea mapping, empty when absent or not a mapping
-func kreaSection(env *tools.Env) map[string]any {
-	switch s := kreaLoadConfig(env)["krea"].(type) {
-	case map[string]any:
-		return s
-	case config.Tree:
-		return s
-	}
-	return map[string]any{}
-}
-
-// Explicit, KREA_IMAGE_MODEL, image_gen.krea.model, image_gen.model, then the default model
+// Explicit, image_gen.krea.model with its KREA_IMAGE_MODEL override, image_gen.model, then the default model
 func kreaResolveModel(env *tools.Env, explicit string) (string, map[string]any) {
-	return resolveStaticModel(env, kreaModels, kreaDefaultModel, staticModelOptions{EnvVar: "KREA_IMAGE_MODEL", ConfigKey: "krea",
-		Explicit: explicit, Config: kreaLoadConfig(env)})
+	return resolveStaticModel(env, kreaModels, kreaDefaultModel, staticModelOptions{Scoped: settings.KreaImageModel, Explicit: explicit})
 }
 
-// Valid creativity from the argument then config, medium otherwise
+// Valid creativity from the argument, else image_gen.krea.creativity
 func kreaResolveCreativity(env *tools.Env, value any) string {
-	for _, c := range []any{value, kreaSection(env)["creativity"]} {
-		if s, ok := c.(string); ok && kreaValidCreativity[pystr.Lower(pystr.Strip(s))] {
-			return pystr.Lower(pystr.Strip(s))
-		}
+	if s, ok := value.(string); ok && kreaValidCreativity[strings.ToLower(strings.TrimSpace(s))] {
+		return strings.ToLower(strings.TrimSpace(s))
 	}
-	return "medium"
+	return settings.KreaImageCreativity.Get(tools.WithEnvHome(context.Background(), env))
 }
 
 // Bearer and user agent headers with a JSON content type for a JSON body
@@ -296,8 +280,8 @@ func kreaExtractResultURL(job any) string {
 	}
 	candidates = append(candidates, kreaGet(result, "url"))
 	for _, c := range candidates {
-		if s, ok := c.(string); ok && pystr.Strip(s) != "" {
-			return pystr.Strip(s)
+		if s, ok := c.(string); ok && strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
 		}
 	}
 	return ""
@@ -367,8 +351,8 @@ func kreaCollectStyleRefs(imageURL string, referenceImageURLs []string, legacy a
 	if list, ok := legacy.([]any); ok {
 		for _, ref := range list {
 			if s, ok := ref.(string); ok {
-				if pystr.Strip(s) != "" {
-					refs = append(refs, pystr.Strip(s))
+				if strings.TrimSpace(s) != "" {
+					refs = append(refs, strings.TrimSpace(s))
 				}
 			} else if pyTruthy(ref) {
 				refs = append(refs, ref)
@@ -617,7 +601,7 @@ func kreaUpscaleRequested(env *tools.Env, explicit any, meta map[string]any) boo
 	if b, ok := explicit.(bool); ok {
 		return b
 	}
-	if b, ok := kreaSection(env)["upscale"].(bool); ok {
+	if b, ok := settings.KreaImageUpscale.Lookup(tools.WithEnvHome(context.Background(), env)); ok {
 		return b
 	}
 	return pyTruthy(meta["upscale"])
@@ -648,7 +632,7 @@ func (p *kreaImageGenProvider) AvailableIn(ctx context.Context) bool {
 // Krea 3 edit controls or Krea 2 style controls for the stored model the dispatcher names
 func (p *kreaImageGenProvider) Capabilities() map[string]any {
 	env := p.env(context.Background())
-	stored, _ := kreaLoadConfig(env)["model"].(string)
+	stored := settings.ImageGenModel.Get(tools.WithEnvHome(context.Background(), env))
 	if _, meta := kreaResolveModel(env, stored); pyTruthy(meta["edit"]) {
 		return map[string]any{"modalities": []any{"text", "image"}, "max_reference_images": kreaMaxKrea3ReferenceImages,
 			"supports_upscale": true, "creative_controls": []any{"thinking", "resolution"}}
@@ -660,7 +644,7 @@ func (p *kreaImageGenProvider) Capabilities() map[string]any {
 
 // Submits, polls, optionally enhances and caches one Krea generation with the Krea key
 func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req ImageGenRequest) (map[string]any, error) {
-	prompt := pystr.Strip(req.Prompt)
+	prompt := strings.TrimSpace(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)
 	kreaAR, ok := kreaAspectMap[aspect]
 	if !ok {

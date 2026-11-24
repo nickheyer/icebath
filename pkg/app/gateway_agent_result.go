@@ -1,6 +1,8 @@
 package app
 
 import (
+	"strings"
+
 	"context"
 	"fmt"
 	"time"
@@ -10,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -138,15 +139,15 @@ func (a *GatewayAgent) paintOwed(turn *gatewayTurn, out, complete map[string]any
 		}
 	}
 	text, isStr := reply.(string)
-	if pyrepr.Truthy(out["failed"]) || !isStr || pystr.Strip(text) == "" {
+	if pyrepr.Truthy(out["failed"]) || !isStr || strings.TrimSpace(text) == "" {
 		return
 	}
 	reused := pyrepr.Truthy(out["response_previewed"]) || pyrepr.Truthy(out["response_reused"]) || pyrepr.Truthy(complete["response_reused"])
-	seen := map[string]bool{pystr.Strip(turn.shownText()): true, pystr.Strip(turn.spokenText()): true}
+	seen := map[string]bool{strings.TrimSpace(turn.shownText()): true, strings.TrimSpace(turn.spokenText()): true}
 	for k := range turn.seen {
 		seen[k] = true
 	}
-	previewed := reused && seen[pystr.Strip(text)]
+	previewed := reused && seen[strings.TrimSpace(text)]
 	out["response_previewed"] = previewed
 	if previewed {
 		return
@@ -307,7 +308,7 @@ func rateLimitStateOf(data any) *provider.RateLimitState {
 // Indented background review line of a review.summary frame, empty for an empty one
 func reviewSummaryLine(payload any) string {
 	dict, _ := payload.(map[string]any)
-	text := pystr.Strip(strOrEmpty(dict["text"]))
+	text := strings.TrimSpace(strOrEmpty(dict["text"]))
 	if text == "" {
 		return ""
 	}

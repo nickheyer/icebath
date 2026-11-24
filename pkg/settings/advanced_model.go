@@ -56,11 +56,26 @@ var AuxiliaryBackgroundReviewReasoningEffort = Register(&Enum{Meta: Meta{Key: "a
 // Time limit for background reviews
 var AuxiliaryBackgroundReviewTimeout = Register(&Duration{Meta: Meta{Key: "auxiliary.background_review.timeout", Label: "Auto review timeout", Short: "Time limit for background reviews.", Group: GroupModel, Order: 1170, Advanced: true}, Default: 2 * time.Minute})
 
+// Whether reviews on a local model wait until it is idle
+var AuxiliaryBackgroundReviewDefer = Register(&Enum{Meta: Meta{Key: "auxiliary.background_review.defer", Label: "Auto review waits", Short: "Hold reviews on your own local model until it is idle.", Help: "Auto waits only when the review runs on the managed local model.", Group: GroupModel, Order: 1171, Advanced: true}, Default: "auto", Values: []Choice{{Value: "auto", Label: "Auto", Meaning: "Wait while the local model is busy."}, {Value: "never", Label: "Never", Meaning: "Start each review at once."}}})
+
+// Longest a held review waits before it starts anyway
+var AuxiliaryBackgroundReviewDeferMaxAgeS = Register(&Duration{Meta: Meta{Key: "auxiliary.background_review.defer_max_age_s", Label: "Review wait cap", Short: "Longest a held review waits before it starts anyway.", Group: GroupModel, Order: 1172, Advanced: true}, Default: 30 * time.Minute})
+
+// More tools a background review may use
+var AuxiliaryBackgroundReviewExtraTools = Register(&List{Meta: Meta{Key: "auxiliary.background_review.extra_tools", Label: "Auto review tools", Short: "More tools a background review may use, by name.", Help: "Reviews always get the skill tools, file reading and search.", Group: GroupModel, Order: 1173, Advanced: true}})
+
+// Most input tokens one background review may send
+var AuxiliaryBackgroundReviewMaxInputTokens = Register(&Int{Meta: Meta{Key: "auxiliary.background_review.max_input_tokens", Label: "Auto review budget", Short: "Most input tokens one background review may send in total.", Help: "Zero or less means no limit.", Group: GroupModel, Order: 1174, Advanced: true}, Null: "three quarters of the review model's window", Unit: "tokens"})
+
 // API key for conversation summaries
 var AuxiliaryCompressionApiKey = Register(&String{Meta: Meta{Key: "auxiliary.compression.api_key", Label: "Compression key", Short: "API key for conversation summaries.", Help: "Empty uses your normal login.", Group: GroupModel, Order: 1180, Advanced: true}, Masked: true, Default: ""})
 
 // Custom endpoint address for conversation summaries
 var AuxiliaryCompressionBaseUrl = Register(&String{Meta: Meta{Key: "auxiliary.compression.base_url", Label: "Compression URL", Short: "Custom endpoint address for conversation summaries.", Group: GroupModel, Order: 1190, Advanced: true}, Default: ""})
+
+// Context window of the summary model, when icebath guesses it wrong
+var AuxiliaryCompressionContextLength = Register(&Int{Meta: Meta{Key: "auxiliary.compression.context_length", Label: "Compression window", Short: "How many tokens the summary model can hold, when icebath guesses wrong.", Help: "Unset uses the size the provider reports or the built-in table.", Group: GroupModel, Order: 1195, Advanced: true, Apply: NewSession}, Null: "the size icebath detects", Min: at(1), Unit: "tokens", DefaultBelow: true})
 
 // Extra request fields for conversation summaries
 var AuxiliaryCompressionExtraBody = Register(&Map{Meta: Meta{Key: "auxiliary.compression.extra_body", Label: "Compression fields", Short: "Extra request fields for conversation summaries.", Group: GroupModel, Order: 1200, Advanced: true}})
@@ -281,6 +296,27 @@ var AuxiliaryReviewModel = Register(&String{Meta: Meta{Key: "auxiliary.review.mo
 // Provider for the review command
 var AuxiliaryReviewProvider = Register(&String{Meta: Meta{Key: "auxiliary.review.provider", Label: "Review provider", Short: "Provider for the review command.", Help: "Auto picks one for you.", Group: GroupModel, Order: 1920, Advanced: true}, Default: "auto"})
 
+// API key for side questions
+var AuxiliarySideQuestionApiKey = Register(&String{Meta: Meta{Key: "auxiliary.side_question.api_key", Label: "Side question key", Short: "API key for /btw side questions.", Help: "Empty uses your normal login.", Group: GroupModel, Order: 1921, Advanced: true}, Masked: true, Default: ""})
+
+// Custom endpoint address for side questions
+var AuxiliarySideQuestionBaseUrl = Register(&String{Meta: Meta{Key: "auxiliary.side_question.base_url", Label: "Side question URL", Short: "Custom endpoint address for /btw side questions.", Group: GroupModel, Order: 1922, Advanced: true}, Default: ""})
+
+// Extra request fields for side questions
+var AuxiliarySideQuestionExtraBody = Register(&Map{Meta: Meta{Key: "auxiliary.side_question.extra_body", Label: "Side question fields", Short: "Extra request fields for /btw side questions.", Group: GroupModel, Order: 1923, Advanced: true}})
+
+// Most input tokens one side question may send
+var AuxiliarySideQuestionMaxInputTokens = Register(&Int{Meta: Meta{Key: "auxiliary.side_question.max_input_tokens", Label: "Side question budget", Short: "Most input tokens one /btw side question may send in total.", Help: "Zero or less means no limit.", Group: GroupModel, Order: 1924, Advanced: true}, Null: "three quarters of the model's window", Unit: "tokens"})
+
+// Model for side questions
+var AuxiliarySideQuestionModel = Register(&String{Meta: Meta{Key: "auxiliary.side_question.model", Label: "Side question model", Short: "Model for /btw side questions.", Help: "Empty asks your main model.", Group: GroupModel, Order: 1925, Advanced: true}, Default: ""})
+
+// Provider for side questions
+var AuxiliarySideQuestionProvider = Register(&String{Meta: Meta{Key: "auxiliary.side_question.provider", Label: "Side question provider", Short: "Provider for /btw side questions.", Help: "Auto asks your main model.", Group: GroupModel, Order: 1926, Advanced: true}, Default: "auto"})
+
+// Thinking effort for side questions
+var AuxiliarySideQuestionReasoningEffort = Register(&Enum{Meta: Meta{Key: "auxiliary.side_question.reasoning_effort", Label: "Side question thinking", Short: "Thinking effort for /btw side questions.", Group: GroupModel, Order: 1927, Advanced: true}, Values: reasoningChoices, Null: "the model's default"})
+
 // Endpoint addresses that only work with streamed replies
 var AuxiliaryStreamOnlyBaseUrls = Register(&List{Meta: Meta{Key: "auxiliary.stream_only_base_urls", Label: "Streaming-only hosts", Short: "Endpoint addresses that only work with streamed replies.", Help: "Any address containing one of these texts is requested in streaming mode.", Group: GroupModel, Order: 1930, Advanced: true}})
 
@@ -396,16 +432,23 @@ var OpenrouterResponseCache = Register(&Bool{Meta: Meta{Key: "openrouter.respons
 var OpenrouterResponseCacheTtl = Register(&Int{Meta: Meta{Key: "openrouter.response_cache_ttl", Label: "Cache lifetime", Short: "How long OpenRouter keeps cached answers.", Group: GroupModel, Order: 2310, Advanced: true}, Default: 300})
 
 // How long the provider keeps your prompt cached
-var PromptCachingCacheTtl = Register(&String{Meta: Meta{Key: "prompt_caching.cache_ttl", Label: "Prompt cache time", Short: "How long the provider keeps your prompt cached.", Group: GroupModel, Order: 2320, Advanced: true}, Default: "5m"})
+var PromptCachingCacheTtl = Register(&Enum{Meta: Meta{Key: "prompt_caching.cache_ttl", Label: "Prompt cache time", Short: "How long the provider keeps your prompt cached.", Group: GroupModel, Order: 2320, Advanced: true}, Default: "5m",
+	Values: []Choice{
+		{"5m", "5 minutes", ""},
+		{"1h", "1 hour", ""},
+		{"auto", "Auto", "1 hour in chats, 5 minutes in scheduled and scripted runs."},
+		{"off", "Off", "No prompt caching."},
+	},
+	Also: map[string]string{"false": "off", "disabled": "off", "no": "off", "none": "off"}})
 
 // Your own named model endpoints and their settings
 var Providers = Register(&Map{Meta: Meta{Key: "providers", Label: "Providers", Short: "Your own named model endpoints and their settings.", Group: GroupModel, Order: 2330, Advanced: true}})
 
 // Google Cloud project used for Vertex AI requests
-var VertexProjectId = Register(&String{Meta: Meta{Key: "vertex.project_id", Label: "Vertex project", Short: "Google Cloud project used for Vertex AI requests.", Group: GroupModel, Order: 2340, Advanced: true}, Default: ""})
+var VertexProjectId = Register(&String{Meta: Meta{Key: "vertex.project_id", Label: "Vertex project", Short: "Google Cloud project used for Vertex AI requests.", Group: GroupModel, Order: 2340, Advanced: true, Env: "VERTEX_PROJECT_ID"}, Default: ""})
 
 // Google Cloud region used for Vertex AI requests
-var VertexRegion = Register(&String{Meta: Meta{Key: "vertex.region", Label: "Vertex region", Short: "Google Cloud region used for Vertex AI requests.", Group: GroupModel, Order: 2350, Advanced: true}, Default: "global"})
+var VertexRegion = Register(&String{Meta: Meta{Key: "vertex.region", Label: "Vertex region", Short: "Google Cloud region used for Vertex AI requests.", Group: GroupModel, Order: 2350, Advanced: true, Env: "VERTEX_REGION"}, Default: "global"})
 
 // Which upstream providers OpenRouter may route requests to, per model or for all
 var ProviderRouting = Register(&Map{Meta: Meta{Key: "provider_routing", Label: "OpenRouter routing", Short: "Which upstream providers OpenRouter may send your requests to.", Help: "Keys such as only, ignore, order and sort, optionally under a model name.", Group: GroupModel, Order: 3000, Advanced: true, Apply: NextTurn}})
@@ -423,13 +466,13 @@ var ModelAuthMode = Register(&Enum{Meta: Meta{Key: "model.auth_mode", Label: "Az
 var ModelEntra = Register(&Map{Meta: Meta{Key: "model.entra", Label: "Entra options", Short: "Options of the Microsoft Entra sign-in, such as the token scope.", Group: GroupModel, Order: 3030, Advanced: true, Apply: NewSession}})
 
 // Context window of the main model, overriding what icebath detects
-var ModelContextLength = Register(&Int{Meta: Meta{Key: "model.context_length", Label: "Context window", Short: "How many tokens the main model can hold, when icebath guesses wrong.", Help: "Unset uses the size the provider reports or the built-in table.", Group: GroupModel, Order: 3100, Advanced: true, Apply: NewSession}, Null: "the size icebath detects", Min: at(1), Unit: "tokens"})
+var ModelContextLength = Register(&Int{Meta: Meta{Key: "model.context_length", Label: "Context window", Short: "How many tokens the main model can hold, when icebath guesses wrong.", Help: "Unset uses the size the provider reports or the built-in table.", Group: GroupModel, Order: 3100, Advanced: true, Apply: NewSession}, Null: "the size icebath detects", Min: at(1), Unit: "tokens", DefaultBelow: true})
 
 // Model that describes videos for the agent
 var AuxiliaryVideoModel = Register(&String{Meta: Meta{Key: "auxiliary.video.model", Label: "Video model", Short: "Model that watches videos for the agent.", Group: GroupModel, Order: 2210, Advanced: true, Apply: NextTurn}, Null: "the image analysis model"})
 
 // Parallel image and video preparation steps
-var AuxiliaryVisionMaxConcurrency = Register(&Int{Meta: Meta{Key: "auxiliary.vision.max_concurrency", Label: "Image workers", Short: "How many images are prepared at the same time.", Group: GroupModel, Order: 2220, Advanced: true, Apply: Restart}, Null: "one per processor core", Min: at(1)})
+var AuxiliaryVisionMaxConcurrency = Register(&Int{Meta: Meta{Key: "auxiliary.vision.max_concurrency", Label: "Image workers", Short: "How many images are prepared at the same time.", Group: GroupModel, Order: 2220, Advanced: true, Apply: Restart}, Null: "one per processor core", Min: at(1), DefaultBelow: true})
 
 // Randomness of image and video descriptions
 var AuxiliaryVisionTemperature = Register(&Float{Meta: Meta{Key: "auxiliary.vision.temperature", Label: "Vision temperature", Short: "How varied image and video descriptions may be.", Help: "Low values give steadier descriptions.", Group: GroupModel, Order: 2230, Advanced: true, Apply: NextTurn}, Default: 0.1, Min: at(0.0), Max: at(2.0)})

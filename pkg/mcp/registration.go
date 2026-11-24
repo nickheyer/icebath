@@ -1030,11 +1030,7 @@ func healConnectedIntoCurrentScope(ctx context.Context, env *tools.Env, servers 
 
 // Registers a server from its cached manifest without spawning it, trust recorded first so gating matches live
 func registerFromCacheSync(ctx context.Context, env *tools.Env, name string, cfg map[string]any, entry map[string]any) ([]string, error) {
-	var tree config.Tree
-	if env != nil {
-		tree = env.Config
-	}
-	toolTimeout := resolveToolTimeout(cfg, tree)
+	toolTimeout := resolveToolTimeout(ctx, cfg)
 	cached := cachedTools(ToolsFromCacheEntry(entry))
 	if err := recordToolTrustMetadata(ctx, name, cfg, cached, nil); err != nil {
 		return nil, err

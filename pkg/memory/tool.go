@@ -589,9 +589,6 @@ func envLog(env *tools.Env) *slog.Logger {
 	return pkgLog()
 }
 
-// Memory tool_store registers nothing at import
-func registerMemoryStore() {}
-
 // Registers the memory tool into the default registry
 func registerMemoryTool() {
 	tools.Register(tools.Def{

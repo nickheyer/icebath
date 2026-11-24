@@ -179,7 +179,7 @@ func safeGitError(result *gitResult, sourceURL string) (string, error) {
 	if text == "" {
 		text = result.Stdout
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if sourceURL != "" {
 		scrubbed, err := scrubGitURL(sourceURL)
 		if err != nil {
@@ -220,7 +220,7 @@ func gitHeadRevision(ctx context.Context, repo, gitExe string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.ToLower(pystr.Strip(result.Stdout)), nil
+	return strings.ToLower(strings.TrimSpace(result.Stdout)), nil
 }
 
 // Commit a revision names with annotated tags peeled, the revision itself when it resolves to nothing
@@ -229,7 +229,7 @@ func gitResolveCommit(ctx context.Context, repo, gitExe, revision string) string
 	if err != nil {
 		return revision
 	}
-	resolved := strings.ToLower(pystr.Strip(result.Stdout))
+	resolved := strings.ToLower(strings.TrimSpace(result.Stdout))
 	if result.Code == 0 && resolved != "" {
 		return resolved
 	}
@@ -238,7 +238,7 @@ func gitResolveCommit(ctx context.Context, repo, gitExe, revision string) string
 
 // Fetches and detaches at one immutable commit, then verifies HEAD is that commit
 func checkoutExactRevision(ctx context.Context, h, repo, gitExe, revision, sourceURL string) error {
-	timeout := time.Duration(cloneTimeoutSeconds(h)) * time.Second
+	timeout := cloneTimeout(h)
 	steps := []struct {
 		verb, prefix string
 		args         []string
@@ -331,7 +331,7 @@ var clonePluginRepo = func(ctx context.Context, h, tmpClone, gitURL, revision, s
 	if gitExe == "" {
 		return "", &PluginOperationError{Msg: "git is not installed or not in PATH.", FailureClass: "git_missing"}
 	}
-	timeout := time.Duration(cloneTimeoutSeconds(h)) * time.Second
+	timeout := cloneTimeout(h)
 	timedOut := func(what string) error {
 		return &PluginOperationError{Msg: fmt.Sprintf("%s timed out after %d seconds. %s", what, int(timeout.Seconds()), CloneTimeoutHint),
 			FailureClass: "clone_failed"}
@@ -454,7 +454,7 @@ func stashRef(ctx context.Context, gitExe, target string) (string, error) {
 	if probe.Code != 0 {
 		return "", nil
 	}
-	return pystr.Strip(probe.Stdout), nil
+	return strings.TrimSpace(probe.Stdout), nil
 }
 
 // Applies the autostash commit and drops it on a clean apply, false when it left errors or unmerged paths
@@ -467,7 +467,7 @@ func reapplyStash(ctx context.Context, gitExe, target, stashSHA string) (bool, e
 	if err != nil {
 		return false, err
 	}
-	if restore.Code != 0 || pystr.Strip(unmerged.Stdout) != "" {
+	if restore.Code != 0 || strings.TrimSpace(unmerged.Stdout) != "" {
 		return false, nil
 	}
 	newest, err := stashRef(ctx, gitExe, target)
@@ -499,7 +499,7 @@ func autostashDirtyTree(ctx context.Context, gitExe, target string) (string, str
 	if err != nil {
 		return "", "", err
 	}
-	if status.Code != 0 || pystr.Strip(status.Stdout) == "" {
+	if status.Code != 0 || strings.TrimSpace(status.Stdout) == "" {
 		return "", "", nil
 	}
 	if paths := intentToAddPaths(status.Stdout); len(paths) > 0 {
@@ -564,7 +564,7 @@ func gitPullSteps(ctx context.Context, gitExe, target string) (bool, string, err
 	if err != nil {
 		return false, "", err
 	}
-	result, err := runPluginGit(ctx, gitExe, target, gitDefaultTimeout, pystr.Strip(origin.Stdout), "pull", "--ff-only")
+	result, err := runPluginGit(ctx, gitExe, target, gitDefaultTimeout, strings.TrimSpace(origin.Stdout), "pull", "--ff-only")
 	if err != nil {
 		return false, "", err
 	}
@@ -589,7 +589,7 @@ func gitPullSteps(ctx context.Context, gitExe, target string) (bool, string, err
 		}
 		return false, detail + "\n" + note, nil
 	}
-	pulled := pystr.Strip(result.Stdout)
+	pulled := strings.TrimSpace(result.Stdout)
 	if stashSHA == "" {
 		return true, pulled, nil
 	}

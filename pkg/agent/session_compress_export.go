@@ -3,15 +3,13 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Agent side of the gateway's canonical session compress
@@ -28,47 +26,15 @@ func runtimeText(runtime map[string]any, key string) string {
 	return ""
 }
 
-// Python int of a configured context length, nil when it does not parse
-func configuredInt(raw any) *int {
-	switch v := raw.(type) {
-	case int:
-		return &v
-	case int64:
-		n := int(v)
-		return &n
-	case float64:
-		n := int(v)
-		return &n
-	case bool:
-		n := 0
-		if v {
-			n = 1
-		}
-		return &n
-	case string:
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
-			return &n
-		}
-	}
-	return nil
-}
-
-// Configured window agent init hands a plugin engine for this runtime, else the matching custom provider's
-func sessionConfiguredContextLength(ctx context.Context, cfg map[string]any, model, providerName, baseURL string, providers []map[string]any) *int {
-	modelCfg, _ := cfg["model"].(map[string]any)
-	if modelCfg == nil {
-		modelCfg = map[string]any{}
-	}
+// Configured window agent init hands a plugin engine for this runtime under the settings of ctx, else the matching custom provider's
+func sessionConfiguredContextLength(ctx context.Context, model, providerName, baseURL string, providers []map[string]any) *int {
 	var configured *int
-	if raw, has := modelCfg["context_length"]; has && raw != nil {
-		configured = configuredInt(raw)
-	}
-	if configured != nil {
+	if n, ok := settings.ModelContextLength.Lookup(ctx); ok {
 		route := &AIAgent{model: model, provider: providerName, baseURL: baseURL}
-		configured = scopeContextLengthToDefaultRuntime(ctx, route, modelCfg, providers, configured, baseURL)
+		configured = scopeContextLengthToDefaultRuntime(ctx, route, providers, &n, baseURL)
 	}
 	if configured == nil && len(providers) > 0 {
-		if n := provider.CustomProviderContextLength(model, baseURL, providers, cfg); n != 0 {
+		if n := provider.CustomProviderContextLength(model, baseURL, providers); n != 0 {
 			configured = &n
 		}
 	}
@@ -93,26 +59,18 @@ func sessionPluginEngine(ctx context.Context, job gateway.SessionCompressJob, re
 	if job.SafeMode {
 		return nil, nil
 	}
-	engine := selectContextEngine(ctx, job.Config)
+	ctx = settings.WithFrozen(ctx, job.Config)
+	engine := selectContextEngine(ctx)
 	if engine == nil || isNilEngine(engine) {
 		return nil, nil
 	}
-	compression, _ := job.Config["compression"].(map[string]any)
-	if thresholds, ok := compression["model_thresholds"].(map[string]any); ok && len(thresholds) > 0 {
-		parsed := make(map[string]float64, len(thresholds))
-		for k, v := range thresholds {
-			f, err := thresholdFloat(v)
-			if err != nil {
-				return nil, err
-			}
-			parsed[k] = f
-		}
-		engine.Base().ModelThresholds = parsed
+	if thresholds := compressionModelThresholds(ctx); len(thresholds) > 0 {
+		engine.Base().ModelThresholds = thresholds
 	}
 	baseURL, apiKey, providerName := runtimeText(job.Runtime, "base_url"), runtimeText(job.Runtime, "api_key"), runtimeText(job.Runtime, "provider")
-	providers := provider.ProviderEntries(job.Config)
+	providers := provider.CustomProviderEntries(ctx)
 	request := provider.ContextLengthRequest{Model: job.Model, BaseURL: baseURL, APIKey: apiKey, Provider: providerName, CustomProviders: providers}
-	if configured := sessionConfiguredContextLength(ctx, job.Config, job.Model, providerName, baseURL, providers); configured != nil {
+	if configured := sessionConfiguredContextLength(ctx, job.Model, providerName, baseURL, providers); configured != nil {
 		request.ConfigContextLength = *configured
 	}
 	engine.UpdateModel(job.Model, provider.GetModelContextLength(ctx, request), baseURL, apiKey, providerName, runtimeText(job.Runtime, "api_mode"))
@@ -124,30 +82,6 @@ func sessionPluginEngine(ctx context.Context, job gateway.SessionCompressJob, re
 		}
 	}
 	return engine, nil
-}
-
-// Float of a threshold value as Python float() reads it
-func thresholdFloat(v any) (float64, error) {
-	switch x := v.(type) {
-	case float64:
-		return x, nil
-	case int:
-		return float64(x), nil
-	case int64:
-		return float64(x), nil
-	case bool:
-		if x {
-			return 1, nil
-		}
-		return 0, nil
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
-		if err != nil {
-			return 0, fmt.Errorf("compression threshold %s is not a number", errchain.Show(x))
-		}
-		return f, nil
-	}
-	return 0, fmt.Errorf("compression threshold is %s where a number was expected", errchain.Kind(v))
 }
 
 // Deep copy of message rows through JSON
@@ -219,10 +153,15 @@ func (SessionCompressAgent) Summarize(ctx context.Context, job gateway.SessionCo
 	options.BaseURL, options.APIKey = runtimeText(job.Runtime, "base_url"), runtimeText(job.Runtime, "api_key")
 	options.Provider, options.APIMode = runtimeText(job.Runtime, "provider"), runtimeText(job.Runtime, "api_mode")
 	options.QuietMode, options.AbortOnSummaryFailure = true, true
-	options.ProtectFirstN = parseConfigInt(mapOr(job.Options, "protect_first_n", 3), 3)
-	options.ProtectLastN = parseConfigInt(mapOr(job.Options, "protect_last_n", 20), 20)
-	options.MinTailUserMessages = max(1, parseConfigInt(mapOr(job.Options, "min_tail_user_messages", 1), 1))
-	options.CustomProviders = provider.ProviderEntryList(job.Config)
+	frozen := settings.WithFrozen(ctx, job.Config)
+	options.ProtectFirstN = max(0, settings.CompressionProtectFirstN.Get(frozen))
+	options.ProtectLastN = max(0, settings.CompressionProtectLastN.Get(frozen))
+	options.MinTailUserMessages = max(1, settings.CompressionMinTailUserMessages.Get(frozen))
+	entries := provider.CustomProviderEntries(frozen)
+	options.CustomProviders = make([]any, len(entries))
+	for i, entry := range entries {
+		options.CustomProviders[i] = entry
+	}
 	compressor := NewContextCompressor(ctx, options)
 	compressed, err := compressor.CompressContext(ctx, cloneRows(job.Head), nil, job.FocusTopic, true, memoryContext)
 	if err != nil {
@@ -234,14 +173,6 @@ func (SessionCompressAgent) Summarize(ctx context.Context, job gateway.SessionCo
 		}
 	}
 	return nil, compressor, nil
-}
-
-// Mapping value with a default for an absent key
-func mapOr(m map[string]any, key string, def any) any {
-	if v, ok := m[key]; ok {
-		return v
-	}
-	return def
 }
 
 // Ends an engine's session, a failure only logged

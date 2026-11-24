@@ -53,7 +53,7 @@ func isContainerStartupEnvironment() bool {
 // Cheap probe for an active non default profile redirecting the home
 func activeProfileMayOverrideHome(root string) bool {
 	text, _ := readText(pypath.Join(root, "active_profile"))
-	active := pystr.Strip(text)
+	active := strings.TrimSpace(text)
 	return active != "" && active != "default"
 }
 
@@ -62,7 +62,7 @@ func ContainerModeMayBeActive() bool {
 	if os.Getenv("ICEBATH_DEV") == "1" || isContainerStartupEnvironment() {
 		return false
 	}
-	if h := pystr.Strip(os.Getenv(home.EnvHome)); h != "" {
+	if h := strings.TrimSpace(os.Getenv(home.EnvHome)); h != "" {
 		if pathExists(pypath.Join(h, ".container-mode")) {
 			return true
 		}
@@ -184,10 +184,10 @@ func pyPositive(v any) (positive, comparable bool) {
 
 // The installer's .install_method stamp in the resolved home, lower cased and empty when absent
 func readInstallMethod() string {
-	h := pystr.Strip(os.Getenv(home.EnvHome))
+	h := strings.TrimSpace(os.Getenv(home.EnvHome))
 	if h == "" {
 		h = home.PlatformDefault()
 	}
 	text, _ := readText(pypath.Join(h, ".install_method"))
-	return pystr.Lower(pystr.Strip(text))
+	return strings.ToLower(strings.TrimSpace(text))
 }

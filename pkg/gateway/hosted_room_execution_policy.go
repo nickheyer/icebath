@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -105,7 +106,7 @@ func RoomExecutionPolicyFromMapping(value any) (*RoomExecutionPolicy, error) {
 	if pyrepr.Truthy(fields["approval_mode"]) {
 		approvalMode = pyrepr.Str(fields["approval_mode"])
 	}
-	approvalMode = pystr.Lower(pystr.Strip(approvalMode))
+	approvalMode = strings.ToLower(strings.TrimSpace(approvalMode))
 	if approvalMode != "manual" && approvalMode != "smart" && approvalMode != "off" {
 		return nil, roomPolicyError("approval_mode is invalid")
 	}
@@ -123,7 +124,7 @@ func RoomExecutionPolicyFromMapping(value any) (*RoomExecutionPolicy, error) {
 	if pyrepr.Truthy(fields["policy_digest"]) {
 		supplied = pyrepr.Str(fields["policy_digest"])
 	}
-	supplied = pystr.Lower(pystr.Strip(supplied))
+	supplied = strings.ToLower(strings.TrimSpace(supplied))
 	if supplied != digest {
 		return nil, roomPolicyError("policy_digest does not match the execution policy")
 	}

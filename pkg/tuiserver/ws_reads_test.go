@@ -52,12 +52,9 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 		log.add("done:" + id)
 		return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil), "result", pyjson.NewObject()), nil
 	})
-	prevClose := wsCloseSessionsForTransport
-	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
-		log.add("teardown")
-		return 0, 0
-	}
-	t.Cleanup(func() { wsCloseSessionsForTransport = prevClose })
+	prevRelease := wsReleaseSetupForTransport
+	wsReleaseSetupForTransport = func(tuihost.Transport) { log.add("teardown") }
+	t.Cleanup(func() { wsReleaseSetupForTransport = prevRelease })
 	return newWSTestSocket(), gates, log
 }
 

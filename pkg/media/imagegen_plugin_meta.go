@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -45,7 +46,7 @@ func resolveMetaBaseURL(ctx context.Context) string {
 
 // Caller model, META_IMAGE_MODEL, the scoped and top level config, else muse-image-1.0
 func resolveMetaImageModel(env *tools.Env, callerModel string) (string, map[string]any) {
-	return resolveStaticModel(env, metaImageModels, metaDefaultModel, staticModelOptions{EnvVar: "META_IMAGE_MODEL", ConfigKey: "meta-ai", Explicit: callerModel})
+	return resolveStaticModel(env, metaImageModels, metaDefaultModel, staticModelOptions{Scoped: settings.MetaAIImageModel, Explicit: callerModel})
 }
 
 // Meta Model API images.generate backend for muse-image

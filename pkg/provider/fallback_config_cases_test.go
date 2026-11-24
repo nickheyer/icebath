@@ -16,7 +16,7 @@ func entryKeyResolver(t *testing.T, scope map[string]string) *resolver {
 	if scope != nil {
 		ctx = WithSecretScope(ctx, scope, "")
 	}
-	return newResolver(ctx, config.Tree{}, config.NewSecrets(h), h, nil)
+	return newResolver(ctx, config.NewSecrets(h), h, nil)
 }
 
 func TestResolveEntryApiKeyInlineApiKeyWins(t *testing.T) {

@@ -1,6 +1,8 @@
 package slack
 
 import (
+	"unicode"
+
 	"maps"
 	"strings"
 	"unicode/utf8"
@@ -256,7 +258,7 @@ func nonemptyElements(elements []any) []any {
 
 // Plain text header capped at 150 characters, nil when emphasis removal leaves nothing
 func headerBlock(text string) map[string]any {
-	clean := pystr.Strip(strings.Map(func(r rune) rune {
+	clean := strings.TrimSpace(strings.Map(func(r rune) rune {
 		if strings.ContainsRune("*_~`", r) {
 			return -1
 		}
@@ -327,8 +329,8 @@ func sectionBlock(text string) map[string]any {
 // Column aligns of a markdown separator row
 func parseAlignment(sepLine string) []string {
 	var aligns []string
-	for _, cell := range strings.Split(strings.Trim(pystr.Strip(sepLine), "|"), "|") {
-		c := pystr.Strip(cell)
+	for _, cell := range strings.Split(strings.Trim(strings.TrimSpace(sepLine), "|"), "|") {
+		c := strings.TrimSpace(cell)
 		left, right := strings.HasPrefix(c, ":"), strings.HasSuffix(c, ":")
 		switch {
 		case left && right:
@@ -344,10 +346,10 @@ func parseAlignment(sepLine string) []string {
 
 // Trimmed cells of a table row, escaped pipes kept inside their cell
 func splitRow(row string) []string {
-	protected := strings.ReplaceAll(strings.Trim(pystr.Strip(row), "|"), `\|`, "\x00PIPE\x00")
+	protected := strings.ReplaceAll(strings.Trim(strings.TrimSpace(row), "|"), `\|`, "\x00PIPE\x00")
 	var out []string
 	for _, c := range strings.Split(protected, "|") {
-		out = append(out, strings.ReplaceAll(pystr.Strip(c), "\x00PIPE\x00", "|"))
+		out = append(out, strings.ReplaceAll(strings.TrimSpace(c), "\x00PIPE\x00", "|"))
 	}
 	return out
 }
@@ -371,7 +373,7 @@ func padRows(parsed [][]string) int {
 func tableBlock(rows []string, sepLine string) map[string]any {
 	var parsed [][]string
 	for _, r := range rows {
-		if pystr.Strip(r) != "" {
+		if strings.TrimSpace(r) != "" {
 			parsed = append(parsed, splitRow(r))
 		}
 	}
@@ -448,7 +450,7 @@ func renderTable(rows []string) string {
 		for c := range cells {
 			cells[c] = pystr.Ljust(r[c], widths[c])
 		}
-		out = append(out, pystr.Rstrip(strings.Join(cells, " | ")))
+		out = append(out, strings.TrimRightFunc(strings.Join(cells, " | "), unicode.IsSpace))
 		if ri == 0 {
 			dashes := make([]string, ncols)
 			for c := range dashes {
@@ -462,7 +464,7 @@ func renderTable(rows []string) string {
 
 // Block Kit blocks of agent markdown, nil when empty, over the block limit or when rendering fails
 func RenderBlocks(markdown string, mrkdwnFn func(string) string) (blocks []any) {
-	if pystr.Strip(markdown) == "" {
+	if strings.TrimSpace(markdown) == "" {
 		return nil
 	}
 	if mrkdwnFn == nil {
@@ -480,7 +482,7 @@ func RenderBlocks(markdown string, mrkdwnFn func(string) string) (blocks []any) 
 		if len(para) == 0 {
 			return
 		}
-		text := pystr.Strip(strings.Join(para, "\n"))
+		text := strings.TrimSpace(strings.Join(para, "\n"))
 		para = nil
 		if text == "" {
 			return
@@ -491,7 +493,7 @@ func RenderBlocks(markdown string, mrkdwnFn func(string) string) (blocks []any) 
 	}
 	for i := 0; i < n; {
 		line := lines[i]
-		if pystr.Strip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			flushPara()
 			i++
 			continue
@@ -501,7 +503,7 @@ func RenderBlocks(markdown string, mrkdwnFn func(string) string) (blocks []any) 
 			marker := fence.groups[1]
 			var body []string
 			i++
-			for i < n && !strings.HasPrefix(pystr.Lstrip(lines[i]), marker) {
+			for i < n && !strings.HasPrefix(strings.TrimLeftFunc(lines[i], unicode.IsSpace), marker) {
 				body = append(body, lines[i])
 				i++
 			}
@@ -529,7 +531,7 @@ func RenderBlocks(markdown string, mrkdwnFn func(string) string) (blocks []any) 
 				sepLine := lines[i+1]
 				trows := []string{line}
 				i += 2
-				for i < n && strings.Contains(lines[i], "|") && pystr.Strip(lines[i]) != "" {
+				for i < n && strings.Contains(lines[i], "|") && strings.TrimSpace(lines[i]) != "" {
 					trows = append(trows, lines[i])
 					i++
 				}
@@ -569,12 +571,12 @@ func RenderBlocks(markdown string, mrkdwnFn func(string) string) (blocks []any) 
 				case ook:
 					items = append(items, listItem{indentLevel(om.groups[1]), true, om.groups[3]})
 					i++
-				case pystr.Strip(lines[i]) != "" && (strings.HasPrefix(lines[i], " ") || strings.HasPrefix(lines[i], "\t")) && len(items) > 0:
-					items[len(items)-1].text += " " + pystr.Strip(lines[i])
+				case strings.TrimSpace(lines[i]) != "" && (strings.HasPrefix(lines[i], " ") || strings.HasPrefix(lines[i], "\t")) && len(items) > 0:
+					items[len(items)-1].text += " " + strings.TrimSpace(lines[i])
 					i++
-				case pystr.Strip(lines[i]) == "" && len(items) > 0:
+				case strings.TrimSpace(lines[i]) == "" && len(items) > 0:
 					j := i + 1
-					for j < n && pystr.Strip(lines[j]) == "" {
+					for j < n && strings.TrimSpace(lines[j]) == "" {
 						j++
 					}
 					if j < n && isListLine(lines[j]) {
@@ -659,7 +661,7 @@ func clampTextObj(obj map[string]any, limit int) (out map[string]any, changed, o
 			return obj, false, true
 		}
 		clamped := maps.Clone(obj)
-		clamped["text"] = pystr.Rstrip(string(r[:limit-1])) + "…"
+		clamped["text"] = strings.TrimRightFunc(string(r[:limit-1]), unicode.IsSpace) + "…"
 		return clamped, true, true
 	case []any:
 		return obj, false, len(t) <= limit
@@ -676,7 +678,7 @@ func strippedText(obj map[string]any) (string, bool) {
 		return "", true
 	}
 	s, ok := v.(string)
-	return pystr.Strip(s), ok
+	return strings.TrimSpace(s), ok
 }
 
 // Blocks clamped to Slack limits with empty blocks dropped and null column settings repaired, nil when nothing valid remains

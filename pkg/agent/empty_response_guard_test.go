@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 type guardResponse struct {
@@ -236,38 +236,41 @@ func TestZeroOutputExtraction(t *testing.T) {
 }
 
 func TestResolveGuardSettings(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	isDefault := func(d guardDecimal) bool { return d.inf == 0 && !d.nan && d.amount.Cmp(big.NewRat(1, 4)) == 0 }
+	guard := func(section any) (bool, guardDecimal) {
+		return resolveGuardSettings(settings.WithFrozen(t.Context(), map[string]any{"agent": map[string]any{"empty_response_guard": section}}))
+	}
 	for _, raw := range []any{nil, "nope"} {
-		if enabled, threshold := resolveGuardSettings(raw); !enabled || !isDefault(threshold) {
+		if enabled, threshold := guard(raw); !enabled || !isDefault(threshold) {
 			t.Fatalf("section %v gave %v %v", raw, enabled, threshold)
 		}
 	}
-	if enabled, _ := resolveGuardSettings(map[string]any{"enabled": false}); enabled {
+	if enabled, _ := guard(map[string]any{"enabled": false}); enabled {
 		t.Fatal("enabled false kept the guard on")
 	}
-	if enabled, _ := resolveGuardSettings(map[string]any{"enabled": "false"}); enabled {
+	if enabled, _ := guard(map[string]any{"enabled": "false"}); enabled {
 		t.Fatal("yaml string false kept the guard on")
 	}
-	if enabled, _ := resolveGuardSettings(map[string]any{"enabled": "true"}); !enabled {
+	if enabled, _ := guard(map[string]any{"enabled": "true"}); !enabled {
 		t.Fatal("yaml string true turned the guard off")
 	}
-	if _, threshold := resolveGuardSettings(map[string]any{"cost_threshold_usd": 5}); threshold.amount.Cmp(big.NewRat(5, 1)) != 0 {
+	if _, threshold := guard(map[string]any{"cost_threshold_usd": 5}); threshold.amount.Cmp(big.NewRat(5, 1)) != 0 {
 		t.Fatalf("int threshold %v", threshold.amount)
 	}
-	if _, threshold := resolveGuardSettings(map[string]any{"cost_threshold_usd": "1.50"}); threshold.amount.Cmp(ratOf("1.50")) != 0 {
+	if _, threshold := guard(map[string]any{"cost_threshold_usd": "1.50"}); threshold.amount.Cmp(ratOf("1.50")) != 0 {
 		t.Fatalf("string threshold %v", threshold.amount)
 	}
-	if _, threshold := resolveGuardSettings(map[string]any{"cost_threshold_usd": 0.1}); threshold.amount.Cmp(ratOf("0.1")) != 0 {
+	if _, threshold := guard(map[string]any{"cost_threshold_usd": 0.1}); threshold.amount.Cmp(ratOf("0.1")) != 0 {
 		t.Fatalf("float threshold %v", threshold.amount)
 	}
 	for _, bad := range []any{"banana", -1, true, "1/2", "nan"} {
-		if _, threshold := resolveGuardSettings(map[string]any{"cost_threshold_usd": bad}); !isDefault(threshold) {
+		if _, threshold := guard(map[string]any{"cost_threshold_usd": bad}); !isDefault(threshold) {
 			t.Fatalf("bad threshold %v kept %v", bad, threshold)
 		}
 	}
-	defaults := config.Defaults()["agent"].(map[string]any)["empty_response_guard"]
-	if enabled, threshold := resolveGuardSettings(defaults); !enabled || !isDefault(threshold) {
-		t.Fatalf("shipped defaults resolve to %v %v", enabled, threshold)
+	if enabled, threshold := resolveGuardSettings(settings.DefaultsOnly(t.Context())); !enabled || !isDefault(threshold) {
+		t.Fatalf("registry defaults resolve to %v %v", enabled, threshold)
 	}
 }
 

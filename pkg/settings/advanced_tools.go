@@ -29,11 +29,23 @@ var BrowserAllowPrivateUrls = Register(&Bool{Meta: Meta{Key: "browser.allow_priv
 // Use the local browser for private addresses instead of a cloud one
 var BrowserAutoLocalForPrivateUrls = Register(&Bool{Meta: Meta{Key: "browser.auto_local_for_private_urls", Label: "Local for private", Short: "Use the local browser for private addresses instead of a cloud one.", Group: GroupTools, Order: 1070, Advanced: true}, Default: true})
 
+// Ask Browserbase for its advanced stealth browser
+var BrowserBrowserbaseAdvancedStealth = Register(&Bool{Meta: Meta{Key: "browser.browserbase.advanced_stealth", Label: "Browserbase stealth", Short: "Ask Browserbase for its advanced stealth browser.", Help: "Needs a Browserbase plan that includes it.", Group: GroupTools, Order: 1072, Advanced: true, Env: "BROWSERBASE_ADVANCED_STEALTH"}, Default: false})
+
+// Keep a Browserbase session alive between steps
+var BrowserBrowserbaseKeepAlive = Register(&Bool{Meta: Meta{Key: "browser.browserbase.keep_alive", Label: "Browserbase keep alive", Short: "Keep a Browserbase session alive between steps.", Help: "Dropped by itself when the plan does not include it.", Group: GroupTools, Order: 1074, Advanced: true, Env: "BROWSERBASE_KEEP_ALIVE"}, Default: true})
+
+// Route Browserbase sessions through its proxies
+var BrowserBrowserbaseProxies = Register(&Bool{Meta: Meta{Key: "browser.browserbase.proxies", Label: "Browserbase proxies", Short: "Route Browserbase sessions through its proxies.", Help: "Dropped by itself when the plan does not include them.", Group: GroupTools, Order: 1076, Advanced: true, Env: "BROWSERBASE_PROXIES"}, Default: true})
+
+// How long a Browserbase session may run before it ends
+var BrowserBrowserbaseSessionTimeout = Register(&Duration{Meta: Meta{Key: "browser.browserbase.session_timeout", Label: "Browserbase session time", Short: "How long a Browserbase session may run before it ends.", Help: "Zero or unset uses the project's own limit.", Group: GroupTools, Order: 1078, Advanced: true, Env: "BROWSERBASE_SESSION_TIMEOUT"}, Null: "the project's own limit"})
+
 // Options for the Camofox browser backend
 var BrowserCamofox = Register(&Map{Meta: Meta{Key: "browser.camofox", Label: "Camofox options", Short: "Options for the Camofox browser backend.", Help: "A block of sub-settings such as managed_persistence, cookies_dir, timeout and temperature.", Group: GroupTools, Order: 1080, Advanced: true}})
 
 // Attach to an already running browser at this address
-var BrowserCdpUrl = Register(&String{Meta: Meta{Key: "browser.cdp_url", Label: "Browser attach address", Short: "Attach to an already running browser at this address.", Help: "The BROWSER_CDP_URL environment variable and a live /browser connect both win over this.", Group: GroupTools, Order: 1090, Advanced: true}, Default: ""})
+var BrowserCdpUrl = Register(&String{Meta: Meta{Key: "browser.cdp_url", Label: "Browser attach address", Short: "Attach to an already running browser at this address.", Help: "A live /browser connect wins over this.", Group: GroupTools, Order: 1090, Advanced: true, Env: "BROWSER_CDP_URL"}, Default: ""})
 
 // Extra command line flags added to every Chromium launch
 var BrowserChromiumArgs = Register(&List{Meta: Meta{Key: "browser.chromium_args", Label: "Extra browser flags", Short: "Extra command line flags added to every Chromium launch.", Group: GroupTools, Order: 1100, Advanced: true}})
@@ -48,22 +60,31 @@ var BrowserDialogPolicy = Register(&Enum{Meta: Meta{Key: "browser.dialog_policy"
 var BrowserDialogTimeoutS = Register(&Duration{Meta: Meta{Key: "browser.dialog_timeout_s", Label: "Dialog wait", Short: "How long a pop-up waits for an answer before it is dealt with.", Help: "Zero or less uses the default.", Group: GroupTools, Order: 1130, Advanced: true}, Default: 5 * time.Minute})
 
 // Which local browser engine the tools drive
-var BrowserEngine = Register(&Enum{Meta: Meta{Key: "browser.engine", Label: "Browser engine", Short: "Which local browser engine the tools drive.", Group: GroupTools, Order: 1140, Advanced: true}, Default: "auto", Values: []Choice{{"auto", "Chromium", "Standard Chromium browser."}, {"lightpanda", "Lightpanda", "Lightweight headless engine."}}})
+var BrowserEngine = Register(&Enum{Meta: Meta{Key: "browser.engine", Label: "Browser engine", Short: "Which local browser engine the tools drive.", Group: GroupTools, Order: 1140, Advanced: true}, Default: "auto", Values: []Choice{{"auto", "Chromium", "Standard Chromium browser."}, {"lightpanda", "Lightpanda", "Lightweight headless engine."}, {"chrome", "Chrome", "Same as Chromium."}}})
+
+// One folder browser code keeps its files in for every task
+var BrowserExecWorkspace = Register(&Path{Meta: Meta{Key: "browser.exec_workspace", Label: "Browser code folder", Short: "One folder browser code keeps its files in for every task.", Help: "Empty gives each task its own folder in the icebath cache. A relative path is placed under the icebath home folder.", Group: GroupTools, Order: 1145, Advanced: true, Env: "BH_AGENT_WORKSPACE"}, Default: ""})
 
 // Use this browser program instead of the bundled one
 var BrowserExecutablePath = Register(&String{Meta: Meta{Key: "browser.executable_path", Label: "Browser program", Short: "Use this browser program instead of the bundled one.", Group: GroupTools, Order: 1150, Advanced: true}, Default: ""})
+
+// How long a Firecrawl browser session lives
+var BrowserFirecrawlTtl = Register(&Duration{Meta: Meta{Key: "browser.firecrawl.ttl", Label: "Firecrawl session life", Short: "How long a Firecrawl browser session lives.", Group: GroupTools, Order: 1155, Advanced: true, Env: "FIRECRAWL_BROWSER_TTL"}, Default: 5 * time.Minute, Min: at(time.Second)})
 
 // Show the browser window instead of running it hidden
 var BrowserHeaded = Register(&Bool{Meta: Meta{Key: "browser.headed", Label: "Show browser window", Short: "Show the browser window instead of running it hidden.", Group: GroupTools, Order: 1160, Advanced: true}, Default: false})
 
 // Close an unused browser session after this long
-var BrowserInactivityTimeout = Register(&Duration{Meta: Meta{Key: "browser.inactivity_timeout", Label: "Browser idle close", Short: "Close an unused browser session after this long.", Help: "Never less than 30 seconds. Falls back to the BROWSER_INACTIVITY_TIMEOUT environment variable only when this is unset.", Group: GroupTools, Order: 1170, Advanced: true}, Default: 2 * time.Minute, Min: at(30 * time.Second)})
+var BrowserInactivityTimeout = Register(&Duration{Meta: Meta{Key: "browser.inactivity_timeout", Label: "Browser idle close", Short: "Close an unused browser session after this long.", Help: "Never less than 30 seconds.", Group: GroupTools, Order: 1170, Advanced: true, Env: "BROWSER_INACTIVITY_TIMEOUT"}, Default: 2 * time.Minute, Min: at(30 * time.Second)})
 
 // Close your own browser by itself when the agent needs its profile
 var BrowserRealProfileAutoclose = Register(&Bool{Meta: Meta{Key: "browser.real_profile_autoclose", Label: "Close real browser", Short: "Close your own browser by itself when the agent needs its profile.", Help: "Only matters when using your real browser profile is allowed.", Group: GroupTools, Order: 1180, Advanced: true}, Default: false})
 
 // Folder name of the browser profile to borrow, such as Profile 2
 var BrowserRealProfilePin = Register(&String{Meta: Meta{Key: "browser.real_profile_pin", Label: "Real profile name", Short: "Folder name of the browser profile to borrow, such as Profile 2.", Help: "Empty uses the profile you used last. A name that does not exist stops the borrow.", Group: GroupTools, Order: 1190, Advanced: true}, Default: ""})
+
+// Mark the tab the agent drives so you can tell it apart
+var BrowserTabMarker = Register(&Bool{Meta: Meta{Key: "browser.tab_marker", Label: "Mark agent tab", Short: "Mark the tab the agent drives so you can tell it apart.", Group: GroupTools, Order: 1195, Advanced: true, Env: "BH_TAB_MARKER"}, Default: true})
 
 // Allow the agent to use a copy of your own browser profile and logins
 var BrowserUseRealProfile = Register(&Bool{Meta: Meta{Key: "browser.use_real_profile", Label: "Use real profile", Short: "Allow the agent to use a copy of your own browser profile and logins.", Group: GroupTools, Order: 1200, Advanced: true}, Default: false})
@@ -74,17 +95,23 @@ var BrowserUserDataDir = Register(&String{Meta: Meta{Key: "browser.user_data_dir
 // Close an idle code session after this long
 var CodeExecutionKernelIdleTimeout = Register(&Duration{Meta: Meta{Key: "code_execution.kernel_idle_timeout", Label: "Kernel idle close", Short: "Close an idle code session after this long.", Help: "Never less than 1 second.", Group: GroupTools, Order: 1220, Advanced: true}, Default: 30 * time.Minute, Min: at(time.Second)})
 
+// Most tool calls one code run may make
+var CodeExecutionMaxToolCalls = Register(&Int{Meta: Meta{Key: "code_execution.max_tool_calls", Label: "Script tool calls", Short: "Most tool calls one code run may make.", Group: GroupTools, Order: 1225, Advanced: true}, Default: 50, Min: at(0), Unit: "calls"})
+
 // How many code sessions can stay open at once
 var CodeExecutionMaxSessionKernels = Register(&Int{Meta: Meta{Key: "code_execution.max_session_kernels", Label: "Max code sessions", Short: "How many code sessions can stay open at once.", Group: GroupTools, Order: 1230, Advanced: true}, Default: 4, Min: at(1)})
 
 // Where scripts run: your working folder or a scratch one
 var CodeExecutionMode = Register(&Enum{Meta: Meta{Key: "code_execution.mode", Label: "Code run folder", Short: "Where scripts run: your working folder or a scratch one.", Group: GroupTools, Order: 1240, Advanced: true}, Default: "project", Values: []Choice{{"project", "Project folder", "Scripts run in your working folder."}, {"strict", "Scratch folder", "Scripts run in a temporary folder."}}})
 
+// Longest one code run may take before it is stopped
+var CodeExecutionTimeout = Register(&Duration{Meta: Meta{Key: "code_execution.timeout", Label: "Code run limit", Short: "Longest one code run may take before it is stopped.", Group: GroupTools, Order: 1245, Advanced: true}, Default: 5 * time.Minute})
+
 // Accept a driver app that lacks the expected publisher signature
 var ComputerUseAllowUnsignedDriver = Register(&Bool{Meta: Meta{Key: "computer_use.allow_unsigned_driver", Label: "Allow unsigned driver", Short: "Accept a driver app that lacks the expected publisher signature.", Help: "Only for locally built drivers on macOS.", Group: GroupTools, Order: 1250, Advanced: true}, Default: false})
 
 // Start the computer-use driver on its own when first needed
-var ComputerUseAutostart = Register(&Bool{Meta: Meta{Key: "computer_use.autostart", Label: "Auto start driver", Short: "Start the computer-use driver on its own when first needed.", Group: GroupTools, Order: 1260, Advanced: true}, Default: false})
+var ComputerUseAutostart = Register(&Bool{Meta: Meta{Key: "computer_use.autostart", Label: "Auto start driver", Short: "Start the computer-use driver each time you log in, on Windows.", Group: GroupTools, Order: 1260, Advanced: true}, Default: false})
 
 // Most on-screen items listed per accessibility snapshot
 var ComputerUseAxMaxElements = Register(&Int{Meta: Meta{Key: "computer_use.ax_max_elements", Label: "Max screen elements", Short: "Most on-screen items listed per accessibility snapshot.", Help: "Zero means no limit.", Group: GroupTools, Order: 1270, Advanced: true}, Default: 200, Unit: "elements", Min: at(0)})
@@ -101,6 +128,9 @@ var ComputerUseCaptureAfterMode = Register(&Enum{Meta: Meta{Key: "computer_use.c
 // Let the computer-use driver send usage data
 var ComputerUseCuaTelemetry = Register(&Bool{Meta: Meta{Key: "computer_use.cua_telemetry", Label: "Driver telemetry", Short: "Let the computer-use driver send usage data.", Group: GroupTools, Order: 1310, Advanced: true}, Default: false})
 
+// Run this computer-use driver program instead of the managed one
+var ComputerUseDriverCommand = Register(&String{Meta: Meta{Key: "computer_use.driver_command", Label: "Driver program", Short: "Run this computer-use driver program instead of the managed one.", Help: "Empty uses the cua-driver icebath installs.", Group: GroupTools, Order: 1315, Advanced: true, Env: "ICEBATH_CUA_DRIVER_CMD"}, Default: ""})
+
 // Longest side of a screenshot sent to the model, in pixels
 var ComputerUseMaxImageDimension = Register(&Int{Meta: Meta{Key: "computer_use.max_image_dimension", Label: "Max screenshot edge", Short: "Longest side of a screenshot sent to the model, in pixels.", Help: "Zero or less turns the cap off.", Group: GroupTools, Order: 1320, Advanced: true}, Default: 1456, Unit: "pixels"})
 
@@ -114,7 +144,7 @@ var ComputerUseNoOverlay = Register(&Bool{Meta: Meta{Key: "computer_use.no_overl
 var ComputerUsePermissionMode = Register(&Enum{Meta: Meta{Key: "computer_use.permission_mode", Label: "Computer use access", Short: "How much of the screen the agent may control.", Help: "Any value other than bounded is treated as standard.", Group: GroupTools, Order: 1350, Advanced: true}, Default: "standard", Values: []Choice{{"standard", "Standard", "Normal driver access."}, {"bounded", "Bounded", "Limited by the capability file."}}})
 
 // Move a skill to the archive after this many idle days
-var CuratorArchiveAfterDays = Register(&Duration{Meta: Meta{Key: "curator.archive_after_days", Label: "Archive after", Short: "Move a skill to the archive after this many idle days.", Help: "Counted in days, at least 1.", Group: GroupTools, Order: 1360, Advanced: true}, Default: 30 * 24 * time.Hour, Unit: 24 * time.Hour, Min: at(24 * time.Hour)})
+var CuratorArchiveAfterDays = Register(&Duration{Meta: Meta{Key: "curator.archive_after_days", Label: "Archive after", Short: "Move a skill to the archive after this many idle days.", Help: "Counted in days, at least 1.", Group: GroupTools, Order: 1360, Advanced: true}, Default: 30 * 24 * time.Hour, Unit: 24 * time.Hour, Min: at(24 * time.Hour), DefaultBelow: true})
 
 // Delete archived skills older than this many days
 var CuratorArchiveTtlDays = Register(&Duration{Meta: Meta{Key: "curator.archive_ttl_days", Label: "Delete archive after", Short: "Delete archived skills older than this many days.", Help: "Zero keeps archived skills forever.", Group: GroupTools, Order: 1370, Advanced: true}, Default: 0, Unit: 24 * time.Hour})
@@ -132,7 +162,7 @@ var CuratorConsolidate = Register(&Bool{Meta: Meta{Key: "curator.consolidate", L
 var CuratorEnabled = Register(&Bool{Meta: Meta{Key: "curator.enabled", Label: "Skill curator", Short: "Automatically tidy up unused skills in the background.", Group: GroupTools, Order: 1410, Advanced: true}, Default: true})
 
 // How long between automatic curator runs
-var CuratorIntervalHours = Register(&Duration{Meta: Meta{Key: "curator.interval_hours", Label: "Curator interval", Short: "How long between automatic curator runs.", Help: "At least 1 hour.", Group: GroupTools, Order: 1420, Advanced: true}, Default: 7 * 24 * time.Hour, Unit: time.Hour, Min: at(time.Hour)})
+var CuratorIntervalHours = Register(&Duration{Meta: Meta{Key: "curator.interval_hours", Label: "Curator interval", Short: "How long between automatic curator runs.", Help: "At least 1 hour.", Group: GroupTools, Order: 1420, Advanced: true}, Default: 7 * 24 * time.Hour, Unit: time.Hour, Min: at(time.Hour), DefaultBelow: true})
 
 // How long you must be idle before an automatic run starts
 var CuratorMinIdleHours = Register(&Duration{Meta: Meta{Key: "curator.min_idle_hours", Label: "Curator idle wait", Short: "How long you must be idle before an automatic run starts.", Group: GroupTools, Order: 1430, Advanced: true}, Default: 2 * time.Hour, Unit: time.Hour})
@@ -141,16 +171,40 @@ var CuratorMinIdleHours = Register(&Duration{Meta: Meta{Key: "curator.min_idle_h
 var CuratorPruneBuiltins = Register(&Bool{Meta: Meta{Key: "curator.prune_builtins", Label: "Prune built-in skills", Short: "Let the curator archive unused built-in skills too.", Group: GroupTools, Order: 1440, Advanced: true}, Default: false})
 
 // Mark a skill stale after this many idle days
-var CuratorStaleAfterDays = Register(&Duration{Meta: Meta{Key: "curator.stale_after_days", Label: "Stale after", Short: "Mark a skill stale after this many idle days.", Help: "Counted in days, at least 1.", Group: GroupTools, Order: 1450, Advanced: true}, Default: 14 * 24 * time.Hour, Unit: 24 * time.Hour, Min: at(24 * time.Hour)})
+var CuratorStaleAfterDays = Register(&Duration{Meta: Meta{Key: "curator.stale_after_days", Label: "Stale after", Short: "Mark a skill stale after this many idle days.", Help: "Counted in days, at least 1.", Group: GroupTools, Order: 1450, Advanced: true}, Default: 14 * 24 * time.Hour, Unit: 24 * time.Hour, Min: at(24 * time.Hour), DefaultBelow: true})
 
 // Most characters returned from one file read
-var FileReadMaxChars = Register(&Int{Meta: Meta{Key: "file_read_max_chars", Label: "File read limit", Short: "Most characters returned from one file read.", Help: "Longer files are cut at a whole line.", Group: GroupTools, Order: 1460, Advanced: true}, Default: 100000, Unit: "chars", Min: at(1)})
+var FileReadMaxChars = Register(&Int{Meta: Meta{Key: "file_read_max_chars", Label: "File read limit", Short: "Most characters returned from one file read.", Help: "Longer files are cut at a whole line.", Group: GroupTools, Order: 1460, Advanced: true}, Default: 100000, Unit: "chars", Min: at(1), DefaultBelow: true})
+
+// Read scanned PDF pages through Firecrawl when its key is set
+var FileToolsHostedOcr = Register(&Bool{Meta: Meta{Key: "file_tools.hosted_ocr", Label: "Hosted PDF reading", Short: "Read scanned PDF pages through Firecrawl when its key is set.", Group: GroupTools, Order: 1465, Advanced: true}, Default: true})
 
 // Commands to run on agent events, grouped by event name
 var Hooks = Register(&Map{Meta: Meta{Key: "hooks", Label: "Shell hooks", Short: "Commands to run on agent events, grouped by event name.", Help: "Each event holds a list of hook definitions. Unknown event names are ignored with a warning.", Group: GroupTools, Order: 1470, Advanced: true}})
 
+// Save long hook and plugin output to a file and keep a preview
+var HooksOutputSpillEnabled = Register(&Bool{Meta: Meta{Key: "hooks.output_spill.enabled", Label: "Save long hook output", Short: "Save long hook and plugin output to a file and keep a preview.", Group: GroupTools, Order: 1471, Advanced: true}, Default: true})
+
+// Length above which hook output is saved to a file
+var HooksOutputSpillMaxChars = Register(&Int{Meta: Meta{Key: "hooks.output_spill.max_chars", Label: "Hook output limit", Short: "Length above which hook output is saved to a file.", Group: GroupTools, Order: 1472, Advanced: true}, Default: 10000, Unit: "chars", Min: at(1), DefaultBelow: true})
+
+// Characters from the start of saved hook output kept in the preview
+var HooksOutputSpillPreviewHead = Register(&Int{Meta: Meta{Key: "hooks.output_spill.preview_head", Label: "Preview start", Short: "Characters from the start of saved hook output kept in the preview.", Group: GroupTools, Order: 1473, Advanced: true}, Default: 500, Unit: "chars", Min: at(0), DefaultBelow: true})
+
+// Characters from the end of saved hook output kept in the preview
+var HooksOutputSpillPreviewTail = Register(&Int{Meta: Meta{Key: "hooks.output_spill.preview_tail", Label: "Preview end", Short: "Characters from the end of saved hook output kept in the preview.", Group: GroupTools, Order: 1474, Advanced: true}, Default: 500, Unit: "chars", Min: at(0), DefaultBelow: true})
+
+// Folder long hook output is saved in
+var HooksOutputSpillDirectory = Register(&Path{Meta: Meta{Key: "hooks.output_spill.directory", Label: "Hook output folder", Short: "Folder long hook output is saved in.", Help: "Empty uses hook_outputs in the icebath home folder.", Group: GroupTools, Order: 1475, Advanced: true}, Default: ""})
+
 // How many MCP servers connect at the same time during discovery
-var McpDiscoveryConcurrency = Register(&Int{Meta: Meta{Key: "mcp.discovery_concurrency", Label: "MCP connect limit", Short: "How many MCP servers connect at the same time during discovery.", Help: "Zero means no limit.", Group: GroupTools, Order: 1480, Advanced: true}, Default: 4, Min: at(0)})
+var McpDiscoveryConcurrency = Register(&Int{Meta: Meta{Key: "mcp.discovery_concurrency", Label: "MCP connect limit", Short: "How many MCP servers connect at the same time during discovery.", Help: "Zero means no limit.", Group: GroupTools, Order: 1480, Advanced: true}, Default: 4, Min: at(0), DefaultBelow: true})
+
+// Folder of MCP catalog manifests used in place of the built-in catalog
+var McpCatalogDir = Register(&Path{Meta: Meta{Key: "mcp.catalog_dir", Label: "MCP catalog folder", Short: "Folder of MCP catalog manifests used in place of the built-in catalog.", Help: "Empty uses the built-in catalog.", Group: GroupTools, Order: 1485, Advanced: true, Env: "ICEBATH_OPTIONAL_MCPS"}})
+
+// Longest one call of an MCP tool may take
+var TimeoutsMcpToolCall = Register(&Duration{Meta: Meta{Key: "timeouts.mcp.tool_call", Label: "MCP tool call limit", Short: "Longest one call of an MCP tool may take.", Help: "A server's own timeout wins over it. Zero or less uses the default.", Group: GroupTools, Order: 1487, Advanced: true, Apply: Restart}, Default: 5 * time.Minute})
 
 // How long a new turn waits for MCP servers to be found
 var McpDiscoveryTimeout = Register(&Duration{Meta: Meta{Key: "mcp_discovery_timeout", Label: "MCP startup wait", Short: "How long a new turn waits for MCP servers to be found.", Help: "Zero or less uses the default.", Group: GroupTools, Order: 1490, Advanced: true}, Default: 1500 * time.Millisecond})
@@ -165,22 +219,34 @@ var PluginsAutoApply = Register(&Bool{Meta: Meta{Key: "plugins.auto_apply", Labe
 var PluginsAutoUpdateCheckHours = Register(&Duration{Meta: Meta{Key: "plugins.auto_update_check_hours", Label: "Plugin update check", Short: "How often to check plugins for updates.", Help: "Zero turns the check off.", Group: GroupTools, Order: 1520, Advanced: true}, Default: 24 * time.Hour, Unit: time.Hour})
 
 // Longest a plugin download may take
-var PluginsCloneTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "plugins.clone_timeout_seconds", Label: "Plugin download limit", Short: "Longest a plugin download may take.", Help: "Between 1 second and 1 hour.", Group: GroupTools, Order: 1530, Advanced: true}, Default: 5 * time.Minute, Min: at(time.Second), Max: at(time.Hour)})
+var PluginsCloneTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "plugins.clone_timeout_seconds", Label: "Plugin download limit", Short: "Longest a plugin download may take.", Help: "Between 1 second and 1 hour.", Group: GroupTools, Order: 1530, Advanced: true}, Default: 5 * time.Minute, Min: at(time.Second), Max: at(time.Hour), DefaultBelow: true})
 
 // Longest a plugin hook may take before it is cut off
-var PluginsHookCallbackTimeout = Register(&Duration{Meta: Meta{Key: "plugins.hook_callback_timeout", Label: "Plugin hook limit", Short: "Longest a plugin hook may take before it is cut off.", Help: "Capped at 10 minutes.", Group: GroupTools, Order: 1540, Advanced: true}, Default: 30 * time.Second, Min: at(time.Duration(0)), Max: at(10 * time.Minute)})
+var PluginsHookCallbackTimeout = Register(&Duration{Meta: Meta{Key: "plugins.hook_callback_timeout", Label: "Plugin hook limit", Short: "Longest a plugin hook may take before it is cut off.", Help: "Capped at 10 minutes.", Group: GroupTools, Order: 1540, Advanced: true}, Default: 30 * time.Second, Min: at(time.Duration(0)), Max: at(10 * time.Minute), DefaultBelow: true})
 
 // Command placed before the plugin host process, such as a sandbox
-var PluginsHostLauncher = Register(&List{Meta: Meta{Key: "plugins.host.launcher", Label: "Plugin launcher", Short: "Command placed before the plugin host process, such as a sandbox.", Group: GroupTools, Order: 1550, Advanced: true}})
+var PluginsHostLauncher = Register(&List{Meta: Meta{Key: "plugins.host.launcher", Label: "Plugin launcher", Short: "Command placed before the plugin host process, such as a sandbox.", Help: "A single line is split like a shell command line.", Group: GroupTools, Order: 1550, Advanced: true}, Whole: true})
+
+// Scan plugins for risky code when they are installed or updated
+var PluginsScanOnInstall = Register(&Bool{Meta: Meta{Key: "plugins.scan_on_install", Label: "Scan new plugins", Short: "Check plugins for risky code when they are installed or updated.", Group: GroupTools, Order: 1555, Advanced: true}, Default: true})
+
+// Let plugins watch the model's reasoning as it streams
+var PluginsStreamReasoningDeltas = Register(&Bool{Meta: Meta{Key: "plugins.stream_reasoning_deltas", Label: "Stream reasoning", Short: "Let plugins watch the model's reasoning as it streams.", Group: GroupTools, Order: 1557, Advanced: true}, Default: false})
+
+// Copy detailed plugin discovery and load logs to the error output
+var PluginsDebug = Register(&Bool{Meta: Meta{Key: "plugins.debug", Label: "Plugin debug log", Short: "Copy detailed plugin discovery and load logs to the error output.", Help: "Plugin failure warnings then also carry the error detail.", Group: GroupTools, Order: 1559, Advanced: true, Env: "ICEBATH_PLUGINS_DEBUG"}, Default: false})
 
 // Longest a single plugin may take to load
-var PluginsLoadTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "plugins.load_timeout_seconds", Label: "Plugin load limit", Short: "Longest a single plugin may take to load.", Help: "Zero loads plugins inline with no limit. Capped at 10 minutes.", Group: GroupTools, Order: 1560, Advanced: true}, Default: 10 * time.Second, Min: at(time.Duration(0)), Max: at(10 * time.Minute)})
+var PluginsLoadTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "plugins.load_timeout_seconds", Label: "Plugin load limit", Short: "Longest a single plugin may take to load.", Help: "Zero loads plugins inline with no limit. Capped at 10 minutes.", Group: GroupTools, Order: 1560, Advanced: true}, Default: 10 * time.Second, Min: at(time.Duration(0)), Max: at(10 * time.Minute), DefaultBelow: true})
 
 // Plugins switched on by name
 var PluginsEnabled = Register(&List{Meta: Meta{Key: "plugins.enabled", Label: "Enabled plugins", Short: "Plugins you switched on, by name.", Help: "The plugins commands and /plugins keep this list.", Group: GroupTools, Order: 1560, Advanced: true, Apply: Restart}})
 
 // Plugins switched off by name
 var PluginsDisabled = Register(&List{Meta: Meta{Key: "plugins.disabled", Label: "Disabled plugins", Short: "Plugins you switched off, by name.", Help: "The plugins commands and /plugins keep this list.", Group: GroupTools, Order: 1570, Advanced: true, Apply: Restart}})
+
+// Plugins an update switched off, each with what to undo once it fits again
+var PluginsDisabledByUpdate = Register(&Map{Meta: Meta{Key: "plugins.disabled_by_update", Label: "Update-disabled plugins", Short: "Plugins an update switched off, with what to undo once they fit.", Help: "Updates keep this record; enabling a plugin again clears its entry.", Group: GroupTools, Order: 1575, Advanced: true, Apply: Restart}})
 
 // Each plugin's own state and settings, by plugin
 var PluginsEntries = Register(&Map{Meta: Meta{Key: "plugins.entries", Label: "Plugin entries", Short: "Each plugin's own state and settings, by plugin name.", Group: GroupTools, Order: 1580, Advanced: true, Apply: Restart}})
@@ -193,6 +259,9 @@ var SkillsAutoLoad = Register(&List{Meta: Meta{Key: "skills.auto_load", Label: "
 
 // Values installed skills ask for, by name
 var SkillsConfig = Register(&Map{Meta: Meta{Key: "skills.config", Label: "Skill settings", Short: "Values the skills you installed ask for, by name.", Group: GroupTools, Order: 1585, Advanced: true}})
+
+// Turns between reminders to save a reusable skill
+var SkillsCreationNudgeInterval = Register(&Int{Meta: Meta{Key: "skills.creation_nudge_interval", Label: "Skill reminder spacing", Short: "Tool turns between reminders to save what worked as a skill.", Help: "Zero turns the reminders off.", Group: GroupTools, Order: 1587, Advanced: true, Apply: NewSession}, Default: 10, Min: at(0), Unit: "turns"})
 
 // Folder where new skills are created
 var SkillsCreateDir = Register(&String{Meta: Meta{Key: "skills.create_dir", Label: "New skill folder", Short: "Folder where new skills are created.", Help: "Empty uses the normal skills folder.", Group: GroupTools, Order: 1590, Advanced: true}, Default: ""})
@@ -234,25 +303,30 @@ var SkillsTier1Advisory = Register(&Bool{Meta: Meta{Key: "skills.tier1_advisory"
 var SkillsTrustedProjectDirs = Register(&List{Meta: Meta{Key: "skills.trusted_project_dirs", Label: "Trusted projects", Short: "Project folders whose own skills may be loaded.", Group: GroupTools, Order: 1710, Advanced: true}})
 
 // Ask before the agent saves or changes a skill
-var SkillsWriteApproval = Register(&Bool{Meta: Meta{Key: "skills.write_approval", Label: "Approve skill writes", Short: "Ask before the agent saves or changes a skill.", Group: GroupTools, Order: 1720, Advanced: true}, Default: false})
+var SkillsWriteApproval = Register(&Bool{Meta: Meta{Key: "skills.write_approval", Label: "Approve skill writes", Short: "Ask before the agent saves or changes a skill.", Group: GroupTools, Order: 1720, Advanced: true}, Default: false, Also: map[string]bool{"approve": true}})
 
 // Most bytes of a tool result kept before it is cut
-var ToolOutputMaxBytes = Register(&Int{Meta: Meta{Key: "tool_output.max_bytes", Label: "Tool output size", Short: "Most bytes of a tool result kept before it is cut.", Group: GroupTools, Order: 1730, Advanced: true}, Default: 50000, Unit: "bytes", Min: at(1)})
+var ToolOutputMaxBytes = Register(&Int{Meta: Meta{Key: "tool_output.max_bytes", Label: "Tool output size", Short: "Most bytes of a tool result kept before it is cut.", Group: GroupTools, Order: 1730, Advanced: true}, Default: 50000, Unit: "bytes", Min: at(1), DefaultBelow: true})
 
 // Most characters kept per line of a tool result
-var ToolOutputMaxLineLength = Register(&Int{Meta: Meta{Key: "tool_output.max_line_length", Label: "Tool line length", Short: "Most characters kept per line of a tool result.", Group: GroupTools, Order: 1740, Advanced: true}, Default: 2000, Unit: "chars", Min: at(1)})
+var ToolOutputMaxLineLength = Register(&Int{Meta: Meta{Key: "tool_output.max_line_length", Label: "Tool line length", Short: "Most characters kept per line of a tool result.", Group: GroupTools, Order: 1740, Advanced: true}, Default: 2000, Unit: "chars", Min: at(1), DefaultBelow: true})
 
 // Most lines of a tool result kept before it is cut
-var ToolOutputMaxLines = Register(&Int{Meta: Meta{Key: "tool_output.max_lines", Label: "Tool output lines", Short: "Most lines of a tool result kept before it is cut.", Group: GroupTools, Order: 1750, Advanced: true}, Default: 2000, Unit: "lines", Min: at(1)})
+var ToolOutputMaxLines = Register(&Int{Meta: Meta{Key: "tool_output.max_lines", Label: "Tool output lines", Short: "Most lines of a tool result kept before it is cut.", Group: GroupTools, Order: 1750, Advanced: true}, Default: 2000, Unit: "lines", Min: at(1), DefaultBelow: true})
+
+// Largest MCP tool result kept in the chat before it is saved to a file
+var ToolBudgetMcpResultSizeChars = Register(&Int{Meta: Meta{Key: "tool_budget.mcp_result_size_chars", Label: "MCP result size", Short: "Largest MCP tool result kept in the chat before it is saved to a file.", Group: GroupTools, Order: 1755, Advanced: true}, Default: 50000, Unit: "chars", Min: at(1), DefaultBelow: true})
 
 // Tools hidden until the agent searches for them, to save context
 var ToolsToolSearchDefer = Register(&List{Meta: Meta{Key: "tools.tool_search.defer", Label: "Deferred tools", Short: "Tools hidden until the agent searches for them, to save context.", Help: "An empty list keeps every tool loaded up front.", Group: GroupTools, Order: 1760, Advanced: true}, Default: []any{"computer_use", "session_search", "image_generate", "todo_list", "process_manage", "cronjob_manage", "browser_vault", "desktop_project"}})
 
 // Whether rarely used tools are found by search instead of listed
-var ToolsToolSearchEnabled = Register(&Enum{Meta: Meta{Key: "tools.tool_search.enabled", Label: "Tool search", Short: "Whether rarely used tools are found by search instead of listed.", Group: GroupTools, Order: 1770, Advanced: true}, Default: "auto", Values: []Choice{{"auto", "Automatic", "Used when it saves context."}, {"on", "On", "Always used."}, {"off", "Off", "Never used."}}})
+var ToolsToolSearchEnabled = Register(&Enum{Meta: Meta{Key: "tools.tool_search.enabled", Label: "Tool search", Short: "Whether rarely used tools are found by search instead of listed.", Group: GroupTools, Order: 1770, Advanced: true}, Default: "auto", Values: []Choice{{"auto", "Automatic", "Used when it saves context."}, {"on", "On", "Always used."}, {"off", "Off", "Never used."}},
+	Also: map[string]string{"true": "on", "1": "on", "yes": "on", "false": "off", "0": "off", "no": "off"}})
 
 // Whether hidden tools are summarized in the prompt
-var ToolsToolSearchListing = Register(&Enum{Meta: Meta{Key: "tools.tool_search.listing", Label: "Tool listing", Short: "Whether hidden tools are summarized in the prompt.", Group: GroupTools, Order: 1780, Advanced: true}, Default: "auto", Values: []Choice{{"auto", "Automatic", "Shown when it fits."}, {"on", "On", "Always shown."}, {"off", "Off", "Never shown."}}})
+var ToolsToolSearchListing = Register(&Enum{Meta: Meta{Key: "tools.tool_search.listing", Label: "Tool listing", Short: "Whether hidden tools are summarized in the prompt.", Group: GroupTools, Order: 1780, Advanced: true}, Default: "auto", Values: []Choice{{"auto", "Automatic", "Shown when it fits."}, {"on", "On", "Always shown."}, {"off", "Off", "Never shown."}},
+	Also: map[string]string{"true": "on", "1": "on", "yes": "on", "false": "off", "0": "off", "no": "off"}})
 
 // Most tokens spent summarizing hidden tools
 var ToolsToolSearchListingMaxTokens = Register(&Int{Meta: Meta{Key: "tools.tool_search.listing_max_tokens", Label: "Listing size", Short: "Most tokens spent summarizing hidden tools.", Help: "Between 200 and 60000.", Group: GroupTools, Order: 1790, Advanced: true}, Default: 4000, Unit: "tokens", Min: at(200), Max: at(60000)})
@@ -284,6 +358,9 @@ var WebExtractBackend = Register(&String{Meta: Meta{Key: "web.extract_backend", 
 // Most characters kept from one web page
 var WebExtractCharLimit = Register(&Int{Meta: Meta{Key: "web.extract_char_limit", Label: "Page text limit", Short: "Most characters kept from one web page.", Help: "Between 2000 and 500000.", Group: GroupTools, Order: 1880, Advanced: true}, Default: 15000, Unit: "chars", Min: at(2000), Max: at(500000)})
 
+// Longest one page read may take before it is given up
+var WebExtractTimeout = Register(&Duration{Meta: Meta{Key: "web.extract_timeout", Label: "Page read timeout", Short: "Longest one page read may take before it is given up.", Help: "Zero waits without a limit.", Group: GroupTools, Order: 1885, Advanced: true}, Default: 2 * time.Minute})
+
 // Use free providers when no web search key is set
 var WebKeylessFallback = Register(&Bool{Meta: Meta{Key: "web.keyless_fallback", Label: "Free web providers", Short: "Use free providers when no web search key is set.", Group: GroupTools, Order: 1890, Advanced: true}, Default: true})
 
@@ -295,6 +372,18 @@ var WebProviderTier = Register(&Map{Meta: Meta{Key: "web.provider_tier", Label: 
 
 // Provider used for web search
 var WebSearchBackend = Register(&String{Meta: Meta{Key: "web.search_backend", Label: "Web search provider", Short: "Provider used for web search.", Help: "Empty follows the main web provider.", Group: GroupTools, Order: 1920, Advanced: true}, Default: ""})
+
+// Model that runs xAI web searches
+var WebXaiModel = Register(&String{Meta: Meta{Key: "web.xai.model", Label: "xAI search model", Short: "Model that runs xAI web searches.", Group: GroupTools, Order: 1925, Advanced: true}, Default: "grok-build-0.1"})
+
+// Longest to wait for an xAI web search
+var WebXaiTimeout = Register(&Duration{Meta: Meta{Key: "web.xai.timeout", Label: "xAI search timeout", Short: "Longest to wait for an xAI web search.", Group: GroupTools, Order: 1926, Advanced: true}, Default: 90 * time.Second})
+
+// Only sites xAI web searches may use
+var WebXaiAllowedDomains = Register(&List{Meta: Meta{Key: "web.xai.allowed_domains", Label: "xAI allowed sites", Short: "Only sites xAI web searches may use, at most five.", Help: "Cannot be set together with xAI blocked sites.", Group: GroupTools, Order: 1927, Advanced: true}})
+
+// Sites xAI web searches leave out
+var WebXaiExcludedDomains = Register(&List{Meta: Meta{Key: "web.xai.excluded_domains", Label: "xAI blocked sites", Short: "Sites xAI web searches leave out, at most five.", Help: "Cannot be set together with xAI allowed sites.", Group: GroupTools, Order: 1928, Advanced: true}})
 
 // Model that runs X searches
 var XSearchModel = Register(&String{Meta: Meta{Key: "x_search.model", Label: "X search model", Short: "Model that runs X searches.", Group: GroupTools, Order: 1930, Advanced: true}, Default: "grok-4.5"})

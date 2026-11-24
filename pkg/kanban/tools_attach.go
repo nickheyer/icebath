@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -100,7 +99,7 @@ func downloadURLWithCap(ctx context.Context, env *tools.Env, rawURL string, maxB
 		if err != nil {
 			return nil, nil, &ValueError{err.Error()}
 		}
-		scheme := pystr.Lower(parsed.Scheme)
+		scheme := strings.ToLower(parsed.Scheme)
 		if scheme == "" {
 			return nil, nil, &ValueError{"the URL has no scheme; only http/https are allowed"}
 		}
@@ -161,8 +160,8 @@ func fetchAttachmentHop(ctx context.Context, currentURL string, maxBytes int64) 
 		return nil, nil, "", &RuntimeError{answer}
 	}
 	var contentType *string
-	if first, _, _ := strings.Cut(strings.Join(resp.Header.Values("Content-Type"), ", "), ";"); pystr.Strip(first) != "" {
-		stripped := pystr.Strip(first)
+	if first, _, _ := strings.Cut(strings.Join(resp.Header.Values("Content-Type"), ", "), ";"); strings.TrimSpace(first) != "" {
+		stripped := strings.TrimSpace(first)
 		contentType = &stripped
 	}
 	var data []byte
@@ -198,12 +197,12 @@ func handleAttachURL(k *kanbanCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	url := pystr.Strip(pyrepr.Str(rawURL))
+	url := strings.TrimSpace(pyrepr.Str(rawURL))
 	filename := k.get("filename")
 	if !pyrepr.Truthy(filename) {
 		filename = k.get("title")
 	}
-	if !pyrepr.Truthy(filename) || pystr.Strip(pyrepr.Str(filename)) == "" {
+	if !pyrepr.Truthy(filename) || strings.TrimSpace(pyrepr.Str(filename)) == "" {
 		parsed, err := pyurl.Parse(url)
 		if err != nil {
 			return "", &ValueError{err.Error()}
@@ -212,7 +211,7 @@ func handleAttachURL(k *kanbanCall) (string, error) {
 		if i := strings.LastIndex(leaf, "/"); i >= 0 {
 			leaf = leaf[i+1:]
 		}
-		name := pystr.Strip(pyurl.Unquote(leaf))
+		name := strings.TrimSpace(pyurl.Unquote(leaf))
 		if name == "" {
 			name = "download"
 		}

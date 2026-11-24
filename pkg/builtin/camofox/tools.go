@@ -396,7 +396,7 @@ func parseSnapshotImages(snapshot any) ([]any, error) {
 	images := []any{}
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		stripped := pystr.Strip(line)
+		stripped := strings.TrimSpace(line)
 		if !strings.HasPrefix(stripped, "- img ") && !strings.HasPrefix(stripped, "img ") {
 			continue
 		}
@@ -405,7 +405,7 @@ func parseSnapshotImages(snapshot any) ([]any, error) {
 			alt = m.GroupByNumber(1).String()
 		}
 		if i+1 < len(lines) {
-			if m, _ := imgURLRE.FindStringMatch(pystr.Strip(lines[i+1])); m != nil {
+			if m, _ := imgURLRE.FindStringMatch(strings.TrimSpace(lines[i+1])); m != nil {
 				src = m.GroupByNumber(1).String()
 			}
 		}
@@ -577,7 +577,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 				"screenshot_path", screenshotPath,
 				"note", "Screenshot was captured but vision analysis failed. You can still share it via MEDIA:<path>.")), nil
 		}
-		analysis := pystr.Strip(result.Text)
+		analysis := strings.TrimSpace(result.Text)
 		if analysis == "" {
 			analysis = "Vision analysis returned no content."
 		}
@@ -589,7 +589,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 func netscapeParse(text string) []*pyjson.Object {
 	var cookies []*pyjson.Object
 	for _, rawLine := range pystr.Splitlines(strings.TrimLeft(text, "\uFEFF"), false) {
-		line := pystr.Strip(rawLine)
+		line := strings.TrimSpace(rawLine)
 		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "#HttpOnly_")) {
 			continue
 		}
@@ -606,14 +606,14 @@ func netscapeParse(text string) []*pyjson.Object {
 			continue
 		}
 		cookies = append(cookies, pyjson.ObjectOf("name", parts[5], "value", strings.Join(parts[6:], "\t"), "domain", parts[0],
-			"path", parts[2], "expires", pyint.Value(expires), "httpOnly", httpOnly, "secure", pystr.Upper(parts[3]) == "TRUE"))
+			"path", parts[2], "expires", pyint.Value(expires), "httpOnly", httpOnly, "secure", strings.ToUpper(parts[3]) == "TRUE"))
 	}
 	return cookies
 }
 
 // browser.camofox.cookies_dir with the tilde expanded, ~/.camofox/cookies by default
 func (s *scope) cookiesDir() string {
-	raw := pystr.Strip(pyOrStr(s.camofoxConfig()["cookies_dir"]))
+	raw := strings.TrimSpace(pyOrStr(s.camofoxConfig()["cookies_dir"]))
 	if raw == "" {
 		raw = "~/.camofox/cookies"
 	}

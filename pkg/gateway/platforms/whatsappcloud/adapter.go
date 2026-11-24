@@ -130,7 +130,7 @@ func strField(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Items Python iteration of a decoded value yields, the TypeError iterating a scalar raises
@@ -184,7 +184,7 @@ func extForMime(mime string) string {
 // Whether the profile opted into WHATSAPP_CLOUD_ALLOW_ALL_USERS
 func cloudAllowAllOptedIn(ctx context.Context) (bool, error) {
 	value, err := gateway.GetScopedSecret(ctx, whatsappCloudAllowAllUsers, "", false)
-	return optinTruthy[pystr.Lower(pystr.Strip(value))], err
+	return optinTruthy[strings.ToLower(strings.TrimSpace(value))], err
 }
 
 // Message id to quote from send metadata, nil when none is set
@@ -350,7 +350,7 @@ func NewWhatsAppCloudAdapter(ctx context.Context, config *gateway.PlatformConfig
 // Policy from the config value, then each scoped env carrier in order, then the default, lowercased
 func firstPolicy(ctx context.Context, configured any, envs []string, def string) (string, error) {
 	if pyrepr.Truthy(configured) {
-		return pystr.Lower(pystr.Strip(pyrepr.Str(configured))), nil
+		return strings.ToLower(strings.TrimSpace(pyrepr.Str(configured))), nil
 	}
 	for _, env := range envs {
 		v, _, err := wsecret(ctx, env)
@@ -358,10 +358,10 @@ func firstPolicy(ctx context.Context, configured any, envs []string, def string)
 			return "", err
 		}
 		if v != "" {
-			return pystr.Lower(pystr.Strip(v)), nil
+			return strings.ToLower(strings.TrimSpace(v)), nil
 		}
 	}
-	return pystr.Lower(pystr.Strip(def)), nil
+	return strings.ToLower(strings.TrimSpace(def)), nil
 }
 
 // Platform display name, the base name over the mixin field
@@ -437,7 +437,7 @@ func (a *WhatsAppCloudAdapter) Connect(ctx context.Context, isReconnect bool) (b
 		return false, nil
 	}
 	a.mu.Lock()
-	a.httpClient = gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(), false)
+	a.httpClient = gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.mu.Unlock()
 	app := gateway.NewHTTPApp(webhookMaxBodyBytes)
 	if err := app.AddGet(a.healthPath, a.handleHealth); err != nil {
@@ -675,7 +675,7 @@ func (a *WhatsAppCloudAdapter) Send(ctx context.Context, chatID, content, replyT
 	if client == nil {
 		return gateway.SendResult{Success: false, Error: "Not connected"}, nil
 	}
-	if content == "" || pystr.Strip(content) == "" {
+	if content == "" || strings.TrimSpace(content) == "" {
 		return gateway.SendResult{Success: true, MessageID: nil}, nil
 	}
 	formatted := a.FormatMessage(content)

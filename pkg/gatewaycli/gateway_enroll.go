@@ -38,7 +38,7 @@ func defaultGatewayID() string {
 	if err != nil {
 		host = ""
 	}
-	host = pystr.Strip(host)
+	host = strings.TrimSpace(host)
 	if host == "" {
 		host = "icebath"
 	}
@@ -51,14 +51,14 @@ func resolveConnectorURL(ctx context.Context, override string) string {
 	if raw == "" {
 		raw = os.Getenv("GATEWAY_RELAY_URL")
 	}
-	raw = pystr.Strip(raw)
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		section := config.EffectiveUserConfig(ctx)["gateway"]
 		if !pyrepr.Truthy(section) {
 			section = map[string]any{}
 		}
 		if block, ok := section.(map[string]any); ok && pyrepr.Truthy(block["relay_url"]) {
-			raw = pystr.Strip(pyrepr.Str(block["relay_url"]))
+			raw = strings.TrimSpace(pyrepr.Str(block["relay_url"]))
 		}
 	}
 	if raw == "" {
@@ -70,12 +70,12 @@ func resolveConnectorURL(ctx context.Context, override string) string {
 			break
 		}
 	}
-	return strings.TrimSuffix(pystr.RstripChars(raw, "/"), "/relay")
+	return strings.TrimSuffix(strings.TrimRight(raw, "/"), "/relay")
 }
 
 // POSTs the enrollment token to the connector relay enroll route and returns its secret bearing payload
 func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentToken, gatewayID string, timeout time.Duration) (*pyjson.Object, error) {
-	url := pystr.RstripChars(connectorBaseURL, "/") + "/relay/enroll"
+	url := strings.TrimRight(connectorBaseURL, "/") + "/relay/enroll"
 	body := pyjson.NewObject()
 	body.Set("enrollmentToken", enrollmentToken)
 	body.Set("gatewayId", gatewayID)
@@ -165,7 +165,7 @@ func CmdGatewayEnroll(ctx context.Context, ns map[string]any, w io.Writer) (int,
 	if enrollmentToken == "" {
 		enrollmentToken = os.Getenv("GATEWAY_RELAY_ENROLL_TOKEN")
 	}
-	enrollmentToken = pystr.Strip(enrollmentToken)
+	enrollmentToken = strings.TrimSpace(enrollmentToken)
 	if enrollmentToken == "" {
 		return enrollFail(w, "✗ No enrollment token. Pass --token <token> (or set "+
 			"GATEWAY_RELAY_ENROLL_TOKEN).\n"+
@@ -181,7 +181,7 @@ func CmdGatewayEnroll(ctx context.Context, ns map[string]any, w io.Writer) (int,
 	if gatewayID == "" {
 		gatewayID = defaultGatewayID()
 	}
-	gatewayID = pystr.Strip(gatewayID)
+	gatewayID = strings.TrimSpace(gatewayID)
 	accessToken, err := gateway.ResolveRelayIdentityToken(ctx)
 	if err != nil {
 		return enrollFail(w, fmt.Sprintf("✗ Could not resolve a caller-identity token: %s", err))
@@ -209,9 +209,9 @@ func CmdGatewayEnroll(ctx context.Context, ns map[string]any, w io.Writer) (int,
 	}
 	anyExplicit := false
 	for _, pair := range [][2]string{{"connector_url", "GATEWAY_RELAY_URL"}, {"wake_url", "GATEWAY_RELAY_WAKE_URL"}} {
-		if v := pystr.Strip(nsText(ns, pair[0])); v != "" {
+		if v := strings.TrimSpace(nsText(ns, pair[0])); v != "" {
 			anyExplicit = true
-			toWrite = append(toWrite, [2]string{pair[1], pystr.RstripChars(v, "/")})
+			toWrite = append(toWrite, [2]string{pair[1], strings.TrimRight(v, "/")})
 		}
 	}
 	for _, kv := range toWrite {

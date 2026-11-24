@@ -66,7 +66,7 @@ func matchID(m []string, groups ...int) string {
 	}
 	for _, g := range groups {
 		if m[g] != "" {
-			return pystr.Strip(pyurl.Unquote(m[g]))
+			return strings.TrimSpace(pyurl.Unquote(m[g]))
 		}
 	}
 	return ""
@@ -80,7 +80,7 @@ func parseGraphMeetingResource(resource any) graphMeetingResource {
 	if meetingID == "" {
 		meetingID = matchID(commMeetingRE.FindStringSubmatch(text), 1, 2)
 	}
-	if meetingID != "" && resourceSentinels[pystr.Lower(meetingID)] {
+	if meetingID != "" && resourceSentinels[strings.ToLower(meetingID)] {
 		meetingID = ""
 	}
 	return graphMeetingResource{
@@ -92,11 +92,11 @@ func parseGraphMeetingResource(resource any) graphMeetingResource {
 
 // True when a Graph id names a callTranscript artifact rather than an onlineMeeting
 func looksLikeTranscriptID(value, odataType any) bool {
-	if strings.Contains(pystr.Lower(textOrEmpty(odataType)), "calltranscript") {
+	if strings.Contains(strings.ToLower(textOrEmpty(odataType)), "calltranscript") {
 		return true
 	}
 	v := textOrEmpty(value)
-	return strings.Contains(pystr.Lower(v), "transcript") || strings.Contains(decodedIDHint(v), "transcript")
+	return strings.Contains(strings.ToLower(v), "transcript") || strings.Contains(decodedIDHint(v), "transcript")
 }
 
 // str(value or "") of a loosely typed value
@@ -109,7 +109,7 @@ func textOrEmpty(value any) string {
 
 // Lowercase base64 decoded text of a Graph id, empty when too short or undecodable
 func decodedIDHint(value string) string {
-	stripped := pystr.Strip(value)
+	stripped := strings.TrimSpace(value)
 	n := utf8.RuneCountInString(stripped)
 	if n < 16 {
 		return ""
@@ -117,7 +117,7 @@ func decodedIDHint(value string) string {
 	padded := stripped + strings.Repeat("=", (4-n%4)%4)
 	for _, decode := range []func(string) ([]byte, error){pybase64.URLSafeB64Decode, pybase64.B64Decode} {
 		if raw, err := decode(padded); err == nil {
-			return pystr.Lower(strings.ToValidUTF8(string(raw), ""))
+			return strings.ToLower(strings.ToValidUTF8(string(raw), ""))
 		}
 	}
 	return ""
@@ -179,7 +179,7 @@ func parseOrganizerUserID(payload *pyjson.Object) any {
 
 // Meeting reference built like the dataclass constructor, the meeting id required
 func newMeetingRef(meetingID string, organizerUserID, joinWebURL, calendarEventID, threadID, tenantID any, metadata *pyjson.Object) (*TeamsMeetingRef, error) {
-	if pystr.Strip(meetingID) == "" {
+	if strings.TrimSpace(meetingID) == "" {
 		return nil, requiredError("TeamsMeetingRef", "meeting_id")
 	}
 	return &TeamsMeetingRef{MeetingID: meetingID, OrganizerUserID: organizerUserID, JoinWebURL: joinWebURL, CalendarEventID: calendarEventID,
@@ -207,7 +207,7 @@ func newMeetingArtifact(kind, id string, displayName, contentType, sourceURL, do
 	if kind != "transcript" && kind != "recording" && kind != "call_record" {
 		return nil, errors.New("MeetingArtifact.artifact_type must be transcript, recording, or call_record.")
 	}
-	if pystr.Strip(id) == "" {
+	if strings.TrimSpace(id) == "" {
 		return nil, requiredError("MeetingArtifact", "artifact_id")
 	}
 	a := &MeetingArtifact{ArtifactType: kind, ArtifactID: id, DisplayName: displayName, ContentType: contentType, SourceURL: sourceURL,
@@ -246,7 +246,7 @@ type transcriptRank struct {
 
 // Rank preferring completed, downloadable, most recent transcripts
 func transcriptSortKey(a *MeetingArtifact) transcriptRank {
-	status := pystr.Lower(textOrEmpty(get(a.Metadata, "status")))
+	status := strings.ToLower(textOrEmpty(get(a.Metadata, "status")))
 	r := transcriptRank{}
 	if pyrepr.Truthy(or(a.DownloadURL, a.SourceURL)) {
 		r.download = 1
@@ -407,7 +407,7 @@ func downloadTranscriptText(ctx context.Context, client graphClient, ref *TeamsM
 	if err != nil {
 		return "", err
 	}
-	text := pystr.Strip(pystr.TranslateNewlines(decoded))
+	text := strings.TrimSpace(pystr.TranslateNewlines(decoded))
 	if text == "" {
 		return "", &TeamsMeetingArtifactNotFoundError{TeamsMeetingError{fmt.Sprintf("Transcript %s for meeting %s was empty.", transcript.ArtifactID, ref.MeetingID)}}
 	}

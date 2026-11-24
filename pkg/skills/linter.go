@@ -108,7 +108,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	if v, ok := fm["name"]; ok {
 		name = pyStrValue(v)
 	}
-	name = pystr.Strip(name)
+	name = strings.TrimSpace(name)
 	if name != "" && !lintNameRe.MatchString(name) {
 		out = append(out, LintFinding{LintError, "name-format", fmt.Sprintf("name '%s' must be lowercase letters, digits, hyphens, and underscores only.", name)})
 	}
@@ -119,12 +119,12 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	if v, ok := fm["description"]; ok {
 		desc = pyStrValue(v)
 	}
-	desc = strings.Trim(pystr.Strip(desc), "'\"")
+	desc = strings.Trim(strings.TrimSpace(desc), "'\"")
 	if n := utf8.RuneCountInString(desc); n > SkillPromptDescLimit {
 		out = append(out, LintFinding{LintWarning, "description-length", fmt.Sprintf("description is %d chars; the skill index shows %d and clips the rest, losing routing signal. Keep it to one sentence.", n, SkillPromptDescLimit)})
 	}
 	var hits []any
-	lowered := pystr.Lower(desc)
+	lowered := strings.ToLower(desc)
 	for _, w := range lintMarketingWords {
 		if containsWholeWord(lowered, w) {
 			hits = append(hits, w)
@@ -155,7 +155,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	if v, ok := fm["author"]; ok {
 		author = pyStrValue(v)
 	}
-	switch pystr.Lower(pystr.Strip(author)) {
+	switch strings.ToLower(strings.TrimSpace(author)) {
 	case "icebath", "agent", "icebath agent":
 		if author != "Icebath Agent" {
 			out = append(out, LintFinding{LintWarning, "author-caps", fmt.Sprintf("author '%s' should be 'Icebath Agent' (proper caps) or a real contributor name.", author)})
@@ -168,7 +168,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 		}
 		var bad []any
 		for _, p := range items {
-			switch pystr.Lower(pyStrValue(p)) {
+			switch strings.ToLower(pyStrValue(p)) {
 			case "linux", "macos", "windows", "darwin":
 			default:
 				bad = append(bad, p)

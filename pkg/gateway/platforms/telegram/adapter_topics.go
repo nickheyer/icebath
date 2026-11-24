@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Creates a forum topic in a private chat, nil when the bot is absent or the topic cannot be created
@@ -54,7 +53,7 @@ func (a *TelegramAdapter) CreateDMTopic(ctx context.Context, chatID int64, name 
 
 // Creates a forum topic for a session handoff, ok false when none was created
 func (a *TelegramAdapter) CreateHandoffThread(ctx context.Context, parentChatID, name string) (string, bool, error) {
-	chatID, err := strconv.ParseInt(pystr.Strip(parentChatID), 10, 64)
+	chatID, err := strconv.ParseInt(strings.TrimSpace(parentChatID), 10, 64)
 	if err != nil {
 		return "", false, nil
 	}
@@ -93,7 +92,7 @@ func configInt(v any) (int64, bool) {
 	case float64:
 		return int64(t), t == float64(int64(t))
 	case string:
-		n, err := strconv.ParseInt(pystr.Strip(t), 10, 64)
+		n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
 		return n, err == nil
 	}
 	return 0, false
@@ -101,11 +100,11 @@ func configInt(v any) (int64, bool) {
 
 // Private DM topic thread id, creating and persisting it when needed
 func (a *TelegramAdapter) EnsureDMTopic(ctx context.Context, chatID, name string, forceCreate bool) (string, error) {
-	name = pystr.Strip(name)
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", nil
 	}
-	chatIDInt, err := strconv.ParseInt(pystr.Strip(chatID), 10, 64)
+	chatIDInt, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64)
 	if err != nil {
 		return "", nil
 	}
@@ -163,7 +162,7 @@ func (a *TelegramAdapter) RenameDMTopic(ctx context.Context, chatID string, thre
 		return nil
 	}
 	var chatArg any = chatID
-	if n, err := strconv.ParseInt(pystr.Strip(chatID), 10, 64); err == nil {
+	if n, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64); err == nil {
 		chatArg = n
 	}
 	if !threadID.IsInt64() {
@@ -407,7 +406,7 @@ func (a *TelegramAdapter) dmTopicInfo(ctx context.Context, chatID, threadID stri
 	if threadID == "" {
 		return nil, nil
 	}
-	tid, err := strconv.ParseInt(pystr.Strip(threadID), 10, 64)
+	tid, err := strconv.ParseInt(strings.TrimSpace(threadID), 10, 64)
 	if err != nil {
 		return nil, &valueError{msg: "invalid literal for int() with base 10: " + pyrepr.Repr(threadID)}
 	}

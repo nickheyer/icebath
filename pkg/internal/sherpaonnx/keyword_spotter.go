@@ -1,13 +1,14 @@
 package sherpaonnx
 
 import (
+	"strings"
+
 	"fmt"
 	"os"
 	"runtime"
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // The constructor arguments of the keyword spotter
@@ -184,7 +185,7 @@ func (k *KeywordSpotter) result(s *OnlineStream) (string, []string, []float32) {
 // Detected keyword of the stream, empty when none is detected
 func (k *KeywordSpotter) GetResult(s *OnlineStream) string {
 	keyword, _, _ := k.result(s)
-	return pystr.Strip(keyword)
+	return strings.TrimSpace(keyword)
 }
 
 // Token list of the keyword result

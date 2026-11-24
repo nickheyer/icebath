@@ -1,6 +1,8 @@
 package slack
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -310,7 +312,7 @@ func (a *SlackAdapter) assistantSuggestedPrompts() (string, []map[string]any) {
 	title := ""
 	rows := raw
 	if m, ok := raw.(map[string]any); ok {
-		title = pystr.Strip(strOrEmpty(m["title"]))
+		title = strings.TrimSpace(strOrEmpty(m["title"]))
 		rows = m["prompts"]
 	}
 	list, ok := rows.([]any)
@@ -323,8 +325,8 @@ func (a *SlackAdapter) assistantSuggestedPrompts() (string, []map[string]any) {
 		if !ok {
 			continue
 		}
-		promptTitle := pystr.Strip(strOrEmpty(m["title"]))
-		promptMessage := pystr.Strip(strOrEmpty(m["message"]))
+		promptTitle := strings.TrimSpace(strOrEmpty(m["title"]))
+		promptMessage := strings.TrimSpace(strOrEmpty(m["message"]))
 		if promptTitle != "" && promptMessage != "" {
 			prompts = append(prompts, map[string]any{"title": pystr.Slice(promptTitle, 0, 75), "message": promptMessage})
 		}
@@ -367,7 +369,7 @@ func (a *SlackAdapter) assistantThreadTitleEnabled() bool {
 		return true
 	}
 	if s, isStr := raw.(string); isStr {
-		switch pystr.Lower(pystr.Strip(s)) {
+		switch strings.ToLower(strings.TrimSpace(s)) {
 		case "0", "false", "no", "off":
 			return false
 		}
@@ -394,12 +396,12 @@ func (a *SlackAdapter) setAssistantThreadTitle(ctx context.Context, channelID, t
 		return
 	}
 	title, _ := whitespaceRunRe.Replace(titleSource, " ", -1, -1)
-	title = pystr.Strip(title)
+	title = strings.TrimSpace(title)
 	if title == "" || strings.HasPrefix(title, "/") {
 		return
 	}
 	if pystr.Len(title) > 80 {
-		title = pystr.Rstrip(pystr.Slice(title, 0, 77)) + "..."
+		title = strings.TrimRightFunc(pystr.Slice(title, 0, 77), unicode.IsSpace) + "..."
 	}
 	if err := sessionTitleMethod(a.getClient(channelID, teamID))(ctx, channelID, threadTS, title); err != nil {
 		pkgLog().Debug(fmt.Sprintf("[Slack] session title set failed: %v", err))
@@ -548,7 +550,7 @@ func (a *SlackAdapter) handleSlackReaction(ctx context.Context, event map[string
 		return nil
 	}
 	explicitAllowlist := len(triggers) > 0
-	if explicitAllowlist && !triggers[pystr.StripChars(reactionName, ":")] {
+	if explicitAllowlist && !triggers[strings.Trim(reactionName, ":")] {
 		return nil
 	}
 	threadTS := a.reactionThreadTS(ctx, client, channelID, msgTS, event, teamID, explicitAllowlist)
@@ -638,40 +640,18 @@ var reactionTriggerSplitRe = mustPyRe(`[,\s]+`)
 
 // Reaction routing opt in, nil disabled, empty for every emoji, else the allowlisted names
 func (a *SlackAdapter) slackReactionTriggers(ctx context.Context) map[string]bool {
-	v, err := settings.Resolve(gateway.SettingsContext(ctx), settings.SlackReactionTriggers.Key)
-	if err != nil {
-		pkgLog().Warn("Slack: reading the reaction triggers failed", "err", err)
-		return nil
-	}
-	clean := func(p any) string { return pystr.StripChars(pystr.Strip(pyrepr.Str(p)), ":") }
-	var names []string
-	switch t := v.Value.(type) {
-	case nil:
-		return nil
-	case bool:
-		if t {
-			return map[string]bool{}
-		}
-		return nil
-	case []any:
-		for _, p := range t {
-			names = append(names, clean(p))
-		}
-	default:
-		parts, _ := reactionTriggerSplitRe.Replace(pystr.Strip(pyrepr.Str(t)), ",", -1, -1)
-		for _, p := range strings.Split(parts, ",") {
-			names = append(names, clean(p))
-		}
-	}
 	out := map[string]bool{}
-	for _, name := range names {
-		switch pystr.Lower(name) {
-		case "", "false", "0", "no", "off":
-			continue
-		case "true", "1", "yes", "on", "all", "*":
-			return map[string]bool{}
+	for _, item := range settings.SlackReactionTriggers.Strings(gateway.SettingsContext(ctx)) {
+		for _, word := range strings.Fields(item) {
+			name := strings.Trim(word, ":")
+			switch strings.ToLower(name) {
+			case "", "false", "0", "no", "off":
+				continue
+			case "true", "1", "yes", "on", "all", "*":
+				return map[string]bool{}
+			}
+			out[name] = true
 		}
-		out[name] = true
 	}
 	if len(out) == 0 {
 		return nil
@@ -681,8 +661,8 @@ func (a *SlackAdapter) slackReactionTriggers(ctx context.Context) map[string]boo
 
 // Optional reaction handoff target channel and thread from C123 or C123 colon ts
 func (a *SlackAdapter) slackReactionTriggerTarget(ctx context.Context) (string, string) {
-	channel, thread, _ := strings.Cut(pystr.Strip(settings.SlackReactionTriggerTarget.Get(gateway.SettingsContext(ctx))), ":")
-	return pystr.Strip(channel), pystr.Strip(thread)
+	channel, thread, _ := strings.Cut(strings.TrimSpace(settings.SlackReactionTriggerTarget.Get(gateway.SettingsContext(ctx))), ":")
+	return strings.TrimSpace(channel), strings.TrimSpace(thread)
 }
 
 // First share entry of the channel, else the first share anywhere, else empty
@@ -861,13 +841,13 @@ func (a *SlackAdapter) shouldWakeOnUnmentionedMessage(ctx context.Context, event
 // Text with unseen Block Kit rich text and the redacted block payload appended
 func appendBlockText(text string, blocks []any, botUID string) string {
 	blocksText := extractAdditionalTextFromSlackBlocks(blocks, text, botUID)
-	stripped := pystr.Strip(blocksText)
+	stripped := strings.TrimSpace(blocksText)
 	if stripped != "" {
 		pkgLog().Debug(fmt.Sprintf("Slack: extracted additional text from blocks (likely quoted/forwarded content; chars=%d)", pystr.Len(stripped)))
-		text = pystr.Strip(pystr.Strip(text) + "\n" + stripped)
+		text = strings.TrimSpace(strings.TrimSpace(text) + "\n" + stripped)
 	}
 	if payload := serializeSlackBlocksForAgent(blocks, slackUnfurlBlocksMaxChars); payload != "" {
-		text = pystr.Strip(pystr.Strip(text) + "\n\n" + payload)
+		text = strings.TrimSpace(strings.TrimSpace(text) + "\n\n" + payload)
 	}
 	return text
 }
@@ -1091,7 +1071,7 @@ func (a *SlackAdapter) channelPromptWithIdentity(channelID, teamID string) *stri
 	identity := a.buildIdentityPrompt(teamID)
 	if identity != "" {
 		if ok {
-			prompt = pystr.Strip(identity + "\n\n" + prompt)
+			prompt = strings.TrimSpace(identity + "\n\n" + prompt)
 		} else {
 			prompt = identity
 		}
@@ -1227,8 +1207,8 @@ func (a *SlackAdapter) peerBotDrop(ctx context.Context, event map[string]any, us
 // Strips our mention, re-probes a command behind it and remembers the thread
 func (a *SlackAdapter) applyBotMention(ctx context.Context, text, originalText, commandProbeText string, isCommandText bool, botUID string, threadTS *string, teamID string) (string, string, string, bool) {
 	mention := "<@" + botUID + ">"
-	text = pystr.Strip(strings.ReplaceAll(text, mention, ""))
-	stripped := pystr.Strip(strings.ReplaceAll(originalText, mention, ""))
+	text = strings.TrimSpace(strings.ReplaceAll(text, mention, ""))
+	stripped := strings.TrimSpace(strings.ReplaceAll(originalText, mention, ""))
 	commandText := stripped
 	if !strings.HasPrefix(stripped, "/") {
 		commandText = rewriteKnownBangCommand(ctx, stripped)
@@ -1250,8 +1230,8 @@ func (a *SlackAdapter) handleSlackMessageImpl(ctx context.Context, event, payloa
 		return nil
 	}
 	originalText := strOrEmpty(event["text"])
-	commandProbeText := rewriteKnownBangCommand(ctx, pystr.Lstrip(originalText))
-	if commandProbeText != pystr.Lstrip(originalText) {
+	commandProbeText := rewriteKnownBangCommand(ctx, strings.TrimLeftFunc(originalText, unicode.IsSpace))
+	if commandProbeText != strings.TrimLeftFunc(originalText, unicode.IsSpace) {
 		originalText = commandProbeText
 	}
 	isCommandText := strings.HasPrefix(commandProbeText, "/")
@@ -1482,7 +1462,7 @@ func (a *SlackAdapter) cacheSlackFile(ctx context.Context, kind string, f map[st
 		ext := strings.ToLower(filepath.Ext(pyrepr.Str(getOr(f, "name", ""))))
 		if _, ok := mediacache.SupportedVideoTypes[ext]; !ok {
 			byMime := gateway.VideoMimeToExt()
-			if e, ok := byMime[pystr.Lower(strings.SplitN(mimetype, ";", 2)[0])]; ok {
+			if e, ok := byMime[strings.ToLower(strings.SplitN(mimetype, ";", 2)[0])]; ok {
 				ext = e
 			} else {
 				ext = ".mp4"

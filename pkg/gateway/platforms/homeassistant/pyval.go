@@ -129,22 +129,6 @@ func parseIntStr(s string) (*big.Int, bool) {
 	return n, true
 }
 
-// int() of a config value, a str past the 4300 digit limit refused with the ValueError int raises
-func pyIntOf(v any) (*big.Int, error) {
-	s, ok := v.(string)
-	if !ok {
-		return pyint.Of(v)
-	}
-	n, err := pyint.Of(s)
-	if err != nil {
-		return nil, err
-	}
-	if digits := len(strings.TrimPrefix(n.String(), "-")); digits > 4300 {
-		return nil, &pyErr{"ValueError", fmt.Sprintf("a number has %d digits, more than the 4300 allowed", digits)}
-	}
-	return n, nil
-}
-
 // Hash identity of a dict key or set element, the TypeError naming that use for an unhashable value
 func hashKeyAs(v any, use string) (any, error) {
 	hk, err := hashKey(v)
@@ -207,38 +191,6 @@ func (m keyedMap) set(k, v any) error {
 	}
 	m[hk] = v
 	return nil
-}
-
-// Python set built from a config value, its truthiness and membership by hash identity
-type pySet struct{ items map[any]bool }
-
-// set() of a config value, characters of a str and keys of a dict, the TypeError of a non iterable
-func newPySet(v any) (pySet, error) {
-	s := pySet{items: map[any]bool{}}
-	items, err := pyIter(v)
-	if err != nil {
-		return s, err
-	}
-	for _, item := range items {
-		hk, err := hashKeyAs(item, "set member")
-		if err != nil {
-			return s, err
-		}
-		s.items[hk] = true
-	}
-	return s, nil
-}
-
-// Whether the set is non empty
-func (s pySet) truthy() bool { return len(s.items) > 0 }
-
-// Membership of a value, the TypeError of an unhashable probe
-func (s pySet) has(v any) (bool, error) {
-	hk, err := hashKeyAs(v, "set member")
-	if err != nil {
-		return false, err
-	}
-	return s.items[hk], nil
 }
 
 // Python int of an isinstance int value excluding bool, false for anything else

@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -348,7 +347,7 @@ func (s *GatewayStreamConsumer) sendOrEdit(ctx context.Context, text string, fin
 	if s.cfg.Cursor != "" {
 		visible = strings.ReplaceAll(text, s.cfg.Cursor, "")
 	}
-	visibleStripped := pystr.Strip(visible)
+	visibleStripped := strings.TrimSpace(visible)
 	if visibleStripped == "" {
 		if finalize && s.useNativeStreaming.Load() && s.nativeStreamOpened.Load() {
 			sent, err := s.sendFrame(ctx, "✅", true)

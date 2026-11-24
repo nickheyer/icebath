@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -25,7 +24,7 @@ func routeStr(value any) string {
 
 // Configured named endpoint entry a provider name selects in config without credentials, nil when none matches
 func routeNamedEntry(ctx context.Context, name string, config map[string]any) map[string]any {
-	return provider.NamedCustomProviderEntry(ctx, name, config)
+	return provider.NamedCustomProviderEntry(provider.WithFrozenRuntimeConfig(ctx, config), name)
 }
 
 // Canonical provider identity of a name, its normalized spelling when no registry provider answers it
@@ -46,12 +45,12 @@ func routeCanonical(ctx context.Context, name string) (string, error) {
 
 // Bare config key of the configured entry behind a custom identity, empty for anything else
 func ConfiguredEntryKey(ctx context.Context, identity string, config map[string]any) string {
-	identity = pystr.Lower(pystr.Strip(identity))
+	identity = strings.ToLower(strings.TrimSpace(identity))
 	if !strings.HasPrefix(identity, "custom:") || len(routeNamedEntry(ctx, identity, config)) == 0 {
 		return ""
 	}
 	_, key, _ := strings.Cut(identity, ":")
-	return pystr.Strip(key)
+	return strings.TrimSpace(key)
 }
 
 // Identity the profile's own model block resolves to, custom for an endpoint naming no provider
@@ -62,7 +61,7 @@ func ProfileRouteIdentity(ctx context.Context, config map[string]any) (string, e
 			held[key] = value
 		}
 	}
-	if name := pystr.Lower(pystr.Strip(routeStr(held["provider"]))); (name == "" || name == "auto") && pystr.Strip(routeStr(held["base_url"])) != "" {
+	if name := strings.ToLower(strings.TrimSpace(routeStr(held["provider"]))); (name == "" || name == "auto") && strings.TrimSpace(routeStr(held["base_url"])) != "" {
 		held["provider"] = "custom"
 	}
 	identity, _, err := ResolvedRoute(ctx, held, config)
@@ -76,16 +75,16 @@ func ResolvedRoute(ctx context.Context, block any, config any) (string, string, 
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
-	name := pystr.Lower(pystr.Strip(routeStr(model["provider"])))
+	name := strings.ToLower(strings.TrimSpace(routeStr(model["provider"])))
 	if name == "" || name == "auto" {
 		return "auto", "", nil
 	}
-	baseURL := pystr.Strip(routeStr(model["base_url"]))
+	baseURL := strings.TrimSpace(routeStr(model["base_url"]))
 	var identity string
 	if entry := routeNamedEntry(ctx, name, cfg); len(entry) > 0 {
 		identity = provider.CustomProviderSlug(routeStr(entry["name"]), routeStr(entry["provider_key"]))
 		if baseURL == "" {
-			baseURL = pystr.Strip(routeStr(entry["base_url"]))
+			baseURL = strings.TrimSpace(routeStr(entry["base_url"]))
 		}
 	} else {
 		var err error

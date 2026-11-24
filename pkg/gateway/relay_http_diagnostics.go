@@ -50,7 +50,7 @@ func RelayConnectorReason(body []byte) string {
 	if !ok {
 		return ""
 	}
-	return pystr.Strip(reason)
+	return strings.TrimSpace(reason)
 }
 
 // True when a response header names a proxy hop rather than the connector
@@ -63,7 +63,7 @@ func RelayAnsweredByProxy(exc *RelayHTTPError) bool {
 			return true
 		}
 	}
-	server := pystr.Lower(exc.Header.Get("Server"))
+	server := strings.ToLower(exc.Header.Get("Server"))
 	for _, name := range relayProxyServerNames {
 		if strings.Contains(server, name) {
 			return true

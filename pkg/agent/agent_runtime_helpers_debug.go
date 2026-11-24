@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"strings"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -134,7 +135,7 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 	headers.Set("Content-Type", "application/json")
 	request := pyjson.NewObject()
 	request.Set("method", "POST")
-	request.Set("url", pystr.RstripChars(a.baseURL, "/")+endpoint)
+	request.Set("url", strings.TrimRight(a.baseURL, "/")+endpoint)
 	request.Set("headers", headers)
 	request.Set("body", body)
 	payload := pyjson.NewObject()

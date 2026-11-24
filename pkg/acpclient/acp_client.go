@@ -87,7 +87,7 @@ func acpSupported(ctx context.Context, command string, args []string) *bool {
 
 // Stable HOME for child agents, the temp dir as the last resort so a child never starts without one
 func resolveHomeDir() string {
-	if h := pystr.Strip(os.Getenv("HOME")); h != "" {
+	if h := strings.TrimSpace(os.Getenv("HOME")); h != "" {
 		return h
 	}
 	if expanded := pypath.Expanduser("~"); expanded != "" && expanded != "~" {
@@ -104,7 +104,7 @@ func resolveHomeDir() string {
 	if err != nil {
 		return tmp()
 	}
-	if dir := pystr.Strip(entry.Dir); dir != "" {
+	if dir := strings.TrimSpace(entry.Dir); dir != "" {
 		return dir
 	}
 	return tmp()
@@ -200,7 +200,7 @@ func strField(v any) string {
 	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	return pystr.Strip(pyrepr.Str(v))
+	return strings.TrimSpace(pyrepr.Str(v))
 }
 
 // Items a for loop over the value yields, the TypeError for a value that is not iterable
@@ -320,7 +320,7 @@ func legacySessionModelIDs(session any, disabled func(any) (bool, error)) ([]str
 // ACP request selecting the model for the session, false for unknown, disabled or session default ids
 func modelSelectionRequest(session any, requestedModel, placeholder string, disabled func(any) (bool, error)) (string, *pyjson.Object, bool, error) {
 	sessionID := strField(dictGet(session, "sessionId"))
-	requestedModel = pystr.Strip(requestedModel)
+	requestedModel = strings.TrimSpace(requestedModel)
 	if sessionID == "" || requestedModel == "" || requestedModel == placeholder {
 		return "", nil, false, nil
 	}

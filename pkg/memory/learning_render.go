@@ -1196,6 +1196,3 @@ func RenderFrames(payload map[string]any, cols, rows, frames int) (map[string]an
 	return map[string]any{"frames": outFrames, "legend": legend, "categories": categories, "buckets": rowsOut,
 		"summary": summary, "axis": axis, "count": len(nodes), "cols": cols, "rows": rows}, nil
 }
-
-// Learning graph renderer is pure and registers nothing at import
-func registerLearningGraphRender() {}

@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -149,7 +148,7 @@ func cliRunJSON(cmd []string, env map[string]string, name string, timeout float6
 		if err != nil {
 			return nil, fmt.Errorf("cua-driver CLI fallback for %s failed to spawn: %v", name, err)
 		}
-		out, errText := pystr.Strip(proc.Stdout), proc.Stderr
+		out, errText := strings.TrimSpace(proc.Stdout), proc.Stderr
 		lastErr = firstRunes(out, 200)
 		if lastErr == "" {
 			lastErr = firstRunes(errText, 200)

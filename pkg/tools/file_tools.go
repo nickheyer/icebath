@@ -22,11 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
 )
-
-// Read size guard in characters, a model agnostic proxy for tokens, configurable as file_read_max_chars
-const defaultMaxReadChars = 100_000
 
 // Above this size a wide read gets a hint toward targeted reads
 const largeFileHintBytes = 512_000
@@ -59,36 +57,9 @@ var (
 	v4aToolMoveHeaderRe   = regexp.MustCompile(`(?m)^(\*\*\*` + pyWSClass + `*Move` + pyWSClass + `+File:` + pyWSClass + `*)(.+?)` + pyWSClass + `*->` + pyWSClass + `*(.+)$`)
 )
 
-// Live config document of the active profile, mtime cached by the loader
-func liveConfig(env *Env) (config.Tree, error) {
-	return config.Load(envHome(env), configLookup(env))
-}
-
-// file_read_max_chars from the live config, the default on a missing or invalid value
+// Most characters one read_file call returns for the env's profile
 func maxReadChars(env *Env) int {
-	tree, err := liveConfig(env)
-	if err != nil {
-		return defaultMaxReadChars
-	}
-	switch v := tree.Get("file_read_max_chars").(type) {
-	case bool:
-		if v {
-			return 1
-		}
-	case int:
-		if v > 0 {
-			return v
-		}
-	case int64:
-		if v > 0 {
-			return int(v)
-		}
-	case float64:
-		if v > 0 {
-			return int(v)
-		}
-	}
-	return defaultMaxReadChars
+	return settings.FileReadMaxChars.Get(envHomeCtx(context.Background(), env))
 }
 
 // Trims numbered content to the last complete line within the budget, clamping mid line when even one does not fit

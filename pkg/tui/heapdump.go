@@ -4,14 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/metrics"
 	"runtime/pprof"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +23,7 @@ const (
 	dumpAutoHigh = "auto-high"
 	// Dump the memory watchdog wrote before it ended the process
 	dumpAutoCritical = "auto-critical"
-	// Bytes the dump folder may hold before its oldest dumps go, unless the environment sets another cap
+	// Bytes the dump folder may hold before its oldest dumps go, unless the settings give another cap
 	heapDumpCap = 2 << 30
 	// Shortest run of the UI a growth rate is worked out over, the memory it takes to start counting as growth before that
 	growthBase = time.Minute
@@ -213,20 +211,15 @@ type heapDumpResult struct {
 	err        error
 }
 
-// Folder the memory dumps go to, the one the environment names or the heapdumps folder of the home
+// Folder the memory dumps go to, the one the settings name or the heapdumps folder of the home
 func heapDumpDir() string {
-	if dir := strings.TrimSpace(os.Getenv("ICEBATH_HEAPDUMP_DIR")); dir != "" {
+	if dir := strings.TrimSpace(prefs.HeapDumpDir); dir != "" {
 		return dir
 	}
 	return filepath.Join(home.Process(), "heapdumps")
 }
 
-// Whether the environment allows the watchdog to write whole heap profiles and not the facts alone
-func autoHeapDumpEnabled() bool {
-	return trueRe.MatchString(strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_AUTO_HEAPDUMP"))))
-}
-
-// Writes the memory facts and then the heap profile of the process, an automatic dump stopping after the facts unless the environment asks for profiles
+// Writes the memory facts and then the heap profile of the process, an automatic dump stopping after the facts unless the settings ask for profiles
 func performHeapDump(trigger string) heapDumpResult {
 	// The facts go first: collecting a very large heap for its profile can fail, and the facts are what explains the dump then
 	diagnostics := captureMemoryDiagnostics(trigger)
@@ -245,7 +238,7 @@ func performHeapDump(trigger string) heapDumpResult {
 		return heapDumpResult{err: err}
 	}
 	// Profiles written at every threshold crossing can fill a disk, so the watchdog writes them only when asked to
-	if trigger != dumpManual && !autoHeapDumpEnabled() {
+	if trigger != dumpManual && !prefs.AutoHeapProfile {
 		pruneHeapDumps(dir)
 		return heapDumpResult{diagPath: diagPath, suppressed: true}
 	}
@@ -271,13 +264,12 @@ func isDumpArtifact(name string) bool {
 	return strings.HasPrefix(name, "icebath-") && (strings.HasSuffix(name, heapProfileSuffix) || strings.HasSuffix(name, diagnosticsSuffix))
 }
 
-// Bytes the dump folder may hold, the cap of the environment when it names a positive number
+// Bytes the dump folder may hold, the cap of the settings when it is a positive number
 func heapDumpLimit() int64 {
-	n, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv("ICEBATH_HEAPDUMP_MAX_BYTES")), 64)
-	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n <= 0 {
+	if prefs.HeapDumpMaxBytes <= 0 {
 		return heapDumpCap
 	}
-	return int64(min(n, math.MaxInt64/2))
+	return prefs.HeapDumpMaxBytes
 }
 
 // Deletes the oldest dumps of the folder until what is left fits the cap, the newest always kept and files of others never touched

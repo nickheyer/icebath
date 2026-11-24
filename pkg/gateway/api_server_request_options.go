@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Agent reasoning config of model options, structured reasoning or the legacy effort, nil when neither applies
@@ -22,7 +21,7 @@ func apiRequestReasoningConfig(modelOptions any) map[string]any {
 	effort = options.GetOr("reasoning_effort", effort)
 	effortNorm := ""
 	if effort != nil {
-		effortNorm = strings.ToLower(pystr.Strip(pyrepr.Str(effort)))
+		effortNorm = strings.ToLower(strings.TrimSpace(pyrepr.Str(effort)))
 	}
 	if enabled == false || effortNorm == "none" {
 		return map[string]any{"enabled": false}

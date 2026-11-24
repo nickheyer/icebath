@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -128,7 +127,7 @@ func validateChildrenGraph(children []any) error {
 			return &ValueError{fmt.Sprintf("child[%d] is not a dict", idx)}
 		}
 		title, _ := dictGet(child, "title")
-		if s, ok := title.(string); !ok || pystr.Strip(s) == "" {
+		if s, ok := title.(string); !ok || strings.TrimSpace(s) == "" {
 			return &ValueError{fmt.Sprintf("child[%d].title is required", idx)}
 		}
 		list, ok := childParents(child).([]any)
@@ -238,8 +237,8 @@ func DecomposeTriageTask(ctx context.Context, conn state.SQLiteConn, taskID stri
 		if _, err := conn.ExecContext(ctx, "UPDATE tasks SET "+strings.Join(sets, ", ")+" WHERE id = ?", params...); err != nil {
 			return err
 		}
-		if author != nil && pystr.Strip(*author) != "" {
-			if err := insertComment(ctx, conn, taskID, pystr.Strip(*author), "Decomposed into "+strings.Join(ids, ", ")+". Root will wake when all children complete.", now); err != nil {
+		if author != nil && strings.TrimSpace(*author) != "" {
+			if err := insertComment(ctx, conn, taskID, strings.TrimSpace(*author), "Decomposed into "+strings.Join(ids, ", ")+". Root will wake when all children complete.", now); err != nil {
 				return err
 			}
 		}
@@ -311,7 +310,7 @@ func insertDecomposedChild(ctx context.Context, conn state.SQLiteConn, rootID st
 	}
 	title, _ := dictGet(child, "title")
 	if _, err := conn.ExecContext(ctx, "INSERT INTO tasks (id, title, body, assignee, status, workspace_kind,  workspace_path, tenant, created_at, created_by) VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)",
-		newID, pystr.Strip(title.(string)), body, optStrValue(assignee), childKind, childPath, root.Get("tenant"), now, by); err != nil {
+		newID, strings.TrimSpace(title.(string)), body, optStrValue(assignee), childKind, childPath, root.Get("tenant"), now, by); err != nil {
 		return "", err
 	}
 	if err := appendEvent(ctx, conn, newID, "created", payload("by", by, "from_decompose_of", rootID), nil); err != nil {

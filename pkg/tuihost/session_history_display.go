@@ -1,6 +1,8 @@
 package tuihost
 
 import (
+	"unicode"
+
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -172,7 +174,7 @@ func userImageDisplayText(ctx context.Context, content any) (string, bool) {
 			return "", false
 		}
 		memoryText, isStr := memory["text"].(string)
-		if !isStr || pystr.Strip(state.SanitizeContext(memoryText)) != "" {
+		if !isStr || strings.TrimSpace(state.SanitizeContext(memoryText)) != "" {
 			return "", false
 		}
 	}
@@ -189,7 +191,7 @@ func legacyDisplayKind(role, text string) string {
 	if kind, ok := state.UntypedFailedTurnDisplayKind(role, text); ok && kind != "" {
 		return kind
 	}
-	if role == "user" && strings.HasPrefix(pystr.Lstrip(text), autoContinueNotePrefix) {
+	if role == "user" && strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), autoContinueNotePrefix) {
 		return "auto_continue"
 	}
 	return ""
@@ -329,7 +331,7 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 			continue
 		}
 		hasDetail := role == "assistant" && slices.ContainsFunc(historyAssistantDetail, func(k string) bool { return pyrepr.Truthy(m[k]) })
-		if pystr.Strip(contentText) == "" && !hasDetail {
+		if strings.TrimSpace(contentText) == "" && !hasDetail {
 			continue
 		}
 		msg := map[string]any{"role": role, "text": contentText}

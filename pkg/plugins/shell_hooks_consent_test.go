@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -116,7 +117,7 @@ func TestShellHookTTYPromptFlow(t *testing.T) {
 	script := writeHookScript(t, filepath.Dir(h), "hook.sh", "#!/usr/bin/env bash\nprintf '{}\\n'\n")
 	cfg := hooksCfg("on_session_start", map[string]any{"command": script})
 	shellHookTTY(t, "y")
-	registered, err := RegisterShellHooksFromConfig(ctx, cfg, false, true)
+	registered, err := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), false, true)
 	entry := ShellHookAllowlistEntry(ctx, "on_session_start", script)
 	if err != nil || len(registered) != 1 || entry == nil || entry["event"] != "on_session_start" || entry["command"] != script {
 		t.Fatalf("approved prompt %v %v %v", registered, entry, err)
@@ -127,12 +128,12 @@ func TestShellHookTTYPromptFlow(t *testing.T) {
 	ResetShellHooksForTests()
 	ResetPluginManagersForTests()
 	shellHookTTY(t)
-	if registered, _ := RegisterShellHooksFromConfig(ctx, cfg, false, true); len(registered) != 1 {
+	if registered, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), false, true); len(registered) != 1 {
 		t.Fatal("allowlisted hook did not register without a prompt")
 	}
 	other := writeHookScript(t, filepath.Dir(h), "other.sh", "#!/usr/bin/env bash\nprintf '{}\\n'\n")
 	shellHookTTY(t, "n")
-	if registered, _ := RegisterShellHooksFromConfig(ctx, hooksCfg("on_session_start", map[string]any{"command": other}), false, true); len(registered) != 0 ||
+	if registered, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, hooksCfg("on_session_start", map[string]any{"command": other})), false, true); len(registered) != 0 ||
 		ShellHookAllowlistEntry(ctx, "on_session_start", other) != nil {
 		t.Fatal("rejected prompt registered or recorded")
 	}
@@ -143,12 +144,12 @@ func TestShellHookNonTTYAndNeverPromptOutsideTheForegroundCLI(t *testing.T) {
 	ctx := context.Background()
 	script := writeHookScript(t, filepath.Dir(h), "hook.sh", "#!/usr/bin/env bash\nprintf '{}\\n'\n")
 	cfg := hooksCfg("on_session_start", map[string]any{"command": script})
-	if r, _ := RegisterShellHooksFromConfig(ctx, cfg, false, false); len(r) != 0 {
+	if r, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), false, false); len(r) != 0 {
 		t.Fatal("registered without a terminal or opt in")
 	}
 	asked := shellHookTTY(t)
 	logs := captureLogs(t)
-	if r, _ := RegisterShellHooksFromConfig(ctx, cfg, false, false); len(r) != 0 || *asked != 0 ||
+	if r, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), false, false); len(r) != 0 || *asked != 0 ||
 		ShellHookAllowlistEntry(ctx, "on_session_start", script) != nil || !strings.Contains(logs.String(), ShellHookAllowlistPath(ctx)) {
 		t.Fatalf("default registration prompted or registered: %s", logs.String())
 	}
@@ -160,7 +161,7 @@ func TestShellHookNonTTYAndNeverPromptOutsideTheForegroundCLI(t *testing.T) {
 		t.Fatalf("force reload re-registration prompted: %v", err)
 	}
 	t.Setenv("ICEBATH_ACCEPT_HOOKS", "1")
-	if r, _ := RegisterShellHooksFromConfig(ctx, cfg, false, false); len(r) != 1 || *asked != 0 || ShellHookAllowlistEntry(ctx, "on_session_start", script) == nil {
+	if r, _ := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), false, false); len(r) != 1 || *asked != 0 || ShellHookAllowlistEntry(ctx, "on_session_start", script) == nil {
 		t.Fatal("opt in did not approve without a prompt")
 	}
 }
@@ -192,8 +193,8 @@ func TestShellHookAllowlistOps(t *testing.T) {
 	if matching != 1 {
 		t.Fatalf("duplicate approvals %d", matching)
 	}
-	for v, want := range map[any]bool{true: true, nil: false, int64(1): false, "false": false, " Yes ": true} {
-		if got := resolveShellHookAccept(map[string]any{"hooks_auto_accept": v}, false); got != want {
+	for v, want := range map[any]bool{true: true, nil: false, int64(1): true, "false": false, " Yes ": true} {
+		if got := resolveShellHookAccept(settings.WithFrozen(context.Background(), map[string]any{"hooks_auto_accept": v}), false); got != want {
 			t.Fatalf("hooks_auto_accept %v = %v", v, got)
 		}
 	}
@@ -219,31 +220,29 @@ func TestShellHookGatewayResyncFollowsConfigAndAllowlist(t *testing.T) {
 	a := writeHookScript(t, dir, "a.sh", "#!/bin/sh\nprintf '{}'\n")
 	b := writeHookScript(t, dir, "b.sh", "#!/bin/sh\nprintf '{}'\n")
 	cfg := hooksCfg("pre_tool_call", map[string]any{"command": a})
-	load := func() any { return cfg }
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 0 {
 		t.Fatalf("unapproved hook wired %v", w)
 	}
-	if err := AcceptShellHooksForLaunch(ctx, cfg); err != nil {
+	if err := AcceptShellHooksForLaunch(settings.WithFrozen(ctx, cfg)); err != nil {
 		t.Fatal(err)
 	}
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); !reflect.DeepEqual(w, []string{"shell_hook[pre_tool_call:" + a + "]"}) {
 		t.Fatalf("launch approval wired %v", w)
 	}
 	hooks := cfg["hooks"].(map[string]any)
 	hooks["pre_tool_call"] = append(hooks["pre_tool_call"].([]any), map[string]any{"command": b})
 	_ = recordShellHookApproval(ctx, "pre_tool_call", b)
-	SyncShellHooksFromConfig(ctx, load)
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 2 {
 		t.Fatalf("client approval wired %v", w)
 	}
-	SyncShellHooksFromConfig(ctx, func() any { return map[string]any{} })
 	allowlist := filepath.Join(h, ShellHookAllowlistFilename)
 	saved, _ := os.ReadFile(allowlist)
 	_ = os.WriteFile(allowlist, []byte("{corrupt"), 0o600)
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 2 {
 		t.Fatalf("unreadable input disarmed a guard %v", w)
 	}
@@ -251,19 +250,19 @@ func TestShellHookGatewayResyncFollowsConfigAndAllowlist(t *testing.T) {
 	c := writeHookScript(t, dir, "c.sh", "#!/bin/sh\nprintf '{}'\n")
 	hooks["pre_tool_call"] = append(hooks["pre_tool_call"].([]any), map[string]any{"command": c})
 	cfg["hooks_auto_accept"] = true
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 3 || ShellHookAllowlistEntry(ctx, "pre_tool_call", c) != nil {
 		t.Fatalf("opt in did not keep an unsaved hook %v", w)
 	}
 	hooks["pre_tool_call"] = hooks["pre_tool_call"].([]any)[:2]
 	delete(cfg, "hooks_auto_accept")
 	_, _ = RevokeShellHook(ctx, a)
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); !reflect.DeepEqual(w, []string{"shell_hook[pre_tool_call:" + b + "]"}) {
 		t.Fatalf("revoked hook still wired %v", w)
 	}
 	hooks["pre_tool_call"] = []any{}
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 0 {
 		t.Fatalf("removed hook still wired %v", w)
 	}
@@ -275,13 +274,12 @@ func TestShellHookResyncKeepsInMemoryConsentAndNeverDisarmsOnBadInput(t *testing
 	a := writeHookScript(t, dir, "a.sh", "#!/bin/sh\nprintf '{}'\n")
 	b := writeHookScript(t, dir, "b.sh", "#!/bin/sh\nprintf '{}'\n")
 	cfg := hooksCfg("pre_tool_call", map[string]any{"command": a})
-	load := func() any { return cfg }
 	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...pyjson.Option) error {
 		return &os.PathError{Op: "open", Path: "x", Err: errors.New("ro")}
 	}
-	_ = AcceptShellHooksForLaunch(ctx, cfg)
-	SyncShellHooksFromConfig(ctx, load)
-	SyncShellHooksFromConfig(ctx, load)
+	_ = AcceptShellHooksForLaunch(settings.WithFrozen(ctx, cfg))
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	shellHookAtomicWrite = defaultShellHookAtomicWrite
 	if w := wiredShellHooks("pre_tool_call"); !reflect.DeepEqual(w, []string{"shell_hook[pre_tool_call:" + a + "]"}) {
 		t.Fatalf("unsaved launch consent lost %v", w)
@@ -289,46 +287,26 @@ func TestShellHookResyncKeepsInMemoryConsentAndNeverDisarmsOnBadInput(t *testing
 	body, _ := json.Marshal(map[string]any{"approvals": []any{map[string]any{"event": "pre_tool_call", "command": []any{}}, map[string]any{"event": "pre_tool_call", "command": b}}})
 	_ = os.WriteFile(filepath.Join(h, ShellHookAllowlistFilename), body, 0o600)
 	cfg["hooks"].(map[string]any)["pre_tool_call"] = map[string]any{"command": a}
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 1 {
 		t.Fatalf("malformed entry removed a hook %v", w)
 	}
 	cfg["hooks"].(map[string]any)["pre_tool_call"] = []any{map[string]any{"command": a}, map[string]any{"command": b}}
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 2 {
 		t.Fatalf("valid record lost beside a bad one %v", w)
 	}
 	c := writeHookScript(t, dir, "c.sh", "#!/bin/sh\nprintf '{}'\n")
 	cfg["hooks"].(map[string]any)["pre_tool_call"] = append(cfg["hooks"].(map[string]any)["pre_tool_call"].([]any), map[string]any{"command": c})
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	cName := "shell_hook[pre_tool_call:" + c + "]"
 	if strings.Contains(strings.Join(wiredShellHooks("pre_tool_call"), ","), cName) {
 		t.Fatal("unapproved hook wired")
 	}
 	AcceptShellHooksForProcess()
-	SyncShellHooksFromConfig(ctx, load)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfg))
 	if !strings.Contains(strings.Join(wiredShellHooks("pre_tool_call"), ","), cName) {
 		t.Fatal("process opt in did not wire a later hook")
-	}
-	ResetShellHooksForTests()
-	ResetPluginManagersForTests()
-	oldRead, release := make(chan struct{}), make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		SyncShellHooksFromConfig(ctx, func() any { close(oldRead); <-release; return hooksCfg("pre_tool_call", map[string]any{"command": a}) })
-	}()
-	<-oldRead
-	go func() {
-		defer wg.Done()
-		SyncShellHooksFromConfig(ctx, func() any { return hooksCfg("pre_tool_call", map[string]any{"command": b}) })
-	}()
-	time.Sleep(50 * time.Millisecond)
-	close(release)
-	wg.Wait()
-	if w := wiredShellHooks("pre_tool_call"); !reflect.DeepEqual(w, []string{"shell_hook[pre_tool_call:" + b + "]"}) {
-		t.Fatalf("older snapshot landed last %v", w)
 	}
 }
 
@@ -337,16 +315,16 @@ func TestShellHookLaunchApprovalsAndRefusedEntries(t *testing.T) {
 	dir, ctx := filepath.Dir(h), context.Background()
 	a := writeHookScript(t, dir, "a.sh", "#!/bin/sh\nprintf '{}'\n")
 	b := writeHookScript(t, dir, "b.sh", "#!/bin/sh\nprintf '{}'\n")
-	cfgA := func() any { return hooksCfg("pre_tool_call", map[string]any{"command": a}) }
-	_ = AcceptShellHooksForLaunch(ctx, cfgA())
+	cfgA := func() map[string]any { return hooksCfg("pre_tool_call", map[string]any{"command": a}) }
+	_ = AcceptShellHooksForLaunch(settings.WithFrozen(ctx, cfgA()))
 	_, _ = RevokeShellHook(ctx, a)
-	SyncShellHooksFromConfig(ctx, cfgA)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfgA()))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 0 {
 		t.Fatalf("revoked saved launch approval wired %v", w)
 	}
 	body, _ := json.Marshal(map[string]any{"approvals": []any{map[string]any{"event": "pre_tool_call", "command": []any{}}, map[string]any{"event": "pre_tool_call", "command": b}}})
 	_ = os.WriteFile(filepath.Join(h, ShellHookAllowlistFilename), body, 0o600)
-	SyncShellHooksFromConfig(ctx, func() any { return hooksCfg("pre_tool_call", map[string]any{"command": b}) })
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, hooksCfg("pre_tool_call", map[string]any{"command": b})))
 	if w := wiredShellHooks("pre_tool_call"); !reflect.DeepEqual(w, []string{"shell_hook[pre_tool_call:" + b + "]"}) {
 		t.Fatalf("bad record broke a valid one %v", w)
 	}
@@ -356,31 +334,31 @@ func TestShellHookLaunchApprovalsAndRefusedEntries(t *testing.T) {
 	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...pyjson.Option) error {
 		return &os.PathError{Op: "open", Path: "x", Err: errors.New("ro")}
 	}
-	_ = AcceptShellHooksForLaunch(ctx, cfgA())
+	_ = AcceptShellHooksForLaunch(settings.WithFrozen(ctx, cfgA()))
 	shellHookAtomicWrite = defaultShellHookAtomicWrite
-	SyncShellHooksFromConfig(ctx, cfgA)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfgA()))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 1 {
 		t.Fatalf("unsaved launch consent not wired %v", w)
 	}
-	SyncShellHooksFromConfig(ctx, func() any { return map[string]any{"hooks": map[string]any{}} })
-	SyncShellHooksFromConfig(ctx, cfgA)
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, map[string]any{"hooks": map[string]any{}}))
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, cfgA()))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 0 {
 		t.Fatalf("re-added hook kept ended consent %v", w)
 	}
 	ResetShellHooksForTests()
 	ResetPluginManagersForTests()
-	_, _ = RegisterShellHooksFromConfig(ctx, cfgA(), true, false)
+	_, _ = RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfgA()), true, false)
 	_, _ = RevokeShellHook(ctx, a)
 	refused := hooksCfg("pre_tool_call", map[string]any{"command": a})
 	refused["hooks"].(map[string]any)["transform_api_error_classification"] = []any{map[string]any{"command": a}}
-	SyncShellHooksFromConfig(ctx, func() any { return refused })
+	SyncShellHooksFromConfig(settings.WithFrozen(ctx, refused))
 	if w := wiredShellHooks("pre_tool_call"); len(w) != 0 {
 		t.Fatalf("refused plugin only entry suspended removal %v", w)
 	}
-	_, _ = RegisterShellHooksFromConfig(ctx, cfgA(), true, false)
+	_, _ = RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfgA()), true, false)
 	_, _ = RevokeShellHook(ctx, a)
 	shellHookTTY(t)
-	if r, err := RegisterShellHooksFromConfig(ctx, cfgA(), false, false); err != nil || len(r) != 0 {
+	if r, err := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfgA()), false, false); err != nil || len(r) != 0 {
 		t.Fatalf("re-asked for a wired hook %v %v", r, err)
 	}
 }
@@ -395,7 +373,7 @@ func TestShellHookToolHooksReceiveOnlyTheOwningWorkersIdentity(t *testing.T) {
 		"pre_tool_call":  []any{map[string]any{"matcher": "kanban_complete", "command": gate}},
 		"post_tool_call": []any{map[string]any{"matcher": "kanban_complete", "command": gate}},
 	}}
-	if r, err := RegisterShellHooksFromConfig(ctx, cfg, true, false); err != nil || len(r) != 2 {
+	if r, err := RegisterShellHooksFromConfig(settings.WithFrozen(ctx, cfg), true, false); err != nil || len(r) != 2 {
 		t.Fatalf("registered %v %v", r, err)
 	}
 	nonOwner := &tools.Env{Values: &sync.Map{}}

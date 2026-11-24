@@ -163,7 +163,7 @@ func pauseSuppressed(err error) bool {
 	return pypath.IsOSError(err) || isSubprocessError(err)
 }
 
-func pauseText(raw []byte) string { return pystr.Strip(pystr.DecodeUTF8Replace(raw)) }
+func pauseText(raw []byte) string { return strings.TrimSpace(pystr.DecodeUTF8Replace(raw)) }
 
 // Control group path systemd reports for a unit, empty when unknown
 func unitCgroup(ctx context.Context, scopeCmd []string, unit string) (string, error) {
@@ -191,10 +191,10 @@ func pidCgroup(pid string) string {
 	haveUnified, haveLegacy := false, false
 	for _, line := range pystr.Splitlines(string(raw), false) {
 		if !haveUnified && strings.HasPrefix(line, "0::") {
-			unified, haveUnified = pystr.Strip(line[3:]), true
+			unified, haveUnified = strings.TrimSpace(line[3:]), true
 		}
 		if !haveLegacy && strings.Contains(line, ":name=systemd:") {
-			legacy, haveLegacy = pystr.Strip(strings.SplitN(line, ":", 3)[2]), true
+			legacy, haveLegacy = strings.TrimSpace(strings.SplitN(line, ":", 3)[2]), true
 		}
 	}
 	if unified != "" {

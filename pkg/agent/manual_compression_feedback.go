@@ -1,16 +1,17 @@
 package agent
 
 import (
+	"strings"
+
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // User facing text for a manual compress skipped by the compression lock, naming a confirmed holder
 func DescribeCompressionLockSkip(lockSignal any) string {
-	if holder, ok := lockSignal.(string); ok && pystr.Strip(holder) != "" {
+	if holder, ok := lockSignal.(string); ok && strings.TrimSpace(holder) != "" {
 		return "⏳ Compression already in progress for this session (holder: " + holder + "). Please wait for it to finish."
 	}
 	return "⏳ Compression skipped: could not acquire this session's compression lock. Another compression may " +
@@ -53,7 +54,7 @@ func SummarizeManualCompression(beforeMessages, afterMessages []map[string]any, 
 	noop := pyrepr.Equal(after, before)
 	aborted, refused, fallback := state.LastCompressAborted, state.LastCompressRefusedWouldGrow, state.LastSummaryFallbackUsed
 	failureReason := state.LastSummaryError
-	if pystr.Strip(failureReason) == "" {
+	if strings.TrimSpace(failureReason) == "" {
 		failureReason = ""
 	}
 	var note *string
@@ -93,7 +94,7 @@ func SummarizeManualCompression(beforeMessages, afterMessages []map[string]any, 
 		if note != nil {
 			prior = *note
 		}
-		setNote(prior + " Reason: " + tools.RedactSensitiveTextWith(nil, pystr.Strip(failureReason), tools.RedactOptions{Force: true}))
+		setNote(prior + " Reason: " + tools.RedactSensitiveTextWith(nil, strings.TrimSpace(failureReason), tools.RedactOptions{Force: true}))
 	}
 	return ManualCompressionFeedback{Noop: noop, Aborted: aborted, RefusedWouldGrow: refused, FallbackUsed: fallback,
 		Headline: headline, TokenLine: tokenLine, Note: note}

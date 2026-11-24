@@ -1,6 +1,8 @@
 package tuihost
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -163,7 +164,7 @@ func ContentDisplayText(content any) string {
 	case []any:
 		var lines []string
 		for _, part := range x {
-			if t := pystr.Strip(ContentDisplayText(part)); t != "" {
+			if t := strings.TrimSpace(ContentDisplayText(part)); t != "" {
 				lines = append(lines, t)
 			}
 		}
@@ -247,7 +248,7 @@ func IsTextOnlyBusyPayload(content any) bool {
 
 // Whether a row is a gateway system notice persisted as a user row that must never render as a bubble
 func IsDisplayHiddenMarker(role, text string) bool {
-	return role == "user" && strings.HasPrefix(pystr.Lstrip(text), "[System:")
+	return role == "user" && strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "[System:")
 }
 
 // Slash invocation a skill expanded turn came from, empty when the row is not one
@@ -258,7 +259,7 @@ func SkillScaffoldProjection(contentText string) string {
 
 // Skill message a projected slash invocation expands back into, the text unchanged when not resolvable
 func ExpandSkillInvocationForReplay(ctx context.Context, text, taskID string) (out string) {
-	head, arg, _ := strings.Cut(pystr.Strip(text), " ")
+	head, arg, _ := strings.Cut(strings.TrimSpace(text), " ")
 	if !strings.HasPrefix(head, "/") {
 		return text
 	}
@@ -277,7 +278,7 @@ func ExpandSkillInvocationForReplay(ctx context.Context, text, taskID string) (o
 	if !found {
 		return text
 	}
-	msg, built, err := scope.BuildSkillInvocationMessage(ctx, cmdKey, pystr.Strip(arg), taskID, "")
+	msg, built, err := scope.BuildSkillInvocationMessage(ctx, cmdKey, strings.TrimSpace(arg), taskID, "")
 	if err != nil {
 		slog.Debug("skill re-expansion failed for replay", "error", err)
 		return text

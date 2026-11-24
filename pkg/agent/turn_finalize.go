@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"unicode"
+
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -28,7 +29,7 @@ func assistantRowMissingVisibleText(m *state.Message) bool {
 	if m == nil || m.Role != "assistant" {
 		return false
 	}
-	return pystr.Strip(state.FlattenMessageText(m.Content, "\n")) == ""
+	return strings.TrimSpace(state.FlattenMessageText(m.Content, "\n")) == ""
 }
 
 // KanbanBudgetExhaustedHook records the timed out kanban outcome, pkg/kanban RecordBudgetExhausted installed by the process wiring
@@ -186,10 +187,10 @@ func recoverFinalFromStream(a *AIAgent, final any, interrupted, failed bool) (an
 	if interrupted || failed {
 		return final, false
 	}
-	streamed := pystr.Strip(a.currentStreamedAssistantText())
+	streamed := strings.TrimSpace(a.currentStreamedAssistantText())
 	visible := ""
 	if pyTruthy(final) {
-		visible = pystr.Strip(state.FlattenMessageText(final, "\n"))
+		visible = strings.TrimSpace(state.FlattenMessageText(final, "\n"))
 	}
 	if visible == "" && streamed != "" {
 		return streamed, true
@@ -377,7 +378,7 @@ func appendFileMutationFooter(ctx context.Context, a *AIAgent, final any) any {
 		pkgLog().Debug(fmt.Sprintf("file-mutation verifier footer failed: %T has no rstrip", final))
 		return final
 	}
-	return pystr.Rstrip(text) + "\n\n" + footer
+	return strings.TrimRightFunc(text, unicode.IsSpace) + "\n\n" + footer
 }
 
 // Surfaces one explanation from the exit reason when the turn produced no usable reply
@@ -397,7 +398,7 @@ func explainAbnormalExit(ctx context.Context, a *AIAgent, final, exitReason any,
 			pkgLog().Debug(fmt.Sprintf("turn-completion explainer failed: %T has no strip", final))
 			return final
 		}
-		stripped = pystr.Strip(text)
+		stripped = strings.TrimSpace(text)
 	}
 	reason := pyrepr.Str(exitReason)
 	emptyTerminal := stripped == "" || stripped == "(empty)"
@@ -520,7 +521,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 	apiCalls, taskID, turnID := s.APICallCount, s.EffectiveTaskID, s.TurnID
 
 	if n := len(s.Messages); !pyTruthy(final) && !interrupted && n > 0 && s.Messages[n-1] != nil && s.Messages[n-1].Role == "tool" &&
-		pystr.Strip(a.currentStreamedAssistantText()) == "" {
+		strings.TrimSpace(a.currentStreamedAssistantText()) == "" {
 		exitReason, failed, final = "pending_tool_result", true, ""
 		func() {
 			defer func() {

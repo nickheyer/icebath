@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/encoding/charmap"
 )
 
@@ -30,7 +29,7 @@ var clawhubSlugRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // Slug and owner of a ClawHub identifier, ok false for GitHub style or malformed ids
 func clawhubParseIdentifier(identifier string) (slug, owner string, hasOwner, ok bool) {
-	raw := pystr.Strip(identifier)
+	raw := strings.TrimSpace(identifier)
 	if raw == "" {
 		return "", "", false, false
 	}
@@ -49,7 +48,7 @@ func clawhubParseIdentifier(identifier string) (slug, owner string, hasOwner, ok
 	switch {
 	case len(parts) == 1:
 		slug = parts[0]
-	case (len(parts) == 2 && hadAt) || (len(parts) == 3 && pystr.Lower(parts[1]) == "skills"):
+	case (len(parts) == 2 && hadAt) || (len(parts) == 3 && strings.ToLower(parts[1]) == "skills"):
 		owner, slug, hasOwner = parts[0], parts[len(parts)-1], true
 	default:
 		return "", "", false, false
@@ -80,7 +79,7 @@ var clawhubSearchQueryRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 // Lowercased alphanumeric terms of a query
 func clawhubQueryTerms(query string) []string {
 	out := []string{}
-	for _, t := range clawhubTermSplit.Split(pystr.Lower(query), -1) {
+	for _, t := range clawhubTermSplit.Split(strings.ToLower(query), -1) {
 		if t != "" {
 			out = append(out, t)
 		}
@@ -97,7 +96,7 @@ func clawhubDedupeResults(results []SkillMeta) []SkillMeta {
 		if key == "" {
 			key = r.Name
 		}
-		key = pystr.Lower(key)
+		key = strings.ToLower(key)
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, r)
@@ -108,11 +107,11 @@ func clawhubDedupeResults(results []SkillMeta) []SkillMeta {
 
 // Relevance of a result to a query from exact, prefix, term and substring hits
 func clawhubSearchScore(query string, meta SkillMeta) int {
-	queryNorm := pystr.Lower(pystr.Strip(query))
+	queryNorm := strings.ToLower(strings.TrimSpace(query))
 	if queryNorm == "" {
 		return 1
 	}
-	identifier, name, description := pystr.Lower(meta.Identifier), pystr.Lower(meta.Name), pystr.Lower(meta.Description)
+	identifier, name, description := strings.ToLower(meta.Identifier), strings.ToLower(meta.Name), strings.ToLower(meta.Description)
 	qTerms, idTerms, nameTerms := clawhubQueryTerms(queryNorm), clawhubQueryTerms(identifier), clawhubQueryTerms(name)
 	normID, normName := strings.Join(idTerms, " "), strings.Join(nameTerms, " ")
 	prefixed := func(terms []string) bool {
@@ -265,7 +264,7 @@ func clawhubOwnerFromPayload(data *pyjson.Object) string {
 		owner, _ = o.Get("handle")
 	}
 	if s, ok := owner.(string); ok {
-		return pystr.Strip(s)
+		return strings.TrimSpace(s)
 	}
 	return ""
 }
@@ -276,7 +275,7 @@ func clawhubOwnerMatches(expected string, data *pyjson.Object) bool {
 		return true
 	}
 	actual := clawhubOwnerFromPayload(data)
-	return actual == "" || pystr.Lower(actual) == pystr.Lower(expected)
+	return actual == "" || strings.ToLower(actual) == strings.ToLower(expected)
 }
 
 // Search result of a listing item, nil without a slug
@@ -333,7 +332,7 @@ func (c *ClawHubSource) skillDetail(ctx context.Context, identifier string) (str
 
 // Detail of the slug the query spells directly or through its suffixed term forms
 func (c *ClawHubSource) exactSlugMeta(ctx context.Context, query string) *SkillMeta {
-	query = pystr.Strip(query)
+	query = strings.TrimSpace(query)
 	terms := clawhubQueryTerms(query)
 	var candidates []string
 	if slug, _, _, ok := clawhubParseIdentifier(query); ok {
@@ -365,7 +364,7 @@ func (c *ClawHubSource) exactSlugMeta(ctx context.Context, query string) *SkillM
 
 // Results ranked by score with the exact slug first, the raw listing when nothing scores
 func (c *ClawHubSource) finalizeSearchResults(ctx context.Context, query string, results []SkillMeta, limit int) []SkillMeta {
-	queryNorm := pystr.Strip(query)
+	queryNorm := strings.TrimSpace(query)
 	if queryNorm == "" {
 		return pyHeadMetas(clawhubDedupeResults(results), limit)
 	}
@@ -383,10 +382,10 @@ func (c *ClawHubSource) finalizeSearchResults(ctx context.Context, query string,
 		if a.score != b.score {
 			return b.score - a.score
 		}
-		if r := strings.Compare(pystr.Lower(a.m.Name), pystr.Lower(b.m.Name)); r != 0 {
+		if r := strings.Compare(strings.ToLower(a.m.Name), strings.ToLower(b.m.Name)); r != 0 {
 			return r
 		}
-		return strings.Compare(pystr.Lower(a.m.Identifier), pystr.Lower(b.m.Identifier))
+		return strings.Compare(strings.ToLower(a.m.Identifier), strings.ToLower(b.m.Identifier))
 	})
 	filtered := make([]SkillMeta, len(ranked))
 	for i, r := range ranked {
@@ -411,7 +410,7 @@ func (c *ClawHubSource) finalizeSearchResults(ctx context.Context, query string,
 // Direct slug hit, catalog search, or the paginated catalog, falling back to the listing API
 func (c *ClawHubSource) Search(ctx context.Context, query string, limit int) (out []SkillMeta, err error) {
 	defer hubRecover(&err)
-	query = pystr.Strip(query)
+	query = strings.TrimSpace(query)
 	if query != "" {
 		if len(clawhubQueryTerms(query)) >= 2 {
 			if direct := c.exactSlugMeta(ctx, query); direct != nil {

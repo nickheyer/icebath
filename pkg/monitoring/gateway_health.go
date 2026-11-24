@@ -89,7 +89,7 @@ func strOr(raw any, def string) string {
 
 // Bounded class of free form gateway error text, unknown when no rule matches
 func ClassifyGatewayError(raw any) string {
-	s := pystr.Lower(strOr(raw, ""))
+	s := strings.ToLower(strOr(raw, ""))
 	for _, rule := range gatewayErrorRules {
 		if rule.match(s) {
 			return rule.label
@@ -104,7 +104,7 @@ func ClassifyExitReason(raw, state any, restartRequested bool) *string {
 	if restartRequested {
 		return label("restart_requested")
 	}
-	stateName := pystr.Lower(strOr(state, ""))
+	stateName := strings.ToLower(strOr(state, ""))
 	if raw == nil && stateName != "startup_failed" {
 		return nil
 	}
@@ -115,7 +115,7 @@ func ClassifyExitReason(raw, state any, restartRequested bool) *string {
 		}
 		return label("startup_failed")
 	}
-	text := pystr.Lower(strOr(raw, ""))
+	text := strings.ToLower(strOr(raw, ""))
 	if strings.Contains(text, "signal") || strings.Contains(text, "sigterm") || strings.Contains(text, "sigint") {
 		return label("signal")
 	}
@@ -127,7 +127,7 @@ func ClassifyExitReason(raw, state any, restartRequested bool) *string {
 
 // Lowercased state when allowed, otherwise unknown
 func boundedState(raw any, allowed map[string]bool) string {
-	state := pystr.Lower(strOr(raw, "unknown"))
+	state := strings.ToLower(strOr(raw, "unknown"))
 	if allowed[state] {
 		return state
 	}

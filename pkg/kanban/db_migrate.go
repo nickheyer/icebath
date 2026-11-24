@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -309,7 +308,7 @@ func tableHasDrifted(ctx context.Context, conn state.SQLiteConn, table string) (
 	}
 	colType := func(c *Row) string {
 		s, _ := c.Get("type").(string)
-		return pystr.Upper(s)
+		return strings.ToUpper(s)
 	}
 	if table == "kanban_notify_subs" {
 		lei := find("last_event_id")

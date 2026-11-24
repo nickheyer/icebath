@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -134,13 +133,13 @@ func TestComputerUseBindsEachCallersContextOnTheBackend(t *testing.T) {
 		return b, nil
 	}
 	t.Cleanup(func() { newComputerUseBackend = prev })
-	mode := "standard"
-	prevConfig := loadCUConfig
-	loadCUConfig = func(*tools.Env) (config.Tree, error) {
-		return config.Tree{"computer_use": map[string]any{"permission_mode": mode}}, nil
-	}
-	t.Cleanup(func() { loadCUConfig = prevConfig })
 	env := cuPluginHome(t, t.TempDir(), nil, "")
+	setMode := func(mode string) {
+		if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("computer_use:\n  permission_mode: "+mode+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setMode("standard")
 	marked := func(mark string) context.Context { return context.WithValue(context.Background(), callMarkKey{}, mark) }
 	first, err := getBackend(marked("start"), env, "s")
 	if err != nil {
@@ -149,7 +148,7 @@ func TestComputerUseBindsEachCallersContextOnTheBackend(t *testing.T) {
 	if _, err := dispatchComputerUse(marked("dispatch"), env, first, "list_apps", map[string]any{}, func() error { return nil }, nil); err != nil {
 		t.Fatal(err)
 	}
-	mode = "bounded"
+	setMode("bounded")
 	if _, err := getBackend(marked("replace"), env, "s"); err != nil {
 		t.Fatal(err)
 	}

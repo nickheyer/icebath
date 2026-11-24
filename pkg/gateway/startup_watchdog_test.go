@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -129,7 +130,7 @@ func TestContractsRestartCodeParityWithGatewayRestart(t *testing.T) {
 
 func TestConfigResolutionDefaultTimeout(t *testing.T) {
 	isolateStartupWatchdog(t)
-	if got := ResolveStartupWatchdogTimeout(); got != DefaultStartupWatchdogTimeoutS {
+	if got := ResolveStartupWatchdogTimeout(context.Background()); got != settings.GatewayStartupWatchdogTimeoutSeconds.Default.Seconds() {
 		t.Fatal(got)
 	}
 }
@@ -137,7 +138,7 @@ func TestConfigResolutionDefaultTimeout(t *testing.T) {
 func TestConfigResolutionEnvOverride(t *testing.T) {
 	isolateStartupWatchdog(t)
 	t.Setenv(EnvStartupWatchdogTimeoutS, "120")
-	if got := ResolveStartupWatchdogTimeout(); got != 120.0 {
+	if got := ResolveStartupWatchdogTimeout(context.Background()); got != 120.0 {
 		t.Fatal(got)
 	}
 }
@@ -145,7 +146,7 @@ func TestConfigResolutionEnvOverride(t *testing.T) {
 func TestConfigResolutionEnvOverrideClampedToFloor(t *testing.T) {
 	isolateStartupWatchdog(t)
 	t.Setenv(EnvStartupWatchdogTimeoutS, "5")
-	if got := ResolveStartupWatchdogTimeout(); got != startupWatchdogMinTimeoutS {
+	if got := ResolveStartupWatchdogTimeout(context.Background()); got != startupWatchdogMinTimeoutS {
 		t.Fatal(got)
 	}
 }
@@ -153,7 +154,7 @@ func TestConfigResolutionEnvOverrideClampedToFloor(t *testing.T) {
 func TestConfigResolutionGarbageEnvFallsBackToDefault(t *testing.T) {
 	isolateStartupWatchdog(t)
 	t.Setenv(EnvStartupWatchdogTimeoutS, "soon")
-	if got := ResolveStartupWatchdogTimeout(); got != DefaultStartupWatchdogTimeoutS {
+	if got := ResolveStartupWatchdogTimeout(context.Background()); got != settings.GatewayStartupWatchdogTimeoutSeconds.Default.Seconds() {
 		t.Fatal(got)
 	}
 }
@@ -161,7 +162,7 @@ func TestConfigResolutionGarbageEnvFallsBackToDefault(t *testing.T) {
 func TestConfigResolutionNonpositiveEnvFallsBackToDefault(t *testing.T) {
 	isolateStartupWatchdog(t)
 	t.Setenv(EnvStartupWatchdogTimeoutS, "-1")
-	if got := ResolveStartupWatchdogTimeout(); got != DefaultStartupWatchdogTimeoutS {
+	if got := ResolveStartupWatchdogTimeout(context.Background()); got != settings.GatewayStartupWatchdogTimeoutSeconds.Default.Seconds() {
 		t.Fatal(got)
 	}
 }
@@ -170,7 +171,7 @@ func TestConfigResolutionDisabledValues(t *testing.T) {
 	isolateStartupWatchdog(t)
 	for _, raw := range []string{"0", "false", "no", "off", "FALSE", "Off"} {
 		t.Setenv(EnvStartupWatchdog, raw)
-		if !StartupWatchdogDisabled() {
+		if !StartupWatchdogDisabled(context.Background()) {
 			t.Fatalf("%q must disable", raw)
 		}
 	}
@@ -180,7 +181,7 @@ func TestConfigResolutionEnabledValues(t *testing.T) {
 	isolateStartupWatchdog(t)
 	for _, raw := range []string{"", "1", "true", "yes"} {
 		t.Setenv(EnvStartupWatchdog, raw)
-		if StartupWatchdogDisabled() {
+		if StartupWatchdogDisabled(context.Background()) {
 			t.Fatalf("%q must not disable", raw)
 		}
 	}
@@ -188,7 +189,7 @@ func TestConfigResolutionEnabledValues(t *testing.T) {
 
 func TestArmDisarmArmReturnsLiveHandle(t *testing.T) {
 	isolateStartupWatchdog(t)
-	handle := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	if handle == nil || !handle.IsAlive() || handle.Disarmed() {
 		t.Fatalf("handle %+v", handle)
 	}
@@ -201,8 +202,8 @@ func TestArmDisarmArmReturnsLiveHandle(t *testing.T) {
 
 func TestArmDisarmArmIsIdempotent(t *testing.T) {
 	isolateStartupWatchdog(t)
-	first := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
-	second := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	first := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
+	second := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	if first == nil || first != second {
 		t.Fatalf("%p != %p", first, second)
 	}
@@ -212,7 +213,7 @@ func TestArmDisarmArmIsIdempotent(t *testing.T) {
 func TestArmDisarmDisarmPreventsFire(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	handle := armStartupWatchdog(0.2, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 0.2, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -225,7 +226,7 @@ func TestArmDisarmDisarmPreventsFire(t *testing.T) {
 
 func TestArmDisarmDisarmIsIdempotent(t *testing.T) {
 	isolateStartupWatchdog(t)
-	armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	DisarmStartupWatchdog()
 	DisarmStartupWatchdog()
 }
@@ -233,17 +234,17 @@ func TestArmDisarmDisarmIsIdempotent(t *testing.T) {
 func TestArmDisarmDisabledViaEnv(t *testing.T) {
 	isolateStartupWatchdog(t)
 	t.Setenv(EnvStartupWatchdog, "0")
-	if handle := armStartupWatchdog(60, StartupWatchdogRestartExitCode); handle != nil {
+	if handle := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode); handle != nil {
 		t.Fatal("armed while disabled")
 	}
 }
 
 func TestArmDisarmRearmAfterDisarmStartsFreshThread(t *testing.T) {
 	isolateStartupWatchdog(t)
-	first := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	first := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	DisarmStartupWatchdog()
 	first.Join(2 * time.Second)
-	second := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	second := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	if second == nil || second == first || !second.IsAlive() {
 		t.Fatalf("second %p first %p", second, first)
 	}
@@ -272,7 +273,7 @@ func TestArmDisarmDisarmAfterDeadlineExpiryWinsOverFire(t *testing.T) {
 		}
 		return 0.0, true
 	}
-	handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -292,7 +293,7 @@ func TestArmDisarmDisarmAfterDeadlineExpiryWinsOverFire(t *testing.T) {
 func TestKickKickExtendsDeadline(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	if handle := armStartupWatchdog(0.3, StartupWatchdogRestartExitCode); handle == nil {
+	if handle := armStartupWatchdog(context.Background(), 0.3, StartupWatchdogRestartExitCode); handle == nil {
 		t.Fatal("no handle")
 	}
 	KickStartupWatchdog(60)
@@ -310,7 +311,7 @@ func TestKickKickWithoutArmIsSafe(t *testing.T) {
 
 func TestKickKickWithGarbageExtraIsSafe(t *testing.T) {
 	isolateStartupWatchdog(t)
-	armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	KickStartupWatchdog("nonsense")
 	DisarmStartupWatchdog()
 }
@@ -320,7 +321,7 @@ func TestCpuProgressExtensionCpuProgressExtendsInsteadOfFiring(t *testing.T) {
 	capture := captureWatchdogExit(t)
 	startupWatchdogDefaults.maxCPUExtensions = 10_000
 	startupWatchdogDefaults.cpuSeconds = busyWatchdogProbe()
-	handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -338,7 +339,7 @@ func TestCpuProgressExtensionCpuExtensionsAreCapped(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
 	startupWatchdogDefaults.cpuSeconds = busyWatchdogProbe()
-	handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -356,7 +357,7 @@ func TestCpuProgressExtensionCpuExtensionsAreCapped(t *testing.T) {
 func TestCpuProgressExtensionNoCpuProgressFires(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if !capture.wait(5 * time.Second) {
 		t.Fatal("never fired")
 	}
@@ -369,7 +370,7 @@ func TestCpuProgressExtensionProbeFailureFailsTowardFiring(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
 	startupWatchdogDefaults.cpuSeconds = func() (float64, bool) { return 0, false }
-	armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if !capture.wait(5 * time.Second) {
 		t.Fatal("never fired")
 	}
@@ -378,7 +379,7 @@ func TestCpuProgressExtensionProbeFailureFailsTowardFiring(t *testing.T) {
 func TestProgressLeaseLeasePreventsFiringWithZeroCpu(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	if handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode); handle == nil {
+	if handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode); handle == nil {
 		t.Fatal("no handle")
 	}
 	ReportStartupProgress(60.0, "state_db_repair")
@@ -392,7 +393,7 @@ func TestProgressLeaseLeasePreventsFiringWithZeroCpu(t *testing.T) {
 func TestProgressLeaseExpiredLeaseNoLongerProtects(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	if handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode); handle == nil {
+	if handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode); handle == nil {
 		t.Fatal("no handle")
 	}
 	ReportStartupProgress(0.2, "short_phase")
@@ -406,7 +407,7 @@ func TestProgressLeaseExpiredLeaseNoLongerProtects(t *testing.T) {
 
 func TestProgressLeaseLeaseDurationIsClamped(t *testing.T) {
 	isolateStartupWatchdog(t)
-	handle := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -425,7 +426,7 @@ func TestProgressLeaseLeaseOutranksCpuExtensionCap(t *testing.T) {
 	capture := captureWatchdogExit(t)
 	startupWatchdogDefaults.maxCPUExtensions = 0
 	startupWatchdogDefaults.cpuSeconds = busyWatchdogProbe()
-	if handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode); handle == nil {
+	if handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode); handle == nil {
 		t.Fatal("no handle")
 	}
 	ReportStartupProgress(60.0, "post_cap_migration")
@@ -444,7 +445,7 @@ func TestProgressLeaseLeaseWithoutArmIsSafe(t *testing.T) {
 
 func TestProgressLeaseLeaseWithGarbageIsSafe(t *testing.T) {
 	isolateStartupWatchdog(t)
-	handle := armStartupWatchdog(60, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 60, StartupWatchdogRestartExitCode)
 	ReportStartupProgress("nonsense", "")
 	ReportStartupProgress(-5, "")
 	handle.mu.Lock()
@@ -459,7 +460,7 @@ func TestProgressLeaseLeaseWithGarbageIsSafe(t *testing.T) {
 func TestProgressLeaseLeaseVisibleInDumpRecord(t *testing.T) {
 	tmp := isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	state.ReportStartupProgress(0.15, "brief_phase")
 	if !capture.wait(10 * time.Second) {
 		t.Fatal("never fired")
@@ -477,7 +478,7 @@ func TestProgressLeaseLeaseVisibleInDumpRecord(t *testing.T) {
 func TestFireFiresAfterDeadlineWithRestartCode(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	if handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode); handle == nil {
+	if handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode); handle == nil {
 		t.Fatal("no handle")
 	}
 	if !capture.wait(5 * time.Second) {
@@ -491,7 +492,7 @@ func TestFireFiresAfterDeadlineWithRestartCode(t *testing.T) {
 func TestFireFireWritesDumpRecordAndStacks(t *testing.T) {
 	tmp := isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if !capture.wait(5 * time.Second) {
 		t.Fatal("never fired")
 	}
@@ -548,7 +549,7 @@ func TestFireFireMarksLifecycleExit(t *testing.T) {
 		defer mu.Unlock()
 		marked["code"], marked["reason"] = *code, reason
 	}
-	armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if !capture.wait(5 * time.Second) {
 		t.Fatal("never fired")
 	}
@@ -562,7 +563,7 @@ func TestFireFireMarksLifecycleExit(t *testing.T) {
 func TestFireCustomExitCode(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
-	armStartupWatchdog(0.1, 42)
+	armStartupWatchdog(context.Background(), 0.1, 42)
 	if !capture.wait(5 * time.Second) {
 		t.Fatal("never fired")
 	}
@@ -596,7 +597,7 @@ func TestBoundedExitExitsEvenWhenLoggingLockIsHeld(t *testing.T) {
 		}
 		slog.SetDefault(prev)
 	}()
-	handle = armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	handle = armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -622,7 +623,7 @@ func TestBoundedExitExitsEvenWhenDumpWriteHangs(t *testing.T) {
 		case <-time.After(30 * time.Second):
 		}
 	}
-	handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}
@@ -640,7 +641,7 @@ func TestBoundedExitEscortStandsDownWhenFireCompletes(t *testing.T) {
 	isolateStartupWatchdog(t)
 	capture := captureWatchdogExit(t)
 	startupWatchdogDefaults.sleep = func(float64) { time.Sleep(500 * time.Millisecond) }
-	handle := armStartupWatchdog(0.1, StartupWatchdogRestartExitCode)
+	handle := armStartupWatchdog(context.Background(), 0.1, StartupWatchdogRestartExitCode)
 	if handle == nil {
 		t.Fatal("no handle")
 	}

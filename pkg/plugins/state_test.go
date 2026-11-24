@@ -86,36 +86,6 @@ func TestConfigRoundTripUsesCanonicalSettingsNamespace(t *testing.T) {
 	}
 }
 
-func TestConfigReadsLegacyConfigNamespaceUntilCanonicalValueIsSet(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "profile")
-	ctx := homeCtx(h)
-	_ = os.MkdirAll(h, 0o755)
-	doc := "plugins:\n  entries:\n    fixture-plugin:\n      config:\n        endpoint: legacy\n        legacy_only: 7\n      settings:\n        endpoint: canonical\n"
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	c := bridgeContext("fixture-plugin", "", "")
-	if v := mustGet(t, c, ctx, "endpoint", nil); v != "canonical" {
-		t.Fatal(v)
-	}
-	if v := mustGet(t, c, ctx, "legacy_only", nil); v != 7 {
-		t.Fatal(v)
-	}
-	if err := c.SetConfig(ctx, "legacy_only", 8); err != nil {
-		t.Fatal(err)
-	}
-	if v := mustGet(t, c, ctx, "legacy_only", nil); v != 8 {
-		t.Fatal(v)
-	}
-	raw, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
-	var out map[string]any
-	_ = yaml.Unmarshal(raw, &out)
-	entry := out["plugins"].(map[string]any)["entries"].(map[string]any)["fixture-plugin"].(map[string]any)
-	if entry["config"].(map[string]any)["legacy_only"] != 7 || entry["settings"].(map[string]any)["legacy_only"] != 8 {
-		t.Fatalf("%#v", entry)
-	}
-}
-
 func TestConfigRejectsGlobalCrossPluginAndTraversalPaths(t *testing.T) {
 	for _, key := range []string{"../../security.approval_mode", `..\..\model.provider`, "security.approval_mode",
 		"model.provider", "plugins.entries.other.settings.token", "settings.endpoint", ""} {

@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"strings"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -58,11 +60,11 @@ func admitCLITurn(params map[string]any) (*pyjson.Object, error) {
 		providerName, isProvider := routed.(string)
 		reasoning, hasReasoning := override["reasoning"]
 		effort, isEffort := reasoning.(string)
-		if !isModel || pystr.Strip(model) == "" || (hasProvider && !isProvider) ||
+		if !isModel || strings.TrimSpace(model) == "" || (hasProvider && !isProvider) ||
 			(hasReasoning && (!isEffort || config.ParseReasoningEffort(effort) == nil)) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		kept := pyjson.ObjectOf("model", pystr.Strip(model))
+		kept := pyjson.ObjectOf("model", strings.TrimSpace(model))
 		if providerName != "" {
 			kept.Set("provider", providerName)
 		}

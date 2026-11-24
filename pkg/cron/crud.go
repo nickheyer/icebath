@@ -18,18 +18,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 const (
-	oneshotRunClaimTTLSeconds     = 1800
-	defaultCronInactivityTimeout  = 600.0
-	restoreKey                    = "manual_run_restore_at"
-	emptyPayloadError             = "Cron job has nothing to run: the prompt is blank and no script or skill(s) are set. Provide a prompt, a script, or at least one skill."
-	rearmRecurringError           = "Cannot re-arm recurring jobs: re-arm is one-shot-only; use plain resume or cron run."
-	createdPausedReason           = "Created paused; awaiting operator approval."
-	completedOneshotRetentionDays = 7
+	oneshotRunClaimTTLSeconds = 1800
+	restoreKey                = "manual_run_restore_at"
+	emptyPayloadError         = "Cron job has nothing to run: the prompt is blank and no script or skill(s) are set. Provide a prompt, a script, or at least one skill."
+	rearmRecurringError       = "Cannot re-arm recurring jobs: re-arm is one-shot-only; use plain resume or cron run."
+	createdPausedReason       = "Created paused; awaiting operator approval."
 )
 
 var payloadFields = []string{"prompt", "script", "skill", "skills", "no_agent"}
@@ -66,15 +63,9 @@ func uuid4Hex() string {
 
 func newJobID() string { return uuid4Hex()[:12] }
 
-// Run claim TTL of a one shot from ICEBATH_CRON_TIMEOUT times the headroom, floored at thirty minutes
+// Run claim TTL of a one shot from the job inactivity limit times the headroom, floored at thirty minutes
 func (s *Store) oneshotRunClaimTTL(ctx context.Context) float64 {
-	raw := pystr.Strip(s.cronEnvSetting(ctx, "ICEBATH_CRON_TIMEOUT", ""))
-	timeout := defaultCronInactivityTimeout
-	if raw != "" {
-		if f, err := pyint.ParseFloat(raw); err == nil {
-			timeout = f
-		}
-	}
+	timeout := s.cronInactivitySeconds(ctx)
 	if timeout <= 0 {
 		return oneshotRunClaimTTLSeconds
 	}
@@ -125,7 +116,7 @@ func normalizeSkillList(skill any, skills any) []string {
 	for _, item := range raw {
 		text := ""
 		if item != nil && pyrepr.Truthy(item) {
-			text = pystr.Strip(pyrepr.Str(item))
+			text = strings.TrimSpace(pyrepr.Str(item))
 		}
 		if text != "" && !containsString(out, text) {
 			out = append(out, text)
@@ -169,7 +160,7 @@ func (j *Job) hasKey(key string) bool {
 
 // Record has nothing runnable while naming at least one payload field
 func jobPayloadIsEmpty(job *Job) bool {
-	if pystr.Strip(job.Prompt) != "" || pystr.Strip(deref(job.Script)) != "" {
+	if strings.TrimSpace(job.Prompt) != "" || strings.TrimSpace(deref(job.Script)) != "" {
 		return false
 	}
 	if len(normalizeSkillList(skillAny(job.Skill), skillsAny(job.Skills))) > 0 {
@@ -185,7 +176,7 @@ func jobPayloadIsEmpty(job *Job) bool {
 
 // Display text of the schedule, the stored display first and a question mark when nothing remains
 func scheduleDisplayForJob(job *Job) string {
-	if d := pystr.Strip(job.ScheduleDisplay); d != "" {
+	if d := strings.TrimSpace(job.ScheduleDisplay); d != "" {
 		return d
 	}
 	sched := job.Schedule
@@ -200,7 +191,7 @@ func scheduleDisplayForJob(job *Job) string {
 		value, _ = decodeText(raw)
 	}
 	for _, text := range []string{sched.Display, value, sched.Expr, sched.RunAt} {
-		if t := pystr.Strip(text); t != "" {
+		if t := strings.TrimSpace(text); t != "" {
 			return t
 		}
 	}
@@ -215,14 +206,14 @@ func normalizeJobRecord(job *Job) *Job {
 	if n.ID == "" && !job.hasKey("id") {
 		n.ID = "unknown"
 	}
-	name := pystr.Strip(n.Name)
+	name := strings.TrimSpace(n.Name)
 	if name == "" {
 		source := n.Prompt
 		if source == "" && len(n.Skills) > 0 {
 			source = n.Skills[0]
 		}
 		if source == "" {
-			source = pystr.Strip(deref(n.Script))
+			source = strings.TrimSpace(deref(n.Script))
 		}
 		if source == "" {
 			source = n.ID
@@ -230,7 +221,7 @@ func normalizeJobRecord(job *Job) *Job {
 		if source == "" {
 			source = "cron job"
 		}
-		name = pystr.Strip(firstRunes(source, 50))
+		name = strings.TrimSpace(firstRunes(source, 50))
 		if name == "" {
 			name = "cron job"
 		}
@@ -251,7 +242,7 @@ func firstRunes(s string, n int) string {
 
 // Record carries an operator facing pause signal
 func hasPauseMarker(job *Job) bool {
-	return pystr.Strip(job.State) == "paused" || deref(job.PausedAt) != ""
+	return strings.TrimSpace(job.State) == "paused" || deref(job.PausedAt) != ""
 }
 
 // Scheduler may fire the job, enabled and free of pause markers
@@ -261,7 +252,7 @@ func isJobRunnable(job *Job) bool {
 
 // Operator facing state derived from enabled, terminal states kept as stored
 func effectiveJobState(job *Job) string {
-	stored := pystr.Strip(job.State)
+	stored := strings.TrimSpace(job.State)
 	if stored == "completed" || stored == "error" {
 		return stored
 	}
@@ -300,7 +291,7 @@ func normalizeRepeatValue(repeat any) (*int, error) {
 	case nil:
 		return nil, nil
 	case string:
-		text := pystr.Lower(pystr.Strip(v))
+		text := strings.ToLower(strings.TrimSpace(v))
 		switch text {
 		case "forever", "infinite", "inf", "none", "":
 			return nil, nil
@@ -376,7 +367,7 @@ func normalizeWorkdir(workdir any) (*string, error) {
 	if workdir == nil {
 		return nil, nil
 	}
-	raw := pystr.Strip(pyrepr.Str(workdir))
+	raw := strings.TrimSpace(pyrepr.Str(workdir))
 	if raw == "" {
 		return nil, nil
 	}
@@ -410,7 +401,7 @@ func normalizeOptionalText(value any, stripTrailingSlash bool) *string {
 	if !ok {
 		return nil
 	}
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	if stripTrailingSlash {
 		text = strings.TrimRight(text, "/")
 	}
@@ -437,7 +428,7 @@ func anyList(value any) ([]any, bool) {
 func strippedItems(items []any) []string {
 	out := []string{}
 	for _, item := range items {
-		if t := pystr.Strip(pyrepr.Str(item)); t != "" {
+		if t := strings.TrimSpace(pyrepr.Str(item)); t != "" {
 			out = append(out, t)
 		}
 	}
@@ -494,7 +485,7 @@ func normalizeReasoningEffort(value any) (*string, error) {
 		}
 		value = *p
 	}
-	text := pystr.Lower(pystr.Strip(pyrepr.Str(value)))
+	text := strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
 	if text == "" {
 		return nil, nil
 	}
@@ -657,7 +648,7 @@ func (s *Store) createJobTx(ctx context.Context, tx *jobsTx, o CreateJobOptions)
 	if err := validateScheduleKnobs(parsed, tzAny, graceAny); err != nil {
 		return nil, err
 	}
-	promptText := pystr.Strip(deref(o.Prompt))
+	promptText := strings.TrimSpace(deref(o.Prompt))
 	if promptText == "" && script == nil && len(skills) == 0 {
 		return nil, errors.New(emptyPayloadError)
 	}
@@ -676,7 +667,7 @@ func (s *Store) createJobTx(ctx context.Context, tx *jobsTx, o CreateJobOptions)
 	}
 	name := deref(o.Name)
 	if name == "" {
-		name = pystr.Strip(firstRunes(label, 50))
+		name = strings.TrimSpace(firstRunes(label, 50))
 	}
 	if o.Pinned && model == nil {
 		var err error
@@ -701,7 +692,7 @@ func (s *Store) createJobTx(ctx context.Context, tx *jobsTx, o CreateJobOptions)
 		job.Skill = strPtr(skills[0])
 	}
 	if o.Paused {
-		reason := pystr.Strip(deref(o.PausedReason))
+		reason := strings.TrimSpace(deref(o.PausedReason))
 		if reason == "" {
 			reason = createdPausedReason
 		}
@@ -761,10 +752,10 @@ func (s *Store) resolveJobRef(ctx context.Context, ref string) (*Job, error) {
 			return normalizeJobRecord(j), nil
 		}
 	}
-	lower := pystr.Lower(ref)
+	lower := strings.ToLower(ref)
 	var matches []*Job
 	for _, j := range jobs {
-		if pystr.Lower(j.Name) == lower {
+		if strings.ToLower(j.Name) == lower {
 			matches = append(matches, j)
 		}
 	}

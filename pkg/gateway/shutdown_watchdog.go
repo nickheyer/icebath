@@ -24,7 +24,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Watchdog defaults, a 60 second leash past the drain, 30 second heartbeats and a 5 second loop floor timer
@@ -52,7 +51,7 @@ func watchdogCoerceFloat(value any, def, floor float64) float64 {
 
 // Launch home when ICEBATH_HOME is set, else the context home, ignoring profile overrides for process identity files
 func watchdogProcessHome(ctx context.Context) string {
-	if pystr.Strip(os.Getenv("ICEBATH_HOME")) != "" {
+	if strings.TrimSpace(os.Getenv("ICEBATH_HOME")) != "" {
 		return home.Process()
 	}
 	return home.Dir(ctx)

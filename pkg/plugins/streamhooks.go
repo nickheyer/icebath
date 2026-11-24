@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var streamHookQueueSize = 1024
@@ -178,13 +178,7 @@ func HasReasoningStreamObserverHooks(ctx context.Context) bool {
 	return StreamReasoningDeltasEnabled(ctx) && len(registeredStreamCallbacks(ctx, "on_stream_delta")) > 0
 }
 
-// Reports whether plugins.stream_reasoning_deltas opts plugins into reasoning deltas
+// Reports whether plugins.stream_reasoning_deltas opts the plugins of the manager's profile into reasoning deltas
 func StreamReasoningDeltasEnabled(ctx context.Context) bool {
-	cfg, err := loadConfig(GetPluginManager(ctx).home)
-	if err != nil {
-		pkgLog().Debug("failed to read plugins.stream_reasoning_deltas: " + err.Error())
-		return false
-	}
-	section, _ := cfg["plugins"].(map[string]any)
-	return config.PyTruthy(section["stream_reasoning_deltas"])
+	return settings.PluginsStreamReasoningDeltas.Get(homeContext(GetPluginManager(ctx).home))
 }

@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // PluginManifestHost is the plugin manifest surface pkg/plugins installs at init, a package pm cannot import
@@ -133,7 +132,7 @@ func pyIntValue(v any) (*big.Int, bool, error) {
 
 // Python int() of a string, signed decimal digits of any script with single underscores between digits
 func pyIntString(text string) (*big.Int, bool, error) {
-	text = pystr.Strip(text)
+	text = strings.TrimSpace(text)
 	sign := ""
 	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
 		sign, text = text[:1], text[1:]
@@ -218,7 +217,7 @@ func (d *PythonDeclaration) External() bool {
 	if pyrepr.Truthy(value) {
 		text = pyrepr.Str(value)
 	}
-	return strings.ToLower(pystr.Strip(text)) == "external"
+	return strings.ToLower(strings.TrimSpace(text)) == "external"
 }
 
 // Requirements the shared environment installs, none for an external runtime

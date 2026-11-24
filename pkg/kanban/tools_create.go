@@ -9,13 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -54,7 +53,7 @@ func strippedArg(value any) (*string, error) {
 	if !isText {
 		return nil, &RuntimeError{fmt.Sprintf("expected text, got %s", errchain.Kind(value))}
 	}
-	return nonEmpty(pystr.Strip(text)), nil
+	return nonEmpty(strings.TrimSpace(text)), nil
 }
 
 // Creates a task, a child of the caller's own task inheriting its project when no workspace is named
@@ -148,7 +147,7 @@ func handleCreate(k *kanbanCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		o := CreateTaskOptions{Title: pystr.Strip(pyrepr.Str(title)), Triage: triage, GoalMode: goalMode, Board: board,
+		o := CreateTaskOptions{Title: strings.TrimSpace(pyrepr.Str(title)), Triage: triage, GoalMode: goalMode, Board: board,
 			ProjectSourceTaskID: projectSourceTaskID, SessionID: sessionID}
 		assigneeText := pyrepr.Str(assignee)
 		o.Assignee = &assigneeText
@@ -448,9 +447,9 @@ func resolveNotifyTarget(k *kanbanCall) *NotifySubOptions {
 	}
 	chat := ""
 	if chatType != nil {
-		chat = pystr.Lower(*chatType)
+		chat = strings.ToLower(*chatType)
 	}
-	if pystr.Lower(platform) == "telegram" && threadID != nil && (chat == "dm" || chat == "direct" || chat == "private") {
+	if strings.ToLower(platform) == "telegram" && threadID != nil && (chat == "dm" || chat == "direct" || chat == "private") {
 		metadata.Set("telegram_dm_topic_reply_fallback", true)
 		if *threadID != "1" {
 			metadata.Set("direct_messages_topic_id", *threadID)
@@ -474,7 +473,7 @@ func resolveNotifyTarget(k *kanbanCall) *NotifySubOptions {
 
 // Subscribes the calling session to the terminal events of a new task, true when a subscription is in place
 func maybeAutoSubscribe(k *kanbanCall, conn state.SQLiteConn, taskID string) (subscribed bool) {
-	if enabled, known := autoSubscribeSetting(k); known && !enabled {
+	if !settings.KanbanAutoSubscribeOnCreate.Get(home.WithOverride(k.ctx, k.home())) {
 		return false
 	}
 	var target *NotifySubOptions
@@ -523,24 +522,6 @@ func maybeAutoSubscribe(k *kanbanCall, conn state.SQLiteConn, taskID string) (su
 		return failed(err)
 	}
 	return true
-}
-
-// The kanban auto_subscribe_on_create setting, not known when the config cannot be read
-func autoSubscribeSetting(k *kanbanCall) (enabled, known bool) {
-	defer func() {
-		if recover() != nil {
-			enabled, known = false, false
-		}
-	}()
-	cfg, err := config.Load(k.home(), kanbanConfigLookup(k.env))
-	if err != nil {
-		return false, false
-	}
-	value, present := config.CfgGet(cfg, "kanban", "auto_subscribe_on_create")
-	if !present {
-		return true, true
-	}
-	return pyrepr.Truthy(value), true
 }
 
 // Moves a blocked task to ready, or back to waiting while a parent is still open

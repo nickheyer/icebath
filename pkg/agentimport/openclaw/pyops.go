@@ -286,13 +286,13 @@ func pyStr(v any) string {
 }
 
 // Python str.strip
-func strip(s string) string { return pystr.Strip(s) }
+func strip(s string) string { return strings.TrimSpace(s) }
 
 // Python str.lower
-func lower(s string) string { return pystr.Lower(s) }
+func lower(s string) string { return strings.ToLower(s) }
 
 // Python str.upper
-func upper(s string) string { return pystr.Upper(s) }
+func upper(s string) string { return strings.ToUpper(s) }
 
 // Python str.islower, true with at least one cased character and none uppercase or titlecase
 func isLower(s string) bool {

@@ -1247,7 +1247,7 @@ func pyIntConvert(v any) (int64, error) {
 		}
 		return int64(t), nil
 	case string:
-		n, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(t), "_", ""), 10, 64)
+		n, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(t), "_", ""), 10, 64)
 		if err != nil {
 			return 0, fmt.Errorf("%s is not a whole number", t)
 		}
@@ -1265,7 +1265,7 @@ func pyFloat(v any) (float64, bool) {
 	case float64:
 		return t, true
 	case string:
-		f, err := strconv.ParseFloat(strings.ReplaceAll(pystr.Strip(t), "_", ""), 64)
+		f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(t), "_", ""), 64)
 		return f, err == nil
 	}
 	return 0, false

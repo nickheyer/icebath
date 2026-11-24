@@ -1,10 +1,11 @@
 package gateway
 
 import (
+	"strings"
+
 	"context"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -23,7 +24,7 @@ func refusalReasonOf(err error) string {
 // Local session an exact id or title names, projected to its compression tip, nil when missing and allowed
 func resolveTitledSession(ctx context.Context, a *SessionAuthority, actor Principal, name any, missingOK bool) (*SessionRef, error) {
 	text, isText := name.(string)
-	if !isText || pystr.Strip(text) == "" {
+	if !isText || strings.TrimSpace(text) == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	db := a.DB

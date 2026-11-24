@@ -3,6 +3,8 @@
 package selfupdate
 
 import (
+	"unicode"
+
 	"context"
 	"database/sql"
 	"errors"
@@ -12,13 +14,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -47,12 +47,6 @@ const (
 var reinstallOneLiner = map[bool]string{
 	true:  "irm icebath.app | iex",
 	false: "curl -fsSL icebath.app | sh",
-}
-
-var backupModeAliases = map[string]string{
-	"off": "off", "false": "off", "none": "off", "disabled": "off",
-	"full": "full", "zip": "full", "true": "full",
-	"quick": "quick",
 }
 
 var (
@@ -85,9 +79,6 @@ func sqlitePartialCompletionLines(info *state.SQLiteRuntimeInfo, probeErr error)
 	}
 	return append(lines, fix)
 }
-
-// The updates section of config.yaml
-func loadUpdatesCfg(ctx context.Context) (map[string]any, error) { return updatesConfig(ctx) }
 
 // Curator heads up printed only while enabled and never run
 func printCuratorFirstRunNotice(ctx context.Context, w io.Writer) {
@@ -494,7 +485,7 @@ func ensureFHSPathGuard(ctx context.Context, w io.Writer) error {
 		}
 		guarded := false
 		for _, line := range pystr.Splitlines(pystr.DecodeUTF8SigReplace(raw), false) {
-			if strings.Contains(line, "/usr/local/bin") && strings.Contains(line, "PATH") && !strings.HasPrefix(pystr.Lstrip(line), "#") {
+			if strings.Contains(line, "/usr/local/bin") && strings.Contains(line, "PATH") && !strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), "#") {
 				guarded = true
 				break
 			}
@@ -536,25 +527,7 @@ func resolvePreUpdateBackupMode(ctx context.Context, args map[string]any) string
 	if pyrepr.Truthy(args["backup"]) {
 		return "full"
 	}
-	var raw any = "quick"
-	cfg, err := loadUpdatesCfg(ctx)
-	if err != nil {
-		pkgLog().DebugContext(ctx, fmt.Sprintf("Could not load config for pre-update backup: %s", launchErrorText(err)))
-	} else if value, ok := cfg["pre_update_backup"]; ok {
-		raw = value
-	}
-	if flag, ok := raw.(bool); ok {
-		if flag {
-			return "full"
-		}
-		return "off"
-	}
-	mode, ok := backupModeAliases[strings.ToLower(pystr.Strip(pyrepr.Str(raw)))]
-	if !ok {
-		pkgLog().WarnContext(ctx, fmt.Sprintf("Unknown updates.pre_update_backup value %s — using 'quick'", errchain.Show(raw)))
-		return "quick"
-	}
-	return mode
+	return settings.UpdatesPreUpdateBackup.Get(ctx)
 }
 
 // Verifies the live state.db after the snapshot and says which copy is still valid when it fails
@@ -616,20 +589,10 @@ func runQuickSnapshots(ctx context.Context, w io.Writer) (string, error) {
 
 // Zips the home under backups, printing where it went and never failing the update
 func runFullBackup(ctx context.Context, w io.Writer) {
-	var keepRaw any = 5
-	if cfg, err := loadUpdatesCfg(ctx); err == nil {
-		if value, ok := cfg["backup_keep"]; ok {
-			keepRaw = value
-		}
-	}
 	fmt.Fprintln(w, "◆ Creating pre-update backup...")
 	started := time.Now()
 	h := home.Dir(ctx)
-	outPath := ""
-	keep, err := maintInt(keepRaw)
-	if err == nil {
-		outPath, err = backup.CreatePreUpdateBackup(h, keep)
-	}
+	outPath, err := backup.CreatePreUpdateBackup(h, settings.UpdatesBackupKeep.Get(ctx))
 	if err != nil {
 		fmt.Fprintf(w, "  ⚠ Backup failed: %s\n", launchErrorText(err))
 		fmt.Fprintln(w, "  Continuing with update.")
@@ -654,29 +617,6 @@ func runFullBackup(ctx context.Context, w io.Writer) {
 	fmt.Fprintf(w, "  Restore:  icebath import %s\n", pypath.PathStr(outPath))
 	fmt.Fprintln(w, "  Disable:  set updates.pre_update_backup: quick (or off) in config.yaml")
 	fmt.Fprintln(w)
-}
-
-// Python int of a config number
-func maintInt(v any) (int, error) {
-	if n, ok := pyIntValue(v); ok {
-		return int(n), nil
-	}
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return 1, nil
-		}
-		return 0, nil
-	case float64:
-		return int(t), nil
-	case string:
-		n, err := strconv.ParseInt(strings.ReplaceAll(pystr.Strip(t), "_", ""), 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("%s is not a whole number", t)
-		}
-		return int(n), nil
-	}
-	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Runs the pre update backup, the quick snapshot id or nil when off or failed
@@ -780,14 +720,7 @@ func syncProfilesAfterUpdate(ctx context.Context, w io.Writer) error {
 
 // Reconciles an installed cua-driver package, never a user selected external binary
 func refreshCuaDriverAfterUpdate(ctx context.Context, w io.Writer) error {
-	cfg, err := loadUpdatesCfg(ctx)
-	if err != nil {
-		return err
-	}
-	if refresh, ok := cfg["refresh_cua_driver"]; ok && !pyrepr.Truthy(refresh) {
-		return nil
-	}
-	if pystr.Strip(os.Getenv("ICEBATH_CUA_DRIVER_CMD")) != "" {
+	if !settings.UpdatesRefreshCuaDriver.Get(ctx) || strings.TrimSpace(settings.ComputerUseDriverCommand.Get(ctx)) != "" {
 		return nil
 	}
 	installed, err := cuaRefreshInstalled(ctx, "cua-driver", true)
@@ -988,7 +921,7 @@ func maintLastLine(err error) string {
 			text = called.Stderr
 		}
 	}
-	lines := pystr.Splitlines(pystr.Strip(text), false)
+	lines := pystr.Splitlines(strings.TrimSpace(text), false)
 	if len(lines) == 0 {
 		return pm.ErrorClass(err)
 	}

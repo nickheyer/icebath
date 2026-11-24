@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -125,14 +127,14 @@ func TestPinnedFallbackPhrase(t *testing.T) {
 	if got := s.fallbackChainPhrase(&Job{ID: "u"}); !strings.Contains(got, "No backup provider is configured") {
 		t.Fatal(got)
 	}
-	s.loadConfig = func() (config.Tree, error) { panic("broken") }
+	writeHomeConfig(t, s, "fallback_providers:\n  - provider: openrouter\n    model: m\n")
 	if got := s.fallbackChainPhrase(&Job{ID: "u"}); got != "No backup provider succeeded either." {
 		t.Fatal(got)
 	}
 	if !jobRoutePinned(&Job{BaseURL: strp(" http://x ")}) || jobRoutePinned(&Job{Provider: strp("  ")}) {
 		t.Fatal("pin detection")
 	}
-	if len(jobFallbackChain(job, config.Tree{"fallback_providers": []any{map[string]any{"provider": "openrouter", "model": "m"}}})) != 0 {
+	if len(s.jobFallbackChain(context.Background(), job)) != 0 {
 		t.Fatal("pinned job borrowed the chain")
 	}
 }
@@ -173,8 +175,13 @@ func TestSetCronSessionTitle(t *testing.T) {
 
 func TestFailureStreakNudge(t *testing.T) {
 	s, _ := newTestStore(t)
-	cfg := config.Tree{}
-	s.loadConfig = func() (config.Tree, error) { return cfg, nil }
+	cronCtx := home.WithOverride(context.Background(), s.Home())
+	setThreshold := func(n int) {
+		t.Helper()
+		if _, err := settings.Set(cronCtx, settings.CronFailureNudgeThreshold.Key, n, settings.Global); err != nil {
+			t.Fatal(err)
+		}
+	}
 	job := func(streak int, kind string) *Job {
 		return &Job{ID: "j1", Name: "scout", FailureStreak: streak, Schedule: &Schedule{Kind: kind}}
 	}
@@ -187,15 +194,17 @@ func TestFailureStreakNudge(t *testing.T) {
 	if got := s.failureStreakNudge(job(2, "cron")); !strings.Contains(got, "failed 3 runs in a row") || !strings.Contains(got, "`icebath cron pause scout`") {
 		t.Fatal(got)
 	}
-	cfg = config.Tree{"cron": map[string]any{"failure_nudge_threshold": 5}}
+	setThreshold(5)
 	if s.failureStreakNudge(job(3, "cron")) != "" || s.failureStreakNudge(job(4, "cron")) == "" {
 		t.Fatal("configured threshold")
 	}
-	cfg = config.Tree{"cron": map[string]any{"failure_nudge_threshold": 0}}
+	setThreshold(0)
 	if s.failureStreakNudge(job(50, "cron")) != "" {
 		t.Fatal("disabled")
 	}
-	cfg = config.Tree{}
+	if _, err := settings.Reset(cronCtx, settings.CronFailureNudgeThreshold.Key, settings.Global); err != nil {
+		t.Fatal(err)
+	}
 	if s.failureStreakNudge(&Job{ID: "old", Schedule: &Schedule{Kind: "interval"}}) != "" {
 		t.Fatal("missing streak")
 	}
@@ -248,10 +257,13 @@ func TestPerJobToolsetMcpMerge(t *testing.T) {
 }
 
 func TestCronDisabledToolsetsAndMarkers(t *testing.T) {
-	if got := resolveCronDisabledToolsets(config.Tree{}); strings.Join(got, ",") != "cronjob,messaging,clarify" {
+	s, _ := newTestStore(t)
+	cronCtx := home.WithOverride(context.Background(), s.Home())
+	if got := resolveCronDisabledToolsets(cronCtx); strings.Join(got, ",") != "cronjob,messaging,clarify" {
 		t.Fatal(got)
 	}
-	got := resolveCronDisabledToolsets(config.Tree{"cron": map[string]any{"allow_agent_scheduling": true}, "agent": map[string]any{"disabled_toolsets": []any{"web", " messaging "}}})
+	writeHomeConfig(t, s, "cron:\n  allow_agent_scheduling: true\nagent:\n  disabled_toolsets:\n    - web\n    - \" messaging \"\n")
+	got := resolveCronDisabledToolsets(cronCtx)
 	if strings.Join(got, ",") != "messaging,clarify,web" {
 		t.Fatal(got)
 	}
@@ -274,10 +286,10 @@ func TestCronDisabledToolsetsAndMarkers(t *testing.T) {
 
 func TestReasoningConfigPinAndFallback(t *testing.T) {
 	s, buf := newTestStore(t)
-	if got := s.resolveJobReasoningConfig(&Job{ID: "j", ReasoningEffort: strp("high")}, config.Tree{}, "m"); got == nil || got["effort"] != "high" {
+	if got := s.resolveJobReasoningConfig(t.Context(), &Job{ID: "j", ReasoningEffort: strp("high")}, "m"); got == nil || got["effort"] != "high" {
 		t.Fatal(got)
 	}
-	s.resolveJobReasoningConfig(&Job{ID: "j", ReasoningEffort: strp("bogus")}, config.Tree{}, "m")
+	s.resolveJobReasoningConfig(t.Context(), &Job{ID: "j", ReasoningEffort: strp("bogus")}, "m")
 	if !strings.Contains(buf.String(), "invalid stored reasoning_effort") {
 		t.Fatal(buf.String())
 	}

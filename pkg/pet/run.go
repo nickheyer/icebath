@@ -1,13 +1,14 @@
 package pet
 
 import (
+	"strings"
+
 	"context"
 	"io"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -39,7 +40,7 @@ func truthy(v any, def bool) bool {
 	case nil:
 		return def
 	case string:
-		switch pystr.Lower(pystr.Strip(x)) {
+		switch strings.ToLower(strings.TrimSpace(x)) {
 		case "1", "true", "yes", "on":
 			return true
 		}

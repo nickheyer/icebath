@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -85,7 +84,7 @@ func gatewayCompressionProgressNoticesEnabled(ctx context.Context) bool {
 func prepareGatewayStatusMessage(ctx context.Context, platform gateway.Platform, eventType string, message any) *string {
 	text := ""
 	if pyrepr.Truthy(message) {
-		text = pystr.Strip(pyrepr.Str(message))
+		text = strings.TrimSpace(pyrepr.Str(message))
 	}
 	if text == "" {
 		return nil

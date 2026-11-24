@@ -10,7 +10,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python re patterns of the FTS5 sanitizer compiled with Python semantics
@@ -58,13 +57,13 @@ func sanitizeFTS5Query(query string) string {
 	}
 	sanitized = sanitizeStarRunRE.ReplaceAllString(sanitized, "*")
 	sanitized = pySub(sanitizeLeadingStarRE, sanitized, "$1")
-	sanitized = pySub(sanitizeLeadingOpRE, pystr.Strip(sanitized), "")
-	sanitized = pySub(sanitizeTrailingOpRE, pystr.Strip(sanitized), "")
+	sanitized = pySub(sanitizeLeadingOpRE, strings.TrimSpace(sanitized), "")
+	sanitized = pySub(sanitizeTrailingOpRE, strings.TrimSpace(sanitized), "")
 	sanitized = pySub(sanitizeCompoundTermRE, sanitized, `"$1"`)
 	for i, quoted := range quotedParts {
 		sanitized = strings.ReplaceAll(sanitized, fmt.Sprintf("\x00Q%d\x00", i), quoted)
 	}
-	return pystr.Strip(sanitized)
+	return strings.TrimSpace(sanitized)
 }
 
 // Reports any codepoint of text inside the search CJK ranges
@@ -108,7 +107,7 @@ func hasLoneCJKRun(query string) bool {
 func orRelaxedQuery(query string) (string, bool) {
 	var units []string
 	for _, rawToken := range likeTokenRE.FindAllString(query, -1) {
-		upper := pystr.Upper(rawToken)
+		upper := strings.ToUpper(rawToken)
 		if upper == "OR" || upper == "NOT" {
 			return "", false
 		}
@@ -124,7 +123,7 @@ func orRelaxedQuery(query string) (string, bool) {
 
 // Reports every non operator token has at least three characters, so each yields trigrams
 func trigramEligibleTokens(query string) bool {
-	tokens := nonOperatorTokens(pystr.Strip(strings.Trim(query, `"`)))
+	tokens := nonOperatorTokens(strings.TrimSpace(strings.Trim(query, `"`)))
 	if len(tokens) == 0 {
 		return false
 	}
@@ -168,7 +167,7 @@ func (s *sessionSearch) describeSearchPath(query string) (path string) {
 	if !queryContainsCJK(sanitized) {
 		return "fts5"
 	}
-	raw := pystr.Strip(strings.Trim(sanitized, `"`))
+	raw := strings.TrimSpace(strings.Trim(sanitized, `"`))
 	if s.fts.ftsCJKAvailable.Load() && !hasLoneCJKRun(raw) {
 		return "fts_cjk"
 	}
@@ -265,7 +264,7 @@ func compileLikeBooleanQuery(query string) (string, []any, string, bool) {
 	groups := [][]likeTerm{{}}
 	negateNext := false
 	for _, rawToken := range likeTokenRE.FindAllString(query, -1) {
-		switch pystr.Upper(rawToken) {
+		switch strings.ToUpper(rawToken) {
 		case "OR":
 			if len(groups[len(groups)-1]) > 0 {
 				groups = append(groups, []likeTerm{})
@@ -278,7 +277,7 @@ func compileLikeBooleanQuery(query string) (string, []any, string, bool) {
 			negateNext = true
 			continue
 		}
-		term := pystr.Strip(strings.Trim(strings.Trim(rawToken, `"`), "*"))
+		term := strings.TrimSpace(strings.Trim(strings.Trim(rawToken, `"`), "*"))
 		if term != "" {
 			groups[len(groups)-1] = append(groups[len(groups)-1], likeTerm{term, negateNext})
 			negateNext = false
@@ -321,7 +320,7 @@ func (s *sessionSearch) searchMessagesLikeFallback(ctx context.Context, query st
 	}
 	where, params := searchFilterClauses([]string{"(" + predicate + ")"}, params, f)
 	order := "DESC"
-	if pystr.Lower(pystr.Strip(sort)) == "oldest" {
+	if strings.ToLower(strings.TrimSpace(sort)) == "oldest" {
 		order = "ASC"
 	}
 	args := append(append([]any{snippet}, params...), limit, offset)

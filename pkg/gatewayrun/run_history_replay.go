@@ -1,6 +1,8 @@
 package gatewayrun
 
 import (
+	"unicode"
+
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -32,7 +33,7 @@ func interimMetadata(metadata map[string]any) map[string]any {
 
 // Plain one line text of an agent notice, empty for a malformed or empty one
 func renderNoticeLine(notice provider.AgentNotice) string {
-	return pystr.Strip(notice.Text)
+	return strings.TrimSpace(notice.Text)
 }
 
 // Classifies an approval prompt send as sent, failed, ambiguous or declined
@@ -126,7 +127,7 @@ func buildResumeRecoveryNote(reason *string, message string, interactive bool) s
 // Recovery message for the model and the user text to persist, the note itself when the original is blank
 func prepareResumePendingMessage(reason *string, message string, interactive bool) (string, string) {
 	recovery := buildResumeRecoveryNote(reason, message, interactive)
-	if pystr.Strip(message) != "" {
+	if strings.TrimSpace(message) != "" {
 		return recovery, message
 	}
 	return recovery, recovery
@@ -220,7 +221,7 @@ func stripAutoContinueNoise(content any) any {
 		if end < 0 {
 			return ""
 		}
-		text = pystr.Lstrip(text[end+1:])
+		text = strings.TrimLeftFunc(text[end+1:], unicode.IsSpace)
 	}
 	return text
 }
@@ -245,7 +246,7 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 				}
 				content = rendered
 			}
-			observed = append(observed, pystr.Strip(pyrepr.Str(content)))
+			observed = append(observed, strings.TrimSpace(pyrepr.Str(content)))
 			continue
 		}
 		_, hasCalls := msg["tool_calls"]
@@ -305,7 +306,7 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 		agentHistory = append(agentHistory, entry)
 	}
 	agentHistory = agent.CanonicalizeReplayHistory(agentHistory, nil)
-	if joined := pystr.Strip(strings.Join(observed, "\n")); joined != "" {
+	if joined := strings.TrimSpace(strings.Join(observed, "\n")); joined != "" {
 		return agentHistory, &joined, nil
 	}
 	return agentHistory, nil, nil
@@ -355,7 +356,7 @@ func wrapCurrentMessageWithObservedContext(message any, observedContext *string)
 				return wrapped
 			}
 		}
-		return append([]any{map[string]any{"type": "text", "text": pystr.Rstrip(prefix)}}, wrapped...)
+		return append([]any{map[string]any{"type": "text", "text": strings.TrimRightFunc(prefix, unicode.IsSpace)}}, wrapped...)
 	}
 	return message
 }
@@ -461,7 +462,7 @@ func collectAutoAppendMediaTags(messages []map[string]any, historyOffset int, hi
 		}
 		match, _ := toolMediaRe.FindStringMatch(content)
 		for match != nil {
-			path := strings.TrimRight(pystr.Strip(match.GroupByNumber(1).String()), "\",}")
+			path := strings.TrimRight(strings.TrimSpace(match.GroupByNumber(1).String()), "\",}")
 			if _, seen := historyMediaPaths[path]; path != "" && !seen {
 				tags = append(tags, "MEDIA:"+path)
 			}

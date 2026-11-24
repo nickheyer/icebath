@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -116,7 +115,7 @@ func ResolveClientSocketPath(home string) (string, error) {
 	if !utf8.Valid(raw) {
 		return "", errors.New("the control socket pointer is not valid UTF-8")
 	}
-	target := pystr.Strip(strings.TrimPrefix(string(raw), "\ufeff"))
+	target := strings.TrimSpace(strings.TrimPrefix(string(raw), "\ufeff"))
 	if target == "" {
 		return "", nil
 	}

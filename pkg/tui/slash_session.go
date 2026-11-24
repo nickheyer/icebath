@@ -13,13 +13,14 @@ import (
 // Busy indicator styles in the order the command offers them
 var indicatorNames = []string{"unicode", "emoji", "ascii"}
 
-// Word of a fast mode value
-func fastModeWord(word string) string {
-	if word == "fast" || word == "ultrafast" {
-		return word
-	}
-	return "normal"
-}
+// Words the first argument of /fast takes: the fast modes in the order the settings registry offers them, status, and the switch words
+var fastArgs = []string{"normal", "fast", "ultrafast", "ultra", "auto", "cold", "status", "on", "off", "toggle"}
+
+// Usage of /fast as its help and refusal spell it
+var fastUsage = "[" + strings.Join(fastArgs, "|") + "] [--global]"
+
+// Service tier the session info carries for each fast mode
+var fastModeTiers = map[string]string{"normal": "", "fast": "priority", "ultrafast": "ultrafast", "auto": "auto", "cold": "cold"}
 
 // Word a config write took, empty for none or a flag
 func setWord(res *tuigateway.ConfigSetResult) string {
@@ -252,36 +253,18 @@ func (a *app) sessionCommands() []slashCommand {
 					return nil
 				})
 			}},
-		{name: "fast", help: "toggle fast mode", usage: "[normal|fast|ultrafast|status|on|off|toggle]",
-			suggest: func(string) []string { return []string{"normal", "fast", "ultrafast", "status", "on", "off", "toggle"} },
-			run: func(r *slashRun) tea.Cmd {
-				mode := strings.ToLower(trimJS(r.arg))
-				switch mode {
-				case "", "status":
-					return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "fast", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
-						if res != nil {
-							r.sys(tr(txt.SlashCmdSessionFastMode, fastModeWord(configWord(res))))
-						}
-						return nil
-					})
-				case "normal", "fast", "ultrafast", "on", "off", "toggle":
-				default:
-					r.sys(tr(txt.SlashCmdSessionFastUsage))
+		{name: "fast", help: "pay more for faster replies; --global sets it for every session", usage: fastUsage,
+			suggest: func(string) []string { return append(append([]string(nil), fastArgs...), "--global") },
+			suggestAfter: func(done []string) []string {
+				switch {
+				case len(done) != 1:
 					return nil
+				case strings.EqualFold(done[0], "--global"):
+					return fastArgs
 				}
-				return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "fast", SessionID: r.sid, Value: tuigateway.TextValue(mode)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
-					if res == nil {
-						return nil
-					}
-					next := fastModeWord(setWord(res))
-					r.sys(tr(txt.SlashCmdSessionFastMode, next))
-					if a.store.ui.Info != nil {
-						fast, tier := next != "normal", map[string]string{"fast": "priority", "normal": "", "ultrafast": "ultrafast"}[next]
-						a.store.ui.Info = patchedInfo(a.store.ui.Info, tuigateway.SessionInfo{Fast: &fast, ServiceTier: &tier})
-					}
-					return nil
-				})
-			}},
+				return []string{"--global"}
+			},
+			run: func(r *slashRun) tea.Cmd { return a.fastSlash(r) }},
 		{name: "busy", help: "control what enter does while a turn runs", usage: "[queue|steer|interrupt|status]",
 			suggest: func(string) []string { return []string{"queue", "steer", "interrupt", "status"} },
 			run: func(r *slashRun) tea.Cmd {
@@ -463,6 +446,61 @@ func (a *app) approvalsSlash(r *slashRun) tea.Cmd {
 			return nil
 		}
 		r.sys(tr(txt.SlashCmdSessionApprovalsSet, detailLabel(res.Row)))
+		return r.ran()
+	})
+}
+
+// /fast: says the fast mode of this session or with --global the one every session starts with, or sets it for this session or with
+// --global for every session, this one following
+func (a *app) fastSlash(r *slashRun) tea.Cmd {
+	mode, global := "", false
+	for _, word := range strings.Fields(strings.ToLower(r.arg)) {
+		switch {
+		case word == "--global" && !global:
+			global = true
+		case mode == "" && slices.Contains(fastArgs, word):
+			mode = word
+		default:
+			r.sys(tr(txt.SlashCmdSessionFastUsage, fastUsage))
+			return nil
+		}
+	}
+	if mode == "" || mode == "status" {
+		sid, key := r.sid, txt.SlashCmdSessionFastMode
+		if global || r.sid == "" {
+			sid, key = "", txt.SlashCmdSessionFastModeGlobal
+		}
+		return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "fast", SessionID: sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+			if res == nil {
+				return nil
+			}
+			current := configWord(res)
+			if current == "" {
+				current = "normal"
+			}
+			r.sys(tr(key, current))
+			return r.ran()
+		})
+	}
+	if !global && r.sid == "" {
+		r.sys(tr(txt.SlashCmdSessionFastNoSession))
+		return nil
+	}
+	scope, key := tuigateway.ConfigWriteScope("session"), txt.SlashCmdSessionFastSetSession
+	if global {
+		scope, key = "global", txt.SlashCmdSessionFastSetGlobal
+	}
+	params := tuigateway.ConfigSetParams{Key: "fast", SessionID: r.sid, Value: tuigateway.TextValue(mode), Scope: scope}
+	return ask(r.rpc, r.sys, tuigateway.ConfigSet, params, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+		next := setWord(res)
+		if next == "" {
+			return nil
+		}
+		r.sys(tr(key, next))
+		if tier, known := fastModeTiers[next]; known && a.store.ui.Info != nil && r.sid != "" {
+			fast := tier == "priority" || tier == "ultrafast"
+			a.store.ui.Info = patchedInfo(a.store.ui.Info, tuigateway.SessionInfo{Fast: &fast, ServiceTier: &tier})
+		}
 		return r.ran()
 	})
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // The wake engine gate of the extras platform table
@@ -69,7 +70,22 @@ func wakeAvailable(v bool) func(context.Context, string) (bool, error) {
 	return func(context.Context, string) (bool, error) { return v, nil }
 }
 
-func mustProvider(t *testing.T, cfg map[string]any, supported func(string) (bool, error)) string {
+// Wake word settings a wake_word section in the config.yaml of a fresh home resolves to
+func wakeConfigOf(t *testing.T, section map[string]any) *WakeConfig {
+	t.Helper()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	data, err := config.SafeDump(map[string]any{"wake_word": section})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return LoadWakeWordConfig(context.Background())
+}
+
+func mustProvider(t *testing.T, cfg *WakeConfig, supported func(string) (bool, error)) string {
 	t.Helper()
 	p, err := wakeProvider(context.Background(), cfg, supported)
 	if err != nil {
@@ -78,7 +94,7 @@ func mustProvider(t *testing.T, cfg map[string]any, supported func(string) (bool
 	return p
 }
 
-func mustRequirements(t *testing.T, cfg map[string]any, supported func(string) (bool, error)) WakeRequirements {
+func mustRequirements(t *testing.T, cfg *WakeConfig, supported func(string) (bool, error)) WakeRequirements {
 	t.Helper()
 	r, err := CheckWakeWordRequirements(context.Background(), cfg, supported)
 	if err != nil {
@@ -90,10 +106,10 @@ func mustRequirements(t *testing.T, cfg map[string]any, supported func(string) (
 func TestConfigDefaultsAndClamping(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
-	if a, b := mustProvider(t, map[string]any{}, nil), mustProvider(t, LoadWakeWordConfig(ctx), nil); a != b {
+	if a, b := mustProvider(t, &WakeConfig{}, nil), mustProvider(t, LoadWakeWordConfig(ctx), nil); a != b {
 		t.Fatalf("provider of {} %q != provider of the loaded config %q", a, b)
 	}
-	if p := mustProvider(t, map[string]any{"provider": "Porcupine"}, nil); p != "porcupine" {
+	if p := mustProvider(t, wakeConfigOf(t, map[string]any{"provider": "Porcupine"}), nil); p != "porcupine" {
 		t.Fatalf("provider = %q", p)
 	}
 	for _, c := range []struct {
@@ -106,7 +122,7 @@ func TestConfigDefaultsAndClamping(t *testing.T) {
 		{map[string]any{"input_device": ""}, nil},
 		{map[string]any{"input_device": false}, nil},
 	} {
-		if got := wakeInputDevice(c.cfg); got != c.want {
+		if got := wakeConfigOf(t, c.cfg).InputDevice; got != c.want {
 			t.Errorf("input device of %v = %#v, want %#v", c.cfg, got, c.want)
 		}
 	}
@@ -116,37 +132,35 @@ func TestConfigDefaultsAndClamping(t *testing.T) {
 	}{
 		{map[string]any{"sensitivity": 5}, 1.0},
 		{map[string]any{"sensitivity": -1}, 0.0},
-		{map[string]any{"sensitivity": "nope"}, wakeDefaults["sensitivity"].(float64)},
-		{map[string]any{}, wakeDefaults["sensitivity"].(float64)},
+		{map[string]any{"sensitivity": "nope"}, settings.WakeWordSensitivity.Default},
+		{map[string]any{}, settings.WakeWordSensitivity.Default},
 	} {
-		got, err := wakeSensitivity(c.cfg)
-		if err != nil || got != c.want {
-			t.Errorf("sensitivity of %v = %v, %v; want %v", c.cfg, got, err, c.want)
+		if got := wakeConfigOf(t, c.cfg).Sensitivity; got != c.want {
+			t.Errorf("sensitivity of %v = %v; want %v", c.cfg, got, c.want)
 		}
 	}
-	if got := WakePhrase(ctx, map[string]any{"phrase": "hey jarvis"}); got != "hey jarvis" {
+	if got := wakeConfigOf(t, map[string]any{"phrase": "hey jarvis"}).Phrase; got != "hey jarvis" {
 		t.Errorf("phrase = %q", got)
 	}
-	if got := WakePhrase(ctx, map[string]any{}); got != "hey icebath" {
+	if got := wakeConfigOf(t, map[string]any{}).Phrase; got != "hey icebath" {
 		t.Errorf("default phrase = %q", got)
 	}
 }
 
 func TestWakeSurfaceEnabledGate(t *testing.T) {
-	ctx := context.Background()
-	if WakeSurfaceEnabled(ctx, "cli", map[string]any{"enabled": false, "surface": "cli"}) {
+	if (&WakeConfig{Enabled: false, Surface: "cli"}).SurfaceEnabled("cli") {
 		t.Fatal("disabled config enabled a surface")
 	}
 	for _, s := range []string{"cli", "tui", "gui"} {
-		if !WakeSurfaceEnabled(ctx, s, map[string]any{"enabled": true, "surface": "auto"}) {
+		if !(&WakeConfig{Enabled: true, Surface: "auto"}).SurfaceEnabled(s) {
 			t.Fatalf("auto surface refused %s", s)
 		}
 	}
-	cfg := map[string]any{"enabled": true, "surface": "tui"}
-	if !WakeSurfaceEnabled(ctx, "tui", cfg) || WakeSurfaceEnabled(ctx, "cli", cfg) || WakeSurfaceEnabled(ctx, "gui", cfg) {
+	cfg := &WakeConfig{Enabled: true, Surface: "tui"}
+	if !cfg.SurfaceEnabled("tui") || cfg.SurfaceEnabled("cli") || cfg.SurfaceEnabled("gui") {
 		t.Fatal("pinned surface must admit only tui")
 	}
-	if !WakeSurfaceEnabled(ctx, "gui", map[string]any{"enabled": true}) {
+	if !wakeConfigOf(t, map[string]any{"enabled": true}).SurfaceEnabled("gui") {
 		t.Fatal("a missing surface must default to auto")
 	}
 }
@@ -180,26 +194,26 @@ func TestLoadedWakeDefaultsResolveSupportedProvider(t *testing.T) {
 					}
 				}
 				cfg := LoadWakeWordConfig(context.Background())
-				if cfg["provider"] != "auto" {
-					t.Fatalf("loaded provider = %v", cfg["provider"])
+				if cfg.Provider != "auto" {
+					t.Fatalf("loaded provider = %v", cfg.Provider)
 				}
 				supported := wakeSupportedOn(p.system, p.machine)
 				if got := mustProvider(t, cfg, supported); got != "sherpa" {
 					t.Fatalf("provider of loaded config = %q, want the open vocabulary sherpa engine", got)
 				}
-				if got := mustProvider(t, map[string]any{}, supported); got != "sherpa" {
+				if got := mustProvider(t, &WakeConfig{}, supported); got != "sherpa" {
 					t.Fatalf("provider of {} = %q, want the open vocabulary sherpa engine", got)
 				}
-				if got := mustProvider(t, map[string]any{"openwakeword": map[string]any{"model": "/models/hey_jarvis.tflite"}}, supported); got != p.expected {
+				if got := mustProvider(t, &WakeConfig{OpenWakeWordModel: "/models/hey_jarvis.tflite"}, supported); got != p.expected {
 					t.Fatalf("provider with an openWakeWord model = %q, want %q", got, p.expected)
 				}
 				if ok, err := supported(WakeProviders[p.expected].Extra); err != nil || !ok {
 					t.Fatalf("expected provider unsupported: %v %v", ok, err)
 				}
-				if WakeSurfaceEnabled(context.Background(), "gui", cfg) {
+				if cfg.SurfaceEnabled("gui") {
 					t.Fatal("default config enabled the gui surface")
 				}
-				if cfg["provider"] != "auto" {
+				if cfg.Provider != "auto" {
 					t.Fatal("probing mutated the config")
 				}
 				if saved != nil {
@@ -216,9 +230,15 @@ func TestLoadedWakeDefaultsResolveSupportedProvider(t *testing.T) {
 func ptr[T any](v T) *T { return &v }
 
 func TestLoadWakeWordConfigGuardsNonDict(t *testing.T) {
-	swap(t, &wakeLoadConfig, func(context.Context) (config.Tree, error) { return config.Tree{"wake_word": "oops"}, nil })
-	if got := LoadWakeWordConfig(context.Background()); len(got) != 0 {
-		t.Fatalf("got %v", got)
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	defaults := LoadWakeWordConfig(context.Background())
+	dir := t.TempDir()
+	t.Setenv("ICEBATH_HOME", dir)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("wake_word: oops\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadWakeWordConfig(context.Background()); !reflect.DeepEqual(got, defaults) {
+		t.Fatalf("got %+v, want the defaults %+v", got, defaults)
 	}
 }
 
@@ -233,7 +253,7 @@ func (e *labelWakeEngine) Process([]int16) (bool, error) { return false, nil }
 func swapEngineClass(t *testing.T, name, label string) {
 	t.Helper()
 	saved := wakeEngineClasses[name]
-	wakeEngineClasses[name] = func(context.Context, map[string]any) (WakeEngine, error) {
+	wakeEngineClasses[name] = func(context.Context, *WakeConfig) (WakeEngine, error) {
 		return &labelWakeEngine{label: label}, nil
 	}
 	t.Cleanup(func() { wakeEngineClasses[name] = saved })
@@ -245,8 +265,8 @@ func TestBuildEngineDispatch(t *testing.T) {
 	swapEngineClass(t, "_OpenWakeWordEngine", "oww")
 	swapEngineClass(t, "_PorcupineEngine", "pv")
 	swapEngineClass(t, "_SherpaKwsEngine", "sherpa")
-	expected := map[string]string{"openwakeword": "oww", "porcupine": "pv", "sherpa": "sherpa"}[mustProvider(t, map[string]any{}, nil)]
-	label := func(cfg map[string]any) string {
+	expected := map[string]string{"openwakeword": "oww", "porcupine": "pv", "sherpa": "sherpa"}[mustProvider(t, &WakeConfig{}, nil)]
+	label := func(cfg *WakeConfig) string {
 		t.Helper()
 		e, err := wakeBuildEngine(ctx, cfg)
 		if err != nil {
@@ -257,13 +277,13 @@ func TestBuildEngineDispatch(t *testing.T) {
 	if got := label(LoadWakeWordConfig(ctx)); got != expected {
 		t.Fatalf("loaded config built %q, want %q", got, expected)
 	}
-	if got := label(map[string]any{"provider": "auto"}); got != expected {
+	if got := label(&WakeConfig{Provider: "auto"}); got != expected {
 		t.Fatalf("auto built %q, want %q", got, expected)
 	}
-	if label(map[string]any{"provider": "openwakeword"}) != "oww" || label(map[string]any{"provider": "porcupine"}) != "pv" {
+	if label(&WakeConfig{Provider: "openwakeword"}) != "oww" || label(&WakeConfig{Provider: "porcupine"}) != "pv" {
 		t.Fatal("explicit providers built the wrong engine")
 	}
-	_, err := wakeBuildEngine(ctx, map[string]any{"provider": "bogus"})
+	_, err := wakeBuildEngine(ctx, &WakeConfig{Provider: "bogus"})
 	var we *WakeWordError
 	if !asError(err, &we) || we.Class != "ValueError" || we.Msg != "Unknown wake_word provider: bogus" {
 		t.Fatalf("bogus provider error = %v", err)
@@ -371,7 +391,7 @@ func TestLoadedProviderRequirementsPreserveChoicesAndRequireKeys(t *testing.T) {
 						t.Fatalf("supported engine unavailable %+v", result)
 					}
 				}
-				if WakeSurfaceEnabled(context.Background(), "gui", cfg) || cfg["provider"] != provider {
+				if cfg.SurfaceEnabled("gui") || cfg.Provider != provider {
 					t.Fatal("probe changed the configured choice")
 				}
 				if data, err := os.ReadFile(path); err != nil || string(data) != saved {
@@ -386,7 +406,7 @@ func TestRequirementsOpenwakewordAvailable(t *testing.T) {
 	wakeVoiceLoopReady(t, true, true)
 	swap(t, &wakeAudioAvailable, func() (bool, error) { return true, nil })
 	swap(t, &wakePMAvailable, wakeAvailable(true))
-	r := mustRequirements(t, map[string]any{"provider": "openwakeword", "phrase": "hey jarvis", "openwakeword": map[string]any{"model": "/models/hey_jarvis.tflite"}}, nil)
+	r := mustRequirements(t, &WakeConfig{Provider: "openwakeword", Phrase: "hey jarvis", OpenWakeWordModel: "/models/hey_jarvis.tflite"}, nil)
 	if !r.Available || r.Provider != "openwakeword" || r.Phrase != "hey jarvis" {
 		t.Fatalf("got %+v", r)
 	}
@@ -395,8 +415,6 @@ func TestRequirementsOpenwakewordAvailable(t *testing.T) {
 func TestTTSReadyDefersToTheRequirementsCheck(t *testing.T) {
 	ctx := context.Background()
 	checkOK := false
-	swap(t, &wakeGetTTSProvider, func(map[string]any) (string, error) { return "edge", nil })
-	swap(t, &wakeLoadTTSConfig, func(context.Context) map[string]any { return map[string]any{} })
 	swap(t, &wakeCheckTTS, func(context.Context) (bool, error) { return checkOK, nil })
 	if ttsReady(ctx) {
 		t.Fatal("a failing requirements check read as ready")
@@ -412,7 +430,7 @@ func TestRequirementsFreshInstallLazyAllowed(t *testing.T) {
 	probed := false
 	swap(t, &wakeAudioAvailable, func() (bool, error) { probed = true; return false, nil })
 	swap(t, &wakePMAvailable, wakeAvailable(false))
-	r := mustRequirements(t, map[string]any{"provider": "openwakeword", "openwakeword": map[string]any{"model": "/models/hey_jarvis.tflite"}}, nil)
+	r := mustRequirements(t, &WakeConfig{Provider: "openwakeword", OpenWakeWordModel: "/models/hey_jarvis.tflite"}, nil)
 	if probed {
 		t.Fatal("audio probe must not run while deps are missing")
 	}
@@ -436,7 +454,7 @@ func TestRequirementsRejectUnsupportedEngineWithoutAttemptingInstall(t *testing.
 				t.Error("a requirements probe must not install dependencies")
 				return nil
 			})
-			r := mustRequirements(t, map[string]any{"provider": provider}, nil)
+			r := mustRequirements(t, &WakeConfig{Provider: provider}, nil)
 			if r.Available || !strings.Contains(r.Hint, "not supported") || !strings.Contains(r.Hint, "wake_word.provider") {
 				t.Fatalf("got %+v", r)
 			}
@@ -444,7 +462,7 @@ func TestRequirementsRejectUnsupportedEngineWithoutAttemptingInstall(t *testing.
 				t.Fatalf("hint %q", r.Hint)
 			}
 			for _, alternative := range []string{"sherpa", "porcupine"} {
-				if !mustRequirements(t, map[string]any{"provider": alternative}, nil).Available {
+				if !mustRequirements(t, &WakeConfig{Provider: alternative}, nil).Available {
 					t.Fatalf("%s must be available", alternative)
 				}
 			}
@@ -456,7 +474,7 @@ func TestRequirementsLazyDisabledReturnsRemedyNotNameerror(t *testing.T) {
 	wakeVoiceLoopReady(t, true, true)
 	swap(t, &wakeAudioAvailable, func() (bool, error) { return true, nil })
 	swap(t, &wakePMAvailable, wakeAvailable(false))
-	r := mustRequirements(t, map[string]any{"provider": "openwakeword", "openwakeword": map[string]any{"model": "/models/hey_jarvis.tflite"}}, nil)
+	r := mustRequirements(t, &WakeConfig{Provider: "openwakeword", OpenWakeWordModel: "/models/hey_jarvis.tflite"}, nil)
 	if r.Available || r.DepsAvailable || !strings.Contains(r.Hint, "icebath pm install --extra wake-openwakeword") {
 		t.Fatalf("got %+v", r)
 	}
@@ -467,7 +485,7 @@ func TestRequirementsDepsPresentButNoAudioHint(t *testing.T) {
 	swap(t, &wakeAudioAvailable, func() (bool, error) { return false, nil })
 	swap(t, &wakeLocalInputReady, func() bool { return false })
 	swap(t, &wakePMAvailable, wakeAvailable(true))
-	r := mustRequirements(t, map[string]any{"provider": "openwakeword", "openwakeword": map[string]any{"model": "/models/hey_jarvis.tflite"}}, nil)
+	r := mustRequirements(t, &WakeConfig{Provider: "openwakeword", OpenWakeWordModel: "/models/hey_jarvis.tflite"}, nil)
 	if r.Available || !(strings.Contains(r.Hint, "audio device") || strings.Contains(strings.ToLower(r.Hint), "microphone")) {
 		t.Fatalf("got %+v", r)
 	}
@@ -478,7 +496,7 @@ func TestOpenwakewordCustomModelPathUsed(t *testing.T) {
 	var paths []string
 	swap(t, &wakeImportPyOpenWakeWord, func(context.Context) (pyOpenWakeWordModule, error) { return fakeOWWModule{paths: &paths}, nil })
 	swap(t, &wakeRequireExtra, func(context.Context, string) error { return nil })
-	eng, err := newOpenWakeWordEngine(context.Background(), map[string]any{"provider": "openwakeword", "openwakeword": map[string]any{"model": "/models/hey_jarvis.tflite"}})
+	eng, err := newOpenWakeWordEngine(context.Background(), &WakeConfig{Provider: "openwakeword", OpenWakeWordModel: "/models/hey_jarvis.tflite"})
 	if err != nil {
 		t.Fatal(err)
 	}

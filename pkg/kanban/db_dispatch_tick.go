@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -213,42 +214,23 @@ func dispatchProfileExistsFn(ctx context.Context) func(string) bool {
 	}
 }
 
-// Claim allowlist of this home from kanban.dispatch_profiles, nil when the key is absent and empty when fail closed
+// Claim allowlist of this home from kanban.dispatch_profiles, nil for any profile and empty when fail closed
 func dispatchProfileAllowlist(ctx context.Context) map[string]bool {
-	cfg, err := config.LoadUserEffectiveFailClosed(home.ConfigPath(home.Dir(ctx)), os.LookupEnv)
-	if err != nil {
+	if _, err := config.LoadUserEffectiveFailClosed(home.ConfigPath(home.Dir(ctx)), os.LookupEnv); err != nil {
 		pkgLog().Warn(fmt.Sprintf("kanban: could not read kanban.dispatch_profiles (%s: %s) — this home claims no cards until the config is readable",
 			pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)))
 		return map[string]bool{}
 	}
-	var section any = map[string]any{}
-	if cfg != nil {
-		if v, ok := cfg["kanban"]; ok {
-			section = v
-		}
-	}
-	kanbanCfg, ok := section.(map[string]any)
-	if !ok {
+	raw := settings.KanbanDispatchProfiles.Get(ctx)
+	if raw == nil {
 		return nil
 	}
-	raw, present := kanbanCfg["dispatch_profiles"]
-	if !present {
-		return nil
-	}
-	if s, isStr := raw.(string); raw == nil || (isStr && strings.TrimSpace(s) == "") {
+	if len(raw) == 0 {
 		pkgLog().Warn("kanban: kanban.dispatch_profiles is present but empty — this home claims no cards; omit the key to allow any existing profile")
 		return map[string]bool{}
 	}
-	var names []string
-	if list, isList := raw.([]any); isList {
-		for _, n := range list {
-			names = append(names, pyrepr.Str(n))
-		}
-	} else {
-		names = strings.Split(pyrepr.Str(raw), ",")
-	}
 	allowed := map[string]bool{}
-	for _, n := range names {
+	for _, n := range config.AsStrings(raw) {
 		if canon, err := profiles.NormalizeProfileName(n); err == nil {
 			allowed[canon] = true
 		}
@@ -299,39 +281,9 @@ func HasSpawnableReview(ctx context.Context, conn state.SQLiteConn) (bool, error
 	return hasSpawnable(ctx, conn, "review")
 }
 
-// Loaded config of the current home, the shared cached tree when readonly
-func loadKanbanConfigTree(ctx context.Context, readonly bool) (config.Tree, error) {
-	if readonly {
-		return config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	}
-	return config.LoadContext(ctx, home.Dir(ctx), os.LookupEnv)
-}
-
-// Kanban section of the loaded config, false when the config or the section is not a mapping
-func kanbanSection(ctx context.Context, readonly bool) (map[string]any, bool) {
-	cfg, err := loadKanbanConfigTree(ctx, readonly)
-	if err != nil {
-		return nil, false
-	}
-	section, present := cfg["kanban"]
-	if !present {
-		return map[string]any{}, true
-	}
-	m, ok := section.(map[string]any)
-	return m, ok
-}
-
-// Whether review tasks dispatch automatically, true unless kanban.review_dispatch is falsy
+// Whether review tasks dispatch automatically, kanban.review_dispatch
 func ReviewDispatchEnabled(ctx context.Context) bool {
-	section, ok := kanbanSection(ctx, false)
-	if !ok {
-		return true
-	}
-	v, present := section["review_dispatch"]
-	if !present {
-		return true
-	}
-	return pyrepr.Truthy(v)
+	return settings.KanbanReviewDispatch.Get(ctx)
 }
 
 // System memory snapshot in KiB values, empty when unknown
@@ -368,22 +320,17 @@ func ResolveMaxInProgress(configured *int) *int {
 	return DeriveDefaultMaxInProgress(nil)
 }
 
-// Positive kanban.max_in_progress from config, nil when unset or invalid
+// Positive kanban.max_in_progress, nil when unset
 func ConfiguredMaxInProgress(ctx context.Context) *int {
-	section, ok := kanbanSection(ctx, true)
-	if !ok {
-		return nil
+	return positiveCap(ctx, settings.KanbanMaxInProgress)
+}
+
+// Optional kanban cap of the profile in ctx, nil when unset or below one
+func positiveCap(ctx context.Context, e *settings.Int) *int {
+	if n, set := e.Lookup(ctx); set && n >= 1 {
+		return &n
 	}
-	raw := section["max_in_progress"]
-	if raw == nil {
-		return nil
-	}
-	n, err := pyint.Of(raw)
-	if err != nil || !n.IsInt64() || n.Int64() < 1 {
-		return nil
-	}
-	v := int(n.Int64())
-	return &v
+	return nil
 }
 
 // Number of running tasks, zero on any error
@@ -478,9 +425,20 @@ type DispatchOptions struct {
 	ReconcileOrphans        bool
 }
 
-// Dispatch options at the dispatch_once defaults
-func DefaultDispatchOptions() DispatchOptions {
-	return DispatchOptions{FailureLimit: DefaultFailureLimit, ReconcileOrphans: true}
+// Dispatch options of the profile in ctx from the kanban settings, the global cap the memory derived default when unset
+func ConfiguredDispatchOptions(ctx context.Context) DispatchOptions {
+	o := DispatchOptions{
+		MaxSpawn:                positiveCap(ctx, settings.KanbanMaxSpawn),
+		MaxInProgress:           ResolveMaxInProgress(ConfiguredMaxInProgress(ctx)),
+		FailureLimit:            int64(settings.KanbanFailureLimit.Get(ctx)),
+		StaleTimeoutSeconds:     int64(max(0, settings.KanbanDispatchStaleTimeoutSeconds.Get(ctx).Seconds())),
+		ReconcileOrphans:        settings.KanbanReconcileOrphans.Get(ctx),
+		MaxInProgressPerProfile: positiveCap(ctx, settings.KanbanMaxInProgressPerProfile),
+	}
+	if assignee := strings.TrimSpace(settings.KanbanDefaultAssignee.Get(ctx)); assignee != "" {
+		o.DefaultAssignee = &assignee
+	}
+	return o
 }
 
 // One dispatcher tick under the board single writer lock, the loser returning a skipped locked result

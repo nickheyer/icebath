@@ -89,11 +89,9 @@ func useLeaseStores(t *testing.T) map[*AIAgent]turnLeaseAdmissionStore {
 // Disables the liveness watchdog as the tests do by resolving a None timeout
 func disableLivenessWatchdog(t *testing.T) {
 	t.Helper()
-	prev := turnLivenessConfig
-	turnLivenessConfig = func(context.Context) map[string]any {
-		return map[string]any{"agent": map[string]any{"turn_liveness": map[string]any{"timeout_s": 0, "poll_s": 1.0}}}
-	}
-	t.Cleanup(func() { turnLivenessConfig = prev })
+	prev := turnLivenessSettings
+	turnLivenessSettings = func(context.Context) (*float64, float64) { return nil, 1.0 }
+	t.Cleanup(func() { turnLivenessSettings = prev })
 }
 
 type leaseStatuses struct {

@@ -69,7 +69,7 @@ var CurrentInstantiationEpoch = func() string {
 	}
 	bootID, pid1Start := "", ""
 	if b, err := procReadFile("/proc/sys/kernel/random/boot_id"); err == nil {
-		bootID = pystr.Strip(string(b))
+		bootID = strings.TrimSpace(string(b))
 	}
 	if b, err := procReadFile("/proc/1/stat"); err == nil {
 		if i := strings.LastIndex(string(b), ")"); i >= 0 {

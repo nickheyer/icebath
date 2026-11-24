@@ -79,7 +79,7 @@ func registerFakeStreamer(t *testing.T, name string, available bool) {
 	streamingRegistryMu.Lock()
 	streamingRegistry[name] = StreamingTTSClass{
 		Available: func(context.Context, *tools.Env) bool { return available },
-		New: func(*tools.Env, map[string]any, any) (StreamingTTSProvider, error) {
+		New: func(*tools.Env, *ttsRequest) (StreamingTTSProvider, error) {
 			return newFakeStreamer(func(*fakeStreamer, string) iter.Seq2[[]byte, error] { return pcmGenerator(nil, []byte("\x00\x00")) }), nil
 		},
 	}
@@ -97,9 +97,9 @@ func registerFakeStreamer(t *testing.T, name string, available bool) {
 
 func TestNeverSwapsProviderForStreaming(t *testing.T) {
 	registerFakeStreamer(t, "elevenlabs", true)
-	got, err := ResolveStreamingProvider(context.Background(), nil, map[string]any{"provider": "edge"}, "")
-	if err != nil || got != nil {
-		t.Fatalf("got %v, %v", got, err)
+	fixedTTSConfig(t, map[string]any{"provider": "edge"})
+	if got := ResolveStreamingProvider(context.Background(), nil, ""); got != nil {
+		t.Fatalf("got %v", got)
 	}
 }
 
@@ -197,8 +197,7 @@ func patchOpenAISpeech(t *testing.T, headers map[string]string, chunks [][]byte)
 func TestOpenaiStreamerForwardsConsentAttestation(t *testing.T) {
 	capture := patchOpenAISpeech(t, nil, [][]byte{[]byte("\x01\x00")})
 	swap(t, &streamResolveOpenAIAudioAPIKey, func(*tools.Env) string { return "env-key" })
-	section := map[string]any{"api_key": "k", "consent_attestation": "I have consent"}
-	s, err := newOpenAIStreamer(nil, map[string]any{"openai": section}, section)
+	s, err := newOpenAIStreamer(nil, &ttsRequest{OpenAI: openAISpeech{APIKey: "k", ConsentAttestation: "I have consent", PCMSampleRate: 24000}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,8 +207,7 @@ func TestOpenaiStreamerForwardsConsentAttestation(t *testing.T) {
 	if !reflect.DeepEqual(capture.extras[0], map[string]any{"consent_attestation": "I have consent"}) {
 		t.Fatalf("extra_body = %v", capture.extras[0])
 	}
-	bare := map[string]any{"api_key": "k"}
-	s, err = newOpenAIStreamer(nil, map[string]any{"openai": bare}, bare)
+	s, err = newOpenAIStreamer(nil, &ttsRequest{OpenAI: openAISpeech{APIKey: "k", PCMSampleRate: 24000}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,10 +222,10 @@ func TestOpenaiStreamerForwardsConsentAttestation(t *testing.T) {
 func TestOpenaiStreamerPrefersConfiguredApiKey(t *testing.T) {
 	capture := patchOpenAISpeech(t, nil, [][]byte{[]byte("\x01\x00")})
 	swap(t, &streamResolveOpenAIAudioAPIKey, func(*tools.Env) string { return "env-key" })
-	config := map[string]any{"provider": "openai", "openai": map[string]any{"api_key": "cfg-key", "base_url": "http://local-tts.example/v1"}}
-	streamer, err := ResolveStreamingProvider(context.Background(), nil, config, "")
-	if err != nil || streamer == nil {
-		t.Fatalf("streamer = %v, %v", streamer, err)
+	fixedTTSConfig(t, map[string]any{"provider": "openai", "openai": map[string]any{"api_key": "cfg-key", "base_url": "http://local-tts.example/v1"}})
+	streamer := ResolveStreamingProvider(context.Background(), nil, "")
+	if streamer == nil {
+		t.Fatal("no streamer")
 	}
 	chunks, err := streamChunks(t, streamer, "Streaming test.")
 	if err != nil || len(chunks) != 1 || string(chunks[0]) != "\x01\x00" {
@@ -286,7 +284,7 @@ func TestXaiStreamingPrefersExplicitApiKey(t *testing.T) {
 	}
 	t.Setenv("XAI_API_KEY", "")
 	pool.token = ""
-	streamer, err := newXAIStreamer(nil, map[string]any{}, map[string]any{"voice_id": "v"})
+	streamer, err := newXAIStreamer(nil, &ttsRequest{XAI: xaiSpeech{VoiceID: "v"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +315,7 @@ func TestGeminiStreamerDecodesSsePcmChunks(t *testing.T) {
 			Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	swap(t, &streamResolveKey, func(context.Context, *tools.Env, string, string) string { return "g-key" })
-	streamer, err := newGeminiStreamer(nil, map[string]any{}, map[string]any{"voice": "Kore"})
+	streamer, err := newGeminiStreamer(nil, &ttsRequest{Gemini: geminiSpeech{Voice: "Kore"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,8 +405,7 @@ func TestXaiStreamPreservesProfileAndDeliversBeforeCompletion(t *testing.T) {
 				_ = ws.WriteMessage(websocket.TextMessage, []byte(`{"type": "audio.done"}`))
 			})
 			env := tools.EnvForProfileHome(context.Background(), nil, home)
-			section := map[string]any{"streaming_url": wsURL, "voice_id": "test-voice", "language": "test-language"}
-			streamer, err := newXAIStreamer(env, map[string]any{}, section)
+			streamer, err := newXAIStreamer(env, &ttsRequest{XAI: xaiSpeech{StreamingURL: wsURL, VoiceID: "test-voice", Language: "test-language"}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -490,7 +487,7 @@ func TestXaiStreamReportsErrorsAndBoundsReceivedAudio(t *testing.T) {
 					}
 				}
 			})
-			streamer, err := newXAIStreamer(nil, map[string]any{}, map[string]any{"streaming_url": wsURL})
+			streamer, err := newXAIStreamer(nil, &ttsRequest{XAI: xaiSpeech{StreamingURL: wsURL}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -558,7 +555,7 @@ func TestOpenaiPcmSampleRateResolution(t *testing.T) {
 		for k, v := range c.config {
 			section[k] = v
 		}
-		s, err := newOpenAIStreamer(nil, map[string]any{}, section)
+		s, err := newOpenAIStreamer(nil, requestOf(t, map[string]any{"openai": section}))
 		if err != nil || s.SampleRate() != c.expected {
 			t.Fatalf("config %v: rate = %v, %v", c.config, s, err)
 		}
@@ -604,13 +601,13 @@ func registerPCMPlugin(t *testing.T, p *pcmPlugin) {
 
 func TestOptedInPluginStreamsPcmInTheConfiguredVoice(t *testing.T) {
 	for _, streaming := range []map[string]any{{}, {"provider": "auto"}, {"provider": "fake-pcm"}} {
-		swap(t, &tryInstantiate, func(context.Context, *tools.Env, string, map[string]any) StreamingTTSProvider { return nil })
+		swap(t, &tryInstantiate, func(context.Context, *tools.Env, string, *ttsRequest) StreamingTTSProvider { return nil })
 		plugin := newPCMPlugin(true, 22050, true)
 		registerPCMPlugin(t, plugin)
-		cfg := map[string]any{"provider": "fake-pcm", "voice": "v1", "speed": 1.25, "streaming": streaming}
-		streamer, err := ResolveStreamingProvider(context.Background(), nil, cfg, "")
-		if err != nil || streamer == nil {
-			t.Fatalf("streaming %v: streamer = %v, %v", streaming, streamer, err)
+		fixedTTSConfig(t, map[string]any{"provider": "fake-pcm", "voice": "v1", "speed": 1.25, "streaming": streaming})
+		streamer := ResolveStreamingProvider(context.Background(), nil, "")
+		if streamer == nil {
+			t.Fatalf("streaming %v: no streamer", streaming)
 		}
 		if streamer.SampleRate() != 22050 {
 			t.Fatalf("sample rate = %d", streamer.SampleRate())
@@ -649,9 +646,9 @@ func TestPluginWithoutFullOptInKeepsPerSentenceSynthesis(t *testing.T) {
 		for k, v := range c.extra {
 			cfg[k] = v
 		}
-		streamer, err := ResolveStreamingProvider(context.Background(), nil, cfg, "")
-		if err != nil || streamer != nil {
-			t.Fatalf("case %d: streamer = %v, %v", i, streamer, err)
+		fixedTTSConfig(t, cfg)
+		if streamer := ResolveStreamingProvider(context.Background(), nil, ""); streamer != nil {
+			t.Fatalf("case %d: streamer = %v", i, streamer)
 		}
 		if len(c.plugin.calls) != 0 {
 			t.Fatalf("case %d: calls = %v", i, c.plugin.calls)
@@ -701,7 +698,7 @@ func TestXaiStreamSocketClosures(t *testing.T) {
 				}
 				c.serve(ws)
 			})
-			streamer, err := newXAIStreamer(nil, map[string]any{}, map[string]any{"streaming_url": wsURL})
+			streamer, err := newXAIStreamer(nil, &ttsRequest{XAI: xaiSpeech{StreamingURL: wsURL}})
 			if err != nil {
 				t.Fatal(err)
 			}

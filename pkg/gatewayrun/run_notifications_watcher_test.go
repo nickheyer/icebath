@@ -34,10 +34,11 @@ func finishedProcess(t *testing.T, id, command, output string, exitCode int) {
 	t.Cleanup(func() { tools.DefaultProcessRegistry().ForgetFinished(id) })
 }
 
-// Real background shell process of the shared registry, killed when the case ends
+// Real background shell process of the shared registry under an empty home, killed when the case ends
 func spawnedProcess(t *testing.T, command string) string {
 	t.Helper()
 	t.Setenv("SHELL", "/bin/sh")
+	t.Setenv("HOME", t.TempDir())
 	env := &tools.Env{Home: home.Dir(context.Background())}
 	s, err := tools.DefaultProcessRegistry().SpawnLocal(context.Background(), env, command, tools.SpawnLocalOptions{Cwd: t.TempDir()})
 	if err != nil {
@@ -100,7 +101,16 @@ func TestConciseModeNoInterimOutputUpdates(t *testing.T) {
 
 func TestRawOutputModesAreHumanFacing(t *testing.T) {
 	r, adapter := notifyModeRunner(t, "all")
-	id := spawnedProcess(t, "printf '\\033[32mstep 1 ok\\033[0m\\n'; sleep 0.9; printf '\\033[31mlinker error\\033[0m\\n'; exit 2")
+	id := spawnedProcess(t, "printf '\\033[32mstep 1 ok\\033[0m\\n'; sleep 0.75; printf '\\033[31mlinker error\\033[0m\\n'; exit 2")
+	env := &tools.Env{Home: home.Dir(context.Background())}
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if s := tools.DefaultProcessRegistry().Get(env, id); s != nil && strings.Contains(s.WatchFields().OutputBuffer, "step 1 ok") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("first line of %s never arrived", id)
+		}
+	}
 	watcher := watcherDict(id)
 	watcher["check_interval"] = 0.3
 	if err := r.runProcessWatcher(context.Background(), watcher); err != nil {

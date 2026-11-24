@@ -105,7 +105,7 @@ func releaseMaintenanceSlot(gitDir, lockName string) error {
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if pystr.Strip(string(buf[:n])) == strconv.Itoa(os.Getpid()) {
+	if strings.TrimSpace(string(buf[:n])) == strconv.Itoa(os.Getpid()) {
 		return f.Truncate(0)
 	}
 	return nil
@@ -149,7 +149,7 @@ func runBoundedGit(ctx context.Context, repoRoot string, args []string, timeout 
 		if len(raw) > 4096 {
 			raw = raw[len(raw)-4096:]
 		}
-		lines := pystr.Splitlines(pystr.Strip(pystr.DecodeUTF8Replace(raw)), false)
+		lines := pystr.Splitlines(strings.TrimSpace(pystr.DecodeUTF8Replace(raw)), false)
 		cause := "no output"
 		if len(lines) > 0 {
 			cause = lines[len(lines)-1]
@@ -214,7 +214,7 @@ func commitGraphDisabled(repoRoot string) bool {
 		}
 	}
 	probe := boundedProbeRun([]string{"git", "config", "--type=bool", "--get", "core.commitGraph"}, 10*time.Second, env, repoRoot, nil)
-	return probe != nil && pystr.Strip(probe.Stdout) == "false"
+	return probe != nil && strings.TrimSpace(probe.Stdout) == "false"
 }
 
 // Git dir holding the object store, the dir a worktree or submodule .git file leads to, empty for no checkout

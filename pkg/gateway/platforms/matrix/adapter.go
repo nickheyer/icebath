@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -175,19 +174,19 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	a.splitThreshold = max(100, a.maxMessageLength-100)
 	scoped := func(name string) string {
 		v, _ := gateway.GetScopedSecret(ctx, name, "", false)
-		return pystr.Strip(v)
+		return strings.TrimSpace(v)
 	}
 	sctx := gateway.SettingsContext(ctx)
-	a.homeserver = strings.TrimRight(pystr.Strip(settings.MatrixHomeserver.Get(sctx)), "/")
+	a.homeserver = strings.TrimRight(strings.TrimSpace(settings.MatrixHomeserver.Get(sctx)), "/")
 	a.accessToken = tokenOf(cfg.Token)
 	if a.accessToken == "" {
 		a.accessToken = scoped("MATRIX_ACCESS_TOKEN")
 	}
-	a.userID = pystr.Strip(settings.MatrixUserID.Get(sctx))
+	a.userID = strings.TrimSpace(settings.MatrixUserID.Get(sctx))
 	a.password = extraStr(cfg.Extra, "password", scoped("MATRIX_PASSWORD"))
 	a.e2eeMode = resolveE2EEMode(ctx, cfg.Extra)
 	a.encryption = a.e2eeMode != "off"
-	a.deviceID = pystr.Strip(settings.MatrixDeviceID.Get(sctx))
+	a.deviceID = strings.TrimSpace(settings.MatrixDeviceID.Get(sctx))
 	a.inviteJoinTasks = map[string]*bgTask{}
 	a.resetClockSkewDetector()
 	a.dmRooms = map[string]bool{}
@@ -211,7 +210,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	a.matrixSessionScope = settings.MatrixSessionScope.Get(sctx)
 	a.processNotices = settings.MatrixProcessNotices.Get(sctx)
 	rawReactions, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, "reactions", "MATRIX_REACTIONS", "true", true)
-	switch pystr.Lower(pyrepr.Str(rawReactions)) {
+	switch strings.ToLower(pyrepr.Str(rawReactions)) {
 	case "false", "0", "no":
 	default:
 		a.reactionsEnabled = true
@@ -270,6 +269,9 @@ func tokenOf(v any) string {
 	return strOf(v)
 }
 
+// Conversation scope the running adapter applies: auto, room or thread
+func (a *MatrixAdapter) MatrixSessionScope() string { return a.matrixSessionScope }
+
 // Process env value or the default when unset
 func envOr(name, def string) string {
 	if v, ok := os.LookupEnv(name); ok {
@@ -310,7 +312,7 @@ func notFalseSpelling(configured any) bool {
 	if b, ok := configured.(bool); ok {
 		return b
 	}
-	switch pystr.Lower(pyrepr.Str(configured)) {
+	switch strings.ToLower(pyrepr.Str(configured)) {
 	case "false", "0", "no", "off":
 		return false
 	}
@@ -346,7 +348,7 @@ func newMatrixHTTPClient(ctx context.Context, proxyURL string) (*http.Client, er
 		} else {
 			transport.Proxy = nil
 		}
-	case strings.HasPrefix(pystr.Lower(strings.SplitN(proxyURL, "://", 2)[0]), "socks"):
+	case strings.HasPrefix(strings.ToLower(strings.SplitN(proxyURL, "://", 2)[0]), "socks"):
 		connector, err := gateway.NewProxyConnector(proxyURL)
 		if err != nil {
 			return nil, err
@@ -405,14 +407,14 @@ func (a *MatrixAdapter) GetDiagnostics(ctx context.Context) map[string]any {
 		"auth": map[string]any{
 			"access_token_present": tokenPresent, "password_present": a.password != "",
 			"token_preview": preview(tokenPresent), "user_id": userID,
-			"device_id_present": deviceID != "", "device_id_preview": preview(pystr.Strip(deviceID) != "")},
+			"device_id_present": deviceID != "", "device_id_preview": preview(strings.TrimSpace(deviceID) != "")},
 		"sync": map[string]any{
 			"connected": a.client != nil, "joined_room_count": len(a.joinedRooms),
 			"last_sync_age_seconds": lastSyncAge},
 		"e2ee": map[string]any{
 			"mode": a.e2eeMode, "enabled": a.encryption, "deps_available": checkE2EEDeps(),
 			"crypto_store_path":       filepath.Join(dir, "crypto.db"),
-			"recovery_key_configured": pystr.Strip(scopedRecoveryKey(ctx)) != ""},
+			"recovery_key_configured": strings.TrimSpace(scopedRecoveryKey(ctx)) != ""},
 		"policy": map[string]any{
 			"allowed_user_count": len(a.allowedUserIDs), "allowed_room_count": len(a.allowedRoomIDs),
 			"ignored_user_pattern_count": len(a.ignoredUserPatterns),

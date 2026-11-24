@@ -546,11 +546,11 @@ var persistRuntimeEnv = func(ctx context.Context, spectrumProjectID, projectSecr
 }
 
 func dashboardHost() string {
-	return pystr.RstripChars(pyOr(os.Getenv("PHOTON_DASHBOARD_HOST"), DefaultDashboardHost).(string), "/")
+	return strings.TrimRight(pyOr(os.Getenv("PHOTON_DASHBOARD_HOST"), DefaultDashboardHost).(string), "/")
 }
 
 func spectrumHost() string {
-	return pystr.RstripChars(pyOr(os.Getenv("PHOTON_SPECTRUM_HOST"), DefaultSpectrumHost).(string), "/")
+	return strings.TrimRight(pyOr(os.Getenv("PHOTON_SPECTRUM_HOST"), DefaultSpectrumHost).(string), "/")
 }
 
 func bearer(token string) map[string]string {
@@ -929,13 +929,13 @@ func cleanBearerToken(value any) string {
 	if !ok {
 		return ""
 	}
-	token := pystr.Strip(s)
-	if strings.HasPrefix(pystr.Lower(token), "bearer ") {
+	token := strings.TrimSpace(s)
+	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
 		runes := []rune(token)
 		if len(runes) < 7 {
 			return ""
 		}
-		return pystr.Strip(string(runes[7:]))
+		return strings.TrimSpace(string(runes[7:]))
 	}
 	return token
 }
@@ -954,7 +954,7 @@ func headerValue(headers http.Header, name string) string {
 	}
 	slices.Sort(keys)
 	for _, k := range keys {
-		if v := strings.Join(headers[k], ", "); pystr.Lower(k) == pystr.Lower(name) && v != "" {
+		if v := strings.Join(headers[k], ", "); strings.ToLower(k) == strings.ToLower(name) && v != "" {
 			return v
 		}
 	}
@@ -1122,7 +1122,7 @@ func ListProjects(ctx context.Context, token string) ([]any, error) {
 
 // First project whose name matches case insensitively, nil when none does
 func FindProjectByName(ctx context.Context, token, name string) (*pyjson.Object, error) {
-	target := pystr.Lower(pystr.Strip(name))
+	target := strings.ToLower(strings.TrimSpace(name))
 	projects, err := ListProjects(ctx, token)
 	if err != nil {
 		return nil, err
@@ -1136,7 +1136,7 @@ func FindProjectByName(ctx context.Context, token, name string) (*pyjson.Object,
 		if err != nil {
 			return nil, err
 		}
-		if pystr.Lower(pystr.Strip(s)) == target {
+		if strings.ToLower(strings.TrimSpace(s)) == target {
 			return proj.(*pyjson.Object), nil
 		}
 	}
@@ -1561,7 +1561,7 @@ func GetIMessageLine(ctx context.Context, token, projectID string, createIfMissi
 		if err != nil {
 			return nil, err
 		}
-		if pystr.Lower(s) == "imessage" {
+		if strings.ToLower(s) == "imessage" {
 			line = ln
 			break
 		}

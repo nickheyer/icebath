@@ -32,7 +32,7 @@ const maxCursor = int64(1_000_000_000_000_000_000)
 // Reports whether a requested platform filter is unset or names actual ignoring case
 func platformMatches(wanted any, actual any) bool {
 	w, _ := wanted.(string)
-	return w == "" || pyLower(actual) == pystr.Lower(w)
+	return w == "" || pyLower(actual) == strings.ToLower(w)
 }
 
 // Optional str argument as a string, empty for None
@@ -89,7 +89,7 @@ func (h *toolHandlers) conversationsList(kw *pyjson.Object) string {
 		if search != "" {
 			hit := false
 			for _, s := range []any{displayName, chatName, key} {
-				if strings.Contains(pyLower(s), pystr.Lower(search)) {
+				if strings.Contains(pyLower(s), strings.ToLower(search)) {
 					hit = true
 					break
 				}

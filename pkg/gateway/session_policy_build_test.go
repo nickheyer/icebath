@@ -222,17 +222,6 @@ func TestNullConfigSectionsReadAsAbsent(t *testing.T) {
 
 func TestRunBudgetIsAFrozenLaunchOption(t *testing.T) {
 	ctx := policyBuildHome(t)
-	held := NormalizeRunBudgetSeconds
-	NormalizeRunBudgetSeconds = func(value any) *float64 {
-		if _, isBool := value.(bool); isBool {
-			return nil
-		}
-		if seconds, _, ok := launchNumber(value); ok && seconds > 0 {
-			return &seconds
-		}
-		return nil
-	}
-	t.Cleanup(func() { NormalizeRunBudgetSeconds = held })
 	dir := t.TempDir()
 	cfg := map[string]any{"agent": map[string]any{"run_budget_seconds": 300}}
 	budget := func(params, cfg map[string]any) *float64 {
@@ -251,7 +240,10 @@ func TestRunBudgetIsAFrozenLaunchOption(t *testing.T) {
 	if got := budget(map[string]any{"cwd": dir}, map[string]any{}); got != nil {
 		t.Fatalf("no budget read as %v", *got)
 	}
-	for _, bad := range []any{0, -5, true, "soon"} {
+	if got := budget(map[string]any{"cwd": dir, "run_budget": 0}, cfg); got != nil {
+		t.Fatalf("run_budget 0 kept the profile budget %v", *got)
+	}
+	for _, bad := range []any{-5, true, "soon"} {
 		refusedInvalid(t, ctx, map[string]any{"cwd": dir, "run_budget": bad}, cfg)
 	}
 }
