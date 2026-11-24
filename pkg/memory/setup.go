@@ -369,17 +369,7 @@ func (m *MemorySetup) promptSchemaFields(ctx context.Context, name string, schem
 		if !ok {
 			desc = key
 		}
-		def := field["default"]
-		if df, ok := field["default_from"].(map[string]any); ok && len(df) > 0 {
-			ref := providerConfig[pyStr(dictGet(df, "field", ""))]
-			if refMap, ok := dictGet(df, "map", map[string]any{}).(map[string]any); ok && pyTruthy(ref) {
-				if s, isStr := ref.(string); isStr {
-					if v, in := refMap[s]; in {
-						def = v
-					}
-				}
-			}
-		}
+		def := schemaFieldDefault(field, providerConfig)
 		secret := pyTruthy(field["secret"])
 		choices, _ := field["choices"].([]any)
 		envVar, _ := field["env_var"].(string)
@@ -539,19 +529,8 @@ func (m *MemorySetup) CmdSetup(ctx context.Context) error {
 			return err
 		}
 	}
-	memCfg["provider"] = chosen.Name
-	if err := m.saveConfig(ctx, cfg); err != nil {
+	if err := m.activateProvider(ctx, cfg, chosen, providerConfig, envWrites); err != nil {
 		return err
-	}
-	if len(providerConfig) > 0 {
-		if err := chosen.Provider.SaveConfig(providerConfig, envHome(m.Env)); err != nil {
-			m.printf("  Failed to write provider config: %s\n", err)
-		}
-	}
-	if len(envWrites) > 0 {
-		if err := m.writeEnvVars(ctx, envWrites, ""); err != nil {
-			return err
-		}
 	}
 	m.printf("\n  Memory provider: %s\n", chosen.Name)
 	m.printf("  Activation saved to config.yaml\n")
@@ -598,8 +577,7 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 	}
 	memCfg, _ := dictGet(cfg, "memory", map[string]any{}).(map[string]any)
 	providerName, _ := dictGet(memCfg, "provider", "").(string)
-	cliTools := tools.Default.PlatformTools(ctx, "", config.Tree(cfg), "cli", tools.PlatformToolsOptions{})
-	toolEnabled := cliTools["memory"] && checkMemoryRequirements(m.Env)
+	toolEnabled := m.memoryToolEnabled(ctx, cfg)
 	m.printf("\nMemory status\n%s\n", strings.Repeat("\u2500", 40))
 	m.printf("  Built-in (MEMORY.md / USER.md):\n")
 	m.printf("    Memory injection:   %s\n", setupMark(dictGet(memCfg, "memory_enabled", true)))

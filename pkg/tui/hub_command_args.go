@@ -246,10 +246,19 @@ func (a *app) slashPaletteCommands() []wm.Command {
 		taken[d.slash] = true
 	}
 	var out []wm.Command
+	// What each command's entry runs, by name, so an alias entry runs the same
+	runs := map[string]func() tea.Cmd{}
+	for _, d := range hubDefs() {
+		runs[d.slash] = func() tea.Cmd { return d.open(a, "") }
+	}
 	add := func(name string, text func() string, run func() tea.Cmd) {
+		runs[strings.ToLower(name)] = run
 		out = append(out, wm.Command{ID: "slash." + name, Title: "/" + name, Text: text, When: idle, Run: run})
 	}
 	for _, c := range a.localCommands {
+		if runs[c.name] == nil {
+			runs[c.name] = func() tea.Cmd { return a.paletteSlash(c.name, c.usage, c.helpText(), c.suggest) }
+		}
 		if taken[c.name] {
 			continue
 		}
@@ -269,6 +278,12 @@ func (a *app) slashPaletteCommands() []wm.Command {
 			taken[strings.ToLower(name)] = true
 			usage, desc := catalogUsage(name, pair[1])
 			add(name, func() string { return "/" + name + "  " + desc }, func() tea.Cmd { return a.paletteSlash(name, usage, desc, nil) })
+		}
+	}
+	for _, pair := range a.commandAliases() {
+		alias, run := strings.TrimPrefix(pair[0], "/"), runs[strings.ToLower(strings.TrimPrefix(pair[1], "/"))]
+		if run != nil && !taken[alias] {
+			out = append(out, wm.Command{ID: "slash." + alias, Title: pair[0], Text: func() string { return pair[0] + "  " + aliasOf(pair[1]) }, When: idle, Run: run})
 		}
 	}
 	return out

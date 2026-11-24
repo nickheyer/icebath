@@ -95,5 +95,5 @@ var SlashTiers = map[string]string{
 	"voice": Extras, "wake": Extras, "pet": Extras, "hatch": Extras, "cron": Extras,
 	"blueprint": Extras, "suggestions": Extras, "kanban": Extras, "browser": Extras,
 	"update": Extras, "arena": Extras,
-	"handoff": Plugins, "platforms": Plugins, "egress": Plugins, "topic": Plugins,
+	"handoff": Plugins, "egress": Plugins, "topic": Plugins,
 }

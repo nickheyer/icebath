@@ -1707,6 +1707,30 @@ slash:
   update:
 
     description: "Icebath Agent frissítése a legújabb verzióra"
+  settings:
+
+    description: "Minden beállítás csoportonként, a funkciójukkal"
+  logins:
+
+    description: "Minden szolgáltató bejelentkezése, és hogy melyik munkamenet melyiket használja"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack és más: párosítás, webhookok, társak, küldés"
+  keys:
+
+    description: "Minden billentyű megjelenítése, vagy módosításuk a /keys edit paranccsal"
+  mouse:
+
+    description: "Egérkövetés beállítása"
+  processes:
+
+    description: "A munkamenet háttérfolyamatainak listázása, kimenetük olvasása vagy egyikük kilövése"
+  language:
+
+    description: "A felület nyelvének kiválasztása"
+  detail:
+
+    description: "Mennyit látsz az ügynök eszközhasználatából és gondolkodásából"
   category:
 
     session: "Munkamenet"
@@ -1737,9 +1761,6 @@ slash:
   topic:
 
     description: "Telegram DM topic-munkamenetek bekapcsolása vagy megtekintése"
-  clear:
-
-    description: "Képernyő törlése és új munkamenet indítása"
   redraw:
 
     description: "Teljes UI-újrarajzolás kényszerítése (terminálhibák után)"
@@ -1855,9 +1876,6 @@ slash:
   sessions:
 
     description: "Korábbi munkamenetek böngészése és folytatása"
-  config:
-
-    description: "Aktuális konfiguráció megjelenítése"
   model:
 
     description: "Modellváltás (munkamenetre érvényes; a --global tartósítja)"
@@ -1918,9 +1936,6 @@ slash:
   tools:
 
     description: "Eszközök kezelése: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Elérhető eszközkészletek listázása"
   skills:
 
     description: "Skillek keresése, telepítése, megtekintése vagy kezelése"
@@ -1987,9 +2002,6 @@ slash:
   usage:
 
     description: "Tokenhasználat és sebességkorlátok megjelenítése; a `reset` beváltja a félretett Codex limit-visszaállítást"
-  platforms:
-
-    description: "Az átjáró/üzenetküldő platformok állapotának megjelenítése"
   platform:
 
     description: "Hibás átjáróplatform szüneteltetése, folytatása vagy listázása"

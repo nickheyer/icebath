@@ -251,6 +251,11 @@ func (a *app) mergeNameOffers(input string, offers []cards.Offer) []cards.Offer 
 			}
 		}
 	}
+	for _, pair := range a.commandAliases() {
+		if strings.HasPrefix(pair[0], strings.ToLower(input)) {
+			add(cards.Offer{Text: pair[0], Display: pair[0], Meta: aliasOf(pair[1])})
+		}
+	}
 	// Names that start with what was typed lead the fuzzy matches
 	typed := strings.ToLower(strings.TrimPrefix(input, "/"))
 	starts := func(o cards.Offer) bool {

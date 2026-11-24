@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Оновити Icebath Agent до найновішої версії"
+  settings:
+
+    description: "Кожне налаштування за групами з описом дії"
+  logins:
+
+    description: "Ваші входи для кожного провайдера й те, який використовує кожен сеанс"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack та інші: сполучення, вебгуки, піри, надсилання"
+  keys:
+
+    description: "Показати всі клавіші або змінити їх через /keys edit"
+  mouse:
+
+    description: "Налаштувати відстеження миші"
+  processes:
+
+    description: "Перелічити фонові процеси сеансу, прочитати їхній вивід або вбити один із них"
+  language:
+
+    description: "Вибрати мову інтерфейсу"
+  detail:
+
+    description: "Скільки з роботи агента з інструментами та міркувань ви бачите"
   category:
 
     session: "Сеанс"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Увімкнути або переглянути сеанси в topic-ах приватних чатів Telegram"
-  clear:
-
-    description: "Очистити екран і почати новий сеанс"
   redraw:
 
     description: "Примусово перемалювати інтерфейс (виправляє збої відображення в терміналі)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Переглянути та відновити попередні сеанси"
-  config:
-
-    description: "Показати поточну конфігурацію"
   model:
 
     description: "Змінити модель (у межах сеансу; --global щоб зберегти)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Керувати інструментами: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Перелічити доступні набори інструментів"
   skills:
 
     description: "Шукати, встановлювати, переглядати або керувати навичками"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Показати використання токенів і обмеження швидкості; `reset` активує накопичене скидання ліміту Codex"
-  platforms:
-
-    description: "Показати стан шлюзу та платформ обміну повідомленнями"
   platform:
 
     description: "Призупинити, відновити або перелічити несправну платформу шлюзу"

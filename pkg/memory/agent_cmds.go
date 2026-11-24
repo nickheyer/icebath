@@ -9,30 +9,16 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Clears memory.provider in config.yaml so only the built-in memory stays active
 func MemoryOff(ctx context.Context, out io.Writer) error {
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, configLookup(&tools.Env{Home: h}))
-	if err != nil {
-		return err
-	}
-	cfg := map[string]any(tree.Clone())
-	mem, ok := cfg["memory"].(map[string]any)
-	if !ok {
-		mem = map[string]any{}
-		cfg["memory"] = mem
-	}
-	mem["provider"] = ""
-	if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
+	if err := TurnOffProvider(ctx); err != nil {
 		return err
 	}
 	fmt.Fprint(out, "\n  ✓ Memory provider: built-in only\n")
@@ -45,19 +31,7 @@ func MemoryReset(ctx context.Context, out io.Writer, in io.Reader, target string
 	h := home.Dir(ctx)
 	memDir := filepath.Join(h, "memories")
 	shown := home.Display(h)
-	var files [][2]string
-	if target == "all" || target == "memory" {
-		files = append(files, [2]string{"MEMORY.md", "agent notes"})
-	}
-	if target == "all" || target == "user" {
-		files = append(files, [2]string{"USER.md", "user profile"})
-	}
-	var existing [][2]string
-	for _, f := range files {
-		if _, err := os.Stat(filepath.Join(memDir, f[0])); err == nil {
-			existing = append(existing, f)
-		}
-	}
+	existing := existingBuiltinMemory(ctx, target)
 	if len(existing) == 0 {
 		fmt.Fprintf(out, "\n  Nothing to reset — no memory files found in %s/memories/\n\n", shown)
 		return nil
@@ -88,11 +62,8 @@ func MemoryReset(ctx context.Context, out io.Writer, in io.Reader, target string
 			return nil
 		}
 	}
-	for _, f := range existing {
-		if err := os.Remove(filepath.Join(memDir, f[0])); err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "  ✓ Deleted %s (%s)\n", f[0], f[1])
+	if _, err := eraseBuiltinMemory(ctx, existing, out); err != nil {
+		return err
 	}
 	fmt.Fprint(out, "\n  Memory reset complete. New sessions will start with a blank slate.\n")
 	fmt.Fprintf(out, "  Files were in: %s/memories/\n\n", shown)

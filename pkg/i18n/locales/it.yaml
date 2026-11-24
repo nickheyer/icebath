@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Aggiorna Icebath Agent all'ultima versione"
+  settings:
+
+    description: "Ogni impostazione, per gruppo, con ciò che fa"
+  logins:
+
+    description: "I tuoi accessi a ogni provider e quale usa ogni sessione"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack e altre: abbinamento, webhook, peer, invio"
+  keys:
+
+    description: "Mostra ogni tasto, o cambiali con /keys edit"
+  mouse:
+
+    description: "Imposta il tracciamento del mouse"
+  processes:
+
+    description: "Elenca i processi in background della sessione, leggine l'output o terminane uno"
+  language:
+
+    description: "Scegli la lingua dell'interfaccia"
+  detail:
+
+    description: "Quanto del lavoro con gli strumenti e del ragionamento dell'agente vedi"
   category:
 
     session: "Sessione"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Attiva o ispeziona le sessioni per argomento nei DM Telegram"
-  clear:
-
-    description: "Pulisci lo schermo e avvia una nuova sessione"
   redraw:
 
     description: "Forza il ridisegno completo dell'interfaccia (ripara il terminale sfasato)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Sfoglia e riprendi le sessioni precedenti"
-  config:
-
-    description: "Mostra la configurazione attuale"
   model:
 
     description: "Cambia modello (solo per la sessione; --global per renderlo permanente)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Gestisci gli strumenti: /tools [list|disable|enable] [nome...]"
-  toolsets:
-
-    description: "Elenca i toolset disponibili"
   skills:
 
     description: "Cerca, installa, ispeziona o gestisci le skill"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Mostra l'utilizzo dei token e i limiti di frequenza; `reset` riscatta un reset del limite Codex accumulato"
-  platforms:
-
-    description: "Mostra lo stato del gateway e delle piattaforme di messaggistica"
   platform:
 
     description: "Metti in pausa, riprendi o elenca una piattaforma del gateway in errore"

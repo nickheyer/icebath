@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Icebath Agent を最新バージョンに更新"
+  settings:
+
+    description: "すべての設定をグループ別に、内容の説明つきで表示"
+  logins:
+
+    description: "各プロバイダーのログインと、セッションごとの使用先"
+  chat-apps:
+
+    description: "Telegram、Discord、Slack など: ペアリング、Webhook、ピア、送信"
+  keys:
+
+    description: "すべてのキーを表示、または /keys edit で変更"
+  mouse:
+
+    description: "マウストラッキングを設定"
+  processes:
+
+    description: "セッションのバックグラウンドプロセスを一覧表示し、出力を読むか 1 つを強制終了"
+  language:
+
+    description: "UI の言語を選択"
+  detail:
+
+    description: "エージェントのツール作業と思考をどこまで表示するか"
   category:
 
     session: "セッション"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Telegram DM の topic セッションを有効化または確認"
-  clear:
-
-    description: "画面をクリアして新しいセッションを開始"
   redraw:
 
     description: "UI 全体を強制的に再描画（ターミナル表示のずれから回復）"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "以前のセッションを閲覧して再開"
-  config:
-
-    description: "現在の設定を表示"
   model:
 
     description: "モデルを切り替え（セッション限定。--global で永続化）"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "ツールを管理: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "利用可能なツールセットを一覧表示"
   skills:
 
     description: "スキルの検索、インストール、確認、または管理"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "トークン使用量とレート制限を表示。`reset` で蓄えた Codex の制限リセットを適用"
-  platforms:
-
-    description: "ゲートウェイ/メッセージングプラットフォームの状態を表示"
   platform:
 
     description: "障害中のゲートウェイプラットフォームを一時停止、再開、または一覧表示"

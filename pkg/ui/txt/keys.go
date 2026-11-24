@@ -261,12 +261,12 @@ var (
 	GatewayMsgWakeFailed                                   = Key{"gatewayMsg.wake.failed"}
 	GatewayMsgWakeOtherProfile                             = Key{"gatewayMsg.wake.otherProfile"}
 	HelpColKeyOrCommand                                    = Key{"help.colKeyOrCommand"}
-	HelpCommandsClear                                      = Key{"help.commands.clear"}
 	HelpCommandsCopy                                       = Key{"help.commands.copy"}
-	HelpCommandsDetails                                    = Key{"help.commands.details"}
+	HelpCommandsDetail                                     = Key{"help.commands.detail"}
 	HelpCommandsHelp                                       = Key{"help.commands.help"}
+	HelpCommandsNew                                        = Key{"help.commands.new"}
 	HelpCommandsQuit                                       = Key{"help.commands.quit"}
-	HelpCommandsResume                                     = Key{"help.commands.resume"}
+	HelpCommandsSessions                                   = Key{"help.commands.sessions"}
 	HelpCommonCommands                                     = Key{"help.commonCommands"}
 	HelpHotkeys                                            = Key{"help.hotkeys"}
 	HelpQuickHelp                                          = Key{"help.quickHelp"}
@@ -698,8 +698,76 @@ var (
 	HubsCronStatePaused                                    = Key{"hubs.cron.state.paused"}
 	HubsCronStateRunning                                   = Key{"hubs.cron.state.running"}
 	HubsCronStateScheduled                                 = Key{"hubs.cron.state.scheduled"}
-	HubsGroupBanner                                        = Key{"hubs.group.banner"}
-	HubsGroupShow                                          = Key{"hubs.group.show"}
+	HubsFallbackAdded                                      = Key{"hubs.fallback.added"}
+	HubsFallbackBanner                                     = Key{"hubs.fallback.banner"}
+	HubsFallbackBannerNone                                 = Key{"hubs.fallback.bannerNone"}
+	HubsFallbackCheck                                      = Key{"hubs.fallback.check"}
+	HubsFallbackCheckDoes                                  = Key{"hubs.fallback.checkDoes"}
+	HubsFallbackCheckLive                                  = Key{"hubs.fallback.checkLive"}
+	HubsFallbackCheckLiveDoes                              = Key{"hubs.fallback.checkLiveDoes"}
+	HubsFallbackChecked                                    = Key{"hubs.fallback.checked"}
+	HubsFallbackChecking                                   = Key{"hubs.fallback.checking"}
+	HubsFallbackClear                                      = Key{"hubs.fallback.clear"}
+	HubsFallbackClearConfirm                               = Key{"hubs.fallback.clearConfirm"}
+	HubsFallbackClearDoes                                  = Key{"hubs.fallback.clearDoes"}
+	HubsFallbackDetailAddress                              = Key{"hubs.fallback.detailAddress"}
+	HubsFallbackDetailLatency                              = Key{"hubs.fallback.detailLatency"}
+	HubsFallbackEarlier                                    = Key{"hubs.fallback.earlier"}
+	HubsFallbackEarlierDoes                                = Key{"hubs.fallback.earlierDoes"}
+	HubsFallbackEmpty                                      = Key{"hubs.fallback.empty"}
+	HubsFallbackLater                                      = Key{"hubs.fallback.later"}
+	HubsFallbackLaterDoes                                  = Key{"hubs.fallback.laterDoes"}
+	HubsFallbackPickProvider                               = Key{"hubs.fallback.pickProvider"}
+	HubsFallbackRemoveConfirm                              = Key{"hubs.fallback.removeConfirm"}
+	HubsFallbackRemoveDoes                                 = Key{"hubs.fallback.removeDoes"}
+	HubsFallbackRemoved                                    = Key{"hubs.fallback.removed"}
+	HubsHooksAllow                                         = Key{"hubs.hooks.allow"}
+	HubsHooksAllowConfirm                                  = Key{"hubs.hooks.allowConfirm"}
+	HubsHooksAllowDoes                                     = Key{"hubs.hooks.allowDoes"}
+	HubsHooksAllowed                                       = Key{"hubs.hooks.allowed"}
+	HubsHooksCheck                                         = Key{"hubs.hooks.check"}
+	HubsHooksCheckAnswersWell                              = Key{"hubs.hooks.checkAnswersWell"}
+	HubsHooksCheckBadAnswer                                = Key{"hubs.hooks.checkBadAnswer"}
+	HubsHooksCheckCanRun                                   = Key{"hubs.hooks.checkCanRun"}
+	HubsHooksCheckCannotRun                                = Key{"hubs.hooks.checkCannotRun"}
+	HubsHooksCheckDoes                                     = Key{"hubs.hooks.checkDoes"}
+	HubsHooksCheckHealthy                                  = Key{"hubs.hooks.checkHealthy"}
+	HubsHooksCheckNotAllowed                               = Key{"hubs.hooks.checkNotAllowed"}
+	HubsHooksCheckProblems                                 = Key{"hubs.hooks.checkProblems"}
+	HubsHooksCheckUnchanged                                = Key{"hubs.hooks.checkUnchanged"}
+	HubsHooksCheckWatches                                  = Key{"hubs.hooks.checkWatches"}
+	HubsHooksColEvent                                      = Key{"hubs.hooks.colEvent"}
+	HubsHooksCommandHelp                                   = Key{"hubs.hooks.commandHelp"}
+	HubsHooksDetailAllowedAt                               = Key{"hubs.hooks.detailAllowedAt"}
+	HubsHooksDetailChanged                                 = Key{"hubs.hooks.detailChanged"}
+	HubsHooksDetailEvents                                  = Key{"hubs.hooks.detailEvents"}
+	HubsHooksDetailFailClosed                              = Key{"hubs.hooks.detailFailClosed"}
+	HubsHooksDetailSeconds                                 = Key{"hubs.hooks.detailSeconds"}
+	HubsHooksDetailSigned                                  = Key{"hubs.hooks.detailSigned"}
+	HubsHooksDetailTools                                   = Key{"hubs.hooks.detailTools"}
+	HubsHooksDetailUnsigned                                = Key{"hubs.hooks.detailUnsigned"}
+	HubsHooksEmpty                                         = Key{"hubs.hooks.empty"}
+	HubsHooksFieldSeconds                                  = Key{"hubs.hooks.fieldSeconds"}
+	HubsHooksFieldTools                                    = Key{"hubs.hooks.fieldTools"}
+	HubsHooksNew                                           = Key{"hubs.hooks.new"}
+	HubsHooksNoAnswer                                      = Key{"hubs.hooks.noAnswer"}
+	HubsHooksRemoveConfirm                                 = Key{"hubs.hooks.removeConfirm"}
+	HubsHooksRemoveDoes                                    = Key{"hubs.hooks.removeDoes"}
+	HubsHooksRevoke                                        = Key{"hubs.hooks.revoke"}
+	HubsHooksRevokeDoes                                    = Key{"hubs.hooks.revokeDoes"}
+	HubsHooksRevoked                                       = Key{"hubs.hooks.revoked"}
+	HubsHooksRunAnswer                                     = Key{"hubs.hooks.runAnswer"}
+	HubsHooksRunErrors                                     = Key{"hubs.hooks.runErrors"}
+	HubsHooksRunExit                                       = Key{"hubs.hooks.runExit"}
+	HubsHooksRunOutput                                     = Key{"hubs.hooks.runOutput"}
+	HubsHooksRunTimedOut                                   = Key{"hubs.hooks.runTimedOut"}
+	HubsHooksStateAllowed                                  = Key{"hubs.hooks.stateAllowed"}
+	HubsHooksStateChanged                                  = Key{"hubs.hooks.stateChanged"}
+	HubsHooksStateNotAllowed                               = Key{"hubs.hooks.stateNotAllowed"}
+	HubsHooksStateWebhook                                  = Key{"hubs.hooks.stateWebhook"}
+	HubsHooksTest                                          = Key{"hubs.hooks.test"}
+	HubsHooksTestDoes                                      = Key{"hubs.hooks.testDoes"}
+	HubsHooksToolsHelp                                     = Key{"hubs.hooks.toolsHelp"}
 	HubsKanbanActArchive                                   = Key{"hubs.kanban.act.archive"}
 	HubsKanbanActArchiveDoes                               = Key{"hubs.kanban.act.archiveDoes"}
 	HubsKanbanActAssign                                    = Key{"hubs.kanban.act.assign"}
@@ -896,7 +964,60 @@ var (
 	HubsLoginsUsed                                         = Key{"hubs.logins.used"}
 	HubsLoginsWhatCode                                     = Key{"hubs.logins.whatCode"}
 	HubsLoginsWhatLink                                     = Key{"hubs.logins.whatLink"}
+	HubsMemoryBanner                                       = Key{"hubs.memory.banner"}
+	HubsMemoryBuiltin                                      = Key{"hubs.memory.builtin"}
+	HubsMemoryBuiltinAbout                                 = Key{"hubs.memory.builtinAbout"}
+	HubsMemoryColNeeds                                     = Key{"hubs.memory.colNeeds"}
+	HubsMemoryEraseAll                                     = Key{"hubs.memory.eraseAll"}
+	HubsMemoryEraseAllDoes                                 = Key{"hubs.memory.eraseAllDoes"}
+	HubsMemoryEraseConfirm                                 = Key{"hubs.memory.eraseConfirm"}
+	HubsMemoryEraseNotes                                   = Key{"hubs.memory.eraseNotes"}
+	HubsMemoryEraseNotesDoes                               = Key{"hubs.memory.eraseNotesDoes"}
+	HubsMemoryEraseProfile                                 = Key{"hubs.memory.eraseProfile"}
+	HubsMemoryEraseProfileDoes                             = Key{"hubs.memory.eraseProfileDoes"}
+	HubsMemoryErased                                       = Key{"hubs.memory.erased"}
+	HubsMemoryErasedNothing                                = Key{"hubs.memory.erasedNothing"}
+	HubsMemoryInUse                                        = Key{"hubs.memory.inUse"}
+	HubsMemoryNeedsKey                                     = Key{"hubs.memory.needsKey"}
+	HubsMemoryNeedsNothing                                 = Key{"hubs.memory.needsNothing"}
+	HubsMemoryNeedsOwnSetup                                = Key{"hubs.memory.needsOwnSetup"}
+	HubsMemoryNeedsSettings                                = Key{"hubs.memory.needsSettings"}
+	HubsMemoryOnlyWhen                                     = Key{"hubs.memory.onlyWhen"}
+	HubsMemoryOwnSetupAbout                                = Key{"hubs.memory.ownSetupAbout"}
+	HubsMemorySecretKeep                                   = Key{"hubs.memory.secretKeep"}
+	HubsMemorySecretSet                                    = Key{"hubs.memory.secretSet"}
+	HubsMemorySetUpAbout                                   = Key{"hubs.memory.setUpAbout"}
+	HubsMemorySettingUp                                    = Key{"hubs.memory.settingUp"}
+	HubsMemoryStateNotReady                                = Key{"hubs.memory.stateNotReady"}
+	HubsMemoryStateReady                                   = Key{"hubs.memory.stateReady"}
+	HubsMemoryUse                                          = Key{"hubs.memory.use"}
+	HubsMemoryUseBuiltin                                   = Key{"hubs.memory.useBuiltin"}
+	HubsMemoryUseBuiltinDoes                               = Key{"hubs.memory.useBuiltinDoes"}
+	HubsMixesAddAdviser                                    = Key{"hubs.mixes.addAdviser"}
+	HubsMixesAddAdviserDoes                                = Key{"hubs.mixes.addAdviserDoes"}
+	HubsMixesColActing                                     = Key{"hubs.mixes.colActing"}
+	HubsMixesColAdvisers                                   = Key{"hubs.mixes.colAdvisers"}
+	HubsMixesDetailActing                                  = Key{"hubs.mixes.detailActing"}
+	HubsMixesDetailAdviser                                 = Key{"hubs.mixes.detailAdviser"}
+	HubsMixesEmpty                                         = Key{"hubs.mixes.empty"}
+	HubsMixesLegend                                        = Key{"hubs.mixes.legend"}
+	HubsMixesMakeDefault                                   = Key{"hubs.mixes.makeDefault"}
+	HubsMixesMakeDefaultDoes                               = Key{"hubs.mixes.makeDefaultDoes"}
+	HubsMixesNew                                           = Key{"hubs.mixes.new"}
+	HubsMixesPickActing                                    = Key{"hubs.mixes.pickActing"}
+	HubsMixesPickAdviser                                   = Key{"hubs.mixes.pickAdviser"}
+	HubsMixesRemoveAdviser                                 = Key{"hubs.mixes.removeAdviser"}
+	HubsMixesRemoveAdviserDoes                             = Key{"hubs.mixes.removeAdviserDoes"}
+	HubsMixesRemoveConfirm                                 = Key{"hubs.mixes.removeConfirm"}
+	HubsMixesRemoveDoes                                    = Key{"hubs.mixes.removeDoes"}
+	HubsMixesSetActing                                     = Key{"hubs.mixes.setActing"}
+	HubsMixesSetActingDoes                                 = Key{"hubs.mixes.setActingDoes"}
+	HubsMixesToggleAdviser                                 = Key{"hubs.mixes.toggleAdviser"}
+	HubsMixesToggleAdviserDoes                             = Key{"hubs.mixes.toggleAdviserDoes"}
 	HubsPickEmpty                                          = Key{"hubs.pick.empty"}
+	HubsPickModelOf                                        = Key{"hubs.pick.modelOf"}
+	HubsPickNoProviders                                    = Key{"hubs.pick.noProviders"}
+	HubsPickOtherModel                                     = Key{"hubs.pick.otherModel"}
 	HubsPluginsAccept                                      = Key{"hubs.plugins.accept"}
 	HubsPluginsAcceptDoes                                  = Key{"hubs.plugins.acceptDoes"}
 	HubsPluginsActCapabilities                             = Key{"hubs.plugins.actCapabilities"}
@@ -1072,12 +1193,88 @@ var (
 	HubsProfilesUse                                        = Key{"hubs.profiles.use"}
 	HubsProfilesUseDoes                                    = Key{"hubs.profiles.useDoes"}
 	HubsProfilesUseLabel                                   = Key{"hubs.profiles.useLabel"}
+	HubsProjectsAddFolder                                  = Key{"hubs.projects.addFolder"}
+	HubsProjectsAddFolderDoes                              = Key{"hubs.projects.addFolderDoes"}
+	HubsProjectsArchiveDoes                                = Key{"hubs.projects.archiveDoes"}
+	HubsProjectsBindBoard                                  = Key{"hubs.projects.bindBoard"}
+	HubsProjectsBindBoardDoes                              = Key{"hubs.projects.bindBoardDoes"}
+	HubsProjectsBoard                                      = Key{"hubs.projects.board"}
+	HubsProjectsBoardHelp                                  = Key{"hubs.projects.boardHelp"}
+	HubsProjectsClear                                      = Key{"hubs.projects.clear"}
+	HubsProjectsClearDoes                                  = Key{"hubs.projects.clearDoes"}
+	HubsProjectsColFolders                                 = Key{"hubs.projects.colFolders"}
+	HubsProjectsDescribeDoes                               = Key{"hubs.projects.describeDoes"}
+	HubsProjectsDetailActive                               = Key{"hubs.projects.detailActive"}
+	HubsProjectsDetailBoard                                = Key{"hubs.projects.detailBoard"}
+	HubsProjectsEmpty                                      = Key{"hubs.projects.empty"}
+	HubsProjectsFolder                                     = Key{"hubs.projects.folder"}
+	HubsProjectsFolderLabel                                = Key{"hubs.projects.folderLabel"}
+	HubsProjectsFoldersHelp                                = Key{"hubs.projects.foldersHelp"}
+	HubsProjectsLegend                                     = Key{"hubs.projects.legend"}
+	HubsProjectsMainFolder                                 = Key{"hubs.projects.mainFolder"}
+	HubsProjectsNew                                        = Key{"hubs.projects.new"}
+	HubsProjectsRemoveFolder                               = Key{"hubs.projects.removeFolder"}
+	HubsProjectsRemoveFolderDoes                           = Key{"hubs.projects.removeFolderDoes"}
+	HubsProjectsRenameDoes                                 = Key{"hubs.projects.renameDoes"}
+	HubsProjectsRestore                                    = Key{"hubs.projects.restore"}
+	HubsProjectsRestoreDoes                                = Key{"hubs.projects.restoreDoes"}
+	HubsProjectsSetMain                                    = Key{"hubs.projects.setMain"}
+	HubsProjectsSetMainDoes                                = Key{"hubs.projects.setMainDoes"}
+	HubsProjectsUse                                        = Key{"hubs.projects.use"}
+	HubsProjectsUseDoes                                    = Key{"hubs.projects.useDoes"}
+	HubsProjectsUseNow                                     = Key{"hubs.projects.useNow"}
 	HubsRunBusy                                            = Key{"hubs.run.busy"}
 	HubsRunDone                                            = Key{"hubs.run.done"}
 	HubsRunExit                                            = Key{"hubs.run.exit"}
 	HubsRunFailed                                          = Key{"hubs.run.failed"}
 	HubsRunNoOutput                                        = Key{"hubs.run.noOutput"}
 	HubsRunRunning                                         = Key{"hubs.run.running"}
+	HubsSecretsAccountHelp                                 = Key{"hubs.secrets.accountHelp"}
+	HubsSecretsBitwardenAbout                              = Key{"hubs.secrets.bitwardenAbout"}
+	HubsSecretsBitwardenSetUpDoes                          = Key{"hubs.secrets.bitwardenSetUpDoes"}
+	HubsSecretsBitwardenTokenHelp                          = Key{"hubs.secrets.bitwardenTokenHelp"}
+	HubsSecretsCheck                                       = Key{"hubs.secrets.check"}
+	HubsSecretsCheckDoes                                   = Key{"hubs.secrets.checkDoes"}
+	HubsSecretsColFrom                                     = Key{"hubs.secrets.colFrom"}
+	HubsSecretsHelperMissing                               = Key{"hubs.secrets.helperMissing"}
+	HubsSecretsMap                                         = Key{"hubs.secrets.map"}
+	HubsSecretsMapDoes                                     = Key{"hubs.secrets.mapDoes"}
+	HubsSecretsNewToken                                    = Key{"hubs.secrets.newToken"}
+	HubsSecretsNewTokenDoes                                = Key{"hubs.secrets.newTokenDoes"}
+	HubsSecretsNext                                        = Key{"hubs.secrets.next"}
+	HubsSecretsNoProjects                                  = Key{"hubs.secrets.noProjects"}
+	HubsSecretsNothing                                     = Key{"hubs.secrets.nothing"}
+	HubsSecretsOnNotSignedIn                               = Key{"hubs.secrets.onNotSignedIn"}
+	HubsSecretsOnSignedIn                                  = Key{"hubs.secrets.onSignedIn"}
+	HubsSecretsOnePasswordAbout                            = Key{"hubs.secrets.onePasswordAbout"}
+	HubsSecretsOnePasswordSetUpDoes                        = Key{"hubs.secrets.onePasswordSetUpDoes"}
+	HubsSecretsOnePasswordTokenHelp                        = Key{"hubs.secrets.onePasswordTokenHelp"}
+	HubsSecretsOpPath                                      = Key{"hubs.secrets.opPath"}
+	HubsSecretsOpPathHelp                                  = Key{"hubs.secrets.opPathHelp"}
+	HubsSecretsPickProject                                 = Key{"hubs.secrets.pickProject"}
+	HubsSecretsProject                                     = Key{"hubs.secrets.project"}
+	HubsSecretsReference                                   = Key{"hubs.secrets.reference"}
+	HubsSecretsRegion                                      = Key{"hubs.secrets.region"}
+	HubsSecretsRegionEU                                    = Key{"hubs.secrets.regionEU"}
+	HubsSecretsRegionOwn                                   = Key{"hubs.secrets.regionOwn"}
+	HubsSecretsRegionUS                                    = Key{"hubs.secrets.regionUS"}
+	HubsSecretsRowExport                                   = Key{"hubs.secrets.rowExport"}
+	HubsSecretsRowOverride                                 = Key{"hubs.secrets.rowOverride"}
+	HubsSecretsRowSkipSet                                  = Key{"hubs.secrets.rowSkipSet"}
+	HubsSecretsRowSkipToken                                = Key{"hubs.secrets.rowSkipToken"}
+	HubsSecretsRowUnresolved                               = Key{"hubs.secrets.rowUnresolved"}
+	HubsSecretsServer                                      = Key{"hubs.secrets.server"}
+	HubsSecretsServerHelp                                  = Key{"hubs.secrets.serverHelp"}
+	HubsSecretsSetUp                                       = Key{"hubs.secrets.setUp"}
+	HubsSecretsToken                                       = Key{"hubs.secrets.token"}
+	HubsSecretsTokenEnv                                    = Key{"hubs.secrets.tokenEnv"}
+	HubsSecretsTokenKept                                   = Key{"hubs.secrets.tokenKept"}
+	HubsSecretsTokenMissing                                = Key{"hubs.secrets.tokenMissing"}
+	HubsSecretsTokenSet                                    = Key{"hubs.secrets.tokenSet"}
+	HubsSecretsTurnOff                                     = Key{"hubs.secrets.turnOff"}
+	HubsSecretsTurnOffDoes                                 = Key{"hubs.secrets.turnOffDoes"}
+	HubsSecretsUnmapConfirm                                = Key{"hubs.secrets.unmapConfirm"}
+	HubsSecretsVariable                                    = Key{"hubs.secrets.variable"}
 	HubsSessionsArchiveOpen                                = Key{"hubs.sessions.archiveOpen"}
 	HubsSessionsArchived                                   = Key{"hubs.sessions.archived"}
 	HubsSessionsArchivedShown                              = Key{"hubs.sessions.archivedShown"}
@@ -1159,7 +1356,6 @@ var (
 	HubsSettingsOff                                        = Key{"hubs.settings.off"}
 	HubsSettingsOn                                         = Key{"hubs.settings.on"}
 	HubsSettingsOpenChoices                                = Key{"hubs.settings.openChoices"}
-	HubsSettingsPlaceCLI                                   = Key{"hubs.settings.placeCLI"}
 	HubsSettingsPlaceEnv                                   = Key{"hubs.settings.placeEnv"}
 	HubsSettingsPlaceSetup                                 = Key{"hubs.settings.placeSetup"}
 	HubsSettingsPlaceSlash                                 = Key{"hubs.settings.placeSlash"}
@@ -1381,6 +1577,57 @@ var (
 	HubsTrustedPathLabel                                   = Key{"hubs.trusted.pathLabel"}
 	HubsTrustedRemoveConfirm                               = Key{"hubs.trusted.removeConfirm"}
 	HubsTrustedRemoveTitle                                 = Key{"hubs.trusted.removeTitle"}
+	HubsVaultAbout                                         = Key{"hubs.vault.about"}
+	HubsVaultColIdentifier                                 = Key{"hubs.vault.colIdentifier"}
+	HubsVaultColSite                                       = Key{"hubs.vault.colSite"}
+	HubsVaultDetailHandle                                  = Key{"hubs.vault.detailHandle"}
+	HubsVaultDetailSource                                  = Key{"hubs.vault.detailSource"}
+	HubsVaultFieldAddressLine1                             = Key{"hubs.vault.field.address_line1"}
+	HubsVaultFieldAddressLine2                             = Key{"hubs.vault.field.address_line2"}
+	HubsVaultFieldBillingPostalCode                        = Key{"hubs.vault.field.billing_postal_code"}
+	HubsVaultFieldCardNumber                               = Key{"hubs.vault.field.card_number"}
+	HubsVaultFieldCardholderName                           = Key{"hubs.vault.field.cardholder_name"}
+	HubsVaultFieldCity                                     = Key{"hubs.vault.field.city"}
+	HubsVaultFieldCountry                                  = Key{"hubs.vault.field.country"}
+	HubsVaultFieldCvc                                      = Key{"hubs.vault.field.cvc"}
+	HubsVaultFieldExpMonth                                 = Key{"hubs.vault.field.exp_month"}
+	HubsVaultFieldExpYear                                  = Key{"hubs.vault.field.exp_year"}
+	HubsVaultFieldIdentifier                               = Key{"hubs.vault.field.identifier"}
+	HubsVaultFieldIdentifierType                           = Key{"hubs.vault.field.identifier_type"}
+	HubsVaultFieldOtpSecret                                = Key{"hubs.vault.field.otp_secret"}
+	HubsVaultFieldPassword                                 = Key{"hubs.vault.field.password"}
+	HubsVaultFieldPostalCode                               = Key{"hubs.vault.field.postal_code"}
+	HubsVaultFieldState                                    = Key{"hubs.vault.field.state"}
+	HubsVaultFieldLabel                                    = Key{"hubs.vault.fieldLabel"}
+	HubsVaultIdEmail                                       = Key{"hubs.vault.id.email"}
+	HubsVaultIdPhone                                       = Key{"hubs.vault.id.phone"}
+	HubsVaultIdUsername                                    = Key{"hubs.vault.id.username"}
+	HubsVaultKeyFile                                       = Key{"hubs.vault.keyFile"}
+	HubsVaultKeyKeychain                                   = Key{"hubs.vault.keyKeychain"}
+	HubsVaultKeyLeft                                       = Key{"hubs.vault.keyLeft"}
+	HubsVaultKeyMoved                                      = Key{"hubs.vault.keyMoved"}
+	HubsVaultKeyNone                                       = Key{"hubs.vault.keyNone"}
+	HubsVaultKeyToFile                                     = Key{"hubs.vault.keyToFile"}
+	HubsVaultKeyToFileDoes                                 = Key{"hubs.vault.keyToFileDoes"}
+	HubsVaultKeyToKeychain                                 = Key{"hubs.vault.keyToKeychain"}
+	HubsVaultKeyToKeychainDoes                             = Key{"hubs.vault.keyToKeychainDoes"}
+	HubsVaultKindAddress                                   = Key{"hubs.vault.kind.address"}
+	HubsVaultKindLogin                                     = Key{"hubs.vault.kind.login"}
+	HubsVaultKindPayment                                   = Key{"hubs.vault.kind.payment"}
+	HubsVaultKindKey                                       = Key{"hubs.vault.kindKey"}
+	HubsVaultKindManager                                   = Key{"hubs.vault.kindManager"}
+	HubsVaultLabelHelp                                     = Key{"hubs.vault.labelHelp"}
+	HubsVaultLocked                                        = Key{"hubs.vault.locked"}
+	HubsVaultNotLocal                                      = Key{"hubs.vault.notLocal"}
+	HubsVaultPickKind                                      = Key{"hubs.vault.pickKind"}
+	HubsVaultRemoveConfirm                                 = Key{"hubs.vault.removeConfirm"}
+	HubsVaultSiteHelp                                      = Key{"hubs.vault.siteHelp"}
+	HubsVaultSourceAbout                                   = Key{"hubs.vault.sourceAbout"}
+	HubsVaultSourceOff                                     = Key{"hubs.vault.sourceOff"}
+	HubsVaultSourceOn                                      = Key{"hubs.vault.sourceOn"}
+	HubsVaultStateMissing                                  = Key{"hubs.vault.stateMissing"}
+	HubsVaultStateOff                                      = Key{"hubs.vault.stateOff"}
+	HubsVaultStateOn                                       = Key{"hubs.vault.stateOn"}
 	JourneyCloseHint                                       = Key{"journey.closeHint"}
 	JourneyConfirmDelete                                   = Key{"journey.confirmDelete"}
 	JourneyEmpty                                           = Key{"journey.empty"}
@@ -3833,12 +4080,12 @@ var all = []Key{
 	GatewayMsgWakeFailed,
 	GatewayMsgWakeOtherProfile,
 	HelpColKeyOrCommand,
-	HelpCommandsClear,
 	HelpCommandsCopy,
-	HelpCommandsDetails,
+	HelpCommandsDetail,
 	HelpCommandsHelp,
+	HelpCommandsNew,
 	HelpCommandsQuit,
-	HelpCommandsResume,
+	HelpCommandsSessions,
 	HelpCommonCommands,
 	HelpHotkeys,
 	HelpQuickHelp,
@@ -4270,8 +4517,76 @@ var all = []Key{
 	HubsCronStatePaused,
 	HubsCronStateRunning,
 	HubsCronStateScheduled,
-	HubsGroupBanner,
-	HubsGroupShow,
+	HubsFallbackAdded,
+	HubsFallbackBanner,
+	HubsFallbackBannerNone,
+	HubsFallbackCheck,
+	HubsFallbackCheckDoes,
+	HubsFallbackCheckLive,
+	HubsFallbackCheckLiveDoes,
+	HubsFallbackChecked,
+	HubsFallbackChecking,
+	HubsFallbackClear,
+	HubsFallbackClearConfirm,
+	HubsFallbackClearDoes,
+	HubsFallbackDetailAddress,
+	HubsFallbackDetailLatency,
+	HubsFallbackEarlier,
+	HubsFallbackEarlierDoes,
+	HubsFallbackEmpty,
+	HubsFallbackLater,
+	HubsFallbackLaterDoes,
+	HubsFallbackPickProvider,
+	HubsFallbackRemoveConfirm,
+	HubsFallbackRemoveDoes,
+	HubsFallbackRemoved,
+	HubsHooksAllow,
+	HubsHooksAllowConfirm,
+	HubsHooksAllowDoes,
+	HubsHooksAllowed,
+	HubsHooksCheck,
+	HubsHooksCheckAnswersWell,
+	HubsHooksCheckBadAnswer,
+	HubsHooksCheckCanRun,
+	HubsHooksCheckCannotRun,
+	HubsHooksCheckDoes,
+	HubsHooksCheckHealthy,
+	HubsHooksCheckNotAllowed,
+	HubsHooksCheckProblems,
+	HubsHooksCheckUnchanged,
+	HubsHooksCheckWatches,
+	HubsHooksColEvent,
+	HubsHooksCommandHelp,
+	HubsHooksDetailAllowedAt,
+	HubsHooksDetailChanged,
+	HubsHooksDetailEvents,
+	HubsHooksDetailFailClosed,
+	HubsHooksDetailSeconds,
+	HubsHooksDetailSigned,
+	HubsHooksDetailTools,
+	HubsHooksDetailUnsigned,
+	HubsHooksEmpty,
+	HubsHooksFieldSeconds,
+	HubsHooksFieldTools,
+	HubsHooksNew,
+	HubsHooksNoAnswer,
+	HubsHooksRemoveConfirm,
+	HubsHooksRemoveDoes,
+	HubsHooksRevoke,
+	HubsHooksRevokeDoes,
+	HubsHooksRevoked,
+	HubsHooksRunAnswer,
+	HubsHooksRunErrors,
+	HubsHooksRunExit,
+	HubsHooksRunOutput,
+	HubsHooksRunTimedOut,
+	HubsHooksStateAllowed,
+	HubsHooksStateChanged,
+	HubsHooksStateNotAllowed,
+	HubsHooksStateWebhook,
+	HubsHooksTest,
+	HubsHooksTestDoes,
+	HubsHooksToolsHelp,
 	HubsKanbanActArchive,
 	HubsKanbanActArchiveDoes,
 	HubsKanbanActAssign,
@@ -4468,7 +4783,60 @@ var all = []Key{
 	HubsLoginsUsed,
 	HubsLoginsWhatCode,
 	HubsLoginsWhatLink,
+	HubsMemoryBanner,
+	HubsMemoryBuiltin,
+	HubsMemoryBuiltinAbout,
+	HubsMemoryColNeeds,
+	HubsMemoryEraseAll,
+	HubsMemoryEraseAllDoes,
+	HubsMemoryEraseConfirm,
+	HubsMemoryEraseNotes,
+	HubsMemoryEraseNotesDoes,
+	HubsMemoryEraseProfile,
+	HubsMemoryEraseProfileDoes,
+	HubsMemoryErased,
+	HubsMemoryErasedNothing,
+	HubsMemoryInUse,
+	HubsMemoryNeedsKey,
+	HubsMemoryNeedsNothing,
+	HubsMemoryNeedsOwnSetup,
+	HubsMemoryNeedsSettings,
+	HubsMemoryOnlyWhen,
+	HubsMemoryOwnSetupAbout,
+	HubsMemorySecretKeep,
+	HubsMemorySecretSet,
+	HubsMemorySetUpAbout,
+	HubsMemorySettingUp,
+	HubsMemoryStateNotReady,
+	HubsMemoryStateReady,
+	HubsMemoryUse,
+	HubsMemoryUseBuiltin,
+	HubsMemoryUseBuiltinDoes,
+	HubsMixesAddAdviser,
+	HubsMixesAddAdviserDoes,
+	HubsMixesColActing,
+	HubsMixesColAdvisers,
+	HubsMixesDetailActing,
+	HubsMixesDetailAdviser,
+	HubsMixesEmpty,
+	HubsMixesLegend,
+	HubsMixesMakeDefault,
+	HubsMixesMakeDefaultDoes,
+	HubsMixesNew,
+	HubsMixesPickActing,
+	HubsMixesPickAdviser,
+	HubsMixesRemoveAdviser,
+	HubsMixesRemoveAdviserDoes,
+	HubsMixesRemoveConfirm,
+	HubsMixesRemoveDoes,
+	HubsMixesSetActing,
+	HubsMixesSetActingDoes,
+	HubsMixesToggleAdviser,
+	HubsMixesToggleAdviserDoes,
 	HubsPickEmpty,
+	HubsPickModelOf,
+	HubsPickNoProviders,
+	HubsPickOtherModel,
 	HubsPluginsAccept,
 	HubsPluginsAcceptDoes,
 	HubsPluginsActCapabilities,
@@ -4644,12 +5012,88 @@ var all = []Key{
 	HubsProfilesUse,
 	HubsProfilesUseDoes,
 	HubsProfilesUseLabel,
+	HubsProjectsAddFolder,
+	HubsProjectsAddFolderDoes,
+	HubsProjectsArchiveDoes,
+	HubsProjectsBindBoard,
+	HubsProjectsBindBoardDoes,
+	HubsProjectsBoard,
+	HubsProjectsBoardHelp,
+	HubsProjectsClear,
+	HubsProjectsClearDoes,
+	HubsProjectsColFolders,
+	HubsProjectsDescribeDoes,
+	HubsProjectsDetailActive,
+	HubsProjectsDetailBoard,
+	HubsProjectsEmpty,
+	HubsProjectsFolder,
+	HubsProjectsFolderLabel,
+	HubsProjectsFoldersHelp,
+	HubsProjectsLegend,
+	HubsProjectsMainFolder,
+	HubsProjectsNew,
+	HubsProjectsRemoveFolder,
+	HubsProjectsRemoveFolderDoes,
+	HubsProjectsRenameDoes,
+	HubsProjectsRestore,
+	HubsProjectsRestoreDoes,
+	HubsProjectsSetMain,
+	HubsProjectsSetMainDoes,
+	HubsProjectsUse,
+	HubsProjectsUseDoes,
+	HubsProjectsUseNow,
 	HubsRunBusy,
 	HubsRunDone,
 	HubsRunExit,
 	HubsRunFailed,
 	HubsRunNoOutput,
 	HubsRunRunning,
+	HubsSecretsAccountHelp,
+	HubsSecretsBitwardenAbout,
+	HubsSecretsBitwardenSetUpDoes,
+	HubsSecretsBitwardenTokenHelp,
+	HubsSecretsCheck,
+	HubsSecretsCheckDoes,
+	HubsSecretsColFrom,
+	HubsSecretsHelperMissing,
+	HubsSecretsMap,
+	HubsSecretsMapDoes,
+	HubsSecretsNewToken,
+	HubsSecretsNewTokenDoes,
+	HubsSecretsNext,
+	HubsSecretsNoProjects,
+	HubsSecretsNothing,
+	HubsSecretsOnNotSignedIn,
+	HubsSecretsOnSignedIn,
+	HubsSecretsOnePasswordAbout,
+	HubsSecretsOnePasswordSetUpDoes,
+	HubsSecretsOnePasswordTokenHelp,
+	HubsSecretsOpPath,
+	HubsSecretsOpPathHelp,
+	HubsSecretsPickProject,
+	HubsSecretsProject,
+	HubsSecretsReference,
+	HubsSecretsRegion,
+	HubsSecretsRegionEU,
+	HubsSecretsRegionOwn,
+	HubsSecretsRegionUS,
+	HubsSecretsRowExport,
+	HubsSecretsRowOverride,
+	HubsSecretsRowSkipSet,
+	HubsSecretsRowSkipToken,
+	HubsSecretsRowUnresolved,
+	HubsSecretsServer,
+	HubsSecretsServerHelp,
+	HubsSecretsSetUp,
+	HubsSecretsToken,
+	HubsSecretsTokenEnv,
+	HubsSecretsTokenKept,
+	HubsSecretsTokenMissing,
+	HubsSecretsTokenSet,
+	HubsSecretsTurnOff,
+	HubsSecretsTurnOffDoes,
+	HubsSecretsUnmapConfirm,
+	HubsSecretsVariable,
 	HubsSessionsArchiveOpen,
 	HubsSessionsArchived,
 	HubsSessionsArchivedShown,
@@ -4731,7 +5175,6 @@ var all = []Key{
 	HubsSettingsOff,
 	HubsSettingsOn,
 	HubsSettingsOpenChoices,
-	HubsSettingsPlaceCLI,
 	HubsSettingsPlaceEnv,
 	HubsSettingsPlaceSetup,
 	HubsSettingsPlaceSlash,
@@ -4953,6 +5396,57 @@ var all = []Key{
 	HubsTrustedPathLabel,
 	HubsTrustedRemoveConfirm,
 	HubsTrustedRemoveTitle,
+	HubsVaultAbout,
+	HubsVaultColIdentifier,
+	HubsVaultColSite,
+	HubsVaultDetailHandle,
+	HubsVaultDetailSource,
+	HubsVaultFieldAddressLine1,
+	HubsVaultFieldAddressLine2,
+	HubsVaultFieldBillingPostalCode,
+	HubsVaultFieldCardNumber,
+	HubsVaultFieldCardholderName,
+	HubsVaultFieldCity,
+	HubsVaultFieldCountry,
+	HubsVaultFieldCvc,
+	HubsVaultFieldExpMonth,
+	HubsVaultFieldExpYear,
+	HubsVaultFieldIdentifier,
+	HubsVaultFieldIdentifierType,
+	HubsVaultFieldOtpSecret,
+	HubsVaultFieldPassword,
+	HubsVaultFieldPostalCode,
+	HubsVaultFieldState,
+	HubsVaultFieldLabel,
+	HubsVaultIdEmail,
+	HubsVaultIdPhone,
+	HubsVaultIdUsername,
+	HubsVaultKeyFile,
+	HubsVaultKeyKeychain,
+	HubsVaultKeyLeft,
+	HubsVaultKeyMoved,
+	HubsVaultKeyNone,
+	HubsVaultKeyToFile,
+	HubsVaultKeyToFileDoes,
+	HubsVaultKeyToKeychain,
+	HubsVaultKeyToKeychainDoes,
+	HubsVaultKindAddress,
+	HubsVaultKindLogin,
+	HubsVaultKindPayment,
+	HubsVaultKindKey,
+	HubsVaultKindManager,
+	HubsVaultLabelHelp,
+	HubsVaultLocked,
+	HubsVaultNotLocal,
+	HubsVaultPickKind,
+	HubsVaultRemoveConfirm,
+	HubsVaultSiteHelp,
+	HubsVaultSourceAbout,
+	HubsVaultSourceOff,
+	HubsVaultSourceOn,
+	HubsVaultStateMissing,
+	HubsVaultStateOff,
+	HubsVaultStateOn,
 	JourneyCloseHint,
 	JourneyConfirmDelete,
 	JourneyEmpty,

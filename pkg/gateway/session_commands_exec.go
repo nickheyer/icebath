@@ -102,27 +102,28 @@ var (
 
 // What to do instead, in plain words, for commands the background service does not run
 var RefusalHints = map[string]string{
-	"export":   "Type /export [profile] [-o <file>] in the terminal UI (run `icebath`), or run `icebath profile export [name] -o <file>`.",
-	"import":   "Type /import <archive> [--name <name>] in the terminal UI (run `icebath`), or run `icebath profile import <archive> [--name <name>]`.",
-	"snapshot": "Type /snapshot in the terminal UI (run `icebath`): list, create [label], restore <id>, prune [N]. `icebath backup --quick` creates one from a shell.",
-	"handoff":  "Type /handoff <platform> in the terminal UI (run `icebath`) on the session to hand off.",
-	"hatch":    "Type /hatch [description] in the terminal UI (run `icebath`), or /pet to pick a gallery pet.",
-	"worktree": "Type /worktree [new [name]|list|prune] in the terminal UI (run `icebath`), or start in a fresh worktree with `icebath -w`.",
+	"export":   "Type /export [profile] [-o <file>] in the terminal UI, or export a profile from the Profiles screen (/profiles).",
+	"import":   "Type /import <backup.zip> [--force] in the terminal UI to restore a backup; a profile archive is imported from the Profiles screen (/profiles).",
+	"snapshot": "Type /snapshot in the terminal UI: list, create [label], restore <id>, prune [N].",
+	"handoff":  "Type /handoff <platform> in the terminal UI on the session to hand off.",
+	"hatch":    "Type /hatch [description] in the terminal UI, or /pet to pick a gallery pet.",
+	"worktree": "Type /worktree [new [name]|list|prune] in the terminal UI.",
 	"palette":  "Type / to search commands (the composer completes and filters them).",
 	"start":    chatAppOnlyHint,
 	"topic":    chatAppOnlyHint,
 	"sethome":  chatAppOnlyHint,
+	"verbose":  "This command only works in a chat app conversation. In the terminal UI, /detail sets how much of the agent's work you see.",
 	"voice":    "The terminal UI speaks replies itself: type /voice tts there. Spoken replies from the background service are for chat apps.",
-	"plugins":  "Type /plugins to open the plugin list, /plugins update to update them all, or /plugins enable|disable <name>. To install or remove one, run `icebath plugins` from the command palette.",
-	"skills":   "Type /skills to open the skill list; /skills search, install and inspect work too. To check, update, audit or uninstall skills, run `icebath skills <action>` from the command palette.",
-	"update":   "Type /update in the terminal UI: it updates once the UI exits, then starts it again. Run `icebath update --check` from the command palette to see what would change.",
+	"plugins":  "Plugins are installed, updated, removed and turned on or off on the Plugins screen of the terminal UI (/plugins).",
+	"skills":   "Skills are searched, installed, checked, updated and removed on the Skills screen of the terminal UI (/skills).",
+	"update":   "Type /update in the terminal UI: it updates once the UI exits, then starts it again.",
 }
 
 // Kanban verbs that keep running until stopped, which a slash reply cannot carry
 var kanbanForegroundVerbs = nameSet("watch", "tail", "daemon")
 
 // Hint of a kanban verb that keeps running until stopped
-const kanbanForegroundHint = "/kanban watch, tail and daemon keep running until stopped, so they cannot answer here. Run `icebath kanban <action>` from the command palette; it opens in a terminal."
+const kanbanForegroundHint = "/kanban watch, tail and daemon keep running until stopped, so they cannot answer here. The Kanban screen of the terminal UI (/kanban) follows the board live."
 
 // Arguments of /skills the background service runs, the review of pending skill writes
 var skillsReviewWords = nameSet("", "pending", "approve", "apply", "reject", "deny", "drop", "diff", "approval", "mode")
@@ -130,11 +131,11 @@ var skillsReviewWords = nameSet("", "pending", "approve", "apply", "reject", "de
 // Hint of a command that only means something in a chat app conversation
 const chatAppOnlyHint = "This command only works in a chat app conversation (Telegram, Discord, Slack and the like). Connect a chat app from /setup in the terminal UI."
 
-// Hint of a registry command the background service has no handler for, run by the terminal UI itself
-const clientOnlyHint = "The terminal UI runs this command itself, not the background service. Type it in the terminal UI (run `icebath`), or type /help there to see what each command does."
+// Hint of a registry command the terminal UI sent that nothing in this build runs, a fault of the build rather than of what was typed
+const clientOnlyHint = "Nothing in this build of icebath runs this command."
 
 // Hint of a command only the terminal UI on this computer may run through the background service
-const ownerOnlyHint = "Only the terminal UI on this computer can run this command. Type it there (run `icebath`)."
+const ownerOnlyHint = "Only the terminal UI on this computer can run this command."
 
 // Service controls, plugin toggles and listings only the local owner may run
 var ownerControlCommands = nameSet("pause", "restart", "platform", "plugins", "agents")

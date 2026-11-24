@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Icebath Agent auf die neueste Version aktualisieren"
+  settings:
+
+    description: "Jede Einstellung, nach Gruppen, mit ihrer Wirkung"
+  logins:
+
+    description: "Deine Anmeldungen jedes Anbieters und welche jede Sitzung nutzt"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack und mehr: Kopplung, Webhooks, Peers, Senden"
+  keys:
+
+    description: "Alle Tasten anzeigen oder mit /keys edit ändern"
+  mouse:
+
+    description: "Maus-Tracking einstellen"
+  processes:
+
+    description: "Hintergrundprozesse der Sitzung auflisten, ihre Ausgabe lesen oder einen töten"
+  language:
+
+    description: "Sprache der UI wählen"
+  detail:
+
+    description: "Wie viel von der Tool-Arbeit und dem Denken des Agenten du siehst"
   category:
 
     session: "Sitzung"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Telegram-Direktnachricht-Topic-Sitzungen aktivieren oder prüfen"
-  clear:
-
-    description: "Bildschirm leeren und neue Sitzung starten"
   redraw:
 
     description: "Vollständiges Neuzeichnen der UI erzwingen (behebt Terminal-Darstellungsfehler)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Frühere Sitzungen durchsuchen und fortsetzen"
-  config:
-
-    description: "Aktuelle Konfiguration anzeigen"
   model:
 
     description: "Modell wechseln (sitzungsbezogen; --global zum dauerhaften Speichern)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Tools verwalten: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Verfügbare Toolsets auflisten"
   skills:
 
     description: "Skills suchen, installieren, prüfen oder verwalten"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Token-Verbrauch und Rate-Limits anzeigen; `reset` löst einen gespeicherten Codex-Limit-Reset ein"
-  platforms:
-
-    description: "Status der Gateway-/Messaging-Plattformen anzeigen"
   platform:
 
     description: "Eine ausgefallene Gateway-Plattform pausieren, fortsetzen oder auflisten"

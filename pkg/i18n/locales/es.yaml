@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Actualizar Icebath Agent a la última versión"
+  settings:
+
+    description: "Todos los ajustes, por grupo, con lo que hacen"
+  logins:
+
+    description: "Tus logins de cada proveedor y cuál usa cada sesión"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack y más: emparejamiento, webhooks, pares, envío"
+  keys:
+
+    description: "Mostrar todas las teclas, o cambiarlas con /keys edit"
+  mouse:
+
+    description: "Configurar el seguimiento del mouse"
+  processes:
+
+    description: "Listar los procesos en segundo plano de la sesión, leer su salida o matar uno"
+  language:
+
+    description: "Elegir el idioma de la interfaz"
+  detail:
+
+    description: "Cuánto ves del trabajo con herramientas y del razonamiento del agente"
   category:
 
     session: "Sesión"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Activar o inspeccionar sesiones por tema en MD de Telegram"
-  clear:
-
-    description: "Limpiar la pantalla e iniciar una nueva sesión"
   redraw:
 
     description: "Forzar un repintado completo de la UI (corrige desajustes del terminal)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Explorar y reanudar sesiones anteriores"
-  config:
-
-    description: "Mostrar la configuración actual"
   model:
 
     description: "Cambiar de modelo (solo para la sesión; --global para persistirlo)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Gestionar herramientas: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Listar los conjuntos de herramientas disponibles"
   skills:
 
     description: "Buscar, instalar, inspeccionar o gestionar skills"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Mostrar el uso de tokens y los límites de tasa; `reset` canjea un reinicio de límite de Codex acumulado"
-  platforms:
-
-    description: "Mostrar el estado de las plataformas de mensajería/gateway"
   platform:
 
     description: "Pausar, reanudar o listar una plataforma del gateway con fallos"

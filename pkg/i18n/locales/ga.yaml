@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Nuashonraigh Icebath Agent go dtí an leagan is déanaí"
+  settings:
+
+    description: "Gach socrú, de réir grúpa, lena fheidhm"
+  logins:
+
+    description: "Do logálacha isteach do gach soláthraí agus cé acu a úsáideann gach seisiún"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack agus tuilleadh: péireáil, crúcaí gréasáin, piaraí, seol"
+  keys:
+
+    description: "Taispeáin gach eochair, nó athraigh iad le /keys edit"
+  mouse:
+
+    description: "Socraigh rianú luiche"
+  processes:
+
+    description: "Liostaigh próisis chúlra an tseisiúin, léigh a n-aschur nó maraigh ceann"
+  language:
+
+    description: "Roghnaigh teanga an chomhéadain"
+  detail:
+
+    description: "An méid d'obair uirlisí agus de smaointeoireacht an ghníomhaire a fheiceann tú"
   category:
 
     session: "Seisiún"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Cumasaigh nó scrúdaigh seisiúin topaice i gcomhráite príobháideacha Telegram"
-  clear:
-
-    description: "Glan an scáileán agus tosaigh seisiún nua"
   redraw:
 
     description: "Fórsáil athphéinteáil iomlán ar an UI (aisghabháil ó shleamhnú teirminéil)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Brabhsáil agus atosaigh seisiúin roimhe seo"
-  config:
-
-    description: "Taispeáin an chumraíocht reatha"
   model:
 
     description: "Athraigh an tsamhail (scóip an tseisiúin; --global chun coinneáil)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Bainistigh uirlisí: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Liostáil na tacair uirlisí atá ar fáil"
   skills:
 
     description: "Cuardaigh, suiteáil, scrúdaigh, nó bainistigh scileanna"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Taispeáin úsáid comharthaí agus teorainneacha ráta; fuasclaíonn `reset` athshocrú teorann Codex bainc"
-  platforms:
-
-    description: "Taispeáin stádas gateway/ardán teachtaireachtaí"
   platform:
 
     description: "Cuir ar sos, atosaigh, nó liostáil ardán gateway atá ag teip"

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -250,15 +251,7 @@ func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	for _, w := range warnings {
 		console.Print("  [yellow]warning:[/yellow] " + w)
 	}
-	secretsCfg["enabled"], secretsCfg["project_id"], secretsCfg["server_url"] = true, projectID, serverURL
-	for _, entry := range []struct {
-		key   string
-		value any
-	}{{"access_token_env", tokenEnv}, {"cache_ttl_seconds", 300}, {"override_existing", true}, {"auto_install", true}} {
-		if _, ok := secretsCfg[entry.key]; !ok {
-			secretsCfg[entry.key] = entry.value
-		}
-	}
+	enableBitwarden(secretsCfg, tokenEnv, projectID, serverURL)
 	if err := secretsSaveConfig(cli.home, cfg); err != nil {
 		return 1, err
 	}
@@ -468,23 +461,23 @@ func bwCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 	var rows [][]string
 	applied := 0
 	for _, key := range sortedStringKeys(secrets) {
-		already := os.Getenv(key) != ""
+		kind := secretSyncAction(key, tokenEnv, override)
 		var action string
 		switch {
-		case key == tokenEnv:
+		case kind == "skip_token":
 			action = "[dim]skip (bootstrap token)[/dim]"
-		case already && !override:
+		case kind == "skip_set":
 			action = "[dim]skip (already set)[/dim]"
 		case apply:
 			os.Setenv(key, secrets[key])
 			applied++
 			action = "[green]exported[/green]"
-			if already {
+			if kind == "override" {
 				action += " (overrode)"
 			}
 		default:
 			action = "[green]would export[/green]"
-			if already {
+			if kind == "override" {
 				action += " (overrides)"
 			}
 		}
@@ -547,20 +540,27 @@ func tokenValidationStatus(cli *secretsCLI, enabled bool, binary, token, serverU
 	return "[green]passed[/green]", messages
 }
 
-// Substrings of the lowercased bws error and the follow up hint, first match wins
-var projectListHints = []struct {
+// Why listing the Bitwarden projects failed: the text to show and what it usually means, region or token, empty when not known
+type bitwardenProjectsFailure struct{ Text, Cause string }
+
+// Substrings of the lowercased bws error and what they usually mean, first match wins
+var projectListCauses = []struct {
 	needles []string
-	hint    string
+	cause   string
 }{
-	{[]string{"invalid_client", "400 bad request"},
-		"  [yellow]'invalid_client' from the US identity endpoint usually " +
-			"means the token is for a different Bitwarden region.  Re-run " +
-			"[cyan]icebath secrets bitwarden setup[/cyan] and pick EU or " +
-			"self-hosted at the region prompt, or set [cyan]secrets.bitwarden." +
-			"server_url[/cyan] in config.yaml.[/yellow]"},
-	{[]string{"authorization", "invalid"},
-		"  [yellow]This usually means the access token is wrong or revoked. " +
-			"Double-check it in the Bitwarden web app.[/yellow]"},
+	{[]string{"invalid_client", "400 bad request"}, "region"},
+	{[]string{"authorization", "invalid"}, "token"},
+}
+
+// Terminal follow up of each cause of a failed project list
+var projectListHints = map[string]string{
+	"region": "  [yellow]'invalid_client' from the US identity endpoint usually " +
+		"means the token is for a different Bitwarden region.  Re-run " +
+		"[cyan]icebath secrets bitwarden setup[/cyan] and pick EU or " +
+		"self-hosted at the region prompt, or set [cyan]secrets.bitwarden." +
+		"server_url[/cyan] in config.yaml.[/yellow]",
+	"token": "  [yellow]This usually means the access token is wrong or revoked. " +
+		"Double-check it in the Bitwarden web app.[/yellow]",
 }
 
 // Text truncated to the first n characters
@@ -572,22 +572,33 @@ func headRunes(s string, n int) string {
 	return s
 }
 
-// Calls bws project list and returns the parsed list, false after printing on failure
-func listBitwardenProjects(cli *secretsCLI, binary, token string, console *pyrich.Console, serverURL string) ([]map[string]any, bool) {
-	env, err := secretCLIEnv(cli.ctx)
+// Cause of a failed project list by its error text, empty when no known cause matches
+func projectListCause(failure string) string {
+	lowered := strings.ToLower(failure)
+	for _, entry := range projectListCauses {
+		for _, needle := range entry.needles {
+			if strings.Contains(lowered, needle) {
+				return entry.cause
+			}
+		}
+	}
+	return ""
+}
+
+// Calls bws project list and returns the parsed list, or why it failed
+func bitwardenProjects(ctx context.Context, binary, token, serverURL string) ([]map[string]any, *bitwardenProjectsFailure) {
+	env, err := secretCLIEnv(ctx)
 	if err != nil {
-		console.Print(fmt.Sprintf("  [red]Couldn't list projects: %s[/red]", pyrepr.ExceptionMessage(err)))
-		return nil, false
+		return nil, &bitwardenProjectsFailure{Text: "Couldn't list projects: " + pyrepr.ExceptionMessage(err)}
 	}
 	env["BWS_ACCESS_TOKEN"] = token
 	if serverURL != "" {
 		env["BWS_SERVER_URL"] = serverURL
 	}
-	res, err := pysubprocess.RunWith(cli.ctx, []string{binary, "project", "list", "--output", "json"},
+	res, err := pysubprocess.RunWith(ctx, []string{binary, "project", "list", "--output", "json"},
 		pysubprocess.Options{Env: envList(env), Timeout: 15 * time.Second})
 	if err != nil {
-		console.Print(fmt.Sprintf("  [red]Couldn't list projects: %s[/red]", pyrepr.ExceptionMessage(err)))
-		return nil, false
+		return nil, &bitwardenProjectsFailure{Text: "Couldn't list projects: " + pyrepr.ExceptionMessage(err)}
 	}
 	stdout := decodeCLIOutput(res.Stdout)
 	if res.Returncode != 0 {
@@ -596,33 +607,18 @@ func listBitwardenProjects(cli *secretsCLI, binary, token string, console *pyric
 			output = stdout
 		}
 		failure := headRunes(pystr.Strip(output), 300)
-		console.Print(fmt.Sprintf("  [red]bws project list failed: %s[/red]", failure))
-		lowered := strings.ToLower(failure)
-		for _, entry := range projectListHints {
-			matched := false
-			for _, needle := range entry.needles {
-				if strings.Contains(lowered, needle) {
-					matched = true
-				}
-			}
-			if matched {
-				console.Print(entry.hint)
-				break
-			}
-		}
-		return nil, false
+		return nil, &bitwardenProjectsFailure{Text: "bws project list failed: " + failure, Cause: projectListCause(failure)}
 	}
 	if stdout == "" {
 		stdout = "[]"
 	}
 	data, err := pyjson.Loads(stdout)
 	if err != nil {
-		console.Print(fmt.Sprintf("  [red]bws returned non-JSON: %s[/red]", pyrepr.ExceptionMessage(err)))
-		return nil, false
+		return nil, &bitwardenProjectsFailure{Text: "bws returned non-JSON: " + pyrepr.ExceptionMessage(err)}
 	}
 	items, ok := data.([]any)
 	if !ok {
-		return []map[string]any{}, true
+		return []map[string]any{}, nil
 	}
 	projects := []map[string]any{}
 	for _, item := range items {
@@ -630,7 +626,20 @@ func listBitwardenProjects(cli *secretsCLI, binary, token string, console *pyric
 			projects = append(projects, p)
 		}
 	}
-	return projects, true
+	return projects, nil
+}
+
+// Calls bws project list and returns the parsed list, false after printing why it failed and what that usually means
+func listBitwardenProjects(cli *secretsCLI, binary, token string, console *pyrich.Console, serverURL string) ([]map[string]any, bool) {
+	projects, failure := bitwardenProjects(cli.ctx, binary, token, serverURL)
+	if failure == nil {
+		return projects, true
+	}
+	console.Print(fmt.Sprintf("  [red]%s[/red]", failure.Text))
+	if hint := projectListHints[failure.Cause]; hint != "" {
+		console.Print(hint)
+	}
+	return nil, false
 }
 
 // Canonical Bitwarden region endpoints, a new region here appears in the prompt

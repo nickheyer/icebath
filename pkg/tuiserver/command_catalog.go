@@ -33,8 +33,6 @@ var catalogHidden = map[string]bool{"sethome": true, "set-home": true, "commands
 var catalogExtras = [][3]string{
 	{"/density", "Toggle compact display mode", "TUI"},
 	{"/logs", "Show recent gateway log lines", "TUI"},
-	{"/mouse", "Set mouse tracking preset [on|off|toggle|wheel|buttons|all]", "TUI"},
-	{"/sessions", "Switch between live TUI sessions", "TUI"},
 }
 
 // Accumulated pairs, canonical names, ordered categories and plugin commands of the catalog

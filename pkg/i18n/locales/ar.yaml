@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "تحديث Icebath Agent إلى أحدث إصدار"
+  settings:
+
+    description: "كل إعداد، حسب المجموعة، مع ما يفعله"
+  logins:
+
+    description: "تسجيلات دخولك لكل مزوّد وأيها تستخدمه كل جلسة"
+  chat-apps:
+
+    description: "Telegram وDiscord وSlack وغيرها: الاقتران، الـ webhooks، النظراء، الإرسال"
+  keys:
+
+    description: "عرض كل مفتاح، أو تغييرها بـ /keys edit"
+  mouse:
+
+    description: "ضبط تتبّع الفأرة"
+  processes:
+
+    description: "سرد عمليات الجلسة في الخلفية، أو قراءة مخرجاتها أو إنهاء إحداها"
+  language:
+
+    description: "اختيار لغة الواجهة"
+  detail:
+
+    description: "مقدار ما تراه من عمل الوكيل بالأدوات وتفكيره"
   category:
 
     session: "الجلسة"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "تفعيل أو فحص جلسات المواضيع في الرسائل الخاصة على Telegram"
-  clear:
-
-    description: "مسح الشاشة وبدء جلسة جديدة"
   redraw:
 
     description: "إعادة رسم الواجهة بالكامل (للتعافي من انحراف الطرفية)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "استعراض الجلسات السابقة واستئنافها"
-  config:
-
-    description: "عرض الإعدادات الحالية"
   model:
 
     description: "تبديل النموذج (على مستوى الجلسة؛ --global للتثبيت الدائم)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "إدارة الأدوات: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "سرد مجموعات الأدوات المتاحة"
   skills:
 
     description: "البحث عن المهارات أو تثبيتها أو فحصها أو إدارتها"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "عرض استخدام الرموز وحدود المعدّل؛ `reset` يستبدل إعادة تعيين حد Codex المدّخرة"
-  platforms:
-
-    description: "عرض حالة البوّابة/منصات المراسلة"
   platform:
 
     description: "إيقاف منصة بوّابة متعطّلة مؤقتًا أو استئنافها أو سردها"

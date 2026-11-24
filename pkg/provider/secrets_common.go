@@ -284,12 +284,7 @@ func secretsSetdefaultMapping(cfg map[string]any, key string) map[string]any {
 
 // Sets secrets.<section>.enabled false in config.yaml and prints the message
 func disableSecretSource(cli *secretsCLI, section, message string) (int, error) {
-	cfg, err := secretsLoadConfig(cli.home)
-	if err != nil {
-		return 1, err
-	}
-	secretsSetdefaultMapping(secretsSetdefaultMapping(cfg, "secrets"), section)["enabled"] = false
-	if err := secretsSaveConfig(cli.home, cfg); err != nil {
+	if err := setSecretSourceDisabled(cli.home, section); err != nil {
 		return 1, err
 	}
 	cli.console.Print(message)

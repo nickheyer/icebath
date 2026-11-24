@@ -101,11 +101,7 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 			password = vaultGetpass("Password (hidden): ")
 		}
 		otpSecret := vaultGetpass("Authenticator key (optional, hidden; the 2FA \"setup key\" or otpauth:// link — Enter to skip): ")
-		secret := pyjson.ObjectOf("identifier_type", idType, "identifier", identifier, "password", password)
-		if strings.TrimSpace(otpSecret) != "" {
-			secret.Set("otp_secret", otpSecret)
-		}
-		meta, err = vault.GetVaultStore(ctx).AddItem("login", label, secret, origin)
+		meta, err = addVaultItem(ctx, "login", label, origin, map[string]string{"identifier_type": idType, "identifier": identifier, "password": password, "otp_secret": otpSecret})
 	} else {
 		fields := vault.AddressFields
 		if kind == "payment" {
@@ -120,7 +116,7 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 		for _, f := range vault.RequiredFields(kind) {
 			required[f] = true
 		}
-		secret := pyjson.NewObject()
+		values := map[string]string{}
 		for _, field := range fields.Keys {
 			prompt := strings.ReplaceAll(field, "_", " ")
 			if !required[field] {
@@ -135,11 +131,9 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 			for required[field] && value == "" {
 				value = read(prompt)
 			}
-			if value != "" {
-				secret.Set(field, value)
-			}
+			values[field] = value
 		}
-		meta, err = vault.GetVaultStore(ctx).AddItem(kind, label, secret, origin)
+		meta, err = addVaultItem(ctx, kind, label, origin, values)
 	}
 	var verr *vault.VaultError
 	if errors.As(err, &verr) {
@@ -155,28 +149,9 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 
 // Lists local items and the unlocked external managers, locked ones named for the session
 func vaultCmdList(ctx context.Context, c *pyrich.Console) error {
-	backends, err := EnabledLoginBackends(ctx)
+	rows, locked, err := vaultListing(ctx)
 	if err != nil {
 		return err
-	}
-	type row struct {
-		source string
-		meta   vault.VaultItemMeta
-	}
-	var rows []row
-	var locked []string
-	for _, backend := range backends {
-		if backend.NeedsUnlock() && !backend.IsUnlocked() {
-			locked = append(locked, backend.DisplayName())
-			continue
-		}
-		items, err := backend.ListItems()
-		if err != nil {
-			return err
-		}
-		for _, meta := range items {
-			rows = append(rows, row{backend.DisplayName(), meta})
-		}
 	}
 	if len(rows) == 0 && len(locked) == 0 {
 		c.Print("[dim]Vault is empty. Add an item with `icebath vault add`.[/]")
@@ -235,18 +210,7 @@ func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[st
 			c.Print(fmt.Sprintf("[red]Unknown password manager %s[/] (expected one of %s)", pyrepr.Repr(name), strings.Join(names, ", ")))
 			return nil
 		}
-		cfg, err := config.Load(h, config.NewSecrets(h).Lookup())
-		if err != nil {
-			return err
-		}
-		doc := map[string]any(cfg)
-		section := ensureConfigDict(ensureConfigDict(doc, "vault"), name)
-		if enable {
-			delete(section, "enabled")
-		} else {
-			section["enabled"] = false
-		}
-		if err := config.SaveConfig(ctx, h, doc, config.SaveOptions{}); err != nil {
+		if err := setVaultSource(ctx, h, name, enable); err != nil {
 			return err
 		}
 		state := "off"
@@ -256,31 +220,19 @@ func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[st
 		c.Print(fmt.Sprintf("[green]%s %s[/] for browser logins.", display[name], state))
 		return nil
 	}
-	backends, err := EnabledLoginBackends(ctx)
+	sources, err := VaultSources(ctx)
 	if err != nil {
 		return err
 	}
-	enabled := map[string]bool{}
-	for _, b := range backends {
-		enabled[b.Name()] = true
-	}
-	for _, cls := range classes {
-		var status string
-		switch {
-		case enabled[cls.name]:
+	for _, source := range sources {
+		status := "[dim]not installed[/]"
+		switch source.State {
+		case "on":
 			status = "[green]detected[/] · the agent asks you to unlock it when it needs a login"
-		default:
-			installed, err := IsLoginBackendInstalled(ctx, cls.name)
-			if err != nil {
-				return err
-			}
-			if installed {
-				status = fmt.Sprintf("[dim]turned off[/] (`icebath vault sources --enable %s` to use it)", cls.name)
-			} else {
-				status = "[dim]not installed[/]"
-			}
+		case "off":
+			status = fmt.Sprintf("[dim]turned off[/] (`icebath vault sources --enable %s` to use it)", source.Name)
 		}
-		c.Print(fmt.Sprintf("  %-10s %s", cls.displayName, status))
+		c.Print(fmt.Sprintf("  %-10s %s", source.DisplayName, status))
 	}
 	c.Print("[dim]Managers are picked up automatically when their CLI is installed and signed in.[/]")
 	return nil
@@ -289,7 +241,7 @@ func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[st
 // Removes a local item by handle
 func vaultCmdRm(ctx context.Context, c *pyrich.Console, ns map[string]any) error {
 	handle := pyrepr.Str(ns["handle"])
-	removed, err := vault.GetVaultStore(ctx).RemoveItem(handle)
+	removed, err := RemoveVaultItem(ctx, handle)
 	if err != nil {
 		return err
 	}
@@ -319,19 +271,12 @@ func keyLocationText(where *pyjson.Object, key string) string {
 
 // Shows where the local vault key lives, or moves it between vault.key and the OS keychain
 func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string]any) error {
-	store := vault.GetVaultStore(ctx)
 	target := ""
 	if pyrepr.Truthy(ns["to"]) {
 		target = pyrepr.Str(ns["to"])
 	}
 	if target != "" {
-		if _, err := store.MigrateKey(target); err != nil {
-			return err
-		}
-		if err := setVaultKeyStorage(ctx, h, target); err != nil {
-			return err
-		}
-		where, err := store.KeyLocation()
+		where, err := moveVaultKey(ctx, h, target)
 		if err != nil {
 			return err
 		}
@@ -355,7 +300,7 @@ func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string
 		}
 		return nil
 	}
-	where, err := store.KeyLocation()
+	where, err := vault.GetVaultStore(ctx).KeyLocation()
 	if err != nil {
 		return err
 	}

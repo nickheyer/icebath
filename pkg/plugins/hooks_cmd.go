@@ -46,57 +46,42 @@ func HooksCommand(ctx context.Context, args HooksArgs, w io.Writer) error {
 
 // Prints configured shell hooks with consent and drift state, then outbound webhook targets
 func hooksList(ctx context.Context, _ HooksArgs, w io.Writer) error {
-	cfg, err := loadConfig(home.Dir(ctx))
+	hooks, outbound, err := HooksOverview(ctx)
 	if err != nil {
 		return err
 	}
-	specs := IterConfiguredShellHooks(cfg)
-	outbound, err := IterConfiguredOutboundWebhooks(ctx, cfg)
-	if err != nil {
-		return err
-	}
-	if len(specs) == 0 && len(outbound) == 0 {
+	if len(hooks) == 0 && len(outbound) == 0 {
 		fmt.Fprintln(w, "No shell hooks or outbound webhooks configured in ~/.icebath/config.yaml.")
 		fmt.Fprintln(w, "See `icebath hooks --help` or")
 		fmt.Fprintln(w, "    website/docs/user-guide/features/hooks.md")
 		fmt.Fprintln(w, "for the config schema and worked examples.")
 		return nil
 	}
-	if len(specs) == 0 {
+	if len(hooks) == 0 {
 		fmt.Fprintln(w, "No shell hooks configured in ~/.icebath/config.yaml.")
 	} else {
-		byEvent := map[string][]*ShellHookSpec{}
-		for _, spec := range specs {
-			byEvent[spec.Event] = append(byEvent[spec.Event], spec)
+		byEvent := map[string][]HookView{}
+		for _, hook := range hooks {
+			byEvent[hook.Event] = append(byEvent[hook.Event], hook)
 		}
 		events := make([]string, 0, len(byEvent))
 		for event := range byEvent {
 			events = append(events, event)
 		}
 		sort.Strings(events)
-		approved := AllowlistedShellHookPairs(ctx)
-		fmt.Fprintf(w, "Configured shell hooks (%d total):\n\n", len(specs))
+		fmt.Fprintf(w, "Configured shell hooks (%d total):\n\n", len(hooks))
 		for _, event := range events {
 			fmt.Fprintf(w, "  [%s]\n", event)
-			for _, spec := range byEvent[event] {
-				isApproved := approved[[2]string{spec.Event, spec.Command}]
+			for _, hook := range byEvent[event] {
 				status := "✗ not allowlisted"
-				if isApproved {
+				if hook.Allowed {
 					status = "✓ allowed"
 				}
-				fmt.Fprintf(w, "    - %s%s (timeout=%ds, %s)\n", spec.Command, hookMatcherPart(spec.Matcher), spec.Timeout, status)
-				var entry map[string]any
-				if isApproved {
-					entry = ShellHookAllowlistEntry(ctx, spec.Event, spec.Command)
-				}
-				if len(entry) > 0 && config.PyTruthy(entry["approved_at"]) {
-					fmt.Fprintf(w, "      approved_at: %s\n", pyrepr.Str(entry["approved_at"]))
-					drift, at, now, err := hookMtimeDrift(spec, entry)
-					if err != nil {
-						return err
-					}
-					if drift == 1 {
-						fmt.Fprintf(w, "      ⚠ script modified since approval (was %s, now %s) — run `icebath hooks doctor` to re-validate\n", at, now)
+				fmt.Fprintf(w, "    - %s%s (timeout=%ds, %s)\n", hook.Command, hookMatcherPart(hook.Matcher), hook.Timeout, status)
+				if hook.ApprovedAt != "" {
+					fmt.Fprintf(w, "      approved_at: %s\n", hook.ApprovedAt)
+					if hook.Drift == 1 {
+						fmt.Fprintf(w, "      ⚠ script modified since approval (was %s, now %s) — run `icebath hooks doctor` to re-validate\n", hook.DriftWas, hook.DriftNow)
 					}
 				}
 			}
@@ -107,10 +92,10 @@ func hooksList(ctx context.Context, _ HooksArgs, w io.Writer) error {
 		fmt.Fprintf(w, "Configured outbound webhooks (%d total):\n\n", len(outbound))
 		for _, target := range outbound {
 			signed := "UNSIGNED"
-			if target.Secret != "" {
+			if target.Signed {
 				signed = "signed"
 			}
-			fmt.Fprintf(w, "  - %s\n", target.Label())
+			fmt.Fprintf(w, "  - %s\n", target.Label)
 			fmt.Fprintf(w, "      url:     %s\n", target.URL)
 			fmt.Fprintf(w, "      events:  %s%s (timeout=%ds, %s)\n", strings.Join(target.Events, ", "), hookMatcherPart(target.Matcher), target.Timeout, signed)
 		}
@@ -226,13 +211,7 @@ func hooksTest(ctx context.Context, args HooksArgs, w io.Writer) error {
 		fmt.Fprintf(w, "Valid events: %s\n", strings.Join(ValidHooks(), ", "))
 		return nil
 	}
-	payload, ok := defaultHookPayload(event)
-	if !ok {
-		payload = map[string]any{"session_id": "test-session"}
-	}
-	if args.ForTool != "" {
-		payload["tool_name"] = args.ForTool
-	}
+	payload := sampleHookPayload(event, args.ForTool)
 	if args.PayloadFile != "" {
 		custom, err := readHookPayloadFile(args.PayloadFile)
 		if err != nil {
@@ -389,75 +368,51 @@ func hooksDoctor(ctx context.Context, _ HooksArgs, w io.Writer) error {
 	return nil
 }
 
-// Issues of one hook, the JSON smoke run reserved for an allowlisted executable script
+// Prints what checking one hook found and returns how many of the findings are problems, the JSON smoke run reserved for an allowlisted executable script
 func hookDoctorOne(ctx context.Context, spec *ShellHookSpec, w io.Writer) (int, error) {
-	problems := 0
-	if ShellHookScriptIsExecutable(spec.Command) {
+	check, err := checkShellHook(ctx, spec)
+	if check.Executable {
 		fmt.Fprintln(w, "      ✓ script exists and is executable")
 	} else {
-		problems++
 		fmt.Fprintln(w, "      ✗ script missing or not executable (chmod +x the file, or fix the path)")
 	}
-	entry := ShellHookAllowlistEntry(ctx, spec.Event, spec.Command)
-	if len(entry) > 0 {
-		approvedAt, ok := entry["approved_at"]
-		if !ok {
-			approvedAt = "?"
-		}
-		fmt.Fprintf(w, "      ✓ allowlisted (approved %s)\n", pyrepr.Str(approvedAt))
+	if check.Allowed {
+		fmt.Fprintf(w, "      ✓ allowlisted (approved %s)\n", check.ApprovedAt)
 	} else {
-		problems++
 		fmt.Fprintln(w, "      ✗ not allowlisted — hook will NOT fire at runtime (run with --accept-hooks once, or confirm at the TTY prompt)")
 	}
-	if len(entry) > 0 && config.PyTruthy(entry["script_mtime_at_approval"]) {
-		drift, at, now, err := hookMtimeDrift(spec, entry)
-		if err != nil {
-			return problems, err
-		}
-		if drift == 1 {
-			problems++
-			fmt.Fprintf(w, "      ⚠ script modified since approval (was %s, now %s) — review changes, then `icebath hooks revoke` + re-approve to refresh\n", at, now)
-		} else if drift == 0 {
-			fmt.Fprintln(w, "      ✓ script unchanged since approval")
-		}
+	if check.DriftChecked && check.Drift == 1 {
+		fmt.Fprintf(w, "      ⚠ script modified since approval (was %s, now %s) — review changes, then `icebath hooks revoke` + re-approve to refresh\n", check.DriftWas, check.DriftNow)
+	} else if check.DriftChecked && check.Drift == 0 {
+		fmt.Fprintln(w, "      ✓ script unchanged since approval")
 	}
-	if len(entry) == 0 {
-		fmt.Fprintln(w, "      ℹ skipped JSON smoke test — not allowlisted yet. Approve the hook first (via TTY prompt or --accept-hooks), then re-run `icebath hooks doctor`.")
-		return problems, nil
-	}
-	if !ShellHookScriptIsExecutable(spec.Command) {
-		return problems, nil
-	}
-	payload, ok := defaultHookPayload(spec.Event)
-	if !ok {
-		payload = map[string]any{"extra": map[string]any{}}
-	}
-	result, err := RunShellHookOnce(ctx, spec, payload)
 	if err != nil {
-		return problems, err
+		return check.Problems, err
 	}
+	if !check.Allowed {
+		fmt.Fprintln(w, "      ℹ skipped JSON smoke test — not allowlisted yet. Approve the hook first (via TTY prompt or --accept-hooks), then re-run `icebath hooks doctor`.")
+		return check.Problems, nil
+	}
+	if check.Run == nil {
+		return check.Problems, nil
+	}
+	result := check.Run
 	elapsed := pyrepr.Float(result.ElapsedSeconds)
+	rc := "None"
+	if result.ReturnCode != nil {
+		rc = fmt.Sprint(*result.ReturnCode)
+	}
 	switch {
 	case result.TimedOut:
-		problems++
 		fmt.Fprintf(w, "      ✗ timed out after %ss on synthetic payload (timeout=%ds)\n", elapsed, spec.Timeout)
 	case result.Error != "":
-		problems++
 		fmt.Fprintf(w, "      ✗ execution error: %s\n", result.Error)
+	case check.Output == "empty":
+		fmt.Fprintf(w, "      ✓ ran clean with empty stdout (exit=%s, %ss) — hook is observer-only\n", rc, elapsed)
+	case check.Output == "json":
+		fmt.Fprintf(w, "      ✓ produced valid JSON on synthetic payload (exit=%s, %ss)\n", rc, elapsed)
 	default:
-		rc := "None"
-		if result.ReturnCode != nil {
-			rc = fmt.Sprint(*result.ReturnCode)
-		}
-		stdout := pystr.Strip(result.Stdout)
-		if stdout == "" {
-			fmt.Fprintf(w, "      ✓ ran clean with empty stdout (exit=%s, %ss) — hook is observer-only\n", rc, elapsed)
-		} else if _, err := pyjson.Loads(stdout); err == nil {
-			fmt.Fprintf(w, "      ✓ produced valid JSON on synthetic payload (exit=%s, %ss)\n", rc, elapsed)
-		} else {
-			problems++
-			fmt.Fprintf(w, "      ✗ stdout was not valid JSON (exit=%s, %ss): %s\n", rc, elapsed, hookTruncate(stdout, 120))
-		}
+		fmt.Fprintf(w, "      ✗ stdout was not valid JSON (exit=%s, %ss): %s\n", rc, elapsed, hookTruncate(pystr.Strip(result.Stdout), 120))
 	}
-	return problems, nil
+	return check.Problems, nil
 }

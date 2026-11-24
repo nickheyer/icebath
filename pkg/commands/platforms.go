@@ -182,7 +182,7 @@ var TelegramMenuPriority = []string{
 	"help", "new", "stop", "status", "egress", "resume", "sessions", "model",
 	"debug", "restart", "update", "verbose", "commands",
 	"approve", "deny", "queue", "steer", "bg", "btw",
-	"reasoning", "usage", "platforms", "platform", "profile", "whoami",
+	"reasoning", "usage", "platform", "profile", "whoami",
 }
 
 // TelegramMenuConfig is the normalized platforms.telegram.extra.command_menu block

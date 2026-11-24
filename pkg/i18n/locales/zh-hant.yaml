@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "將 Icebath Agent 更新到最新版本"
+  settings:
+
+    description: "所有設定，依群組排列並附說明"
+  logins:
+
+    description: "你在各供應商的登入資訊，以及每個工作階段使用哪一個"
+  chat-apps:
+
+    description: "Telegram、Discord、Slack 等：配對、webhook、對等節點、傳送"
+  keys:
+
+    description: "顯示所有按鍵，或以 /keys edit 變更"
+  mouse:
+
+    description: "設定滑鼠追蹤"
+  processes:
+
+    description: "列出工作階段的背景程序，閱讀其輸出或終止其中一個"
+  language:
+
+    description: "選擇介面語言"
+  detail:
+
+    description: "你能看到多少代理的工具操作與思考內容"
   category:
 
     session: "工作階段"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "啟用或檢視 Telegram 私訊主題工作階段"
-  clear:
-
-    description: "清除畫面並開始新的工作階段"
   redraw:
 
     description: "強制完整重繪 UI（修復終端機顯示錯位）"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "瀏覽並恢復先前的工作階段"
-  config:
-
-    description: "顯示目前設定"
   model:
 
     description: "切換模型（僅本次工作階段；--global 可永久儲存）"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "管理工具：/tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "列出可用的工具集"
   skills:
 
     description: "搜尋、安裝、檢視或管理技能"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "顯示 token 用量與速率限制；`reset` 兌換已保留的 Codex 限制重設"
-  platforms:
-
-    description: "顯示閘道／訊息平台狀態"
   platform:
 
     description: "暫停、恢復或列出故障的閘道平台"

@@ -21,6 +21,9 @@ type helpRow struct {
 	name, does string
 	// Command enter puts in the prompt, empty for a key
 	run string
+	// Command the row sorts under and whether it is an alias of it, so an alias sits right after its command
+	cmd   string
+	alias bool
 }
 
 // Help screen: the keys of the session, the keys after the leader, then every command, one line each
@@ -62,7 +65,7 @@ func (a *app) openHelp() tea.Cmd {
 		if usage != "" {
 			shown += " " + usage
 		}
-		rows = append(rows, helpRow{name: shown, does: does, run: name})
+		rows = append(rows, helpRow{name: shown, does: does, run: name, cmd: name})
 	}
 	for _, c := range a.localCommands {
 		addCommand(c.name, c.usage, c.helpText())
@@ -74,7 +77,24 @@ func (a *app) openHelp() tea.Cmd {
 			}
 		}
 	}
-	slices.SortStableFunc(rows[keyRows:], func(x, y helpRow) int { return strings.Compare(x.name, y.name) })
+	for _, pair := range a.commandAliases() {
+		if !seen[pair[0]] {
+			seen[pair[0]] = true
+			rows = append(rows, helpRow{name: pair[0], does: aliasOf(pair[1]), run: pair[0], cmd: pair[1], alias: true})
+		}
+	}
+	slices.SortStableFunc(rows[keyRows:], func(x, y helpRow) int {
+		if c := strings.Compare(x.cmd, y.cmd); c != 0 {
+			return c
+		}
+		if x.alias != y.alias {
+			if x.alias {
+				return 1
+			}
+			return -1
+		}
+		return strings.Compare(x.name, y.name)
+	})
 	isCommand := func(i int) bool { return i >= 0 && i < len(rows) && rows[i].run != "" }
 	run := func(l *cards.List, i int) tea.Cmd {
 		if !isCommand(i) {

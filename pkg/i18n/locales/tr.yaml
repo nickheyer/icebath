@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Icebath Agent'ı en son sürüme güncelle"
+  settings:
+
+    description: "Her ayar, gruba göre, ne işe yaradığıyla"
+  logins:
+
+    description: "Her sağlayıcının girişleri ve her oturumun hangisini kullandığı"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack ve daha fazlası: eşleştirme, webhook'lar, eşler, gönder"
+  keys:
+
+    description: "Her tuşu göster veya /keys edit ile değiştir"
+  mouse:
+
+    description: "Fare izlemeyi ayarla"
+  processes:
+
+    description: "Oturumun arka plan süreçlerini listele, çıktılarını oku veya birini öldür"
+  language:
+
+    description: "Arayüz dilini seç"
+  detail:
+
+    description: "Ajanın araç işinin ve düşünmesinin ne kadarını görürsünüz"
   category:
 
     session: "Oturum"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Telegram DM konu oturumlarını etkinleştir veya incele"
-  clear:
-
-    description: "Ekranı temizle ve yeni bir oturum başlat"
   redraw:
 
     description: "Arayüzü tamamen yeniden çiz (terminal kaymasını düzeltir)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Önceki oturumlara göz at ve devam et"
-  config:
-
-    description: "Geçerli yapılandırmayı göster"
   model:
 
     description: "Modeli değiştir (oturuma özel; kalıcı yapmak için --global)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Araçları yönet: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Kullanılabilir araç setlerini listele"
   skills:
 
     description: "Skill'leri ara, kur, incele veya yönet"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Token kullanımını ve hız sınırlarını göster; `reset` biriktirilmiş Codex sınır sıfırlamasını kullanır"
-  platforms:
-
-    description: "Gateway/mesajlaşma platformu durumunu göster"
   platform:
 
     description: "Sorunlu bir gateway platformunu duraklat, sürdür veya listele"

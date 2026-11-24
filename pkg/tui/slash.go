@@ -596,6 +596,29 @@ func (a *app) knownCommandNames() []string {
 	return out
 }
 
+// Aliases of the session catalog as alias and command pairs, each listed beside its command: by command, then by alias
+func (a *app) commandAliases() [][2]string {
+	if a.catalog == nil {
+		return nil
+	}
+	var out [][2]string
+	for alias, canon := range a.catalog.Canon {
+		if !strings.EqualFold(alias, canon) {
+			out = append(out, [2]string{alias, canon})
+		}
+	}
+	slices.SortFunc(out, func(x, y [2]string) int {
+		if c := strings.Compare(x[1], y[1]); c != 0 {
+			return c
+		}
+		return strings.Compare(x[0], y[0])
+	})
+	return out
+}
+
+// What an alias row shows in place of a description: the command the alias runs
+func aliasOf(canon string) string { return "→ " + canon }
+
 // Up to three known names nearest a mistyped one, by edit distance with a prefix match counted close
 func closestCommands(name string, known []string) []string {
 	type scored struct {

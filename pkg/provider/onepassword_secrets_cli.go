@@ -140,15 +140,7 @@ func opCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 				fmt.Sprintf("service-account token in %s, then re-run status.", tokenEnv))
 		}
 	}
-	op["enabled"] = true
-	for _, entry := range []struct {
-		key   string
-		value any
-	}{{"env", map[string]any{}}, {"cache_ttl_seconds", 300}, {"override_existing", true}} {
-		if _, ok := op[entry.key]; !ok {
-			op[entry.key] = entry.value
-		}
-	}
+	enableOnePassword(op)
 	if err := secretsSaveConfig(cli.home, cfg); err != nil {
 		return 1, err
 	}
@@ -221,30 +213,18 @@ func opCmdStatus(cli *secretsCLI, ns map[string]any) (int, error) {
 func opCmdSet(cli *secretsCLI, ns map[string]any) (int, error) {
 	console := cli.console
 	envVar := nsText(ns, "env_var")
-	valid, warnings := validateOpReferences(map[string]any{envVar: ns["reference"]})
-	value, ok := valid[envVar]
-	if !ok {
+	value, warnings, enabled, err := mapOnePasswordReference(cli.home, envVar, ns["reference"])
+	if err != nil {
+		return 1, err
+	}
+	if value == "" {
 		for _, w := range warnings {
 			console.Print(fmt.Sprintf("[red]%s[/red]", w))
 		}
 		return 1, nil
 	}
-	cfg, err := secretsLoadConfig(cli.home)
-	if err != nil {
-		return 1, err
-	}
-	op := opCfgForWrite(cfg)
-	env, isMap := op["env"].(map[string]any)
-	if !isMap {
-		env = map[string]any{}
-		op["env"] = env
-	}
-	env[envVar] = value
-	if err := secretsSaveConfig(cli.home, cfg); err != nil {
-		return 1, err
-	}
 	console.Print(fmt.Sprintf("[green]✓[/green] mapped [cyan]%s[/cyan] → %s", envVar, value))
-	if !pyTruthy(op["enabled"]) {
+	if !enabled {
 		console.Print("  [yellow]Note: the integration is disabled — run " +
 			"[cyan]icebath secrets onepassword setup[/cyan] to turn it on.[/yellow]")
 	}
@@ -254,19 +234,13 @@ func opCmdSet(cli *secretsCLI, ns map[string]any) (int, error) {
 func opCmdRemove(cli *secretsCLI, ns map[string]any) (int, error) {
 	console := cli.console
 	envVar := nsText(ns, "env_var")
-	cfg, err := secretsLoadConfig(cli.home)
+	mapped, err := unmapOnePasswordReference(cli.home, envVar)
 	if err != nil {
 		return 1, err
 	}
-	op := opCfgForWrite(cfg)
-	envMap, isMap := op["env"].(map[string]any)
-	if _, mapped := envMap[envVar]; !isMap || !mapped {
+	if !mapped {
 		console.Print(fmt.Sprintf("[yellow]%s is not mapped.[/yellow]", envVar))
 		return 1, nil
-	}
-	delete(envMap, envVar)
-	if err := secretsSaveConfig(cli.home, cfg); err != nil {
-		return 1, err
 	}
 	console.Print(fmt.Sprintf("[green]✓[/green] removed mapping for [cyan]%s[/cyan]", envVar))
 	return 0, nil
@@ -365,17 +339,16 @@ func opCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 	}
 	override := cfgBool(op, "override_existing", true)
 	action := func(name string) string {
-		if name == tokenEnv {
-			return "[dim]skip (token var)[/dim]"
-		}
-		if _, resolved := secrets[name]; !resolved {
+		kind := secretSyncAction(name, tokenEnv, override)
+		if _, resolved := secrets[name]; !resolved && kind != "skip_token" {
 			return "[red]unresolved (see warnings)[/red]"
 		}
-		already := os.Getenv(name) != ""
-		if already && !override {
+		switch kind {
+		case "skip_token":
+			return "[dim]skip (token var)[/dim]"
+		case "skip_set":
 			return "[dim]skip (already set)[/dim]"
-		}
-		if already {
+		case "override":
 			return "[green]would export[/green] (overrides)"
 		}
 		return "[green]would export[/green]"

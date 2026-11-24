@@ -161,13 +161,13 @@ func TestSlashExecFallbackPolicy(t *testing.T) {
 }
 
 func TestBackendLifecycleCopy(t *testing.T) {
-	t.Run("names the exit code, the last real stderr line, /logs and icebath doctor", func(t *testing.T) {
+	t.Run("names the exit code, the last real stderr line and /logs, never a command to run outside the app", func(t *testing.T) {
 		tail := "[lifecycle] child exit code=1\nModuleNotFoundError: No module named pydantic\n[lifecycle] scheduling gateway reconnect in 1000ms (attempt 1)"
 		last, _ := lastStderrLine(tail)
 		code := 1
 		text := backendGaveUp(&code, last)
-		mustContain(t, text, "exit code 1", "Details: ModuleNotFoundError: No module named pydantic", "/logs", "icebath doctor", "/resume")
-		mustLack(t, text, "[lifecycle]")
+		mustContain(t, text, "exit code 1", "Details: ModuleNotFoundError: No module named pydantic", "/logs", "/resume")
+		mustLack(t, text, "[lifecycle]", "icebath doctor")
 		if regexp.MustCompile(`\bgateway\b`).MatchString(text) {
 			t.Fatalf("%q", text)
 		}

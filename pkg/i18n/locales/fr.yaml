@@ -1940,6 +1940,30 @@ slash:
   update:
 
     description: "Mettre à jour Icebath Agent vers la dernière version"
+  settings:
+
+    description: "Tous les réglages, par groupe, avec leur rôle"
+  logins:
+
+    description: "Vos identifiants de chaque fournisseur et celui qu'utilise chaque session"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack et plus : appairage, webhooks, pairs, envoi"
+  keys:
+
+    description: "Afficher toutes les touches, ou les modifier avec /keys edit"
+  mouse:
+
+    description: "Régler le suivi de la souris"
+  processes:
+
+    description: "Lister les processus en arrière-plan de la session, lire leur sortie ou en tuer un"
+  language:
+
+    description: "Choisir la langue de l'interface"
+  detail:
+
+    description: "Quelle part du travail d'outils et de la réflexion de l'agent vous voyez"
   category:
 
     session: "Session"
@@ -1970,9 +1994,6 @@ slash:
   topic:
 
     description: "Activer ou inspecter les sessions par topic dans les DM Telegram"
-  clear:
-
-    description: "Effacer l'écran et démarrer une nouvelle session"
   redraw:
 
     description: "Forcer un rafraîchissement complet de l'interface (corrige les décalages du terminal)"
@@ -2088,9 +2109,6 @@ slash:
   sessions:
 
     description: "Parcourir et reprendre les sessions précédentes"
-  config:
-
-    description: "Afficher la configuration actuelle"
   model:
 
     description: "Changer de modèle (pour la session ; --global pour le conserver)"
@@ -2151,9 +2169,6 @@ slash:
   tools:
 
     description: "Gérer les outils : /tools [list|disable|enable] [nom...]"
-  toolsets:
-
-    description: "Lister les toolsets disponibles"
   skills:
 
     description: "Rechercher, installer, inspecter ou gérer des skills"
@@ -2220,9 +2235,6 @@ slash:
   usage:
 
     description: "Afficher la consommation de tokens et les limites de débit ; `reset` utilise une réinitialisation de limite Codex mise en réserve"
-  platforms:
-
-    description: "Afficher l'état du gateway et des plateformes de messagerie"
   platform:
 
     description: "Suspendre, reprendre ou lister une plateforme gateway en échec"

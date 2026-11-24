@@ -138,15 +138,17 @@ func redactGatewayUserFacingSecrets(ctx context.Context, text string) string {
 	return tools.RedactForEgress(&tools.Env{Home: home.Dir(ctx)}, text)
 }
 
-// Final reply sanitized for chat surfaces, provider failures as categories and secrets redacted
+// Final reply sanitized for chat surfaces, provider failures as categories and secrets redacted; the agent's waiting text of a stopped turn is no
+// reply on a chat surface or in the terminal UI, which marks a stopped turn itself
 func sanitizeGatewayFinalResponse(ctx context.Context, platform gateway.Platform, text string) string {
-	if text == "" || gatewaySurfacePassesRawText(platform) {
+	raw := gatewaySurfacePassesRawText(platform)
+	if strings.HasPrefix(pystr.Strip(text), agent.InterruptWaitingForModelPrefix) && (platform == gateway.PlatformLocal || !raw) {
+		return ""
+	}
+	if text == "" || raw {
 		return text
 	}
 	text = gateway.TrimTerminalSentinel(state.SanitizeSurrogates(text))
-	if strings.HasPrefix(pystr.Strip(text), agent.InterruptWaitingForModelPrefix) {
-		return ""
-	}
 	redacted := redactGatewayUserFacingSecrets(ctx, text)
 	if looksLikeGatewayProviderError(redacted) {
 		return gatewayProviderErrorReply(ctx, redacted)

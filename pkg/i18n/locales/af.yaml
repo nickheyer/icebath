@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Opdateer Icebath Agent na die nuutste weergawe"
+  settings:
+
+    description: "Elke instelling, per groep, met wat dit doen"
+  logins:
+
+    description: "Jou aanmeldings by elke verskaffer en watter een elke sessie gebruik"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack en meer: koppeling, webhooks, eweknieë, stuur"
+  keys:
+
+    description: "Wys elke sleutel, of verander hulle met /keys edit"
+  mouse:
+
+    description: "Stel muisopsporing in"
+  processes:
+
+    description: "Lys die agtergrondprosesse van die sessie, lees hul uitvoer of maak een dood"
+  language:
+
+    description: "Kies die taal van die UI"
+  detail:
+
+    description: "Hoeveel van die agent se gereedskapwerk en denke jy sien"
   category:
 
     session: "Sessie"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Aktiveer of ondersoek Telegram-DM-onderwerpsessies"
-  clear:
-
-    description: "Maak die skerm skoon en begin 'n nuwe sessie"
   redraw:
 
     description: "Forseer 'n volledige UI-herteken (herstel van terminaal-afwyking)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Blaai deur vorige sessies en hervat hulle"
-  config:
-
-    description: "Wys huidige konfigurasie"
   model:
 
     description: "Verander model (sessie-omvang; --global om permanent te stoor)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Bestuur gereedskap: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "Lys beskikbare gereedskapstelle"
   skills:
 
     description: "Soek, installeer, ondersoek of bestuur vaardighede"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Wys tokengebruik en tariefperke; `reset` los 'n gebankte Codex-limiet-terugstelling in"
-  platforms:
-
-    description: "Wys gateway-/boodskapplatform-status"
   platform:
 
     description: "Pouseer, hervat of lys 'n falende gateway-platform"

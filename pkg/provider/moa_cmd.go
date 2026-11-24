@@ -286,24 +286,14 @@ func moaCmdConfigure(ctx context.Context, out io.Writer, cfg config.Tree, args M
 	}
 	fmt.Fprintln(out, "Configure aggregator model.")
 	fmt.Fprintln(out, "The aggregator is the acting model: it runs every tool-loop step, and almost all of the run's cost lands on its provider.")
-	updated := make(map[string]any, len(current))
-	for k, v := range current {
-		updated[k] = v
-	}
-	updated["reference_models"] = refs
-	aggregator, err := moaPickSlot(ctx, out, anyMap(updated["aggregator"]))
+	aggregator, err := moaPickSlot(ctx, out, anyMap(current["aggregator"]))
 	if err != nil {
 		return err
-	}
-	updated["aggregator"] = aggregator
-	presets[presetName] = updated
-	if _, has := moa["default_preset"]; !has {
-		moa["default_preset"] = presetName
 	}
 	if notice := moaProviderMismatchNotice(cfg, aggregator); notice != "" {
 		fmt.Fprintln(out, notice)
 	}
-	if err := moaSave(ctx, cfg, moa); err != nil {
+	if err := moaStorePreset(ctx, cfg, moa, presetName, refs, aggregator); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Saved MoA preset: %s\n", presetName)
@@ -318,21 +308,7 @@ func moaCmdDelete(ctx context.Context, out io.Writer, cfg config.Tree, args MoAA
 	if presetName == "" {
 		return &MoAExitError{Message: "Usage: icebath moa delete <name>"}
 	}
-	presets := anyMap(moa["presets"])
-	if _, ok := presets[presetName]; !ok {
-		return &MoAExitError{Message: "Unknown MoA preset: " + presetName}
-	}
-	if len(presets) <= 1 {
-		return &MoAExitError{Message: "Cannot delete the only MoA preset"}
-	}
-	delete(presets, presetName)
-	if moa["default_preset"] == presetName {
-		moa["default_preset"] = moaPresetOrder(presets)[0]
-	}
-	if moa["active_preset"] == presetName {
-		moa["active_preset"] = ""
-	}
-	if err := moaSave(ctx, cfg, moa); err != nil {
+	if err := moaDeletePreset(ctx, cfg, moa, presetName); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Deleted MoA preset: %s\n", presetName)

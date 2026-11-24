@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Обновить Icebath Agent до последней версии"
+  settings:
+
+    description: "Все настройки по группам с описанием"
+  logins:
+
+    description: "Ваши входы у каждого провайдера и какой из них использует каждый сеанс"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack и другие: сопряжение, вебхуки, пиры, отправка"
+  keys:
+
+    description: "Показать все клавиши или изменить их через /keys edit"
+  mouse:
+
+    description: "Настроить отслеживание мыши"
+  processes:
+
+    description: "Показать фоновые процессы сеанса, прочитать их вывод или убить один из них"
+  language:
+
+    description: "Выбрать язык интерфейса"
+  detail:
+
+    description: "Сколько работы агента с инструментами и рассуждений вы видите"
   category:
 
     session: "Сеанс"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Включить или просмотреть сеансы-темы в личных сообщениях Telegram"
-  clear:
-
-    description: "Очистить экран и начать новый сеанс"
   redraw:
 
     description: "Принудительно перерисовать интерфейс (исправляет сбои отображения терминала)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Просмотреть и возобновить предыдущие сеансы"
-  config:
-
-    description: "Показать текущую конфигурацию"
   model:
 
     description: "Переключить модель (в рамках сеанса; --global — сохранить навсегда)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Управлять инструментами: /tools [list|disable|enable] [имя...]"
-  toolsets:
-
-    description: "Показать доступные наборы инструментов"
   skills:
 
     description: "Искать, устанавливать, просматривать навыки и управлять ими"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Показать расход токенов и лимиты; `reset` использует накопленный сброс лимита Codex"
-  platforms:
-
-    description: "Показать состояние шлюза и платформ обмена сообщениями"
   platform:
 
     description: "Приостановить, возобновить или показать сбойные платформы шлюза"

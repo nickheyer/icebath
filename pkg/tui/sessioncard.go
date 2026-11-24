@@ -467,8 +467,8 @@ func (c *sessionCard) quickHelpRows(width, room int, rc renderCtx) []string {
 		return nil
 	}
 	t := rc.t
-	commands := [][2]string{{"/help", tr(txt.HelpCommandsHelp)}, {"/clear", tr(txt.HelpCommandsClear)}, {"/resume", tr(txt.HelpCommandsResume)},
-		{"/details", tr(txt.HelpCommandsDetails)}, {"/copy", tr(txt.HelpCommandsCopy)}, {"/quit", tr(txt.HelpCommandsQuit)}}
+	commands := [][2]string{{"/help", tr(txt.HelpCommandsHelp)}, {"/new", tr(txt.HelpCommandsNew)}, {"/sessions", tr(txt.HelpCommandsSessions)},
+		{"/detail", tr(txt.HelpCommandsDetail)}, {"/copy", tr(txt.HelpCommandsCopy)}, {"/quit", tr(txt.HelpCommandsQuit)}}
 	hotkeys := c.app.hotkeyRows()
 	hotkeys = hotkeys[:min(len(hotkeys), quickHelpHotkeys)]
 	title, tail := tr(txt.HelpQuickHelp), tr(txt.HelpQuickHelpTail)

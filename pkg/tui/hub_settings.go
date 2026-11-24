@@ -612,20 +612,22 @@ func settingDetail(r tuigateway.SettingsRow) []string {
 	return out
 }
 
-// Every other place that changes a setting, for its help: its shortcut, the setup section that asks it, the command line and the environment
+// Every other place that changes a setting, for its help: its shortcut, the setup section that asks it and the environment, nothing when there is none
 func settingPlaces(r tuigateway.SettingsRow) []string {
-	out := []string{"", tr(txt.HubsSettingsPlacesTitle)}
+	var places []string
 	if r.Slash != "" {
-		out = append(out, "  "+tr(txt.HubsSettingsPlaceSlash, r.Slash))
+		places = append(places, "  "+tr(txt.HubsSettingsPlaceSlash, r.Slash))
 	}
 	for _, title := range setupSectionsWriting(r.Key) {
-		out = append(out, "  "+tr(txt.HubsSettingsPlaceSetup, title))
+		places = append(places, "  "+tr(txt.HubsSettingsPlaceSetup, title))
 	}
-	out = append(out, "  "+tr(txt.HubsSettingsPlaceCLI, r.Key))
 	if r.Env != "" {
-		out = append(out, "  "+tr(txt.HubsSettingsPlaceEnv, r.Env))
+		places = append(places, "  "+tr(txt.HubsSettingsPlaceEnv, r.Env))
 	}
-	return out
+	if len(places) == 0 {
+		return nil
+	}
+	return append([]string{"", tr(txt.HubsSettingsPlacesTitle)}, places...)
 }
 
 // When a change takes effect, in plain words

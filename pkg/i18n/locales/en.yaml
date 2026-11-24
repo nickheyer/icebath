@@ -1759,6 +1759,30 @@ slash:
   update:
 
     description: "Update Icebath Agent to the latest version"
+  settings:
+
+    description: "Every setting, by group, with what it does"
+  logins:
+
+    description: "Your logins of every provider and which one each session uses"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack and more: pairing, webhooks, peers, send"
+  keys:
+
+    description: "Show every key, or change them with /keys edit"
+  mouse:
+
+    description: "Set mouse tracking"
+  processes:
+
+    description: "List the background processes of the session, read their output or kill one"
+  language:
+
+    description: "Choose the language of the UI"
+  detail:
+
+    description: "How much of the agent's tool work and thinking you see"
   category:
 
     session: "Session"
@@ -1789,9 +1813,6 @@ slash:
   topic:
 
     description: "Enable or inspect Telegram DM topic sessions"
-  clear:
-
-    description: "Clear screen and start a new session"
   redraw:
 
     description: "Force a full UI repaint (recovers from terminal drift)"
@@ -1907,9 +1928,6 @@ slash:
   sessions:
 
     description: "Browse and resume previous sessions"
-  config:
-
-    description: "Show current configuration"
   model:
 
     description: "Switch model (session-scoped; --global to persist)"
@@ -1970,9 +1988,6 @@ slash:
   tools:
 
     description: "Manage tools: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "List available toolsets"
   skills:
 
     description: "Search, install, inspect, or manage skills"
@@ -2039,9 +2054,6 @@ slash:
   usage:
 
     description: "Show token usage and rate limits; `reset` redeems a banked Codex limit reset"
-  platforms:
-
-    description: "Show gateway/messaging platform status"
   platform:
 
     description: "Pause, resume, or list a failing gateway platform"

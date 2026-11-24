@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Atualizar o Icebath Agent para a versão mais recente"
+  settings:
+
+    description: "Todas as configurações, por grupo, com o que fazem"
+  logins:
+
+    description: "Seus logins de cada provedor e qual cada sessão usa"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack e mais: pareamento, webhooks, pares, envio"
+  keys:
+
+    description: "Mostrar todas as teclas, ou alterá-las com /keys edit"
+  mouse:
+
+    description: "Definir o rastreamento do mouse"
+  processes:
+
+    description: "Listar os processos em segundo plano da sessão, ler a saída deles ou matar um"
+  language:
+
+    description: "Escolher o idioma da interface"
+  detail:
+
+    description: "Quanto do trabalho de ferramentas e do raciocínio do agente você vê"
   category:
 
     session: "Sessão"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Ativar ou inspecionar sessões por tópico em DMs do Telegram"
-  clear:
-
-    description: "Limpar a tela e iniciar uma nova sessão"
   redraw:
 
     description: "Forçar uma repintura completa da interface (recupera de desvios do terminal)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "Navegar e retomar sessões anteriores"
-  config:
-
-    description: "Mostrar a configuração atual"
   model:
 
     description: "Trocar de modelo (escopo da sessão; --global para persistir)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "Gerenciar ferramentas: /tools [list|disable|enable] [nome...]"
-  toolsets:
-
-    description: "Listar os conjuntos de ferramentas disponíveis"
   skills:
 
     description: "Buscar, instalar, inspecionar ou gerenciar skills"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "Mostrar uso de tokens e limites de taxa; `reset` resgata um reset de limite do Codex acumulado"
-  platforms:
-
-    description: "Mostrar o status do gateway/plataformas de mensagens"
   platform:
 
     description: "Pausar, retomar ou listar uma plataforma do gateway com falha"

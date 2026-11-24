@@ -222,6 +222,46 @@ func (a *app) hubAsk(h *cards.Hub, title, label, initial string, secret bool, do
 	})
 }
 
+// Picks a model on the hub: a signed in provider, then one of its models or a model named by hand, handed on with its provider
+func (a *app) hubPickModel(h *cards.Hub, title string, then func(p tuigateway.ModelOptionProvider, model string) tea.Cmd) tea.Cmd {
+	params := tuigateway.ModelOptionsParams{SessionID: a.store.ui.Sid}
+	return hubCall(a, h, tr(txt.HubsLoading), tuigateway.ModelOptions, params, func(r *tuigateway.ModelOptionsResult) tea.Cmd {
+		var choices []hubChoice
+		providers := map[string]tuigateway.ModelOptionProvider{}
+		for _, p := range r.Providers {
+			if p.Unauthenticated() || p.Slug == "moa" {
+				continue
+			}
+			providers[p.Slug] = p
+			choices = append(choices, hubChoice{id: p.Slug, title: providerName(p), detail: p.Slug})
+		}
+		if len(choices) == 0 {
+			return h.Fail(tr(txt.HubsPickNoProviders))
+		}
+		return a.hubPick(h, title, choices, "", func(c hubChoice) tea.Cmd {
+			const other = "\x00other"
+			p := providers[c.id]
+			models := make([]hubChoice, 0, len(p.Models)+1)
+			for _, model := range p.Models {
+				models = append(models, hubChoice{id: model, title: model})
+			}
+			models = append(models, hubChoice{id: other, title: tr(txt.HubsPickOtherModel)})
+			modelTitle := tr(txt.HubsPickModelOf, providerName(p))
+			return a.hubPick(h, modelTitle, models, "", func(m hubChoice) tea.Cmd {
+				if m.id != other {
+					return then(p, m.id)
+				}
+				return a.hubAsk(h, modelTitle, tr(txt.HubsProfilesColModel), "", false, func(model string) tea.Cmd {
+					if model == "" {
+						return nil
+					}
+					return then(p, model)
+				})
+			})
+		})
+	})
+}
+
 // One action of a row of a hub, listed on its actions screen
 type hubAction struct {
 	// Keymap action that runs it straight from the hub's list, shown beside it, empty for none
@@ -298,11 +338,9 @@ type cliRun struct {
 func (a *app) hubRunCLI(h *cards.Hub, title string, argv []string, then func(run *cliRun) tea.Cmd) tea.Cmd {
 	run := &cliRun{argv: argv}
 	t := a.toolkit
-	line := "icebath " + joinCommandLine(argv)
 	page := cards.NewPage(a.hubEnv(), cards.PageSpec{Title: title, Key: "hub:run", Follow: true,
 		Lines: func(int) []string {
-			out := []string{render.Dim("$ "+line, t), ""}
-			out = append(out, run.lines...)
+			out := slices.Clone(run.lines)
 			switch {
 			case run.err != nil:
 				out = append(out, "", render.Bad(tr(txt.HubsRunFailed, run.err.Error()), t))
@@ -316,7 +354,7 @@ func (a *app) hubRunCLI(h *cards.Hub, title string, argv []string, then func(run
 			return out
 		},
 	})
-	h.Busy(tr(txt.HubsRunBusy, line))
+	h.Busy(tr(txt.HubsRunBusy, title))
 	finish := func() tea.Cmd {
 		h.Quiet()
 		if run.err != nil {

@@ -161,7 +161,7 @@ func projectCmdList(ctx context.Context, env *Env, ns map[string]any, w, errw io
 			return "", 0, err
 		}
 		if len(projs) == 0 {
-			return "No projects yet. Create one with `icebath project create <name>`.", 0, nil
+			return "No projects yet.", 0, nil
 		}
 		for _, p := range projs {
 			flags := ""

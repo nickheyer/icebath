@@ -273,30 +273,16 @@ func FallbackAdd(ctx context.Context, w io.Writer, h string, picker func() error
 		fmt.Fprintln(w, "\n  No fallback added.")
 		return nil
 	}
-	newIdent := FallbackEntryIdentity(newEntry)
-	primaryEntry, _, err := ExtractFallbackFromModelCfg(modelBefore)
-	if err != nil {
-		return err
-	}
-	if primaryEntry != nil && SameDeploymentIn(ctx, FallbackEntryIdentity(primaryEntry), newIdent) {
+	chain, err := AppendFallback(ctx, h, newEntry)
+	switch {
+	case errors.Is(err, ErrFallbackIsPrimary):
 		fmt.Fprintf(w, "\n  Selected model matches the current primary (%s).\n", FormatFallbackEntry(newEntry))
 		fmt.Fprintln(w, "  A provider cannot be a fallback for itself — no change.")
 		return nil
-	}
-	final, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return err
-	}
-	chain := ReadFallbackChain(final)
-	for _, existing := range chain {
-		if SameDeploymentIn(ctx, FallbackEntryIdentity(existing), newIdent) {
-			fmt.Fprintf(w, "\n  %s is already in the fallback chain — skipped.\n", FormatFallbackEntry(newEntry))
-			return nil
-		}
-	}
-	chain = append(chain, newEntry)
-	WriteFallbackChain(final, chain)
-	if err := config.Save(h, final); err != nil {
+	case errors.Is(err, ErrFallbackInChain):
+		fmt.Fprintf(w, "\n  %s is already in the fallback chain — skipped.\n", FormatFallbackEntry(newEntry))
+		return nil
+	case err != nil:
 		return err
 	}
 	fmt.Fprintf(w, "\n  Added fallback: %s\n", FormatFallbackEntry(newEntry))
@@ -307,7 +293,7 @@ func FallbackAdd(ctx context.Context, w io.Writer, h string, picker func() error
 
 // FallbackRemove lets the chooser pick an entry, a cancel or out of range answer leaving the chain alone
 func FallbackRemove(ctx context.Context, w io.Writer, h string, choose func(question string, choices []string, def int, description string) (int, error)) error {
-	cfg, chain, err := loadChain(ctx, w, h, "  No fallback providers configured — nothing to remove.")
+	_, chain, err := loadChain(ctx, w, h, "  No fallback providers configured — nothing to remove.")
 	if err != nil || chain == nil {
 		return err
 	}
@@ -324,10 +310,8 @@ func FallbackRemove(ctx context.Context, w io.Writer, h string, choose func(ques
 		fmt.Fprintln(w, "\n  Cancelled — no change.")
 		return nil
 	}
-	removed := chain[idx]
-	chain = append(chain[:idx:idx], chain[idx+1:]...)
-	WriteFallbackChain(cfg, chain)
-	if err := config.Save(h, cfg); err != nil {
+	removed, chain, err := RemoveFallbackAt(ctx, h, idx)
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "\n  Removed fallback: %s\n", FormatFallbackEntry(removed))
@@ -341,7 +325,7 @@ func FallbackRemove(ctx context.Context, w io.Writer, h string, choose func(ques
 
 // FallbackClear empties the chain after a y or yes confirmation, an interrupted prompt cancelling
 func FallbackClear(ctx context.Context, w io.Writer, h string, confirm func(out io.Writer, prompt string) (string, error)) error {
-	cfg, chain, err := loadChain(ctx, w, h, "  No fallback providers configured — nothing to clear.")
+	_, chain, err := loadChain(ctx, w, h, "  No fallback providers configured — nothing to clear.")
 	if err != nil || chain == nil {
 		return err
 	}
@@ -361,8 +345,7 @@ func FallbackClear(ctx context.Context, w io.Writer, h string, confirm func(out 
 		fmt.Fprintln(w, "  Cancelled — no change.")
 		return nil
 	}
-	WriteFallbackChain(cfg, nil)
-	if err := config.Save(h, cfg); err != nil {
+	if err := ClearFallbacks(ctx, h); err != nil {
 		return err
 	}
 	fmt.Fprint(w, "\n  Fallback chain cleared.\n\n")

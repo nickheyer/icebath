@@ -1690,6 +1690,30 @@ slash:
   update:
 
     description: "Icebath Agent를 최신 버전으로 업데이트"
+  settings:
+
+    description: "그룹별 모든 설정과 그 기능"
+  logins:
+
+    description: "모든 제공자의 로그인과 각 세션이 사용하는 로그인"
+  chat-apps:
+
+    description: "Telegram, Discord, Slack 등: 페어링, 웹훅, 피어, 전송"
+  keys:
+
+    description: "모든 키를 표시하거나 /keys edit으로 변경"
+  mouse:
+
+    description: "마우스 추적 설정"
+  processes:
+
+    description: "세션의 백그라운드 프로세스 목록 보기, 출력 읽기 또는 하나 강제 종료"
+  language:
+
+    description: "UI 언어 선택"
+  detail:
+
+    description: "에이전트의 도구 작업과 생각을 얼마나 보여 줄지"
   category:
 
     session: "세션"
@@ -1720,9 +1744,6 @@ slash:
   topic:
 
     description: "Telegram DM 토픽 세션 활성화 또는 확인"
-  clear:
-
-    description: "화면을 지우고 새 세션 시작"
   redraw:
 
     description: "UI 전체를 강제로 다시 그리기 (터미널 표시 오류 복구)"
@@ -1838,9 +1859,6 @@ slash:
   sessions:
 
     description: "이전 세션 탐색 및 재개"
-  config:
-
-    description: "현재 설정 표시"
   model:
 
     description: "모델 전환 (세션 범위; --global로 영구 적용)"
@@ -1901,9 +1919,6 @@ slash:
   tools:
 
     description: "도구 관리: /tools [list|disable|enable] [name...]"
-  toolsets:
-
-    description: "사용 가능한 도구 세트 목록"
   skills:
 
     description: "스킬 검색, 설치, 확인 또는 관리"
@@ -1970,9 +1985,6 @@ slash:
   usage:
 
     description: "토큰 사용량과 요청 제한 표시; `reset`은 적립된 Codex 한도 초기화 사용"
-  platforms:
-
-    description: "게이트웨이/메시징 플랫폼 상태 표시"
   platform:
 
     description: "오류가 난 게이트웨이 플랫폼 일시 중지, 재개 또는 목록 표시"
