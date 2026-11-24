@@ -11,10 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 

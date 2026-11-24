@@ -19,8 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // RelayMediaMaxBytes mirrors the connector media store cap so oversize files fail before the round trip

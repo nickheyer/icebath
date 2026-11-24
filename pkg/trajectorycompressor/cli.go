@@ -20,8 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // SamplePercent is a sampling percentage with the Python repr it was given as, an int or a float

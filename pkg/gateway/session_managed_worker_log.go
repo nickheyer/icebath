@@ -18,8 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Bounds of the per profile managed worker stderr sink

@@ -17,8 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/tools"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Remote session kernel runner template filled with cell source, capture limit and idle exit

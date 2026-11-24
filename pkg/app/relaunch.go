@@ -15,9 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/spf13/pflag"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // An option string that carries over a relaunch and whether a value follows it

@@ -10,11 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
-
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pvporcupine"
 	"github.com/nickheyer/icebath/pkg/internal/pyopenwakeword"
+	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 

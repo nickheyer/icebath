@@ -8,8 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // SwitchModel swaps the live route in place, a once pick keeping its alias for the turn and a restore clearing the one turn state

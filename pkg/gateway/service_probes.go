@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // True when a systemctl failure is the RuntimeError or timeout the probes swallow

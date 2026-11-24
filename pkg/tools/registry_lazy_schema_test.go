@@ -8,9 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // A builder schema loads config at the first registry read only, once across concurrent readers

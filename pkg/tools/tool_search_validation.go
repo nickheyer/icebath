@@ -14,8 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Literal keywords hold instance data rather than schemas

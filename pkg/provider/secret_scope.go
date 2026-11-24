@@ -8,10 +8,9 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/tools"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 var (

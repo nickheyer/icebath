@@ -6,9 +6,8 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/goals"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"

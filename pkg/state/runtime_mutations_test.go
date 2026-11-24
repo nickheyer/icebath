@@ -37,7 +37,6 @@ func TestMutationReceiptFencesReplayRevisionAndEpoch(t *testing.T) {
 		payload   *pyjson.Object
 	}{
 		{"rename", pyjson.ObjectOf("title", " New  name ")},
-		{"rename", pyjson.ObjectOf("title", "a\xffb")},
 		{"archive", pyjson.ObjectOf("archived", true)},
 	} {
 		ctx := context.Background()

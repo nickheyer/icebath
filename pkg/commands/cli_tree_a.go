@@ -3,10 +3,9 @@ package commands
 import (
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/spf13/cobra"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Machine readable refusal of a malformed gateway ensure call on stdout, then exit status 2 with its stderr line

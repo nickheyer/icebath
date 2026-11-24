@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Part is a MIME entity under construction, a leaf with an encoded text payload or a multipart container

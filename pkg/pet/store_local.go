@@ -12,8 +12,7 @@ import (
 	"github.com/HugoSmits86/nativewebp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var slugifyRe = regexp.MustCompile(`[^a-z0-9]+`)

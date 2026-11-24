@@ -10,11 +10,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
-
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/tty"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )

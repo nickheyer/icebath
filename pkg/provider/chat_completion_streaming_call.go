@@ -16,8 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Streaming request on the agent wire firing the delta callbacks, the non streaming response shape on return

@@ -735,7 +735,7 @@ func TestGeminiSseLineDecoding(t *testing.T) {
 		{"text/event-stream", "data: a\r\n\r\ndata: b", []string{"data: a", "", "data: b"}, ""},
 		{"text/event-stream", "caf\xe9\x85tail\n", []string{"café\u0085tail"}, ""},
 		{"application/json", split, []string{strings.Repeat("a", 511) + "é", "next"}, ""},
-		{"application/octet-stream; charset=\"utf-8\"", "x y", []string{"x", "y"}, ""},
+		{"application/octet-stream; charset=\"utf-8\"", "x\u2028y", []string{"x\u2028y"}, ""},
 		{"", "\n\ndata: x\n", nil, "the response names no text encoding, so its lines cannot be read as text"},
 		{"", "\r\n\n", nil, ""},
 		{"text/plain; charset=bogus", "x", nil, "unknown encoding: bogus"},

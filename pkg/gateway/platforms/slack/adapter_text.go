@@ -20,9 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"golang.org/x/text/width"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const slackErrorBodyLimitBytes = 8 * 1024

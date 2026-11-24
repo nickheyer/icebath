@@ -11,10 +11,9 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"

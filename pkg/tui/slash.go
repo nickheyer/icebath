@@ -6,11 +6,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
-
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/linktier"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )

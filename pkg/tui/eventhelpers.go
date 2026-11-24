@@ -9,9 +9,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
-
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 

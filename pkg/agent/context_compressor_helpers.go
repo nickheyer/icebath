@@ -24,8 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var summaryPermanentQuotaMarkers = []string{"insufficient_quota", "quota exceeded", "quota_exceeded", "out of funds", "out of credits",

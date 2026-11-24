@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"modernc.org/sqlite"
 
@@ -30,8 +31,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Decoded result of one worktree git call

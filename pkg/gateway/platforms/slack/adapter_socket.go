@@ -15,10 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	slackapi "github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Acknowledges a Socket Mode envelope with an optional response payload

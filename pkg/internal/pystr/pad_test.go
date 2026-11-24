@@ -1,13 +1,11 @@
 package pystr
 
-import "testing"
+import (
+	"testing"
+)
 
-func TestPadMatchesCPython(t *testing.T) {
+func TestCenter(t *testing.T) {
 	cases := []struct{ got, want string }{
-		{Ljust("ab", 5), "ab   "},
-		{Ljust("abcdef", 3), "abcdef"},
-		{Ljust("é", 3), "é  "},
-		{Rjust("ab", 4), "  ab"},
 		{Center("abc", 6), " abc  "},
 		{Center("ab", 5), "  ab "},
 		{Center("abc", 8), "  abc   "},

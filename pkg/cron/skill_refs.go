@@ -6,9 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/skills"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/skills"
 )
 
 // SkillRefRewrite is one job whose skill references a curator pass rewrote

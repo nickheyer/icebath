@@ -13,9 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 )
 
 // Whether a goroutine other than the caller waits for a fetch lock inside the boot fetch

@@ -10,10 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Plugins config key mapping each plugin an update disabled to what to undo once it fits

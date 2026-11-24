@@ -12,12 +12,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/remote"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 

@@ -10,8 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // CgroupCleanupEntry is the hidden argument the unit ExecStopPost runs to reap orphans left in the service cgroup

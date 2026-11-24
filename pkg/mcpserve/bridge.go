@@ -21,9 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	_ "modernc.org/sqlite"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Events the bridge queue keeps, the oldest dropped past it

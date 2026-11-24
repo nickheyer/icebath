@@ -15,9 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"golang.org/x/text/unicode/norm"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var removableKinds = map[string]bool{"scratch": true, "worktree": true}

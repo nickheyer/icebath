@@ -20,8 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // RuntimeStartError is a start the service manager refused or failed, with the verdict state it reports

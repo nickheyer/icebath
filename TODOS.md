@@ -15,11 +15,11 @@ Close an item with `[x]`
 - [ ] Typed readers replace raw map reads, group by group. Every setting has a typed handle in `pkg/settings`; readers outside it still take values from a loaded config map, a passed section or the process environment.
   - `pkg/provider`: the resolver (`newResolver`) and the readers behind `LoadConfigSafe`, the model switch code, and the setup flows that save a whole config document.
   - `pkg/media`: wake word, voice, image and video generation.
-  - `pkg/tools`, `pkg/agent`, `pkg/mcp`, `pkg/kanban`, `pkg/plugins`, `pkg/commands`, `pkg/tuiserver`, `pkg/skills`, `pkg/memory`, `pkg/codeexec`, `pkg/browser`, `pkg/gateway`, `cmd/icebath`; in `pkg/cron`, `ICEBATH_CRON_TIMEOUT` and the readers that still load the config.
-  - Chat app adapters: their env knobs and their raw `settings.Resolve` list readers.
-  - Env readers in `pkg/tui` (37 `os.Getenv` calls), `pkg/app` (48), `pkg/i18n` (1): each is a setting, a real process fact, or dead.
+  - `pkg/tools`, `pkg/agent`, `pkg/mcp`, `pkg/kanban`, `pkg/plugins`, `pkg/commands`, `pkg/tuiserver`, `pkg/skills`, `pkg/memory`, `pkg/codeexec`, `pkg/browser`, `pkg/gateway`, `cmd/icebath`; in `pkg/cron`, the readers that still load the config.
+  - Chat app adapters whatsapp, whatsappcloud, photon, matrix, yuanbao, and the home channel of every platform: their env knobs and their raw `settings.Resolve` list readers.
+  - Env readers in `pkg/tui` (14 `os.Getenv` calls), `pkg/app` (32): each is a setting, a real process fact, or dead.
   - Writers of registered keys outside `settings.Set`.
-  - Config pushed into the process environment for a reader elsewhere (`pkg/config/facade_env.go` `TerminalConfigEnvMap`, `pkg/provider/env_loader.go` `applyTerminalConfigToEnv`, 123 `os.Setenv` calls outside tests): the reader takes the handle and the push goes. Then the rows of the env table in `pkg/config/env.go` that nothing reads.
+  - Config pushed into the process environment for a reader elsewhere (`pkg/config/facade_env.go` `TerminalConfigEnvMap`, `pkg/provider/env_loader.go` `applyTerminalConfigToEnv`, 88 `os.Setenv` calls outside tests): the reader takes the handle and the push goes. Then the rows of the env table in `pkg/config/env.go` that nothing reads.
 - [ ] `pkg/config/defaults.go` is written by `pkg/settings/internal/docgen` from the registry instead of by hand.
 - [ ] The duplicates of `settings-docs.md` §3 that are left: one setting and one place per feature.
 
@@ -32,14 +32,13 @@ Close an item with `[x]`
 ## Help and words
 
 - [ ] Wrong help texts that are left:
-  - H10: the bundled `icebath-agent` skill's `slash-commands.md` lists a `/indicator` look and a `/verbose` step that do not exist. The fix needs the packed skill tree rebuilt (`go generate`), which the no-build rule keeps from agents.
+  - H10: the packed skill tree (`pkg/skills/bundled.tar.zst`) still holds the old `slash-commands.md` of the `icebath-agent` skill. It needs the rebuild (`go generate`), which the no-build rule keeps from agents.
 
 ## Project-wide cleanup
 
 - [ ] Package splits: `pkg/gateway` (692 source files at the top level), `pkg/provider` (468), `pkg/tools` (395), `pkg/gatewayrun` (352), `pkg/agent` (330), `pkg/state` (218), `pkg/tuiserver` (188), `pkg/config` (79).
 - [ ] Python-port leftovers are removed: `py*` shims where the stdlib does the job (`pkg/internal` holds 66 packages), `pythonPath` naming (25 files), reference-mirroring compatibility code, `*_export.go` shims with no caller.
 - [ ] Delete everything intended to support legacy versions of icebath or migrate functionality to current version, including but not limited to: `pkg/gateway/service_retired.go` and its callers, the `ALTER TABLE` steps of the hosted rooms stores, the pickle migration in `pkg/gateway/platforms/matrix/e2ee_goolm.go`, `legacyCustomPoolMatches` in `pkg/provider/pool_persist.go`, `fallback_model` read beside `fallback_providers` (`pkg/provider/fallback_routes.go`), and the flat `moa` block (`legacyMoAKeys`, `pkg/provider/inventory.go`). No migration is ever added.
-- [ ] Files that do not belong in the source tree: `pkg/pm/.lock.json.lock`, `pkg/mcp/TODOS.md`.
 - [ ] Performance: cold start, time to first token, streaming throughput, idle CPU, RSS and background service start time were measured (`~/.cache/icebath-redesign/handoff2/lead.md`). Still to fix: 131 ms and 69 MB spent in package init (1,329 `regexp.MustCompile` at package level, 288 of them in `pkg/tools`), and the size of the binary (dead-code elimination is off for exported methods because `reflect.Value.MethodByName` is reachable through `text/template`). The idle CPU fix is in and not yet measured.
 - [ ] Drive each chat-app adapter with a scripted inbound message and check its replies.
 

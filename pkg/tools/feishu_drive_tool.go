@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 

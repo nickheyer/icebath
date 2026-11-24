@@ -13,11 +13,10 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"

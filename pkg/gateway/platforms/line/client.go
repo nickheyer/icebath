@@ -13,8 +13,7 @@ import (
 	"github.com/line/line-bot-sdk-go/v8/linebot/messaging_api"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Messaging API and content API hosts the client talks to

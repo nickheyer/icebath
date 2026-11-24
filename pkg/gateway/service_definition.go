@@ -16,8 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/pm"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Raised when the account a system service should run as cannot be chosen or found

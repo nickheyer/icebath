@@ -17,10 +17,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"golang.org/x/text/unicode/norm"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // TermuxPool is the Termux main package pool the bionic pins come from

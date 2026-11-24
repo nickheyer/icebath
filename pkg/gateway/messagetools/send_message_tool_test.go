@@ -11,10 +11,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 type botCall struct {

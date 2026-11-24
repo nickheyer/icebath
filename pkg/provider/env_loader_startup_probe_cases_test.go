@@ -7,11 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/remote"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 )
 
 // Process argv for the test, the real argv restored afterwards

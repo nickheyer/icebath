@@ -11,8 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const IterationBudgetWarningTemplate = "[SYSTEM NOTICE — iteration budget checkpoint] You have used %d of %d " +

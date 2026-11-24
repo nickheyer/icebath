@@ -6,14 +6,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/tuihost"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Per response stream delivery flags plus the per goroutine writer token a claim stores

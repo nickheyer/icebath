@@ -9,10 +9,9 @@ import (
 	"testing"
 	"testing/iotest"
 
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
-
-	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
 func agentCmdsHome(t *testing.T) (context.Context, string) {

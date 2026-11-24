@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Shell command collapsed onto one line and capped at limit runes for display

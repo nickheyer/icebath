@@ -6,9 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 )
 
 func TestPlaneRefusalsKeepThePlaneCode(t *testing.T) {

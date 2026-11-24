@@ -7,11 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
-
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"

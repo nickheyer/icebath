@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
-
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
@@ -21,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/startupfast"
 	"github.com/nickheyer/icebath/pkg/tools"
 )

@@ -7,8 +7,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const backendProbeCmd = "printf 'os=%s\\nkernel=%s\\n' \"$(uname -s 2>/dev/null || echo unknown)\" \"$(uname -r 2>/dev/null || echo unknown)\""

@@ -18,10 +18,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"modernc.org/libc"
 	sqlite3 "modernc.org/sqlite/lib"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Trigger names split by the DDL half that creates them, trigram triggers needing the trigram tokenizer

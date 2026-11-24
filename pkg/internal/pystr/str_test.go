@@ -1,24 +1,11 @@
 package pystr
 
 import (
-	"reflect"
 	"testing"
 )
 
-// Whitespace stripping and splitting use the CPython isspace set including the ASCII separators
-func TestStripAndSplit(t *testing.T) {
-	if got := SplitWhitespace("  a b  c  ", 1); !reflect.DeepEqual(got, []string{"a", "b  c  "}) {
-		t.Errorf("split max %q", got)
-	}
-	if got := SplitWhitespace(" a\x1fb ", -1); !reflect.DeepEqual(got, []string{"a", "b"}) {
-		t.Errorf("split %q", got)
-	}
-	if got := Splitlines("a\r\nb c\x1d", false); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
-		t.Errorf("splitlines %q", got)
-	}
-	if got := Splitlines("a\r\nb\n", true); !reflect.DeepEqual(got, []string{"a\r\n", "b\n"}) {
-		t.Errorf("splitlines keepends %q", got)
-	}
+// A surrogate written in three bytes and a stray byte each count as one character
+func TestLen(t *testing.T) {
 	if got := Len("a\xed\xa0\x80\xff"); got != 3 {
 		t.Errorf("len %d", got)
 	}
@@ -43,7 +30,7 @@ func TestCaseMappings(t *testing.T) {
 
 // Character class predicates follow the str methods
 func TestPredicates(t *testing.T) {
-	if !IsDigit('²') || IsDecimal('²') || !All("١٢", IsDecimal) || All("", IsDigit) {
+	if !IsDigit('²') || !All("١٢", IsDigit) || All("", IsDigit) {
 		t.Errorf("digits")
 	}
 	for s, want := range map[string]bool{"_a1": true, "1a": false, "ä": true, "a-b": false, "": false, "℘x": true, "à": true, "̀a": false} {
@@ -51,7 +38,7 @@ func TestPredicates(t *testing.T) {
 			t.Errorf("isidentifier %q", s)
 		}
 	}
-	if !IsAlnum('½') || IsAlnum('-') || !IsSpace('\x1f') || IsPrintable(' ') || !IsPrintable(' ') {
+	if !IsAlnum('½') || IsAlnum('-') || IsPrintable(' ') || !IsPrintable(' ') {
 		t.Errorf("classes")
 	}
 }

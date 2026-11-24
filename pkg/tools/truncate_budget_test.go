@@ -8,10 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 var noticeRe = regexp.MustCompile(`\n\n\.\.\. \[(?P<label>[A-Z ]+) TRUNCATED - (?P<omitted>[\d,]+) (?P<unit>chars|bytes) omitted out of (?P<total>[\d,]+) total\] \.\.\.\n\n`)

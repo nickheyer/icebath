@@ -8,72 +8,6 @@ import (
 	"golang.org/x/text/language"
 )
 
-// Code points str.isspace accepts, Unicode White_Space plus the ASCII file group record and unit separators
-func IsSpace(r rune) bool {
-	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
-}
-
-// str.split(None, maxsplit), whitespace runs as separators and the remainder keeping trailing space once maxsplit is spent
-func SplitWhitespace(s string, maxsplit int) []string {
-	out := []string{}
-	i := 0
-	for i < len(s) {
-		for i < len(s) {
-			r, n := DecodeRune(s[i:])
-			if !IsSpace(r) {
-				break
-			}
-			i += n
-		}
-		if i >= len(s) {
-			break
-		}
-		if maxsplit >= 0 && len(out) == maxsplit {
-			out = append(out, s[i:])
-			break
-		}
-		j := i
-		for j < len(s) {
-			r, n := DecodeRune(s[j:])
-			if IsSpace(r) {
-				break
-			}
-			j += n
-		}
-		out = append(out, s[i:j])
-		i = j
-	}
-	return out
-}
-
-// str.splitlines over every Python line boundary, carrying the boundaries when keepends is set
-func Splitlines(s string, keepends bool) []string {
-	lines := []string{}
-	start := 0
-	for i := 0; i < len(s); {
-		r, size := DecodeRune(s[i:])
-		switch r {
-		case '\n', '\r', '\v', '\f', '\x1c', '\x1d', '\x1e', '\u0085', ' ', ' ':
-			eol := i
-			i += size
-			if r == '\r' && i < len(s) && s[i] == '\n' {
-				i++
-			}
-			if keepends {
-				eol = i
-			}
-			lines = append(lines, s[start:eol])
-			start = i
-			continue
-		}
-		i += size
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
-
 // str.casefold with full case folding, Cherokee folding to its uppercase letters as CaseFolding.txt maps it
 func Casefold(s string) string {
 	return strings.Map(func(r rune) rune {
@@ -169,12 +103,6 @@ var digitExtra = &unicode.RangeTable{R16: []unicode.Range16{
 
 // str.isdigit on one code point, decimal digits plus superscripts circled and other Digit typed numbers
 func IsDigit(r rune) bool { return unicode.Is(unicode.Nd, r) || unicode.Is(digitExtra, r) }
-
-// str.isdecimal on one code point
-func IsDecimal(r rune) bool { return unicode.Is(unicode.Nd, r) }
-
-// str.isalpha on one code point
-func IsAlpha(r rune) bool { return unicode.IsLetter(r) }
 
 // str.isalnum on one code point, every N category code point carrying a numeric type
 func IsAlnum(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }

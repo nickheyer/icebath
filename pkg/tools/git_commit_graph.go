@@ -20,8 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var commitGraphWrite = []string{"commit-graph", "write", "--reachable", "--split", "--no-changed-paths", "--no-progress"}

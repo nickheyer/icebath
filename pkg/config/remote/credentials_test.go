@@ -12,9 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 )
 
 type captureTransport struct {

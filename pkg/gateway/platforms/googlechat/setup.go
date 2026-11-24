@@ -5,8 +5,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // GCP walkthrough the wizard prints before asking for the Pub/Sub settings

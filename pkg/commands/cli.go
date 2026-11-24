@@ -12,14 +12,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/profiles"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 // CLIHandler runs one bound CLI subcommand

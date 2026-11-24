@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 	"github.com/nickheyer/icebath/pkg/settings"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Adapter built from an extra without the test defaults, or the construction error

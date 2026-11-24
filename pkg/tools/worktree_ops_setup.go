@@ -16,8 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Colored CLI line printer of the worktree setup, the cli _cprint the app replaces with its renderer

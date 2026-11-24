@@ -10,8 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Home directory the way Path home resolves it, expanding a bare tilde

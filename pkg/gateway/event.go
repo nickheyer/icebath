@@ -8,8 +8,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var attachmentRefRE = regexp.MustCompile(`(?i)^(?:@(?:image|file|url):[^\n]+\n?)+`)

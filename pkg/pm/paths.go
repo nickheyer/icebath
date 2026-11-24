@@ -15,10 +15,9 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // EnvInstallRoot names the tree whose install stamp a steward wrapper keeps outside the binary dir

@@ -21,12 +21,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Client wait budgets and retry policy

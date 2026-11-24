@@ -8,10 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 )
 
 func setProfile(p *configplane.Plane, name string, values map[string]any, version int) {

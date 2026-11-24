@@ -19,10 +19,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Fresh cobra command tree with every host handler bound, assigned by the binary at startup

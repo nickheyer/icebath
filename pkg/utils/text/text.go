@@ -1,4 +1,3 @@
-// Package textutil holds the few text helpers the standard library has no call for
 package textutil
 
 import (

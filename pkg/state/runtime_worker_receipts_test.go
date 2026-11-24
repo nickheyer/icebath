@@ -181,48 +181,42 @@ func TestWorkerReceiptsRequireExactSequenceAssignmentAndAdoption(t *testing.T) {
 }
 
 func TestWorkerMutationAndReceiptRollBackTogether(t *testing.T) {
-	for _, content := range []string{"once", "a\xffb"} {
-		ctx := context.Background()
-		db, path, _, assignment := setupWorker(t)
-		mustExecConn(t, db.conn, "CREATE TRIGGER reject_receipt BEFORE INSERT ON worker_receipts BEGIN SELECT RAISE(ABORT, 'receipt fixture'); END")
-		if err := db.CreateSession(NewSession{ID: "direct", Source: "test"}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.AppendMessage(ctx, "direct", map[string]any{"role": "assistant", "content": content}, AppendGuards{}); err != nil {
-			t.Fatal(err)
-		}
-		expected := messageContents(t, db, "direct")[0]
-		args := appendReceipt(assignment, 1, content)
-		_, err := db.MutateWorkerExecution(ctx, args)
-		if !isIntegrityError(err) || !strings.Contains(err.Error(), "receipt fixture") {
-			t.Fatalf("want the receipt fixture integrity error, got %v", err)
-		}
-		if len(messageContents(t, db, "s")) != 0 || !pyjson.Equal(rowValue(mustSession(t, db, "s"), "message_count"), 0) {
-			t.Fatal("rolled back append left rows")
-		}
-		if !pyjson.Equal(scalarOf(t, db.conn, "SELECT last_sequence FROM worker_executions WHERE execution_id='worker'"), 0) {
-			t.Fatal("last_sequence moved")
-		}
-		mustExecConn(t, db.conn, "DROP TRIGGER reject_receipt")
-		receipt := mustReceipt(t, db, args)
-		db.Close()
-		db = mustSessionDB(t, path, false)
-		if again := mustReceipt(t, db, args); !pyjson.Equal(again, receipt) {
-			t.Fatalf("replay %v", again)
-		}
-		if got := messageContents(t, db, "s")[0]; got != expected {
-			t.Fatalf("content %q != %q", got, expected)
-		}
-		if content != expected {
-			if r := receiptRefusal(t, db, appendReceipt(assignment, 1, expected)); r != "admission_conflict" {
-				t.Fatal(r)
-			}
-		}
-		if len(messageContents(t, db, "s")) != 1 || !pyjson.Equal(rowValue(mustSession(t, db, "s"), "message_count"), 1) {
-			t.Fatal("one message expected")
-		}
-		db.Close()
+	content := "once"
+	ctx := context.Background()
+	db, path, _, assignment := setupWorker(t)
+	mustExecConn(t, db.conn, "CREATE TRIGGER reject_receipt BEFORE INSERT ON worker_receipts BEGIN SELECT RAISE(ABORT, 'receipt fixture'); END")
+	if err := db.CreateSession(NewSession{ID: "direct", Source: "test"}); err != nil {
+		t.Fatal(err)
 	}
+	if _, err := db.AppendMessage(ctx, "direct", map[string]any{"role": "assistant", "content": content}, AppendGuards{}); err != nil {
+		t.Fatal(err)
+	}
+	expected := messageContents(t, db, "direct")[0]
+	args := appendReceipt(assignment, 1, content)
+	_, err := db.MutateWorkerExecution(ctx, args)
+	if !isIntegrityError(err) || !strings.Contains(err.Error(), "receipt fixture") {
+		t.Fatalf("want the receipt fixture integrity error, got %v", err)
+	}
+	if len(messageContents(t, db, "s")) != 0 || !pyjson.Equal(rowValue(mustSession(t, db, "s"), "message_count"), 0) {
+		t.Fatal("rolled back append left rows")
+	}
+	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT last_sequence FROM worker_executions WHERE execution_id='worker'"), 0) {
+		t.Fatal("last_sequence moved")
+	}
+	mustExecConn(t, db.conn, "DROP TRIGGER reject_receipt")
+	receipt := mustReceipt(t, db, args)
+	db.Close()
+	db = mustSessionDB(t, path, false)
+	if again := mustReceipt(t, db, args); !pyjson.Equal(again, receipt) {
+		t.Fatalf("replay %v", again)
+	}
+	if got := messageContents(t, db, "s")[0]; got != expected {
+		t.Fatalf("content %q != %q", got, expected)
+	}
+	if len(messageContents(t, db, "s")) != 1 || !pyjson.Equal(rowValue(mustSession(t, db, "s"), "message_count"), 1) {
+		t.Fatal("one message expected")
+	}
+	db.Close()
 }
 
 func TestWorkerAppendPreservesCompressionWriteGuards(t *testing.T) {

@@ -15,9 +15,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Venv is the project venv made true by a frozen uv sync of pyproject, uv.lock and the enabled extras

@@ -16,10 +16,9 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // File under the home cache dir holding every server's cached tool manifest

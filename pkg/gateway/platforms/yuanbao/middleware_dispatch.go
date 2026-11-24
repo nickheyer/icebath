@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // DispatchMiddleware builds the message event and hands it to the gateway, group turns serialised per session

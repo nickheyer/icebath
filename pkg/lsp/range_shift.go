@@ -1,8 +1,6 @@
 package lsp
 
-import (
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
-)
+import textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 // LineShift maps a pre edit line to its post edit line, false when the line was deleted
 type LineShift func(line int64) (int64, bool)

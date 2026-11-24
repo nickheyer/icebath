@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/textutil"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var stampedLineRe = `\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}`
