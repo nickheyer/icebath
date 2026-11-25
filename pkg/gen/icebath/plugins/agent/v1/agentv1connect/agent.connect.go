@@ -30,6 +30,10 @@ const (
 	AgentServiceStopProcedure = "/icebath.plugins.agent.v1.AgentService/Stop"
 	// AgentServiceWatchProcedure is the procedure name of the AgentService's Watch RPC.
 	AgentServiceWatchProcedure = "/icebath.plugins.agent.v1.AgentService/Watch"
+	// AgentServiceApproveProcedure is the procedure name of the AgentService's Approve RPC.
+	AgentServiceApproveProcedure = "/icebath.plugins.agent.v1.AgentService/Approve"
+	// AgentServiceDenyProcedure is the procedure name of the AgentService's Deny RPC.
+	AgentServiceDenyProcedure = "/icebath.plugins.agent.v1.AgentService/Deny"
 )
 
 var (
@@ -54,6 +58,20 @@ var (
 			Procedure:  AgentServiceWatchProcedure,
 		}
 	})
+	agentServiceApproveSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Approve"),
+			Procedure:  AgentServiceApproveProcedure,
+		}
+	})
+	agentServiceDenySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_icebath_plugins_agent_v1_agent_proto.Services().ByName("AgentService").Methods().ByName("Deny"),
+			Procedure:  AgentServiceDenyProcedure,
+		}
+	})
 )
 
 // AgentServiceClient is a client for the icebath.plugins.agent.v1.AgentService service.
@@ -61,6 +79,8 @@ type AgentServiceClient interface {
 	Send(context.Context, *v1.SendRequest) (*v1.SendResponse, error)
 	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
 	Watch(context.Context, *v1.WatchRequest) (AgentServiceWatchClientStream, error)
+	Approve(context.Context, *v1.ApproveRequest) (*v1.ApproveResponse, error)
+	Deny(context.Context, *v1.DenyRequest) (*v1.DenyResponse, error)
 }
 
 // NewAgentServiceClient constructs a client for the icebath.plugins.agent.v1.AgentService service.
@@ -94,6 +114,8 @@ type AgentServiceHandler interface {
 	Send(context.Context, *v1.SendRequest) (*v1.SendResponse, error)
 	Stop(context.Context, *v1.StopRequest) (*v1.StopResponse, error)
 	Watch(context.Context, *v1.WatchRequest, AgentServiceWatchServerStream) error
+	Approve(context.Context, *v1.ApproveRequest) (*v1.ApproveResponse, error)
+	Deny(context.Context, *v1.DenyRequest) (*v1.DenyResponse, error)
 }
 
 // RegisterAgentServiceHandler registers svc as the icebath.plugins.agent.v1.AgentService
@@ -104,6 +126,8 @@ func RegisterAgentServiceHandler(server *connect.Server, svc AgentServiceHandler
 		connect.Method{Spec: agentServiceSendSpec(), Handler: adapter.send},
 		connect.Method{Spec: agentServiceStopSpec(), Handler: adapter.stop},
 		connect.Method{Spec: agentServiceWatchSpec(), Handler: adapter.watch},
+		connect.Method{Spec: agentServiceApproveSpec(), Handler: adapter.approve},
+		connect.Method{Spec: agentServiceDenySpec(), Handler: adapter.deny},
 	)
 }
 
@@ -137,6 +161,14 @@ func (UnimplementedAgentServiceHandler) Watch(context.Context, *v1.WatchRequest,
 	return connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Watch is not implemented")
 }
 
+func (UnimplementedAgentServiceHandler) Approve(context.Context, *v1.ApproveRequest) (*v1.ApproveResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Approve is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) Deny(context.Context, *v1.DenyRequest) (*v1.DenyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "icebath.plugins.agent.v1.AgentService.Deny is not implemented")
+}
+
 type agentServiceClient struct {
 	client *connect.Client
 }
@@ -163,6 +195,22 @@ func (c *agentServiceClient) Watch(ctx context.Context, req *v1.WatchRequest) (A
 		return AgentServiceWatchClientStream{}, err
 	}
 	return AgentServiceWatchClientStream{stream: stream}, nil
+}
+
+func (c *agentServiceClient) Approve(ctx context.Context, req *v1.ApproveRequest) (*v1.ApproveResponse, error) {
+	var res v1.ApproveResponse
+	if err := c.client.CallUnary(ctx, agentServiceApproveSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) Deny(ctx context.Context, req *v1.DenyRequest) (*v1.DenyResponse, error) {
+	var res v1.DenyResponse
+	if err := c.client.CallUnary(ctx, agentServiceDenySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
 }
 
 type agentServiceHandler struct{ svc AgentServiceHandler }
@@ -197,4 +245,28 @@ func (h agentServiceHandler) watch(ctx context.Context, _ connect.Spec, stream c
 		return err
 	}
 	return h.svc.Watch(ctx, &req, AgentServiceWatchServerStream{stream: stream})
+}
+
+func (h agentServiceHandler) approve(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ApproveRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Approve(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) deny(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DenyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.Deny(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

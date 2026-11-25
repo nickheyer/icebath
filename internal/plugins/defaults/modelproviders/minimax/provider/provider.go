@@ -52,7 +52,7 @@ func (p profiles) Profiles() []provider.Profile {
 	}, {
 		Name:               minimaxconfig.OAuthName,
 		DisplayName:        "MiniMax (OAuth)",
-		Description:        "MiniMax via OAuth browser flow — no API key required",
+		Description:        "MiniMax via OAuth browser flow - no API key required",
 		SignupURL:          "https://api.minimax.io/",
 		BaseURL:            p.config.GetString(minimaxconfig.OAuthBaseURL),
 		ModelsURL:          minimaxconfig.OAuthModelsURL,

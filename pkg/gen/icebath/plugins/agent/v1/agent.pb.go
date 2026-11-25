@@ -22,6 +22,58 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ApprovalScope int32
+
+const (
+	ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED ApprovalScope = 0
+	ApprovalScope_APPROVAL_SCOPE_ONCE        ApprovalScope = 1
+	ApprovalScope_APPROVAL_SCOPE_SESSION     ApprovalScope = 2
+	ApprovalScope_APPROVAL_SCOPE_ALWAYS      ApprovalScope = 3
+)
+
+// Enum value maps for ApprovalScope.
+var (
+	ApprovalScope_name = map[int32]string{
+		0: "APPROVAL_SCOPE_UNSPECIFIED",
+		1: "APPROVAL_SCOPE_ONCE",
+		2: "APPROVAL_SCOPE_SESSION",
+		3: "APPROVAL_SCOPE_ALWAYS",
+	}
+	ApprovalScope_value = map[string]int32{
+		"APPROVAL_SCOPE_UNSPECIFIED": 0,
+		"APPROVAL_SCOPE_ONCE":        1,
+		"APPROVAL_SCOPE_SESSION":     2,
+		"APPROVAL_SCOPE_ALWAYS":      3,
+	}
+)
+
+func (x ApprovalScope) Enum() *ApprovalScope {
+	p := new(ApprovalScope)
+	*p = x
+	return p
+}
+
+func (x ApprovalScope) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ApprovalScope) Descriptor() protoreflect.EnumDescriptor {
+	return file_icebath_plugins_agent_v1_agent_proto_enumTypes[0].Descriptor()
+}
+
+func (ApprovalScope) Type() protoreflect.EnumType {
+	return &file_icebath_plugins_agent_v1_agent_proto_enumTypes[0]
+}
+
+func (x ApprovalScope) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ApprovalScope.Descriptor instead.
+func (ApprovalScope) EnumDescriptor() ([]byte, []int) {
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
 type Delta struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
@@ -170,6 +222,74 @@ func (x *Rewind) GetMessages() uint32 {
 	return 0
 }
 
+type State struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Provider        string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Model           string                 `protobuf:"bytes,2,opt,name=model,proto3" json:"model,omitempty"`
+	ReasoningEffort string                 `protobuf:"bytes,3,opt,name=reasoning_effort,json=reasoningEffort,proto3" json:"reasoning_effort,omitempty"`
+	Yolo            bool                   `protobuf:"varint,4,opt,name=yolo,proto3" json:"yolo,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *State) Reset() {
+	*x = State{}
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *State) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*State) ProtoMessage() {}
+
+func (x *State) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use State.ProtoReflect.Descriptor instead.
+func (*State) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *State) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *State) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *State) GetReasoningEffort() string {
+	if x != nil {
+		return x.ReasoningEffort
+	}
+	return ""
+}
+
+func (x *State) GetYolo() bool {
+	if x != nil {
+		return x.Yolo
+	}
+	return false
+}
+
 type SendRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -180,7 +300,7 @@ type SendRequest struct {
 
 func (x *SendRequest) Reset() {
 	*x = SendRequest{}
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[3]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -192,7 +312,7 @@ func (x *SendRequest) String() string {
 func (*SendRequest) ProtoMessage() {}
 
 func (x *SendRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[3]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -205,7 +325,7 @@ func (x *SendRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendRequest.ProtoReflect.Descriptor instead.
 func (*SendRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{3}
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *SendRequest) GetSessionId() string {
@@ -230,7 +350,7 @@ type SendResponse struct {
 
 func (x *SendResponse) Reset() {
 	*x = SendResponse{}
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -242,7 +362,7 @@ func (x *SendResponse) String() string {
 func (*SendResponse) ProtoMessage() {}
 
 func (x *SendResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[4]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -255,7 +375,7 @@ func (x *SendResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendResponse.ProtoReflect.Descriptor instead.
 func (*SendResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{4}
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{5}
 }
 
 type StopRequest struct {
@@ -267,7 +387,7 @@ type StopRequest struct {
 
 func (x *StopRequest) Reset() {
 	*x = StopRequest{}
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -279,7 +399,7 @@ func (x *StopRequest) String() string {
 func (*StopRequest) ProtoMessage() {}
 
 func (x *StopRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[5]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -292,7 +412,7 @@ func (x *StopRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRequest.ProtoReflect.Descriptor instead.
 func (*StopRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{5}
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *StopRequest) GetSessionId() string {
@@ -310,7 +430,7 @@ type StopResponse struct {
 
 func (x *StopResponse) Reset() {
 	*x = StopResponse{}
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -322,7 +442,7 @@ func (x *StopResponse) String() string {
 func (*StopResponse) ProtoMessage() {}
 
 func (x *StopResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[6]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -335,7 +455,183 @@ func (x *StopResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopResponse.ProtoReflect.Descriptor instead.
 func (*StopResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{6}
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+}
+
+type ApproveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Scope         ApprovalScope          `protobuf:"varint,2,opt,name=scope,proto3,enum=icebath.plugins.agent.v1.ApprovalScope" json:"scope,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveRequest) Reset() {
+	*x = ApproveRequest{}
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveRequest) ProtoMessage() {}
+
+func (x *ApproveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveRequest.ProtoReflect.Descriptor instead.
+func (*ApproveRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ApproveRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ApproveRequest) GetScope() ApprovalScope {
+	if x != nil {
+		return x.Scope
+	}
+	return ApprovalScope_APPROVAL_SCOPE_UNSPECIFIED
+}
+
+type ApproveResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApproveResponse) Reset() {
+	*x = ApproveResponse{}
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApproveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApproveResponse) ProtoMessage() {}
+
+func (x *ApproveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApproveResponse.ProtoReflect.Descriptor instead.
+func (*ApproveResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+}
+
+type DenyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DenyRequest) Reset() {
+	*x = DenyRequest{}
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DenyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DenyRequest) ProtoMessage() {}
+
+func (x *DenyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DenyRequest.ProtoReflect.Descriptor instead.
+func (*DenyRequest) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DenyRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *DenyRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type DenyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DenyResponse) Reset() {
+	*x = DenyResponse{}
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DenyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DenyResponse) ProtoMessage() {}
+
+func (x *DenyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DenyResponse.ProtoReflect.Descriptor instead.
+func (*DenyResponse) Descriptor() ([]byte, []int) {
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 type WatchRequest struct {
@@ -347,7 +643,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -359,7 +655,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -372,7 +668,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *WatchRequest) GetSessionId() string {
@@ -392,6 +688,7 @@ type WatchResponse struct {
 	//	*WatchResponse_Notice
 	//	*WatchResponse_Busy
 	//	*WatchResponse_Rewind
+	//	*WatchResponse_State
 	Event         isWatchResponse_Event `protobuf_oneof:"event"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -399,7 +696,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -411,7 +708,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_icebath_plugins_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,7 +721,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *WatchResponse) GetEvent() isWatchResponse_Event {
@@ -488,6 +785,15 @@ func (x *WatchResponse) GetRewind() *Rewind {
 	return nil
 }
 
+func (x *WatchResponse) GetState() *State {
+	if x != nil {
+		if x, ok := x.Event.(*WatchResponse_State); ok {
+			return x.State
+		}
+	}
+	return nil
+}
+
 type isWatchResponse_Event interface {
 	isWatchResponse_Event()
 }
@@ -516,6 +822,10 @@ type WatchResponse_Rewind struct {
 	Rewind *Rewind `protobuf:"bytes,6,opt,name=rewind,proto3,oneof"`
 }
 
+type WatchResponse_State struct {
+	State *State `protobuf:"bytes,7,opt,name=state,proto3,oneof"`
+}
+
 func (*WatchResponse_Message) isWatchResponse_Event() {}
 
 func (*WatchResponse_Delta) isWatchResponse_Event() {}
@@ -527,6 +837,8 @@ func (*WatchResponse_Notice) isWatchResponse_Event() {}
 func (*WatchResponse_Busy) isWatchResponse_Event() {}
 
 func (*WatchResponse_Rewind) isWatchResponse_Event() {}
+
+func (*WatchResponse_State) isWatchResponse_Event() {}
 
 var File_icebath_plugins_agent_v1_agent_proto protoreflect.FileDescriptor
 
@@ -540,7 +852,12 @@ const file_icebath_plugins_agent_v1_agent_proto_rawDesc = "" +
 	"\acommand\x18\x01 \x01(\tR\acommand\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\"$\n" +
 	"\x06Rewind\x12\x1a\n" +
-	"\bmessages\x18\x01 \x01(\rR\bmessages\"@\n" +
+	"\bmessages\x18\x01 \x01(\rR\bmessages\"x\n" +
+	"\x05State\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x14\n" +
+	"\x05model\x18\x02 \x01(\tR\x05model\x12)\n" +
+	"\x10reasoning_effort\x18\x03 \x01(\tR\x0freasoningEffort\x12\x12\n" +
+	"\x04yolo\x18\x04 \x01(\bR\x04yolo\"@\n" +
 	"\vSendRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
@@ -549,22 +866,40 @@ const file_icebath_plugins_agent_v1_agent_proto_rawDesc = "" +
 	"\vStopRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x0e\n" +
-	"\fStopResponse\"-\n" +
+	"\fStopResponse\"n\n" +
+	"\x0eApproveRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12=\n" +
+	"\x05scope\x18\x02 \x01(\x0e2'.icebath.plugins.agent.v1.ApprovalScopeR\x05scope\"\x11\n" +
+	"\x0fApproveResponse\"D\n" +
+	"\vDenyRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x0e\n" +
+	"\fDenyResponse\"-\n" +
 	"\fWatchRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"\xb9\x02\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xf2\x02\n" +
 	"\rWatchResponse\x128\n" +
 	"\amessage\x18\x01 \x01(\v2\x1c.icebath.sessions.v1.MessageH\x00R\amessage\x127\n" +
 	"\x05delta\x18\x02 \x01(\v2\x1f.icebath.plugins.agent.v1.DeltaH\x00R\x05delta\x12@\n" +
 	"\bapproval\x18\x03 \x01(\v2\".icebath.plugins.agent.v1.ApprovalH\x00R\bapproval\x12\x18\n" +
 	"\x06notice\x18\x04 \x01(\tH\x00R\x06notice\x12\x14\n" +
 	"\x04busy\x18\x05 \x01(\bH\x00R\x04busy\x12:\n" +
-	"\x06rewind\x18\x06 \x01(\v2 .icebath.plugins.agent.v1.RewindH\x00R\x06rewindB\a\n" +
-	"\x05event2\x98\x02\n" +
+	"\x06rewind\x18\x06 \x01(\v2 .icebath.plugins.agent.v1.RewindH\x00R\x06rewind\x127\n" +
+	"\x05state\x18\a \x01(\v2\x1f.icebath.plugins.agent.v1.StateH\x00R\x05stateB\a\n" +
+	"\x05event*\x7f\n" +
+	"\rApprovalScope\x12\x1e\n" +
+	"\x1aAPPROVAL_SCOPE_UNSPECIFIED\x10\x00\x12\x17\n" +
+	"\x13APPROVAL_SCOPE_ONCE\x10\x01\x12\x1a\n" +
+	"\x16APPROVAL_SCOPE_SESSION\x10\x02\x12\x19\n" +
+	"\x15APPROVAL_SCOPE_ALWAYS\x10\x032\xcf\x03\n" +
 	"\fAgentService\x12U\n" +
 	"\x04Send\x12%.icebath.plugins.agent.v1.SendRequest\x1a&.icebath.plugins.agent.v1.SendResponse\x12U\n" +
 	"\x04Stop\x12%.icebath.plugins.agent.v1.StopRequest\x1a&.icebath.plugins.agent.v1.StopResponse\x12Z\n" +
-	"\x05Watch\x12&.icebath.plugins.agent.v1.WatchRequest\x1a'.icebath.plugins.agent.v1.WatchResponse0\x01B\xf4\x01\n" +
+	"\x05Watch\x12&.icebath.plugins.agent.v1.WatchRequest\x1a'.icebath.plugins.agent.v1.WatchResponse0\x01\x12^\n" +
+	"\aApprove\x12(.icebath.plugins.agent.v1.ApproveRequest\x1a).icebath.plugins.agent.v1.ApproveResponse\x12U\n" +
+	"\x04Deny\x12%.icebath.plugins.agent.v1.DenyRequest\x1a&.icebath.plugins.agent.v1.DenyResponseB\xf4\x01\n" +
 	"\x1ccom.icebath.plugins.agent.v1B\n" +
 	"AgentProtoP\x01ZEgithub.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1;agentv1\xa2\x02\x03IPA\xaa\x02\x18Icebath.Plugins.Agent.V1\xca\x02\x18Icebath\\Plugins\\Agent\\V1\xe2\x02$Icebath\\Plugins\\Agent\\V1\\GPBMetadata\xea\x02\x1bIcebath::Plugins::Agent::V1b\x06proto3"
 
@@ -580,35 +915,48 @@ func file_icebath_plugins_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_icebath_plugins_agent_v1_agent_proto_rawDescData
 }
 
-var file_icebath_plugins_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_icebath_plugins_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_icebath_plugins_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_icebath_plugins_agent_v1_agent_proto_goTypes = []any{
-	(*Delta)(nil),         // 0: icebath.plugins.agent.v1.Delta
-	(*Approval)(nil),      // 1: icebath.plugins.agent.v1.Approval
-	(*Rewind)(nil),        // 2: icebath.plugins.agent.v1.Rewind
-	(*SendRequest)(nil),   // 3: icebath.plugins.agent.v1.SendRequest
-	(*SendResponse)(nil),  // 4: icebath.plugins.agent.v1.SendResponse
-	(*StopRequest)(nil),   // 5: icebath.plugins.agent.v1.StopRequest
-	(*StopResponse)(nil),  // 6: icebath.plugins.agent.v1.StopResponse
-	(*WatchRequest)(nil),  // 7: icebath.plugins.agent.v1.WatchRequest
-	(*WatchResponse)(nil), // 8: icebath.plugins.agent.v1.WatchResponse
-	(*v1.Message)(nil),    // 9: icebath.sessions.v1.Message
+	(ApprovalScope)(0),      // 0: icebath.plugins.agent.v1.ApprovalScope
+	(*Delta)(nil),           // 1: icebath.plugins.agent.v1.Delta
+	(*Approval)(nil),        // 2: icebath.plugins.agent.v1.Approval
+	(*Rewind)(nil),          // 3: icebath.plugins.agent.v1.Rewind
+	(*State)(nil),           // 4: icebath.plugins.agent.v1.State
+	(*SendRequest)(nil),     // 5: icebath.plugins.agent.v1.SendRequest
+	(*SendResponse)(nil),    // 6: icebath.plugins.agent.v1.SendResponse
+	(*StopRequest)(nil),     // 7: icebath.plugins.agent.v1.StopRequest
+	(*StopResponse)(nil),    // 8: icebath.plugins.agent.v1.StopResponse
+	(*ApproveRequest)(nil),  // 9: icebath.plugins.agent.v1.ApproveRequest
+	(*ApproveResponse)(nil), // 10: icebath.plugins.agent.v1.ApproveResponse
+	(*DenyRequest)(nil),     // 11: icebath.plugins.agent.v1.DenyRequest
+	(*DenyResponse)(nil),    // 12: icebath.plugins.agent.v1.DenyResponse
+	(*WatchRequest)(nil),    // 13: icebath.plugins.agent.v1.WatchRequest
+	(*WatchResponse)(nil),   // 14: icebath.plugins.agent.v1.WatchResponse
+	(*v1.Message)(nil),      // 15: icebath.sessions.v1.Message
 }
 var file_icebath_plugins_agent_v1_agent_proto_depIdxs = []int32{
-	9, // 0: icebath.plugins.agent.v1.WatchResponse.message:type_name -> icebath.sessions.v1.Message
-	0, // 1: icebath.plugins.agent.v1.WatchResponse.delta:type_name -> icebath.plugins.agent.v1.Delta
-	1, // 2: icebath.plugins.agent.v1.WatchResponse.approval:type_name -> icebath.plugins.agent.v1.Approval
-	2, // 3: icebath.plugins.agent.v1.WatchResponse.rewind:type_name -> icebath.plugins.agent.v1.Rewind
-	3, // 4: icebath.plugins.agent.v1.AgentService.Send:input_type -> icebath.plugins.agent.v1.SendRequest
-	5, // 5: icebath.plugins.agent.v1.AgentService.Stop:input_type -> icebath.plugins.agent.v1.StopRequest
-	7, // 6: icebath.plugins.agent.v1.AgentService.Watch:input_type -> icebath.plugins.agent.v1.WatchRequest
-	4, // 7: icebath.plugins.agent.v1.AgentService.Send:output_type -> icebath.plugins.agent.v1.SendResponse
-	6, // 8: icebath.plugins.agent.v1.AgentService.Stop:output_type -> icebath.plugins.agent.v1.StopResponse
-	8, // 9: icebath.plugins.agent.v1.AgentService.Watch:output_type -> icebath.plugins.agent.v1.WatchResponse
-	7, // [7:10] is the sub-list for method output_type
-	4, // [4:7] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: icebath.plugins.agent.v1.ApproveRequest.scope:type_name -> icebath.plugins.agent.v1.ApprovalScope
+	15, // 1: icebath.plugins.agent.v1.WatchResponse.message:type_name -> icebath.sessions.v1.Message
+	1,  // 2: icebath.plugins.agent.v1.WatchResponse.delta:type_name -> icebath.plugins.agent.v1.Delta
+	2,  // 3: icebath.plugins.agent.v1.WatchResponse.approval:type_name -> icebath.plugins.agent.v1.Approval
+	3,  // 4: icebath.plugins.agent.v1.WatchResponse.rewind:type_name -> icebath.plugins.agent.v1.Rewind
+	4,  // 5: icebath.plugins.agent.v1.WatchResponse.state:type_name -> icebath.plugins.agent.v1.State
+	5,  // 6: icebath.plugins.agent.v1.AgentService.Send:input_type -> icebath.plugins.agent.v1.SendRequest
+	7,  // 7: icebath.plugins.agent.v1.AgentService.Stop:input_type -> icebath.plugins.agent.v1.StopRequest
+	13, // 8: icebath.plugins.agent.v1.AgentService.Watch:input_type -> icebath.plugins.agent.v1.WatchRequest
+	9,  // 9: icebath.plugins.agent.v1.AgentService.Approve:input_type -> icebath.plugins.agent.v1.ApproveRequest
+	11, // 10: icebath.plugins.agent.v1.AgentService.Deny:input_type -> icebath.plugins.agent.v1.DenyRequest
+	6,  // 11: icebath.plugins.agent.v1.AgentService.Send:output_type -> icebath.plugins.agent.v1.SendResponse
+	8,  // 12: icebath.plugins.agent.v1.AgentService.Stop:output_type -> icebath.plugins.agent.v1.StopResponse
+	14, // 13: icebath.plugins.agent.v1.AgentService.Watch:output_type -> icebath.plugins.agent.v1.WatchResponse
+	10, // 14: icebath.plugins.agent.v1.AgentService.Approve:output_type -> icebath.plugins.agent.v1.ApproveResponse
+	12, // 15: icebath.plugins.agent.v1.AgentService.Deny:output_type -> icebath.plugins.agent.v1.DenyResponse
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_icebath_plugins_agent_v1_agent_proto_init() }
@@ -616,26 +964,28 @@ func file_icebath_plugins_agent_v1_agent_proto_init() {
 	if File_icebath_plugins_agent_v1_agent_proto != nil {
 		return
 	}
-	file_icebath_plugins_agent_v1_agent_proto_msgTypes[8].OneofWrappers = []any{
+	file_icebath_plugins_agent_v1_agent_proto_msgTypes[13].OneofWrappers = []any{
 		(*WatchResponse_Message)(nil),
 		(*WatchResponse_Delta)(nil),
 		(*WatchResponse_Approval)(nil),
 		(*WatchResponse_Notice)(nil),
 		(*WatchResponse_Busy)(nil),
 		(*WatchResponse_Rewind)(nil),
+		(*WatchResponse_State)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_icebath_plugins_agent_v1_agent_proto_rawDesc), len(file_icebath_plugins_agent_v1_agent_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   9,
+			NumEnums:      1,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_icebath_plugins_agent_v1_agent_proto_goTypes,
 		DependencyIndexes: file_icebath_plugins_agent_v1_agent_proto_depIdxs,
+		EnumInfos:         file_icebath_plugins_agent_v1_agent_proto_enumTypes,
 		MessageInfos:      file_icebath_plugins_agent_v1_agent_proto_msgTypes,
 	}.Build()
 	File_icebath_plugins_agent_v1_agent_proto = out.File

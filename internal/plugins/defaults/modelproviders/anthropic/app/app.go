@@ -105,6 +105,10 @@ func (o *output) lines() []string {
 func (l *login) subscription() tea.Cmd {
 	out := new(output)
 	ctx, cancel := context.WithCancel(l.kit.Env.Ctx)
+	l.hub.OnClose(func() tea.Cmd {
+		cancel()
+		return nil
+	})
 	page := cards.NewPage(l.kit.Env, cards.PageSpec{
 		Title:  "Claude Pro/Max subscription",
 		Key:    "anthropic.login.subscription",
@@ -114,6 +118,9 @@ func (l *login) subscription() tea.Cmd {
 	prompt := func(label string) (string, bool) {
 		answer := make(chan string, 1)
 		l.kit.Apply(func() tea.Cmd {
+			if ctx.Err() != nil {
+				return nil
+			}
 			return l.hub.Push(cards.NewForm(l.kit.Env, cards.FormSpec{
 				Title:  "Claude Pro/Max subscription",
 				Intro:  out.lines(),
@@ -139,19 +146,24 @@ func (l *login) subscription() tea.Cmd {
 	return tea.Batch(l.hub.Push(page), tui.Async(func() func() tea.Cmd {
 		state := anthropiccredentials.RunIcebathOAuthLoginTo(anthropiccredentials.PoolEnv{Config: l.config, Ctx: ctx}, out, prompt, true)
 		token, _ := state["access_token"].(string)
+		refresh, _ := state["refresh_token"].(string)
+		expires, _ := state["expires_at_ms"].(float64)
+		left := ctx.Err() != nil
 		var err error
 		if token != "" {
-			err = l.save(token)
+			err = l.save(token, refresh, int64(expires))
 		}
 		return func() tea.Cmd {
 			cancel()
 			switch {
 			case err != nil:
-				return l.hub.Fail(err.Error())
+				return tea.Batch(l.hub.Fail(err.Error()), l.kit.WM.Toast("Anthropic sign in: "+err.Error(), wm.Error, wm.DefaultToastTTL))
+			case token == "" && left:
+				return l.kit.WM.Toast("Anthropic sign in cancelled", wm.Info, wm.DefaultToastTTL)
 			case token == "":
 				return l.hub.Fail("Sign in did not return a credential")
 			}
-			return tea.Batch(l.hub.PopTo(l.hub.Root()), l.hub.Done("Signed in to Anthropic"))
+			return tea.Batch(l.hub.PopTo(l.hub.Root()), l.hub.Done("Signed in to Anthropic"), l.kit.WM.Toast("Signed in to Anthropic", wm.Success, wm.DefaultToastTTL))
 		}
 	}))
 }
@@ -165,7 +177,7 @@ func (l *login) token() tea.Cmd {
 		Done: func(_ *cards.Form, values map[string]string) tea.Cmd {
 			token := strings.TrimSpace(values["token"])
 			return tui.Async(func() func() tea.Cmd {
-				err := l.save(token)
+				err := l.save(token, "", 0)
 				return func() tea.Cmd {
 					if err != nil {
 						return l.hub.Fail(err.Error())
@@ -178,7 +190,15 @@ func (l *login) token() tea.Cmd {
 	}))
 }
 
-func (l *login) save(token string) error {
-	_, err := l.settings.Set(l.kit.Env.Ctx, &configv1.SetRequest{Key: anthropicconfig.Token, Value: strconv.Quote(token)})
-	return err
+func (l *login) save(token, refresh string, expires int64) error {
+	values := [][2]string{{anthropicconfig.Token, strconv.Quote(token)}, {anthropicconfig.RefreshToken, "null"}, {anthropicconfig.TokenExpires, "null"}}
+	if refresh != "" {
+		values[1][1], values[2][1] = strconv.Quote(refresh), strconv.FormatInt(expires, 10)
+	}
+	for _, value := range values {
+		if _, err := l.settings.Set(l.kit.Env.Ctx, &configv1.SetRequest{Key: value[0], Value: value[1]}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

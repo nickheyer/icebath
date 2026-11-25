@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package icebath.tools.v1;
+
+service ToolService {
+  rpc List(ListRequest) returns (ListResponse);
+}
+
+message Tool {
+  string name = 1;
+  string toolset = 2;
+  string description = 3;
+  bool available = 4;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Tool tools = 1;
+}

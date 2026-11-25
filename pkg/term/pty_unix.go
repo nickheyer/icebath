@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-
-	"github.com/nickheyer/icebath/pkg/utils/proc"
 )
 
 // Program running on a pseudo terminal
@@ -99,7 +97,7 @@ func (p *Process) Close() {
 		return
 	case <-time.After(closeGrace):
 	}
-	proc.KillTree(p.Pid())
+	killTree(p.Pid())
 	<-p.done
 }
 

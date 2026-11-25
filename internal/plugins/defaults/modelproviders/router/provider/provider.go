@@ -19,7 +19,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               routerconfig.Name,
 		DisplayName:        "Ramp Router",
-		Description:        "Ramp Router (router.com) — routes each request to the cheapest model that clears your quality bar",
+		Description:        "Ramp Router (router.com) - routes each request to the cheapest model that clears your quality bar",
 		SignupURL:          "https://app.router.com/keys",
 		BaseURL:            base,
 		BaseURLEnv:         routerconfig.BaseURLEnv,

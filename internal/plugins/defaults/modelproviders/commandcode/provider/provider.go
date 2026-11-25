@@ -18,7 +18,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:            commandcodeconfig.ChatName,
 		DisplayName:     "CommandCode",
-		Description:     "CommandCode — 20+ models via OpenAI-compatible API",
+		Description:     "CommandCode - 20+ models via OpenAI-compatible API",
 		SignupURL:       "https://commandcode.ai/",
 		BaseURL:         p.config.GetString(commandcodeconfig.ChatBaseURL),
 		BaseURLEnv:      commandcodeconfig.ChatBaseURLEnv,
@@ -40,7 +40,7 @@ func (p profiles) Profiles() []provider.Profile {
 	}, {
 		Name:               commandcodeconfig.AnthropicName,
 		DisplayName:        "CommandCode (Anthropic)",
-		Description:        "CommandCode — Claude models via Anthropic Messages API",
+		Description:        "CommandCode - Claude models via Anthropic Messages API",
 		SignupURL:          "https://commandcode.ai/",
 		BaseURL:            p.config.GetString(commandcodeconfig.AnthropicBaseURL),
 		BaseURLEnv:         commandcodeconfig.AnthropicBaseURLEnv,

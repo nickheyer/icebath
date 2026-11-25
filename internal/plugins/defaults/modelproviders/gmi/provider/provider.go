@@ -19,7 +19,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               gmiconfig.Name,
 		DisplayName:        "GMI Cloud",
-		Description:        "GMI Cloud — multi-model direct API (slash-form model IDs)",
+		Description:        "GMI Cloud - multi-model direct API (slash-form model IDs)",
 		SignupURL:          "https://www.gmicloud.ai/",
 		BaseURL:            base,
 		BaseURLEnv:         gmiconfig.BaseURLEnv,

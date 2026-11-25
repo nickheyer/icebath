@@ -18,7 +18,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:            nebiustokenfactoryconfig.Name,
 		DisplayName:     "Nebius Token Factory",
-		Description:     "Nebius Token Factory — OpenAI-compatible inference",
+		Description:     "Nebius Token Factory - OpenAI-compatible inference",
 		SignupURL:       "https://tokenfactory.nebius.com/",
 		BaseURL:         p.config.GetString(nebiustokenfactoryconfig.BaseURL),
 		BaseURLEnv:      nebiustokenfactoryconfig.BaseURLEnv,

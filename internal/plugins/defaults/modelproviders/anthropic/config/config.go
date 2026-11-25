@@ -9,6 +9,8 @@ const (
 	APIKey              = Key + ".api_key"
 	Token               = Key + ".token"
 	OAuthToken          = Key + ".oauth_token"
+	RefreshToken        = Key + ".refresh_token"
+	TokenExpires        = Key + ".token_expires"
 	AdoptExternalLogins = Key + ".adopt_external_logins"
 	DefaultModel        = Key + ".default_model"
 )

@@ -8,6 +8,15 @@ service AgentService {
   rpc Send(SendRequest) returns (SendResponse);
   rpc Stop(StopRequest) returns (StopResponse);
   rpc Watch(WatchRequest) returns (stream WatchResponse);
+  rpc Approve(ApproveRequest) returns (ApproveResponse);
+  rpc Deny(DenyRequest) returns (DenyResponse);
+}
+
+enum ApprovalScope {
+  APPROVAL_SCOPE_UNSPECIFIED = 0;
+  APPROVAL_SCOPE_ONCE = 1;
+  APPROVAL_SCOPE_SESSION = 2;
+  APPROVAL_SCOPE_ALWAYS = 3;
 }
 
 message Delta {
@@ -24,6 +33,13 @@ message Rewind {
   uint32 messages = 1;
 }
 
+message State {
+  string provider = 1;
+  string model = 2;
+  string reasoning_effort = 3;
+  bool yolo = 4;
+}
+
 message SendRequest {
   string session_id = 1;
   string text = 2;
@@ -37,6 +53,20 @@ message StopRequest {
 
 message StopResponse {}
 
+message ApproveRequest {
+  string session_id = 1;
+  ApprovalScope scope = 2;
+}
+
+message ApproveResponse {}
+
+message DenyRequest {
+  string session_id = 1;
+  string reason = 2;
+}
+
+message DenyResponse {}
+
 message WatchRequest {
   string session_id = 1;
 }
@@ -49,5 +79,6 @@ message WatchResponse {
     string notice = 4;
     bool busy = 5;
     Rewind rewind = 6;
+    State state = 7;
   }
 }

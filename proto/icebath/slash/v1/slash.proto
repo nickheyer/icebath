@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package icebath.slash.v1;
+
+service SlashService {
+  rpc List(ListRequest) returns (ListResponse);
+}
+
+message Command {
+  string name = 1;
+  repeated string aliases = 2;
+  string usage = 3;
+  string help = 4;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Command commands = 1;
+}

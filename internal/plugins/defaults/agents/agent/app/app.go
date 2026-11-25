@@ -9,8 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/internal/app"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/plugins/agent/v1/agentv1connect"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1/providerv1connect"
 	sessionsv1 "github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/sessions/v1/sessionsv1connect"
+	"github.com/nickheyer/icebath/pkg/gen/icebath/slash/v1/slashv1connect"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -28,17 +30,38 @@ func Register(registry *app.Registry) {
 func (s *screens) Screens(conn *connect.Client) []tui.Screen {
 	sessions := sessionsv1connect.NewSessionServiceClient(conn)
 	agents := agentv1connect.NewAgentServiceClient(conn)
-	chat := func(kit *tui.Kit, session *sessionsv1.Session) *chat {
+	commands := slashv1connect.NewSlashServiceClient(conn)
+	providers := providerv1connect.NewProviderServiceClient(conn)
+	var start func(kit *tui.Kit, session *sessionsv1.Session) *chat
+	start = func(kit *tui.Kit, session *sessionsv1.Session) *chat {
 		s.chats++
-		return newChat(kit, sessions, agents, "chat:"+strconv.Itoa(s.chats), session)
+		c := newChat(kit, sessions, agents, commands, "chat:"+strconv.Itoa(s.chats), session)
+		c.pick = func() tea.Cmd { return (&picker{kit: kit, providers: providers, chat: c}).open() }
+		c.open = func(session *sessionsv1.Session) tea.Cmd { return kit.WM.OpenHere(start(kit, session)) }
+		return c
 	}
 	return []tui.Screen{
 		{
-			ID:    "chat",
-			Title: "New chat",
-			Short: "Start a session with the agent in this directory",
+			ID:       "chat",
+			Title:    "New chat",
+			Short:    "Start a session with the agent in this directory",
+			Startup:  true,
+			Commands: []string{"session.beside", "session.new"},
 			Open: func(kit *tui.Kit) tea.Cmd {
-				return kit.WM.OpenHere(chat(kit, nil))
+				return kit.WM.OpenHere(start(kit, nil))
+			},
+		},
+		{
+			ID:       "model",
+			Title:    "Model",
+			Short:    "Switch the provider and model of the session in focus",
+			Commands: []string{"model.switch"},
+			Open: func(kit *tui.Kit) tea.Cmd {
+				target, ok := kit.Focused().(*chat)
+				if !ok {
+					return kit.WM.Toast("Focus a chat to switch its model", wm.Warn, wm.DefaultToastTTL)
+				}
+				return target.pick()
 			},
 		},
 		{
@@ -46,7 +69,7 @@ func (s *screens) Screens(conn *connect.Client) []tui.Screen {
 			Title: "Sessions",
 			Short: "Open, rename or delete an earlier session",
 			Open: func(kit *tui.Kit) tea.Cmd {
-				return (&history{kit: kit, sessions: sessions, chat: chat}).open()
+				return (&history{kit: kit, sessions: sessions, chat: start}).open()
 			},
 		},
 	}

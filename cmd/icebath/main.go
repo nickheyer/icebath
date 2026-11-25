@@ -29,9 +29,12 @@ import (
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsserver "github.com/nickheyer/icebath/internal/sessions/server"
 	"github.com/nickheyer/icebath/internal/slash"
+	slashserver "github.com/nickheyer/icebath/internal/slash/server"
 	"github.com/nickheyer/icebath/internal/state"
 	statecli "github.com/nickheyer/icebath/internal/state/cli"
 	"github.com/nickheyer/icebath/internal/tools"
+	toolsapp "github.com/nickheyer/icebath/internal/tools/app"
+	toolsserver "github.com/nickheyer/icebath/internal/tools/server"
 	"github.com/nickheyer/icebath/internal/transport"
 )
 
@@ -74,6 +77,9 @@ func run(ctx context.Context, args []string) (err error) {
 	providerapp.Register(a)
 	providercli.Register(c)
 	sessionsserver.Register(srv, cfg, s)
+	slashserver.Register(srv, sl)
+	toolsserver.Register(srv, cfg, tl)
+	toolsapp.Register(a)
 	defaults.Register(plugins.New(cfg, srv, a, c, p, t, cr, m, tl, s, sl))
 	defer func() {
 		err = errors.Join(err, srv.Close(), s.Close())

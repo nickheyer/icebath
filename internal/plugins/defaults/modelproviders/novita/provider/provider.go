@@ -19,7 +19,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               novitaconfig.Name,
 		DisplayName:        "NovitaAI",
-		Description:        "NovitaAI — AI-native cloud for builders and agents",
+		Description:        "NovitaAI - AI-native cloud for builders and agents",
 		SignupURL:          "https://novita.ai/settings/key-management",
 		BaseURL:            base,
 		BaseURLEnv:         novitaconfig.BaseURLEnv,

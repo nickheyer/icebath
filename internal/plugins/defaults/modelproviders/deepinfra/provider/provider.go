@@ -19,7 +19,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               deepinfraconfig.Name,
 		DisplayName:        "DeepInfra",
-		Description:        "DeepInfra — 100+ open models, pay-per-use",
+		Description:        "DeepInfra - 100+ open models, pay-per-use",
 		SignupURL:          "https://deepinfra.com/dash/api_keys",
 		BaseURL:            base,
 		BaseURLEnv:         deepinfraconfig.BaseURLEnv,

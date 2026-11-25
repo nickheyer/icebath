@@ -24,7 +24,7 @@ func (screens) Screens(conn *connect.Client) []tui.Screen {
 		Title: "apluginexample",
 		Short: "The example plugin's greeting",
 		Open: func(kit *tui.Kit) tea.Cmd {
-			text := "Loading…"
+			text := "Loading..."
 			page := cards.NewPage(kit.Env, cards.PageSpec{
 				Title: "apluginexample",
 				Key:   "apluginexample",

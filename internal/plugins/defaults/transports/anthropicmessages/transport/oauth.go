@@ -14,8 +14,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
-	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
+	"github.com/nickheyer/icebath/internal/provider"
 )
 
 // Author named in the product's own system prompt
@@ -249,7 +248,8 @@ func anthClaudeCodeUserAgent() string {
 }
 
 func asMap(v any) (map[string]any, bool) {
-	return jsonutil.AsMap(v)
+	m, ok := v.(map[string]any)
+	return m, ok
 }
 
 func asList(v any) ([]any, bool) {
@@ -271,15 +271,10 @@ func asStr(v any) string {
 	return s
 }
 
-// Stores v under key in a block held as a plain map or an ordered object, in place
+// Stores v under key in a block held as a plain map, in place
 func setBlockField(b any, key string, v any) {
-	switch t := b.(type) {
-	case map[string]any:
+	if t, ok := b.(map[string]any); ok {
 		t[key] = v
-	case *jsonutil.Object:
-		if t != nil {
-			t.Set(key, v)
-		}
 	}
 }
 
@@ -294,11 +289,7 @@ func expandTildePath(p string) string {
 
 // Lowercased hostname of a base URL, empty when absent
 func baseURLHostname(raw string) string {
-	host, err := urlutil.BaseHost(raw)
-	if err != nil {
-		return ""
-	}
-	return host
+	return provider.BaseHost(raw)
 }
 
 func normalizeBaseURLText(raw string) string { return strings.TrimSpace(raw) }

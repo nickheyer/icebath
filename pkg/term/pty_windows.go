@@ -10,8 +10,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/utils/proc"
 )
 
 // Program running on a pseudo console
@@ -182,7 +180,7 @@ func (p *Process) Close() {
 	select {
 	case <-p.done:
 	case <-time.After(closeGrace):
-		proc.KillTree(p.Pid())
+		killTree(p.Pid())
 		<-p.done
 	}
 	p.out.Close()

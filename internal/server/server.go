@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -76,13 +79,32 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	token := s.config.GetString(serverconfig.Token)
+	if token == "" {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return err
+		}
+		token = hex.EncodeToString(raw)
+		if err := s.config.Set(serverconfig.Token, token); err != nil {
+			return err
+		}
+	}
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, s.Services())
+	guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, password, ok := r.BasicAuth(); !ok || subtle.ConstantTimeCompare([]byte(password), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="icebath"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
 	httpServer := &http.Server{
-		Handler:           mux,
+		Handler:           guarded,
 		Protocols:         protocols,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -92,7 +114,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		<-ctx.Done()
 		shutdown <- httpServer.Shutdown(context.Background())
 	}()
-	slog.Info("serving", "address", listener.Addr().String())
+	slog.Info("serving", "address", listener.Addr().String(), "connect", "icebath connect http://icebath:"+token+"@"+listener.Addr().String())
 	if err := httpServer.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

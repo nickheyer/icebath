@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -18,6 +20,9 @@ type Agent interface {
 	Deny(sessionID, reason string) error
 	Yolo(sessionID string) (bool, error)
 	Model(ctx context.Context, sessionID, model, provider, effort string, reset, global bool) (string, error)
+	Status(sessionID string) (string, error)
+	Approvals(mode string) (string, error)
+	Diff(ctx context.Context, sessionID string) (string, error)
 }
 
 type commands struct {
@@ -38,6 +43,11 @@ func (c commands) Commands() []slash.Command {
 		{Name: "approve", Usage: "[session|always]", Help: "Approve a pending dangerous command, and others like it for this session or from now on", Run: c.approve},
 		{Name: "deny", Usage: "[reason]", Help: "Deny a pending dangerous command", Run: c.deny},
 		{Name: "yolo", Help: "Toggle YOLO mode (skip all dangerous command approvals)", Run: c.yolo},
+		{Name: "status", Help: "Show session, model, token, and context info", Run: c.status},
+		{Name: "reasoning", Usage: "[level]", Help: "Manage reasoning effort and display", Run: c.reasoning},
+		{Name: "approvals", Usage: "[manual|off]", Help: "Show or set the persistent dangerous-command approval mode", Run: c.approvals},
+		{Name: "diff", Help: "Show git changes in the working directory", Run: c.diff},
+		{Name: "version", Aliases: []string{"v"}, Help: "Show icebath version", Run: c.version},
 		{Name: "model", Usage: "[model|reset] [--provider name] [--reasoning level] [--global|--session]", Help: "Show the model and the ones the provider serves, or switch model for this session", Run: c.model},
 	}
 }
@@ -101,6 +111,33 @@ func (c commands) yolo(_ context.Context, call *slash.Call) (string, error) {
 		return "yolo on: risky commands run without asking", nil
 	}
 	return "yolo off: risky commands ask first", nil
+}
+
+func (c commands) status(_ context.Context, call *slash.Call) (string, error) {
+	return c.agent.Status(call.SessionID)
+}
+
+func (c commands) reasoning(ctx context.Context, call *slash.Call) (string, error) {
+	if strings.ContainsAny(call.Argument, " \t") {
+		return "", errors.New("usage: /reasoning [level]")
+	}
+	return c.agent.Model(ctx, call.SessionID, "", "", call.Argument, false, false)
+}
+
+func (c commands) approvals(_ context.Context, call *slash.Call) (string, error) {
+	return c.agent.Approvals(call.Argument)
+}
+
+func (c commands) diff(ctx context.Context, call *slash.Call) (string, error) {
+	return c.agent.Diff(ctx, call.SessionID)
+}
+
+func (c commands) version(context.Context, *slash.Call) (string, error) {
+	version := "(devel)"
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		version = info.Main.Version
+	}
+	return "icebath " + version + " " + runtime.Version() + " " + runtime.GOOS + "/" + runtime.GOARCH, nil
 }
 
 func (c commands) model(ctx context.Context, call *slash.Call) (string, error) {

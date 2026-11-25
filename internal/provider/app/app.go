@@ -70,13 +70,15 @@ func (p *providers) open() tea.Cmd {
 		},
 		Free: map[string]bool{"hub.refresh": true},
 		Hints: func(*cards.List, int) []wm.Hint {
-			return []wm.Hint{{Action: "hub.use", Label: "models"}, {Action: "hub.refresh"}}
+			return []wm.Hint{{Action: "hub.use", Label: "models"}, {Action: "hub.toggle", Label: "details"}, {Action: "hub.refresh"}}
 		},
 		Actions: map[string]func(*cards.List, int) tea.Cmd{
 			"hub.use":     func(_ *cards.List, i int) tea.Cmd { return p.models(p.rows[i]) },
+			"hub.toggle":  func(l *cards.List, _ int) tea.Cmd { return l.ToggleDetail() },
 			"hub.refresh": func(*cards.List, int) tea.Cmd { return p.load() },
 		},
 	})
+	list.ToggleDetail()
 	p.hub = p.kit.Hub("providers", list)
 	return tea.Batch(p.kit.WM.ShowOverlay(p.hub), p.load())
 }

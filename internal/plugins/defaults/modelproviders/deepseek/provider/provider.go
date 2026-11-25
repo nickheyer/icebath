@@ -18,7 +18,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:                       deepseekconfig.Name,
 		DisplayName:                "DeepSeek",
-		Description:                "DeepSeek — native DeepSeek API",
+		Description:                "DeepSeek - native DeepSeek API",
 		SignupURL:                  "https://platform.deepseek.com/",
 		BaseURL:                    p.config.GetString(deepseekconfig.BaseURL),
 		BaseURLEnv:                 deepseekconfig.BaseURLEnv,

@@ -19,7 +19,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               nvidiaconfig.Name,
 		DisplayName:        "NVIDIA NIM",
-		Description:        "NVIDIA NIM — accelerated inference",
+		Description:        "NVIDIA NIM - accelerated inference",
 		SignupURL:          "https://build.nvidia.com/",
 		BaseURL:            base,
 		BaseURLEnv:         nvidiaconfig.BaseURLEnv,

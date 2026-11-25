@@ -18,7 +18,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               zaiconfig.Name,
 		DisplayName:        "Z.AI (GLM)",
-		Description:        "Z.AI / GLM — Zhipu AI models",
+		Description:        "Z.AI / GLM - Zhipu AI models",
 		SignupURL:          "https://z.ai/",
 		BaseURL:            p.config.GetString(zaiconfig.BaseURL),
 		BaseURLEnv:         zaiconfig.BaseURLEnv,

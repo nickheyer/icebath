@@ -18,13 +18,24 @@ func Register(registry *app.Registry) {
 }
 
 func (s *screens) Screens(*connect.Client) []tui.Screen {
-	return []tui.Screen{{
-		ID:    "terminal",
-		Title: "Terminal",
-		Short: "A shell in this directory, tiled beside the sessions",
-		Open: func(kit *tui.Kit) tea.Cmd {
-			s.terminals++
-			return kit.WM.OpenHere(cards.NewTerminal(kit.Env, s.terminals, kit.Env.WorkDir()))
+	shell := func(kit *tui.Kit) *cards.Terminal {
+		s.terminals++
+		return cards.NewTerminal(kit.Env, s.terminals, kit.Env.WorkDir())
+	}
+	return []tui.Screen{
+		{
+			ID:       "terminal",
+			Title:    "Terminal",
+			Short:    "A shell in this directory, tiled beside the sessions",
+			Commands: []string{"terminal.new"},
+			Open:     func(kit *tui.Kit) tea.Cmd { return kit.WM.OpenHere(shell(kit)) },
 		},
-	}}
+		{
+			ID:       "terminal.tab",
+			Title:    "Terminal tab",
+			Short:    "A shell as a tab of the window in focus",
+			Commands: []string{"terminal.tab"},
+			Open:     func(kit *tui.Kit) tea.Cmd { return kit.WM.OpenTab(shell(kit)) },
+		},
+	}
 }

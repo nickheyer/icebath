@@ -18,7 +18,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               openrouterconfig.Name,
 		DisplayName:        "OpenRouter",
-		Description:        "OpenRouter — unified API for 200+ models",
+		Description:        "OpenRouter - unified API for 200+ models",
 		SignupURL:          "https://openrouter.ai/keys",
 		BaseURL:            p.config.GetString(openrouterconfig.BaseURL),
 		BaseURLEnv:         openrouterconfig.BaseURLEnv,

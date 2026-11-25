@@ -28,12 +28,8 @@ import (
 
 	"github.com/nickheyer/icebath/internal/config"
 	anthropicconfig "github.com/nickheyer/icebath/internal/plugins/defaults/modelproviders/anthropic/config"
-	browserutil "github.com/nickheyer/icebath/pkg/utils/browser"
-	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
-	httputil "github.com/nickheyer/icebath/pkg/utils/http"
-	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
-	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
-	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
+	"github.com/nickheyer/icebath/internal/provider"
+	browserutil "github.com/nickheyer/icebath/pkg/browser"
 )
 
 const (
@@ -611,11 +607,11 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 		refreshToken = anyString(creds["refreshToken"])
 	}
 	if refreshToken == "" {
-		env.log().Debug("No refresh token available — cannot refresh")
+		env.log().Debug("No refresh token available - cannot refresh")
 		return ""
 	}
 	if IsRotationConsumedUncommitted(refreshToken, credPath) {
-		env.log().Debug("Refresh token was already consumed by an uncommitted rotation - refusing to replay it; run 'icebath auth add anthropic'")
+		env.log().Debug("Refresh token was already consumed by an uncommitted rotation - refusing to replay it; run 'icebath auth add anthropic' or add again in ui.")
 		return ""
 	}
 	sum := sha256.Sum256([]byte(refreshToken))
@@ -641,7 +637,7 @@ func refreshClaudeCodeOAuthToken(env PoolEnv, creds map[string]any) string {
 	}
 	ms, _ := anyFloat(refreshed["expires_at_ms"])
 	if err := writeClaudeCodeCredentialsFn(env, anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"]), int64(ms), nil, refreshToken); err != nil {
-		env.log().Error(fmt.Sprintf("Anthropic OAuth refresh rotated the single-use token but could not commit it to %s (%v) — treating the refresh as failed; run 'icebath auth add anthropic' to give Icebath its own login", credPath, err))
+		env.log().Error(fmt.Sprintf("Anthropic OAuth refresh rotated the single-use token but could not commit it to %s (%v) - treating the refresh as failed, run 'icebath auth add anthropic' or login in the ui.", credPath, err))
 		MarkRotationConsumedUncommitted(credPath, refreshToken, anyString(creds["accessToken"]), anyString(current["accessToken"]), anyString(current["refreshToken"]))
 		return ""
 	}
@@ -735,10 +731,10 @@ func resolveClaudeCodeTokenFromCredentials(env PoolEnv, creds map[string]any) st
 		env.log().Debug("Using Claude Code credentials (auto-detected)")
 		return anyString(creds["accessToken"])
 	}
-	env.log().Debug("Claude Code credentials expired — attempting refresh")
+	env.log().Debug("Claude Code credentials expired - attempting refresh")
 	refreshed := refreshClaudeCodeOAuthToken(env, creds)
 	if refreshed == "" {
-		env.log().Debug("Token refresh failed — run 'icebath auth add anthropic' to give Icebath its own login")
+		env.log().Debug("Token refresh failed - run 'icebath auth add anthropic' to give Icebath its own login")
 	}
 	return refreshed
 }
@@ -842,7 +838,7 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 	var stateRaw [32]byte
 	fillRandom(stateRaw[:])
 	oauthState := base64.RawURLEncoding.EncodeToString(stateRaw[:])
-	authURL := "https://claude.ai/oauth/authorize?" + urlutil.EncodeQuery([][2]string{
+	authURL := "https://claude.ai/oauth/authorize?" + encodeQuery([][2]string{
 		{"code", "true"}, {"client_id", anthropicOAuthClientID}, {"response_type", "code"},
 		{"redirect_uri", anthropicOAuthRedirectURI}, {"scope", anthropicOAuthScopes}, {"code_challenge", challenge},
 		{"code_challenge_method", "S256"}, {"state", oauthState},
@@ -876,11 +872,11 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 		receivedState = splits[1]
 	}
 	if receivedState != oauthState {
-		env.log().Warn("OAuth state mismatch — possible CSRF, aborting")
+		env.log().Warn("OAuth state mismatch - possible CSRF, aborting")
 		return nil
 	}
-	exchangeBody, err := httputil.JSONBody(jsonutil.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
-		"code", code, "state", receivedState, "redirect_uri", anthropicOAuthRedirectURI, "code_verifier", verifier))
+	exchangeBody, err := json.Marshal(map[string]string{"grant_type": "authorization_code", "client_id": anthropicOAuthClientID,
+		"code": code, "state": receivedState, "redirect_uri": anthropicOAuthRedirectURI, "code_verifier": verifier})
 	if err != nil {
 		fmt.Fprintf(out, "Token exchange failed: %v\n", err)
 		return nil
@@ -956,11 +952,11 @@ func (env PoolEnv) fileLock(authPath string, timeout time.Duration) (func(), err
 	if timeout < time.Second {
 		timeout = time.Second
 	}
-	return fsutil.SharedFileLock(lockPath).Lock(env.ctx(), timeout)
+	return lockFile(env.ctx(), lockPath, timeout)
 }
 
 // ExternalLoginsNotAdoptedNotice is printed once per process when a borrowed CLI login is skipped
-const ExternalLoginsNotAdoptedNotice = "External CLI logins (Codex CLI, Claude Code) are not adopted: plugins.anthropic.adopt_external_logins is false. " +
+const ExternalLoginsNotAdoptedNotice = "External CLI logins (Codex CLI, Claude Code) are not adopted: " + anthropicconfig.AdoptExternalLogins + " is false. " +
 	"Icebath uses only its own logins; run `icebath auth add <provider>` to add one."
 
 var (
@@ -1056,11 +1052,21 @@ func stringifyAny(value any) string {
 
 // Lowercased hostname of a base URL, empty when absent
 func baseURLHostname(raw string) string {
-	host, err := urlutil.BaseHost(raw)
-	if err != nil {
-		return ""
+	return provider.BaseHost(raw)
+}
+
+// Query string of the pairs in their order, each name and value escaped
+func encodeQuery(pairs [][2]string) string {
+	var b strings.Builder
+	for i, p := range pairs {
+		if i > 0 {
+			b.WriteByte('&')
+		}
+		b.WriteString(url.QueryEscape(p[0]))
+		b.WriteByte('=')
+		b.WriteString(url.QueryEscape(p[1]))
 	}
-	return host
+	return b.String()
 }
 
 // Float value of an environment variable, an infinity for one too large, def when unset, blank or not a number
@@ -1078,7 +1084,7 @@ func envFloat(name string, def float64) float64 {
 
 // Writes data to path through a temporary sibling and a rename
 func atomicWrite(path string, data []byte, mode os.FileMode) error {
-	dir := pathutil.DirKeepDotDot(path)
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}

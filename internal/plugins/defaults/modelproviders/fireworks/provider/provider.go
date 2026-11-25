@@ -19,7 +19,7 @@ func (p profiles) Profiles() []provider.Profile {
 	return []provider.Profile{{
 		Name:               fireworksconfig.Name,
 		DisplayName:        "Fireworks AI",
-		Description:        "Fireworks AI — OpenAI-compatible direct model API",
+		Description:        "Fireworks AI - OpenAI-compatible direct model API",
 		SignupURL:          "https://app.fireworks.ai/settings/users/api-keys",
 		BaseURL:            base,
 		ModelsURL:          provider.ModelsURL(base),
