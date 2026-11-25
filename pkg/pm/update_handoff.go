@@ -35,7 +35,7 @@ func readHandoff(path string) (*jsonutil.Object, error) {
 	}
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	if err := strictUTF8(data); err != nil {
-		return nil, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return nil, &ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	decoded, err := jsonutil.Decode(string(data))
 	if err != nil {
@@ -43,7 +43,7 @@ func readHandoff(path string) (*jsonutil.Object, error) {
 	}
 	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("post-swap hand-off %s is not a JSON object", filepath.Clean(path))}
+		return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("post-swap hand-off %s is not a JSON object", filepath.Clean(path))}
 	}
 	return payload, nil
 }

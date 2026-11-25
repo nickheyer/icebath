@@ -313,7 +313,7 @@ func Migrate(ctx context.Context, args agentimport.OpenClawArgs) (int, error) {
 	}
 	preset := opts.Preset
 	if preset == "" {
-		preset = "None"
+		preset = "none"
 	}
 	settings := []string{"Source:      " + opts.sourceDir, "Target:      " + opts.icebathHome, "Preset:      " + preset}
 	if len(opts.Include) > 0 {

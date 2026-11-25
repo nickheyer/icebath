@@ -18,16 +18,16 @@ var websocketsAvailable = true
 
 // AttributeError of a field that is not text, naming the field
 func notText(v any, field string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("%s must be text, got %s", field, errchain.Kind(v))}
+	return &kindErr{"AttributeError", fmt.Sprintf("%s must be text, got %s", field, errchain.Kind(v))}
 }
 
 // TypeError of using a list or dict where a single value is needed, nil for every other value
 func unhashable(v any) error {
 	switch v.(type) {
 	case []any:
-		return &pyErr{"TypeError", "expected a single value, got a list"}
+		return &kindErr{"TypeError", "expected a single value, got a list"}
 	case *jsonutil.Object, map[string]any:
-		return &pyErr{"TypeError", "expected a single value, got a mapping"}
+		return &kindErr{"TypeError", "expected a single value, got a mapping"}
 	}
 	return nil
 }
@@ -36,7 +36,7 @@ func unhashable(v any) error {
 func dictOf(v any) (map[string]any, error) {
 	d, ok := asDict(v)
 	if !ok {
-		return nil, &pyErr{"AttributeError", fmt.Sprintf("expected a mapping, got %s", errchain.Kind(v))}
+		return nil, &kindErr{"AttributeError", fmt.Sprintf("expected a mapping, got %s", errchain.Kind(v))}
 	}
 	return d, nil
 }
@@ -68,7 +68,7 @@ func iterOf(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
+	return nil, &kindErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Parts joined by a separator, the TypeError str join raises for a part that is not text
@@ -77,7 +77,7 @@ func joinParts(sep string, parts []any) (string, error) {
 	for i, p := range parts {
 		s, ok := p.(string)
 		if !ok {
-			return "", &pyErr{"TypeError", fmt.Sprintf("part %d must be text, got %s", i, errchain.Kind(p))}
+			return "", &kindErr{"TypeError", fmt.Sprintf("part %d must be text, got %s", i, errchain.Kind(p))}
 		}
 		texts[i] = s
 	}
@@ -92,7 +92,7 @@ func jsonLoads(v any) (any, error) {
 	case []byte:
 		return jsonutil.Decode(t)
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("expected JSON text, got %s", errchain.Kind(v))}
+	return nil, &kindErr{"TypeError", fmt.Sprintf("expected JSON text, got %s", errchain.Kind(v))}
 }
 
 // Text of a protobuf string field, empty for a falsy value and the AttributeError naming the field for any other value
@@ -180,7 +180,7 @@ func (f *future) setException(err error) {
 // Settles the slot as cancelled, what an elapsed wait does to the future it awaited
 func (f *future) cancel() {
 	f.once.Do(func() {
-		f.err = &pyErr{"CancelledError", ""}
+		f.err = &kindErr{"CancelledError", ""}
 		close(f.done)
 	})
 }
@@ -193,7 +193,7 @@ func (f *future) wait(ctx context.Context, timeout float64) (any, error) {
 	case <-f.done:
 		return f.result, f.err
 	case <-timer.C:
-		return nil, &pyErr{"TimeoutError", ""}
+		return nil, &kindErr{"TimeoutError", ""}
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

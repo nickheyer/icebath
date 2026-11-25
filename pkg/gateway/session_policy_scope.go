@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -70,7 +71,7 @@ func policyScope(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuth
 	}
 	fields, ok := jsonutil.AsObject(loaded)
 	if !ok {
-		return &PyError{Kind: "TypeError", Msg: "the session policy scope is " + errchain.Kind(loaded) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the session policy scope is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	terminal := tools.TerminalPolicy{}
 	for _, key := range fields.Keys() {

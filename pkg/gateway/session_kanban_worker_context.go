@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -25,7 +26,7 @@ var kanbanTurnsDone = make(chan struct{})
 func kanbanContextItem(context *jsonutil.Object, key string) (any, error) {
 	v, ok := context.Get(key)
 	if !ok {
-		return nil, &PyError{Kind: "KeyError", Msg: anyutil.Quote(key)}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: anyutil.Quote(key)}
 	}
 	return v, nil
 }
@@ -41,11 +42,11 @@ func decodeKanbanWorkerContext(text, source any) (*jsonutil.Object, error) {
 		return nil, err
 	}
 	if !anyutil.Equal(source, "kanban") {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid_kanban_policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid_kanban_policy"}
 	}
 	kctx, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
 	}
 	return kctx, nil
 }
@@ -128,7 +129,7 @@ func kanbanClaimTTL(ctx context.Context, dbPath, taskID string, runID int64) (in
 	}
 	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return 0, false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the kanban claimed event is %s, expected a mapping", errchain.Kind(decoded))}
+		return 0, false, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the kanban claimed event is %s, expected a mapping", errchain.Kind(decoded))}
 	}
 	expires, isInt := obj.ValueOr("expires", nil).(int64)
 	if !isInt || !anyutil.IsTrue(claimedAt) {
@@ -201,9 +202,9 @@ func claimInt(v any) (int64, error) {
 		if i, err := strconv.ParseInt(n, 10, 64); err == nil {
 			return i, nil
 		}
-		return 0, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("the kanban claim number %v is not a whole number", n)}
+		return 0, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("the kanban claim number %v is not a whole number", n)}
 	}
-	return 0, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban claim number is %s, expected a whole number", errchain.Kind(v))}
+	return 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the kanban claim number is %s, expected a whole number", errchain.Kind(v))}
 }
 
 // Ends this attempt hard once the dispatcher's spawned worker for the run is gone, re-reading the run row each second

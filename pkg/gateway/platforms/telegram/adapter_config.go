@@ -57,7 +57,7 @@ func flattenRichBlocks(blocks any) string {
 				if len(itemLines) == 0 {
 					continue
 				}
-				if label := item["label"]; pyTruthy(label) {
+				if label := item["label"]; anyutil.IsTrue(label) {
 					lines = append(lines, strings.TrimSpace(anyutil.String(label)+" "+itemLines[0]))
 				} else {
 					lines = append(lines, itemLines[0])

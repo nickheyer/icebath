@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -28,7 +29,7 @@ type preparedHistory struct {
 func historyRowID(row map[string]any) (int64, error) {
 	raw, ok := row["_row_id"]
 	if !ok {
-		return 0, &pyKeyError{key: "_row_id"}
+		return 0, &keyError{key: "_row_id"}
 	}
 	n, err := anyutil.ToInt(raw)
 	if err != nil {
@@ -152,7 +153,7 @@ func omittedHistoryState(ctx context.Context, db *state.SessionDB, target string
 	}
 	plan := todoStateFromDB(ctx, db, target)
 	count := 0
-	if raw, _ := row.Get("message_count"); pyTruthy(raw) {
+	if raw, _ := row.Get("message_count"); anyutil.IsTrue(raw) {
 		n, err := anyutil.ToInt(raw)
 		if err != nil {
 			return nil, 0, err
@@ -203,7 +204,7 @@ func mergeLiveInStoredOrder(display, live []map[string]any) ([]map[string]any, e
 		id, _ := historyRowID(row)
 		if shownIDs[id] {
 			if seen >= len(groups) {
-				return nil, &PyError{Kind: "IndexError", Msg: "the live history has more shown rows than message groups"}
+				return nil, &errorutil.Error{Kind: "IndexError", Msg: "the live history has more shown rows than message groups"}
 			}
 			rows = append(rows, groups[seen]...)
 			seen++
@@ -318,9 +319,9 @@ func restoreCompletionRoute(ctx context.Context, runner any, sessionKey string) 
 	}
 	chatID, has := parsed["chat_id"]
 	if !has {
-		return &pyKeyError{key: "chat_id"}
+		return &keyError{key: "chat_id"}
 	}
-	sid := pyStrOf(chatID)
+	sid := anyutil.String(chatID)
 	if _, live := authority.live(sid); live {
 		return nil
 	}

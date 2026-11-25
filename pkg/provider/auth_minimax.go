@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const minimaxOAuthErrorBodyLimit = 16 * 1024
@@ -149,9 +150,9 @@ func minimaxResolveTokenExpiryUnix(expiredIn int64, now time.Time) float64 {
 
 // Obtained at, expires at and expires in fields derived from a MiniMax expired_in value
 func minimaxExpiryFields(expiredIn any) (map[string]any, error) {
-	raw, ok := pyInt(expiredIn)
+	raw, ok := wholeNumber(expiredIn)
 	if !ok {
-		return nil, fmt.Errorf("the MiniMax token lifetime %s is not a whole number", pyStr(expiredIn))
+		return nil, fmt.Errorf("the MiniMax token lifetime %s is not a whole number", anyutil.String(expiredIn))
 	}
 	now := nowFunc().UTC()
 	expiresAt := minimaxResolveTokenExpiryUnix(int64(raw), now)
@@ -186,7 +187,7 @@ func minimaxPollToken(ctx context.Context, client *http.Client, portalBaseURL, c
 			if resp.errorText != "" {
 				_ = json.Unmarshal([]byte(resp.errorText), &errPayload)
 			}
-			msg := pyOrStr(anyMap(errPayload["base_resp"])["status_msg"])
+			msg := anyutil.StringOr(anyMap(errPayload["base_resp"])["status_msg"], "")
 			if msg == "" {
 				msg = resp.errorText
 			}
@@ -204,7 +205,7 @@ func minimaxPollToken(ctx context.Context, client *http.Client, portalBaseURL, c
 			return nil, minimaxErr("MiniMax OAuth reported an error. Please try again later.", "authorization_denied", false)
 		case "success":
 			for _, k := range []string{"access_token", "refresh_token", "expired_in"} {
-				if !pyTruthy(payload[k]) {
+				if !anyutil.IsTrue(payload[k]) {
 					return nil, minimaxErr("MiniMax OAuth success payload missing required token fields.", "token_incomplete", false)
 				}
 			}
@@ -253,25 +254,25 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	if err != nil {
 		return nil, err
 	}
-	err = printDeviceCodeInstructions(out, pyStr(codeData["verification_uri"]), pyStr(codeData["user_code"]),
+	err = printDeviceCodeInstructions(out, anyutil.String(codeData["verification_uri"]), anyutil.String(codeData["user_code"]),
 		openBrowser && canOpenGraphicalBrowser(), "", false)
 	if err != nil {
 		return nil, err
 	}
 	var intervalMS *int
 	if raw := codeData["interval"]; raw != nil {
-		v, ok := pyInt(raw)
+		v, ok := wholeNumber(raw)
 		if !ok {
-			return nil, fmt.Errorf("the MiniMax device code value %s is not a whole number", pyStr(raw))
+			return nil, fmt.Errorf("the MiniMax device code value %s is not a whole number", anyutil.String(raw))
 		}
 		intervalMS = &v
 	}
 	fmt.Fprintln(out, "Waiting for approval...")
-	expiredIn, ok := pyInt(codeData["expired_in"])
+	expiredIn, ok := wholeNumber(codeData["expired_in"])
 	if !ok {
-		return nil, fmt.Errorf("the MiniMax device code lifetime %s is not a whole number", pyStr(codeData["expired_in"]))
+		return nil, fmt.Errorf("the MiniMax device code lifetime %s is not a whole number", anyutil.String(codeData["expired_in"]))
 	}
-	tokenData, err := minimaxPollToken(ctx, client, portalBaseURL, pconfig.ClientID, pyStr(codeData["user_code"]), verifier, int64(expiredIn), intervalMS)
+	tokenData, err := minimaxPollToken(ctx, client, portalBaseURL, pconfig.ClientID, anyutil.String(codeData["user_code"]), verifier, int64(expiredIn), intervalMS)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +293,7 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 		authState[k] = v
 	}
 	fmt.Fprintln(out, "✓ MiniMax OAuth login successful.")
-	if msg := pyOrStr(tokenData["notification_message"]); msg != "" {
+	if msg := anyutil.StringOr(tokenData["notification_message"], ""); msg != "" {
 		fmt.Fprintf(out, "Note from MiniMax: %s\n", msg)
 	}
 	return authState, nil
@@ -404,11 +405,11 @@ func refreshMinimaxLogin(ctx context.Context, entry PooledCredential, timeout ti
 	if err != nil {
 		return nil, err
 	}
-	refresh := pyOrStr(payload["refresh_token"])
+	refresh := anyutil.StringOr(payload["refresh_token"], "")
 	if refresh == "" {
 		refresh = entry.RefreshToken
 	}
-	out := map[string]any{"access_token": pyOrStr(payload["access_token"]), "refresh_token": refresh}
+	out := map[string]any{"access_token": anyutil.StringOr(payload["access_token"], ""), "refresh_token": refresh}
 	if epoch, ok := ParseISOTimestamp(expiry["expires_at"]); ok {
 		out["expires_at_ms"] = epoch * 1000
 	}

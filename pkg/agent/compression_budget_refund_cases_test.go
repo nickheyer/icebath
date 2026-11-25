@@ -25,7 +25,7 @@ func (e *coherentEngine) ShouldCompress(promptTokens *int) bool {
 }
 
 func (e *coherentEngine) UpdateFromResponse(usage map[string]any) {
-	e.LastPromptTokens = pyInt(usage["prompt_tokens"])
+	e.LastPromptTokens = wholeNumber(usage["prompt_tokens"])
 	e.verify, e.awaiting = false, false
 }
 

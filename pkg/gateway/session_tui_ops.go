@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -467,7 +468,7 @@ func runRollback(ctx context.Context, kind string, kwargs map[string]any, termin
 // A rollback number names its checkpoint's hash, anything that is not a number passes through
 func resolveCheckpointHash(mgr *tools.CheckpointManager, cwd, ref string) (string, error) {
 	checkpoints := mgr.ListCheckpoints(cwd)
-	number, err := pyIntLiteral(ref)
+	number, err := intLiteral(ref)
 	if err != nil {
 		return ref, nil
 	}
@@ -475,23 +476,23 @@ func resolveCheckpointHash(mgr *tools.CheckpointManager, cwd, ref string) (strin
 	if index >= 0 && index < int64(len(checkpoints)) {
 		return checkpoints[index].Hash, nil
 	}
-	return "", &PyError{Kind: "ValueError", Msg: "Invalid checkpoint number. Use 1-" + strconv.Itoa(len(checkpoints)) + "."}
+	return "", &errorutil.Error{Kind: "ValueError", Msg: "Invalid checkpoint number. Use 1-" + strconv.Itoa(len(checkpoints)) + "."}
 }
 
 // Value of a Python int() of text, a ValueError for anything int() refuses
-func pyIntLiteral(text string) (int64, error) {
-	if !pyIntPattern.MatchString(text) {
-		return 0, &PyError{Kind: "ValueError", Msg: text + " is not a whole number"}
+func intLiteral(text string) (int64, error) {
+	if !intPattern.MatchString(text) {
+		return 0, &errorutil.Error{Kind: "ValueError", Msg: text + " is not a whole number"}
 	}
 	value, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(text), "_", ""), 10, 64)
 	if err != nil {
-		return 0, &PyError{Kind: "ValueError", Msg: text + " is not a whole number"}
+		return 0, &errorutil.Error{Kind: "ValueError", Msg: text + " is not a whole number"}
 	}
 	return value, nil
 }
 
 // Decimal literal int() accepts, surrounding whitespace and single underscores between digits allowed
-var pyIntPattern = regexp.MustCompile(`^\s*[+-]?\d+(_\d+)*\s*$`)
+var intPattern = regexp.MustCompile(`^\s*[+-]?\d+(_\d+)*\s*$`)
 
 // Earliest retained checkpoint against the tree as data, cut to the frame budget by whole lines
 func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) tuigateway.RollbackSessionDiffResult {

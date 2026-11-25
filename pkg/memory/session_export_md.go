@@ -61,7 +61,7 @@ func exportFirst(row *jsonutil.Object, keys ...string) any {
 	return last
 }
 
-// UTC ISO text of a stored timestamp, empty when unset, the raw text of a corrupt cell
+// RFC 3339 text in UTC with six fractional digits of a stored timestamp, empty when unset, the raw text of a corrupt cell
 func isoTimestamp(value any) string {
 	if value == nil || value == "" {
 		return ""
@@ -70,11 +70,7 @@ func isoTimestamp(value any) string {
 	if !ok {
 		return anyutil.String(value)
 	}
-	t := timeutil.FromEpoch(ts).UTC()
-	if t.Nanosecond()/1000 == 0 {
-		return t.Format("2006-01-02T15:04:05") + "Z"
-	}
-	return t.Format("2006-01-02T15:04:05.000000") + "Z"
+	return timeutil.FromEpoch(ts).UTC().Format(timeutil.RFC3339Micro)
 }
 
 // One frontmatter line, null and booleans bare, numbers and lists as JSON, anything else as a JSON string
@@ -277,7 +273,10 @@ func exportBodyWithoutHash(session *jsonutil.Object, format string, exportedAt f
 	}
 	sourceCount := anyutil.String(messageCount)
 	if v, ok := session.Get("message_count"); ok {
-		sourceCount = anyutil.String(v)
+		sourceCount = "null"
+		if v != nil {
+			sourceCount = anyutil.String(v)
+		}
 	}
 	parts = append(parts, messages, exportVerificationHeader+"\n", "- Session id: `"+sessionID+"`",
 		"- Exported messages: `"+anyutil.String(messageCount)+"`", "- Source DB message count at export: `"+sourceCount+"`",

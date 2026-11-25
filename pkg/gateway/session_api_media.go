@@ -11,6 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -60,12 +62,12 @@ func apiPartImageURL(part any) (string, error) {
 		return "", nil
 	}
 	raw, _ := obj.Get("image_url")
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "", nil
 	}
 	image, ok := raw.(*jsonutil.Object)
 	if !ok {
-		return "", &PyError{Kind: "AttributeError", Msg: "an API image part is " + errchain.Kind(raw) + ", expected a mapping"}
+		return "", &errorutil.Error{Kind: "AttributeError", Msg: "an API image part is " + errchain.Kind(raw) + ", expected a mapping"}
 	}
 	url, found := image.Get("url")
 	if !found {
@@ -73,7 +75,7 @@ func apiPartImageURL(part any) (string, error) {
 	}
 	text, ok := url.(string)
 	if !ok {
-		return "", &PyError{Kind: "AttributeError", Msg: "an API image URL is " + errchain.Kind(url) + ", expected text"}
+		return "", &errorutil.Error{Kind: "AttributeError", Msg: "an API image URL is " + errchain.Kind(url) + ", expected text"}
 	}
 	return text, nil
 }
@@ -82,7 +84,7 @@ func apiPartImageURL(part any) (string, error) {
 func apiCompacted(content, media any) ([]any, error) {
 	parts, isList := content.([]any)
 	references, _ := media.([]any)
-	if !isList || !pyTruthy(media) {
+	if !isList || !anyutil.IsTrue(media) {
 		return nil, nil
 	}
 	next := 0
@@ -103,11 +105,11 @@ func apiCompacted(content, media any) ([]any, error) {
 			reference, isObj := references[next].(*jsonutil.Object)
 			next++
 			if !isObj {
-				return nil, &PyError{Kind: "TypeError", Msg: "an API media reference is " + errchain.Kind(references[next-1]) + ", expected a mapping"}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "an API media reference is " + errchain.Kind(references[next-1]) + ", expected a mapping"}
 			}
 			value, found := reference.Get("sha256")
 			if !found {
-				return nil, &pyKeyError{"sha256"}
+				return nil, &keyError{"sha256"}
 			}
 			digest = value
 		}
@@ -199,15 +201,15 @@ func compactAPIPayload(payloadJSON, requestID string) (bool, *jsonutil.Object, e
 	}
 	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return false, nil, &PyError{Kind: "TypeError", Msg: "the API payload is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return false, nil, &errorutil.Error{Kind: "TypeError", Msg: "the API payload is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	rawData, found := payload.Get("api_turn_v1")
 	if !found {
-		return false, nil, &pyKeyError{"api_turn_v1"}
+		return false, nil, &keyError{"api_turn_v1"}
 	}
 	data, ok := rawData.(*jsonutil.Object)
 	if !ok {
-		return false, nil, &PyError{Kind: "AttributeError", Msg: "the API payload data is " + errchain.Kind(rawData) + ", expected a mapping"}
+		return false, nil, &errorutil.Error{Kind: "AttributeError", Msg: "the API payload data is " + errchain.Kind(rawData) + ", expected a mapping"}
 	}
 	content, _ := payload.Get("text")
 	media, _ := data.Get("media")

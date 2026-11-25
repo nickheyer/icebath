@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func cronRunIDs(t *testing.T, db *SessionDB, jobID string, limit, offset int) []string {
@@ -18,7 +20,7 @@ func cronRunIDs(t *testing.T, db *SessionDB, jobID string, limit, offset int) []
 		if rowValue(r, "cron_job_id") != jobID {
 			t.Fatalf("row stamped %v", rowValue(r, "cron_job_id"))
 		}
-		out = append(out, pyStr(rowValue(r, "id"))+"|"+pyStr(rowValue(r, "cron_execution_id")))
+		out = append(out, anyutil.String(rowValue(r, "id"))+"|"+anyutil.String(rowValue(r, "cron_execution_id")))
 	}
 	return out
 }
@@ -45,7 +47,7 @@ func TestUnifiedRunsAreListedWithLegacyRunsAndOnlyForTheirJob(t *testing.T) {
 	profileExec(t, db, "UPDATE sessions SET started_at = CASE id WHEN 'cron_alpha_20260101_000000' THEN 1 WHEN 'local-a1' THEN 2 "+
 		"WHEN 'local-legacy-colon' THEN 3 ELSE 4 END")
 	got := strings.Join(cronRunIDs(t, db, "alpha", 20, 0), ",")
-	if got != "local-legacy-colon|ex:4,local-a1|exec1,cron_alpha_20260101_000000|None" {
+	if got != "local-legacy-colon|ex:4,local-a1|exec1,cron_alpha_20260101_000000|" {
 		t.Fatalf("alpha runs %s", got)
 	}
 	if got := strings.Join(cronRunIDs(t, db, "beta", 20, 0), ","); got != "local-b1|exec2" {
@@ -54,7 +56,7 @@ func TestUnifiedRunsAreListedWithLegacyRunsAndOnlyForTheirJob(t *testing.T) {
 	if got := strings.Join(cronRunIDs(t, db, "alpha:b", 20, 0), ","); got != "local-ab|exec3" {
 		t.Fatalf("alpha:b runs %s", got)
 	}
-	if got := strings.Join(cronRunIDs(t, db, "alpha", 1, 2), ","); got != "cron_alpha_20260101_000000|None" {
+	if got := strings.Join(cronRunIDs(t, db, "alpha", 1, 2), ","); got != "cron_alpha_20260101_000000|" {
 		t.Fatalf("paged runs %s", got)
 	}
 	runs, err := db.ListCronJobRuns(context.Background(), "alpha", 1)
@@ -67,10 +69,10 @@ func TestLegacyRunsOfAJobWhoseIDExtendsAnotherStayWithTheirOwnJob(t *testing.T) 
 	db := usageDB(t)
 	readSession(t, db, NewSession{ID: "cron_daily_20261011_120000", Source: "cron"})
 	readSession(t, db, NewSession{ID: "cron_daily_digest_20261011_130000", Source: "cron"})
-	if got := strings.Join(cronRunIDs(t, db, "daily", 20, 0), ","); got != "cron_daily_20261011_120000|None" {
+	if got := strings.Join(cronRunIDs(t, db, "daily", 20, 0), ","); got != "cron_daily_20261011_120000|" {
 		t.Fatalf("daily %s", got)
 	}
-	if got := strings.Join(cronRunIDs(t, db, "daily_digest", 20, 0), ","); got != "cron_daily_digest_20261011_130000|None" {
+	if got := strings.Join(cronRunIDs(t, db, "daily_digest", 20, 0), ","); got != "cron_daily_digest_20261011_130000|" {
 		t.Fatalf("digest %s", got)
 	}
 }
@@ -95,7 +97,7 @@ func TestRunLookupIsIndexServedOnNewAndUpgradedStores(t *testing.T) {
 	}
 	var details []string
 	for _, r := range plan {
-		details = append(details, pyStr(r.Value(r.Keys()[r.Len()-1])))
+		details = append(details, anyutil.String(r.Value(r.Keys()[r.Len()-1])))
 	}
 	if joined := strings.Join(details, " "); !strings.Contains(joined, "idx_session_admissions_cron_request") {
 		t.Fatalf("plan %s", joined)

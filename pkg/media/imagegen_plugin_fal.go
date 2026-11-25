@@ -77,7 +77,7 @@ func (p *falImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 			if rec := recover(); rec != nil {
 				typeName := "Exception"
 				if err, ok := rec.(error); ok {
-					typeName = pyErrorTypeName(err)
+					typeName = errorTypeName(err)
 				}
 				logOf(env).Warn(fmt.Sprintf("FAL image_generate_tool raised: %v", rec))
 				failure = map[string]any{"success": false, "image": nil, "error": fmt.Sprintf("FAL image generation failed: %v", rec),

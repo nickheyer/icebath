@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -64,7 +65,7 @@ func (c *auxCodexStatusClient) CreateResponse(_ context.Context, kwargs map[stri
 	if text, _ := c.final["output_text"].(string); text != "" {
 		events = append(events, map[string]any{"type": "response.output_text.delta", "delta": text})
 	}
-	events = append(events, map[string]any{"type": "response." + pyStr(c.final["status"]), "response": c.final})
+	events = append(events, map[string]any{"type": "response." + anyutil.String(c.final["status"]), "response": c.final})
 	return &auxCodexStatusStream{events: events}, nil
 }
 

@@ -95,7 +95,7 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 		for _, toolset := range sortedMapKeys(grouped) {
 			fmt.Fprintf(out, "\n  [%s]\n", toolset)
 			for _, r := range grouped[toolset] {
-				fmt.Fprintln(out, pyFmt("    * {name:<20} - {desc}", map[string]any{"name": r.name, "desc": r.desc}))
+				fmt.Fprintln(out, fmtValue("    * {name:<20} - {desc}", map[string]any{"name": r.name, "desc": r.desc}))
 			}
 		}
 		fmt.Fprintf(out, "\n  %s\n", t("cli.tools.total", map[string]any{"count": strconv.Itoa(len(defs))}))
@@ -119,7 +119,7 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 				break
 			}
 		}
-		fmt.Fprintln(out, pyFmt("  {marker} {name:<18} [{count:>2} tools] - {desc}",
+		fmt.Fprintln(out, fmtValue("  {marker} {name:<18} [{count:>2} tools] - {desc}",
 			map[string]any{"marker": marker, "name": name, "count": info.ToolCount, "desc": info.Description}))
 	}
 	fmt.Fprintf(out, "\n  %s\n", t("cli.toolsets.currently_enabled_legend", nil))

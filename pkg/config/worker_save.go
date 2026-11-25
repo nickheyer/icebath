@@ -1,5 +1,7 @@
 package config
 
+import anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+
 // Config a save persists, a frozen worker landing only its own edits on the live file
 func RebaseForSave(cfg, liveRaw map[string]any, mergeExisting bool, loadConfig func() map[string]any) map[string]any {
 	if snapshot := workerConfigSnapshot(); snapshot != nil {
@@ -57,7 +59,7 @@ func schemaDefaultBranch(snapshot, defaults any) any {
 			kept[key] = Clone(value)
 			continue
 		}
-		if pyEq(value, def) {
+		if anyutil.Equal(value, def) {
 			continue
 		}
 		vm, vok := value.(map[string]any)
@@ -75,7 +77,7 @@ func schemaDefaultBranch(snapshot, defaults any) any {
 
 // Live with the edits applied, a branch the live file lost since base staying lost unless it came only from defaults
 func threeWayFrozen(live, desired, base, frozen any) any {
-	if pyEq(desired, base) {
+	if anyutil.Equal(desired, base) {
 		return Clone(live)
 	}
 	dm, dok := desired.(map[string]any)
@@ -90,7 +92,7 @@ func threeWayFrozen(live, desired, base, frozen any) any {
 				merged[key] = Clone(value)
 				continue
 			}
-			if pyEq(value, bv) {
+			if anyutil.Equal(value, bv) {
 				continue
 			}
 			current, inLive := lm[key]
@@ -120,18 +122,18 @@ func threeWayFrozen(live, desired, base, frozen any) any {
 	if dlok && blok && llok {
 		var removed, kept []any
 		for _, item := range bl {
-			if !pyIn(dl, item) {
+			if !holds(dl, item) {
 				removed = append(removed, item)
 			}
 		}
 		for _, item := range ll {
-			if !pyIn(removed, item) {
+			if !holds(removed, item) {
 				kept = append(kept, item)
 			}
 		}
 		out := append([]any{}, kept...)
 		for _, item := range dl {
-			if !pyIn(bl, item) && !pyIn(kept, item) {
+			if !holds(bl, item) && !holds(kept, item) {
 				out = append(out, Clone(item))
 			}
 		}
@@ -141,9 +143,9 @@ func threeWayFrozen(live, desired, base, frozen any) any {
 }
 
 // Reports whether a list holds an item equal to v under Python equality
-func pyIn(list []any, v any) bool {
+func holds(list []any, v any) bool {
 	for _, item := range list {
-		if pyEq(item, v) {
+		if anyutil.Equal(item, v) {
 			return true
 		}
 	}

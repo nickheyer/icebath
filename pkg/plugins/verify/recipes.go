@@ -244,9 +244,10 @@ func DetectPackageManager(root string) (string, error) {
 	return "", nil
 }
 
+// Port flags and PORT assignments of a start command with the ASCII digits the servers it starts read, and a Makefile target line
 var (
-	portFlagRE = mustPyre(`(?:--port|-p)\s+(\d{2,5})`)
-	portEnvRE  = mustPyre(`\bPORT=(\d{2,5})\b`)
+	portFlagRE = mustPyre(`(?:--port|-p)\s+([0-9]{2,5})`)
+	portEnvRE  = mustPyre(`\bPORT=([0-9]{2,5})\b`)
 	makeTarget = mustPyre(`^([A-Za-z0-9_.-]+):(?:\s|$)`)
 )
 

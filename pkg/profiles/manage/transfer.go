@@ -189,11 +189,11 @@ func shouldRedactExportFile(path string) bool {
 	name := filepath.Base(path)
 	lower := strings.ToLower(name)
 	return name == ".cursorrules" || strings.HasSuffix(lower, ".env.example") || strings.HasPrefix(lower, "config.yaml.") ||
-		exportRedactSuffixes[strings.ToLower(pySuffix(name))]
+		exportRedactSuffixes[strings.ToLower(suffix(name))]
 }
 
 // Suffix of a file name like PurePath.suffix
-func pySuffix(name string) string {
+func suffix(name string) string {
 	i := strings.LastIndex(name, ".")
 	if i <= 0 || i == len(name)-1 {
 		return ""
@@ -275,7 +275,7 @@ func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (_ str
 	if err != nil {
 		return "", err
 	}
-	base := strings.TrimSuffix(strings.TrimSuffix(pyPathString(outputPath), ".tar.gz"), ".tgz")
+	base := strings.TrimSuffix(strings.TrimSuffix(pathString(outputPath), ".tar.gz"), ".tgz")
 	ignoreCredentials := func(dir string, names []string) map[string]bool {
 		ignored := nonExportableEntries(dir, names)
 		for n := range exportCredentialEntries(dir, names) {
@@ -429,7 +429,7 @@ func ImportProfile(archivePath, name string) (_ string, err error) {
 }
 
 // Path text like str(Path(p)), dropping empty and dot components while keeping parent references
-func pyPathString(p string) string {
+func pathString(p string) string {
 	parts := pathParts(p)
 	if len(parts) == 0 {
 		return "."

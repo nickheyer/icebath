@@ -8,8 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Persisted title provenance, automatic labels rank below a user chosen title
@@ -65,14 +67,14 @@ func sqlStartsWith(expression string, prefixes []string) string {
 	trimmed := sqlLtrimWhitespace(expression)
 	parts := make([]string, len(prefixes))
 	for i, p := range prefixes {
-		parts[i] = "SUBSTR(" + trimmed + ", 1, " + strconv.Itoa(pyLen(p)) + ") = " + sqlLiteral(p)
+		parts[i] = "SUBSTR(" + trimmed + ", 1, " + strconv.Itoa(utf8.RuneCountInString(p)) + ") = " + sqlLiteral(p)
 	}
 	return "(" + strings.Join(parts, " OR ") + ")"
 }
 
 // Message content after the first occurrence of marker
 func sqlAfterMarker(marker string) string {
-	return "SUBSTR(m.content, INSTR(m.content, " + sqlLiteral(marker) + ") + " + strconv.Itoa(pyLen(marker)) + ")"
+	return "SUBSTR(m.content, INSTR(m.content, " + sqlLiteral(marker) + ") + " + strconv.Itoa(utf8.RuneCountInString(marker)) + ")"
 }
 
 var (
@@ -83,8 +85,8 @@ var (
 	previewMergedSummarySQL       = "(INSTR(m.content, " + sqlLiteral(MergedSummaryDelimiter) + ") > 0 AND " + sqlStartsWith(previewMergedAfterSQL, previewSummaryPrefixes) + ")"
 	previewMergedPriorSQL         = sqlTrimWhitespace("SUBSTR(m.content, 1, INSTR(m.content, " + sqlLiteral(MergedSummaryDelimiter) + ") - 1)")
 	previewMergedPriorLtrimmedSQL = sqlLtrimWhitespace(previewMergedPriorSQL)
-	previewMergedPriorUnwrapped   = "CASE WHEN SUBSTR(" + previewMergedPriorLtrimmedSQL + ", 1, " + strconv.Itoa(pyLen(MergedPriorContextHeader)) + ") = " + sqlLiteral(MergedPriorContextHeader) +
-		" THEN " + sqlLtrimWhitespace("SUBSTR("+previewMergedPriorLtrimmedSQL+", "+strconv.Itoa(pyLen(MergedPriorContextHeader)+1)+")") +
+	previewMergedPriorUnwrapped   = "CASE WHEN SUBSTR(" + previewMergedPriorLtrimmedSQL + ", 1, " + strconv.Itoa(utf8.RuneCountInString(MergedPriorContextHeader)) + ") = " + sqlLiteral(MergedPriorContextHeader) +
+		" THEN " + sqlLtrimWhitespace("SUBSTR("+previewMergedPriorLtrimmedSQL+", "+strconv.Itoa(utf8.RuneCountInString(MergedPriorContextHeader)+1)+")") +
 		" ELSE " + previewMergedPriorSQL + " END"
 	previewForceUserRemainderSQL = sqlAfterMarker(SummaryEndMarker)
 	previewEligibleSQL           = "(COALESCE(m.display_kind, '') <> 'hidden'" +
@@ -111,14 +113,12 @@ func shapePreview(raw any) string {
 		text = x
 	case []byte:
 		if len(x) > 0 {
-			text = pyBytesRepr(x)
+			text = anyutil.Quote(x)
 		}
 	default:
-		if s := pyStr(x); s != "0" && s != "0.0" && s != "-0.0" && s != "False" {
-			text = s
-		}
+		text = anyutil.StringOr(x, "")
 	}
-	if text = pyStrip(text); text == "" {
+	if text = strings.TrimSpace(text); text == "" {
 		return ""
 	}
 	text = strings.NewReplacer("\n", " ", "\r", " ").Replace(text)
@@ -231,7 +231,7 @@ func ephemeralChildSQL(alias string) string {
 		" AND NOT (" + compressionChildSQL(alias) + ") AND NOT (" + resetChildSQL(alias) + "))"
 }
 
-var sqlInWindowClause = "BETWEEN " + pyFloatRepr(EpochMin) + " AND " + pyFloatRepr(EpochMax)
+var sqlInWindowClause = "BETWEEN " + floatRepr(EpochMin) + " AND " + floatRepr(EpochMax)
 
 // The expression when inside the coerce_epoch window, else NULL
 func sqlInWindow(expr string) string {
@@ -485,7 +485,7 @@ func jsonOr(raw, fallback any, warning string) (any, error) {
 	case string:
 		text = x
 	case []byte:
-		decoded, err := pyJSONDecodeBytes(x)
+		decoded, err := jsonDecodeBytes(x)
 		if err != nil {
 			return nil, err
 		}
@@ -494,7 +494,7 @@ func jsonOr(raw, fallback any, warning string) (any, error) {
 		pkgLog().Warn(warning)
 		return fallback, nil
 	}
-	v, err := pyLoads(text)
+	v, err := loadsValue(text)
 	if err != nil {
 		pkgLog().Warn(warning)
 		return fallback, nil

@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func seqRepair(t *testing.T, msgs *[]map[string]any) int {
@@ -56,7 +58,7 @@ func seqCopies(msgs []map[string]any) []map[string]any {
 func seqRoles(msgs []map[string]any) []string {
 	var out []string
 	for _, m := range msgs {
-		out = append(out, pyStr(m["role"]))
+		out = append(out, anyutil.String(m["role"]))
 	}
 	return out
 }
@@ -65,7 +67,7 @@ func seqToolContents(msgs []map[string]any) []string {
 	var out []string
 	for _, m := range msgs {
 		if m["role"] == "tool" {
-			out = append(out, pyStr(m["content"]))
+			out = append(out, anyutil.String(m["content"]))
 		}
 	}
 	return out
@@ -95,7 +97,7 @@ func TestRepairMarkerUserMergeKeepsPlainRowAddressable(t *testing.T) {
 	}
 	merged := msgs[1]
 	content := merged["content"].(string)
-	if merged["role"] != "user" || pyTruthy(merged["display_kind"]) || merged["_row_id"] != int64(12135) ||
+	if merged["role"] != "user" || anyutil.IsTrue(merged["display_kind"]) || merged["_row_id"] != int64(12135) ||
 		!strings.Contains(content, "the user's real prompt") || !strings.Contains(content, "[System:") {
 		t.Fatalf("merged %v", merged)
 	}
@@ -110,7 +112,7 @@ func TestRepairMarkerUserMergeKeepsPlainRowAddressable(t *testing.T) {
 		t.Fatalf("%d %v", n, msgs)
 	}
 	s := msgs[0]
-	if s["role"] != "user" || s["_row_id"] != int64(12134) || pyTruthy(s["display_kind"]) ||
+	if s["role"] != "user" || s["_row_id"] != int64(12134) || anyutil.IsTrue(s["display_kind"]) ||
 		s["content"] != "the user's real prompt\n\n"+marker || !seqContains(s["_absorbed_row_ids"].([]any), int64(12135)) {
 		t.Fatalf("plain then marker %v", s)
 	}
@@ -260,7 +262,7 @@ func TestRepairDecodesSentinelMultimodalAndSkipsTextMerge(t *testing.T) {
 	}
 	msgs := []map[string]any{seqUser(encodeMessageContent(parts)), seqUser("any follow-up thoughts?")}
 	seqRepair(t, &msgs)
-	if len(msgs) != 2 || !pyValueEqual(msgs[0]["content"], parts) || msgs[1]["content"] != "any follow-up thoughts?" {
+	if len(msgs) != 2 || !anyutil.Equal(msgs[0]["content"], parts) || msgs[1]["content"] != "any follow-up thoughts?" {
 		t.Fatalf("%v", msgs)
 	}
 	corrupt := contentJSONPrefix + `[{"type": "text"} EXTRA garbage`

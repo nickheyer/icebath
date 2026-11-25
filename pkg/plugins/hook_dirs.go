@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,21 +31,16 @@ func ResolveDirectoryHookCommand(hookDir, command string) ([]string, error) {
 	return argv, nil
 }
 
-// Seconds the command of a hook directory may run, the shell hook default for an unset or unusable value and its cap above that
+// Seconds the command of a hook directory may run as a whole number of seconds or numeric text, the shell hook default for an unset, unusable or boolean value and its cap above that
 func DirectoryHookTimeout(raw any) int {
-	seconds := 0
-	switch v := raw.(type) {
-	case int:
-		seconds = v
-	case int64:
-		seconds = int(v)
-	case float64:
-		seconds = int(v)
-	}
-	if seconds <= 0 {
+	if _, isBool := raw.(bool); isBool {
 		return ShellHookDefaultTimeoutSeconds
 	}
-	return min(seconds, ShellHookMaxTimeoutSeconds)
+	seconds, err := anyutil.ToInt(raw)
+	if (err != nil && !errors.Is(err, anyutil.ErrRange)) || seconds < 1 {
+		return ShellHookDefaultTimeoutSeconds
+	}
+	return int(min(seconds, ShellHookMaxTimeoutSeconds))
 }
 
 // Runs the command of a hook directory inside that directory for one gateway event with the event name and its context as JSON on standard input and answers the JSON object it printed, nil when it printed none

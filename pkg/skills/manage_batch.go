@@ -136,7 +136,7 @@ func (s *Scope) validateBatchOps(operations []any, defaultName string) ([]map[st
 				acts = append(acts, a)
 			}
 			sort.Strings(acts)
-			return fail(i, fmt.Sprintf(": unknown action '%s'. Batchable: %s; delete must be sole.", pyStrValue(op["action"]), strings.Join(acts, ", ")))
+			return fail(i, fmt.Sprintf(": unknown action '%s'. Batchable: %s; delete must be sole.", anyutil.String(op["action"]), strings.Join(acts, ", ")))
 		}
 		nm, err := opName(op, defaultName)
 		if err != nil {
@@ -419,7 +419,7 @@ func (s *Scope) skillManageBatch(ctx context.Context, operations any, defaultNam
 			note, rollbackFailed = s.rollbackBatch(snapshots, results)
 			errText := "unknown error"
 			if v, ok := parsed.Get("error"); ok {
-				errText = pyStrValue(v)
+				errText = anyutil.String(v)
 			}
 			fail := resultObj("success", false,
 				"error", fmt.Sprintf("operations[%d] (%s on '%s') failed: %s — batch aborted, %s.", i, op["action"], names[i], errText, note),

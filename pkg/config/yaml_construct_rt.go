@@ -52,17 +52,17 @@ func roundtripLoadValue(in ry.Input) (any, error) {
 
 func rtTypeName(v any) string {
 	switch x := v.(type) {
-	case *pyList:
+	case *listOf:
 		return "CommentedSeq"
-	case *pySet:
+	case *setValue:
 		return "CommentedSet"
-	case *pyDict:
+	case *mappingOf:
 		if x.kind == dictCommentedOrdered {
 			return "CommentedOrderedMap"
 		}
 		return "CommentedMap"
 	}
-	return pyObjType(v)
+	return objType(v)
 }
 
 // Repr of a TimeStamp, its datetime text under the class name
@@ -117,7 +117,7 @@ func (c *safeConstructor) constructScalarTagRT(n *ry.Node, tag string) any {
 		low := strings.ToLower(value)
 		b, ok := boolValues[low]
 		if !ok {
-			panic(pyErr("KeyError", strconv.Quote(low)))
+			panic(kindErr("KeyError", strconv.Quote(low)))
 		}
 		if n.Anchor != nil {
 			return &rtBool{b}
@@ -138,7 +138,7 @@ func (c *safeConstructor) constructScalarTagRT(n *ry.Node, tag string) any {
 // AttributeError a ScalarNode raises for the flow_style read of omap and set construction
 func requireFlowStyle(n *ry.Node) {
 	if n.Kind == ry.ScalarNode {
-		panic(pyErr("AttributeError", "a YAML scalar stands where a mapping or a list was expected"))
+		panic(kindErr("AttributeError", "a YAML scalar stands where a mapping or a list was expected"))
 	}
 }
 
@@ -151,14 +151,14 @@ func (c *safeConstructor) constructCollectionRT(n *ry.Node, tag string) any {
 		c.inFrames(1, func() { requireFlowStyle(n) })
 		return c.generator(omap, 1, func() { c.fillOmapRT(n, omap) })
 	case yamlTagPrefix + "pairs":
-		pairs := &pyList{}
+		pairs := &listOf{}
 		return c.generator(pairs, 1, func() { c.fillPairs(n, pairs) })
 	case yamlTagPrefix + "set":
-		set := &pySet{index: map[string]int{}, rt: true}
+		set := &setValue{index: map[string]int{}, rt: true}
 		c.inFrames(1, func() { requireFlowStyle(n) })
 		return c.generator(set, 2, func() { c.constructSetting(n, set) })
 	case yamlTagPrefix + "seq":
-		list := &pyList{rt: true}
+		list := &listOf{rt: true}
 		return c.generator(list, 2, func() { list.items = append(list.items, c.constructRTSequence(n, false)...) })
 	case yamlTagPrefix + "map":
 		m := newPyDict()
@@ -188,7 +188,7 @@ func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 		defer func() {
 			if r := recover(); r != nil {
 				switch r.(type) {
-				case *ry.MarkedError, *ry.PyException:
+				case *ry.MarkedError, *ry.Exception:
 					refuse()
 				}
 				panic(r)
@@ -206,7 +206,7 @@ func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 		c.inFrames(2, func() { guard(func() { t = &rtTagged{value: c.constructScalarRT(n), style: n.Style, tag: n.Tag()} }) })
 		return t
 	case ry.SequenceNode:
-		list := &pyList{rt: true}
+		list := &listOf{rt: true}
 		return c.generator(list, 2, func() { guard(func() { list.items = append(list.items, c.constructSequence(n, false)...) }) })
 	}
 	refuse()
@@ -217,7 +217,7 @@ func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 func strIndex(s string, i int) rune {
 	r := []rune(s)
 	if i >= len(r) {
-		panic(pyErr("IndexError", fmt.Sprintf("YAML text has no character at position %d", i)))
+		panic(kindErr("IndexError", fmt.Sprintf("YAML text has no character at position %d", i)))
 	}
 	return r[i]
 }
@@ -277,7 +277,7 @@ func (c *safeConstructor) constructFloatRT(n *ry.Node) any {
 		parts := strings.Split(valueS, ":")
 		digits := make([]float64, len(parts))
 		for i, part := range parts {
-			digits[i] = pyFloatText(part)
+			digits[i] = floatText(part)
 		}
 		value, base := 0.0, 1.0
 		for i := len(digits) - 1; i >= 0; i-- {
@@ -292,9 +292,9 @@ func (c *safeConstructor) constructFloatRT(n *ry.Node) any {
 			parts = strings.Split(valueSO, "E")
 			if len(parts) != 2 {
 				if len(parts) > 2 {
-					panic(pyErr("ValueError", fmt.Sprintf("too many values to unpack (expected 2, got %d)", len(parts))))
+					panic(kindErr("ValueError", fmt.Sprintf("too many values to unpack (expected 2, got %d)", len(parts))))
 				}
-				panic(pyErr("ValueError", fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(parts))))
+				panic(kindErr("ValueError", fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(parts))))
 			}
 		}
 		if !strings.Contains(parts[0], ".") {
@@ -303,7 +303,7 @@ func (c *safeConstructor) constructFloatRT(n *ry.Node) any {
 		}
 		strIndex(parts[1], 0)
 	}
-	return floatObj(sign * pyFloatText(valueS))
+	return floatObj(sign * floatText(valueS))
 }
 
 // Module line and source of the MantissaNoDotYAML1_1Warning each constructor raises
@@ -313,7 +313,7 @@ var (
 )
 
 func (c *safeConstructor) constructTimestampRT(n *ry.Node) any {
-	v := c.constructTimestamp(n).(*pyTime)
+	v := c.constructTimestamp(n).(*clockTime)
 	full := timestampRegexp.FindStringSubmatch(n.Value)
 	if full == nil && strings.HasSuffix(n.Value, "\n") {
 		full = timestampRegexp.FindStringSubmatch(n.Value[:len(n.Value)-1])
@@ -367,7 +367,7 @@ func assertCommentList(v any) {
 		return
 	}
 	if _, ok := v.([]any); !ok {
-		panic(pyErr("AssertionError", ""))
+		panic(kindErr("AssertionError", ""))
 	}
 }
 
@@ -383,9 +383,9 @@ func extendList(list any, items any) any {
 		}
 		return l
 	case nil:
-		panic(pyErr("TypeError", "a YAML comment slot is empty where comment tokens were expected"))
+		panic(kindErr("TypeError", "a YAML comment slot is empty where comment tokens were expected"))
 	}
-	panic(pyErr("TypeError", "a YAML comment token stands where a list of comment tokens was expected"))
+	panic(kindErr("TypeError", "a YAML comment token stands where a list of comment tokens was expected"))
 }
 
 // Elements of a round trip sequence with each child comment moved onto the sequence
@@ -409,23 +409,23 @@ func (c *safeConstructor) constructRTSequence(n *ry.Node, deep bool) []any {
 func (c *safeConstructor) rtKey(n *ry.Node, keyNode *ry.Node) any {
 	key := c.constructObject(keyNode, true)
 	switch k := key.(type) {
-	case *pyList:
-		return &pyTuple{items: append([]any(nil), k.items...), rtKey: true}
-	case *pyDict:
+	case *listOf:
+		return &tupleOf{items: append([]any(nil), k.items...), rtKey: true}
+	case *mappingOf:
 		km := newPyDict()
 		km.kind = dictCommentedKey
 		for i, kk := range k.keys {
 			km.set(kk, k.vals[i])
 		}
 		return km
-	case *pySet:
+	case *setValue:
 		panic(constructorError("while constructing a mapping", n.Start, "found unhashable key", keyNode.Start))
 	}
 	return key
 }
 
 // Fills a CommentedMap, merges referenced and added after the own keys, duplicates refused
-func (c *safeConstructor) constructMappingRT(n *ry.Node, m *pyDict, deep bool) {
+func (c *safeConstructor) constructMappingRT(n *ry.Node, m *mappingOf, deep bool) {
 	if n.Kind != ry.MappingNode {
 		panic(constructorError("", nil, "expected a mapping node, but found "+n.Kind.ID(), n.Start))
 	}
@@ -438,7 +438,7 @@ func (c *safeConstructor) constructMappingRT(n *ry.Node, m *pyDict, deep bool) {
 		value := c.constructObject(p.Value, deep)
 		k := dictKey(key)
 		if mk, dup := m.get(k); dup {
-			problem := fmt.Sprintf("found duplicate key \"%s\" with value \"%s\" (original value: \"%s\")", pyObjStr(key), pyObjStr(value), pyObjStr(mk))
+			problem := fmt.Sprintf("found duplicate key \"%s\" with value \"%s\" (original value: \"%s\")", objStr(key), objStr(value), objStr(mk))
 			panic(&ry.MarkedError{Class: "DuplicateKeyError", Context: strPtr("while constructing a mapping"), ContextMark: n.Start,
 				Problem: &problem, ProblemMark: p.Key.Start,
 				Note: "\n                    To suppress this check see:\n                        https://yaml.dev/doc/ruamel.yaml/api/#Duplicate_keys\n                    "})
@@ -465,7 +465,7 @@ func (c *safeConstructor) constructMappingRT(n *ry.Node, m *pyDict, deep bool) {
 		lastKey, lastValue = key, value
 	}
 	for _, src := range merged {
-		if sm, ok := src.(*pyDict); ok {
+		if sm, ok := src.(*mappingOf); ok {
 			for i, k := range sm.keys {
 				if _, has := m.get(dictKey(k)); !has {
 					m.set(k, sm.vals[i])
@@ -529,24 +529,24 @@ func (c *safeConstructor) flattenMappingRT(n *ry.Node) []any {
 }
 
 // Fills a CommentedSet from a mapping node, duplicate members refused
-func (c *safeConstructor) constructSetting(n *ry.Node, set *pySet) {
+func (c *safeConstructor) constructSetting(n *ry.Node, set *setValue) {
 	if n.Kind != ry.MappingNode {
 		panic(constructorError("", nil, "expected a mapping node, but found "+n.Kind.ID(), n.Start))
 	}
 	rc := &rtComments{items: map[string][]any{}}
 	for _, p := range n.Pairs {
 		key := c.constructObject(p.Key, true)
-		if l, ok := key.(*pyList); ok {
-			key = &pyTuple{items: append([]any(nil), l.items...)}
+		if l, ok := key.(*listOf); ok {
+			key = &tupleOf{items: append([]any(nil), l.items...)}
 		}
 		switch key.(type) {
-		case *pyDict, *pySet:
+		case *mappingOf, *setValue:
 			panic(constructorError("while constructing a mapping", n.Start, "found unhashable key", p.Key.Start))
 		}
 		c.constructObject(p.Value, false)
 		k := dictKey(key)
 		if _, dup := set.index[k]; dup {
-			problem := fmt.Sprintf("found duplicate key \"%s\"", pyObjStr(key))
+			problem := fmt.Sprintf("found duplicate key \"%s\"", objStr(key))
 			panic(&ry.MarkedError{Class: "DuplicateKeyError", Context: strPtr("while constructing a set"), ContextMark: n.Start,
 				Problem: &problem, ProblemMark: p.Key.Start,
 				Note: "\n                    To suppress this check see:\n                        https://yaml.dev/doc/ruamel.yaml/api/#Duplicate_keys\n                    "})
@@ -562,7 +562,7 @@ func (c *safeConstructor) constructSetting(n *ry.Node, set *pySet) {
 	}
 }
 
-func (c *safeConstructor) fillOmapRT(n *ry.Node, omap *pyDict) {
+func (c *safeConstructor) fillOmapRT(n *ry.Node, omap *mappingOf) {
 	const ctx = "while constructing an ordered map"
 	if n.Kind != ry.SequenceNode {
 		panic(constructorError(ctx, n.Start, "expected a sequence, but found "+n.Kind.ID(), n.Start))
@@ -579,7 +579,7 @@ func (c *safeConstructor) fillOmapRT(n *ry.Node, omap *pyDict) {
 		key := c.constructObject(keyNode, false)
 		k := dictKey(key)
 		if _, dup := omap.get(k); dup {
-			panic(pyErr("AssertionError", ""))
+			panic(kindErr("AssertionError", ""))
 		}
 		value := c.constructObject(valueNode, false)
 		if len(keyNode.Comment) > 0 {

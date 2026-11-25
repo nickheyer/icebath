@@ -42,7 +42,7 @@ func ChatPickKey(principalID, sessionID string, params *jsonutil.Object) (string
 	}
 	payload, err := jsonutil.Decode(text)
 	if err != nil {
-		return "", "", pyValueError(err.Error())
+		return "", "", valueError(err.Error())
 	}
 	operation, err := receiptItem(params, "operation")
 	if err != nil {

@@ -253,7 +253,7 @@ func formatTemplate(template string, fields map[string]string) (string, error) {
 			name := template[i+1 : i+end]
 			value, ok := fields[name]
 			if !ok {
-				return "", &PyError{Class: "KeyError", Message: fmt.Sprintf("the URL template %s names unknown field %s", template, name)}
+				return "", &ClassError{Class: "KeyError", Message: fmt.Sprintf("the URL template %s names unknown field %s", template, name)}
 			}
 			out.WriteString(value)
 			i += end

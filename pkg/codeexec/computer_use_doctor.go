@@ -900,13 +900,8 @@ func waylandEnvironmentContext(report *jsonutil.Object) *jsonutil.Object {
 	return o
 }
 
-// Report value or the question mark default when the key is absent
-func reportField(report *jsonutil.Object, k string) any {
-	if v, ok := report.Get(k); ok {
-		return v
-	}
-	return "?"
-}
+// Report value or the question mark default when the key is absent or null
+func reportField(report *jsonutil.Object, k string) any { return reportFieldOr(report, k, "?") }
 
 // Renders the report like the driver does with identity, environment, checks, hints and data rows
 func printTextReport(w io.Writer, report *jsonutil.Object, color bool, identity, environment *jsonutil.Object) {
@@ -973,6 +968,8 @@ func printTextReport(w io.Writer, report *jsonutil.Object, color bool, identity,
 				v := d.Value(k)
 				s := anyutil.String(v)
 				switch v.(type) {
+				case nil:
+					s = "null"
 				case *jsonutil.Object, []any:
 					s, _ = jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 				}
@@ -983,9 +980,9 @@ func printTextReport(w io.Writer, report *jsonutil.Object, color bool, identity,
 	fmt.Fprintln(w, strings.Join(lines, "\n"))
 }
 
-// Mapping value or the default when the key is absent
+// Mapping value or the default when the key is absent or null
 func reportFieldOr(o *jsonutil.Object, k string, def any) any {
-	if v, ok := o.Get(k); ok {
+	if v, ok := o.Get(k); ok && v != nil {
 		return v
 	}
 	return def

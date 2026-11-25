@@ -80,7 +80,11 @@ func GetConfiguredCodexBinary(cfg map[string]any) string {
 // Stores the runtime in the config in place and returns the previous one
 func SetCodexRuntime(cfg map[string]any, newValue string) (string, error) {
 	if !slices.Contains(CodexValidRuntimes, newValue) {
-		return "", fmt.Errorf("invalid runtime %s; must be one of ('auto', 'codex_app_server')", anyutil.Quote(newValue))
+		valid := make([]string, len(CodexValidRuntimes))
+		for i, name := range CodexValidRuntimes {
+			valid[i] = anyutil.Quote(name)
+		}
+		return "", fmt.Errorf("invalid runtime %s; must be one of %s", anyutil.Quote(newValue), strings.Join(valid, ", "))
 	}
 	old := GetCurrentCodexRuntime(cfg)
 	modelCfg, ok := cfg["model"].(map[string]any)

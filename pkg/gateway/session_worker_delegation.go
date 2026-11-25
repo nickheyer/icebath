@@ -461,7 +461,7 @@ func workerDelegationRequest(ctx context.Context, c *AuthorityConnection, ref Se
 			return err
 		}
 		if row["delivery_state"] == "pending" {
-			decoded, err := jsonutil.Decode(pyStrOf(row["event_json"]))
+			decoded, err := jsonutil.Decode(anyutil.String(row["event_json"]))
 			if err != nil {
 				return err
 			}

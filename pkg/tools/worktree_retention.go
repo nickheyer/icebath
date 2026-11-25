@@ -178,7 +178,7 @@ func HiddenIndexEdits(wtPath string, env map[string]string) ([]string, error) {
 	for _, record := range strings.Split(out, "\x00") {
 		meta, rel, _ := strings.Cut(record, "\t")
 		parts := strings.Fields(meta)
-		if rel == "" || len(parts) != 4 || !(parts[0] == "S" || pyIsLower(parts[0])) {
+		if rel == "" || len(parts) != 4 || !(parts[0] == "S" || isLower(parts[0])) {
 			continue
 		}
 		if _, err := os.Lstat(filepath.Join(wtPath, rel)); err != nil {
@@ -219,7 +219,7 @@ func HiddenIndexEdits(wtPath string, env map[string]string) ([]string, error) {
 }
 
 // Whether the text has a cased character and every cased character is lowercase, as str.islower
-func pyIsLower(s string) bool {
+func isLower(s string) bool {
 	cased := false
 	for _, r := range s {
 		if unicode.IsUpper(r) || unicode.IsTitle(r) {

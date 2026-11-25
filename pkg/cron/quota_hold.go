@@ -137,7 +137,7 @@ func quotaHoldPlanHold(s *Store, job *Job, holdSeconds float64, recoverConsumedF
 	}
 	extraFireReschedule(job, parked)
 	job.QuotaHoldUntil = strPtr(parked)
-	s.log.Warn(fmt.Sprintf("Job '%s': provider usage window closed for %.0fs — holding fires until %s instead of "+
+	s.log.Warn(fmt.Sprintf("Job %q: provider usage window closed for %.0fs — holding fires until %s instead of "+
 		"failing on every cadence tick", oneshotLabel(job), holdSeconds, parked))
 	return true, nil
 }

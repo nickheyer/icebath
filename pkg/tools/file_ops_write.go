@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -25,7 +26,7 @@ func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 		output, exitCode = nativeDeleteEntry(path, s.nativePath(purePosixPathStr(path)))
 	} else {
 		snippet := "import os, shutil, pathlib, sys\n" +
-			"p = pathlib.Path(" + pyJSONDumpsASCII(path) + ")\n" +
+			"p = pathlib.Path(" + jsonDumpsASCII(path) + ")\n" +
 			"recursive = False\n" +
 			"try:\n" +
 			"    if p.is_dir() and not p.is_symlink():\n" +
@@ -51,7 +52,7 @@ func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 		output, exitCode = result.Stdout, result.ExitCode
 	}
 	if exitCode != 0 {
-		msg := pyStrip(output)
+		msg := strings.TrimSpace(output)
 		if msg == "" {
 			msg = "unknown error"
 		}
@@ -189,7 +190,7 @@ func (s *shellFileOps) probeWriteTarget(path string, preContent *string, wantPre
 	probe := s.exec(s.writeProbeCmd(path, sentinel, bodyMode), "", 0)
 	output := probe.Stdout
 	if !strings.Contains(output, sentinel) {
-		if pyStrip(stripTerminalFenceLeaks(output)) == missingSentinel {
+		if strings.TrimSpace(stripTerminalFenceLeaks(output)) == missingSentinel {
 			ending := ""
 			if preContent != nil && *preContent != "" {
 				ending = detectLineEnding(*preContent)
@@ -252,8 +253,8 @@ func (s *shellFileOps) verifyWrittenHash(path string, contentBytes []byte) (veri
 	}
 	if diskSha == "" {
 		hashResult := s.exec("sha256sum "+s.escapeShellArg(path, true)+" 2>/dev/null", "", 0)
-		if out := pyStrip(hashResult.Stdout); hashResult.ExitCode == 0 && out != "" {
-			diskSha = pyFields(out)[0]
+		if out := strings.TrimSpace(hashResult.Stdout); hashResult.ExitCode == 0 && out != "" {
+			diskSha = fieldsValue(out)[0]
 		}
 	}
 	if diskSha == "" {
@@ -278,7 +279,7 @@ func (s *shellFileOps) WriteFile(path, content string, preContent *string) *Writ
 	if denied := writeDeniedError(s.env, path, "Write", false); denied != "" {
 		return &WriteResult{Error: denied}
 	}
-	ext := cases.Lower(language.Und).String(pySplitextExt(path))
+	ext := cases.Lower(language.Und).String(splitextExt(path))
 	if refused := failClosedSyntaxError(path, ext, content); refused != nil {
 		return refused
 	}
@@ -350,7 +351,7 @@ func (s *shellFileOps) verifyPatchPersisted(path, newContent string) *PatchResul
 			"differs from intended write "+
 			"(wrote %d chars, read back "+
 			"%d chars after normalizing line endings). "+
-			"The patch did not persist. Re-read the file and try again.", path, pyLen(intended), pyLen(onDisk))}
+			"The patch did not persist. Re-read the file and try again.", path, utf8.RuneCountInString(intended), utf8.RuneCountInString(onDisk))}
 	}
 	return nil
 }

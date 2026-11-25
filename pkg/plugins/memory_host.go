@@ -8,7 +8,7 @@ import (
 	"sync"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -55,13 +55,13 @@ func (mc *memoryCollector) dropHooks(ctx context.Context, m *Manager) {
 func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context, method string, args []any, kwargs map[string]any) (any, error) {
 	switch method {
 	case "register_hook":
-		return hostMethod(method, []pyParam{req("hook_name"), req("callback"), kwo("hold_stream", false)},
+		return hostMethod(method, []paramValue{req("hook_name"), req("callback"), kwo("hold_stream", false)},
 			func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				cb, err := argCallable(method, "callback", a["callback"])
 				if err != nil {
 					return nil, err
 				}
-				hookName, hold := argStr(a["hook_name"]), config.PyTruthy(a["hold_stream"])
+				hookName, hold := argStr(a["hook_name"]), anyutil.IsTrue(a["hold_stream"])
 				_, unlock := c.manager.lockDiscovery(ctx)
 				defer unlock()
 				return c.manager.registerFallbackHookWith(c, mc.hookSource(), hookName, func() *Registration {
@@ -71,7 +71,7 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 	case "register_memory_provider", "register_cli_command":
 		return nil, nil
 	case "rewrite_memory_query":
-		return hostMethod(method, []pyParam{req("user_message")},
+		return hostMethod(method, []paramValue{req("user_message")},
 			func(ctx context.Context, _ *PluginHost, _ *Context, a, _ map[string]any) (any, error) {
 				if MemoryQueryRewrite == nil {
 					return "", nil
@@ -90,7 +90,7 @@ func (mc *memoryCollector) serve(ctx context.Context, h *PluginHost, c *Context,
 		if len(args) > 0 {
 			skill = args[0]
 		}
-		qualified := mc.name + ":" + config.PyStr(skill)
+		qualified := mc.name + ":" + anyutil.String(skill)
 		if _, ok := c.manager.FindPluginSkill(qualified); ok && mc.trackSkill != nil {
 			mc.trackSkill(qualified)
 		}

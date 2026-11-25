@@ -21,5 +21,5 @@ func cronProfileGate(name, profileHome string) (tick bool) {
 		ProfileDir: profileHome, NoCache: true,
 		PidProbe: func(path string) (int, bool, error) { return gateway.GetRunningPid(path, false) },
 	})
-	return !(liveness.Running && liveness.PID != nil && !gateway.PyValuesEqual(liveness.PID, int64(os.Getpid())))
+	return !(liveness.Running && liveness.PID != nil && !gateway.ValuesEqual(liveness.PID, int64(os.Getpid())))
 }

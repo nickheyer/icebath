@@ -23,7 +23,7 @@ var providerNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 // Name of an external memory provider, empty for none, a core provider or an unsafe name
 func externalProviderName(name string) string {
-	name = pyStrip(name)
+	name = strings.TrimSpace(name)
 	if name == "" || IsCoreMemoryProvider(name) || name == "." || name == ".." || !providerNameRe.MatchString(name) {
 		return ""
 	}

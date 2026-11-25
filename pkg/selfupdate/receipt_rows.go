@@ -73,17 +73,17 @@ func exactInt(v any) (int64, bool) {
 }
 
 // Text of a missing mapping key
-func pyKeyErrorText(key string) string { return "missing " + key }
+func keyErrorText(key string) string { return "missing " + key }
 
 // Value of key in a JSON object, the KeyError or TypeError text when it is absent or not subscriptable
-func pyDictItem(holder any, key string) (any, error) {
+func dictItem(holder any, key string) (any, error) {
 	obj, ok := holder.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("record is %s where a mapping holding %s was expected", errchain.Kind(holder), key)
 	}
 	value, present := obj.Get(key)
 	if !present {
-		return nil, fmt.Errorf("%s", pyKeyErrorText(key))
+		return nil, fmt.Errorf("%s", keyErrorText(key))
 	}
 	return value, nil
 }
@@ -102,7 +102,7 @@ func readRequestFile(path string) (any, error) {
 }
 
 // Items of a JSON value iterated the way a Python for loop does, a TypeError for a non iterable
-func pyIterable(value any) ([]any, error) {
+func iterable(value any) ([]any, error) {
 	switch v := value.(type) {
 	case nil:
 		return nil, nil

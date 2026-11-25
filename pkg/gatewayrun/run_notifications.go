@@ -248,13 +248,13 @@ func watchNotificationMetadata(evt map[string]any, source *gateway.SessionSource
 		metadata["gateway_proven_session_id"] = proven
 	}
 	if ids := evt["completion_ids"]; anyutil.IsTrue(ids) {
-		metadata["gateway_completion_ids"] = pyListOf(ids)
+		metadata["gateway_completion_ids"] = listOf(ids)
 	}
 	return metadata
 }
 
 // Python list of an iterable value
-func pyListOf(v any) []any {
+func listOf(v any) []any {
 	switch items := v.(type) {
 	case []any:
 		return append([]any(nil), items...)

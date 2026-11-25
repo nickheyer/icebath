@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -19,7 +20,7 @@ func BindTurnWorkspace(env *tools.Env, policy *LocalSessionPolicy, taskID string
 	}
 	obj, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "the turn workspace record is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "the turn workspace record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	terminal := jsonutil.Plain(obj).(map[string]any)
 	if strings.ToLower(strings.TrimSpace(routeStr(terminal["TERMINAL_ENV"]))) != "docker" || !terminalUsesHostCwd(terminal) {

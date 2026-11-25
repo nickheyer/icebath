@@ -60,7 +60,7 @@ func selectionReaders(ctx context.Context, configPath string) (version func(cont
 func ReadHomeSelection(ctx context.Context, homeDir string) (map[string]any, error) {
 	configPath := filepath.Join(homeDir, "config.yaml")
 	configVersion, readConfigDoc := selectionReaders(ctx, configPath)
-	unreadable := &PyError{Class: "ValueError", Message: "could not read plugin selection: " + configPath}
+	unreadable := &ClassError{Class: "ValueError", Message: "could not read plugin selection: " + configPath}
 	if _, err := configVersion(ctx, configPath); err != nil {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -79,7 +79,7 @@ func ReadHomeSelection(ctx context.Context, homeDir string) (map[string]any, err
 		case config.IsOSError(err), errors.As(err, &load) && strings.HasPrefix(load.ErrorKind(), "Unicode"):
 			return nil, unreadable
 		case errors.As(err, &load) && ry.IsYAMLError(load.Err):
-			return nil, &PyError{Class: "ValueError", Message: "could not parse plugin selection: " + configPath}
+			return nil, &ClassError{Class: "ValueError", Message: "could not parse plugin selection: " + configPath}
 		}
 		return nil, err
 	}
@@ -88,12 +88,12 @@ func ReadHomeSelection(ctx context.Context, homeDir string) (map[string]any, err
 	}
 	selection, ok := doc.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "ValueError", Message: "configuration must be a mapping: " + configPath}
+		return nil, &ClassError{Class: "ValueError", Message: "configuration must be a mapping: " + configPath}
 	}
 	for _, section := range []string{"plugins", "memory"} {
 		if value := selection[section]; value != nil {
 			if _, ok := value.(map[string]any); !ok {
-				return nil, &PyError{Class: "ValueError", Message: section + " must be a mapping: " + configPath}
+				return nil, &ClassError{Class: "ValueError", Message: section + " must be a mapping: " + configPath}
 			}
 		}
 	}
@@ -110,13 +110,13 @@ func ReadHomeSelection(ctx context.Context, homeDir string) (map[string]any, err
 			}
 		}
 		if !ok {
-			return nil, &PyError{Class: "ValueError", Message: "plugins." + key + " must be a list of names: " + configPath}
+			return nil, &ClassError{Class: "ValueError", Message: "plugins." + key + " must be a list of names: " + configPath}
 		}
 	}
 	memory, _ := selection["memory"].(map[string]any)
 	if provider := memory["provider"]; provider != nil {
 		if _, ok := provider.(string); !ok {
-			return nil, &PyError{Class: "ValueError", Message: "memory.provider must be a name: " + configPath}
+			return nil, &ClassError{Class: "ValueError", Message: "memory.provider must be a name: " + configPath}
 		}
 	}
 	return selection, nil
@@ -168,7 +168,7 @@ func pluginIsDirectory(path string) (bool, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return false, nil
 		}
-		return false, &PyError{Class: "ValueError", Message: "could not inspect plugin directory: " + path}
+		return false, &ClassError{Class: "ValueError", Message: "could not inspect plugin directory: " + path}
 	}
 	return st.IsDir(), nil
 }
@@ -182,7 +182,7 @@ func dependencyHomes(ctx context.Context) ([]string, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return homes, nil
 		}
-		return nil, &PyError{Class: "ValueError", Message: "could not enumerate profiles: " + root}
+		return nil, &ClassError{Class: "ValueError", Message: "could not enumerate profiles: " + root}
 	}
 	profiles := make([]string, len(entries))
 	for i, entry := range entries {
@@ -216,8 +216,8 @@ func EnabledPluginsOrdered(ctx context.Context, opts EnabledPluginsOptions) ([]H
 	for i, homeDir := range homes {
 		selection, err := ReadHomeSelection(ctx, homeDir)
 		if err != nil {
-			var pyErr *PyError
-			if !opts.SkipInvalidSecondary || i == 0 || !errors.As(err, &pyErr) || pyErr.Class != "ValueError" {
+			var kindErr *ClassError
+			if !opts.SkipInvalidSecondary || i == 0 || !errors.As(err, &kindErr) || kindErr.Class != "ValueError" {
 				return nil, err
 			}
 			pkgLog().Warn("Skipping broken secondary profile during dependency verification", "home", homeDir, "error", err.Error())
@@ -304,9 +304,9 @@ func pluginSpellings(pluginDir, key string) (map[string]bool, error) {
 	if err == nil && manifestFile != "" {
 		manifest, err = ReadNativeManifest(manifestFile)
 	}
-	var pyErr *PyError
+	var kindErr *ClassError
 	switch {
-	case err != nil && !(errors.As(err, &pyErr) && pyErr.Class == "ValueError"):
+	case err != nil && !(errors.As(err, &kindErr) && kindErr.Class == "ValueError"):
 		return nil, err
 	case err == nil && manifest != nil:
 		name := ""

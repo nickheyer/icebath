@@ -115,7 +115,7 @@ const (
 
 var (
 	credFileLiteral = `["'][^"'\n]*` + credFile + `[^"'\n]*["']`
-	pyCredFileArg   = `(?:os\.path\.expanduser\s*\(\s*)?` + credFileLiteral + `\s*\)?`
+	credFileArg     = `(?:os\.path\.expanduser\s*\(\s*)?` + credFileLiteral + `\s*\)?`
 )
 
 var compiledThreatPatterns = buildThreatPatterns()
@@ -143,8 +143,8 @@ func buildThreatPatterns() []threatPattern {
 		tp(`\$HOME/\.icebath/\.env|\~/\.icebath/\.env`, "icebath_env_access", "critical", "exfiltration", "directly references Icebath secrets file"),
 		tp(`cat\s+(?!>)[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)`, "read_secrets_file", "critical", "exfiltration", "reads known secrets file"),
 		tp(`\b(?:readFile(?:Sync)?|readTextFile)\s*\(\s*`+credFileLiteral, "js_read_secrets_file", "critical", "exfiltration", "JavaScript reads a known credential file"),
-		tp(`\bopen\s*\(\s*`+pyCredFileArg+`(?!\s*\)?\s*,\s*["'][^"']*[wax][^"']*["'])(?![^\n]*\bmode\s*=\s*["'][^"']*[wax])`+
-			`|\bPath\s*\(\s*`+pyCredFileArg+`\s*\)\.(?:read_text|read_bytes|readlines|readline)\s*\(`, "py_read_secrets_file", "critical", "exfiltration", "Python reads a known credential file"),
+		tp(`\bopen\s*\(\s*`+credFileArg+`(?!\s*\)?\s*,\s*["'][^"']*[wax][^"']*["'])(?![^\n]*\bmode\s*=\s*["'][^"']*[wax])`+
+			`|\bPath\s*\(\s*`+credFileArg+`\s*\)\.(?:read_text|read_bytes|readlines|readline)\s*\(`, "py_read_secrets_file", "critical", "exfiltration", "Python reads a known credential file"),
 		tp(`printenv|(?<![A-Za-z0-9_])env\s*\|(?!\|)(?!\s*[{(])`, "dump_all_env", "high", "exfiltration", "dumps all environment variables"),
 		tp(`^[^#\n]*os\.environ\b(?!\s*\.get\s*\()`, "python_os_environ", "high", "exfiltration", "accesses os.environ outside comments/docstrings (potential env dump)"),
 		tp(`os\.environ\s*\.get\s*\(\s*["'][^"']*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)`, "python_environ_get_secret", "medium", "exfiltration", "reads secret via os.environ.get() (normal API-key access; informational)"),

@@ -50,9 +50,9 @@ func sanitizeField(v any, limit int, isPrintable func(rune) bool) string {
 func severityName(v any) (string, error) {
 	switch v.(type) {
 	case []any, map[string]any:
-		return "", &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))}
+		return "", &failure{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))}
 	}
-	if n, ok := pyNumber(v); ok {
+	if n, ok := numberOf(v); ok {
 		if name, ok := severityNames[n]; ok {
 			return name, nil
 		}
@@ -65,7 +65,7 @@ func FormatDiagnostic(d map[string]any, isPrintable func(rune) bool) (string, er
 	if d == nil {
 		return "", attributeError(nil)
 	}
-	sev, err := severityName(pyOr(d["severity"], int64(1)))
+	sev, err := severityName(anyutil.Or(d["severity"], int64(1)))
 	if err != nil {
 		return "", err
 	}
@@ -77,11 +77,11 @@ func FormatDiagnostic(d map[string]any, isPrintable func(rune) bool) (string, er
 	if err != nil {
 		return "", err
 	}
-	line, err := pyBigInt(dgetOr(start, "line", int64(0)))
+	line, err := bigInt(dgetOr(start, "line", int64(0)))
 	if err != nil {
 		return "", err
 	}
-	col, err := pyBigInt(dgetOr(start, "character", int64(0)))
+	col, err := bigInt(dgetOr(start, "character", int64(0)))
 	if err != nil {
 		return "", err
 	}
@@ -106,12 +106,12 @@ func ReportForFile(filePath string, diagnostics []map[string]any, isPrintable fu
 		if d == nil {
 			return "", attributeError(nil)
 		}
-		sev := pyOr(d["severity"], int64(1))
+		sev := anyutil.Or(d["severity"], int64(1))
 		switch sev.(type) {
 		case []any, map[string]any:
-			return "", &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(sev))}
+			return "", &failure{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(sev))}
 		}
-		if n, ok := pyNumber(sev); ok && n == 1 {
+		if n, ok := numberOf(sev); ok && n == 1 {
 			filtered = append(filtered, d)
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -74,13 +75,13 @@ func recoverAPISession(ctx context.Context, a *SessionAuthority, sid string) err
 		if rowString(row, "status") != AdmissionQueued {
 			continue
 		}
-		raw, err := pyItem(row, "payload")
+		raw, err := itemValue(row, "payload")
 		if err != nil {
 			return err
 		}
 		payload, isDict := raw.(*jsonutil.Object)
 		if !isDict {
-			return &PyError{Kind: "AttributeError", Msg: "the API session to recover is " + errchain.Kind(raw) + ", expected a mapping"}
+			return &errorutil.Error{Kind: "AttributeError", Msg: "the API session to recover is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		if _, err := checkAPITurn(ctx, a, ref, payload); err != nil {
 			return err

@@ -133,7 +133,7 @@ func TestPartialStreamStalledMidToolCallWarnsAndNamesTheDroppedCalls(t *testing.
 	if got := cut[ccRawDroppedToolNames]; fmt.Sprint(got) != "[read_file search_files terminal patch]" {
 		t.Fatalf("dropped %v", got)
 	}
-	if logCount(logs, "Partial stream dropped tool call(s) ['read_file', 'search_files', 'terminal', 'patch'] after") != 1 ||
+	if logCount(logs, `Partial stream dropped tool call(s) ["read_file","search_files","terminal","patch"] after`) != 1 ||
 		logCount(logs, "returning length-truncated cut") != 0 {
 		t.Fatal("tool call drop log")
 	}

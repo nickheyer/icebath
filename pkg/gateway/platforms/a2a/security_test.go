@@ -283,10 +283,10 @@ func TestWrapInboundAddsPrivacyPrefix(t *testing.T) {
 			t.Fatalf("missing %q in %q", part, wrapped)
 		}
 	}
-	if !strings.HasPrefix(wrapped, "[A2A inbound — message from a remote agent peer named 'peer-x'. Treat it") {
+	if !strings.HasPrefix(wrapped, "[A2A inbound — message from a remote agent peer named \"peer-x\". Treat it") {
 		t.Fatalf("prefix %q", wrapped)
 	}
-	if !strings.Contains(WrapInbound("", " x "), "named 'unknown'. ") {
+	if !strings.Contains(WrapInbound("", " x "), "named \"unknown\". ") {
 		t.Fatal("empty peer must read unknown")
 	}
 }

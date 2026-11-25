@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Adapter of a platform bound to this runner so it resolves inbound profile routes before connecting
@@ -45,7 +46,7 @@ func (r *GatewayRunner) instantiateAdapter(ctx context.Context, platform gateway
 		}
 		adapter, ok := created.(gateway.PlatformAdapter)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the %s plugin created %s where a platform adapter was expected", platform, errchain.Kind(created))}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the %s plugin created %s where a platform adapter was expected", platform, errchain.Kind(created))}
 		}
 		return adapter, nil
 	}

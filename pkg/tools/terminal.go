@@ -361,7 +361,7 @@ func withPromotedNote(resultJSON string, requestedTimeout int) string {
 	}
 	note := strings.ReplaceAll(strings.ReplaceAll(template, "{requested}", strconv.Itoa(requestedTimeout)), "{cap}", strconv.Itoa(foregroundMaxTimeout()))
 	data.Set("promoted_from_foreground", note)
-	return dumpsUnicode(data)
+	return spacedJSON(data)
 }
 
 // Cached env for the task, else created under the per task creation lock

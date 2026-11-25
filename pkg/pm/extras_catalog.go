@@ -181,29 +181,29 @@ func wheelTargets(file string) []string {
 	if len(parts) < 5 || !strings.HasSuffix(name, ".whl") {
 		return nil
 	}
-	pyTags, abi, platforms := parts[len(parts)-3], parts[len(parts)-2], parts[len(parts)-1]
+	tagsValue, abi, platforms := parts[len(parts)-3], parts[len(parts)-2], parts[len(parts)-1]
 	short, _, err := extrasPythonVersion()
 	if err != nil {
 		return nil
 	}
 	own := strings.ReplaceAll(short, ".", "")
 	ownMinor, _ := strconv.Atoi(strings.TrimPrefix(own, "3"))
-	pyOK := false
+	okValue := false
 	for _, abiTag := range strings.Split(abi, ".") {
-		for _, tag := range strings.Split(pyTags, ".") {
+		for _, tag := range strings.Split(tagsValue, ".") {
 			switch {
 			case abiTag == "none" && (tag == "py3" || tag == "py"+own || tag == "cp"+own):
-				pyOK = true
+				okValue = true
 			case abiTag == "cp"+own && tag == "cp"+own:
-				pyOK = true
+				okValue = true
 			case abiTag == "abi3" && strings.HasPrefix(tag, "cp3"):
 				if minor, err := strconv.Atoi(strings.TrimPrefix(tag, "cp3")); err == nil && minor <= ownMinor {
-					pyOK = true
+					okValue = true
 				}
 			}
 		}
 	}
-	if !pyOK {
+	if !okValue {
 		return nil
 	}
 	served := map[string]bool{}

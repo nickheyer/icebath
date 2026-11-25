@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
@@ -73,12 +74,12 @@ func ccMarkerOnlyFinish(chunk map[string]any) bool {
 		return false
 	}
 	choice, _ := choices[0].(map[string]any)
-	if !pyTruthy(choice["finish_reason"]) {
+	if !anyutil.IsTrue(choice["finish_reason"]) {
 		return false
 	}
 	delta, _ := choice["delta"].(map[string]any)
 	for _, key := range []string{"content", "tool_calls", "reasoning_content", "reasoning"} {
-		if pyTruthy(delta[key]) {
+		if anyutil.IsTrue(delta[key]) {
 			return false
 		}
 	}
@@ -143,10 +144,10 @@ func (a *relayChatAccumulator) Observe(chunk any) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if pyTruthy(m["model"]) {
+	if anyutil.IsTrue(m["model"]) {
 		a.model = m["model"]
 	}
-	if pyTruthy(m["usage"]) {
+	if anyutil.IsTrue(m["usage"]) {
 		a.usage = m["usage"]
 	}
 	choices, _ := m["choices"].([]any)
@@ -157,27 +158,27 @@ func (a *relayChatAccumulator) Observe(chunk any) {
 	if !ok {
 		return
 	}
-	if pyTruthy(choice["finish_reason"]) {
+	if anyutil.IsTrue(choice["finish_reason"]) {
 		a.finishReason = choice["finish_reason"]
 	}
 	delta, ok := choice["delta"].(map[string]any)
 	if !ok {
 		return
 	}
-	if pyTruthy(delta["role"]) {
+	if anyutil.IsTrue(delta["role"]) {
 		a.role = delta["role"]
 	}
 	if text := flattenMessageText(delta["content"], ""); text != "" {
 		a.content = append(a.content, text)
 	}
-	if pyTruthy(delta["reasoning_details"]) {
+	if anyutil.IsTrue(delta["reasoning_details"]) {
 		a.reasoningDetails = append(a.reasoningDetails, relayExtendItems(delta["reasoning_details"])...)
 	}
 	reasoning := delta["reasoning_content"]
-	if !pyTruthy(reasoning) {
+	if !anyutil.IsTrue(reasoning) {
 		reasoning = delta["reasoning"]
 	}
-	if pyTruthy(reasoning) {
+	if anyutil.IsTrue(reasoning) {
 		previous := ""
 		if n := len(a.reasoning); n > 0 {
 			previous = a.reasoning[n-1]
@@ -187,7 +188,7 @@ func (a *relayChatAccumulator) Observe(chunk any) {
 	if refusal, ok := delta["refusal"].(string); ok && refusal != "" {
 		a.refusal = append(a.refusal, refusal)
 	}
-	if pyTruthy(delta["tool_calls"]) {
+	if anyutil.IsTrue(delta["tool_calls"]) {
 		for _, tc := range relayExtendItems(delta["tool_calls"]) {
 			if tcm, ok := tc.(map[string]any); ok {
 				a.tools.Feed(tcm)
@@ -227,7 +228,7 @@ func (a *relayChatAccumulator) Finalize() map[string]any {
 		message["tool_calls"] = calls
 	}
 	finish := a.finishReason
-	if !pyTruthy(finish) {
+	if !anyutil.IsTrue(finish) {
 		finish = "stop"
 	}
 	return map[string]any{"model": a.model, "usage": a.usage, "choices": []any{map[string]any{"message": message, "finish_reason": finish}}}

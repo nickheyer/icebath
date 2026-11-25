@@ -78,10 +78,10 @@ func httpGetJSON(ctx context.Context, env *Env, label, target string, params url
 }
 
 // dict.get with a default over a decoded value, the AttributeError of a non dict
-func pyGetDefault(v any, key string, def any) (any, error) {
-	d, ok := pyDict(v)
+func getDefault(v any, key string, def any) (any, error) {
+	d, ok := mappingOf(v)
 	if !ok {
-		return nil, pyAttributeError(v, "get")
+		return nil, attributeError(v, "get")
 	}
 	if val, ok := d.Get(key); ok {
 		return val, nil
@@ -90,7 +90,7 @@ func pyGetDefault(v any, key string, def any) (any, error) {
 }
 
 // Python seq[:n] over a decoded value, lists and strings sliced and every other type raising
-func pySeqHead(v any, n int) (any, error) {
+func seqHead(v any, n int) (any, error) {
 	clamp := func(length int) int {
 		if n < 0 {
 			n += length
@@ -107,7 +107,7 @@ func pySeqHead(v any, n int) (any, error) {
 		r := []rune(x)
 		return string(r[:clamp(len(r))]), nil
 	}
-	if _, ok := pyDict(v); ok {
+	if _, ok := mappingOf(v); ok {
 		return nil, fmt.Errorf("slice(None, %d, None)", n)
 	}
 	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
@@ -117,9 +117,9 @@ func pySeqHead(v any, n int) (any, error) {
 func titledRows(raw []any, descriptionKey string) ([]WebSearchHit, error) {
 	out := make([]WebSearchHit, 0, len(raw))
 	for i, item := range raw {
-		d, ok := pyDict(item)
+		d, ok := mappingOf(item)
 		if !ok {
-			return nil, pyAttributeError(item, "get")
+			return nil, attributeError(item, "get")
 		}
 		field := func(key string) string {
 			if v, ok := d.Get(key); ok {

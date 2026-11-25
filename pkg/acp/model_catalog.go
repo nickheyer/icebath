@@ -32,6 +32,7 @@ func fieldText(entry map[string]any, key string) string {
 	return strings.TrimSpace(anyutil.String(anyutil.Or(entry[key], "")))
 }
 
+// Extra headers of a provider entry as text, a header set to null left out as the provider requests leave it, nil when none remain
 func stringHeaders(v any) map[string]string {
 	m, ok := v.(map[string]any)
 	if !ok || len(m) == 0 {
@@ -39,7 +40,12 @@ func stringHeaders(v any) map[string]string {
 	}
 	out := map[string]string{}
 	for k, x := range m {
-		out[k] = anyutil.String(x)
+		if x != nil {
+			out[k] = anyutil.String(x)
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

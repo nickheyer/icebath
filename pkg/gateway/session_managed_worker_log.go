@@ -14,9 +14,9 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -148,7 +148,7 @@ func drainWorkerStderr(ctx context.Context, stream io.ReadCloser, path string, p
 		}
 		if werr := appendWorkerLog(ctx, path, entry); werr != nil && !warned {
 			warned = true
-			pkgLog().Warn(fmt.Sprintf("managed worker log %s not written (%s); dropping its lines", path, errorutil.Kind(werr)))
+			pkgLog().Warn(fmt.Sprintf("managed worker log %s not written (%s); dropping its lines", path, errchain.OSText(werr)))
 		}
 		if err != nil {
 			return

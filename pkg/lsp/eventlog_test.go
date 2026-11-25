@@ -39,7 +39,7 @@ func TestDiagnosticsAlwaysInfo(t *testing.T) {
 func TestSpawnFailedWarns(t *testing.T) {
 	resetCaches(t)
 	rt, h, _ := testRuntime(t)
-	logSpawnFailed(rt, "pyright", "/proj", &pyExc{typ: "FileNotFoundError", text: "nope"})
+	logSpawnFailed(rt, "pyright", "/proj", &failure{typ: "FileNotFoundError", text: "nope"})
 	recs := h.all()
 	if len(recs) != 1 || recs[0].level != slog.LevelWarn || recs[0].msg != "lsp[pyright] spawn/initialize failed for /proj: FileNotFoundError: nope" {
 		t.Fatalf("%+v", recs)

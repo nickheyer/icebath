@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +96,7 @@ func readUTF8SigText(path string) (string, bool, error) {
 		return "", false, nil
 	}
 	raw = trimUTF8BOM(raw)
-	if err := pyUTF8DecodeError(raw); err != nil {
+	if err := textutil.ValidateUTF8(raw); err != nil {
 		return "", false, err
 	}
 	return string(raw), true, nil
@@ -154,7 +156,7 @@ func DetectInstallMethod(ctx context.Context, h, projectRoot string) (string, er
 	if managed := ManagedSystem(ctx, h); managed != "" {
 		return strings.ReplaceAll(strings.ToLower(managed), " ", "-"), nil
 	}
-	if resolved, err := pyResolve(root); err == nil && resolved != nixStore {
+	if resolved, err := pathutil.Resolve(root); err == nil && resolved != nixStore {
 		for dir := filepath.Dir(resolved); ; dir = filepath.Dir(dir) {
 			if dir == nixStore {
 				return "nix", nil
@@ -164,7 +166,7 @@ func DetectInstallMethod(ctx context.Context, h, projectRoot string) (string, er
 			}
 		}
 	}
-	if resolved, err := pyResolve(root); err == nil {
+	if resolved, err := pathutil.Resolve(root); err == nil {
 		if manager := PackageManagerOfPath(filepath.Join(resolved, "icebath")); manager != "" && manager != "nix" {
 			return manager, nil
 		}

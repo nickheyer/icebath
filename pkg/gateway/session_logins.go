@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -169,7 +170,7 @@ func publishLoginInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 	}
 	info, err := localSessionInfo(ctx, a, ref)
 	if err != nil {
-		pkgLog().Debug("session.info after a login change failed: " + pyExceptionRepr(err))
+		pkgLog().Debug("session.info after a login change failed: " + errchain.OSText(err))
 		return
 	}
 	live.EventStream.Publish(ref.SessionID, info, "session.info", nil)

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Launch flags the policy owns mapped to their INI keys
@@ -213,7 +214,7 @@ var (
 )
 
 // Stem of a path like PurePath.stem
-func presetStem(p string) string { return pyPathStem(p) }
+func presetStem(p string) string { return pathStem(p) }
 
 // Launch decision for one staged model, nil with a nil error when its header is unreadable
 func PresetForModel(gguf string, budget HardwareBudget, mtpCapable map[string]bool, requestedWindow int,
@@ -293,7 +294,7 @@ func PresetForModel(gguf string, budget HardwareBudget, mtpCapable map[string]bo
 		return out, nil
 	}
 	for _, s := range entry.Sampling {
-		out.setDefault(s.Key, pyStr(s.Value))
+		out.setDefault(s.Key, anyutil.String(s.Value))
 	}
 	if companions.mmproj != "" {
 		out.set("mmproj", companions.mmproj)
@@ -433,7 +434,7 @@ func AdmittedResidencyCount(modelsDir string, budget HardwareBudget, configured 
 	if live != nil && live.CommitRoomBytes != nil {
 		usable = min(usable, live.UsableVRAMBytes)
 	}
-	return int(max(1, min(int64(configured), pyFloorDiv(usable, largest)))), nil
+	return int(max(1, min(int64(configured), floorDiv(usable, largest)))), nil
 }
 
 // Launch decision of every staged model with unreadable headers skipped
@@ -586,7 +587,7 @@ func presetReadBack(presetPath string, out map[string]*PresetEntry) error {
 		return err
 	}
 	recorded := map[string]map[string]any{}
-	for _, line := range pySplitLines(text) {
+	for _, line := range splitLines(text) {
 		rest, ok := strings.CutPrefix(line, "# "+presetDecisionMarker+" ")
 		if !ok {
 			rest, ok = strings.CutPrefix(line, "# "+legacyPresetDecisionMarker+" ")
@@ -606,9 +607,9 @@ func presetReadBack(presetPath string, out map[string]*PresetEntry) error {
 		if !ok {
 			return errors.New("a preset entry has no model_id")
 		}
-		id := pyStr(rawID)
+		id := anyutil.String(rawID)
 		recorded[id] = fact
-		if pyTruthy(fact["refusal"]) {
+		if anyutil.IsTrue(fact["refusal"]) {
 			entry, err := presetEntryFromFact(fact)
 			if err != nil {
 				return err
@@ -628,7 +629,7 @@ func presetReadBack(presetPath string, out map[string]*PresetEntry) error {
 		_, spilled := keys["override-tensor"]
 		if fact, ok := recorded[section]; ok {
 			if raw, ok := fact["spilled"]; ok {
-				spilled = pyTruthy(raw)
+				spilled = anyutil.IsTrue(raw)
 			}
 		}
 		entry := &PresetEntry{ModelID: section, Window: int(window), Spilled: spilled}
@@ -662,10 +663,10 @@ func presetEntryFromFact(fact map[string]any) (*PresetEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	entry := &PresetEntry{ModelID: pyStr(fact["model_id"]), Window: int(window), Spilled: pyTruthy(fact["spilled"]), Refusal: pyStr(fact["refusal"])}
+	entry := &PresetEntry{ModelID: anyutil.String(fact["model_id"]), Window: int(window), Spilled: anyutil.IsTrue(fact["spilled"]), Refusal: anyutil.String(fact["refusal"])}
 	if keys, ok := fact["keys"].(map[string]any); ok {
 		for k, v := range keys {
-			entry.set(k, pyStr(v))
+			entry.set(k, anyutil.String(v))
 		}
 	}
 	return entry, nil
@@ -676,7 +677,7 @@ func presetSectionKeyOrder(text string) map[string][]string {
 	order := map[string][]string{}
 	var defaults []string
 	current := ""
-	for _, line := range pySplitLines(text) {
+	for _, line := range splitLines(text) {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";") || (len(line) > 0 && (line[0] == ' ' || line[0] == '\t') && current != "") {
 			continue

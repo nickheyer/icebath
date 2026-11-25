@@ -188,7 +188,7 @@ func TestSummarizeToolResultClarify(t *testing.T) {
 		t.Fatalf("sqlite round trip %q %v", back, err)
 	}
 	surrogateAnswer := summarizeToolResult("clarify", "{}", `{"responses": [{"status": "answered", "user_response": "ok \ud83d"}]}`)
-	if surrogateAnswer != `[clarify] user responded: "ok \ud83d"` {
+	if surrogateAnswer != "[clarify] user responded: \"ok �\"" {
 		t.Fatalf("surrogate answer got %q", surrogateAnswer)
 	}
 	for _, content := range []string{

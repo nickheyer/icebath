@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -39,7 +41,7 @@ func UnattendedTurn(ctx context.Context) bool {
 
 // Context binding an admission's finite flag, unattended only when the turn is finite too
 func finiteTurnScope(ctx context.Context, finite any, unattended bool) context.Context {
-	return context.WithValue(ctx, finiteTurnKey{}, finiteTurnState{finite: finite, unattended: pyTruthy(finite) && unattended})
+	return context.WithValue(ctx, finiteTurnKey{}, finiteTurnState{finite: finite, unattended: anyutil.IsTrue(finite) && unattended})
 }
 
 // Wire client of a submission, the connection and session an unattended turn is judged against
@@ -62,7 +64,7 @@ func admitFiniteFor(ctx context.Context, params map[string]any, submitter *finit
 	if hasUnattended && (!isFlag || (flag && params["finite"] != true)) {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	if pyTruthy(unattended) && submitter != nil {
+	if anyutil.IsTrue(unattended) && submitter != nil {
 		allowed, err := mayRunUnattended(ctx, submitter.connection, submitter.ref)
 		if err != nil {
 			return nil, err
@@ -80,7 +82,7 @@ func admitFiniteFor(ctx context.Context, params map[string]any, submitter *finit
 		return nil, runtimeRefusal("invalid_params")
 	}
 	out := jsonutil.ObjectOf("finite", bounded)
-	if pyTruthy(unattended) {
+	if anyutil.IsTrue(unattended) {
 		out.Set("unattended", true)
 	}
 	return out, nil
@@ -95,12 +97,12 @@ func admitFinite(params map[string]any) (*jsonutil.Object, error) {
 func mayRunUnattended(ctx context.Context, connection any, ref SessionRef) (bool, error) {
 	submitter, ok := connection.(unattendedConnection)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: "the session connection has no authority"}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "the session connection has no authority"}
 	}
 	authority := submitter.ConnectionAuthority()
 	live, ok := authority.live(ref.SessionID)
 	if !ok {
-		return false, &pyKeyError{ref.SessionID}
+		return false, &keyError{ref.SessionID}
 	}
 	source := live.Source
 	if !submitter.NativeOwner() || source == nil || source.UserID == nil || *source.UserID != submitter.Actor().Subject {

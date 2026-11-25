@@ -168,7 +168,7 @@ func canonicalRoleIDs(entries strSet) (strSet, error) {
 		}
 		n, err := strconv.ParseInt(strings.TrimSpace(entry), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(entry))
+			return nil, fmt.Errorf("Discord role id %s is not a 64-bit integer", anyutil.Quote(entry))
 		}
 		out[strconv.FormatInt(n, 10)] = struct{}{}
 	}

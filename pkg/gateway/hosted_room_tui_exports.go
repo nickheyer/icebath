@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Every room method the gateway route serves, in wire order
@@ -32,5 +34,5 @@ func StoredRoomAuthority(ctx context.Context, dbPath, roomID string) (string, bo
 	if err != nil {
 		return "", false, err
 	}
-	return pyStrOf(authority), true, nil
+	return anyutil.String(authority), true, nil
 }

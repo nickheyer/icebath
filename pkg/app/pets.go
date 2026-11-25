@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -227,11 +226,7 @@ func (r *petsRun) cmdScale() (int, error) {
 		r.errf("✗ %s", msg)
 		return 1, nil
 	}
-	shown, err := templateutil.Format("{v:g}", map[string]any{"v": scale})
-	if err != nil {
-		return 1, err
-	}
-	r.printf("✓ pet scale set to %s (display.pet.scale)", shown)
+	r.printf("✓ pet scale set to %s (display.pet.scale)", anyutil.String(scale))
 	return 0, nil
 }
 

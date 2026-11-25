@@ -263,7 +263,7 @@ func (m *MemorySetup) getAvailableProviders(ctx context.Context) []setupProvider
 		schema := p.ConfigSchema()
 		secrets, plain := false, false
 		for _, f := range schema {
-			if pyTruthy(f["secret"]) {
+			if anyutil.IsTrue(f["secret"]) {
 				secrets = true
 			} else {
 				plain = true
@@ -364,13 +364,13 @@ func (m *MemorySetup) promptSchemaFields(ctx context.Context, name string, schem
 		return false
 	}
 	for _, field := range schema {
-		key := pyStr(field["key"])
+		key := anyutil.String(field["key"])
 		desc, ok := field["description"]
 		if !ok {
 			desc = key
 		}
 		def := schemaFieldDefault(field, providerConfig)
-		secret := pyTruthy(field["secret"])
+		secret := anyutil.IsTrue(field["secret"])
 		choices, _ := field["choices"].([]any)
 		envVar, _ := field["env_var"].(string)
 		url, _ := field["url"].(string)
@@ -384,9 +384,9 @@ func (m *MemorySetup) promptSchemaFields(ctx context.Context, name string, schem
 				current = def
 			}
 			idx := 0
-			if pyTruthy(current) {
+			if anyutil.IsTrue(current) {
 				for i, c := range choices {
-					if pyEqual(c, current) {
+					if anyutil.Equal(c, current) {
 						idx = i
 						break
 					}
@@ -394,9 +394,9 @@ func (m *MemorySetup) promptSchemaFields(ctx context.Context, name string, schem
 			}
 			items := make([][2]string, len(choices))
 			for i, c := range choices {
-				items[i] = [2]string{pyStr(c), ""}
+				items[i] = [2]string{anyutil.String(c), ""}
 			}
-			sel, err := m.cursesSelect(ctx, "  "+pyStr(desc), items, idx, setupCancelled)
+			sel, err := m.cursesSelect(ctx, "  "+anyutil.String(desc), items, idx, setupCancelled)
 			if err != nil {
 				return false, err
 			}
@@ -417,12 +417,12 @@ func (m *MemorySetup) promptSchemaFields(ctx context.Context, name string, schem
 				if r := []rune(existing); len(r) > 4 {
 					masked = "..." + string(r[len(r)-4:])
 				}
-				val, err = m.prompt(fmt.Sprintf("%s (current: %s, blank to keep)", pyStr(desc), masked), "", true)
+				val, err = m.prompt(fmt.Sprintf("%s (current: %s, blank to keep)", anyutil.String(desc), masked), "", true)
 			} else {
 				if url != "" {
 					m.printf("  Get yours at %s\n", url)
 				}
-				val, err = m.prompt(pyStr(desc), "", true)
+				val, err = m.prompt(anyutil.String(desc), "", true)
 			}
 			if err != nil {
 				return false, err
@@ -432,14 +432,14 @@ func (m *MemorySetup) promptSchemaFields(ctx context.Context, name string, schem
 			}
 		default:
 			effective := providerConfig[key]
-			if !pyTruthy(effective) {
+			if !anyutil.IsTrue(effective) {
 				effective = def
 			}
 			defText := ""
-			if pyTruthy(effective) {
-				defText = pyStr(effective)
+			if anyutil.IsTrue(effective) {
+				defText = anyutil.String(effective)
 			}
-			val, err := m.prompt(pyStr(desc), defText, false)
+			val, err := m.prompt(anyutil.String(desc), defText, false)
 			if err != nil {
 				return false, err
 			}
@@ -463,14 +463,12 @@ func dictGet(m map[string]any, key string, def any) any {
 
 func whenMatches(cfg, when map[string]any) bool {
 	for k, v := range when {
-		if !pyEqual(cfg[k], v) {
+		if !anyutil.Equal(cfg[k], v) {
 			return false
 		}
 	}
 	return true
 }
-
-func pyEqual(a, b any) bool { return anyutil.Quote(a) == anyutil.Quote(b) }
 
 // Interactive provider picker and schema walk that saves activation, provider config and secrets
 func (m *MemorySetup) CmdSetup(ctx context.Context) error {
@@ -563,7 +561,7 @@ func (m *MemorySetup) writeEnvVars(ctx context.Context, writes []envWrite, iceba
 }
 
 func setupMark(enabled any) string {
-	if pyTruthy(enabled) {
+	if anyutil.IsTrue(enabled) {
 		return "enabled \u2713"
 	}
 	return "disabled \u2717"
@@ -614,7 +612,11 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 		if dm, ok := display.(map[string]any); ok && len(dm) > 0 {
 			m.printf("\n  %s config:\n", providerName)
 			for _, k := range config.MappingKeys(dm) {
-				m.printf("    %s: %s\n", k, anyutil.String(dm[k]))
+				shown := "null"
+				if dm[k] != nil {
+					shown = anyutil.String(dm[k])
+				}
+				m.printf("    %s: %s\n", k, shown)
 			}
 		}
 		if parked, ok := ParkedProviderNotice(ctx, m.Env, providerName); ok && parked != "" {
@@ -627,14 +629,14 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 				m.printf("  Status:    not available \u2717\n")
 				var required []map[string]any
 				for _, f := range p.ConfigSchema() {
-					if pyTruthy(f["env_var"]) {
+					if anyutil.IsTrue(f["env_var"]) {
 						required = append(required, f)
 					}
 				}
 				if len(required) > 0 {
 					m.printf("  Missing:\n")
 					for _, f := range required {
-						envVar := pyStr(f["env_var"])
+						envVar := anyutil.String(f["env_var"])
 						url, _ := f["url"].(string)
 						set := os.Getenv(envVar) != ""
 						mark := "\u2717"

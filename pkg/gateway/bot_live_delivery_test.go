@@ -142,7 +142,7 @@ func TestTicketShapeErrorNamesTheDefect(t *testing.T) {
 		t.Fatal(problem)
 	}
 	bad := ticket("", "lost", nil)
-	if problem := ticketShapeError(filepath.Join(root, testDeliveryID+".json"), bad); problem != "unknown status 'lost'" {
+	if problem := ticketShapeError(filepath.Join(root, testDeliveryID+".json"), bad); problem != `unknown status "lost"` {
 		t.Fatal(problem)
 	}
 	bad = ticket("", "queued", map[string]any{"created_at": true})

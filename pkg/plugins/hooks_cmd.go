@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
@@ -116,7 +115,7 @@ func hookMtimeDrift(spec *ShellHookSpec, entry map[string]any) (int, string, str
 	now, _ := ShellHookScriptMtimeISO(spec.Command)
 	rawAt := entry["script_mtime_at_approval"]
 	at := anyutil.String(rawAt)
-	if now == "" || !config.PyTruthy(rawAt) {
+	if now == "" || !anyutil.IsTrue(rawAt) {
 		return -1, at, now, nil
 	}
 	atText, ok := rawAt.(string)

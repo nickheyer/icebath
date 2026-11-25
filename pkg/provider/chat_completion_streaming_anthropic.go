@@ -135,6 +135,9 @@ func (s *anthSDKMessageStream) errorEvent(data string) error {
 	message := data
 	if parsed, err := jsonutil.Decode(data); err == nil {
 		body, message = jsonutil.Plain(parsed), anyutil.String(parsed)
+		if parsed == nil {
+			message = "null"
+		}
 	} else if data == "" {
 		message = fmt.Sprintf("Error code: %d", s.resp.StatusCode)
 	}

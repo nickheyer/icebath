@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Converse stopReason mapped to the OpenAI finish reason, unknown values meaning stop
@@ -52,7 +53,7 @@ func bedrockEncodeRedacted(redacted any) (string, bool) {
 
 // Tool call with the input dumped as Python json text
 func bedrockToolCall(id, name, input any) state.ToolCall {
-	return state.ToolCall{ID: pyStr(id), Type: "function", Function: state.ToolCallFunction{Name: pyStr(name), Arguments: bedrockPyDumps(input)}}
+	return state.ToolCall{ID: anyutil.String(id), Type: "function", Function: state.ToolCallFunction{Name: anyutil.String(name), Arguments: bedrockPyDumps(input)}}
 }
 
 // Anthropic shaped thinking and redacted thinking records of the ordered reasoning blocks
@@ -105,7 +106,7 @@ func (p *bedrockResponseParts) absorbReasoning(raw any, block map[string]any, on
 		reasoning = merged
 	}
 	if text := reasoning["text"]; truthy(text) {
-		s := pyStr(text)
+		s := anyutil.String(text)
 		if onText != nil {
 			if err := onText(s); err != nil {
 				return err
@@ -140,7 +141,7 @@ func (p *bedrockResponseParts) build(ordered []any, usage map[string]any, stopRe
 	for _, item := range ordered {
 		block, _ := asMap(item)
 		if reasoning, ok := asMap(block["reasoningContent"]); ok && truthy(reasoning["text"]) {
-			texts = append(texts, pyStr(reasoning["text"]))
+			texts = append(texts, anyutil.String(reasoning["text"]))
 		}
 	}
 	out.ReasoningContent = strings.Join(texts, "\n\n")
@@ -181,7 +182,7 @@ func bedrockTextOf(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Converse response as the OpenAI shaped answer with ordered blocks and reasoning details
@@ -207,14 +208,14 @@ func normalizeConverseResponse(response map[string]any) *bedrockConverseResult {
 			}
 		} else if raw, has := block["toolUse"]; has {
 			tu, _ := asMap(raw)
-			id, name, input := pyGetAny(tu, "toolUseId", ""), pyGetAny(tu, "name", ""), pyGetAny(tu, "input", map[string]any{})
+			id, name, input := getAny(tu, "toolUseId", ""), getAny(tu, "name", ""), getAny(tu, "input", map[string]any{})
 			ordered = append(ordered, bedrockToolUseBlock(id, name, input))
 			parts.toolCalls = append(parts.toolCalls, bedrockToolCall(id, name, input))
 		}
 	}
 	usage, _ := asMap(response["usage"])
-	stop := pyGetStr(response, "stopReason", "end_turn")
-	return parts.build(ordered, usage, stop, pyGetStr(response, "modelId", ""))
+	stop := getStr(response, "stopReason", "end_turn")
+	return parts.build(ordered, usage, stop, getStr(response, "modelId", ""))
 }
 
 // Callbacks of a streamed Converse answer, an error from any of them aborting the stream
@@ -307,12 +308,12 @@ func streamConverseWithCallbacks(next bedrockEventSource, cb bedrockStreamCallba
 			startEvent, _ := asMap(raw)
 			idx := blockIndex(startEvent, true)
 			current, hasCurrent = idx, true
-			start, _ := asMap(pyGetAny(startEvent, "start", map[string]any{}))
+			start, _ := asMap(getAny(startEvent, "start", map[string]any{}))
 			if tu, has := start["toolUse"]; has {
 				hasToolUse = true
 				flushText()
 				t, _ := asMap(tu)
-				tool = map[string]string{"toolUseId": pyGetStr(t, "toolUseId", ""), "name": pyGetStr(t, "name", ""), "input_json": ""}
+				tool = map[string]string{"toolUseId": getStr(t, "toolUseId", ""), "name": getStr(t, "name", ""), "input_json": ""}
 				blocks[idx] = bedrockToolUseBlock(tool["toolUseId"], tool["name"], map[string]any{})
 				if cb.OnToolStart != nil {
 					if err := cb.OnToolStart(len(parts.toolCalls), tool["toolUseId"], tool["name"]); err != nil {
@@ -324,7 +325,7 @@ func streamConverseWithCallbacks(next bedrockEventSource, cb bedrockStreamCallba
 			deltaEvent, _ := asMap(raw)
 			idx := blockIndex(deltaEvent, false)
 			current, hasCurrent = idx, true
-			delta, _ := asMap(pyGetAny(deltaEvent, "delta", map[string]any{}))
+			delta, _ := asMap(getAny(deltaEvent, "delta", map[string]any{}))
 			if rawText, has := delta["text"]; has {
 				text := bedrockTextOf(rawText)
 				block, ok := blocks[idx]
@@ -342,11 +343,11 @@ func streamConverseWithCallbacks(next bedrockEventSource, cb bedrockStreamCallba
 				}
 			} else if rawTool, has := delta["toolUse"]; has && tool != nil {
 				t, _ := asMap(rawTool)
-				tool["input_json"] += pyGetStr(t, "input", "")
+				tool["input_json"] += getStr(t, "input", "")
 			} else if rawReasoning, has := delta["reasoningContent"]; has {
 				reasoning, ok := asMap(rawReasoning)
 				encoded, _ := bedrockEncodeRedacted(reasoning["redactedContent"])
-				if ok && (truthy(pyGetAny(reasoning, "text", "")) || truthy(reasoning["signature"]) || encoded != "") {
+				if ok && (truthy(getAny(reasoning, "text", "")) || truthy(reasoning["signature"]) || encoded != "") {
 					block, ok := blocks[idx]
 					if !ok {
 						block = map[string]any{"reasoningContent": map[string]any{}}
@@ -386,13 +387,13 @@ func streamConverseWithCallbacks(next bedrockEventSource, cb bedrockStreamCallba
 			}
 		} else if raw, has := event["messageStop"]; has {
 			stop, _ := asMap(raw)
-			stopReason, hasStop = pyGetStr(stop, "stopReason", "end_turn"), true
+			stopReason, hasStop = getStr(stop, "stopReason", "end_turn"), true
 		} else if raw, has := event["metadata"]; has {
 			meta, _ := asMap(raw)
-			metaUsage, _ := asMap(pyGetAny(meta, "usage", map[string]any{}))
+			metaUsage, _ := asMap(getAny(meta, "usage", map[string]any{}))
 			usage = map[string]any{}
 			for _, k := range []string{"inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens"} {
-				usage[k] = pyGetAny(metaUsage, k, 0)
+				usage[k] = getAny(metaUsage, k, 0)
 			}
 		}
 	}

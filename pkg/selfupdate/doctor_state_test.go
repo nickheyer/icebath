@@ -123,7 +123,7 @@ func TestCronStoreCheckReportsWritabilityAndLowSpace(t *testing.T) {
 		issues     []string
 	}{
 		{"writable", nil, 50 << 30, "store is writable", nil},
-		{"enospc", syscall.ENOSPC, 50 << 30, "NOT writable (ENOSPC", []string{"is not writable"}},
+		{"enospc", syscall.ENOSPC, 50 << 30, "NOT writable (no space left on device)", []string{"is not writable"}},
 		{"low-space", nil, 10 << 20, "free — cron jobs stop when it fills", []string{"Free disk space"}},
 		{"root-reserved-blocks", nil, (1 << 20) * 4096, "store is writable", nil},
 	} {

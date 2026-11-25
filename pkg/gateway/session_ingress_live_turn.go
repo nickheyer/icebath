@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -31,7 +32,7 @@ var (
 func liveTurnRunner(runner AuthorityRunner) (LiveTurnRunner, error) {
 	live, ok := runner.(LiveTurnRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot answer a running turn", runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot answer a running turn", runner)}
 	}
 	return live, nil
 }

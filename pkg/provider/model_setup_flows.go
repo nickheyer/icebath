@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -228,7 +229,7 @@ func modelFlowMoA(r *ModelFlowRun) error {
 		agg, _ := preset["aggregator"].(map[string]any)
 		aggLabel := ""
 		if len(agg) > 0 {
-			aggLabel = fmt.Sprintf("%s:%s", pyStr(agg["provider"]), pyStr(agg["model"]))
+			aggLabel = fmt.Sprintf("%s:%s", anyutil.String(agg["provider"]), anyutil.String(agg["model"]))
 		}
 		refs, _ := preset["reference_models"].([]any)
 		suffix := ""
@@ -266,8 +267,8 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	if err != nil {
 		return err
 	}
-	pyDictSet(model, "default", selectedName)
-	pyDictSet(model, "provider", "moa")
+	dictSet(model, "default", selectedName)
+	dictSet(model, "provider", "moa")
 	clearModelEndpointCredentials(model, true, true, false)
 	delete(model, "base_url")
 	if err := commitModelConfig(r.Env, cfg); err != nil {
@@ -282,10 +283,10 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	refs, _ := preset["reference_models"].([]any)
 	for i, slot := range refs {
 		m, _ := slot.(map[string]any)
-		fmt.Fprintf(r.Out, "    %d. %s:%s\n", i+1, pyStr(m["provider"]), pyStr(m["model"]))
+		fmt.Fprintf(r.Out, "    %d. %s:%s\n", i+1, anyutil.String(m["provider"]), anyutil.String(m["model"]))
 	}
 	agg, _ := preset["aggregator"].(map[string]any)
-	fmt.Fprintf(r.Out, "  Aggregator:  %s:%s  (acting model — runs every step and carries almost all of the cost)\n", pyStr(agg["provider"]), pyStr(agg["model"]))
+	fmt.Fprintf(r.Out, "  Aggregator:  %s:%s  (acting model — runs every step and carries almost all of the cost)\n", anyutil.String(agg["provider"]), anyutil.String(agg["model"]))
 	return nil
 }
 
@@ -489,7 +490,7 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 	currentBase := envBaseURLFn(r, baseURLEnv)
 	if currentBase == "" {
 		if modelCfg, ok := r.Config["model"].(map[string]any); ok {
-			currentBase = strings.TrimSpace(pyOrStr(modelCfg["base_url"]))
+			currentBase = strings.TrimSpace(anyutil.StringOr(modelCfg["base_url"], ""))
 		}
 	}
 	regionBase := currentBase
@@ -553,7 +554,7 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 			copied[k] = v
 		}
 		config.SetMappingKeys(copied, config.MappingKeys(model))
-		pyDictSet(r.Config, "model", copied)
+		dictSet(r.Config, "model", copied)
 	}
 	return nil
 }
@@ -579,7 +580,7 @@ func modelFlowVertex(r *ModelFlowRun) error {
 		return err
 	}
 	vertexCfg, _ := cfg["vertex"].(map[string]any)
-	currentProject := strings.TrimSpace(pyOrStr(vertexCfg["project_id"]))
+	currentProject := strings.TrimSpace(anyutil.StringOr(vertexCfg["project_id"], ""))
 	shown := currentProject
 	if shown == "" {
 		shown = "from credentials"
@@ -593,8 +594,8 @@ func modelFlowVertex(r *ModelFlowRun) error {
 		projectID = currentProject
 	}
 	currentRegion := "global"
-	if pyTruthy(vertexCfg["region"]) {
-		currentRegion = pyStr(vertexCfg["region"])
+	if anyutil.IsTrue(vertexCfg["region"]) {
+		currentRegion = anyutil.String(vertexCfg["region"])
 	}
 	if currentRegion = strings.TrimSpace(currentRegion); currentRegion == "" {
 		currentRegion = "global"
@@ -619,8 +620,8 @@ func modelFlowVertex(r *ModelFlowRun) error {
 	selected, _ := flowPromptModelSelectionFn(r.Env, r.Out, ModelSelectionPrompt{ModelIDs: modelList, CurrentModel: r.CurrentModel, ConfirmProvider: "vertex", ConfirmBaseURL: baseURLPreview})
 	finish := func(cfg config.Tree, _ map[string]any) {
 		vcfg := ensureDictSection(cfg, "vertex")
-		pyDictSet(vcfg, "project_id", projectID)
-		pyDictSet(vcfg, "region", region)
+		dictSet(vcfg, "project_id", projectID)
+		dictSet(vcfg, "region", region)
 	}
 	_, err = finishModelFn(r.Env, r.Out, selected, "vertex", fmt.Sprintf("  Default model set to: %s (via Google Vertex AI, %s)", selected, region), "  No change.",
 		persistModelOptions{DropBaseURL: true, DropAPIMode: true, Finish: finish})
@@ -784,8 +785,8 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 	currentBase := envBaseURLFn(r, baseURLEnv)
 	if currentBase == "" {
 		if cfg, cerr := r.loadConfig(); cerr == nil {
-			if m, ok := cfg["model"].(map[string]any); ok && strings.ToLower(strings.TrimSpace(pyOrStr(m["provider"]))) == providerID {
-				currentBase = strings.TrimSpace(pyOrStr(m["base_url"]))
+			if m, ok := cfg["model"].(map[string]any); ok && strings.ToLower(strings.TrimSpace(anyutil.StringOr(m["provider"], ""))) == providerID {
+				currentBase = strings.TrimSpace(anyutil.StringOr(m["base_url"], ""))
 			}
 		}
 	}
@@ -794,8 +795,8 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 		effectiveBase = pconfig.BaseURL
 	}
 	if providerID == "actual" {
-		if modelCfg, ok := r.Config["model"].(map[string]any); ok && NormalizeProvider(pyOrStr(modelCfg["provider"])) == providerID {
-			if configured := strings.TrimSpace(pyOrStr(modelCfg["base_url"])); configured != "" {
+		if modelCfg, ok := r.Config["model"].(map[string]any); ok && NormalizeProvider(anyutil.StringOr(modelCfg["provider"], "")) == providerID {
+			if configured := strings.TrimSpace(anyutil.StringOr(modelCfg["base_url"], "")); configured != "" {
 				effectiveBase = configured
 			}
 		}

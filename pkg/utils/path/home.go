@@ -41,6 +41,15 @@ func ExpandUserPath(p string) (string, error) {
 	return filepath.Clean(out), nil
 }
 
+// CleanKeepDotDot form of p with a leading ~ or ~name replaced by that user's home directory, so a dot-dot after a symlink still names what the system opens; an error wrapping ErrNoHome when that home cannot be found
+func ExpandUserKeepDotDot(p string) (string, error) {
+	out, err := expandUser(p)
+	if err != nil {
+		return "", err
+	}
+	return CleanKeepDotDot(out), nil
+}
+
 func expandUser(p string) (string, error) {
 	if !strings.HasPrefix(p, "~") {
 		return p, nil

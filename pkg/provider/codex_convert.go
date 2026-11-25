@@ -200,7 +200,7 @@ func leakedToolCallText(text string) bool {
 	if loc == nil {
 		return false
 	}
-	lead := pySplitLines(strings.TrimSpace(text[:loc[0]]))
+	lead := splitLines(strings.TrimSpace(text[:loc[0]]))
 	if len(lead) == 0 {
 		return false
 	}
@@ -208,7 +208,7 @@ func leakedToolCallText(text string) bool {
 }
 
 // Python str.splitlines without keepends
-func pySplitLines(s string) []string {
+func splitLines(s string) []string {
 	if s == "" {
 		return nil
 	}
@@ -825,7 +825,7 @@ type codexConvertOptions struct {
 func replayReasoningItems(msg *codexMsg, seen map[string]bool, opts codexConvertOptions) []map[string]any {
 	var replayed []map[string]any
 	for _, ri := range msg.reasoningItems {
-		if !pyTruthy(ri["encrypted_content"]) {
+		if !anyutil.IsTrue(ri["encrypted_content"]) {
 			continue
 		}
 		itemID := stringOf(ri["id"])
@@ -1255,7 +1255,7 @@ func preflightMessage(item map[string]any, idx int, ctx *codexPreflightCtx) (map
 		}
 		pt, _ := part["type"].(string)
 		if !codexOutputTextTypes[pt] {
-			return nil, fmt.Errorf("Codex Responses input[%d] message content[%d] has unsupported type %s.", idx, partIdx, pyRepr(part["type"]))
+			return nil, fmt.Errorf("Codex Responses input[%d] message content[%d] has unsupported type %s.", idx, partIdx, anyutil.Quote(part["type"]))
 		}
 		text := ""
 		if t, has := part["text"]; has {
@@ -1269,25 +1269,11 @@ func preflightMessage(item map[string]any, idx int, ctx *codexPreflightCtx) (map
 	return assistantMessageItem(item, normalized, ctx.dropReplayItemIDs, ""), nil
 }
 
-// Python repr of a scalar for error messages
-func pyRepr(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "None"
-	case string:
-		if strings.Contains(t, "'") && !strings.Contains(t, `"`) {
-			return `"` + t + `"`
-		}
-		return "'" + strings.ReplaceAll(t, "'", `\'`) + "'"
-	}
-	return strOrEmpty(v)
-}
-
 // User or assistant role message with string content or Responses parts validated and retyped
 func preflightRoleMessage(item map[string]any, idx int, ctx *codexPreflightCtx) (map[string]any, error) {
 	role, _ := item["role"].(string)
 	if role != "user" && role != "assistant" {
-		return nil, fmt.Errorf("Codex Responses input[%d] has unsupported item shape (type=%s, role=%s).", idx, pyRepr(item["type"]), pyRepr(item["role"]))
+		return nil, fmt.Errorf("Codex Responses input[%d] has unsupported item shape (type=%s, role=%s).", idx, anyutil.Quote(item["type"]), anyutil.Quote(item["role"]))
 	}
 	content, has := item["content"]
 	if !has {
@@ -1321,7 +1307,7 @@ func preflightRoleMessage(item map[string]any, idx int, ctx *codexPreflightCtx) 
 			case codexImagePartTypes[pt]:
 				validated = append(validated, inputImagePart(part, role, true))
 			default:
-				return nil, fmt.Errorf("Codex Responses input[%d].content[%d] has unsupported type %s.", idx, partIdx, pyRepr(part["type"]))
+				return nil, fmt.Errorf("Codex Responses input[%d].content[%d] has unsupported type %s.", idx, partIdx, anyutil.Quote(part["type"]))
 			}
 		default:
 			return nil, fmt.Errorf("Codex Responses input[%d].content[%d] must be an object or string.", idx, partIdx)
@@ -1392,7 +1378,7 @@ func preflightTool(tool any, idx int) (map[string]any, error) {
 		return out, nil
 	}
 	if toolType != "function" {
-		return nil, fmt.Errorf("Codex Responses tools[%d] has unsupported type %s.", idx, pyRepr(t["type"]))
+		return nil, fmt.Errorf("Codex Responses tools[%d] has unsupported type %s.", idx, anyutil.Quote(t["type"]))
 	}
 	name, params := t["name"], t["parameters"]
 	if !nonblank(name) {
@@ -1413,36 +1399,9 @@ func preflightTool(tool any, idx int) (map[string]any, error) {
 	}
 	strict := false
 	if s, has := t["strict"]; has {
-		strict = pyTruthy(s)
+		strict = anyutil.IsTrue(s)
 	}
 	return map[string]any{"type": "function", "name": strings.TrimSpace(name.(string)), "description": desc, "strict": strict, "parameters": params}, nil
-}
-
-// Python truthiness of a JSON value
-func pyTruthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case float64:
-		return t != 0
-	case int:
-		return t != 0
-	case int64:
-		return t != 0
-	case []any:
-		return len(t) > 0
-	case []map[string]any:
-		return len(t) > 0
-	case map[string]any:
-		return len(t) > 0
-	case *jsonutil.Object:
-		return t != nil && t.Len() > 0
-	}
-	return true
 }
 
 // Finite positive number from any JSON numeric shape
@@ -1771,7 +1730,7 @@ func formatResponsesError(errObj any, status string) string {
 		if s, ok := v.(string); ok {
 			return strings.TrimSpace(s)
 		}
-		if pyTruthy(v) {
+		if anyutil.IsTrue(v) {
 			return strings.TrimSpace(strOrEmpty(v))
 		}
 		return ""
@@ -1786,7 +1745,7 @@ func formatResponsesError(errObj any, status string) string {
 	if code != "" {
 		return code
 	}
-	if pyTruthy(errObj) {
+	if anyutil.IsTrue(errObj) {
 		return strOrEmpty(errObj)
 	}
 	return fmt.Sprintf("Responses API returned status '%s'", status)
@@ -1998,7 +1957,7 @@ func normalizeCodexResponse(resp map[string]any, issuerKind, issuerModel string,
 		if len(snippet) > 300 {
 			snippet = snippet[:300]
 		}
-		pkgLog().Warn("Codex response contains leaked tool-call text in assistant content (no structured function_call items). Treating as incomplete so the continuation path can re-elicit a proper tool call. Leaked snippet: " + pyRepr(snippet))
+		pkgLog().Warn("Codex response contains leaked tool-call text in assistant content (no structured function_call items). Treating as incomplete so the continuation path can re-elicit a proper tool call. Leaked snippet: " + anyutil.Quote(snippet))
 		finalText = ""
 	}
 	if issuerKind == "xai_responses" && finalText == "" && len(toolCalls) == 0 && len(reasoningParts) > 0 {
@@ -2278,7 +2237,7 @@ func extractItemText(item map[string]any) (string, bool) {
 			if part, ok := p.(map[string]any); ok {
 				var first any
 				for _, k := range []string{"text", "input_text", "output_text"} {
-					if pyTruthy(part[k]) {
+					if anyutil.IsTrue(part[k]) {
 						first = part[k]
 						break
 					}
@@ -2416,7 +2375,7 @@ func isCompactionSummaryMessage(m *state.Message) bool {
 
 // Reports whether a Responses item is a compaction summary by flag or content
 func isCompactionSummaryItem(item map[string]any) bool {
-	if pyTruthy(item["_compressed_summary"]) {
+	if anyutil.IsTrue(item["_compressed_summary"]) {
 		return true
 	}
 	return state.IsContextSummaryContent(item["content"])

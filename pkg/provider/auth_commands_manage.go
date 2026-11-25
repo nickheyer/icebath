@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // icebath auth list, every pooled provider or the one named, free tier rows rendered as the upgrade hint
@@ -89,7 +90,7 @@ func (c *authCLI) remove() error {
 	}
 	removed, ok := pool.RemoveIndex(index)
 	if !ok {
-		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", pyStr(target), provider))
+		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", anyutil.String(target), provider))
 	}
 	fmt.Fprintf(c.out, "Removed %s credential #%d (%s)\n", provider, index, removed.Label)
 	if next, repinned := repinDefaultAfterRemoval(c.env, provider, removed); repinned {
@@ -123,18 +124,18 @@ func (c *authCLI) reset() error {
 	provider := c.normalizeProvider(authTextOr(c.ns["provider"]))
 	target := c.ns["target"]
 	pool := LoadPool(c.env, provider)
-	if target == nil || strings.TrimSpace(pyStr(target)) == "" {
+	if target == nil || strings.TrimSpace(anyutil.String(target)) == "" {
 		count := pool.ResetStatuses()
 		fmt.Fprintf(c.out, "Reset status on %d %s credentials\n", count, provider)
 		return nil
 	}
-	index, matched, errText := pool.ResolveTarget(pyStr(target))
+	index, matched, errText := pool.ResolveTarget(anyutil.String(target))
 	if index == 0 {
 		return authExit(fmt.Sprintf("%s Provider: %s.", errText, provider))
 	}
 	cleared, ok := pool.ResetStatus(matched.ID)
 	if !ok {
-		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", pyStr(target), provider))
+		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", anyutil.String(target), provider))
 	}
 	fmt.Fprintf(c.out, "Reset status on %s credential #%d (%s)\n", provider, index, cleared.Label)
 	return nil
@@ -154,7 +155,7 @@ func (c *authCLI) refresh() error {
 	}
 	var index int
 	var matched PooledCredential
-	if target == nil || strings.TrimSpace(pyStr(target)) == "" {
+	if target == nil || strings.TrimSpace(anyutil.String(target)) == "" {
 		if len(entries) != 1 {
 			return authExit(fmt.Sprintf("%s has %d credentials; pass an index, entry id, or exact "+
 				"label (see `icebath auth list %s`).", provider, len(entries), provider))
@@ -162,7 +163,7 @@ func (c *authCLI) refresh() error {
 		index, matched = 1, entries[0]
 	} else {
 		var errText string
-		index, matched, errText = pool.ResolveTarget(pyStr(target))
+		index, matched, errText = pool.ResolveTarget(anyutil.String(target))
 		if index == 0 {
 			return authExit(fmt.Sprintf("%s Provider: %s.", errText, provider))
 		}
@@ -215,10 +216,10 @@ func (c *authCLI) status() error {
 	}
 	status := GetAuthStatus(c.env, provider)
 	c.printOAuthHealNotices()
-	if !pyTruthy(status["logged_in"]) {
+	if !anyutil.IsTrue(status["logged_in"]) {
 		line := provider + ": logged out"
-		if reason := status["error"]; pyTruthy(reason) {
-			line += fmt.Sprintf(" (%s)", pyStr(reason))
+		if reason := status["error"]; anyutil.IsTrue(reason) {
+			line += fmt.Sprintf(" (%s)", anyutil.String(reason))
 		}
 		fmt.Fprintln(c.out, line)
 		if ExternalLoginProviders[provider] {
@@ -228,8 +229,8 @@ func (c *authCLI) status() error {
 	}
 	fmt.Fprintf(c.out, "%s: logged in\n", provider)
 	for _, key := range []string{"auth_type", "client_id", "redirect_uri", "scope", "expires_at", "api_base_url"} {
-		if value := status[key]; pyTruthy(value) {
-			fmt.Fprintf(c.out, "  %s: %s\n", key, pyStr(value))
+		if value := status[key]; anyutil.IsTrue(value) {
+			fmt.Fprintf(c.out, "  %s: %s\n", key, anyutil.String(value))
 		}
 	}
 	return nil
@@ -318,7 +319,7 @@ func authStrings(v any) []string {
 		return t
 	case []any:
 		for _, item := range t {
-			out = append(out, pyStr(item))
+			out = append(out, anyutil.String(item))
 		}
 	}
 	return out
@@ -344,7 +345,7 @@ func (c *authCLI) printAzureEntraStatus() {
 	fmt.Fprintf(c.out, "  Scope: %s\n", scope)
 	info := DescribeActiveEntraCredential(c.ctx, &EntraIdentityConfig{Scope: scope}, "", 10*time.Second)
 	envSources := authStrings(info["env_sources"])
-	if pyTruthy(info["ok"]) {
+	if anyutil.IsTrue(info["ok"]) {
 		source := "default chain"
 		if len(envSources) > 0 {
 			source = strings.Join(envSources, ", ")
@@ -356,8 +357,8 @@ func (c *authCLI) printAzureEntraStatus() {
 			errText = "credential chain exhausted"
 		}
 		fmt.Fprintf(c.out, "  Status: ⚠ %s\n", errText)
-		if pyTruthy(info["hint"]) {
-			fmt.Fprintf(c.out, "  Hint: %s\n", pyStr(info["hint"]))
+		if anyutil.IsTrue(info["hint"]) {
+			fmt.Fprintf(c.out, "  Hint: %s\n", anyutil.String(info["hint"]))
 		}
 	}
 	fmt.Fprintln(c.out)

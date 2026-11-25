@@ -71,7 +71,7 @@ func FormatMessage(content string) string {
 		text = strings.ReplaceAll(text, keys[i], protectedSpans[keys[i]])
 	}
 	var out strings.Builder
-	for idx, seg := range pySplitKeep(codeSpanSplitRE, text) {
+	for idx, seg := range splitKeep(codeSpanSplitRE, text) {
 		if idx%2 == 1 {
 			out.WriteString(seg)
 			continue
@@ -83,7 +83,7 @@ func FormatMessage(content string) string {
 }
 
 // Segments between matches with each first group kept in between, the re.split of a capturing pattern
-func pySplitKeep(re *regexp2.Regexp, text string) []string {
+func splitKeep(re *regexp2.Regexp, text string) []string {
 	runes := []rune(text)
 	var parts []string
 	last := 0

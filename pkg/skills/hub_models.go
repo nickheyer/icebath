@@ -14,8 +14,8 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
-	"golang.org/x/text/cases"
 )
 
 // Search result metadata of one registry skill
@@ -166,7 +166,7 @@ func (b SourceBase) TrustLevelFor(string) string {
 // Empty revision so update checks take the full fetch path
 func (b SourceBase) CurrentRevision(context.Context, string) (string, error) { return "", nil }
 
-var hubFrontmatterEnd = pyMust(`\n---\s*\n`)
+var hubFrontmatterEnd = must(`\n---\s*\n`)
 
 // YAML frontmatter mapping of a SKILL.md, empty when absent or invalid
 func hubParseFrontmatter(content string) map[string]any {
@@ -215,7 +215,7 @@ func hubTags(fm map[string]any) any {
 func sourceURLForBundle(b *SkillBundle) string {
 	if b.Metadata != nil {
 		for _, key := range []string{"source_url", "url"} {
-			if v, ok := b.Metadata.Get(key); ok && pyTruthyJSON(v) {
+			if v, ok := b.Metadata.Get(key); ok && truthyJSON(v) {
 				return anyutil.String(v)
 			}
 		}
@@ -286,17 +286,17 @@ func normalizeLockInstallPath(installPath, skillName string) (string, error) {
 
 var (
 	allowedSupportDirs   = map[string]bool{"references": true, "templates": true, "scripts": true, "assets": true, "examples": true}
-	localLinkRe          = pyMust(`(?m)(?:\]\(|` + "`" + `|(?:^|[\s"']))((?:references|templates|scripts|assets|examples)/[^\s)` + "`" + `"'<>]+)`)
-	suspiciousLocalRefRe = pyMust(`(?:references|templates|scripts|assets|examples)/(?:[^\s)` + "`" + `"'<>]*/)?\.\.(?:/|$)`)
-	valuelessQueryFlagRe = pyMust(`(?:[A-Za-z0-9_~-]|%[0-9A-Fa-f]{2})+\Z`)
-	samedirLinkRe        = pyMust(`\]\(([^)\s"'<>]+)`)
-	samedirNameRe        = pyMust(`^(?:\./)?[A-Za-z0-9][A-Za-z0-9._-]*$`)
-	globCharRe           = pyMust(`[*?<>]`)
-	alnumEndRe           = pyMust(`[A-Za-z0-9]$`)
+	localLinkRe          = must(`(?m)(?:\]\(|` + "`" + `|(?:^|[\s"']))((?:references|templates|scripts|assets|examples)/[^\s)` + "`" + `"'<>]+)`)
+	suspiciousLocalRefRe = must(`(?:references|templates|scripts|assets|examples)/(?:[^\s)` + "`" + `"'<>]*/)?\.\.(?:/|$)`)
+	valuelessQueryFlagRe = must(`(?:[A-Za-z0-9_~-]|%[0-9A-Fa-f]{2})+\Z`)
+	samedirLinkRe        = must(`\]\(([^)\s"'<>]+)`)
+	samedirNameRe        = must(`^(?:\./)?[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	globCharRe           = must(`[*?<>]`)
+	alnumEndRe           = must(`[A-Za-z0-9]$`)
 )
 
 // Python pattern compiled with Python matching semantics, panicking on an invalid pattern
-func pyMust(p string) *regexp2.Regexp {
+func must(p string) *regexp2.Regexp {
 	re, err := regexutil.Compile(p)
 	if err != nil {
 		panic(err)
@@ -305,16 +305,16 @@ func pyMust(p string) *regexp2.Regexp {
 }
 
 // Pattern compiled through pyre with its Python group names kept for group lookups
-type pyNamedRe struct {
+type namedRe struct {
 	*regexp2.Regexp
 }
 
-func pyMustNamed(p string) pyNamedRe {
-	return pyNamedRe{pyMust(p)}
+func mustNamed(p string) namedRe {
+	return namedRe{must(p)}
 }
 
 // Text of the named group in the match, empty when the group took no part
-func (r pyNamedRe) group(m *regexp2.Match, name string) string {
+func (r namedRe) group(m *regexp2.Match, name string) string {
 	return regexutil.NamedGroup(m, name)
 }
 
@@ -395,7 +395,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 			pkgLog().Warn("SKILL.md links outside the skill directory; installing without it", "link", raw)
 			continue
 		}
-		if strings.Contains(name, "/") || cases.Fold().String(name) == "skill.md" || !strings.Contains(strings.TrimLeft(name, "."), ".") || !reSearch(samedirNameRe, name) {
+		if strings.Contains(name, "/") || textutil.Fold(name) == "skill.md" || !strings.Contains(strings.TrimLeft(name, "."), ".") || !reSearch(samedirNameRe, name) {
 			continue
 		}
 		safe, err := validateBundleRelPath(name)
@@ -406,7 +406,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 	}
 	folded := map[string][]string{}
 	for _, p := range slices.Sorted(maps.Keys(paths)) {
-		folded[cases.Fold().String(p)] = append(folded[cases.Fold().String(p)], p)
+		folded[textutil.Fold(p)] = append(folded[textutil.Fold(p)], p)
 	}
 	for _, group := range folded {
 		if len(group) > 1 {

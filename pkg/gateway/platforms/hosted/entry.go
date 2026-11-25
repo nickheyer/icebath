@@ -4,9 +4,10 @@ import (
 	"context"
 	"maps"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Upstream names a hosted platform's Python values are built from and judged against
@@ -88,7 +89,7 @@ func entryValue(name, key string, value any) (any, error) {
 	case "ensure_deps_fn":
 		return func(ctx context.Context) (bool, error) { return truthyCall(ctx, f) }, nil
 	case "setup_fn":
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: "platform " + name + " passed setup_fn, a function that needs a terminal a plugin has none of; " +
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "platform " + name + " passed setup_fn, a function that needs a terminal a plugin has none of; " +
 			"declare setup_vars and setup_instructions and icebath asks the questions and saves the answers"}
 	case "env_enablement_fn":
 		return func(ctx context.Context) map[string]any {
@@ -188,7 +189,7 @@ func truthyCall(ctx context.Context, f *plugins.HostedCallable, args ...any) (bo
 	if err != nil {
 		return false, err
 	}
-	return config.PyTruthy(result), nil
+	return anyutil.IsTrue(result), nil
 }
 
 // Answer of a hosted call that raises as a panic the way Go callers of these hooks recover
@@ -210,7 +211,7 @@ func targetPair(v any) (*string, *string, bool) {
 		if x == nil {
 			return nil
 		}
-		s := config.PyStr(x)
+		s := anyutil.String(x)
 		return &s
 	}
 	return str(pair[0]), str(pair[1]), true
@@ -243,13 +244,13 @@ func standaloneSendPolicy(o *plugins.HostedObject) (*gateway.StandaloneSendPolic
 	read := func(name string) (any, error) { return o.Get(ctx, name) }
 	flag := func(name string) (bool, error) {
 		v, err := read(name)
-		return config.PyTruthy(v), err
+		return anyutil.IsTrue(v), err
 	}
 	label, err := read("label")
 	if err != nil {
 		return nil, err
 	}
-	policy := &gateway.StandaloneSendPolicy{Label: config.PyStr(label)}
+	policy := &gateway.StandaloneSendPolicy{Label: anyutil.String(label)}
 	for name, dst := range map[string]*bool{"media": &policy.Media, "all_sends": &policy.AllSends, "captionable": &policy.Captionable,
 		"empty_list_between_chunks": &policy.EmptyListBetweenChunks, "forward_force_document": &policy.ForwardForceDocument,
 		"mentions": &policy.Mentions, "text_direct": &policy.TextDirect} {
@@ -264,14 +265,14 @@ func standaloneSendPolicy(o *plugins.HostedObject) (*gateway.StandaloneSendPolic
 func setupVars(name string, value any) ([]gateway.SetupVar, error) {
 	items, ok := value.([]any)
 	if !ok && value != nil {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: "platform " + name + " setup_vars must be a list of mappings"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "platform " + name + " setup_vars must be a list of mappings"}
 	}
 	vars := make([]gateway.SetupVar, 0, len(items))
 	for _, item := range items {
 		fields := plugins.FieldsOf(item)
 		env, _ := fields["name"].(string)
 		if fields == nil || env == "" {
-			return nil, &gateway.PyError{Kind: "TypeError", Msg: "platform " + name + " setup_vars entries must name the variable their answer is saved under"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "platform " + name + " setup_vars entries must name the variable their answer is saved under"}
 		}
 		prompt, _ := fields["prompt"].(string)
 		if prompt == "" {
@@ -279,7 +280,7 @@ func setupVars(name string, value any) ([]gateway.SetupVar, error) {
 		}
 		help, _ := fields["help"].(string)
 		vars = append(vars, gateway.SetupVar{Name: env, Prompt: prompt, Help: help,
-			Password: config.PyTruthy(fields["password"]), IsAllowlist: config.PyTruthy(fields["is_allowlist"])})
+			Password: anyutil.IsTrue(fields["password"]), IsAllowlist: anyutil.IsTrue(fields["is_allowlist"])})
 	}
 	return vars, nil
 }

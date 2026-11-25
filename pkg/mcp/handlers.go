@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -258,7 +259,7 @@ func (o *keyOrder) item(i int) *keyOrder {
 }
 
 // Writes a value as json.dumps with indent 2, raw non ASCII, str for unknown types and keys in emitted order
-func pyIndentJSON(b *strings.Builder, value any, level int, order *keyOrder) {
+func indentJSONValue(b *strings.Builder, value any, level int, order *keyOrder) {
 	pad := func(n int) { b.WriteString("\n" + strings.Repeat("  ", n)) }
 	switch v := value.(type) {
 	case nil:
@@ -270,7 +271,7 @@ func pyIndentJSON(b *strings.Builder, value any, level int, order *keyOrder) {
 			b.WriteString("false")
 		}
 	case string:
-		b.WriteString(pyJSONString(v))
+		b.WriteString(jsonString(v))
 	case json.Number:
 		b.WriteString(string(v))
 	case int:
@@ -278,7 +279,7 @@ func pyIndentJSON(b *strings.Builder, value any, level int, order *keyOrder) {
 	case int64:
 		b.WriteString(strconv.FormatInt(v, 10))
 	case float64:
-		b.WriteString(pyJSONFloat(v))
+		b.WriteString(jsonFloat(v))
 	case map[string]any:
 		if len(v) == 0 {
 			b.WriteString("{}")
@@ -290,8 +291,8 @@ func pyIndentJSON(b *strings.Builder, value any, level int, order *keyOrder) {
 				b.WriteByte(',')
 			}
 			pad(level + 1)
-			b.WriteString(pyJSONString(k) + ": ")
-			pyIndentJSON(b, v[k], level+1, order.child(k))
+			b.WriteString(jsonString(k) + ": ")
+			indentJSONValue(b, v[k], level+1, order.child(k))
 		}
 		pad(level)
 		b.WriteByte('}')
@@ -306,17 +307,17 @@ func pyIndentJSON(b *strings.Builder, value any, level int, order *keyOrder) {
 				b.WriteByte(',')
 			}
 			pad(level + 1)
-			pyIndentJSON(b, item, level+1, order.item(i))
+			indentJSONValue(b, item, level+1, order.item(i))
 		}
 		pad(level)
 		b.WriteByte(']')
 	default:
-		b.WriteString(pyJSONString(pyStr(v)))
+		b.WriteString(jsonString(anyutil.String(v)))
 	}
 }
 
 // Float the way json.dumps writes it, integral values as the int the decoder saw
-func pyJSONFloat(f float64) string {
+func jsonFloat(f float64) string {
 	switch {
 	case math.IsNaN(f):
 		return "NaN"
@@ -327,7 +328,7 @@ func pyJSONFloat(f float64) string {
 	case f == math.Trunc(f) && math.Abs(f) < 1e16:
 		return strconv.FormatFloat(f, 'f', -1, 64)
 	}
-	return pyFloatRepr(f)
+	return floatRepr(f)
 }
 
 // Sorted keys of a decoded object
@@ -354,7 +355,7 @@ func unicodeEscape(r rune) string {
 // Redacted, bounded JSON of the call arguments for the approval card with hidden characters escaped
 func formatTrustGateArguments(env *tools.Env, args map[string]any, rawArgs string) string {
 	var b strings.Builder
-	pyIndentJSON(&b, maskSecretFields(args), 0, parseKeyOrder(rawArgs))
+	indentJSONValue(&b, maskSecretFields(args), 0, parseKeyOrder(rawArgs))
 	runes := []rune(b.String())
 	window := 4 * trustGateArgumentsMaxChars
 	cut := len(runes) > window
@@ -718,8 +719,8 @@ func handleStdioChildExitedAndRetry(ctx context.Context, serverName string, err 
 		return strike(ctx, serverName, fmt.Sprintf(stdioDiedAgainMsg, serverName)), true
 	}
 	pkgLog().Warn(fmt.Sprintf("MCP %s/%s retry after stdio respawn failed: %s", serverName, op, excStr(retryErr)))
-	return strike(ctx, serverName, sanitizeError(fmt.Sprintf("MCP call failed after respawning the stdio subprocess for '%s': %s: %s",
-		serverName, errTypeName(retryErr), excStr(retryErr)))), true
+	return strike(ctx, serverName, sanitizeError(fmt.Sprintf("MCP call failed after respawning the stdio subprocess for '%s': %s",
+		serverName, excStr(retryErr)))), true
 }
 
 // Runs call on the loop and walks the recoverers on failure, breaker bookkeeping on the first attempt when asked
@@ -919,7 +920,7 @@ func makeUtilityHandler(op, label string, rpc utilityRPC, render utilityRender, 
 			if args == nil {
 				args = map[string]any{}
 			}
-			if required != "" && !pyTruthy(args[required]) {
+			if required != "" && !anyutil.IsTrue(args[required]) {
 				return toolError(fmt.Sprintf("Missing required parameter '%s'", required))
 			}
 			return dispatchUtilityCall(ctx, serverName, srv, op, label, toolTimeout, func(c context.Context) (string, error) {
@@ -951,6 +952,9 @@ func makeUtilityHandler(op, label string, rpc utilityRPC, render utilityRender, 
 func renderResourceList(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	resources := []any{}
 	for _, r := range result.([]*Resource) {
+		if r == nil {
+			continue
+		}
 		entry := &orderedPayload{}
 		entry.set("uri", r.URI)
 		entry.set("name", r.Name)
@@ -972,6 +976,7 @@ func renderReadResource(ctx context.Context, env *tools.Env, result any, serverN
 	var parts []string
 	for _, block := range result.(*ReadResourceResult).Contents {
 		switch {
+		case block == nil:
 		case block.Text != nil:
 			parts = append(parts, tools.StripUnicodeTags(*block.Text))
 		case block.Blob != nil:
@@ -987,10 +992,13 @@ func renderReadResource(ctx context.Context, env *tools.Env, result any, serverN
 	return p, nil
 }
 
-// Prompt list entries with name, description when set and the declared arguments
+// Prompt list entries with name, description when set and the declared arguments, an argument the server does not mark required listed as not required
 func renderPromptList(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	prompts := []any{}
 	for _, pr := range result.([]*Prompt) {
+		if pr == nil {
+			continue
+		}
 		entry := &orderedPayload{}
 		entry.set("name", pr.Name)
 		if pr.Description != "" {
@@ -999,16 +1007,15 @@ func renderPromptList(ctx context.Context, env *tools.Env, result any, serverNam
 		if len(pr.Arguments) > 0 {
 			argsOut := make([]any, 0, len(pr.Arguments))
 			for _, a := range pr.Arguments {
+				if a == nil {
+					continue
+				}
 				ae := &orderedPayload{}
 				ae.set("name", a.Name)
 				if a.Description != "" {
 					ae.set("description", a.Description)
 				}
-				var req any
-				if a.Required != nil {
-					req = *a.Required
-				}
-				ae.set("required", req)
+				ae.set("required", a.Required != nil && *a.Required)
 				argsOut = append(argsOut, ae)
 			}
 			entry.set("arguments", argsOut)
@@ -1020,18 +1027,22 @@ func renderPromptList(ctx context.Context, env *tools.Env, result any, serverNam
 	return p, nil
 }
 
-// Prompt messages with role and text content, plus the description when set
+// Prompt messages with their role and the text each content block shows the model, plus the description when set
 func renderGetPrompt(ctx context.Context, env *tools.Env, result any, serverName string) (any, error) {
 	r := result.(*GetPromptResult)
 	messages := []any{}
 	for i, msg := range r.Messages {
-		entry := &orderedPayload{}
-		entry.set("role", msg.Role)
-		text, err := promptContentStr(msg.Content, fmt.Sprintf("messages.%d.content", i))
+		loc := fmt.Sprintf("messages.%d", i)
+		if msg == nil {
+			return nil, promptValidationError(loc, "Input should be a prompt message object", "model_type")
+		}
+		block, err := promptContentBlock(msg.Content, loc+".content")
 		if err != nil {
 			return nil, err
 		}
-		entry.set("content", tools.StripUnicodeTags(text))
+		entry := &orderedPayload{}
+		entry.set("role", msg.Role)
+		entry.set("content", tools.StripUnicodeTags(renderPromptContent(ctx, env, block, serverName)))
 		messages = append(messages, entry)
 	}
 	p := &orderedPayload{}
@@ -1042,49 +1053,50 @@ func renderGetPrompt(ctx context.Context, env *tools.Env, result any, serverName
 	return p, nil
 }
 
-// Field of an SDK content model in declaration order with its camel alias and value kind
-type modelField struct {
-	name, alias, kind string
-	required          bool
+// Content block of one prompt message, a validation error naming the field when the content is not a block object
+func promptContentBlock(raw json.RawMessage, loc string) (*ContentBlock, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if !strings.HasPrefix(trimmed, "{") {
+		return nil, promptValidationError(loc, "Input should be a content block object", "model_type")
+	}
+	var block ContentBlock
+	if err := json.Unmarshal([]byte(trimmed), &block); err != nil {
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && typeErr.Field != "" {
+			return nil, promptValidationError(loc+"."+typeErr.Field, "Input is a JSON "+typeErr.Value+", the wrong type for this field", "wrong_type")
+		}
+		return nil, promptValidationError(loc, "Input should be a content block object", "model_type")
+	}
+	return &block, nil
 }
 
-var (
-	annotationsFields = []modelField{{"audience", "audience", "any", false}, {"priority", "priority", "float", false}, {"last_modified", "lastModified", "str", false}}
-	iconFields        = []modelField{{"src", "src", "str", true}, {"mime_type", "mimeType", "str", false}, {"sizes", "sizes", "any", false}, {"theme", "theme", "str", false}}
-	mediaFields       = []modelField{{"type", "type", "str", false}, {"data", "data", "str", true}, {"mime_type", "mimeType", "str", true}, {"annotations", "annotations", "annotations", false}, {"meta", "_meta", "any", false}}
-	embeddedFields    = []modelField{{"type", "type", "str", false}, {"resource", "resource", "resource", true}, {"annotations", "annotations", "annotations", false}, {"meta", "_meta", "any", false}}
-	resourceLinkField = []modelField{{"name", "name", "str", true}, {"title", "title", "str", false}, {"uri", "uri", "str", true}, {"description", "description", "str", false},
-		{"mime_type", "mimeType", "str", false}, {"size", "size", "int", false}, {"icons", "icons", "icons", false}, {"annotations", "annotations", "annotations", false},
-		{"meta", "_meta", "any", false}, {"type", "type", "str", false}}
-)
-
-// Prompt content as the SDK str of its model, text content as its text
-func promptContentStr(raw json.RawMessage, loc string) (string, error) {
-	fields, err := orderedObject(raw)
-	if err != nil {
-		return "", promptValidationError(loc, "Input should be a valid dictionary or instance of a model", "model_type")
-	}
-	var kind string
-	if t, ok := fields.get("type"); ok {
-		_ = json.Unmarshal(t, &kind)
-	}
-	switch kind {
+// Text the model reads for one prompt content block: text as is, images and audio cached as MEDIA tags, resources as tool results show them, a notice for a block whose payload is unusable or whose type is unknown
+func renderPromptContent(ctx context.Context, env *tools.Env, block *ContentBlock, serverName string) string {
+	switch block.Type {
 	case "text":
-		t, ok := fields.get("text")
-		var text string
-		if !ok || json.Unmarshal(t, &text) != nil {
-			return "", promptValidationError(loc+".text.text", "Field required", "missing")
+		return block.Text
+	case "image":
+		if tag := cacheImageBlock(env, block); tag != "" {
+			return tag
 		}
-		return text, nil
-	case "image", "audio":
-		return modelStr(fields, mediaFields, loc+"."+kind, " ")
-	case "resource":
-		return modelStr(fields, embeddedFields, loc+".resource", " ")
-	case "resource_link":
-		return modelStr(fields, resourceLinkField, loc+".resource_link", " ")
+	case "audio":
+		if tag := cacheAudioBlock(env, block); tag != "" {
+			return tag
+		}
+	case "resource", "resource_link":
+		rendered := renderResourceBlock(ctx, env, block, serverName)
+		if rendered != "" || block.Resource != nil && block.Resource.Text != nil {
+			return rendered
+		}
+	default:
+		blockType := block.Type
+		if blockType == "" {
+			blockType = "ContentBlock"
+		}
+		pkgLog().Warn(fmt.Sprintf("MCP %s: prompt content block type %s is unsupported", serverName, strconv.Quote(blockType)))
+		return renderDroppedBlockNotice(block, blockType)
 	}
-	return "", promptValidationError(loc, fmt.Sprintf("Input tag %s found using 'type' does not match any of the expected tags: "+
-		"'text', 'image', 'audio', 'resource_link', 'resource'", pyReprStr(kind)), "union_tag_invalid")
+	return renderUnreadableBlockNotice(block)
 }
 
 // Validation failure of a prompts/get result
@@ -1128,147 +1140,6 @@ func orderedObject(raw json.RawMessage) (orderedFields, error) {
 		out.vals[k] = v
 	}
 	return out, nil
-}
-
-// Pydantic str or repr body of a model, its fields as name=repr joined by sep
-func modelStr(fields orderedFields, spec []modelField, loc, sep string) (string, error) {
-	parts := make([]string, 0, len(spec))
-	for _, f := range spec {
-		raw, ok := fields.get(f.alias)
-		if !ok {
-			raw, ok = fields.get(f.name)
-		}
-		if !ok || string(raw) == "null" {
-			if f.required {
-				return "", promptValidationError(loc+"."+f.alias, "Field required", "missing")
-			}
-			parts = append(parts, f.name+"=None")
-			continue
-		}
-		v, err := fieldRepr(raw, f, loc+"."+f.alias)
-		if err != nil {
-			return "", err
-		}
-		parts = append(parts, f.name+"="+v)
-	}
-	return strings.Join(parts, sep), nil
-}
-
-// Repr of one model field value by its declared kind
-func fieldRepr(raw json.RawMessage, f modelField, loc string) (string, error) {
-	switch f.kind {
-	case "str":
-		var s string
-		if json.Unmarshal(raw, &s) != nil {
-			return "", promptValidationError(loc, "Input should be a valid string", "string_type")
-		}
-		return pyReprStr(s), nil
-	case "float":
-		var x float64
-		if json.Unmarshal(raw, &x) != nil {
-			return "", promptValidationError(loc, "Input should be a valid number", "float_type")
-		}
-		return pyFloatRepr(x), nil
-	case "int":
-		var x float64
-		if json.Unmarshal(raw, &x) != nil || x != math.Trunc(x) {
-			return "", promptValidationError(loc, "Input should be a valid integer", "int_type")
-		}
-		return strconv.FormatFloat(x, 'f', -1, 64), nil
-	case "annotations":
-		sub, err := orderedObject(raw)
-		if err != nil {
-			return "", promptValidationError(loc, "Input should be a valid dictionary or instance of Annotations", "model_type")
-		}
-		body, err := modelStr(sub, annotationsFields, loc, ", ")
-		return "Annotations(" + body + ")", err
-	case "resource":
-		sub, err := orderedObject(raw)
-		if err != nil {
-			return "", promptValidationError(loc, "Input should be a valid dictionary", "model_type")
-		}
-		base := []modelField{{"uri", "uri", "str", true}, {"mime_type", "mimeType", "str", false}, {"meta", "_meta", "any", false}}
-		if _, ok := sub.get("text"); ok {
-			body, err := modelStr(sub, append(base, modelField{"text", "text", "str", true}), loc+".TextResourceContents", ", ")
-			return "TextResourceContents(" + body + ")", err
-		}
-		body, err := modelStr(sub, append(base, modelField{"blob", "blob", "str", true}), loc+".BlobResourceContents", ", ")
-		return "BlobResourceContents(" + body + ")", err
-	case "icons":
-		var items []json.RawMessage
-		if json.Unmarshal(raw, &items) != nil {
-			return "", promptValidationError(loc, "Input should be a valid list", "list_type")
-		}
-		reprs := make([]string, 0, len(items))
-		for i, item := range items {
-			sub, err := orderedObject(item)
-			if err != nil {
-				return "", promptValidationError(fmt.Sprintf("%s.%d", loc, i), "Input should be a valid dictionary or instance of Icon", "model_type")
-			}
-			body, err := modelStr(sub, iconFields, fmt.Sprintf("%s.%d", loc, i), ", ")
-			if err != nil {
-				return "", err
-			}
-			reprs = append(reprs, "Icon("+body+")")
-		}
-		return "[" + strings.Join(reprs, ", ") + "]", nil
-	}
-	return jsonPyRepr(raw)
-}
-
-// Python repr of a decoded JSON value with object members in document order
-func jsonPyRepr(raw json.RawMessage) (string, error) {
-	trimmed := strings.TrimSpace(string(raw))
-	switch {
-	case trimmed == "null":
-		return "None", nil
-	case trimmed == "true":
-		return "True", nil
-	case trimmed == "false":
-		return "False", nil
-	case strings.HasPrefix(trimmed, `"`):
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			return "", err
-		}
-		return pyReprStr(s), nil
-	case strings.HasPrefix(trimmed, "["):
-		var items []json.RawMessage
-		if err := json.Unmarshal(raw, &items); err != nil {
-			return "", err
-		}
-		reprs := make([]string, 0, len(items))
-		for _, item := range items {
-			r, err := jsonPyRepr(item)
-			if err != nil {
-				return "", err
-			}
-			reprs = append(reprs, r)
-		}
-		return "[" + strings.Join(reprs, ", ") + "]", nil
-	case strings.HasPrefix(trimmed, "{"):
-		obj, err := orderedObject(raw)
-		if err != nil {
-			return "", err
-		}
-		reprs := make([]string, 0, len(obj.keys))
-		for _, k := range obj.keys {
-			r, err := jsonPyRepr(obj.vals[k])
-			if err != nil {
-				return "", err
-			}
-			reprs = append(reprs, pyReprStr(k)+": "+r)
-		}
-		return "{" + strings.Join(reprs, ", ") + "}", nil
-	}
-	if !strings.ContainsAny(trimmed, ".eE") {
-		return trimmed, nil
-	}
-	f, err := strconv.ParseFloat(trimmed, 64)
-	if err != nil {
-		return "", err
-	}
-	return pyFloatRepr(f), nil
 }
 
 // Prompt arguments as the string map prompts/get takes, a validation error for any other shape

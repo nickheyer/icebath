@@ -61,7 +61,7 @@ func recordedToolchain(python string) any {
 func recordedText(recorded any, key string) (string, error) {
 	m, ok := recorded.(map[string]any)
 	if !ok {
-		return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("the recorded toolchain must be a mapping, got %s", errchain.Kind(recorded))}
+		return "", &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the recorded toolchain must be a mapping, got %s", errchain.Kind(recorded))}
 	}
 	v, ok := m[key]
 	if !ok {
@@ -69,7 +69,7 @@ func recordedText(recorded any, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("the recorded toolchain value %s must be text, got %s", key, errchain.Kind(v))}
+		return "", &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the recorded toolchain value %s must be text, got %s", key, errchain.Kind(v))}
 	}
 	return s, nil
 }
@@ -131,7 +131,7 @@ func MissingCompilerRemedy(output string) string {
 			if len(m) == 1 {
 				return fmt.Sprintf(compilerRemedy, "this package compiles native code and no compiler was found")
 			}
-			if compilerName.MatchString(pyPathName(m[1])) {
+			if compilerName.MatchString(pathName(m[1])) {
 				return fmt.Sprintf(compilerRemedy, "the build needs `"+m[1]+"`, which is not on PATH")
 			}
 		}

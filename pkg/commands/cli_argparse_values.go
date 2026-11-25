@@ -33,7 +33,7 @@ func (v *choiceValue) Set(s string) error {
 	return nil
 }
 
-// Argparse text for a refused value, the type function error or the invalid choice line in Python repr
+// Text for a refused value: the type function error, else the invalid choice line with text values quoted and numbers as written
 func (v *choiceValue) refusal(value string) error {
 	if v.typeMsg != "" {
 		return errors.New(v.typeMsg)

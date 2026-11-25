@@ -256,7 +256,7 @@ func TestWriteSinksRunsEnabledSinksInOrderWithExistingRecords(t *testing.T) {
 	if err != nil || job.Status != "completed" {
 		t.Fatalf("job %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
-	if want := []string{"notion:writing_notion:None:n", "teams:sending_teams:None:t"}; !reflect.DeepEqual(seen, want) {
+	if want := []string{"notion:writing_notion::n", "teams:sending_teams::t"}; !reflect.DeepEqual(seen, want) {
 		t.Fatalf("seen %v", seen)
 	}
 	if record := store.GetSinkRecord("notion:meeting-1"); get(record, "n") != int64(1) || get(record, "sink_key") != "notion:meeting-1" || store.GetSinkRecord("linear:meeting-1") != nil {
@@ -290,7 +290,7 @@ func TestRunJobRecordsRaisedPanicsAndMissingTranscriptionResult(t *testing.T) {
 	pipelineFetchPreferredTranscriptText = transcriptFetcher(t, longTranscript)
 	pipeline, store := testPipeline(t, obj("transcript_min_chars", int64(20), "ffmpeg_extract_audio", false, "tmp_dir", t.TempDir()))
 	pipeline.SummarizeFn = func(context.Context, *TeamsMeetingRef, string, []*MeetingArtifact) (any, error) {
-		panic(pyError("ValueError", "summarizer exploded"))
+		panic(kindError("ValueError", "summarizer exploded"))
 	}
 	job, err := pipeline.RunNotification(context.Background(), flowNotification("n-panic"))
 	if err != nil || job.Status != "failed" || !anyutil.Equal(job.ErrorInfo, obj("message", "summarizer exploded", "type", "ValueError")) {

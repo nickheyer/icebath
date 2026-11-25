@@ -3,14 +3,15 @@ package home
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -29,7 +30,7 @@ func ManagedSystem(ctx context.Context, h string) string {
 	if h == "" {
 		h = Dir(ctx)
 	}
-	if path := pathutil.Join(h, ".managed"); !set {
+	if path := pathutil.JoinKeepDotDot(h, ".managed"); !set {
 		if pathExists(path) {
 			set = true
 			if b, err := os.ReadFile(path); err == nil {
@@ -57,34 +58,35 @@ func ContainerOrChmodSkipped() bool {
 	return detectContainer()
 }
 
-// ICEBATH_UID and ICEBATH_GID as integers, nil when unset, not a whole number or on Windows, a number beyond int64 kept as the bound of its sign
+// ICEBATH_UID and ICEBATH_GID as the ids chown takes, -1 leaving an id unchanged, nil when unset, on Windows, or set to anything but an id from -1 to 4294967295 (warned once)
 func resolveIcebathUIDGID() (*int64, *int64) {
 	if runtime.GOOS == "windows" {
 		return nil, nil
 	}
-	envInt := func(name string) *int64 {
-		text := strings.TrimSpace(os.Getenv(name))
+	envID := func(name string) *int64 {
+		raw := os.Getenv(name)
+		text := strings.TrimSpace(raw)
 		if text == "" {
 			return nil
 		}
 		n, err := strconv.ParseInt(text, 10, 64)
-		if err != nil && !errors.Is(err, strconv.ErrRange) {
+		switch {
+		case err != nil && !errors.Is(err, strconv.ErrRange):
+			warnIgnoredEnv(name, raw, "is not a whole number, leaving that id unchanged")
+			return nil
+		case err != nil || n < -1 || n > math.MaxUint32:
+			warnIgnoredEnv(name, raw, "is outside the ids from -1 to 4294967295, leaving that id unchanged")
 			return nil
 		}
 		return &n
 	}
-	return envInt("ICEBATH_UID"), envInt("ICEBATH_GID")
+	return envID("ICEBATH_UID"), envID("ICEBATH_GID")
 }
 
-// The uid_t chown accepts for v, minus one leaving the id alone, panicking with an OverflowError for anything else outside uid_t
-func chownID(v *int64, kind string) int {
-	switch {
-	case v == nil || *v == -1:
+// The id chown takes for v, minus one leaving the id unchanged
+func chownID(v *int64) int {
+	if v == nil {
 		return -1
-	case *v == math.MaxInt64:
-		panic(&errorutil.Error{Kind: "OverflowError", Msg: kind + " is greater than maximum"})
-	case *v < 0 || *v > math.MaxUint32:
-		panic(&errorutil.Error{Kind: "OverflowError", Msg: kind + " is less than minimum"})
 	}
 	return int(*v)
 }
@@ -95,9 +97,35 @@ func chownToIcebathUID(path string) {
 	if uid == nil && gid == nil {
 		return
 	}
-	u := chownID(uid, "uid")
-	g := chownID(gid, "gid")
-	_ = chownPath(path, u, g)
+	_ = chownPath(path, chownID(uid), chownID(gid))
+}
+
+// Environment settings already warned about, by name and value
+var ignoredEnvWarned = &sync.Map{}
+
+// Logs once per variable and value that an environment setting is ignored and why
+func warnIgnoredEnv(name, value, reason string) {
+	if _, seen := ignoredEnvWarned.LoadOrStore(name+"="+value, true); !seen {
+		pkgLog().Warn(fmt.Sprintf("%s=%s %s", name, strconv.Quote(value), reason))
+	}
+}
+
+// Mode bits ICEBATH_HOME_MODE names in octal, an optional 0o prefix allowed, 700 for unset and for a value that is no octal number within 32 bits (warned once)
+func homeModeBits(explicit string) uint64 {
+	text := strings.TrimSpace(explicit)
+	if text == "" {
+		return 0o700
+	}
+	mode, err := strconv.ParseUint(strings.TrimPrefix(strings.ToLower(text), "0o"), 8, 32)
+	switch {
+	case errors.Is(err, strconv.ErrRange):
+		warnIgnoredEnv("ICEBATH_HOME_MODE", explicit, "is beyond the largest file mode, using 700")
+		return 0o700
+	case err != nil:
+		warnIgnoredEnv("ICEBATH_HOME_MODE", explicit, "is not an octal file mode, using 700")
+		return 0o700
+	}
+	return mode
 }
 
 // Owner only directory unless the home is managed, a container keeps its modes, or ICEBATH_HOME_MODE names one
@@ -105,23 +133,12 @@ func ApplySecureDirPolicy(ctx context.Context, path, h string) {
 	if ManagedSystem(ctx, h) != "" {
 		return
 	}
-	explicit := strings.TrimSpace(os.Getenv("ICEBATH_HOME_MODE"))
-	if ContainerOrChmodSkipped() && explicit == "" {
+	explicit := os.Getenv("ICEBATH_HOME_MODE")
+	if ContainerOrChmodSkipped() && strings.TrimSpace(explicit) == "" {
 		chownToIcebathUID(path)
 		return
 	}
-	text := explicit
-	if text == "" {
-		text = "700"
-	}
-	mode := int64(0o700)
-	n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(text), "0o"), 8, 64)
-	if err == nil || errors.Is(err, strconv.ErrRange) {
-		if n > math.MaxInt32 || n < math.MinInt32 {
-			panic(&errorutil.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C int"})
-		}
-		mode = n
-	}
+	mode := homeModeBits(explicit)
 	fm := os.FileMode(mode & 0o777)
 	if mode&0o4000 != 0 {
 		fm |= os.ModeSetuid

@@ -115,7 +115,7 @@ func skillsHubList(ctx context.Context, rid any, _ map[string]any) (map[string]a
 	for _, t := range taps {
 		obj, isObj := t.(*jsonutil.Object)
 		if !isObj {
-			return nil, fmt.Errorf("a skill source entry is %T, expected a mapping", t)
+			return nil, fmt.Errorf("a skill source entry is %s, expected an object", anyutil.Kind(t))
 		}
 		out.Taps = append(out.Taps, tuigateway.SkillTapRow{Name: text(obj, "repo"), Path: text(obj, "path")})
 	}

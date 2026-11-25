@@ -47,15 +47,15 @@ type RuntimeMainOptions struct {
 // Binds the live main runtime for auxiliary routing under the returned context
 func SetRuntimeMain(ctx context.Context, provider, model string, opts RuntimeMainOptions) context.Context {
 	runtime := map[string]any{
-		"provider":           strings.ToLower(pyStripSpace(provider)),
-		"requested_provider": strings.ToLower(pyStripSpace(opts.RequestedProvider)),
-		"model":              pyStripSpace(model),
-		"base_url":           pyStripSpace(opts.BaseURL),
+		"provider":           strings.ToLower(strings.TrimSpace(provider)),
+		"requested_provider": strings.ToLower(strings.TrimSpace(opts.RequestedProvider)),
+		"model":              strings.TrimSpace(model),
+		"base_url":           strings.TrimSpace(opts.BaseURL),
 		"api_key":            auxNormalizeAPIKey(opts.APIKey),
-		"api_mode":           pyStripSpace(opts.APIMode),
-		"auth_mode":          strings.ToLower(pyStripSpace(opts.AuthMode)),
-		"session_id":         pyStripSpace(opts.SessionID),
-		"cache_scope":        pyStripSpace(opts.CacheScope),
+		"api_mode":           strings.TrimSpace(opts.APIMode),
+		"auth_mode":          strings.ToLower(strings.TrimSpace(opts.AuthMode)),
+		"session_id":         strings.TrimSpace(opts.SessionID),
+		"cache_scope":        strings.TrimSpace(opts.CacheScope),
 	}
 	return context.WithValue(ctx, auxRuntimeMainKey{}, runtime)
 }
@@ -94,7 +94,7 @@ func auxNormalizeMainRuntime(ctx context.Context, mainRuntime map[string]any) ma
 		}
 		switch v := value.(type) {
 		case string:
-			if s := pyStripSpace(v); s != "" {
+			if s := strings.TrimSpace(v); s != "" {
 				normalized[field] = s
 			}
 		}

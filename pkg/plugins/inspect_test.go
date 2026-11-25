@@ -58,11 +58,11 @@ func inspectWorld(t *testing.T) (context.Context, string, map[string]string, str
 		inspectionsMu.Unlock()
 	})
 	sentinel := filepath.Join(tmp, "imported.flag")
-	files := map[string]string{"plugin.yaml": "name: demo-agent\nversion: 1.0.0\n", "__init__.py": "open(" + pyQuote(sentinel) + ", 'w').write('ran')\n"}
+	files := map[string]string{"plugin.yaml": "name: demo-agent\nversion: 1.0.0\n", "__init__.py": "open(" + quoteValue(sentinel) + ", 'w').write('ran')\n"}
 	return home.WithOverride(context.Background(), h), tmp, files, sentinel
 }
 
-func pyQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+func quoteValue(s string) string { b, _ := json.Marshal(s); return string(b) }
 
 type cloneCounter struct {
 	count   atomic.Int32

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -78,7 +79,7 @@ func lazyModel(ctx context.Context, a *SessionAuthority, policy *LocalSessionPol
 	if err != nil {
 		return nil, err
 	}
-	if pinned, _ := request.Get("model"); pyTruthy(pinned) {
+	if pinned, _ := request.Get("model"); anyutil.IsTrue(pinned) {
 		return model, nil
 	}
 	if route := strings.ToLower(strings.TrimSpace(anyText(policy.Provider()))); route != "" && route != "auto" {
@@ -120,7 +121,7 @@ func effortFields(reasoning any, tier string, model, providerName, baseURL, apiM
 	if cfg, ok := reasoning.(map[string]any); ok && cfg != nil {
 		if cfg["enabled"] == any(false) {
 			effort = "none"
-		} else if pyTruthy(cfg["effort"]) {
+		} else if anyutil.IsTrue(cfg["effort"]) {
 			effort = anyText(cfg["effort"])
 		}
 	}
@@ -131,10 +132,10 @@ func effortFields(reasoning any, tier string, model, providerName, baseURL, apiM
 	fast := false
 	if provider.StaticTiers[tier] {
 		name, base := "", ""
-		if pyTruthy(providerName) {
+		if anyutil.IsTrue(providerName) {
 			name = anyText(providerName)
 		}
-		if pyTruthy(baseURL) {
+		if anyutil.IsTrue(baseURL) {
 			base = anyText(baseURL)
 		}
 		fast = provider.ResolveFastModeOverrides(anyText(model), name, base, tier) != nil
@@ -146,7 +147,7 @@ func effortFields(reasoning any, tier string, model, providerName, baseURL, apiM
 func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*jsonutil.Object, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{key: ref.SessionID}
+		return nil, &keyError{key: ref.SessionID}
 	}
 	agent, err := authorityAgent(ctx, a, ref)
 	if err != nil {
@@ -164,11 +165,11 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 			return nil, err
 		}
 		if row == nil {
-			return nil, &PyError{Kind: "TypeError", Msg: "the local session row is missing"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the local session row is missing"}
 		}
 		label, has := row.Get("source")
 		if !has {
-			return nil, &pyKeyError{key: "source"}
+			return nil, &keyError{key: "source"}
 		}
 		source = label
 	case policy != nil:
@@ -309,7 +310,7 @@ func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 			}
 		}
 	}
-	if !pyTruthy(apiMode) {
+	if !anyutil.IsTrue(apiMode) {
 		apiMode = nil
 	}
 	var hint, toolCount any
@@ -324,7 +325,7 @@ func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	title, _ := row.Get("title")
 	started, _ := row.Get("started_at")
 	lastActive, _ := row.Get("last_activity_at")
-	if !pyTruthy(lastActive) {
+	if !anyutil.IsTrue(lastActive) {
 		lastActive = started
 	}
 	return jsonutil.ObjectOf("title", strings.TrimSpace(anyText(title)), "started_at", started, "last_active_at", lastActive, "yolo", yolo,
@@ -335,7 +336,7 @@ func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 func authorityAgent(ctx context.Context, a *SessionAuthority, ref SessionRef) (sessionInfoAgent, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{key: ref.SessionID}
+		return nil, &keyError{key: ref.SessionID}
 	}
 	key := runningKey(a.Runner, live.Route, ref.SessionID)
 	var found any
@@ -344,14 +345,14 @@ func authorityAgent(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 	} else if cached, has := a.Runner.(cachedAgentRunner); has {
 		found = cached.CachedAgentFor(key)
 	} else {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a cached agent", a.Runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a cached agent", a.Runner)}
 	}
 	if found == nil {
 		return nil, nil
 	}
 	agent, ok := found.(sessionInfoAgent)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the cached agent (%T) has no model", found)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the cached agent (%T) has no model", found)}
 	}
 	return agent, nil
 }

@@ -159,7 +159,7 @@ func contextBreakdown(ctx context.Context, c *AuthorityConnection, ref SessionRe
 // Stored breakdown of the row's frozen prompt and tool pin beside its stored usage
 func storedBreakdown(ctx context.Context, row *jsonutil.Object, conversation []map[string]any, usage *jsonutil.Object) (*jsonutil.Object, error) {
 	breakdown := jsonutil.ObjectOf("categories", []any{}, "estimated_total", 0)
-	if prompt := row.ValueOr("system_prompt", nil); pyTruthy(prompt) {
+	if prompt := row.ValueOr("system_prompt", nil); anyutil.IsTrue(prompt) {
 		var pin any
 		pinText, _ := row.ValueOr("tool_names", nil).(string)
 		if pinText == "" {
@@ -186,14 +186,14 @@ func storedBreakdown(ctx context.Context, row *jsonutil.Object, conversation []m
 		}
 		out.Set(key, n)
 	}
-	out.Set("context_estimated", pyTruthy(usage.ValueOr("context_estimated", false)))
+	out.Set("context_estimated", anyutil.IsTrue(usage.ValueOr("context_estimated", false)))
 	source := usage.ValueOr("context_source", nil)
-	if !pyTruthy(source) {
+	if !anyutil.IsTrue(source) {
 		source = "provider_usage"
 	}
 	out.Set("context_source", anyutil.String(source))
 	model := usage.ValueOr("model", nil)
-	if !pyTruthy(model) {
+	if !anyutil.IsTrue(model) {
 		model = ""
 	}
 	out.Set("model", anyutil.String(model))

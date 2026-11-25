@@ -17,7 +17,7 @@ var loopbackHosts = map[string]bool{"localhost": true, "127.0.0.1": true, "::1":
 func secretTransportOK(raw string) (bool, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return false, &pyError{"ValueError", err.Error()}
+		return false, &kindError{"ValueError", err.Error()}
 	}
 	user := u.User.Username()
 	pass, _ := u.User.Password()
@@ -64,7 +64,7 @@ func (b *pageBackend) Evaluate(taskID, expression string, secret bool) (any, err
 	s := b.scope()
 	ss := s.trackedSession(taskID)
 	if ss == nil || !ss.hasTab() {
-		return nil, &pyError{"RuntimeError", noSessionError}
+		return nil, &kindError{"RuntimeError", noSessionError}
 	}
 	if secret {
 		ok, err := secretTransportOK(s.camofoxURL())
@@ -72,7 +72,7 @@ func (b *pageBackend) Evaluate(taskID, expression string, secret bool) (any, err
 			return nil, err
 		}
 		if !ok {
-			return nil, &pyError{"RuntimeError", "vault fills need CAMOFOX_URL on loopback or HTTPS"}
+			return nil, &kindError{"RuntimeError", "vault fills need CAMOFOX_URL on loopback or HTTPS"}
 		}
 	}
 	reply, err := s.request("POST", tabPath(ss, "evaluate"), commandTimeoutDefault, nil,
@@ -100,7 +100,7 @@ func (b *pageBackend) Evaluate(taskID, expression string, secret bool) (any, err
 		if text == "" {
 			text = "evaluate failed"
 		}
-		return nil, &pyError{"RuntimeError", text}
+		return nil, &kindError{"RuntimeError", text}
 	}
 	return result, nil
 }

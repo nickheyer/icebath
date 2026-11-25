@@ -82,7 +82,7 @@ func TestToPlainDataStringifiesCyclesAndDepthPastTwenty(t *testing.T) {
 	loop := map[string]any{"name": "root"}
 	loop["self"] = []any{loop}
 	plain := toPlainData(loop, 0, nil).(map[string]any)
-	if text := plain["self"].([]any)[0]; text != "{'name': 'root', 'self': [{...}]}" {
+	if text := plain["self"].([]any)[0]; text != `{"name": "root", "self": [{...}]}` {
 		t.Fatalf("cycle text %v", text)
 	}
 	var deep any = "leaf"
@@ -93,7 +93,7 @@ func TestToPlainDataStringifiesCyclesAndDepthPastTwenty(t *testing.T) {
 	for i := 0; i <= 20; i++ {
 		level = level.([]any)[0]
 	}
-	if level != "[[[['leaf']]]]" {
+	if level != `[[[["leaf"]]]]` {
 		t.Fatalf("depth text %v", level)
 	}
 	if raw := toPlainData([]byte("ab"), 0, nil); string(raw.([]byte)) != "ab" {
@@ -170,7 +170,7 @@ func TestBearerHookClientSendsMintedTokensAndClaudeCodeIdentity(t *testing.T) {
 	}
 	head, oauth, err := nativeHook.requestHeaders(context.Background(), anthCommonBetasForBaseURL("", false), nil)
 	headers := map[string]string{}
-	for _, l := range head.spec.custom.stripped() {
+	for _, l := range head.spec.custom.fields() {
 		headers[l.Name] = l.Value
 	}
 	if err != nil || !oauth || headers["x-app"] != "cli" || !strings.HasPrefix(headers["user-agent"], "claude-code/") ||

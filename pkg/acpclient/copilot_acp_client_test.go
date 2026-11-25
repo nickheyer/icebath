@@ -22,7 +22,7 @@ func TestCopilotDisabledReadsEnablementMeta(t *testing.T) {
 			t.Fatalf("%v: got %v %v", c.entry, got, err)
 		}
 	}
-	if _, err := copilotDisabled(map[string]any{"_meta": "x"}); err == nil || !strings.Contains(err.Error(), "'str' object has no attribute 'get'") {
+	if _, err := copilotDisabled(map[string]any{"_meta": "x"}); err == nil || !strings.Contains(err.Error(), `cannot read "copilotEnablement" from text where a mapping was expected`) {
 		t.Fatalf("non dict meta: %v", err)
 	}
 }

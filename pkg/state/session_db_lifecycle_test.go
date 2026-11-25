@@ -129,7 +129,7 @@ func TestFailedWritableOpenDoesNotLeakTrackedConnection(t *testing.T) {
 		return conn, err
 	}
 	sessionInitSchema = func(context.Context, *SessionDB) error {
-		return &pyConvError{"RuntimeError", "schema init failed"}
+		return &convError{"RuntimeError", "schema init failed"}
 	}
 	defer func() {
 		for _, c := range opened {
@@ -155,7 +155,7 @@ func TestFailedWALReadOpenDoesNotLeakTrackedConnection(t *testing.T) {
 	defer db.Close()
 	savedPragmas := sessionApplyDatabasePragmas
 	sessionApplyDatabasePragmas = func(context.Context, SQLiteConn, string) error {
-		return &pyConvError{"RuntimeError", "read setup failed"}
+		return &convError{"RuntimeError", "read setup failed"}
 	}
 	before := liveConnectionsSnapshot()
 	db.walActive.Store(true)
@@ -266,7 +266,7 @@ func TestFailedReadOnlyOpenDoesNotLeakTrackedConnection(t *testing.T) {
 		t.Fatal("malformed store opened read only")
 	}
 	if !isDatabaseError(err) {
-		t.Fatalf("refusal %s: %v", pyExceptionClassName(err), err)
+		t.Fatalf("refusal %s: %v", exceptionClassName(err), err)
 	}
 	if HasLiveConnection(path) {
 		t.Fatal("failed read only open leaked a tracked connection")

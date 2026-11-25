@@ -297,7 +297,7 @@ func runBedrockStreamWorker(ctx context.Context, r bedrockStreamRun, cb bedrockS
 		var denied *bedrockStreamDenied
 		if errors.As(err, &denied) {
 			r.onDenied()
-			pkgLog().Info(fmt.Sprintf("bedrock: converse_stream denied by IAM (%s) — using non-streaming converse() for this session.", pyTypeNameOfError(denied.err)))
+			pkgLog().Info(fmt.Sprintf("bedrock: converse_stream denied by IAM (%s) — using non-streaming converse() for this session.", typeNameOfError(denied.err)))
 			result, raw, err := bedrockConverseComplete(ctx, r.region, request)
 			if err != nil {
 				return nil, err

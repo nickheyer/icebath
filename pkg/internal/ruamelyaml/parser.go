@@ -51,10 +51,10 @@ func uriDecodedSuffix(suffix string) string {
 			out = append(out, ch)
 			continue
 		}
-		part := string(pySlice(rs, idx, idx+2))
+		part := string(sliceOf(rs, idx, idx+2))
 		n, err := strconv.ParseInt(part, 16, 64)
 		if err != nil {
-			panic(Raise("ValueError", "invalid literal for int() with base 16: "+pyStrRepr(part)))
+			panic(Raise("ValueError", "invalid literal for int() with base 16: "+strconv.Quote(part)))
 		}
 		if n < 0 || n > 0x10FFFF {
 			panic(Raise("ValueError", "chr() arg not in range(0x110000)"))
@@ -170,7 +170,7 @@ func (p *parser) parseImplicitDocumentStart() *event {
 }
 
 // Python repr of the one element tuple holding a token id
-func tupleIDRepr(t *token) string { return "(" + pyStrRepr(t.id()) + ",)" }
+func tupleIDRepr(t *token) string { return "(" + strconv.Quote(t.id()) + ",)" }
 
 func (p *parser) parseDocumentStart() *event {
 	for p.s.checkToken(tkDocumentEnd) {
@@ -248,7 +248,7 @@ func (p *parser) processDirectives() {
 			yamlVersion = t.ver
 		case "TAG":
 			if _, dup := p.tagHandles[t.tagHandle]; dup {
-				panic(parserError("", nil, "duplicate tag handle "+pyStrRepr(t.tagHandle), t.start))
+				panic(parserError("", nil, "duplicate tag handle "+strconv.Quote(t.tagHandle), t.start))
 			}
 			p.tagHandles[t.tagHandle] = t.tagPrefix
 			p.handleList = append(p.handleList, t.tagHandle)
@@ -273,7 +273,7 @@ func (p *parser) makeTag(t *token, start, tagMark *Mark) *tagValue {
 	if t.handle != nil {
 		prefix, ok := p.tagHandles[*t.handle]
 		if !ok {
-			panic(parserError("while parsing a node", start, "found undefined tag handle "+pyStrRepr(*t.handle), tagMark))
+			panic(parserError("while parsing a node", start, "found undefined tag handle "+strconv.Quote(*t.handle), tagMark))
 		}
 		return &tagValue{text: prefix + uriDecodedSuffix(t.suffix), handle: t.handle}
 	}
@@ -381,7 +381,7 @@ func (p *parser) parseNode(block, indentlessSequence bool) *event {
 			node = "block"
 		}
 		t := p.s.peekToken()
-		panic(parserError("while parsing a "+node+" node", start, "expected the node content, but found "+pyStrRepr(t.id()), t.start))
+		panic(parserError("while parsing a "+node+" node", start, "expected the node content, but found "+strconv.Quote(t.id()), t.start))
 	}
 	return ev
 }
@@ -393,7 +393,7 @@ func (p *parser) moveTagTokenComment(t *token) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			if e, ok := r.(*PyException); ok && e.Class == "NotImplementedError" {
+			if e, ok := r.(*Exception); ok && e.Class == "NotImplementedError" {
 				return
 			}
 			panic(r)
@@ -421,7 +421,7 @@ func (p *parser) parseBlockSequenceEntry() *event {
 	}
 	if !p.s.checkToken(tkBlockEnd) {
 		t := p.s.peekToken()
-		panic(parserError("while parsing a block collection", p.marks[len(p.marks)-1], "expected <block end>, but found "+pyStrRepr(t.id()), t.start))
+		panic(parserError("while parsing a block collection", p.marks[len(p.marks)-1], "expected <block end>, but found "+strconv.Quote(t.id()), t.start))
 	}
 	t := p.s.getToken()
 	ev := &event{kind: evSequenceEnd, start: t.start, end: t.end, comment: t.comment}
@@ -470,7 +470,7 @@ func (p *parser) parseBlockMappingKey() *event {
 	}
 	if !p.s.checkToken(tkBlockEnd) {
 		t := p.s.peekToken()
-		panic(parserError("while parsing a block mapping", p.marks[len(p.marks)-1], "expected <block end>, but found "+pyStrRepr(t.id()), t.start))
+		panic(parserError("while parsing a block mapping", p.marks[len(p.marks)-1], "expected <block end>, but found "+strconv.Quote(t.id()), t.start))
 	}
 	t := p.s.getToken()
 	p.moveTokenComment(t, nil, false)
@@ -524,7 +524,7 @@ func (p *parser) parseFlowSequenceEntry(first bool) *event {
 				p.s.getToken()
 			} else {
 				t := p.s.peekToken()
-				panic(parserError("while parsing a flow sequence", p.marks[len(p.marks)-1], "expected ',' or ']', but got "+pyStrRepr(t.id()), t.start))
+				panic(parserError("while parsing a flow sequence", p.marks[len(p.marks)-1], "expected ',' or ']', but got "+strconv.Quote(t.id()), t.start))
 			}
 		}
 		if p.s.checkToken(tkKey) {
@@ -589,7 +589,7 @@ func (p *parser) parseFlowMappingKey(first bool) *event {
 				p.s.getToken()
 			} else {
 				t := p.s.peekToken()
-				panic(parserError("while parsing a flow mapping", p.marks[len(p.marks)-1], "expected ',' or '}', but got "+pyStrRepr(t.id()), t.start))
+				panic(parserError("while parsing a flow mapping", p.marks[len(p.marks)-1], "expected ',' or '}', but got "+strconv.Quote(t.id()), t.start))
 			}
 		}
 		if p.s.checkToken(tkKey) {

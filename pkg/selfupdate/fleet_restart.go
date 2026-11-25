@@ -330,7 +330,7 @@ func gatewayHomeForPid(pid int) (found string) {
 		if record == nil {
 			continue
 		}
-		if recorded, ok := pyIntValue(rowValue(record, "pid")); ok && int(recorded) == pid {
+		if recorded, ok := intValue(rowValue(record, "pid")); ok && int(recorded) == pid {
 			return profile.home
 		}
 	}

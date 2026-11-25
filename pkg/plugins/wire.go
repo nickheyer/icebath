@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,7 +20,6 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -106,7 +106,7 @@ func wireStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return config.PyStr(v)
+	return anyutil.String(v)
 }
 
 // Dataclass that crossed the boundary with item and attribute access
@@ -162,6 +162,8 @@ func wireEncodeDepth(value any, refs func(any) map[string]any, depth int) any {
 		return encodeUnsigned(v)
 	case float32:
 		return float64(v)
+	case json.Number:
+		return wireNumber(v)
 	}
 	if depth > 64 {
 		return map[string]any{"__opaque__": wireTypeName(value), "repr": "<too deep>"}
@@ -211,7 +213,7 @@ func wireEncodeDepth(value any, refs func(any) map[string]any, depth int) any {
 		out := map[string]any{}
 		iter := rv.MapRange()
 		for iter.Next() {
-			out[config.PyStr(iter.Key().Interface())] = wireEncodeDepth(iter.Value().Interface(), refs, depth+1)
+			out[anyutil.String(iter.Key().Interface())] = wireEncodeDepth(iter.Value().Interface(), refs, depth+1)
 		}
 		return out
 	case reflect.Slice, reflect.Array:
@@ -252,6 +254,21 @@ func encodeUnsigned(v uint64) any {
 		return int64(v)
 	}
 	return new(big.Int).SetUint64(v)
+}
+
+// Wire number of a json.Number: an integer as int64, or exactly as *big.Int beyond that range, any other number as float64, text that spells no number as the text
+func wireNumber(n json.Number) any {
+	text := string(n)
+	if i, err := strconv.ParseInt(text, 10, 64); err == nil {
+		return i
+	}
+	if b, ok := new(big.Int).SetString(text, 10); ok {
+		return b
+	}
+	if f, err := strconv.ParseFloat(text, 64); err == nil || errors.Is(err, strconv.ErrRange) {
+		return f
+	}
+	return text
 }
 
 // Exported struct fields keyed by their json tag or snake case name, the dataclass field table
@@ -338,9 +355,9 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 		if raw, ok := v["__opaque__"]; ok {
 			text := ""
 			if anyutil.IsTrue(v["repr"]) {
-				text = config.PyStr(v["repr"])
+				text = anyutil.String(v["repr"])
 			}
-			return &Opaque{TypeName: config.PyStr(raw), Text: text}, nil
+			return &Opaque{TypeName: anyutil.String(raw), Text: text}, nil
 		}
 		_, c := v["__callable__"]
 		_, o := v["__object__"]
@@ -577,7 +594,7 @@ func (c *Channel) Request(ctx context.Context, method string, params map[string]
 
 // Writes one frame under the write lock, closing the channel when the pipe fails
 func (c *Channel) send(message map[string]any) error {
-	data, err := pyJSONDumps(message)
+	data, err := jsonDumps(message)
 	if err != nil {
 		return &HostBuiltinError{Type: "TypeError", Message: err.Error()}
 	}
@@ -614,7 +631,7 @@ func (c *Channel) readLoop() {
 }
 
 func (c *Channel) dispatchFrame(line []byte) {
-	parsed, err := pyJSONLoads(line)
+	parsed, err := jsonLoads(line)
 	message, ok := parsed.(map[string]any)
 	if err != nil || !ok {
 		text := strconv.Quote(string(line))
@@ -690,17 +707,17 @@ func (c *Channel) serve(message map[string]any, frame []byte) {
 				if ui, ok := r.(*UserInterrupt); ok {
 					typeName, r = "KeyboardInterrupt", ui.Err
 				}
-				pkgLog().Warn(fmt.Sprintf("%s: request %s raised %s", c.name, config.PyStr(message["method"]), typeName))
-				reply = map[string]any{"id": id, "error": map[string]any{"type": typeName, "message": config.PyStr(r)}}
+				pkgLog().Warn(fmt.Sprintf("%s: request %s raised %s", c.name, anyutil.String(message["method"]), typeName))
+				reply = map[string]any{"id": id, "error": map[string]any{"type": typeName, "message": anyutil.String(r)}}
 			}
 		}()
-		result, err := c.handler(ctx, config.PyStr(message["method"]), params, origin)
+		result, err := c.handler(ctx, anyutil.String(message["method"]), params, origin)
 		var remote interface{ WireError() map[string]any }
 		if errors.As(err, &remote) {
 			return map[string]any{"id": id, "error": remote.WireError()}
 		}
 		if err != nil {
-			return map[string]any{"id": id, "error": map[string]any{"type": pyErrorTypeName(err), "message": err.Error()}}
+			return map[string]any{"id": id, "error": map[string]any{"type": errorTypeNameValue(err), "message": err.Error()}}
 		}
 		return map[string]any{"id": id, "result": result}
 	}()
@@ -776,7 +793,7 @@ func (c *Channel) Close(reason string) {
 	_ = c.reader.Close()
 }
 
-// Integer value of a decoded wire number
+// Integer value of a decoded wire number, a float only when it is whole and within the int64 range
 func wireInt(v any) (int64, bool) {
 	switch n := v.(type) {
 	case int64:
@@ -784,7 +801,7 @@ func wireInt(v any) (int64, bool) {
 	case int:
 		return int64(n), true
 	case float64:
-		if n == math.Trunc(n) {
+		if n == math.Trunc(n) && n >= -(1<<63) && n < 1<<63 {
 			return int64(n), true
 		}
 	}
@@ -792,15 +809,15 @@ func wireInt(v any) (int64, bool) {
 }
 
 // Python json.dumps with compact separators, allow_nan and ensure_ascii
-func pyJSONDumps(v any) ([]byte, error) {
+func jsonDumps(v any) ([]byte, error) {
 	var b strings.Builder
-	if err := pyJSONWrite(&b, v); err != nil {
+	if err := jsonWrite(&b, v); err != nil {
 		return nil, err
 	}
 	return []byte(b.String()), nil
 }
 
-func pyJSONWrite(b *strings.Builder, v any) error {
+func jsonWrite(b *strings.Builder, v any) error {
 	switch x := v.(type) {
 	case nil:
 		b.WriteString("null")
@@ -825,17 +842,17 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 		case math.IsInf(x, -1):
 			b.WriteString("-Infinity")
 		default:
-			b.WriteString(pyFloatRepr(x))
+			b.WriteString(floatRepr(x))
 		}
 	case string:
-		pyJSONString(b, x)
+		jsonString(b, x)
 	case []any:
 		b.WriteByte('[')
 		for i, item := range x {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			if err := pyJSONWrite(b, item); err != nil {
+			if err := jsonWrite(b, item); err != nil {
 				return err
 			}
 		}
@@ -851,9 +868,9 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			pyJSONString(b, k)
+			jsonString(b, k)
 			b.WriteByte(':')
-			if err := pyJSONWrite(b, x[k]); err != nil {
+			if err := jsonWrite(b, x[k]); err != nil {
 				return err
 			}
 		}
@@ -864,9 +881,9 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 			if i > 0 {
 				b.WriteByte(',')
 			}
-			pyJSONString(b, k)
+			jsonString(b, k)
 			b.WriteByte(':')
-			if err := pyJSONWrite(b, x.Value(k)); err != nil {
+			if err := jsonWrite(b, x.Value(k)); err != nil {
 				return err
 			}
 		}
@@ -878,7 +895,7 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 }
 
 // Python float repr, the shortest round tripping form with a trailing .0 for integral values
-func pyFloatRepr(f float64) string {
+func floatRepr(f float64) string {
 	abs := math.Abs(f)
 	if abs != 0 && (abs < 1e-4 || abs >= 1e16) {
 		s := strconv.FormatFloat(f, 'e', -1, 64)
@@ -898,7 +915,7 @@ func pyFloatRepr(f float64) string {
 }
 
 // Writes a JSON string with every non ASCII code unit escaped, WTF-8 lone surrogates included
-func pyJSONString(b *strings.Builder, s string) {
+func jsonString(b *strings.Builder, s string) {
 	b.WriteByte('"')
 	for i := 0; i < len(s); {
 		c := s[i]
@@ -952,8 +969,8 @@ func pyJSONString(b *strings.Builder, s string) {
 }
 
 // Python json.loads of one document, NaN and Infinity accepted, integers kept exact
-func pyJSONLoads(data []byte) (any, error) {
-	p := &pyJSONParser{s: data}
+func jsonLoads(data []byte) (any, error) {
+	p := &jsonParser{s: data}
 	p.skip()
 	v, err := p.value()
 	if err != nil {
@@ -966,20 +983,20 @@ func pyJSONLoads(data []byte) (any, error) {
 	return v, nil
 }
 
-type pyJSONParser struct {
+type jsonParser struct {
 	s []byte
 	i int
 }
 
-func (p *pyJSONParser) skip() {
+func (p *jsonParser) skip() {
 	for p.i < len(p.s) && (p.s[p.i] == ' ' || p.s[p.i] == '\t' || p.s[p.i] == '\n' || p.s[p.i] == '\r') {
 		p.i++
 	}
 }
 
-func (p *pyJSONParser) fail() error { return fmt.Errorf("invalid JSON at character %d", p.i) }
+func (p *jsonParser) fail() error { return fmt.Errorf("invalid JSON at character %d", p.i) }
 
-func (p *pyJSONParser) lit(word string, v any) (any, error) {
+func (p *jsonParser) lit(word string, v any) (any, error) {
 	if strings.HasPrefix(string(p.s[p.i:]), word) {
 		p.i += len(word)
 		return v, nil
@@ -987,7 +1004,7 @@ func (p *pyJSONParser) lit(word string, v any) (any, error) {
 	return nil, p.fail()
 }
 
-func (p *pyJSONParser) value() (any, error) {
+func (p *jsonParser) value() (any, error) {
 	if p.i >= len(p.s) {
 		return nil, p.fail()
 	}
@@ -1016,7 +1033,7 @@ func (p *pyJSONParser) value() (any, error) {
 	return nil, p.fail()
 }
 
-func (p *pyJSONParser) number() (any, error) {
+func (p *jsonParser) number() (any, error) {
 	start := p.i
 	if p.s[p.i] == '-' {
 		p.i++
@@ -1053,7 +1070,7 @@ func (p *pyJSONParser) number() (any, error) {
 	return n, nil
 }
 
-func (p *pyJSONParser) str() (any, error) {
+func (p *jsonParser) str() (any, error) {
 	p.i++
 	var b strings.Builder
 	for p.i < len(p.s) {
@@ -1113,7 +1130,7 @@ func (p *pyJSONParser) str() (any, error) {
 	return nil, fmt.Errorf("Unterminated string")
 }
 
-func (p *pyJSONParser) hex4() (uint16, bool) {
+func (p *jsonParser) hex4() (uint16, bool) {
 	if p.i+4 > len(p.s) {
 		return 0, false
 	}
@@ -1125,7 +1142,7 @@ func (p *pyJSONParser) hex4() (uint16, bool) {
 	return uint16(n), true
 }
 
-func (p *pyJSONParser) array() (any, error) {
+func (p *jsonParser) array() (any, error) {
 	p.i++
 	out := []any{}
 	p.skip()
@@ -1156,7 +1173,7 @@ func (p *pyJSONParser) array() (any, error) {
 	}
 }
 
-func (p *pyJSONParser) object() (any, error) {
+func (p *jsonParser) object() (any, error) {
 	p.i++
 	out := map[string]any{}
 	p.skip()

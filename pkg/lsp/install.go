@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -177,7 +178,7 @@ func existingBinary(rt *Runtime, name string, windows bool) (string, error) {
 		suffixes = append(append([]string{}, windowsWrapperSuffixes...), "")
 	}
 	for _, s := range suffixes {
-		if p := pyWhich(name + s); p != "" {
+		if p := whichValue(name + s); p != "" {
 			return p, nil
 		}
 	}
@@ -231,7 +232,7 @@ func TryInstall(rt *Runtime, pkg, strategy string) (string, error) {
 func doInstall(rt *Runtime, pkg string) (string, error) {
 	recipe, ok := InstallRecipes[pkg]
 	if !ok {
-		return pyWhich(pkg), nil
+		return whichValue(pkg), nil
 	}
 	strategy := recipe.Strategy
 	if strategy == "" {
@@ -247,7 +248,7 @@ func doInstall(rt *Runtime, pkg string) (string, error) {
 	}
 	switch strategy {
 	case "manual":
-		rt.logf(slog.LevelDebug, "[install] %s requires manual install (recipe=%s)", pkg, recipeRepr(recipe))
+		rt.logf(slog.LevelDebug, "[install] %s requires manual install (recipe=%s)", pkg, recipeText(recipe))
 		return "", nil
 	case "npm":
 		return installNpm(rt, recipe.Pkg, binName, recipe.ExtraPkgs)
@@ -260,13 +261,13 @@ func doInstall(rt *Runtime, pkg string) (string, error) {
 	return "", nil
 }
 
-// Python dict repr of a recipe
-func recipeRepr(r Recipe) string {
-	s := fmt.Sprintf("{'strategy': %s, 'pkg': %s, 'bin': %s", strconv.Quote(r.Strategy), strconv.Quote(r.Pkg), strconv.Quote(r.Bin))
+// Recipe fields as compact JSON for logs, extra_pkgs only when the recipe has them
+func recipeText(r Recipe) string {
+	o := jsonutil.ObjectOf("strategy", r.Strategy, "pkg", r.Pkg, "bin", r.Bin)
 	if r.ExtraPkgs != nil {
-		s += ", 'extra_pkgs': " + anyutil.Quote(r.ExtraPkgs)
+		o.Set("extra_pkgs", r.ExtraPkgs)
 	}
-	return s + "}"
+	return o.String()
 }
 
 // Captured outcome of one installer child
@@ -289,13 +290,13 @@ var runInstallCommand = func(argv []string, timeout time.Duration, env map[strin
 	hideWindow(cmd)
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &TimeoutError{msg: fmt.Sprintf("Command '%s' timed out after %d seconds", anyutil.Quote(argv), int(timeout/time.Second))}
+		return nil, &TimeoutError{msg: fmt.Sprintf("command %s timed out after %d seconds", anyutil.Quote(argv), int(timeout/time.Second))}
 	}
 	res := &installRun{stdout: decodeUTF8Replace(stdout.Bytes()), stderr: decodeUTF8Replace(stderr.Bytes())}
 	if err != nil {
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
-			return nil, pyOSError(err, argv[0])
+			return nil, osError(err, argv[0])
 		}
 		res.code = ee.ExitCode()
 	}
@@ -410,8 +411,7 @@ func nodePackageManager(rt *Runtime) string {
 		pm = strings.ToLower(strings.TrimSpace(anyutil.String(v)))
 	}
 	if _, ok := nodePMArgv[pm]; !ok {
-		rt.logf(slog.LevelWarn, "[install] lsp.package_manager=%s is not one of %s; skipping install",
-			strconv.Quote(pm), anyutil.Quote([]string{"npm", "pnpm", "yarn"}))
+		rt.logf(slog.LevelWarn, "[install] lsp.package_manager=%s is not one of npm, pnpm, yarn; skipping install", strconv.Quote(pm))
 		return ""
 	}
 	return pm
@@ -443,7 +443,7 @@ var findNodeExecutable = func(rt *Runtime, command string) (string, error) {
 			}
 			return "", nil
 		}
-		return pyWhich(command), nil
+		return whichValue(command), nil
 	}
 	base := strings.ToLower(command)
 	for _, suffix := range []string{".cmd", ".exe", ".ps1"} {
@@ -466,7 +466,7 @@ var findNodeExecutable = func(rt *Runtime, command string) (string, error) {
 		return "", nil
 	}
 	if !isWindowsHost() {
-		return pyWhich(command), nil
+		return whichValue(command), nil
 	}
 	for _, name := range candidateNodeCommandNames(command) {
 		for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
@@ -547,7 +547,7 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 
 // Installs a Go module with GOBIN pointed at the staging directory
 func installGo(rt *Runtime, pkg, binName string) (string, error) {
-	goBin := pyWhich("go")
+	goBin := whichValue("go")
 	if goBin == "" {
 		rt.logf(slog.LevelInfo, "[install] cannot install %s: go not on PATH", pkg)
 		return "", nil

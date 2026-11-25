@@ -149,7 +149,7 @@ func armCommitObligations(ctx context.Context, root, expectedSHA string) error {
 		return armErr
 	}
 	if !owed {
-		return &pm.PyError{Class: "OSError", Message: "could not record the pending gateway-restart obligation"}
+		return &pm.ClassError{Class: "OSError", Message: "could not record the pending gateway-restart obligation"}
 	}
 	return nil
 }
@@ -318,7 +318,7 @@ func armTreeMove(ctx context.Context, gitCmd []string, root string, move treeMov
 // Copies the launch repair's modules as committed at pre beside the marker and returns the closure directory
 func publishRecoveryClosure(ctx context.Context, gitCmd []string, root, pre string) (string, error) {
 	if !IsObjectID(pre) {
-		return "", &pm.PyError{Class: "OSError", Message: "not a commit id: " + errchain.Show(pre)}
+		return "", &pm.ClassError{Class: "OSError", Message: "not a commit id: " + errchain.Show(pre)}
 	}
 	dest, err := RecoveryClosureDirOf(root, pre)
 	if err != nil {
@@ -342,7 +342,7 @@ func publishRecoveryClosure(ctx context.Context, gitCmd []string, root, pre stri
 				continue
 			}
 			if len(fields) < 3 {
-				return "", &pm.PyError{Class: "IndexError", Message: "git ls-tree printed a blob line without an object id"}
+				return "", &pm.ClassError{Class: "IndexError", Message: "git ls-tree printed a blob line without an object id"}
 			}
 			ids[rel] = fields[2]
 		}
@@ -355,7 +355,7 @@ func publishRecoveryClosure(ctx context.Context, gitCmd []string, root, pre stri
 	for _, rel := range RecoveryClosure {
 		id, listedBlob := ids[rel]
 		if !listedBlob || shown[rel] == nil || BlobID(shown[rel], pre) != id {
-			return "", &pm.PyError{Class: "OSError", Message: rel + " is not in " + short(pre)}
+			return "", &pm.ClassError{Class: "OSError", Message: rel + " is not in " + short(pre)}
 		}
 		blobs = append(blobs, sourceFile{Rel: rel, Data: shown[rel]})
 	}

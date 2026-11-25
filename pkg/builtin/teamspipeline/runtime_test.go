@@ -233,7 +233,7 @@ func TestBuildPipelineRuntimeSkipsSenderWhenAdapterLayerIsUnavailable(t *testing
 	t.Cleanup(func() { runtimeGraphClient, importTeamsSummaryWriter = prevClient, prevImport })
 	runtimeGraphClient = func() (graphClient, error) { return &scriptGraph{}, nil }
 	importTeamsSummaryWriter = func() (func(*gateway.PlatformConfig) SummarySink, error) {
-		return nil, pyError("ImportError", "cannot import name 'register' from 'plugins.platforms.teams.adapter' (unknown location)")
+		return nil, kindError("ImportError", "cannot import name 'register' from 'plugins.platforms.teams.adapter' (unknown location)")
 	}
 	t.Setenv("MSGRAPH_WEBHOOK_STORE_PATH", filepath.Join(t.TempDir(), "teams-pipeline-store.json"))
 
@@ -252,7 +252,7 @@ func TestBindGatewayRuntimeDropsNotificationsWhenTheRuntimeCannotBeBuilt(t *test
 	host := &fakeGatewayHost{adapters: map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformMSGraphWebhook: adapter},
 		config: &gateway.GatewayConfig{Platforms: map[gateway.Platform]*gateway.PlatformConfig{}}}
 	useRuntimeBuilder(t, func(context.Context, GatewayRuntimeHost) (PipelineRuntime, error) {
-		return nil, pyError("ValueError", "MSGRAPH_TENANT_ID is required.")
+		return nil, kindError("ValueError", "MSGRAPH_TENANT_ID is required.")
 	})
 
 	bound, err := BindGatewayRuntime(context.Background(), host)

@@ -171,7 +171,7 @@ func TestLinearWriterCreatesThenUpdatesIssue(t *testing.T) {
 	}
 	transport.body = `{"errors": [{"message": "denied"}]}`
 	if _, err := writer.WriteSummary(context.Background(), sinkPayload(), obj("team_id", "t"), nil); !errors.As(err, &sinkErr) ||
-		err.Error() != "Linear write failed: {'errors': [{'message': 'denied'}]}" {
+		err.Error() != `Linear write failed: {"errors":[{"message":"denied"}]}` {
 		t.Fatalf("failed write %v", err)
 	}
 	transport.body = `[1]`

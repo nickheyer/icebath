@@ -42,7 +42,7 @@ func profileHomePath(ctx context.Context, env map[string]string) string {
 	if h == "" {
 		return ""
 	}
-	p := pathutil.Join(expand(h), "home")
+	p := pathutil.JoinKeepDotDot(expand(h), "home")
 	if st, err := os.Stat(p); err == nil && st.IsDir() {
 		return p
 	}
@@ -78,7 +78,7 @@ func realHomeCandidates(env map[string]string) []string {
 		if strings.HasPrefix(path, `\`) || strings.HasPrefix(path, "/") {
 			candidates = append(candidates, drive+path)
 		} else {
-			candidates = append(candidates, pathutil.Join(drive, path))
+			candidates = append(candidates, pathutil.JoinKeepDotDot(drive, path))
 		}
 	}
 	if expanded := pathutil.ExpandUser("~"); expanded != "~" {

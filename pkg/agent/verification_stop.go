@@ -79,7 +79,7 @@ func verifyCandidateCwds(paths []string) []string {
 
 // Status of a verification record, unverified when absent
 func verifyStatusName(status map[string]any) string {
-	if v := status["status"]; pyTruthy(v) {
+	if v := status["status"]; anyutil.IsTrue(v) {
 		return anyutil.String(v)
 	}
 	return "unverified"
@@ -124,7 +124,7 @@ var verifyDetectRecipe = verify.DetectRecipe
 
 // Whether icebath verify has a saved manifest or a detected recipe with a start command here
 func workspaceHasRunnableRecipe(root any) bool {
-	if !pyTruthy(root) {
+	if !anyutil.IsTrue(root) {
 		return false
 	}
 	rootPath := anyutil.String(root)
@@ -143,15 +143,15 @@ func verifyStatusDetail(status map[string]any) string {
 		return name
 	}
 	command := evidence["canonical_command"]
-	if !pyTruthy(command) {
+	if !anyutil.IsTrue(command) {
 		command = evidence["command"]
 	}
 	summary := ""
-	if v := evidence["output_summary"]; pyTruthy(v) {
+	if v := evidence["output_summary"]; anyutil.IsTrue(v) {
 		summary = strings.TrimSpace(anyutil.String(v))
 	}
 	parts := []string{name}
-	if pyTruthy(command) {
+	if anyutil.IsTrue(command) {
 		parts = append(parts, "last command `"+anyutil.String(command)+"`")
 	}
 	if summary != "" {

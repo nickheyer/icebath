@@ -44,7 +44,7 @@ func FormatAge(seconds float64) string {
 // Details line every owner refusal message carries, the surface and age of the holding lease
 func SessionOwnerDetails(sessionID string, entry *jsonutil.Object) string {
 	surface := "another surface"
-	if v := entry.ValueOr("surface", nil); pyTruthy(v) {
+	if v := entry.ValueOr("surface", nil); anyutil.IsTrue(v) {
 		surface = anyutil.String(v)
 	}
 	age := ""
@@ -189,7 +189,7 @@ func registryPid(pid any) int {
 		}
 		return math.MinInt
 	case string:
-		n, ok := pyIntText(v)
+		n, ok := intText(v)
 		if !ok {
 			return 0
 		}
@@ -199,7 +199,7 @@ func registryPid(pid any) int {
 }
 
 // Python int() of text, surrounding whitespace and underscores between digits accepted
-func pyIntText(s string) (int, bool) {
+func intText(s string) (int, bool) {
 	t := strings.TrimSpace(s)
 	if t == "" || strings.HasPrefix(t, "_") || strings.HasSuffix(t, "_") || strings.Contains(t, "__") {
 		return 0, false
@@ -254,13 +254,13 @@ func optionalFloat(v any) (float64, bool) {
 		if x == "" {
 			return 0, false
 		}
-		return pyFloatText(x)
+		return floatText(x)
 	}
 	return 0, false
 }
 
 // Python float() of text, whitespace stripped and inf and nan spellings accepted
-func pyFloatText(s string) (float64, bool) {
+func floatText(s string) (float64, bool) {
 	t := strings.TrimSpace(s)
 	switch strings.ToLower(strings.TrimLeft(t, "+-")) {
 	case "inf", "infinity", "nan":
@@ -395,7 +395,7 @@ var pruneDead = func(entries []*jsonutil.Object, strict bool, targetSessionID *s
 	targeted := targetSessionID != nil || targetPid != nil
 	var live []*jsonutil.Object
 	for _, entry := range entries {
-		tracked := strict || pyTruthy(entry.ValueOr("track_liveness", nil))
+		tracked := strict || anyutil.IsTrue(entry.ValueOr("track_liveness", nil))
 		state := pidLiveness(entry.ValueOr("pid", nil), entry.ValueOr("process_start_time", nil), !tracked)
 		if state == livenessUnknown {
 			sessionMatch := targetSessionID != nil && anyutil.String(orEmpty(entry.ValueOr("session_id", nil))) == *targetSessionID
@@ -471,31 +471,8 @@ func leaseIDOf(entry *jsonutil.Object) string {
 
 // Value itself when truthy, else the empty string
 func orEmpty(v any) any {
-	if pyTruthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return ""
-}
-
-// Python truthiness of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case *big.Int:
-		return x.Sign() != 0
-	case []any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x.Len() > 0
-	}
-	return true
 }

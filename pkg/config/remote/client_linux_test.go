@@ -15,7 +15,7 @@ func TestRefusedAndResetConnectionsCarryTheErrnoText(t *testing.T) {
 	ln.Close()
 	var te *TransportError
 	err = requestError(t, "http://"+gone)
-	if want := "GET http://" + gone + "/v1/config/self?profile=p: [Errno 111] Connection refused"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET http://" + gone + "/v1/config/self?profile=p: connect: connection refused"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("refused: %v", err)
 	}
 	reset := rawServer(t, func(conn net.Conn) {
@@ -25,7 +25,7 @@ func TestRefusedAndResetConnectionsCarryTheErrnoText(t *testing.T) {
 		conn.Close()
 	})
 	err = requestError(t, "http://"+reset)
-	if want := "GET http://" + reset + "/v1/config/self?profile=p: [Errno 104] Connection reset by peer"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET http://" + reset + "/v1/config/self?profile=p: read: connection reset by peer"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("reset: %v", err)
 	}
 }

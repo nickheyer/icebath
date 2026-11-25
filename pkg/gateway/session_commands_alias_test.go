@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 const aliasQuickCommandsConfig = `quick_commands:
@@ -78,7 +80,7 @@ func TestResolveCommandAliasRefusesBrokenAliases(t *testing.T) {
 		}
 	}
 	_, _, err := resolveCommandAlias(ctx, "slash", "")
-	var raised *PyError
+	var raised *errorutil.Error
 	if !errors.As(err, &raised) || raised.Kind != "IndexError" {
 		t.Fatalf("a target of only a slash gave %v", err)
 	}

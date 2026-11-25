@@ -100,11 +100,11 @@ func reopenIfReattached(ctx context.Context, a *SessionAuthority, sessionID stri
 	}
 	entry, ok := receipt.Get("entry")
 	if !ok {
-		return ended, &pyKeyError{"entry"}
+		return ended, &keyError{"entry"}
 	}
 	target, ok := rowGet(entry.(*jsonutil.Object), "session_id")
 	if !ok {
-		return ended, &pyKeyError{"session_id"}
+		return ended, &keyError{"session_id"}
 	}
 	return ended, a.DB.ReopenSession(ctx, target.(string))
 }

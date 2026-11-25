@@ -96,7 +96,9 @@ func auxParseCallKwargs(fn string, kwargs map[string]any, sync bool) (auxCallReq
 	} else if headers, ok := kwargs["extra_headers"].(map[string]any); ok {
 		req.ExtraHeaders = make(map[string]string, len(headers))
 		for k, v := range headers {
-			req.ExtraHeaders[k] = anyutil.String(v)
+			if v != nil {
+				req.ExtraHeaders[k] = anyutil.String(v)
+			}
 		}
 	}
 	var err error

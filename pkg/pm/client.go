@@ -61,7 +61,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 		offered = append(offered, "progress")
 		handlers["progress"] = func(args []any) error {
 			if len(args) != 4 {
-				return &PyError{Class: "TypeError", Message: fmt.Sprintf("the progress callback takes 4 values, got %d", len(args))}
+				return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the progress callback takes 4 values, got %d", len(args))}
 			}
 			done, _ := jsonNumber(args[1])
 			total, _ := jsonNumber(args[2])
@@ -72,7 +72,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 		offered = append(offered, "download_progress")
 		handlers["download_progress"] = func(args []any) error {
 			if len(args) != 3 {
-				return &PyError{Class: "TypeError", Message: fmt.Sprintf("the download_progress callback takes 3 values, got %d", len(args))}
+				return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the download_progress callback takes 3 values, got %d", len(args))}
 			}
 			done, _ := jsonNumber(args[0])
 			total, _ := jsonNumber(args[1])
@@ -86,7 +86,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 func policyFromArguments(arguments map[string]any) (policyArgs, error) {
 	args := policyArgs{Name: anyutil.String(arguments["name"]), Explicit: anyutil.IsTrue(arguments["explicit"]), Repair: anyutil.IsTrue(arguments["repair"])}
 	if raw, ok := arguments["extras"]; ok && anyutil.IsTrue(raw) {
-		extras, err := pyIterStrings(raw)
+		extras, err := iterStrings(raw)
 		if err != nil {
 			return policyArgs{}, err
 		}
@@ -106,7 +106,7 @@ func request(ctx context.Context, operation string, arguments map[string]any, ho
 	names := spec.packages
 	if names == nil {
 		if raw, ok := arguments["names"]; ok {
-			if names, err = pyIterStrings(raw); err != nil {
+			if names, err = iterStrings(raw); err != nil {
 				return nil, err
 			}
 		} else {
@@ -280,7 +280,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 		}
 		value, err := loadJSON(line)
 		if err != nil {
-			return nil, &PyError{Class: "ValueError", Message: err.Error()}
+			return nil, &ClassError{Class: "ValueError", Message: err.Error()}
 		}
 		parsed, ok := value.(map[string]any)
 		if !ok {
@@ -311,7 +311,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 		}
 		var runErr error
 		if !known {
-			runErr = &PyError{Class: "KeyError", Message: "unknown callback " + errchain.Show(name)}
+			runErr = &ClassError{Class: "KeyError", Message: "unknown callback " + errchain.Show(name)}
 		} else if args, err := wireCallbackArgs(anyutil.String(name), parsed, line); err != nil {
 			runErr = err
 		} else {
@@ -347,7 +347,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 			return nil, NewInstallError("pm", "worker exited unsuccessfully", "")
 		}
 	case <-time.After(5 * time.Second):
-		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 5 seconds", strings.Join(s.cmd.Args, " "))}
+		return nil, &ClassError{Class: "TimeoutExpired", Message: fmt.Sprintf("Command '%s' timed out after 5 seconds", strings.Join(s.cmd.Args, " "))}
 	}
 	if err := acceptWorkerReceipt(ctx, orderedWorkerReceipt(resultLine), updateID); err != nil {
 		return nil, err
@@ -371,7 +371,7 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 
 // KeyError subscripting a worker message raises for a missing key
 func wireKeyError(key string) error {
-	return &PyError{Class: "KeyError", Message: "the worker message has no " + key}
+	return &ClassError{Class: "KeyError", Message: "the worker message has no " + key}
 }
 
 // Error subscripting a decoded worker value raises when it is no object
@@ -379,12 +379,12 @@ func wireSubscriptError(v any, key string) error {
 	if _, ok := v.(map[string]any); ok {
 		return wireKeyError(key)
 	}
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker message must be a mapping holding %s, got %s", key, errchain.Kind(v))}
+	return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the worker message must be a mapping holding %s, got %s", key, errchain.Kind(v))}
 }
 
 // Error for a worker error value that is no mapping
 func wireErrorShape(v any) error {
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker error must be a mapping, got %s", errchain.Kind(v))}
+	return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the worker error must be a mapping, got %s", errchain.Kind(v))}
 }
 
 // Positional arguments of a relayed callback the way star unpacking reads the message args, an empty list when absent
@@ -405,7 +405,7 @@ func wireCallbackArgs(name string, message map[string]any, line []byte) ([]any, 
 	case map[string]any:
 		ordered, err := loadOrderedJSON(line)
 		if err != nil {
-			return nil, &PyError{Class: "ValueError", Message: err.Error()}
+			return nil, &ClassError{Class: "ValueError", Message: err.Error()}
 		}
 		doc, _ := ordered.(*OrderedObject)
 		var inner any
@@ -414,7 +414,7 @@ func wireCallbackArgs(name string, message map[string]any, line []byte) ([]any, 
 		}
 		obj, isObject := inner.(*OrderedObject)
 		if !isObject || len(obj.Keys) != len(v) {
-			return nil, &PyError{Class: "ValueError", Message: "worker message args decoded differently in key order"}
+			return nil, &ClassError{Class: "ValueError", Message: "worker message args decoded differently in key order"}
 		}
 		out := make([]any, len(obj.Keys))
 		for i, key := range obj.Keys {
@@ -422,7 +422,7 @@ func wireCallbackArgs(name string, message map[string]any, line []byte) ([]any, 
 		}
 		return out, nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s callback arguments must be a list, got %s", name, errchain.Kind(raw))}
+	return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the %s callback arguments must be a list, got %s", name, errchain.Kind(raw))}
 }
 
 // Callback arguments with the coverage object rebuilt in the order the worker reported it
@@ -495,11 +495,11 @@ func managedSyncVenv(ctx context.Context, opts SyncVenvOptions) error {
 		if _, has := selection.Data["expected_config"]; !has {
 			homeValue, ok := selection.Data["home"]
 			if !ok {
-				return &PyError{Class: "KeyError", Message: "the plugin selection has no home"}
+				return &ClassError{Class: "KeyError", Message: "the plugin selection has no home"}
 			}
 			homeDir, ok := homeValue.(string)
 			if !ok {
-				return &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugin selection home must be text, got %s", errchain.Kind(homeValue))}
+				return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the plugin selection home must be text, got %s", errchain.Kind(homeValue))}
 			}
 			digest, found, err := FileDigest(filepath.Join(homeDir, "config.yaml"))
 			if err != nil {
@@ -595,7 +595,7 @@ func EnsureToolsForSync(ctx context.Context) error {
 		return err
 	}
 	if len(problems) > 0 {
-		return &PyError{Class: "RuntimeError", Message: "tools not on PATH before venv sync: " + strings.Join(problems, "; ")}
+		return &ClassError{Class: "RuntimeError", Message: "tools not on PATH before venv sync: " + strings.Join(problems, "; ")}
 	}
 	return nil
 }

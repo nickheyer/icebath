@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -106,7 +107,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 		if err != nil {
 			return false, err
 		}
-		job.ExecutionID = strPtr(pyStrOrEmpty(execution["id"]))
+		job.ExecutionID = strPtr(anyutil.StringOr(execution["id"], ""))
 	}
 	executionID := *job.ExecutionID
 	if externalWorkerOf(ctx) != executionID {
@@ -128,7 +129,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 					return true, nil
 				}
 			}
-			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, errText))
+			s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, errText))
 			owner := ""
 			if job.FireClaim != nil {
 				owner = job.FireClaim.By
@@ -333,7 +334,7 @@ func (f *fireOwnership) sampleLost(ctx context.Context) bool {
 	latched := f.claimLost != nil && f.claimLost.IsSet()
 	owns, err := f.s.heartbeatFireClaim(ctx, f.job.ID, *f.owner)
 	if err != nil {
-		f.s.log.Debug(fmt.Sprintf("Job '%s': fire_claim ownership validation failed", f.job.ID), "error", err)
+		f.s.log.Debug(fmt.Sprintf("Job %q: fire_claim ownership validation failed", f.job.ID), "error", err)
 		return latched
 	}
 	if owns {
@@ -403,16 +404,16 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 		}
 		if willRetry {
 			d.shouldDeliver = false
-			s.log.Info(fmt.Sprintf("Job '%s': suppressing failure notice — automatic re-run pending", job.ID))
+			s.log.Info(fmt.Sprintf("Job %q: suppressing failure notice — automatic re-run pending", job.ID))
 		}
 	}
 	if d.shouldDeliver && d.success && isCronSilenceResponse(composed.content) {
-		s.log.Info(fmt.Sprintf("Job '%s': agent returned %s — skipping delivery", job.ID, SilentMarker))
+		s.log.Info(fmt.Sprintf("Job %q: agent returned %s — skipping delivery", job.ID, SilentMarker))
 		d.shouldDeliver = false
 	}
 	if d.shouldDeliver && fence.lost(ctx) {
 		d.shouldDeliver = false
-		s.log.Warn(fmt.Sprintf("Job '%s': skipping delivery after fire claim ownership loss", job.ID))
+		s.log.Warn(fmt.Sprintf("Job %q: skipping delivery after fire claim ownership loss", job.ID))
 	}
 	if !d.shouldDeliver {
 		return nil
@@ -558,7 +559,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 		if err != nil {
 			return false, err
 		}
-		executionID = pyStrOrEmpty(execution["id"])
+		executionID = anyutil.StringOr(execution["id"], "")
 	}
 	cp := *job
 	cp.ExecutionID = strPtr(executionID)
@@ -625,7 +626,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 			if name == "" {
 				name = job.ID
 			}
-			s.log.Info(fmt.Sprintf("Job '%s': one-shot dispatch limit reached — skipping", name))
+			s.log.Info(fmt.Sprintf("Job %q: one-shot dispatch limit reached — skipping", name))
 			_, err := ledger.Finish(ctx, executionID, false, strPtr("Dispatch claim rejected; execution was not started."), nil, false)
 			return true, err
 		}
@@ -679,10 +680,10 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 		if fence.lost(runCtx) {
 			transportCancelled := fence.transportCancelled()
 			if d.deliveryAttempted && d.deliveryError == nil && !transportCancelled {
-				s.log.Warn(fmt.Sprintf("Job '%s': fire claim ownership lost after completed delivery; recording the delivered run's terminal status", job.ID))
+				s.log.Warn(fmt.Sprintf("Job %q: fire claim ownership lost after completed delivery; recording the delivered run's terminal status", job.ID))
 			} else {
 				if transportCancelled {
-					s.log.Warn(fmt.Sprintf("Job '%s': transport cancellation arrived before terminal completion; recording the interrupted run", job.ID))
+					s.log.Warn(fmt.Sprintf("Job %q: transport cancellation arrived before terminal completion; recording the interrupted run", job.ID))
 				}
 				return true, s.recordFireOwnershipLost(ctx, job, fireOwner, executionID)
 			}

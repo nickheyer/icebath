@@ -114,7 +114,7 @@ func linuxLivePids(roots []string, exclude map[int]bool) (map[string][]int, erro
 	hits := map[string][]int{}
 	for _, e := range ents {
 		pid, err := strconv.Atoi(e.Name())
-		if err != nil || !pyIsDigits(e.Name()) || exclude[pid] {
+		if err != nil || !isDigitsValue(e.Name()) || exclude[pid] {
 			continue
 		}
 		pidDir := filepath.Join("/proc", e.Name())
@@ -138,7 +138,7 @@ func linuxLivePids(roots []string, exclude map[int]bool) (map[string][]int, erro
 	return hits, nil
 }
 
-func pyIsDigits(s string) bool {
+func isDigitsValue(s string) bool {
 	for _, r := range s {
 		if r < '0' || r > '9' {
 			return false
@@ -317,7 +317,7 @@ func applyBudget(decisions []*Decision, maxTotalGB, maxFileMB float64) {
 			d.Action, d.Reason = unsafe.Action, unsafe.Reason
 			continue
 		}
-		d.Action, d.Reason = "archive-remove", fmt.Sprintf("%s; over worktrees.max_total_gb=%s", d.Reason, pyFormatG(maxTotalGB))
+		d.Action, d.Reason = "archive-remove", fmt.Sprintf("%s; over worktrees.max_total_gb=%s", d.Reason, formatG(maxTotalGB))
 		total -= *d.SizeMB
 	}
 }
@@ -414,7 +414,7 @@ func PlanSweep(ctx context.Context, repoRoot string, maxAgeHours int, s *SweepCo
 	if olderThanDays != nil {
 		for _, d := range decisions {
 			if slices.Contains(destructiveActions, d.Action) && d.AgeHours < *olderThanDays*24 {
-				d.Action, d.Reason = "skip-young", fmt.Sprintf("idle %.1fh (--older-than %s)", d.AgeHours, pyFormatG(*olderThanDays))
+				d.Action, d.Reason = "skip-young", fmt.Sprintf("idle %.1fh (--older-than %s)", d.AgeHours, formatG(*olderThanDays))
 			}
 		}
 	}
@@ -675,7 +675,7 @@ func RunSweep(ctx context.Context, repoRoot string, maxAgeHours int, s SweepConf
 		return err
 	}
 	if len(expired) > 0 {
-		envLog(nil).Info(fmt.Sprintf("Deleted %d worktree archive(s) older than %s days", len(expired), pyFormatG(s.ArchiveRetentionDays)))
+		envLog(nil).Info(fmt.Sprintf("Deleted %d worktree archive(s) older than %s days", len(expired), formatG(s.ArchiveRetentionDays)))
 	}
 	pruneOrphanedBranches(repoRoot, kept)
 	return nil

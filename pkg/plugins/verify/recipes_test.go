@@ -146,7 +146,7 @@ func TestNodeDetection(t *testing.T) {
 		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("dev", "PORT=4222 node server.js")))
 		eq(t, "env port", ptrInt(detect(t, root).Port), 4222)
 		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("dev", "XPORT=4222 node -p ٤٣٢١")))
-		eq(t, "unicode digits", ptrInt(detect(t, root).Port), 4321)
+		eq(t, "non-ASCII digits name no port", ptrInt(detect(t, root).Port), nil)
 	})
 	t.Run("non_string_start_script_raises_type_error", func(t *testing.T) {
 		root := t.TempDir()

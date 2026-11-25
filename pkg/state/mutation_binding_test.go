@@ -51,7 +51,7 @@ func installOwnerIdentityDoubles(t *testing.T) {
 			return true
 		}
 		text, ok := stored.(string)
-		if !ok || text == "" || !pyTruthy(subject) {
+		if !ok || text == "" || !anyutil.IsTrue(subject) {
 			return false
 		}
 		if label, mapped := LoginLabel(subject); mapped && text == label {

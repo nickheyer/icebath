@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -82,7 +81,7 @@ func HooksOverview(ctx context.Context) ([]HookView, []WebhookView, error) {
 		view := HookView{Event: spec.Event, Command: spec.Command, Matcher: spec.Matcher, Timeout: spec.Timeout, FailClosed: spec.FailClosed,
 			Allowed: approved[[2]string{spec.Event, spec.Command}], Drift: -1}
 		if view.Allowed {
-			if entry := ShellHookAllowlistEntry(ctx, spec.Event, spec.Command); len(entry) > 0 && config.PyTruthy(entry["approved_at"]) {
+			if entry := ShellHookAllowlistEntry(ctx, spec.Event, spec.Command); len(entry) > 0 && anyutil.IsTrue(entry["approved_at"]) {
 				view.ApprovedAt = anyutil.String(entry["approved_at"])
 				if view.Drift, view.DriftWas, view.DriftNow, err = hookMtimeDrift(spec, entry); err != nil {
 					return nil, nil, err
@@ -166,11 +165,11 @@ func checkShellHook(ctx context.Context, spec *ShellHookSpec) (*HookCheck, error
 		return check, nil
 	}
 	approvedAt, ok := entry["approved_at"]
-	if !ok {
+	if !ok || approvedAt == nil {
 		approvedAt = "?"
 	}
 	check.ApprovedAt = anyutil.String(approvedAt)
-	if config.PyTruthy(entry["script_mtime_at_approval"]) {
+	if anyutil.IsTrue(entry["script_mtime_at_approval"]) {
 		var err error
 		if check.Drift, check.DriftWas, check.DriftNow, err = hookMtimeDrift(spec, entry); err != nil {
 			return check, err

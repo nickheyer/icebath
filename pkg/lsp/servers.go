@@ -142,7 +142,7 @@ func fileExtOrBasename(path string) string {
 }
 
 // Python shutil.which for one command name
-func pyWhich(name string) string {
+func whichValue(name string) string {
 	p, err := exec.LookPath(name)
 	if err != nil && !errors.Is(err, exec.ErrDot) {
 		return ""
@@ -156,7 +156,7 @@ func pyWhich(name string) string {
 // Full path of the first command found on PATH, swapped by tests that stage binaries
 var which = func(names ...string) string {
 	for _, n := range names {
-		if p := pyWhich(n); p != "" {
+		if p := whichValue(n); p != "" {
 			return p
 		}
 	}
@@ -372,7 +372,7 @@ func vueServerMajor(rt *Runtime, trees []string) (int, error) {
 		v, err := rt.jsonDecoder()(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
 		if err != nil {
 			var jde *JSONDecodeError
-			var pe *pyExc
+			var pe *failure
 			if errors.As(err, &jde) || (errors.As(err, &pe) && pe.typ == "ValueError") {
 				continue
 			}
@@ -387,7 +387,7 @@ func vueServerMajor(rt *Runtime, trees []string) (int, error) {
 			version = ""
 		}
 		head, _, _ := strings.Cut(anyutil.String(version), ".")
-		n, err := pyInt(head)
+		n, err := wholeNumber(head)
 		if err != nil {
 			continue
 		}
@@ -775,7 +775,9 @@ func CustomServers(rt *Runtime, serversCfg any) []*ServerDef {
 		var markers []string
 		if list, ok := entry["root_markers"].([]any); ok && len(list) > 0 {
 			for _, m := range list {
-				markers = append(markers, anyutil.String(m))
+				if marker := anyutil.String(m); marker != "" {
+					markers = append(markers, marker)
+				}
 			}
 		}
 		description := serverID + " — custom (lsp.servers)"

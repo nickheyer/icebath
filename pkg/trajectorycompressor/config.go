@@ -3,6 +3,7 @@ package trajectorycompressor
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"strings"
 
@@ -141,17 +142,22 @@ func assignYAML(dst any, attr string, v any) error {
 		}
 		return fmt.Errorf("%s must be text, got %s", attr, errchain.Kind(v))
 	case *int:
-		if f, ok := yamlNumber(v); ok && f == math.Trunc(f) {
-			*d = int(f)
-			return nil
+		n, err := yamlInt(attr, v)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("%s must be a whole number, got %s", attr, errchain.Kind(v))
+		*d = n
+		return nil
 	case *float64:
-		if f, ok := yamlNumber(v); ok {
-			*d = f
-			return nil
+		f, ok := yamlNumber(v)
+		if !ok {
+			return fmt.Errorf("%s must be a number, got %s", attr, errchain.Kind(v))
 		}
-		return fmt.Errorf("%s must be a number, got %s", attr, errchain.Kind(v))
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return fmt.Errorf("%s must be a finite number, got %s", attr, errchain.Show(v))
+		}
+		*d = f
+		return nil
 	}
 	panic("unsupported compression config field type")
 }
@@ -177,6 +183,29 @@ func yamlNumber(v any) (float64, bool) {
 	}
 	f, err := anyutil.ToFloat(v)
 	return f, err == nil
+}
+
+// Integer of a YAML scalar for an int setting: integers exactly, floats without a fraction part and booleans as 0 and 1, refused when it is no whole number or lies outside the int range
+func yamlInt(attr string, v any) (int, error) {
+	if n, ok := anyutil.Int(v); ok {
+		if int64(int(n)) != n {
+			return 0, fmt.Errorf("%s must be between %d and %d, got %d", attr, math.MinInt, math.MaxInt, n)
+		}
+		return int(n), nil
+	}
+	if b, isBig := v.(*big.Int); isBig && b != nil {
+		return 0, fmt.Errorf("%s must be between %d and %d, got %d", attr, math.MinInt, math.MaxInt, b)
+	}
+	f, ok := yamlNumber(v)
+	switch {
+	case !ok:
+		return 0, fmt.Errorf("%s must be a whole number, got %s", attr, errchain.Kind(v))
+	case f != math.Trunc(f):
+		return 0, fmt.Errorf("%s must be a whole number, got %s", attr, errchain.Show(v))
+	case f < math.MinInt || f >= -math.MinInt:
+		return 0, fmt.Errorf("%s must be between %d and %d, got %s", attr, math.MinInt, math.MaxInt, errchain.Show(v))
+	}
+	return int(f), nil
 }
 
 // Loads a YAML config file, missing sections and keys keeping the defaults and a null base_url keeping its default

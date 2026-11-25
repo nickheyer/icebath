@@ -55,11 +55,11 @@ func tavilyRequest(ctx context.Context, env *Env, endpoint string, payload *json
 
 // Search answer rows as title first hits
 func normalizeTavilySearchResults(response any) (*WebSearchResponse, error) {
-	results, err := pyGetDefault(response, "results", []any{})
+	results, err := getDefault(response, "results", []any{})
 	if err != nil {
 		return nil, err
 	}
-	rows, err := pyIter(results)
+	rows, err := elementsOf(results)
 	if err != nil {
 		return nil, err
 	}
@@ -67,11 +67,11 @@ func normalizeTavilySearchResults(response any) (*WebSearchResponse, error) {
 	for i, r := range rows {
 		var vals [3]any
 		for j, key := range []string{"title", "url", "content"} {
-			if vals[j], err = pyGetDefault(r, key, ""); err != nil {
+			if vals[j], err = getDefault(r, key, ""); err != nil {
 				return nil, err
 			}
 		}
-		hits = append(hits, titleHit(pyStrField(vals[0]), pyStrField(vals[1]), pyStrField(vals[2]), i+1))
+		hits = append(hits, titleHit(anyutil.String(vals[0]), anyutil.String(vals[1]), anyutil.String(vals[2]), i+1))
 	}
 	return searchOK(hits), nil
 }
@@ -79,46 +79,46 @@ func normalizeTavilySearchResults(response any) (*WebSearchResponse, error) {
 // Extract answer as documents, failed results and failed urls as error entries never tied to a request
 func normalizeTavilyDocuments(response any) ([]*WebPage, error) {
 	var docs []*WebPage
-	results, err := pyGetDefault(response, "results", []any{})
+	results, err := getDefault(response, "results", []any{})
 	if err != nil {
 		return nil, err
 	}
-	rows, err := pyIter(results)
+	rows, err := elementsOf(results)
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range rows {
-		u, err := pyGetDefault(r, "url", "")
+		u, err := getDefault(r, "url", "")
 		if err != nil {
 			return nil, err
 		}
-		title, _ := pyGetDefault(r, "title", "")
-		raw, _ := pyGetDefault(r, "raw_content", "")
+		title, _ := getDefault(r, "title", "")
+		raw, _ := getDefault(r, "raw_content", "")
 		if !anyutil.IsTrue(raw) {
-			raw, _ = pyGetDefault(r, "content", "")
+			raw, _ = getDefault(r, "content", "")
 		}
-		docs = append(docs, webDocument(pyStrField(u), pyStrField(title), pyStrField(raw), ""))
+		docs = append(docs, webDocument(anyutil.String(u), anyutil.String(title), anyutil.String(raw), ""))
 	}
-	failed, err := pyGetDefault(response, "failed_results", []any{})
+	failed, err := getDefault(response, "failed_results", []any{})
 	if err != nil {
 		return nil, err
 	}
-	if rows, err = pyIter(failed); err != nil {
+	if rows, err = elementsOf(failed); err != nil {
 		return nil, err
 	}
 	for _, f := range rows {
-		u, err := pyGetDefault(f, "url", "")
+		u, err := getDefault(f, "url", "")
 		if err != nil {
 			return nil, err
 		}
-		msg, _ := pyGetDefault(f, "error", "extraction failed")
-		docs = append(docs, tavilyFailedDocument(pyStrField(u), pyStrField(msg)))
+		msg, _ := getDefault(f, "error", "extraction failed")
+		docs = append(docs, tavilyFailedDocument(anyutil.String(u), anyutil.String(msg)))
 	}
-	failedURLs, err := pyGetDefault(response, "failed_urls", []any{})
+	failedURLs, err := getDefault(response, "failed_urls", []any{})
 	if err != nil {
 		return nil, err
 	}
-	if rows, err = pyIter(failedURLs); err != nil {
+	if rows, err = elementsOf(failedURLs); err != nil {
 		return nil, err
 	}
 	for _, u := range rows {

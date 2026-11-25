@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -258,9 +259,29 @@ func EmitStreamDrop(agent StreamDiagAgent, err error, attempt, maxAttempts int, 
 		suffix = fmt.Sprintf(" after %.1fs", math.Max(0, streamDiagNow().Sub(diag.StartedAt).Seconds()))
 	}
 	defer func() { _ = recover() }()
-	typeName := errorutil.Kind(err)
-	agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ %s stream %s (%s)%s — attempt %d/%d dropped, reconnecting", provider, kind, typeName, suffix, attempt, maxAttempts))
-	agent.TouchActivity(fmt.Sprintf("stream retry %d/%d after %s", attempt, maxAttempts, typeName))
+	reason := streamDropReason(err)
+	agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ %s stream %s (%s)%s — attempt %d/%d dropped, reconnecting", provider, kind, reason, suffix, attempt, maxAttempts))
+	agent.TouchActivity(fmt.Sprintf("stream retry %d/%d after %s", attempt, maxAttempts, reason))
+}
+
+// Short reason of a stream drop for the status line: the kind an error of the chain declares for itself, else timeout, connection lost or the error's own text
+func streamDropReason(err error) string {
+	link := err
+	for i := 0; i < 8 && link != nil; i++ {
+		if _, wrapper := link.(*StreamRequestError); !wrapper {
+			if k, ok := link.(interface{ ErrorKind() string }); ok && k.ErrorKind() != "" {
+				return k.ErrorKind()
+			}
+		}
+		link = unwrapOne(link)
+	}
+	switch {
+	case auxIsGoTimeout(err):
+		return "timeout"
+	case IsNetworkError(err) || isCertificateError(err):
+		return "connection lost"
+	}
+	return textutil.First(strings.Join(strings.Fields(errchain.OSText(err)), " "), 80)
 }
 
 // Buffered request carried by the error chain, nil when no link carries one

@@ -354,12 +354,12 @@ func TestBrowseShSearchAndInspect(t *testing.T) {
 	}
 }
 
-func TestGuardedRedirectToInvalidIPv6RaisesLikeUrljoin(t *testing.T) {
+func TestGuardedRedirectToInvalidIPv6RaisesTheParseError(t *testing.T) {
 	h, _ := publicHub(t, func(string) *httputil.Response {
 		return &httputil.Response{StatusCode: 302, Header: http.Header{"Location": {"http://[bad/SKILL.md"}}}
 	})
 	b, err := NewUrlSource(h).Fetch(context.Background(), "https://example.com/SKILL.md")
-	if b != nil || err == nil || err.Error() != "Invalid IPv6 URL" {
+	if b != nil || err == nil || err.Error() != `parse "http://[bad/SKILL.md": missing ']' in host` {
 		t.Fatalf("fetch gave %v %v", b, err)
 	}
 }

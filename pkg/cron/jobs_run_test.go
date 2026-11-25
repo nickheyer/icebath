@@ -243,7 +243,7 @@ func TestMarkJobRunRecurringCronNotDisabledWhenCroniterMissing(t *testing.T) {
 		t.Fatal("recurring cron job was deleted")
 	}
 	if !got.Enabled || got.State != "error" || got.State == "completed" || got.NextRunAt != nil || deref(got.LastError) == "" ||
-		!strings.Contains(strings.ToLower(deref(got.LastError)), "croniter") {
+		!strings.Contains(deref(got.LastError), "schedule has no cron expression") {
 		t.Fatalf("recurring job retired instead of error %+v", got)
 	}
 }

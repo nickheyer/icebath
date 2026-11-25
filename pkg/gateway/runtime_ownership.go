@@ -346,7 +346,7 @@ func MaintenanceHolder(h, purpose string) *jsonutil.Object {
 		return nil
 	}
 	record := readGatewayLockRecord(pathutil.Join(c, gatewayLockFilename))
-	if record == nil || record.Len() == 0 || !pyEq(recGet(record, "purpose"), purpose) {
+	if record == nil || record.Len() == 0 || !anyutil.Equal(recGet(record, "purpose"), purpose) {
 		return nil
 	}
 	if _, live := liveFromRecord(record); !live {

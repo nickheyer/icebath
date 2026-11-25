@@ -14,7 +14,7 @@ var (
 
 var (
 	jsExts  = []string{".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".vue", ".svelte"}
-	pyExts  = []string{".py", ".pyi", ".ipynb"}
+	exts    = []string{".py", ".pyi", ".ipynb"}
 	docExts = []string{".md", ".mdx", ".txt", ".rst", ".json", ".yaml", ".yml"}
 )
 
@@ -29,7 +29,7 @@ func endsWithAny(p string, suffixes []string) bool {
 }
 
 func jsOnly(p string) bool  { return endsWithAny(p, jsExts) }
-func pyOnly(p string) bool  { return endsWithAny(p, pyExts) }
+func only(p string) bool    { return endsWithAny(p, exts) }
 func notDocs(p string) bool { return !endsWithAny(p, docExts) }
 
 // Whether p names a GitHub Actions workflow file
@@ -46,8 +46,8 @@ var SecurityPatterns = []Rule{
 	{RuleName: "react_dangerously_set_html", Reminder: "\u26a0\ufe0f Security Warning: dangerouslySetInnerHTML can lead to XSS vulnerabilities if used with untrusted content. Ensure all content is properly sanitized using an HTML sanitizer library like DOMPurify, or use safe alternatives.", Substrings: []string{"dangerouslySetInnerHTML"}},
 	{RuleName: "document_write_xss", Reminder: "\u26a0\ufe0f Security Warning: document.write() can be exploited for XSS attacks and has performance issues. Use DOM manipulation methods like createElement() and appendChild() instead.", Substrings: []string{"document.write"}},
 	{RuleName: "innerHTML_xss", Reminder: "\u26a0\ufe0f Security Warning: Setting innerHTML with untrusted content can lead to XSS vulnerabilities. Use textContent for plain text or safe DOM methods for HTML content. If you need HTML support, consider using an HTML sanitizer library such as DOMPurify.", Substrings: []string{".innerHTML =", ".innerHTML="}},
-	{RuleName: "pickle_deserialization", Reminder: unsafeDeserializationReminder, PathFilter: pyOnly, Regex: "(?<![a-zA-Z0-9_])pickle\\.(loads?|Unpickler)\\b|(?<![a-zA-Z0-9_])pkl_load\\("},
-	{RuleName: "os_system_injection", Reminder: "\u26a0\ufe0f Security Warning: os.system() runs a shell and is a command-injection sink. Use subprocess.run([...]) with a list of arguments instead. If this is safe or is explicitly needed, briefly document that in a comment before continuing.", PathFilter: pyOnly, Substrings: []string{"from os import system"}, Regex: "\\bos\\.system\\s*\\("},
+	{RuleName: "pickle_deserialization", Reminder: unsafeDeserializationReminder, PathFilter: only, Regex: "(?<![a-zA-Z0-9_])pickle\\.(loads?|Unpickler)\\b|(?<![a-zA-Z0-9_])pkl_load\\("},
+	{RuleName: "os_system_injection", Reminder: "\u26a0\ufe0f Security Warning: os.system() runs a shell and is a command-injection sink. Use subprocess.run([...]) with a list of arguments instead. If this is safe or is explicitly needed, briefly document that in a comment before continuing.", PathFilter: only, Substrings: []string{"from os import system"}, Regex: "\\bos\\.system\\s*\\("},
 	{RuleName: "python_subprocess_shell", Reminder: subprocessShellReminder, Regex: "subprocess\\.(?:run|call|Popen|check_output|check_call)\\(.*shell\\s*=\\s*True"},
 	{RuleName: "go_exec_shell_injection", Reminder: goExecShellReminder, Regex: "exec\\.Command\\(\\s*\"(?:sh|bash|/bin/sh|/bin/bash)\""},
 	{RuleName: "unsafe_yaml_load", Reminder: unsafeYamlLoadReminder, Regex: "\\byaml\\.load\\s*\\((?![^)\\n]{0,80}\\bSafe)"},

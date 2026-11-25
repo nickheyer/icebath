@@ -117,7 +117,7 @@ func TestCompletedMaintenanceSurvivesStampIoError(t *testing.T) {
 	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
 	prev := sourceCompletionWriteStamp
 	sourceCompletionWriteStamp = func(string, bool) (*jsonutil.Object, error) {
-		return nil, &pm.PyError{Class: "OSError", Message: "readonly"}
+		return nil, &pm.ClassError{Class: "OSError", Message: "readonly"}
 	}
 	t.Cleanup(func() { sourceCompletionWriteStamp = prev })
 	var stderr bytes.Buffer

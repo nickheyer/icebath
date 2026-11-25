@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const byteroverManifest = `name: byterover
@@ -54,7 +55,7 @@ func coerceBool(value any, def bool) bool {
 	case float64:
 		return v != 0
 	case string:
-		if b, ok := boolWords[pyLower(pyStrip(v))]; ok {
+		if b, ok := boolWords[strings.ToLower(strings.TrimSpace(v))]; ok {
 			return b
 		}
 	}
@@ -220,8 +221,8 @@ func decodeReplace(b []byte) string {
 }
 
 // OS error carrying the Python OSError text
-func pyOSError(err error) error {
-	return &pyError{class: "OSError", msg: osErrorText(err)}
+func osError(err error) error {
+	return &kindError{class: "OSError", msg: osErrorText(err)}
 }
 
 // Runs one brv command in the context tree directory with a bounded timeout, a non string argument refused like subprocess
@@ -235,7 +236,7 @@ func runBrv(ctx context.Context, env *tools.Env, args []any, timeout time.Durati
 		effective = brvCwd(ctx, env)
 	}
 	if err := os.MkdirAll(effective, 0o777); err != nil {
-		return brvResult{}, pyOSError(err)
+		return brvResult{}, osError(err)
 	}
 	childEnv, err := brvChildEnv(ctx, env, brvPath)
 	if err != nil {
@@ -270,8 +271,8 @@ func runBrv(ctx context.Context, env *tools.Env, args []any, timeout time.Durati
 			return brvResult{Error: osErrorText(runErr)}, nil
 		}
 	}
-	out := pyStrip(decodeReplace(stdout.Bytes()))
-	errText := pyStrip(decodeReplace(stderr.Bytes()))
+	out := strings.TrimSpace(decodeReplace(stdout.Bytes()))
+	errText := strings.TrimSpace(decodeReplace(stderr.Bytes()))
 	code := cmd.ProcessState.ExitCode()
 	if code == 0 {
 		return brvResult{Success: true, Output: out}, nil
@@ -370,7 +371,7 @@ func (p *ByteRoverProvider) Initialize(ctx context.Context, sessionID string, op
 	p.cwd, p.sessionID, p.turnCount = cwd, sessionID, 0
 	p.mu.Unlock()
 	if err := os.MkdirAll(cwd, 0o777); err != nil {
-		return pyOSError(err)
+		return osError(err)
 	}
 	return nil
 }
@@ -390,7 +391,7 @@ func (p *ByteRoverProvider) boundCwd() string {
 }
 
 func (p *ByteRoverProvider) query(ctx context.Context, query string) (brvResult, error) {
-	return runBrv(ctx, p.env, []any{"query", "--", runePrefix(pyStrip(query), 5000)}, brvQueryTimeout, p.boundCwd())
+	return runBrv(ctx, p.env, []any{"query", "--", runePrefix(strings.TrimSpace(query), 5000)}, brvQueryTimeout, p.boundCwd())
 }
 
 func (p *ByteRoverProvider) curate(ctx context.Context, content any) (brvResult, error) {
@@ -425,7 +426,7 @@ func (p *ByteRoverProvider) autoExtractEnabled(what string) bool {
 
 // Synchronous brv query so context is ready before the first model call
 func (p *ByteRoverProvider) Prefetch(ctx context.Context, query, sessionID string) (string, error) {
-	if query == "" || runeLen(pyStrip(query)) < brvMinQueryLen {
+	if query == "" || runeLen(strings.TrimSpace(query)) < brvMinQueryLen {
 		return "", nil
 	}
 	result, err := p.query(ctx, query)
@@ -434,7 +435,7 @@ func (p *ByteRoverProvider) Prefetch(ctx context.Context, query, sessionID strin
 	}
 	output := ""
 	if result.Success {
-		output = pyStrip(result.Output)
+		output = strings.TrimSpace(result.Output)
 	}
 	if runeLen(output) > brvMinOutputLen {
 		return "## ByteRover Context\n" + output, nil
@@ -447,7 +448,7 @@ func (p *ByteRoverProvider) SyncTurn(ctx context.Context, userContent, assistant
 	p.mu.Lock()
 	p.turnCount++
 	p.mu.Unlock()
-	if !p.autoExtractEnabled("sync_turn") || runeLen(pyStrip(userContent)) < brvMinQueryLen {
+	if !p.autoExtractEnabled("sync_turn") || runeLen(strings.TrimSpace(userContent)) < brvMinQueryLen {
 		return nil
 	}
 	p.mu.Lock()
@@ -491,7 +492,7 @@ func (p *ByteRoverProvider) OnPreCompress(ctx context.Context, messages []map[st
 		if _, present := msg["content"]; !present {
 			content, isStr = "", true
 		}
-		if (role == "user" || role == "assistant") && isStr && pyStrip(content) != "" {
+		if (role == "user" || role == "assistant") && isStr && strings.TrimSpace(content) != "" {
 			parts = append(parts, role+": "+runePrefix(content, 500))
 		}
 	}
@@ -508,7 +509,7 @@ func (p *ByteRoverProvider) ToolSchemas(ctx context.Context) ([]map[string]any, 
 
 // Query output trimmed, a no result note under the minimum and truncated past eight thousand characters
 func formatBrvQueryOutput(output string) map[string]any {
-	output = pyStrip(output)
+	output = strings.TrimSpace(output)
 	if runeLen(output) < brvMinOutputLen {
 		return map[string]any{"result": "No relevant memories found."}
 	}
@@ -555,7 +556,7 @@ func (p *ByteRoverProvider) HandleToolCall(ctx context.Context, toolName string,
 		if !present {
 			v = ""
 		}
-		if !pyTruthy(v) {
+		if !anyutil.IsTrue(v) {
 			return toolError(arg+" is required", nil), nil
 		}
 		value = v

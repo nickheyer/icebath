@@ -316,8 +316,8 @@ func TestPromptCacheNormalizationOrdering(t *testing.T) {
 		t.Fatalf("text %#v", p0["text"])
 	}
 	raw := "file1\nfile2\n"
-	outOfWindow := pyStripSpace(raw)
-	marked = applyAnthropicCacheControl([]map[string]any{{"role": "tool", "content": pyStripSpace(raw), "tool_call_id": "t1"}}, "5m", false, "", true)
+	outOfWindow := strings.TrimSpace(raw)
+	marked = applyAnthropicCacheControl([]map[string]any{{"role": "tool", "content": strings.TrimSpace(raw), "tool_call_id": "t1"}}, "5m", false, "", true)
 	parts, _ = asList(marked[0]["content"])
 	if p0, _ := asMap(parts[0]); p0["text"] != outOfWindow {
 		t.Fatalf("in window %#v", p0["text"])

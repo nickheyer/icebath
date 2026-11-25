@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -30,7 +31,7 @@ func rowSource(ctx context.Context, row *jsonutil.Object, platform Platform, pro
 		if parsed, err := jsonutil.Decode(text); err == nil {
 			obj, isObject := parsed.(*jsonutil.Object)
 			if !isObject {
-				panic(&PyError{Kind: "AttributeError", Msg: "the stored session source is " + errchain.Kind(parsed) + ", expected a mapping"})
+				panic(&errorutil.Error{Kind: "AttributeError", Msg: "the stored session source is " + errchain.Kind(parsed) + ", expected a mapping"})
 			}
 			if source, err := SessionSourceFromDict(ctx, jsonutil.Plain(obj).(map[string]any)); err == nil {
 				return source
@@ -42,10 +43,10 @@ func rowSource(ctx context.Context, row *jsonutil.Object, platform Platform, pro
 		return nil
 	}
 	chatType := "dm"
-	if v, _ := row.Get("chat_type"); pyTruthy(v) {
-		chatType = pyStrOf(v)
+	if v, _ := row.Get("chat_type"); anyutil.IsTrue(v) {
+		chatType = anyutil.String(v)
 	}
-	source := &SessionSource{Platform: platform, ChatID: pyStrOf(chatID), ChatType: chatType,
+	source := &SessionSource{Platform: platform, ChatID: anyutil.String(chatID), ChatType: chatType,
 		UserID: rowOptStr(row, "user_id"), ThreadID: rowOptStr(row, "thread_id"), ChatName: rowOptStr(row, "display_name")}
 	if profile != "" {
 		source.Profile = &profile

@@ -654,7 +654,7 @@ func doctorPMErrorReported(err error) bool {
 	if errors.As(err, &unknown) {
 		return false
 	}
-	var pmErr *pm.PyError
+	var pmErr *pm.ClassError
 	if errors.As(err, &pmErr) {
 		switch pmErr.Class {
 		case "KeyError", "LookupError", "IndexError", "TypeError", "AttributeError", "AssertionError":

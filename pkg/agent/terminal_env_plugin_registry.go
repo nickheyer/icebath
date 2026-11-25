@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const hostedTerminalEnvBase = "agent.terminal_env_provider:TerminalEnvironmentProvider"
@@ -77,7 +77,7 @@ func (h hostedTerminalEnvProvider) flag(name string, def func() bool) bool {
 	if !declared {
 		return def()
 	}
-	return config.PyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 func (h hostedTerminalEnvProvider) Name() string {
@@ -130,7 +130,7 @@ func (h hostedTerminalEnvProvider) SupportsStreams() bool {
 	return h.flag("supports_streams", h.defaults().SupportsStreams)
 }
 func (h hostedTerminalEnvProvider) IsAvailable() bool {
-	return config.PyTruthy(h.mustCall("is_available"))
+	return anyutil.IsTrue(h.mustCall("is_available"))
 }
 
 // Requirements verdict of the plugin, a False answer reading as the requirements not met and the availability probe without the method
@@ -142,7 +142,7 @@ func (h hostedTerminalEnvProvider) CheckRequirements(env *tools.Env, cfg map[str
 	if err != nil {
 		return err
 	}
-	if !config.PyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return tools.ErrBackendRequirementsNotMet
 	}
 	return nil
@@ -185,7 +185,7 @@ func (h hostedTerminalEnvProvider) DoctorChecks() []tools.DoctorCheck {
 		row, _ := r.([]any)
 		check := tools.DoctorCheck{}
 		if len(row) > 0 {
-			check.OK = config.PyTruthy(row[0])
+			check.OK = anyutil.IsTrue(row[0])
 		}
 		if len(row) > 1 {
 			check.Label, _ = row[1].(string)

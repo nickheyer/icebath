@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -184,7 +185,7 @@ func TestRegisterSelfWritesAndPrunesDead(t *testing.T) {
 	}
 }
 
-func TestRegisterSelfSurvivesNonUTF8Argv(t *testing.T) {
+func TestRegisterSelfKeepsNonUTF8ArgvBytes(t *testing.T) {
 	_, ledger := identityFixture(t, map[int]float64{999: 50.0}, 999)
 	prev := os.Args
 	os.Args = []string{"icebath", "gateway", "/tmp/project-\xff"}
@@ -193,11 +194,15 @@ func TestRegisterSelfSurvivesNonUTF8Argv(t *testing.T) {
 		t.Fatal("register_self failed")
 	}
 	raw, _ := os.ReadFile(ledger)
-	if !strings.Contains(string(raw), `icebath gateway /tmp/project-\udcff`) {
-		t.Fatalf("argv not surrogate escaped: %s", raw)
+	exact := "icebath gateway /tmp/project-\xff"
+	if !strings.Contains(string(raw), `"argv": "icebath gateway /tmp/project-\ufffd",`+"\n    "+`"argv_base64": "`+base64.StdEncoding.EncodeToString([]byte(exact))+`",`) {
+		t.Fatalf("argv bytes not kept: %s", raw)
 	}
 	if len(readLedgerFile(t, ledger)) != 1 {
 		t.Fatal("ledger unreadable after the non UTF-8 argv")
+	}
+	if rows := LedgerEntries(LedgerOptions{AllInstalls: true}); len(rows) != 1 || rows[0]["argv"] != exact || rows[0][ledgerArgvBytesKey] != nil {
+		t.Fatalf("argv read back as %v", rows)
 	}
 }
 

@@ -52,7 +52,7 @@ func findStablePrefix(content string) string {
 	best := ""
 	bestIdx := -1
 	for i, p := range stablePrefixList {
-		if strings.HasPrefix(content, p) && pyStripSpace(content[len(p):]) != "" && len(p) > len(best) {
+		if strings.HasPrefix(content, p) && strings.TrimSpace(content[len(p):]) != "" && len(p) > len(best) {
 			best, bestIdx = p, i
 		}
 	}
@@ -84,7 +84,7 @@ func hasLitellmToken(value, delimiters string) bool {
 }
 
 func envelopeToolPartCacheMarkersSupported(providerName, baseURL string) bool {
-	return !isLitellmRoute(strings.ToLower(pyStripSpace(providerName)), baseURL)
+	return !isLitellmRoute(strings.ToLower(strings.TrimSpace(providerName)), baseURL)
 }
 
 // Reports whether the route accepts cache markers on tool parts
@@ -143,9 +143,7 @@ func applyCacheMarker(msg map[string]any, marker map[string]any, nativeAnthropic
 		return
 	}
 	if list, ok := asList(content); ok && len(list) > 0 {
-		if last, ok := asMap(list[len(list)-1]); ok {
-			last["cache_control"] = marker
-		}
+		setBlockField(list[len(list)-1], "cache_control", marker)
 	}
 }
 
@@ -205,7 +203,7 @@ var no1HTierModels = map[string]bool{"minimax-m2.5": true}
 var machinePacedSources = map[string]bool{"subagent": true, "cron": true, "oneshot": true, "webhook": true, "kanban": true, "api": true, "tool": true, "batch": true}
 
 func flatModel(model string) string {
-	m := pyStripSpace(model)
+	m := strings.TrimSpace(model)
 	if i := strings.LastIndex(m, "/"); i >= 0 {
 		m = m[i+1:]
 	}
@@ -216,7 +214,7 @@ func isQwenModel(model string) bool { return strings.Contains(strings.ToLower(mo
 
 // AutoCacheTTLForSource resolves the auto tier, 5m for machine paced sources and 1h for human paced ones
 func AutoCacheTTLForSource(source string) string {
-	if machinePacedSources[strings.ToLower(pyStripSpace(source))] {
+	if machinePacedSources[strings.ToLower(strings.TrimSpace(source))] {
 		return "5m"
 	}
 	return "1h"
@@ -253,7 +251,7 @@ func applySystemCacheMarkers(message map[string]any, marker map[string]any, stat
 	content, isStr := asString(message["content"])
 	if staticPrefix != "" && isStr && strings.HasPrefix(content, staticPrefix) {
 		suffix := content[len(staticPrefix):]
-		if pyStripSpace(suffix) != "" {
+		if strings.TrimSpace(suffix) != "" {
 			var suffixMarker map[string]any
 			if markSuffix {
 				suffixMarker = marker

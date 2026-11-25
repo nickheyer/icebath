@@ -294,11 +294,10 @@ func (m *GoalManager) AddSubgoal(text string) (string, error) {
 
 // Zero based position of a one based index, an IndexError outside the list
 func goalIndex(index1Based int64, length int) (int, error) {
-	idx := index1Based - 1
-	if idx < 0 || idx >= int64(length) {
+	if index1Based < 1 || index1Based > int64(length) {
 		return 0, &errorutil.Error{Kind: "IndexError", Msg: fmt.Sprintf("index out of range (1..%d)", length)}
 	}
-	return int(idx), nil
+	return int(index1Based - 1), nil
 }
 
 // Removes the one based item of the subgoals or gates list and returns it, an IndexError outside the list
@@ -612,7 +611,7 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		}
 		state, err := goalManagerWaitOn(m, pid, reason)
 		if err != nil {
-			if pyErr, isPy := err.(*errorutil.Error); isPy && pyErr.Kind == "ValueError" {
+			if kindErr, isPy := err.(*errorutil.Error); isPy && kindErr.Kind == "ValueError" {
 				pkgLog().Info(fmt.Sprintf("goal judge: wait_on_pid %s is not alive on this host; continuing", anyutil.String(wait["pid"])))
 				return nil, nil
 			}
@@ -625,7 +624,7 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 			return nil, &errorutil.Error{Kind: "KeyError", Msg: "'seconds'"}
 		}
 		n, err := anyutil.ToInt(seconds)
-		if err != nil {
+		if err != nil && !errors.Is(err, anyutil.ErrRange) {
 			return nil, err
 		}
 		if _, err := m.WaitForSeconds(n, reason, int64(activeDelegations)); err != nil {
@@ -670,7 +669,7 @@ func (m *GoalManager) EvaluateAfterTurn(lastResponse string, backgroundProcesses
 	}
 	goal, isText := state.Goal.(string)
 	if !isText {
-		return GoalDecision{}, strMethodError(state.Goal, "strip")
+		return GoalDecision{}, notTextError(state.Goal, "the goal")
 	}
 	options := JudgeOptions{BackgroundProcesses: backgroundProcesses, ActiveDelegations: activeDelegations}
 	if len(state.Subgoals) > 0 {
@@ -861,7 +860,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 		}
 		response, isText := lastResponse.(string)
 		if !isText && strings.TrimSpace(o.GoalText) != "" {
-			return GoalLoopResult{}, strMethodError(lastResponse, "strip")
+			return GoalLoopResult{}, notTextError(lastResponse, "the turn response")
 		}
 		judged, err := judgeRaising(judgeCtx, o.GoalText, response, JudgeOptions{})
 		if err != nil {
@@ -902,7 +901,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 		var turn any
 		if err := callRaising(func() (err error) { turn, err = o.RunTurn(prompt); return err }); err != nil {
 			logLine(fmt.Sprintf("kanban goal loop: run_turn failed (%s); stopping", err.Error()))
-			return result("stopped", "run_turn error: "+errorutil.Kind(err))
+			return result("stopped", "run_turn error: "+goalFailureLabel(err))
 		}
 		failed, failureReason := false, ""
 		if dict, isDict := turn.(map[string]any); isDict {

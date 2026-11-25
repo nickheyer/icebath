@@ -181,7 +181,7 @@ func (a *GatewayAgent) refreshStats(turn *gatewayTurn) bool {
 	if nested, isDict := stats["usage"].(map[string]any); isDict {
 		stats = nested
 	}
-	if _, ok := pyIntValue(stats["api_calls"]); !ok {
+	if _, ok := intValue(stats["api_calls"]); !ok {
 		return false
 	}
 	if turn == nil || a.owns(turn) {
@@ -197,7 +197,7 @@ func (a *GatewayAgent) applyUsage(ctx context.Context, stored, receiptUsage map[
 	}
 	usage := map[string]any{}
 	for _, pair := range gatewayCounterFromUsage {
-		if n, ok := pyIntValue(stored[pair[1]]); ok {
+		if n, ok := intValue(stored[pair[1]]); ok {
 			usage[pair[1]] = n
 		}
 	}
@@ -206,7 +206,7 @@ func (a *GatewayAgent) applyUsage(ctx context.Context, stored, receiptUsage map[
 	a.mu.Unlock()
 	for _, key := range []string{"input_tokens", "output_tokens"} {
 		if _, has := usage[key]; !has {
-			if n, ok := pyIntValue(receiptUsage[key]); ok {
+			if n, ok := intValue(receiptUsage[key]); ok {
 				usage[key] = counters["session_"+key] + n
 			}
 		}
@@ -217,12 +217,12 @@ func (a *GatewayAgent) applyUsage(ctx context.Context, stored, receiptUsage map[
 	if _, has := usage["completion_tokens"]; !has {
 		usage["completion_tokens"] = usage["output_tokens"]
 	}
-	prompt, promptOK := pyIntValue(usage["prompt_tokens"])
-	completion, completionOK := pyIntValue(usage["completion_tokens"])
+	prompt, promptOK := intValue(usage["prompt_tokens"])
+	completion, completionOK := intValue(usage["completion_tokens"])
 	if _, has := usage["total_tokens"]; !has && promptOK && completionOK {
 		usage["total_tokens"] = prompt + completion
 	}
-	if n, ok := pyIntValue(stored["api_calls"]); ok {
+	if n, ok := intValue(stored["api_calls"]); ok {
 		usage["api_calls"] = counters["session_api_calls"] + n
 	}
 	for _, key := range []string{"last_prompt_tokens", "context_length", "model"} {
@@ -282,23 +282,23 @@ func rateLimitStateOf(data any) *provider.RateLimitState {
 	bucket := func(name string) provider.RateLimitBucket {
 		raw, _ := dict[name].(map[string]any)
 		var b provider.RateLimitBucket
-		if n, ok := pyIntValue(raw["limit"]); ok {
+		if n, ok := intValue(raw["limit"]); ok {
 			b.Limit = n
 		}
-		if n, ok := pyIntValue(raw["remaining"]); ok {
+		if n, ok := intValue(raw["remaining"]); ok {
 			b.Remaining = n
 		}
-		if f, ok := pyNumber(raw["reset_seconds"]); ok {
+		if f, ok := numberOf(raw["reset_seconds"]); ok {
 			b.ResetSeconds = f
 		}
-		if f, ok := pyNumber(raw["captured_at"]); ok && f != 0 {
+		if f, ok := numberOf(raw["captured_at"]); ok && f != 0 {
 			b.CapturedAt = time.Unix(0, int64(f*float64(time.Second)))
 		}
 		return b
 	}
 	state := &provider.RateLimitState{RequestsMin: bucket("requests_min"), RequestsHour: bucket("requests_hour"),
 		TokensMin: bucket("tokens_min"), TokensHour: bucket("tokens_hour"), Provider: strOrEmpty(dict["provider"])}
-	if f, ok := pyNumber(dict["captured_at"]); ok && f != 0 {
+	if f, ok := numberOf(dict["captured_at"]); ok && f != 0 {
 		state.CapturedAt = time.Unix(0, int64(f*float64(time.Second)))
 	}
 	return state

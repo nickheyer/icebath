@@ -295,7 +295,7 @@ func (h *heartbeatManager) sendHeartbeatOnce(ctx context.Context, chatID string,
 		}
 		ws := adapter.connection.socket()
 		if ws == nil {
-			return &pyErr{"AttributeError", "the Yuanbao connection has no open socket"}
+			return &kindErr{"AttributeError", "the Yuanbao connection has no open socket"}
 		}
 		return ws.SendBinary(encoded)
 	}()

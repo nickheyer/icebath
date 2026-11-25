@@ -60,7 +60,7 @@ func expandUser(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") && !(windows && strings.HasPrefix(path, `~\`)) {
 		return path
 	}
-	home, ok := pyUserHome()
+	home, ok := userHome()
 	if !ok {
 		return path
 	}
@@ -74,7 +74,7 @@ func expandUser(path string) string {
 }
 
 // Home Python's expanduser substitutes for a bare tilde, false when it leaves the path untouched
-func pyUserHome() (string, bool) {
+func userHome() (string, bool) {
 	if runtime.GOOS == "windows" {
 		if profile, ok := os.LookupEnv("USERPROFILE"); ok {
 			return profile, true

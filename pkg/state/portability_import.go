@@ -55,17 +55,30 @@ func withinSQLiteInt(n *big.Int) bool {
 	return n.Cmp(sqliteIntMin) >= 0 && n.Cmp(sqliteIntMax) <= 0
 }
 
-// Python int of a decoded value, nil for one int refuses without an OverflowError
-func importBigInt(value any) (*big.Int, error) {
-	n, err := pyIntOf(value)
-	if err != nil {
-		var conv *pyConvError
-		if errors.As(err, &conv) && conv.Class == "OverflowError" {
-			return nil, err
-		}
-		return nil, nil
+// Whether a decoded number lies beyond the signed 64 bit range SQLite binds, an integer past int64 arriving as a big integer or, from a plain decode, as a float
+func beyondSQLiteInt(value any) bool {
+	switch v := value.(type) {
+	case *big.Int:
+		return !withinSQLiteInt(v)
+	case float64:
+		return v < -0x1p63 || v >= 0x1p63
 	}
-	return n, nil
+	return false
+}
+
+// Whole number of a decoded value, floats cut toward zero, true and false as 1 and 0, integer text read; nil for anything without one, NaN, infinity and other text included
+func importBigInt(value any) *big.Int {
+	n, err := intOfValue(value)
+	if err != nil {
+		return nil
+	}
+	return n
+}
+
+// Whether a decoded value is an infinite float, which no integer column can take
+func importInfinite(value any) bool {
+	f, ok := value.(float64)
+	return ok && math.IsInf(f, 0)
 }
 
 // The value when nil or a string, ValueError naming the field otherwise
@@ -76,20 +89,17 @@ func importTextOrNone(value any, field string) (any, error) {
 	if _, ok := value.(string); ok {
 		return value, nil
 	}
-	return nil, pyValueError(field + " must be a string")
+	return nil, valueError(field + " must be a string")
 }
 
-// int of the value, nil for nil and ValueError naming the field for an unparsable one
+// Whole number of the value, nil for nil and a ValueError naming the field for a value without one
 func importIntOrNone(value any, field string) (*big.Int, error) {
 	if value == nil {
 		return nil, nil
 	}
-	n, err := importBigInt(value)
-	if err != nil {
-		return nil, err
-	}
+	n := importBigInt(value)
 	if n == nil {
-		return nil, pyValueError(field + " must be an integer")
+		return nil, valueError(field + " must be an integer")
 	}
 	return n, nil
 }
@@ -138,7 +148,7 @@ func importLoadJSON(value, path string) (any, error) {
 		return nil, err
 	}
 	if at, found := importNonFinitePath(parsed, path); found {
-		return nil, pyValueError("non-finite number at " + at)
+		return nil, valueError("non-finite number at " + at)
 	}
 	return parsed, nil
 }
@@ -159,12 +169,12 @@ func importJSONObjectOrNone(value any, field string) (any, error) {
 		parsed, err := importLoadJSON(text, path)
 		if err != nil {
 			if isJSONDecodeError(err) {
-				return nil, pyValueError(field + " must be valid JSON")
+				return nil, valueError(field + " must be valid JSON")
 			}
 			return nil, err
 		}
 		if _, isObj := parsed.(*jsonutil.Object); !isObj {
-			return nil, pyValueError(field + " must be a JSON object")
+			return nil, valueError(field + " must be a JSON object")
 		}
 		return value, nil
 	}
@@ -181,44 +191,34 @@ func importJSONObjectOrNone(value any, field string) (any, error) {
 				obj.Set(key, plain[key])
 			}
 		} else {
-			return nil, pyValueError(field + " must be a JSON object")
+			return nil, valueError(field + " must be a JSON object")
 		}
 	}
 	if at, found := importNonFinitePath(obj, path); found {
-		return nil, pyValueError("non-finite number at " + at)
+		return nil, valueError("non-finite number at " + at)
 	}
-	text, err := pyDumps(obj, pyJSONDefault)
+	text, err := dumpsValue(obj, jsonDefault)
 	if err != nil {
-		return nil, pyValueError(field + " must be JSON serializable")
+		return nil, valueError(field + " must be JSON serializable")
 	}
 	return text, nil
 }
 
-// int of the value with the default for nil or an unparsable value, an OverflowError propagating
-func coerceOrInt(value any, def *big.Int) (*big.Int, error) {
-	if value == nil {
-		return def, nil
+// Whole number of the value, the default for nil or a value without one
+func coerceOrInt(value any, def *big.Int) *big.Int {
+	if n := importBigInt(value); n != nil {
+		return n
 	}
-	n, err := importBigInt(value)
-	if err != nil {
-		return nil, err
-	}
-	if n == nil {
-		return def, nil
-	}
-	return n, nil
+	return def
 }
 
 // Imported int column inside the SQLite range, the default otherwise
-func importIntOrBounded(value any, def int64) (int64, error) {
-	n, err := coerceOrInt(value, big.NewInt(def))
-	if err != nil {
-		return 0, err
-	}
+func importIntOrBounded(value any, def int64) int64 {
+	n := coerceOrInt(value, big.NewInt(def))
 	if !withinSQLiteInt(n) {
-		return def, nil
+		return def
 	}
-	return n.Int64(), nil
+	return n.Int64()
 }
 
 // Refuses scalar message content SQLite cannot bind or JSON cannot serialize later
@@ -226,14 +226,14 @@ func validateImportMessageContent(content any, messagePath string) error {
 	switch v := content.(type) {
 	case *big.Int:
 		if !withinSQLiteInt(v) {
-			return pyValueError(messagePath + ".content is outside SQLite's integer range")
+			return valueError(messagePath + ".content is outside SQLite's integer range")
 		}
 	case float64:
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return pyValueError("non-finite number at " + messagePath + ".content")
+			return valueError("non-finite number at " + messagePath + ".content")
 		}
 	case []byte:
-		return pyValueError(messagePath + ".content must be a string, list, object, finite number, or null")
+		return valueError(messagePath + ".content must be a string, list, object, finite number, or null")
 	}
 	return nil
 }
@@ -243,7 +243,7 @@ func importFloatOrFinite(value any) any {
 	if value == nil {
 		return nil
 	}
-	f, err := pyFloatOf(value)
+	f, err := floatOf(value)
 	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil
 	}
@@ -255,7 +255,7 @@ func normalizeImportMessage(message *jsonutil.Object, index int) (*jsonutil.Obje
 	clean := message.Clone()
 	role, _ := clean.Get("role")
 	if text, ok := role.(string); !ok || text == "" {
-		return nil, pyValueError(fmt.Sprintf("messages[%d].role must be a non-empty string", index))
+		return nil, valueError(fmt.Sprintf("messages[%d].role must be a non-empty string", index))
 	}
 	for _, field := range importMessageTextFields {
 		value, _ := clean.Get(field)
@@ -266,12 +266,15 @@ func normalizeImportMessage(message *jsonutil.Object, index int) (*jsonutil.Obje
 		clean.Set(field, text)
 	}
 	tokenRaw, _ := clean.Get("token_count")
+	if beyondSQLiteInt(tokenRaw) {
+		return nil, valueError("token_count is outside SQLite's integer range")
+	}
 	tokenCount, err := importIntOrNone(tokenRaw, "token_count")
 	if err != nil {
 		return nil, err
 	}
 	if tokenCount != nil && !withinSQLiteInt(tokenCount) {
-		return nil, pyValueError("token_count is outside SQLite's integer range")
+		return nil, valueError("token_count is outside SQLite's integer range")
 	}
 	if tokenCount == nil {
 		clean.Set("token_count", nil)
@@ -279,9 +282,14 @@ func normalizeImportMessage(message *jsonutil.Object, index int) (*jsonutil.Obje
 		clean.Set("token_count", tokenCount.Int64())
 	}
 	messagePath := fmt.Sprintf("session.messages[%d]", index)
+	for _, field := range []string{"active", "compacted"} {
+		if importInfinite(clean.Value(field)) {
+			return nil, valueError("non-finite number at " + messagePath + "." + field)
+		}
+	}
 	if timestamp, _ := clean.Get("timestamp"); timestamp != nil {
 		if _, ok := timeutil.StoredEpoch(timestamp, "", "messages[].timestamp"); !ok {
-			return nil, pyValueError(messagePath + ".timestamp must be a supported Unix timestamp")
+			return nil, valueError(messagePath + ".timestamp must be a supported Unix timestamp")
 		}
 	}
 	content, _ := clean.Get("content")
@@ -296,7 +304,7 @@ func normalizeImportMessage(message *jsonutil.Object, index int) (*jsonutil.Obje
 			}
 		} else if jsonValue != nil {
 			if at, found := importNonFinitePath(jsonValue, messagePath+"."+field); found {
-				return nil, pyValueError("non-finite number at " + at)
+				return nil, valueError("non-finite number at " + at)
 			}
 		}
 	}
@@ -323,21 +331,24 @@ func normalizeImportSession(raw *jsonutil.Object, sessionID string, messages []a
 	}
 	if startedAt, _ := clean.Get("started_at"); startedAt != nil {
 		if _, ok := timeutil.StoredEpoch(startedAt, "", "started_at"); !ok {
-			return nil, pyValueError("session.started_at must be a supported Unix timestamp")
+			return nil, valueError("session.started_at must be a supported Unix timestamp")
 		}
 	}
 	for _, field := range importFloatCols {
 		if value, _ := clean.Get(field); value != nil {
 			if f, ok := value.(float64); ok && (math.IsNaN(f) || math.IsInf(f, 0)) {
-				return nil, pyValueError("non-finite number at session." + field)
+				return nil, valueError("non-finite number at session." + field)
 			}
 		}
 	}
 	for _, field := range importIntCols {
-		if value, _ := clean.Get(field); value != nil {
-			if n, ok := value.(*big.Int); ok && !withinSQLiteInt(n) {
-				return nil, pyValueError(field + " is outside SQLite's integer range")
-			}
+		if value, _ := clean.Get(field); beyondSQLiteInt(value) {
+			return nil, valueError(field + " is outside SQLite's integer range")
+		}
+	}
+	for _, field := range importFlagCols {
+		if importInfinite(clean.Value(field)) {
+			return nil, valueError("non-finite number at session." + field)
 		}
 	}
 	cleanMessages := make([]any, 0, len(messages))
@@ -353,18 +364,21 @@ func normalizeImportSession(raw *jsonutil.Object, sessionID string, messages []a
 
 type importTotals struct{ messages, bytes int }
 
-// Size, shape and type validation of the whole payload, every rejected entry reported
+// Size, shape and type validation of the whole payload, every rejected entry reported; a session given as a plain map is read as the object it holds
 func (d *SessionDB) validateImportPayload(sessions []any) ([]*jsonutil.Object, []any, error) {
 	normalized := []*jsonutil.Object{}
 	errs := []any{}
 	seen := map[string]bool{}
 	totals := &importTotals{}
 	for index, raw := range sessions {
+		if plain, isMap := raw.(map[string]any); isMap {
+			raw = jsonutil.Ordered(plain)
+		}
 		sessionID := ""
 		if obj, ok := raw.(*jsonutil.Object); ok {
 			id, _ := obj.Get("id")
-			if pyTruthy(id) {
-				sessionID = strings.TrimSpace(pyStr(id))
+			if anyutil.IsTrue(id) {
+				sessionID = strings.TrimSpace(anyutil.String(id))
 			}
 		}
 		item, err := d.validateImportSession(raw, sessionID, seen, totals)
@@ -391,31 +405,31 @@ func (d *SessionDB) validateImportPayload(sessions []any) ([]*jsonutil.Object, [
 func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[string]bool, totals *importTotals) (*jsonutil.Object, error) {
 	obj, ok := raw.(*jsonutil.Object)
 	if !ok {
-		return nil, pyValueError("session must be an object")
+		return nil, valueError("session must be an object")
 	}
 	if sessionID == "" {
-		return nil, pyValueError("session id is required")
+		return nil, valueError("session id is required")
 	}
 	if seen[sessionID] {
-		return nil, pyValueError("duplicate session id")
+		return nil, valueError("duplicate session id")
 	}
 	rawMessages, _ := obj.Get("messages")
 	var messages []any
-	if pyTruthy(rawMessages) {
+	if anyutil.IsTrue(rawMessages) {
 		list, ok := rawMessages.([]any)
 		if !ok {
-			return nil, pyValueError("messages must be a list")
+			return nil, valueError("messages must be a list")
 		}
 		messages = list
 	} else {
 		messages = []any{}
 	}
 	if len(messages) > importMaxMessagesPerSession {
-		return nil, pyValueError("messages exceeds the per-session import limit")
+		return nil, valueError("messages exceeds the per-session import limit")
 	}
 	for _, msg := range messages {
 		if _, ok := msg.(*jsonutil.Object); !ok {
-			return nil, pyValueError("messages must contain only objects")
+			return nil, valueError("messages must contain only objects")
 		}
 	}
 	measured := jsonutil.NewObject()
@@ -424,17 +438,17 @@ func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[st
 			measured.Set(key, obj.Value(key))
 		}
 	}
-	text, err := pyDumps(measured, pyJSON{allowNaN: true, itemSep: ",", keySep: ":"})
+	text, err := dumpsValue(measured, jsonCodec{allowNaN: true, itemSep: ",", keySep: ":"})
 	if err != nil {
-		return nil, pyValueError("session must be JSON serializable")
+		return nil, valueError("session must be JSON serializable")
 	}
 	sessionBytes := len(text)
 	if sessionBytes > importMaxSessionBytes {
-		return nil, pyValueError("session exceeds the import size limit")
+		return nil, valueError("session exceeds the import size limit")
 	}
 	totals.bytes += sessionBytes
 	if totals.bytes > importMaxTotalBytes {
-		return nil, pyValueError("import exceeds the total size limit")
+		return nil, valueError("import exceeds the total size limit")
 	}
 	item, err := normalizeImportSession(obj, sessionID, messages)
 	if err != nil {
@@ -443,7 +457,7 @@ func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[st
 	cleanMessages, _ := rowGet(item, "messages").([]any)
 	totals.messages += len(cleanMessages)
 	if totals.messages > importMaxTotalMessages {
-		return nil, pyValueError("messages exceeds the total import limit")
+		return nil, valueError("messages exceeds the total import limit")
 	}
 	return item, nil
 }
@@ -469,8 +483,8 @@ func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *
 		startedAt = ts
 	}
 	source := "import"
-	if v, _ := raw.Get("source"); pyTruthy(v) {
-		source = pyStr(v)
+	if v, _ := raw.Get("source"); anyutil.IsTrue(v) {
+		source = anyutil.String(v)
 	}
 	promptRaw, _ := raw.Get("system_prompt")
 	promptHash, err := storeSystemPrompt(ctx, conn, promptRaw)
@@ -480,11 +494,7 @@ func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *
 	flags := map[string]int64{}
 	for _, col := range importFlagCols {
 		value, _ := raw.Get(col)
-		n, err := coerceOrInt(value, big.NewInt(0))
-		if err != nil {
-			return err
-		}
-		if n.Sign() != 0 {
+		if coerceOrInt(value, big.NewInt(0)).Sign() != 0 {
 			flags[col] = 1
 		} else {
 			flags[col] = 0
@@ -496,11 +506,7 @@ func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *
 	intCols := map[string]int64{}
 	for _, col := range importIntCols {
 		value, _ := raw.Get(col)
-		n, err := importIntOrBounded(value, 0)
-		if err != nil {
-			return err
-		}
-		intCols[col] = n
+		intCols[col] = importIntOrBounded(value, 0)
 	}
 	if _, err := conn.ExecContext(ctx, importSessionInsertSQL,
 		sessionID, source, passthrough("user_id"), passthrough("model"), passthrough("model_config"),
@@ -530,11 +536,7 @@ func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *
 	live := []map[string]any{}
 	archived := []map[string]any{}
 	for _, msg := range sanitized {
-		active, err := coerceOrInt(msg["active"], big.NewInt(1))
-		if err != nil {
-			return err
-		}
-		if active.Sign() != 0 {
+		if coerceOrInt(msg["active"], big.NewInt(1)).Sign() != 0 {
 			live = append(live, msg)
 		} else {
 			archived = append(archived, msg)
@@ -544,12 +546,8 @@ func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *
 		return err
 	}
 	for _, msg := range archived {
-		compacted, err := coerceOrInt(msg["compacted"], big.NewInt(0))
-		if err != nil {
-			return err
-		}
 		flag := int64(0)
-		if compacted.Sign() != 0 {
+		if coerceOrInt(msg["compacted"], big.NewInt(0)).Sign() != 0 {
 			flag = 1
 		}
 		if _, err := conn.ExecContext(ctx, "UPDATE messages SET active = 0, compacted = ? WHERE id = ?", flag, msg["_row_id"]); err != nil {
@@ -627,10 +625,10 @@ func attachImportParents(ctx context.Context, conn SQLiteConn, parentUpdates [][
 // Imports exported sessions, skipping existing ids, refusing deleted ids by name and detaching foreign parents
 func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*jsonutil.Object, error) {
 	if sessions == nil {
-		return nil, pyValueError("sessions must be a list")
+		return nil, valueError("sessions must be a list")
 	}
 	if len(sessions) > importMaxSessions {
-		return nil, pyValueError(fmt.Sprintf("sessions must contain at most %d entries", importMaxSessions))
+		return nil, valueError(fmt.Sprintf("sessions must contain at most %d entries", importMaxSessions))
 	}
 	normalized, errs, err := d.validateImportPayload(sessions)
 	if err != nil {
@@ -644,7 +642,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*jsonut
 		ids := make([]string, 0, len(normalized))
 		for _, item := range normalized {
 			id, _ := rowGet(item, "session").(*jsonutil.Object).Get("id")
-			ids = append(ids, strings.TrimSpace(pyStr(anyutil.Or(id, ""))))
+			ids = append(ids, strings.TrimSpace(anyutil.String(anyutil.Or(id, ""))))
 		}
 		deleted := []any{}
 		for _, sid := range ids {
@@ -665,7 +663,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*jsonut
 		for _, item := range normalized {
 			raw := rowGet(item, "session").(*jsonutil.Object)
 			id, _ := raw.Get("id")
-			sessionID := strings.TrimSpace(pyStr(anyutil.Or(id, "")))
+			sessionID := strings.TrimSpace(anyutil.String(anyutil.Or(id, "")))
 			exists, err := connRow(ctx, conn, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1", sessionID)
 			if err != nil {
 				return err
@@ -678,7 +676,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*jsonut
 				return err
 			}
 			parentRaw, _ := raw.Get("parent_session_id")
-			if parentID := strings.TrimSpace(pyStr(anyutil.Or(parentRaw, ""))); parentID != "" {
+			if parentID := strings.TrimSpace(anyutil.String(anyutil.Or(parentRaw, ""))); parentID != "" {
 				parentUpdates = append(parentUpdates, [2]string{sessionID, parentID})
 			}
 			imported = append(imported, sessionID)

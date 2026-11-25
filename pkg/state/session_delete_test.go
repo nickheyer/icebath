@@ -164,7 +164,7 @@ func TestDeleteRetiresTerminalReceiptsAndRoutes(t *testing.T) {
 		}
 		return rowValue(row, "value")
 	}
-	marker, _ := jsonutil.Decode(pyStr(meta(RetiredPrefix + "gone")))
+	marker, _ := jsonutil.Decode(anyutil.String(meta(RetiredPrefix + "gone")))
 	if mo, ok := marker.(*jsonutil.Object); !ok || mo.Value("own") != true {
 		t.Fatalf("retired marker %v", marker)
 	}
@@ -197,7 +197,7 @@ func TestTerminalResultEncodingRoundTrips(t *testing.T) {
 	if back, _ := loadTerminalResult(etext); !anyutil.Equal(back, escaped) {
 		t.Fatalf("raw envelope %v", back)
 	}
-	if back, _ := loadTerminalResult(`{"_stored": {"v": true, "raw": 1}}`); pyStr(back.(*jsonutil.Object).Value("_stored")) == "1" {
+	if back, _ := loadTerminalResult(`{"_stored": {"v": true, "raw": 1}}`); anyutil.String(back.(*jsonutil.Object).Value("_stored")) == "1" {
 		t.Fatal("bool version must not unwrap")
 	}
 }

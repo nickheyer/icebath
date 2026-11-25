@@ -92,7 +92,7 @@ func messageRow(m *state.Message) map[string]any {
 	dec.UseNumber()
 	var decoded any
 	_ = dec.Decode(&decoded)
-	row, _ := pyNumbers(decoded).(map[string]any)
+	row, _ := numbers(decoded).(map[string]any)
 	if row == nil {
 		row = map[string]any{}
 	}
@@ -160,7 +160,7 @@ func mapShadow(row map[string]any) map[string]any {
 // Whether content is a multimodal tool result not yet converted to wire parts
 func isUnconvertedMultimodal(content any) bool {
 	cm, ok := content.(map[string]any)
-	return ok && pyTruthy(cm["_multimodal"])
+	return ok && anyutil.IsTrue(cm["_multimodal"])
 }
 
 // Image parts a message row carries in content, stashed Anthropic blocks, unconverted multimodal results and output
@@ -232,7 +232,7 @@ func stripOpaqueReplayItems(items any) any {
 // Opaque replay items with encrypted payloads removed, the shape the budget estimator charges
 func StripOpaqueReplayItems(items any) any { return stripOpaqueReplayItems(items) }
 
-// Text tokens of one message with image payloads stripped, the Python str of a dict row shadow or of the value
+// Text tokens of one message with image payloads stripped, priced on the JSON text of a dict row shadow or the text of any other value
 func estimateMessageTokensWithoutImages(msg any) int {
 	if row, ok := msg.(map[string]any); ok {
 		return EstimateTokens(anyutil.String(mapShadow(row)))
@@ -255,7 +255,7 @@ func EstimateRowsTokens(rows []map[string]any, imageCost int) int {
 }
 
 // Decoded JSON with numbers as Python ints or floats so their str matches the dict row
-func pyNumbers(v any) any {
+func numbers(v any) any {
 	switch t := v.(type) {
 	case json.Number:
 		text := t.String()
@@ -271,12 +271,12 @@ func pyNumbers(v any) any {
 		return f
 	case map[string]any:
 		for k, item := range t {
-			t[k] = pyNumbers(item)
+			t[k] = numbers(item)
 		}
 		return t
 	case []any:
 		for i, item := range t {
-			t[i] = pyNumbers(item)
+			t[i] = numbers(item)
 		}
 		return t
 	}
@@ -293,10 +293,27 @@ func nativeAnthropicProjectionRows(messages []*state.Message) ([]any, []string) 
 	return projected.([]any), replayed
 }
 
+// Tokens of native Anthropic projected rows, an assistant's text content priced on its own like the text block the wire carries it in and the rest of the row by its shadow
+func estimateNativeProjectedRows(projected []any, imageCost int) int {
+	total := 0
+	for _, row := range projected {
+		m, isRow := row.(map[string]any)
+		text, isText := m["content"].(string)
+		if !isRow || m["role"] != "assistant" || !isText || text == "" {
+			total += estimateMessageTokensCached(row, imageCost)
+			continue
+		}
+		rest := maps.Clone(m)
+		rest["content"] = ""
+		total += EstimateTokens(text) + estimateMessageTokensCached(rest, imageCost)
+	}
+	return total
+}
+
 // EstimateNativeAnthropicMessagesTokens charges replayed readable thinking once over the native Anthropic projection
 func EstimateNativeAnthropicMessagesTokens(ctx context.Context, messages []*state.Message) int {
 	projected, replayed := nativeAnthropicProjectionRows(messages)
-	total := estimateRowsTokens(projected, CurrentImageTokenCost(ctx))
+	total := estimateNativeProjectedRows(projected, CurrentImageTokenCost(ctx))
 	for _, text := range replayed {
 		total += EstimateTokens(text)
 	}
@@ -310,7 +327,7 @@ func EstimateNativeAnthropicRequestTokens(ctx context.Context, messages []*state
 	if system != "" {
 		total = EstimateTokens(system)
 	}
-	total += estimateRowsTokens(projected, CurrentImageTokenCost(ctx))
+	total += estimateNativeProjectedRows(projected, CurrentImageTokenCost(ctx))
 	if len(tools) > 0 {
 		total += EstimateToolsTokens(tools)
 	}
@@ -423,7 +440,7 @@ func EstimateToolsTokens(tools []map[string]any) int {
 			}
 		}
 		params := src["parameters"]
-		if !pyTruthy(params) {
+		if !anyutil.IsTrue(params) {
 			params = map[string]any{}
 		}
 		if text, err := compactSchemaJSON(params); err == nil {

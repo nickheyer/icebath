@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func interplayDB(t *testing.T, sid string, contents ...string) *SessionDB {
@@ -132,7 +134,7 @@ func TestRewindToEmptyDriftsTheCounterToZero(t *testing.T) {
 		t.Fatalf("counts after the rewind %s", got)
 	}
 	rows, err := db.GetMessages(ctx, "rewound", GetMessagesOptions{IncludeInactive: true})
-	if err != nil || len(rows) != 4 || !strings.HasPrefix(pyStr(rows[0].Value("content")), "turn") {
+	if err != nil || len(rows) != 4 || !strings.HasPrefix(anyutil.String(rows[0].Value("content")), "turn") {
 		t.Fatalf("inactive rows %d err %v", len(rows), err)
 	}
 }

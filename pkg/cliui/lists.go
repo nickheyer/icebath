@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -160,7 +161,7 @@ func (c *Console) CursesRadiolist(ctx context.Context, title string, items []Rad
 	}
 	n, ok := res.(int)
 	if !ok {
-		return 0, fmt.Errorf("menu navigation replay value %T is not a row index", res)
+		return 0, fmt.Errorf("menu navigation replay value is %s, not a row index", errchain.Kind(res))
 	}
 	return n, nil
 }
@@ -202,7 +203,7 @@ func (c *Console) CursesChecklist(ctx context.Context, title string, items []str
 	}
 	set, ok := res.(map[int]bool)
 	if !ok {
-		return nil, fmt.Errorf("menu navigation replay value %T is not a checklist selection", res)
+		return nil, fmt.Errorf("menu navigation replay value is %s, not a checklist selection", errchain.Kind(res))
 	}
 	return set, nil
 }
@@ -238,7 +239,7 @@ func (c *Console) CursesSingleSelect(ctx context.Context, title string, items []
 	}
 	n, ok := res.(int)
 	if !ok {
-		return 0, false, fmt.Errorf("menu navigation replay value %T is not a row index", res)
+		return 0, false, fmt.Errorf("menu navigation replay value is %s, not a row index", errchain.Kind(res))
 	}
 	return n, true, nil
 }

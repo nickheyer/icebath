@@ -299,7 +299,7 @@ func (s *Scope) pluginSkillPromptRows(ctx context.Context, disabled, availableTo
 	host.Discover(ctx)
 	var rows []indexRow
 	for _, meta := range host.ListPluginSkillMetadata() {
-		name := pyStrTruthy(meta["name"])
+		name := strTruthy(meta["name"])
 		if name == "" || disabled[name] {
 			continue
 		}
@@ -318,7 +318,7 @@ func (s *Scope) pluginSkillPromptRows(ctx context.Context, disabled, availableTo
 		if !skillShouldShow(extractSkillConditions(fm), availableTools, availableToolsets, sessionPlatform) {
 			continue
 		}
-		desc := ClipSkillDescription(strings.TrimSpace(pyStrTruthy(meta["description"])))
+		desc := ClipSkillDescription(strings.TrimSpace(strTruthy(meta["description"])))
 		if desc == "" {
 			desc = extractSkillDescription(fm)
 		}
@@ -373,7 +373,7 @@ func entryName(e *jsonutil.Object) string {
 		return anyutil.String(v)
 	}
 	v, _ := e.Get("skill_name")
-	return pyStrTruthy(v)
+	return strTruthy(v)
 }
 
 // One scanned index entry with its root, tier and offer time compatibility
@@ -566,15 +566,15 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 			return "", fmt.Errorf("a skill index entry rel is %s where a path was expected", errchain.Kind(entryGet(r.entry, "rel")))
 		}
 		conds := entryConditions(r.entry)
-		category := pyStrTruthy(entryGet(r.entry, "category"))
+		category := strTruthy(entryGet(r.entry, "category"))
 		if category == "" {
 			category = "general"
 		}
 		desc := entryGet(r.entry, "description")
 		entries = append(entries, catalogEntry{
-			Name: entryName(r.entry), Description: pyStrTruthy(desc), Category: category, Tier: r.tier, Root: r.root,
-			Path: filepath.Join(r.root, filepath.FromSlash(rel)), Visible: r.compatible && !hides(pyStrTruthy(entryGet(r.entry, "skill_name")), conds),
-			SkillName: pyStrTruthy(entryGet(r.entry, "skill_name")), Conditions: conds, Rel: rel,
+			Name: entryName(r.entry), Description: strTruthy(desc), Category: category, Tier: r.tier, Root: r.root,
+			Path: filepath.Join(r.root, filepath.FromSlash(rel)), Visible: r.compatible && !hides(strTruthy(entryGet(r.entry, "skill_name")), conds),
+			SkillName: strTruthy(entryGet(r.entry, "skill_name")), Conditions: conds, Rel: rel,
 		})
 	}
 	resolved := s.resolveSkillCatalog(entries)

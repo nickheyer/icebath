@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -379,19 +380,19 @@ func (b *BasePlatformAdapter) Self() PlatformAdapter {
 type baseOnly struct{ *BasePlatformAdapter }
 
 func (a baseOnly) Connect(context.Context, bool) (bool, error) {
-	return false, &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot connect"}
+	return false, &errorutil.Error{Kind: "NotImplementedError", Msg: "the base platform adapter cannot connect"}
 }
 
 func (a baseOnly) Disconnect(context.Context) error {
-	return &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot disconnect"}
+	return &errorutil.Error{Kind: "NotImplementedError", Msg: "the base platform adapter cannot disconnect"}
 }
 
 func (a baseOnly) Send(context.Context, string, string, string, map[string]any) (SendResult, error) {
-	return SendResult{}, &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot send"}
+	return SendResult{}, &errorutil.Error{Kind: "NotImplementedError", Msg: "the base platform adapter cannot send"}
 }
 
 func (a baseOnly) GetChatInfo(context.Context, string) (map[string]any, error) {
-	return nil, &PyError{Kind: "NotImplementedError", Msg: "the base platform adapter cannot read chat info"}
+	return nil, &errorutil.Error{Kind: "NotImplementedError", Msg: "the base platform adapter cannot read chat info"}
 }
 
 // Type name of the bound adapter for not implemented messages
@@ -464,7 +465,7 @@ func (b *BasePlatformAdapter) StreamingOverflowLimit() (int, bool) { return 0, f
 
 // Streaming draft preview, an error for adapters that never override it
 func (b *BasePlatformAdapter) SendDraft(ctx context.Context, chatID string, draftID int, content string, metadata map[string]any) (SendResult, error) {
-	return SendResult{}, &PyError{Kind: "NotImplementedError", Msg: "the " + b.typeName() + " platform adapter cannot send drafts"}
+	return SendResult{}, &errorutil.Error{Kind: "NotImplementedError", Msg: "the " + b.typeName() + " platform adapter cannot send drafts"}
 }
 
 // Renders a message chunk, intermediate stop or commentary onto the stream sink

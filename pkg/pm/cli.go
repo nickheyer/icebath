@@ -1061,7 +1061,7 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 		return nil, err
 	}
 	if err := strictUTF8(data); err != nil {
-		return nil, &PyError{Class: "ValueError", Message: err.Error()}
+		return nil, &ClassError{Class: "ValueError", Message: err.Error()}
 	}
 	declared, err := tomlLoads(universalNewlines(string(data)))
 	if err != nil {
@@ -1093,7 +1093,7 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 			return nil, err
 		}
 		if !found {
-			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", extra, path)}
+			return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("%s is not an extra declared in %s", extra, path)}
 		}
 		seen[extra] = true
 		listed, err := tomlIndex(table, extra)
@@ -1108,13 +1108,13 @@ func extraRequirements(project string, extras []string) ([]string, error) {
 			if own == nil {
 				name, ok := nameValue.(string)
 				if !ok {
-					return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("project.name must be text, got %s", tomlKind(nameValue))}
+					return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("project.name must be text, got %s", tomlKind(nameValue))}
 				}
 				own = regexp.MustCompile(`\A(?:` + regexp.QuoteMeta(name) + `\[([^\]]+)\])\z`)
 			}
 			requirement, ok := row.(string)
 			if !ok {
-				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("optional dependency of extra %s must be text, got %s", extra, tomlKind(row))}
+				return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("optional dependency of extra %s must be text, got %s", extra, tomlKind(row))}
 			}
 			if m := own.FindStringSubmatch(strings.ReplaceAll(requirement, " ", "")); m != nil {
 				pending = append(pending, strings.Split(m[1], ",")...)

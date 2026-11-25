@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -64,8 +64,8 @@ func FindOpenBotUserData(source string) string {
 	return ""
 }
 
-// Python int of a decoded value, false where int raises
-func pyInt(v any) (int64, bool) {
+// Integer of a decoded value: an integer, a boolean as 1 or 0, a float cut toward zero or whole number text; false for anything else, NaN, infinity and values beyond int64 included
+func wholeNumber(v any) (int64, bool) {
 	switch t := v.(type) {
 	case int64:
 		return t, true
@@ -77,10 +77,8 @@ func pyInt(v any) (int64, bool) {
 		}
 		return 0, true
 	case float64:
-		if math.IsNaN(t) || math.IsInf(t, 0) {
-			return 0, false
-		}
-		return int64(t), true
+		n, err := anyutil.ToInt(t)
+		return n, err == nil
 	case *big.Int:
 		return t.Int64(), t.IsInt64()
 	case string:
@@ -95,12 +93,12 @@ func pyInt(v any) (int64, bool) {
 
 // Hour and minute of a clock time as the minute and hour cron fields
 func clockFields(v any) (string, bool) {
-	parts := strings.Split(pyStr(v), ":")
+	parts := strings.Split(anyutil.String(v), ":")
 	if len(parts) != 2 {
 		return "", false
 	}
-	hour, ok1 := pyInt(parts[0])
-	minute, ok2 := pyInt(parts[1])
+	hour, ok1 := wholeNumber(parts[0])
+	minute, ok2 := wholeNumber(parts[1])
 	if !ok1 || !ok2 {
 		return "", false
 	}
@@ -150,7 +148,7 @@ func ScheduleToCron(schedule *jsonutil.Object, timezone string) (string, bool) {
 		if !ok {
 			return "", false
 		}
-		minute, ok := pyInt(m)
+		minute, ok := wholeNumber(m)
 		if !ok {
 			return "", false
 		}
@@ -171,14 +169,14 @@ func ScheduleToCron(schedule *jsonutil.Object, timezone string) (string, bool) {
 			return clock + " * * " + weekdays, true
 		case "weekly":
 			d, ok := need(schedule, "weekday")
-			n, ok2 := pyInt(d)
+			n, ok2 := wholeNumber(d)
 			if !ok || !ok2 {
 				return "", false
 			}
 			return fmt.Sprintf("%s * * %d", clock, n), true
 		default:
 			d, ok := need(schedule, "day")
-			n, ok2 := pyInt(d)
+			n, ok2 := wholeNumber(d)
 			if !ok || !ok2 {
 				return "", false
 			}
@@ -194,7 +192,7 @@ func ScheduleToCron(schedule *jsonutil.Object, timezone string) (string, bool) {
 		if !ok1 || !ok2 {
 			return "", false
 		}
-		parsed, _, err := timeutil.ParseISOZone(pyStr(d)+"T"+pyStr(t), time.UTC)
+		parsed, _, err := timeutil.ParseISOZone(anyutil.String(d)+"T"+anyutil.String(t), time.UTC)
 		if err != nil {
 			return "", false
 		}
@@ -216,24 +214,24 @@ func intervalCron(schedule *jsonutil.Object) (string, bool) {
 	if !ok1 || !ok2 || !ok3 {
 		return "", false
 	}
-	amount, ok := pyInt(a)
+	amount, ok := wholeNumber(a)
 	if !ok || amount == 0 {
 		return "", false
 	}
-	unit := pyStr(u)
-	parsed, err := timeutil.ParseISO(strings.ReplaceAll(pyStr(anchorRaw), "Z", "+00:00"), time.Local)
+	unit := anyutil.String(u)
+	parsed, err := timeutil.ParseISO(strings.ReplaceAll(anyutil.String(anchorRaw), "Z", "+00:00"), time.Local)
 	if err != nil {
 		return "", false
 	}
 	anchor := parsed.UTC()
 	switch {
-	case unit == "minutes" && pyMod(60, amount) == 0:
+	case unit == "minutes" && mod(60, amount) == 0:
 		if amount > 1 {
-			return fmt.Sprintf("%d-59/%d * * * *", pyMod(int64(anchor.Minute()), amount), amount), true
+			return fmt.Sprintf("%d-59/%d * * * *", mod(int64(anchor.Minute()), amount), amount), true
 		}
 		return "* * * * *", true
-	case unit == "hours" && pyMod(24, amount) == 0:
-		return fmt.Sprintf("%d %d-23/%d * * *", anchor.Minute(), pyMod(int64(anchor.Hour()), amount), amount), true
+	case unit == "hours" && mod(24, amount) == 0:
+		return fmt.Sprintf("%d %d-23/%d * * *", anchor.Minute(), mod(int64(anchor.Hour()), amount), amount), true
 	case unit == "days" && amount == 1:
 		return fmt.Sprintf("%d %d * * *", anchor.Minute(), anchor.Hour()), true
 	}
@@ -244,7 +242,7 @@ func intervalCron(schedule *jsonutil.Object) (string, bool) {
 }
 
 // Remainder with the sign of the divisor like the Python modulo operator
-func pyMod(a, b int64) int64 {
+func mod(a, b int64) int64 {
 	r := a % b
 	if r != 0 && (r < 0) != (b < 0) {
 		r += b
@@ -258,7 +256,7 @@ func customCron(schedule *jsonutil.Object) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	expression := strings.TrimSpace(pyStr(e))
+	expression := strings.TrimSpace(anyutil.String(e))
 	for _, f := range strings.Fields(expression) {
 		if reMatch(bareStepRe, f) {
 			return "", false
@@ -286,7 +284,7 @@ func intList(v any) (string, bool) {
 	}
 	parts := make([]string, len(list))
 	for i, item := range list {
-		n, ok := pyInt(item)
+		n, ok := wholeNumber(item)
 		if !ok {
 			return "", false
 		}
@@ -321,7 +319,7 @@ func advancedCron(schedule *jsonutil.Object) (string, bool) {
 		}
 	}
 	var dom, dow string
-	switch pyStr(days.Value("kind")) {
+	switch anyutil.String(days.Value("kind")) {
 	case "every-day":
 		dom, dow = "*", "*"
 	case "days-of-week":
@@ -336,7 +334,7 @@ func advancedCron(schedule *jsonutil.Object) (string, bool) {
 	if !hasKind {
 		return "", false
 	}
-	if pyStr(tkind) == "at-time" {
+	if anyutil.String(tkind) == "at-time" {
 		t, has := tm.Get("time")
 		if !has {
 			return "", false
@@ -352,11 +350,11 @@ func advancedCron(schedule *jsonutil.Object) (string, bool) {
 		if !has || !hasAmount {
 			return "", false
 		}
-		amount, ok := pyInt(amountRaw)
+		amount, ok := wholeNumber(amountRaw)
 		if !ok {
 			return "", false
 		}
-		if pyStr(unit) == "minutes" {
+		if anyutil.String(unit) == "minutes" {
 			clock = fmt.Sprintf("*/%d *", amount)
 		} else {
 			clock = fmt.Sprintf("0 */%d", amount)
@@ -384,7 +382,7 @@ func sqliteErrText(err error) string {
 		Error() string
 	}
 	if !errors.As(err, &coded) {
-		return pyErrText(err)
+		return errText(err)
 	}
 	msg := coded.Error()
 	if m, _ := sqliteCodeSuffix.FindStringMatch(msg); m != nil {
@@ -514,7 +512,7 @@ func columnJSON(raw any, def any) any {
 func colTruthy(v any) bool { return truthy(v) }
 
 // Python str of a column value
-func colStr(v any) string { return pyStr(v) }
+func colStr(v any) string { return anyutil.String(v) }
 
 // The agent's own skill folders, one per name, bundled skills left behind
 func openbotSkills(workspace string) ([]any, error) {
@@ -563,9 +561,9 @@ func openbotPairs(raw any) *jsonutil.Object {
 		}
 		value := ""
 		if v, has := o.Get("value"); has {
-			value = pyStr(v)
+			value = anyutil.String(v)
 		}
-		out.Set(pyStr(o.Value("key")), value)
+		out.Set(anyutil.String(o.Value("key")), value)
 	}
 	return out
 }
@@ -622,7 +620,7 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 		case []any:
 			for _, n := range v {
 				if truthy(n) {
-					names = append(names, pyStr(n))
+					names = append(names, anyutil.String(n))
 				}
 			}
 		case *jsonutil.Object:
@@ -743,7 +741,7 @@ func ReadOpenBotAgents(ctx context.Context, userData, scratchParent string) (*Op
 		}
 		workspace := filepath.Join(userHome(), "OpenBot", "Agents", agentID)
 		if truthy(agent.Value("workspacePath")) {
-			workspace = pyStr(agent.Value("workspacePath"))
+			workspace = anyutil.String(agent.Value("workspacePath"))
 		}
 		routineRows, err := queryRows(ctx, db, "SELECT r.*, t.schedule_json FROM projection_agent_routines r LEFT JOIN "+
 			"projection_routine_triggers t ON t.routine_id = r.routine_id WHERE r.agent_id = ? "+

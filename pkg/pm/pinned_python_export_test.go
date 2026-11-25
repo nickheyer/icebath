@@ -22,8 +22,8 @@ func TestPinnedPythonVersionExportReadsTheLockPin(t *testing.T) {
 	previous := lockfilePath
 	lockfilePath = func() string { return empty }
 	t.Cleanup(func() { lockfilePath = previous })
-	var pyErr *PyError
-	if _, _, err := PinnedPythonVersion(); !errors.As(err, &pyErr) || pyErr.Class != "RuntimeError" || pyErr.Message != "the lock pins no python version" {
+	var kindErr *ClassError
+	if _, _, err := PinnedPythonVersion(); !errors.As(err, &kindErr) || kindErr.Class != "RuntimeError" || kindErr.Message != "the lock pins no python version" {
 		t.Fatalf("no pin %v", err)
 	}
 }

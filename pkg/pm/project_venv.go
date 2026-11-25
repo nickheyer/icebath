@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"syscall"
 	"unicode/utf8"
@@ -64,7 +63,7 @@ func projectVenvDir(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !samePurePath(moduleDir(), resolvedRoot) {
+	if !samePath(moduleDir(), resolvedRoot) {
 		return "", nil
 	}
 	running, inVenv, err := runningVenvPrefix()
@@ -80,15 +79,6 @@ func projectVenvDir(root string) (string, error) {
 
 // ProjectVenvDir exports projectVenvDir
 func ProjectVenvDir(root string) (string, error) { return projectVenvDir(root) }
-
-// pathlib equality, the str form on POSIX and its lowercase on Windows
-func samePurePath(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(a) == strings.ToLower(b)
-	}
-	return a == b
-}
 
 // Reports whether the venv's own icebath-agent distribution records the resolved root as its direct_url source tree
 func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
@@ -118,7 +108,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		}
 		object, ok := value.(*jsonutil.Object)
 		if !ok {
-			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("direct_url.json must hold a mapping, got %s", errchain.Kind(value))}
+			return false, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("direct_url.json must hold a mapping, got %s", errchain.Kind(value))}
 		}
 		var url any = ""
 		if got, ok := object.Get("url"); ok {
@@ -126,7 +116,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		}
 		text, ok := url.(string)
 		if !ok {
-			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the url in direct_url.json must be text, got %s", errchain.Kind(url))}
+			return false, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the url in direct_url.json must be text, got %s", errchain.Kind(url))}
 		}
 		if !strings.HasPrefix(text, "file:") {
 			continue
@@ -143,11 +133,14 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 			}
 			return false, err
 		}
+		if strings.IndexByte(local, 0) >= 0 {
+			return false, &ClassError{Class: "ValueError", Message: "lstat: embedded null character in path"}
+		}
 		source, err := pathutil.Resolve(local)
 		if err != nil {
 			return false, err
 		}
-		if samePurePath(source, resolvedRoot) {
+		if samePath(source, resolvedRoot) {
 			return true, nil
 		}
 	}

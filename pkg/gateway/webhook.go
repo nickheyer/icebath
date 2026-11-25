@@ -31,6 +31,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
@@ -228,7 +229,7 @@ func webhookRouteObject(route any) (*jsonutil.Object, error) {
 	if obj, ok := route.(*jsonutil.Object); ok && obj != nil {
 		return obj, nil
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("a webhook route is %s, expected a mapping", errchain.Kind(route))}
+	return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("a webhook route is %s, expected a mapping", errchain.Kind(route))}
 }
 
 // One delivery info entry and the time it was recorded
@@ -324,7 +325,7 @@ func NewWebhookAdapter(config *PlatformConfig) (*WebhookAdapter, error) {
 func webhookRouteTable(routes any) (*orderedutil.Map[string, any], error) {
 	obj, ok := webhookNormalize(routes).(*jsonutil.Object)
 	if !ok || obj == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook routes are %s, expected a mapping", errchain.Kind(routes))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the webhook routes are %s, expected a mapping", errchain.Kind(routes))}
 	}
 	table := orderedutil.NewMap[string, any]()
 	for _, name := range obj.Keys() {
@@ -385,21 +386,21 @@ func (a *WebhookAdapter) validateRoute(name string, route any) error {
 	}
 	secret := obj.ValueOr("secret", a.globalSecret)
 	if !WebhookIsUsableSecret(secret) {
-		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' HMAC secret is missing, blank, or not a string. Set 'secret' "+
+		return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' HMAC secret is missing, blank, or not a string. Set 'secret' "+
 			"on the route or globally. For testing without auth, set secret to '%s'.", name, webhookInsecureNoAuth)}
 	}
 	if secret == webhookInsecureNoAuth && !webhookIsLoopbackHost(a.host) {
-		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' uses INSECURE_NO_AUTH secret but is bound to non-loopback "+
-			"host '%s'. INSECURE_NO_AUTH is for local testing only. Refusing to start to prevent accidental exposure.", name, pyHostText(a.host))}
+		return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' uses INSECURE_NO_AUTH secret but is bound to non-loopback "+
+			"host '%s'. INSECURE_NO_AUTH is for local testing only. Refusing to start to prevent accidental exposure.", name, hostTextValue(a.host))}
 	}
 	if anyutil.IsTrue(obj.ValueOr("deliver_only", nil)) {
 		deliver := obj.ValueOr("deliver", "log")
 		if !anyutil.IsTrue(deliver) || anyutil.Equal(deliver, "log") {
-			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has deliver_only=true but deliver is '%s'. Direct "+
+			return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has deliver_only=true but deliver is '%s'. Direct "+
 				"delivery requires a real target (telegram, discord, slack, github_comment, etc.).", name, anyutil.String(deliver))}
 		}
 		if anyutil.IsTrue(obj.ValueOr("cron_job", nil)) {
-			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' sets both deliver_only and cron_job. They are mutually "+
+			return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' sets both deliver_only and cron_job. They are mutually "+
 				"exclusive: deliver_only pushes the rendered template as a message, cron_job fires "+
 				"an existing cron job (which handles its own delivery).", name)}
 		}
@@ -491,12 +492,12 @@ func (a *WebhookAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 func (a *WebhookAdapter) deliverTo(ctx context.Context, delivery *jsonutil.Object, chatID, content string) (SendResult, error) {
 	raw, found := delivery.Get("deliver")
 	if !found {
-		return SendResult{}, &pyKeyError{"deliver"}
+		return SendResult{}, &keyError{"deliver"}
 	}
 	deliverType := anyutil.String(raw)
 	switch {
 	case anyutil.Equal(raw, "log"):
-		pkgLog().Info(fmt.Sprintf("[webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
+		pkgLog().Info(fmt.Sprintf("[webhook] Response for %s: %s", chatID, sliceRunes(content, 200)))
 		return SendResult{Success: true}, nil
 	case anyutil.Equal(raw, "github_comment"):
 		return a.deliverGitHubComment(ctx, content, delivery)
@@ -625,7 +626,7 @@ func (a *WebhookAdapter) dynamicRouteAllowed(name string, route *jsonutil.Object
 	}
 	if secret == webhookInsecureNoAuth && !webhookIsLoopbackHost(a.host) {
 		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: INSECURE_NO_AUTH is only allowed on loopback "+
-			"hosts. Current host: '%s'.", name, pyHostText(a.host)))
+			"hosts. Current host: '%s'.", name, hostTextValue(a.host)))
 		return false
 	}
 	if err := ValidateCoalesceConfig(name, route); err != nil {
@@ -666,7 +667,7 @@ func (a *WebhookAdapter) ReloadDynamicRoutes(ctx context.Context) {
 	if utf8.Valid(raw) {
 		data, err = jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	} else {
-		err = &PyError{Kind: "UnicodeDecodeError", Msg: "the dynamic webhook routes file is not valid UTF-8"}
+		err = &errorutil.Error{Kind: "UnicodeDecodeError", Msg: "the dynamic webhook routes file is not valid UTF-8"}
 	}
 	if err != nil {
 		a.dynamicRoutesStat = statKey
@@ -893,7 +894,7 @@ func (a *WebhookAdapter) handleCronTrigger(ctx context.Context, prompt string, r
 	deliveryID string, profile *string) (*WebResponse, error) {
 	rawJob, found := routeConfig.Get("cron_job")
 	if !found {
-		return nil, &pyKeyError{"cron_job"}
+		return nil, &keyError{"cron_job"}
 	}
 	jobRef := anyutil.String(rawJob)
 	eventContext := fmt.Sprintf("This run was triggered by webhook event '%s' on route '%s' (not the schedule).\n\n%s",
@@ -1282,14 +1283,14 @@ func (a *WebhookAdapter) admitAgentRun(ctx context.Context, payload any, prompt,
 func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEvent, authority *SessionAuthority, receipt AdmissionReceipt) {
 	err := func() error {
 		if authority == nil {
-			return &PyError{Kind: "AttributeError", Msg: "the session store is not open"}
+			return &errorutil.Error{Kind: "AttributeError", Msg: "the session store is not open"}
 		}
 		row, err := authority.DB.GetSessionAdmission(ctx, receipt.AdmissionID)
 		if err != nil {
 			return err
 		}
 		if row == nil {
-			return &PyError{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
 		}
 		if status := row.ValueOr("status", nil); status == "queued" || status == "started" {
 			authority.mu.Lock()
@@ -1306,7 +1307,7 @@ func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEve
 				return err
 			}
 			if row == nil {
-				return &PyError{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
+				return &errorutil.Error{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
 			}
 		}
 		event.webhookReceipt = &webhookReceiptBinding{authority: authority, receipt: authority.receiptOf(row)}
@@ -1391,19 +1392,25 @@ func (a *WebhookAdapter) ValidateSignature(request *WebRequest, body []byte, sec
 	return false
 }
 
-// Renders a prompt template with dotted payload fields, the raw payload JSON for an empty template
+// Renders a prompt template with dotted payload fields, a null field as null and a missing one left as written, the raw payload JSON for an empty template
 func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, routeName string) (string, error) {
 	if !anyutil.IsTrue(template) {
 		dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII())
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Webhook event '%s' on route '%s':\n\n```json\n%s\n```", anyutil.String(eventType), routeName, pySliceRunes(dumped, 4000)), nil
+		return fmt.Sprintf("Webhook event '%s' on route '%s':\n\n```json\n%s\n```", anyutil.String(eventType), routeName, sliceRunes(dumped, 4000)), nil
 	}
 	text, ok := template.(string)
 	if !ok {
-		return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook prompt template is %s, expected text", errchain.Kind(template))}
+		return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the webhook prompt template is %s, expected text", errchain.Kind(template))}
 	}
+	return renderWebhookTemplate(text, payload, eventType, "null")
+}
+
+// Template text with {__raw__} as the payload JSON, {event_type} as the event type and every other {dotted.field} as its payload value, a null field
+// written as nullText and a missing one left as written
+func renderWebhookTemplate(text string, payload, eventType any, nullText string) (string, error) {
 	var failure error
 	out := webhookTemplateKeyRE.ReplaceAllStringFunc(text, func(match string) string {
 		if failure != nil {
@@ -1418,11 +1425,11 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 				failure = err
 				return match
 			}
-			return pySliceRunes(dumped, 4000)
+			return sliceRunes(dumped, 4000)
 		case "event_type":
 			eventText, ok := eventType.(string)
 			if !ok {
-				failure = &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook event type is %s, expected text", errchain.Kind(eventType))}
+				failure = &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the webhook event type is %s, expected text", errchain.Kind(eventType))}
 				return match
 			}
 			return eventText
@@ -1442,24 +1449,26 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 				failure = err
 				return match
 			}
-			return pySliceRunes(dumped, 2000)
+			return sliceRunes(dumped, 2000)
+		case nil:
+			return nullText
 		}
 		return anyutil.String(value)
 	})
 	return out, failure
 }
 
-// Delivery extra with every string value rendered against the payload
+// Delivery extra with every string value rendered against the payload, a null field rendering empty so an unset target falls back to the home channel
 func (a *WebhookAdapter) renderDeliveryExtra(extra any, payload any) (*jsonutil.Object, error) {
 	obj, ok := jsonutil.AsObject(extra)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
 	}
 	out := jsonutil.NewObject()
 	for _, key := range obj.Keys() {
 		value, _ := obj.Get(key)
 		if text, isText := value.(string); isText {
-			rendered, err := a.RenderPrompt(text, payload, "", "")
+			rendered, err := renderWebhookTemplate(text, payload, "", "")
 			if err != nil {
 				return nil, err
 			}
@@ -1476,7 +1485,7 @@ func (a *WebhookAdapter) directDeliver(ctx context.Context, content string, deli
 	deliverType := delivery.ValueOr("deliver", "log")
 	switch {
 	case anyutil.Equal(deliverType, "log"):
-		pkgLog().Info("[webhook] direct-deliver log-only: " + pySliceRunes(content, 200))
+		pkgLog().Info("[webhook] direct-deliver log-only: " + sliceRunes(content, 200))
 		return SendResult{Success: true}, nil
 	case anyutil.Equal(deliverType, "github_comment"):
 		return a.deliverGitHubComment(ctx, content, delivery)
@@ -1489,7 +1498,7 @@ func webhookDeliveryExtra(delivery *jsonutil.Object) (*jsonutil.Object, error) {
 	extra := delivery.ValueOr("deliver_extra", jsonutil.NewObject())
 	obj, ok := jsonutil.AsObject(extra)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
 	}
 	return obj, nil
 }
@@ -1507,7 +1516,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 	}
 	prInt, err := anyutil.ToInt(prNumber)
 	if err == nil && prInt <= 0 {
-		err = &PyError{Kind: "ValueError", Msg: "non-positive"}
+		err = &errorutil.Error{Kind: "ValueError", Msg: "non-positive"}
 	}
 	if err != nil {
 		pkgLog().Error("[webhook] invalid pr_number: " + anyutil.Quote(prNumber))
@@ -1515,7 +1524,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 	}
 	repoText, ok := repo.(string)
 	if !ok {
-		return SendResult{}, &PyError{Kind: "TypeError", Msg: "the GitHub repository is " + errchain.Kind(repo) + ", expected text"}
+		return SendResult{}, &errorutil.Error{Kind: "TypeError", Msg: "the GitHub repository is " + errchain.Kind(repo) + ", expected text"}
 	}
 	if !webhookRepoRE.MatchString(repoText) {
 		pkgLog().Error("[webhook] invalid repo format: " + anyutil.Quote(repo))
@@ -1622,7 +1631,7 @@ func (a *WebhookAdapter) deliverCrossPlatform(ctx context.Context, platformName 
 	if raw := delivery.ValueOr("profile", nil); raw != nil {
 		text, isText := raw.(string)
 		if !isText {
-			return SendResult{}, &PyError{Kind: "TypeError", Msg: "profile must be a string"}
+			return SendResult{}, &errorutil.Error{Kind: "TypeError", Msg: "profile must be a string"}
 		}
 		profile = &text
 	}
@@ -1674,7 +1683,7 @@ func (a *WebhookAdapter) WebhookDeliveryConfig(ctx context.Context, profile *str
 	if profile == nil || *profile == "" {
 		holder, ok := a.GatewayRunner.(gatewayConfigRunner)
 		if !ok || holder == nil {
-			return nil, &PyError{Kind: "AttributeError", Msg: "the webhook adapter has no config"}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the webhook adapter has no config"}
 		}
 		return holder.GatewayConfig(), nil
 	}

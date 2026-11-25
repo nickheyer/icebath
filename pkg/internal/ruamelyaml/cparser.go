@@ -35,7 +35,7 @@ func (c *cComposer) next() {
 func (c *cComposer) del() { c.have = false }
 
 // Python str of C string bytes, the UnicodeDecodeError of invalid UTF-8
-func pyFromString(b []byte) string {
+func fromString(b []byte) string {
 	b = cString(b)
 	text, err := textutil.DecodeUTF8(b)
 	if err != nil {
@@ -84,7 +84,7 @@ func cStackCost(kind NodeKind, flow bool) int64 {
 }
 
 // RecursionError CPython raises when the composer recursion exhausts the C stack
-func cStackOverflow(kind NodeKind, flow bool) *PyException {
+func cStackOverflow(kind NodeKind, flow bool) *Exception {
 	msg := "Stack overflow (used 8148 kB)"
 	if kind == MappingNode || !flow {
 		msg += " while calling a Python object"
@@ -95,7 +95,7 @@ func cStackOverflow(kind NodeKind, flow bool) *PyException {
 func (c *cComposer) composeNode() *Node {
 	c.next()
 	if c.ev.typ == yamlAliasEvent {
-		anchor := pyFromString(c.ev.anchor)
+		anchor := fromString(c.ev.anchor)
 		n, ok := c.anchors[anchor]
 		if !ok {
 			panic(&cYAMLError{kind: "ComposerError"})
@@ -105,7 +105,7 @@ func (c *cComposer) composeNode() *Node {
 	}
 	var anchor *string
 	if (c.ev.typ == yamlScalarEvent || c.ev.typ == yamlSequenceStartEvent || c.ev.typ == yamlMappingStartEvent) && c.ev.anchor != nil {
-		a := pyFromString(c.ev.anchor)
+		a := fromString(c.ev.anchor)
 		anchor = &a
 		if _, dup := c.anchors[a]; dup {
 			panic(&cYAMLError{kind: "ComposerError"})
@@ -148,7 +148,7 @@ func (c *cComposer) composeScalar(anchor *string) *Node {
 	if c.ev.tag == nil || string(cString(c.ev.tag)) == "!" {
 		n.tag = resolve(v11, ScalarNode, value, [2]bool{c.ev.plainImplicit, c.ev.quotedImplicit})
 	} else {
-		n.rawTag, n.lazy = pyFromString(c.ev.tag), true
+		n.rawTag, n.lazy = fromString(c.ev.tag), true
 	}
 	if anchor != nil {
 		c.anchors[*anchor] = n
@@ -162,7 +162,7 @@ func (c *cComposer) composeCollection(anchor *string, kind NodeKind) *Node {
 	if c.ev.tag == nil || string(cString(c.ev.tag)) == "!" {
 		n.tag = resolve(v11, kind, "", [2]bool{c.ev.plainImplicit})
 	} else {
-		n.rawTag, n.lazy = pyFromString(c.ev.tag), true
+		n.rawTag, n.lazy = fromString(c.ev.tag), true
 	}
 	if anchor != nil {
 		c.anchors[*anchor] = n

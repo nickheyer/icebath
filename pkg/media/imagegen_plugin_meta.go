@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -128,7 +129,7 @@ func (p *metaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 		return fail(fmt.Sprintf("Failed to save Meta image: %v", err), "io_error"), nil
 	}
 	extra := map[string]any{"size": size}
-	if revised := openAIItemField(first, "revised_prompt"); pyTruthy(revised) {
+	if revised := openAIItemField(first, "revised_prompt"); anyutil.IsTrue(revised) {
 		extra["revised_prompt"] = revised
 	}
 	return imageSuccessResponse(imageRef, modelID, prompt, aspect, "meta-ai", "text", extra), nil

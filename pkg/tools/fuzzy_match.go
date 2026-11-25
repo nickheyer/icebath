@@ -3,7 +3,9 @@ package tools
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -85,9 +87,9 @@ func mapLines(lines []string, f func(string) string) []string {
 // Strips whitespace on the first and last lines only
 func stripBoundary(lines []string) []string {
 	out := append([]string(nil), lines...)
-	out[0] = pyStrip(out[0])
+	out[0] = strings.TrimSpace(out[0])
 	if len(out) > 1 {
-		out[len(out)-1] = pyStrip(out[len(out)-1])
+		out[len(out)-1] = strings.TrimSpace(out[len(out)-1])
 	}
 	return out
 }
@@ -237,7 +239,7 @@ func strategyExact(content, pattern string) []matchSpan {
 
 // Compares lines after stripping each one
 func strategyLineTrimmed(content, pattern string) []matchSpan {
-	return matchTransformedLines(content, pattern, func(ls []string) []string { return mapLines(ls, pyStrip) })
+	return matchTransformedLines(content, pattern, func(ls []string) []string { return mapLines(ls, strings.TrimSpace) })
 }
 
 // Collapses runs of spaces and tabs to one space
@@ -270,7 +272,7 @@ func strategyWhitespaceNormalized(content, pattern string) []matchSpan {
 // Ignores leading indentation entirely
 func strategyIndentationFlexible(content, pattern string) []matchSpan {
 	return matchTransformedLines(content, pattern, func(ls []string) []string {
-		return mapLines(ls, func(l string) string { return strings.TrimLeftFunc(l, pyIsSpace) })
+		return mapLines(ls, func(l string) string { return strings.TrimLeftFunc(l, unicode.IsSpace) })
 	})
 }
 
@@ -311,13 +313,13 @@ func strategyBlockAnchor(content, pattern string) []matchSpan {
 	if len(patternLines) < 2 {
 		return nil
 	}
-	firstLine := pyStrip(patternLines[0])
-	lastLine := pyStrip(patternLines[len(patternLines)-1])
+	firstLine := strings.TrimSpace(patternLines[0])
+	lastLine := strings.TrimSpace(patternLines[len(patternLines)-1])
 	n := len(patternLines)
 	normContentLines := strings.Split(unicodeNormalize(content), "\n")
 	potential := map[int]bool{}
 	for i := 0; i < len(normContentLines)-n+1; i++ {
-		if pyStrip(normContentLines[i]) == firstLine && pyStrip(normContentLines[i+n-1]) == lastLine {
+		if strings.TrimSpace(normContentLines[i]) == firstLine && strings.TrimSpace(normContentLines[i+n-1]) == lastLine {
 			potential[i] = true
 		}
 	}
@@ -346,8 +348,8 @@ func strategyContextAware(content, pattern string) []matchSpan {
 	if n > len(contentLines) {
 		return nil
 	}
-	firstPat := pyStrip(patternLines[0])
-	lastPat := pyStrip(patternLines[n-1])
+	firstPat := strings.TrimSpace(patternLines[0])
+	lastPat := strings.TrimSpace(patternLines[n-1])
 	sim := func(a, b string) float64 {
 		if a == b {
 			return 1.0
@@ -356,15 +358,15 @@ func strategyContextAware(content, pattern string) []matchSpan {
 	}
 	return windowSpans(content, contentLines, n, func(i int) bool {
 		block := contentLines[i : i+n]
-		if sim(firstPat, pyStrip(block[0])) < 0.80 {
+		if sim(firstPat, strings.TrimSpace(block[0])) < 0.80 {
 			return false
 		}
-		if sim(lastPat, pyStrip(block[n-1])) < 0.80 {
+		if sim(lastPat, strings.TrimSpace(block[n-1])) < 0.80 {
 			return false
 		}
 		for k, pLine := range patternLines {
-			p := pyStrip(pLine)
-			if p != "" && sim(p, pyStrip(block[k])) < 0.80 {
+			p := strings.TrimSpace(pLine)
+			if p != "" && sim(p, strings.TrimSpace(block[k])) < 0.80 {
 				return false
 			}
 		}
@@ -409,9 +411,12 @@ func boundaryNote(strategies []string, target, where string) string {
 		"drop a line just outside the edited region)."
 }
 
-// Reports a re sent edit whose non trivial new text is present and old text gone
+// Reports a re sent edit whose non trivial new text is present and old text gone, content compared as read_file shows it
 func isAlreadyApplied(content, oldString, newString string) bool {
-	if newString == "" || utf8.RuneCountInString(pyStrip(newString)) < 8 || !strings.Contains(content, newString) {
+	if !utf8.ValidString(content) {
+		content, _ = undecodableView(content)
+	}
+	if newString == "" || utf8.RuneCountInString(strings.TrimSpace(newString)) < 8 || !strings.Contains(content, newString) {
 		return false
 	}
 	return oldString == newString || !strings.Contains(content, oldString)
@@ -440,7 +445,7 @@ func formatMatchLocations(content string, matches []matchSpan, limit int) string
 		} else {
 			lineEnd += lineStart
 		}
-		snippet := pyStrip(content[lineStart:lineEnd])
+		snippet := strings.TrimSpace(content[lineStart:lineEnd])
 		if utf8.RuneCountInString(snippet) > 80 {
 			snippet = runePrefix(snippet, 77) + "..."
 		}
@@ -452,25 +457,56 @@ func formatMatchLocations(content string, matches []matchSpan, limit int) string
 	return strings.Join(rows, "\n")
 }
 
-// Finds and replaces through the strategy chain, returning new content, count, strategy and error
+// Finds and replaces through the strategy chain, returning new content, count, strategy and error; content that is not valid UTF-8 is matched as read_file shows it, each undecodable byte as U+FFFD, and every byte the edit leaves unchanged is written back as it was
 func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, correctionNotes *[]string) (string, int, string, string) {
+	if utf8.ValidString(content) {
+		edits, count, strategy, errText := fuzzyFindEdits(content, oldString, newString, replaceAll, correctionNotes)
+		if errText != "" {
+			return content, count, strategy, errText
+		}
+		for _, e := range edits {
+			content = content[:e.span.start] + e.text + content[e.span.end:]
+		}
+		return content, count, strategy, ""
+	}
+	view, holes := undecodableView(content)
+	edits, count, strategy, errText := fuzzyFindEdits(view, oldString, newString, replaceAll, correctionNotes)
+	if errText != "" {
+		return content, count, strategy, errText
+	}
+	result := content
+	for _, e := range edits {
+		start, end := viewToContent(holes, e.span.start), viewToContent(holes, e.span.end)
+		result = result[:start] + keepUndecodableBytes(content, view, holes, e.span, e.text) + result[end:]
+	}
+	return result, count, strategy, ""
+}
+
+// One replacement the strategy chain settled on: the span it covers and the text that takes its place
+type fuzzyEdit struct {
+	span matchSpan
+	text string
+}
+
+// Edits of the first strategy that matches, last span first so splicing them in order keeps earlier offsets valid, with the match count, strategy and error
+func fuzzyFindEdits(content, oldString, newString string, replaceAll bool, correctionNotes *[]string) ([]fuzzyEdit, int, string, string) {
 	if oldString == "" {
-		return content, 0, "", "old_string is empty — nothing to match. Set old_string to the exact " +
+		return nil, 0, "", "old_string is empty — nothing to match. Set old_string to the exact " +
 			"existing text the replacement should replace (read the file first if " +
 			"unsure). To create a new file or fully rewrite one, use write_file " +
 			"instead. Do not re-send this call unchanged."
 	}
-	if pyStrip(oldString) == "" {
-		return content, 0, "", "old_string is only whitespace — provide non-blank text to match. Set it " +
+	if strings.TrimSpace(oldString) == "" {
+		return nil, 0, "", "old_string is only whitespace — provide non-blank text to match. Set it " +
 			"to the exact existing text the replacement should replace (read the file " +
 			"first if unsure). Do not re-send this call unchanged."
 	}
 	oldString, newString, correctionNote, err := maybeCorrectEscapeDrift(oldString, newString, content)
 	if err != nil {
-		return content, 0, "", err.Error()
+		return nil, 0, "", err.Error()
 	}
 	if oldString == newString {
-		return content, 0, "", identicalStringsError
+		return nil, 0, "", identicalStringsError
 	}
 	for _, st := range fuzzyStrategies {
 		matches := st.fn(content, oldString)
@@ -478,19 +514,19 @@ func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, 
 			continue
 		}
 		if len(matches) > 1 && !replaceAll {
-			return content, 0, "", fmt.Sprintf("Found %d matches for old_string. "+
+			return nil, 0, "", fmt.Sprintf("Found %d matches for old_string. "+
 				"Provide more context to make it unique, or use replace_all=True. "+
 				"Matches:\n%s", len(matches), formatMatchLocations(content, matches, 5))
 		}
 		if replaceAll && len(matches) > 1 && similarityStrategies[st.name] {
-			return content, 0, "", fmt.Sprintf("Found %d approximate matches via the "+
+			return nil, 0, "", fmt.Sprintf("Found %d approximate matches via the "+
 				"'%s' strategy; replace_all only applies to exact "+
 				"matches. Provide the precise text (whitespace included) so an "+
 				"exact/line-trimmed match can be made.", len(matches), st.name)
 		}
 		if st.name != "exact" {
 			if driftErr := detectEscapeDrift(content, matches, oldString, newString); driftErr != "" {
-				return content, 0, "", driftErr
+				return nil, 0, "", driftErr
 			}
 		}
 		effectiveNew := maybeUnescapeNewString(newString, content, matches)
@@ -498,13 +534,62 @@ func FuzzyFindAndReplace(content, oldString, newString string, replaceAll bool, 
 		if st.name == "unicode_normalized" {
 			plan = newUnicodeEditPlan(oldString, effectiveNew)
 		}
-		newContent := applyReplacements(content, matches, effectiveNew, oldString, st.name != "exact", plan)
+		edits := replacementEdits(content, matches, effectiveNew, oldString, st.name != "exact", plan)
 		if correctionNote != "" && correctionNotes != nil {
 			*correctionNotes = append(*correctionNotes, correctionNote)
 		}
-		return newContent, len(matches), st.name, ""
+		return edits, len(matches), st.name, ""
 	}
-	return content, 0, "", noMatchText
+	return nil, 0, "", noMatchText
+}
+
+// Text of content with each byte that starts no valid UTF-8 sequence shown as U+FFFD, as read_file shows it, and the offsets of those replacement characters in the text
+func undecodableView(content string) (string, []int) {
+	var b strings.Builder
+	b.Grow(len(content) + 8)
+	var holes []int
+	start := 0
+	for i := 0; i < len(content); {
+		r, size := utf8.DecodeRuneInString(content[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteString(content[start:i])
+			holes = append(holes, b.Len())
+			b.WriteRune(utf8.RuneError)
+			i++
+			start = i
+			continue
+		}
+		i += size
+	}
+	b.WriteString(content[start:])
+	return b.String(), holes
+}
+
+// Offset in the original content of an offset in its undecodable view, one inside a replacement character landing after the byte it stands for
+func viewToContent(holes []int, at int) int {
+	k := sort.SearchInts(holes, at)
+	if k > 0 && at < holes[k-1]+utf8.RuneLen(utf8.RuneError) {
+		return holes[k-1] - 2*(k-1) + 1
+	}
+	return at - 2*k
+}
+
+// Replacement for a span of the undecodable view with every stretch the edit leaves unchanged written as the original bytes, so undecodable bytes outside the changed text survive
+func keepUndecodableBytes(content, view string, holes []int, span matchSpan, text string) string {
+	region := view[span.start:span.end]
+	if region == content[viewToContent(holes, span.start):viewToContent(holes, span.end)] {
+		return text
+	}
+	regionOffs, textOffs := runeOffsets(region), runeOffsets(text)
+	var b strings.Builder
+	for _, op := range newSequenceMatcher[rune](nil, []rune(region), []rune(text), false).getOpcodes() {
+		if op.tag == "equal" {
+			b.WriteString(content[viewToContent(holes, span.start+regionOffs[op.i1]):viewToContent(holes, span.start+regionOffs[op.i2])])
+			continue
+		}
+		b.WriteString(text[textOffs[op.j1]:textOffs[op.j2]])
+	}
+	return b.String()
 }
 
 // Failure of a replace whose old_string matches nowhere in the file
@@ -558,12 +643,12 @@ func detectEscapeDrift(content string, matches []matchSpan, oldString, newString
 			if strings.Contains(newString, suspect) && strings.Contains(oldString, suspect) && !strings.Contains(regions, suspect) {
 				plain := suspect[1:]
 				return "Escape-drift detected: old_string and new_string contain " +
-					"the literal sequence " + pyReprStr(suspect) + " but the matched region of " +
+					"the literal sequence " + strconv.Quote(suspect) + " but the matched region of " +
 					"the file does not. This is almost always a tool-call " +
 					"serialization artifact where an apostrophe or quote got " +
 					"prefixed with a spurious backslash. Re-read the file with " +
 					"read_file and pass old_string/new_string without " +
-					"backslash-escaping " + pyReprStr(plain) + " characters."
+					"backslash-escaping " + strconv.Quote(plain) + " characters."
 			}
 		}
 	}
@@ -634,7 +719,7 @@ func leadingWhitespace(line string) string {
 // First line holding non whitespace text
 func firstMeaningfulLine(text string) (string, bool) {
 	for _, line := range strings.Split(text, "\n") {
-		if pyStrip(line) != "" {
+		if strings.TrimSpace(line) != "" {
 			return line, true
 		}
 	}
@@ -645,7 +730,7 @@ func firstMeaningfulLine(text string) (string, bool) {
 func matchStartsMidLine(content string, start, end int) bool {
 	firstLineStart := start
 	for _, line := range strings.Split(content[start:end], "\n") {
-		if pyStrip(line) != "" {
+		if strings.TrimSpace(line) != "" {
 			lineStart := strings.LastIndexByte(content[:firstLineStart], '\n') + 1
 			return strings.Trim(content[lineStart:firstLineStart], " \t\r") != ""
 		}
@@ -673,7 +758,7 @@ func reindentReplacement(fileRegion, oldString, newString string, midLine bool) 
 	out := make([]string, len(lines))
 	for i, line := range lines {
 		switch {
-		case pyStrip(line) == "":
+		case strings.TrimSpace(line) == "":
 			out[i] = line
 		case strings.HasPrefix(leadingWhitespace(line), oldIndent):
 			out[i] = fileIndent + line[len(oldIndent):]
@@ -728,12 +813,12 @@ func preserveUnicodeInReplacement(fileRegion, newString string, plan *unicodeEdi
 	return b.String()
 }
 
-// Splices the replacement over each span from the end, reindenting and keeping typography when asked
-func applyReplacements(content string, matches []matchSpan, newString, oldString string, reindent bool, plan *unicodeEditPlan) string {
+// Replacement for each span, last span first, reindenting and keeping typography when asked
+func replacementEdits(content string, matches []matchSpan, newString, oldString string, reindent bool, plan *unicodeEditPlan) []fuzzyEdit {
 	ordered := append([]matchSpan(nil), matches...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].start > ordered[j].start })
-	result := content
-	for _, m := range ordered {
+	edits := make([]fuzzyEdit, len(ordered))
+	for i, m := range ordered {
 		adjusted := newString
 		if reindent {
 			region := content[m.start:m.end]
@@ -742,9 +827,9 @@ func applyReplacements(content string, matches []matchSpan, newString, oldString
 			}
 			adjusted = reindentReplacement(region, oldString, adjusted, matchStartsMidLine(content, m.start, m.end))
 		}
-		result = result[:m.start] + adjusted + result[m.end:]
+		edits[i] = fuzzyEdit{span: m, text: adjusted}
 	}
-	return result
+	return edits
 }
 
 // Renders the leading whitespace run with an arrow per tab and a middle dot per space
@@ -755,8 +840,8 @@ func visualizeWhitespace(line string) string {
 }
 
 // Python str.splitlines without line terminators
-func pySplitLines(s string) []string {
-	lines := pySplitLinesKeepEnds(s)
+func splitLinesValue(s string) []string {
+	lines := splitLinesKeepEndsValue(s)
 	for i, l := range lines {
 		switch {
 		case strings.HasSuffix(l, "\r\n"):
@@ -777,15 +862,15 @@ func findClosestLines(oldString, content string, contextLines, maxResults int) s
 	if oldString == "" || content == "" {
 		return ""
 	}
-	oldLines := pySplitLines(oldString)
-	contentLines := pySplitLines(content)
+	oldLines := splitLinesValue(oldString)
+	contentLines := splitLinesValue(content)
 	if len(oldLines) == 0 || len(contentLines) == 0 {
 		return ""
 	}
-	anchor := pyStrip(oldLines[0])
+	anchor := strings.TrimSpace(oldLines[0])
 	if anchor == "" {
 		for _, l := range oldLines {
-			if s := pyStrip(l); s != "" {
+			if s := strings.TrimSpace(l); s != "" {
 				anchor = s
 				break
 			}
@@ -800,7 +885,7 @@ func findClosestLines(oldString, content string, contextLines, maxResults int) s
 	}
 	var scored []scoredLine
 	for i, line := range contentLines {
-		if s := pyStrip(line); s != "" {
+		if s := strings.TrimSpace(line); s != "" {
 			scored = append(scored, scoredLine{stringRatio(anchor, s), i})
 		}
 	}
@@ -834,7 +919,7 @@ func findClosestLines(oldString, content string, contextLines, maxResults int) s
 	}
 	result := strings.Join(parts, "\n---\n")
 	bestLine := contentLines[top[0].idx]
-	if pyStrip(bestLine) == anchor && bestLine != oldLines[0] {
+	if strings.TrimSpace(bestLine) == anchor && bestLine != oldLines[0] {
 		result += "\n\nWhitespace difference detected (→ = tab, · = space):\n" +
 			"  file has: " + visualizeWhitespace(bestLine) + "\n" +
 			"  you sent: " + visualizeWhitespace(oldLines[0]) + "\n" +

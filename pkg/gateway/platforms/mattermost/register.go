@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -122,7 +123,7 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 		}
 		filePath, ok := media.(string)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("stat: path should be string, bytes, os.PathLike or integer, not %s",
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("stat: path should be string, bytes, os.PathLike or integer, not %s",
 				anyutil.Kind(media))}
 		}
 		if _, err := os.Stat(filePath); err != nil {

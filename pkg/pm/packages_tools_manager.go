@@ -32,7 +32,7 @@ func (p *Ffmpeg) FetchURL(version, target string) (string, error) {
 		return fmt.Sprintf("https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_%s_aarch64.deb", version), nil
 	}
 	if MuslTargets[target] {
-		return "", NewInstallError(p.Name, fmt.Sprintf("unavailable on %s: %s", target, pyNoneStr(p.dispatch().MissingReason(target))), "")
+		return "", NewInstallError(p.Name, fmt.Sprintf("unavailable on %s: %s", target, noneStr(p.dispatch().MissingReason(target))), "")
 	}
 	osname, arch, err := unpackTwo(target, "-", "target")
 	if err != nil {

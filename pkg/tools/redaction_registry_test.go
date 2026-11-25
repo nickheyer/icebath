@@ -76,9 +76,11 @@ func TestRedactionRegistryRejectsAndDedupes(t *testing.T) {
 	ResetPluginRedactionPatterns()
 	mustRegister(t, []any{nil, "", "   ", 42}, 0)
 	mustRegister(t, nil, 0)
-	if _, err := RegisterRedactionPatterns([]string{"ab{4294967295}"}, "test"); err == nil || err.Error() != "the repetition number is too large" {
-		t.Fatalf("overflow repeat must raise, got %v", err)
+	mustRegister(t, []string{"ab{4294967295}", nvapiPattern}, 1)
+	if out := forceRedact("x " + nvapiKey); strings.Contains(out, nvapiKey) {
+		t.Fatalf("pattern beside an oversized repeat not registered: %q", out)
 	}
+	ResetPluginRedactionPatterns()
 	if _, err := RegisterRedactionPatterns(42, "test"); err == nil || err.Error() != "expected a list, got a number" {
 		t.Fatalf("non iterable patterns error %v", err)
 	}

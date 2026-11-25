@@ -83,7 +83,7 @@ func shortReason(reason string) string {
 
 // Text of an error raised inside one batch update, a package worker failure led by the exception class the worker reported
 func updateFailureText(err error) string {
-	var workerErr *pm.PyError
+	var workerErr *pm.ClassError
 	if errors.As(err, &workerErr) {
 		return workerErr.Class + ": " + workerErr.Message
 	}

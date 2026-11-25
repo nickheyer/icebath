@@ -71,11 +71,11 @@ type uvTimeoutError struct {
 }
 
 func (e *uvTimeoutError) Error() string {
-	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Argv, " "), pySeconds(e.Timeout))
+	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Argv, " "), secondsValue(e.Timeout))
 }
 
 // Seconds of a duration the way Python prints an int or float timeout
-func pySeconds(d time.Duration) string {
+func secondsValue(d time.Duration) string {
 	if d%time.Second == 0 {
 		return strconv.FormatInt(int64(d/time.Second), 10)
 	}
@@ -157,7 +157,7 @@ func projectName(source string) (string, error) {
 	}
 	s, ok := name.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("project.name must be text, got %s", tomlKind(name))}
+		return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("project.name must be text, got %s", tomlKind(name))}
 	}
 	return s, nil
 }
@@ -194,7 +194,7 @@ func PruneSitePth(venv string) {
 }
 
 // Process environment the way Python os environ maps it, keys uppercased on Windows
-func pyEnviron() map[string]string {
+func environValue() map[string]string {
 	env := map[string]string{}
 	for _, kv := range os.Environ() {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -211,7 +211,7 @@ func pyEnviron() map[string]string {
 func BaseEnvironment(env map[string]string) (map[string]string, error) {
 	source := env
 	if env == nil {
-		source = pyEnviron()
+		source = environValue()
 	}
 	base := map[string]string{}
 	for k, v := range source {
@@ -220,7 +220,7 @@ func BaseEnvironment(env map[string]string) (map[string]string, error) {
 		}
 	}
 	if env == nil {
-		bridged, err := BridgedIndexSettings(pyEnviron(), "")
+		bridged, err := BridgedIndexSettings(environValue(), "")
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +388,7 @@ func (e *PythonEnvironment) runUV(ctx context.Context, args []string, cwd string
 	result, err := e.dispatch(ctx, args, command, cwd, env, timeout)
 	var timedOut *uvTimeoutError
 	if errors.As(err, &timedOut) {
-		return uvResult{}, NewInstallError("venv", fmt.Sprintf("uv %s timed out after %ss", args[0], pySeconds(timeout)), TimeoutHint)
+		return uvResult{}, NewInstallError("venv", fmt.Sprintf("uv %s timed out after %ss", args[0], secondsValue(timeout)), TimeoutHint)
 	}
 	return result, err
 }

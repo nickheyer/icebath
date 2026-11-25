@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Scaffold markers shared byte for byte with the session store preview SQL
@@ -107,16 +108,16 @@ func (s *Scope) loadSkillPayload(ctx context.Context, identifier, taskID string)
 	if err := json.Unmarshal([]byte(s.SkillView(ctx, normalized, "", taskID, false)), &loaded); err != nil || !fmTruthy(loaded["success"]) {
 		return nil, "", "", false
 	}
-	skillPath := pyStrOr(firstTruthy(loaded["path"]))
+	skillPath := anyutil.String(firstTruthy(loaded["path"]))
 	skillDir := ""
 	if d := loaded["skill_dir"]; fmTruthy(d) {
-		skillDir = pyStrValue(d)
+		skillDir = anyutil.String(d)
 	} else if skillPath != "" {
 		skillDir = filepath.Join(s.SkillsDir(), filepath.Dir(skillPath))
 	}
 	name := normalized
 	if n := loaded["name"]; fmTruthy(n) {
-		name = pyStrValue(n)
+		name = anyutil.String(n)
 	}
 	return loaded, skillDir, name, true
 }
@@ -129,7 +130,7 @@ func AmbiguousSkillLabel(identifier string, payload map[string]any) (string, boo
 	}
 	parts := make([]string, len(names))
 	for i, n := range names {
-		parts[i] = pyStrValue(n)
+		parts[i] = anyutil.String(n)
 	}
 	return fmt.Sprintf("%s%s: use one of %s", AmbiguousSkillPrefix, identifier, strings.Join(parts, ", ")), true
 }
@@ -164,7 +165,7 @@ func FormatMissingSkills(missing []string) string {
 
 // Appends the skill's resolved config values block, nothing when it declares none
 func (s *Scope) injectSkillConfig(loaded map[string]any, parts *[]string) {
-	raw := pyStrOr(firstTruthy(loaded["raw_content"], loaded["content"]))
+	raw := anyutil.String(firstTruthy(loaded["raw_content"], loaded["content"]))
 	fm, _ := ParseFrontmatter(raw)
 	resolved := s.ResolveSkillConfigValues(extractSkillConfigVars(fm))
 	if len(resolved) == 0 {
@@ -177,8 +178,8 @@ func (s *Scope) injectSkillConfig(loaded map[string]any, parts *[]string) {
 			continue
 		}
 		shown := "(not set)"
-		if config.PyTruthy(value) {
-			shown = config.PyStr(value)
+		if anyutil.IsTrue(value) {
+			shown = anyutil.String(value)
 		}
 		*parts = append(*parts, fmt.Sprintf("  %s = %s", v.Key, shown))
 	}

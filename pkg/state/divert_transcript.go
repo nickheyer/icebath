@@ -43,9 +43,6 @@ func DivertSessionTranscriptJSONL(ctx context.Context, sessionID string, message
 		if err != nil {
 			return "", err
 		}
-		if _, err := sha256HexUTF8(line); err != nil {
-			return "", err
-		}
 		if _, err := f.WriteString(line + "\n"); err != nil {
 			return "", err
 		}

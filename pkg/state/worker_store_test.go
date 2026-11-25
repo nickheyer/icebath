@@ -88,7 +88,7 @@ func workerFixture(t *testing.T) (*SessionDB, *workerStore) {
 
 // Value after a JSON round trip, the shape every receipt result and journaled payload takes
 func jsonRoundTrip(value any) any {
-	text, err := pyDumps(value, pyJSON{ensureASCII: true, itemSep: ", ", keySep: ": "})
+	text, err := dumpsValue(value, jsonCodec{ensureASCII: true, itemSep: ", ", keySep: ": "})
 	if err != nil {
 		panic(err)
 	}
@@ -141,7 +141,7 @@ func (s *workerStore) retryPending() ([]*jsonutil.Object, error) {
 			s.failure = err.Error()
 			return results, err
 		}
-		if assignment, has := result.Get("worker_assignment"); has && pyTruthy(assignment) {
+		if assignment, has := result.Get("worker_assignment"); has && anyutil.IsTrue(assignment) {
 			parent, _ := assignment.(*jsonutil.Object).Get("parent")
 			if !anyutil.Equal(parent, s.scope.SessionID) {
 				s.failure = "outbox_scope_mismatch"
@@ -242,7 +242,7 @@ func (s *workerStore) tryAcquireSessionTurnLease(sessionID, holder string) (bool
 	if err != nil {
 		return false, err
 	}
-	return pyTruthy(resultValue(result, "value")), nil
+	return anyutil.IsTrue(resultValue(result, "value")), nil
 }
 
 func (s *workerStore) queueTokenCounts(sessionID string, usage map[string]any) error {
@@ -400,12 +400,12 @@ func (s *workerStore) compressionLock(action, sessionID string, payload map[stri
 
 func (s *workerStore) tryAcquireCompressionLock(sessionID, holder string) (bool, error) {
 	v, err := s.compressionLock("acquire", sessionID, map[string]any{"holder": holder, "ttl_seconds": 300.0})
-	return pyTruthy(v), err
+	return anyutil.IsTrue(v), err
 }
 
 func (s *workerStore) refreshCompressionLock(sessionID, holder string) (bool, error) {
 	v, err := s.compressionLock("renew", sessionID, map[string]any{"holder": holder, "ttl_seconds": 300.0})
-	return pyTruthy(v), err
+	return anyutil.IsTrue(v), err
 }
 
 func (s *workerStore) getCompressionLockHolder(sessionID string) (any, error) {
@@ -425,7 +425,7 @@ func (s *workerStore) reopenOrphanedCompressionSession(sessionID string) (bool, 
 	if err != nil {
 		return false, err
 	}
-	return pyTruthy(resultValue(result, "value")), nil
+	return anyutil.IsTrue(resultValue(result, "value")), nil
 }
 
 func (s *workerStore) recordCompressionFailureCooldown(sessionID string, cooldownUntil float64, errValue any) error {
@@ -479,7 +479,7 @@ func (s *workerStore) getCompressionFailureCooldown(sessionID string) (*jsonutil
 	if deadline == nil {
 		return nil, nil
 	}
-	f, err := pyFloatOf(deadline)
+	f, err := floatOf(deadline)
 	if err != nil {
 		return nil, err
 	}
@@ -537,10 +537,10 @@ func (s *workerStore) createSession(sessionID, source string, fields map[string]
 
 // Title result of the facade, an error entry raised as the ValueError the consumer catches
 func titleResult(result *jsonutil.Object) (bool, error) {
-	if errValue := resultValue(result, "error"); pyTruthy(errValue) {
-		return false, pyValueError(pyStr(errValue))
+	if errValue := resultValue(result, "error"); anyutil.IsTrue(errValue) {
+		return false, valueError(anyutil.String(errValue))
 	}
-	return pyTruthy(resultValue(result, "value")), nil
+	return anyutil.IsTrue(resultValue(result, "value")), nil
 }
 
 func (s *workerStore) setSessionTitle(sessionID, title string) (bool, error) {
@@ -556,7 +556,7 @@ func (s *workerStore) setSessionTitle(sessionID, title string) (bool, error) {
 
 func (s *workerStore) setAutoTitle(sessionID, title, source string) (bool, error) {
 	if source != "derived" && source != "llm" {
-		return false, pyValueError("invalid automatic title source: " + source)
+		return false, valueError("invalid automatic title source: " + source)
 	}
 	if err := s.session(sessionID); err != nil {
 		return false, err
@@ -584,7 +584,7 @@ func (s *workerStore) setSessionTitleSource(sessionID, source string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return pyTruthy(resultValue(result, "value")), nil
+	return anyutil.IsTrue(resultValue(result, "value")), nil
 }
 
 func (s *workerStore) getNextTitleInLineage(baseTitle string) (any, error) {
@@ -677,7 +677,7 @@ func messageContents(t *testing.T, db *SessionDB, sessionID string) []string {
 	}
 	out := []string{}
 	for _, row := range rows {
-		out = append(out, pyStr(rowValue(row, "content")))
+		out = append(out, anyutil.String(rowValue(row, "content")))
 	}
 	return out
 }
@@ -691,7 +691,7 @@ func conversationContents(t *testing.T, db *SessionDB, sessionID string) []strin
 	}
 	out := []string{}
 	for _, row := range rows {
-		out = append(out, pyStr(row["content"]))
+		out = append(out, anyutil.String(row["content"]))
 	}
 	return out
 }

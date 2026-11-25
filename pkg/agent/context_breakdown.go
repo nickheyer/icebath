@@ -114,7 +114,7 @@ func breakdownJSONTokens(tools []map[string]any) int {
 	if len(tools) == 0 {
 		return 0
 	}
-	text, err := jsonutil.Encode(tools, jsonutil.Spaced())
+	text, err := jsonutil.Encode(tools)
 	if err != nil {
 		return 0
 	}

@@ -207,10 +207,10 @@ func ProfileFlagValue(command string) (string, bool) {
 	return "", false
 }
 
-const pySpaceClass = `\t\n\v\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
-const pySpaceClassNet = `\t\n\v\f\r\x1c-\x1f \u0085   -     　`
+const spaceClass = `\t\n\v\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
+const spaceClassNet = `\t\n\v\f\r\x1c-\x1f \u0085   -     　`
 
-var homeAssignmentRe = regexp.MustCompile(`(?:^|[` + pySpaceClass + `])icebath_home=(?:"([^"]*)"|'([^']*)'|([^` + pySpaceClass + `]+))`)
+var homeAssignmentRe = regexp.MustCompile(`(?:^|[` + spaceClass + `])icebath_home=(?:"([^"]*)"|'([^']*)'|([^` + spaceClass + `]+))`)
 
 // Values of every token bounded ICEBATH_HOME assignment in a lower cased command line, trailing slash stripped
 func IcebathHomeAssignments(command string) []string {
@@ -233,7 +233,7 @@ func CommandLineNamesIcebathHome(commandLC, homeLC string) bool {
 			return true
 		}
 	}
-	re := regexp2.MustCompile(`(?:^|[`+pySpaceClassNet+`])icebath_home=`+regexp2.Escape(homeLC)+`/?(?=[`+pySpaceClassNet+`]|$)`, regexp2.None)
+	re := regexp2.MustCompile(`(?:^|[`+spaceClassNet+`])icebath_home=`+regexp2.Escape(homeLC)+`/?(?=[`+spaceClassNet+`]|$)`, regexp2.None)
 	ok, err := re.MatchString(commandLC)
 	return err == nil && ok
 }

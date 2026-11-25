@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -29,7 +30,7 @@ func customPluginProfiles() []Profile {
 // Ollama num_ctx option, reasoning off as effort none with think false on Ollama, Groq default, else the clamped effort
 func customBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	extraBody, topLevel := jsonutil.ObjectOf(), map[string]any{}
-	if numCtx := kw["ollama_num_ctx"]; pyTruthy(numCtx) {
+	if numCtx := kw["ollama_num_ctx"]; anyutil.IsTrue(numCtx) {
 		extraBody.Set("options", jsonutil.ObjectOf("num_ctx", numCtx))
 	}
 	cfg := reasoningConfigMap(reasoning)

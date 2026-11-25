@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -699,10 +700,10 @@ func launchRecordOwns(pidFile string, pid int, ownHome string) (bool, error) {
 	}
 	started, recordedHome := recGet(record, "start_time"), recHome(record, home.RecordKey)
 	recorded, isStr := recordedHome.(string)
-	if !pyEq(recGet(record, "kind"), gatewayKind) || started == nil || !isStr {
+	if !anyutil.Equal(recGet(record, "kind"), gatewayKind) || started == nil || !isStr {
 		return false, nil
 	}
-	if got, ok := pidFromRecord(record, "pid"); !ok || got != pid || !pyEq(started, statusProcessStartTime(pid)) {
+	if got, ok := pidFromRecord(record, "pid"); !ok || got != pid || !anyutil.Equal(started, statusProcessStartTime(pid)) {
 		return false, nil
 	}
 	return sameIcebathHome(recorded, ownHome)

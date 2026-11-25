@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strconv"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -40,7 +41,7 @@ func receiptItem(v any, key string) (any, error) {
 		return nil, &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 	}
 	if !ok {
-		return nil, &stateTypedError{"KeyError", pyRepr(key)}
+		return nil, &stateTypedError{"KeyError", strconv.Quote(key)}
 	}
 	return item, nil
 }
@@ -66,7 +67,7 @@ func legacyLineageRoot(ctx context.Context, conn SQLiteConn, receipt *jsonutil.O
 		}
 		expected.Set(k, v)
 	}
-	row, err := connRow(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalLegacyPrefix+pyStr(legacy))
+	row, err := connRow(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalLegacyPrefix+anyutil.String(legacy))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +77,7 @@ func legacyLineageRoot(ctx context.Context, conn SQLiteConn, receipt *jsonutil.O
 	text, _ := row["value"].(string)
 	stored, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	if !anyutil.Equal(stored, expected) {
 		return nil, runtimeRefusal("storage_unavailable")
@@ -99,7 +100,7 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *jsonuti
 		if err != nil {
 			return "", err
 		}
-		if !pyEquals(ids[0], identity) {
+		if !equals(ids[0], identity) {
 			return "", runtimeRefusal("storage_unavailable")
 		}
 	}
@@ -145,14 +146,14 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *jsonuti
 			return "", runtimeRefusal("storage_unavailable")
 		}
 		valid := false
-		if pyEquals(parent["end_reason"], "session_reset") {
+		if equals(parent["end_reason"], "session_reset") {
 			text := "{}"
 			if s, ok := child["model_config"].(string); ok && s != "" {
 				text = s
 			}
 			cfg, err := jsonutil.Decode(text)
 			if err != nil {
-				return "", pyValueError(err.Error())
+				return "", valueError(err.Error())
 			}
 			obj, ok := cfg.(*jsonutil.Object)
 			if !ok {
@@ -165,7 +166,7 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *jsonuti
 			if err != nil {
 				return "", err
 			}
-			valid = pyEquals(parent["end_reason"], "compression") && tip != nil && anyutil.Equal(tip["id"], childID)
+			valid = equals(parent["end_reason"], "compression") && tip != nil && anyutil.Equal(tip["id"], childID)
 		}
 		if !valid {
 			return "", runtimeRefusal("storage_unavailable")
@@ -178,7 +179,7 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *jsonuti
 	if next != nil {
 		return "", runtimeRefusal("storage_unavailable")
 	}
-	return pyStr(lineage[len(lineage)-1]), nil
+	return anyutil.String(lineage[len(lineage)-1]), nil
 }
 
 // Current transcript of a local owner resolved on the caller's transaction
@@ -193,7 +194,7 @@ func localPhysicalTarget(ctx context.Context, conn SQLiteConn, sessionID string)
 	text, _ := saved["value"].(string)
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return "", pyValueError(err.Error())
+		return "", valueError(err.Error())
 	}
 	receipt, ok := decoded.(*jsonutil.Object)
 	if !ok {
@@ -203,7 +204,7 @@ func localPhysicalTarget(ctx context.Context, conn SQLiteConn, sessionID string)
 	if err != nil {
 		return "", err
 	}
-	if !pyEquals(owner, sessionID) {
+	if !equals(owner, sessionID) {
 		return "", runtimeRefusal("storage_unavailable")
 	}
 	return validateLocalLineage(ctx, conn, receipt)
@@ -218,7 +219,7 @@ func routedEntry(ctx context.Context, conn SQLiteConn, route, tip any) (*jsonuti
 	text, _ := row["entry_json"].(string)
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	if decoded == nil {
 		return nil, nil
@@ -248,7 +249,7 @@ func commitLocalTarget(ctx context.Context, conn SQLiteConn, receipt, routed *js
 		return err
 	}
 	sessionID, _ := receipt.Get("session_id")
-	if _, err := conn.ExecContext(ctx, "UPDATE state_meta SET value=? WHERE key=?", receiptText, LocalPolicyPrefix+pyStr(sessionID)); err != nil {
+	if _, err := conn.ExecContext(ctx, "UPDATE state_meta SET value=? WHERE key=?", receiptText, LocalPolicyPrefix+anyutil.String(sessionID)); err != nil {
 		return err
 	}
 	_, err = conn.ExecContext(ctx, "UPDATE sessions SET runtime_revision=runtime_revision+1 WHERE id=?", sessionID)
@@ -305,7 +306,7 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 	}
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, nil, pyValueError(err.Error())
+		return nil, nil, valueError(err.Error())
 	}
 	receipt, ok := decoded.(*jsonutil.Object)
 	if !ok {
@@ -374,7 +375,7 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 func untrackedSteps(ctx context.Context, conn SQLiteConn, tip string, lineage []any) ([]string, error) {
 	seen := map[string]bool{tip: true}
 	for _, sid := range lineage {
-		seen[pyStr(sid)] = true
+		seen[anyutil.String(sid)] = true
 	}
 	steps := []string{}
 	current := tip
@@ -437,7 +438,7 @@ func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *jsonuti
 	if err != nil {
 		return nil, nil, err
 	}
-	children, err := untrackedSteps(ctx, conn, pyStr(tip), lineage)
+	children, err := untrackedSteps(ctx, conn, anyutil.String(tip), lineage)
 	if err != nil || len(children) == 0 {
 		return nil, nil, err
 	}
@@ -485,7 +486,7 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 		text, _ := saved["value"].(string)
 		decoded, err := jsonutil.Decode(text)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		var want any
 		if expected != nil {
@@ -549,7 +550,7 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 		text, _ := saved["value"].(string)
 		decoded, err := jsonutil.Decode(text)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		receipt, isObj := decoded.(*jsonutil.Object)
 		if !isObj {
@@ -559,7 +560,7 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 		if err != nil {
 			return err
 		}
-		logicalID := pyStr(logical)
+		logicalID := anyutil.String(logical)
 		target, err := validateLocalLineage(ctx, conn, receipt)
 		if err != nil {
 			return err
@@ -593,7 +594,7 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 			return &stateTypedError{"TypeError", "child session id is not a str"}
 		}
 		publish := CompressionChildPublish{ParentSessionID: parentSessionID, ChildSessionID: childID,
-			Source: pyStr(fields["source"]), Model: anyStrPtr(fields["model"]), Cwd: anyStrPtr(fields["cwd"]),
+			Source: anyutil.String(fields["source"]), Model: anyStrPtr(fields["model"]), Cwd: anyStrPtr(fields["cwd"]),
 			ModelConfig: jsonutil.ObjectOf("_reset_from", parentSessionID), ProfileName: anyStrPtr(parent["profile_name"])}
 		if err := d.publishChildSessionRow(ctx, conn, parent, publish); err != nil {
 			return err

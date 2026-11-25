@@ -741,6 +741,8 @@ type ExecProcess struct {
 	code      int
 	stdinDone chan struct{}
 	stdinErr  string
+	// Write end of the child stdin pipe, closed by JoinStdin to release a writer still blocked once the child is gone
+	stdinW *os.File
 	// Owner death supervisor entry of the process group, zero once released
 	ownedPgid int
 	// Process group id recorded at spawn
@@ -749,9 +751,10 @@ type ExecProcess struct {
 	pgidStart string
 }
 
-// Writes data to the child stdin on a goroutine, recording a missing pipe, then closes it
+// Writes data byte for byte to the child stdin on a goroutine, then closes it; records a missing pipe or a failed write, but not the child closing its end before reading everything
 func pipeStdin(p *ExecProcess, w *os.File, data string) {
 	p.stdinDone = make(chan struct{})
+	p.stdinW = w
 	go func() {
 		defer close(p.stdinDone)
 		if w == nil {
@@ -759,7 +762,13 @@ func pipeStdin(p *ExecProcess, w *os.File, data string) {
 			return
 		}
 		defer w.Close()
-		w.WriteString(data)
+		if _, err := w.WriteString(data); err != nil && !errors.Is(err, os.ErrClosed) && !isBrokenPipe(err) {
+			var pe *os.PathError
+			if errors.As(err, &pe) {
+				err = pe.Err
+			}
+			p.stdinErr = err.Error()
+		}
 	}()
 }
 
@@ -873,16 +882,25 @@ func (p *ExecProcess) Pid() int {
 	return p.Cmd.Process.Pid
 }
 
-// JoinStdin waits for the stdin writer and returns its recorded error
+// JoinStdin waits for the stdin writer and returns its recorded error; past the timeout it closes the pipe to release a writer another holder of the read end keeps blocked, and reports nothing for a writer that still has not finished
 func (p *ExecProcess) JoinStdin(timeout time.Duration) string {
 	if p.stdinDone == nil {
 		return ""
 	}
 	select {
 	case <-p.stdinDone:
+		return p.stdinErr
 	case <-time.After(timeout):
 	}
-	return p.stdinErr
+	if p.stdinW != nil {
+		p.stdinW.Close()
+	}
+	select {
+	case <-p.stdinDone:
+		return p.stdinErr
+	case <-time.After(time.Second):
+		return ""
+	}
 }
 
 // ThreadedProcessHandle adapts an SDK call with no real subprocess to the ProcessHandle contract

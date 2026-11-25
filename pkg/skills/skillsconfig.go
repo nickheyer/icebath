@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Scope over the process home with its loaded config
@@ -84,7 +85,7 @@ func normalizeSkillNames(v any) map[string]bool {
 		return out
 	case []any:
 		for _, item := range t {
-			if s := strings.TrimSpace(pyStrValue(item)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 				out[s] = true
 			}
 		}

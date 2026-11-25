@@ -272,7 +272,7 @@ func peRun(t *testing.T, argv []string, cwd string, env map[string]string) strin
 func peIsolatedEnv(t *testing.T, root string) map[string]string {
 	t.Helper()
 	env := map[string]string{}
-	for k, v := range pyEnviron() {
+	for k, v := range environValue() {
 		if !strings.HasPrefix(k, "UV_") && !strings.HasPrefix(k, "PYTHON") && k != "VIRTUAL_ENV" {
 			env[k] = v
 		}

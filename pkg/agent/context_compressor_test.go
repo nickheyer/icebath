@@ -608,7 +608,7 @@ func TestSanitizerStripsOrphanedToolCalls(t *testing.T) {
 	t.Run("strips orphaned tool calls", func(t *testing.T) {
 		sanitized := c.sanitizeToolPairs([]map[string]any{callRow("", "tc_orphan"), {"role": "user", "content": "never mind"}})
 		asst := rowsOfRole(sanitized, "assistant")[0]
-		if pyTruthy(asst["tool_calls"]) || len(rowsOfRole(sanitized, "tool")) != 0 || !pyTruthy(asst["content"]) {
+		if anyutil.IsTrue(asst["tool_calls"]) || len(rowsOfRole(sanitized, "tool")) != 0 || !anyutil.IsTrue(asst["content"]) {
 			t.Fatalf("assistant %v", asst)
 		}
 	})
@@ -622,7 +622,7 @@ func TestSanitizerStripsOrphanedToolCalls(t *testing.T) {
 	})
 	t.Run("strips orphaned preserves text content", func(t *testing.T) {
 		asst := rowsOfRole(c.sanitizeToolPairs([]map[string]any{callRow("Let me search for that.", "tc_orphan"), {"role": "user", "content": "thanks"}}), "assistant")[0]
-		if asst["content"] != "Let me search for that." || pyTruthy(asst["tool_calls"]) {
+		if asst["content"] != "Let me search for that." || anyutil.IsTrue(asst["tool_calls"]) {
 			t.Fatalf("assistant %v", asst)
 		}
 	})
@@ -800,7 +800,7 @@ func TestMinTailUserMessages(t *testing.T) {
 		cut := c.findTailCutByTokens(messages, c.ProtectFirstN, nil)
 		var toolPositions []int
 		for i, m := range messages[:cut] {
-			if (m["role"] == "assistant" || m["role"] == "tool") && (pyTruthy(m["tool_calls"]) || pyTruthy(m["tool_call_id"])) {
+			if (m["role"] == "assistant" || m["role"] == "tool") && (anyutil.IsTrue(m["tool_calls"]) || anyutil.IsTrue(m["tool_call_id"])) {
 				toolPositions = append(toolPositions, i)
 			}
 		}

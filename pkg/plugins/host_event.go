@@ -150,7 +150,7 @@ func (h *PluginHost) serveParentEvent(ctx context.Context, params map[string]any
 		e.clear()
 		return nil, nil
 	case "wait":
-		timeout, err := pyWaitTimeout(params["timeout"])
+		timeout, err := waitTimeout(params["timeout"])
 		if err != nil {
 			return nil, err
 		}
@@ -175,7 +175,7 @@ func (h *PluginHost) serveParentEvent(ctx context.Context, params map[string]any
 }
 
 // Wait duration of a Python Event.wait timeout, None without limit and a non positive number not blocking
-func pyWaitTimeout(raw any) (time.Duration, error) {
+func waitTimeout(raw any) (time.Duration, error) {
 	var seconds float64
 	switch v := raw.(type) {
 	case nil:

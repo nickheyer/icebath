@@ -212,7 +212,7 @@ func auxRouteClientHeaders(ctx context.Context, baseURL, provider string, isVisi
 	return auxHeaderMap(answer)
 }
 
-// String header map of a hook answer, nil for a falsy answer
+// String header map of a hook answer with its null values dropped, nil for a falsy answer
 func auxHeaderMap(answer any) map[string]string {
 	switch h := answer.(type) {
 	case map[string]string:
@@ -226,7 +226,9 @@ func auxHeaderMap(answer any) map[string]string {
 		}
 		out := make(map[string]string, len(h))
 		for k, v := range h {
-			out[k] = anyutil.String(v)
+			if v != nil {
+				out[k] = anyutil.String(v)
+			}
 		}
 		return out
 	}

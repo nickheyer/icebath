@@ -504,7 +504,7 @@ func (c *ContextCompressor) DeriveAutoFocusTopic(messages []map[string]any) *str
 
 func truthyField(m map[string]any, key string) bool {
 	v, ok := m[key]
-	return ok && pyTruthy(v)
+	return ok && anyutil.IsTrue(v)
 }
 
 func (c *ContextCompressor) AwaitingRealUsageAfterCompression() bool {

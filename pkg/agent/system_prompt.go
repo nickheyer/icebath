@@ -135,7 +135,7 @@ func resolvePlatformHint(a *AIAgent, platformKey, defaultHint string) string {
 	if s, ok := spec.(string); ok {
 		spec = map[string]any{"append": s}
 	}
-	m, ok := pyDict(spec)
+	m, ok := mappingOf(spec)
 	if !ok {
 		return defaultHint
 	}
@@ -157,7 +157,7 @@ func resolvePlatformHint(a *AIAgent, platformKey, defaultHint string) string {
 }
 
 // Returns a mapping value as a string keyed dict, false for anything that is not a dict
-func pyDict(v any) (map[string]any, bool) {
+func mappingOf(v any) (map[string]any, bool) {
 	switch m := v.(type) {
 	case map[string]any:
 		return m, true
@@ -1028,8 +1028,8 @@ func FormatToolsForSystemMessage(a *AIAgent) (string, error) {
 	}
 	out := make([]any, 0, len(a.tools))
 	for _, t := range a.tools {
-		tool, _ := pyDict(t)
-		fn, ok := pyDict(tool["function"])
+		tool, _ := mappingOf(t)
+		fn, ok := mappingOf(tool["function"])
 		if !ok {
 			return "", errors.New("a tool schema has no function")
 		}

@@ -644,21 +644,15 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 		reason := "rejected"
 		if err != nil {
 			reason = err.Error()
-		} else if e, ok := dispatch["error"]; ok {
-			reason = anyutil.String(e)
+		} else if e := anyutil.String(dispatch["error"]); e != "" {
+			reason = e
 		}
 		restoreParentCancellation(unit)
 		if len(dispatched) == 0 {
 			pkgLog().Info(fmt.Sprintf("delegate_task: async pool at capacity (%s); running the whole batch synchronously instead.", reason))
 			return runSyncWithNote(ctx, batch, syncNoteAtCapacity)
 		}
-		shown := "None"
-		if err != nil {
-			shown = err.Error()
-		} else if e, ok := dispatch["error"]; ok {
-			shown = anyutil.String(e)
-		}
-		pkgLog().Warn(fmt.Sprintf("delegate_task: unit %d/%d not accepted (%s); running it inline.", k+1, len(units), shown))
+		pkgLog().Warn(fmt.Sprintf("delegate_task: unit %d/%d not accepted (%s); running it inline.", k+1, len(units), reason))
 		results, _ := entryValue(executeAndAggregate(ctx, unit, true), "results").([]any)
 		inline = append(inline, results...)
 	}

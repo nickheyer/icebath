@@ -13,16 +13,16 @@ import (
 )
 
 // Python re pattern compiled on regexp2 with its group numbers, matched over rune slices
-type pyRE struct {
+type reValue struct {
 	re *regexp2.Regexp
 }
 
-func newPyRE(pattern string) pyRE {
-	return pyRE{regexutil.MustCompile(pattern)}
+func newPyRE(pattern string) reValue {
+	return reValue{regexutil.MustCompile(pattern)}
 }
 
 // Every non overlapping match over the runes, the way re.finditer walks a str
-func (p pyRE) finditer(text []rune) []*regexp2.Match {
+func (p reValue) finditer(text []rune) []*regexp2.Match {
 	var out []*regexp2.Match
 	m, err := p.re.FindRunesMatch(text)
 	for err == nil && m != nil {
@@ -33,13 +33,13 @@ func (p pyRE) finditer(text []rune) []*regexp2.Match {
 }
 
 // Whether the pattern matches anywhere in the text
-func (p pyRE) search(text string) bool {
+func (p reValue) search(text string) bool {
 	m, err := p.re.FindStringMatch(text)
 	return err == nil && m != nil
 }
 
 // Rune span of a named group, ok false when it did not take part
-func (p pyRE) span(m *regexp2.Match, name string) (int, int, bool) {
+func (p reValue) span(m *regexp2.Match, name string) (int, int, bool) {
 	g := m.GroupByName(name)
 	if g == nil || len(g.Captures) == 0 {
 		return 0, 0, false
@@ -48,7 +48,7 @@ func (p pyRE) span(m *regexp2.Match, name string) (int, int, bool) {
 }
 
 // Matched text of a named group, empty when it did not take part
-func (p pyRE) group(m *regexp2.Match, name string) string {
+func (p reValue) group(m *regexp2.Match, name string) string {
 	g := m.GroupByName(name)
 	if g == nil || len(g.Captures) == 0 {
 		return ""

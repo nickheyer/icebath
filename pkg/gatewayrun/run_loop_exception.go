@@ -3,8 +3,11 @@ package gatewayrun
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"reflect"
 	"strings"
+	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
@@ -27,6 +30,23 @@ func ownExceptionName(err error) string {
 	return name
 }
 
+// Whether one link of an error chain is a Go network failure a retry can outlive: a timeout, a socket operation that failed, a refused, reset or aborted connection, or a connection cut mid read
+func isGoTransientNetworkLink(err error) bool {
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		return true
+	}
+	if _, ok := err.(*net.OpError); ok {
+		return true
+	}
+	if errno, ok := err.(syscall.Errno); ok {
+		switch errno {
+		case syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE, syscall.ETIMEDOUT, syscall.ENETUNREACH, syscall.EHOSTUNREACH:
+			return true
+		}
+	}
+	return err == io.ErrUnexpectedEOF
+}
+
 // Next link of an error chain, the first of a joined error
 func causeOf(err error) error {
 	if next := errors.Unwrap(err); next != nil {
@@ -40,7 +60,7 @@ func causeOf(err error) error {
 	return nil
 }
 
-// True for a transient network error anywhere in the first twelve links of its cause chain
+// True for a transient network error, a known class name or a Go network failure, anywhere in the first twelve links of its cause chain
 func isTransientNetworkError(err error) bool {
 	seen := map[error]bool{}
 	cur := err
@@ -51,7 +71,7 @@ func isTransientNetworkError(err error) bool {
 			}
 			seen[cur] = true
 		}
-		if transientNetworkErrorClassNames[ownExceptionName(cur)] {
+		if transientNetworkErrorClassNames[ownExceptionName(cur)] || isGoTransientNetworkLink(cur) {
 			return true
 		}
 		cur = causeOf(cur)
@@ -66,8 +86,11 @@ func gatewayLoopExceptionHandler(loop *gateway.CallbackLoop, c gateway.LoopExcep
 		if task == "" {
 			task = "<unknown task>"
 		}
-		pkgLog().Warn(fmt.Sprintf("Gateway swallowed transient network error from %s: %s: %s", task,
-			ownExceptionName(c.Exception), c.Exception.Error()), "exc_info", c.Exception)
+		text := c.Exception.Error()
+		if label := ownExceptionName(c.Exception); transientNetworkErrorClassNames[label] {
+			text = label + ": " + text
+		}
+		pkgLog().Warn(fmt.Sprintf("Gateway swallowed transient network error from %s: %s", task, text), "exc_info", c.Exception)
 		return
 	}
 	loop.DefaultExceptionHandler(c)

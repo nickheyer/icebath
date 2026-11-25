@@ -210,7 +210,7 @@ func TestSwitchSessionKeepsModelOverrideAndResetDropsIt(t *testing.T) {
 // SessionEntry wire round trip including the tri state yolo and the legacy memory_flushed key
 func TestSessionEntryRoundTripAndLegacyKeys(t *testing.T) {
 	ctx := context.Background()
-	created := pyDatetime{T: time.Date(2026, 1, 2, 3, 4, 5, 6000, time.Local)}
+	created := datetime{T: time.Date(2026, 1, 2, 3, 4, 5, 6000, time.Local)}
 	e := NewSessionEntry("agent:main:telegram:dm:1", "20260102_030405_abcdef12", created, created)
 	off := false
 	e.Yolo, e.Platform = &off, PlatformTelegram
@@ -218,7 +218,7 @@ func TestSessionEntryRoundTripAndLegacyKeys(t *testing.T) {
 	if v, _ := d.Get("yolo"); v != false {
 		t.Fatalf("yolo %v", v)
 	}
-	if v, _ := d.Get("created_at"); v != "2026-01-02T03:04:05.000006" {
+	if v, _ := d.Get("created_at"); v != "2026-01-02T03:04:05.000006"+created.T.Format("Z07:00") {
 		t.Fatalf("created_at %v", v)
 	}
 	text, _ := jsonutil.Encode(d, jsonutil.Spaced(), jsonutil.ASCII())

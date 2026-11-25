@@ -25,7 +25,7 @@ func realPlatformStateRoot() (string, bool) {
 	home := expandUser("~")
 	var root string
 	if runtime.GOOS == "windows" {
-		if base := pyStrip(os.Getenv("LOCALAPPDATA")); base != "" {
+		if base := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); base != "" {
 			root = filepath.Join(base, "icebath")
 		} else {
 			root = filepath.Join(home, "AppData", "Local", "icebath")

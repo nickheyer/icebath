@@ -300,7 +300,7 @@ func TestExecHelpersFollowTheRouteToANewEndpointAndStopOnTimeout(t *testing.T) {
 		t.Fatalf("%+v", out)
 	}
 	h := &helperRun{ctx: context.Background(), s: &execSession{}}
-	if reply := string(h.answer([]byte(`{"helper":"fly","args":{}}`))); reply != `{"error":"'fly' is not a browser helper","type":"RuntimeError"}` {
+	if reply := string(h.answer([]byte(`{"helper":"fly","args":{}}`))); reply != `{"error":"\"fly\" is not a browser helper","type":"RuntimeError"}` {
 		t.Fatalf("reply %s", reply)
 	}
 }

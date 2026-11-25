@@ -188,7 +188,7 @@ func ttlMemoGet(path, key string, ttl time.Duration, tsKey, valueKey string) any
 	return value
 }
 
-// Writes a key into a TTL memo file in file order, dropping expired siblings, as json.dump indent 0 with compact separators
+// Writes a key into a TTL memo file as compact JSON in file order, dropping expired siblings
 func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Duration, tsKey, valueKey, what string, tsFirst bool) {
 	now := float64(wallNow().UnixNano()) / 1e9
 	data := jsonutil.NewObject()
@@ -221,7 +221,7 @@ func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Durat
 		entry.Set(tsKey, now)
 	}
 	data.Set(key, entry)
-	if err := config.AtomicJSONWriteWith(ctx, path, data, jsonutil.Indent(0)); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, data); err != nil {
 		pkgLog().Debug("failed to save "+what, "error", err)
 	}
 }

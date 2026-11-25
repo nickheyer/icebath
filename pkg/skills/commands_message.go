@@ -154,7 +154,7 @@ func isSymlink(p string) bool {
 
 // Formats a loaded skill into the activation message payload, registering its stable scaffold prefix
 func (s *Scope) buildSkillMessage(ctx context.Context, loaded map[string]any, skillDir, activationNote, userInstruction, runtimeNote, sessionID string) string {
-	content := s.PreprocessSkillContent(ctx, pyStrOr(firstTruthy(loaded["content"], "")), skillDir, sessionID, s.skillsCfg())
+	content := s.PreprocessSkillContent(ctx, anyutil.String(firstTruthy(loaded["content"], "")), skillDir, sessionID, s.skillsCfg())
 	parts := []string{activationNote, "", strings.TrimSpace(content)}
 	if skillDir != "" {
 		parts = append(parts, "", fmt.Sprintf("[Skill directory: %s]", skillDir), skillDirNote)

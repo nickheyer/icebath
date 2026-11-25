@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -300,7 +301,7 @@ func renderFinalAssistantContent(text, mode string) consoleutil.Renderable {
 
 // Text still to display after a streamed response transform, the suffix or the whole replaced response
 func postStreamTransformOutput(response string, result map[string]any) string {
-	if result == nil || !cliTruthy(result["response_transformed"]) {
+	if result == nil || !anyutil.IsTrue(result["response_transformed"]) {
 		return ""
 	}
 	original := cliStr(result["pre_transform_response"], "")

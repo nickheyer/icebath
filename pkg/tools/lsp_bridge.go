@@ -5,8 +5,10 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -68,17 +70,14 @@ func LSPRuntime(env *Env) *lsp.Runtime {
 	}
 }
 
-// json.loads of an LSP body, Python's constants, integers and decode errors included
+// Value of an LSP message body with NaN and Infinity accepted and integers kept exact at any length, malformed text a *lsp.JSONDecodeError
 func lspDecodeJSON(text string) (any, error) {
-	class, msg, jerr := pyJSONLoadsCheck(text)
-	if jerr != nil {
-		return nil, &lsp.JSONDecodeError{Msg: jerr.Error()}
-	}
-	if class != "" {
-		return nil, lsp.PythonError(class, msg)
-	}
-	v, err := jsonutil.Decode(text)
+	v, err := jsonutil.DecodeWith(text, jsonutil.BigInts())
 	if err != nil {
+		var se *jsonutil.SyntaxError
+		if errors.As(err, &se) {
+			return nil, &lsp.JSONDecodeError{Msg: se.Error()}
+		}
 		return nil, err
 	}
 	return lspJSONValue(v), nil
@@ -202,9 +201,9 @@ func (f lspFuture) OnDone(fn func(res *lspEditCheckResult, cancelled bool, err e
 	f.fut.OnDone(func(res *lsp.CheckResult, cancelled bool, err error) { fn(lspCheckResult(res), cancelled, err) })
 }
 
-// Diagnostics block of a file, raising like the reporter does on malformed entries
+// Diagnostics block of a file with characters that do not print dropped from its fields, panicking on malformed entries for the write path to recover
 func lspReportForFile(path string, diagnostics []map[string]any) string {
-	block, err := lsp.ReportForFile(path, diagnostics, tomllibIsPrintable)
+	block, err := lsp.ReportForFile(path, diagnostics, unicode.IsPrint)
 	if err != nil {
 		panic(err)
 	}

@@ -20,7 +20,7 @@ var runtimeErrorClasses = []string{"RuntimeError", "NotImplementedError", "Recur
 // True when err or any error it wraps stands for one of the named Python exception classes
 func errIsPyClass(err error, names ...string) bool {
 	for e := err; e != nil; e = errors.Unwrap(e) {
-		if n, ok := e.(pyTypeNamed); ok && slices.Contains(names, n.ErrorKind()) {
+		if n, ok := e.(typeNamed); ok && slices.Contains(names, n.ErrorKind()) {
 			return true
 		}
 	}
@@ -38,7 +38,7 @@ func apiErrorBodyText(err error) string {
 	var apiErr *provider.APIError
 	if errors.As(err, &apiErr) {
 		if apiErr.Body != "" {
-			if parsed, perr := jsonutil.Decode(apiErr.Body); perr == nil && pyTruthy(parsed) {
+			if parsed, perr := jsonutil.Decode(apiErr.Body); perr == nil && anyutil.IsTrue(parsed) {
 				return anyutil.String(parsed)
 			}
 			return apiErr.Body
@@ -195,7 +195,7 @@ func recoverBeforeClassification(ctx context.Context, a *AIAgent, s *LoopState, 
 	if s.APIKwargs != nil {
 		sent = s.APIKwargs["messages"]
 	}
-	if !pyTruthy(sent) {
+	if !anyutil.IsTrue(sent) {
 		sent = s.APIMessages
 	}
 	if statusOK {

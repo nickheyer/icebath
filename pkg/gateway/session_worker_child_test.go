@@ -238,7 +238,7 @@ func TestDepthCapProfileAndAnEarlyChildFinishSettleTheChildRow(t *testing.T) {
 		Operation: "session.create", Payload: jsonutil.ObjectOf("source", "subagent", "model_config", jsonutil.ObjectOf("max_iterations", 7))}); err != nil {
 		t.Fatal(err)
 	}
-	config, err := jsonutil.Decode(pyStrOf(sessionRow(t, ctx, db, childSID).ValueOr("model_config", nil)))
+	config, err := jsonutil.Decode(anyutil.String(sessionRow(t, ctx, db, childSID).ValueOr("model_config", nil)))
 	if err != nil || !anyutil.Equal(config, jsonutil.ObjectOf("_delegate_from", "parent", "max_iterations", 7)) {
 		t.Fatalf("model_config %v %v", config, err)
 	}

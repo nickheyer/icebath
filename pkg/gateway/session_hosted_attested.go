@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -223,7 +224,7 @@ func attestedInputs(ctx context.Context, attachments, digests any) ([]attestedIn
 
 // Payload the committed submission carries for these inputs, derived from source attested digests alone
 func attestedSubmissionPayload(ctx context.Context, prompt string, attachments, digests any) (*jsonutil.Object, error) {
-	if !pyTruthy(attachments) {
+	if !anyutil.IsTrue(attachments) {
 		return jsonutil.ObjectOf("text", prompt), nil
 	}
 	inputs, err := attestedInputs(ctx, attachments, digests)
@@ -255,7 +256,7 @@ func attestedSubmissionPayload(ctx context.Context, prompt string, attachments, 
 
 // Refuses storage_unavailable unless every retained document still hashes to its source attested digest
 func verifyAttestedDocuments(ctx context.Context, attachments, digests any) error {
-	if !pyTruthy(attachments) {
+	if !anyutil.IsTrue(attachments) {
 		return nil
 	}
 	inputs, err := attestedInputs(ctx, attachments, digests)

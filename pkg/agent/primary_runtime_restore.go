@@ -86,7 +86,7 @@ func (a *AIAgent) restorePrimaryRuntime(ctx context.Context) (bool, error) {
 	if fallbackRoute == ([2]string{}) {
 		fallbackRoute = [2]string{a.model, a.provider}
 	}
-	previousModel, previousProvider := pyStrOr(fallbackRoute[0], "unknown"), pyStrOr(fallbackRoute[1], "unknown")
+	previousModel, previousProvider := anyutil.StringOr(fallbackRoute[0], "unknown"), anyutil.StringOr(fallbackRoute[1], "unknown")
 	providerFallbackActive := a.providerFallbackActive
 	if err := guardPhase(func() error { return reinstallPrimaryRuntime(ctx, a, route, prefetchedPool, prefetched) }); err != nil {
 		log.Warn(fmt.Sprintf("Failed to restore primary runtime: %s", err.Error()))
@@ -141,7 +141,7 @@ func (a *AIAgent) rebindPrimaryCredentialPool(ctx context.Context, route primary
 	}
 	if !route.matchesEntry(ctx, entry) {
 		log.Info(fmt.Sprintf("Restore skipped pool entry %s (%s): provider %s does not match primary provider %s",
-			entry.ID, entry.Label, pyStrOr(strings.ToLower(strings.TrimSpace(entry.Provider)), "?"), pyStrOr(route.provider, "?")))
+			entry.ID, entry.Label, anyutil.StringOr(strings.ToLower(strings.TrimSpace(entry.Provider)), "?"), anyutil.StringOr(route.provider, "?")))
 		return nil
 	}
 	if _, err := swapPoolCredential(ctx, a, entry); err != nil {
@@ -234,7 +234,7 @@ func (a *AIAgent) primaryResetGateBlocks(ctx context.Context, route primaryResto
 		if !a.restoreWaitLogged {
 			a.restoreWaitLogged = true
 			pkgLog().Info(fmt.Sprintf("Primary %s rate-limited until %s; staying on fallback %s/%s until the reset elapses",
-				pyStrOr(route.provider, "?"), nextAt.Local().Format("2006-01-02T15:04:05"), a.provider, a.model))
+				anyutil.StringOr(route.provider, "?"), nextAt.Local().Format("2006-01-02T15:04:05"), a.provider, a.model))
 		}
 		blocked = true
 		return nil

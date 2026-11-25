@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -202,7 +203,7 @@ func retireRestored(ctx context.Context, a *SessionAuthority, sessionID string, 
 		retired, err = retireIdle(ctx, a, sessionID, live, target)
 	}
 	if err != nil {
-		pkgLog().Error("Exception in callback retire_restored: " + pyExceptionRepr(err))
+		pkgLog().Error("Exception in callback retire_restored: " + errchain.OSText(err))
 		return
 	}
 	if !retired {

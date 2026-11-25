@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Publishes this live gateway's plugin message scheduler process wide
@@ -44,16 +45,16 @@ func pluginInjectionArgsFrom(kwargs map[string]any) (pluginInjectionArgs, error)
 	var args pluginInjectionArgs
 	for _, name := range []string{"content", "plugin_id"} {
 		if _, ok := kwargs[name]; !ok {
-			return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("_schedule_plugin_message_injection() missing 1 required keyword-only argument: '%s'", name)}
+			return args, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("_schedule_plugin_message_injection() missing 1 required keyword-only argument: '%s'", name)}
 		}
 	}
 	content, ok := kwargs["content"].(string)
 	if !ok {
-		return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("content must be text, got %s", errchain.Kind(kwargs["content"]))}
+		return args, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("content must be text, got %s", errchain.Kind(kwargs["content"]))}
 	}
 	pluginID, ok := kwargs["plugin_id"].(string)
 	if !ok {
-		return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("plugin_id must be text, got %s", errchain.Kind(kwargs["plugin_id"]))}
+		return args, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("plugin_id must be text, got %s", errchain.Kind(kwargs["plugin_id"]))}
 	}
 	args.content, args.pluginID = content, pluginID
 	if key, isText := kwargs["session_key"].(string); isText {
@@ -62,7 +63,7 @@ func pluginInjectionArgsFrom(kwargs map[string]any) (pluginInjectionArgs, error)
 	if raw, present := kwargs["origin"]; present && raw != nil {
 		origin, isMap := raw.(map[string]any)
 		if !isMap {
-			return args, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("origin is %s where a mapping was expected", errchain.Kind(raw))}
+			return args, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("origin is %s where a mapping was expected", errchain.Kind(raw))}
 		}
 		args.origin = origin
 	}
@@ -341,7 +342,7 @@ func (r *GatewayRunner) pluginOriginSource(ctx context.Context, origin map[strin
 	}
 	source, err := gateway.SessionSourceFromDict(ctx, fields)
 	if err != nil {
-		switch gateway.PyErrorKind(err) {
+		switch gateway.ErrorKindValue(err) {
 		case "KeyError", "TypeError", "ValueError":
 			refuse(fmt.Sprintf("invalid origin (%s)", err))
 			return nil, nil

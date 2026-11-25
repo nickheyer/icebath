@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Plugin platform entries carrying cron home env vars, registered for one test
@@ -160,7 +161,7 @@ func TestBotChatTargetWithoutLiveOwnerIsParkedAndAdmittedLater(t *testing.T) {
 	savedFind, savedDeliver := findCanonicalLiveOwner, deliverToLiveOwner
 	t.Cleanup(func() { findCanonicalLiveOwner, deliverToLiveOwner = savedFind, savedDeliver })
 	findCanonicalLiveOwner = func(context.Context, string) (map[string]any, error) {
-		return nil, &gateway.PyError{Kind: "ValueError", Msg: "profile authority is not ready"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "profile authority is not ready"}
 	}
 	ctx := context.Background()
 	job := &Job{ID: "digest", Name: "Digest", ExecutionID: strPtr("run-1"), Deliver: strPtr("bot-chat")}
@@ -292,7 +293,7 @@ func TestStampOriginDiscriminatorsNeverOverrides(t *testing.T) {
 
 func TestCronJobOriginLogSuffix(t *testing.T) {
 	job := &Job{Origin: map[string]any{"platform": "slack", "chat_id": "C1\nX", "thread_id": nil, "remote": "  "}}
-	if got := cronJobOriginLogSuffix(job); got != " origin_platform='slack' origin_chat_id='C1 X'" {
+	if got := cronJobOriginLogSuffix(job); got != " origin_platform=\"slack\" origin_chat_id=\"C1 X\"" {
 		t.Fatalf("%q", got)
 	}
 	if cronJobOriginLogSuffix(&Job{}) != "" {

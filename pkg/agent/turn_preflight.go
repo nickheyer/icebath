@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Pre API compression gate rebinding the loop state, refunding the call on every pass that never reached the provider
@@ -79,7 +80,7 @@ func runPreflightCompression(ctx context.Context, a *AIAgent, s *LoopState, comp
 		s.APICallCount = refundAPICall(a, s.APICallCount)
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
 			pkgLog().Info("Skipping post-compaction model call: reference-only handoff would be the sole active user turn (#80622)")
-			if !pyTruthy(s.FinalResponse) {
+			if !anyutil.IsTrue(s.FinalResponse) {
 				s.FinalResponse = handoffSkipFinalResponse
 			}
 			s.TurnExitReason = "compaction_handoff_not_actionable"
@@ -151,7 +152,7 @@ func compressAfterToolResults(ctx context.Context, a *AIAgent, s *LoopState) (bo
 		s.ConversationHistory = historyAfterCompaction(a, lc, s.ConversationHistory)
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
 			pkgLog().Info("Skipping post-tool compaction model call: reference-only handoff would be the sole active user turn (#80622)")
-			if !pyTruthy(s.FinalResponse) {
+			if !anyutil.IsTrue(s.FinalResponse) {
 				s.FinalResponse = handoffSkipFinalResponse
 			}
 			s.TurnExitReason = "compaction_handoff_not_actionable"

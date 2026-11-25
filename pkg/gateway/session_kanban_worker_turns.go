@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -25,7 +26,7 @@ var KanbanTurnAuthor = map[string]any{"id": "kanban:dispatcher", "name": "Kanban
 func KanbanContextItem(kctx any, key string) (any, error) {
 	obj, isDict := kctx.(*jsonutil.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(kctx) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(kctx) + ", expected a mapping"}
 	}
 	return kanbanContextItem(obj, key)
 }
@@ -98,7 +99,7 @@ func boundWorkerMatches(ctx context.Context, conn state.SQLiteConn, kctx any) (b
 		}
 		obj, isDict := decoded.(*jsonutil.Object)
 		if !isDict {
-			return false, &PyError{Kind: "AttributeError", Msg: "the bound worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
+			return false, &errorutil.Error{Kind: "AttributeError", Msg: "the bound worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
 		}
 		bound = obj
 	}

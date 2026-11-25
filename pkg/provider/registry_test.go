@@ -237,7 +237,7 @@ func TestPluginLoadErrorIsRecordedAndClearedOnSuccess(t *testing.T) {
 	if _, ok := GetProviderProfile(ctx, "fixed-provider"); ok {
 		t.Fatal("a failed plugin registered a profile")
 	}
-	if got := PluginLoadError(ctx, "broken"); !strings.HasSuffix(got, ": boom") {
+	if got := PluginLoadError(ctx, "broken"); got != "boom" {
 		t.Fatalf("load error = %q", got)
 	}
 	fail = false
@@ -348,7 +348,7 @@ func TestLazyHeadersResolveOnceUnderConcurrentReads(t *testing.T) {
 	if v, _ := h.Get("User-Agent"); v != "ua-in" {
 		t.Fatalf("value = %q", v)
 	}
-	if !h.Equal(map[string]string{"User-Agent": "ua-in", "Accept": "json"}) || h.String() != "{'User-Agent': 'ua-in', 'Accept': 'json'}" {
+	if !h.Equal(map[string]string{"User-Agent": "ua-in", "Accept": "json"}) || h.String() != `{"User-Agent": "ua-in", "Accept": "json"}` {
 		t.Fatalf("repr = %s", h.String())
 	}
 	h.Set("X-New", "1")

@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One downloadable file with its repo relative path, exact size, local name override and source repo
@@ -400,7 +401,7 @@ func catalogString(v any, key string) (string, error) {
 
 // Optional asset, nil for a falsy value
 func catalogAsset(v any) (*AssetFile, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	rawPath, err := catalogKey(v, "path")
@@ -467,7 +468,7 @@ func catalogFloat(v any) (float64, error) {
 		}
 		f, err := strconv.ParseFloat(strings.ReplaceAll(text, "_", ""), 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) || strings.Contains(text, "__") || strings.HasPrefix(text, "_") || strings.HasSuffix(text, "_") {
-			return 0, fmt.Errorf("%s is not a number", pyRepr(t))
+			return 0, fmt.Errorf("%s is not a number", anyutil.Quote(t))
 		}
 		return f, nil
 	}
@@ -507,7 +508,7 @@ func catalogSettings(v any, order []string) ([]CatalogSetting, error) {
 			if len(pair) != 2 {
 				return nil, fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))
 			}
-			key := pyStr(pair[0])
+			key := anyutil.String(pair[0])
 			if at, ok := index[key]; ok {
 				out[at].Value = pair[1]
 				continue
@@ -537,7 +538,7 @@ func loadCatalog(doc any, samplingOrder func(int) []string) ([]CatalogEntry, err
 	if version != catalogSchemaVersion {
 		shown := "None"
 		if present {
-			shown = pyRepr(rawVersion)
+			shown = anyutil.Quote(rawVersion)
 		}
 		return nil, fmt.Errorf("catalog schema %s (this build reads %d)", shown, catalogSchemaVersion)
 	}
@@ -617,17 +618,17 @@ func catalogEntryFrom(m any, samplingOrder []string) (CatalogEntry, error) {
 	}
 	for key, dst := range map[string]*bool{"moe": &e.MoE, "mtp": &e.MTP} {
 		raw, _ := field(key, false)
-		*dst = pyTruthy(raw)
+		*dst = anyutil.IsTrue(raw)
 	}
 	rawRecommend, _ := field("recommend", true)
-	e.Recommend = pyTruthy(rawRecommend)
+	e.Recommend = anyutil.IsTrue(rawRecommend)
 	for _, s := range []struct {
 		key, def string
 		dst      *string
 	}{{"min_engine", "", &e.MinEngine}, {"architecture", "", &e.Architecture},
 		{"draft_spec_type", "draft-dspark", &e.DraftSpecType}, {"draft_min_engine", "", &e.DraftMinEngine}} {
 		raw, _ := field(s.key, s.def)
-		*s.dst = pyStr(raw)
+		*s.dst = anyutil.String(raw)
 	}
 	rawFraction, _ := field("decode_fraction", 1.0)
 	if e.DecodeFraction, err = catalogFloat(rawFraction); err != nil {
@@ -668,7 +669,7 @@ func catalogVariantFrom(v any) (QuantVariant, error) {
 		return q, err
 	}
 	obj := v.(map[string]any)
-	q.Validated = pyTruthy(obj["validated"])
+	q.Validated = anyutil.IsTrue(obj["validated"])
 	rawFiles, err := catalogKey(obj, "files")
 	if err != nil {
 		return q, err

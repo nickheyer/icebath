@@ -21,7 +21,7 @@ func normalizeTodoState(value any) *jsonutil.Object {
 		return nil
 	}
 	rawRevision, _ := obj.Get("revision")
-	if !pyTruthy(rawRevision) {
+	if !anyutil.IsTrue(rawRevision) {
 		rawRevision = int64(0)
 	}
 	parsed, err := anyutil.ToInt(rawRevision)

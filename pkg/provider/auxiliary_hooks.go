@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/token"
 	"math"
 	"reflect"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 const (
@@ -194,10 +196,30 @@ func auxPyExceptionName(err error) string {
 		}
 		return "APIError"
 	}
-	if name := goErrorTypeName(err); name != "" && name != "errorString" && name != "wrapError" && name != "joinError" {
+	if name := ownErrorTypeName(err); name != "" {
 		return name
 	}
+	switch {
+	case auxIsGoTimeout(err):
+		return "TimeoutError"
+	case IsNetworkError(err) || isCertificateError(err):
+		return "ConnectionError"
+	case errorutil.IsSystem(err):
+		return "OSError"
+	}
 	return "Exception"
+}
+
+// Name of an exported error type this module declares, pointer marks dropped, "" for an unexported type or one of the standard library or another module
+func ownErrorTypeName(err error) string {
+	t := reflect.TypeOf(err)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if !strings.HasPrefix(t.PkgPath(), "github.com/nickheyer/icebath/") || !token.IsExported(t.Name()) {
+		return ""
+	}
+	return t.Name()
 }
 
 // Arguments of one physical provider attempt that the auxiliary hook pair reports

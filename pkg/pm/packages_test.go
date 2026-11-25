@@ -14,10 +14,11 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Replaces a package level seam for the rest of the test
@@ -765,7 +766,7 @@ func TestCatProbeRunnerReportsExitTimeoutAndSpawnFailure(t *testing.T) {
 	}
 	missing := filepath.Join(t.TempDir(), "absent")
 	_, err = startProcess(processSpec{Argv: []string{missing}})
-	if got := err.Error(); got != "[Errno 2] No such file or directory: "+strconv.Quote(missing) {
+	if got := errchain.OSText(err); got != "no such file or directory: "+missing {
 		t.Fatalf("spawn failure = %q", got)
 	}
 }

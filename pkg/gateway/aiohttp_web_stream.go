@@ -3,6 +3,8 @@ package gateway
 import (
 	"errors"
 	"net/http"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // WebStreamResponse is an aiohttp StreamResponse, its status and headers sent at prepare and its body written in parts
@@ -49,7 +51,7 @@ func (s *WebStreamResponse) Write(data []byte) error {
 	}
 	s.streamed += len(data)
 	if _, err := s.writer.Write(data); err != nil {
-		return &PyError{Kind: "ConnectionResetError", Msg: "Cannot write to closing transport"}
+		return &errorutil.Error{Kind: "ConnectionResetError", Msg: "Cannot write to closing transport"}
 	}
 	if flusher, ok := s.writer.(http.Flusher); ok {
 		flusher.Flush()

@@ -54,7 +54,7 @@ func TestSharedRouteAdaptersResolveOnlyTargetExactRoutes(t *testing.T) {
 	primary := map[string]any{"telegram": "tg-bot", "discord": "dc-bot", "slack": "sl-bot"}
 	a := newSharedRouteAdapters(primary, routes)
 	ctx := context.Background()
-	if !a.PyBool() || newSharedRouteAdapters(primary, nil).PyBool() || newSharedRouteAdapters(nil, routes).PyBool() {
+	if a.Len() == 0 || newSharedRouteAdapters(primary, nil).Len() != 0 || newSharedRouteAdapters(nil, routes).Len() != 0 {
 		t.Fatal("truthy only with adapters and routes")
 	}
 	cases := []struct {

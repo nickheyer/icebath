@@ -30,7 +30,7 @@ import (
 )
 
 // Python str of a decoded JSON value, the text the native model peer acknowledges
-func pyStrOfJSON(value any) string {
+func strOfJSON(value any) string {
 	switch v := value.(type) {
 	case nil:
 		return "None"
@@ -47,11 +47,11 @@ func pyStrOfJSON(value any) string {
 		}
 		return fmt.Sprintf("%v", v)
 	}
-	return pyReprOfJSON(value)
+	return reprOfJSON(value)
 }
 
 // Python repr of a decoded JSON value, dict keys in sorted order
-func pyReprOfJSON(value any) string {
+func reprOfJSON(value any) string {
 	switch v := value.(type) {
 	case string:
 		quoted, _ := json.Marshal(v)
@@ -60,7 +60,7 @@ func pyReprOfJSON(value any) string {
 	case []any:
 		parts := make([]string, len(v))
 		for i, item := range v {
-			parts[i] = pyReprOfJSON(item)
+			parts[i] = reprOfJSON(item)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
 	case map[string]any:
@@ -71,11 +71,11 @@ func pyReprOfJSON(value any) string {
 		sort.Strings(keys)
 		parts := make([]string, len(keys))
 		for i, key := range keys {
-			parts[i] = pyReprOfJSON(key) + ": " + pyReprOfJSON(v[key])
+			parts[i] = reprOfJSON(key) + ": " + reprOfJSON(v[key])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
-	return pyStrOfJSON(value)
+	return strOfJSON(value)
 }
 
 // One chat request the native model peer received
@@ -171,13 +171,13 @@ func (m *nativeModel) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		first, _ := messages[0].(map[string]any)
-		head := pyStrOfJSON(first["content"])
+		head := strOfJSON(first["content"])
 		if first["content"] == nil {
 			head = ""
 		}
 		textString, isString := text.(string)
 		m.mu.Lock()
-		m.requests = append(m.requests, nativeModelRequest{Model: body["model"], Text: pyStrOfJSON(text),
+		m.requests = append(m.requests, nativeModelRequest{Model: body["model"], Text: strOfJSON(text),
 			Auth: r.Header.Get("Authorization"), TitleGeneration: strings.HasPrefix(head, "You name chat sessions")})
 		blocked, release := m.blocked, m.release
 		if isString && strings.HasPrefix(textString, "BLOCK_") {
@@ -195,7 +195,7 @@ func (m *nativeModel) serve(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	message := map[string]any{"role": "assistant", "content": "NATIVE_ACK_" + pyStrOfJSON(text)}
+	message := map[string]any{"role": "assistant", "content": "NATIVE_ACK_" + strOfJSON(text)}
 	choice := map[string]any{"index": 0, "message": message, "finish_reason": "stop"}
 	frame := map[string]any{"id": "native", "model": body["model"], "choices": []any{choice},
 		"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}

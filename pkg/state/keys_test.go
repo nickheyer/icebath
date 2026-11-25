@@ -108,18 +108,18 @@ func TestPyDumpsDefaults(t *testing.T) {
 		in   any
 		want string
 	}{
-		{pyObject{{"b", 1.0}, {"a", "x\"\\\n\t\b\f\x01\x7f\u00e9\U0001F600"}}, `{"b": 1.0, "a": "x\"\\\n\t\b\f\u0001\u007f\u00e9\ud83d\ude00"}`},
+		{orderedObject{{"b", 1.0}, {"a", "x\"\\\n\t\b\f\x01\x7f\u00e9\U0001F600"}}, `{"b": 1.0, "a": "x\"\\\n\t\b\f\u0001\u007f\u00e9\ud83d\ude00"}`},
 		{[]any{0.1, 1e-05, 123456789012345680.0, math.Copysign(0, -1), math.Inf(1)}, `[0.1, 1e-05, 1.2345678901234568e+17, -0.0, Infinity]`},
 		{"\xed\xa0\x80", `"\ud800"`},
 	}
 	for _, c := range cases {
-		got, err := pyDumps(c.in, pyJSONDefault)
+		got, err := dumpsValue(c.in, jsonDefault)
 		if err != nil || got != c.want {
-			t.Errorf("pyDumps(%v) = %s %v, want %s", c.in, got, err, c.want)
+			t.Errorf("dumps(%v) = %s %v, want %s", c.in, got, err, c.want)
 		}
 	}
-	if got := pyRepr("a'b\n\u00e9\x00"); got != `"a'b\n`+"\u00e9"+`\x00"` {
-		t.Errorf("pyRepr = %s", got)
+	if got := strconv.Quote("a'b\n\u00e9\x00"); got != `"a'b\n`+"\u00e9"+`\x00"` {
+		t.Errorf("Quote = %s", got)
 	}
 }
 

@@ -125,7 +125,7 @@ func TestMetadataWriteDoesNotTouchActivityClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idle := pyDatetime{T: time.Now().Add(-21 * 24 * time.Hour)}
+	idle := datetime{T: time.Now().Add(-21 * 24 * time.Hour)}
 	store.mu.Lock()
 	entry.UpdatedAt = idle
 	store.mu.Unlock()

@@ -365,7 +365,7 @@ func (r *Runner) scanCompletedPrompts() map[string]bool {
 func mustStrip(v any) (string, error) {
 	text, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'strip'", anyutil.Kind(v))
+		return "", fmt.Errorf("the dataset prompt is %s, expected a string", anyutil.Kind(v))
 	}
 	return strings.TrimSpace(text), nil
 }
@@ -384,7 +384,7 @@ func datasetPromptText(entry *jsonutil.Object) (string, error) {
 	for _, item := range listItems(conversations) {
 		msg, ok := jsonutil.AsMap(item)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(item))
+			return "", fmt.Errorf("a dataset conversation turn is %s, expected an object", anyutil.Kind(item))
 		}
 		role := msg["role"]
 		if !anyutil.IsTrue(role) {

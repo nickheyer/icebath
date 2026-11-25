@@ -143,7 +143,7 @@ func TestAuxSDKStatusErrorCarriesTheSDKShape(t *testing.T) {
 	if !errors.As(err, &sdk) {
 		t.Fatalf("err %T %v", err, err)
 	}
-	want := "Error code: 429 - {'error': {'code': 'rl', 'message': 'slow down', 'type': 'rate_limit'}}"
+	want := `Error code: 429 - {"error":{"code":"rl","message":"slow down","type":"rate_limit"}}`
 	if sdk.StatusCode != 429 || sdk.Class != "RateLimitError" || sdk.Message != want || sdk.Code != "rl" || sdk.Type != "rate_limit" {
 		t.Fatalf("sdk error %+v", sdk)
 	}
@@ -333,15 +333,15 @@ func TestCreateOpenAIClientRoutesViaEnvProxy(t *testing.T) {
 	ct := keepaliveMounts(t, sdk.httpClient)
 	for scheme, rt := range ct.mounts {
 		tr, ok := rt.(*http.Transport)
-		if !ok || tr.Proxy == nil || tr.DialTLSContext == nil {
+		if !ok || tr.Proxy == nil || tr.DialContext == nil {
 			t.Fatalf("%s mount %T is not proxy backed", scheme, rt)
 		}
 		u, _ := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "http", Host: "litellm.internal.example.com"}})
 		if u == nil || u.String() != "http://127.0.0.1:7897" {
 			t.Fatalf("plain proxy %v", u)
 		}
-		if u, _ := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "https", Host: "litellm.internal.example.com"}}); u != nil {
-			t.Fatalf("an https target must reach the proxy through the wire tunnel, not the transport proxy %v", u)
+		if u, _ := tr.Proxy(&http.Request{URL: &url.URL{Scheme: "https", Host: "litellm.internal.example.com"}}); u == nil || u.String() != "http://127.0.0.1:7897" {
+			t.Fatalf("an https target must reach the proxy through the transport's CONNECT tunnel, got %v", u)
 		}
 	}
 	if sdk.maxRetries != 0 {

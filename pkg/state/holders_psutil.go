@@ -14,8 +14,8 @@ func scanOpenFiles(dbPath string, watched map[string]bool, watchedIDs map[FileId
 		return []Holder{{-1, "open-file scan unavailable"}}
 	}
 	if err := openFilesHolderScan(watched, &holders); err != nil {
-		pkgLog().Warn("Could not prove state.db has no foreign holders; deferring structural maintenance: " + pyOSErrorStr(err))
-		holders = append(holders, Holder{-1, "open-file scan failed: " + pyOSErrorStr(err)})
+		pkgLog().Warn("Could not prove state.db has no foreign holders; deferring structural maintenance: " + osErrorStr(err))
+		holders = append(holders, Holder{-1, "open-file scan failed: " + osErrorStr(err)})
 	}
 	return holders
 }
@@ -43,7 +43,7 @@ func openFilesHolderScan(watched map[string]bool, holders *[]Holder) error {
 			if opened.Path == "" {
 				continue
 			}
-			resolved, err := pyRealpath(opened.Path)
+			resolved, err := realpath(opened.Path)
 			if err != nil {
 				return err
 			}

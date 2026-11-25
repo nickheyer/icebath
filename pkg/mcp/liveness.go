@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Liveness is one portable plugin liveness declaration, kind static, server_json or interactive_session
@@ -114,7 +116,10 @@ func ParseLiveness(raw any) (Liveness, error) {
 		return newLiveness("interactive_session"), nil
 	case "server_json":
 	default:
-		return Liveness{}, fmt.Errorf("unknown liveness kind: %s", pyRepr(kind))
+		if kind == nil {
+			return Liveness{}, errors.New("liveness has no kind")
+		}
+		return Liveness{}, fmt.Errorf("unknown liveness kind: %s", anyutil.Quote(kind))
 	}
 	for key := range m {
 		if key != "kind" && key != "path" && key != "fields" {
@@ -122,7 +127,7 @@ func ParseLiveness(raw any) (Liveness, error) {
 		}
 	}
 	fields := map[string]any{"url": "http", "token": "token", "pid": "pid"}
-	if raw := m["fields"]; pyTruthy(raw) {
+	if raw := m["fields"]; anyutil.IsTrue(raw) {
 		overrides, ok := raw.(map[string]any)
 		if !ok {
 			return Liveness{}, fmt.Errorf("server_json liveness fields are %s where a mapping was expected", errchain.Kind(raw))
@@ -132,7 +137,7 @@ func ParseLiveness(raw any) (Liveness, error) {
 		}
 	}
 	path, ok := m["path"].(string)
-	if !ok || pyStrip(path) == "" {
+	if !ok || strings.TrimSpace(path) == "" {
 		return Liveness{}, errors.New("server_json liveness requires a non-empty path")
 	}
 	if len(fields) != 3 {
@@ -144,12 +149,12 @@ func ParseLiveness(raw any) (Liveness, error) {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if s, ok := fields[k].(string); !ok || pyStrip(s) == "" {
+		if s, ok := fields[k].(string); !ok || strings.TrimSpace(s) == "" {
 			return Liveness{}, errors.New("server_json liveness field names must be non-empty strings")
 		}
 	}
-	return Liveness{Kind: "server_json", Path: pyStrip(path), URLField: pyStrip(fields["url"].(string)),
-		TokenField: pyStrip(fields["token"].(string)), PIDField: pyStrip(fields["pid"].(string))}, nil
+	return Liveness{Kind: "server_json", Path: strings.TrimSpace(path), URLField: strings.TrimSpace(fields["url"].(string)),
+		TokenField: strings.TrimSpace(fields["token"].(string)), PIDField: strings.TrimSpace(fields["pid"].(string))}, nil
 }
 
 // Registered liveness of a server, static when none is registered or the declaration is invalid

@@ -8,6 +8,8 @@ import (
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -140,7 +142,7 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *jsonuti
 			if err != nil {
 				return nil, err
 			}
-			restored, err := restoreLocalSession(ctx, a, pyStrOf(sid))
+			restored, err := restoreLocalSession(ctx, a, anyutil.String(sid))
 			if err != nil {
 				return nil, err
 			}
@@ -153,7 +155,7 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *jsonuti
 				return nil, err
 			}
 			if receipt == nil {
-				return nil, &PyError{Kind: "TypeError", Msg: "the created session row is missing"}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "the created session row is missing"}
 			}
 			raw, err := receiptField(receipt, "policy")
 			if err != nil {
@@ -324,7 +326,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	}
 	mounted, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{key: ref.SessionID}
+		return nil, &keyError{key: ref.SessionID}
 	}
 	if c.actor.Capabilities["session:control"] && mounted.Source != nil && mounted.Source.Platform == PlatformLocal {
 		c.mu.Lock()
@@ -356,7 +358,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	info := jsonutil.ObjectOf("gateway_protocol", CanonicalGatewayProtocol)
 	attachedLive, ok := a.live(snapshot.Handle.Ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{key: snapshot.Handle.Ref.SessionID}
+		return nil, &keyError{key: snapshot.Handle.Ref.SessionID}
 	}
 	if source := attachedLive.Source; source != nil && source.Platform == PlatformLocal {
 		policy, err := policyForSource(ctx, a.Runner, source)
@@ -370,7 +372,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	}
 	history := append([]map[string]any(nil), snapshot.History...)
 	display := jsonutil.NewObject()
-	if pyTruthy(params.ValueOr("display_projection", nil)) {
+	if anyutil.IsTrue(params.ValueOr("display_projection", nil)) {
 		shown := []map[string]any{}
 		for _, row := range history {
 			if !modelOnly(row) {

@@ -2,6 +2,8 @@ package state
 
 import (
 	"context"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Deactivates still marked busy queue accept rows of a session on the caller's connection, returning how many
@@ -78,7 +80,7 @@ func setLineageColumnInTransaction(ctx context.Context, conn SQLiteConn, column,
 	}
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
-		ids = append(ids, pyStr(rowValue(row, "id")))
+		ids = append(ids, anyutil.String(rowValue(row, "id")))
 	}
 	return ids, nil
 }
@@ -99,7 +101,7 @@ func (d *SessionDB) SetSessionArchived(ctx context.Context, sessionID string, ar
 		if ids, err = setLineageColumnInTransaction(ctx, conn, "archived", sessionID, flag, ", auto_archived = 0"); err != nil {
 			return err
 		}
-		newlyArchived = archived && len(ids) > 0 && row != nil && !pyTruthy(row["archived"])
+		newlyArchived = archived && len(ids) > 0 && row != nil && !anyutil.IsTrue(row["archived"])
 		return nil
 	}, nil)
 	if err != nil {

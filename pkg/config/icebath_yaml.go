@@ -28,7 +28,7 @@ func (e *YAMLError) ErrorKind() string {
 	switch x := e.Err.(type) {
 	case *ry.MarkedError:
 		return x.Class
-	case *ry.PyException:
+	case *ry.Exception:
 		return x.Class
 	case *ry.ReaderError:
 		return "ReaderError"
@@ -276,7 +276,7 @@ func (d *RoundtripDoc) Root() (*yaml.Node, error) {
 	if root.Kind != yaml.MappingNode {
 		var v any
 		_ = root.Decode(&v)
-		return nil, fmt.Errorf("top-level YAML must be a mapping, got %s", ErrorKind(v))
+		return nil, fmt.Errorf("top-level YAML must be a mapping, got %s", errchain.Kind(v))
 	}
 	return root, nil
 }

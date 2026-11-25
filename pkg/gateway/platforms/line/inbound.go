@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -47,7 +48,7 @@ func (a *LineAdapter) handleWebhook(ctx context.Context, request *gateway.WebReq
 	}
 	payload, ok := jsonutil.Plain(decoded).(map[string]any)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("webhook body must be a JSON object, got %s", anyutil.Kind(decoded))}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("webhook body must be a JSON object, got %s", anyutil.Kind(decoded))}
 	}
 	events, err := iterEvents(payload["events"])
 	if err != nil {
@@ -88,7 +89,7 @@ func iterEvents(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a list, got %s", anyutil.Kind(v))}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected a list, got %s", anyutil.Kind(v))}
 }
 
 // Drops redeliveries, self echoes and unauthorized sources then routes message and postback events
@@ -210,13 +211,13 @@ func joinStrings(v any) (string, error) {
 		if s, isStr := v.(string); isStr {
 			return strings.Join(strings.Split(s, ""), ", "), nil
 		}
-		return "", &gateway.PyError{Kind: "TypeError", Msg: "can only join an iterable"}
+		return "", &errorutil.Error{Kind: "TypeError", Msg: "can only join an iterable"}
 	}
 	parts := make([]string, 0, len(items))
 	for i, item := range items {
 		s, isStr := item.(string)
 		if !isStr {
-			return "", &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("item %d must be text, got %s", i, anyutil.Kind(item))}
+			return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("item %d must be text, got %s", i, anyutil.Kind(item))}
 		}
 		parts = append(parts, s)
 	}
@@ -241,7 +242,7 @@ func (a *LineAdapter) handlePostbackEvent(ctx context.Context, event map[string]
 	}
 	parsed, ok := jsonutil.Plain(decoded).(map[string]any)
 	if !ok {
-		return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("postback data must be a JSON object, got %s", anyutil.Kind(decoded))}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("postback data must be a JSON object, got %s", anyutil.Kind(decoded))}
 	}
 	requestID := ""
 	if action, _ := parsed["action"].(string); action == "show_response" {

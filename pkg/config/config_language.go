@@ -31,7 +31,7 @@ func DisplayLanguageError(value string, cat LanguageCatalog) string {
 	if _, ok := ResolveDisplayLanguage(value, cat); ok {
 		return ""
 	}
-	return fmt.Sprintf("✗ Unknown language %s for %s. Available: %s.\n  Install a language pack plugin "+
+	return fmt.Sprintf("✗ Unknown language %q for %s. Available: %s.\n  Install a language pack plugin "+
 		"(icebath plugins install <pack>) or drop <ICEBATH_HOME>/locales/<id>.yaml to add one.",
-		PyRepr(value), DisplayLanguageKey, strings.Join(cat.SupportedLanguages(), ", "))
+		value, DisplayLanguageKey, strings.Join(cat.SupportedLanguages(), ", "))
 }

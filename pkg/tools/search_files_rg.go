@@ -19,13 +19,13 @@ import (
 )
 
 var (
-	rgVersionRe = regexp.MustCompile(`(?m)^ripgrep` + pyWSClass + `+((?:0|[1-9]\p{Nd}*))\.` +
+	rgVersionRe = regexp.MustCompile(`(?m)^ripgrep` + wsClass + `+((?:0|[1-9]\p{Nd}*))\.` +
 		`(?:0|[1-9]\p{Nd}*)\.(?:0|[1-9]\p{Nd}*)` +
 		`(?:-(?:(?:0|[1-9]\p{Nd}*)|(?:[0-9A-Za-z-]*[A-Za-z-]` +
 		`[0-9A-Za-z-]*))(?:\.(?:(?:0|[1-9]\p{Nd}*)|` +
 		`(?:[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)))*)?` +
 		`(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?` +
-		`(?:` + pyWSClass + `+\(rev [^)]+\))?` + pyWSClass + `*$`)
+		`(?:` + wsClass + `+\(rev [^)]+\))?` + wsClass + `*$`)
 	bareExecutableRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	regexMetaRe      = regexp.MustCompile(`[.\[\](){}?*+^$\\|]`)
 )
@@ -72,8 +72,8 @@ func (s *shellFileOps) resolveCommand(cmd string) string {
 		}
 	}
 	result := s.exec("command -v rg 2>/dev/null", "", 0)
-	if out := pyStrip(result.Stdout); result.ExitCode == 0 && out != "" {
-		resolved := pySplitLines(out)[0]
+	if out := strings.TrimSpace(result.Stdout); result.ExitCode == 0 && out != "" {
+		resolved := splitLinesValue(out)[0]
 		if resolved == "yes" {
 			resolved = "rg"
 		}
@@ -134,7 +134,7 @@ func (s *shellFileOps) modifiedRgCapabilityError(executable string) string {
 
 // Whether a decimal major version string is at least the floor at any magnitude
 func rgMajorAtLeast(digits string, floor int64) bool {
-	n, ok := new(big.Int).SetString(pyDigitsASCII(digits), 10)
+	n, ok := new(big.Int).SetString(digitsASCII(digits), 10)
 	return ok && n.Cmp(big.NewInt(floor)) >= 0
 }
 
@@ -149,7 +149,7 @@ func popenCandidates(name string, runEnv map[string]string) []string {
 	}
 	var out []string
 	for _, dir := range strings.Split(pathValue, string(os.PathListSeparator)) {
-		out = append(out, pyOSPathJoin(dir, name))
+		out = append(out, osPathJoinValue(dir, name))
 	}
 	return out
 }
@@ -163,7 +163,7 @@ func drainStderrCapped(r io.Reader, chunks *[][]byte, omitted *int) {
 		if len(raw) > 0 {
 			switch {
 			case len(*chunks) > 0 && kept+len(raw) > stderrRetainBytes:
-				line := pyStrip(decodeUTF8Replace(raw))
+				line := strings.TrimSpace(decodeUTF8Replace(raw))
 				if !keptOther && line != "" && !permissionDeniedRe.MatchString(line) {
 					*chunks = append(*chunks, raw)
 					keptOther = true
@@ -461,17 +461,17 @@ func (s *shellFileOps) zeroMatchProbe(pattern, path, fileGlob string) (string, e
 		res := s.runRgBounded(words, 50, 30, false, true, "")
 		total := new(big.Int)
 		var perFile []string
-		for _, line := range pySplitLines(pyStrip(res.Stdout)) {
+		for _, line := range splitLinesValue(strings.TrimSpace(res.Stdout)) {
 			p, n := "", line
 			if i := strings.LastIndex(line, ":"); i >= 0 {
 				p, n = line[:i], line[i+1:]
 			}
-			if !pyIsDigitText(n) {
+			if !isDigitText(n) {
 				continue
 			}
-			digits, ok := pyIntDigits(n)
+			digits, ok := intDigits(n)
 			if !ok {
-				return "", fmt.Errorf("rg match count %s is not a whole number", pyReprStr(n))
+				return "", fmt.Errorf("rg match count %s is not a whole number", strconv.Quote(n))
 			}
 			addPyInt(total, digits)
 			perFile = append(perFile, p)
@@ -572,10 +572,10 @@ func (s *shellFileOps) searchFilesRg(pattern string, roots []string, rootList bo
 		exclusionArgs + " -- " + strings.Join(rootArgs, " ")
 	result := s.runRgBounded([]string{rgCmd}, fetchLimit, 60, true, !scoped, "set -o pipefail; "+cdPrefix)
 	stdout, limitReason := searchStdoutAndLimit(result)
-	stdoutLines := pySplitLines(stdout)
+	stdoutLines := splitLinesValue(stdout)
 	var diagLines, allFiles []string
 	for _, line := range stdoutLines {
-		if hasAnyPrefix(pyLStrip(line), []string{"rg: ", "grep: "}) {
+		if hasAnyPrefix(lStrip(line), []string{"rg: ", "grep: "}) {
 			diagLines = append(diagLines, line)
 		} else if line != "" {
 			allFiles = append(allFiles, line)
@@ -597,7 +597,7 @@ func (s *shellFileOps) searchFilesRg(pattern string, roots []string, rootList bo
 	}
 	boundedSigpipe := result.ExitCode == 141 && len(allFiles) >= fetchLimit
 	if code := result.ExitCode; code != 0 && code != 1 && code != 124 && !boundedSigpipe && !permissionOnly {
-		detail := pyStrip(diagnostics)
+		detail := strings.TrimSpace(diagnostics)
 		if detail == "" {
 			detail = "no diagnostics"
 		}

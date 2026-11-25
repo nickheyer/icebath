@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -53,7 +54,7 @@ func TestASelectContextSelectionIsStrippedBeforeTheProvider(t *testing.T) {
 		t.Fatalf("out %v", out)
 	}
 	for _, m := range history {
-		if !pyTruthy(m["message_uid"]) {
+		if !anyutil.IsTrue(m["message_uid"]) {
 			t.Fatalf("history touched %v", m)
 		}
 	}
@@ -445,9 +446,9 @@ func plainUIDMap(v any) map[string]any {
 	switch t := v.(type) {
 	case map[string]any:
 		return jsonutil.Plain(t).(map[string]any)
-	case interface{ PyItems() iter.Seq2[any, any] }:
+	case interface{ ItemsValue() iter.Seq2[any, any] }:
 		out := map[string]any{}
-		for k, val := range t.PyItems() {
+		for k, val := range t.ItemsValue() {
 			out[fmt.Sprint(k)] = jsonutil.Plain(val)
 		}
 		return out
@@ -527,7 +528,7 @@ func TestAReusedIDMergeSurvivesRewriteAndRestore(t *testing.T) {
 	}
 	var storedCall, storedTool map[string]any
 	for _, m := range again {
-		if storedCall == nil && m["role"] == "assistant" && pyTruthy(m["tool_calls"]) {
+		if storedCall == nil && m["role"] == "assistant" && anyutil.IsTrue(m["tool_calls"]) {
 			storedCall = m
 		}
 		if storedTool == nil && m["role"] == "tool" {

@@ -108,7 +108,7 @@ func TestProviderBaseUnboundDefaultsPanic(t *testing.T) {
 
 // Catalog providers show the title cased name
 func TestCatalogProviderBaseDisplayNameTitleCased(t *testing.T) {
-	for name, want := range map[string]string{"openai": "Openai", "fal-ai": "Fal-Ai", "my_tts": "My_Tts", "elevenlabs2x": "Elevenlabs2X"} {
+	for name, want := range map[string]string{"openai": "Openai", "fal-ai": "Fal-Ai", "my_tts": "My_Tts", "elevenlabs2x": "Elevenlabs2x"} {
 		if got := newPbCatalog(name).DisplayName(); got != want {
 			t.Errorf("%s title %q want %q", name, got, want)
 		}

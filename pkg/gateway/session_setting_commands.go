@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -54,7 +55,7 @@ func applyPendingReasoning(ctx context.Context, a *SessionAuthority, ref Session
 	var refusal *state.RuntimeStoreError
 	guard := state.IsMutationGuardRefusal(err)
 	if !guard && !errors.As(err, &refusal) {
-		pkgLog().Error(fmt.Sprintf("Reasoning command on %s failed to commit: %s", ref.SessionID, pyExceptionRepr(err)))
+		pkgLog().Error(fmt.Sprintf("Reasoning command on %s failed to commit: %s", ref.SessionID, errchain.OSText(err)))
 		return
 	}
 	reason := "session_busy"
@@ -120,7 +121,7 @@ func applyOnceRestore(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		a.mu.Unlock()
 		return
 	}
-	pkgLog().Error(fmt.Sprintf("One turn model switch on %s could not be put back: %s", ref.SessionID, pyExceptionRepr(err)))
+	pkgLog().Error(fmt.Sprintf("One turn model switch on %s could not be put back: %s", ref.SessionID, errchain.OSText(err)))
 }
 
 // Authority and live session owning the local session a source belongs to
@@ -179,7 +180,7 @@ func deferLocalModelPick(ctx context.Context, a *SessionAuthority, live *LiveSes
 	if err != nil {
 		return nil, err
 	}
-	principal, err := pyItem(receipt, "principal_id")
+	principal, err := itemValue(receipt, "principal_id")
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +213,7 @@ func commitReasoningCommand(ctx context.Context, a *SessionAuthority, actor Prin
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	if live.Source.Platform != PlatformLocal {
 		return nil

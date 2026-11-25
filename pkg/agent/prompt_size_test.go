@@ -174,7 +174,7 @@ func TestComputeSkillsBreakdownParsesRowsAndSharedLines(t *testing.T) {
 	for _, e := range entries {
 		rows = append(rows, e.Object())
 	}
-	got, err := jsonutil.Encode(rows, jsonutil.Spaced())
+	got, err := jsonutil.Encode(rows)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestPromptToolNameShapes(t *testing.T) {
 		{map[string]any{"function": map[string]any{"name": "fn"}, "name": "outer"}, "fn"},
 		{map[string]any{"function": map[string]any{"name": ""}, "name": "outer"}, "outer"},
 		{map[string]any{"function": "x", "name": 7}, "7"},
-		{map[string]any{"name": nil}, "None"},
+		{map[string]any{"name": nil}, ""},
 		{map[string]any{}, ""},
 		{"not a dict", ""},
 		{obj, "ordered"},
@@ -252,7 +252,7 @@ func TestComputeToolsetsBreakdownGroupsLargestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	knownJSON, _ := jsonutil.Encode(list[1], jsonutil.Spaced())
+	knownJSON, _ := jsonutil.Encode(list[1])
 	unknown := ToolsetBreakdownEntry{Toolset: "(unknown)", ToolCount: 3, JSONBytes: 20 + 5 + 20}
 	knownRow := ToolsetBreakdownEntry{Toolset: m[known], ToolCount: 1, JSONBytes: len(knownJSON)}
 	want := []ToolsetBreakdownEntry{unknown, knownRow}
@@ -343,7 +343,7 @@ func TestCmdPromptSizePrintsTextJSONAndFailure(t *testing.T) {
 	}
 	out.Reset()
 	code, err = CmdPromptSize(context.Background(), env, map[string]any{"platform": "cli"}, &out)
-	if err != nil || code != 0 || out.String() != "Could not compute prompt-size breakdown: dictionary update sequence element #0 has length 1; 2 is required\n" {
+	if err != nil || code != 0 || out.String() != "Could not compute prompt-size breakdown: the config section \"agent\" is text where a mapping was expected\n" {
 		t.Fatalf("failure %d %v %q", code, err, out.String())
 	}
 }

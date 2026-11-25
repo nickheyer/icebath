@@ -168,7 +168,7 @@ func liveNotice(activation map[string]any) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			n, err := pyLenOr(server["tools"])
+			n, err := lenOr(server["tools"])
 			if err != nil {
 				return "", err
 			}
@@ -188,14 +188,14 @@ func liveNotice(activation map[string]any) (string, error) {
 	deferred, _ := activation["deferred"].(map[string]any)
 	var later []string
 	if anyutil.IsTrue(deferred["tools"]) {
-		n, err := pyLenOr(deferred["tools"])
+		n, err := lenOr(deferred["tools"])
 		if err != nil {
 			return "", err
 		}
 		later = append(later, fmt.Sprintf("%d Python tools", n))
 	}
 	if anyutil.IsTrue(deferred["prompt"]) {
-		n, err := pyLenOr(deferred["prompt"])
+		n, err := lenOr(deferred["prompt"])
 		if err != nil {
 			return "", err
 		}

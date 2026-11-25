@@ -93,9 +93,13 @@ func facadeClaimFire(ctx context.Context, _ string, args []any, kwargs map[strin
 	}
 	source, ok := kw["source"]
 	if !ok {
-		return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: "claim_fire() missing 1 required keyword-only argument: 'source'"}
+		return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: "claim_fire needs the source argument"}
 	}
-	claimed, err := claimFireForSource(ctx, anyutil.String(source), anyutil.String(raw), anyutil.IsTrue(kw["force"]), anyutil.IsTrue(kw["manual"]))
+	sourceText, isText := source.(string)
+	if !isText {
+		return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: "claim_fire source must be text, got " + errchain.Kind(source)}
+	}
+	claimed, err := claimFireForSource(ctx, sourceText, anyutil.String(raw), anyutil.IsTrue(kw["force"]), anyutil.IsTrue(kw["manual"]))
 	if err != nil || claimed == nil {
 		return nil, err
 	}

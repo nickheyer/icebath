@@ -146,13 +146,13 @@ func (a *AIAgent) retainedDataURL(ctx context.Context, ref string) string {
 // Oldest image slot still replayed, moving forward only in whole batches of keep
 func ReplayFrontier(total, keep int) int {
 	if total > keep {
-		return pyFloorDivInt(total-keep, keep) * keep
+		return floorDivInt(total-keep, keep) * keep
 	}
 	return 0
 }
 
 // Python floor division of ints
-func pyFloorDivInt(a, b int) int {
+func floorDivInt(a, b int) int {
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
 		q--

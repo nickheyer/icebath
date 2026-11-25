@@ -21,12 +21,12 @@ import (
 )
 
 // Reason phrases of Python http.HTTPStatus where the Go status text differs
-var pyStatusPhrases = map[int]string{413: "Content Too Large", 414: "URI Too Long", 416: "Range Not Satisfiable",
+var statusPhrases = map[int]string{413: "Content Too Large", 414: "URI Too Long", 416: "Range Not Satisfiable",
 	418: "I'm a Teapot", 422: "Unprocessable Content"}
 
 // Python HTTPStatus phrase of a status code, empty for an unknown code
 func webReason(status int) string {
-	if phrase, ok := pyStatusPhrases[status]; ok {
+	if phrase, ok := statusPhrases[status]; ok {
 		return phrase
 	}
 	return http.StatusText(status)
@@ -755,7 +755,7 @@ func StartHTTPApp(ctx context.Context, app *HTTPApp, host *string, port int, opt
 				}
 			}
 			_ = rn.Cleanup(ctx)
-			return nil, fmt.Errorf("error while attempting to bind on address %s: %w", pyAddrRepr(h, port), err)
+			return nil, fmt.Errorf("error while attempting to bind on address %s: %w", addrRepr(h, port), err)
 		}
 		rn.listeners = append(rn.listeners, l)
 		server := &http.Server{Handler: rn, BaseContext: func(net.Listener) context.Context { return runCtx }}
@@ -770,7 +770,7 @@ func StartHTTPApp(ctx context.Context, app *HTTPApp, host *string, port int, opt
 }
 
 // Python repr of a bound socket address tuple
-func pyAddrRepr(host string, port int) string {
+func addrRepr(host string, port int) string {
 	return fmt.Sprintf("('%s', %d)", host, port)
 }
 

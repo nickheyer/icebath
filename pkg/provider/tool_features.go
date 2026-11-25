@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // ToolFeatureState is one tool feature's availability and the backend serving it as status surfaces show it
@@ -139,7 +140,7 @@ func browserToolFeature(env PoolEnv, toolEnabled bool) ToolFeatureState {
 	explicit := err == nil && cloud.Source != settings.SourceDefault
 	provider := tools.NormalizeBrowserCloudProvider("")
 	if explicit {
-		provider = tools.NormalizeBrowserCloudProvider(pyOrStr(cloud.Value))
+		provider = tools.NormalizeBrowserCloudProvider(anyutil.StringOr(cloud.Value, ""))
 	}
 	directBrowserbase := toolFeatureEnvValueFn(env, "BROWSERBASE_API_KEY") != "" && toolFeatureEnvValueFn(env, "BROWSERBASE_PROJECT_ID") != ""
 	directBrowserUse := toolAnyEnv(env, "BROWSER_USE_API_KEY")
@@ -243,10 +244,10 @@ func toolSettingSet(ctx context.Context, key string) bool {
 // Lowercased stripped text of value or the default when the value is falsy
 func toolNorm(value any, def string) string {
 	s := def
-	if pyTruthy(value) {
-		s = pyStr(value)
+	if anyutil.IsTrue(value) {
+		s = anyutil.String(value)
 	}
-	return strings.ToLower(pyStripSpace(s))
+	return strings.ToLower(strings.TrimSpace(s))
 }
 
 // Some platform's configured toolsets cover every tool of the toolset

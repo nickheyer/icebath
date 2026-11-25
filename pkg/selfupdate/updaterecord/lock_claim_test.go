@@ -419,7 +419,7 @@ func TestLockUnwritableInstallRootRefusesAndLinkedLockFilesAreRefused(t *testing
 	os.Chmod(root, 0o555)
 	t.Cleanup(func() { os.Chmod(root, 0o755) })
 	lock := NewUpdateLock(lcMarker(t), root, true)
-	if lcAcquire(t, lock) || lock.Holder == nil || !strings.Contains(lock.Holder.Reason, "is not writable (Permission denied); the update locks the checkout there") {
+	if lcAcquire(t, lock) || lock.Holder == nil || !strings.Contains(lock.Holder.Reason, "is not writable (permission denied); the update locks the checkout there") {
 		t.Fatalf("%+v", lock.Holder)
 	}
 	linked := t.TempDir()

@@ -17,7 +17,7 @@ func TestConflictRetryDropsPendingUpdates(t *testing.T) {
 	app := newMockApp()
 	app.polling, app.general = nil, nil
 	p, _ := newTestLifecycle(t, app)
-	if err := p.handlePollingConflict(context.Background(), &pyExc{class: "Conflict", msg: "Conflict: terminated by other getUpdates request"}); err != nil {
+	if err := p.handlePollingConflict(context.Background(), &excValue{class: "Conflict", msg: "Conflict: terminated by other getUpdates request"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(app.updater.drops) != 1 || !app.updater.drops[0] {
@@ -38,7 +38,7 @@ func TestConflictRetryProgressDoesNotResetRetryLadder(t *testing.T) {
 		p.recordPollingProgress(context.Background(), generation)
 		return nil
 	}
-	if err := p.handlePollingConflict(context.Background(), &pyExc{class: "Conflict", msg: "Conflict: terminated by other getUpdates request"}); err != nil {
+	if err := p.handlePollingConflict(context.Background(), &excValue{class: "Conflict", msg: "Conflict: terminated by other getUpdates request"}); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 || p.conflictCount != 1 || p.conflictRecoveryGeneration != nil || p.isSendPathDegraded() {

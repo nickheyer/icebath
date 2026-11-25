@@ -20,7 +20,7 @@ func macosProtectedSearchExclusions(path, cwd, home, platform string) []string {
 	if platform != "darwin" {
 		return nil
 	}
-	root := pyExpandUser(path)
+	root := expandUserValue(path)
 	if !strings.HasPrefix(root, "/") {
 		base := cwd
 		if base == "" {
@@ -32,7 +32,7 @@ func macosProtectedSearchExclusions(path, cwd, home, platform string) []string {
 	if home == "" {
 		home = searchDefaultHome()
 	}
-	homePath := posixNormpath(pyExpandUser(home))
+	homePath := posixNormpath(expandUserValue(home))
 	var exclusions []string
 	for _, dirname := range macosTCCProtectedHomeDirs {
 		if rel, ok := purePosixRelativeTo(posixJoin(homePath, dirname), root); ok && rel != "" {
@@ -112,7 +112,7 @@ func hostRealpath(p string) string {
 	if isWindowsHost {
 		return resolveNonStrict(p)
 	}
-	return pyRealpath(p)
+	return realpath(p)
 }
 
 // posixpath.commonpath of absolute paths
@@ -311,13 +311,13 @@ func releaseFilenameSearchRoots(keys []filenameSearchKey) {
 // Paths and find diagnostics from a bounded find run, timestamps stripped in modified order
 func splitFindOutput(stdout, order string) ([]string, []string) {
 	var rawFiles, diagnostics []string
-	for _, line := range pySplitLines(stdout) {
+	for _, line := range splitLinesValue(stdout) {
 		switch {
 		case strings.HasPrefix(line, "find: "):
 			diagnostics = append(diagnostics, line)
 		case order == "modified":
 			parts := strings.SplitN(line, " ", 2)
-			if len(parts) == 2 && pyIsDigitText(strings.Replace(parts[0], ".", "", 1)) {
+			if len(parts) == 2 && isDigitText(strings.Replace(parts[0], ".", "", 1)) {
 				rawFiles = append(rawFiles, parts[1])
 			}
 		case line != "":
@@ -359,7 +359,7 @@ func findExitVerdict(exitCode int, rawFiles, diagnostics []string, fetchLimit in
 		return &SearchResult{Error: "File search failed while running bounded find traversal" + detail}, ""
 	}
 	for _, d := range diagnostics {
-		if other := pyStrip(d); other != "" && !permissionDeniedRe.MatchString(other) {
+		if other := strings.TrimSpace(d); other != "" && !permissionDeniedRe.MatchString(other) {
 			msg := "Some paths could not be read: " + other + ". Results may be incomplete."
 			if warning != "" {
 				msg += " " + warning
@@ -564,7 +564,7 @@ func (s *shellFileOps) filterGitignoredPaths(paths []string, root string) []stri
 	}
 	stdin := strings.Join(paths, "\n")
 	result := s.execStdin("git -C "+escapedRoot+" check-ignore --stdin", "", 10*time.Second, &stdin)
-	ignored := setOf(pySplitLines(result.Stdout)...)
+	ignored := setOf(splitLinesValue(result.Stdout)...)
 	var out []string
 	for _, p := range paths {
 		if !ignored[p] {
@@ -586,11 +586,11 @@ func (s *shellFileOps) sortPathsByMtime(paths []string) []string {
 		`done`
 	stdin := strings.Join(paths, "\n")
 	result := s.execStdin(script, "", 60*time.Second, &stdin)
-	lines := pySplitLines(result.Stdout)
+	lines := splitLinesValue(result.Stdout)
 	mtimes := make([]float64, len(paths))
 	for i := range paths {
 		if i < len(lines) {
-			if f, ok := pyFloatText(lines[i]); ok {
+			if f, ok := floatText(lines[i]); ok {
 				mtimes[i] = f
 			}
 		}
@@ -620,19 +620,19 @@ func (s *shellFileOps) searchDirectoriesWithFind(pattern, path string, fetchLimi
 		"2>/dev/null | sort -rn"
 	result := s.exec(cmd, "", 30*time.Second)
 	stdout, limitReason := searchStdoutAndLimit(result)
-	if pyStrip(stdout) == "" && limitReason == "" {
+	if strings.TrimSpace(stdout) == "" && limitReason == "" {
 		cmdSimple := "find -H " + escapedPath + " -mindepth 1 " + hiddenPrune + " -o -type d " +
 			"! -name '.*' -name " + escapedPattern + " 2>/dev/null"
 		result = s.exec(cmdSimple, "", 30*time.Second)
 		stdout, limitReason = searchStdoutAndLimit(result)
 	}
 	var dirs []string
-	for _, line := range strings.Split(pyStrip(stdout), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
 		if line == "" {
 			continue
 		}
 		parts := strings.SplitN(line, " ", 2)
-		if len(parts) == 2 && pyIsDigitText(strings.ReplaceAll(parts[0], ".", "")) {
+		if len(parts) == 2 && isDigitText(strings.ReplaceAll(parts[0], ".", "")) {
 			dirs = append(dirs, parts[1])
 		} else {
 			dirs = append(dirs, line)

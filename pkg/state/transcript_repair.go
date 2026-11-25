@@ -66,7 +66,7 @@ var restoreMayOmit = [][2]string{{"token_count", "token_count"}, {"_compressed_s
 	{"tool_call_uids", ToolCallUIDs}, {"absorbed_message_uids", AbsorbedMessageUIDs}}
 
 // Value of a Python int typed field, bool counting as int
-func pyIntID(v any) (int64, bool) {
+func intID(v any) (int64, bool) {
 	switch x := v.(type) {
 	case int64:
 		return x, true
@@ -139,7 +139,7 @@ func stampInsertedRowSnapshots(ctx context.Context, conn SQLiteConn, sessionID s
 	byID := map[int64]map[string]any{}
 	var ids []int64
 	for _, msg := range messages {
-		if id, ok := pyIntID(msg["_row_id"]); ok {
+		if id, ok := intID(msg["_row_id"]); ok {
 			if _, seen := byID[id]; !seen {
 				ids = append(ids, id)
 			}
@@ -156,7 +156,7 @@ func stampInsertedRowSnapshots(ctx context.Context, conn SQLiteConn, sessionID s
 			return err
 		}
 		for _, row := range rows {
-			id, _ := pyIntID(row["id"])
+			id, _ := intID(row["id"])
 			byID[id][DBRowSnapshot] = TranscriptRowSnapshot(row)
 		}
 	}
@@ -169,7 +169,7 @@ func IsContentBlank(content any) (bool, error) {
 	case nil:
 		return true, nil
 	case string:
-		return pyStrip(c) == "", nil
+		return strings.TrimSpace(c) == "", nil
 	case []any:
 		var b strings.Builder
 		index := 0
@@ -189,7 +189,7 @@ func IsContentBlank(content any) (bool, error) {
 			b.WriteString(text)
 			index++
 		}
-		return pyStrip(b.String()) == "", nil
+		return strings.TrimSpace(b.String()) == "", nil
 	}
 	return false, nil
 }
@@ -214,7 +214,7 @@ func activeUIDDedupe(ctx context.Context, conn SQLiteConn, sessionID string, mes
 		if restored, ok := msg[RestoredFromStore].(bool); !ok || !restored {
 			continue
 		}
-		if _, ok := pyIntID(msg["_row_id"]); ok {
+		if _, ok := intID(msg["_row_id"]); ok {
 			continue
 		}
 		if _, ok := msg[DBRowSnapshot].(string); ok {
@@ -255,7 +255,7 @@ type transcriptCodec struct {
 // Whether msg serializes to the replayed columns of one of its uid's active rows seen through the restore lens
 func sameAsStored(msg map[string]any, rows []map[string]any, codec transcriptCodec) (bool, error) {
 	for _, row := range rows {
-		ts, err := pyFloatOf(row["timestamp"])
+		ts, err := floatOf(row["timestamp"])
 		if err != nil {
 			return false, err
 		}
@@ -264,7 +264,7 @@ func sameAsStored(msg map[string]any, rows []map[string]any, codec transcriptCod
 			return false, err
 		}
 		for _, pair := range restoreMayOmit {
-			if !pyTruthy(msg[pair[1]]) {
+			if !anyutil.IsTrue(msg[pair[1]]) {
 				serialized[pair[0]] = row[pair[0]]
 			}
 		}
@@ -306,7 +306,7 @@ func resolveAndRepairTranscriptBatch(ctx context.Context, conn SQLiteConn, sessi
 		}
 		expectedStr, hasExpected := expected.(string)
 		var target map[string]any
-		if id, ok := pyIntID(existing); ok {
+		if id, ok := intID(existing); ok {
 			if target, err = activeMessageRow(ctx, conn, sessionID, id, role); err != nil {
 				return nil, err
 			}
@@ -317,7 +317,7 @@ func resolveAndRepairTranscriptBatch(ctx context.Context, conn SQLiteConn, sessi
 			}
 		}
 		if target == nil {
-			if msg != nil && !pyTruthy(msg[PersistAfterAdmissionInterrupt]) {
+			if msg != nil && !anyutil.IsTrue(msg[PersistAfterAdmissionInterrupt]) {
 				uid, _ := MessageUIDOrNone(msg)
 				if stored := durableUIDs[uid]; len(stored) > 0 {
 					same, err := sameAsStored(msg, stored, codec)
@@ -333,7 +333,7 @@ func resolveAndRepairTranscriptBatch(ctx context.Context, conn SQLiteConn, sessi
 			inserted = append(inserted, msg)
 			continue
 		}
-		targetID, _ := pyIntID(target["id"])
+		targetID, _ := intID(target["id"])
 		msg["_row_id"] = targetID
 		fillMissingToolCallUIDs(target, msg)
 		var canonical map[string]any
@@ -341,7 +341,7 @@ func resolveAndRepairTranscriptBatch(ctx context.Context, conn SQLiteConn, sessi
 		if hasExpected {
 			adopt = TranscriptRowSnapshot(target) != expectedStr
 			if !adopt {
-				ts, err := pyFloatOf(target["timestamp"])
+				ts, err := floatOf(target["timestamp"])
 				if err != nil {
 					return nil, err
 				}
@@ -433,7 +433,7 @@ func rewriteTranscriptRow(ctx context.Context, conn SQLiteConn, sessionID string
 			return err
 		}
 		for _, r := range rows {
-			id, _ := pyIntID(r["id"])
+			id, _ := intID(r["id"])
 			oldPeers = append(oldPeers, id)
 		}
 	}
@@ -443,7 +443,7 @@ func rewriteTranscriptRow(ctx context.Context, conn SQLiteConn, sessionID string
 		assignments[i] = column + " = ?"
 		args = append(args, serialized[column])
 	}
-	targetID, _ := pyIntID(target["id"])
+	targetID, _ := intID(target["id"])
 	args = append(args, targetID, sessionID)
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("UPDATE messages SET %s WHERE id = ? AND session_id = ?", strings.Join(assignments, ", ")), args...); err != nil {
 		return err
@@ -466,9 +466,9 @@ func restoreDisplayIndex(ctx context.Context, conn SQLiteConn, sessionID string,
 			return err
 		}
 	}
-	targetID, _ := pyIntID(target["id"])
+	targetID, _ := intID(target["id"])
 	newIdentity := serialized["display_identity"]
-	if !pyTruthy(target["active"]) && !pyTruthy(target["compacted"]) {
+	if !anyutil.IsTrue(target["active"]) && !anyutil.IsTrue(target["compacted"]) {
 		_, err := conn.ExecContext(ctx, "UPDATE messages SET display_identity = ?, display_order = ? WHERE id = ? AND session_id = ?",
 			newIdentity, targetID, targetID, sessionID)
 		return err
@@ -480,9 +480,9 @@ func restoreDisplayIndex(ctx context.Context, conn SQLiteConn, sessionID string,
 	}
 	newOrder := targetID
 	for _, peer := range peers {
-		order, ok := pyIntID(peer["display_order"])
+		order, ok := intID(peer["display_order"])
 		if !ok {
-			order, _ = pyIntID(peer["id"])
+			order, _ = intID(peer["id"])
 		}
 		newOrder = min(newOrder, order)
 	}
@@ -504,7 +504,7 @@ func activeMessageRow(ctx context.Context, conn SQLiteConn, sessionID string, ro
 	if err != nil || row == nil || !anyutil.Equal(row["role"], role) {
 		return nil, err
 	}
-	if active, _ := pyIntID(row["active"]); active == 1 {
+	if active, _ := intID(row["active"]); active == 1 {
 		return row, nil
 	}
 	if row["display_identity"] == nil {
@@ -532,7 +532,7 @@ func SyncFlushedMessageMarkers(batchMsgs, batchRows []map[string]any) {
 	for i := 0; i < len(batchMsgs) && i < len(batchRows); i++ {
 		written, row := batchMsgs[i], batchRows[i]
 		written[DBPersistedMarker] = true
-		if id, ok := pyIntID(row["_row_id"]); ok {
+		if id, ok := intID(row["_row_id"]); ok {
 			written["_row_id"] = id
 		}
 		CopyIdentityFields(row, written)
@@ -545,13 +545,13 @@ func SyncFlushedMessageMarkers(batchMsgs, batchRows []map[string]any) {
 		}
 		canonical, ok := row[CanonicalRow].(map[string]any)
 		switch {
-		case ok && pyTruthy(canonical[canonicalMetadataOnly]):
+		case ok && anyutil.IsTrue(canonical[canonicalMetadataOnly]):
 			for _, key := range liveMissingMetadata {
 				if canonical[key] != nil && written[key] == nil {
 					written[key] = canonical[key]
 				}
 			}
-		case ok && pyTruthy(canonical[canonicalContentOnly]):
+		case ok && anyutil.IsTrue(canonical[canonicalContentOnly]):
 			written["content"] = canonical["content"]
 		case ok:
 			for _, key := range syncFields {

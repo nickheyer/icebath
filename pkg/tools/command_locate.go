@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
@@ -87,7 +88,7 @@ func locateCommand(name string, ctx *commandLookupContext, knownDirs []string) c
 	if ctx == nil {
 		ctx = &commandLookupContext{}
 	}
-	name = strings.TrimFunc(name, pyIsSpace)
+	name = strings.TrimFunc(name, unicode.IsSpace)
 	if strings.Contains(name, string(os.PathSeparator)) || (runtime.GOOS == "windows" && strings.Contains(name, "/")) {
 		expanded := osPathExpandVars(osPathExpandUser(name))
 		present := filepath.IsAbs(expanded) && commandIsExecutableFile(expanded)

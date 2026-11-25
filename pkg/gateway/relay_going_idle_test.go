@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 var relayIdleDescriptor = map[string]any{"contract_version": 1, "platform": "discord", "label": "Discord", "max_message_length": 2000,
@@ -193,10 +194,10 @@ func TestGoDormantRedialsOnWakeAndDrains(t *testing.T) {
 type relayThrowingRedial struct{ relayCapture }
 
 func (*relayThrowingRedial) HoldRedial() {
-	panic(&PyError{Kind: "RuntimeError", Msg: "transport refused the hold"})
+	panic(&errorutil.Error{Kind: "RuntimeError", Msg: "transport refused the hold"})
 }
 func (*relayThrowingRedial) ReleaseRedial() {
-	panic(&PyError{Kind: "RuntimeError", Msg: "transport refused the release"})
+	panic(&errorutil.Error{Kind: "RuntimeError", Msg: "transport refused the release"})
 }
 
 // Transport whose redial toggles record their calls

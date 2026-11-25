@@ -106,7 +106,7 @@ func (q *a2aRequest) handleError(rec any) {
 
 // JSON body with its content type and length
 func (q *a2aRequest) json(code int, payload any) {
-	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		panic(err)
 	}
@@ -265,7 +265,7 @@ func (q *a2aRequest) doPOST() {
 		return
 	}
 	reqID := getOr(reqObj, "id")
-	method := anyutil.String(pyGet(reqObj, "method", ""))
+	method := anyutil.String(lookup(reqObj, "method", ""))
 	var params any = jsonutil.NewObject()
 	if p := getOr(reqObj, "params"); p != nil {
 		params = p
@@ -297,7 +297,7 @@ func (q *a2aRequest) doPOST() {
 		fail(http.StatusTooManyRequests, ErrRateLimited, "rate limit exceeded")
 		return
 	case !a.securityContext.IsTrustedPeer(identity):
-		fail(http.StatusForbidden, ErrUntrustedPeer, fmt.Sprintf("peer '%s' not trusted", identity))
+		fail(http.StatusForbidden, ErrUntrustedPeer, fmt.Sprintf("peer %q not trusted", identity))
 		return
 	case entry.handler == "":
 		fail(http.StatusOK, ErrMethodNotFound, "method not found: "+method)
@@ -395,9 +395,9 @@ func pushRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-// POSTs a JSON payload to a push callback and returns the final status, the HTTPError for a non success one
+// POSTs a payload as the signed push body to a push callback and returns the final status, the HTTPError for a non success one
 func pushPost(ctx context.Context, rawURL string, payload any, headers map[string]string, timeout time.Duration) (int, error) {
-	body, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
+	body, err := pushJSON(payload)
 	if err != nil {
 		return 0, err
 	}

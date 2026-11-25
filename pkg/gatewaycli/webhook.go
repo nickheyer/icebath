@@ -109,7 +109,7 @@ func WebhookCommand(ctx context.Context, w io.Writer, args WebhookArgs) (int, er
 	h := home.Dir(ctx)
 	if args.Action == "" {
 		fmt.Fprintln(w, "Usage: icebath webhook {subscribe|list|remove|test}")
-		fmt.Fprintln(w, "Run 'icebath webhook --help' for details.")
+		fmt.Fprintln(w, `Run "icebath webhook --help" for details.`)
 		return 0, nil
 	}
 	if !webhookEnabled(ctx, h) {
@@ -141,7 +141,7 @@ func splitStripped(s string) []any {
 func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookArgs) (int, error) {
 	name := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(args.Name)), " ", "-")
 	if !webhookNameRe.MatchString(name) {
-		fmt.Fprintf(w, "Error: Invalid name '%s'. Use lowercase alphanumeric with hyphens/underscores.\n", name)
+		fmt.Fprintf(w, "Error: Invalid name %q. Use lowercase alphanumeric with hyphens/underscores.\n", name)
 		return 1, nil
 	}
 	subs := webhookSubscriptions(h)
@@ -166,7 +166,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 			return 1, nil
 		}
 		if !profiles.ProfileExists(normalized) {
-			fmt.Fprintf(w, "Error: Profile '%s' does not exist.\n", normalized)
+			fmt.Fprintf(w, "Error: Profile %q does not exist.\n", normalized)
 			return 1, nil
 		}
 		profile = normalized
@@ -222,7 +222,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		}
 		if deliver == "log" {
 			fmt.Fprintln(w, "Error: --deliver-only requires --deliver to be a real target "+
-				"(telegram, discord, slack, github_comment, etc.) — not 'log'.")
+				`(telegram, discord, slack, github_comment, etc.) — not "log".`)
 			return 1, nil
 		}
 		route.Set("deliver_only", true)
@@ -245,7 +245,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 			return 1, err
 		}
 		if jobID == "" {
-			fmt.Fprintf(w, "Error: no cron job matches '%s'. List jobs with: icebath cron list\n", cronJob)
+			fmt.Fprintf(w, "Error: no cron job matches %q. List jobs with: icebath cron list\n", cronJob)
 			return 1, nil
 		}
 		route.Set("cron_job", jobID)
@@ -273,7 +273,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	}
 	fmt.Fprintf(w, "\n  %s webhook subscription: %s\n", verb, name)
 	fmt.Fprintf(w, "  URL:    %s\n", webhooksubs.RouteURL(ctx, h, name, written))
-	fmt.Fprintf(w, "  Profile: %s\n", anyutil.String(profile))
+	fmt.Fprintf(w, "  Profile: %s\n", profileText(profile))
 	fmt.Fprintf(w, "  Secret: %s\n", anyutil.String(secret))
 	shown := make([]string, len(events))
 	for i, e := range events {
@@ -292,7 +292,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		fmt.Fprintln(w, "  Replies: each delivery is mirrored into the target chat's session")
 	}
 	if v := objGet(written, "cron_job", nil); anyutil.IsTrue(v) {
-		fmt.Fprintf(w, "  Mode: cron-job trigger — fires job '%s' on each event\n", anyutil.String(v))
+		fmt.Fprintf(w, "  Mode: cron-job trigger — fires job %q on each event\n", anyutil.String(v))
 	}
 	if v := objGet(written, "prompt", nil); anyutil.IsTrue(v) {
 		runes := []rune(anyutil.String(v))
@@ -316,39 +316,41 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	return 0, nil
 }
 
-// Route as a dict or the AttributeError a get on another type raises
-func routeObject(route any) (*jsonutil.Object, error) {
+// Route of a named subscription as an object, an error naming the subscription when it holds another kind of value
+func routeObject(name string, route any) (*jsonutil.Object, error) {
 	if o, ok := route.(*jsonutil.Object); ok {
 		return o, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(route))
+	return nil, fmt.Errorf("webhook subscription %q: expected an object, found %s", name, anyutil.Kind(route))
 }
 
-// Comma joined event names or the TypeError str.join raises on a non string item
-func joinEvents(v any) (string, error) {
-	items, ok := v.([]any)
-	if !ok {
-		if s, isStr := v.(string); isStr {
-			return strings.Join(strings.Split(s, ""), ", "), nil
-		}
-		if o, isObj := v.(*jsonutil.Object); isObj {
-			keys := make([]any, o.Len())
-			for i, k := range o.Keys() {
-				keys[i] = k
+// Comma joined event names of a route: an array of strings, a single string as it is, an object's keys; an error naming the subscription for anything else
+func joinEvents(name string, v any) (string, error) {
+	switch events := v.(type) {
+	case string:
+		return events, nil
+	case *jsonutil.Object:
+		return strings.Join(events.Keys(), ", "), nil
+	case []any:
+		parts := make([]string, len(events))
+		for i, item := range events {
+			s, isStr := item.(string)
+			if !isStr {
+				return "", fmt.Errorf("webhook subscription %q: event %d: expected a string, found %s", name, i, anyutil.Kind(item))
 			}
-			return joinEvents(keys)
+			parts[i] = s
 		}
-		return "", fmt.Errorf("can only join an iterable")
+		return strings.Join(parts, ", "), nil
 	}
-	parts := make([]string, len(items))
-	for i, item := range items {
-		s, isStr := item.(string)
-		if !isStr {
-			return "", fmt.Errorf("sequence item %d: expected str instance, %s found", i, anyutil.Kind(item))
-		}
-		parts[i] = s
+	return "", fmt.Errorf("webhook subscription %q: events: expected an array, found %s", name, anyutil.Kind(v))
+}
+
+// Profile a route is bound to as shown to the user, null for an explicit null binding
+func profileText(profile any) string {
+	if profile == nil {
+		return "null"
 	}
-	return strings.Join(parts, ", "), nil
+	return anyutil.String(profile)
 }
 
 // Prints every dynamic subscription with its URL, profile, events and delivery
@@ -361,11 +363,11 @@ func webhookList(ctx context.Context, w io.Writer, h string, _ WebhookArgs) (int
 	}
 	fmt.Fprintf(w, "\n  %d webhook subscription(s):\n\n", subs.Len())
 	for _, name := range subs.Keys() {
-		route, err := routeObject(subs.Value(name))
+		route, err := routeObject(name, subs.Value(name))
 		if err != nil {
 			return 1, err
 		}
-		events, err := joinEvents(objGet(route, "events", []any{}))
+		events, err := joinEvents(name, objGet(route, "events", []any{}))
 		if err != nil {
 			return 1, err
 		}
@@ -377,14 +379,14 @@ func webhookList(ctx context.Context, w io.Writer, h string, _ WebhookArgs) (int
 			deliver += " (direct — no agent)"
 		}
 		if v := objGet(route, "cron_job", nil); anyutil.IsTrue(v) {
-			deliver = fmt.Sprintf("cron job '%s'", anyutil.String(v))
+			deliver = fmt.Sprintf("cron job %q", anyutil.String(v))
 		}
 		fmt.Fprintf(w, "  ◆ %s\n", name)
 		if desc := objGet(route, "description", ""); anyutil.IsTrue(desc) {
 			fmt.Fprintf(w, "    %s\n", anyutil.String(desc))
 		}
 		fmt.Fprintf(w, "    URL:     %s\n", webhooksubs.RouteURL(ctx, h, name, route))
-		fmt.Fprintf(w, "    Profile: %s\n", anyutil.String(objGet(route, "profile", "default")))
+		fmt.Fprintf(w, "    Profile: %s\n", profileText(objGet(route, "profile", "default")))
 		fmt.Fprintf(w, "    Events:  %s\n", events)
 		fmt.Fprintf(w, "    Deliver: %s\n", deliver)
 		if v := objGet(route, "script", nil); anyutil.IsTrue(v) {
@@ -406,7 +408,7 @@ func webhookRemove(_ context.Context, w io.Writer, h string, args WebhookArgs) (
 		return nil
 	})
 	if errors.Is(err, errNoSubscription) {
-		fmt.Fprintf(w, "  No subscription named '%s'.\n", name)
+		fmt.Fprintf(w, "  No subscription named %q.\n", name)
 		fmt.Fprintln(w, "  Note: Static routes from config.yaml cannot be removed here.")
 		return 0, nil
 	}
@@ -423,16 +425,16 @@ func webhookTest(ctx context.Context, w io.Writer, h string, args WebhookArgs) (
 	subs := webhookSubscriptions(h)
 	raw, ok := subs.Get(name)
 	if !ok {
-		fmt.Fprintf(w, "  No subscription named '%s'.\n", name)
+		fmt.Fprintf(w, "  No subscription named %q.\n", name)
 		return 0, nil
 	}
-	route, err := routeObject(raw)
+	route, err := routeObject(name, raw)
 	if err != nil {
 		return 1, err
 	}
 	secret, isStr := objGet(route, "secret", "").(string)
 	if !isStr {
-		return 1, fmt.Errorf("'%s' object has no attribute 'encode'", anyutil.Kind(objGet(route, "secret", "")))
+		return 1, fmt.Errorf("webhook subscription %q: secret: expected a string, found %s", name, anyutil.Kind(objGet(route, "secret", "")))
 	}
 	url := webhooksubs.RouteURL(ctx, h, name, route)
 	payload := args.Payload
@@ -453,11 +455,11 @@ func webhookTest(ctx context.Context, w io.Writer, h string, args WebhookArgs) (
 	return 0, nil
 }
 
-// One urllib style POST, a non 2xx final status failing as HTTPError and transport failures as URLError text
+// One signed test POST returning the status and body text, a non 2xx final status and transport failures as errors
 func postWebhookTest(ctx context.Context, url, payload, sig string) (int, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(payload))
 	if err != nil {
-		return 0, "", fmt.Errorf("<urlopen error %s>", err.Error())
+		return 0, "", fmt.Errorf("invalid webhook URL: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Hub-Signature-256", sig)
@@ -465,11 +467,11 @@ func postWebhookTest(ctx context.Context, url, payload, sig string) (int, string
 	req.Header.Set("User-Agent", "icebath-agent")
 	resp, err := webhookHTTPClient.Do(req)
 	if err != nil {
-		return 0, "", urlopenError(err)
+		return 0, "", webhookTransportError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return 0, "", fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)+" "))
+		return 0, "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)+" "))
 	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -494,7 +496,7 @@ func isTimeout(err error) bool {
 }
 
 // Plain reason of a webhook transport failure
-func urlopenError(err error) error {
+func webhookTransportError(err error) error {
 	if isTimeout(err) {
 		return errors.New("timed out")
 	}

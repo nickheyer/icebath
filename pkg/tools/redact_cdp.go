@@ -3,11 +3,11 @@ package tools
 import "regexp"
 
 // Python str pattern whitespace, the code points str.isspace accepts
-const pyRegexSpace = `\t\n\x0b\x0c\r\x1c-\x20\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
+const regexSpace = `\t\n\x0b\x0c\r\x1c-\x20\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
 var (
-	cdpURLWithQueryRe = regexp.MustCompile(`(https?|wss?|ftp)://([^` + pyRegexSpace + `/?#]+)([^` + pyRegexSpace + `?#]*)\?([^` + pyRegexSpace + `#]+)(#[^` + pyRegexSpace + `]*)?`)
-	cdpURLUserinfoRe  = regexp.MustCompile(`(https?|wss?|ftp)://([^/` + pyRegexSpace + `:@]+):([^/` + pyRegexSpace + `@]+)@`)
+	cdpURLWithQueryRe = regexp.MustCompile(`(https?|wss?|ftp)://([^` + regexSpace + `/?#]+)([^` + regexSpace + `?#]*)\?([^` + regexSpace + `#]+)(#[^` + regexSpace + `]*)?`)
+	cdpURLUserinfoRe  = regexp.MustCompile(`(https?|wss?|ftp)://([^/` + regexSpace + `:@]+):([^/` + regexSpace + `@]+)@`)
 )
 
 // Endpoint url with the default redaction plus every sensitive query value and userinfo password masked

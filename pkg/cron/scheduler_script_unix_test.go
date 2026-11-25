@@ -67,7 +67,7 @@ func TestRunJobScriptConfiguredInterpreterIsRefusedUnlessAPythonPath(t *testing.
 	}
 }
 
-func TestConfiguredInterpreterKeepsDotDotAndReportsEveryRefusalAsPythonDoes(t *testing.T) {
+func TestConfiguredInterpreterKeepsDotDotAndReportsEveryRefusal(t *testing.T) {
 	s := scriptStore(t)
 	script := writeScript(t, s, "job.py", "print(\"ran\")\n")
 	d := t.TempDir()
@@ -85,14 +85,18 @@ func TestConfiguredInterpreterKeepsDotDotAndReportsEveryRefusalAsPythonDoes(t *t
 	if err := os.Symlink(hostPython(t), filepath.Join(d, "other", "python3")); err != nil {
 		t.Fatal(err)
 	}
+	_, noHome := pathutil.ExpandUserPath("~no_such_user_zz/python3")
+	if noHome == nil {
+		t.Fatal("an unknown user's home was found")
+	}
 	refusals := []struct{ interpreter, want string }{
 		{d + "//x/./../python3", "Interpreter is not executable: " + d + "/x/../python3"},
 		{" " + d + "/x/../python3  ", "Interpreter is not executable: " + d + "/x/../python3"},
 		{d + "/python3/python3", "Unable to resolve interpreter path " + strconv.Quote(d+"/python3/python3") + ": not a directory: " + d + "/python3/python3"},
-		{"~no_such_user_zz/python3", "Unable to resolve interpreter path '~no_such_user_zz/python3': Could not determine home directory."},
+		{"~no_such_user_zz/python3", "Unable to resolve interpreter path \"~no_such_user_zz/python3\": " + noHome.Error()},
 		{d + "/nope/../python3", "Interpreter not found: " + d + "/nope/../python3"},
-		{"./~/x", "Interpreter not found: ./~/x"},
-		{"python3", "Interpreter must be an absolute or ~-prefixed path (got 'python3'). Bare names like 'python3' are not stable across PATH changes."},
+		{"./~/x", "Interpreter must be an absolute or ~-prefixed path (got \"./~/x\"). Bare names like \"python3\" are not stable across PATH changes."},
+		{"python3", "Interpreter must be an absolute or ~-prefixed path (got \"python3\"). Bare names like \"python3\" are not stable across PATH changes."},
 		{d, "Interpreter path is not a file: " + d},
 		{"/bin/bash", "Interpreter must be a Python executable (python, python3, python3.12, ...): /bin/bash"},
 		{"/x\x00y", "Script execution failed: stat: embedded null character in path"},
@@ -163,7 +167,7 @@ func TestScriptPathFollowsLinksBeforeDotDot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok || out != "Blocked: script path resolves outside the scripts directory ("+scripts+"): 'out/../evil.py'" || strings.Contains(out, resolvedAway) {
+	if ok || out != "Blocked: script path resolves outside the scripts directory ("+scripts+"): \"out/../evil.py\"" || strings.Contains(out, resolvedAway) {
 		t.Fatalf("got %v %q", ok, out)
 	}
 }
@@ -178,7 +182,7 @@ func writeFixtureFile(t *testing.T, path, body string) {
 	}
 }
 
-func TestKilledScriptThatOutlivesBothReapWaitsRaisesTimeoutExpired(t *testing.T) {
+func TestKilledScriptThatOutlivesBothReapWaitsReturnsTimeoutError(t *testing.T) {
 	s, _ := newTestStore(t)
 	cmd := exec.Command("sleep", "30")
 	cmd.SysProcAttr = cronScriptSysProcAttr()
@@ -188,7 +192,7 @@ func TestKilledScriptThatOutlivesBothReapWaitsRaisesTimeoutExpired(t *testing.T)
 	unreaped := &cronScriptProcess{cmd: cmd, exited: make(chan struct{})}
 	err := s.terminateCronScriptProcess(unreaped)
 	var expired *executil.TimeoutError
-	if !errors.As(err, &expired) || err.Error() != "Command '['sleep', '30']' timed out after 1.0 seconds" {
+	if !errors.As(err, &expired) || err.Error() != "command [\"sleep\" \"30\"] timed out after 1s" {
 		t.Fatalf("got %v", err)
 	}
 	if state, waitErr := cmd.Process.Wait(); waitErr != nil || state.Sys().(syscall.WaitStatus).Signal() != syscall.SIGTERM {

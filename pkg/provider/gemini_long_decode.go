@@ -3,6 +3,7 @@ package provider
 import (
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -24,7 +25,7 @@ func longDecodeMaxOutputTokens(model string, reasoningConfig map[string]any) int
 	if enabled, ok := reasoningConfig["enabled"].(bool); ok && !enabled {
 		return 0
 	}
-	return geminiLongDecodeBudgets[strings.ToLower(strings.TrimSpace(pyOrStr(reasoningConfig["effort"])))]
+	return geminiLongDecodeBudgets[strings.ToLower(strings.TrimSpace(anyutil.StringOr(reasoningConfig["effort"], "")))]
 }
 
 // Hop count that scales the non streaming stale budget of one api payload
@@ -58,7 +59,7 @@ func geminiCandidate(payload map[string]any) map[string]any {
 func continuationToken(payload map[string]any) string {
 	cand := geminiCandidate(payload)
 	token, _ := cand["continuationToken"].(string)
-	if strings.ToUpper(pyOrStr(cand["finishReason"])) == "CONTINUATION" && token != "" {
+	if strings.ToUpper(anyutil.StringOr(cand["finishReason"], "")) == "CONTINUATION" && token != "" {
 		return token
 	}
 	return ""
@@ -151,7 +152,7 @@ func splitStreamContinuation(event map[string]any, hopUsage *[]map[string]any) (
 		return out, token
 	}
 	cand := geminiCandidate(event)
-	if len(*hopUsage) > 0 && pyTruthy(cand["finishReason"]) {
+	if len(*hopUsage) > 0 && anyutil.IsTrue(cand["finishReason"]) {
 		um, _ := event["usageMetadata"].(map[string]any)
 		if um == nil {
 			um = map[string]any{}
@@ -161,7 +162,7 @@ func splitStreamContinuation(event map[string]any, hopUsage *[]map[string]any) (
 		out["usageMetadata"] = mergeHopUsage(all)
 		return out, ""
 	}
-	if pyTruthy(cand["finishReason"]) {
+	if anyutil.IsTrue(cand["finishReason"]) {
 		return event, ""
 	}
 	checkpoint, _ := cand["continuationToken"].(string)

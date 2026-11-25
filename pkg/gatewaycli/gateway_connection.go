@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/memory"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
@@ -516,7 +516,7 @@ func (c *GatewayConnection) loop(ctx context.Context) {
 	failed := func(err error) {
 		if !c.ready.IsSet() {
 			if !isClientError(err) {
-				err = &gateway.GatewayClientError{Msg: fmt.Sprintf("Gateway connection failed; no local fallback (%s)", errorutil.Kind(err))}
+				err = &gateway.GatewayClientError{Msg: fmt.Sprintf("Gateway connection failed; no local fallback (%s)", errchain.OSText(err))}
 			}
 			c.mu.Lock()
 			c.err = err

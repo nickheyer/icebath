@@ -57,7 +57,7 @@ type JSONDecodeError struct{ Msg string }
 func (e *JSONDecodeError) Error() string { return e.Msg }
 
 // PythonError builds the error a Python exception of a class and text stands for
-func PythonError(class, text string) error { return &pyExc{typ: class, text: text} }
+func PythonError(class, text string) error { return &failure{typ: class, text: text} }
 
 // TimeoutError is a wait that ran out of its budget
 type TimeoutError struct{ msg string }
@@ -69,7 +69,7 @@ func attachDetails(err error, details string) {
 	var pe *ProtocolError
 	var re *RequestError
 	var te *TimeoutError
-	var oe *pyExc
+	var oe *failure
 	switch {
 	case errors.As(err, &re):
 		re.text = re.text + " (" + details + ")"

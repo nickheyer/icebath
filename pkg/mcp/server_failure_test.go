@@ -15,7 +15,7 @@ import (
 
 type brokenPipeError struct{}
 
-func (brokenPipeError) Error() string { return "" }
+func (brokenPipeError) Error() string { return "write to the server failed" }
 
 // Transport whose every send fails with a task group wrapped broken pipe
 type groupFailTransport struct{ in chan *Message }
@@ -48,7 +48,7 @@ func TestFailureKeepaliveLogsRootCause(t *testing.T) {
 			keepalive = append(keepalive, r.msg)
 		}
 	}
-	if len(keepalive) == 0 || !strings.Contains(strings.Join(keepalive, "\n"), "brokenPipeError") || strings.Contains(strings.Join(keepalive, "\n"), "joinError") {
+	if len(keepalive) == 0 || !strings.Contains(strings.Join(keepalive, "\n"), "write to the server failed") || strings.Contains(strings.Join(keepalive, "\n"), "context canceled") {
 		t.Fatalf("keepalive logs %v", keepalive)
 	}
 }
@@ -73,7 +73,7 @@ func TestFailurePermanentStdioFailureParksWithoutRetryLadder(t *testing.T) {
 			park = append(park, r.msg)
 		}
 	}
-	if len(park) != 1 || !strings.Contains(park[0], "FileNotFoundError") {
+	if len(park) != 1 || !strings.Contains(park[0], "exec nonexistent-mcp-command: file does not exist") {
 		t.Fatalf("park warnings %v\n%s", park, logs.text())
 	}
 }

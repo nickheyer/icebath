@@ -221,7 +221,7 @@ func TestHandleCacheLastErrorRecoveredAndRegistryReopen(t *testing.T) {
 	if got, _ := cache.GetWith(context.Background(), path, func() (any, error) { return nil, errors.New("locked") }, opts); got != nil {
 		t.Fatalf("failed open %v", got)
 	}
-	if got := cache.LastError(filepath.Join(dir, ".", "state.db")); got != "Exception: locked" {
+	if got := cache.LastError(filepath.Join(dir, ".", "state.db")); got != "locked" {
 		t.Fatalf("last error %q", got)
 	}
 	clock.set(1)

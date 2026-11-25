@@ -48,10 +48,10 @@ func reviewMessageText(message map[string]any) string {
 			var text string
 			if part["type"] == "text" {
 				if v := part["text"]; anyutil.IsTrue(v) {
-					text = pyStr(v)
+					text = anyutil.String(v)
 				}
 			} else if typ, present := part["type"]; present {
-				text = "[" + pyStr(typ) + "]"
+				text = "[" + anyutil.String(typ) + "]"
 			} else {
 				text = "[attachment]"
 			}
@@ -74,7 +74,7 @@ func SnapshotRecentMessages(messages []map[string]any, limit int) []map[string]s
 		}
 		role := ""
 		if anyutil.IsTrue(message["role"]) {
-			role = pyStr(message["role"])
+			role = anyutil.String(message["role"])
 		}
 		text := ""
 		if role == "user" || role == "assistant" {
@@ -142,7 +142,7 @@ func CollectParentLoadedSkills(parent any, messages []map[string]any, limit int)
 			}
 			name, _ := args.Get("name")
 			if anyutil.IsTrue(name) {
-				candidates = append(candidates, pyStr(name))
+				candidates = append(candidates, anyutil.String(name))
 			} else {
 				candidates = append(candidates, "")
 			}
@@ -249,7 +249,7 @@ func StartReview(ctx context.Context, env *Env, parent any, messages []map[strin
 	result, isObject := parsed.(*jsonutil.Object)
 	if isObject {
 		if errValue, _ := result.Get("error"); anyutil.IsTrue(errValue) {
-			return nil, errors.New(pyStr(errValue))
+			return nil, errors.New(anyutil.String(errValue))
 		}
 	}
 	if !isObject {
@@ -258,7 +258,7 @@ func StartReview(ctx context.Context, env *Env, parent any, messages []map[strin
 	if _, present := result.Get("review_model"); !present {
 		model := ""
 		if credentialsCfg != nil && anyutil.IsTrue(credentialsCfg["model"]) {
-			model = pyStr(credentialsCfg["model"])
+			model = anyutil.String(credentialsCfg["model"])
 		}
 		result.Set("review_model", model)
 	}
@@ -272,7 +272,7 @@ func FormatDispatchNote(result *jsonutil.Object, userPrompt string) string {
 	}
 	model := ""
 	if v, _ := result.Get("review_model"); anyutil.IsTrue(v) {
-		model = strings.TrimSpace(pyStr(v))
+		model = strings.TrimSpace(anyutil.String(v))
 	}
 	modelNote := ""
 	if model != "" {

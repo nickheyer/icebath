@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 )
@@ -98,7 +99,7 @@ func msgraphIterate(value any) ([]any, error) {
 	if !anyutil.IsTrue(value) {
 		return nil, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a Microsoft Graph notification field is %s, expected a list", errchain.Kind(value))}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("a Microsoft Graph notification field is %s, expected a list", errchain.Kind(value))}
 }
 
 // Optional CIDR allowlist, empty allowing every source and an invalid entry skipped with a warning
@@ -138,7 +139,7 @@ func msgraphPrefixMatch(resource, prefix string) bool {
 }
 
 // First n code points of text, the Python slice up to n
-func pySliceRunes(text string, n int) string {
+func sliceRunes(text string, n int) string {
 	count := 0
 	for i := range text {
 		if count == n {
@@ -170,7 +171,7 @@ func msgraphRenderTemplate(template string, payload *jsonutil.Object) (string, e
 				failure = err
 				return match
 			}
-			return pySliceRunes(text, 2000)
+			return sliceRunes(text, 2000)
 		}
 		return anyutil.String(value)
 	})
@@ -329,7 +330,7 @@ func (a *MSGraphWebhookAdapter) Connect(ctx context.Context, isReconnect bool) (
 	if a.sourceAllowlistRequiredButMissing(ctx) {
 		pkgLog().Error(fmt.Sprintf("[msgraph_webhook] Refusing to start: binding to %s requires extra.allowed_source_cidrs. "+
 			"Configure the Microsoft Graph source CIDRs or bind to loopback (127.0.0.1/::1) behind a "+
-			"tunnel or reverse proxy.", pyHostText(a.host)))
+			"tunnel or reverse proxy.", hostTextValue(a.host)))
 		return false, nil
 	}
 	app := NewHTTPApp(a.maxBodyBytes)
@@ -350,13 +351,13 @@ func (a *MSGraphWebhookAdapter) Connect(ctx context.Context, isReconnect bool) (
 	a.runner = runner
 	a.MarkConnected(ctx, "")
 	if a.runner != nil {
-		pkgLog().Info(fmt.Sprintf("[msgraph_webhook] Listening on %s:%d%s", pyHostText(a.host), a.port, a.webhookPath))
+		pkgLog().Info(fmt.Sprintf("[msgraph_webhook] Listening on %s:%d%s", hostTextValue(a.host), a.port, a.webhookPath))
 	}
 	return true, nil
 }
 
 // Python str of an optional host
-func pyHostText(host *string) string {
+func hostTextValue(host *string) string {
 	if host == nil {
 		return "None"
 	}
@@ -377,7 +378,7 @@ func (a *MSGraphWebhookAdapter) Disconnect(ctx context.Context) error {
 
 // Logs the response the internal turn produced, Graph has no reply channel
 func (a *MSGraphWebhookAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (SendResult, error) {
-	pkgLog().Info(fmt.Sprintf("[msgraph_webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
+	pkgLog().Info(fmt.Sprintf("[msgraph_webhook] Response for %s: %s", chatID, sliceRunes(content, 200)))
 	return SendResult{Success: true}, nil
 }
 
@@ -586,7 +587,7 @@ func (a *MSGraphWebhookAdapter) verifyClientState(notification *jsonutil.Object)
 	}
 	for _, text := range []string{*provided, *expected} {
 		if !utf8.ValidString(text) {
-			return false, &PyError{Kind: "UnicodeEncodeError", Msg: "the client state holds a lone surrogate, which UTF-8 cannot encode"}
+			return false, &errorutil.Error{Kind: "UnicodeEncodeError", Msg: "the client state holds a lone surrogate, which UTF-8 cannot encode"}
 		}
 	}
 	return subtle.ConstantTimeCompare([]byte(*provided), []byte(*expected)) == 1, nil
@@ -640,7 +641,7 @@ func (a *MSGraphWebhookAdapter) renderPrompt(notification *jsonutil.Object) (str
 	if anyutil.IsTrue(template) {
 		text, isText := template.(string)
 		if !isText {
-			return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the prompt template is %s, expected text", errchain.Kind(template))}
+			return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the prompt template is %s, expected text", errchain.Kind(template))}
 		}
 		return msgraphRenderTemplate(text, jsonutil.ObjectOf("notification", notification,
 			"resource", notification.ValueOr("resource", ""), "change_type", notification.ValueOr("changeType", ""),
@@ -650,7 +651,7 @@ func (a *MSGraphWebhookAdapter) renderPrompt(notification *jsonutil.Object) (str
 	if err != nil {
 		return "", err
 	}
-	return "Microsoft Graph change notification:\n\n```json\n" + pySliceRunes(rendered, 4000) + "\n```", nil
+	return "Microsoft Graph change notification:\n\n```json\n" + sliceRunes(rendered, 4000) + "\n```", nil
 }
 
 // Hands the notification to the plugin scheduler when one owns the route, else admits it for inference
@@ -690,7 +691,7 @@ func (a *MSGraphWebhookAdapter) admitNotification(ctx context.Context, event *Me
 	live, ok := authority.Sessions[ref.SessionID]
 	authority.mu.Unlock()
 	if !ok {
-		return AdmissionReceipt{}, &pyKeyError{ref.SessionID}
+		return AdmissionReceipt{}, &keyError{ref.SessionID}
 	}
 	route := live.Route
 	source := event.Source.ToDict()

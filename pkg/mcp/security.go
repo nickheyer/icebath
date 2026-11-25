@@ -7,6 +7,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Shell interpreters whose inline scripts are scanned for egress and persistence
@@ -52,10 +53,10 @@ func reMatch(re *regexp2.Regexp, text string) bool {
 
 // Lowercased basename of the first shell word of a command
 func commandBasename(command any) string {
-	if !pyTruthy(command) {
+	if !anyutil.IsTrue(command) {
 		command = ""
 	}
-	text := strings.TrimSpace(pyStr(command))
+	text := strings.TrimSpace(anyutil.String(command))
 	if text == "" {
 		return ""
 	}
@@ -73,7 +74,7 @@ func commandBasename(command any) string {
 	if len(parts) > 0 {
 		first = parts[0]
 	}
-	return strings.ToLower(pyBasename(first))
+	return strings.ToLower(basename(first))
 }
 
 // Words of a command line under non POSIX shlex rules, quotes kept and a quoted token ending at its close
@@ -111,7 +112,7 @@ func shlexNonPosix(s string) ([]string, error) {
 var errShlexUnclosed = fmt.Errorf("No closing quotation")
 
 // Final path component the way os.path.basename splits it, empty after a trailing separator
-func pyBasename(p string) string {
+func basename(p string) string {
 	if runtime.GOOS == "windows" {
 		if len(p) >= 2 && p[1] == ':' {
 			p = p[2:]
@@ -129,25 +130,25 @@ func inlineScript(args any) string {
 	case []any:
 		parts := make([]string, len(a))
 		for i, item := range a {
-			parts[i] = pyStr(item)
+			parts[i] = anyutil.String(item)
 		}
 		return strings.Join(parts, " ")
 	case []string:
 		return strings.Join(a, " ")
 	}
-	return pyStr(args)
+	return anyutil.String(args)
 }
 
 // Command plus args plus env values flattened for IOC scanning
 func entryText(entry map[string]any) string {
 	cmd := entry["command"]
-	if !pyTruthy(cmd) {
+	if !anyutil.IsTrue(cmd) {
 		cmd = ""
 	}
-	parts := []string{pyStr(cmd), inlineScript(entry["args"])}
+	parts := []string{anyutil.String(cmd), inlineScript(entry["args"])}
 	if env, ok := entry["env"].(map[string]any); ok {
 		for _, k := range orderedKeys(env) {
-			parts = append(parts, pyStr(env[k]))
+			parts = append(parts, anyutil.String(env[k]))
 		}
 	}
 	return strings.Join(parts, " ")
@@ -174,7 +175,7 @@ func ValidateServerEntry(name string, entry map[string]any) []string {
 		return issues
 	}
 	if reMatch(egressPattern, script) {
-		issue := fmt.Sprintf("MCP server '%s' uses shell interpreter '%s' with network egress in args", name, pyStr(command))
+		issue := fmt.Sprintf("MCP server '%s' uses shell interpreter '%s' with network egress in args", name, anyutil.String(command))
 		if reMatch(exfilHintPattern, script) {
 			issue += " and exfiltration-shaped arguments"
 		}
@@ -182,7 +183,7 @@ func ValidateServerEntry(name string, entry map[string]any) []string {
 	}
 	if reMatch(persistencePattern, script) {
 		issues = append(issues, fmt.Sprintf("MCP server '%s' uses shell interpreter '%s' to write to an OS persistence surface "+
-			"(SSH keys / PAM / sudoers / cron / shell rc) \u2014 this is the backdoor shape of the June 2026 MCP campaign, not a real MCP server", name, pyStr(command)))
+			"(SSH keys / PAM / sudoers / cron / shell rc) \u2014 this is the backdoor shape of the June 2026 MCP campaign, not a real MCP server", name, anyutil.String(command)))
 	}
 	return issues
 }

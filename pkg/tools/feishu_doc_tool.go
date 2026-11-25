@@ -38,7 +38,7 @@ func feishuArgStrip(args map[string]any, key string) string {
 	}
 	s, isStr := v.(string)
 	if !isStr {
-		panic(pyAttributeError(v, "strip"))
+		panic(attributeError(v, "strip"))
 	}
 	return strings.TrimSpace(s)
 }

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -89,8 +91,8 @@ func compressRequestOf(payload *jsonutil.Object) (compressRequest, error) {
 		}
 		request = compressRequest{Preview: preview, Aggressive: aggressive, Partial: partial, KeepLast: keepLast, FocusTopic: focus}
 	} else {
-		request = compressRequest{Preview: pyTruthy(payload.ValueOr("preview", false)), Partial: pyTruthy(payload.ValueOr("partial", false)), KeepLast: 2,
-			Aggressive: pyTruthy(payload.ValueOr("aggressive", false))}
+		request = compressRequest{Preview: anyutil.IsTrue(payload.ValueOr("preview", false)), Partial: anyutil.IsTrue(payload.ValueOr("partial", false)), KeepLast: 2,
+			Aggressive: anyutil.IsTrue(payload.ValueOr("aggressive", false))}
 		if keep, has := payload.Get("keep_last"); has {
 			n, ok := pathIndex(keep)
 			if !ok {
@@ -112,7 +114,7 @@ func compressRequestOf(payload *jsonutil.Object) (compressRequest, error) {
 // Agent side of compress, an AttributeError when the wiring never assigned it
 func sessionCompressor() (SessionCompressor, error) {
 	if SessionCompress == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "session compress has no agent side"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "session compress has no agent side"}
 	}
 	return SessionCompress, nil
 }
@@ -165,7 +167,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 	if options == nil {
 		options = map[string]any{}
 	}
-	if pyTruthy(options["checkpoint_required"]) {
+	if anyutil.IsTrue(options["checkpoint_required"]) {
 		return nil, runtimeRefusal("compression_checkpoint_required")
 	}
 	resolver, err := runtimeResolver(a)
@@ -179,7 +181,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 	if runtime["api_mode"] == "codex_app_server" {
 		return nil, runtimeRefusal("runtime_coordination_required")
 	}
-	rawTarget, err := pyItem(snapshot, "target")
+	rawTarget, err := itemValue(snapshot, "target")
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +251,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 			lowered := strings.ToLower(strings.TrimSpace(text))
 			inPlace = lowered == "1" || lowered == "true" || lowered == "yes" || lowered == "on"
 		} else {
-			inPlace = pyTruthy(raw)
+			inPlace = anyutil.IsTrue(raw)
 		}
 	}
 	return preparedWith(prepared, "messages", objectMessages(compressed), "summary", summary, "post_compaction", hook,
@@ -274,7 +276,7 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *js
 	}
 	compressor, err := sessionCompressor()
 	if err != nil {
-		pkgLog().Warn("context engine compression notification failed: " + pyExceptionRepr(err))
+		pkgLog().Warn("context engine compression notification failed: " + errchain.OSText(err))
 		return
 	}
 	scoped := profileRuntimeScope(ctx, a.ProfileID, false)
@@ -293,7 +295,7 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *js
 		if result != nil {
 			target, _ = result.Get("target_session_id")
 		} else {
-			target, _ = pyItem(prepared, "snapshot", "target")
+			target, _ = itemValue(prepared, "snapshot", "target")
 		}
 		raw, _ := prepared.Get("messages")
 		list, _ := raw.([]any)
@@ -311,7 +313,7 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *js
 func firePostCompactionHook(ctx context.Context, a *SessionAuthority, prepared *jsonutil.Object, result *jsonutil.Object) {
 	compressor, err := sessionCompressor()
 	if err != nil {
-		pkgLog().Warn("post_compaction hook delivery failed: " + pyExceptionRepr(err))
+		pkgLog().Warn("post_compaction hook delivery failed: " + errchain.OSText(err))
 		return
 	}
 	defer func() {
@@ -339,11 +341,11 @@ func compressRequestTokens(ctx context.Context, compressor SessionCompressor, ag
 	}
 	if agent == nil && row != nil {
 		prompt = ""
-		if value, _ := row.Get("system_prompt"); pyTruthy(value) {
+		if value, _ := row.Get("system_prompt"); anyutil.IsTrue(value) {
 			prompt = anyutil.String(value)
 		}
 		var pin any
-		if raw, _ := row.Get("tool_names"); pyTruthy(raw) {
+		if raw, _ := row.Get("tool_names"); anyutil.IsTrue(raw) {
 			if text, ok := raw.(string); ok {
 				if loaded, err := jsonutil.Decode(text); err == nil {
 					pin = loaded

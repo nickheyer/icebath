@@ -153,7 +153,7 @@ func (e *videoHandlerError) ErrorKind() string { return e.typeName }
 // Stripped string argument with the fallback for falsy values, the AttributeError strip raises on other types
 func stripArg(args map[string]any, key, fallback string) (string, error) {
 	v := args[key]
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return strings.TrimSpace(fallback), nil
 	}
 	s, ok := v.(string)
@@ -197,7 +197,7 @@ func videoCoerceBool(value any) *bool {
 // Tool error JSON of an exception the registry dispatch would have caught
 func videoHandlerFailure(env *tools.Env, name string, err error) string {
 	logOf(env).Error(fmt.Sprintf("Tool %s dispatch error: %s", name, err))
-	return tools.ErrorResult(errors.New(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", pyErrorTypeName(err), err))))
+	return tools.ErrorResult(errors.New(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", errorTypeName(err), err))))
 }
 
 // Generate call with a provider panic surfaced as an error like the exception Python catches
@@ -430,7 +430,7 @@ func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 		properties.Set("image_url", jsonutil.ObjectOf("type", "string",
 			"description", "Public HTTPS URL of a still image to animate (image-to-video). Omit for text-to-video."))
 		maxRefs := 0
-		if pyTruthy(caps["max_reference_images"]) {
+		if anyutil.IsTrue(caps["max_reference_images"]) {
 			if n, err := anyutil.ToInt(caps["max_reference_images"]); err == nil {
 				maxRefs = int(n)
 			}
@@ -448,7 +448,7 @@ func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 	}
 	minDuration, maxDuration := metaOr("min_duration"), metaOr("max_duration")
 	durationParam := static.Value("duration").(*jsonutil.Object).Clone()
-	if pyTruthy(minDuration) && pyTruthy(maxDuration) {
+	if anyutil.IsTrue(minDuration) && anyutil.IsTrue(maxDuration) {
 		lo, err1 := anyutil.ToInt(minDuration)
 		hi, err2 := anyutil.ToInt(maxDuration)
 		if err1 == nil && err2 == nil {
@@ -461,7 +461,7 @@ func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 	properties.Set("duration", durationParam)
 	for _, kv := range [][2]string{{"aspect_ratio", "aspect_ratios"}, {"resolution", "resolutions"}} {
 		param := static.Value(kv[0]).(*jsonutil.Object).Clone()
-		if pyTruthy(caps[kv[1]]) {
+		if anyutil.IsTrue(caps[kv[1]]) {
 			if list, ok := caps[kv[1]].([]any); ok {
 				param.Set("enum", append([]any(nil), list...))
 			} else if list, ok := caps[kv[1]].([]string); ok {
@@ -471,11 +471,11 @@ func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 		properties.Set(kv[0], param)
 	}
 	for _, cp := range videoCapabilityParams {
-		if pyTruthy(caps[cp.flag]) {
+		if anyutil.IsTrue(caps[cp.flag]) {
 			properties.Set(cp.key, cp.param)
 		}
 	}
-	if pyTruthy(caps["audio_always_on"]) && !pyTruthy(caps["supports_audio"]) {
+	if anyutil.IsTrue(caps["audio_always_on"]) && !anyutil.IsTrue(caps["supports_audio"]) {
 		parts = append(parts, "- audio: native stereo audio is generated with every video "+
 			"(always on; no toggle) — describe the desired sound in the prompt")
 	}

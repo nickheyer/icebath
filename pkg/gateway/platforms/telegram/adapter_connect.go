@@ -54,8 +54,8 @@ func (a *TelegramAdapter) buildApp(token string, general, polling *ptbRequest, p
 		if v, ok := extra["base_file_url"]; ok {
 			fileURL = anyutil.String(v)
 		}
-		app.useBaseURLs(token, baseURL, fileURL, pyTruthy(extra["local_mode"]))
-	} else if pyTruthy(extra["local_mode"]) {
+		app.useBaseURLs(token, baseURL, fileURL, anyutil.IsTrue(extra["local_mode"]))
+	} else if anyutil.IsTrue(extra["local_mode"]) {
 		app.localMode = true
 	}
 	tgApp = NewTelegramApplication(app.sdk.ID(), processor, a, a.admission)
@@ -139,7 +139,7 @@ func (a *TelegramAdapter) connectBody(ctx context.Context, token string, isRecon
 	if baseURL := extraString(extra, "base_url"); baseURL != "" {
 		pkgLog().Info(fmt.Sprintf("[%s] Using custom Telegram base_url: %s", a.Name(), anyutil.String(extra["base_url"])))
 	}
-	if pyTruthy(extra["local_mode"]) {
+	if anyutil.IsTrue(extra["local_mode"]) {
 		pkgLog().Info(fmt.Sprintf("[%s] Using Telegram local_mode (read files from disk)", a.Name()))
 	}
 	general, polling, err := buildPTBRequests(ctx, a.Name(), extra, a.polling)

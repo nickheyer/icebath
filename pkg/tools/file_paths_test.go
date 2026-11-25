@@ -98,7 +98,7 @@ func TestFilePathsHostResolution(t *testing.T) {
 	}
 	outside, _ := resolvePathForTaskID(env, "paths-host-b", "../elsewhere.go")
 	warn := pathResolutionWarningFor(env, "paths-host-b", "../elsewhere.go", outside)
-	if !strings.HasPrefix(warn, "Relative path '../elsewhere.go' resolved to '"+outside+"', which is OUTSIDE the active workspace ('"+resolveNonStrict(root)+"').") {
+	if !strings.HasPrefix(warn, "Relative path \"../elsewhere.go\" resolved to \""+outside+"\", which is OUTSIDE the active workspace (\""+resolveNonStrict(root)+"\").") {
 		t.Fatalf("warning %q", warn)
 	}
 	if pathResolutionWarningFor(env, "paths-host-b", "/abs/x", "/abs/x") != "" || pathResolutionWarningFor(env, "paths-host-b", "sub/file.go", got) != "" {
@@ -132,7 +132,7 @@ func TestFilePathsContainerResolution(t *testing.T) {
 	if err != nil || got != "/workspace/app/dir/name" {
 		t.Fatalf("container entry %q %v", got, err)
 	}
-	if w := pathResolutionWarningFor(nil, "paths-docker", "../../etc/x", "/etc/x"); !strings.Contains(w, "OUTSIDE the active workspace ('/workspace/app')") {
+	if w := pathResolutionWarningFor(nil, "paths-docker", "../../etc/x", "/etc/x"); !strings.Contains(w, `OUTSIDE the active workspace ("/workspace/app")`) {
 		t.Fatalf("container warning %q", w)
 	}
 }
@@ -150,7 +150,7 @@ func TestFilePathsSSHResolution(t *testing.T) {
 	if err != nil || base != "/home/remote/proj" {
 		t.Fatalf("ssh base %q %v", base, err)
 	}
-	if w := pathResolutionWarningFor(nil, "paths-ssh", "../../out", "/home/out"); !strings.Contains(w, "('/home/remote/proj')") {
+	if w := pathResolutionWarningFor(nil, "paths-ssh", "../../out", "/home/out"); !strings.Contains(w, `("/home/remote/proj")`) {
 		t.Fatalf("ssh warning %q", w)
 	}
 	if pathResolutionWarningFor(nil, "paths-ssh", "~/x", "/home/remote/x") != "" {

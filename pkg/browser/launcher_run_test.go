@@ -345,7 +345,7 @@ func TestALauncherKilledDuringTheReadinessWaitLeavesItsChromiumToTheReaper(t *te
 	records := homeRecords(t, env)
 	waitUntil(t, 30*time.Second, "the starting Chromium's launch record", func() bool {
 		for _, name := range globNames(records, "*.json") {
-			if r := loadStateFile(filepath.Join(records, name)); r != nil && pyEqualInt(objGet(r, "pid"), pid) {
+			if r := loadStateFile(filepath.Join(records, name)); r != nil && equalInt(objGet(r, "pid"), pid) {
 				return true
 			}
 		}
@@ -361,7 +361,7 @@ func TestALauncherKilledDuringTheReadinessWaitLeavesItsChromiumToTheReaper(t *te
 	gone(t, pid)
 }
 
-func pyEqualInt(v any, n int64) bool {
+func equalInt(v any, n int64) bool {
 	got, ok := jsonInt(v)
 	return ok && got == n
 }
@@ -1268,7 +1268,7 @@ func TestBrowserAttachedAfterItsOwnerCrashedIsNeverReapedWhileInUse(t *testing.T
 	if n := reapOrphanedBrowsers(context.Background(), nil); n != 0 || len(*f.terminated) != 0 {
 		t.Fatalf("reaped %d", n)
 	}
-	if data := loadStateFile(record); !pyEqualInt(objGet(data, "owner_pid"), int64(os.Getpid())) {
+	if data := loadStateFile(record); !equalInt(objGet(data, "owner_pid"), int64(os.Getpid())) {
 		t.Fatalf("record owner %v", objGet(data, "owner_pid"))
 	}
 }

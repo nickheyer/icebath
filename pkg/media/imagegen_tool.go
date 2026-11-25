@@ -58,7 +58,7 @@ func (e *falClientHTTPError) ErrorKind() string      { return "FalClientHTTPErro
 func (falMissingCredentialsError) ErrorKind() string { return "MissingCredentialsError" }
 
 // Python exception class name of an error for the error_type field
-func pyErrorTypeName(err error) string {
+func errorTypeName(err error) string {
 	var named interface{ ErrorKind() string }
 	if errors.As(err, &named) {
 		return named.ErrorKind()
@@ -205,7 +205,7 @@ func buildFalRequestPayload(modelID, prompt, aspectRatio string, seed any, overr
 	if known && (!edit || supports[sizeKey]) {
 		payload[sizeKey] = sizes[aspect]
 	}
-	if pyIsInt(seed) {
+	if isInt(seed) {
 		payload["seed"] = seed
 	}
 	for k, v := range overrides {
@@ -223,7 +223,7 @@ func buildFalRequestPayload(modelID, prompt, aspectRatio string, seed any, overr
 }
 
 // Python isinstance int test, bool included
-func pyIsInt(v any) bool {
+func isInt(v any) bool {
 	if _, ok := v.(bool); ok {
 		return true
 	}
@@ -503,7 +503,7 @@ func imageGenerateTool(ctx context.Context, env *tools.Env, a imageToolArgs) str
 		msg := "Error generating image: " + err.Error()
 		logOf(env).Error(msg)
 		debugData["error"] = msg
-		return finish([]string{"success", "image", "error", "error_type"}, map[string]any{"success": false, "image": nil, "error": err.Error(), "error_type": pyErrorTypeName(err)})
+		return finish([]string{"success", "image", "error", "error_type"}, map[string]any{"success": false, "image": nil, "error": err.Error(), "error_type": errorTypeName(err)})
 	}
 	endpoint, arguments, err := prepareFalRequest(ctx, env, modelID, meta, a.Prompt, a.AspectRatio, a.Seed, overrides, sources)
 	if err != nil {

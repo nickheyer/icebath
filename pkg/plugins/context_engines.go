@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -137,7 +137,7 @@ func newEngineCollectorContext(m *Manager, engineName string) *Context {
 func (e *engineCollector) serve(ctx context.Context, h *PluginHost, c *Context, method string, args []any, kwargs map[string]any) (any, error) {
 	switch method {
 	case "register_command":
-		return hostMethod(method, []pyParam{req("name"), req("handler"), opt("description", ""), opt("args_hint", "")},
+		return hostMethod(method, []paramValue{req("name"), req("handler"), opt("description", ""), opt("args_hint", "")},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				handler, err := argCallable(method, "handler", a["handler"])
 				if err != nil {
@@ -168,8 +168,8 @@ func (e *engineCollector) dropCommands(m *Manager) {
 // Registers an engine slash command unless its name is empty, built in or taken by a plugin
 func (e *engineCollector) registerCommand(m *Manager, rawName any, handler PluginCommandHandler, description, argsHint any) {
 	nameText := ""
-	if config.PyTruthy(rawName) {
-		nameText = config.PyStr(rawName)
+	if anyutil.IsTrue(rawName) {
+		nameText = anyutil.String(rawName)
 	}
 	clean := strings.ReplaceAll(strings.TrimLeft(strings.TrimSpace(strings.ToLower(nameText)), "/"), " ", "-")
 	if clean == "" {
@@ -185,12 +185,12 @@ func (e *engineCollector) registerCommand(m *Manager, rawName any, handler Plugi
 		}
 	}
 	desc := "Context engine command"
-	if config.PyTruthy(description) {
-		desc = config.PyStr(description)
+	if anyutil.IsTrue(description) {
+		desc = anyutil.String(description)
 	}
 	hint := ""
-	if config.PyTruthy(argsHint) {
-		hint = strings.TrimSpace(config.PyStr(argsHint))
+	if anyutil.IsTrue(argsHint) {
+		hint = strings.TrimSpace(anyutil.String(argsHint))
 	}
 	m.mu.Lock()
 	if _, taken := m.pluginCommands[clean]; taken {

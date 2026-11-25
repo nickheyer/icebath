@@ -88,17 +88,11 @@ func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason 
 	}
 	record, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return &pyTypeError{msg: "the execution record is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return errors.New("the admission journal " + journal + " holds " + errchain.Kind(decoded) + ", expected a mapping")
 	}
 	record.Set("pause_recorded", pauseIdentity(paused))
 	return s.writeAdmissionJournal(ctx, journal, record)
 }
-
-// Python TypeError raised by an operation on the wrong value type
-type pyTypeError struct{ msg string }
-
-func (e *pyTypeError) Error() string     { return e.msg }
-func (e *pyTypeError) ErrorKind() string { return "TypeError" }
 
 // Resumes the job only while it is still held by exactly the recorded pause
 func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {

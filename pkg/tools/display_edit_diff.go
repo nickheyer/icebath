@@ -298,7 +298,7 @@ func diffFromSnapshot(snapshot *LocalEditSnapshot) string {
 		if after != nil {
 			afterLines = *after
 		}
-		diff := strings.Join(unifiedDiff(pySplitLinesKeepEnds(beforeText), pySplitLinesKeepEnds(afterLines), "a/"+display, "b/"+display, 3), "")
+		diff := strings.Join(unifiedDiff(splitLinesKeepEndsValue(beforeText), splitLinesKeepEndsValue(afterLines), "a/"+display, "b/"+display, 3), "")
 		if diff != "" {
 			if !strings.HasSuffix(diff, "\n") {
 				diff += "\n"
@@ -348,7 +348,7 @@ var diffLineColors = [][2]string{{"@@", "hunk"}, {"-", "minus"}, {"+", "plus"}, 
 func renderInlineUnifiedDiff(ctx context.Context, diff string) []string {
 	rendered := []string{}
 	fromFile, toFile := "", ""
-	for _, raw := range pySplitLines(diff) {
+	for _, raw := range splitLinesValue(diff) {
 		if strings.HasPrefix(raw, "--- ") {
 			fromFile = strings.TrimSpace(raw[4:])
 			continue
@@ -386,7 +386,7 @@ func renderInlineUnifiedDiff(ctx context.Context, diff string) []string {
 // Per file sections of a unified diff
 func splitUnifiedDiffSections(diff string) []string {
 	sections := [][]string{{}}
-	for _, line := range pySplitLines(diff) {
+	for _, line := range splitLinesValue(diff) {
 		if strings.HasPrefix(line, "--- ") && len(sections[len(sections)-1]) > 0 {
 			sections = append(sections, []string{})
 		}

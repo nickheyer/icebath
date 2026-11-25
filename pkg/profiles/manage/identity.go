@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -59,15 +59,6 @@ func PurgeProfileIdentity(ctx context.Context, profile string) (bool, error) {
 	return purgeProfileIdentity(ctx, canon, liveDefaultMultiplexer()), nil
 }
 
-// Python style type name and message of an error for warnings
-func excText(err error) string {
-	t := reflect.TypeOf(err)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return fmt.Sprintf("%s: %v", t.Name(), err)
-}
-
 // Reports whether a decoded control answer is a mapping with ok exactly true
 func answerOK(answer any) bool {
 	m, isMap := answer.(*jsonutil.Object)
@@ -86,7 +77,7 @@ func purgeProfileIdentity(ctx context.Context, canon string, liveMux bool) bool 
 		var reason string
 		answer, err := gatewayPurgeProfileIdentity(root, canon)
 		if err != nil {
-			reason = excText(err)
+			reason = errchain.OSText(err)
 		} else {
 			if answerOK(answer) {
 				return true
@@ -116,7 +107,7 @@ func purgeProfileIdentity(ctx context.Context, canon string, liveMux bool) bool 
 		}
 		if err != nil {
 			purged = false
-			fmt.Fprintf(stderr, "⚠ Profile was deleted, but identity purge failed for %s: %s\n", dbPath, excText(err))
+			fmt.Fprintf(stderr, "⚠ Profile was deleted, but identity purge failed for %s: %s\n", dbPath, errchain.OSText(err))
 		}
 	}
 	return purged
@@ -171,7 +162,7 @@ func migrateProfileIdentity(ctx context.Context, oldCanon, newCanon string, live
 		var reason string
 		answer, err := migrateGatewayIdentity(root, oldCanon, newCanon)
 		if err != nil {
-			reason = excText(err)
+			reason = errchain.OSText(err)
 		} else {
 			if answerOK(answer) {
 				return checkpointMigrated
@@ -201,41 +192,14 @@ func migrateProfileIdentity(ctx context.Context, oldCanon, newCanon string, live
 		}
 		if err != nil {
 			migrated = false
-			fmt.Fprintf(stderr, "⚠ Profile was renamed, but identity migration failed for %s: %s\n", dbPath, excText(err))
+			fmt.Fprintf(stderr, "⚠ Profile was renamed, but identity migration failed for %s: %s\n", dbPath, errchain.OSText(err))
 		}
 	}
 	return migrated
 }
 
-// Python truthiness of a decoded JSON or YAML value
-func truthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x.Len() > 0
-	}
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Slice, reflect.Map, reflect.String:
-		return rv.Len() > 0
-	}
-	return true
-}
+// Whether a decoded JSON or YAML value is set: false for null, false, zero numbers, empty text, lists and mappings
+func truthy(v any) bool { return anyutil.IsTrue(v) }
 
 // Reports whether a path is a directory following symlinks
 func isDir(p string) bool {

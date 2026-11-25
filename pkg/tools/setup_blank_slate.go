@@ -12,7 +12,7 @@ import (
 // Writes the Blank Slate toolset state, only file, terminal, vision and skills left on through both suppression layers
 func BlankSlateMinimalToolsets(ctx context.Context, cfg config.Tree) error {
 	keep := map[string]bool{"file": true, "terminal": true, "vision": true, "skills": true}
-	platformToolsets, ok := pyDictOf(cfg["platform_toolsets"])
+	platformToolsets, ok := dictOf(cfg["platform_toolsets"])
 	if _, present := cfg["platform_toolsets"]; !present {
 		platformToolsets, ok = map[string]any{}, true
 		cfg["platform_toolsets"] = platformToolsets
@@ -56,7 +56,7 @@ func BlankSlateMinimalToolsets(ctx context.Context, cfg config.Tree) error {
 	if len(disabled) == 0 {
 		return nil
 	}
-	agent, ok := pyDictOf(cfg["agent"])
+	agent, ok := dictOf(cfg["agent"])
 	if _, present := cfg["agent"]; !present {
 		agent, ok = map[string]any{}, true
 		cfg["agent"] = agent
@@ -97,7 +97,7 @@ func blankSlateSection(cfg config.Tree, key string) (map[string]any, error) {
 		cfg[key] = section
 		return section, nil
 	}
-	section, ok := pyDictOf(v)
+	section, ok := dictOf(v)
 	if !ok {
 		return nil, fmt.Errorf("%s in config is %s, expected a mapping", key, errchain.Kind(v))
 	}

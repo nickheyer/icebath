@@ -311,14 +311,14 @@ func (m *Migrator) migrateAgentConfig(cfg *jsonutil.Object) {
 			m.archiveJSON("agents-list.json", agentList)
 		}
 		m.record("agent-config", "openclaw.json agents.list", "archive/agents-list.json", StatusArchived,
-			fmt.Sprintf("Multi-agent setup (%d agents) archived for manual recreation", pyLen(agentList)))
+			fmt.Sprintf("Multi-agent setup (%d agents) archived for manual recreation", lengthOf(agentList)))
 	}
 	if bindings := or(dget(cfg, "bindings", nil), []any{}); anyutil.IsTrue(bindings) {
 		if m.archiveDir != "" && m.execute {
 			m.archiveJSON("bindings.json", bindings)
 		}
 		m.record("agent-config", "openclaw.json bindings", "archive/bindings.json", StatusArchived,
-			fmt.Sprintf("Agent routing bindings (%d rules) archived", pyLen(bindings)))
+			fmt.Sprintf("Agent routing bindings (%d rules) archived", lengthOf(bindings)))
 	}
 }
 
@@ -437,7 +437,7 @@ func (m *Migrator) migrateFullProviders(cfg *jsonutil.Object) {
 			m.archiveJSON("model-aliases.json", aliases)
 		}
 		m.record("full-providers", "agents.defaults.models", "archive/model-aliases.json", StatusArchived,
-			fmt.Sprintf("Model aliases/catalog (%d entries) archived", pyLen(aliases)))
+			fmt.Sprintf("Model aliases/catalog (%d entries) archived", lengthOf(aliases)))
 	}
 }
 
@@ -470,11 +470,11 @@ func joinedStr(v any) string {
 	if list, ok := v.([]any); ok {
 		parts := make([]string, len(list))
 		for i, x := range list {
-			parts[i] = pyStr(x)
+			parts[i] = anyutil.String(x)
 		}
 		return strings.Join(parts, ",")
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Imports extended channel settings into .env, Discord options into config.yaml, and archives the complex channel settings
@@ -496,7 +496,7 @@ func (m *Migrator) migrateDeepChannels(cfg *jsonutil.Object) {
 		}
 		botToken := channelField(chCfg, tokenField)
 		if ch.token != "" && anyutil.IsTrue(botToken) && m.migrateSecrets {
-			m.setEnvVar(ch.token, pyStr(botToken), "channels."+ch.name+"."+tokenField)
+			m.setEnvVar(ch.token, anyutil.String(botToken), "channels."+ch.name+"."+tokenField)
 		}
 		if allowVal := channelField(chCfg, "allowFrom"); ch.allowFrom != "" && anyutil.IsTrue(allowVal) {
 			m.setEnvVar(ch.allowFrom, joinedStr(allowVal), "channels."+ch.name+".allowFrom")
@@ -676,9 +676,9 @@ func (m *Migrator) migrateApprovalsConfig(cfg *jsonutil.Object) {
 			dumpYAML(path, icebathCfg)
 		}
 		m.record("approvals-config", "openclaw.json approvals.mode", "config.yaml approvals.mode", StatusMigrated,
-			fmt.Sprintf("Mapped '%s' -> '%s'", pyStr(mode), icebathMode))
+			fmt.Sprintf("Mapped '%s' -> '%s'", anyutil.String(mode), icebathMode))
 	}
-	if pyLen(approvals) > 1 && m.archiveDir != "" {
+	if lengthOf(approvals) > 1 && m.archiveDir != "" {
 		if m.execute {
 			m.archiveJSON("approvals-config.json", approvals)
 		}
@@ -718,7 +718,7 @@ func (m *Migrator) migrateSkillsConfig(cfg *jsonutil.Object) {
 		m.archiveJSON("skills-registry-config.json", skills)
 	}
 	m.record("skills-config", "openclaw.json skills.*", "archive/skills-registry-config.json", StatusArchived,
-		fmt.Sprintf("Skills registry config (%d entries) archived", pyLen(entries)))
+		fmt.Sprintf("Skills registry config (%d entries) archived", lengthOf(entries)))
 }
 
 // Archives the UI theme and identity settings
@@ -757,7 +757,7 @@ func (m *Migrator) setEnvVar(key string, value any, sourceLabel string) {
 			m.record("env-var", sourceLabel, ".env "+key, StatusConflict, "Env var "+key+" already set")
 			return
 		}
-		envData.set(key, pyStr(value))
+		envData.set(key, anyutil.String(value))
 		saveEnvFile(envPath, envData)
 	}
 	m.record("env-var", sourceLabel, ".env "+key, StatusMigrated, "")
@@ -806,7 +806,11 @@ func (m *Migrator) generateMigrationNotes() {
 			"",
 		)
 		for _, i := range archived {
-			notes = append(notes, "- **"+i.Kind+"**: `"+derefOr(i.Destination, "None")+"` -- "+i.Reason)
+			if i.Destination == nil {
+				notes = append(notes, "- **"+i.Kind+"** -- "+i.Reason)
+				continue
+			}
+			notes = append(notes, "- **"+i.Kind+"**: `"+*i.Destination+"` -- "+i.Reason)
 		}
 		notes = append(notes, "")
 	}

@@ -150,7 +150,7 @@ func ActivationSummaries(ctx context.Context, m *Manager) []map[string]any {
 }
 
 // Dict of a truthy value or an empty dict, an AttributeError for any other truthy value
-func pyDictOr(v any) (map[string]any, error) {
+func dictOr(v any) (map[string]any, error) {
 	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
@@ -161,7 +161,7 @@ func pyDictOr(v any) (map[string]any, error) {
 }
 
 // Items iterating a truthy value yields, none for a falsy one, a TypeError for a non iterable
-func pyItemsOr(v any) ([]any, error) {
+func itemsOr(v any) ([]any, error) {
 	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
@@ -189,7 +189,7 @@ func pyItemsOr(v any) ([]any, error) {
 }
 
 // Length of a truthy value or zero, a TypeError for a value without a length
-func pyLenOr(v any) (int, error) {
+func lenOr(v any) (int, error) {
 	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
@@ -199,7 +199,7 @@ func pyLenOr(v any) (int, error) {
 	case map[string]any:
 		return len(x), nil
 	}
-	items, err := pyItemsOr(v)
+	items, err := itemsOr(v)
 	if err != nil {
 		return 0, fmt.Errorf("expected a list to count, got %s", errchain.Kind(v))
 	}
@@ -207,8 +207,8 @@ func pyLenOr(v any) (int, error) {
 }
 
 // String items of a list, a TypeError naming the first item that is not a string
-func pyStrItems(v any) ([]string, error) {
-	items, err := pyItemsOr(v)
+func strItems(v any) ([]string, error) {
+	items, err := itemsOr(v)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func pyStrItems(v any) ([]string, error) {
 
 // Summary for a manifest name, canonical key or bare key leaf, nil when none matches
 func findActivation(summaries any, name string) (map[string]any, error) {
-	entries, err := pyItemsOr(summaries)
+	entries, err := itemsOr(summaries)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func gatewayActivation(ctx context.Context, name string, activation any) (map[st
 		}
 		gatewayActivation = found
 	}
-	backendActivation, err := pyDictOr(activation)
+	backendActivation, err := dictOr(activation)
 	if err != nil {
 		return nil, err
 	}
@@ -475,15 +475,15 @@ func reportActivation(ctx context.Context, console *Console, name string) error 
 
 // One sentence for CLI surfaces from an activation result, empty when there is nothing to say
 func activationHint(ctx context.Context, result map[string]any) (string, error) {
-	act, err := pyDictOr(result["activation"])
+	act, err := dictOr(result["activation"])
 	if err != nil {
 		return "", err
 	}
-	live, err := pyDictOr(act["live_now"])
+	live, err := dictOr(act["live_now"])
 	if err != nil {
 		return "", err
 	}
-	servers, err := pyItemsOr(live["mcp_servers"])
+	servers, err := itemsOr(live["mcp_servers"])
 	if err != nil {
 		return "", err
 	}
@@ -503,13 +503,13 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 	if len(connected) > 0 || anyutil.IsTrue(live["skills"]) {
 		tools := 0
 		for _, s := range connected {
-			n, err := pyLenOr(s["tools"])
+			n, err := lenOr(s["tools"])
 			if err != nil {
 				return "", err
 			}
 			tools += n
 		}
-		skills, err := pyLenOr(live["skills"])
+		skills, err := lenOr(live["skills"])
 		if err != nil {
 			return "", err
 		}
@@ -527,11 +527,11 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 		lines = append(lines, "MCP server "+anyutil.String(serverName)+" not connected: "+reason)
 	}
 	if missing := act["missing_dependencies"]; anyutil.IsTrue(missing) {
-		deps, err := pyStrItems(missing)
+		deps, err := strItems(missing)
 		if err != nil {
 			return "", err
 		}
-		processes, err := pyStrItems(act["missing_in"])
+		processes, err := strItems(act["missing_in"])
 		if err != nil {
 			return "", err
 		}
@@ -554,11 +554,11 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 		}
 		return "Restart the gateway for the plugin to take effect:\n  icebath gateway restart", nil
 	}
-	now, err := pyDictOr(act["activated_now"])
+	now, err := dictOr(act["activated_now"])
 	if err != nil {
 		return "", err
 	}
-	deferred, err := pyDictOr(act["deferred"])
+	deferred, err := dictOr(act["deferred"])
 	if err != nil {
 		return "", err
 	}

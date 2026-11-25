@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -616,7 +617,7 @@ func (*lmTimeoutError) Temporary() bool { return true }
 
 // Calls the local router with its bearer key, a GET decoding JSON and a POST of payload returning nil
 func lmRouterRequest(endpoint map[string]any, path string, timeout time.Duration, payload []byte) (any, error) {
-	headers := map[string]string{"Authorization": "Bearer " + pyStr(pyGetAny(endpoint, "api_key", ""))}
+	headers := map[string]string{"Authorization": "Bearer " + anyutil.String(getAny(endpoint, "api_key", ""))}
 	method := http.MethodGet
 	if payload != nil {
 		headers["Content-Type"] = "application/json"
@@ -661,7 +662,7 @@ func lmDictGet(v any, key string, def any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
-	return pyGetAny(m, key, def), nil
+	return getAny(m, key, def), nil
 }
 
 // Python iteration of a decoded JSON value as list items, a TypeError for a scalar
@@ -697,7 +698,7 @@ func lmRuntimeSection(ctx context.Context) any {
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
-	if section := cfg["local_runtime"]; pyTruthy(section) {
+	if section := cfg["local_runtime"]; anyutil.IsTrue(section) {
 		return section
 	}
 	return map[string]any{}
@@ -709,7 +710,7 @@ func lmSectionBackend(section any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pyStr(v), nil
+	return anyutil.String(v), nil
 }
 
 // Persists local_runtime.enabled through its setting and returns the local_runtime view the server boots from
@@ -875,7 +876,7 @@ func lmKnownModels(endpoint map[string]any) (map[any]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !pyTruthy(body) {
+	if !anyutil.IsTrue(body) {
 		body = map[string]any{}
 	}
 	data, err := lmDictGet(body, "data", []any{})
@@ -924,7 +925,7 @@ func lmJSONKey(v any) string {
 		}
 		return "false"
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Makes modelID the main model through the same assignment the model set route runs
@@ -942,7 +943,7 @@ func lmHFURL(repo, path, revision string) string {
 }
 
 // Variant model id of a staged file with split part suffixes stripped
-func lmModelIDFor(gguf string) string { return ModelIDFromStem(pyPathStem(gguf)) }
+func lmModelIDFor(gguf string) string { return ModelIDFromStem(pathStem(gguf)) }
 
 // Everything a variant needs, its files then the projector, draft and MTP head companions
 func lmDownloadPlan(entry CatalogEntry, variant QuantVariant) []lmPlanRow {
@@ -1192,7 +1193,7 @@ func lmLoadedModels(running map[string]any) (map[string]any, map[string]any, err
 			facts["window"], facts["window_label"], facts["spilled"] = plan.Window, lmKLabel(int64(plan.Window)), plan.Spilled
 		}
 		if state == "loaded" || state == "ready" {
-			if nCtx := lmQuiet(func() (any, error) { return lmGrantedWindow(running, modelID) }, nil, "", ""); pyTruthy(nCtx) {
+			if nCtx := lmQuiet(func() (any, error) { return lmGrantedWindow(running, modelID) }, nil, "", ""); anyutil.IsTrue(nCtx) {
 				n, err := lmPyInt(nCtx)
 				if err != nil {
 					return nil, nil, err
@@ -1242,18 +1243,18 @@ func lmActiveLlamacppModelID(ctx context.Context) any {
 	read := func() (any, error) {
 		cfg := lmDeps.loadConfig(ctx)
 		var section any = map[string]any{}
-		if raw := cfg["model"]; pyTruthy(raw) {
+		if raw := cfg["model"]; anyutil.IsTrue(raw) {
 			section = raw
 		}
 		provider, err := lmDictGet(section, "provider", "")
 		if err != nil {
 			return nil, err
 		}
-		if !lmLlamacppProviders[strings.ToLower(strings.TrimSpace(pyStr(provider)))] {
+		if !lmLlamacppProviders[strings.ToLower(strings.TrimSpace(anyutil.String(provider)))] {
 			return nil, nil
 		}
 		m := section.(map[string]any)
-		if id := strings.TrimSpace(pyOrStr(pyOr(m["default"], m["name"], ""))); id != "" {
+		if id := strings.TrimSpace(anyutil.StringOr(anyutil.Or(m["default"], m["name"], ""), "")); id != "" {
 			return id, nil
 		}
 		return nil, nil
@@ -1323,11 +1324,11 @@ func LocalModelsStatus(ctx context.Context) (map[string]any, error) {
 	enabled, _ := lmDictGet(section, "enabled", nil)
 	var serverBaseURL any
 	if running != nil {
-		serverBaseURL = pyGetAny(running, "base_url", nil)
+		serverBaseURL = getAny(running, "base_url", nil)
 	}
 	out := map[string]any{
-		"enabled": pyTruthy(enabled), "tag": tag, "configured_tag": configuredTag,
-		"update_available":  pyTruthy(enabled) && engine != nil && current == nil,
+		"enabled": anyutil.IsTrue(enabled), "tag": tag, "configured_tag": configuredTag,
+		"update_available":  anyutil.IsTrue(enabled) && engine != nil && current == nil,
 		"runtime_installed": runtimeBackend != nil, "runtime_backend": runtimeBackend,
 		"server_running": running != nil, "server_base_url": serverBaseURL,
 		"active_model_id": lmActiveLlamacppModelID(ctx), "loaded_models": loaded,

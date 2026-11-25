@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -79,25 +80,6 @@ func leftCoreFeatureByPlugin(plugin string) *LeftCoreFeature {
 	panic(fmt.Sprintf("no left core row for plugin %q", plugin))
 }
 
-// Python str of a config value
-func pyStr(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case json.Number:
-		return t.String()
-	}
-	return leftCorePyRepr(v)
-}
-
-// Python str of value or else, the value counting only when truthy
-func pyOrStr(v any) string {
-	if !pyTruthy(v) {
-		return ""
-	}
-	return pyStr(v)
-}
-
 func anyMap(v any) map[string]any {
 	if m, ok := v.(map[string]any); ok {
 		return m
@@ -113,7 +95,7 @@ func isTruthyValue(v any) bool {
 		}
 		return false
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Reports whether a config or env value spells a truthy flag the way is_truthy_value does
@@ -181,7 +163,7 @@ func leftCorePluginLists(h, plugin string) (bool, bool) {
 			return false
 		}
 		for _, n := range names {
-			if name := pyStr(n); name == feature.Plugin {
+			if name := anyutil.String(n); name == feature.Plugin {
 				return true
 			}
 		}
@@ -264,7 +246,7 @@ func leftCoreLaunchEnvNames() map[string]bool {
 }
 
 // JSON string literal escaping every non ASCII rune as Python json.dumps does
-func pyJSONQuote(s string) string {
+func jsonQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -315,7 +297,7 @@ func PluginPresent(plugin, h string) bool {
 }
 
 // Python int of a config scalar
-func pyInt(v any) (int, bool) {
+func wholeNumber(v any) (int, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {

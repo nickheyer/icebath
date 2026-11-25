@@ -74,7 +74,7 @@ func localReceiptDecoded(raw any) (*jsonutil.Object, error) {
 		if !isBytes {
 			return nil, &stateTypedError{"TypeError", "the stored local receipt is " + errchain.Kind(raw) + ", expected JSON text"}
 		}
-		decoded, err := pyJSONDecodeBytes(b)
+		decoded, err := jsonDecodeBytes(b)
 		if err != nil {
 			return nil, err
 		}

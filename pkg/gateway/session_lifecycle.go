@@ -11,35 +11,33 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Python datetime value, naive ones holding local wall time and aware ones their own offset
-type pyDatetime struct {
+type datetime struct {
 	T     time.Time
 	Aware bool
 }
 
 // Current local wall time as a naive datetime
-func sessionNow() pyDatetime { return pyDatetime{T: time.Now()} }
+func sessionNow() datetime { return datetime{T: time.Now()} }
 
 // Session id stamped from the given instant with an eight character random suffix
-func newRoutedSessionID(now pyDatetime) string { return state.NewSessionIDAt(now.T, 8) }
+func newRoutedSessionID(now datetime) string { return state.NewSessionIDAt(now.T, 8) }
 
-// Python isoformat of the value in its naive or aware form
-func (d pyDatetime) isoformat() string {
-	if d.Aware {
-		return d.T.Format(timeutil.RFC3339Micro)
-	}
+// Stamp text of the value in RFC 3339 with microseconds, a naive value written with the local offset its wall time has
+func (d datetime) isoformat() string {
 	return d.T.Format(timeutil.RFC3339Micro)
 }
 
 // Epoch seconds, a naive value read as local time
-func (d pyDatetime) timestamp() float64 { return float64(d.T.UnixNano()) / 1e9 }
+func (d datetime) timestamp() float64 { return float64(d.T.UnixNano()) / 1e9 }
 
 // Isoformat of an optional datetime, nil when absent
-func isoOf(d *pyDatetime) any {
+func isoOf(d *datetime) any {
 	if d == nil {
 		return nil
 	}
@@ -47,19 +45,19 @@ func isoOf(d *pyDatetime) any {
 }
 
 // Strict fromisoformat that keeps a naive value as local wall time
-func fromISOFormat(value string) (pyDatetime, error) {
+func fromISOFormat(value string) (datetime, error) {
 	t, aware, err := timeutil.ParseISOZone(value, time.UTC)
 	if err != nil {
-		return pyDatetime{}, err
+		return datetime{}, err
 	}
 	if !aware {
 		t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.Local)
 	}
-	return pyDatetime{T: t, Aware: aware}, nil
+	return datetime{T: t, Aware: aware}, nil
 }
 
 // Fromisoformat returning nil for an empty, non string or malformed value
-func parseISOValue(value any) *pyDatetime {
+func parseISOValue(value any) *datetime {
 	s, ok := value.(string)
 	if !ok || s == "" {
 		return nil
@@ -133,7 +131,7 @@ func (s *SessionStore) localReceiptTarget(ctx context.Context, entry *SessionEnt
 	if !ok {
 		return "", nil
 	}
-	return pyFloatStr(sid), nil
+	return floatStr(sid), nil
 }
 
 // True when the API binding receipt names this entry's route, a failed store read returned
@@ -215,7 +213,7 @@ func (s *SessionStore) SuspendSession(ctx context.Context, sessionKey string) (b
 }
 
 // Persists the active turn pair before publishing it in memory, lock held
-func (s *SessionStore) setTurnMarkerLocked(ctx context.Context, sessionKey string, entry *SessionEntry, token *string, startedAt *pyDatetime) error {
+func (s *SessionStore) setTurnMarkerLocked(ctx context.Context, sessionKey string, entry *SessionEntry, token *string, startedAt *datetime) error {
 	candidate := entry.ToDict()
 	if token == nil {
 		candidate.Set("active_turn_token", nil)
@@ -223,7 +221,7 @@ func (s *SessionStore) setTurnMarkerLocked(ctx context.Context, sessionKey strin
 		candidate.Set("active_turn_token", *token)
 	}
 	candidate.Set("active_turn_started_at", isoOf(startedAt))
-	var touched *pyDatetime
+	var touched *datetime
 	if startedAt != nil {
 		now := sessionNow()
 		touched = &now
@@ -258,7 +256,7 @@ func (s *SessionStore) MarkTurnActive(ctx context.Context, sessionKey string) (s
 	if entry == nil {
 		return "", nil
 	}
-	started := pyDatetime{T: time.Now().UTC(), Aware: true}
+	started := datetime{T: time.Now().UTC(), Aware: true}
 	if err := s.setTurnMarkerLocked(ctx, sessionKey, entry, &token, &started); err != nil {
 		return "", err
 	}
@@ -369,8 +367,8 @@ func (s *SessionStore) PruneOldEntries(ctx context.Context, maxAgeDays int) (int
 	return len(removed), err
 }
 
-// Python str of a decoded JSON scalar, empty for null
-func pyFloatStr(v any) string {
+// Text of a decoded JSON scalar: empty for null, a whole float with one fractional digit, anything else as anyutil.String writes it
+func floatStr(v any) string {
 	switch x := v.(type) {
 	case nil:
 		return ""
@@ -382,6 +380,6 @@ func pyFloatStr(v any) string {
 		}
 		return strconv.FormatFloat(x, 'g', -1, 64)
 	default:
-		return fmt.Sprint(x)
+		return anyutil.String(x)
 	}
 }

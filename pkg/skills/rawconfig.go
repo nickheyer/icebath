@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Parses of config.yaml keyed by path and backend cache version, oldest insert evicted first
@@ -41,9 +42,9 @@ func configCacheKey(ctx context.Context, configPath string) (string, bool) {
 	if version == nil {
 		return "", false
 	}
-	parts := []string{config.PyRepr(configPath)}
+	parts := []string{anyutil.Quote(configPath)}
 	for _, v := range version {
-		parts = append(parts, config.PyRepr(v))
+		parts = append(parts, anyutil.Quote(v))
 	}
 	return "(" + strings.Join(parts, ", ") + ")", true
 }

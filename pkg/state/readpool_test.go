@@ -217,7 +217,7 @@ func TestPathBudgetCapsReadConnectionsAndReleasesBothPermits(t *testing.T) {
 		}
 	}
 	err := b.release()
-	var conv *pyConvError
+	var conv *convError
 	if !errors.As(err, &conv) || conv.Class != "ValueError" || conv.Msg != "Semaphore released too many times" {
 		t.Fatalf("over release %v", err)
 	}

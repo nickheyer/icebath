@@ -141,10 +141,10 @@ func TestGatewayClarifyTextCoercion(t *testing.T) {
 	}
 	multi := RegisterGatewayClarify("c2", "s2", "Pick", []string{"a", "b", "c"}, true)
 	defer ClearClarifySession("s2")
-	if v, ok, _ := clarifyCoerceTextDetailed(multi, "1 3"); !ok || v != `["a", "c"]` {
+	if v, ok, _ := clarifyCoerceTextDetailed(multi, "1 3"); !ok || v != `["a","c"]` {
 		t.Fatal(v)
 	}
-	if v, ok, _ := clarifyCoerceTextDetailed(multi, "b, a, b"); !ok || v != `["b", "a"]` {
+	if v, ok, _ := clarifyCoerceTextDetailed(multi, "b, a, b"); !ok || v != `["b","a"]` {
 		t.Fatal(v)
 	}
 	if _, ok, reason := clarifyCoerceTextDetailed(multi, "1,9"); ok || reason != "invalid_selection" {
@@ -205,9 +205,9 @@ func TestClarifyTimeoutFollowsTheQuestionTimeoutSetting(t *testing.T) {
 	}
 }
 
-func TestClarifyCleanAnswerPrintsDecodedItemsAsPythonStr(t *testing.T) {
+func TestClarifyCleanAnswerWritesDecodedItemsAsJSONText(t *testing.T) {
 	got := clarifyCleanAnswer(`[1, 1.0, "a (Recommended)", true, null, "  ", {"k": 1.0}, 1e2]`, true)
-	want := []string{"1", "1.0", "a", "True", "None", "{'k': 1.0}", "100.0"}
+	want := []string{"1", "1.0", "a", "true", "null", `{"k":1.0}`, "100.0"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("multi answer %#v, want %#v", got, want)
 	}

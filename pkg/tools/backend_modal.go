@@ -116,17 +116,17 @@ type ModalOptions struct {
 func modalCreateParams(kwargs map[string]any) *modal.SandboxCreateParams {
 	params := &modal.SandboxCreateParams{Command: []string{"sleep", "infinity"}, Timeout: time.Hour}
 	if v, ok := kwargs["cpu"]; ok {
-		if f, ok := pyFloatValue(v); ok && f > 0 {
+		if f, ok := floatValue(v); ok && f > 0 {
 			params.CPU = f
 		}
 	}
 	if v, ok := kwargs["memory"]; ok {
-		if n, ok := pyIntValue(v); ok && n > 0 {
+		if n, ok := wholeNumberArg(v); ok && n > 0 {
 			params.MemoryMiB = n
 		}
 	}
 	if v, ok := kwargs["timeout"]; ok {
-		if n, ok := pyIntValue(v); ok {
+		if n, ok := wholeNumberArg(v); ok {
 			params.Timeout = time.Duration(n) * time.Second
 		}
 	}
@@ -463,7 +463,7 @@ func (modalBackend) CreateEnvironment(ctx context.Context, env *Env, opts Create
 	res := sandboxResources(opts.ContainerConfig)
 	kwargs := map[string]any{}
 	for _, key := range []string{"cpu", "memory"} {
-		if f, ok := pyFloatValue(res[key]); ok && f > 0 {
+		if f, ok := floatValue(res[key]); ok && f > 0 {
 			kwargs[key] = res[key]
 		}
 	}

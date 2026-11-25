@@ -103,7 +103,7 @@ func TestLSPDiagKeyMatchesForShiftedBaselineAndPreservesNewInstances(t *testing.
 	}
 }
 
-func TestLSPDecodeJSONMatchesJSONLoads(t *testing.T) {
+func TestLSPDecodeJSONKeepsValuesExact(t *testing.T) {
 	v, err := lspDecodeJSON(`{"id": 7, "big": 123456789012345678901234567890, "f": 1.5, "n": NaN, "i": -Infinity, "s": "\u00e4"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -114,11 +114,12 @@ func TestLSPDecodeJSONMatchesJSONLoads(t *testing.T) {
 		t.Fatalf("%#v", m)
 	}
 	var jde *lsp.JSONDecodeError
-	if _, err := lspDecodeJSON("{\"a\": }"); !errors.As(err, &jde) || jde.Msg != "Expecting value: line 1 column 7 (char 6)" {
+	if _, err := lspDecodeJSON("{\"a\": }"); !errors.As(err, &jde) || jde.Msg != "json: invalid character '}' looking for beginning of value at line 1, column 7" {
 		t.Fatalf("%v", err)
 	}
-	if _, err := lspDecodeJSON("1" + strings.Repeat("0", 5000)); err == nil || errors.As(err, &jde) {
-		t.Fatalf("the int digit limit raises ValueError, not a decode error: %v", err)
+	huge := "1" + strings.Repeat("0", 5000)
+	if v, err := lspDecodeJSON(huge); err != nil || v != json.Number(huge) {
+		t.Fatalf("an integer of any length decodes exactly: %v %v", v, err)
 	}
 }
 

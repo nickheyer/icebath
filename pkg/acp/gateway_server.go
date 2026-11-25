@@ -45,7 +45,7 @@ func (c *clientLink) RPC(ctx context.Context, method string, params map[string]a
 	}
 	obj, ok := result.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("gateway %s answered %T, not an object", method, result)
+		return nil, fmt.Errorf("gateway %s answered %s, not an object", method, errchain.Kind(result))
 	}
 	return obj, nil
 }
@@ -546,10 +546,10 @@ func (a *GatewayACPAgent) NewSession(ctx context.Context, req *acputil.NewSessio
 	if err != nil {
 		return nil, err
 	}
-	if !dhas(snapshot, "session_id") {
+	sessionID := anyutil.String(dget(snapshot, "session_id"))
+	if sessionID == "" {
 		return nil, errors.New("the gateway session snapshot has no session_id")
 	}
-	sessionID := anyutil.String(dget(snapshot, "session_id"))
 	if err := a.adopt(ctx, sessionID, snapshot, nil); err != nil {
 		return nil, err
 	}
@@ -823,7 +823,7 @@ func liveMessages(raw any) []map[string]any {
 		}
 		id := 0.0
 		if v := dget(obj, "row_id"); anyutil.IsTrue(v) {
-			id, _ = pyFloat(v)
+			id, _ = floatNumber(v)
 		}
 		message := make(map[string]any, obj.Len())
 		for _, key := range obj.Keys() {
@@ -971,10 +971,10 @@ func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *acputil.ForkSess
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := result["branched_session_id"]; !ok {
+	child := anyutil.String(result["branched_session_id"])
+	if child == "" {
 		return nil, errors.New("the gateway fork reply has no branched_session_id")
 	}
-	child := anyutil.String(result["branched_session_id"])
 	if a.moved(info, req.Cwd) {
 		if _, err := a.moveWorkspace(ctx, link, child, req.Cwd); err != nil {
 			return nil, err
@@ -1531,10 +1531,10 @@ func (a *GatewayACPAgent) admissionFromReceipt(ctx context.Context, link gateway
 		}
 		return "", false, nil
 	}
-	if !dhas(receipt, "admission_id") {
+	admissionID, ok := admissionOf(receipt)
+	if !ok {
 		return "", false, errors.New("the gateway receipt has no admission_id")
 	}
-	admissionID := anyutil.String(dget(receipt, "admission_id"))
 	a.admissions[sessionID] = admissionID
 	switch dget(receipt, "status") {
 	case "terminal":
@@ -1683,10 +1683,10 @@ func (a *GatewayACPAgent) recover(ctx context.Context, sessionID, admissionID st
 
 // Reports a turn that already settled from its terminal receipt, once
 func (a *GatewayACPAgent) settledReceipt(ctx context.Context, link gatewayLink, heldID, sessionID string, receipt, saved *jsonutil.Object) error {
-	if !dhas(receipt, "admission_id") {
+	admissionID, ok := admissionOf(receipt)
+	if !ok {
 		return errors.New("the gateway receipt has no admission_id")
 	}
-	admissionID := anyutil.String(dget(receipt, "admission_id"))
 	if !anyutil.IsTrue(saved) {
 		var err error
 		if saved, err = a.rpc(ctx, link, "prompt.receipt", map[string]any{"session_id": sessionID, "admission_id": admissionID, "include_result": true}); err != nil {
@@ -1720,23 +1720,27 @@ func (a *GatewayACPAgent) settledReceipt(ctx context.Context, link gatewayLink, 
 	return nil
 }
 
-// Refusal for a FIFO blocked by a lost turn, naming the recovery control
+// Admission id a gateway receipt or pending row names, false when it is absent, null or empty
+func admissionOf(row *jsonutil.Object) (string, bool) {
+	id := anyutil.String(dget(row, "admission_id"))
+	return id, id != ""
+}
+
+// Refusal for a FIFO blocked by a lost turn, naming the recovery control: the /discard of each lost admission it knows, else only the terminal command that discards them all
 func (a *GatewayACPAgent) unknownRecovery(sessionID, admissionID string, submitted bool) string {
 	var lost []string
 	if snapshot, ok := a.snapshots.Get(sessionID); ok {
 		pending, _ := dget(snapshot, "pending").([]any)
 		for _, raw := range pending {
 			if row := asObject(raw); dget(row, "status") == "unknown" {
-				lost = append(lost, anyutil.String(dget(row, "admission_id")))
+				if id, ok := dget(row, "admission_id").(string); ok && id != "" {
+					lost = append(lost, id)
+				}
 			}
 		}
 	}
-	if len(lost) == 0 {
-		if admissionID == "" {
-			lost = []string{"None"}
-		} else {
-			lost = []string{admissionID}
-		}
+	if len(lost) == 0 && admissionID != "" {
+		lost = []string{admissionID}
 	}
 	command := "icebath"
 	if profile, ok := gateway.ProfileNameForHome(a.home); ok && profile != "default" {
@@ -1745,6 +1749,11 @@ func (a *GatewayACPAgent) unknownRecovery(sessionID, admissionID string, submitt
 	state := "nothing was submitted"
 	if submitted {
 		state = "your input is accepted and kept"
+	}
+	if len(lost) == 0 {
+		return fmt.Sprintf("unknown_execution: do not resend accepted input; a turn in this session was lost when the "+
+			"gateway restarted and its outcome is unknown (%s). Run `%s sessions discard %s` in a terminal, then continue.",
+			state, command, sessionID)
 	}
 	discards := make([]string, len(lost))
 	for i, id := range lost {
@@ -1784,7 +1793,7 @@ func snapshotWatermark(snapshot *jsonutil.Object) pendingWatermark {
 	if mark, ok := dget(snapshot, "_pending_watermark").(pendingWatermark); ok {
 		return mark
 	}
-	sequence, _ := pyFloat(dgetOr(snapshot, "last_sequence", int64(0)))
+	sequence, _ := floatNumber(dgetOr(snapshot, "last_sequence", int64(0)))
 	return pendingWatermark{epoch: dget(snapshot, "replay_epoch"), sequence: sequence}
 }
 
@@ -1812,7 +1821,7 @@ func (a *GatewayACPAgent) refreshUnknown(ctx context.Context, sessionID string) 
 		return &gateway.GatewayClientError{Msg: "not_found"}
 	}
 	mark := snapshotWatermark(cached)
-	freshSequence, _ := pyFloat(dgetOr(fresh, "last_sequence", int64(0)))
+	freshSequence, _ := floatNumber(dgetOr(fresh, "last_sequence", int64(0)))
 	if dhas(fresh, "pending") && (!anyutil.Equal(dget(fresh, "replay_epoch"), mark.epoch) || freshSequence >= mark.sequence) {
 		cached.Set("pending", dget(fresh, "pending"))
 		cached.Set("_pending_watermark", pendingWatermark{epoch: dget(fresh, "replay_epoch"), sequence: freshSequence})
@@ -1828,7 +1837,7 @@ func (a *GatewayACPAgent) pendingEventIsNew(sessionID string, event *jsonutil.Ob
 	if !ok || sequence == nil || !anyutil.Equal(dget(event, "replay_epoch"), fence.epoch) {
 		return true
 	}
-	seq, _ := pyFloat(sequence)
+	seq, _ := floatNumber(sequence)
 	return seq > fence.sequence
 }
 
@@ -1878,8 +1887,8 @@ func (a *GatewayACPAgent) events(ctx context.Context) error {
 					continue
 				}
 				epoch := dget(event, "replay_epoch")
-				seq, _ := pyFloat(dgetOr(event, "seq", int64(0)))
-				last, _ := pyFloat(dgetOr(snapshot, "last_sequence", int64(0)))
+				seq, _ := floatNumber(dgetOr(event, "seq", int64(0)))
+				last, _ := floatNumber(dgetOr(snapshot, "last_sequence", int64(0)))
 				if anyutil.Equal(epoch, dget(snapshot, "replay_epoch")) && seq <= last {
 					continue
 				}
@@ -2015,10 +2024,11 @@ func (a *GatewayACPAgent) gapGuard(ctx context.Context, kind, sid, aid string) (
 		pending, _ := dget(snapshot, "pending").([]any)
 		for _, raw := range pending {
 			if row := asObject(raw); dget(row, "status") == "started" {
-				if !dhas(row, "admission_id") {
+				admission, ok := admissionOf(row)
+				if !ok {
 					return false, errors.New("the gateway receipt has no admission_id")
 				}
-				add(anyutil.String(dget(row, "admission_id")))
+				add(admission)
 			}
 		}
 		for _, key := range a.inflight.Keys() {
@@ -2077,7 +2087,7 @@ func (a *GatewayACPAgent) projectSessionState(ctx context.Context, kind, sid, ed
 		if a.pendingEventIsNew(sid, event) {
 			snapshot, _ := a.snapshots.Get(sid)
 			snapshot.Set("pending", dget(payload, "pending"))
-			sequence, _ := pyFloat(dgetOr(event, "seq", int64(0)))
+			sequence, _ := floatNumber(dgetOr(event, "seq", int64(0)))
 			snapshot.Set("_pending_watermark", pendingWatermark{epoch: dget(event, "replay_epoch"), sequence: sequence})
 			a.loop.notifyAll()
 		}

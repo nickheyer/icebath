@@ -54,7 +54,7 @@ var anchorImportable = func(ctx context.Context, anchor string) bool {
 		return false
 	}
 	roots := moduleRoots(site)
-	for _, dir := range filepath.SplitList(pyEnviron()["PYTHONPATH"]) {
+	for _, dir := range filepath.SplitList(environValue()["PYTHONPATH"]) {
 		if dir != "" {
 			roots = append(roots, dir)
 		}
@@ -276,7 +276,7 @@ func declinedExtras(ctx context.Context, projectRoot string) (map[string]bool, e
 		return NewInstallError("venv", fmt.Sprintf("cannot read %s: %s", path, detail), "fix or delete the file, then retry")
 	}
 	if err != nil {
-		return nil, fail(pyExceptionText(err))
+		return nil, fail(exceptionText(err))
 	}
 	data = trimBOM(data)
 	if err := utf8Strict(data); err != nil {
@@ -345,7 +345,7 @@ func recordDeclinedExtras(ctx context.Context, add, remove []string, reasons map
 		merged[name] = text
 	}
 	for name, text := range reasons {
-		merged[ExtraKey(name)] = pyPrefix(strings.Join(strings.FieldsFunc(text, unicode.IsSpace), " "), 300)
+		merged[ExtraKey(name)] = prefixValue(strings.Join(strings.FieldsFunc(text, unicode.IsSpace), " "), 300)
 	}
 	noted := map[string]string{}
 	for name, text := range merged {
@@ -438,7 +438,7 @@ func DroppableExtras(projectRoot string) ([]string, error) {
 		for _, item := range items {
 			text, ok := item.(string)
 			if !ok {
-				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("optional dependency of extra %s must be text, got %s", next, tomlKind(item))}
+				return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("optional dependency of extra %s must be text, got %s", next, tomlKind(item))}
 			}
 			match := selfRef.FindStringSubmatch(strings.ReplaceAll(text, " ", ""))
 			if match == nil {

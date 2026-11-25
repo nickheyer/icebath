@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Admits off the reader behind the chat's earlier admission, a plugin hook or the chat's running turn may await a send only the reader settles
@@ -76,7 +77,7 @@ func relayAdmit(ctx context.Context, a *RelayAdapter, runner any, event *Message
 	}
 	authority, ok := runner.(AuthorityRunner)
 	if !ok || authority == nil {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot derive a session key for a source", runner)}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot derive a session key for a source", runner)}
 	}
 	sessionKey, err := runnerSessionKeyForSource(ctx, authority, event.Source)
 	if err != nil {

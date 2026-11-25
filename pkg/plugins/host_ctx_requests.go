@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Answer of a credentialed provider request the wiring sends for a plugin
@@ -28,14 +28,14 @@ func (c *Context) CredentialedProviderRequest(ctx context.Context, provider, met
 }
 
 func init() {
-	hostCtxDispatch["credentialed_provider_request"] = hostMethod("credentialed_provider_request", []pyParam{req("provider"), req("method"), req("url"),
+	hostCtxDispatch["credentialed_provider_request"] = hostMethod("credentialed_provider_request", []paramValue{req("provider"), req("method"), req("url"),
 		kwo("json", nil), kwo("headers", nil), kwo("timeout", 0.0)},
 		func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			headers := map[string]string{}
 			for k, v := range argMap(a["headers"]) {
-				headers[k] = config.PyStr(v)
+				headers[k] = anyutil.String(v)
 			}
-			timeout := time.Duration(guestNumber(a["timeout"], 0) * float64(time.Second))
+			timeout := guestDuration(guestNumber(a["timeout"], 0))
 			answer, err := c.CredentialedProviderRequest(ctx, argStr(a["provider"]), argStr(a["method"]), argStr(a["url"]), a["json"], headers, timeout)
 			if errors.Is(err, fs.ErrPermission) {
 				return nil, &HostBuiltinError{Type: "PermissionError", Message: err.Error()}

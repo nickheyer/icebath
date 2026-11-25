@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const qwenRerun = "Re-run 'qwen auth qwen-oauth'."
@@ -67,7 +69,7 @@ func saveQwenCLITokens(tokens map[string]any) (string, error) {
 
 // True when the millisecond expiry is unparseable or falls within the skew of now
 func qwenAccessTokenIsExpiring(expiryDateMS any, skew time.Duration) bool {
-	expiryMS, ok := pyInt(expiryDateMS)
+	expiryMS, ok := wholeNumber(expiryDateMS)
 	if !ok {
 		return true
 	}
@@ -79,7 +81,7 @@ func qwenAccessTokenIsExpiring(expiryDateMS any, skew time.Duration) bool {
 
 // Refreshes the Qwen CLI tokens against the Qwen token endpoint and saves them back to the CLI file
 func refreshQwenCLITokens(ctx context.Context, tokens map[string]any, timeout time.Duration) (map[string]any, error) {
-	refreshToken := strings.TrimSpace(pyOrStr(tokens["refresh_token"]))
+	refreshToken := strings.TrimSpace(anyutil.StringOr(tokens["refresh_token"], ""))
 	if refreshToken == "" {
 		return nil, qwenErr("Qwen OAuth refresh token missing. "+qwenRerun, "qwen_refresh_token_missing", false)
 	}
@@ -111,10 +113,10 @@ func refreshQwenCLITokens(ctx context.Context, tokens map[string]any, timeout ti
 		return nil, ae
 	}
 	payload, ok := raw.(map[string]any)
-	if !ok || strings.TrimSpace(pyOrStr(payload["access_token"])) == "" {
+	if !ok || strings.TrimSpace(anyutil.StringOr(payload["access_token"], "")) == "" {
 		return nil, qwenErr("Qwen OAuth refresh response missing access_token.", "qwen_refresh_invalid_response", false)
 	}
-	expiresIn, ok := pyInt(payload["expires_in"])
+	expiresIn, ok := wholeNumber(payload["expires_in"])
 	if !ok {
 		expiresIn = 6 * 60 * 60
 	}
@@ -123,7 +125,7 @@ func refreshQwenCLITokens(ctx context.Context, tokens map[string]any, timeout ti
 		if !has {
 			v = fallback
 		}
-		if s := pyOrStr(v); s != "" {
+		if s := anyutil.StringOr(v, ""); s != "" {
 			return strings.TrimSpace(s)
 		}
 		return last
@@ -133,7 +135,7 @@ func refreshQwenCLITokens(ctx context.Context, tokens map[string]any, timeout ti
 		tokenType = "Bearer"
 	}
 	refreshed := map[string]any{
-		"access_token":  strings.TrimSpace(pyOrStr(payload["access_token"])),
+		"access_token":  strings.TrimSpace(anyutil.StringOr(payload["access_token"], "")),
 		"refresh_token": strings.TrimSpace(orDefault("refresh_token", refreshToken, refreshToken)),
 		"token_type":    tokenType,
 		"resource_url":  orDefault("resource_url", tokensOr(tokens, "resource_url", "portal.qwen.ai"), "portal.qwen.ai"),
@@ -168,7 +170,7 @@ func resolveQwenRuntimeCredentialsWith(env PoolEnv, forceRefresh, refreshIfExpir
 			return nil, err
 		}
 	}
-	accessToken := strings.TrimSpace(pyOrStr(tokens["access_token"]))
+	accessToken := strings.TrimSpace(anyutil.StringOr(tokens["access_token"], ""))
 	if accessToken == "" {
 		return nil, qwenErr("Qwen OAuth access token missing. "+qwenRerun, "qwen_access_token_missing", false)
 	}

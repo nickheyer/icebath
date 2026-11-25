@@ -131,7 +131,7 @@ func (n *Notepad) Set(jobID, key, value string) (*jsonutil.Object, error) {
 			return err
 		}
 		if other+int64(len(key)+len(value)) > int64(NotepadMaxJobTotalBytes) {
-			return &NoteRejectedError{fmt.Sprintf("notepad full: job '%s' would exceed %d bytes total; delete unused keys first", jobID, NotepadMaxJobTotalBytes)}
+			return &NoteRejectedError{fmt.Sprintf("notepad full: job %q would exceed %d bytes total; delete unused keys first", jobID, NotepadMaxJobTotalBytes)}
 		}
 		_, err := conn.ExecContext(ctx, `INSERT INTO cron_notepad (job_id, key, value, updated_at)
                VALUES (?, ?, ?, ?)

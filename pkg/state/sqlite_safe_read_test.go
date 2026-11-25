@@ -522,7 +522,7 @@ func TestOpenerReturningNoConnectionIsRefused(t *testing.T) {
 		var untrackable *UntrackableConnectionError
 		want := "connection to " + liveKey(db) + " uses factory (none), which cannot release its tracking entry on close; " +
 			"byte-probe safety for this database would be silently lost"
-		var cause *pyConvError
+		var cause *convError
 		if !errors.As(err, &untrackable) || err.Error() != want || !errors.As(err, &cause) || cause.Class != "TypeError" {
 			t.Fatalf("%v", err)
 		}

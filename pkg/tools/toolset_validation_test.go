@@ -99,12 +99,12 @@ func TestToolsetValidationNullAndScalarValuesFallBack(t *testing.T) {
 	if !tvAny(w, "platform 'cli'", "invalid toolset value 'bogus'", "falling back to 'icebath-cli'") || tvAny(w, "zero valid toolsets") {
 		t.Fatalf("scalar: %q", w)
 	}
-	for raw, name := range map[any]string{5: "int", 1.5: "float", true: "bool"} {
+	for raw, name := range map[any]string{5: "integer", 1.5: "number", true: "boolean"} {
 		if w := tvValidate(map[string]any{"cli": raw}); !tvAny(w, "has invalid "+name+" toolset value — falling back to 'icebath-cli'. Run `icebath tools` to configure explicitly.") {
 			t.Fatalf("%v: %q", raw, w)
 		}
 	}
-	if w := tvValidate(map[string]any{"cli": map[string]any{}}); !tvAny(w, "invalid dict toolset value") {
+	if w := tvValidate(map[string]any{"cli": map[string]any{}}); !tvAny(w, "invalid object toolset value") {
 		t.Fatalf("dict: %q", w)
 	}
 }

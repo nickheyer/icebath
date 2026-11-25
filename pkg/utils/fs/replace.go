@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"math/rand/v2"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -33,8 +32,8 @@ func syncDir(path string) {
 
 // Temp file named prefix, random characters and suffix in the directory Replace publishes target into, the directory of the link itself when that one refuses it
 func CreateTempBeside(target, prefix, suffix string) (*os.File, error) {
-	linkDir := filepath.Dir(target)
-	stageDir := filepath.Dir(publishPath(target))
+	linkDir := pathutil.DirKeepDotDot(target)
+	stageDir := pathutil.DirKeepDotDot(publishPath(target))
 	f, err := os.CreateTemp(stageDir, prefix+"*"+suffix)
 	if err != nil && errors.Is(err, fs.ErrPermission) && stageDir != linkDir {
 		return os.CreateTemp(linkDir, prefix+"*"+suffix)

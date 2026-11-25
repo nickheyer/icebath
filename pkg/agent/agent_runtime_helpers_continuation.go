@@ -7,6 +7,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
@@ -69,7 +70,7 @@ func looksLikeDegenerateFinal(text string, userMessage any) bool {
 		return false
 	}
 	userText := ""
-	if pyTruthy(userMessage) {
+	if anyutil.IsTrue(userMessage) {
 		userText = provider.SummarizeUserMessageForLog(userMessage, " ")
 	}
 	for _, ch := range userText {
@@ -104,7 +105,7 @@ func trailingContinueIntent(text string) bool {
 	if n := len([]rune(t)); n == 0 || n > trailingContinueIntentMaxChars {
 		return false
 	}
-	return pyReSearch(trailingContinueIntentRe, lastRunes(t, 160))
+	return reSearch(trailingContinueIntentRe, lastRunes(t, 160))
 }
 
 // Whether promoted reasoning ends on a first person plan to act
@@ -113,7 +114,7 @@ func promotedReasoningAnnouncesAction(text string) bool {
 	if t == "" {
 		return false
 	}
-	return pyReSearch(promotedReasoningPlanTailRe, lastRunes(t, 240))
+	return reSearch(promotedReasoningPlanTailRe, lastRunes(t, 240))
 }
 
 // Intent ack continuation mode off, codex_only or all from the agent setting and live route

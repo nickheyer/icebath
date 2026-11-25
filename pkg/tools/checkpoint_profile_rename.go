@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Counts the checkpoint projects a profile rename scanned, rekeyed and failed
@@ -111,7 +113,7 @@ func MigrateProfileCheckpointProjects(env *Env, oldProfileDir, newProfileDir str
 		if !checkpointTruthy(raw) {
 			continue
 		}
-		oldWorkdir := checkpointNormalizePath(pyStr(raw))
+		oldWorkdir := checkpointNormalizePath(anyutil.String(raw))
 		rel, ok := relativeTo(oldWorkdir, oldRoot)
 		if !ok {
 			continue

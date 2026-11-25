@@ -205,7 +205,7 @@ func cmdUpdate(ctx context.Context, u UpdateInvocation) error {
 		} else {
 			fmt.Fprintf(w, "✗ Update failed: %s\n", launchErrorText(err))
 		}
-		finalizeUpdateReceipt(ctx, 1, launchErrorClass(err)+": "+launchErrorText(err))
+		finalizeUpdateReceipt(ctx, 1, launchErrorLine(err))
 		if gatewayMode {
 			updaterecord.WriteGatewayUpdateExitCode(ctx, false)
 		}
@@ -214,7 +214,7 @@ func cmdUpdate(ctx context.Context, u UpdateInvocation) error {
 		if gatewayMode {
 			updaterecord.WriteGatewayUpdateExitCode(ctx, false)
 		}
-		finalizeUpdateReceipt(ctx, 1, launchErrorClass(err)+": "+launchErrorText(err))
+		finalizeUpdateReceipt(ctx, 1, launchErrorLine(err))
 		return err
 	}
 }

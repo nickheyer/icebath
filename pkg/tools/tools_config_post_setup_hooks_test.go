@@ -132,7 +132,7 @@ func TestPostSetupChromiumInstallFailures(t *testing.T) {
 	if err := s.runPostSetup("chromium"); err == nil || err.Error() != "unknown package: chromium" {
 		t.Fatalf("key error not raised %v", err)
 	}
-	s, _, _ = setup(t, &pm.PyError{Class: "ValueError", Message: "bad pin"}, false)
+	s, _, _ = setup(t, &pm.ClassError{Class: "ValueError", Message: "bad pin"}, false)
 	if err := s.runPostSetup("chromium"); err == nil {
 		t.Fatal("value error swallowed")
 	}
@@ -272,8 +272,8 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 		saves    int
 	}{
 		{1, nil, nil, nil, "      Codex image generation will remain inactive until you sign in.\n", 0},
-		{0, nil, cliui.ErrInterrupt, nil, "⚠     Codex sign-in did not complete: . Run later: " + relogin + "\n", 0},
-		{0, map[string]any{"last_refresh": "x"}, nil, nil, "⚠     Codex sign-in did not complete: 'tokens'. Run later: " + relogin + "\n", 0},
+		{0, nil, cliui.ErrInterrupt, nil, "⚠     Codex sign-in did not complete: interrupted. Run later: " + relogin + "\n", 0},
+		{0, map[string]any{"last_refresh": "x"}, nil, nil, "⚠     Codex sign-in did not complete: the sign-in returned no tokens. Run later: " + relogin + "\n", 0},
 		{0, map[string]any{"tokens": map[string]any{"access_token": "a"}}, nil, errors.New("store locked"),
 			"⚠     Codex sign-in did not complete: store locked. Run later: " + relogin + "\n", 1},
 		{0, map[string]any{"tokens": map[string]any{"access_token": "a"}, "last_refresh": "2026-01-01T00:00:00Z"}, nil, nil,
@@ -305,7 +305,7 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 		if !slices.Equal(questions, []string{"    How do you want to sign in? Sign in with ChatGPT/Codex OAuth — browser login | Skip — configure later via `" + relogin + "`"}) {
 			t.Fatalf("questions %q", questions)
 		}
-		if len(saves) == 1 && (!anyutil.Equal(saves[0].tokens, map[string]any{"access_token": "a"}) || saves[0].lastRefresh != pyOrStr(c.creds["last_refresh"])) {
+		if len(saves) == 1 && (!anyutil.Equal(saves[0].tokens, map[string]any{"access_token": "a"}) || saves[0].lastRefresh != anyutil.StringOr(c.creds["last_refresh"], "")) {
 			t.Fatalf("save call %+v", saves[0])
 		}
 	}
@@ -369,7 +369,7 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 	}
 	s, out = newTestToolsSetup(t, "")
 	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "bogus"}); code != 2 ||
-		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: chromium, cua_driver, faster_whisper, kittentts, lightpanda, xai_grok\n" {
+		out.String() != "✗ Unknown post-setup key: \"bogus\". Valid keys: chromium, cua_driver, faster_whisper, kittentts, lightpanda, xai_grok\n" {
 		t.Fatalf("unknown %d %q", code, out.String())
 	}
 	s, out = newTestToolsSetup(t, "")
@@ -405,9 +405,9 @@ func TestPMRuntimeOrOSErrorClasses(t *testing.T) {
 		{pm.NewInstallError("a", "b", ""), true},
 		{&pm.ResolutionConflict{InstallError: pm.NewInstallError("a", "b", "")}, true},
 		{&pm.DownloadError{Message: "x"}, true},
-		{&pm.PyError{Class: "RuntimeError", Message: "x"}, true},
-		{&pm.PyError{Class: "ConnectionResetError", Message: "x"}, true},
-		{&pm.PyError{Class: "KeyError", Message: "x"}, false},
+		{&pm.ClassError{Class: "RuntimeError", Message: "x"}, true},
+		{&pm.ClassError{Class: "ConnectionResetError", Message: "x"}, true},
+		{&pm.ClassError{Class: "KeyError", Message: "x"}, false},
 		{&pm.TarReadError{Class: "OSError", Message: "x"}, true},
 		{&pm.TarReadError{Class: "ReadError", Message: "x"}, false},
 		{os.ErrNotExist, true},

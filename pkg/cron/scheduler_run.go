@@ -83,7 +83,7 @@ func (s *Store) runCronCleanupWithTimeout(jobID, label string, timeoutSeconds *f
 	}
 	if timeout <= 0 {
 		if err := call(); err != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': %s failed: %v", jobID, label, err))
+			s.log.Debug(fmt.Sprintf("Job %q: %s failed: %v", jobID, label, err))
 			return false
 		}
 		return true
@@ -93,12 +93,12 @@ func (s *Store) runCronCleanupWithTimeout(jobID, label string, timeoutSeconds *f
 	select {
 	case err := <-done:
 		if err != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': %s failed: %v", jobID, label, err))
+			s.log.Debug(fmt.Sprintf("Job %q: %s failed: %v", jobID, label, err))
 			return false
 		}
 		return true
 	case <-time.After(time.Duration(timeout * float64(time.Second))):
-		s.log.Error(fmt.Sprintf("Job '%s': %s exceeded %.1fs; abandoning cleanup so future runs remain dispatchable", jobID, label, timeout))
+		s.log.Error(fmt.Sprintf("Job %q: %s exceeded %.1fs; abandoning cleanup so future runs remain dispatchable", jobID, label, timeout))
 		return false
 	}
 }
@@ -211,7 +211,7 @@ func (b *boundedCronSessionDB) release() error {
 // Script is the job, stdout delivered verbatim, empty or wakeAgent false silent, failure alerted
 func (s *Store) runNoAgentJob(ctx context.Context, job *Job, jobID, jobName string, cancel CancelSource) jobRunOutcome {
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{Home: s.home}); err != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': no_agent .env reload failed", jobID), "error", err)
+		s.log.Debug(fmt.Sprintf("Job %q: no_agent .env reload failed", jobID), "error", err)
 	}
 	scriptPath := ""
 	if job.Script != nil {
@@ -226,21 +226,21 @@ func (s *Store) runNoAgentJob(ctx context.Context, job *Job, jobID, jobName stri
 	}
 	ok, output, err := s.runJobScriptWithClaimHeartbeat(ctx, job, scriptPath, workdir, cancel)
 	if err != nil {
-		s.log.Error(fmt.Sprintf("Job '%s': script execution raised unexpectedly", jobID), "error", err)
+		s.log.Error(fmt.Sprintf("Job %q: script execution raised unexpectedly", jobID), "error", err)
 		ok, output = false, fmt.Sprintf("Script execution failed: %s", err.Error())
 	}
 	nowISO := s.clk.now().Format(time.DateTime)
 	header := jobDocHeader(jobName, jobID, nowISO, "no_agent (script)")
 	if !ok {
-		alert := fmt.Sprintf("⚠ Cron watchdog '%s' script failed\n\n%s\n\nTime: %s", jobName, output, nowISO)
+		alert := fmt.Sprintf("⚠ Cron watchdog %q script failed\n\n%s\n\nTime: %s", jobName, output, nowISO)
 		return jobRunOutcome{false, fmt.Sprintf("%s**Status:** script failed\n\n%s\n", header, output), alert, strPtr(output)}
 	}
 	if !parseWakeGate(output) {
-		s.log.Info(fmt.Sprintf("Job '%s' (no_agent): wakeAgent=false gate — silent run", jobID))
+		s.log.Info(fmt.Sprintf("Job %q (no_agent): wakeAgent=false gate — silent run", jobID))
 		return jobRunOutcome{true, header + "**Status:** silent (wakeAgent=false)\n", SilentMarker, nil}
 	}
 	if strings.TrimSpace(output) == "" {
-		s.log.Info(fmt.Sprintf("Job '%s' (no_agent): empty stdout — silent run", jobID))
+		s.log.Info(fmt.Sprintf("Job %q (no_agent): empty stdout — silent run", jobID))
 		return jobRunOutcome{true, header + "**Status:** silent (empty output)\n", SilentMarker, nil}
 	}
 	return jobRunOutcome{true, fmt.Sprintf("%s\n---\n\n%s\n", header, output), output, nil}
@@ -262,12 +262,12 @@ func (s *Store) applyMonitorGate(ctx context.Context, job *Job, jobID, jobName s
 		if mon.Error != nil {
 			monErr = *mon.Error
 		}
-		s.log.Error(fmt.Sprintf("Job '%s': monitor source failed: %s", jobID, monErr))
-		alert := fmt.Sprintf("⚠ Cron monitor '%s' source failed\n\n%s\n\nTime: %s", jobName, monErr, now)
+		s.log.Error(fmt.Sprintf("Job %q: monitor source failed: %s", jobID, monErr))
+		alert := fmt.Sprintf("⚠ Cron monitor %q source failed\n\n%s\n\nTime: %s", jobName, monErr, now)
 		return &jobRunOutcome{false, fmt.Sprintf("%s**Status:** monitor source failed\n\n%s\n", header, monErr), alert, mon.Error}, nil, nil
 	}
 	if !mon.Changed {
-		s.log.Info(fmt.Sprintf("Job '%s': monitor output unchanged — suppressing agent run", jobID))
+		s.log.Info(fmt.Sprintf("Job %q: monitor output unchanged — suppressing agent run", jobID))
 		return &jobRunOutcome{true, header + "**Status:** no_change (agent run suppressed)\n", SilentMarker, nil}, nil, nil
 	}
 	return nil, mon.ContextBlock, nil
@@ -317,15 +317,15 @@ func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName 
 		if errors.As(err, &unavailable) {
 			return jc, err
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s': failed to load config.yaml, using defaults: %v", jobID, err))
+		s.log.Warn(fmt.Sprintf("Job %q: failed to load config.yaml, using defaults: %v", jobID, err))
 	}
 	model := s.jobModel(ctx, job)
 	if model == "" {
-		jobModel := "None"
+		jobModel := "job.model unset"
 		if job.Model != nil {
-			jobModel = anyutil.Quote(*job.Model)
+			jobModel = "job.model=" + anyutil.Quote(*job.Model)
 		}
-		return jc, fmt.Errorf("Cron job '%s' has no model configured (job.model=%s, cron.model and model.default empty, ICEBATH_MODEL unset). Set a per-job model via `icebath cron edit %s --model <name>` or set a default with `icebath model <name>`.",
+		return jc, fmt.Errorf("Cron job %q has no model configured (%s, cron.model and model.default empty, ICEBATH_MODEL unset). Set a per-job model via `icebath cron edit %s --model <name>` or set a default with `icebath model <name>`.",
 			jobName, jobModel, jobID)
 	}
 	if settings.NetworkForceIpv4.Get(home.WithOverride(ctx, s.home)) {
@@ -341,9 +341,13 @@ func (s *Store) loadPrefillMessages(ctx context.Context, jobID string) []any {
 	if prefillFile == "" {
 		return nil
 	}
-	pfpath, _ := pathutil.ExpandUserPath(prefillFile)
+	pfpath, err := pathutil.ExpandUserKeepDotDot(prefillFile)
+	if err != nil {
+		s.log.Warn(fmt.Sprintf("Job %q: prefill messages file %q cannot be located: %v", jobID, prefillFile, err))
+		return nil
+	}
 	if !filepath.IsAbs(pfpath) {
-		pfpath = filepath.Join(s.home, pfpath)
+		pfpath = pathutil.JoinKeepDotDot(s.home, pfpath)
 	}
 	if _, err := os.Stat(pfpath); err != nil {
 		return nil
@@ -359,7 +363,7 @@ func (s *Store) loadPrefillMessages(ctx context.Context, jobID string) []any {
 			return nil
 		}
 	}
-	s.log.Warn(fmt.Sprintf("Job '%s': failed to parse prefill messages file '%s': %v", jobID, pfpath, err))
+	s.log.Warn(fmt.Sprintf("Job %q: failed to parse prefill messages file %q: %v", jobID, pfpath, err))
 	return nil
 }
 
@@ -369,7 +373,7 @@ func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName s
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				s.log.Debug(fmt.Sprintf("Job '%s': preflight validation errored — failing open", jobID), "error", r)
+				s.log.Debug(fmt.Sprintf("Job %q: preflight validation errored — failing open", jobID), "error", r)
 				reason = ""
 			}
 		}()
@@ -378,7 +382,7 @@ func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName s
 		}
 		r, err := s.preflightJobConfig(ctx, job)
 		if err != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': preflight validation errored — failing open", jobID), "error", err)
+			s.log.Debug(fmt.Sprintf("Job %q: preflight validation errored — failing open", jobID), "error", err)
 			return
 		}
 		reason = r
@@ -395,10 +399,10 @@ func (s *Store) preflightOrBlock(ctx context.Context, job *Job, jobID, jobName s
 
 // Blocked configuration outcome for the reason, alerting once per job
 func (s *Store) blockedConfigResult(ctx context.Context, jobID, jobName, reason string) jobRunOutcome {
-	s.log.Warn(fmt.Sprintf("Job '%s' (ID: %s): BLOCKED by pre-dispatch config validation — %s (no LLM call was made)", jobName, jobID, reason))
+	s.log.Warn(fmt.Sprintf("Job %q (ID: %s): BLOCKED by pre-dispatch config validation — %s (no LLM call was made)", jobName, jobID, reason))
 	alreadyAlerted, err := s.markPreflightAlerted(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': could not persist preflight alert marker", jobID), "error", err)
+		s.log.Debug(fmt.Sprintf("Job %q: could not persist preflight alert marker", jobID), "error", err)
 		alreadyAlerted = false
 	}
 	marker := BlockedConfigMarker
@@ -443,28 +447,28 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 	} else if jobRoutePinned(job) {
 		next = "not falling back: the job is pinned"
 	}
-	s.log.Warn(fmt.Sprintf("Job '%s': primary provider resolve failed (%s: %v), %s", jobID, kind, resolveErr, next))
+	s.log.Warn(fmt.Sprintf("Job %q: primary provider resolve failed (%s: %v), %s", jobID, kind, resolveErr, next))
 	for _, entry := range chain {
 		if entry == nil {
 			continue
 		}
-		fbProvider := strings.TrimSpace(pyStrOrEmpty(entry["provider"]))
-		fbModel := strings.TrimSpace(pyStrOrEmpty(entry["model"]))
+		fbProvider := strings.TrimSpace(anyutil.StringOr(entry["provider"], ""))
+		fbModel := strings.TrimSpace(anyutil.StringOr(entry["model"], ""))
 		if fbProvider == "" || fbModel == "" {
 			continue
 		}
 		fbBase := ""
 		if anyutil.IsTrue(entry["base_url"]) {
-			fbBase = pyStrOrEmpty(entry["base_url"])
+			fbBase = anyutil.StringOr(entry["base_url"], "")
 		}
 		fbKey := provider.ResolveFallbackEntryAPIKey(ctx, s.home, entry)
 		fbRT, err := resolveRuntimeProviderSeam(ctx, s.home, fbProvider, fbModel, fbBase, fbKey)
 		if err != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': fallback %s failed: %v", jobID, fbProvider, err))
+			s.log.Debug(fmt.Sprintf("Job %q: fallback %s failed: %v", jobID, fbProvider, err))
 			continue
 		}
 		fbRT.Provider = provider.EffectiveRuntimeProvider(entry, fbRT)
-		s.log.Info(fmt.Sprintf("Job '%s': fallback resolved to %s model %s", jobID, fbRT.Provider, fbModel))
+		s.log.Info(fmt.Sprintf("Job %q: fallback resolved to %s model %s", jobID, fbRT.Provider, fbModel))
 		primary := requested
 		if primary == "" {
 			primary = strings.TrimSpace(settings.ModelProvider.Get(home.WithOverride(ctx, s.home)))
@@ -484,7 +488,7 @@ func (s *Store) loadCredentialPool(rt *provider.Runtime, jobID string) *provider
 	env := provider.PoolEnv{Store: provider.NewStore(s.home), Secrets: config.NewSecrets(s.home), Log: s.log}
 	pool := provider.LoadRoutePool(env, runtimeProvider, rt.BaseURL, rt.RequestedProvider)
 	if pool != nil && pool.HasCredentials() {
-		s.log.Info(fmt.Sprintf("Job '%s': loaded credential pool for provider %s with %d entries", jobID, runtimeProvider, len(pool.Entries())))
+		s.log.Info(fmt.Sprintf("Job %q: loaded credential pool for provider %s with %d entries", jobID, runtimeProvider, len(pool.Entries())))
 		return pool
 	}
 	return nil
@@ -494,11 +498,11 @@ func (s *Store) loadCredentialPool(rt *provider.Runtime, jobID string) *provider
 func (s *Store) initCronMCPTools(ctx context.Context, jobID string) {
 	names, err := mcp.ConnectAll(ctx, &tools.Env{Home: s.home}, nil)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Job '%s': MCP initialization failed (non-fatal): %v", jobID, err))
+		s.log.Warn(fmt.Sprintf("Job %q: MCP initialization failed (non-fatal): %v", jobID, err))
 		return
 	}
 	if len(names) > 0 {
-		s.log.Info(fmt.Sprintf("Job '%s': %d MCP tool(s) available", jobID, len(names)))
+		s.log.Info(fmt.Sprintf("Job %q: %d MCP tool(s) available", jobID, len(names)))
 	}
 }
 
@@ -552,9 +556,9 @@ func (s *Store) openCronSessionDB(ctx context.Context, job *Job) (*state.DB, err
 		case <-time.After(time.Duration(timeout * float64(time.Second))):
 			go closeLateSessionDBResult(func() (*state.DB, error) { r := <-ch; return r.db, r.err })
 			if isOwner {
-				return nil, &pyTimeoutError{"Canonical cron session store acquisition timed out"}
+				return nil, &timeoutError{"Canonical cron session store acquisition timed out"}
 			}
-			s.log.Error(fmt.Sprintf("Job '%s': SessionDB init did not return within %.0fs — proceeding without a session store for this run instead of blocking it forever", jobLabel, timeout))
+			s.log.Error(fmt.Sprintf("Job %q: SessionDB init did not return within %.0fs — proceeding without a session store for this run instead of blocking it forever", jobLabel, timeout))
 			return nil, nil
 		}
 	}
@@ -562,18 +566,18 @@ func (s *Store) openCronSessionDB(ctx context.Context, job *Job) (*state.DB, err
 		if isOwner {
 			return nil, err
 		}
-		s.log.Debug(fmt.Sprintf("Job '%s': SQLite session store not available: %v", jobLabel, err))
+		s.log.Debug(fmt.Sprintf("Job %q: SQLite session store not available: %v", jobLabel, err))
 		return nil, nil
 	}
 	return db, nil
 }
 
 // Python TimeoutError raised by the cron run path
-type pyTimeoutError struct{ msg string }
+type timeoutError struct{ msg string }
 
-func (e *pyTimeoutError) Error() string     { return e.msg }
-func (e *pyTimeoutError) ErrorKind() string { return "TimeoutError" }
-func (e *pyTimeoutError) Timeout() bool     { return true }
+func (e *timeoutError) Error() string     { return e.msg }
+func (e *timeoutError) ErrorKind() string { return "TimeoutError" }
+func (e *timeoutError) Timeout() bool     { return true }
 
 // Logs the agent's last activity, hard interrupts it and returns the inactivity TimeoutError
 func (s *Store) raiseInactivityTimeout(a CronAgent, jobName string, limitS float64) error {
@@ -583,14 +587,14 @@ func (s *Store) raiseInactivityTimeout(a CronAgent, jobName string, limitS float
 			activity = act
 		}
 	}
-	lastDesc := any("unknown")
-	if v, ok := activity["last_activity_desc"]; ok {
-		lastDesc = v
+	lastDesc := "unknown"
+	if d := anyutil.String(activity["last_activity_desc"]); d != "" {
+		lastDesc = d
 	}
 	secsAgo, _, _ := anyFloat(activity["seconds_since_activity"])
 	tool := "none"
 	if anyutil.IsTrue(activity["current_tool"]) {
-		tool = pyStrOrEmpty(activity["current_tool"])
+		tool = anyutil.StringOr(activity["current_tool"], "")
 	}
 	apiCalls := activity["api_call_count"]
 	if apiCalls == nil {
@@ -600,12 +604,12 @@ func (s *Store) raiseInactivityTimeout(a CronAgent, jobName string, limitS float
 	if maxIter == nil {
 		maxIter = 0
 	}
-	s.log.Error(fmt.Sprintf("Job '%s' idle for %.0fs (inactivity limit %.0fs) | last_activity=%v | iteration=%v/%v | tool=%s",
+	s.log.Error(fmt.Sprintf("Job %q idle for %.0fs (inactivity limit %.0fs) | last_activity=%v | iteration=%v/%v | tool=%s",
 		jobName, secsAgo, limitS, lastDesc, apiCalls, maxIter, tool))
 	if a != nil {
 		requestHardInterrupt(a, "Cron job timed out (inactivity)", "cron inactivity watchdog")
 	}
-	return &pyTimeoutError{fmt.Sprintf("Cron job '%s' idle for %ds (limit %ds) — last activity: %v", jobName, int(secsAgo), int(limitS), lastDesc)}
+	return &timeoutError{fmt.Sprintf("Cron job %q idle for %ds (limit %ds) — last activity: %v", jobName, int(secsAgo), int(limitS), lastDesc)}
 }
 
 // Completion handle of an agent conversation running on its own goroutine
@@ -680,7 +684,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 		if a != nil {
 			a.Interrupt(fmt.Sprintf("Cron run stopped: %s", reason))
 		}
-		return fmt.Errorf("Cron job '%s' was stopped: %s", jobName, reason)
+		return fmt.Errorf("Cron job %q was stopped: %s", jobName, reason)
 	}
 	heartbeatRunClaimIfDue := func() {
 		if !isOneshot || runClaimOwner == "" {
@@ -692,7 +696,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 		}
 		lastClaimHeartbeat = mono
 		if _, err := s.heartbeatRunClaim(home.WithOverride(ctx, s.home), jobID, runClaimOwner); err != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': run_claim heartbeat failed", jobName), "error", err)
+			s.log.Debug(fmt.Sprintf("Job %q: run_claim heartbeat failed", jobName), "error", err)
 		}
 	}
 	meter := newWatchdogMeter()
@@ -800,13 +804,13 @@ func cronResultMessages(result map[string]any) []any {
 
 // Deliverable reply of a conversation result, failing on a reported failure and dropping explainer only turns
 func finalResponseFromResult(ctx context.Context, s *Store, result map[string]any, jobID, jobName string) (string, error) {
-	turnExitReason := pyStrOrEmpty(result["turn_exit_reason"])
-	finalText := strings.TrimSpace(pyStrOrEmpty(result["final_response"]))
+	turnExitReason := anyutil.StringOr(result["turn_exit_reason"], "")
+	finalText := strings.TrimSpace(anyutil.StringOr(result["final_response"], ""))
 	maxIterationSummary := isMaxIterationHandoff(result)
 	failed, _ := result["failed"].(bool)
 	completed, hasCompleted := result["completed"].(bool)
 	if failed || (hasCompleted && !completed && !maxIterationSummary) {
-		msg := pyStrOrEmpty(result["error"])
+		msg := anyutil.StringOr(result["error"], "")
 		if msg == "" {
 			msg = finalText
 		}
@@ -816,9 +820,9 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 		return "", errors.New(msg)
 	}
 	if maxIterationSummary {
-		s.log.Warn(fmt.Sprintf("Job '%s' reached the iteration limit but produced a final fallback response; delivering the response instead of failing the cron run", jobName))
+		s.log.Warn(fmt.Sprintf("Job %q reached the iteration limit but produced a final fallback response; delivering the response instead of failing the cron run", jobName))
 	}
-	finalResponse := pyStrOrEmpty(result["final_response"])
+	finalResponse := anyutil.StringOr(result["final_response"], "")
 	if finalResponse != "" {
 		finalResponse = gateway.RepairExplicitComputerUseMediaPathsAt(ctx, finalResponse, cronResultMessages(result), 0)
 	}
@@ -826,7 +830,7 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 		finalResponse = ""
 	}
 	if strings.TrimSpace(finalResponse) != "" && turnExitReason != "" {
-		model := pyStrOrEmpty(result["model"])
+		model := anyutil.StringOr(result["model"], "")
 		causes := append([]*string{nil}, func() []*string {
 			out := make([]*string, 0, len(state.PersistenceErrorCauses))
 			for _, c := range state.PersistenceErrorCauses {
@@ -847,7 +851,7 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 			}
 		}
 		if variants[strings.TrimSpace(finalResponse)] {
-			s.log.Info(fmt.Sprintf("Job '%s': abnormal empty turn (%s) — suppressing explainer for cron delivery", jobID, turnExitReason))
+			s.log.Info(fmt.Sprintf("Job %q: abnormal empty turn (%s) — suppressing explainer for cron delivery", jobID, turnExitReason))
 			finalResponse = ""
 		}
 	}
@@ -864,7 +868,7 @@ func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a Cro
 				finalID = sid
 			}
 		}
-		s.log.Debug(fmt.Sprintf("Job '%s': failed to resolve cron compression tip: %v", jobID, err))
+		s.log.Debug(fmt.Sprintf("Job %q: failed to resolve cron compression tip: %v", jobID, err))
 	} else if tip != "" {
 		finalID = tip
 	}
@@ -878,7 +882,7 @@ func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a Cro
 		_, err = setCronSessionTitle(ctx, b, finalID, "cron "+jobID)
 	}
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': failed to set cron session title: %v", jobID, err))
+		s.log.Debug(fmt.Sprintf("Job %q: failed to set cron session title: %v", jobID, err))
 		lineageTitle, lerr := b.GetNextTitleInLineage(ctx, "cron "+jobID)
 		fallbacks := []string{}
 		if lerr == nil {
@@ -893,23 +897,23 @@ func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a Cro
 	}
 	endReason := "cron_complete"
 	if statuses, serr := b.sessionLifecycleStatuses(ctx, []string{finalID}); serr != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': session lifecycle classification failed: %v", jobID, serr))
+		s.log.Debug(fmt.Sprintf("Job %q: session lifecycle classification failed: %v", jobID, serr))
 	} else if lc := statuses[finalID]; lc == "interrupted" || lc == "error" || lc == "empty" {
 		endReason = "cron_incomplete_no_output"
-		s.log.Warn(fmt.Sprintf("Job '%s': session ended without a final assistant message (lifecycle=%s) — booking run as %s", jobID, lc, endReason))
+		s.log.Warn(fmt.Sprintf("Job %q: session ended without a final assistant message (lifecycle=%s) — booking run as %s", jobID, lc, endReason))
 	}
 	if workdir != "" {
 		if werr := b.UpdateSessionCwd(finalID, workdir); werr != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': failed to stamp workdir on session row: %v", jobID, werr))
+			s.log.Debug(fmt.Sprintf("Job %q: failed to stamp workdir on session row: %v", jobID, werr))
 		}
 	}
 	if eerr := b.EndSession(finalID, endReason); eerr != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': failed to end session: %v", jobID, eerr))
+		s.log.Debug(fmt.Sprintf("Job %q: failed to end session: %v", jobID, eerr))
 	} else if a != nil {
 		a.SetEndSessionOnClose(false)
 	}
 	if rerr := b.release(); rerr != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': failed to close SQLite session store: %v", jobID, rerr))
+		s.log.Debug(fmt.Sprintf("Job %q: failed to close SQLite session store: %v", jobID, rerr))
 	}
 }
 
@@ -949,7 +953,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 			if !errors.As(err, &invalid) {
 				return nil, "", err
 			}
-			s.log.Error(fmt.Sprintf("Job '%s': refusing to run — %v", jobID, err))
+			s.log.Error(fmt.Sprintf("Job %q: refusing to run — %v", jobID, err))
 			return &jobRunOutcome{false, fmt.Sprintf("# Cron Job: %s\n\nError: %s\n", jobName, err.Error()), "", strPtr(err.Error())}, "", nil
 		}
 	}
@@ -980,7 +984,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 		}
 		prerun = &scriptRun{Success: ok, Output: output}
 		if ok && !parseWakeGate(output) {
-			s.log.Info(fmt.Sprintf("Job '%s' (ID: %s): wakeAgent=false, skipping agent run", jobName, jobID))
+			s.log.Info(fmt.Sprintf("Job %q (ID: %s): wakeAgent=false, skipping agent run", jobName, jobID))
 			doc := fmt.Sprintf("# Cron Job: %s\n\n**Job ID:** %s\n**Run Time:** %s\n\nScript gate returned `wakeAgent=false` — agent skipped.\n",
 				jobName, jobID, s.clk.now().Format(time.DateTime))
 			return &jobRunOutcome{true, doc, SilentMarker, nil}, "", nil
@@ -999,7 +1003,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 		if !errors.As(err, &blocked) {
 			return nil, "", err
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s' (ID: %s): blocked by prompt-injection scanner — %s", jobName, jobID, blocked.Error()))
+		s.log.Warn(fmt.Sprintf("Job %q (ID: %s): blocked by prompt-injection scanner — %s", jobName, jobID, blocked.Error()))
 		doc := fmt.Sprintf("# Cron Job: %s\n\n**Job ID:** %s\n**Run Time:** %s\n**Status:** BLOCKED\n\n"+
 			"The assembled prompt (user prompt + loaded skill content) tripped the cron injection scanner and the agent was NOT run.\n\n"+
 			"**Scanner result:** %s\n\n"+
@@ -1010,7 +1014,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 		return &jobRunOutcome{false, doc, "", strPtr(blocked.Error())}, "", nil
 	}
 	if prompt == nil {
-		s.log.Info(fmt.Sprintf("Job '%s': script produced no output, skipping AI call.", jobName))
+		s.log.Info(fmt.Sprintf("Job %q: script produced no output, skipping AI call.", jobName))
 		return &jobRunOutcome{true, "", SilentMarker, nil}, "", nil
 	}
 	return nil, *prompt, nil
@@ -1269,7 +1273,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 	if isOwner {
 		cronSessionID = owner.SessionID
 	}
-	s.log.Info(fmt.Sprintf("Running job '%s' (ID: %s)", jobName, jobID))
+	s.log.Info(fmt.Sprintf("Running job %q (ID: %s)", jobName, jobID))
 	s.log.Info(fmt.Sprintf("Prompt: %s", truncateRunes(prompt, 100)))
 	var a CronAgent
 	var sessionDB *state.DB
@@ -1295,7 +1299,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 	}()
 	outcome, runErr := func() (jobRunOutcome, error) {
 		if scope.workdir != "" {
-			s.log.Info(fmt.Sprintf("Job '%s': using task-scoped workdir %s", jobID, scope.workdir))
+			s.log.Info(fmt.Sprintf("Job %q: using task-scoped workdir %s", jobID, scope.workdir))
 		}
 		if err := s.reloadDotenvAndPublishDeliveryTarget(runCtx, job, scope); err != nil {
 			return jobRunOutcome{}, err
@@ -1342,7 +1346,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		logged = normalizeNewlines(logged)
 		output := s.runDocHeader(job, jobName, jobID, framedPrompt, fmt.Sprintf("%s%d\n", promptFrame, utf8.RuneCountInString(framedPrompt))) +
 			fmt.Sprintf("%s%d\n%s%s%s", responseFrame, utf8.RuneCountInString(logged), responseHeading, logged, responseTerminator)
-		s.log.Info(fmt.Sprintf("Job '%s' completed successfully", jobName))
+		s.log.Info(fmt.Sprintf("Job %q completed successfully", jobName))
 		audit.write(result, isCronSilenceResponse(finalResponse), nil)
 		return jobRunOutcome{true, output, finalResponse, nil}, nil
 	}()
@@ -1354,7 +1358,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		errorMsg = "the run failed with no error message"
 	}
 	job.run.failureReason = string(provider.ClassifyError(provider.ClassifyInput{Err: runErr}).Reason)
-	s.log.Error(fmt.Sprintf("Job '%s' failed: %s", jobName, errorMsg))
+	s.log.Error(fmt.Sprintf("Job %q failed: %s", jobName, errorMsg))
 	apiCalls := 0
 	if a != nil {
 		apiCalls = a.SessionAPICalls()
@@ -1377,11 +1381,11 @@ func (s *Store) teardownCronAgent(a CronAgent, jobID string, timeoutSeconds *flo
 	s.runCronCleanupWithTimeout(jobID, "agent resource teardown", timeoutSeconds, func() error {
 		if a != nil {
 			if err := a.Close(); err != nil {
-				s.log.Debug(fmt.Sprintf("Job '%s': failed to close agent resources: %v", jobID, err))
+				s.log.Debug(fmt.Sprintf("Job %q: failed to close agent resources: %v", jobID, err))
 			}
 		}
 		if err := cleanupStaleAsyncClients(); err != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': failed to reap stale auxiliary clients: %v", jobID, err))
+			s.log.Debug(fmt.Sprintf("Job %q: failed to reap stale auxiliary clients: %v", jobID, err))
 		}
 		return nil
 	})
@@ -1423,17 +1427,17 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 			return
 		}
 		if _, err := s.finishLostExecution(ctx, *job.ExecutionID, errText); err != nil {
-			s.log.Warn(fmt.Sprintf("Job '%s': failed to close unstarted execution ledger row", jobID), "error", err)
+			s.log.Warn(fmt.Sprintf("Job %q: failed to close unstarted execution ledger row", jobID), "error", err)
 		}
 	}
 	owns, err := s.heartbeatFireClaim(home.WithOverride(ctx, s.home), jobID, owner)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Job '%s': initial fire_claim validation failed", jobID), "error", err)
+		s.log.Warn(fmt.Sprintf("Job %q: initial fire_claim validation failed", jobID), "error", err)
 		finishUnstarted("Fire claim ownership could not be validated before execution started.")
 		return true, nil
 	}
 	if !owns {
-		s.log.Warn(fmt.Sprintf("Job '%s': fire claim ownership was already lost before execution", jobID))
+		s.log.Warn(fmt.Sprintf("Job %q: fire claim ownership was already lost before execution", jobID))
 		finishUnstarted("Fire claim ownership lost before execution started.")
 		return true, nil
 	}
@@ -1466,15 +1470,15 @@ func (s *Store) runWithFireClaimHeartbeat(ctx context.Context, job *Job, run fun
 					herr = aerr
 				} else {
 					lost.Set()
-					s.log.Warn(fmt.Sprintf("Job '%s': fire claim ownership lost; interrupting stale run", jobID))
+					s.log.Warn(fmt.Sprintf("Job %q: fire claim ownership lost; interrupting stale run", jobID))
 					return
 				}
 			}
 			if herr != nil {
-				s.log.Debug(fmt.Sprintf("Job '%s': fire_claim heartbeat failed", jobID), "error", herr)
+				s.log.Debug(fmt.Sprintf("Job %q: fire_claim heartbeat failed", jobID), "error", herr)
 				if monoNow()-lastConfirmed >= fireClaimHeartbeatGraceSecs {
 					lost.Set()
-					s.log.Warn(fmt.Sprintf("Job '%s': fire_claim could not be renewed within %.1fs; interrupting uncertain run", jobID, fireClaimHeartbeatGraceSecs))
+					s.log.Warn(fmt.Sprintf("Job %q: fire_claim could not be renewed within %.1fs; interrupting uncertain run", jobID, fireClaimHeartbeatGraceSecs))
 					return
 				}
 				continue

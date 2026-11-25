@@ -50,28 +50,28 @@ func TestStampClaimPublishesTheCardAndAnOrdinaryClaimStaysEmpty(t *testing.T) {
 		t.Fatalf("published %v", published)
 	}
 	want := jsonutil.ObjectOf("display_kind", "process_complete", "display_text", claimCardDisplay, "text", claimCardModelText)
-	if got := pyDumps(t, published[0]); got != pyDumps(t, want) {
+	if got := dumps(t, published[0]); got != dumps(t, want) {
 		t.Fatalf("card %s", got)
 	}
 	if published[1].Len() != 0 {
-		t.Fatalf("ordinary claim published %s", pyDumps(t, published[1]))
+		t.Fatalf("ordinary claim published %s", dumps(t, published[1]))
 	}
 }
 
 func TestClaimStampCarriesTheAutomationCardOnMessageStart(t *testing.T) {
 	want := jsonutil.ObjectOf("display_kind", "process_complete", "display_text", claimCardDisplay, "text", claimCardModelText)
-	if got := pyDumps(t, AutomationAdmissionDisplay(claimCardAutomation())); got != pyDumps(t, want) {
+	if got := dumps(t, AutomationAdmissionDisplay(claimCardAutomation())); got != dumps(t, want) {
 		t.Fatalf("local card %s", got)
 	}
 	diagnostic := jsonutil.ObjectOf("text", "x", "native_text_v1", jsonutil.ObjectOf("automation", jsonutil.ObjectOf(
 		"display_kind", "process_complete", "display_text", claimCardDisplay, "notification_category", "diagnostic")))
 	if category, _ := AutomationAdmissionDisplay(diagnostic).Get("notification_category"); category != "diagnostic" {
-		t.Fatalf("diagnostic card %s", pyDumps(t, AutomationAdmissionDisplay(diagnostic)))
+		t.Fatalf("diagnostic card %s", dumps(t, AutomationAdmissionDisplay(diagnostic)))
 	}
 	if card := AutomationAdmissionDisplay(jsonutil.ObjectOf("text", "typed by the user")); card.Len() != 0 {
-		t.Fatalf("typed input card %s", pyDumps(t, card))
+		t.Fatalf("typed input card %s", dumps(t, card))
 	}
 	if card := AutomationAdmissionDisplay(jsonutil.ObjectOf("text", "x", "local_automation_v1", jsonutil.ObjectOf("identity", "i"))); card.Len() != 0 {
-		t.Fatalf("bare descriptor card %s", pyDumps(t, card))
+		t.Fatalf("bare descriptor card %s", dumps(t, card))
 	}
 }

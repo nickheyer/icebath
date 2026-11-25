@@ -17,11 +17,11 @@ func TestOrderedArgsObjectKeepsTheModelIntsAndFloats(t *testing.T) {
 	if parseErr != "" {
 		t.Fatal(parseErr)
 	}
-	if got := dumpsUnicode(orderedArgsObject(raw, args)); got != `{"b": 1.0, "a": 1, "n": {"z": 2, "y": 2.5}}` {
+	if got := spacedJSON(orderedArgsObject(raw, args)); got != `{"b": 1.0, "a": 1, "n": {"z": 2, "y": 2.5}}` {
 		t.Fatalf("display %s", got)
 	}
 	args["a"] = 2.0
-	if got := dumpsUnicode(orderedArgsObject(raw, args)); got != `{"b": 1.0, "a": 2.0, "n": {"z": 2, "y": 2.5}}` {
+	if got := spacedJSON(orderedArgsObject(raw, args)); got != `{"b": 1.0, "a": 2.0, "n": {"z": 2, "y": 2.5}}` {
 		t.Fatalf("changed key %s", got)
 	}
 }
@@ -48,7 +48,7 @@ func TestGuardrailCanonicalArgsAndResultHashKeepIntsAndFloats(t *testing.T) {
 func TestPromotedNoteKeepsTheSpawnResultNumbers(t *testing.T) {
 	spawn := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false}`
 	note := strings.ReplaceAll(strings.ReplaceAll(promotedNotePollOnly, "{requested}", "900"), "{cap}", strconv.Itoa(foregroundMaxTimeout()))
-	want := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false, "promoted_from_foreground": ` + pyDumps(note, jsonutil.Spaced()) + `}`
+	want := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false, "promoted_from_foreground": ` + dumps(note, jsonutil.Spaced()) + `}`
 	if got := withPromotedNote(spawn, 900); got != want {
 		t.Fatalf("promoted %s", got)
 	}

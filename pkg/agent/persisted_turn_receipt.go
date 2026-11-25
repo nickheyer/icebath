@@ -4,6 +4,7 @@ import (
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Row id of a committed message, nil for an unpersisted row or one without a positive integer id
@@ -18,7 +19,7 @@ func CommittedRowID(message any) *int {
 			rowID, isInt = int(i64), true
 		}
 	}
-	if pyTruthy(m[state.DBPersistedMarker]) && isInt && rowID > 0 {
+	if anyutil.IsTrue(m[state.DBPersistedMarker]) && isInt && rowID > 0 {
 		return &rowID
 	}
 	return nil
@@ -81,7 +82,7 @@ func PersistedTurnReceipt(messages any, start *int, history []map[string]any, ra
 		receipt["user_row_ids"] = userRowIDs
 	}
 	last := tail[len(tail)-1]
-	if status == "complete" && last["role"] == "assistant" && !pyTruthy(last["tool_calls"]) && reflect.DeepEqual(last["content"], raw) {
+	if status == "complete" && last["role"] == "assistant" && !anyutil.IsTrue(last["tool_calls"]) && reflect.DeepEqual(last["content"], raw) {
 		if finalID := CommittedRowID(last); finalID != nil {
 			receipt["final_assistant_row_id"] = *finalID
 		}

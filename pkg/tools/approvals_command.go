@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -56,8 +55,8 @@ func nsStringList(ns map[string]any, key string) []string {
 	return nil
 }
 
-// Python json.dumps of a value with the default separators
-func pyDumps(v any, opts ...jsonutil.Option) string {
+// JSON text of a value under the given encoding options, panicking when the value cannot be encoded
+func dumps(v any, opts ...jsonutil.Option) string {
 	text, err := jsonutil.Encode(v, opts...)
 	if err != nil {
 		panic(err)
@@ -142,7 +141,7 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 		return 1, err
 	}
 	proposals := BuildProposals(records, LoadPermanentAllowlist(env), nsIntOr(ns, "min_count", 2), nsIntOr(ns, "limit", 20))
-	asJSON := config.PyTruthy(ns["json"])
+	asJSON := anyutil.IsTrue(ns["json"])
 	if applySpec := nsString(ns, "apply_indices"); applySpec != "" {
 		indices, err := ParseApplyIndices(applySpec, len(proposals))
 		if err != nil {
@@ -158,7 +157,7 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 			applied = append(applied, proposals[i].Pattern)
 		}
 		if asJSON {
-			fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("applied", applied, "allowlist_size", len(merged)), jsonutil.Spaced(), jsonutil.ASCII()))
+			fmt.Fprintln(w, dumps(jsonutil.ObjectOf("applied", applied, "allowlist_size", len(merged)), jsonutil.Spaced(), jsonutil.ASCII()))
 		} else {
 			fmt.Fprintln(w, "Added to command_allowlist:")
 			for _, pattern := range applied {
@@ -174,7 +173,7 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 			rows = append(rows, jsonutil.ObjectOf("n", i+1, "pattern", p.Pattern, "kind", p.Kind, "count", p.Count,
 				"classes", jsonStringList(proposalClasses(p)), "examples", jsonStringList(p.Examples)))
 		}
-		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("db", dbPath, "days", days, "proposals", rows), jsonutil.Indent(2), jsonutil.ASCII()))
+		fmt.Fprintln(w, dumps(jsonutil.ObjectOf("db", dbPath, "days", days, "proposals", rows), jsonutil.Indent(2), jsonutil.ASCII()))
 		return 0, nil
 	}
 	renderProposals(w, proposals, days)
@@ -205,7 +204,7 @@ func approvalsTestCommand(env *Env, ns map[string]any, w io.Writer) (int, error)
 		envType = "local"
 	}
 	verdict := EvaluateCommand(env, strings.Join(words, " "), envType)
-	if config.PyTruthy(ns["json"]) {
+	if anyutil.IsTrue(ns["json"]) {
 		rule, detail := any(nil), any(nil)
 		if verdict.Rule != "" {
 			rule = verdict.Rule
@@ -213,7 +212,7 @@ func approvalsTestCommand(env *Env, ns map[string]any, w io.Writer) (int, error)
 		if verdict.Detail != "" {
 			detail = verdict.Detail
 		}
-		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("command", verdict.Command, "env_type", verdict.EnvType, "verdict", verdict.Verdict,
+		fmt.Fprintln(w, dumps(jsonutil.ObjectOf("command", verdict.Command, "env_type", verdict.EnvType, "verdict", verdict.Verdict,
 			"exit_code", verdict.ExitCode, "rule", rule, "detail", detail, "normalized_variants", jsonStringList(verdict.NormalizedVariants)), jsonutil.Indent(2), jsonutil.ASCII()))
 	} else {
 		fmt.Fprint(w, RenderVerdict(verdict))

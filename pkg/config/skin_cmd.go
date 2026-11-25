@@ -32,15 +32,15 @@ func activeSkinFromConfig(ctx context.Context) (string, error) {
 		return "", err
 	}
 	display := map[string]any{}
-	if v := cfg["display"]; PyTruthy(v) {
+	if v := cfg["display"]; anyutil.IsTrue(v) {
 		m, ok := v.(map[string]any)
 		if !ok {
 			return "", fmt.Errorf("config display section is %s where a mapping was expected", errchain.Kind(v))
 		}
 		display = m
 	}
-	if skin := display["skin"]; PyTruthy(skin) {
-		return PyStr(skin), nil
+	if skin := display["skin"]; anyutil.IsTrue(skin) {
+		return anyutil.String(skin), nil
 	}
 	return "default", nil
 }
@@ -86,7 +86,7 @@ func skinSet(ctx context.Context, key, value, skin string, src ConfigCommandSour
 		if err != nil {
 			return 0, err
 		}
-		if !PyTruthy(doc) {
+		if !anyutil.IsTrue(doc) {
 			doc = map[string]any{}
 		}
 		m, ok := doc.(map[string]any)
@@ -143,7 +143,7 @@ func skinList(ctx context.Context, stdout io.Writer) (int, error) {
 	}
 	for _, s := range ListSkins(ctx) {
 		mark := " "
-		if pyEq(s.Name, active) {
+		if anyutil.Equal(s.Name, active) {
 			mark = "*"
 		}
 		fmt.Fprintf(stdout, "%s %-16s %-8s %s\n", mark, anyutil.String(s.Name), s.Source, anyutil.String(s.Description))

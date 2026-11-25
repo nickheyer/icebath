@@ -142,7 +142,7 @@ func isNumber(v any) bool {
 }
 
 // Python int value of an int shaped value, integral float64 narrowed back to int64
-func pyIntValue(v any) (any, bool) {
+func intValue(v any) (any, bool) {
 	switch t := v.(type) {
 	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return t, true
@@ -195,7 +195,7 @@ func toFloat(v any) (float64, bool) {
 
 // Python int() of a numeric value truncating floats, zero for anything else
 func toInt(v any) int {
-	if n, ok := pyIntValue(v); ok {
+	if n, ok := intValue(v); ok {
 		switch t := n.(type) {
 		case bool:
 			if t {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestConfigFilePermissions(t *testing.T) {
@@ -139,7 +140,7 @@ func TestFreshnessAfterConfigEdit(t *testing.T) {
 	h, path, _ := moduleHome(t, "")
 	moduleDump(t, path, map[string]any{"display": map[string]any{"ephemeral_system_ttl": 1}})
 	first, err := ReadRawConfigReadonly(t.Context(), h)
-	if err != nil || !pyEq(Tree(first).Get("display.ephemeral_system_ttl"), 1) {
+	if err != nil || !anyutil.Equal(Tree(first).Get("display.ephemeral_system_ttl"), 1) {
 		t.Fatalf("first read %v %v", first, err)
 	}
 	moduleDump(t, path, map[string]any{"display": map[string]any{"ephemeral_system_ttl": 7}})
@@ -151,7 +152,7 @@ func TestFreshnessAfterConfigEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := ReadRawConfigReadonly(t.Context(), h)
-	if err != nil || !pyEq(Tree(second).Get("display.ephemeral_system_ttl"), 7) {
+	if err != nil || !anyutil.Equal(Tree(second).Get("display.ephemeral_system_ttl"), 7) {
 		t.Fatalf("second read %v %v", second, err)
 	}
 }

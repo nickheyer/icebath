@@ -194,7 +194,7 @@ func (g *adapterCore) pruneStaleDMTopicBinding(ctx context.Context, chatID, thre
 		return
 	}
 	profileName := "default"
-	if p := metadata["profile"]; pyTruthy(p) {
+	if p := metadata["profile"]; anyutil.IsTrue(p) {
 		profileName = anyutil.String(p)
 	} else if name := g.base.ProfileName(); name != "" {
 		profileName = name
@@ -231,7 +231,7 @@ func (g *adapterCore) coerceBoolExtra(key string, def bool) bool {
 		}
 		return def
 	}
-	return pyTruthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // Link preview options disabling previews when configured, nil otherwise

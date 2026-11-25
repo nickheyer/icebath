@@ -47,11 +47,11 @@ func newMixerChild(pcm []byte, loop bool, gain float64, fadeInMS int) *mixerChil
 	pad := (mixerFrameSize - len(pcm)%mixerFrameSize) % mixerFrameSize
 	padded := make([]byte, len(pcm)+pad)
 	copy(padded, pcm)
-	return &mixerChild{pcm: padded, loop: loop, gain: gain, fadeFrames: max(0, pyFloorDiv(fadeInMS, mixerFrameLengthMS))}
+	return &mixerChild{pcm: padded, loop: loop, gain: gain, fadeFrames: max(0, floorDiv(fadeInMS, mixerFrameLengthMS))}
 }
 
 // Python floor division of two ints
-func pyFloorDiv(a, b int) int {
+func floorDiv(a, b int) int {
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
 		q--
@@ -108,7 +108,7 @@ type voiceMixer struct {
 
 func newVoiceMixer(ambientGain, duckGain, speechGain float64, duckReleaseMS int) *voiceMixer {
 	return &voiceMixer{ambientGain: ambientGain, duckGain: duckGain, speechGain: speechGain,
-		duckReleaseFrames: max(1, pyFloorDiv(duckReleaseMS, mixerFrameLengthMS))}
+		duckReleaseFrames: max(1, floorDiv(duckReleaseMS, mixerFrameLengthMS))}
 }
 
 // The mixer hands raw PCM to the player
@@ -236,7 +236,7 @@ func (m *voiceMixer) cleanup() {
 }
 
 // Python returncode of an exited process, the negated signal number when a signal ended it
-func pyReturnCode(ps *os.ProcessState) int {
+func returnCode(ps *os.ProcessState) int {
 	if ps == nil {
 		return -1
 	}
@@ -271,7 +271,7 @@ func decodeToPCM(ctx context.Context, path string, timeout time.Duration) []byte
 		pkgLog().Warn(fmt.Sprintf("decode_to_pcm failed for %s: %s", path, err))
 		return nil
 	}
-	if rc := pyReturnCode(cmd.ProcessState); rc != 0 {
+	if rc := returnCode(cmd.ProcessState); rc != 0 {
 		pkgLog().Warn(fmt.Sprintf("ffmpeg decode failed for %s (rc=%d): %s", path, rc, cut(strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD"), 200)))
 		return nil
 	}

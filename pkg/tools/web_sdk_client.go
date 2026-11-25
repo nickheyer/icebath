@@ -212,7 +212,7 @@ func isSDKTimeout(err error) bool {
 // ---- Python object semantics of decoded vendor payloads --------------------------------------------
 
 // Dict view of a decoded JSON value, false for every other type
-func pyDict(v any) (*jsonutil.Object, bool) {
+func mappingOf(v any) (*jsonutil.Object, bool) {
 	switch x := v.(type) {
 	case *jsonutil.Object:
 		return x, true
@@ -227,55 +227,40 @@ func pyDict(v any) (*jsonutil.Object, bool) {
 }
 
 // dict.get of a decoded value, the AttributeError of a non dict
-func pyDictGet(v any, key string) (any, error) {
-	d, ok := pyDict(v)
+func dictGet(v any, key string) (any, error) {
+	d, ok := mappingOf(v)
 	if !ok {
-		return nil, pyAttributeError(v, "get")
+		return nil, attributeError(v, "get")
 	}
 	val, _ := d.Get(key)
 	return val, nil
 }
 
 // Refusal of a decoded reply value that is no mapping, naming the field read from it unless it is a lookup
-func pyAttributeError(v any, attr string) error {
+func attributeError(v any, attr string) error {
 	switch attr {
 	case "get", "items", "keys", "values":
-		return &pyAttrError{"expected a mapping, got " + errchain.Kind(v)}
+		return &attrError{"expected a mapping, got " + errchain.Kind(v)}
 	}
-	return &pyAttrError{fmt.Sprintf("expected a mapping with %s, got %s", attr, errchain.Kind(v))}
+	return &attrError{fmt.Sprintf("expected a mapping with %s, got %s", attr, errchain.Kind(v))}
 }
 
 // AttributeError raised while reading a decoded payload
-type pyAttrError struct{ msg string }
+type attrError struct{ msg string }
 
-func (e *pyAttrError) Error() string { return e.msg }
+func (e *attrError) Error() string { return e.msg }
 
-func (e *pyAttrError) ErrorKind() string { return "AttributeError" }
+func (e *attrError) ErrorKind() string { return "AttributeError" }
 
-// TypeError raised while iterating, joining or slicing a decoded payload
-type pyTypeError struct{ msg string }
+// TypeError of a decoded payload value that is no list where a list is read
+type typeError struct{ msg string }
 
-func (e *pyTypeError) Error() string { return e.msg }
+func (e *typeError) Error() string { return e.msg }
 
-func (e *pyTypeError) ErrorKind() string { return "TypeError" }
-
-// The value sliced to its first n items like v[:n], the TypeError of an unsliceable value
-func pySubscriptTo(v any, n int) (any, error) {
-	switch x := v.(type) {
-	case []any:
-		return x[:min(n, len(x))], nil
-	case string:
-		runes := []rune(x)
-		return string(runes[:min(n, len(runes))]), nil
-	}
-	if _, ok := pyDict(v); ok {
-		return nil, &pyTypeError{"expected a list, got a mapping"}
-	}
-	return nil, &pyTypeError{fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
-}
+func (e *typeError) ErrorKind() string { return "TypeError" }
 
 // Items of a for loop over a decoded value, dict keys and string characters included
-func pyIter(v any) ([]any, error) {
+func elementsOf(v any) ([]any, error) {
 	switch x := v.(type) {
 	case []any:
 		return x, nil
@@ -286,50 +271,14 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	if d, ok := pyDict(v); ok {
+	if d, ok := mappingOf(v); ok {
 		out := make([]any, 0, d.Len())
 		for _, k := range d.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
 	}
-	return nil, &pyTypeError{fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
-}
-
-// Value or a fallback when the value is falsy, the Python x or y
-func pyOr(v any, fallback any) any {
-	if anyutil.IsTrue(v) {
-		return v
-	}
-	return fallback
-}
-
-// sep.join over a decoded value, the TypeError of a non string item
-func pyJoin(sep string, v any) (string, error) {
-	items, err := pyIter(v)
-	if err != nil {
-		return "", &pyTypeError{"can only join an iterable"}
-	}
-	parts := make([]string, 0, len(items))
-	for i, item := range items {
-		s, ok := item.(string)
-		if !ok {
-			return "", &pyTypeError{fmt.Sprintf("sequence item %d: expected str instance, %s found", i, anyutil.Kind(item))}
-		}
-		parts = append(parts, s)
-	}
-	return strings.Join(parts, sep), nil
-}
-
-// String field of a vendor row, the value itself for a string and its str form otherwise
-func pyStrField(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	if v == nil {
-		return ""
-	}
-	return anyutil.String(v)
+	return nil, &typeError{fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 var (
@@ -348,7 +297,7 @@ func toSnakeCase(d *jsonutil.Object) *jsonutil.Object {
 	out := jsonutil.NewObject()
 	for _, k := range d.Keys() {
 		v, _ := d.Get(k)
-		if inner, ok := pyDict(v); ok {
+		if inner, ok := mappingOf(v); ok {
 			v = toSnakeCase(inner)
 		}
 		out.Set(camelToSnake(k), v)

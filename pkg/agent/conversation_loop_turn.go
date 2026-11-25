@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // LoopState holds every local the turn loop threads through the phase helpers of the turn modules
@@ -216,12 +217,12 @@ func codexAppServerTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[stri
 	case []*state.Message:
 		s.Messages = m
 	}
-	s.APICallCount = pyInt(result["api_calls"])
+	s.APICallCount = wholeNumber(result["api_calls"])
 	s.ActiveSystemPrompt = syncFailoverSystemMessage(a, nil, s.ActiveSystemPrompt)
 	return nil, nil
 }
 
-func pyInt(v any) int {
+func wholeNumber(v any) int {
 	switch n := v.(type) {
 	case int:
 		return n
@@ -424,7 +425,7 @@ const failedTurnErrorMaxChars = 2000
 func failedTurnDisplayMetadata(a *AIAgent, result map[string]any) map[string]any {
 	surface := buildErrorSurfaceFromResult(result, a.provider, a.model)
 	errText := ""
-	if v := result["error"]; pyTruthy(v) {
+	if v := result["error"]; anyutil.IsTrue(v) {
 		errText = fmt.Sprint(v)
 	}
 	runes := []rune(strings.TrimSpace(errText))
@@ -489,7 +490,7 @@ func CloseDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]a
 	if result == nil || result["completed"] == true {
 		return
 	}
-	if pyTruthy(result["compression_exhausted"]) || pyTruthy(result["compression_deferred"]) || result["failure_reason"] == "context_overflow" {
+	if anyutil.IsTrue(result["compression_exhausted"]) || anyutil.IsTrue(result["compression_deferred"]) || result["failure_reason"] == "context_overflow" {
 		return
 	}
 	messages, ok := result["messages"].([]*state.Message)

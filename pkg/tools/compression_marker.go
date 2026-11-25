@@ -20,7 +20,7 @@ var compressionMarkerRe = regexp.MustCompile(compressionMarkerPrefixPattern + ` 
 func HasCompressionMarker(text string) bool { return compressionMarkerRe.MatchString(text) }
 
 // Python format with the comma thousands separator
-func pyCommaInt(n int) string {
+func commaIntValue(n int) string {
 	digits := strconv.Itoa(n)
 	neg := strings.HasPrefix(digits, "-")
 	if neg {
@@ -41,7 +41,7 @@ func pyCommaInt(n int) string {
 
 // Elision marker, the first sentence of the compression marker with per instance counts
 func elisionMarker(omitted, total int) string {
-	return CompressionMarkerPrefix + " " + pyCommaInt(omitted) + " of " + pyCommaInt(total) + " chars omitted here by icebath's context compressor.⟫"
+	return CompressionMarkerPrefix + " " + commaIntValue(omitted) + " of " + commaIntValue(total) + " chars omitted here by icebath's context compressor.⟫"
 }
 
 // Intra record truncation marker naming the omitted and total character counts
@@ -63,7 +63,7 @@ func elide(text string, limit int) string {
 	if headLen <= 0 {
 		return elisionMarker(total, total)
 	}
-	kept := pyRStrip(runePrefix(text, headLen))
+	kept := rStrip(runePrefix(text, headLen))
 	return kept + elisionMarker(total-utf8.RuneCountInString(kept), total)
 }
 

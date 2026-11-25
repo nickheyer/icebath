@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Mailbox home and owning session of one unsettled bot receipt
@@ -91,7 +91,7 @@ func writeReceiptLocked(ctx context.Context, home string, record map[string]any,
 	err := lockedMailbox(ctx, home, func(root string) error {
 		deliveryID, ok := record["delivery_id"]
 		if !ok {
-			return &pyKeyError{"delivery_id"}
+			return &keyError{"delivery_id"}
 		}
 		path := filepath.Join(root, anyutil.String(deliveryID)+".json")
 		current, err := readTicket(path)
@@ -101,7 +101,7 @@ func writeReceiptLocked(ctx context.Context, home string, record map[string]any,
 		if expect != nil && !anyutil.Equal(current["status"], expect.status) {
 			return nil
 		}
-		if current != nil && pyTruthy(current["principal_id"]) {
+		if current != nil && anyutil.IsTrue(current["principal_id"]) {
 			conflict := false
 			for _, field := range []string{"profile_home", "session_id", "principal_id", "message", "author"} {
 				if !anyutil.Equal(current[field], record[field]) {
@@ -109,7 +109,7 @@ func writeReceiptLocked(ctx context.Context, home string, record map[string]any,
 				}
 			}
 			if !anyutil.Equal(categoryOf(current), categoryOf(record)) ||
-				(pyTruthy(current["admission_id"]) && !anyutil.Equal(current["admission_id"], record["admission_id"])) {
+				(anyutil.IsTrue(current["admission_id"]) && !anyutil.Equal(current["admission_id"], record["admission_id"])) {
 				conflict = true
 			}
 			if conflict {
@@ -155,7 +155,7 @@ func withdrawPin(ctx context.Context, home, key string) (bool, error) {
 			if err != nil {
 				return err
 			}
-			if current != nil && current["status"] == "ambiguous" && !pyTruthy(current["admission_id"]) {
+			if current != nil && current["status"] == "ambiguous" && !anyutil.IsTrue(current["admission_id"]) {
 				if err := os.Remove(path); err != nil {
 					return err
 				}
@@ -177,7 +177,7 @@ func requeuePin(ctx context.Context, home, key string) (map[string]any, error) {
 			if err != nil {
 				return err
 			}
-			if _, legacy := current["owner"]; current == nil || current["status"] != "ambiguous" || pyTruthy(current["admission_id"]) || !legacy {
+			if _, legacy := current["owner"]; current == nil || current["status"] != "ambiguous" || anyutil.IsTrue(current["admission_id"]) || !legacy {
 				return nil
 			}
 			restored := map[string]any{}
@@ -206,7 +206,7 @@ func refusePin(ctx context.Context, home, key string) error {
 			if err != nil {
 				return err
 			}
-			if current != nil && current["status"] == "ambiguous" && !pyTruthy(current["admission_id"]) {
+			if current != nil && current["status"] == "ambiguous" && !anyutil.IsTrue(current["admission_id"]) {
 				current["status"] = "failed"
 				current["refused"] = true
 				current["reply"] = ""
@@ -270,7 +270,7 @@ func trackReceiptTask(a *SessionAuthority, task *adapterTask) {
 		delete(a.botReceiptTasks, task)
 		a.mu.Unlock()
 		if task.err != nil && !errors.Is(task.err, context.Canceled) {
-			pkgLog().Warn("Bot receipt projection failed: " + errorutil.Kind(task.err))
+			pkgLog().Warn("Bot receipt projection failed: " + errchain.OSText(task.err))
 		}
 	}()
 }

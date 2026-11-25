@@ -157,7 +157,7 @@ func (a *GatewayAgent) onToolStart(payload map[string]any, streamCallback func(s
 func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
 	name, args, callID := toolFrameFields(payload)
 	result := payload["result"]
-	duration, hasDuration := pyNumber(payload["duration_s"])
+	duration, hasDuration := numberOf(payload["duration_s"])
 	if payload["duration_s"] == nil || !hasDuration {
 		duration = 0.0
 		if started, ok := starts[callID]; ok {
@@ -247,7 +247,7 @@ func (a *GatewayAgent) onNotice(payload map[string]any, streamCallback func(stri
 	if cb == nil {
 		return
 	}
-	ttl, _ := pyIntValue(payload["ttl_ms"])
+	ttl, _ := intValue(payload["ttl_ms"])
 	level, kind := "info", "sticky"
 	if anyutil.IsTrue(payload["level"]) {
 		level = anyutil.String(payload["level"])
@@ -408,24 +408,21 @@ func (a *GatewayAgent) askSecret(params map[string]any) any {
 
 // Leaves a password manager locked at once and says so
 func (a *GatewayAgent) askVaultUnlock(params map[string]any) any {
-	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.stays_locked", "", map[string]any{"name": pyStrOr(params["display_name"])}))
+	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.stays_locked", "", map[string]any{"name": strOrEmpty(params["display_name"])}))
 	return ""
 }
 
 // Declines to save a login at once and says so
 func (a *GatewayAgent) askVaultSaveLogin(params map[string]any) any {
-	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.login_not_saved", "", map[string]any{"site": pyStrOr(params["site"])}))
+	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.login_not_saved", "", map[string]any{"site": strOrEmpty(params["site"])}))
 	return ""
 }
 
 // Enters no one time code at once and says so
 func (a *GatewayAgent) askVaultCode(params map[string]any) any {
-	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.code_not_entered", "", map[string]any{"site": pyStrOr(params["site"])}))
+	a.noteUnanswered(i18n.T(a.ctx, "cli.secret.code_not_entered", "", map[string]any{"site": strOrEmpty(params["site"])}))
 	return ""
 }
-
-// Python str of a value with None and falsy values reading as empty
-func pyStrOr(v any) string { return strOrEmpty(v) }
 
 // String of a value, empty for None only
 func noneOrStr(v any) string {

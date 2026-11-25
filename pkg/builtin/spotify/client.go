@@ -51,13 +51,13 @@ func (e *SpotifyAPIError) ErrorKind() string { return "SpotifyAPIError" }
 func (*SpotifyAPIError) spotifyError()       {}
 
 // Python built in exception of a failed conversion or lookup, ValueError, KeyError or TypeError
-type pyError struct {
+type kindError struct {
 	kind string
 	msg  string
 }
 
-func (e *pyError) Error() string     { return e.msg }
-func (e *pyError) ErrorKind() string { return e.kind }
+func (e *kindError) Error() string     { return e.msg }
+func (e *kindError) ErrorKind() string { return e.kind }
 
 // Python class name of an error raised inside a tool
 func exceptionName(err error) string {
@@ -302,7 +302,7 @@ func checkType(itemType, expectedType string) error {
 func urlPathSegments(cleaned string) ([]string, error) {
 	u, err := urlutil.Split(cleaned)
 	if err != nil {
-		return nil, &pyError{kind: "ValueError", msg: err.Error()}
+		return nil, &kindError{kind: "ValueError", msg: err.Error()}
 	}
 	path := u.Path
 	if i := strings.LastIndex(path, "/"); i >= 0 {

@@ -8,25 +8,25 @@ import (
 )
 
 const (
-	pyWSClass  = `\t\n\x0B\f\r\x1C-\x1F \x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}`
-	pyHWSClass = `\t\x0B\f\x1C-\x1F \x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}`
+	wsClass  = `\t\n\x0B\f\r\x1C-\x1F \x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}`
+	hwsClass = `\t\x0B\f\x1C-\x1F \x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}`
 )
 
 var (
 	dotenvNewlineRe           = regexp.MustCompile(`\r\n|\n|\r`)
-	dotenvMultilineWSRe       = regexp.MustCompile(`^[` + pyWSClass + `]*`)
-	dotenvWhitespaceRe        = regexp.MustCompile(`^[` + pyHWSClass + `]*`)
-	dotenvExportRe            = regexp.MustCompile(`^(?:export[` + pyHWSClass + `]+)?`)
+	dotenvMultilineWSRe       = regexp.MustCompile(`^[` + wsClass + `]*`)
+	dotenvWhitespaceRe        = regexp.MustCompile(`^[` + hwsClass + `]*`)
+	dotenvExportRe            = regexp.MustCompile(`^(?:export[` + hwsClass + `]+)?`)
 	dotenvSingleQuotedKeyRe   = regexp.MustCompile(`^'([^']+)'`)
-	dotenvUnquotedKeyRe       = regexp.MustCompile(`^([^=#` + pyWSClass + `]+)`)
-	dotenvEqualSignRe         = regexp.MustCompile(`^(=[` + pyHWSClass + `]*)`)
+	dotenvUnquotedKeyRe       = regexp.MustCompile(`^([^=#` + wsClass + `]+)`)
+	dotenvEqualSignRe         = regexp.MustCompile(`^(=[` + hwsClass + `]*)`)
 	dotenvSingleQuotedValueRe = regexp.MustCompile(`(?s)^'((?:\\.|[^'\\])*)'`)
 	dotenvDoubleQuotedValueRe = regexp.MustCompile(`(?s)^"((?:\\.|[^"\\])*)"`)
 	dotenvUnquotedValueRe     = regexp.MustCompile(`^([^\r\n]*)`)
-	dotenvCommentRe           = regexp.MustCompile(`^(?:[` + pyHWSClass + `]*#[^\r\n]*)?`)
-	dotenvEndOfLineRe         = regexp.MustCompile(`^[` + pyHWSClass + `]*(?:\r\n|\n|\r|$)`)
+	dotenvCommentRe           = regexp.MustCompile(`^(?:[` + hwsClass + `]*#[^\r\n]*)?`)
+	dotenvEndOfLineRe         = regexp.MustCompile(`^[` + hwsClass + `]*(?:\r\n|\n|\r|$)`)
 	dotenvRestOfLineRe        = regexp.MustCompile(`^[^\r\n]*(?:\r|\n|\r\n)?`)
-	dotenvInlineCommentRe     = regexp.MustCompile(`[` + pyWSClass + `]+#`)
+	dotenvInlineCommentRe     = regexp.MustCompile(`[` + wsClass + `]+#`)
 	dotenvDoubleEscapeRe      = regexp.MustCompile(`\\[\\'"abfnrtv]`)
 	dotenvSingleEscapeRe      = regexp.MustCompile(`\\[\\']`)
 	dotenvPosixVariableRe     = regexp.MustCompile(`\$\{([^}:]*)(?::-([^}]*))?\}`)

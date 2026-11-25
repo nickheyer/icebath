@@ -19,7 +19,7 @@ func NativeManifestFileFS(tree fs.FS, pluginDir string) (string, error) {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", p, errchain.OSText(err))}
+			return "", &ClassError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", p, errchain.OSText(err))}
 		}
 		return p, nil
 	}
@@ -32,16 +32,16 @@ func ReadNativeManifestFS(tree fs.FS, name string) (map[string]any, error) {
 	if err == nil {
 		data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
 		if uerr := strictUTF8(data); uerr != nil {
-			err = &PyError{Class: "UnicodeDecodeError", Message: uerr.Error()}
+			err = &ClassError{Class: "UnicodeDecodeError", Message: uerr.Error()}
 		}
 	}
 	if err != nil {
-		var pyErr *PyError
+		var kindErr *ClassError
 		message := errchain.OSText(err)
-		if errors.As(err, &pyErr) {
-			message = pyErr.Message
+		if errors.As(err, &kindErr) {
+			message = kindErr.Message
 		}
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", name, message)}
+		return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", name, message)}
 	}
 	return decodeNativeManifest(name, string(data))
 }
@@ -50,14 +50,14 @@ func ReadNativeManifestFS(tree fs.FS, name string) (map[string]any, error) {
 func decodeNativeManifest(name, text string) (map[string]any, error) {
 	var data any
 	if err := yaml.Unmarshal([]byte(text), &data); err != nil {
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", name, err)}
+		return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", name, err)}
 	}
 	if data == nil {
 		return map[string]any{}, nil
 	}
 	manifest, ok := yamlNormalize(data).(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "ValueError", Message: "Plugin manifest must be a mapping: " + name}
+		return nil, &ClassError{Class: "ValueError", Message: "Plugin manifest must be a mapping: " + name}
 	}
 	return manifest, nil
 }

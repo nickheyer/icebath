@@ -508,7 +508,7 @@ func TestCronGatewayRunnerGrantsASharedBotSatelliteOnlyItsRoutedTargets(t *testi
 	}
 	sat := "sat"
 	shared := cron.NewSharedRouteAdapters(runner.AdaptersForProfile(&sat), routes)
-	if !shared.PyBool() {
+	if shared.Len() == 0 {
 		t.Fatal("the satellite borrowed nothing from the primary")
 	}
 	if got := shared.Get(ctx, "telegram", map[string]any{"chat_id": "routed"}, nil); got != any(primary) {

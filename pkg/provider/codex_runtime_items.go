@@ -169,7 +169,7 @@ func codexItemCompletionPayload(item any) (string, bool) {
 		if list, ok := contentItems.([]any); ok && len(list) > 0 {
 			return cxDumpsCut(list, 4000), !cxTruthy(success)
 		}
-		return "success=" + anyutil.String(success), !cxTruthy(success)
+		return codexSuccessText(success), !cxTruthy(success)
 	}
 	return "", false
 }

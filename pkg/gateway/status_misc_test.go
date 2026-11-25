@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -39,14 +40,14 @@ func TestReadJSONFileReturnsNilOnBinaryGarbage(t *testing.T) {
 		t.Fatal("garbage parsed")
 	}
 	os.WriteFile(p, []byte(" 4242 \n"), 0o644)
-	if r := readJSONFile(p, true); !pyEq(recGet(r, "pid"), 4242) {
+	if r := readJSONFile(p, true); !anyutil.Equal(recGet(r, "pid"), 4242) {
 		t.Fatal("bare pid")
 	}
 }
 
 func TestActiveAgentsAndBusyDerivation(t *testing.T) {
 	for in, want := range map[any]int64{3: 3, 0: 0, -4: 0, "x": 0, nil: 0, "7": 7} {
-		if got, err := ParseActiveAgents(in); err != nil || !pyEq(got, want) {
+		if got, err := ParseActiveAgents(in); err != nil || !anyutil.Equal(got, want) {
 			t.Errorf("%v = %v %v", in, got, err)
 		}
 	}
@@ -128,9 +129,9 @@ func TestNormalizeUpdatedAt(t *testing.T) {
 		}
 	}
 	check(1750000000, time.Unix(1750000000, 0).UTC().Format(timeutil.RFC3339Micro))
-	check("2026-07-21T12:00:00Z", "2026-07-21T12:00:00+00:00")
-	check("2026-07-21T12:00:00", "2026-07-21T12:00:00+00:00")
-	check("2026-07-21T12:00:00+00:00", "2026-07-21T12:00:00+00:00")
+	check("2026-07-21T12:00:00Z", "2026-07-21T12:00:00.000000Z")
+	check("2026-07-21T12:00:00", "2026-07-21T12:00:00.000000Z")
+	check("2026-07-21T12:00:00+00:00", "2026-07-21T12:00:00.000000Z")
 	check(0, "")
 	check(946684799, "")
 	check(-1750000000, "")

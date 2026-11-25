@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
@@ -259,7 +260,7 @@ func geminiErrorInfo(errObj map[string]any) (string, map[string]any) {
 	details, _ := errObj["details"].([]any)
 	for _, raw := range details {
 		d, ok := raw.(map[string]any)
-		if !ok || reason != "" || !strings.HasSuffix(pyOrStr(d["@type"]), "/google.rpc.ErrorInfo") {
+		if !ok || reason != "" || !strings.HasSuffix(anyutil.StringOr(d["@type"], ""), "/google.rpc.ErrorInfo") {
 			continue
 		}
 		if r, ok := d["reason"].(string); ok {
@@ -292,8 +293,8 @@ func geminiErrorObject(bodyText string) map[string]any {
 // GeminiAPIError for a non 200 response with free tier, Standard key and key surface guidance
 func geminiHTTPError(status int, headers http.Header, bodyText, apiKey, baseURL string, keyGuidance bool) *GeminiAPIError {
 	errObj := geminiErrorObject(bodyText)
-	errStatus := strings.TrimSpace(pyOrStr(errObj["status"]))
-	errMessage := strings.TrimSpace(pyOrStr(errObj["message"]))
+	errStatus := strings.TrimSpace(anyutil.StringOr(errObj["status"], ""))
+	errMessage := strings.TrimSpace(anyutil.StringOr(errObj["message"], ""))
 	reason, metadata := geminiErrorInfo(errObj)
 	retryAfter, _ := RetryAfterFromHeaders(headers)
 	var message string
@@ -391,22 +392,18 @@ func (c *geminiNativeClient) credentials(ctx context.Context) (string, map[strin
 	return base, map[string]string{"Authorization": "Bearer " + tok}, nil
 }
 
-// Request lines of one call, the adapter header dict with route default headers last merged over the httpx client defaults
+// Headers of one call over the httpx client defaults, the route headers over the adapter's own and a given Accept over both
 func (c *geminiNativeClient) headers(auth map[string]string, accept string) http.Header {
-	d := &pyHeaderDict{}
-	d.set("Content-Type", "application/json")
-	d.set("Accept", "application/json")
-	for _, k := range sortedHeaderKeys(auth) {
-		d.set(k, auth[k])
-	}
+	d := newSDKHeaders(headerField{Name: "Content-Type", Value: "application/json"}, headerField{Name: "Accept", Value: "application/json"})
+	d.update(newSDKHeaders(orderedExtraHeaders(auth)...))
 	d.set("User-Agent", geminiAPIClient()+" (gemini-native)")
 	d.set("X-Goog-Api-Client", geminiAPIClient())
-	d.update(pyHeaderDictOf(orderedExtraHeaders(c.route.Headers)...))
+	d.update(newSDKHeaders(orderedExtraHeaders(c.route.Headers)...))
 	if accept != "" {
 		d.set("Accept", accept)
 	}
 	h := httpxClientHeaders()
-	setFields(h, d.stripped())
+	setFields(h, d.fields())
 	return h
 }
 
@@ -479,7 +476,7 @@ func (c *geminiNativeClient) prepare(ctx context.Context, req *Request) (*gemini
 	c.chat.mu.Unlock()
 	kwargs := geminiPlain(build.body)
 	extra := geminiPlain(build.extraBody)
-	if c.chat.cc.provider == "gemini" && isNativeGeminiBaseURL(c.route.BaseURL) && pyTruthy(extra["thinking_config"]) {
+	if c.chat.cc.provider == "gemini" && isNativeGeminiBaseURL(c.route.BaseURL) && anyutil.IsTrue(extra["thinking_config"]) {
 		if _, set := extra["max_output_tokens"]; !set {
 			if budget := longDecodeMaxOutputTokens(req.Model, geminiReasoningConfig(req.Reasoning)); budget > 0 {
 				extra["max_output_tokens"] = budget
@@ -494,14 +491,14 @@ func (c *geminiNativeClient) prepare(ctx context.Context, req *Request) (*gemini
 		}
 	}
 	thinking := extra["thinking_config"]
-	if !pyTruthy(thinking) {
+	if !anyutil.IsTrue(thinking) {
 		thinking = extra["thinkingConfig"]
 	}
 	responseFormat := kwargs["response_format"]
-	if !pyTruthy(responseFormat) {
+	if !anyutil.IsTrue(responseFormat) {
 		responseFormat = extra["response_format"]
 	}
-	model := pyOrStr(kwargs["model"])
+	model := anyutil.StringOr(kwargs["model"], "")
 	if model == "" {
 		model = req.Model
 	}

@@ -64,7 +64,7 @@ func getConfig(ctx context.Context) (string, string, error) {
 	}
 	hassURL := strings.TrimRight(rawURL, "/")
 	if problem := urlSchemeProblem(hassURL); problem != "" {
-		return "", "", &pyErr{"ValueError", problem}
+		return "", "", &kindErr{"ValueError", problem}
 	}
 	token, err := getSecret(ctx, "HASS_TOKEN", "")
 	if err != nil {
@@ -129,7 +129,7 @@ func entityMatches(entityID any, patterns []string) (bool, error) {
 			return true, nil
 		}
 		if !isStr {
-			return false, &pyErr{"TypeError", fmt.Sprintf("an entity id must be text, got %s", errchain.Kind(entityID))}
+			return false, &kindErr{"TypeError", fmt.Sprintf("an entity id must be text, got %s", errchain.Kind(entityID))}
 		}
 		if fnmatch.Fnmatch(id, pat) {
 			return true, nil
@@ -152,13 +152,13 @@ func applyOperatorFilters(states any, allow, deny []string) (any, error) {
 	if len(allow) == 0 && len(deny) == 0 {
 		return states, nil
 	}
-	items, err := pyIter(states)
+	items, err := elementsOf(states)
 	if err != nil {
 		return nil, err
 	}
 	out := []any{}
 	for _, s := range items {
-		entityID, err := pyGet(s, "entity_id", "")
+		entityID, err := lookup(s, "entity_id", "")
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func collectServiceTargets(payload any, entityIDs, indirect map[string]bool) {
 		return
 	}
 	for _, key := range dictKeys(payload) {
-		value, _ := pyGet(payload, key, nil)
+		value, _ := lookup(payload, key, nil)
 		if emptyTargetValue(value) {
 			continue
 		}
@@ -377,7 +377,7 @@ var blockedDomains = []string{"command_line", "hassio", "pyscript", "python_scri
 func reMatch(re interface{ MatchString(string) (bool, error) }, v any) bool {
 	s, ok := v.(string)
 	if !ok {
-		panic(&pyErr{"TypeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))})
+		panic(&kindErr{"TypeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))})
 	}
 	matched, err := re.MatchString(s)
 	if err != nil {
@@ -430,10 +430,10 @@ func apiJSON(ctx context.Context, method, path string, timeout time.Duration, pa
 }
 
 // Lower case of a text argument, an AttributeError for any other value
-func pyLower(v any) (string, error) {
+func lower(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", &pyErr{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
+		return "", &kindErr{"AttributeError", fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 	}
 	return strings.ToLower(s), nil
 }
@@ -443,21 +443,21 @@ func lowerOrEmpty(v any) (string, error) {
 	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
-	return pyLower(v)
+	return lower(v)
 }
 
 // Friendly name of a state's attributes, empty when absent
 func friendlyName(s any) (any, error) {
-	attrs, err := pyGet(s, "attributes", jsonutil.NewObject())
+	attrs, err := lookup(s, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}
-	return pyGet(attrs, "friendly_name", "")
+	return lookup(attrs, "friendly_name", "")
 }
 
 // Whether a state belongs to the area by its registry area, else by friendly name or area attribute
 func inArea(s any, areaLower string, entityArea keyedMap) (bool, error) {
-	eid, err := pyGet(s, "entity_id", "")
+	eid, err := lookup(s, "entity_id", "")
 	if err != nil {
 		return false, err
 	}
@@ -466,17 +466,17 @@ func inArea(s any, areaLower string, entityArea keyedMap) (bool, error) {
 		return false, err
 	}
 	if found && registered != nil {
-		lowered, err := pyLower(registered)
+		lowered, err := lower(registered)
 		if err != nil {
 			return false, err
 		}
 		return strings.Contains(lowered, areaLower), nil
 	}
-	attrs, err := pyGet(s, "attributes", jsonutil.NewObject())
+	attrs, err := lookup(s, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return false, err
 	}
-	name, err := pyGet(attrs, "friendly_name", "")
+	name, err := lookup(attrs, "friendly_name", "")
 	if err != nil {
 		return false, err
 	}
@@ -487,7 +487,7 @@ func inArea(s any, areaLower string, entityArea keyedMap) (bool, error) {
 	if strings.Contains(nameLower, areaLower) {
 		return true, nil
 	}
-	area, err := pyGet(attrs, "area", "")
+	area, err := lookup(attrs, "area", "")
 	if err != nil {
 		return false, err
 	}
@@ -536,7 +536,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 	// Comprehension over the current states, turning the raw value into a list on first use
 	comprehend := func(keep func(s any) (bool, error)) error {
 		if !listed {
-			items, err := pyIter(filtered)
+			items, err := elementsOf(filtered)
 			if err != nil {
 				return err
 			}
@@ -551,7 +551,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 	}
 	if len(idFilter) > 0 {
 		if err := comprehend(func(s any) (bool, error) {
-			eid, err := pyGet(s, "entity_id", "")
+			eid, err := lookup(s, "entity_id", "")
 			if err != nil {
 				return false, err
 			}
@@ -567,7 +567,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 		if anyutil.IsTrue(domain) {
 			prefix := anyutil.String(domain) + "."
 			if err := comprehend(func(s any) (bool, error) {
-				eid, err := pyGet(s, "entity_id", "")
+				eid, err := lookup(s, "entity_id", "")
 				if err != nil {
 					return false, err
 				}
@@ -581,7 +581,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 			}
 		}
 		if anyutil.IsTrue(area) {
-			areaLower, err := pyLower(area)
+			areaLower, err := lower(area)
 			if err != nil {
 				return nil, err
 			}
@@ -590,7 +590,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 			}
 		}
 		if anyutil.IsTrue(name) {
-			nameLower, err := pyLower(name)
+			nameLower, err := lower(name)
 			if err != nil {
 				return nil, err
 			}
@@ -606,7 +606,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 				if strings.Contains(fnLower, nameLower) {
 					return true, nil
 				}
-				eid, err := pyGet(s, "entity_id", "")
+				eid, err := lookup(s, "entity_id", "")
 				if err != nil {
 					return false, err
 				}
@@ -627,9 +627,9 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 		return nil, err
 	}
 	if !listed {
-		items, err := pyIter(filtered)
+		items, err := elementsOf(filtered)
 		if err != nil {
-			return nil, &pyErr{"TypeError", fmt.Sprintf("the entity filter must give a list, got %s", errchain.Kind(filtered))}
+			return nil, &kindErr{"TypeError", fmt.Sprintf("the entity filter must give a list, got %s", errchain.Kind(filtered))}
 		}
 		list = items
 	}
@@ -637,17 +637,17 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 	truncated := limit > 0 && int64(total) > limit
 	if truncated {
 		if !listed && isDict(filtered) {
-			return nil, &pyErr{"KeyError", fmt.Sprintf("the entity filter gave a mapping, which cannot be cut to its first %d entities", limit)}
+			return nil, &kindErr{"KeyError", fmt.Sprintf("the entity filter gave a mapping, which cannot be cut to its first %d entities", limit)}
 		}
 		list = list[:limit]
 	}
 	entities := []any{}
 	for _, s := range list {
-		eid, err := pyIndex(s, "entity_id")
+		eid, err := elementAt(s, "entity_id")
 		if err != nil {
 			return nil, err
 		}
-		state, err := pyIndex(s, "state")
+		state, err := elementAt(s, "state")
 		if err != nil {
 			return nil, err
 		}
@@ -742,26 +742,26 @@ func registryFetch(ctx context.Context, conn *websocketutil.Conn, mid int64, mty
 		if err != nil {
 			return nil, err
 		}
-		id, err := pyGet(m, "id", nil)
+		id, err := lookup(m, "id", nil)
 		if err != nil {
 			return nil, err
 		}
 		if !anyutil.Equal(id, mid) {
 			continue
 		}
-		kind, err := pyGet(m, "type", nil)
+		kind, err := lookup(m, "type", nil)
 		if err != nil {
 			return nil, err
 		}
 		if kind != "result" {
 			continue
 		}
-		success, _ := pyGet(m, "success", true)
+		success, _ := lookup(m, "success", true)
 		if !anyutil.IsTrue(success) {
-			detail, _ := pyGet(m, "error", nil)
-			return nil, &pyErr{"RuntimeError", fmt.Sprintf("%s refused: %s", mtype, anyutil.String(detail))}
+			detail, _ := lookup(m, "error", nil)
+			return nil, &kindErr{"RuntimeError", fmt.Sprintf("%s refused: %s", mtype, anyutil.String(detail))}
 		}
-		result, _ := pyGet(m, "result", nil)
+		result, _ := lookup(m, "result", nil)
 		if !anyutil.IsTrue(result) {
 			return []any{}, nil
 		}
@@ -791,12 +791,12 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 	if err != nil {
 		return nil, nil, false, err
 	}
-	authType, err := pyGet(authReply, "type", nil)
+	authType, err := lookup(authReply, "type", nil)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	if authType != "auth_ok" {
-		reason, _ := pyGet(authReply, "message", nil)
+		reason, _ := lookup(authReply, "message", nil)
 		if !anyutil.IsTrue(reason) {
 			reason = authType
 		}
@@ -808,16 +808,16 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 		return nil, nil, false, err
 	}
 	areas := keyedMap{}
-	areaItems, err := pyIter(areaReg)
+	areaItems, err := elementsOf(areaReg)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	for _, a := range areaItems {
-		k, err := pyIndex(a, "area_id")
+		k, err := elementAt(a, "area_id")
 		if err != nil {
 			return nil, nil, false, err
 		}
-		v, err := pyIndex(a, "name")
+		v, err := elementAt(a, "name")
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -830,12 +830,12 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 		return nil, nil, false, err
 	}
 	devices := keyedMap{}
-	deviceItems, err := pyIter(deviceReg)
+	deviceItems, err := elementsOf(deviceReg)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	for _, d := range deviceItems {
-		k, err := pyIndex(d, "id")
+		k, err := elementAt(d, "id")
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -847,13 +847,13 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 	if err != nil {
 		return nil, nil, false, err
 	}
-	entityItems, err := pyIter(entityReg)
+	entityItems, err := elementsOf(entityReg)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	entArea, entDev = keyedMap{}, keyedMap{}
 	for _, e := range entityItems {
-		deviceID, err := pyGet(e, "device_id", nil)
+		deviceID, err := lookup(e, "device_id", nil)
 		if err != nil {
 			return nil, nil, false, err
 		}
@@ -864,12 +864,12 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 		if !anyutil.IsTrue(dev) {
 			dev = jsonutil.NewObject()
 		}
-		aid, err := pyGet(e, "area_id", nil)
+		aid, err := lookup(e, "area_id", nil)
 		if err != nil {
 			return nil, nil, false, err
 		}
 		if !anyutil.IsTrue(aid) {
-			if aid, err = pyGet(dev, "area_id", nil); err != nil {
+			if aid, err = lookup(dev, "area_id", nil); err != nil {
 				return nil, nil, false, err
 			}
 		}
@@ -878,7 +878,7 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 			return nil, nil, false, err
 		}
 		if known {
-			eid, err := pyIndex(e, "entity_id")
+			eid, err := elementAt(e, "entity_id")
 			if err != nil {
 				return nil, nil, false, err
 			}
@@ -886,17 +886,17 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 				return nil, nil, false, err
 			}
 		}
-		dname, err := pyGet(dev, "name_by_user", nil)
+		dname, err := lookup(dev, "name_by_user", nil)
 		if err != nil {
 			return nil, nil, false, err
 		}
 		if !anyutil.IsTrue(dname) {
-			if dname, err = pyGet(dev, "name", nil); err != nil {
+			if dname, err = lookup(dev, "name", nil); err != nil {
 				return nil, nil, false, err
 			}
 		}
 		if anyutil.IsTrue(dname) {
-			eid, err := pyIndex(e, "entity_id")
+			eid, err := elementAt(e, "entity_id")
 			if err != nil {
 				return nil, nil, false, err
 			}
@@ -959,7 +959,7 @@ func registryAreaMap(ctx context.Context) (keyedMap, keyedMap, error) {
 func warmRegistryMaps(ctx context.Context) (keyedMap, keyedMap, error) {
 	hassURL, _, err := getConfig(ctx)
 	if err != nil {
-		var pe *pyErr
+		var pe *kindErr
 		if errors.As(err, &pe) && pe.kind == "ValueError" {
 			return keyedMap{}, keyedMap{}, nil
 		}
@@ -997,27 +997,27 @@ func getState(ctx context.Context, entityID string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	eid, err := pyIndex(data, "entity_id")
+	eid, err := elementAt(data, "entity_id")
 	if err != nil {
 		return nil, err
 	}
-	state, err := pyIndex(data, "state")
+	state, err := elementAt(data, "state")
 	if err != nil {
 		return nil, err
 	}
-	attrs, err := pyGet(data, "attributes", jsonutil.NewObject())
+	attrs, err := lookup(data, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}
-	lastChanged, _ := pyGet(data, "last_changed", nil)
-	lastUpdated, _ := pyGet(data, "last_updated", nil)
+	lastChanged, _ := lookup(data, "last_changed", nil)
+	lastUpdated, _ := lookup(data, "last_updated", nil)
 	return jsonutil.ObjectOf("entity_id", eid, "state", state, "attributes", attrs, "last_changed", lastChanged,
 		"last_updated", lastUpdated), nil
 }
 
 // Service call payload of the data with the entity id argument overriding data entity_id
 func buildServicePayload(entityID, data any) (*jsonutil.Object, error) {
-	payload, err := pyDict(data)
+	payload, err := mappingOf(data)
 	if err != nil {
 		return nil, err
 	}
@@ -1032,17 +1032,17 @@ func parseServiceResponse(domain, service string, result, entityID any) (*jsonut
 	affected := []any{}
 	var serviceResponse any
 	compact := func(s any) {
-		eid, _ := pyGet(s, "entity_id", "")
-		state, _ := pyGet(s, "state", "")
+		eid, _ := lookup(s, "entity_id", "")
+		state, _ := lookup(s, "state", "")
 		affected = append(affected, jsonutil.ObjectOf("entity_id", eid, "state", state))
 	}
 	switch {
 	case isDict(result):
-		changed, _ := pyGet(result, "changed_states", nil)
+		changed, _ := lookup(result, "changed_states", nil)
 		if !anyutil.IsTrue(changed) {
 			changed = []any{}
 		}
-		items, err := pyIter(changed)
+		items, err := elementsOf(changed)
 		if err != nil {
 			return nil, err
 		}
@@ -1051,7 +1051,7 @@ func parseServiceResponse(domain, service string, result, entityID any) (*jsonut
 				compact(s)
 			}
 		}
-		serviceResponse, _ = pyGet(result, "service_response", nil)
+		serviceResponse, _ = lookup(result, "service_response", nil)
 	default:
 		if list, ok := result.([]any); ok {
 			for _, s := range list {
@@ -1114,7 +1114,7 @@ func callService(ctx context.Context, domain, service string, entityID, data any
 		}
 		return out, nil
 	}
-	stateID, err := pyIndex(state, "entity_id")
+	stateID, err := elementAt(state, "entity_id")
 	if err != nil {
 		return nil, err
 	}
@@ -1129,7 +1129,7 @@ func callService(ctx context.Context, domain, service string, entityID, data any
 			"of their own domain — call %s.%s instead.", domain, service, eid, actualDomain, domain, actualDomain, service))
 		return out, nil
 	}
-	current, err := pyIndex(state, "state")
+	current, err := elementAt(state, "state")
 	if err != nil {
 		return nil, err
 	}
@@ -1145,13 +1145,13 @@ func listServices(ctx context.Context, domain any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	items, err := pyIter(services)
+	items, err := elementsOf(services)
 	if err != nil {
 		return nil, err
 	}
 	if anyutil.IsTrue(domain) {
 		if items, err = filterStates(items, func(s any) (bool, error) {
-			d, err := pyGet(s, "domain", nil)
+			d, err := lookup(s, "domain", nil)
 			return err == nil && anyutil.Equal(d, domain), err
 		}); err != nil {
 			return nil, err
@@ -1159,7 +1159,7 @@ func listServices(ctx context.Context, domain any) (any, error) {
 	}
 	result := []any{}
 	for _, svcDomain := range items {
-		svcs, err := pyGet(svcDomain, "services", jsonutil.NewObject())
+		svcs, err := lookup(svcDomain, "services", jsonutil.NewObject())
 		if err != nil {
 			return nil, err
 		}
@@ -1168,22 +1168,22 @@ func listServices(ctx context.Context, domain any) (any, error) {
 		}
 		domainServices := jsonutil.NewObject()
 		for _, svcName := range dictKeys(svcs) {
-			svcInfo, _ := pyGet(svcs, svcName, nil)
-			description, err := pyGet(svcInfo, "description", "")
+			svcInfo, _ := lookup(svcs, svcName, nil)
+			description, err := lookup(svcInfo, "description", "")
 			if err != nil {
 				return nil, err
 			}
 			entry := jsonutil.ObjectOf("description", description)
-			fields, _ := pyGet(svcInfo, "fields", jsonutil.NewObject())
+			fields, _ := lookup(svcInfo, "fields", jsonutil.NewObject())
 			if anyutil.IsTrue(fields) {
 				if !isDict(fields) {
 					return nil, attrErr(fields, "the fields of a service", "a mapping")
 				}
 				described := jsonutil.NewObject()
 				for _, k := range dictKeys(fields) {
-					v, _ := pyGet(fields, k, nil)
+					v, _ := lookup(fields, k, nil)
 					if isDict(v) {
-						d, _ := pyGet(v, "description", "")
+						d, _ := lookup(v, "description", "")
 						described.Set(k, d)
 					}
 				}
@@ -1191,7 +1191,7 @@ func listServices(ctx context.Context, domain any) (any, error) {
 			}
 			domainServices.Set(svcName, entry)
 		}
-		d, _ := pyGet(svcDomain, "domain", "")
+		d, _ := lookup(svcDomain, "domain", "")
 		result = append(result, jsonutil.ObjectOf("domain", d, "services", domainServices))
 	}
 	return jsonutil.ObjectOf("count", len(result), "domains", result), nil

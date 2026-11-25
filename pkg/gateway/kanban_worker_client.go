@@ -312,8 +312,10 @@ func kanbanWorkerClientSubmit(ctx context.Context) (int, error) {
 			return rc, nil
 		}
 	}
-	var pyErr *kanbanPyError
-	if (errors.As(err, &pyErr) && (pyErr.Class == "KeyError" || pyErr.Class == "ValueError")) || errorutil.IsSystem(err) {
+	var kindErr *kanbanPyError
+	var syntaxErr *jsonutil.SyntaxError
+	if (errors.As(err, &kindErr) && (kindErr.Class == "KeyError" || kindErr.Class == "ValueError")) || errors.As(err, &syntaxErr) ||
+		errors.Is(err, anyutil.ErrNotNumber) || errors.Is(err, anyutil.ErrRange) || errorutil.IsSystem(err) {
 		text := err.Error()
 		if errorutil.IsSystem(err) {
 			text = errchain.OSText(err)

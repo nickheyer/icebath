@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,8 +13,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Strings a YAML 1.1 reader resolves to a bool or null, quoted on write at every depth
@@ -59,12 +63,12 @@ func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (m
 	}
 	m, ok := loaded.(map[string]any)
 	if !ok {
-		kind := ErrorKind(loaded)
+		kind := errchain.Kind(loaded)
 		terr := fmt.Errorf("top-level YAML must be a mapping, got %s", kind)
 		if werr := WarnConfigParseFailure(ctx, configPath, terr, "refuse-write"); werr != nil {
 			return nil, werr
 		}
-		return nil, RefuseOverwrite(configPath, "must start with settings names, but its top level is a "+kind, terr,
+		return nil, RefuseOverwrite(configPath, "must start with settings names, but its top level is "+kind, terr,
 			fmt.Sprintf(fixYAML, BackupsDirDisplay(home.Dir(ctx))))
 	}
 	return m, nil
@@ -154,6 +158,11 @@ func rtNode(value any, quote yaml.Style) (*yaml.Node, error) {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: yamlFloatText(v)}, nil
 	case float32:
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: yamlFloatText(float64(v))}, nil
+	case *big.Int:
+		if v == nil {
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!null", Value: "null"}, nil
+		}
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: v.String()}, nil
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Kind() {
@@ -187,7 +196,7 @@ func yamlFloatText(f float64) string {
 	case math.IsInf(f, -1):
 		return "-.inf"
 	}
-	s := pyFloatRepr(f)
+	s := representFloat(f)
 	if mant, exp, ok := strings.Cut(s, "e"); ok && !strings.Contains(mant, ".") {
 		s = mant + ".0e" + exp
 	}
@@ -278,7 +287,7 @@ func rtSet(root *yaml.Node, path string, value any) error {
 				return nil
 			}
 			if perr != nil && perr.Kind == "ValueError" {
-				return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into list at key %s: segment %s is not a numeric index", PyRepr(path), PyRepr(part))}
+				return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into a list at key %q: segment %q is not a numeric index", path, part)}
 			}
 			if perr != nil {
 				return perr
@@ -318,7 +327,7 @@ func rtSet(root *yaml.Node, path string, value any) error {
 			if err := current.Decode(&held); err != nil {
 				return err
 			}
-			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", ErrorKind(held), PyRepr(path))}
+			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %q", errchain.Kind(held), path)}
 		}
 	}
 	return nil
@@ -373,7 +382,7 @@ func rtUnset(root *yaml.Node, path string) bool {
 
 // Sets and then removes dotted keys of a YAML file in one rewrite that keeps comments, order and quoting; nothing is written when a key cannot be set or nothing changes
 func atomicRoundtripYAMLApply(ctx context.Context, path string, set []KeyValue, unset []string) error {
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, pathutil.DirKeepDotDot(path)); err != nil {
 		return err
 	}
 	doc, source, err := roundtripLoad(path)
@@ -403,7 +412,7 @@ func atomicRoundtripYAMLApply(ctx context.Context, path string, set []KeyValue, 
 
 // Persists a whole config state onto the file, reassigning only changed nodes and deleting absent keys
 func atomicRoundtripYAMLSave(ctx context.Context, path string, state map[string]any, extraOnCreate string) error {
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, pathutil.DirKeepDotDot(path)); err != nil {
 		return err
 	}
 	if _, err := RequireReadableConfigBeforeWrite(ctx, path); err != nil {
@@ -473,7 +482,7 @@ func rtMergeItem(content []*yaml.Node, i int, value any) error {
 		have = normalizeMaps(have)
 		_, haveBool := have.(bool)
 		_, wantBool := value.(bool)
-		if pyEq(have, value) && haveBool == wantBool {
+		if anyutil.Equal(have, value) && haveBool == wantBool {
 			return nil
 		}
 	}

@@ -76,7 +76,7 @@ func TestImportJobDefinitionsSeedsNewIdsPausedAndNamesRefusals(t *testing.T) {
 	bad := jsonutil.NewObject()
 	bad.Set(kept.ID, map[string]any{"name": "broken", "schedule": "not a schedule"})
 	err := s.importJobDefinitions(context.Background(), bad, "review first")
-	if err == nil || !strings.HasPrefix(err.Error(), "cron job 'broken': ") {
+	if err == nil || !strings.HasPrefix(err.Error(), `cron job "broken": Invalid schedule "not a schedule". Use:`) {
 		t.Fatalf("refusal %v", err)
 	}
 	if mustGet(t, s, kept.ID).Prompt != "mine" {

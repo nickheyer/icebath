@@ -28,20 +28,20 @@ func (p *braveFreeProvider) Search(ctx context.Context, env *Env, query string, 
 	if failure != nil {
 		return failure, nil
 	}
-	web, err := pyGetDefault(data, "web", nil)
+	web, err := getDefault(data, "web", nil)
 	if err != nil {
 		return nil, err
 	}
-	results, err := pyGetDefault(anyutil.Or(web, map[string]any{}), "results", []any{})
+	results, err := getDefault(anyutil.Or(web, map[string]any{}), "results", []any{})
 	if err != nil {
 		return nil, err
 	}
 	raw := anyutil.Or(results, []any{})
-	head, err := pySeqHead(raw, limit)
+	head, err := seqHead(raw, limit)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := pyIter(head)
+	rows, err := elementsOf(head)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (p *braveFreeProvider) Search(ctx context.Context, env *Env, query string, 
 	if err != nil {
 		return nil, err
 	}
-	all, _ := pyIter(raw)
+	all, _ := elementsOf(raw)
 	total := len(all)
 	envLog(env).Info("Brave Search results", "query", query, "results", len(hits), "raw", total, "limit", limit)
 	return searchOK(hits), nil

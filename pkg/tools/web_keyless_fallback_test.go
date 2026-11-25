@@ -93,10 +93,10 @@ func TestMCPCallDecodesLikeResponseText(t *testing.T) {
 	}
 	keylessServer(t, &exaMCPURL, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=no-such-codec")
-		io.WriteString(w, "x")
+		io.WriteString(w, "data: "+keylessEnvelope("Title: 你好")+"\n\n")
 	})
-	if _, err := mcpCall(context.Background(), exaMCPURL, "web_search_exa", nil); err == nil || isKeylessMCPError(err) || err.Error() != "unknown encoding: no-such-codec" {
-		t.Fatalf("lookup error %v", err)
+	if text, err := mcpCall(context.Background(), exaMCPURL, "web_search_exa", nil); err != nil || text != "Title: 你好" {
+		t.Fatalf("an unknown charset is read as UTF-8: %q %v", text, err)
 	}
 }
 
@@ -120,15 +120,15 @@ func TestKeenableRequestErrorsAndDecoding(t *testing.T) {
 	})
 	body = `{"results": [{"url": "https://a", "title": NaN, "snippet": Infinity}]}`
 	out, err := keenableSearchKeyless(context.Background(), "q", 5)
-	if err != nil || !out.Success || out.data().Web[0].Title != "nan" || out.data().Web[0].Description != "inf" {
+	if err != nil || !out.Success || out.data().Web[0].Title != "NaN" || out.data().Web[0].Description != "+Inf" {
 		t.Fatalf("nan payload %+v %v", out, err)
 	}
 	for payload, want := range map[string]string{
-		"not json":            "Keyless Keenable search failed: Expecting value: line 1 column 1 (char 0).",
+		"not json":            "Keyless Keenable search failed: json: invalid character 'o' in literal null (expecting 'u') at line 1, column 2.",
 		`[1, 2]`:              "Keyless Keenable search failed: expected a mapping, got a list.",
 		`{"results": 5}`:      "Keyless Keenable search failed: expected a list, got a number.",
 		`{"results": ["x"]}`:  "Keyless Keenable search failed: expected a mapping, got text.",
-		`{"results": [], "x"`: "Keyless Keenable search failed: Expecting ':' delimiter: line 1 column 20 (char 19).",
+		`{"results": [], "x"`: "Keyless Keenable search failed: json: unexpected end of input at line 1, column 20.",
 	} {
 		body = payload
 		out, err := keenableSearchKeyless(context.Background(), "q", 5)
@@ -216,21 +216,25 @@ func TestKeylessCalls(t *testing.T) {
 	if out, _ := parallelSearchKeyless(context.Background(), "query", 0); len(out.data().Web) != 2 {
 		t.Fatalf("zero limit %+v", out)
 	}
-	for payload, want := range map[string]string{
-		`{"results": 5}`:                   "Keyless Parallel search returned an unexpected payload: expected a list, got a number",
-		`{"results": {"a": 1}}`:            "Keyless Parallel search returned an unexpected payload: expected a list, got a mapping",
-		`{"results": [{"excerpts": [1]}]}`: "Keyless Parallel search returned an unexpected payload: sequence item 0: expected str instance, int found",
-		`{"results": [{"excerpts": 3}]}`:   "Keyless Parallel search returned an unexpected payload: can only join an iterable",
-		`{"results": [], "x" 1}`:           "Keyless Parallel search returned an unexpected payload: Expecting ':' delimiter: line 1 column 21 (char 20)",
-		`{"results": [{"url": Infinity}]}`: "",
+	for _, c := range []struct {
+		payload, err string
+		hit          WebSearchHit
+	}{
+		{`{"results": 5}`, "Keyless Parallel search returned an unexpected payload: expected a list, got a number", WebSearchHit{}},
+		{`{"results": {"a": 1}}`, "Keyless Parallel search returned an unexpected payload: expected a list, got a mapping", WebSearchHit{}},
+		{`{"results": "ab"}`, "Keyless Parallel search returned an unexpected payload: expected a list, got text", WebSearchHit{}},
+		{`{"results": [], "x" 1}`, "Keyless Parallel search returned an unexpected payload: json: invalid character '1' after object key at line 1, column 21", WebSearchHit{}},
+		{`{"results": [{"excerpts": [1]}]}`, "", WebSearchHit{Description: "1", Position: 1}},
+		{`{"results": [{"excerpts": 3}]}`, "", WebSearchHit{Description: "3", Position: 1}},
+		{`{"results": [{"url": Infinity}]}`, "", WebSearchHit{URL: "+Inf", Position: 1}},
 	} {
-		reply = keylessEnvelope(payload)
+		reply = keylessEnvelope(c.payload)
 		out, err := parallelSearchKeyless(context.Background(), "q", 5)
-		if err != nil || (want == "" && (!out.Success || out.data().Web[0].URL != "inf")) || (want != "" && out.Error != want) {
-			t.Errorf("payload %q gave %+v %v", payload, out, err)
+		if err != nil || (c.err == "" && (!out.Success || len(out.data().Web) != 1 || out.data().Web[0] != c.hit)) || (c.err != "" && (out.Success || out.Error != c.err)) {
+			t.Errorf("payload %q gave %+v %v", c.payload, out, err)
 		}
 	}
-	for payload, want := range map[string]string{`[1]`: "expected a mapping, got a list", `{"results": "ab"}`: "expected a mapping, got text"} {
+	for payload, want := range map[string]string{`[1]`: "expected a mapping, got a list"} {
 		reply = keylessEnvelope(payload)
 		if _, err := parallelSearchKeyless(context.Background(), "q", 5); err == nil || err.Error() != want {
 			t.Errorf("payload %q propagated %v", payload, err)
@@ -253,8 +257,8 @@ func TestKeylessCalls(t *testing.T) {
 		t.Fatalf("exa args %v", lastArgs)
 	}
 	reply = `{"result": {"content": [{"type": "text", "text": "x"}]}, "error": [1]}`
-	if _, err := exaSearchKeyless(context.Background(), "q", 5); err == nil || isKeylessMCPError(err) {
-		t.Fatalf("exa non mcp error swallowed %v", err)
+	if out, err := exaSearchKeyless(context.Background(), "q", 5); err != nil || out.Success || out.Error != "Keyless Exa search failed: [1]. Set EXA_API_KEY (https://exa.ai) or another web backend via `icebath tools` for reliable service." {
+		t.Fatalf("an error member of any shape is the vendor's error %+v %v", out, err)
 	}
 	reply = keylessEnvelope("# Page Title\nbody text")
 	calls.Store(0)

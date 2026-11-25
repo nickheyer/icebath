@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -74,8 +75,8 @@ func (s *SessionStore) activeProfileName() string {
 func (s *SessionStore) recoveredRowAllowedForActiveProfile(requestedSessionKey string, recovered *jsonutil.Object) bool {
 	raw, _ := recovered.Get("session_key")
 	recoveredKey := ""
-	if pyTruthy(raw) {
-		recoveredKey = pyStrOf(raw)
+	if anyutil.IsTrue(raw) {
+		recoveredKey = anyutil.String(raw)
 	}
 	if recoveredKey == "" || recoveredKey == requestedSessionKey {
 		return true
@@ -143,7 +144,7 @@ func recoveredRowMatchesSourceScope(recovered *jsonutil.Object, source *SessionS
 	}
 	raw, _ := recovered.Get("origin_json")
 	text, _ := raw.(string)
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		text = ""
 	}
 	parsed, err := jsonutil.Decode(text)
@@ -162,7 +163,7 @@ func recoveredRowMatchesSourceScope(recovered *jsonutil.Object, source *SessionS
 }
 
 // Epoch value of a row column as a local naive datetime, the default when invalid
-func rowTimestamp(value any, def pyDatetime) pyDatetime {
+func rowTimestamp(value any, def datetime) datetime {
 	var f float64
 	switch x := value.(type) {
 	case float64:
@@ -186,26 +187,26 @@ func rowTimestamp(value any, def pyDatetime) pyDatetime {
 		return def
 	}
 	sec, frac := math.Modf(f)
-	return pyDatetime{T: time.Unix(int64(sec), int64(math.Round(frac*1e6))*1000).In(time.Local)}
+	return datetime{T: time.Unix(int64(sec), int64(math.Round(frac*1e6))*1000).In(time.Local)}
 }
 
 // Entry rebuilt from a recovered row, an invalid durable timestamp reading as old
 func (s *SessionStore) createEntryFromRecoveredRow(row *jsonutil.Object, sessionKey string, source *SessionSource) *SessionEntry {
 	started, _ := row.Get("started_at")
-	created := rowTimestamp(started, pyDatetime{T: time.Unix(0, 0).In(time.Local)})
+	created := rowTimestamp(started, datetime{T: time.Unix(0, 0).In(time.Local)})
 	lastActivity, hasLast := row.Get("last_activity_at")
 	updated := created
 	if hasLast && lastActivity != nil {
 		updated = rowTimestamp(lastActivity, created)
 	}
 	hadRaw, _ := row.Get("_has_messages")
-	had := pyTruthy(hadRaw)
+	had := anyutil.IsTrue(hadRaw)
 	if hadRaw == nil {
 		count, _ := row.Get("message_count")
-		had = pyTruthy(count) || (hasLast && lastActivity != nil)
+		had = anyutil.IsTrue(count) || (hasLast && lastActivity != nil)
 	}
 	id, _ := row.Get("id")
-	e := NewSessionEntry(sessionKey, pyStrOf(id), created, updated)
+	e := NewSessionEntry(sessionKey, anyutil.String(id), created, updated)
 	e.Origin, e.DisplayName, e.Platform, e.ChatType = source, source.ChatName, source.Platform, source.ChatType
 	e.ResetHadActivity, e.TransportProfile = had, optionalString(TransportProfileOf(source))
 	return e
@@ -260,7 +261,7 @@ func (s *SessionStore) ResolveSessionIDForKey(ctx context.Context, sessionKey st
 		return "", nil
 	}
 	id, _ := row.Get("id")
-	if !pyTruthy(id) {
+	if !anyutil.IsTrue(id) {
 		return "", nil
 	}
 	if started, ok := row.Get("started_at"); ok && started != nil && notAfter != nil {
@@ -269,7 +270,7 @@ func (s *SessionStore) ResolveSessionIDForKey(ctx context.Context, sessionKey st
 			return "", nil
 		}
 	}
-	return pyStrOf(id), db
+	return anyutil.String(id), db
 }
 
 // Float value of a decoded JSON number or numeric string
@@ -287,7 +288,7 @@ func jsonFloat(v any) (float64, bool) {
 }
 
 // Rebuilds a missing key mapping from a recoverable durable row and reopens it
-func (s *SessionStore) recoverSessionFromDB(ctx context.Context, sessionKey string, source *SessionSource, now pyDatetime, raiseOnLookupError bool) (*SessionEntry, error) {
+func (s *SessionStore) recoverSessionFromDB(ctx context.Context, sessionKey string, source *SessionSource, now datetime, raiseOnLookupError bool) (*SessionEntry, error) {
 	entry, migrated, err := s.queryRecoverableRow(ctx, sessionKey, source, raiseOnLookupError)
 	if err != nil || entry == nil {
 		return nil, err
@@ -302,7 +303,7 @@ func (s *SessionStore) recoverSessionFromDB(ctx context.Context, sessionKey stri
 }
 
 // Database half of recovery without reopening the row, the caller publishing the entry
-func (s *SessionStore) queryRecoverableSession(ctx context.Context, sessionKey string, source *SessionSource, now pyDatetime) (*SessionEntry, error) {
+func (s *SessionStore) queryRecoverableSession(ctx context.Context, sessionKey string, source *SessionSource, now datetime) (*SessionEntry, error) {
 	entry, migrated, err := s.queryRecoverableRow(ctx, sessionKey, source, false)
 	if err != nil {
 		return nil, err

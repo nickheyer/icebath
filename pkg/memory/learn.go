@@ -1,5 +1,7 @@
 package memory
 
+import "strings"
+
 // Skill authoring house rules the learn prompt asks the agent to follow
 const learnAuthoringStandards = "Follow the Icebath skill-authoring standards exactly. These are the same\n" +
 	"HARDLINE rules a maintainer enforces in review:\n" +
@@ -123,7 +125,7 @@ const learnDefaultRequest = "the workflow we just went through in this conversat
 
 // Prompt for an open ended learn request, an empty request meaning the workflow just completed
 func BuildLearnPrompt(userRequest string) string {
-	req := pyStrip(userRequest)
+	req := strings.TrimSpace(userRequest)
 	if req == "" {
 		req = learnDefaultRequest
 	}

@@ -40,7 +40,7 @@ func (r *nodeRegistry) save(ctx context.Context, nodes *jsonutil.Object) error {
 func withName(name string, entry any) (*jsonutil.Object, error) {
 	e, ok := entry.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object is not a mapping", pyTypeName(entry))
+		return nil, fmt.Errorf("'%s' object is not a mapping", typeName(entry))
 	}
 	out := jsonutil.ObjectOf("name", name)
 	out.Merge(e)

@@ -20,8 +20,8 @@ import (
 // Reads the import time checkpoint git timeout from ICEBATH_CHECKPOINT_TIMEOUT, clamped to ten through sixty seconds
 func registerCheckpointManager() {
 	n := 30
-	if raw := pyStrip(os.Getenv("ICEBATH_CHECKPOINT_TIMEOUT")); raw != "" {
-		if v, ok := pyIntParse(raw); ok {
+	if raw := strings.TrimSpace(os.Getenv("ICEBATH_CHECKPOINT_TIMEOUT")); raw != "" {
+		if v, ok := intParse(raw); ok {
 			n = v
 		}
 	}
@@ -370,7 +370,7 @@ func (m *CheckpointManager) ListCheckpoints(workingDir string) []CheckpointEntry
 		return []CheckpointEntry{}
 	}
 	results := []CheckpointEntry{}
-	for _, line := range pySplitLines(stdout) {
+	for _, line := range splitLinesValue(stdout) {
 		parts := strings.SplitN(line, "|", 4)
 		if len(parts) != 4 {
 			continue
@@ -805,7 +805,7 @@ func (m *CheckpointManager) take(workingDir, reason string, prune bool) (bool, e
 		}
 	} else {
 		okLs, lsOut, _ := runCheckpointGit(m.env, []string{"ls-files", "--cached"}, store, workingDir, checkpointGitOpts{IndexFile: indexFile})
-		if okLs && pyStrip(lsOut) == "" {
+		if okLs && strings.TrimSpace(lsOut) == "" {
 			log.Debug("Checkpoint skipped: empty tree in " + workingDir)
 			return false, nil
 		}
@@ -820,8 +820,8 @@ func (m *CheckpointManager) take(workingDir, reason string, prune bool) (bool, e
 		if nested := checkpointGitlinkPaths(treeOut); len(nested) > 0 {
 			log.Info(fmt.Sprintf("Checkpoint of %s does not capture nested git repositories: %s", workingDir, strings.Join(nested, ", ")))
 			var lines []string
-			for _, line := range pySplitLines(reason) {
-				if s := pyStrip(line); s != "" {
+			for _, line := range splitLinesValue(reason) {
+				if s := strings.TrimSpace(line); s != "" {
 					lines = append(lines, s)
 				}
 			}

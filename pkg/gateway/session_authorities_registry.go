@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
@@ -155,7 +156,7 @@ func (s *SessionAuthorities) Launch() (*SessionAuthority, error) {
 	defer s.mu.Unlock()
 	authority, ok := s.byKey.Get(s.LaunchKey)
 	if !ok {
-		return nil, &PyError{Kind: "KeyError", Msg: s.LaunchKey}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: s.LaunchKey}
 	}
 	return authority, nil
 }

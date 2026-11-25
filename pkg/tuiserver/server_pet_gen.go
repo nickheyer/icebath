@@ -33,7 +33,7 @@ func petConfigScale(ctx context.Context) float64 {
 	if !anyutil.IsTrue(raw) {
 		return pet.DefaultScale
 	}
-	scale, err := pyFloat(raw)
+	scale, err := floatNumber(raw)
 	if err != nil {
 		return pet.DefaultScale
 	}

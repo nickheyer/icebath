@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -154,7 +155,7 @@ func reapUnsupervisedGatewayOrphans(ctx context.Context, extraExclude map[int]bo
 	}
 	var stale []int
 	for _, p := range awaitGatewayExit(orphans, statusPidExists, nil, orphanExitGraceSeconds, orphanExitPollSeconds) {
-		if start, ok := identity[p]; ok && pyEq(GetProcessStartTime(p), start) {
+		if start, ok := identity[p]; ok && anyutil.Equal(GetProcessStartTime(p), start) {
 			stale = append(stale, p)
 		}
 	}

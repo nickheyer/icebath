@@ -79,12 +79,12 @@ func TestWakeLibraryImportsFromTheSelectedEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var pvErr *pvporcupine.PyError
-	if _, err := porcupine.Create("key", nil, []string{"computer"}, []float64{0.5}); !errors.As(err, &pvErr) || pvErr.Class != "ValueError" ||
-		pvErr.Msg != `One or more keywords are not available by default. Available default keywords are:\njarvis` {
+	var pvErr *pvporcupine.Error
+	if _, err := porcupine.Create("key", nil, []string{"computer"}, []float64{0.5}); !errors.As(err, &pvErr) || pvErr.Kind != pvporcupine.InvalidArgument ||
+		pvErr.Msg != `Keyword "computer" is not available by default. Available default keywords are: jarvis` {
 		t.Fatalf("unknown keyword gave %v", err)
 	}
-	if _, err := porcupine.Create("key", nil, []string{"jarvis"}, []float64{0.5}); !errors.As(err, &pvErr) || pvErr.Class != "OSError" {
+	if _, err := porcupine.Create("key", nil, []string{"jarvis"}, []float64{0.5}); !errors.As(err, &pvErr) || pvErr.Kind != pvporcupine.FileUnavailable {
 		t.Fatalf("tree without the dynamic library gave %v", err)
 	}
 	if _, err := porcupine.Create("key", []string{"custom.ppn"}, nil, []float64{0.5, 0.5}); !errors.As(err, &pvErr) ||

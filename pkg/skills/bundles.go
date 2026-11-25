@@ -140,7 +140,7 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	}
 	text, err := decodeUTF8Sig(raw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("bundle %s: %w", path, err)
 	}
 	data, err := yamlLoad(text)
 	if err != nil {
@@ -170,14 +170,12 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	if len(rawSkills) == 0 {
 		return skip("has no skills list")
 	}
-	var members []any
-	for _, item := range rawSkills {
-		if v := strings.TrimSpace(anyutil.String(item)); v != "" {
-			members = append(members, v)
-		}
-	}
+	members, empty := bundleMembers(rawSkills)
 	if len(members) == 0 {
 		return skip("has empty skills list")
+	}
+	if empty > 0 {
+		s.logger().Warn(fmt.Sprintf("Bundle %s has %d empty skills entries; ignoring them", path, empty))
 	}
 	slug := SlugifySkillName(name)
 	if slug == "" {
@@ -189,6 +187,25 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	}
 	return map[string]any{"name": name, "slug": slug, "skills": members, "path": path, "description": desc,
 		"instruction": strings.TrimSpace(anyutil.String(orEmpty(m["instruction"])))}, nil
+}
+
+// Skill names a bundle's skills list gives, each entry's text trimmed, and the count of null or blank entries, which name no skill
+func bundleMembers(items []any) ([]any, int) {
+	members := []any{}
+	empty := 0
+	for _, item := range items {
+		if item == nil {
+			empty++
+			continue
+		}
+		name := strings.TrimSpace(anyutil.String(item))
+		if name == "" {
+			empty++
+			continue
+		}
+		members = append(members, name)
+	}
+	return members, empty
 }
 
 // Value when truthy, the empty string otherwise

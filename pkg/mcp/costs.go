@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Unit label a cost table counts in when it names none
@@ -45,10 +46,10 @@ func costNumber(value any, where string) (float64, error) {
 	case float64:
 		f = v
 	default:
-		return 0, fmt.Errorf("%s must be a non-negative number, not %s", where, pyRepr(value))
+		return 0, fmt.Errorf("%s must be a non-negative number, not %s", where, anyutil.Quote(value))
 	}
 	if math.IsNaN(f) || math.IsInf(f, 0) || f < 0 {
-		return 0, fmt.Errorf("%s must be a non-negative number, not %s", where, pyRepr(value))
+		return 0, fmt.Errorf("%s must be a non-negative number, not %s", where, anyutil.Quote(value))
 	}
 	return f, nil
 }
@@ -91,13 +92,13 @@ func parseCost(value any, where string) (ToolCost, error) {
 		if low > high {
 			return ToolCost{}, fmt.Errorf("%s range must be [min, max] with min <= max", where)
 		}
-		return ToolCost{Low: low, High: high, Note: pyStrip(note)}, nil
+		return ToolCost{Low: low, High: high, Note: strings.TrimSpace(note)}, nil
 	}
 	amount, err := costNumber(value, where)
 	if err != nil {
 		return ToolCost{}, err
 	}
-	return ToolCost{Low: amount, High: amount, Note: pyStrip(note)}, nil
+	return ToolCost{Low: amount, High: amount, Note: strings.TrimSpace(note)}, nil
 }
 
 // One server's validated cost declaration, nil when it declares no cost, an error naming the bad key otherwise
@@ -132,8 +133,8 @@ func ParseCostPolicy(costs, spendLimit, costUnit any, where string) (*CostPolicy
 		unit = costUnit
 	}
 	label, ok := unit.(string)
-	if !ok || pyStrip(label) == "" || len([]rune(label)) > 32 {
-		return nil, fmt.Errorf("%s cost_unit must be a short non-empty label, not %s", where, pyRepr(costUnit))
+	if !ok || strings.TrimSpace(label) == "" || len([]rune(label)) > 32 {
+		return nil, fmt.Errorf("%s cost_unit must be a short non-empty label, not %s", where, anyutil.Quote(costUnit))
 	}
 	declared := false
 	for _, c := range table {
@@ -144,7 +145,7 @@ func ParseCostPolicy(costs, spendLimit, costUnit any, where string) (*CostPolicy
 	if !declared {
 		return nil, nil
 	}
-	return &CostPolicy{Costs: table, Limit: limit, Unit: pyStrip(label)}, nil
+	return &CostPolicy{Costs: table, Limit: limit, Unit: strings.TrimSpace(label)}, nil
 }
 
 // Policy of a native or translated mcp_servers entry, an error when malformed

@@ -225,7 +225,7 @@ func (s *TodoStore) Restore(todos []any, revision any) []TodoItem {
 	}
 	s.items = items
 	s.revision = 0
-	if n, ok := pyIntValue(revision); ok && n > 0 {
+	if n, ok := wholeNumberArg(revision); ok && n > 0 {
 		s.revision = n
 	}
 	return s.readLocked()

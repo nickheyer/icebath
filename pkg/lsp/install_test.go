@@ -106,7 +106,7 @@ func TestLSPPackageManagerConfigSelectsInstallerArgvAndNeverFallsBackSilently(t 
 	if got, err := installNpm(rt, "pyright", "pyright-langserver", nil); got != "" || err != nil {
 		t.Fatalf("unknown manager must fail closed, got %q %v", got, err)
 	}
-	if len(h.matching("lsp.package_manager='pnmp' is not one of ['npm', 'pnpm', 'yarn']")) != 1 {
+	if len(h.matching(`lsp.package_manager="pnmp" is not one of npm, pnpm, yarn`)) != 1 {
 		t.Fatal("unknown manager warning")
 	}
 	delete(present, "yarn")

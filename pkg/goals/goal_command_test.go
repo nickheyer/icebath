@@ -61,7 +61,7 @@ func TestGoalCommandDraftsAContractOrFallsBackToAFreeFormGoal(t *testing.T) {
 		len(progress) != 1 || progress[0] != "Drafting completion contract…" {
 		t.Fatalf("drafted %q progress %v", r.Output, progress)
 	}
-	goalCommandDraft = func(context.Context, string, *float64) *GoalContract { panic(strMethodError([]any{}, "strip")) }
+	goalCommandDraft = func(context.Context, string, *float64) *GoalContract { panic(notTextError([]any{}, "the judge reply")) }
 	if r = goalCmd(t, m, "draft other thing", GoalCommandOptions{}); !strings.HasSuffix(r.Output,
 		"\nCouldn't draft a contract (aux model unavailable) — running as a free-form goal. The per-turn judge still applies.") {
 		t.Fatalf("draft fallback %q", r.Output)
@@ -88,8 +88,8 @@ func TestGoalCommandControlVerbsActOnTheExistingGoal(t *testing.T) {
 		t.Fatalf("pause %+v", r)
 	}
 	r := goalCmd(t, m, "resume last goal", GoalCommandOptions{})
-	if r.Output != "▶ Goal resumed: ship it\n(ignored 'last goal': a control command never sets goal text — use /goal -- <text> when the goal really starts with a control word.)" ||
-		r.Prompt == nil || !strings.Contains(*r.Prompt, "Goal: ship it") || pyStrOf(m.State().Goal) != "ship it" {
+	if r.Output != "▶ Goal resumed: ship it\n(ignored \"last goal\": a control command never sets goal text — use /goal -- <text> when the goal really starts with a control word.)" ||
+		r.Prompt == nil || !strings.Contains(*r.Prompt, "Goal: ship it") || strOf(m.State().Goal) != "ship it" {
 		t.Fatalf("bare control %+v", r)
 	}
 	if r := goalCmd(t, m, "show", GoalCommandOptions{}); r.Output != "⊙ Goal (active, 0/20 turns): ship it\n(no completion contract — set one with /goal draft <objective> or inline field: value lines)" {
@@ -184,7 +184,7 @@ func TestGoalCommandGatesNeedAuthorizationToBeAdded(t *testing.T) {
 			t.Fatalf("%q gave %+v", arg, r)
 		}
 	}
-	for arg, want := range map[string]string{"gate rm x": "/goal gate remove: invalid literal for int() with base 10: 'x'",
+	for arg, want := range map[string]string{"gate rm x": "/goal gate remove: gate number must be an integer, got \"x\"",
 		"gate remove 5": "/goal gate remove: index out of range (1..1)", "gate remove 99999999999999999999": "/goal gate remove: index out of range (1..1)"} {
 		if r := goalCmd(t, m, arg, GoalCommandOptions{}); r.Output != want || !r.Error {
 			t.Fatalf("%q gave %+v", arg, r)

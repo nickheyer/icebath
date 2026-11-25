@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -52,19 +53,19 @@ func rowEntry(ctx context.Context, row *jsonutil.Object, platform Platform, rout
 		return nil, nil
 	}
 	started := sessionNow()
-	if stamp, _ := row.Get("started_at"); pyTruthy(stamp) {
+	if stamp, _ := row.Get("started_at"); anyutil.IsTrue(stamp) {
 		seconds, err := anyutil.ToFloat(stamp)
 		if err != nil {
 			return nil, err
 		}
 		whole, frac := math.Modf(seconds)
-		started = pyDatetime{T: time.Unix(int64(whole), int64(math.Round(frac*1e6))*1000)}
+		started = datetime{T: time.Unix(int64(whole), int64(math.Round(frac*1e6))*1000)}
 	}
 	id, has := row.Get("id")
 	if !has {
-		return nil, &pyKeyError{key: "id"}
+		return nil, &keyError{key: "id"}
 	}
-	entry := NewSessionEntry(route, pyStrOf(id), started, started)
+	entry := NewSessionEntry(route, anyutil.String(id), started, started)
 	entry.Origin, entry.Platform, entry.ChatType = source, platform, source.ChatType
 	entry.TransportProfile = rowOptStr(row, "transport_profile")
 	return entry, nil
@@ -85,8 +86,8 @@ func mountPlan(ctx context.Context, a *SessionAuthority, sid string) (*mountPlan
 	}
 	route := ""
 	if row != nil {
-		if key, _ := row.Get("session_key"); pyTruthy(key) {
-			route = pyStrOf(key)
+		if key, _ := row.Get("session_key"); anyutil.IsTrue(key) {
+			route = anyutil.String(key)
 		}
 	}
 	if route == "" {
@@ -94,7 +95,7 @@ func mountPlan(ctx context.Context, a *SessionAuthority, sid string) (*mountPlan
 	}
 	label, has := row.Get("source")
 	if !has {
-		return nil, &pyKeyError{key: "source"}
+		return nil, &keyError{key: "source"}
 	}
 	platform, messaging := messagingPlatform(ctx, label)
 	if !messaging {
@@ -134,7 +135,7 @@ func restoreRoutedSession(ctx context.Context, a *SessionAuthority, sid string) 
 	}
 	runner, ok := a.Runner.(restoredSourceRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot restore a routed source", a.Runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot restore a routed source", a.Runner)}
 	}
 	source, err := runner.RestoredSource(ctx, plan.entry)
 	if err != nil {
@@ -176,7 +177,7 @@ func detach(ctx context.Context, a *SessionAuthority, live *LiveSession, session
 	}
 	local, ok := adapter.(*LocalSessionAdapter)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) cannot register a source", adapter)}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) cannot register a source", adapter)}
 	}
 	route := detachedKey(live.Route, sessionID)
 	source := ReplaceSource(live.Source, func(s *SessionSource) {
@@ -205,12 +206,12 @@ func messagingOwnerRef(ctx context.Context, a *SessionAuthority, ref SessionRef)
 	if row == nil {
 		return ref, nil
 	}
-	if key, _ := row.Get("session_key"); !pyTruthy(key) {
+	if key, _ := row.Get("session_key"); !anyutil.IsTrue(key) {
 		return ref, nil
 	}
 	label, has := row.Get("source")
 	if !has {
-		return SessionRef{}, &pyKeyError{key: "source"}
+		return SessionRef{}, &keyError{key: "source"}
 	}
 	if _, messaging := messagingPlatform(ctx, label); !messaging {
 		return ref, nil
@@ -258,7 +259,7 @@ func supersededHandOff(ctx context.Context, a *SessionAuthority, ref SessionRef)
 	route := ""
 	if row != nil {
 		if key, _ := row.Get("session_key"); key != nil {
-			route = pyStrOf(key)
+			route = anyutil.String(key)
 		}
 	}
 	return namesAnotherConversation(ctx, a, ref.SessionID, route)
@@ -281,7 +282,7 @@ func conversationHead(ctx context.Context, runner any, sessionID string) (*Sessi
 	} else if held, ok := runner.(sessionDBRunner); ok {
 		db = held.SessionDB(ctx)
 	} else {
-		return nil, nil, "", &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no session database", runner)}
+		return nil, nil, "", &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no session database", runner)}
 	}
 	if db == nil {
 		return authority, nil, sessionID, nil

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -66,7 +67,7 @@ func Override(ctx context.Context) string {
 
 // Expands a tilde and environment references in a home path
 func expand(path string) string {
-	return filepath.Clean(pathutil.ExpandUser(pathutil.ExpandEnv(path)))
+	return pathutil.CleanKeepDotDot(pathutil.ExpandUser(pathutil.ExpandEnv(path)))
 }
 
 // Platform default home with the data directory suffix applied
@@ -79,21 +80,21 @@ func platformDefault(environ func(string) string, userHome func() (string, error
 			if err != nil {
 				return "", err
 			}
-			base = pathutil.Join(h, "AppData", "Local")
+			base = pathutil.JoinKeepDotDot(h, "AppData", "Local")
 		}
-		return pathutil.Join(base, "icebath"+suffix), nil
+		return pathutil.JoinKeepDotDot(base, "icebath"+suffix), nil
 	}
 	h, err := userHome()
 	if err != nil {
 		return "", err
 	}
-	return pathutil.Join(h, dirName+suffix), nil
+	return pathutil.JoinKeepDotDot(h, dirName+suffix), nil
 }
 
-// Patched pathlib Path.home lookup, nil while the real lookup serves
+// Replacement user home lookup a test installed, nil while the real lookup serves
 var userHomeLookup atomic.Pointer[func() (string, error)]
 
-// User home like pathlib Path.home, the patched lookup when a test replaced it
+// Home directory of the current user, an error wrapping pathutil.ErrNoHome when none is known; the replacement lookup when a test installed one
 func UserHome() (string, error) {
 	if f := userHomeLookup.Load(); f != nil {
 		return (*f)()
@@ -101,7 +102,7 @@ func UserHome() (string, error) {
 	return pathutil.Home()
 }
 
-// Serves dir as the user home like a monkeypatched Path.home and returns the restore
+// Serves dir as the user home until the returned restore runs
 func PatchUserHome(dir string) (restore func()) {
 	lookup := func() (string, error) { return dir, nil }
 	prev := userHomeLookup.Swap(&lookup)
@@ -117,7 +118,7 @@ func PatchPlatformDefault(dir string) (restore func()) {
 	return func() { platformDefaultParent.Store(prev) }
 }
 
-// Platform default home of the process, the Path.home RuntimeError when no user home is known
+// Platform default home of the process, an error wrapping pathutil.ErrNoHome when no user home is known
 func platformDefaultHome() (string, error) {
 	native, err := platformDefault(os.Getenv, UserHome)
 	if parent := platformDefaultParent.Load(); parent != nil && err == nil && userHomeLookup.Load() == nil {
@@ -126,11 +127,16 @@ func platformDefaultHome() (string, error) {
 	return native, err
 }
 
-// Platform default home of the running process, panicking with the RuntimeError Python raises without a user home
+// Refusal to pick a data home when neither ICEBATH_HOME nor a user home names one, saying how to name it
+func noDataHome(err error) error {
+	return fmt.Errorf("%w, so icebath has nowhere to keep its data: set %s to the folder it should use", err, EnvHome)
+}
+
+// Platform default home of the running process; without a user home there is no folder for the data, and it panics with the noDataHome error
 func PlatformDefault() string {
 	p, err := platformDefaultHome()
 	if err != nil {
-		panic(err)
+		panic(noDataHome(err))
 	}
 	return p
 }
@@ -143,7 +149,7 @@ func envHomePath() string {
 	return ""
 }
 
-// Home directory of the process, the Path.home RuntimeError when it falls back to an unknown user home
+// Home directory of the process, an error wrapping pathutil.ErrNoHome when it falls back to an unknown user home
 func processHome() (string, error) {
 	if p := envHomePath(); p != "" {
 		return p, nil
@@ -174,10 +180,10 @@ func Dir(ctx context.Context) string {
 func accountHome(ctx context.Context) string {
 	if runtime.GOOS != "windows" {
 		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
-			return filepath.Clean(u.HomeDir)
+			return pathutil.CleanKeepDotDot(u.HomeDir)
 		}
 	}
-	return filepath.Clean(RealHome(ctx, nil))
+	return pathutil.CleanKeepDotDot(RealHome(ctx, nil))
 }
 
 // Default home of the OS account, the process platform default when the user home resolves to the account home
@@ -190,16 +196,16 @@ func AccountDefault(ctx context.Context) string {
 	return p
 }
 
-// pathlib equality of two host paths, case insensitive on Windows
+// Reports whether two host paths are spelled alike in CleanKeepDotDot form, case insensitive on Windows
 func pathEqual(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
+	a, b = pathutil.CleanKeepDotDot(a), pathutil.CleanKeepDotDot(b)
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(a) == strings.ToLower(b)
 	}
 	return a == b
 }
 
-// Reports whether the looked up home and path resolve to equal pathlib paths, false when either fails
+// Reports whether the looked up home and path resolve to the same path, false when either fails
 func sameResolvedPath(lookup func() (string, error), path string) bool {
 	h, err := lookup()
 	if err != nil {
@@ -210,38 +216,44 @@ func sameResolvedPath(lookup func() (string, error), path string) bool {
 	return errA == nil && errB == nil && pathEqual(a, b)
 }
 
-// Root that holds home, the platform default when home lives under it, the parent of a profiles directory, or home itself
+// Root that holds home, the platform default when home lives under it, the parent of a profiles directory, or home itself; native is empty when no platform default is known
 func rootOf(native, home string) string {
 	if home == "" {
 		return native
 	}
-	rh, errH := resolve(home)
-	rn, errN := resolve(native)
-	if errH == nil && errN == nil {
-		if _, under := pathutil.RelativeTo(rh, rn); under {
-			return native
+	if native != "" {
+		rh, errH := resolve(home)
+		rn, errN := resolve(native)
+		if errH == nil && errN == nil {
+			if _, under := pathutil.RelativeTo(rh, rn); under {
+				return native
+			}
 		}
 	}
-	if parent := filepath.Dir(filepath.Clean(home)); pathutil.Name(parent) == ProfilesDir {
-		return filepath.Dir(filepath.Clean(parent))
+	if parent := pathutil.DirKeepDotDot(home); pathutil.NameKeepDotDot(parent) == ProfilesDir {
+		return pathutil.DirKeepDotDot(parent)
 	}
 	return home
 }
 
-// Root home of the process, the Path.home RuntimeError when the platform default has no user home
+// Root home of the process, from ICEBATH_HOME alone when no user home is known, an error wrapping pathutil.ErrNoHome when neither names one
 func rootHome() (string, error) {
 	native, err := platformDefaultHome()
+	env := envHomePath()
 	if err != nil {
-		return "", err
+		if env == "" {
+			return "", err
+		}
+		native = ""
 	}
-	return rootOf(native, envHomePath()), nil
+	return rootOf(native, env), nil
 }
 
-// Root home that owns the profile tree, derived from the process home
+// Root home that owns the profile tree, derived from the process home; panics with the noDataHome error when no user home is known
 func Root() string {
 	r, err := rootHome()
 	if err != nil {
-		panic(err)
+		panic(noDataHome(err))
 	}
 	return r
 }
@@ -255,7 +267,7 @@ func RootOf(home string) string {
 	return native
 }
 
-// Reports whether a pathlib is_dir check passes
+// Reports whether p names a directory, following symlinks
 func pathIsDir(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
@@ -263,15 +275,15 @@ func pathIsDir(p string) bool {
 
 // Reports whether dir is provably the profiles directory of a home
 func isProfilesRoot(dir string) bool {
-	root := filepath.Dir(filepath.Clean(dir))
-	if pathutil.Name(root) == dirName {
+	root := pathutil.DirKeepDotDot(dir)
+	if pathutil.NameKeepDotDot(root) == dirName {
 		return true
 	}
-	if pathIsDir(pathutil.Join(dir, deletedDir)) {
+	if pathIsDir(pathutil.JoinKeepDotDot(dir, deletedDir)) {
 		return true
 	}
 	for _, m := range homeMarkers {
-		if pathExists(pathutil.Join(root, m)) {
+		if pathExists(pathutil.JoinKeepDotDot(root, m)) {
 			return true
 		}
 	}
@@ -280,29 +292,32 @@ func isProfilesRoot(dir string) bool {
 	return errA == nil && errB == nil && pathEqual(a, b)
 }
 
-// Profile home that path is or lies under, empty when path is not a named profile
+// Profile home that path is or passes through on its way down, dot-dot elements kept as steps through the directory before them, empty when path is not a named profile
 func NamedProfileHome(path string) string {
-	current := filepath.Clean(path)
-	for _, c := range append([]string{current}, pathutil.Parents(current)...) {
-		parent, name := filepath.Dir(filepath.Clean(c)), pathutil.Name(c)
-		if pathutil.Name(parent) == ProfilesDir && !strings.HasPrefix(name, ".") && isProfilesRoot(parent) {
+	for c := pathutil.CleanKeepDotDot(path); ; {
+		parent := pathutil.DirKeepDotDot(c)
+		if parent == c {
+			return ""
+		}
+		name := pathutil.NameKeepDotDot(c)
+		if pathutil.NameKeepDotDot(parent) == ProfilesDir && !strings.HasPrefix(name, ".") && isProfilesRoot(parent) {
 			return c
 		}
 		if name == dirName {
 			return ""
 		}
+		c = parent
 	}
-	return ""
 }
 
-// Profile id owning path, default for the root home, empty when path is no home
+// Profile id owning path, default for the root home, empty when path is no home or starts with a ~ whose home is unknown
 func ProfileNameFor(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return ""
 	}
-	current, err := pathutil.ExpandUserPath(path)
+	current, err := pathutil.ExpandUserKeepDotDot(path)
 	if err != nil {
-		panic(err)
+		return ""
 	}
 	root, err := rootHome()
 	if err != nil {
@@ -322,16 +337,16 @@ func ProfileNameFor(path string) string {
 			return "default"
 		}
 		if named := NamedProfileHome(c); named != "" {
-			return pathutil.Name(named)
+			return pathutil.NameKeepDotDot(named)
 		}
-		if name := pathutil.Name(c); pathutil.Name(filepath.Dir(filepath.Clean(c))) == ProfilesDir && !strings.HasPrefix(name, ".") {
+		if name := pathutil.NameKeepDotDot(c); pathutil.NameKeepDotDot(pathutil.DirKeepDotDot(c)) == ProfilesDir && !strings.HasPrefix(name, ".") {
 			return name
 		}
 	}
 	return ""
 }
 
-// pathlib Path.resolve of path, the ValueError of a null byte or an unencodable component returned
+// Absolute path with its symlinks resolved as far as it exists, an error for a null byte or an unreadable working directory
 func resolve(path string) (string, error) { return pathutil.Resolve(path) }
 
 // Home directory of the named profile under the root, the root for default
@@ -339,12 +354,12 @@ func ProfileHome(root, name string) string {
 	if name == "" || name == "default" {
 		return root
 	}
-	return filepath.Join(root, ProfilesDir, name)
+	return pathutil.JoinKeepDotDot(root, ProfilesDir, name)
 }
 
 // Tombstone file marking a profile as deleted
 func TombstonePath(profileHome string) string {
-	return pathutil.Join(filepath.Dir(filepath.Clean(profileHome)), deletedDir, pathutil.Name(profileHome))
+	return pathutil.JoinKeepDotDot(pathutil.DirKeepDotDot(profileHome), deletedDir, pathutil.NameKeepDotDot(profileHome))
 }
 
 // Reports whether the profile was deleted
@@ -355,7 +370,7 @@ func ProfileDeleted(profileHome string) bool {
 // Reports whether a profile directory carries a file that identifies it as a profile
 func ProfileHasIdentity(profileHome string) bool {
 	for _, m := range identityMarkers {
-		p := pathutil.Join(profileHome, m)
+		p := pathutil.JoinKeepDotDot(profileHome, m)
 		if st, err := os.Lstat(p); err == nil && (st.Mode().IsRegular() || st.Mode()&os.ModeSymlink != 0) {
 			return true
 		}
@@ -368,10 +383,10 @@ func ProfileLive(profileHome string) bool {
 	return pathIsDir(profileHome) && ProfileHasIdentity(profileHome) && !ProfileDeleted(profileHome)
 }
 
-// Writes the tombstone of a profile, its directory made like pathlib mkdir with parents
+// Writes the tombstone of a profile, its directory and missing parents created first
 func MarkProfileDeleted(profileHome string) error {
 	t := TombstonePath(profileHome)
-	if err := pathMkdir(filepath.Dir(filepath.Clean(t)), 0o777, true, true); err != nil {
+	if err := pathMkdir(pathutil.DirKeepDotDot(t), 0o777, true, true); err != nil {
 		return err
 	}
 	text := "deleted\n"
@@ -381,9 +396,13 @@ func MarkProfileDeleted(profileHome string) error {
 	return os.WriteFile(t, []byte(text), 0o666)
 }
 
-// Unlinks the tombstone of a profile, a missing one ignored
+// Unlinks the tombstone file of a profile, a missing one ignored and a directory in its place refused and kept
 func ClearProfileDeleted(profileHome string) error {
-	err := os.Remove(TombstonePath(profileHome))
+	t := TombstonePath(profileHome)
+	if st, err := os.Lstat(t); err == nil && st.IsDir() {
+		return &fs.PathError{Op: "unlink", Path: t, Err: syscall.EISDIR}
+	}
+	err := os.Remove(t)
 	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -399,7 +418,7 @@ func (e *ErrProfileMissing) Error() string {
 	return fmt.Sprintf("Named profile home does not exist: %s. Create the profile explicitly before using it.", e.Home)
 }
 
-// Matches fs.ErrNotExist like the FileNotFoundError Python raises
+// Matches fs.ErrNotExist, the profile home does not exist
 func (e *ErrProfileMissing) Is(target error) bool { return target == fs.ErrNotExist }
 
 // Homes whose data this process erased, so no later step of the same process sets them up again
@@ -412,16 +431,15 @@ var (
 func MarkHomeErased(h string) {
 	erasedHomesMu.Lock()
 	defer erasedHomesMu.Unlock()
-	erasedHomes = append(erasedHomes, filepath.Clean(h))
+	erasedHomes = append(erasedHomes, pathutil.CleanKeepDotDot(h))
 }
 
-// Home this process erased that path is or lies under, empty when none
+// Home this process erased that path is or passes through on its way down, empty when none
 func erasedHomeOf(path string) string {
-	clean := filepath.Clean(path)
 	erasedHomesMu.Lock()
 	defer erasedHomesMu.Unlock()
 	for _, h := range erasedHomes {
-		if clean == h || strings.HasPrefix(clean, h+string(filepath.Separator)) {
+		if _, under := pathutil.RelativeToKeepDotDot(path, h); under {
 			return h
 		}
 	}
@@ -462,7 +480,7 @@ func Mkdir(ctx context.Context, path string) (string, error) {
 
 // Names of every live named profile under root, sorted
 func ListProfiles(root string) []string {
-	entries, err := os.ReadDir(filepath.Join(root, ProfilesDir))
+	entries, err := os.ReadDir(pathutil.JoinKeepDotDot(root, ProfilesDir))
 	if err != nil {
 		return nil
 	}
@@ -471,21 +489,21 @@ func ListProfiles(root string) []string {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || !ProfileIDRe.MatchString(e.Name()) {
 			continue
 		}
-		if ProfileLive(filepath.Join(root, ProfilesDir, e.Name())) {
+		if ProfileLive(pathutil.JoinKeepDotDot(root, ProfilesDir, e.Name())) {
 			out = append(out, e.Name())
 		}
 	}
 	return out
 }
 
-// Path relative to the user home as a tilde posix path, the path itself when outside the user home
+// Path relative to the user home as a tilde posix path, the path itself when outside the user home or when no user home is known
 func Display(path string) string {
-	p := filepath.Clean(path)
+	p := pathutil.CleanKeepDotDot(path)
 	h, err := UserHome()
 	if err != nil {
-		panic(err)
+		return p
 	}
-	rel, ok := pathutil.RelativeTo(p, h)
+	rel, ok := pathutil.RelativeToKeepDotDot(p, h)
 	if !ok {
 		return p
 	}
@@ -505,23 +523,23 @@ var (
 	keyCache = map[string]string{}
 )
 
-// Stable key of a home directory, the resolved path, cached once the directory exists
+// Stable key of a home directory, the resolved path, cached once the directory exists; a leading ~ whose home is unknown is kept as written, and a path that cannot be resolved is keyed as it is spelled
 func Key(path string) string {
-	raw := filepath.Clean(path)
+	raw := pathutil.CleanKeepDotDot(path)
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	if k, ok := keyCache[raw]; ok {
 		return k
 	}
-	expanded, err := pathutil.ExpandUserPath(raw)
+	expanded, err := pathutil.ExpandUserKeepDotDot(raw)
 	if err != nil {
-		panic(err)
+		expanded = raw
 	}
 	resolved, err := strictResolve(expanded)
 	if err != nil {
 		lenient, rerr := resolve(expanded)
 		if rerr != nil {
-			panic(rerr)
+			return pathutil.FoldCase(expanded)
 		}
 		return pathutil.FoldCase(lenient)
 	}

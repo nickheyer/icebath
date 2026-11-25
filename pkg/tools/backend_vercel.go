@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -408,7 +409,7 @@ func (c *vercelClient) runCommand(ctx context.Context, sessionID, command string
 				cmdID, _ = cmd["id"].(string)
 				continue
 			}
-			if code, ok := pyIntValue(cmd["exitCode"]); ok {
+			if code, ok := wholeNumberArg(cmd["exitCode"]); ok {
 				return vercelCommandResult{output.String(), code}, nil
 			}
 			continue
@@ -431,7 +432,7 @@ func (c *vercelClient) runCommand(ctx context.Context, sessionID, command string
 		return vercelCommandResult{}, err
 	}
 	code := 1
-	if n, ok := pyIntValue(asMapOrEmpty(reply["command"])["exitCode"]); ok {
+	if n, ok := wholeNumberArg(asMapOrEmpty(reply["command"])["exitCode"]); ok {
 		code = n
 	}
 	return vercelCommandResult{output.String(), code}, nil
@@ -888,11 +889,11 @@ func (vercelSandboxBackend) IsAvailable() bool { return DescribeVercelAuth(nil).
 func (vercelSandboxBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	runtime := strings.TrimSpace(argS(cfg, "vercel_runtime"))
 	if !IsSupportedVercelRuntime(runtime) {
-		return fmt.Errorf("Vercel Sandbox runtime %s is not supported. Set terminal.vercel_runtime to one of: %s.", pyRepr(runtime), strings.Join(SupportedVercelRuntimes, ", "))
+		return fmt.Errorf("Vercel Sandbox runtime %s is not supported. Set terminal.vercel_runtime to one of: %s.", strconv.Quote(runtime), strings.Join(SupportedVercelRuntimes, ", "))
 	}
 	disk := vercelDefaultDiskMB
 	if v, ok := cfg["container_disk"]; ok && v != nil {
-		if n, ok := pyIntValue(v); ok {
+		if n, ok := wholeNumberArg(v); ok {
 			disk = n
 		} else {
 			disk = -1
@@ -972,9 +973,9 @@ func (vercelSandboxBackend) DoctorChecks() []DoctorCheck {
 // CreateEnvironment builds the sandbox from the shaped resources and the runtime or image setting
 func (vercelSandboxBackend) CreateEnvironment(ctx context.Context, env *Env, opts CreateOptions) (Environment, error) {
 	res := sandboxResources(opts.ContainerConfig)
-	cpu, _ := pyFloatValue(res["cpu"])
-	memory, _ := pyIntValue(res["memory"])
-	disk, _ := pyIntValue(res["disk"])
+	cpu, _ := floatValue(res["cpu"])
+	memory, _ := wholeNumberArg(res["memory"])
+	disk, _ := wholeNumberArg(res["disk"])
 	return NewVercelSandboxEnvironment(ctx, env, VercelOptions{Runtime: argS(opts.ContainerConfig, "vercel_runtime"), Image: argS(opts.ContainerConfig, "vercel_image"),
 		Cwd: opts.Cwd, Timeout: opts.Timeout, CPU: cpu, Memory: memory, Disk: disk, Persistent: truthy(res["persistent_filesystem"]), TaskID: opts.TaskID})
 }

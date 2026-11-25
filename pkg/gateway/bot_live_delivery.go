@@ -25,7 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -85,7 +85,7 @@ func botChatTip(ctx context.Context, profileHome string) (string, error) {
 	return db.GetCompressionTip(ctx, id)
 }
 
-// Profile authority and its exact Bot Chat without a lease, nil when the profile has no store
+// Profile authority and its exact Bot Chat without a lease, nil when the profile has no store, a ValueError kind refusal while the authority is not ready
 func FindCanonicalLiveOwner(ctx context.Context, profileHome string) (map[string]any, error) {
 	resolved, err := filepath.Abs(profileHome)
 	if err != nil {
@@ -96,7 +96,7 @@ func FindCanonicalLiveOwner(ctx context.Context, profileHome string) (map[string
 	}
 	discovery := DiscoverGatewayEndpoint(ctx, resolved, 5*time.Second)
 	if discovery.State != "ready" || discovery.Endpoint == nil {
-		return nil, errors.New("profile authority is not ready")
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "profile authority is not ready"}
 	}
 	if st, err := os.Stat(filepath.Join(resolved, "state.db")); err != nil || !st.Mode().IsRegular() {
 		return nil, nil
@@ -335,7 +335,7 @@ func ticketShapeError(path string, record map[string]any) string {
 	}
 	status, ok := record["status"].(string)
 	if !ok || !(status == "queued" || status == "claimed" || deliveryTerminal[status]) {
-		return "unknown status " + anyutil.Quote(record["status"])
+		return "unknown status " + quotedValue(record["status"])
 	}
 	if !deliveryIsInt(createdAt) || !deliveryIsInt(sequence) {
 		return "created_at/sequence are not integers"

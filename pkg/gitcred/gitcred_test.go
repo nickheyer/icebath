@@ -411,7 +411,7 @@ func TestWithGitAuthAppendsExtraheaderAndOriginShapes(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 	if _, err := WithGitAuth(context.Background(), map[string]string{"GIT_CONFIG_COUNT": "x"}, "https://h/x", &BasicAuth{"u", "p"}); err == nil ||
-		err.Error() != "invalid literal for int() with base 10: 'x'" {
+		err.Error() != `GIT_CONFIG_COUNT "x" is not an entry count git accepts` {
 		t.Fatalf("bad count: %v", err)
 	}
 	if _, err := WithGitAuth(context.Background(), nil, "https://h:99999/x", &BasicAuth{"u", "p"}); err == nil {

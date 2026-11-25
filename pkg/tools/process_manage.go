@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -160,10 +161,10 @@ var sessionActions = map[string]processAction{
 		return processRegistry.killDict(WithEnvHome(ctx, env), env, sid, "process.kill", true)
 	}, true},
 	"write": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
-		return processRegistry.writeStdinDict(env, sid, pyStrOrEmpty(a["data"]))
+		return processRegistry.writeStdinDict(env, sid, anyutil.String(a["data"]))
 	}, false},
 	"submit": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
-		return processRegistry.submitStdinDict(env, sid, pyStrOrEmpty(a["data"]))
+		return processRegistry.submitStdinDict(env, sid, anyutil.String(a["data"]))
 	}, false},
 	"close": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		return processRegistry.closeStdinDict(env, sid)
@@ -189,7 +190,7 @@ func handoffProcess(env *Env, sessionID string, args map[string]any, taskID stri
 	if len(child.HandedOff()) >= maxHandoffsPerChild {
 		return Dict("error", fmt.Sprintf("handoff cap reached (%d per subagent); wait on or kill the rest yourself.", maxHandoffsPerChild))
 	}
-	note := strings.TrimSpace(pyStrOrEmpty(args["data"]))
+	note := strings.TrimSpace(anyutil.String(args["data"]))
 	if note == "" {
 		return Dict("error", "handoff requires `data`: one sentence saying what the process is for and what the parent should do with its result.")
 	}
@@ -220,7 +221,7 @@ func handleProcess(ctx context.Context, call *Call) string {
 	action := asStr(args["action"])
 	sessionID := ""
 	if v, ok := args["session_id"]; ok && v != nil {
-		sessionID = pyStr(v)
+		sessionID = anyutil.String(v)
 	}
 	if action == "list" {
 		return processJSON(listProcesses(WithEnvHome(ctx, env), env, call.TaskID))

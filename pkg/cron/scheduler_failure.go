@@ -454,10 +454,10 @@ func (s *Store) resolveJobReasoningConfig(ctx context.Context, job *Job, model s
 	if job.ReasoningEffort != nil {
 		pinned := *job.ReasoningEffort
 		if parsed := config.ParseReasoningEffort(pinned); parsed != nil {
-			s.log.Info(fmt.Sprintf("Job '%s': using per-job reasoning_effort '%s'", jobIDOrUnknown(job), pinned))
+			s.log.Info(fmt.Sprintf("Job %q: using per-job reasoning_effort %q", jobIDOrUnknown(job), pinned))
 			return parsed
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s': invalid stored reasoning_effort %s — ignoring the pin "+
+		s.log.Warn(fmt.Sprintf("Job %q: invalid stored reasoning_effort %s — ignoring the pin "+
 			"and falling back to config resolution. Fix with `cronjob "+
 			"action=update job_id=%s reasoning_effort=<level>` (valid: none, "+
 			"minimal, low, medium, high, xhigh, max, ultra).", jobIDOrUnknown(job), strconv.Quote(pinned), jobIDOrUnknown(job)))

@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -57,7 +58,7 @@ func copilotCatalogFor(ctx context.Context, apiKey string) ([]any, []string, fun
 	ids := []string{}
 	for _, item := range catalog {
 		if id := cpGetOr(item, "id", ""); cpTruthy(id) {
-			ids = append(ids, pyStr(id))
+			ids = append(ids, anyutil.String(id))
 		}
 	}
 	normalize := func(mid string) string {
@@ -109,7 +110,7 @@ func copilotRawModelIDs(ctx context.Context, apiKey string) []string {
 	ids := []string{}
 	for _, item := range copilotPayloadItems(payload) {
 		if id := cpGetOr(item, "id", nil); cpTruthy(id) {
-			ids = append(ids, pyStr(id))
+			ids = append(ids, anyutil.String(id))
 		}
 	}
 	return ids
@@ -264,7 +265,7 @@ func copilotPyInt(v any) (int, error) {
 	case string:
 		i, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(n, "_", "")))
 		if err != nil {
-			return 0, fmt.Errorf("%s is not a whole number", pyStringRepr(n))
+			return 0, fmt.Errorf("%s is not a whole number", strconv.Quote(n))
 		}
 		return i, nil
 	}
@@ -318,7 +319,7 @@ func copilotPollDeviceLogin(ctx context.Context, state any) (any, error) {
 		return nil, errors.New("the Copilot device login state has no device_code")
 	}
 	result, err := copilotPostForm(ctx, copilotDeviceLoginBase+"/login/oauth/access_token",
-		[][2]string{{"client_id", copilotOAuthClientID}, {"device_code", pyStr(deviceCode)},
+		[][2]string{{"client_id", copilotOAuthClientID}, {"device_code", anyutil.String(deviceCode)},
 			{"grant_type", "urn:ietf:params:oauth:grant-type:device_code"}}, 10*time.Second)
 	if err != nil {
 		var notDict *copilotNotDictError
@@ -361,7 +362,7 @@ func copilotPollDeviceLogin(ctx context.Context, state any) (any, error) {
 	}
 	outcome, known := copilotDeviceErrors[errText]
 	if !known {
-		outcome = [2]string{"error", "Authorization failed: " + pyStr(errValue)}
+		outcome = [2]string{"error", "Authorization failed: " + anyutil.String(errValue)}
 	}
 	return map[string]any{"status": outcome[0], "message": outcome[1]}, nil
 }
@@ -372,7 +373,7 @@ func copilotDeviceToken(ctx context.Context, out io.Writer, openBrowser bool) (s
 	if err != nil {
 		return "", err
 	}
-	token := strings.TrimSpace(pyStr(credential))
+	token := strings.TrimSpace(anyutil.String(credential))
 	if valid, msg := validateCopilotToken(token); !valid {
 		return "", &AuthError{Provider: "copilot", Code: "copilot_token_unsupported", Message: msg}
 	}

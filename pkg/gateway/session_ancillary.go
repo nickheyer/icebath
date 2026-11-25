@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -88,7 +89,7 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 			if anyutil.Equal(record["subagent_id"], sub) {
 				held, present := record["agent"]
 				if !present {
-					return &pyKeyError{"agent"}
+					return &keyError{"agent"}
 				}
 				child = held
 				return nil
@@ -199,7 +200,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 			if !anyutil.IsTrue(agentSection) {
 				agentSection = map[string]any{}
 			}
-			raw, err := pyGet(agentSection, "disabled_toolsets", nil)
+			raw, err := getValue(agentSection, "disabled_toolsets", nil)
 			if err != nil {
 				return nil, err
 			}
@@ -354,7 +355,7 @@ func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession,
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
 	projected, err := project(ctx, a, ref, params, kind)
-	var missing *pyKeyError
+	var missing *keyError
 	if err != nil && errors.As(err, &missing) {
 		if current, ok := a.live(ref.SessionID); !ok || current != live {
 			return nil, runtimeRefusal("not_found")
@@ -524,7 +525,7 @@ func reloadMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	a := c.authority
 	refresher, ok := a.Runner.(mcpReloadRefresher)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot refresh cached agents after an MCP reload", a.Runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot refresh cached agents after an MCP reload", a.Runner)}
 	}
 	refresher.MCPReloadRefreshCachedAgents(a.Runner.MultiplexProfiles(), servedProfileName(a.ProfileID))
 	session, err := commitSessionMCP(ctx, c, ref, params)
@@ -615,7 +616,7 @@ func sessionServers(ctx context.Context, a *SessionAuthority, sessionID string, 
 	}
 	stored, ok := receipt.Get("policy")
 	if !ok {
-		return nil, &pyKeyError{"policy"}
+		return nil, &keyError{"policy"}
 	}
 	policy, err := restorePolicy(stored)
 	if err != nil {

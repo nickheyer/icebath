@@ -30,5 +30,5 @@ func checkEnvFor(ctx context.Context, env *Env) *Env {
 	return &bound
 }
 
-// PyContainsKanban reports Python membership of kanban in a toolsets config value
-func PyContainsKanban(v any) bool { return pyContainsKanban(v) }
+// ContainsKanban reports Python membership of kanban in a toolsets config value
+func ContainsKanban(v any) bool { return containsKanban(v) }

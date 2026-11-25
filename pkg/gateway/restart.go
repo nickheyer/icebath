@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Gateway exit codes, 75 asks the supervisor for a restart and 78 is a fatal configuration error
@@ -46,12 +47,12 @@ var (
 	DefaultGatewayCronDrainTimeout            = settings.AgentCronDrainTimeout.Default.Seconds()
 )
 
-var launchdExitTimeoutRE = regexp.MustCompile(`(?m)^[` + pySpaceClass + `]*exit timeout[` + pySpaceClass + `]*=[` + pySpaceClass + `]*(\p{Nd}+)[` + pySpaceClass + `]*$`)
+var launchdExitTimeoutRE = regexp.MustCompile(`(?m)^[` + spaceClass + `]*exit timeout[` + spaceClass + `]*=[` + spaceClass + `]*(\p{Nd}+)[` + spaceClass + `]*$`)
 
 var restartTruthy = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
 // Python max of two floats, the first wins unless the second compares greater
-func pyMaxFloat(a, b float64) float64 {
+func maxFloat(a, b float64) float64 {
 	if b > a {
 		return b
 	}
@@ -59,7 +60,7 @@ func pyMaxFloat(a, b float64) float64 {
 }
 
 // Python min of two floats, the first wins unless the second compares smaller
-func pyMinFloat(a, b float64) float64 {
+func minFloat(a, b float64) float64 {
 	if b < a {
 		return b
 	}
@@ -185,7 +186,7 @@ func ResolveLaunchdCappedDrain(drainTimeout, launchdExitTimeoutS, cleanupReserve
 	if budget <= 0.0 {
 		return drain
 	}
-	return pyMinFloat(drain, pyMaxFloat(budget-restartSeconds(cleanupReserveS, 0), 0.0))
+	return minFloat(drain, maxFloat(budget-restartSeconds(cleanupReserveS, 0), 0.0))
 }
 
 // Stop timing attributes a runner carries, a nil drain is the shipped default
@@ -261,7 +262,7 @@ func restartSeconds(value any, fallback float64) float64 {
 	if err != nil {
 		return fallback
 	}
-	return pyMaxFloat(f, 0.0)
+	return maxFloat(f, 0.0)
 }
 
 // Timeout where 0 disables, None blank or non numeric input and optionally non finite input take the default
@@ -276,7 +277,7 @@ func parseTimeoutKeepingZero(raw any, def float64, finite bool) float64 {
 	if finite && (math.IsInf(value, 0) || math.IsNaN(value)) {
 		return def
 	}
-	return pyMaxFloat(0.0, value)
+	return maxFloat(0.0, value)
 }
 
 // Configured restart drain timeout, a falsy value including 0 takes the shipped default
@@ -310,7 +311,7 @@ func ResolveCronDrainBudget(drainTimeout, cronDrainTimeout, watchdogDelay, elaps
 		return drain
 	}
 	ceiling := restartSeconds(watchdogDelay, 0) - restartSeconds(elapsed, 0) - restartSeconds(cleanupReserveS, CronDrainCleanupReserveS)
-	return pyMaxFloat(drain, pyMinFloat(floor, ceiling))
+	return maxFloat(drain, minFloat(floor, ceiling))
 }
 
 // Seconds systemd TimeoutStopSec must cover, int() of the float so infinity and NaN raise as Python does
@@ -321,12 +322,12 @@ func ResolveSystemdTimeoutStopSec(drainTimeout, cronDrainTimeout, cleanupReserve
 	if cron > 0.0 {
 		cronBudget = cron + restartSeconds(cleanupReserveS, 0)
 	}
-	v := pyMaxFloat(restartSeconds(floorS, 0), pyMaxFloat(drain, cronBudget)+restartSeconds(headroomS, 0))
+	v := maxFloat(restartSeconds(floorS, 0), maxFloat(drain, cronBudget)+restartSeconds(headroomS, 0))
 	if math.IsInf(v, 0) {
-		return nil, &PyError{"OverflowError", "cannot convert float infinity to integer"}
+		return nil, &errorutil.Error{"OverflowError", "cannot convert float infinity to integer"}
 	}
 	if math.IsNaN(v) {
-		return nil, &PyError{"ValueError", "cannot convert float NaN to integer"}
+		return nil, &errorutil.Error{"ValueError", "cannot convert float NaN to integer"}
 	}
 	n, _ := big.NewFloat(math.Trunc(v)).Int(nil)
 	return n, nil

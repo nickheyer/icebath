@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -358,7 +359,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		r.RestartWithCompressedMessages = false
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
 			pkgLog().Info("Skipping compressed-restart model call: reference-only handoff would be the sole active user turn (#80622)")
-			if !pyTruthy(s.FinalResponse) {
+			if !anyutil.IsTrue(s.FinalResponse) {
 				s.FinalResponse = handoffSkipFinalResponse
 			}
 			s.TurnExitReason = "compaction_handoff_not_actionable"

@@ -30,8 +30,8 @@ func assertGuardRefused(t *testing.T, dbPath string, readOnly bool) {
 		db.Close()
 		t.Fatalf("opened production path %s", dbPath)
 	}
-	if !strings.Contains(err.Error(), "live-system guard") || pyExceptionClassName(err) != "RuntimeError" {
-		t.Fatalf("refusal %s: %v", pyExceptionClassName(err), err)
+	if !strings.Contains(err.Error(), "live-system guard") || exceptionClassName(err) != "RuntimeError" {
+		t.Fatalf("refusal %s: %v", exceptionClassName(err), err)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestSessionDBChildHelperProcess(t *testing.T) {
 	}
 	db, err := NewSessionDB(context.Background(), "", false)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, pyExceptionClassName(err)+": "+err.Error())
+		fmt.Fprintln(os.Stderr, exceptionClassName(err)+": "+err.Error())
 		os.Exit(1)
 	}
 	db.Close()

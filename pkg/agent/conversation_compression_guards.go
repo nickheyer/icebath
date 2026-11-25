@@ -197,6 +197,6 @@ func markCompressionBlockedTransient(a *AIAgent, c *ContextCompressor, reason st
 		lastErr = *c.lastSummaryError
 	}
 	pkgLog().Info(fmt.Sprintf("Skipping automatic compression re-entry: transient guard active (%s, session=%s, last failure: %s) — will retry after the backoff lapses; /compress forces an immediate retry",
-		reason, pyStrOr(a.sessionID, "none"), lastErr))
+		reason, anyutil.StringOr(a.sessionID, "none"), lastErr))
 	a.compressionBlockedTransient = reason
 }

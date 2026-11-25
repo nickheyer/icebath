@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
@@ -324,18 +323,14 @@ func cmdDeep(ctx context.Context, _ []string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// Sorted allowed categories as a Python list repr
-func allowedRepr() string {
+// Allowed categories in sorted order, separated by commas
+func allowedCategoryList() string {
 	names := make([]string, 0, len(AllowedCategories))
 	for k := range AllowedCategories {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	list := make([]any, len(names))
-	for i, n := range names {
-		list[i] = n
-	}
-	return anyutil.Quote(list)
+	return strings.Join(names, ", ")
 }
 
 // Manually adds a path to tracking under a category
@@ -345,14 +340,14 @@ func cmdTrack(ctx context.Context, argv []string) (string, error) {
 	}
 	pathArg, category := argv[1], argv[2]
 	if !AllowedCategories[category] {
-		return fmt.Sprintf("Unknown category '%s'. Allowed: %s", category, allowedRepr()), nil
+		return fmt.Sprintf("Unknown category %q. Allowed: %s", category, allowedCategoryList()), nil
 	}
 	ok, err := Track(ctx, pathArg, category, true)
 	if err != nil {
 		return "", err
 	}
 	if ok {
-		return fmt.Sprintf("Tracked %s as '%s'.", pathArg, category), nil
+		return fmt.Sprintf("Tracked %s as %q.", pathArg, category), nil
 	}
 	return fmt.Sprintf("Not tracked (already present, missing, or outside ICEBATH_HOME): %s", pathArg), nil
 }

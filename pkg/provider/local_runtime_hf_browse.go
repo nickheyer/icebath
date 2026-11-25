@@ -17,6 +17,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -115,7 +118,7 @@ func hfFetchJSON(url string) (any, error) {
 func hfQuote(s string) string {
 	parts := strings.Split(s, "/")
 	for i, p := range parts {
-		parts[i] = pyQuoteAll(p)
+		parts[i] = urlutil.Escape(p, "")
 	}
 	return strings.Join(parts, "/")
 }
@@ -135,13 +138,13 @@ func hfIterate(v any) ([]any, error) {
 
 // Python int of a field or zero when falsy, an error where int raises
 func hfInt(v any) (int64, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
 	if s, ok := v.(string); ok {
 		n, ok := pythonUnicodeIntText(s)
 		if !ok {
-			return 0, fmt.Errorf("%s is not a whole number", pyRepr(s))
+			return 0, fmt.Errorf("%s is not a whole number", anyutil.Quote(s))
 		}
 		return n, nil
 	}
@@ -163,7 +166,7 @@ func pythonUnicodeIntText(s string) (int64, bool) {
 	var ascii strings.Builder
 	for _, r := range s {
 		if unicode.IsDigit(r) && r > unicode.MaxASCII {
-			ascii.WriteByte(byte('0' + unicodeDigitValue(r)))
+			ascii.WriteByte(byte('0' + textutil.DigitValue(r)))
 			continue
 		}
 		ascii.WriteRune(r)
@@ -175,7 +178,7 @@ func pythonUnicodeIntText(s string) (int64, bool) {
 // Hugging Face models shipping GGUF files that match query, most downloaded first
 func SearchModels(query string, limit int) ([]HFModelHit, error) {
 	url := fmt.Sprintf("%s/api/models?search=%s&filter=gguf&sort=downloads&direction=-1&limit=%d",
-		hfBase, hfQuote(pyStripSpace(query)), max(1, min(limit, 50)))
+		hfBase, hfQuote(strings.TrimSpace(query)), max(1, min(limit, 50)))
 	data, err := hfGetJSON(url)
 	if err != nil {
 		return nil, err
@@ -192,7 +195,7 @@ func SearchModels(query string, limit int) ([]HFModelHit, error) {
 		}
 		repo := ""
 		if v, ok := m["id"]; ok {
-			repo = pyStr(v)
+			repo = anyutil.String(v)
 		}
 		downloads, err := hfInt(m["downloads"])
 		if err != nil {
@@ -203,10 +206,10 @@ func SearchModels(query string, limit int) ([]HFModelHit, error) {
 			return nil, err
 		}
 		updated := ""
-		if pyTruthy(m["lastModified"]) {
-			updated = pyStr(m["lastModified"])
+		if anyutil.IsTrue(m["lastModified"]) {
+			updated = anyutil.String(m["lastModified"])
 		}
-		hits = append(hits, HFModelHit{Repo: repo, Downloads: downloads, Likes: likes, Updated: updated, Gated: pyTruthy(m["gated"])})
+		hits = append(hits, HFModelHit{Repo: repo, Downloads: downloads, Likes: likes, Updated: updated, Gated: anyutil.IsTrue(m["gated"])})
 	}
 	return hits, nil
 }
@@ -245,7 +248,7 @@ func RepoFiles(repo string) ([]HFFileGroup, error) {
 		}
 		path := ""
 		if v, ok := f["path"]; ok {
-			path = pyStr(v)
+			path = anyutil.String(v)
 		}
 		if !strings.HasSuffix(strings.ToLower(path), ".gguf") {
 			continue

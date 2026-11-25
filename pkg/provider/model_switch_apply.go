@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,11 +46,11 @@ func validateSwitch(ctx context.Context, st *modelSwitch) *ModelSwitchResult {
 	}
 	var headers map[string]string
 	switch {
-	case strings.ToLower(pyStripSpace(st.TargetProvider)) == "ollama" && st.SuppressOllamaHeaders:
+	case strings.ToLower(strings.TrimSpace(st.TargetProvider)) == "ollama" && st.SuppressOllamaHeaders:
 		headers = map[string]string{}
-	case strings.ToLower(pyStripSpace(st.TargetProvider)) == "ollama" && len(st.ValidationHeaders) > 0:
+	case strings.ToLower(strings.TrimSpace(st.TargetProvider)) == "ollama" && len(st.ValidationHeaders) > 0:
 		headers = st.ValidationHeaders
-	case strings.ToLower(pyStripSpace(st.TargetProvider)) == "ollama":
+	case strings.ToLower(strings.TrimSpace(st.TargetProvider)) == "ollama":
 		headers = switchOllamaHeadersFn(ctx)
 	case len(st.ValidationHeaders) > 0:
 		headers = st.ValidationHeaders
@@ -99,7 +100,7 @@ func opencodeAPIMode(_ context.Context, provider, model, _ string) string {
 
 // ModelDerivedAPIMode is the api mode re-derived from the final model, false when the endpoint fixes the wire
 func ModelDerivedAPIMode(ctx context.Context, provider, model, apiKey string) (string, bool) {
-	key := strings.ToLower(pyStripSpace(provider))
+	key := strings.ToLower(strings.TrimSpace(provider))
 	lookup := OpenCodeFamily(key)
 	if lookup == "" {
 		lookup = key
@@ -138,7 +139,7 @@ func buildSwitchResult(ctx context.Context, st *modelSwitch) ModelSwitchResult {
 	if caps, ok := switchCapabilitiesFn(ctx, st.TargetProvider, st.NewModel, true); ok {
 		res.Capabilities = &caps
 	}
-	isCodex := strings.ToLower(pyStripSpace(st.TargetProvider)) == "openai-codex"
+	isCodex := strings.ToLower(strings.TrimSpace(st.TargetProvider)) == "openai-codex"
 	res.RuntimeCapabilities = map[string]bool{
 		"native_compaction": resolveNativeCompactionCapability(st.NewModel, st.BaseURL, st.TargetProvider, isCodex)}
 	if info, ok := switchModelInfoFn(ctx, st.TargetProvider, st.NewModel, true); ok {
@@ -173,7 +174,7 @@ var SwitchModel = switchModel
 // Model switch pipeline the module level SwitchModel holds in production
 func switchModel(ctx context.Context, opts SwitchModelOptions) (ModelSwitchResult, error) {
 	st := &modelSwitch{
-		SwitchRoute: SwitchRoute{NewModel: pyStripSpace(opts.RawInput), TargetProvider: opts.CurrentProvider, ValidationHeaders: map[string]string{}},
+		SwitchRoute: SwitchRoute{NewModel: strings.TrimSpace(opts.RawInput), TargetProvider: opts.CurrentProvider, ValidationHeaders: map[string]string{}},
 		RawInput:    opts.RawInput, CurrentProvider: opts.CurrentProvider, CurrentBaseURL: opts.CurrentBaseURL,
 		CurrentAPIKey: opts.CurrentAPIKey, IsGlobal: opts.IsGlobal, ExplicitProvider: opts.ExplicitProvider,
 		UserProviders: opts.UserProviders, CustomProviders: opts.CustomProviders,
@@ -215,14 +216,14 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 	var stale []string
 	_, pinned := modelCfg["context_length"]
 	_, vision := modelCfg["supports_vision"]
-	if (pinned || vision) && selectionClearsContextPinFn(pyStrOrEmpty(modelCfg["default"]), result.NewModel,
-		pyStrOrEmpty(modelCfg["base_url"]), result.BaseURL, pyStrOrEmpty(modelCfg["provider"]), result.TargetProvider) {
+	if (pinned || vision) && selectionClearsContextPinFn(anyutil.String(modelCfg["default"]), result.NewModel,
+		anyutil.String(modelCfg["base_url"]), result.BaseURL, anyutil.String(modelCfg["provider"]), result.TargetProvider) {
 		stale = append(stale, "context_length", "supports_vision")
 	}
 	// A non custom target reads its credential from the environment, the login store or the pool, so an inline key is
 	// a leftover there, while a custom target keeps its inline key and its key pointer across a same route pick
 	routeChanged := SelectionRouteChanged(modelCfg, result)
-	if !strings.HasPrefix(strings.ToLower(pyStripSpace(result.TargetProvider)), "custom") || routeChanged {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(result.TargetProvider)), "custom") || routeChanged {
 		stale = append(stale, "api_key")
 	}
 	if routeChanged {
@@ -238,11 +239,11 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 
 // SelectionRouteChanged reports whether the provider or endpoint differs between a model section and the switch target
 func SelectionRouteChanged(modelCfg map[string]any, result ModelSwitchResult) bool {
-	heldProvider := strings.ToLower(pyStripSpace(pyStrOrEmpty(pyOr(modelCfg["provider"], ""))))
-	if heldProvider != strings.ToLower(pyStripSpace(result.TargetProvider)) {
+	heldProvider := strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(modelCfg["provider"], ""))))
+	if heldProvider != strings.ToLower(strings.TrimSpace(result.TargetProvider)) {
 		return true
 	}
-	heldRoute, newRoute := NormalizeRouteBaseURL(pyStrOrEmpty(modelCfg["base_url"])), NormalizeRouteBaseURL(result.BaseURL)
+	heldRoute, newRoute := NormalizeRouteBaseURL(anyutil.String(modelCfg["base_url"])), NormalizeRouteBaseURL(result.BaseURL)
 	if heldRoute == "" && newRoute != "" && heldProvider != "" {
 		return !providerDefaultRoutes(NormalizeProvider(heldProvider))[newRoute]
 	}
@@ -310,7 +311,7 @@ func RemoteModelSelectionGuard(ctx context.Context, before, after any) error {
 	for _, key := range keys {
 		bv, bHeld := b[key]
 		av, aHeld := a[key]
-		if bHeld == aHeld && pyJSONEqual(bv, av) {
+		if bHeld == aHeld && jsonEqual(bv, av) {
 			continue
 		}
 		level, _, err := backend.Locked(ctx, h, "model."+key)
@@ -389,7 +390,7 @@ func persistSelectionLocked(ctx context.Context, path string, result ModelSwitch
 			shareConfigValue(cfg, at, m)
 		}
 	}
-	if !pyJSONEqual(modelCfg, plannedFrom) {
+	if !jsonEqual(modelCfg, plannedFrom) {
 		updates = ModelSelectionConfigUpdates(result, modelCfg)
 	}
 	merged := mergeSelectionUpdates(modelCfg, updates, false)

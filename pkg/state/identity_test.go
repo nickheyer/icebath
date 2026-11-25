@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestUIDCodecs(t *testing.T) {
@@ -17,20 +19,20 @@ func TestUIDCodecs(t *testing.T) {
 		t.Fatalf("bytes are not a list %v", got)
 	}
 	got := uidMap(`{"c1": "u1", "": "x", "c2": "", "c3": ["u3", "u4"], "c4": [], "c5": ["u", ""], "c6": 5}`)
-	want := pyObject{{"c1", "u1"}, {"c3", []any{"u3", "u4"}}}
+	want := orderedObject{{"c1", "u1"}, {"c3", []any{"u3", "u4"}}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("uid map %v", got)
 	}
 	if got := uidMap(`[1]`); len(got) != 0 {
 		t.Fatalf("non map %v", got)
 	}
-	if got := uidMap(map[string]any{"b": "2", "a": "1"}); !reflect.DeepEqual(got, pyObject{{"a", "1"}, {"b", "2"}}) {
+	if got := uidMap(map[string]any{"b": "2", "a": "1"}); !reflect.DeepEqual(got, orderedObject{{"a", "1"}, {"b", "2"}}) {
 		t.Fatalf("live map %v", got)
 	}
 	for tc, want := range map[string]string{
 		`{"call_id": " c1|item ", "id": "x"}`: "c1", `{"id": "plain"}`: "plain", `{"id": "|tail"}`: "|tail", `{"call_id": "  ", "id": "fallback"}`: "fallback", `{"id": 7}`: "", `"str"`: "",
 	} {
-		v, _ := pyLoads(tc)
+		v, _ := loadsValue(tc)
 		if got := CoalesceToolCallID(v); got != want {
 			t.Fatalf("coalesce %s -> %q", tc, got)
 		}
@@ -59,9 +61,9 @@ func TestIdentityColumnSerialization(t *testing.T) {
 
 func TestRestoreAndFillIdentity(t *testing.T) {
 	row := map[string]any{MessageUID: "m1", "tool_call_uids": `{"c1": "s1", "c2": "s2", "c3": "s3"}`, "tool_call_uid": "tu", "absorbed_message_uids": `["a1", "a1", "a2"]`}
-	msg := map[string]any{ToolCallUIDs: pyObject{{"c2", []any{"s2", "later"}}, {"c9", "live"}}}
+	msg := map[string]any{ToolCallUIDs: orderedObject{{"c2", []any{"s2", "later"}}, {"c9", "live"}}}
 	restoreIdentityColumns(row, msg)
-	want := pyObject{{"c2", []any{"s2", "later"}}, {"c9", "live"}, {"c1", "s1"}, {"c3", "s3"}}
+	want := orderedObject{{"c2", []any{"s2", "later"}}, {"c9", "live"}, {"c1", "s1"}, {"c3", "s3"}}
 	if !reflect.DeepEqual(msg[ToolCallUIDs], want) || msg[MessageUID] != "m1" || msg[ToolCallUID] != "tu" || !reflect.DeepEqual(msg[AbsorbedMessageUIDs], []string{"a1", "a2"}) {
 		t.Fatalf("restored %v", msg)
 	}
@@ -71,10 +73,10 @@ func TestRestoreAndFillIdentity(t *testing.T) {
 	if len(untouched) != 1 {
 		t.Fatalf("empty columns add nothing %v", untouched)
 	}
-	calls, _ := pyLoads(`[{"id": "c1"}, {"call_id": "c3|x"}]`)
-	clone := map[string]any{"tool_calls": calls, ToolCallUIDs: pyObject{{"c1", "live1"}}}
+	calls, _ := loadsValue(`[{"id": "c1"}, {"call_id": "c3|x"}]`)
+	clone := map[string]any{"tool_calls": calls, ToolCallUIDs: orderedObject{{"c1", "live1"}}}
 	fillMissingToolCallUIDs(row, clone)
-	if !reflect.DeepEqual(clone[ToolCallUIDs], pyObject{{"c1", "live1"}, {"c3", "s3"}}) {
+	if !reflect.DeepEqual(clone[ToolCallUIDs], orderedObject{{"c1", "live1"}, {"c3", "s3"}}) {
 		t.Fatalf("filled %v", clone[ToolCallUIDs])
 	}
 	noCalls := map[string]any{"tool_calls": "x"}
@@ -89,11 +91,11 @@ func TestRestoreAndFillIdentity(t *testing.T) {
 
 func TestStableToolKey(t *testing.T) {
 	row := map[string]any{"role": "assistant", "tool_calls": `[{"id": "c1"}, {"call_id": "c2|r"}]`, "timestamp": 12.5, "tool_call_id": nil, "tool_name": nil}
-	if got, ok, err := stableToolKey(row); err != nil || !ok || got != "('assistant', None, 12.5, None, ('c1', 'c2'), None)" {
+	if got, ok, err := stableToolKey(row); err != nil || !ok || got != `["assistant",null,12.5,null,["c1","c2"],null]` {
 		t.Fatalf("key %q %v %v", got, ok, err)
 	}
 	row["tool_calls"] = `[{"id": "only"}]`
-	if got, _, _ := stableToolKey(row); got != "('assistant', None, 12.5, None, ('only',), None)" {
+	if got, _, _ := stableToolKey(row); got != `["assistant",null,12.5,null,["only"],null]` {
 		t.Fatalf("single call tuple %q", got)
 	}
 	for _, calls := range []any{`[{"id": "c1"}, {"function": {}}]`, nil, "", `{"c1": 1}`, `"abc"`, `[]`, `0`, `not json`} {
@@ -109,7 +111,8 @@ func TestStableToolKey(t *testing.T) {
 	if _, ok, _ := stableToolKey(map[string]any{"role": "tool", "tool_calls": `[{"id": "c1"}]`}); ok {
 		t.Fatal("only assistant rows")
 	}
-	if !pyValueEqual(json.Number("1"), 1.0) || pyValueEqual("1", json.Number("1")) || !pyValueEqual(pyObject{{"a", []any{true}}}, map[string]any{"a": []any{json.Number("1")}}) {
-		t.Fatal("python equality")
+	if !anyutil.Equal(json.Number("1"), 1.0) || anyutil.Equal("1", json.Number("1")) || anyutil.Equal(true, json.Number("1")) ||
+		!anyutil.Equal(orderedObject{{"a", []any{true, int64(1)}}}, map[string]any{"a": []any{true, json.Number("1")}}) {
+		t.Fatal("value equality")
 	}
 }

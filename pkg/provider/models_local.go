@@ -22,8 +22,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -71,7 +73,7 @@ func rootForOllamaNativeAPI(baseURL string) string {
 func configuredOllamaBaseURL(ctx context.Context) string {
 	cfg := getProviderConfigDict(ctx, "ollama")
 	for _, key := range []string{"base_url", "api", "url"} {
-		if v := pyStr(cfg[key]); pyTruthy(cfg[key]) && v != "" {
+		if v := anyutil.String(cfg[key]); anyutil.IsTrue(cfg[key]) && v != "" {
 			return strings.TrimSpace(v)
 		}
 	}
@@ -79,7 +81,7 @@ func configuredOllamaBaseURL(ctx context.Context) string {
 }
 
 // Python urlsplit hostname and raw port text of a netloc
-func pyNetlocHostPort(netloc string) (hostname, port string, hasPort bool) {
+func netlocHostPort(netloc string) (hostname, port string, hasPort bool) {
 	hostinfo := netloc
 	if i := strings.LastIndex(netloc, "@"); i >= 0 {
 		hostinfo = netloc[i+1:]
@@ -94,12 +96,12 @@ func pyNetlocHostPort(netloc string) (hostname, port string, hasPort bool) {
 }
 
 // Python urlsplit port, an error where Python raises ValueError
-func pyURLPort(raw string) (int, bool, error) {
-	parts, err := pyURLParse(raw, "")
+func urlPort(raw string) (int, bool, error) {
+	parts, err := urlutil.Split(raw)
 	if err != nil {
 		return 0, false, err
 	}
-	_, port, ok := pyNetlocHostPort(parts.netloc)
+	_, port, ok := netlocHostPort(parts.Authority)
 	if !ok {
 		return 0, false, nil
 	}
@@ -125,19 +127,19 @@ func ollamaHostFromEnv(envHost string) string {
 		return envHost + ":" + port
 	}
 	if strings.Contains(envHost, "://") {
-		parts, err := pyURLParse(envHost, "")
+		parts, err := urlutil.Split(envHost)
 		if err == nil {
-			hostname, _, hasPort := pyNetlocHostPort(parts.netloc)
-			if _, _, perr := pyURLPort(envHost); perr == nil && hostname != "" && !hasPort {
+			hostname, _, hasPort := netlocHostPort(parts.Authority)
+			if _, _, perr := urlPort(envHost); perr == nil && hostname != "" && !hasPort {
 				if strings.Contains(hostname, ":") && !strings.HasPrefix(hostname, "[") {
 					hostname = "[" + hostname + "]"
 				}
 				userinfo := ""
-				if i := strings.LastIndex(parts.netloc, "@"); i >= 0 {
-					userinfo = parts.netloc[:i] + "@"
+				if i := strings.LastIndex(parts.Authority, "@"); i >= 0 {
+					userinfo = parts.Authority[:i] + "@"
 				}
-				parts.netloc = userinfo + hostname + ":" + port
-				return pyURLUnparse(parts)
+				parts.Authority = userinfo + hostname + ":" + port
+				return parts.String()
 			}
 		}
 		return envHost
@@ -157,8 +159,8 @@ func getOllamaBaseURL(ctx context.Context) string {
 		return configured
 	}
 	modelCfg := modelConfigDictFn(ctx)
-	modelProvider := strings.ToLower(strings.TrimSpace(pyOrStr(modelCfg["provider"])))
-	modelBase := strings.TrimSpace(pyOrStr(modelCfg["base_url"]))
+	modelProvider := strings.ToLower(strings.TrimSpace(anyutil.StringOr(modelCfg["provider"], "")))
+	modelBase := strings.TrimSpace(anyutil.StringOr(modelCfg["base_url"], ""))
 	if modelProvider == "ollama" && modelBase != "" {
 		return modelBase
 	}
@@ -173,13 +175,13 @@ func getOllamaBaseURL(ctx context.Context) string {
 
 // The api_key of a provider block, else the secret named by the first set env key field
 func apiKeyFromProviderConfig(ctx context.Context, entry map[string]any, envKeys ...string) string {
-	if apiKey := strings.TrimSpace(pyOrStr(entry["api_key"])); apiKey != "" {
+	if apiKey := strings.TrimSpace(anyutil.StringOr(entry["api_key"], "")); apiKey != "" {
 		return apiKey
 	}
 	keyEnv := ""
 	for _, k := range envKeys {
-		if pyTruthy(entry[k]) {
-			keyEnv = strings.TrimSpace(pyStr(entry[k]))
+		if anyutil.IsTrue(entry[k]) {
+			keyEnv = strings.TrimSpace(anyutil.String(entry[k]))
 			break
 		}
 	}
@@ -334,14 +336,14 @@ func ollamaProbeCacheKey(root string, headers map[string]string) string {
 		if i > 0 {
 			blob.WriteByte(',')
 		}
-		blob.WriteString("[" + pyJSONQuoteUnicode(p[0]) + "," + pyJSONQuoteUnicode(p[1]) + "]")
+		blob.WriteString("[" + jsonQuoteUnicode(p[0]) + "," + jsonQuoteUnicode(p[1]) + "]")
 	}
 	blob.WriteByte(']')
 	return root + "|headers:" + hex.EncodeToString(blake2bSum([]byte(blob.String()), 8))
 }
 
 // JSON string literal as Python json.dumps writes it with ensure_ascii off
-func pyJSONQuoteUnicode(s string) string {
+func jsonQuoteUnicode(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -470,12 +472,12 @@ func parseOllamaTags(payload any) ([]string, bool) {
 			return nil, false
 		}
 		id := entry["model"]
-		if !pyTruthy(id) {
+		if !anyutil.IsTrue(id) {
 			id = entry["name"]
 		}
 		modelID := ""
-		if pyTruthy(id) {
-			modelID = strings.TrimSpace(pyStr(id))
+		if anyutil.IsTrue(id) {
+			modelID = strings.TrimSpace(anyutil.String(id))
 		}
 		if modelID != "" && !containsString(models, modelID) {
 			models = append(models, modelID)
@@ -547,13 +549,13 @@ func sameOllamaNativeRoot(left, right string) bool {
 	if leftRoot == "" || rightRoot == "" {
 		return false
 	}
-	leftParts, lerr := pyURLParse(leftRoot, "")
-	rightParts, rerr := pyURLParse(rightRoot, "")
+	leftParts, lerr := urlutil.Split(leftRoot)
+	rightParts, rerr := urlutil.Split(rightRoot)
 	if lerr != nil || rerr != nil {
 		return false
 	}
 	return urlOrigin(leftRoot) == urlOrigin(rightRoot) &&
-		strings.TrimRight(leftParts.path, "/") == strings.TrimRight(rightParts.path, "/")
+		strings.TrimRight(leftParts.Path, "/") == strings.TrimRight(rightParts.Path, "/")
 }
 
 var (
@@ -570,8 +572,8 @@ func shouldUseOllamaNativeCatalog(ctx context.Context, provider, baseURL string,
 	requested := strings.ToLower(strings.TrimSpace(provider))
 	root := rootForOllamaNativeAPI(baseURL)
 	if root != "" {
-		if parts, err := pyURLParse(root, ""); err == nil {
-			host, _, _ := pyNetlocHostPort(parts.netloc)
+		if parts, err := urlutil.Split(root); err == nil {
+			host, _, _ := netlocHostPort(parts.Authority)
 			if host == "ollama.com" || strings.HasSuffix(host, ".ollama.com") {
 				return false
 			}
@@ -603,7 +605,7 @@ func shouldUseOllamaNativeCatalog(ctx context.Context, provider, baseURL string,
 	if requested == "custom:ollama" || strings.HasSuffix(requested, "-ollama") {
 		return true
 	}
-	port, hasPort, err := pyURLPort(root)
+	port, hasPort, err := urlPort(root)
 	if err != nil || !hasPort || port != ollamaDefaultPort {
 		return false
 	}
@@ -634,8 +636,8 @@ func ollamaLocalCatalog(ctx context.Context, forceRefresh bool) []string {
 	cfg := getProviderConfigDict(ctx, "ollama")
 	fallbackKey := apiKeyFromProviderConfig(ctx, cfg, "key_env")
 	fallbackSource := baseURL
-	if pyTruthy(cfg["base_url"]) {
-		fallbackSource = pyStr(cfg["base_url"])
+	if anyutil.IsTrue(cfg["base_url"]) {
+		fallbackSource = anyutil.String(cfg["base_url"])
 	}
 	fallbackBase := normalizeOpenAIBaseURL(fallbackSource)
 	var fallbackHeaders map[string]string
@@ -822,14 +824,14 @@ func ProbeLMStudioModels(ctx context.Context, apiKey any, baseURL string, timeou
 	keys := []string{}
 	for _, raw := range rawModels {
 		entry, isMap := raw.(map[string]any)
-		if !isMap || strings.ToLower(strings.TrimSpace(pyOrStr(entry["type"]))) == "embedding" {
+		if !isMap || strings.ToLower(strings.TrimSpace(anyutil.StringOr(entry["type"], ""))) == "embedding" {
 			continue
 		}
 		key := entry["key"]
-		if !pyTruthy(key) {
+		if !anyutil.IsTrue(key) {
 			key = entry["id"]
 		}
-		id := strings.TrimSpace(pyOrStr(key))
+		id := strings.TrimSpace(anyutil.StringOr(key, ""))
 		if id != "" && !containsString(keys, id) {
 			keys = append(keys, id)
 		}

@@ -635,7 +635,7 @@ func RestoreAgentToolPrefix(ctx context.Context, agent AgentToolSnapshot, saved 
 	mergedNames := defNameSet(merged)
 	reinjectAuthorizedDynamicTools(agent, &merged, mergedNames)
 	merged, mergedNames = dropSessionTools(agent, merged, mergedNames)
-	changed := !pyListsEqual(defsAsAny(merged), defsAsAny(freshDefs))
+	changed := !listsEqual(defsAsAny(merged), defsAsAny(freshDefs))
 	if changed {
 		agentToolsLock.Lock()
 		agent.SetToolSnapshot(merged, mergedNames)
@@ -645,19 +645,19 @@ func RestoreAgentToolPrefix(ctx context.Context, agent AgentToolSnapshot, saved 
 		agent.AdoptBuiltBackend(pinned, obj["delegation_backend"])
 	}
 	agent.AdoptSessionDelegationMode()
-	if !sameCode || !pyListsEqual(defsAsAny(merged), pinned) {
+	if !sameCode || !listsEqual(defsAsAny(merged), pinned) {
 		persistAgentToolNamesFn(ctx, agent)
 	}
 	return changed
 }
 
 // Python list equality over JSON shaped values, numbers comparing numerically and Go slices as lists
-func pyListsEqual(a, b []any) bool {
+func listsEqual(a, b []any) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if !anyutil.Equal(pyJSONValue(a[i]), pyJSONValue(b[i])) {
+		if !anyutil.Equal(jsonValue(a[i]), jsonValue(b[i])) {
 			return false
 		}
 	}
@@ -665,7 +665,7 @@ func pyListsEqual(a, b []any) bool {
 }
 
 // Value in the decoded JSON model so typed Go slices and maps compare like their Python counterparts
-func pyJSONValue(v any) any {
+func jsonValue(v any) any {
 	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
 		return v

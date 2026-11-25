@@ -10,12 +10,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Value under the key path of nested dicts, a KeyError when a key is absent
-func pyItem(v any, keys ...string) (any, error) {
+func itemValue(v any, keys ...string) (any, error) {
 	for _, key := range keys {
 		var found bool
 		switch m := v.(type) {
@@ -25,7 +26,7 @@ func pyItem(v any, keys ...string) (any, error) {
 			v, found = m[key]
 		}
 		if !found {
-			return nil, &pyKeyError{key}
+			return nil, &keyError{key}
 		}
 	}
 	return v, nil
@@ -33,7 +34,7 @@ func pyItem(v any, keys ...string) (any, error) {
 
 // Frozen policy of the receipt a prepared snapshot carries
 func preparedPolicy(prepared *jsonutil.Object) (*LocalSessionPolicy, error) {
-	raw, err := pyItem(prepared, "snapshot", "receipt", "policy")
+	raw, err := itemValue(prepared, "snapshot", "receipt", "policy")
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +43,7 @@ func preparedPolicy(prepared *jsonutil.Object) (*LocalSessionPolicy, error) {
 
 // Session id of the receipt a prepared snapshot carries
 func preparedSessionID(prepared *jsonutil.Object) (string, error) {
-	raw, err := pyItem(prepared, "snapshot", "receipt", "session_id")
+	raw, err := itemValue(prepared, "snapshot", "receipt", "session_id")
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +98,7 @@ func prepareReasoning(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	if err != nil {
 		return nil, err
 	}
-	effort, err := pyItem(payload, "effort")
+	effort, err := itemValue(payload, "effort")
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	if err != nil {
 		return nil, err
 	}
-	raw, err := pyItem(payload, "cwd")
+	raw, err := itemValue(payload, "cwd")
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +150,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	}
 	ordered, ok := loaded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	ordered.Set("TERMINAL_CWD", cwd)
 	text, err := jsonutil.Encode(ordered, jsonutil.Spaced(), jsonutil.ASCII())
@@ -171,7 +172,7 @@ func prepareEditPolicy(ctx context.Context, a *SessionAuthority, live *LiveSessi
 		field, detail := "payload.policy", "only an ACP session has an editor edit approval policy"
 		return nil, state.NewRuntimeStoreError("invalid_params", &field, &detail)
 	}
-	picked, err := pyItem(payload, "policy")
+	picked, err := itemValue(payload, "policy")
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +377,7 @@ func bindRelaunched(ctx context.Context, a *SessionAuthority, prepared *jsonutil
 		}
 		ordered, ok := loaded.(*jsonutil.Object)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 		}
 		ordered.Set("TERMINAL_CWD", cwd)
 		if policy.TerminalJSON, err = jsonutil.Encode(ordered, jsonutil.Spaced(), jsonutil.ASCII()); err != nil {

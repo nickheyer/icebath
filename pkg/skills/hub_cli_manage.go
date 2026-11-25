@@ -274,7 +274,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *consoleutil.Consol
 	c.Print(fmt.Sprintf("\n[bold]Auditing %d skill(s)...[/]\n", len(targets)))
 	for _, e := range targets {
 		ip, ok := objGet(e, "install_path")
-		if !ok {
+		if !ok || ip == nil {
 			return missingField("install_path")
 		}
 		skillPath := filepath.Join(x.S.SkillsDir(), anyutil.String(ip))
@@ -579,9 +579,9 @@ func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *consoleutil.
 	return nil
 }
 
-const pyWhitespace = `\t\n\x0b\x0c\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
+const whitespace = `\t\n\x0b\x0c\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
-var publishFrontmatterEndRe = regexp.MustCompile(`\n---[` + pyWhitespace + `]*\n`)
+var publishFrontmatterEndRe = regexp.MustCompile(`\n---[` + whitespace + `]*\n`)
 
 // YAML frontmatter of a SKILL.md body, empty when absent or invalid
 func readPublishFrontmatter(skillMD string) (map[string]any, error) {

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -23,7 +24,7 @@ var roomOnlyFields = []string{"hosted_room_dispatch", "_room_execution_policy"}
 func (a *APIServerAdapter) ensureHostedMemberSession(ctx context.Context, dispatch *gateway.HostedMemberDispatch) (string, error) {
 	db := a.ensureSessionDB(ctx)
 	if db == nil {
-		return "", &gateway.PyError{Kind: "RuntimeError", Msg: "session database unavailable"}
+		return "", &errorutil.Error{Kind: "RuntimeError", Msg: "session database unavailable"}
 	}
 	title := "Group: " + dispatch.RoomID
 	seed := dispatch.HomeInstallID + "\x00" + dispatch.RoomID + "\x00" + dispatch.MemberID + "\x00" + dispatch.TargetProfile
@@ -35,7 +36,7 @@ func (a *APIServerAdapter) ensureHostedMemberSession(ctx context.Context, dispat
 	}
 	if authority != nil {
 		if db != authority.DB {
-			return "", &gateway.PyError{Kind: "RuntimeError", Msg: "profile_mismatch"}
+			return "", &errorutil.Error{Kind: "RuntimeError", Msg: "profile_mismatch"}
 		}
 		identity := []string{dispatch.HomeInstallID, dispatch.RoomID, dispatch.MemberID, dispatch.TargetProfile}
 		if _, sessionID, err = gateway.HostedMemberSession(ctx, authority.DB, identity); err != nil {
@@ -55,7 +56,7 @@ func (a *APIServerAdapter) ensureHostedMemberSession(ctx context.Context, dispat
 		}
 		if row != nil {
 			if !anyutil.Equal(row.ValueOr("title", nil), title) || !anyutil.Equal(row.ValueOr("source", nil), "bot_room") {
-				return &gateway.PyError{Kind: "RuntimeError", Msg: "room session identity conflicts with existing data"}
+				return &errorutil.Error{Kind: "RuntimeError", Msg: "room session identity conflicts with existing data"}
 			}
 			return nil
 		}
@@ -68,7 +69,7 @@ func (a *APIServerAdapter) ensureHostedMemberSession(ctx context.Context, dispat
 			return err
 		}
 		if conflict != nil {
-			return &gateway.PyError{Kind: "RuntimeError", Msg: "Another group already uses this room title on the target gateway. " +
+			return &errorutil.Error{Kind: "RuntimeError", Msg: "Another group already uses this room title on the target gateway. " +
 				"Rename or migrate that group before retrying."}
 		}
 		_, err = conn.ExecContext(ctx, "INSERT INTO sessions(id, source, title, hidden, started_at) VALUES(?, 'bot_room', ?, 1, ?)",
@@ -139,7 +140,7 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 			return nil, err
 		}
 		if dispatch.TargetProfile != activeProfile || dispatch.TargetInstallID != localInstall {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch target does not match this profile"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "room dispatch target does not match this profile"}
 		}
 		_, catalogMap, err := gateway.APILocalRoomCatalog(ctx, a, activeProfile, localInstall)
 		if err != nil {
@@ -154,17 +155,17 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 			return nil, err
 		}
 		if !hmac.Equal([]byte(policy.PolicyDigest), []byte(dispatch.ExecutionPolicyDigest)) {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room execution policy changed"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "room execution policy changed"}
 		}
 		if !hmac.Equal([]byte(catalog.CatalogDigest), []byte(dispatch.CapabilityDigest)) {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room capability catalog changed"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "room capability catalog changed"}
 		}
 		if input := dict.ValueOr("input", nil); input != nil && !anyutil.Equal(input, dispatch.Prompt) {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch input does not match its prompt"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "room dispatch input does not match its prompt"}
 		}
 		expectedKey := "room:" + dispatch.TaskID + ":" + strconv.FormatInt(dispatch.ExecutionGeneration, 10)
 		if strings.TrimSpace(request.Header.Get("Idempotency-Key")) != expectedKey {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch idempotency key is invalid"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "room dispatch idempotency key is invalid"}
 		}
 		input, err := roomTurnInput(ctx, claims, activeProfile, dispatch)
 		if err != nil {

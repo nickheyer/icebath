@@ -1,10 +1,13 @@
 package state
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Stamps the given owner onto rows whose profile is null or blank, never overwriting an owner, returning rows stamped
 func (d *SessionDB) BackfillNullSessionProfiles(ctx context.Context, profileName string) (int, error) {
-	stamp := pyStrip(profileName)
+	stamp := strings.TrimSpace(profileName)
 	if stamp == "" {
 		return 0, nil
 	}

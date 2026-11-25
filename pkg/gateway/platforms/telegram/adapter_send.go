@@ -126,7 +126,7 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 		if isPTBError(sendErr, "NetworkError") {
 			if isPTBError(sendErr, "BadRequest") {
 				if isThreadNotFoundError(sendErr) && effectiveThreadID != nil {
-					if privateDMTopicSend || pyTruthy(metadata["telegram_dm_topic_created_for_send"]) {
+					if privateDMTopicSend || anyutil.IsTrue(metadata["telegram_dm_topic_created_for_send"]) {
 						return nil, usedThreadFallback, &gateway.SendResult{Success: false, Error: sendErr.Error()}, nil
 					}
 					if !retriedThreadNotFound {
@@ -208,7 +208,7 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 
 // Re-arms typing after an intermediate send, scheduled once per chat and rate limited, never on the final reply
 func (a *TelegramAdapter) retriggerTyping(ctx context.Context, chatID string, metadata map[string]any) {
-	if pyTruthy(metadata["notify"]) || (a.Config != nil && !a.Config.TypingIndicator) {
+	if anyutil.IsTrue(metadata["notify"]) || (a.Config != nil && !a.Config.TypingIndicator) {
 		return
 	}
 	a.mu.Lock()
@@ -489,7 +489,7 @@ func (a *TelegramAdapter) SendOrUpdateStatus(ctx context.Context, chatID, status
 		}
 		if result.Success {
 			a.mu.Lock()
-			if current, ok := a.statusMessageIDs.Get(key); ok && current == cachedID && pyTruthy(result.MessageID) {
+			if current, ok := a.statusMessageIDs.Get(key); ok && current == cachedID && anyutil.IsTrue(result.MessageID) {
 				a.statusMessageIDs.Set(key, anyutil.String(result.MessageID))
 			}
 			a.mu.Unlock()
@@ -503,7 +503,7 @@ func (a *TelegramAdapter) SendOrUpdateStatus(ctx context.Context, chatID, status
 	if err != nil {
 		return result, err
 	}
-	if result.Success && pyTruthy(result.MessageID) {
+	if result.Success && anyutil.IsTrue(result.MessageID) {
 		a.mu.Lock()
 		if a.statusMessageIDs.Len() >= statusMessageIDsMax {
 			keys := a.statusMessageIDs.Keys()
@@ -519,7 +519,7 @@ func (a *TelegramAdapter) SendOrUpdateStatus(ctx context.Context, chatID, status
 
 // editMessageText with normalized ids, an empty parse mode sending plain text
 func (a *TelegramAdapter) editText(ctx context.Context, chatID, messageID, text string, parseMode models.ParseMode) error {
-	id, err := pyIntOf(messageID)
+	id, err := intOf(messageID)
 	if err != nil {
 		return err
 	}
@@ -778,7 +778,7 @@ func (a *TelegramAdapter) editOverflowSplit(ctx context.Context, chatID, message
 	for _, chunk := range chunks[1:] {
 		var replyToID *int
 		if prevID != "" {
-			id, convErr := pyIntOf(prevID)
+			id, convErr := intOf(prevID)
 			if convErr != nil {
 				return gateway.SendResult{}, convErr
 			}
@@ -832,7 +832,7 @@ func (a *TelegramAdapter) DeleteMessage(ctx context.Context, chatID, messageID s
 	if b == nil {
 		return false, nil
 	}
-	id, err := pyIntOf(messageID)
+	id, err := intOf(messageID)
 	if err == nil {
 		_, err = b.DeleteMessage(ctx, &bot.DeleteMessageParams{ChatID: NormalizeTelegramChatID(chatID), MessageID: id})
 		err = ptbError(err)
@@ -940,12 +940,12 @@ func (a *TelegramAdapter) richEligible(content string) bool {
 
 // Whether a fresh send tries sendRichMessage
 func (a *TelegramAdapter) shouldAttemptRich(content string, metadata map[string]any) bool {
-	return !pyTruthy(metadata["expect_edits"]) && a.richEligible(content)
+	return !anyutil.IsTrue(metadata["expect_edits"]) && a.richEligible(content)
 }
 
 // Replaces a streamed preview with a fresh rich final in DM topics only
 func (a *TelegramAdapter) PrefersFreshFinalStreaming(content string, metadata map[string]any, chatID string) bool {
-	if !(pyTruthy(metadata["telegram_dm_topic_reply_fallback"]) || metadataDirectMessagesTopicID(metadata) != nil) {
+	if !(anyutil.IsTrue(metadata["telegram_dm_topic_reply_fallback"]) || metadataDirectMessagesTopicID(metadata) != nil) {
 		return false
 	}
 	return a.richEligible(content)
@@ -1066,7 +1066,7 @@ func (a *TelegramAdapter) richRejected(err error, what, fallback string) bool {
 
 // Edits a message in place as rich so a streamed preview finalizes without send and delete
 func (a *TelegramAdapter) tryEditRich(ctx context.Context, chatID, messageID, content string) (*gateway.SendResult, error) {
-	id, err := pyIntOf(messageID)
+	id, err := intOf(messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -1114,7 +1114,7 @@ func (a *TelegramAdapter) trySendRichDraft(ctx context.Context, chatID string, d
 		v, err = awaitWithThreadDeadline(ctx, func(c context.Context) (any, error) { return a.doAPIRequest(c, "sendRichMessageDraft", payload) },
 			textSendDeadline, nil, "telegram-send", false)
 		if err == nil {
-			return pyTruthy(v)
+			return anyutil.IsTrue(v)
 		}
 	}
 	if isRichCapabilityError(err) {
@@ -1215,7 +1215,7 @@ func (a *TelegramAdapter) setReaction(ctx context.Context, chatID, messageID, em
 	if b == nil {
 		return false
 	}
-	id, err := pyIntOf(messageID)
+	id, err := intOf(messageID)
 	if err == nil {
 		params := &bot.SetMessageReactionParams{ChatID: NormalizeTelegramChatID(chatID), MessageID: id, Reaction: []models.ReactionType{}}
 		if emoji != "" {

@@ -188,7 +188,7 @@ func TestOUIncompleteHandoffRecordsStopWithoutChild(t *testing.T) {
 func TestOUInvalidAcknowledgementFailsTheTakeover(t *testing.T) {
 	cases := map[string]string{
 		"[1]":   "invalid update takeover acknowledgement",
-		"{oops": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+		"{oops": "invalid update takeover acknowledgement: json: invalid character 'o' looking for beginning of object key string at line 1, column 2",
 	}
 	for ack, want := range cases {
 		t.Run(ack, func(t *testing.T) {

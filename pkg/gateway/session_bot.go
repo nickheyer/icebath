@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -15,10 +16,10 @@ func botRowText(row *jsonutil.Object, key string) string {
 		return ""
 	}
 	value, _ := row.Get(key)
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyStrOf(value)
+	return anyutil.String(value)
 }
 
 // First id of the compression lineage of sessionID, sessionID itself when the lineage is empty
@@ -83,7 +84,7 @@ func botRowCreatedSource(row *jsonutil.Object) string {
 	if value == nil {
 		return ""
 	}
-	return pyStrOf(value)
+	return anyutil.String(value)
 }
 
 // Boot pass releasing the titled Bot Chat an older build left handed off to a lane that moved on

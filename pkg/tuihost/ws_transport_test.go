@@ -104,7 +104,7 @@ func TestWsTransportRepliesWithErrorForUnserializableResponse(t *testing.T) {
 			t.Fatalf("message = %q", message)
 		}
 	}
-	if sent[1] != `{"jsonrpc": "2.0", "id": "next", "result": {}}` {
+	if sent[1] != `{"jsonrpc":"2.0","id":"next","result":{}}` {
 		t.Fatalf("second frame = %s", sent[1])
 	}
 	if count := strings.Count(logs.String(), "frame serialization failed"); count != 2 {

@@ -102,14 +102,14 @@ func (r *HostRecord) ToJSON() *jsonutil.Object {
 func jsonPyInt(v any) (*big.Int, bool) {
 	switch x := v.(type) {
 	case bool, int, int64, *big.Int:
-		return pyIntOf(x)
+		return intOf(x)
 	}
 	return nil, false
 }
 
 // Python str of a value or empty when the value is falsy
 func strOrEmpty(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)

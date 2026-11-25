@@ -153,7 +153,7 @@ func TestMemorySubparsersParseThroughTheTree(t *testing.T) {
 	if out := run("memory", "setup", "honcho", "extra"); !strings.Contains(out, "unrecognized arguments: extra") {
 		t.Fatalf("second setup positional accepted\n%s", out)
 	}
-	if out := run("memory", "reset", "--target", "bogus", "--yes"); !strings.Contains(out, "argument --target: invalid choice: 'bogus' (choose from 'all', 'memory', 'user')") {
+	if out := run("memory", "reset", "--target", "bogus", "--yes"); !strings.Contains(out, `argument --target: invalid choice: "bogus" (choose from "all", "memory", "user")`) {
 		t.Fatalf("reset target choice\n%s", out)
 	}
 	if _, err := os.Stat(filepath.Join(h, "memories", "USER.md")); err != nil {

@@ -590,7 +590,7 @@ func TestAccountUsageReadOnlyFetchRoutesToEntriesOwnHostAndParses(t *testing.T) 
 	}
 	got := []string{}
 	for _, w := range snap.Windows {
-		got = append(got, w.Label+" "+pyFloatRepr(*w.UsedPercent)+" "+w.Scope)
+		got = append(got, w.Label+" "+floatRepr(*w.UsedPercent)+" "+w.Scope)
 	}
 	if !reflect.DeepEqual(got, []string{"Session 44.0 account", "Weekly 5.0 account"}) {
 		t.Fatalf("windows %v", got)
@@ -713,12 +713,12 @@ func TestAccountUsageRenderLinesAndPythonJSON(t *testing.T) {
 	if RenderAccountUsageLines(nil, false) == nil || len(RenderAccountUsageLines(nil, false)) != 0 {
 		t.Fatal("nil renders no lines")
 	}
-	_, repr, err := pyJSONLoads([]byte(`{"a": "it's", "b": {"x": -0, "y": 1e400, "z": NaN}, "a": "\ud800"}`))
+	_, repr, err := jsonLoads([]byte(`{"a": "it's", "b": {"x": -0, "y": 1e400, "z": NaN}, "a": "\ud800"}`))
 	if err != nil || repr != `{'a': '\ud800', 'b': {'x': 0, 'y': inf, 'z': nan}}` {
 		t.Fatalf("repr %q %v", repr, err)
 	}
 	for _, bad := range []string{"\xef\xbb\xbf{}", "{} x", "{'a': 1}", ""} {
-		if _, _, err := pyJSONLoads([]byte(bad)); err == nil {
+		if _, _, err := jsonLoads([]byte(bad)); err == nil {
 			t.Fatalf("accepted %q", bad)
 		}
 	}

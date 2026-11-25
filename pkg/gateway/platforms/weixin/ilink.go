@@ -87,21 +87,21 @@ var (
 )
 
 // Error carrying a kind label beside its message
-type pyErr struct{ kind, msg string }
+type kindErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string     { return e.msg }
-func (e *pyErr) ErrorKind() string { return e.kind }
+func (e *kindErr) Error() string     { return e.msg }
+func (e *kindErr) ErrorKind() string { return e.kind }
 
-func runtimeError(msg string) error { return &pyErr{"RuntimeError", msg} }
+func runtimeError(msg string) error { return &kindErr{"RuntimeError", msg} }
 
 // Failure of a call made while the adapter holds no open HTTP session
 var errSessionClosed = runtimeError("weixin HTTP session is not open")
 
-func valueError(msg string) error { return &pyErr{"ValueError", msg} }
+func valueError(msg string) error { return &kindErr{"ValueError", msg} }
 
 // Whether the error is the timeout of an awaited request
 func isTimeout(err error) bool {
-	var pe *pyErr
+	var pe *kindErr
 	return errors.As(err, &pe) && pe.kind == "TimeoutError"
 }
 
@@ -549,7 +549,7 @@ func requestError(ctx, rctx context.Context, rawURL string, err error) error {
 		host = parsed.Host
 	}
 	if rctx.Err() != nil {
-		return &pyErr{"TimeoutError", "request to " + host + " timed out"}
+		return &kindErr{"TimeoutError", "request to " + host + " timed out"}
 	}
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {

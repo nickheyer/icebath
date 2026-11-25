@@ -103,7 +103,7 @@ func (s *ToolsSetup) runToolsMenuRow(cfg config.Tree, m *toolsMenu, idx int) err
 		}
 		return nil
 	}
-	j, ok := pyListIndex(len(m.platformKeys), idx)
+	j, ok := listIndex(len(m.platformKeys), idx)
 	if !ok {
 		return fmt.Errorf("platform choice %d is past the end of the list", idx)
 	}
@@ -114,7 +114,7 @@ func (s *ToolsSetup) runToolsMenuRow(cfg config.Tree, m *toolsMenu, idx int) err
 	if err != nil {
 		return err
 	}
-	ci, _ := pyListIndex(len(m.choices), idx)
+	ci, _ := listIndex(len(m.choices), idx)
 	m.choices[ci] = label
 	return nil
 }

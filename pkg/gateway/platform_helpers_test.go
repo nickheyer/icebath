@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
@@ -412,29 +413,32 @@ func TestThreadParticipationTrackerInit(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", dir)
 		os.WriteFile(filepath.Join(dir, "discord_threads.json"), []byte(`["b", 7, "b", true, null, 1.5]`), 0o600)
 		tracker := NewThreadParticipationTracker(ctx, "discord", DefaultMaxTrackedThreads)
-		if got := tracker.threads.Keys(); !slices.Equal(got, []string{"b", "7", "True", "None", "1.5"}) {
+		if got := tracker.threads.Keys(); !slices.Equal(got, []string{"b", "7", "true", "1.5"}) {
 			t.Fatalf("loaded %v", got)
 		}
 	})
-	for name, body := range map[string]*string{
-		"missing_file":        nil,
-		"empty_file":          new(""),
-		"not_a_list":          new(`{"a": 1}`),
-		"malformed_json":      new(`["a",`),
-		"second_bom":          new("\xef\xbb\xbf\xef\xbb\xbf[\"a\"]"),
-		"invalid_utf8":        new("[\"\xff\"]"),
-		"utf16_with_bom":      new("\xff\xfe[\x00\"\x00a\x00\"\x00]\x00"),
-		"utf16_without_bom":   new("[\x00\"\x00a\x00\"\x00]\x00"),
-		"lone_bom_start_only": new("\xef\xbb"),
+	for name, tc := range map[string]struct {
+		body *string
+		want []string
+	}{
+		"missing_file":        {nil, nil},
+		"empty_file":          {new(""), nil},
+		"not_a_list":          {new(`{"a": 1}`), nil},
+		"malformed_json":      {new(`["a",`), nil},
+		"second_bom":          {new("\xef\xbb\xbf\xef\xbb\xbf[\"a\"]"), []string{"a"}},
+		"invalid_utf8":        {new("[\"\xff\"]"), nil},
+		"utf16_with_bom":      {new("\xff\xfe[\x00\"\x00a\x00\"\x00]\x00"), []string{"a"}},
+		"utf16_without_bom":   {new("[\x00\"\x00a\x00\"\x00]\x00"), []string{"a"}},
+		"lone_bom_start_only": {new("\xef\xbb"), nil},
 	} {
-		t.Run("load_is_empty_for_"+name, func(t *testing.T) {
+		t.Run("load_of_"+name, func(t *testing.T) {
 			tracker, path := trackerAt(t)
-			if body != nil {
-				os.WriteFile(path, []byte(*body), 0o600)
+			if tc.body != nil {
+				os.WriteFile(path, []byte(*tc.body), 0o600)
 			}
 			tracker = NewThreadParticipationTracker(ctx, "matrix", DefaultMaxTrackedThreads)
-			if n := tracker.threads.Len(); n != 0 {
-				t.Fatalf("loaded %v", tracker.threads.Keys())
+			if got := tracker.threads.Keys(); !slices.Equal(got, tc.want) {
+				t.Fatalf("loaded %v", got)
 			}
 		})
 	}
@@ -632,7 +636,7 @@ func TestSharedPlatformBoilerplate(t *testing.T) {
 			if n := CoercePort(raw, -1); n >= 0 {
 				return n, nil
 			}
-			return nil, &PyError{"ValueError", "bad"}
+			return nil, &errorutil.Error{"ValueError", "bad"}
 		}
 		seed, err := SeedExtraFromEnv(ctx, []EnvSeedRow{{"P", "port", port}, {"BAD", "bad", port}, {"S", "s", nil}, {"MISSING", "m", nil}}, "", "")
 		if err != nil || seed["port"] != 6697 || seed["s"] != "s" || len(seed) != 2 {

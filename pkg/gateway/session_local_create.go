@@ -14,6 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -27,7 +29,7 @@ type localCreateOptions struct {
 
 // Frozen snapshot of a bypass launch, code defaults plus the explicit launch options and never the profile
 func bypassPolicy(ctx context.Context, params map[string]any, privateSecrets *RecoveredSecrets, clientLocal bool) (*LocalSessionPolicy, error) {
-	if !pyTruthy(params["model"]) {
+	if !anyutil.IsTrue(params["model"]) {
 		return nil, invalidParams("model", "a bypass launch has no profile to inherit a model from")
 	}
 	defaults := map[string]any(config.Defaults())
@@ -97,7 +99,7 @@ func createLocalSession(ctx context.Context, a *SessionAuthority, actor Principa
 	if err != nil {
 		return SessionRef{}, err
 	}
-	return restoreLocalSession(ctx, a, pyStrOf(sid))
+	return restoreLocalSession(ctx, a, anyutil.String(sid))
 }
 
 // True unless an older build committed the request id's session without following the profile
@@ -128,7 +130,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		}
 		policy, isObject := rawPolicy.(*jsonutil.Object)
 		if !isObject {
-			return nil, &PyError{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 		}
 		rawRequest, err := receiptField(policy, "request_json")
 		if err != nil {
@@ -136,7 +138,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		}
 		requestJSON, isText := rawRequest.(string)
 		if !isText {
-			return nil, &PyError{Kind: "TypeError", Msg: "the staged creation request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the staged creation request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
 		}
 		return jsonutil.Decode(requestJSON)
 	}()
@@ -298,7 +300,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 		}
 		savedPolicy, isObject := rawPolicy.(*jsonutil.Object)
 		if !isObject {
-			return nil, nil, &PyError{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
+			return nil, nil, &errorutil.Error{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 		}
 		same, err := state.SameCreateRetry(savedPolicy, policy.RequestJSON, paramsObject(params))
 		if err != nil {
@@ -321,10 +323,10 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 				return nil, nil, err
 			}
 			offered := ""
-			if raw := params["api_key"]; pyTruthy(raw) {
+			if raw := params["api_key"]; anyutil.IsTrue(raw) {
 				text, isText := raw.(string)
 				if !isText {
-					return nil, nil, &PyError{Kind: "TypeError", Msg: "a staged session value is " + errchain.Kind(raw) + ", expected text"}
+					return nil, nil, &errorutil.Error{Kind: "TypeError", Msg: "a staged session value is " + errchain.Kind(raw) + ", expected text"}
 				}
 				offered = text
 			}
@@ -388,7 +390,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID string, evict bool) error {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return &pyKeyError{key: sessionID}
+		return &keyError{key: sessionID}
 	}
 	adapters, err := localAdapterMap(ctx, a)
 	if err != nil {
@@ -396,11 +398,11 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 	}
 	adapter, held := adapters.Get(PlatformLocal)
 	if !held {
-		return &pyKeyError{key: string(PlatformLocal)}
+		return &keyError{key: string(PlatformLocal)}
 	}
 	local, isLocal := adapter.(*LocalSessionAdapter)
 	if !isLocal {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the local adapter (%T) keeps no session policies", adapter)}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the local adapter (%T) keeps no session policies", adapter)}
 	}
 	receipt, err := a.DB.LocalReceipt(ctx, sessionID)
 	if err != nil {
@@ -415,7 +417,7 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 		return err
 	}
 	if live.Source == nil {
-		return &PyError{Kind: "AttributeError", Msg: "the local session has no source to publish its policy to"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "the local session has no source to publish its policy to"}
 	}
 	local.setPolicy(live.Source.ChatID, policy)
 	if !evict {
@@ -423,7 +425,7 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 	}
 	evicting, can := a.Runner.(agentEvictingRunner)
 	if !can {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
 	}
 	evicting.EvictCachedAgent(live.Route)
 	return nil

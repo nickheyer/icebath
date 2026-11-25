@@ -192,7 +192,7 @@ func healStaleShallowCheckout(ctx context.Context, w io.Writer, repoRoot, branch
 }
 
 // One line naming where a Python source fails to compile and why
-func pyCompileErrorMessage(err error, file string) string {
+func compileErrorMessage(err error, file string) string {
 	var se *pythonutil.SyntaxError
 	if errors.As(err, &se) {
 		msg := se.Msg
@@ -223,7 +223,7 @@ func validatePythonFilesSyntax(root string, relpaths []string) (bool, string, st
 			return false, file, "could not read: " + launchErrorText(err)
 		}
 		if err := pythonutil.Compile(source, file); err != nil {
-			return false, file, pyCompileErrorMessage(err, file)
+			return false, file, compileErrorMessage(err, file)
 		}
 	}
 	return true, "", ""
@@ -365,7 +365,7 @@ func calledProcessErrorIsPythonDepInstall(exc error) bool {
 		parts[i] = strings.ToLower(part)
 		has[parts[i]] = true
 	}
-	exe := pyBasename(strings.ReplaceAll(parts[0], "\\", "/"))
+	exe := basename(strings.ReplaceAll(parts[0], "\\", "/"))
 	if has["ensurepip"] {
 		return true
 	}
@@ -374,7 +374,7 @@ func calledProcessErrorIsPythonDepInstall(exc error) bool {
 }
 
 // Final component of a slash separated path, empty after a trailing slash
-func pyBasename(p string) string {
+func basename(p string) string {
 	return p[strings.LastIndex(p, "/")+1:]
 }
 

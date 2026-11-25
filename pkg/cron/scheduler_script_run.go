@@ -69,13 +69,13 @@ func (s *Store) resolveJobScriptPath(scriptPath string) (string, string, error) 
 	if strings.IndexByte(scriptPath, 0) >= 0 {
 		return "", "Blocked: script path contains a NUL byte: " + strconv.Quote(scriptPath), nil
 	}
-	raw, err := pathutil.ExpandUserPath(scriptPath)
+	raw, err := pathutil.ExpandUserKeepDotDot(scriptPath)
 	if err != nil {
 		return "", "Blocked: script path is not a valid filesystem path: " + strconv.Quote(scriptPath), nil
 	}
 	target := raw
 	if !filepath.IsAbs(raw) {
-		target = pathutil.Join(scriptsDir, raw)
+		target = pathutil.JoinKeepDotDot(scriptsDir, raw)
 	}
 	path, err := pathutil.Resolve(target)
 	if err != nil {
@@ -105,13 +105,13 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 	unresolvable := func(text string) (string, string, error) {
 		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", strconv.Quote(raw), text), nil
 	}
-	resolved, err := pathutil.ExpandUserPath(raw)
+	resolved, err := pathutil.ExpandUserKeepDotDot(raw)
 	if err != nil {
 		return unresolvable(err.Error())
 	}
 	if !filepath.IsAbs(resolved) {
 		return "", fmt.Sprintf("Interpreter must be an absolute or ~-prefixed path (got %s). "+
-			"Bare names like 'python3' are not stable across PATH changes.", strconv.Quote(raw)), nil
+			"Bare names like \"python3\" are not stable across PATH changes.", strconv.Quote(raw)), nil
 	}
 	if strings.IndexByte(resolved, 0) >= 0 {
 		return "", "", errors.New("stat: embedded null character in path")
@@ -267,7 +267,7 @@ func startCronScript(argv []string, dir string, env map[string]string) (*cronScr
 	return p, nil
 }
 
-// Hard stop of the script and every child it spawned, a script that outlives the kill reported as TimeoutExpired
+// Hard stop of the script and every child it spawned, a script still not reaped a second after the final kill reported as an *executil.TimeoutError
 func (s *Store) terminateCronScriptProcess(p *cronScriptProcess) error {
 	if p.poll() {
 		return nil
@@ -280,8 +280,7 @@ func (s *Store) terminateCronScriptProcess(p *cronScriptProcess) error {
 	if p.wait(time.Second) {
 		return nil
 	}
-	seconds := 1.0
-	return &executil.TimeoutError{Args: p.cmd.Args, Timeout: time.Duration(*&seconds * float64(time.Second))}
+	return &executil.TimeoutError{Args: p.cmd.Args, Timeout: time.Second}
 }
 
 // Kills the whole tree through the provider walk, falling back to the process group path
@@ -341,7 +340,7 @@ func scriptText(b []byte) (string, error) {
 	return strings.ReplaceAll(text, "\r", "\n"), nil
 }
 
-// Python str of an error the script run reports, OS failures in their errno form
+// Text of an error the script run reports, an operating system failure as its reason and path
 func scriptErrorText(err error) string {
 	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
@@ -488,7 +487,7 @@ func (s *Store) runJobScriptWithClaimHeartbeat(ctx context.Context, job *Job, sc
 				return
 			case <-time.After(time.Duration(runClaimHeartbeatSeconds * float64(time.Second))):
 				if _, err := cronHeartbeatRunClaim(s, home.WithOverride(ctx, s.home), jobID, owner); err != nil {
-					s.log.Debug(fmt.Sprintf("Job '%s': script run_claim heartbeat failed", jobID), "error", err)
+					s.log.Debug(fmt.Sprintf("Job %q: script run_claim heartbeat failed", jobID), "error", err)
 				}
 			}
 		}

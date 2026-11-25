@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Suffixes that rank a model above the bare family member when versions tie
@@ -25,9 +26,9 @@ func modelSortKey(modelID, prefix string) []any {
 	if n := len([]rune(prefix)); n < len(runes) {
 		rest = string(runes[n:])
 	}
-	rest = pyStripSpace(strings.TrimLeft(strings.TrimPrefix(rest, "/"), "-"))
+	rest = strings.TrimSpace(strings.TrimLeft(strings.TrimPrefix(rest, "/"), "-"))
 	nums, suffixBuf := splitVersionSuffix(rest)
-	suffix := pyStripSpace(strings.Trim(strings.ToLower(suffixBuf), "-_."))
+	suffix := strings.TrimSpace(strings.Trim(strings.ToLower(suffixBuf), "-_."))
 	key := []any{}
 	dateStamp := 0.0
 	for _, n := range nums {
@@ -49,17 +50,17 @@ func modelSortKey(modelID, prefix string) []any {
 }
 
 // Unicode digits outside Nd that Python isdigit accepts
-var pyOtherDigits = &unicode.RangeTable{R16: []unicode.Range16{
+var otherDigits = &unicode.RangeTable{R16: []unicode.Range16{
 	{Lo: 0x00b2, Hi: 0x00b3, Stride: 1}, {Lo: 0x00b9, Hi: 0x00b9, Stride: 1}, {Lo: 0x2070, Hi: 0x2070, Stride: 1},
 	{Lo: 0x2074, Hi: 0x2079, Stride: 1}, {Lo: 0x2080, Hi: 0x2089, Stride: 1}, {Lo: 0x2460, Hi: 0x2468, Stride: 1},
 	{Lo: 0x2474, Hi: 0x247c, Stride: 1}, {Lo: 0x2488, Hi: 0x2490, Stride: 1}, {Lo: 0x24ea, Hi: 0x24ea, Stride: 1},
 	{Lo: 0x24f5, Hi: 0x24fd, Stride: 1}, {Lo: 0x24ff, Hi: 0x24ff, Stride: 1}, {Lo: 0x2776, Hi: 0x277e, Stride: 1},
 	{Lo: 0x2780, Hi: 0x2788, Stride: 1}, {Lo: 0x278a, Hi: 0x2792, Stride: 1}}}
 
-func pyIsDigit(r rune) bool { return unicode.IsDigit(r) || unicode.Is(pyOtherDigits, r) }
+func isDigit(r rune) bool { return unicode.IsDigit(r) || unicode.Is(otherDigits, r) }
 
 // Python float of a digit and dot run, decimal digits of any script mapped to ASCII
-func pyFloatOfRun(run string) (float64, bool) {
+func floatOfRun(run string) (float64, bool) {
 	var b strings.Builder
 	for _, r := range run {
 		switch {
@@ -85,7 +86,7 @@ func splitVersionSuffix(rest string) ([]float64, string) {
 	nums := []float64{}
 	run := ""
 	flush := func() {
-		if f, ok := pyFloatOfRun(strings.TrimRight(run, ".")); ok {
+		if f, ok := floatOfRun(strings.TrimRight(run, ".")); ok {
 			nums = append(nums, f)
 		}
 		run = ""
@@ -97,13 +98,13 @@ func splitVersionSuffix(rest string) ([]float64, string) {
 			pos++
 			continue
 		}
-		if !(ch == 'v' || ch == 'V' || pyIsDigit(ch)) {
+		if !(ch == 'v' || ch == 'V' || isDigit(ch)) {
 			break
 		}
 		if ch == 'v' || ch == 'V' {
 			pos++
 		}
-		for pos < len(rs) && (pyIsDigit(rs[pos]) || rs[pos] == '.') {
+		for pos < len(rs) && (isDigit(rs[pos]) || rs[pos] == '.') {
 			if rs[pos] == '.' && strings.Contains(run, ".") {
 				flush()
 			} else {
@@ -131,7 +132,7 @@ func keyNumber(v any) (float64, bool) {
 }
 
 // Python tuple ordering of two sort keys, a TypeError when a string meets a number at the deciding position
-func pyTupleLess(a, b []any) (bool, error) {
+func tupleLess(a, b []any) (bool, error) {
 	for i := 0; i < len(a) && i < len(b); i++ {
 		as, aStr := a[i].(string)
 		bs, bStr := b[i].(string)
@@ -161,7 +162,7 @@ func sortModelsByKey(models []string, prefix string) error {
 	}
 	var sortErr error
 	sort.SliceStable(models, func(i, j int) bool {
-		less, err := pyTupleLess(keys[models[i]], keys[models[j]])
+		less, err := tupleLess(keys[models[i]], keys[models[j]])
 		if err != nil && sortErr == nil {
 			sortErr = err
 		}
@@ -178,7 +179,7 @@ type AmbiguousAliasError struct {
 }
 
 func (e *AmbiguousAliasError) Error() string {
-	return fmt.Sprintf("alias %s matches %d models on %s", pyStringRepr(e.Alias), len(e.Candidates), e.Provider)
+	return fmt.Sprintf("alias %s matches %d models on %s", strconv.Quote(e.Alias), len(e.Candidates), e.Provider)
 }
 
 // User facing disambiguation list of at most ten candidates
@@ -227,7 +228,7 @@ var listProviderModelsFn = func(ctx context.Context, provider string) []string {
 
 // ResolveAlias resolves direct aliases, process provider ids and short family aliases against the provider catalog
 func ResolveAlias(ctx context.Context, rawInput, currentProvider string, userProviders map[string]any, customProviders []any) (*AliasMatch, error) {
-	key := strings.ToLower(pyStripSpace(rawInput))
+	key := strings.ToLower(strings.TrimSpace(rawInput))
 	ensureDirectAliases(ctx)
 	if direct, ok := DirectAliases.Get(key); ok {
 		return &AliasMatch{Provider: direct.Provider, Model: direct.Model, Alias: key}, nil
@@ -319,7 +320,7 @@ func externalProcessCatalog(provider string) ([]string, map[string]string) {
 
 // Provider alias, exact id, else the single declared id extending the typed text, several raising ambiguity
 func externalProcessMatch(catalog []string, aliases map[string]string, typed, provider string) (string, bool, error) {
-	wanted := strings.ToLower(pyStripSpace(typed))
+	wanted := strings.ToLower(strings.TrimSpace(typed))
 	if v, ok := aliases[wanted]; ok {
 		return v, true, nil
 	}
@@ -358,7 +359,7 @@ func GetAuthenticatedProviderSlugs(ctx context.Context, currentProvider string, 
 		if !ok {
 			return []string{}
 		}
-		slugs = append(slugs, pyStr(slug))
+		slugs = append(slugs, anyutil.String(slug))
 	}
 	return slugs
 }
@@ -430,10 +431,10 @@ func configuredMatchIndex(matches []ConfiguredMatch, slug string) int {
 
 // Configured providers whose declared models contain the typed name exactly, folding compat duplicates onto their row
 func configuredProviderMatches(modelName string, userProviders map[string]any, customProviders []any) []ConfiguredMatch {
-	if pyStripSpace(modelName) == "" {
+	if strings.TrimSpace(modelName) == "" {
 		return nil
 	}
-	target := strings.ToLower(pyStripSpace(modelName))
+	target := strings.ToLower(strings.TrimSpace(modelName))
 	type candidate struct {
 		slug string
 		cfg  map[string]any
@@ -450,7 +451,7 @@ func configuredProviderMatches(modelName string, userProviders map[string]any, c
 	}
 	all := append([]candidate{}, candidates...)
 	for _, e := range customEntries(customProviders) {
-		if name, ok := e["name"].(string); ok && pyStripSpace(name) != "" {
+		if name, ok := e["name"].(string); ok && strings.TrimSpace(name) != "" {
 			all = append(all, candidate{"custom:" + name, e})
 		}
 	}
@@ -515,7 +516,7 @@ func configuredProviderIdentity(slug string, cfg map[string]any) [4]string {
 	baseURL := strings.ToLower(strings.TrimRight(msClean(entry["base_url"]), "/"))
 	apiKey, keyEnv := msClean(entry["api_key"]), msClean(entry["key_env"])
 	if strings.HasPrefix(apiKey, "${") && strings.HasSuffix(apiKey, "}") && len(apiKey) >= 3 {
-		apiKey, keyEnv = "", pyStripSpace(apiKey[2:len(apiKey)-1])
+		apiKey, keyEnv = "", strings.TrimSpace(apiKey[2:len(apiKey)-1])
 	}
 	credential := ""
 	switch {
@@ -531,16 +532,6 @@ func configuredProviderIdentity(slug string, cfg map[string]any) [4]string {
 		apiMode = strings.ToLower(strings.TrimSpace(apiMode))
 	}
 	return [4]string{name, baseURL, credential, apiMode}
-}
-
-// First truthy value as Python or evaluates it, the last value when none is truthy
-func pyOr(values ...any) any {
-	for _, v := range values {
-		if pyTruthy(v) {
-			return v
-		}
-	}
-	return values[len(values)-1]
 }
 
 // Slug of the providers row a normalized entry is a second view of, empty when it is its own provider
@@ -568,8 +559,8 @@ func currentProviderMatch(currentProvider string, userProviders map[string]any, 
 			continue
 		}
 		name := ""
-		if pyTruthy(cfg["name"]) {
-			name = pyStr(cfg["name"])
+		if anyutil.IsTrue(cfg["name"]) {
+			name = anyutil.String(cfg["name"])
 		}
 		if CustomProviderAliases(name, m.Slug)[current] {
 			return m.Slug, true
@@ -585,7 +576,7 @@ func resolveNamedCustomModelID(modelName, targetProvider string, customProviders
 		return modelName
 	}
 	before, after, _ := strings.Cut(modelName, "/")
-	prefix, candidate := pyStripSpace(before), pyStripSpace(after)
+	prefix, candidate := strings.TrimSpace(before), strings.TrimSpace(after)
 	if prefix == "" || candidate == "" {
 		return modelName
 	}
@@ -625,11 +616,11 @@ func customEntries(customProviders any) []map[string]any {
 // Slug aliases a custom provider entry answers to
 func entryAliases(entry map[string]any) map[string]bool {
 	name, key := "", ""
-	if pyTruthy(entry["name"]) {
-		name = pyStr(entry["name"])
+	if anyutil.IsTrue(entry["name"]) {
+		name = anyutil.String(entry["name"])
 	}
-	if pyTruthy(entry["provider_key"]) {
-		key = pyStr(entry["provider_key"])
+	if anyutil.IsTrue(entry["provider_key"]) {
+		key = anyutil.String(entry["provider_key"])
 	}
 	return CustomProviderAliases(name, key)
 }
@@ -683,7 +674,7 @@ func unknownProviderMessage(ctx context.Context, explicitProvider string) string
 
 // Refusal for a vendor alias that routes through an aggregator holding no credentials, empty when the hop is fine
 func aggregatorAliasError(ctx context.Context, explicitProvider, targetProvider, currentProvider string, userProviders map[string]any, customProviders []any) string {
-	explicitNorm := strings.ToLower(pyStripSpace(explicitProvider))
+	explicitNorm := strings.ToLower(strings.TrimSpace(explicitProvider))
 	aliasTarget := staticAliases()[explicitNorm]
 	if aliasTarget == "" {
 		aliasTarget = profileAliasIndex(ctx)[explicitNorm]
@@ -811,10 +802,10 @@ func applyDirectAliasEndpoint(ctx context.Context, st *SwitchRoute, da DirectAli
 			st.APIKey = "no-key-required"
 		}
 	}
-	if aliasKey == "" && strings.ToLower(pyStripSpace(st.TargetProvider)) == "ollama" {
+	if aliasKey == "" && strings.ToLower(strings.TrimSpace(st.TargetProvider)) == "ollama" {
 		ollamaCfg, ollamaBase := ollamaConfiguredBase(ctx)
 		if ollamaBase != "" && sameOllamaNativeRoot(st.BaseURL, ollamaBase) {
-			if key := entryConfiguredKey(ollamaCfg, func(n string) string { return pyStripSpace(os.Getenv(n)) }); key != "" {
+			if key := entryConfiguredKey(ollamaCfg, func(n string) string { return strings.TrimSpace(os.Getenv(n)) }); key != "" {
 				st.APIKey = key
 			}
 		} else {

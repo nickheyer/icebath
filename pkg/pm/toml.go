@@ -240,7 +240,7 @@ func tomlKind(v any) string {
 func tomlGet(v any, key string, fallback any) (any, error) {
 	obj, ok := v.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(v))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(v))}
 	}
 	if value, ok := obj.Values[key]; ok {
 		return value, nil
@@ -252,11 +252,11 @@ func tomlGet(v any, key string, fallback any) (any, error) {
 func tomlIndex(v any, key string) (any, error) {
 	obj, ok := v.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(v))}
+		return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(v))}
 	}
 	value, ok := obj.Values[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: "missing " + key}
+		return nil, &ClassError{Class: "KeyError", Message: "missing " + key}
 	}
 	return value, nil
 }
@@ -279,7 +279,7 @@ func tomlIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", tomlKind(v))}
+	return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", tomlKind(v))}
 }
 
 // Python equality of two tomllib values, bools and ints and floats comparing as numbers
@@ -393,14 +393,14 @@ func tomlContains(container any, item string) (bool, error) {
 	case string:
 		return strings.Contains(c, item), nil
 	}
-	return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a table or list holding %s, got %s", item, tomlKind(container))}
+	return false, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected a table or list holding %s, got %s", item, tomlKind(container))}
 }
 
 // TypeError a set raises for an unhashable tomllib value, nil for a hashable one
 func tomlUnhashable(v any) error {
 	switch v.(type) {
 	case *OrderedObject, []any:
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a single value, got %s", tomlKind(v))}
+		return &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected a single value, got %s", tomlKind(v))}
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -20,7 +21,7 @@ func hookLMStudioOptions(kw map[string]any) ([]string, bool) {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, o := range v {
-			out = append(out, pyStr(o))
+			out = append(out, anyutil.String(o))
 		}
 		return out, true
 	}

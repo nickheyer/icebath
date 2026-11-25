@@ -95,7 +95,7 @@ func agentKwargCheckpointInt(value any) (*int, error) {
 	return &n, nil
 }
 
-// Keyword value as an optional float
+// Keyword value as an optional float, fractions kept and non-finite values other than a float64 refused
 func agentKwargFloat(name string, value any) (*float64, error) {
 	switch v := value.(type) {
 	case nil:
@@ -103,11 +103,10 @@ func agentKwargFloat(name string, value any) (*float64, error) {
 	case float64:
 		return &v, nil
 	}
-	n, err := anyutil.ToInt(value)
-	if err != nil {
+	f, err := anyutil.ToFloat(value)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil, agentKwargTypeError(name, value)
 	}
-	f := float64(n)
 	return &f, nil
 }
 

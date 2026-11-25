@@ -10,7 +10,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -50,11 +52,11 @@ func InstallSkinColorFilter(fn func(string) string) {
 	skinColorFilter.Store(&fn)
 }
 
-// Color under key as text, fallback when the skin lacks it, both through the installed filter
+// Color under key as text, fallback when the skin lacks it or sets it to null, both through the installed filter
 func (s *SkinConfig) GetColor(key, fallback string) string {
 	value := fallback
-	if v, ok := s.Colors[key]; ok {
-		value = PyStr(v)
+	if v := s.Colors[key]; v != nil {
+		value = anyutil.String(v)
 	}
 	if f := skinColorFilter.Load(); f != nil {
 		return (*f)(value)
@@ -62,21 +64,21 @@ func (s *SkinConfig) GetColor(key, fallback string) string {
 	return value
 }
 
-// Branding string under key, fallback when the skin lacks it
+// Branding string under key, fallback when the skin lacks it or sets it to null
 func (s *SkinConfig) GetBranding(key, fallback string) string {
-	if v, ok := s.Branding[key]; ok {
-		return PyStr(v)
+	if v := s.Branding[key]; v != nil {
+		return anyutil.String(v)
 	}
 	return fallback
 }
 
-// Spinner wing pairs of two, any other entry skipped
+// Spinner wing pairs of two, a null side left empty and any other entry skipped
 func (s *SkinConfig) GetSpinnerWings() [][2]string {
 	var out [][2]string
 	wings, _ := s.Spinner["wings"].([]any)
 	for _, pair := range wings {
 		if p, ok := pair.([]any); ok && len(p) == 2 {
-			out = append(out, [2]string{PyStr(p[0]), PyStr(p[1])})
+			out = append(out, [2]string{anyutil.String(p[0]), anyutil.String(p[1])})
 		}
 	}
 	return out
@@ -191,14 +193,17 @@ func mergeOrdered(a, b map[string]any) map[string]any {
 // Skin config from a built in or user mapping, the default skin filling missing colors, spinner and branding
 func buildSkinConfig(data map[string]any, source string) *SkinConfig {
 	def, _ := builtinSkin(DefaultSkinName)
-	name := PyStr(getOr(data, "name", "unknown"))
+	name := "unknown"
+	if v := data["name"]; v != nil {
+		name = anyutil.String(v)
+	}
 	section := func(key string) map[string]any {
 		value, present := data[key]
 		if m, ok := value.(map[string]any); ok {
 			return m
 		}
 		if present && value != nil {
-			pkgLog().Warn("Skin has invalid section type; ignoring section", "skin", name, "section", key, "type", ErrorKind(value))
+			pkgLog().Warn("Skin has invalid section type; ignoring section", "skin", name, "section", key, "type", errchain.Kind(value))
 		}
 		return map[string]any{}
 	}
@@ -206,7 +211,7 @@ func buildSkinConfig(data map[string]any, source string) *SkinConfig {
 		base, _ := def[key].(map[string]any)
 		return mergeOrdered(base, section(key))
 	}
-	css := []rune(strings.TrimSpace(PyStr(getOr(data, "customCSS", ""))))
+	css := []rune(strings.TrimSpace(anyutil.String(data["customCSS"])))
 	if len(css) > 32768 {
 		css = css[:32768]
 	}
@@ -245,10 +250,13 @@ func ListSkins(ctx context.Context) []SkinListing {
 		if len(data) == 0 {
 			continue
 		}
-		name := getOr(data, "name", strings.TrimSuffix(filepath.Base(f), ".yaml"))
+		var name any = strings.TrimSuffix(filepath.Base(f), ".yaml")
+		if v := data["name"]; v != nil {
+			name = v
+		}
 		taken := false
 		for _, s := range out {
-			if pyEq(s.Name, name) {
+			if anyutil.Equal(s.Name, name) {
 				taken = true
 				break
 			}

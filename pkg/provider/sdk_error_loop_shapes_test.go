@@ -150,7 +150,7 @@ func TestNonStreamingMalformedJSONRaisesTheSDKDecodeError(t *testing.T) {
 	client := newAuxOpenAIClient("k", srv.URL, auxOpenAIOptions{MaxRetries: &zero})
 	_, err := client.CreateChatCompletion(context.Background(), map[string]any{"model": "fake-model", "messages": []any{}})
 	te, ok := err.(*AuxTransportError)
-	if !ok || te.Class != "JSONDecodeError" || te.Message != "Unterminated string starting at: line 1 column 96 (char 95)" {
+	if !ok || te.Class != "JSONDecodeError" || te.Message != "json: unexpected end of input at line 1, column 103" {
 		t.Fatalf("JSON body that does not parse %#v", err)
 	}
 	if IsLocalValidationError(err) {

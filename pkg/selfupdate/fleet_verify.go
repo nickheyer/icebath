@@ -99,7 +99,7 @@ func fleetRowIdentityPending(row any, preRestartPIDs []int) bool {
 	if preRestartPIDs == nil {
 		return false
 	}
-	pid, ok := pyIntValue(rowValue(row, "pid"))
+	pid, ok := intValue(rowValue(row, "pid"))
 	if !ok {
 		return true
 	}
@@ -172,7 +172,7 @@ func liveGatewayPidsFromFleet(fleetRows []*jsonutil.Object) map[string]map[int]b
 	live := map[string]map[int]bool{}
 	for _, row := range fleetRows {
 		profile := rowValue(row, "profile")
-		pid, isInt := pyIntValue(rowValue(row, "pid"))
+		pid, isInt := intValue(rowValue(row, "pid"))
 		if !anyutil.IsTrue(profile) || !isInt || anyutil.Equal(rowValue(row, "state"), "down") {
 			continue
 		}
@@ -227,7 +227,7 @@ func settleUnitsProvenCurrent(ctx context.Context, w io.Writer, restart *gateway
 	}
 	fresh := map[int]bool{}
 	for _, row := range fleetRows {
-		if pid, ok := pyIntValue(rowValue(row, "pid")); ok && anyutil.Equal(rowValue(row, "state"), "current") {
+		if pid, ok := intValue(rowValue(row, "pid")); ok && anyutil.Equal(rowValue(row, "state"), "current") {
 			fresh[int(pid)] = true
 		}
 	}
@@ -422,7 +422,7 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 			ExternalGatewayPIDs: map[int]bool{}, LiveGatewayPIDs: liveGatewayPidsFromFleet(fleetSnapshot),
 		}
 		for _, row := range fleetSnapshot {
-			if pid, ok := pyIntValue(rowValue(row, "pid")); ok && updaterecord.RowIsExternal(row) {
+			if pid, ok := intValue(rowValue(row, "pid")); ok && updaterecord.RowIsExternal(row) {
 				evidence.ExternalGatewayPIDs[int(pid)] = true
 			}
 		}

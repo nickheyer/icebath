@@ -266,7 +266,7 @@ func pePinIsolation(t *testing.T) (*Lockfile, *peUpdateFixture, *peUpdateFixture
 	lock := peUpdateLock(t, tmp, broken, healthy)
 	peSwap(t, &updatePinArtifacts, func(p Package, d *Resolved, current map[string]any) (map[string]any, error) {
 		if p.Base().Name == "broken-pin" {
-			return nil, &PyError{Class: "ValueError", Message: "fixture pool skew: 404"}
+			return nil, &ClassError{Class: "ValueError", Message: "fixture pool skew: 404"}
 		}
 		return pinArtifacts(p, d, current)
 	})

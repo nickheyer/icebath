@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
@@ -177,7 +178,7 @@ func (s *GatewayStreamConsumer) fallbackWhenNothingUnseen(ctx context.Context, f
 // Length function and raw per chat limit for fallback chunking
 func (s *GatewayStreamConsumer) fallbackLenBudget() (func(string) int, int) {
 	rawLimit := 4096
-	lenFn := pyLen
+	lenFn := utf8.RuneCountInString
 	if s.adapter == nil || s.adapter.Base() == nil {
 		return lenFn, rawLimit
 	}

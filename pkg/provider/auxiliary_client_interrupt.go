@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 	"strings"
 	"sync"
 	"time"
@@ -353,24 +354,24 @@ func auxClientDeclares(client any, flag string) bool {
 
 // URL without its query and the first value of each non blank query parameter, nil when the URL has no query
 func auxExtractURLQueryParams(raw string) (string, map[string]string, error) {
-	parsed, err := pyURLParse(raw, "")
+	parsed, err := urlutil.Split(raw)
 	if err != nil {
 		return "", nil, err
 	}
-	if parsed.query == "" {
+	if parsed.Query == "" {
 		return raw, nil, nil
 	}
 	params := map[string]string{}
-	for _, pair := range strings.Split(parsed.query, "&") {
+	for _, pair := range strings.Split(parsed.Query, "&") {
 		name, value, ok := strings.Cut(pair, "=")
 		if pair == "" || !ok || value == "" {
 			continue
 		}
-		name = pyUnquoteReplace(strings.ReplaceAll(name, "+", " "))
+		name = strings.ToValidUTF8(urlutil.Unescape(strings.ReplaceAll(name, "+", " ")), "�")
 		if _, seen := params[name]; !seen {
-			params[name] = pyUnquoteReplace(strings.ReplaceAll(value, "+", " "))
+			params[name] = strings.ToValidUTF8(urlutil.Unescape(strings.ReplaceAll(value, "+", " ")), "�")
 		}
 	}
-	parsed.query = ""
-	return pyURLUnparse(parsed), params, nil
+	parsed.Query = ""
+	return parsed.String(), params, nil
 }

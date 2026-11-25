@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -77,7 +78,7 @@ func skillViewHandler(ctx context.Context, call *tools.Call) string {
 	}
 	resolved := name
 	if v := parsed["name"]; fmTruthy(v) {
-		resolved = pyStrValue(v)
+		resolved = anyutil.String(v)
 	}
 	if resolved != "" {
 		scope.BumpView(ctx, resolved)

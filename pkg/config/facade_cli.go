@@ -15,6 +15,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"gopkg.in/yaml.v3"
 )
 
@@ -274,7 +276,7 @@ func exitIfKeyManaged(ctx context.Context, h, key, action string) error {
 	if err != nil {
 		return err
 	}
-	level, locked, err := backend.Locked(ctx, filepath.Dir(GetConfigPath(h)), key)
+	level, locked, err := backend.Locked(ctx, pathutil.DirKeepDotDot(GetConfigPath(h)), key)
 	if err != nil {
 		return err
 	}
@@ -324,7 +326,7 @@ func setRegisteredValue(ctx context.Context, h, key, value string, src ConfigCom
 		return true, err
 	}
 	modelCfg, _ := Clone(userConfig["model"]).(map[string]any)
-	oldProvider := strings.TrimSpace(pyOrEmpty(modelCfg["provider"]))
+	oldProvider := strings.TrimSpace(setText(modelCfg["provider"]))
 	stored, _, err := settingsHooks.Set(ctx, key, value)
 	var printed *ConfigExit
 	if errors.As(err, &printed) {
@@ -334,7 +336,7 @@ func setRegisteredValue(ctx context.Context, h, key, value string, src ConfigCom
 		return true, exitInvalid("✗ " + err.Error())
 	}
 	routeNotice := ""
-	if newProvider := PyStr(stored); key == "model.provider" && !strings.EqualFold(oldProvider, strings.TrimSpace(newProvider)) {
+	if newProvider := anyutil.String(stored); key == "model.provider" && !strings.EqualFold(oldProvider, strings.TrimSpace(newProvider)) {
 		if oldProvider == "" {
 			oldProvider = "the previous provider"
 		}
@@ -354,7 +356,7 @@ func setRegisteredValue(ctx context.Context, h, key, value string, src ConfigCom
 	if err != nil {
 		return true, err
 	}
-	fmt.Fprintf(FacadeStdout, "✓ Set %s = %s in %s\n", key, PyStr(display), dest)
+	fmt.Fprintf(FacadeStdout, "✓ Set %s = %s in %s\n", key, ShowValue(display), dest)
 	if routeNotice != "" {
 		fmt.Fprintln(FacadeStdout, routeNotice)
 	}
@@ -363,7 +365,7 @@ func setRegisteredValue(ctx context.Context, h, key, value string, src ConfigCom
 
 // Clears the model endpoint a provider change leaves behind through the settings writer, the notice to print
 func dropStaleRoute(ctx context.Context, modelCfg map[string]any, oldName, newName string, userConfig map[string]any, src ConfigCommandSources) (string, error) {
-	baseURL := PyStr(modelCfg["base_url"])
+	baseURL := ShowValue(modelCfg["base_url"])
 	popped, unverified := src.DropStaleModelRoute(modelCfg, newName, userConfig)
 	if unverified {
 		return colorize(fmt.Sprintf("⚠ model.base_url (%s) was set under %s and still applies to %s — requests go there. "+
@@ -378,7 +380,7 @@ func dropStaleRoute(ctx context.Context, modelCfg map[string]any, oldName, newNa
 		if _, _, err := settingsHooks.Reset(ctx, "model."+k); err != nil {
 			return "", err
 		}
-		parts = append(parts, fmt.Sprintf("model.%s (%s)", k, PyStr(popped[k])))
+		parts = append(parts, fmt.Sprintf("model.%s (%s)", k, ShowValue(popped[k])))
 	}
 	return "  Cleared " + strings.Join(parts, ", ") + " — that route belonged to " + oldName + ", not " + newName +
 		". " + newName + "'s endpoint resolves automatically; set model.base_url again if you meant a custom endpoint.", nil
@@ -387,7 +389,7 @@ func dropStaleRoute(ctx context.Context, modelCfg map[string]any, oldName, newNa
 // Command line text of a config value, JSON or YAML block style for containers
 func formatConfigGetValue(value any, asJSON bool) string {
 	if asJSON {
-		return pyJSONUnicode(pyJSONDumps(value))
+		return jsonUnicode(jsonDumps(value))
 	}
 	switch v := value.(type) {
 	case bool:
@@ -398,13 +400,13 @@ func formatConfigGetValue(value any, asJSON bool) string {
 	case nil:
 		return "null"
 	case map[string]any, []any:
-		return strings.TrimRight(pySafeDump(v), " \t\n\r")
+		return strings.TrimRight(safeDump(v), " \t\n\r")
 	}
-	return PyStr(value)
+	return ShowValue(value)
 }
 
 // Undoes non ASCII escapes in Python JSON text, giving the ensure_ascii False form
-func pyJSONUnicode(text string) string {
+func jsonUnicode(text string) string {
 	var b strings.Builder
 	for i := 0; i < len(text); i++ {
 		c := text[i]
@@ -438,7 +440,7 @@ func pyJSONUnicode(text string) string {
 }
 
 // Block style YAML in the shape PyYAML safe_dump writes with sort_keys off
-func pySafeDump(value any) string {
+func safeDump(value any) string {
 	var b strings.Builder
 	dumpBlock(&b, value, 0)
 	return b.String()
@@ -447,7 +449,7 @@ func pySafeDump(value any) string {
 func dumpScalar(v any) string {
 	out, err := yaml.Marshal(v) // config-writer ok renders a value for display and never writes it to disk
 	if err != nil {
-		return PyStr(v)
+		return ShowValue(v)
 	}
 	return strings.TrimSuffix(string(out), "\n")
 }
@@ -728,10 +730,10 @@ func unknownKeyRefusal(key string) error {
 // Checks a typed key: no surrounding whitespace and no empty path segment
 func checkKeySpelling(key string) error {
 	if key != strings.TrimFunc(key, isPySpace) || strings.TrimFunc(key, isPySpace) == "" {
-		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %s (empty or surrounding whitespace).", pyStringRepr(key)))
+		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %q (empty or surrounding whitespace).", key))
 	}
 	if slices.Contains(SplitPath(key), "") {
-		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %s — contains an empty path segment (leading, trailing, or doubled '.').", pyStringRepr(key)))
+		return exitInvalid(fmt.Sprintf(`✗ Invalid config key: %q — contains an empty path segment (leading, trailing, or doubled ".").`, key))
 	}
 	return nil
 }

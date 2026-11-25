@@ -175,7 +175,7 @@ var singularityDiskUsage struct {
 }
 
 // Python percent f formatting of a float, inf and nan spelled the Python way
-func pyPercentF(f float64, prec int) string {
+func percentF(f float64, prec int) string {
 	switch {
 	case math.IsNaN(f):
 		return "nan"
@@ -233,7 +233,7 @@ func checkSingularityDiskUsageWarning(env *Env) bool {
 	threshold := singularityDiskWarningThresholdGB(env)
 	exceeded := totalGB > threshold
 	if exceeded {
-		envLog(env).Warn(fmt.Sprintf("Singularity scratch disk usage (%sGB) exceeds threshold (%sGB).", pyPercentF(totalGB, 1), pyPercentF(threshold, 0)))
+		envLog(env).Warn(fmt.Sprintf("Singularity scratch disk usage (%sGB) exceeds threshold (%sGB).", percentF(totalGB, 1), percentF(threshold, 0)))
 	}
 	singularityDiskUsage.Lock()
 	singularityDiskUsage.stamp, singularityDiskUsage.set, singularityDiskUsage.result = time.Now(), true, exceeded

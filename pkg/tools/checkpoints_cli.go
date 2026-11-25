@@ -187,7 +187,7 @@ func checkpointsCmdPrune(env *Env, ns map[string]any, w io.Writer) (int, error) 
 	}
 	fmt.Fprintln(w, "Pruning checkpoint store\u2026")
 	fmt.Fprintf(w, "  retention_days:    %d\n", retentionDays)
-	fmt.Fprintf(w, "  delete_orphans:    %s\n", pyBoolText(deleteOrphans))
+	fmt.Fprintf(w, "  delete_orphans:    %s\n", boolText(deleteOrphans))
 	fmt.Fprintf(w, "  max_total_size_mb: %d\n", maxSizeMB)
 	fmt.Fprintln(w)
 	result, err := checkpointsPruneFn(env, CheckpointPruneOptions{RetentionDays: retentionDays, DeleteOrphans: deleteOrphans,
@@ -204,7 +204,7 @@ func checkpointsCmdPrune(env *Env, ns map[string]any, w io.Writer) (int, error) 
 }
 
 // Python repr of a bool
-func pyBoolText(v bool) string {
+func boolText(v bool) string {
 	if v {
 		return "True"
 	}
@@ -294,7 +294,7 @@ func checkpointsCmdClearLegacy(env *Env, ns map[string]any, w io.Writer) (int, e
 
 // CheckpointsCommand runs the icebath checkpoints subcommand named by checkpoints_command, status when bare
 func CheckpointsCommand(ctx context.Context, env *Env, ns map[string]any, w io.Writer) (int, error) {
-	switch strings.TrimSpace(pyStrOrEmpty(ns["checkpoints_command"])) {
+	switch strings.TrimSpace(anyutil.String(ns["checkpoints_command"])) {
 	case "", "status", "list":
 		return checkpointsCmdStatus(env, ns, w)
 	case "prune":

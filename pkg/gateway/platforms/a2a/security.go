@@ -211,12 +211,17 @@ func (s *A2ASecurityContext) IsTrustedPeer(identity string) bool {
 	return ok
 }
 
-// HMAC SHA256 hex over the sorted key JSON body, empty when no push secret is set
+// Push notification body, sorted key JSON with a space after each separator, the exact bytes the push signature covers
+func pushJSON(payload any) (string, error) {
+	return jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.Spaced())
+}
+
+// HMAC SHA256 hex over the push notification body, empty when no push secret is set
 func (s *A2ASecurityContext) SignPushPayload(payload any) (string, error) {
 	if s.PushSecret == "" {
 		return "", nil
 	}
-	body, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.Spaced())
+	body, err := pushJSON(payload)
 	if err != nil {
 		return "", err
 	}

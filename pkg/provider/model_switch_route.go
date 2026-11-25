@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Configured default MoA preset name
 func moaDefaultPreset(ctx context.Context) string {
 	cfg := modelsConfig(ctx)
-	name, _ := normalizeMoAConfig(pyOr(cfg["moa"], map[string]any{}))["default_preset"].(string)
+	name, _ := normalizeMoAConfig(anyutil.Or(cfg["moa"], map[string]any{}))["default_preset"].(string)
 	return name
 }
 
@@ -93,7 +95,7 @@ func switchDetermineAPIMode(ctx context.Context, provider, baseURL, model string
 // Routes an explicit provider request, detecting a local model when none was typed, then resolves the alias there
 func routeExplicitProvider(ctx context.Context, st *modelSwitch) (*ModelSwitchResult, error) {
 	pdef := ResolveProviderFull(ctx, st.ExplicitProvider, st.UserProviders, st.CustomProviders)
-	if pdef == nil && strings.ToLower(pyStripSpace(st.ExplicitProvider)) == "custom" {
+	if pdef == nil && strings.ToLower(strings.TrimSpace(st.ExplicitProvider)) == "custom" {
 		pdef = bareCustomProviderDef(st.CurrentBaseURL)
 	}
 	if pdef == nil {
@@ -161,12 +163,12 @@ func routeAliasFallback(ctx context.Context, st *modelSwitch, key string) (*Mode
 func convertVendorColonSlug(ctx context.Context, st *modelSwitch) {
 	raw := st.RawInput
 	colon := strings.Index(raw, ":")
-	curNorm := strings.ToLower(pyStripSpace(st.CurrentProvider))
+	curNorm := strings.ToLower(strings.TrimSpace(st.CurrentProvider))
 	if colon <= 0 || strings.Contains(raw, "/") || strings.HasPrefix(curNorm, "custom") || curNorm == "ollama" {
 		return
 	}
-	left := strings.ToLower(pyStripSpace(raw[:colon]))
-	right := pyStripSpace(raw[colon+1:])
+	left := strings.ToLower(strings.TrimSpace(raw[:colon]))
+	right := strings.TrimSpace(raw[colon+1:])
 	if left == "" || right == "" {
 		return
 	}
@@ -223,7 +225,7 @@ func routeConfiguredProvider(ctx context.Context, st *modelSwitch) (*ModelSwitch
 func routeFromModelInput(ctx context.Context, st *modelSwitch) (*ModelSwitchResult, error) {
 	raw, current := st.RawInput, st.CurrentProvider
 	cfg := modelsConfig(ctx)
-	if moaMatch := ExactMoAPresetName(normalizeMoAConfig(pyOr(cfg["moa"], map[string]any{})), raw); moaMatch != "" {
+	if moaMatch := ExactMoAPresetName(normalizeMoAConfig(anyutil.Or(cfg["moa"], map[string]any{})), raw); moaMatch != "" {
 		st.TargetProvider, st.NewModel, st.ResolvedAlias = "moa", moaMatch, ""
 	} else {
 		match, err := ResolveAlias(ctx, raw, current, st.UserProviders, st.CustomProviders)
@@ -234,7 +236,7 @@ func routeFromModelInput(ctx context.Context, st *modelSwitch) (*ModelSwitchResu
 		if err != nil {
 			return nil, err
 		}
-		key := strings.ToLower(pyStripSpace(raw))
+		key := strings.ToLower(strings.TrimSpace(raw))
 		_, isFamily := ModelAliases[key]
 		switch {
 		case match != nil:
@@ -290,7 +292,7 @@ func switchProviderLabel(ctx context.Context, st *modelSwitch) string {
 // Credentials for a changed or explicit provider from its providers block, the session endpoint or runtime resolution
 func credsForSwitchedProvider(ctx context.Context, st *modelSwitch) *ModelSwitchResult {
 	var userPdef *ProviderDef
-	explicitNorm := strings.ToLower(pyStripSpace(st.ExplicitProvider))
+	explicitNorm := strings.ToLower(strings.TrimSpace(st.ExplicitProvider))
 	if st.ExplicitProvider != "" && len(st.UserProviders) > 0 {
 		if userPdef = resolveUserProvider(explicitNorm, st.UserProviders); userPdef == nil {
 			userPdef = resolveUserProvider(st.TargetProvider, st.UserProviders)
@@ -298,7 +300,7 @@ func credsForSwitchedProvider(ctx context.Context, st *modelSwitch) *ModelSwitch
 	}
 	switch {
 	case userPdef != nil && userPdef.BaseURL != "":
-		ucfg, _ := pyOr(st.UserProviders[explicitNorm], st.UserProviders[st.TargetProvider], map[string]any{}).(map[string]any)
+		ucfg, _ := anyutil.Or(st.UserProviders[explicitNorm], st.UserProviders[st.TargetProvider], map[string]any{}).(map[string]any)
 		ukey := entryConfiguredKey(ucfg, func(name string) string {
 			value, _ := scopedKeyEnv(ctx, name)
 			return value
@@ -387,7 +389,7 @@ func customEndpointSource(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	if envURL = pyStripSpace(envURL); ok && envURL != "" {
+	if envURL = strings.TrimSpace(envURL); ok && envURL != "" {
 		return envURL
 	}
 	r := modelsResolver(ctx)
@@ -403,7 +405,7 @@ func openrouterMirrorBaseURL(ctx context.Context) string {
 	if err != nil || !ok {
 		return ""
 	}
-	return strings.TrimRight(pyStripSpace(value), "/")
+	return strings.TrimRight(strings.TrimSpace(value), "/")
 }
 
 // Settles credentials, a direct alias endpoint and the wire protocol for the final provider and base URL

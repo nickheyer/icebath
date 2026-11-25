@@ -6,10 +6,11 @@ import (
 	"io"
 	"os"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
-// Python str of an exception a store command reports to the user
+// Text of an error a store command reports to the user, SQLite failures with their engine message
 func cmdExcText(err error) string {
 	if _, ok := sqliteClassOf(err); ok {
 		return errText(err)
@@ -48,11 +49,11 @@ func CmdRepair(ctx context.Context, ns map[string]any, w io.Writer) (int, error)
 		return 0, nil
 	}
 	printf("✗ %s does not open cleanly: %s", dbPath, reason)
-	if pyTruthy(ns["check_only"]) {
+	if anyutil.IsTrue(ns["check_only"]) {
 		return 1, nil
 	}
 	printf("%s", "Repairing (a backup copy is made first)…")
-	backup := !pyTruthy(ns["no_backup"])
+	backup := !anyutil.IsTrue(ns["no_backup"])
 	var repaired bool
 	var strategy, backupPath, failure string
 	if driftOnly {
@@ -65,17 +66,13 @@ func CmdRepair(ctx context.Context, ns map[string]any, w io.Writer) (int, error)
 		}
 		repaired, strategy, backupPath, failure = report.Repaired, report.Strategy, report.BackupPath, report.Error
 	}
-	noneWhenEmpty := func(s string) string {
-		if s == "" {
-			return "None"
-		}
-		return s
-	}
 	if repaired {
 		if backupPath != "" {
 			printf("  backup: %s", backupPath)
 		}
-		printf("  strategy: %s", noneWhenEmpty(strategy))
+		if strategy != "" {
+			printf("  strategy: %s", strategy)
+		}
 		if n, err := repairedSessionCount(ctx, dbPath, driftOnly); err == nil {
 			printf("✓ Repaired — %d sessions recovered.", n)
 		} else {
@@ -83,7 +80,11 @@ func CmdRepair(ctx context.Context, ns map[string]any, w io.Writer) (int, error)
 		}
 		return 0, nil
 	}
-	printf("✗ Repair failed: %s", noneWhenEmpty(failure))
+	if failure != "" {
+		printf("✗ Repair failed: %s", failure)
+	} else {
+		printf("%s", "✗ Repair failed.")
+	}
 	if backupPath != "" {
 		printf("  A backup is preserved at: %s", backupPath)
 	}

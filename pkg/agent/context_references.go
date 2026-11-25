@@ -278,19 +278,19 @@ var ReferencePattern = mustPyRegex(`(?<![\w/])@(?:(?P<simple>diff|staged)\b|(?P<
 var pluginReferencePattern = mustPyRegex(`(?<![\w/])@(?P<kind>[a-zA-Z][a-zA-Z0-9_-]*):(?P<value>` + quotedReferenceValue + `(?::\d+(?:-\d+)?)?|\S+)`)
 
 // A Python regex with its groupindex, named groups read by number the way the translator numbers them
-type pyRegex struct {
+type regex struct {
 	re    *regexp2.Regexp
 	names []string
 }
 
 // Compiles a Python regex at init, a bad pattern stopping the program like a module import error
-func mustPyRegex(pattern string) *pyRegex {
+func mustPyRegex(pattern string) *regex {
 	re := regexutil.MustCompile(pattern)
-	return &pyRegex{re: re, names: re.GetGroupNames()}
+	return &regex{re: re, names: re.GetGroupNames()}
 }
 
 // Named group of a match, empty when the group did not participate
-func (r *pyRegex) group(m *regexp2.Match, name string) string {
+func (r *regex) group(m *regexp2.Match, name string) string {
 	return regexutil.NamedGroup(m, name)
 }
 
@@ -305,7 +305,7 @@ type referenceMatch struct {
 func (m referenceMatch) Group(name string) string { return m.groups[name] }
 
 // Every non overlapping match of a Python regex in order, spans in code points like re.finditer
-func findAllReferenceMatches(re *pyRegex, s string) []referenceMatch {
+func findAllReferenceMatches(re *regex, s string) []referenceMatch {
 	var out []referenceMatch
 	m, err := re.re.FindStringMatch(s)
 	for err == nil && m != nil {
@@ -354,7 +354,7 @@ var (
 			if v, err := strconv.Atoi(strings.TrimSpace(ref.Target)); err == nil {
 				n = v
 			} else if strings.TrimSpace(ref.Target) != "" {
-				n = pyIntOrPanic(ref.Target)
+				n = intOrPanic(ref.Target)
 			}
 			return []string{"log", fmt.Sprintf("-%d", max(1, min(n, 10))), "-p"}
 		},
@@ -362,7 +362,7 @@ var (
 )
 
 // Refusal of a git reference count that is not a whole number, which the expander reports as a warning
-func pyIntOrPanic(text string) int {
+func intOrPanic(text string) int {
 	panic(&plugins.HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("git reference count %s is not a whole number", text)})
 }
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -124,17 +125,17 @@ func opencodeGoFetchAccountUsage(ctx context.Context, provider, baseURL, apiKey 
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
-	doc, err := pyDictOrEmpty(payload)
+	doc, err := dictOrEmptyValue(payload)
 	if err != nil {
 		return nil, err
 	}
-	usage, err := pyDictOrEmpty(doc["usage"])
+	usage, err := dictOrEmptyValue(doc["usage"])
 	if err != nil {
 		return nil, err
 	}
 	var windows []AccountUsageWindow
 	for _, kl := range [][2]string{{"rolling", "Rolling window"}, {"weekly", "Weekly"}, {"monthly", "Monthly"}} {
-		window, err := pyDictOrEmpty(usage[kl[0]])
+		window, err := dictOrEmptyValue(usage[kl[0]])
 		if err != nil {
 			return nil, err
 		}
@@ -142,11 +143,11 @@ func opencodeGoFetchAccountUsage(ctx context.Context, provider, baseURL, apiKey 
 			continue
 		}
 		var resetAt *time.Time
-		if pyTruthy(window["resetsAt"]) {
-			raw := strings.ReplaceAll(pyScalarStr(window["resetsAt"]), "Z", "+00:00")
+		if anyutil.IsTrue(window["resetsAt"]) {
+			raw := strings.ReplaceAll(scalarStr(window["resetsAt"]), "Z", "+00:00")
 			t, ok := parseISO(raw)
 			if !ok {
-				return nil, fmt.Errorf("Invalid isoformat string: %s", pyRepr(raw))
+				return nil, fmt.Errorf("Invalid isoformat string: %s", anyutil.Quote(raw))
 			}
 			resetAt = &t
 		}
@@ -160,11 +161,11 @@ func opencodeGoFetchAccountUsage(ctx context.Context, provider, baseURL, apiKey 
 }
 
 // Dict of a falsy or dict value, the attribute error Python raises calling get on anything else
-func pyDictOrEmpty(v any) (map[string]any, error) {
+func dictOrEmptyValue(v any) (map[string]any, error) {
 	if m, ok := v.(map[string]any); ok {
 		return m, nil
 	}
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
 	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))

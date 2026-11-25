@@ -41,18 +41,18 @@ func HeartbeatStateFromJSON(raw string) (*HeartbeatState, error) {
 		return nil, errchain.Reword(err, "stored heartbeat state is not a JSON mapping")
 	}
 	get := d.Value
-	s := &HeartbeatState{Prompt: anyutil.String(pyOr(get("prompt"), ""))}
-	if s.IntervalSeconds, err = anyutil.ToInt(pyOr(get("interval_seconds"), int64(0))); err != nil {
+	s := &HeartbeatState{Prompt: anyutil.String(anyutil.Or(get("prompt"), ""))}
+	if s.IntervalSeconds, err = anyutil.ToInt(anyutil.Or(get("interval_seconds"), int64(0))); err != nil {
 		return nil, err
 	}
-	s.Status = anyutil.String(pyOr(get("status"), "active"))
-	if s.CreatedAt, err = anyutil.ToFloat(pyOr(get("created_at"), 0.0)); err != nil {
+	s.Status = anyutil.String(anyutil.Or(get("status"), "active"))
+	if s.CreatedAt, err = anyutil.ToFloat(anyutil.Or(get("created_at"), 0.0)); err != nil {
 		return nil, err
 	}
-	if s.LastFiredAt, err = anyutil.ToFloat(pyOr(get("last_fired_at"), 0.0)); err != nil {
+	if s.LastFiredAt, err = anyutil.ToFloat(anyutil.Or(get("last_fired_at"), 0.0)); err != nil {
 		return nil, err
 	}
-	if s.FireCount, err = anyutil.ToInt(pyOr(get("fire_count"), int64(0))); err != nil {
+	if s.FireCount, err = anyutil.ToInt(anyutil.Or(get("fire_count"), int64(0))); err != nil {
 		return nil, err
 	}
 	return s, nil

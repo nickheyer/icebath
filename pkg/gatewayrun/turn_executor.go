@@ -56,7 +56,7 @@ func (e *unboundedThreadExecutor) submit(fn func(ctx context.Context) (any, erro
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	if e.shut {
-		return nil, &pyRuntimeError{msg: tools.ErrPoolShutdown.Error(), cause: tools.ErrPoolShutdown}
+		return nil, &runtimeError{msg: tools.ErrPoolShutdown.Error(), cause: tools.ErrPoolShutdown}
 	}
 	if n := len(e.idle); n > 0 {
 		worker := e.idle[n-1]

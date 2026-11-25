@@ -11,13 +11,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Shallow copy of a mapping value, TypeError naming the type for anything that is not a mapping
-func pyMappingCopy(v any) (map[string]any, error) {
+func mappingCopy(v any) (map[string]any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, &PyError{"TypeError", "expected a mapping, got " + errchain.Kind(v)}
+		return nil, &errorutil.Error{"TypeError", "expected a mapping, got " + errchain.Kind(v)}
 	}
 	out := make(map[string]any, len(m))
 	for k, val := range m {
@@ -47,7 +48,7 @@ func MergePlatformSections(yamlCfg map[string]any, gwData map[string]any) (map[s
 		if !present {
 			existingExtra = map[string]any{}
 		}
-		mergedExtra, err := pyMappingCopy(existingExtra)
+		mergedExtra, err := mappingCopy(existingExtra)
 		if err != nil {
 			return nil, err
 		}
@@ -55,7 +56,7 @@ func MergePlatformSections(yamlCfg map[string]any, gwData map[string]any) (map[s
 		if !present {
 			blockExtra = map[string]any{}
 		}
-		overlay, err := pyMappingCopy(blockExtra)
+		overlay, err := mappingCopy(blockExtra)
 		if err != nil {
 			return nil, err
 		}
@@ -421,7 +422,7 @@ func ReadYAMLLayers(ctx context.Context, h string) (map[string]any, error) {
 	}
 	m, ok := config.Expand(doc, config.ProfileEnvLookup(ctx, h)).(map[string]any)
 	if !ok {
-		return nil, &PyError{"AttributeError", "the config layer is " + errchain.Kind(doc) + ", expected a mapping"}
+		return nil, &errorutil.Error{"AttributeError", "the config layer is " + errchain.Kind(doc) + ", expected a mapping"}
 	}
 	return config.ApplyManagedOverlay(m), nil
 }
@@ -476,7 +477,7 @@ func LoadGatewayConfigFile(ctx context.Context, path string) (*GatewayConfig, er
 		return nil, err
 	}
 	if !utf8.Valid(raw) {
-		return nil, &PyError{"UnicodeDecodeError", path + " is not valid UTF-8"}
+		return nil, &errorutil.Error{"UnicodeDecodeError", path + " is not valid UTF-8"}
 	}
 	doc, err := config.FastSafeLoad(raw)
 	if err != nil {

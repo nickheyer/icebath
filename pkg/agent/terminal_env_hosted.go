@@ -12,10 +12,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
@@ -69,7 +69,7 @@ func newHostedTerminalEnv(ctx context.Context, obj *plugins.HostedObject, backen
 	if cwd, ok := attr("cwd").(string); ok && cwd != "" {
 		e.cwd = cwd
 	}
-	e.persistent = config.PyTruthy(attr("persistent"))
+	e.persistent = anyutil.IsTrue(attr("persistent"))
 	e.hostFiles = attr("uses_host_filesystem") == true
 	e.hostCwd, _ = attr("host_cwd").(string)
 	e.hostCwdMount, _ = attr("host_cwd_mount").(string)
@@ -148,7 +148,7 @@ func (e *hostedTerminalEnv) Execute(ctx context.Context, command string, opts to
 	if fields == nil {
 		return nil, fmt.Errorf("terminal backend %s execute returned %s where a mapping was expected", e.backend, errchain.Kind(raw))
 	}
-	result := &tools.ExecResult{TimedOut: config.PyTruthy(fields["timed_out"])}
+	result := &tools.ExecResult{TimedOut: anyutil.IsTrue(fields["timed_out"])}
 	result.Output, _ = fields["output"].(string)
 	code, coded := fields["returncode"]
 	if !coded {

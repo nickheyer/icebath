@@ -24,7 +24,7 @@ func rewriteIDs(t *testing.T, db *SessionDB, sid string, where string) []int64 {
 	out := make([]int64, len(rows))
 	for i, r := range rows {
 		v, _ := r.Get("id")
-		out[i], _ = pyIntID(v)
+		out[i], _ = intID(v)
 	}
 	return out
 }

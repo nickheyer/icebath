@@ -604,7 +604,7 @@ func geminiEventParts(event any) (any, bool) {
 }
 
 // The elements a Python for loop walks over a decoded JSON value, failing for a scalar
-func pyIterJSON(v any) ([]any, error) {
+func iterJSON(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		return t, nil
@@ -625,7 +625,7 @@ func pyIterJSON(v any) ([]any, error) {
 }
 
 // Python dict.get of a decoded JSON value, a non mapping failing like the attribute lookup
-func pyJSONGet(v any, key string) (any, error) {
+func jsonGet(v any, key string) (any, error) {
 	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, &ttsAttributeError{msg: fmt.Sprintf("TTS stream event is %s where a mapping holding %s was expected", errchain.Kind(v), key)}
@@ -635,7 +635,7 @@ func pyJSONGet(v any, key string) (any, error) {
 }
 
 // base64.b64decode of a decoded JSON value, a non string failing with the Python type error
-func pyB64DecodeValue(v any) ([]byte, error) {
+func b64DecodeValue(v any) ([]byte, error) {
 	s, ok := v.(string)
 	if !ok {
 		return nil, &ttsTypeError{msg: fmt.Sprintf("audio payload is %s where base64 text was expected", errchain.Kind(v))}
@@ -677,22 +677,22 @@ func (s *geminiStreamer) sseChunks(ctx context.Context, endpoint, apiKey string,
 			if !ok {
 				continue
 			}
-			parts, err := pyIterJSON(partsValue)
+			parts, err := iterJSON(partsValue)
 			if err != nil {
 				yield(nil, err)
 				return
 			}
 			for _, part := range parts {
-				inline, err := pyJSONGet(part, "inlineData")
-				if err == nil && !pyTruthy(inline) {
-					inline, err = pyJSONGet(part, "inline_data")
+				inline, err := jsonGet(part, "inlineData")
+				if err == nil && !anyutil.IsTrue(inline) {
+					inline, err = jsonGet(part, "inline_data")
 				}
 				if err != nil {
 					yield(nil, err)
 					return
 				}
 				var b64 any = ""
-				if pyTruthy(inline) {
+				if anyutil.IsTrue(inline) {
 					obj, isObj := inline.(*jsonutil.Object)
 					if !isObj {
 						yield(nil, &ttsAttributeError{msg: fmt.Sprintf("Gemini TTS inline data is %s where a mapping was expected", errchain.Kind(inline))})
@@ -700,10 +700,10 @@ func (s *geminiStreamer) sseChunks(ctx context.Context, endpoint, apiKey string,
 					}
 					b64 = obj.ValueOr("data", "")
 				}
-				if !pyTruthy(b64) {
+				if !anyutil.IsTrue(b64) {
 					continue
 				}
-				pcm, err := pyB64DecodeValue(b64)
+				pcm, err := b64DecodeValue(b64)
 				if err != nil {
 					pkgLog().Warn(fmt.Sprintf("Gemini SSE: bad base64 audio: %s", err))
 					continue

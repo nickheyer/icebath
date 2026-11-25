@@ -54,7 +54,7 @@ func checkLocalInput(a *SessionAuthority, ref SessionRef, row *jsonutil.Object, 
 		if source == nil {
 			live, ok := a.live(ref.SessionID)
 			if !ok {
-				return &pyKeyError{ref.SessionID}
+				return &keyError{ref.SessionID}
 			}
 			source = live.Source
 		}

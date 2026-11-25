@@ -11,7 +11,7 @@ import (
 
 func init() { scmEnumerate = enumerateSCMServices }
 
-// SCM query error under the exception class psutil raises for it
+// SCM query error under its category: AccessDenied for a refused privilege or permission, NoSuchProcess for a service name the SCM does not know
 func scmQueryFailure(err error) error {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
@@ -85,7 +85,7 @@ func (s windowsSCMService) queryStatus() (windows.SERVICE_STATUS_PROCESS, error)
 	return status, err
 }
 
-// State of the service in the words psutil reports
+// State of the service as a lower case word such as running, stopped or stop_pending
 func (s windowsSCMService) Status() (string, error) {
 	status, err := s.queryStatus()
 	if err != nil {

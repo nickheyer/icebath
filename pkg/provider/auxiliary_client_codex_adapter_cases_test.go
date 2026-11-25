@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -381,7 +382,7 @@ func TestCodexAuxiliaryAdapterReservedToolAliasesWireToolsMatchMainTransportAlia
 			if tool["strict"] != false {
 				t.Fatalf("%s strict %v", c.baseURL, tool["strict"])
 			}
-			gotNames[pyStr(tool["name"])] = true
+			gotNames[anyutil.String(tool["name"])] = true
 		}
 		if !reflect.DeepEqual(gotNames, wantNames) {
 			t.Fatalf("%s names %v want %v", c.baseURL, gotNames, wantNames)
@@ -389,7 +390,7 @@ func TestCodexAuxiliaryAdapterReservedToolAliasesWireToolsMatchMainTransportAlia
 		var historyNames []string
 		for _, item := range auxKwargMaps(respKwargs["input"]) {
 			if item["type"] == "function_call" {
-				historyNames = append(historyNames, pyStr(item["name"]))
+				historyNames = append(historyNames, anyutil.String(item["name"]))
 			}
 		}
 		wantHistory := "search_files"
@@ -428,7 +429,7 @@ func TestCodexAuxiliaryAdapterReservedToolAliasesCreateMapsAliasesBackAndNeverSe
 	}
 	names := map[string]bool{}
 	for _, tool := range auxKwargMaps(client.kwargs["tools"]) {
-		names[pyStr(tool["name"])] = true
+		names[anyutil.String(tool["name"])] = true
 	}
 	if !names[reservedToolAliasPrefix+"search_files"] {
 		t.Fatalf("wire tools %v", client.kwargs["tools"])
@@ -437,7 +438,7 @@ func TestCodexAuxiliaryAdapterReservedToolAliasesCreateMapsAliasesBackAndNeverSe
 	var called []string
 	for _, tc := range auxKwargMaps(jsonutil.Plain(message["tool_calls"])) {
 		fn, _ := jsonutil.AsMap(tc["function"])
-		called = append(called, pyStr(fn["name"]))
+		called = append(called, anyutil.String(fn["name"]))
 	}
 	if !reflect.DeepEqual(called, []string{"search_files"}) {
 		t.Fatalf("tool calls %v", message["tool_calls"])

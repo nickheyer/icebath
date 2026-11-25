@@ -68,7 +68,7 @@ func TestPluginDeclPolicySurvivesCrossProfileResolution(t *testing.T) {
 				t.Fatalf("unsupported %v %v", bad, err)
 			}
 			env := map[string]string{}
-			for k, v := range pyEnviron() {
+			for k, v := range environValue() {
 				env[k] = v
 			}
 			environment := &PythonEnvironment{UV: peUV(t), Python: peHostPython(t), Destination: filepath.Join(tmp, "env"),

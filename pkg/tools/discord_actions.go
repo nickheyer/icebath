@@ -250,16 +250,7 @@ func discordSortKey(v any) float64 {
 
 // JSON text of a listing with its item count
 func discordListing(key string, items []any) string {
-	return dumpsDefault(jsonutil.ObjectOf(key, items, "count", len(items)))
-}
-
-// json.dumps with the default separators and ASCII escaping
-func dumpsDefault(v any) string {
-	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
-	if err != nil {
-		panic(err)
-	}
-	return text
+	return JSON(jsonutil.ObjectOf(key, items, "count", len(items)))
 }
 
 // Member row, the full shape adding the avatar and join fields member_info exposes
@@ -339,7 +330,7 @@ func discordServerInfo(ctx context.Context, token string, a discordArgs) (string
 		return "", err
 	}
 	g := discordDict(raw)
-	return dumpsDefault(jsonutil.ObjectOf("id", discordReq(g, "id"), "name", discordReq(g, "name"), "description", g.ValueOr("description", nil),
+	return JSON(jsonutil.ObjectOf("id", discordReq(g, "id"), "name", discordReq(g, "name"), "description", g.ValueOr("description", nil),
 		"icon", g.ValueOr("icon", nil), "owner_id", g.ValueOr("owner_id", nil), "member_count", g.ValueOr("approximate_member_count", nil),
 		"online_count", g.ValueOr("approximate_presence_count", nil), "features", g.ValueOr("features", []any{}),
 		"premium_tier", g.ValueOr("premium_tier", nil), "premium_subscription_count", g.ValueOr("premium_subscription_count", nil),
@@ -405,7 +396,7 @@ func discordListChannels(ctx context.Context, token string, a discordArgs) (stri
 		total += len(groups[id])
 		result = append(result, jsonutil.ObjectOf("category", jsonutil.ObjectOf("id", c.Value("id"), "name", discordReq(c, "name")), "channels", asList(groups[id])))
 	}
-	return dumpsDefault(jsonutil.ObjectOf("channel_groups", result, "total_channels", total)), nil
+	return JSON(jsonutil.ObjectOf("channel_groups", result, "total_channels", total)), nil
 }
 
 // Single channel details
@@ -415,7 +406,7 @@ func discordChannelInfo(ctx context.Context, token string, a discordArgs) (strin
 		return "", err
 	}
 	ch := discordDict(raw)
-	return dumpsDefault(jsonutil.ObjectOf("id", discordReq(ch, "id"), "name", ch.ValueOr("name", nil), "type", discordChannelTypeName(discordReq(ch, "type")),
+	return JSON(jsonutil.ObjectOf("id", discordReq(ch, "id"), "name", ch.ValueOr("name", nil), "type", discordChannelTypeName(discordReq(ch, "type")),
 		"guild_id", ch.ValueOr("guild_id", nil), "topic", ch.ValueOr("topic", nil), "nsfw", ch.ValueOr("nsfw", false),
 		"position", ch.ValueOr("position", nil), "parent_id", ch.ValueOr("parent_id", nil),
 		"rate_limit_per_user", ch.ValueOr("rate_limit_per_user", int64(0)), "last_message_id", ch.ValueOr("last_message_id", nil))), nil
@@ -457,7 +448,7 @@ func discordMemberInfo(ctx context.Context, token string, a discordArgs) (string
 	if err != nil {
 		return "", err
 	}
-	return dumpsDefault(discordMemberSummary(discordDict(raw), true)), nil
+	return JSON(discordMemberSummary(discordDict(raw), true)), nil
 }
 
 // Name prefix member search, which needs the GUILD_MEMBERS intent
@@ -531,7 +522,7 @@ func discordCreateThread(ctx context.Context, token string, a discordArgs) (stri
 		return "", err
 	}
 	thread := discordDict(raw)
-	return dumpsDefault(jsonutil.ObjectOf("success", true, "thread_id", discordReq(thread, "id"), "name", thread.ValueOr("name", nil))), nil
+	return JSON(jsonutil.ObjectOf("success", true, "thread_id", discordReq(thread, "id"), "name", thread.ValueOr("name", nil))), nil
 }
 
 // Body less write action whose path and message are templates over the action arguments
@@ -546,7 +537,7 @@ func discordMutation(method, path, message string) discordAction {
 		if _, err := DiscordRequest(ctx, method, format(path, a), token, nil, nil, 15*time.Second); err != nil {
 			return "", err
 		}
-		return dumpsDefault(jsonutil.ObjectOf("success", true, "message", format(message, a))), nil
+		return JSON(jsonutil.ObjectOf("success", true, "message", format(message, a))), nil
 	}
 }
 
@@ -774,7 +765,7 @@ var discordAction403Hint = map[string]string{
 
 // Guidance for a call time 403 on the action with the raw Discord body appended
 func discordEnrich403(action, body string) string {
-	base := "Discord API 403 (forbidden) on '" + action + "'."
+	base := "Discord API 403 (forbidden) on " + strconv.Quote(action) + "."
 	if hint, ok := discordAction403Hint[action]; ok {
 		return base + " " + hint + " (Raw: " + body + ")"
 	}
@@ -806,7 +797,7 @@ func discordRunAction(ctx context.Context, env *Env, action string, core bool, t
 		if len(allowlist) > 0 {
 			allowed = strings.Join(allowlist, ", ")
 		}
-		return toolErrorJSON(fmt.Sprintf("Action '%s' is disabled by config (discord.server_actions). Allowed: %s", action, allowed), nil)
+		return toolErrorJSON(fmt.Sprintf("Action %q is disabled by config (discord.server_actions). Allowed: %s", action, allowed), nil)
 	}
 	args := discordArgs{}
 	for _, d := range discordHandlerDefaults {
@@ -823,11 +814,11 @@ func discordRunAction(ctx context.Context, env *Env, action string, core bool, t
 		}
 	}
 	if len(missing) > 0 {
-		return toolErrorJSON(fmt.Sprintf("Missing required parameters for '%s': %s", action, strings.Join(missing, ", ")), nil)
+		return toolErrorJSON(fmt.Sprintf("Missing required parameters for %q: %s", action, strings.Join(missing, ", ")), nil)
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			envLog(env).Error(fmt.Sprintf("Unexpected error in %s action '%s'", toolLabel, action), "error", rec)
+			envLog(env).Error(fmt.Sprintf("Unexpected error in %s action %q", toolLabel, action), "error", rec)
 			result = toolErrorJSON(fmt.Sprintf("Unexpected error: %v", rec), nil)
 		}
 	}()
@@ -836,13 +827,13 @@ func discordRunAction(ctx context.Context, env *Env, action string, core bool, t
 		return out
 	}
 	if apiErr, ok := err.(*DiscordAPIError); ok {
-		envLog(env).Warn(fmt.Sprintf("Discord API error in %s action '%s': %s", toolLabel, action, apiErr))
+		envLog(env).Warn(fmt.Sprintf("Discord API error in %s action %q: %s", toolLabel, action, apiErr))
 		if apiErr.Status == 403 {
 			return toolErrorJSON(discordEnrich403(action, apiErr.Body), nil)
 		}
 		return toolErrorJSON(apiErr.Error(), nil)
 	}
-	envLog(env).Error(fmt.Sprintf("Unexpected error in %s action '%s'", toolLabel, action), "error", err)
+	envLog(env).Error(fmt.Sprintf("Unexpected error in %s action %q", toolLabel, action), "error", err)
 	return toolErrorJSON(fmt.Sprintf("Unexpected error: %s", err), nil)
 }
 

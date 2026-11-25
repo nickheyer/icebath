@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -32,9 +32,9 @@ func NewSupervisedTickerThread(target func(), stop <-chan struct{}, name string)
 	return &SupervisedTickerThread{target: target, stop: stop, name: name, log: pkgLog()}
 }
 
-// Process wide report of a failure escaping a cron goroutine, printed to stderr as threading.excepthook prints it
+// Process wide report of a failure escaping a cron goroutine, logged at error level so it lands in errors.log
 var threadExceptHook = func(thread, report string) {
-	fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%s", thread, report)
+	pkgLog().Error(fmt.Sprintf("Unhandled failure in cron goroutine %s: %s", strconv.Quote(thread), strings.TrimRight(report, "\n")))
 }
 
 // Runs target once, marking the ticker crashed and handing the escaping panic to the thread exception hook
@@ -130,7 +130,7 @@ func (t *SupervisedTickerThread) RestartIfDead() bool {
 		return false
 	}
 	t.restarts++
-	t.log.Error(fmt.Sprintf("Cron ticker thread %s died without a stop request; restarting (restart #%d). Scheduled jobs did not fire while it was down \u2014 check errors.log for the escaping exception.", strconv.Quote(t.name), t.restarts))
+	t.log.Error(fmt.Sprintf("Cron ticker thread %s died without a stop request; restarting (restart #%d). Scheduled jobs did not fire while it was down \u2014 check errors.log for the panic that ended it.", strconv.Quote(t.name), t.restarts))
 	t.spawnLocked()
 	return true
 }

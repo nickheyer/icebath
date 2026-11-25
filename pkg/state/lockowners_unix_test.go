@@ -102,7 +102,7 @@ func TestParseProcLocksRaisesTheMakedevOverflow(t *testing.T) {
 		"10000000000000000:0:1": "a device number is too large",
 	} {
 		_, err := ParseProcLocks("1: POSIX ADVISORY WRITE 1 "+ident+" 0 0\n", inodes)
-		var conv *pyConvError
+		var conv *convError
 		if !errors.As(err, &conv) || conv.Class != "OverflowError" || conv.Msg != msg {
 			t.Fatalf("%s raised %v", ident, err)
 		}

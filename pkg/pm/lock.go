@@ -514,19 +514,19 @@ func normalizeJSON(v any) any {
 		if err != nil {
 			return t.String()
 		}
-		return pyNumber{f}
+		return numberOf{f}
 	case int:
-		return pyNumber{float64(t)}
+		return numberOf{float64(t)}
 	case int64:
-		return pyNumber{float64(t)}
+		return numberOf{float64(t)}
 	case float64:
-		return pyNumber{t}
+		return numberOf{t}
 	}
 	return v
 }
 
 // Numeric value compared across int, float and decoded JSON spellings
-type pyNumber struct{ f float64 }
+type numberOf struct{ f float64 }
 
 // Decoded JSON spelling of an integer
 func jsonInt(n int) json.Number { return json.Number(strconv.Itoa(n)) }

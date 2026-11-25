@@ -86,7 +86,7 @@ func StepDropLivePluginCatalog(ctx context.Context) (map[string]any, error) {
 }
 
 // Python isoformat of the current UTC instant with microseconds
-func pyISONowUTC() string {
+func isoNowUTC() string {
 	now := time.Now().UTC()
 	if now.Nanosecond()/1000 == 0 {
 		return now.Format("2006-01-02T15:04:05+00:00")
@@ -154,7 +154,7 @@ func StepAdoptBlessedCheckout(ctx context.Context, projectRoot string) (map[stri
 		return map[string]any{"ok": true, "skipped": "unwritable: " + errchain.OSText(err)}, nil
 	}
 	if identified == nil {
-		stamp := jsonutil.ObjectOf("schemaVersion", 2, "updateMechanism", "self", "source", "adoption", "adoptedAt", pyISONowUTC())
+		stamp := jsonutil.ObjectOf("schemaVersion", 2, "updateMechanism", "self", "source", "adoption", "adoptedAt", isoNowUTC())
 		if err := writeJSONViaTemp(root, ".install-stamp.", stampPath, stamp); err != nil {
 			pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", errchain.OSText(err)))
 			return map[string]any{"ok": true, "skipped": "unwritable: " + errchain.OSText(err)}, nil

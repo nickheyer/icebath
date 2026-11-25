@@ -502,11 +502,11 @@ func lockHolder(path string) UpdateHolder {
 	return UpdateHolder{PID: max(parsed.pid, 0), AgeSeconds: age}
 }
 
-// C strerror of an OSError, its whole text when it carries no errno
-func strerrorOf(err error) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		return errno.Error()
+// Operating system reason err gives for path, naming the path it concerns only when that is another one
+func osReason(path string, err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) && filepath.Clean(pathErr.Path) == filepath.Clean(path) {
+		return pathErr.Err.Error()
 	}
 	return errchain.OSText(err)
 }
@@ -603,13 +603,13 @@ func openLockFile(path string) (*os.File, bool, string) {
 		return f, true, ""
 	}
 	if !errors.Is(err, fs.ErrPermission) {
-		return nil, false, strerrorOf(err)
+		return nil, false, osReason(path, err)
 	}
 	denied := err
 	if f, err := os.OpenFile(path, os.O_RDONLY|noFollow, 0); err == nil {
 		return f, false, ""
 	}
-	return nil, false, strerrorOf(denied)
+	return nil, false, osReason(path, denied)
 }
 
 // Takes the lock, waiting out a momentary held probe unless our own Windows update tree holds it
@@ -808,7 +808,7 @@ func publishExclusive(ctx context.Context, path string, body []byte) (bool, erro
 
 // Why an unwritable marker location refuses the update
 func markerUnwritable(path string, err error) string {
-	return fmt.Sprintf("%s is not writable (%s); the update records itself there so gateways, installers and other updaters wait for it", path, errchain.OSText(err))
+	return fmt.Sprintf("%s is not writable (%s); the update records itself there so gateways, installers and other updaters wait for it", path, osReason(path, err))
 }
 
 var claims struct {

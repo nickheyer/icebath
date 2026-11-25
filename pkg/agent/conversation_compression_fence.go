@@ -155,17 +155,9 @@ func refreshAgentToolDefinitions(ctx context.Context, a *AIAgent) bool {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		pkgLog().Info(fmt.Sprintf("Compaction tool refresh added tools: %v", pyListRepr(names)))
+		pkgLog().Info(fmt.Sprintf("Compaction tool refresh added tools: %v", anyutil.String(names)))
 	}
 	return len(added) > 0
-}
-
-func pyListRepr(names []string) string {
-	quoted := make([]string, len(names))
-	for i, n := range names {
-		quoted[i] = "'" + n + "'"
-	}
-	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
 var compressorCooldownStateFields = []string{"_summary_failure_cooldown_until", "_last_summary_error", "_cooldown_persist_failed"}
@@ -315,7 +307,7 @@ func rollbackDurableCooldown(compressor any, snapshot map[string]any, authoritat
 		}
 		if remaining > 0 {
 			errText, _ := snapshot["_last_summary_error"].(*string)
-			db.RecordCompressionFailureCooldown(c.sessionID, pyTimeNow()+remaining, errText)
+			db.RecordCompressionFailureCooldown(c.sessionID, timeNow()+remaining, errText)
 		} else {
 			db.ClearCompressionFailureCooldown(c.sessionID)
 		}
@@ -324,7 +316,7 @@ func rollbackDurableCooldown(compressor any, snapshot map[string]any, authoritat
 	return nil
 }
 
-func pyTimeNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+func timeNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Restores the per attempt snapshot after a pre commit hard cancel unless a newer attempt owns the compressor
 func restoreCompressorAttemptState(compressor any, snapshot map[string]any, durableAuthoritative *bool, durableState *state.CompressionCooldownRow, attemptGeneration *int) error {

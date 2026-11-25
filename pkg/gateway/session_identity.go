@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -365,15 +366,15 @@ func ParseAuthenticatedSubject(subject any) (parts [3]string, ok bool) {
 // Stable subject of a private native identity, else the auth v1 namespaced form of a sign in
 func AuthenticatedSubject(identity map[string]any) (string, error) {
 	subject := "unbound"
-	if value := identity["user_id"]; pyTruthy(value) {
-		subject = pyStrOf(value)
+	if value := identity["user_id"]; anyutil.IsTrue(value) {
+		subject = anyutil.String(value)
 	}
 	_, hasCapabilities := identity["capabilities"]
-	if identity["provider"] == "local" && pyTruthy(identity["profile_id"]) && pyTruthy(identity["instance_id"]) && hasCapabilities {
+	if identity["provider"] == "local" && anyutil.IsTrue(identity["profile_id"]) && anyutil.IsTrue(identity["instance_id"]) && hasCapabilities {
 		return subject, nil
 	}
 	orEmpty := func(key string) any {
-		if value := identity[key]; pyTruthy(value) {
+		if value := identity[key]; anyutil.IsTrue(value) {
 			return value
 		}
 		return ""

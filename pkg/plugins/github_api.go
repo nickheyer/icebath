@@ -112,7 +112,7 @@ func DescribeGithubFailure(err error, authenticated bool, now *float64) string {
 				if now != nil {
 					current = *now
 				}
-				minutes := int(pyFloorDiv(float64(reset)-current+59, 60))
+				minutes := int(floorDiv(float64(reset)-current+59, 60))
 				if minutes >= 1 {
 					when = fmt.Sprintf("in about %d minutes", minutes)
 					if minutes == 1 {
@@ -165,7 +165,7 @@ func githubHeaderInt(header http.Header, name string) (int64, bool) {
 }
 
 // Float floor division with the CPython rounding of float_floor_div
-func pyFloorDiv(a, b float64) float64 {
+func floorDiv(a, b float64) float64 {
 	mod := math.Mod(a, b)
 	div := (a - mod) / b
 	if mod != 0 && (b < 0) != (mod < 0) {

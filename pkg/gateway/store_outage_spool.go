@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -68,7 +69,7 @@ func storeOutageMessage(ctx context.Context, store *SessionStore, appender Trans
 	}
 	if appender != nil {
 		if kept, err := admissionKept(ctx, appender, payload); err == nil && kept {
-			removeReplayed(path, pyStrOf(payload.ValueOr("session_key", "")))
+			removeReplayed(path, anyutil.String(payload.ValueOr("session_key", "")))
 			return nil, false
 		}
 	}
@@ -77,8 +78,8 @@ func storeOutageMessage(ctx context.Context, store *SessionStore, appender Trans
 	if !isData {
 		return nil, false
 	}
-	text := pyStrOf(obj.ValueOr("text", ""))
-	key := pyStrOf(payload.ValueOr("session_key", ""))
+	text := anyutil.String(obj.ValueOr("text", ""))
+	key := anyutil.String(payload.ValueOr("session_key", ""))
 	entry := store.LookupBySessionKey(ctx, key)
 	if text == "" || entry == nil || entry.Origin == nil {
 		return nil, false

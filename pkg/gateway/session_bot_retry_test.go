@@ -201,7 +201,7 @@ func TestTransientFailureRetriesExactlyOnceAndTheReceiptFollowsTheRetry(t *testi
 	if receipt["status"] != "settled" || receipt["reply"] != "pong" {
 		t.Fatalf("receipt %v", receipt)
 	}
-	if !anyutil.Equal(receipt["admission_id"], first["admission_id"]) || !pyTruthy(receipt["retry_admission_id"]) {
+	if !anyutil.Equal(receipt["admission_id"], first["admission_id"]) || !anyutil.IsTrue(receipt["retry_admission_id"]) {
 		t.Fatalf("receipt %v first %v", receipt, first)
 	}
 	if ids := f.requestIDs(t, 0); strings.Join(ids, ",") != "bot:"+botRetryKey+",bot:"+botRetryKey+":retry" {
@@ -225,7 +225,7 @@ func TestRetryThatFailsAgainAndNonTransientFailuresAreNeverReplayed(t *testing.T
 	f.fail("HTTP 503 server error", "HTTP 503 server error")
 	f.deliver(t, botRetryKey, "ping")
 	receipt := f.settled(t, botRetryKey, 2)
-	if receipt["status"] != "failed" || !pyTruthy(receipt["retry_admission_id"]) {
+	if receipt["status"] != "failed" || !anyutil.IsTrue(receipt["retry_admission_id"]) {
 		t.Fatalf("receipt %v", receipt)
 	}
 	if receipt["reason"] != "provider_server_error" || !strings.Contains(routeStr(receipt["error"]), "503") {
@@ -287,7 +287,7 @@ func TestContextOverflowRetriesOnceUnlessTheFailedDmIsStillAnOpenTail(t *testing
 		if record, err = ReadDeliveryResult(f.ctx, f.home, other); err != nil {
 			t.Fatal(err)
 		}
-		if retry, _ := record["retry"].(map[string]any); retry != nil && pyTruthy(retry["refused"]) {
+		if retry, _ := record["retry"].(map[string]any); retry != nil && anyutil.IsTrue(retry["refused"]) {
 			break
 		}
 	}

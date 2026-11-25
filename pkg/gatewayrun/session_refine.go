@@ -85,7 +85,7 @@ func (r *GatewayRunner) sideAgent(ctx context.Context, a *gateway.SessionAuthori
 	add := func(values map[string]any) error {
 		for k, v := range values {
 			if _, dup := kwargs[k]; dup {
-				return &pyTypeError{fmt.Sprintf("AIAgent() got multiple values for keyword argument '%s'", k)}
+				return &typeError{fmt.Sprintf("AIAgent() got multiple values for keyword argument '%s'", k)}
 			}
 			kwargs[k] = v
 		}

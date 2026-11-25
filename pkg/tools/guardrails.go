@@ -483,7 +483,7 @@ func (d ToolGuardrailDecision) ToMetadata() map[string]any {
 
 // Sorted compact JSON of any value with unencodable values rendered as strings
 func canonicalJSON(value any) string {
-	return pyDumps(value, jsonutil.SortKeys(),
+	return dumps(value, jsonutil.SortKeys(),
 		jsonutil.Convert(func(o any) (any, error) { return anyutil.String(o), nil }))
 
 }
@@ -1010,7 +1010,7 @@ func guardResultHash(result *string, toolName string) string {
 	if result != nil {
 		text = *result
 	}
-	parsed, err := jsonutil.Decode(text)
+	parsed, err := jsonutil.DecodeWith(text, jsonutil.BigInts())
 	if err != nil || parsed == nil {
 		return guardSHA256(text)
 	}
@@ -1150,7 +1150,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 			expanded = append(expanded, call)
 			continue
 		}
-		decoded, parseErr := jsonutil.Decode(call.Function.Arguments)
+		decoded, parseErr := jsonutil.DecodeWith(call.Function.Arguments, jsonutil.BigInts())
 		args, _ := decoded.(*jsonutil.Object)
 		var entries []ToolCallEntry
 		errText := ""
@@ -1166,7 +1166,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 		parentID := state.CoalesceToolCallID(call)
 		var children []state.ToolCall
 		for index, entry := range entries {
-			arguments := pyDumps(jsonutil.ObjectOf("calls", []any{jsonutil.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}), jsonutil.Spaced())
+			arguments := dumps(jsonutil.ObjectOf("calls", []any{jsonutil.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}), jsonutil.Spaced())
 			var child state.ToolCall
 			if index == 0 {
 				child = call
@@ -1200,9 +1200,9 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 	return expanded
 }
 
-// Typed and ordered json.loads of a split child's arguments, the input its replayed content block carries
+// Typed and ordered decode of a split child's arguments with integers of any size exact, the input its replayed content block carries
 func decodedArguments(call state.ToolCall) any {
-	v, err := jsonutil.Decode(call.Function.Arguments)
+	v, err := jsonutil.DecodeWith(call.Function.Arguments, jsonutil.BigInts())
 	if err != nil {
 		panic(fmt.Sprintf("split tool call batch child carries arguments that are not JSON: %v", err))
 	}

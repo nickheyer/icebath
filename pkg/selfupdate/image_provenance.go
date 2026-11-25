@@ -6,10 +6,10 @@ import (
 	"io/fs"
 	"os"
 	"strings"
-	"unicode/utf8"
 
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Marker an image bakes outside the home and the checkout, a var so tests and other image builders repoint it
@@ -62,22 +62,22 @@ func ReadImageProvenance(markerPath string) *ImageProvenance {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		return invalidProvenance(path, "marker_presence_unreadable:"+errorutil.Kind(err))
+		return invalidProvenance(path, "marker_presence_unreadable:"+errchain.OSText(err))
 	}
 	if !info.Mode().IsRegular() {
 		return invalidProvenance(path, "marker_not_regular_file")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return invalidProvenance(path, "marker_unreadable:"+errorutil.Kind(err))
+		return invalidProvenance(path, "marker_unreadable:"+errchain.OSText(err))
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-	if !utf8.Valid(raw) {
-		return invalidProvenance(path, "marker_unreadable:UnicodeDecodeError")
+	if err := textutil.ValidateUTF8(raw); err != nil {
+		return invalidProvenance(path, "marker_unreadable:"+err.Error())
 	}
 	doc, err := jsonutil.Decode(string(raw))
 	if err != nil {
-		return invalidProvenance(path, "marker_unreadable:JSONDecodeError")
+		return invalidProvenance(path, "marker_unreadable:"+err.Error())
 	}
 	payload, isDict := doc.(*jsonutil.Object)
 	if !isDict || payload == nil {

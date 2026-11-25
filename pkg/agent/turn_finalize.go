@@ -56,7 +56,7 @@ func dropVerificationContinuationScaffolding(messages *[]*state.Message) {
 // True when any listed bookkeeping key holds a truthy value
 func anyFlagSet(extra map[string]any, flags []string) bool {
 	for _, f := range flags {
-		if pyTruthy(extra[f]) {
+		if anyutil.IsTrue(extra[f]) {
 			return true
 		}
 	}
@@ -129,7 +129,7 @@ func resolveBudgetFallback(ctx context.Context, a *AIAgent, s *LoopState, final 
 	out := budgetFallback{finalResponse: final, exitReason: exitReason, interrupted: interrupted}
 	if reason := anyutil.String(exitReason); final == nil && exhausted && !interrupted && !failed && (reason == "unknown" || reason == "budget_exhausted") {
 		out.exitReason = fmt.Sprintf("max_iterations_reached(%d/%d)", apiCalls, a.maxIterations)
-		if pyTruthy(s.PendingVerificationResponse) {
+		if anyutil.IsTrue(s.PendingVerificationResponse) {
 			out.finalResponse = s.PendingVerificationResponse
 			if s.PendingVerificationResponsePreviewed {
 				a.responseWasPreviewed = true
@@ -188,7 +188,7 @@ func recoverFinalFromStream(a *AIAgent, final any, interrupted, failed bool) (an
 	}
 	streamed := strings.TrimSpace(a.currentStreamedAssistantText())
 	visible := ""
-	if pyTruthy(final) {
+	if anyutil.IsTrue(final) {
 		visible = strings.TrimSpace(state.FlattenMessageText(final, "\n"))
 	}
 	if visible == "" && streamed != "" {
@@ -211,7 +211,7 @@ func closeTranscriptTail(a *AIAgent, messages *[]*state.Message, final any, inte
 	if interrupted {
 		closeLiveInterruptedToolSequence(messages, final)
 	}
-	if pyTruthy(final) && !interrupted {
+	if anyutil.IsTrue(final) && !interrupted {
 		var tail *state.Message
 		if n := len(*messages); n > 0 {
 			tail = (*messages)[n-1]
@@ -240,7 +240,7 @@ func storeRewriteOnTail(a *AIAgent, messages []*state.Message, raw, final any) {
 	}
 	tail := messages[len(messages)-1]
 	row := state.MessageToDict(tail)
-	if row["role"] != "assistant" || !reflect.DeepEqual(row["content"], raw) || pyTruthy(row[dbPersistedMarker]) {
+	if row["role"] != "assistant" || !reflect.DeepEqual(row["content"], raw) || anyutil.IsTrue(row[dbPersistedMarker]) {
 		return
 	}
 	if row["display_kind"] == "hidden" && a.holdStream {
@@ -266,7 +266,7 @@ func microCompactAfterTurn(ctx context.Context, a *AIAgent, messages *[]*state.M
 		}
 	}()
 	c, ok := a.contextCompressor.(*ContextCompressor)
-	if !ok || c == nil || !c.microCompactEnabled || !pyTruthy(final) || a.compressionCheckpointRequired || a.persistDisabled {
+	if !ok || c == nil || !c.microCompactEnabled || !anyutil.IsTrue(final) || a.compressionCheckpointRequired || a.persistDisabled {
 		return
 	}
 	before := len(*messages)
@@ -293,7 +293,7 @@ func microCompactAfterTurn(ctx context.Context, a *AIAgent, messages *[]*state.M
 }
 
 // Python len of a final response, code points for text
-func pyLen(v any) int {
+func lengthOf(v any) int {
 	switch x := v.(type) {
 	case nil:
 		return 0
@@ -345,7 +345,7 @@ func logTurnExit(a *AIAgent, messages []*state.Message, final any, apiCallCount 
 		session = "none"
 	}
 	diag := fmt.Sprintf("Turn ended: reason=%s model=%s api_calls=%d/%d budget=%d/%d tool_turns=%d last_msg_role=%s response_len=%d session=%s",
-		anyutil.String(exitReason), a.model, apiCallCount, a.maxIterations, used, maxTotal, toolTurns, lastRole, pyLen(final), session)
+		anyutil.String(exitReason), a.model, apiCallCount, a.maxIterations, used, maxTotal, toolTurns, lastRole, lengthOf(final), session)
 	if a.turnOrigin != "" {
 		diag += " origin=" + a.turnOrigin
 	}
@@ -391,7 +391,7 @@ func explainAbnormalExit(ctx context.Context, a *AIAgent, final, exitReason any,
 		return final
 	}
 	stripped := ""
-	if pyTruthy(final) {
+	if anyutil.IsTrue(final) {
 		text, ok := final.(string)
 		if !ok {
 			pkgLog().Debug(fmt.Sprintf("turn-completion explainer failed: %T has no strip", final))
@@ -476,7 +476,7 @@ func mirrorTurnToMemory(ctx context.Context, a *AIAgent, originalUserMessage, fi
 		return
 	}
 	a.syncExternalMemoryForTurn(originalUserMessage, final, interrupted, messagesToRows(messages))
-	if !pyTruthy(final) || interrupted || a.skipBackgroundReview || !(reviewMemory || reviewSkills) {
+	if !anyutil.IsTrue(final) || interrupted || a.skipBackgroundReview || !(reviewMemory || reviewSkills) {
 		return
 	}
 	func() {
@@ -519,7 +519,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 	final, exitReason, preserved, interrupted, failed := fb.finalResponse, fb.exitReason, fb.preserved, fb.interrupted, s.Failed
 	apiCalls, taskID, turnID := s.APICallCount, s.EffectiveTaskID, s.TurnID
 
-	if n := len(s.Messages); !pyTruthy(final) && !interrupted && n > 0 && s.Messages[n-1] != nil && s.Messages[n-1].Role == "tool" &&
+	if n := len(s.Messages); !anyutil.IsTrue(final) && !interrupted && n > 0 && s.Messages[n-1] != nil && s.Messages[n-1].Role == "tool" &&
 		strings.TrimSpace(a.currentStreamedAssistantText()) == "" {
 		exitReason, failed, final = "pending_tool_result", true, ""
 		func() {
@@ -575,7 +575,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 	a.setSessionMessages(s.Messages)
 
 	logTurnExit(a, s.Messages, final, apiCalls, exitReason, interrupted)
-	if pyTruthy(final) && !interrupted {
+	if anyutil.IsTrue(final) && !interrupted {
 		final = appendFileMutationFooter(ctx, a, final)
 	}
 	if !interrupted {
@@ -624,7 +624,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 		result["guardrail"] = a.toolGuardrailHaltDecision.ToMetadata()
 	}
 	if failed && anyutil.String(exitReason) == "session_persistence_failed" {
-		if pyTruthy(final) {
+		if anyutil.IsTrue(final) {
 			result["error"] = final
 		} else {
 			result["error"] = "session storage could not be written — check the state database health (`icebath " +
@@ -637,7 +637,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 		result["failure_reason"] = "session_persistence_failed:" + cause
 	} else if exitFailure != nil {
 		if failed {
-			if pyTruthy(final) {
+			if anyutil.IsTrue(final) {
 				result["error"] = final
 			} else {
 				result["error"] = anyutil.String(exitReason)

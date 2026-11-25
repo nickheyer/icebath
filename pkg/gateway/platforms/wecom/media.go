@@ -317,34 +317,34 @@ func guessFilename(rawURL, contentDisposition, contentType string) (string, erro
 // AES-256-CBC decryption of a WeCom media file keyed by its unpadded base64 key, the padding checked
 func decryptFileBytes(encryptedData []byte, aesKey string) ([]byte, error) {
 	if len(encryptedData) == 0 {
-		return nil, &pyErr{"ValueError", "encrypted_data is empty"}
+		return nil, &kindErr{"ValueError", "encrypted_data is empty"}
 	}
 	if aesKey == "" {
-		return nil, &pyErr{"ValueError", "aes_key is required"}
+		return nil, &kindErr{"ValueError", "aes_key is required"}
 	}
 	key, err := base64.StdEncoding.DecodeString(aesKey + strings.Repeat("=", (4-utf8.RuneCountInString(aesKey)%4)%4))
 	if err != nil {
 		return nil, err
 	}
 	if len(key) != 32 {
-		return nil, &pyErr{"ValueError", fmt.Sprintf("Invalid WeCom AES key length: expected 32 bytes, got %d", len(key))}
+		return nil, &kindErr{"ValueError", fmt.Sprintf("Invalid WeCom AES key length: expected 32 bytes, got %d", len(key))}
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 	if len(encryptedData)%aes.BlockSize != 0 {
-		return nil, &pyErr{"ValueError", "The length of the provided data is not a multiple of the block length."}
+		return nil, &kindErr{"ValueError", "The length of the provided data is not a multiple of the block length."}
 	}
 	decrypted := make([]byte, len(encryptedData))
 	cipher.NewCBCDecrypter(block, key[:16]).CryptBlocks(decrypted, encryptedData)
 	padLen := int(decrypted[len(decrypted)-1])
 	if padLen < 1 || padLen > 32 || padLen > len(decrypted) {
-		return nil, &pyErr{"ValueError", fmt.Sprintf("Invalid PKCS#7 padding value: %d", padLen)}
+		return nil, &kindErr{"ValueError", fmt.Sprintf("Invalid PKCS#7 padding value: %d", padLen)}
 	}
 	for _, b := range decrypted[len(decrypted)-padLen:] {
 		if int(b) != padLen {
-			return nil, &pyErr{"ValueError", "Invalid PKCS#7 padding: padding bytes mismatch"}
+			return nil, &kindErr{"ValueError", "Invalid PKCS#7 padding: padding bytes mismatch"}
 		}
 	}
 	return decrypted[:len(decrypted)-padLen], nil
@@ -353,7 +353,7 @@ func decryptFileBytes(encryptedData []byte, aesKey string) ([]byte, error) {
 // Downloads a remote media under the SSRF guard and the size cap, returning its bytes and lowercased headers
 func (a *WeComAdapter) downloadRemoteBytes(ctx context.Context, url string, maxBytes int) ([]byte, map[string]string, error) {
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), url) {
-		return nil, nil, &pyErr{"ValueError", "Blocked unsafe URL (SSRF protection): " + textutil.First(url, 80)}
+		return nil, nil, &kindErr{"ValueError", "Blocked unsafe URL (SSRF protection): " + textutil.First(url, 80)}
 	}
 	a.mu.Lock()
 	client := a.httpClient
@@ -385,7 +385,7 @@ func (a *WeComAdapter) downloadRemoteBytes(ctx context.Context, url string, maxB
 	}
 	if contentLength := headers["content-length"]; textutil.IsDigits(contentLength) {
 		if n, err := textutil.ParseInt(contentLength); (err == nil || errors.Is(err, strconv.ErrRange)) && n > int64(maxBytes) {
-			return nil, nil, &pyErr{"ValueError", fmt.Sprintf("Remote media exceeds WeCom limit: %s bytes > %d bytes", contentLength, maxBytes)}
+			return nil, nil, &kindErr{"ValueError", fmt.Sprintf("Remote media exceeds WeCom limit: %s bytes > %d bytes", contentLength, maxBytes)}
 		}
 	}
 	var data []byte
@@ -394,7 +394,7 @@ func (a *WeComAdapter) downloadRemoteBytes(ctx context.Context, url string, maxB
 		n, rerr := stream.Body.Read(buf)
 		data = append(data, buf[:n]...)
 		if len(data) > maxBytes {
-			return nil, nil, &pyErr{"ValueError", fmt.Sprintf("Remote media exceeds WeCom limit while downloading: %d bytes > %d bytes", len(data), maxBytes)}
+			return nil, nil, &kindErr{"ValueError", fmt.Sprintf("Remote media exceeds WeCom limit while downloading: %d bytes > %d bytes", len(data), maxBytes)}
 		}
 		if errors.Is(rerr, io.EOF) {
 			return data, headers, nil
@@ -473,10 +473,10 @@ func looksLikeURL(mediaSource string) bool {
 func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileName string) ([]byte, string, string, error) {
 	source := strings.TrimSpace(mediaSource)
 	if source == "" {
-		return nil, "", "", &pyErr{"ValueError", "media source is required"}
+		return nil, "", "", &kindErr{"ValueError", "media source is required"}
 	}
 	if placeholder, _ := mediaPlaceholderRE.MatchString(source); placeholder {
-		return nil, "", "", &pyErr{"ValueError", "Media placeholder was not replaced with a real file path: " + source}
+		return nil, "", "", &kindErr{"ValueError", "Media placeholder was not replaced with a real file path: " + source}
 	}
 	parsed, err := urlutil.Split(source)
 	if err != nil {
@@ -511,7 +511,7 @@ func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileN
 		}
 	}
 	if info, err := os.Stat(localPath); err != nil || !info.Mode().IsRegular() {
-		return nil, "", "", &pyErr{"FileNotFoundError", "Media file not found: " + localPath}
+		return nil, "", "", &kindErr{"FileNotFoundError", "Media file not found: " + localPath}
 	}
 	resolvedName := fileName
 	if resolvedName == "" {
@@ -520,7 +520,7 @@ func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileN
 	data, err := os.ReadFile(localPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, "", "", &pyErr{"FileNotFoundError", err.Error()}
+			return nil, "", "", &kindErr{"FileNotFoundError", err.Error()}
 		}
 		return nil, "", "", err
 	}
@@ -562,11 +562,11 @@ func (a *WeComAdapter) checkedRequest(ctx context.Context, cmd string, body *jso
 // Uploads media bytes in base64 chunks and returns the type, media id and creation time of the upload
 func (a *WeComAdapter) uploadMediaBytes(ctx context.Context, data []byte, mediaType, filename string) (*jsonutil.Object, error) {
 	if len(data) == 0 {
-		return nil, &pyErr{"ValueError", "Cannot upload empty media"}
+		return nil, &kindErr{"ValueError", "Cannot upload empty media"}
 	}
 	totalSize, totalChunks := len(data), (len(data)+uploadChunkSize-1)/uploadChunkSize
 	if totalChunks > maxUploadChunks {
-		return nil, &pyErr{"ValueError", fmt.Sprintf("File too large: %d chunks exceeds maximum of %d chunks", totalChunks, maxUploadChunks)}
+		return nil, &kindErr{"ValueError", fmt.Sprintf("File too large: %d chunks exceeds maximum of %d chunks", totalChunks, maxUploadChunks)}
 	}
 	sum := md5.Sum(data)
 	initResponse, err := a.checkedRequest(ctx, appCmdUploadMediaInit, obj("type", mediaType, "filename", filename, "total_size", int64(totalSize),
@@ -627,7 +627,7 @@ func (a *WeComAdapter) sendMediaSource(ctx context.Context, chatID, mediaSource,
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		var pe *pyErr
+		var pe *kindErr
 		if !errors.As(err, &pe) || pe.kind != "FileNotFoundError" {
 			pkgLog().Error(fmt.Sprintf("[%s] Failed to prepare outbound media %s: %s", a.Name(), mediaSource, err.Error()))
 		}

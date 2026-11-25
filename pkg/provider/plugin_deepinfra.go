@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -49,12 +50,12 @@ func deepinfraDefaultVisionModel(ctx context.Context) string {
 			continue
 		}
 		tags, isList := meta["tags"].([]any)
-		if !isList || !pyTruthy(item["id"]) {
+		if !isList || !anyutil.IsTrue(item["id"]) {
 			continue
 		}
 		for _, tag := range tags {
 			if tag == "vision" {
-				return pyStr(item["id"])
+				return anyutil.String(item["id"])
 			}
 		}
 	}

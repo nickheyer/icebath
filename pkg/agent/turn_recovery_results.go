@@ -111,7 +111,7 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 	a.emitDiagnosticStatus(fmt.Sprintf("❌ %s: %s", label, summary))
 	if a.verboseLogging {
 		vlines(a,
-			fmt.Sprintf("   🔌 Provider: %s  Model: %s  (HTTP %s)", prov, model, pyStatus(e.statusCode)),
+			fmt.Sprintf("   🔌 Provider: %s  Model: %s  (HTTP %s)", prov, model, statusValue(e.statusCode)),
 			"   🌐 Endpoint: "+baseURL)
 	}
 	prefixSuggestion := missingVendorPrefixSuggestion(apiError, prov, model)

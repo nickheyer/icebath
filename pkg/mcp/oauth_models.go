@@ -7,6 +7,9 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // jsonObject is a decoded JSON object that keeps its key order across a rewrite
@@ -159,7 +162,7 @@ func (o *jsonObject) MarshalJSON() ([]byte, error) {
 // JSON of a value without HTML escaping, the way json.dumps with ensure_ascii off writes it
 func encodeJSONValue(v any) []byte {
 	if f, ok := v.(float64); ok && !math.IsInf(f, 0) && !math.IsNaN(f) {
-		return []byte(pyFloatRepr(f))
+		return []byte(floatRepr(f))
 	}
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -192,7 +195,7 @@ func jsonTruthy(v any) bool {
 	case *jsonObject:
 		return len(x.keys) > 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // FieldError is one failing field of a model validation
@@ -524,7 +527,7 @@ func validateOAuthToken(m map[string]any) (*OAuthToken, error) {
 	if v, ok := m["token_type"]; ok {
 		s, isStr := v.(string)
 		if isStr {
-			s = pyTitle(s)
+			s = textutil.Title(s)
 		}
 		if !isStr || s != "Bearer" {
 			r.fail("token_type", "Input should be 'Bearer'", "literal_error")
@@ -566,26 +569,6 @@ func (t *OAuthToken) dump() *jsonObject {
 	d.o.set("access_token", t.AccessToken)
 	d.o.set("token_type", t.TokenType)
 	return d.integer("expires_in", t.ExpiresIn).str("scope", t.Scope).str("refresh_token", t.RefreshToken).o
-}
-
-// Python str.title of an ASCII heavy word
-func pyTitle(s string) string {
-	var b strings.Builder
-	prevCased := false
-	for _, r := range s {
-		isLetter := strings.ToUpper(string(r)) != strings.ToLower(string(r))
-		if isLetter {
-			if prevCased {
-				b.WriteString(strings.ToLower(string(r)))
-			} else {
-				b.WriteString(strings.ToUpper(string(r)))
-			}
-		} else {
-			b.WriteRune(r)
-		}
-		prevCased = isLetter
-	}
-	return b.String()
 }
 
 // clientMetadataBase is the RFC 7591 metadata shared by the registration request and the stored record

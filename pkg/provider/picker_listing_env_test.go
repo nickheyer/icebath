@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -34,7 +35,7 @@ func alibabaSlugs(t *testing.T, env map[string]string) []string {
 	}
 	var out []string
 	for _, r := range mustListProviders(t, ctx, AuthenticatedProvidersOptions{}) {
-		if slug := pyStr(r["slug"]); strings.Contains(slug, "coding-plan") {
+		if slug := anyutil.String(r["slug"]); strings.Contains(slug, "coding-plan") {
 			out = append(out, slug)
 		}
 	}

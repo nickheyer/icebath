@@ -3,8 +3,11 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Named view a plugin provides and the terminal UI renders, its state a JSON value the UI holds between calls
@@ -136,11 +139,11 @@ func hostedWidget(a map[string]any) (WidgetSpec, error) {
 	width, _ := wireInt(a["width"])
 	spec := WidgetSpec{ID: argStr(a["id"]), Help: argStr(a["help"]), Usage: argStr(a["usage"]), Mode: argStr(a["mode"]),
 		Zone: argStr(a["zone"]), Width: int(width)}
-	switch seconds := a["refresh"].(type) {
-	case float64:
-		spec.Refresh = time.Duration(seconds * float64(time.Second))
-	case int64:
-		spec.Refresh = time.Duration(seconds) * time.Second
+	if seconds, ok := anyutil.Float(a["refresh"]); ok {
+		if math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+			return spec, fmt.Errorf("widget %s refresh must be a finite number of seconds, got %s", spec.ID, anyutil.String(a["refresh"]))
+		}
+		spec.Refresh = guestDuration(seconds)
 	}
 	if tick, ok := a["tick"].(*HostedCallable); ok && tick != nil {
 		spec.Tick = func(ctx context.Context, state any) (any, error) {
@@ -193,7 +196,7 @@ func widgetViewFrom(raw any) WidgetView {
 }
 
 func init() {
-	hostCtxDispatch["register_widget"] = hostMethod("register_widget", []pyParam{kwReq("id"), kwReq("render"), kwo("help", ""), kwo("usage", ""),
+	hostCtxDispatch["register_widget"] = hostMethod("register_widget", []paramValue{kwReq("id"), kwReq("render"), kwo("help", ""), kwo("usage", ""),
 		kwo("mode", ""), kwo("zone", ""), kwo("width", int64(0)), kwo("open", nil), kwo("input", nil), kwo("refresh", 0.0), kwo("tick", nil)},
 		func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			spec, err := hostedWidget(a)

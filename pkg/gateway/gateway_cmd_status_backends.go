@@ -330,7 +330,7 @@ func windowsProbePidFile(w io.Writer, pidPath string) (int, bool) {
 	pidValue, have := 0, false
 	if err == nil {
 		if raw := data.ValueOr("pid", nil); raw != nil {
-			n, convErr := pyIntArg(raw)
+			n, convErr := intArg(raw)
 			if convErr != nil {
 				err = convErr
 			} else {
@@ -351,7 +351,7 @@ func windowsProbePidFile(w io.Writer, pidPath string) (int, bool) {
 }
 
 // int of a pid record value the way int() converts it
-func pyIntArg(v any) (int, error) {
+func intArg(v any) (int, error) {
 	switch n := v.(type) {
 	case int64:
 		return int(n), nil
@@ -424,7 +424,7 @@ func windowsProbeStateFile(w io.Writer, statePath string) {
 		}
 	}
 	ok := gatewayState == "running" || gatewayState == "degraded"
-	windowsProbe(w, 5, ok, fmt.Sprintf("gateway_state.json state=%s%s", anyutil.Quote(gatewayState), ageStr))
+	windowsProbe(w, 5, ok, fmt.Sprintf("gateway_state.json state=%s%s", quotedValue(gatewayState), ageStr))
 }
 
 func windowsProbeExitDiag(w io.Writer, diagPath string) {
@@ -468,9 +468,18 @@ func windowsProbeExitDiag(w io.Writer, diagPath string) {
 		windowsProbe(w, 6, false, fmt.Sprintf("Last lifecycle line not JSON: %s", string(runes[:min(len(runes), 120)])))
 		return
 	}
-	tag := event.ValueOr("tag", "?")
-	windowsProbe(w, 6, tag == "gateway.start", fmt.Sprintf("Last lifecycle event: tag=%s pid=%s ts=%s",
-		anyutil.String(tag), anyutil.String(event.ValueOr("pid", "?")), anyutil.String(event.ValueOr("ts", "?"))))
+	field := func(key string) string {
+		v, ok := event.Get(key)
+		switch {
+		case !ok:
+			return "?"
+		case v == nil:
+			return "null"
+		}
+		return anyutil.String(v)
+	}
+	windowsProbe(w, 6, event.Value("tag") == "gateway.start", fmt.Sprintf("Last lifecycle event: tag=%s pid=%s ts=%s",
+		field("tag"), field("pid"), field("ts")))
 }
 
 // Prints PASS or FAIL for each liveness signal the collapsed summary folds together

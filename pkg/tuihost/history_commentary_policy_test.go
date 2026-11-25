@@ -62,7 +62,7 @@ func TestCommentaryDisplayMetadataThatIsNotADictRaises(t *testing.T) {
 	row["display_metadata"] = []any{"commentary_withheld"}
 	_, err := HistoryToMessages(context.Background(), []any{row}, "", true)
 	var attrErr *DisplayMetadataError
-	if !errors.As(err, &attrErr) || err.Error() != "'list' object has no attribute 'get'" || attrErr.ErrorKind() != "AttributeError" {
+	if !errors.As(err, &attrErr) || err.Error() != "display_metadata is a list where a mapping was expected" || attrErr.ErrorKind() != "AttributeError" {
 		t.Fatalf("err = %v", err)
 	}
 	row["display_metadata"] = map[string]any{CommentaryWithheld: true}

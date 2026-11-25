@@ -24,8 +24,8 @@ func TestCommandStatusRendersServiceAndRegistry(t *testing.T) {
 	svc.markBroken(pairKey{"pyright", "/r"})
 	cc := CommandContext{Runtime: rt, Service: func() (*Service, error) { return svc, nil }}
 	code, out, _ := runCLI(t, cc, CommandArgs{})
-	for _, want := range []string{"LSP Service\n===========\n  enabled:         True\n  wait_mode:       document\n  wait_timeout:    5.0s\n  install_strategy:manual\n  active clients:  none\n",
-		"  broken pairs:    1\n    - ('pyright', '/r')\n", "  disabled in cfg: gopls\n", "Registered Servers\n==================\n",
+	for _, want := range []string{"LSP Service\n===========\n  enabled:         true\n  wait_mode:       document\n  wait_timeout:    5s\n  install_strategy:manual\n  active clients:  none\n",
+		"  broken pairs:    1\n    - pyright              root=/r\n", "  disabled in cfg: gopls\n", "Registered Servers\n==================\n",
 		"  · pyright                  [missing    ] .py, .pyi\n      Python — Microsoft pyright\n",
 		"  ? rust-analyzer            [manual-only] .rs\n      Rust — rust-analyzer  [trusted workspaces only]\n",
 		"clangd                   [manual-only] .c, .cpp, .cc, .cxx, .h, … (+3)\n"} {
@@ -90,7 +90,7 @@ func TestCommandStatusWarnsAboutMissingShellcheck(t *testing.T) {
 	must(t, os.Chmod(staged, 0o755))
 	_, out, _ := runCLI(t, CommandContext{Runtime: rt, Service: func() (*Service, error) { return nil, nil }}, CommandArgs{})
 	if !strings.Contains(out, "\nBackend warnings\n================\n  ! bash-language-server is installed but shellcheck is missing") ||
-		!strings.Contains(out, "  enabled:         False\n\nBackend") {
+		!strings.Contains(out, "  enabled:         false\n\nBackend") {
 		t.Fatal(out)
 	}
 }

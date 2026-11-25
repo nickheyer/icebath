@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // SelectionWarning is a selection time warning a surface confirms before applying a model
@@ -270,7 +271,7 @@ func contextCacheThreshold(ctx context.Context) int {
 		return DefaultContextCacheSwitchThreshold
 	}
 	if s, isStr := raw.(string); isStr {
-		n, ok := pyIntLiteral(s)
+		n, ok := intLiteral(s)
 		if !ok {
 			return DefaultContextCacheSwitchThreshold
 		}
@@ -284,15 +285,15 @@ func contextCacheThreshold(ctx context.Context) int {
 }
 
 // Python int of a string, surrounding whitespace, a sign and single underscores between digits allowed
-func pyIntLiteral(s string) (int, bool) {
-	t := strings.TrimFunc(s, pyIsSpace)
+func intLiteral(s string) (int, bool) {
+	t := strings.TrimFunc(s, unicode.IsSpace)
 	if t != "" && (t[0] == '+' || t[0] == '-') {
 		t = t[1:]
 	}
 	if t == "" || t[0] == '_' || t[len(t)-1] == '_' || strings.Contains(t, "__") {
 		return 0, false
 	}
-	n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimFunc(s, pyIsSpace), "_", ""))
+	n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimFunc(s, unicode.IsSpace), "_", ""))
 	return n, err == nil
 }
 

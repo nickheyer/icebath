@@ -205,7 +205,7 @@ func callBedrockConverse(ctx context.Context, region string, in bedrockConverseI
 		}
 		if isBedrockStaleConnectionError(err) {
 			pkgLog().Warn(fmt.Sprintf("bedrock: stale-connection error on converse(region=%s, model=%s): %s — evicting cached client so the next call reconnects.",
-				region, in.Model, pyTypeNameOfError(err)))
+				region, in.Model, typeNameOfError(err)))
 			InvalidateBedrockRuntimeClient(ctx, region)
 		}
 		return nil, err
@@ -226,7 +226,7 @@ func bedrockConverseFinish(resp *http.Response, err error) (*bedrockConverseResu
 }
 
 // Exception class name a Python caller would log for the error
-func pyTypeNameOfError(err error) string {
+func typeNameOfError(err error) string {
 	var svc *AWSServiceError
 	if errors.As(err, &svc) && svc.Code != "" {
 		return svc.Code
@@ -323,9 +323,9 @@ func (c *bedrockConverseClient) completeOnce(ctx context.Context, p *bedrockConv
 // Poll cadence of the Bedrock stream interrupt and stale event watchdog
 var bedrockStreamPoll = 300 * time.Millisecond
 
-// modelId of Converse kwargs, unknown when absent
+// modelId of Converse kwargs, unknown when absent or null
 func bedrockStreamModel(kwargs map[string]any) string {
-	if m, ok := kwargs["modelId"]; ok {
+	if m := kwargs["modelId"]; m != nil {
 		return anyutil.String(m)
 	}
 	return "unknown"

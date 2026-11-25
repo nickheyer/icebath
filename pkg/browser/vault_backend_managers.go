@@ -255,17 +255,19 @@ func (b *OnePasswordLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 	out := []vault.VaultItemMeta{}
 	b.itemVaults = map[string]string{}
 	for _, item := range items {
-		if id := anyGet(item, "id"); anyutil.IsTrue(id) {
-			vaultID := ""
-			itemVault := anyGet(item, "vault")
-			if !anyutil.IsTrue(itemVault) {
-				itemVault = jsonutil.NewObject()
-			}
-			if v, ok := jsonutil.AsObject(itemVault); ok {
-				vaultID = vaultText(anyGet(v, "id"))
-			}
-			b.itemVaults[anyutil.String(id)] = vaultID
+		id := vaultText(anyGet(item, "id"))
+		if id == "" {
+			continue
 		}
+		vaultID := ""
+		itemVault := anyGet(item, "vault")
+		if !anyutil.IsTrue(itemVault) {
+			itemVault = jsonutil.NewObject()
+		}
+		if v, ok := jsonutil.AsObject(itemVault); ok {
+			vaultID = vaultText(anyGet(v, "id"))
+		}
+		b.itemVaults[id] = vaultID
 		urls := []string{}
 		for _, u := range managerList(anyGet(item, "urls")) {
 			if entry, ok := jsonutil.AsObject(u); ok && anyutil.IsTrue(anyGet(entry, "href")) {
@@ -281,7 +283,7 @@ func (b *OnePasswordLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 		if label == "" {
 			label = origins[0]
 		}
-		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + anyutil.String(anyGet(item, "id")), Kind: "login", Label: label,
+		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + id, Kind: "login", Label: label,
 			Origin: origins[0], CreatedAt: vaultText(anyGet(item, "created_at")), IdentifierType: identifierType,
 			Identifier: identifier, AllowedOrigins: webOrigins(origins)})
 	}
@@ -482,7 +484,8 @@ func (b *BitwardenLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 	out := []vault.VaultItemMeta{}
 	for _, item := range items {
 		login, isLogin := jsonutil.AsObject(anyGet(item, "login"))
-		if !anyutil.Equal(anyGet(item, "type"), int64(1)) || !isLogin {
+		id := vaultText(anyGet(item, "id"))
+		if !anyutil.Equal(anyGet(item, "type"), int64(1)) || !isLogin || id == "" {
 			continue
 		}
 		uris, err := managerItems(managerList(anyGet(login, "uris")))
@@ -510,7 +513,7 @@ func (b *BitwardenLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 		if label == "" {
 			label = origins[0]
 		}
-		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + anyutil.String(anyGet(item, "id")), Kind: "login", Label: label,
+		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + id, Kind: "login", Label: label,
 			Origin: origins[0], CreatedAt: vaultText(anyGet(item, "creationDate")), IdentifierType: identifierType,
 			Identifier: identifier, AllowedOrigins: webOrigins(origins)})
 	}

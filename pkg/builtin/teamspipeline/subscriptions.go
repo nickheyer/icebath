@@ -30,10 +30,10 @@ func buildGraphClient() (graphClient, error) {
 	return messagetools.NewMicrosoftGraphClient(tp), nil
 }
 
-// Current UTC instant at microsecond precision like datetime.now
+// Current UTC instant cut to the microsecond stored stamps hold
 func utcNow() time.Time { return nowUTC().Truncate(time.Microsecond) }
 
-// Second precision UTC timestamp with a Z suffix hours from base or now
+// Stored form of the whole second hoursFromNow hours after base or now, the RFC 3339 UTC text Graph takes as a DateTimeOffset
 func utcTimestamp(hoursFromNow int, base *time.Time) string {
 	b := utcNow()
 	if base != nil {

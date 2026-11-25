@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // taskGroup mimics an anyio TaskGroup wrapper whose own text says nothing
@@ -22,11 +24,6 @@ func (g *taskGroup) Error() string   { return "unhandled errors in a TaskGroup (
 func (g *taskGroup) Unwrap() []error { return g.errs }
 
 func group(errs ...error) error { return &taskGroup{errs: errs} }
-
-// SystemExit mirrors the process exit error a group unwrap must re-raise
-type SystemExit struct{ Code int }
-
-func (e *SystemExit) Error() string { return fmt.Sprint(e.Code) }
 
 // chainErr is one link of a hand built cause chain that may loop
 type chainErr struct {
@@ -65,11 +62,11 @@ func TestErrorsUnwrapExceptionGroup(t *testing.T) {
 	if got := unwrapExceptionGroup(group(context.Canceled)); got != context.Canceled {
 		t.Fatalf("an all cancellation group keeps its first member, got %v", got)
 	}
-	exit := &SystemExit{Code: 2}
+	exit := &pm.SystemExit{Code: 2}
 	func() {
 		defer func() {
 			if r := recover(); r != exit {
-				t.Fatalf("SystemExit must be re-raised, recovered %v", r)
+				t.Fatalf("an exit status must be re-raised, recovered %v", r)
 			}
 		}()
 		unwrapExceptionGroup(group(errors.New("noise"), group(exit)))
@@ -109,7 +106,7 @@ func TestFailureClassification(t *testing.T) {
 	}
 	dir := t.TempDir()
 	_, err := resolveClientCert("remote", filepath.Join(dir, "missing.pem"), nil)
-	if err == nil || !strings.Contains(err.Error(), "MCP server 'remote': client_cert not found at '") || classifyMCPFailure(err) != "permanent" {
+	if err == nil || !strings.Contains(err.Error(), "MCP server 'remote': client_cert not found at \"") || classifyMCPFailure(err) != "permanent" {
 		t.Fatalf("missing client cert must be a permanent not found error: %v", err)
 	}
 }
@@ -143,11 +140,11 @@ func TestErrorsAuthDetailAndCallFailedMessage(t *testing.T) {
 		t.Fatal("non registration errors carry no detail")
 	}
 	msg := mcpCallFailedMessage(group(&OAuthRegistrationError{Msg: "registration guidance text"}))
-	if !strings.Contains(msg, "OAuthRegistrationError") || !strings.Contains(msg, "registration guidance text") || strings.Contains(msg, "TaskGroup") {
+	if msg != "MCP call failed: registration guidance text" || strings.Contains(msg, "TaskGroup") {
 		t.Fatalf("call failed message %q", msg)
 	}
-	if msg := mcpCallFailedMessage(silentErr{}); !strings.HasPrefix(msg, "MCP call failed: silentErr: ") || strings.HasSuffix(msg, ": ") {
-		t.Fatalf("empty message must still carry diagnostics: %q", msg)
+	if msg := mcpCallFailedMessage(silentErr{}); msg != "MCP call failed: (empty error message)" || strings.HasSuffix(msg, ": ") {
+		t.Fatalf("empty message must still say it had none: %q", msg)
 	}
 	if msg := mcpCallFailedMessage(errors.New("token sk-abcdefghijklmnopqrstuvwxyz0123456789 leaked")); strings.Contains(msg, "abcdefghijklmnop") {
 		t.Fatalf("call failed message must be sanitized: %q", msg)
@@ -183,11 +180,11 @@ func TestErrorsInvalidURL(t *testing.T) {
 		{nil, "Invalid MCP URL for 's': expected text, got nothing"},
 		{map[string]any{}, "Invalid MCP URL for 's': expected text, got a mapping"},
 		{"   ", "Invalid MCP URL for 's': empty url"},
-		{"ftp://example.com", "Invalid MCP URL for 's': scheme must be http or https, got 'ftp' ('ftp://example.com')"},
-		{"not a url at all", "Invalid MCP URL for 's': scheme must be http or https, got '' ('not a url at all')"},
-		{"http://", "Invalid MCP URL for 's': missing host ('http://')"},
-		{"http://:8080", "Invalid MCP URL for 's': missing hostname ('http://:8080')"},
-		{"http://[::1", "Invalid MCP URL for 's': 'http://[::1' (Invalid IPv6 URL)"},
+		{"ftp://example.com", `Invalid MCP URL for 's': scheme must be http or https, got "ftp" ("ftp://example.com")`},
+		{"not a url at all", `Invalid MCP URL for 's': scheme must be http or https, got "" ("not a url at all")`},
+		{"http://", `Invalid MCP URL for 's': missing host ("http://")`},
+		{"http://:8080", `Invalid MCP URL for 's': missing hostname ("http://:8080")`},
+		{"http://[::1", `Invalid MCP URL for 's': "http://[::1" (Invalid IPv6 URL)`},
 	}
 	for _, c := range cases {
 		if err := validateRemoteMCPURL("s", c.url); err == nil || err.Error() != c.text {
@@ -227,7 +224,7 @@ func TestErrorsFormatConnectError(t *testing.T) {
 		t.Fatalf("abi error is the whole story, got %q", got)
 	}
 	got := formatConnectError(group(errors.New("a"), silentErr{}, errors.New("b"), errors.New("c"), errors.New("a")))
-	if got != "a; silentErr; b" {
+	if got != "a; b; c" {
 		t.Fatalf("flattened %q", got)
 	}
 	if got := formatConnectError(fmt.Errorf("handshake: %w", errors.New("Connection closed"))); got != "handshake: Connection closed" {

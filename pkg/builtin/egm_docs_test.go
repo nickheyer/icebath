@@ -19,7 +19,7 @@ import (
 )
 
 // Compiles a Python re pattern or fails the test
-func pyPattern(t *testing.T, pattern string) *regexp2.Regexp {
+func patternValue(t *testing.T, pattern string) *regexp2.Regexp {
 	t.Helper()
 	re, err := regexutil.Compile(pattern)
 	if err != nil {
@@ -29,7 +29,7 @@ func pyPattern(t *testing.T, pattern string) *regexp2.Regexp {
 }
 
 // Groups of every non overlapping match like re.finditer
-func pyFindAll(t *testing.T, re *regexp2.Regexp, s string) [][]string {
+func findAll(t *testing.T, re *regexp2.Regexp, s string) [][]string {
 	t.Helper()
 	var out [][]string
 	m, err := re.FindStringMatch(s)
@@ -47,7 +47,7 @@ func pyFindAll(t *testing.T, re *regexp2.Regexp, s string) [][]string {
 }
 
 // Result of re.sub with a replacement computed from each match
-func pySub(t *testing.T, re *regexp2.Regexp, s string, repl func(string) string) string {
+func subValue(t *testing.T, re *regexp2.Regexp, s string, repl func(string) string) string {
 	t.Helper()
 	out, err := re.ReplaceFunc(s, func(m regexp2.Match) string { return repl(m.String()) }, -1, -1)
 	if err != nil {
@@ -82,9 +82,9 @@ func egmMarkdownFiles(t *testing.T, root string) []string {
 // Slug anchors of every Markdown heading with one hyphen per space as GitHub renders them
 func extractHeaders(t *testing.T, content string) map[string]bool {
 	slugs := map[string]bool{}
-	strip := pyPattern(t, `[^a-z0-9 -]`)
-	for _, m := range pyFindAll(t, pyPattern(t, `(?m)^(#{1,6})\s+(.+)$`), content) {
-		slug := pySub(t, strip, strings.ToLower(strings.TrimSpace(m[2])), func(string) string { return "" })
+	strip := patternValue(t, `[^a-z0-9 -]`)
+	for _, m := range findAll(t, patternValue(t, `(?m)^(#{1,6})\s+(.+)$`), content) {
+		slug := subValue(t, strip, strings.ToLower(strings.TrimSpace(m[2])), func(string) string { return "" })
 		slugs[strings.ReplaceAll(slug, " ", "-")] = true
 	}
 	return slugs
@@ -99,19 +99,19 @@ func TestEGMHeadingSlugKeepsOneHyphenPerSpace(t *testing.T) {
 
 // Fails on every relative Markdown link below root that does not resolve inside root
 func checkEGMLinks(t *testing.T, root string) int {
-	link := pyPattern(t, `\[([^\]]+)\]\(([^\)]+)\)`)
-	fence, tick := pyPattern(t, "```[\\s\\S]*?```"), pyPattern(t, "`[^`]*`")
+	link := patternValue(t, `\[([^\]]+)\]\(([^\)]+)\)`)
+	fence, tick := patternValue(t, "```[\\s\\S]*?```"), patternValue(t, "`[^`]*`")
 	checked := 0
 	for _, md := range egmMarkdownFiles(t, root) {
 		raw, err := os.ReadFile(md)
 		if err != nil {
 			t.Fatal(err)
 		}
-		clean := pySub(t, fence, strings.ToValidUTF8(string(raw), ""), func(string) string { return "" })
-		clean = pySub(t, tick, clean, func(string) string { return "" })
+		clean := subValue(t, fence, strings.ToValidUTF8(string(raw), ""), func(string) string { return "" })
+		clean = subValue(t, tick, clean, func(string) string { return "" })
 		headers := extractHeaders(t, clean)
 		rel, _ := filepath.Rel(root, md)
-		for _, m := range pyFindAll(t, link, clean) {
+		for _, m := range findAll(t, link, clean) {
 			target := strings.TrimSpace(m[2])
 			if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:") || strings.HasPrefix(target, "file://") {
 				continue
@@ -170,7 +170,7 @@ func TestEGMBundledPromptDependenciesAndHarnessGuides(t *testing.T) {
 			t.Errorf("docs/%s is not materialized", doc)
 		}
 	}
-	codexRe := pyPattern(t, `\[Codex integration\]\(([^)]+)\)`)
+	codexRe := patternValue(t, `\[Codex integration\]\(([^)]+)\)`)
 	codex, _ := os.ReadFile(filepath.Join(root, "docs", "codex.md"))
 	dirs := egmSkillDirs()
 	if len(dirs) != 7 {
@@ -184,7 +184,7 @@ func TestEGMBundledPromptDependenciesAndHarnessGuides(t *testing.T) {
 		if !bytes.Contains(text, []byte("${CLAUDE_PLUGIN_ROOT}/docs/claude.md")) {
 			t.Errorf("%s does not name the Claude guide", skill)
 		}
-		targets := pyFindAll(t, codexRe, string(text))
+		targets := findAll(t, codexRe, string(text))
 		if len(targets) != 1 || filepath.Join(filepath.Dir(skill), targets[0][1]) != filepath.Join(root, "docs", "codex.md") {
 			t.Errorf("%s codex targets %v", skill, targets)
 		}
@@ -193,7 +193,7 @@ func TestEGMBundledPromptDependenciesAndHarnessGuides(t *testing.T) {
 		if bytes.Contains(hostText, egmPluginRootVar) || !bytes.Contains(hostText, []byte(root+"/docs/claude.md")) || !isFile(filepath.Join(root, "docs", "claude.md")) {
 			t.Errorf("%s does not resolve the plugin root onto %s", host, root)
 		}
-		hostTargets := pyFindAll(t, codexRe, string(hostText))
+		hostTargets := findAll(t, codexRe, string(hostText))
 		resolved, _ := os.ReadFile(filepath.Join(filepath.Dir(host), hostTargets[0][1]))
 		if len(hostTargets) != 1 || !bytes.Equal(resolved, codex) {
 			t.Errorf("%s codex link does not reach docs/codex.md", host)
@@ -201,11 +201,11 @@ func TestEGMBundledPromptDependenciesAndHarnessGuides(t *testing.T) {
 	}
 	agents, _ := filepath.Glob(filepath.Join(root, "agents", "*.md"))
 	prompts = append(prompts, agents...)
-	refRe := pyPattern(t, "`((?:agents|resources|references)/[^`\\s]+\\.md)`")
+	refRe := patternValue(t, "`((?:agents|resources|references)/[^`\\s]+\\.md)`")
 	checked := 0
 	for _, prompt := range prompts {
 		text, _ := os.ReadFile(prompt)
-		for _, m := range pyFindAll(t, refRe, string(text)) {
+		for _, m := range findAll(t, refRe, string(text)) {
 			if strings.ContainsAny(m[1], "{}[]<>") {
 				continue
 			}
@@ -322,12 +322,12 @@ func TestEGMTablesHaveNoMultilineContinuationRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := tree.Payload(egmRoot)
-	fence, continuation := pyPattern(t, "```[\\s\\S]*?```"), pyPattern(t, `^:.*:\s*$`)
+	fence, continuation := patternValue(t, "```[\\s\\S]*?```"), patternValue(t, `^:.*:\s*$`)
 	var failures []string
 	files := egmMarkdownFiles(t, root)
 	for _, md := range files {
 		raw, _ := os.ReadFile(md)
-		content := pySub(t, fence, strings.ToValidUTF8(string(raw), ""), func(m string) string {
+		content := subValue(t, fence, strings.ToValidUTF8(string(raw), ""), func(m string) string {
 			return strings.Repeat("\n", strings.Count(m, "\n"))
 		})
 		previous := ""

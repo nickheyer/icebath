@@ -52,7 +52,7 @@ Rules:
 
 const describerUserTemplate = "Profile name: %s\nDefault model: %s\nProvider: %s\nInstalled skill count: %d\nNotable skills (up to %d):\n%s\n"
 
-var describerFenceRe = regexp.MustCompile("(?mi)^```(?:json)?" + pyWS + "*|" + pyWS + "*```$")
+var describerFenceRe = regexp.MustCompile("(?mi)^```(?:json)?" + ws + "*|" + ws + "*```$")
 
 // Auxiliary completion seam, the auxiliary client call_llm in production
 var describeCallLLM = auxCallLLM

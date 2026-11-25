@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type cfgSetHome struct {
@@ -98,7 +100,7 @@ func TestUnescapedDottedModelKeys(t *testing.T) {
 			"grok-4.6": map[string]any{"context_length": 500000, "supports_vision": true}}}}})
 		s.command(ConfigArgs{Command: "unset", Key: "providers.myprov.models.grok-4.6.supports_vision"})
 		target := AsMap(s.at("providers", "myprov", "models", "grok-4.6"))
-		if _, has := target["supports_vision"]; has || !pyEq(target["context_length"], 500000) {
+		if _, has := target["supports_vision"]; has || !anyutil.Equal(target["context_length"], 500000) {
 			t.Fatalf("unset %v", target)
 		}
 	})
@@ -167,7 +169,7 @@ func TestDottedLeafKeys(t *testing.T) {
 		s, _ := newCfgSetHome(t, dottedLeafConfig)
 		s.mustSet("providers.Bai.models.glm-5.3-flash.context_length", "1000000")
 		models := AsMap(s.at("providers", "Bai", "models"))
-		if _, has := models["glm-5"]; has || !pyEq(AsMap(models["glm-5.3-flash"])["context_length"], 1000000) {
+		if _, has := models["glm-5"]; has || !anyutil.Equal(AsMap(models["glm-5.3-flash"])["context_length"], 1000000) {
 			t.Fatalf("dotted parent %v", models)
 		}
 	})
@@ -227,7 +229,7 @@ func TestNestedPathPythonSemantics(t *testing.T) {
 	cases := []struct{ path, kind, msg string }{
 		{"fallback_providers.x", "ValueError", "x is not a list index"},
 		{"fallback_providers.5", "IndexError", "the list has no item 5"},
-		{"fallback_providers.x.name", "TypeError", "Cannot navigate into list at key 'fallback_providers.x.name': segment 'x' is not a numeric index"},
+		{"fallback_providers.x.name", "TypeError", `Cannot navigate into a list at key "fallback_providers.x.name": segment "x" is not a numeric index`},
 		{"fallback_providers.9.name", "IndexError", "the list has no item 9"},
 		{"label.inner.deep", "", ""},
 	}
@@ -245,7 +247,7 @@ func TestNestedPathPythonSemantics(t *testing.T) {
 		}
 	}
 	scalarItems := Tree{"items": []any{"plain"}}
-	if err, ok := scalarItems.Set("items.0.name", 1).(*PathError); !ok || err.Kind != "TypeError" || err.Msg != "Cannot navigate into str at key 'items.0.name'" {
+	if err, ok := scalarItems.Set("items.0.name", 1).(*PathError); !ok || err.Kind != "TypeError" || err.Msg != `Cannot navigate into text at key "items.0.name"` {
 		t.Fatalf("scalar item %#v", err)
 	}
 	pruned := Tree{"fallback_providers": []any{map[string]any{"name": "a"}, map[string]any{"only": 1}}}
@@ -305,7 +307,7 @@ func TestConfigSetListValues(t *testing.T) {
 		s.mustSet("agent.max_turns", "300")
 		s.mustSet("display.bell_on_complete", "true")
 		s.mustSet("tts.provider", "edge")
-		if !pyEq(s.at("agent", "max_turns"), 300) || s.at("display", "bell_on_complete") != true || s.at("tts", "provider") != "edge" {
+		if !anyutil.Equal(s.at("agent", "max_turns"), 300) || s.at("display", "bell_on_complete") != true || s.at("tts", "provider") != "edge" {
 			t.Fatalf("scalars %v", s.raw())
 		}
 	})
@@ -371,11 +373,11 @@ func TestConfigSetCoercionFollowsPythonNumberParsers(t *testing.T) {
 			}
 			continue
 		}
-		if !ok || !pyEq(got, want) || ErrorKind(got) != ErrorKind(want) {
+		if !ok || !anyutil.Equal(got, want) || anyutil.Kind(got) != anyutil.Kind(want) {
 			t.Fatalf("%q coerced to %#v want %#v", in, got, want)
 		}
 	}
-	if ErrorKind(big) != "int" {
+	if anyutil.Kind(big) != "integer" {
 		t.Fatal("a big int is an int")
 	}
 }
@@ -386,7 +388,7 @@ func TestFastSafeLoadResolvesYAML11Scalars(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{"a": true, "b": false, "c": true, "d": 15, "e": 1000, "f": 90, "g": "0o17", "h": "off", "i": "on",
-		"j": 1000.5, "k": ".5e3", PyKeyString(true): 1, "l": []any{false, "5", 31}, "m": 90.5}
+		"j": 1000.5, "k": ".5e3", KeyString(true): 1, "l": []any{false, "5", 31}, "m": 90.5}
 	if !reflect.DeepEqual(doc, want) {
 		t.Fatalf("got %#v", doc)
 	}

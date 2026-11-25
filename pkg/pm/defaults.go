@@ -53,7 +53,7 @@ func Declined(ctx context.Context, projectRoot string) (map[string]bool, error) 
 	}
 	out := map[string]bool{}
 	m, _ := doc.(map[string]any)
-	names, err := pyIterate(m["declined"])
+	names, err := iterate(m["declined"])
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func Declined(ctx context.Context, projectRoot string) (map[string]bool, error) 
 }
 
 // Items Python iteration yields over a falsy-or-iterable JSON value, characters of a string and keys of an object
-func pyIterate(v any) ([]any, error) {
+func iterate(v any) ([]any, error) {
 	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}

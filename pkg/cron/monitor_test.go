@@ -146,7 +146,7 @@ func TestFetchMonitorURL(t *testing.T) {
 	if ok, body := fetchMonitorURL(ctx, srv.URL+"/missing"); ok || body != "monitor_url fetch failed: HTTP 404 Not Found" {
 		t.Fatal(ok, body)
 	}
-	if ok, body := fetchMonitorURL(ctx, "ftp://example.com/x"); ok || body != "monitor_url must be http(s): 'ftp://example.com/x'" {
+	if ok, body := fetchMonitorURL(ctx, "ftp://example.com/x"); ok || body != `monitor_url must be http(s): "ftp://example.com/x"` {
 		t.Fatal(ok, body)
 	}
 	s, _ := newTestStore(t)

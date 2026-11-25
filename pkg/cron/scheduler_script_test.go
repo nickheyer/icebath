@@ -196,11 +196,11 @@ func TestScriptPathContainmentSubdirectoryInsideScriptsDirAllowed(t *testing.T) 
 func TestScriptPathRefusalsForNulUnknownUserAndDirectories(t *testing.T) {
 	s := scriptStore(t)
 	ok, out := runScript(t, s, "bad\x00name.py", nil)
-	if ok || out != "Blocked: script path contains a NUL byte: 'bad\\x00name.py'" {
+	if ok || out != "Blocked: script path contains a NUL byte: \"bad\\x00name.py\"" {
 		t.Fatalf("nul %v %q", ok, out)
 	}
 	ok, out = runScript(t, s, "~no_such_user_zz/job.py", nil)
-	if ok || out != "Blocked: script path is not a valid filesystem path: '~no_such_user_zz/job.py'" {
+	if ok || out != "Blocked: script path is not a valid filesystem path: \"~no_such_user_zz/job.py\"" {
 		t.Fatalf("unknown user %v %q", ok, out)
 	}
 	if err := os.MkdirAll(filepath.Join(s.Home(), "scripts", "adir"), 0o700); err != nil {
@@ -437,8 +437,7 @@ func TestScriptRunReportsAKilledScriptThatIsNeverReaped(t *testing.T) {
 	var started *cronScriptProcess
 	cronTerminateScriptProcess = func(_ *Store, p *cronScriptProcess) error {
 		started = p
-		seconds := 1.0
-		return &executil.TimeoutError{Args: p.cmd.Args, Timeout: time.Duration(*&seconds * float64(time.Second))}
+		return &executil.TimeoutError{Args: p.cmd.Args, Timeout: time.Second}
 	}
 	script := writeScript(t, s, "long.py", "import time; time.sleep(30)\n")
 	python := hostPython(t)
@@ -447,7 +446,7 @@ func TestScriptRunReportsAKilledScriptThatIsNeverReaped(t *testing.T) {
 		started.cmd.Process.Kill()
 		started.wait(5 * time.Second)
 	}
-	want := "Script execution failed: Command '[" + strconv.Quote(python) + ", " + strconv.Quote(script) + "]' timed out after 1.0 seconds"
+	want := "Script execution failed: command [" + strconv.Quote(python) + " " + strconv.Quote(script) + "] timed out after 1s"
 	if err != nil || ok || out != want {
 		t.Fatalf("got %v %q %v want %q", ok, out, err, want)
 	}
@@ -492,7 +491,7 @@ func TestCronSchedulerBashResolutionMissingBashReturnsActionableError(t *testing
 	if err != nil || argv != nil || !strings.Contains(refusal, "bash not found") || !strings.Contains(refusal, "job.sh") {
 		t.Fatalf("got %q %q %v", argv, refusal, err)
 	}
-	want := "Cannot run .sh/.bash script 'job.sh': bash not found on PATH. On Windows, install Git for Windows (which ships Git Bash) or rewrite the script as Python (.py)."
+	want := "Cannot run .sh/.bash script \"job.sh\": bash not found on PATH. On Windows, install Git for Windows (which ships Git Bash) or rewrite the script as Python (.py)."
 	if refusal != want {
 		t.Fatalf("got %q", refusal)
 	}

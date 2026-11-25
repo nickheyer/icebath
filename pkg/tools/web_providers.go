@@ -26,12 +26,12 @@ import (
 	"golang.org/x/net/html/charset"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
@@ -223,19 +223,24 @@ func webHTTPClient(timeout time.Duration) *http.Client {
 
 // Response body decoded with the declared charset, else UTF-8
 func responseText(resp *http.Response, body []byte) string {
-	ct := resp.Header.Get("Content-Type")
+	return strings.ToValidUTF8(string(utf8Body(resp.Header, body)), "�")
+}
+
+// Body bytes transcoded to UTF-8 from the charset the Content-Type declares, unchanged when it declares UTF-8, none, or one no decoder knows
+func utf8Body(header http.Header, body []byte) []byte {
+	ct := header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(ct), "charset=") {
 		if _, params, err := parseMediaTypeParams(ct); err == nil {
 			if label := params["charset"]; label != "" && !strings.EqualFold(label, "utf-8") && !strings.EqualFold(label, "utf8") {
 				if r, err := charset.NewReaderLabel(label, bytes.NewReader(body)); err == nil {
 					if decoded, err := io.ReadAll(r); err == nil {
-						return strings.ToValidUTF8(string(decoded), "�")
+						return decoded
 					}
 				}
 			}
 		}
 	}
-	return strings.ToValidUTF8(string(body), "�")
+	return body
 }
 
 // Media type and its parameters without pulling in mime for one call site
@@ -466,6 +471,45 @@ func titleHit(title, u, description string, position int) WebSearchHit {
 	return WebSearchHit{Title: title, URL: u, Description: description, Position: position, TitleFirst: true}
 }
 
+// Items of a vendor's excerpt or highlight list joined by sep in their text form, null, false, zero and empty items left out, a lone value read as a list of one
+func joinText(sep string, v any) string {
+	items, ok := v.([]any)
+	if !ok {
+		items = []any{v}
+	}
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if anyutil.IsTrue(item) {
+			parts = append(parts, anyutil.String(item))
+		}
+	}
+	return strings.Join(parts, sep)
+}
+
+// Items of a vendor's list field, none for an absent or empty value, the TypeError of a value that is no list
+func vendorList(v any) ([]any, error) {
+	if !anyutil.IsTrue(v) {
+		return nil, nil
+	}
+	items, ok := v.([]any)
+	if !ok {
+		return nil, &typeError{"expected a list, got " + errchain.Kind(v)}
+	}
+	return items, nil
+}
+
+// Rank a vendor gives a search row as a whole number, 0 when it gives none or one that is no whole number (NaN, an infinity, a boolean, beyond int)
+func vendorPosition(v any) int {
+	if _, ok := v.(bool); ok {
+		return 0
+	}
+	n, err := anyutil.ToInt(v)
+	if err != nil || int64(int(n)) != n {
+		return 0
+	}
+	return int(n)
+}
+
 // WebPage is one extract entry as providers report it before trimming
 type WebPage struct {
 	URL             string
@@ -543,88 +587,84 @@ func isOriginHTTPError(err string) bool {
 	return pyreSearch(originHTTPErrorRe(), err) != nil
 }
 
-// Error text when the integer of status is 400 or above, nothing for a status with no integer form, the range error of a status beyond int64 (infinity included) returned
-func originHTTPError(status any, reason any) (string, error) {
-	if _, ok := status.(bool); ok {
-		return "", nil
+// HTTP status code a vendor reports for the target page: a whole three digit code given as a number or as decimal text in any script; false for anything else, NaN, infinities and booleans included
+func vendorHTTPStatus(v any) (int, bool) {
+	if s, ok := v.(string); ok {
+		v = textutil.ASCIIDigits(s)
 	}
-	code, err := anyutil.ToInt(status)
-	if err != nil {
-		if errors.Is(err, anyutil.ErrNotNumber) {
-			return "", nil
-		}
-		return "", err
+	code, err := anyutil.ToInt(v)
+	if err != nil || code < 100 || code > 999 {
+		return 0, false
 	}
-	if code < 400 {
-		return "", nil
+	return int(code), true
+}
+
+// Error text naming the origin's answer when status is an HTTP code of 400 or above, with the trimmed reason after it; empty for any other status
+func originHTTPError(status any, reason any) string {
+	code, ok := vendorHTTPStatus(status)
+	if !ok || code < 400 {
+		return ""
 	}
+	text := "HTTP " + strconv.Itoa(code) + " from origin"
 	if detail := strings.TrimSpace(anyutil.String(anyutil.Or(reason, ""))); detail != "" {
-		return "HTTP " + strconv.FormatInt(code, 10) + " from origin: " + detail, nil
+		return text + ": " + detail
 	}
-	return "HTTP " + strconv.FormatInt(code, 10) + " from origin", nil
+	return text
 }
 
 var exaCrawlStatusRe = pyreOnce(`\bCRAWL_(?:HTTP_(\d{3})|(NOT_FOUND))\s*$`)
 
-// Origin status an Exa crawl error tag ends with, 404 for CRAWL_NOT_FOUND, digits of any script read like int
+// Origin status an Exa crawl error tag ends with, 404 for CRAWL_NOT_FOUND, the digits read in any script
 func exaCrawlStatus(text string) (int, bool) {
 	m := pyreSearch(exaCrawlStatusRe(), text)
 	if m == nil {
 		return 0, false
 	}
 	if m[1] != "" {
-		n, _ := strconv.Atoi(m[1])
-		return n, true
+		n, err := strconv.Atoi(textutil.ASCIIDigits(m[1]))
+		return n, err == nil
 	}
 	return 404, true
 }
 
 var keenableOriginMessageRe = pyreOnce(`(?i)\A(?:the (?:target server|page does not exist)\b)`)
 
-// Origin error when a Keenable fetch error describes the target's answer
-func keenableOriginError(status int, body string) (string, error) {
+// Origin error when a Keenable fetch error body's message describes the target's answer, empty otherwise
+func keenableOriginError(status int, body string) string {
 	v, err := jsonutil.Decode(body)
 	if err != nil {
-		return "", nil
+		return ""
 	}
 	message := ""
-	if d, ok := pyDict(v); ok {
+	if d, ok := v.(*jsonutil.Object); ok {
 		m, _ := d.Get("message")
-		message = strings.TrimSpace(anyutil.String(pyOr(m, "")))
+		message = strings.TrimSpace(anyutil.String(anyutil.Or(m, "")))
 	}
 	if pyreSearch(keenableOriginMessageRe(), message) == nil {
-		return "", nil
+		return ""
 	}
 	return originHTTPError(status, message)
 }
 
-// Marks an extract entry whose target answered 400 or above, keeping the body as content
-func withOriginStatus(p *WebPage, status any, reason any) (*WebPage, error) {
-	e, err := originHTTPError(status, reason)
-	if err != nil {
-		return nil, err
-	}
-	if e != "" {
+// Marks an extract entry whose target answered 400 or above, keeping the body as content; an unusable status leaves the entry as it is
+func withOriginStatus(p *WebPage, status any, reason any) *WebPage {
+	if e := originHTTPError(status, reason); e != "" {
 		p.Error = e
 	}
-	return p, nil
+	return p
 }
 
-// Per URL failure from a vendor's own error list, the origin status named when the vendor reports one
-func vendorErrorEntry(u string, status any, reason any, body any) (*WebPage, error) {
-	origin, err := originHTTPError(status, nil)
-	if err != nil {
-		return nil, err
-	}
+// Per URL failure from a vendor's own error list, the origin status named when the vendor reports a usable one, else the vendor's body or reason
+func vendorErrorEntry(u string, status any, reason any, body any) *WebPage {
 	var entry *WebPage
-	if origin != "" {
+	if origin := originHTTPError(status, nil); origin != "" {
 		entry = pageError(u, origin)
-		entry.Content = anyutil.String(pyOr(body, ""))
+		entry.Content = anyutil.String(anyutil.Or(body, ""))
 	} else {
-		entry = pageError(u, anyutil.String(pyOr(pyOr(body, reason), "extraction failed")))
+		entry = pageError(u, anyutil.String(anyutil.Or(body, reason, "extraction failed")))
 	}
 	entry.Metadata = map[string]any{"sourceURL": u}
-	return entry, nil
+	return entry
 }
 
 // ---- guarded execution ------------------------------------------------------------------------------
@@ -976,94 +1016,92 @@ func keylessFailMsg(vendor, kind string, err any, otherBackends bool) string {
 	return fmt.Sprintf("Keyless %s %s failed: %v. Set %s (%s)%s for reliable service.", hint.label, kind, err, hint.envKey, hint.site, alt)
 }
 
-// Parses an MCP tools/call body, plain JSON or SSE data frames, into its first text content
+var mcpLineBreakRe = regexp.MustCompile(`\r\n|\r|\n`)
+
+// Parses an MCP tools/call body, plain JSON or SSE data frames, into its first text content, every failure a KeylessMCPError
 func parseMCPBody(body string) (string, error) {
-	fromPayload := func(payload string) (string, bool, error) {
-		payload = strings.TrimSpace(payload)
-		if !strings.HasPrefix(payload, "{") {
-			return "", false, nil
-		}
-		data, err := jsonutil.Decode(payload)
-		if err != nil {
-			return "", false, err
-		}
-		if errObj, _ := pyDictGet(data, "error"); anyutil.IsTrue(errObj) {
-			msg, err := pyDictGet(errObj, "message")
-			if err != nil {
-				return "", true, err
-			}
-			return "", true, keylessErr("%s", anyutil.String(pyOr(msg, errObj)))
-		}
-		raw, _ := pyDictGet(data, "result")
-		result := pyOr(raw, jsonutil.NewObject())
-		content, err := pyDictGet(result, "content")
-		if err != nil {
-			return "", true, err
-		}
-		items, err := pyIter(pyOr(content, []any{}))
-		if err != nil {
-			return "", true, err
-		}
-		texts := []any{}
-		for _, c := range items {
-			if d, ok := pyDict(c); ok {
-				t, present := d.Get("text")
-				if !present {
-					t = ""
-				}
-				texts = append(texts, t)
-			}
-		}
-		truthy := []any{}
-		for _, t := range texts {
-			if anyutil.IsTrue(t) {
-				truthy = append(truthy, t)
-			}
-		}
-		if isError, _ := pyDictGet(result, "isError"); anyutil.IsTrue(isError) {
-			msg, err := pyJoin(" ", truthy)
-			if err != nil {
-				return "", true, err
-			}
-			if msg == "" {
-				msg = "MCP tool call failed"
-			}
-			return "", true, keylessErr("%s", msg)
-		}
-		if len(truthy) > 0 {
-			return anyutil.String(truthy[0]), true, nil
-		}
-		return "", true, nil
-	}
 	stripped := strings.TrimSpace(body)
 	candidates := []string{}
 	if strings.HasPrefix(stripped, "{") {
 		candidates = append(candidates, stripped)
 	}
-	for _, line := range regexp.MustCompile(`\r\n|\r|\n`).Split(body, -1) {
+	for _, line := range mcpLineBreakRe.Split(body, -1) {
 		if strings.HasPrefix(line, "data: ") {
 			candidates = append(candidates, line[len("data: "):])
 		}
 	}
 	envelopeSeen := false
 	for _, candidate := range candidates {
-		text, isEnvelope, err := fromPayload(candidate)
-		if err != nil {
-			var de *jsonutil.SyntaxError
-			if !errors.As(err, &de) {
-				return "", err
-			}
+		envelope, ok := mcpEnvelope(candidate)
+		if !ok {
 			continue
 		}
-		if text != "" {
-			return text, nil
+		text, err := mcpEnvelopeText(envelope)
+		if err != nil || text != "" {
+			return text, err
 		}
-		envelopeSeen = envelopeSeen || isEnvelope
+		envelopeSeen = true
 	}
 	if envelopeSeen {
 		return "", keylessErr("MCP response contained no text content")
 	}
 	return "", keylessErr("Unrecognized MCP response shape")
+}
+
+// JSON-RPC envelope a body candidate holds, false when it is not a JSON object
+func mcpEnvelope(payload string) (*jsonutil.Object, bool) {
+	payload = strings.TrimSpace(payload)
+	if !strings.HasPrefix(payload, "{") {
+		return nil, false
+	}
+	data, err := jsonutil.Decode(payload)
+	if err != nil {
+		return nil, false
+	}
+	envelope, ok := data.(*jsonutil.Object)
+	return envelope, ok
+}
+
+// First text content of an MCP envelope, empty when it has none; its error member or a result flagged isError returned as a KeylessMCPError
+func mcpEnvelopeText(envelope *jsonutil.Object) (string, error) {
+	if errObj, _ := envelope.Get("error"); anyutil.IsTrue(errObj) {
+		return "", keylessErr("%s", mcpErrorText(errObj))
+	}
+	result, _ := envelope.Get("result")
+	resultObj, ok := result.(*jsonutil.Object)
+	if !ok {
+		return "", nil
+	}
+	content, _ := resultObj.Get("content")
+	items, _ := content.([]any)
+	texts := []string{}
+	for _, item := range items {
+		if c, ok := item.(*jsonutil.Object); ok {
+			if t, _ := c.Get("text"); anyutil.IsTrue(t) {
+				texts = append(texts, anyutil.String(t))
+			}
+		}
+	}
+	if isError, _ := resultObj.Get("isError"); anyutil.IsTrue(isError) {
+		if len(texts) == 0 {
+			return "", keylessErr("MCP tool call failed")
+		}
+		return "", keylessErr("%s", strings.Join(texts, " "))
+	}
+	if len(texts) == 0 {
+		return "", nil
+	}
+	return texts[0], nil
+}
+
+// Text of a JSON-RPC error member, its message when it is an object with one, else the member itself as text
+func mcpErrorText(v any) string {
+	if d, ok := v.(*jsonutil.Object); ok {
+		if msg, _ := d.Get("message"); anyutil.IsTrue(msg) {
+			return anyutil.String(msg)
+		}
+	}
+	return anyutil.String(v)
 }
 
 // Posts a JSON-RPC tools/call and returns its text payload, a KeylessMCPError for transport, status and tool failures
@@ -1074,10 +1112,7 @@ func mcpCall(ctx context.Context, target, tool string, arguments map[string]any)
 	if err != nil {
 		return "", keylessErr("request failed: %v", err)
 	}
-	text, err := keylessResponseText(header, raw)
-	if err != nil {
-		return "", err
-	}
+	text := responseText(&http.Response{Header: header}, raw)
 	if status >= 400 {
 		return "", keylessErr("HTTP %d: %s", status, truncateRunes(text, 300))
 	}
@@ -1114,57 +1149,6 @@ func keylessHTTP(ctx context.Context, method, target string, params map[string]s
 		return 0, nil, nil, err
 	}
 	return resp.StatusCode, resp.Header, resp.Content, nil
-}
-
-// Body decoded with the declared charset else UTF-8, undecodable bytes replaced like _response_text
-func keylessResponseText(header http.Header, raw []byte) (string, error) {
-	contentType := strings.Join(header.Values("Content-Type"), ", ")
-	if strings.Contains(strings.ToLower(contentType), "charset=") {
-		declared, err := requestsEncodingFromHeaders(contentType)
-		if err != nil {
-			return "", err
-		}
-		if declared != "" {
-			return charsetutil.DecodeReplace(raw, declared)
-		}
-	}
-	return strings.ToValidUTF8(string(raw), "\uFFFD"), nil
-}
-
-// Charset requests get_encoding_from_headers reads from a content type, its text and json defaults included
-func requestsEncodingFromHeaders(contentType string) (string, error) {
-	if contentType == "" {
-		return "", nil
-	}
-	tokens := strings.Split(contentType, ";")
-	mediaType := strings.TrimSpace(tokens[0])
-	params := map[string]any{}
-	for _, param := range tokens[1:] {
-		param = strings.TrimSpace(param)
-		if param == "" {
-			continue
-		}
-		key, value := param, any(true)
-		if i := strings.Index(param, "="); i >= 0 {
-			key = strings.Trim(param[:i], "\"' ")
-			value = strings.Trim(param[i+1:], "\"' ")
-		}
-		params[strings.ToLower(key)] = value
-	}
-	if v, ok := params["charset"]; ok {
-		s, isStr := v.(string)
-		if !isStr {
-			return "", pyAttributeError(v, "strip")
-		}
-		return strings.Trim(s, "'\""), nil
-	}
-	if strings.Contains(mediaType, "text") {
-		return "ISO-8859-1", nil
-	}
-	if strings.Contains(mediaType, "application/json") {
-		return "utf-8", nil
-	}
-	return "", nil
 }
 
 // First n characters of a string by rune
@@ -1208,7 +1192,7 @@ func isKeylessMCPError(err error) bool {
 	return errors.As(err, &ke)
 }
 
-// Parallel keyless search, a decode, TypeError or KeyError payload failure named and any other error propagated
+// Parallel keyless search, a reply that does not decode or holds no list of results named an unexpected payload and any other error propagated
 func parallelSearchKeyless(ctx context.Context, query string, limit int) (*WebSearchResponse, error) {
 	return keylessSearch("parallel", func() ([]WebSearchHit, error) {
 		text, err := mcpCall(ctx, parallelMCPURL, "web_search", map[string]any{"objective": query, "search_queries": []string{query}, "session_id": keylessSessionID})
@@ -1219,38 +1203,31 @@ func parallelSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 		if err != nil {
 			return nil, err
 		}
-		results, err := pyDictGet(data, "results")
+		results, err := dictGet(data, "results")
 		if err != nil {
 			return nil, err
 		}
-		results = pyOr(results, []any{})
+		items, err := vendorList(results)
+		if err != nil {
+			return nil, err
+		}
 		if limit != 0 {
-			if results, err = pySubscriptTo(results, max(limit, 0)); err != nil {
-				return nil, err
-			}
-		}
-		items, err := pyIter(results)
-		if err != nil {
-			return nil, err
+			items = items[:min(max(limit, 0), len(items))]
 		}
 		hits := []WebSearchHit{}
 		for i, r := range items {
 			fields := make([]any, 3)
 			for k, key := range []string{"url", "title", "excerpts"} {
-				if fields[k], err = pyDictGet(r, key); err != nil {
+				if fields[k], err = dictGet(r, key); err != nil {
 					return nil, err
 				}
 			}
-			excerpts, err := pyJoin(" ", pyOr(fields[2], []any{}))
-			if err != nil {
-				return nil, err
-			}
-			hits = append(hits, webHit(pyStrField(pyOr(fields[0], "")), pyStrField(pyOr(fields[1], "")), excerpts, i+1))
+			hits = append(hits, webHit(anyutil.String(anyutil.Or(fields[0], "")), anyutil.String(anyutil.Or(fields[1], "")), joinText(" ", fields[2]), i+1))
 		}
 		return hits, nil
 	}, func(err error) bool {
 		var de *jsonutil.SyntaxError
-		var te *pyTypeError
+		var te *typeError
 		return errors.As(err, &de) || errors.As(err, &te)
 	}, func(err error) string {
 		return fmt.Sprintf("Keyless Parallel search returned an unexpected payload: %v", err)
@@ -1267,11 +1244,11 @@ func parallelExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, err
 	if err != nil {
 		return extractFail(urls, keylessFailMsg("parallel", "extract", err, true)), nil
 	}
-	rows, err := pyDictGet(data, "results")
+	rows, err := dictGet(data, "results")
 	if err != nil {
 		return nil, err
 	}
-	items, err := pyIter(pyOr(rows, []any{}))
+	items, err := vendorList(rows)
 	if err != nil {
 		return nil, err
 	}
@@ -1283,25 +1260,21 @@ func parallelExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, err
 		}
 		results = append(results, page)
 	}
-	failures, err := pyDictGet(data, "errors")
+	failures, err := dictGet(data, "errors")
 	if err != nil {
 		return nil, err
 	}
-	if items, err = pyIter(pyOr(failures, []any{})); err != nil {
+	if items, err = vendorList(failures); err != nil {
 		return nil, err
 	}
 	for _, e := range items {
 		fields := make([]any, 4)
 		for i, key := range []string{"url", "http_status_code", "error_type", "content"} {
-			if fields[i], err = pyDictGet(e, key); err != nil {
+			if fields[i], err = dictGet(e, key); err != nil {
 				return nil, err
 			}
 		}
-		entry, err := vendorErrorEntry(pyStrField(pyOr(fields[0], "")), fields[1], fields[2], fields[3])
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, entry)
+		results = append(results, vendorErrorEntry(anyutil.String(anyutil.Or(fields[0], "")), fields[1], fields[2], fields[3]))
 	}
 	seen := map[string]bool{}
 	for _, r := range results {
@@ -1317,24 +1290,20 @@ func parallelExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, err
 
 // Document of one Parallel fetch row, full content then content then the joined excerpts
 func parallelKeylessDocument(r any) (*WebPage, error) {
-	u, err := pyDictGet(r, "url")
+	u, err := dictGet(r, "url")
 	if err != nil {
 		return nil, err
 	}
-	title, _ := pyDictGet(r, "title")
-	content, _ := pyDictGet(r, "full_content")
+	title, _ := dictGet(r, "title")
+	content, _ := dictGet(r, "full_content")
 	if !anyutil.IsTrue(content) {
-		content, _ = pyDictGet(r, "content")
+		content, _ = dictGet(r, "content")
 	}
 	if !anyutil.IsTrue(content) {
-		excerpts, _ := pyDictGet(r, "excerpts")
-		joined, err := pyJoin("\n\n", pyOr(excerpts, []any{}))
-		if err != nil {
-			return nil, err
-		}
-		content = joined
+		excerpts, _ := dictGet(r, "excerpts")
+		content = joinText("\n\n", excerpts)
 	}
-	return webDocument(pyStrField(pyOr(u, "")), pyStrField(pyOr(title, "")), pyStrField(content), ""), nil
+	return webDocument(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), anyutil.String(content), ""), nil
 }
 
 var exaLabels = []string{"Title:", "URL:", "Highlights:", "Published:", "Author:"}
@@ -1386,19 +1355,10 @@ func exaExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, error) {
 	fetch := func(u string) (*WebPage, error) {
 		text, err := mcpCall(ctx, exaMCPURL, "web_fetch_exa", map[string]any{"urls": []string{u}})
 		if err != nil {
-			if !isKeylessMCPError(err) {
-				return nil, err
-			}
-			var status any
-			if code, ok := exaCrawlStatus(err.Error()); ok {
-				status = code
-			}
-			origin, oerr := originHTTPError(status, nil)
-			if oerr != nil {
-				return nil, oerr
-			}
-			if origin != "" {
-				return pageError(u, origin), nil
+			if code, ok := exaCrawlStatus(err.Error()); ok && isKeylessMCPError(err) {
+				if origin := originHTTPError(code, nil); origin != "" {
+					return pageError(u, origin), nil
+				}
 			}
 			return nil, err
 		}
@@ -1449,7 +1409,7 @@ func firecrawlExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, er
 			content = asStr(payload["html"])
 		}
 		page := webDocument(firecrawlFinalURL(metadata, u), asStr(metadata["title"]), content, u)
-		return firecrawlWithScrapeStatus(page, metadata)
+		return firecrawlWithScrapeStatus(page, metadata), nil
 	}
 	return keylessPerURL(urls, fetch, "firecrawl", nil, false)
 }
@@ -1465,83 +1425,18 @@ func keenableRequest(ctx context.Context, method, path string, params map[string
 		return nil, err
 	}
 	if status >= 400 {
-		text, err := keylessResponseText(header, raw)
-		if err != nil {
-			return nil, err
-		}
-		body := strings.TrimSpace(text)
-		origin, err := keenableOriginError(status, body)
-		if err != nil {
-			return nil, err
-		}
-		if origin != "" {
+		body := strings.TrimSpace(responseText(&http.Response{Header: header}, raw))
+		if origin := keenableOriginError(status, body); origin != "" {
 			return nil, keylessErr("%s", origin)
 		}
 		return nil, keylessErr("HTTP %d: %s", status, truncateRunes(body, 300))
 	}
-	return requestsJSON(header, raw)
+	return responseJSON(header, raw)
 }
 
-// Decoded body like requests Response.json, a UTF encoding guessed from the leading bytes before the declared charset
-func requestsJSON(header http.Header, raw []byte) (any, error) {
-	contentType := strings.Join(header.Values("Content-Type"), ", ")
-	declared, err := requestsEncodingFromHeaders(contentType)
-	if err != nil {
-		return nil, err
-	}
-	if declared == "" && len(raw) > 3 {
-		if guessed := requestsGuessJSONUTF(raw); guessed != "" {
-			if text, err := charsetutil.Decode(raw, guessed); err == nil {
-				return jsonutil.Decode(text)
-			} else if _, isDecode := err.(*charsetutil.DecodeError); !isDecode {
-				return nil, err
-			}
-		}
-	}
-	if declared == "" {
-		declared = requestsApparentEncoding(raw)
-	}
-	text, err := charsetutil.DecodeReplace(raw, declared)
-	if err != nil {
-		if !errors.Is(err, charsetutil.ErrUnknown) {
-			return nil, err
-		}
-		text = strings.ToValidUTF8(string(raw), "\uFFFD")
-	}
-	return jsonutil.Decode(text)
-}
-
-// UTF codec requests guess_json_utf infers from the BOM or the null byte pattern of the first four bytes
-func requestsGuessJSONUTF(data []byte) string {
-	sample := data[:4]
-	switch {
-	case bytes.HasPrefix(sample, []byte{0xff, 0xfe, 0, 0}) || bytes.HasPrefix(sample, []byte{0, 0, 0xfe, 0xff}):
-		return "utf-32"
-	case bytes.HasPrefix(sample, []byte{0xef, 0xbb, 0xbf}):
-		return "utf-8-sig"
-	case bytes.HasPrefix(sample, []byte{0xff, 0xfe}) || bytes.HasPrefix(sample, []byte{0xfe, 0xff}):
-		return "utf-16"
-	}
-	nulls := bytes.Count(sample, []byte{0})
-	switch nulls {
-	case 0:
-		return "utf-8"
-	case 2:
-		if sample[0] == 0 && sample[2] == 0 {
-			return "utf-16-be"
-		}
-		if sample[1] == 0 && sample[3] == 0 {
-			return "utf-16-le"
-		}
-	case 3:
-		if sample[0] == 0 && sample[1] == 0 && sample[2] == 0 {
-			return "utf-32-be"
-		}
-		if sample[1] == 0 && sample[2] == 0 && sample[3] == 0 {
-			return "utf-32-le"
-		}
-	}
-	return ""
+// JSON value of a response body, read in the charset the Content-Type declares when it names another one than UTF-8, else as UTF-8 or the UTF-16 or UTF-32 its bytes show
+func responseJSON(header http.Header, raw []byte) (any, error) {
+	return jsonutil.Decode(utf8Body(header, raw))
 }
 
 // Keenable keyless search over the public search endpoint, any error named in the Keenable failure text
@@ -1551,11 +1446,11 @@ func keenableSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 		if err != nil {
 			return nil, err
 		}
-		results, err := pyDictGet(data, "results")
+		results, err := dictGet(data, "results")
 		if err != nil {
 			return nil, err
 		}
-		items, err := pyIter(pyOr(results, []any{}))
+		items, err := vendorList(results)
 		if err != nil {
 			return nil, err
 		}
@@ -1563,12 +1458,12 @@ func keenableSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 		for i, r := range items {
 			fields := make([]any, 4)
 			for k, key := range []string{"url", "title", "snippet", "description"} {
-				if fields[k], err = pyDictGet(r, key); err != nil {
+				if fields[k], err = dictGet(r, key); err != nil {
 					return nil, err
 				}
 			}
-			desc := pyOr(fields[2], pyOr(fields[3], ""))
-			hits = append(hits, webHit(pyStrField(pyOr(fields[0], "")), pyStrField(pyOr(fields[1], "")), pyStrField(desc), i+1))
+			desc := anyutil.Or(fields[2], anyutil.Or(fields[3], ""))
+			hits = append(hits, webHit(anyutil.String(anyutil.Or(fields[0], "")), anyutil.String(anyutil.Or(fields[1], "")), anyutil.String(desc), i+1))
 		}
 		return hits, nil
 	}, func(error) bool { return true }, func(err error) string { return fmt.Sprintf("Keyless Keenable search failed: %v.", err) })
@@ -1586,11 +1481,11 @@ func keenableExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, err
 		}
 		fields := make([]any, 3)
 		for k, key := range []string{"url", "title", "content"} {
-			if fields[k], err = pyDictGet(data, key); err != nil {
+			if fields[k], err = dictGet(data, key); err != nil {
 				return nil, err
 			}
 		}
-		return webDocument(pyStrField(pyOr(fields[0], u)), pyStrField(pyOr(fields[1], "")), pyStrField(pyOr(fields[2], "")), u), nil
+		return webDocument(anyutil.String(anyutil.Or(fields[0], u)), anyutil.String(anyutil.Or(fields[1], "")), anyutil.String(anyutil.Or(fields[2], "")), u), nil
 	}
 	return keylessPerURL(urls, fetch, "keenable", nil, false)
 }
@@ -1716,14 +1611,4 @@ func keylessExtractWithFailover(ctx context.Context, env *Env, name string, urls
 		}
 	}
 	return results, nil
-}
-
-// Encoding requests detects for a charset less body, ascii for pure ASCII bytes and utf-8 otherwise
-func requestsApparentEncoding(raw []byte) string {
-	for _, c := range raw {
-		if c >= 0x80 {
-			return "utf-8"
-		}
-	}
-	return "ascii"
 }

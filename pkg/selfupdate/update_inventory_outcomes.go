@@ -118,6 +118,12 @@ func matchRuntimeOutcomes(plan *UpdatePlan, e runtimeOutcomeEvidence) []*jsonuti
 // Warns about every runtime the restart phase never touched and reports whether one exists
 func reportUnaccountedRuntimes(w io.Writer, outcomes []*jsonutil.Object) bool {
 	field := func(o *jsonutil.Object, key string) string { return anyutil.String(rowValue(o, key)) }
+	pidText := func(o *jsonutil.Object) string {
+		if pid := rowValue(o, "pid"); pid != nil {
+			return "pid " + anyutil.String(pid)
+		}
+		return "no pid recorded"
+	}
 	is := func(o *jsonutil.Object, key string, want string) bool { return anyutil.Equal(rowValue(o, key), want) }
 	var external, missed []*jsonutil.Object
 	for _, o := range outcomes {
@@ -132,7 +138,7 @@ func reportUnaccountedRuntimes(w io.Writer, outcomes []*jsonutil.Object) bool {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  ℹ Left to their own install (separate checkout, not restarted by this update):")
 		for _, o := range external {
-			fmt.Fprintf(w, "    • %s [%s] pid %s\n", field(o, "kind"), field(o, "profile"), field(o, "pid"))
+			fmt.Fprintf(w, "    • %s [%s] %s\n", field(o, "kind"), field(o, "profile"), pidText(o))
 		}
 	}
 	if len(missed) == 0 {
@@ -141,7 +147,7 @@ func reportUnaccountedRuntimes(w io.Writer, outcomes []*jsonutil.Object) bool {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  ⚠ Planned runtimes the restart phase never touched:")
 	for _, o := range missed {
-		fmt.Fprintf(w, "    ✗ %s [%s] pid %s — planned mechanism: %s\n", field(o, "kind"), field(o, "profile"), field(o, "pid"), field(o, "mechanism"))
+		fmt.Fprintf(w, "    ✗ %s [%s] %s — planned mechanism: %s\n", field(o, "kind"), field(o, "profile"), pidText(o), field(o, "mechanism"))
 	}
 	fmt.Fprintln(w, "    Restart them manually, then verify:")
 	fmt.Fprintln(w, "      icebath gateway restart                # active profile")

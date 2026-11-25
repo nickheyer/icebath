@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runs fn and swallows a panic it raises, the contextlib suppress of one builder
@@ -26,7 +27,7 @@ func publishSettledInfo(ctx context.Context, t *TurnRunner, a *agent.AIAgent) {
 
 func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent) error {
 	if t.approvalOwner == nil {
-		return &pyTypeError{"the turn has no approval owner to publish settled info for"}
+		return &typeError{"the turn has no approval owner to publish settled info for"}
 	}
 	authority, sessionID := t.approvalOwner.authority, t.approvalOwner.sessionID
 	var messageID any
@@ -35,7 +36,7 @@ func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent
 			messageID = *inboundID
 		}
 	}
-	oneTurn := pyTruthy(gateway.CLITurn(ctx, messageID).ValueOr("model_override", nil))
+	oneTurn := anyutil.IsTrue(gateway.CLITurn(ctx, messageID).ValueOr("model_override", nil))
 	var live *gateway.LiveSession
 	if oneTurn {
 		if found, ok := authority.Live(sessionID); ok {
@@ -76,7 +77,7 @@ func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent
 				info.Set("model", nil)
 			}
 			if section, ok := cfg["model"].(map[string]any); ok {
-				if p := section["provider"]; pyTruthy(p) {
+				if p := section["provider"]; anyutil.IsTrue(p) {
 					info.Set("provider", p)
 				}
 			}

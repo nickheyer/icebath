@@ -41,7 +41,7 @@ func TestOverCapFloodReturnsPartialOverflowAndArmsCooldown(t *testing.T) {
 	content := threeChunkText()
 	ctx := context.Background()
 	result, err := a.SendWithRetry(ctx, "4242", content, "", nil, 2, 2.0)
-	if err != nil || result.Success || result.Error != "flood_control:120.0" {
+	if err != nil || result.Success || result.Error != "flood_control:120" {
 		t.Fatalf("result %+v err %v", result, err)
 	}
 	raw, _ := result.RawResponse.(map[string]any)

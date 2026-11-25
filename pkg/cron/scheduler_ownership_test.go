@@ -217,7 +217,7 @@ func TestClaimOwnerIsDeadOnlyForAProvenLocalDeath(t *testing.T) {
 		{host + ":7", false},
 		{host + ":123", true},
 		{host + ":123:token", true},
-		{host + ":١٢٣", true},
+		{host + ":١٢٣", false},
 		{host + ":99999999999999999999999", false},
 	}
 	for _, tc := range cases {
@@ -225,7 +225,7 @@ func TestClaimOwnerIsDeadOnlyForAProvenLocalDeath(t *testing.T) {
 			t.Errorf("claim by %q dead=%v want %v", tc.by, got, tc.dead)
 		}
 	}
-	if fmt.Sprint(probed) != "[7 123 123 123]" {
+	if fmt.Sprint(probed) != "[7 123 123]" {
 		t.Fatalf("pid probes %v", probed)
 	}
 	if claimOwnerIsDead(nil) {

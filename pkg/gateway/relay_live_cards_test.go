@@ -5,6 +5,8 @@ import (
 	"errors"
 	"slices"
 	"testing"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Live cards adapter over the scripted connector with the ops overridden when given
@@ -45,7 +47,7 @@ func TestDraftOpSendDraftEmitsDraftOp(t *testing.T) {
 func TestDraftOpSendDraftRequiresDescriptorOp(t *testing.T) {
 	a, c := relayLiveCardsAdapter(t, "send", "edit", "typing")
 	_, err := a.SendDraft(context.Background(), "C1", 1, "x", nil)
-	var pe *PyError
+	var pe *errorutil.Error
 	if !errors.As(err, &pe) || pe.Kind != "NotImplementedError" || len(c.ops("draft")) != 0 {
 		t.Fatalf("err %v frames %v", err, c.ops("draft"))
 	}
@@ -114,7 +116,7 @@ func TestDraftOpDraftTransportExceptionKeepsInterceptionArmed(t *testing.T) {
 	c.result = func(map[string]any) (map[string]any, error) {
 		calls++
 		if calls == 1 {
-			return nil, &PyError{Kind: "ConnectionError", Msg: "mid-write drop"}
+			return nil, &errorutil.Error{Kind: "ConnectionError", Msg: "mid-write drop"}
 		}
 		return map[string]any{"success": true, "message_id": "ts.9"}, nil
 	}

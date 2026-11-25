@@ -224,7 +224,7 @@ func TestPKCETokenURLOffAuthorizeAllowlistRefusedBeforeAnyRequest(t *testing.T) 
 
 func TestPKCEConfigValidationAndTokenFields(t *testing.T) {
 	cfg := NewOAuthPKCEConfig("client", "https://auth.example.com/authorize", "https://login.example.com/token")
-	if err := ValidateOAuthPKCEConfig("p", cfg); authErrCode(err) != "oauth_token_host_rejected" || !strings.Contains(err.Error(), "'login.example.com' is not on the allowlist ['auth.example.com']") {
+	if err := ValidateOAuthPKCEConfig("p", cfg); authErrCode(err) != "oauth_token_host_rejected" || !strings.Contains(err.Error(), `"login.example.com" is not on the allowlist ["auth.example.com"]`) {
 		t.Fatalf("allowlist %v", err)
 	}
 	cfg.AllowedHosts = []string{"Example.com"}

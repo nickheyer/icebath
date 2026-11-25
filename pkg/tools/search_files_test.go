@@ -251,7 +251,7 @@ func TestSearchInvalidFileOrderIsStructuredError(t *testing.T) {
 	if !strings.Contains(r.Error, "random") || len(commandsWith(env, "--files")) != 0 {
 		t.Fatalf("error %q", r.Error)
 	}
-	if r.Error != "Invalid file search order 'random'; expected 'discovery' or 'modified'." {
+	if r.Error != `Invalid file search order "random"; expected 'discovery' or 'modified'.` {
 		t.Fatalf("error text %q", r.Error)
 	}
 }
@@ -1407,26 +1407,26 @@ func TestSearchWindowsLocalRootSpellingsShareOneKey(t *testing.T) {
 }
 
 func TestSearchPythonTextHelpers(t *testing.T) {
-	if !pyIsDigitText("²") || pyIsDigitText("") || pyIsDigitText("1a") || !pyIsDigitText("١٢") {
+	if !isDigitText("²") || isDigitText("") || isDigitText("1a") || !isDigitText("١٢") {
 		t.Fatal("isdigit")
 	}
 	for in, want := range map[string]int{" +1_0 ": 10, "١٢": 12, "007": 7, "-3": -3} {
-		if n, ok := pyIntText(in); !ok || n != want {
+		if n, ok := intText(in); !ok || n != want {
 			t.Fatalf("int(%q) = %d %v", in, n, ok)
 		}
 	}
 	for _, bad := range []string{"1__0", "_1", "²", "", "1.5"} {
-		if _, ok := pyIntText(bad); ok {
+		if _, ok := intText(bad); ok {
 			t.Fatalf("int(%q) accepted", bad)
 		}
 	}
-	if f, ok := pyFloatText("1_0.5"); !ok || f != 10.5 {
+	if f, ok := floatText("1_0.5"); !ok || f != 10.5 {
 		t.Fatalf("float %v %v", f, ok)
 	}
-	if _, ok := pyFloatText("0x10"); ok {
+	if _, ok := floatText("0x10"); ok {
 		t.Fatal("hex float accepted")
 	}
-	if f, ok := pyFloatText("-nan"); !ok || f == f {
+	if f, ok := floatText("-nan"); !ok || f == f {
 		t.Fatal("-nan")
 	}
 }
@@ -1509,7 +1509,7 @@ func TestSearchUnavailableBackendAndCwdErrors(t *testing.T) {
 	}
 	r = searchOpsOver(t, searchScriptEnv("/gone", func(string) (string, int) { return "bash: cd: /gone: No such file or directory", 126 })).
 		search("x", "/repo", "content", "", 50, 0, "content", 0, "discovery")
-	if !strings.HasPrefix(r.Error, "working directory '/gone' does not exist on the active terminal backend") {
+	if !strings.HasPrefix(r.Error, `working directory "/gone" does not exist on the active terminal backend`) {
 		t.Fatalf("error %q", r.Error)
 	}
 }

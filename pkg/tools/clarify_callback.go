@@ -71,7 +71,7 @@ func ClarifyToolWithCallback(ctx context.Context, env *Env, questions any, callb
 			outcome = anyutil.String(raw)
 		}
 		if _, present := reply["outcome"]; !present {
-			err = errors.New("'outcome'")
+			err = errors.New(`the reply has no "outcome"`)
 		}
 	}
 	if err != nil {

@@ -180,7 +180,7 @@ func (c *Client) resolveArgs() ([]string, error) {
 	}
 	split, err := shellutil.Split(override)
 	if err != nil {
-		return nil, pyErr("ValueError", "%s", err.Error())
+		return nil, kindErr("ValueError", "%s", err.Error())
 	}
 	if len(split) > 0 {
 		return split, nil
@@ -460,7 +460,7 @@ func (c *Client) spawn(ctx context.Context) (*process, error) {
 		if len(c.acpArgs) > 0 {
 			preview = strings.Join(c.acpArgs[:min(3, len(c.acpArgs))], " ")
 		}
-		return nil, pyErr("RuntimeError", "ACP transport not supported by '%s': `%s` is rejected as an unknown option. This "+
+		return nil, kindErr("RuntimeError", "ACP transport not supported by '%s': `%s` is rejected as an unknown option. This "+
 			"usually means the CLI is an older release (e.g. Claude Code v2.x) or a different tool than expected. %s",
 			c.acpCommand, preview, c.UnsupportedTransportHint)
 	}
@@ -471,7 +471,7 @@ func (c *Client) spawn(ctx context.Context) (*process, error) {
 	p, err := startProcess(append([]string{c.acpCommand}, c.acpArgs...), c.acpCwd, childEnv)
 	if err != nil {
 		if isNotFound(err) {
-			return nil, pyErr("RuntimeError", "Could not start %s command '%s'. %s", c.Label, c.acpCommand, c.missingCommandHint())
+			return nil, kindErr("RuntimeError", "Could not start %s command '%s'. %s", c.Label, c.acpCommand, c.missingCommandHint())
 		}
 		return nil, err
 	}
@@ -519,7 +519,7 @@ func (c *Client) openSession(ctx context.Context, timeoutSeconds float64, allowF
 	}
 	if strField(sid) == "" {
 		s.close()
-		return nil, pyErr("RuntimeError", "%s did not return a sessionId.", c.Label)
+		return nil, kindErr("RuntimeError", "%s did not return a sessionId.", c.Label)
 	}
 	s.result = result
 	return s, nil
@@ -605,7 +605,7 @@ func (s *session) request(ctx context.Context, method string, params any, textPa
 			continue
 		}
 		if dictHas(m, "error") {
-			return nil, pyErr("RuntimeError", "%s", s.c.requestError(method, or(dictGet(m, "error"), jsonutil.NewObject())))
+			return nil, kindErr("RuntimeError", "%s", s.c.requestError(method, or(dictGet(m, "error"), jsonutil.NewObject())))
 		}
 		return dictGet(m, "result"), nil
 	}
@@ -618,14 +618,14 @@ func (s *session) request(ctx context.Context, method string, params any, textPa
 		stderrText := strings.TrimSpace(strings.Join(s.proc.stderrTail, "\n"))
 		s.proc.stderrMu.Unlock()
 		if vendorErr, ok := s.c.EarlyExitError(stderrText); ok {
-			return nil, pyErr("RuntimeError", "%s", vendorErr)
+			return nil, kindErr("RuntimeError", "%s", vendorErr)
 		}
 		if stderrText == "" {
 			stderrText = fmt.Sprintf("exit code %d", code)
 		}
-		return nil, pyErr("RuntimeError", "%s process exited early: %s", s.c.Label, stderrText)
+		return nil, kindErr("RuntimeError", "%s process exited early: %s", s.c.Label, stderrText)
 	}
-	return nil, pyErr("TimeoutError", "Timed out waiting for %s response to %s.", s.c.Label, method)
+	return nil, kindErr("TimeoutError", "Timed out waiting for %s response to %s.", s.c.Label, method)
 }
 
 // Enabled models a short lived authenticated session advertises, file requests refused meanwhile

@@ -359,7 +359,7 @@ func TestRouterDiskMirrorUnparseableStampIsNoCache(t *testing.T) {
 		t.Fatalf("mirror = %v", got)
 	}
 	writeRouterMirror(t, ctx, "\xef\xbb\xbf{\"ts\": \"12.5\", \"efforts\": {\"m\": [1, true, null, \"x\"], \"n\": 3}}")
-	if got := routerLoadDisk(ctx); !reflect.DeepEqual(got, map[string][]string{"m": {"1", "True", "None", "x"}}) {
+	if got := routerLoadDisk(ctx); !reflect.DeepEqual(got, map[string][]string{"m": {"1", "true", "x"}}) {
 		t.Fatalf("mirror = %v", got)
 	}
 }

@@ -140,7 +140,7 @@ func TestBootNeverActivatesThePrePMVenv(t *testing.T) {
 				}
 				err := ActivateDependencies(ctx, root)
 				if interpreter == "store" {
-					var py *PyError
+					var py *ClassError
 					if !errors.As(err, &py) || py.Class != "RuntimeError" || !strings.HasPrefix(err.Error(), "no dependency environment is committed") {
 						t.Fatalf("store interpreter gave %v", err)
 					}
@@ -168,7 +168,7 @@ func TestMalformedSelectionHasActionableError(t *testing.T) {
 			sttMkdir(t, filepath.Dir(record))
 			writeFile(t, record, []byte(data), 0o666)
 			_, err := SelectedVenv(ctx, repo)
-			var py *PyError
+			var py *ClassError
 			if !errors.As(err, &py) || py.Class != "RuntimeError" || !strings.Contains(err.Error(), "dependency environment") {
 				t.Fatalf("malformed %s gave %v", data, err)
 			}
@@ -191,7 +191,7 @@ func TestInvalidSelectedEnvironmentNeverSilentlyFallsBack(t *testing.T) {
 			}
 			svFacts(t, state, map[string]any{"environment": candidate})
 			_, err := SelectedVenv(ctx, root)
-			var py *PyError
+			var py *ClassError
 			if !errors.As(err, &py) || py.Class != "RuntimeError" || !strings.Contains(err.Error(), "environment") {
 				t.Fatalf("%s selection gave %v", bad, err)
 			}

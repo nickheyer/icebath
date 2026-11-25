@@ -121,7 +121,7 @@ func loadConfigModelSection(h string) (config.Tree, map[string]any, error) {
 		if raw := cfg["model"]; truthy(raw) {
 			model["default"] = raw
 		}
-		pyDictSet(cfg, "model", model)
+		dictSet(cfg, "model", model)
 	}
 	return cfg, model, nil
 }
@@ -135,7 +135,7 @@ func beginModelConfig(env PoolEnv, selected, providerID string) (config.Tree, ma
 	if err != nil {
 		return nil, nil, err
 	}
-	pyDictSet(model, "provider", providerID)
+	dictSet(model, "provider", providerID)
 	return cfg, model, nil
 }
 
@@ -163,10 +163,10 @@ func persistModel(env PoolEnv, selected, providerID string, o persistModelOption
 		return nil, err
 	}
 	if o.BaseURL != nil {
-		pyDictSet(model, "base_url", *o.BaseURL)
+		dictSet(model, "base_url", *o.BaseURL)
 	}
 	if o.APIMode != nil {
-		pyDictSet(model, "api_mode", *o.APIMode)
+		dictSet(model, "api_mode", *o.APIMode)
 	}
 	if o.DropBaseURL {
 		delete(model, "base_url")
@@ -223,7 +223,7 @@ func ensureDictSection(cfg map[string]any, key string) map[string]any {
 	if !ok {
 		section = map[string]any{}
 	}
-	pyDictSet(cfg, key, section)
+	dictSet(cfg, key, section)
 	return section
 }
 

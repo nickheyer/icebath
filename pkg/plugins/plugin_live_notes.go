@@ -4,8 +4,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Go live notices an open chat holds, one per plugin key in queue order, plus those riding this tool batch
@@ -101,8 +101,8 @@ func appendLiveNote(message *state.Message, notes string) {
 		message.Content = append(out, map[string]any{"type": "text", "text": notes})
 	default:
 		prefix := ""
-		if config.PyTruthy(message.Content) {
-			prefix = config.PyStr(message.Content)
+		if anyutil.IsTrue(message.Content) {
+			prefix = anyutil.String(message.Content)
 		}
 		message.Content = prefix + "\n\n" + notes
 	}

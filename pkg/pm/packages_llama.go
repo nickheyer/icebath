@@ -134,7 +134,7 @@ func (p *LlamaCpp) Unpack(archive, staged, target string) error {
 func (p *LlamaCpp) Stage(store *Store, staged, version, target string) error {
 	bin := p.dispatch().Binary(staged, target)
 	if bin == "" {
-		return &PyError{Class: "AttributeError", Message: "the staged llama.cpp build has no llama-server binary"}
+		return &ClassError{Class: "AttributeError", Message: "the staged llama.cpp build has no llama-server binary"}
 	}
 	server := filepath.Base(bin)
 	if !isRegularFile(filepath.Join(staged, server)) {
@@ -245,7 +245,7 @@ func newWhisperCppCpu() *WhisperCppCpu {
 }
 
 // Items a Python for loop visits, dict keys and string characters included
-func pyIterItems(v any) ([]any, error) {
+func iterItems(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		return t, nil
@@ -262,7 +262,7 @@ func pyIterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the GitHub release assets are %s, expected a list", errchain.Kind(v))}
+	return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the GitHub release assets are %s, expected a list", errchain.Kind(v))}
 }
 
 // Children of dir whose names match a single component pattern, case folded where pathlib folds case

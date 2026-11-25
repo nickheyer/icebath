@@ -22,7 +22,7 @@ var ImageAttachments struct {
 
 // Whether an error declares one of the kind labels
 func declaresErrorKind(err error, names ...string) bool {
-	var fault *PyError
+	var fault *errorutil.Error
 	if errors.As(err, &fault) && slices.Contains(names, fault.Kind) {
 		return true
 	}

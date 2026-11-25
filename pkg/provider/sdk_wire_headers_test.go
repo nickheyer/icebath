@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"maps"
 	"net"
+	"net/textproto"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -71,22 +74,30 @@ func itoaTest(n int) string {
 	return itoaTest(n/10) + string(rune('0'+n%10))
 }
 
-// Head the pinned openai 2.54.0 SDK wrote for the same client and call, captured with tools/sdkheads.py, on this host and runtime
+// Head net/http writes for a call carrying the given SDK header lines, PLATFORM standing for this host's X-Stainless lines: Host, User-Agent and Content-Length, then the rest by canonical name
 func sdkGoldenHead(addr string, lines ...string) string {
-	platform := "X-Stainless-Lang: python\r\nX-Stainless-Package-Version: 2.54.0\r\nX-Stainless-OS: " + stainlessOS() + "\r\nX-Stainless-Arch: " +
-		stainlessArch() + "\r\nX-Stainless-Runtime: CPython\r\nX-Stainless-Runtime-Version: " + pinnedPythonRuntimeVersion() + "\r\n"
-	head := "POST /v1/chat/completions HTTP/1.1\r\nHost: " + addr + "\r\nAccept-Encoding: gzip, deflate\r\nConnection: keep-alive\r\n"
+	platform := []string{"X-Stainless-Lang: python", "X-Stainless-Package-Version: 2.54.0", "X-Stainless-OS: " + stainlessOS(),
+		"X-Stainless-Arch: " + stainlessArch(), "X-Stainless-Runtime: CPython", "X-Stainless-Runtime-Version: " + pinnedPythonRuntimeVersion()}
+	fields := map[string]string{"Accept-Encoding": "gzip, deflate", "Connection": "keep-alive"}
 	for _, l := range lines {
+		expanded := []string{l}
 		if l == "PLATFORM" {
-			head += platform
-			continue
+			expanded = platform
 		}
-		head += l + "\r\n"
+		for _, line := range expanded {
+			name, value, _ := strings.Cut(line, ": ")
+			fields[textproto.CanonicalMIMEHeaderKey(name)] = value
+		}
 	}
-	return head + "Content-Length: 57\r\n\r\n"
+	head := "POST /v1/chat/completions HTTP/1.1\r\nHost: " + addr + "\r\nUser-Agent: " + fields["User-Agent"] + "\r\nContent-Length: 57\r\n"
+	delete(fields, "User-Agent")
+	for _, name := range slices.Sorted(maps.Keys(fields)) {
+		head += name + ": " + fields[name] + "\r\n"
+	}
+	return head + "\r\n"
 }
 
-func TestOpenAISDKWireHeadMatchesThePinnedSDK(t *testing.T) {
+func TestOpenAISDKWireHeadCarriesThePinnedSDKHeaders(t *testing.T) {
 	unsetEnvForTest(t, "OPENAI_ORG_ID", "OPENAI_PROJECT_ID")
 	addr, heads := sdkHeadServer(t)
 	base := "http://" + addr + "/v1"

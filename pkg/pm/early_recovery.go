@@ -85,7 +85,7 @@ func pidRunning(pid *big.Int) (bool, error) {
 		return pidAlive(int(pid.Int64())), nil
 	}
 	if !pid.IsInt64() || pid.Int64() > math.MaxInt32 {
-		return false, &PyError{Class: "OverflowError", Message: fmt.Sprintf("the process id %s is larger than a 32 bit integer holds", pid.String())}
+		return false, &ClassError{Class: "OverflowError", Message: fmt.Sprintf("the process id %s is larger than a 32 bit integer holds", pid.String())}
 	}
 	return pidAlive(int(pid.Int64())), nil
 }
@@ -125,8 +125,8 @@ func missingEnvironment(ctx context.Context, root string) (bool, error) {
 			return !isDirectory(site), nil
 		}
 	}
-	var pyErr *PyError
-	if errors.As(err, &pyErr) && pyErr.Class == "RuntimeError" {
+	var kindErr *ClassError
+	if errors.As(err, &kindErr) && kindErr.Class == "RuntimeError" {
 		return true, nil
 	}
 	return false, err

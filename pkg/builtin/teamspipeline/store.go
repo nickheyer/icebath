@@ -14,9 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -26,7 +26,7 @@ var storeBuckets = []string{"subscriptions", "notification_receipts", "event_tim
 
 var nowUTC = func() time.Time { return time.Now().UTC() }
 
-// Current UTC time as Python datetime isoformat
+// Current UTC time as fixed width RFC 3339 text with microseconds
 func utcNowISO() string { return nowUTC().UTC().Format(timeutil.RFC3339Micro) }
 
 // Store path from the explicit value, MSGRAPH_WEBHOOK_STORE_PATH or the home default
@@ -67,7 +67,7 @@ func emptyBuckets() map[string]*jsonutil.Object {
 	return out
 }
 
-// Loads every bucket from the store file, keeping empty buckets for a missing file or non dict document
+// Loads every bucket from the store file, keeping empty buckets for a missing, blank or non object document; a byte order mark is skipped and invalid UTF-8 or JSON is refused naming the file
 func (s *TeamsPipelineStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -84,16 +84,17 @@ func (s *TeamsPipelineStore) load() error {
 	if err != nil {
 		return err
 	}
-	text, err := charsetutil.Decode(b, "utf-8-sig")
+	text, err := textutil.DecodeUTF8(b)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", s.Path, err)
 	}
-	if text == "" {
-		text = "{}"
+	text = textutil.TrimBOM(text)
+	if strings.TrimSpace(text) == "" {
+		return nil
 	}
 	data, err := jsonutil.Decode(text)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", s.Path, err)
 	}
 	doc, ok := data.(*jsonutil.Object)
 	if !ok {
@@ -104,7 +105,7 @@ func (s *TeamsPipelineStore) load() error {
 		v, _ := doc.Get(bucket)
 		d, err := dictField(v)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %s bucket: %w", s.Path, bucket, err)
 		}
 		loaded[bucket] = d
 	}
@@ -190,7 +191,7 @@ func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *jsonut
 		existing = e
 	}
 	if payload == nil {
-		return nil, pyError("TypeError", "the "+bucket+" record to store is empty")
+		return nil, kindError("TypeError", "the "+bucket+" record to store is empty")
 	}
 	merged := existing.Clone()
 	for _, k := range payload.Keys() {

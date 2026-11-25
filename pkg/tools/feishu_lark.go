@@ -48,7 +48,7 @@ func buildLarkRequest(method, uri string, paths map[string]string, queries []lar
 func requestsParamValues(v any) []string {
 	items := []any{v}
 	if _, isStr := v.(string); !isStr {
-		if seq, ok := pyIterItems(v); ok {
+		if seq, ok := iterItems(v); ok {
 			items = seq
 		}
 	}
@@ -59,7 +59,7 @@ func requestsParamValues(v any) []string {
 		case string:
 			out = append(out, x)
 		default:
-			seq, ok := pyIterItems(x)
+			seq, ok := iterItems(x)
 			if !ok {
 				out = append(out, anyutil.String(x))
 				continue
@@ -73,7 +73,7 @@ func requestsParamValues(v any) []string {
 }
 
 // Items a Python for loop yields over a decoded JSON value, dict keys for a dict, false for a scalar
-func pyIterItems(v any) ([]any, bool) {
+func iterItems(v any) ([]any, bool) {
 	switch x := v.(type) {
 	case []any:
 		return x, true
@@ -123,7 +123,7 @@ func larkResponseOf(raw *larkcore.ApiResp) larkResponse {
 			resp.code, _ = d.Get("code")
 			resp.msg, _ = d.Get("msg")
 		default:
-			panic(pyAttributeError(d, "items"))
+			panic(attributeError(d, "items"))
 		}
 		return resp
 	}

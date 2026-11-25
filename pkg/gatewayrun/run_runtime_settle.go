@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Keeps authority tasks alive until their last durable settlement write within the stop budget
@@ -29,7 +30,7 @@ func (r *GatewayRunner) settleGatewayRuntime(ctx context.Context, budget float64
 	}
 	for _, a := range authorities {
 		err := gateway.JoinAuthorityWork(ctx, a, 0)
-		var timeout *gateway.PyError
+		var timeout *errorutil.Error
 		if errors.As(err, &timeout) && timeout.Kind == "TimeoutError" {
 			pkgLog().Warn(fmt.Sprintf("Profile %s still has live writers at shutdown; its admissions stay for recovery", a.ProfileID))
 		} else if err != nil {

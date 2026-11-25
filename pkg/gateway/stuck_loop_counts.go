@@ -44,7 +44,7 @@ func IncrementRestartFailureCounts(ctx context.Context, path string, activeSessi
 	next := jsonutil.NewObject()
 	for _, key := range activeSessionKeys {
 		prev, _ := counts.Get(key)
-		n, err := pyAddOne(prev)
+		n, err := addOne(prev)
 		if err != nil {
 			pkgLog().Debug("Could not write restart-failure counters to "+path, "exc_info", err)
 			return
@@ -57,7 +57,7 @@ func IncrementRestartFailureCounts(ctx context.Context, path string, activeSessi
 }
 
 // Python counts.get(key, 0) + 1 over a decoded JSON value
-func pyAddOne(v any) (any, error) {
+func addOne(v any) (any, error) {
 	switch n := v.(type) {
 	case nil:
 		return int64(1), nil

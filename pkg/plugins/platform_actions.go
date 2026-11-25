@@ -338,7 +338,7 @@ func (p *PlatformActions) HostCall(ctx context.Context, method string, args []an
 	if third == "" {
 		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("platform actions have no %s", method)}
 	}
-	a, _, err := bindPyOn("PlatformActions", method, []pyParam{req("platform"), req("chat_id"), req(third), req(last)}, args, kwargs)
+	a, _, err := bindPyOn("PlatformActions", method, []paramValue{req("platform"), req("chat_id"), req(third), req(last)}, args, kwargs)
 	if err != nil {
 		return nil, err
 	}

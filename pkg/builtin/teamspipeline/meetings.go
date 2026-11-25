@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -19,7 +20,6 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
-	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
@@ -241,7 +241,7 @@ func normalizeArtifact(kind string, payload *jsonutil.Object) (*MeetingArtifact,
 // Completed, downloadable and stamp ranks of a transcript in priority order
 type transcriptRank struct {
 	completed, download int
-	stamp               string
+	stamp               time.Time
 }
 
 // Rank preferring completed, downloadable, most recent transcripts
@@ -255,14 +255,14 @@ func transcriptSortKey(a *MeetingArtifact) transcriptRank {
 		r.completed = 1
 	}
 	if stamp := a.AvailableAt; stamp != nil {
-		r.stamp = (*stamp).Format(timeutil.RFC3339Micro)
+		r.stamp = *stamp
 	} else if a.CreatedAt != nil {
-		r.stamp = (*a.CreatedAt).Format(timeutil.RFC3339Micro)
+		r.stamp = *a.CreatedAt
 	}
 	return r
 }
 
-// Tuple order of two ranks
+// Whether r ranks below o: completion first, then a download link, then the earlier instant, a missing stamp lowest
 func (r transcriptRank) less(o transcriptRank) bool {
 	if r.completed != o.completed {
 		return r.completed < o.completed
@@ -270,7 +270,7 @@ func (r transcriptRank) less(o transcriptRank) bool {
 	if r.download != o.download {
 		return r.download < o.download
 	}
-	return r.stamp < o.stamp
+	return r.stamp.Before(o.stamp)
 }
 
 // Meeting reference from a meeting id or join URL, refusing transcript ids without a join URL

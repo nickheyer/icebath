@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	_ "golang.org/x/image/bmp"
@@ -270,10 +271,10 @@ func resultWithNativeImages(ctx context.Context, env *tools.Env, sessionID, text
 			return text + notes
 		}
 		prior := payload["result"]
-		if !pyTruthy(prior) {
+		if !anyutil.IsTrue(prior) {
 			prior = ""
 		}
-		payload["result"] = pyStr(prior) + notes
+		payload["result"] = anyutil.String(prior) + notes
 		return tools.JSON(payload)
 	}
 	header := "The image(s) from this call are attached \u2014 inspect them with your native vision."
@@ -295,7 +296,7 @@ func resourceFilename(uri, mime string) string {
 			}
 		}
 	}
-	name = pyStrip(controlCharsRe.ReplaceAllString(name, ""))
+	name = strings.TrimSpace(controlCharsRe.ReplaceAllString(name, ""))
 	if r := []rune(name); len(r) > 150 {
 		stem, ext, dot := name, "", false
 		if i := strings.LastIndex(name, "."); i >= 0 {
@@ -333,6 +334,16 @@ func pathName(p string) string {
 
 // Inline notice naming an unsupported block and whatever handles it exposes
 func renderDroppedBlockNotice(block *ContentBlock, blockType string) string {
+	return "[MCP content dropped: unsupported block (" + blockDetails(block, blockType) + ")]"
+}
+
+// Inline notice naming a supported block whose payload could not be decoded or saved
+func renderUnreadableBlockNotice(block *ContentBlock) string {
+	return "[MCP content unreadable: the block could not be decoded or saved (" + blockDetails(block, block.Type) + ")]"
+}
+
+// Type, MIME type, URI, size and name of a block as comma separated key=value details
+func blockDetails(block *ContentBlock, blockType string) string {
 	details := []string{"type=" + blockType}
 	if block.MimeType != "" {
 		details = append(details, "mimeType="+block.MimeType)
@@ -350,7 +361,7 @@ func renderDroppedBlockNotice(block *ContentBlock, blockType string) string {
 	if block.Name != "" {
 		details = append(details, "name="+block.Name)
 	}
-	return "[MCP content dropped: unsupported block (" + strings.Join(details, ", ") + ")]"
+	return strings.Join(details, ", ")
 }
 
 // Resource link or embedded resource rendered as text, an embedded blob saved to the document cache
@@ -431,7 +442,7 @@ func renderContentBlocks(ctx context.Context, env *tools.Env, result *CallToolRe
 		}
 		if blk.Text != "" {
 			parts = append(parts, tools.StripUnicodeTags(blk.Text))
-			if pyStrip(blk.Text) != "" {
+			if strings.TrimSpace(blk.Text) != "" {
 				usable++
 			}
 			continue
@@ -458,9 +469,9 @@ func renderContentBlocks(ctx context.Context, env *tools.Env, result *CallToolRe
 		}
 		switch blockType {
 		case "text", "resource", "audio", "image":
-			pkgLog().Debug(fmt.Sprintf("MCP %s: content block type %s rendered empty", serverName, pyReprStr(blockType)))
+			pkgLog().Debug(fmt.Sprintf("MCP %s: content block type %s rendered empty", serverName, strconv.Quote(blockType)))
 		default:
-			pkgLog().Warn(fmt.Sprintf("MCP %s: dropping unsupported content block type %s", serverName, pyReprStr(blockType)))
+			pkgLog().Warn(fmt.Sprintf("MCP %s: dropping unsupported content block type %s", serverName, strconv.Quote(blockType)))
 			parts = append(parts, renderDroppedBlockNotice(blk, blockType))
 		}
 	}
@@ -485,7 +496,7 @@ func contentDualEmitsStructured(result *CallToolResult, structured any) bool {
 		if blk == nil || blk.Text == "" {
 			continue
 		}
-		parsed, err := jsonutil.Decode(blk.Text)
+		parsed, err := jsonutil.DecodeWith(blk.Text, jsonutil.BigInts())
 		if err != nil {
 			continue
 		}

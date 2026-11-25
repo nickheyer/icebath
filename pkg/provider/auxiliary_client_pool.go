@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Runs fn and turns a raised error panic into a returned error the way a Python except Exception catches it
@@ -88,13 +90,13 @@ func auxPoolRuntimeAPIKey(entry *PooledCredential) string {
 	if key == "" {
 		key = entry.AccessToken
 	}
-	return pyStripSpace(key)
+	return strings.TrimSpace(key)
 }
 
 // Runtime base URL of a pool entry with the fallback last, trailing slashes removed
 func auxPoolRuntimeBaseURL(ctx context.Context, entry *PooledCredential, fallback string) string {
 	if entry == nil {
-		return strings.TrimRight(pyStripSpace(fallback), "/")
+		return strings.TrimRight(strings.TrimSpace(fallback), "/")
 	}
 	url := entry.RuntimeBaseURL()
 	for _, next := range []string{entry.InferenceBaseURL, entry.BaseURL, fallback} {
@@ -103,7 +105,7 @@ func auxPoolRuntimeBaseURL(ctx context.Context, entry *PooledCredential, fallbac
 		}
 		url = next
 	}
-	return strings.TrimRight(pyStripSpace(url), "/")
+	return strings.TrimRight(strings.TrimSpace(url), "/")
 }
 
 // Hosts the auxiliary Anthropic path accepts from model.base_url, anything else falls back to the Anthropic default
@@ -114,15 +116,15 @@ func auxIsAnthropicCompatibleHost(url string) bool {
 	if url == "" {
 		return false
 	}
-	parsed, err := pyURLParse(url, "")
+	parsed, err := urlutil.Split(url)
 	if err != nil {
 		return false
 	}
-	hostname, _, _ := pyNetlocHostPort(parsed.netloc)
-	if auxAnthropicCompatibleHosts[strings.TrimRight(strings.ToLower(pyStripSpace(hostname)), ".")] {
+	hostname, _, _ := netlocHostPort(parsed.Authority)
+	if auxAnthropicCompatibleHosts[strings.TrimRight(strings.ToLower(strings.TrimSpace(hostname)), ".")] {
 		return true
 	}
-	path := strings.ToLower(strings.TrimRight(parsed.path, "/"))
+	path := strings.ToLower(strings.TrimRight(parsed.Path, "/"))
 	return strings.HasSuffix(path, "/anthropic") || strings.HasSuffix(path, "/anthropic/v1")
 }
 
@@ -138,9 +140,9 @@ func auxScopedKeyEnv(ctx context.Context, name string) (string, error) {
 	if err != nil {
 		var unscoped *UnscopedSecretError
 		if errors.As(err, &unscoped) {
-			return pyStripSpace(os.Getenv(name)), nil
+			return strings.TrimSpace(os.Getenv(name)), nil
 		}
 		return "", err
 	}
-	return pyStripSpace(value), nil
+	return strings.TrimSpace(value), nil
 }

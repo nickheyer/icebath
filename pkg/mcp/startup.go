@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Name of the thread the discovery of a command line run reports under
@@ -80,7 +81,7 @@ func SetServerFilter(toolsets any) []string {
 		}
 	case []any:
 		for _, item := range v {
-			split(pyStr(item))
+			split(anyutil.String(item))
 		}
 	}
 	discoveryMu.Lock()

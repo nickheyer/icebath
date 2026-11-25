@@ -120,9 +120,12 @@ func (k packKeys) typed(m map[string]any, key string) (any, bool) {
 	return key, true
 }
 
-// Text of a mapping key
+// Text of a mapping key, a null key spelled null
 func (k packKeys) str(m map[string]any, key string) string {
 	v, _ := k.typed(m, key)
+	if v == nil {
+		return "null"
+	}
 	return anyutil.String(timeKeyText(v))
 }
 

@@ -170,8 +170,8 @@ func CatalogSessions(ctx context.Context, path, cwd string) ([]*jsonutil.Object,
 		if o, ok := owners[sid]; ok {
 			sid = o
 		}
-		count := int(pyIntValue(anyutil.Or(dget(row, "message_count"), int64(0))))
-		sessionCwd := anyutil.String(anyutil.Or(dget(row, "cwd"), dgetOr(parseModelConfig(dget(row, "model_config")), "cwd", ".")))
+		count := int(intValue(anyutil.Or(dget(row, "message_count"), int64(0))))
+		sessionCwd := anyutil.String(anyutil.Or(dget(row, "cwd"), dget(parseModelConfig(dget(row, "model_config")), "cwd"), "."))
 		if count <= 0 || (normalized != "" && normalizeCwdForCompare(sessionCwd) != normalized) {
 			continue
 		}

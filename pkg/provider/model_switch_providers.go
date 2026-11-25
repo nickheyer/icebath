@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Rows never capped by max models, aggregators with full catalogs and rows already curated
@@ -110,7 +111,7 @@ func saveDiscoveredModelsToConfig(ctx context.Context, apiURL string, modelIDs [
 		if !ok {
 			continue
 		}
-		entryURL := strings.TrimSpace(pyOrStr(entry["base_url"]))
+		entryURL := strings.TrimSpace(anyutil.StringOr(entry["base_url"], ""))
 		if strings.ToLower(strings.TrimRight(entryURL, "/")) != normURL || entryAPIMode(entry) != apiMode {
 			continue
 		}
@@ -477,7 +478,7 @@ func iterBuiltinCandidates(ctx context.Context, data map[string]any, excluded, s
 				continue
 			}
 			for _, v := range list {
-				envVars = append(envVars, pyStr(v))
+				envVars = append(envVars, anyutil.String(v))
 			}
 		}
 		if err := visit(builtinCandidate{icebathID: icebathID, mdevID: mdevID, pconfig: pconfig, envVars: envVars}); err != nil {
@@ -513,7 +514,7 @@ func rawPoolUsable(ctx context.Context, icebathID string, forPicker bool) bool {
 		return false
 	}
 	pool, _ := data["credential_pool"].(map[string]any)
-	if pyTruthy(pool[icebathID]) {
+	if anyutil.IsTrue(pool[icebathID]) {
 		return credentialPoolIsUsable(ctx, icebathID, true, forPicker)
 	}
 	return false
@@ -553,11 +554,11 @@ func overlayHasEnvCreds(ctx context.Context, pid, icebathSlug string, overlay Ic
 // Azure Foundry under entra_id auth is configured once the provider, auth mode and an endpoint are set
 func azureEntraConfigured(ctx context.Context, readEnv func(string) (string, error)) (bool, error) {
 	modelCfg := modelConfigDictFn(ctx)
-	if strings.ToLower(strings.TrimSpace(pyOrStr(modelCfg["provider"]))) != "azure-foundry" ||
-		strings.ToLower(strings.TrimSpace(pyOrStr(modelCfg["auth_mode"]))) != "entra_id" {
+	if strings.ToLower(strings.TrimSpace(anyutil.StringOr(modelCfg["provider"], ""))) != "azure-foundry" ||
+		strings.ToLower(strings.TrimSpace(anyutil.StringOr(modelCfg["auth_mode"], ""))) != "entra_id" {
 		return false, nil
 	}
-	if strings.TrimSpace(pyOrStr(modelCfg["base_url"])) != "" {
+	if strings.TrimSpace(anyutil.StringOr(modelCfg["base_url"], "")) != "" {
 		return true, nil
 	}
 	value, err := readEnv("AZURE_FOUNDRY_BASE_URL")
@@ -663,7 +664,7 @@ func splitChainEntries(models []string) []string {
 		if strings.Contains(model, ",") {
 			parts := strings.Split(model, ",")
 			for i := range parts {
-				parts[i] = pyStripSpace(parts[i])
+				parts[i] = strings.TrimSpace(parts[i])
 			}
 			models = extendUnique(models, parts)
 		}
@@ -683,10 +684,10 @@ func extendUnique(target, items []string) []string {
 
 // Trimmed lowercase URL without trailing slashes
 func normURL(url any) string {
-	if !pyTruthy(url) {
+	if !anyutil.IsTrue(url) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyStr(url)), "/"))
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.String(url)), "/"))
 }
 
 var defaultEntryURLKeys = []string{"base_url"}
@@ -694,8 +695,8 @@ var defaultEntryURLKeys = []string{"base_url"}
 // First non empty URL field of an entry
 func entryBaseURL(entry map[string]any, keys []string) string {
 	for _, key := range keys {
-		if v := entry[key]; pyTruthy(v) {
-			return pyStr(v)
+		if v := entry[key]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return ""
@@ -703,26 +704,26 @@ func entryBaseURL(entry map[string]any, keys []string) string {
 
 // Lowercased api_mode, empty when unset
 func entryAPIMode(entry map[string]any) string {
-	return strings.ToLower(strings.TrimSpace(pyOrStr(entry["api_mode"])))
+	return strings.ToLower(strings.TrimSpace(anyutil.StringOr(entry["api_mode"], "")))
 }
 
 // Unminted credential, env fallback name and the stable grouping identity
 func entryCredentials(ctx context.Context, entry map[string]any, keyEnvKeys ...string) (any, string, string) {
 	keyEnv := ""
 	for _, k := range keyEnvKeys {
-		if pyTruthy(entry[k]) {
-			keyEnv = strings.TrimSpace(pyStr(entry[k]))
+		if anyutil.IsTrue(entry[k]) {
+			keyEnv = strings.TrimSpace(anyutil.String(entry[k]))
 			break
 		}
 	}
 	label := "custom"
-	if pyTruthy(entry["name"]) {
-		label = pyStr(entry["name"])
+	if anyutil.IsTrue(entry["name"]) {
+		label = anyutil.String(entry["name"])
 	}
-	if source := BuildCommandTokenSource(pyOrStr(entry["key_cmd"]), label, home.Dir(ctx), nil); source != nil {
+	if source := BuildCommandTokenSource(anyutil.StringOr(entry["key_cmd"], ""), label, home.Dir(ctx), nil); source != nil {
 		return source, keyEnv, source.CacheIdentity()
 	}
-	inline := strings.TrimSpace(pyOrStr(entry["api_key"]))
+	inline := strings.TrimSpace(anyutil.StringOr(entry["api_key"], ""))
 	identity := inline
 	if identity == "" && keyEnv != "" {
 		identity = "env:" + keyEnv
@@ -743,14 +744,14 @@ func discoverFlag(entry map[string]any) bool {
 		}
 		return true
 	}
-	return pyTruthy(discover)
+	return anyutil.IsTrue(discover)
 }
 
 // Text before the per model separator the config writer uses
 func displayPrefix(name string) string {
 	for _, sep := range []string{"—", " - "} {
 		if strings.Contains(name, sep) {
-			return pyStripSpace(strings.SplitN(name, sep, 2)[0])
+			return strings.TrimSpace(strings.SplitN(name, sep, 2)[0])
 		}
 	}
 	return name
@@ -763,7 +764,7 @@ func groupDisplayName(displayName string) string {
 	for i, t := range toks {
 		if strings.ContainsFunc(strings.Trim(t, ".,()"), unicode.IsDigit) {
 			if i >= 2 {
-				grp = pyStripSpace(strings.Join(toks[:i], " "))
+				grp = strings.TrimSpace(strings.Join(toks[:i], " "))
 			}
 			break
 		}
@@ -972,7 +973,7 @@ func (b *pickerBuild) addEndpointRow(slug, name, apiURL string, models []string,
 
 // Remembers a name and base URL pair for section four dedup, false when either is blank
 func (b *pickerBuild) recordSection3Pair(name, urlNorm string) bool {
-	pair := [2]string{strings.ToLower(pyStripSpace(name)), urlNorm}
+	pair := [2]string{strings.ToLower(strings.TrimSpace(name)), urlNorm}
 	if pair[0] == "" || pair[1] == "" {
 		return false
 	}
@@ -989,7 +990,7 @@ func (b *pickerBuild) endpointIsCurrent(slug string, aliases map[string]bool, ur
 
 // Probe policy of sections three and four, returning models, ok, native empty and whether it probed live
 func (b *pickerBuild) discoverEndpoint(apiKey any, apiURL, nativeProvider string, hasExplicitModels bool, headers map[string]string, apiMode string, discoveryAllowed, isCurrent bool) ([]string, bool, bool, bool) {
-	probeLive := discoveryAllowed && (pyTruthy(apiKey) || !hasExplicitModels) && b.canProbeCustom(isCurrent)
+	probeLive := discoveryAllowed && (anyutil.IsTrue(apiKey) || !hasExplicitModels) && b.canProbeCustom(isCurrent)
 	models, ok, nativeEmpty := pickerDiscoverEndpointFn(b.ctx, apiKey, apiURL, nativeProvider, hasExplicitModels, headers, apiMode,
 		probeLive, discoveryAllowed, b.resolvedFastCustomProbe())
 	return models, ok, nativeEmpty, probeLive
@@ -1071,13 +1072,13 @@ func overlayHasCreds(b *pickerBuild, pid, icebathSlug string, overlay IcebathOve
 	env := modelsPoolEnv(b.ctx)
 	if !hasCreds && overlay.AuthType == "external_process" {
 		status := GetAuthStatus(env, icebathSlug)
-		hasCreds = pyTruthy(status["logged_in"]) || pyTruthy(status["configured"])
+		hasCreds = anyutil.IsTrue(status["logged_in"]) || anyutil.IsTrue(status["configured"])
 	}
 	hasCreds = hasCreds || authStoreHasProvider(b.ctx, pid, icebathSlug)
 	if !hasCreds && credentialPoolIsUsable(b.ctx, icebathSlug, false, b.forPicker) {
 		hasCreds = true
 	}
-	if !hasCreds && icebathSlug == "anthropic" && pyTruthy(ReadClaudeCodeCredentials(env)["accessToken"]) {
+	if !hasCreds && icebathSlug == "anthropic" && anyutil.IsTrue(ReadClaudeCodeCredentials(env)["accessToken"]) {
 		hasCreds = true
 	}
 	return hasCreds, nil
@@ -1113,7 +1114,7 @@ func lapOverlayRows(b *pickerBuild, userProviders map[string]any) error {
 			ids = liveOrCuratedIDs(b.ctx, icebathSlug, b.curated, []string{icebathSlug, pid}, true, b.nonBlockingCatalogs)
 		}
 		configured := userProviders[icebathSlug]
-		if !pyTruthy(configured) {
+		if !anyutil.IsTrue(configured) {
 			configured = userProviders[pid]
 		}
 		if cfg, ok := configured.(map[string]any); ok {
@@ -1156,7 +1157,7 @@ func lapCanonicalRows(b *pickerBuild) {
 		hasCreds = hasCreds || authStoreHasProvider(b.ctx, cp.Slug) || credentialPoolIsUsable(b.ctx, cp.Slug, false, b.forPicker) ||
 			(isAWSSDK(cpConfig) && hasAWSSDKCredsForListing(b.ctx, cp.Slug, b.currentProvider))
 		if !hasCreds && cpConfig != nil && cpConfig.AuthType == "external_process" {
-			hasCreds = pyTruthy(GetExternalProcessProviderStatus(env, cp.Slug)["configured"])
+			hasCreds = anyutil.IsTrue(GetExternalProcessProviderStatus(env, cp.Slug)["configured"])
 		}
 		if !hasCreds {
 			continue
@@ -1221,7 +1222,7 @@ func lapUserProviderRows(b *pickerBuild, userProviders map[string]any) error {
 		grp, exists := groups[key]
 		if !exists {
 			apiKey := inlineKey
-			if !pyTruthy(apiKey) {
+			if !anyutil.IsTrue(apiKey) {
 				scoped, err := scopedKeyEnv(b.ctx, keyEnv)
 				if err != nil {
 					return err
@@ -1229,12 +1230,12 @@ func lapUserProviderRows(b *pickerBuild, userProviders map[string]any) error {
 				apiKey = scoped
 			}
 			grp = &pickerGroup{slug: epName, name: groupDisplayName(displayName), apiURL: apiURL, models: []string{},
-				apiKey: apiKey, headers: headers, apiMode: pyOrStr(epCfg["api_mode"]),
+				apiKey: apiKey, headers: headers, apiMode: anyutil.StringOr(epCfg["api_mode"], ""),
 				discoveryAllowed: apiURL != "" && discoverFlag(epCfg), aliases: map[string]bool{}}
 			groups[key] = grp
 			order = append(order, key)
 		}
-		absorbEntryModels(grp, epCfg, pyOrStr(epCfg["default_model"]))
+		absorbEntryModels(grp, epCfg, anyutil.StringOr(epCfg["default_model"], ""))
 		grp.rawNames = append(grp.rawNames, displayName)
 		for alias := range CustomProviderAliases(displayName, epName) {
 			grp.aliases[alias] = true
@@ -1332,7 +1333,7 @@ func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 		}
 		inlineKey, keyEnv, credIdentity := entryCredentials(b.ctx, entry, "key_env")
 		apiKey := inlineKey
-		if !pyTruthy(apiKey) {
+		if !anyutil.IsTrue(apiKey) {
 			scoped, err := scopedKeyEnv(b.ctx, keyEnv)
 			if err != nil {
 				return err
@@ -1342,7 +1343,7 @@ func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 		apiMode := entryAPIMode(entry)
 		headers := extraHeadersFromConfig(entry)
 		prefix := displayPrefix(rawName)
-		providerKey := strings.TrimSpace(pyOrStr(entry["provider_key"]))
+		providerKey := strings.TrimSpace(anyutil.StringOr(entry["provider_key"], ""))
 		key := endpointGroupKey([]string{apiURL, credIdentity, apiMode, strings.ToLower(prefix)}, headers)
 		displayName := prefix
 		if displayName == "" {
@@ -1356,14 +1357,14 @@ func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 			groups[key] = grp
 			order = append(order, key)
 		}
-		if !pyTruthy(grp.apiKey) {
+		if !anyutil.IsTrue(grp.apiKey) {
 			grp.apiKey = apiKey
 		}
 		grp.discoveryAllowed = grp.discoveryAllowed && discoverFlag(entry)
 		for alias := range CustomProviderAliases(rawName, providerKey) {
 			grp.aliases[alias] = true
 		}
-		absorbEntryModels(grp, entry, strings.TrimSpace(pyOrStr(entry["model"])))
+		absorbEntryModels(grp, entry, strings.TrimSpace(anyutil.StringOr(entry["model"], "")))
 	}
 	section4 := map[string]bool{}
 	currentURLGroups := 0
@@ -1387,7 +1388,7 @@ func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 			grp.slug = slug
 		}
 		urlNorm := normURL(grp.apiURL)
-		pair := [2]string{strings.ToLower(pyStripSpace(grp.name)), urlNorm}
+		pair := [2]string{strings.ToLower(strings.TrimSpace(grp.name)), urlNorm}
 		if pair[0] != "" && pair[1] != "" && b.section3Pairs[pair] {
 			continue
 		}
@@ -1545,7 +1546,7 @@ func finalizePickerRows(results []map[string]any, userProviders map[string]any, 
 	if len(disabled) > 0 {
 		kept := results[:0:0]
 		for _, r := range results {
-			if !disabled[strings.ToLower(strings.TrimSpace(pyOrStr(r["provider_id"])))] && !disabled[strings.ToLower(strings.TrimSpace(pyOrStr(r["slug"])))] {
+			if !disabled[strings.ToLower(strings.TrimSpace(anyutil.StringOr(r["provider_id"], "")))] && !disabled[strings.ToLower(strings.TrimSpace(anyutil.StringOr(r["slug"], "")))] {
 				kept = append(kept, r)
 			}
 		}
@@ -1553,16 +1554,16 @@ func finalizePickerRows(results []map[string]any, userProviders map[string]any, 
 	}
 	if currentModel != "" {
 		for _, row := range results {
-			if !pyTruthy(row["is_current"]) || pyTruthy(row["native_catalog_empty"]) {
+			if !anyutil.IsTrue(row["is_current"]) || anyutil.IsTrue(row["native_catalog_empty"]) {
 				continue
 			}
 			models, _ := row["models"].([]any)
 			if !anyListContains(models, currentModel) {
-				if modelRequiresAccountDiscovery(pyOrStr(row["slug"]), currentModel) {
+				if modelRequiresAccountDiscovery(anyutil.StringOr(row["slug"], ""), currentModel) {
 					break
 				}
 				row["models"] = append([]any{currentModel}, models...)
-				total, ok := pyIsInt(row["total_models"])
+				total, ok := isIntValue(row["total_models"])
 				if !ok {
 					total = len(models)
 				}
@@ -1575,12 +1576,12 @@ func finalizePickerRows(results []map[string]any, userProviders map[string]any, 
 		results = []map[string]any{}
 	}
 	sort.SliceStable(results, func(i, j int) bool {
-		ci, cj := pyTruthy(results[i]["is_current"]), pyTruthy(results[j]["is_current"])
+		ci, cj := anyutil.IsTrue(results[i]["is_current"]), anyutil.IsTrue(results[j]["is_current"])
 		if ci != cj {
 			return ci
 		}
-		ti, _ := pyIsInt(results[i]["total_models"])
-		tj, _ := pyIsInt(results[j]["total_models"])
+		ti, _ := isIntValue(results[i]["total_models"])
+		tj, _ := isIntValue(results[j]["total_models"])
 		return ti > tj
 	})
 	return results
@@ -1603,7 +1604,7 @@ func prependMoAPickerProvider(ctx context.Context, providers []map[string]any, c
 	}
 	out := []map[string]any{moa}
 	for _, p := range providers {
-		if strings.ToLower(pyOrStr(p["slug"])) != "moa" {
+		if strings.ToLower(anyutil.StringOr(p["slug"], "")) != "moa" {
 			out = append(out, p)
 		}
 	}
@@ -1626,7 +1627,7 @@ func ListPickerProviders(ctx context.Context, opts PickerProvidersOptions) ([]ma
 	filtered := []map[string]any{}
 	rows := []any{}
 	for _, p := range providers {
-		if strings.ToLower(pyOrStr(p["slug"])) == "openrouter" {
+		if strings.ToLower(anyutil.StringOr(p["slug"], "")) == "openrouter" {
 			var live []string
 			for _, m := range pickerOpenRouterModelsFn(ctx, FetchModelsOptions{CacheOnly: opts.NonBlockingCatalogs}) {
 				live = append(live, m.ID)
@@ -1639,8 +1640,8 @@ func ListPickerProviders(ctx context.Context, opts PickerProvidersOptions) ([]ma
 			copied["total_models"] = len(live)
 			p = copied
 		}
-		isCustomEndpoint := pyTruthy(p["is_user_defined"]) && pyTruthy(p["api_url"])
-		if pyTruthy(p["models"]) || isCustomEndpoint {
+		isCustomEndpoint := anyutil.IsTrue(p["is_user_defined"]) && anyutil.IsTrue(p["api_url"])
+		if anyutil.IsTrue(p["models"]) || isCustomEndpoint {
 			filtered = append(filtered, p)
 			rows = append(rows, p)
 		}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Launch params with an explicit model decoded as every startup path decodes it, true when a new mapping was resolved
@@ -18,12 +19,12 @@ func resolveLaunchRoute(ctx context.Context, params, cfg map[string]any) (map[st
 	}
 	modelCfg, _ := cfg["model"].(map[string]any)
 	explicit := ""
-	if raw := params["provider"]; pyTruthy(raw) {
-		explicit = strings.TrimSpace(pyStrOf(raw))
+	if raw := params["provider"]; anyutil.IsTrue(raw) {
+		explicit = strings.TrimSpace(anyutil.String(raw))
 	}
 	current := explicit
-	if current == "" && pyTruthy(modelCfg["provider"]) {
-		current = pyStrOf(modelCfg["provider"])
+	if current == "" && anyutil.IsTrue(modelCfg["provider"]) {
+		current = anyutil.String(modelCfg["provider"])
 	}
 	userProviders, _ := cfg["providers"].(map[string]any)
 	customProviders := provider.ProviderEntryList(cfg)

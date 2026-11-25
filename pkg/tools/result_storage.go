@@ -330,9 +330,9 @@ func GeneratePreview(content string, maxChars int) (string, bool) {
 	return head, true
 }
 
-// Rewrites an MCP handler result envelope into the text it wraps with metadata appended
+// Rewrites an MCP handler result envelope into the text it wraps with metadata appended, integers of any size kept exact
 func pageableText(content string) string {
-	decoded, err := jsonutil.Decode(content)
+	decoded, err := jsonutil.DecodeWith(content, jsonutil.BigInts())
 	if err != nil {
 		return content
 	}

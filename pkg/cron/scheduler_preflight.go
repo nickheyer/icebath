@@ -59,7 +59,7 @@ func isTransientProviderResolveError(err error) bool {
 		if named, ok := cur.(interface{ ErrorKind() string }); ok && transientNetExcNames[named.ErrorKind()] {
 			return true
 		}
-		if moduled, ok := cur.(interface{ PyModule() string }); ok && containsAny(moduled.PyModule(), []string{"httpx", "httpcore", "aiohttp"}) && containsAny(msg, transientHTTPNeedles) {
+		if moduled, ok := cur.(interface{ Module() string }); ok && containsAny(moduled.Module(), []string{"httpx", "httpcore", "aiohttp"}) && containsAny(msg, transientHTTPNeedles) {
 			return true
 		}
 		if netErr, ok := cur.(net.Error); ok && netErr.Timeout() {

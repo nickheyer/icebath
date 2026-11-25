@@ -69,7 +69,7 @@ func TestSiteDirDecodesNonUTF8LinesThroughTheLocale(t *testing.T) {
 	writeFile(t, filepath.Join(base, "site", "bad.pth"), []byte("\xff\n"), 0o666)
 	t.Setenv("LC_ALL", "C")
 	got, err = addSiteDir(nil, filepath.Join(base, "site"), nil)
-	want := "'ascii' codec can't decode byte 0xff in position 0: ordinal not in range(128)"
+	want := "cannot decode byte 0 as UTF-8: invalid start byte"
 	if runtime.GOOS == "windows" {
 		_, decodeErr := charsetutil.Decode([]byte("\xff\n"), charsetutil.Locale())
 		if decodeErr == nil {
@@ -80,7 +80,7 @@ func TestSiteDirDecodesNonUTF8LinesThroughTheLocale(t *testing.T) {
 		}
 		want = decodeErr.Error()
 	}
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "UnicodeDecodeError" || py.Message != want {
 		t.Fatalf("undecodable pth error %#v, want %q", err, want)
 	}

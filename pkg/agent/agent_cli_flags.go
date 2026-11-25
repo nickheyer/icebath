@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -162,9 +163,9 @@ func (a *AIAgent) controlSnapshotRevision() (string, error) {
 	if goal != nil {
 		status, _ := goal.Get("status")
 		_, barrier := goal.Get("wait_barrier")
-		deferred = pyStr(status) == "active" && !barrier
+		deferred = anyutil.String(status) == "active" && !barrier
 	}
-	loop := safeLoopSnapshot(loopState, deferred && loopState != nil && pyStr(loopState.Status) == "active")
+	loop := safeLoopSnapshot(loopState, deferred && loopState != nil && anyutil.String(loopState.Status) == "active")
 	heartbeat := safeHeartbeatSnapshot(heartbeatState)
 	return controlSnapshotRevision(goal, loop, heartbeat)
 }
@@ -186,7 +187,7 @@ func (a *AIAgent) controlMeta(ctx context.Context, key string) (string, error) {
 
 // The stable viewer facing goal fields, nil for no goal or a cleared one
 func safeGoalSnapshot(s *goals.GoalState) *jsonutil.Object {
-	if s == nil || pyStr(s.Status) == "cleared" {
+	if s == nil || anyutil.String(s.Status) == "cleared" {
 		return nil
 	}
 	subgoals := make([]any, 0, len(s.Subgoals))
@@ -210,13 +211,13 @@ func safeGoalSnapshot(s *goals.GoalState) *jsonutil.Object {
 	if s.LastTurnAt != 0 {
 		snapshot.Set("updated_at", s.LastTurnAt)
 	}
-	if pyTruthy(s.PausedReason) {
+	if anyutil.IsTrue(s.PausedReason) {
 		snapshot.Set("paused_reason", s.PausedReason)
 	}
-	if pyTruthy(s.LastVerdict) {
+	if anyutil.IsTrue(s.LastVerdict) {
 		snapshot.Set("last_verdict", s.LastVerdict)
 	}
-	if pyTruthy(s.LastReason) {
+	if anyutil.IsTrue(s.LastReason) {
 		snapshot.Set("last_reason", s.LastReason)
 	}
 	if barrier := goalWaitBarrier(s); barrier != nil {
@@ -227,7 +228,7 @@ func safeGoalSnapshot(s *goals.GoalState) *jsonutil.Object {
 
 // The absolute barrier a goal waits on, nil when it waits on nothing the viewer can show
 func goalWaitBarrier(s *goals.GoalState) *jsonutil.Object {
-	reason := pyStr(s.WaitingReason)
+	reason := anyutil.String(s.WaitingReason)
 	if s.WaitingUntil != 0 && float64(time.Now().UnixNano())/1e9 < s.WaitingUntil {
 		return jsonutil.ObjectOf("type", "until", "until_at", s.WaitingUntil, "reason", reason)
 	}
@@ -242,17 +243,17 @@ func goalWaitBarrier(s *goals.GoalState) *jsonutil.Object {
 
 // The allowlisted persisted loop fields without its route, nil for no loop or a cleared one
 func safeLoopSnapshot(s *SessionLoopState, deferredByGoal bool) *jsonutil.Object {
-	if s == nil || pyStr(s.Status) == "cleared" {
+	if s == nil || anyutil.String(s.Status) == "cleared" {
 		return nil
 	}
 	snapshot := jsonutil.ObjectOf("prompt", s.Prompt, "status", s.Status, "mode", s.Mode, "interval_seconds", s.IntervalSeconds,
 		"current_delay", s.CurrentDelay, "times", s.Times, "until", s.Until, "max_ticks", s.MaxTicks, "ticks_fired", s.TicksFired,
 		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "next_due_at", s.NextDueAt,
 		"awaiting_response", s.AwaitingResponse, "deferred_by_goal", deferredByGoal)
-	if pyTruthy(s.PausedReason) {
+	if anyutil.IsTrue(s.PausedReason) {
 		snapshot.Set("paused_reason", s.PausedReason)
 	}
-	if pyTruthy(s.LastStopReason) {
+	if anyutil.IsTrue(s.LastStopReason) {
 		snapshot.Set("last_stop_reason", s.LastStopReason)
 	}
 	return snapshot

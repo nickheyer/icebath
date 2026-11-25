@@ -198,11 +198,11 @@ func cmdShow(ctx context.Context, name string, console *Console) error {
 			return err
 		}
 	}
-	emits, err := pyStrItems(manifest["emits"])
+	emits, err := strItems(manifest["emits"])
 	if err != nil {
 		return err
 	}
-	listens, err := pyStrItems(manifest["listens"])
+	listens, err := strItems(manifest["listens"])
 	if err != nil {
 		return err
 	}

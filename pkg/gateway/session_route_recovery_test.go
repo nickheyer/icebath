@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -37,7 +38,7 @@ func TestMessagingPlatformAndRowSource(t *testing.T) {
 		t.Fatalf("no chat id %+v", s)
 	}
 	defer func() {
-		if err, ok := recover().(*PyError); !ok || err.Kind != "AttributeError" || err.Msg != "the stored session source is a list, expected a mapping" {
+		if err, ok := recover().(*errorutil.Error); !ok || err.Kind != "AttributeError" || err.Msg != "the stored session source is a list, expected a mapping" {
 			t.Fatalf("recovered %v", err)
 		}
 	}()

@@ -56,7 +56,7 @@ func TestHousekeepingRestartsADeadTicker(t *testing.T) {
 	if count() != 2 || ticker.Restarts() != 1 {
 		t.Fatalf("starts %d restarts %d", count(), ticker.Restarts())
 	}
-	if !strings.Contains(logs.String(), "Cron ticker thread 'cron-scheduler' died without a stop request; restarting (restart #1).") {
+	if !strings.Contains(logs.String(), `Cron ticker thread \"cron-scheduler\" died without a stop request; restarting (restart #1).`) {
 		t.Fatalf("log %s", logs.String())
 	}
 	close(stop)

@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 
 func wantPyError(t *testing.T, err error, class, msg string) {
 	t.Helper()
-	var pe *PyError
+	var pe *KindError
 	if !errors.As(err, &pe) || pe.Class != class || pe.Msg != msg {
 		t.Fatalf("error %v, want %s %q", err, class, msg)
 	}
@@ -231,7 +231,7 @@ func TestLibraryNames(t *testing.T) {
 		}
 	}
 	_, err := Import(t.TempDir(), Environment{})
-	var pe *PyError
+	var pe *KindError
 	if !errors.As(err, &pe) || pe.Class != "ImportError" || pe.Msg == "" {
 		t.Fatalf("import without the library gave %v", err)
 	}

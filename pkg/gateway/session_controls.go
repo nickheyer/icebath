@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -162,14 +163,14 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 	}
 	if granted, ok := identity["capabilities"]; ok {
 		capabilities = map[string]bool{}
-		items, err := pyIterable(granted)
+		items, err := iterable(granted)
 		if err != nil {
 			return nil, err
 		}
 		for _, item := range items {
 			name, isText := item.(string)
 			if !isText {
-				return nil, &PyError{Kind: "TypeError", Msg: "unhashable capability " + anyutil.Quote(item)}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "unhashable capability " + anyutil.Quote(item)}
 			}
 			capabilities[name] = true
 		}
@@ -179,7 +180,7 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 		capabilities["session:operator"] = true
 	}
 	instance, hasInstance := identity["instance_id"]
-	if !pyTruthy(identity["user_id"]) || (hasInstance && !anyutil.Equal(instance, a.InstanceID)) {
+	if !anyutil.IsTrue(identity["user_id"]) || (hasInstance && !anyutil.Equal(instance, a.InstanceID)) {
 		capabilities = map[string]bool{}
 	}
 	subject, err := PrincipalSubject(identity)
@@ -188,7 +189,7 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 	}
 	profileID := a.ProfileID
 	if value, ok := identity["profile_id"]; ok {
-		profileID = pyStrOf(value)
+		profileID = anyutil.String(value)
 	}
 	c := &AuthorityConnection{authority: a, transport: transport,
 		actor:         Principal{Subject: subject, ProfileID: profileID, Capabilities: capabilities, TransportID: uuidHex()},
@@ -203,7 +204,7 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 }
 
 // Items of a list, tuple or set value, the TypeError of anything else
-func pyIterable(value any) ([]any, error) {
+func iterable(value any) ([]any, error) {
 	switch typed := value.(type) {
 	case []any:
 		return typed, nil
@@ -226,7 +227,7 @@ func pyIterable(value any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "expected a list, got " + errchain.Kind(value)}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: "expected a list, got " + errchain.Kind(value)}
 }
 
 // Authority the connection acts on

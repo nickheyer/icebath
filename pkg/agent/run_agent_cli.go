@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -114,17 +115,8 @@ func parseToolsetArg(w io.Writer, raw, label string) []string {
 	for i, p := range parts {
 		names[i] = strings.TrimSpace(p)
 	}
-	fmt.Fprintf(w, "%s: %s\n", label, pyStrListRepr(names))
+	fmt.Fprintf(w, "%s: %s\n", label, anyutil.String(names))
 	return names
-}
-
-// Python repr of a list of str
-func pyStrListRepr(items []string) string {
-	reprs := make([]string, len(items))
-	for i, s := range items {
-		reprs[i] = pyStrRepr(s)
-	}
-	return "[" + strings.Join(reprs, ", ") + "]"
 }
 
 // Writes one trajectory in the batch runner format to a UUID named sample file
@@ -203,7 +195,7 @@ func Main(ctx context.Context, w io.Writer, o MainOptions) {
 	}
 	fmt.Fprintln(w, "\n"+strings.Repeat("=", 50)+"\n📋 CONVERSATION SUMMARY\n"+strings.Repeat("=", 50))
 	messages, _ := result["messages"].([]map[string]any)
-	fmt.Fprintf(w, "✅ Completed: %s\n📞 API Calls: %v\n💬 Messages: %d\n", pyBoolStr(result["completed"]), result["api_calls"], len(messages))
+	fmt.Fprintf(w, "✅ Completed: %s\n📞 API Calls: %v\n💬 Messages: %d\n", boolStr(result["completed"]), result["api_calls"], len(messages))
 	if final, _ := result["final_response"].(string); final != "" {
 		fmt.Fprintln(w, "\n🎯 FINAL RESPONSE:\n"+strings.Repeat("-", 30)+"\n"+final)
 	}
@@ -214,7 +206,7 @@ func Main(ctx context.Context, w io.Writer, o MainOptions) {
 }
 
 // Python str of a bool value
-func pyBoolStr(v any) string {
+func boolStr(v any) string {
 	switch v {
 	case true:
 		return "True"

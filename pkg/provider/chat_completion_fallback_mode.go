@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
@@ -29,7 +30,7 @@ func FallbackAPIModeHint(ctx context.Context, fb map[string]any, fbProvider stri
 		if err != nil {
 			return false, "", err
 		}
-		if declared := entry["api_mode"]; pyTruthy(declared) {
+		if declared := entry["api_mode"]; anyutil.IsTrue(declared) {
 			return true, cfgString(declared), nil
 		}
 	}

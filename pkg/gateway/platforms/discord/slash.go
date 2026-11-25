@@ -614,7 +614,7 @@ func (a *DiscordAdapter) rejectSlash(ctx context.Context, i *discordgo.Interacti
 	chanID := i.ChannelID
 	guildID := i.GuildID
 	pkgLog().Warn(fmt.Sprintf("[Discord] Unauthorized slash attempt: user=%s id=%s channel=%s guild=%s cmd=%s reason=%s",
-		userName, userID, pyNone(chanID), pyNone(guildID), anyutil.Quote(commandText), anyutil.Quote(reason)))
+		userName, userID, idOrNull(chanID), idOrNull(guildID), anyutil.Quote(commandText), anyutil.Quote(reason)))
 	if err := a.respondEphemeral(ctx, i, unauthorized(ctx)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("[Discord] Could not send unauthorized ephemeral: %s", err))
 	}
@@ -622,10 +622,10 @@ func (a *DiscordAdapter) rejectSlash(ctx context.Context, i *discordgo.Interacti
 	return false
 }
 
-// Python None text for an empty id
-func pyNone(s string) string {
+// Id as an alert shows it, null for an empty id such as the guild of a direct message
+func idOrNull(s string) string {
 	if s == "" {
-		return "None"
+		return "null"
 	}
 	return s
 }
@@ -673,7 +673,7 @@ func (a *DiscordAdapter) deliverUnauthorizedSlashAlert(ctx context.Context, runn
 			continue
 		}
 		msg := i18n.T(ctx, "platform.discord.security.unauthorized_slash_alert", "", map[string]any{"user_name": userName, "user_id": userID,
-			"chan_id": pyNone(chanID), "guild_id": pyNone(guildID), "command_text": commandText, "reason": reason})
+			"chan_id": idOrNull(chanID), "guild_id": idOrNull(guildID), "command_text": commandText, "reason": reason})
 		var result gateway.SendResult
 		presented, err := config.PresentNotification(ctx, func(ctx context.Context) error {
 			var sendErr error

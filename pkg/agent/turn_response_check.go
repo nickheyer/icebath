@@ -178,7 +178,7 @@ func retryInvalidResponse(ctx context.Context, a *AIAgent, s *LoopState, errorDe
 		"task_id": s.EffectiveTaskID, "turn_id": s.TurnID, "api_request_id": s.APIRequestID,
 		"api_call_count": s.APICallCount, "api_start_time": s.APIStartTime, "api_kwargs": s.APIKwargs,
 		"error_type": "InvalidAPIResponse", "error_message": errorMessage,
-		"status_code": pyAttr(state.ToolCallField(s.Response, "error"), "code"),
+		"status_code": attrValue(state.ToolCallField(s.Response, "error"), "code"),
 		"retry_count": s.RetryCount, "max_retries": s.MaxRetries, "retryable": true, "reason": "invalid_response",
 	})
 	s.ThinkingSpinner = stopThinkingSpinner(a, s.ThinkingSpinner)

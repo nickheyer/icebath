@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -51,7 +52,7 @@ func stringifyGeminiEnumValue(item any) (string, bool) {
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return "", false
 		}
-		return pyFloatRepr(v), true
+		return floatRepr(v), true
 	case json.Number:
 		return v.String(), true
 	}
@@ -279,7 +280,7 @@ func inlineGeminiRefs(node any, root *jsonutil.Object, budget *int, stack []stri
 		}
 		for _, s := range stack {
 			if s == ref {
-				return nil, errors.New("circular $ref " + pyRepr(ref))
+				return nil, errors.New("circular $ref " + anyutil.Quote(ref))
 			}
 		}
 		*budget--
@@ -288,7 +289,7 @@ func inlineGeminiRefs(node any, root *jsonutil.Object, budget *int, stack []stri
 		}
 		target := resolveLocalRef(root, ref)
 		if target == nil {
-			return nil, errors.New("unresolvable $ref " + pyRepr(ref))
+			return nil, errors.New("unresolvable $ref " + anyutil.Quote(ref))
 		}
 		inlined, err := inlineGeminiRefs(target, root, budget, append(append([]string{}, stack...), ref))
 		if err != nil {

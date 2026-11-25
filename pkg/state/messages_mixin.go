@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -62,7 +63,7 @@ func parseToolCalls(toolCalls any) any {
 	if !ok {
 		return toolCalls
 	}
-	v, err := pyLoads(s)
+	v, err := loadsValue(s)
 	if err != nil {
 		return []any{}
 	}
@@ -86,7 +87,7 @@ func toolCallsLen(raw any, scalar int) int {
 	if list, ok := parsed.([]any); ok {
 		return len(list)
 	}
-	if pyTruthy(parsed) {
+	if anyutil.IsTrue(parsed) {
 		return scalar
 	}
 	return 0
@@ -102,7 +103,7 @@ func scrubSurrogates(value any) any {
 
 // Lock or lease row whose holder expired or is a provably dead local process
 func staleHolder(row map[string]any, now float64) bool {
-	expires, _ := pyFloatOf(row["expires_at"])
+	expires, _ := floatOf(row["expires_at"])
 	holder, _ := row["holder"].(string)
 	return expires <= now || compressionLockHolderProcessIsDead(holder)
 }
@@ -137,7 +138,7 @@ func bumpConversationGeneration(ctx context.Context, conn SQLiteConn, sessionID,
 	if err != nil || row == nil {
 		return err
 	}
-	source, sessionKey := pyStrip(rowStrOrMap(row, "source")), pyStrip(rowStrOrMap(row, "session_key"))
+	source, sessionKey := strings.TrimSpace(rowStrOrMap(row, "source")), strings.TrimSpace(rowStrOrMap(row, "session_key"))
 	if source != "" && sessionKey != "" {
 		_, err = conn.ExecContext(ctx, bumpGenerationSQL, source, sessionKey)
 	}
@@ -146,10 +147,10 @@ func bumpConversationGeneration(ctx context.Context, conn SQLiteConn, sessionID,
 
 // Python str of a map value after the or empty fallback
 func rowStrOrMap(row map[string]any, key string) string {
-	if !pyTruthy(row[key]) {
+	if !anyutil.IsTrue(row[key]) {
 		return ""
 	}
-	return pyStr(row[key])
+	return anyutil.String(row[key])
 }
 
 // Whether a string list holds the value
@@ -174,16 +175,16 @@ func encodeMessageContent(content any) any {
 	case nil, []byte, int, int64, float64, bool:
 		return content
 	}
-	text, err := pyDumps(content, pyJSONDefault)
+	text, err := dumpsValue(content, jsonDefault)
 	if err != nil {
-		return SanitizeSurrogates(pyStr(content))
+		return SanitizeSurrogates(anyutil.String(content))
 	}
 	return contentJSONPrefix + text
 }
 
 // Display metadata serialized for its TEXT column, serialized JSON objects kept and anything else dropped
 func encodeDisplayMetadata(displayMetadata any) (any, error) {
-	if !pyTruthy(displayMetadata) {
+	if !anyutil.IsTrue(displayMetadata) {
 		return nil, nil
 	}
 	if s, ok := displayMetadata.(string); ok {
@@ -203,7 +204,7 @@ func encodeDisplayMetadata(displayMetadata any) (any, error) {
 		pkgLog().Warn(fmt.Sprintf("Ignoring unexpected display metadata type on write: %s", anyutil.Kind(displayMetadata)))
 		return nil, nil
 	}
-	text, err := pyDumps(displayMetadata, pyJSONDefault)
+	text, err := dumpsValue(displayMetadata, jsonDefault)
 	if err != nil {
 		return nil, err
 	}
@@ -212,13 +213,13 @@ func encodeDisplayMetadata(displayMetadata any) (any, error) {
 
 // Structured reasoning field for its TEXT column, strings stored as given
 func reasoningJSONText(value any) (any, error) {
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return nil, nil
 	}
 	if s, ok := value.(string); ok {
 		return s, nil
 	}
-	text, err := pyDumps(value, pyJSONDefault)
+	text, err := dumpsValue(value, jsonDefault)
 	if err != nil {
 		return nil, err
 	}
@@ -239,8 +240,8 @@ func displayDedupeKey(row map[string]any) (string, error) {
 	if err != nil || ok {
 		return key, err
 	}
-	return "(" + pyReprValue(row["role"]) + ", " + pyReprValue(dedupeContent) + ", " + pyReprValue(row["timestamp"]) + ", " +
-		pyReprValue(row["tool_call_id"]) + ", " + pyReprValue(row["tool_calls"]) + ", " + pyReprValue(row["tool_name"]) + ")", nil
+	return "(" + anyutil.Quote(row["role"]) + ", " + anyutil.Quote(dedupeContent) + ", " + anyutil.Quote(row["timestamp"]) + ", " +
+		anyutil.Quote(row["tool_call_id"]) + ", " + anyutil.Quote(row["tool_calls"]) + ", " + anyutil.Quote(row["tool_name"]) + ")", nil
 }
 
 // Display key hash every reader and writer calls, swappable so tests can count hashing work
@@ -258,7 +259,7 @@ func foldSummaryCarrier(row map[string]any, key string, firstByUID map[string]st
 	if uid == "" {
 		return key
 	}
-	if pyTruthy(row["_compressed_summary"]) {
+	if anyutil.IsTrue(row["_compressed_summary"]) {
 		if first, ok := firstByUID[uid]; ok {
 			return first
 		}
@@ -281,8 +282,8 @@ func dedupeDisplayGenerations(rows []*jsonutil.Object, dropRemoved bool) ([]*jso
 	laterCopies := laterToolCopyIDs(rows)
 	if dropRemoved {
 		for _, row := range rows {
-			if !pyTruthy(rowValue(row, "active")) && !pyTruthy(rowValue(row, "compacted")) {
-				removedTS[pyReprValue(rowValue(row, "timestamp"))] = true
+			if !anyutil.IsTrue(rowValue(row, "active")) && !anyutil.IsTrue(rowValue(row, "compacted")) {
+				removedTS[anyutil.Quote(rowValue(row, "timestamp"))] = true
 			}
 		}
 		dropRemoved = len(removedTS) > 0
@@ -294,12 +295,12 @@ func dedupeDisplayGenerations(rows []*jsonutil.Object, dropRemoved bool) ([]*jso
 		key := ""
 		haveKey := false
 		if dropRemoved {
-			gone := !pyTruthy(row["active"]) && !pyTruthy(row["compacted"])
+			gone := !anyutil.IsTrue(row["active"]) && !anyutil.IsTrue(row["compacted"])
 			var stored any
 			if gone {
 				stored = row["display_identity"]
 			}
-			if !pyTruthy(stored) {
+			if !anyutil.IsTrue(stored) {
 				k, err := displayDedupeKey(row)
 				if err != nil {
 					return nil, err
@@ -307,17 +308,17 @@ func dedupeDisplayGenerations(rows []*jsonutil.Object, dropRemoved bool) ([]*jso
 				key, haveKey = k, true
 			}
 			hashed := ""
-			if pyTruthy(stored) {
+			if anyutil.IsTrue(stored) {
 				hashed = "h:" + string(identityBytes(stored))
-			} else if haveKey && (gone || removedTS[pyReprValue(row["timestamp"])]) {
+			} else if haveKey && (gone || removedTS[anyutil.Quote(row["timestamp"])]) {
 				hashed = "h:" + string(displayIdentityOf(key))
 			}
 			if hashed != "" {
 				copies = append(copies, hashed)
 			}
 			for _, uid := range append([]any{row["message_uid"]}, anyStrings(uidList(row["absorbed_message_uids"]))...) {
-				if pyTruthy(uid) {
-					copies = append(copies, "uid:"+pyStr(uid))
+				if anyutil.IsTrue(uid) {
+					copies = append(copies, "uid:"+anyutil.String(uid))
 				}
 			}
 			for _, c := range copies {
@@ -391,7 +392,7 @@ func identityBytes(v any) []byte {
 	case string:
 		return []byte(x)
 	}
-	return []byte(pyStr(v))
+	return []byte(anyutil.String(v))
 }
 
 // String list as a list of values
@@ -435,7 +436,7 @@ func (d *SessionDB) checkTranscriptWriteGuards(ctx context.Context, conn SQLiteC
 					return err
 				}
 			} else if g.compressionLockHolder == nil || lock["holder"] != *g.compressionLockHolder {
-				return &SessionCompressionInProgressError{Msg: "Session " + pyRepr(sessionID) + " is being compressed by another writer"}
+				return &SessionCompressionInProgressError{Msg: "Session " + strconv.Quote(sessionID) + " is being compressed by another writer"}
 			}
 		}
 	}
@@ -455,9 +456,9 @@ func (d *SessionDB) checkTranscriptWriteGuards(ctx context.Context, conn SQLiteC
 		current := now()
 		if holder != "" {
 			if lease == nil || lease["holder"] != holder {
-				return &SessionTurnLeaseLostError{Msg: "Session turn lease lost; refusing transcript write for " + pyRepr(sessionID)}
+				return &SessionTurnLeaseLostError{Msg: "Session turn lease lost; refusing transcript write for " + strconv.Quote(sessionID)}
 			}
-			if expires, _ := pyFloatOf(lease["expires_at"]); expires <= current {
+			if expires, _ := floatOf(lease["expires_at"]); expires <= current {
 				ttl := 300.0
 				if g.turnLeaseTTLSeconds != nil {
 					ttl = *g.turnLeaseTTLSeconds
@@ -469,7 +470,7 @@ func (d *SessionDB) checkTranscriptWriteGuards(ctx context.Context, conn SQLiteC
 			}
 		} else if lease != nil {
 			if !staleHolder(lease, current) {
-				return &SessionTurnLeaseLostError{Msg: "Session has an active turn lease; refusing transcript mutation for " + pyRepr(sessionID)}
+				return &SessionTurnLeaseLostError{Msg: "Session has an active turn lease; refusing transcript mutation for " + strconv.Quote(sessionID)}
 			}
 			if _, err := conn.ExecContext(ctx, "DELETE FROM session_turn_leases WHERE conversation_id = ? AND holder = ?", conversationID, lease["holder"]); err != nil {
 				return err
@@ -529,8 +530,8 @@ func (d *SessionDB) walkTurnLeaseKeyOnConn(ctx context.Context, conn SQLiteConn,
 	if current == nil {
 		return sessionID, nil
 	}
-	if id := rowValue(current, "id"); pyTruthy(id) {
-		return pyStr(id), nil
+	if id := rowValue(current, "id"); anyutil.IsTrue(id) {
+		return anyutil.String(id), nil
 	}
 	return sessionID, nil
 }
@@ -560,8 +561,8 @@ func messageRowValues(sessionID, role string, msg map[string]any, toolCalls any,
 	}
 	encodedContent := encodeMessageContent(msg["content"])
 	var encodedToolCalls any
-	if pyTruthy(toolCalls) {
-		text, err := pyDumps(toolCalls, pyJSONDefault)
+	if anyutil.IsTrue(toolCalls) {
+		text, err := dumpsValue(toolCalls, jsonDefault)
 		if err != nil {
 			return nil, err
 		}
@@ -589,10 +590,10 @@ func messageRowValues(sessionID, role string, msg map[string]any, toolCalls any,
 		params = append(params, text)
 	}
 	platformID := msg["platform_message_id"]
-	if !pyTruthy(platformID) {
+	if !anyutil.IsTrue(platformID) {
 		platformID = msg["message_id"]
 	}
-	params = append(params, platformID, boolInt(pyTruthy(msg["observed"])), boolInt(pyTruthy(msg["_compressed_summary"])), 1,
+	params = append(params, platformID, boolInt(anyutil.IsTrue(msg["observed"])), boolInt(anyutil.IsTrue(msg["_compressed_summary"])), 1,
 		strOrNone(msg["api_content"]), strOrNone(msg["display_kind"]), encodedMeta, displayIdentityOf(key))
 	if uid, ok := MessageUIDOrNone(msg); ok {
 		params = append(params, uid)
@@ -619,39 +620,39 @@ func messageRowValues(sessionID, role string, msg map[string]any, toolCalls any,
 }
 
 // Ordered object view of a mapping value
-func toPyObject(v any) pyObject {
+func toPyObject(v any) orderedObject {
 	switch m := v.(type) {
-	case pyObject:
-		return append(pyObject{}, m...)
+	case orderedObject:
+		return append(orderedObject{}, m...)
 	case *jsonutil.Object:
-		out := pyObject{}
+		out := orderedObject{}
 		for _, k := range m.Keys() {
-			out = append(out, pyKeyValue{k, m.Value(k)})
+			out = append(out, keyValue{k, m.Value(k)})
 		}
 		return out
 	case map[string]any:
-		out := pyObject{}
+		out := orderedObject{}
 		for _, k := range sortedKeys(m) {
-			out = append(out, pyKeyValue{k, m[k]})
+			out = append(out, keyValue{k, m[k]})
 		}
 		return out
 	}
-	return pyObject{}
+	return orderedObject{}
 }
 
 // Object with the key set in place or appended like a dict assignment
-func pyObjectSet(obj pyObject, key string, value any) pyObject {
+func objectSet(obj orderedObject, key string, value any) orderedObject {
 	for i := range obj {
 		if obj[i].Key == key {
 			obj[i].Value = value
 			return obj
 		}
 	}
-	return append(obj, pyKeyValue{key, value})
+	return append(obj, keyValue{key, value})
 }
 
 // Object without the key like dict pop
-func pyObjectDel(obj pyObject, key string) pyObject {
+func objectDel(obj orderedObject, key string) orderedObject {
 	for i := range obj {
 		if obj[i].Key == key {
 			return append(obj[:i:i], obj[i+1:]...)
@@ -664,14 +665,14 @@ func pyObjectDel(obj pyObject, key string) pyObject {
 func stampToolCallUIDs(msg map[string]any, toolCalls any, batchIndex map[string]string) {
 	switch msg["role"] {
 	case "assistant":
-		if !pyTruthy(toolCalls) {
+		if !anyutil.IsTrue(toolCalls) {
 			return
 		}
 		uids := toolCallUIDMap(msg)
-		for _, tc := range pyIter(toolCalls) {
+		for _, tc := range elementsOf(toolCalls) {
 			callID := CoalesceToolCallID(tc)
 			if _, ok := uids.get(callID); callID != "" && !ok {
-				uids = append(uids, pyKeyValue{callID, MintUID()})
+				uids = append(uids, keyValue{callID, MintUID()})
 			}
 		}
 		if len(uids) > 0 {
@@ -839,13 +840,13 @@ func (d *SessionDB) SetMessageReaction(ctx context.Context, sessionID string, ro
 		if emoji != nil && *emoji != "" {
 			prevEmoji, _ := mappingGet(previous, "emoji")
 			if previous == nil || prevEmoji != *emoji {
-				reactions = append(reactions, pyObject{{"emoji", SanitizeSurrogates(*emoji)}, {"author", author}, {"at", now()}})
+				reactions = append(reactions, orderedObject{{"emoji", SanitizeSurrogates(*emoji)}, {"author", author}, {"at", now()}})
 			}
 		}
 		if len(reactions) > 0 {
-			meta = pyObjectSet(meta, ReactionsMetadataKey, reactions)
+			meta = objectSet(meta, ReactionsMetadataKey, reactions)
 		} else {
-			meta = pyObjectDel(meta, ReactionsMetadataKey)
+			meta = objectDel(meta, ReactionsMetadataKey)
 		}
 		var encoded any
 		if len(meta) > 0 {
@@ -905,27 +906,27 @@ func (d *SessionDB) TakeUnseenReactions(ctx context.Context, sessionID, author s
 			}
 			changed := false
 			for i, reaction := range reactions {
-				obj, isObj := reaction.(pyObject)
+				obj, isObj := reaction.(orderedObject)
 				if !isObj {
 					continue
 				}
 				a, _ := obj.get("author")
 				seen, _ := obj.get("seen")
-				if a != author || pyTruthy(seen) {
+				if a != author || anyutil.IsTrue(seen) {
 					continue
 				}
-				reactions[i] = pyObjectSet(obj, "seen", true)
+				reactions[i] = objectSet(obj, "seen", true)
 				changed = true
 				content := decodeMessageContent(rowValue(row, "content"))
 				text, _ := content.(string)
 				emoji, _ := obj.get("emoji")
-				if !pyTruthy(emoji) {
+				if !anyutil.IsTrue(emoji) {
 					emoji = ""
 				}
 				pending = append(pending, map[string]any{"row_id": rowValue(row, "id"), "role": rowValue(row, "role"), "emoji": emoji, "text": text})
 			}
 			if changed {
-				encoded, err := encodeDisplayMetadata(pyObjectSet(toPyObject(meta), ReactionsMetadataKey, reactions))
+				encoded, err := encodeDisplayMetadata(objectSet(toPyObject(meta), ReactionsMetadataKey, reactions))
 				if err != nil {
 					return err
 				}
@@ -963,7 +964,7 @@ func (d *SessionDB) LatestConversationRole(ctx context.Context, sessionID string
 	if err != nil || row == nil {
 		return "", err
 	}
-	return pyStr(rowValue(row, "role")), nil
+	return anyutil.String(rowValue(row, "role")), nil
 }
 
 // Role of the active message at the row id in the session, false when absent
@@ -975,7 +976,7 @@ func (d *SessionDB) GetMessageRole(ctx context.Context, sessionID string, rowID 
 	if err != nil || row == nil {
 		return "", false, err
 	}
-	return pyStr(rowValue(row, "role")), true, nil
+	return anyutil.String(rowValue(row, "role")), true, nil
 }
 
 // Whether a json reasoning item is a compaction checkpoint

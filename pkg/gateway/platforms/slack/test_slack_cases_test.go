@@ -532,14 +532,14 @@ func TestIncomingDocumentHandlingDocumentMarksMediaTextInlined(t *testing.T) {
 			ev := dispatchedDoc(t, a, captured, docEvent("", []any{map[string]any{"mimetype": "text/plain", "name": "notes.txt",
 				"url_private_download": "https://files.slack.com/notes.txt", "size": int64(len(c.content))}}))
 			if strings.Contains(ev.Text, "[Content of") != c.inlined || len(ev.MediaTextInlined) != 1 || *ev.MediaTextInlined[0] != c.inlined {
-				t.Fatalf("text %q inlined %v", pyShort(ev.Text), ev.MediaTextInlined)
+				t.Fatalf("text %q inlined %v", shortValue(ev.Text), ev.MediaTextInlined)
 			}
 		})
 	}
 }
 
 // First characters of a long text for failure messages
-func pyShort(s string) string {
+func shortValue(s string) string {
 	if len(s) > 80 {
 		return s[:80]
 	}

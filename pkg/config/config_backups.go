@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Backups a config writer keeps per reason
@@ -23,7 +25,7 @@ var backupTimestamp = func() string { return time.Now().Format("20060102-150405"
 
 // Directory holding the dated config backups beside a config file
 func BackupsDir(configPath string) string {
-	return filepath.Join(filepath.Dir(configPath), "backups", "config")
+	return pathutil.JoinKeepDotDot(pathutil.DirKeepDotDot(configPath), "backups", "config")
 }
 
 // Existing backups newest first, filtered to one reason when given
@@ -39,7 +41,7 @@ func ListConfigBackups(configPath, reason string) []string {
 	}
 	var out []string
 	for _, e := range entries {
-		p := filepath.Join(root, e.Name())
+		p := pathutil.JoinKeepDotDot(root, e.Name())
 		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && strings.HasPrefix(e.Name(), prefix) {
 			out = append(out, p)
 		}
@@ -63,7 +65,7 @@ func BackupConfig(ctx context.Context, configPath, reason string, keep int) (str
 	}
 	root := BackupsDir(configPath)
 	fail := func(err error) string {
-		pkgLog().Warn(fmt.Sprintf("Could not back up %s (%s): %s", configPath, reason, pyOSErrorString(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not back up %s (%s): %s", configPath, reason, errchain.OSText(err)))
 		return ""
 	}
 	if err := os.MkdirAll(root, 0o777); err != nil {
@@ -91,7 +93,7 @@ func BackupConfig(ctx context.Context, configPath, reason string, keep int) (str
 			return "", nil
 		}
 	}
-	dest := filepath.Join(root, filepath.Base(configPath)+"."+reason+"."+backupTimestamp())
+	dest := pathutil.JoinKeepDotDot(root, filepath.Base(configPath)+"."+reason+"."+backupTimestamp())
 	if _, err := os.Lstat(dest); err == nil {
 		return "", nil
 	}
@@ -129,7 +131,7 @@ func LoadNewestGoodBackup(ctx context.Context, configPath string) (map[string]an
 		doc, err = FastSafeLoad(data)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Last-known-good backup %s is unreadable: %s", newest[0], pyOSErrorString(err)))
+		pkgLog().Warn(fmt.Sprintf("Last-known-good backup %s is unreadable: %s", newest[0], errchain.OSText(err)))
 		return nil, nil
 	}
 	if m, ok := doc.(map[string]any); ok {
@@ -140,16 +142,24 @@ func LoadNewestGoodBackup(ctx context.Context, configPath string) (map[string]an
 
 // Moves legacy backup siblings of config.yaml into the backups dir and makes them owner only
 func sweepLegacySiblings(ctx context.Context, configPath, root string) {
+	dir := pathutil.DirKeepDotDot(configPath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
 	for _, pattern := range legacySiblingGlobs {
-		matches, _ := filepath.Glob(filepath.Join(filepath.Dir(configPath), pattern))
-		for _, old := range matches {
+		for _, e := range entries {
+			if ok, _ := filepath.Match(pattern, e.Name()); !ok {
+				continue
+			}
+			old := pathutil.JoinKeepDotDot(dir, e.Name())
 			st, err := os.Lstat(old)
 			if err != nil || !st.Mode().IsRegular() {
 				continue
 			}
-			moved := filepath.Join(root, filepath.Base(old))
+			moved := pathutil.JoinKeepDotDot(root, e.Name())
 			if err := os.Rename(old, moved); err != nil {
-				pkgLog().Debug(fmt.Sprintf("Could not move legacy backup %s: %s", old, pyOSErrorString(err)))
+				pkgLog().Debug(fmt.Sprintf("Could not move legacy backup %s: %s", old, errchain.OSText(err)))
 				continue
 			}
 			SecureFile(ctx, "", moved)

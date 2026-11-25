@@ -2,7 +2,6 @@ package startupfast
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -125,18 +124,21 @@ func printUpdateStatus(ctx context.Context, w io.Writer, root string) {
 	}
 }
 
-// Update status line, rollback before the behind count, none when no branch matches or the command lookup fails
+// Update status line, rollback before the behind count, none when behind is no count the line can show or the command lookup fails
 func updateStatusLine(status *jsonutil.Object, command func() (string, error)) (string, bool) {
 	behind, _ := status.Get("behind")
 	rollback, _ := status.Get("rollback")
 	switch {
 	case anyutil.IsTrue(rollback):
-		sourceVersion, _ := status.Get("sourceVersion")
 		cmd, err := command()
 		if err != nil {
 			return "", false
 		}
-		return fmt.Sprintf("Newer than stable release v%s — '%s' moves back to it", anyutil.String(sourceVersion), cmd), true
+		release := "the stable release"
+		if version := anyutil.String(status.ValueOr("sourceVersion", nil)); version != "" {
+			release = "stable release v" + version
+		}
+		return fmt.Sprintf("Newer than %s — '%s' moves back to it", release, cmd), true
 	case anyutil.Equal(behind, updaterecord.UpdateAvailableNoCount):
 		cmd, err := command()
 		if err != nil {
@@ -144,8 +146,7 @@ func updateStatusLine(status *jsonutil.Object, command func() (string, error)) (
 		}
 		return fmt.Sprintf("Update available — run '%s'", cmd), true
 	case anyutil.IsTrue(behind):
-		positive, comparable := pyPositive(behind)
-		if !comparable || !positive {
+		if !positiveNumber(behind) {
 			return "", false
 		}
 		word := "commits"
@@ -163,24 +164,10 @@ func updateStatusLine(status *jsonutil.Object, command func() (string, error)) (
 	return "", false
 }
 
-// Python value greater than zero for a bool, int or float, comparable false where the comparison raises TypeError
-func pyPositive(v any) (positive, comparable bool) {
-	switch n := v.(type) {
-	case bool:
-		return n, true
-	case float64:
-		return n > 0, true
-	case float32:
-		return n > 0, true
-	case json.Number:
-		if f, err := n.Float64(); err == nil && strings.ContainsAny(string(n), ".eE") {
-			return f > 0, true
-		}
-	}
-	if i, ok := anyutil.Int(v); ok {
-		return i > 0, true
-	}
-	return false, false
+// Whether v is a number above zero, false for text, booleans and any other value that is no number
+func positiveNumber(v any) bool {
+	f, ok := anyutil.Float(v)
+	return ok && f > 0
 }
 
 // The installer's .install_method stamp in the resolved home, lower cased and empty when absent

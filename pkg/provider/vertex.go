@@ -466,9 +466,8 @@ func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, bod
 		return nil, err
 	}
 	req.Host = httpxHost(req.URL)
-	prepared := httpxPreparedLines(req, lines, len(data))
-	prepared.Set("Authorization", "Bearer "+token)
-	return withHeader(req, prepared), nil
+	lines.Set("Authorization", "Bearer "+token)
+	return withHeader(req, lines), nil
 }
 
 func (t *anthVertexTransport) Events(resp *http.Response) anthEventSource {

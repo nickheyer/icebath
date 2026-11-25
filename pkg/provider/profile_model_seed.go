@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Fields endpoint lookups match on, expanded for matching while copied entries keep their env refs
@@ -76,7 +77,7 @@ func LaunchModelSeed(ctx context.Context, sourceCfg map[string]any) map[string]a
 // Model seed of a source config and whether its provider selects an endpoint the runtime resolves
 func selectedModelSeed(ctx context.Context, sourceCfg map[string]any) (map[string]any, bool) {
 	modelCfg := sourceCfg["model"]
-	if !pyTruthy(modelCfg) {
+	if !anyutil.IsTrue(modelCfg) {
 		return map[string]any{}, false
 	}
 	seed := map[string]any{"model": modelCfg}
@@ -107,11 +108,11 @@ func seedAliases(ctx context.Context, entry any, key string) map[string]bool {
 	}
 	m := seedExpandFields(ctx, entry, seedRoutingFields).(map[string]any)
 	if key == "" {
-		key = pyOrStr(m["provider_key"])
+		key = anyutil.StringOr(m["provider_key"], "")
 	}
 	name := key
-	if pyTruthy(m["name"]) {
-		name = pyStr(m["name"])
+	if anyutil.IsTrue(m["name"]) {
+		name = anyutil.String(m["name"])
 	}
 	return CustomProviderAliases(name, key)
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Asker recording every approval prompt and answering with a mutable choice
@@ -131,7 +132,7 @@ func wgHasError(r map[string]any) bool {
 // Asserts a tool result carries a BLOCKED refusal
 func wgAssertBlocked(t *testing.T, r map[string]any) {
 	t.Helper()
-	if !wgHasError(r) || !strings.Contains(pyStr(r["error"]), "BLOCKED") {
+	if !wgHasError(r) || !strings.Contains(anyutil.String(r["error"]), "BLOCKED") {
 		t.Fatalf("expected BLOCKED error, got %v", r)
 	}
 }
@@ -865,7 +866,7 @@ func wgBlocked(t *testing.T, r map[string]any) string {
 	if r["stale_write_blocked"] != true {
 		t.Fatalf("expected stale_write_blocked, got %v", r)
 	}
-	return pyStr(r["error"])
+	return anyutil.String(r["error"])
 }
 
 // Per test task id whose file tool state is dropped when the test ends
@@ -1269,7 +1270,7 @@ func TestWriteGuardsBaselineThirdPatchFailureHintRequiresFullReread(t *testing.T
 	for range 3 {
 		failed = wgDispatch(t, env, "patch", task, map[string]any{"path": path, "old_string": "missing", "new_string": "x"})
 	}
-	hint := pyStr(failed["_hint"])
+	hint := anyutil.String(failed["_hint"])
 	if !strings.Contains(hint, "failure #3") || !strings.Contains(hint, "re-read the file in full, then use write_file to replace it") ||
 		strings.Contains(hint, "use write_file to replace the entire file") {
 		t.Fatalf("hint %q", hint)

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // The locals one API error threads from classification through routing, overflow recovery and settlement
@@ -17,7 +19,6 @@ type apiErrorTurn struct {
 	classified             *provider.Classified
 	statusCode             *int
 	errorContext           map[string]any
-	errorType              string
 	errorMsg               string
 	providerName           string
 	baseURL                string
@@ -78,7 +79,7 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 	cl := provider.ClassifyError(in)
 	e.classified = cl
 	pkgLog().Debug(fmt.Sprintf("Error classified: reason=%s status=%s retryable=%s compress=%s rotate=%s fallback=%s",
-		cl.Reason, pyIntOrNone(cl.StatusCode), pyBool(cl.Retryable), pyBool(cl.ShouldCompress), pyBool(cl.ShouldRotateCredential), pyBool(cl.ShouldFallback)))
+		cl.Reason, intOrNoneValue(cl.StatusCode), strconv.FormatBool(cl.Retryable), strconv.FormatBool(cl.ShouldCompress), strconv.FormatBool(cl.ShouldRotateCredential), strconv.FormatBool(cl.ShouldFallback)))
 	var statusArg any
 	if e.statusCode != nil {
 		statusArg = *e.statusCode
@@ -99,7 +100,7 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 	s.RetryCount++
 	elapsed := apiErrorWallNow() - s.APIStartTime
 	a.TouchActivity(fmt.Sprintf("API error recovery (attempt %d/%d)", s.RetryCount, s.MaxRetries))
-	e.errorType, e.errorMsg, e.providerName, e.baseURL, e.model = logAPIErrorAttempt(ctx, a, s, e, elapsed, cl.Retryable)
+	e.errorMsg, e.providerName, e.baseURL, e.model = logAPIErrorAttempt(ctx, a, s, e, elapsed, cl.Retryable)
 
 	if a.Interrupted() {
 		if a.clearInterrupt(true) {
@@ -108,7 +109,7 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 		}
 		result, err := abortTurnOnInterrupt(a, &s.Messages, s.ConversationHistory, s.APICallCount,
 			"Interrupt detected during error handling, aborting retries.",
-			fmt.Sprintf("Operation interrupted: handling API error (%s: %s).", e.errorType, provider.CleanErrorMessage(apiError.Error())))
+			fmt.Sprintf("Operation interrupted: handling API error (%s: %s).", cl.Reason, provider.CleanErrorMessage(apiError.Error())))
 		return PhaseVerdict{Action: "return", Result: result}, err
 	}
 
@@ -127,18 +128,11 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 var apiErrorWallNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Python repr of an optional status code
-func pyIntOrNone(n int) string {
+func intOrNoneValue(n int) string {
 	if n == 0 {
 		return "None"
 	}
 	return fmt.Sprint(n)
-}
-
-func pyBool(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
 }
 
 // ValueError and TypeError shaped local bugs, excluding encode, decode, TLS, stream parse and NoneType iteration failures
@@ -167,7 +161,7 @@ func settleUnrecoveredError(ctx context.Context, a *AIAgent, s *LoopState, e *ap
 					message = apiErr.Message
 				}
 				stale := provider.AskOnErrorPath(ctx, profile, "is_stale_credential_error", false, map[string]any{"status_code": status, "message": message})
-				if pyTruthy(stale) {
+				if anyutil.IsTrue(stale) {
 					retry.ProviderStaleRefreshAttempted = true
 					refreshed, err := a.tryRefreshProviderRuntimeCredentials(ctx, "stale")
 					if err != nil {
@@ -194,7 +188,7 @@ func settleUnrecoveredError(ctx context.Context, a *AIAgent, s *LoopState, e *ap
 			if a.hasPendingFallback() {
 				label, ok := provider.NonretryableLabel(cl.Reason)
 				if !ok {
-					label = fmt.Sprintf("Non-retryable error (HTTP %s)", pyStatus(e.statusCode))
+					label = fmt.Sprintf("Non-retryable error (HTTP %s)", statusValue(e.statusCode))
 				}
 				a.BufferDiagnosticStatus(fmt.Sprintf("⚠️ %s — trying fallback...", label))
 			}
@@ -276,7 +270,7 @@ var (
 )
 
 // Python str of an optional status code
-func pyStatus(code *int) string {
+func statusValue(code *int) string {
 	if code == nil {
 		return "None"
 	}

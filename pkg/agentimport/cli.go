@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
@@ -350,7 +351,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 		report, err := makeImporter(execute)
 		if err != nil {
 			fmt.Fprintln(c.Out)
-			c.PrintError(fmt.Sprintf("Import%s failed: %s", phase, pyErrText(err)))
+			c.PrintError(fmt.Sprintf("Import%s failed: %s", phase, errText(err)))
 			pkgLog().Debug("import-agent"+phase+" error", "error", err)
 			return nil
 		}
@@ -478,7 +479,7 @@ func printRoutineNextSteps(c *cliui.Console, report *Report, product string) {
 		c.PrintInfo(fmt.Sprintf("%d routine(s) were created PAUSED so they don't run twice. Once you turn "+
 			"the routine off in %s, resume its copy here:", len(paused), product))
 		for _, it := range paused {
-			c.PrintInfo(fmt.Sprintf("  icebath cron resume %s    # %s", pyStr(it.Details["job_id"]), it.Destination))
+			c.PrintInfo(fmt.Sprintf("  icebath cron resume %s    # %s", anyutil.String(it.Details["job_id"]), it.Destination))
 		}
 	}
 	if len(jobs) > 0 {
@@ -490,7 +491,7 @@ func printRoutineNextSteps(c *cliui.Console, report *Report, product string) {
 // Records the source in the sync manifest so a later --sync pulls its changes in
 func registerForSync(ctx context.Context, c *cliui.Console, agent, sourceDir, target string, overwrite bool, report *Report) {
 	if err := UpdateSyncManifest(ctx, agent, sourceDir, target, overwrite, report, true); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not update import sync manifest: %s", pyErrText(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not update import sync manifest: %s", errText(err)))
 		return
 	}
 	c.PrintInfo("Source registered for sync — re-run 'icebath import-agent --sync' any time to pull in changes.")

@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
-	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -300,7 +299,7 @@ func AuditWorktrees(ctx context.Context, repoRoot string, withSizes bool, olderT
 		}
 		verdict, reason, untracked := gcClassifyTree(repoRoot, path, mergeCache, remoteHeads)
 		if olderThanDays != nil && gcReapVerdicts[verdict] && ageDays < *olderThanDays {
-			threshold, _ := templateutil.Format("{v:g}", map[string]any{"v": *olderThanDays})
+			threshold := strconv.FormatFloat(*olderThanDays, 'f', -1, 64)
 			verdict, reason, untracked = "keep", fmt.Sprintf("reapable but only %.1fd old (--older-than %s)", ageDays, threshold), nil
 		}
 		var size *int

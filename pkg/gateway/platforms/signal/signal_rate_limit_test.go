@@ -65,7 +65,7 @@ func TestAcquireWhenEmptySleepsForDeficit(t *testing.T) {
 		t.Fatal(wait, err, *sleeps, s.Tokens)
 	}
 	var se *SignalSchedulerError
-	if _, err := s.Acquire(context.Background(), 51); !errors.As(err, &se) || err.Error() != "Signal scheduler was called requesting 51 tokens (max is 50.0)" {
+	if _, err := s.Acquire(context.Background(), 51); !errors.As(err, &se) || err.Error() != "Signal scheduler was called requesting 51 tokens (max is 50)" {
 		t.Fatal(err)
 	}
 }

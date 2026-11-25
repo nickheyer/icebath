@@ -8,25 +8,14 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // The value an optional argument flag takes when given without a value
 const flagPresent = commands.FlagPresent
 
-// Python str of a value, nil reading as None
-func pyStr(v any) string { return config.PyStr(v) }
-
-// Python str of a value, empty for None
-func pyStrOrEmpty(v any) string {
-	if v == nil {
-		return ""
-	}
-	return config.PyStr(v)
-}
-
 // Python truthiness of a value
-func truthy(v any) bool { return config.PyTruthy(v) }
+func truthy(v any) bool { return anyutil.IsTrue(v) }
 
 // Value of a key on a row, nil when the row or key is absent
 func rowValue(row map[string]any, key string) any {
@@ -62,7 +51,7 @@ func printErr(msg string) { fmt.Fprintln(os.Stderr, msg) }
 func nsBool(ns map[string]any, key string) bool { return truthy(ns[key]) }
 
 // String dest of an argparse namespace, empty when absent or None
-func nsString(ns map[string]any, key string) string { return pyStrOrEmpty(ns[key]) }
+func nsString(ns map[string]any, key string) string { return anyutil.String(ns[key]) }
 
 // Integer dest of an argparse namespace, zero when absent or not an int
 func nsInt(ns map[string]any, key string) int {

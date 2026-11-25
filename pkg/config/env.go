@@ -11,6 +11,8 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -267,7 +269,7 @@ func writeEnvLines(path string, lines []string) error {
 
 // Writes data to path through a temporary sibling and a rename
 func AtomicWrite(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
+	dir := pathutil.DirKeepDotDot(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -471,7 +473,7 @@ type Secrets struct {
 
 // Secret resolver for a home directory
 func NewSecrets(home string) *Secrets {
-	return &Secrets{path: filepath.Join(home, ".env")}
+	return &Secrets{path: pathutil.JoinKeepDotDot(home, ".env")}
 }
 
 // Path of the .env file behind the resolver

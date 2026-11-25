@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 )
 
-// Python TypeError a provider registry raises for an object that is not an instance of its provider class
+// Error a provider registry returns for a value that is not of its provider type, naming both types
 type ProviderTypeError = providerregistry.ProviderTypeError
 
 // Registry key of a name stripped of whitespace and lowercased for case insensitive registries

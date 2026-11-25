@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -96,7 +97,7 @@ var fetchXAILiveImageModels = func(ctx context.Context, env *tools.Env, creds *x
 			continue
 		}
 		id := entry["id"]
-		if !pyTruthy(id) {
+		if !anyutil.IsTrue(id) {
 			id = entry["name"]
 		}
 		s, ok := id.(string)
@@ -105,10 +106,10 @@ var fetchXAILiveImageModels = func(ctx context.Context, env *tools.Env, creds *x
 		}
 		s = strings.TrimSpace(s)
 		mods, aliases := entry["input_modalities"], entry["aliases"]
-		if !pyTruthy(mods) {
+		if !anyutil.IsTrue(mods) {
 			mods = []any{}
 		}
-		if !pyTruthy(aliases) {
+		if !anyutil.IsTrue(aliases) {
 			aliases = []any{}
 		}
 		if _, seen := out.models[s]; !seen {
@@ -193,7 +194,7 @@ func xaiImageCatalog(ctx context.Context, env *tools.Env) imageModelCatalog {
 			row[k] = v
 		}
 		mods := live.models[id]["input_modalities"]
-		if !pyTruthy(mods) {
+		if !anyutil.IsTrue(mods) {
 			mods = []any{}
 		}
 		row["input_modalities"] = mods
@@ -229,7 +230,7 @@ func xaiCallerModel(v any) (string, bool, error) {
 		return "", true, &xaiUnhashableError{errchain.Kind(v)}
 	}
 	s, _ := v.(string)
-	return s, pyTruthy(v), nil
+	return s, anyutil.IsTrue(v), nil
 }
 
 // Caller kwarg, then XAI_IMAGE_MODEL, then config, then the default, each validated against the merged catalog
@@ -485,7 +486,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	if !has {
 		data = []any{}
 	}
-	if !pyTruthy(data) {
+	if !anyutil.IsTrue(data) {
 		return fail("xAI returned no image data", "empty_response"), nil
 	}
 	items, ok := data.([]any)
@@ -529,7 +530,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 			extra[k] = v
 		}
 	}
-	if usage, _ := obj.Get("usage"); pyTruthy(usage) {
+	if usage, _ := obj.Get("usage"); anyutil.IsTrue(usage) {
 		extra["usage"] = usage
 	}
 	modality := "text"

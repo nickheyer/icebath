@@ -296,7 +296,7 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 	}
 	if len(lines) == 0 {
 		record := ReadRuntimeStatus(filepath.Join(profileHome, "gateway_state.json"))
-		if reason := recGet(record, "exit_reason"); pyTruthy(reason) && pid != nil && pyEq(recGet(record, "pid"), int64(*pid)) {
+		if reason := recGet(record, "exit_reason"); anyutil.IsTrue(reason) && pid != nil && anyutil.Equal(recGet(record, "pid"), int64(*pid)) {
 			lines = []string{textutil.First(anyutil.String(reason), 2000)}
 			path = filepath.Join(profileHome, "logs", "gateway.log")
 		}

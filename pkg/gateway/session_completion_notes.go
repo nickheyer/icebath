@@ -89,7 +89,7 @@ func noteIfUnviewed(ctx context.Context, a *SessionAuthority, ref SessionRef, ro
 		return false, reopenForTurn(ctx, a, ref)
 	}
 	names := []string{anyutil.String(identity)}
-	if identities, _ := descriptor.Get("identities"); pyTruthy(identities) {
+	if identities, _ := descriptor.Get("identities"); anyutil.IsTrue(identities) {
 		if list, isList := identities.([]any); isList {
 			for _, item := range list {
 				names = append(names, anyutil.String(item))

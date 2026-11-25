@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -11,11 +12,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"github.com/spf13/cobra"
 )
 
 // Mirrors the import time sequence of and then its main
 func main() {
+	defer refuseWithoutDataHome()
 	if code, ok := runTierArgvEntries(os.Args); ok {
 		os.Exit(code)
 	}
@@ -116,6 +119,20 @@ func beforeDispatch(cli *commands.CLI, cmd *cobra.Command, args []string) error 
 		return &commands.ExitError{Code: runOneshotFromArgs(a)}
 	}
 	return nil
+}
+
+// Ends the process with the reason, not a stack trace, when it panicked because neither ICEBATH_HOME nor a user home names a folder for the data
+func refuseWithoutDataHome() {
+	r := recover()
+	if r == nil {
+		return
+	}
+	if err, ok := r.(error); ok && errors.Is(err, pathutil.ErrNoHome) {
+		cliui.RestoreTerminal()
+		fmt.Fprintln(os.Stderr, "icebath: "+err.Error())
+		os.Exit(1)
+	}
+	panic(r)
 }
 
 // Runs the registered exit hooks and ends the process with code

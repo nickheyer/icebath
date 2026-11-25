@@ -141,7 +141,7 @@ func resolveAudioDeliveryProfile(platform string, req *ttsRequest) audioDelivery
 }
 
 // Float of a Python int or float value, false for bools and every other type
-func pyRealNumber(v any) (float64, bool) {
+func realNumber(v any) (float64, bool) {
 	switch n := v.(type) {
 	case int:
 		return float64(n), true

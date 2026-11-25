@@ -292,9 +292,17 @@ func codexDynamicToolCallSpec(item any) (string, string, any, string) {
 	if list, ok := contentItems.([]any); ok && len(list) > 0 {
 		content = cxDumpsCut(list, 4000)
 	} else {
-		content = "success=" + anyutil.String(cxGet(item, "success"))
+		content = codexSuccessText(cxGet(item, "success"))
 	}
 	return "dyn_" + tool, tool, codexDictArgs(cxGet(item, "arguments")), content
+}
+
+// Tool result text of a dynamic tool call's success flag, success=null when the item carries none
+func codexSuccessText(success any) string {
+	if success == nil {
+		return "success=null"
+	}
+	return "success=" + anyutil.String(success)
 }
 
 func codexWebSearchSpec(item any) (string, string, any, string) {

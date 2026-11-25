@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Points the in-tree kill list at a directory holding one removed.yaml row for the world repo
@@ -27,11 +28,11 @@ func TestKillListBlocksCliAndUnattendedPaths(t *testing.T) {
 	w := catWorld(t)
 	catWorldRemoved(t, w, "malware")
 	res, err := UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{CatalogName: "cat-plugin"})
-	if err != nil || !strings.Contains(pyStrOr(res["error"]), "malware") {
+	if err != nil || !strings.Contains(anyutil.StringOr(res["error"], ""), "malware") {
 		t.Fatalf("unattended catalog install %v %v", res, err)
 	}
 	res, err = UnattendedInstallPlugin(w.ctx, UnattendedInstallOptions{Identifier: "file://" + filepath.ToSlash(w.repo)})
-	if err != nil || !strings.Contains(pyStrOr(res["error"]), "malware") {
+	if err != nil || !strings.Contains(anyutil.StringOr(res["error"], ""), "malware") {
 		t.Fatalf("unattended url install %v %v", res, err)
 	}
 	target := filepath.Join(w.pluginsDir, "cat-plugin")
@@ -161,7 +162,7 @@ func TestRepinKeepsAWhollyIgnoredDataDirInAGitCheckout(t *testing.T) {
 	c6Write(t, filepath.Join(w.repo, "helper.py"), "def register(ctx):\n    pass  # v4\n")
 	w.pin = c6Commit(t, w.repo, "v4")
 	res, err := UnattendedUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
-	if err != nil || res["ok"] != false || !strings.Contains(pyStrOr(res["error"]), "data/link.yaml") {
+	if err != nil || res["ok"] != false || !strings.Contains(anyutil.StringOr(res["error"], ""), "data/link.yaml") {
 		t.Fatalf("symlinked update %v %v", res, err)
 	}
 	if got := catHead(t, target); got != published {

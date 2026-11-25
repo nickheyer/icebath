@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Context methods the host serves for a guest through wire callbacks beyond the object taking ones
@@ -25,7 +25,7 @@ func hostedCheck(v any) func() bool {
 		if err != nil {
 			panic(err)
 		}
-		return config.PyTruthy(result)
+		return anyutil.IsTrue(result)
 	}
 }
 
@@ -51,28 +51,28 @@ func hostedApprovalPresent(f *HostedCallable) tools.ApprovalPresentFunc {
 		if reply["is_instance"] != true || !isRecord {
 			return tools.ApprovalTransportDecision{}, nil
 		}
-		return tools.ApprovalTransportDecision{RequestID: config.PyStr(decision["request_id"]), RequestDigest: config.PyStr(decision["request_digest"]),
-			Choice: config.PyStr(decision["choice"])}, nil
+		return tools.ApprovalTransportDecision{RequestID: anyutil.String(decision["request_id"]), RequestDigest: anyutil.String(decision["request_digest"]),
+			Choice: anyutil.String(decision["choice"])}, nil
 	}
 }
 
 func init() {
-	hostCtxDispatch["register_approval_transport"] = hostMethod("register_approval_transport", []pyParam{req("name"), req("present_fn")},
+	hostCtxDispatch["register_approval_transport"] = hostMethod("register_approval_transport", []paramValue{req("name"), req("present_fn")},
 		func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			var present tools.ApprovalPresentFunc
 			if f, ok := a["present_fn"].(*HostedCallable); ok && f != nil {
 				present = hostedApprovalPresent(f)
 			}
-			return nil, c.RegisterApprovalTransport(ctx, config.PyStr(a["name"]), present)
+			return nil, c.RegisterApprovalTransport(ctx, anyutil.String(a["name"]), present)
 		})
-	hostCtxDispatch["register_platform"] = hostMethod("register_platform", []pyParam{req("name"), req("label"), req("adapter_factory"), req("check_fn"),
+	hostCtxDispatch["register_platform"] = hostMethod("register_platform", []paramValue{req("name"), req("label"), req("adapter_factory"), req("check_fn"),
 		opt("validate_config", nil), opt("required_env", nil), opt("install_hint", ""), varKwargs()},
 		func(_ context.Context, _ *PluginHost, c *Context, a, extra map[string]any) (any, error) {
 			return c.RegisterPlatform(PlatformSpec{Name: argStr(a["name"]), Label: argStr(a["label"]), AdapterFactory: a["adapter_factory"],
 				Check: hostedCheck(a["check_fn"]), ValidateConfig: a["validate_config"], RequiredEnv: argStrings(a["required_env"]),
 				InstallHint: argStr(a["install_hint"]), Extra: extra})
 		})
-	hostCtxDispatch["register_slack_action_handler"] = hostMethod("register_slack_action_handler", []pyParam{req("action_id"), req("callback")},
+	hostCtxDispatch["register_slack_action_handler"] = hostMethod("register_slack_action_handler", []paramValue{req("action_id"), req("callback")},
 		func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			actionID, err := slackActionID(a["action_id"])
 			if err != nil {
@@ -88,11 +88,11 @@ func init() {
 			}
 			return c.registerSlackActionHandler(actionID, callback, text)
 		})
-	hostCtxDispatch["post_message"] = hostMethod("post_message", []pyParam{req("text")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-		return c.PostMessage(ctx, config.PyStr(a["text"])), nil
+	hostCtxDispatch["post_message"] = hostMethod("post_message", []paramValue{req("text")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		return c.PostMessage(ctx, anyutil.String(a["text"])), nil
 	})
-	hostCtxDispatch["apost_message"] = hostMethod("apost_message", []pyParam{req("text")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-		return c.APostMessage(ctx, config.PyStr(a["text"]))
+	hostCtxDispatch["apost_message"] = hostMethod("apost_message", []paramValue{req("text")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		return c.APostMessage(ctx, anyutil.String(a["text"]))
 	})
 }
 

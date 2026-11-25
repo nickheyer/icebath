@@ -357,7 +357,7 @@ func (s *Scope) GetPluginSkillCommands(ctx context.Context) (SkillCommands, erro
 	metadata := host.ListPluginSkillMetadata()
 	tag := pluginCommandsTag{home: s.Home}
 	for _, m := range metadata {
-		tag.names = append(tag.names, pyStrTruthy(m["name"]))
+		tag.names = append(tag.names, strTruthy(m["name"]))
 	}
 	skillCmds.mu.Lock()
 	cached, fresh := skillCmds.plugin, skillCmds.pluginTag.equal(tag)
@@ -388,7 +388,7 @@ func (s *Scope) GetPluginSkillCommands(ctx context.Context) (SkillCommands, erro
 }
 
 // Python str(value or "") of a metadata field
-func pyStrTruthy(v any) string {
+func strTruthy(v any) string {
 	if !anyutil.IsTrue(v) {
 		return ""
 	}
@@ -399,7 +399,7 @@ func pyStrTruthy(v any) string {
 func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[string]any, tag pluginCommandsTag) SkillCommands {
 	commands := SkillCommands{}
 	for _, entry := range metadata {
-		qualified := strings.TrimSpace(pyStrTruthy(entry["name"]))
+		qualified := strings.TrimSpace(strTruthy(entry["name"]))
 		if !strings.Contains(qualified, ":") {
 			continue
 		}

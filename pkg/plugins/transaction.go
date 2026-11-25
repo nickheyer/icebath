@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -80,7 +79,7 @@ func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newM
 		if err != nil {
 			return err
 		}
-		if !config.PyTruthy(manifest["entry"]) {
+		if !anyutil.IsTrue(manifest["entry"]) {
 			return &PluginOperationError{Msg: fmt.Sprintf("%s is Python source and was not installed; %s.", manifestText(manifest, "name", filepath.Base(target)), PluginFormsText),
 				FailureClass: "unsupported_form"}
 		}

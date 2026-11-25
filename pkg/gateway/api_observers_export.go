@@ -17,7 +17,7 @@ func (a *SessionAuthority) CheckApprovalGeneration(ctx context.Context, sessionI
 func PublishAPIObserverCallback(ctx context.Context, a *SessionAuthority, sessionID string, generation int64, key string, args []any, kwargs map[string]any) (bool, error) {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return false, &pyKeyError{sessionID}
+		return false, &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()

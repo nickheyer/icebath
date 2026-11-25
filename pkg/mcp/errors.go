@@ -11,10 +11,13 @@ import (
 	"os/exec"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // InvalidMCPURLError is a remote server url that is not a parseable http or https URL
@@ -71,10 +74,10 @@ func carriesCancellation(err error) bool {
 	return errors.Is(err, context.Canceled)
 }
 
-// Reports a KeyboardInterrupt or SystemExit style error that ends the process
+// Reports an error that ends the process: the interrupt the SIGINT handler raises or a requested exit status
 func isProcessExit(err error) bool {
-	name := errTypeName(err)
-	return name == "SystemExit" || name == "KeyboardInterrupt"
+	var exit *pm.SystemExit
+	return errors.Is(err, tools.ErrKeyboardInterrupt) || errors.As(err, &exit)
 }
 
 // First process exit leaf of a group tree in depth first order, nil when none
@@ -162,10 +165,10 @@ func authErrorDetail(err error) string {
 	return ""
 }
 
-// Generic tool error naming the root cause type and text instead of the group wrapper
+// Generic tool error giving the root cause text instead of the group wrapper
 func mcpCallFailedMessage(err error) string {
 	root := unwrapExceptionGroup(err)
-	return sanitizeError(fmt.Sprintf("MCP call failed: %s: %s", errTypeName(root), excStr(root)))
+	return sanitizeError("MCP call failed: " + excStr(root))
 }
 
 // Error a connection wrapper stands for, the node ABI error it re-raises or the wrapper itself
@@ -262,22 +265,22 @@ func validatedRemoteMCPURL(serverName string, raw any) (string, error) {
 	if !ok {
 		return "", bad("expected text, got " + errchain.Kind(raw))
 	}
-	stripped := pyStrip(s)
+	stripped := strings.TrimSpace(s)
 	if stripped == "" {
 		return "", bad("empty url")
 	}
-	parsed, err := pyURLParse(stripped)
+	parsed, err := urlParse(stripped)
 	if err != nil {
-		return "", bad(fmt.Sprintf("%s (%s)", pyReprStr(stripped), err.Error()))
+		return "", bad(fmt.Sprintf("%s (%s)", strconv.Quote(stripped), err.Error()))
 	}
 	if scheme := strings.ToLower(parsed.Scheme); scheme != "http" && scheme != "https" {
-		return "", bad(fmt.Sprintf("scheme must be http or https, got %s (%s)", pyReprStr(parsed.Scheme), pyReprStr(stripped)))
+		return "", bad(fmt.Sprintf("scheme must be http or https, got %s (%s)", strconv.Quote(parsed.Scheme), strconv.Quote(stripped)))
 	}
 	if parsed.Netloc == "" {
-		return "", bad(fmt.Sprintf("missing host (%s)", pyReprStr(stripped)))
+		return "", bad(fmt.Sprintf("missing host (%s)", strconv.Quote(stripped)))
 	}
 	if netlocHostname(parsed.Netloc) == "" {
-		return "", bad(fmt.Sprintf("missing hostname (%s)", pyReprStr(stripped)))
+		return "", bad(fmt.Sprintf("missing hostname (%s)", strconv.Quote(stripped)))
 	}
 	return stripped, nil
 }
@@ -290,6 +293,22 @@ func validateRemoteMCPURL(serverName string, raw any) error {
 
 // Nodes visited before an error tree walk stops
 const excTraversalMaxNodes = 10_000
+
+// Text standing for an error when no error in its tree has a message
+const noErrorMessage = "(empty error message)"
+
+// Non empty text of an error: its own message, else the first message an error it wraps carries, else a note that none has one
+func excStr(err error) string {
+	if err == nil {
+		return ""
+	}
+	for _, node := range iterExceptionNodes(err) {
+		if text := strings.TrimSpace(node.Error()); text != "" {
+			return text
+		}
+	}
+	return noErrorMessage
+}
 
 // Group members followed by the wrapped cause, so a chain is never skipped
 func excChildren(err error) []error {
@@ -411,18 +430,15 @@ func formatConnectError(err error) string {
 			messages = append(messages, text)
 		}
 		for _, node := range nodes {
-			text := ""
-			if groupMembers(node) == nil {
-				text = strings.TrimSpace(node.Error())
+			if groupMembers(node) != nil {
+				continue
 			}
-			if text != "" {
+			if text := strings.TrimSpace(node.Error()); text != "" {
 				add(text)
-			} else if len(excChildren(node)) == 0 {
-				add(errTypeName(node))
 			}
 		}
 		if len(messages) == 0 {
-			messages = []string{errTypeName(err)}
+			messages = []string{noErrorMessage}
 		}
 		if len(messages) > 3 {
 			messages = messages[:3]
@@ -430,7 +446,7 @@ func formatConnectError(err error) string {
 		return sanitizeError(strings.Join(messages, "; "))
 	}
 	message := fmt.Sprintf("missing executable '%s'", missing)
-	if nodeToolchainBins[pyBasename(missing)] {
+	if nodeToolchainBins[basename(missing)] {
 		message += " (ensure Node.js is installed and PATH includes its bin directory, " +
 			"or set mcp_servers.<name>.command to an absolute path and include " +
 			"that directory in mcp_servers.<name>.env.PATH)"

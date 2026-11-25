@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -51,7 +52,7 @@ func (d *SessionDB) PruneStaleHeartbeats(ctx context.Context, maxAgeSeconds floa
 		removed = []string{}
 		rows, err := connRows(ctx, conn, "DELETE FROM gateway_heartbeats WHERE last_heartbeat < ? RETURNING backend_id", cutoff)
 		for _, row := range rows {
-			removed = append(removed, pyStr(row["backend_id"]))
+			removed = append(removed, anyutil.String(row["backend_id"]))
 		}
 		return err
 	}, nil)

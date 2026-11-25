@@ -1,6 +1,7 @@
 package state
 
 import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -29,7 +30,7 @@ func laterToolCopyIDs(rows []*jsonutil.Object) map[int64]bool {
 	}
 	var candidates []*jsonutil.Object
 	for _, row := range tools {
-		if pyTruthy(rowValue(row, "active")) || pyTruthy(rowValue(row, "compacted")) {
+		if anyutil.IsTrue(rowValue(row, "active")) || anyutil.IsTrue(rowValue(row, "compacted")) {
 			candidates = append(candidates, row)
 		}
 	}
@@ -37,12 +38,12 @@ func laterToolCopyIDs(rows []*jsonutil.Object) map[int64]bool {
 		return out
 	}
 	owner := func(row *jsonutil.Object) string {
-		return pyReprValue(rowValue(row, "session_id")) + "\x00" + pyReprValue(rowValue(row, "message_uid")) + "\x00" + pyReprValue(rowValue(row, "timestamp"))
+		return anyutil.Quote(rowValue(row, "session_id")) + "\x00" + anyutil.Quote(rowValue(row, "message_uid")) + "\x00" + anyutil.Quote(rowValue(row, "timestamp"))
 	}
 	firstSlot := map[string]int64{}
 	for _, row := range candidates {
 		slot, ok := rowInt(row, "display_order")
-		if pyTruthy(rowValue(row, "message_uid")) && ok && !pyTruthy(rowValue(row, "active")) && !isModelOnlyRow(row) {
+		if anyutil.IsTrue(rowValue(row, "message_uid")) && ok && !anyutil.IsTrue(rowValue(row, "active")) && !isModelOnlyRow(row) {
 			if cur, seen := firstSlot[owner(row)]; !seen || slot < cur {
 				firstSlot[owner(row)] = slot
 			}
@@ -50,7 +51,7 @@ func laterToolCopyIDs(rows []*jsonutil.Object) map[int64]bool {
 	}
 	for _, row := range candidates {
 		slot, ok := rowInt(row, "display_order")
-		if !pyTruthy(rowValue(row, "message_uid")) || !ok {
+		if !anyutil.IsTrue(rowValue(row, "message_uid")) || !ok {
 			continue
 		}
 		if first, seen := firstSlot[owner(row)]; seen && first < slot {
@@ -89,5 +90,5 @@ func rowInt(row *jsonutil.Object, key string) (int64, bool) {
 func isModelOnlyRow(row *jsonutil.Object) bool {
 	meta := decodeDisplayMetadata(rowValue(row, "display_metadata"))
 	v, _ := mappingGet(meta, ModelOnlyKey)
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }

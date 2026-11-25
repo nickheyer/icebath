@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Context bound to a fresh temp home with the YAML text written as its config.yaml
@@ -114,8 +115,8 @@ func TestPlatformMembersAndBundledAliases(t *testing.T) {
 		t.Fatal("a member parses to itself")
 	}
 	_, err := ParsePlatform(ctx, "nope")
-	var pe *PyError
-	if !errors.As(err, &pe) || pe.Kind != "ValueError" || pe.Msg != "'nope' is not a valid Platform" {
+	var pe *errorutil.Error
+	if !errors.As(err, &pe) || pe.Kind != "ValueError" || pe.Msg != `"nope" is not a valid Platform` {
 		t.Fatalf("unknown %v", err)
 	}
 	if _, err := ParsePlatform(ctx, 5); err == nil {
@@ -141,7 +142,7 @@ func TestHomeChannelAndPlatformConfig(t *testing.T) {
 	if h.ChatID != "22" {
 		t.Fatalf("discord link %q", h.ChatID)
 	}
-	if _, err := HomeChannelFromDict(ctx, map[string]any{"platform": "telegram"}); err == nil || err.(*PyError).Kind != "KeyError" {
+	if _, err := HomeChannelFromDict(ctx, map[string]any{"platform": "telegram"}); err == nil || err.(*errorutil.Error).Kind != "KeyError" {
 		t.Fatalf("missing chat id %v", err)
 	}
 	hc, _ := HomeChannelFromDict(ctx, map[string]any{"platform": "telegram", "chat_id": 42, "thread_id": 7, "user_id": ""})
@@ -246,7 +247,7 @@ func TestConnectedPlatformsAndValidation(t *testing.T) {
 		t.Fatalf("placeholder disabled %v", err)
 	}
 	gw.Platforms[PlatformWeixin] = &PlatformConfig{Enabled: true, Token: 5}
-	if err := validateGatewayConfig(gw); err == nil || err.(*PyError).Kind != "AttributeError" {
+	if err := validateGatewayConfig(gw); err == nil || err.(*errorutil.Error).Kind != "AttributeError" {
 		t.Fatalf("int token %v", err)
 	}
 	if !provider.HasUsableSecret("abcdefghijklmnopq", 16) || provider.HasUsableSecret("abc", 16) || provider.HasUsableSecret(5, 1) {

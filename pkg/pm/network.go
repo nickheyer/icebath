@@ -152,7 +152,7 @@ func EdgeBlock(err error) string {
 	return fmt.Sprintf("%s's CDN firewall (%s) refused this network. Your install is fine; retry from another network", who, cdn)
 }
 
-var pyIntLiteral = regexp.MustCompile(`^\s*[+-]?[0-9]+(_[0-9]+)*\s*$`)
+var intLiteral = regexp.MustCompile(`^\s*[+-]?[0-9]+(_[0-9]+)*\s*$`)
 
 // Clock the retry policy reads, replaceable by tests
 var networkNow = time.Now
@@ -169,7 +169,7 @@ func retryDelay(err error, attempt int) float64 {
 		return delay
 	}
 	var retryAfter float64
-	if pyIntLiteral.MatchString(value) {
+	if intLiteral.MatchString(value) {
 		n, _ := new(big.Float).SetString(strings.ReplaceAll(strings.TrimSpace(value), "_", ""))
 		retryAfter, _ = n.Float64()
 	} else if when, perr := parseHTTPDate(value); perr == nil {

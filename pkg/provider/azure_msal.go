@@ -98,7 +98,7 @@ var azureIdentityTransport http.RoundTripper
 func newAzureIdentityPipeline() *azureIdentityPipeline {
 	tr := azureIdentityTransport
 	if tr == nil {
-		tr = pyStackWireTransport(300*time.Second, 10)
+		tr = stackWireTransport(300*time.Second, 10)
 	}
 	return &azureIdentityPipeline{client: &http.Client{Transport: httputil.DecodingTransport(tr), CheckRedirect: httpxNoRedirects}}
 }

@@ -42,10 +42,10 @@ type BotDesktopLease struct {
 	Epoch    any
 }
 
-func pyNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+func nowValue() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 func newLease() BotDesktopLease {
-	return BotDesktopLease{Holder: LeaseAgent, Since: pyNow(), Reason: "", Epoch: int64(0)}
+	return BotDesktopLease{Holder: LeaseAgent, Since: nowValue(), Reason: "", Epoch: int64(0)}
 }
 
 func corruptLease(reason string) BotDesktopLease {
@@ -279,7 +279,7 @@ func LeaseAcquire(viewerID, profileKey, reason string) (BotDesktopLease, error) 
 		if l.Holder == LeaseHuman && l.ViewerID == viewerID {
 			return false
 		}
-		l.Holder, l.ViewerID, l.Since, l.Reason = LeaseHuman, viewerID, pyNow(), reason
+		l.Holder, l.ViewerID, l.Since, l.Reason = LeaseHuman, viewerID, nowValue(), reason
 		return true
 	})
 }
@@ -310,7 +310,7 @@ func LeaseRelease(opts LeaseReleaseOptions) (BotDesktopLease, error) {
 		if l.Holder == LeaseAgent {
 			return false
 		}
-		l.Holder, l.ViewerID, l.Since, l.Reason = LeaseAgent, nil, pyNow(), ""
+		l.Holder, l.ViewerID, l.Since, l.Reason = LeaseAgent, nil, nowValue(), ""
 		return true
 	})
 }

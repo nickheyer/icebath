@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One decoded Anthropic Messages stream event
@@ -126,7 +127,7 @@ func (a *anthAccumulator) normalizeUsage(ev *anthEvent) {
 			m["usage"] = map[string]any{"input_tokens": float64(0), "output_tokens": float64(0)}
 		} else if usage, isMap := asMap(m["usage"]); isMap {
 			a.outputTokens = float64(0)
-			if pyTruthy(usage["output_tokens"]) {
+			if anyutil.IsTrue(usage["output_tokens"]) {
 				a.outputTokens = usage["output_tokens"]
 			}
 		}

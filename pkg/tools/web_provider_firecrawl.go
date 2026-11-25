@@ -75,7 +75,7 @@ func normalizeFirecrawlRows(values any) []WebSearchHit {
 		if row == nil {
 			continue
 		}
-		out = append(out, WebSearchHit{URL: asStr(row["url"]), Title: asStr(row["title"]), Description: asStr(row["description"]), Position: int(asFloat(row["position"]))})
+		out = append(out, WebSearchHit{URL: asStr(row["url"]), Title: asStr(row["title"]), Description: asStr(row["description"]), Position: vendorPosition(row["position"])})
 	}
 	return out
 }
@@ -137,13 +137,10 @@ func firecrawlFinalURL(metadata map[string]any, requested string) string {
 	return requested
 }
 
-// Flags a scrape whose target answered 400 or above from either status key spelling
-func firecrawlWithScrapeStatus(p *WebPage, metadata map[string]any) (*WebPage, error) {
-	if metadata == nil {
-		return p, nil
-	}
-	status, ok := metadata["statusCode"]
-	if !ok {
+// Flags a scrape whose target answered 400 or above, read from statusCode or else status_code, an unusable status leaving the page as scraped
+func firecrawlWithScrapeStatus(p *WebPage, metadata map[string]any) *WebPage {
+	status := metadata["statusCode"]
+	if _, ok := vendorHTTPStatus(status); !ok {
 		status = metadata["status_code"]
 	}
 	return withOriginStatus(p, status, metadata["error"])
@@ -311,12 +308,7 @@ func firecrawlScrapeOne(ctx context.Context, env *Env, u string, formats []strin
 		content = markdown
 	}
 	entry := &WebPage{URL: finalURL, Title: title, Content: content, RawContent: content, HasRaw: true, Metadata: metadata}
-	flagged, err := firecrawlWithScrapeStatus(entry, metadata)
-	if err != nil {
-		envLog(env).Debug("Firecrawl scrape failed", "url", u, "error", err.Error())
-		return firecrawlErrorEntry(u, err.Error(), "", true, nil)
-	}
-	return flagged
+	return firecrawlWithScrapeStatus(entry, metadata)
 }
 
 type firecrawlProvider struct{ baseWebProvider }

@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // reviewRequeueMaxAttempts bounds how often a preempted automatic review is requeued
@@ -137,7 +138,7 @@ func nonNilMessages(messages []map[string]any) []map[string]any {
 
 // Mirrors a completed turn into external memory and queues the next prefetch, skipping interrupted turns
 func (a *AIAgent) syncExternalMemoryForTurn(originalUserMessage, finalResponse any, interrupted bool, messages []map[string]any) {
-	if interrupted || a.memoryManager == nil || !pyTruthy(finalResponse) || !pyTruthy(originalUserMessage) {
+	if interrupted || a.memoryManager == nil || !anyutil.IsTrue(finalResponse) || !anyutil.IsTrue(originalUserMessage) {
 		return
 	}
 	userText := provider.SummarizeUserMessageForLog(originalUserMessage, "\n")
@@ -155,29 +156,6 @@ func (a *AIAgent) syncExternalMemoryForTurn(originalUserMessage, finalResponse a
 	if !memory.IsTrivialPrompt(userText) {
 		a.memoryManager.QueuePrefetchAll(ctx, userText, a.sessionID)
 	}
-}
-
-// Python truthiness of a message or response value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case string:
-		return x != ""
-	case []any:
-		return len(x) > 0
-	case []map[string]any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	case bool:
-		return x
-	case int:
-		return x != 0
-	case float64:
-		return x != 0
-	}
-	return true
 }
 
 // Releases LLM clients, children, the codex session and soft memory state while keeping task resources

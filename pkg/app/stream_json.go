@@ -159,7 +159,7 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 	case "tool.completed":
 		var duration float64
 		if anyutil.IsTrue(extra["duration"]) {
-			duration = pyFloat(extra["duration"])
+			duration = floatNumber(extra["duration"])
 		} else {
 			e.mu.Lock()
 			started, ok := e.toolStarted[key]
@@ -190,7 +190,7 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 }
 
 // Python float() of a number, duration or numeric string
-func pyFloat(v any) float64 {
+func floatNumber(v any) float64 {
 	switch n := v.(type) {
 	case float64:
 		return n

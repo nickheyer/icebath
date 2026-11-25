@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Plain language description of a persistence failure shared by every surface
@@ -154,7 +155,7 @@ func NewStoreUnavailableError(ctx context.Context, path string, cause error) *St
 // Whitespace flattened raw cause cut to limit code points with an ellipsis
 func StorageFailureDetails(excOrStr any, limit int) string {
 	raw := ""
-	if pyTruthy(excOrStr) {
+	if anyutil.IsTrue(excOrStr) {
 		raw = errText(excOrStr)
 	}
 	text := strings.Join(strings.Fields(raw), " ")

@@ -1,11 +1,11 @@
 package state
 
 import (
-	"encoding/json"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -17,41 +17,10 @@ const (
 	ToolCallUID         = "_tool_call_uid"
 )
 
-// Truth value of a column or decoded JSON value under Python bool
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case []byte:
-		return len(x) > 0
-	case int64:
-		return x != 0
-	case int:
-		return x != 0
-	case float64:
-		return x != 0
-	case json.Number:
-		return strings.TrimLeft(strings.TrimPrefix(x.String(), "-"), "0") != ""
-	case []any:
-		return len(x) > 0
-	case pyObject:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x != nil && x.Len() > 0
-	}
-	return true
-}
-
 // Ordered view of a dict value, live maps in sorted key order, false for a non dict
-func asPyObject(v any) (pyObject, bool) {
+func asPyObject(v any) (orderedObject, bool) {
 	switch x := v.(type) {
-	case pyObject:
+	case orderedObject:
 		return x, true
 	case map[string]any:
 		keys := make([]string, 0, len(x))
@@ -59,9 +28,9 @@ func asPyObject(v any) (pyObject, bool) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		obj := make(pyObject, len(keys))
+		obj := make(orderedObject, len(keys))
 		for i, k := range keys {
-			obj[i] = pyKeyValue{k, x[k]}
+			obj[i] = keyValue{k, x[k]}
 		}
 		return obj, true
 	}
@@ -72,9 +41,9 @@ func asPyObject(v any) (pyObject, bool) {
 func CoalesceToolCallID(tc any) string {
 	for _, key := range []string{"call_id", "id"} {
 		value, _ := ToolCallField(tc, key).(string)
-		if value = pyStrip(value); value != "" {
+		if value = strings.TrimSpace(value); value != "" {
 			head, _, _ := strings.Cut(value, "|")
-			if head = pyStrip(head); head != "" {
+			if head = strings.TrimSpace(head); head != "" {
 				return head
 			}
 			return value
@@ -100,12 +69,12 @@ func uidList(value any) []string {
 }
 
 // Tool call uid map from a live dict or its JSON text, keeping non empty uids and non empty uid lists
-func uidMap(value any) pyObject {
+func uidMap(value any) orderedObject {
 	if s, ok := value.(string); ok {
-		value, _ = jsonOr(s, pyObject{}, "Failed to deserialize a tool-call uid map, falling back to {}")
+		value, _ = jsonOr(s, orderedObject{}, "Failed to deserialize a tool-call uid map, falling back to {}")
 	}
 	obj, ok := asPyObject(value)
-	out := pyObject{}
+	out := orderedObject{}
 	if !ok {
 		return out
 	}
@@ -133,7 +102,7 @@ func uidMap(value any) pyObject {
 	return out
 }
 
-func toolCallUIDMap(msg map[string]any) pyObject {
+func toolCallUIDMap(msg map[string]any) orderedObject {
 	return uidMap(liveOrColumn(msg, ToolCallUIDs, "tool_call_uids"))
 }
 
@@ -143,7 +112,7 @@ func absorbedUIDsJSON(msg map[string]any) (string, bool, error) {
 	if len(uids) == 0 {
 		return "", false, nil
 	}
-	text, err := pyDumps(uids, pyJSONDefault)
+	text, err := dumpsValue(uids, jsonDefault)
 	return text, err == nil, err
 }
 
@@ -153,9 +122,9 @@ func toolCallUIDsJSON(msg map[string]any) (string, bool, error) {
 	if len(uids) == 0 {
 		return "", false, nil
 	}
-	o := pyJSONDefault
+	o := jsonDefault
 	o.sortKeys = true
-	text, err := pyDumps(uids, o)
+	text, err := dumpsValue(uids, o)
 	return text, err == nil, err
 }
 
@@ -180,79 +149,28 @@ func liveExtends(liveUID, storedUID any) bool {
 		return false
 	}
 	for i := range stored {
-		if !pyValueEqual(head[i], stored[i]) {
+		if !anyutil.Equal(head[i], stored[i]) {
 			return false
 		}
 	}
 	return true
 }
 
-// Equality of two decoded JSON scalars or containers under Python ==
-func pyValueEqual(a, b any) bool {
-	ao, aIsObj := asPyObject(a)
-	bo, bIsObj := asPyObject(b)
-	if aIsObj || bIsObj {
-		if !aIsObj || !bIsObj || len(ao) != len(bo) {
-			return false
-		}
-		for _, kv := range ao {
-			other, found := bo.get(kv.Key)
-			if !found || !pyValueEqual(kv.Value, other) {
-				return false
-			}
-		}
-		return true
-	}
-	al, aIsList := a.([]any)
-	bl, bIsList := b.([]any)
-	if aIsList || bIsList {
-		if !aIsList || !bIsList || len(al) != len(bl) {
-			return false
-		}
-		for i := range al {
-			if !pyValueEqual(al[i], bl[i]) {
-				return false
-			}
-		}
-		return true
-	}
-	if as, ok := a.(string); ok {
-		bs, ok := b.(string)
-		return ok && as == bs
-	}
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	af, aErr := pyFloatOf(a)
-	bf, bErr := pyFloatOf(b)
-	if aErr == nil && bErr == nil {
-		ai, aIntErr := pyIntOf(a)
-		bi, bIntErr := pyIntOf(b)
-		if _, aIsFloat := a.(float64); !aIsFloat && aIntErr == nil {
-			if _, bIsFloat := b.(float64); !bIsFloat && bIntErr == nil {
-				return ai.Cmp(bi) == 0
-			}
-		}
-		return af == bf
-	}
-	return a == b
-}
-
 // Stored uids for calls a rewritten dict still names but lost, so a row addressed rewrite keeps them
 func fillMissingToolCallUIDs(row, msg map[string]any) {
 	calls, isList := msg["tool_calls"].([]any)
-	if !pyTruthy(row["tool_call_uids"]) || !isList {
+	if !anyutil.IsTrue(row["tool_call_uids"]) || !isList {
 		return
 	}
 	live, ok := asPyObject(msg[ToolCallUIDs])
 	if !ok {
-		live = pyObject{}
+		live = orderedObject{}
 	}
 	named := map[string]bool{}
 	for _, tc := range calls {
 		named[CoalesceToolCallID(tc)] = true
 	}
-	merged := append(pyObject{}, live...)
+	merged := append(orderedObject{}, live...)
 	added := false
 	for _, kv := range uidMap(row["tool_call_uids"]) {
 		if _, inLive := live.get(kv.Key); named[kv.Key] && !inLive {
@@ -267,16 +185,16 @@ func fillMissingToolCallUIDs(row, msg map[string]any) {
 
 // Stored uid and tool call uids onto a live dict, the stored value winning unless a live list extends it
 func restoreRowIdentity(row, msg map[string]any) {
-	if pyTruthy(row[MessageUID]) {
+	if anyutil.IsTrue(row[MessageUID]) {
 		msg[MessageUID] = row[MessageUID]
 	}
-	if pyTruthy(row["tool_call_uids"]) {
+	if anyutil.IsTrue(row["tool_call_uids"]) {
 		if stored := uidMap(row["tool_call_uids"]); len(stored) > 0 {
 			live, ok := asPyObject(msg[ToolCallUIDs])
 			if !ok {
-				live = pyObject{}
+				live = orderedObject{}
 			}
-			merged := append(pyObject{}, live...)
+			merged := append(orderedObject{}, live...)
 			for _, kv := range stored {
 				liveUID, _ := live.get(kv.Key)
 				if liveExtends(liveUID, kv.Value) {
@@ -287,26 +205,26 @@ func restoreRowIdentity(row, msg map[string]any) {
 			msg[ToolCallUIDs] = merged
 		}
 	}
-	if pyTruthy(row["tool_call_uid"]) {
+	if anyutil.IsTrue(row["tool_call_uid"]) {
 		msg[ToolCallUID] = row["tool_call_uid"]
 	}
 }
 
 // Assigns key in an ordered object, keeping the first position like a dict update
-func setPyKey(obj pyObject, key string, value any) pyObject {
+func setPyKey(obj orderedObject, key string, value any) orderedObject {
 	for i := range obj {
 		if obj[i].Key == key {
 			obj[i].Value = value
 			return obj
 		}
 	}
-	return append(obj, pyKeyValue{key, value})
+	return append(obj, keyValue{key, value})
 }
 
 // Stored identity columns onto a restored dict under their live keys, empty columns adding nothing
 func restoreIdentityColumns(row, msg map[string]any) {
 	restoreRowIdentity(row, msg)
-	if pyTruthy(row["absorbed_message_uids"]) {
+	if anyutil.IsTrue(row["absorbed_message_uids"]) {
 		if absorbed := uidList(row["absorbed_message_uids"]); len(absorbed) > 0 {
 			msg[AbsorbedMessageUIDs] = absorbed
 		}
@@ -319,7 +237,7 @@ func stableToolKey(row map[string]any) (string, bool, error) {
 		return "", false, nil
 	}
 	raw := row["tool_calls"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = "[]"
 	}
 	calls, err := jsonOr(raw, []any{}, "Failed to deserialize tool_calls, falling back to []")
@@ -330,7 +248,7 @@ func stableToolKey(row map[string]any) (string, bool, error) {
 	switch x := calls.(type) {
 	case []any:
 		entries = x
-	case pyObject:
+	case orderedObject:
 		for _, kv := range x {
 			entries = append(entries, kv.Key)
 		}
@@ -339,8 +257,8 @@ func stableToolKey(row map[string]any) (string, bool, error) {
 			entries = append(entries, string(r))
 		}
 	default:
-		if pyTruthy(x) {
-			return "", false, &pyConvError{"TypeError", "a tool key part is " + errchain.Kind(x) + ", expected text or a list"}
+		if anyutil.IsTrue(x) {
+			return "", false, &convError{"TypeError", "a tool key part is " + errchain.Kind(x) + ", expected text or a list"}
 		}
 	}
 	ids := make([]string, len(entries))
@@ -352,14 +270,9 @@ func stableToolKey(row map[string]any) (string, bool, error) {
 	if len(ids) == 0 {
 		return "", false, nil
 	}
-	reprIDs := make([]string, len(ids))
-	for i, id := range ids {
-		reprIDs[i] = pyRepr(id)
+	key, err := jsonutil.Encode([]any{"assistant", nil, row["timestamp"], row["tool_call_id"], ids, row["tool_name"]})
+	if err != nil {
+		return "", false, err
 	}
-	tuple := "(" + strings.Join(reprIDs, ", ")
-	if len(ids) == 1 {
-		tuple += ","
-	}
-	tuple += ")"
-	return "('assistant', None, " + pyReprValue(row["timestamp"]) + ", " + pyReprValue(row["tool_call_id"]) + ", " + tuple + ", " + pyReprValue(row["tool_name"]) + ")", true, nil
+	return key, true, nil
 }

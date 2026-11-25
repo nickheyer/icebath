@@ -100,7 +100,7 @@ func TestFleetCapabilityCoverageAbcDefaultFailsClosed(t *testing.T) {
 		t.Fatal(caps)
 	}
 	for _, axis := range []string{"supports_audio", "supports_negative_prompt", "supports_seed", "supports_upscale"} {
-		if pyTruthy(caps[axis]) {
+		if anyutil.IsTrue(caps[axis]) {
 			t.Fatal(axis)
 		}
 	}

@@ -489,7 +489,7 @@ func resetPerTurnAgentState(ctx context.Context, a *AIAgent) {
 		defer func() { _ = recover() }()
 		retryRecoveredLocalServer(a)
 	}()
-	if pyTruthy(a.compressionWarning) {
+	if anyutil.IsTrue(a.compressionWarning) {
 		a.replayCompressionWarning()
 		a.compressionWarning = nil
 	}
@@ -619,7 +619,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	content := turnUserMsg.Content
 	var withheld any
 	row := state.MessageToDict(turnUserMsg)
-	if pyTruthy(row[state.CompressedSummaryMetadataKey]) {
+	if anyutil.IsTrue(row[state.CompressedSummaryMetadataKey]) {
 		handoff := strings.TrimSpace(state.FlattenMessageText(state.HandoffOnlyContent(content), "\n"))
 		if handoff != "" {
 			withheld = handoff + "\n\n" + state.PreLLMBlockWithheldText
@@ -634,7 +634,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	for k, v := range turnUserMsg.DisplayMetadata {
 		metadata[k] = v
 	}
-	metadata[state.WithheldPrompt] = anyutil.String(pyOr(durableContent(typed), ""))
+	metadata[state.WithheldPrompt] = anyutil.String(anyutil.Or(durableContent(typed), ""))
 	a.persistUserMessageOverride = state.PreLLMBlockWithheldText
 	defer persistLock(a)()
 	turnUserMsg.Content = withheld
@@ -683,7 +683,7 @@ func collectPreLLMCallContext(ctx context.Context, a *AIAgent, effectiveTaskID, 
 			}
 			continue
 		}
-		if d, ok := r.(map[string]any); ok && pyTruthy(d["context"]) {
+		if d, ok := r.(map[string]any); ok && anyutil.IsTrue(d["context"]) {
 			piece = anyutil.String(d["context"])
 		} else if s, ok := r.(string); ok && strings.TrimSpace(s) != "" {
 			piece = s
@@ -777,7 +777,7 @@ func memoryTurnStartAndPrefetch(ctx context.Context, a *AIAgent, originalUserMes
 	authorName, _ := turnAuthor["name"].(string)
 	func() {
 		defer func() { _ = recover() }()
-		a.memoryManager.OnTurnStart(ctx, a.userTurnCount, query, memory.TurnOptions{AuthorID: authorID, AuthorName: authorName, AuthorIsBot: pyTruthy(turnAuthor["is_bot"])})
+		a.memoryManager.OnTurnStart(ctx, a.userTurnCount, query, memory.TurnOptions{AuthorID: authorID, AuthorName: authorName, AuthorIsBot: anyutil.IsTrue(turnAuthor["is_bot"])})
 	}()
 	prefetch := ""
 	func() {
@@ -802,7 +802,7 @@ func stampAPIContentSidecar(ctx context.Context, a *AIAgent, messages []*state.M
 	turnUserMsg := messages[currentTurnUserIdx]
 	live := turnUserMsg.Content
 	var composed *string
-	if c, ok := composeUserAPIContent(pyOr(live, ""), extPrefetchCache, pluginUserContext); ok {
+	if c, ok := composeUserAPIContent(anyutil.Or(live, ""), extPrefetchCache, pluginUserContext); ok {
 		composed = &c
 	}
 	durable, apiContent := durableUserRowContent(a, turnUserMsg, live, composed)
@@ -876,7 +876,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 		conversationHistory = recovered
 	}
 	setLoggingSessionContext(a.sessionID)
-	skills.SetCurrentWriteOrigin(a.env, pyStrOr(a.memoryWriteOrigin, "assistant_tool"))
+	skills.SetCurrentWriteOrigin(a.env, anyutil.StringOr(a.memoryWriteOrigin, "assistant_tool"))
 	skills.SetReviewAttended(a.env, a.reviewAttended)
 	if _, err := a.restorePrimaryRuntime(ctx); err != nil {
 		return nil, err
@@ -902,7 +902,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 		msgPreview += "..."
 	}
 	line := fmt.Sprintf("conversation turn: session=%s model=%s provider=%s platform=%s history=%d msg=%s",
-		orNone(a.sessionID), a.model, pyStrOr(a.provider, "unknown"), pyStrOr(a.platform, "unknown"), len(conversationHistory),
+		orNone(a.sessionID), a.model, anyutil.StringOr(a.provider, "unknown"), anyutil.StringOr(a.platform, "unknown"), len(conversationHistory),
 		errchain.Show(strings.ReplaceAll(msgPreview, "\n", " ")))
 	if a.turnOrigin != "" {
 		line += " origin=" + a.turnOrigin
@@ -959,7 +959,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	}()
 	ensureSessionRow(a, pendingCLI)
 	for _, m := range conversationHistory {
-		if pyTruthy(m[state.PersistAfterAdmissionInterrupt]) {
+		if anyutil.IsTrue(m[state.PersistAfterAdmissionInterrupt]) {
 			a.flushMessagesToSessionDBWithHistory(conversationHistory, conversationHistory)
 			for i, row := range conversationHistory {
 				*messages[i] = *state.MessageFromDict(row)

@@ -5,9 +5,10 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Rejected authorization URL or browser callback, a client error for the relaying client
@@ -19,21 +20,6 @@ func (e *ClientOAuthValueError) Error() string { return e.Msg }
 type ClientOAuthTimeoutError struct{ Msg string }
 
 func (e *ClientOAuthTimeoutError) Error() string { return e.Msg }
-
-// Error text, or the error type name when the text is empty
-func ExceptionMessage(err error) string {
-	if msg := err.Error(); msg != "" {
-		return msg
-	}
-	t := reflect.TypeOf(err)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	if t.Name() != "" {
-		return t.Name()
-	}
-	return fmt.Sprintf("%T", err)
-}
 
 // flowLatch is a resettable one shot signal, every method called with the flow lock held
 type flowLatch struct {
@@ -144,12 +130,12 @@ func (f *ClientOAuthFlow) Cancelled() bool {
 
 // Records the authorization URL and its state, re-minting an ended attempt unless the user cancelled
 func (f *ClientOAuthFlow) PublishAuthorizationURL(_ context.Context, rawURL string) error {
-	u, err := pyURLParse(rawURL)
+	u, err := urlParse(rawURL)
 	if err != nil {
 		return &ClientOAuthValueError{err.Error()}
 	}
 	state := ""
-	for _, kv := range pyParseQSL(u.Query, false) {
+	for _, kv := range parseQSL(u.Query, false) {
 		if kv[0] == "state" {
 			state = kv[1]
 			break
@@ -268,7 +254,7 @@ func (f *ClientOAuthFlow) WaitForCallback(ctx context.Context, timeout time.Dura
 			failure = f.failure
 		}
 		return "", "", "", fmt.Errorf("MCP OAuth flow for '%s' ended without an authorization code (status=%s, error=%s)",
-			f.ServerName, f.statusLocked(), pyRepr(failure))
+			f.ServerName, f.statusLocked(), anyutil.Quote(failure))
 	}
 	return f.callback[0], f.callback[1], f.callback[2], nil
 }

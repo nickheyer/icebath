@@ -110,8 +110,8 @@ func Show(v any) string {
 		return strconv.FormatFloat(float64(x), 'f', -1, 32)
 	case error:
 		return x.Error()
-	case interface{ PyStr() string }:
-		return x.PyStr()
+	case interface{ TextOf() string }:
+		return x.TextOf()
 	case json.Marshaler:
 		if b, err := x.MarshalJSON(); err == nil {
 			return string(b)

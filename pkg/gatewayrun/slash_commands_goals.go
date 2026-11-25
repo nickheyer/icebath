@@ -17,7 +17,7 @@ import (
 )
 
 // Python class name of an error, the kind of a pyint error first
-func pyErrorClass(err error) string {
+func errorClass(err error) string {
 	var pe *errorutil.Error
 	if errors.As(err, &pe) && pe.Kind != "" {
 		return pe.Kind
@@ -37,7 +37,7 @@ func quietBool(fn func() bool) (out bool) {
 
 // Manager error reply prefixed for the command when the error class is one the command answers, else the error itself
 func mgrCallError(prefix string, err error, classes ...string) (string, error) {
-	if slices.Contains(classes, pyErrorClass(err)) {
+	if slices.Contains(classes, errorClass(err)) {
 		return prefix + ": " + err.Error(), nil
 	}
 	return "", err

@@ -45,7 +45,7 @@ func reviewDeferMaxAgeS(taskCfg map[string]any) float64 {
 	if !ok {
 		return reviewMaxAgeDefaultSeconds
 	}
-	value, valid := pyFloatCoerce(v)
+	value, valid := floatCoerce(v)
 	if !valid || !(value > 0) {
 		return reviewMaxAgeDefaultSeconds
 	}
@@ -53,7 +53,7 @@ func reviewDeferMaxAgeS(taskCfg map[string]any) float64 {
 }
 
 // Python float() over a number, a bool or a numeric string, false where float() raises
-func pyFloatCoerce(v any) (float64, bool) {
+func floatCoerce(v any) (float64, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -418,10 +418,10 @@ func managedServerIdle() (idle bool) {
 		data = []any{}
 	}
 	var loaded []string
-	for _, m := range pyIterItems(data) {
+	for _, m := range iterItems(data) {
 		entry := m.(map[string]any)
 		var value any
-		if st := entry["status"]; pyTruthy(st) {
+		if st := entry["status"]; anyutil.IsTrue(st) {
 			value = st.(map[string]any)["value"]
 		}
 		if value == "loaded" || value == "ready" {
@@ -433,8 +433,8 @@ func managedServerIdle() (idle bool) {
 		if err != nil {
 			return true
 		}
-		for _, s := range pyIterItems(slots) {
-			if slot, ok := s.(map[string]any); ok && pyTruthy(slot["is_processing"]) {
+		for _, s := range iterItems(slots) {
+			if slot, ok := s.(map[string]any); ok && anyutil.IsTrue(slot["is_processing"]) {
 				return false
 			}
 		}
@@ -457,7 +457,7 @@ func noteReviewTurnStarted() { reviewQueue.noteTurnStarted() }
 func noteReviewTurnFinished() { reviewQueue.noteTurnFinished() }
 
 // Items iterating a decoded JSON value yields in Python, panicking where iteration raises
-func pyIterItems(v any) []any {
+func iterItems(v any) []any {
 	switch x := v.(type) {
 	case []any:
 		return x

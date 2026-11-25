@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"maps"
 	"sync"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Capabilities each bootstrap purpose grants
@@ -48,7 +50,7 @@ type TicketStore struct {
 // Store for one runtime instance serving profileIDs, a ValueError without either
 func NewTicketStore(instanceID string, profileIDs map[string]bool) (*TicketStore, error) {
 	if instanceID == "" || len(profileIDs) == 0 {
-		return nil, &PyError{Kind: "ValueError", Msg: "bootstrap requires instance and served profiles"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "bootstrap requires instance and served profiles"}
 	}
 	return &TicketStore{InstanceID: instanceID, profileIDs: maps.Clone(profileIDs), entries: map[string]ticketEntry{}}, nil
 }
@@ -82,7 +84,7 @@ func (s *TicketStore) Mint(profileID, subject, purpose, scope string, refuseRest
 	defer s.mu.Unlock()
 	capabilities, known := purposeCapabilities[purpose]
 	if !s.profileIDs[profileID] || !known || subject == "" || !ticketScopes[scope] || (scope == "host" && purpose != "interactive") {
-		return "", &PyError{Kind: "PermissionError", Msg: "bootstrap binding rejected"}
+		return "", &errorutil.Error{Kind: "PermissionError", Msg: "bootstrap binding rejected"}
 	}
 	now := ticketMonotonic()
 	for k, v := range s.entries {
@@ -91,7 +93,7 @@ func (s *TicketStore) Mint(profileID, subject, purpose, scope string, refuseRest
 		}
 	}
 	if len(s.entries) >= ticketMaxEntries {
-		return "", &PyError{Kind: "PermissionError", Msg: "bootstrap capacity exhausted"}
+		return "", &errorutil.Error{Kind: "PermissionError", Msg: "bootstrap capacity exhausted"}
 	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
@@ -109,18 +111,18 @@ func (s *TicketStore) Mint(profileID, subject, purpose, scope string, refuseRest
 func (s *TicketStore) Redeem(ticket any, profileID *string, purpose string) (map[string]any, error) {
 	text, ok := ticket.(string)
 	if !ok || len([]rune(text)) > 256 {
-		return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap ticket"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "invalid bootstrap ticket"}
 	}
 	key := ticketKey(text)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, ok := s.entries[key]
 	if !ok {
-		return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap ticket"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "invalid bootstrap ticket"}
 	}
 	if entry.expires <= ticketMonotonic() {
 		delete(s.entries, key)
-		return nil, &PyError{Kind: "PermissionError", Msg: "expired bootstrap ticket"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "expired bootstrap ticket"}
 	}
 	granted, _ := entry.grant["profile_id"].(string)
 	served := s.profileIDs[granted]
@@ -128,7 +130,7 @@ func (s *TicketStore) Redeem(ticket any, profileID *string, purpose string) (map
 		served = granted == *profileID
 	}
 	if !served || entry.grant["purpose"] != purpose {
-		return nil, &PyError{Kind: "PermissionError", Msg: "bootstrap binding rejected"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "bootstrap binding rejected"}
 	}
 	delete(s.entries, key)
 	return maps.Clone(entry.grant), nil

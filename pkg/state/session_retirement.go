@@ -187,7 +187,7 @@ func LoadTerminalResult(text string) (any, error) { return loadTerminalResult(te
 
 // State meta key holding the terminal admission id of one principal request
 func terminalIdentityKey(principalID, sessionID, requestID any) (string, error) {
-	fp, err := AdmissionFingerprint(pyStr(sessionID), map[string]any{"principal": principalID, "request": requestID})
+	fp, err := AdmissionFingerprint(anyutil.String(sessionID), map[string]any{"principal": principalID, "request": requestID})
 	if err != nil {
 		return "", err
 	}
@@ -230,7 +230,7 @@ func retireMedia(ctx context.Context, conn SQLiteConn, payload *jsonutil.Object,
 		path, has := ref.Get("path")
 		ps, ok := path.(string)
 		if !has || !ok {
-			return fmt.Errorf("media reference without a str path: %s", pyReprValue(path))
+			return fmt.Errorf("media reference without a str path: %s", anyutil.Quote(path))
 		}
 		sum := sha256.Sum256([]byte(ps))
 		text, err := jsonutil.Encode(ref, jsonutil.Spaced(), jsonutil.ASCII())
@@ -317,7 +317,7 @@ func (d *SessionDB) collectRetiredSpillover(ctx context.Context) error {
 	}
 	var done []string
 	for _, row := range rows {
-		name, err := jsonutil.Decode(pyStr(row["value"]))
+		name, err := jsonutil.Decode(anyutil.String(row["value"]))
 		if err != nil {
 			return err
 		}
@@ -330,7 +330,7 @@ func (d *SessionDB) collectRetiredSpillover(ctx context.Context) error {
 				continue
 			}
 		}
-		done = append(done, pyStr(row["key"]))
+		done = append(done, anyutil.String(row["key"]))
 	}
 	return d.deleteMetaKeys(ctx, done)
 }
@@ -347,7 +347,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 	}
 	refs := make([]any, 0, len(rows))
 	for _, row := range rows {
-		v, err := jsonutil.Decode(pyStr(row["value"]))
+		v, err := jsonutil.Decode(anyutil.String(row["value"]))
 		if err != nil {
 			return err
 		}
@@ -358,7 +358,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 	}
 	var gone []string
 	for _, row := range rows {
-		v, err := jsonutil.Decode(pyStr(row["value"]))
+		v, err := jsonutil.Decode(anyutil.String(row["value"]))
 		if err != nil {
 			return err
 		}
@@ -378,7 +378,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 			ps = "."
 		}
 		if _, err := os.Stat(ps); err != nil {
-			gone = append(gone, pyStr(row["key"]))
+			gone = append(gone, anyutil.String(row["key"]))
 		}
 	}
 	if len(gone) == 0 {
@@ -421,7 +421,7 @@ func compactTerminalResult(ctx context.Context, conn SQLiteConn, admissionID str
 	if err != nil || saved == nil {
 		return err
 	}
-	value, err := loadTerminalResult(pyStr(saved["value"]))
+	value, err := loadTerminalResult(anyutil.String(saved["value"]))
 	if err != nil {
 		return err
 	}
@@ -474,7 +474,7 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			return runtimeRefusal("session_busy")
 		}
 		for _, row := range admissions {
-			payload, err := jsonutil.Decode(pyStr(rowValue(row, "payload_json")))
+			payload, err := jsonutil.Decode(anyutil.String(rowValue(row, "payload_json")))
 			if err != nil {
 				return err
 			}
@@ -482,13 +482,13 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			if !ok {
 				return fmt.Errorf("a terminal receipt payload is %s, expected a mapping", errchain.Kind(payload))
 			}
-			if err := retireMedia(ctx, conn, po, pyStr(rowValue(row, "request_id"))); err != nil {
+			if err := retireMedia(ctx, conn, po, anyutil.String(rowValue(row, "request_id"))); err != nil {
 				return err
 			}
 			row.Set("payload_json", "{}")
 			row.Set("lineage_json", "[]")
 			row.Set("retired_at", now())
-			admissionID := pyStr(rowValue(row, "admission_id"))
+			admissionID := anyutil.String(rowValue(row, "admission_id"))
 			if err := compactTerminalResult(ctx, conn, admissionID); err != nil {
 				return err
 			}
@@ -534,7 +534,7 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			if err != nil {
 				return err
 			}
-			if _, err := conn.ExecContext(ctx, "INSERT INTO state_meta(key,value) VALUES(?,?)", TerminalWorkerPrefix+pyStr(executionID), text); err != nil {
+			if _, err := conn.ExecContext(ctx, "INSERT INTO state_meta(key,value) VALUES(?,?)", TerminalWorkerPrefix+anyutil.String(executionID), text); err != nil {
 				return err
 			}
 			if _, err := conn.ExecContext(ctx, "DELETE FROM worker_receipts WHERE execution_id=?", executionID); err != nil {
@@ -587,7 +587,7 @@ func retireMutationReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 		return err
 	}
 	for _, row := range rows {
-		receipt, err := jsonutil.Decode(pyStr(row["value"]))
+		receipt, err := jsonutil.Decode(anyutil.String(row["value"]))
 		if err != nil {
 			return err
 		}
@@ -725,7 +725,7 @@ func retireLocalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []stri
 			return err
 		}
 		if hit {
-			gone = append(gone, pyStr(row["key"]))
+			gone = append(gone, anyutil.String(row["key"]))
 		}
 	}
 	declared, err := connRows(ctx, conn, "SELECT key,value FROM state_meta WHERE key GLOB ?", LocalAPIDeclaredPrefix+"*")
@@ -734,7 +734,7 @@ func retireLocalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []stri
 	}
 	for _, row := range declared {
 		if v, ok := row["value"].(string); ok && targets[v] {
-			gone = append(gone, pyStr(row["key"]))
+			gone = append(gone, anyutil.String(row["key"]))
 		}
 	}
 	for _, sid := range sessionIDs {
@@ -885,8 +885,8 @@ func localConversationsIndex(ctx context.Context, conn SQLiteConn) (map[string][
 		}
 		request, _ := receipt.Get("request_id")
 		label := ""
-		if pyTruthy(request) {
-			label = pyStr(request)
+		if anyutil.IsTrue(request) {
+			label = anyutil.String(request)
 		}
 		if strings.HasPrefix(label, "bot-chat:") || strings.HasPrefix(label, "a2a:") {
 			for _, id := range ids {
@@ -991,7 +991,7 @@ func pruneRetiredTombstones(ctx context.Context, conn SQLiteConn, olderThan floa
 		return err
 	}
 	for _, r := range rows {
-		decoded, err := jsonutil.Decode(pyStr(rowValue(r, "value")))
+		decoded, err := jsonutil.Decode(anyutil.String(rowValue(r, "value")))
 		if err != nil {
 			return err
 		}
@@ -1124,7 +1124,7 @@ func KeepPassedFences(ctx context.Context, conn SQLiteConn, derive func(int) str
 func RouteNamespace(sessionKey any) string {
 	key := ""
 	if sessionKey != nil {
-		key = pyStr(sessionKey)
+		key = anyutil.String(sessionKey)
 	}
 	parts := strings.Split(key, ":")
 	if len(parts) > 2 && parts[0] == "agent" && parts[1] != "" {
@@ -1183,7 +1183,7 @@ func (d *SessionDB) ExpiringRetirements(ctx context.Context, sessionIDs []string
 		rows, err := connRows(ctx, conn, "SELECT key FROM state_meta WHERE key IN (SELECT ? || value FROM json_each(?)) "+
 			"AND json_valid(value) AND json_extract(value, '$.expires')", RetiredPrefix, list)
 		for _, row := range rows {
-			out[strings.TrimPrefix(pyStr(row["key"]), RetiredPrefix)] = true
+			out[strings.TrimPrefix(anyutil.String(row["key"]), RetiredPrefix)] = true
 		}
 		return err
 	})

@@ -52,7 +52,7 @@ func configuredPetSelection(ctx context.Context) (bool, *pet.InstalledPet, float
 	if !present || !anyutil.IsTrue(rawScale) {
 		return enabled, active, pet.DefaultScale, nil
 	}
-	scale, err := pyFloat(rawScale)
+	scale, err := floatNumber(rawScale)
 	if err != nil {
 		return false, nil, 0, err
 	}

@@ -74,7 +74,7 @@ func decimalCount(token string) (int, bool) {
 }
 
 // Value of a token Python int accepts, underscores allowed between digits only
-func pyInt(token string) (int, bool) {
+func wholeNumber(token string) (int, bool) {
 	n, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(token, "_", "")))
 	if err != nil || strings.HasPrefix(token, "_") || strings.HasSuffix(token, "_") || strings.Contains(token, "__") {
 		return 0, false
@@ -184,7 +184,7 @@ func (s SnapshotCommand) RestoreTarget(parts []string) (string, []string, error)
 		return "", lines, nil
 	}
 	snapID := parts[2]
-	if idx, ok := pyInt(snapID); ok {
+	if idx, ok := wholeNumber(snapID); ok {
 		snaps, err := backup.ListQuickSnapshots(20, s.Home)
 		if err != nil {
 			return "", nil, err

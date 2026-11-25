@@ -37,10 +37,13 @@ func rowHas(p *jsonutil.Object, key string) bool {
 // Text a row value formats as inside an f-string
 func rowText(p *jsonutil.Object, key string) string { return anyutil.String(rowGet(p, key)) }
 
-// Python str of a raised exception, empty for the bare Ctrl-C and EOF interrupts
-func pyExcText(err error) string {
-	if errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, cliui.ErrEOF) {
-		return ""
+// Text of a setup failure for the terminal, a Ctrl-C or a closed input named in words
+func setupErrorText(err error) string {
+	switch {
+	case errors.Is(err, cliui.ErrInterrupt):
+		return "interrupted"
+	case errors.Is(err, cliui.ErrEOF):
+		return "input closed"
 	}
 	return err.Error()
 }
@@ -67,7 +70,7 @@ func catalogCategory(tsKey string) *jsonutil.Object {
 }
 
 // Membership of a value among members, an error for a list or mapping value
-func pySetContains(v any, members ...any) (bool, error) {
+func setContains(v any, members ...any) (bool, error) {
 	switch v.(type) {
 	case []any, []string, map[string]any, config.Tree, *jsonutil.Object:
 		return false, fmt.Errorf("expected a single name, got %s", errchain.Kind(v))
@@ -86,7 +89,7 @@ func cfgDictOr(cfg map[string]any, key string) (map[string]any, bool) {
 	if !ok {
 		return map[string]any{}, true
 	}
-	return pyDictOf(v)
+	return dictOf(v)
 }
 
 // Python setdefault of a dict section, the error of using a non dict existing value the way op does
@@ -97,7 +100,7 @@ func setdefaultSection(cfg map[string]any, key string) (map[string]any, error) {
 		cfg[key] = m
 		return m, nil
 	}
-	if m, ok := pyDictOf(v); ok {
+	if m, ok := dictOf(v); ok {
 		return m, nil
 	}
 	return nil, fmt.Errorf("%s in config is %s, expected a mapping", key, errchain.Kind(v))
@@ -147,7 +150,7 @@ func pickerValue(v any) any {
 }
 
 // Dict entries of a schema variants value as iteration sees them, a TypeError panic for a non iterable
-func pyIterDicts(v any) []map[string]any {
+func iterDicts(v any) []map[string]any {
 	if !anyutil.IsTrue(v) {
 		return nil
 	}
@@ -293,7 +296,7 @@ func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, re
 		}
 		entries := []map[string]any{schema}
 		if flattenVariants {
-			entries = append(entries, pyIterDicts(schema["variants"])...)
+			entries = append(entries, iterDicts(schema["variants"])...)
 		}
 		for _, entry := range entries {
 			row := jsonutil.NewObject()
@@ -569,11 +572,11 @@ func (s *ToolsSetup) webTierMatches(provider *jsonutil.Object, cfg config.Tree) 
 	if !anyutil.IsTrue(rowTier) {
 		return true
 	}
-	webCfg, ok := pyDictOf(cfg["web"])
+	webCfg, ok := dictOf(cfg["web"])
 	if !ok {
 		webCfg = map[string]any{}
 	}
-	tiers, ok := pyDictOf(webCfg["provider_tier"])
+	tiers, ok := dictOf(webCfg["provider_tier"])
 	if !ok {
 		tiers = map[string]any{}
 	}
@@ -582,7 +585,7 @@ func (s *ToolsSetup) webTierMatches(provider *jsonutil.Object, cfg config.Tree) 
 		panic("a web provider row has no web_backend")
 	}
 	backend := anyutil.String(backendValue)
-	configured := strings.TrimSpace(strings.ToLower(pyOrStr(mapGetOr(tiers, backend, ""))))
+	configured := strings.TrimSpace(strings.ToLower(anyutil.StringOr(mapGetOr(tiers, backend, ""), "")))
 	if configured == "free" || configured == "paid" {
 		return anyutil.Equal(configured, rowTier)
 	}
@@ -608,7 +611,7 @@ func (s *ToolsSetup) webTierMatches(provider *jsonutil.Object, cfg config.Tree) 
 
 // Backend names serving web search or extract, each capability override first then the shared backend
 func webServingBackends(cfg config.Tree) map[string]bool {
-	webCfg, ok := pyDictOf(cfg["web"])
+	webCfg, ok := dictOf(cfg["web"])
 	if !ok {
 		webCfg = map[string]any{}
 	}
@@ -677,7 +680,7 @@ func browserProviderActive(provider *jsonutil.Object, cfg config.Tree) bool {
 	}
 	if anyutil.IsTrue(rowGet(provider, "browser_engine")) {
 		raw, _ := config.CfgGet(cfg, "browser", "engine")
-		engine := pyOrStr(raw)
+		engine := anyutil.StringOr(raw, "")
 		if engine == "" {
 			engine = "auto"
 		}
@@ -692,7 +695,7 @@ func imagegenBackendActive(provider *jsonutil.Object, cfg config.Tree) (bool, er
 	if !ok || !anyutil.Equal(rowGet(provider, "imagegen_backend"), "fal") {
 		return false, nil
 	}
-	allowed, err := pySetContains(imageCfg["provider"], nil, "", "fal")
+	allowed, err := setContains(imageCfg["provider"], nil, "", "fal")
 	return allowed && err == nil, err
 }
 
@@ -885,7 +888,7 @@ func (s *ToolsSetup) pickModelFromCatalog(cat *modelCatalog, defaultModel, cfgKe
 	}
 	currentModel, isStr := current.(string)
 	if !isStr || !cat.has(currentModel) {
-		if _, err := pySetContains(current); err != nil {
+		if _, err := setContains(current); err != nil {
 			return err
 		}
 		currentModel = cat.ids[0]
@@ -1067,7 +1070,7 @@ func (s *ToolsSetup) configureSTTModel(sttProvider string, cfg config.Tree) erro
 	if !ok {
 		modelKey = "model"
 	}
-	current := strings.TrimSpace(pyOrStr(provCfg[modelKey]))
+	current := strings.TrimSpace(anyutil.StringOr(provCfg[modelKey], ""))
 	ordered := slices.Clone(catalog)
 	def := slices.Index(ordered, current)
 	if def < 0 {
@@ -1112,7 +1115,7 @@ func (s *ToolsSetup) writeProviderConfig(provider *jsonutil.Object, cfg config.T
 		} else {
 			tiers = webCfg["provider_tier"]
 		}
-		if m, ok := pyDictOf(tiers); ok {
+		if m, ok := dictOf(tiers); ok {
 			if anyutil.IsTrue(tier) {
 				m[anyutil.String(backend)] = tier
 			} else {
@@ -1161,7 +1164,7 @@ func (s *ToolsSetup) configurePiperVoice(cfg config.Tree) error {
 		return nil
 	}
 	piper := cfgSection(config.Tree(cfgSection(cfg, "tts")), "piper")
-	current := strings.TrimSpace(pyOrStr(piper["voice"]))
+	current := strings.TrimSpace(anyutil.StringOr(piper["voice"], ""))
 	if current == "" {
 		current = defaultVoice
 	}
@@ -1464,12 +1467,12 @@ func (s *ToolsSetup) configureVisionProviderModel(cfg config.Tree, visionCfg map
 		s.Con.PrintWarning("  Could not load provider list: " + errInventoryUnwired.Error())
 		return nil
 	}
-	currentProvider := strings.TrimSpace(pyOrStr(visionCfg["provider"]))
-	currentModel := strings.TrimSpace(pyOrStr(visionCfg["model"]))
-	currentBaseURL := strings.TrimSpace(pyOrStr(visionCfg["base_url"]))
+	currentProvider := strings.TrimSpace(anyutil.StringOr(visionCfg["provider"], ""))
+	currentModel := strings.TrimSpace(anyutil.StringOr(visionCfg["model"], ""))
+	currentBaseURL := strings.TrimSpace(anyutil.StringOr(visionCfg["base_url"], ""))
 	providers, err := s.visionPickerRows(currentProvider, currentModel, currentBaseURL)
 	if err != nil {
-		s.Con.PrintWarning("  Could not detect providers: " + pyExcText(err))
+		s.Con.PrintWarning("  Could not detect providers: " + setupErrorText(err))
 		providers = nil
 	}
 	if len(providers) == 0 {

@@ -66,7 +66,7 @@ func hasSignedThinkingDetail(resp *provider.Response) bool {
 			continue
 		}
 		kind := detail["type"]
-		if (kind == "thinking" || kind == "redacted_thinking") && (pyTruthy(detail["signature"]) || pyTruthy(detail["data"])) {
+		if (kind == "thinking" || kind == "redacted_thinking") && (anyutil.IsTrue(detail["signature"]) || anyutil.IsTrue(detail["data"])) {
 			return true
 		}
 		if kind != nil && strings.HasSuffix(anyutil.String(kind), ".native_assistant") {
@@ -101,11 +101,11 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		!hasSignedThinkingDetail(msg) && answerInReasoningCapability(ctx, a) {
 		if promoted = a.extractReasoning(msg); promoted != "" {
 			pkgLog().Warn(fmt.Sprintf("Reasoning-only clean stop (%d chars) — returning the reasoning as the final response (model=%s provider=%s api_calls=%d tool_turns=%d)",
-				pyLen(promoted), a.model, a.provider, s.APICallCount, toolTurnCount(s.Messages)))
+				lengthOf(promoted), a.model, a.provider, s.APICallCount, toolTurnCount(s.Messages)))
 		}
 	}
 	final := promoted
-	if final == "" && pyTruthy(content) {
+	if final == "" && anyutil.IsTrue(content) {
 		final = text
 		if !isText {
 			final = state.ContentText(content)
@@ -173,7 +173,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	final = strings.TrimSpace(a.stripThinkBlocks(final))
 	s.FinalResponse = final
 
-	if final != "" && pyLen(final) >= provider.StopPathMinChars && provider.IsRunawayRepetition(final) {
+	if final != "" && lengthOf(final) >= provider.StopPathMinChars && provider.IsRunawayRepetition(final) {
 		line, userResponse, errText := repetitionStopped[0], repetitionStopped[1], repetitionStopped[2]
 		a.vprint(a.logPrefix+line, true, true)
 		a.cleanupTaskResources(tools.WithEnvHome(ctx, a.env), s.EffectiveTaskID)

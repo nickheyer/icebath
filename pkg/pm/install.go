@@ -210,7 +210,7 @@ func Installed(ctx context.Context, name string, allowOutdated bool) (*Installed
 		return nil, err
 	}
 	if p.Base().Internal {
-		return nil, &PyError{Class: "ValueError", Message: name + " is internal PM tooling, not an application package"}
+		return nil, &ClassError{Class: "ValueError", Message: name + " is internal PM tooling, not an application package"}
 	}
 	target, err := CurrentTarget()
 	if err != nil {
@@ -232,7 +232,7 @@ func Installed(ctx context.Context, name string, allowOutdated bool) (*Installed
 // Installed uv or uvx launcher for a user declared MCP stdio command, empty when it is not installed
 func UvLauncher(ctx context.Context, name string) (string, error) {
 	if name != "uv" && name != "uvx" {
-		return "", &PyError{Class: "ValueError", Message: name + " is not a uv launcher"}
+		return "", &ClassError{Class: "ValueError", Message: name + " is not a uv launcher"}
 	}
 	p, err := GetPackage("uv")
 	if err != nil {
@@ -581,7 +581,7 @@ func refreshRecordedEnv(p Package, facts *Facts, store *Store, entry string, pre
 	}
 	record := FactRecord{Target: optionalFactString(previous, "target"), Digest: optionalFactString(previous, "digest")}
 	if raw, ok := previous["artifacts"]; ok && raw != nil {
-		list, err := pyIterStrings(raw)
+		list, err := iterStrings(raw)
 		if err != nil {
 			return err
 		}
@@ -646,7 +646,7 @@ func copyVerifiedSource(p Package, lockfile *Lockfile, copyFrom *Location, stage
 }
 
 // First n characters of a string, counted in code points
-func pyPrefix(s string, n int) string {
+func prefixValue(s string, n int) string {
 	runes := []rune(s)
 	if len(runes) > n {
 		runes = runes[:n]
@@ -666,7 +666,7 @@ func logRepair(p Package, previous map[string]any, version string, artifacts []m
 	if list, ok := previous["artifacts"].([]any); ok && len(list) > 0 {
 		oldArtifact = list[0]
 	} else if anyutil.IsTrue(previous["artifacts"]) {
-		if items, err := pyIterStrings(previous["artifacts"]); err == nil && len(items) > 0 {
+		if items, err := iterStrings(previous["artifacts"]); err == nil && len(items) > 0 {
 			oldArtifact = items[0]
 		}
 	}
@@ -674,10 +674,10 @@ func logRepair(p Package, previous map[string]any, version string, artifacts []m
 	if v, ok := previous["version"]; ok {
 		oldVersion = anyutil.String(v)
 	}
-	old := oldVersion + "/" + pyPrefix(anyutil.String(oldArtifact), 12)
+	old := oldVersion + "/" + prefixValue(anyutil.String(oldArtifact), 12)
 	fresh := version
 	if len(artifacts) > 0 {
-		fresh = version + "/" + pyPrefix(anyutil.String(artifacts[0]["sha256"]), 12)
+		fresh = version + "/" + prefixValue(anyutil.String(artifacts[0]["sha256"]), 12)
 	}
 	pkgLog().Info(fmt.Sprintf("repair: %s re-realized %s -> %s", p.Base().Name, old, fresh))
 }
@@ -1173,7 +1173,7 @@ func EnvFor(names []string, base map[string]string) map[string]string {
 }
 
 // Strings of a decoded JSON iterable as Python iterates it, a string yielding its characters
-func pyIterStrings(v any) ([]string, error) {
+func iterStrings(v any) ([]string, error) {
 	switch t := v.(type) {
 	case []string:
 		return append([]string{}, t...), nil
@@ -1182,7 +1182,7 @@ func pyIterStrings(v any) ([]string, error) {
 		for _, item := range t {
 			s, ok := item.(string)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected text, got %s", errchain.Kind(item))}
+				return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected text, got %s", errchain.Kind(item))}
 			}
 			out = append(out, s)
 		}
@@ -1196,7 +1196,7 @@ func pyIterStrings(v any) ([]string, error) {
 	case map[string]any:
 		return sortedKeys(t), nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
+	return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // DriftReport maps each unhealthy package to its reason in the order the problems were found

@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -74,7 +75,7 @@ func frozenEditorNames(data map[string]any, specs []map[string]any) (map[int]str
 		for key, name := range raw {
 			i, err := strconv.Atoi(key)
 			if err != nil {
-				return nil, &PyError{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
+				return nil, &errorutil.Error{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
 			}
 			names[i] = anyutil.String(name)
 		}
@@ -300,7 +301,7 @@ func rebindEditorMCP(ctx context.Context, a *SessionAuthority, sid string, polic
 		}
 	}
 	var data map[string]any
-	if pyTruthy(servers) {
+	if anyutil.IsTrue(servers) {
 		specs := editorSpecs(servers)
 		scope := sessionScope(a, sid)
 		held := heldEditorMCP(a, scope)
@@ -410,7 +411,7 @@ func resumeEditorMCP(ctx context.Context, a *SessionAuthority, ref SessionRef, e
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	policy, err := policyForSource(ctx, a.Runner, live.Source)
 	if err != nil {
@@ -422,7 +423,7 @@ func resumeEditorMCP(ctx context.Context, a *SessionAuthority, ref SessionRef, e
 	if err := validateEditor(policy.Source, editor); err != nil {
 		return err
 	}
-	if pyTruthy(servers) {
+	if anyutil.IsTrue(servers) {
 		return attachEditorMCP(ctx, a, policy, servers)
 	}
 	return nil
@@ -443,7 +444,7 @@ func installEditorMCP(ctx context.Context, a *SessionAuthority, sid string, serv
 	if err != nil {
 		return err
 	}
-	raw, err := pyItem(receipt, "policy")
+	raw, err := itemValue(receipt, "policy")
 	if err != nil {
 		return err
 	}
@@ -479,7 +480,7 @@ func announceToolsChanged(live *LiveSession, sessionID string, result *jsonutil.
 		return
 	}
 	changed, _ := result.Get("tools_changed")
-	if !pyTruthy(changed) {
+	if !anyutil.IsTrue(changed) {
 		return
 	}
 	servers, _ := result.Get("mcp_servers")
@@ -513,7 +514,7 @@ func prepareEditorMCP(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	for key := range names {
 		i, err := strconv.Atoi(key)
 		if err != nil {
-			return nil, &PyError{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
 		}
 		indexes = append(indexes, i)
 	}
@@ -584,7 +585,7 @@ func prepareBranchEditor(ctx context.Context, a *SessionAuthority, ref SessionRe
 		}
 		return nil, nil, err
 	}
-	raw, err := pyItem(saved, "policy")
+	raw, err := itemValue(saved, "policy")
 	if err != nil {
 		return nil, nil, err
 	}

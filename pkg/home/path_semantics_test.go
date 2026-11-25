@@ -14,7 +14,7 @@ import (
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
-// Serves a user home lookup that fails like Path.home without HOME or a passwd entry
+// Serves a user home lookup that fails as it does without HOME or an account entry
 func noUserHome(t *testing.T) {
 	t.Helper()
 	lookup := func() (string, error) { return "", pathutil.ErrNoHome }
@@ -22,18 +22,18 @@ func noUserHome(t *testing.T) {
 	t.Cleanup(func() { userHomeLookup.Store(prev) })
 }
 
-// Runs fn and returns the RuntimeError it panicked with, failing when it returned
-func panicsWithRuntimeError(t *testing.T, what string, fn func()) {
+// Runs fn and fails unless it panicked with the missing data home refusal naming ICEBATH_HOME
+func panicsWithNoDataHome(t *testing.T, what string, fn func()) {
 	t.Helper()
 	defer func() {
-		if err, ok := recover().(error); !ok || !errors.Is(err, pathutil.ErrNoHome) {
-			t.Fatalf("%s did not raise the RuntimeError", what)
+		if err, ok := recover().(error); !ok || !errors.Is(err, pathutil.ErrNoHome) || !strings.Contains(err.Error(), EnvHome) {
+			t.Fatalf("%s did not refuse for the missing data home", what)
 		}
 	}()
 	fn()
 }
 
-func TestNamedProfileHomeKeepsDotDotLikePathlib(t *testing.T) {
+func TestNamedProfileHomeKeepsDotDot(t *testing.T) {
 	root := t.TempDir()
 	writeText(t, filepath.Join(root, "config.yaml"), "")
 	profile := filepath.Join(root, "profiles", "coder")
@@ -121,13 +121,15 @@ func TestMarkProfileDeletedWritesTextModeLines(t *testing.T) {
 	}
 }
 
-func TestMissingUserHomeRaisesLikePathHome(t *testing.T) {
+func TestMissingUserHomeRefusesTheDataHome(t *testing.T) {
 	hcFresh(t)
 	noUserHome(t)
-	panicsWithRuntimeError(t, "PlatformDefault", func() { PlatformDefault() })
-	panicsWithRuntimeError(t, "Process", func() { Process() })
-	panicsWithRuntimeError(t, "Root", func() { Root() })
-	panicsWithRuntimeError(t, "Display", func() { Display("/x") })
+	panicsWithNoDataHome(t, "PlatformDefault", func() { PlatformDefault() })
+	panicsWithNoDataHome(t, "Process", func() { Process() })
+	panicsWithNoDataHome(t, "Root", func() { Root() })
+	if got, want := Display("/x"), pathutil.CleanKeepDotDot("/x"); got != want {
+		t.Fatalf("Display without a user home = %q, want the path itself %q", got, want)
+	}
 	if got := ProfileNameFor("/x/profiles/coder"); got != "" {
 		t.Fatalf("ProfileNameFor swallowed nothing: %q", got)
 	}
@@ -136,17 +138,24 @@ func TestMissingUserHomeRaisesLikePathHome(t *testing.T) {
 	}
 	h := t.TempDir()
 	t.Setenv(EnvHome, h)
-	if Process() != h || Dir(context.Background()) != h {
+	if Process() != h || Dir(context.Background()) != h || Root() != h {
 		t.Fatal("an explicit home must not need the user home")
 	}
 }
 
-func TestKeyRaisesForAnUnknownUser(t *testing.T) {
+func TestKeyOfAnUnknownUserKeepsTheTilde(t *testing.T) {
 	hcFresh(t)
 	if runtime.GOOS == "windows" {
-		t.Skip("ntpath expands ~user from the profile directory")
+		t.Skip("Windows derives a ~user home from the profile directory, so no user home is unknown")
 	}
-	panicsWithRuntimeError(t, "Key", func() { Key("~icebath-no-such-user-zz/x") })
+	path := "~icebath-no-such-user-zz/x"
+	want, err := resolve(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Key(path); got != pathutil.FoldCase(want) {
+		t.Fatalf("Key(%q) = %q, want %q", path, got, pathutil.FoldCase(want))
+	}
 }
 
 func TestManagedSystemReadsTheMarkerLikeReadText(t *testing.T) {
@@ -258,7 +267,7 @@ func TestWSLTranslatorsTrimWhitespace(t *testing.T) {
 	}
 }
 
-func TestLayoutPathsJoinLikePathlib(t *testing.T) {
+func TestLayoutPathsKeepDotDot(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX separators")
 	}

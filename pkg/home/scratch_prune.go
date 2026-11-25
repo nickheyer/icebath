@@ -15,14 +15,16 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -78,8 +80,18 @@ func readDirUnsorted(dir string) ([]fs.DirEntry, error) {
 	return f.ReadDir(-1)
 }
 
-// Python repr of a filesystem path or name, undecodable bytes shown as surrogate escapes
-func pathRepr(p string) string { return strconv.Quote(string(p)) }
+// Quoted filesystem path or name for a log record, control characters and undecodable bytes escaped so the record stays one line and keeps every byte
+func pathRepr(p string) string { return strconv.Quote(p) }
+
+// Text for a log record as it is when every rune prints, else quoted so the record stays one line and keeps every byte
+func logSafe(s string) string {
+	for _, r := range s {
+		if r == utf8.RuneError || !unicode.IsPrint(r) {
+			return strconv.Quote(s)
+		}
+	}
+	return s
+}
 
 // Modification time of fi as float epoch seconds
 func mtimeOf(fi fs.FileInfo) float64 { return float64(fi.ModTime().UnixNano()) / 1e9 }
@@ -100,13 +112,13 @@ func (a *pruneAudit) info(msg string) {
 	if a.path == "" {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(a.path), 0o777); err != nil {
-		pkgLog().Warn(fmt.Sprintf("scratch prune: cannot create %s: %s", filepath.Dir(a.path), err.Error()))
+	if err := os.MkdirAll(pathutil.DirKeepDotDot(a.path), 0o777); err != nil {
+		pkgLog().Warn(fmt.Sprintf("scratch prune: cannot create %s: %s", pathutil.DirKeepDotDot(a.path), errchain.OSText(err)))
 		a.path = ""
 		return
 	}
-	line := time.Now().Format("2006-01-02 15:04:05,000") + " " + msg + "\n"
-	if fi, err := os.Stat(a.path); err == nil && fi.Mode().IsRegular() && fi.Size()+int64(utf8.RuneCountInString(line)) >= pruneLogMaxBytes {
+	line := time.Now().Format(timeutil.RFC3339Micro) + " " + msg + "\n"
+	if fi, err := os.Stat(a.path); err == nil && fi.Mode().IsRegular() && fi.Size()+int64(len(line)) >= pruneLogMaxBytes {
 		a.rollover()
 	}
 	f, err := os.OpenFile(a.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
@@ -245,15 +257,15 @@ func birthStamp(pid int) (float64, error) {
 	}
 	end := strings.LastIndexByte(string(data), ')')
 	if end < 0 {
-		return 0, &errorutil.Error{Kind: "IndexError", Msg: "list index out of range"}
+		return 0, fmt.Errorf("/proc/%d/stat has no closing parenthesis after the command name", pid)
 	}
 	fields := strings.Fields(string(data[end+1:]))
 	if len(fields) <= 19 {
-		return 0, &errorutil.Error{Kind: "IndexError", Msg: "list index out of range"}
+		return 0, fmt.Errorf("/proc/%d/stat has %d fields after the command name, the start time is field 20", pid, len(fields))
 	}
 	ticks, err := strconv.ParseInt(fields[19], 10, 64)
 	if err != nil {
-		return 0, &errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(string([]byte(fields[19])))}
+		return 0, fmt.Errorf("/proc/%d/stat start time %q is not an integer", pid, fields[19])
 	}
 	return float64(ticks), nil
 }
@@ -555,7 +567,7 @@ func (c reapCandidate) current() bool {
 // TERMs then KILLs same user processes living in doomed entries or vanished scratch dirs, sparing icebath owned ones
 func reapProcessesRootedIn(scratchRoot string, doomed *[]string, audit *pruneAudit) (int, error) {
 	if !proc.CwdAvailable {
-		return 0, &errorutil.Error{Kind: "NotImplementedError", Msg: "platform " + runtime.GOOS + " is not supported"}
+		return 0, errors.New("reading process working directories is not supported on " + runtime.GOOS)
 	}
 	root := realpath(scratchRoot)
 	var targets []string
@@ -721,20 +733,17 @@ func ReleaseGitWorktrees(repos map[string]bool) {
 
 // Deletes entries of root idle for maxIdleHours after reaping processes and worktrees rooted in them, returns the count
 func PruneIdleEntries(root string, maxIdleHours float64, skipNames map[string]bool, logFile string) (int, error) {
-	return pruneIdleEntries(root, maxIdleHours, skipNames, openPruneLog(logFile))
+	return pruneIdleEntries(walkableRoot(root), maxIdleHours, skipNames, openPruneLog(logFile))
 }
 
-// Python exception class and message for an error raised inside a prune pass
-func excInfo(err error) (string, string) {
-	var pe *errorutil.Error
-	if errors.As(err, &pe) {
-		return pe.Kind, pe.Msg
+// Root resolved through the filesystem when it holds a dot-dot element, so every path the prune joins below it names the directory it lists rather than one a lexical clean would pick
+func walkableRoot(root string) string {
+	if _, elems := pathutil.Parts(root); slices.Contains(elems, "..") {
+		if resolved, err := pathutil.Resolve(root); err == nil {
+			return resolved
+		}
 	}
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		return errorutil.Kind(err), err.Error()
-	}
-	return "OSError", err.Error()
+	return root
 }
 
 func pruneIdleEntries(root string, maxIdleHours float64, skipNames map[string]bool, audit *pruneAudit) (int, error) {
@@ -767,8 +776,7 @@ func pruneIdleEntries(root string, maxIdleHours float64, skipNames map[string]bo
 		}
 	}
 	if _, err := reapStep(root, &doomed, audit); err != nil {
-		class, msg := excInfo(err)
-		audit.info(fmt.Sprintf("scratch prune: process check failed (%s: %s), nothing deleted this pass", class, strconv.Quote(msg)))
+		audit.info(fmt.Sprintf("scratch prune: process check failed, nothing deleted this pass: %s", logSafe(errchain.OSText(err))))
 		return 0, nil
 	}
 	if len(doomed) == 0 {

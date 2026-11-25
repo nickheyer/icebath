@@ -242,7 +242,7 @@ func (c *CanonicalHostedRoomService) runShares(p *roomSharePump) {
 	defer ticker.Stop()
 	for {
 		status := c.RuntimeStatus()
-		if pyTruthy(status["stopping"]) || !pyTruthy(status["running"]) {
+		if anyutil.IsTrue(status["stopping"]) || !anyutil.IsTrue(status["running"]) {
 			return
 		}
 		targets, err := c.shareTargets()
@@ -363,7 +363,7 @@ func (c *CanonicalHostedRoomService) syncPeerOnce(p *roomSharePump, target strin
 			return false, err
 		}
 		latest[roomID], _ = page["latest_seq"].(int64)
-		more = more || pyTruthy(page["has_more"])
+		more = more || anyutil.IsTrue(page["has_more"])
 		entry := map[string]any{"room_id": roomID, "name": room["name"], "members": room["members"], "page": page,
 			"disbanded_at": room["disbanded_at"]}
 		if room["disbanded_at"] == nil {

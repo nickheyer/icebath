@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -110,7 +111,7 @@ func applyHostedProfileField(p *Profile, name string, v any) bool {
 	case "signup_url":
 		p.SignupURL = hostedStr(v)
 	case "hidden":
-		p.Hidden = pyTruthy(v)
+		p.Hidden = anyutil.IsTrue(v)
 	case "env_vars":
 		p.KeyEnv = hostedStrs(v)
 	case "base_url":
@@ -121,19 +122,19 @@ func applyHostedProfileField(p *Profile, name string, v any) bool {
 		p.AuthType = hostedStr(v)
 	case "supports_streaming":
 		if v != nil {
-			b := pyTruthy(v)
+			b := anyutil.IsTrue(v)
 			p.SupportsStreaming = &b
 		}
 	case "supports_health_check":
-		p.HealthCheck = pyTruthy(v)
+		p.HealthCheck = anyutil.IsTrue(v)
 	case "supports_model_listing":
-		p.ModelListing = pyTruthy(v)
+		p.ModelListing = anyutil.IsTrue(v)
 	case "supports_vision":
-		p.Vision = pyTruthy(v)
+		p.Vision = anyutil.IsTrue(v)
 	case "supports_vision_tool_messages":
-		p.VisionToolMessages = pyTruthy(v)
+		p.VisionToolMessages = anyutil.IsTrue(v)
 	case "supports_prompt_cache_key":
-		p.SupportsPromptCacheKey = pyTruthy(v)
+		p.SupportsPromptCacheKey = anyutil.IsTrue(v)
 	case "native_reasoning_details_type":
 		p.NativeReasoningDetailsType = hostedStr(v)
 	case "process_command":
@@ -179,25 +180,25 @@ func applyHostedProfileField(p *Profile, name string, v any) bool {
 	case "models_dev_id":
 		p.ModelsDevID = hostedStr(v)
 	case "ambient_credentials":
-		p.AmbientCredentials = pyTruthy(v)
+		p.AmbientCredentials = anyutil.IsTrue(v)
 	case "responses_replay_item_ids":
-		p.ResponsesDropReplayItemIDs = !pyTruthy(v)
+		p.ResponsesDropReplayItemIDs = !anyutil.IsTrue(v)
 	case "responses_prompt_cache_key":
-		p.ResponsesOmitPromptCacheKey = !pyTruthy(v)
+		p.ResponsesOmitPromptCacheKey = !anyutil.IsTrue(v)
 	case "responses_issuer_kind":
 		p.ResponsesIssuer = hostedStr(v)
 	case "responses_trusts_completed_status":
-		p.ResponsesDistrustCompletedStatus = !pyTruthy(v)
+		p.ResponsesDistrustCompletedStatus = !anyutil.IsTrue(v)
 	case "responses_native_compaction":
-		p.ResponsesNoNativeCompaction = !pyTruthy(v)
+		p.ResponsesNoNativeCompaction = !anyutil.IsTrue(v)
 	case "responses_profile_reasoning":
-		p.ResponsesReasoningFromProfile = pyTruthy(v)
+		p.ResponsesReasoningFromProfile = anyutil.IsTrue(v)
 	case "message_carrier_opaque":
 		p.MessageCarrierOpaque = hostedStr(v)
 	case "message_carrier_text":
 		p.MessageCarrierText = hostedStr(v)
 	case "replays_tool_call_signatures":
-		p.ReplaysToolCallSignatures = pyTruthy(v)
+		p.ReplaysToolCallSignatures = anyutil.IsTrue(v)
 	case "static_models":
 		p.StaticModels = hostedStrs(v)
 	case "catalog_credential_files":
@@ -207,9 +208,9 @@ func applyHostedProfileField(p *Profile, name string, v any) bool {
 	case "picker_group":
 		p.PickerGroup = hostedStrs(v)
 	case "catalog_aliases":
-		p.CatalogAliases = pyTruthy(v)
+		p.CatalogAliases = anyutil.IsTrue(v)
 	case "aggregator":
-		p.Aggregator = pyTruthy(v)
+		p.Aggregator = anyutil.IsTrue(v)
 	case "provider_overlay":
 		p.Overlay = hostedOverlay(hostedMap(v))
 	case "overlay_aliases":
@@ -231,7 +232,7 @@ func hostedOverlay(m map[string]any) *IcebathOverlay {
 	if len(m) == 0 {
 		return nil
 	}
-	return &IcebathOverlay{Transport: hostedStr(m["transport"]), IsAggregator: pyTruthy(m["is_aggregator"]), AuthType: hostedStr(m["auth_type"]),
+	return &IcebathOverlay{Transport: hostedStr(m["transport"]), IsAggregator: anyutil.IsTrue(m["is_aggregator"]), AuthType: hostedStr(m["auth_type"]),
 		ExtraEnvVars: hostedStrs(m["extra_env_vars"]), BaseURLOverride: hostedStr(m["base_url_override"]), BaseURLEnvVar: hostedStr(m["base_url_env_var"])}
 }
 
@@ -264,7 +265,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 	case "auth_handler":
 		p.AuthHandler = func(action string, args []string, provider string) (bool, error) {
 			out, err := hc.call(bg, attr, []any{action, hostedAuthNamespace{Provider: provider, Argv: args}}, nil)
-			return pyTruthy(out), err
+			return anyutil.IsTrue(out), err
 		}
 	case "refresh_credential":
 		p.RefreshCredential = func(entry PooledCredential) (map[string]any, error) {
@@ -393,7 +394,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 	case "listed":
 		p.ListedHook = func(ctx context.Context) (bool, error) {
 			out, err := hc.call(ctx, attr, nil, nil)
-			return pyTruthy(out), err
+			return anyutil.IsTrue(out), err
 		}
 	case "setup_status":
 		p.SetupStatusHook = func(ctx context.Context, kwargs map[string]any) (map[string]any, error) {
@@ -472,7 +473,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 		}
 	case "is_stale_credential_error":
 		p.IsStaleCredentialErrorHook = func(statusCode int, message string) bool {
-			return pyTruthy(hc.must(bg, attr, nil, map[string]any{"status_code": hostedOptInt(statusCode), "message": message}))
+			return anyutil.IsTrue(hc.must(bg, attr, nil, map[string]any{"status_code": hostedOptInt(statusCode), "message": message}))
 		}
 	case "credential_refresh_notice":
 		p.CredentialRefreshNoticeHook = func(reason string) string {
@@ -489,7 +490,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			if out == nil || len(pair) < 2 {
 				return false, "", false
 			}
-			return pyTruthy(pair[0]), hostedStr(pair[1]), true
+			return anyutil.IsTrue(pair[0]), hostedStr(pair[1]), true
 		}
 	case "missing_credentials_hint":
 		p.MissingCredentialsHintHook = func() any { return hc.must(bg, attr, nil, nil) }
@@ -503,7 +504,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 		}
 	case "replays_function_thought_signature":
 		p.ReplaysFunctionThoughtSignatureHook = func(model, baseURL string) bool {
-			return pyTruthy(hc.must(bg, attr, nil, map[string]any{"model": hostedOptStr(model), "base_url": baseURL}))
+			return anyutil.IsTrue(hc.must(bg, attr, nil, map[string]any{"model": hostedOptStr(model), "base_url": baseURL}))
 		}
 	case "probe_models":
 		p.ProbeModelsHook = func(ctx context.Context, baseURL, apiKey string, timeout time.Duration) *ModelsProbe {
@@ -555,7 +556,7 @@ func hostedVerdict(out any) *Verdict {
 		"should_rotate_credential": &vd.ShouldRotateCredential, "should_fallback": &vd.ShouldFallback}
 	for key, dst := range flags {
 		if v, present := m[key]; present {
-			*dst = bptr(pyTruthy(v))
+			*dst = bptr(anyutil.IsTrue(v))
 		}
 	}
 	if ctxMap, ok := m["error_context"].(map[string]any); ok {
@@ -568,7 +569,7 @@ func hostedVerdict(out any) *Verdict {
 func hostedUsageSnapshot(m map[string]any) *AccountUsageSnapshot {
 	snap := &AccountUsageSnapshot{Provider: hostedStr(m["provider"]), Source: hostedStr(m["source"]), Title: hostedStr(m["title"]),
 		Plan: hostedStr(m["plan"]), Details: hostedStrs(m["details"]), UnavailableReason: hostedStr(m["unavailable_reason"]),
-		Identity: hostedStr(m["identity"]), Raw: hostedMapOrNil(m["raw"]), UsageWindow: pyTruthy(m["usage_window"])}
+		Identity: hostedStr(m["identity"]), Raw: hostedMapOrNil(m["raw"]), UsageWindow: anyutil.IsTrue(m["usage_window"])}
 	if t, ok := hostedDatetime(m["fetched_at"]); ok {
 		snap.FetchedAt = t
 	}
@@ -597,7 +598,7 @@ func hostedCostResult(m map[string]any) CostResult {
 			out.AmountUSD, _ = new(big.Rat).SetString(mm[1])
 		}
 	default:
-		out.AmountUSD, _ = new(big.Rat).SetString(pyStr(amount))
+		out.AmountUSD, _ = new(big.Rat).SetString(anyutil.String(amount))
 	}
 	if t, ok := hostedDatetime(m["fetched_at"]); ok {
 		out.FetchedAt = t
@@ -657,7 +658,7 @@ func hostedStr(v any) string {
 	case string:
 		return s
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 func hostedOptStr(s string) any {

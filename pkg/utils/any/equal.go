@@ -15,7 +15,7 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-// Whether two values are deeply equal: numbers by value across integer and float types, a bool only to a bool, sequences element by element, maps and objects by their entries whatever their key order, values that contain themselves without looping
+// Whether two values are deeply equal: numbers by value across integer and float types, a bool only to a bool, sequences element by element, maps and objects by their entries whatever their key order (an object being a *jsonutil.Object or any value that lists its entries through Len, Get and All), values that contain themselves without looping
 func Equal(a, b any) bool {
 	var q equality
 	return q.equal(a, b)
@@ -98,8 +98,19 @@ func identity(v any) (containerID, bool) {
 		return containerID{ptr: rv.UnsafePointer(), n: -1}, rv.Len() > 0
 	case reflect.Slice:
 		return containerID{ptr: rv.UnsafePointer(), n: rv.Len()}, rv.Len() > 0
+	case reflect.Pointer:
+		if e, ok := v.(entryObject); ok {
+			return containerID{ptr: rv.UnsafePointer()}, e.Len() > 0
+		}
 	}
 	return containerID{}, false
+}
+
+// Object that lists its text-keyed entries, such as an ordered map or a list of key and value pairs, compared by its entries as a map is
+type entryObject interface {
+	Len() int
+	Get(key string) (any, bool)
+	All() iter.Seq2[string, any]
 }
 
 type class uint8
@@ -135,6 +146,11 @@ func classOf(v any) class {
 	case *jsonutil.Object:
 		// a nil object is JSON null, the way it encodes
 		if x == nil {
+			return classNil
+		}
+		return classObject
+	case entryObject:
+		if nilPointer(v) {
 			return classNil
 		}
 		return classObject
@@ -379,10 +395,11 @@ func (q *equality) objectEqual(a, b any) bool {
 	return true
 }
 
-// Read access to a plain map, an object, or a map of another type through reflection
+// Read access to a plain map, an object, an entry listing object, or a map of another type through reflection
 type view struct {
 	m   map[string]any
 	obj *jsonutil.Object
+	ent entryObject
 	rv  reflect.Value
 }
 
@@ -392,6 +409,8 @@ func viewOf(v any) view {
 		return view{m: x}
 	case *jsonutil.Object:
 		return view{obj: x}
+	case entryObject:
+		return view{ent: x}
 	}
 	return view{rv: reflect.ValueOf(v)}
 }
@@ -400,6 +419,8 @@ func (w view) size() int {
 	switch {
 	case w.obj != nil:
 		return w.obj.Len()
+	case w.ent != nil:
+		return w.ent.Len()
 	case w.rv.IsValid():
 		return w.rv.Len()
 	}
@@ -415,6 +436,8 @@ func (w view) entries() iter.Seq2[string, any] {
 	switch {
 	case w.obj != nil:
 		return w.obj.All()
+	case w.ent != nil:
+		return w.ent.All()
 	case w.rv.IsValid():
 		return func(yield func(string, any) bool) {
 			it := w.rv.MapRange()
@@ -432,6 +455,8 @@ func (w view) get(key string) (any, bool) {
 	switch {
 	case w.obj != nil:
 		return w.obj.Get(key)
+	case w.ent != nil:
+		return w.ent.Get(key)
 	case w.rv.IsValid():
 		v := w.rv.MapIndex(reflect.ValueOf(key).Convert(w.rv.Type().Key()))
 		if !v.IsValid() {

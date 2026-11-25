@@ -283,11 +283,11 @@ func hfRaiseForStatus(resp *httputil.Response, r hfRequest, endpointName string)
 		}
 		return hfFormat("BadRequestError", msg, resp)
 	case resp.StatusCode == 403:
-		em := "None"
-		if hasErrorMessage {
-			em = errorMessage
+		forbidden := fmt.Sprintf("%d Forbidden", resp.StatusCode)
+		if errorMessage != "" {
+			forbidden += ": " + errorMessage
 		}
-		return hfFormat("HfHubHTTPError", fmt.Sprintf("\n\n%d Forbidden: %s.\nCannot access content at: %s.\nMake sure your token has the correct permissions.", resp.StatusCode, em, u), resp)
+		return hfFormat("HfHubHTTPError", fmt.Sprintf("\n\n%s.\nCannot access content at: %s.\nMake sure your token has the correct permissions.", forbidden, u), resp)
 	case resp.StatusCode == 429:
 		var msg string
 		if info := hfParseRatelimit(resp.Header); info != nil && info.remaining == 0 {
@@ -789,9 +789,9 @@ func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, 
 	return nil
 }
 
-// int of a chunk_size header value, the batch endpoint error for anything else
+// Integer of a chunk_size header value, whole number text, an integer, a float cut toward zero or a boolean as 1 or 0; the batch endpoint error for anything else, NaN, infinity and values beyond int64 included
 func pyintOfChunk(v any) (int, error) {
-	bad := &appValueError{fmt.Sprintf("Malformed response from LFS batch endpoint: `chunk_size` should be an integer. Got '%s'.", anyutil.String(v))}
+	bad := &appValueError{"Malformed response from LFS batch endpoint: `chunk_size` should be an integer. Got " + anyutil.Quote(v) + "."}
 	switch t := v.(type) {
 	case string:
 		n, err := textutil.ParseInt(t)
@@ -799,17 +799,15 @@ func pyintOfChunk(v any) (int, error) {
 			return 0, bad
 		}
 		return int(n), nil
-	case int:
-		return t, nil
-	case int64:
-		return int(t), nil
-	case float64:
-		return int(t), nil
-	case bool:
-		if t {
-			return 1, nil
+	case bool, float64:
+		n, err := anyutil.ToInt(t)
+		if err != nil {
+			return 0, bad
 		}
-		return 0, nil
+		return int(n), nil
+	}
+	if n, ok := anyutil.Int(v); ok {
+		return int(n), nil
 	}
 	return 0, bad
 }
@@ -855,11 +853,10 @@ func hfUploadMultiPart(ctx context.Context, content []byte, oid string, header *
 		}
 		etag := resp.Header.Get("etag")
 		if etag == "" {
-			shown := "None"
-			if _, ok := resp.Header["Etag"]; ok {
-				shown = ""
+			if _, sent := resp.Header["Etag"]; sent {
+				return &appValueError{fmt.Sprintf("Invalid etag (empty) returned for part %d", i+1)}
 			}
-			return &appValueError{fmt.Sprintf("Invalid etag (`%s`) returned for part %d", shown, i+1)}
+			return &appValueError{fmt.Sprintf("No etag returned for part %d", i+1)}
 		}
 		completed = append(completed, jsonutil.ObjectOf("partNumber", i+1, "etag", etag))
 	}

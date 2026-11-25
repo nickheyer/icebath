@@ -165,7 +165,7 @@ func (p *pendingPass) read(seconds float64) {
 	}
 }
 
-func pyGetDefault(m map[string]any, key string, def any) any {
+func getDefault(m map[string]any, key string, def any) any {
 	if v, ok := m[key]; ok {
 		return v
 	}
@@ -178,10 +178,10 @@ func messageIdentity(msg any) PreparedIdentity {
 	if !ok {
 		return PreparedIdentity{Structure: "?"}
 	}
-	role := pyStrOr(m["role"], "")
+	role := anyutil.StringOr(m["role"], "")
 	uid, _ := state.MessageUIDOrNone(m)
 	if role == "tool" {
-		return PreparedIdentity{Structure: "tool\x1f" + pyStrOr(m["tool_call_id"], ""), UID: uid}
+		return PreparedIdentity{Structure: "tool\x1f" + anyutil.StringOr(m["tool_call_id"], ""), UID: uid}
 	}
 	text := strings.TrimSpace(memory.SanitizeContext(state.FlattenMessageText(m["content"], "\n")))
 	digest := hex.EncodeToString(provider.Blake2bSum([]byte(text), 8))
@@ -200,14 +200,22 @@ func messageIdentity(msg any) PreparedIdentity {
 				fn = map[string]any{}
 			}
 			if fd, ok := jsonutil.AsMap(fn); ok {
-				name = anyutil.String(pyGetDefault(fd, "name", ""))
+				name = identityField(getDefault(fd, "name", ""))
 			}
-			parts = append(parts, anyutil.String(pyGetDefault(d, "id", ""))+":"+name)
+			parts = append(parts, identityField(getDefault(d, "id", ""))+":"+name)
 		} else {
 			parts = append(parts, toolCallAttrIdentity(tc))
 		}
 	}
 	return PreparedIdentity{Structure: strings.Join(parts, "\x1f"), UID: uid, Digest: digest}
+}
+
+// Text of one tool call identity field, a null written as null so it stays distinct from an absent or empty value
+func identityField(v any) string {
+	if v == nil {
+		return "null"
+	}
+	return anyutil.String(v)
 }
 
 // Id and function name of an object tool call, empty for attributes it lacks

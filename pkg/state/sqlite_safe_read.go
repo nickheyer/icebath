@@ -12,6 +12,8 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reports a raw file operation attempted on a database with live connections
@@ -228,7 +230,7 @@ func ConnectTracked(path string, opts ...TrackedOption) (*TrackedConn, error) {
 		resolved, ok = liveKey(o.trackingPath), true
 	} else {
 		if isNilConn(conn) {
-			return nil, &pyConvError{"AttributeError", "the connection to track is closed"}
+			return nil, &convError{"AttributeError", "the connection to track is closed"}
 		}
 		resolved, ok = canonicalDBPath(conn)
 	}
@@ -275,7 +277,7 @@ func isNilConn(conn SQLiteConn) bool {
 func retrofitTracking(conn SQLiteConn, resolved string) (*TrackedConn, error) {
 	if isNilConn(conn) {
 		return nil, &UntrackableConnectionError{Path: resolved, Factory: "(none)",
-			Cause: &pyConvError{"TypeError", "the connection type cannot be wrapped for tracking"}}
+			Cause: &convError{"TypeError", "the connection type cannot be wrapped for tracking"}}
 	}
 	if tracked, ok := conn.(*TrackedConn); ok {
 		return tracked, nil
@@ -311,10 +313,10 @@ func pragmaFirstValue(conn SQLiteConn, pragma string) (any, error) {
 		if err := rows.Err(); err != nil {
 			return nil, err
 		}
-		return nil, &pyConvError{"TypeError", "the pragma returned no row"}
+		return nil, &convError{"TypeError", "the pragma returned no row"}
 	}
 	if len(cols) == 0 {
-		return nil, &pyConvError{"IndexError", "the pragma returned a row with no columns"}
+		return nil, &convError{"IndexError", "the pragma returned a row with no columns"}
 	}
 	vals := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
@@ -327,7 +329,7 @@ func pragmaFirstValue(conn SQLiteConn, pragma string) (any, error) {
 	if b, ok := vals[0].([]byte); ok {
 		for _, c := range b {
 			if c >= 0x80 {
-				return nil, &pyConvError{"ValueError", "the pragma value " + pyBytesRepr(b) + " is not a whole number"}
+				return nil, &convError{"ValueError", "the pragma value " + anyutil.Quote(b) + " is not a whole number"}
 			}
 		}
 		return string(b), nil
@@ -347,11 +349,11 @@ func PageCountBytes(conn SQLiteConn) (int64, bool) {
 		if err != nil {
 			return err
 		}
-		count, err := pyIntOf(pageCount)
+		count, err := intOfValue(pageCount)
 		if err != nil {
 			return err
 		}
-		size, err := pyIntOf(pageSize)
+		size, err := intOfValue(pageSize)
 		if err != nil {
 			return err
 		}

@@ -19,7 +19,7 @@ var legacyCronRunID = regexp.MustCompile(`^cron_(.+)_\p{Nd}{8}_\p{Nd}{6}\n?$`)
 
 // The admission request id of one cron fire
 func CronRequestID(jobID, executionID any) string {
-	return CronRequestPrefix + pyFormat(jobID) + ":" + pyFormat(executionID)
+	return CronRequestPrefix + formatted(jobID) + ":" + formatted(executionID)
 }
 
 var errEmptyPrefix = errors.New("a key prefix cannot be empty")
@@ -75,8 +75,8 @@ func LegacyCronRunJob(sessionID string) (string, bool) {
 
 // Hashes the canonical target and payload after authorization and media capture
 func AdmissionFingerprint(canonicalTarget string, payload map[string]any) (string, error) {
-	encoded, err := pyDumps(pyObject{{"target", canonicalTarget}, {"payload", payload}},
-		pyJSON{sortKeys: true, itemSep: ",", keySep: ":"})
+	encoded, err := dumpsValue(orderedObject{{"target", canonicalTarget}, {"payload", payload}},
+		jsonCodec{sortKeys: true, itemSep: ",", keySep: ":"})
 	if err != nil {
 		return "", err
 	}
@@ -86,9 +86,9 @@ func AdmissionFingerprint(canonicalTarget string, payload map[string]any) (strin
 
 // The deterministic session id of a local creation receipt
 func LocalIdentity(profileID, principalID, requestID any) (string, error) {
-	opts := pyJSONDefault
+	opts := jsonDefault
 	opts.itemSep, opts.keySep = ",", ":"
-	identity, err := pyDumps([]any{profileID, principalID, requestID}, opts)
+	identity, err := dumpsValue([]any{profileID, principalID, requestID}, opts)
 	if err != nil {
 		return "", err
 	}

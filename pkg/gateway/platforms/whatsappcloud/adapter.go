@@ -98,10 +98,10 @@ func mustFullmatch(pattern string) *regexp2.Regexp {
 }
 
 // Error carrying a kind label beside its message
-type pyErr struct{ kind, msg string }
+type kindErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string     { return e.msg }
-func (e *pyErr) ErrorKind() string { return e.kind }
+func (e *kindErr) Error() string     { return e.msg }
+func (e *kindErr) ErrorKind() string { return e.kind }
 
 // Error for a decoded value that is not the object the payload shape requires
 func notObject(v any) error {
@@ -117,6 +117,14 @@ func dictOr(v any) (map[string]any, error) {
 		return m, nil
 	}
 	return nil, notObject(v)
+}
+
+// Value under key or the default when the key is absent or null
+func settingOr(m map[string]any, key string, def any) any {
+	if v := m[key]; v != nil {
+		return v
+	}
+	return def
 }
 
 // Value under key or the default when the key is absent
@@ -301,9 +309,9 @@ func NewWhatsAppCloudAdapter(ctx context.Context, config *gateway.PlatformConfig
 		return nil, err
 	}
 	a.webhookPort = int(port)
-	a.webhookPath = normalizePath(getOr(extra, "webhook_path", defaultWebhookPath))
-	a.healthPath = normalizePath(getOr(extra, "health_path", "/health"))
-	a.apiVersion = anyutil.String(getOr(extra, "api_version", defaultAPIVersion))
+	a.webhookPath = normalizePath(settingOr(extra, "webhook_path", defaultWebhookPath))
+	a.healthPath = normalizePath(settingOr(extra, "health_path", "/health"))
+	a.apiVersion = anyutil.String(settingOr(extra, "api_version", defaultAPIVersion))
 	if rp, ok := extra["reply_prefix"]; ok && rp != nil {
 		s := anyutil.String(rp)
 		a.ReplyPrefix = &s

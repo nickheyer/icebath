@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Outcomes argparse of Python 3.14 gives the module entry parser for each argv, recorded at 80 columns without color
+// Outcome the module entry parser gives each argv: the config, whether parsing ends the run, the exit code and both streams at 80 columns without color
 const runMainArgsRecorded = `[
 {
 "argv": [],
@@ -148,7 +148,7 @@ const runMainArgsRecorded = `[
 "done": true,
 "code": 2,
 "out": "",
-"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument --verbose/-v: ignored explicit argument '1'\n"
+"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument --verbose/-v: ignored explicit argument \"1\"\n"
 },
 {
 "argv": [
@@ -209,7 +209,7 @@ const runMainArgsRecorded = `[
 "done": true,
 "code": 2,
 "out": "",
-"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument --verbose/-v: ignored explicit argument '1'\n"
+"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument --verbose/-v: ignored explicit argument \"1\"\n"
 },
 {
 "argv": [
@@ -411,7 +411,7 @@ const runMainArgsRecorded = `[
 "done": true,
 "code": 2,
 "out": "",
-"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument --verbose/-v: ignored explicit argument '-'\n"
+"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument --verbose/-v: ignored explicit argument \"-\"\n"
 },
 {
 "argv": [
@@ -432,7 +432,7 @@ const runMainArgsRecorded = `[
 "done": true,
 "code": 2,
 "out": "",
-"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument -h/--help: ignored explicit argument '1'\n"
+"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument -h/--help: ignored explicit argument \"1\"\n"
 },
 {
 "argv": [
@@ -442,7 +442,7 @@ const runMainArgsRecorded = `[
 "done": true,
 "code": 2,
 "out": "",
-"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument -h/--help: ignored explicit argument '1'\n"
+"err": "usage: icebath __icebath_gateway_run__ [-h] [--config CONFIG] [--verbose]\nicebath __icebath_gateway_run__: error: argument -h/--help: ignored explicit argument \"1\"\n"
 },
 {
 "argv": [
@@ -488,8 +488,8 @@ const runMainArgsRecorded = `[
 }
 ]`
 
-// The module entry parser reads every recorded argv the way argparse reads it for gateway/run.py main
-func TestParseRunMainArgsMatchesArgparse(t *testing.T) {
+// The module entry parser gives every recorded argv its recorded config, exit and output
+func TestParseRunMainArgsGivesEachRecordedOutcome(t *testing.T) {
 	t.Setenv("COLUMNS", "80")
 	t.Setenv("NO_COLOR", "1")
 	var rows []struct {

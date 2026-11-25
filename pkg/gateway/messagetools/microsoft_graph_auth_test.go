@@ -181,7 +181,7 @@ func TestTokenResponseValidationAndErrorDetail(t *testing.T) {
 	}{
 		{400, `{"error": {"code": "AADSTS7000215", "message": "Invalid client secret"}}`, "Microsoft Graph token request failed with HTTP 400: AADSTS7000215: Invalid client secret"},
 		{400, `{"error": {"code": "OnlyCode"}}`, "Microsoft Graph token request failed with HTTP 400: OnlyCode"},
-		{400, `{"other": 1}`, "Microsoft Graph token request failed with HTTP 400: {'other': 1}"},
+		{400, `{"other": 1}`, `Microsoft Graph token request failed with HTTP 400: {"other": 1}`},
 		{500, `  upstream down  `, "Microsoft Graph token request failed with HTTP 500: upstream down"},
 		{500, ``, "Microsoft Graph token request failed with HTTP 500: unknown error"},
 		{502, `[1, 2]`, "Microsoft Graph token request failed with HTTP 502: [1, 2]"},

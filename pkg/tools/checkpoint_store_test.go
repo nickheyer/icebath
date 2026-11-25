@@ -319,8 +319,8 @@ func TestCheckpointValidators(t *testing.T) {
 	for in, want := range map[string]string{
 		"":          "Empty commit hash",
 		"   ":       "Empty commit hash",
-		"-x":        "Invalid commit hash (must not start with '-'): '-x'",
-		"abc":       "Invalid commit hash (expected 4-64 hex characters): 'abc'",
+		"-x":        `Invalid commit hash (must not start with '-'): "-x"`,
+		"abc":       `Invalid commit hash (expected 4-64 hex characters): "abc"`,
 		"abcd":      "",
 		"ABCDEF012": "",
 	} {

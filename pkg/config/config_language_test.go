@@ -34,7 +34,7 @@ func TestDisplayLanguageErrorAfterDiscovery(t *testing.T) {
 		t.Fatalf("blank refused: %q", got)
 	}
 	got := DisplayLanguageError("xx", &fakeCatalog{})
-	if !strings.HasPrefix(got, "✗ Unknown language 'xx' for display.language. Available: en, pl.\n  Install a language pack plugin") {
+	if !strings.HasPrefix(got, "✗ Unknown language \"xx\" for display.language. Available: en, pl.\n  Install a language pack plugin") {
 		t.Fatalf("got %q", got)
 	}
 }

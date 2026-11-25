@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -185,7 +186,7 @@ func (c *codexResponsesClient) nativeContextManagement(ctx context.Context, req 
 	return nativeCompactionContextManagement(nativeCompactionInputs{
 		runtimeCapability: runtimeCapability, configured: settings.nativeCompaction, compressionEnabled: settings.compressionEnabled,
 		checkpointRequired: codexCheckpointRequired(ctx), model: model, provider: c.route.Provider, baseURL: c.route.BaseURL,
-		trustedProxy:       pyTruthy(req.Metadata[CodexTrustedProxyCompactionKey]) && strings.ToLower(req.Metadata[CodexTrustedProxyCompactionKey]) != "false" && req.Metadata[CodexTrustedProxyCompactionKey] != "0",
+		trustedProxy:       anyutil.IsTrue(req.Metadata[CodexTrustedProxyCompactionKey]) && strings.ToLower(req.Metadata[CodexTrustedProxyCompactionKey]) != "false" && req.Metadata[CodexTrustedProxyCompactionKey] != "0",
 		localTriggerTokens: localTrigger, compactThreshold: settings.compactThreshold, isCodexBackend: c.flags.isCodexBackend,
 		isXAI: c.flags.isXAI, endpoint: endpoint,
 	})
@@ -406,12 +407,8 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 		custom = append(custom, headerField{Name: k, Value: p.headers[k]})
 	}
 	sdk := newAuxOpenAIClient(key, p.url, auxOpenAIOptions{DefaultHeaders: fieldMap(custom...), Timeout: p.timeout.Seconds()})
-	r := &auxSDKRequest{headers: map[string]any{}, timeout: auxUniformTimeouts(sdk.timeout, sdk.hasTimeout), readTimeoutText: sdk.timeoutText}
-	extra := providerRequestHeaders(ctx)
-	for _, k := range slices.Sorted(maps.Keys(extra)) {
-		r.headers[k] = extra[k]
-		r.headerOrder = append(r.headerOrder, k)
-	}
+	r := &auxSDKRequest{headers: newSDKHeaders(orderedExtraHeaders(providerRequestHeaders(ctx))...), timeout: auxUniformTimeouts(sdk.timeout, sdk.hasTimeout),
+		readTimeoutText: sdk.timeoutText}
 	httpReq.Host = httpxHost(httpReq.URL)
 	httpReq = withHeader(httpReq, sdk.wireHeaders(key, r, 0))
 	codexCompressRequest(httpReq, c.route.BaseURL, body)

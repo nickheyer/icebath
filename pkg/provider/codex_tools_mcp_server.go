@@ -42,9 +42,6 @@ var codexToolsHandshakeVersions = []string{"2024-11-05", "2025-03-26", "2025-06-
 
 const codexToolsDiscoverVersion = "2026-07-28"
 
-// Major and minor of the pydantic release whose error documentation links the validation text cites
-const codexToolsPydanticDocsVersion = "2.14"
-
 var codexToolsJSONToPy = map[string]string{"string": "str", "integer": "int", "number": "float", "boolean": "bool", "array": "list", "object": "dict"}
 
 // codexToolsExposedTools is the curated tool subset codex reaches through the server, never its own builtins
@@ -63,7 +60,7 @@ func CodexToolsExposedTools() []string { return slices.Clone(codexToolsExposedTo
 // One keyword only handler parameter, an optional one defaulting to Default when HasDefault is set, else None
 type codexToolsParam struct {
 	Name       string
-	PyType     string
+	KindOf     string
 	Required   bool
 	Default    any
 	HasDefault bool
@@ -72,9 +69,9 @@ type codexToolsParam struct {
 // Annotation renders the parameter annotation the way typing prints it
 func (p codexToolsParam) Annotation() string {
 	if p.Required || p.HasDefault {
-		return p.PyType
+		return p.KindOf
 	}
-	return "Optional[" + p.PyType + "]"
+	return "Optional[" + p.KindOf + "]"
 }
 
 type codexToolsSignature struct {
@@ -115,7 +112,7 @@ func codexToolsSignatureFromSchema(schema any) (codexToolsSignature, map[string]
 		if t, ok := cxGet(cxOr(cxGet(props, name), map[string]any{}), "type").(string); ok && codexToolsJSONToPy[t] != "" {
 			py = codexToolsJSONToPy[t]
 		}
-		p := codexToolsParam{Name: name, PyType: py, Required: required[name]}
+		p := codexToolsParam{Name: name, KindOf: py, Required: required[name]}
 		annots[name] = p.Annotation()
 		sig.Params = append(sig.Params, p)
 	}
@@ -155,7 +152,7 @@ func codexToolsInputSchema(toolName string, sig codexToolsSignature) *jsonutil.O
 	var required []any
 	for _, p := range sig.Params {
 		field := jsonutil.NewObject()
-		inner := codexToolsTypeSchema(p.PyType)
+		inner := codexToolsTypeSchema(p.KindOf)
 		if p.Required || p.HasDefault {
 			for _, k := range inner.Keys() {
 				field.Set(k, inner.Value(k))
@@ -233,7 +230,7 @@ var codexToolsErrorMessages = map[string]string{
 	"dict_type":      "Input should be a valid dictionary",
 }
 
-// Pydantic ValidationError text with the input value repr truncated the way pydantic-core prints it
+// Argument validation failure listing each field's error with its input as JSON text, a long input shortened in the middle
 type codexToolsValidationError struct {
 	title  string
 	errors []codexToolsLineError
@@ -247,13 +244,16 @@ func (e *codexToolsValidationError) Error() string {
 	}
 	fmt.Fprintf(&b, "%d validation error%s for %s", len(e.errors), plural, e.title)
 	for _, le := range e.errors {
-		r := []rune(anyutil.Quote(le.input))
+		text := "null"
+		if le.input != nil {
+			text = anyutil.Quote(le.input)
+		}
+		r := []rune(text)
 		value := string(r)
 		if len(r) > 50 {
 			value = string(r[:25]) + "..." + string(r[len(r)-24:])
 		}
-		fmt.Fprintf(&b, "\n%s\n  %s [type=%s, input_value=%s, input_type=%s]\n    For further information visit https://errors.pydantic.dev/%s/v/%s",
-			le.loc, codexToolsErrorMessages[le.kind], le.kind, value, anyutil.Kind(le.input), codexToolsPydanticDocsVersion, le.kind)
+		fmt.Fprintf(&b, "\n%s\n  %s [type=%s, input_value=%s, input_type=%s]", le.loc, codexToolsErrorMessages[le.kind], le.kind, value, anyutil.Kind(le.input))
 	}
 	return b.String()
 }
@@ -432,7 +432,7 @@ func codexToolsValidate(toolName string, sig codexToolsSignature, args *jsonutil
 			out.Set(p.Name, nil)
 			continue
 		}
-		coerced, kind := codexToolsCoerce(p.PyType, v)
+		coerced, kind := codexToolsCoerce(p.KindOf, v)
 		if kind != "" {
 			verr.errors = append(verr.errors, codexToolsLineError{loc: p.Name, kind: kind, input: v})
 			continue
@@ -611,6 +611,9 @@ func (s *CodexToolsServer) callTool(params any) *jsonutil.Object {
 		}
 	}
 	if tool == nil {
+		if cxGet(params, "name") == nil {
+			return errResult("Unknown tool: the call names none")
+		}
 		return errResult("Unknown tool: " + name)
 	}
 	args, ok := cxGet(params, "arguments").(*jsonutil.Object)

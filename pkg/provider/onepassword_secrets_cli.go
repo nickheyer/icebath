@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
@@ -157,7 +158,7 @@ func opCmdStatus(cli *secretsCLI, ns map[string]any) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	enabled := pyTruthy(op["enabled"])
+	enabled := anyutil.IsTrue(op["enabled"])
 	account := cfgStr(op, "account")
 	tokenEnv := cfgText(op, "service_account_token_env", opDefaultTokenEnv)
 	binaryPath := cfgStr(op, "binary_path")
@@ -185,7 +186,7 @@ func opCmdStatus(cli *secretsCLI, ns map[string]any) (int, error) {
 	if len(refs) > 0 {
 		rows := make([][]string, 0, len(refs))
 		for _, name := range sortedAnyKeys(refs) {
-			rows = append(rows, []string{name, pyStr(refs[name])})
+			rows = append(rows, []string{name, anyutil.String(refs[name])})
 		}
 		printTable(console, []consoleutil.Column{{Header: "Env var", Style: "cyan"}, {Header: "Reference"}}, rows, nil, "")
 	}
@@ -274,7 +275,7 @@ func opCmdToken(cli *secretsCLI, ns map[string]any) (int, error) {
 		verify = nil
 	}
 	disabledNote := ""
-	if !pyTruthy(op["enabled"]) {
+	if !anyutil.IsTrue(op["enabled"]) {
 		disabledNote = "[yellow]Note: the 1Password integration is currently disabled — " +
 			"run `icebath secrets onepassword setup` to turn it on.[/yellow]"
 	}

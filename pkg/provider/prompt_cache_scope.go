@@ -7,12 +7,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -123,7 +123,7 @@ func cacheScopeAgentSource(a *CacheScopeAgent, sessionID string, db any, rowSour
 			if row, err := reader.GetSession(context.Background(), sessionID); err == nil && row != nil {
 				source, _ := row.Get("source")
 				text, _ := source.(string)
-				read = pyStripSpace(text)
+				read = strings.TrimSpace(text)
 			}
 		}
 		rowSource = &read
@@ -131,7 +131,7 @@ func cacheScopeAgentSource(a *CacheScopeAgent, sessionID string, db any, rowSour
 	if rowSource != nil && *rowSource != "" {
 		return *rowSource
 	}
-	return pyStripSpace(SessionSourceFor(a.Env, a.Platform))
+	return strings.TrimSpace(SessionSourceFor(a.Env, a.Platform))
 }
 
 // Durable reset generation of the declared conversation key, empty when the store records none
@@ -152,7 +152,7 @@ func DeclaredConversationScope(a *CacheScopeAgent) string {
 	if strings.HasPrefix(a.InheritedCacheScope, declaredScopePrefix) {
 		return a.InheritedCacheScope
 	}
-	key := pyStripSpace(a.GatewaySessionKey)
+	key := strings.TrimSpace(a.GatewaySessionKey)
 	if key == "" || a.PersistDisabled {
 		return ""
 	}
@@ -189,7 +189,7 @@ func DeclaredConversationScope(a *CacheScopeAgent) string {
 		}
 		generation = g
 	}
-	sum := sha256.Sum256(pyUTF8Replace(source + "|" + key + "|" + generation))
+	sum := sha256.Sum256(utf8Replace(source + "|" + key + "|" + generation))
 	return declaredScopePrefix + hex.EncodeToString(sum[:])[:24]
 }
 
@@ -228,14 +228,14 @@ func ResolvePromptCacheScope(a *CacheScopeAgent) string {
 
 // IsSlotKeyedCacheRoute reports whether the cache key pins one server side slot per conversation as xAI does
 func IsSlotKeyedCacheRoute(providerName, model, baseURL string) bool {
-	p := strings.ToLower(pyStripSpace(providerName))
+	p := strings.ToLower(strings.TrimSpace(providerName))
 	if p == "xai" || p == "xai-oauth" {
 		return true
 	}
 	if baseURLHostname(baseURL) == "api.x.ai" {
 		return true
 	}
-	m := strings.ToLower(pyStripSpace(model))
+	m := strings.ToLower(strings.TrimSpace(model))
 	for _, prefix := range grokAggregatorModelPrefixes {
 		if strings.HasPrefix(m, prefix) {
 			return true
@@ -285,15 +285,8 @@ func ResolvePromptCacheScopeSafe(a *CacheScopeAgent) (scope string) {
 	return ResolvePromptCacheScope(a)
 }
 
-// Strips the characters Python str.strip treats as whitespace
-func pyStripSpace(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool {
-		return (r >= 0x1c && r <= 0x1f) || unicode.IsSpace(r)
-	})
-}
-
 // UTF-8 bytes with each surrogate or invalid byte replaced by a question mark as Python errors replace encodes
-func pyUTF8Replace(s string) []byte {
+func utf8Replace(s string) []byte {
 	out := make([]byte, 0, len(s))
 	for i := 0; i < len(s); {
 		if i+2 < len(s) && s[i] == 0xED && s[i+1] >= 0xA0 && s[i+1] <= 0xBF && s[i+2] >= 0x80 && s[i+2] <= 0xBF {
@@ -376,8 +369,8 @@ func moaAggregatorCachePolicy(ctx context.Context, agent *CachePolicyAgent, effM
 		return false, false
 	}
 	agg, _ := preset["aggregator"].(map[string]any)
-	aggProvider := strings.TrimSpace(pyOrStr(agg["provider"]))
-	aggModel := strings.TrimSpace(pyOrStr(agg["model"]))
+	aggProvider := strings.TrimSpace(anyutil.StringOr(agg["provider"], ""))
+	aggModel := strings.TrimSpace(anyutil.StringOr(agg["model"], ""))
 	if aggProvider == "" || aggModel == "" {
 		return false, false
 	}
@@ -403,7 +396,7 @@ func routeMayBeCustom(ctx context.Context, agent *CachePolicyAgent, effProvider,
 			if entry == nil {
 				continue
 			}
-			for alias := range CustomProviderAliases(pyOrStr(entry["name"]), pyOrStr(entry["provider_key"])) {
+			for alias := range CustomProviderAliases(anyutil.StringOr(entry["name"], ""), anyutil.StringOr(entry["provider_key"], "")) {
 				if ids[alias] {
 					return true
 				}
@@ -433,21 +426,21 @@ func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, de
 	if dest.Model != nil {
 		rawModel = *dest.Model
 	}
-	if strings.ToLower(pyStripSpace(effProvider)) == "moa" {
-		return moaAggregatorCachePolicy(ctx, agent, pyOrStr(rawModel))
+	if strings.ToLower(strings.TrimSpace(effProvider)) == "moa" {
+		return moaAggregatorCachePolicy(ctx, agent, anyutil.StringOr(rawModel, ""))
 	}
 	if m, ok := rawModel.(map[string]any); ok {
 		rawModel = m["model"]
-		if !pyTruthy(rawModel) {
+		if !anyutil.IsTrue(rawModel) {
 			rawModel = m["default"]
 		}
-		if !pyTruthy(rawModel) {
+		if !anyutil.IsTrue(rawModel) {
 			rawModel = ""
 		}
 	}
 	effModel, ok := rawModel.(string)
 	if !ok {
-		effModel = pyOrStr(rawModel)
+		effModel = anyutil.StringOr(rawModel, "")
 	}
 	modelLower := strings.ToLower(effModel)
 	providerLower := strings.ToLower(effProvider)

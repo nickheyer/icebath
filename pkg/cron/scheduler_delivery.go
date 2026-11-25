@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -204,18 +205,6 @@ func resultTruthy(v any) bool {
 	return true
 }
 
-// Go type name of a send result, a fixed phrase for no result
-func resultTypeName(v any) string {
-	if v == nil {
-		return "no result"
-	}
-	t := reflect.TypeOf(v)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return t.Name()
-}
-
 // Opens a thread for a continuable cron job, empty when the adapter has no thread primitive or it fails
 func (s *Store) openContinuableCronThread(ctx context.Context, job *Job, adapter any, chatID string, loop any) string {
 	creator, ok := adapter.(handoffThreadCreator)
@@ -236,7 +225,7 @@ func (s *Store) openContinuableCronThread(ctx context.Context, job *Job, adapter
 		if errors.Is(err, errFutureTimeout) {
 			future.cancel()
 		}
-		s.log.Debug(fmt.Sprintf("Job '%s': create_handoff_thread failed on %s — falling back to DM-session mirror: %v", jobIDOr(job, "?"), name, err))
+		s.log.Debug(fmt.Sprintf("Job %q: create_handoff_thread failed on %s — falling back to DM-session mirror: %v", jobIDOr(job, "?"), name, err))
 		return ""
 	}
 	if !anyutil.IsTrue(v) {
@@ -285,11 +274,11 @@ func (s *Store) seedCronThreadSession(ctx context.Context, job *Job, adapter any
 	ok, err := s.seedCronSession(ctx, job, adapter, platform, chatID, text, &threadID, chatType, strPtr("system:cron"), strPtr("Cron"), chatName, scopeID, true)
 	switch {
 	case err != nil:
-		s.log.Warn(fmt.Sprintf("Job '%s': seeding cron thread session failed for %s:%s:%s: %v", jobIDOr(job, "?"), platform, chatID, threadID, err))
+		s.log.Warn(fmt.Sprintf("Job %q: seeding cron thread session failed for %s:%s:%s: %v", jobIDOr(job, "?"), platform, chatID, threadID, err))
 	case ok:
-		s.log.Info(fmt.Sprintf("Job '%s': opened continuable thread %s on %s:%s and seeded the brief", jobIDOr(job, "?"), threadID, platform, chatID))
+		s.log.Info(fmt.Sprintf("Job %q: opened continuable thread %s on %s:%s and seeded the brief", jobIDOr(job, "?"), threadID, platform, chatID))
 	default:
-		s.log.Warn(fmt.Sprintf("Job '%s': thread seed did NOT land on %s:%s thread=%s — an in-thread reply will not see this brief", jobIDOr(job, "?"), platform, chatID, threadID))
+		s.log.Warn(fmt.Sprintf("Job %q: thread seed did NOT land on %s:%s thread=%s — an in-thread reply will not see this brief", jobIDOr(job, "?"), platform, chatID, threadID))
 	}
 }
 
@@ -309,11 +298,11 @@ func (s *Store) seedCronChannelSession(ctx context.Context, job *Job, adapter an
 	}
 	ok, err := s.seedCronSession(ctx, job, adapter, platform, chatID, text, nil, chatType, uid, nil, chatName, scopeID, false)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Job '%s': seeding in_channel session failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, err))
+		s.log.Warn(fmt.Sprintf("Job %q: seeding in_channel session failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, err))
 		return false
 	}
 	if ok {
-		s.log.Info(fmt.Sprintf("Job '%s': seeded flat in_channel session on %s:%s (chat_type=%s)", jobIDOr(job, "?"), platform, chatID, chatType))
+		s.log.Info(fmt.Sprintf("Job %q: seeded flat in_channel session on %s:%s (chat_type=%s)", jobIDOr(job, "?"), platform, chatID, chatType))
 	}
 	return ok
 }
@@ -354,7 +343,7 @@ func receiptStatus(job *Job, target string) (string, bool) {
 		return "", false
 	}
 	st, _ := v.(*jsonutil.Object).Get("status")
-	return pyStrOrEmpty(st), true
+	return anyutil.StringOr(st, ""), true
 }
 
 func newReceipt(status, deliveryID string) *jsonutil.Object {
@@ -374,7 +363,7 @@ func (s *Store) deliverToBotChat(ctx context.Context, job *Job, content, profile
 	message := s.botChatMessage(job, content)
 	out, err := s.deliverToBotChatInner(ctx, job, jobID, label, content, profile, message, forFailure)
 	if err != nil {
-		return strPtr(fmt.Sprintf("bot-chat delivery to profile '%s' unverified: %v", label, err))
+		return strPtr(fmt.Sprintf("bot-chat delivery to profile %q unverified: %v", label, err))
 	}
 	return out
 }
@@ -430,8 +419,8 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 	}
 	if receipt == nil {
 		owner, err := findCanonicalLiveOwner(ctx, targetHome)
-		var pyErr *gateway.PyError
-		if errors.As(err, &pyErr) && pyErr.Kind == "ValueError" {
+		var kindErr *errorutil.Error
+		if errors.As(err, &kindErr) && kindErr.Kind == "ValueError" {
 			if err := s.botChatLegacyDefer(ctx, key, job, content, targetHome, forFailure); err != nil {
 				return nil, err
 			}
@@ -442,7 +431,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 			return nil, err
 		}
 		if owner == nil {
-			return strPtr(fmt.Sprintf("bot-chat delivery to profile '%s' unverified: no canonical Bot Chat", label)), nil
+			return strPtr(fmt.Sprintf("bot-chat delivery to profile %q unverified: no canonical Bot Chat", label)), nil
 		}
 		category := ""
 		if forFailure {
@@ -462,18 +451,18 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 	}
 	gotMessage, ok := receipt["message"]
 	if !ok {
-		return nil, errors.New("'message'")
+		return nil, errors.New("the delivery receipt has no message")
 	}
 	if gotMessage != message || gotCategory != wantCategory {
 		return nil, errors.New("delivery id already belongs to a different payload")
 	}
 	statusVal, ok := receipt["status"]
-	if !ok {
-		return nil, errors.New("'status'")
+	if !ok || statusVal == nil {
+		return nil, errors.New("the delivery receipt has no status")
 	}
 	status := anyutil.String(statusVal)
 	job.botChatReceipts().Set(target, newReceipt(status, key))
-	s.log.Info(fmt.Sprintf("Job '%s': Bot Chat %s receipt=%s status=%s", jobID, label, key, status))
+	s.log.Info(fmt.Sprintf("Job %q: Bot Chat %s receipt=%s status=%s", jobID, label, key, status))
 	if status == "settled" {
 		return nil, nil
 	}
@@ -490,7 +479,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 }
 
 func noteTargetError(s *Store, jobID, msg string, errs *[]string) {
-	s.log.Warn(fmt.Sprintf("Job '%s': %s", jobID, msg))
+	s.log.Warn(fmt.Sprintf("Job %q: %s", jobID, msg))
 	*errs = append(*errs, msg)
 }
 
@@ -528,25 +517,25 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 			case gateway.ShouldSendMediaAsAudio(route, ext, isVoice):
 				sender, ok := adapter.(voiceSender)
 				if !ok {
-					return attributeError(adapter, "voice messages")
+					return unsupportedMediaError(route, "voice messages")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendVoice(ctx, chatID, path, metadata, isVoice) }
 			case videoExts[ext]:
 				sender, ok := adapter.(videoSender)
 				if !ok {
-					return attributeError(adapter, "videos")
+					return unsupportedMediaError(route, "videos")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendVideo(ctx, chatID, path, metadata) }
 			case imageExts[ext]:
 				sender, ok := adapter.(imageFileSender)
 				if !ok {
-					return attributeError(adapter, "image files")
+					return unsupportedMediaError(route, "image files")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendImageFile(ctx, chatID, path, metadata) }
 			default:
 				sender, ok := adapter.(documentSender)
 				if !ok {
-					return attributeError(adapter, "documents")
+					return unsupportedMediaError(route, "documents")
 				}
 				call = func(ctx context.Context) (any, error) { return sender.SendDocument(ctx, chatID, path, metadata) }
 			}
@@ -567,7 +556,11 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 			if resultTruthy(result) && anyutil.IsTrue(resultGet(result, "success", false)) && isMap && anyutil.IsTrue(rawMap["ambiguous"]) {
 				job.run.mediaAckLost = true
 			} else if resultTruthy(result) && !anyutil.IsTrue(resultGet(result, "success", true)) {
-				noteTargetError(s, jobRef, fmt.Sprintf("media send failed for %s: %s", path, anyutil.String(resultGet(result, "error", "unknown"))), &errs)
+				reason := anyutil.String(resultGet(result, "error", nil))
+				if reason == "" {
+					reason = "unknown"
+				}
+				noteTargetError(s, jobRef, fmt.Sprintf("media send failed for %s: %s", path, reason), &errs)
 			}
 			return nil
 		}()
@@ -591,15 +584,13 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 
 var errLoopUnavailable = errors.New("gateway loop unavailable")
 
-// Refusal of a platform adapter that cannot send one kind of media
-func attributeError(obj any, media string) error {
-	return &pyAttributeError{msg: fmt.Sprintf("the %s platform adapter cannot send %s", resultTypeName(obj), media)}
+// Refusal of a platform adapter that cannot send one kind of media, naming the platform when it is known
+func unsupportedMediaError(route gateway.Platform, media string) error {
+	if route == "" {
+		return errors.New("the platform adapter cannot send " + media)
+	}
+	return fmt.Errorf("the %s platform adapter cannot send %s", route, media)
 }
-
-type pyAttributeError struct{ msg string }
-
-func (e *pyAttributeError) Error() string     { return e.msg }
-func (e *pyAttributeError) ErrorKind() string { return "AttributeError" }
 
 // True only for a success result with no delivered false, an evidence gap appended when no id or raw response
 func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]bool) bool {
@@ -616,7 +607,7 @@ func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]b
 	msgID, _ := resultField(result, "message_id")
 	raw, _ := resultField(result, "raw_response")
 	if msgID == nil && !anyutil.IsTrue(raw) {
-		s.log.Warn(fmt.Sprintf("Job '%s': live adapter reported success with no delivery evidence (no message_id, no raw_response) — treating as delivered but UNVERIFIED", jobID))
+		s.log.Warn(fmt.Sprintf("Job %q: live adapter reported success with no delivery evidence (no message_id, no raw_response) — treating as delivered but UNVERIFIED", jobID))
 		if unverified != nil {
 			*unverified = append(*unverified, true)
 		}
@@ -639,13 +630,13 @@ func (s *Store) isChannelDMTopic(ctx context.Context, adapter any, chatID string
 		if errors.Is(err, errFutureTimeout) {
 			future.cancel()
 		}
-		s.log.Debug(fmt.Sprintf("Job '%s': get_chat_info probe failed for chat=%s — defaulting to message_thread_id routing", jobID, chatID))
+		s.log.Debug(fmt.Sprintf("Job %q: get_chat_info probe failed for chat=%s — defaulting to message_thread_id routing", jobID, chatID))
 		return false
 	}
 	m, isMap := info.(map[string]any)
-	isChannel := isMap && strings.ToLower(pyStrOrEmpty(m["type"])) == "channel"
+	isChannel := isMap && strings.ToLower(anyutil.StringOr(m["type"], "")) == "channel"
 	if isChannel {
-		s.log.Info(fmt.Sprintf("Job '%s': chat=%s is a channel — routing via direct_messages_topic_id", jobID, chatID))
+		s.log.Info(fmt.Sprintf("Job %q: chat=%s is a channel — routing via direct_messages_topic_id", jobID, chatID))
 	}
 	return isChannel
 }
@@ -698,7 +689,7 @@ func (s *Store) recordDeliveryVerification(ctx context.Context, job *Job, unveri
 		job.LastDeliveryQueued = want
 	}
 	if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, values); err != nil {
-		s.log.Debug(fmt.Sprintf("Job '%s': could not record delivery verification: %v", job.ID, err))
+		s.log.Debug(fmt.Sprintf("Job %q: could not record delivery verification: %v", job.ID, err))
 	}
 }
 
@@ -763,9 +754,9 @@ func (t *targetDelivery) where() string {
 
 func (s *Store) warnLiveLaneFailure(job *Job, msg string, isRelay bool) {
 	if isRelay {
-		s.log.Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Warn(fmt.Sprintf("Job %q: %s", job.ID, msg))
 	} else {
-		s.log.Warn(fmt.Sprintf("Job '%s': %s, falling back to standalone", job.ID, msg))
+		s.log.Warn(fmt.Sprintf("Job %q: %s, falling back to standalone", job.ID, msg))
 	}
 }
 
@@ -803,7 +794,7 @@ func (s *Store) resolveTargetTransport(ctx context.Context, platform gateway.Pla
 		pconfig, runtimeAdapter = transport.Config, transport.Adapter
 	} else {
 		if gateway.RelayFrontedPlatforms(ctx)[platformName] {
-			return nil, fmt.Sprintf("platform '%s' is relay-fronted and has no live gateway transport; start the gateway (its ticker owns relay-fronted delivery and will fire the job on schedule)", platformName)
+			return nil, fmt.Sprintf("platform %q is relay-fronted and has no live gateway transport; start the gateway (its ticker owns relay-fronted delivery and will fire the job on schedule)", platformName)
 		}
 		pconfig = cfg.Platforms[platform]
 	}
@@ -813,7 +804,7 @@ func (s *Store) resolveTargetTransport(ctx context.Context, platform gateway.Pla
 			pconfig.Enabled = true
 		}
 	} else if pconfig == nil || !pconfig.Enabled {
-		return nil, fmt.Sprintf("platform '%s' not configured/enabled", platformName)
+		return nil, fmt.Sprintf("platform %q not configured/enabled", platformName)
 	}
 	return &resolvedTransport{transport: transport, pconfig: pconfig, runtimeAdapter: runtimeAdapter, targetAdapters: targetAdapters}, ""
 }
@@ -882,25 +873,25 @@ func (s *Store) liveSendText(ctx context.Context, t *targetDelivery, text string
 		if gaveUp {
 			future.cancel()
 			msg := fmt.Sprintf("live adapter send to %s timed out before the coroutine was dispatched", t.where())
-			s.log.Warn(fmt.Sprintf("Job '%s': %s, falling back to standalone", job.ID, msg))
+			s.log.Warn(fmt.Sprintf("Job %q: %s, falling back to standalone", job.ID, msg))
 			*targetErrors = append(*targetErrors, msg)
 			return false, false, nil, nil
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s': live adapter send to %s:%s timed out after 60s; already dispatched (in flight), assuming delivered (skipping standalone fallback to avoid duplicate)", job.ID, t.platformName, t.chatID))
+		s.log.Warn(fmt.Sprintf("Job %q: live adapter send to %s:%s timed out after 60s; already dispatched (in flight), assuming delivered (skipping standalone fallback to avoid duplicate)", job.ID, t.platformName, t.chatID))
 		return true, true, nil, nil
 	}
 	var partial *gateway.PartialDeliveryError
 	if errors.As(err, &partial) {
 		raw, _ := resultField(partial.Result, "raw_response")
 		rawMap, _ := raw.(map[string]any)
-		delivered, total := any("?"), any("?")
-		if v, ok := rawMap["delivered_chunks"]; ok {
+		delivered, total := "?", "?"
+		if v := anyutil.String(rawMap["delivered_chunks"]); v != "" {
 			delivered = v
 		}
-		if v, ok := rawMap["total_chunks"]; ok {
+		if v := anyutil.String(rawMap["total_chunks"]); v != "" {
 			total = v
 		}
-		noteTargetError(s, job.ID, fmt.Sprintf("live adapter send to %s delivered %s of %s chunks, then failed: %v", t.where(), anyutil.String(delivered), anyutil.String(total), err), deliveryErrors)
+		noteTargetError(s, job.ID, fmt.Sprintf("live adapter send to %s delivered %s of %s chunks, then failed: %v", t.where(), delivered, total, err), deliveryErrors)
 		return true, false, nil, nil
 	}
 	if err != nil {
@@ -917,12 +908,10 @@ func (s *Store) liveSendText(ctx context.Context, t *targetDelivery, text string
 	}
 	if !success {
 		var errVal any
-		shape := "None"
 		switch r := result.(type) {
 		case nil:
 			errVal = "no response from adapter"
 		case map[string]any:
-			shape = "dict"
 			errVal = "unknown"
 			if anyutil.IsTrue(r["error"]) {
 				errVal = r["error"]
@@ -931,9 +920,11 @@ func (s *Store) liveSendText(ctx context.Context, t *targetDelivery, text string
 			}
 		default:
 			errVal, _ = resultField(result, "error")
-			shape = resultTypeName(result)
 		}
-		msg := fmt.Sprintf("live adapter send to %s returned unconfirmed result (%s, error=%s)", t.where(), shape, anyutil.String(errVal))
+		msg := fmt.Sprintf("live adapter send to %s returned an unconfirmed result with no error detail", t.where())
+		if anyutil.IsTrue(errVal) {
+			msg = fmt.Sprintf("live adapter send to %s returned an unconfirmed result (error: %s)", t.where(), anyutil.String(errVal))
+		}
 		t.liveError = nil
 		if anyutil.IsTrue(errVal) {
 			t.liveError = strPtr(anyutil.String(errVal))
@@ -997,15 +988,23 @@ func (s *Store) seedLiveDeliverySessions(ctx context.Context, t *targetDelivery,
 	if t.inChannelSurface && t.inchannelContinuable && !threadSeeded {
 		inchannelSeeded = s.seedCronChannelSession(ctx, job, t.runtimeAdapter, t.platformName, t.chatID, t.mirrorText, t.isDMTarget, t.originUserID, chatName, scopeID)
 		if !inchannelSeeded {
-			s.log.Warn(fmt.Sprintf("Job '%s': in_channel seed did NOT land on %s:%s — a plain reply will not see this brief", job.ID, t.platformName, t.chatID))
+			s.log.Warn(fmt.Sprintf("Job %q: in_channel seed did NOT land on %s:%s — a plain reply will not see this brief", job.ID, t.platformName, t.chatID))
 		}
 		if anyutil.IsTrue(deliveredMessageID) {
 			s.seedCronThreadSession(ctx, job, t.runtimeAdapter, t.platformName, t.chatID, anyutil.String(deliveredMessageID), t.mirrorText, chatName, t.isDMTarget, scopeID)
 		}
 	} else if t.inChannelSurface && !t.inchannelContinuable {
-		s.log.Warn(fmt.Sprintf("Job '%s': in_channel delivery to %s:%s is not a continuable target (origin=%s:%s thread=%s; not the origin conversation, and not a mirror-eligible fallback/opted-in target the seed can key) — seed skipped; the plain mirror below may still apply", job.ID, t.platformName, t.chatID, anyutil.String(origin["platform"]), anyutil.String(origin["chat_id"]), anyutil.String(origin["thread_id"])))
+		s.log.Warn(fmt.Sprintf("Job %q: in_channel delivery to %s:%s is not a continuable target (origin=%s:%s thread=%s; not the origin conversation, and not a mirror-eligible fallback/opted-in target the seed can key) — seed skipped; the plain mirror below may still apply", job.ID, t.platformName, t.chatID, logField(origin["platform"]), logField(origin["chat_id"]), logField(origin["thread_id"])))
 	}
 	s.maybeMirrorCronDelivery(ctx, job, t.platformName, t.chatID, t.mirrorText, t.threadID, t.originUserID, t.mirrorThisTarget && !threadSeeded && !inchannelSeeded)
+}
+
+// Text of a value for a key=value log field, - when it is null or empty
+func logField(v any) string {
+	if text := anyutil.String(v); text != "" {
+		return text
+	}
+	return "-"
 }
 
 func optionalStrPtr(v any) *string {
@@ -1067,7 +1066,7 @@ func (s *Store) deliverViaLiveAdapter(ctx context.Context, t *targetDelivery, cl
 		if messageID != nil {
 			idLog = anyutil.String(messageID)
 		}
-		s.log.Info(fmt.Sprintf("Job '%s': delivered to %s:%s via live adapter thread=%s message_id=%s", job.ID, t.platformName, t.chatID, threadLog, idLog))
+		s.log.Info(fmt.Sprintf("Job %q: delivered to %s:%s via live adapter thread=%s message_id=%s", job.ID, t.platformName, t.chatID, threadLog, idLog))
 		delivered = true
 		s.seedLiveDeliverySessions(ctx, t, messageID)
 	}
@@ -1083,10 +1082,10 @@ var enqueueAndWait = (*DeliveryQueue).EnqueueAndWait
 // Standalone platform send without the gateway, the result mapping or the error text
 func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content string, media []gateway.MediaRef) (map[string]any, *string) {
 	job := t.job
-	shutdownMsg := fmt.Sprintf("delivery to %s skipped — interpreter is shutting down", t.where())
+	shutdownMsg := fmt.Sprintf("delivery to %s skipped — the process is shutting down", t.where())
 	timeout := s.getStandaloneSendTimeout()
 	warned := func(msg string) (map[string]any, *string) {
-		s.log.Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Warn(fmt.Sprintf("Job %q: %s", job.ID, msg))
 		return nil, &msg
 	}
 	if interpreterShuttingDown(nil) {
@@ -1121,7 +1120,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 	case <-sendCtx.Done():
 		if ctx.Err() == nil {
 			msg := fmt.Sprintf("standalone send to %s timed out after %ds (the send may still be in flight)", t.where(), timeout)
-			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+			s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, msg))
 			return nil, &msg
 		}
 		o = outcome{err: ctx.Err()}
@@ -1131,7 +1130,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 			return warned(shutdownMsg)
 		}
 		msg := fmt.Sprintf("delivery to %s failed: %v", t.where(), o.err)
-		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, msg))
 		return nil, &msg
 	}
 	return o.result, nil
@@ -1176,14 +1175,14 @@ func (s *Store) queueForLiveReconnect(ctx context.Context, t *targetDelivery, co
 		return
 	}
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Job '%s': could not queue %s for post-reconnect redelivery: %v", jobIDOr(t.job, "None"), t.where(), err))
+		s.log.Warn(fmt.Sprintf("Job %q: could not queue %s for post-reconnect redelivery: %v", jobIDOr(t.job, "?"), t.where(), err))
 		return
 	}
 	note := fmt.Sprintf("queued text for %s for redelivery once the live adapter reconnects", t.where())
 	if len(media) > 0 {
 		note += fmt.Sprintf(" (%d attachment(s) not queued)", len(media))
 	}
-	s.log.Warn(fmt.Sprintf("Job '%s': %s", jobIDOr(t.job, "None"), note))
+	s.log.Warn(fmt.Sprintf("Job %q: %s", jobIDOr(t.job, "?"), note))
 	*deliveryErrors = append(*deliveryErrors, note)
 }
 
@@ -1210,7 +1209,7 @@ func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content s
 	result, errText := s.standaloneSend(ctx, t, content, media)
 	if errText == nil && len(result) > 0 && anyutil.IsTrue(result["error"]) {
 		errText = strPtr(fmt.Sprintf("delivery error: %s (target %s)", anyutil.String(result["error"]), t.where()))
-		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, *errText))
+		s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, *errText))
 	}
 	if errText != nil {
 		*targetErrors = append(*targetErrors, *errText)
@@ -1221,11 +1220,11 @@ func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content s
 	if warnings, ok := result["warnings"].([]any); ok {
 		for _, w := range warnings {
 			msg := fmt.Sprintf("delivery warning: %s (target %s)", anyutil.String(w), t.where())
-			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+			s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, msg))
 			*deliveryErrors = append(*deliveryErrors, msg)
 		}
 	}
-	s.log.Info(fmt.Sprintf("Job '%s': delivered to %s:%s", job.ID, t.platformName, t.chatID))
+	s.log.Info(fmt.Sprintf("Job %q: delivered to %s:%s", job.ID, t.platformName, t.chatID))
 	s.maybeMirrorCronDelivery(ctx, job, t.platformName, t.chatID, t.mirrorText, t.threadID, t.originUserID, t.mirrorThisTarget)
 }
 
@@ -1241,9 +1240,9 @@ func (s *Store) prepareTargetDelivery(ctx context.Context, job *Job, target Targ
 		if job.Deliver != nil {
 			deliver = *job.Deliver
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s': origin has thread_id=%s but delivery target lost it (deliver=%s, target=%s)", job.ID, anyutil.String(origin["thread_id"]), deliver, anyutil.String(target.dict())))
+		s.log.Warn(fmt.Sprintf("Job %q: origin has thread_id=%s but delivery target lost it (deliver=%s, target=%s)", job.ID, anyutil.String(origin["thread_id"]), deliver, anyutil.String(target.dict())))
 	} else if threadID != "" {
-		s.log.Debug(fmt.Sprintf("Job '%s': delivering to %s:%s thread_id=%s", job.ID, platformName, chatID, threadID))
+		s.log.Debug(fmt.Sprintf("Job %q: delivering to %s:%s thread_id=%s", job.ID, platformName, chatID, threadID))
 	}
 	originTarget := targetMatchesOrigin(origin, platformName, chatID, threadID)
 	mirrorThis := mirrorEnabled && targetMirrorEligible(job, target, mirrorEnabled, &originTarget)
@@ -1251,12 +1250,12 @@ func (s *Store) prepareTargetDelivery(ctx context.Context, job *Job, target Targ
 	if originTarget {
 		originUserID = optionalStrPtr(origin["user_id"])
 	}
-	chatType := strings.ToLower(pyStrOrEmpty(origin["chat_type"]))
+	chatType := strings.ToLower(anyutil.StringOr(origin["chat_type"], ""))
 	isDM := chatType == "dm" || (chatType == "" && strings.HasPrefix(chatID, "D"))
 	continuable := originTarget || (mirrorThis && inchannelSeedAllowed(isDM, originUserID))
 	platform, err := gateway.ParsePlatform(ctx, strings.ToLower(platformName))
 	if err != nil {
-		noteTargetError(s, job.ID, fmt.Sprintf("unknown platform '%s'", platformName), deliveryErrors)
+		noteTargetError(s, job.ID, fmt.Sprintf("unknown platform %q", platformName), deliveryErrors)
 		return nil
 	}
 	resolved, reason := s.resolveTargetTransport(ctx, platform, platformName, target, adapters, cfg)
@@ -1268,7 +1267,7 @@ func (s *Store) prepareTargetDelivery(ctx context.Context, job *Job, target Targ
 	ready := resolved.runtimeAdapter != nil && loop != nil && isLoop && l.IsRunning()
 	inChannel := resolveCronSurfaceMode(resolved.pconfig, platformName) == "in_channel"
 	if inChannel && resolved.runtimeAdapter != nil && !inchannelSurfaceSupported(resolved.runtimeAdapter, platformName) {
-		s.log.Debug(fmt.Sprintf("Job '%s': cron_continuable_surface=in_channel not supported on %s, using thread", jobIDOr(job, "?"), platformName))
+		s.log.Debug(fmt.Sprintf("Job %q: cron_continuable_surface=in_channel not supported on %s, using thread", jobIDOr(job, "?"), platformName))
 		inChannel = false
 	}
 	if inChannel && continuable && ready {
@@ -1291,11 +1290,11 @@ func (s *Store) unresolvedDeliveryOutcome(job *Job, forFailure bool) *string {
 	}
 	if deliver == "origin" {
 		name := jobNameOr(job, jobIDOr(job, "?"))
-		s.log.Info(fmt.Sprintf("Job '%s': deliver=origin but no origin or home channels — skipping delivery (output saved in last_output)", name))
+		s.log.Info(fmt.Sprintf("Job %q: deliver=origin but no origin or home channels — skipping delivery (output saved in last_output)", name))
 		return nil
 	}
 	msg := "no delivery target resolved for deliver=" + deliver
-	s.log.Warn(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+	s.log.Warn(fmt.Sprintf("Job %q: %s", job.ID, msg))
 	return &msg
 }
 
@@ -1365,7 +1364,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	gwCfg, err := loadGatewayConfig(ctx)
 	if err != nil {
 		msg := fmt.Sprintf("failed to load gateway config: %v", err)
-		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
+		s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, msg))
 		return &msg, nil
 	}
 	var deliveryErrors []string

@@ -14,7 +14,7 @@ func TestRepairsExplicitComputerUseMediaPathFromJSONResult(t *testing.T) {
 		map[string]any{"role": "assistant", "tool_calls": []any{
 			map[string]any{"id": "capture", "function": map[string]any{"name": "computer_use"}},
 		}},
-		map[string]any{"role": "tool", "tool_call_id": "capture", "content": pyDumps(t, map[string]any{"screenshot_path": canonical})},
+		map[string]any{"role": "tool", "tool_call_id": "capture", "content": dumps(t, map[string]any{"screenshot_path": canonical})},
 	}
 	if got, want := RepairExplicitComputerUseMediaPaths(response, messages), "Here is the screenshot.\nMEDIA:"+canonical; got != want {
 		t.Fatalf("got %q, want %q", got, want)
@@ -39,7 +39,7 @@ func TestRepairsExplicitPathFromMultimodalTextSummary(t *testing.T) {
 
 func TestDoesNotAutoAttachComputerUseCapture(t *testing.T) {
 	canonical := `C:\Users\Alice\AppData\Local\icebath\cache\images\computer_use_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png`
-	messages := []any{map[string]any{"role": "tool", "name": "computer_use", "content": pyDumps(t, map[string]any{"screenshot_path": canonical})}}
+	messages := []any{map[string]any{"role": "tool", "name": "computer_use", "content": dumps(t, map[string]any{"screenshot_path": canonical})}}
 	if got := RepairExplicitComputerUseMediaPaths("Done.", messages); got != "Done." {
 		t.Fatalf("got %q", got)
 	}
@@ -48,10 +48,10 @@ func TestDoesNotAutoAttachComputerUseCapture(t *testing.T) {
 func TestDoesNotRewriteUnmatchedOrPreviousTurnCapture(t *testing.T) {
 	oldName := "computer_use_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.png"
 	currentName := "computer_use_cccccccccccccccccccccccccccccccc.png"
-	history := []any{map[string]any{"role": "tool", "name": "computer_use", "content": pyDumps(t, map[string]any{"screenshot_path": `C:\cache\images\` + oldName})}}
+	history := []any{map[string]any{"role": "tool", "name": "computer_use", "content": dumps(t, map[string]any{"screenshot_path": `C:\cache\images\` + oldName})}}
 	currentTurn := []any{
 		map[string]any{"role": "user", "content": "Send the current screenshot."},
-		map[string]any{"role": "tool", "name": "computer_use", "content": pyDumps(t, map[string]any{"screenshot_path": `C:\cache\images\` + currentName})},
+		map[string]any{"role": "tool", "name": "computer_use", "content": dumps(t, map[string]any{"screenshot_path": `C:\cache\images\` + currentName})},
 	}
 	response := "MEDIA:/Users/Alice/cache/images/" + oldName
 	got := RepairExplicitComputerUseMediaPathsAt(t.Context(), response, append(append([]any{}, history...), currentTurn...), len(history))
@@ -63,7 +63,7 @@ func TestDoesNotRewriteUnmatchedOrPreviousTurnCapture(t *testing.T) {
 func TestMalformedJSONResultFailsClosed(t *testing.T) {
 	captureName := "computer_use_dddddddddddddddddddddddddddddddd.png"
 	canonical := `C:\Users\Alice\AppData\Local\icebath\cache\images\` + captureName
-	payload := pyDumps(t, map[string]any{
+	payload := dumps(t, map[string]any{
 		"summary":         "capture\n  (shareable screenshot saved to " + canonical + ")",
 		"screenshot_path": canonical,
 	})
@@ -81,7 +81,7 @@ func TestCompressionFallbackSlicesFromLastUserMessage(t *testing.T) {
 	response := "MEDIA:/cache/images/" + captureName
 	currentTurn := []any{
 		map[string]any{"role": "user", "content": "Send the screenshot."},
-		map[string]any{"role": "tool", "name": "computer_use", "content": pyDumps(t, map[string]any{"screenshot_path": canonical})},
+		map[string]any{"role": "tool", "name": "computer_use", "content": dumps(t, map[string]any{"screenshot_path": canonical})},
 	}
 	if got, want := RepairExplicitComputerUseMediaPathsAt(t.Context(), response, currentTurn, 10), "MEDIA:"+canonical; got != want {
 		t.Fatalf("got %q, want %q", got, want)
@@ -91,7 +91,7 @@ func TestCompressionFallbackSlicesFromLastUserMessage(t *testing.T) {
 	}
 }
 
-func pyDumps(t *testing.T, v any) string {
+func dumps(t *testing.T, v any) string {
 	t.Helper()
 	s, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {

@@ -71,8 +71,8 @@ func TestBaseURLAndInstanceIDAreTrimmed(t *testing.T) {
 	}
 }
 
-func TestRetryAfterParsesLikePythonFloat(t *testing.T) {
-	for text, want := range map[string]float64{"3": 3, " 2.5 ": 2.5, "1_0": 10, "١٢": 12, "1e3": 1000, "-0.5": -0.5,
+func TestRetryAfterParsesGoFloatSeconds(t *testing.T) {
+	for text, want := range map[string]float64{"3": 3, " 2.5 ": 2.5, "1_0": 10, "1e3": 1000, "-0.5": -0.5,
 		"1e999": math.Inf(1), "inf": math.Inf(1), "-Infinity": math.Inf(-1), ".5": 0.5, "5.": 5} {
 		if got, ok := parseRetryAfter(text); !ok || got != want {
 			t.Fatalf("%q parsed as %v %v", text, got, ok)
@@ -81,14 +81,14 @@ func TestRetryAfterParsesLikePythonFloat(t *testing.T) {
 	if got, ok := parseRetryAfter("nan"); !ok || !math.IsNaN(got) {
 		t.Fatalf("nan parsed as %v %v", got, ok)
 	}
-	for _, text := range []string{"", "soon", "0x10", "1__0", "_1", "1_", "1 0", "Wed, 21 Oct 2026 07:28:00 GMT", "1,5"} {
+	for _, text := range []string{"", "soon", "0x10", "1__0", "_1", "1_", "1 0", "Wed, 21 Oct 2026 07:28:00 GMT", "1,5", "١٢"} {
 		if got, ok := parseRetryAfter(text); ok {
 			t.Fatalf("%q must not parse, got %v", text, got)
 		}
 	}
 }
 
-func TestTransportFailuresCarryThePythonReasonTexts(t *testing.T) {
+func TestTransportFailuresCarryTheirReasonTexts(t *testing.T) {
 	stall := make(chan struct{})
 	t.Cleanup(func() { close(stall) })
 	wait := func() { <-stall }
@@ -98,21 +98,21 @@ func TestTransportFailuresCarryThePythonReasonTexts(t *testing.T) {
 	})
 	var te *TransportError
 	err := requestError(t, "http://"+silent)
-	if want := "GET http://" + silent + "/v1/config/self?profile=p: timed out"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET http://" + silent + "/v1/config/self?profile=p: timed out reading the response"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("silent plain server: %v", err)
 	}
 	err = requestError(t, "https://"+silent)
-	if want := "GET https://" + silent + "/v1/config/self?profile=p: _ssl.c:1064: The handshake operation timed out"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET https://" + silent + "/v1/config/self?profile=p: TLS handshake timed out"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("silent tls server: %v", err)
 	}
 	stalled := rawServer(t, answering("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nhello", wait))
 	err = requestError(t, "http://"+stalled)
-	if want := "GET http://" + stalled + "/v1/config/self?profile=p: timed out"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET http://" + stalled + "/v1/config/self?profile=p: timed out reading the response"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("stalled body: %v", err)
 	}
 	closed := rawServer(t, answering("", nil))
 	err = requestError(t, "http://"+closed)
-	if want := "GET http://" + closed + "/v1/config/self?profile=p: Remote end closed connection without response"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET http://" + closed + "/v1/config/self?profile=p: server closed the connection without a response"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("closed without an answer: %v", err)
 	}
 }
@@ -147,7 +147,7 @@ func TestStalledTLSBodyReportsTheReadOperationTimeout(t *testing.T) {
 	t.Cleanup(func() { credentialedClient = prev })
 	err := requestError(t, srv.URL)
 	var te *TransportError
-	if want := "GET " + srv.URL + "/v1/config/self?profile=p: The read operation timed out"; !errors.As(err, &te) || te.Message != want {
+	if want := "GET " + srv.URL + "/v1/config/self?profile=p: timed out reading the response"; !errors.As(err, &te) || te.Message != want {
 		t.Fatalf("stalled tls body: %v", err)
 	}
 	if !strings.HasPrefix(srv.URL, "https://127.0.0.1:") {

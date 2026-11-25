@@ -139,12 +139,3 @@ func flatModelName(model string) string {
 	m := strings.TrimSpace(model)
 	return strings.ToLower(m[strings.LastIndex(m, "/")+1:])
 }
-
-// Python list repr of strings
-func pyStrListRepr(items []string) string {
-	parts := make([]string, len(items))
-	for i, it := range items {
-		parts[i] = pyStringRepr(it)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
-}

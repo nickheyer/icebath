@@ -82,7 +82,7 @@ func (a *AIAgent) foldMoAUsage(canonical provider.CanonicalUsage) (any, provider
 }
 
 // Python isinstance int check over a decoded usage attribute, bool included
-func pyIntAttr(v any) (int64, bool) {
+func intAttr(v any) (int64, bool) {
 	switch n := v.(type) {
 	case bool:
 		if n {
@@ -141,13 +141,13 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	totalTokens := canonical.TotalTokens()
 
 	contextPrompt := 0
-	if n, ok := pyIntAttr(state.ToolCallField(rawUsage, "initial_prompt_tokens")); ok && n > 0 {
+	if n, ok := intAttr(state.ToolCallField(rawUsage, "initial_prompt_tokens")); ok && n > 0 {
 		contextPrompt = int(n)
 	}
 	contextCacheRead, haveContextCacheRead := 0, false
 	if contextPrompt != 0 {
 		initialCached := attrOr(rawUsage, "initial_cached_tokens", 0)
-		if n, ok := pyIntAttr(initialCached); ok {
+		if n, ok := intAttr(initialCached); ok {
 			contextCacheRead, haveContextCacheRead = int(n), true
 		}
 	}
@@ -243,8 +243,8 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	if s, ok := moaClient.(moaAggregatorSlotClient); ok {
 		if slot := s.LastAggregatorSlot(); len(slot) > 0 && anyutil.IsTrue(slot["model"]) {
 			costModel = anyutil.String(slot["model"])
-			costProvider = pyStrOr(slot["provider"], a.provider)
-			costBaseURL = pyStrOr(slot["base_url"], a.baseURL)
+			costProvider = anyutil.StringOr(slot["provider"], a.provider)
+			costBaseURL = anyutil.StringOr(slot["base_url"], a.baseURL)
 		}
 	}
 	costResult := provider.EstimateUsageCost(ctx, costModel, aggregator, costProvider, costBaseURL, a.apiKey)
@@ -341,7 +341,7 @@ func attrOr(v any, key string, def any) any {
 			return value
 		}
 		return def
-	case state.PyObject:
+	case state.OrderedObject:
 		for _, kv := range m {
 			if kv.Key == key {
 				return kv.Value

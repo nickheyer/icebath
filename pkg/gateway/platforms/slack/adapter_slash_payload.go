@@ -2,18 +2,17 @@ package slack
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"strings"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
-// Raised like Python AttributeError when the slash command field is a truthy value other than a string
+// Refusal of a slash payload whose command field is a non empty value other than a string, naming the kind it holds
 type SlashPayloadError struct{ TypeName string }
 
 func (e *SlashPayloadError) Error() string {
-	return fmt.Sprintf("'%s' object has no attribute 'lstrip'", e.TypeName)
+	return "slash command field must be a string, got " + e.TypeName
 }
 
 // Name and alias to /command table of the /icebath slash, installed by the process wiring from pkg/commands

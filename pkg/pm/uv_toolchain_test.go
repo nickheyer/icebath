@@ -60,7 +60,7 @@ func TestUVToolchainAllUVCommandsKeepThePMInterpreter(t *testing.T) {
 	store := filepath.Join(root, "store")
 	selected := filepath.Join(store, "selected-python")
 	clean := map[string]string{}
-	for k, v := range pyEnviron() {
+	for k, v := range environValue() {
 		if !strings.HasPrefix(k, "UV_") {
 			clean[k] = v
 		}
@@ -202,7 +202,7 @@ func TestUVToolchainProjectEnvironmentReplacesGenerationWhenPinnedPythonMoves(t 
 	peWrite(t, filepath.Join(project, "pyproject.toml"), "[project]\nname=\"pm-generation-proof\"\nversion=\"1\"\nrequires-python=\">=3.11\"\n"+
 		"dependencies=[\"side-dep==1.0\"]\n[tool.uv]\npackage=false\nno-index=true\nfind-links=[\""+filepath.ToSlash(filepath.Dir(wheel))+"\"]\n")
 	env := map[string]string{}
-	for k, v := range pyEnviron() {
+	for k, v := range environValue() {
 		if !strings.HasPrefix(k, "UV_") && !strings.HasPrefix(k, "PYTHON") && k != "VIRTUAL_ENV" {
 			env[k] = v
 		}
@@ -275,7 +275,7 @@ func TestUVToolchainEnvironmentProbeNeedsNoPMRuntime(t *testing.T) {
 	if tool, ok, err := PythonTool("test", "test", root); err != nil || ok || tool != "" {
 		t.Fatalf("tool %q %v %v", tool, ok, err)
 	}
-	var py *PyError
+	var py *ClassError
 	if _, err := ensureEnvironment(context.Background(), EnsureEnvironmentOptions{Name: "../escape", Requirements: []string{"example==1"}, Explicit: true}); !errors.As(err, &py) || py.Class != "ValueError" {
 		t.Fatalf("escape %v", err)
 	}

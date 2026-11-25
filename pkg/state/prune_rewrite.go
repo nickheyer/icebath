@@ -67,7 +67,7 @@ func (d *SessionDB) heldRowMismatches(ctx context.Context, conn SQLiteConn, sess
 	byID := map[int64]map[string]any{}
 	var idOrder []int64
 	for _, message := range held {
-		if message == nil || !pyTruthy(message[DBPersistedMarker]) {
+		if message == nil || !anyutil.IsTrue(message[DBPersistedMarker]) {
 			continue
 		}
 		switch message["role"] {
@@ -107,7 +107,7 @@ func (d *SessionDB) heldRowMismatches(ctx context.Context, conn SQLiteConn, sess
 			return nil, err
 		}
 		for _, row := range rows {
-			id, _ := pyIntID(row["id"])
+			id, _ := intID(row["id"])
 			stored[id] = row
 		}
 	}
@@ -119,7 +119,7 @@ func (d *SessionDB) heldRowMismatches(ctx context.Context, conn SQLiteConn, sess
 		}
 		if row != nil {
 			byUIDRow[uid] = row
-			id, _ := pyIntID(row["id"])
+			id, _ := intID(row["id"])
 			stored[id] = row
 		}
 	}
@@ -132,10 +132,10 @@ func (d *SessionDB) heldRowMismatches(ctx context.Context, conn SQLiteConn, sess
 			uid, _ := MessageUIDOrNone(ref.message)
 			row = byUIDRow[uid]
 		}
-		if row == nil || !pyTruthy(row["active"]) {
+		if row == nil || !anyutil.IsTrue(row["active"]) {
 			continue
 		}
-		rowID, _ := pyIntID(row["id"])
+		rowID, _ := intID(row["id"])
 		if snapshot, ok := ref.message[DBRowSnapshot].(string); ok {
 			if TranscriptRowSnapshot(row) != snapshot {
 				mismatches = append(mismatches, rowID)
@@ -178,7 +178,7 @@ func (d *SessionDB) RewritePrunedRows(ctx context.Context, sessionID string, cha
 // Tool call ids of a stored or loaded tool_calls value, None for a call that is not a dict
 func pruneCallIDs(toolCalls any) ([]any, error) {
 	parsed := parseToolCalls(toolCalls)
-	if !pyTruthy(parsed) {
+	if !anyutil.IsTrue(parsed) {
 		return []any{}, nil
 	}
 	calls, err := seqIter(parsed)
@@ -197,12 +197,12 @@ func pruneCallIDs(toolCalls any) ([]any, error) {
 // Exact live row a pruned dict names, refusing ambiguity and rows another writer moved on
 func (d *SessionDB) resolvePrunedRow(ctx context.Context, conn SQLiteConn, sessionID string, original map[string]any) (map[string]any, error) {
 	role := original["role"]
-	if (role != "assistant" && role != "tool") || pyTruthy(original[AbsorbedRowIDs]) {
-		return nil, &PruneRowUnresolvedError{Msg: "a " + pyStr(role) + " message is not rewritten in place"}
+	if (role != "assistant" && role != "tool") || anyutil.IsTrue(original[AbsorbedRowIDs]) {
+		return nil, &PruneRowUnresolvedError{Msg: "a " + anyutil.String(role) + " message is not rewritten in place"}
 	}
 	var ids []int64
 	_, isBool := original["_row_id"].(bool)
-	rowID, isInt := pyIntID(original["_row_id"])
+	rowID, isInt := intID(original["_row_id"])
 	wanted, err := pruneCallIDs(original["tool_calls"])
 	if err != nil {
 		return nil, err
@@ -210,7 +210,7 @@ func (d *SessionDB) resolvePrunedRow(ctx context.Context, conn SQLiteConn, sessi
 	switch {
 	case isInt && !isBool && rowID > 0:
 		ids = []int64{rowID}
-	case role == "tool" && pyTruthy(original["tool_call_id"]):
+	case role == "tool" && anyutil.IsTrue(original["tool_call_id"]):
 		rows, err := connRows(ctx, conn, "SELECT id FROM messages WHERE session_id = ? AND active = 1 AND role = 'tool' AND tool_call_id = ?",
 			sessionID, original["tool_call_id"])
 		if err != nil {
@@ -229,7 +229,7 @@ func (d *SessionDB) resolvePrunedRow(ctx context.Context, conn SQLiteConn, sessi
 				return nil, err
 			}
 			if anyutil.Equal(got, wanted) {
-				id, _ := pyIntID(row["id"])
+				id, _ := intID(row["id"])
 				ids = append(ids, id)
 			}
 		}
@@ -239,9 +239,9 @@ func (d *SessionDB) resolvePrunedRow(ctx context.Context, conn SQLiteConn, sessi
 		}
 	}
 	if len(ids) != 1 {
-		return nil, &PruneRowUnresolvedError{Msg: strconv.Itoa(len(ids)) + " live rows match a pruned " + pyStr(role) + " message"}
+		return nil, &PruneRowUnresolvedError{Msg: strconv.Itoa(len(ids)) + " live rows match a pruned " + anyutil.String(role) + " message"}
 	}
-	stale := &PruneRowStaleError{Msg: "row " + strconv.FormatInt(ids[0], 10) + " no longer holds the pruned " + pyStr(role) + " message"}
+	stale := &PruneRowStaleError{Msg: "row " + strconv.FormatInt(ids[0], 10) + " no longer holds the pruned " + anyutil.String(role) + " message"}
 	row, err := connRow(ctx, conn, "SELECT * FROM messages WHERE id = ? AND session_id = ? AND active = 1", ids[0], sessionID)
 	if err != nil {
 		return nil, err
@@ -296,7 +296,7 @@ func (d *SessionDB) rewritePrunedRowsOnConn(ctx context.Context, conn SQLiteConn
 		if change.Replacement["role"] != role {
 			return 0, &PruneRowUnresolvedError{Msg: "a prune replacement changed the message role"}
 		}
-		timestamp, err := pyFloatOf(row["timestamp"])
+		timestamp, err := floatOf(row["timestamp"])
 		if err != nil {
 			return 0, err
 		}
@@ -319,10 +319,10 @@ func (d *SessionDB) rewritePrunedRowsOnConn(ctx context.Context, conn SQLiteConn
 		if len(columns) == 0 {
 			continue
 		}
-		id, _ := pyIntID(row["id"])
+		id, _ := intID(row["id"])
 		order := id
 		if row["display_order"] != nil {
-			order, _ = pyIntID(row["display_order"])
+			order, _ = intID(row["display_order"])
 		}
 		updates = append(updates, pruneUpdate{id, columns, values, row["display_identity"], order, change.Replacement})
 	}

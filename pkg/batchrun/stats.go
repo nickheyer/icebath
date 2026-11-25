@@ -77,11 +77,11 @@ func listItems(v any) []any {
 	return nil
 }
 
-// Value under a required key, the missing key named the way a failed lookup reports it
+// Value under a required key, an error naming the key when it is missing
 func requiredKey(m map[string]any, key string) (any, error) {
 	v, ok := m[key]
 	if !ok {
-		return nil, fmt.Errorf("'%s'", key)
+		return nil, fmt.Errorf("missing the %q field", key)
 	}
 	return v, nil
 }
@@ -137,7 +137,10 @@ func extractToolStats(messages []map[string]any) (*toolStats, error) {
 				if err != nil {
 					return nil, err
 				}
-				name := anyutil.String(nameValue)
+				name := "unknown"
+				if nameValue != nil {
+					name = anyutil.String(nameValue)
+				}
 				stats.of(name).count++
 				id, err := requiredKey(call, "id")
 				if err != nil {
@@ -193,7 +196,7 @@ func turnHasReasoning(msg map[string]any) (bool, error) {
 	}
 	text, ok := reasoning.(string)
 	if !ok {
-		return false, fmt.Errorf("'%s' object has no attribute 'strip'", anyutil.Kind(reasoning))
+		return false, fmt.Errorf("the reasoning of a turn is %s, expected a string", anyutil.Kind(reasoning))
 	}
 	return strings.TrimSpace(text) != "", nil
 }

@@ -211,7 +211,7 @@ func recoverLiveIDs(t *testing.T, rows []map[string]any) []int64 {
 	t.Helper()
 	ids := []int64{}
 	for _, row := range rows {
-		if !pyTruthy(row["archived"]) {
+		if !anyutil.IsTrue(row["archived"]) {
 			ids = append(ids, recoverRowID(t, row["row_id"]))
 		}
 	}
@@ -221,7 +221,7 @@ func recoverLiveIDs(t *testing.T, rows []map[string]any) []int64 {
 func recoverShape(rows []map[string]any) [][2]any {
 	shape := make([][2]any, len(rows))
 	for i, row := range rows {
-		shape[i] = [2]any{row["content"], pyTruthy(row["archived"])}
+		shape[i] = [2]any{row["content"], anyutil.IsTrue(row["archived"])}
 	}
 	return shape
 }
@@ -284,7 +284,7 @@ func TestCliUndoPrefixKeepsTheSummaryAfterARotatedCompression(t *testing.T) {
 	}
 	var live []map[string]any
 	for _, row := range rows {
-		if !pyTruthy(row["archived"]) {
+		if !anyutil.IsTrue(row["archived"]) {
 			live = append(live, row)
 		}
 	}
@@ -323,7 +323,7 @@ func TestALongArchivedHistoryKeepsTheResumeReplyBounded(t *testing.T) {
 	if 2*recoverDumpLen(t, rows) >= 8*1024*1024 {
 		t.Fatalf("reply rows take %d bytes twice over", recoverDumpLen(t, rows))
 	}
-	if !pyTruthy(rows[0]["archived_truncated"]) || rows[len(rows)-1]["content"] != "R23" {
+	if !anyutil.IsTrue(rows[0]["archived_truncated"]) || rows[len(rows)-1]["content"] != "R23" {
 		t.Fatalf("first %v last %v", rows[0]["archived_truncated"], rows[len(rows)-1]["content"])
 	}
 	if got, stored := recoverLiveIDs(t, rows), recoverStoredIDs(t, ctx, db, tip); !reflect.DeepEqual(got, stored) {
@@ -331,7 +331,7 @@ func TestALongArchivedHistoryKeepsTheResumeReplyBounded(t *testing.T) {
 	}
 	var archived []string
 	for _, row := range rows {
-		if pyTruthy(row["archived"]) && row["role"] == "user" {
+		if anyutil.IsTrue(row["archived"]) && row["role"] == "user" {
 			archived = append(archived, row["content"].(string)[:4])
 		}
 	}
@@ -383,7 +383,7 @@ func TestARowAppendedDuringPrepareCountsAgainstTheArchiveBudget(t *testing.T) {
 	if !strings.HasPrefix(reply[len(reply)-1]["content"].(string), "nnn") {
 		t.Fatal("the raced row is not the last live row")
 	}
-	if !pyTruthy(reply[0]["archived_truncated"]) {
+	if !anyutil.IsTrue(reply[0]["archived_truncated"]) {
 		t.Fatal("the raced reply is not marked truncated")
 	}
 	if recoverDumpLen(t, reply) > recoverDumpLen(t, fresh) {

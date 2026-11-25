@@ -116,9 +116,9 @@ func copyStdoutWithTimestamps(stdout io.Reader, out io.Writer) error {
 	return copyLinesWithTimestamps(stdout, out)
 }
 
-// Reports a failure of the wrapper itself on one line with the errors it wraps and returns exit status 1
+// Reports a failure of the wrapper itself on one line, an operating system failure as its reason and path, and returns exit status 1
 func stderrTimestampUncaught(err error) int {
-	fmt.Fprintf(stderrTimestampStderr, "icebath stderr timestamp wrapper failed: %s (%s)\n", err, errchain.Types(err))
+	fmt.Fprintf(stderrTimestampStderr, "icebath stderr timestamp wrapper failed: %s\n", errchain.OSText(err))
 	return 1
 }
 
@@ -282,7 +282,7 @@ func StderrTimestampMain(argv []string) int {
 		defer close(pumped)
 		defer stdout.Close()
 		if err := copyStdoutWithTimestamps(stdout, wrapperStdout); err != nil {
-			fmt.Fprintf(wrapperStderr, "icebath stderr timestamp wrapper stopped copying the command's stdout: %s (%s)\n", err, errchain.Types(err))
+			fmt.Fprintf(wrapperStderr, "icebath stderr timestamp wrapper stopped copying the command's stdout: %s\n", errchain.OSText(err))
 		}
 	}()
 	raised := make(chan error, 1)

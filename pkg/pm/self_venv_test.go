@@ -97,7 +97,7 @@ func TestSVSelectedVenvReadsTheRecordedGeneration(t *testing.T) {
 	writeFile(t, EnvironmentRuntimeFactsPath(ctx, repo), []byte(`{`), 0o666)
 	_, err = SelectedVenv(ctx, repo)
 	svWantError(t, err, "cannot read dependency environment")
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "RuntimeError" {
 		t.Fatalf("class of %v", err)
 	}

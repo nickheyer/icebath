@@ -288,7 +288,7 @@ func ingressFingerprint(payload *jsonutil.Object, raw any) (string, error) {
 	native, _ := payload.Get("native_text_v1")
 	source, ok := native.(*jsonutil.Object)
 	if !ok {
-		return "", &pyKeyError{"native_text_v1"}
+		return "", &keyError{"native_text_v1"}
 	}
 	envelope := source.Clone()
 	envelope.Delete("ingress_sha256")
@@ -475,7 +475,7 @@ func restoreAttachments(ctx context.Context, payload *jsonutil.Object) (urls []s
 	}
 	media, ok := data.Get("media")
 	if !ok {
-		return nil, nil, &pyKeyError{"media"}
+		return nil, nil, &keyError{"media"}
 	}
 	list, _ := media.([]any)
 	if urls, err = restoreNativeMedia(ctx, list); err != nil {
@@ -483,7 +483,7 @@ func restoreAttachments(ctx context.Context, payload *jsonutil.Object) (urls []s
 	}
 	mediaTypes, ok := data.Get("media_types")
 	if !ok {
-		return nil, nil, &pyKeyError{"media_types"}
+		return nil, nil, &keyError{"media_types"}
 	}
 	typeList, _ := mediaTypes.([]any)
 	types = make([]string, 0, len(typeList))

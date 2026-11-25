@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
@@ -57,7 +58,7 @@ func healBareCustomProvider(ctx context.Context, prov, baseURL, model string) (h
 
 // Restores the model and provider recorded on the session row unless the launch named an explicit model
 func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
-	if !cliTruthy(sessionMeta["model"]) || c.explicitModelOverride {
+	if !anyutil.IsTrue(sessionMeta["model"]) || c.explicitModelOverride {
 		return
 	}
 	storedModel, storedProvider, storedBaseURL, storedAPIMode, providerChanged, ok := storedSessionRoute(c.ctx, sessionMeta, c.model, c.provider)

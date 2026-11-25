@@ -4,21 +4,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"unsafe"
 
 	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
-// An error the engine reports, Class naming the subclass raised
+// An error the native engine reports: the Picovoice status it returned, the failed step and the engine's message stack
 type PorcupineError struct {
-	Class        string
+	Status       int32
 	Message      string
 	MessageStack []string
 }
 
+// The failed step, the status it ended in when there is one and the numbered message stack
 func (e *PorcupineError) Error() string {
 	message := e.Message
+	if e.Status != StatusSuccess {
+		message += " (" + statusName(e.Status) + ")"
+	}
 	if len(e.MessageStack) > 0 {
 		message += ":"
 		for i, line := range e.MessageStack {
@@ -44,27 +49,32 @@ const (
 	StatusActivationRefused
 )
 
-var statusToException = map[int32]string{
-	StatusOutOfMemory:            "PorcupineMemoryError",
-	StatusIOError:                "PorcupineIOError",
-	StatusInvalidArgument:        "PorcupineInvalidArgumentError",
-	StatusStopIteration:          "PorcupineStopIterationError",
-	StatusKeyError:               "PorcupineKeyError",
-	StatusInvalidState:           "PorcupineInvalidStateError",
-	StatusRuntimeError:           "PorcupineRuntimeError",
-	StatusActivationError:        "PorcupineActivationError",
-	StatusActivationLimitReached: "PorcupineActivationLimitError",
-	StatusActivationThrottled:    "PorcupineActivationThrottledError",
-	StatusActivationRefused:      "PorcupineActivationRefusedError",
+// Description of each Picovoice failure status
+var statusNames = map[int32]string{
+	StatusOutOfMemory:            "out of memory",
+	StatusIOError:                "I/O error",
+	StatusInvalidArgument:        "invalid argument",
+	StatusStopIteration:          "stop iteration",
+	StatusKeyError:               "key error",
+	StatusInvalidState:           "invalid state",
+	StatusRuntimeError:           "runtime error",
+	StatusActivationError:        "activation error",
+	StatusActivationLimitReached: "activation limit reached",
+	StatusActivationThrottled:    "activation throttled",
+	StatusActivationRefused:      "activation refused",
 }
 
-// Error for a non success status, a ValueError for a code outside the status enum
-func statusError(status int32, message string, stack []string) error {
-	class, ok := statusToException[status]
-	if !ok {
-		return &PyError{Class: "ValueError", Msg: fmt.Sprintf("%d is not a valid Porcupine.PicovoiceStatuses", status)}
+// Description of a Picovoice status, its number for a code outside the known set
+func statusName(status int32) string {
+	if name, ok := statusNames[status]; ok {
+		return name
 	}
-	return &PorcupineError{Class: class, Message: message, MessageStack: stack}
+	return "status " + strconv.Itoa(int(status))
+}
+
+// Error for a status other than success the native library returned, kept with its code whether or not the code is a known one
+func statusError(status int32, message string, stack []string) error {
+	return &PorcupineError{Status: status, Message: message, MessageStack: stack}
 }
 
 // One wake word engine handle over the native library
@@ -82,32 +92,32 @@ type Porcupine struct {
 // Loads the dynamic library and initializes an engine for the keyword files with their sensitivities
 func NewPorcupine(accessKey, libraryPath, modelPath, device string, keywordPaths []string, sensitivities []float64) (*Porcupine, error) {
 	if accessKey == "" {
-		return nil, &PyError{Class: "ValueError", Msg: "access_key should be a non-empty string."}
+		return nil, &Error{Kind: InvalidArgument, Msg: "Access key should be a non-empty string."}
 	}
-	if !pathExists(libraryPath) {
-		return nil, &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find Porcupine's dynamic library at '%s'.", libraryPath)}
+	if err := requireFile(libraryPath, libraryPath, "Porcupine's dynamic library"); err != nil {
+		return nil, err
 	}
 	library, err := dlutil.Open(libraryPath, false)
 	if err != nil {
 		return nil, err
 	}
-	if !pathExists(modelPath) {
-		return nil, &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find model file at '%s'.", modelPath)}
+	if err := requireFile(modelPath, modelPath, "model file"); err != nil {
+		return nil, err
 	}
 	if len(device) == 0 {
-		return nil, &PyError{Class: "ValueError", Msg: "`device` should be a non-empty string."}
+		return nil, &Error{Kind: InvalidArgument, Msg: "Device should be a non-empty string."}
 	}
 	if len(keywordPaths) != len(sensitivities) {
-		return nil, &PyError{Class: "ValueError", Msg: "Number of keywords does not match the number of sensitivities."}
+		return nil, &Error{Kind: InvalidArgument, Msg: "Number of keywords does not match the number of sensitivities."}
 	}
 	for _, x := range keywordPaths {
-		if !pathExists(pathutil.ExpandUser(x)) {
-			return nil, &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find keyword file at '%s'.", x)}
+		if err := requireFile(pathutil.ExpandUser(x), x, "keyword file"); err != nil {
+			return nil, err
 		}
 	}
 	for _, x := range sensitivities {
 		if !(0 <= x && x <= 1) {
-			return nil, &PyError{Class: "ValueError", Msg: "A sensitivity value should be within [0, 1]."}
+			return nil, &Error{Kind: InvalidArgument, Msg: "A sensitivity value should be within [0, 1]."}
 		}
 	}
 	p := &Porcupine{}
@@ -184,7 +194,7 @@ func (p *Porcupine) Delete() { p.deleteFunc(p.handle) }
 // Index of the keyword detected at the end of one frame of audio, -1 when none
 func (p *Porcupine) Process(pcm []int16) (int, error) {
 	if len(pcm) != p.frameLength {
-		return 0, &PyError{Class: "ValueError", Msg: fmt.Sprintf("Invalid frame length. expected %d but received %d", p.frameLength, len(pcm))}
+		return 0, &Error{Kind: InvalidArgument, Msg: fmt.Sprintf("Invalid frame length. expected %d but received %d", p.frameLength, len(pcm))}
 	}
 	frame := append(make([]int16, 0, len(pcm)+1), pcm...)
 	var result int32
@@ -258,9 +268,12 @@ func ListHardwareDevices(libraryPath string) ([]string, error) {
 	return res, nil
 }
 
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// Error naming the file the engine needs as shown, when there is nothing to stat at path
+func requireFile(path, shown, what string) error {
+	if _, err := os.Stat(path); err != nil {
+		return &Error{Kind: FileUnavailable, Msg: fmt.Sprintf("Couldn't find %s at %q.", what, shown), Err: err}
+	}
+	return nil
 }
 
 // Loads the host platform dynamic library and resolves the engine init function
@@ -269,8 +282,8 @@ func (m *Module) LoadLibrary() error {
 	if err != nil {
 		return err
 	}
-	if !pathExists(libraryPath) {
-		return &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find Porcupine's dynamic library at '%s'.", libraryPath)}
+	if err := requireFile(libraryPath, libraryPath, "Porcupine's dynamic library"); err != nil {
+		return err
 	}
 	library, err := dlutil.Open(libraryPath, false)
 	if err != nil {

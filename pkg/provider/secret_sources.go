@@ -17,7 +17,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -446,24 +445,21 @@ func (c *SecretDiskCache) currentPath(homePath string) string {
 	return CurrentCachePath(ResolveCacheHome(homePath), c.basename)
 }
 
-// Read is the fresh cached entry for key, false on mismatch or staleness, an error only for undecodable bytes
+// Read is the fresh cached entry for key, false on mismatch or staleness, an error naming the file only for bytes that are not UTF-8
 func (c *SecretDiskCache) Read(key string, ttl float64, homePath string) (CachedFetch, bool, error) {
 	if ttl <= 0 {
 		return CachedFetch{}, false, nil
 	}
-	raw, err := os.ReadFile(c.currentPath(homePath))
+	path := c.currentPath(homePath)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return CachedFetch{}, false, nil
 	}
-	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-	for i := 0; i < len(raw); {
-		r, size := utf8.DecodeRune(raw[i:])
-		if r == utf8.RuneError && size <= 1 {
-			return CachedFetch{}, false, &textutil.InvalidUTF8Error{Offset: i}
-		}
-		i += size
+	raw = textutil.TrimBOM(raw)
+	if err := textutil.ValidateUTF8(raw); err != nil {
+		return CachedFetch{}, false, fmt.Errorf("secret cache %s: %w", path, err)
 	}
-	parsed, err := jsonutil.Decode(string(raw))
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		return CachedFetch{}, false, nil
 	}

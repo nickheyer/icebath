@@ -182,7 +182,7 @@ func TestMainCheckAndPairingCommands(t *testing.T) {
 		}
 		return code
 	}
-	if run("check", "docx:x", "ou_a") != 0 || out.String() != "Document:     docx:x\nUser:         ou_a\nResolved rule:\n  enabled:      False\n  policy:       allowlist\n  allow_from:   ['ou_a', 'ou_b']\n  match_source: exact:docx:x\nResult:       ALLOWED\n" {
+	if run("check", "docx:x", "ou_a") != 0 || out.String() != "Document:     docx:x\nUser:         ou_a\nResolved rule:\n  enabled:      false\n  policy:       allowlist\n  allow_from:   [\"ou_a\",\"ou_b\"]\n  match_source: exact:docx:x\nResult:       ALLOWED\n" {
 		t.Fatalf("check output %q", out.String())
 	}
 	if run("pairing", "add", "ou_z") != 0 || out.String() != "Added: ou_z\n" {
@@ -194,7 +194,7 @@ func TestMainCheckAndPairingCommands(t *testing.T) {
 	if run("pairing", "remove") != 1 || out.String() != "Usage: pairing remove <user_open_id>\n" {
 		t.Fatalf("pairing remove usage %q", out.String())
 	}
-	if run("status") != 0 || !strings.Contains(out.String(), "Document rules (2):\n  [*] (empty — inherits all)\n  [docx:x] enabled=False\n\nPairing approved (1):\n  ou_z  (approved_at=") {
+	if run("status") != 0 || !strings.Contains(out.String(), "Document rules (2):\n  [*] (empty — inherits all)\n  [docx:x] enabled=false\n\nPairing approved (1):\n  ou_z  (approved_at=") {
 		t.Fatalf("status output %q", out.String())
 	}
 	if run("bogus") != 1 || !strings.HasPrefix(out.String(), "Unknown command: bogus\nUsage: icebath feishu comment-rules") {

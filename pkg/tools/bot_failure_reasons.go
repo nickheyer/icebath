@@ -84,7 +84,7 @@ func TurnFailureText(stdout, stderr any) (string, error) {
 		}
 		text, ok := value.(string)
 		if !ok {
-			return "", pyAttributeError(value, "strip")
+			return "", attributeError(value, "strip")
 		}
 		if stripped := strings.TrimSpace(text); stripped != "" {
 			parts = append(parts, stripped)

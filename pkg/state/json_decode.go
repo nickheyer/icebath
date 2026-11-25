@@ -12,23 +12,23 @@ import (
 )
 
 // Invalid JSON with the line and column of the fault
-type pyJSONDecodeError struct {
+type jsonDecodeError struct {
 	Msg                string
 	Pos, Lineno, Colno int
 }
 
-func (e *pyJSONDecodeError) Error() string {
+func (e *jsonDecodeError) Error() string {
 	return fmt.Sprintf("invalid JSON at line %d column %d: %s", e.Lineno, e.Colno, e.Msg)
 }
 
-type pyJSONScanner struct{ s []rune }
+type jsonScanner struct{ s []rune }
 
 // No value starts at the offset, the StopIteration of the Python scanner
-type pyJSONStop struct{ pos int }
+type jsonStop struct{ pos int }
 
-func (e *pyJSONStop) Error() string { return "expected a value" }
+func (e *jsonStop) Error() string { return "expected a value" }
 
-func (p *pyJSONScanner) fail(msg string, pos int) error {
+func (p *jsonScanner) fail(msg string, pos int) error {
 	lineno, last := 1, -1
 	for i := 0; i < pos && i < len(p.s); i++ {
 		if p.s[i] == '\n' {
@@ -36,24 +36,24 @@ func (p *pyJSONScanner) fail(msg string, pos int) error {
 			last = i
 		}
 	}
-	return &pyJSONDecodeError{Msg: msg, Pos: pos, Lineno: lineno, Colno: pos - last}
+	return &jsonDecodeError{Msg: msg, Pos: pos, Lineno: lineno, Colno: pos - last}
 }
 
-func (p *pyJSONScanner) ws(i int) int {
+func (p *jsonScanner) ws(i int) int {
 	for i < len(p.s) && (p.s[i] == ' ' || p.s[i] == '\t' || p.s[i] == '\n' || p.s[i] == '\r') {
 		i++
 	}
 	return i
 }
 
-// Decodes text with the json.loads grammar into pyObject, json.Number for ints, float64, string, []any, bool and nil
-func pyLoads(text string) (any, error) {
-	p := &pyJSONScanner{s: []rune(text)}
+// Decodes text with the json.loads grammar into orderedObject, json.Number for ints, float64, string, []any, bool and nil
+func loadsValue(text string) (any, error) {
+	p := &jsonScanner{s: []rune(text)}
 	if len(p.s) > 0 && p.s[0] == 0xfeff {
 		return nil, p.fail("the text starts with a UTF-8 byte order mark", 0)
 	}
 	v, end, err := p.value(p.ws(0))
-	if stop, ok := err.(*pyJSONStop); ok {
+	if stop, ok := err.(*jsonStop); ok {
 		return nil, p.fail("expected a value", stop.pos)
 	}
 	if err != nil {
@@ -65,7 +65,7 @@ func pyLoads(text string) (any, error) {
 	return v, nil
 }
 
-func (p *pyJSONScanner) hasWord(i int, w string) bool {
+func (p *jsonScanner) hasWord(i int, w string) bool {
 	rs := []rune(w)
 	if i+len(rs) > len(p.s) {
 		return false
@@ -78,9 +78,9 @@ func (p *pyJSONScanner) hasWord(i int, w string) bool {
 	return true
 }
 
-func (p *pyJSONScanner) value(i int) (any, int, error) {
+func (p *jsonScanner) value(i int) (any, int, error) {
 	if i >= len(p.s) {
-		return nil, i, &pyJSONStop{i}
+		return nil, i, &jsonStop{i}
 	}
 	switch c := p.s[i]; {
 	case c == '"':
@@ -107,7 +107,7 @@ func (p *pyJSONScanner) value(i int) (any, int, error) {
 
 func asciiDigit(r rune) bool { return r >= '0' && r <= '9' }
 
-func (p *pyJSONScanner) number(i int) (any, int, error) {
+func (p *jsonScanner) number(i int) (any, int, error) {
 	j := i
 	if j < len(p.s) && p.s[j] == '-' {
 		j++
@@ -120,7 +120,7 @@ func (p *pyJSONScanner) number(i int) (any, int, error) {
 			j++
 		}
 	default:
-		return nil, i, &pyJSONStop{i}
+		return nil, i, &jsonStop{i}
 	}
 	isFloat := false
 	if j+1 < len(p.s) && p.s[j] == '.' && asciiDigit(p.s[j+1]) {
@@ -156,7 +156,7 @@ func (p *pyJSONScanner) number(i int) (any, int, error) {
 	return json.Number(text), j, nil
 }
 
-func (p *pyJSONScanner) hex4(at int) (rune, bool) {
+func (p *jsonScanner) hex4(at int) (rune, bool) {
 	if at+4 >= len(p.s) {
 		return 0, false
 	}
@@ -178,7 +178,7 @@ func (p *pyJSONScanner) hex4(at int) (rune, bool) {
 }
 
 // Scans a string body after its opening quote, lone surrogates kept in generalized UTF-8
-func (p *pyJSONScanner) str(end int) (any, int, error) {
+func (p *jsonScanner) str(end int) (any, int, error) {
 	begin := end - 1
 	var b strings.Builder
 	escapes := map[rune]string{'"': `"`, '\\': `\`, '/': "/", 'b': "\b", 'f': "\f", 'n': "\n", 'r': "\r", 't': "\t"}
@@ -231,8 +231,8 @@ func (p *pyJSONScanner) str(end int) (any, int, error) {
 	}
 }
 
-func (p *pyJSONScanner) object(i int) (any, int, error) {
-	obj := pyObject{}
+func (p *jsonScanner) object(i int) (any, int, error) {
+	obj := orderedObject{}
 	index := map[string]int{}
 	i = p.ws(i)
 	if i < len(p.s) && p.s[i] == '}' {
@@ -251,7 +251,7 @@ func (p *pyJSONScanner) object(i int) (any, int, error) {
 			return nil, i, p.fail("expected ':' after a key", i)
 		}
 		val, next, err := p.value(p.ws(i + 1))
-		if stop, ok := err.(*pyJSONStop); ok {
+		if stop, ok := err.(*jsonStop); ok {
 			return nil, next, p.fail("expected a value", stop.pos)
 		}
 		if err != nil {
@@ -262,7 +262,7 @@ func (p *pyJSONScanner) object(i int) (any, int, error) {
 			obj[at].Value = val
 		} else {
 			index[k] = len(obj)
-			obj = append(obj, pyKeyValue{k, val})
+			obj = append(obj, keyValue{k, val})
 		}
 		i = p.ws(next)
 		if i < len(p.s) && p.s[i] == '}' {
@@ -278,7 +278,7 @@ func (p *pyJSONScanner) object(i int) (any, int, error) {
 	}
 }
 
-func (p *pyJSONScanner) array(i int) (any, int, error) {
+func (p *jsonScanner) array(i int) (any, int, error) {
 	out := []any{}
 	i = p.ws(i)
 	if i < len(p.s) && p.s[i] == ']' {
@@ -286,7 +286,7 @@ func (p *pyJSONScanner) array(i int) (any, int, error) {
 	}
 	for {
 		val, next, err := p.value(i)
-		if stop, ok := err.(*pyJSONStop); ok {
+		if stop, ok := err.(*jsonStop); ok {
 			return nil, next, p.fail("expected a value", stop.pos)
 		}
 		if err != nil {
@@ -319,7 +319,7 @@ func wtf8Write(b *strings.Builder, r rune) {
 }
 
 // Text of bytes under json.detect_encoding, decoded with surrogatepass, the UnicodeDecodeError on bad input
-func pyJSONDecodeBytes(b []byte) (string, error) {
+func jsonDecodeBytes(b []byte) (string, error) {
 	enc := "utf-8"
 	switch {
 	case strings.HasPrefix(string(b), "\x00\x00\xfe\xff") || strings.HasPrefix(string(b), "\xff\xfe\x00\x00"):
@@ -327,7 +327,7 @@ func pyJSONDecodeBytes(b []byte) (string, error) {
 	case strings.HasPrefix(string(b), "\xfe\xff") || strings.HasPrefix(string(b), "\xff\xfe"):
 		enc = "utf-16"
 	case strings.HasPrefix(string(b), "\xef\xbb\xbf"):
-		return pyDecodeUTF8Strict(b[3:])
+		return decodeUTF8Strict(b[3:])
 	case len(b) >= 4 && b[0] == 0:
 		enc = map[bool]string{true: "utf-16-be", false: "utf-32-be"}[b[1] != 0]
 	case len(b) >= 4 && b[1] == 0:
@@ -340,13 +340,13 @@ func pyJSONDecodeBytes(b []byte) (string, error) {
 	bigEndian := strings.HasSuffix(enc, "-be")
 	switch {
 	case enc == "utf-8":
-		return pyDecodeUTF8Strict(b)
+		return decodeUTF8Strict(b)
 	case strings.HasPrefix(enc, "utf-16"):
 		if enc == "utf-16" {
 			bigEndian, b = b[0] == 0xfe, b[2:]
 		}
 		if len(b)%2 != 0 {
-			return "", &pyConvError{"UnicodeDecodeError", "the " + enc + " JSON bytes end inside a character"}
+			return "", &convError{"UnicodeDecodeError", "the " + enc + " JSON bytes end inside a character"}
 		}
 		var sb strings.Builder
 		for i := 0; i < len(b); i += 2 {
@@ -373,7 +373,7 @@ func pyJSONDecodeBytes(b []byte) (string, error) {
 		bigEndian, b = b[0] == 0, b[4:]
 	}
 	if len(b)%4 != 0 {
-		return "", &pyConvError{"UnicodeDecodeError", "the " + enc + " JSON bytes end inside a character"}
+		return "", &convError{"UnicodeDecodeError", "the " + enc + " JSON bytes end inside a character"}
 	}
 	var sb strings.Builder
 	for i := 0; i < len(b); i += 4 {
@@ -382,7 +382,7 @@ func pyJSONDecodeBytes(b []byte) (string, error) {
 			u = rune(b[i])<<24 | rune(b[i+1])<<16 | rune(b[i+2])<<8 | rune(b[i+3])
 		}
 		if u < 0 || u > 0x10ffff {
-			return "", &pyConvError{"UnicodeDecodeError", "the " + enc + " JSON bytes hold a character beyond U+10FFFF"}
+			return "", &convError{"UnicodeDecodeError", "the " + enc + " JSON bytes hold a character beyond U+10FFFF"}
 		}
 		wtf8Write(&sb, u)
 	}
@@ -390,7 +390,7 @@ func pyJSONDecodeBytes(b []byte) (string, error) {
 }
 
 // UTF-8 bytes as text with surrogatepass, the UnicodeDecodeError at the first invalid byte
-func pyDecodeUTF8Strict(b []byte) (string, error) {
+func decodeUTF8Strict(b []byte) (string, error) {
 	for i := 0; i < len(b); {
 		if r, ok := wtf8Surrogate(string(b[i:])); ok && r >= 0xd800 {
 			i += 3
@@ -408,16 +408,16 @@ func pyDecodeUTF8Strict(b []byte) (string, error) {
 		reason := "invalid continuation byte"
 		if b[i] < 0xc2 || b[i] > 0xf4 {
 			reason = "invalid start byte"
-		} else if sub := pyDecodeUTF8Replace(b[i:]); sub == "\ufffd" {
+		} else if sub := decodeUTF8Replace(b[i:]); sub == "\ufffd" {
 			reason = "unexpected end of data"
 		}
-		return "", &pyConvError{"UnicodeDecodeError", fmt.Sprintf("the JSON bytes are not valid UTF-8 at byte %d (0x%02x, %s)", i, b[i], reason)}
+		return "", &convError{"UnicodeDecodeError", fmt.Sprintf("the JSON bytes are not valid UTF-8 at byte %d (0x%02x, %s)", i, b[i], reason)}
 	}
 	return string(b), nil
 }
 
 // Insertion ordered JSON object other packages read and build for identity and decoded JSON values
-type PyObject = pyObject
+type OrderedObject = orderedObject
 
-// One entry of a PyObject
-type PyKeyValue = pyKeyValue
+// One entry of a OrderedObject
+type KeyValue = keyValue

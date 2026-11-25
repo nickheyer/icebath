@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -71,7 +72,7 @@ func (d *SessionDB) SessionCountBySource(ctx context.Context, includeArchived, a
 	out := jsonutil.NewObject()
 	for _, row := range rows {
 		count, _ := rowInt(row, "count")
-		out.Set(pyStr(rowValue(row, "source")), count)
+		out.Set(anyutil.String(rowValue(row, "source")), count)
 	}
 	return out, nil
 }
@@ -84,7 +85,7 @@ func (d *SessionDB) DeclaredScopeIdentity(ctx context.Context, sessionID string)
 	}
 	source := ""
 	if v := rowValue(session, "source"); v != nil {
-		source = strings.TrimSpace(pyStr(v))
+		source = strings.TrimSpace(anyutil.String(v))
 	}
 	return isExplicitForkChildRow(session, false), source, nil
 }

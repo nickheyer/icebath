@@ -87,7 +87,7 @@ func skillViewNamesByCallID(messages []map[string]any) map[string]string {
 		if msg["role"] != "assistant" {
 			continue
 		}
-		for _, tc := range pyIterRows(msg["tool_calls"]) {
+		for _, tc := range iterRows(msg["tool_calls"]) {
 			fn := tcGet(tc, "function", map[string]any{})
 			if tcGet(fn, "name", "") != "skill_view" {
 				continue
@@ -186,7 +186,7 @@ func TailCutProgressFloor(c TailCutCompressor, messages []map[string]any, headEn
 	if newest < 0 {
 		return floor
 	}
-	for _, m := range pySlice(messages, headEnd, max(cutIdx, newest+1)) {
+	for _, m := range sliceOf(messages, headEnd, max(cutIdx, newest+1)) {
 		if !c.IsContextSummaryMessage(m) {
 			return floor
 		}
@@ -200,7 +200,7 @@ func TailCutProgressFloor(c TailCutCompressor, messages []map[string]any, headEn
 }
 
 // Python slice rows[lo:hi] with negative and out of range bounds clamped
-func pySlice(rows []map[string]any, lo, hi int) []map[string]any {
+func sliceOf(rows []map[string]any, lo, hi int) []map[string]any {
 	n := len(rows)
 	clamp := func(i int) int {
 		if i < 0 {

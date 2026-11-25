@@ -65,7 +65,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		tokensType = "cjkchar"
 	}
 	if !isFile(tokens) {
-		return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + tokens}
+		return nil, &KindError{Class: "AssertionError", Msg: "File not exists, " + tokens}
 	}
 	tokensTable := map[string]any{}
 	lines, err := readLines(tokens)
@@ -75,24 +75,24 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 	for _, line := range lines {
 		toks := strings.Fields(strings.TrimSpace(line))
 		if len(toks) != 2 {
-			return nil, &PyError{Class: "AssertionError", Msg: fmt.Sprint(len(toks))}
+			return nil, &KindError{Class: "AssertionError", Msg: fmt.Sprint(len(toks))}
 		}
 		if _, dup := tokensTable[toks[0]]; dup {
-			return nil, &PyError{Class: "AssertionError", Msg: "Duplicate token: " + strList(toks) + " "}
+			return nil, &KindError{Class: "AssertionError", Msg: "Duplicate token: " + strList(toks) + " "}
 		}
 		id, err := textutil.ParseInt(toks[1])
 		if err != nil {
-			return nil, &PyError{Class: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(toks[1])}
+			return nil, &KindError{Class: "ValueError", Msg: "token id " + strconv.Quote(toks[1]) + " in " + tokens + " is not a whole number"}
 		}
 		tokensTable[toks[0]] = int(id)
 	}
 	var sp *sentencepiece.Processor
 	if strings.Contains(tokensType, "bpe") {
 		if o.BPEModel == nil {
-			return nil, &PyError{Class: "TypeError", Msg: "argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'NoneType'"}
+			return nil, &KindError{Class: "TypeError", Msg: "tokens type " + tokensType + " needs the path of a BPE model"}
 		}
 		if !isFile(*o.BPEModel) {
-			return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + *o.BPEModel}
+			return nil, &KindError{Class: "AssertionError", Msg: "File not exists, " + *o.BPEModel}
 		}
 		if sp, err = sentencepiece.Load(*o.BPEModel); err != nil {
 			return nil, err
@@ -114,7 +114,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		}
 	default:
 		if tokensType != "cjkchar+bpe" {
-			return nil, &PyError{Class: "AssertionError", Msg: "Supported tokens_type are cjkchar, bpe, cjkchar+bpe given " + tokensType}
+			return nil, &KindError{Class: "AssertionError", Msg: "Supported tokens_type are cjkchar, bpe, cjkchar+bpe given " + tokensType}
 		}
 		for _, text := range texts {
 			textList := []string{}

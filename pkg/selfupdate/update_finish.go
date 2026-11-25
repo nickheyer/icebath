@@ -42,7 +42,7 @@ func updateFinishArgv(binary, contextPath, resultPath string) []string {
 }
 
 // str of an exception, its class name when the text is empty
-func pyReason(err error) string {
+func reasonValue(err error) string {
 	if text := launchErrorText(err); text != "" {
 		return text
 	}
@@ -88,7 +88,7 @@ func finishUpdate(ctx context.Context, w, errw io.Writer, o finishUpdateOptions)
 		if isInterrupt(err) {
 			return err
 		}
-		reason := pyReason(err)
+		reason := reasonValue(err)
 		updaterecord.RecordFollowup(ctx, "maintenance", reason, updaterecord.FollowupRetryDefault)
 		*owed = append(*owed, [2]string{"maintenance", reason})
 	} else {
@@ -135,7 +135,7 @@ func finishUpdate(ctx context.Context, w, errw io.Writer, o finishUpdateOptions)
 		if isInterrupt(err) {
 			return err
 		}
-		return updaterecord.OweFollowup(ctx, updateID, "gateway_restart", pyReason(err), updaterecord.FollowupRetryDefault)
+		return updaterecord.OweFollowup(ctx, updateID, "gateway_restart", reasonValue(err), updaterecord.FollowupRetryDefault)
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func UpdateFinishMain(ctx context.Context, contextPath, resultPath string, stdou
 		if isInterrupt(err) {
 			return 130
 		}
-		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		fmt.Fprintln(stderr, launchErrorLine(err))
 		return 1
 	}
 	return code
@@ -182,7 +182,7 @@ func LegacyPostSwapMain(ctx context.Context, handoffPath string, argvTail []stri
 		if isInterrupt(err) {
 			return 130
 		}
-		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		fmt.Fprintln(stderr, launchErrorLine(err))
 		return 1
 	}
 	return code
@@ -194,7 +194,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	if err != nil {
 		return 0, err
 	}
-	rootValue, err := pyDictItem(decoded, "root")
+	rootValue, err := dictItem(decoded, "root")
 	if err != nil {
 		return 0, err
 	}
@@ -211,7 +211,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	cliStarted, begun := false, false
 	code := 1
 	beginFromRequest := func() error {
-		id, err := pyDictItem(request, "update_id")
+		id, err := dictItem(request, "update_id")
 		if err != nil {
 			return err
 		}
@@ -236,7 +236,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 		}
 		fleetProjectRoot = func() string { return root }
 		if restarting {
-			argv, err := pyIterable(request.ValueOr("argv", nil))
+			argv, err := iterable(request.ValueOr("argv", nil))
 			if err != nil {
 				return err
 			}
@@ -279,15 +279,15 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			if isInterrupt(err) {
 				return err
 			}
-			reason := pyReason(err)
+			reason := reasonValue(err)
 			updaterecord.RecordFollowup(ctx, featureDependenciesFollowup, reason, updaterecord.FollowupRetryDefault)
 			owed = append(owed, [2]string{featureDependenciesFollowup, reason})
 		}
-		assumeYes, err := pyDictItem(request, "assume_yes")
+		assumeYes, err := dictItem(request, "assume_yes")
 		if err != nil {
 			return err
 		}
-		gatewayMode, err := pyDictItem(request, "gateway_mode")
+		gatewayMode, err := dictItem(request, "gateway_mode")
 		if err != nil {
 			return err
 		}
@@ -312,7 +312,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			fmt.Fprintf(stderr, "Update completion failed: %s\n", launchErrorText(err))
 		}
 	}
-	idValue, err := pyDictItem(request, "update_id")
+	idValue, err := dictItem(request, "update_id")
 	if err != nil {
 		return 0, err
 	}

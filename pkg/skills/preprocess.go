@@ -20,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var skillTemplateRe = regexp.MustCompile(`\$\{((?:ICEBATH|HERMES)_(?:SKILL_DIR|SESSION_ID))\}`)
@@ -98,7 +99,7 @@ func (s *Scope) RunInlineShell(ctx context.Context, command, cwd string, timeout
 	if output == "" {
 		output = strings.TrimRight(universalNewlines(strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD")), "\n")
 	}
-	if code := pyReturnCode(cmd.ProcessState); code != 0 && output == "" {
+	if code := returnCode(cmd.ProcessState); code != 0 && output == "" {
 		return fmt.Sprintf("[inline-shell exit %d with no output: %s]", code, command)
 	}
 	return tools.Elide(output, inlineShellMaxOutput)
@@ -182,7 +183,7 @@ func (s *Scope) isCommunityHubSkill(skillDir string) bool {
 			return true
 		}
 		for _, e := range entries {
-			rel := pyStrOr(firstTruthy(e["install_path"]))
+			rel := anyutil.String(firstTruthy(e["install_path"]))
 			if e["trust_level"] == "community" && rel != "" && isRelativeTo(target, resolvePath(filepath.Join(lr.root, rel))) {
 				return true
 			}
@@ -219,7 +220,7 @@ func hubLockEntries(lockPath string) ([]map[string]any, error) {
 }
 
 // Python int of a config value, an error where int() raises
-func pyIntValue(v any) (int, error) {
+func intValue(v any) (int, error) {
 	switch t := v.(type) {
 	case int:
 		return t, nil
@@ -274,7 +275,7 @@ func (s *Scope) preprocessSkillContent(ctx context.Context, content, skillDir, s
 		if !ok || !fmTruthy(raw) {
 			raw = 10
 		}
-		timeout, err := pyIntValue(raw)
+		timeout, err := intValue(raw)
 		if err != nil {
 			return "", err
 		}

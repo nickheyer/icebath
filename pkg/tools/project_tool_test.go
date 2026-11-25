@@ -41,7 +41,7 @@ func TestProjectsDBCreateListSwitch(t *testing.T) {
 	if _, err := db.CreateProject(" ", CreateProjectOptions{}); err == nil {
 		t.Fatal("empty name")
 	}
-	if _, err := NormalizeProjectSlug("-bad"); err == nil || !strings.Contains(err.Error(), "invalid project slug '-bad'") {
+	if _, err := NormalizeProjectSlug("-bad"); err == nil || !strings.Contains(err.Error(), `invalid project slug "-bad"`) {
 		t.Fatal(err)
 	}
 	owner, _ := db.ProjectForPath(filepath.Join(folder, "src", "x.go"), false)
@@ -106,7 +106,7 @@ func TestProjectToolActions(t *testing.T) {
 	if len(rows) != 1 || rows[0].(map[string]any)["active"] != true || list["active_id"] == nil {
 		t.Fatal(list)
 	}
-	if r := projectSwitch(context.Background(), env, "nope", ""); !strings.Contains(r, "no project matching 'nope'") {
+	if r := mustJSON(t, projectSwitch(context.Background(), env, "nope", "")); r["success"] != false || r["error"] != `no project matching "nope"` {
 		t.Fatal(r)
 	}
 	moved := ""
@@ -116,7 +116,7 @@ func TestProjectToolActions(t *testing.T) {
 	if sw["success"] != true || moved != "task-2:Work" {
 		t.Fatal(sw, moved)
 	}
-	if r := projectFail("x"); r != `{"success": false, "error": "x"}` {
+	if r := projectFail("x"); r != `{"success":false,"error":"x"}` {
 		t.Fatal(r)
 	}
 }

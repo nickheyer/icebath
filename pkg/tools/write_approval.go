@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Write approval subsystems gating cross session writes
@@ -157,7 +159,7 @@ func StageWrite(ctx context.Context, env *Env, subsystem string, payload map[str
 		action = ""
 	}
 	created := float64(time.Now().UnixNano()) / 1e9
-	rec := pendingRecordJSON{ID: pid, Subsystem: subsystem, Action: action, Summary: pyStrip(summary), Origin: origin, CreatedAt: created, Payload: payload}
+	rec := pendingRecordJSON{ID: pid, Subsystem: subsystem, Action: action, Summary: strings.TrimSpace(summary), Origin: origin, CreatedAt: created, Payload: payload}
 	if err := writeApprovalJSONAtomic(WithEnvHome(ctx, env), pendingWritePath(env, subsystem, pid), rec); err != nil {
 		envLog(env).Error(fmt.Sprintf("Failed to stage pending %s write: %v", subsystem, err))
 	}
@@ -274,7 +276,7 @@ type GateDecision struct {
 
 // Reports whether a human on this turn can type the pending review slash command
 func slashReviewSurface(env *Env) bool {
-	if pyStrip(sessionValue(env, "kanban_task", "ICEBATH_KANBAN_TASK")) != "" {
+	if strings.TrimSpace(sessionValue(env, "kanban_task", "ICEBATH_KANBAN_TASK")) != "" {
 		return false
 	}
 	if isCronApprovalContext(env) {
@@ -284,7 +286,7 @@ func slashReviewSurface(env *Env) bool {
 	if platform == "" {
 		platform = os.Getenv("ICEBATH_PLATFORM")
 	}
-	return !unattendedApprovalPlatforms[strings.ToLower(pyStrip(platform))]
+	return !unattendedApprovalPlatforms[strings.ToLower(strings.TrimSpace(platform))]
 }
 
 // Stage decision whose message names the review command or the pending dir on headless surfaces
@@ -323,11 +325,11 @@ func promptInlineMemoryApproval(ctx context.Context, env *Env, summary, detail s
 	if env == nil || env.Ask == nil {
 		return false, false
 	}
-	header := pyStrip(summary)
+	header := strings.TrimSpace(summary)
 	if header == "" {
 		header = "Save to memory?"
 	}
-	text := pyStrip(detail)
+	text := strings.TrimSpace(detail)
 	if text == "" {
 		text = header
 	}
@@ -345,7 +347,7 @@ func promptInlineMemoryApproval(ctx context.Context, env *Env, summary, detail s
 	if len(result.Answers[0].Selected) > 0 {
 		choice = result.Answers[0].Selected[0]
 	}
-	switch strings.ToLower(pyStrip(choice)) {
+	switch strings.ToLower(strings.TrimSpace(choice)) {
 	case "once", "session":
 		return true, true
 	case "deny":
@@ -406,7 +408,7 @@ func frontmatterDescription(content string) string {
 	if m == nil {
 		return ""
 	}
-	desc := strings.Trim(pyStrip(m[1]), `'"`)
+	desc := strings.Trim(strings.TrimSpace(m[1]), `'"`)
 	if utf8.RuneCountInString(desc) > 140 {
 		desc = runePrefix(desc, 140)
 	}
@@ -461,7 +463,7 @@ func payloadOrEmpty(m map[string]any, key string) string {
 	if !truthy(v) {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Full content or a unified diff against its base for a pending skill write
@@ -470,8 +472,8 @@ func SkillPendingDiff(env *Env, record map[string]any, staged map[string]map[str
 	if payload == nil {
 		payload = map[string]any{}
 	}
-	action := pyStr(payloadGet(payload, "action", ""))
-	name := pyStr(payloadGet(payload, "name", ""))
+	action := anyutil.String(payloadGet(payload, "action", ""))
+	name := anyutil.String(payloadGet(payload, "name", ""))
 	switch action {
 	case "batch":
 		return batchPendingDiff(env, payload)
@@ -479,7 +481,7 @@ func SkillPendingDiff(env *Env, record map[string]any, staged map[string]map[str
 		return payloadOrEmpty(payload, "content")
 	case "edit", "patch", "write_file":
 	case "remove_file":
-		return fmt.Sprintf("remove file: %s from skill '%s'", pyStr(payload["file_path"]), name)
+		return fmt.Sprintf("remove file: %s from skill '%s'", anyutil.String(payload["file_path"]), name)
 	case "delete":
 		return fmt.Sprintf("delete skill '%s'", name)
 	default:
@@ -496,7 +498,7 @@ func SkillPendingDiff(env *Env, record map[string]any, staged map[string]map[str
 	if action == "patch" {
 		oldS, newS := payloadOrEmpty(payload, "old_string"), payloadOrEmpty(payload, "new_string")
 		if current == "" {
-			updated = fmt.Sprintf("(patch %s → %s)", pyReprStr(oldS), pyReprStr(newS))
+			updated = fmt.Sprintf("(patch %s → %s)", strconv.Quote(oldS), strconv.Quote(newS))
 		} else {
 			folded, patchErr := foldPatch(current, oldS, newS, truthy(payload["replace_all"]))
 			if patchErr != "" {
@@ -511,7 +513,7 @@ func SkillPendingDiff(env *Env, record map[string]any, staged map[string]map[str
 		}
 		updated = payloadOrEmpty(payload, key)
 	}
-	diff := strings.Join(unifiedDiff(pySplitLinesKeepEnds(current), pySplitLinesKeepEnds(updated), "a/"+targetLabel, "b/"+targetLabel, 3), "")
+	diff := strings.Join(unifiedDiff(splitLinesKeepEndsValue(current), splitLinesKeepEndsValue(updated), "a/"+targetLabel, "b/"+targetLabel, 3), "")
 	if diff == "" {
 		return "(no textual change)"
 	}
@@ -579,7 +581,7 @@ func batchPendingDiff(env *Env, payload map[string]any) string {
 	staged := map[string]map[string]string{}
 	var parts []string
 	for i, op := range ops {
-		opAction := pyStr(payloadGet(op, "action", ""))
+		opAction := anyutil.String(payloadGet(op, "action", ""))
 		opName := payloadOrEmpty(op, "name")
 		gist := SkillGist(opAction, opName, payloadOrEmpty(op, "content"), payloadOrEmpty(op, "file_path"), payloadOrEmpty(op, "old_string"), payloadOrEmpty(op, "new_string"))
 		merged := make(map[string]any, len(op)+1)

@@ -308,7 +308,7 @@ type treeMember struct {
 }
 
 // Python iteration of a registry value, the TypeError for anything not iterable
-func pyIterate(v any) []any {
+func iterate(v any) []any {
 	switch x := v.(type) {
 	case []any:
 		return x
@@ -343,14 +343,14 @@ func pyIterate(v any) []any {
 // Git tree entries under prefix with their relative path and whether each is a regular blob
 func treeMembers(entries any, prefix string) []treeMember {
 	var out []treeMember
-	for _, item := range pyIterate(entries) {
-		itemPath := pyGet(item, "path", "")
+	for _, item := range iterate(entries) {
+		itemPath := lookup(item, "path", "")
 		s, ok := itemPath.(string)
 		if !ok {
 			hubRaise(fmt.Errorf("GitHub tree entry path is %s where text was expected", errchain.Kind(itemPath)))
 		}
 		if strings.HasPrefix(s, prefix) {
-			out = append(out, treeMember{s[len(prefix):], s, pyGet(item, "type", nil) == "blob" && pyGet(item, "mode", nil) != "120000"})
+			out = append(out, treeMember{s[len(prefix):], s, lookup(item, "type", nil) == "blob" && lookup(item, "mode", nil) != "120000"})
 		}
 	}
 	return out
@@ -387,8 +387,8 @@ func tapsFromList(list []any) []GitHubTap {
 		if !found {
 			hubRaise(errors.New("a tap entry has no repo"))
 		}
-		tap := GitHubTap{Repo: anyutil.String(repo), Path: anyutil.String(pyGet(o, "path", ""))}
-		if b := pyGet(o, "bucket", nil); anyutil.IsTrue(b) {
+		tap := GitHubTap{Repo: anyutil.String(repo), Path: anyutil.String(lookup(o, "path", ""))}
+		if b := lookup(o, "bucket", nil); anyutil.IsTrue(b) {
 			tap.Bucket = anyutil.String(b)
 		}
 		out = append(out, tap)
@@ -489,11 +489,11 @@ func (g *GitHubSource) SearchProvider(ctx context.Context, query string, limit i
 			g.h.S.logger().Debug(fmt.Sprintf("Failed to search %s: %s", tap.Repo, err))
 		}
 	}
-	return pyHeadMetas(dedupeByTrust(results), limit), nil
+	return headMetas(dedupeByTrust(results), limit), nil
 }
 
 // First limit results with Python slice semantics for a negative limit
-func pyHeadMetas(results []SkillMeta, limit int) []SkillMeta {
+func headMetas(results []SkillMeta, limit int) []SkillMeta {
 	if limit < 0 {
 		limit = max(len(results)+limit, 0)
 	}
@@ -659,7 +659,7 @@ func (g *GitHubSource) inspect(ctx context.Context, identifier string) *SkillMet
 		}
 	}
 	tagList := []string{}
-	for _, t := range pyIterate(tags) {
+	for _, t := range iterate(tags) {
 		tagList = append(tagList, anyutil.String(t))
 	}
 	name := skillPath[strings.LastIndex(skillPath, "/")+1:]
@@ -707,7 +707,7 @@ func (g *GitHubSource) listSkillsInRepo(ctx context.Context, repo, path, bucket 
 	skills := []SkillMeta{}
 	groupings := g.getSkillshGroupings(ctx, repo)
 	for _, entry := range entries {
-		if pyGet(entry, "type", nil) != "dir" {
+		if lookup(entry, "type", nil) != "dir" {
 			continue
 		}
 		nameV, found := entry.(*jsonutil.Object).Get("name")
@@ -765,20 +765,20 @@ func (g *GitHubSource) getRepoTree(ctx context.Context, repo string) *ghTree {
 	if repoData == nil {
 		return nil
 	}
-	branch := anyutil.String(pyGet(repoData, "default_branch", "main"))
+	branch := anyutil.String(lookup(repoData, "default_branch", "main"))
 	treeData := g.githubJSON(ctx, githubAPI+"/"+repo+"/git/trees/"+branch,
 		ghGet{Params: url.Values{"recursive": {"1"}}, Timeout: 30 * time.Second})
 	if treeData == nil {
 		return nil
 	}
-	if anyutil.IsTrue(pyGet(treeData, "truncated", nil)) {
+	if anyutil.IsTrue(lookup(treeData, "truncated", nil)) {
 		g.h.S.logger().Debug(fmt.Sprintf("Git tree truncated for %s", repo))
 		return nil
 	}
-	if sha, ok := pyGet(treeData, "sha", nil).(string); ok && sha != "" {
+	if sha, ok := lookup(treeData, "sha", nil).(string); ok && sha != "" {
 		g.treeRevisions[repo] = sha
 	}
-	t := &ghTree{Branch: branch, Entries: pyGet(treeData, "tree", []any{})}
+	t := &ghTree{Branch: branch, Entries: lookup(treeData, "tree", []any{})}
 	g.treeCache[repo] = t
 	return t
 }
@@ -898,12 +898,12 @@ func (g *GitHubSource) findSkillInRepoTree(ctx context.Context, repo, skillName 
 	}
 	suffix := "/" + skillName + "/SKILL.md"
 	var dirs []string
-	for _, entry := range pyIterate(tree.Entries) {
-		pathV := pyGet(entry, "path", "")
-		if pyGet(entry, "type", nil) != "blob" || pyGet(entry, "mode", nil) == "120000" || !strings.HasSuffix("/"+anyutil.String(pathV), "/SKILL.md") {
+	for _, entry := range iterate(tree.Entries) {
+		pathV := lookup(entry, "path", "")
+		if lookup(entry, "type", nil) != "blob" || lookup(entry, "mode", nil) == "120000" || !strings.HasSuffix("/"+anyutil.String(pathV), "/SKILL.md") {
 			continue
 		}
-		path := pyStrOf(pathV)
+		path := hubText(pathV)
 		if strings.HasSuffix(path, suffix) || path == suffix[1:] {
 			return repo + "/" + path[:len(path)-len("/SKILL.md")], true
 		}
@@ -925,13 +925,13 @@ func (g *GitHubSource) findRepoRootSkill(ctx context.Context, repo string) (stri
 		return "", false
 	}
 	var mds []string
-	for _, entry := range pyIterate(tree.Entries) {
-		if pyGet(entry, "type", nil) != "blob" || pyGet(entry, "mode", nil) == "120000" {
+	for _, entry := range iterate(tree.Entries) {
+		if lookup(entry, "type", nil) != "blob" || lookup(entry, "mode", nil) == "120000" {
 			continue
 		}
-		p := pyGet(entry, "path", "")
-		if p == "SKILL.md" || strings.HasSuffix(pyStrOf(p), "/SKILL.md") {
-			mds = append(mds, pyStrOf(p))
+		p := lookup(entry, "path", "")
+		if p == "SKILL.md" || strings.HasSuffix(hubText(p), "/SKILL.md") {
+			mds = append(mds, hubText(p))
 		}
 	}
 	if len(mds) == 1 && mds[0] == "SKILL.md" {

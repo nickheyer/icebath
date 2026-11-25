@@ -183,7 +183,7 @@ func codeIdentity(refresh bool) *jsonutil.Object {
 
 // Mapping entries reduced to stringified keys
 func strRecords(entries any, keys []string) ([]any, error) {
-	items, err := pyList(entries)
+	items, err := listOf(entries)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func (r *UpdateReceipt) GatewayRestartResult(g GatewayRestart) error {
 			if !present {
 				raw = []any{}
 			}
-			items, err := pyList(raw)
+			items, err := listOf(raw)
 			if err != nil {
 				return err
 			}
@@ -532,7 +532,7 @@ func pidAliveMatches(pid int64, createTime any) *bool {
 	}
 	same := true
 	if createTime != nil {
-		ct, ok := pyFloat(createTime)
+		ct, ok := floatNumber(createTime)
 		if !ok {
 			return nil
 		}
@@ -546,7 +546,7 @@ func ownerAlive(record *jsonutil.Object) bool {
 	var order []int64
 	identities := map[int64]any{}
 	for _, pair := range [][2]string{{"pid", "pid_create_time"}, {"writer_pid", "writer_create_time"}} {
-		pid, ok := pyIntValue(record.Value(pair[0]))
+		pid, ok := intValue(record.Value(pair[0]))
 		if !ok || pid <= 0 {
 			continue
 		}
@@ -621,7 +621,7 @@ func ReconcileInterruptedRuns(ctx context.Context) []map[string]any {
 				continue
 			}
 			var last any
-			if stages, err := pyList(orEmptyList(record.Value("stages"))); err == nil && len(stages) > 0 {
+			if stages, err := listOf(orEmptyList(record.Value("stages"))); err == nil && len(stages) > 0 {
 				last = mapGet(stages[len(stages)-1], "name")
 			} else if err != nil {
 				continue
@@ -668,7 +668,7 @@ func BeginUpdateReceipt(ctx context.Context, previous *jsonutil.Object, correlat
 	receipt.Data.Set("outcome", "running")
 	receipt.Data.Set("finished_at", nil)
 	if _, present := receipt.Data.Get("pid_create_time"); !present {
-		if pid, ok := pyIntValue(receipt.Data.Value("pid")); ok && pid > 0 && pid <= math.MaxInt32 {
+		if pid, ok := intValue(receipt.Data.Value("pid")); ok && pid > 0 && pid <= math.MaxInt32 {
 			if ct := ProcessCreateTime(int(pid)); ct != nil {
 				receipt.Data.Set("pid_create_time", *ct)
 			} else {
@@ -1183,7 +1183,7 @@ func listItems(v any) []any {
 }
 
 // Python list() of a decoded JSON value
-func pyList(v any) ([]any, error) {
+func listOf(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		return append([]any{}, t...), nil
@@ -1215,7 +1215,7 @@ func pyList(v any) ([]any, error) {
 }
 
 // Integer value of a JSON int, bool counting as Python int, false for anything else
-func pyIntValue(v any) (int64, bool) {
+func intValue(v any) (int64, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -1236,8 +1236,8 @@ func pyIntValue(v any) (int64, bool) {
 }
 
 // Python int() of a value
-func pyIntConvert(v any) (int64, error) {
-	if n, ok := pyIntValue(v); ok {
+func intConvert(v any) (int64, error) {
+	if n, ok := intValue(v); ok {
 		return n, nil
 	}
 	switch t := v.(type) {
@@ -1257,8 +1257,8 @@ func pyIntConvert(v any) (int64, error) {
 }
 
 // Python float() of a value, false when it raises
-func pyFloat(v any) (float64, bool) {
-	if n, ok := pyIntValue(v); ok {
+func floatNumber(v any) (float64, bool) {
+	if n, ok := intValue(v); ok {
 		return float64(n), true
 	}
 	switch t := v.(type) {

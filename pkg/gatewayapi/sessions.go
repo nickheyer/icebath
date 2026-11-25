@@ -256,7 +256,7 @@ func parseNonnegativeInt(value any, def, maximum int) int {
 	if value == nil {
 		return def
 	}
-	n, ok := pyIntOf(value)
+	n, ok := intOf(value)
 	if !ok {
 		return def
 	}
@@ -267,7 +267,7 @@ func parseNonnegativeInt(value any, def, maximum int) int {
 }
 
 // Python int of a string or number, ok false when int raises
-func pyIntOf(value any) (int, bool) {
+func intOf(value any) (int, bool) {
 	switch v := value.(type) {
 	case string:
 		n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimSpace(v), "_", ""))
@@ -743,11 +743,11 @@ func (a *APIServerAdapter) handleSessionMessages(ctx context.Context, request *g
 	if hasOrder && order != "oldest" && order != "latest" {
 		return errorResponse("order must be one of: oldest, latest", http.StatusBadRequest, errOpts{Code: "invalid_pagination"}), nil
 	}
-	offset, okOffset := pyIntOf(rawOffset)
+	offset, okOffset := intOf(rawOffset)
 	requestedLimit := -2
 	okLimit := true
 	if hasLimit && len(rawLimit) > 0 {
-		requestedLimit, okLimit = pyIntOf(rawLimit[0])
+		requestedLimit, okLimit = intOf(rawLimit[0])
 	}
 	if !okOffset || !okLimit {
 		offset, requestedLimit = -1, -1

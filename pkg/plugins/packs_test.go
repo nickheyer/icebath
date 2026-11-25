@@ -204,7 +204,7 @@ func TestLoadPackSources(t *testing.T) {
 	if pack, err := LoadPack(ctx, srv.URL+"/pack.yaml"); err != nil || pack.Name != "voice-pack" {
 		t.Fatalf("%v %v", pack, err)
 	}
-	if _, err := LoadPack(ctx, srv.URL+"/missing"); !strings.HasPrefix(packErrText(t, err), "Could not fetch pack from "+srv.URL+"/missing: Client error '404 Not Found'") {
+	if _, err := LoadPack(ctx, srv.URL+"/missing"); !strings.HasPrefix(packErrText(t, err), "Could not fetch pack from "+srv.URL+"/missing: client error 404 Not Found for "+srv.URL+"/missing") {
 		t.Fatal(err)
 	}
 }

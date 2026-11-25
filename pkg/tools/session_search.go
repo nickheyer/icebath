@@ -654,7 +654,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 			pkgLog().Debug(fmt.Sprintf("get_anchored_view failed for title match %s/%v", sessionID, anchorID))
 		}
 	}
-	title := pyOr(oget(sessionMeta, "title"), titleQuery)
+	title := anyutil.Or(oget(sessionMeta, "title"), titleQuery)
 	head := messages[:min(3, len(messages))]
 	window := messages[:min(5, len(messages))]
 	tail := messages[max(0, len(messages)-3):]
@@ -662,7 +662,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 		sessionID:      sessionID,
 		when:           formatTimestamp(oget(sessionMeta, "started_at")),
 		source:         ogetDefault(sessionMeta, "source", "unknown"),
-		model:          pyOr(oget(sessionMeta, "model"), "unknown"),
+		model:          anyutil.Or(oget(sessionMeta, "model"), "unknown"),
 		title:          title,
 		matchedRole:    "session_title",
 		matchMessageID: anchorID,
@@ -744,7 +744,7 @@ func bookend(view *jsonutil.Object, key string) []any {
 
 // Discovery result of a surviving FTS row, nil when its anchored view cannot load
 func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, matchInfo *jsonutil.Object, resultDetail string) *jsonutil.Object {
-	hitSID := ostr(pyOr(oget(matchInfo, "session_id"), lineageRoot))
+	hitSID := ostr(anyutil.Or(oget(matchInfo, "session_id"), lineageRoot))
 	msgID := oget(matchInfo, "id")
 	id, ok := sessionSearchInt(msgID)
 	var view *jsonutil.Object
@@ -774,13 +774,13 @@ func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, 
 	}
 	return discoveryEntry(lineageRoot, discoveryFields{
 		sessionID:      hitSID,
-		when:           formatTimestamp(pyOr(oget(sessionMeta, "started_at"), oget(matchInfo, "session_started"))),
-		source:         pyOr(oget(sessionMeta, "source"), ogetDefault(matchInfo, "source", "unknown")),
-		model:          pyOr(pyOr(oget(sessionMeta, "model"), oget(matchInfo, "model")), "unknown"),
-		title:          pyOr(oget(sessionMeta, "title"), nil),
+		when:           formatTimestamp(anyutil.Or(oget(sessionMeta, "started_at"), oget(matchInfo, "session_started"))),
+		source:         anyutil.Or(oget(sessionMeta, "source"), ogetDefault(matchInfo, "source", "unknown")),
+		model:          anyutil.Or(anyutil.Or(oget(sessionMeta, "model"), oget(matchInfo, "model")), "unknown"),
+		title:          anyutil.Or(oget(sessionMeta, "title"), nil),
 		matchedRole:    oget(matchInfo, "role"),
 		matchMessageID: msgID,
-		snippet:        ostr(pyOr(oget(matchInfo, "snippet"), "")),
+		snippet:        ostr(anyutil.Or(oget(matchInfo, "snippet"), "")),
 		bookendStart:   bookendStart,
 		messages:       messages,
 		bookendEnd:     bookendEnd,
@@ -807,7 +807,7 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 	titleResult := titleMatchResult(ctx, db, query, currentLineageRoot)
 	if titleResult != nil {
 		titleSID := ostr(oget(titleResult, "session_id"))
-		titleRoot := ostr(pyOr(oget(titleResult, "_lineage_root"), titleSID))
+		titleRoot := ostr(anyutil.Or(oget(titleResult, "_lineage_root"), titleSID))
 		rootMeta := getSessionMeta(ctx, db, titleRoot)
 		if rootMeta.Len() == 0 {
 			rootMeta = getSessionMeta(ctx, db, titleSID)
@@ -848,8 +848,8 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 		return errJSON
 	}
 	sort.SliceStable(rawResults, func(i, j int) bool {
-		di := sessionSearchDemotedSources[ostr(pyOr(oget(rawResults[i], "source"), ""))]
-		dj := sessionSearchDemotedSources[ostr(pyOr(oget(rawResults[j], "source"), ""))]
+		di := sessionSearchDemotedSources[ostr(anyutil.Or(oget(rawResults[i], "source"), ""))]
+		dj := sessionSearchDemotedSources[ostr(anyutil.Or(oget(rawResults[j], "source"), ""))]
 		return !di && dj
 	})
 	if len(rawResults) == 0 && titleResult == nil {
@@ -1043,7 +1043,7 @@ func listRecentSessions(ctx context.Context, db SessionSearchStore, limit int, c
 			row := jsonutil.NewObject()
 			row.Set("session_id", id)
 			row.Set("link", sessionLink(ctx, id, linkProfile))
-			row.Set("title", pyOr(oget(s, "title"), nil))
+			row.Set("title", anyutil.Or(oget(s, "title"), nil))
 			for _, k := range []string{"source", "started_at", "last_active"} {
 				row.Set(k, ogetDefault(s, k, ""))
 			}
@@ -1274,7 +1274,7 @@ func argDefault(args map[string]any, key string, def any) any {
 // session_search arguments of a registry call, the handler kwargs mapped like the lambda
 func sessionSearchArgsOf(args map[string]any, db *state.DB, currentSessionID string) SessionSearchArgs {
 	a := SessionSearchArgs{
-		Query:             pyOr(args["query"], ""),
+		Query:             anyutil.Or(args["query"], ""),
 		Limit:             args["limit"],
 		Window:            argDefault(args, "window", 5),
 		Detail:            argDefault(args, "detail", "adaptive"),

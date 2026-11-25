@@ -12,6 +12,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -99,7 +100,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	var out []LintFinding
 	name := ""
 	if v, ok := fm["name"]; ok {
-		name = pyStrValue(v)
+		name = anyutil.String(v)
 	}
 	name = strings.TrimSpace(name)
 	if name != "" && !lintNameRe.MatchString(name) {
@@ -110,7 +111,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	}
 	desc := ""
 	if v, ok := fm["description"]; ok {
-		desc = pyStrValue(v)
+		desc = anyutil.String(v)
 	}
 	desc = strings.Trim(strings.TrimSpace(desc), "'\"")
 	if n := utf8.RuneCountInString(desc); n > SkillPromptDescLimit {
@@ -146,7 +147,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 	}
 	author := ""
 	if v, ok := fm["author"]; ok {
-		author = pyStrValue(v)
+		author = anyutil.String(v)
 	}
 	switch strings.ToLower(strings.TrimSpace(author)) {
 	case "icebath", "agent", "icebath agent":
@@ -161,7 +162,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 		}
 		var bad []any
 		for _, p := range items {
-			switch strings.ToLower(pyStrValue(p)) {
+			switch strings.ToLower(anyutil.String(p)) {
 			case "linux", "macos", "windows", "darwin":
 			default:
 				bad = append(bad, p)

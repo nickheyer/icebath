@@ -18,11 +18,11 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -686,12 +686,12 @@ func (h *PluginHost) unavailableAsExit(err error) error {
 }
 
 // Calls the child, flushing queued releases first and rebuilding object refs of a declared provider return
-func (h *PluginHost) call(ctx context.Context, method string, params map[string]any, generation *int, timeout time.Duration, returns *pyHint) (any, error) {
+func (h *PluginHost) call(ctx context.Context, method string, params map[string]any, generation *int, timeout time.Duration, returns *hintValue) (any, error) {
 	return h.callIn(ctx, "", method, params, generation, timeout, returns)
 }
 
 // One child request whose object refs resolve under base, the base the return hint declares when empty
-func (h *PluginHost) callIn(ctx context.Context, forcedBase, method string, params map[string]any, generation *int, timeout time.Duration, returns *pyHint) (any, error) {
+func (h *PluginHost) callIn(ctx context.Context, forcedBase, method string, params map[string]any, generation *int, timeout time.Duration, returns *hintValue) (any, error) {
 	h.mu.Lock()
 	ch := h.channel
 	current := h.generation
@@ -900,8 +900,8 @@ func (h *PluginHost) serveParentObject(ctx context.Context, params map[string]an
 	if !ok || slot.obj == nil {
 		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("icebath object %d was released", id)}
 	}
-	if config.PyTruthy(params["repr"]) {
-		return slot.obj.PyRepr(), nil
+	if anyutil.IsTrue(params["repr"]) {
+		return slot.obj.Quoted(), nil
 	}
 	method := wireStr(params["method"])
 	if strings.HasPrefix(method, "_") {
@@ -919,7 +919,7 @@ func (h *PluginHost) serveFacadeAttr(ctx context.Context, target HostFacade, met
 	if !isMethod {
 		return h.encodeForHost(value), nil
 	}
-	if config.PyTruthy(params["probe"]) {
+	if anyutil.IsTrue(params["probe"]) {
 		return map[string]any{"__method__": true, "async": async}, nil
 	}
 	resolve := func(ref map[string]any) (any, error) { return h.resolveRef(ref, "") }
@@ -965,7 +965,7 @@ type HostFacade interface {
 type HostObjectFacade interface {
 	HostFacade
 	ErrorKind() string
-	PyRepr() string
+	Quoted() string
 }
 
 func listOrEmpty(v any) []any {
@@ -1061,7 +1061,7 @@ func (h *PluginHost) callableProxy(ref map[string]any) *HostedCallable {
 	h.mu.Lock()
 	generation := h.generation
 	h.mu.Unlock()
-	f := &HostedCallable{host: h, ref: id, generation: generation, Async: config.PyTruthy(ref["async"]), Sig: signatureFrom(ref["sig"])}
+	f := &HostedCallable{host: h, ref: id, generation: generation, Async: anyutil.IsTrue(ref["async"]), Sig: signatureFrom(ref["sig"])}
 	f.Name = wireStr(ref["name"])
 	if f.Name == "" {
 		f.Name = "callback"
@@ -1139,7 +1139,7 @@ func (h *PluginHost) objectProxy(ref map[string]any, base string, reload func(co
 	if methods, ok := ref["methods"].(map[string]any); ok {
 		for name, raw := range methods {
 			meta, _ := raw.(map[string]any)
-			o.methods[name] = hostedMethod{Async: config.PyTruthy(meta["async"]), Sig: signatureFrom(meta["sig"])}
+			o.methods[name] = hostedMethod{Async: anyutil.IsTrue(meta["async"]), Sig: signatureFrom(meta["sig"])}
 		}
 	}
 	for _, name := range listOrEmpty(ref["live"]) {
@@ -1229,7 +1229,7 @@ func (o *HostedObject) Next(ctx context.Context) (item any, ok bool, err error) 
 	if !isMap {
 		return nil, false, fmt.Errorf("plugin host: obj_next answered %T instead of a step", raw)
 	}
-	if config.PyTruthy(step["done"]) {
+	if anyutil.IsTrue(step["done"]) {
 		return nil, false, nil
 	}
 	return step["item"], true, nil

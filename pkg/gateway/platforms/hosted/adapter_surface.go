@@ -7,11 +7,11 @@ import (
 	"sync"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Python names reached through platform_call, forwarded when the plugin class defines them outside the upstream base
@@ -79,7 +79,7 @@ func (a *Adapter) baseLifecycle(ctx context.Context, name string, args []any, kw
 	case "_mark_connected":
 		listener := ""
 		if v, ok := kw["listener_base"]; ok && v != nil {
-			listener = config.PyStr(v)
+			listener = anyutil.String(v)
 		}
 		a.BasePlatformAdapter.MarkConnected(ctx, listener)
 	case "_mark_disconnected":
@@ -89,12 +89,12 @@ func (a *Adapter) baseLifecycle(ctx context.Context, name string, args []any, kw
 		message, okMessage := arg(1, "message")
 		retryable, okRetryable := kw["retryable"]
 		if !okCode || !okMessage {
-			return &gateway.PyError{Kind: "TypeError", Msg: "_set_fatal_error() missing required positional arguments: 'code' and 'message'"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "_set_fatal_error() missing required positional arguments: 'code' and 'message'"}
 		}
 		if !okRetryable {
-			return &gateway.PyError{Kind: "TypeError", Msg: "_set_fatal_error() missing 1 required keyword-only argument: 'retryable'"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "_set_fatal_error() missing 1 required keyword-only argument: 'retryable'"}
 		}
-		a.BasePlatformAdapter.SetFatalError(ctx, config.PyStr(code), config.PyStr(message), config.PyTruthy(retryable))
+		a.BasePlatformAdapter.SetFatalError(ctx, anyutil.String(code), anyutil.String(message), anyutil.IsTrue(retryable))
 	}
 	return nil
 }
@@ -129,14 +129,14 @@ func (a *Adapter) IsConnected() bool {
 	if !a.defined["is_connected"] {
 		return a.BasePlatformAdapter.IsConnected()
 	}
-	return config.PyTruthy(a.surfaceAttr("is_connected"))
+	return anyutil.IsTrue(a.surfaceAttr("is_connected"))
 }
 
 // Length function of a hosted callable answer, counting through the plugin's function
 func lengthFn(v any) func(string) int {
 	f, ok := v.(*plugins.HostedCallable)
 	if !ok {
-		panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(v))})
+		panic(&errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(v))})
 	}
 	return func(s string) int {
 		n, _ := number(mustCall(f, s))
@@ -203,7 +203,7 @@ func streamEventArg(event gateway.StreamEvent) (string, map[string]any) {
 		}
 		return module + "GatewayNotice", map[string]any{"kind": e.Kind, "text": e.Text, "extra": extra}
 	}
-	panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("unknown stream event %T", event)})
+	panic(&errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("unknown stream event %T", event)})
 }
 
 // Field dict of a stream sink, its three primitives as Go callables the plugin calls synchronously
@@ -212,7 +212,7 @@ func sinkArg(sink gateway.StreamSink) map[string]any {
 		if len(args) == 0 {
 			return ""
 		}
-		return config.PyStr(args[0])
+		return anyutil.String(args[0])
 	}
 	return map[string]any{
 		"on_delta": plugins.HostCallable(func(_ context.Context, args []any, _ map[string]any) (any, error) {
@@ -251,7 +251,7 @@ func (a *Adapter) FormatToolEvent(ctx context.Context, event gateway.StreamEvent
 	if v == nil {
 		return "", false
 	}
-	return config.PyStr(v), true
+	return anyutil.String(v), true
 }
 
 func (a *Adapter) FormatToolPreview(preview tools.ToolPreview) string {
@@ -259,7 +259,7 @@ func (a *Adapter) FormatToolPreview(preview tools.ToolPreview) string {
 		return a.BasePlatformAdapter.FormatToolPreview(preview)
 	}
 	fields := map[string]any{"text": preview.Text, "truncated": preview.Truncated, "url": optional(preview.URL)}
-	return config.PyStr(a.mustSurface("format_tool_preview", []any{fields}, nil, toolPreviewBuilder))
+	return anyutil.String(a.mustSurface("format_tool_preview", []any{fields}, nil, toolPreviewBuilder))
 }
 
 func (a *Adapter) WirePluginHandlers(ctx context.Context, native any) {
@@ -294,7 +294,7 @@ func (a *Adapter) TextBatchKey(ctx context.Context, event *gateway.MessageEvent)
 	if err != nil {
 		return "", err
 	}
-	return config.PyStr(v), nil
+	return anyutil.String(v), nil
 }
 
 func (a *Adapter) EnqueueTextEvent(ctx context.Context, event *gateway.MessageEvent) error {
@@ -352,21 +352,21 @@ func (a *Adapter) EAHeader(ctx context.Context) string {
 	if !a.defined["_EA_HEADER"] {
 		return a.BasePlatformAdapter.EAHeader(ctx)
 	}
-	return config.PyStr(a.surfaceAttr("_EA_HEADER"))
+	return anyutil.String(a.surfaceAttr("_EA_HEADER"))
 }
 
 func (a *Adapter) EAReasonLabel(ctx context.Context) string {
 	if !a.defined["_EA_REASON_LABEL"] {
 		return a.BasePlatformAdapter.EAReasonLabel(ctx)
 	}
-	return config.PyStr(a.surfaceAttr("_EA_REASON_LABEL"))
+	return anyutil.String(a.surfaceAttr("_EA_REASON_LABEL"))
 }
 
 func (a *Adapter) EASmartDenyLine(ctx context.Context) string {
 	if !a.defined["_EA_SMART_DENY_LINE"] {
 		return a.BasePlatformAdapter.EASmartDenyLine(ctx)
 	}
-	return config.PyStr(a.surfaceAttr("_EA_SMART_DENY_LINE"))
+	return anyutil.String(a.surfaceAttr("_EA_SMART_DENY_LINE"))
 }
 
 func (a *Adapter) EAActionLabelsFor(ctx context.Context) map[string]string {
@@ -376,7 +376,7 @@ func (a *Adapter) EAActionLabelsFor(ctx context.Context) map[string]string {
 	labels := plainMap(a.surfaceAttr("_EA_ACTION_LABELS"))
 	out := make(map[string]string, len(labels))
 	for k, v := range labels {
-		out[k] = config.PyStr(v)
+		out[k] = anyutil.String(v)
 	}
 	return out
 }
@@ -385,7 +385,7 @@ func (a *Adapter) EAEscape(text string) string {
 	if !a.defined["_ea_escape"] {
 		return a.BasePlatformAdapter.EAEscape(text)
 	}
-	return config.PyStr(a.mustSurface("_ea_escape", []any{text}, nil))
+	return anyutil.String(a.mustSurface("_ea_escape", []any{text}, nil))
 }
 
 func (a *Adapter) ExecApprovalCmdBudget(ctx context.Context, description string, smartDenied bool) int {
@@ -468,7 +468,7 @@ func (a *Adapter) WarningText(ctx context.Context, visible string, hidden *strin
 	if v == nil {
 		return nil
 	}
-	s := config.PyStr(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -481,7 +481,7 @@ func (a *Adapter) WarningNotificationsEnabled(ctx context.Context, logicalPlatfo
 	if err != nil {
 		panic(err)
 	}
-	return config.PyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Field dict of an audio format as the upstream AudioFormat dataclass
@@ -493,7 +493,7 @@ func (a *Adapter) SupportsStreamingTTS(chatID string, format gateway.AudioFormat
 	if !a.defined["supports_streaming_tts"] {
 		return a.BasePlatformAdapter.SupportsStreamingTTS(chatID, format)
 	}
-	return config.PyTruthy(a.mustSurface("supports_streaming_tts", []any{chatID, audioFormatArg(format)}, nil, "", audioFormatBuilder))
+	return anyutil.IsTrue(a.mustSurface("supports_streaming_tts", []any{chatID, audioFormatArg(format)}, nil, "", audioFormatBuilder))
 }
 
 func (a *Adapter) BeginStreamingTTS(ctx context.Context, chatID string, format gateway.AudioFormat, metadata map[string]any) (*gateway.StreamingTTSHandle, error) {
@@ -507,7 +507,7 @@ func (a *Adapter) BeginStreamingTTS(ctx context.Context, chatID string, format g
 	}
 	obj, ok := v.(*plugins.HostedObject)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("begin_streaming_tts returned a %s, not a StreamingTTSHandle", anyutil.Kind(v))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("begin_streaming_tts returned a %s, not a StreamingTTSHandle", anyutil.Kind(v))}
 	}
 	handle := &gateway.StreamingTTSHandle{ChatID: chatID, AudioFormat: format}
 	if err := pullHandle(ctx, obj, handle); err != nil {
@@ -521,7 +521,7 @@ func (a *Adapter) BeginStreamingTTS(ctx context.Context, chatID string, format g
 func pushHandle(ctx context.Context, handle *gateway.StreamingTTSHandle) (*plugins.HostedObject, error) {
 	held, ok := ttsHandles.Load(weak.Make(handle))
 	if !ok {
-		return nil, &gateway.PyError{Kind: "ValueError", Msg: "streaming TTS handle was not begun by this adapter"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "streaming TTS handle was not begun by this adapter"}
 	}
 	obj := held.(*plugins.HostedObject)
 	if err := obj.Set(ctx, "audible", handle.Audible); err != nil {
@@ -537,10 +537,10 @@ func pullHandle(ctx context.Context, obj *plugins.HostedObject, handle *gateway.
 		if err != nil {
 			return err
 		}
-		*dst = config.PyTruthy(v)
+		*dst = anyutil.IsTrue(v)
 	}
 	if v, err := obj.Get(ctx, "chat_id"); err == nil && v != nil {
-		handle.ChatID = config.PyStr(v)
+		handle.ChatID = anyutil.String(v)
 	}
 	if v, err := obj.Get(ctx, "audio_format"); err == nil {
 		if f := plainMap(v); f != nil {
@@ -603,5 +603,5 @@ func (a *Adapter) SendRetryIsFinal(result gateway.SendResult) bool {
 	}
 	fields := map[string]any{"success": result.Success, "message_id": result.MessageID, "error": result.Error, "raw_response": rawMessage(result.RawResponse),
 		"retryable": result.Retryable, "retry_after": retryAfter, "continuation_message_ids": ids, "error_kind": optionalPtr(result.ErrorKind)}
-	return config.PyTruthy(a.mustSurface("_send_retry_is_final", []any{fields}, nil, sendResultBuilder))
+	return anyutil.IsTrue(a.mustSurface("_send_retry_is_final", []any{fields}, nil, sendResultBuilder))
 }

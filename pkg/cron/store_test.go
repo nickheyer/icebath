@@ -187,8 +187,8 @@ func TestNonDictMapValuesSkippedWithWarning(t *testing.T) {
 	if !reflect.DeepEqual(jobIDs(loaded), []string{"goodjob1"}) {
 		t.Fatalf("loaded %v", jobIDs(loaded))
 	}
-	if !strings.Contains(logs.String(), "non-dict") {
-		t.Fatalf("no non-dict warning in %s", logs)
+	if !strings.Contains(logs.String(), "non-object entries in id-keyed jobs map") {
+		t.Fatalf("no non-object warning in %s", logs)
 	}
 	listed, err := s.listJobs(context.Background(), true)
 	if err != nil || !reflect.DeepEqual(jobIDs(listed), []string{"goodjob1"}) {
@@ -217,7 +217,7 @@ func TestNonObjectListEntriesDroppedAndScalarJobsFieldReplaced(t *testing.T) {
 	if err != nil || len(loaded) != 0 {
 		t.Fatalf("scalar jobs field: %v %v", jobIDs(loaded), err)
 	}
-	if !strings.Contains(logs.String(), "Replacing invalid jobs.json 'jobs' field (a number) with an empty list") {
+	if !strings.Contains(logs.String(), "Replacing invalid jobs.json \\\"jobs\\\" field (a number) with an empty list") {
 		t.Fatalf("log %s", logs)
 	}
 	if disk := diskJobIDs(t, s); len(disk) != 0 {
@@ -241,7 +241,7 @@ func TestLoadJobsRepairsControlCharactersAndBareList(t *testing.T) {
 	}
 	os.WriteFile(s.jobsFile, []byte(`[{"id": "bare1"}]`), 0o600)
 	loaded, err = s.LoadJobs(context.Background())
-	if err != nil || !reflect.DeepEqual(jobIDs(loaded), []string{"bare1"}) || !strings.Contains(logs.String(), "bare list wrapped as dict") {
+	if err != nil || !reflect.DeepEqual(jobIDs(loaded), []string{"bare1"}) || !strings.Contains(logs.String(), "bare list wrapped in an object") {
 		t.Fatalf("bare list %v %v", jobIDs(loaded), err)
 	}
 	os.WriteFile(s.jobsFile, []byte(`"nope"`), 0o600)
@@ -263,7 +263,7 @@ func TestLoadJobsNormalizesRepeatCompleted(t *testing.T) {
 	}
 }
 
-func TestSaveKeepsLoadedKeyOrderAndPythonFloats(t *testing.T) {
+func TestSaveKeepsLoadedKeyOrderAndFloats(t *testing.T) {
 	s, _ := newTestStore(t)
 	os.WriteFile(s.jobsFile, []byte(`{"jobs": [{"zeta_custom": 1, "prompt": "p", "id": "k1", "last_dispatch": {"scheduled_at": "a", "dispatched_at": "b", "lateness_seconds": 12.0, "kind": "on_time"}}]}`), 0o600)
 	loaded, err := s.LoadJobs(context.Background())

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // ProviderFieldView is one setting a memory provider asks for
@@ -61,8 +62,8 @@ func (e *SetupRefusal) Error() string { return e.Message }
 func schemaFieldDefault(field, providerConfig map[string]any) any {
 	def := field["default"]
 	if df, ok := field["default_from"].(map[string]any); ok && len(df) > 0 {
-		ref := providerConfig[pyStr(dictGet(df, "field", ""))]
-		if refMap, ok := dictGet(df, "map", map[string]any{}).(map[string]any); ok && pyTruthy(ref) {
+		ref := providerConfig[anyutil.String(dictGet(df, "field", ""))]
+		if refMap, ok := dictGet(df, "map", map[string]any{}).(map[string]any); ok && anyutil.IsTrue(ref) {
 			if s, isStr := ref.(string); isStr {
 				if v, in := refMap[s]; in {
 					def = v
@@ -75,16 +76,16 @@ func schemaFieldDefault(field, providerConfig map[string]any) any {
 
 // One schema field as a screen shows it, with the value in force from the provider config
 func schemaFieldView(field, providerConfig map[string]any) ProviderFieldView {
-	key := pyStr(field["key"])
-	view := ProviderFieldView{Key: key, Label: key, Secret: pyTruthy(field["secret"])}
+	key := anyutil.String(field["key"])
+	view := ProviderFieldView{Key: key, Label: key, Secret: anyutil.IsTrue(field["secret"])}
 	if desc, ok := field["description"]; ok {
-		view.Label = pyStr(desc)
+		view.Label = anyutil.String(desc)
 	}
 	view.URL, _ = field["url"].(string)
 	if when, ok := field["when"].(map[string]any); ok && len(when) > 0 {
 		view.When = make(map[string]string, len(when))
 		for k, v := range when {
-			view.When[k] = pyStr(v)
+			view.When[k] = anyutil.String(v)
 		}
 	}
 	if view.Secret {
@@ -94,15 +95,15 @@ func schemaFieldView(field, providerConfig map[string]any) ProviderFieldView {
 	}
 	if choices, _ := field["choices"].([]any); len(choices) > 0 {
 		for _, c := range choices {
-			view.Choices = append(view.Choices, pyStr(c))
+			view.Choices = append(view.Choices, anyutil.String(c))
 		}
 	}
 	effective, has := providerConfig[key]
-	if !has || (len(view.Choices) == 0 && !pyTruthy(effective)) {
+	if !has || (len(view.Choices) == 0 && !anyutil.IsTrue(effective)) {
 		effective = schemaFieldDefault(field, providerConfig)
 	}
-	if pyTruthy(effective) {
-		view.Value = pyStr(effective)
+	if anyutil.IsTrue(effective) {
+		view.Value = anyutil.String(effective)
 	}
 	return view
 }
@@ -120,8 +121,8 @@ func (m *MemorySetup) Overview(ctx context.Context) (*OverviewView, error) {
 	}
 	memCfg, _ := dictGet(cfg, "memory", map[string]any{}).(map[string]any)
 	active, _ := dictGet(memCfg, "provider", "").(string)
-	out := &OverviewView{Provider: active, MemoryEnabled: pyTruthy(dictGet(memCfg, "memory_enabled", true)),
-		UserProfileEnabled: pyTruthy(dictGet(memCfg, "user_profile_enabled", true)), ToolEnabled: m.memoryToolEnabled(ctx, cfg)}
+	out := &OverviewView{Provider: active, MemoryEnabled: anyutil.IsTrue(dictGet(memCfg, "memory_enabled", true)),
+		UserProfileEnabled: anyutil.IsTrue(dictGet(memCfg, "user_profile_enabled", true)), ToolEnabled: m.memoryToolEnabled(ctx, cfg)}
 	providers := m.availableProviders(ctx)
 	defer dismissSetupProviders(ctx, providers)
 	for _, sp := range providers {
@@ -201,10 +202,10 @@ func (m *MemorySetup) Configure(ctx context.Context, name string, values map[str
 		if when, ok := field["when"].(map[string]any); ok && len(when) > 0 && !whenMatches(providerConfig, when) {
 			continue
 		}
-		key, value := pyStr(field["key"]), values[pyStr(field["key"])]
+		key, value := anyutil.String(field["key"]), values[anyutil.String(field["key"])]
 		envVar, _ := field["env_var"].(string)
 		choices, _ := field["choices"].([]any)
-		switch secret := pyTruthy(field["secret"]); {
+		switch secret := anyutil.IsTrue(field["secret"]); {
 		case secret:
 			if value != "" && envVar != "" {
 				envWrites = append(envWrites, envWrite{envVar, value})
@@ -215,14 +216,14 @@ func (m *MemorySetup) Configure(ctx context.Context, name string, values map[str
 				if !has {
 					current = schemaFieldDefault(field, providerConfig)
 				}
-				value = pyStr(choices[0])
-				if pyTruthy(current) {
-					value = pyStr(current)
+				value = anyutil.String(choices[0])
+				if anyutil.IsTrue(current) {
+					value = anyutil.String(current)
 				}
 			}
 			picked := false
 			for _, c := range choices {
-				if pyStr(c) == value {
+				if anyutil.String(c) == value {
 					providerConfig[key], picked = c, true
 					break
 				}

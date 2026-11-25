@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Ports probed for a llama-server beside the managed and configured ones, always on 127.0.0.1
@@ -70,7 +72,7 @@ func ProbePort(port int) (*DetectedServer, error) {
 	if status != 200 || !isDict {
 		return nil, nil
 	}
-	build := pyStr(pyGetAny(fields, "build_info", ""))
+	build := anyutil.String(getAny(fields, "build_info", ""))
 	if build == "" {
 		return nil, nil
 	}
@@ -84,7 +86,7 @@ func ProbePort(port int) (*DetectedServer, error) {
 	}
 	listing, listingIsDict := models.(map[string]any)
 	_, hasData := listing["data"]
-	return &DetectedServer{BaseURL: root + "/v1", BuildInfo: build, ModelPath: pyStr(pyGetAny(fields, "model_path", "")),
+	return &DetectedServer{BaseURL: root + "/v1", BuildInfo: build, ModelPath: anyutil.String(getAny(fields, "model_path", "")),
 		NCtx: nCtx, RouterMode: modelsStatus == 200 && listingIsDict && hasData}, nil
 }
 

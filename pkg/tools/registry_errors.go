@@ -21,12 +21,12 @@ func boundModelErrorText(env *Env, text string) string {
 	return textutil.First(text, maxToolErrorChars) + toolErrorTruncationMarker
 }
 
-// Trims an oversized error string of a JSON object result, re-encoded with json.dumps defaults and ensure_ascii off
+// Trims an oversized error string of a JSON object result, the object re-encoded spaced in UTF-8 with its numbers exactly as written
 func boundJSONErrorResult(env *Env, result string) string {
 	if utf8.RuneCountInString(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
 		return result
 	}
-	decoded, err := jsonutil.Decode(result)
+	decoded, err := jsonutil.DecodeWith(result, jsonutil.BigInts())
 	if err != nil {
 		return result
 	}

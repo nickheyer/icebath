@@ -40,7 +40,7 @@ func oneshotExitCode(response string, result map[string]any) int {
 }
 
 // Python addition of two JSON numbers, ints staying exact and a float operand making a float
-func pyNumAdd(a, b any) any {
+func numAdd(a, b any) any {
 	toBig := func(v any) (*big.Int, bool) {
 		switch n := v.(type) {
 		case int64:
@@ -98,11 +98,11 @@ func oneshotAuxiliaryReport(report *jsonutil.Object, byTask *jsonutil.Object) {
 			if counters != nil {
 				value = counters.Value(key)
 			}
-			sum = pyNumAdd(sum, orIntZero(value))
+			sum = numAdd(sum, orIntZero(value))
 		}
 		totals.Set(key, sum)
 	}
-	totals.Set("total_tokens", pyNumAdd(totals.Value("input_tokens"), totals.Value("output_tokens")))
+	totals.Set("total_tokens", numAdd(totals.Value("input_tokens"), totals.Value("output_tokens")))
 	auxiliary := jsonutil.NewObject()
 	for _, key := range totals.Keys() {
 		auxiliary.Set(key, totals.Value(key))
@@ -112,12 +112,12 @@ func oneshotAuxiliaryReport(report *jsonutil.Object, byTask *jsonutil.Object) {
 	mainCost := report.Value("estimated_cost_usd")
 	var cost any
 	if mainCost != nil {
-		cost = pyNumAdd(mainCost, totals.Value("estimated_cost_usd"))
+		cost = numAdd(mainCost, totals.Value("estimated_cost_usd"))
 	}
 	report.Set("total_including_auxiliary", jsonutil.ObjectOf(
 		"estimated_cost_usd", cost,
-		"total_tokens", pyNumAdd(orIntZero(report.Value("total_tokens")), totals.Value("total_tokens")),
-		"api_calls", pyNumAdd(orIntZero(report.Value("api_calls")), totals.Value("api_calls"))))
+		"total_tokens", numAdd(orIntZero(report.Value("total_tokens")), totals.Value("total_tokens")),
+		"api_calls", numAdd(orIntZero(report.Value("api_calls")), totals.Value("api_calls"))))
 }
 
 // Writes the usage file JSON report for pipelines, swallowing every failure so the run outcome stands

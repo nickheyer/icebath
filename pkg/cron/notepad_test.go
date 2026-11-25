@@ -246,7 +246,7 @@ func TestNotepadPerJobTotalCap(t *testing.T) {
 	_, n := testNotepad(t)
 	mustSetNote(t, n, "job-1", "a", strings.Repeat("x", 60))
 	_, err := n.Set("job-1", "b", strings.Repeat("x", 60))
-	if err == nil || err.Error() != "notepad full: job 'job-1' would exceed 100 bytes total; delete unused keys first" {
+	if err == nil || err.Error() != "notepad full: job \"job-1\" would exceed 100 bytes total; delete unused keys first" {
 		t.Fatalf("total cap %v", err)
 	}
 	mustSetNote(t, n, "job-1", "a", strings.Repeat("x", 90))

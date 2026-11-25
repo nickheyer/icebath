@@ -352,7 +352,10 @@ func (c *stdioMCPClient) Initialize(ctx context.Context) error {
 		supported = supported || v == version
 	}
 	if !supported {
-		return fmt.Errorf("Unsupported protocol version from the server: %s", anyutil.String(cuGet(obj, "protocolVersion")))
+		if raw := cuGet(obj, "protocolVersion"); raw != nil {
+			return fmt.Errorf("Unsupported protocol version from the server: %s", anyutil.String(raw))
+		}
+		return errors.New("The server reported no protocol version")
 	}
 	note, err := mcp.NewNotification("notifications/initialized", nil)
 	if err != nil {

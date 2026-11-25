@@ -60,13 +60,13 @@ func mustPyGroup(pattern, name string) int {
 }
 
 // Whether the pattern finds a match anywhere in the text
-func pyReSearch(re *regexp2.Regexp, text string) bool {
+func reSearch(re *regexp2.Regexp, text string) bool {
 	m, _ := re.FindStringMatch(text)
 	return m != nil
 }
 
 // Every non overlapping match in order
-func pyReFinditer(re *regexp2.Regexp, text string) []*regexp2.Match {
+func reFinditer(re *regexp2.Regexp, text string) []*regexp2.Match {
 	out := []*regexp2.Match{}
 	m, _ := re.FindStringMatch(text)
 	for m != nil {
@@ -104,21 +104,21 @@ func ackProviderTailRE(ctx context.Context) *regexp2.Regexp {
 // Whether a pronounless action clause with an explicit transition cue ends the reply
 func hasPronounlessAction(ctx context.Context, text string) bool {
 	stepNumbers := map[string]bool{}
-	for _, m := range pyReFinditer(ackStatusNumberRE, text) {
+	for _, m := range reFinditer(ackStatusNumberRE, text) {
 		if m.GroupByNumber(ackLabelGroup).String() == "step" {
 			stepNumbers[m.GroupByNumber(ackNumberGroup).String()] = true
 		}
 	}
 	numberingText, _ := ackStatusNumberRE.Replace(text, "", -1, -1)
-	hasNumberedList := len(stepNumbers) >= 2 || len(pyReFinditer(ackNumberedItemRE, numberingText)) > 0
-	if pyReSearch(ackQuestionRE, text) {
+	hasNumberedList := len(stepNumbers) >= 2 || len(reFinditer(ackNumberedItemRE, numberingText)) > 0
+	if reSearch(ackQuestionRE, text) {
 		return false
 	}
 	runes := []rune(text)
 	var providerTail *regexp2.Regexp
-	for _, m := range pyReFinditer(ackActionClauseRE, text) {
+	for _, m := range reFinditer(ackActionClauseRE, text) {
 		action := m.GroupByNumber(ackActionGroup)
-		if hasNumberedList || pyReSearch(ackListItemPrefixRE, string(runes[:action.RuneIndex])) {
+		if hasNumberedList || reSearch(ackListItemPrefixRE, string(runes[:action.RuneIndex])) {
 			continue
 		}
 		rawTail := string(runes[m.RuneIndex+m.RuneLength:])
@@ -127,24 +127,24 @@ func hasPronounlessAction(ctx context.Context, text string) bool {
 			tailRunes := []rune(rawTail)
 			clauseTail, remaining = string(tailRunes[:b.RuneIndex]), string(tailRunes[b.RuneIndex+b.RuneLength:])
 		}
-		if strings.TrimSpace(remaining) != "" && !pyReSearch(ackAllowedTrailingRE, remaining) {
+		if strings.TrimSpace(remaining) != "" && !reSearch(ackAllowedTrailingRE, remaining) {
 			continue
 		}
 		word := action.String()
 		launch := ackLaunchActions[word]
-		cue := (launch && pyReSearch(ackLaunchNowTailRE, clauseTail)) ||
-			(word == "running" && pyReSearch(ackRunNowTailRE, clauseTail)) ||
-			(word == "checking" && pyReSearch(ackCheckNowTailRE, clauseTail)) ||
-			(launch && pyReSearch(ackLaunchURLTailRE, clauseTail))
+		cue := (launch && reSearch(ackLaunchNowTailRE, clauseTail)) ||
+			(word == "running" && reSearch(ackRunNowTailRE, clauseTail)) ||
+			(word == "checking" && reSearch(ackCheckNowTailRE, clauseTail)) ||
+			(launch && reSearch(ackLaunchURLTailRE, clauseTail))
 		if !cue && launch {
 			if providerTail == nil {
 				providerTail = ackProviderTailRE(ctx)
 			}
-			cue = pyReSearch(providerTail, clauseTail)
+			cue = reSearch(providerTail, clauseTail)
 		}
-		cue = cue || (ackLogActions[word] && pyReSearch(ackActualLogTailRE, clauseTail)) ||
-			(word == "checking" && pyReSearch(ackHealthCheckRE, clauseTail)) ||
-			(launch && pyReSearch(ackLaunchWithTailRE, clauseTail))
+		cue = cue || (ackLogActions[word] && reSearch(ackActualLogTailRE, clauseTail)) ||
+			(word == "checking" && reSearch(ackHealthCheckRE, clauseTail)) ||
+			(launch && reSearch(ackLaunchWithTailRE, clauseTail))
 		if cue {
 			return true
 		}
@@ -160,11 +160,11 @@ func (a *AIAgent) looksLikeCodexIntermediateAck(userMessage any, assistantConten
 		}
 	}
 	text := strings.ToLower(strings.TrimSpace(a.stripThinkBlocks(assistantContent)))
-	if text == "" || pyLen(text) > 1200 {
+	if text == "" || lengthOf(text) > 1200 {
 		return false
 	}
 	pronounless := hasPronounlessAction(a.homeContext(), text)
-	if !pyReSearch(ackFutureRE, text) && !pronounless {
+	if !reSearch(ackFutureRE, text) && !pronounless {
 		return false
 	}
 	if !pronounless && !containsAny(text, ackActionMarkers...) {

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -41,7 +42,7 @@ var (
 
 // Text cut to the normalized length cap in code points
 func apiCapText(text string) string {
-	return pySliceRunes(text, apiMaxNormalizedTextLength)
+	return sliceRunes(text, apiMaxNormalizedTextLength)
 }
 
 // Items cut to the content list size cap
@@ -116,23 +117,23 @@ func apiNormalizeImagePart(part *jsonutil.Object) (*jsonutil.Object, error) {
 	}
 	text, ok := urlValue.(string)
 	if !ok || strings.TrimSpace(text) == "" {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid_image_url:Image parts must include a non-empty image URL."}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid_image_url:Image parts must include a non-empty image URL."}
 	}
 	text = strings.TrimSpace(text)
 	lowered := strings.ToLower(text)
 	if strings.HasPrefix(lowered, "data:") {
 		if !strings.HasPrefix(lowered, "data:image/") || !strings.Contains(text, ",") {
-			return nil, &PyError{Kind: "ValueError", Msg: "unsupported_content_type:Only image data URLs are supported. " +
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "unsupported_content_type:Only image data URLs are supported. " +
 				"Non-image data payloads are not supported."}
 		}
 	} else if !strings.HasPrefix(lowered, "http://") && !strings.HasPrefix(lowered, "https://") {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid_image_url:Image inputs must use http(s) URLs or data:image/... URLs."}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid_image_url:Image inputs must use http(s) URLs or data:image/... URLs."}
 	}
 	imageURL := jsonutil.ObjectOf("url", text)
 	if detail != nil {
 		detailText, isText := detail.(string)
 		if !isText || strings.TrimSpace(detailText) == "" {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid_content_part:Image detail must be a non-empty string when provided."}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid_content_part:Image detail must be a non-empty string when provided."}
 		}
 		imageURL.Set("detail", strings.TrimSpace(detailText))
 	}
@@ -141,7 +142,7 @@ func apiNormalizeImagePart(part *jsonutil.Object) (*jsonutil.Object, error) {
 
 // Coded ValueError of a malformed file part
 func apiFileInputError(code, msg string) error {
-	return &PyError{Kind: "ValueError", Msg: code + ":" + msg}
+	return &errorutil.Error{Kind: "ValueError", Msg: code + ":" + msg}
 }
 
 // Bytes and media type of a file_data value, a data: URL or bare base64
@@ -324,8 +325,8 @@ func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error
 				}
 				normalized = append(normalized, file)
 			default:
-				return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("unsupported_content_type:Unsupported content part type %s. "+
-					"Content parts are text/input_text, image_url/input_image and file/input_file.", anyutil.Quote(part.ValueOr("type", nil)))}
+				return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("unsupported_content_type:Unsupported content part type %s. "+
+					"Content parts are text/input_text, image_url/input_image and file/input_file.", quotedValue(part.ValueOr("type", nil)))}
 			}
 		}
 		if len(normalized) == 0 {

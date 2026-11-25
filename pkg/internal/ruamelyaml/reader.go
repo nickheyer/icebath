@@ -114,13 +114,13 @@ func utf8Failure(raw []byte) (int, string, bool) {
 // Character index ahead of the pointer, the IndexError of a read past the trailing NUL
 func (r *reader) peek(index int) rune {
 	if r.pointer+index >= len(r.buffer) {
-		panic(&PyException{Class: "IndexError", Msg: "string index out of range"})
+		panic(&Exception{Class: "IndexError", Msg: "string index out of range"})
 	}
 	return r.buffer[r.pointer+index]
 }
 
 func (r *reader) prefix(length int) []rune {
-	return pySlice(r.buffer, r.pointer, r.pointer+length)
+	return sliceOf(r.buffer, r.pointer, r.pointer+length)
 }
 
 func (r *reader) prefixString(length int) string { return string(r.prefix(length)) }
@@ -129,7 +129,7 @@ func (r *reader) prefixString(length int) string { return string(r.prefix(length
 func (r *reader) forward(length int) {
 	for length != 0 {
 		if r.pointer >= len(r.buffer) {
-			panic(&PyException{Class: "IndexError", Msg: "string index out of range"})
+			panic(&Exception{Class: "IndexError", Msg: "string index out of range"})
 		}
 		ch := r.buffer[r.pointer]
 		r.pointer++
@@ -146,7 +146,7 @@ func (r *reader) forward(length int) {
 
 func (r *reader) peekRaw() rune {
 	if r.pointer >= len(r.buffer) {
-		panic(&PyException{Class: "IndexError", Msg: "string index out of range"})
+		panic(&Exception{Class: "IndexError", Msg: "string index out of range"})
 	}
 	return r.buffer[r.pointer]
 }

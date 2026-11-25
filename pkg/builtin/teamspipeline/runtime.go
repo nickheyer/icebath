@@ -125,7 +125,7 @@ func BuildPipelineRuntimeConfig(gatewayConfig *gateway.GatewayConfig) (*jsonutil
 			}
 		default:
 			if name := anyutil.Kind(value); name == "list" || name == "dict" || name == "set" {
-				return nil, pyError("TypeError", "Teams delivery setting "+key+" is "+errchain.Kind(value)+" where a single value was expected")
+				return nil, kindError("TypeError", "Teams delivery setting "+key+" is "+errchain.Kind(value)+" where a single value was expected")
 			}
 			teamsDelivery.Set(key, value)
 		}
@@ -213,7 +213,7 @@ func BindGatewayRuntime(ctx context.Context, host GatewayRuntimeHost) (bool, err
 	setScheduler := func(scheduler gateway.NotificationScheduler) error {
 		target, ok := adapter.(notificationSchedulerAdapter)
 		if !ok {
-			return pyError("AttributeError", "the Teams adapter cannot take a notification scheduler")
+			return kindError("AttributeError", "the Teams adapter cannot take a notification scheduler")
 		}
 		target.SetNotificationScheduler(scheduler)
 		return nil

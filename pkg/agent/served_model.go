@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var servedModelHeaders = []string{"x-litellm-model-id", "x-litellm-model-api-base"}
@@ -74,7 +75,7 @@ func resultModelFields(a *AIAgent) map[string]any {
 	served := a.LastServedModel()
 	requested := a.model
 	if (served == nil || *served == "") && a.fallbackActivated {
-		primary := strings.TrimSpace(pyStr(pyOr(a.primaryRuntime["model"], "")))
+		primary := strings.TrimSpace(anyutil.String(anyutil.Or(a.primaryRuntime["model"], "")))
 		if primary != "" && primary != a.model {
 			requested, served = primary, &a.model
 		}

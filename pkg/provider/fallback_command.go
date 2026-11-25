@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Fallback command seams, swappable so tests script the picker, the terminal check and the menus
@@ -36,9 +37,9 @@ func FallbackEntryIdentity(entry map[string]any) BackendIdentity {
 
 // FormatFallbackEntry renders one chain entry as model (via provider) with the base URL when set
 func FormatFallbackEntry(entry map[string]any) string {
-	out := fmt.Sprintf("%s  (via %s)", pyStr(dictGet(entry, "model", "?")), pyStr(dictGet(entry, "provider", "?")))
-	if base := entry["base_url"]; pyTruthy(base) {
-		out += "  [" + pyStr(base) + "]"
+	out := fmt.Sprintf("%s  (via %s)", anyutil.String(dictGet(entry, "model", "?")), anyutil.String(dictGet(entry, "provider", "?")))
+	if base := entry["base_url"]; anyutil.IsTrue(base) {
+		out += "  [" + anyutil.String(base) + "]"
 	}
 	return out
 }
@@ -316,7 +317,7 @@ func FallbackCommand(ctx context.Context, h string, ns map[string]any, w, errw i
 	defer RecoverSetupExit(&code)
 	sub := ""
 	if v, ok := ns["fallback_command"]; ok && v != nil {
-		sub = pyStr(v)
+		sub = anyutil.String(v)
 	}
 	switch sub {
 	case "", "list", "ls":

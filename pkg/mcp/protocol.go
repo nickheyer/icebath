@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -151,24 +153,36 @@ type CallToolResult struct {
 	Meta              map[string]any  `json:"_meta,omitempty"`
 }
 
-// Decodes structured content like json.loads, integers kept integers and keys in wire order
+// Decodes structured content and _meta with keys in wire order and integers of any size kept exact integers
 func (r *CallToolResult) UnmarshalJSON(data []byte) error {
 	type wire CallToolResult
 	var w struct {
 		wire
 		StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
+		Meta              json.RawMessage `json:"_meta,omitempty"`
 	}
 	if err := json.Unmarshal(data, &w); err != nil {
 		return err
 	}
 	*r = CallToolResult(w.wire)
-	r.StructuredContent = nil
+	r.StructuredContent, r.Meta = nil, nil
 	if len(w.StructuredContent) > 0 && string(w.StructuredContent) != "null" {
-		v, err := jsonutil.Decode(w.StructuredContent)
+		v, err := jsonutil.DecodeWith(w.StructuredContent, jsonutil.BigInts())
 		if err != nil {
 			return err
 		}
 		r.StructuredContent = v
+	}
+	if len(w.Meta) > 0 && string(w.Meta) != "null" {
+		v, err := jsonutil.DecodeWith(w.Meta, jsonutil.BigInts())
+		if err != nil {
+			return err
+		}
+		meta, ok := v.(*jsonutil.Object)
+		if !ok {
+			return fmt.Errorf("the tool result _meta is %s, expected a mapping", errchain.Kind(v))
+		}
+		r.Meta = meta.Map()
 	}
 	return nil
 }

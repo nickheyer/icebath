@@ -7,33 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/settings"
-	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
-
-// Python truthiness of a decoded config value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case map[string]any:
-		return len(x) > 0
-	case []any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x.Len() > 0
-	}
-	return true
-}
 
 // Message text for the model with the event time captured, the persisted text stripped of stamps and the trigger note
 func (r *GatewayRunner) hmwaApplyMessageTimestamp(ctx context.Context, event *gateway.MessageEvent, messageText any) (any, any, any) {

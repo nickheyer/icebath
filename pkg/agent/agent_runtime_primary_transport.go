@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python exception class names of transient transport failures the primary rebuild retries once
@@ -19,7 +20,8 @@ var transientTransportErrors = map[string]bool{
 
 // Python class name of an API error, the SDK connection and timeout classes for a statusless provider error
 func apiErrorClassName(err error) string {
-	if apiErr, ok := err.(*provider.APIError); ok && apiErr.StatusCode == 0 {
+	var apiErr *provider.APIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 0 {
 		switch apiErr.Kind {
 		case provider.ErrTimeout:
 			return "APITimeoutError"
@@ -129,7 +131,7 @@ func buildAnthropicClientFromRuntime(ctx context.Context, a *AIAgent, rt map[str
 	if err != nil {
 		return err
 	}
-	a.isAnthropicOAuth = pyTruthy(oauth)
+	a.isAnthropicOAuth = anyutil.IsTrue(oauth)
 	a.client = nil
 	return nil
 }

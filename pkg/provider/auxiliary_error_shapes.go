@@ -28,7 +28,7 @@ func (e *AuxSDKError) Unwrap() error { return e.Err }
 func (e *AuxSDKError) ResponseHeaders() http.Header { return e.Headers }
 
 // Python module of the SDK exception classes
-func (e *AuxSDKError) PyModule() string { return "openai" }
+func (e *AuxSDKError) Module() string { return "openai" }
 
 // Base class of each httpx and openai SDK exception class the auxiliary clients raise
 var auxSDKExceptionParents = map[string]string{
@@ -50,11 +50,11 @@ var auxSDKExceptionParents = map[string]string{
 }
 
 var (
-	_ interface{ PyModule() string } = (*AuxSDKError)(nil)
-	_ interface{ PyModule() string } = (*AuxTransportError)(nil)
-	_ interface{ PyModule() string } = (*AWSServiceError)(nil)
-	_ interface{ PyModule() string } = (*AWSReadTimeoutError)(nil)
-	_ interface{ PyModule() string } = (*AWSCredentialError)(nil)
+	_ interface{ Module() string } = (*AuxSDKError)(nil)
+	_ interface{ Module() string } = (*AuxTransportError)(nil)
+	_ interface{ Module() string } = (*AWSServiceError)(nil)
+	_ interface{ Module() string } = (*AWSReadTimeoutError)(nil)
+	_ interface{ Module() string } = (*AWSCredentialError)(nil)
 )
 
 // Python exception class the SDK raised, APIError when unclassified
@@ -86,7 +86,7 @@ const (
 func (e *AuxRuntimeError) Error() string { return e.Message }
 
 // Marks the error as a Python RuntimeError for callers that branch on the exception class
-func (e *AuxRuntimeError) PyRuntimeError() {}
+func (e *AuxRuntimeError) RuntimeError() {}
 
 // HTTP status and error code of a Bedrock service error, zero and empty for any other error
 func auxBotocoreError(err error) (int, string) {

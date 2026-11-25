@@ -81,7 +81,7 @@ func workerClaim(ctx context.Context, c *AuthorityConnection, params *jsonutil.O
 		payload[key] = params.Value(key)
 	}
 	payload["session_id"], payload["principal"] = origin, c.actor.Subject
-	return state.AdmissionFingerprint(pyStrOf(origin), payload)
+	return state.AdmissionFingerprint(anyutil.String(origin), payload)
 }
 
 // Verifies the claim against the stored assignment of the execution the worker names
@@ -109,7 +109,7 @@ func verifyWorkerClaim(ctx context.Context, c *AuthorityConnection, params *json
 		if err != nil {
 			return err
 		}
-		if subtle.ConstantTimeCompare([]byte(pyStrOf(row["adoption_digest"])), []byte(digest)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(anyutil.String(row["adoption_digest"])), []byte(digest)) != 1 {
 			return runtimeRefusal("permission_denied")
 		}
 		return nil

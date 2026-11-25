@@ -6,8 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const xaiRelogin = "Re-authenticate with `icebath model`."
@@ -23,7 +26,7 @@ var xaiRefreshPureAtFn = refreshXAIOAuthPureAt
 // Device code login the xAI login command runs, swappable so tests script the whole browser flow
 var xaiOAuthDeviceCodeLoginFn = xaiOAuthDeviceCodeLogin
 
-func xaiClean(v any) string { return strings.TrimSpace(pyOrStr(v)) }
+func xaiClean(v any) string { return strings.TrimSpace(anyutil.StringOr(v, "")) }
 
 // Stripped access and refresh tokens, empty strings when the value is not a mapping
 func xaiTokenPair(tokens any) (string, string) {
@@ -73,14 +76,14 @@ func xaiValidateOAuthEndpoint(raw, field string) (string, error) {
 	case "":
 		return raw, nil
 	case "scheme":
-		return "", xaiErr(fmt.Sprintf("xAI OIDC discovery returned a non-HTTPS %s: %s.", field, pyStringRepr(raw)), "xai_discovery_invalid", false)
+		return "", xaiErr(fmt.Sprintf("xAI OIDC discovery returned a non-HTTPS %s: %s.", field, strconv.Quote(raw)), "xai_discovery_invalid", false)
 	case "host":
-		return "", xaiErr(fmt.Sprintf("xAI OIDC discovery %s is missing a hostname: %s.", field, pyStringRepr(raw)), "xai_discovery_invalid", false)
+		return "", xaiErr(fmt.Sprintf("xAI OIDC discovery %s is missing a hostname: %s.", field, strconv.Quote(raw)), "xai_discovery_invalid", false)
 	}
 	return "", xaiErr(fmt.Sprintf("xAI OIDC discovery %s host %s is not on the xAI origin "+
 		"(expected x.ai or a *.x.ai subdomain). Refusing to use a cached "+
 		"endpoint that may have been substituted by a MITM during initial "+
-		"discovery; re-authenticate with `icebath model` to re-fetch.", field, pyStringRepr(host)), "xai_discovery_invalid", false)
+		"discovery; re-authenticate with `icebath model` to re-fetch.", field, strconv.Quote(host)), "xai_discovery_invalid", false)
 }
 
 // Pins the OAuth inference base URL to the xAI origin, warning and using the fallback on rejection
@@ -91,7 +94,7 @@ func xaiValidateInferenceBaseURL(env PoolEnv, value, fallback string) string {
 	}
 	problem, host, err := xaiURLProblem(candidate)
 	if err != nil {
-		env.log().Warn(fmt.Sprintf("Ignoring malformed xAI base_url override %s; using %s instead.", pyStringRepr(candidate), fallback))
+		env.log().Warn(fmt.Sprintf("Ignoring malformed xAI base_url override %s; using %s instead.", strconv.Quote(candidate), fallback))
 		return fallback
 	}
 	switch problem {
@@ -99,14 +102,14 @@ func xaiValidateInferenceBaseURL(env PoolEnv, value, fallback string) string {
 		return candidate
 	case "scheme":
 		env.log().Warn(fmt.Sprintf("Refusing non-HTTPS xAI base_url override %s (xai-oauth bearer would "+
-			"be sent in cleartext); falling back to %s.", pyStringRepr(candidate), fallback))
+			"be sent in cleartext); falling back to %s.", strconv.Quote(candidate), fallback))
 	case "host":
-		env.log().Warn(fmt.Sprintf("Ignoring xAI base_url override %s with no hostname; using %s instead.", pyStringRepr(candidate), fallback))
+		env.log().Warn(fmt.Sprintf("Ignoring xAI base_url override %s with no hostname; using %s instead.", strconv.Quote(candidate), fallback))
 	default:
 		env.log().Warn(fmt.Sprintf("Refusing xAI base_url override %s — host %s is not on the xAI origin "+
 			"(expected x.ai or a *.x.ai subdomain). The xai-oauth bearer is only "+
 			"valid against xAI's inference API; sending it elsewhere would leak "+
-			"the credential. Falling back to %s.", pyStringRepr(candidate), pyStringRepr(host), fallback))
+			"the credential. Falling back to %s.", strconv.Quote(candidate), strconv.Quote(host), fallback))
 	}
 	return fallback
 }
@@ -157,7 +160,7 @@ func xaiOAuthDiscovery(ctx context.Context, timeout time.Duration) (map[string]s
 
 // Token block persisted for xAI OAuth, keeping the prior refresh token when none rotated in
 func xaiTokensFromPayload(payload map[string]any, accessToken, fallbackRefresh string) map[string]any {
-	refresh := pyOrStr(payload["refresh_token"])
+	refresh := anyutil.StringOr(payload["refresh_token"], "")
 	if refresh == "" {
 		refresh = fallbackRefresh
 	}
@@ -363,7 +366,7 @@ func xaiOAuthPollDeviceToken(ctx context.Context, client *http.Client, tokenEndp
 		pollInterval: pollInterval,
 		validateSuccess: func(payload map[string]any) error {
 			for _, f := range [][2]string{{"access_token", "an"}, {"refresh_token", "a"}} {
-				if !pyTruthy(payload[f[0]]) {
+				if !anyutil.IsTrue(payload[f[0]]) {
 					return xaiErr(fmt.Sprintf("xAI device-code token response did not include %s %s.", f[1], f[0]), "xai_device_token_invalid", false)
 				}
 			}
@@ -373,15 +376,15 @@ func xaiOAuthPollDeviceToken(ctx context.Context, client *http.Client, tokenEndp
 			return xaiErr("xAI device-code token polling returned a non-JSON error response.", "xai_device_token_failed", false)
 		},
 		onError: func(resp *oauthHTTPResponse, payload map[string]any) error {
-			description := pyOrStr(payload["error_description"])
+			description := anyutil.StringOr(payload["error_description"], "")
 			if description == "" {
-				description = pyOrStr(payload["error"])
+				description = anyutil.StringOr(payload["error"], "")
 			}
 			if description == "" {
 				description = string(resp.Body)
 			}
 			ae := xaiErr("xAI device-code token polling failed: "+description, "xai_device_token_failed", false)
-			ae.Err = &SignInCopyError{Message: description, OAuthErrorCode: pyOrStr(payload["error"])}
+			ae.Err = &SignInCopyError{Message: description, OAuthErrorCode: anyutil.StringOr(payload["error"], "")}
 			return ae
 		},
 		onTimeout: func(error) error {
@@ -411,25 +414,25 @@ func xaiOAuthDeviceCodeLogin(env PoolEnv, out io.Writer, timeout time.Duration, 
 	if err != nil {
 		return nil, err
 	}
-	interval, ok := pyInt(deviceData["interval"])
+	interval, ok := wholeNumber(deviceData["interval"])
 	if !ok {
-		return nil, fmt.Errorf("the device code interval %s is not a whole number", pyStr(deviceData["interval"]))
+		return nil, fmt.Errorf("the device code interval %s is not a whole number", anyutil.String(deviceData["interval"]))
 	}
-	expiresIn, ok := pyInt(deviceData["expires_in"])
+	expiresIn, ok := wholeNumber(deviceData["expires_in"])
 	if !ok {
-		return nil, fmt.Errorf("the device code lifetime %s is not a whole number", pyStr(deviceData["expires_in"]))
+		return nil, fmt.Errorf("the device code lifetime %s is not a whole number", anyutil.String(deviceData["expires_in"]))
 	}
-	verificationURL := pyOrStr(deviceData["verification_uri_complete"])
+	verificationURL := anyutil.StringOr(deviceData["verification_uri_complete"], "")
 	if verificationURL == "" {
-		verificationURL = pyStr(deviceData["verification_uri"])
+		verificationURL = anyutil.String(deviceData["verification_uri"])
 	}
-	err = printDeviceCodeInstructions(out, verificationURL, pyStr(deviceData["user_code"]),
+	err = printDeviceCodeInstructions(out, verificationURL, anyutil.String(deviceData["user_code"]),
 		openBrowser && !isRemoteSession() && canOpenGraphicalBrowser(), "", true)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(out, "Waiting for approval (polling every %ds)...\n", max(1, interval))
-	payload, err := xaiOAuthPollDeviceToken(ctx, client, discovery["token_endpoint"], pyStr(deviceData["device_code"]), expiresIn, interval)
+	payload, err := xaiOAuthPollDeviceToken(ctx, client, discovery["token_endpoint"], anyutil.String(deviceData["device_code"]), expiresIn, interval)
 	if err != nil {
 		return nil, err
 	}

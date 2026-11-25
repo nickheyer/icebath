@@ -13,7 +13,7 @@ import (
 var windowsDepsProvider = filepath.Join("scripts", "build", "windows-deps.ps1")
 
 // FileNotFoundError text a missing PowerShell raises
-var errNoPowerShell = &PyError{Class: "FileNotFoundError", Message: "PowerShell is required to prepare Windows ARM64 build dependencies"}
+var errNoPowerShell = &ClassError{Class: "FileNotFoundError", Message: "PowerShell is required to prepare Windows ARM64 build dependencies"}
 
 // Runs the checkout's Windows ARM64 build dependency provider and returns the environment it prepared
 func PrepareWindowsEnvironment(source, state string, env map[string]string) (map[string]string, error) {
@@ -54,9 +54,9 @@ func PrepareWindowsEnvironment(source, state string, env map[string]string) (map
 	}
 	decoded, err := loadJSON(data)
 	if err != nil {
-		return nil, &PyError{Class: "ValueError", Message: err.Error()}
+		return nil, &ClassError{Class: "ValueError", Message: err.Error()}
 	}
-	invalid := &PyError{Class: "ValueError", Message: "Windows build dependency provider returned an invalid environment"}
+	invalid := &ClassError{Class: "ValueError", Message: "Windows build dependency provider returned an invalid environment"}
 	object, ok := decoded.(map[string]any)
 	if !ok {
 		return nil, invalid
@@ -85,11 +85,11 @@ func sourceBuildEnvironment(ctx context.Context, source string) (map[string]stri
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := PrepareWindowsEnvironment(source, filepath.Dir(store), pyEnviron())
+	prepared, err := PrepareWindowsEnvironment(source, filepath.Dir(store), environValue())
 	if err != nil {
 		return nil, err
 	}
-	bridged, err := BridgedIndexSettings(pyEnviron(), "")
+	bridged, err := BridgedIndexSettings(environValue(), "")
 	if err != nil {
 		return nil, err
 	}

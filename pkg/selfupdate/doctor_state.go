@@ -103,7 +103,7 @@ func doctorTruthy(v any) bool {
 	if o, ok := v.(*jsonutil.Object); ok {
 		return o != nil && o.Len() > 0
 	}
-	return config.PyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Float value of a Python number, false for anything else
@@ -1056,7 +1056,7 @@ func checkProfiles(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 			if p.GatewayRunning {
 				parts = append(parts, "gateway running")
 			}
-			if config.PyTruthy(p.Model) {
+			if anyutil.IsTrue(p.Model) {
 				model, ok := p.Model.(string)
 				if !ok {
 					return fmt.Errorf("profile model is %s where text was expected", errchain.Kind(p.Model))

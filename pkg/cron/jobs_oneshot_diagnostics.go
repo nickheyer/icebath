@@ -11,16 +11,16 @@ import (
 // Writes a diagnostic into the job output directory, false when the write failed
 func writeOneshotDiagnostic(ctx context.Context, s *Store, job *Job, text, what string) bool {
 	if _, err := s.SaveJobOutput(home.WithOverride(ctx, s.home), job.ID, text); err != nil {
-		s.log.Debug(fmt.Sprintf("Failed to write %s diagnostic for job '%s'", what, job.ID), "error", err)
+		s.log.Debug(fmt.Sprintf("Failed to write %s diagnostic for job %q", what, job.ID), "error", err)
 		return false
 	}
 	return true
 }
 
-// Name as str(job.get("name")) renders it, None when the record has no name key
+// Name of the job for a diagnostic, (unnamed) when the record has no name
 func diagnosticName(job *Job) string {
-	if !job.hasKey("name") {
-		return "None"
+	if !job.hasKey("name") || job.Name == "" {
+		return "(unnamed)"
 	}
 	return job.Name
 }
@@ -32,7 +32,7 @@ func writeWedged(ctx context.Context, s *Store, job *Job) {
 	}
 	completed, times := "?", "?"
 	if job.Repeat != nil {
-		completed, times = strconv.Itoa(job.Repeat.Completed), "None"
+		completed, times = strconv.Itoa(job.Repeat.Completed), "unlimited"
 		if job.Repeat.Times != nil {
 			times = strconv.Itoa(*job.Repeat.Times)
 		}
@@ -58,7 +58,7 @@ func writeWedged(ctx context.Context, s *Store, job *Job) {
 		"job has been removed to stop it re-firing; recreate it to run " +
 		"again.\n"
 	if writeOneshotDiagnostic(home.WithOverride(ctx, s.home), s, job, text, "wedged-oneshot") {
-		s.log.Warn(fmt.Sprintf("Job '%s': removed without a completed run — diagnostic written to its output directory", oneshotLabel(job)))
+		s.log.Warn(fmt.Sprintf("Job %q: removed without a completed run — diagnostic written to its output directory", oneshotLabel(job)))
 	}
 }
 
@@ -72,7 +72,7 @@ func writeMissed(ctx context.Context, s *Store, job *Job, nextRun string) {
 		fmt.Sprintf("- removed at: %s\n\n", s.clk.nowISO()) +
 		"This one-shot's run time is more than the grace window in the " +
 		"past (scheduler down past the window, host asleep, or jobs.json " +
-		"edited), which is outside the 'will never fire' contract " +
+		"edited), which is outside the \"will never fire\" contract " +
 		"enforced at create/update/resume time. The job was removed " +
 		"without running; recreate it (or use the Run button) to " +
 		"schedule it again.\n"

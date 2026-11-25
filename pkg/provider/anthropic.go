@@ -469,7 +469,7 @@ func anthApplyClaudeCodeIdentity(system any, tools []map[string]any, messages []
 		for _, rep := range anthOAuthSystemReplacements {
 			text = strings.ReplaceAll(text, rep[0], rep[1])
 		}
-		block["text"] = anthApplyOAuthProseAliases(anthRewriteSlug(text))
+		setBlockField(b, "text", anthApplyOAuthProseAliases(anthRewriteSlug(text)))
 	}
 	for _, tool := range tools {
 		if name, ok := tool["name"].(string); ok {
@@ -490,7 +490,7 @@ func anthApplyClaudeCodeIdentity(system any, tools []map[string]any, messages []
 				continue
 			}
 			if name, ok := block["name"].(string); ok {
-				block["name"] = toWire(name)
+				setBlockField(b, "name", toWire(name))
 			}
 		}
 	}
@@ -730,9 +730,7 @@ func anthBufferToolInput(kwargs map[string]any, baseURL string) {
 	}
 	tools, _ := asList(kwargs["tools"])
 	for _, t := range tools {
-		if tool, ok := asMap(t); ok {
-			tool["eager_input_streaming"] = false
-		}
+		setBlockField(t, "eager_input_streaming", false)
 	}
 }
 
@@ -758,12 +756,10 @@ func anthTranslateResponseFormat(kwargs map[string]any, responseFormat map[strin
 	default:
 		return
 	}
-	cfg, ok := asMap(kwargs["output_config"])
-	if !ok {
-		cfg = map[string]any{}
-		kwargs["output_config"] = cfg
+	if _, ok := asMap(kwargs["output_config"]); !ok {
+		kwargs["output_config"] = map[string]any{}
 	}
-	cfg["format"] = map[string]any{"type": "json_schema", "schema": schema}
+	setBlockField(kwargs["output_config"], "format", map[string]any{"type": "json_schema", "schema": schema})
 }
 
 // Reports a 400 telling an OAuth subscription that the 1M context beta is not available to it
@@ -846,7 +842,7 @@ func newAnthropicClientWithBearerHook(route Route) (*anthropicClient, error) {
 	config.NormalizeProxyEnvVars()
 	c := &anthropicClient{route: route, variant: "direct", transports: map[time.Duration]*http.Transport{}, transport: newAnthDirectTransport(route)}
 	if len(route.Headers) > 0 {
-		c.defaultHeaders = pyHeaderDictOf(orderedExtraHeaders(route.Headers)...)
+		c.defaultHeaders = newSDKHeaders(orderedExtraHeaders(route.Headers)...)
 	}
 	var sendsAsAPIKey func(string) bool
 	if isNativeAnthropicHost(route.BaseURL) {
@@ -907,7 +903,7 @@ func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, bod
 		return nil, err
 	}
 	req.Host = httpxHost(target)
-	return withHeader(req, httpxPreparedLines(req, lines, len(data))), nil
+	return withHeader(req, lines), nil
 }
 
 func (t *anthDirectTransport) Events(resp *http.Response) anthEventSource {
@@ -974,14 +970,14 @@ type anthropicClient struct {
 	hookStyle        func(context.Context) string
 	// Timeout the SDK client was built with, zero for the route timeout
 	sdkTimeout time.Duration
-	// default_headers the SDK client keeps beyond its builder's own, in declaration order
-	defaultHeaders *pyHeaderDict
+	// Default headers the SDK client keeps beyond its builder's own
+	defaultHeaders *sdkHeaders
 }
 
 func newAnthropicClient(route Route) (Client, error) {
 	c := &anthropicClient{route: route, variant: "direct", transports: map[time.Duration]*http.Transport{}}
 	if len(route.Headers) > 0 {
-		c.defaultHeaders = pyHeaderDictOf(orderedExtraHeaders(route.Headers)...)
+		c.defaultHeaders = newSDKHeaders(orderedExtraHeaders(route.Headers)...)
 	}
 	switch {
 	case anthRouteIsBedrock(route):
@@ -1136,7 +1132,7 @@ type anthPrepared struct {
 // Client spec and per call extra headers of one Messages request, the head the reference SDK client writes for it
 type anthHead struct {
 	spec  anthSDKClientSpec
-	extra *pyHeaderDict
+	extra *sdkHeaders
 }
 
 // Wire lines of a messages.stream call when stream is set, else of a messages.create call, with the call timeout
@@ -1154,31 +1150,23 @@ func (h anthHead) withExtra(raw any) anthHead {
 	if len(lines) == 0 {
 		return h
 	}
-	extra := &pyHeaderDict{}
-	if h.extra != nil {
-		extra.entries = append(extra.entries, h.extra.entries...)
-	}
-	extra.update(pyHeaderDictOf(lines...))
+	extra := h.extra.clone()
+	extra.update(newSDKHeaders(lines...))
 	return anthHead{spec: h.spec, extra: extra}
 }
 
-// anthropic-beta dict of the betas, empty without any
-func anthBetaHeaderDict(betas []string) *pyHeaderDict {
-	d := &pyHeaderDict{}
+// anthropic-beta header of the betas, an empty set without any
+func anthBetaHeaderSet(betas []string) *sdkHeaders {
+	d := newSDKHeaders()
 	if len(betas) > 0 {
 		d.set("anthropic-beta", strings.Join(betas, ","))
 	}
 	return d
 }
 
-// Client attribution headers sent to Kimi and OpenCode, in the order of the reference dict
-func anthAttributionHeaderDict() *pyHeaderDict {
-	attribution := attributionHeaders("IcebathAgent")
-	d := &pyHeaderDict{}
-	for _, name := range []string{"HTTP-Referer", "X-Title", "User-Agent"} {
-		d.set(name, attribution[name])
-	}
-	return d
+// Client attribution headers sent to Kimi and OpenCode
+func anthAttributionHeaderSet() *sdkHeaders {
+	return newSDKHeaders(orderedExtraHeaders(attributionHeaders("IcebathAgent"))...)
 }
 
 // User-agent the Claude Code identity carries
@@ -1198,44 +1186,44 @@ func (c *anthropicClient) sdkReadTimeout() time.Duration {
 
 // SDK client of the route as the reference builders construct it, with the auth style the request takes
 func (c *anthropicClient) sdkClientSpec(ctx context.Context, betas []string) (anthSDKClientSpec, string) {
-	spec := anthSDKClientSpec{class: "Anthropic", readTimeout: pyFloatRepr(c.sdkReadTimeout().Seconds())}
+	spec := anthSDKClientSpec{class: "Anthropic", readTimeout: floatRepr(c.sdkReadTimeout().Seconds())}
 	if c.variant != "direct" {
 		spec.class = "AnthropicBedrock"
 		if c.variant == "vertex" {
 			spec.class = "AnthropicVertex"
 		}
-		headers := anthBetaHeaderDict(betas)
+		headers := anthBetaHeaderSet(betas)
 		if c.variant == "bedrock" {
-			headers.update(bedrockGuardrailHeaderDict(ctx))
+			headers.update(bedrockGuardrailHeaderSet(ctx))
 		}
 		spec.custom = stainlessMergeHeaders(headers, c.defaultHeaders)
 		return spec, "platform"
 	}
-	headers := &pyHeaderDict{}
+	headers := newSDKHeaders()
 	var style string
 	if c.hookStyle != nil {
 		style = c.hookStyle(ctx)
 		token := "entra-id-bearer-via-http-hook"
 		spec.authToken = &token
 		if style == "oauth" {
-			headers = anthBetaHeaderDict(append(cloneStrings(betas), anthropicOAuthOnlyBetas...))
+			headers = anthBetaHeaderSet(append(cloneStrings(betas), anthropicOAuthOnlyBetas...))
 			headers.set("user-agent", anthClaudeCodeUserAgent())
 			headers.set("x-app", "cli")
 		} else {
-			headers = anthBetaHeaderDict(betas)
+			headers = anthBetaHeaderSet(betas)
 		}
 		headers.omit("X-Api-Key")
 	} else {
 		key := strings.TrimSpace(c.route.APIKey)
 		style = anthAuthStyle(key, c.route.BaseURL, anthNormalizedBaseURL(c.route.BaseURL))
 		if style == "oauth" {
-			headers = anthBetaHeaderDict(append(cloneStrings(betas), anthropicOAuthOnlyBetas...))
+			headers = anthBetaHeaderSet(append(cloneStrings(betas), anthropicOAuthOnlyBetas...))
 		} else {
-			headers = anthBetaHeaderDict(betas)
+			headers = anthBetaHeaderSet(betas)
 		}
 		switch style {
 		case "kimi":
-			attributed := anthAttributionHeaderDict()
+			attributed := anthAttributionHeaderSet()
 			attributed.update(headers)
 			headers = attributed
 		case "oauth":
@@ -1243,9 +1231,9 @@ func (c *anthropicClient) sdkClientSpec(ctx context.Context, betas []string) (an
 			headers.set("x-app", "cli")
 		}
 		if isOpenCodeEndpoint(c.route.BaseURL) {
-			for _, e := range anthAttributionHeaderDict().entries {
-				if _, present := headers.get(e.name); !present && !headers.omitted(e.name) {
-					headers.put(e)
+			for _, f := range anthAttributionHeaderSet().fields() {
+				if !headers.has(f.Name) {
+					headers.set(f.Name, f.Value)
 				}
 			}
 		}
@@ -1257,7 +1245,7 @@ func (c *anthropicClient) sdkClientSpec(ctx context.Context, betas []string) (an
 			headers.omit("Authorization")
 		}
 	}
-	headers.update(pyHeaderDictOf(anthCustomProviderExtraHeaders(ctx, c.route.BaseURL)...))
+	headers.update(newSDKHeaders(anthCustomProviderExtraHeaders(ctx, c.route.BaseURL)...))
 	spec.custom = stainlessMergeHeaders(headers, c.defaultHeaders)
 	return spec, style
 }
@@ -1265,13 +1253,8 @@ func (c *anthropicClient) sdkClientSpec(ctx context.Context, betas []string) (an
 // Head of one request, the client spec of the route and the call extra headers over the context's per request headers
 func (c *anthropicClient) requestHeaders(ctx context.Context, betas []string, extraHeaders any) (anthHead, bool, error) {
 	spec, style := c.sdkClientSpec(ctx, betas)
-	extra := &pyHeaderDict{}
-	for _, l := range orderedExtraHeaders(extraHeaders) {
-		extra.set(l.Name, l.Value)
-	}
-	for _, l := range orderedExtraHeaders(providerRequestHeaders(ctx)) {
-		extra.set(l.Name, l.Value)
-	}
+	extra := newSDKHeaders(orderedExtraHeaders(extraHeaders)...)
+	extra.update(newSDKHeaders(orderedExtraHeaders(providerRequestHeaders(ctx))...))
 	return anthHead{spec: spec, extra: extra}, style == "oauth", nil
 }
 

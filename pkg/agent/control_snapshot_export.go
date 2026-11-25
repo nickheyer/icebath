@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/goals"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -56,9 +57,9 @@ func ControlSnapshot(ctx context.Context, getMeta func(ctx context.Context, key 
 	if goal != nil {
 		status, _ := goal.Get("status")
 		barrier, _ := goal.Get("wait_barrier")
-		deferred = pyStr(status) == "active" && barrier == nil
+		deferred = anyutil.String(status) == "active" && barrier == nil
 	}
-	loop := safeLoopSnapshot(loopState, deferred && loopState != nil && pyStr(loopState.Status) == "active")
+	loop := safeLoopSnapshot(loopState, deferred && loopState != nil && anyutil.String(loopState.Status) == "active")
 	heartbeat := safeHeartbeatSnapshot(heartbeatState)
 	revision, err := controlSnapshotRevision(goal, loop, heartbeat)
 	if err != nil {

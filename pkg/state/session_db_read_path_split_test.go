@@ -231,7 +231,7 @@ func TestAnchoredViewAndAroundUseReadPath(t *testing.T) {
 	}
 	for _, got := range []*jsonutil.Object{around, view} {
 		window, _ := got.Get("window")
-		if !pyTruthy(window) {
+		if !anyutil.IsTrue(window) {
 			t.Fatalf("empty window in %v", got)
 		}
 	}

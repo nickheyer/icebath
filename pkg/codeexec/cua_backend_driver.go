@@ -264,7 +264,7 @@ func manifestContractReason(manifest *jsonutil.Object) (string, error) {
 	}
 	advertised := map[string]map[string]bool{}
 	subs, _ := manifest.Get("subcommands")
-	subList, err := pyIterItems(subs)
+	subList, err := iterItems(subs)
 	if err != nil {
 		return "", err
 	}
@@ -280,7 +280,7 @@ func manifestContractReason(manifest *jsonutil.Object) (string, error) {
 		}
 		set := map[string]bool{}
 		argsRaw, _ := cmd.Get("args")
-		argList, err := pyIterItems(argsRaw)
+		argList, err := iterItems(argsRaw)
 		if err != nil {
 			return "", err
 		}
@@ -312,7 +312,7 @@ func manifestContractReason(manifest *jsonutil.Object) (string, error) {
 }
 
 // Items a for loop over value or an empty list visits, the TypeError for a non iterable truthy value
-func pyIterItems(value any) ([]any, error) {
+func iterItems(value any) ([]any, error) {
 	if !anyutil.IsTrue(value) {
 		return nil, nil
 	}

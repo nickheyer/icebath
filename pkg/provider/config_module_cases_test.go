@@ -258,7 +258,7 @@ func TestProviderEnabledRuntimeGateDisabledCustomProviderRaisesValueerror(t *tes
 	if !errors.As(err, &valueErr) || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("resolution error %v", err)
 	}
-	if err.Error() != "provider 'my-fork' is disabled in config (providers.my-fork.enabled: false)" {
+	if err.Error() != `provider "my-fork" is disabled in config (providers.my-fork.enabled: false)` {
 		t.Fatalf("message %q", err.Error())
 	}
 }

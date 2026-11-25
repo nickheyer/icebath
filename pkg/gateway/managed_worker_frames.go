@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -104,7 +105,7 @@ func ResultFrame(result *jsonutil.Object) *jsonutil.Object {
 
 // Invalid worker result refusal
 func invalidWorkerResult() error {
-	return &PyError{Kind: "ValueError", Msg: "invalid_worker_result"}
+	return &errorutil.Error{Kind: "ValueError", Msg: "invalid_worker_result"}
 }
 
 // Sum of two receipt scalars: texts joined, numbers added with bools as 0 and 1, a TypeError for a mixed text and number pair
@@ -117,7 +118,7 @@ func scalarAdd(left, right any) (any, error) {
 	_, leftText := left.(string)
 	_, rightText := right.(string)
 	if leftText || rightText || left == nil || right == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("cannot add %s to %s", errchain.Kind(right), errchain.Kind(left))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot add %s to %s", errchain.Kind(right), errchain.Kind(left))}
 	}
 	lf, leftFloat := left.(float64)
 	rf, rightFloat := right.(float64)
@@ -234,21 +235,21 @@ func ReadFrame(stream *bufio.Reader) (*jsonutil.Object, error) {
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		return nil, &PyError{Kind: "OSError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "OSError", Msg: err.Error()}
 	}
 	if len(line) == 0 {
-		return nil, &PyError{Kind: "EOFError", Msg: "managed_worker_pipe_closed"}
+		return nil, &errorutil.Error{Kind: "EOFError", Msg: "managed_worker_pipe_closed"}
 	}
 	if len(line) > MaxManagedFrame || line[len(line)-1] != '\n' {
-		return nil, &PyError{Kind: "ValueError", Msg: "managed_worker_frame_too_large"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "managed_worker_frame_too_large"}
 	}
 	decoded, err := jsonutil.Decode(line)
 	if err != nil {
-		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
 	frame, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid_managed_worker_frame"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid_managed_worker_frame"}
 	}
 	return frame, nil
 }
@@ -259,13 +260,13 @@ func EncodeFrame(frame any) ([]byte, error) {
 	if err != nil {
 		var typeErr *json.UnsupportedTypeError
 		if errors.As(err, &typeErr) {
-			return nil, &PyError{Kind: "TypeError", Msg: err.Error()}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: err.Error()}
 		}
-		return nil, &PyError{Kind: "ValueError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: err.Error()}
 	}
 	data := append([]byte(text), '\n')
 	if len(data) > MaxManagedFrame {
-		return nil, &PyError{Kind: "ValueError", Msg: "managed_worker_frame_too_large"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "managed_worker_frame_too_large"}
 	}
 	return data, nil
 }

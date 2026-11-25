@@ -114,8 +114,10 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if r, ok := get("route").(*jsonutil.Object); ok {
 		s.Route = r
 	}
-	float := func(key string) (float64, error) { return anyutil.ToFloat(pyOr(d.ValueOr(key, 0.0), 0.0)) }
-	integer := func(key string, def int64) (int64, error) { return anyutil.ToInt(pyOr(d.ValueOr(key, def), int64(0))) }
+	float := func(key string) (float64, error) { return anyutil.ToFloat(anyutil.Or(d.ValueOr(key, 0.0), 0.0)) }
+	integer := func(key string, def int64) (int64, error) {
+		return anyutil.ToInt(anyutil.Or(d.ValueOr(key, def), int64(0)))
+	}
 	if s.IntervalSeconds, err = float("interval_seconds"); err != nil {
 		return nil, err
 	}
@@ -125,7 +127,7 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if s.Times, err = integer("times", 0); err != nil {
 		return nil, err
 	}
-	s.Until = anyutil.String(pyOr(d.ValueOr("until", ""), ""))
+	s.Until = anyutil.String(anyutil.Or(d.ValueOr("until", ""), ""))
 	if s.MaxTicks, err = integer("max_ticks", int64(settings.LoopsMaxTicks.Default)); err != nil {
 		return nil, err
 	}
@@ -141,8 +143,8 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if s.NextDueAt, err = float("next_due_at"); err != nil {
 		return nil, err
 	}
-	s.AwaitingResponse = pyTruthy(d.ValueOr("awaiting_response", false))
-	s.LastResponseDigest = anyutil.String(pyOr(d.ValueOr("last_response_digest", ""), ""))
+	s.AwaitingResponse = anyutil.IsTrue(d.ValueOr("awaiting_response", false))
+	s.LastResponseDigest = anyutil.String(anyutil.Or(d.ValueOr("last_response_digest", ""), ""))
 	return s, nil
 }
 
@@ -231,7 +233,7 @@ func ListActiveLoops(ctx context.Context) []ActiveLoop {
 	}
 	for _, e := range entries {
 		sessionID := e.Key[len(loopMetaPrefix):]
-		if sessionID == "" || !pyTruthy(e.Value) {
+		if sessionID == "" || !anyutil.IsTrue(e.Value) {
 			continue
 		}
 		if st := parseLoopState(e.Value, ""); st != nil && st.Status == "active" {
@@ -319,7 +321,7 @@ func (m *LoopManager) Pause(ctx context.Context, reason string) (*SessionLoopSta
 	if s == nil {
 		return nil, nil
 	}
-	in, err := pyStatusIn(s.Status, "active", "paused")
+	in, err := statusIn(s.Status, "active", "paused")
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +362,7 @@ func (m *LoopManager) Clear(ctx context.Context) bool {
 }
 
 // Python membership of a stored value in a set of strings, the TypeError for an unhashable value
-func pyStatusIn(v any, members ...string) (bool, error) {
+func statusIn(v any, members ...string) (bool, error) {
 	switch v.(type) {
 	case []any, *jsonutil.Object:
 		return false, &errorutil.Error{Kind: "TypeError", Msg: "stored loop status is " + errchain.Kind(v) + " where text was expected"}

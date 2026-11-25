@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 type deliveryAdapter struct {
@@ -208,7 +210,7 @@ func TestDeliverTracksDeadTargetsAndSavesLocal(t *testing.T) {
 	if ClassifyDeadError("Bad Request: message thread not found; chat not found") != "" || ClassifyDeadError("Bad Request: chat not found") != "not_found" {
 		t.Fatal("only a whole chat not found is dead")
 	}
-	if ClassifySendError(&PyError{Kind: "ConnectError", Msg: "x"}, "") != "transient" || ClassifySendError(nil, "Message is too long") != "too_long" ||
+	if ClassifySendError(&errorutil.Error{Kind: "ConnectError", Msg: "x"}, "") != "transient" || ClassifySendError(nil, "Message is too long") != "too_long" ||
 		ClassifySendError(nil, "can't parse entities") != "bad_format" || ClassifySendError(nil, "Too Many Requests") != "rate_limited" || ClassifySendError(nil, "?") != "unknown" {
 		t.Fatal("classifier")
 	}

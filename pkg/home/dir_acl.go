@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -209,15 +210,11 @@ func expectedFinal(ctx context.Context, path string) (string, error) {
 	return pathutil.Join(real, parts...), nil
 }
 
-func excText(err error) string {
-	_, text := excInfo(err)
-	return text
-}
-
+// Warns that an elevated grant stopped at a junction or link on the way to path
 func warnRefused(path string, err error) {
 	pkgLog().Warn(fmt.Sprintf("Not granting the current user access to %s while elevated (%s): an elevated grant "+
 		"never follows a junction or link out of the Icebath home. If this is your own link, "+
-		"point ICEBATH_HOME (or the link) at the real directory.", path, excText(err)))
+		"point ICEBATH_HOME (or the link) at the real directory.", path, errchain.OSText(err)))
 }
 
 // Gives the user an inheriting full control ACE on path when elevated, true when the grant took
@@ -248,7 +245,7 @@ func GrantUserAccess(ctx context.Context, path string, elevated, repairChildren 
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Could not grant the current user access to %s created while elevated (%s); a "+
 			"non-elevated Icebath may not be able to use it. To repair, from an elevated prompt run: "+
-			"icacls \"%s\" /reset /t", target, excText(err), target))
+			"icacls \"%s\" /reset /t", target, errchain.OSText(err), target))
 		return false
 	}
 	if repairChildren && owed {
@@ -406,11 +403,7 @@ func grantEntries(root, realRoot string, entries []treeEntry, skipped []string) 
 		case errors.As(err, &refused):
 			skipped = append(skipped, e.path)
 		case err != nil:
-			cls, text := excInfo(err)
-			if text == "" {
-				text = cls
-			}
-			failed = append(failed, GrantFailure{e.path, text})
+			failed = append(failed, GrantFailure{e.path, errchain.OSText(err)})
 		default:
 			granted++
 		}
@@ -432,12 +425,12 @@ func MakeUserDir(ctx context.Context, path string, mode os.FileMode, parents, ex
 }
 
 func makeUserDir(ctx context.Context, path string, mode os.FileMode, parents, existOK, elevated bool) (string, error) {
-	target := filepath.Clean(path)
+	target := pathutil.CleanKeepDotDot(path)
 	if !elevated {
 		return target, pathMkdir(target, mode, parents, existOK)
 	}
 	var created []string
-	for probe := target; !pathExists(probe) && filepath.Dir(filepath.Clean(probe)) != probe; probe = filepath.Dir(filepath.Clean(probe)) {
+	for probe := target; !pathExists(probe) && pathutil.DirKeepDotDot(probe) != probe; probe = pathutil.DirKeepDotDot(probe) {
 		created = append(created, probe)
 	}
 	if err := pathMkdir(target, mode, parents, existOK); err != nil {
@@ -505,7 +498,7 @@ func pathMkdir(p string, mode os.FileMode, parents, existOK bool) error {
 		return nil
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		parent := filepath.Dir(filepath.Clean(p))
+		parent := pathutil.DirKeepDotDot(p)
 		if !parents || parent == p {
 			return err
 		}

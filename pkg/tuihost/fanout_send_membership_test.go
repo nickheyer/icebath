@@ -138,7 +138,7 @@ func TestDetachDiscardsBatchWaitingForSendLock(t *testing.T) {
 				FanoutMaxPendingFrames = 2
 				defer func() { FanoutMaxPendingFrames = savedFrames }()
 				for index := range 3 {
-					fanout.WriteOverflow(deltaEvent(pyStrInt(index), "session"), func(Transport) *jsonutil.Object { return notice })
+					fanout.WriteOverflow(deltaEvent(strInt(index), "session"), func(Transport) *jsonutil.Object { return notice })
 				}
 				if fanout.Contains(transport) {
 					t.Fatal("overflowed peer kept its subscription")
@@ -199,7 +199,7 @@ func TestDetachDiscardsBatchWaitingForSendLock(t *testing.T) {
 }
 
 // Decimal text of a small index
-func pyStrInt(n int) string { return string(rune('0' + n)) }
+func strInt(n int) string { return string(rune('0' + n)) }
 
 func TestDetachDiscardsUnsentTailOfCapturedBatch(t *testing.T) {
 	for _, reattach := range []bool{false, true} {

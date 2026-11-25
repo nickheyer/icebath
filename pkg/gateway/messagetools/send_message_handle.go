@@ -353,7 +353,7 @@ func handleSend(ctx context.Context, args map[string]any) (string, error) {
 	return dumpsResult(result), nil
 }
 
-// Mentions argument as a list, a lone string wrapped
+// Mentions argument as a list, a lone string wrapped, null items skipped
 func mentionList(v any) []string {
 	switch m := v.(type) {
 	case string:
@@ -363,7 +363,9 @@ func mentionList(v any) []string {
 	case []any:
 		out := make([]string, 0, len(m))
 		for _, x := range m {
-			out = append(out, anyutil.String(x))
+			if x != nil {
+				out = append(out, anyutil.String(x))
+			}
 		}
 		return out
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -48,18 +47,9 @@ func dispatchPluginAuth(action string, args []string, provider string) (bool, er
 		if exit, ok := err.(*PluginAuthError); ok {
 			return false, exit
 		}
-		return false, &PluginAuthError{Message: fmt.Sprintf("%s auth handler failed for `%s`: %s: %s", provider, action, goErrorTypeName(err), err)}
+		return false, &PluginAuthError{Message: fmt.Sprintf("%s auth handler failed for `%s`: %s", provider, action, errchain.OSText(err))}
 	}
 	return owned, nil
-}
-
-// Type name of an error value without its package and pointer marks
-func goErrorTypeName(err error) string {
-	t := reflect.TypeOf(err)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return t.Name()
 }
 
 // Loud failure for a mirrored non api key plugin that ships no auth handler, nil otherwise

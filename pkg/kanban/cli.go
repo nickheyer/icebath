@@ -639,6 +639,14 @@ func (c *kanbanCLI) cmdList() (int, error) {
 
 var severityMarkers = map[string]string{"warning": "⚠", "error": "!!", "critical": "!!!"}
 
+// Text of one diagnostic data value, null for a value the rule left unset
+func diagDataText(v any) string {
+	if v == nil {
+		return "null"
+	}
+	return anyutil.String(v)
+}
+
 // Prints diagnostics with their data and suggested actions
 func (c *kanbanCLI) printDiagnostics(diags []*Diagnostic, indent string, withKind bool) {
 	for _, d := range diags {
@@ -658,11 +666,11 @@ func (c *kanbanCLI) printDiagnostics(diags []*Diagnostic, indent string, withKin
 				if list, isList := v.([]any); isList {
 					parts := make([]string, 0, len(list))
 					for _, x := range list {
-						parts = append(parts, anyutil.String(x))
+						parts = append(parts, diagDataText(x))
 					}
 					bits = append(bits, k+"="+strings.Join(parts, ","))
 				} else {
-					bits = append(bits, k+"="+anyutil.String(v))
+					bits = append(bits, k+"="+diagDataText(v))
 				}
 			}
 			fmt.Fprintf(c.w, "%s   data: %s\n", indent, strings.Join(bits, " | "))

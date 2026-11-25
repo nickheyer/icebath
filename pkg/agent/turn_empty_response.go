@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var inlineThinkRe = regexp.MustCompile(`(?i)<think>|<thinking>|<reasoning>`)
@@ -78,7 +79,7 @@ func terminalEmpty(a *AIAgent, s *LoopState, assistantMessage *provider.Response
 
 // Line written beside a housekeeping only tool round with think blocks stripped, nil without one
 func housekeepingReplyLine(a *AIAgent) *string {
-	if !pyTruthy(a.lastContentWithTools) || !a.lastContentToolsAllHousekeeping {
+	if !anyutil.IsTrue(a.lastContentWithTools) || !a.lastContentToolsAllHousekeeping {
 		return nil
 	}
 	line := state.SanitizeSurrogates(strings.TrimSpace(a.stripThinkBlocks(a.lastContentWithTools)))
@@ -118,7 +119,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 	if partial := a.currentStreamedAssistantText(); a.hasContentAfterThinkBlock(partial) {
 		s.TurnExitReason = "partial_stream_recovery"
 		recovered := strings.TrimSpace(a.stripThinkBlocks(partial))
-		pkgLog().Info(fmt.Sprintf("Partial stream content delivered (%d chars) — using as final response", pyLen(recovered)))
+		pkgLog().Info(fmt.Sprintf("Partial stream content delivered (%d chars) — using as final response", lengthOf(recovered)))
 		a.emitDiagnosticStatus("↻ Stream interrupted — using delivered content as final response")
 		s.FinalResponse = recovered
 		a.responseWasPreviewed = false

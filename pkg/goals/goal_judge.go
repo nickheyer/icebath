@@ -5,16 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"math"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -155,13 +161,31 @@ func gatePipe(sink *gateOutput) (read, write *os.File, done chan struct{}, err e
 	return read, write, done, nil
 }
 
+// Error naming a gate working directory that is missing or not a directory, nil for the current directory or a usable one
+func gateDirError(cwd string) error {
+	if cwd == "" {
+		return nil
+	}
+	info, err := os.Stat(cwd)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return &fs.PathError{Op: "chdir", Path: cwd, Err: syscall.ENOTDIR}
+	}
+	return nil
+}
+
 // Shell run of one gate giving pass, exit code and output tail, a timeout as minus one
 func RunGate(ctx context.Context, gate GoalGate, cwd string) (passed bool, exitCode int64, outputTail string, interrupted error) {
 	couldNotRun := func(err error) (bool, int64, string, error) {
-		return false, -1, fmt.Sprintf("[gate could not run: %s: %s]", errorutil.Kind(err), err.Error()), nil
+		return false, -1, "[gate could not run: " + errchain.OSText(err) + "]", nil
 	}
 	shell, err := executil.ShellCommand(gate.Command)
 	if err != nil {
+		return couldNotRun(err)
+	}
+	if err := gateDirError(cwd); err != nil {
 		return couldNotRun(err)
 	}
 	var stdout, stderr gateOutput
@@ -223,6 +247,17 @@ func RunGate(ctx context.Context, gate GoalGate, cwd string) (passed bool, exitC
 		combined += "\n" + errText
 	}
 	return code == 0, code, textTail(combined, gateOutputTailChars), nil
+}
+
+// Short reason a failure is reported under: the kind its chain declares, else its own text cut to two hundred characters
+func goalFailureLabel(err error) string {
+	var kinded interface{ ErrorKind() string }
+	if errors.As(err, &kinded) {
+		if kind := kinded.ErrorKind(); kind != "" {
+			return kind
+		}
+	}
+	return goalTruncate(errchain.OSText(err), 200)
 }
 
 // Text cut to limit characters with a truncation mark, empty for empty text
@@ -318,19 +353,19 @@ func goalJudgeTimeout(ctx context.Context) float64 {
 	return goalJudgeSetting(ctx, "timeout", DefaultJudgeTimeout, castJudgeFloat).(float64)
 }
 
-// AttributeError a str method call on a value of another type raises
-func strMethodError(v any, method string) error {
-	return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), method)}
+// Error for a value that had to be text, naming what it was and the kind it holds
+func notTextError(v any, what string) error {
+	return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("%s must be text, got %s", what, anyutil.Kind(v))}
 }
 
-// JSON object of a fence stripped reply or its first parsable braced span, nil otherwise
+// JSON object of a fence stripped reply or its first parsable braced span, integers past int64 kept exact, nil otherwise
 func extractJSONObject(raw any) (*jsonutil.Object, error) {
 	if !anyutil.IsTrue(raw) {
 		return nil, nil
 	}
 	rawText, isText := raw.(string)
 	if !isText {
-		return nil, strMethodError(raw, "strip")
+		return nil, notTextError(raw, "the judge reply")
 	}
 	text := strings.TrimSpace(rawText)
 	if strings.HasPrefix(text, "```") {
@@ -339,18 +374,49 @@ func extractJSONObject(raw any) (*jsonutil.Object, error) {
 			text = text[nl+1:]
 		}
 	}
-	data, err := jsonutil.Decode(text)
+	data, err := jsonutil.DecodeWith(text, jsonutil.BigInts())
 	if err != nil {
 		match := goalJSONObjectRE.FindString(text)
 		if match == "" {
 			return nil, nil
 		}
-		if data, err = jsonutil.Decode(match); err != nil {
+		if data, err = jsonutil.DecodeWith(match, jsonutil.BigInts()); err != nil {
 			return nil, nil
 		}
 	}
 	obj, _ := data.(*jsonutil.Object)
 	return obj, nil
+}
+
+// Whole number above zero a judge field holds: an int64, or an exact *big.Int past the int64 range; nil for anything else
+func positiveWhole(v any) any {
+	if v == nil {
+		return nil
+	}
+	n, err := anyutil.ToInt(v)
+	if err == nil {
+		if n > 0 {
+			return n
+		}
+		return nil
+	}
+	if !errors.Is(err, anyutil.ErrRange) || n < 0 {
+		return nil
+	}
+	switch x := v.(type) {
+	case *big.Int:
+		return x
+	case string:
+		if exact, ok := new(big.Int).SetString(strings.TrimSpace(x), 10); ok {
+			return exact
+		}
+	}
+	f, err := anyutil.ToFloat(v)
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+		return nil
+	}
+	exact, _ := big.NewFloat(f).Int(nil)
+	return exact
 }
 
 // Verdict, reason, unusable reply flag and wait target of a judge reply, failing open to continue
@@ -363,7 +429,7 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 		return "", "", false, nil, err
 	}
 	if data == nil {
-		return "continue", "judge reply was not JSON: " + anyutil.Quote(goalTruncate(raw.(string), 200)), true, nil, nil
+		return "continue", "judge reply was not a JSON object: " + strconv.Quote(goalTruncate(raw.(string), 200)), true, nil, nil
 	}
 	get := func(key string) any { return data.ValueOr(key, nil) }
 	reason = strings.TrimSpace(anyutil.String(anyutil.Or(get("reason"), "")))
@@ -398,17 +464,8 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 	}
 	firstInt := func(keys ...string) any {
 		for _, key := range keys {
-			value := get(key)
-			if value == nil {
-				continue
-			}
-			// A value past what an int64 holds reads as the bound on its side
-			iv, convErr := anyutil.ToInt(value)
-			if convErr != nil && !errors.Is(convErr, anyutil.ErrRange) {
-				continue
-			}
-			if iv > 0 {
-				return iv
+			if n := positiveWhole(get(key)); n != nil {
+				return n
 			}
 		}
 		return nil
@@ -568,7 +625,7 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 			return JudgeResult{Verdict: "continue", Reason: "goal_judge auxiliary client unavailable: " + err.Error(), TransportFailed: true}
 		}
 		pkgLog().Info(fmt.Sprintf("goal judge: API call failed (%s) — falling through to continue", err.Error()))
-		return JudgeResult{Verdict: "continue", Reason: "judge error: " + errorutil.Kind(err), TransportFailed: true}
+		return JudgeResult{Verdict: "continue", Reason: "judge error: " + goalFailureLabel(err), TransportFailed: true}
 	}
 	verdict, reason, parseFailed, wait, err := parseJudgeResponse(raw)
 	if err != nil {

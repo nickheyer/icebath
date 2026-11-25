@@ -3,18 +3,20 @@ package home
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"strconv"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var chmodPath = os.Chmod
 
-// Restricts the resolved parent of path to 0700, never the root, a top level dir or the install tree
+// Restricts the resolved parent of path to 0700, never the root, a top level dir or the install tree; a parent that cannot be resolved is left as it is with a warning
 func SecureParentDir(path string) {
-	parent, err := resolve(filepath.Dir(filepath.Clean(path)))
+	parent, err := resolve(pathutil.DirKeepDotDot(path))
 	if err != nil {
-		panic(err)
+		pkgLog().Warn(fmt.Sprintf("Not restricting permissions on the folder of %s: it cannot be resolved (%s)", strconv.Quote(path), errchain.OSText(err)))
+		return
 	}
 	anchor, parts := pathutil.Parts(parent)
 	depth := len(parts)

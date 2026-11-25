@@ -52,7 +52,7 @@ func RenderHistoryForSideQuestion(history []map[string]any, charBudget int) stri
 				}
 				fn, _ := jsonutil.AsMap(call["function"])
 				name := "?"
-				if v, ok := fn["name"]; ok {
+				if v := fn["name"]; v != nil {
 					name = anyutil.String(v)
 				}
 				names = append(names, name)

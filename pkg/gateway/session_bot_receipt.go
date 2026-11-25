@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -27,7 +28,7 @@ type botReplyWatch struct {
 func botReceiptField(record map[string]any, key string) (any, error) {
 	value, ok := record[key]
 	if !ok {
-		return nil, &pyKeyError{key}
+		return nil, &keyError{key}
 	}
 	return value, nil
 }
@@ -90,7 +91,7 @@ func botExpiredOutcome(ctx context.Context, a *SessionAuthority, record map[stri
 	if status, ok := record["status"].(string); ok && deliveryTerminal[status] {
 		return status, receiptReply(record), nil
 	}
-	if sessionID := record["session_id"]; pyTruthy(sessionID) {
+	if sessionID := record["session_id"]; anyutil.IsTrue(sessionID) {
 		sid := anyutil.String(sessionID)
 		retired, err := a.DB.RetiredSession(context.WithoutCancel(ctx), sid)
 		if err != nil {
@@ -130,12 +131,12 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 			return "", nil, err
 		}
 		if row == nil {
-			return "", nil, &PyError{Kind: "TypeError", Msg: "the bot admission row is missing"}
+			return "", nil, &errorutil.Error{Kind: "TypeError", Msg: "the bot admission row is missing"}
 		}
 	}
 	outcome, present := row.Get("outcome")
 	if !present {
-		return "", nil, &pyKeyError{"outcome"}
+		return "", nil, &keyError{"outcome"}
 	}
 	rawStatus, _ := row.Get("status")
 	var status string
@@ -156,7 +157,7 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 			status = "ambiguous"
 		}
 	default:
-		return "", nil, &pyKeyError{anyutil.String(rawStatus)}
+		return "", nil, &keyError{anyutil.String(rawStatus)}
 	}
 	var reply any = ""
 	if fallback != nil {
@@ -167,7 +168,7 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 		if err != nil {
 			return "", nil, err
 		}
-		if reply, err = pyDictGet(result, "final_response", ""); err != nil {
+		if reply, err = dictGetValue(result, "final_response", ""); err != nil {
 			return "", nil, err
 		}
 		status = "failed"
@@ -191,11 +192,11 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 func botSavedResult(saved any) (any, error) {
 	obj, ok := saved.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the saved bot result is " + errchain.Kind(saved) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the saved bot result is " + errchain.Kind(saved) + ", expected a mapping"}
 	}
 	result, present := obj.Get("result")
 	if !present {
-		return nil, &pyKeyError{"result"}
+		return nil, &keyError{"result"}
 	}
 	return result, nil
 }
@@ -208,22 +209,22 @@ func botFailure(ctx context.Context, a *SessionAuthority, admissionID string) (a
 	}
 	var result any = jsonutil.NewObject()
 	if saved != nil {
-		if got, err := pyDictGet(saved, "result", nil); err != nil {
+		if got, err := dictGetValue(saved, "result", nil); err != nil {
 			return nil, "", err
-		} else if pyTruthy(got) {
+		} else if anyutil.IsTrue(got) {
 			result = got
 		}
 	}
-	rawError, err := pyDictGet(result, "error", nil)
+	rawError, err := dictGetValue(result, "error", nil)
 	if err != nil {
 		return nil, "", err
 	}
-	failureReason, _ := pyDictGet(result, "failure_reason", nil)
+	failureReason, _ := dictGetValue(result, "failure_reason", nil)
 	errorText := rawError
-	if !pyTruthy(errorText) {
-		errorText, _ = pyDictGet(result, "final_response", nil)
+	if !anyutil.IsTrue(errorText) {
+		errorText, _ = dictGetValue(result, "final_response", nil)
 	}
-	if !pyTruthy(errorText) {
+	if !anyutil.IsTrue(errorText) {
 		errorText = "Bot Chat delivery failed"
 	}
 	text, err := tools.TurnFailureText(rawError, failureReason)
@@ -269,10 +270,10 @@ func botResult(ctx context.Context, a *SessionAuthority, record map[string]any) 
 			errorText, reason = text, typed
 		case isRuntimeRefusal(err, "not_found"):
 			errorText, reason = record["error"], record["reason"]
-			if !pyTruthy(errorText) {
+			if !anyutil.IsTrue(errorText) {
 				errorText = "Bot Chat delivery failed"
 			}
-			if !pyTruthy(reason) {
+			if !anyutil.IsTrue(reason) {
 				reason = tools.ReasonUnknown
 			}
 		default:
@@ -324,10 +325,10 @@ func botDeliveryResult(ctx context.Context, a *SessionAuthority, record map[stri
 
 // Whether the original admission settled failed with a committed result whose error classifies transient
 func botRetryEligible(ctx context.Context, a *SessionAuthority, record map[string]any) (bool, error) {
-	if retry, _ := record["retry"].(map[string]any); retry != nil && pyTruthy(retry["refused"]) {
+	if retry, _ := record["retry"].(map[string]any); retry != nil && anyutil.IsTrue(retry["refused"]) {
 		return false, nil
-	} else if retry == nil && pyTruthy(record["retry"]) {
-		if _, err := pyDictGet(record["retry"], "refused", nil); err != nil {
+	} else if retry == nil && anyutil.IsTrue(record["retry"]) {
+		if _, err := dictGetValue(record["retry"], "refused", nil); err != nil {
 			return false, err
 		}
 	}
@@ -415,7 +416,7 @@ func botMaybeRetry(ctx context.Context, a *SessionAuthority, home string, record
 	if author := record["author"]; author != nil {
 		fields, ok := hostedMapping(author)
 		if !ok {
-			return &PyError{Kind: "TypeError", Msg: "the bot message author is " + errchain.Kind(author) + ", expected a list"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "the bot message author is " + errchain.Kind(author) + ", expected a list"}
 		}
 		event.Metadata["turn_author"] = maps.Clone(fields)
 	}
@@ -525,7 +526,7 @@ func refreshBotReceipt(ctx context.Context, a *SessionAuthority, home, key strin
 		maps.Copy(record, result)
 		if record["status"] == "queued" || record["status"] == "claimed" {
 			following := record["retry_admission_id"]
-			if !pyTruthy(following) {
+			if !anyutil.IsTrue(following) {
 				if following, err = botReceiptField(record, "admission_id"); err != nil {
 					return err
 				}
@@ -619,7 +620,7 @@ func botTarget(ctx context.Context, a *SessionAuthority, actor Principal) (Sessi
 	}
 	if ref == nil {
 		if row == nil {
-			return SessionRef{}, nil, nil, &PyError{Kind: "TypeError", Msg: "the bot target row is missing"}
+			return SessionRef{}, nil, nil, &errorutil.Error{Kind: "TypeError", Msg: "the bot target row is missing"}
 		}
 		tip, err := a.DB.GetCompressionTip(ctx, routeStr(rowField(row, "id")))
 		if err != nil {
@@ -650,7 +651,7 @@ func botTarget(ctx context.Context, a *SessionAuthority, actor Principal) (Sessi
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return SessionRef{}, nil, nil, &pyKeyError{ref.SessionID}
+		return SessionRef{}, nil, nil, &keyError{ref.SessionID}
 	}
 	entry := a.Runner.SessionStore().LookupBySessionKey(ctx, live.Route)
 	if (live.Source.Platform != PlatformLocal && lane == nil) || entry == nil {
@@ -734,13 +735,13 @@ func keptLocalHistory(db *state.SessionDB, row *jsonutil.Object, subject any) (b
 	}
 	userID := rowField(row, "user_id")
 	owner := HostOwnerSubject()
-	if pyTruthy(userID) {
+	if anyutil.IsTrue(userID) {
 		labelled, err := state.LegacyAccountLabel(row)
 		if err != nil {
 			return false, err
 		}
 		_, authenticated := ParseAuthenticatedSubject(userID)
-		if !labelled && !SameOwner(userID, owner) && !(pyTruthy(subject) && SameOwner(userID, subject)) && !authenticated {
+		if !labelled && !SameOwner(userID, owner) && !(anyutil.IsTrue(subject) && SameOwner(userID, subject)) && !authenticated {
 			return source == state.ClientHistorySource, nil
 		}
 	}

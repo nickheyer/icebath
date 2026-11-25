@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -741,7 +742,7 @@ func TestRetainDBSyncTurnQueuesBothSides(t *testing.T) {
 	if first["role"] != "user" || first["content"] != "hello" || second["role"] != "assistant" || second["timestamp"] != first["timestamp"] {
 		t.Fatalf("messages %v", msgs)
 	}
-	if !strings.HasSuffix(first["timestamp"].(string), "+00:00") {
+	if stamp, _ := first["timestamp"].(string); len(stamp) != len("2006-01-02T15:04:05.000000Z") || !strings.HasSuffix(stamp, "Z") {
 		t.Fatalf("timestamp %v", first["timestamp"])
 	}
 }
@@ -792,7 +793,7 @@ func runInterleaved(t *testing.T, managers map[string]*MemoryManager, tool strin
 					return
 				}
 				if _, bad := result["error"]; bad {
-					errs <- name + " tool error " + pyStr(result["error"])
+					errs <- name + " tool error " + anyutil.String(result["error"])
 					return
 				}
 				m.SyncAll(ctx, name+"-turn-"+itoa(i)+" what did we decide", "the plan", SyncOptions{SessionID: "s"})
@@ -811,7 +812,7 @@ func runInterleaved(t *testing.T, managers map[string]*MemoryManager, tool strin
 	}
 }
 
-func itoa(i int) string { return pyStr(i) }
+func itoa(i int) string { return anyutil.String(i) }
 
 // Polls until cond holds or the deadline passes
 func waitUntil(t *testing.T, what string, cond func() bool) {
@@ -875,9 +876,9 @@ func TestRetainDBTwoProfilesInterleavingStayInTheirOwnProjects(t *testing.T) {
 		name := filepath.Base(h)
 		kinds := map[string]bool{}
 		for _, r := range written() {
-			content := pyStr(r.body["content"])
+			content := anyutil.String(r.body["content"])
 			if r.path == "/v1/memory/ingest/session" {
-				content = pyStr(r.body["messages"].([]any)[0].(map[string]any)["content"])
+				content = anyutil.String(r.body["messages"].([]any)[0].(map[string]any)["content"])
 			}
 			if !strings.Contains(content, name+"-") {
 				continue
@@ -975,14 +976,14 @@ func TestRetainDBRegisteredBundled(t *testing.T) {
 	}
 }
 
-func TestRetainDBReasoningLevelAndISOFormat(t *testing.T) {
+func TestRetainDBReasoningLevelAndTimestamp(t *testing.T) {
 	if retaindbReasoningLevel(strings.Repeat("a", 119)) != "low" || retaindbReasoningLevel(strings.Repeat("a", 120)) != "medium" ||
 		retaindbReasoningLevel(strings.Repeat("a", 400)) != "high" {
 		t.Fatal("reasoning levels")
 	}
 	at := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	if pyISOFormatUTC(at) != "2026-03-04T05:06:07+00:00" || pyISOFormatUTC(at.Add(1500*time.Microsecond)) != "2026-03-04T05:06:07.001500+00:00" {
-		t.Fatal("isoformat")
+	if retaindbTimestamp(at) != "2026-03-04T05:06:07.000000Z" || retaindbTimestamp(at.Add(1500*time.Microsecond).In(time.FixedZone("", 3600))) != "2026-03-04T05:06:07.001500Z" {
+		t.Fatal("timestamp")
 	}
 	if quoteAll("a b/c~_.-é") != "a%20b%2Fc~_.-%C3%A9" {
 		t.Fatalf("quote %q", quoteAll("a b/c~_.-é"))

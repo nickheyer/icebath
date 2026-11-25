@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"math"
 	"os"
 	"os/exec"
@@ -13,10 +14,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -158,7 +161,7 @@ func hwRunCommand(argv []string, timeout time.Duration, dir string) (hwRunResult
 	err := cmd.Run()
 	if ctx.Err() != nil {
 		return hwRunResult{}, &HardwareProbeError{Class: "TimeoutExpired",
-			Msg: fmt.Sprintf("Command '%s' timed out after %d seconds", pyRepr(stringsAsAny(argv)), int(timeout.Seconds()))}
+			Msg: fmt.Sprintf("Command '%s' timed out after %d seconds", anyutil.Quote(stringsAsAny(argv)), int(timeout.Seconds()))}
 	}
 	var exit *exec.ExitError
 	if err != nil && !errors.As(err, &exit) {
@@ -193,16 +196,16 @@ func linuxMeminfoText() (string, bool) {
 // Total and available bytes from meminfo text, MemAvailable present even at zero beats MemFree
 func linuxRAMFromMeminfo(text string) (int64, int64, bool) {
 	fields := map[string]int64{}
-	for _, line := range pySplitLines(text) {
+	for _, line := range splitLines(text) {
 		name, value, found := strings.Cut(line, ":")
 		if !found || !hwLinuxRAM[name] {
 			continue
 		}
-		parts := strings.FieldsFunc(value, pyIsSpace)
+		parts := strings.FieldsFunc(value, unicode.IsSpace)
 		if len(parts) != 2 || parts[1] != "kB" {
 			continue
 		}
-		n, ok := pyIntText(parts[0])
+		n, ok := textutil.ParseIntAnyScript(parts[0])
 		if !ok {
 			return 0, 0, false
 		}
@@ -224,9 +227,9 @@ func hwIntOr(text string, fallback int64) (int64, error) {
 	if text == "" {
 		return fallback, nil
 	}
-	n, ok := pyIntText(text)
+	n, ok := textutil.ParseIntAnyScript(text)
 	if !ok {
-		return 0, &HardwareProbeError{Class: "ValueError", Msg: fmt.Sprintf("hardware value %s is not a whole number", pyRepr(text))}
+		return 0, &HardwareProbeError{Class: "ValueError", Msg: fmt.Sprintf("hardware value %s is not a whole number", anyutil.Quote(text))}
 	}
 	return n, nil
 }
@@ -271,7 +274,7 @@ func ramBytesPOSIX() (int64, int64, error) {
 		return 0, 0, err
 	}
 	total := pages * page
-	avail := pyFloorDiv(total, 2)
+	avail := floorDiv(total, 2)
 	out, err = hwStdout("getconf", "_AVPHYS_PAGES")
 	if err == nil {
 		var free int64
@@ -290,11 +293,11 @@ func ramBytesDarwin() (int64, int64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	total, err := hwIntOr(strings.TrimFunc(out, pyIsSpace), 0)
+	total, err := hwIntOr(strings.TrimFunc(out, unicode.IsSpace), 0)
 	if err != nil || total <= 0 {
 		return 0, 0, err
 	}
-	avail := pyFloorDiv(total, 2)
+	avail := floorDiv(total, 2)
 	out, err = hwStdout("/usr/bin/vm_stat")
 	if err != nil {
 		if hwIsClass(err, "OSError") {
@@ -404,11 +407,11 @@ func nvidiaGPUQueryUncached() (*NvidiaGPUQuery, error) {
 	if err != nil {
 		return nil, nil
 	}
-	text := strings.TrimFunc(out.Stdout, pyIsSpace)
+	text := strings.TrimFunc(out.Stdout, unicode.IsSpace)
 	if out.ReturnCode != 0 || text == "" {
 		return nil, nil
 	}
-	row, err := pyCSVFirstRow(pySplitLines(text))
+	row, err := csvFirstRow(splitLines(text))
 	if err != nil {
 		return nil, err
 	}
@@ -417,22 +420,22 @@ func nvidiaGPUQueryUncached() (*NvidiaGPUQuery, error) {
 	}
 	values := make([]int64, 0, 4)
 	for _, raw := range []string{row[0], row[1], row[4], row[5]} {
-		n, ok := pyIntText(raw)
+		n, ok := textutil.ParseIntAnyScript(raw)
 		if !ok {
 			return nil, nil
 		}
 		values = append(values, n)
 	}
 	var pciID *int64
-	if id, ok := pyIntBase16(row[3]); ok {
+	if id, ok := intBase16(row[3]); ok {
 		pciID = &id
 	}
-	return &NvidiaGPUQuery{GPUName: strings.TrimFunc(row[2], pyIsSpace), TotalBytes: values[0] << 20,
+	return &NvidiaGPUQuery{GPUName: strings.TrimFunc(row[2], unicode.IsSpace), TotalBytes: values[0] << 20,
 		FreeBytes: values[1] << 20, UsedBytes: values[2] << 20, GPUUtilPercent: values[3], GPUPCIID: pciID}, nil
 }
 
 // First record of Python csv.reader with skipinitialspace over lines, a csv.Error past the field limit
-func pyCSVFirstRow(lines []string) ([]string, error) {
+func csvFirstRow(lines []string) ([]string, error) {
 	var row []string
 	var field []rune
 	const (
@@ -509,8 +512,8 @@ func pyCSVFirstRow(lines []string) ([]string, error) {
 }
 
 // Python int(text, 16) with whitespace, sign, an optional 0x prefix and digit underscores
-func pyIntBase16(text string) (int64, bool) {
-	s := strings.TrimFunc(text, pyIsSpace)
+func intBase16(text string) (int64, bool) {
+	s := strings.TrimFunc(text, unicode.IsSpace)
 	neg := false
 	if s != "" && (s[0] == '+' || s[0] == '-') {
 		neg, s = s[0] == '-', s[1:]
@@ -533,8 +536,8 @@ func pyIntBase16(text string) (int64, bool) {
 			d = uint64(r-'a') + 10
 		case r >= 'A' && r <= 'F':
 			d = uint64(r-'A') + 10
-		case pyIsDigit(r):
-			d = uint64(unicodeDigitValue(r))
+		case isDigit(r):
+			d = uint64(textutil.DigitValue(r))
 		default:
 			return 0, false
 		}
@@ -596,7 +599,7 @@ func cudaDriverPool() *hwDevicePool {
 // The local_runtime config section, an AttributeError class error when it is truthy but not a mapping
 func hwLocalRuntimeSection() (map[string]any, error) {
 	raw := hwLoadConfig()["local_runtime"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return map[string]any{}, nil
 	}
 	section, ok := raw.(map[string]any)
@@ -609,7 +612,7 @@ func hwLocalRuntimeSection() (map[string]any, error) {
 // The backend local_runtime.backend names, auto when unset or falsy
 func hwConfiguredBackend(section map[string]any) (string, error) {
 	raw := section["backend"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "auto", nil
 	}
 	backend, ok := raw.(string)
@@ -650,7 +653,7 @@ func engineDevicePool() (pool *hwDevicePool) {
 	if err != nil || out.ReturnCode != 0 {
 		return nil
 	}
-	for _, line := range pySplitLines(out.Stdout + out.Stderr) {
+	for _, line := range splitLines(out.Stdout + out.Stderr) {
 		if m := hwDeviceLineRE.FindStringSubmatch(line); m != nil {
 			mib, ok := pythonUnicodeIntText(m[1])
 			if !ok {
@@ -768,7 +771,7 @@ func PromptCacheBytes(live *HardwareBudget, modelBytes int64, residents int) *in
 		return nil
 	}
 	n := int64(max(1, residents))
-	cache := min(hwPromptCacheMax, pyFloorDiv(max(0, *live.CommitRoomBytes-n*ModelCommitBytes(modelBytes)), n))
+	cache := min(hwPromptCacheMax, floorDiv(max(0, *live.CommitRoomBytes-n*ModelCommitBytes(modelBytes)), n))
 	if cache < hwPromptCacheMin {
 		cache = 0
 	}
@@ -780,7 +783,7 @@ func UsableBesidePromptCache(live HardwareBudget, residents int) (int64, error) 
 	if live.CommitRoomBytes == nil {
 		return 0, &HardwareProbeError{Class: "TypeError", Msg: "the usable memory is unknown"}
 	}
-	share := pyFloorDiv(*live.CommitRoomBytes, int64(max(1, residents))) - hwPromptCacheMin
+	share := floorDiv(*live.CommitRoomBytes, int64(max(1, residents))) - hwPromptCacheMin
 	return min(live.UsableVRAMBytes, max(0, int64(float64(share)*(1-hwUMAHeadroomFraction)))), nil
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -191,15 +192,15 @@ func controlIDEchoable(id any) bool {
 // Dispatches one decoded request to its verb, the request id stored for the response
 func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID *any) (*jsonutil.Object, error) {
 	if !utf8.Valid(raw) {
-		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "the control request is not valid UTF-8"}
+		return nil, &errorutil.Error{Kind: "UnicodeDecodeError", Msg: "the control request is not valid UTF-8"}
 	}
 	decoded, err := jsonutil.Decode(string(raw))
 	if err != nil {
-		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
 	request, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "ValueError", Msg: "request must be a JSON object"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "request must be a JSON object"}
 	}
 	*requestID, _ = request.Get("id")
 	verbValue, _ := request.Get("verb")
@@ -213,7 +214,7 @@ func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID 
 		paramsValue, _ := request.Get("params")
 		params, paramsIsDict := paramsValue.(*jsonutil.Object)
 		if peerSubject == "" || !anyutil.Equal(protocol, int64(1)) || controlExtraKeys(request, "protocol", "verb", "id", "params") || !paramsIsDict {
-			return nil, &PyError{Kind: "PermissionError", Msg: "authenticated private request required"}
+			return nil, &errorutil.Error{Kind: "PermissionError", Msg: "authenticated private request required"}
 		}
 		result, err := private(controlPlainParams(params), peerSubject)
 		if err != nil {
@@ -234,7 +235,7 @@ func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID 
 		for i, name := range supported {
 			names[i] = name
 		}
-		return jsonutil.ObjectOf("ok", false, "error", "unknown verb: "+anyutil.Quote(verbValue),
+		return jsonutil.ObjectOf("ok", false, "error", "unknown verb: "+quotedValue(verbValue),
 			"protocol", int64(ControlProtocolVersion), "supported_verbs", names), nil
 	}
 	params := map[string]any{}
@@ -283,15 +284,15 @@ func controlHasKeys(obj *jsonutil.Object, keys ...string) bool {
 func (s *GatewayControlServer) sessionTicket(request *jsonutil.Object, peerSubject string) (map[string]any, error) {
 	store := s.TicketStore
 	if peerSubject == "" || store == nil {
-		return nil, &PyError{Kind: "PermissionError", Msg: "authenticated runtime bootstrap unavailable"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "authenticated runtime bootstrap unavailable"}
 	}
 	protocol, _ := request.Get("protocol")
 	if controlExtraKeys(request, "protocol", "verb", "id", "params") || !anyutil.Equal(protocol, int64(1)) {
-		return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap envelope"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "invalid bootstrap envelope"}
 	}
 	paramsValue, _ := request.Get("params")
 	params, isDict := paramsValue.(*jsonutil.Object)
-	invalidParams := &PyError{Kind: "PermissionError", Msg: "invalid bootstrap parameters"}
+	invalidParams := &errorutil.Error{Kind: "PermissionError", Msg: "invalid bootstrap parameters"}
 	if !isDict || !controlHasKeys(params, "profile_id", "instance_id", "purpose") ||
 		controlExtraKeys(params, "profile_id", "instance_id", "purpose", "scope", "restart_wait") {
 		return nil, invalidParams
@@ -301,11 +302,11 @@ func (s *GatewayControlServer) sessionTicket(request *jsonutil.Object, peerSubje
 	}
 	instanceID, _ := params.Get("instance_id")
 	if instanceID != store.InstanceID {
-		return nil, &PyError{Kind: "PermissionError", Msg: "stale runtime instance"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "stale runtime instance"}
 	}
 	subject := peerSubject
 	if len([]rune(subject)) > 256 {
-		return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap subject"}
+		return nil, &errorutil.Error{Kind: "PermissionError", Msg: "invalid bootstrap subject"}
 	}
 	profileValue, _ := params.Get("profile_id")
 	purposeValue, _ := params.Get("purpose")
@@ -320,7 +321,7 @@ func (s *GatewayControlServer) sessionTicket(request *jsonutil.Object, peerSubje
 			return nil, err
 		}
 		if text == nil || *text == "" {
-			return nil, &PyError{Kind: "PermissionError", Msg: "bootstrap binding rejected"}
+			return nil, &errorutil.Error{Kind: "PermissionError", Msg: "bootstrap binding rejected"}
 		}
 		binding[i] = *text
 	}
@@ -339,9 +340,9 @@ func controlBindingText(value any) (*string, error) {
 	case string:
 		return &v, nil
 	case *jsonutil.Object, map[string]any:
-		return nil, &PyError{Kind: "TypeError", Msg: "a control binding is a mapping, expected text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "a control binding is a mapping, expected text"}
 	case []any:
-		return nil, &PyError{Kind: "TypeError", Msg: "a control binding is a list, expected text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "a control binding is a list, expected text"}
 	}
 	return nil, nil
 }

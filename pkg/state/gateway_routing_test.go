@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -46,7 +47,7 @@ func naIDs(t *testing.T, db *SessionDB, days float64) []string {
 	}
 	out := []string{}
 	for _, r := range rows {
-		out = append(out, pyStr(rowValue(r, "id")))
+		out = append(out, anyutil.String(rowValue(r, "id")))
 	}
 	return out
 }
@@ -69,7 +70,7 @@ func naColumn(t *testing.T, db *SessionDB, query string) []string {
 	}
 	out := []string{}
 	for _, r := range rows {
-		out = append(out, pyStr(r.Value(r.Keys()[0])))
+		out = append(out, anyutil.String(r.Value(r.Keys()[0])))
 	}
 	sort.Strings(out)
 	return out
@@ -257,7 +258,7 @@ func TestRoutingLineageCteAgreesWithPythonWalkForResetFork(t *testing.T) {
 			}
 			ids := []string{}
 			for _, r := range rows {
-				ids = append(ids, pyStr(r["id"]))
+				ids = append(ids, anyutil.String(r["id"]))
 			}
 			sort.Strings(ids)
 			cte[start] = ids

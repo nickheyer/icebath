@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -94,8 +95,8 @@ func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o Sear
 	score := func(row *jsonutil.Object) int {
 		normalized := []string{}
 		for _, key := range []string{"id", "_lineage_root_id"} {
-			if v := rowValue(row, key); pyTruthy(v) {
-				normalized = append(normalized, strings.ToLower(pyStr(v)))
+			if v := rowValue(row, key); anyutil.IsTrue(v) {
+				normalized = append(normalized, strings.ToLower(anyutil.String(v)))
 			}
 		}
 		if slices.Contains(normalized, needle) {

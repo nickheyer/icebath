@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Isolated home bound to the context with setup prints captured, the test setup home
@@ -92,7 +93,7 @@ func TestSaveDelegationWritesTopLevelSection(t *testing.T) {
 		t.Fatalf("delegation %v", d)
 	}
 	if aux, ok := cfg["auxiliary"].(map[string]any); ok {
-		if entry, ok := aux["delegation"].(map[string]any); ok && pyTruthy(entry["provider"]) {
+		if entry, ok := aux["delegation"].(map[string]any); ok && anyutil.IsTrue(entry["provider"]) {
 			t.Fatal("delegation routing leaked into auxiliary.delegation")
 		}
 	}

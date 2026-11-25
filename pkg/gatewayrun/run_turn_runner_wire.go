@@ -127,7 +127,7 @@ func (t *TurnRunner) attachSessionTitleCallback(ctx context.Context, a *agent.AI
 			}
 			live, ok := authority.Live(canonicalID)
 			if !ok || live == nil {
-				panic(&pyRuntimeError{msg: "no live session " + canonicalID})
+				panic(&runtimeError{msg: "no live session " + canonicalID})
 			}
 			live.EventStream.Publish(canonicalID, info, "session.info", nil)
 		})

@@ -58,7 +58,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 	account := fallback
 	if runtime.GOOS != "windows" {
 		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
-			account = filepath.Clean(u.HomeDir)
+			account = pathutil.CleanKeepDotDot(u.HomeDir)
 		}
 	}
 	accountDefault, err := platformDefault(os.Getenv, func() (string, error) { return account, nil })
@@ -83,7 +83,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 // Platform default directory derived from a user home with no suffix and no LOCALAPPDATA
 func platformBase(h string) string {
 	if runtime.GOOS == "windows" {
-		return pathutil.Join(h, "AppData", "Local", "icebath")
+		return pathutil.JoinKeepDotDot(h, "AppData", "Local", "icebath")
 	}
-	return pathutil.Join(h, ".icebath")
+	return pathutil.JoinKeepDotDot(h, ".icebath")
 }

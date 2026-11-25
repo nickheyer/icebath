@@ -242,14 +242,6 @@ func routeArg(v any) *string {
 	return &s
 }
 
-// First truthy of two values, else the second as Python or does
-func pyOr(a, b any) any {
-	if anyutil.IsTrue(a) {
-		return a
-	}
-	return b
-}
-
 // Adapter that may deliver a durable subscription, never letting a missing secondary bot borrow primary authority
 func adapterForSubscription(ctx context.Context, r *GatewayRunner, platform gateway.Platform, sub *jsonutil.Object, ownerProfile string) (gateway.PlatformAdapter, error) {
 	var owner *string
@@ -280,11 +272,11 @@ func adapterForSubscription(ctx context.Context, r *GatewayRunner, platform gate
 		return nil, nil
 	}
 	meta := subMetadata(sub)
-	guild := routeArg(pyOr(objValue(meta, "scope_id"), objValue(meta, "guild_id")))
+	guild := routeArg(anyutil.Or(objValue(meta, "scope_id"), objValue(meta, "guild_id")))
 	parent := routeArg(objValue(meta, "parent_chat_id"))
 	chat := routeArg(objValue(sub, "chat_id"))
-	thread := routeArg(pyOr(objValue(sub, "thread_id"), nil))
-	userID := routeArg(pyOr(objValue(sub, "user_id"), nil))
+	thread := routeArg(anyutil.Or(objValue(sub, "thread_id"), nil))
+	userID := routeArg(anyutil.Or(objValue(sub, "user_id"), nil))
 	threadLike := anyutil.IsTrue(objValue(sub, "thread_id")) || subThreadLike(sub, meta)
 	for _, route := range r.config.ProfileRoutes {
 		hit, err := route.Matches(ctx, gateway.RouteQuery{Platform: string(platform), GuildID: guild, ChatID: chat,
@@ -1041,7 +1033,7 @@ func (n *kanbanNotification) wake(ctx context.Context) error {
 		return nil
 	}
 	meta := subMetadata(sub)
-	chatType := strings.TrimSpace(anyutil.String(pyOr(pyOr(objValue(sub, "chat_type"), objValue(meta, "chat_type")), "")))
+	chatType := strings.TrimSpace(anyutil.String(anyutil.Or(anyutil.Or(objValue(sub, "chat_type"), objValue(meta, "chat_type")), "")))
 	if chatType == "" {
 		chatType = "group"
 	}

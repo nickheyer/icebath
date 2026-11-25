@@ -84,46 +84,30 @@ func TestMountinfoFstypeEdges(t *testing.T) {
 		t.Fatalf("blank fstype tail = %v", err)
 	}
 	mi = writeMountinfo(t, `1 2 3:4 / /bad\x4 rw - virtiofs src rw`)
-	if _, err := mountinfoFstype("/data/x", mi); err == nil || !strings.Contains(err.Error(), `truncated \xXX escape`) {
-		t.Fatalf("malformed escape = %v", err)
+	if got, err := mountinfoFstype(`/bad\x4/db`, mi); err != nil || got != "virtiofs" {
+		t.Fatalf("non-octal backslash kept literally = %q, %v", got, err)
 	}
 	if _, err := mountinfoFstype("/data", "/proc/self/mount\x00info"); err == nil || !strings.Contains(err.Error(), "the mount path holds a null byte") {
 		t.Fatalf("nul path = %v", err)
 	}
 }
 
-func TestPyUnicodeEscapeDecode(t *testing.T) {
+func TestUnescapeMountinfoField(t *testing.T) {
 	cases := []struct {
-		in, want, err string
+		in, want string
 	}{
-		{`/mnt/my\040share`, "/mnt/my share", ""},
-		{`a\tb\\c\'\"\n`, "a\tb\\c'\"\n", ""},
-		{`\777`, "\u01ff", ""},
-		{`\q`, `\q`, ""},
-		{"x\\\ny", "xy", ""},
-		{"\\x41\\u00e9\\U0001F600", "A\u00e9\U0001F600", ""},
-		{`\N{LATIN SMALL LETTER A}\N{latin small letter b}`, "ab", ""},
-		{`\x4`, "", `invalid escape at byte 0 of a mount path: truncated \xXX escape`},
-		{`ab\N{bogus}`, "", `invalid escape at byte 2 of a mount path: unknown Unicode character name`},
-		{`\N{}`, "", `invalid escape at byte 0 of a mount path: malformed \N character escape`},
-		{`\Nx`, "", `invalid escape at byte 0 of a mount path: malformed \N character escape`},
-		{`\U00110000`, "", `invalid escape at byte 0 of a mount path: illegal Unicode character`},
-		{`a\`, "", `invalid escape at byte 1 of a mount path: \ at end of string`},
+		{`/mnt/my\040share`, "/mnt/my share"},
+		{`a\011b\134c\012`, "a\tb\\c\n"},
+		{`/x\303\251\377`, "/x\u00e9\xff"},
+		{`\777`, `\777`},
+		{`\q`, `\q`},
+		{`\04`, `\04`},
+		{`a\`, `a\`},
 	}
 	for _, c := range cases {
-		got, err := pyUnicodeEscapeDecode([]byte(c.in))
-		if c.err != "" {
-			if err == nil || err.Error() != c.err {
-				t.Errorf("%q error = %v want %s", c.in, err, c.err)
-			}
-			continue
+		if got := unescapeMountinfoField(c.in); got != c.want {
+			t.Errorf("%q = %q want %q", c.in, got, c.want)
 		}
-		if err != nil || got != c.want {
-			t.Errorf("%q = %q, %v want %q", c.in, got, err, c.want)
-		}
-	}
-	if got := latin1Ignore("a\u00e9\u65e5b"); string(got) != "a\xe9b" {
-		t.Fatalf("latin1Ignore = %q", got)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -414,7 +415,7 @@ func (s *SessionStore) RecordChatLabels(ctx context.Context, source *SessionSour
 func (s *SessionStore) ChatLabels(ctx context.Context, platform Platform, scopeID *string, chatID string) (chatName, chatTopic any, ok bool, err error) {
 	db := s.routingDB(ctx)
 	if db == nil {
-		return nil, nil, false, &PyError{Kind: "LookupError", Msg: "session database unavailable"}
+		return nil, nil, false, &errorutil.Error{Kind: "LookupError", Msg: "session database unavailable"}
 	}
 	raw, found, err := db.GetMeta(ctx, chatLabelsMetaKey(platform, scopeID, chatID))
 	if err != nil {
@@ -429,7 +430,7 @@ func (s *SessionStore) ChatLabels(ctx context.Context, platform Platform, scopeI
 	}
 	pair, isList := parsed.([]any)
 	if !isList || len(pair) != 2 {
-		return nil, nil, false, &PyError{Kind: "ValueError", Msg: "chat labels are not a pair"}
+		return nil, nil, false, &errorutil.Error{Kind: "ValueError", Msg: "chat labels are not a pair"}
 	}
 	return pair[0], pair[1], true, nil
 }
@@ -572,7 +573,7 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 			continue
 		}
 		if db := s.routingDB(ctx); db != nil {
-			skip, err := db.RouteRetired(ctx, key, sessionIDJSON(pyStrOf(sid)))
+			skip, err := db.RouteRetired(ctx, key, sessionIDJSON(anyutil.String(sid)))
 			if err != nil {
 				fmt.Printf("[gateway] Warning: Failed to load sessions: %v\n", err)
 				return retired

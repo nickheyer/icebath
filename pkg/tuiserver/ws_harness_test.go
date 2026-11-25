@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -81,7 +82,7 @@ func (s *wsTestSocket) SendText(_ context.Context, text string) error {
 		s.mu.Lock()
 		if s.failIDs[frame["id"]] {
 			s.mu.Unlock()
-			return &gateway.PyError{Kind: "RuntimeError", Msg: "peer gone"}
+			return &errorutil.Error{Kind: "RuntimeError", Msg: "peer gone"}
 		}
 		s.sent = append(s.sent, frame)
 		s.lines = append(s.lines, part)

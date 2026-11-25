@@ -85,7 +85,7 @@ func TestTavilyRequest(t *testing.T) {
 	})
 	t.Run("keyless when no api key", func(t *testing.T) {
 		env := httpxProviderEnv(t, "TAVILY_BASE_URL="+srv.URL+"\n", nil)
-		if _, err := tavilyRequest(context.Background(), env, "search", pyObject("query", "test"), nil); err != nil {
+		if _, err := tavilyRequest(context.Background(), env, "search", jsonutil.ObjectOf("query", "test"), nil); err != nil {
 			t.Fatal(err)
 		}
 		c := calls()[len(calls())-1]
@@ -98,7 +98,7 @@ func TestTavilyRequest(t *testing.T) {
 	})
 	t.Run("keyed uses bearer not body", func(t *testing.T) {
 		env := httpxProviderEnv(t, "TAVILY_BASE_URL="+srv.URL+"\nTAVILY_API_KEY=tvly-test-key\n", nil)
-		if _, err := tavilyRequest(context.Background(), env, "/search", pyObject("query", "hello"), nil); err != nil {
+		if _, err := tavilyRequest(context.Background(), env, "/search", jsonutil.ObjectOf("query", "hello"), nil); err != nil {
 			t.Fatal(err)
 		}
 		c := calls()[len(calls())-1]
@@ -111,7 +111,7 @@ func TestTavilyRequest(t *testing.T) {
 	})
 	t.Run("http error surfaces response body", func(t *testing.T) {
 		env := httpxProviderEnv(t, "TAVILY_BASE_URL="+srv.URL+"\n", nil)
-		_, err := tavilyRequest(context.Background(), env, "search", pyObject("query", "limited"), nil)
+		_, err := tavilyRequest(context.Background(), env, "search", jsonutil.ObjectOf("query", "limited"), nil)
 		var ve *verbatimError
 		if !errors.As(err, &ve) || !strings.Contains(ve.msg, "Rate limit hit") {
 			t.Fatalf("%v", err)
@@ -392,7 +392,7 @@ func TestKeenableKeyedSearchAndExtract(t *testing.T) {
 		t.Fatalf("%+v", resp)
 	}
 	c := calls()[0]
-	if c.header.Get("Authorization") != "Bearer kn-from-dotenv" || c.header.Get("X-Keenable-Title") != "icebath-agent" || c.raw != `{"query": "q", "max_results": 20}` {
+	if c.header.Get("Authorization") != "Bearer kn-from-dotenv" || c.header.Get("X-Keenable-Title") != "icebath-agent" || c.raw != `{"query":"q","max_results":20}` {
 		t.Fatalf("%v %s", c.header, c.raw)
 	}
 	pages, _ := keenableP().Extract(context.Background(), env, []string{"https://old.example/a", "https://missing.example", "https://broken.example"}, "")
@@ -414,7 +414,7 @@ func TestKeenableKeyedSearchAndExtract(t *testing.T) {
 	if resp, _ := keenableP().Search(context.Background(), env, "q", 5); resp.Error != "Keenable search failed: busy" {
 		t.Fatalf("%+v", resp)
 	}
-	if resp, _ := keenableP().Search(context.Background(), env, "garbage", 5); resp.Error != "Keenable search failed: Expecting value: line 1 column 1 (char 0)" {
+	if resp, _ := keenableP().Search(context.Background(), env, "garbage", 5); resp.Error != "Keenable search failed: json: invalid character 'o' in literal null (expecting 'u') at line 1, column 2" {
 		t.Fatalf("%+v", resp)
 	}
 }

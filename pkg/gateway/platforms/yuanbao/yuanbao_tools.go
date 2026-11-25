@@ -378,7 +378,7 @@ func sendDM(ctx context.Context, call *tools.Call) (*jsonutil.Object, error) {
 	}
 	rawMessage, isText := toolArg(call, "message", "").(string)
 	if !isText {
-		return nil, &pyErr{"TypeError", "message must be text, got " + errchain.Kind(call.Args["message"])}
+		return nil, &kindErr{"TypeError", "message must be text, got " + errchain.Kind(call.Args["message"])}
 	}
 	embedded, message, err := gateway.ExtractMedia(ctx, rawMessage)
 	if err != nil {

@@ -2,14 +2,16 @@ package state
 
 import (
 	"fmt"
-	"strconv"
+	"math/big"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"context"
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -54,22 +56,42 @@ func newSessionTitles(host titlesHost) *sessionTitles {
 }
 
 // Matches the numbered title pattern, raising the TypeError re.match gives a non string title
-func matchNumberedTitle(title any) (int64, string, bool, error) {
+func matchNumberedTitle(title any) (*big.Int, string, bool, error) {
 	var text string
 	switch v := title.(type) {
 	case string:
 		text = v
 	case []byte:
-		return 0, "", false, &errorutil.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
+		return nil, "", false, &errorutil.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
 	default:
-		return 0, "", false, &errorutil.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
+		return nil, "", false, &errorutil.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
 	}
 	m, err := numberedTitleRe.FindStringMatch(text)
 	if err != nil || m == nil {
-		return 0, "", false, err
+		return nil, "", false, err
 	}
-	n, _ := strconv.ParseInt(strings.TrimSpace(m.GroupByNumber(2).String()), 10, 64)
-	return n, m.GroupByNumber(1).String(), true, nil
+	return decimalDigitsValue(m.GroupByNumber(2).String()), m.GroupByNumber(1).String(), true, nil
+}
+
+// Unbounded value of a run of decimal digits from any script, such as 42 or ٤٢
+func decimalDigitsValue(digits string) *big.Int {
+	n, ten := new(big.Int), big.NewInt(10)
+	for _, r := range digits {
+		n.Mul(n, ten).Add(n, big.NewInt(int64(decimalDigit(r))))
+	}
+	return n
+}
+
+// Value 0 to 9 of a decimal digit: every script lays its digits out as ten consecutive code points from zero, so the offset into the run of digits gives it
+func decimalDigit(r rune) int {
+	if '0' <= r && r <= '9' {
+		return int(r - '0')
+	}
+	start := r
+	for unicode.Is(unicode.Nd, start-1) {
+		start--
+	}
+	return int(r-start) % 10
 }
 
 // Next lineage title seen by conn, stripping a number suffix then incrementing the highest existing number
@@ -84,18 +106,18 @@ func nextTitleInLineage(ctx context.Context, conn SQLiteConn, baseTitle string) 
 	if err != nil || len(rows) == 0 {
 		return base, err
 	}
-	highest := int64(1)
+	highest := big.NewInt(1)
 	for _, row := range rows {
 		title, _ := row.Get("title")
 		n, _, ok, err := matchNumberedTitle(title)
 		if err != nil {
 			return "", err
 		}
-		if ok {
-			highest = max(highest, n)
+		if ok && n.Cmp(highest) > 0 {
+			highest = n
 		}
 	}
-	return base + " #" + strconv.FormatInt(highest+1, 10), nil
+	return base + " #" + new(big.Int).Add(highest, big.NewInt(1)).String(), nil
 }
 
 // Next lineage title on an authority owned transaction connection, counting siblings committed inside it
@@ -108,7 +130,7 @@ func titleRankOf(source any) int {
 	if source == nil {
 		return titleSourceRank[TitleSourceUser]
 	}
-	return titleSourceRank[pyStr(source)]
+	return titleSourceRank[anyutil.String(source)]
 }
 
 // Strips controls, invisibles and lone surrogates and collapses whitespace, empty meaning None, ValueError past the length cap
@@ -117,7 +139,7 @@ func SanitizeTitle(title string) (string, error) {
 		return "", nil
 	}
 	cleaned := titleInvisibleRe.ReplaceAllString(titleControlRe.ReplaceAllString(SanitizeSurrogates(title), ""), "")
-	cleaned = strings.TrimSpace(pySub(titleWhitespaceRe, cleaned, " "))
+	cleaned = strings.TrimSpace(subValue(titleWhitespaceRe, cleaned, " "))
 	if cleaned == "" {
 		return "", nil
 	}
@@ -157,7 +179,7 @@ func (t *sessionTitles) resolveTitleConflict(ctx context.Context, conn SQLiteCon
 	}
 	conflict := rows[0]
 	rawID, _ := conflict.Get("id")
-	conflictID := pyStr(rawID)
+	conflictID := anyutil.String(rawID)
 	ancestor, err := t.isCompressionAncestor(ctx, conn, conflictID, sessionID)
 	if err != nil {
 		return "", false, err
@@ -171,7 +193,7 @@ func (t *sessionTitles) resolveTitleConflict(ctx context.Context, conn SQLiteCon
 	archived, _ := conflict.Get("archived")
 	hidden, _ := conflict.Get("hidden")
 	ghost, _ := conflict.Get("ghost")
-	if (title == CanonicalBotChatTitle && pyTruthy(archived) && pyTruthy(hidden)) || (pyTruthy(ghost) && !pyTruthy(hidden)) {
+	if (title == CanonicalBotChatTitle && anyutil.IsTrue(archived) && anyutil.IsTrue(hidden)) || (anyutil.IsTrue(ghost) && !anyutil.IsTrue(hidden)) {
 		if _, err := conn.ExecContext(ctx, "UPDATE sessions SET title = NULL, title_source = NULL WHERE id = ?", rawID); err != nil {
 			return "", false, err
 		}
@@ -196,7 +218,7 @@ func (t *sessionTitles) setSessionTitleInTransaction(ctx context.Context, conn S
 	currentTitle, _ := current.Get("title")
 	currentSource, _ := current.Get("title_source")
 	hidden, _ := current.Get("hidden")
-	if held, _ := currentTitle.(string); held == CanonicalBotChatTitle && pyTruthy(hidden) && title != CanonicalBotChatTitle {
+	if held, _ := currentTitle.(string); held == CanonicalBotChatTitle && anyutil.IsTrue(hidden) && title != CanonicalBotChatTitle {
 		if isUser {
 			return nil, &errorutil.Error{Kind: "ValueError", Msg: "This is the bot's canonical Bot Chat — its name is its " +
 				"identity, and renaming it would orphan the conversation. " +
@@ -271,7 +293,7 @@ func optionalText(v any) (string, bool) {
 	case string:
 		return x, true
 	default:
-		return pyStr(x), true
+		return anyutil.String(x), true
 	}
 }
 

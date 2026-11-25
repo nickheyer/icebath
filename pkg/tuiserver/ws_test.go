@@ -75,7 +75,7 @@ func TestWsReadyComesFirstAndPingIsInline(t *testing.T) {
 	if want := map[string]any{"jsonrpc": "2.0", "result": map[string]any{"ok": true}, "id": "heartbeat-1"}; !reflect.DeepEqual(sent[1], want) {
 		t.Fatalf("ping reply %v", sent[1])
 	}
-	if sock.lines[1] != `{"jsonrpc": "2.0", "result": {"ok": true}, "id": "heartbeat-1"}` {
+	if sock.lines[1] != `{"jsonrpc":"2.0","result":{"ok":true},"id":"heartbeat-1"}` {
 		t.Fatalf("ping reply on the wire %s", sock.lines[1])
 	}
 }

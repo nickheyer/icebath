@@ -34,7 +34,7 @@ func peBuildTools(t *testing.T) (string, map[string]string) {
 	tmp := isolateHome(t)
 	peToolchain(t, peUV(t), peHostPython(t))
 	env := map[string]string{}
-	for k, v := range pyEnviron() {
+	for k, v := range environValue() {
 		if !strings.HasPrefix(k, "UV_") && !strings.HasPrefix(k, "PYTHON") && k != "VIRTUAL_ENV" {
 			env[k] = v
 		}

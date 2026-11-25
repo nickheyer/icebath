@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
@@ -55,7 +56,7 @@ func futureResultWithin(ctx context.Context, fut *gatewayFuture, timeout time.Du
 	defer cancel()
 	result, err := fut.wait(waitCtx)
 	if !fut.isDone() && ctx.Err() == nil {
-		return nil, &gateway.PyError{Kind: "TimeoutError"}
+		return nil, &errorutil.Error{Kind: "TimeoutError"}
 	}
 	return result, err
 }

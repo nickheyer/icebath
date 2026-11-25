@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -178,13 +179,13 @@ func searchSlowMS(ctx context.Context) float64 {
 const fts5SpecialChars = `+{}():"^@/#&|~[]<>,;!?$=\'`
 
 // Python unicode whitespace complement, the \S of a str pattern
-const pyNonSpaceClass = `[^\t\n\v\f\r \x1c-\x1f\x85\xa0\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
+const nonSpaceClass = `[^\t\n\v\f\r \x1c-\x1f\x85\xa0\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
 
 var (
 	fts5SpecialRE  = regexp.MustCompile("[" + regexp.QuoteMeta(fts5SpecialChars) + "]")
 	ftsOperators   = []string{"AND", "OR", "NOT"}
 	likeSkipTokens = []string{"AND", "OR", "NOT", "NEAR"}
-	likeTokenRE    = regexp.MustCompile(`"[^"]+"|` + pyNonSpaceClass + `+`)
+	likeTokenRE    = regexp.MustCompile(`"[^"]+"|` + nonSpaceClass + `+`)
 )
 
 // Result columns every search route shares, snippet and metadata but never content
@@ -321,7 +322,7 @@ func flattenText(decoded any) (string, error) {
 	}
 	var texts []string
 	for _, t := range parts {
-		if !pyTruthy(t) {
+		if !anyutil.IsTrue(t) {
 			continue
 		}
 		s, ok := t.(string)

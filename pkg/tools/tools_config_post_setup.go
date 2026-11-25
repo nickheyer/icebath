@@ -38,7 +38,7 @@ var (
 	}
 	postSetupInterpreter        = selectedEnvironmentPython
 	postSetupFileExists         = func(path string) bool { _, err := os.Stat(path); return err == nil }
-	errCodexTokensMissing       = errors.New("'tokens'")
+	errCodexTokensMissing       = errors.New("the sign-in returned no tokens")
 	postSetupRuntimeOrOSClasses = map[string]bool{
 		"RuntimeError": true, "NotImplementedError": true, "RecursionError": true, "PythonFinalizationError": true,
 		"InstallError": true, "ResolutionConflict": true, "BuildFailure": true, "NoCommittedEnvironment": true,
@@ -72,7 +72,7 @@ func pmRuntimeOrOSError(err error) bool {
 	if errors.As(err, &install) || errors.As(err, &download) || errorutil.IsSystem(err) {
 		return true
 	}
-	var py *pm.PyError
+	var py *pm.ClassError
 	if errors.As(err, &py) {
 		return postSetupRuntimeOrOSClasses[py.Class]
 	}
@@ -148,7 +148,7 @@ func (s *ToolsSetup) postSetupChromium() error {
 			if !pmRuntimeOrOSError(err) {
 				return err
 			}
-			s.Con.PrintWarning("    Chromium install failed: " + pyExcText(err))
+			s.Con.PrintWarning("    Chromium install failed: " + setupErrorText(err))
 			s.infoLines("Retry with: icebath tools post-setup chromium")
 			return nil
 		}
@@ -211,7 +211,7 @@ func (s *ToolsSetup) postSetupPython(spec pythonPostSetupHook) error {
 		if !setupSyncFailureHandled(err) {
 			return err
 		}
-		s.Con.PrintWarning("    " + spec.label + " install failed: " + pyExcText(err))
+		s.Con.PrintWarning("    " + spec.label + " install failed: " + setupErrorText(err))
 		s.infoLines("Retry with: icebath tools")
 		return nil
 	}
@@ -358,7 +358,7 @@ func (s *ToolsSetup) postSetupOpenAICodex() error {
 		return nil
 	}
 	if err := s.codexSignIn(login, save); err != nil {
-		s.Con.PrintWarning("    Codex sign-in did not complete: " + pyExcText(err) + ". Run later: " + relogin)
+		s.Con.PrintWarning("    Codex sign-in did not complete: " + setupErrorText(err) + ". Run later: " + relogin)
 		return nil
 	}
 	s.Con.PrintSuccess("    Logged in — image generation will use these Codex OAuth credentials")
@@ -381,7 +381,7 @@ func (s *ToolsSetup) codexSignIn(login func(context.Context, string, io.Writer) 
 	if !ok {
 		return errCodexTokensMissing
 	}
-	tokens, _ := pyDictOf(raw)
+	tokens, _ := dictOf(raw)
 	lastRefresh := ""
 	if v, ok := creds["last_refresh"]; ok && v != nil {
 		lastRefresh = anyutil.String(v)
@@ -485,7 +485,7 @@ func (s *ToolsSetup) RunPostSetupCommand(ns map[string]any) int {
 	}
 	s.Con.PrintInfo("Running post-setup hook: " + keyText)
 	if err := s.runPostSetupCaught(keyText); err != nil {
-		s.Con.PrintError("Post-setup failed: " + pyExcText(err))
+		s.Con.PrintError("Post-setup failed: " + setupErrorText(err))
 		return 1
 	}
 	s.Con.PrintSuccess("Post-setup '" + keyText + "' complete")

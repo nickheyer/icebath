@@ -44,7 +44,7 @@ func lastChars(s string, n int) string {
 // Refuses bytes that are not UTF-8 with the UnicodeDecodeError Python raises
 func utf8Strict(data []byte) error {
 	if err := strictUTF8(data); err != nil {
-		return &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return &ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	return nil
 }

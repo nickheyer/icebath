@@ -244,7 +244,7 @@ func TestServiceReadinessFilterSkipsVanishedGatewaysButNeverSwallowsBugs(t *test
 		t.Fatalf("got %v err %v", got, err)
 	}
 	winParents = func(int) ([]int, error) {
-		return nil, &pm.PyError{Class: "RuntimeError", Message: "bug in the parent walk"}
+		return nil, &pm.ClassError{Class: "RuntimeError", Message: "bug in the parent walk"}
 	}
 	winWaitForGatewayReady = func(_ context.Context, _ *float64, _ string, _ bool, filter func([]int) ([]int, error)) ([]int, error) {
 		return filter([]int{os.Getpid()})

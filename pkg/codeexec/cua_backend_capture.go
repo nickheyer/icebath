@@ -19,7 +19,7 @@ import (
 )
 
 // Python str pattern whitespace class
-const pyWS = `[\s\x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
+const wsValue = `[\s\x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
 
 // Whole screen and desktop shell intents of the app argument
 var (
@@ -27,8 +27,8 @@ var (
 	desktopShellSentinels = map[string]bool{"desktop": true}
 	desktopWindowNames    = []string{"progman", "workerw", "program manager", "shell_traywnd", "taskbar", "finder", "desktop", "dock"}
 	desktopBackdropNames  = []string{"progman", "workerw", "program manager", "finder", "desktop"}
-	axWindowTitleRE       = regexp.MustCompile(`AXWindow` + pyWS + `+"([^"]+)"`)
-	textAppPIDRE          = regexp.MustCompile(`(.+?)` + pyWS + `+\(pid` + pyWS + `+([0-9]+)\)`)
+	axWindowTitleRE       = regexp.MustCompile(`AXWindow` + wsValue + `+"([^"]+)"`)
+	textAppPIDRE          = regexp.MustCompile(`(.+?)` + wsValue + `+\(pid` + wsValue + `+([0-9]+)\)`)
 )
 
 const (

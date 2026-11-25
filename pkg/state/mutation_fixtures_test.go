@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -206,7 +207,7 @@ func sessionOf(t *testing.T, db *SessionDB, sid string) *jsonutil.Object {
 func idSet(values any) map[string]bool {
 	out := map[string]bool{}
 	for _, v := range values.([]any) {
-		out[pyStr(v)] = true
+		out[anyutil.String(v)] = true
 	}
 	return out
 }
@@ -230,7 +231,7 @@ func metaKeys(t *testing.T, db *SessionDB, prefix string) []string {
 	rows := rowsOf(t, db, "SELECT key FROM state_meta WHERE key GLOB ?", prefix+"*")
 	out := []string{}
 	for _, row := range rows {
-		out = append(out, pyStr(rowValue(row, "key")))
+		out = append(out, anyutil.String(rowValue(row, "key")))
 	}
 	return out
 }
@@ -240,7 +241,7 @@ func metaBlob(t *testing.T, db *SessionDB, query string, args ...any) string {
 	t.Helper()
 	out := ""
 	for _, row := range rowsOf(t, db, query, args...) {
-		out += pyStr(rowValue(row, "value"))
+		out += anyutil.String(rowValue(row, "value"))
 	}
 	return out
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -162,7 +163,7 @@ func recoverRotatedCompressionSession(ctx context.Context, a *AIAgent) (recovere
 		}
 	}()
 	fail := func(err error) ([]map[string]any, bool) {
-		pkgLog().Warn(fmt.Sprintf("compression session recovery failed for session=%s (%s: %v)", sessionID, pyErrorClass(err), err))
+		pkgLog().Warn(fmt.Sprintf("compression session recovery failed for session=%s (%s)", sessionID, errchain.OSText(err)))
 		return nil, false
 	}
 	rotated, err := sessionWasRotatedByCompression(ctx, a.sessionDB, sessionID)
@@ -194,15 +195,6 @@ func recoverRotatedCompressionSession(ctx context.Context, a *AIAgent) (recovere
 		time.Sleep(compressionRecoveryPoll)
 	}
 	return nil, false
-}
-
-// Python exception class name shown in recovery warnings
-func pyErrorClass(err error) string {
-	var named interface{ ErrorKind() string }
-	if errors.As(err, &named) {
-		return named.ErrorKind()
-	}
-	return fmt.Sprintf("%T", err)
 }
 
 // Unique durable lock holder id from pid, pid namespace, goroutine, agent instance and a per acquire nonce

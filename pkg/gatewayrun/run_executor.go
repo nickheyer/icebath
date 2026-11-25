@@ -45,7 +45,7 @@ func (r *GatewayRunner) getOrCreatePool(slot *gatewayExecutor, makePool func() g
 	r.executorLock.Lock()
 	defer r.executorLock.Unlock()
 	if r.executorClosing {
-		return nil, &pyRuntimeError{msg: "Gateway is shutting down; executor unavailable"}
+		return nil, &runtimeError{msg: "Gateway is shutting down; executor unavailable"}
 	}
 	if *slot == nil || (*slot).isShutdown() {
 		*slot = makePool()

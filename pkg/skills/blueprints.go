@@ -92,7 +92,9 @@ func ParseBlueprint(skillMD string) (*BlueprintSpec, error) {
 		spec.Provider = strPtr(strings.TrimSpace(anyutil.String(p)))
 	}
 	for _, t := range list {
-		spec.EnabledToolsets = append(spec.EnabledToolsets, anyutil.String(t))
+		if t != nil {
+			spec.EnabledToolsets = append(spec.EnabledToolsets, anyutil.String(t))
+		}
 	}
 	return spec, nil
 }

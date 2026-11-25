@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // deviceRuntimeError is a device login failure whose text is safe to show
@@ -199,14 +200,14 @@ func deviceRegister(ctx context.Context, client *http.Client, p *OAuthProvider, 
 		return err
 	}
 	var data map[string]any
-	if pyTruthy(cfg["client_id"]) {
+	if anyutil.IsTrue(cfg["client_id"]) {
 		doc, err := decodeJSONDocument(body)
 		if err != nil {
 			return err
 		}
 		data, _ = documentMap(doc)
 		data["client_id"] = cfg["client_id"]
-		if pyTruthy(cfg["client_secret"]) {
+		if anyutil.IsTrue(cfg["client_secret"]) {
 			data["client_secret"] = cfg["client_secret"]
 		}
 	} else {
@@ -253,7 +254,7 @@ func devicePositiveSeconds(v any, label string) (float64, error) {
 	if n, ok := v.(json.Number); ok {
 		v = n.String()
 	}
-	f, err := pyFloatStrict(v)
+	f, err := floatStrict(v)
 	if err != nil {
 		return 0, &deviceFieldError{err}
 	}

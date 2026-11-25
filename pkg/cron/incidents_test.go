@@ -95,7 +95,7 @@ func TestIncidentsListNewestInstantFirstAcrossDSTFallBack(t *testing.T) {
 	if err != nil || len(rows) != 2 || rows[0].ID != later || rows[1].ID != earlier {
 		t.Fatal(rows, err)
 	}
-	if !strings.HasSuffix(rows[0].LastSeenAt, "01:10:00-05:00") || !strings.HasSuffix(rows[1].LastSeenAt, "01:50:00-04:00") {
+	if !strings.HasSuffix(rows[0].LastSeenAt, "01:10:00.000000-05:00") || !strings.HasSuffix(rows[1].LastSeenAt, "01:50:00.000000-04:00") {
 		t.Fatal(rows[0].LastSeenAt, rows[1].LastSeenAt)
 	}
 }

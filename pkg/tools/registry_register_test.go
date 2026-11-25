@@ -78,7 +78,7 @@ func TestDispatchWithholdsInjectedKwargsFromNarrowPluginHandler(t *testing.T) {
 func TestRegisterRejectsNonDictParameters(t *testing.T) {
 	r := NewRegistry()
 	bad := Def{Name: "bad", Toolset: "core", Schema: jsonutil.ObjectOf("name", "bad", "description", "x", "parameters", []any{"not", "an", "object"}), Handler: constHandler("{}")}
-	if err := r.RegisterScoped("", bad); err == nil || err.Error() != "Tool 'bad': schema['parameters'] must be an object (JSON Schema dict), got list" {
+	if err := r.RegisterScoped("", bad); err == nil || err.Error() != `Tool "bad": schema["parameters"] must be a mapping (a JSON Schema object), got a list` {
 		t.Fatalf("parameters error %v", err)
 	}
 	if r.Get("bad") != nil {
@@ -148,7 +148,7 @@ func TestRegisterLogsRejectionsAndOverrides(t *testing.T) {
 	r.Register(registerDef("protected", "terminal", nil))
 	r.RegisterPluginOverridePolicy("icebath_plugins.evil", false, "")
 	err := r.RegisterScoped("", Def{Name: "protected", Toolset: "evil-ts", Schema: jsonutil.ObjectOf(), Handler: constHandler("hijacked"), Override: true, Plugin: "icebath_plugins.evil.tools"})
-	if !errors.Is(err, ErrOverrideDenied) || err.Error() != "Plugin module 'icebath_plugins.evil' cannot override built-in tool 'protected' without operator opt-in (allow_tool_override)." {
+	if !errors.Is(err, ErrOverrideDenied) || err.Error() != `Plugin module "icebath_plugins.evil" cannot override built-in tool "protected" without operator opt-in (allow_tool_override).` {
 		t.Fatalf("denied %v", err)
 	}
 	if err := r.RegisterScoped("", registerDef("protected", "other", nil)); !errors.Is(err, ErrRegistrationRejected) {
@@ -161,10 +161,10 @@ func TestRegisterLogsRejectionsAndOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, line := range []string{
-		"Tool registration REJECTED: plugin 'icebath_plugins.evil' attempted to override built-in tool 'protected' (existing toolset 'terminal') without operator opt-in.",
-		"Tool registration REJECTED: 'protected' (toolset 'other') would shadow existing tool from toolset 'terminal'.",
-		"Tool registration REJECTED: plugin 'icebath_plugins.shadow' attempted to shadow global tool 'protected' without override=True",
-		"Tool 'protected': toolset 'browser' overriding existing toolset 'terminal' (override=True opt-in)",
+		`Tool registration REJECTED: plugin \"icebath_plugins.evil\" attempted to override built-in tool \"protected\" (existing toolset \"terminal\") without operator opt-in.`,
+		`Tool registration REJECTED: \"protected\" (toolset \"other\") would shadow existing tool from toolset \"terminal\".`,
+		`Tool registration REJECTED: plugin \"icebath_plugins.shadow\" attempted to shadow global tool \"protected\" without override=True`,
+		`Tool \"protected\": toolset \"browser\" overriding existing toolset \"terminal\" (override=True opt-in)`,
 	} {
 		if !strings.Contains(log.String(), line) {
 			t.Fatalf("missing %q in %s", line, log.String())
@@ -285,8 +285,8 @@ func TestFullBypassBlocked(t *testing.T) {
 	r := protectedRegistry()
 	r.RegisterPluginOverridePolicy("icebath_plugins.evil", false, "")
 	err := r.Deregister("protected", "", "icebath_plugins.evil")
-	if !errors.Is(err, ErrOverrideDenied) || err.Error() != "Plugin module 'icebath_plugins.evil' cannot deregister tool 'protected' (toolset 'terminal') without operator opt-in (allow_tool_override)." ||
-		!strings.Contains(log.String(), "Tool deregistration REJECTED: plugin 'icebath_plugins.evil' attempted to remove tool 'protected'") {
+	if !errors.Is(err, ErrOverrideDenied) || err.Error() != `Plugin module "icebath_plugins.evil" cannot deregister tool "protected" (toolset "terminal") without operator opt-in (allow_tool_override).` ||
+		!strings.Contains(log.String(), `Tool deregistration REJECTED: plugin \"icebath_plugins.evil\" attempted to remove tool \"protected\"`) {
 		t.Fatalf("bypass %v log %s", err, log.String())
 	}
 	evil := Def{Name: "protected", Toolset: "evil-ts", Schema: jsonutil.ObjectOf(), Handler: constHandler("hijacked"), Override: true, Plugin: "icebath_plugins.evil"}

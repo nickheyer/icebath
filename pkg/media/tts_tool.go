@@ -472,12 +472,12 @@ func synthesizeChunks(ctx context.Context, env *tools.Env, chunks []string, base
 		if err := json.Unmarshal([]byte(raw), &result); err != nil || result == nil {
 			return nil, nil, &ttsRuntimeError{msg: fmt.Sprintf("TTS chunk %d returned invalid JSON: %s", index+1, clipRunes(raw, 200))}
 		}
-		if !pyTruthy(result["success"]) {
+		if !anyutil.IsTrue(result["success"]) {
 			errMsg := dictGetDefault(result, "error", "unknown error")
 			return nil, nil, &chunkFailedError{msg: fmt.Sprintf("TTS chunk %d failed (%s): %s", index+1, o.Provider, anyutil.String(errMsg))}
 		}
 		actual := chunkPath
-		if pyTruthy(result["file_path"]) {
+		if anyutil.IsTrue(result["file_path"]) {
 			actual = anyutil.String(result["file_path"])
 		}
 		if info, err := os.Stat(actual); err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
@@ -561,7 +561,7 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		}
 		voiceCompatible := len(results) > 0
 		for _, r := range results {
-			voiceCompatible = voiceCompatible && pyTruthy(r["voice_compatible"])
+			voiceCompatible = voiceCompatible && anyutil.IsTrue(r["voice_compatible"])
 		}
 		deliveryBase, err := pathutil.WithSuffix(basePath, pathutil.Suffix(encoded[0]))
 		if err != nil {

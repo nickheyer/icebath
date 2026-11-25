@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Providers that support OAuth login in addition to API keys
@@ -112,10 +113,10 @@ func (c *authCLI) ask(prompt string, reader func(string) (string, error)) (strin
 
 // str(value or "") of a namespace or config value
 func authTextOr(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 func authInt(v any) (int, bool) {
@@ -881,11 +882,11 @@ func (c *authCLI) priority() error {
 	}
 	requested, ok := authInt(c.ns["priority"])
 	if !ok {
-		return fmt.Errorf("provider: auth priority needs an integer priority, got %s", pyRepr(c.ns["priority"]))
+		return fmt.Errorf("provider: auth priority needs an integer priority, got %s", anyutil.Quote(c.ns["priority"]))
 	}
 	moved, ok := pool.MoveEntry(matched.ID, requested)
 	if !ok {
-		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", pyStr(target), provider))
+		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", anyutil.String(target), provider))
 	}
 	c.reportPriority(provider, pool, moved, requested, "Set", "to")
 	return nil

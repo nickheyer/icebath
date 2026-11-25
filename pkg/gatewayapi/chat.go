@@ -327,9 +327,9 @@ func hexUUID() string { return strings.ReplaceAll(uuid.NewString(), "-", "") }
 
 // Whether a write error means the SSE client went away
 func isClientGone(err error) bool {
-	var pyErr *gateway.PyError
-	if errors.As(err, &pyErr) {
-		switch pyErr.Kind {
+	var kindErr *errorutil.Error
+	if errors.As(err, &kindErr) {
+		switch kindErr.Kind {
 		case "ConnectionResetError", "ConnectionAbortedError", "BrokenPipeError", "OSError":
 			return true
 		}
@@ -481,7 +481,7 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 		final, _ := result["final_response"].(string)
 		finalResponse := gateway.APIResolveMediaToDataURLs(taskCtx, final)
 		effective := sessionID
-		if sid, ok := result["session_id"]; ok {
+		if sid, ok := result["session_id"]; ok && sid != nil {
 			effective = anyutil.String(sid)
 		}
 		turnMessages := a.turnTranscriptMessages(history, userMessage, result)

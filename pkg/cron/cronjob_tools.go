@@ -94,7 +94,7 @@ func cronToolError(message string, extra *jsonutil.Object) string {
 }
 
 // Ordered object from alternating keys and values
-func pyObj(kv ...any) *jsonutil.Object {
+func objValue(kv ...any) *jsonutil.Object {
 	out := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		out.Set(kv[i].(string), kv[i+1])
@@ -183,12 +183,12 @@ func (s *Store) forwardRelayFrontedRun(ctx context.Context, job *Job, extraPromp
 		}
 	}
 	if err == nil {
-		return cronDumps(pyObj("success", true, "forwarded_to_gateway", true,
+		return cronDumps(objValue("success", true, "forwarded_to_gateway", true,
 			"note", "This job targets a relay-fronted platform; it was dispatched "+
 				"to the running gateway, whose live relay adapter owns that "+
 				"delivery."))
 	}
-	return cronDumps(pyObj("success", false,
+	return cronDumps(objValue("success", false,
 		"error", "This job targets a relay-fronted platform, which has no "+
 			"standalone sender. Start the gateway — its ticker will "+
 			"deliver the job on schedule via the live relay adapter. "+
@@ -237,7 +237,7 @@ func (s *Store) handOffPrimaryRoutedRun(ctx context.Context, job *Job, extraProm
 			names = append(names, p)
 		}
 		sort.Strings(names)
-		return cronDumps(pyObj("success", false, "error",
+		return cronDumps(objValue("success", false, "error",
 			fmt.Sprintf("This job delivers to %s through the primary ", strings.Join(names, ", "))+
 				fmt.Sprintf("gateway's profile route, which has no standalone sender. %s", cause))), nil
 	}
@@ -250,7 +250,7 @@ func (s *Store) handOffPrimaryRoutedRun(ctx context.Context, job *Job, extraProm
 		return "", err
 	}
 	s.notifyProviderJobsChanged()
-	return cronDumps(pyObj("success", true, "job", s.formatJob(updated),
+	return cronDumps(objValue("success", true, "job", s.formatJob(updated),
 		"note", "This job delivers through the primary gateway's profile route; it was "+
 			"queued for that gateway's next scheduler tick, which runs and delivers it.")), nil
 }
@@ -337,12 +337,12 @@ func (s *Store) runHeartbeat(ctx context.Context, jobName string) func() {
 			}
 			elapsed := time.Since(started)
 			if elapsed > cronRunHeartbeatCeiling {
-				s.log.Warn(fmt.Sprintf("cronjob run heartbeat ceiling reached for job '%s' (%.0fs) — stopping heartbeat; gateway watchdog regains authority", jobName, elapsed.Seconds()))
+				s.log.Warn(fmt.Sprintf("cronjob run heartbeat ceiling reached for job %q (%.0fs) — stopping heartbeat; gateway watchdog regains authority", jobName, elapsed.Seconds()))
 				return
 			}
 			func() {
 				defer func() { _ = recover() }()
-				cb(fmt.Sprintf("cronjob: running job '%s' (%ds elapsed)", jobName, int(elapsed.Seconds())))
+				cb(fmt.Sprintf("cronjob: running job %q (%ds elapsed)", jobName, int(elapsed.Seconds())))
 			}()
 		}
 	}()
@@ -460,7 +460,7 @@ func ExecuteJobForEvent(ctx context.Context, h, jobRef string, extraPrompt *stri
 		return nil, err
 	}
 	if job == nil {
-		return map[string]any{"claimed": false, "success": false, "error": fmt.Sprintf("Cron job '%s' not found.", jobRef)}, nil
+		return map[string]any{"claimed": false, "success": false, "error": fmt.Sprintf("Cron job %q not found.", jobRef)}, nil
 	}
 	res := s.executeJobNow(ctx, job, extraPrompt)
 	return map[string]any{"claimed": res.Claimed, "success": res.Success, "error": res.Error}, nil
@@ -500,7 +500,7 @@ func (s *Store) reapStaleExecutions(ctx context.Context, jobName string) {
 		return
 	}
 	if reclaimed > 0 {
-		s.log.Warn(fmt.Sprintf("Reclaimed %d stale cron execution(s) from dead owner(s) before dispatching job '%s'", reclaimed, jobName))
+		s.log.Warn(fmt.Sprintf("Reclaimed %d stale cron execution(s) from dead owner(s) before dispatching job %q", reclaimed, jobName))
 	}
 }
 
@@ -591,7 +591,7 @@ func (s *Store) manualRunCompletion(ctx context.Context, res *manualRunResult, j
 		result += " — " + anyutil.String(res.Error)
 	}
 	lines := []string{
-		fmt.Sprintf("Cron job '%s' (%s) finished its manual run.", jobName, jobID),
+		fmt.Sprintf("Cron job %q (%s) finished its manual run.", jobName, jobID),
 		"Result: " + result,
 		"Delivery target: " + deliver + manualRunDeliveryNote(deliver, refreshed),
 	}
@@ -605,7 +605,7 @@ func (s *Store) manualRunCompletion(ctx context.Context, res *manualRunResult, j
 	if res.Success {
 		status = "completed"
 	}
-	out := pyObj("status", status, "summary", strings.Join(lines, "\n"), "error", res.Error, "duration_seconds", duration)
+	out := objValue("status", status, "summary", strings.Join(lines, "\n"), "error", res.Error, "duration_seconds", duration)
 	return mergeObj(out, s.runSessionUsage(ctx, jobID, executionID))
 }
 
@@ -653,8 +653,8 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 	}
 	runCtx := context.WithoutCancel(ctx)
 	dispatch := dispatchAsyncDelegationSeam(env, tools.AsyncDelegationRequest{
-		Goal: fmt.Sprintf("Manual run of cron job '%s' (%s)", jobName, jobID),
-		Context: "Triggered via cronjob(action='run'). The job executed in its own " +
+		Goal: fmt.Sprintf("Manual run of cron job %q (%s)", jobName, jobID),
+		Context: "Triggered via cronjob(action=\"run\"). The job executed in its own " +
 			"fresh cron session; this block reports its outcome.",
 		Role: "cron_run", SessionKey: sessionKey, ParentSessionID: parent,
 		Runner: func() *jsonutil.Object {
@@ -671,7 +671,7 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 	if v, ok := dispatch["error"]; ok {
 		reason = v
 	}
-	s.log.Info(fmt.Sprintf("cronjob run: background pool unavailable (%s); running job '%s' inline.", anyutil.String(reason), jobName))
+	s.log.Info(fmt.Sprintf("cronjob run: background pool unavailable (%s); running job %q inline.", anyutil.String(reason), jobName))
 	result := s.runClaimedJob(ctx, job, extraPrompt)
 	f := false
 	result.Dispatched = &f
@@ -734,7 +734,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 	noAgent := anyutil.IsTrue(a.NoAgent)
 	if noAgent {
 		if script == "" {
-			return cronToolError("create with no_agent=True requires a script — "+
+			return cronToolError("create with no_agent=true requires a script — "+
 				"the script is the job. In no_agent mode the LLM is "+
 				"skipped entirely: prompt and skills are ignored, "+
 				"non-empty stdout is delivered verbatim, empty stdout "+
@@ -779,7 +779,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 			contextFrom = nil
 		}
 	}
-	spec := pyObj("prompt", prompt, "schedule", a.Schedule, "name", a.Name, "repeat", a.Repeat,
+	spec := objValue("prompt", prompt, "schedule", a.Schedule, "name", a.Name, "repeat", a.Repeat,
 		"deliver", ptrValue(resolveCronContextDeliver(a.env, deliver)))
 	if origin := s.originFromEnv(a.env, a.Schedule); origin != nil {
 		spec.Set("origin", origin)
@@ -824,7 +824,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 	if err != nil {
 		return "", err
 	}
-	parts := []string{fmt.Sprintf("Cron job '%s' created.", job.Name)}
+	parts := []string{fmt.Sprintf("Cron job %q created.", job.Name)}
 	if !job.Enabled {
 		parts = append(parts, "Created PAUSED — resume to schedule, or explicitly run now.")
 	}
@@ -839,7 +839,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 	if job.Skills != nil {
 		skillsOut = toAnyList(job.Skills)
 	}
-	result := pyObj("success", true, "job_id", job.ID, "name", job.Name, "skill", strPtrAny(job.Skill),
+	result := objValue("success", true, "job_id", job.ID, "name", job.Name, "skill", strPtrAny(job.Skill),
 		"skills", skillsOut, "schedule", job.ScheduleDisplay, "repeat", repeatDisplay(job),
 		"deliver", jobDeliver, "next_run_at", strPtrAny(job.NextRunAt), "job", s.formatJob(job),
 		"message", strings.Join(parts, " "))
@@ -856,7 +856,7 @@ func (s *Store) actionList(ctx context.Context, a *cronjobArgs) (string, error) 
 	for _, j := range jobs {
 		formatted = append(formatted, s.formatJob(j))
 	}
-	result := pyObj("success", true, "count", len(formatted), "jobs", formatted)
+	result := objValue("success", true, "count", len(formatted), "jobs", formatted)
 	if len(formatted) > 0 {
 		mergeObj(result, s.gatewayLivenessNotice(ctx, true))
 	}
@@ -869,21 +869,21 @@ func (s *Store) actionRemove(ctx context.Context, job *Job, a *cronjobArgs) (str
 		return "", err
 	}
 	if !removed {
-		return cronToolError(fmt.Sprintf("Failed to remove job '%s'", job.ID), nil), nil
+		return cronToolError(fmt.Sprintf("Failed to remove job %q", job.ID), nil), nil
 	}
 	s.notifyProviderJobsChanged()
 	var sched any
 	if job.ScheduleDisplay != "" || jobHasKey(job, "schedule_display") {
 		sched = job.ScheduleDisplay
 	}
-	return cronDumps(pyObj("success", true, "message", fmt.Sprintf("Cron job '%s' removed.", job.Name),
-		"removed_job", pyObj("id", job.ID, "name", job.Name, "schedule", sched))), nil
+	return cronDumps(objValue("success", true, "message", fmt.Sprintf("Cron job %q removed.", job.Name),
+		"removed_job", objValue("id", job.ID, "name", job.Name, "schedule", sched))), nil
 }
 
 // Success payload with the formatted job after a state change
 func (s *Store) jobStateResult(updated *Job) string {
 	s.notifyProviderJobsChanged()
-	return cronDumps(pyObj("success", true, "job", s.formatJob(updated)))
+	return cronDumps(objValue("success", true, "job", s.formatJob(updated)))
 }
 
 // Formatted job reread so the response reflects the post run fields
@@ -924,7 +924,7 @@ func (s *Store) actionRun(ctx context.Context, job *Job, a *cronjobArgs) (string
 		result.Set("executed", true)
 		result.Set("execution_mode", "background")
 		result.Set("delegation_id", bg.DelegationID)
-		return cronDumps(pyObj("success", true, "job", result,
+		return cronDumps(objValue("success", true, "job", result,
 			"note", "The job is running in the background. You and the "+
 				"user can keep working; its outcome re-enters the "+
 				"conversation as a new message when it finishes. "+
@@ -955,7 +955,7 @@ func (s *Store) actionRun(ctx context.Context, job *Job, a *cronjobArgs) (string
 	} else if anyutil.IsTrue(execResult.Error) {
 		result.Set("execution_error", execResult.Error)
 	}
-	return cronDumps(pyObj("success", true, "job", result)), nil
+	return cronDumps(objValue("success", true, "job", result)), nil
 }
 
 // Effective value of a key after this update, the pending update winning over the stored job
@@ -1120,7 +1120,7 @@ func (s *Store) updateRunFields(ctx context.Context, job *Job, a *cronjobArgs, u
 	if a.NoAgent != nil {
 		target := anyutil.IsTrue(a.NoAgent)
 		if target && !anyutil.IsTrue(pickUpdate(updates, job, "script")) {
-			return "Cannot set no_agent=True on a job without a script. " +
+			return "Cannot set no_agent=true on a job without a script. " +
 				"Set `script` in the same update, or on the job first.", nil
 		}
 		updates["no_agent"] = target
@@ -1202,7 +1202,7 @@ func (s *Store) actionUpdate(ctx context.Context, job *Job, a *cronjobArgs) (str
 		return "", err
 	}
 	s.notifyProviderJobsChanged()
-	return cronDumps(withGuidance(pyObj("success", true, "job", s.formatJob(updated)), updated, normalizeDeliverParam(a.Deliver))), nil
+	return cronDumps(withGuidance(objValue("success", true, "job", s.formatJob(updated)), updated, normalizeDeliverParam(a.Deliver))), nil
 }
 
 // Stops the live run of a job without touching its schedule
@@ -1211,7 +1211,7 @@ func (s *Store) actionCancel(ctx context.Context, job *Job, a *cronjobArgs) (str
 	if err != nil {
 		return "", err
 	}
-	return cronDumps(mergeObj(pyObj("job", s.formatJob(job)), res)), nil
+	return cronDumps(mergeObj(objValue("job", s.formatJob(job)), res)), nil
 }
 
 // Job for a reference or the JSON error naming the ambiguity or the miss
@@ -1225,16 +1225,16 @@ func (s *Store) resolveJobOrError(ctx context.Context, jobID string) (*Job, stri
 			if m.ScheduleDisplay != "" {
 				sched = m.ScheduleDisplay
 			}
-			matches = append(matches, pyObj("id", m.ID, "name", m.Name, "schedule", sched, "next_run_at", strPtrAny(m.NextRunAt)))
+			matches = append(matches, objValue("id", m.ID, "name", m.Name, "schedule", sched, "next_run_at", strPtrAny(m.NextRunAt)))
 		}
-		return nil, cronDumps(pyObj("success", false, "error", amb.Error(), "matches", matches)), nil
+		return nil, cronDumps(objValue("success", false, "error", amb.Error(), "matches", matches)), nil
 	}
 	if err != nil {
 		return nil, "", err
 	}
 	if job == nil {
-		return nil, cronDumps(pyObj("success", false,
-			"error", fmt.Sprintf("Job with ID or name '%s' not found. Use cronjob(action='list') to inspect jobs.", jobID))), nil
+		return nil, cronDumps(objValue("success", false,
+			"error", fmt.Sprintf("Job with ID or name %q not found. Use cronjob(action=\"list\") to inspect jobs.", jobID))), nil
 	}
 	return job, "", nil
 }
@@ -1250,6 +1250,9 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 		a.Paused = false
 	}
 	normalized := strings.ToLower(strings.TrimSpace(argText(a.Action)))
+	if normalized == "" {
+		return cronToolError("action is required: one of create, list, update, pause, resume, remove, run, cancel", nil)
+	}
 	var text string
 	var err error
 	switch normalized {
@@ -1259,7 +1262,7 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 		text, err = s.actionList(ctx, a)
 	default:
 		if !anyutil.IsTrue(a.JobID) {
-			return cronToolError(fmt.Sprintf("job_id is required for action '%s'", normalized), nil)
+			return cronToolError(fmt.Sprintf("job_id is required for action %q", normalized), nil)
 		}
 		job, errJSON, rerr := s.resolveJobOrError(home.WithOverride(ctx, s.home), anyutil.String(a.JobID))
 		if rerr != nil {
@@ -1288,7 +1291,7 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 		case "cancel":
 			text, err = s.actionCancel(ctx, job, a)
 		default:
-			return cronToolError(fmt.Sprintf("Unknown cron action '%s'", argText(a.Action)), nil)
+			return cronToolError(fmt.Sprintf("Unknown cron action %q", argText(a.Action)), nil)
 		}
 	}
 	if err != nil {
@@ -1299,7 +1302,7 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 
 // Script parameter description naming the active profile home
 func scriptDescription(h string) string {
-	return "Optional script run each tick; stdout is injected into the agent's prompt as context (with no_agent=True " +
+	return "Optional script run each tick; stdout is injected into the agent's prompt as context (with no_agent=true " +
 		fmt.Sprintf("the script IS the job). Relative paths resolve under %s/scripts/; .sh/.bash via bash, else Python. ", h) +
 		"On update, '' clears."
 }

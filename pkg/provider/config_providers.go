@@ -44,10 +44,10 @@ func StringifyProviderMap(providers any) map[string]any {
 
 // Provider id of a stored providers key, a non string YAML key coerced from its own value
 func storedProviderID(providers map[string]any, stored string) string {
-	if pyKey, isPy := config.MappingPyKey(providers, stored); isPy {
-		return CoerceProviderID(pyKey)
+	if keyValue, isPy := config.MappingPyKey(providers, stored); isPy {
+		return CoerceProviderID(keyValue)
 	}
-	if text, marked := strings.CutPrefix(stored, config.PyKeyString(nil)[:1]); marked {
+	if text, marked := strings.CutPrefix(stored, config.KeyString(nil)[:1]); marked {
 		if text == "None" {
 			return ""
 		}

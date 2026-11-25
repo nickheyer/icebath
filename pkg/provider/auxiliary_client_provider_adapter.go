@@ -86,7 +86,9 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 		req.Stop = stop
 	case []any:
 		for _, s := range stop {
-			req.Stop = append(req.Stop, anyutil.String(s))
+			if s != nil {
+				req.Stop = append(req.Stop, anyutil.String(s))
+			}
 		}
 	}
 	extraBody, _ := jsonutil.AsMap(kwargs["extra_body"])
@@ -117,7 +119,9 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 	if md, ok := kwargs["metadata"].(map[string]any); ok {
 		req.Metadata = make(map[string]string, len(md))
 		for k, v := range md {
-			req.Metadata[k] = anyutil.String(v)
+			if v != nil {
+				req.Metadata[k] = anyutil.String(v)
+			}
 		}
 	}
 	var headers map[string]string
@@ -127,7 +131,9 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 	case map[string]any:
 		headers = make(map[string]string, len(h))
 		for k, v := range h {
-			headers[k] = anyutil.String(v)
+			if v != nil {
+				headers[k] = anyutil.String(v)
+			}
 		}
 	}
 	req.Stream = kwargBool(kwargs, "stream", false)

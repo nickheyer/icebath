@@ -69,8 +69,8 @@ func describeRange(sidecar string, start, end *big.Int) string {
 // Every WRITE lock of /proc/locks text on the inodes, waiters and read locks dropped, makedev errors raised
 func ParseProcLocks(text string, inodes map[DevIno]string) ([]ProcLock, error) {
 	var found []ProcLock
-	for _, line := range pySplitlines(text) {
-		fields := pySplitWhitespace(line)
+	for _, line := range splitlines(text) {
+		fields := splitWhitespace(line)
 		if len(fields) < 8 || fields[1] == "->" {
 			continue
 		}
@@ -86,11 +86,11 @@ func ParseProcLocks(text string, inodes map[DevIno]string) ([]ProcLock, error) {
 		if err != nil {
 			return nil, err
 		}
-		major, ok := pyIntBase16(parts[0])
+		major, ok := intBase16(parts[0])
 		if !ok {
 			continue
 		}
-		minor, ok := pyIntBase16(parts[1])
+		minor, ok := intBase16(parts[1])
 		if !ok {
 			continue
 		}
@@ -98,21 +98,21 @@ func ParseProcLocks(text string, inodes map[DevIno]string) ([]ProcLock, error) {
 		if err != nil {
 			return nil, err
 		}
-		ino, err := pyIntOf(parts[2])
+		ino, err := intOfValue(parts[2])
 		if err != nil {
 			continue
 		}
-		pid, err := pyIntOf(pidS)
+		pid, err := intOfValue(pidS)
 		if err != nil {
 			continue
 		}
-		start, err := pyIntOf(startS)
+		start, err := intOfValue(startS)
 		if err != nil {
 			continue
 		}
 		end := start
 		if endS != "EOF" {
-			if end, err = pyIntOf(endS); err != nil {
+			if end, err = intOfValue(endS); err != nil {
 				continue
 			}
 		}
@@ -134,10 +134,10 @@ func makedevArg(n *big.Int) (uint64, error) {
 		if n.IsInt64() && n.Int64() == -1 {
 			return math.MaxUint64, nil
 		}
-		return 0, &pyConvError{"OverflowError", "a device number cannot be negative"}
+		return 0, &convError{"OverflowError", "a device number cannot be negative"}
 	}
 	if !n.IsUint64() {
-		return 0, &pyConvError{"OverflowError", "a device number is too large"}
+		return 0, &convError{"OverflowError", "a device number is too large"}
 	}
 	return n.Uint64(), nil
 }
@@ -154,7 +154,7 @@ func makedevParts(major, minor *big.Int) (uint32, uint32, error) {
 	}
 	for _, v := range []uint64{maj, mnr} {
 		if v > math.MaxUint32 && v != math.MaxUint64 {
-			return 0, 0, &pyConvError{"OverflowError", "a device number does not fit in 32 bits"}
+			return 0, 0, &convError{"OverflowError", "a device number does not fit in 32 bits"}
 		}
 	}
 	return uint32(maj), uint32(mnr), nil
@@ -233,12 +233,12 @@ func LogWriteLockHolders(dbPath string, patienceS float64) error {
 	if len(holders) > 0 {
 		detail = strings.Join(holders, " | ")
 	}
-	pkgLog().Warn(fmt.Sprintf("state.db write lock unavailable for %ss (%s): %s", pyPercentF0(patienceS), pathlibName(dbPath), detail))
+	pkgLog().Warn(fmt.Sprintf("state.db write lock unavailable for %ss (%s): %s", percentF0(patienceS), pathlibName(dbPath), detail))
 	return nil
 }
 
 // Python percent .0f formatting with the nan and inf spellings
-func pyPercentF0(v float64) string {
+func percentF0(v float64) string {
 	switch {
 	case math.IsNaN(v):
 		return "nan"

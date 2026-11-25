@@ -13,9 +13,9 @@ import (
 const Version = "1.13.8"
 
 // A Python exception the package raises, named by its class
-type PyError struct{ Class, Msg string }
+type KindError struct{ Class, Msg string }
 
-func (e *PyError) Error() string { return e.Msg }
+func (e *KindError) Error() string { return e.Msg }
 
 // SherpaOnnxFeatureConfig of the C API
 type cFeatureConfig struct {
@@ -114,7 +114,7 @@ func Import(dir string, env Environment) (*Module, error) {
 	path := pathutil.Join(dir, "lib", libraryName(runtime.GOOS))
 	cdll, err := dlutil.Open(path, false)
 	if err != nil {
-		return nil, &PyError{Class: "ImportError", Msg: err.Error()}
+		return nil, &KindError{Class: "ImportError", Msg: err.Error()}
 	}
 	api := &capi{}
 	for _, entry := range []struct {
@@ -132,7 +132,7 @@ func Import(dir string, env Environment) (*Module, error) {
 	} {
 		addr, err := cdll.Symbol(entry.name)
 		if err != nil {
-			return nil, &PyError{Class: "ImportError", Msg: err.Error()}
+			return nil, &KindError{Class: "ImportError", Msg: err.Error()}
 		}
 		dlutil.RegisterFunc(entry.fptr, addr)
 	}

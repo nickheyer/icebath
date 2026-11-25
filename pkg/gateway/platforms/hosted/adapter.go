@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -45,7 +45,7 @@ func buildAdapter(ctx context.Context, platform string, f *plugins.HostedCallabl
 	}
 	obj, ok := value.(*plugins.HostedObject)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("adapter_factory returned a %s, not a platform adapter", anyutil.Kind(value))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("adapter_factory returned a %s, not a platform adapter", anyutil.Kind(value))}
 	}
 	return NewAdapter(ctx, gateway.Platform(platform), cfg, obj)
 }
@@ -114,10 +114,10 @@ func sendResult(v any, err error) (gateway.SendResult, error) {
 	}
 	m := plainMap(v)
 	if m == nil {
-		return gateway.SendResult{}, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a SendResult, got %s", anyutil.Kind(v))}
+		return gateway.SendResult{}, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected a SendResult, got %s", anyutil.Kind(v))}
 	}
-	out := gateway.SendResult{Success: config.PyTruthy(m["success"]), MessageID: m["message_id"], Error: m["error"],
-		RawResponse: m["raw_response"], Retryable: config.PyTruthy(m["retryable"])}
+	out := gateway.SendResult{Success: anyutil.IsTrue(m["success"]), MessageID: m["message_id"], Error: m["error"],
+		RawResponse: m["raw_response"], Retryable: anyutil.IsTrue(m["retryable"])}
 	if f, ok := number(m["retry_after"]); ok {
 		out.RetryAfter = &f
 	}
@@ -161,7 +161,7 @@ func (a *Adapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return config.PyTruthy(v), nil
+	return anyutil.IsTrue(v), nil
 }
 
 func (a *Adapter) Disconnect(ctx context.Context) error {
@@ -186,7 +186,7 @@ func (a *Adapter) Name() string {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyStr(v)
+	return anyutil.String(v)
 }
 
 func (a *Adapter) EditMessage(ctx context.Context, chatID, messageID, content string, finalize bool) (gateway.SendResult, error) {
@@ -201,7 +201,7 @@ func (a *Adapter) DeleteMessage(ctx context.Context, chatID, messageID string) (
 		return a.BasePlatformAdapter.DeleteMessage(ctx, chatID, messageID)
 	}
 	v, err := a.obj.Call(ctx, "delete_message", []any{chatID, messageID}, nil)
-	return config.PyTruthy(v), err
+	return anyutil.IsTrue(v), err
 }
 
 func (a *Adapter) CreateHandoffThread(ctx context.Context, parentChatID, name string) (string, bool, error) {
@@ -212,7 +212,7 @@ func (a *Adapter) CreateHandoffThread(ctx context.Context, parentChatID, name st
 	if err != nil || v == nil {
 		return "", false, err
 	}
-	return config.PyStr(v), true, nil
+	return anyutil.String(v), true, nil
 }
 
 func (a *Adapter) SendTyping(ctx context.Context, chatID string, metadata map[string]any) error {
@@ -336,7 +336,7 @@ func (a *Adapter) FormatMessage(content string) string {
 	if !a.defined["format_message"] {
 		return a.BasePlatformAdapter.FormatMessage(content)
 	}
-	return config.PyStr(a.must("format_message", []any{content}, nil))
+	return anyutil.String(a.must("format_message", []any{content}, nil))
 }
 
 func (a *Adapter) MaxMessageLengthForChat(chatID string) (int, error) {
@@ -355,28 +355,28 @@ func (a *Adapter) EnforcesOwnAccessPolicy() bool {
 	if !a.defined["enforces_own_access_policy"] {
 		return a.BasePlatformAdapter.EnforcesOwnAccessPolicy()
 	}
-	return config.PyTruthy(a.must("enforces_own_access_policy", nil, nil))
+	return anyutil.IsTrue(a.must("enforces_own_access_policy", nil, nil))
 }
 
 func (a *Adapter) AuthorizationIsUpstream() bool {
 	if !a.defined["authorization_is_upstream"] {
 		return a.BasePlatformAdapter.AuthorizationIsUpstream()
 	}
-	return config.PyTruthy(a.must("authorization_is_upstream", nil, nil))
+	return anyutil.IsTrue(a.must("authorization_is_upstream", nil, nil))
 }
 
 func (a *Adapter) SupportsDraftStreaming(chatType string, metadata map[string]any, chatID string) bool {
 	if !a.defined["supports_draft_streaming"] {
 		return a.BasePlatformAdapter.SupportsDraftStreaming(chatType, metadata, chatID)
 	}
-	return config.PyTruthy(a.must("supports_draft_streaming", nil, map[string]any{"chat_type": optional(chatType), "metadata": metadata, "chat_id": optional(chatID)}))
+	return anyutil.IsTrue(a.must("supports_draft_streaming", nil, map[string]any{"chat_type": optional(chatType), "metadata": metadata, "chat_id": optional(chatID)}))
 }
 
 func (a *Adapter) PrefersFreshFinalStreaming(content string, metadata map[string]any, chatID string) bool {
 	if !a.defined["prefers_fresh_final_streaming"] {
 		return a.BasePlatformAdapter.PrefersFreshFinalStreaming(content, metadata, chatID)
 	}
-	return config.PyTruthy(a.must("prefers_fresh_final_streaming", []any{content}, map[string]any{"metadata": metadata}))
+	return anyutil.IsTrue(a.must("prefers_fresh_final_streaming", []any{content}, map[string]any{"metadata": metadata}))
 }
 
 func (a *Adapter) StreamingOverflowLimit() (int, bool) {
@@ -391,7 +391,7 @@ func (a *Adapter) SendPathDegraded() bool {
 	if !a.defined["send_path_degraded"] {
 		return a.BasePlatformAdapter.SendPathDegraded()
 	}
-	return config.PyTruthy(a.must("send_path_degraded", nil, nil))
+	return anyutil.IsTrue(a.must("send_path_degraded", nil, nil))
 }
 
 func (a *Adapter) PrepareTTSText(ctx context.Context, text string) string {
@@ -402,7 +402,7 @@ func (a *Adapter) PrepareTTSText(ctx context.Context, text string) string {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyStr(v)
+	return anyutil.String(v)
 }
 
 func (a *Adapter) PlayTTS(ctx context.Context, chatID, audioPath, caption, replyTo string, metadata, extra map[string]any) (gateway.SendResult, error) {
@@ -452,7 +452,7 @@ func (a *Adapter) ToolsetsForSource(source *gateway.SessionSource) ([]string, bo
 	}
 	out := make([]string, len(items))
 	for i, item := range items {
-		out[i] = config.PyStr(item)
+		out[i] = anyutil.String(item)
 	}
 	return out, true
 }
@@ -536,7 +536,7 @@ func sourceToDict(s *gateway.SessionSource) any {
 
 // Go event of the field dict a hosted adapter sent inbound
 func eventFromDict(ctx context.Context, d map[string]any) (*gateway.MessageEvent, error) {
-	e := &gateway.MessageEvent{Text: config.PyStr(orEmpty(d["text"])), MessageType: gateway.MessageTypeText, AllowGatewayControl: true,
+	e := &gateway.MessageEvent{Text: anyutil.String(orEmpty(d["text"])), MessageType: gateway.MessageTypeText, AllowGatewayControl: true,
 		Metadata: map[string]any{}, MediaURLs: []string{}, MediaTypes: []string{}, MediaFilenames: []string{}, Timestamp: time.Now()}
 	if mt, ok := d["message_type"].(string); ok {
 		e.MessageType = gateway.MessageType(mt)
@@ -550,7 +550,7 @@ func eventFromDict(ctx context.Context, d map[string]any) (*gateway.MessageEvent
 	}
 	strPtr := func(key string) *string {
 		if v, ok := d[key]; ok && v != nil {
-			s := config.PyStr(v)
+			s := anyutil.String(v)
 			return &s
 		}
 		return nil
@@ -559,7 +559,7 @@ func eventFromDict(ctx context.Context, d map[string]any) (*gateway.MessageEvent
 		items, _ := d[key].([]any)
 		out := make([]string, len(items))
 		for i, item := range items {
-			out[i] = config.PyStr(item)
+			out[i] = anyutil.String(item)
 		}
 		return out
 	}
@@ -596,13 +596,13 @@ func eventFromDict(ctx context.Context, d map[string]any) (*gateway.MessageEvent
 	if m := plainMap(d["metadata"]); m != nil {
 		e.Metadata = m
 	}
-	e.ReplyToIsOwnMessage, e.Internal = config.PyTruthy(d["reply_to_is_own_message"]), config.PyTruthy(d["internal"])
-	e.InheritChannelPin = config.PyTruthy(d["inherit_channel_pin"])
+	e.ReplyToIsOwnMessage, e.Internal = anyutil.IsTrue(d["reply_to_is_own_message"]), anyutil.IsTrue(d["internal"])
+	e.InheritChannelPin = anyutil.IsTrue(d["inherit_channel_pin"])
 	if v, ok := d["allow_gateway_control"]; ok {
-		e.AllowGatewayControl = config.PyTruthy(v)
+		e.AllowGatewayControl = anyutil.IsTrue(v)
 	}
 	if ts := plainMap(d["timestamp"]); ts != nil {
-		parsed, err := timeutil.ParseISO(config.PyStr(ts["__datetime__"]), time.Local)
+		parsed, err := timeutil.ParseISO(anyutil.String(ts["__datetime__"]), time.Local)
 		if err != nil {
 			return nil, err
 		}

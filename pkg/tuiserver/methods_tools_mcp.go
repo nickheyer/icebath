@@ -68,7 +68,7 @@ func mcpConfigServerOrError(ctx context.Context, rid any, params map[string]any)
 }
 
 // Items a Python list call yields for a config value, characters of a string and keys of a dict
-func pyListItems(v any) []any {
+func listItems(v any) []any {
 	switch x := v.(type) {
 	case nil:
 		return []any{}
@@ -112,11 +112,11 @@ func summarizeMCPServer(ctx context.Context, name string, cfg map[string]any, pl
 	}
 	args := []any{}
 	if anyutil.IsTrue(cfg["args"]) {
-		args = pyListItems(cfg["args"])
+		args = listItems(cfg["args"])
 	}
 	envKeys := []string{}
 	if anyutil.IsTrue(cfg["env"]) {
-		for _, k := range pyListItems(cfg["env"]) {
+		for _, k := range listItems(cfg["env"]) {
 			envKeys = append(envKeys, anyutil.String(k))
 		}
 	}
@@ -251,7 +251,7 @@ func mcpServersAdd(ctx context.Context, rid any, params map[string]any) (map[str
 			}
 		} else {
 			var cmdArgs []string
-			for _, a := range pyListItems(serverConfig["args"]) {
+			for _, a := range listItems(serverConfig["args"]) {
 				cmdArgs = append(cmdArgs, anyutil.String(a))
 			}
 			if err := mcp.ApplyMCPPreset(preset, strOr(serverConfig["url"]), strOr(serverConfig["command"]), cmdArgs, serverConfig); err != nil {

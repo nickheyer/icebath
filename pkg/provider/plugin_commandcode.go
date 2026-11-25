@@ -74,7 +74,7 @@ func commandcodeFetchModels(ctx context.Context, baseURL string, timeout time.Du
 	for _, it := range items {
 		if m, ok := it.(map[string]any); ok {
 			if id, present := m["id"]; present {
-				ids = append(ids, pyScalarStr(id))
+				ids = append(ids, scalarStr(id))
 			}
 		}
 	}

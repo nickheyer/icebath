@@ -158,7 +158,7 @@ func TestDetachedPassFailureIsOneLogLine(t *testing.T) {
 	if code := RunScratchPrune(context.Background(), []string{scratch, "x:1.0"}); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if log := pruneLog(t, h); !strings.Contains(log, "scratch prune: detached pass failed (ValueError: \"invalid literal for int() with base 10: 'x'\")") {
+	if log := pruneLog(t, h); !strings.Contains(log, `scratch prune: detached pass failed: launcher lineage entry "x:1.0": pid "x" is not an integer`+"\n") {
 		t.Fatal(log)
 	}
 }
@@ -261,7 +261,7 @@ func TestPruneLogKeepsRecordOfNonUTF8Name(t *testing.T) {
 	writeText(t, raw, "x")
 	age(t, 30, raw)
 	mustPrune(t, scratch, 1)
-	if log := pruneLog(t, h); !strings.Contains(log, "removed ") || !strings.Contains(log, `old-\udcff`) {
+	if log := pruneLog(t, h); !strings.Contains(log, "removed ") || !strings.Contains(log, `old-\xff"`) {
 		t.Fatal(log)
 	}
 }

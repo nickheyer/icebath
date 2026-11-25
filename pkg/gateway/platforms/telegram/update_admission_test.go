@@ -346,15 +346,19 @@ func TestRedeliveryToRebuiltAdapterIsDropped(t *testing.T) {
 	flushed(t, broken.state)
 }
 
-func TestReceiptLoadRaisesOnAnIntPastTheFloatRange(t *testing.T) {
+func TestReceiptLoadSkipsAStampPastTheFloatRange(t *testing.T) {
 	dir := t.TempDir()
 	r := newAdmissionRig(t, dir, nil)
+	r.app.AddHandler(r.coreHandler(nil), 0)
 	big := "1" + strings.Repeat("0", 400)
 	if err := os.WriteFile(r.state.ReceiptPath(111), []byte(`{"update_ids": {"1": `+big+`}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.app.ProcessUpdate(context.Background(), &Update{UpdateID: 1}); err == nil {
-		t.Fatal("float of an int past the float range must raise OverflowError")
+	if err := r.app.ProcessUpdate(context.Background(), &Update{UpdateID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.seen(); !slices.Equal(got, []int64{1}) {
+		t.Fatalf("a stamp past the float range must not count as a receipt, dispatched %v", got)
 	}
 }
 

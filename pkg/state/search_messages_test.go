@@ -102,7 +102,7 @@ func TestSearchRoutesFieldsToolsAndGap(t *testing.T) {
 	if len(rows) != 3 || strings.Join(rows[0].Keys(), ",") != "id,role" {
 		t.Fatalf("projection in canonical order: %d %v", len(rows), rows[0].Keys())
 	}
-	if !strings.Contains(logs.String(), "slow session search: path=fts5") || !strings.Contains(logs.String(), "query='walrus'") {
+	if !strings.Contains(logs.String(), "slow session search: path=fts5") || !strings.Contains(logs.String(), `query=\"walrus\"`) {
 		t.Fatalf("a zero threshold logs every search: %s", logs.String())
 	}
 	tool := searchRowsT(t, s, "body", func(o *SearchMessagesOptions) { o.RoleFilter = []string{"tool"} })

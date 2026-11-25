@@ -162,7 +162,7 @@ func bridgeLabels(functionName string, args map[string]any) []ToolLabel {
 		first := ""
 		if list, ok := anyList(queries); ok {
 			for _, q := range list {
-				text := pyStrOrEmpty(q)
+				text := anyutil.String(q)
 				if strings.TrimSpace(text) != "" {
 					first = text
 					break
@@ -381,7 +381,7 @@ func delegateTaskGoals(tasks any, perGoalLen int) []string {
 		g, present := m["goal"]
 		text := "?"
 		if present && g != nil {
-			text = oneline(pyStrOrEmpty(g))
+			text = oneline(anyutil.String(g))
 		}
 		if text == "" {
 			text = "?"
@@ -393,7 +393,7 @@ func delegateTaskGoals(tasks any, perGoalLen int) []string {
 
 // User friendly step label of a browser_exec call, the leading comment of its code
 func browserExecStepLabel(args map[string]any, maxChars int) (string, bool) {
-	first, _, _ := strings.Cut(strings.TrimSpace(pyStrOrEmpty(args["code"])), "\n")
+	first, _, _ := strings.Cut(strings.TrimSpace(anyutil.String(args["code"])), "\n")
 	first = strings.TrimSpace(first)
 	label := ""
 	if strings.HasPrefix(first, "#") {
@@ -422,9 +422,9 @@ var fallbackPreviewKeys = []string{"query", "text", "command", "path", "name", "
 
 // Shared list, steer, or stop preview for delegate_task, ok false for spawn calls
 func delegateActionPreview(args map[string]any) (string, bool) {
-	action := strings.ToLower(strings.TrimSpace(pyStrOrEmpty(args["action"])))
+	action := strings.ToLower(strings.TrimSpace(anyutil.String(args["action"])))
 	if action == "list" || action == "steer" || action == "stop" {
-		return strings.TrimSpace(action + " " + strings.TrimSpace(pyStrOrEmpty(args["subagent_id"]))), true
+		return strings.TrimSpace(action + " " + strings.TrimSpace(anyutil.String(args["subagent_id"]))), true
 	}
 	return "", false
 }
@@ -433,7 +433,7 @@ func previewBrowserExec(env *Env, args map[string]any, maxLen int) string {
 	if label, ok := browserExecStepLabel(args, 80); ok {
 		return tailTrunc(label, maxLen)
 	}
-	return tailTrunc(oneline(pyStrOrEmpty(args["code"])), maxLen)
+	return tailTrunc(oneline(anyutil.String(args["code"])), maxLen)
 }
 
 func previewDelegateTask(env *Env, args map[string]any, maxLen int) string {
@@ -452,23 +452,23 @@ func previewDelegateTask(env *Env, args map[string]any, maxLen int) string {
 	if present && goal == nil {
 		return ""
 	}
-	return tailTrunc(oneline(pyStrOrEmpty(goal)), maxLen)
+	return tailTrunc(oneline(anyutil.String(goal)), maxLen)
 }
 
 func previewProcessManage(env *Env, args map[string]any, maxLen int) string {
 	action, sid, data, timeout := args["action"], args["session_id"], args["data"], args["timeout"]
 	var parts []string
-	if action != nil && pyStrOrEmpty(action) != "" {
-		parts = append(parts, pyStr(action))
+	if action != nil && anyutil.String(action) != "" {
+		parts = append(parts, anyutil.String(action))
 	}
-	if sid != nil && pyStrOrEmpty(sid) != "" {
-		parts = append(parts, pyStr(sid))
+	if sid != nil && anyutil.String(sid) != "" {
+		parts = append(parts, anyutil.String(sid))
 	}
-	if data != nil && pyStrOrEmpty(data) != "" {
-		parts = append(parts, "\""+oneline(pyStr(data))+"\"")
+	if data != nil && anyutil.String(data) != "" {
+		parts = append(parts, "\""+oneline(anyutil.String(data))+"\"")
 	}
-	if timeout != nil && pyStrOrEmpty(timeout) != "" && pyStrOrEmpty(timeout) != "0" && action == "wait" {
-		parts = append(parts, pyStr(timeout)+"s")
+	if timeout != nil && anyutil.String(timeout) != "" && anyutil.String(timeout) != "0" && action == "wait" {
+		parts = append(parts, anyutil.String(timeout)+"s")
 	}
 	return tailTrunc(strings.Join(parts, " "), maxLen)
 }
@@ -495,22 +495,22 @@ func previewShell(key string) previewBuilder {
 		if !present || command == nil {
 			return ""
 		}
-		return tailTrunc(oneline(sanitizeCommandForDisplay(pyStr(command), false)), maxLen)
+		return tailTrunc(oneline(sanitizeCommandForDisplay(anyutil.String(command), false)), maxLen)
 	}
 }
 
 func previewReadFile(env *Env, args map[string]any, maxLen int) string {
 	p := args["path"]
-	if p == nil || pyStrOrEmpty(p) == "" {
+	if p == nil || anyutil.String(p) == "" {
 		p = args["file"]
 	}
-	if p == nil || pyStrOrEmpty(p) == "" {
+	if p == nil || anyutil.String(p) == "" {
 		p = args["filepath"]
 	}
 	if p == nil {
 		return ""
 	}
-	return tailTrunc(strings.TrimSpace(oneline(pyStr(p))+" "+readFileLineLabel(args)), maxLen)
+	return tailTrunc(strings.TrimSpace(oneline(anyutil.String(p))+" "+readFileLineLabel(args)), maxLen)
 }
 
 // The op a memory progress line shows and an N more suffix for the rest of a batch
@@ -531,16 +531,16 @@ func memoryFirstOp(args map[string]any) (map[string]any, string) {
 
 func previewMemory(env *Env, args map[string]any, maxLen int) string {
 	op, more := memoryFirstOp(args)
-	action, target := pyStrOrEmpty(op["action"]), pyStrOrEmpty(args["target"])
+	action, target := anyutil.String(op["action"]), anyutil.String(args["target"])
 	switch action {
 	case "add":
-		content := pyStrOrEmpty(op["content"])
+		content := anyutil.String(op["content"])
 		if content == "" {
-			content = pyStrOrEmpty(op["new_text"])
+			content = anyutil.String(op["new_text"])
 		}
 		return tailTrunc("+"+target+": \""+oneline(content)+"\""+more, maxLen)
 	case "replace", "patch", "remove":
-		old := oneline(pyStrOrEmpty(op["old_text"]))
+		old := oneline(anyutil.String(op["old_text"]))
 		if old == "" {
 			old = "<missing old_text>"
 		}
@@ -556,20 +556,20 @@ func previewMemory(env *Env, args map[string]any, maxLen int) string {
 func previewSendMessage(env *Env, args map[string]any, maxLen int) string {
 	target := "?"
 	if t, ok := args["target"]; ok {
-		target = pyStr(t)
+		target = anyutil.String(t)
 	}
-	return tailTrunc("to "+target+": \""+oneline(pyStrOrEmpty(args["message"]))+"\"", maxLen)
+	return tailTrunc("to "+target+": \""+oneline(anyutil.String(args["message"]))+"\"", maxLen)
 }
 
 func previewSkillView(env *Env, args map[string]any, maxLen int) string {
-	name := oneline(pyStrOrEmpty(args["name"]))
+	name := oneline(anyutil.String(args["name"]))
 	filePath, present := args["file_path"]
 	label := name
-	if present && filePath != nil && pyStrOrEmpty(filePath) != "" {
+	if present && filePath != nil && anyutil.String(filePath) != "" {
 		if name != "" {
-			label = name + " → " + oneline(pyStr(filePath))
+			label = name + " → " + oneline(anyutil.String(filePath))
 		} else {
-			label = oneline(pyStr(filePath))
+			label = oneline(anyutil.String(filePath))
 		}
 	}
 	return tailTrunc(label, maxLen)
@@ -584,7 +584,7 @@ func previewClarify(env *Env, args map[string]any, maxLen int) string {
 	if !ok {
 		return ""
 	}
-	return tailTrunc(oneline(pyStrOrEmpty(first["question"])), maxLen)
+	return tailTrunc(oneline(anyutil.String(first["question"])), maxLen)
 }
 
 func previewBridgeCall(toolName string) previewBuilder {
@@ -602,7 +602,7 @@ func previewBridgeCall(toolName string) previewBuilder {
 }
 
 func previewSessionSearch(env *Env, args map[string]any, maxLen int) string {
-	return tailTrunc("recall: \""+oneline(pyStrOrEmpty(args["query"]))+"\"", maxLen)
+	return tailTrunc("recall: \""+oneline(anyutil.String(args["query"]))+"\"", maxLen)
 }
 
 type previewBuilder func(env *Env, args map[string]any, maxLen int) string
@@ -680,7 +680,7 @@ func primaryArgPreview(toolName string, args map[string]any, maxLen int) string 
 			value = list[0]
 		}
 	}
-	preview := oneline(pyStr(value))
+	preview := oneline(anyutil.String(value))
 	if preview == "" {
 		return ""
 	}
@@ -888,7 +888,7 @@ func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int)
 
 // VerboseToolArgsText renders the typed ordered args as json.dumps does, capped at maxLen, code blocked with real line breaks
 func VerboseToolArgsText(args *jsonutil.Object, maxLen int, codeBlock bool) string {
-	text := pyDumps(args, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
+	text := dumps(args, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if maxLen > 0 && len([]rune(text)) > maxLen {
 		text = textutil.First(text, maxLen-3) + "..."
 	}

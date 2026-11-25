@@ -129,7 +129,7 @@ func delegationParamError(index int, name string, value any, schema map[string]a
 	for i, v := range enum {
 		parts[i] = anyutil.String(v)
 	}
-	return fmt.Sprintf("Task %d: '%s' must be one of %s (got %s).", index, name, strings.Join(parts, ", "), anyutil.Quote(value))
+	return fmt.Sprintf("Task %d: %q must be one of %s (got %s).", index, name, strings.Join(parts, ", "), anyutil.Quote(value))
 }
 
 // DelegationParamError returns the enum violation text of one task parameter, empty when allowed
@@ -141,7 +141,7 @@ func DelegationParamError(index int, name string, value any, schema map[string]a
 func cleanDelegationRoute(providerName string, route any) (map[string]any, error) {
 	m, ok := route.(map[string]any)
 	if !ok {
-		return nil, &DelegationRouteError{Message: fmt.Sprintf("delegation backend '%s' returned no route.", providerName)}
+		return nil, &DelegationRouteError{Message: fmt.Sprintf("delegation backend %q returned no route.", providerName)}
 	}
 	out := map[string]any{}
 	for k, v := range m {

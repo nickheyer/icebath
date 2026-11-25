@@ -49,10 +49,21 @@ func StripRecommended(text string) string {
 	return stripped
 }
 
+// Text of one question or answer value: a string as it is, anything else as its compact JSON text so a float keeps its fraction and null stays visible
+func clarifyValueText(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if text, err := jsonutil.Encode(v); err == nil {
+		return text
+	}
+	return anyutil.String(v)
+}
+
 // Strips presentation from a locked answer, a multi select answer being a list, a JSON array string, or one typed answer
 func clarifyCleanAnswer(raw any, multi bool) any {
 	if !multi {
-		return StripRecommended(anyutil.String(raw))
+		return StripRecommended(clarifyValueText(raw))
 	}
 	var items []any
 	switch v := raw.(type) {
@@ -74,7 +85,7 @@ func clarifyCleanAnswer(raw any, multi bool) any {
 	}
 	out := []string{}
 	for _, item := range items {
-		if text := anyutil.String(item); strings.TrimSpace(text) != "" {
+		if text := clarifyValueText(item); strings.TrimSpace(text) != "" {
 			out = append(out, StripRecommended(text))
 		}
 	}
@@ -98,7 +109,7 @@ func clarifyNormalizeQuestions(questions any) ([]clarifyQuestion, string) {
 		}
 		text := ""
 		if truthy(m["question"]) {
-			text = strings.TrimSpace(fmt.Sprint(m["question"]))
+			text = strings.TrimSpace(clarifyValueText(m["question"]))
 		}
 		if text == "" {
 			return nil, fmt.Sprintf("questions[%d].question must be non-empty text.", index)

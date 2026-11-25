@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -208,7 +209,7 @@ func bedrockKwargsModel(kwargs map[string]any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // ---- encrypted content redacted reasoning suppression ----
@@ -318,7 +319,7 @@ func bedrockPlaceholderBlock() map[string]any {
 func bedrockSafeText(v any) string {
 	text := ""
 	if v != nil {
-		text = pyStr(v)
+		text = anyutil.String(v)
 	}
 	if strings.TrimSpace(text) == "" {
 		return bedrockEmptyTextPlaceholder
@@ -375,7 +376,7 @@ func convertContentToConverse(content any) []any {
 		if !ok {
 			continue
 		}
-		switch pyGetStr(p, "type", "") {
+		switch getStr(p, "type", "") {
 		case "text":
 			text, has := p["text"]
 			if !has {
@@ -385,7 +386,7 @@ func convertContentToConverse(content any) []any {
 		case "image_url":
 			url := ""
 			if iu, ok := asMap(p["image_url"]); ok {
-				url = pyGetStr(iu, "url", "")
+				url = getStr(iu, "url", "")
 			}
 			if strings.HasPrefix(url, "data:") {
 				blocks = append(blocks, bedrockImageBlockFromDataURL(url))
@@ -401,7 +402,7 @@ func convertContentToConverse(content any) []any {
 }
 
 // String value of a key with a default, empty for a present non string value
-func pyGetStr(m map[string]any, key, def string) string {
+func getStr(m map[string]any, key, def string) string {
 	v, has := m[key]
 	if !has {
 		return def
@@ -486,14 +487,14 @@ func bedrockReplayOrderedBlocks(ordered []any) []any {
 			continue
 		}
 		if tu, ok := asMap(block["toolUse"]); ok {
-			out = append(out, bedrockToolUseBlock(pyGetAny(tu, "toolUseId", ""), pyGetAny(tu, "name", ""), pyGetAny(tu, "input", map[string]any{})))
+			out = append(out, bedrockToolUseBlock(getAny(tu, "toolUseId", ""), getAny(tu, "name", ""), getAny(tu, "input", map[string]any{})))
 		}
 	}
 	return out
 }
 
 // Value of a key with a default when absent
-func pyGetAny(m map[string]any, key string, def any) any {
+func getAny(m map[string]any, key string, def any) any {
 	if v, has := m[key]; has {
 		return v
 	}
@@ -544,7 +545,7 @@ func bedrockToolCallArgs(msg map[string]any) map[string]any {
 		if !has {
 			raw = "{}"
 		}
-		args[pyStr(tc["id"])] = bedrockParseToolArgs(raw)
+		args[anyutil.String(tc["id"])] = bedrockParseToolArgs(raw)
 	}
 	return args
 }
@@ -570,11 +571,11 @@ func bedrockAnthropicOrderedBlocks(msg map[string]any) []any {
 				converted = map[string]any{"text": text}
 			}
 		case "tool_use":
-			input, has := args[pyStr(b["id"])]
+			input, has := args[anyutil.String(b["id"])]
 			if !has {
-				input = pyGetAny(b, "input", map[string]any{})
+				input = getAny(b, "input", map[string]any{})
 			}
-			converted = bedrockToolUseBlock(pyGetAny(b, "id", ""), pyGetAny(b, "name", ""), input)
+			converted = bedrockToolUseBlock(getAny(b, "id", ""), getAny(b, "name", ""), input)
 		}
 		if converted != nil {
 			out = append(out, converted)
@@ -654,7 +655,7 @@ func bedrockAssistantBlocks(msg map[string]any, content any, claude, own bool) [
 		if !has {
 			args = "{}"
 		}
-		blocks = append(blocks, bedrockToolUseBlock(pyGetAny(tc, "id", ""), pyGetAny(f, "name", ""), bedrockParseToolArgs(args)))
+		blocks = append(blocks, bedrockToolUseBlock(getAny(tc, "id", ""), getAny(f, "name", ""), bedrockParseToolArgs(args)))
 	}
 	return blocks
 }
@@ -768,7 +769,7 @@ func convertMessagesToConverse(messages []map[string]any, resolve func(string) s
 				result = bedrockPyDumps(content)
 			}
 			appendTurn("user", []any{map[string]any{"toolResult": map[string]any{
-				"toolUseId": pyGetAny(msg, "tool_call_id", ""), "content": []any{map[string]any{"text": bedrockSafeText(result)}}}}})
+				"toolUseId": getAny(msg, "tool_call_id", ""), "content": []any{map[string]any{"text": bedrockSafeText(result)}}}}})
 		case "assistant":
 			issuer, hasIssuer := "", false
 			if hasModel {
@@ -801,7 +802,7 @@ func convertMessagesToConverse(messages []map[string]any, resolve func(string) s
 func bedrockPyDumps(v any) string {
 	text, err := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
-		return pyStr(v)
+		return anyutil.String(v)
 	}
 	return text
 }
@@ -826,9 +827,9 @@ func bedrockClaudeConverseReasoning(model string, cfg *anthReasoningConfig, maxT
 		if !strings.Contains(strings.ToLower(model), "claude-3") {
 			fields["anthropic_beta"] = []any{"interleaved-thinking-2025-05-14"}
 		}
-		inference["temperature"] = pyGetAny(thinking, "temperature", 1)
+		inference["temperature"] = getAny(thinking, "temperature", 1)
 		if maxTokens != nil {
-			inference["maxTokens"] = pyGetAny(thinking, "max_tokens", *maxTokens)
+			inference["maxTokens"] = getAny(thinking, "max_tokens", *maxTokens)
 		}
 	}
 	return fields, inference

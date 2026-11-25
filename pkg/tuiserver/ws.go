@@ -312,13 +312,13 @@ func (c *wsConnection) dispatchOne(req any) error {
 		c.mu.Lock()
 		c.dispatchCrashes++
 		c.mu.Unlock()
-		pkgLog().Error(fmt.Sprintf("ws dispatch crash peer=%s id=%s method=%s: %s", c.peer, anyutil.String(reqID), methodText, failureText(crash)))
+		pkgLog().Error(fmt.Sprintf("ws dispatch crash peer=%s id=%s method=%s: %s", c.peer, errchain.Show(reqID), methodText, failureText(crash)))
 		return c.reply(wsError(-32603, "internal error", reqID), "send_failed_after_dispatch_crash",
-			fmt.Sprintf("ws dispatch-crash reply send failed peer=%s id=%s method=%s", c.peer, anyutil.String(reqID), methodText))
+			fmt.Sprintf("ws dispatch-crash reply send failed peer=%s id=%s method=%s", c.peer, errchain.Show(reqID), methodText))
 	}
 	if resp != nil {
 		return c.reply(resp, "send_failed_after_response",
-			fmt.Sprintf("ws response send failed peer=%s id=%s method=%s", c.peer, anyutil.String(reqID), methodText))
+			fmt.Sprintf("ws response send failed peer=%s id=%s method=%s", c.peer, errchain.Show(reqID), methodText))
 	}
 	return nil
 }
@@ -790,7 +790,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 		if obj, isDict := req.(*jsonutil.Object); isDict && obj.ValueOr("method", nil) == "gateway.ping" {
 			reqID := obj.ValueOr("id", nil)
 			if err := c.reply(jsonutil.ObjectOf("jsonrpc", "2.0", "result", jsonutil.ObjectOf("ok", true), "id", reqID), "send_failed_after_heartbeat",
-				fmt.Sprintf("ws heartbeat reply send failed peer=%s id=%s", c.peer, anyutil.String(reqID))); err != nil {
+				fmt.Sprintf("ws heartbeat reply send failed peer=%s id=%s", c.peer, errchain.Show(reqID))); err != nil {
 				return err
 			}
 			continue

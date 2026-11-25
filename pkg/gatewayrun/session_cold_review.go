@@ -152,7 +152,7 @@ func (r *GatewayRunner) coldReviewParent(ctx context.Context, source *gateway.Se
 			"fallback_model": fallback, "skip_memory": true,
 		} {
 			if _, dup := kwargs[k]; dup {
-				return &pyTypeError{fmt.Sprintf("AIAgent() got multiple values for keyword argument '%s'", k)}
+				return &typeError{fmt.Sprintf("AIAgent() got multiple values for keyword argument '%s'", k)}
 			}
 			kwargs[k] = v
 		}

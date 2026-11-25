@@ -167,7 +167,7 @@ func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 	})
 	t.Run("scalar list and table forms", func(t *testing.T) {
 		cases := map[string]any{
-			"true": true, "7": 7, "7.0": 7.0, "1e+16": 1e16, `"a\\b\"c\b\t\n\f\r"`: "a\\b\"c\b\t\n\f\r",
+			"true": true, "7": 7, "7.0": 7.0, "10000000000000000.0": 1e16, "\"a\\\\b\\\"c\\b\t\\n\\f\\r\"": "a\\b\"c\b\t\n\f\r",
 			`["x", 2]`: []any{"x", 2}, "{}": map[string]any{}, `{ a-b_1 = "v", "k y" = false, "q\"\\" = 1 }`: codexMigrationEntry("a-b_1", "v", "k y", false, "q\"\\", 1),
 		}
 		for want, value := range cases {
@@ -178,7 +178,7 @@ func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 		if _, err := codexFormatTOMLValue(nil); err == nil || err.Error() != "cannot write nothing as a TOML value" {
 			t.Fatalf("None error %v", err)
 		}
-		if codexQuoteTOMLKey("") != `""` || codexQuoteTOMLKey("é1") != "é1" || codexQuoteTOMLKey("a@b") != `"a@b"` {
+		if codexQuoteTOMLKey("") != `""` || codexQuoteTOMLKey("é1") != `"é1"` || codexQuoteTOMLKey("a@b") != `"a@b"` {
 			t.Fatal("key quoting")
 		}
 	})
@@ -342,20 +342,29 @@ func TestCodexMigrationMigrate(t *testing.T) {
 			t.Fatalf("not a dict %v", report.Errors)
 		}
 		report = codexMigrateNoExtras(t, map[string]any{"mcp_servers": map[string]any{"a": "", "b": 5, "c": map[string]any{"cwd": "/"}, "d": map[string]any{"command": "x\x01"}}}, home)
-		want := []string{"server 'a' skipped: no command or url field", "server 'b' skipped: no transport configured", "server 'c' skipped: no command or url field"}
-		if !slices.Equal(report.Errors[:3], want) || !strings.HasPrefix(report.Errors[3], "refusing to write "+filepath.Join(home, "config.toml")+": rendered config is not valid TOML (") || report.Written {
+		want := []string{`server "a" skipped: no command or url field`, `server "b" skipped: no transport configured`, `server "c" skipped: no command or url field`}
+		if !slices.Equal(report.Errors, want) || !report.Written || !slices.Equal(report.Migrated, []string{"d"}) {
 			t.Fatalf("errors %q", report.Errors)
 		}
-		if _, err := os.Stat(filepath.Join(home, "config.toml")); err == nil {
-			t.Fatal("refused config written")
+		written, err := tomlutil.Decode(codexMigrationRead(t, filepath.Join(home, "config.toml")))
+		servers, _ := written["mcp_servers"].(map[string]any)
+		if d, _ := servers["d"].(map[string]any); err != nil || d["command"] != "x\x01" {
+			t.Fatalf("a control character must be escaped and read back from config.toml: %v %v", written, err)
 		}
-		os.WriteFile(filepath.Join(home, "config.toml"), []byte("[a]\nx = 1\n[a]\n"), 0o644)
+		unloadable := "[a]\nx = 1\n[a]\n"
+		os.WriteFile(filepath.Join(home, "config.toml"), []byte(unloadable), 0o644)
 		codexMigrationPatchQuery(t, func(string, float64, string) ([]map[string]any, string, error) {
 			return []map[string]any{}, "boom", nil
 		})
 		report, _ = MigrateCodexRuntimePlugins(context.Background(), nil, CodexMigrateOptions{CodexHome: home, SkipToolsMCPServer: true})
 		if report.PluginQueryError != "boom; existing config.toml was unloadable — re-run `icebath codex-runtime migrate` to migrate plugins" {
 			t.Fatalf("plugin error %q", report.PluginQueryError)
+		}
+		if len(report.Errors) != 1 || !strings.HasPrefix(report.Errors[0], "refusing to write "+filepath.Join(home, "config.toml")+": rendered config is not valid TOML (") || report.Written {
+			t.Fatalf("refusal %q", report.Errors)
+		}
+		if codexMigrationRead(t, filepath.Join(home, "config.toml")) != unloadable {
+			t.Fatal("refused config written")
 		}
 		os.Remove(filepath.Join(home, "config.toml"))
 		os.Mkdir(filepath.Join(home, "config.toml"), 0o755)
@@ -367,7 +376,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 	t.Run("summary", func(t *testing.T) {
 		r := &CodexMigrationReport{TargetPath: "/c/config.toml", Written: true, Migrated: []string{"a", "b"}, SkippedKeysPerServer: map[string][]string{"a": {"x (unknown Icebath key)", "sampling (no codex equivalent)"}},
 			PluginQueryError: "down", WrotePermissionsDefault: ":workspace", PreservedUserServers: []string{"g"}, Errors: []string{"e1"}}
-		want := "Wrote /c/config.toml\nMigrated 2 MCP server(s):\n  - a (skipped: x (unknown Icebath key), sampling (no codex equivalent))\n  - b\nCodex plugin discovery skipped: down\nWrote default_permissions = ':workspace'\nKept 1 user-owned MCP server(s) already in config.toml (Icebath projection skipped): g\n⚠ e1"
+		want := "Wrote /c/config.toml\nMigrated 2 MCP server(s):\n  - a (skipped: x (unknown Icebath key), sampling (no codex equivalent))\n  - b\nCodex plugin discovery skipped: down\nWrote default_permissions = \":workspace\"\nKept 1 user-owned MCP server(s) already in config.toml (Icebath projection skipped): g\n⚠ e1"
 		if got := r.Summary(); got != want {
 			t.Fatalf("summary\n%s", got)
 		}
@@ -624,7 +633,7 @@ func TestCodexRuntimeCommandPrintsTheSummaryAndExitsOneOnErrors(t *testing.T) {
 		want string
 	}{
 		{"summary", good, map[string]any{"dry_run": true, "json": false}, 0,
-			"(dry run) Would write " + target + "\nMigrated 2 MCP server(s):\n  - other\n  - " + CodexToolsMCPServerName + "\nWrote default_permissions = ':workspace'\nKept 1 user-owned MCP server(s) already in config.toml (Icebath projection skipped): gbrain\n"},
+			"(dry run) Would write " + target + "\nMigrated 2 MCP server(s):\n  - other\n  - " + CodexToolsMCPServerName + "\nWrote default_permissions = \":workspace\"\nKept 1 user-owned MCP server(s) already in config.toml (Icebath projection skipped): gbrain\n"},
 		{"errors as json", bad, map[string]any{"dry_run": true, "json": true}, 1,
 			"{\n  \"dry_run\": true,\n  \"errors\": [\n    \"mcp_servers in Icebath config is not a mapping; cannot migrate.\"\n  ],\n  \"migrated\": [],\n  \"migrated_plugins\": [],\n  \"plugin_query_error\": null,\n  \"preserved_user_servers\": [],\n  \"skipped_keys_per_server\": {},\n  \"target_path\": \"" + target + "\",\n  \"written\": false,\n  \"wrote_permissions_default\": null\n}\n"},
 		{"errors as summary", bad, map[string]any{"dry_run": true, "json": false}, 1,

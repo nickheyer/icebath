@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var (
@@ -98,7 +99,7 @@ func taskXMLLeafValues(text string) map[string]string {
 			stack = stack[:len(stack)-1]
 			declared = declared[:len(declared)-1]
 			if !top.children {
-				values[top.path] = strings.Join(strings.FieldsFunc(top.text.String(), pyIsSpace), " ")
+				values[top.path] = strings.Join(strings.FieldsFunc(top.text.String(), unicode.IsSpace), " ")
 			}
 			if len(stack) == 0 {
 				rootDone = true

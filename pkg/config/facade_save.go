@@ -7,6 +7,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Stream that receives managed mode refusals and managed key notices, standard error outside tests
@@ -105,7 +107,7 @@ func commentedSectionsForSave(normalized map[string]any) string {
 	}
 	configured := false
 	for _, e := range entries {
-		if m, ok := e.(map[string]any); ok && PyTruthy(m["provider"]) && PyTruthy(m["model"]) {
+		if m, ok := e.(map[string]any); ok && anyutil.IsTrue(m["provider"]) && anyutil.IsTrue(m["model"]) {
 			configured = true
 		}
 	}

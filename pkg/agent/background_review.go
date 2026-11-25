@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -230,7 +231,7 @@ func reviewInputTokenBudget(ctx context.Context, taskCfg map[string]any, reviewA
 	if !ok {
 		return contextDerivedReviewInputBudget(reviewAgent)
 	}
-	budget, ok := pyIntCoerce(raw)
+	budget, ok := intCoerce(raw)
 	if !ok {
 		return contextDerivedReviewInputBudget(reviewAgent)
 	}
@@ -339,7 +340,7 @@ func warnReviewRoutingFallback(ctx context.Context, a *AIAgent, taskProvider, ta
 		errorLine = strings.SplitN(text, "\n", 2)[0]
 	}
 	pkgLog().Warn(fmt.Sprintf("auxiliary.background_review.provider=%s (model %s) could not be resolved: %s — background reviews "+
-		"run on the main model %s/%s instead.", pyStrRepr(taskProvider), pyStrRepr(taskModel), errorLine, a.provider, a.model))
+		"run on the main model %s/%s instead.", strconv.Quote(taskProvider), strconv.Quote(taskModel), errorLine, a.provider, a.model))
 	message := i18n.T(ctx, "display.review.routing_fallback_warning", "", map[string]any{
 		"task_provider": taskProvider, "task_model": taskModel, "error": errorLine, "provider": a.provider, "model": a.model,
 	})
@@ -414,7 +415,7 @@ func digestHistory(messagesSnapshot []map[string]any, tail int) []map[string]any
 					}
 					name := "?"
 					if fn, ok := jsonutil.AsMap(call["function"]); ok {
-						if n, has := fn["name"]; has {
+						if n := fn["name"]; n != nil {
 							name = anyutil.String(n)
 						}
 					}

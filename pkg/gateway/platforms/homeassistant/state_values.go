@@ -14,14 +14,14 @@ import (
 )
 
 // Error carrying a kind label beside its message
-type pyErr struct{ kind, msg string }
+type kindErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string     { return e.msg }
-func (e *pyErr) ErrorKind() string { return e.kind }
+func (e *kindErr) Error() string     { return e.msg }
+func (e *kindErr) ErrorKind() string { return e.kind }
 
 // AttributeError of a value of the wrong kind, naming the field and the kind it needs
 func attrErr(v any, field, want string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("%s must be %s, got %s", field, want, errchain.Kind(v))}
+	return &kindErr{"AttributeError", fmt.Sprintf("%s must be %s, got %s", field, want, errchain.Kind(v))}
 }
 
 // Whether a decoded value is a Python dict
@@ -34,7 +34,7 @@ func isDict(v any) bool {
 }
 
 // dict get of a decoded value, the AttributeError a non dict raises
-func pyGet(v any, key string, def any) (any, error) {
+func lookup(v any, key string, def any) (any, error) {
 	switch m := v.(type) {
 	case *jsonutil.Object:
 		if m != nil {
@@ -49,26 +49,26 @@ func pyGet(v any, key string, def any) (any, error) {
 		}
 		return def, nil
 	}
-	return nil, &pyErr{"AttributeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
+	return nil, &kindErr{"AttributeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
 }
 
 // Subscript of a decoded value by a str key with the KeyError or TypeError Python raises
-func pyIndex(v any, key string) (any, error) {
+func elementAt(v any, key string) (any, error) {
 	switch m := v.(type) {
 	case *jsonutil.Object:
 		if m != nil {
 			if val, ok := m.Get(key); ok {
 				return val, nil
 			}
-			return nil, &pyErr{"KeyError", "missing " + key}
+			return nil, &kindErr{"KeyError", "missing " + key}
 		}
 	case map[string]any:
 		if val, ok := m[key]; ok {
 			return val, nil
 		}
-		return nil, &pyErr{"KeyError", "missing " + key}
+		return nil, &kindErr{"KeyError", "missing " + key}
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
+	return nil, &kindErr{"TypeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
 }
 
 // Keys of a dict in iteration order, a plain map's keys sorted
@@ -88,7 +88,7 @@ func dictKeys(v any) []string {
 }
 
 // Items a for loop over a decoded value yields, the TypeError of a value Python cannot iterate
-func pyIter(v any) ([]any, error) {
+func elementsOf(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		return t, nil
@@ -113,7 +113,7 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
+	return nil, &kindErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // Integer of a base ten text with surrounding space ignored, false when it is not one or lies outside the int64 range
@@ -126,7 +126,7 @@ func parseIntStr(s string) (int64, bool) {
 func hashKeyAs(v any, use string) (any, error) {
 	hk, err := hashKey(v)
 	if err != nil {
-		return nil, &pyErr{"TypeError", fmt.Sprintf("%s cannot be a %s", errchain.Kind(v), use)}
+		return nil, &kindErr{"TypeError", fmt.Sprintf("%s cannot be a %s", errchain.Kind(v), use)}
 	}
 	return hk, nil
 }
@@ -149,13 +149,13 @@ func hashKey(v any) (any, error) {
 		}
 		return t, nil
 	case []any, *jsonutil.Object, map[string]any:
-		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
+		return nil, &kindErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 	}
 	if n, ok := anyutil.Int(v); ok {
 		return n, nil
 	}
 	if !reflect.TypeOf(v).Comparable() {
-		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
+		return nil, &kindErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 	}
 	return v, nil
 }
@@ -209,7 +209,7 @@ func jsonKey(k any) (string, error) {
 	if n, ok := anyutil.Int(k); ok {
 		return strconv.FormatInt(n, 10), nil
 	}
-	return "", &pyErr{"TypeError", fmt.Sprintf("a mapping key must be text, a number, true or false or nothing, got %s", errchain.Kind(k))}
+	return "", &kindErr{"TypeError", fmt.Sprintf("a mapping key must be text, a number, true or false or nothing, got %s", errchain.Kind(k))}
 }
 
 // Pairs dict() reads from a list element, the errors dict raises for a bad element
@@ -217,25 +217,25 @@ func updatePair(index int, elem any) (any, any, error) {
 	var parts []any
 	switch t := elem.(type) {
 	case string, []any, *jsonutil.Object, map[string]any:
-		parts, _ = pyIter(t)
+		parts, _ = elementsOf(t)
 	default:
-		return nil, nil, &pyErr{"TypeError", fmt.Sprintf("item %d must be a pair of key and value, got %s", index, errchain.Kind(elem))}
+		return nil, nil, &kindErr{"TypeError", fmt.Sprintf("item %d must be a pair of key and value, got %s", index, errchain.Kind(elem))}
 	}
 	if len(parts) != 2 {
-		return nil, nil, &pyErr{"ValueError", fmt.Sprintf("item %d must be a pair of key and value, got %d values", index, len(parts))}
+		return nil, nil, &kindErr{"ValueError", fmt.Sprintf("item %d must be a pair of key and value, got %d values", index, len(parts))}
 	}
 	return parts[0], parts[1], nil
 }
 
 // dict(data) as an ordered JSON object, equal keys merged and keys that are not text written as JSON object keys
-func pyDict(data any) (*jsonutil.Object, error) {
+func mappingOf(data any) (*jsonutil.Object, error) {
 	out := jsonutil.NewObject()
 	if !anyutil.IsTrue(data) {
 		return out, nil
 	}
 	if isDict(data) {
 		for _, k := range dictKeys(data) {
-			v, _ := pyGet(data, k, nil)
+			v, _ := lookup(data, k, nil)
 			out.Set(k, v)
 		}
 		return out, nil
@@ -243,9 +243,9 @@ func pyDict(data any) (*jsonutil.Object, error) {
 	var elems []any
 	switch t := data.(type) {
 	case []any, string:
-		elems, _ = pyIter(t)
+		elems, _ = elementsOf(t)
 	default:
-		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a mapping or a list of pairs, got %s", errchain.Kind(data))}
+		return nil, &kindErr{"TypeError", fmt.Sprintf("expected a mapping or a list of pairs, got %s", errchain.Kind(data))}
 	}
 	type entry struct {
 		key any

@@ -10,18 +10,22 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
-// Logs one failed attempt with its buffered retry trace and hints, returning type, lowered message, provider, base URL and model
-func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErrorTurn, elapsed float64, retryable bool) (string, string, string, string, string) {
-	errorType := surfaceExceptionName(e.apiError)
+// Logs one failed attempt with its failure reason, buffered retry trace and hints, returning lowered message, provider, base URL and model
+func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErrorTurn, elapsed float64, retryable bool) (string, string, string, string) {
+	reason := provider.ReasonUnknown
+	if e.classified != nil && e.classified.Reason != "" {
+		reason = e.classified.Reason
+	}
 	errorMsg := strings.ToLower(e.apiError.Error())
 	summary := a.summarizeAPIError(e.apiError)
 	attempt := fmt.Sprintf("attempt %d/%d", s.RetryCount, s.MaxRetries)
 	if !retryable {
 		attempt += ", not retryable"
 	}
-	pkgLog().Warn(fmt.Sprintf("API call failed (%s) error_type=%s %s summary=%s", attempt, errorType, a.ClientLogContext(), summary))
+	pkgLog().Warn(fmt.Sprintf("API call failed (%s) reason=%s %s summary=%s", attempt, reason, a.ClientLogContext(), summary))
 	providerName, baseURL, model := a.provider, a.baseURL, a.model
 	blines(a, fmt.Sprintf("⚠️  %s%s failed: %s", strings.ToUpper(attempt[:1]), attempt[1:], summary))
 	if a.verboseLogging {
@@ -29,7 +33,7 @@ func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErr
 		if e.statusCode != nil && *e.statusCode != 0 {
 			statusStr = fmt.Sprintf(" [HTTP %d]", *e.statusCode)
 		}
-		blines(a, fmt.Sprintf("   🔌 %s%s  Provider: %s  Model: %s", errorType, statusStr, providerName, model),
+		blines(a, fmt.Sprintf("   🔌 %s%s  Provider: %s  Model: %s", reason, statusStr, providerName, model),
 			fmt.Sprintf("   🌐 Endpoint: %s", baseURL))
 		if e.statusCode != nil && *e.statusCode != 0 && *e.statusCode < 500 {
 			var apiErr *provider.APIError
@@ -42,7 +46,7 @@ func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErr
 	}
 	if a.isOpenRouterURL() && strings.Contains(errorMsg, "support tool use") {
 		blines(a, fmt.Sprintf("   💡 No OpenRouter providers for %s support tool calling with your current settings.", model))
-		if pyTruthy(a.providerPreferencesForAgent(ctx)["only"]) {
+		if anyutil.IsTrue(a.providerPreferencesForAgent(ctx)["only"]) {
 			blines(a, "      Your provider_routing.only restriction is filtering out tool-capable providers.",
 				"      Try removing the restriction or adding providers that support tools for this model.")
 		}
@@ -52,7 +56,7 @@ func logAPIErrorAttempt(ctx context.Context, a *AIAgent, s *LoopState, e *apiErr
 		blines(a, fmt.Sprintf("   💡 Model '%s' is not a valid id for provider %s — it is missing its vendor prefix.", model, providerName),
 			fmt.Sprintf("      Did you mean '%s'?  Re-pick it with /model.", suggestion))
 	}
-	return errorType, errorMsg, providerName, baseURL, model
+	return errorMsg, providerName, baseURL, model
 }
 
 // Prefixed catalogue id when a bare 404 most likely means the vendor prefix was lost

@@ -21,8 +21,6 @@ import (
 	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
-
-	"golang.org/x/text/cases"
 )
 
 // Install stamp updateMechanism values a build lane may write
@@ -103,7 +101,7 @@ func isSealedTree(projectRoot string) (bool, error) {
 			return true, nil
 		}
 	}
-	return false, &PyError{Class: "RuntimeError", Message: fmt.Sprintf(
+	return false, &ClassError{Class: "RuntimeError", Message: fmt.Sprintf(
 		"install-stamp.json at %s is missing a valid 'updateMechanism' (one of %s). The build lane that wrote this stamp must pass --update-mechanism to scripts/write_install_stamp.py.",
 		filepath.Dir(InstallStampPath(projectRoot)), strings.Join(updateMechanisms, ", "))}
 }
@@ -212,7 +210,7 @@ func storePython(runtime string) (string, error) {
 	get := func(value any, key string, fallback any) (any, error) {
 		obj, ok := value.(*jsonutil.Object)
 		if !ok {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s in %s, got %s", key, facts, errchain.Kind(value))}
+			return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s in %s, got %s", key, facts, errchain.Kind(value))}
 		}
 		if got, present := obj.Get(key); present {
 			return got, nil
@@ -236,7 +234,7 @@ func storePython(runtime string) (string, error) {
 	}
 	name, ok := entry.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the python entry of %s must be text, got %s", facts, errchain.Kind(entry))}
+		return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("the python entry of %s must be text, got %s", facts, errchain.Kind(entry))}
 	}
 	candidate := pathutil.Join(runtime, name, rel)
 	if isRegularFile(candidate) {
@@ -724,7 +722,7 @@ func mergeUserPath(existing, entry string) (string, bool) {
 		if part == "" {
 			continue
 		}
-		if cases.Fold().String(strings.TrimRight(part, `\/`)) == cases.Fold().String(wanted) {
+		if textutil.Fold(strings.TrimRight(part, `\/`)) == textutil.Fold(wanted) {
 			return "", false
 		}
 		parts = append(parts, part)

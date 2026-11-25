@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -116,7 +117,7 @@ func TestRepairPlainUserThenMarkerStaysAddressable(t *testing.T) {
 		t.Fatalf("repairs %d messages %v", repairs, messages)
 	}
 	survivor := messages[0]
-	if survivor["role"] != "user" || survivor["_row_id"] != 12134 || pyTruthy(survivor["display_kind"]) {
+	if survivor["role"] != "user" || survivor["_row_id"] != 12134 || anyutil.IsTrue(survivor["display_kind"]) {
 		t.Fatalf("survivor %v", survivor)
 	}
 	if survivor["content"] != "the user's real prompt\n\n[System: The active model for this chat has changed to ds4.]" {
@@ -361,7 +362,7 @@ func assistantCallIDs(m map[string]any) []any {
 func assistantsWithCalls(messages []map[string]any) []map[string]any {
 	var out []map[string]any
 	for _, m := range messages {
-		if m["role"] == "assistant" && pyTruthy(m["tool_calls"]) {
+		if m["role"] == "assistant" && anyutil.IsTrue(m["tool_calls"]) {
 			out = append(out, m)
 		}
 	}
@@ -620,7 +621,7 @@ func TestCompressorSanitizeKeepsCompositeKeyedPair(t *testing.T) {
 	cc := &ContextCompressor{}
 	cc.quietMode = true
 	out := cc.sanitizeToolPairs([]map[string]any{seqAssistantCalls(seqToolCall("fc_7", "s", map[string]any{"call_id": "call_7"})), seqTool("call_7|fc_7", "res"), seqUser("next")})
-	if asst := firstAssistant(out); !pyTruthy(asst["tool_calls"]) {
+	if asst := firstAssistant(out); !anyutil.IsTrue(asst["tool_calls"]) {
 		t.Fatalf("valid tool_call stripped %v", asst)
 	}
 	if got := toolContents(out); !reflect.DeepEqual(got, []any{"res"}) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -60,7 +61,7 @@ func TestHandoffStateMachine(t *testing.T) {
 		t.Fatalf("reclaimed %v", got)
 	}
 	state := db.GetHandoffState(ctx, "s")
-	if rowValue(state, "state") != "failed" || rowValue(state, "platform") != "telegram" || len(pyStr(rowValue(state, "error"))) != 500 {
+	if rowValue(state, "state") != "failed" || rowValue(state, "platform") != "telegram" || len(anyutil.String(rowValue(state, "error"))) != 500 {
 		t.Fatalf("state %v", state)
 	}
 	if ok, _ := db.RequestHandoff(ctx, "s", "telegram"); !ok {

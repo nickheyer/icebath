@@ -230,7 +230,7 @@ func (e *CalledProcessError) Error() string {
 }
 
 // Exit status as Python reports it, the negated signal number for a child a signal killed
-func pyReturnCode(exitErr *exec.ExitError) int {
+func returnCode(exitErr *exec.ExitError) int {
 	if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 		return -int(status.Signal())
 	}
@@ -387,7 +387,7 @@ func RunContained(cmd *exec.Cmd, label string, opts ContainOptions) (string, err
 func calledProcess(argv []string, err error, output string) error {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return &CalledProcessError{Argv: argv, Code: pyReturnCode(exitErr), Output: output}
+		return &CalledProcessError{Argv: argv, Code: returnCode(exitErr), Output: output}
 	}
 	return err
 }

@@ -48,7 +48,7 @@ func statusFormatISOTimestamp(value any) any {
 	return config.SafeStrftime(parsed.Local(), "%Y-%m-%d %H:%M:%S %Z")
 }
 
-// UTC isoformat of a millisecond epoch
+// UTC RFC 3339 stamp with microseconds of a millisecond epoch
 func statusQwenExpiry(expiresAtMs any) (any, error) {
 	n, err := anyutil.ToInt(expiresAtMs)
 	if err != nil {

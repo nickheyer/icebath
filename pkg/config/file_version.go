@@ -51,13 +51,13 @@ func frozenConfigWorker(path string) bool {
 func fileDigest(path string) string {
 	data, err := readDigestBytes(path)
 	if err != nil {
-		return "<" + pyOSErrorName(err) + ">"
+		return "<" + osErrorName(err) + ">"
 	}
 	return ContentDigest(data)
 }
 
 // Python OSError subclass name of a file error
-func pyOSErrorName(err error) string {
+func osErrorName(err error) string {
 	var errno syscall.Errno
 	switch {
 	case errors.Is(err, fs.ErrNotExist):

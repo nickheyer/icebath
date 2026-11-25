@@ -289,7 +289,7 @@ func TestRealSqliteFullAbortsAdmissionAndEpochFailureIsAtomic(t *testing.T) {
 	}
 	mustExecConn(t, db.conn, "DROP TRIGGER refuse_epoch")
 	pages := scalarOf(t, db.conn, "PRAGMA page_count")
-	mustExecConn(t, db.conn, "PRAGMA max_page_count="+pyStr(pages))
+	mustExecConn(t, db.conn, "PRAGMA max_page_count="+anyutil.String(pages))
 	args := SessionInput{Epoch: epoch, PrincipalID: "human", SessionID: "s", RequestID: "full", Payload: admissionText(strings.Repeat("x", 2*1024*1024))}
 	_, err = db.AdmitSessionInput(ctx, args)
 	if code, _ := sqliteErrorCode(err); code != sqlite3.SQLITE_FULL {

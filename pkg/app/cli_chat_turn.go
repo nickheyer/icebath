@@ -413,9 +413,9 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 		}
 		return "", false
 	}
-	if len(result) > 0 && (cliTruthy(result["failed"]) || cliTruthy(result["partial"])) && response == "" {
+	if len(result) > 0 && (anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["partial"])) && response == "" {
 		errText := c.t("cli.chat.unknown_error", nil)
-		if cliTruthy(result["error"]) {
+		if anyutil.IsTrue(result["error"]) {
 			errText = anyutil.String(result["error"])
 		}
 		response = chatErrorResponse(c.ctx, errText, c.turnProvider(), c.turnModel(), cliStr(result["failure_reason"], ""))
@@ -427,7 +427,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 		cprint("\n" + dimANSI + c.t("cli.chat.interrupted_marker", nil) + resetANSI)
 	}
 	c.ringBell()
-	if len(result) > 0 && !cliTruthy(result["completed"]) && !cliTruthy(result["interrupted"]) {
+	if len(result) > 0 && !anyutil.IsTrue(result["completed"]) && !anyutil.IsTrue(result["interrupted"]) {
 		apiCalls, _ := progressNumber(mapValueOr(result, "api_calls", 0))
 		maxIter := 500
 		if c.agentRef() != nil {
@@ -496,7 +496,7 @@ func (c *CLI) requeueInterruptedInput(pendingMessage any) {
 // Returns the message to requeue and whether to print the interrupt marker, clearing a stale agent interrupt flag
 func (c *CLI) chatResolveInterrupt(turn *chatTurn, done <-chan struct{}, interruptMsg any, response string) (any, bool) {
 	result := turn.getResult()
-	interruptedThisTurn := len(result) > 0 && cliTruthy(result["interrupted"])
+	interruptedThisTurn := len(result) > 0 && anyutil.IsTrue(result["interrupted"])
 	c.uiMu.Lock()
 	c.lastTurnInterrupted = interruptedThisTurn
 	c.uiMu.Unlock()
@@ -556,7 +556,7 @@ func (c *CLI) chatPrintReasoningBox(turn *chatTurn) {
 // Prints the response block, closing a spoken block or showing a transform suffix, then the billing call to action
 func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	result := turn.getResult()
-	if response == "" || cliTruthy(result["response_previewed"]) {
+	if response == "" || anyutil.IsTrue(result["response_previewed"]) {
 		return
 	}
 	label, respColor, respText := "󰆧 Icebath", "#9cc7e8", "#dfe9f2"
@@ -566,7 +566,7 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 		respText = skin.GetColor("banner_text", "#dfe9f2")
 	}
 	respColor, respText = maybeRemapForLightMode(respColor), maybeRemapForLightMode(respText)
-	isErrorResponse := cliTruthy(result["failed"]) || cliTruthy(result["partial"])
+	isErrorResponse := anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["partial"])
 	c.streamMu.Lock()
 	streamedText, streamStarted, streamBoxOpened := c.streamedTextThisTurn, c.streamStarted, c.streamBoxOpened
 	c.streamMu.Unlock()

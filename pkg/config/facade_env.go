@@ -3,10 +3,13 @@ package config
 import (
 	"context"
 	"fmt"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"math"
 	"os"
 	"strings"
 	"unicode/utf16"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Terminal config keys in declaration order with the env var each one mirrors
@@ -46,7 +49,7 @@ func TerminalConfigEnvVarForKey(key string) (string, bool) {
 }
 
 // Python json.dumps text of a value with the default separators and ASCII escaping
-func pyJSONDumps(v any) string {
+func jsonDumps(v any) string {
 	var b strings.Builder
 	var write func(v any)
 	write = func(v any) {
@@ -60,7 +63,7 @@ func pyJSONDumps(v any) string {
 				b.WriteString("false")
 			}
 		case string:
-			b.WriteString(pyJSONString(c))
+			b.WriteString(jsonString(c))
 		case float64:
 			switch {
 			case math.IsNaN(c):
@@ -70,7 +73,7 @@ func pyJSONDumps(v any) string {
 			case math.IsInf(c, -1):
 				b.WriteString("-Infinity")
 			default:
-				b.WriteString(pyFloatRepr(c))
+				b.WriteString(representFloat(c))
 			}
 		case map[string]any:
 			b.WriteString("{")
@@ -78,7 +81,7 @@ func pyJSONDumps(v any) string {
 				if i > 0 {
 					b.WriteString(", ")
 				}
-				b.WriteString(pyJSONString(k))
+				b.WriteString(jsonString(k))
 				b.WriteString(": ")
 				write(c[k])
 			}
@@ -101,7 +104,7 @@ func pyJSONDumps(v any) string {
 			}
 			write(items)
 		default:
-			b.WriteString(PyStr(c))
+			b.WriteString(anyutil.String(c))
 		}
 	}
 	write(v)
@@ -109,7 +112,7 @@ func pyJSONDumps(v any) string {
 }
 
 // JSON string literal with every non ASCII rune escaped the way ensure_ascii does
-func pyJSONString(s string) string {
+func jsonString(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -144,21 +147,21 @@ func pyJSONString(s string) string {
 	return b.String()
 }
 
-// Env text of a terminal config value, lists and mappings as JSON
+// Env text of a terminal config value: text as it is, empty for null, true or false, numbers in decimal, lists and mappings as JSON
 func terminalEnvValueText(v any) string {
 	switch v.(type) {
 	case []any, map[string]any, Tree, []string:
-		return pyJSONDumps(v)
+		return jsonDumps(v)
 	}
-	return PyStr(v)
+	return anyutil.String(v)
 }
 
-// Python str of a value when truthy, empty otherwise
-func pyOrEmpty(v any) string {
-	if !PyTruthy(v) {
+// Text of a config value that is set, empty for null, false, zero and empty values
+func setText(v any) string {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return PyStr(v)
+	return anyutil.String(v)
 }
 
 // Reports whether a terminal config value owns its mirrored env var, a dot, auto or cwd value never does
@@ -166,7 +169,7 @@ func terminalConfigValueIsBridgeable(key string, value any) bool {
 	if key != "cwd" {
 		return true
 	}
-	switch strings.TrimSpace(pyOrEmpty(value)) {
+	switch strings.TrimSpace(setText(value)) {
 	case ".", "auto", "cwd":
 		return false
 	}
@@ -238,11 +241,9 @@ func ApplyTerminalConfigToEnv(ctx context.Context, h string, opts TerminalEnvOpt
 	if _, rawBackend := rawTerminal["backend"]; !(opts.Config != nil || rawBackend) {
 		sources[0], sources[1] = sources[1], sources[0]
 	}
-	backend := ""
-	if PyTruthy(sources[0]) {
-		backend = PyStr(sources[0])
-	} else if PyTruthy(sources[1]) {
-		backend = PyStr(sources[1])
+	backend := setText(sources[0])
+	if backend == "" {
+		backend = setText(sources[1])
 	}
 	if _, pinned := explicit["docker_image"]; shouldOverride && pinned {
 		if err := set("TERMINAL_DOCKER_IMAGE_PINNED", "1"); err != nil {
@@ -264,8 +265,8 @@ func ApplyTerminalConfigToEnv(ctx context.Context, h string, opts TerminalEnvOpt
 			continue
 		}
 		if key == "cwd" {
-			if s, isStr := value.(string); isStr && !IsSSHRemoteTildeCwd(backend, strings.TrimSpace(pyOrEmpty(value))) {
-				value = pyExpandUser(s)
+			if s, isStr := value.(string); isStr && !IsSSHRemoteTildeCwd(backend, strings.TrimSpace(setText(value))) {
+				value = pathutil.ExpandUser(s)
 			}
 		}
 		_, explicitKey := explicit[key]

@@ -119,7 +119,7 @@ func TestPauseARequestOnDiskIsOwedEvenBeforeItIsRecordedSent(t *testing.T) {
 	}
 	_ = gw.cmd.Process.Kill()
 	_ = gw.cmd.Wait()
-	if got := wpLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{"resume ['default']"}, {}}) {
+	if got := wpLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{`resume ["default"]`}, {}}) {
 		t.Fatal(got)
 	}
 }
@@ -137,7 +137,7 @@ func TestPausePlannedStopMarkerRecordsTheRequestAndRefusesAnUnwritableHome(t *te
 	}
 	body := loaded.(*jsonutil.Object)
 	if !reflect.DeepEqual(body.Keys(), []string{"target_pid", "target_start_time", "stopper_pid", "written_at"}) ||
-		strings.Contains(string(raw), " ") || !strings.HasSuffix(body.Value("written_at").(string), "+00:00") {
+		strings.Contains(string(raw), " ") || !strings.HasSuffix(body.Value("written_at").(string), "Z") {
 		t.Fatalf("%s", raw)
 	}
 	if os.Geteuid() == 0 {

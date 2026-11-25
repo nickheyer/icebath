@@ -125,7 +125,7 @@ func (a *AIAgent) extractReasoning(resp *provider.Response) string {
 	}
 	if s, ok := msg.Content.(string); ok && len(parts) == 0 && s != "" {
 		for _, re := range inlineReasoningBlocks {
-			for _, m := range pyFindAll(re, s) {
+			for _, m := range findAll(re, s) {
 				add(strings.TrimSpace(m.GroupByNumber(1).String()))
 			}
 		}

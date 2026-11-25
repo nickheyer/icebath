@@ -75,25 +75,8 @@ func recHome(r *jsonutil.Object, key string) any {
 	return v
 }
 
-// Python equality of two decoded JSON values, numbers compared by value across int, float and bool
-func pyEq(a, b any) bool {
-	ra, aNum := pyNumber(a)
-	rb, bNum := pyNumber(b)
-	if aNum || bNum {
-		return aNum && bNum && ra != nil && rb != nil && ra.Cmp(rb) == 0
-	}
-	switch x := a.(type) {
-	case nil:
-		return b == nil
-	case string:
-		y, ok := b.(string)
-		return ok && x == y
-	}
-	return anyutil.Quote(a) == anyutil.Quote(b)
-}
-
 // Exact rational of a Python number, nil for NaN and infinities which equal nothing finite
-func pyNumber(v any) (*big.Rat, bool) {
+func numberOf(v any) (*big.Rat, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -113,7 +96,7 @@ func pyNumber(v any) (*big.Rat, bool) {
 }
 
 // Whether v is a Python int that is not a bool
-func pyIsInt(v any) bool {
+func isIntValue(v any) bool {
 	if _, ok := v.(bool); ok {
 		return false
 	}
@@ -250,7 +233,7 @@ func NormalizeUpdatedAt(value any) (string, bool, error) {
 	case bool:
 		return "", false, nil
 	}
-	if _, isNum := pyNumber(value); !isNum {
+	if _, isNum := numberOf(value); !isNum {
 		return "", false, nil
 	}
 	seconds, err := anyutil.ToFloat(value)
@@ -372,7 +355,7 @@ func looksLikeGatewayProcessLive(pid int) bool {
 // Whether persisted record metadata names a gateway runtime when the live command line is unreadable
 func recordLooksLikeGateway(record *jsonutil.Object) bool {
 	argv, ok := recGet(record, "argv").([]any)
-	if !pyEq(recGet(record, "kind"), gatewayKind) || !ok || len(argv) == 0 {
+	if !anyutil.Equal(recGet(record, "kind"), gatewayKind) || !ok || len(argv) == 0 {
 		return false
 	}
 	parts := make([]string, len(argv))
@@ -481,7 +464,7 @@ func readJSONFile(path string, barePidOK bool) *jsonutil.Object {
 		}
 	}
 	if barePidOK {
-		if _, isBool := payload.(bool); isBool || pyIsInt(payload) {
+		if _, isBool := payload.(bool); isBool || isIntValue(payload) {
 			r := jsonutil.NewObject()
 			r.Set("pid", payload)
 			return r
@@ -530,7 +513,7 @@ func pidFromRecord(record *jsonutil.Object, key string) (int, bool) {
 
 // Whether both start times are known and differ, the pid reuse guard
 func startTimesConflict(recorded, current any) bool {
-	return recorded != nil && current != nil && !pyEq(current, recorded)
+	return recorded != nil && current != nil && !anyutil.Equal(current, recorded)
 }
 
 // Record pid when it is alive and passes the start time reuse guard

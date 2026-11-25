@@ -64,7 +64,7 @@ func (s *scope) fetchSnapshot(ss *session) (string, any, error) {
 	threshold := s.snapshotThreshold()
 	snapshot, ok := redacted.(string)
 	if !ok {
-		return "", nil, &pyError{"TypeError", "the snapshot reply carries no snapshot text"}
+		return "", nil, &kindError{"TypeError", "the snapshot reply carries no snapshot text"}
 	}
 	if int64(utf8.RuneCountInString(snapshot)) > threshold {
 		snapshot = s.truncateSnapshot(snapshot, threshold)
@@ -388,7 +388,7 @@ func (s *scope) browserPress(key, taskID string) string {
 func parseSnapshotImages(snapshot any) ([]any, error) {
 	text, ok := snapshot.(string)
 	if !ok {
-		return nil, &pyError{"AttributeError", "expected snapshot text, got " + anyutil.Kind(snapshot)}
+		return nil, &kindError{"AttributeError", "expected snapshot text, got " + anyutil.Kind(snapshot)}
 	}
 	images := []any{}
 	lines := strings.Split(text, "\n")
@@ -557,7 +557,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 		var result *plugins.PluginLlmCompleteResult
 		if err := try(func() error {
 			if llm == nil {
-				return &pyError{"AttributeError", "no plugin LLM is available to analyze the screenshot"}
+				return &kindError{"AttributeError", "no plugin LLM is available to analyze the screenshot"}
 			}
 			var err error
 			result, err = llm.Complete(s.ctx, messages, plugins.PluginLlmOptions{Task: &task, Purpose: &purpose,
@@ -620,7 +620,7 @@ func readUTF8Text(path string) (string, error) {
 	}
 	text, err := textutil.DecodeUTF8(data)
 	if err != nil {
-		return "", &pyError{"UnicodeDecodeError", err.Error()}
+		return "", &kindError{"UnicodeDecodeError", err.Error()}
 	}
 	return textutil.NormalizeNewlines(text), nil
 }
@@ -631,7 +631,7 @@ func (s *scope) readCookieFile(cookiesPath string, domainSuffix *string) ([]*jso
 	if err != nil {
 		return nil, err
 	}
-	outside := &pyError{"ValueError", "cookies_path must be a relative path within the cookies directory"}
+	outside := &kindError{"ValueError", "cookies_path must be a relative path within the cookies directory"}
 	if filepath.IsAbs(cookiesPath) {
 		return nil, outside
 	}
@@ -644,10 +644,10 @@ func (s *scope) readCookieFile(cookiesPath string, domainSuffix *string) ([]*jso
 	}
 	st, err := os.Stat(resolved)
 	if err != nil || !st.Mode().IsRegular() {
-		return nil, &pyError{"FileNotFoundError", "Cookie file not found: " + cookiesPath}
+		return nil, &kindError{"FileNotFoundError", "Cookie file not found: " + cookiesPath}
 	}
 	if size := st.Size(); size > cookieMaxBytes {
-		return nil, &pyError{"ValueError", fmt.Sprintf("Cookie file too large (max %d bytes, got %d)", cookieMaxBytes, size)}
+		return nil, &kindError{"ValueError", fmt.Sprintf("Cookie file too large (max %d bytes, got %d)", cookieMaxBytes, size)}
 	}
 	text, err := readUTF8Text(resolved)
 	if err != nil {

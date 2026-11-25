@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Empty DeepInfra catalog cache for the test and afterwards
@@ -42,7 +43,7 @@ func TestDeepInfraListModelsFiltersByImageGenTag(t *testing.T) {
 	if len(rows) != 1 || rows[0]["id"] != "vendor/img" || rows[0]["price"] != "$0.0050/image" || rows[0]["display"] != "img" {
 		t.Fatal(rows)
 	}
-	if w := rows[0]["default_width"]; w == nil || pyStrOf(w) != "1024" {
+	if w := rows[0]["default_width"]; w == nil || anyutil.String(w) != "1024" {
 		t.Fatal(rows[0])
 	}
 	if p.DefaultModel() != "vendor/img" || !p.IsAvailable() {

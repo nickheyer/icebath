@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Plain descriptor of a fronted platform with its length cap and unit
@@ -74,7 +75,7 @@ func relayExplodingAdapter(t *testing.T) *RelayAdapter {
 	t.Helper()
 	a, c := relayCaptureAdapter(t, relayLiveCardsDesc)
 	c.result = func(map[string]any) (map[string]any, error) {
-		return nil, &PyError{Kind: "ConnectionError", Msg: "socket dropped"}
+		return nil, &errorutil.Error{Kind: "ConnectionError", Msg: "socket dropped"}
 	}
 	return a
 }

@@ -293,8 +293,8 @@ func TestHealGatewayRoutingAndUsagePrimaryKeys(t *testing.T) {
 		t.Fatalf("foreign keys %v", fk)
 	}
 	text := buf.String()
-	for _, want := range []string{"gateway_routing has legacy primary key ['session_key']",
-		"session_model_usage has legacy primary key ['billing_base_url', 'billing_mode', 'billing_provider', 'model', 'session_id'] (missing task)"} {
+	for _, want := range []string{"gateway_routing has legacy primary key (session_key); rebuilding with composite (scope, session_key) key",
+		"session_model_usage has legacy primary key (billing_base_url, billing_mode, billing_provider, model, session_id) (missing task)"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("log lacks %q: %s", want, text)
 		}
@@ -322,7 +322,7 @@ func TestInitSchemaFreshStoreStampsEverything(t *testing.T) {
 			t.Fatalf("%s missing", key)
 		}
 	}
-	if created, _ := metaAny(t, conn, "store_created_at_utc").(string); !strings.HasSuffix(created, "+00:00") {
+	if created, _ := metaAny(t, conn, "store_created_at_utc").(string); !strings.HasSuffix(created, "Z") {
 		t.Fatalf("created %q", created)
 	}
 	if metaAny(t, conn, messageUIDBackfillDone) != "1" || metaAny(t, conn, "fts_storage_version") != "3" {
@@ -458,8 +458,8 @@ func TestEnsureUniqueTitleIndexRepairsDuplicates(t *testing.T) {
 	if scalarOf(t, conn, "SELECT name FROM sqlite_master WHERE name = 'idx_sessions_title_unique'") == nil {
 		t.Fatal("index not created")
 	}
-	for _, line := range []string{"Renamed duplicate user session title 'Plan' to 'Plan #2'", "Cleared duplicate llm session title 'Plan'",
-		"Cleared duplicate derived session title 'Notes'"} {
+	for _, line := range []string{`Renamed duplicate user session title \"Plan\" to \"Plan #2\"`, `Cleared duplicate llm session title \"Plan\"`,
+		`Cleared duplicate derived session title \"Notes\"`} {
 		if !strings.Contains(buf.String(), line) {
 			t.Fatalf("log lacks %q", line)
 		}
@@ -522,8 +522,11 @@ func TestDeferStaleFTSForHoldersEscalatesAndGoesFutile(t *testing.T) {
 		t.Fatalf("reset %v", a)
 	}
 	mustExecConn(t, conn, "UPDATE state_meta SET value = '{\"attempts\": Infinity}' WHERE key = 'fts_rebuild_deferral'")
-	if _, err := schema.deferStaleFTSForHolders(ctx, conn, holders); err == nil || !strings.Contains(err.Error(), "infinity") {
+	if _, err := schema.deferStaleFTSForHolders(ctx, conn, holders); err != nil {
 		t.Fatalf("overflow %v", err)
+	}
+	if a, _ := record().Get("attempts"); a != int64(1) {
+		t.Fatalf("overflow reset %v", a)
 	}
 	mustExecConn(t, conn, "DELETE FROM state_meta WHERE key = 'fts_rebuild_deferral'")
 	if deferred, err := schema.deferStaleFTSForHolders(ctx, conn, nil); deferred || err != nil || schema.ftsDeferredHolderPIDs != nil {

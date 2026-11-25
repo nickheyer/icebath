@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -163,7 +164,7 @@ func (h hostedTTSProvider) IsAvailable() bool {
 	if !h.obj.HasMethod("is_available") {
 		return h.defaults().IsAvailable()
 	}
-	return pyTruthy(h.mustCall("is_available"))
+	return anyutil.IsTrue(h.mustCall("is_available"))
 }
 
 func hostedRows(v any) []map[string]any {
@@ -302,7 +303,7 @@ func (h hostedTTSProvider) VoiceCompatible() bool {
 	if !declared {
 		return h.defaults().VoiceCompatible()
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 func (h hostedTTSProvider) StreamsPCM() bool {
@@ -310,7 +311,7 @@ func (h hostedTTSProvider) StreamsPCM() bool {
 	if !declared {
 		return h.defaults().StreamsPCM()
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 func (h hostedTTSProvider) StreamSampleRate() any {

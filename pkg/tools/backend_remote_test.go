@@ -342,7 +342,7 @@ func TestVercelBackendRequirements(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	b := vercelSandboxBackend{}
-	if err := b.CheckRequirements(env, map[string]any{"vercel_runtime": "node18"}); err == nil || !strings.Contains(err.Error(), "runtime 'node18' is not supported") {
+	if err := b.CheckRequirements(env, map[string]any{"vercel_runtime": "node18"}); err == nil || !strings.Contains(err.Error(), `runtime "node18" is not supported`) {
 		t.Fatal(err)
 	}
 	if err := b.CheckRequirements(env, map[string]any{"container_disk": 1024}); err == nil || !strings.Contains(err.Error(), "terminal.container_disk is 1024") {
@@ -529,15 +529,31 @@ func TestVercelPayloadStdinIsStagedByteExactNotInArgv(t *testing.T) {
 			t.Fatal("payload leaked into argv")
 		}
 	}
-	bad := "\xed\xa0\x80"
-	h, err = v.runBash(context.Background(), "cat > /tmp/out", false, 30, &bad)
+	firstPath := ""
+	for path := range staged {
+		firstPath = path
+	}
+	invalid := "\xed\xa0\x80"
+	h, err = v.runBash(context.Background(), "cat > /tmp/out", false, 30, &invalid)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mu.Unlock()
 	code, err := h.Wait(5)
 	mu.Lock()
-	if err != nil || code != 1 || len(staged) != 1 || len(args) != 1 {
-		t.Fatalf("unencodable payload: code %d err %v staged %d commands %d", code, err, len(staged), len(args))
+	if err != nil || code != 0 || len(staged) != 2 || len(args) != 2 {
+		t.Fatalf("invalid UTF-8 payload: code %d err %v staged %d commands %d", code, err, len(staged), len(args))
+	}
+	for path, data := range staged {
+		if path == firstPath {
+			continue
+		}
+		if string(data) != invalid || modes[path] != 0o600 {
+			t.Fatalf("invalid UTF-8 payload staged %q mode %o", data, modes[path])
+		}
+		script, _ := args[1][1].(string)
+		if args[1][0] != "-c" || !strings.HasPrefix(script, "exec 0< "+path+" || exit $?\n") || !strings.HasSuffix(script, "\ncat > /tmp/out") {
+			t.Fatalf("argv %q", args[1])
+		}
 	}
 }

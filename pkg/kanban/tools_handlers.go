@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -70,7 +71,7 @@ func sqliteBind(value any, position int) (*string, error) {
 }
 
 // Whether a Python value can be a set element, false for the list and dict shapes JSON decodes to
-func pyHashable(value any) bool {
+func hashable(value any) bool {
 	switch value.(type) {
 	case []any, []string, *jsonutil.Object, map[string]any:
 		return false
@@ -162,7 +163,7 @@ func handleList(k *kanbanCall) (string, error) {
 	limit := int64(KanbanListDefaultLimit)
 	if raw := k.get("limit"); raw != nil {
 		n, err := anyutil.ToInt(raw)
-		if err != nil {
+		if f, isFloat := raw.(float64); err != nil && (!errors.Is(err, anyutil.ErrRange) || (isFloat && math.IsInf(f, 0))) {
 			return kanbanToolError("limit must be an integer"), nil
 		}
 		switch {
@@ -184,7 +185,7 @@ func handleList(k *kanbanCall) (string, error) {
 		case string:
 			o.Status = &raw
 		default:
-			if !pyHashable(raw) {
+			if !hashable(raw) {
 				return "", unhashableSetError(raw)
 			}
 			return "", &ValueError{fmt.Sprintf("status must be one of %s", sortedRepr(ValidStatuses))}
@@ -383,7 +384,7 @@ func handleBlock(k *kanbanCall) (string, error) {
 	return withBoard(k.ctx, k.get("board"), false, func(conn state.SQLiteConn) (string, error) {
 		kindText, isText := kind.(string)
 		if kind != nil {
-			if !pyHashable(kind) {
+			if !hashable(kind) {
 				return "", unhashableSetError(kind)
 			}
 			if !isText || !ValidBlockKinds[kindText] {
@@ -421,7 +422,7 @@ func handleBlock(k *kanbanCall) (string, error) {
 		extra := []any{"block_kind", optStrValue(landed.BlockKind)}
 		if isText && kindText == "dependency" && (landed.BlockKind == nil || *landed.BlockKind != kindText) {
 			extra = append(extra, "requested_kind", kindText, "note",
-				"kind='dependency' only waits on an incomplete parent; no parent is open, "+
+				`kind="dependency" only waits on an incomplete parent; no parent is open, `+
 					"so this was recorded as needs_input (sticky until a human unblocks) "+
 					"instead of parking in todo where the dispatcher would respawn it.")
 		}

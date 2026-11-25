@@ -406,7 +406,7 @@ func targetRegularFileState(env *Env, filePath, taskID string) string {
 
 // Refusal for a text write that would corrupt a binary document, sidecar, or existing binary file
 func checkBinaryDocumentWrite(env *Env, filePath, taskID string) string {
-	ext := strings.ToLower(pySplitextExt(filePath))
+	ext := strings.ToLower(splitextExt(filePath))
 	if hasOpaqueDocumentExtension(filePath) {
 		return "Refusing to write plain text to binary document '" + filePath + "' (" + ext + "). " +
 			"A text write cannot produce a valid document container and would " +
@@ -504,7 +504,7 @@ func staleWriteRefusal(filePath, reason, resolved string) *jsonutil.Object {
 
 // True for the read_file dedup status message verbatim or lightly framed
 func isInternalFileStatusText(content string) bool {
-	stripped := pyStrip(content)
+	stripped := strings.TrimSpace(content)
 	return stripped != "" && strings.Contains(stripped, readDedupStatusMessage) &&
 		utf8Len(stripped) <= 2*utf8Len(readDedupStatusMessage)
 }
@@ -512,8 +512,8 @@ func isInternalFileStatusText(content string) bool {
 // True for content dominated by consecutive read_file LINE_NUM pipe CONTENT display rows
 func looksLikeReadFileLineNumberedContent(content string) bool {
 	var lines []string
-	for _, line := range pySplitLines(content) {
-		if pyStrip(line) != "" {
+	for _, line := range splitLinesValue(content) {
+		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
 	}
@@ -522,9 +522,9 @@ func looksLikeReadFileLineNumberedContent(content string) bool {
 	}
 	var numbered []int
 	for _, line := range lines {
-		prefix, _, sep := strings.Cut(strings.TrimLeftFunc(line, pyIsSpace), "|")
-		if sep && pyIsDigitString(prefix) {
-			n, err := strconv.Atoi(pyDigitsASCII(prefix))
+		prefix, _, sep := strings.Cut(strings.TrimLeftFunc(line, unicode.IsSpace), "|")
+		if sep && isDigitString(prefix) {
+			n, err := strconv.Atoi(digitsASCII(prefix))
 			if err == nil {
 				numbered = append(numbered, n)
 			}
@@ -543,7 +543,7 @@ func looksLikeReadFileLineNumberedContent(content string) bool {
 }
 
 // Python str.isdecimal over a non empty string, the digits int accepts
-func pyIsDigitString(s string) bool {
+func isDigitString(s string) bool {
 	if s == "" {
 		return false
 	}
@@ -556,7 +556,7 @@ func pyIsDigitString(s string) bool {
 }
 
 // ASCII spelling of a Unicode decimal digit string, each Nd run of ten counted from its zero
-func pyDigitsASCII(s string) string {
+func digitsASCII(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		start := r

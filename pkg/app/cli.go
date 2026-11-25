@@ -441,32 +441,6 @@ func cliStr(v any, def string) string {
 	}
 }
 
-// Returns the Python truthiness of a config value
-func cliTruthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case int:
-		return t != 0
-	case int64:
-		return t != 0
-	case float64:
-		return t != 0
-	case []any:
-		return len(t) > 0
-	case []string:
-		return len(t) > 0
-	case map[string]any:
-		return len(t) > 0
-	default:
-		return true
-	}
-}
-
 // Returns a nested config map, an empty map when the key is absent or not a map
 func cliMap(cfg map[string]any, key string) map[string]any {
 	if m, ok := cfg[key].(map[string]any); ok {

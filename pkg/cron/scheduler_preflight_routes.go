@@ -64,8 +64,13 @@ func newSharedRouteAdapters(adapters any, routes []*gateway.ProfileRoute) *Share
 	return &SharedRouteAdapters{primary: primary, routes: append([]*gateway.ProfileRoute(nil), routes...)}
 }
 
-// True only while both a primary adapter and a route exist
-func (a *SharedRouteAdapters) PyBool() bool { return len(a.primary) > 0 && len(a.routes) > 0 }
+// Primary adapters a route can lend, zero while there is no route, so a view that can lend nothing reads as empty
+func (a *SharedRouteAdapters) Len() int {
+	if len(a.routes) == 0 {
+		return 0
+	}
+	return len(a.primary)
+}
 
 // Primary adapter for the platform when a target exact route accepts the target, else the default
 func (a *SharedRouteAdapters) Get(ctx context.Context, platform string, target map[string]any, def any) any {

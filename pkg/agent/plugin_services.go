@@ -208,6 +208,9 @@ func (f delegationBackendsFacade) HostCall(ctx context.Context, method string, a
 		if err != nil {
 			return nil, err
 		}
+		if a["name"] == nil {
+			return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: "set_global_backend needs a backend name, got nothing"}
+		}
 		return nil, f.backends.SetGlobalBackend(ctx, anyutil.String(a["name"]), anyutil.String(a["session_key"]), anyutil.IsTrue(a["apply_now"]))
 	}
 	return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("delegation backends have no %s", method)}

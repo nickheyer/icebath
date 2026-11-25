@@ -232,11 +232,11 @@ func TestResolveFallsBackOnANonStringOrFailingProvider(t *testing.T) {
 	}
 	patchSeam(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) { return nil, errors.New("boom") })
 	providerConfig(t, s, "cron:\n  provider: ' live '\n")
-	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok || !strings.Contains(logs.String(), "Failed to load cron.provider 'live' (boom); using built-in ticker") {
+	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok || !strings.Contains(logs.String(), "Failed to load cron.provider \\\"live\\\" (boom); using built-in ticker") {
 		t.Fatal(logs.String())
 	}
 	patchSeam(t, &loadCronScheduler, func(*Store, string) (CronScheduler, error) { return nil, nil })
-	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok || !strings.Contains(logs.String(), "cron.provider 'live' not found; using built-in ticker") {
+	if _, ok := resolveCronScheduler(s).(*InProcessCronScheduler); !ok || !strings.Contains(logs.String(), "cron.provider \\\"live\\\" not found; using built-in ticker") {
 		t.Fatal(logs.String())
 	}
 }
@@ -595,7 +595,7 @@ func runMultiplexCapture(t *testing.T, profileAdapters map[string]any, shared an
 	return captured[0], captured[1]
 }
 
-// Python identity of two adapter maps
+// Whether two adapter values are the very same map
 func sameAdapters(a, b any) bool {
 	ma, okA := a.(map[string]any)
 	mb, okB := b.(map[string]any)

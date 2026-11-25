@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -75,7 +76,7 @@ func kanbanGoalLoopRun(c *CLI, firstResponse string, runTurn func(string) (any, 
 		if resp != "" {
 			fmt.Fprintln(c.console.Out, resp)
 		}
-		return map[string]any{"response": resp, "failed": cliTruthy(result["failed"]), "failure_reason": result["failure_reason"]}, nil
+		return map[string]any{"response": resp, "failed": anyutil.IsTrue(result["failed"]), "failure_reason": result["failure_reason"]}, nil
 	}
 	taskStatus := func() (*string, error) {
 		var status *string

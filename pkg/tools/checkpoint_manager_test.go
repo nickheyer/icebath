@@ -190,7 +190,7 @@ func TestCheckpointMaxFileSizeSkipsLargeFiles(t *testing.T) {
 		t.Fatal("not taken")
 	}
 	ok, files, _ := runCheckpointGit(f.env, []string{"ls-tree", "-r", "--name-only", checkpointRefName(checkpointProjectHash(wd))}, f.store(), wd, checkpointGitOpts{})
-	names := pySplitLines(files)
+	names := splitLinesValue(files)
 	if !ok || !cpHas(names, "small.py") || cpHas(names, "weights.bin") {
 		t.Fatalf("size cap not applied: %v", names)
 	}
@@ -545,11 +545,11 @@ func TestCheckpointResolvesProjectRootMarkers(t *testing.T) {
 	if wd, _ := m.WorkingDirForPath(filepath.Join(gitProj, "src", "main.py")); wd != gitProj {
 		t.Fatalf(".git marker not found: %s", wd)
 	}
-	pyProj := filepath.Join(home, "pyproj")
-	os.MkdirAll(filepath.Join(pyProj, "src"), 0o755)
-	os.WriteFile(filepath.Join(pyProj, "pyproject.toml"), []byte("[project]\n"), 0o644)
-	os.WriteFile(filepath.Join(pyProj, "src", "file.py"), []byte("x\n"), 0o644)
-	if wd, _ := m.WorkingDirForPath("~/pyproj/src/file.py"); wd != pyProj {
+	projValue := filepath.Join(home, "pyproj")
+	os.MkdirAll(filepath.Join(projValue, "src"), 0o755)
+	os.WriteFile(filepath.Join(projValue, "pyproject.toml"), []byte("[project]\n"), 0o644)
+	os.WriteFile(filepath.Join(projValue, "src", "file.py"), []byte("x\n"), 0o644)
+	if wd, _ := m.WorkingDirForPath("~/pyproj/src/file.py"); wd != projValue {
 		t.Fatalf("pyproject marker through tilde not found: %s", wd)
 	}
 }

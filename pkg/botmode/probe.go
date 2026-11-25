@@ -459,7 +459,7 @@ func modelPromptCapabilitySurface(modelCfg any) (map[string]any, error) {
 }
 
 // Items Python iteration yields for a config value, falsy values empty, a non iterable an error
-func pyIterate(v any) ([]any, error) {
+func iterate(v any) ([]any, error) {
 	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
@@ -502,7 +502,7 @@ func configSurface(resolved string, surface map[string]any) error {
 		return err
 	}
 	surface["model_capabilities"] = caps
-	disabledRaw, err := pyIterate(skillsCfg["disabled"])
+	disabledRaw, err := iterate(skillsCfg["disabled"])
 	if err != nil {
 		return err
 	}

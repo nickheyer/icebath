@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 // Lock file another holder kept past the timeout
@@ -106,11 +107,11 @@ func lockHolderHintText(lockPath string) string {
 		return ""
 	}
 	raw = []byte(strings.TrimPrefix(decodeUTF8Replace(raw), "\ufeff"))
-	fields := strings.FieldsFunc(string(raw), pyIsSpace)
+	fields := strings.FieldsFunc(string(raw), unicode.IsSpace)
 	if len(fields) == 0 {
 		return ""
 	}
-	pid, ok := pyIntParse(fields[0])
+	pid, ok := intParse(fields[0])
 	if !ok || pid <= 0 || pid == os.Getpid() {
 		return ""
 	}

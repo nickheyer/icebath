@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
@@ -70,17 +71,17 @@ func openAINamedEndpoint(ctx context.Context, env *tools.Env, name string) (stri
 		logOf(env).Warn(fmt.Sprintf("image_gen.openai.provider '%s' matches no custom endpoint in providers:", name))
 		return "", "", nil
 	}
-	keyEnv := strings.TrimSpace(pyStrOf(orNone(entry["key_env"])))
-	apiKey := strings.TrimSpace(pyStrOf(orNone(entry["api_key"])))
+	keyEnv := strings.TrimSpace(anyutil.String(orNone(entry["key_env"])))
+	apiKey := strings.TrimSpace(anyutil.String(orNone(entry["api_key"])))
 	if apiKey == "" && keyEnv != "" {
 		apiKey = mustSecret(ctx, keyEnv)
 	}
-	return strings.TrimRight(strings.TrimSpace(pyStrOf(orNone(entry["base_url"]))), "/"), apiKey, nil
+	return strings.TrimRight(strings.TrimSpace(anyutil.String(orNone(entry["base_url"]))), "/"), apiKey, nil
 }
 
 // Empty string for a falsy value, the str() of the value otherwise
 func orNone(v any) any {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return v
@@ -283,7 +284,7 @@ func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, r
 		logOf(env).Debug(fmt.Sprintf("OpenAI image %s failed", verb), "err", err)
 		return fail(fmt.Sprintf("OpenAI image %s failed: %v", gerund, err), "api_error"), nil
 	}
-	apiModel := pyStrOf(meta["api_model"])
+	apiModel := anyutil.String(meta["api_model"])
 	recordTokenUsage(ctx, response.Usage, apiModel, "openai", "")
 	if len(response.Data) == 0 {
 		return fail("OpenAI returned no image data", "empty_response"), nil
@@ -296,7 +297,7 @@ func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, r
 		return failure, nil
 	}
 	extra := map[string]any{"size": size, "quality": meta["quality"]}
-	if revised := openAIItemField(first, "revised_prompt"); pyTruthy(revised) {
+	if revised := openAIItemField(first, "revised_prompt"); anyutil.IsTrue(revised) {
 		extra["revised_prompt"] = revised
 	}
 	modality := "text"

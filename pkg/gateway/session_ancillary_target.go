@@ -27,7 +27,7 @@ func physicalTarget(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 	}
 	sessionID, ok := entry.Get("session_id")
 	if !ok {
-		return "", &pyKeyError{"session_id"}
+		return "", &keyError{"session_id"}
 	}
 	return anyutil.String(sessionID), nil
 }

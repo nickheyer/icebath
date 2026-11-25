@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -65,8 +67,8 @@ func rateLabel(bytesPerSec float64) string {
 
 // One progress line of a job view, the byte counter only during a download phase
 func progressLine(view map[string]any) string {
-	line := "  " + pyOrStr(view["detail"])
-	if !pyTruthy(view["detail"]) {
+	line := "  " + anyutil.StringOr(view["detail"], "")
+	if !anyutil.IsTrue(view["detail"]) {
 		line = "  Starting"
 	}
 	if !localModelsDownloadPhases[anyString(view["phase"])] {
@@ -78,7 +80,7 @@ func progressLine(view map[string]any) string {
 		if p, present := view["percent"]; present {
 			percent = p
 		}
-		line += fmt.Sprintf("  %s%%  %s / %s", pyStr(percent), LocalModelsHumanGB(done), LocalModelsHumanGB(total))
+		line += fmt.Sprintf("  %s%%  %s / %s", anyutil.String(percent), LocalModelsHumanGB(done), LocalModelsHumanGB(total))
 	}
 	if rate, ok := anyFloat(view["bytes_per_sec"]); ok && rate != 0 {
 		line += "  " + rateLabel(rate)
@@ -151,13 +153,13 @@ func followJob(r *ModelFlowRun, jobID string) (string, error) {
 	}
 	switch anyString(view["status"]) {
 	case "error":
-		msg := pyOrStr(view["error"])
+		msg := anyutil.StringOr(view["error"], "")
 		if msg == "" {
 			msg = "Setup failed"
 		}
 		fmt.Fprintf(r.Out, "  ✗ %s\n", msg)
 	case "done":
-		fmt.Fprintf(r.Out, "  ✓ %s\n", pyStr(view["detail"]))
+		fmt.Fprintf(r.Out, "  ✓ %s\n", anyutil.String(view["detail"]))
 	}
 	return anyString(view["status"]), nil
 }
@@ -192,13 +194,13 @@ func rowLabel(row map[string]any, activeID string) string {
 	if truthy(row["recommended"]) {
 		label = "★ "
 	}
-	label += fmt.Sprintf("%s (%s", pyStr(row["display_name"]), pyStr(row["size_label"]))
+	label += fmt.Sprintf("%s (%s", anyutil.String(row["display_name"]), anyutil.String(row["size_label"]))
 	if truthy(row["downloaded"]) {
 		label += ", downloaded)"
 	} else {
 		label += ")"
 	}
-	label += fmt.Sprintf(" — %s", pyStr(pyGetAny(row, "fit_summary", "")))
+	label += fmt.Sprintf(" — %s", anyutil.String(getAny(row, "fit_summary", "")))
 	if activeID != "" && (activeID == anyString(row["downloaded_model_id"]) || activeID == anyString(row["model_id"])) {
 		label += "  ← currently active"
 	}
@@ -231,23 +233,23 @@ func modelFlowLocal(r *ModelFlowRun) error {
 	}
 	gpu := ""
 	if truthy(hw["gpu_name"]) {
-		gpu = fmt.Sprintf("%s · ", pyStr(hw["gpu_name"]))
+		gpu = fmt.Sprintf("%s · ", anyutil.String(hw["gpu_name"]))
 	}
 	memoryKind := "GPU"
 	if truthy(hw["uma"]) {
 		memoryKind = "unified"
 	}
 	ramBytes, _ := anyFloat(hw["ram_total_bytes"])
-	fmt.Fprintf(r.Out, "  Machine:  %s%s %s memory · %s RAM\n", gpu, pyStr(hw["vram_label"]), memoryKind, LocalModelsHumanGB(ramBytes))
+	fmt.Fprintf(r.Out, "  Machine:  %s%s %s memory · %s RAM\n", gpu, anyutil.String(hw["vram_label"]), memoryKind, LocalModelsHumanGB(ramBytes))
 	runtimeInstalled := truthy(status["runtime_installed"])
 	if runtimeInstalled {
 		update := ""
 		if truthy(status["update_available"]) {
 			update = "  (update available)"
 		}
-		fmt.Fprintf(r.Out, "  Engine:   llama.cpp %s (%s)%s\n", pyStr(status["tag"]), pyStr(status["runtime_backend"]), update)
+		fmt.Fprintf(r.Out, "  Engine:   llama.cpp %s (%s)%s\n", anyutil.String(status["tag"]), anyutil.String(status["runtime_backend"]), update)
 	} else {
-		fmt.Fprintf(r.Out, "  Engine:   not installed; llama.cpp %s installs with your first model\n", pyStr(status["configured_tag"]))
+		fmt.Fprintf(r.Out, "  Engine:   not installed; llama.cpp %s installs with your first model\n", anyutil.String(status["configured_tag"]))
 	}
 	fmt.Fprintln(r.Out)
 	catalog, err := localFlowDeps.catalog(r.ctx())
@@ -275,7 +277,7 @@ func modelFlowLocal(r *ModelFlowRun) error {
 		labels = append(labels, rowLabel(row, activeID))
 	}
 	for _, m := range staged {
-		label := fmt.Sprintf("  %s — %s · on disk", pyStr(m["id"]), pyStr(m["size_label"]))
+		label := fmt.Sprintf("  %s — %s · on disk", anyutil.String(m["id"]), anyutil.String(m["size_label"]))
 		if anyString(m["id"]) == activeID {
 			label += "  ← currently active"
 		}
@@ -309,15 +311,15 @@ func modelFlowLocal(r *ModelFlowRun) error {
 	var modelID, name string
 	if idx < len(choices) {
 		row := choices[idx]
-		name = pyStr(row["display_name"])
+		name = anyutil.String(row["display_name"])
 		useDownloaded := truthy(row["downloaded"]) && runtimeInstalled
 		if !useDownloaded {
 			need := []string{}
 			if !runtimeInstalled {
-				need = append(need, fmt.Sprintf("the llama.cpp engine (%s)", pyStr(status["configured_tag"])))
+				need = append(need, fmt.Sprintf("the llama.cpp engine (%s)", anyutil.String(status["configured_tag"])))
 			}
 			if !truthy(row["downloaded"]) {
-				need = append(need, fmt.Sprintf("%s (%s)", name, pyStr(row["size_label"])))
+				need = append(need, fmt.Sprintf("%s (%s)", name, anyutil.String(row["size_label"])))
 			}
 			if len(need) > 0 && !localFlowDeps.promptYesNo(fmt.Sprintf("  Download %s?", strings.Join(need, " and ")), true, "") {
 				fmt.Fprintln(r.Out, flowNoChange)
@@ -339,7 +341,7 @@ func modelFlowLocal(r *ModelFlowRun) error {
 		name = modelID
 	}
 	if !runtimeInstalled {
-		if !localFlowDeps.promptYesNo(fmt.Sprintf("  Download the llama.cpp engine (%s)?", pyStr(status["configured_tag"])), true, "") {
+		if !localFlowDeps.promptYesNo(fmt.Sprintf("  Download the llama.cpp engine (%s)?", anyutil.String(status["configured_tag"])), true, "") {
 			fmt.Fprintln(r.Out, flowNoChange)
 			return nil
 		}

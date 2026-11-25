@@ -6,10 +6,10 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"runtime"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Temp file name prefix of a write whose WriteOptions leave Prefix empty
@@ -56,7 +56,7 @@ type PendingFile struct {
 
 // Temp file for an atomic write of path under o, staged where Replace publishes and already carrying the final permission bits; the parent directory is made first, refusing a deleted profile home; publish it with Commit and defer Cleanup
 func NewPendingFile(ctx context.Context, path string, o WriteOptions) (*PendingFile, error) {
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, pathutil.DirKeepDotDot(path)); err != nil {
 		return nil, err
 	}
 	mode, modeSet := writeMode(path, o)
@@ -127,7 +127,7 @@ func (p *PendingFile) Commit() error {
 		_ = chmodBits(published, p.mode)
 	}
 	if p.syncDir {
-		SyncDir(filepath.Dir(published))
+		SyncDir(pathutil.DirKeepDotDot(published))
 	}
 	return nil
 }

@@ -2,10 +2,12 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 func secretCachePayload(t *testing.T, key string, secrets map[string]string) []byte {
@@ -199,7 +201,7 @@ func TestBitwardenClearCachesRemovesPreviousCopies(t *testing.T) {
 	}
 }
 
-func TestSecretCacheReadKeepsPythonJSONAndRaisesOnUndecodableBytes(t *testing.T) {
+func TestSecretCacheReadToleratesBOMAndNaNAndRaisesOnUndecodableBytes(t *testing.T) {
 	h := t.TempDir()
 	cache := NewSecretDiskCache("probe.json")
 	path := filepath.Join(h, "probe.json")
@@ -212,7 +214,9 @@ func TestSecretCacheReadKeepsPythonJSONAndRaisesOnUndecodableBytes(t *testing.T)
 		t.Fatal("a NaN timestamp parses and is never fresh")
 	}
 	writeTestFile(t, path, []byte("{\"key\": \"k\xff\"}"))
-	if _, _, err := cache.Read("k", 60, h); err == nil || !strings.Contains(err.Error(), "can't decode byte 0xff") {
-		t.Fatalf("undecodable bytes raise the decode error, got %v", err)
+	_, _, err := cache.Read("k", 60, h)
+	var invalid *textutil.InvalidUTF8Error
+	if !errors.As(err, &invalid) || invalid.Offset != 10 || err.Error() != "secret cache "+path+": invalid UTF-8 at byte 10" {
+		t.Fatalf("undecodable bytes raise the decode error naming the file, got %v", err)
 	}
 }

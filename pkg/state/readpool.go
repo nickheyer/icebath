@@ -46,7 +46,7 @@ func (s *boundedSemaphore) release() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.value >= s.bound {
-		return &pyConvError{"ValueError", "Semaphore released too many times"}
+		return &convError{"ValueError", "Semaphore released too many times"}
 	}
 	s.value++
 	return nil

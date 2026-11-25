@@ -248,7 +248,7 @@ func TestContextFromSkipsTraversalIDsAndUndecodableTextPropagates(t *testing.T) 
 	if out, injected, err := s.injectContextFrom(job, "p"); err != nil || injected || out != "p" {
 		t.Fatal(out, injected, err)
 	}
-	if got := cronJobOriginLogSuffix(job); got != " origin_platform='telegram' origin_chat_id='42'" {
+	if got := cronJobOriginLogSuffix(job); got != " origin_platform=\"telegram\" origin_chat_id=\"42\"" {
 		t.Fatal(got)
 	}
 	writeArchive(t, s, "abc", "bad.md", "\xff\xfe broken", 0)
@@ -409,17 +409,17 @@ func TestGuardJobCredentialExfilAndBlockAndPause(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := s.guardJobCredentialExfil(&Job{ID: "j", BaseURL: strp("http://evil")})
-	if err == nil || err.Error() != "Cron job 'j' blocked for safety: could not validate provider/base_url pair (boom); refusing to run a job with an unverified base_url override" {
+	if err == nil || err.Error() != "Cron job \"j\" blocked for safety: could not validate provider/base_url pair (boom); refusing to run a job with an unverified base_url override" {
 		t.Fatal(err)
 	}
 	cronBaseURLValidator = func(_ *Store, _, _ *string) (string, error) { return "off origin", nil }
-	if err := s.guardJobCredentialExfil(&Job{ID: "j"}); err == nil || err.Error() != "Cron job 'j' blocked for safety: off origin" {
+	if err := s.guardJobCredentialExfil(&Job{ID: "j"}); err == nil || err.Error() != "Cron job \"j\" blocked for safety: off origin" {
 		t.Fatal(err)
 	}
 	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
 	out := s.blockAndPauseJob(context.Background(), job.ID, "nm", "bad pair")
 	got, _ := s.getJob(context.Background(), job.ID)
-	if out.Success || out.Error == nil || *out.Error != "bad pair" || !strings.Contains(out.Output, "**Status:** blocked (unrunnable job) \u2014 auto-paused\n\nbad pair\n") || out.FinalResponse != "\u26a0 Cron job 'nm' was auto-paused\n\nbad pair" || got.PausedReason == nil || *got.PausedReason != "Auto-paused by scheduler: bad pair" {
+	if out.Success || out.Error == nil || *out.Error != "bad pair" || !strings.Contains(out.Output, "**Status:** blocked (unrunnable job) \u2014 auto-paused\n\nbad pair\n") || out.FinalResponse != "\u26a0 Cron job \"nm\" was auto-paused\n\nbad pair" || got.PausedReason == nil || *got.PausedReason != "Auto-paused by scheduler: bad pair" {
 		t.Fatalf("%+v %+v", out, got)
 	}
 }

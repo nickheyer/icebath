@@ -146,7 +146,7 @@ func TestDescribeGithubFailure(t *testing.T) {
 	if got := DescribeGithubFailure(errors.New("boom"), false, nil); got != "api.github.com: boom" {
 		t.Fatalf("other %q", got)
 	}
-	if pyFloorDiv(-1, 60) != -1 || pyFloorDiv(659, 60) != 10 || pyFloorDiv(119.5, 60) != 1 {
+	if floorDiv(-1, 60) != -1 || floorDiv(659, 60) != 10 || floorDiv(119.5, 60) != 1 {
 		t.Fatal("floor division parity")
 	}
 }

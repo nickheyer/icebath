@@ -67,7 +67,7 @@ var disabledSlashPolicy = SlashAccessPolicy{Enabled: false, AdminUserIDs: map[st
 
 var failClosedSlashPolicy = SlashAccessPolicy{Enabled: true, AdminUserIDs: map[string]struct{}{}, UserAllowedCommands: map[string]struct{}{}}
 
-// Stripped non empty strings of a YAML list, comma string or scalar with normalize applied to each
+// Stripped non empty texts of a YAML list, comma string or scalar with normalize applied to each, null and blank entries skipped as naming nothing
 func coerceSlashList(raw any, normalize func(string) string) map[string]struct{} {
 	out := map[string]struct{}{}
 	var items []any

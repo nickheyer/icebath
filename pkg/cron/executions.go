@@ -134,16 +134,13 @@ func (s *Store) liveOwnerStaleAfterSeconds(ctx context.Context) (float64, bool) 
 	return math.Max(math.Max(inactivity*ClaimTTLInactivityHeadroom, float64(s.getScriptTimeout(ctx))), LiveOwnerStaleClaimFloorSeconds), true
 }
 
-// Seconds since an aware claim stamp, a naive stamp fails like the aware minus naive subtraction
+// Seconds since a claim stamp, a stamp without a UTC offset read as system local wall time like every other offsetless cron stamp
 func (s *Store) claimAgeSeconds(claimedAt string) (float64, error) {
 	at, err := ParseISO(claimedAt)
 	if err != nil {
 		return 0, err
 	}
-	if !at.Aware {
-		return 0, &pyTypeError{"can't subtract offset-naive and offset-aware datetimes"}
-	}
-	return elapsedSeconds(s.clk.now(), at.Time), nil
+	return elapsedSeconds(s.clk.now(), s.clk.ensureAware(at, nil)), nil
 }
 
 // Seconds since the owner last proved progress, the claim age for rows without a stamp
@@ -156,7 +153,7 @@ func (s *Store) staleAgeSeconds(claimedAt string, progressAt any) (float64, erro
 		}
 	default:
 		if anyutil.IsTrue(p) {
-			return 0, &pyTypeError{"the execution progress time is " + errchain.Kind(p) + ", expected ISO 8601 text"}
+			return 0, fmt.Errorf("the execution progress time is %s, expected ISO 8601 text", errchain.Kind(p))
 		}
 	}
 	return s.claimAgeSeconds(claimedAt)
@@ -687,7 +684,7 @@ func (l *Ledger) SettleDeliveryOutcome(ctx context.Context, executionID, outcome
 // Closes the receipt of a run that never started, logging a ledger failure instead of raising it
 func (l *Ledger) SettleUnstarted(ctx context.Context, executionID, jobID, errText string) {
 	if _, err := l.Finish(ctx, executionID, false, &errText, nil, false); err != nil {
-		l.s.log.Error(fmt.Sprintf("Job '%s': failed to close execution receipt %s (%s): %v", jobID, executionID, errText, err))
+		l.s.log.Error(fmt.Sprintf("Job %q: failed to close execution receipt %s (%s): %v", jobID, executionID, errText, err))
 	}
 }
 
@@ -737,7 +734,8 @@ func (l *Ledger) RecoverInterrupted(ctx context.Context) (int, error) {
 			}
 			age, err := l.s.staleAgeSeconds(recText(row, "claimed_at"), row["progress_at"])
 			if err != nil {
-				return 0, err
+				l.s.log.Warn(fmt.Sprintf("Execution %q: its live owner's idle time cannot be read, leaving it claimed: %v", recText(row, "id"), err))
+				continue
 			}
 			if age <= staleAfter {
 				continue
@@ -1030,11 +1028,15 @@ func (l *Ledger) LatestMany(ctx context.Context, jobIDs []string) (map[string]ma
 	return out, nil
 }
 
-// Completed attempts of one occurrence of the job
+// Completed attempts of one occurrence of the job, the instant given in any offset-carrying ISO 8601 spelling
 func (l *Ledger) completed(ctx context.Context, jobID, instant string) ([]executionStamp, error) {
+	canonical := scheduledInstant(&instant)
+	if canonical == nil {
+		return nil, nil
+	}
 	var recs []map[string]any
 	err := l.transaction(ctx, func(conn state.SQLiteConn) error {
-		rows, err := conn.QueryContext(ctx, "SELECT id, finished_at, claimed_at FROM executions WHERE job_id=? AND scheduled_instant=? AND status='completed'", jobID, instant)
+		rows, err := conn.QueryContext(ctx, "SELECT id, finished_at, claimed_at FROM executions WHERE job_id=? AND scheduled_instant=? AND status='completed'", jobID, *canonical)
 		if err != nil {
 			return err
 		}

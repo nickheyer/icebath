@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -84,7 +85,7 @@ func hasServerSideTools(apiKwargs map[string]any) bool {
 		if !ok {
 			continue
 		}
-		if toolType := entry["type"]; pyTruthy(toolType) {
+		if toolType := entry["type"]; anyutil.IsTrue(toolType) {
 			if s, ok := toolType.(string); !ok || !clientToolTypes[s] {
 				return true
 			}
@@ -112,7 +113,7 @@ func trimSnapshotForFork(history []map[string]any) []map[string]any {
 	msgs := append([]map[string]any{}, history...)
 	for len(msgs) > 0 {
 		last := msgs[len(msgs)-1]
-		if last != nil && last["role"] == "assistant" && !pyTruthy(last["tool_calls"]) {
+		if last != nil && last["role"] == "assistant" && !anyutil.IsTrue(last["tool_calls"]) {
 			break
 		}
 		msgs = msgs[:len(msgs)-1]
@@ -242,7 +243,7 @@ func sideQuestionLogAudit(audit *sideQuestionAudit) {
 	}
 	counts := make([]any, 0, 5)
 	for _, key := range []string{"api_calls", "input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens"} {
-		counts = append(counts, pyIntOf(audit.usage[key]))
+		counts = append(counts, intOf(audit.usage[key]))
 	}
 	pkgLog().Info(fmt.Sprintf("side_question plugin=%s outcome=%s calls=%d in=%d cache_read=%d cache_write=%d out=%d latency=%.1fs",
 		append(append([]any{pluginID, audit.outcome}, counts...), timeutil.Monotonic()-audit.started)...))

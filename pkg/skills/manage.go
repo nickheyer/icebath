@@ -111,7 +111,7 @@ func validateSkillFrontmatter(content string) string {
 			return fmt.Sprintf("Frontmatter must include '%s' field.", field)
 		}
 	}
-	if utf8.RuneCountInString(pyStrValue(fm["description"])) > MaxDescriptionLength {
+	if utf8.RuneCountInString(anyutil.String(fm["description"])) > MaxDescriptionLength {
 		return fmt.Sprintf("Description exceeds %d characters.", MaxDescriptionLength)
 	}
 	if strings.TrimSpace(content[loc[1]+3:]) == "" {
@@ -127,7 +127,7 @@ func descriptionOf(content string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return strings.Trim(strings.TrimSpace(pyStrValue(v)), "'\""), true
+	return strings.Trim(strings.TrimSpace(anyutil.String(v)), "'\""), true
 }
 
 // Error text when this write sets a description wider than the skill index
@@ -176,7 +176,7 @@ func descriptionPreview(content string) string {
 	if !ok {
 		return ""
 	}
-	runes := []rune(pyStrValue(v))
+	runes := []rune(anyutil.String(v))
 	if len(runes) > 120 {
 		runes = runes[:120]
 	}

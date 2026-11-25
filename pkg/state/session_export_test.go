@@ -79,7 +79,7 @@ func TestSaveFormatsNormalizeAndRender(t *testing.T) {
 			t.Fatalf("%q normalized to %q %v", token, got, err)
 		}
 	}
-	if _, err := NormalizeSaveFormat("pdf"); err == nil || err.Error() != "Unknown format 'pdf' — expected one of: json, md, html" {
+	if _, err := NormalizeSaveFormat("pdf"); err == nil || err.Error() != `Unknown format "pdf" — expected one of: json, md, html` {
 		t.Fatalf("format error %v", err)
 	}
 	if got := DefaultSaveFilename("20260308_000001 ab/cd", "md"); got != "icebath_session_20260308_000001abcd.md" {
@@ -95,7 +95,7 @@ func TestSaveFormatsNormalizeAndRender(t *testing.T) {
 	if got, err := RenderSessionForSave(session, "md"); err != nil || got != "# Session: Tést\n- Session ID: `s1`\n- Title: Tést\n\n_No messages found._\n" {
 		t.Fatalf("markdown save %v %q", err, got)
 	}
-	if _, err := RenderSessionForSave(session, "yaml"); err == nil || err.Error() != "Unknown save format: 'yaml'" {
+	if _, err := RenderSessionForSave(session, "yaml"); err == nil || err.Error() != `Unknown save format: "yaml"` {
 		t.Fatalf("save error %v", err)
 	}
 	if c, i := ExportProjection(true); !c || i {

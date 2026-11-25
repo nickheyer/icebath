@@ -14,6 +14,7 @@ import (
 
 	sqlite3 "modernc.org/sqlite/lib"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -120,7 +121,7 @@ func excText(err error) string {
 		return re.msg
 	}
 	if errorutil.IsSystem(err) {
-		return err.Error()
+		return errchain.OSText(err)
 	}
 	return state.ErrText(err)
 }

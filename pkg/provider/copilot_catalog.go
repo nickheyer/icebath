@@ -156,7 +156,7 @@ func copilotCatalogItemIsTextModel(item any, ignorePickerFlag bool) bool {
 	if endpoints, ok := cpGetOr(item, "supported_endpoints", nil).([]any); ok {
 		any_, chat := false, false
 		for _, e := range endpoints {
-			if s := strings.TrimSpace(pyStr(e)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(e)); s != "" {
 				any_ = true
 				chat = chat || copilotChatEndpoints[s]
 			}
@@ -240,7 +240,7 @@ func fetchGithubModels(ctx context.Context, apiKey string, timeout time.Duration
 	ids := []string{}
 	for _, item := range catalog {
 		if id := cpGetOr(item, "id", ""); cpTruthy(id) {
-			ids = append(ids, pyStr(id))
+			ids = append(ids, anyutil.String(id))
 		}
 	}
 	return ids
@@ -485,7 +485,7 @@ func githubModelReasoningEfforts(ctx context.Context, modelID string, catalog []
 			out := []string{}
 			seen := map[string]bool{}
 			for _, e := range list {
-				if s := strings.ToLower(strings.TrimSpace(pyStr(e))); s != "" && !seen[s] {
+				if s := strings.ToLower(strings.TrimSpace(anyutil.String(e))); s != "" && !seen[s] {
 					seen[s] = true
 					out = append(out, s)
 				}
@@ -494,7 +494,7 @@ func githubModelReasoningEfforts(ctx context.Context, modelID string, catalog []
 		}
 		reasoning := false
 		for _, c := range copilotIterCapabilities(cpGetOr(entry, "capabilities", []any{})) {
-			reasoning = reasoning || strings.ToLower(strings.TrimSpace(pyStr(c))) == "reasoning"
+			reasoning = reasoning || strings.ToLower(strings.TrimSpace(anyutil.String(c))) == "reasoning"
 		}
 		if !reasoning {
 			return []string{}

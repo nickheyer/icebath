@@ -33,7 +33,7 @@ type keyringError struct {
 func (e *keyringError) Error() string { return e.Msg }
 
 // Python exception class name of an error as messages report it
-func pyErrorClass(err error) string {
+func errorClass(err error) string {
 	var ke *keyringError
 	var de *dbusError
 	var errno syscall.Errno

@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // CLIConfigUI is a terminal whose raw line input reports end of input or an interrupt as false
@@ -198,7 +199,7 @@ func printTools(ui TerminalUI, found []ToolSummary, width, descMax int) {
 		if r := []rune(short); len(r) > descMax {
 			short = string(r[:descMax]) + "..."
 		}
-		fmt.Fprintf(ui.Out(), "    %s %s\n", pyLjust(ui.Color(t.Name, ansiGreen), width), short)
+		fmt.Fprintf(ui.Out(), "    %s %s\n", ljust(ui.Color(t.Name, ansiGreen), width), short)
 	}
 }
 
@@ -274,9 +275,9 @@ func envKeyForServer(name string) string {
 
 // Pasted token without a leading Bearer word and surrounding whitespace
 func stripBearerPrefix(token string) string {
-	stripped := pyStrip(token)
+	stripped := strings.TrimSpace(token)
 	if r := []rune(stripped); len(r) >= 7 && strings.ToLower(string(r[:7])) == "bearer " {
-		return pyStrip(string(r[7:]))
+		return strings.TrimSpace(string(r[7:]))
 	}
 	return stripped
 }
@@ -302,7 +303,7 @@ func SaveBearerAuthToken(ctx context.Context, name, token string) (map[string]an
 func parseEnvAssignments(rawEnv []string) (map[string]any, error) {
 	parsed := map[string]any{}
 	for _, item := range rawEnv {
-		text := pyStrip(item)
+		text := strings.TrimSpace(item)
 		if text == "" {
 			continue
 		}
@@ -310,7 +311,7 @@ func parseEnvAssignments(rawEnv []string) (map[string]any, error) {
 		if !ok {
 			return nil, fmt.Errorf("Invalid --env value '%s' (expected KEY=VALUE)", text)
 		}
-		key = pyStrip(key)
+		key = strings.TrimSpace(key)
 		if key == "" {
 			return nil, fmt.Errorf("Invalid --env value '%s' (missing variable name)", text)
 		}
@@ -334,11 +335,11 @@ func applyMCPPreset(presetName, url, command string, cmdArgs []string, serverCon
 	if url != "" || command != "" {
 		return url, command, cmdArgs, false, nil
 	}
-	url, command = pyStr(preset["url"]), pyStr(preset["command"])
+	url, command = anyutil.String(preset["url"]), anyutil.String(preset["command"])
 	cmdArgs = nil
 	presetArgs, _ := preset["args"].([]any)
 	for _, a := range presetArgs {
-		cmdArgs = append(cmdArgs, pyStr(a))
+		cmdArgs = append(cmdArgs, anyutil.String(a))
 	}
 	if url != "" {
 		serverConfig["url"] = url
@@ -391,7 +392,7 @@ func probeServer(ctx context.Context, env *tools.Env, name string, cfg map[strin
 		timeout = *connectTimeout
 	} else if raw, ok := r.Config["connect_timeout"]; !ok {
 		timeout = 30
-	} else if f, ok := pyFloat(raw); ok {
+	} else if f, ok := floatNumber(raw); ok {
 		timeout = max(1.0, f)
 	}
 	r.Config["connect_timeout"] = timeout
@@ -434,7 +435,7 @@ func probeServer(ctx context.Context, env *tools.Env, name string, cfg map[strin
 		if details != nil {
 			details.SchemaChars = map[string]int{}
 			for _, t := range listed {
-				details.SchemaChars[t.Name] = len(pyJSONCompactASCII(convertToolSchema(name, t)))
+				details.SchemaChars[t.Name] = len(jsonCompactASCII(convertToolSchema(name, t)))
 			}
 			filter, _ := r.Config["tools"].(map[string]any)
 			var caps *ServerCapabilities
@@ -484,7 +485,7 @@ func cliHTTPOptions(name, url string, cfg map[string]any) HTTPOptions {
 	if !ok {
 		sslVerify = true
 	}
-	return HTTPOptions{URL: url, StrictRedirectHeaders: pyTruthy(cfg["strict_redirect_headers"]), SSLVerify: sslVerify,
+	return HTTPOptions{URL: url, StrictRedirectHeaders: anyutil.IsTrue(cfg["strict_redirect_headers"]), SSLVerify: sslVerify,
 		ClientCert: cfg["client_cert"], ClientKey: cfg["client_key"],
 		ConnectTimeout: secondsDuration(floatOr(cfg, "connect_timeout", defaultConnectTimeout)), ReadTimeout: 300 * time.Second, ServerName: name}
 }
@@ -725,19 +726,19 @@ func cmdMCPList(ctx context.Context, ui TerminalUI) int {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, ui.Color("  MCP Servers:", ansiCyan, ansiBold))
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "  %s %s %s %s\n", pyLjust("Name", 16), pyLjust("Transport", 30), pyLjust("Tools", 12), pyLjust("Status", 10))
+	fmt.Fprintf(out, "  %s %s %s %s\n", ljust("Name", 16), ljust("Transport", 30), ljust("Tools", 12), ljust("Status", 10))
 	fmt.Fprintf(out, "  %s %s %s %s\n", strings.Repeat("─", 16), strings.Repeat("─", 30), strings.Repeat("─", 12), strings.Repeat("─", 10))
 	for _, name := range sortedKeys(servers) {
 		cfg, _ := servers[name].(map[string]any)
 		transport := "?"
 		if v, ok := cfg["url"]; ok {
-			transport = pyStr(v)
+			transport = anyutil.String(v)
 		} else if v, ok := cfg["command"]; ok {
-			transport = pyStr(v)
+			transport = anyutil.String(v)
 			if args, ok := cfg["args"].([]any); ok && len(args) > 0 {
 				var parts []string
 				for _, a := range args[:min(2, len(args))] {
-					parts = append(parts, pyStr(a))
+					parts = append(parts, anyutil.String(a))
 				}
 				transport += " " + strings.Join(parts, " ")
 			}
@@ -756,7 +757,7 @@ func cmdMCPList(ctx context.Context, ui TerminalUI) int {
 		if ServerEnabled(cfg) {
 			status = ui.Color("✓ enabled", ansiGreen)
 		}
-		fmt.Fprintf(out, "  %s %s %s %s\n", pyLjust(name, 16), pyLjust(transport, 30), pyLjust(toolsStr, 12), status)
+		fmt.Fprintf(out, "  %s %s %s %s\n", ljust(name, 16), ljust(transport, 30), ljust(toolsStr, 12), status)
 	}
 	fmt.Fprintln(out)
 	return 0
@@ -834,19 +835,19 @@ func cmdMCPTest(ctx context.Context, env *tools.Env, ui TerminalUI, name string)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, ui.Color(fmt.Sprintf("  Testing '%s'...", name), ansiCyan))
 	if v, ok := cfg["url"]; ok {
-		cfgInfo(ui, "Transport: HTTP → "+pyStr(v))
+		cfgInfo(ui, "Transport: HTTP → "+anyutil.String(v))
 	} else {
 		command := "?"
 		if v, ok := cfg["command"]; ok {
-			command = pyStr(v)
+			command = anyutil.String(v)
 		}
 		cfgInfo(ui, "Transport: stdio → "+command)
 	}
 	headers, _ := cfg["headers"].(map[string]any)
 	switch {
-	case pyStr(cfg["auth"]) == "oauth":
+	case anyutil.String(cfg["auth"]) == "oauth":
 		cfgInfo(ui, "Auth: OAuth 2.0")
-	case pyTruthy(cfg["headers"]):
+	case anyutil.IsTrue(cfg["headers"]):
 		for _, k := range sortedKeys(headers) {
 			v, isStr := headers[k].(string)
 			lower := strings.ToLower(k)
@@ -879,15 +880,15 @@ var cliLoginDevice = LoginDevice
 
 // Forces a fresh browser or device OAuth flow for one server and verifies a token landed
 func reauthOAuthServer(ctx context.Context, env *tools.Env, ui TerminalUI, name string, serverConfig map[string]any, flow string) bool {
-	url := pyStr(serverConfig["url"])
-	if !pyTruthy(serverConfig["url"]) {
+	url := anyutil.String(serverConfig["url"])
+	if !anyutil.IsTrue(serverConfig["url"]) {
 		cfgError(ui, fmt.Sprintf("Server '%s' has no URL — not an OAuth-capable server", name))
 		return false
 	}
-	if auth, ok := serverConfig["auth"]; !ok || pyStr(auth) != "oauth" {
+	if auth, ok := serverConfig["auth"]; !ok || anyutil.String(auth) != "oauth" {
 		shown := "None"
 		if ok {
-			shown = pyStr(auth)
+			shown = anyutil.String(auth)
 		}
 		cfgError(ui, fmt.Sprintf("Server '%s' is not configured for OAuth (auth=%s)", name, shown))
 		cfgInfo(ui, "Use `icebath mcp remove` + `icebath mcp add` to reconfigure auth.")
@@ -901,7 +902,7 @@ func reauthOAuthServer(ctx context.Context, env *tools.Env, ui TerminalUI, name 
 	if selected == "" {
 		selected = "browser"
 		if v, ok := oauthCfg["flow"]; ok {
-			selected = pyStr(v)
+			selected = anyutil.String(v)
 		}
 	}
 	if selected != "browser" && selected != "device" {
@@ -984,7 +985,7 @@ func cmdMCPReauth(ctx context.Context, env *tools.Env, ui TerminalUI, name strin
 		var names []string
 		for _, n := range sortedKeys(servers) {
 			c, _ := servers[n].(map[string]any)
-			if pyStr(c["auth"]) == "oauth" && pyTruthy(c["url"]) {
+			if anyutil.String(c["auth"]) == "oauth" && anyutil.IsTrue(c["url"]) {
 				names = append(names, n)
 			}
 		}
@@ -1024,7 +1025,7 @@ func rebuildExcludeList(ui TerminalUI, name string, exclude []any, toolNames []s
 	literals := map[string]bool{}
 	oldSet := map[string]bool{}
 	for _, p := range exclude {
-		s := pyStr(p)
+		s := anyutil.String(p)
 		oldSet[s] = true
 		if strings.ContainsAny(s, "*?[") {
 			globs = append(globs, s)
@@ -1068,7 +1069,7 @@ func rebuildExcludeList(ui TerminalUI, name string, exclude []any, toolNames []s
 			more = " ..."
 		}
 		cfgWarning(ui, fmt.Sprintf("%d re-enabled tool(s) still match glob exclude pattern(s) %s and stay excluded: %s%s. Remove the pattern from mcp_servers.%s.tools.exclude in config.yaml to enable them.",
-			len(shadowed), pyStrListRepr(globs), strings.Join(shadowed[:min(5, len(shadowed))], ", "), more, name))
+			len(shadowed), anyutil.String(globs), strings.Join(shadowed[:min(5, len(shadowed))], ", "), more, name))
 	}
 	sortedLiterals := make([]string, 0, len(newLiterals))
 	for s := range newLiterals {
@@ -1109,7 +1110,7 @@ func cmdMCPConfigure(ctx context.Context, env *tools.Env, ui TerminalUI, name st
 	asSet := func(items []any) map[string]bool {
 		set := map[string]bool{}
 		for _, p := range items {
-			set[pyStr(p)] = true
+			set[anyutil.String(p)] = true
 		}
 		return set
 	}

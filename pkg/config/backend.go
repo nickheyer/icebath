@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -156,7 +157,7 @@ func (FileBackend) ReadPathReadonly(path string) (any, error) { return LoadYAMLF
 
 // Applies the document, then each set key, then each unset key with comment preserving writers
 func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) error {
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
+	if _, err := home.Mkdir(ctx, pathutil.DirKeepDotDot(path)); err != nil {
 		return err
 	}
 	unlock, err := configFileLock(path)
@@ -181,7 +182,7 @@ func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) 
 
 // Serializes a read, change and write of one config file across goroutines and processes, reentrant per goroutine
 func configFileLock(path string) (func(), error) {
-	release, err := fsutil.SharedFileLock(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")).Lock(context.Background(), 15*time.Second)
+	release, err := fsutil.SharedFileLock(pathutil.JoinKeepDotDot(pathutil.DirKeepDotDot(path), "."+filepath.Base(path)+".lock")).Lock(context.Background(), 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("settings file lock (%s): %w", path, err)
 	}
@@ -195,7 +196,7 @@ func (b FileBackend) ConfigPath(home string) string {
 	if b.explicit != "" {
 		return b.explicit
 	}
-	return pathutil.Join(home, ConfigFilename)
+	return pathutil.JoinKeepDotDot(home, ConfigFilename)
 }
 
 func (b FileBackend) ReadUserDoc(ctx context.Context, home string) (any, error) {
@@ -317,7 +318,7 @@ func backendFor(kind string) (ConfigBackend, error) {
 		return FileBackend{}, nil
 	}
 	unknown := &ConfigBackendUnavailable{Message: fmt.Sprintf(
-		"%s=%s is not a config backend this build provides (expected 'file' or 'remote').", BackendEnv, PyRepr(kind))}
+		`%s=%q is not a config backend this build provides (expected "file" or "remote").`, BackendEnv, kind)}
 	if !backendKindRe.MatchString(kind) {
 		return nil, unknown
 	}
@@ -389,18 +390,18 @@ func GetConfigBackend(ctx context.Context) (ConfigBackend, error) {
 
 // Backend and home serving a config path, a home config.yaml through the selected backend
 func route(ctx context.Context, configPath string) (ConfigBackend, string, error) {
-	path := filepath.Clean(configPath)
-	if pathutil.Name(path) == ConfigFilename {
+	path := pathutil.CleanKeepDotDot(configPath)
+	if filepath.Base(path) == ConfigFilename {
 		backend, err := GetConfigBackend(ctx)
-		return backend, filepath.Dir(filepath.Clean(path)), err
+		return backend, pathutil.DirKeepDotDot(path), err
 	}
-	return FileBackend{explicit: path}, filepath.Dir(filepath.Clean(path)), nil
+	return FileBackend{explicit: path}, pathutil.DirKeepDotDot(path), nil
 }
 
 // Local file backend of a path whichever backend is selected, for the PM dependency runtime
 func LocalFileLayer(configPath string) (ConfigBackend, string) {
-	path := filepath.Clean(configPath)
-	return FileBackend{explicit: path}, filepath.Dir(filepath.Clean(path))
+	path := pathutil.CleanKeepDotDot(configPath)
+	return FileBackend{explicit: path}, pathutil.DirKeepDotDot(path)
 }
 
 // Parsed root of a config file, nil when empty
@@ -493,7 +494,7 @@ func VersionToken(version []any) float64 {
 	}
 	items := make([]string, len(version))
 	for i, v := range version {
-		items[i] = PyRepr(v)
+		items[i] = anyutil.Quote(v)
 	}
 	repr := "(" + strings.Join(items, ", ")
 	if len(items) == 1 {
@@ -640,6 +641,6 @@ func RequireFileTooling(ctx context.Context, what string) error {
 		return nil
 	}
 	return &ConfigBackendUnavailable{Message: fmt.Sprintf(
-		"%s copies the local config.yaml, and the %s config backend has none. It is not available with this backend.",
-		what, PyRepr(backend.Name()))}
+		"%s copies the local config.yaml, and the %q config backend has none. It is not available with this backend.",
+		what, backend.Name())}
 }

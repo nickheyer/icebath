@@ -640,12 +640,6 @@ func AdoptLateConnections(ctx context.Context, agent LateConnectionAgent) []stri
 	return adopted
 }
 
-// Message-less errors reach the user as what happened instead of their class name
-var connBareErrors = map[string]string{
-	"CancelledError": "tool discovery was interrupted; run the same action again to list the tools",
-	"TimeoutError":   "the server did not answer in time",
-}
-
 // User facing failure text with every value the card submitted for the target replaced before the redactor runs
 func connDetail(r *connRunner, t *tools.ConnTarget, cause any) string {
 	text := "error"
@@ -657,19 +651,15 @@ func connDetail(r *connRunner, t *tools.ConnTarget, cause any) string {
 	case error:
 		text = c.Error()
 		if text == "" {
-			var te *TimeoutError
 			switch {
-			case errors.As(c, &te) || errors.Is(c, context.DeadlineExceeded):
-				text = connBareErrors["TimeoutError"]
+			case errors.Is(c, context.DeadlineExceeded):
+				text = (&TimeoutError{}).Error()
 			case errors.Is(c, context.Canceled):
-				text = connBareErrors["CancelledError"]
+				text = "tool discovery was interrupted; run the same action again to list the tools"
 			default:
-				text = fmt.Sprintf("%T", c)
+				text = excStr(c)
 			}
 		}
-	}
-	if bare, ok := connBareErrors[text]; ok {
-		text = bare
 	}
 	if approved := r.approved(t.Name); approved != nil {
 		for _, k := range approved.Keys() {

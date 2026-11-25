@@ -4,17 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"os/exec"
 	"reflect"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reconnect budget of a session that never proved healthy and of the very first connection, swapped by tests
@@ -275,76 +272,6 @@ func (s *serverTask) recycleIfDue() bool {
 
 // Seconds as a duration
 func secondsDuration(sec float64) time.Duration { return time.Duration(sec * float64(time.Second)) }
-
-// Python class name style label of an error for log lines
-func errTypeName(err error) string {
-	if name := pyOSErrorName(err); name != "" {
-		return name
-	}
-	name := fmt.Sprintf("%T", err)
-	name = strings.TrimLeft(name, "*")
-	if i := strings.LastIndexByte(name, '.'); i >= 0 {
-		name = name[i+1:]
-	}
-	return name
-}
-
-// Python exception class an OS level Go error surfaces as, empty for any other error
-func pyOSErrorName(err error) string {
-	switch err.(type) {
-	case *fileNotFoundError:
-		return "FileNotFoundError"
-	case *mcpConnectionError:
-		return "ConnectionError"
-	case *probeTimeoutError:
-		return "TimeoutError"
-	case *fs.PathError, *os.SyscallError, *os.LinkError, *exec.Error, syscall.Errno:
-	default:
-		switch {
-		case err == context.Canceled:
-			return "CancelledError"
-		case err == context.DeadlineExceeded:
-			return "TimeoutError"
-		}
-		return ""
-	}
-	var errno syscall.Errno
-	switch {
-	case errors.Is(err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist):
-		return "FileNotFoundError"
-	case errors.Is(err, fs.ErrExist):
-		return "FileExistsError"
-	case errors.Is(err, fs.ErrPermission):
-		return "PermissionError"
-	case !errors.As(err, &errno):
-		return "OSError"
-	}
-	switch errno {
-	case syscall.EAGAIN, syscall.EALREADY, syscall.EINPROGRESS:
-		return "BlockingIOError"
-	case syscall.ECHILD:
-		return "ChildProcessError"
-	case syscall.EPIPE, syscall.ESHUTDOWN:
-		return "BrokenPipeError"
-	case syscall.ECONNABORTED:
-		return "ConnectionAbortedError"
-	case syscall.ECONNREFUSED:
-		return "ConnectionRefusedError"
-	case syscall.ECONNRESET:
-		return "ConnectionResetError"
-	case syscall.EINTR:
-		return "InterruptedError"
-	case syscall.EISDIR:
-		return "IsADirectoryError"
-	case syscall.ENOTDIR:
-		return "NotADirectoryError"
-	case syscall.ESRCH:
-		return "ProcessLookupError"
-	case syscall.ETIMEDOUT:
-		return "TimeoutError"
-	}
-	return "OSError"
-}
 
 // False only when captured capabilities omit tools, true without capability info
 func (s *serverTask) advertisesTools() bool {
@@ -641,8 +568,8 @@ func (s *serverTask) waitForLifecycleEvent(ctx context.Context, sessionDone <-ch
 				return "", ctx.Err()
 			}
 			root := unwrapExceptionGroup(err)
-			pkgLog().Warn(fmt.Sprintf("MCP server '%s' keepalive failed, triggering reconnect (state: connected → degraded): %s: %s", s.name, errTypeName(root), root.Error()))
-			s.markSuspect(fmt.Sprintf("keepalive failed: %s: %s", errTypeName(root), root.Error()))
+			pkgLog().Warn(fmt.Sprintf("MCP server '%s' keepalive failed, triggering reconnect (state: connected → degraded): %s", s.name, excStr(root)))
+			s.markSuspect(fmt.Sprintf("keepalive failed: %s", excStr(root)))
 			s.reconnect.Set()
 			return s.finishLifecycleWait(), nil
 		}
@@ -771,7 +698,7 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 	s.mu.Lock()
 	s.rendered, s.config = r, cfg
 	s.toolTimeout = resolveToolTimeout(ctx, cfg)
-	s.authType = strings.ToLower(strings.TrimSpace(pyStr(cfg["auth"])))
+	s.authType = strings.ToLower(strings.TrimSpace(anyutil.String(cfg["auth"])))
 	s.idleTimeout, s.maxLifetime = nil, nil
 	if v, ok := lifecycleSeconds(cfg, "idle_timeout_seconds"); ok {
 		s.idleTimeout = &v
@@ -786,7 +713,7 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 		samplingCfg = map[string]any{}
 	}
 	var sampler Sampler
-	if v, ok := samplingCfg["enabled"]; !ok || pyTruthy(v) {
+	if v, ok := samplingCfg["enabled"]; !ok || anyutil.IsTrue(v) {
 		sampler = newSamplingHandler(s.name, s.env, samplingCfg)
 	}
 	elicitCfg, _ := cfg["elicitation"].(map[string]any)
@@ -794,7 +721,7 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 		elicitCfg = map[string]any{}
 	}
 	var elicitor Elicitor
-	if v, ok := elicitCfg["enabled"]; !ok || pyTruthy(v) {
+	if v, ok := elicitCfg["enabled"]; !ok || anyutil.IsTrue(v) {
 		elicitor = newElicitationHandler(s.name, s.env, elicitCfg, func() context.Context {
 			s.mu.Lock()
 			defer s.mu.Unlock()
@@ -813,20 +740,20 @@ func (s *serverTask) prepareRun(ctx context.Context, r *Rendered) bool {
 		return true
 	}
 	err := validateRemoteMCPURL(s.name, cfg["url"])
-	if err == nil && pyStr(cfg["transport"]) != "sse" && !pyTruthy(cfg["skip_preflight"]) &&
+	if err == nil && anyutil.String(cfg["transport"]) != "sse" && !anyutil.IsTrue(cfg["skip_preflight"]) &&
 		livenessKind(ctx, s.name) != "server_json" && !s.ready.IsSet() && authType != "oauth" {
 		headers := map[string]string{}
 		if h, ok := cfg["headers"].(map[string]any); ok {
 			for k, v := range h {
-				headers[k] = pyStr(v)
+				headers[k] = anyutil.String(v)
 			}
 		}
 		sslVerify, ok := cfg["ssl_verify"]
 		if !ok {
 			sslVerify = true
 		}
-		err = s.preflightContentType(ctx, pyStr(cfg["url"]), headers, sslVerify, cfg["client_cert"], cfg["client_key"],
-			5*time.Second, pyTruthy(cfg["strict_redirect_headers"]))
+		err = s.preflightContentType(ctx, anyutil.String(cfg["url"]), headers, sslVerify, cfg["client_cert"], cfg["client_key"],
+			5*time.Second, anyutil.IsTrue(cfg["strict_redirect_headers"]))
 	}
 	if err != nil {
 		pkgLog().Warn(excStr(err))
@@ -867,10 +794,10 @@ func (s *serverTask) refreshRemoteConfig(ctx context.Context, r *Rendered) *Rend
 		return r
 	}
 	pkgLog().Info(fmt.Sprintf("MCP server '%s': definition changed in config.yaml (%s -> %s); rebuilding with the new one",
-		s.name, pyRepr(r.Config["url"]), pyRepr(fresh.Config["url"])))
+		s.name, anyutil.Quote(r.Config["url"]), anyutil.Quote(fresh.Config["url"])))
 	s.mu.Lock()
 	s.rendered, s.config = fresh, fresh.Config
-	s.authType = strings.ToLower(strings.TrimSpace(pyStr(fresh.Config["auth"])))
+	s.authType = strings.ToLower(strings.TrimSpace(anyutil.String(fresh.Config["auth"])))
 	s.sseFallback = false
 	s.mu.Unlock()
 	return fresh
@@ -1007,7 +934,7 @@ func (s *serverTask) backoffSleep(ctx context.Context, budget *retryBudget) {
 func (s *serverTask) onTransportError(ctx context.Context, err error, budget *retryBudget) bool {
 	failureClass := classifyMCPFailure(err)
 	if s.isRecycledStdio() {
-		pkgLog().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed, marking unavailable while retrying: %s: %s", s.name, errTypeName(err), excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': lazy reconnect after stdio recycle failed, marking unavailable while retrying: %s", s.name, excStr(err)))
 		s.mu.Lock()
 		s.recycledReason = ""
 		s.mu.Unlock()
@@ -1019,7 +946,7 @@ func (s *serverTask) onTransportError(ctx context.Context, err error, budget *re
 		return s.onInitialConnectError(ctx, err, failureClass, budget)
 	}
 	if s.shutdownEv.IsSet() {
-		pkgLog().Debug(fmt.Sprintf("MCP server '%s' disconnected during shutdown: %s: %s", s.name, errTypeName(err), excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("MCP server '%s' disconnected during shutdown: %s", s.name, excStr(err)))
 		return false
 	}
 	if failureClass == "permanent" {
@@ -1030,12 +957,12 @@ func (s *serverTask) onTransportError(ctx context.Context, err error, budget *re
 	retries := s.reconnectRetries
 	s.mu.Unlock()
 	if retries > maxReconnectRetries {
-		s.logPark(fmt.Sprintf("MCP server '%s' failed after %d reconnection attempts, parking; will self-probe every %ds until it recovers (state: degraded → parked): %s: %s",
-			s.name, maxReconnectRetries, int(parkedRetryInterval.Seconds()), errTypeName(err), excStr(err)))
+		s.logPark(fmt.Sprintf("MCP server '%s' failed after %d reconnection attempts, parking; will self-probe every %ds until it recovers (state: degraded → parked): %s",
+			s.name, maxReconnectRetries, int(parkedRetryInterval.Seconds()), excStr(err)))
 		return s.parkAndRearm(ctx, "from parked state", budget)
 	}
-	pkgLog().Debug(fmt.Sprintf("MCP server '%s' connection lost (attempt %d/%d), reconnecting in %.0fs: %s: %s",
-		s.name, retries, maxReconnectRetries, budget.backoff, errTypeName(err), excStr(err)))
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s' connection lost (attempt %d/%d), reconnecting in %.0fs: %s",
+		s.name, retries, maxReconnectRetries, budget.backoff, excStr(err)))
 	s.backoffSleep(ctx, budget)
 	return !s.shutdownEv.IsSet() && ctx.Err() == nil
 }
@@ -1047,18 +974,18 @@ func (s *serverTask) onInitialConnectError(ctx context.Context, err error, failu
 		if isAuthError(err) {
 			detail = fmt.Sprintf("authentication, parking until credentials change; re-authenticate with `icebath mcp login %s`", s.name)
 		}
-		s.logPark(fmt.Sprintf("MCP server '%s' failed initial %s (state: connecting → parked): %s: %s", s.name, detail, errTypeName(err), excStr(err)))
+		s.logPark(fmt.Sprintf("MCP server '%s' failed initial %s (state: connecting → parked): %s", s.name, detail, excStr(err)))
 		s.armAuthPark(ctx, err)
 		return s.parkInitialFailure(ctx, err, "after permanent initial failure", budget)
 	}
 	budget.initialRetries++
 	if budget.initialRetries > maxInitialConnectRetries {
-		s.logPark(fmt.Sprintf("MCP server '%s' failed initial connection after %d attempts, parking until a reconnect is requested (state: connecting → parked): %s: %s",
-			s.name, maxInitialConnectRetries, errTypeName(err), excStr(err)))
+		s.logPark(fmt.Sprintf("MCP server '%s' failed initial connection after %d attempts, parking until a reconnect is requested (state: connecting → parked): %s",
+			s.name, maxInitialConnectRetries, excStr(err)))
 		return s.parkInitialFailure(ctx, err, "after initial connection failures", budget)
 	}
-	pkgLog().Debug(fmt.Sprintf("MCP server '%s' initial connection failed (attempt %d/%d), retrying in %.0fs: %s: %s",
-		s.name, budget.initialRetries, maxInitialConnectRetries, budget.backoff, errTypeName(err), excStr(err)))
+	pkgLog().Debug(fmt.Sprintf("MCP server '%s' initial connection failed (attempt %d/%d), retrying in %.0fs: %s",
+		s.name, budget.initialRetries, maxInitialConnectRetries, budget.backoff, excStr(err)))
 	s.backoffSleep(ctx, budget)
 	if s.shutdownEv.IsSet() {
 		s.publishError(err)
@@ -1076,16 +1003,16 @@ func (s *serverTask) onPermanentError(ctx context.Context, err error, budget *re
 	s.mu.Unlock()
 	if grace {
 		s.markSuspect("auth error on proven session: " + excStr(err))
-		pkgLog().Warn(fmt.Sprintf("MCP server '%s': auth error on a previously healthy session — marking suspect and forcing one reconnect instead of parking (state: connected → suspect): %s: %s",
-			s.name, errTypeName(err), excStr(err)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': auth error on a previously healthy session — marking suspect and forcing one reconnect instead of parking (state: connected → suspect): %s",
+			s.name, excStr(err)))
 		s.mu.Lock()
 		s.reconnectRetries, budget.backoff = 0, 1.0
 		s.mu.Unlock()
 		serverSleep(ctx, secondsDuration(jittered(1.0)))
 		return !s.shutdownEv.IsSet() && ctx.Err() == nil
 	}
-	s.logPark(fmt.Sprintf("MCP server '%s' hit a permanent error, parking without retries; will self-probe every %ds (state: connected → parked): %s: %s",
-		s.name, int(parkedRetryInterval.Seconds()), errTypeName(err), excStr(err)))
+	s.logPark(fmt.Sprintf("MCP server '%s' hit a permanent error, parking without retries; will self-probe every %ds (state: connected → parked): %s",
+		s.name, int(parkedRetryInterval.Seconds()), excStr(err)))
 	s.armAuthPark(ctx, err)
 	return s.parkAndRearm(ctx, "from parked state (permanent error)", budget)
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -34,15 +35,15 @@ func checkAutomationRoute(ctx context.Context, runner AuthorityRunner, payload *
 	}
 	rawAutomation, found := envelope.Get("automation")
 	if !found {
-		return nil, "", &pyKeyError{"automation"}
+		return nil, "", &keyError{"automation"}
 	}
 	automation, ok := rawAutomation.(*jsonutil.Object)
 	if !ok {
-		return nil, "", &PyError{Kind: "TypeError", Msg: "the stored automation is " + errchain.Kind(rawAutomation) + ", expected a mapping"}
+		return nil, "", &errorutil.Error{Kind: "TypeError", Msg: "the stored automation is " + errchain.Kind(rawAutomation) + ", expected a mapping"}
 	}
 	owner, found := automation.Get("owner")
 	if !found {
-		return nil, "", &pyKeyError{"owner"}
+		return nil, "", &keyError{"owner"}
 	}
 	logical, err := authority.LogicalOwner(ctx, sessionID)
 	if err != nil {
@@ -73,7 +74,7 @@ func restoreLocalAutomation(ctx context.Context, a *SessionAuthority, ref Sessio
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	payloadValue, _ := row.Get("payload")
 	payload := payloadValue.(*jsonutil.Object)
@@ -84,7 +85,7 @@ func restoreLocalAutomation(ctx context.Context, a *SessionAuthority, ref Sessio
 		return nil, err
 	}
 	if entry == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the automation has no session to restore into"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the automation has no session to restore into"}
 	}
 	text, _ := payload.Get("text")
 	identity, _ := descriptor.Get("identity")
@@ -105,7 +106,7 @@ func restoreLocalAutomation(ctx context.Context, a *SessionAuthority, ref Sessio
 	if author, _ := descriptor.Get("turn_author"); author != nil {
 		event.Metadata["turn_author"] = any(anyutil.Clone(author))
 	}
-	if heartbeat, _ := descriptor.Get("heartbeat"); pyTruthy(heartbeat) {
+	if heartbeat, _ := descriptor.Get("heartbeat"); anyutil.IsTrue(heartbeat) {
 		id := anyutil.String(heartbeat)
 		event.SetHeartbeatSessionID(&id)
 	}

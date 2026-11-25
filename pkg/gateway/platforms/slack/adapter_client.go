@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	slackapi "github.com/slack-go/slack"
 )
@@ -59,7 +59,7 @@ func newWebClient(token, proxyURL string) *webClient {
 
 // Error a call on a missing workspace client raises, the AttributeError Python raises on None
 func noClientError(method string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute '" + method + "'"}
+	return &errorutil.Error{Kind: "AttributeError", Msg: "'NoneType' object has no attribute '" + method + "'"}
 }
 
 // Failed Web API call with the decoded body, headers and HTTP status Slack answered

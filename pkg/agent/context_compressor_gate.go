@@ -7,6 +7,8 @@ import (
 	"maps"
 	"strings"
 	"unicode/utf8"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Pairs the real prompt count with the rough estimate and judges the armed compaction verdict
@@ -251,7 +253,7 @@ func demoteToolResultAt(result []map[string]any, idx int, callIDToTool map[strin
 		content = ""
 	}
 	multimodal := false
-	if d, ok := content.(map[string]any); ok && pyTruthy(d["_multimodal"]) {
+	if d, ok := content.(map[string]any); ok && anyutil.IsTrue(d["_multimodal"]) {
 		multimodal = true
 	}
 	if _, isList := content.([]any); isList || multimodal {
@@ -270,7 +272,7 @@ func demoteToolResultAt(result []map[string]any, idx int, callIDToTool map[strin
 	if !found {
 		ref = toolCallRef{"unknown", ""}
 	}
-	toolName := pyStrOf(ref.name)
+	toolName := anyutil.String(ref.name)
 	if len(protectedSkills) > 0 && toolName == "skill_view" {
 		if obj := jsonDict(ref.args); obj != nil {
 			if skill, ok := obj.Get("name"); ok {
@@ -345,7 +347,7 @@ func (c *ContextCompressor) pressureDemoteTail(result []map[string]any, pruneBou
 // Pending tool round with its owning assistant row when it fits the hard share of the input window
 func (c *ContextCompressor) sparedPendingToolRound(messages []map[string]any) (int, int) {
 	start, end := pendingToolRound(messages)
-	if end > start && start > 0 && pyTruthy(messages[start-1]["tool_calls"]) {
+	if end > start && start > 0 && anyutil.IsTrue(messages[start-1]["tool_calls"]) {
 		start--
 	}
 	hardShare := int(float64(effectiveInputWindow(c.contextLength(), c.maxTokens)) * tailMaxContextFraction)

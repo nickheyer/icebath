@@ -37,8 +37,8 @@ type guardDecimal struct {
 }
 
 var (
-	pyDecimalLiteral           = regexp.MustCompile(`^([+-]?)(?:(\d(?:_?\d)*)(?:\.(\d(?:_?\d)*)?)?|\.(\d(?:_?\d)*))(?:[eE]([+-]?\d(?:_?\d)*))?$`)
-	pyDecimalSpecial           = regexp.MustCompile(`(?i)^([+-]?)(inf|infinity|nan|snan)(\d*)$`)
+	decimalLiteral             = regexp.MustCompile(`^([+-]?)(?:(\d(?:_?\d)*)(?:\.(\d(?:_?\d)*)?)?|\.(\d(?:_?\d)*))(?:[eE]([+-]?\d(?:_?\d)*))?$`)
+	decimalSpecial             = regexp.MustCompile(`(?i)^([+-]?)(inf|infinity|nan|snan)(\d*)$`)
 	errDecimalNaNCompare       = errors.New("[<class 'decimal.InvalidOperation'>]")
 	estimateEmptyAttemptCostFn = estimateEmptyAttemptCost
 )
@@ -46,7 +46,7 @@ var (
 // Decimal of a str() form with the Python grammar, an error where Decimal raises InvalidOperation
 func parseGuardDecimal(s string) (guardDecimal, error) {
 	s = strings.TrimSpace(s)
-	if m := pyDecimalSpecial.FindStringSubmatch(s); m != nil {
+	if m := decimalSpecial.FindStringSubmatch(s); m != nil {
 		word := strings.ToLower(m[2])
 		if strings.HasSuffix(word, "nan") {
 			return guardDecimal{nan: true}, nil
@@ -59,7 +59,7 @@ func parseGuardDecimal(s string) (guardDecimal, error) {
 		}
 		return guardDecimal{inf: 1}, nil
 	}
-	if !pyDecimalLiteral.MatchString(s) {
+	if !decimalLiteral.MatchString(s) {
 		return guardDecimal{}, errDecimalNaNCompare
 	}
 	r, ok := new(big.Rat).SetString(strings.ReplaceAll(s, "_", ""))

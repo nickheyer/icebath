@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -154,7 +155,7 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 		payload.Set("commit_ms", commitMS)
 	}
 	prior, _ := payload.Get("failure_class")
-	if e.FailureClass != "" && !(compressionGenericAbortVerdicts[e.FailureClass] && own && pyTruthy(prior)) {
+	if e.FailureClass != "" && !(compressionGenericAbortVerdicts[e.FailureClass] && own && anyutil.IsTrue(prior)) {
 		payload.Set("failure_class", e.FailureClass)
 	}
 	if _, ok := payload.Get("chunking"); !ok {
@@ -164,7 +165,7 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 		payload.Set("chunk_count", 0)
 	}
 	fallback, _ := payload.Get("fallback_used")
-	payload.Set("fallback_used", pyTruthy(fallback) || own && compressor != nil && (compressor.LastSummaryFallbackUsed || compressor.LastAuxModelFailureModel != ""))
+	payload.Set("fallback_used", anyutil.IsTrue(fallback) || own && compressor != nil && (compressor.LastSummaryFallbackUsed || compressor.LastAuxModelFailureModel != ""))
 	logAttemptRecord(payload)
 	record, _ := jsonutil.Plain(payload).(map[string]any)
 	PublishCompactionAttempt(ctx, a, record)

@@ -74,6 +74,14 @@ func field(o *jsonutil.Object, key string, def any) any {
 	return def
 }
 
+// Text of a field for display, def when the field is absent, null or empty
+func fieldText(o *jsonutil.Object, key, def string) string {
+	if text := anyutil.String(field(o, key, nil)); text != "" {
+		return text
+	}
+	return def
+}
+
 // Decoded job objects of a list reply, none unless the reply succeeded
 func replyJobs(result *jsonutil.Object) []*jsonutil.Object {
 	if !anyutil.IsTrue(field(result, "success", nil)) {
@@ -112,7 +120,7 @@ func (s *Store) cronOverviewLines(ctx context.Context) []string {
 	out = append(out, "  "+cliT(ctx, "cron.current_jobs"), "  "+strings.Repeat("-", 63))
 	for _, job := range jobs {
 		out = append(out, fmt.Sprintf("    %-12s | %-15s | %-8s", textutil.First(anyutil.String(field(job, "job_id", nil)), 12),
-			anyutil.String(field(job, "schedule", nil)), anyutil.String(field(job, "repeat", "?"))))
+			anyutil.String(field(job, "schedule", nil)), fieldText(job, "repeat", "?")))
 		if anyutil.IsTrue(field(job, "skills", nil)) {
 			out = append(out, "      "+cliT(ctx, "cron.skills", "skills", joinedSkills(job)))
 		}

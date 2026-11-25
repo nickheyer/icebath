@@ -154,7 +154,7 @@ func TestDropRejectedRouteUnservedAndRetryableIngress(t *testing.T) {
 	ctx, scope, closeScope := RetryableIngress(context.Background())
 	beta := "beta"
 	dropRejectedRoute(ctx, bot, &SessionSource{Platform: PlatformSlack, ChatID: "C", rejectedRouteProfile: &beta})
-	if !scope.Refused() || len(bot.sent) != 0 || !strings.Contains(logs.String(), "routed profile 'beta' on slack is parked") {
+	if !scope.Refused() || len(bot.sent) != 0 || !strings.Contains(logs.String(), `routed profile \"beta\" on slack is parked`) {
 		t.Fatalf("retryable ingress %v %v %q", scope.Refused(), bot.sent, logs.String())
 	}
 	closeScope()

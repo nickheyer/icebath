@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -255,7 +256,7 @@ func a2aCompletion(ctx context.Context, client *GatewayClient, admissionID any) 
 func a2aMapping(frame any, key string) (map[string]any, error) {
 	m, ok := frame.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A frame is %s, expected a mapping", errchain.Kind(frame))}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A frame is %s, expected a mapping", errchain.Kind(frame))}
 	}
 	value := m[key]
 	if !anyutil.IsTrue(value) {
@@ -263,7 +264,7 @@ func a2aMapping(frame any, key string) (map[string]any, error) {
 	}
 	inner, ok := value.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A value is %s, expected a mapping", errchain.Kind(value))}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A value is %s, expected a mapping", errchain.Kind(value))}
 	}
 	return inner, nil
 }

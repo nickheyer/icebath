@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -42,7 +43,7 @@ func requestAdmissionRows(ctx context.Context, db *state.SessionDB, requestID st
 		for _, record := range retired {
 			row, ok := record.(*jsonutil.Object)
 			if !ok {
-				return &gateway.PyError{Kind: "TypeError", Msg: "terminal admission record must be an object, got " + anyutil.Kind(record)}
+				return &errorutil.Error{Kind: "TypeError", Msg: "terminal admission record must be an object, got " + anyutil.Kind(record)}
 			}
 			rows = append(rows, row)
 		}

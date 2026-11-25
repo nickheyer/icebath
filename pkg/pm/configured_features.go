@@ -60,7 +60,7 @@ func InstallConfiguredFeaturesMissingDeps(ctx context.Context, projectRoot strin
 		err := clientSyncVenv(ctx, SyncVenvOptions{Extras: extras, Explicit: true, ProjectRoot: projectRoot,
 			EvictIncompatiblePlugins: true, Automatic: extras})
 		if err != nil {
-			fmt.Fprintf(out, "  ⚠ Could not install %s for configured features: %s\n", strings.Join(extras, ", "), pyExceptionText(err))
+			fmt.Fprintf(out, "  ⚠ Could not install %s for configured features: %s\n", strings.Join(extras, ", "), exceptionText(err))
 		} else {
 			after, err := declinedExtras(ctx, projectRoot)
 			if err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Launch secret owner of the active authority, a nil owner when the runner has none
@@ -58,7 +59,7 @@ func (p *LocalSessionPolicy) CurrentServiceTier(ctx context.Context, runner any,
 	if sessionKey != "" {
 		peeker, ok := runner.(sessionStatePeekRunner)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot read session state", runner)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot read session state", runner)}
 		}
 		if state := peeker.PeekSessionState(sessionKey); state != nil {
 			if tier, set := state.ServiceTierOverride(); set {

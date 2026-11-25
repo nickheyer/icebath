@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
@@ -65,7 +66,7 @@ func TestStaleUnopenableGatewayLockIsReplacedOnBoot(t *testing.T) {
 		t.Fatal("stale unwritable lock not replaced")
 	}
 	defer ReleaseGatewayRuntimeLock()
-	if r := readRecord(t, lock); !pyEq(recGet(r, "pid"), int64(os.Getpid())) {
+	if r := readRecord(t, lock); !anyutil.Equal(recGet(r, "pid"), int64(os.Getpid())) {
 		t.Fatal("record not ours")
 	}
 }

@@ -38,7 +38,7 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 	}
 	singletonKey := ""
 	if v := singletonNow["api_key"]; anyutil.IsTrue(v) {
-		singletonKey = strings.TrimSpace(pyStrValue(v))
+		singletonKey = strings.TrimSpace(anyutil.String(v))
 	}
 	oldKey := strings.TrimSpace(a.apiKey)
 	if singletonKey != "" && oldKey != "" && singletonKey != oldKey {

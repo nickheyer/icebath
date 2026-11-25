@@ -588,7 +588,7 @@ func (s *VaultStore) migrateToKeychain() (string, error) {
 	}
 	if fresh {
 		if err := vaultSaveNewRef(s.ctx, s.keyrefPath, ref); err != nil {
-			return "", &VaultError{fmt.Sprintf("could not save %s (%s); the key stays in %s", filepath.Base(s.keyrefPath), pyOSErrorStr(err), s.keyPath)}
+			return "", &VaultError{fmt.Sprintf("could not save %s (%s); the key stays in %s", filepath.Base(s.keyrefPath), osErrorStr(err), s.keyPath)}
 		}
 	}
 	if err := vaultRemoveFile(s.keyPath); err != nil {
@@ -598,7 +598,7 @@ func (s *VaultStore) migrateToKeychain() (string, error) {
 }
 
 // Reason of an operating system failure followed by the path it concerns
-func pyOSErrorStr(err error) string {
+func osErrorStr(err error) string {
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {
 		return err.Error()
@@ -736,7 +736,7 @@ func contains(list []string, v any) bool {
 	return false
 }
 
-func pyTuple(list []string) string {
+func tupleOf(list []string) string {
 	parts := make([]string, len(list))
 	for i, s := range list {
 		parts[i] = anyutil.Quote(s)
@@ -747,7 +747,7 @@ func pyTuple(list []string) string {
 // Adds an item, a login keeping its identifier in metadata and only the password and seed secret
 func (s *VaultStore) AddItem(kind, label string, secret *jsonutil.Object, origin string) (VaultItemMeta, error) {
 	if !contains(VaultKinds, kind) {
-		return VaultItemMeta{}, &VaultError{fmt.Sprintf("unknown vault kind %s (expected one of %s)", anyutil.Quote(kind), pyTuple(VaultKinds))}
+		return VaultItemMeta{}, &VaultError{fmt.Sprintf("unknown vault kind %s (expected one of %s)", anyutil.Quote(kind), tupleOf(VaultKinds))}
 	}
 	label = strings.TrimSpace(label)
 	if label == "" {
@@ -767,7 +767,7 @@ func (s *VaultStore) AddItem(kind, label string, secret *jsonutil.Object, origin
 		idType, _ := secret.Get("identifier_type")
 		secret.Delete("identifier_type")
 		if !contains(LoginIdentifierTypes, idType) {
-			return VaultItemMeta{}, &VaultError{"identifier_type must be one of " + pyTuple(LoginIdentifierTypes)}
+			return VaultItemMeta{}, &VaultError{"identifier_type must be one of " + tupleOf(LoginIdentifierTypes)}
 		}
 		rawID, _ := secret.Get("identifier")
 		secret.Delete("identifier")

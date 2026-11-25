@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var ggufMagic = []byte("GGUF")
@@ -125,7 +126,7 @@ func ggufDigitValue(r rune) int {
 
 // Python int of a decimal string with sign, underscores and Unicode digits
 func ggufParseIntString(s string) (int64, error) {
-	bad := &GGUFError{"ValueError", "GGUF value " + pyStringRepr(s) + " is not a whole number"}
+	bad := &GGUFError{"ValueError", "GGUF value " + strconv.Quote(s) + " is not a whole number"}
 	t := strings.TrimFunc(s, unicode.IsSpace)
 	neg := false
 	if t != "" && (t[0] == '+' || t[0] == '-') {
@@ -199,7 +200,7 @@ func ggufInt(v any) (int64, error) {
 			return 0, &GGUFError{"OverflowError", "cannot convert float infinity to integer"}
 		}
 		if t >= 9223372036854775808.0 || t < -9223372036854775808.0 {
-			return 0, &GGUFError{"OverflowError", "int too large to convert to int64: " + pyFloatRepr(t)}
+			return 0, &GGUFError{"OverflowError", "int too large to convert to int64: " + floatRepr(t)}
 		}
 		return int64(t), nil
 	case string:
@@ -210,7 +211,7 @@ func ggufInt(v any) (int64, error) {
 
 // Python int(v or 0) of a metadata value
 func ggufIntOrZero(v any) (int64, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
 	return ggufInt(v)
@@ -221,7 +222,7 @@ func (h *GGUFHeader) Architecture() string {
 	if !ok {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Bytes of weights llama.cpp keeps on disk and reads row by row instead of loading
@@ -319,7 +320,7 @@ func (h *GGUFHeader) SlidingWindowPatternPeriod() int64 {
 
 // Vocabulary size from vocab_size metadata, else the tokenizer list length
 func (h *GGUFHeader) NVocab() (int64, error) {
-	if v := h.archKey("vocab_size"); pyTruthy(v) {
+	if v := h.archKey("vocab_size"); anyutil.IsTrue(v) {
 		return ggufInt(v)
 	}
 	if toks, ok := h.Metadata["tokenizer.ggml.tokens"].([]any); ok {
@@ -377,7 +378,7 @@ func (h *GGUFHeader) SamplingDefaults() (map[string]string, error) {
 				out[name] = strconv.FormatFloat(num, 'f', 0, 64)
 			}
 		} else {
-			out[name] = pyFloatRepr(num)
+			out[name] = floatRepr(num)
 		}
 	}
 	return out, nil
@@ -524,7 +525,7 @@ func (h *GGUFHeader) HeadCountsKV() ([]int64, error) {
 
 // Per head key size from key_length, else embedding size over head count
 func (h *GGUFHeader) HeadDimK() (int64, error) {
-	if v := h.archKey("attention.key_length"); pyTruthy(v) {
+	if v := h.archKey("attention.key_length"); anyutil.IsTrue(v) {
 		return ggufInt(v)
 	}
 	nHead, err := h.NHead()
@@ -535,12 +536,12 @@ func (h *GGUFHeader) HeadDimK() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return pyFloorDiv(nEmbd, nHead), nil
+	return floorDiv(nEmbd, nHead), nil
 }
 
 // Per head value size from value_length, else the key size
 func (h *GGUFHeader) HeadDimV() (int64, error) {
-	if v := h.archKey("attention.value_length"); pyTruthy(v) {
+	if v := h.archKey("attention.value_length"); anyutil.IsTrue(v) {
 		return ggufInt(v)
 	}
 	return h.HeadDimK()
@@ -576,7 +577,7 @@ func ggufPathStr(p string) string {
 }
 
 // Python floor division of two int64 values
-func pyFloorDiv(a, b int64) int64 {
+func floorDiv(a, b int64) int64 {
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
 		q--

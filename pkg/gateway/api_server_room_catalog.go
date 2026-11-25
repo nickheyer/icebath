@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -27,7 +28,7 @@ func apiProfileScope(ctx context.Context, profile string) (context.Context, erro
 // Execution policy and catalog the API server adapter advertises for one served profile
 func localRoomCatalog(ctx context.Context, adapter PlatformAdapter, profile, installationID string) (*jsonutil.Object, *jsonutil.Object, error) {
 	if adapter == nil || adapter.Base() == nil || adapter.Base().Platform != PlatformAPIServer {
-		return nil, nil, &PyError{Kind: "AttributeError", Msg: "the API server adapter has no profile scope"}
+		return nil, nil, &errorutil.Error{Kind: "AttributeError", Msg: "the API server adapter has no profile scope"}
 	}
 	scoped, err := apiProfileScope(ctx, profile)
 	if err != nil {

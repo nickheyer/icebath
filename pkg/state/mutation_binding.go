@@ -189,7 +189,7 @@ func AuthorizeHistory(ctx context.Context, conn SQLiteConn, actor HistoryActor, 
 	if err != nil {
 		return false, err
 	}
-	if pyTruthy(owner) && !sameOwner(rowGet(row, "user_id"), actor.Subject) {
+	if anyutil.IsTrue(owner) && !sameOwner(rowGet(row, "user_id"), actor.Subject) {
 		return false, runtimeRefusal("permission_denied")
 	}
 	canCreate := false
@@ -224,7 +224,7 @@ func SameHistoryOwner(ctx context.Context, conn SQLiteConn, anchorID, sessionID 
 	if err != nil || !ok {
 		return false, err
 	}
-	if pyTruthy(row[2]) || pyTruthy(row[3]) || pyTruthy(row[4]) {
+	if anyutil.IsTrue(row[2]) || anyutil.IsTrue(row[3]) || anyutil.IsTrue(row[4]) {
 		for i := 1; i < 4; i++ {
 			if !anyutil.Equal(row[i], anchor[i]) {
 				return false, nil
@@ -246,7 +246,7 @@ func SameHistoryOwner(ctx context.Context, conn SQLiteConn, anchorID, sessionID 
 	if binding != nil {
 		return true, nil
 	}
-	routelessPeer := anyutil.Equal(row[0], anchor[0]) && !pyTruthy(anchor[2]) && !pyTruthy(anchor[3]) && !pyTruthy(anchor[4])
+	routelessPeer := anyutil.Equal(row[0], anchor[0]) && !anyutil.IsTrue(anchor[2]) && !anyutil.IsTrue(anchor[3]) && !anyutil.IsTrue(anchor[4])
 	member := jsonutil.ObjectOf("source", row[0], "user_id", row[1], "session_key", row[2], "chat_id", row[3], "origin_json", row[4])
 	if !historyRow(member) && !routelessPeer {
 		return false, nil

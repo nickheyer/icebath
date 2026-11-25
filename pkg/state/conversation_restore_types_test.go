@@ -66,7 +66,7 @@ func TestRestoredConversationCarriesPlainPartsAndOrderedToolCalls(t *testing.T) 
 // True when no decoder object hides anywhere in the value, and no ordered object either when strict
 func reflectPlain(v any, strict bool) bool {
 	switch t := v.(type) {
-	case pyObject:
+	case orderedObject:
 		return false
 	case *jsonutil.Object:
 		if strict || t == nil {

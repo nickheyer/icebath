@@ -73,11 +73,11 @@ func perplexityRequest(ctx context.Context, env *Env, endpoint string, payload *
 
 // Search API rows as url first hits with falsy fields blanked
 func normalizePerplexitySearchResults(response any) (*WebSearchResponse, error) {
-	results, err := pyDictGet(response, "results")
+	results, err := dictGet(response, "results")
 	if err != nil {
 		return nil, err
 	}
-	rows, err := pyIter(pyOr(results, []any{}))
+	rows, err := elementsOf(anyutil.Or(results, []any{}))
 	if err != nil {
 		return nil, err
 	}
@@ -85,11 +85,11 @@ func normalizePerplexitySearchResults(response any) (*WebSearchResponse, error) 
 	for i, r := range rows {
 		var vals [3]string
 		for j, key := range []string{"title", "url", "snippet"} {
-			v, err := pyGetDefault(r, key, "")
+			v, err := getDefault(r, key, "")
 			if err != nil {
 				return nil, err
 			}
-			vals[j] = pyStrField(pyOr(v, ""))
+			vals[j] = anyutil.String(anyutil.Or(v, ""))
 		}
 		hits = append(hits, titleHit(vals[0], vals[1], vals[2], i+1))
 	}
@@ -98,17 +98,17 @@ func normalizePerplexitySearchResults(response any) (*WebSearchResponse, error) 
 
 // One document per requested url in request order, omitted or flagged pages carrying an error
 func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error) {
-	results, err := pyDictGet(response, "results")
+	results, err := dictGet(response, "results")
 	if err != nil {
 		return nil, err
 	}
-	rows, err := pyIter(pyOr(results, []any{}))
+	rows, err := elementsOf(anyutil.Or(results, []any{}))
 	if err != nil {
 		return nil, err
 	}
 	byURL := map[string]*jsonutil.Object{}
 	for _, r := range rows {
-		d, ok := pyDict(r)
+		d, ok := mappingOf(r)
 		if !ok {
 			continue
 		}
@@ -130,8 +130,8 @@ func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error
 			result = jsonutil.NewObject()
 		}
 		textVal, _ := result.Get("text")
-		text := pyOr(textVal, "")
-		doc := &WebPage{URL: u, Content: pyStrField(text), RawContent: pyStrField(text), HasRaw: true, Metadata: map[string]any{"sourceURL": u}}
+		text := anyutil.Or(textVal, "")
+		doc := &WebPage{URL: u, Content: anyutil.String(text), RawContent: anyutil.String(text), HasRaw: true, Metadata: map[string]any{"sourceURL": u}}
 		errVal, _ := result.Get("error")
 		if anyutil.IsTrue(errVal) {
 			doc.Error = anyutil.String(errVal)
@@ -143,7 +143,7 @@ func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error
 	return docs, nil
 }
 
-// Relevance query from the lowered path words of each url, the host for a bare root
+// Relevance query from the lowered path words of each url, segment ;parameters left out, the host for a bare root
 func perplexityQueryForURLs(urls []string) (string, error) {
 	var words []string
 	seen := map[string]bool{}
@@ -152,15 +152,15 @@ func perplexityQueryForURLs(urls []string) (string, error) {
 		if err != nil {
 			return "", verbatim(err.Error())
 		}
-		path := strings.NewReplacer("-", " ", "_", " ", "/", " ").Replace(parsed.Path)
-		for _, token := range strings.Fields(path) {
+		path := pathWithoutParams(parsed.Path)
+		for _, token := range strings.Fields(strings.NewReplacer("-", " ", "_", " ", "/", " ").Replace(path)) {
 			lowered := strings.ToLower(token)
-			if !seen[lowered] && !pyStrIsDigit(token) {
+			if !seen[lowered] && !strIsDigit(token) {
 				seen[lowered] = true
 				words = append(words, lowered)
 			}
 		}
-		if strings.Trim(parsed.Path, "/") == "" {
+		if strings.Trim(path, "/") == "" {
 			words = append(words, parsed.Authority)
 			seen[parsed.Authority] = true
 		}
@@ -171,8 +171,20 @@ func perplexityQueryForURLs(urls []string) (string, error) {
 	return runePrefix(strings.Join(urls, " "), 500), nil
 }
 
+// URL path with the ;parameters of every segment cut off, leaving the segment names that describe the page
+func pathWithoutParams(path string) string {
+	if !strings.Contains(path, ";") {
+		return path
+	}
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i], _, _ = strings.Cut(s, ";")
+	}
+	return strings.Join(segments, "/")
+}
+
 // str.isdigit over a whole string, false for an empty one
-func pyStrIsDigit(s string) bool {
+func strIsDigit(s string) bool {
 	if s == "" {
 		return false
 	}

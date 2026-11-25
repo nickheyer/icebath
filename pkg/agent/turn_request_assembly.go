@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Anchored request pressure of the assembled turn, bound at module level like the import
@@ -27,8 +27,8 @@ func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]
 		aggregator = map[string]any{}
 	}
 	var referenceTimeout *float64
-	if pyTruthy(moaConfig["reference_timeout"]) {
-		f, err := pyFloat(moaConfig["reference_timeout"])
+	if anyutil.IsTrue(moaConfig["reference_timeout"]) {
+		f, err := floatNumber(moaConfig["reference_timeout"])
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("MoA context aggregation failed: %v", err))
 			return
@@ -36,8 +36,8 @@ func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]
 		referenceTimeout = &f
 	}
 	policy := "loud"
-	if pyTruthy(moaConfig["degraded_reference_policy"]) {
-		policy = config.PyStr(moaConfig["degraded_reference_policy"])
+	if anyutil.IsTrue(moaConfig["degraded_reference_policy"]) {
+		policy = anyutil.String(moaConfig["degraded_reference_policy"])
 	}
 	moaContext, err := aggregateMoaContext(ctx, a, prompt, apiMessages, referenceModels, aggregator,
 		presetTemperature(moaConfig, "reference_temperature"), presetTemperature(moaConfig, "aggregator_temperature"), referenceTimeout, nil, policy)
@@ -74,7 +74,7 @@ func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]
 }
 
 // Python float() of a config value, numbers and numeric strings
-func pyFloat(v any) (float64, error) {
+func floatNumber(v any) (float64, error) {
 	switch n := v.(type) {
 	case float64:
 		return n, nil

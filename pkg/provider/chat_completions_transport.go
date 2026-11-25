@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -263,8 +264,8 @@ func clampReasoningConfigObject(rc *jsonutil.Object, supported []string) *jsonut
 		return nil
 	}
 	effort := ""
-	if pyTruthy(rc.Value("effort")) {
-		effort = strings.ToLower(strings.TrimSpace(pyStr(rc.Value("effort"))))
+	if anyutil.IsTrue(rc.Value("effort")) {
+		effort = strings.ToLower(strings.TrimSpace(anyutil.String(rc.Value("effort"))))
 	}
 	clamped := effort
 	if effort != "" {
@@ -284,8 +285,8 @@ func clampReasoningConfigDict(rc map[string]any, supported []string) map[string]
 		return nil
 	}
 	effort := ""
-	if pyTruthy(rc["effort"]) {
-		effort = strings.ToLower(strings.TrimSpace(pyStr(rc["effort"])))
+	if anyutil.IsTrue(rc["effort"]) {
+		effort = strings.ToLower(strings.TrimSpace(anyutil.String(rc["effort"])))
 	}
 	clamped := effort
 	if effort != "" {
@@ -307,10 +308,10 @@ func requestedEffortDict(rc map[string]any) string {
 	if enabled, ok := rc["enabled"].(bool); ok && !enabled {
 		return ""
 	}
-	if !pyTruthy(rc["effort"]) {
+	if !anyutil.IsTrue(rc["effort"]) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyStr(rc["effort"])))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(rc["effort"])))
 }
 
 // Hook reasoning value of a config dict, nil when the config is unset
@@ -321,7 +322,7 @@ func reasoningPtrOfDict(rc map[string]any) *Reasoning {
 	r := reasoningFromConfig(rc)
 	if e, ok := rc["effort"]; ok && e != nil {
 		if _, isStr := e.(string); !isStr {
-			r.Effort = pyStr(e)
+			r.Effort = anyutil.String(e)
 		}
 	}
 	return &r
@@ -440,10 +441,10 @@ func staticPromptInstructionsDicts(messages []map[string]any) string {
 	}
 	text, err := jsonutil.Encode(content, jsonutil.SortKeys())
 	if err != nil {
-		if !pyTruthy(content) {
+		if !anyutil.IsTrue(content) {
 			return ""
 		}
-		return pyStr(content)
+		return anyutil.String(content)
 	}
 	return text
 }
@@ -568,7 +569,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 	extraBody := jsonutil.NewObject()
 	isOpenRouter := kwargBool(params, "is_openrouter", false)
 	baseURL := kwargString(params, "base_url")
-	if isOpenRouter && pyTruthy(params["provider_preferences"]) {
+	if isOpenRouter && anyutil.IsTrue(params["provider_preferences"]) {
 		extraBody.Set("provider", params["provider_preferences"])
 	}
 	if isOpenRouter && model == "openrouter/pareto-code" {
@@ -591,7 +592,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 		} else {
 			var effort any = "medium"
 			if len(rc) > 0 {
-				if e, ok := rc["effort"]; ok && pyTruthy(e) {
+				if e, ok := rc["effort"]; ok && anyutil.IsTrue(e) {
 					effort = e
 				}
 			}
@@ -603,7 +604,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 			}
 		}
 	}
-	if strings.ToLower(strings.TrimSpace(pyStr(params["provider_name"]))) == "gemini" && params["provider_name"] != nil {
+	if strings.ToLower(strings.TrimSpace(anyutil.String(params["provider_name"]))) == "gemini" && params["provider_name"] != nil {
 		raw := buildGeminiThinkingConfig(model, reasoningFromRequest(reasoningFromConfig(rc)))
 		if geminiOpenAICompatBaseURL(baseURL) {
 			if tc := snakeCaseGeminiThinkingConfig(raw); len(tc) > 0 {

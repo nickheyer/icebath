@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -135,7 +136,7 @@ func (f *relayFuture[T]) wait(ctx context.Context, timeoutS float64) (T, error) 
 	case <-f.done:
 		return f.val, f.err
 	case <-timer.C:
-		return zero, &PyError{"TimeoutError", ""}
+		return zero, &errorutil.Error{"TimeoutError", ""}
 	case <-ctx.Done():
 		return zero, ctx.Err()
 	}
@@ -488,7 +489,7 @@ func (t *WebSocketRelayTransport) dialAndStart(ctx context.Context) error {
 		}
 	}
 	if reader.finished() {
-		return &PyError{"ConnectionError", "relay ws closed during hello"}
+		return &errorutil.Error{"ConnectionError", "relay ws closed during hello"}
 	}
 	return nil
 }
@@ -610,7 +611,7 @@ func (t *WebSocketRelayTransport) Disconnect(ctx context.Context, budgetS *float
 	}
 	t.mu.Unlock()
 	defer func() {
-		closed := &PyError{"RuntimeError", "relay transport closed"}
+		closed := &errorutil.Error{"RuntimeError", "relay transport closed"}
 		t.failPending(func(p *relayPending) { p.fut.settle(nil, closed) })
 		t.mu.Lock()
 		ack := t.goingIdleAck
@@ -695,7 +696,7 @@ func (t *WebSocketRelayTransport) Handshake(ctx context.Context) (CapabilityDesc
 	ready := t.descriptorReady
 	t.mu.Unlock()
 	if ready == nil {
-		return CapabilityDescriptor{}, &PyError{"RuntimeError", "handshake() called before connect()"}
+		return CapabilityDescriptor{}, &errorutil.Error{"RuntimeError", "handshake() called before connect()"}
 	}
 	return ready.wait(ctx, t.connectTimeoutS)
 }
@@ -768,7 +769,7 @@ func (t *WebSocketRelayTransport) GetChatInfo(ctx context.Context, chatID string
 	if ci, ok := result["chat_info"]; ok && anyutil.IsTrue(ci) {
 		m, ok := ci.(map[string]any)
 		if !ok {
-			return nil, &PyError{"AttributeError", "the relay chat info is " + errchain.Kind(ci) + ", expected a mapping"}
+			return nil, &errorutil.Error{"AttributeError", "the relay chat info is " + errchain.Kind(ci) + ", expected a mapping"}
 		}
 		info = m
 	}
@@ -880,10 +881,10 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 	result, err := p.fut.wait(ctx, t.outboundTimeoutS)
 	var shape *relayResultShapeError
 	if errors.As(err, &shape) {
-		return nil, &PyError{"AttributeError", shape.Error()}
+		return nil, &errorutil.Error{"AttributeError", shape.Error()}
 	}
 	if err != nil {
-		var pe *PyError
+		var pe *errorutil.Error
 		if errors.As(err, &pe) && pe.Kind == "TimeoutError" {
 			return map[string]any{"success": false, "error": "relay outbound timed out", "ambiguous": true}, nil
 		}
@@ -918,7 +919,7 @@ func (t *WebSocketRelayTransport) send(frame *jsonutil.Object) error {
 	conn := t.conn
 	t.mu.Unlock()
 	if conn == nil {
-		return &PyError{"RuntimeError", "relay transport not connected"}
+		return &errorutil.Error{"RuntimeError", "relay transport not connected"}
 	}
 	text, err := jsonutil.Encode(frame, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
@@ -1212,12 +1213,12 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 	}
 	frame, ok := jsonutil.AsObject(parsed)
 	if !ok {
-		return &PyError{"AttributeError", "a relay frame is " + errchain.Kind(parsed) + ", expected a mapping"}
+		return &errorutil.Error{"AttributeError", "a relay frame is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	typ := frame.ValueOr("type", nil)
 	switch typ.(type) {
 	case []any, *jsonutil.Object:
-		return &PyError{"TypeError", "a relay frame type is " + errchain.Kind(typ) + ", expected text"}
+		return &errorutil.Error{"TypeError", "a relay frame type is " + errchain.Kind(typ) + ", expected text"}
 	}
 	switch typ {
 	case "descriptor":
@@ -1235,7 +1236,7 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 		rawID := frame.ValueOr("requestId", "")
 		switch rawID.(type) {
 		case []any, *jsonutil.Object:
-			return &PyError{"TypeError", "a relay frame id is " + errchain.Kind(rawID) + ", expected text"}
+			return &errorutil.Error{"TypeError", "a relay frame id is " + errchain.Kind(rawID) + ", expected text"}
 		}
 		id, _ := rawID.(string)
 		t.mu.Lock()

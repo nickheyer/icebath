@@ -286,6 +286,6 @@ func PhysicsCheck(profile ModelProfile, budget HardwareBudget, floor int, flashA
 	return &PhysicsRefusal{
 		NeededBytes: needed, AvailableBytes: available,
 		Message: fmt.Sprintf("%s: needs ~%.1f GiB at the %dK floor but only ~%.1f GiB of VRAM+RAM are available — try a smaller model or a supported smaller quant",
-			profile.Name, float64(needed)/gib, pyFloorDiv(int64(floor), 1024), float64(available)/gib),
+			profile.Name, float64(needed)/gib, floorDiv(int64(floor), 1024), float64(available)/gib),
 	}
 }

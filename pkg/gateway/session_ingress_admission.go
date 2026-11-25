@@ -7,6 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 type admissionAuthorKey struct{}
@@ -325,12 +327,12 @@ func fireAdmissionPostDelivery(ctx context.Context, a *SessionAuthority, admissi
 
 // Clears the durable crash marker an event still carries
 func releaseAdmissionTurnMarker(ctx context.Context, a *SessionAuthority, event *MessageEvent) error {
-	if !pyTruthy(event.GatewayActiveTurnToken()) {
+	if !anyutil.IsTrue(event.GatewayActiveTurnToken()) {
 		return nil
 	}
 	clearer, ok := a.Runner.(DurableActiveTurnClearer)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot clear a durable active turn"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "the gateway runner cannot clear a durable active turn"}
 	}
 	return clearer.ClearDurableActiveTurn(ctx, event)
 }
@@ -341,7 +343,7 @@ func pauseNotice(a *SessionAuthority, ref SessionRef, reason string) (any, error
 	live, ok := a.Sessions[ref.SessionID]
 	if !ok {
 		a.mu.Unlock()
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	if live.PauseNotified {
 		a.mu.Unlock()
@@ -400,7 +402,7 @@ func deliverSettled(ctx context.Context, a *SessionAuthority, admissionID string
 		closeProducerTurn(ctx, a, admissionID, ProcessingSuccess)
 		return nil
 	}
-	delivered, sendErr := false, error(&PyError{Kind: "AttributeError", Msg: "the platform adapter cannot unwrap an ephemeral reply"})
+	delivered, sendErr := false, error(&errorutil.Error{Kind: "AttributeError", Msg: "the platform adapter cannot unwrap an ephemeral reply"})
 	if base := delivery.adapter.Base(); base != nil {
 		delivered, sendErr = base.deliverResponse(executionScope(ctx, a, delivery.home), delivery.event, delivery.route, delivery.response)
 	}

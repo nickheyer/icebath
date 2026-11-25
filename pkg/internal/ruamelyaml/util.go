@@ -15,8 +15,6 @@ func in(r rune, set string) bool { return strings.ContainsRune(set, r) }
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-func pyStrRepr(s string) string { return strconv.Quote(s) }
-
 // Python repr of one character, a surrogate kept as its own code point
 func charRepr(r rune) string { return strconv.Quote(string([]rune{r})) }
 
@@ -24,7 +22,7 @@ func charRepr(r rune) string { return strconv.Quote(string([]rune{r})) }
 const intMaxStrDigits = 4300
 
 // ValueError Python int() raises for a decimal text longer than the conversion limit
-func intDigitsLimitError(digits int) *PyException {
+func intDigitsLimitError(digits int) *Exception {
 	return Raise("ValueError", "Exceeds the limit ("+itoa(intMaxStrDigits)+" digits) for integer string conversion: value has "+
 		itoa(digits)+" digits; use sys.set_int_max_str_digits() to increase the limit")
 }

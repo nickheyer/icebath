@@ -154,7 +154,7 @@ func TestStderrTimestampUnopenableLogIsReportedOnOneLine(t *testing.T) {
 	if rc != 1 {
 		t.Fatalf("rc = %d", rc)
 	}
-	want := "icebath stderr timestamp wrapper failed: mkdir " + blocker + ": file exists (*fs.PathError -> syscall.Errno)\n"
+	want := "icebath stderr timestamp wrapper failed: not a directory: " + blocker + "\n"
 	if stderr != want {
 		t.Fatalf("stderr = %q", stderr)
 	}
@@ -170,7 +170,7 @@ func TestStderrTimestampBrokenStdoutEndsPumpWithOneLine(t *testing.T) {
 	if rc != 3 {
 		t.Fatalf("rc = %d", rc)
 	}
-	want := "icebath stderr timestamp wrapper stopped copying the command's stdout: write terminal: broken pipe (*fs.PathError -> syscall.Errno)\n"
+	want := "icebath stderr timestamp wrapper stopped copying the command's stdout: broken pipe: terminal\n"
 	if errOut.String() != want {
 		t.Fatalf("stderr = %q", errOut.String())
 	}

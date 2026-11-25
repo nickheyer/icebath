@@ -305,7 +305,11 @@ func RunCodexAppServerTurn(agent CodexRuntimeAgent, userMessage string, original
 	}
 	interrupted, interruptMessage := consumeUserInterrupt(agent, turn.Interrupted)
 	if turn.ShouldRetire {
-		pkgLog().Warn(fmt.Sprintf("codex app-server session retired (turn error: %s)", anyutil.String(codexNoneIfEmpty(turn.Error))))
+		turnError := turn.Error
+		if turnError == "" {
+			turnError = "none"
+		}
+		pkgLog().Warn(fmt.Sprintf("codex app-server session retired (turn error: %s)", turnError))
 		closeCodexSession(agent)
 	}
 	reply, err := transformCodexReply(agent, turn, turnID)

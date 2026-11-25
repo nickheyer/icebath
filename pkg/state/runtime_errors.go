@@ -32,7 +32,7 @@ func runtimeOneLine(value *string, limit int) *string {
 		return nil
 	}
 	var b strings.Builder
-	for _, r := range strings.Join(pySplitWhitespace(*value), " ") {
+	for _, r := range strings.Join(splitWhitespace(*value), " ") {
 		if unicode.IsPrint(r) {
 			b.WriteRune(r)
 		}

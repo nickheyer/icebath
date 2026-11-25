@@ -76,7 +76,7 @@ func (f *concurrentFuture) setRunningOrNotifyCancel() bool {
 		f.state = futureRunning
 		return true
 	}
-	panic(&pyRuntimeError{msg: "Future in unexpected state"})
+	panic(&runtimeError{msg: "Future in unexpected state"})
 }
 
 // Settles the future with the outcome of its work item

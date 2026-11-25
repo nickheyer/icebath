@@ -374,6 +374,10 @@ func coerceSubagentRequest(request any) (*SubagentLaunchRequest, error) {
 		if list, ok := values[name].([]any); ok {
 			*dst = make([]string, len(list))
 			for i, item := range list {
+				if item == nil {
+					(*dst)[i] = "null"
+					continue
+				}
 				(*dst)[i] = anyutil.String(item)
 			}
 		}
@@ -695,7 +699,7 @@ func runSubagent(ctx context.Context, d SubagentDelegation, record *subagentReco
 	}()
 	if err != nil {
 		result.TerminalState = SubagentFailed
-		result.ErrorClassification = strp(pyErrorTypeName(err))
+		result.ErrorClassification = strp(errorTypeNameValue(err))
 		result.ErrorMessage = clipResult(err.Error())
 	} else {
 		m, isDict := raw.(map[string]any)
@@ -703,7 +707,7 @@ func runSubagent(ctx context.Context, d SubagentDelegation, record *subagentReco
 			m = map[string]any{}
 		}
 		status := "error"
-		if v, ok := m["status"]; ok {
+		if v, ok := m["status"]; ok && v != nil {
 			status = anyutil.String(v)
 		}
 		lifecycleRegistry.mu.Lock()
@@ -836,7 +840,7 @@ func validateSubagentRequest(ctx context.Context, d SubagentDelegation, r *Subag
 	return nil
 }
 
-var lifecycleMethods = map[string][]pyParam{
+var lifecycleMethods = map[string][]paramValue{
 	"launch": {req("request")}, "status": {req("handle")}, "wait": {req("handle"), kwo("timeout_seconds", nil)},
 	"cancel": {req("handle"), kwReq("reason")}, "result": {req("handle")}, "reconnect": {req("handle")}, "steer": {req("handle"), req("text")},
 }

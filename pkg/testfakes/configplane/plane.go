@@ -322,22 +322,15 @@ func (p *Plane) serveToken(w http.ResponseWriter, r *http.Request, raw []byte) {
 	send(w, 200, map[string]any{"access_token": Token, "token_type": "Bearer", "expires_in": 3600}, "")
 }
 
-func pyInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case bool:
-		if n {
-			return 1, true
-		}
-		return 0, true
-	}
-	return 0, false
+// Version a PATCH body names, an integer as loadJSON leaves it; true, false and every other value name none
+func versionNumber(v any) (int, bool) {
+	n, ok := v.(int)
+	return n, ok
 }
 
 func (p *Plane) patch(w http.ResponseWriter, profile string, body map[string]any) {
 	prof := p.Profile(profile)
-	if v, ok := pyInt(body["expectedVersion"]); !ok || v != prof.Version {
+	if v, ok := versionNumber(body["expectedVersion"]); !ok || v != prof.Version {
 		send(w, 409, map[string]any{"error": "config_version_conflict", "message": "stale", "currentVersion": prof.Version}, "")
 		return
 	}

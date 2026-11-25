@@ -214,11 +214,11 @@ func (native *geminiNativeClient) createChatCompletion(ctx context.Context, kwar
 		}
 	}
 	thinking := extra["thinking_config"]
-	if !pyTruthy(thinking) {
+	if !anyutil.IsTrue(thinking) {
 		thinking = extra["thinkingConfig"]
 	}
 	responseFormat := kwargs["response_format"]
-	if !pyTruthy(responseFormat) {
+	if !anyutil.IsTrue(responseFormat) {
 		responseFormat = extra["response_format"]
 	}
 	model := "gemini-3.7-flash"

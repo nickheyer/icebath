@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -21,25 +22,25 @@ type RewindOptions struct {
 
 // Validates an active user originated rewind target and returns its handoff scaffold when asked to keep it
 func (d *SessionDB) splitRewindTarget(targetRow *jsonutil.Object, expectedTargetContent any, preserveCompactionHandoff bool) (map[string]any, error) {
-	if !pyTruthy(targetRow.Value("active")) {
-		return nil, pyValueError("rewind target is not active")
+	if !anyutil.IsTrue(targetRow.Value("active")) {
+		return nil, valueError("rewind target is not active")
 	}
 	view := objMap(targetRow)
 	view["content"] = decodeMessageContent(targetRow.Value("content"))
 	view["display_metadata"] = decodeDisplayMetadata(targetRow.Value("display_metadata"))
 	handoff, liveView := SplitUserOriginatedTurn(view)
 	if liveView == nil {
-		return nil, pyValueError("rewind target is not a user-originated turn")
+		return nil, valueError("rewind target is not a user-originated turn")
 	}
 	liveContent := liveView["content"]
 	if text, ok := liveContent.(string); ok {
-		liveContent = pyStrip(SanitizeContext(text))
+		liveContent = strings.TrimSpace(SanitizeContext(text))
 	}
 	if expectedTargetContent != nil && !anyutil.Equal(liveContent, expectedTargetContent) {
 		return nil, errors.New("rewind target changed before it could be persisted")
 	}
 	if preserveCompactionHandoff && handoff == nil {
-		return nil, pyValueError("preserve_compaction_handoff requires an active composite carrier")
+		return nil, valueError("preserve_compaction_handoff requires an active composite carrier")
 	}
 	if preserveCompactionHandoff {
 		return handoff, nil
@@ -66,11 +67,15 @@ func (d *SessionDB) rewindInTransaction(ctx context.Context, conn SQLiteConn, se
 		return nil, nil, nil, nil, err
 	}
 	if len(rows) == 0 {
-		return nil, nil, nil, nil, pyValueError(fmt.Sprintf("message %d not found in session %s", targetMessageID, sessionID))
+		return nil, nil, nil, nil, valueError(fmt.Sprintf("message %d not found in session %s", targetMessageID, sessionID))
 	}
 	targetRow := rows[0]
 	if role := targetRow.Value("role"); role != "user" {
-		return nil, nil, nil, nil, pyValueError(fmt.Sprintf("rewind target must be a 'user' message (got role=%s, id=%d)", anyutil.Quote(role), targetMessageID))
+		got := "null"
+		if role != nil {
+			got = anyutil.Quote(role)
+		}
+		return nil, nil, nil, nil, valueError(fmt.Sprintf(`rewind target must be a "user" message (got role=%s, id=%d)`, got, targetMessageID))
 	}
 	var replacement map[string]any
 	if o.PreserveCompactionHandoff || o.ExpectedTargetContent != nil {
@@ -97,7 +102,7 @@ func (d *SessionDB) rewindInTransaction(ctx context.Context, conn SQLiteConn, se
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		id, _ := pyIntID(last["id"])
+		id, _ := intID(last["id"])
 		replacementID = &id
 	}
 	if _, err := conn.ExecContext(ctx, "UPDATE sessions SET rewind_count = COALESCE(rewind_count, 0) + 1 WHERE id = ?", sessionID); err != nil {
@@ -170,8 +175,8 @@ func (d *SessionDB) PurgeStaleToolCallMarkers(ctx context.Context, dryRun, backu
 		}
 		ids := []int64{}
 		for _, row := range rows {
-			if text, ok := row["content"].(string); ok && staleToolCallMarkerRe.MatchString(pyStrip(text)) {
-				id, _ := pyIntID(row["id"])
+			if text, ok := row["content"].(string); ok && staleToolCallMarkerRe.MatchString(strings.TrimSpace(text)) {
+				id, _ := intID(row["id"])
 				ids = append(ids, id)
 			}
 		}

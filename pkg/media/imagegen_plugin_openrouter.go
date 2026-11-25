@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -372,7 +373,7 @@ func orImageAPIErrorMessage(status int, body []byte) string {
 	}
 	errObj, ok := errNode.(map[string]any)
 	if !ok {
-		if pyTruthy(parsed) {
+		if anyutil.IsTrue(parsed) {
 			return orClippedJSON(parsed, 300)
 		}
 		return fallback

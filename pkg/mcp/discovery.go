@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reports whether the server's run goroutine is still alive
@@ -25,10 +26,11 @@ func (s *serverTask) runAlive() bool {
 	}
 }
 
-// TimeoutError is a connect that outlived its connect_timeout, reported by class name like the bare Python exception
+// TimeoutError is a connect that outlived its connect_timeout
 type TimeoutError struct{}
 
-func (*TimeoutError) Error() string { return "" }
+// What the user is told about a connect that outlived its deadline
+func (*TimeoutError) Error() string { return "the server did not answer in time" }
 
 // Marks the error as a timeout for callers that test for one
 func (*TimeoutError) Timeout() bool { return true }
@@ -200,13 +202,13 @@ func ensureLazyServerConnected(ctx context.Context, env *tools.Env, serverName s
 			deregisterMCPToolForKey(ctx, key, n)
 		}
 		pkgLog().Info(fmt.Sprintf("MCP server '%s': deregistered %d phantom cached tool(s) not served live (stale schema-cache fingerprint %s): %s",
-			serverName, len(phantom), pyNoneOr(staleFingerprint), strings.Join(phantom, ", ")))
+			serverName, len(phantom), noneOr(staleFingerprint), strings.Join(phantom, ", ")))
 	}
 	return srv != nil && srv.currentSession() != nil
 }
 
 // Python str of an optional string, None when empty
-func pyNoneOr(s string) string {
+func noneOr(s string) string {
 	if s == "" {
 		return "None"
 	}
@@ -394,7 +396,7 @@ func discoverAll(ctx context.Context, env *tools.Env, fresh map[string]*Rendered
 		}
 		command := ""
 		if c, ok := fresh[name].Config["command"]; ok && c != nil && c != "" {
-			command = fmt.Sprintf(" (command=%s)", pyStr(c))
+			command = fmt.Sprintf(" (command=%s)", anyutil.String(c))
 		}
 		message := noteConnectFailure(ctx, name, errs[i])
 		pkgLog().Warn(fmt.Sprintf("Failed to connect to MCP server '%s'%s: %s%s", name, command, message, stderrTailNote(ctx, name)))
@@ -513,7 +515,7 @@ func logSummary(ctx context.Context, prefix string, names []string, lazyTools, l
 func registerMCPServers(ctx context.Context, env *tools.Env, servers map[string]*Rendered) []string {
 	names, err := Connect(ctx, env, servers)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %s", pyNoneOr(mcpRegistryScope(ctx)), excStr(err)))
+		pkgLog().Debug(fmt.Sprintf("MCP: re-registration for profile scope %s failed: %s", noneOr(mcpRegistryScope(ctx)), excStr(err)))
 	}
 	return names
 }
@@ -1032,7 +1034,7 @@ func Status(ctx context.Context, env *tools.Env, configured map[string]*Rendered
 		if _, ok := cfg["url"]; ok {
 			transport = "http"
 			if t, ok := cfg["transport"]; ok {
-				transport = pyStr(t)
+				transport = anyutil.String(t)
 			}
 		}
 		entry := ServerStatus{Name: name, Transport: transport, Disabled: status == "disabled", Status: status}

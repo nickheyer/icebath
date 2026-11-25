@@ -284,9 +284,6 @@ func TestConversationRootIDFallbacks(t *testing.T) {
 }
 
 func TestRuntimeHelpersSmall(t *testing.T) {
-	if pyStrRepr("it's") != `"it's"` || pyStrRepr("gpt-5.5") != "'gpt-5.5'" || pyStrRepr("a'b\"c") != `'a\'b"c'` {
-		t.Fatal("repr")
-	}
 	a := &AIAgent{model: "m", provider: "p", baseURL: "u", apiKey: "k", apiMode: "chat_completions", sessionID: "s"}
 	want := map[string]any{"model": "m", "provider": "p", "base_url": "u", "api_key": "k", "api_mode": "chat_completions", "auth_mode": "", "session_id": "s"}
 	if !reflect.DeepEqual(a.currentMainRuntime(context.Background()), want) {

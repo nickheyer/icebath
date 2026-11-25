@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var settingsFieldTypes = map[string]string{
@@ -79,7 +81,7 @@ func decodeRawObject(raw []byte) ([]string, map[string]json.RawMessage, error) {
 	return keys, values, nil
 }
 
-// Keys and decoded values of a JSON object in document order
+// Keys and decoded values of a JSON object in document order, objects inside as plain maps, integers as int64 and other numbers as float64
 func DecodeOrderedObject(raw []byte) ([]string, map[string]any, error) {
 	keys, rawValues, err := decodeRawObject(raw)
 	if err != nil {
@@ -87,11 +89,11 @@ func DecodeOrderedObject(raw []byte) ([]string, map[string]any, error) {
 	}
 	values := make(map[string]any, len(rawValues))
 	for k, v := range rawValues {
-		var decoded any
-		if err := json.Unmarshal(v, &decoded); err != nil {
+		decoded, err := jsonutil.Decode(v)
+		if err != nil {
 			return nil, nil, err
 		}
-		values[k] = decoded
+		values[k] = jsonutil.Plain(decoded)
 	}
 	return keys, values, nil
 }
@@ -124,7 +126,7 @@ func yamlSchemaEntries(node *yaml.Node) []schemaEntry {
 			continue
 		}
 		if m, ok := value.(map[string]any); ok {
-			out = append(out, schemaEntry{key: config.PyStr(key), spec: normalizeAnyMaps(m)})
+			out = append(out, schemaEntry{key: anyutil.String(key), spec: normalizeAnyMaps(m)})
 		}
 	}
 	return out
@@ -208,7 +210,7 @@ func settingsFieldType(spec map[string]any) string {
 	}
 	name := "str"
 	if jsonTruthy(spec["type"]) {
-		name = config.PyStr(spec["type"])
+		name = anyutil.String(spec["type"])
 	}
 	kind, ok := settingsFieldTypes[strings.ToLower(name)]
 	if !ok {
@@ -236,14 +238,14 @@ func PluginSettingsFields(ctx context.Context, h, pluginID, pluginDir string) []
 		kind := settingsFieldType(spec)
 		label := item.key
 		if jsonTruthy(spec["label"]) {
-			label = config.PyStr(spec["label"])
+			label = anyutil.String(spec["label"])
 		} else if jsonTruthy(spec["title"]) {
-			label = config.PyStr(spec["title"])
+			label = anyutil.String(spec["title"])
 		}
 		field := map[string]any{
 			"key": item.key, "type": kind, "label": label,
-			"description": config.PyStr(orNil(spec["description"])),
-			"required":    config.PyTruthy(spec["required"]),
+			"description": anyutil.String(orNil(spec["description"])),
+			"required":    anyutil.IsTrue(spec["required"]),
 		}
 		if kind == "secret" {
 			env := SecretEnvName(pluginID, item.key, spec)
@@ -254,7 +256,7 @@ func PluginSettingsFields(ctx context.Context, h, pluginID, pluginDir string) []
 			if kind == "enum" {
 				var choices []any
 				for _, c := range fieldChoices(spec).([]any) {
-					choices = append(choices, config.PyStr(c))
+					choices = append(choices, anyutil.String(c))
 				}
 				field["choices"] = choices
 			}
@@ -337,7 +339,7 @@ func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, valu
 		if kind == "enum" {
 			allowed := false
 			for _, c := range fieldChoices(spec).([]any) {
-				if config.PyStr(c) == kv.Value.(string) {
+				if anyutil.String(c) == kv.Value.(string) {
 					allowed = true
 					break
 				}

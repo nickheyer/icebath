@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // MaxReferencedScriptBytes caps one referenced script read by the lifecycle walk
@@ -209,7 +210,7 @@ func ResolveLifecycleScriptPath(h, scriptPath string) (string, bool) {
 	return resolveScriptPath(h, scriptPath)
 }
 
-// Resolves a cron script value the way the scheduler does, relative names live under home scripts
+// Resolves a cron script value the way the scheduler does, relative names live under home scripts and a dot-dot after a symlink keeps naming the file the scheduler runs
 func resolveScriptPath(h, scriptPath string) (string, bool) {
 	raw, ok := expandCandidatePath(scriptPath)
 	if !ok {
@@ -221,16 +222,20 @@ func resolveScriptPath(h, scriptPath string) (string, bool) {
 	if strings.TrimSpace(h) == "" {
 		return "", false
 	}
-	return filepath.Join(h, "scripts", raw), true
+	return pathutil.JoinKeepDotDot(h, "scripts", raw), true
 }
 
-// Directory a script path resolves to, empty when it has none
+// Directory of the script once its symlinks are followed, the working directory the scheduler runs it in, empty when it has none
 func resolveScriptDirectory(h, scriptPath string) string {
 	path, ok := resolveScriptPath(h, scriptPath)
 	if !ok || !filepath.IsAbs(path) {
 		return ""
 	}
-	return filepath.Dir(path)
+	resolved, err := pathutil.Resolve(path)
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(resolved)
 }
 
 // Values given to an option in both separated and equals form

@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -19,12 +20,12 @@ import (
 // Replays the newest paired todo tool result into the todo store when its revision is newer
 func (a *AIAgent) hydrateTodoStore(ctx context.Context, history []map[string]any) {
 	if todos, revision, found := a.latestTodoResponse(history); found {
-		historyRevision, ok := pyIntCoerce(pyOr(revision, 0))
+		historyRevision, ok := intCoerce(anyutil.Or(revision, 0))
 		if !ok {
 			historyRevision = 1
 		}
 		historyRevision = max(0, historyRevision)
-		current, _ := pyIntCoerce(pyOr(a.todoStore.Snapshot()["revision"], 0))
+		current, _ := intCoerce(anyutil.Or(a.todoStore.Snapshot()["revision"], 0))
 		if historyRevision > current {
 			a.todoStore.Restore(todos, historyRevision)
 			if !a.quietMode {
@@ -33,14 +34,6 @@ func (a *AIAgent) hydrateTodoStore(ctx context.Context, history []map[string]any
 		}
 	}
 	tools.SetInterrupt(tools.WorkerOf(ctx), false, "")
-}
-
-// Python x or y over JSON values
-func pyOr(v, def any) any {
-	if pyTruthy(v) {
-		return v
-	}
-	return def
 }
 
 // Newest paired size bounded todo result as its todos and revision
@@ -169,10 +162,10 @@ func getToolCallNameStatic(tc any) string {
 
 // True for an assistant turn whose only payload is reasoning with no text and no tool calls
 func isThinkingOnlyAssistant(msg map[string]any, dropCodexReasoningItems bool) bool {
-	if msg == nil || msg["role"] != "assistant" || pyTruthy(msg["tool_calls"]) {
+	if msg == nil || msg["role"] != "assistant" || anyutil.IsTrue(msg["tool_calls"]) {
 		return false
 	}
-	if pyTruthy(msg["_thinking_prefill"]) {
+	if anyutil.IsTrue(msg["_thinking_prefill"]) {
 		return true
 	}
 	if contentHasRealPayload(msg["content"]) {
@@ -181,7 +174,7 @@ func isThinkingOnlyAssistant(msg map[string]any, dropCodexReasoningItems bool) b
 	if provider.HasCompactionCheckpoint(dictItems(msg["codex_reasoning_items"])) {
 		return false
 	}
-	reasoning := pyOr(msg["reasoning_content"], msg["reasoning"])
+	reasoning := anyutil.Or(msg["reasoning_content"], msg["reasoning"])
 	if s, ok := reasoning.(string); ok && strings.TrimSpace(s) != "" {
 		return true
 	}
@@ -207,7 +200,7 @@ func contentHasRealPayload(content any) bool {
 		for _, block := range c {
 			b, ok := block.(map[string]any)
 			if !ok {
-				if pyTruthy(block) {
+				if anyutil.IsTrue(block) {
 					return true
 				}
 				continue

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -35,8 +36,8 @@ func usageTotals(t *testing.T, d *SessionDB, id string) usageTotalsRow {
 	if err != nil || row == nil {
 		t.Fatalf("totals of %s: %v %v", id, row, err)
 	}
-	est, _ := pyFloatOf(orZero(rowValue(row, "estimated_cost_usd")))
-	n := func(k string) int64 { v, _ := pyIntOf(orZero(rowValue(row, k))); return v.Int64() }
+	est, _ := floatOf(orZero(rowValue(row, "estimated_cost_usd")))
+	n := func(k string) int64 { v, _ := intOfValue(orZero(rowValue(row, k))); return v.Int64() }
 	return usageTotalsRow{n("input_tokens"), n("output_tokens"), n("api_call_count"), est}
 }
 
@@ -60,7 +61,7 @@ func TestTokenDeltasApplyInEnqueueOrder(t *testing.T) {
 	var applied, expected []string
 	setUpdateHook(d, func(id string, delta TokenCountDelta) error {
 		mu.Lock()
-		applied = append(applied, id+":"+pyStr(delta.InputTokens))
+		applied = append(applied, id+":"+anyutil.String(delta.InputTokens))
 		mu.Unlock()
 		return d.UpdateTokenCounts(id, delta)
 	})
@@ -72,13 +73,13 @@ func TestTokenDeltasApplyInEnqueueOrder(t *testing.T) {
 		if err := d.QueueTokenCounts(id, TokenCountDelta{InputTokens: i, APICallCount: 1}); err != nil {
 			t.Fatal(err)
 		}
-		expected = append(expected, id+":"+pyStr(i))
+		expected = append(expected, id+":"+anyutil.String(i))
 	}
 	if !d.FlushTokenCounts(5.0) {
 		t.Fatal("flush timed out")
 	}
 	setUpdateHook(d, nil)
-	if pyStr(applied) != pyStr(expected) {
+	if anyutil.String(applied) != anyutil.String(expected) {
 		t.Fatalf("applied %v want %v", applied, expected)
 	}
 	if usageTotals(t, d, "s-a").input != 9 || usageTotals(t, d, "s-b").input != 12 {
@@ -145,7 +146,7 @@ func TestTokenBacklogCoalescesAndSumsMatch(t *testing.T) {
 		t.Fatalf("totals %+v", got)
 	}
 	rows, err := d.readAll(context.Background(), "SELECT input_tokens, api_call_count FROM session_model_usage WHERE session_id = ?", "s-c")
-	if err != nil || len(rows) != 1 || pyStr(rowValue(rows[0], "input_tokens")) != "20" || pyStr(rowValue(rows[0], "api_call_count")) != "20" {
+	if err != nil || len(rows) != 1 || anyutil.String(rowValue(rows[0], "input_tokens")) != "20" || anyutil.String(rowValue(rows[0], "api_call_count")) != "20" {
 		t.Fatalf("model usage rows %v %v", rows, err)
 	}
 }
@@ -172,7 +173,7 @@ func TestCoalescedApplyEqualsSequentialApply(t *testing.T) {
 	q := "SELECT model, input_tokens, output_tokens, api_call_count, ROUND(estimated_cost_usd, 9) AS est FROM session_model_usage WHERE session_id = 's-eq' ORDER BY model"
 	a, _ := d.readAll(context.Background(), q)
 	b, _ := seq.readAll(context.Background(), q)
-	if pyStr(usageTotals(t, d, "s-eq")) != pyStr(usageTotals(t, seq, "s-eq")) || len(a) != 2 || dumpRows(a) != dumpRows(b) {
+	if anyutil.String(usageTotals(t, d, "s-eq")) != anyutil.String(usageTotals(t, seq, "s-eq")) || len(a) != 2 || dumpRows(a) != dumpRows(b) {
 		t.Fatalf("coalesced %v sequential %v", a, b)
 	}
 }
@@ -187,11 +188,11 @@ func TestGetSessionSeesQueuedDeltas(t *testing.T) {
 		return d.UpdateTokenCounts(id, delta)
 	})
 	for i := int64(1); i < 5; i++ {
-		_ = d.QueueTokenCounts("s-r", TokenCountDelta{InputTokens: i, Model: strPtr("m" + pyStr(i%2)), APICallCount: 1})
+		_ = d.QueueTokenCounts("s-r", TokenCountDelta{InputTokens: i, Model: strPtr("m" + anyutil.String(i%2)), APICallCount: 1})
 	}
 	row, err := d.GetSession(context.Background(), "s-r")
 	setUpdateHook(d, nil)
-	if err != nil || pyStr(rowValue(row, "input_tokens")) != "10" || pyStr(rowValue(row, "api_call_count")) != "4" {
+	if err != nil || anyutil.String(rowValue(row, "input_tokens")) != "10" || anyutil.String(rowValue(row, "api_call_count")) != "4" {
 		t.Fatalf("row %v %v", row, err)
 	}
 }
@@ -388,7 +389,7 @@ func TestTokenGuardInsertCarriesRealSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	row, err := d.GetSession(context.Background(), "s-src")
-	if err != nil || !pyEquals(rowValue(row, "source"), "telegram") || !pyEquals(rowValue(row, "created_source"), "telegram") {
+	if err != nil || !equals(rowValue(row, "source"), "telegram") || !equals(rowValue(row, "created_source"), "telegram") {
 		t.Fatalf("row %v %v", row, err)
 	}
 	if err := d.UpdateTokenCounts("s-unk", TokenCountDelta{InputTokens: 1, APICallCount: 1}); err != nil {
@@ -397,7 +398,7 @@ func TestTokenGuardInsertCarriesRealSource(t *testing.T) {
 	if err := d.CreateSession(NewSession{ID: "s-unk", Source: "cli"}); err != nil {
 		t.Fatal(err)
 	}
-	if row, _ := d.GetSession(context.Background(), "s-unk"); !pyEquals(rowValue(row, "source"), "cli") {
+	if row, _ := d.GetSession(context.Background(), "s-unk"); !equals(rowValue(row, "source"), "cli") {
 		t.Fatalf("placeholder source not replaced %v", row)
 	}
 }
@@ -415,7 +416,7 @@ func TestModelUsageFallsBackToSessionRouteExceptForAux(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows, _ := d.readAll(ctx, "SELECT model, task, api_call_count FROM session_model_usage WHERE session_id = 's-m' ORDER BY task")
-	if len(rows) != 2 || !pyEquals(rowValue(rows[0], "model"), "main-model") || !pyEquals(rowValue(rows[1], "model"), "unknown") {
+	if len(rows) != 2 || !equals(rowValue(rows[0], "model"), "main-model") || !equals(rowValue(rows[1], "model"), "unknown") {
 		t.Fatalf("rows %v", rows)
 	}
 	byTask, err := d.AuxiliaryUsageByTask(ctx, "s-m")
@@ -453,7 +454,7 @@ func TestIsKanbanOwnedSessionFollowsVerifiedLineage(t *testing.T) {
 		}
 	}
 	lineage, _ := d.resumeLineageIDs(ctx, "tip")
-	if pyStr(lineage) != pyStr([]string{"root", "tip"}) {
+	if anyutil.String(lineage) != anyutil.String([]string{"root", "tip"}) {
 		t.Fatalf("lineage %v", lineage)
 	}
 	if fork, _ := d.IsExplicitForkChild(ctx, "fork"); !fork {

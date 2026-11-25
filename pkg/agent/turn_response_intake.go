@@ -67,7 +67,7 @@ func coerceContentText(raw any) (any, error) {
 						return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("content part %d text is %s where text was expected", i, errchain.Kind(text))}
 					}
 					parts = append(parts, s)
-				} else if text, has := p["text"]; has {
+				} else if text := p["text"]; text != nil {
 					parts = append(parts, anyutil.String(text))
 				}
 			}
@@ -101,7 +101,7 @@ func firePostAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, assis
 	if msg == nil {
 		msg = &state.Message{}
 	}
-	contentChars, ok := pySizedLen(msg.Content)
+	contentChars, ok := sizedLen(msg.Content)
 	if !ok {
 		return
 	}
@@ -123,7 +123,7 @@ func firePostAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, assis
 }
 
 // Python len of value or empty text, false when the value has no length
-func pySizedLen(v any) (int, bool) {
+func sizedLen(v any) (int, bool) {
 	if !anyutil.IsTrue(v) {
 		return 0, true
 	}

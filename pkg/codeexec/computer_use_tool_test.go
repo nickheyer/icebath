@@ -269,7 +269,7 @@ func TestSummarizeActionPrompts(t *testing.T) {
 	}{
 		{"click", map[string]any{"element": int64(3)}, "click element #3"},
 		{"double_click", map[string]any{"coordinate": []any{int64(10), int64(20)}, "delivery_mode": "foreground"}, "double_click at 10, 20" + cuForegroundSuffix},
-		{"drag", map[string]any{"from_element": int64(1), "to_coordinate": []any{int64(5), int64(6)}}, "drag 1 → [5, 6]"},
+		{"drag", map[string]any{"from_element": int64(1), "to_coordinate": []any{int64(5), int64(6)}}, "drag 1 → [5,6]"},
 		{"scroll", map[string]any{}, "scroll ? x3"},
 		{"type", map[string]any{"text": long}, "type " + strings.Repeat("a", 60) + "..."},
 		{"key", map[string]any{"keys": "cmd+s"}, "key cmd+s"},

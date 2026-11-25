@@ -353,13 +353,13 @@ func NewThreadParticipationTracker(ctx context.Context, platform string, maxTrac
 	return t
 }
 
-// Thread ids of the state file, empty when it is missing, unreadable or not a list
+// Thread ids of the state file in file order, each entry by its text and null entries skipped as naming no thread; the file is JSON text in UTF-8, UTF-16 or UTF-32 with or without a byte order mark, and is read as empty when missing, not valid text in its encoding, not JSON or not a list
 func (t *ThreadParticipationTracker) load(ctx context.Context) []string {
 	raw, err := os.ReadFile(threadTrackerStatePath(ctx, t.platform))
 	if err != nil {
 		return nil
 	}
-	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
+	text, err := jsonutil.Text(raw)
 	if err != nil {
 		return nil
 	}
@@ -368,9 +368,11 @@ func (t *ThreadParticipationTracker) load(ctx context.Context) []string {
 	if err != nil || !ok {
 		return nil
 	}
-	out := make([]string, len(list))
-	for i, id := range list {
-		out[i] = anyutil.String(id)
+	out := make([]string, 0, len(list))
+	for _, id := range list {
+		if id != nil {
+			out = append(out, anyutil.String(id))
+		}
 	}
 	return out
 }
@@ -382,7 +384,7 @@ func (t *ThreadParticipationTracker) save(ctx context.Context) error {
 	t.mu.Lock()
 	list := t.threads.Keys()
 	if len(list) > t.maxTracked {
-		list = list[pyNegativeSliceStart(len(list), t.maxTracked):]
+		list = list[negativeSliceStart(len(list), t.maxTracked):]
 		t.threads = orderedutil.NewMap[string, struct{}]()
 		for _, id := range list {
 			t.threads.Set(id, struct{}{})
@@ -397,7 +399,7 @@ func (t *ThreadParticipationTracker) save(ctx context.Context) error {
 }
 
 // Start index Python takes for seq[-n:] over a sequence of the given size, any sign of n
-func pyNegativeSliceStart(size, n int) int {
+func negativeSliceStart(size, n int) int {
 	switch {
 	case n > 0:
 		return max(size-n, 0)

@@ -1345,7 +1345,7 @@ func attestedPidsFrom(data any) []int64 {
 	pids := make([]int64, 0, len(list))
 	for _, p := range list {
 		n, isInt := anyutil.Int(p)
-		if !pyIsInt(p) || !isInt || n <= 0 {
+		if !isIntValue(p) || !isInt || n <= 0 {
 			return nil
 		}
 		pids = append(pids, n)
@@ -1365,15 +1365,15 @@ func attestedCreateTime(data any, pid int64) *float64 {
 		return nil
 	}
 	value, _ := times.Get(strconv.FormatInt(pid, 10))
-	if f, ok := pyFloatOf(value); ok {
+	if f, ok := floatOf(value); ok {
 		return &f
 	}
 	return nil
 }
 
 // Whether a decoded JSON value equals pid under Python numeric equality
-func pyEqualsInt(v any, pid int64) bool {
-	r, ok := pyNumber(v)
+func equalsInt(v any, pid int64) bool {
+	r, ok := numberOf(v)
 	return ok && r != nil && r.Cmp(new(big.Rat).SetInt64(pid)) == 0
 }
 
@@ -1395,24 +1395,24 @@ func attestedPidExitedCleanly(ctx context.Context, pid int64, createTime *float6
 	}
 	recorded, _ := obj.Get("pid")
 	if createTime != nil {
-		if !pyEqualsInt(recorded, pid) {
+		if !equalsInt(recorded, pid) {
 			return true
 		}
 		birth, _ := obj.Get("create_time")
-		if f, ok := pyFloatOf(birth); ok && max(f-*createTime, *createTime-f) > attestationCreateTimeTolerS {
+		if f, ok := floatOf(birth); ok && max(f-*createTime, *createTime-f) > attestationCreateTimeTolerS {
 			return true
 		}
 	}
 	phase, _ := obj.Get("phase")
-	return phase == "exited" && pyEqualsInt(recorded, pid)
+	return phase == "exited" && equalsInt(recorded, pid)
 }
 
 // Float of a JSON int or float, false for anything else including bools
-func pyFloatOf(v any) (float64, bool) {
+func floatOf(v any) (float64, bool) {
 	if f, ok := v.(float64); ok {
 		return f, true
 	}
-	if n, ok := anyutil.Int(v); ok && pyIsInt(v) {
+	if n, ok := anyutil.Int(v); ok && isIntValue(v) {
 		return float64(n), true
 	}
 	return 0, false
@@ -1457,9 +1457,9 @@ func CheckStartAttestation(ctx context.Context, currentPids []int, scanned bool)
 }
 
 // Truthy value of key rendered with str, else the fallback
-func pyOrStr(obj *jsonutil.Object, key, fallback string) string {
+func objectTextOr(obj *jsonutil.Object, key, fallback string) string {
 	v, _ := obj.Get(key)
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return fallback
 	}
 	return anyutil.String(v)
@@ -1472,7 +1472,7 @@ func formatAttestationWarning(ctx context.Context, attested []int64, data *jsonu
 		parts[i] = strconv.FormatInt(p, 10)
 	}
 	lines := []string{
-		"⚠ The previous gateway start (" + pyOrStr(data, "via", "direct spawn") + ", " + pyOrStr(data, "ts", "unknown time") + ") reported success, but the " +
+		"⚠ The previous gateway start (" + objectTextOr(data, "via", "direct spawn") + ", " + objectTextOr(data, "ts", "unknown time") + ") reported success, but the " +
 			"process (PID " + strings.Join(parts, ", ") + ") died without a clean " + "shutdown record.",
 		"  This usually means the shell that ran `icebath gateway start` was inside " + "a Windows Job Object that killed the gateway on exit (#91675).",
 	}

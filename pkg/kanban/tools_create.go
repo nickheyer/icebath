@@ -88,7 +88,7 @@ func handleCreate(k *kanbanCall) (string, error) {
 	}
 	modelOverride, providerOverride := k.get("model"), k.get("provider")
 	if !anyutil.IsTrue(modelOverride) && anyutil.IsTrue(providerOverride) {
-		return "", reject("'provider' requires 'model' to be set as well")
+		return "", reject(`"provider" requires "model" to be set as well`)
 	}
 	rawParents := k.get("parents")
 	if !anyutil.IsTrue(rawParents) {
@@ -299,7 +299,7 @@ func handleCreate(k *kanbanCall) (string, error) {
 				parent, present = items.Get("parent")
 			}
 			if !present {
-				return "", &RuntimeError{"'parent'"}
+				return "", &RuntimeError{"the dependency_wait event of " + newTID + " names no parent"}
 			}
 			fields = append(fields, "gated", true, "gated_by", parent)
 		}
@@ -333,7 +333,7 @@ func createArgumentError(err error, workspaceKind any, parentItems []any) error 
 	if _, isText := workspaceKind.(string); workspaceKind != nil && !isText {
 		passed := ", got " + anyutil.String(workspaceKind)
 		if strings.HasPrefix(ve.Msg, "workspace_kind must be one of ") && strings.HasSuffix(ve.Msg, passed) {
-			if !pyHashable(workspaceKind) {
+			if !hashable(workspaceKind) {
 				return unhashableSetError(workspaceKind)
 			}
 			return &ValueError{strings.TrimSuffix(ve.Msg, passed) + ", got " + errchain.Show(workspaceKind)}

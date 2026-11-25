@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func resetPickerPrewarmGuard(t *testing.T) {
@@ -89,7 +90,7 @@ func skeletonSlugs(t *testing.T, pc PickerConfigContext) map[string]bool {
 	t.Helper()
 	out := map[string]bool{}
 	for _, r := range appendUnconfiguredRows(context.Background(), nil, pc, false) {
-		out[strings.ToLower(pyStr(r["slug"]))] = true
+		out[strings.ToLower(anyutil.String(r["slug"]))] = true
 	}
 	return out
 }

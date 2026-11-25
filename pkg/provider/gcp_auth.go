@@ -1567,7 +1567,7 @@ func gcpWireClient(client *http.Client) *http.Client {
 	out := *client
 	base := client.Transport
 	if base == nil {
-		base = pyStackWireTransport(120*time.Second, 10)
+		base = stackWireTransport(120*time.Second, 10)
 	}
 	out.Transport = httputil.DecodingTransport(base)
 	return &out

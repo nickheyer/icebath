@@ -297,7 +297,7 @@ func (a *TelegramAdapter) SendChoicePicker(ctx context.Context, chatID, title st
 		var buttons []models.InlineKeyboardButton
 		for i, choice := range choices {
 			label := anyutil.String(anyutil.Or(choice["label"], anyutil.Or(choice["value"], "")))
-			if pyTruthy(choice["is_current"]) {
+			if anyutil.IsTrue(choice["is_current"]) {
 				label = "✓ " + label
 			}
 			buttons = append(buttons, button(label, fmt.Sprintf("cp:%d", i)))
@@ -385,7 +385,7 @@ func (a *TelegramAdapter) handleChoicePickerCallback(ctx context.Context, q call
 	if state == nil {
 		return q.answer(ctx, toast(ctx, "platform.telegram.picker.expired_rerun", nil))
 	}
-	idx, err := pyIntOf(data[3:])
+	idx, err := intOf(data[3:])
 	if err == nil && idx < 0 {
 		idx += len(state.choices)
 	}
@@ -437,7 +437,7 @@ func stringList(v any) []string {
 // Provider button with its model count and the current marker
 func providerButton(p map[string]any) models.InlineKeyboardButton {
 	label := fmt.Sprintf("%s (%s)", anyutil.String(p["name"]), anyutil.String(providerModelCount(p)))
-	if pyTruthy(p["is_current"]) {
+	if anyutil.IsTrue(p["is_current"]) {
 		label = "✓ " + label
 	}
 	return button(label, "mp:"+anyutil.String(p["slug"]))
@@ -503,8 +503,8 @@ func (a *TelegramAdapter) buildProviderKeyboard(ctx context.Context, providers [
 				if !ok {
 					continue
 				}
-				count += pyCount(providerModelCount(member))
-				current = current || pyTruthy(member["is_current"])
+				count += countValue(providerModelCount(member))
+				current = current || anyutil.IsTrue(member["is_current"])
 			}
 			label := fmt.Sprintf("%s ▸ (%d)", row.Label, count)
 			if current {
@@ -520,7 +520,7 @@ func (a *TelegramAdapter) buildProviderKeyboard(ctx context.Context, providers [
 }
 
 // Integer of a count value
-func pyCount(v any) int {
+func countValue(v any) int {
 	switch t := v.(type) {
 	case int:
 		return t
@@ -576,14 +576,14 @@ func (a *TelegramAdapter) pickerShowModels(ctx context.Context, q callbackQuery,
 	keyboard, pageInfo := a.buildModelKeyboard(ctx, modelIDs, page)
 	total := len(modelIDs)
 	if p != nil {
-		total = pyCount(providerModelCount(p))
+		total = countValue(providerModelCount(p))
 	}
 	extra := ""
 	if total > len(modelIDs) {
 		extra = "\n_" + tr(ctx, "platform.telegram.picker.more_available", "count", strconv.Itoa(total-len(modelIDs))) + "_"
 	}
 	planLine := ""
-	if p != nil && pyTruthy(p["plan_line"]) {
+	if p != nil && anyutil.IsTrue(p["plan_line"]) {
 		planLine = "\n⚠️ " + anyutil.String(p["plan_line"])
 	}
 	text := fmt.Sprintf("⚙ *%s*\n\n%s%s%s\n%s%s", tr(ctx, "platform.telegram.picker.title"),
@@ -611,7 +611,7 @@ func (a *TelegramAdapter) pickerShowProviders(ctx context.Context, q callbackQue
 
 // Resolves an mm or mc index into the model, provider and callback, answering and returning false on error
 func (a *TelegramAdapter) pickerSelection(ctx context.Context, q callbackQuery, state *modelPickerState, rawIdx string) (int, string, string, bool, error) {
-	idx, err := pyIntOf(rawIdx)
+	idx, err := intOf(rawIdx)
 	if err != nil {
 		return 0, "", "", false, q.answer(ctx, toast(ctx, "platform.telegram.picker.invalid_selection", nil))
 	}
@@ -650,7 +650,7 @@ func (a *TelegramAdapter) pickerSwitch(ctx context.Context, q callbackQuery, cha
 
 // Page number of a callback, answering the invalid page toast when it does not parse
 func parsePage(ctx context.Context, q callbackQuery, raw string) (int, bool, error) {
-	page, err := pyIntOf(raw)
+	page, err := intOf(raw)
 	if err != nil {
 		return 0, false, q.answer(ctx, toast(ctx, "platform.telegram.picker.invalid_page", nil))
 	}
@@ -930,7 +930,7 @@ func (a *TelegramAdapter) handleExecApprovalCallback(ctx context.Context, q call
 		return nil
 	}
 	choice := parts[1]
-	approvalID, err := pyIntOf(parts[2])
+	approvalID, err := intOf(parts[2])
 	if err != nil {
 		return q.answer(ctx, toast(ctx, "platform.telegram.approval.toast_invalid_data", nil))
 	}
@@ -1056,7 +1056,7 @@ func (a *TelegramAdapter) handleClarifyCallback(ctx context.Context, q callbackQ
 			html.EscapeString(tr(ctx, "platform.telegram.prompt.awaiting_typed", "user", user))))
 		return nil
 	}
-	idx, convErr := pyIntOf(token)
+	idx, convErr := intOf(token)
 	if convErr != nil {
 		return q.answer(ctx, toast(ctx, "platform.telegram.prompt.invalid_choice", nil))
 	}

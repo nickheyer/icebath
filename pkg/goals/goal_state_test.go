@@ -308,12 +308,12 @@ func TestSlowConstructionDoesNotBlockTheLoop(t *testing.T) {
 	}
 }
 
-func TestGoalStateRowsMatchPythonJSONLayout(t *testing.T) {
+func TestGoalStateRowsAreCompactJSONAndRefuseMalformedRows(t *testing.T) {
 	cases := []struct {
 		dump func() (string, error)
 		want string
 	}{
-		{NewGoalState("café").ToJSON, `{"goal": "café", "status": "active", "turns_used": 0, "max_turns": 20, "created_at": 0.0, "last_turn_at": 0.0, "last_verdict": null, "last_reason": null, "paused_reason": null, "consecutive_parse_failures": 0, "consecutive_transport_failures": 0, "subgoals": [], "waiting_on_pid": null, "waiting_on_session": null, "waiting_until": 0.0, "waiting_on_delegations": 0, "waiting_reason": null, "waiting_since": 0.0, "contract": {"outcome": "", "verification": "", "constraints": "", "boundaries": "", "stop_when": ""}, "gates": []}`},
+		{NewGoalState("café").ToJSON, `{"goal":"café","status":"active","turns_used":0,"max_turns":20,"created_at":0.0,"last_turn_at":0.0,"last_verdict":null,"last_reason":null,"paused_reason":null,"consecutive_parse_failures":0,"consecutive_transport_failures":0,"subgoals":[],"waiting_on_pid":null,"waiting_on_session":null,"waiting_until":0.0,"waiting_on_delegations":0,"waiting_reason":null,"waiting_since":0.0,"contract":{"outcome":"","verification":"","constraints":"","boundaries":"","stop_when":""},"gates":[]}`},
 	}
 	for _, c := range cases {
 		got, err := c.dump()
@@ -330,17 +330,17 @@ func TestGoalStateRowsMatchPythonJSONLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(raw, `"gates": [{"command": "make test", "timeout_seconds": 300, "max_retries": 3, "attempts": 0, "last_exit_code": null, "last_output_tail": ""}]}`) {
+	if !strings.HasSuffix(raw, `"gates":[{"command":"make test","timeout_seconds":300,"max_retries":3,"attempts":0,"last_exit_code":null,"last_output_tail":""}]}`) {
 		t.Fatalf("gates %s", raw)
 	}
 	back, err := GoalStateFromJSON(raw)
 	if err != nil || len(back.Gates) != 1 || back.Gates[0] != NewGoalGate("make test") {
 		t.Fatalf("gates back %#v %v", back, err)
 	}
-	if _, err := GoalStateFromJSON(`{"goal": "g", "gates": 5}`); err == nil || err.Error() != "'int' object is not iterable" {
+	if _, err := GoalStateFromJSON(`{"goal": "g", "gates": 5}`); err == nil || err.Error() != "gates must be an array, got integer" {
 		t.Fatalf("scalar gates error %v", err)
 	}
-	if _, err := GoalStateFromJSON(`[]`); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := GoalStateFromJSON(`[]`); err == nil || err.Error() != "json: value is not an object: found an array" {
 		t.Fatalf("list row error %v", err)
 	}
 }

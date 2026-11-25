@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -515,7 +516,7 @@ func (c *GatewayClient) RPC(ctx context.Context, method string, params map[strin
 	}
 	plain, ok := jsonutil.Plain(result).(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("gateway %s answered %T, not an object", method, result)
+		return nil, fmt.Errorf("gateway %s answered %s, not an object", method, errchain.Kind(result))
 	}
 	return plain, nil
 }
@@ -772,7 +773,7 @@ func DialGatewaySocket(ctx context.Context, target string, protocols []string, m
 	conn, resp, err := dialer.DialContext(ctx, target, http.Header{})
 	if err != nil {
 		if resp != nil && errors.Is(err, websocket.ErrBadHandshake) {
-			return nil, &InvalidStatusError{StatusCode: resp.StatusCode}
+			return nil, HandshakeError(resp, err)
 		}
 		var netErr net.Error
 		var opErr *net.OpError

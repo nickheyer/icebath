@@ -164,16 +164,16 @@ func adoptLegacySidecar(ctx context.Context, h, pluginDir string, record map[str
 	if !ok || !jsonTruthy(data["catalog_name"]) {
 		return nil, nil
 	}
-	sha := strings.ToLower(pyStrOr(data["sha"]))
+	sha := strings.ToLower(anyutil.StringOr(data["sha"], ""))
 	entry := GetLiveCatalogEntry(ctx, anyutil.String(data["catalog_name"]))
 	if pinned, _ := record["pinned"].(bool); entry == nil || !pinned || record["revision"] != sha {
 		return nil, nil
 	}
-	source, _, _ := strings.Cut(pyStrOr(record["source"]), "#")
+	source, _, _ := strings.Cut(anyutil.StringOr(record["source"], ""), "#")
 	if normalizeRepo(source) != normalizeRepo(entry.Repo) {
 		return nil, nil
 	}
-	tier := pyStrOr(data["tier"])
+	tier := anyutil.StringOr(data["tier"], "")
 	if tier == "" {
 		tier = entry.Tier
 	}
@@ -182,7 +182,7 @@ func adoptLegacySidecar(ctx context.Context, h, pluginDir string, record map[str
 
 // Adopts a url install of an archived handoff repo as the catalog entry that superseded it
 func adoptHandoffInstall(ctx context.Context, h, pluginDir string, record map[string]any) (map[string]any, error) {
-	source, _, _ := strings.Cut(pyStrOr(record["source"]), "#")
+	source, _, _ := strings.Cut(anyutil.StringOr(record["source"], ""), "#")
 	name, handedOff := handoffRepos[normalizeRepo(source)]
 	if !handedOff {
 		return nil, nil
@@ -191,16 +191,8 @@ func adoptHandoffInstall(ctx context.Context, h, pluginDir string, record map[st
 	if entry == nil {
 		return nil, nil
 	}
-	sha := strings.ToLower(pyStrOr(record["revision"]))
+	sha := strings.ToLower(anyutil.StringOr(record["revision"], ""))
 	return writeCatalogBlock(ctx, h, pluginDir, map[string]any{"name": entry.Name, "repo": source, "tier": entry.Tier, "pin": sha, "sha": sha})
-}
-
-// Text of a JSON value the way str(value or "") reads it
-func pyStrOr(v any) string {
-	if !jsonTruthy(v) {
-		return ""
-	}
-	return anyutil.String(v)
 }
 
 // Catalog provenance of an installed plugin from the installer owned record, nil for a non catalog install
@@ -217,9 +209,9 @@ func readCatalogSidecar(h, pluginDir string) (map[string]any, error) {
 	if !ok {
 		var err error
 		if legacy := record["catalog_name"]; jsonTruthy(legacy) {
-			sha := strings.ToLower(pyStrOr(record["revision"]))
-			repo, _, _ := strings.Cut(pyStrOr(record["source"]), "#")
-			tier := pyStrOr(record["catalog_tier"])
+			sha := strings.ToLower(anyutil.StringOr(record["revision"], ""))
+			repo, _, _ := strings.Cut(anyutil.StringOr(record["source"], ""), "#")
+			tier := anyutil.StringOr(record["catalog_tier"], "")
 			if tier == "" {
 				tier = "community"
 			}
@@ -251,7 +243,7 @@ func valueOr(m map[string]any, key string, def any) any {
 
 // Install satisfies the catalog pin when HEAD is that commit or the pin is the verified tag object
 func atCatalogPin(sidecar map[string]any, entrySha string) bool {
-	return entrySha != "" && (entrySha == strings.ToLower(pyStrOr(sidecar["sha"])) || entrySha == strings.ToLower(pyStrOr(sidecar["pin"])))
+	return entrySha != "" && (entrySha == strings.ToLower(anyutil.StringOr(sidecar["sha"], "")) || entrySha == strings.ToLower(anyutil.StringOr(sidecar["pin"], "")))
 }
 
 func catalogInstallRecord(h, pluginDir string) (map[string]any, error) {
@@ -287,7 +279,7 @@ func loginBackendProvenanceErrorRule(h string, m *Manifest, rule string) string 
 	if jsonTruthy(record["allow_removed"]) {
 		return rule + "; this plugin was installed with --allow-removed"
 	}
-	tier := pyStrOr(block["tier"])
+	tier := anyutil.StringOr(block["tier"], "")
 	if tier == "" {
 		tier = "community"
 	}
@@ -306,11 +298,11 @@ func catalogAnnotation(h, dir string) (string, error) {
 	if sidecar == nil {
 		return "", err
 	}
-	tier := pyStrOr(sidecar["tier"])
+	tier := anyutil.StringOr(sidecar["tier"], "")
 	if tier == "" {
 		tier = "community"
 	}
-	sha := pyStrOr(sidecar["sha"])
+	sha := anyutil.StringOr(sidecar["sha"], "")
 	return fmt.Sprintf("catalog:%s@%s", tier, sha[:min(8, len(sha))]), nil
 }
 
@@ -732,7 +724,7 @@ func pluginSurface(manifest map[string]any) (map[string]map[string]bool, error) 
 		}
 		return out
 	}
-	name := pyStrOr(manifest["name"])
+	name := anyutil.StringOr(manifest["name"], "")
 	if name == "" {
 		name = "?"
 	}
@@ -806,7 +798,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 		if err != nil {
 			return nil, err
 		}
-		installed := pyStrOr(sidecar["sha"])
+		installed := anyutil.StringOr(sidecar["sha"], "")
 		installed = installed[:min(8, len(installed))]
 		if installed == "" {
 			installed = "its installed version"
@@ -819,7 +811,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 		return nil, err
 	}
 	gitTree := local != nil
-	oldSha8 := pyStrOr(sidecar["sha"])
+	oldSha8 := anyutil.StringOr(sidecar["sha"], "")
 	if oldSha8 == "" {
 		oldSha8 = "old"
 	}
@@ -1285,8 +1277,8 @@ func CatalogRowFields(h, dir string, pins, versions map[string]string) (map[stri
 	if sidecar == nil {
 		return map[string]any{}, err
 	}
-	installedSha := strings.ToLower(pyStrOr(sidecar["sha"]))
-	tier := pyStrOr(sidecar["tier"])
+	installedSha := strings.ToLower(anyutil.StringOr(sidecar["sha"], ""))
+	tier := anyutil.StringOr(sidecar["tier"], "")
 	if tier == "" {
 		tier = "community"
 	}

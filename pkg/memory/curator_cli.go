@@ -99,7 +99,7 @@ func (c *CuratorCLI) fmtTS(ts any) string {
 	}
 	dt, ok := curatorCLIParseTS(ts)
 	if !ok {
-		return pyStr(ts)
+		return anyutil.String(ts)
 	}
 	secs := int(c.Now().Sub(dt).Seconds())
 	for _, u := range []struct {
@@ -107,13 +107,13 @@ func (c *CuratorCLI) fmtTS(ts any) string {
 		div, limit int
 	}{{"s", 1, 60}, {"m", 60, 3600}, {"h", 3600, 86400}} {
 		if secs < u.limit {
-			return fmt.Sprintf("%d%s ago", pyFloorDiv(secs, u.div), u.unit)
+			return fmt.Sprintf("%d%s ago", floorDiv(secs, u.div), u.unit)
 		}
 	}
-	return fmt.Sprintf("%dd ago", pyFloorDiv(secs, 86400))
+	return fmt.Sprintf("%dd ago", floorDiv(secs, 86400))
 }
 
-func pyFloorDiv(a, b int) int {
+func floorDiv(a, b int) int {
 	q := a / b
 	if (a%b != 0) && ((a < 0) != (b < 0)) {
 		q--
@@ -127,7 +127,7 @@ func (c *CuratorCLI) confirm(prompt, cancel, eofPrefix string) bool {
 	line, err := c.In.ReadString('\n')
 	if err != nil && line == "" {
 		fmt.Fprint(c.Out, eofPrefix)
-	} else if a := strings.ToLower(pyStrip(line)); a == "y" || a == "yes" {
+	} else if a := strings.ToLower(strings.TrimSpace(line)); a == "y" || a == "yes" {
 		return true
 	}
 	c.println(cancel)
@@ -145,7 +145,7 @@ func curatorCLIInt(v any) int {
 func (c *CuratorCLI) printSkillRows(title string, rows []*jsonutil.Object) {
 	c.printf("\n%s:\n", title)
 	for _, r := range rows {
-		c.printf("  %s  activity=%3d  use=%3d  view=%3d  patches=%3d  last_activity=%s\n", curatorPad(pyStr(curatorGetOr(r, "name", nil)), 40, false),
+		c.printf("  %s  activity=%3d  use=%3d  view=%3d  patches=%3d  last_activity=%s\n", curatorPad(anyutil.String(curatorGetOr(r, "name", nil)), 40, false),
 			curatorCLIInt(curatorGetOr(r, "activity_count", 0)), curatorCLIInt(curatorGetOr(r, "use_count", 0)), curatorCLIInt(curatorGetOr(r, "view_count", 0)),
 			curatorCLIInt(curatorGetOr(r, "patch_count", 0)), c.fmtTS(curatorGetOr(r, "last_activity_at", nil)))
 	}
@@ -183,11 +183,11 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 		status = "ENABLED"
 	}
 	c.println("curator: " + status)
-	c.printf("  runs:           %s\n", pyStr(curatorGetOr(st, "run_count", 0)))
+	c.printf("  runs:           %s\n", anyutil.String(curatorGetOr(st, "run_count", 0)))
 	c.printf("  last run:       %s\n", c.fmtTS(curatorGetOr(st, "last_run_at", nil)))
 	summary := "(none)"
 	if v := curatorGetOr(st, "last_run_summary", nil); anyutil.IsTrue(v) {
-		summary = pyStr(v)
+		summary = anyutil.String(v)
 	}
 	lines := []string{summary}
 	if strings.Contains(summary, "\n") {
@@ -202,10 +202,10 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 	}
 	if report := curatorGetOr(st, "last_report_path", nil); anyutil.IsTrue(report) {
 		missing := " (missing)"
-		if curatorExists(pyStr(report)) {
+		if curatorExists(anyutil.String(report)) {
 			missing = ""
 		}
-		c.printf("  last report:    %s%s\n", pyStr(report), missing)
+		c.printf("  last report:    %s%s\n", anyutil.String(report), missing)
 	}
 	ih := CuratorIntervalHours(ctx)
 	if ih%24 == 0 && ih >= 24 {
@@ -226,7 +226,7 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 func curatorSortKeyStr(r *jsonutil.Object, keys ...string) string {
 	for _, k := range keys {
 		if v := curatorGetOr(r, k, nil); anyutil.IsTrue(v) {
-			return pyStr(v)
+			return anyutil.String(v)
 		}
 	}
 	return ""
@@ -257,10 +257,10 @@ func (c *CuratorCLI) cmdStatus(ctx context.Context, _ CuratorArgs) (int, error) 
 	var pinned []string
 	agent, bundled := 0, 0
 	for _, r := range rows {
-		state := pyStr(curatorGetOr(r, "state", "active"))
+		state := anyutil.String(curatorGetOr(r, "state", "active"))
 		byState[state] = append(byState[state], r)
 		if anyutil.IsTrue(curatorGetOr(r, "pinned", nil)) {
-			pinned = append(pinned, pyStr(curatorGetOr(r, "name", nil)))
+			pinned = append(pinned, anyutil.String(curatorGetOr(r, "name", nil)))
 		}
 		switch curatorGetOr(r, "provenance", "agent") {
 		case "agent":
@@ -457,7 +457,7 @@ func (c *CuratorCLI) cmdListUnmanaged(ctx context.Context, _ CuratorArgs) (int, 
 	c.printf("unmanaged skills (%d):\n", len(rows))
 	sorted := append([]*jsonutil.Object{}, rows...)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return pyStr(curatorGetOr(sorted[i], "name", nil)) < pyStr(curatorGetOr(sorted[j], "name", nil))
+		return anyutil.String(curatorGetOr(sorted[i], "name", nil)) < anyutil.String(curatorGetOr(sorted[j], "name", nil))
 	})
 	for _, r := range sorted {
 		why := "no marker"
@@ -466,9 +466,9 @@ func (c *CuratorCLI) cmdListUnmanaged(ctx context.Context, _ CuratorArgs) (int, 
 			if !anyutil.IsTrue(by) {
 				by = "null"
 			}
-			why = "created_by:" + pyStr(by)
+			why = "created_by:" + anyutil.String(by)
 		}
-		c.printf("  %s activity=%4d  last_activity=%s  (%s)\n", curatorPad(pyStr(curatorGetOr(r, "name", nil)), 44, false),
+		c.printf("  %s activity=%4d  last_activity=%s  (%s)\n", curatorPad(anyutil.String(curatorGetOr(r, "name", nil)), 44, false),
 			curatorCLIInt(curatorGetOr(r, "activity_count", 0)), curatorPad(c.fmtTS(curatorGetOr(r, "last_activity_at", nil)), 14, false), why)
 	}
 	c.println("\nadopt one with `icebath curator adopt <name>`, or all with `icebath curator adopt --all-unmanaged`")
@@ -570,11 +570,11 @@ func (c *CuratorCLI) idleDays(r *jsonutil.Object) (int, bool) {
 	if !anyutil.IsTrue(ts) {
 		return 0, false
 	}
-	dt, ok := curatorCLIParseTS(pyStr(ts))
+	dt, ok := curatorCLIParseTS(anyutil.String(ts))
 	if !ok {
 		return 0, false
 	}
-	return max(0, pyFloorDiv(int(c.Now().Sub(dt)/time.Second), 86400)), true
+	return max(0, floorDiv(int(c.Now().Sub(dt)/time.Second), 86400)), true
 }
 
 func (c *CuratorCLI) cmdPrune(ctx context.Context, a CuratorArgs) (int, error) {
@@ -601,7 +601,7 @@ func (c *CuratorCLI) cmdPrune(ctx context.Context, a CuratorArgs) (int, error) {
 			continue
 		}
 		if idle, ok := c.idleDays(r); ok && idle >= days {
-			cands = append(cands, cand{pyStr(curatorGetOr(r, "name", nil)), idle})
+			cands = append(cands, cand{anyutil.String(curatorGetOr(r, "name", nil)), idle})
 		}
 	}
 	if len(cands) == 0 {
@@ -695,13 +695,13 @@ func (c *CuratorCLI) cmdLedger(ctx context.Context, a CuratorArgs) (int, error) 
 		evidence := curatorGetOr(r, "evidence", nil)
 		extra := ""
 		if v := curatorGetOr(evidence, "absorbed_into", nil); anyutil.IsTrue(v) {
-			extra = fmt.Sprintf("  → absorbed into '%s'", pyStr(v))
+			extra = fmt.Sprintf("  → absorbed into '%s'", anyutil.String(v))
 		} else if v := curatorGetOr(evidence, "rollback_target", nil); anyutil.IsTrue(v) {
-			extra = "  → rollback of " + pyStr(v)
+			extra = "  → rollback of " + anyutil.String(v)
 		}
-		c.printf("%s %s %s %s %s%s\n", curatorPad(pyStr(curatorGetOr(r, "id", "?")), 14, false), curatorPad(c.fmtTS(curatorGetOr(r, "ts", nil)), 12, false),
-			curatorPad(pyStr(curatorGetOr(r, "actor", "?")), 8, false), curatorPad(pyStr(curatorGetOr(r, "action", "?")), 12, false),
-			pyStr(curatorGetOr(r, "skill", "?")), extra)
+		c.printf("%s %s %s %s %s%s\n", curatorPad(anyutil.String(curatorGetOr(r, "id", "?")), 14, false), curatorPad(c.fmtTS(curatorGetOr(r, "ts", nil)), 12, false),
+			curatorPad(anyutil.String(curatorGetOr(r, "actor", "?")), 8, false), curatorPad(anyutil.String(curatorGetOr(r, "action", "?")), 12, false),
+			anyutil.String(curatorGetOr(r, "skill", "?")), extra)
 	}
 	c.println("\nRoll back a single mutation with `icebath curator rollback <id>`; whole-tree snapshots remain available via `icebath curator rollback --list`.")
 	return 0, nil
@@ -722,7 +722,7 @@ func curatorArchivedTS(usage *jsonutil.Object, p string) (float64, error) {
 	if !anyutil.IsTrue(raw) {
 		return mtime, nil
 	}
-	at, ok := curatorCLIParseTS(pyStr(raw))
+	at, ok := curatorCLIParseTS(anyutil.String(raw))
 	if !ok {
 		return mtime, nil
 	}
@@ -825,7 +825,7 @@ func (c *CuratorCLI) rollbackLedgerEntry(ctx context.Context, a CuratorArgs) (in
 	}
 	c.printf("Rollback target: ledger entry %s\n", a.EntryID)
 	for _, kv := range [][2]string{{"action", "  action: "}, {"skill", "  skill:  "}, {"actor", "  actor:  "}, {"ts", "  when:   "}} {
-		c.printf("%s%s\n", kv[1], pyStr(curatorGetOr(entry, kv[0], "?")))
+		c.printf("%s%s\n", kv[1], anyutil.String(curatorGetOr(entry, kv[0], "?")))
 	}
 	touched := map[string]bool{}
 	for _, key := range []string{"before", "after"} {
@@ -886,18 +886,18 @@ func (c *CuratorCLI) cmdRollback(ctx context.Context, a CuratorArgs) (int, error
 	}
 	c.printf("Rollback target: %s\n", filepath.Base(target))
 	if anyutil.IsTrue(manifest) {
-		c.printf("  reason:      %s\n", pyStr(curatorGetOr(manifest, "reason", "?")))
-		c.printf("  created_at:  %s\n", pyStr(curatorGetOr(manifest, "created_at", "?")))
-		c.printf("  skill files: %s\n", pyStr(curatorGetOr(manifest, "skill_files", "?")))
+		c.printf("  reason:      %s\n", anyutil.String(curatorGetOr(manifest, "reason", "?")))
+		c.printf("  created_at:  %s\n", anyutil.String(curatorGetOr(manifest, "created_at", "?")))
+		c.printf("  skill files: %s\n", anyutil.String(curatorGetOr(manifest, "skill_files", "?")))
 		cron := curatorGetOr(manifest, "cron_jobs", nil)
 		if !anyutil.IsTrue(cron) {
 			cron = jsonutil.NewObject()
 		}
 		if curatorIsDict(cron) {
 			if anyutil.IsTrue(curatorGetOr(cron, "backed_up", nil)) {
-				c.printf("  cron jobs:   %s (will be restored for skill-link fields only)\n", pyStr(curatorGetOr(cron, "jobs_count", 0)))
+				c.printf("  cron jobs:   %s (will be restored for skill-link fields only)\n", anyutil.String(curatorGetOr(cron, "jobs_count", 0)))
 			} else {
-				c.printf("  cron jobs:   not in snapshot (%s)\n", pyStr(curatorGetOr(cron, "reason", "not captured")))
+				c.printf("  cron jobs:   not in snapshot (%s)\n", anyutil.String(curatorGetOr(cron, "reason", "not captured")))
 			}
 		}
 	}
@@ -939,7 +939,7 @@ func (c *CuratorCLI) cmdUsage(ctx context.Context, a CuratorArgs) (int, error) {
 	switch a.Sort {
 	case "name":
 		sort.SliceStable(rows, func(i, j int) bool {
-			return pyStr(curatorGetOr(rows[i], "name", nil)) < pyStr(curatorGetOr(rows[j], "name", nil))
+			return anyutil.String(curatorGetOr(rows[i], "name", nil)) < anyutil.String(curatorGetOr(rows[j], "name", nil))
 		})
 	case "recent":
 		sort.SliceStable(rows, func(i, j int) bool {
@@ -964,14 +964,14 @@ func (c *CuratorCLI) cmdUsage(ctx context.Context, a CuratorArgs) (int, error) {
 	}
 	counts := map[string]int{}
 	for _, r := range rows {
-		counts[pyStr(curatorGetOr(r, "provenance", "agent"))]++
+		counts[anyutil.String(curatorGetOr(r, "provenance", "agent"))]++
 	}
 	c.printf("skills: %d total  (agent=%d  bundled=%d  hub=%d  external=%d)\n\n", len(rows), counts["agent"], counts["bundled"], counts["hub"], counts["external"])
 	c.printf("  %s  %s  %s  %s  %s  %s  last_activity\n", curatorPad("skill", 40, false), curatorPad("origin", 8, false), curatorPad("use", 4, true),
 		curatorPad("view", 4, true), curatorPad("patch", 5, true), curatorPad("act", 4, true))
 	for _, r := range rows {
-		c.printf("  %s  %s  %4d  %4d  %5d  %4d  %s\n", curatorPad(curatorRunes(pyStr(curatorGetOr(r, "name", nil)), 40), 40, false),
-			curatorPad(pyStr(curatorGetOr(r, "provenance", "agent")), 8, false), curatorCLIInt(curatorGetOr(r, "use_count", 0)),
+		c.printf("  %s  %s  %4d  %4d  %5d  %4d  %s\n", curatorPad(curatorRunes(anyutil.String(curatorGetOr(r, "name", nil)), 40), 40, false),
+			curatorPad(anyutil.String(curatorGetOr(r, "provenance", "agent")), 8, false), curatorCLIInt(curatorGetOr(r, "use_count", 0)),
 			curatorCLIInt(curatorGetOr(r, "view_count", 0)), curatorCLIInt(curatorGetOr(r, "patch_count", 0)),
 			curatorCLIInt(curatorGetOr(r, "activity_count", 0)), c.fmtTS(curatorGetOr(r, "last_activity_at", nil)))
 	}

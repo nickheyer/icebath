@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -431,7 +432,7 @@ func (s *ResponseStore) RequestModel(ctx context.Context, key string, fallback a
 		return fallback, err
 	}
 	if !modelJSON.Valid {
-		return nil, &PyError{Kind: "TypeError", Msg: "the stored response has no request model"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the stored response has no request model"}
 	}
 	return jsonutil.Decode(modelJSON.String)
 }
@@ -464,7 +465,7 @@ func (s *ResponseStore) OrderOutput(ctx context.Context, key string, items []*js
 	for i, item := range items {
 		id, found := item.Get("id")
 		if !found {
-			return nil, &pyKeyError{"id"}
+			return nil, &keyError{"id"}
 		}
 		index, err := s.outputIndexLocked(ctx, key, anyutil.String(id))
 		if err != nil {

@@ -112,7 +112,7 @@ func TestWorkspaceSidecarRealNPMUsesPairedNodeWithEmptyAmbientPath(t *testing.T)
 	peWrite(t, filepath.Join(dependency, "package.json"), `{"name": "side-dep", "version": "1.0.0", "main": "index.js"}`)
 	peWrite(t, filepath.Join(dependency, "index.js"), "module.exports = 'isolated';")
 	peWrite(t, filepath.Join(plugin, "package.json"), `{"name": "plugin", "version": "1.0.0", "dependencies": {"side-dep": "file:../side-dep"}}`)
-	ambient := pyEnviron()
+	ambient := environValue()
 	ctx := context.Background()
 	if reason := InstallNodeSidecar(ctx, plugin, true); reason != "" {
 		t.Fatalf("install %q", reason)
@@ -140,7 +140,7 @@ func TestWorkspaceSidecarRealNPMUsesPairedNodeWithEmptyAmbientPath(t *testing.T)
 	if _, err := os.Lstat(filepath.Join(tmp, "node_modules")); err == nil {
 		t.Fatal("node_modules escaped the plugin")
 	}
-	if !reflect.DeepEqual(pyEnviron(), ambient) {
+	if !reflect.DeepEqual(environValue(), ambient) {
 		t.Fatal("ambient environment mutated")
 	}
 	if !reflect.DeepEqual(*calls, []wsAcquisition{{"npm", true}, {"npm", true}}) {
@@ -213,7 +213,7 @@ func TestWorkspaceEncodingUVFailureRetainsUTF8BuildDiagnostic(t *testing.T) {
 						results = append(results, r)
 						return r, err
 					})
-					e := &PythonEnvironment{UV: uv, Python: peHostPython(t), Destination: filepath.Join(tmp, "venv"), Cache: filepath.Join(tmp, "cache"), Env: pyEnviron()}
+					e := &PythonEnvironment{UV: uv, Python: peHostPython(t), Destination: filepath.Join(tmp, "venv"), Cache: filepath.Join(tmp, "cache"), Env: environValue()}
 					err := LockAndSync(context.Background(), wsMembers(), []string{}, LockAndSyncOptions{Root: filepath.Join(tmp, "workspace"), Source: core, Environment: e})
 					ie, exact := err.(*InstallError)
 					if !exact || ie.Cause != "uv "+stage+" exited 17: "+expected {
@@ -256,7 +256,7 @@ func TestWorkspaceEncodingNodeSidecarRetainsOutputAndExitStatus(t *testing.T) {
 					npm := filepath.Join(npmDir, "npm")
 					wsScript(t, npm, "d=${0%/*}\n{ printf '%s\\n' \"$0\" \"$@\"; pwd; printf '%s\\n' \"$PM_SIDECAR_RUNNER\" \"${PM_SIDECAR_AMBIENT-unset}\"; } > \"$d/seen\"\n"+
 						"printf '"+wsOctal(diagnostic+"\xff\n")+"'"+redirect+"\nexit "+fmt.Sprint(code)+"\n")
-					env := pyEnviron()
+					env := environValue()
 					delete(env, "PM_SIDECAR_AMBIENT")
 					env["PATH"], env["PM_SIDECAR_RUNNER"] = npmDir, "runner"
 					calls := wsAcquire(t, func(string, EnsureOptions) (*Runner, error) { return &Runner{Name: "npm", Env: env}, nil })

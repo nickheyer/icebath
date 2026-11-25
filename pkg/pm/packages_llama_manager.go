@@ -45,25 +45,25 @@ func githubReleaseDigests(repo, tag string) (map[string]string, error) {
 	}
 	release, isMap := data.(map[string]any)
 	if !isMap {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the GitHub release reply is %s, expected a mapping", errchain.Kind(data))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the GitHub release reply is %s, expected a mapping", errchain.Kind(data))}
 	}
 	digests := map[string]string{}
 	assets := []any{}
 	if raw, present := release["assets"]; present {
-		if assets, err = pyIterItems(raw); err != nil {
+		if assets, err = iterItems(raw); err != nil {
 			return nil, err
 		}
 	}
 	for _, item := range assets {
 		asset, isAsset := item.(map[string]any)
 		if !isAsset {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("a GitHub release asset is %s, expected a mapping", errchain.Kind(item))}
+			return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("a GitHub release asset is %s, expected a mapping", errchain.Kind(item))}
 		}
 		digest := ""
 		if raw := asset["digest"]; anyutil.IsTrue(raw) {
 			text, isText := raw.(string)
 			if !isText {
-				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("a GitHub release asset digest is %s, expected text", errchain.Kind(raw))}
+				return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("a GitHub release asset digest is %s, expected text", errchain.Kind(raw))}
 			}
 			_, digest, _ = strings.Cut(text, "sha256:")
 		}

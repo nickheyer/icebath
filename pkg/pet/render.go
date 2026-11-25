@@ -426,7 +426,7 @@ func (r *Renderer) Cells(state string, index, cols int) [][]Cell {
 	if cols == 0 {
 		cols = r.UnicodeCols
 	}
-	return DownscaleCells(frames[pyMod(index, len(frames))], cols)
+	return DownscaleCells(frames[mod(index, len(frames))], cols)
 }
 
 // Builds the virtual placement escapes and text grid of a state, nil when the state has no frames
@@ -450,7 +450,7 @@ func (r *Renderer) Frame(state string, index int) string {
 	if r.Mode == "off" || len(frames) == 0 {
 		return ""
 	}
-	frame := frames[pyMod(index, len(frames))]
+	frame := frames[mod(index, len(frames))]
 	return func() (out string) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -488,7 +488,7 @@ func SheetFrameEscapes(sheet *image.NRGBA, state, mode string, frameW, frameH, f
 }
 
 // Python modulo of an index by a positive length
-func pyMod(i, n int) int { return ((i % n) + n) % n }
+func mod(i, n int) int { return ((i % n) + n) % n }
 
 // BuildRenderer resolves the mode from the configured one and the environment and constructs the renderer
 func BuildRenderer(spritesheet, configuredMode string, scale float64, unicodeCols int, isTTY bool) *Renderer {

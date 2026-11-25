@@ -488,7 +488,7 @@ func (a *GatewayAgent) applySessionUsage(ctx context.Context, usage map[string]a
 	}
 	a.mu.Lock()
 	for _, pair := range gatewayCounterFromUsage {
-		if n, ok := pyIntValue(usage[pair[1]]); ok {
+		if n, ok := intValue(usage[pair[1]]); ok {
 			a.counters[pair[0]] = n
 		}
 	}
@@ -568,7 +568,7 @@ func (a *GatewayAgent) Interrupt() {
 }
 
 // Integer value of a decoded JSON number that is not a bool
-func pyIntValue(v any) (int, bool) {
+func intValue(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
 		return n, true
@@ -583,8 +583,8 @@ func pyIntValue(v any) (int, bool) {
 }
 
 // Numeric value of a decoded JSON int or float that is not a bool
-func pyNumber(v any) (float64, bool) {
-	if n, ok := pyIntValue(v); ok {
+func numberOf(v any) (float64, bool) {
+	if n, ok := intValue(v); ok {
 		return float64(n), true
 	}
 	f, ok := v.(float64)

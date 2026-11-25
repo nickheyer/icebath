@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -38,7 +39,7 @@ func (a *APIServerAdapter) handleResponses(ctx context.Context, request *gateway
 	}
 	body, _ := raw.(*jsonutil.Object)
 	if body == nil {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 	}
 	if body.ValueOr("input", nil) == nil {
 		return errorResponse("Missing 'input' field", http.StatusBadRequest, errOpts{}), nil
@@ -302,7 +303,7 @@ func extractOutputItems(result map[string]any, startIndex int, responseID string
 	for _, raw := range messages {
 		msg, _ := jsonutil.AsMap(raw)
 		if msg == nil {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 		}
 		role := msg["role"]
 		if role == "assistant" {

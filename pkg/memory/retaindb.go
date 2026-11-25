@@ -25,7 +25,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const retaindbManifest = `name: retaindb
@@ -251,14 +253,14 @@ func (c *retaindbClient) request(ctx context.Context, method, path string, param
 	if resp.StatusCode >= 400 {
 		msg := ""
 		if m, ok := jsonutil.AsMap(payload); ok {
-			if pyTruthy(m["message"]) {
-				msg = pyStr(m["message"])
-			} else if pyTruthy(m["error"]) {
-				msg = pyStr(m["error"])
+			if anyutil.IsTrue(m["message"]) {
+				msg = anyutil.String(m["message"])
+			} else if anyutil.IsTrue(m["error"]) {
+				msg = anyutil.String(m["error"])
 			}
 		}
 		if msg == "" {
-			msg = pyStr(payload)
+			msg = anyutil.String(payload)
 		}
 		return nil, fmt.Errorf("RetainDB %s %s failed (%d): %s", method, path, resp.StatusCode, msg)
 	}
@@ -394,8 +396,8 @@ func (c *retaindbClient) uploadFile(ctx context.Context, data []byte, filename, 
 
 func (c *retaindbClient) listFiles(ctx context.Context, prefix any, limit int) (any, error) {
 	params := []queryParam{{"limit", strconv.Itoa(limit)}}
-	if pyTruthy(prefix) {
-		params = append(params, queryParam{"prefix", pyStr(prefix)})
+	if anyutil.IsTrue(prefix) {
+		params = append(params, queryParam{"prefix", anyutil.String(prefix)})
 	}
 	return c.request(ctx, "GET", "/v1/files", params, nil, 8*time.Second)
 }
@@ -430,13 +432,9 @@ func (c *retaindbClient) deleteFile(ctx context.Context, fileID string) (any, er
 	return c.request(ctx, "DELETE", "/v1/files/"+quoteAll(fileID), nil, nil, 5*time.Second)
 }
 
-// Python datetime isoformat of a UTC instant, microseconds only when non zero
-func pyISOFormatUTC(t time.Time) string {
-	t = t.UTC()
-	if us := t.Nanosecond() / 1000; us != 0 {
-		return t.Format("2006-01-02T15:04:05") + fmt.Sprintf(".%06d", us) + "+00:00"
-	}
-	return t.Format("2006-01-02T15:04:05") + "+00:00"
+// RFC 3339 text of an instant in UTC with six fractional digits, the stamp of queued rows and ingested messages
+func retaindbTimestamp(t time.Time) string {
+	return t.UTC().Format(timeutil.RFC3339Micro)
 }
 
 // One queued ingest row
@@ -495,7 +493,7 @@ var sqliteURIPath = strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23")
 
 func newRetainDBWriteQueue(ctx context.Context, env *tools.Env, client *retaindbClient, dbPath string) (*retaindbWriteQueue, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o777); err != nil {
-		return nil, pyOSError(err)
+		return nil, osError(err)
 	}
 	db, err := sql.Open("sqlite", "file:"+sqliteURIPath.Replace(dbPath)+"?_pragma=busy_timeout(30000)")
 	if err != nil {
@@ -534,7 +532,7 @@ func newRetainDBWriteQueue(ctx context.Context, env *tools.Env, client *retaindb
 
 // Persists the turn and queues it for ingest, nothing once shut down
 func (q *retaindbWriteQueue) enqueue(userID, sessionID string, messages []any) error {
-	now := pyISOFormatUTC(time.Now())
+	now := retaindbTimestamp(time.Now())
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.shutdown {
@@ -597,7 +595,7 @@ func (q *retaindbWriteQueue) close() {
 }
 
 var (
-	whitespaceRun = regexp.MustCompile(`[` + pySpaceClass + `]+`)
+	whitespaceRun = regexp.MustCompile(`[` + spaceClass + `]+`)
 	nonAlnumSpace = regexp.MustCompile(`[^a-z0-9 ]`)
 	retaindbNoGet = func(v any) error {
 		return fmt.Errorf("RetainDB returned %s where a mapping was expected", errchain.Kind(v))
@@ -606,19 +604,19 @@ var (
 
 func retaindbCompact(v any) string {
 	s := ""
-	if pyTruthy(v) {
-		s = pyStr(v)
+	if anyutil.IsTrue(v) {
+		s = anyutil.String(v)
 	}
-	return runePrefix(pyStrip(whitespaceRun.ReplaceAllString(s, " ")), 320)
+	return runePrefix(strings.TrimSpace(whitespaceRun.ReplaceAllString(s, " ")), 320)
 }
 
 func retaindbNorm(v any) string {
-	return nonAlnumSpace.ReplaceAllString(pyLower(retaindbCompact(v)), "")
+	return nonAlnumSpace.ReplaceAllString(strings.ToLower(retaindbCompact(v)), "")
 }
 
 // Mapping a value stands in for, an empty one for falsy values and an error for any other non mapping
 func mappingOrEmpty(v any) (map[string]any, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
 	m, ok := jsonutil.AsMap(v)
@@ -638,7 +636,7 @@ func buildRetainDBOverlay(profile, queryResult any, localEntries []string) (stri
 	}
 	dedupe := func(items any) ([]string, error) {
 		var list []any
-		if pyTruthy(items) {
+		if anyutil.IsTrue(items) {
 			switch x := items.(type) {
 			case []any:
 				list = x
@@ -703,7 +701,7 @@ func bulletsOrNone(items []string) []string {
 }
 
 // Numeric value of a decoded JSON field for comparisons, an error for non numbers
-func pyNumber(v any) (float64, error) {
+func numberOf(v any) (float64, error) {
 	switch x := v.(type) {
 	case nil:
 		return 0, errors.New("RetainDB score is missing where a number was expected")
@@ -730,16 +728,16 @@ func memoryCount(model map[string]any) (float64, error) {
 	if !ok {
 		return 0, nil
 	}
-	return pyNumber(v)
+	return numberOf(v)
 }
 
 // Python iteration of a JSON value as strings, list items, string characters or mapping keys
-func pyIterStrings(v any) []string {
+func iterStrings(v any) []string {
 	switch x := v.(type) {
 	case []any:
 		out := make([]string, len(x))
 		for i, item := range x {
-			out[i] = pyStr(item)
+			out[i] = anyutil.String(item)
 		}
 		return out
 	case string:
@@ -765,15 +763,15 @@ var agentModelFields = []struct {
 	key    string
 	format func(v any) string
 }{
-	{"persona", func(v any) string { return "Persona: " + pyStr(v) }},
+	{"persona", func(v any) string { return "Persona: " + anyutil.String(v) }},
 	{"persistent_instructions", func(v any) string {
-		lines := pyIterStrings(v)
+		lines := iterStrings(v)
 		for i, l := range lines {
 			lines[i] = "- " + l
 		}
 		return "Instructions:\n" + strings.Join(lines, "\n")
 	}},
-	{"working_style", func(v any) string { return "Working style: " + pyStr(v) }},
+	{"working_style", func(v any) string { return "Working style: " + anyutil.String(v) }},
 }
 
 // RetainDB cloud memory with a durable queue, semantic search, dialectic synthesis and shared files
@@ -825,7 +823,7 @@ func (p *RetainDBProvider) Initialize(ctx context.Context, sessionID string, opt
 	cfg := map[string]string{}
 	for k, v := range loadRetainDBConfig(ctx, p.env) {
 		if s, ok := v.(string); ok {
-			cfg[k] = pyStrip(s)
+			cfg[k] = strings.TrimSpace(s)
 		}
 	}
 	baseURL, err := scopedSecret(ctx, "RETAINDB_BASE_URL")
@@ -884,9 +882,9 @@ func (p *RetainDBProvider) Initialize(ctx context.Context, sessionID string, opt
 	soulPath := filepath.Join(homeDir, "SOUL.md")
 	soul := ""
 	if raw, err := os.ReadFile(soulPath); err == nil {
-		soul = pyStrip(strings.TrimPrefix(decodeReplace(raw), "\xef\xbb\xbf"))
+		soul = strings.TrimSpace(strings.TrimPrefix(decodeReplace(raw), "\xef\xbb\xbf"))
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return pyOSError(err)
+		return osError(err)
 	}
 	if soul != "" {
 		SpawnContextThread(ctx, "retaindb-soul-seed", func(ctx context.Context) {
@@ -974,8 +972,8 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 				return nil, false, retaindbNoGet(answer)
 			}
 			text := ""
-			if pyTruthy(m["answer"]) {
-				text = pyStr(m["answer"])
+			if anyutil.IsTrue(m["answer"]) {
+				text = anyutil.String(m["answer"])
 			}
 			return text, text != "", nil
 		}, func(v any) { p.dialecticResult = v.(string) }},
@@ -1036,7 +1034,7 @@ func (p *RetainDBProvider) Prefetch(ctx context.Context, query, sessionID string
 	}
 	if count > 0 {
 		for _, f := range agentModelFields {
-			if v := agentModel[f.key]; pyTruthy(v) {
+			if v := agentModel[f.key]; anyutil.IsTrue(v) {
 				modelLines = append(modelLines, f.format(v))
 			}
 		}
@@ -1065,7 +1063,7 @@ func (p *RetainDBProvider) SyncTurn(ctx context.Context, userContent, assistantC
 	if opts.SessionID != "" {
 		session = opts.SessionID
 	}
-	now := pyISOFormatUTC(time.Now())
+	now := retaindbTimestamp(time.Now())
 	return queue.enqueue(userID, session, []any{
 		map[string]any{"role": "user", "content": userContent, "timestamp": now},
 		map[string]any{"role": "assistant", "content": assistantContent, "timestamp": now},
@@ -1077,7 +1075,7 @@ func (p *RetainDBProvider) ToolSchemas(ctx context.Context) ([]map[string]any, e
 }
 
 // Python int conversion of a tool argument with the conversion error text
-func pyIntArg(v any) (int, error) {
+func intArg(v any) (int, error) {
 	switch x := v.(type) {
 	case json.Number:
 		if n, err := strconv.Atoi(string(x)); err == nil {
@@ -1096,14 +1094,14 @@ func pyIntArg(v any) (int, error) {
 			return 0, errors.New("expected a whole number, got NaN")
 		}
 	case string:
-		if n, ok := pyInt(x); ok {
+		if n, ok := wholeNumber(x); ok {
 			return n, nil
 		}
 		return 0, fmt.Errorf("%s is not a whole number", errchain.Show(x))
 	case nil, []any, map[string]any:
 		return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 	}
-	n, ok := pyInt(v)
+	n, ok := wholeNumber(v)
 	if !ok {
 		return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 	}
@@ -1111,7 +1109,7 @@ func pyIntArg(v any) (int, error) {
 }
 
 // Python float conversion of a tool argument with the conversion error text
-func pyFloatArg(v any) (float64, error) {
+func floatArg(v any) (float64, error) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -1127,8 +1125,8 @@ func pyFloatArg(v any) (float64, error) {
 	case json.Number:
 		return x.Float64()
 	case string:
-		s := strings.ReplaceAll(pyStrip(x), "_", "")
-		if f, err := strconv.ParseFloat(s, 64); err == nil && pyStrip(x) != "" {
+		s := strings.ReplaceAll(strings.TrimSpace(x), "_", "")
+		if f, err := strconv.ParseFloat(s, 64); err == nil && strings.TrimSpace(x) != "" {
 			return f, nil
 		}
 		return 0, fmt.Errorf("%s is not a number", errchain.Show(x))
@@ -1180,7 +1178,7 @@ func (p *RetainDBProvider) dispatch(ctx context.Context, client *retaindbClient,
 	var value any
 	if req != "" {
 		value = argOr(args, req, "")
-		if !pyTruthy(value) {
+		if !anyutil.IsTrue(value) {
 			return map[string]any{"error": req + " is required"}, nil
 		}
 	}
@@ -1191,7 +1189,7 @@ func (p *RetainDBProvider) dispatch(ctx context.Context, client *retaindbClient,
 	case "retaindb_profile":
 		return client.getProfile(ctx, userID)
 	case "retaindb_search":
-		topK, err := pyIntArg(argOr(args, "top_k", 8))
+		topK, err := intArg(argOr(args, "top_k", 8))
 		if err != nil {
 			return nil, err
 		}
@@ -1199,7 +1197,7 @@ func (p *RetainDBProvider) dispatch(ctx context.Context, client *retaindbClient,
 	case "retaindb_context":
 		return p.contextOverlay(ctx, client, userID, session, value)
 	case "retaindb_remember":
-		importance, err := pyFloatArg(argOr(args, "importance", 0.7))
+		importance, err := floatArg(argOr(args, "importance", 0.7))
 		if err != nil {
 			return nil, err
 		}
@@ -1217,7 +1215,7 @@ func (p *RetainDBProvider) dispatch(ctx context.Context, client *retaindbClient,
 		}
 		return p.toolUploadFile(ctx, client, userID, agentID, args, path)
 	case "retaindb_list_files":
-		limit, err := pyIntArg(argOr(args, "limit", 50))
+		limit, err := intArg(argOr(args, "limit", 50))
 		if err != nil {
 			return nil, err
 		}
@@ -1255,12 +1253,12 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 	}
 	data, err := os.ReadFile(localPath)
 	if err != nil {
-		return nil, pyOSError(err)
+		return nil, osError(err)
 	}
 	name := filepath.Base(localPath)
 	remote := "/" + name
-	if v := args["remote_path"]; pyTruthy(v) {
-		remote = pyStr(v)
+	if v := args["remote_path"]; anyutil.IsTrue(v) {
+		remote = anyutil.String(v)
 	}
 	mimeType := "application/octet-stream"
 	if t := mime.TypeByExtension(filepath.Ext(name)); t != "" {
@@ -1275,7 +1273,7 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 	if err != nil {
 		return nil, err
 	}
-	if pyTruthy(args["ingest"]) {
+	if anyutil.IsTrue(args["ingest"]) {
 		rm, ok := jsonutil.AsMap(result)
 		if !ok {
 			return nil, retaindbNoGet(result)
@@ -1288,8 +1286,8 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 			}
 			file = fm
 		}
-		if id := file["id"]; pyTruthy(id) {
-			ingested, err := client.ingestFile(ctx, pyStr(id), userID, agentID)
+		if id := file["id"]; anyutil.IsTrue(id) {
+			ingested, err := client.ingestFile(ctx, anyutil.String(id), userID, agentID)
 			if err != nil {
 				return nil, err
 			}
@@ -1323,8 +1321,8 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 	}
 	out := jsonutil.ObjectOf("file_id", fileID, "rdb_uri", fileInfo["rdb_uri"], "name", fileInfo["name"])
 	mimeType := ""
-	if pyTruthy(fileInfo["mime_type"]) {
-		mimeType = pyLower(pyStr(fileInfo["mime_type"]))
+	if anyutil.IsTrue(fileInfo["mime_type"]) {
+		mimeType = strings.ToLower(anyutil.String(fileInfo["mime_type"]))
 	}
 	nameValue, present := fileInfo["name"]
 	if !present {

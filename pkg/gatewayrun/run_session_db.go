@@ -14,25 +14,25 @@ import (
 )
 
 // Python RuntimeError carrying only its message
-type pyRuntimeError struct {
+type runtimeError struct {
 	msg   string
 	cause error
 }
 
-func (e *pyRuntimeError) Error() string { return e.msg }
+func (e *runtimeError) Error() string { return e.msg }
 
-func (e *pyRuntimeError) Unwrap() error { return e.cause }
+func (e *runtimeError) Unwrap() error { return e.cause }
 
 // Exception class the error reports, RuntimeError
-func (e *pyRuntimeError) ErrorKind() string { return "RuntimeError" }
+func (e *runtimeError) ErrorKind() string { return "RuntimeError" }
 
 // Python AttributeError carrying only its message
-type pyAttributeError struct{ msg string }
+type attributeError struct{ msg string }
 
-func (e *pyAttributeError) Error() string { return e.msg }
+func (e *attributeError) Error() string { return e.msg }
 
 // Exception class the error reports, AttributeError
-func (e *pyAttributeError) ErrorKind() string { return "AttributeError" }
+func (e *attributeError) ErrorKind() string { return "AttributeError" }
 
 // Async database of the active profile scope, one per path, borrowing the session store handle when present
 func (r *GatewayRunner) openSessionDBForActiveScope(ctx context.Context, raiseOnError bool) (*state.AsyncSessionDB, error) {
@@ -55,7 +55,7 @@ func (r *GatewayRunner) openSessionDBForActiveScope(ctx context.Context, raiseOn
 			}
 			db, ok := borrowed.(*state.SessionDB)
 			if !ok || db == nil {
-				return nil, &pyRuntimeError{msg: fmt.Sprintf("SessionStore SQLite handle %T is not a SessionDB", borrowed)}
+				return nil, &runtimeError{msg: fmt.Sprintf("SessionStore SQLite handle %T is not a SessionDB", borrowed)}
 			}
 			return state.NewBorrowedAsyncSessionDB(db), nil
 		}
@@ -114,7 +114,7 @@ func (r *GatewayRunner) closeAllSessionDBHandles() {
 		}()
 	}
 	if r.sessionDBHandleCache == nil {
-		panic(&pyAttributeError{msg: "the gateway runner has no session database handle cache"})
+		panic(&attributeError{msg: "the gateway runner has no session database handle cache"})
 	}
 	r.sessionDBHandleCache.CloseAll(closeHandle)
 }
@@ -124,7 +124,7 @@ func storeOpenCause(store *gateway.SessionStore, path string) error {
 	if cause := store.DBHandleCache().LastFailure(path); cause != nil {
 		return cause
 	}
-	return &pyRuntimeError{msg: fmt.Sprintf("another caller is still opening %s", path)}
+	return &runtimeError{msg: fmt.Sprintf("another caller is still opening %s", path)}
 }
 
 // Session database handles and the startup state db maintenance, a launch store that will not open stopping the start

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"math"
 	"os"
 	"os/exec"
 	"runtime"
@@ -349,19 +350,27 @@ func WithGitAuth(ctx context.Context, env map[string]string, url string, auth *B
 		auth = &resolved
 	}
 	encoded := base64.StdEncoding.EncodeToString([]byte(auth.Username + ":" + auth.Password))
-	countText := out["GIT_CONFIG_COUNT"]
-	if countText == "" {
-		countText = "0"
-	}
-	idx, err := strconv.ParseInt(strings.TrimSpace(countText), 10, 64)
+	idx, err := gitConfigCount(out["GIT_CONFIG_COUNT"])
 	if err != nil {
-		return nil, fmt.Errorf("invalid literal for int() with base 10: %s", strconv.Quote(countText))
+		return nil, err
 	}
-	n := strconv.FormatInt(idx, 10)
+	n := strconv.FormatUint(idx, 10)
 	out["GIT_CONFIG_KEY_"+n] = "http." + origin + "/.extraheader"
 	out["GIT_CONFIG_VALUE_"+n] = "Authorization: basic " + encoded
-	out["GIT_CONFIG_COUNT"] = strconv.FormatInt(idx+1, 10)
+	out["GIT_CONFIG_COUNT"] = strconv.FormatUint(idx+1, 10)
 	return out, nil
+}
+
+// Entries a GIT_CONFIG_COUNT value declares, 0 when unset, an error for a value git would refuse once one more entry is added
+func gitConfigCount(text string) (uint64, error) {
+	if text == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(strings.TrimSpace(text), 10, 64)
+	if err != nil || n >= math.MaxInt32 {
+		return 0, fmt.Errorf("GIT_CONFIG_COUNT %q is not an entry count git accepts", text)
+	}
+	return n, nil
 }
 
 func authHeaders(env map[string]string) map[string]bool {

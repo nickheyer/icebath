@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const turnLeaseSweepGraceS = 86400.0
@@ -65,7 +67,7 @@ func (d *SessionDB) TryAcquireCompressionLock(sessionID, holder string, ttlSecon
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		var err error
 		acquired, reclaimed, err = claimLeaseRow(ctx, conn, "compression_locks", "session_id", sessionID, holder, t, t+ttlSeconds, func(h, e any) bool {
-			expires, _ := pyFloatOf(e)
+			expires, _ := floatOf(e)
 			name, _ := h.(string)
 			return expires < t || compressionLockHolderProcessIsDead(name)
 		})
@@ -75,8 +77,8 @@ func (d *SessionDB) TryAcquireCompressionLock(sessionID, holder string, ttlSecon
 		pkgLog().Warn(fmt.Sprintf("try_acquire_compression_lock(%s) failed: %s", sessionID, errText(err)))
 		return false
 	}
-	if pyTruthy(reclaimed) {
-		pkgLog().Warn(fmt.Sprintf("Reclaimed stale compression lock for session=%s (holder=%s)", sessionID, pyStr(reclaimed)))
+	if anyutil.IsTrue(reclaimed) {
+		pkgLog().Warn(fmt.Sprintf("Reclaimed stale compression lock for session=%s (holder=%s)", sessionID, anyutil.String(reclaimed)))
 	}
 	return acquired
 }
@@ -99,7 +101,7 @@ func (d *SessionDB) GetCompressionLockHolder(sessionID string) (*string, error) 
 	if err != nil || row == nil {
 		return nil, err
 	}
-	holder := pyStr(rowValue(row, "holder"))
+	holder := anyutil.String(rowValue(row, "holder"))
 	return &holder, nil
 }
 
@@ -133,7 +135,7 @@ func (d *SessionDB) TryAcquireSessionTurnLease(sessionID, holder string, ttlSeco
 			return err
 		}
 		acquired, _, err = claimLeaseRow(ctx, conn, "session_turn_leases", "conversation_id", key, holder, t, expiresAt, func(h, e any) bool {
-			expires, _ := pyFloatOf(e)
+			expires, _ := floatOf(e)
 			name, _ := h.(string)
 			return expires <= t || compressionLockHolderProcessIsDead(name)
 		})
@@ -184,7 +186,7 @@ func (d *SessionDB) SessionTurnLeaseExpiresAt(sessionID, holder string) (*float6
 		if err != nil || row == nil {
 			return err
 		}
-		f, err := pyFloatOf(row["expires_at"])
+		f, err := floatOf(row["expires_at"])
 		out = &f
 		return err
 	})

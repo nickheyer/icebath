@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -198,7 +199,7 @@ func relayWireMapping(v any) (*jsonutil.Object, error) {
 	if obj, ok := jsonutil.AsObject(v); ok {
 		return obj, nil
 	}
-	return nil, &PyError{"AttributeError", "a relay wire value is " + errchain.Kind(v) + ", expected a mapping"}
+	return nil, &errorutil.Error{"AttributeError", "a relay wire value is " + errchain.Kind(v) + ", expected a mapping"}
 }
 
 // Message event rebuilt from the connector inbound payload, unknown platforms as relay and unknown types as text
@@ -215,7 +216,7 @@ func relayEventFromWire(ctx context.Context, raw *jsonutil.Object) (*MessageEven
 	source := &SessionSource{
 		Platform:                  platform,
 		ChatID:                    anyutil.String(src.Value("chat_id")),
-		ChatType:                  anyutil.String(src.ValueOr("chat_type", "dm")),
+		ChatType:                  anyutil.String(anyutil.Or(src.Value("chat_type"), "dm")),
 		ChatName:                  relayWireOptStr(src.ValueOr("chat_name", nil)),
 		UserID:                    relayWireOptStr(src.ValueOr("user_id", nil)),
 		UserName:                  relayWireOptStr(userName),

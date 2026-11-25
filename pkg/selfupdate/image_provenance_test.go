@@ -46,7 +46,7 @@ func TestReaderFailsClosedOnMalformed(t *testing.T) {
 		{object(map[string]any{"schema": 1, "deployment_kind": "source", "manager": "docker"}), "invalid_deployment_kind"},
 		{object(map[string]any{"schema": 1, "deployment_kind": "image", "manager": "  "}), "missing_manager"},
 		{object(map[string]any{"schema": 1, "deployment_kind": "image", "manager": "docker", "version": 3}), "invalid_version"},
-		{"\xff\xfe", "marker_unreadable:UnicodeDecodeError"},
+		{"\xff\xfe", "marker_unreadable:invalid UTF-8 at byte 0"},
 	} {
 		marker := filepath.Join(t.TempDir(), "image-provenance.json")
 		if err := os.WriteFile(marker, []byte(c.payload), 0o644); err != nil {

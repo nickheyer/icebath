@@ -72,7 +72,7 @@ func (s *Store) warnIfGatewayNotRunning(ctx context.Context, w io.Writer) {
 	if alive, known := s.builtinGatewayLiveness(ctx); alive || !known {
 		return
 	}
-	say(w, color(fmt.Sprintf("  ⚠  Scheduler is not ready for profile '%s': no gateway serves it and no fresh ticker heartbeat.", profiles.GetActiveProfileName(ctx)), cliui.Yellow),
+	say(w, color(fmt.Sprintf("  ⚠  Scheduler is not ready for profile %q: no gateway serves it and no fresh ticker heartbeat.", profiles.GetActiveProfileName(ctx)), cliui.Yellow),
 		color("     If no gateway is running: icebath gateway install\n                    sudo icebath gateway install --system  # Linux servers\n     Check status:  icebath cron status", cliui.Dim))
 }
 
@@ -189,7 +189,7 @@ func (s *Store) cronList(ctx context.Context, w io.Writer, showAll bool) error {
 	}
 	active := profiles.GetActiveProfileName(ctx)
 	if len(jobs) == 0 {
-		say(w, color(fmt.Sprintf("No scheduled jobs in profile '%s'.\nCreate one with 'icebath cron create ...' or the /cron command in chat.", active), cliui.Dim))
+		say(w, color(fmt.Sprintf("No scheduled jobs in profile %q.\nCreate one with \"icebath cron create ...\" or the /cron command in chat.", active), cliui.Dim))
 		return nil
 	}
 	printBanner(w, fmt.Sprintf("Scheduled Jobs (profile: %s)", active))
@@ -201,7 +201,7 @@ func (s *Store) cronList(ctx context.Context, w io.Writer, showAll bool) error {
 				badge = [2]string{"[active]", cliui.Green}
 			}
 		}
-		fmt.Fprintf(w, "  %s %s\n", color(anyutil.String(field(j.obj, "id", "?")), cliui.Yellow), color(badge[0], badge[1]))
+		fmt.Fprintf(w, "  %s %s\n", color(fieldText(j.obj, "id", "?"), cliui.Yellow), color(badge[0], badge[1]))
 		for _, row := range s.jobRows(j.obj) {
 			fmt.Fprintf(w, "    %-11s%s\n", row[0]+":", row[1])
 		}
@@ -224,7 +224,7 @@ func lastRunDisplay(job *jsonutil.Object) string {
 	case "delivery_failed":
 		return color(fmt.Sprintf("ran, but the result was not delivered (%s). %s", shortReason(field(job, "last_delivery_error", nil), 120), deliveryFixHint(job)), cliui.Yellow)
 	}
-	display := color(fmt.Sprintf("%s: %s", anyutil.String(lastStatus), anyutil.String(field(job, "last_error", "?"))), cliui.Red)
+	display := color(fmt.Sprintf("%s: %s", anyutil.String(lastStatus), fieldText(job, "last_error", "?")), cliui.Red)
 	streak := 0
 	if v := field(job, "failure_streak", nil); anyutil.IsTrue(v) {
 		streak = int(numberOf(v))
@@ -283,13 +283,13 @@ func (s *Store) jobRows(job *jsonutil.Object) [][2]string {
 	}
 	optional = append(optional, [2]string{"Workdir", str(field(job, "workdir", nil))}, [2]string{"Python", str(field(job, "interpreter", nil))})
 	if anyutil.IsTrue(field(job, "last_status", nil)) {
-		optional = append(optional, [2]string{"Last run", fmt.Sprintf("%s  %s", anyutil.String(field(job, "last_run_at", "?")), lastRunDisplay(job))})
+		optional = append(optional, [2]string{"Last run", fmt.Sprintf("%s  %s", fieldText(job, "last_run_at", "?"), lastRunDisplay(job))})
 	}
 	if d, ok := dispatchDisplay(field(job, "last_dispatch", nil)); ok {
 		optional = append(optional, [2]string{"Dispatch", d})
 	}
 	if latest.Len() > 0 {
-		optional = append(optional, [2]string{"Execution", fmt.Sprintf("%s  %s", anyutil.String(field(latest, "status", "?")), anyutil.String(field(latest, "id", "?")))})
+		optional = append(optional, [2]string{"Execution", fmt.Sprintf("%s  %s", fieldText(latest, "status", "?"), fieldText(latest, "id", "?"))})
 	}
 	schedule := field(job, "schedule_display", nil)
 	if _, ok := job.Get("schedule_display"); !ok {
@@ -297,7 +297,7 @@ func (s *Store) jobRows(job *jsonutil.Object) [][2]string {
 	}
 	repeat := "∞"
 	if anyutil.IsTrue(repeatTimes) {
-		repeat = fmt.Sprintf("%s/%s", anyutil.String(field(repeatInfo, "completed", 0)), anyutil.String(repeatTimes))
+		repeat = fmt.Sprintf("%s/%s", fieldText(repeatInfo, "completed", "0"), anyutil.String(repeatTimes))
 	}
 	deliverText := ""
 	if d, ok := deliver.(string); ok {
@@ -306,7 +306,7 @@ func (s *Store) jobRows(job *jsonutil.Object) [][2]string {
 		deliverText = unverifiedTargets(deliver)
 	}
 	label, value := s.nextRunRow(job)
-	rows := [][2]string{{"Name", anyutil.String(field(job, "name", "(unnamed)"))}, {"Schedule", anyutil.String(schedule)}, {"Repeat", repeat}, {label, value}, {"Deliver", deliverText}}
+	rows := [][2]string{{"Name", fieldText(job, "name", "(unnamed)")}, {"Schedule", anyutil.String(schedule)}, {"Repeat", repeat}, {label, value}, {"Deliver", deliverText}}
 	for _, r := range optional {
 		if r[1] != "" {
 			rows = append(rows, r)
@@ -336,12 +336,12 @@ func shortReason(text any, limit int) string {
 }
 
 func deliveryFixHint(job *jsonutil.Object) string {
-	return fmt.Sprintf("Check the target with `icebath cron status` or change it with `icebath cron edit %s --deliver <target>`.", anyutil.String(field(job, "id", "<id>")))
+	return fmt.Sprintf("Check the target with `icebath cron status` or change it with `icebath cron edit %s --deliver <target>`.", fieldText(job, "id", "<id>"))
 }
 
 func missedFireIssue(job, fireErr *jsonutil.Object) string {
 	return fmt.Sprintf("missed scheduled fire at %s: %s. The messaging gateway was unreachable. Run `icebath gateway restart`, then `icebath cron run %s` to run it now.",
-		anyutil.String(field(fireErr, "at", "?")), shortReason(field(fireErr, "detail", nil), 120), anyutil.String(field(job, "id", "<id>")))
+		fieldText(fireErr, "at", "?"), shortReason(field(fireErr, "detail", nil), 120), fieldText(job, "id", "<id>"))
 }
 
 // Delivery and fire warning lines of one job in cron list
@@ -365,7 +365,7 @@ func jobWarnings(job *jsonutil.Object) []string {
 			st = anyutil.String(v)
 		}
 		recovered := st == "ok" || st == "delivery_queued"
-		text := fmt.Sprintf("⚠ Last failure at %s: %s", anyutil.String(field(lf, "at", "?")), shortReason(field(lf, "detail", nil), 120))
+		text := fmt.Sprintf("⚠ Last failure at %s: %s", fieldText(lf, "at", "?"), shortReason(field(lf, "detail", nil), 120))
 		code := cliui.Red
 		if recovered {
 			text += " — recovered since"
@@ -455,7 +455,7 @@ func (s *Store) cronIncidents(ctx context.Context, w io.Writer, a *CronArgs) (in
 	if len(incidents) == 0 {
 		say(w, color("No cron failure incidents recorded.", cliui.Dim))
 		if a.State != nil && *a.State != "" {
-			say(w, color(fmt.Sprintf("  (filtered by state '%s')", *a.State), cliui.Dim))
+			say(w, color(fmt.Sprintf("  (filtered by state %q)", *a.State), cliui.Dim))
 		}
 		return 0, nil
 	}
@@ -580,7 +580,7 @@ func (s *Store) printTickerHealth(w io.Writer, pids []int, restart string) {
 				say(w, color(cronFDExhaustionHint, cliui.Yellow))
 			}
 		}
-		say(w, "  Check the gateway log for 'Cron tick error'.")
+		say(w, "  Check the gateway log for \"Cron tick error\".")
 	default:
 		say(w, color("✓ Gateway is running — cron jobs will fire automatically", cliui.Green))
 		if pidLine != "" {
@@ -680,7 +680,7 @@ func (s *Store) printSchedulerHost(ctx context.Context, w io.Writer) error {
 	case len(pids) > 0 || viaLock:
 		s.printTickerHealth(w, pids, "icebath gateway restart")
 	default:
-		say(w, color(fmt.Sprintf("✗ No scheduler is serving profile '%s' — its cron jobs will NOT fire", active), cliui.Red))
+		say(w, color(fmt.Sprintf("✗ No scheduler is serving profile %q — its cron jobs will NOT fire", active), cliui.Red))
 		if hb, ok := s.TickerHeartbeatAge(); ok && hb > TickerIntervalSeconds*3+20 {
 			say(w, color(fmt.Sprintf("  Scheduler last ticked %s ago — jobs that came due since then have not fired.", formatLateness(hb)), cliui.Yellow))
 		}
@@ -742,17 +742,10 @@ func (s *Store) printActiveJobsSummary(w io.Writer, jobs []listedJob) {
 		for _, j := range late {
 			d := field(j, "last_dispatch", nil).(*jsonutil.Object)
 			lateBy := formatLateness(numberOf(field(d, "lateness_seconds", 0)))
-			say(w, fmt.Sprintf("    %s  %s: %s, scheduled %s, ran %s ", anyutil.String(field(j, "id", "?")), anyutil.String(field(j, "name", "(unnamed)")), dispatchKindLabelOrNone(field(d, "kind", nil)),
-				anyutil.String(field(d, "scheduled_at", "?")), anyutil.String(field(d, "dispatched_at", "?")))+color("("+lateBy+" late)", cliui.Yellow))
+			say(w, fmt.Sprintf("    %s  %s: %s, scheduled %s, ran %s ", fieldText(j, "id", "?"), fieldText(j, "name", "(unnamed)"), dispatchKindLabel(field(d, "kind", nil)),
+				fieldText(d, "scheduled_at", "?"), fieldText(d, "dispatched_at", "?"))+color("("+lateBy+" late)", cliui.Yellow))
 		}
 	}
-}
-
-func dispatchKindLabelOrNone(kind any) string {
-	if l := dispatchKindLabel(kind); l != "" {
-		return l
-	}
-	return "None"
 }
 
 func (s *Store) scriptsDirForCron() string { return filepath.Join(filepath.Dir(s.cronDir), "scripts") }
@@ -766,7 +759,7 @@ func (s *Store) scriptHealthIssue(script string) (string, error) {
 	raw := pathutil.ExpandUser(script)
 	p := raw
 	if !filepath.IsAbs(raw) {
-		p = filepath.Join(scriptsDir, raw)
+		p = pathutil.JoinKeepDotDot(scriptsDir, raw)
 	}
 	if p, err = pathutil.Resolve(p); err != nil {
 		return "", err
@@ -826,7 +819,7 @@ func (s *Store) cronDoctorIssuesForJob(job *jsonutil.Object) ([]string, error) {
 	if d, ok := field(job, "last_dispatch", nil).(*jsonutil.Object); ok {
 		if label := dispatchKindLabel(field(d, "kind", nil)); label != "" {
 			issues = append(issues, fmt.Sprintf("last fire was %s (scheduled %s, %s late). This warning clears at the next on-time fire.",
-				label, anyutil.String(field(d, "scheduled_at", "?")), formatLateness(numberOf(field(d, "lateness_seconds", 0)))))
+				label, fieldText(d, "scheduled_at", "?"), formatLateness(numberOf(field(d, "lateness_seconds", 0)))))
 		}
 	}
 	if fe, ok := field(job, "last_fire_error", nil).(*jsonutil.Object); ok && anyutil.IsTrue(field(fe, "detail", nil)) {
@@ -915,7 +908,7 @@ func (s *Store) cronDoctor(ctx context.Context, w io.Writer) (int, error) {
 	say(w, color(fmt.Sprintf("Cron doctor found %d issue(s) across %d job(s):", total, len(findings)), cliui.Yellow))
 	fmt.Fprintln(w)
 	for _, f := range findings {
-		fmt.Fprintf(w, "  %s %s\n", color(anyutil.String(field(f.job, "id", "?")), cliui.Yellow), anyutil.String(field(f.job, "name", "(unnamed)")))
+		fmt.Fprintf(w, "  %s %s\n", color(fieldText(f.job, "id", "?"), cliui.Yellow), fieldText(f.job, "name", "(unnamed)"))
 		for _, issue := range f.issues {
 			fmt.Fprintf(w, "    - %s\n", issue)
 		}
@@ -979,11 +972,11 @@ func (s *Store) cronCreate(ctx context.Context, w io.Writer, a *CronArgs) int {
 	jobAPIKwargs(a, c)
 	result := s.cronAPI(ctx, c)
 	if !anyutil.IsTrue(field(result, "success", nil)) {
-		say(w, color("Failed to create job: "+anyutil.String(field(result, "error", "unknown error")), cliui.Red))
+		say(w, color("Failed to create job: "+fieldText(result, "error", "unknown error"), cliui.Red))
 		return 1
 	}
 	say(w, color("Created job: "+anyutil.String(field(result, "job_id", nil)), cliui.Green))
-	say(w, fmt.Sprintf("  Name: %s\n  Schedule: %s", anyutil.String(field(result, "name", nil)), anyutil.String(field(result, "schedule", nil))))
+	say(w, fmt.Sprintf("  Name: %s\n  Schedule: %s", fieldText(result, "name", "(unnamed)"), anyutil.String(field(result, "schedule", nil))))
 	if sk := field(result, "skills", nil); anyutil.IsTrue(sk) {
 		say(w, "  Skills: "+joinedStrings(sk))
 	}
@@ -995,7 +988,7 @@ func (s *Store) cronCreate(ctx context.Context, w io.Writer, a *CronArgs) int {
 	if !enabledOf(job) {
 		say(w, "  Created PAUSED — resume to schedule, or explicitly run now.")
 	} else {
-		say(w, "  Next run: "+anyutil.String(field(result, "next_run_at", nil)))
+		say(w, "  Next run: "+fieldText(result, "next_run_at", "not scheduled"))
 	}
 	s.warnIfGatewayNotRunning(ctx, w)
 	return 0
@@ -1060,12 +1053,12 @@ func (s *Store) cronEdit(ctx context.Context, w io.Writer, a *CronArgs) (int, er
 	jobAPIKwargs(a, c)
 	result := s.cronAPI(ctx, c)
 	if !anyutil.IsTrue(field(result, "success", nil)) {
-		say(w, color("Failed to update job: "+anyutil.String(field(result, "error", "unknown error")), cliui.Red))
+		say(w, color("Failed to update job: "+fieldText(result, "error", "unknown error"), cliui.Red))
 		return 1, nil
 	}
 	updated, _ := field(result, "job", nil).(*jsonutil.Object)
 	say(w, color("Updated job: "+anyutil.String(field(updated, "job_id", nil)), cliui.Green))
-	say(w, fmt.Sprintf("  Name: %s\n  Schedule: %s", anyutil.String(field(updated, "name", nil)), anyutil.String(field(updated, "schedule", nil))))
+	say(w, fmt.Sprintf("  Name: %s\n  Schedule: %s", fieldText(updated, "name", "(unnamed)"), anyutil.String(field(updated, "schedule", nil))))
 	if sk := field(updated, "skills", nil); anyutil.IsTrue(sk) {
 		say(w, "  Skills: "+joinedStrings(sk))
 	} else {
@@ -1084,7 +1077,7 @@ func (s *Store) jobAction(ctx context.Context, w io.Writer, action, jobID, verb 
 	}
 	result := s.cronAPI(ctx, c)
 	if !anyutil.IsTrue(field(result, "success", nil)) {
-		say(w, color(fmt.Sprintf("Failed to %s job: %s", action, anyutil.String(field(result, "error", "unknown error"))), cliui.Red))
+		say(w, color(fmt.Sprintf("Failed to %s job: %s", action, fieldText(result, "error", "unknown error")), cliui.Red))
 		return 1
 	}
 	job, _ := field(result, "job", nil).(*jsonutil.Object)
@@ -1094,7 +1087,7 @@ func (s *Store) jobAction(ctx context.Context, w io.Writer, action, jobID, verb 
 	if job == nil {
 		job = jsonutil.NewObject()
 	}
-	say(w, color(fmt.Sprintf("%s job: %s (%s)", verb, anyutil.String(field(job, "name", jobID)), jobID), cliui.Green))
+	say(w, color(fmt.Sprintf("%s job: %s (%s)", verb, fieldText(job, "name", jobID), jobID), cliui.Green))
 	resJob, _ := field(result, "job", nil).(*jsonutil.Object)
 	if resJob == nil {
 		resJob = jsonutil.NewObject()
@@ -1144,8 +1137,8 @@ func (s *Store) cronResume(ctx context.Context, w io.Writer, a *CronArgs) (int, 
 		return 1, nil
 	}
 	name := job.Name
-	next := "None"
-	if job.NextRunAt != nil {
+	next := "not scheduled"
+	if deref(job.NextRunAt) != "" {
 		next = *job.NextRunAt
 	}
 	say(w, color(fmt.Sprintf("Re-armed job: %s (%s)", name, a.JobID), cliui.Green)+"\n  Next run: "+next)
@@ -1199,7 +1192,7 @@ func (s *Store) cronNotepad(w io.Writer, a *CronArgs) (int, error) {
 		if _, err := n.Set(a.JobID, key, *a.Value); err != nil {
 			return fail(err)
 		}
-		say(w, color(fmt.Sprintf("Set notepad key '%s' for job %s.", key, a.JobID), cliui.Green))
+		say(w, color(fmt.Sprintf("Set notepad key %q for job %s.", key, a.JobID), cliui.Green))
 		return 0, nil
 	case "get":
 		stored, err := n.Get(a.JobID, key)
@@ -1216,11 +1209,11 @@ func (s *Store) cronNotepad(w io.Writer, a *CronArgs) (int, error) {
 			return fail(err)
 		}
 		if ok {
-			say(w, color(fmt.Sprintf("Deleted notepad key '%s' for job %s.", key, a.JobID), cliui.Green))
+			say(w, color(fmt.Sprintf("Deleted notepad key %q for job %s.", key, a.JobID), cliui.Green))
 			return 0, nil
 		}
 	}
-	say(w, color(fmt.Sprintf("No notepad key '%s' for job %s.", key, a.JobID), cliui.Yellow))
+	say(w, color(fmt.Sprintf("No notepad key %q for job %s.", key, a.JobID), cliui.Yellow))
 	return 1, nil
 }
 
@@ -1228,20 +1221,20 @@ func (s *Store) cronNotepad(w io.Writer, a *CronArgs) (int, error) {
 func (s *Store) cronCancel(ctx context.Context, w io.Writer, a *CronArgs) int {
 	result := s.cronAPI(ctx, &cronjobArgs{Action: "cancel", JobID: a.JobID, Reason: strOrNil(a.Reason)})
 	if !anyutil.IsTrue(field(result, "success", nil)) {
-		say(w, color("Failed to cancel run: "+anyutil.String(field(result, "error", "unknown error")), cliui.Red))
+		say(w, color("Failed to cancel run: "+fieldText(result, "error", "unknown error"), cliui.Red))
 		return 1
 	}
 	job, _ := field(result, "job", nil).(*jsonutil.Object)
 	if job == nil {
 		job = jsonutil.NewObject()
 	}
-	label := fmt.Sprintf("%s (%s)", anyutil.String(field(job, "name", a.JobID)), a.JobID)
+	label := fmt.Sprintf("%s (%s)", fieldText(job, "name", a.JobID), a.JobID)
 	if !anyutil.IsTrue(field(result, "cancelled", nil)) {
 		say(w, color("Nothing to cancel for "+label, cliui.Yellow))
 		return 0
 	}
-	say(w, color("Cancel requested for "+label, cliui.Green), fmt.Sprintf("  Execution: %s (pid %s)", anyutil.String(field(result, "execution_id", nil)), anyutil.String(field(result, "pid", nil))),
-		"  "+anyutil.String(field(result, "detail", "")))
+	say(w, color("Cancel requested for "+label, cliui.Green), fmt.Sprintf("  Execution: %s (pid %s)", fieldText(result, "execution_id", "unknown"), fieldText(result, "pid", "unknown")),
+		"  "+fieldText(result, "detail", ""))
 	return 0
 }
 

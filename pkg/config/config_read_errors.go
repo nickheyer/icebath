@@ -44,7 +44,7 @@ var (
 )
 
 // Python exception behind a config read failure, the parse error an invalid config wraps
-func pyReadFailure(err error) error {
+func readFailure(err error) error {
 	var inv *InvalidUserConfigError
 	if errors.As(err, &inv) && inv.Err != nil {
 		err = inv.Err
@@ -59,7 +59,7 @@ func pyReadFailure(err error) error {
 // Line of the problem mark, else the context mark, of a YAML error such as line 12, empty without one
 func YAMLErrorLocation(err error) string {
 	var me *ry.MarkedError
-	if !errors.As(pyReadFailure(err), &me) {
+	if !errors.As(readFailure(err), &me) {
 		return ""
 	}
 	mark := me.ProblemMark
@@ -74,7 +74,7 @@ func YAMLErrorLocation(err error) string {
 
 // Single line details text, the YAML problem or the exception text with whitespace runs collapsed
 func YAMLErrorDetails(err error) string {
-	inner := pyReadFailure(err)
+	inner := readFailure(err)
 	text := ""
 	var me *ry.MarkedError
 	if errors.As(inner, &me) && me.Problem != nil && *me.Problem != "" {

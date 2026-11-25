@@ -307,9 +307,9 @@ func TestDeletingASessionDropsTranscriptCopiesFromItsTerminalResults(t *testing.
 	history := []any{}
 	rows := []*jsonutil.Object{}
 	for turn := 0; turn < 3; turn++ {
-		ask := "SECRET_HISTORY q" + pyStr(int64(turn))
-		answer := "a" + pyStr(int64(turn))
-		admitInput(t, db, epoch, "api", "gone", "r"+pyStr(int64(turn)), admissionText(ask))
+		ask := "SECRET_HISTORY q" + anyutil.String(int64(turn))
+		answer := "a" + anyutil.String(int64(turn))
+		admitInput(t, db, epoch, "api", "gone", "r"+anyutil.String(int64(turn)), admissionText(ask))
 		row := claimHead(t, db, epoch, "gone")
 		if _, err := db.AppendMessage(ctx, "gone", map[string]any{"role": "user", "content": ask}, AppendGuards{}); err != nil {
 			t.Fatal(err)
@@ -890,8 +890,8 @@ func TestLocalResetStampsEndedAtOnTheSameFloatClockAsStartedAt(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent := sessionOf(t, db, sid)
-	ended, _ := pyFloatOf(rowValue(parent, "ended_at"))
-	started, _ := pyFloatOf(rowValue(parent, "started_at"))
+	ended, _ := floatOf(rowValue(parent, "ended_at"))
+	started, _ := floatOf(rowValue(parent, "started_at"))
 	if ended < started || ended < before {
 		t.Fatalf("ended %v started %v before %v", ended, started, before)
 	}
@@ -907,11 +907,11 @@ func TestPendingAndIdleProbesDoNotScanFinishedHistory(t *testing.T) {
 		for i := 0; i < 20000; i++ {
 			if _, err := conn.ExecContext(ctx, "INSERT INTO session_admissions(admission_id,request_id,principal_id,target_session_id,lineage_json,"+
 				"payload_json,payload_digest,intent,status,outcome,owner_epoch,generation) "+
-				"VALUES(?,?,'p','s','[]','{}','d','queue','terminal','completed',1,1)", "a"+pyStr(int64(i)), "r"+pyStr(int64(i))); err != nil {
+				"VALUES(?,?,'p','s','[]','{}','d','queue','terminal','completed',1,1)", "a"+anyutil.String(int64(i)), "r"+anyutil.String(int64(i))); err != nil {
 				return err
 			}
 			if _, err := conn.ExecContext(ctx, "INSERT INTO worker_executions(execution_id,session_id,kind,owner_epoch,generation,"+
-				"status,adoption_digest) VALUES(?,'s','compute',1,1,'terminal','d')", "w"+pyStr(int64(i))); err != nil {
+				"status,adoption_digest) VALUES(?,'s','compute',1,1,'terminal','d')", "w"+anyutil.String(int64(i))); err != nil {
 				return err
 			}
 		}
@@ -1006,7 +1006,7 @@ func TestADeletedCompressedRootLeavesItsBranchAndNoReusableID(t *testing.T) {
 		t.Fatal(err)
 	}
 	branch := sessionOf(t, db, "branch")
-	if rowValue(branch, "parent_session_id") != nil || !strings.Contains(pyStr(rowValue(branch, "model_config")), `"_branched_from": "tip"`) {
+	if rowValue(branch, "parent_session_id") != nil || !strings.Contains(anyutil.String(rowValue(branch, "model_config")), `"_branched_from": "tip"`) {
 		t.Fatalf("branch %v", branch)
 	}
 	limit := 50
@@ -1132,11 +1132,11 @@ func recordDeleteEvents(t *testing.T, db *SessionDB, before func() error) *[]*js
 		for k, v := range kwargs {
 			event.Set(k, v)
 		}
-		row, _ := db.GetSession(ctx, pyStr(kwargs["session_id"]))
+		row, _ := db.GetSession(ctx, anyutil.String(kwargs["session_id"]))
 		if row == nil {
 			event.Set("row_after", nil)
 		} else {
-			event.Set("row_after", pyTruthy(rowValue(row, "archived")))
+			event.Set("row_after", anyutil.IsTrue(rowValue(row, "archived")))
 		}
 		*events = append(*events, event)
 		return nil, firstErr
@@ -1257,7 +1257,7 @@ func TestRaisingCallbackNeverBreaksDeletion(t *testing.T) {
 	if ok, err := db.SetSessionArchived(ctx, "s2", true, true); err != nil || !ok {
 		t.Fatalf("archive %v %v", ok, err)
 	}
-	if sessionOf(t, db, "s1") != nil || !pyTruthy(rowValue(sessionOf(t, db, "s2"), "archived")) {
+	if sessionOf(t, db, "s1") != nil || !anyutil.IsTrue(rowValue(sessionOf(t, db, "s2"), "archived")) {
 		t.Fatal("state")
 	}
 	ids := []any{}
@@ -1397,7 +1397,7 @@ func TestImportSessionsRefusesADeletedIDByName(t *testing.T) {
 	}
 	found := false
 	for _, e := range rowValue(result, "errors").([]any) {
-		text := pyStr(e)
+		text := anyutil.String(e)
 		if strings.Contains(text, "s") && strings.Contains(text, "deleted") {
 			found = true
 		}

@@ -43,7 +43,7 @@ func cascadeSession(t *testing.T, conn SQLiteConn, sid, delegateFrom, parent str
 	ctx := context.Background()
 	var modelConfig, parentArg any
 	if delegateFrom != "" {
-		text, err := pyDumps(jsonutil.ObjectOf("_delegate_from", delegateFrom), pyJSONDefault)
+		text, err := dumpsValue(jsonutil.ObjectOf("_delegate_from", delegateFrom), jsonDefault)
 		if err != nil {
 			t.Fatal(err)
 		}

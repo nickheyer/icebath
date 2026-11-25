@@ -22,7 +22,7 @@ func (a *SessionAuthority) LiveSessionViews() []LiveSessionView {
 }
 
 // Python exception class an error stands for, empty when it carries none
-func PyErrorKind(err error) string { return pyErrorKind(err) }
+func ErrorKindValue(err error) string { return errorKindLabel(err) }
 
 // Whether the loop was closed so scheduling onto it fails
 func (l *CallbackLoop) IsClosed() bool {

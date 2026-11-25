@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -89,7 +90,7 @@ func stageSessionPrefill(ctx context.Context, a *SessionAuthority, policy *Local
 		if err != nil {
 			return nil, err
 		}
-		staged.OnCreate = &prefillPublication{ctx: context.WithoutCancel(ctx), authority: a, policy: policy, sessionID: pyStrOf(sid)}
+		staged.OnCreate = &prefillPublication{ctx: context.WithoutCancel(ctx), authority: a, policy: policy, sessionID: anyutil.String(sid)}
 	}
 	return staged, nil
 }

@@ -143,12 +143,12 @@ func (a *AIAgent) stripImagesForRejectingModel(apiMessages *[]any) bool {
 
 // True when a provider error says image or multimodal input is unsupported
 func looksLikeImageContentRejection(errorBody any) bool {
-	return containsAnyPhrase(strings.ToLower(pyStrOr(errorBody, "")), imageRejectionPhrases)
+	return containsAnyPhrase(strings.ToLower(anyutil.StringOr(errorBody, "")), imageRejectionPhrases)
 }
 
 // True when the rejection is about a bad image payload rather than the model capability
 func looksLikeCorruptImageRejection(errorBody any) bool {
-	return containsAnyPhrase(strings.ToLower(pyStrOr(errorBody, "")), imageCorruptPhrases)
+	return containsAnyPhrase(strings.ToLower(anyutil.StringOr(errorBody, "")), imageCorruptPhrases)
 }
 
 // True when body contains any of the phrases
@@ -257,7 +257,7 @@ func applyReasoningContentPolicy(sourceMsg, apiMsg map[string]any, needsThinking
 		var private []any
 		items, _ := popped.([]any)
 		for _, d := range items {
-			if dict, ok := jsonutil.AsMap(d); ok && strings.HasSuffix(pyStrOr(dict["type"], ""), ".native_assistant") {
+			if dict, ok := jsonutil.AsMap(d); ok && strings.HasSuffix(anyutil.StringOr(dict["type"], ""), ".native_assistant") {
 				private = append(private, d)
 			}
 		}

@@ -272,7 +272,7 @@ func hostedStrings(v any) []string {
 	switch l := v.(type) {
 	case []any:
 		items = l
-	case plugins.PySet:
+	case plugins.SetOf:
 		items = l
 	}
 	out := []string{}

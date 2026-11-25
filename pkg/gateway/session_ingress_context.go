@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -192,7 +193,7 @@ func nativeCallbackOf(ctx context.Context) (AuthorityRunner, *MessageEvent, stri
 func adapterRelayTransport(adapter PlatformAdapter) (any, error) {
 	holder, ok := adapter.(relayTransportAdapter)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) has no relay transport", adapter)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) has no relay transport", adapter)}
 	}
 	return holder.RelayTransport(), nil
 }
@@ -243,9 +244,9 @@ func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenanc
 	}
 	bot, found := source.Get("is_bot")
 	if !found {
-		return nil, &pyKeyError{"is_bot"}
+		return nil, &keyError{"is_bot"}
 	}
-	stored.IsBot = pyTruthy(bot)
+	stored.IsBot = anyutil.IsTrue(bot)
 	base := jsonutil.NewObject()
 	for _, key := range provenance.Keys() {
 		if key != "relay" {
@@ -259,7 +260,7 @@ func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenanc
 	}
 	transport, ok := raw.(relayTransport)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the relay transport (%T) cannot reseal an upgrade secret", raw)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the relay transport (%T) cannot reseal an upgrade secret", raw)}
 	}
 	seal, err := relaySeal(transport, stored, base)
 	if err != nil {
@@ -325,7 +326,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	}
 	bound, ok := runner.(provenanceRunner)
 	if !ok {
-		return nil, "", "", nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", runner)}
+		return nil, "", "", nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", runner)}
 	}
 	type registry struct {
 		owner   *string
@@ -515,7 +516,7 @@ func captureProvenance(ctx context.Context, runner AuthorityRunner, event *Messa
 	} else {
 		resolver, can := runner.(TransportOwnerRunner)
 		if !can {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no transport owner", runner)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no transport owner", runner)}
 		}
 		owner, _, owned = resolver.TransportOwner(event.Source)
 	}
@@ -584,7 +585,7 @@ func reauthorizeRoles(ctx context.Context, runner AuthorityRunner, source *Sessi
 	}
 	authz, ok := runner.(nativeAuthorizationRunner)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot check whether a user is authorized for a source", runner)}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot check whether a user is authorized for a source", runner)}
 	}
 	direct, err := authz.IsUserAuthorizedForSource(ctx, source, false)
 	if err != nil || direct {
@@ -599,7 +600,7 @@ func reauthorizeRoles(ctx context.Context, runner AuthorityRunner, source *Sessi
 	if recorded != nil {
 		value, found := recorded.Get("transport_home")
 		if !found {
-			return false, &pyKeyError{"transport_home"}
+			return false, &keyError{"transport_home"}
 		}
 		transportHome = anyutil.String(value)
 	} else if plain, isMap := provenance.(map[string]any); isMap {

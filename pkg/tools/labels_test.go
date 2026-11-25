@@ -103,12 +103,12 @@ func TestLabelsAndVerbs(t *testing.T) {
 	}
 }
 
-func TestVerboseToolArgsTextPrintsArgsAsPythonJSONDumps(t *testing.T) {
+func TestVerboseToolArgsTextPrintsArgsAsSpacedJSON(t *testing.T) {
 	if got := VerboseToolArgsText(jsonutil.ObjectOf("a", "x\ny"), 0, true); got != "```\n{\"a\": \"x\ny\"}\n```" {
 		t.Fatalf("code block %q", got)
 	}
 	args := jsonutil.ObjectOf("zeta", int64(1), "alpha", 1.0, "path", "caf\u00e9\ttab", "nested", jsonutil.ObjectOf("b", []any{int64(2), 2.5, nil, true}), "odd", struct{ X int }{3})
-	want := `{"zeta": 1, "alpha": 1.0, "path": "café\ttab", "nested": {"b": [2, 2.5, null, true]}, "odd": "{3}"}`
+	want := `{"zeta": 1, "alpha": 1.0, "path": "café\ttab", "nested": {"b": [2, 2.5, null, true]}, "odd": {"X": 3}}`
 	if got := VerboseToolArgsText(args, 0, false); got != want {
 		t.Fatalf("plain got %q want %q", got, want)
 	}

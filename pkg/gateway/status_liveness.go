@@ -208,7 +208,7 @@ func SharedListenerMirrorPlatformsFor(runtime *jsonutil.Object, profile string) 
 	for _, name := range names {
 		entry, ok := recGet(plats, name).(*jsonutil.Object)
 		state := recGet(entry, "state")
-		if !ok || !(pyEq(state, "connected") || pyEq(state, "connecting") || pyEq(state, "retrying")) {
+		if !ok || !(anyutil.Equal(state, "connected") || anyutil.Equal(state, "connecting") || anyutil.Equal(state, "retrying")) {
 			continue
 		}
 		var url any

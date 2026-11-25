@@ -247,11 +247,3 @@ func SelectionError(section, selectionName, failure string) string {
 func FalKeyIsConfigured(env *Env) bool {
 	return scopedCredential(env, "FAL_KEY") != "" || dotenvValue(env, "FAL_KEY") != ""
 }
-
-// Text of value or the empty string when the value is falsy, the str(value or "") idiom
-func pyOrStr(v any) string {
-	if !anyutil.IsTrue(v) {
-		return ""
-	}
-	return anyutil.String(v)
-}

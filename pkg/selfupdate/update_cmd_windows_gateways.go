@@ -554,7 +554,7 @@ func winFloat(v any) (float64, bool) {
 		parsed, err := strconv.ParseFloat(strings.TrimSpace(number), 64)
 		return parsed, err == nil
 	}
-	if number, ok := pyIntValue(v); ok {
+	if number, ok := intValue(v); ok {
 		return float64(number), true
 	}
 	return 0, false
@@ -889,7 +889,7 @@ func serviceGatewayReady(ctx context.Context, name, profile string, timeoutS *fl
 		var owned []int
 		for _, pid := range pids {
 			ancestors, err := winParents(pid)
-			var typed *pm.PyError
+			var typed *pm.ClassError
 			if errors.As(err, &typed) && !isUpdateOSError(err) {
 				return nil, err
 			}
@@ -974,7 +974,7 @@ func resumeWindowsServices(ctx context.Context, w io.Writer, token map[string]an
 				return err
 			}
 			if len(ready) == 0 {
-				attempts, _ := pyIntValue(backoff["attempts"])
+				attempts, _ := intValue(backoff["attempts"])
 				attempts++
 				retry[name] = map[string]any{"attempts": attempts,
 					"next_at": winNow() + math.Min(serviceRetryBaseS*math.Pow(2, float64(min(attempts-1, 6))), serviceRetryMaxS)}
@@ -1016,7 +1016,7 @@ func resumeWindowsServices(ctx context.Context, w io.Writer, token map[string]an
 func relaunchPausedGateways(ctx context.Context, paused map[string]any, unmapped []any) (map[string]any, []any) {
 	launched := map[string]any{}
 	for _, profile := range sortedKeysOf(paused) {
-		oldPid, ok := pyIntValue(paused[profile])
+		oldPid, ok := intValue(paused[profile])
 		if !ok {
 			pkgLog().DebugContext(ctx, fmt.Sprintf("Could not restart Windows gateway profile %s after update: %s", profile, "invalid pid"))
 			continue
@@ -1050,7 +1050,7 @@ func relaunchPausedGateways(ctx context.Context, paused map[string]any, unmapped
 func pendingRelaunchPids(paused map[string]any, unmapped []any, pidExists func(int) bool) []int {
 	set := map[int]bool{}
 	for _, pid := range paused {
-		if number, ok := pyIntValue(pid); ok {
+		if number, ok := intValue(pid); ok {
 			set[int(number)] = true
 		}
 	}
@@ -1105,8 +1105,8 @@ func unmappedReadyFilter(ctx context.Context, entry map[string]any, taken map[in
 		if oldCt == nil || ct == nil {
 			return true, nil
 		}
-		newer, newOk := pyIntValue(ct)
-		older, oldOk := pyIntValue(oldCt)
+		newer, newOk := intValue(ct)
+		older, oldOk := intValue(oldCt)
 		return newOk && oldOk && newer > older, nil
 	}
 	matches := func(pid int) (bool, error) {
@@ -1257,7 +1257,7 @@ func verifyRelaunchedGatewaysAlive(ctx context.Context, w io.Writer, token, paus
 		if err != nil {
 			return abortOnError("Could not load Windows gateway liveness helpers", err)
 		}
-		oldPid, _ := pyIntValue(paused[name])
+		oldPid, _ := intValue(paused[name])
 		targets = append(targets, readyTarget{Key: "profile:" + name, ClaimAll: true, Probe: func(func() ([]int, error)) ([]int, error) {
 			return winLiveGatewayPids(ctx, profileHome, func(pids []int) ([]int, error) {
 				var others []int

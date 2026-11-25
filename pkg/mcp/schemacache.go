@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -35,7 +36,7 @@ func schemaCachePath(ctx context.Context) string {
 }
 
 // Python json.dumps of a value with sorted keys, compact separators and ASCII escapes
-func pyJSONCompactASCII(v any) string {
+func jsonCompactASCII(v any) string {
 	var b strings.Builder
 	var enc func(v any)
 	enc = func(v any) {
@@ -91,7 +92,7 @@ func pyJSONCompactASCII(v any) string {
 			case math.IsInf(x, -1):
 				b.WriteString("-Infinity")
 			default:
-				b.WriteString(pyFloatRepr(x))
+				b.WriteString(floatRepr(x))
 			}
 		case []any:
 			b.WriteByte('[')
@@ -126,7 +127,7 @@ func pyJSONCompactASCII(v any) string {
 			}
 			enc(x.Map())
 		default:
-			enc(pyStr(v))
+			enc(anyutil.String(v))
 		}
 	}
 	enc(v)
@@ -145,15 +146,15 @@ func sortedFilter(v any) []any {
 		}
 	case []any:
 		for _, item := range x {
-			items = append(items, pyStr(item))
+			items = append(items, anyutil.String(item))
 		}
 	case []string:
 		items = append(items, x...)
 	default:
-		if !pyTruthy(v) {
+		if !anyutil.IsTrue(v) {
 			return []any{}
 		}
-		items = append(items, pyStr(v))
+		items = append(items, anyutil.String(v))
 	}
 	sort.Strings(items)
 	out := make([]any, len(items))
@@ -167,14 +168,14 @@ func sortedFilter(v any) []any {
 func ConfigFingerprint(cfg map[string]any) string {
 	toolsFilter, _ := cfg["tools"].(map[string]any)
 	args := cfg["args"]
-	if !pyTruthy(args) {
+	if !anyutil.IsTrue(args) {
 		args = []any{}
 	}
 	include, exclude := toolsFilter["include"], toolsFilter["exclude"]
-	if !pyTruthy(include) {
+	if !anyutil.IsTrue(include) {
 		include = nil
 	}
-	if !pyTruthy(exclude) {
+	if !anyutil.IsTrue(exclude) {
 		exclude = nil
 	}
 	payload := map[string]any{
@@ -185,7 +186,7 @@ func ConfigFingerprint(cfg map[string]any) string {
 		"tools_include": sortedFilter(include),
 		"tools_exclude": sortedFilter(exclude),
 	}
-	sum := sha256.Sum256([]byte(pyJSONCompactASCII(payload)))
+	sum := sha256.Sum256([]byte(jsonCompactASCII(payload)))
 	return hex.EncodeToString(sum[:])[:16]
 }
 

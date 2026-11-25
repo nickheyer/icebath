@@ -7,6 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -52,7 +54,7 @@ func rowTurnAuthor(policy *LocalSessionPolicy, row *jsonutil.Object) any {
 func admittedText(payload *jsonutil.Object) (string, bool, error) {
 	text, ok := payload.Get("text")
 	if !ok {
-		return "", false, &pyKeyError{"text"}
+		return "", false, &keyError{"text"}
 	}
 	switch value := text.(type) {
 	case string:
@@ -60,7 +62,7 @@ func admittedText(payload *jsonutil.Object) (string, bool, error) {
 	case []any:
 		return "", true, nil
 	}
-	return "", false, &PyError{Kind: "TypeError", Msg: "admitted text is " + errchain.Kind(text) + ", expected text or a list"}
+	return "", false, &errorutil.Error{Kind: "TypeError", Msg: "admitted text is " + errchain.Kind(text) + ", expected text or a list"}
 }
 
 // Event of a claimed row rebuilt from its committed payload
@@ -92,25 +94,25 @@ func admittedEvent(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 func preparedText(prepared *jsonutil.Object) (string, error) {
 	content, ok := prepared.Get("content")
 	if !ok {
-		return "", &pyKeyError{"content"}
+		return "", &keyError{"content"}
 	}
 	items, _ := content.([]any)
 	lines := []string{}
 	for _, item := range items {
 		part, isPart := item.(*jsonutil.Object)
 		if !isPart {
-			return "", &PyError{Kind: "AttributeError", Msg: "an admitted text part is " + errchain.Kind(item) + ", expected a mapping"}
+			return "", &errorutil.Error{Kind: "AttributeError", Msg: "an admitted text part is " + errchain.Kind(item) + ", expected a mapping"}
 		}
 		if kind, _ := part.Get("type"); kind != "text" {
 			continue
 		}
 		text, has := part.Get("text")
 		if !has {
-			return "", &pyKeyError{"text"}
+			return "", &keyError{"text"}
 		}
 		line, isText := text.(string)
 		if !isText {
-			return "", &PyError{Kind: "TypeError", Msg: "admitted text part 0 is " + errchain.Kind(text) + ", expected text"}
+			return "", &errorutil.Error{Kind: "TypeError", Msg: "admitted text part 0 is " + errchain.Kind(text) + ", expected text"}
 		}
 		lines = append(lines, line)
 	}
@@ -129,7 +131,7 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	policy, err := policyForSource(ctx, a.Runner, live.Source)
 	if err != nil {
@@ -179,7 +181,7 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 	}
 	if live.Source == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the admission has no source"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the admission has no source"}
 	}
 	isAPI := live.Source.Platform == PlatformAPIServer
 	if !(event.Internal || isAPI || live.Source.Platform == PlatformLocal) {
@@ -233,11 +235,11 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 			event.AllowGatewayControl = false
 			event.Internal = true
 		} else if textParts {
-			return &PyError{Kind: "TypeError", Msg: "admitted text is a list, expected text"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "admitted text is a list, expected text"}
 		}
 		handler, canHandle := a.Runner.(turnHandlerRunner)
 		if !canHandle {
-			return &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot handle a message"}
+			return &errorutil.Error{Kind: "AttributeError", Msg: "the gateway runner cannot handle a message"}
 		}
 		var err error
 		if response, err = handler.HandleMessage(scope, event); err != nil {
@@ -249,14 +251,14 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 		if result == nil {
 			final := response
-			if !pyTruthy(final) {
+			if !anyutil.IsTrue(final) {
 				final = ""
 			}
 			result = jsonutil.ObjectOf("final_response", final, "messages", []any{})
 			command, isCommand := event.GetCommand()
 			if finite, _ := payload.Get("finite"); isAPI || (finite == true && !(isCommand && command != "")) {
 				failure := response
-				if !pyTruthy(failure) {
+				if !anyutil.IsTrue(failure) {
 					failure = "The admitted turn failed."
 				}
 				result = jsonutil.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", failure)
@@ -273,7 +275,7 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		a.mu.Lock()
 		a.PendingResults[admissionID] = pending
 		a.mu.Unlock()
-		if !isAPI && pyTruthy(response) {
+		if !isAPI && anyutil.IsTrue(response) {
 			adapter, err := a.Runner.AdapterForSource(scope, event.Source)
 			if err != nil {
 				return err

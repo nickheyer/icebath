@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/pm"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -63,24 +64,27 @@ func failureText(err error) string {
 		return fmt.Sprintf("%s exited %d", strings.Join(subCalled.Args, " "), subCalled.ExitCode)
 	}
 	name := exceptionName(err)
+	if name == "" {
+		return errchain.OSText(err)
+	}
 	if text := err.Error(); text != "" {
 		return name + ": " + text
 	}
 	return name
 }
 
-// Python exception class an error stands for
+// Class label a failure declares, "" for an operating-system error, which its own text describes
 func exceptionName(err error) string {
 	var named interface{ ErrorKind() string }
 	if errors.As(err, &named) {
 		return named.ErrorKind()
 	}
-	var pyErr *pm.PyError
-	if errors.As(err, &pyErr) && pyErr.Class != "" {
-		return pyErr.Class
+	var kindErr *pm.ClassError
+	if errors.As(err, &kindErr) && kindErr.Class != "" {
+		return kindErr.Class
 	}
 	if errorutil.IsSystem(err) {
-		return errorutil.Kind(err)
+		return ""
 	}
 	return "RuntimeError"
 }

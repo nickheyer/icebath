@@ -574,7 +574,7 @@ func TestVertexAnthropicTransportPaths(t *testing.T) {
 		Model: "claude-sonnet-4-5", TokenSource: func(context.Context) (string, error) { return "tok", nil }}
 	tr, _ := vertexTransport(route)
 	req, err := tr.Request(context.Background(), anthOpMessages, map[string]any{"model": "claude-sonnet-4-5@20250929", "stream": true, "max_tokens": 5},
-		anthHead{extra: &pyHeaderDict{entries: []pyHeaderEntry{{name: "anthropic-beta", value: "b1"}}}}, anthSDKCall{})
+		anthHead{extra: newSDKHeaders(headerField{Name: "anthropic-beta", Value: "b1"})}, anthSDKCall{})
 	if err != nil {
 		t.Fatal(err)
 	}

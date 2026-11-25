@@ -69,7 +69,7 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 	}
 	decoded, err := jsonutil.Decode(encoded)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	payload := decoded.(*jsonutil.Object)
 	key, digest, err := MutationReceiptKey(in.PrincipalID, in.SessionID, in.RequestID, in.Operation, payload, in.ExpectedRevision, in.ExpectedGeneration)
@@ -152,18 +152,18 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 				return err
 			}
 			child, _ := projection.Get("branched_session_id")
-			carried = &branchShellLines{child: pyStr(child), before: before}
+			carried = &branchShellLines{child: anyutil.String(child), before: before}
 		}
 		if in.Operation == "delete" {
 			ids := []string{in.SessionID}
-			if deleted, _ := projection.Get("deleted_ids"); pyTruthy(deleted) {
+			if deleted, _ := projection.Get("deleted_ids"); anyutil.IsTrue(deleted) {
 				ids = []string{}
 				for _, sid := range deleted.([]any) {
-					ids = append(ids, pyStr(sid))
+					ids = append(ids, anyutil.String(sid))
 				}
 			}
 			event = &SessionGoneEvent{SessionIDs: ids, Reason: "delete"}
-		} else if archived, _ := payload.Get("archived"); archived == true && session != nil && !pyTruthy(session["archived"]) {
+		} else if archived, _ := payload.Get("archived"); archived == true && session != nil && !anyutil.IsTrue(session["archived"]) {
 			ids := affected
 			if len(ids) == 0 {
 				ids = []string{in.SessionID}
@@ -236,7 +236,7 @@ func canonicalChain(ctx context.Context, conn SQLiteConn, sessionID string) ([]s
 		if child == nil {
 			return chain, nil
 		}
-		id := pyStr(child["id"])
+		id := anyutil.String(child["id"])
 		for _, seen := range chain {
 			if seen == id {
 				return nil, runtimeRefusal("admission_conflict")
@@ -257,10 +257,10 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *jsonutil.Object,
 	lineageRaw, _ := rowValue(row, "lineage").(string)
 	lineageDecoded, err := jsonutil.Decode(lineageRaw)
 	if err != nil {
-		return pyValueError(err.Error())
+		return valueError(err.Error())
 	}
 	lineage, ok := lineageDecoded.([]any)
-	targetID := pyStr(rowValue(row, "target_session_id"))
+	targetID := anyutil.String(rowValue(row, "target_session_id"))
 	inLineage := false
 	for _, item := range lineage {
 		if anyutil.Equal(item, targetID) {
@@ -273,7 +273,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *jsonutil.Object,
 	payloadRaw, _ := rowValue(row, "payload").(string)
 	payloadDecoded, err := jsonutil.Decode(payloadRaw)
 	if err != nil {
-		return pyValueError(err.Error())
+		return valueError(err.Error())
 	}
 	encoded, err := runtimeJSON(payloadDecoded)
 	if err != nil {
@@ -287,7 +287,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *jsonutil.Object,
 	if intent == "interrupt" {
 		intent = "redirect"
 	}
-	status := pyStr(rowValue(row, "status"))
+	status := anyutil.String(rowValue(row, "status"))
 	switch intent {
 	case "queue", "steer", "redirect":
 	default:

@@ -118,7 +118,7 @@ func TestUnpairedSurrogatesAreSafeThroughPruningAndSqlite(t *testing.T) {
 	if count != 1 || utf8.RuneCountInString(summary) > pruneMinChars || !utf8.ValidString(summary) {
 		t.Fatalf("count=%d len=%d valid=%v %q", count, utf8.RuneCountInString(summary), utf8.ValidString(summary), summary)
 	}
-	if !strings.Contains(summary, "Привет 😀") || !strings.Contains(summary, `\ud83d`) {
+	if !strings.Contains(summary, "Привет 😀�") {
 		t.Fatalf("summary %q", summary)
 	}
 	sqliteRoundTrip(t, summary)

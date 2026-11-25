@@ -113,7 +113,7 @@ func sideQuestionRedeemable(lease *sideQuestionLease, prompt any) string {
 		return "turn_moved_on"
 	}
 	text, ok := prompt.(string)
-	if !ok || strings.TrimSpace(text) == "" || pyLen(text) > sideQuestionMaxPromptChars {
+	if !ok || strings.TrimSpace(text) == "" || lengthOf(text) > sideQuestionMaxPromptChars {
 		return "bad_prompt"
 	}
 	return ""

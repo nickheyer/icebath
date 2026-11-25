@@ -125,8 +125,8 @@ func TestGatewayExecQuickCommandReplies(t *testing.T) {
 		{"true", "Command returned no output."},
 		{[]byte("echo bytes"), "bytes"},
 		{"printf 'a\\r\\nb\\rc\\r\\n'", "a\r\nb\rc"},
-		{"printf 'ok\\377\\342\\202x'", "Quick command error: 'utf-8' codec can't decode byte 0xff in position 2: invalid start byte"},
-		{"printf '\\342\\202'", "Quick command error: 'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"},
+		{"printf 'ok\\377\\342\\202x'", "Quick command error: invalid UTF-8 at byte 2"},
+		{"printf '\\342\\202'", "Quick command error: invalid UTF-8 at byte 0"},
 	}
 	for _, c := range cases {
 		if got, err := RunGatewayExecQuickCommand(ctx, env, c.cmd, ""); err != nil || got != c.want {

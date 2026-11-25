@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -17,7 +18,7 @@ func (d *SessionDB) projectCompressionTips(ctx context.Context, sessions []*json
 		if rowValue(s, "end_reason") != "compression" {
 			continue
 		}
-		id := pyStr(rowValue(s, "id"))
+		id := anyutil.String(rowValue(s, "id"))
 		chain, err := d.GetCompressionChain(ctx, id)
 		if err != nil {
 			return nil, err
@@ -36,7 +37,7 @@ func (d *SessionDB) projectCompressionTips(ctx context.Context, sessions []*json
 	}
 	projected := make([]*jsonutil.Object, 0, len(sessions))
 	for _, s := range sessions {
-		chain := chainByRoot[pyStr(rowValue(s, "id"))]
+		chain := chainByRoot[anyutil.String(rowValue(s, "id"))]
 		var tipRow *jsonutil.Object
 		if chain != nil {
 			tipRow = tipRows[chain[len(chain)-1]]

@@ -143,7 +143,7 @@ func GetRuntimeStatusRunningPid(runtime *jsonutil.Object, expectedHome string) (
 		return 0, false, nil
 	}
 	state := recGet(payload, "gateway_state")
-	if state == nil || pyEq(state, "stopped") || pyEq(state, "startup_failed") {
+	if state == nil || anyutil.Equal(state, "stopped") || anyutil.Equal(state, "startup_failed") {
 		return 0, false, nil
 	}
 	pid, ok := liveFromRecord(payload)
@@ -284,7 +284,7 @@ func scopedLockRecordIsStale(existing *jsonutil.Object, existingPid int, hasPid 
 		return true
 	}
 	meta, _ := recGet(existing, "metadata").(*jsonutil.Object)
-	processOwner := meta != nil && pyEq(recGet(meta, "owner_kind"), "process")
+	processOwner := meta != nil && anyutil.Equal(recGet(meta, "owner_kind"), "process")
 	if !processOwner && !statusLooksLikeGatewayProcess(existingPid) {
 		if _, ok := statusReadProcessCmdline(existingPid); ok {
 			return true
@@ -299,7 +299,7 @@ func scopedLockRecordIsStale(existing *jsonutil.Object, existingPid int, hasPid 
 // Releases a scope lock owned by this pid whatever its recorded start time
 func ReleaseScopedLock(scope, identity string) {
 	lockPath := scopeLockPath(scope, identity)
-	if pyEq(recGet(readJSONFile(lockPath, false), "pid"), int64(statusGetpid())) {
+	if anyutil.Equal(recGet(readJSONFile(lockPath, false), "pid"), int64(statusGetpid())) {
 		unlinkQuietly(lockPath)
 	}
 }
@@ -319,7 +319,7 @@ func ReleaseAllScopedLocks(ownerPid *int, ownerStartTime any) int {
 		if ownerPid != nil {
 			record := readJSONFile(lockFile, false)
 			pid, ok := pidFromRecord(record, "pid")
-			if !ok || pid != *ownerPid || (ownerStartTime != nil && !pyEq(recGet(record, "start_time"), ownerStartTime)) {
+			if !ok || pid != *ownerPid || (ownerStartTime != nil && !anyutil.Equal(recGet(record, "start_time"), ownerStartTime)) {
 				continue
 			}
 		}
@@ -449,7 +449,7 @@ func GetRunningPidIdentityStrict(pidPathArg string) (int, float64, bool, error) 
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("exact gateway creation time is unavailable: %w", err)
 	}
-	if pyRound(exact*100) != math.Trunc(current) {
+	if roundHalfEven(exact*100) != math.Trunc(current) {
 		return 0, 0, false, errors.New("gateway process identity changed")
 	}
 	return pid, exact, true, nil

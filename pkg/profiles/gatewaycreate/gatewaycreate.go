@@ -162,17 +162,8 @@ func describedInstance(ctx context.Context, client *gateway.GatewayClient) strin
 	return instance
 }
 
-// Type names of failures that carry nothing but a text
-var untypedFailures = map[string]bool{"errorString": true, "wrapError": true, "wrapErrors": true, "joinError": true}
-
-// Short type name of a failure, the only part shown since its text can quote the gateway URL
-func kindName(err error) string {
-	name := strings.TrimLeft(fmt.Sprintf("%T", err), "*")
-	if name = name[strings.LastIndex(name, ".")+1:]; untypedFailures[name] {
-		return "connection error"
-	}
-	return name
-}
+// Reason an exchange with the gateway failed, its text with every credential shape and URL credential masked
+func failureReason(err error) string { return manage.RedactCreateText(err.Error()) }
 
 // Outcome of one create request over a gateway connection
 type exchange struct {
@@ -252,12 +243,12 @@ func CreateThroughGateway(ctx context.Context, req manage.ProfileCreateRequest) 
 		return nil, refusedCreate(refused, remote, named, profile, unknown)
 	case !sent.attached || err.Error() == gateway.GatewayNotSent:
 		if remote != "" {
-			return nil, &GatewayCreateError{fmt.Sprintf("could not reach %s (%s)", named, kindName(err))}
+			return nil, &GatewayCreateError{fmt.Sprintf("could not reach %s (%s)", named, failureReason(err))}
 		}
-		pkgLog().Info(fmt.Sprintf("profile create: the running gateway is unreachable (%s); creating locally", manage.RedactCreateText(err.Error())))
+		pkgLog().Info(fmt.Sprintf("profile create: the running gateway is unreachable (%s); creating locally", failureReason(err)))
 		return nil, nil
 	default:
-		return nil, &GatewayCreateError{fmt.Sprintf("lost %s during the create (%s); %s", named, kindName(err), unknown)}
+		return nil, &GatewayCreateError{fmt.Sprintf("lost %s during the create (%s); %s", named, failureReason(err), unknown)}
 	}
 	var wireReceipt any
 	if answer, isObject := jsonutil.Plain(sent.answer).(map[string]any); isObject {

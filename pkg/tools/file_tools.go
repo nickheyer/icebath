@@ -53,8 +53,8 @@ const (
 
 // V4A headers, group one the prefix, two the op, three the path
 var (
-	v4aToolSingleHeaderRe = regexp.MustCompile(`(?m)^(\*\*\*` + pyWSClass + `*(Update|Add|Delete)` + pyWSClass + `+File:` + pyWSClass + `*)(.+)$`)
-	v4aToolMoveHeaderRe   = regexp.MustCompile(`(?m)^(\*\*\*` + pyWSClass + `*Move` + pyWSClass + `+File:` + pyWSClass + `*)(.+?)` + pyWSClass + `*->` + pyWSClass + `*(.+)$`)
+	v4aToolSingleHeaderRe = regexp.MustCompile(`(?m)^(\*\*\*` + wsClass + `*(Update|Add|Delete)` + wsClass + `+File:` + wsClass + `*)(.+)$`)
+	v4aToolMoveHeaderRe   = regexp.MustCompile(`(?m)^(\*\*\*` + wsClass + `*Move` + wsClass + `+File:` + wsClass + `*)(.+?)` + wsClass + `*->` + wsClass + `*(.+)$`)
 )
 
 // Most characters one read_file call returns for the env's profile
@@ -100,7 +100,7 @@ func applyCharBudget(result *jsonutil.Object, content string, offset int, totalL
 	result.Set("truncated_by", "bytes")
 	result.Set("next_offset", nextOffset)
 	hint := fmt.Sprintf("Output truncated at the %s-char read budget after %d line(s) (showing lines %d-%d of %s). Use offset=%d to continue.",
-		commaInt(maxChars), linesKept, offset, nextOffset-1, pyDisplay(totalLines), nextOffset)
+		commaInt(maxChars), linesKept, offset, nextOffset-1, displayValue(totalLines), nextOffset)
 	first, _, _ := strings.Cut(trimmed, "\n")
 	if utf8Len(first) >= maxChars {
 		result.Set("truncated_lines", true)
@@ -112,11 +112,11 @@ func applyCharBudget(result *jsonutil.Object, content string, offset int, totalL
 }
 
 // Python str of a decoded result value for message text
-func pyDisplay(v any) string {
+func displayValue(v any) string {
 	if n, ok := v.(json.Number); ok {
 		return n.String()
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // File backend surface the file tools drive, the backend contract plus probes and gutters
@@ -167,18 +167,18 @@ const fileOpsEnvStartTimeout = 5 * time.Minute
 
 // Builds the configured terminal environment of a task so a file tool before any command gets the right backend
 func createTerminalEnvForFileOps(env *Env, rawTaskID, taskID string, cfg map[string]any) (string, Environment, error) {
-	envType := pyStrOrEmpty(cfg["env_type"])
+	envType := anyutil.String(cfg["env_type"])
 	overrides, err := ResolveTaskOverrides(env, rawTaskID)
 	if err != nil {
 		return envType, nil, err
 	}
 	cwd := ""
 	if truthy(overrides["cwd"]) {
-		cwd = pyStr(overrides["cwd"])
+		cwd = anyutil.String(overrides["cwd"])
 	} else if recorded, ok := GetSessionCwd(env, rawTaskID); ok && recorded != "" {
 		cwd = recorded
 	} else {
-		cwd = pyStrOrEmpty(cfg["cwd"])
+		cwd = anyutil.String(cfg["cwd"])
 	}
 	cwd = coerceSSHRemoteCwd(env, cwd, envType)
 	hostCwd, err := resolveTaskHostCwd(env, cfg, rawTaskID)
@@ -186,13 +186,13 @@ func createTerminalEnvForFileOps(env *Env, rawTaskID, taskID string, cfg map[str
 		return envType, nil, err
 	}
 	if isContainerBackend(envType) && isUnusableContainerCwd(cwd, hostCwd) {
-		fallback := pyStrOrEmpty(cfg["cwd"])
+		fallback := anyutil.String(cfg["cwd"])
 		if isMountedHostCwd(cwd, hostCwd) {
 			fallback = "/workspace"
 		}
 		if cwd != fallback {
 			envLog(env).Info(fmt.Sprintf("Ignoring host/relative cwd override %s for %s backend (won't exist in sandbox). Using %s instead.",
-				pyReprStr(cwd), envType, pyReprStr(fallback)))
+				strconv.Quote(cwd), envType, strconv.Quote(fallback)))
 		}
 		cwd = fallback
 	}
@@ -295,7 +295,7 @@ func rewriteV4APatchPathsForHost(patch string, pathToResolved, pathToEntry map[s
 		return patch
 	}
 	res := func(raw string, entry bool) string {
-		raw = pyStrip(raw)
+		raw = strings.TrimSpace(raw)
 		table := pathToResolved
 		if entry {
 			table = pathToEntry
@@ -361,7 +361,7 @@ func hostDirname(p string) string {
 func isBlockedDevice(env *Env, filePath, baseDir string) bool {
 	expanded := expandTildeFor(env, filePath)
 	if baseDir != "" && !filepath.IsAbs(expanded) {
-		expanded = pyOSPathJoin(baseDir, expanded)
+		expanded = osPathJoinValue(baseDir, expanded)
 	}
 	normalized := hostNormpath(expanded)
 	if isBlockedDevicePath(env, normalized) {
@@ -375,7 +375,7 @@ func isBlockedDevice(env *Env, filePath, baseDir string) bool {
 			break
 		}
 		if !filepath.IsAbs(target) {
-			target = pyOSPathJoin(hostDirname(current), target)
+			target = osPathJoinValue(hostDirname(current), target)
 		}
 		target = hostNormpath(target)
 		if isBlockedDevicePath(env, target) {
@@ -482,12 +482,7 @@ func dictSetDefault(o *jsonutil.Object, key string, v any) {
 
 // Truthy value of a result key
 func dictTruthy(o *jsonutil.Object, key string) bool {
-	v, _ := o.Get(key)
-	if n, ok := v.(json.Number); ok {
-		f, _ := n.Float64()
-		return f != 0
-	}
-	return truthy(v)
+	return truthy(o.Value(key))
 }
 
 // String value of a result key, empty when absent or not a string
@@ -497,13 +492,11 @@ func dictString(o *jsonutil.Object, key string) string {
 	return s
 }
 
-// Integer value of a result key and whether it held a JSON integer
+// Integer value of a result key and whether it held one, as decoded JSON (int64) or as set in Go (int)
 func dictInt(o *jsonutil.Object, key string) (int, bool) {
-	v, _ := o.Get(key)
-	switch n := v.(type) {
-	case json.Number:
-		i, err := n.Int64()
-		return int(i), err == nil
+	switch n := o.Value(key).(type) {
+	case int64:
+		return int(n), true
 	case int:
 		return n, true
 	}
@@ -665,7 +658,7 @@ func renderDocument(ctx context.Context, env *Env, path, resolved string, offset
 		}
 		return "", false, nil
 	}
-	lines := pySplitLines(extracted)
+	lines := splitLinesValue(extracted)
 	totalLines := len(lines)
 	endLine := offset + limit - 1
 	lo, hi := min(offset-1, totalLines), min(endLine, totalLines)
@@ -1105,7 +1098,7 @@ func wholeFileRewriteHint(ctx context.Context, env *Env, taskID, resolved, newCo
 	if n := utf8Len(old); n < rewriteHintMinChars || n > rewriteHintMaxChars {
 		return ""
 	}
-	oldLines, newLines := pySplitLines(old), pySplitLines(newContent)
+	oldLines, newLines := splitLinesValue(old), splitLinesValue(newContent)
 	if len(oldLines) == 0 {
 		return ""
 	}
@@ -1252,12 +1245,12 @@ func collectV4AHeaderPaths(patch string) ([]string, []string, []string, string) 
 	}
 	var paths, contentPaths, entryPaths []string
 	for _, h := range headers {
-		v4aPath := pyStrip(h.raw)
+		v4aPath := strings.TrimSpace(h.raw)
 		if hasTraversalComponent(v4aPath) {
 			return nil, nil, nil, fileToolError(fmt.Sprintf("V4A patch header contains '..' traversal: %s. "+
 				"Use the agent's cwd-relative path (no '..') or an absolute "+
 				"path in '*** Update File:' / '*** Add File:' / "+
-				"'*** Delete File:' / '*** Move File:' headers.", pyReprStr(v4aPath)))
+				"'*** Delete File:' / '*** Move File:' headers.", strconv.Quote(v4aPath)))
 		}
 		paths = append(paths, v4aPath)
 		if h.writesText {
@@ -1423,7 +1416,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 	if early {
 		return dictJSON(dict), nil
 	}
-	if errText := pyDisplay(dict.Value("error")); dictTruthy(dict, "error") && holdsNoMatch(errText) {
+	if errText := displayValue(dict.Value("error")); dictTruthy(dict, "error") && holdsNoMatch(errText) {
 		failureCount := 0
 		if a.mode == "replace" && a.path != "" {
 			target := pathToResolved[a.path]
@@ -1439,7 +1432,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 				"content, (2) use a longer / more unique old_string with "+
 				"surrounding context lines, or (3) re-read the file in "+
 				"full, then use write_file to replace it if the targeted "+
-				"region is hard to anchor.", failureCount, pyReprStr(a.path)))
+				"region is hard to anchor.", failureCount, strconv.Quote(a.path)))
 		} else if !strings.Contains(errText, didYouMeanLead) {
 			dict.Set("_hint", "old_string not found. Use read_file to verify the current "+
 				"content, or search_files to locate the text.")
@@ -1480,7 +1473,7 @@ func pathlibTypeError(v any) string {
 }
 
 // Scalar JSON value, the Python types an in test rejects as not a container
-func pyScalarArg(v any) bool {
+func scalarArg(v any) bool {
 	switch v.(type) {
 	case []any, map[string]any, *jsonutil.Object, string:
 		return false
@@ -1489,7 +1482,7 @@ func pyScalarArg(v any) bool {
 }
 
 // Membership the way Python in tests a list element or a dict key
-func pyContainsStr(v any, s string) bool {
+func containsStr(v any, s string) bool {
 	switch t := v.(type) {
 	case []any:
 		for _, item := range t {
@@ -1512,10 +1505,10 @@ func tildePathTypeError(v any) string {
 	if _, ok := v.(string); ok {
 		return ""
 	}
-	if pyContainsStr(v, "~") {
+	if containsStr(v, "~") {
 		return "the path is " + errchain.Kind(v) + ", expected text"
 	}
-	if pyScalarArg(v) && anyutil.IsTrue(v) {
+	if scalarArg(v) && anyutil.IsTrue(v) {
 		return "the path is " + errchain.Kind(v) + ", expected text"
 	}
 	return pathlibTypeError(v)
@@ -1534,14 +1527,14 @@ func searchPatternKey(a searchArgs) any {
 	if a.patternErr == "" {
 		return a.pattern
 	}
-	if f, ok := pyNumericValue(a.patternValue); ok {
+	if f, ok := numericValue(a.patternValue); ok {
 		return "\x01" + strconv.FormatFloat(f, 'g', -1, 64)
 	}
 	return "\x01" + anyutil.Quote(a.patternValue)
 }
 
 // Numeric value of a JSON bool or number, the way Python equality compares them
-func pyNumericValue(v any) (float64, bool) {
+func numericValue(v any) (float64, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -1867,7 +1860,7 @@ func optionalStringArg(args map[string]any, key string) *string {
 	if !ok || v == nil {
 		return nil
 	}
-	s := pyStr(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -1875,20 +1868,20 @@ func handlePatch(ctx context.Context, call *Call) string {
 	tid := callTaskID(call)
 	mode := "replace"
 	if v, ok := call.Args["mode"]; ok {
-		mode = pyStr(v)
+		mode = anyutil.String(v)
 	}
 	a := patchArgs{mode: mode, oldString: optionalStringArg(call.Args, "old_string"), newString: optionalStringArg(call.Args, "new_string"),
 		replaceAll: truthy(call.Args["replace_all"]), crossProfile: truthy(call.Args["cross_profile"]), sessionID: call.SessionID}
-	pyArgs := pythonCallArgs(call)
-	if p, ok := pyArgs["patch"].(string); ok {
+	argsValue := pythonCallArgs(call)
+	if p, ok := argsValue["patch"].(string); ok {
 		a.patch = p
-	} else if mode == "patch" && anyutil.IsTrue(pyArgs["patch"]) {
-		panic(&pyTypeError{msg: "the patch is " + errchain.Kind(pyArgs["patch"]) + ", expected text"})
+	} else if mode == "patch" && anyutil.IsTrue(argsValue["patch"]) {
+		panic(&typeError{msg: "the patch is " + errchain.Kind(argsValue["patch"]) + ", expected text"})
 	}
-	if p, ok := pyArgs["path"].(string); ok {
+	if p, ok := argsValue["path"].(string); ok {
 		a.path = p
-	} else if anyutil.IsTrue(pyArgs["path"]) {
-		panic(&pyTypeError{msg: tildePathTypeError(pyArgs["path"])})
+	} else if anyutil.IsTrue(argsValue["path"]) {
+		panic(&typeError{msg: tildePathTypeError(argsValue["path"])})
 	}
 	return owned(ctx, call, func(ctx context.Context) string {
 		return patchTool(ctx, call.Env, a, tid)
@@ -1903,7 +1896,7 @@ func stringArgDefault(args map[string]any, key, def string) string {
 	if !ok {
 		return def
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 func handleSearchFiles(ctx context.Context, call *Call) string {
@@ -1911,16 +1904,16 @@ func handleSearchFiles(ctx context.Context, call *Call) string {
 	if alias, ok := searchTargetAliases[target]; ok {
 		target = alias
 	}
-	pyArgs := pythonCallArgs(call)
+	argsValue := pythonCallArgs(call)
 	path, pathErr := ".", ""
-	if v, ok := pyArgs["path"]; ok && v != nil {
-		if s, isString := v.(string); !isString || pyStrip(s) != "" {
-			path, pathErr = pyStr(v), tildePathTypeError(v)
+	if v, ok := argsValue["path"]; ok && v != nil {
+		if s, isString := v.(string); !isString || strings.TrimSpace(s) != "" {
+			path, pathErr = anyutil.String(v), tildePathTypeError(v)
 		}
 	}
 	fileGlob := ""
 	if v, ok := call.Args["file_glob"]; ok && v != nil {
-		fileGlob = pyStr(v)
+		fileGlob = anyutil.String(v)
 	}
 	limit, ok := call.Args["limit"]
 	if !ok {
@@ -1931,7 +1924,7 @@ func handleSearchFiles(ctx context.Context, call *Call) string {
 		offset = 0
 	}
 	var patternValue any = ""
-	if v, ok := pyArgs["pattern"]; ok {
+	if v, ok := argsValue["pattern"]; ok {
 		patternValue = v
 	}
 	a := searchArgs{pattern: stringArgDefault(call.Args, "pattern", ""), target: target, path: path, fileGlob: fileGlob,

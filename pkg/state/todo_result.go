@@ -52,7 +52,7 @@ func (d *SessionDB) GetLatestTodoResult(ctx context.Context, sessionID string, m
 				}
 				for _, row := range rows {
 					callID := rowValue(row, "tool_call_id")
-					if !pyTruthy(callID) {
+					if !anyutil.IsTrue(callID) {
 						continue
 					}
 					gone, err := todoCopyRemoved(row, removed)
@@ -77,7 +77,7 @@ func (d *SessionDB) GetLatestTodoResult(ctx context.Context, sessionID string, m
 						return err
 					}
 					if valid {
-						result, found = pyStr(rowValue(row, "content")), true
+						result, found = anyutil.String(rowValue(row, "content")), true
 						return nil
 					}
 				}
@@ -99,7 +99,7 @@ func todoLoads(raw any) (any, error) {
 	case string:
 		text = x
 	case []byte:
-		decoded, err := pyJSONDecodeBytes(x)
+		decoded, err := jsonDecodeBytes(x)
 		if err != nil {
 			return nil, errTodoSkip
 		}
@@ -107,7 +107,7 @@ func todoLoads(raw any) (any, error) {
 	default:
 		return nil, errTodoSkip
 	}
-	v, err := pyLoads(text)
+	v, err := loadsValue(text)
 	if err != nil {
 		return nil, errTodoSkip
 	}
@@ -126,7 +126,7 @@ func todoResultValid(priorCalls, callID, content any) (bool, error) {
 // Todo pairing and payload validation, errTodoSkip standing for a swallowed ValueError or TypeError
 func todoResultCheck(priorCalls, callID, content any) (bool, error) {
 	var calls any = []any{}
-	if pyTruthy(priorCalls) {
+	if anyutil.IsTrue(priorCalls) {
 		v, err := todoLoads(priorCalls)
 		if err != nil {
 			return false, err
@@ -201,20 +201,20 @@ func todoResultCheck(priorCalls, callID, content any) (bool, error) {
 		return false, nil
 	}
 	revision, _ := mappingGet(data, "revision")
-	if !pyTruthy(revision) {
+	if !anyutil.IsTrue(revision) {
 		return true, nil
 	}
-	return true, pyIntConvertible(revision)
+	return true, intConvertible(revision)
 }
 
 // Python int of a JSON value, errTodoSkip for ValueError and TypeError, an OverflowError for infinity
-func pyIntConvertible(v any) error {
+func intConvertible(v any) error {
 	switch x := v.(type) {
 	case bool, int, int64, json.Number:
 		return nil
 	case float64:
 		if math.IsInf(x, 0) {
-			return &pyConvError{"OverflowError", "infinity has no whole number value"}
+			return &convError{"OverflowError", "infinity has no whole number value"}
 		}
 		if math.IsNaN(x) {
 			return errTodoSkip
@@ -232,7 +232,7 @@ func pyIntConvertible(v any) error {
 // Copy identities the removal aware display dedupe gives a Todo result row
 func todoCopies(row *jsonutil.Object, identity any) ([]string, error) {
 	hashed := ""
-	if pyTruthy(identity) {
+	if anyutil.IsTrue(identity) {
 		hashed = "h:" + string(identityBytes(identity))
 	} else {
 		key, err := displayDedupeKey(objMap(row))
@@ -243,8 +243,8 @@ func todoCopies(row *jsonutil.Object, identity any) ([]string, error) {
 	}
 	copies := []string{hashed}
 	for _, uid := range append([]any{rowValue(row, "message_uid")}, anyStrings(uidList(rowValue(row, "absorbed_message_uids")))...) {
-		if pyTruthy(uid) {
-			copies = append(copies, "uid:"+pyStr(uid))
+		if anyutil.IsTrue(uid) {
+			copies = append(copies, "uid:"+anyutil.String(uid))
 		}
 	}
 	return copies, nil

@@ -141,7 +141,7 @@ func TestVaultListShowsItemsAndRmRemovesThem(t *testing.T) {
 	if out := runVault(t, h, map[string]any{"vault_action": "rm", "handle": meta.ID}); !strings.Contains(out, "Removed "+meta.ID) {
 		t.Fatalf("output %q", out)
 	}
-	if out := runVault(t, h, map[string]any{"vault_action": "rm", "handle": "vault_nope"}); !strings.Contains(out, "No vault item with handle 'vault_nope'") {
+	if out := runVault(t, h, map[string]any{"vault_action": "rm", "handle": "vault_nope"}); !strings.Contains(out, `No vault item with handle "vault_nope"`) {
 		t.Fatalf("output %q", out)
 	}
 }

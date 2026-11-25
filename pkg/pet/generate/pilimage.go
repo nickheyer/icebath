@@ -281,4 +281,4 @@ func erodeAlpha3(img *image.NRGBA) {
 }
 
 // Python round of a float, half to even
-func pyRound(v float64) int { return int(math.RoundToEven(v)) }
+func roundHalfEven(v float64) int { return int(math.RoundToEven(v)) }

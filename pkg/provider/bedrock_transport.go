@@ -142,7 +142,7 @@ func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, bo
 		return nil, err
 	}
 	req.Host = httpxHost(req.URL)
-	signed, err := t.authorize(ctx, req, httpxPreparedLines(req, lines, len(data)), data, client, region)
+	signed, err := t.authorize(ctx, req, lines, data, client, region)
 	if err != nil {
 		return nil, err
 	}

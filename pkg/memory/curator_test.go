@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -235,7 +236,7 @@ func TestCuratorRunReviewRecordsState(t *testing.T) {
 	if st.Value("last_run_at") == nil || curatorCount(st, "run_count") < 1 || st.Value("last_run_summary") == nil {
 		t.Fatalf("state %v", st)
 	}
-	report := pyStr(st.Value("last_report_path"))
+	report := anyutil.String(st.Value("last_report_path"))
 	for _, f := range []string{"run.json", "REPORT.md"} {
 		if !curatorExists(filepath.Join(report, f)) {
 			t.Fatalf("missing %s in %s", f, report)
@@ -318,7 +319,7 @@ func TestCuratorAbsorbedIntoDeclarations(t *testing.T) {
 func TestCuratorReconcileClassification(t *testing.T) {
 	cons, pruned := curatorReconcile([]string{"pr-review-format"}, nil, nil, nil, map[string]bool{"icebath-agent-dev": true},
 		map[string]string{"pr-review-format": "icebath-agent-dev"})
-	if len(cons) != 1 || len(pruned) != 0 || cons[0].Value("into") != "icebath-agent-dev" || !strings.Contains(pyStr(cons[0].Value("source")), "absorbed_into") {
+	if len(cons) != 1 || len(pruned) != 0 || cons[0].Value("into") != "icebath-agent-dev" || !strings.Contains(anyutil.String(cons[0].Value("source")), "absorbed_into") {
 		t.Fatalf("declared absorption lost: %v %v", cons, pruned)
 	}
 	heur := []*jsonutil.Object{curatorEntry("name", "legacy-cons", "into", "umbrella-a", "evidence", "...")}
@@ -327,7 +328,7 @@ func TestCuratorReconcileClassification(t *testing.T) {
 	byName := func(list []*jsonutil.Object) map[string]*jsonutil.Object {
 		out := map[string]*jsonutil.Object{}
 		for _, e := range list {
-			out[pyStr(e.Value("name"))] = e
+			out[anyutil.String(e.Value("name"))] = e
 		}
 		return out
 	}
@@ -417,7 +418,7 @@ func TestCuratorRollbackIsItselfUndoable(t *testing.T) {
 	rows, _ := ListCuratorBackups(ctx)
 	found := false
 	for _, r := range rows {
-		found = found || strings.Contains(pyStr(r.Value("reason")), "pre-rollback")
+		found = found || strings.Contains(anyutil.String(r.Value("reason")), "pre-rollback")
 	}
 	entries, _ := os.ReadDir(filepath.Join(sk, ".curator_backups"))
 	for _, e := range entries {

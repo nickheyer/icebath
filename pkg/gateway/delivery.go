@@ -13,6 +13,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -20,11 +21,11 @@ import (
 // MaxPlatformOutput caps cron output before truncation for adapters that do not split long messages
 const MaxPlatformOutput = 4000
 
-const pyWS = `\t\n\x0b\f\r\x1c-\x1f \x85\p{Z}`
+const wsValue = `\t\n\x0b\f\r\x1c-\x1f \x85\p{Z}`
 
 var silenceNarration = regexp2.MustCompile(
-	`^[`+pyWS+`*_~\x60]*\(?[`+pyWS+`]*(silent|silence|no[`+pyWS+`]+response|no[`+pyWS+`]+reply)[`+pyWS+`]*\.?\)?[`+pyWS+`*_~\x60]*$`+
-		`|^[`+pyWS+`*_~\x60]*[\x{1F507}\.\x{2026}]+[`+pyWS+`*_~\x60]*$`, regexp2.IgnoreCase|regexp2.Unicode)
+	`^[`+wsValue+`*_~\x60]*\(?[`+wsValue+`]*(silent|silence|no[`+wsValue+`]+response|no[`+wsValue+`]+reply)[`+wsValue+`]*\.?\)?[`+wsValue+`*_~\x60]*$`+
+		`|^[`+wsValue+`*_~\x60]*[\x{1F507}\.\x{2026}]+[`+wsValue+`*_~\x60]*$`, regexp2.IgnoreCase|regexp2.Unicode)
 
 var threadRoutingKeys = []string{"thread_id", "message_thread_id", "direct_messages_topic_id", "telegram_direct_messages_topic_id"}
 
@@ -82,13 +83,13 @@ func (t *DeliveryTransport) Send(ctx context.Context, logical Platform, chatID, 
 	if t.IsRelay() {
 		relay, ok := t.Adapter.(RelayDeliveryAdapter)
 		if !ok {
-			return SendResult{}, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the delivery adapter (%T) cannot send for a platform", t.Adapter)}
+			return SendResult{}, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the delivery adapter (%T) cannot send for a platform", t.Adapter)}
 		}
 		return relay.SendForPlatform(ctx, logical, chatID, content, metadata)
 	}
 	native, ok := t.Adapter.(DeliveryAdapter)
 	if !ok {
-		return SendResult{}, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the delivery adapter (%T) cannot send", t.Adapter)}
+		return SendResult{}, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the delivery adapter (%T) cannot send", t.Adapter)}
 	}
 	return native.Send(ctx, chatID, content, "", metadata)
 }
@@ -360,10 +361,10 @@ func (r *DeliveryRouter) DeliverToPlatform(ctx context.Context, target DeliveryT
 		transport = ResolveDeliveryTransport(ctx, target.Platform, r.Config, r.Adapters)
 	}
 	if transport == nil {
-		return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("No adapter configured for %s", target.Platform)}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("No adapter configured for %s", target.Platform)}
 	}
 	if target.ChatID == "" {
-		return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("No chat ID for %s delivery", target.Platform)}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("No chat ID for %s delivery", target.Platform)}
 	}
 	adapter := transport.Adapter
 	jobID := "unknown"

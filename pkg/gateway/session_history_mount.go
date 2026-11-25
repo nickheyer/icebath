@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // True when two principals carry the same subject, profile, transport and capability set
@@ -46,11 +47,11 @@ func mountHistory(ctx context.Context, a *SessionAuthority, actor Principal, sid
 		return false, err
 	}
 	if row == nil {
-		return false, &PyError{Kind: "TypeError", Msg: "the history mount row is missing"}
+		return false, &errorutil.Error{Kind: "TypeError", Msg: "the history mount row is missing"}
 	}
 	label, has := row.Get("source")
 	if !has {
-		return false, &pyKeyError{key: "source"}
+		return false, &keyError{key: "source"}
 	}
 	if state.LegacyLocalSource(label) || label == any("local") {
 		return false, nil
@@ -94,7 +95,7 @@ func mountHistory(ctx context.Context, a *SessionAuthority, actor Principal, sid
 func requireHistoryLeaf(ctx context.Context, a *SessionAuthority, sid string) error {
 	live, ok := a.live(sid)
 	if !ok {
-		return &pyKeyError{key: sid}
+		return &keyError{key: sid}
 	}
 	if !isHistoryMount(live) {
 		return nil

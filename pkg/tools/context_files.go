@@ -232,11 +232,11 @@ func TruncateContent(ctx context.Context, env *Env, content, filename string, o 
 	}
 	marker := fmt.Sprintf("\n\n[...truncated %s: kept %d+%d of %d chars. The middle is omitted.%s If you need the full "+
 		"instructions, read the complete file with the read_file tool: %s]\n\n", filename, headChars, tailChars, len(runes), sections, readPath)
-	return pySliceTo(runes, headChars) + marker + pySliceFrom(runes, -tailChars)
+	return sliceTo(runes, headChars) + marker + sliceFrom(runes, -tailChars)
 }
 
 // Python content[:n] over code points
-func pySliceTo(runes []rune, n int) string {
+func sliceTo(runes []rune, n int) string {
 	if n < 0 {
 		n += len(runes)
 	}
@@ -244,7 +244,7 @@ func pySliceTo(runes []rune, n int) string {
 }
 
 // Python content[n:] over code points, a zero start keeping everything
-func pySliceFrom(runes []rune, n int) string {
+func sliceFrom(runes []rune, n int) string {
 	if n < 0 {
 		n += len(runes)
 	}

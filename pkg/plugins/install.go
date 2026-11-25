@@ -73,9 +73,9 @@ func askYesNo(ctx context.Context, key []any, prompt string, console *Console) b
 	return accepted
 }
 
-// Manifest value at the key as text, the default when the key is absent
+// Manifest value at the key as text, the default when the key is absent or null
 func manifestText(manifest map[string]any, key, def string) string {
-	if v, ok := manifest[key]; ok {
+	if v, ok := manifest[key]; ok && v != nil {
 		return anyutil.String(v)
 	}
 	return def
@@ -831,12 +831,12 @@ func catalogInstallOnDisk(ctx context.Context, h, catalogName, ref, inspectedSha
 	if err != nil {
 		return "", nil, "", false, err
 	}
-	installedSha := strings.ToLower(pyStrOr(record["sha"]))
+	installedSha := strings.ToLower(anyutil.StringOr(record["sha"], ""))
 	if ref != "" && installedSha != strings.ToLower(ref) {
 		return "", nil, "", false, nil
 	}
 	if inspectedSha != "" {
-		inspected, pin := strings.ToLower(inspectedSha), strings.ToLower(pyStrOr(record["pin"]))
+		inspected, pin := strings.ToLower(inspectedSha), strings.ToLower(anyutil.StringOr(record["pin"], ""))
 		if inspected == "" || (inspected != installedSha && inspected != pin) {
 			return "", nil, "", false, nil
 		}

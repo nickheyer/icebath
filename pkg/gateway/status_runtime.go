@@ -301,7 +301,7 @@ func coerceSessionStore(v any) any {
 }
 
 // Python list of an iterable keyword value
-func pyList(v any) ([]any, error) {
+func listOf(v any) ([]any, error) {
 	switch t := v.(type) {
 	case nil:
 		return []any{}, nil
@@ -334,12 +334,12 @@ func coerceStatusField(key string, v any) (any, error) {
 		if !anyutil.IsTrue(v) {
 			return nil, nil
 		}
-		return pyList(v)
+		return listOf(v)
 	case "served_profiles":
 		if !anyutil.IsTrue(v) {
 			v = nil
 		}
-		return pyList(v)
+		return listOf(v)
 	case "parked_profiles":
 		out := jsonutil.NewObject()
 		switch t := v.(type) {
@@ -480,7 +480,7 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 		for k, v := range u.Fields {
 			fields[k] = v
 		}
-		if state, set := fields["platform_state"]; set && pyEq(state, "connected") {
+		if state, set := fields["platform_state"]; set && anyutil.Equal(state, "connected") {
 			if _, set := fields["needs_attention"]; !set {
 				fields["needs_attention"] = false
 			}
@@ -612,12 +612,12 @@ func DeriveGatewayBusy(gatewayRunning bool, gatewayState, activeAgents any) (boo
 	if err != nil {
 		return false, err
 	}
-	return pyIsInt(n) && !pyEq(n, int64(0)), nil
+	return isIntValue(n) && !anyutil.Equal(n, int64(0)), nil
 }
 
 // Whether a gateway is live and in a serving state
 func DeriveGatewayDrainable(gatewayRunning bool, gatewayState any) bool {
-	return gatewayRunning && (pyEq(gatewayState, "running") || pyEq(gatewayState, "degraded"))
+	return gatewayRunning && (anyutil.Equal(gatewayState, "running") || anyutil.Equal(gatewayState, "degraded"))
 }
 
 // Object key json.dumps writes for a Python dict key

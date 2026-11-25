@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,30 +71,30 @@ var checkpointCommitHashRe = regexp.MustCompile(`\A[0-9a-fA-F]{4,64}\n?\z`)
 
 // Error text for a commit hash that is empty, flag shaped or not hex, empty when valid
 func checkpointValidateCommitHash(commitHash string) string {
-	if commitHash == "" || pyStrip(commitHash) == "" {
+	if commitHash == "" || strings.TrimSpace(commitHash) == "" {
 		return "Empty commit hash"
 	}
 	if strings.HasPrefix(commitHash, "-") {
-		return "Invalid commit hash (must not start with '-'): " + pyReprStr(commitHash)
+		return "Invalid commit hash (must not start with '-'): " + strconv.Quote(commitHash)
 	}
 	if !checkpointCommitHashRe.MatchString(commitHash) {
-		return "Invalid commit hash (expected 4-64 hex characters): " + pyReprStr(commitHash)
+		return "Invalid commit hash (expected 4-64 hex characters): " + strconv.Quote(commitHash)
 	}
 	return ""
 }
 
 // Error text for a file path that is empty, absolute or escapes the working directory, empty when valid
 func checkpointValidateFilePath(filePath, workingDir string) string {
-	if filePath == "" || pyStrip(filePath) == "" {
+	if filePath == "" || strings.TrimSpace(filePath) == "" {
 		return "Empty file path"
 	}
 	if filepath.IsAbs(filePath) {
-		return "File path must be relative, got absolute path: " + pyReprStr(filePath)
+		return "File path must be relative, got absolute path: " + strconv.Quote(filePath)
 	}
 	absWorkdir := checkpointNormalizePath(workingDir)
 	resolved := checkpointResolve(absWorkdir + string(filepath.Separator) + filePath)
 	if _, ok := relativeTo(resolved, absWorkdir); !ok {
-		return "File path escapes the working directory via traversal: " + pyReprStr(filePath)
+		return "File path escapes the working directory via traversal: " + strconv.Quote(filePath)
 	}
 	return ""
 }
@@ -108,7 +109,7 @@ func checkpointResolve(p string) string {
 	if runtime.GOOS == "windows" {
 		return resolveNonStrict(p)
 	}
-	return pyRealpath(p)
+	return realpath(p)
 }
 
 // First sixteen hex digits of the sha256 of the canonical working directory
@@ -371,13 +372,13 @@ func runCheckpointGitProcess(env *Env, args []string, store, workingDir string, 
 	if nul {
 		out = stdout.String()
 	} else {
-		out = pyStrip(checkpointTextOutput(stdout.Bytes()))
+		out = strings.TrimSpace(checkpointTextOutput(stdout.Bytes()))
 	}
 	var errText string
 	if nul {
-		errText = pyStrip(decodeUTF8Replace(stderr.Bytes()))
+		errText = strings.TrimSpace(decodeUTF8Replace(stderr.Bytes()))
 	} else {
-		errText = pyStrip(checkpointTextOutput(stderr.Bytes()))
+		errText = strings.TrimSpace(checkpointTextOutput(stderr.Bytes()))
 	}
 	if !ok && !o.Allowed[code] {
 		log.Error(fmt.Sprintf("Git command failed: %s (rc=%d) stderr=%s", cmdText, code, errText))
@@ -410,8 +411,8 @@ func checkpointRefTip(env *Env, store, workingDir, ref string) string {
 func listCheckpointProjectRefs(env *Env, store, workingDir string) []string {
 	out := checkpointGitOut(env, []string{"for-each-ref", "--format=%(refname)", checkpointRefsPrefix}, store, workingDir, map[int]bool{128: true})
 	var refs []string
-	for _, r := range pySplitLines(out) {
-		if pyStrip(r) != "" {
+	for _, r := range splitLinesValue(out) {
+		if strings.TrimSpace(r) != "" {
 			refs = append(refs, r)
 		}
 	}
@@ -512,14 +513,14 @@ func initCheckpointStore(env *Env, store, workingDir string) (string, error) {
 	werr := cmd.Wait()
 	if ctx.Err() == context.DeadlineExceeded {
 		return fmt.Sprintf("Shadow store init failed: Command '%s' timed out after %d seconds",
-			pyArgvRepr([]string{git, "init", "--bare", store}), checkpointGitTimeoutSecs), nil
+			argvRepr([]string{git, "init", "--bare", store}), checkpointGitTimeoutSecs), nil
 	}
 	if werr != nil {
 		var ee *exec.ExitError
 		if !errors.As(werr, &ee) {
 			return "", werr
 		}
-		return "Shadow store init failed: " + pyStrip(checkpointTextOutput(stderr.Bytes())), nil
+		return "Shadow store init failed: " + strings.TrimSpace(checkpointTextOutput(stderr.Bytes())), nil
 	}
 	for _, kv := range [][2]string{
 		{"user.email", "icebath@local"},
@@ -697,7 +698,7 @@ func preV2ShadowRepos(base string) ([]checkpointPreV2Repo, error) {
 		marker := filepath.Join(child, checkpointWorkdirMarker)
 		if pathExistsFollow(marker) {
 			if text, err := readUTF8SigText(marker); err == nil {
-				wd := pyStrip(text)
+				wd := strings.TrimSpace(text)
 				repo.Workdir = &wd
 			} else {
 				repo.MarkerUnreadable = true

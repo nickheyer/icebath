@@ -445,7 +445,7 @@ func (s *CommandTokenSource) servedChildEnv(ctx context.Context) ([]string, erro
 
 // Runs a shell command and returns its stdout and exit code
 func runShellCommand(ctx context.Context, command string, env []string) ([]byte, int, error) {
-	cmd, err := pyShellCommand(ctx, command)
+	cmd, err := shellCommand(ctx, command)
 	if err != nil {
 		return nil, 0, err
 	}

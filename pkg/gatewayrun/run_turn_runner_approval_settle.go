@@ -24,7 +24,7 @@ func registerTimeoutNotice(t *TurnRunner, approvalData map[string]any, command s
 	}
 	timeoutS := gateway.ApprovalTimeoutSeconds(t.turnCtx)
 	if value, present := approvalData["timeout_s"]; present && value != nil {
-		if n, ok := pyIntValue(value); ok {
+		if n, ok := intValueValue(value); ok {
 			timeoutS = n
 		}
 	}

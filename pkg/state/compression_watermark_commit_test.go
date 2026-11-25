@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var watermarkSummary = []map[string]any{
@@ -24,7 +26,7 @@ func watermarkDB(t *testing.T, n int) *SessionDB {
 		if i%2 == 1 {
 			role = "assistant"
 		}
-		wmAppend(t, db, "sess1", map[string]any{"role": role, "content": "turn " + pyStr(i)}, AppendGuards{})
+		wmAppend(t, db, "sess1", map[string]any{"role": role, "content": "turn " + anyutil.String(i)}, AppendGuards{})
 	}
 	return db
 }
@@ -163,7 +165,7 @@ func TestArchivedRowsStayRecoverable(t *testing.T) {
 	rows, _ := db.GetMessages(context.Background(), "sess1", GetMessagesOptions{IncludeInactive: true})
 	turnZero, tailActive := 0, []bool{}
 	for _, r := range rows {
-		active := pyTruthy(rowValue(r, "active"))
+		active := anyutil.IsTrue(rowValue(r, "active"))
 		if !active && rowValue(r, "content") == "turn 0" {
 			turnZero++
 		}
@@ -238,7 +240,7 @@ func TestCommitFence(t *testing.T) {
 		t.Fatalf("rows %d -> %d", len(before), len(after))
 	}
 	for _, r := range after {
-		if !pyTruthy(rowValue(r, "active")) {
+		if !anyutil.IsTrue(rowValue(r, "active")) {
 			t.Fatal("refused commit archived a row")
 		}
 	}
@@ -328,7 +330,7 @@ func TestRotationTailClonesIntoTheChild(t *testing.T) {
 }
 
 func tailKey(v any) string {
-	text, err := pyDumps(v, pyJSONDefault)
+	text, err := dumpsValue(v, jsonDefault)
 	if err != nil {
 		return "unencodable"
 	}

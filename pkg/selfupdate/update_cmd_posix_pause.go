@@ -84,10 +84,10 @@ func tokenTruthy(v any) bool {
 	case float64:
 		return t != 0
 	}
-	if n, ok := pyIntValue(v); ok {
+	if n, ok := intValue(v); ok {
 		return n != 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Entries of a token list as dicts, a typed list read the same as a decoded one
@@ -107,7 +107,7 @@ func tokenEntries(v any) []map[string]any {
 }
 
 func entryPid(entry map[string]any) int {
-	n, _ := pyIntValue(entry["pid"])
+	n, _ := intValue(entry["pid"])
 	return int(n)
 }
 

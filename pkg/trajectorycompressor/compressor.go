@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -119,8 +120,8 @@ func (c *Compressor) detectProvider() (string, error) {
 	return "", nil
 }
 
-// len() of a JSON value, the TypeError Python raises for a value without one
-func pyLen(v any) (int, error) {
+// Length of a turn value: the characters of text, the items of a list or a mapping, refused for any other value
+func valueLen(v any) (int, error) {
 	switch x := v.(type) {
 	case string:
 		return utf8.RuneCountInString(x), nil
@@ -129,7 +130,7 @@ func pyLen(v any) (int, error) {
 	case *jsonutil.Object:
 		return x.Len(), nil
 	}
-	return 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("object of type '%s' has no len()", anyutil.Kind(v))}
+	return 0, &errorutil.Error{Kind: "TypeError", Msg: "a turn value must be text, a list or a mapping, got " + errchain.Kind(v)}
 }
 
 // Token count of a turn value, zero when empty, a quarter of its length when it is not encodable text
@@ -142,16 +143,16 @@ func (c *Compressor) CountTokens(text any) (int, error) {
 			return len(ids), nil
 		}
 	}
-	l, err := pyLen(text)
+	l, err := valueLen(text)
 	return l / 4, err
 }
 
-// A turn as the dict it must be, the AttributeError of turn.get otherwise
+// A turn as the mapping it must be, refused for any other value
 func turnDict(turn any) (*jsonutil.Object, error) {
 	if o, ok := turn.(*jsonutil.Object); ok {
 		return o, nil
 	}
-	return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(turn))}
+	return nil, &errorutil.Error{Kind: "AttributeError", Msg: "a turn must be a mapping, got " + errchain.Kind(turn)}
 }
 
 // Token counts of every turn value in order
@@ -191,7 +192,7 @@ func (c *Compressor) findProtectedIndices(traj []any) (map[int]bool, int, int, e
 		role := d.ValueOr("from", "")
 		switch role.(type) {
 		case []any, *jsonutil.Object:
-			return nil, 0, 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(role))}
+			return nil, 0, 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("turn %d: from must be a single value, got %s", i, errchain.Kind(role))}
 		}
 		if s, ok := role.(string); ok {
 			if _, seen := firstSeen[s]; !seen {
@@ -260,7 +261,7 @@ func (c *Compressor) extractTurnContentForSummary(traj []any, start, end int) (s
 			return "", err
 		}
 		value := d.ValueOr("value", "")
-		n, err := pyLen(value)
+		n, err := valueLen(value)
 		if err != nil {
 			return "", err
 		}
@@ -268,14 +269,14 @@ func (c *Compressor) extractTurnContentForSummary(traj []any, start, end int) (s
 		if n > 3000 {
 			s, ok := value.(string)
 			if !ok {
-				return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("can only concatenate %s (not \"str\") to %s", anyutil.Kind(value), anyutil.Kind(value))}
+				return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("turn %d: value is %s of %d items, only text can be shortened for the summary", i, errchain.Kind(value), n)}
 			}
 			text = tools.ElideMiddle(s, 1500, 500)
 		}
 		from := d.ValueOr("from", "unknown")
 		fs, ok := from.(string)
 		if !ok {
-			return "", &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'upper'", anyutil.Kind(from))}
+			return "", &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("turn %d: from must be text, got %s", i, errchain.Kind(from))}
 		}
 		parts = append(parts, fmt.Sprintf("[Turn %d - %s]:\n%s", i, strings.ToUpper(fs), text))
 	}
@@ -500,16 +501,16 @@ func copyObject(o *jsonutil.Object) *jsonutil.Object {
 // Head with the summary notice on system turns, the summary human turn, then the verbatim tail, metrics finalized
 func (c *Compressor) assembleCompressed(traj []any, start, until int, summary any, m *TrajectoryMetrics) ([]any, error) {
 	compressed := make([]any, 0, start+1+len(traj)-until)
-	for _, turn := range traj[:start] {
+	for i, turn := range traj[:start] {
 		t := copyObject(turn.(*jsonutil.Object))
 		if from, _ := t.Get("from"); from == "system" && c.Config.AddSummaryNotice {
 			value, ok := t.Get("value")
 			if !ok {
-				return nil, &errorutil.Error{Kind: "KeyError", Msg: "'value'"}
+				return nil, &errorutil.Error{Kind: "KeyError", Msg: fmt.Sprintf("turn %d: the system turn has no value to take the summary notice", i)}
 			}
 			s, isStr := value.(string)
 			if !isStr {
-				return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("unsupported operand type(s) for +: '%s' and 'str'", anyutil.Kind(value))}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("turn %d: the system turn's value must be text to take the summary notice, got %s", i, errchain.Kind(value))}
 			}
 			t.Set("value", s+c.Config.SummaryNoticeText)
 		}
@@ -536,25 +537,12 @@ func (c *Compressor) assembleCompressed(traj []any, start, until int, summary an
 	return compressed, nil
 }
 
-// Elements a Python for loop yields over a conversations value, the TypeError for a value that is not iterable
+// Turns of a conversations value, which must be a list
 func iterTurns(v any) ([]any, error) {
-	switch x := v.(type) {
-	case []any:
-		return x, nil
-	case string:
-		out := make([]any, 0, len(x))
-		for _, r := range x {
-			out = append(out, string(r))
-		}
-		return out, nil
-	case *jsonutil.Object:
-		out := make([]any, x.Len())
-		for i, k := range x.Keys() {
-			out[i] = k
-		}
-		return out, nil
+	if turns, ok := v.([]any); ok {
+		return turns, nil
 	}
-	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: "conversations must be a list of turns, got " + errchain.Kind(v)}
 }
 
 func (c *Compressor) compress(ctx context.Context, trajectory any, async bool) (any, *TrajectoryMetrics, error) {

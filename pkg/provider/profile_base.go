@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -331,7 +332,7 @@ func (h *LazyHeaders) String() string {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		b.WriteString(pyRepr(kv[0]) + ": " + pyRepr(kv[1]))
+		b.WriteString(anyutil.Quote(kv[0]) + ": " + anyutil.Quote(kv[1]))
 	}
 	b.WriteByte('}')
 	return b.String()

@@ -38,7 +38,7 @@ func mustPyre(pattern string) *regexp2.Regexp {
 }
 
 // Every match of a regexp2 pattern as byte start, byte end and text
-func pyFinditer(re *regexp2.Regexp, text string) [][3]any {
+func finditer(re *regexp2.Regexp, text string) [][3]any {
 	var out [][3]any
 	m, _ := re.FindStringMatch(text)
 	for m != nil {
@@ -53,10 +53,10 @@ func pyFinditer(re *regexp2.Regexp, text string) [][3]any {
 func matchesOutsideCode(re *regexp2.Regexp, text string) []string {
 	var spans [][3]any
 	for _, p := range codeSpanRes {
-		spans = append(spans, pyFinditer(p, text)...)
+		spans = append(spans, finditer(p, text)...)
 	}
 	var out []string
-	for _, m := range pyFinditer(re, text) {
+	for _, m := range finditer(re, text) {
 		start := m[0].(int)
 		inside := false
 		for _, s := range spans {
@@ -377,7 +377,7 @@ func guessImageMime(path string, raw []byte, haveRaw bool) (string, error) {
 	if strings.HasPrefix(mime, "image/") {
 		return mime, nil
 	}
-	if m, ok := imageRoutingSuffixMimes[strings.ToLower(pySuffix(path))]; ok {
+	if m, ok := imageRoutingSuffixMimes[strings.ToLower(suffixValue(path))]; ok {
 		return m, nil
 	}
 	return "image/jpeg", nil

@@ -56,7 +56,7 @@ func coverageTextOf(content any) string {
 		if kind, _ := part["type"].(string); !coverageTextPartTypes[kind] {
 			continue
 		}
-		if pyTruthy(part["text"]) {
+		if anyutil.IsTrue(part["text"]) {
 			parts = append(parts, anyutil.String(part["text"]))
 		} else {
 			parts = append(parts, "")
@@ -78,7 +78,7 @@ func holdsAsBlock(inner, outer string) bool {
 		if i := strings.Index(after, "\n"); i >= 0 {
 			after = after[:i]
 		}
-		if pyStrip(before) == "" && pyStrip(after) == "" {
+		if strings.TrimSpace(before) == "" && strings.TrimSpace(after) == "" {
 			return true
 		}
 		step := 1
@@ -130,10 +130,10 @@ func imagesReplaced(stored, held any) bool {
 
 // Python float of a stored timestamp cell, falsy cells read as zero
 func rowTimestampFloat(v any) (float64, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	return pyFloatOf(v)
+	return floatOf(v)
 }
 
 // Positive int row id a dict names, false for a bool, non int or non positive value
@@ -141,7 +141,7 @@ func namedRowID(v any) (int64, bool) {
 	if _, isBool := v.(bool); isBool {
 		return 0, false
 	}
-	n, ok := pyIntID(v)
+	n, ok := intID(v)
 	return n, ok && n > 0
 }
 
@@ -179,7 +179,7 @@ func storedRowIdentity(row map[string]any) ([]any, error) {
 }
 
 func rowUID(row map[string]any) string {
-	if pyTruthy(row[MessageUID]) {
+	if anyutil.IsTrue(row[MessageUID]) {
 		return anyutil.String(row[MessageUID])
 	}
 	return ""
@@ -248,7 +248,7 @@ func (d *SessionDB) carriedTailIDs(ctx context.Context, conn SQLiteConn, tailIDs
 			return nil, nil, err
 		}
 		if ok {
-			id, _ := pyIntID(row["id"])
+			id, _ := intID(row["id"])
 			carried[id] = index
 		}
 	}
@@ -272,7 +272,7 @@ func (d *SessionDB) carriedTailIDs(ctx context.Context, conn SQLiteConn, tailIDs
 		}
 	}
 	for _, row := range rows {
-		rowID, _ := pyIntID(row["id"])
+		rowID, _ := intID(row["id"])
 		uid := rowUID(row)
 		if _, done := carried[rowID]; done || uid == "" || tailUIDs[uid] != 1 || heldElsewhere[uid] {
 			continue
@@ -295,7 +295,7 @@ func (d *SessionDB) claimStoredCopy(row map[string]any, compacted []map[string]a
 	if err != nil {
 		return 0, false, err
 	}
-	rowID, _ := pyIntID(row["id"])
+	rowID, _ := intID(row["id"])
 	var candidates []int
 	if named, ok := byRow[rowID]; ok && anyutil.Equal(named.identity, identity) {
 		candidates = append(candidates, named.index)
@@ -324,7 +324,7 @@ func (d *SessionDB) claimStoredCopy(row map[string]any, compacted []map[string]a
 
 // Second pass claim, the one unclaimed dict naming the row whose content the compressor rewrite explains
 func (d *SessionDB) rewrittenCarry(row map[string]any, uid string, compacted []map[string]any, byRow map[int64]heldByRow, byUID map[string][]heldByUID, claimed map[int]bool) (int, bool, error) {
-	rowID, _ := pyIntID(row["id"])
+	rowID, _ := intID(row["id"])
 	var candidates []int
 	if named, ok := byRow[rowID]; ok && named.hasUID && named.uid == uid {
 		candidates = []int{named.index}
@@ -381,7 +381,7 @@ func copyOfCurrentRow(row, held map[string]any) bool {
 }
 
 func orNone(v any) any {
-	if pyTruthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return nil
@@ -410,7 +410,7 @@ func (d *SessionDB) rewriteExplains(row, held map[string]any) (bool, error) {
 		return false, nil
 	}
 	storedText := coverageTextOf(stored)
-	return pyStrip(storedText) != "" && holdsAsBlock(storedText, coverageTextOf(content)), nil
+	return strings.TrimSpace(storedText) != "" && holdsAsBlock(storedText, coverageTextOf(content)), nil
 }
 
 // Named uids of tail rows that an active row below the watermark also carries
@@ -442,7 +442,7 @@ func uidsActiveOutside(ctx context.Context, conn SQLiteConn, rows []map[string]a
 			return nil, err
 		}
 		for _, hit := range hits {
-			if id, _ := pyIntID(hit["id"]); !tail[id] {
+			if id, _ := intID(hit["id"]); !tail[id] {
 				found[anyutil.String(hit[MessageUID])] = true
 			}
 		}
@@ -500,7 +500,7 @@ func (d *SessionDB) resolveCarriedRowIDs(ctx context.Context, conn SQLiteConn, s
 			return nil, nil, err
 		}
 		for _, row := range rows {
-			rid, _ := pyIntID(row["id"])
+			rid, _ := intID(row["id"])
 			identity, err := storedRowIdentity(row)
 			if err != nil {
 				return nil, nil, err
@@ -578,15 +578,15 @@ func matchingActiveIDs(ctx context.Context, conn SQLiteConn, sessionID string, m
 func rowIDList(rows []map[string]any) []int64 {
 	out := make([]int64, 0, len(rows))
 	for _, row := range rows {
-		id, _ := pyIntID(row["id"])
+		id, _ := intID(row["id"])
 		out = append(out, id)
 	}
 	return out
 }
 
 // Python list of a value, a string split into characters, a TypeError for a non iterable
-func pyListOf(v any) ([]any, error) {
-	if !pyTruthy(v) {
+func listOf(v any) ([]any, error) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	return seqIter(v)
@@ -595,7 +595,7 @@ func pyListOf(v any) ([]any, error) {
 // Active rows equal to a row the alternation repair retired without an id, at or below the watermark
 func matchingRetiredIDs(ctx context.Context, conn SQLiteConn, sessionID string, retired map[string]any, watermark *int64) ([]int64, error) {
 	role := ""
-	if pyTruthy(retired["role"]) {
+	if anyutil.IsTrue(retired["role"]) {
 		role = anyutil.String(retired["role"])
 	}
 	query, args := "SELECT id, content, tool_call_id, tool_calls FROM messages WHERE session_id = ? AND active = 1 AND role = ?", []any{sessionID, role}
@@ -607,7 +607,7 @@ func matchingRetiredIDs(ctx context.Context, conn SQLiteConn, sessionID string, 
 	if err != nil {
 		return nil, err
 	}
-	wantCalls, err := pyListOf(retired["tool_call_ids"])
+	wantCalls, err := listOf(retired["tool_call_ids"])
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +634,7 @@ func matchingRetiredIDs(ctx context.Context, conn SQLiteConn, sessionID string, 
 		if !anyutil.Equal(ids, wantCalls) {
 			continue
 		}
-		id, _ := pyIntID(row["id"])
+		id, _ := intID(row["id"])
 		matches = append(matches, id)
 	}
 	return matches, nil
@@ -659,7 +659,7 @@ func mergedUserRun(ctx context.Context, conn SQLiteConn, sessionID string, messa
 		return nil, false, err
 	}
 	retiredIDs := map[int64]bool{}
-	retiredRows, err := pyListOf(message[RetiredDurableRows])
+	retiredRows, err := listOf(message[RetiredDurableRows])
 	if err != nil {
 		return nil, false, err
 	}
@@ -668,7 +668,7 @@ func mergedUserRun(ctx context.Context, conn SQLiteConn, sessionID string, messa
 		if !isMap {
 			return nil, false, fmt.Errorf("a merged user message part is %s, expected a mapping", errchain.Kind(item))
 		}
-		if pyTruthy(retired[OwnRow]) {
+		if anyutil.IsTrue(retired[OwnRow]) {
 			continue
 		}
 		matches, err := matchingRetiredIDs(ctx, conn, sessionID, retired, watermark)
@@ -687,7 +687,7 @@ func mergedUserRun(ctx context.Context, conn SQLiteConn, sessionID string, messa
 	}
 	var rows []runRow
 	for _, row := range stored {
-		id, _ := pyIntID(row["id"])
+		id, _ := intID(row["id"])
 		if retiredIDs[id] {
 			continue
 		}
@@ -747,24 +747,24 @@ func provedCoverage(ctx context.Context, conn SQLiteConn, sessionID string, cove
 		if message == nil {
 			continue
 		}
-		if pyTruthy(message[RetiredRow]) {
+		if anyutil.IsTrue(message[RetiredRow]) {
 			matches, err := matchingRetiredIDs(ctx, conn, sessionID, message, watermark)
 			if err != nil || len(matches) != 1 {
 				return nil, nil, false, err
 			}
 			proved = append(proved, matches...)
-			if !pyTruthy(message[OwnRow]) {
+			if !anyutil.IsTrue(message[OwnRow]) {
 				mergedAway[matches[0]] = true
 			}
 			continue
 		}
-		retiredRows, err := pyListOf(message[RetiredDurableRows])
+		retiredRows, err := listOf(message[RetiredDurableRows])
 		if err != nil {
 			return nil, nil, false, err
 		}
 		if slices.ContainsFunc(retiredRows, func(item any) bool {
 			m, ok := dictValue(item)
-			return ok && pyTruthy(m[OwnRow])
+			return ok && anyutil.IsTrue(m[OwnRow])
 		}) {
 			continue
 		}
@@ -772,7 +772,7 @@ func provedCoverage(ctx context.Context, conn SQLiteConn, sessionID string, cove
 		if err != nil {
 			return nil, nil, false, err
 		}
-		if pyTruthy(message[MergedDurableRows]) && (!named || len(run) == 0) {
+		if anyutil.IsTrue(message[MergedDurableRows]) && (!named || len(run) == 0) {
 			return nil, nil, false, nil
 		}
 		var matches []int64
@@ -781,7 +781,7 @@ func provedCoverage(ctx context.Context, conn SQLiteConn, sessionID string, cove
 				return nil, nil, false, err
 			}
 		}
-		if len(matches) > 1 || (pyTruthy(message[DBPersistedMarker]) && len(matches) != 1 && len(run) == 0) {
+		if len(matches) > 1 || (anyutil.IsTrue(message[DBPersistedMarker]) && len(matches) != 1 && len(run) == 0) {
 			return nil, nil, false, nil
 		}
 		if len(matches) > 0 {
@@ -790,12 +790,12 @@ func provedCoverage(ctx context.Context, conn SQLiteConn, sessionID string, cove
 			proved = append(proved, run...)
 		}
 		absorbed := map[int64]bool{}
-		absorbedItems, err := pyListOf(message[AbsorbedRowIDs])
+		absorbedItems, err := listOf(message[AbsorbedRowIDs])
 		if err != nil {
 			return nil, nil, false, err
 		}
 		for _, item := range absorbedItems {
-			if n, ok := pyIntID(item); ok {
+			if n, ok := intID(item); ok {
 				absorbed[n] = true
 			} else if f, isFloat := item.(float64); isFloat && f == float64(int64(f)) {
 				absorbed[int64(f)] = true
@@ -813,9 +813,9 @@ func provedCoverage(ctx context.Context, conn SQLiteConn, sessionID string, cove
 }
 
 // Python len of a value or the error len raises
-func pyLenOf(v any) (int, error) {
+func lenOf(v any) (int, error) {
 	if s, ok := v.(string); ok {
-		return pyLen(s), nil
+		return utf8.RuneCountInString(s), nil
 	}
 	if m, ok := dictValue(v); ok {
 		return len(m), nil
@@ -838,8 +838,8 @@ func uncountedMergedRows(tail []map[string]any) (int, error) {
 		unlisted := int64(0)
 		if merged, ok := exactInt(message[MergedDurableRows]); ok {
 			absorbed := int64(0)
-			if pyTruthy(message[AbsorbedRowIDs]) {
-				n, err := pyLenOf(message[AbsorbedRowIDs])
+			if anyutil.IsTrue(message[AbsorbedRowIDs]) {
+				n, err := lenOf(message[AbsorbedRowIDs])
 				if err != nil {
 					return 0, err
 				}
@@ -857,7 +857,7 @@ func uncountedMergedRows(tail []map[string]any) (int, error) {
 func tailOriginals(coveredActive []int64, tailCount int, mergedAway map[int64]bool) []int64 {
 	width := tailCount
 	for {
-		window := pyTail(coveredActive, width)
+		window := tailValue(coveredActive, width)
 		need := tailCount
 		for _, id := range window {
 			if mergedAway[id] {
@@ -872,7 +872,7 @@ func tailOriginals(coveredActive []int64, tailCount int, mergedAway map[int64]bo
 }
 
 // Last n items as Python negative slicing gives them, the whole slice for zero or past its length
-func pyTail[T any](items []T, n int) []T {
+func tailValue[T any](items []T, n int) []T {
 	if n <= 0 || n >= len(items) {
 		return items
 	}

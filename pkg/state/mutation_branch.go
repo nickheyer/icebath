@@ -47,7 +47,7 @@ func childPolicy(policy *jsonutil.Object, child string, prepared *jsonutil.Objec
 	}
 	editorJSON, _ := out.Get("editor_mcp_json")
 	if prepared == nil {
-		if pyTruthy(editorJSON) {
+		if anyutil.IsTrue(editorJSON) {
 			return nil, runtimeRefusal("runtime_coordination_required")
 		}
 		return out, nil
@@ -187,14 +187,14 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	if _, err := conn.ExecContext(ctx, "UPDATE sessions SET message_count=?,tool_call_count=? WHERE id=?", int64(len(ids)), int64(tools), child); err != nil {
 		return nil, nil, err
 	}
-	if title, _ := payload.Get("title"); pyTruthy(title) {
-		if _, err := d.setSessionTitleInTransaction(ctx, conn, child, pyStr(title), TitleSourceUser); err != nil {
+	if title, _ := payload.Get("title"); anyutil.IsTrue(title) {
+		if _, err := d.setSessionTitleInTransaction(ctx, conn, child, anyutil.String(title), TitleSourceUser); err != nil {
 			return nil, nil, err
 		}
 	} else {
 		base := "branch"
-		if parentTitle := parent["title"]; pyTruthy(parentTitle) {
-			base = pyStr(parentTitle)
+		if parentTitle := parent["title"]; anyutil.IsTrue(parentTitle) {
+			base = anyutil.String(parentTitle)
 		}
 		next, err := LineageTitleOnConn(ctx, conn, base)
 		if err != nil {

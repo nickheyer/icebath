@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -22,10 +23,10 @@ func rowValue(row *jsonutil.Object, key string) any {
 // Python str of a row column after the or empty fallback
 func rowStrOr(row *jsonutil.Object, key string) string {
 	v := rowValue(row, key)
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Most recent live session id of a platform chat, empty when none or when several participants make it ambiguous
@@ -52,7 +53,7 @@ func (d *SessionDB) FindSessionByOrigin(ctx context.Context, platform, chatID st
 	if userID != nil && *userID != "" {
 		for _, r := range rows {
 			if rowStrOr(r, "user_id") == *userID {
-				return pyStr(rowValue(r, "id")), nil
+				return anyutil.String(rowValue(r, "id")), nil
 			}
 		}
 		if len(rows) > 1 {
@@ -61,7 +62,7 @@ func (d *SessionDB) FindSessionByOrigin(ctx context.Context, platform, chatID st
 	} else {
 		users := map[string]bool{}
 		for _, r := range rows {
-			if u := pyStrip(rowStrOr(r, "user_id")); u != "" {
+			if u := strings.TrimSpace(rowStrOr(r, "user_id")); u != "" {
 				users[u] = true
 			}
 		}
@@ -69,7 +70,7 @@ func (d *SessionDB) FindSessionByOrigin(ctx context.Context, platform, chatID st
 			return "", nil
 		}
 	}
-	return pyStr(rowValue(rows[0], "id")), nil
+	return anyutil.String(rowValue(rows[0], "id")), nil
 }
 
 // Find_session_by_origin as a package function over a store
@@ -207,7 +208,7 @@ func (d *SessionDB) GetRecentSessionModelRoute(ctx context.Context, sessionID st
 
 // Tolerant model_config decode, JSON text or an object copied, anything else empty
 func parseModelConfigValue(raw any) *jsonutil.Object {
-	if text, ok := raw.(string); ok && pyStrip(text) != "" {
+	if text, ok := raw.(string); ok && strings.TrimSpace(text) != "" {
 		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return jsonutil.NewObject()
@@ -233,7 +234,7 @@ func (d *SessionDB) isExplicitBranchSession(ctx context.Context, sessionID strin
 		return false, err
 	}
 	branched, _ := parseModelConfigValue(rowValue(row, "model_config")).Get("_branched_from")
-	return pyTruthy(branched), nil
+	return anyutil.IsTrue(branched), nil
 }
 
 // Raw parent walk from the root to a session, capped at 100 hops
@@ -340,7 +341,7 @@ func (d *SessionDB) ClearSessionActivityLabels(sessionID string) error {
 	}
 	if row != nil {
 		desc, prov := rowValue(row, "last_activity_description"), rowValue(row, "last_activity_provenance")
-		if !pyTruthy(desc) && (!pyTruthy(prov) || prov == string(ActivityProvenanceUnknown)) {
+		if !anyutil.IsTrue(desc) && (!anyutil.IsTrue(prov) || prov == string(ActivityProvenanceUnknown)) {
 			return nil
 		}
 	}
@@ -358,7 +359,7 @@ func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string
 	}
 	if row == nil {
 		if raiseOnMissing {
-			return nil, true, pyValueError("Session not found: " + sessionID)
+			return nil, true, valueError("Session not found: " + sessionID)
 		}
 		return nil, true, nil
 	}

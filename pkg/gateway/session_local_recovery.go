@@ -43,7 +43,7 @@ func (s *SessionStore) localResetEpoch(db SessionStoreDB) (int64, error) {
 }
 
 // Resets a local route onto a fresh child through its owner's epoch fenced reset, called with the store lock held
-func resetLocalSession(ctx context.Context, store *SessionStore, old *SessionEntry, sessionID string, now pyDatetime, displayName *string) (*SessionEntry, error) {
+func resetLocalSession(ctx context.Context, store *SessionStore, old *SessionEntry, sessionID string, now datetime, displayName *string) (*SessionEntry, error) {
 	entry := NewSessionEntry(old.SessionKey, sessionID, now, now)
 	entry.Origin, entry.Platform, entry.ChatType = old.Origin, old.Platform, old.ChatType
 	entry.DisplayName = old.DisplayName

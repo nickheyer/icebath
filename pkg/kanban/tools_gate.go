@@ -85,7 +85,7 @@ func profileHasKanbanToolset(env *tools.Env) (has bool) {
 	if err != nil {
 		return false
 	}
-	if toolsets := cfg["toolsets"]; anyutil.IsTrue(toolsets) && tools.PyContainsKanban(toolsets) {
+	if toolsets := cfg["toolsets"]; anyutil.IsTrue(toolsets) && tools.ContainsKanban(toolsets) {
 		return true
 	}
 	if inAssembly {
@@ -256,7 +256,7 @@ func registeredProperties(toolName string) (map[string]any, error) {
 	}
 	parameters, ok := def.Schema.Get("parameters")
 	if !ok {
-		return nil, &RuntimeError{"'parameters'"}
+		return nil, &RuntimeError{"tool " + toolName + " schema has no parameters"}
 	}
 	paramKeys, paramValues, isDict := dictItems(parameters)
 	if !isDict {
@@ -276,7 +276,7 @@ func registeredProperties(toolName string) (map[string]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &RuntimeError{"'properties'"}
+	return nil, &RuntimeError{"tool " + toolName + " parameters have no properties"}
 }
 
 // Arguments with the number types and key order the model wrote, read from the raw JSON where it still matches
@@ -288,7 +288,7 @@ func exactArgs(call *tools.Call) map[string]any {
 	if call.RawArgs == "" {
 		return out
 	}
-	decoded, err := jsonutil.Decode(call.RawArgs)
+	decoded, err := jsonutil.DecodeWith(call.RawArgs, jsonutil.BigInts())
 	if err != nil {
 		return out
 	}
@@ -341,6 +341,10 @@ func sameJSON(exact, value any) bool {
 	}
 	if _, isBool := value.(bool); isBool {
 		return false
+	}
+	if f, isFloat := value.(float64); isFloat {
+		loose, isNumber := anyutil.Float(exact)
+		return isNumber && loose == f
 	}
 	return anyutil.Equal(exact, value)
 }
@@ -458,7 +462,7 @@ func boardArg(v any) (*string, error) {
 	if _, isText := v.(string); !isText {
 		if _, err := normalizeBoardSlug(&s); err != nil {
 			return nil, &ValueError{fmt.Sprintf("invalid board slug %s: must be 1-64 chars, lowercase "+
-				"alphanumerics / hyphens / underscores, not starting with '-' or '_'", errchain.Show(v))}
+				`alphanumerics / hyphens / underscores, not starting with "-" or "_"`, anyutil.Quote(v))}
 		}
 	}
 	return &s, nil
@@ -653,20 +657,23 @@ func requireText(k *kanbanCall, name, message string) (any, error) {
 
 var boolWords = map[string]bool{"true": true, "1": true, "yes": true, "false": false, "0": false, "no": false}
 
-// Boolean argument given as a bool or one of the true and false words, false when absent
+// Boolean argument given as a bool, the integer 0 or 1, or one of the true and false words, false when absent; a float such as 1.0 is refused
 func parseBoolArg(k *kanbanCall, name string) (bool, error) {
-	value := k.get(name)
-	if value == nil {
+	switch value := k.get(name).(type) {
+	case nil:
 		return false, nil
+	case bool:
+		return value, nil
+	case string:
+		if parsed, known := boolWords[strings.ToLower(strings.TrimSpace(value))]; known {
+			return parsed, nil
+		}
+	default:
+		if n, isInt := anyutil.Int(value); isInt && (n == 0 || n == 1) {
+			return n == 1, nil
+		}
 	}
-	if b, isBool := value.(bool); isBool {
-		return b, nil
-	}
-	parsed, known := boolWords[strings.ToLower(strings.TrimSpace(anyutil.String(value)))]
-	if !known {
-		return false, reject(name + " must be a boolean or 'true'/'false'")
-	}
-	return parsed, nil
+	return false, reject(name + ` must be a boolean or "true"/"false"`)
 }
 
 // Optional whole number argument: n is nil when it is absent or tooLarge, which marks a number past what a SQLite INTEGER holds

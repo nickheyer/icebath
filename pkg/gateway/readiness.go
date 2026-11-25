@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
@@ -67,7 +67,7 @@ func readinessProbeStateDB(h string) *jsonutil.Object {
 	if state.NoteStorageError(path, err) {
 		return readinessCheck("degraded", state.StorageCorrupt)
 	}
-	return readinessCheck("degraded", errorutil.Kind(err))
+	return readinessCheck("degraded", errchain.OSText(err))
 }
 
 // Config document readability, defaults when absent and degraded when unreadable or not a mapping
@@ -86,7 +86,7 @@ func readinessProbeConfig(ctx context.Context, h string) *jsonutil.Object {
 		if errors.As(err, &unavailable) {
 			return readinessCheck("degraded", "config backend unavailable")
 		}
-		return readinessCheck("degraded", fmt.Sprintf("invalid config (%s)", errorutil.Kind(err)))
+		return readinessCheck("degraded", fmt.Sprintf("invalid config (%s)", errchain.OSText(err)))
 	}
 	if raw == nil {
 		return readinessCheck("ok", "")
@@ -102,7 +102,7 @@ func readinessProbeConfig(ctx context.Context, h string) *jsonutil.Object {
 func readinessProbeDisk(h string) *jsonutil.Object {
 	total, used, free, err := fsutil.DiskUsage(h)
 	if err != nil {
-		return readinessCheck("degraded", errorutil.Kind(err))
+		return readinessCheck("degraded", errchain.OSText(err))
 	}
 	usedPct := 0.0
 	if total != 0 {

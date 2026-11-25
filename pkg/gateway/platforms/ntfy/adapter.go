@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -47,7 +48,7 @@ func (e *fatalStreamError) Error() string { return e.reason }
 
 // AttributeError a str method raises on a value of another type
 func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
+	return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
 }
 
 // Twelve hex digits of a fresh uuid4
@@ -286,7 +287,7 @@ func (a *NtfyAdapter) runStream(ctx context.Context) error {
 
 // Text of an error the stream ended with
 func streamErrorText(err error) string {
-	var pe *gateway.PyError
+	var pe *errorutil.Error
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}
@@ -530,7 +531,7 @@ func hasEchoTag(tags any) (bool, error) {
 		_, ok := t.Get(echoTag)
 		return ok, nil
 	}
-	return false, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", anyutil.Kind(tags))}
+	return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", anyutil.Kind(tags))}
 }
 
 // Turns one ntfy message event into a text message from the topic, duplicates, own echoes and blank bodies dropped

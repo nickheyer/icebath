@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
@@ -305,14 +306,14 @@ func gatewayRunCommand(ctx context.Context) ([]string, error) {
 func LaunchdProgramArguments(command []string, stdoutLog, stderrLog string) []string {
 	shell := fmt.Sprintf("exec %s >> %s 2>> %s", shlexJoin(command), shellutil.Quote(stdoutLog), shellutil.Quote(stderrLog))
 	javascript := `ObjC.import("stdlib"); ` +
-		fmt.Sprintf("const status=$.system(%s); ", pyJSONString(shell)) +
+		fmt.Sprintf("const status=$.system(%s); ", jsonString(shell)) +
 		"const signal=status & 127; " +
 		"$.exit(status === -1 ? 1 : signal === 0 ? (status >> 8) & 255 : 128 + signal);"
 	return []string{"/usr/bin/osascript", "-l", "JavaScript", "-e", javascript}
 }
 
 // JSON string literal with json.dumps ensure_ascii escaping
-func pyJSONString(s string) string {
+func jsonString(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -1052,7 +1053,7 @@ func waitForAPIServerPortFree(ctx context.Context, timeout float64) (bool, error
 		extra = map[string]any{}
 	}
 	hostValue, port := APIServerListenAddress(ctx, extra)
-	host := pyStrValue(hostValue)
+	host := anyutil.String(hostValue)
 	freed := waitForTCPPortFree(host, port, timeout)
 	if !freed {
 		lifecyclePrintf("⚠ %s:%d still accepting connections — new api_server may fail to bind\n", host, port)

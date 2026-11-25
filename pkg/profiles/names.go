@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -134,7 +134,7 @@ func matchesProfileID(s string) bool {
 func InvalidProfileNameError(name string) error {
 	s := SuggestProfileName(name)
 	return &ValueError{fmt.Sprintf("%s is not a valid profile name. %s (for example: %s). Then run `icebath profile create %s`.",
-		config.PyRepr(name), profileNameRule, s, s)}
+		anyutil.Quote(name), profileNameRule, s, s)}
 }
 
 // Canonical profile id, lowercase with default matched case insensitively
@@ -168,7 +168,7 @@ func ValidateProfileName(name string) error {
 	}
 	if ReservedNames[name] {
 		return &ValueError{fmt.Sprintf("Profile name %s is reserved — it collides with either "+
-			"the icebath installation itself or a common system binary.  Pick a different name.", config.PyRepr(name))}
+			"the icebath installation itself or a common system binary.  Pick a different name.", anyutil.Quote(name))}
 	}
 	return nil
 }
@@ -176,7 +176,7 @@ func ValidateProfileName(name string) error {
 // Error unless name is safe as a wrapper file name under the wrapper directory
 func ValidateAliasName(name string) error {
 	if !matchesProfileID(name) {
-		return &ValueError{fmt.Sprintf("Invalid alias name %s. %s.", config.PyRepr(name), profileNameRule)}
+		return &ValueError{fmt.Sprintf("Invalid alias name %s. %s.", anyutil.Quote(name), profileNameRule)}
 	}
 	return nil
 }
@@ -249,11 +249,11 @@ func ProfileMatchesHome(ctx context.Context, name, homeDir string) bool {
 	if homeDir == "" {
 		homeDir = home.Dir(ctx)
 	}
-	target, err = pathutil.ExpandUserPath(target)
+	target, err = pathutil.ExpandUserKeepDotDot(target)
 	if err != nil {
 		return false
 	}
-	homeDir, err = pathutil.ExpandUserPath(homeDir)
+	homeDir, err = pathutil.ExpandUserKeepDotDot(homeDir)
 	if err != nil {
 		return false
 	}

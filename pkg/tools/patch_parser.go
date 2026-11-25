@@ -3,8 +3,8 @@ package tools
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -47,62 +47,22 @@ type v4aFileOps interface {
 }
 
 // Python str.isspace characters as a regexp class
-const pyWSClass = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
+const wsClass = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
 
 var (
-	v4aBeginMarker = regexp.MustCompile(`^\*\*\*` + pyWSClass + `*Begin` + pyWSClass + `+Patch` + pyWSClass + `*$`)
-	v4aEndMarker   = regexp.MustCompile(`^\*\*\*` + pyWSClass + `*End` + pyWSClass + `+Patch` + pyWSClass + `*$`)
+	v4aBeginMarker = regexp.MustCompile(`^\*\*\*` + wsClass + `*Begin` + wsClass + `+Patch` + wsClass + `*$`)
+	v4aEndMarker   = regexp.MustCompile(`^\*\*\*` + wsClass + `*End` + wsClass + `+Patch` + wsClass + `*$`)
 	v4aOpMarkers   = []struct {
 		kind string
 		re   *regexp.Regexp
 	}{
-		{v4aUpdate, regexp.MustCompile(`^\*\*\*` + pyWSClass + `*Update` + pyWSClass + `+File:` + pyWSClass + `*(.+)`)},
-		{v4aAdd, regexp.MustCompile(`^\*\*\*` + pyWSClass + `*Add` + pyWSClass + `+File:` + pyWSClass + `*(.+)`)},
-		{v4aDelete, regexp.MustCompile(`^\*\*\*` + pyWSClass + `*Delete` + pyWSClass + `+File:` + pyWSClass + `*(.+)`)},
-		{v4aMove, regexp.MustCompile(`^\*\*\*` + pyWSClass + `*Move` + pyWSClass + `+File:` + pyWSClass + `*(.+?)` + pyWSClass + `*->` + pyWSClass + `*(.+)`)},
+		{v4aUpdate, regexp.MustCompile(`^\*\*\*` + wsClass + `*Update` + wsClass + `+File:` + wsClass + `*(.+)`)},
+		{v4aAdd, regexp.MustCompile(`^\*\*\*` + wsClass + `*Add` + wsClass + `+File:` + wsClass + `*(.+)`)},
+		{v4aDelete, regexp.MustCompile(`^\*\*\*` + wsClass + `*Delete` + wsClass + `+File:` + wsClass + `*(.+)`)},
+		{v4aMove, regexp.MustCompile(`^\*\*\*` + wsClass + `*Move` + wsClass + `+File:` + wsClass + `*(.+?)` + wsClass + `*->` + wsClass + `*(.+)`)},
 	}
-	v4aHintRe = regexp.MustCompile(`^@@` + pyWSClass + `*(.+?)` + pyWSClass + `*@@`)
+	v4aHintRe = regexp.MustCompile(`^@@` + wsClass + `*(.+?)` + wsClass + `*@@`)
 )
-
-// Python str.strip with no arguments
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
-
-// Python repr of a str with its quote choice and escapes
-func pyReprStr(s string) string {
-	quote := '\''
-	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteRune(quote)
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		i += size
-		switch {
-		case r == quote || r == '\\':
-			b.WriteRune('\\')
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r < ' ' || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r < 0x7f || unicode.IsPrint(r):
-			b.WriteRune(r)
-		case r <= 0xff:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08x`, r)
-		}
-	}
-	b.WriteRune(quote)
-	return b.String()
-}
 
 // Parses V4A text into operations or returns the joined parse errors
 func parseV4APatch(patchContent string) ([]*v4aOperation, string) {
@@ -144,9 +104,9 @@ func parseV4APatch(patchContent string) ([]*v4aOperation, string) {
 		switch {
 		case m != nil:
 			flush()
-			currentOp = &v4aOperation{kind: kind, filePath: pyStrip(m[1])}
+			currentOp = &v4aOperation{kind: kind, filePath: strings.TrimSpace(m[1])}
 			if kind == v4aMove {
-				currentOp.newPath = pyStrip(m[2])
+				currentOp.newPath = strings.TrimSpace(m[2])
 			}
 			currentHunk = nil
 			if kind == v4aAdd {
@@ -184,10 +144,10 @@ func parseV4APatch(patchContent string) ([]*v4aOperation, string) {
 			parseErrors = append(parseErrors, "Operation with empty file path")
 		}
 		if op.kind == v4aUpdate && len(op.hunks) == 0 {
-			parseErrors = append(parseErrors, "UPDATE "+pyReprStr(op.filePath)+": no hunks found")
+			parseErrors = append(parseErrors, "UPDATE "+strconv.Quote(op.filePath)+": no hunks found")
 		}
 		if op.kind == v4aMove && op.newPath == "" {
-			parseErrors = append(parseErrors, "MOVE "+pyReprStr(op.filePath)+": missing destination path (expected 'src -> dst')")
+			parseErrors = append(parseErrors, "MOVE "+strconv.Quote(op.filePath)+": missing destination path (expected 'src -> dst')")
 		}
 	}
 	if len(parseErrors) > 0 {
@@ -437,7 +397,7 @@ func v4aWritten(result *WriteResult, diff, path string, readSha *string) v4aAppl
 }
 
 // Python str.splitlines with keepends over the line boundaries str recognizes
-func pySplitLinesKeepEnds(s string) []string {
+func splitLinesKeepEndsValue(s string) []string {
 	var out []string
 	start := 0
 	for i := 0; i < len(s); {
@@ -470,10 +430,10 @@ func v4aUnifiedDiff(path, old string, newContent *string) string {
 	var b []string
 	to := "/dev/null"
 	if newContent != nil {
-		b = pySplitLinesKeepEnds(*newContent)
+		b = splitLinesKeepEndsValue(*newContent)
 		to = "b/" + path
 	}
-	return strings.Join(unifiedDiff(pySplitLinesKeepEnds(old), b, "a/"+path, to, 3), "")
+	return strings.Join(unifiedDiff(splitLinesKeepEndsValue(old), b, "a/"+path, to, 3), "")
 }
 
 func v4aBullets(errs []string) string {

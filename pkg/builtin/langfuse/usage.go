@@ -33,7 +33,7 @@ var usageFields = []usageField{
 }
 
 // Whole number of a token count that may be absent, a float, numeric text or a bool, counts written as integers held within the int32 range
-func pyIntOf(v any) int {
+func intOf(v any) int {
 	if !anyutil.IsTrue(v) {
 		return 0
 	}
@@ -63,7 +63,7 @@ func pyIntOf(v any) int {
 		}
 		return clampInt(t.Int64())
 	}
-	if n, ok := pyIntValue(v); ok {
+	if n, ok := intValue(v); ok {
 		return toInt(n)
 	}
 	panic(fmt.Sprintf("a usage count is %s, expected a whole number", errchain.Kind(v)))
@@ -84,7 +84,7 @@ func floatToInt(f float64) int {
 func usageBuckets(read func(attr string) any) *jsonutil.Object {
 	tokens := map[string]int{}
 	for _, f := range usageFields {
-		tokens[f.key] = max(pyIntOf(read(f.attr)), 0)
+		tokens[f.key] = max(intOf(read(f.attr)), 0)
 	}
 	reasoning := min(tokens["output_reasoning_tokens"], tokens["output"])
 	tokens["output_reasoning_tokens"], tokens["output"] = reasoning, tokens["output"]-reasoning
@@ -208,12 +208,12 @@ func usageAndCost(ctx context.Context, response any, providerName, model, baseUR
 		}
 		requestCount := 1
 		if v, ok := dictGet(usage, "request_count"); ok {
-			requestCount = pyIntOf(v)
+			requestCount = intOf(v)
 		}
 		canonical = provider.CanonicalUsage{
-			InputTokens: pyIntOf(dget(usage, "input_tokens")), OutputTokens: pyIntOf(output),
-			CacheReadTokens: pyIntOf(dget(usage, "cache_read_tokens")), CacheWriteTokens: pyIntOf(dget(usage, "cache_write_tokens")),
-			ReasoningTokens: pyIntOf(dget(usage, "reasoning_tokens")), RequestCount: requestCount,
+			InputTokens: intOf(dget(usage, "input_tokens")), OutputTokens: intOf(output),
+			CacheReadTokens: intOf(dget(usage, "cache_read_tokens")), CacheWriteTokens: intOf(dget(usage, "cache_write_tokens")),
+			ReasoningTokens: intOf(dget(usage, "reasoning_tokens")), RequestCount: requestCount,
 		}
 	}
 	return canonicalUsageAndCost(ctx, canonical, providerName, model, baseURL)

@@ -86,7 +86,7 @@ func (s *Store) cronMirrorDeliveryEnabled(ctx context.Context, job *Job) bool {
 
 // True when the target is the job origin conversation, a pinned origin thread must match
 func targetMatchesOrigin(origin map[string]any, platform, chatID, threadID string) bool {
-	if len(origin) == 0 || strings.ToLower(pyStrOrEmpty(origin["platform"])) != strings.ToLower(platform) || pyStrOrEmpty(origin["chat_id"]) != chatID {
+	if len(origin) == 0 || strings.ToLower(anyutil.StringOr(origin["platform"], "")) != strings.ToLower(platform) || anyutil.StringOr(origin["chat_id"], "") != chatID {
 		return false
 	}
 	originThread, ok := origin["thread_id"]
@@ -159,14 +159,14 @@ func (s *Store) maybeMirrorCronDelivery(ctx context.Context, job *Job, platform,
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			s.log.Debug(fmt.Sprintf("Job '%s': delivery mirror failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, r))
+			s.log.Debug(fmt.Sprintf("Job %q: delivery mirror failed for %s:%s: %v", jobIDOr(job, "?"), platform, chatID, r))
 		}
 	}()
 	ok := gateway.MirrorToSession(ctx, platform, chatID, s.cronMirrorMessage(job, text), gateway.MirrorOptions{SourceLabel: "cron", ThreadID: optStr(threadID), UserID: userID, Role: "user"})
 	if ok {
-		s.log.Info(fmt.Sprintf("Job '%s': mirrored delivery into %s:%s session transcript", jobIDOr(job, "?"), platform, chatID))
+		s.log.Info(fmt.Sprintf("Job %q: mirrored delivery into %s:%s session transcript", jobIDOr(job, "?"), platform, chatID))
 	} else {
-		s.log.Debug(fmt.Sprintf("Job '%s': delivery mirror skipped for %s:%s (no matching gateway session — cold start)", jobIDOr(job, "?"), platform, chatID))
+		s.log.Debug(fmt.Sprintf("Job %q: delivery mirror skipped for %s:%s (no matching gateway session — cold start)", jobIDOr(job, "?"), platform, chatID))
 	}
 }
 
@@ -339,7 +339,7 @@ func (s *Store) relayFrontedConnectedPlatforms(ctx context.Context, connected ma
 
 // Slack origin thread stamped in the home chat is a session key, not a location
 func (s *Store) originThreadIsStale(ctx context.Context, origin map[string]any) bool {
-	if strings.ToLower(pyStrOrEmpty(origin["platform"])) != "slack" || !anyutil.IsTrue(origin["thread_id"]) {
+	if strings.ToLower(anyutil.StringOr(origin["platform"], "")) != "slack" || !anyutil.IsTrue(origin["thread_id"]) {
 		return false
 	}
 	homeChat := s.getHomeTargetChatID(ctx, "slack")
@@ -382,7 +382,7 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 		for _, platform := range iterHomeTargetPlatforms(ctx) {
 			if chatID := s.getHomeTargetChatID(ctx, platform); chatID != "" {
 				name := jobNameOr(job, jobIDOr(job, "?"))
-				s.log.Info(fmt.Sprintf("Job '%s' has deliver=origin but no origin; falling back to %s home channel", name, platform))
+				s.log.Info(fmt.Sprintf("Job %q has deliver=origin but no origin; falling back to %s home channel", name, platform))
 				return s.homeTarget(ctx, platform, chatID, "origin_fallback"), true
 			}
 		}
@@ -393,14 +393,14 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 		gateway.PrepareSendMessagePlatforms(ctx)
 		chatID, threadID, resolutionErr := gateway.ResolveSendTarget(ctx, key, rest, true)
 		if resolutionErr != "" {
-			s.log.Warn(fmt.Sprintf("Invalid cron delivery target '%s': %s", deliverValue, resolutionErr))
+			s.log.Warn(fmt.Sprintf("Invalid cron delivery target %q: %s", deliverValue, resolutionErr))
 			return Target{}, false
 		}
 		thread := ""
 		if threadID != nil {
 			thread = *threadID
 		}
-		if threadID == nil && key == "slack" && origin != nil && strings.ToLower(pyStrOrEmpty(origin["platform"])) == key && anyutil.String(origin["chat_id"]) == chatID && anyutil.IsTrue(origin["thread_id"]) && !s.originThreadIsStale(ctx, origin) {
+		if threadID == nil && key == "slack" && origin != nil && strings.ToLower(anyutil.StringOr(origin["platform"], "")) == key && anyutil.String(origin["chat_id"]) == chatID && anyutil.IsTrue(origin["thread_id"]) && !s.originThreadIsStale(ctx, origin) {
 			thread = anyutil.String(origin["thread_id"])
 		}
 		return Target{Platform: platform, ChatID: chatID, ThreadID: thread, ResolvedFrom: "explicit"}, true
@@ -410,7 +410,7 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 	if fromBroadcast {
 		provenance = ""
 	}
-	if origin != nil && pyStrOrEmpty(origin["platform"]) == platform {
+	if origin != nil && anyutil.StringOr(origin["platform"], "") == platform {
 		if chatID := s.getHomeTargetChatID(ctx, platform); chatID != "" {
 			return s.homeTarget(ctx, platform, chatID, provenance), true
 		}
@@ -432,17 +432,17 @@ func (s *Store) resolveBotChatTarget(job *Job, profileArg string) (t Target, ok 
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			s.log.Warn(fmt.Sprintf("Job '%s': failed to resolve bot-chat profile '%s'", jobIDOr(job, "?"), profileArg))
+			s.log.Warn(fmt.Sprintf("Job %q: failed to resolve bot-chat profile %q", jobIDOr(job, "?"), profileArg))
 			t, ok = Target{}, false
 		}
 	}()
 	canon, err := profiles.NormalizeProfileName(profileArg)
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Job '%s': failed to resolve bot-chat profile '%s'", jobIDOr(job, "?"), profileArg))
+		s.log.Warn(fmt.Sprintf("Job %q: failed to resolve bot-chat profile %q", jobIDOr(job, "?"), profileArg))
 		return Target{}, false
 	}
 	if !profiles.ProfileExists(canon) {
-		s.log.Warn(fmt.Sprintf("Job '%s': bot-chat delivery profile '%s' not found on this machine — skipping target", jobIDOr(job, "?"), profileArg))
+		s.log.Warn(fmt.Sprintf("Job %q: bot-chat delivery profile %q not found on this machine — skipping target", jobIDOr(job, "?"), profileArg))
 		return Target{}, false
 	}
 	return Target{Platform: BotChatPlatform, ChatID: canon}, true

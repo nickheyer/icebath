@@ -114,7 +114,7 @@ func isDirectoryPath(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-func runtimeErr(message string) error { return &pm.PyError{Class: "RuntimeError", Message: message} }
+func runtimeErr(message string) error { return &pm.ClassError{Class: "RuntimeError", Message: message} }
 
 // st_mtime of a stat result as CPython computes it, seconds plus nanoseconds in double precision
 func statMtime(st os.FileInfo) float64 {
@@ -242,7 +242,7 @@ func readCompletionAttempts(record string) (int64, string, bool, error) {
 		// A count past what an int64 holds is held at the bound on its side
 		n, err := strconv.ParseInt(words[0], 10, 64)
 		if err != nil && !errors.Is(err, strconv.ErrRange) {
-			return 0, "", false, &pm.PyError{Class: "ValueError", Message: "completion attempt count " + words[0] + " is not a whole number"}
+			return 0, "", false, &pm.ClassError{Class: "ValueError", Message: "completion attempt count " + words[0] + " is not a whole number"}
 		}
 		attempts = n
 	}

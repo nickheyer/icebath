@@ -10,13 +10,13 @@ func expandToolIDVariants(values ...any) map[string]bool {
 	variants := map[string]bool{}
 	for _, raw := range values {
 		s, _ := raw.(string)
-		value := pyStrip(s)
+		value := strings.TrimSpace(s)
 		if value == "" {
 			continue
 		}
 		variants[value] = true
 		for _, part := range strings.Split(value, "|") {
-			if p := pyStrip(part); p != "" {
+			if p := strings.TrimSpace(part); p != "" {
 				variants[p] = true
 			}
 		}

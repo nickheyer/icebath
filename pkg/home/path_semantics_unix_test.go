@@ -3,28 +3,25 @@
 package home
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"unicode/utf8"
-
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
-// Runs fn and fails unless it panicked with the OverflowError text CPython raises
-func panicsWithOverflow(t *testing.T, want string, fn func()) {
+// Fails unless the captured log holds the warning text exactly once
+func warnedOnce(t *testing.T, warnings *bytes.Buffer, text string) {
 	t.Helper()
-	defer func() {
-		e, ok := recover().(*errorutil.Error)
-		if !ok || e.Kind != "OverflowError" || e.Msg != want {
-			t.Fatalf("want OverflowError %q, got %v", want, e)
-		}
-	}()
-	fn()
+	if n := strings.Count(warnings.String(), "level=WARN msg="+strconv.Quote(text)); n != 1 {
+		t.Fatalf("warning %q logged %d times, want once:\n%s", text, n, warnings.String())
+	}
 }
 
 func TestMarkProfileDeletedCreatesWithTheUmaskModes(t *testing.T) {
@@ -42,7 +39,9 @@ func TestMarkProfileDeletedCreatesWithTheUmaskModes(t *testing.T) {
 	}
 }
 
-func TestHomeModeParsesLikePythonIntBaseEight(t *testing.T) {
+func TestHomeModeReadsOctalDigitsAndFallsBackTo700(t *testing.T) {
+	swap(t, &ignoredEnvWarned, &sync.Map{})
+	warnings := captureWarnings(t)
 	cases := map[string]uint32{"_755": 0o700, "0o7_55": 0o700, "\u0667\u0665\u0665": 0o700, "\t751\t": 0o751, "0o_750": 0o700, "78": 0o700}
 	for text, want := range cases {
 		tmp := t.TempDir()
@@ -57,10 +56,21 @@ func TestHomeModeParsesLikePythonIntBaseEight(t *testing.T) {
 	tmp := t.TempDir()
 	isolatePolicyEnv(t, tmp)
 	t.Setenv("ICEBATH_HOME_MODE", "0o77777777777")
-	panicsWithOverflow(t, "Python int too large to convert to C int", func() { ApplySecureDirPolicy(context.Background(), tmp, tmp) })
+	for range 2 {
+		dir := mkdirs(t, filepath.Join(tmp, "d"), 0o755)
+		ApplySecureDirPolicy(context.Background(), dir, tmp)
+		if got := sMode(t, dir); got != 0o700 {
+			t.Fatalf("ICEBATH_HOME_MODE beyond 32 bits gave %o, want 700", got)
+		}
+	}
+	warnedOnce(t, warnings, `ICEBATH_HOME_MODE="0o77777777777" is beyond the largest file mode, using 700`)
+	warnedOnce(t, warnings, `ICEBATH_HOME_MODE="78" is not an octal file mode, using 700`)
+	warnedOnce(t, warnings, `ICEBATH_HOME_MODE="0o7_55" is not an octal file mode, using 700`)
 }
 
-func TestIcebathUIDGIDConvertLikeOsChown(t *testing.T) {
+func TestIcebathUIDGIDBadValuesWarnOnceAndLeaveTheIdUnchanged(t *testing.T) {
+	swap(t, &ignoredEnvWarned, &sync.Map{})
+	warnings := captureWarnings(t)
 	type call struct{ uid, gid int }
 	run := func(uid, gid string) []call {
 		tmp := t.TempDir()
@@ -81,10 +91,27 @@ func TestIcebathUIDGIDConvertLikeOsChown(t *testing.T) {
 	if got := run("x", " "); len(got) != 0 {
 		t.Fatalf("invalid values chown = %v", got)
 	}
-	panicsWithOverflow(t, "uid is less than minimum", func() { run("-2", "") })
-	panicsWithOverflow(t, "uid is less than minimum", func() { run("4294967296", "") })
-	panicsWithOverflow(t, "gid is greater than maximum", func() { run("1", "99999999999999999999") })
-	panicsWithOverflow(t, "gid is less than minimum", func() { run("", "-99999999999999999999") })
+	for range 2 {
+		if got := run("-2", ""); len(got) != 0 {
+			t.Fatalf("a uid below -1 chowns = %v", got)
+		}
+	}
+	if got := run("4294967296", ""); len(got) != 0 {
+		t.Fatalf("a uid beyond 32 bits chowns = %v", got)
+	}
+	if got := run("1", "99999999999999999999"); len(got) != 1 || got[0] != (call{1, -1}) {
+		t.Fatalf("a gid beyond int64 is not left unchanged = %v", got)
+	}
+	if got := run("", "-99999999999999999999"); len(got) != 0 {
+		t.Fatalf("a gid below int64 chowns = %v", got)
+	}
+	warnedOnce(t, warnings, `ICEBATH_UID="1_000" is not a whole number, leaving that id unchanged`)
+	warnedOnce(t, warnings, "ICEBATH_GID=\"\u0663\" is not a whole number, leaving that id unchanged")
+	warnedOnce(t, warnings, `ICEBATH_UID="x" is not a whole number, leaving that id unchanged`)
+	warnedOnce(t, warnings, `ICEBATH_UID="-2" is outside the ids from -1 to 4294967295, leaving that id unchanged`)
+	warnedOnce(t, warnings, `ICEBATH_UID="4294967296" is outside the ids from -1 to 4294967295, leaving that id unchanged`)
+	warnedOnce(t, warnings, `ICEBATH_GID="99999999999999999999" is outside the ids from -1 to 4294967295, leaving that id unchanged`)
+	warnedOnce(t, warnings, `ICEBATH_GID="-99999999999999999999" is outside the ids from -1 to 4294967295, leaving that id unchanged`)
 }
 
 func TestScratchUsageCountsEveryNonDirectoryLstat(t *testing.T) {

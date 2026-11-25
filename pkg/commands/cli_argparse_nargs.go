@@ -139,9 +139,9 @@ func (v *nonNegativeDays) String() string { return strconv.Itoa(int(*v)) }
 
 func (v *nonNegativeDays) Type() string { return "int" }
 
-// Accepts decimal integer text at or above zero
+// Accepts integer text at or above zero
 func (v *nonNegativeDays) Set(text string) error {
-	n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	n, err := parseIntArg(text)
 	if err != nil {
 		return errors.New("must be an integer")
 	}

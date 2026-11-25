@@ -21,9 +21,9 @@ func reinstallRuntimeSnapshot(ctx context.Context, a *AIAgent, rt map[string]any
 	if err != nil {
 		return err
 	}
-	a.usePromptCaching = pyTruthy(caching)
+	a.usePromptCaching = anyutil.IsTrue(caching)
 	if native, ok := rt["use_native_cache_layout"]; ok {
-		a.useNativeCacheLayout = pyTruthy(native)
+		a.useNativeCacheLayout = anyutil.IsTrue(native)
 	} else {
 		a.useNativeCacheLayout = a.apiMode == "anthropic_messages" && a.provider == "anthropic"
 	}
@@ -92,7 +92,7 @@ func restoreRuntimeCapabilities(a *AIAgent, rt map[string]any) {
 	case map[string]any:
 		restored := make(map[string]bool, len(caps))
 		for name, v := range caps {
-			restored[name] = pyTruthy(v)
+			restored[name] = anyutil.IsTrue(v)
 		}
 		a.runtimeCapabilities = restored
 	case map[string]bool:

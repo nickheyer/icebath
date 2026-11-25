@@ -420,7 +420,7 @@ func TestToolsConfigScalarHelpers(t *testing.T) {
 			t.Fatalf("contextEngineActive(%v) = %v", c.cfg, got)
 		}
 	}
-	if !pyContainsKanban("x,kanban") || !pyContainsKanban([]any{"kanban"}) || pyContainsKanban([]any{"web"}) || !pyContainsKanban(map[string]any{"kanban": nil}) {
+	if !containsKanban("x,kanban") || !containsKanban([]any{"kanban"}) || containsKanban([]any{"web"}) || !containsKanban(map[string]any{"kanban": nil}) {
 		t.Fatal("kanban membership")
 	}
 	cfg := config.Tree{"image_gen": "corrupt"}

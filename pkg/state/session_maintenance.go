@@ -3,6 +3,8 @@ package state
 import (
 	"context"
 	"math"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Compression continuation edge between parent alias p and child alias c
@@ -86,7 +88,7 @@ func (d *SessionDB) SweepOrphanedSessions(ctx context.Context, o SweepOrphanedOp
 			return err
 		}
 		for _, row := range rows {
-			sid := pyStr(row["id"])
+			sid := anyutil.String(row["id"])
 			if excluded[sid] {
 				continue
 			}
@@ -138,7 +140,7 @@ func (d *SessionDB) ArchiveStaleSessions(ctx context.Context, idleDays float64, 
 		return 0, err
 	}
 	for _, row := range rows {
-		if _, err := d.autoArchiveLineage(ctx, pyStr(rowValue(row, "id"))); err != nil {
+		if _, err := d.autoArchiveLineage(ctx, anyutil.String(rowValue(row, "id"))); err != nil {
 			return 0, err
 		}
 	}

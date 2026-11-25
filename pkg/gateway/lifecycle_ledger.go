@@ -354,15 +354,20 @@ func reportUncleanExit(ctx context.Context, evidence *jsonutil.Object, h string,
 		record.Set(k, evidence.Value(k))
 	}
 	appendExitDiag(ctx, record, h)
-	oom := recGet(evidence, "suspected_oom")
-	if _, ok := evidence.Get("suspected_oom"); !ok {
-		oom = false
+	shown := func(key string) string {
+		if v := recGet(evidence, key); v != nil {
+			return anyutil.String(v)
+		}
+		return "unknown"
+	}
+	oom := "false"
+	if _, ok := evidence.Get("suspected_oom"); ok {
+		oom = shown("suspected_oom")
 	}
 	pkgLog().Warn(fmt.Sprintf("Previous gateway life (pid=%s, started_at=%s) exited UNCLEANLY (no exit path ran — SIGKILL / OOM / "+
 		"VM death, or a process kill issued by the agent or one of its descendants, e.g. a pkill/taskkill of "+
 		"the host interpreter image; see #113667). last_heartbeat_at=%s last_mem=%s suspected_oom=%s",
-		anyutil.String(recGet(evidence, "prior_pid")), anyutil.String(recGet(evidence, "prior_started_at")),
-		anyutil.String(recGet(evidence, "last_heartbeat_at")), anyutil.String(recGet(evidence, "last_heartbeat_mem")), anyutil.String(oom)))
+		shown("prior_pid"), shown("prior_started_at"), shown("last_heartbeat_at"), shown("last_heartbeat_mem"), oom))
 }
 
 // Reports an unclean previous exit then claims the sentinel for this life, returning the evidence

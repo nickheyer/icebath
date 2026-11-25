@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -16,7 +15,7 @@ import (
 )
 
 // One Python parameter of a plugin context method
-type pyParam struct {
+type paramValue struct {
 	name     string
 	kwOnly   bool
 	varKw    bool
@@ -24,26 +23,26 @@ type pyParam struct {
 	def      any
 }
 
-func req(name string) pyParam          { return pyParam{name: name, required: true} }
-func opt(name string, def any) pyParam { return pyParam{name: name, def: def} }
-func kwo(name string, def any) pyParam { return pyParam{name: name, kwOnly: true, def: def} }
-func kwReq(name string) pyParam        { return pyParam{name: name, kwOnly: true, required: true} }
-func varKwargs() pyParam               { return pyParam{name: "kwargs", varKw: true} }
+func req(name string) paramValue          { return paramValue{name: name, required: true} }
+func opt(name string, def any) paramValue { return paramValue{name: name, def: def} }
+func kwo(name string, def any) paramValue { return paramValue{name: name, kwOnly: true, def: def} }
+func kwReq(name string) paramValue        { return paramValue{name: name, kwOnly: true, required: true} }
+func varKwargs() paramValue               { return paramValue{name: "kwargs", varKw: true} }
 
 // Binds a call the way Python binds arguments to a PluginContext method, raising its TypeError wording
-func bindPy(method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
+func bindPy(method string, params []paramValue, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
 	return bindPyOn("PluginContext", method, params, args, kwargs)
 }
 
 // Binds a call to a method of the named class the way Python binds arguments, raising its TypeError wording
-func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
+func bindPyOn(owner, method string, params []paramValue, args []any, kwargs map[string]any) (map[string]any, map[string]any, error) {
 	fname := owner + "." + method
 	typeErr := func(format string, a ...any) error {
 		return &HostBuiltinError{Type: "TypeError", Message: fname + " " + fmt.Sprintf(format, a...)}
 	}
 	bound := map[string]any{}
 	extra := map[string]any{}
-	positional := []pyParam{}
+	positional := []paramValue{}
 	acceptsVarKw := false
 	for _, p := range params {
 		switch {
@@ -72,7 +71,7 @@ func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[str
 	for i, v := range args {
 		bound[positional[i].name] = v
 	}
-	known := map[string]pyParam{}
+	known := map[string]paramValue{}
 	for _, p := range params {
 		if !p.varKw {
 			known[p.name] = p
@@ -119,7 +118,7 @@ func bindPyOn(owner, method string, params []pyParam, args []any, kwargs map[str
 }
 
 // HostParam is one Python parameter of a host facade method another package implements
-type HostParam = pyParam
+type HostParam = paramValue
 
 // HostReq is a required positional or keyword parameter of a host facade method
 func HostReq(name string) HostParam { return req(name) }
@@ -140,7 +139,7 @@ var notPassed = unsetDefault{}
 type hostCtxFunc func(ctx context.Context, h *PluginHost, c *Context, args []any, kwargs map[string]any) (any, error)
 
 // One context method with its Python signature and the Go call it replays
-func hostMethod(name string, params []pyParam, run func(ctx context.Context, h *PluginHost, c *Context, a map[string]any, extra map[string]any) (any, error)) hostCtxFunc {
+func hostMethod(name string, params []paramValue, run func(ctx context.Context, h *PluginHost, c *Context, a map[string]any, extra map[string]any) (any, error)) hostCtxFunc {
 	return func(ctx context.Context, h *PluginHost, c *Context, args []any, kwargs map[string]any) (any, error) {
 		bound, extra, err := bindPy(name, params, args, kwargs)
 		if err != nil {
@@ -151,11 +150,11 @@ func hostMethod(name string, params []pyParam, run func(ctx context.Context, h *
 }
 
 // Parameters of PluginContext.register_tool in signature order
-var registerToolParams = []pyParam{req("name"), req("toolset"), req("schema"), req("handler"),
+var registerToolParams = []paramValue{req("name"), req("toolset"), req("schema"), req("handler"),
 	opt("check_fn", nil), opt("requires_env", nil), opt("is_async", false), opt("description", ""), opt("emoji", ""), opt("override", false)}
 
 // Dict argument of the ctx call being served, read from its request frame so every object keeps its wire key order
-func orderedCtxArg(ctx context.Context, params []pyParam, name string, bound any) *jsonutil.Object {
+func orderedCtxArg(ctx context.Context, params []paramValue, name string, bound any) *jsonutil.Object {
 	if frame := servingFrame(ctx); frame != nil {
 		if parsed, err := jsonutil.Decode(frame); err == nil {
 			if msg, ok := parsed.(*jsonutil.Object); ok {
@@ -190,7 +189,7 @@ func argStr(v any) string {
 	if v == nil {
 		return ""
 	}
-	return config.PyStr(v)
+	return anyutil.String(v)
 }
 
 func argMap(v any) map[string]any {
@@ -210,7 +209,7 @@ func argStrings(v any) []string {
 	}
 	out := make([]string, len(items))
 	for i, item := range items {
-		out[i] = config.PyStr(item)
+		out[i] = anyutil.String(item)
 	}
 	return out
 }
@@ -254,22 +253,22 @@ func hostedToolHandler(f *HostedCallable) tools.Handler {
 		}
 		result, err := f.Call(ctx, []any{args}, kwargs)
 		if err != nil {
-			return pyJSONText(map[string]any{"error": fmt.Sprintf("Tool execution failed: %s: %s", pyErrorTypeName(err), err.Error())})
+			return jsonText(map[string]any{"error": fmt.Sprintf("Tool execution failed: %s: %s", errorTypeNameValue(err), err.Error())})
 		}
 		if s, ok := result.(string); ok {
 			return s
 		}
-		return pyJSONText(result)
+		return jsonText(result)
 	}
 }
 
 // json.dumps with ensure_ascii off
-func pyJSONText(v any) string {
+func jsonText(v any) string {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		return config.PyStr(v)
+		return anyutil.String(v)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -285,18 +284,18 @@ var hostCtxDispatch map[string]hostCtxFunc
 
 func init() {
 	providerRegistrar := func(name, param string, register func(c *Context, p any) (*Registration, error)) hostCtxFunc {
-		return hostMethod(name, []pyParam{req(param)}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		return hostMethod(name, []paramValue{req(param)}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return register(c, a[param])
 		})
 	}
 	hostCtxDispatch = map[string]hostCtxFunc{
-		"has_plugin": hostMethod("has_plugin", []pyParam{req("plugin_id")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"has_plugin": hostMethod("has_plugin", []paramValue{req("plugin_id")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return c.HasPlugin(argStr(a["plugin_id"])), nil
 		}),
-		"get_config": hostMethod("get_config", []pyParam{req("key"), opt("default", nil)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"get_config": hostMethod("get_config", []paramValue{req("key"), opt("default", nil)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return c.GetConfig(ctx, argStr(a["key"]), a["default"])
 		}),
-		"set_config": hostMethod("set_config", []pyParam{req("key"), req("value")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"set_config": hostMethod("set_config", []paramValue{req("key"), req("value")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return nil, c.SetConfig(ctx, argStr(a["key"]), a["value"])
 		}),
 		"current_cron_execution": hostMethod("current_cron_execution", nil, func(ctx context.Context, _ *PluginHost, c *Context, _, _ map[string]any) (any, error) {
@@ -310,20 +309,20 @@ func init() {
 				}
 				spec := ToolSpec{Name: argStr(a["name"]), Toolset: argStr(a["toolset"]), Schema: orderedCtxArg(ctx, registerToolParams, "schema", a["schema"]),
 					Handler: hostedToolHandler(handler), RequiresEnv: argStrings(a["requires_env"]),
-					Description: argStr(a["description"]), Emoji: argStr(a["emoji"]), Override: config.PyTruthy(a["override"])}
+					Description: argStr(a["description"]), Emoji: argStr(a["emoji"]), Override: anyutil.IsTrue(a["override"])}
 				if check, ok := a["check_fn"].(*HostedCallable); ok {
 					spec.Check = func(env *tools.Env) bool {
 						v, err := check.Call(h.baseCtx, nil, nil)
-						return err == nil && config.PyTruthy(v)
+						return err == nil && anyutil.IsTrue(v)
 					}
 				}
 				return c.RegisterTool(ctx, spec)
 			}),
-		"call_mcp": hostMethod("call_mcp", []pyParam{req("server"), req("tool"), opt("arguments", nil), opt("timeout", int64(30))},
+		"call_mcp": hostMethod("call_mcp", []paramValue{req("server"), req("tool"), opt("arguments", nil), opt("timeout", int64(30))},
 			func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				return c.CallMCP(ctx, argStr(a["server"]), argStr(a["tool"]), argMap(a["arguments"]), a["timeout"])
 			}),
-		"inject_message": hostMethod("inject_message", []pyParam{req("content"), opt("role", "user"), kwo("session_key", nil), kwo("origin", nil)},
+		"inject_message": hostMethod("inject_message", []paramValue{req("content"), opt("role", "user"), kwo("session_key", nil), kwo("origin", nil)},
 			func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				return c.InjectMessage(ctx, argStr(a["content"]), argStr(a["role"]), argStr(a["session_key"]), a["origin"]), nil
 			}),
@@ -333,14 +332,14 @@ func init() {
 		"session_surface": hostMethod("session_surface", nil, func(ctx context.Context, _ *PluginHost, c *Context, _, _ map[string]any) (any, error) {
 			return c.SessionSurface(ctx)
 		}),
-		"ask_choice": hostMethod("ask_choice", []pyParam{req("question"), req("choices")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-			choice, ok, err := c.AskChoice(ctx, config.PyStr(a["question"]), argList(a["choices"]))
+		"ask_choice": hostMethod("ask_choice", []paramValue{req("question"), req("choices")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+			choice, ok, err := c.AskChoice(ctx, anyutil.String(a["question"]), argList(a["choices"]))
 			if err != nil || !ok {
 				return nil, err
 			}
 			return choice, nil
 		}),
-		"register_command": hostMethod("register_command", []pyParam{req("name"), req("handler"), opt("description", ""), opt("args_hint", ""), opt("argument_mode", nil)},
+		"register_command": hostMethod("register_command", []paramValue{req("name"), req("handler"), opt("description", ""), opt("args_hint", ""), opt("argument_mode", nil)},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				handler, err := argCallable("register_command", "handler", a["handler"])
 				if err != nil {
@@ -348,28 +347,28 @@ func init() {
 				}
 				return c.RegisterCommand(argStr(a["name"]), hostedCommandHandler(handler), argStr(a["description"]), argStr(a["args_hint"]), argStr(a["argument_mode"])), nil
 			}),
-		"dispatch_tool": hostMethod("dispatch_tool", []pyParam{req("tool_name"), req("args"), varKwargs()},
+		"dispatch_tool": hostMethod("dispatch_tool", []paramValue{req("tool_name"), req("args"), varKwargs()},
 			func(ctx context.Context, _ *PluginHost, c *Context, a, extra map[string]any) (any, error) {
 				return c.DispatchTool(ctx, argStr(a["tool_name"]), argMap(a["args"]), extra)
 			}),
 		"register_context_engine":    providerRegistrar("register_context_engine", "engine", (*Context).RegisterContextEngine),
 		"register_context_reference": providerRegistrar("register_context_reference", "provider", (*Context).RegisterContextReference),
-		"register_memory_provider": hostMethod("register_memory_provider", []pyParam{req("provider")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"register_memory_provider": hostMethod("register_memory_provider", []paramValue{req("provider")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return nil, c.RegisterMemoryProvider(a["provider"])
 		}),
-		"register_auxiliary_task": hostMethod("register_auxiliary_task", []pyParam{req("key"), kwReq("display_name"), kwReq("description"), kwo("defaults", nil), kwo("inherit_from", nil)},
+		"register_auxiliary_task": hostMethod("register_auxiliary_task", []paramValue{req("key"), kwReq("display_name"), kwReq("description"), kwo("defaults", nil), kwo("inherit_from", nil)},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				return c.RegisterAuxiliaryTask(a["key"], AuxTaskOptions{DisplayName: a["display_name"], Description: a["description"],
 					Defaults: a["defaults"], InheritFrom: a["inherit_from"]})
 			}),
-		"register_redaction_patterns": hostMethod("register_redaction_patterns", []pyParam{req("patterns")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"register_redaction_patterns": hostMethod("register_redaction_patterns", []paramValue{req("patterns")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return int64(c.RegisterRedactionPatterns(a["patterns"])), nil
 		}),
-		"register_locale": hostMethod("register_locale", []pyParam{req("lang"), req("source"), kwo("endonym", nil), kwo("rtl", false), kwo("surface", "core")},
+		"register_locale": hostMethod("register_locale", []paramValue{req("lang"), req("source"), kwo("endonym", nil), kwo("rtl", false), kwo("surface", "core")},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-				return c.RegisterLocale(argStr(a["lang"]), a["source"], argStr(a["endonym"]), config.PyTruthy(a["rtl"]), argStr(a["surface"]))
+				return c.RegisterLocale(argStr(a["lang"]), a["source"], argStr(a["endonym"]), anyutil.IsTrue(a["rtl"]), argStr(a["surface"]))
 			}),
-		"register_locale_dir": hostMethod("register_locale_dir", []pyParam{req("path"), kwo("metadata", nil)}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"register_locale_dir": hostMethod("register_locale_dir", []paramValue{req("path"), kwo("metadata", nil)}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			var meta map[string]map[string]any
 			if m := argMap(a["metadata"]); m != nil {
 				meta = map[string]map[string]any{}
@@ -379,7 +378,7 @@ func init() {
 			}
 			return c.RegisterLocaleDir(argStr(a["path"]), meta), nil
 		}),
-		"register_hook": hostMethod("register_hook", []pyParam{req("hook_name"), req("callback"), kwo("hold_stream", false)},
+		"register_hook": hostMethod("register_hook", []paramValue{req("hook_name"), req("callback"), kwo("hold_stream", false)},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				if c.ignoredAfterAbandonedLoad("register_hook") {
 					return nil, nil
@@ -388,9 +387,9 @@ func init() {
 				if err != nil {
 					return nil, err
 				}
-				return c.manager.trackHostedHook(c, argStr(a["hook_name"]), cb, config.PyTruthy(a["hold_stream"])), nil
+				return c.manager.trackHostedHook(c, argStr(a["hook_name"]), cb, anyutil.IsTrue(a["hold_stream"])), nil
 			}),
-		"register_middleware": hostMethod("register_middleware", []pyParam{req("kind"), req("callback")}, func(_ context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"register_middleware": hostMethod("register_middleware", []paramValue{req("kind"), req("callback")}, func(_ context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			if c.ignoredAfterAbandonedLoad("register_middleware") {
 				return nil, nil
 			}
@@ -401,7 +400,7 @@ func init() {
 			run := func(kwargs map[string]any) (any, error) { return cb.Call(h.baseCtx, nil, kwargs) }
 			return c.registerMiddlewareAs(argStr(a["kind"]), run, cb.Name), nil
 		}),
-		"register_system_prompt_section": hostMethod("register_system_prompt_section", []pyParam{req("id"), req("content"), kwo("position", notPassed), kwo("max_chars", notPassed)},
+		"register_system_prompt_section": hostMethod("register_system_prompt_section", []paramValue{req("id"), req("content"), kwo("position", notPassed), kwo("max_chars", notPassed)},
 			func(_ context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				var opts []SectionOption
 				if a["position"] != notPassed {
@@ -417,11 +416,11 @@ func init() {
 				}
 				return c.RegisterSystemPromptSection(argStr(a["id"]), content, opts...)
 			}),
-		"emit": hostMethod("emit", []pyParam{req("event"), opt("payload", nil)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"emit": hostMethod("emit", []paramValue{req("event"), opt("payload", nil)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			n, err := c.Emit(ctx, argStr(a["event"]), argMap(a["payload"]))
 			return int64(n), err
 		}),
-		"subscribe": hostMethod("subscribe", []pyParam{req("event"), req("callback")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"subscribe": hostMethod("subscribe", []paramValue{req("event"), req("callback")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			cb, err := argCallable("subscribe", "callback", a["callback"])
 			if err != nil {
 				return nil, err
@@ -430,11 +429,11 @@ func init() {
 				return cb.Call(ctx, nil, payload)
 			})
 		}),
-		"register_skill": hostMethod("register_skill", []pyParam{req("name"), req("path"), opt("description", ""), opt("frontmatter", nil)},
+		"register_skill": hostMethod("register_skill", []paramValue{req("name"), req("path"), opt("description", ""), opt("frontmatter", nil)},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 				return c.RegisterSkill(argStr(a["name"]), argStr(a["path"]), argStr(a["description"]), argMap(a["frontmatter"]))
 			}),
-		"register_automation_blueprint": hostMethod("register_automation_blueprint", []pyParam{req("key"), kwReq("title"), kwReq("description"),
+		"register_automation_blueprint": hostMethod("register_automation_blueprint", []paramValue{req("key"), kwReq("title"), kwReq("description"),
 			kwReq("schedule_template"), kwReq("prompt_template"), kwo("category", "general"), kwo("slots", []any{}), kwo("deliver_default", "origin"),
 			kwo("skills", []any{}), kwo("tags", []any{})},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
@@ -442,10 +441,10 @@ func init() {
 					ScheduleTemplate: a["schedule_template"], PromptTemplate: a["prompt_template"], Category: a["category"],
 					Slots: a["slots"], DeliverDefault: a["deliver_default"], Skills: a["skills"], Tags: a["tags"]})
 			}),
-		"has_capability": hostMethod("has_capability", []pyParam{req("capability")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"has_capability": hostMethod("has_capability", []paramValue{req("capability")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return c.HasCapability(ctx, argStr(a["capability"])), nil
 		}),
-		"side_question": hostMethod("side_question", []pyParam{req("token"), req("prompt"), kwo("timeout", 15.0)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
+		"side_question": hostMethod("side_question", []paramValue{req("token"), req("prompt"), kwo("timeout", 15.0)}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			answer, err := c.SideQuestion(ctx, a["token"], a["prompt"], a["timeout"])
 			if err != nil || answer == nil {
 				return nil, err
@@ -467,7 +466,7 @@ func init() {
 }
 
 // Python class name a parent side error reports to the child, plain Go errors answering RuntimeError
-func pyErrorTypeName(err error) string {
+func errorTypeNameValue(err error) string {
 	name := errorTypeName(err)
 	if !strings.HasSuffix(name, "Error") && !strings.HasSuffix(name, "Unavailable") && !strings.HasSuffix(name, "Unsupported") &&
 		!strings.HasSuffix(name, "Timeout") && !strings.HasSuffix(name, "Interrupt") || name == "wrapError" {

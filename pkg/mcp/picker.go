@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -74,13 +75,13 @@ func BuildPickerRows(ctx context.Context) ([]PickerRow, error) {
 			status = pickerStatusCustomEnabled
 		}
 		m, _, _ := yDict(cfg)
-		rows = append(rows, PickerRow{Name: name, Description: pyStr(yOr(yOr(m["url"], m["command"]), "(no transport)")), Status: status})
+		rows = append(rows, PickerRow{Name: name, Description: anyutil.String(yOr(yOr(m["url"], m["command"]), "(no transport)")), Status: status})
 	}
 	return rows, nil
 }
 
 // Pads s with spaces to width code points like str.ljust
-func pyLjust(s string, width int) string {
+func ljust(s string, width int) string {
 	if n := utf8.RuneCountInString(s); n < width {
 		return s + strings.Repeat(" ", width-n)
 	}
@@ -88,7 +89,7 @@ func pyLjust(s string, width int) string {
 }
 
 func formatPickerRow(row PickerRow) string {
-	return fmt.Sprintf("%s %s %s", pyLjust(row.Name, 18), pyLjust(row.Status, 24), row.Description)
+	return fmt.Sprintf("%s %s %s", ljust(row.Name, 18), ljust(row.Status, 24), row.Description)
 }
 
 // Sets the enabled flag of an installed server, reporting a missing server instead of writing
@@ -244,7 +245,7 @@ func printPickerRows(ui TerminalUI, rows []PickerRow) {
 	}
 	say(ui, "  MCP Catalog + configured servers:", ansiCyan+ansiBold)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "  %s %s Description\n", pyLjust("Name", 18), pyLjust("Status", 24))
+	fmt.Fprintf(out, "  %s %s Description\n", ljust("Name", 18), ljust("Status", 24))
 	fmt.Fprintf(out, "  %s %s %s\n", strings.Repeat("-", 18), strings.Repeat("-", 24), strings.Repeat("-", 11))
 	for _, row := range rows {
 		fmt.Fprintf(out, "  %s\n", formatPickerRow(row))

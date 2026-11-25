@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -118,13 +119,13 @@ func hostedAttachmentData(ctx context.Context, binding *jsonutil.Object, atteste
 		size := int64(item["size"].(int))
 		var data []byte
 		for int64(len(data)) < size {
-			prompt, err := pyItem(attested, "prompt")
+			prompt, err := itemValue(attested, "prompt")
 			if err != nil {
 				return nil, err
 			}
 			promptText, isText := prompt.(string)
 			if !isText {
-				return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted attachment prompt is %s, expected text", errchain.Kind(prompt))}
+				return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted attachment prompt is %s, expected text", errchain.Kind(prompt))}
 			}
 			promptDigest := sha256.Sum256([]byte(promptText))
 			chunk, err := hostedAttest(ctx, binding, "attachment", map[string]any{
@@ -133,7 +134,7 @@ func hostedAttachmentData(ctx context.Context, binding *jsonutil.Object, atteste
 			if err != nil {
 				return nil, err
 			}
-			encoded, err := pyItem(chunk, "data_base64")
+			encoded, err := itemValue(chunk, "data_base64")
 			if err != nil {
 				return nil, err
 			}
@@ -143,15 +144,15 @@ func hostedAttachmentData(ctx context.Context, binding *jsonutil.Object, atteste
 				return nil, err
 			}
 			expected := min(int64(hostedChunkBytes), size-int64(len(data)))
-			chunkOwner, err := pyItem(chunk, "owner")
+			chunkOwner, err := itemValue(chunk, "owner")
 			if err != nil {
 				return nil, err
 			}
-			owner, err := pyItem(attested, "owner")
+			owner, err := itemValue(attested, "owner")
 			if err != nil {
 				return nil, err
 			}
-			chunkDigest, err := pyItem(chunk, "sha256")
+			chunkDigest, err := itemValue(chunk, "sha256")
 			if err != nil {
 				return nil, err
 			}
@@ -250,7 +251,7 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 		if err != nil {
 			return nil, err
 		}
-		owner, err := pyItem(attested, "owner")
+		owner, err := itemValue(attested, "owner")
 		if err != nil {
 			return nil, err
 		}
@@ -295,11 +296,11 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 			}
 			rpc.HostedAttachmentData = &transferred
 			delete(params, "prompt_sha256")
-			prompt, err := pyItem(attested, "prompt")
+			prompt, err := itemValue(attested, "prompt")
 			if err != nil {
 				return nil, err
 			}
-			attachments, err := pyItem(attested, "attachments")
+			attachments, err := itemValue(attested, "attachments")
 			if err != nil {
 				return nil, err
 			}
@@ -424,7 +425,7 @@ func (o *HostedRoomOwnerRPC) call(ctx context.Context, operation string, params 
 		mapping, _ := hostedMapping(result)
 		sessionID, has := mapping["session_id"]
 		if !has {
-			return nil, &pyKeyError{"session_id"}
+			return nil, &keyError{"session_id"}
 		}
 		o.lock.Lock()
 		o.Ref, o.hasRef = SessionRef{ProfileID: o.Home, SessionID: anyutil.String(sessionID)}, true
@@ -434,7 +435,7 @@ func (o *HostedRoomOwnerRPC) call(ctx context.Context, operation string, params 
 		mapping, _ := hostedMapping(result)
 		admissionID, has := mapping["admission_id"]
 		if !has {
-			return nil, &pyKeyError{"admission_id"}
+			return nil, &keyError{"admission_id"}
 		}
 		sessionID := anyutil.String(params["session_id"])
 		o.lock.Lock()

@@ -102,7 +102,11 @@ func renderToolCallForSummary(tc any) string {
 		if fn == nil {
 			return "  ?(...)"
 		}
-		return "  " + pyStrOf(tcGet(fn, "name", "?")) + "(...)"
+		name := tcGet(fn, "name", nil)
+		if name == nil {
+			name = "?"
+		}
+		return "  " + anyutil.String(name) + "(...)"
 	}
 	fn, _ := jsonutil.AsMap(call["function"])
 	var rawArgs any = ""
@@ -111,15 +115,15 @@ func renderToolCallForSummary(tc any) string {
 		if v, has := fn["arguments"]; has {
 			rawArgs = v
 		}
-		if v, has := fn["name"]; has {
+		if v := fn["name"]; v != nil {
 			name = v
 		}
 	}
-	args := redactCompactionText(pyStrOf(rawArgs))
+	args := redactCompactionText(anyutil.String(rawArgs))
 	if utf8.RuneCountInString(args) > summaryToolArgsMax {
 		args = string([]rune(args)[:summaryToolArgsHead]) + "..."
 	}
-	return "  " + pyStrOf(name) + "(" + args + ")"
+	return "  " + anyutil.String(name) + "(" + args + ")"
 }
 
 // Labeled redacted records of the turns for the summarizer
@@ -127,8 +131,8 @@ func serializeRecordsForSummary(turns []map[string]any) []string {
 	parts := make([]string, 0, len(turns))
 	for _, msg := range turns {
 		role := "unknown"
-		if r, has := msg["role"]; has {
-			role = pyStrOf(r)
+		if r := msg["role"]; r != nil {
+			role = anyutil.String(r)
 		}
 		content := msg["content"]
 		if list, ok := content.([]any); ok {
@@ -142,8 +146,8 @@ func serializeRecordsForSummary(turns []map[string]any) []string {
 			content = strings.Join(texts, "\n")
 		}
 		text := ""
-		if pyTruthy(content) {
-			text = pyStrOf(content)
+		if anyutil.IsTrue(content) {
+			text = anyutil.String(content)
 		}
 		text = redactCompactionText(text)
 		text, _ = mediaDirectiveRE.Replace(text, "[media attachment]", -1, -1)
@@ -156,7 +160,7 @@ func serializeRecordsForSummary(turns []map[string]any) []string {
 		if role == "tool" {
 			id := ""
 			if v, has := msg["tool_call_id"]; has {
-				id = pyStrOf(v)
+				id = anyutil.String(v)
 			}
 			parts = append(parts, "[TOOL RESULT "+id+"]: "+text)
 			continue
@@ -193,8 +197,8 @@ func fallbackAnchors(turns []map[string]any) fallbackAnchorSet {
 			name, rawArgs := extractToolCallNameAndArgs(tc)
 			args := redactCompactionText(rawArgs)
 			callID := ""
-			if id := tcGet(tc, "id", nil); pyTruthy(id) {
-				callID = pyStrOf(id)
+			if id := tcGet(tc, "id", nil); anyutil.IsTrue(id) {
+				callID = anyutil.String(id)
 			}
 			if callID != "" {
 				callIDToTool[callID] = [2]string{name, args}
@@ -210,8 +214,8 @@ func fallbackAnchors(turns []map[string]any) fallbackAnchorSet {
 	}
 	for _, msg := range turns {
 		role := "unknown"
-		if r, has := msg["role"]; has {
-			role = pyStrOf(r)
+		if r := msg["role"]; r != nil {
+			role = anyutil.String(r)
 		}
 		content := msg["content"]
 		var text string
@@ -263,8 +267,8 @@ func fallbackAnchors(turns []map[string]any) fallbackAnchorSet {
 			}
 		case role == "tool":
 			id := ""
-			if v := msg["tool_call_id"]; pyTruthy(v) {
-				id = pyStrOf(v)
+			if v := msg["tool_call_id"]; anyutil.IsTrue(v) {
+				id = anyutil.String(v)
 			}
 			ref, found := callIDToTool[id]
 			if !found {
@@ -575,7 +579,7 @@ func (c *ContextCompressor) fallbackToMainForCompression(err error, reason, fail
 	c.LastAuxModelFailureModel = failed
 	if t := c.Active; t != nil {
 		t.Set("fallback_used", true)
-		if v, _ := t.Get("failure_class"); !pyTruthy(v) {
+		if v, _ := t.Get("failure_class"); !anyutil.IsTrue(v) {
 			t.Set("failure_class", "aux_model_fallback")
 		}
 	}

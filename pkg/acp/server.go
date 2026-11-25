@@ -39,9 +39,9 @@ func historyDict(v any) (*jsonutil.Object, bool) {
 			o.Set(k, historyValue(x[k]))
 		}
 		return o, true
-	case interface{ PyItems() iter.Seq2[any, any] }:
+	case interface{ ItemsValue() iter.Seq2[any, any] }:
 		o := jsonutil.NewObject()
-		for k, val := range x.PyItems() {
+		for k, val := range x.ItemsValue() {
 			o.Set(anyutil.String(k), historyValue(val))
 		}
 		return o, true

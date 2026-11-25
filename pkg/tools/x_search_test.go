@@ -136,8 +136,8 @@ func TestXSearchFilterValidation(t *testing.T) {
 	}{
 		{[]any{"xai"}, []any{"grok"}, "", "", "allowed_x_handles and excluded_x_handles cannot be used together"},
 		{[]any{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"}, nil, "", "", "allowed_x_handles supports at most 10 handles"},
-		{nil, nil, "2026/04/01", "", "from_date must be YYYY-MM-DD (got '2026/04/01')"},
-		{nil, nil, "", "2026-02-30", "to_date must be YYYY-MM-DD (got '2026-02-30')"},
+		{nil, nil, "2026/04/01", "", `from_date must be YYYY-MM-DD (got "2026/04/01")`},
+		{nil, nil, "", "2026-02-30", `to_date must be YYYY-MM-DD (got "2026-02-30")`},
 		{nil, nil, "2026-04-10", "2026-04-01", "from_date (2026-04-10) must be on or before to_date (2026-04-01)"},
 		{nil, nil, "2026-12-01", "", "from_date (2026-12-01) is in the future; X Search only indexes past posts (today UTC is 2026-11-04)"},
 	}
@@ -188,14 +188,14 @@ func TestXSearchStructuredHTTPError(t *testing.T) {
 	if r["success"] != false || r["provider"] != "xai" || r["tool"] != "x_search" || r["error_type"] != "HTTPError" || r["error"] != "forbidden: x_search is not enabled for this model" {
 		t.Fatalf("%v", r)
 	}
-	if raw != `{"success": false, "provider": "xai", "tool": "x_search", "error": "forbidden: x_search is not enabled for this model", "error_type": "HTTPError"}` {
+	if raw != `{"success":false,"provider":"xai","tool":"x_search","error":"forbidden: x_search is not enabled for this model","error_type":"HTTPError"}` {
 		t.Fatalf("key order %q", raw)
 	}
 	stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
 		return xsResponse(req, 400, `{"code":"bad","error":{"detail":"nested"}}`), nil
 	})
 	r = decodeResult(t, xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false))
-	if r["error"] != "bad: {'detail': 'nested'}" {
+	if r["error"] != `bad: {"detail":"nested"}` {
 		t.Fatalf("nested error repr %v", r["error"])
 	}
 	stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
@@ -240,7 +240,7 @@ func TestXSearchRetries(t *testing.T) {
 	stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
 		return xsResponse(req, 200, `not json`), nil
 	})
-	if r := decodeResult(t, xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false)); r["error_type"] != "JSONDecodeError" || r["error"] != "Expecting value: line 1 column 1 (char 0)" {
+	if r := decodeResult(t, xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false)); r["error_type"] != "JSONDecodeError" || r["error"] != "json: invalid character 'o' in literal null (expecting 'u') at line 1, column 2" {
 		t.Fatalf("decode error %v", r)
 	}
 }

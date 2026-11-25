@@ -55,7 +55,7 @@ func liveBestEffort(what string, fn func() error) {
 
 // Text of a value with falsy values reading as empty
 func liveText(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)
@@ -146,7 +146,7 @@ func newLiveTranscriptWriter(ctx context.Context, delegationID string, taskIndex
 		w.path, w.ok = path, true
 		w.stateMu.Unlock()
 		kickoff := "kickoff: " + goalLine
-		if pyTruthy(taskContext) {
+		if anyutil.IsTrue(taskContext) {
 			kickoff += " | context: " + oneLine(taskContext, liveKickoffMax)
 		}
 		w.event("user", kickoff)
@@ -266,7 +266,7 @@ func (w *liveTranscriptWriter) flushStream() {
 func (w *liveTranscriptWriter) onComplete(preview any, kwargs map[string]any) {
 	dur := kwargs["duration_seconds"]
 	summary := kwargs["summary"]
-	if !pyTruthy(summary) {
+	if !anyutil.IsTrue(summary) {
 		summary = preview
 	}
 	status, ok := kwargs["status"]
@@ -277,7 +277,7 @@ func (w *liveTranscriptWriter) onComplete(preview any, kwargs map[string]any) {
 	if dur != nil {
 		durPart = "duration=" + anyutil.String(dur) + "s"
 	}
-	if pyTruthy(summary) {
+	if anyutil.IsTrue(summary) {
 		summaryPart = "summary: " + oneLine(summary, liveResultMax)
 	}
 	w.marker(liveJoined("status="+anyutil.String(status), durPart, summaryPart))
@@ -288,15 +288,15 @@ func (w *liveTranscriptWriter) observe(eventType any, toolName, preview, args an
 	switch liveText(eventType) {
 	case "tool.started":
 		argsPreview := preview
-		if !pyTruthy(preview) {
+		if !anyutil.IsTrue(preview) {
 			argsPreview = args
 		}
 		w.toolStart(liveText(toolName), argsPreview)
 	case "tool.completed":
-		w.toolResult(liveText(toolName), kwargs["result"], kwargs["duration"], pyTruthy(kwargs["is_error"]))
+		w.toolResult(liveText(toolName), kwargs["result"], kwargs["duration"], anyutil.IsTrue(kwargs["is_error"]))
 	case "_thinking":
 		text := toolName
-		if !pyTruthy(text) {
+		if !anyutil.IsTrue(text) {
 			text = preview
 		}
 		w.thinking(liveText(text))
@@ -323,13 +323,13 @@ func (w *liveTranscriptWriter) Finalize(entry *jsonutil.Object) error {
 	}
 	exitReason := get("exit_reason")
 	exitPart, budgetPart, errorPart := "", "", ""
-	if pyTruthy(exitReason) {
+	if anyutil.IsTrue(exitReason) {
 		exitPart = "exit_reason=" + anyutil.String(exitReason)
 	}
 	if exitReason == "max_iterations" {
 		budgetPart = "(iteration budget exhausted)"
 	}
-	if errVal := get("error"); pyTruthy(errVal) {
+	if errVal := get("error"); anyutil.IsTrue(errVal) {
 		errorPart = "error: " + oneLine(errVal, liveResultMax)
 	}
 	w.marker(liveJoined("end status="+anyutil.String(status), exitPart, budgetPart, errorPart))
@@ -424,7 +424,7 @@ func createLiveTranscripts(ctx context.Context, taskList []map[string]any, taskC
 			goal = anyutil.String(g)
 		}
 		ctxVal := t["context"]
-		if !pyTruthy(ctxVal) {
+		if !anyutil.IsTrue(ctxVal) {
 			ctxVal = taskContext
 		}
 		w := newLiveTranscriptWriter(ctx, delegID, i, goal, ctxVal, root)
@@ -546,17 +546,17 @@ func updateManifestStatuses(delegationID string, results []*jsonutil.Object, liv
 			}
 			current, _ := task.Get("status")
 			task.Set("status", liveObjectGet(r, "status", current))
-			if v, _ := r.Get("exit_reason"); pyTruthy(v) {
+			if v, _ := r.Get("exit_reason"); anyutil.IsTrue(v) {
 				task.Set("exit_reason", v)
 			}
-			if v, _ := r.Get("model"); pyTruthy(v) {
+			if v, _ := r.Get("model"); anyutil.IsTrue(v) {
 				task.Set("model", v)
 			}
 		}
-		if !pyTruthy(liveObjectGet(manifest, "model", nil)) {
+		if !anyutil.IsTrue(liveObjectGet(manifest, "model", nil)) {
 			var inherited any
 			for _, rawTask := range taskList {
-				if v := liveObjectGet(rawTask, "model", nil); pyTruthy(v) {
+				if v := liveObjectGet(rawTask, "model", nil); anyutil.IsTrue(v) {
 					inherited = v
 					break
 				}

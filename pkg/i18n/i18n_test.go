@@ -31,7 +31,7 @@ func rawCatalog(t *testing.T, name string) map[string]any {
 	out := map[string]any{}
 	var walk func(node any, prefix string)
 	walk = func(node any, prefix string) {
-		m, ok := node.(pyMap)
+		m, ok := node.(mapOf)
 		if !ok {
 			out[prefix] = node
 			return

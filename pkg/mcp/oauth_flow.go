@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -176,31 +177,31 @@ func buildProtectedResourceMetadataDiscoveryURLs(wwwAuthURL, serverURL string) [
 	if wwwAuthURL != "" {
 		urls = append(urls, wwwAuthURL)
 	}
-	parsed, _ := pyURLParse(serverURL)
+	parsed, _ := urlParse(serverURL)
 	base := parsed.Scheme + "://" + parsed.Netloc
 	if parsed.Path != "" && parsed.Path != "/" {
-		urls = append(urls, pyURLJoinAbsPath(base, "/.well-known/oauth-protected-resource"+parsed.Path))
+		urls = append(urls, urlJoinAbsPath(base, "/.well-known/oauth-protected-resource"+parsed.Path))
 	}
-	return append(urls, pyURLJoinAbsPath(base, "/.well-known/oauth-protected-resource"))
+	return append(urls, urlJoinAbsPath(base, "/.well-known/oauth-protected-resource"))
 }
 
 // Authorization server metadata URLs to try, RFC 8414 path aware then OIDC, the legacy origin document without a server
 func buildOAuthAuthorizationServerMetadataDiscoveryURLs(authServerURL, serverURL string) []string {
 	if authServerURL == "" {
-		parsed, _ := pyURLParse(serverURL)
+		parsed, _ := urlParse(serverURL)
 		return []string{parsed.Scheme + "://" + parsed.Netloc + "/.well-known/oauth-authorization-server"}
 	}
-	parsed, _ := pyURLParse(authServerURL)
+	parsed, _ := urlParse(authServerURL)
 	base := parsed.Scheme + "://" + parsed.Netloc
 	if parsed.Path != "" && parsed.Path != "/" {
 		trimmed := strings.TrimRight(parsed.Path, "/")
 		return []string{
-			pyURLJoinAbsPath(base, "/.well-known/oauth-authorization-server"+trimmed),
-			pyURLJoinAbsPath(base, "/.well-known/openid-configuration"+trimmed),
-			pyURLJoinAbsPath(base, trimmed+"/.well-known/openid-configuration"),
+			urlJoinAbsPath(base, "/.well-known/oauth-authorization-server"+trimmed),
+			urlJoinAbsPath(base, "/.well-known/openid-configuration"+trimmed),
+			urlJoinAbsPath(base, trimmed+"/.well-known/openid-configuration"),
 		}
 	}
-	return []string{pyURLJoinAbsPath(base, "/.well-known/oauth-authorization-server"), pyURLJoinAbsPath(base, "/.well-known/openid-configuration")}
+	return []string{urlJoinAbsPath(base, "/.well-known/oauth-authorization-server"), urlJoinAbsPath(base, "/.well-known/openid-configuration")}
 }
 
 // Scope to request, challenge first then resource then server scopes, with offline_access when refresh is possible
@@ -305,7 +306,7 @@ func issuersMatch(a, b string) bool {
 	if len(b) < len(a) {
 		shorter, longer = b, a
 	}
-	parsed, _ := pyURLParse(shorter)
+	parsed, _ := urlParse(shorter)
 	return longer == shorter+"/" && shorter == parsed.Scheme+"://"+parsed.Netloc
 }
 
@@ -365,25 +366,25 @@ func checkRegistrationUsable(info *OAuthClientInfo) error {
 	switch {
 	case method == nil, *method == "none", *method == "client_secret_post", *method == "client_secret_basic":
 	default:
-		return &OAuthRegistrationError{fmt.Sprintf("Authorization server registered the client with unsupported token_endpoint_auth_method %s", pyReprStr(*method))}
+		return &OAuthRegistrationError{fmt.Sprintf("Authorization server registered the client with unsupported token_endpoint_auth_method %s", strconv.Quote(*method))}
 	}
 	if method != nil && (*method == "client_secret_post" || *method == "client_secret_basic") && info.ClientSecret == nil {
-		return &OAuthRegistrationError{fmt.Sprintf("Authorization server registered the client for %s but issued no client_secret", pyReprStr(*method))}
+		return &OAuthRegistrationError{fmt.Sprintf("Authorization server registered the client for %s but issued no client_secret", strconv.Quote(*method))}
 	}
 	return nil
 }
 
 // Canonical RFC 8707 resource URL of a server URL, scheme and host lowercased and fragment dropped
 func resourceURLFromServerURL(serverURL string) string {
-	u, _ := pyURLSplit(serverURL)
+	u, _ := urlSplit(serverURL)
 	u.Scheme, u.Netloc, u.Fragment = strings.ToLower(u.Scheme), strings.ToLower(u.Netloc), ""
-	return pyURLUnparse(u)
+	return urlUnparse(u)
 }
 
 // Reports whether a requested resource sits under a configured one on the same origin
 func checkResourceAllowed(requested, configured string) bool {
-	r, _ := pyURLParse(requested)
-	c, _ := pyURLParse(configured)
+	r, _ := urlParse(requested)
+	c, _ := urlParse(configured)
 	if !strings.EqualFold(r.Scheme, c.Scheme) || strings.ToLower(r.Netloc) != strings.ToLower(c.Netloc) {
 		return false
 	}
@@ -414,7 +415,7 @@ func protocolVersionAtLeast(version, minimum string) bool {
 
 // Origin of a server URL rendered the way metadata issuers render, the legacy expected issuer
 func originIssuer(serverURL string) string {
-	parsed, _ := pyURLParse(serverURL)
+	parsed, _ := urlParse(serverURL)
 	n, err := normalizeURL(parsed.Scheme+"://"+parsed.Netloc, true)
 	if err != nil {
 		return parsed.Scheme + "://" + parsed.Netloc
@@ -612,7 +613,7 @@ func (p *OAuthProvider) CurrentTokens() *OAuthToken {
 }
 
 // Scheme and authority of a server URL, where guessed endpoints hang
-func authorizationBaseURL(serverURL string) string { return pyURLOrigin(serverURL) }
+func authorizationBaseURL(serverURL string) string { return urlOrigin(serverURL) }
 
 // Absolute expiry of a token from now, nil when the token carries none
 func (p *OAuthProvider) updateTokenExpiry(t *OAuthToken) {
@@ -674,7 +675,7 @@ func (p *OAuthProvider) prepareTokenAuth(data *form, headers http.Header) error 
 	secret := derefStr(p.clientInfo.ClientSecret)
 	switch {
 	case method != nil && *method == "client_secret_basic" && secret != "":
-		creds := pyQuote(p.clientInfo.ClientID, "") + ":" + pyQuote(secret, "")
+		creds := quote(p.clientInfo.ClientID, "") + ":" + quote(secret, "")
 		headers.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(creds)))
 		data.del("client_secret")
 	case method != nil && *method == "client_secret_post" && secret != "":
@@ -682,7 +683,7 @@ func (p *OAuthProvider) prepareTokenAuth(data *form, headers http.Header) error 
 		data.set("client_secret", secret)
 	case method == nil || tokenEndpointAuthMethods[*method]:
 	default:
-		return &OAuthTokenError{fmt.Sprintf("Registered client uses unsupported token_endpoint_auth_method %s", pyReprStr(*method))}
+		return &OAuthTokenError{fmt.Sprintf("Registered client uses unsupported token_endpoint_auth_method %s", strconv.Quote(*method))}
 	}
 	return nil
 }
@@ -739,7 +740,7 @@ func (p *OAuthProvider) googleOfflineAccessParams() [][2]string {
 	if issuer == "" {
 		return nil
 	}
-	u, err := pyURLSplit(issuer)
+	u, err := urlSplit(issuer)
 	if err != nil || u.Netloc != "accounts.google.com" {
 		return nil
 	}
@@ -751,7 +752,7 @@ func metadataIssuedByOrigin(md *OAuthMetadata, authServerURL string, r *flowResp
 	if authServerURL == "" {
 		return false
 	}
-	parts, err := pyURLSplit(authServerURL)
+	parts, err := urlSplit(authServerURL)
 	if err != nil {
 		return false
 	}
@@ -872,7 +873,7 @@ func (p *OAuthProvider) send(ctx context.Context, req *http.Request, body []byte
 
 // Builds a form POST to a token style endpoint
 func newFormRequest(ctx context.Context, endpoint string, data form, headers http.Header) (*http.Request, []byte, error) {
-	body := []byte(pyURLEncode(data))
+	body := []byte(urlEncode(data))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
@@ -898,7 +899,7 @@ func (p *OAuthProvider) tokenEndpoint() string {
 	if p.oauthMetadata != nil && p.oauthMetadata.TokenEndpoint != "" {
 		return p.oauthMetadata.TokenEndpoint
 	}
-	return pyURLJoinAbsPath(authorizationBaseURL(p.serverURL), "/token")
+	return urlJoinAbsPath(authorizationBaseURL(p.serverURL), "/token")
 }
 
 // Sets client_secret_post on the held client record when a secret came without a usable method
@@ -1108,7 +1109,7 @@ func (p *OAuthProvider) handleTokenResponse(ctx context.Context, r *flowResponse
 		if r.ReadErr != nil {
 			return r.ReadErr
 		}
-		excerpt := pyHead(strings.Join(pyWhitespaceFields(htmlTagPattern.ReplaceAllString(r.text(), " ")), " "), 200)
+		excerpt := headValue(strings.Join(whitespaceFields(htmlTagPattern.ReplaceAllString(r.text(), " ")), " "), 200)
 		msg := strings.TrimRight(fmt.Sprintf("Token exchange failed (%d): %s", r.StatusCode, sanitizeError(excerpt)), ": ")
 		return &OAuthTokenError{msg}
 	}
@@ -1153,12 +1154,12 @@ func (p *OAuthProvider) requestGoogleOfflineAccess() {
 		if len(params) == 0 {
 			return inner(ctx, authorizationURL)
 		}
-		parts, err := pyURLSplit(authorizationURL)
+		parts, err := urlSplit(authorizationURL)
 		if err != nil {
 			return err
 		}
 		var query form
-		for _, kv := range pyParseQSL(parts.Query, true) {
+		for _, kv := range parseQSL(parts.Query, true) {
 			query.set(kv[0], kv[1])
 		}
 		for _, kv := range params {
@@ -1173,8 +1174,8 @@ func (p *OAuthProvider) requestGoogleOfflineAccess() {
 		if !hasPrompt {
 			query.set("prompt", "consent")
 		}
-		parts.Query = pyURLEncode(query)
-		return inner(ctx, pyURLUnparse(parts))
+		parts.Query = urlEncode(query)
+		return inner(ctx, urlUnparse(parts))
 	}
 }
 
@@ -1189,7 +1190,7 @@ func (p *OAuthProvider) performAuthorizationCodeGrant(ctx context.Context) (stri
 	if p.callbackHandler == nil {
 		return "", "", &OAuthFlowError{"No callback handler provided for authorization code grant"}
 	}
-	authEndpoint := pyURLJoinAbsPath(authorizationBaseURL(p.serverURL), "/authorize")
+	authEndpoint := urlJoinAbsPath(authorizationBaseURL(p.serverURL), "/authorize")
 	if p.oauthMetadata != nil && p.oauthMetadata.AuthorizationEndpoint != nil {
 		authEndpoint = *p.oauthMetadata.AuthorizationEndpoint
 	}
@@ -1209,7 +1210,7 @@ func (p *OAuthProvider) performAuthorizationCodeGrant(ctx context.Context) (stri
 			params.set("prompt", "consent")
 		}
 	}
-	authorizationURL := authEndpoint + "?" + pyURLEncode(params)
+	authorizationURL := authEndpoint + "?" + urlEncode(params)
 	resume := waitingOnAPerson(ctx)
 	err := p.redirectHandler(ctx, authorizationURL)
 	var result *AuthorizationCodeResult
@@ -1519,7 +1520,7 @@ func (p *OAuthProvider) identifyClient(ctx context.Context, failures *[]string) 
 		return p.storage.SetClientInfo(ctx, info)
 	}
 	fallbackBase := authorizationBaseURL(p.serverURL)
-	registrationURL := pyURLJoinAbsPath(fallbackBase, "/register")
+	registrationURL := urlJoinAbsPath(fallbackBase, "/register")
 	if p.oauthMetadata != nil && p.oauthMetadata.RegistrationEndpoint != nil {
 		registrationURL = *p.oauthMetadata.RegistrationEndpoint
 	}

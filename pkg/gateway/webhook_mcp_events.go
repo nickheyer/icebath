@@ -64,7 +64,7 @@ func RenderMCPEventPrompt(adapter *WebhookAdapter, routeConfig *jsonutil.Object,
 		return "", false, err
 	}
 	if length := utf8.RuneCountInString(data); length > mcpEventMaxEventDataChars {
-		data = fmt.Sprintf(mcpEventTruncatedNoteTemplate, pySliceRunes(data, mcpEventMaxEventDataChars),
+		data = fmt.Sprintf(mcpEventTruncatedNoteTemplate, sliceRunes(data, mcpEventMaxEventDataChars),
 			mcpEventGrouped(mcpEventMaxEventDataChars), mcpEventGrouped(length))
 	}
 	parts := strings.Split(template, "{data}")
@@ -142,9 +142,12 @@ func mcpEventTerminated(ctx context.Context, adapter *WebhookAdapter, routeName 
 		if !anyutil.IsTrue(reason) {
 			reason = "no reason given"
 		}
-		detail := pySliceRunes(anyutil.String(reason), mcpEventMaxNoticeDetailChars)
-		notice := fmt.Sprintf("MCP server '%s' ended the subscription to '%s': %s (code %s). Subscribe again to keep receiving these events.",
-			anyutil.String(event.ValueOr("server", nil)), anyutil.String(event.ValueOr("name", nil)), detail, anyutil.String(errorInfo.ValueOr("code", nil)))
+		detail := sliceRunes(anyutil.String(reason), mcpEventMaxNoticeDetailChars)
+		if code := errorInfo.Value("code"); code != nil {
+			detail += " (code " + anyutil.String(code) + ")"
+		}
+		notice := fmt.Sprintf("MCP server '%s' ended the subscription to '%s': %s. Subscribe again to keep receiving these events.",
+			anyutil.String(event.ValueOr("server", nil)), anyutil.String(event.ValueOr("name", nil)), detail)
 		if _, err := adapter.handleDeliverOnly(ctx, notice, payload, routeConfig, routeName, "terminated", "mcp-terminated:"+routeName, profile); err != nil {
 			return nil, err
 		}
@@ -184,7 +187,7 @@ func HandleMCPEventControl(ctx context.Context, adapter *WebhookAdapter, routeNa
 		}
 	}
 	if found {
-		pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s: ignoring a control envelope of unknown type %s", routeName, anyutil.Quote(kind)))
+		pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s: ignoring a control envelope of unknown type %s", routeName, quotedValue(kind)))
 		var reported any
 		if isText {
 			reported = kindText

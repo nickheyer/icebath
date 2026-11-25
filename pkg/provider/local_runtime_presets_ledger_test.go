@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const lr7GiB = int64(1) << 30
@@ -308,7 +310,7 @@ func TestLocalRuntimeSamplingLadderFileBeatsCatalogBeatsNothing(t *testing.T) {
 		t.Fatalf("file's own sampling must win per key %v", sec)
 	}
 	for _, s := range entry.Sampling {
-		if s.Key != "temp" && sec[s.Key] != pyStr(s.Value) {
+		if s.Key != "temp" && sec[s.Key] != anyutil.String(s.Value) {
 			t.Fatalf("catalog must fill the silent key %s %v", s.Key, sec)
 		}
 	}

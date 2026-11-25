@@ -71,7 +71,7 @@ func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if err != nil {
 		return nil, err
 	}
-	backendValue, err := pyGet(jsonutil.Plain(terminal), "TERMINAL_ENV", nil)
+	backendValue, err := getValue(jsonutil.Plain(terminal), "TERMINAL_ENV", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func withShellLines(rows []any, profileHome, sessionID string) ([]any, error) {
 	}
 	for _, row := range rows {
 		if m, isRow := row.(map[string]any); isRow {
-			if ts, isNumber := m["timestamp"].(float64); isNumber {
+			if ts, isNumber := anyutil.Float(m["timestamp"]); isNumber {
 				place(ts)
 			}
 		}

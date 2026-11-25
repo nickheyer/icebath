@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Settings of the platform, read from the arena mapping of the display settings
@@ -62,7 +64,7 @@ func Parse(raw any) (Config, error) {
 	}
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return cfg, fmt.Errorf("arena is %T, it must be a mapping", raw)
+		return cfg, fmt.Errorf("arena is %s, it must be a mapping", errchain.Kind(raw))
 	}
 	var errs []error
 	word := func(key string, allowed []string, dst *string) {
@@ -73,7 +75,7 @@ func Parse(raw any) (Config, error) {
 		s, isStr := v.(string)
 		s = strings.ToLower(strings.TrimSpace(s))
 		if !isStr || !slices.Contains(allowed, s) {
-			errs = append(errs, fmt.Errorf("arena.%s is %v, it must be one of %s", key, v, strings.Join(allowed, ", ")))
+			errs = append(errs, fmt.Errorf("arena.%s is %s, it must be one of %s", key, settingText(v), strings.Join(allowed, ", ")))
 			return
 		}
 		*dst = s
@@ -87,14 +89,14 @@ func Parse(raw any) (Config, error) {
 		if n, ok := wholeNumber(v); ok && n >= 5 && n <= 120 {
 			cfg.Arena.FPS = n
 		} else {
-			errs = append(errs, fmt.Errorf("arena.fps is %v, it must be a whole number from 5 to 120", v))
+			errs = append(errs, fmt.Errorf("arena.fps is %s, it must be a whole number from 5 to 120", settingText(v)))
 		}
 	}
 	if v, has := m["labels"]; has && v != nil {
 		if b, isBool := v.(bool); isBool {
 			cfg.Arena.Labels = b
 		} else {
-			errs = append(errs, fmt.Errorf("arena.labels is %v, it must be true or false", v))
+			errs = append(errs, fmt.Errorf("arena.labels is %s, it must be true or false", settingText(v)))
 		}
 	}
 	for key := range m {
@@ -103,6 +105,15 @@ func Parse(raw any) (Config, error) {
 		}
 	}
 	return cfg, errors.Join(errs...)
+}
+
+// A setting value as an error names it: text, numbers and true or false as written, a list or a mapping by its kind
+func settingText(v any) string {
+	switch v.(type) {
+	case string, bool, int, int64, uint64, float64:
+		return errchain.Show(v)
+	}
+	return errchain.Kind(v)
 }
 
 // Whole number of a setting value as YAML or JSON decodes it

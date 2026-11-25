@@ -8,8 +8,8 @@ import (
 // Walks procfs descriptors, keeping holders found before a scan failure and adding the unknown holder for it
 func scanOpenFiles(dbPath string, watched map[string]bool, watchedIDs map[FileIdentity]bool, dbDev uint64, hasDBDev bool, holders []Holder) []Holder {
 	if err := procfsHolderScan(dbPath, watched, watchedIDs, dbDev, hasDBDev, &holders); err != nil {
-		pkgLog().Warn("Could not prove state.db has no foreign holders; deferring structural maintenance: " + pyOSErrorStr(err))
-		holders = append(holders, Holder{-1, "open-file scan failed: " + pyOSErrorStr(err)})
+		pkgLog().Warn("Could not prove state.db has no foreign holders; deferring structural maintenance: " + osErrorStr(err))
+		holders = append(holders, Holder{-1, "open-file scan failed: " + osErrorStr(err)})
 	}
 	return holders
 }
@@ -33,10 +33,10 @@ func procfsHolderScan(dbPath string, watched map[string]bool, watchedIDs map[Fil
 		return err
 	}
 	for _, pidStr := range entries {
-		if !pyIsDigits(pidStr) {
+		if !isDigits(pidStr) {
 			continue
 		}
-		n, err := pyIntOf(pidStr)
+		n, err := intOfValue(pidStr)
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func procfsHolderScan(dbPath string, watched map[string]bool, watchedIDs map[Fil
 				if isVanishedErr(err) {
 					continue
 				}
-				if err := uninspected(pid, "uninspectable descriptor: "+fdPath+": "+pyOSErrorStr(err)); err != nil {
+				if err := uninspected(pid, "uninspectable descriptor: "+fdPath+": "+osErrorStr(err)); err != nil {
 					return err
 				}
 				continue
@@ -83,7 +83,7 @@ func procfsHolderScan(dbPath string, watched map[string]bool, watchedIDs map[Fil
 				if isVanishedErr(err) {
 					continue
 				}
-				description := "uninspectable descriptor: " + target + ": " + pyOSErrorStr(err)
+				description := "uninspectable descriptor: " + target + ": " + osErrorStr(err)
 				if targetIsWatched {
 					*holders = append(*holders, Holder{pid, description})
 				} else if err := uninspected(pid, description); err != nil {

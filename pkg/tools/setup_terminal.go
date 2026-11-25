@@ -103,8 +103,8 @@ func setupSyncFailureHandled(err error) bool {
 	if errors.As(err, &installErr) || errorutil.IsSystem(err) {
 		return true
 	}
-	var pyErr *pm.PyError
-	return errors.As(err, &pyErr) && slices.Contains(setupHandledPyClasses, pyErr.Class)
+	var kindErr *pm.ClassError
+	return errors.As(err, &kindErr) && slices.Contains(setupHandledPyClasses, kindErr.Class)
 }
 
 var setupHandledPyClasses = []string{"OSError", "IOError", "EnvironmentError", "FileNotFoundError", "FileExistsError", "PermissionError",

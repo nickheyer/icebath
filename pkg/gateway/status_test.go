@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -23,7 +24,7 @@ func TestWritePidFileRecordsGatewayMetadataAndIsExclusive(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := readRecord(t, filepath.Join(dir, "gateway.pid"))
-	if !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(payload, "kind") != "icebath-gateway" {
+	if !anyutil.Equal(recGet(payload, "pid"), int64(os.Getpid())) || recGet(payload, "kind") != "icebath-gateway" {
 		t.Fatalf("payload %v", payload.Keys())
 	}
 	if argv, ok := recGet(payload, "argv").([]any); !ok || len(argv) == 0 {
@@ -244,7 +245,7 @@ func TestPlatformWritesAreStampedWithWriterIdentity(t *testing.T) {
 	statusHome(t)
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"platform": "telegram", "platform_state": "connected"}})
 	entry := recGet(platformsOf(t), "telegram").(*jsonutil.Object)
-	if !pyEq(recGet(entry, "writer_pid"), int64(os.Getpid())) || !pyEq(recGet(entry, "writer_start_time"), GetProcessStartTime(os.Getpid())) {
+	if !anyutil.Equal(recGet(entry, "writer_pid"), int64(os.Getpid())) || !anyutil.Equal(recGet(entry, "writer_start_time"), GetProcessStartTime(os.Getpid())) {
 		t.Fatalf("writer %v %v", recGet(entry, "writer_pid"), recGet(entry, "writer_start_time"))
 	}
 }
@@ -263,7 +264,7 @@ func TestWriteRuntimeStatusOverwritesStalePidOnRestart(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "gateway_state.json"), []byte(`{"pid": 99999, "start_time": 1000.0, "kind": "icebath-gateway", "platforms": {}, "updated_at": "2025-01-01T00:00:00Z"}`), 0o644)
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running"}})
 	payload := ReadRuntimeStatus("")
-	if !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || pyEq(recGet(payload, "start_time"), 1000.0) {
+	if !anyutil.Equal(recGet(payload, "pid"), int64(os.Getpid())) || anyutil.Equal(recGet(payload, "start_time"), 1000.0) {
 		t.Fatalf("pid %v start %v", recGet(payload, "pid"), recGet(payload, "start_time"))
 	}
 }
@@ -405,7 +406,7 @@ func TestBlockedWriteDoesNotBlockPublishAndBurstCoalesces(t *testing.T) {
 	plats := recGet(final, "platforms").(*jsonutil.Object)
 	telegram := recGet(plats, "telegram").(*jsonutil.Object)
 	work, _ := jsonutil.Encode(recGet(final, "active_work"), jsonutil.Spaced(), jsonutil.ASCII())
-	if recGet(final, "gateway_state") != "running" || !pyEq(recGet(final, "active_agents"), 49) || work != `["telegram:dm:1"]` ||
+	if recGet(final, "gateway_state") != "running" || !anyutil.Equal(recGet(final, "active_agents"), 49) || work != `["telegram:dm:1"]` ||
 		recGet(final, "multiplex_standalone_reason") != "single-profile" || recGet(plats, "reviewer:slack") != nil ||
 		!strings.HasSuffix(recGet(telegram, "ingress_url").(string), "/telegram") || recGet(telegram, "listener_base") != "http://127.0.0.1:8080" {
 		t.Fatal("final snapshot wrong")
@@ -451,7 +452,7 @@ func TestWriteRuntimeStatusRecordsPlatformMetricsAndActiveAgents(t *testing.T) {
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running", "active_agents": 0}})
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"active_agents": 2}})
 	r := ReadRuntimeStatus("")
-	if !pyEq(recGet(r, "active_agents"), 2) || recGet(r, "gateway_state") != "running" {
+	if !anyutil.Equal(recGet(r, "active_agents"), 2) || recGet(r, "gateway_state") != "running" {
 		t.Fatal("active agents write clobbered state")
 	}
 	stamp := recGet(r, "updated_at").(string)

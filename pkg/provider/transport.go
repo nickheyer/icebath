@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -83,7 +84,7 @@ func kwargBool(kwargs map[string]any, key string, def bool) bool {
 	if !ok {
 		return def
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 func kwargInt(kwargs map[string]any, key string) int {

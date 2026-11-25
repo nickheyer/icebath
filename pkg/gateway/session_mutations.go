@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -73,11 +74,11 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 		}
 		if _, has := prepared.Get("snapshot"); has {
 			if live == nil && (operation == "model" || operation == "compress") {
-				return nil, &PyError{Kind: "AttributeError", Msg: "the mutation has no session source"}
+				return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the mutation has no session source"}
 			}
 			payload, ok := jsonutil.AsObject(params.Payload)
 			if !ok {
-				return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the mutation payload is %s, expected a mapping", errchain.Kind(params.Payload))}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the mutation payload is %s, expected a mapping", errchain.Kind(params.Payload))}
 			}
 			if prepared, err = mutationPrepareStep(operation, editorServers)(ctx, a, live, payload, prepared); err != nil {
 				return nil, err
@@ -149,7 +150,7 @@ func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, li
 	}
 	projectErr := projectResult(ctx, a, ref, live, params, result, editorServers, *applied)
 	if operation == "compress" && *applied && prepared != nil {
-		if hook, _ := prepared.Get("post_compaction"); pyTruthy(hook) {
+		if hook, _ := prepared.Get("post_compaction"); anyutil.IsTrue(hook) {
 			firePostCompactionHook(ctx, a, prepared, result)
 		}
 	}
@@ -162,11 +163,11 @@ func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, li
 // Fenced params of an owner mutation on the row's current revision and generation
 func fencedMutation(row *jsonutil.Object, sessionID, requestID, operation string, payload any) (mutationParams, error) {
 	if row == nil {
-		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "the fenced mutation row is missing"}
+		return mutationParams{}, &errorutil.Error{Kind: "TypeError", Msg: "the fenced mutation row is missing"}
 	}
 	revision, ok := pathIndex(rowValue(row, "runtime_revision"))
 	if !ok {
-		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "runtime_revision is not an int: " + anyutil.Quote(rowValue(row, "runtime_revision"))}
+		return mutationParams{}, &errorutil.Error{Kind: "TypeError", Msg: "runtime_revision is not an int: " + anyutil.Quote(rowValue(row, "runtime_revision"))}
 	}
 	params := mutationParams{SessionID: sessionID, RequestID: requestID, ExpectedRevision: int64(revision), Operation: operation, Payload: payload}
 	if generation, ok := pathIndex(rowValue(row, "runtime_generation")); ok {

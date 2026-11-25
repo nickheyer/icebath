@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -358,7 +358,7 @@ func sumSizes(items []Entry) (float64, error) {
 // Registers a path for tracking and reports whether it was newly tracked
 func Track(ctx context.Context, pathStr, category string, silent bool) (bool, error) {
 	if !AllowedCategories[category] {
-		Log(ctx, fmt.Sprintf("WARN: unknown category '%s', using 'other'", category))
+		Log(ctx, fmt.Sprintf("WARN: unknown category %q, using \"other\"", category))
 		category = "other"
 	}
 	path, err := resolvePath(pathStr)
@@ -608,11 +608,11 @@ func Quick(ctx context.Context) (Summary, error) {
 				return s, err
 			}
 			if reCat != cat {
-				var shown any
+				shown := "no category"
 				if reCat != "" {
-					shown = reCat
+					shown = strconv.Quote(reCat)
 				}
-				Log(ctx, fmt.Sprintf("SKIP stale %s entry: %s (re-classified as %s%s)", cat, li.path, anyutil.Quote(shown), note))
+				Log(ctx, fmt.Sprintf("SKIP stale %s entry: %s (re-classified as %s%s)", cat, li.path, shown, note))
 				continue
 			}
 		}

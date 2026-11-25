@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runs the body under each env name policy and restores the host policy afterwards
@@ -82,7 +84,7 @@ func TestConfigNormalizationDoesNotOverwriteUserValuesSaveConfigDoesNotInjectMax
 			t.Fatalf("max_turns injected: %v", raw["agent"])
 		}
 	}
-	if !pyEq(Tree(raw).Get("memory.user_char_limit"), 2200) {
+	if !anyutil.Equal(Tree(raw).Get("memory.user_char_limit"), 2200) {
 		t.Fatalf("memory %v", raw["memory"])
 	}
 }

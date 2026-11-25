@@ -142,7 +142,7 @@ func (a *APIServerAdapter) handleCreateJob(ctx context.Context, request *gateway
 		}
 		body, ok := raw.(*jsonutil.Object)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 		}
 		name := strings.TrimSpace(anyutil.String(anyutil.Or(body.ValueOr("name", nil), "")))
 		schedule := strings.TrimSpace(anyutil.String(anyutil.Or(body.ValueOr("schedule", nil), "")))
@@ -160,7 +160,7 @@ func (a *APIServerAdapter) handleCreateJob(ctx context.Context, request *gateway
 		}
 		promptText, isStr := prompt.(string)
 		if !isStr {
-			return nil, &gateway.PyError{Kind: "TypeError", Msg: "prompt must be a string, got " + anyutil.Kind(prompt)}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "prompt must be a string, got " + anyutil.Kind(prompt)}
 		}
 		if promptErr := validateCronPrompt(promptText); promptErr != nil {
 			return promptErr, nil
@@ -230,7 +230,7 @@ func (a *APIServerAdapter) handleUpdateJob(ctx context.Context, request *gateway
 		}
 		body, ok := raw.(*jsonutil.Object)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 		}
 		for _, k := range body.Keys() {
 			if updateAllowedFields[k] {
@@ -249,7 +249,7 @@ func (a *APIServerAdapter) handleUpdateJob(ctx context.Context, request *gateway
 		if prompt, ok := sanitized["prompt"]; ok {
 			text, isStr := prompt.(string)
 			if !isStr {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: "prompt must be a string, got " + anyutil.Kind(prompt)}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "prompt must be a string, got " + anyutil.Kind(prompt)}
 			}
 			if promptErr := validateCronPrompt(text); promptErr != nil {
 				return promptErr, nil

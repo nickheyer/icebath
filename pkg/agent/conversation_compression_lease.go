@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -206,12 +207,12 @@ func directMessagesForPreCompressMemory(messages []map[string]any) []map[string]
 			continue
 		}
 		role, _ := message["role"].(string)
-		if (role != "user" && role != "assistant") || pyTruthy(message[state.CompressedSummaryMetadataKey]) {
+		if (role != "user" && role != "assistant") || anyutil.IsTrue(message[state.CompressedSummaryMetadataKey]) {
 			continue
 		}
-		if role == "assistant" && pyTruthy(message["tool_calls"]) {
+		if role == "assistant" && anyutil.IsTrue(message["tool_calls"]) {
 			content := message["content"]
-			hasProse := pyTruthy(content)
+			hasProse := anyutil.IsTrue(content)
 			if s, ok := content.(string); ok {
 				hasProse = strings.TrimSpace(s) != ""
 			}
@@ -437,15 +438,15 @@ func resolveLockAPI(lockDB any) (db compressionLockDB, lookupErr error) {
 	}
 	api, ok := lockDB.(compressionLockDB)
 	if !ok {
-		return nil, &pyTypeError{"compression lock API is present but not callable"}
+		return nil, &typeErrorValue{"compression lock API is present but not callable"}
 	}
 	return api, nil
 }
 
-type pyTypeError struct{ msg string }
+type typeErrorValue struct{ msg string }
 
-func (e *pyTypeError) Error() string     { return e.msg }
-func (e *pyTypeError) ErrorKind() string { return "TypeError" }
+func (e *typeErrorValue) Error() string     { return e.msg }
+func (e *typeErrorValue) ErrorKind() string { return "TypeError" }
 
 // Sit out return of lease acquisition with the prompt, aborted telemetry and the terminal status edge
 func abortLease(ctx context.Context, a *AIAgent, lifecycle *compactionLifecycle, systemMessage *string, attempt *compressionAttempt, failureClass string, prompt *string) (string, error) {
@@ -550,7 +551,7 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 		switch {
 		case lookupErr != nil:
 			lease.holder = nil
-			pkgLog().Warn(fmt.Sprintf("compression lock lookup raised unexpectedly for session=%s (%s: %v) — skipping compression this cycle", sid, pyErrorClass(lookupErr), lookupErr))
+			pkgLog().Warn(fmt.Sprintf("compression lock lookup raised unexpectedly for session=%s (%s) — skipping compression this cycle", sid, errchain.OSText(lookupErr)))
 		case api == nil:
 			lease.holder = nil
 			if a.lastCompressionLockErrorSID == nil || *a.lastCompressionLockErrorSID != sid {
@@ -618,7 +619,7 @@ func adoptIfParentRotated(ctx context.Context, a *AIAgent, lease *compressionLea
 	}
 	rotated, lookupErr := sessionWasRotatedByCompression(ctx, lease.db, lease.sid)
 	if lookupErr != nil {
-		pkgLog().Warn(fmt.Sprintf("compression session ownership lookup failed for session=%s (%s: %v) - skipping compression this cycle", lease.sid, pyErrorClass(lookupErr), lookupErr))
+		pkgLog().Warn(fmt.Sprintf("compression session ownership lookup failed for session=%s (%s) - skipping compression this cycle", lease.sid, errchain.OSText(lookupErr)))
 		lease.release()
 		emitBypassedAttemptTelemetry(ctx, a, attempt.startedAt, attemptBypass{CommitStatus: "aborted", FailureClass: "session_ownership_unreadable", ApproxTokens: approxTokens, AttemptSeed: attempt.seed})
 		prompt, err = existingSystemPrompt(ctx, a, systemMessage)
@@ -741,7 +742,7 @@ func preCompressMemoryContext(ctx context.Context, a *AIAgent, messages []map[st
 		}
 		got, err := callPreCompress(ctx, mm, messages, evidence, true, version)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Required pre-compress checkpoint failed (%s)", pyErrorClass(err)))
+			pkgLog().Warn(fmt.Sprintf("Required pre-compress checkpoint failed (%s)", errchain.OSText(err)))
 			return "", &chainedCheckpointError{provider.CheckpointBlocked(fmt.Sprintf("provider checkpoint API v%d failed", version)), err}
 		}
 		return SanitizeMemoryContext(a.env, got), nil

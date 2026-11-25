@@ -13,7 +13,7 @@ import (
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
-// Aware time of an ISO 8601 value with Z accepted, naive values taken as UTC, nil for None or blank
+// Instant of an ISO 8601 value, text without a UTC offset read as UTC, nil for nil or blank
 func parseDatetime(value any) (*time.Time, error) {
 	switch t := value.(type) {
 	case nil:
@@ -27,20 +27,14 @@ func parseDatetime(value any) (*time.Time, error) {
 	if text == "" {
 		return nil, nil
 	}
-	if strings.HasSuffix(text, "Z") {
-		text = text[:len(text)-1] + "+00:00"
-	}
-	parsed, aware, err := timeutil.ParseISOZone(text, time.UTC)
+	parsed, err := timeutil.ParseISO(text, time.UTC)
 	if err != nil {
 		return nil, err
-	}
-	if !aware {
-		parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), time.UTC)
 	}
 	return &parsed, nil
 }
 
-// UTC ISO text with a Z suffix, nil for a missing time
+// UTC RFC 3339 text with six fractional digits and a Z suffix, nil for a missing time
 func serializeDatetime(value *time.Time) any {
 	if value == nil {
 		return nil

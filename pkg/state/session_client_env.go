@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -20,7 +21,7 @@ var (
 	ClientToolEnvPrefixes  = []string{"CONDA_", "NODE_", "NVM_", "PYENV_"}
 	SecretEnvName          = IsSecretEnvName
 	SecretEnvSubstrings    = SecretSubstrings
-	errClientEnvNotFlatMap = pyValueError("client_env must be a map of variable names to string values")
+	errClientEnvNotFlatMap = valueError("client_env must be a map of variable names to string values")
 )
 
 const (
@@ -69,7 +70,7 @@ func ParseClientEnvRules(raw any) (*ClientEnvRules, error) {
 	for i, key := range []string{"behaviour", "names", "prefixes", "secret"} {
 		v, ok := obj.Get(key)
 		if !ok {
-			return nil, &stateTypedError{"KeyError", pyRepr(key)}
+			return nil, &stateTypedError{"KeyError", strconv.Quote(key)}
 		}
 		if v == nil && key == "secret" {
 			continue

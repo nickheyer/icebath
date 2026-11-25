@@ -175,7 +175,7 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		reason := groupOr(params, "reason", "the home gateway "+anyutil.String(link["home"])+" is gone")
 		return service.PromoteReplicaRoom(actor, roomID, reason)
 	}
-	return nil, &pyKeyError{key: method}
+	return nil, &keyError{key: method}
 }
 
 // Refusal unless every manifest item names a file uploaded to this replica

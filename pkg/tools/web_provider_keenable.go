@@ -35,7 +35,7 @@ func keenableSend(ctx context.Context, method, target string, payload *jsonutil.
 	h.Set("Accept", "*/*")
 	var body []byte
 	if payload != nil {
-		text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -73,24 +73,24 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 		if err != nil {
 			return nil, err
 		}
-		results, err := pyDictGet(data, "results")
+		results, err := dictGet(data, "results")
 		if err != nil {
 			return nil, err
 		}
-		rows, err := pyIter(anyutil.Or(results, []any{}))
+		rows, err := elementsOf(anyutil.Or(results, []any{}))
 		if err != nil {
 			return nil, err
 		}
 		hits := make([]WebSearchHit, 0, len(rows))
 		for i, r := range rows {
-			u, err := pyDictGet(r, "url")
+			u, err := dictGet(r, "url")
 			if err != nil {
 				return nil, err
 			}
-			title, _ := pyDictGet(r, "title")
-			snippet, _ := pyDictGet(r, "snippet")
+			title, _ := dictGet(r, "title")
+			snippet, _ := dictGet(r, "snippet")
 			if !anyutil.IsTrue(snippet) {
-				snippet, _ = pyDictGet(r, "description")
+				snippet, _ = dictGet(r, "description")
 			}
 			hits = append(hits, webHit(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), anyutil.String(anyutil.Or(snippet, "")), i+1))
 		}
@@ -106,11 +106,7 @@ func keenableFetch(ctx context.Context, apiKey, u string) (*WebPage, error) {
 		return nil, err
 	}
 	if resp.status >= 400 {
-		origin, err := keenableOriginError(resp.status, resp.text())
-		if err != nil {
-			return nil, err
-		}
-		if origin != "" {
+		if origin := keenableOriginError(resp.status, resp.text()); origin != "" {
 			return pageError(u, origin), nil
 		}
 		return nil, fmt.Errorf("%s", httpStatusDetail(resp.status, resp.text()))
@@ -119,12 +115,12 @@ func keenableFetch(ctx context.Context, apiKey, u string) (*WebPage, error) {
 	if err != nil {
 		return nil, err
 	}
-	final, err := pyDictGet(data, "url")
+	final, err := dictGet(data, "url")
 	if err != nil {
 		return nil, err
 	}
-	title, _ := pyDictGet(data, "title")
-	content, _ := pyDictGet(data, "content")
+	title, _ := dictGet(data, "title")
+	content, _ := dictGet(data, "content")
 	return webDocument(anyutil.String(anyutil.Or(final, u)), anyutil.String(anyutil.Or(title, "")), anyutil.String(anyutil.Or(content, "")), u), nil
 }
 

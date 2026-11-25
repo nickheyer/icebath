@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -105,10 +106,10 @@ func osErrorText(err error) string {
 }
 
 // Python list repr of an argv for subprocess error text
-func pyArgvRepr(argv []string) string {
+func argvRepr(argv []string) string {
 	parts := make([]string, len(argv))
 	for i, a := range argv {
-		parts[i] = pyReprStr(a)
+		parts[i] = strconv.Quote(a)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
@@ -120,15 +121,15 @@ type gitTimeoutError struct {
 }
 
 func (e *gitTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", pyArgvRepr(e.argv), pyTimeoutSeconds(e.timeout.Seconds()))
+	return fmt.Sprintf("Command '%s' timed out after %s seconds", argvRepr(e.argv), timeoutSecondsValue(e.timeout.Seconds()))
 }
 
 // Python number text for a float that may be integral
-func pyTimeoutSeconds(f float64) string {
+func timeoutSecondsValue(f float64) string {
 	if f == float64(int64(f)) {
 		return fmt.Sprintf("%d", int64(f))
 	}
-	return pyFloatRepr(f)
+	return floatRepr(f)
 }
 
 // Runs hardened git returning the exit code and lossy UTF-8 stdout, 127 when git is not on PATH
@@ -179,8 +180,8 @@ func untrackedFiles(cwd string) ([]string, error) {
 		return []string{}, nil
 	}
 	files := []string{}
-	for _, line := range pySplitLines(out) {
-		if pyStrip(line) != "" {
+	for _, line := range splitLinesValue(out) {
+		if strings.TrimSpace(line) != "" {
 			files = append(files, line)
 		}
 	}
@@ -199,7 +200,7 @@ func untrackedDiff(cwd string, files []string) string {
 		if err != nil {
 			continue
 		}
-		if pyStrip(out) != "" {
+		if strings.TrimSpace(out) != "" {
 			chunks = append(chunks, strings.TrimRight(out, "\n"))
 		}
 	}
@@ -264,9 +265,9 @@ func CollectWorkingDiff(cwd, mode string, paths []string) WorkingDiff {
 	if len(untracked) > 0 {
 		extra = untrackedDiff(cwd, untracked)
 	}
-	stat, diff := pyStrip(statOut), pyStrip(diffOut)
+	stat, diff := strings.TrimSpace(statOut), strings.TrimSpace(diffOut)
 	if extra != "" {
-		diff = pyStrip(diff + "\n" + extra)
+		diff = strings.TrimSpace(diff + "\n" + extra)
 	}
 	result := WorkingDiff{Success: true, Stat: stat, Diff: diff, Untracked: untracked}
 	if stat == "" && diff == "" && len(untracked) == 0 {

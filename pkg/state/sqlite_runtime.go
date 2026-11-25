@@ -42,7 +42,7 @@ func (v VersionTuple) Cmp(o VersionTuple) int {
 }
 
 // Iterates a decoded JSON value the way Python's for loop does, the TypeError for non iterables
-func pyIterate(v any) ([]any, error) {
+func iterate(v any) ([]any, error) {
 	switch x := v.(type) {
 	case []any:
 		return x, nil
@@ -52,25 +52,25 @@ func pyIterate(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case pyObject:
+	case orderedObject:
 		out := make([]any, 0, len(x))
 		for _, kv := range x {
 			out = append(out, kv.Key)
 		}
 		return out, nil
 	}
-	return nil, &pyConvError{"TypeError", fmt.Sprintf("expected a list of rows, got %s", errchain.Kind(v))}
+	return nil, &convError{"TypeError", fmt.Sprintf("expected a list of rows, got %s", errchain.Kind(v))}
 }
 
 // int of every part padded with zeros to three and cut at three, with the errors int and iteration raise
 func versionTuple(parts any) (VersionTuple, error) {
-	items, err := pyIterate(parts)
+	items, err := iterate(parts)
 	if err != nil {
 		return VersionTuple{}, err
 	}
 	v := NewVersionTuple()
 	for i, item := range items {
-		n, err := pyIntOf(item)
+		n, err := intOfValue(item)
 		if err != nil {
 			return VersionTuple{}, err
 		}

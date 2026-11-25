@@ -399,7 +399,7 @@ func summarizedByCompaction(ctx context.Context, conn SQLiteConn, physical strin
 			lineage[sid] = true
 		}
 	}
-	return lineage[pyStr(row[0])], nil
+	return lineage[anyutil.String(row[0])], nil
 }
 
 // Live ask of a composite compaction carrier, nil for an ordinary user row
@@ -430,7 +430,7 @@ func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, session
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(errs) > 0 || len(normalized) == 0 || sessionID != pyStr(rowGet(rowGet(normalized[0], "session").(*jsonutil.Object), "id")) {
+	if len(errs) > 0 || len(normalized) == 0 || sessionID != anyutil.String(rowGet(rowGet(normalized[0], "session").(*jsonutil.Object), "id")) {
 		return nil, nil, runtimeRefusal("invalid_params")
 	}
 	var imported, skipped []string
@@ -438,7 +438,7 @@ func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, session
 	var parents []link
 	for _, item := range normalized {
 		raw := rowGet(item, "session").(*jsonutil.Object)
-		sid := pyStr(rowGet(raw, "id"))
+		sid := anyutil.String(rowGet(raw, "id"))
 		if _, retired, err := fetchScalar(ctx, conn, "SELECT 1 FROM state_meta WHERE key=?", RetiredPrefix+sid); err != nil {
 			return nil, nil, err
 		} else if retired {
@@ -454,8 +454,8 @@ func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, session
 		if err := d.importSessionRow(ctx, conn, raw, rowGet(item, "messages"), sid); err != nil {
 			return nil, nil, err
 		}
-		if parent := rowGet(raw, "parent_session_id"); pyTruthy(parent) {
-			parents = append(parents, link{sid, pyStr(parent)})
+		if parent := rowGet(raw, "parent_session_id"); anyutil.IsTrue(parent) {
+			parents = append(parents, link{sid, anyutil.String(parent)})
 		}
 		imported = append(imported, sid)
 	}

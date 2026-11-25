@@ -137,7 +137,7 @@ func TestPluginLlmStructuredMessagesAndParsing(t *testing.T) {
 	if parsed, ct, err := parseStructuredText("{\"language\": \"French\"}", false, schema); err != nil || ct != "json" || parsed.(map[string]any)["language"] != "French" {
 		t.Fatalf("schema match %v %v", parsed, err)
 	}
-	if _, _, err := parseStructuredText("{}", false, schema); err == nil || err.Error() != "Plugin LLM structured output did not match schema: 'language' is a required property" {
+	if _, _, err := parseStructuredText("{}", false, schema); err == nil || err.Error() != `Plugin LLM structured output did not match schema: "language" is a required property` {
 		t.Fatalf("schema mismatch %v", err)
 	}
 	if parsed, ct, _ := parseStructuredText("not json", true, nil); parsed != nil || ct != "text" {

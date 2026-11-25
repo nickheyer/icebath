@@ -118,7 +118,7 @@ func stringsToAny(values []string) []any {
 }
 
 // Python int of a value as the smallest Go integer holding it
-func pyIntValue(v any) (any, error) {
+func intValue(v any) (any, error) {
 	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return nil, err
@@ -174,19 +174,19 @@ func subscript(v any, key string) (any, error) {
 			if val, ok := t.Get(key); ok {
 				return val, nil
 			}
-			return nil, &pyError{kind: "KeyError", msg: anyutil.Quote(key)}
+			return nil, &kindError{kind: "KeyError", msg: anyutil.Quote(key)}
 		}
 	case map[string]any:
 		if val, ok := t[key]; ok {
 			return val, nil
 		}
-		return nil, &pyError{kind: "KeyError", msg: anyutil.Quote(key)}
+		return nil, &kindError{kind: "KeyError", msg: anyutil.Quote(key)}
 	case []any:
-		return nil, &pyError{kind: "TypeError", msg: "list indices must be integers or slices, not str"}
+		return nil, &kindError{kind: "TypeError", msg: "list indices must be integers or slices, not str"}
 	case string:
-		return nil, &pyError{kind: "TypeError", msg: "string indices must be integers, not 'str'"}
+		return nil, &kindError{kind: "TypeError", msg: "string indices must be integers, not 'str'"}
 	}
-	return nil, &pyError{kind: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
+	return nil, &kindError{kind: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
 }
 
 // Action text of the call, the default when blank
@@ -394,14 +394,14 @@ func pbRecentlyPlayed(c apiClient, a toolArgs, _ string) (string, error) {
 	}
 	params := jsonutil.ObjectOf("limit", limitArg(a, 20), "after", nil, "before", nil)
 	if after != nil {
-		v, err := pyIntValue(after)
+		v, err := intValue(after)
 		if err != nil {
 			return "", err
 		}
 		params.Set("after", v)
 	}
 	if before != nil {
-		v, err := pyIntValue(before)
+		v, err := intValue(before)
 		if err != nil {
 			return "", err
 		}
@@ -425,7 +425,7 @@ var handleSpotifyPlayback = dispatcher("spotify_playback", "get_state", map[stri
 	"pause":    pbDeviceCmd("PUT", "/me/player/pause"),
 	"next":     pbDeviceCmd("POST", "/me/player/next"),
 	"previous": pbDeviceCmd("POST", "/me/player/previous"),
-	"seek":     pbRequiredParam("/me/player/seek", "position_ms", pyIntValue),
+	"seek":     pbRequiredParam("/me/player/seek", "position_ms", intValue),
 	"set_repeat": func(c apiClient, a toolArgs, action string) (string, error) {
 		state, err := pbRepeatState(a)
 		if err != nil {

@@ -20,8 +20,8 @@ func TestCursorStoreRoundTripAndForeignFiles(t *testing.T) {
 		t.Fatalf("%s %v", raw, err)
 	}
 	other := &CursorStore{SelfPubkey: "pk", RelayURL: "wss://r"}
-	if err := other.LoadCursors(ctx); err != nil || other.RestoredCursors["b"].LastTS != 5 || other.RestoredCursors["b"].ChatType != "group" || len(other.RestoredCursors["a"].Seen) != 0 {
-		t.Fatalf("%+v %v", other.RestoredCursors, err)
+	if other.LoadCursors(ctx); other.RestoredCursors["b"].LastTS != 5 || other.RestoredCursors["b"].ChatType != "group" || len(other.RestoredCursors["a"].Seen) != 0 {
+		t.Fatalf("%+v", other.RestoredCursors)
 	}
 	foreign := &CursorStore{SelfPubkey: "pk2", RelayURL: "wss://r"}
 	if foreign.LoadCursors(ctx); len(foreign.RestoredCursors) != 0 {
@@ -33,24 +33,22 @@ func TestCursorStoreRoundTripAndForeignFiles(t *testing.T) {
 	}
 	body := "\ufeff" + `{"identity": "pk", "relay": "wss://r", "channels": {"c": {"last_ts": "12", "seen": [` + strings.Join(seen, ",") + `, 7], "chat_type": 3}, "d": {"last_ts": "x"}, "e": [], "f": {"last_ts": 2.9, "seen": "no"}}}`
 	os.WriteFile(CursorPath(ctx), []byte(body), 0o600)
-	if err := other.LoadCursors(ctx); err != nil {
-		t.Fatal(err)
-	}
+	other.LoadCursors(ctx)
 	c := other.RestoredCursors["c"]
 	if len(c.Seen) != 500 || c.Seen[499] != "7" || c.LastTS != 12 || c.ChatType != "3" || other.RestoredCursors["f"].LastTS != 2 || len(other.RestoredCursors) != 2 {
 		t.Fatalf("%+v", other.RestoredCursors)
 	}
-	os.WriteFile(CursorPath(ctx), []byte(`{"identity": "pk", "relay": "wss://r", "channels": {"g": {"last_ts": Infinity}}}`), 0o600)
-	if err := other.LoadCursors(ctx); err == nil {
-		t.Fatal("infinite last_ts did not raise")
+	os.WriteFile(CursorPath(ctx), []byte(`{"identity": "pk", "relay": "wss://r", "channels": {"g": {"last_ts": Infinity}, "h": {"last_ts": 4}}}`), 0o600)
+	if other.LoadCursors(ctx); len(other.RestoredCursors) != 1 || other.RestoredCursors["h"].LastTS != 4 {
+		t.Fatalf("an infinite last_ts must drop only its own entry: %+v", other.RestoredCursors)
 	}
 	os.WriteFile(CursorPath(ctx), []byte(`not json`), 0o600)
-	if err := other.LoadCursors(ctx); err != nil || len(other.RestoredCursors) != 0 {
-		t.Fatal(err)
+	if other.LoadCursors(ctx); len(other.RestoredCursors) != 0 {
+		t.Fatalf("%+v", other.RestoredCursors)
 	}
 	os.Remove(CursorPath(ctx))
-	if err := other.LoadCursors(ctx); err != nil || len(other.RestoredCursors) != 0 {
-		t.Fatal(err)
+	if other.LoadCursors(ctx); len(other.RestoredCursors) != 0 {
+		t.Fatalf("%+v", other.RestoredCursors)
 	}
 }
 

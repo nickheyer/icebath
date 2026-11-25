@@ -129,7 +129,7 @@ func BuildInlineResults(ctx context.Context, query, offset string, pageSize int)
 	start := 0
 	if offset != "" {
 		// A positive offset, held at the end of the catalog when it lies past it or past what an int64 holds
-		if parsed, err := strconv.ParseInt(strings.TrimSpace(offset), 10, 64); (err == nil || errors.Is(err, strconv.ErrRange)) && parsed > 0 {
+		if parsed, err := textutil.ParseInt(offset); (err == nil || errors.Is(err, strconv.ErrRange)) && parsed > 0 {
 			start = int(min(parsed, int64(len(matches))))
 		}
 	}

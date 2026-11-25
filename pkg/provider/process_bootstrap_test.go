@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"os/signal"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -529,8 +528,8 @@ func TestOfficialCodexResponsesBodyIsZstdAndLossless(t *testing.T) {
 	official := "https://chatgpt.com/backend-api/codex"
 	payload := map[string]any{"model": "gpt-6.1-sol", "input": []any{map[string]any{"role": "user", "content": strings.Repeat("hi ", 500)}}}
 	req, body := keepaliveSend(t, official, "/responses", payload)
-	if req.Header.Get("Content-Encoding") != "zstd" || req.Header.Get("Content-Length") != strconv.Itoa(len(body)) {
-		t.Fatalf("headers %v len %d", req.Header, len(body))
+	if req.Header.Get("Content-Encoding") != "zstd" || req.ContentLength != int64(len(body)) {
+		t.Fatalf("headers %v content length %d len %d", req.Header, req.ContentLength, len(body))
 	}
 	dec, _ := zstd.NewReader(nil)
 	plain, err := dec.DecodeAll(body, nil)

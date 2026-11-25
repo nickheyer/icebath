@@ -18,7 +18,7 @@ func init() {
 		},
 		ResumeSuspended: func(cmd *exec.Cmd) error {
 			if err := updaterecord.ResumeSuspendedChild(cmd.Process); err != nil {
-				return &pm.PyError{Class: "OSError", Message: err.Error()}
+				return &pm.ClassError{Class: "OSError", Message: err.Error()}
 			}
 			return nil
 		},

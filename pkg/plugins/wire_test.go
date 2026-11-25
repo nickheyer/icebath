@@ -59,7 +59,7 @@ func TestWireEncodingsRoundTrip(t *testing.T) {
 }
 
 func TestPyJSONParity(t *testing.T) {
-	out, err := pyJSONDumps(map[string]any{"a": math.NaN(), "b": math.Inf(-1), "c": "é\n\U0001F600", "d": 1.0, "e": 1e20, "f": []any{int64(1), nil, true}})
+	out, err := jsonDumps(map[string]any{"a": math.NaN(), "b": math.Inf(-1), "c": "é\n\U0001F600", "d": 1.0, "e": 1e20, "f": []any{int64(1), nil, true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestPyJSONParity(t *testing.T) {
 	if string(out) != want {
 		t.Fatalf("dumps %s", out)
 	}
-	back, err := pyJSONLoads(out)
+	back, err := jsonLoads(out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,15 +75,15 @@ func TestPyJSONParity(t *testing.T) {
 	if !math.IsNaN(m["a"].(float64)) || m["c"] != "é\n\U0001F600" || m["d"] != 1.0 || m["f"].([]any)[0] != int64(1) {
 		t.Fatalf("loads %#v", m)
 	}
-	lone, err := pyJSONLoads([]byte(`"\ud800x"`))
+	lone, err := jsonLoads([]byte(`"\ud800x"`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, _ := pyJSONDumps(lone)
+	again, _ := jsonDumps(lone)
 	if string(again) != `"\ud800x"` {
 		t.Fatalf("lone surrogate %s", again)
 	}
-	if _, err := pyJSONLoads([]byte(`{"a":`)); err == nil {
+	if _, err := jsonLoads([]byte(`{"a":`)); err == nil {
 		t.Fatal("malformed accepted")
 	}
 }
@@ -162,7 +162,7 @@ func TestChannelNestedCallRunsInTheCallerContext(t *testing.T) {
 }
 
 func TestBindPyMatchesPythonTypeErrors(t *testing.T) {
-	params := []pyParam{req("name"), req("handler"), opt("description", ""), kwReq("title")}
+	params := []paramValue{req("name"), req("handler"), opt("description", ""), kwReq("title")}
 	cases := map[string]struct {
 		args   []any
 		kwargs map[string]any

@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -135,7 +136,7 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
 	if !utf8.Valid(data) {
-		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "the webhook filter file is not valid UTF-8"}
+		return nil, &errorutil.Error{Kind: "UnicodeDecodeError", Msg: "the webhook filter file is not valid UTF-8"}
 	}
 	raw := string(data)
 	decoded, err := jsonutil.Decode(raw)
@@ -182,23 +183,23 @@ func webhookPyIn(item, container any) (bool, error) {
 			_, found := obj.Get(key)
 			return found, nil
 		case *jsonutil.Object, map[string]any, []any:
-			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value is %s, expected text or a number", errchain.Kind(item))}
+			return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value is %s, expected text or a number", errchain.Kind(item))}
 		}
 		return false, nil
 	case string:
 		needle, ok := item.(string)
 		if !ok {
-			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value to find in text is %s, expected text", errchain.Kind(item))}
+			return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value to find in text is %s, expected text", errchain.Kind(item))}
 		}
 		return strings.Contains(c, needle), nil
 	}
 	if item == webhookMissing {
 		return false, nil
 	}
-	return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter list is %s, expected a list", errchain.Kind(container))}
+	return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter list is %s, expected a list", errchain.Kind(container))}
 }
 
-// Whether the operand occurs in a container value or its text occurs in a scalar value
+// Whether the operand occurs in a container value or its text occurs in a scalar value, a null operand occurring in no text
 func webhookOpContains(value, needle any) (bool, error) {
 	if value == webhookMissing {
 		return false, nil
@@ -207,6 +208,9 @@ func webhookOpContains(value, needle any) (bool, error) {
 	case []any, *jsonutil.Object, map[string]any:
 		return webhookPyIn(needle, value)
 	}
+	if needle == nil {
+		return false, nil
+	}
 	text, err := webhookStringifyFilterValue(value)
 	if err != nil {
 		return false, err
@@ -214,9 +218,13 @@ func webhookOpContains(value, needle any) (bool, error) {
 	return strings.Contains(text, anyutil.String(needle)), nil
 }
 
-// Whether the pattern searches the value text, an invalid pattern logging and matching nothing
+// Whether the pattern searches the value text, a null or invalid pattern logging and matching nothing
 func webhookOpRegex(value, pattern any) (bool, error) {
 	if value == webhookMissing {
+		return false, nil
+	}
+	if pattern == nil {
+		pkgLog().Warn("[webhook] Invalid webhook filter regex: the pattern is null")
 		return false, nil
 	}
 	re, err := regexutil.Compile(anyutil.String(pattern))
@@ -281,7 +289,7 @@ func NewWebhookRouteProcessor(scriptTimeoutSeconds int) *WebhookRouteProcessor {
 func webhookPayloadGet(payload any, key string, def any) (any, error) {
 	obj, ok := jsonutil.AsObject(payload)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
 	}
 	return obj.ValueOr(key, def), nil
 }
@@ -354,7 +362,7 @@ func webhookIsDigits(text string) bool {
 func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload, eventType any, headers *jsonutil.Object) (bool, error) {
 	obj, ok := jsonutil.AsObject(spec)
 	if !ok {
-		pkgLog().Warn("[webhook] Ignoring invalid filter spec: " + anyutil.Quote(spec))
+		pkgLog().Warn("[webhook] Ignoring invalid filter spec: " + quotedValue(spec))
 		return false, nil
 	}
 	for _, key := range []string{"all", "any"} {
@@ -492,7 +500,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 			level = slog.LevelWarn
 		}
 		log.Log(ctx, level, fmt.Sprintf("[webhook] script ignored webhook path=%s code=%d stderr=%s",
-			pathutil.Name(path), result.ExitCode, pySliceRunes(stderr, 200)))
+			pathutil.Name(path), result.ExitCode, sliceRunes(stderr, 200)))
 	}
 	if result.ExitCode != 0 || stdout == "" || stdout == "[SILENT]" {
 		return false, nil, nil
@@ -508,7 +516,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		if obj, ok := jsonutil.AsObject(payload); ok {
 			merged = obj.Clone()
 		} else {
-			return false, nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
+			return false, nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
 		}
 		merged.Set("script_output", stdout)
 		transformed = merged

@@ -129,7 +129,7 @@ type aclHeader struct {
 	_    [4]byte
 }
 
-// AddAccessAllowedAceEx on a copy of acl, padded and retried when the ACL has no room like PyACL
+// AddAccessAllowedAceEx on a copy of acl, padded and retried when the ACL has no room
 func addAccessAllowedACE(acl *windows.ACL, flags uint32, sid *windows.SID) (*windows.ACL, error) {
 	size := int((*aclHeader)(unsafe.Pointer(acl)).size)
 	buf := make([]byte, size)

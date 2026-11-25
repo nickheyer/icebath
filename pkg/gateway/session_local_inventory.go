@@ -78,7 +78,7 @@ func policyTools(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	if !anyutil.IsTrue(agentSection) {
 		agentSection = map[string]any{}
 	}
-	raw, err := pyGet(agentSection, "disabled_toolsets", nil)
+	raw, err := getValue(agentSection, "disabled_toolsets", nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -339,7 +339,7 @@ func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSes
 		if !anyutil.IsTrue(route) {
 			route = map[string]any{}
 		}
-		name, err := pyGet(route, "provider", nil)
+		name, err := getValue(route, "provider", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -415,7 +415,7 @@ func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*js
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{key: ref.SessionID}
+		return nil, &keyError{key: ref.SessionID}
 	}
 	policy, err := policyForSource(ctx, a.Runner, live.Source)
 	if err != nil {
@@ -446,7 +446,7 @@ func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*js
 	if usage != nil {
 		info.Set("usage", usage)
 	}
-	if !pyTruthy(inventory.ValueOr("system_prompt", nil)) {
+	if !anyutil.IsTrue(inventory.ValueOr("system_prompt", nil)) {
 		row, err := a.DB.GetSession(ctx, ref.SessionID)
 		if err != nil {
 			return nil, err

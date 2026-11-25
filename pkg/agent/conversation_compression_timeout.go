@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -147,7 +148,7 @@ func recordStallInterruptedBackoff(ctx context.Context, a *AIAgent, fence *Compr
 		}
 	}()
 	record.RecordTimeoutFailure(errText, "stall_interrupted")
-	pkgLog().Info(fmt.Sprintf("Recorded stall-interrupted compression backoff (session=%s, %s)", pyStrOr(a.sessionID, "none"), errText))
+	pkgLog().Info(fmt.Sprintf("Recorded stall-interrupted compression backoff (session=%s, %s)", anyutil.StringOr(a.sessionID, "none"), errText))
 	return true
 }
 
@@ -167,22 +168,22 @@ func resolveCompressionFallbackRoute(ctx context.Context) map[string]any {
 		if !ok {
 			continue
 		}
-		prov := strings.TrimSpace(pyStr(entry["provider"]))
-		model := strings.TrimSpace(pyStr(entry["model"]))
+		prov := strings.TrimSpace(anyutil.String(entry["provider"]))
+		model := strings.TrimSpace(anyutil.String(entry["model"]))
 		if prov == "" || model == "" {
 			continue
 		}
 		route := map[string]any{"label": fmt.Sprintf("fallback_chain[%d](%s)", index, prov), "provider": prov, "model": model,
 			"base_url": nil, "api_key": nil, "api_mode": nil, "timeout": nil}
-		if v := strings.TrimSpace(pyStr(entry["base_url"])); v != "" {
+		if v := strings.TrimSpace(anyutil.String(entry["base_url"])); v != "" {
 			route["base_url"] = v
 		}
 		if v := provider.AuxFallbackEntryAPIKey(ctx, entry); v != "" {
 			route["api_key"] = v
 		}
-		mode := pyStr(entry["api_mode"])
+		mode := anyutil.String(entry["api_mode"])
 		if mode == "" {
-			mode = pyStr(entry["transport"])
+			mode = anyutil.String(entry["transport"])
 		}
 		if v := strings.TrimSpace(mode); v != "" {
 			route["api_mode"] = v
@@ -193,17 +194,6 @@ func resolveCompressionFallbackRoute(ctx context.Context) map[string]any {
 		return route
 	}
 	return nil
-}
-
-// String form of a config value the way str(value or "") reads it
-func pyStr(v any) string {
-	if v == nil || v == false {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
 }
 
 // Pinned stall retry routes, the chain entry then the deterministic summary once a stall already burned a window
@@ -289,7 +279,7 @@ func retryCompressionOnFallbackChain(ctx context.Context, o compressionTimeoutRu
 // One bounded rerun of the worker with the route pinned, false when it produced no compression
 func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o compressionTimeoutRun, precommitDeadline float64) ([]map[string]any, string, bool) {
 	deterministic := route["deterministic"] == true
-	label := pyStr(route["label"])
+	label := anyutil.String(route["label"])
 	if !deterministic && timeutil.Monotonic() >= precommitDeadline {
 		pkgLog().Info(fmt.Sprintf("Skipping compression stall fallback on %s: the shared pre-commit ceiling is spent", label))
 		return nil, "", false
@@ -328,7 +318,7 @@ func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o comp
 	if deterministic {
 		pkgLog().Warn(fmt.Sprintf("Context compression stalled on every summary route — committing the %s (no summary model) before continuing without compression", label))
 	} else {
-		pkgLog().Warn(fmt.Sprintf("Context compression stalled on the configured summary route — retrying once on %s (%s) within %.1fs of the shared pre-commit budget before continuing without compression", label, pyStr(route["model"]), ceiling))
+		pkgLog().Warn(fmt.Sprintf("Context compression stalled on the configured summary route — retrying once on %s (%s) within %.1fs of the shared pre-commit budget before continuing without compression", label, anyutil.String(route["model"]), ceiling))
 	}
 	streakBefore := fallbackStreakOf(o.TelemetryAgent)
 	var msgs []map[string]any

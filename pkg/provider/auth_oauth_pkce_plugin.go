@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var pkceLoopbackLiterals = map[string]bool{"127.0.0.1": true, "::1": true}
@@ -105,9 +106,9 @@ func ValidateOAuthPKCEConfig(provider string, cfg OAuthPKCEConfig) error {
 		sort.Strings(sorted)
 		reprs := make([]string, len(sorted))
 		for i, h := range sorted {
-			reprs[i] = pyRepr(h)
+			reprs[i] = anyutil.Quote(h)
 		}
-		return pkceErr(provider, fmt.Sprintf("OAuth token_url host %s is not on the allowlist [%s].", pyRepr(tokenHost), strings.Join(reprs, ", ")), "oauth_token_host_rejected")
+		return pkceErr(provider, fmt.Sprintf("OAuth token_url host %s is not on the allowlist [%s].", anyutil.Quote(tokenHost), strings.Join(reprs, ", ")), "oauth_token_host_rejected")
 	}
 	if cfg.RedirectPort < 0 || cfg.RedirectPort > 65535 {
 		return pkceErr(provider, "OAuth redirect_port must be within 0..65535.", "oauth_redirect_invalid")

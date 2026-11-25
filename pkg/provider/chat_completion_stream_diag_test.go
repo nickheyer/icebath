@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestRetryAfterDropReportsTheAttemptThatDropped(t *testing.T) {
@@ -20,7 +18,7 @@ func TestRetryAfterDropReportsTheAttemptThatDropped(t *testing.T) {
 	if len(statuses) != 1 || !strings.Contains(statuses[0], "attempt 1/3 dropped") {
 		t.Fatalf("statuses %q", statuses)
 	}
-	if len(activity) != 1 || activity[0] != "stream retry 1/3 after "+anyutil.Kind(drop) {
+	if len(activity) != 1 || activity[0] != "stream retry 1/3 after ConnectionError" {
 		t.Fatalf("activity %q", activity)
 	}
 }

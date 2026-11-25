@@ -237,7 +237,7 @@ func debugIsDpasteURL(raw string) bool {
 func debugURLOpen(ctx context.Context, method, target string, body []byte, headers map[string]string, timeout time.Duration) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
-		return nil, 0, &pm.PyError{Class: "ValueError", Message: "unknown url type: " + errchain.Show(target)}
+		return nil, 0, &pm.ClassError{Class: "ValueError", Message: "unknown url type: " + errchain.Show(target)}
 	}
 	if body == nil {
 		req.Body, req.ContentLength = http.NoBody, 0
@@ -251,15 +251,15 @@ func debugURLOpen(ctx context.Context, method, target string, body []byte, heade
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) && ue.Timeout() {
-			return nil, 0, &pm.PyError{Class: "TimeoutError", Message: "timed out"}
+			return nil, 0, &pm.ClassError{Class: "TimeoutError", Message: "timed out"}
 		}
-		return nil, 0, &pm.PyError{Class: "URLError", Message: err.Error()}
+		return nil, 0, &pm.ClassError{Class: "URLError", Message: err.Error()}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		reason := strings.TrimSpace(strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)))
-		return nil, resp.StatusCode, &pm.PyError{Class: "HTTPError", Message: fmt.Sprintf("HTTP Error %d: %s", resp.StatusCode, reason)}
+		return nil, resp.StatusCode, &pm.ClassError{Class: "HTTPError", Message: fmt.Sprintf("HTTP Error %d: %s", resp.StatusCode, reason)}
 	}
 	if err != nil {
 		return nil, resp.StatusCode, err
@@ -272,10 +272,10 @@ var debugDeletePaste = func(ctx context.Context, raw string) (bool, error) {
 	pasteID := debugExtractPasteID(raw)
 	if pasteID == "" {
 		if debugIsDpasteURL(raw) {
-			return false, &pm.PyError{Class: "ValueError", Message: "Cannot delete: dpaste.com pastes cannot be deleted (anonymous " +
+			return false, &pm.ClassError{Class: "ValueError", Message: "Cannot delete: dpaste.com pastes cannot be deleted (anonymous " +
 				"uploads have no owner token); they expire on their own.  Got: " + raw}
 		}
-		return false, &pm.PyError{Class: "ValueError", Message: "Cannot delete: only paste.rs URLs are supported.  Got: " + raw}
+		return false, &pm.ClassError{Class: "ValueError", Message: "Cannot delete: only paste.rs URLs are supported.  Got: " + raw}
 	}
 	_, status, err := debugURLOpen(ctx, http.MethodDelete, debugPasteRSURL+pasteID, nil, map[string]string{"User-Agent": debugUserAgent}, 30*time.Second)
 	if err != nil {
@@ -339,11 +339,11 @@ func debugPostPaste(ctx context.Context, service, endpoint string, body []byte, 
 	}
 	text, err := textutil.DecodeUTF8(data)
 	if err != nil {
-		return "", &pm.PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return "", &pm.ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	got := strings.TrimSpace(text)
 	if !strings.HasPrefix(got, "http") {
-		return "", &pm.PyError{Class: "ValueError", Message: "Unexpected response from " + service + ": " + RedactDebugSupportTextCapped(got, 200)}
+		return "", &pm.ClassError{Class: "ValueError", Message: "Unexpected response from " + service + ": " + RedactDebugSupportTextCapped(got, 200)}
 	}
 	return got, nil
 }
@@ -385,7 +385,7 @@ var debugUploadToPastebin = func(ctx context.Context, content string, expiryDays
 		}
 		failures = append(failures, service+": "+err.Error())
 	}
-	return "", &pm.PyError{Class: "RuntimeError", Message: "Failed to upload to any paste service:\n  " + strings.Join(failures, "\n  ")}
+	return "", &pm.ClassError{Class: "RuntimeError", Message: "Failed to upload to any paste service:\n  " + strings.Join(failures, "\n  ")}
 }
 
 // Single read snapshot of a log file, the summary tail and the full upload text
@@ -794,7 +794,7 @@ func runDebugShare(ctx context.Context, ns map[string]any, w io.Writer) (int, er
 	fmt.Fprintln(w, "Collecting debug report...\nUploading...")
 	result, err := BuildDebugShare(ctx, logLines, expiry, redact)
 	if err != nil {
-		var pe *pm.PyError
+		var pe *pm.ClassError
 		if !errors.As(err, &pe) || pe.Class != "RuntimeError" {
 			return 1, err
 		}
@@ -848,7 +848,7 @@ func runDebugDelete(ctx context.Context, ns map[string]any, w io.Writer) (int, e
 	}
 	for _, u := range urls {
 		gone, err := debugDeletePaste(ctx, u)
-		var pe *pm.PyError
+		var pe *pm.ClassError
 		switch {
 		case err == nil && gone:
 			fmt.Fprintln(w, "  ✓ Deleted: "+u)

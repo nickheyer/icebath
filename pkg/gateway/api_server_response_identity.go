@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -28,7 +29,7 @@ func APIDurableResponseID(requestKey string) string {
 func apiNextItemID(responseID string, counters map[apiItemCounterKey]int, kind string, callID any, commentary bool) (string, error) {
 	switch callID.(type) {
 	case *jsonutil.Object, map[string]any, []any:
-		return "", &PyError{Kind: "TypeError", Msg: "the tool call id is " + errchain.Kind(callID) + ", expected text"}
+		return "", &errorutil.Error{Kind: "TypeError", Msg: "the tool call id is " + errchain.Kind(callID) + ", expected text"}
 	}
 	key := apiItemCounterKey{Kind: kind, CallID: callID, Commentary: commentary}
 	occurrence := counters[key]
@@ -39,7 +40,7 @@ func apiNextItemID(responseID string, counters map[apiItemCounterKey]int, kind s
 	}
 	prefix, ok := apiItemIDPrefixes[kind]
 	if !ok {
-		return "", &pyKeyError{kind}
+		return "", &keyError{kind}
 	}
 	sum := sha256.Sum256([]byte(encoded))
 	return prefix + "_" + hex.EncodeToString(sum[:])[:24], nil
@@ -52,11 +53,11 @@ func apiIdentifyOutput(items []*jsonutil.Object, responseID string) ([]*jsonutil
 	for _, item := range items {
 		kind, found := item.Get("type")
 		if !found {
-			return nil, &pyKeyError{"type"}
+			return nil, &keyError{"type"}
 		}
 		kindText, ok := kind.(string)
 		if !ok {
-			return nil, &pyKeyError{anyutil.String(kind)}
+			return nil, &keyError{anyutil.String(kind)}
 		}
 		id, err := apiNextItemID(responseID, counters, kindText, item.ValueOr("call_id", nil), item.ValueOr("phase", nil) == "commentary")
 		if err != nil {

@@ -1,6 +1,8 @@
 package lsp
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,7 +10,8 @@ import (
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
-func TestRelativePathsRaiseFileNotFoundInRemovedCwd(t *testing.T) {
+// Relative paths fail as not found, reported as the working directory lookup that failed, once the working directory is removed
+func TestRelativePathsFailNotFoundInRemovedCwd(t *testing.T) {
 	dir := t.TempDir()
 	gone := filepath.Join(dir, "gone")
 	if err := os.Mkdir(gone, 0o755); err != nil {
@@ -18,10 +21,10 @@ func TestRelativePathsRaiseFileNotFoundInRemovedCwd(t *testing.T) {
 	if err := os.Remove(gone); err != nil {
 		t.Fatal(err)
 	}
-	const want = "FileNotFoundError:[Errno 2] No such file or directory"
+	const want = "getwd: no such file or directory"
 	check := func(name string, err error) {
 		t.Helper()
-		if err == nil || errTypeName(err)+":"+errText(err) != want {
+		if err == nil || !errors.Is(err, fs.ErrNotExist) || errReport(err) != want {
 			t.Errorf("%s = %v want %s", name, err, want)
 		}
 	}

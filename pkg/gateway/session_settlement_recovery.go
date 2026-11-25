@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -107,7 +108,7 @@ func recoverFailedSettlement(ctx context.Context, a *SessionAuthority, row *json
 // Result object of a captured execution, empty when it captured none
 func capturedResultOf(captured *jsonutil.Object) *jsonutil.Object {
 	if captured != nil {
-		if value, _ := captured.Get("result"); pyTruthy(value) {
+		if value, _ := captured.Get("result"); anyutil.IsTrue(value) {
 			if obj, ok := value.(*jsonutil.Object); ok {
 				return obj
 			}
@@ -140,7 +141,7 @@ func completionPayload(row, settled *jsonutil.Object, response any, captured *js
 	}
 	truthy := func(key string) bool {
 		value, _ := result.Get(key)
-		return pyTruthy(value)
+		return anyutil.IsTrue(value)
 	}
 	surface, _ := result.Get("error_surface")
 	if _, isSurface := surface.(*jsonutil.Object); !isSurface && status == "error" {
@@ -158,7 +159,7 @@ func completionPayload(row, settled *jsonutil.Object, response any, captured *js
 	if descriptor, ok := surface.(*jsonutil.Object); ok && descriptor != nil {
 		complete.Set("error_surface", descriptor)
 	}
-	if pyTruthy(response) && truthy("response_reused") {
+	if anyutil.IsTrue(response) && truthy("response_reused") {
 		complete.Set("response_reused", true)
 	}
 	if truthy("local_viewer") {
@@ -167,7 +168,7 @@ func completionPayload(row, settled *jsonutil.Object, response any, captured *js
 		}
 		if truthy("response_transformed") {
 			complete.Set("response_transformed", true)
-			if final, _ := result.Get("final_response"); !pyTruthy(response) && pyTruthy(final) {
+			if final, _ := result.Get("final_response"); !anyutil.IsTrue(response) && anyutil.IsTrue(final) {
 				complete.Set("text", final)
 				complete.Set("content", final)
 			}
@@ -217,7 +218,7 @@ func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSessi
 	}()
 	complete := completionPayload(row, settled, response, captured)
 	notice := ownerStopNotice(captured, rowString(settled, "outcome"), row)
-	if warning, _ := complete.Get("warning"); notice != "" && !pyTruthy(warning) {
+	if warning, _ := complete.Get("warning"); notice != "" && !anyutil.IsTrue(warning) {
 		complete.Set("warning", notice)
 	}
 	live.EventStream.Publish(ref.SessionID, complete, "message.complete", nil)
@@ -318,7 +319,7 @@ func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession
 			return err
 		}
 		delay := settleRetryDelaysS[attempt]
-		pkgLog().Warn(fmt.Sprintf("Settlement of admission %s deferred by storage (%s); retrying in %.1fs", rowString(row, "admission_id"), pyExceptionRepr(err), delay))
+		pkgLog().Warn(fmt.Sprintf("Settlement of admission %s deferred by storage (%s); retrying in %.1fs", rowString(row, "admission_id"), errchain.OSText(err), delay))
 		timer := time.NewTimer(time.Duration(delay * float64(time.Second)))
 		select {
 		case <-timer.C:
@@ -333,7 +334,7 @@ func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession
 func publishTerminal(ctx context.Context, a *SessionAuthority, ref SessionRef, row, settled *jsonutil.Object, response any, captured *jsonutil.Object) error {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	live.EventStream.Lock.Lock()
 	err := publishCompletion(ctx, a, live, ref, row, settled, response, captured)

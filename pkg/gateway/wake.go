@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -147,7 +148,7 @@ func DeliverWake(ctx context.Context, adapter PlatformAdapter, opts WakeOptions)
 	}
 	if AdapterSupportsPush(adapter) {
 		if opts.Source == nil {
-			return &PyError{Kind: "ValueError", Msg: "deliver_wake: push-capable adapter requires a SessionSource"}
+			return &errorutil.Error{Kind: "ValueError", Msg: "deliver_wake: push-capable adapter requires a SessionSource"}
 		}
 		if runner, ok := adapter.Base().GatewayRunner.(AuthorityRunner); ok && runner != nil {
 			metadata := map[string]any{}
@@ -174,7 +175,7 @@ func DeliverWake(ctx context.Context, adapter PlatformAdapter, opts WakeOptions)
 		return AdmitInternalEvent(ctx, adapter, synth)
 	}
 	if opts.SessionID == "" {
-		return &PyError{Kind: "ValueError", Msg: "deliver_wake: non-push adapter (supports_async_delivery=False) requires the raw session id to self-post the wake turn"}
+		return &errorutil.Error{Kind: "ValueError", Msg: "deliver_wake: non-push adapter (supports_async_delivery=False) requires the raw session id to self-post the wake turn"}
 	}
 	return selfPostChatCompletion(ctx, adapter, opts.Text, opts.SessionID, category, opts.Profile)
 }
@@ -250,7 +251,7 @@ type DelegationDeliveryStore interface {
 // Persists an async delegation completion as a durable delivery row without running a turn
 func PersistDelegationDelivery(ctx context.Context, adapter PlatformAdapter, text, sessionID string, evt map[string]any) error {
 	if sessionID == "" {
-		return &PyError{Kind: "ValueError", Msg: "persist_delegation_delivery: raw session id required to persist the completion on the api_server session transcript"}
+		return &errorutil.Error{Kind: "ValueError", Msg: "persist_delegation_delivery: raw session id required to persist the completion on the api_server session transcript"}
 	}
 	var db *state.SessionDB
 	if ensure, ok := adapter.(DelegationDeliveryStore); ok {

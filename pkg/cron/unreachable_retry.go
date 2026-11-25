@@ -115,12 +115,13 @@ func unreachableRetryPlanRetry(s *Store, job *Job) bool {
 	attempt := unreachableAttempt(job)
 	if retryAt == nil {
 		if attempt >= len(UnreachableRetryDelaysSeconds) && s.unreachableLadderApplies(job) {
-			next := "None"
 			if job.NextRunAt != nil {
-				next = *job.NextRunAt
+				s.log.Warn(fmt.Sprintf("Job %q: model unreachable after %d automatic re-runs — waiting for the "+
+					"scheduled occurrence at %s", job.Label(), attempt, *job.NextRunAt))
+			} else {
+				s.log.Warn(fmt.Sprintf("Job %q: model unreachable after %d automatic re-runs — its schedule "+
+					"has no next occurrence to wait for", job.Label(), attempt))
 			}
-			s.log.Warn(fmt.Sprintf("Job '%s': model unreachable after %d automatic re-runs — waiting for the "+
-				"scheduled occurrence at %s", job.Label(), attempt, next))
 		}
 		unreachableRetryClearState(job)
 		return false
@@ -132,7 +133,7 @@ func unreachableRetryPlanRetry(s *Store, job *Job) bool {
 	if job.State != "paused" {
 		job.State = "scheduled"
 	}
-	s.log.Info(fmt.Sprintf("Job '%s': model unreachable with zero API calls — automatic re-run %d/%d in %ds "+
+	s.log.Info(fmt.Sprintf("Job %q: model unreachable with zero API calls — automatic re-run %d/%d in %ds "+
 		"(at %s)", job.Label(), attempt+1, len(UnreachableRetryDelaysSeconds), delay, at))
 	return true
 }

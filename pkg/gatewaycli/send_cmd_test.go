@@ -226,7 +226,7 @@ func TestSendReadsItsBodyFromTheArgumentThenTheFileThenStdin(t *testing.T) {
 	}
 	missing := filepath.Join(h, "absent.txt")
 	_, _, err = readMessageBody(nil, missing, strings.NewReader(""))
-	if !errors.As(err, &exit) || exit.code != 2 || exit.msg != "icebath send: cannot read "+missing+": [Errno 2] No such file or directory: '"+missing+"'" {
+	if !errors.As(err, &exit) || exit.code != 2 || exit.msg != "icebath send: cannot read "+missing+": no such file or directory: "+missing {
 		t.Fatalf("error %v", err)
 	}
 }

@@ -100,9 +100,9 @@ func ReadUser(h string) (map[string]any, error) {
 	return ReadDocument(GetConfigPath(h))
 }
 
-// Document as stored, the Python error for an agent section that is no mapping
+// Document as stored, refused when its agent section is set to something other than a mapping
 func Canonicalize(doc map[string]any) (map[string]any, error) {
-	if _, err := pyDictOf(doc["agent"]); err != nil {
+	if err := sectionMappingError("agent", doc["agent"]); err != nil {
 		return nil, err
 	}
 	return doc, nil

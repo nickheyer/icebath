@@ -101,11 +101,11 @@ func ReadLastKnown(path string) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
-	var data any
-	if err := json.Unmarshal([]byte(text), &data); err != nil {
+	data, err := jsonutil.Decode(text)
+	if err != nil {
 		return map[string]any{}
 	}
-	if m, ok := data.(map[string]any); ok {
+	if m, ok := jsonutil.Plain(data).(map[string]any); ok {
 		return m
 	}
 	return map[string]any{}

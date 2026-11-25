@@ -33,7 +33,7 @@ func TestSlashCommandTextMapsSubcommandsAndKeepsNativeSlashes(t *testing.T) {
 	}
 	_, err := SlashCommandText(ctx, map[string]any{"command": 7})
 	var payloadErr *SlashPayloadError
-	if !errors.As(err, &payloadErr) || err.Error() != "'int' object has no attribute 'lstrip'" {
+	if !errors.As(err, &payloadErr) || err.Error() != "slash command field must be a string, got integer" {
 		t.Fatalf("non string command error = %v", err)
 	}
 }

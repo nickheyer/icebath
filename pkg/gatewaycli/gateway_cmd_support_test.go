@@ -72,7 +72,7 @@ func TestExplainServiceFailureCoversSystemctlFailures(t *testing.T) {
 	failed := &gateway.CalledProcessError{Cmd: []string{"systemctl", "--user", "restart", "icebath-gateway"}, ReturnCode: 1}
 	lines = ExplainServiceFailure(failed)
 	if len(lines) != 4 || lines[0] != "Could not restart the gateway service; systemd reported an error." ||
-		lines[3] != "Details: Command '['systemctl', '--user', 'restart', 'icebath-gateway']' returned non-zero exit status 1." {
+		lines[3] != `Details: command ["systemctl" "--user" "restart" "icebath-gateway"]: exit status 1` {
 		t.Fatalf("lines %q", lines)
 	}
 	if lines := ExplainServiceFailure(&executil.StatusError{Args: []string{"journalctl"}, ExitCode: 2}); lines[0] != "Could not start the gateway service; systemd reported an error." {

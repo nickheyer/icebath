@@ -28,7 +28,7 @@ func WriteSourceStamp(root string, adopted bool) (*jsonutil.Object, error) {
 		updaterecord.ResetVersionInfoCache()
 		return nil, nil
 	}
-	builtAt := pyISONowUTC()
+	builtAt := isoNowUTC()
 	stamp := jsonutil.ObjectOf(
 		"schemaVersion", 2,
 		"commit", *info.Commit,

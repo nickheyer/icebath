@@ -227,7 +227,7 @@ func SteerOwnedSubagent(subagentID string, child any, text string) bool {
 	activeSubagentsMu.Lock()
 	defer activeSubagentsMu.Unlock()
 	record := activeSubagents.get(subagentID)
-	if isNilAgent(child) || record == nil || record["agent"] != child || !pyTruthy(record["accepting_steer"]) {
+	if isNilAgent(child) || record == nil || record["agent"] != child || !anyutil.IsTrue(record["accepting_steer"]) {
 		return false
 	}
 	target, ok := child.(steerable)

@@ -91,7 +91,7 @@ func lr5FakeLlamaServer(args []string) {
 		case "/models":
 			var data []any
 			for _, p := range stagedIn(opts["--models-dir"], true) {
-				id := ModelIDFromStem(pyPathStem(p))
+				id := ModelIDFromStem(pathStem(p))
 				status := "unloaded"
 				if loaded[id] {
 					status = "loaded"

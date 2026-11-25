@@ -290,7 +290,7 @@ func toolResultObserverFields(toolName, result string) (string, string, string) 
 	if decoded, err := jsonutil.Decode(result); err == nil {
 		if data, ok := decoded.(*jsonutil.Object); ok {
 			if e, _ := data.Get("error"); anyutil.IsTrue(e) {
-				return "error", "tool_error", anyutil.String(e)
+				return "error", "tool_error", toolErrorValueText(result, e)
 			}
 		}
 	}
@@ -298,6 +298,55 @@ func toolResultObserverFields(toolName, result string) (string, string, string) 
 		return "error", "tool_error", strings.Trim(strings.TrimSpace(suffix), "[]")
 	}
 	return "ok", "", ""
+}
+
+// Text of a tool result's error value: a string as is, any other value as the JSON text the tool wrote for it
+func toolErrorValueText(result string, e any) string {
+	if s, ok := e.(string); ok {
+		return s
+	}
+	if raw := lastMemberSourceText(result, "error"); raw != "" {
+		return raw
+	}
+	return anyutil.String(e)
+}
+
+// Source text of the value of the last top level member named key of a JSON object, empty when the text is not an object holding it
+func lastMemberSourceText(text, key string) string {
+	pos := jsonSpaceEnd(text, 0)
+	if pos >= len(text) || text[pos] != '{' {
+		return ""
+	}
+	found := ""
+	for pos = jsonSpaceEnd(text, pos+1); pos < len(text) && text[pos] != '}'; {
+		name, n, err := jsonutil.DecodePrefix(text[pos:])
+		if err != nil {
+			return ""
+		}
+		if pos = jsonSpaceEnd(text, pos+n); pos >= len(text) || text[pos] != ':' {
+			return ""
+		}
+		start := jsonSpaceEnd(text, pos+1)
+		_, n, err = jsonutil.DecodePrefix(text[start:])
+		if err != nil {
+			return ""
+		}
+		if name == key {
+			found = text[start : start+n]
+		}
+		if pos = jsonSpaceEnd(text, start+n); pos < len(text) && text[pos] == ',' {
+			pos = jsonSpaceEnd(text, pos+1)
+		}
+	}
+	return found
+}
+
+// Offset of the first byte at or after pos that is not JSON white space
+func jsonSpaceEnd(text string, pos int) int {
+	for pos < len(text) && (text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\n' || text[pos] == '\r') {
+		pos++
+	}
+	return pos
 }
 
 // EmitPostToolCall fires the post tool call observers unless an outer executor owns the event
@@ -591,7 +640,7 @@ func pythonCallArgs(call *Call) map[string]any {
 }
 
 // Handles a bridge call returning the finished result or the underlying call to re dispatch, tool_call resolved from Python valued args
-func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs map[string]any, enabled, disabled []string) (string, string, map[string]any, bool) {
+func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, argsValue map[string]any, enabled, disabled []string) (string, string, map[string]any, bool) {
 	if !IsBridgeTool(call.Name) {
 		return "", "", nil, false
 	}
@@ -607,10 +656,10 @@ func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs 
 	case ToolDescribeName:
 		return DispatchToolDescribe(ctx, env, args, currentDefs, nil, call), "", nil, true
 	}
-	if pyArgs == nil {
-		pyArgs = map[string]any{}
+	if argsValue == nil {
+		argsValue = map[string]any{}
 	}
-	underlying, underlyingArgs, errMsg := ResolveUnderlyingCall(ctx, env, pyArgs, SessionToolNames(currentDefs))
+	underlying, underlyingArgs, errMsg := ResolveUnderlyingCall(ctx, env, argsValue, SessionToolNames(currentDefs))
 	if errMsg != "" || underlying == "" {
 		if errMsg == "" {
 			errMsg = "tool_call could not be resolved"
@@ -620,7 +669,7 @@ func (d *Dispatcher) dispatchBridgeTool(ctx context.Context, call *Call, pyArgs 
 	if !ScopedDeferrableNames(ctx, env, currentDefs)[underlying] {
 		return toolErrorJSON(SessionScopeBlockReason(ctx, env, underlying, enabled, disabled), nil), "", nil, true
 	}
-	if probe := validateDeferredCallArgsAt(ctx, env, underlying, DeferredCallArguments(pyArgs), dispatchValidationFrameDepth); probe != "" {
+	if probe := validateDeferredCallArgsAt(ctx, env, underlying, DeferredCallArguments(argsValue), dispatchValidationFrameDepth); probe != "" {
 		return probe, "", nil, true
 	}
 	return "", underlying, underlyingArgs, true
@@ -663,11 +712,11 @@ func (d *Dispatcher) DispatchWith(ctx context.Context, call *Call, opts Dispatch
 	elapsedMS := func() int { return int(time.Since(start).Milliseconds()) }
 	resolved := &Call{Name: name, Args: args, RawArgs: call.RawArgs, ToolCallID: call.ToolCallID, TaskID: call.TaskID, SessionID: call.SessionID,
 		TurnID: call.TurnID, APIRequestID: call.APIRequestID, UserTask: call.UserTask, Env: env}
-	var pyArgs map[string]any
+	var argsValue map[string]any
 	if name == ToolCallName {
-		pyArgs = coercePythonToolArgs(ctx, d.Registry, env, call.Name, pythonCallArgs(call))
+		argsValue = coercePythonToolArgs(ctx, d.Registry, env, call.Name, pythonCallArgs(call))
 	}
-	if result, underlying, underlyingArgs, bridged := d.dispatchBridgeTool(ctx, resolved, pyArgs, enabled, disabled); bridged {
+	if result, underlying, underlyingArgs, bridged := d.dispatchBridgeTool(ctx, resolved, argsValue, enabled, disabled); bridged {
 		if underlying == "" {
 			return emit(result, "", "", "", elapsedMS())
 		}

@@ -47,13 +47,13 @@ var nodePlat = map[string]string{
 var packagesCurrentTarget = CurrentTarget
 
 // Lookup failure in a package table, classed KeyError for the worker wire
-func missingKey(msg string) error { return &PyError{Class: "KeyError", Message: msg} }
+func missingKey(msg string) error { return &ClassError{Class: "KeyError", Message: msg} }
 
 // Two parts of s split at sep, a ValueError classed failure naming what s is otherwise
 func unpackTwo(s, sep, what string) (string, string, error) {
 	parts := strings.Split(s, sep)
 	if len(parts) != 2 {
-		return "", "", &PyError{Class: "ValueError", Message: fmt.Sprintf("%s %s must be two parts joined by %s", what, s, sep)}
+		return "", "", &ClassError{Class: "ValueError", Message: fmt.Sprintf("%s %s must be two parts joined by %s", what, s, sep)}
 	}
 	return parts[0], parts[1], nil
 }
@@ -352,7 +352,7 @@ func startProcess(spec processSpec) (processResult, error) {
 	result := processResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
 	var exitErr *exec.ExitError
 	if errors.As(waitErr, &exitErr) {
-		result.Code = pyReturnCode(exitErr)
+		result.Code = returnCode(exitErr)
 	} else if waitErr != nil {
 		return processResult{}, waitErr
 	}

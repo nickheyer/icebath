@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -187,7 +188,7 @@ func makeActivityEvent(hookEventName string, sessionID any, f activityFields) (*
 }
 
 // Error of an activity event that fails validation, labelled ValueError for the hook error records
-func activityError(msg string) error { return &gateway.PyError{Kind: "ValueError", Msg: msg} }
+func activityError(msg string) error { return &errorutil.Error{Kind: "ValueError", Msg: msg} }
 
 // Optional field groups in check order with the description of what each must be
 var optionalFieldRules = []struct {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -75,7 +76,7 @@ func pruneLargeResults(t *testing.T, db *SessionDB, sid string, msgs []map[strin
 	for i, m := range msgs {
 		pruned[i] = m
 		if s, ok := m["content"].(string); ok && m["role"] == "tool" && len(s) > 8000 {
-			pruned[i] = pruneCopy(m, "[pruned "+pyStr(m["tool_call_id"])+"]")
+			pruned[i] = pruneCopy(m, "[pruned "+anyutil.String(m["tool_call_id"])+"]")
 			changes = append(changes, PruneChange{pruneCopy(m, nil), pruned[i]})
 		}
 	}
@@ -114,7 +115,7 @@ func TestAssistantToolCallsRewriteIsStaleInTheRowLocalWriter(t *testing.T) {
 	msgs := archiveConversation(t, db, sid, true)
 	var held map[string]any
 	for _, m := range msgs {
-		if m["role"] == "assistant" && pyTruthy(m["tool_calls"]) {
+		if m["role"] == "assistant" && anyutil.IsTrue(m["tool_calls"]) {
 			held = m
 			break
 		}
@@ -385,7 +386,7 @@ func uidFenceSession(t *testing.T) (*SessionDB, []map[string]any, any, int64, in
 		if _, has := m["_row_id"]; has {
 			t.Fatal("held dict carries a row id")
 		}
-		if uid == nil && m["role"] == "assistant" && pyTruthy(m["content"]) {
+		if uid == nil && m["role"] == "assistant" && anyutil.IsTrue(m["content"]) {
 			uid = m[MessageUID]
 		}
 	}
@@ -416,7 +417,7 @@ func TestUIDFenceCASAgainstTheNewestActiveCopy(t *testing.T) {
 	}
 	var original map[string]any
 	for _, m := range resume {
-		if id, _ := pyIntID(m["_row_id"]); m[MessageUID] == uid && id == cloneID {
+		if id, _ := intID(m["_row_id"]); m[MessageUID] == uid && id == cloneID {
 			original = m
 		}
 	}

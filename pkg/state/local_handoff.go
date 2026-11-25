@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -31,11 +32,11 @@ func movedReceipts(ctx context.Context, conn SQLiteConn, targetIDs map[string]bo
 	var out []movedReceipt
 	seen := map[string]int{}
 	for _, row := range rows {
-		target := pyStr(row["target"])
+		target := anyutil.String(row["target"])
 		if targetIDs != nil && !targetIDs[target] {
 			continue
 		}
-		owner := pyStr(row["owner"])
+		owner := anyutil.String(row["owner"])
 		m := movedReceipt{Owner: owner, Target: target, Source: row["source"]}
 		if i, ok := seen[owner]; ok {
 			out[i] = m
@@ -77,8 +78,8 @@ func (d *SessionDB) HandoffHead(ctx context.Context, sessionID string) (string, 
 		target = localPolicyTarget(saved["value"])
 	}
 	start := sessionID
-	if pyTruthy(target) {
-		start = pyStr(target)
+	if anyutil.IsTrue(target) {
+		start = anyutil.String(target)
 	} else {
 		owner = ""
 	}
@@ -100,7 +101,7 @@ func localReceiptObject(raw any) *jsonutil.Object {
 		if !isBytes {
 			return nil
 		}
-		decoded, err := pyJSONDecodeBytes(b)
+		decoded, err := jsonDecodeBytes(b)
 		if err != nil {
 			return nil
 		}
@@ -145,14 +146,14 @@ func localTitleFollowsHead(ctx context.Context, conn SQLiteConn, owner, head str
 	if err != nil {
 		return err
 	}
-	if head == owner || row == nil || !pyTruthy(row["title"]) {
+	if head == owner || row == nil || !anyutil.IsTrue(row["title"]) {
 		return nil
 	}
 	kept, err := connRow(ctx, conn, "SELECT title, title_source FROM sessions WHERE id=?", head)
 	if err != nil {
 		return err
 	}
-	if kept == nil || (pyTruthy(kept["title"]) && titleRankOf(kept["title_source"]) >= titleRankOf(row["title_source"])) {
+	if kept == nil || (anyutil.IsTrue(kept["title"]) && titleRankOf(kept["title_source"]) >= titleRankOf(row["title_source"])) {
 		return nil
 	}
 	if _, err := conn.ExecContext(ctx, "UPDATE sessions SET title=NULL WHERE id IN (?,?)", owner, head); err != nil {

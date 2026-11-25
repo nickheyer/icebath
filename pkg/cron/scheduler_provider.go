@@ -11,12 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 const emfileBackoffMaxSeconds = 15 * 60
@@ -259,7 +257,7 @@ func claimFireForSource(ctx context.Context, source, jobID string, force, manual
 	if err != nil {
 		return nil, err
 	}
-	executionID := config.PyStr(execution["id"])
+	executionID := anyutil.String(execution["id"])
 	var claimed *Job
 	var ok bool
 	var claimErr error
@@ -365,10 +363,10 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 			name = "unnamed"
 		}
 		if job.scheduleOrEmpty().Kind == "once" && overdue > oneshotGraceSeconds {
-			s.log.Warn(fmt.Sprintf("Misfire catch-up: one-shot job %s (%s) was due %s (%s min overdue) — outside the %ds one-shot grace window, not firing.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60), oneshotGraceSeconds))
+			s.log.Warn(fmt.Sprintf("Misfire catch-up: one-shot job %s (%s) was due %s (%.0f min overdue) — outside the %ds one-shot grace window, not firing.", job.ID, name, *job.NextRunAt, overdue/60, oneshotGraceSeconds))
 			continue
 		}
-		s.log.Warn(fmt.Sprintf("Misfire catch-up: job %s (%s) was due %s (%s min overdue) and no external fire arrived — firing locally.", job.ID, name, *job.NextRunAt, pyFormatFixed0(overdue/60)))
+		s.log.Warn(fmt.Sprintf("Misfire catch-up: job %s (%s) was due %s (%.0f min overdue) and no external fire arrived — firing locally.", job.ID, name, *job.NextRunAt, overdue/60))
 		claimed, err := schedulerClaimFire(ctx, p, job.ID, false, false)
 		if err != nil {
 			s.log.Warn(fmt.Sprintf("Misfire catch-up failed for job %s: %v", job.ID, err))
@@ -395,15 +393,6 @@ func runMisfireFire(ctx context.Context, p CronScheduler, claimed *Job, o FireOp
 	}
 }
 
-// Python format of a float with zero decimals, round half to even like %.0f
-func pyFormatFixed0(v float64) string {
-	out, err := templateutil.Format("{v:.0f}", map[string]any{"v": v})
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
-
 // Scheduler cron.provider names, the built in ticker when unset, unknown, unavailable or failing to load
 func resolveCronScheduler(s *Store) CronScheduler {
 	name := strings.TrimSpace(settings.CronProvider.Get(s.settingsCtx()))
@@ -421,7 +410,7 @@ func resolveCronScheduler(s *Store) CronScheduler {
 // Loaded, available provider of the name, else the warning naming why the built in ticker stays
 func (s *Store) loadConfiguredScheduler(name string) (provider CronScheduler, warning string) {
 	failed := func(err any) (CronScheduler, string) {
-		return nil, fmt.Sprintf("Failed to load cron.provider '%s' (%v); using built-in ticker", name, err)
+		return nil, fmt.Sprintf("Failed to load cron.provider %q (%v); using built-in ticker", name, err)
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -433,7 +422,7 @@ func (s *Store) loadConfiguredScheduler(name string) (provider CronScheduler, wa
 		return failed(err)
 	}
 	if provider == nil {
-		return nil, fmt.Sprintf("cron.provider '%s' not found; using built-in ticker", name)
+		return nil, fmt.Sprintf("cron.provider %q not found; using built-in ticker", name)
 	}
 	checked, hosted := provider.(checkedScheduler)
 	available := false
@@ -445,7 +434,7 @@ func (s *Store) loadConfiguredScheduler(name string) (provider CronScheduler, wa
 		available = schedulerIsAvailable(provider)
 	}
 	if !available {
-		return nil, fmt.Sprintf("cron.provider '%s' not available; using built-in ticker", name)
+		return nil, fmt.Sprintf("cron.provider %q not available; using built-in ticker", name)
 	}
 	label := ""
 	if hosted {
@@ -467,7 +456,7 @@ func (s *Store) schedulerForProfileMode(p CronScheduler, multiplexProfiles bool)
 	if _, builtin := p.(*InProcessCronScheduler); !multiplexProfiles || builtin {
 		return p
 	}
-	s.log.Warn(fmt.Sprintf("cron.provider '%s' does not support multiplex_profiles; using built-in ticker", p.Name()))
+	s.log.Warn(fmt.Sprintf("cron.provider %q does not support multiplex_profiles; using built-in ticker", p.Name()))
 	return &InProcessCronScheduler{}
 }
 

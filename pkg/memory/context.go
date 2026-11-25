@@ -3,15 +3,16 @@ package memory
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Python re whitespace class for str patterns, every code point str isspace accepts
-const pySpaceClass = `\t\n\x0b\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
+const spaceClass = `\t\n\x0b\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
 var (
-	recallBulletRe = regexp.MustCompile(`^[-*+][` + pySpaceClass + `]+[^` + pySpaceClass + `]`)
+	recallBulletRe = regexp.MustCompile(`^[-*+][` + spaceClass + `]+[^` + spaceClass + `]`)
 )
 
 // Strips fence tags, injected context blocks and system notes from provider output
@@ -144,7 +145,7 @@ func (s *StreamingContextScrubber) endsAtBlockBoundary(text []rune) bool {
 		}
 	}
 	tail := text[last+1:]
-	return pyStrip(string(tail)) == "" && (last >= 0 || s.atBlockBoundary)
+	return strings.TrimSpace(string(tail)) == "" && (last >= 0 || s.atBlockBoundary)
 }
 
 func (s *StreamingContextScrubber) appendVisible(out *strings.Builder, text []rune) {
@@ -156,20 +157,20 @@ func (s *StreamingContextScrubber) appendVisible(out *strings.Builder, text []ru
 
 // Python lower over a rune slice, which may change length for the dotted capital I
 func lowerRunes(rs []rune) []rune {
-	return []rune(pyLower(string(rs)))
+	return []rune(strings.ToLower(string(rs)))
 }
 
 // Python slice end resolution with a negative index counted from the end
-func pySliceIndex(n, i int) int {
+func sliceIndex(n, i int) int {
 	if i < 0 {
 		i += n
 	}
 	return max(0, min(i, n))
 }
 
-func sliceTo(rs []rune, i int) []rune { return rs[:pySliceIndex(len(rs), i)] }
+func sliceTo(rs []rune, i int) []rune { return rs[:sliceIndex(len(rs), i)] }
 
-func sliceFrom(rs []rune, i int) []rune { return rs[pySliceIndex(len(rs), i):] }
+func sliceFrom(rs []rune, i int) []rune { return rs[sliceIndex(len(rs), i):] }
 
 // First index of needle in hay at or after start, -1 when absent
 func runeFind(hay, needle []rune, start int) int {
@@ -203,7 +204,7 @@ func dropRepeatedRecallLines(text string) string {
 	seen := map[string]bool{}
 	kept := make([]string, 0, len(lines))
 	for index, line := range lines {
-		stripped := pyStrip(line)
+		stripped := strings.TrimSpace(line)
 		if stripped != "" && startsWithSpace(line) {
 			kept = append(kept, line)
 			continue
@@ -217,7 +218,7 @@ func dropRepeatedRecallLines(text string) string {
 			if index+1 < len(lines) {
 				following = lines[index+1]
 			}
-			carriesContinuation := pyStrip(following) != "" && startsWithSpace(following)
+			carriesContinuation := strings.TrimSpace(following) != "" && startsWithSpace(following)
 			if !carriesContinuation {
 				if seen[stripped] {
 					continue
@@ -232,14 +233,14 @@ func dropRepeatedRecallLines(text string) string {
 
 func startsWithSpace(s string) bool {
 	for _, r := range s {
-		return pyIsSpace(r)
+		return unicode.IsSpace(r)
 	}
 	return false
 }
 
 // Prefetched memory wrapped in a fenced block with the system note, empty for blank input
 func BuildMemoryContextBlock(rawContext string) string {
-	if pyStrip(rawContext) == "" {
+	if strings.TrimSpace(rawContext) == "" {
 		return ""
 	}
 	sanitized := SanitizeContext(rawContext)

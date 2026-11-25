@@ -130,7 +130,7 @@ func IsEphemeralScaffolding(msg any) bool {
 		return false
 	}
 	for _, flag := range ephemeralScaffoldingFlags {
-		if pyTruthy(m[flag]) {
+		if anyutil.IsTrue(m[flag]) {
 			return true
 		}
 	}
@@ -154,7 +154,7 @@ func IsMultimodalToolResult(value any) bool {
 // Text view of a multimodal envelope, its summary, else its text parts, else a fixed marker
 func MultimodalEnvelopeSummary(value any) string {
 	m, _ := contentDict(value)
-	if summary, ok := m["text_summary"]; ok && pyTruthy(summary) {
+	if summary, ok := m["text_summary"]; ok && anyutil.IsTrue(summary) {
 		return fmt.Sprint(summary)
 	}
 	var parts []string
@@ -207,7 +207,7 @@ func DurableContent(content any) any {
 // Screenshot marker carrying a caller chosen detail so a replay rebuilds the part the live turn sent
 func imageMarker(part map[string]any) string {
 	detail := part["detail"]
-	if !pyTruthy(detail) {
+	if !anyutil.IsTrue(detail) {
 		detail = nil
 		if url, ok := contentDict(part["image_url"]); ok {
 			detail = url["detail"]
@@ -224,7 +224,7 @@ func contentDict(v any) (map[string]any, bool) {
 	switch d := v.(type) {
 	case map[string]any:
 		return d, true
-	case pyObject:
+	case orderedObject:
 		m := make(map[string]any, len(d))
 		for _, kv := range d {
 			m[kv.Key] = kv.Value
@@ -240,8 +240,25 @@ func contentDict(v any) (map[string]any, bool) {
 }
 
 // Items in key order so pyrepr compares, prints and names a row object as the dict it decodes
-func (o pyObject) PyItems() iter.Seq2[any, any] {
+func (o orderedObject) ItemsValue() iter.Seq2[any, any] {
 	return func(yield func(any, any) bool) {
+		for _, kv := range o {
+			if !yield(kv.Key, kv.Value) {
+				return
+			}
+		}
+	}
+}
+
+// Number of entries of a row object
+func (o orderedObject) Len() int { return len(o) }
+
+// Value of a row object under key, false when the key is absent
+func (o orderedObject) Get(key string) (any, bool) { return o.get(key) }
+
+// Every entry of a row object in key order, so that anyutil.Equal compares it by its entries as it compares the map it decodes to
+func (o orderedObject) All() iter.Seq2[string, any] {
+	return func(yield func(string, any) bool) {
 		for _, kv := range o {
 			if !yield(kv.Key, kv.Value) {
 				return
@@ -442,7 +459,7 @@ func (d *SessionDB) RewindUserTurn(ctx context.Context, sessionID string, userOr
 		}
 		head := durablePrefix[len(durablePrefix)-1]
 		head["_row_id"], head[DBPersistedMarker] = replacementID, true
-		if uid, _ := result.Get("replacement_message_uid"); pyTruthy(uid) {
+		if uid, _ := result.Get("replacement_message_uid"); anyutil.IsTrue(uid) {
 			head[MessageUID] = uid
 		}
 		prefix[len(prefix)-1] = head
@@ -473,7 +490,7 @@ func (d *SessionDB) RewindUserTurn(ctx context.Context, sessionID string, userOr
 func warmMatchesDurable(prefix, durablePrefix []map[string]any) bool {
 	for i, warm := range prefix {
 		durable := durablePrefix[i]
-		if !anyutil.Equal(warm["role"], durable["role"]) || pyTruthy(warm["display_kind"]) != pyTruthy(durable["display_kind"]) {
+		if !anyutil.Equal(warm["role"], durable["role"]) || anyutil.IsTrue(warm["display_kind"]) != anyutil.IsTrue(durable["display_kind"]) {
 			return false
 		}
 		if !anyutil.Equal(rewindComparisonContent(warm), rewindComparisonContent(durable)) {

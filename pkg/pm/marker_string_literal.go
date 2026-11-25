@@ -20,7 +20,7 @@ func appendCodePoint(b *strings.Builder, r rune) {
 }
 
 // Value of a quoted string evaluated as a Python string literal, ok false where Python raises
-func pyStringLiteral(text string) (string, bool) {
+func stringLiteral(text string) (string, bool) {
 	src := []rune(text)
 	if len(src) < 2 || strings.ContainsRune(text, 0) {
 		return "", false

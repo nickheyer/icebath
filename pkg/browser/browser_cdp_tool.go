@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -196,7 +197,7 @@ func paramsGet(params any, key string) any {
 	}
 	o, ok := jsonutil.AsObject(params)
 	if !ok {
-		panic(pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(params))))
+		panic(kindError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(params))))
 	}
 	v, _ := o.Get(key)
 	return v
@@ -426,7 +427,7 @@ func isWebSocketException(err error) bool {
 }
 
 // Transport error mapped to the exception class and text the websockets client raises
-func pyWSError(err error, rawURL string) error {
+func wsError(err error, rawURL string) error {
 	if err == nil {
 		return nil
 	}
@@ -441,10 +442,10 @@ func pyWSError(err error, rawURL string) error {
 			class = "ConnectionClosedOK"
 		}
 		text := wsCloseText(closed.Code, closed.Reason)
-		return pyError(class, "received "+text+"; then sent "+text)
+		return kindError(class, "received "+text+"; then sent "+text)
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, syscall.ECONNRESET) {
-		return pyError("ConnectionClosedError", "no close frame received or sent")
+		return kindError("ConnectionClosedError", "no close frame received or sent")
 	}
 	var netErr net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
@@ -452,7 +453,7 @@ func pyWSError(err error, rawURL string) error {
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return pyError("gaierror", "host name could not be resolved")
+		return kindError("gaierror", "host name could not be resolved")
 	}
 	var opErr *net.OpError
 	var errno syscall.Errno
@@ -461,21 +462,21 @@ func pyWSError(err error, rawURL string) error {
 		if addr, ok := opErr.Addr.(*net.TCPAddr); ok {
 			host, port = addr.IP.String(), addr.Port
 		}
-		return pyError(errorutil.Kind(err), fmt.Sprintf("could not connect to %s port %d: %s", host, port, errno.Error()))
+		return errchain.Reword(err, "could not connect to %s port %d: %s", host, port, errno.Error())
 	}
 	text := err.Error()
 	if rest, ok := strings.CutPrefix(text, "websocket handshake rejected: "); ok {
 		status, _, _ := strings.Cut(rest, " ")
-		return pyError("InvalidStatus", "server rejected WebSocket connection: HTTP "+status)
+		return kindError("InvalidStatus", "server rejected WebSocket connection: HTTP "+status)
 	}
 	if strings.HasPrefix(text, "websocket handshake") {
-		return pyError("InvalidHandshake", text)
+		return kindError("InvalidHandshake", text)
 	}
 	if strings.HasPrefix(text, "websocket url") {
-		return pyError("InvalidURI", rawURL+" isn't a valid URI")
+		return kindError("InvalidURI", rawURL+" isn't a valid URI")
 	}
 	if errorutil.IsSystem(err) {
-		return pyError(errorutil.Kind(err), err.Error())
+		return errchain.Reword(err, "%s", errchain.OSText(err))
 	}
 	return err
 }
@@ -487,7 +488,7 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 	defer cancel()
 	ws, err := DialWS(dialCtx, wsURL, WSOptions{HandshakeTimeout: limit})
 	if err != nil {
-		return nil, pyWSError(err, wsURL)
+		return nil, wsError(err, wsURL)
 	}
 	defer func() { _ = ws.Close(1000, "") }()
 	nextID := int64(1)
@@ -501,7 +502,7 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 			return nil, err
 		}
 		if err := ws.WriteText(ctx, []byte(text)); err != nil {
-			return nil, pyWSError(err, wsURL)
+			return nil, wsError(err, wsURL)
 		}
 		deadline := time.Now().Add(limit)
 		for {
@@ -516,15 +517,15 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 				if readCtx.Err() != nil && ctx.Err() == nil {
 					return nil, timeoutError("")
 				}
-				return nil, pyWSError(err, wsURL)
+				return nil, wsError(err, wsURL)
 			}
 			decoded, err := jsonutil.Decode(raw)
 			if err != nil {
-				return nil, pyError("JSONDecodeError", err.Error())
+				return nil, kindError("JSONDecodeError", err.Error())
 			}
 			msg, ok := decoded.(*jsonutil.Object)
 			if !ok {
-				return nil, pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(decoded)))
+				return nil, kindError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(decoded)))
 			}
 			if id, _ := msg.Get("id"); anyutil.Equal(id, callID) {
 				return msg, nil
@@ -562,7 +563,7 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 		if o, ok := jsonutil.AsObject(result); ok {
 			return o, nil
 		}
-		return nil, pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(result)))
+		return nil, kindError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(result)))
 	}
 	return jsonutil.NewObject(), nil
 }
@@ -585,7 +586,7 @@ func timeoutSeconds(v any) (float64, error) {
 		f, _ := new(big.Float).SetInt(t).Float64()
 		return f, nil
 	}
-	return 0, pyError("TypeError", fmt.Sprintf("can only concatenate %s (not \"int\") to %s", anyutil.Kind(v), anyutil.Kind(v)))
+	return 0, kindError("TypeError", fmt.Sprintf("can only concatenate %s (not \"int\") to %s", anyutil.Kind(v), anyutil.Kind(v)))
 }
 
 // CDP call routed through the supervisor's live session of an out of process frame

@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,7 +89,7 @@ func timezoneEntryFor(ctx context.Context) timezoneEntry {
 		var err error
 		if loc, err = time.LoadLocation(name); err != nil {
 			loc = nil
-			pkgLog().Warn("Invalid timezone '" + name + "': " + err.Error() + ". Falling back to server local time.")
+			pkgLog().Warn("Invalid timezone " + strconv.Quote(name) + ": " + err.Error() + ". Falling back to server local time.")
 		}
 	}
 	tzCacheMu.Lock()
@@ -117,7 +118,7 @@ func ResetTimezoneCache() {
 	clear(tzCache)
 }
 
-// Current time in the configured zone, else in the fixed server local offset astimezone gives
+// Current time in the configured zone, else in server local time so later and earlier instants keep their own offsets
 func TimeNow(ctx context.Context) time.Time {
 	if loc, ok := TimeZone(ctx); ok {
 		return time.Now().In(loc)

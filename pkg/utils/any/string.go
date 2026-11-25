@@ -81,6 +81,14 @@ func String(v any) string {
 	return reflectString(reflect.ValueOf(v), v)
 }
 
+// Text of a value that counts as true, as String gives it, def for one that does not
+func StringOr(v any, def string) string {
+	if !IsTrue(v) {
+		return def
+	}
+	return String(v)
+}
+
 // A string, a string-kind value or []byte in Go double-quoted form, anything else as String gives it
 func Quote(v any) string {
 	switch x := v.(type) {

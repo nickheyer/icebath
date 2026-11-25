@@ -96,7 +96,7 @@ func TestUnknownBackendFailsClosed(t *testing.T) {
 	if _, err := ReadConfigDoc(ctx, filepath.Join(h, "config.yaml")); !errors.As(err, &unavailable) {
 		t.Fatalf("read %v", err)
 	}
-	want := "ICEBATH_CONFIG_BACKEND='bogus' is not a config backend this build provides (expected 'file' or 'remote')."
+	want := `ICEBATH_CONFIG_BACKEND="bogus" is not a config backend this build provides (expected "file" or "remote").`
 	if unavailable.SystemExitCode() != want {
 		t.Fatalf("message %q", unavailable.SystemExitCode())
 	}
@@ -319,7 +319,7 @@ func TestBackendWithoutAFileRefusesFileTooling(t *testing.T) {
 	}
 	err := RequireFileTooling(ctx, "config backup")
 	var unavailable *ConfigBackendUnavailable
-	if !errors.As(err, &unavailable) || err.Error() != "config backup copies the local config.yaml, and the 'remote' config backend has none. It is not available with this backend." {
+	if !errors.As(err, &unavailable) || err.Error() != `config backup copies the local config.yaml, and the "remote" config backend has none. It is not available with this backend.` {
 		t.Fatalf("refusal %v", err)
 	}
 	t.Setenv(BackendEnv, "")
@@ -487,13 +487,13 @@ func TestBackendKindIsTrimmedAndLowered(t *testing.T) {
 	t.Setenv(BackendEnv, " REMOTEΣ\t")
 	var unavailable *ConfigBackendUnavailable
 	_, err := GetConfigBackend(ctx)
-	want := "ICEBATH_CONFIG_BACKEND='remoteσ' is not a config backend this build provides (expected 'file' or 'remote')."
+	want := `ICEBATH_CONFIG_BACKEND="remoteσ" is not a config backend this build provides (expected "file" or "remote").`
 	if !errors.As(err, &unavailable) || unavailable.Message != want {
 		t.Fatalf("unknown selector %v", err)
 	}
 }
 
-func TestRoutingKeepsParentSegmentsLikePathlib(t *testing.T) {
+func TestRoutingKeepsParentSegments(t *testing.T) {
 	backendHome(t)
 	ctx := context.Background()
 	dotted := filepath.FromSlash("base/link/../config.yaml")

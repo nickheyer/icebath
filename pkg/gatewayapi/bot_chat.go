@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -121,10 +122,10 @@ func createPeerBotChat(ctx context.Context, a *APIServerAdapter, body *jsonutil.
 	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session", "session", sessionResponse(row)), http.StatusCreated, nil), nil
 }
 
-// Python text of an optional refusal detail, None for an absent one
+// Text of an optional refusal detail, null for an absent one
 func optionalDetail(value *string) string {
 	if value == nil {
-		return "None"
+		return "null"
 	}
 	return *value
 }
@@ -258,7 +259,7 @@ func awaitLiveDeliveryUntil(ctx context.Context, a *APIServerAdapter, profileHom
 	}
 	deliveryID, ok := record["delivery_id"]
 	if !ok {
-		return nil, &gateway.PyError{Kind: "KeyError", Msg: "'delivery_id'"}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "'delivery_id'"}
 	}
 	settled, err := gateway.AwaitDelivery(ctx, profileHome, anyutil.String(deliveryID), secondsDuration(timeout), shouldStop)
 	if err != nil {

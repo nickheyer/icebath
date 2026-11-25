@@ -8,6 +8,8 @@ import (
 	"os"
 	"syscall"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Errno values flock reports while another process holds the lock
@@ -75,7 +77,7 @@ func acquireDBFlock(lockPath string, handle *os.File, timeoutSeconds, pollSecond
 			pid, _ := record.get("pid")
 			pkgLog().Warn(fmt.Sprintf("%s %s is held by an orphaned file descriptor (recorded holder pid %s is dead — a "+
 				"forked child inherited the lock fd); breaking the stale lock and retaking it on a "+
-				"fresh file.", description, lockPath, pyStr(pid)))
+				"fresh file.", description, lockPath, anyutil.String(pid)))
 			if err := os.Remove(lockPath); err != nil {
 				pkgLog().Warn(fmt.Sprintf("Could not break stale %s %s (%s) — deferring.", description, lockPath, err))
 				return lockTimedOut, handle, nil

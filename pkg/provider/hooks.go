@@ -247,7 +247,7 @@ func SanitizeHookPayload(value any) any {
 	encoded := ""
 	for _, caps := range []HookJSONCaps{DefaultHookJSONCaps, {MaxDepth: 8, MaxString: 1000, MaxSequence: 50}} {
 		payload := HookJSONable(value, caps)
-		text, err := jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
+		text, err := jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
 			s, _ := truncateRunes(anyutil.String(payload), limit)
 			return s

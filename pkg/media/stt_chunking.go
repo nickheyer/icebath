@@ -212,13 +212,13 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 		if err != nil {
 			return nil, err
 		}
-		if p := result["provider"]; pyTruthy(p) {
+		if p := result["provider"]; anyutil.IsTrue(p) {
 			provider = anyutil.String(p)
 		}
-		if pyTruthy(result["no_speech"]) {
+		if anyutil.IsTrue(result["no_speech"]) {
 			continue
 		}
-		if !pyTruthy(result["success"]) {
+		if !anyutil.IsTrue(result["success"]) {
 			detail, ok := result["error"]
 			if !ok {
 				detail = "unknown error"
@@ -226,7 +226,7 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 			return sttError(fmt.Sprintf("Segment %d/%d failed: %s", index+1, len(parts), anyutil.String(detail)), "provider", provider), nil
 		}
 		text := ""
-		if t := result["transcript"]; pyTruthy(t) {
+		if t := result["transcript"]; anyutil.IsTrue(t) {
 			text = strings.TrimSpace(anyutil.String(t))
 		}
 		if text != "" && !isWhisperHallucination(text) {

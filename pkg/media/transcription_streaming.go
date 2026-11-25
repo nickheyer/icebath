@@ -362,7 +362,7 @@ func (w *openAIRealtimeWire) end(ws *wsConn) error {
 // Python str of an event field, empty when missing, None or falsy
 func eventText(event *jsonutil.Object, key string) string {
 	v, _ := event.Get(key)
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)
@@ -382,7 +382,7 @@ func (w *openAIRealtimeWire) event(event *jsonutil.Object) (map[string]any, erro
 		return map[string]any{"success": true, "transcript": strings.TrimSpace(transcript), "provider": "openai"}, nil
 	case kind == "error":
 		message := "provider error"
-		if errObj, ok := event.Get("error"); ok && pyTruthy(errObj) {
+		if errObj, ok := event.Get("error"); ok && anyutil.IsTrue(errObj) {
 			o, isObj := errObj.(*jsonutil.Object)
 			if !isObj {
 				return nil, fmt.Errorf("OpenAI realtime error is %s where a mapping was expected", errchain.Kind(errObj))
@@ -464,10 +464,10 @@ func (w *xaiStreamingWire) event(event *jsonutil.Object) (map[string]any, error)
 		speechFinal, _ := event.Get("speech_final")
 		isFinal, _ := event.Get("is_final")
 		switch {
-		case pyTruthy(speechFinal):
+		case anyutil.IsTrue(speechFinal):
 			w.utterances = append(w.utterances, text)
 			w.chunks, w.interim = nil, ""
-		case pyTruthy(isFinal):
+		case anyutil.IsTrue(isFinal):
 			w.chunks = append(w.chunks, text)
 			w.interim = ""
 		default:
@@ -532,7 +532,7 @@ func (w *elevenLabsRealtimeWire) text() string {
 func (w *elevenLabsRealtimeWire) event(event *jsonutil.Object) (map[string]any, error) {
 	raw, _ := event.Get("message_type")
 	kind := ""
-	if pyTruthy(raw) {
+	if anyutil.IsTrue(raw) {
 		kind = anyutil.String(raw)
 	}
 	switch {

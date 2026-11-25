@@ -533,12 +533,12 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 	}
 	args := `{"url": "https://user:pw@Example.com:8443/p?q=1#f", "path": "/tmp/x", "content": "raw payload", "urls": ["http://a.test/x?k=v", 3]}`
 	summary := summarizeToolArguments(env, args)
-	text, _ := jsonutil.Encode(summary, jsonutil.Spaced(), jsonutil.ASCII())
+	text, _ := jsonutil.Encode(summary)
 	want := `{"argument_keys":["content","path","url","urls"],"targets":{"url":"https://example.com:8443/p","path":"/tmp/x","urls":["http://a.test/x"]}}`
 	if text != want {
 		t.Fatalf("argument summary %s", text)
 	}
-	if text, _ := jsonutil.Encode(summarizeToolArguments(env, "not json"), jsonutil.Spaced(), jsonutil.ASCII()); text != `{"argument_keys":[],"targets":{}}` {
+	if text, _ := jsonutil.Encode(summarizeToolArguments(env, "not json")); text != `{"argument_keys":[],"targets":{}}` {
 		t.Fatalf("malformed arguments %s", text)
 	}
 	result := map[string]any{"messages": []any{
@@ -546,7 +546,7 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 		map[string]any{"role": "tool", "tool_call_id": "c1", "content": "line one\nline two"},
 		map[string]any{"role": "tool", "tool_call_id": "zz", "content": []any{map[string]any{"text": "Error: wrapped"}}},
 	}}
-	tail, _ := jsonutil.Encode(extractOutputTail(env, result, 8, 600), jsonutil.Spaced(), jsonutil.ASCII())
+	tail, _ := jsonutil.Encode(extractOutputTail(env, result, 8, 600))
 	if tail != `[{"tool":"terminal","preview":"line one\nline two","is_error":false},{"tool":"tool","preview":"Error: wrapped","is_error":true}]` {
 		t.Fatalf("output tail %s", tail)
 	}
@@ -555,7 +555,7 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 	}
 	trace := []any{jsonutil.ObjectOf("tool", "terminal", "status", "ERROR", "args_bytes", 12.7, "result_bytes", true, "input_summary", summary)}
 	history, err := subagentStopToolCallHistory(env, trace)
-	row, _ := jsonutil.Encode(history, jsonutil.Spaced(), jsonutil.ASCII())
+	row, _ := jsonutil.Encode(history)
 	if err != nil || row != `[{"tool_name":"terminal","tool_input":{"argument_keys":["content","path","url","urls"],"targets":{"url":"https://example.com:8443/p","path":"/tmp/x","urls":["http://a.test/x"]}},"input_bytes":12,"output_bytes":0,"status":"error"}]` {
 		t.Fatalf("stop history %s %v", row, err)
 	}

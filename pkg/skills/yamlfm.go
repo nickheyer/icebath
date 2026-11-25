@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -222,26 +223,8 @@ func fmStringList(v any) []string {
 	return nil
 }
 
-// Reports whether a frontmatter value is truthy the way Python would judge it
-func fmTruthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case int64:
-		return t != 0
-	case float64:
-		return t != 0
-	case []any:
-		return len(t) > 0
-	case map[string]any:
-		return len(t) > 0
-	}
-	return true
-}
+// Whether a frontmatter, config or decoded value counts as set: false for null, false, zero of any number kind and empty text, lists and mappings
+func fmTruthy(v any) bool { return anyutil.IsTrue(v) }
 
 // Frontmatter metadata keys read in order, icebath first then the spelling skills written before the rename carry
 var MetadataKeys = []string{"icebath", "hermes"}

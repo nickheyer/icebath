@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var openAISizes = map[string]string{"landscape": "1536x1024", "square": "1024x1024", "portrait": "1024x1536"}
@@ -236,7 +237,7 @@ func cacheURLBestEffort(ctx context.Context, env *tools.Env, rawURL string, o ma
 
 // Records a token billed image call against the ambient session as task image_generation
 func recordTokenUsage(ctx context.Context, usage any, model, providerName, baseURL string) {
-	if !pyTruthy(usage) {
+	if !anyutil.IsTrue(usage) {
 		return
 	}
 	provider.RecordAuxUsage(ctx, map[string]any{"model": model, "usage": usage}, "image_generation", providerName, baseURL)

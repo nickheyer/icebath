@@ -185,7 +185,7 @@ func (p *profileIO) die(msg string, code int, toErr bool) error {
 
 // Prints "Error" with the Python text of err and exits 1
 func (p *profileIO) dieErr(err error) error {
-	return p.die("Error: "+pyErrText(err), 1, false)
+	return p.die("Error: "+errText(err), 1, false)
 }
 
 // Yes or no prompt where end of input counts as no
@@ -200,7 +200,7 @@ func (p *profileIO) confirm(prompt string) bool {
 }
 
 // Python str of an exception, OS errors in their errno form
-func pyErrText(err error) string {
+func errText(err error) string {
 	switch err.(type) {
 	case *fs.PathError, *os.LinkError, *os.SyscallError, syscall.Errno, *exec.Error:
 		return err.Error()
@@ -673,7 +673,7 @@ func profileDescribe(p *profileIO, a ProfileArgs) error {
 	if name != "" && a.Text == "" && !a.Auto {
 		profileDir, err := describeTargetDir(p.ctx, name)
 		if err != nil {
-			return p.die("Error: "+pyErrText(err), 1, true)
+			return p.die("Error: "+errText(err), 1, true)
 		}
 		if !isDirPath(profileDir) {
 			return p.die(fmt.Sprintf("Error: profile '%s' not found", name), 1, true)
@@ -697,7 +697,7 @@ func profileDescribe(p *profileIO, a ProfileArgs) error {
 			err = profiles.WriteProfileMeta(p.ctx, dir, profiles.MetaUpdate{Description: &a.Text, DescriptionAuto: &auto})
 		}
 		if err != nil {
-			return p.die("Error: "+pyErrText(err), 1, true)
+			return p.die("Error: "+errText(err), 1, true)
 		}
 		p.println("Description updated for '%s'.", name)
 		return nil
@@ -721,7 +721,7 @@ func profileDescribe(p *profileIO, a ProfileArgs) error {
 		}
 		if outcome.OK {
 			okCount++
-			description := "None"
+			description := "(no description)"
 			if outcome.Description != nil {
 				description = *outcome.Description
 			}

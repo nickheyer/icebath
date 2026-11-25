@@ -12,7 +12,7 @@ import (
 )
 
 // Python float of a number, bool or numeric string, a ValueError or TypeError otherwise
-func pyFloat(v any) (float64, error) {
+func floatNumber(v any) (float64, error) {
 	switch n := v.(type) {
 	case float64:
 		return n, nil

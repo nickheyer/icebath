@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
 	"os"
 	"runtime"
 	"slices"
@@ -56,33 +55,10 @@ func readTUIActiveSessionFile(path string) string {
 		return ""
 	}
 	value := obj.Value("session_id")
-	if !pyTruthyValue(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
 	return strings.TrimSpace(anyutil.String(value))
-}
-
-// Python truthiness of a decoded JSON value
-func pyTruthyValue(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case *big.Int:
-		return x.Sign() != 0
-	case []any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x.Len() > 0
-	}
-	return true
 }
 
 // Stripped non empty parts of comma separated items

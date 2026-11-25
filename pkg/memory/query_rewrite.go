@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
@@ -84,13 +85,13 @@ func init() { plugins.MemoryQueryRewrite = RewriteMemoryQuery }
 
 // Stripped user message, its middle left out past the input bound
 func boundedUserMessage(message string) string {
-	text := pyStrip(message)
+	text := strings.TrimSpace(message)
 	runes := []rune(text)
 	if len(runes) <= queryRewriteMaxInputChars {
 		return text
 	}
-	head := strings.TrimRightFunc(string(runes[:queryRewriteHeadChars]), pyIsSpace)
-	tail := strings.TrimLeftFunc(string(runes[len(runes)-queryRewriteTailChars:]), pyIsSpace)
+	head := strings.TrimRightFunc(string(runes[:queryRewriteHeadChars]), unicode.IsSpace)
+	tail := strings.TrimLeftFunc(string(runes[len(runes)-queryRewriteTailChars:]), unicode.IsSpace)
 	return head + "\n\n[... middle omitted ...]\n\n" + tail
 }
 
@@ -122,15 +123,15 @@ func queryRewriteResponseText(response any) string {
 
 // One clean retrieval question out of a model answer, empty for an answer that is none: empty or too long, no question, not about the user's memory, carrying instructions or more than one sentence
 func normalizeQueryRewrite(text string) string {
-	candidate := pyStrip(text)
+	candidate := strings.TrimSpace(text)
 	if strings.HasPrefix(candidate, "```") && strings.HasSuffix(candidate, "```") {
 		candidate = queryRewriteSub(queryRewriteFenceOpenRe, "", candidate)
 		candidate = queryRewriteSub(queryRewriteFenceCloseRe, "", candidate)
 	}
-	candidate = queryRewriteSub(queryRewritePrefixRe, "", pyStrip(candidate))
-	candidate = pyStrip(strings.Trim(pyStrip(candidate), "\"'`"))
+	candidate = queryRewriteSub(queryRewritePrefixRe, "", strings.TrimSpace(candidate))
+	candidate = strings.TrimSpace(strings.Trim(strings.TrimSpace(candidate), "\"'`"))
 	candidate = queryRewriteSub(queryRewriteControlCharsRe, " ", candidate)
-	candidate = pyStrip(queryRewriteSub(queryRewriteSpaceRe, " ", candidate))
+	candidate = strings.TrimSpace(queryRewriteSub(queryRewriteSpaceRe, " ", candidate))
 	if candidate == "" || utf8.RuneCountInString(candidate) > queryRewriteMaxQueryChars ||
 		!queryRewriteSearch(queryRewriteQuestionRe, candidate) || !queryRewriteSearch(queryRewriteGroundingRe, candidate) ||
 		queryRewriteSearch(queryRewriteLeakRe, candidate) || queryRewriteSearch(queryRewriteSentenceRe, strings.TrimRight(candidate, "?")) {

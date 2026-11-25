@@ -522,7 +522,7 @@ func observeGroupMessage(ctx context.Context, adapter *YuanbaoAdapter, source *g
 	}
 	err := func() error {
 		if source == nil {
-			return &pyErr{"AttributeError", "the inbound message has no source"}
+			return &kindErr{"AttributeError", "the inbound message has no source"}
 		}
 		sessionEntry, err := store.GetOrCreateSession(ctx, source, false, true)
 		if err != nil {

@@ -417,8 +417,10 @@ func extractUsage(response any) PluginLlmUsage {
 			if n, ok := anyutil.Int(responseField(raw, name)); ok && n != 0 {
 				return int(n)
 			}
-			if f, ok := responseField(raw, name).(float64); ok && int(f) != 0 {
-				return int(f)
+			if f, ok := responseField(raw, name).(float64); ok {
+				if n, err := anyutil.ToInt(f); err == nil && n != 0 {
+					return int(n)
+				}
 			}
 			if s, ok := responseField(raw, name).(string); ok {
 				if n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil && n != 0 {
@@ -785,7 +787,7 @@ func (l *PluginLlm) HostAttr(_ context.Context, name string) (any, bool, bool, e
 	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin LLM has no %s", name)}
 }
 
-var pluginLlmOptionParams = []pyParam{kwo("provider", nil), kwo("model", nil), kwo("temperature", nil), kwo("max_tokens", nil),
+var pluginLlmOptionParams = []paramValue{kwo("provider", nil), kwo("model", nil), kwo("temperature", nil), kwo("max_tokens", nil),
 	kwo("timeout", nil), kwo("agent_id", nil), kwo("profile", nil), kwo("purpose", nil), kwo("task", nil)}
 
 // Runs a completion method for a hosted plugin with the Python keyword binding
@@ -795,9 +797,9 @@ func (l *PluginLlm) HostCall(ctx context.Context, method string, args []any, kwa
 		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("plugin LLM has no %s", method)}
 	}
 	structured := strings.HasSuffix(method, "_structured")
-	params := append([]pyParam{req("messages")}, pluginLlmOptionParams...)
+	params := append([]paramValue{req("messages")}, pluginLlmOptionParams...)
 	if structured {
-		params = append([]pyParam{kwReq("instructions"), kwReq("input"), kwo("json_schema", nil), kwo("json_mode", false),
+		params = append([]paramValue{kwReq("instructions"), kwReq("input"), kwo("json_schema", nil), kwo("json_mode", false),
 			kwo("schema_name", nil), kwo("system_prompt", nil)}, pluginLlmOptionParams...)
 	}
 	a, _, err := bindPyOn("PluginLlm", method, params, args, kwargs)

@@ -346,7 +346,7 @@ func ParseToolArguments(raw string) (map[string]any, string) {
 			return m, ""
 		}
 	}
-	return map[string]any{}, dumpsUnicode(pyObject("error", "Invalid tool arguments", "message", "Tool arguments must be a valid JSON object; tool was not executed."))
+	return map[string]any{}, spacedJSON(jsonutil.ObjectOf("error", "Invalid tool arguments", "message", "Tool arguments must be a valid JSON object; tool was not executed."))
 }
 
 // ToolCallRef is the identity of one call as every hook and result message sees it
@@ -418,7 +418,7 @@ func (e *Executor) interruptForKeyboard() {
 // Synthesizes the cancelled result for a keyboard interrupt mid tool and emits its terminal hook
 func (e *Executor) emitCancelled(ctx context.Context, ref *ToolCallRef, start time.Time) string {
 	message := "Tool execution cancelled. " + InterruptSkipWording(e.Host.ToolInterruptReason())
-	result := dumpsUnicode(pyObject("error", message, "status", "cancelled"))
+	result := spacedJSON(jsonutil.ObjectOf("error", message, "status", "cancelled"))
 	e.emitPost(context.WithoutCancel(ctx), ref, result, int(time.Since(start).Milliseconds()), "cancelled", "keyboard_interrupt", message, nil)
 	return result
 }
@@ -470,7 +470,7 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 				return def
 			}
 			scopeBlock = strings.TrimSpace(fmt.Sprintf("%s Parameters schema: %s. %s", anyutil.String(get("error", "")),
-				dumpsUnicode(get("parameters", jsonutil.NewObject())), anyutil.String(get("hint", ""))))
+				spacedJSON(get("parameters", jsonutil.NewObject())), anyutil.String(get("hint", ""))))
 		}
 	}
 	return name, args, scopeBlock
@@ -685,7 +685,7 @@ func touchActivitySafely(host ExecutorHost, label string) (ok bool) {
 func (e *Executor) blockedToolResult(ctx context.Context, ref *ToolCallRef, blockBody *jsonutil.Object, blockErrorType string, decision *ToolGuardrailDecision) string {
 	var result, errorType, errorMessage string
 	if blockBody != nil {
-		result = dumpsUnicode(blockBody)
+		result = spacedJSON(blockBody)
 		errorType = blockErrorType
 		if msg, ok := blockBody.Value("message").(string); ok && msg != "" {
 			errorMessage = msg
@@ -862,7 +862,7 @@ func (e *Executor) beginToolExecution(ref *ToolCallRef, displayIndex int) {
 			}
 			host.Print(host.WrapVerbose("Args: ", indented))
 		} else {
-			host.Print(fmt.Sprintf("  \U0001F4DE %s: %s(%s) - %s", prefix, ref.Name, argKeysRepr(orderedArgsObject(ref.RawArgs, ref.Args)), previewText(dumpsUnicode(ordered), host.LogPrefixChars())))
+			host.Print(fmt.Sprintf("  \U0001F4DE %s: %s(%s) - %s", prefix, ref.Name, argKeysRepr(orderedArgsObject(ref.RawArgs, ref.Args)), previewText(spacedJSON(ordered), host.LogPrefixChars())))
 		}
 	}
 	host.SetCurrentTool(ref.Name)
@@ -1902,7 +1902,7 @@ func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]
 		var block string
 		block, args = e.preToolBlock(ctx, &ToolCallRef{Name: name, Args: args, TaskID: taskID, CallID: toolCallID, Trace: trace})
 		if block != "" {
-			result := dumpsUnicode(map[string]any{"error": block})
+			result := spacedJSON(map[string]any{"error": block})
 			e.emitPost(ctx, &ToolCallRef{Name: name, Args: args, TaskID: taskID, CallID: toolCallID}, result, 0, "blocked", "plugin_block", block, trace)
 			return result, nil
 		}
@@ -2272,17 +2272,17 @@ func dumpsASCII(v any) string {
 	return out
 }
 
-// Arguments as an ordered object, keys in the model's raw order then any added keys sorted
+// Arguments as an ordered object, keys in the model's raw order then any added keys sorted, a value the args still hold as the raw text decodes taken exactly as the model wrote it
 func orderedArgsObject(raw string, args map[string]any) *jsonutil.Object {
 	o := jsonutil.NewObject()
-	if parsed, err := jsonutil.Decode(raw); err == nil {
+	if parsed, err := jsonutil.DecodeWith(raw, jsonutil.BigInts()); err == nil {
 		if obj, ok := parsed.(*jsonutil.Object); ok {
 			for _, k := range obj.Keys() {
 				v, present := args[k]
 				if !present {
 					continue
 				}
-				if rv, _ := obj.Get(k); anyutil.Equal(rv, v) {
+				if rv, _ := obj.Get(k); anyutil.Equal(rv, v) || anyutil.Equal(handlerShape(rv), v) {
 					v = rv
 				}
 				o.Set(k, v)
@@ -2297,12 +2297,7 @@ func orderedArgsObject(raw string, args map[string]any) *jsonutil.Object {
 	return o
 }
 
-// Python repr of the argument key list
+// Argument key list as a JSON array laid out like the argument preview beside it
 func argKeysRepr(o *jsonutil.Object) string {
-	keys := o.Keys()
-	items := make([]any, len(keys))
-	for i, k := range keys {
-		items[i] = k
-	}
-	return anyutil.Quote(items)
+	return spacedJSON(o.Keys())
 }

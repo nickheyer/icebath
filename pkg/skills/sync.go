@@ -873,13 +873,13 @@ func hubLockInstalledEntries(data any) ([]*jsonutil.Object, error) {
 	}
 	obj, ok := data.(*jsonutil.Object)
 	if !ok {
-		if pyTruthyJSON(data) {
+		if truthyJSON(data) {
 			return nil, fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(data))
 		}
 		return nil, nil
 	}
 	installed, _ := obj.Get("installed")
-	if installed == nil || !pyTruthyJSON(installed) {
+	if installed == nil || !truthyJSON(installed) {
 		return nil, nil
 	}
 	table, ok := installed.(*jsonutil.Object)
@@ -896,7 +896,7 @@ func hubLockInstalledEntries(data any) ([]*jsonutil.Object, error) {
 }
 
 // Python truthiness of a decoded JSON value
-func pyTruthyJSON(v any) bool {
+func truthyJSON(v any) bool {
 	switch x := v.(type) {
 	case nil:
 		return false
@@ -926,7 +926,7 @@ func (s *Scope) readHubInstallPaths() (map[string]bool, error) {
 	}
 	out := map[string]bool{}
 	for _, e := range entries {
-		if v, ok := e.Get("install_path"); ok && pyTruthyJSON(v) {
+		if v, ok := e.Get("install_path"); ok && truthyJSON(v) {
 			out[strings.Trim(anyutil.String(v), "/")] = true
 		}
 	}

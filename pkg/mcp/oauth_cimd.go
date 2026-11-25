@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Published Client ID Metadata Document, on an origin that never redirects as CIMD fetchers require
@@ -56,7 +58,7 @@ func isValidClientMetadataURL(raw string) bool {
 	if raw == "" {
 		return false
 	}
-	u, err := pyURLParse(raw)
+	u, err := urlParse(raw)
 	if err != nil {
 		return false
 	}
@@ -68,7 +70,7 @@ func isValidCIMDURL(raw string) bool {
 	if !isValidClientMetadataURL(raw) {
 		return false
 	}
-	u, err := pyURLParse(raw)
+	u, err := urlParse(raw)
 	if err != nil {
 		return false
 	}
@@ -120,25 +122,25 @@ func serverDeclinedCIMD(storage *TokenStorage) bool {
 // CIMD client_id URL and pinned callback port, false when the flow must use dynamic registration
 func maybeUseCIMD(ctx context.Context, cfg map[string]any, storage *TokenStorage) (string, int, bool) {
 	urlValue := cfg["client_metadata_url"]
-	if !pyTruthy(urlValue) {
+	if !anyutil.IsTrue(urlValue) {
 		urlValue = cimdClientMetadataURL
 	}
 	url, isStr := urlValue.(string)
 	authMethod := cfg["token_endpoint_auth_method"]
-	if !pyTruthy(authMethod) {
+	if !anyutil.IsTrue(authMethod) {
 		authMethod = "none"
 	}
 	redirectHost := cfg["redirect_host"]
-	if !pyTruthy(redirectHost) {
+	if !anyutil.IsTrue(redirectHost) {
 		redirectHost = "127.0.0.1"
 	}
 	hostStr, hostIsStr := redirectHost.(string)
 	ineligible := cfg["cimd"] == false ||
 		!isStr || !isValidCIMDURL(url) ||
-		pyTruthy(cfg["client_id"]) || pyTruthy(cfg["client_secret"]) ||
-		pyTruthy(cfg["client_name"]) || authMethod != "none" ||
+		anyutil.IsTrue(cfg["client_id"]) || anyutil.IsTrue(cfg["client_secret"]) ||
+		anyutil.IsTrue(cfg["client_name"]) || authMethod != "none" ||
 		clientOAuthFlowFrom(ctx) != nil ||
-		pyTruthy(cfg["redirect_uri"]) || pyTruthy(cfg["redirect_port"]) ||
+		anyutil.IsTrue(cfg["redirect_uri"]) || anyutil.IsTrue(cfg["redirect_port"]) ||
 		!hostIsStr || !cimdRedirectHosts[hostStr] ||
 		cachedClientInfo(storage) != nil ||
 		(storage != nil && storage.CIMDRejected()) ||

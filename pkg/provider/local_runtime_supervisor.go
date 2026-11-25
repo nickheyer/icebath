@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Touch generation prompt and the token its answer must carry, the readiness proof of a router child
@@ -109,7 +110,7 @@ func lrStableAPIKey() (string, error) {
 		if !utf8.Valid(raw) {
 			return "", fmt.Errorf("the api key file %s is not valid UTF-8", keyPath)
 		}
-		existing := pyStripSpace(string(raw))
+		existing := strings.TrimSpace(string(raw))
 		if utf8.RuneCountInString(existing) >= 16 {
 			return existing, nil
 		}
@@ -144,7 +145,7 @@ func lrDirectIOArgs(executable string) ([]string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		argv := pyRepr([]any{executable, "--help"})
+		argv := anyutil.Quote([]any{executable, "--help"})
 		var exitErr *exec.ExitError
 		switch {
 		case ctx.Err() != nil:
@@ -502,7 +503,7 @@ func lrWriteJSON(b *strings.Builder, v any) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			pyJSONWriteString(b, x[i].(string))
+			jsonWriteString(b, x[i].(string))
 			b.WriteString(": ")
 			lrWriteJSON(b, x[i+1])
 		}
@@ -517,13 +518,13 @@ func lrWriteJSON(b *strings.Builder, v any) {
 		}
 		b.WriteByte(']')
 	case string:
-		pyJSONWriteString(b, x)
+		jsonWriteString(b, x)
 	case int:
 		b.WriteString(strconv.Itoa(x))
 	case int64:
 		b.WriteString(strconv.FormatInt(x, 10))
 	case float64:
-		b.WriteString(pyFloatRepr(x))
+		b.WriteString(floatRepr(x))
 	case bool:
 		b.WriteString(strconv.FormatBool(x))
 	case nil:
@@ -563,7 +564,7 @@ func (s *LlamaServerSupervisor) spawn(ctx context.Context) error {
 	for i, a := range cmdArgs {
 		argv[i] = a
 	}
-	if _, err := logHandle.WriteString("\n# spawn: " + pyRepr(argv) + "\n"); err != nil {
+	if _, err := logHandle.WriteString("\n# spawn: " + anyutil.Quote(argv) + "\n"); err != nil {
 		logHandle.Close()
 		return err
 	}
@@ -708,7 +709,7 @@ func lrIndentedJSON(obj lrObject) string {
 			b.WriteString(",")
 		}
 		b.WriteString("\n  ")
-		pyJSONWriteString(&b, obj[i].(string))
+		jsonWriteString(&b, obj[i].(string))
 		b.WriteString(": ")
 		lrWriteJSON(&b, obj[i+1])
 	}
@@ -781,7 +782,7 @@ func (s *LlamaServerSupervisor) watch(ctx context.Context) {
 		restarts := s.restarts
 		s.mu.Unlock()
 		backoff := lrRestartBackoff[min(restarts, len(lrRestartBackoff)-1)]
-		pkgLog().Warn(fmt.Sprintf("llama-server exited rc=%d; restart #%d in %ss", rc, restarts+1, pyFloatOrInt(backoff.Seconds())))
+		pkgLog().Warn(fmt.Sprintf("llama-server exited rc=%d; restart #%d in %ss", rc, restarts+1, floatOrInt(backoff.Seconds())))
 		if supBackoffWait(s, backoff) {
 			return
 		}
@@ -799,11 +800,11 @@ func (s *LlamaServerSupervisor) watch(ctx context.Context) {
 }
 
 // Seconds as Python prints an int or float backoff
-func pyFloatOrInt(secs float64) string {
+func floatOrInt(secs float64) string {
 	if secs == float64(int64(secs)) {
 		return strconv.FormatInt(int64(secs), 10)
 	}
-	return pyFloatRepr(secs)
+	return floatRepr(secs)
 }
 
 // Replaces a crashed router, true when a stop arrived first and the watchdog must end
@@ -972,7 +973,7 @@ func (s *LlamaServerSupervisor) Models(timeout time.Duration) (RouterModels, err
 		}
 		id, ok := rawID.(string)
 		if !ok {
-			return out, fmt.Errorf("model id %s is not a string", pyRepr(rawID))
+			return out, fmt.Errorf("model id %s is not a string", anyutil.Quote(rawID))
 		}
 		var status any = "unknown"
 		if st, has := m["status"]; has {
@@ -1123,12 +1124,12 @@ func (s *LlamaServerSupervisor) touch(modelID string, timeout time.Duration) (bo
 	if err != nil {
 		return false, err
 	}
-	return strings.Contains(pyLower(content+" "+reasoning), TouchExpect), nil
+	return strings.Contains(strings.ToLower(content+" "+reasoning), TouchExpect), nil
 }
 
 // Python value or "" for a falsy value, a TypeError for a truthy non string
 func lrTextOrEmpty(v any) (string, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	s, ok := v.(string)
@@ -1138,16 +1139,11 @@ func lrTextOrEmpty(v any) (string, error) {
 	return s, nil
 }
 
-// Python str.lower, which keeps the combining dot of a dotted capital I
-func pyLower(s string) string {
-	return strings.ToLower(strings.ReplaceAll(s, "İ", "i̇"))
-}
-
-// Missing model error whose text is the quoted key like a Python KeyError
+// Missing model error naming the model the router does not list
 type lrModelMissingError struct{ ModelID string }
 
 func (e *lrModelMissingError) Error() string {
-	return pyStringRepr("model " + e.ModelID + " not present in models dir")
+	return "model " + e.ModelID + " not present in models dir"
 }
 
 // Loads a listed model when needed and proves readiness with a touch generation
@@ -1225,14 +1221,14 @@ func (s *LlamaServerSupervisor) probeIdleErr(modelID *string) (bool, error) {
 		if !utf8.Valid(raw) {
 			return false, errors.New("the metrics body is not valid UTF-8")
 		}
-		for _, line := range pySplitLines(string(raw)) {
+		for _, line := range splitLines(string(raw)) {
 			if !strings.HasPrefix(line, "llamacpp:requests_processing") {
 				continue
 			}
-			fields := strings.FieldsFunc(line, pyIsSpace)
+			fields := strings.FieldsFunc(line, unicode.IsSpace)
 			value, ok := lrPyFloat(fields[len(fields)-1])
 			if !ok {
-				return false, fmt.Errorf("metric value %s is not a number", pyStringRepr(fields[len(fields)-1]))
+				return false, fmt.Errorf("metric value %s is not a number", strconv.Quote(fields[len(fields)-1]))
 			}
 			if value != 0 {
 				return false, nil
@@ -1251,7 +1247,7 @@ func lrAnySlotProcessing(slots any) (bool, error) {
 			if !ok {
 				return false, fmt.Errorf("a slot entry is %s, expected a mapping", errchain.Kind(slot))
 			}
-			if pyTruthy(m["is_processing"]) {
+			if anyutil.IsTrue(m["is_processing"]) {
 				return true, nil
 			}
 		}
@@ -1274,7 +1270,7 @@ func lrAnySlotProcessing(slots any) (bool, error) {
 // Python float of a numeric string, underscores between digits and any script's decimal digits allowed
 func lrPyFloat(text string) (float64, bool) {
 	var b strings.Builder
-	for _, r := range pyStripSpace(text) {
+	for _, r := range strings.TrimSpace(text) {
 		if r > 0x7f && unicode.IsDigit(r) {
 			b.WriteRune(rune('0' + lrDigitValue(r)))
 			continue

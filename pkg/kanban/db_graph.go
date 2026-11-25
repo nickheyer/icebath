@@ -93,7 +93,7 @@ func isDict(d any) bool {
 }
 
 // Python int value of an integer or bool, false for any other type
-func pyIndex(v any) (*big.Int, bool) {
+func elementAt(v any) (*big.Int, bool) {
 	switch n := v.(type) {
 	case bool:
 		if n {
@@ -135,7 +135,7 @@ func validateChildrenGraph(children []any) error {
 			return &ValueError{fmt.Sprintf("child[%d].parents must be a list", idx)}
 		}
 		for _, p := range list {
-			i, ok := pyIndex(p)
+			i, ok := elementAt(p)
 			if !ok || i.Sign() < 0 || i.Cmp(big.NewInt(int64(n))) >= 0 {
 				return &ValueError{fmt.Sprintf("child[%d].parents[%s] is not a valid index into children", idx, anyutil.String(p))}
 			}
@@ -148,7 +148,7 @@ func validateChildrenGraph(children []any) error {
 	adj := make([][]int, n)
 	for i, c := range children {
 		for _, p := range childParents(c).([]any) {
-			pi, _ := pyIndex(p)
+			pi, _ := elementAt(p)
 			adj[pi.Int64()] = append(adj[pi.Int64()], i)
 			inDeg[i]++
 		}
@@ -212,7 +212,7 @@ func DecomposeTriageTask(ctx context.Context, conn state.SQLiteConn, taskID stri
 		}
 		for idx, child := range children {
 			for _, p := range childParents(child).([]any) {
-				pi, _ := pyIndex(p)
+				pi, _ := elementAt(p)
 				parentID, childID := ids[pi.Int64()], ids[idx]
 				if err := linkRow(ctx, conn, parentID, childID); err != nil {
 					return err

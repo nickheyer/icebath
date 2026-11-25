@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Home skeleton that cannot be used, distinct from an invalid YAML document
@@ -32,13 +33,12 @@ var (
 	homeEnsured   = map[string]bool{}
 )
 
-// Symlinked components of a path from the filesystem root down to the path itself
+// Symlinked components of a path from the filesystem root down to the path itself, every prefix the system walks through checked, the one before a dot-dot included
 func directoryLinks(path string) []string {
-	path = filepath.Clean(path)
 	var chain []string
-	for p := path; ; p = filepath.Dir(p) {
+	for p := pathutil.CleanKeepDotDot(path); ; p = pathutil.DirKeepDotDot(p) {
 		chain = append([]string{p}, chain...)
-		if filepath.Dir(p) == p {
+		if pathutil.DirKeepDotDot(p) == p {
 			break
 		}
 	}
@@ -53,10 +53,9 @@ func directoryLinks(path string) []string {
 
 // Links at or below the home, the ones that hand its permissions to the operator
 func operatorOwnedLinks(links []string, h string) []string {
-	h = filepath.Clean(h)
 	var out []string
 	for _, link := range links {
-		if link == h || strings.HasPrefix(link, h+string(filepath.Separator)) {
+		if _, under := pathutil.RelativeToKeepDotDot(link, h); under {
 			out = append(out, link)
 		}
 	}
@@ -64,7 +63,7 @@ func operatorOwnedLinks(links []string, h string) []string {
 }
 
 // Reason of an errno failure followed by its path
-func pyOSErrorText(err error) string {
+func osErrorText(err error) string {
 	var pe *fs.PathError
 	var errno syscall.Errno
 	if errors.As(err, &pe) && errors.As(pe.Err, &errno) {
@@ -78,7 +77,7 @@ func ensureDirectory(ctx context.Context, path string, create, secure bool, h st
 	links := directoryLinks(path)
 	details := make([]string, 0, len(links))
 	fail := func(err error) error {
-		msg := fmt.Sprintf("Cannot initialize Icebath directory %s: %s. ", path, pyOSErrorText(err))
+		msg := fmt.Sprintf("Cannot initialize Icebath directory %s: %s. ", path, osErrorText(err))
 		if len(details) > 0 {
 			msg += "Directory links: " + strings.Join(details, "; ") + ". "
 		}
@@ -126,18 +125,18 @@ func InitializeHome(ctx context.Context, h string, subdirs []string, ensured map
 			required = []string{"cron", "sessions", "logs", "memories"}
 		}
 		for _, sub := range required {
-			if err := ensureDirectory(ctx, filepath.Join(h, filepath.FromSlash(sub)), !managed, !managed, h); err != nil {
+			if err := ensureDirectory(ctx, pathutil.JoinKeepDotDot(h, filepath.FromSlash(sub)), !managed, !managed, h); err != nil {
 				return err
 			}
 		}
 		if managed {
-			if err := ensureDirectory(ctx, filepath.Join(h, "logs", "curator"), true, false, h); err != nil {
+			if err := ensureDirectory(ctx, pathutil.JoinKeepDotDot(h, "logs", "curator"), true, false, h); err != nil {
 				return err
 			}
 		}
 		if err := ensureDefaultSoulMD(ctx, h); err != nil {
 			return &HomeInitializationError{Message: fmt.Sprintf("Cannot initialize Icebath home %s: %s. "+
-				"Check storage availability and access permissions.", h, pyOSErrorText(err)), Err: err}
+				"Check storage availability and access permissions.", h, osErrorText(err)), Err: err}
 		}
 		return nil
 	}()

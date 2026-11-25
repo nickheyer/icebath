@@ -393,7 +393,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *s
 		if err != nil {
 			continue
 		}
-		msgType, err := pyJSONGet(decoded, "type")
+		msgType, err := jsonGet(decoded, "type")
 		if err != nil {
 			return err
 		}
@@ -401,10 +401,10 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *s
 		switch msgType {
 		case "audio.delta":
 			b64, _ := envelope.Get("delta")
-			if !pyTruthy(b64) {
+			if !anyutil.IsTrue(b64) {
 				continue
 			}
-			pcm, err := pyB64DecodeValue(b64)
+			pcm, err := b64DecodeValue(b64)
 			if err != nil {
 				return err
 			}
@@ -420,10 +420,10 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *s
 			return nil
 		case "error":
 			detail, _ := envelope.Get("message")
-			if !pyTruthy(detail) {
+			if !anyutil.IsTrue(detail) {
 				detail, _ = envelope.Get("error")
 			}
-			if !pyTruthy(detail) {
+			if !anyutil.IsTrue(detail) {
 				detail = envelope
 			}
 			return &ttsRuntimeError{msg: "xAI streaming TTS error: " + anyutil.String(detail)}

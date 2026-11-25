@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Base reference of the objects register_browser_provider receives from a plugin in the host
@@ -35,7 +35,7 @@ func (h hostedBrowserProvider) Name() string {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyStr(v)
+	return anyutil.String(v)
 }
 
 // Label the plugin declares, its name when it declares none
@@ -68,7 +68,7 @@ func (h hostedBrowserProvider) IsAvailable(env *tools.Env) bool {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Session metadata the plugin answers for a task, anything but a mapping an error
@@ -91,7 +91,7 @@ func (h hostedBrowserProvider) CloseSession(env *tools.Env, sessionID string) bo
 		pkgLog().Warn(fmt.Sprintf("browser provider %s close_session failed: %v", h.Name(), err))
 		return false
 	}
-	return config.PyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Best effort teardown at exit, a failing call logged and never raised

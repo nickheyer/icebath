@@ -337,8 +337,14 @@ func streamingChoicelessChunk(chunk map[string]any, finishReason string) (map[st
 		if anyutil.IsTrue(errMsg) {
 			msg = anyutil.String(errMsg)
 		}
+		var raw []string
+		for _, part := range []any{errType, errMsg} {
+			if anyutil.IsTrue(part) {
+				raw = append(raw, anyutil.String(part))
+			}
+		}
 		return nil, finishReason, &ProviderStreamError{StatusCode: status, Body: providerErrorBody(map[string]any{"code": code, "message": msg}, status),
-			RawText: fmt.Sprintf("%s: %s", anyutil.String(errType), anyutil.String(errMsg))}
+			RawText: strings.Join(raw, ": ")}
 	}
 	switch last := chunk["lastOne"].(type) {
 	case bool:

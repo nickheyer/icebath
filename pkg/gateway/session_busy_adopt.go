@@ -11,7 +11,7 @@ import (
 func adoptsOwnerAgent(ctx context.Context, a *SessionAuthority, ref SessionRef) (bool, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return false, &pyKeyError{ref.SessionID}
+		return false, &keyError{ref.SessionID}
 	}
 	adopts, err := ownerAgentPolicy(ctx, a, ref, live)
 	var refusal *state.RuntimeStoreError

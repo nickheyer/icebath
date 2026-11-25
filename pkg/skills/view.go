@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -136,7 +137,7 @@ func (s *Scope) toolSkillDisabled(platform string, names ...string) bool {
 	}
 	for _, n := range names {
 		if hasPlatform {
-			in, err := pyContains(platformDisabled, n)
+			in, err := contains(platformDisabled, n)
 			if err != nil {
 				return false
 			}
@@ -144,7 +145,7 @@ func (s *Scope) toolSkillDisabled(platform string, names ...string) bool {
 				return true
 			}
 		}
-		in, err := pyContains(disabled, n)
+		in, err := contains(disabled, n)
 		if err != nil {
 			return false
 		}
@@ -156,7 +157,7 @@ func (s *Scope) toolSkillDisabled(platform string, names ...string) bool {
 }
 
 // Python in operator of a string over a config value, an error where Python raises TypeError
-func pyContains(container any, n string) (bool, error) {
+func contains(container any, n string) (bool, error) {
 	switch c := container.(type) {
 	case string:
 		return strings.Contains(c, n), nil
@@ -773,8 +774,8 @@ func (s *Scope) ensureDeclaredDeps(ctx context.Context, fm map[string]any) strin
 	}
 	var failed, all []string
 	for _, d := range list {
-		all = append(all, pyStrValue(d))
-		dep := strings.TrimSpace(pyStrValue(d))
+		all = append(all, anyutil.String(d))
+		dep := strings.TrimSpace(anyutil.String(d))
 		if dep == "" {
 			continue
 		}
@@ -786,20 +787,6 @@ func (s *Scope) ensureDeclaredDeps(ctx context.Context, fm map[string]any) strin
 		return ""
 	}
 	return "Tool dependencies could not be installed — " + strings.Join(failed, "; ") + ". Run `icebath pm install " + strings.Join(all, " ") + "` and reload."
-}
-
-// Python str of a YAML scalar, True and False capitalized and None spelled out
-func pyStrValue(v any) string {
-	switch t := v.(type) {
-	case nil:
-		return "None"
-	case bool:
-		if t {
-			return "True"
-		}
-		return "False"
-	}
-	return fmString(v)
 }
 
 // Reason of a file failure followed by the path it concerns
@@ -889,27 +876,27 @@ func getRequiredEnvironmentVariables(fm map[string]any) []map[string]any {
 	for _, item := range asDictList(setup["collect_secrets"]) {
 		if m, ok := item.(map[string]any); ok {
 			var url any
-			if u := strings.TrimSpace(pyStrOr(firstTruthy(m["provider_url"], m["url"]))); u != "" {
+			if u := strings.TrimSpace(anyutil.String(firstTruthy(m["provider_url"], m["url"]))); u != "" {
 				url = u
 			}
 			entries = append(entries, map[string]any{"name": m["env_var"], "prompt": m["prompt"], "url": url})
 		}
 	}
 	for _, v := range legacy {
-		if strings.TrimSpace(pyStrValue(v)) != "" {
-			entries = append(entries, map[string]any{"name": pyStrValue(v)})
+		if strings.TrimSpace(anyutil.String(v)) != "" {
+			entries = append(entries, map[string]any{"name": anyutil.String(v)})
 		}
 	}
 	seen := map[string]bool{}
 	out := []map[string]any{}
 	for _, e := range entries {
-		envName := strings.TrimSpace(pyStrOr(firstTruthy(e["name"], e["env_var"])))
+		envName := strings.TrimSpace(anyutil.String(firstTruthy(e["name"], e["env_var"])))
 		if envName == "" || seen[envName] || !envVarNameRe.MatchString(envName) {
 			continue
 		}
 		prompt := "Enter value for " + envName
 		if p := firstTruthy(e["prompt"]); p != nil {
-			prompt = pyStrValue(p)
+			prompt = anyutil.String(p)
 		}
 		norm := map[string]any{"name": envName, "prompt": strings.TrimSpace(prompt)}
 		helpRaw := firstTruthy(e["help"], e["provider_url"], e["url"])
@@ -929,14 +916,6 @@ func getRequiredEnvironmentVariables(fm map[string]any) []map[string]any {
 		out = append(out, norm)
 	}
 	return out
-}
-
-// Python str of a value with None mapping to an empty string
-func pyStrOr(v any) string {
-	if v == nil {
-		return ""
-	}
-	return pyStrValue(v)
 }
 
 // Prompts for missing secrets through the bound capture callback, reporting what stays missing
@@ -1277,7 +1256,7 @@ func (s *Scope) servePluginSkill(ctx context.Context, host PluginSkillHost, skil
 	}
 	return jsonResult(jsonutil.ObjectOf(
 		"success", true, "name", qualified, "content", banner+rendered,
-		"description", truncateDescription(pyStrValue(fmGet(fm, "description", ""))),
+		"description", truncateDescription(anyutil.String(fmGet(fm, "description", ""))),
 		"linked_files", linked, "readiness_status", ReadinessAvailable, "skill_dir", filepath.Dir(skillMD),
 	))
 }
@@ -1325,7 +1304,7 @@ func dedupSkillView(taskID, name, filePath string, payload map[string]any, resul
 	}
 	resolved := name
 	if v := payload["name"]; fmTruthy(v) {
-		resolved = pyStrValue(v)
+		resolved = anyutil.String(v)
 	}
 	key := resolved + "\x00" + filePath
 	sum := sha256.Sum256([]byte(result))

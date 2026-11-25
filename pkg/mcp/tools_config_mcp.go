@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Checklist indexes enabled by an include whitelist, an exclude list, or everything without a filter
@@ -74,7 +75,7 @@ func applyMCPChecklist(ui TerminalUI, serverName string, toolsCfg map[string]any
 		}
 		if len(shadowSet) > 0 {
 			printWarning(ui, fmt.Sprintf("  %s: %d re-enabled tool(s) still match glob exclude pattern(s) %s and stay excluded — edit mcp_servers.%s.tools.exclude in config.yaml to enable them.",
-				serverName, len(shadowSet), pyStrListRepr(globs), serverName))
+				serverName, len(shadowSet), anyutil.String(globs), serverName))
 		}
 		sortedLiterals := make([]string, 0, len(literals))
 		for s := range literals {
@@ -161,13 +162,13 @@ func configureMCPToolsInteractive(ctx context.Context, env *tools.Env, ui Termin
 		if list, ok := existing["include"].([]any); ok {
 			include = map[string]bool{}
 			for _, p := range list {
-				include[pyStr(p)] = true
+				include[anyutil.String(p)] = true
 			}
 		}
 		if list, _ := existing["exclude"].([]any); len(list) > 0 {
 			exclude = map[string]bool{}
 			for _, p := range list {
-				exclude[pyStr(p)] = true
+				exclude[anyutil.String(p)] = true
 			}
 		}
 		labels := make([]string, len(found))
@@ -263,7 +264,7 @@ func applyMCPChange(cfg config.Tree, targets []string, action string) map[string
 		if action != "disable" {
 			kept := []any{}
 			for _, t := range exclude {
-				if pyStr(t) != toolName {
+				if anyutil.String(t) != toolName {
 					kept = append(kept, t)
 				}
 			}
@@ -271,7 +272,7 @@ func applyMCPChange(cfg config.Tree, targets []string, action string) map[string
 		} else {
 			present := false
 			for _, t := range exclude {
-				present = present || pyStr(t) == toolName
+				present = present || anyutil.String(t) == toolName
 			}
 			if !present {
 				exclude = append(exclude, toolName)
@@ -346,7 +347,7 @@ func printToolsList(ctx context.Context, ui TerminalUI, enabled map[string]bool,
 func joinAny(items []any) string {
 	parts := make([]string, len(items))
 	for i, v := range items {
-		parts[i] = pyStr(v)
+		parts[i] = anyutil.String(v)
 	}
 	return strings.Join(parts, ", ")
 }

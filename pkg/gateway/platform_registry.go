@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
@@ -112,7 +113,7 @@ func (e *PlatformEntry) SetKeywords(kwargs map[string]any) error {
 	for _, k := range keys {
 		i, ok := fields[k]
 		if !ok {
-			return &PyError{"TypeError", fmt.Sprintf("a platform entry has no field %s", k)}
+			return &errorutil.Error{"TypeError", fmt.Sprintf("a platform entry has no field %s", k)}
 		}
 		f := v.Field(i)
 		val := kwargs[k]
@@ -129,7 +130,7 @@ func (e *PlatformEntry) SetKeywords(kwargs map[string]any) error {
 			for j := range out {
 				s, ok := rv.Index(j).Interface().(string)
 				if !ok {
-					return &PyError{"TypeError", fmt.Sprintf("PlatformEntry %s items must be strings", k)}
+					return &errorutil.Error{"TypeError", fmt.Sprintf("PlatformEntry %s items must be strings", k)}
 				}
 				out[j] = s
 			}
@@ -144,7 +145,7 @@ func (e *PlatformEntry) SetKeywords(kwargs map[string]any) error {
 			fn := val.(func(*PlatformConfig) bool)
 			f.Set(reflect.ValueOf(func(_ context.Context, cfg *PlatformConfig) (bool, error) { return fn(cfg), nil }))
 		default:
-			return &PyError{"TypeError", fmt.Sprintf("PlatformEntry %s takes %s, not %T", k, f.Type(), val)}
+			return &errorutil.Error{"TypeError", fmt.Sprintf("PlatformEntry %s takes %s, not %T", k, f.Type(), val)}
 		}
 	}
 	return nil
@@ -826,7 +827,7 @@ func (s platformRegistryService) NewEntry(spec plugins.PlatformSpec) (any, error
 	}
 	if containsHosted(kwargs) {
 		if HostedEntryKeywords == nil {
-			return nil, &PyError{"RuntimeError", linktier.Missing("the "+spec.Name+" platform a plugin registers", linktier.Plugins)}
+			return nil, &errorutil.Error{"RuntimeError", linktier.Missing("the "+spec.Name+" platform a plugin registers", linktier.Plugins)}
 		}
 		converted, err := HostedEntryKeywords(spec.Name, kwargs)
 		if err != nil {

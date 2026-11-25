@@ -80,7 +80,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 			field.Set(reflect.Zero(field.Type()))
 			return nil
 		}
-		list, err := pyIterStrings(value)
+		list, err := iterStrings(value)
 		if err != nil {
 			return err
 		}
@@ -114,7 +114,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 		field.SetInt(int64(n))
 		return nil
 	}
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("%s() argument '%s' has no wire form", op, name)}
+	return &ClassError{Class: "TypeError", Message: fmt.Sprintf("%s() argument '%s' has no wire form", op, name)}
 }
 
 // Number of a decoded JSON value
@@ -189,7 +189,7 @@ func (k *kwargs) list(name string) ([]string, error) {
 	if !ok || v == nil {
 		return nil, nil
 	}
-	return pyIterStrings(v)
+	return iterStrings(v)
 }
 
 // Plugin input keyword decoded from its wire form, nil when absent or null
@@ -200,7 +200,7 @@ func (k *kwargs) plugins() (PluginInput, error) {
 	}
 	encoded, isMap := raw.(map[string]any)
 	if !isMap {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugins option must be a mapping, got %s", errchain.Kind(raw))}
+		return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the plugins option must be a mapping, got %s", errchain.Kind(raw))}
 	}
 	return DecodePluginInput(encoded)
 }

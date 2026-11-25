@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
@@ -89,7 +90,7 @@ func CmdSetJournalMode(ctx context.Context, ns map[string]any, w io.Writer) (int
 	if err != nil {
 		return 1, err
 	}
-	if pyTruthy(ns["force"]) {
+	if anyutil.IsTrue(ns["force"]) {
 		found := holders[:0:0]
 		for _, holder := range holders {
 			if holder.PID > 0 {

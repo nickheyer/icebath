@@ -11,12 +11,13 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Higher package collaborators the top level wiring installs so pkg/plugins never imports them
@@ -326,26 +327,6 @@ type PluginToolset struct {
 	Key, Label, Description string
 }
 
-// Python str.title over ASCII and Unicode letters
-func pyTitle(s string) string {
-	var b strings.Builder
-	prevLetter := false
-	for _, r := range s {
-		if unicode.IsLetter(r) {
-			if prevLetter {
-				b.WriteRune(unicode.ToLower(r))
-			} else {
-				b.WriteRune(unicode.ToTitle(r))
-			}
-			prevLetter = true
-			continue
-		}
-		prevLetter = false
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
 // Plugin toolsets as key, label and description rows for the tools picker
 func GetPluginToolsets(ctx context.Context) []PluginToolset {
 	m := GetPluginManager(ctx)
@@ -388,7 +369,7 @@ func GetPluginToolsets(ctx context.Context) []PluginToolset {
 			sort.Strings(names)
 			desc = strings.Join(names, ", ")
 		}
-		out = append(out, PluginToolset{Key: key, Label: "🔌 " + pyTitle(strings.ReplaceAll(key, "_", " ")), Description: desc})
+		out = append(out, PluginToolset{Key: key, Label: "🔌 " + textutil.Title(strings.ReplaceAll(key, "_", " ")), Description: desc})
 	}
 	return out
 }
@@ -511,15 +492,15 @@ func GetPreVerifyContinueMessage(ctx context.Context, in PreVerifyInput) string 
 			continue
 		}
 		actionVal := result["action"]
-		if !config.PyTruthy(actionVal) {
+		if !anyutil.IsTrue(actionVal) {
 			actionVal = result["decision"]
 		}
 		action := ""
-		if config.PyTruthy(actionVal) {
+		if anyutil.IsTrue(actionVal) {
 			action = strings.ToLower(strings.TrimSpace(fmt.Sprint(actionVal)))
 		}
 		messageVal := result["message"]
-		if !config.PyTruthy(messageVal) {
+		if !anyutil.IsTrue(messageVal) {
 			messageVal = result["reason"]
 		}
 		message, _ := messageVal.(string)
@@ -586,7 +567,7 @@ func GetPluginErrorClassification(ctx context.Context, in ErrorClassificationInp
 	winner := map[string]any{"reason": picks[0].reason}
 	for _, key := range []string{"retryable", "should_compress", "should_rotate_credential", "should_fallback"} {
 		if v, ok := result[key]; ok {
-			winner[key] = config.PyTruthy(v)
+			winner[key] = anyutil.IsTrue(v)
 		}
 	}
 	if msg, ok := result["message"].(string); ok && strings.TrimSpace(msg) != "" {

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/settings"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Longest wait every platform can express, DWORD milliseconds on Windows and one year elsewhere
@@ -339,24 +337,6 @@ func approvalTimeoutNoticeKwargs(env *Env) map[string]any {
 	return map[string]any{"waited": formatApprovalWindow(seconds), "suggested": seconds * 3}
 }
 
-// Python str() of a config scalar
-func pyStr(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case bool:
-		if x {
-			return "True"
-		}
-		return "False"
-	case nil:
-		return "None"
-	case map[string]any, []any, *jsonutil.Object:
-		return anyutil.String(pythonDisplayValue(v))
-	}
-	return fmt.Sprint(v)
-}
-
 // Approve or deny for risky commands in scheduled jobs
 func getCronApprovalMode(env *Env) string { return settings.ApprovalsCronMode.Get(approvalCtx(env)) }
 
@@ -381,12 +361,4 @@ func getApprovalTransportConfig(env *Env) (string, string) {
 		return selected, "builtin"
 	}
 	return selected, ""
-}
-
-// Python str of a value treating None and empty as the empty string
-func pyStrOrEmpty(v any) string {
-	if v == nil || v == "" {
-		return ""
-	}
-	return pyStr(v)
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Keyword arguments of search_messages, NewSearchMessagesOptions giving the Python defaults
@@ -48,12 +49,8 @@ func (s *sessionSearch) SearchMessages(ctx context.Context, query string, o Sear
 		if err == nil {
 			count = fmt.Sprint(len(rows))
 		}
-		head := query
-		if runes := []rune(query); len(runes) > 200 {
-			head = string(runes[:200])
-		}
 		pkgLog().Info(fmt.Sprintf("slow session search: path=%s elapsed=%.0fms rows=%s query=%s",
-			s.describeSearchPath(query), elapsedMS, count, strconv.Quote(head)))
+			s.describeSearchPath(query), elapsedMS, count, strconv.Quote(textutil.First(query, 200))))
 	}
 	return rows, err
 }

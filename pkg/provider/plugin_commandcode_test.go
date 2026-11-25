@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -68,7 +69,7 @@ func reasoningLabel(r *Reasoning) string {
 	if r == nil {
 		return "nil"
 	}
-	return pyRepr(reasoningConfigMap(r))
+	return anyutil.Quote(reasoningConfigMap(r))
 }
 
 func TestCommandCodePluginProfilesMatchUpstreamRegistration(t *testing.T) {

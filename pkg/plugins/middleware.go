@@ -6,6 +6,7 @@ import (
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -136,9 +137,9 @@ func (m *Manager) ApplyToolRequestMiddleware(goctx context.Context, toolName str
 	ctx := copyKwargs(context)
 	sessionID := ""
 	if jsonTruthy(ctx["session_id"]) {
-		sessionID = config.PyStr(ctx["session_id"])
+		sessionID = anyutil.String(ctx["session_id"])
 	}
-	skipRelay := config.PyTruthy(ctx["skip_relay"])
+	skipRelay := anyutil.IsTrue(ctx["skip_relay"])
 	delete(ctx, "skip_relay")
 	if sessionID != "" && !skipRelay {
 		currentArgs, _ := current.(map[string]any)

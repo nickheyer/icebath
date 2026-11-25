@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestServerReconnectAdoptsChangedURLFromConfig(t *testing.T) {
@@ -23,7 +24,7 @@ func TestServerReconnectAdoptsChangedURLFromConfig(t *testing.T) {
 	var seen [][3]string
 	s.transportRunner = func(ctx context.Context, r *Rendered) (string, error) {
 		s.mu.Lock()
-		seen = append(seen, [3]string{pyStr(r.Config["url"]), pyStr(s.config["url"]), s.authType})
+		seen = append(seen, [3]string{anyutil.String(r.Config["url"]), anyutil.String(s.config["url"]), s.authType})
 		n := len(seen)
 		s.mu.Unlock()
 		fakeConnected(s, true)

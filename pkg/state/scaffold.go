@@ -88,7 +88,7 @@ func cutAfter(message, marker, stopMarker string, last bool) (string, bool) {
 		return "", false
 	}
 	span, _, _ := strings.Cut(message[idx+len(marker):], stopMarker)
-	span = pyStrip(span)
+	span = strings.TrimSpace(span)
 	return span, span != ""
 }
 
@@ -125,7 +125,7 @@ func describeAutoLoadedSkillTurn(content string) (string, bool) {
 	if footerEnd == -1 {
 		return bare()
 	}
-	tail := pyLstrip(content[footerEnd+len(skillDirNoteEnd):])
+	tail := lstrip(content[footerEnd+len(skillDirNoteEnd):])
 	for {
 		blockEnd, found := "", false
 		for _, pair := range trailingBlockEnds {
@@ -138,15 +138,15 @@ func describeAutoLoadedSkillTurn(content string) (string, bool) {
 			break
 		}
 		if cut := strings.Index(tail, blockEnd); cut >= 0 {
-			tail = pyLstrip(tail[cut+len(blockEnd):])
+			tail = lstrip(tail[cut+len(blockEnd):])
 		} else {
 			tail = ""
 		}
 	}
-	if pyStrip(tail) == "" {
+	if strings.TrimSpace(tail) == "" {
 		return bare()
 	}
-	joined := strings.Join(pySplitWhitespace(tail), " ")
+	joined := strings.Join(splitWhitespace(tail), " ")
 	return joined, joined != ""
 }
 
@@ -160,7 +160,7 @@ func DescribeSkillInvocation(content, separator string) (string, bool) {
 	}
 	name := ""
 	if m := skillNameRe.FindStringSubmatch(content); m != nil {
-		name = pyStrip(m[1])
+		name = strings.TrimSpace(m[1])
 	}
 	label := name
 	if !strings.HasPrefix(name, "/") {
@@ -168,7 +168,7 @@ func DescribeSkillInvocation(content, separator string) (string, bool) {
 	}
 	if instruction, ok := ExtractUserInstructionFromSkillMessage(content); ok && instruction != "" {
 		head, _, _ := strings.Cut(instruction, SkillExcerptJoint)
-		if instruction = strings.Join(pySplitWhitespace(head), " "); instruction != "" {
+		if instruction = strings.Join(splitWhitespace(head), " "); instruction != "" {
 			if name != "" {
 				return label + separator + instruction, true
 			}

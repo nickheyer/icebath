@@ -41,11 +41,11 @@ func cleanRelParts(p string) []string {
 
 // Lowercased extra provider label of a raw index entry
 func entryProvider(entry any) string {
-	extra := pyGet(entry, "extra", nil)
+	extra := lookup(entry, "extra", nil)
 	if !anyutil.IsTrue(extra) {
 		extra = jsonutil.NewObject()
 	}
-	return strings.ToLower(anyutil.String(pyGet(extra, "provider", "")))
+	return strings.ToLower(anyutil.String(lookup(extra, "provider", "")))
 }
 
 const (
@@ -305,12 +305,12 @@ func (o *OptionalSkillSource) listRemoteSkillDirs(ctx context.Context) *jsonutil
 		}
 		dirs := jsonutil.NewObject()
 		prefix, suffix := optionalSkillsPrefix+"/", "/SKILL.md"
-		for _, item := range pyIterate(tree.Entries) {
-			pv := pyGet(item, "path", "")
-			if pyGet(item, "type", nil) != "blob" {
+		for _, item := range iterate(tree.Entries) {
+			pv := lookup(item, "path", "")
+			if lookup(item, "type", nil) != "blob" {
 				continue
 			}
-			p := pyStrOf(pv)
+			p := hubText(pv)
 			if strings.HasPrefix(p, prefix) && strings.HasSuffix(p, suffix) && len(p) >= len(prefix)+len(suffix) {
 				rel := p[len(prefix) : len(p)-len(suffix)]
 				if rel != "" && !isExcludedSkillPath(rel+suffix, "") {
@@ -441,7 +441,7 @@ func (o *OptionalSkillSource) scanAll() []SkillMeta {
 		}
 		desc := ""
 		if v, has := fm["description"]; has {
-			desc = pyHead(v, 200)
+			desc = headValue(v, 200)
 		}
 		results = append(results, o.meta(parent, name, desc, tags))
 	}
@@ -474,7 +474,7 @@ func (x *IndexSource) ensureLoaded(ctx context.Context) any {
 }
 
 func (x *IndexSource) skills(ctx context.Context) []any {
-	return pyIterate(pyGet(x.ensureLoaded(ctx), "skills", []any{}))
+	return iterate(lookup(x.ensureLoaded(ctx), "skills", []any{}))
 }
 
 func (x *IndexSource) getGitHub() *GitHubSource {
@@ -486,17 +486,17 @@ func (x *IndexSource) getGitHub() *GitHubSource {
 
 // Whether the index loaded with at least one skill
 func (x *IndexSource) IsAvailable() bool {
-	return anyutil.IsTrue(pyGet(x.ensureLoaded(context.Background()), "skills", []any{}))
+	return anyutil.IsTrue(lookup(x.ensureLoaded(context.Background()), "skills", []any{}))
 }
 
 // Trust level recorded for the identifier in the index, community otherwise
 func (x *IndexSource) TrustLevelFor(identifier string) string {
 	for _, s := range x.skills(context.Background()) {
-		if pyGet(s, "identifier", nil) == identifier {
+		if lookup(s, "identifier", nil) == identifier {
 			if !anyutil.IsTrue(s) {
 				break
 			}
-			return anyutil.String(pyGet(s, "trust_level", "community"))
+			return fieldText(s, "trust_level", "community")
 		}
 	}
 	return "community"
@@ -525,7 +525,7 @@ func (x *IndexSource) SearchProvider(ctx context.Context, query string, limit in
 	}
 	if strings.TrimSpace(query) == "" {
 		out = []SkillMeta{}
-		for _, s := range pyHeadAny(skills, limit) {
+		for _, s := range headAny(skills, limit) {
 			out = append(out, indexToMeta(s))
 		}
 		return out, nil
@@ -537,14 +537,14 @@ func (x *IndexSource) SearchProvider(ctx context.Context, query string, limit in
 	}
 	var hits []scored
 	for i, s := range skills {
-		name := strings.ToLower(anyutil.String(pyGet(s, "name", "")))
+		name := strings.ToLower(anyutil.String(lookup(s, "name", "")))
 		provider := entryProvider(s)
 		var tags []string
-		for _, t := range pyIterate(pyGet(s, "tags", []any{})) {
+		for _, t := range iterate(lookup(s, "tags", []any{})) {
 			tags = append(tags, strings.ToLower(anyutil.String(t)))
 		}
-		hay := strings.Join([]string{name, strings.ToLower(anyutil.String(pyGet(s, "description", ""))), strings.Join(tags, " "),
-			strings.ToLower(anyutil.String(pyGet(s, "identifier", ""))), provider}, " ")
+		hay := strings.Join([]string{name, strings.ToLower(anyutil.String(lookup(s, "description", ""))), strings.Join(tags, " "),
+			strings.ToLower(anyutil.String(lookup(s, "identifier", ""))), provider}, " ")
 		if !strings.Contains(hay, ql) {
 			continue
 		}
@@ -577,14 +577,14 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 	if entry == nil {
 		return nil, nil
 	}
-	repoV, pathV := pyGet(entry, "repo", ""), pyGet(entry, "path", "")
-	p := pyStrOf(pathV)
+	repoV, pathV := lookup(entry, "repo", ""), lookup(entry, "path", "")
+	p := hubText(pathV)
 	slugBase := strings.TrimRight(p, "/")
 	slug := slugBase[strings.LastIndex(slugBase, "/")+1:]
 	github := x.getGitHub()
-	src := pyGet(entry, "source", nil)
+	src := lookup(entry, "source", nil)
 	skillsSh := src == "skills.sh" || src == "skills-sh"
-	candidates := []any{pyGet(entry, "resolved_github_id", nil)}
+	candidates := []any{lookup(entry, "resolved_github_id", nil)}
 	if anyutil.IsTrue(repoV) && anyutil.IsTrue(pathV) {
 		candidates = append(candidates, anyutil.String(repoV)+"/"+p)
 	}
@@ -593,7 +593,7 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 		if !anyutil.IsTrue(c) {
 			continue
 		}
-		if bundle = github.fetch(ctx, pyStrOf(c)); bundle != nil {
+		if bundle = github.fetch(ctx, hubText(c)); bundle != nil {
 			break
 		}
 	}
@@ -601,7 +601,7 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 		if !skillsSh || !anyutil.IsTrue(repoV) || slug == "" {
 			return nil, nil
 		}
-		repo := pyStrOf(repoV)
+		repo := hubText(repoV)
 		found, ok := github.findSkillInRepoTree(ctx, repo, slug)
 		if !ok || found == "" {
 			found, ok = github.findRepoRootSkill(ctx, repo)
@@ -616,7 +616,7 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 	if skillsSh && bundle.Name == "skills" {
 		bundle.Name = slug
 	}
-	bundle.Source = anyutil.String(pyGet(entry, "source", "skills-index"))
+	bundle.Source = fieldText(entry, "source", "skills-index")
 	bundle.Identifier = identifier
 	return bundle, nil
 }
@@ -635,31 +635,40 @@ func (x *IndexSource) Inspect(ctx context.Context, identifier string) (m *SkillM
 func (x *IndexSource) findEntry(ctx context.Context, identifier string) any {
 	skills := x.skills(ctx)
 	for _, s := range skills {
-		if pyGet(s, "identifier", nil) == identifier && anyutil.IsTrue(s) {
+		if lookup(s, "identifier", nil) == identifier && anyutil.IsTrue(s) {
 			return s
 		}
 	}
 	normalized := stripIDPrefix(identifier, indexIDPrefixes)
 	for _, s := range skills {
-		if stripIDPrefix(pyStrOf(pyGet(s, "identifier", "")), indexIDPrefixes) == normalized && anyutil.IsTrue(s) {
+		if stripIDPrefix(hubText(lookup(s, "identifier", "")), indexIDPrefixes) == normalized && anyutil.IsTrue(s) {
 			return s
 		}
 	}
 	return nil
 }
 
+// Text of a decoded record's field, the fallback when the field is absent or null
+func fieldText(entry any, key, fallback string) string {
+	v := lookup(entry, key, nil)
+	if v == nil {
+		return fallback
+	}
+	return anyutil.String(v)
+}
+
 // Search result of an index entry
 func indexToMeta(entry any) SkillMeta {
 	optStr := func(k string) *string {
-		v := pyGet(entry, k, nil)
+		v := lookup(entry, k, nil)
 		if v == nil {
 			return nil
 		}
 		return strPtr(anyutil.String(v))
 	}
-	extra, _ := pyGet(entry, "extra", jsonutil.NewObject()).(*jsonutil.Object)
-	return SkillMeta{Name: anyutil.String(pyGet(entry, "name", "")), Description: anyutil.String(pyGet(entry, "description", "")),
-		Source: anyutil.String(pyGet(entry, "source", "skills-index")), Identifier: anyutil.String(pyGet(entry, "identifier", "")),
-		TrustLevel: anyutil.String(pyGet(entry, "trust_level", "community")), Repo: optStr("repo"), Path: optStr("path"),
-		Tags: tagStrings(pyGet(entry, "tags", []any{})), Extra: extra}
+	extra, _ := lookup(entry, "extra", jsonutil.NewObject()).(*jsonutil.Object)
+	return SkillMeta{Name: fieldText(entry, "name", ""), Description: fieldText(entry, "description", ""),
+		Source: fieldText(entry, "source", "skills-index"), Identifier: fieldText(entry, "identifier", ""),
+		TrustLevel: fieldText(entry, "trust_level", "community"), Repo: optStr("repo"), Path: optStr("path"),
+		Tags: tagStrings(lookup(entry, "tags", []any{})), Extra: extra}
 }

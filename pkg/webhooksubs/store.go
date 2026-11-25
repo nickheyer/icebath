@@ -37,10 +37,10 @@ type SubscriptionMutationConflict struct{ Msg string }
 
 func (e *SubscriptionMutationConflict) Error() string { return e.Msg }
 
-// Python exception class name the error stands for
+// Kind label of the error
 func (e *SubscriptionMutationConflict) ErrorKind() string { return "SubscriptionMutationConflict" }
 
-// Lock file that could not be opened or locked, the RuntimeError of the file lock
+// Lock file that could not be opened or locked
 type LockUnavailableError struct {
 	Path string
 	Err  error
@@ -139,7 +139,7 @@ func Mutate(h string, mutate func(subs *jsonutil.Object) error) error {
 	return SaveUnlocked(h, subs)
 }
 
-// Compares one route to a snapshot value with Python equality over decoded JSON
+// Compares one route to a snapshot value as decoded JSON: numbers by value, a bool only to a bool, object keys in any order
 func sameRoute(a, b any) bool {
 	return anyutil.Equal(jsonutil.Plain(a), jsonutil.Plain(b))
 }
@@ -151,7 +151,7 @@ func Replace(h, name string, route *jsonutil.Object, expected any) (*jsonutil.Ob
 		current, present := subs.Get(name)
 		expectedMissing := expected == Missing
 		if present == expectedMissing || (!expectedMissing && !sameRoute(current, expected)) {
-			return &SubscriptionMutationConflict{Msg: fmt.Sprintf("Webhook subscription '%s' changed concurrently; retry the operation.", name)}
+			return &SubscriptionMutationConflict{Msg: fmt.Sprintf("Webhook subscription %q changed concurrently; retry the operation.", name)}
 		}
 		published = route
 		if cur, ok := current.(*jsonutil.Object); ok {
@@ -169,7 +169,7 @@ func Replace(h, name string, route *jsonutil.Object, expected any) (*jsonutil.Ob
 	return published, nil
 }
 
-// Shallow copy of an ordered object like {**route}
+// Shallow copy of an ordered object, keys in the same order
 func copyObject(o *jsonutil.Object) *jsonutil.Object {
 	out := jsonutil.NewObject()
 	for _, k := range o.Keys() {
@@ -277,7 +277,7 @@ func WebhookConfig(ctx context.Context, h string) map[string]any {
 
 // Whether the webhook platform is enabled in the home config
 func WebhookEnabled(ctx context.Context, h string) bool {
-	return pyTruthy(WebhookConfig(ctx, h)["enabled"])
+	return anyutil.IsTrue(WebhookConfig(ctx, h)["enabled"])
 }
 
 // Local base URL of the webhook listener, wildcard hosts shown as localhost and IPv6 bracketed
@@ -288,7 +288,7 @@ func BaseURL(ctx context.Context, h string) string {
 	if extra["host"] != nil && host == "" {
 		displayHost = anyutil.String(extra["host"])
 	}
-	if !pyTruthy(extra["host"]) || host == "0.0.0.0" || host == "::" {
+	if !anyutil.IsTrue(extra["host"]) || host == "0.0.0.0" || host == "::" {
 		displayHost = "localhost"
 	}
 	if strings.Contains(displayHost, ":") && !strings.HasPrefix(displayHost, "[") {
@@ -301,7 +301,7 @@ func BaseURL(ctx context.Context, h string) string {
 	return fmt.Sprintf("http://%s:%s", displayHost, anyutil.String(port))
 }
 
-// Delivery URL of one route, prefixed with /p/<profile> for a non default profile
+// Delivery URL of one route, prefixed with /p/<profile> for a non default profile and /p/null for an explicit null binding
 func RouteURL(ctx context.Context, h, name string, route *jsonutil.Object) string {
 	profile := any("default")
 	if v, ok := route.Get("profile"); ok {
@@ -309,30 +309,11 @@ func RouteURL(ctx context.Context, h, name string, route *jsonutil.Object) strin
 	}
 	prefix := ""
 	if p, ok := profile.(string); !ok || p != "default" {
-		prefix = "/p/" + anyutil.String(profile)
+		segment := "null"
+		if profile != nil {
+			segment = anyutil.String(profile)
+		}
+		prefix = "/p/" + segment
 	}
 	return BaseURL(ctx, h) + prefix + "/webhooks/" + name
-}
-
-// Python truthiness of a decoded config value
-func pyTruthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case string:
-		return t != ""
-	case int:
-		return t != 0
-	case int64:
-		return t != 0
-	case float64:
-		return t != 0
-	case map[string]any:
-		return len(t) > 0
-	case []any:
-		return len(t) > 0
-	}
-	return true
 }

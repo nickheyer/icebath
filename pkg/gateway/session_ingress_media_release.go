@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -51,7 +52,7 @@ func releaseAdmissionMediaCount(ctx context.Context, db *state.SessionDB, admiss
 		if apiTurn, ok := apiValue.(*jsonutil.Object); ok {
 			media, _ := apiTurn.Get("media")
 			history, _ := apiTurn.Get("history")
-			if _, isList := history.([]any); pyTruthy(media) || isList {
+			if _, isList := history.([]any); anyutil.IsTrue(media) || isList {
 				if _, err := compactSettledAPIPayloads(ctx, db, &admissionID); err != nil {
 					return 0, err
 				}
@@ -135,7 +136,7 @@ func sweepSettledMedia(ctx context.Context, db *state.SessionDB, now *float64) (
 		}
 		pair, _ := decoded.([]any)
 		for _, side := range pair {
-			if !pyTruthy(side) {
+			if !anyutil.IsTrue(side) {
 				continue
 			}
 			references, err := jsonList(side)

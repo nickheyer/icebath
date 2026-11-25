@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Env step of a hosted plugin, upstream EnvCred rows and step partials as their Go types and any other callable run in the child
@@ -15,7 +15,7 @@ func envStep(item any) (gateway.EnvStep, error) {
 	f, ok := item.(*plugins.HostedCallable)
 	if !ok {
 		return gateway.EnvStepFunc(func(context.Context, *gateway.GatewayConfig) error {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(item))}
+			return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(item))}
 		}), nil
 	}
 	shape := f.Shape
@@ -26,10 +26,10 @@ func envStep(item any) (gateway.EnvStep, error) {
 		kw := plainMap(shape["keywords"])
 		switch shape["qualname"] {
 		case "env_home_channel":
-			return gateway.HomeStep{Platform: gateway.Platform(config.PyStr(kw["platform"])), EnvBase: config.PyStr(kw["env_base"]),
-				Strip: config.PyTruthy(kw["strip"])}, nil
+			return gateway.HomeStep{Platform: gateway.Platform(anyutil.String(kw["platform"])), EnvBase: anyutil.String(kw["env_base"]),
+				Strip: anyutil.IsTrue(kw["strip"])}, nil
 		case "env_reply_mode":
-			return gateway.ReplyModeStep{Platform: gateway.Platform(config.PyStr(kw["platform"])), Env: config.PyStr(kw["env"])}, nil
+			return gateway.ReplyModeStep{Platform: gateway.Platform(anyutil.String(kw["platform"])), Env: anyutil.String(kw["env"])}, nil
 		}
 	}
 	return hostedStep{f: f}, nil
@@ -63,16 +63,16 @@ func writeBack(ctx context.Context, cfg *gateway.GatewayConfig, dumped any) erro
 
 // Go EnvCred of an upstream EnvCred's fields, nested callables kept as hosted calls
 func envCred(fields map[string]any) (gateway.EnvStep, error) {
-	c := &gateway.EnvCred{Platform: gateway.Platform(config.PyStr(fields["platform"]))}
+	c := &gateway.EnvCred{Platform: gateway.Platform(anyutil.String(fields["platform"]))}
 	for _, group := range listOf(fields["creds"]) {
 		if names, ok := group.([]any); ok {
 			c.Creds = append(c.Creds, stringList(names))
 		} else {
-			c.Creds = append(c.Creds, []string{config.PyStr(group)})
+			c.Creds = append(c.Creds, []string{anyutil.String(group)})
 		}
 	}
 	if fields["token"] != nil {
-		c.Token = config.PyStr(fields["token"])
+		c.Token = anyutil.String(fields["token"])
 	}
 	var err error
 	if c.Fixed, err = envSpecs(listOf(fields["fixed"]), true); err != nil {
@@ -85,7 +85,7 @@ func envCred(fields map[string]any) (gateway.EnvStep, error) {
 		return nil, err
 	}
 	if warn := listOf(fields["warn_missing"]); len(warn) == 2 {
-		c.WarnMissingEnv, c.WarnMissingMsg = config.PyStr(warn[0]), config.PyStr(warn[1])
+		c.WarnMissingEnv, c.WarnMissingMsg = anyutil.String(warn[0]), anyutil.String(warn[1])
 	}
 	if then, ok := fields["then"].(*plugins.HostedCallable); ok {
 		platform := c.Platform
@@ -106,16 +106,16 @@ func envCred(fields map[string]any) (gateway.EnvStep, error) {
 		}
 	}
 	if fields["home"] != nil {
-		c.Home = config.PyStr(fields["home"])
+		c.Home = anyutil.String(fields["home"])
 	}
-	c.HomeStrip = config.PyTruthy(fields["home_strip"])
+	c.HomeStrip = anyutil.IsTrue(fields["home_strip"])
 	return c, nil
 }
 
 func stringList(items []any) []string {
 	out := make([]string, len(items))
 	for i, item := range items {
-		out[i] = config.PyStr(item)
+		out[i] = anyutil.String(item)
 	}
 	return out
 }
@@ -126,18 +126,18 @@ func envSpecs(rows []any, fixed bool) ([]gateway.EnvSpec, error) {
 	for _, raw := range rows {
 		row := listOf(raw)
 		if len(row) < 2 {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected at least 2, got %d)", len(row))}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected at least 2, got %d)", len(row))}
 		}
-		spec := gateway.EnvSpec{Key: config.PyStr(row[0])}
+		spec := gateway.EnvSpec{Key: anyutil.String(row[0])}
 		if names, ok := row[1].([]any); ok {
 			spec.AnyOf = stringList(names)
 		} else {
-			spec.Env = config.PyStr(row[1])
+			spec.Env = anyutil.String(row[1])
 		}
 		rest := row[2:]
 		if fixed {
 			if len(rest) > 0 {
-				spec.Default = config.PyStr(rest[0])
+				spec.Default = anyutil.String(rest[0])
 			}
 			if len(rest) > 1 {
 				spec.Fn = specFn(rest[1])
@@ -159,7 +159,7 @@ func specFn(v any) func(string) any {
 	f, ok := v.(*plugins.HostedCallable)
 	if !ok {
 		return func(string) any {
-			panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(v))})
+			panic(&errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(v))})
 		}
 	}
 	return func(value string) any { return mustCall(f, value) }

@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Working directory values that mean not configured
@@ -63,7 +65,7 @@ func userHomeDir() string {
 }
 
 // Joins two path parts the way os.path.join does, an absolute second part replacing the first
-func pyOSPathJoin(a, b string) string {
+func osPathJoinValue(a, b string) string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(a, b)
 	}
@@ -85,7 +87,7 @@ func expandTildeFor(env *Env, p string) string {
 		if p == "~" {
 			return home
 		}
-		return pyOSPathJoin(home, p[2:])
+		return osPathJoinValue(home, p[2:])
 	}
 	if !strings.HasPrefix(p, "~") {
 		return p
@@ -199,7 +201,7 @@ func terminalEnvTypeForTask(env *Env, taskID string) string {
 	v := ""
 	if cfg, err := getEnvConfig(env); err == nil {
 		if raw := cfg["env_type"]; raw != nil && raw != "" && raw != false {
-			v = pyStr(raw)
+			v = anyutil.String(raw)
 		}
 	}
 	if v == "" {
@@ -225,9 +227,9 @@ func containerBackendForTask(env *Env, taskID string) string {
 func sentinelFreeAbsCwd(env *Env, raw any) string {
 	text := ""
 	if raw != nil && raw != "" && raw != false {
-		text = pyStr(raw)
+		text = anyutil.String(raw)
 	}
-	text = pyStrip(text)
+	text = strings.TrimSpace(text)
 	if terminalCwdSentinels[strings.ToLower(text)] {
 		return ""
 	}
@@ -323,7 +325,7 @@ func anchorPath(text string, base func() (string, error), containerPaths bool) (
 		if err != nil {
 			return "", err
 		}
-		text = pyOSPathJoin(b, text)
+		text = osPathJoinValue(b, text)
 	}
 	return resolveNonStrict(text), nil
 }
@@ -342,9 +344,9 @@ func sshRemoteAnchor(env *Env, taskID string) (string, error) {
 	for _, raw := range []any{recorded, overrides["cwd"], scoped} {
 		text := ""
 		if raw != nil && raw != "" && raw != false {
-			text = pyStr(raw)
+			text = anyutil.String(raw)
 		}
-		text = pyStrip(text)
+		text = strings.TrimSpace(text)
 		if !terminalCwdSentinels[strings.ToLower(text)] && (strings.HasPrefix(text, "~") || strings.HasPrefix(text, "/")) {
 			return coerceSSHRemoteCwd(env, text, "ssh"), nil
 		}
@@ -412,7 +414,7 @@ func sshRemoteHome(env *Env, taskID string) (string, error) {
 
 // Resolves a path in the SSH target namespace, tilde becoming the remote home once it is known
 func resolveSSHPath(env *Env, taskID, filePath string) (string, error) {
-	text := pyStrip(filePath)
+	text := strings.TrimSpace(filePath)
 	if !strings.HasPrefix(text, "~") && !strings.HasPrefix(text, "/") {
 		anchor, err := sshRemoteAnchor(env, taskID)
 		if err != nil {
@@ -603,8 +605,8 @@ func pathResolutionWarningFor(env *Env, taskID, filePath, resolved string) strin
 	if (posix && isUnderPosix(resolved, root)) || (!posix && isUnder(resolved, root)) {
 		return ""
 	}
-	return "Relative path " + pyReprStr(filePath) + " resolved to " + pyReprStr(resolved) + ", which is " +
-		"OUTSIDE the active workspace (" + pyReprStr(root) + "). The edit will land in " +
+	return "Relative path " + strconv.Quote(filePath) + " resolved to " + strconv.Quote(resolved) + ", which is " +
+		"OUTSIDE the active workspace (" + strconv.Quote(root) + "). The edit will land in " +
 		"a different directory than the terminal's cwd. If this is not " +
 		"intended (e.g. a git-worktree session writing into the main " +
 		"checkout), pass an absolute path under the workspace instead."

@@ -558,7 +558,7 @@ func TestMCPCmdConfigure(t *testing.T) {
 	if !reflect.DeepEqual(tc["exclude"], []any{"debug_*", "drop"}) || tc["include"] != nil {
 		t.Fatalf("tools %v", tc)
 	}
-	if !strings.Contains(ui.out.String(), "1 re-enabled tool(s) still match glob exclude pattern(s) ['debug_*']") {
+	if !strings.Contains(ui.out.String(), "1 re-enabled tool(s) still match glob exclude pattern(s) [\"debug_*\"]") {
 		t.Fatal(ui.out.String())
 	}
 }

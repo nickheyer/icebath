@@ -24,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
@@ -108,7 +107,8 @@ func textOf(v any) string {
 }
 
 // Text of a REST failure for a log line or a send result: the kind of error and the proxy's host when the proxy URL the client reads from the environment
-// holds a secret the raw text could repeat, else the error text with the password every request URL carries masked, the error kind when that is empty
+// holds a secret the raw text could repeat, else the error text with the password every request URL carries masked, the declared error kind or
+// "request failed" when that is empty
 func safeError(err error, serverURL string) string {
 	if shown := gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(serverURL)); shown != "" {
 		return shown
@@ -116,7 +116,11 @@ func safeError(err error, serverURL string) string {
 	if text := tools.RedactSensitiveTextWith(nil, err.Error(), tools.RedactOptions{Force: true, URLCredentials: true}); text != "" {
 		return text
 	}
-	return errorutil.Kind(err)
+	var kinded interface{ ErrorKind() string }
+	if errors.As(err, &kinded) && kinded.ErrorKind() != "" {
+		return kinded.ErrorKind()
+	}
+	return "request failed"
 }
 
 // Optional string pointer, nil for the empty value

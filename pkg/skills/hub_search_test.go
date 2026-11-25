@@ -79,7 +79,7 @@ func TestFetchResolvesGenericSkillDirectoryFromIndexSlug(t *testing.T) {
 		_, h := githubTestSource(t)
 		x := NewIndexSource(h, anonAuth(h))
 		x.index, x.loaded = jsonutil.NewObject(), true
-		x.index.(*jsonutil.Object).Set("skills", pyList(t, "["+entry+"]"))
+		x.index.(*jsonutil.Object).Set("skills", listOf(t, "["+entry+"]"))
 		x.github = NewGitHubSource(h, x.Auth, nil)
 		x.github.seams.fetch = func(string) *SkillBundle { b := fetched[0]; fetched = fetched[1:]; return b }
 		x.github.seams.findSkillInRepoTree = func(repo, name string) (string, bool) {
@@ -170,7 +170,7 @@ func TestParallelSearchSourcesTimeoutAndIndexMissFallback(t *testing.T) {
 	}
 	x := NewIndexSource(h, nil)
 	x.index, x.loaded = jsonutil.NewObject(), true
-	x.index.(*jsonutil.Object).Set("skills", pyList(t, `[{"name": "zzz", "identifier": "zzz"}]`))
+	x.index.(*jsonutil.Object).Set("skills", listOf(t, `[{"name": "zzz", "identifier": "zzz"}]`))
 	skillsSh := &fixedSource{SourceBase{ID: "skills-sh"}, []SkillMeta{{Name: "live", Identifier: "skills-sh/o/r/live"}}, 0}
 	gh := &fixedSource{SourceBase{ID: "github"}, []SkillMeta{{Name: "g", Identifier: "g"}}, 0}
 	all, _, _ = h.ParallelSearchSources(context.Background(), []SkillSource{x, skillsSh, gh}, "live", nil, "all", 5*time.Second, nil)

@@ -38,7 +38,7 @@ var codeScanSkipDirs = map[string]bool{".git": true, "node_modules": true, "venv
 
 const codeScanMaxEntries = 500
 
-var pyLockfiles = [][2]string{{"uv.lock", "uv"}, {"poetry.lock", "poetry"}, {"Pipfile.lock", "pipenv"}}
+var lockfiles = [][2]string{{"uv.lock", "uv"}, {"poetry.lock", "poetry"}, {"Pipfile.lock", "pipenv"}}
 var jsLockfiles = [][2]string{{"pnpm-lock.yaml", "pnpm"}, {"bun.lockb", "bun"}, {"bun.lock", "bun"}, {"yarn.lock", "yarn"}, {"package-lock.json", "npm"}}
 var verifyTargets = []string{"test", "tests", "lint", "typecheck", "check", "build", "fmt", "format"}
 
@@ -513,7 +513,7 @@ func DetectProjectFacts(root string) ProjectFacts {
 		}
 	}
 	seenPM := map[string]bool{}
-	for _, lf := range append(append([][2]string{}, pyLockfiles...), jsLockfiles...) {
+	for _, lf := range append(append([][2]string{}, lockfiles...), jsLockfiles...) {
 		if isFile(filepath.Join(root, lf[0])) && !seenPM[lf[1]] {
 			seenPM[lf[1]] = true
 			facts.PackageManagers = append(facts.PackageManagers, lf[1])

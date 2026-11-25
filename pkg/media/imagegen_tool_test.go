@@ -181,7 +181,7 @@ func TestImageWaitFalResultAbandonsJobOnInterrupt(t *testing.T) {
 	t.Cleanup(func() { tools.SetInterrupt(id, false, "") })
 	_, err := waitFalResult(ctx, h, 0.01)
 	var intr *imageGenerationInterrupted
-	if !errors.As(err, &intr) || pyErrorTypeName(err) != "ImageGenerationInterrupted" || !strings.Contains(err.Error(), "interrupted by user") {
+	if !errors.As(err, &intr) || errorTypeName(err) != "ImageGenerationInterrupted" || !strings.Contains(err.Error(), "interrupted by user") {
 		t.Fatalf("got %v", err)
 	}
 }

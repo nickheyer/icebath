@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -104,8 +105,8 @@ func TestInvalidCoalesceConfigRejectedAtConnect(t *testing.T) {
 	for _, c := range cases {
 		adapter := makeCoalesceAdapter(t, map[string]any{"pr": c.route})
 		_, err := adapter.Connect(context.Background(), false)
-		var pyErr *PyError
-		if err == nil || !asPyError(err, &pyErr) || pyErr.Kind != "ValueError" || !strings.Contains(err.Error(), c.match) {
+		var kindErr *errorutil.Error
+		if err == nil || !asPyError(err, &kindErr) || kindErr.Kind != "ValueError" || !strings.Contains(err.Error(), c.match) {
 			t.Fatalf("%s: %v", c.match, err)
 		}
 		dynamic := makeCoalesceAdapter(t, nil)

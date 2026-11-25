@@ -18,11 +18,11 @@ func PrincipalSubject(identity map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !pyTruthy(identity["user_id"]) {
+	if !anyutil.IsTrue(identity["user_id"]) {
 		return subject, nil
 	}
 	provider := ""
-	if pyTruthy(identity["provider"]) {
+	if anyutil.IsTrue(identity["provider"]) {
 		provider = strings.TrimSpace(anyutil.String(identity["provider"]))
 	}
 	if provider == "local" {
@@ -67,11 +67,11 @@ func ownerLoginSubject(value any) bool {
 
 // True when a stored owner stamp belongs to subject, older sign in stamps reading as the host owner's
 func SameOwner(stored, subject any) bool {
-	if pyEqualOwner(stored, subject) {
+	if equalOwner(stored, subject) {
 		return true
 	}
 	text, isText := stored.(string)
-	if !isText || text == "" || !pyTruthy(subject) {
+	if !isText || text == "" || !anyutil.IsTrue(subject) {
 		return false
 	}
 	if label, ok := state.LoginLabel(subject); ok && text == label {
@@ -86,7 +86,7 @@ func OwnersAgree(first, second any) bool {
 }
 
 // Python equality of two owner stamps, strings and None compared by value
-func pyEqualOwner(a, b any) bool {
+func equalOwner(a, b any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}

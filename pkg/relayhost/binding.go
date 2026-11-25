@@ -26,7 +26,7 @@ import (
 // Python context the binding last left for a Go context, copied by pyctx the way contextvars copies it
 var relayContextVar = ctxutil.NewVar[any]("icebath.relayhost.context", nil)
 
-type pyContext struct {
+type contextValue struct {
 	client *Client
 	id     int64
 }
@@ -476,14 +476,14 @@ func (c *Client) handle(ctx context.Context, m *message) (any, error) {
 
 // Python context id the binding left for ctx, zero when ctx carries none of this child
 func (c *Client) contextID(ctx context.Context) int64 {
-	if p, ok := relayContextVar.Get(ctx).(*pyContext); ok && p != nil && p.client == c {
+	if p, ok := relayContextVar.Get(ctx).(*contextValue); ok && p != nil && p.client == c {
 		return p.id
 	}
 	return 0
 }
 
 func (c *Client) setContext(ctx context.Context, id int64) {
-	p := &pyContext{client: c, id: id}
+	p := &contextValue{client: c, id: id}
 	runtime.AddCleanup(p, c.release, id)
 	relayContextVar.Set(ctx, p)
 }

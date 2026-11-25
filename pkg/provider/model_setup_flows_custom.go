@@ -13,7 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // errFlowCancelled is the Ctrl-C or EOF a wrapped prompt raised
@@ -143,11 +145,11 @@ func promptCustomAPIModeSelection(r *ModelFlowRun, baseURL, currentAPIMode strin
 
 // The value persisted for a custom provider key, the reference, the key env template or the resolved key
 func customProviderAPIKeyConfigValue(providerInfo map[string]any, resolvedAPIKey string) string {
-	if ref := strings.TrimSpace(pyOrStr(providerInfo["api_key_ref"])); ref != "" {
+	if ref := strings.TrimSpace(anyutil.StringOr(providerInfo["api_key_ref"], "")); ref != "" {
 		return ref
 	}
-	keyEnv := strings.TrimSpace(pyOrStr(providerInfo["key_env"]))
-	if keyEnv != "" && strings.TrimSpace(pyOrStr(providerInfo["api_key"])) == "" {
+	keyEnv := strings.TrimSpace(anyutil.StringOr(providerInfo["key_env"], ""))
+	if keyEnv != "" && strings.TrimSpace(anyutil.StringOr(providerInfo["api_key"], "")) == "" {
 		return "${" + keyEnv + "}"
 	}
 	return strings.TrimSpace(resolvedAPIKey)
@@ -161,7 +163,7 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 	var held map[string]any
 	for _, k := range sortedKeys(existing) {
 		entry, ok := existing[k].(map[string]any)
-		if ok && strings.TrimRight(pyOrStr(entry["base_url"]), "/") == strings.TrimRight(baseURL, "/") {
+		if ok && strings.TrimRight(anyutil.StringOr(entry["base_url"], ""), "/") == strings.TrimRight(baseURL, "/") {
 			key, held = k, entry
 			break
 		}
@@ -215,7 +217,7 @@ func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextL
 }
 
 // Text of a setting, an error naming the setting when it is no text
-func pyStrReceiver(v any, setting string) (string, error) {
+func strReceiver(v any, setting string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
@@ -455,7 +457,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 	probe, effectiveURL := probeCustomEndpoint(r, effectiveKey, effectiveURL)
 	currentAPIMode := ""
 	if modelCfg, ok := r.Config["model"].(map[string]any); ok {
-		currentAPIMode = strings.TrimSpace(pyOrStr(modelCfg["api_mode"]))
+		currentAPIMode = strings.TrimSpace(anyutil.StringOr(modelCfg["api_mode"], ""))
 	}
 	apiMode, err := promptCustomAPIModeSelectionFn(r, effectiveURL, currentAPIMode)
 	if err != nil {
@@ -496,10 +498,10 @@ func modelFlowCustom(r *ModelFlowRun) error {
 	customKeyEnv := ""
 	if effectiveKey != "" {
 		identity := ""
-		if parts, perr := pyURLParse(effectiveURL, ""); perr == nil {
-			identity, _, _ = pyNetlocHostPort(parts.netloc)
+		if parts, perr := urlutil.Split(effectiveURL); perr == nil {
+			identity, _, _ = netlocHostPort(parts.Authority)
 		}
-		port, hasPort, perr := pyURLPort(effectiveURL)
+		port, hasPort, perr := urlPort(effectiveURL)
 		if perr != nil {
 			return perr
 		}
@@ -513,14 +515,14 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		fmt.Fprintf(r.Out, "  API key saved to .env as %s\n", customKeyEnv)
 	}
 	applyEndpoint := func(model map[string]any) {
-		pyDictSet(model, "provider", "custom")
-		pyDictSet(model, "base_url", effectiveURL)
+		dictSet(model, "provider", "custom")
+		dictSet(model, "base_url", effectiveURL)
 		delete(model, "key_env")
 		if customKeyEnv != "" {
-			pyDictSet(model, "api_key", "${"+customKeyEnv+"}")
+			dictSet(model, "api_key", "${"+customKeyEnv+"}")
 		}
 		if apiMode != "" {
-			pyDictSet(model, "api_mode", apiMode)
+			dictSet(model, "api_mode", apiMode)
 		} else {
 			delete(model, "api_mode")
 		}
@@ -542,7 +544,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 			copied[k] = v
 		}
 		config.SetMappingKeys(copied, config.MappingKeys(model))
-		pyDictSet(r.Config, "model", copied)
+		dictSet(r.Config, "model", copied)
 		fmt.Fprintf(r.Out, "Default model set to: %s (via %s)\n", modelName, effectiveURL)
 	} else {
 		callerModel, ok := r.Config["model"].(map[string]any)
@@ -553,7 +555,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 			}
 		}
 		applyEndpoint(callerModel)
-		pyDictSet(r.Config, "model", callerModel)
+		dictSet(r.Config, "model", callerModel)
 		fmt.Fprintln(r.Out, "Endpoint saved. Use `/model` in chat or `icebath model` to set a model.")
 	}
 	if err := saveCustomProviderFn(r, effectiveURL, effectiveKey, modelName, contextLength, displayName, apiMode, customKeyEnv); err != nil {
@@ -580,10 +582,10 @@ func configuredModelIDs(cfgModels any) []string {
 			switch e := entry.(type) {
 			case map[string]any:
 				raw := e["id"]
-				if !pyTruthy(raw) {
+				if !anyutil.IsTrue(raw) {
 					raw = e["model"]
 				}
-				modelID = strings.TrimSpace(pyOrStr(raw))
+				modelID = strings.TrimSpace(anyutil.StringOr(raw, ""))
 			case string:
 				modelID = strings.TrimSpace(e)
 			}
@@ -841,11 +843,11 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 		return err
 	}
 	delete(model, "key_env")
-	pyDictSet(model, "provider", CustomProviderSlug(name, providerKey))
+	dictSet(model, "provider", CustomProviderSlug(name, providerKey))
 	delete(model, "base_url")
 	delete(model, "api_key")
 	if apiMode != "" {
-		pyDictSet(model, "api_mode", apiMode)
+		dictSet(model, "api_mode", apiMode)
 	} else {
 		delete(model, "api_mode")
 	}
@@ -858,15 +860,15 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 	}
 	providersCfg, _ := cfg["providers"].(map[string]any)
 	if providerEntry, ok := providersCfg[providerKey].(map[string]any); ok {
-		pyDictSet(providerEntry, "default_model", modelName)
-		hadInlineAPIKey := strings.TrimSpace(pyOrStr(providerInfo["api_key_ref"])) != "" || strings.TrimSpace(pyOrStr(providerInfo["api_key"])) != ""
-		if hadInlineAPIKey && configAPIKey != "" && strings.TrimSpace(pyOrStr(providerEntry["api_key"])) == "" {
-			pyDictSet(providerEntry, "api_key", configAPIKey)
+		dictSet(providerEntry, "default_model", modelName)
+		hadInlineAPIKey := strings.TrimSpace(anyutil.StringOr(providerInfo["api_key_ref"], "")) != "" || strings.TrimSpace(anyutil.StringOr(providerInfo["api_key"], "")) != ""
+		if hadInlineAPIKey && configAPIKey != "" && strings.TrimSpace(anyutil.StringOr(providerEntry["api_key"], "")) == "" {
+			dictSet(providerEntry, "api_key", configAPIKey)
 		}
-		if keyEnv != "" && strings.TrimSpace(pyOrStr(providerEntry["key_env"])) == "" {
-			pyDictSet(providerEntry, "key_env", keyEnv)
+		if keyEnv != "" && strings.TrimSpace(anyutil.StringOr(providerEntry["key_env"], "")) == "" {
+			dictSet(providerEntry, "key_env", keyEnv)
 		}
-		pyDictSet(cfg, "providers", providersCfg)
+		dictSet(cfg, "providers", providersCfg)
 		if err := config.Save(r.home(), cfg); err != nil {
 			return err
 		}

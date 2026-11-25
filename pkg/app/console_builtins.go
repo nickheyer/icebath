@@ -448,22 +448,20 @@ func consoleSessionsRepair(e *ConsoleEngine, args []string) (int, error) {
 		return 0, err
 	}
 	if !report.Repaired {
-		return 0, &ConsoleCommandError{Msg: "Repair failed: " + consoleNoneText(report.Error)}
+		msg := "Repair failed"
+		if report.Error != "" {
+			msg += ": " + report.Error
+		}
+		return 0, &ConsoleCommandError{Msg: msg}
 	}
 	if report.BackupPath != "" {
 		fmt.Fprintln(os.Stdout, "backup: "+report.BackupPath)
 	}
-	fmt.Fprintln(os.Stdout, "strategy: "+consoleNoneText(report.Strategy))
+	if report.Strategy != "" {
+		fmt.Fprintln(os.Stdout, "strategy: "+report.Strategy)
+	}
 	fmt.Fprintln(os.Stdout, "Repaired session database.")
 	return 0, nil
-}
-
-// Python str of an optional report field, None when absent
-func consoleNoneText(s string) string {
-	if s == "" {
-		return "None"
-	}
-	return s
 }
 
 // Status of the active profile, the bare profile command

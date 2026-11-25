@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func readRawTimestamps(t *testing.T, db *SessionDB, sid string) []any {
@@ -107,7 +109,7 @@ func TestReplaceMessagesPreservesDisplayMetadata(t *testing.T) {
 	if err != nil || len(reloaded) != 1 {
 		t.Fatal(reloaded, err)
 	}
-	if reloaded[0]["display_kind"] != "async_delegation_complete" || !pyValueEqual(reloaded[0]["display_metadata"], meta) {
+	if reloaded[0]["display_kind"] != "async_delegation_complete" || !anyutil.Equal(reloaded[0]["display_metadata"], meta) {
 		t.Fatalf("%v", reloaded[0])
 	}
 }
@@ -123,7 +125,7 @@ func TestGetMessagesPagingAndDisplayReads(t *testing.T) {
 	contents := func(rows []map[string]any) []string {
 		var out []string
 		for _, m := range rows {
-			out = append(out, pyStr(m["content"]))
+			out = append(out, anyutil.String(m["content"]))
 		}
 		return out
 	}
@@ -136,7 +138,7 @@ func TestGetMessagesPagingAndDisplayReads(t *testing.T) {
 		var out []string
 		for _, r := range rows {
 			v, _ := r.Get("content")
-			out = append(out, pyStr(v))
+			out = append(out, anyutil.String(v))
 		}
 		return out
 	}
@@ -293,7 +295,7 @@ func TestCompressionTipAndReplayedUserDedupe(t *testing.T) {
 	}
 	var texts []string
 	for _, m := range merged {
-		texts = append(texts, pyStr(m["content"]))
+		texts = append(texts, anyutil.String(m["content"]))
 	}
 	if !slices.Equal(texts, []string{"hello", "hi", "carry", "done"}) {
 		t.Fatalf("replayed user not deduped %v", texts)
@@ -321,11 +323,11 @@ func TestReplayedUserCloneHelpers(t *testing.T) {
 	if _, _, ok := findDuplicateReplayedUserMessage(msgs, seqUser("same")); ok {
 		t.Fatal("matched across an answered assistant turn")
 	}
-	if got := pyLatestPage([]int{1, 2, 3, 4, 5}, 1, nil, true); !slices.Equal(got, []int{1, 2, 3, 4}) {
+	if got := latestPage([]int{1, 2, 3, 4, 5}, 1, nil, true); !slices.Equal(got, []int{1, 2, 3, 4}) {
 		t.Fatal(got)
 	}
 	neg := -1
-	if got := pyPage([]int{1, 2, 3}, 0, &neg); !slices.Equal(got, []int{1, 2}) {
+	if got := pageValue([]int{1, 2, 3}, 0, &neg); !slices.Equal(got, []int{1, 2}) {
 		t.Fatal(got)
 	}
 }

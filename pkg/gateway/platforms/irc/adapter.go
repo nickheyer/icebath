@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
@@ -241,7 +242,7 @@ func textValue(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("expected text, got %s", anyutil.Kind(v))}
+	return "", &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("expected text, got %s", anyutil.Kind(v))}
 }
 
 // str of the exception asyncio open_connection raises for a failed dial, empty for the wait_for timeout
@@ -250,7 +251,7 @@ func connectErrorText(err error) string {
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 		return ""
 	}
-	var pe *gateway.PyError
+	var pe *errorutil.Error
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}
@@ -272,7 +273,7 @@ func connectErrorText(err error) string {
 func openConnection(ctx context.Context, server any, port int, useTLS bool, timeout time.Duration) (net.Conn, error) {
 	host, ok := server.(string)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: "getaddrinfo() argument 1 must be string or None"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "getaddrinfo() argument 1 must be string or None"}
 	}
 	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -650,7 +651,7 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 		a.mu.Unlock()
 		currentText, isStr := current.(string)
 		if !isStr {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("the current nick must be text, got %s", anyutil.Kind(current))}
+			return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the current nick must be text, got %s", anyutil.Kind(current))}
 		}
 		m, err := nickSuffixRE.FindStringMatch(currentText)
 		if err != nil {

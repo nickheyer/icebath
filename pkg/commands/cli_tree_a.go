@@ -19,7 +19,7 @@ func sf(cmd *cobra.Command, name, short, def, help string) {
 	cmd.Flags().StringP(name, short, def, help)
 }
 func inf(cmd *cobra.Command, name, short string, def int, help string) {
-	cmd.Flags().IntP(name, short, def, help)
+	cmd.Flags().VarP(newIntArg(def), name, short, help)
 }
 func ff(cmd *cobra.Command, name, short string, def float64, help string) {
 	cmd.Flags().Float64P(name, short, def, help)

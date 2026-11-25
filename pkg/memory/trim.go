@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -198,7 +199,7 @@ func TrimMemory(ctx context.Context, env *tools.Env, opts TrimOptions) (released
 	trimCallCount++
 	if released && shouldLogTrim(opts.Force, logEveryN, trimCallCount, before, after, minDelta) {
 		envLog(env).Info(fmt.Sprintf("memory trim: reason=%s malloc_trim=%d collected=%s rss_kib=%s->%s rss_anon_kib=%s->%s "+
-			"threads=%d duration_ms=%.1f", reason, result, pyStr(collect), optInt(before.RSSKiB), optInt(after.RSSKiB),
+			"threads=%d duration_ms=%.1f", reason, result, anyutil.String(collect), optInt(before.RSSKiB), optInt(after.RSSKiB),
 			optInt(before.RSSAnonKiB), optInt(after.RSSAnonKiB), after.ThreadCount, duration))
 	}
 	return released

@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -40,7 +41,7 @@ func mappingGet(value any, key string) (any, bool) {
 	case map[string]any:
 		v, ok := m[key]
 		return v, ok
-	case pyObject:
+	case orderedObject:
 		return m.get(key)
 	case *jsonutil.Object:
 		if m == nil {
@@ -53,14 +54,14 @@ func mappingGet(value any, key string) (any, bool) {
 
 func isMapping(value any) bool {
 	switch value.(type) {
-	case map[string]any, pyObject, *jsonutil.Object:
+	case map[string]any, orderedObject, *jsonutil.Object:
 		return true
 	}
 	return false
 }
 
 // Iteration of a Python value as for x in value, strings yield characters and dicts their keys
-func pyIter(value any) []any {
+func elementsOf(value any) []any {
 	switch v := value.(type) {
 	case string:
 		out := make([]any, 0, utf8.RuneCountInString(v))
@@ -70,8 +71,8 @@ func pyIter(value any) []any {
 		return out
 	case map[string]any:
 		obj, _ := asPyObject(v)
-		return pyIter(obj)
-	case pyObject:
+		return elementsOf(obj)
+	case orderedObject:
 		out := make([]any, len(v))
 		for i, kv := range v {
 			out[i] = kv.Key
@@ -90,7 +91,7 @@ func metadataCopy(metadata any) map[string]any {
 		for k, v := range m {
 			out[k] = v
 		}
-	case pyObject:
+	case orderedObject:
 		for _, kv := range m {
 			out[kv.Key] = kv.Value
 		}
@@ -122,9 +123,9 @@ func TypedPromptContent(content, message any) any {
 	out := make([]any, len(parts))
 	for i, part := range parts {
 		out[i] = part
-		if obj, isObj := part.(pyObject); isObj {
+		if obj, isObj := part.(orderedObject); isObj {
 			if text, isText := mappingText(obj); isText {
-				out[i] = setPyKey(append(pyObject{}, obj...), "text", strings.ReplaceAll(text, PreLLMBlockWithheldText, typed))
+				out[i] = setPyKey(append(orderedObject{}, obj...), "text", strings.ReplaceAll(text, PreLLMBlockWithheldText, typed))
 			}
 			continue
 		}
@@ -271,11 +272,11 @@ func MarkInflightRestatement(msg map[string]any) {
 // Compaction provenance fields replay keeps, the summary flag and the restatement flag
 func ScaffoldingReplayFields(msg map[string]any) map[string]any {
 	fields := map[string]any{}
-	if pyTruthy(msg["_compressed_summary"]) {
+	if anyutil.IsTrue(msg["_compressed_summary"]) {
 		fields["_compressed_summary"] = true
 	}
 	metadata := msg["display_metadata"]
-	if v, _ := mappingGet(metadata, InflightTaskRestatement); isMapping(metadata) && pyTruthy(v) {
+	if v, _ := mappingGet(metadata, InflightTaskRestatement); isMapping(metadata) && anyutil.IsTrue(v) {
 		fields["display_metadata"] = map[string]any{InflightTaskRestatement: true}
 	}
 	return fields
@@ -297,9 +298,9 @@ func CopyIdentityFields(src, dst map[string]any) {
 		dst[AbsorbedMessageUIDs] = stringsToAny(items)
 	}
 	switch m := src[ToolCallUIDs].(type) {
-	case pyObject:
+	case orderedObject:
 		if len(m) > 0 {
-			dst[ToolCallUIDs] = append(pyObject{}, m...)
+			dst[ToolCallUIDs] = append(orderedObject{}, m...)
 		}
 	case map[string]any:
 		if len(m) > 0 {
@@ -364,9 +365,9 @@ func RecordAbsorbedMessage(survivor, dropped map[string]any, droppedLeads bool) 
 }
 
 // Union of two tool call uid maps keeping one uid per occurrence for a repeated provider id
-func MergeToolCallUIDs(into, extra any) PyObject {
+func MergeToolCallUIDs(into, extra any) OrderedObject {
 	base, _ := asPyObject(into)
-	merged := append(pyObject{}, base...)
+	merged := append(orderedObject{}, base...)
 	add, _ := asPyObject(extra)
 	for _, kv := range add {
 		if prev, ok := merged.get(kv.Key); ok {
@@ -389,7 +390,7 @@ func uidOccurrences(value any) []any {
 }
 
 // Uid map with every provider id named more than once spelled out as one uid per occurrence
-func PerOccurrenceToolCallUIDs(uids any, toolCalls []any) PyObject {
+func PerOccurrenceToolCallUIDs(uids any, toolCalls []any) OrderedObject {
 	var order []string
 	counts := map[string]int{}
 	for _, tc := range toolCalls {
@@ -401,7 +402,7 @@ func PerOccurrenceToolCallUIDs(uids any, toolCalls []any) PyObject {
 		}
 	}
 	base, _ := asPyObject(uids)
-	expanded := append(pyObject{}, base...)
+	expanded := append(orderedObject{}, base...)
 	for _, id := range order {
 		uid, _ := base.get(id)
 		if s, ok := uid.(string); ok && counts[id] > 1 {
@@ -422,8 +423,8 @@ func IndexToolCallUIDs(index map[string]string, assistant map[string]any) map[st
 		variants map[string]bool
 	}
 	var calls []call
-	if pyTruthy(assistant["tool_calls"]) {
-		for _, tc := range pyIter(assistant["tool_calls"]) {
+	if anyutil.IsTrue(assistant["tool_calls"]) {
+		for _, tc := range elementsOf(assistant["tool_calls"]) {
 			calls = append(calls, call{tc, ToolCallIDVariants(tc)})
 		}
 	}
@@ -549,11 +550,11 @@ func AppendMessage(messages *[]map[string]any, message map[string]any, timestamp
 
 // Copy of a dict row of either shape without the withheld prompt in its display metadata
 func withoutWithheldAny(m any) any {
-	if obj, ok := m.(pyObject); ok {
-		clone := append(pyObject{}, obj...)
+	if obj, ok := m.(orderedObject); ok {
+		clone := append(orderedObject{}, obj...)
 		metadata, _ := obj.get("display_metadata")
-		var kept pyObject
-		if mo, isObj := metadata.(pyObject); isObj {
+		var kept orderedObject
+		if mo, isObj := metadata.(orderedObject); isObj {
 			for _, kv := range mo {
 				if kv.Key != WithheldPrompt {
 					kept = append(kept, kv)
@@ -566,7 +567,7 @@ func withoutWithheldAny(m any) any {
 	return withoutWithheld(m.(map[string]any))
 }
 
-func mappingText(obj pyObject) (string, bool) {
+func mappingText(obj orderedObject) (string, bool) {
 	v, _ := obj.get("text")
 	s, ok := v.(string)
 	return s, ok

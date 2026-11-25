@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const MaxSafeInteger = 1<<53 - 1
@@ -52,8 +53,22 @@ func ToWire(value any, path Path) (any, error) {
 			return nil, config.NewConfigValueError(rootName(path)+": NaN/Infinity cannot be stored in Remote Config", "")
 		}
 		return v, nil
+	case float32:
+		return ToWire(float64(v), path)
 	case time.Time:
 		return isoformat(v), nil
+	case *time.Time:
+		if v != nil {
+			return isoformat(*v), nil
+		}
+		return nil, nil
+	case timeutil.Date:
+		return v.String(), nil
+	case *timeutil.Date:
+		if v != nil {
+			return v.String(), nil
+		}
+		return nil, nil
 	case []any:
 		out := make([]any, len(v))
 		for i, e := range v {
@@ -67,14 +82,27 @@ func ToWire(value any, path Path) (any, error) {
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		keys := config.MappingKeys(v)
+		order := make([]string, 0, len(keys))
 		for _, k := range keys {
-			w, err := ToWire(v[k], extend(path, k))
+			key := k
+			if yamlKey, nonString := config.MappingPyKey(v, k); nonString {
+				wk, err := wireKey(yamlKey, path)
+				if err != nil {
+					return nil, err
+				}
+				key = wk
+			}
+			if _, dup := out[key]; dup {
+				return nil, config.NewConfigValueError(fmt.Sprintf("%s: two keys become the same string key %s", Encode(extend(path, key)), strconv.Quote(key)), "")
+			}
+			w, err := ToWire(v[k], extend(path, key))
 			if err != nil {
 				return nil, err
 			}
-			out[k] = w
+			out[key] = w
+			order = append(order, key)
 		}
-		config.SetMappingKeys(out, keys)
+		config.SetMappingKeys(out, order)
 		return out, nil
 	case map[any]any:
 		out := map[string]any{}
@@ -97,7 +125,21 @@ func ToWire(value any, path Path) (any, error) {
 		config.SetMappingKeys(out, order)
 		return out, nil
 	}
-	return nil, config.NewConfigValueError(fmt.Sprintf("%s: a %s value cannot be stored in Remote Config", rootName(path), anyutil.Kind(value)), "")
+	if n, ok := anyutil.Int(value); ok {
+		return wireInt(big.NewInt(n), path), nil
+	}
+	return nil, config.NewConfigValueError(fmt.Sprintf("%s: a %s value cannot be stored in Remote Config", rootName(path), unstorableKind(value)), "")
+}
+
+// Word for a value Remote Config has no form for
+func unstorableKind(v any) string {
+	switch v.(type) {
+	case *config.YAMLSet, config.YAMLSet:
+		return "set"
+	case []byte:
+		return "binary"
+	}
+	return anyutil.Kind(v)
 }
 
 // Integer kept when JSON safe, a decimal string with a warning when it is outside the safe range
@@ -241,7 +283,8 @@ func SecretLiteralPath(path Path, value any) (Path, bool) {
 			}
 			found = p
 			return false
-		case int, int64, uint64, float64, *big.Int:
+		}
+		if _, number := anyutil.Float(node); number {
 			found = p
 			return false
 		}

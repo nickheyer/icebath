@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-
-	"golang.org/x/text/cases"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Surface prompt taking a question and shown labels, returning the picked label or false
@@ -61,14 +60,14 @@ func choiceOptions(choices []any) ([]choiceOption, error) {
 		if !ok {
 			return nil, &HostBuiltinError{Type: "KeyError", Message: "'value'"}
 		}
-		value := config.PyStr(raw)
+		value := anyutil.String(raw)
 		label := value
-		if l, _ := get("label"); config.PyTruthy(l) {
-			label = config.PyStr(l)
+		if l, _ := get("label"); anyutil.IsTrue(l) {
+			label = anyutil.String(l)
 		}
 		description := ""
-		if d, _ := get("description"); config.PyTruthy(d) {
-			description = strings.TrimSpace(config.PyStr(d))
+		if d, _ := get("description"); anyutil.IsTrue(d) {
+			description = strings.TrimSpace(anyutil.String(d))
 		}
 		shown := label
 		if description != "" {
@@ -104,13 +103,13 @@ func askChoice(ctx context.Context, question any, choices []any) (string, bool, 
 	for i, o := range options {
 		labels[i] = o.shown
 	}
-	picked, _ := asker(config.PyStr(question), labels)
-	typed := cases.Fold().String(strings.TrimSpace(picked))
+	picked, _ := asker(anyutil.String(question), labels)
+	typed := textutil.Fold(strings.TrimSpace(picked))
 	if typed == "" {
 		return "", false, nil
 	}
 	for _, o := range options {
-		if typed == cases.Fold().String(o.shown) || typed == cases.Fold().String(o.label) || typed == cases.Fold().String(o.value) {
+		if typed == textutil.Fold(o.shown) || typed == textutil.Fold(o.label) || typed == textutil.Fold(o.value) {
 			return o.value, true, nil
 		}
 	}

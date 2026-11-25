@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Clean process home and Meta env so every case starts from no credentials
@@ -36,7 +37,7 @@ func TestMetaCatalogAvailabilityAndResolution(t *testing.T) {
 	metaHomeEnv(t)
 	for _, row := range newMetaImageGenProvider().ListModels() {
 		for _, k := range []string{"display", "speed", "strengths", "price"} {
-			if !pyTruthy(row[k]) {
+			if !anyutil.IsTrue(row[k]) {
 				t.Fatal(row)
 			}
 		}

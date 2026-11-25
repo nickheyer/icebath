@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Store whose execution ledger lives in a throwaway file, the execution_ledger fixture
@@ -64,7 +65,7 @@ func TestDispatchFailureOpensIncidentAndDeliversFailureNotice(t *testing.T) {
 		t.Fatalf("delivered = %q", delivered)
 	}
 	finished, err := ledger.Get(ctx, id)
-	if err != nil || finished["status"] != "failed" || !strings.Contains(pyStrOrEmpty(finished["error"]), "Restart-safe cron worker dispatch failed") ||
+	if err != nil || finished["status"] != "failed" || !strings.Contains(anyutil.StringOr(finished["error"], ""), "Restart-safe cron worker dispatch failed") ||
 		finished["delivery_outcome"] != "delivered" {
 		t.Fatalf("finished = %v, %v", finished, err)
 	}

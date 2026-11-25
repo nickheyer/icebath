@@ -20,7 +20,7 @@ import (
 var (
 	failedInstallPrefix = regexp.MustCompile(`(?i)failed to install: `)
 	corruptCauses       = []string{"the wheel is invalid", "`record` file is invalid"}
-	missingArchive      = regexp.MustCompile("(?i)archive-v0[\\\\/][^" + pyWhitespaceClass + "`'\"]+.*\\(os error [23]\\)")
+	missingArchive      = regexp.MustCompile("(?i)archive-v0[\\\\/][^" + whitespaceClass + "`'\"]+.*\\(os error [23]\\)")
 	pep508Name          = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`)
 	distInfoName        = regexp.MustCompile(`^(.+?)-[^-]+\.dist-info$`)
 	pep503Runs          = regexp.MustCompile(`[-_.]+`)
@@ -80,7 +80,7 @@ func wheelEnd(text string, start int) int {
 		i += size
 		if len(text)-i >= 4 && strings.EqualFold(text[i:i+4], ".whl") {
 			after, _ := utf8.DecodeRuneInString(text[i+4:])
-			if i+4 == len(text) || !pyIsWord(after) {
+			if i+4 == len(text) || !isWord(after) {
 				return i + 4
 			}
 		}

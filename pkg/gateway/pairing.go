@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
@@ -506,7 +507,7 @@ func pairingNumber(v any) (float64, bool) {
 		}
 		return 0, true
 	}
-	return pyFloatOf(v)
+	return floatOf(v)
 }
 
 // Number a rate limit slot holds, zero for an absent slot and a TypeError for a value arithmetic refuses
@@ -518,7 +519,7 @@ func pairingLimit(limits *jsonutil.Object, key string) (float64, error) {
 	if number, ok := pairingNumber(value); ok {
 		return number, nil
 	}
-	return 0, &PyError{Kind: "TypeError", Msg: "a pairing limit time is " + errchain.Kind(value) + ", expected a number"}
+	return 0, &errorutil.Error{Kind: "TypeError", Msg: "a pairing limit time is " + errchain.Kind(value) + ", expected a number"}
 }
 
 type approvedCacheEntry struct {
@@ -692,7 +693,7 @@ func (s *PairingStore) ListApproved(platform string) ([]*jsonutil.Object, error)
 			row := jsonutil.ObjectOf("platform", p, "user_id", uid)
 			info, ok := approved.Value(uid).(*jsonutil.Object)
 			if !ok {
-				return nil, &PyError{Kind: "TypeError", Msg: "an approved pairing is " + errchain.Kind(approved.Value(uid)) + ", expected a mapping"}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "an approved pairing is " + errchain.Kind(approved.Value(uid)) + ", expected a mapping"}
 			}
 			row.Merge(info)
 			rows = append(rows, row)
@@ -769,7 +770,7 @@ func (s *PairingStore) finishApproval(ctx context.Context, platform string, pend
 	}
 	userID, present := matched.Get("user_id")
 	if !present {
-		return nil, &PyError{Kind: "KeyError", Msg: "'user_id'"}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "'user_id'"}
 	}
 	userName := matched.ValueOr("user_name", "")
 	result := &PairingApproval{UserID: anyutil.String(userID), UserName: anyutil.String(userName),
@@ -872,7 +873,7 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 		object := entry.(*jsonutil.Object)
 		saltText, ok := object.ValueOr("salt", nil).(string)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing salt is " + errchain.Kind(object.ValueOr("salt", nil)) + ", expected hexadecimal text"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the stored pairing salt is " + errchain.Kind(object.ValueOr("salt", nil)) + ", expected hexadecimal text"}
 		}
 		salt, err := hex.DecodeString(saltText)
 		if err != nil {
@@ -880,7 +881,7 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 		}
 		stored, ok := object.ValueOr("hash", nil).(string)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing hash is " + errchain.Kind(object.ValueOr("hash", nil)) + ", expected text"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the stored pairing hash is " + errchain.Kind(object.ValueOr("hash", nil)) + ", expected text"}
 		}
 		if subtle.ConstantTimeCompare([]byte(hashPairingCode(code, salt)), []byte(stored)) == 1 {
 			return s.finishApproval(ctx, platform, pending, entryID, object)

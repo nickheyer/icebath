@@ -118,7 +118,7 @@ func newAWSServiceClient(cfg awsClientConfig) *awsServiceClient {
 	if read <= 0 {
 		read = awsDefaultReadTimeout
 	}
-	tr := pyStackWireTransport(awsDefaultConnectTimeout, 10)
+	tr := stackWireTransport(awsDefaultConnectTimeout, 10)
 	tr.ResponseHeaderTimeout = read
 	signing := cfg.signingName
 	if signing == "" {
@@ -151,7 +151,7 @@ func (e *AWSReadTimeoutError) Timeout() bool   { return true }
 func (e *AWSReadTimeoutError) Temporary() bool { return true }
 
 // Python module of botocore's ReadTimeoutError
-func (e *AWSReadTimeoutError) PyModule() string { return "botocore.exceptions" }
+func (e *AWSReadTimeoutError) Module() string { return "botocore.exceptions" }
 
 // Body whose reads fail once no byte arrives within the read timeout
 type awsIdleTimeoutBody struct {

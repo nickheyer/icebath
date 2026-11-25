@@ -125,12 +125,12 @@ func TestCASRetryOfADocumentWriteReplaysOnlyItsOwnEdit(t *testing.T) {
 	if len(patches) != 2 || patches[0].Body["expectedVersion"] != 1 || patches[1].Body["expectedVersion"] != 2 {
 		t.Fatalf("patches %v", patches)
 	}
-	if _, has := patches[1].Body["unset"]; has || strings.Contains(pyStrOf(patches[1].Body), "compact") {
+	if _, has := patches[1].Body["unset"]; has || strings.Contains(strOf(patches[1].Body), "compact") {
 		t.Fatalf("retry body %v", patches[1].Body)
 	}
 }
 
-func pyStrOf(v any) string {
+func strOf(v any) string {
 	s, _ := wireObject(v).(interface{ MarshalJSON() ([]byte, error) }).MarshalJSON()
 	return string(s)
 }

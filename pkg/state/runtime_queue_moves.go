@@ -36,7 +36,7 @@ func RetireReplacedInput(ctx context.Context, conn SQLiteConn, admissionID, bind
 	if _, err := conn.ExecContext(ctx, cancelQueuedAdmissionQ, admissionID); err != nil {
 		return err
 	}
-	encoded, err := pyDumps(admissionID, pyJSONDefault)
+	encoded, err := dumpsValue(admissionID, jsonDefault)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func CheckReplacedInput(ctx context.Context, conn SQLiteConn, admissionID, bindi
 	text, _ := saved["value"].(string)
 	value, err := jsonutil.Decode(text)
 	if err != nil {
-		return pyValueError(err.Error())
+		return valueError(err.Error())
 	}
 	if !anyutil.Equal(value, admissionID) {
 		return runtimeRefusal("admission_conflict")
@@ -95,7 +95,7 @@ func (d *SessionDB) RehomeQueuedInputs(ctx context.Context, epoch int64, oldSess
 		if err != nil {
 			return err
 		}
-		lineage, err := pyDumps([]any{newSessionID}, pyJSONDefault)
+		lineage, err := dumpsValue([]any{newSessionID}, jsonDefault)
 		if err != nil {
 			return err
 		}
@@ -103,7 +103,7 @@ func (d *SessionDB) RehomeQueuedInputs(ctx context.Context, epoch int64, oldSess
 			text, _ := rowValue(row, "payload_json").(string)
 			input, err := jsonutil.Decode(text)
 			if err != nil {
-				return pyValueError(err.Error())
+				return valueError(err.Error())
 			}
 			digest, err := AdmissionFingerprint(newSessionID, map[string]any{"input": input, "intent": rowValue(row, "intent")})
 			if err != nil {
@@ -161,7 +161,7 @@ func (d *SessionDB) RetargetLocalAutomation(ctx context.Context, epoch int64, se
 			text, _ := rowValue(row, "payload_json").(string)
 			decoded, err := jsonutil.Decode(text)
 			if err != nil {
-				return pyValueError(err.Error())
+				return valueError(err.Error())
 			}
 			payload, _ := decoded.(*jsonutil.Object)
 			var descriptor *jsonutil.Object
@@ -175,9 +175,9 @@ func (d *SessionDB) RetargetLocalAutomation(ctx context.Context, epoch int64, se
 			target, _ := descriptor.Get("target")
 			switch target.(type) {
 			case []any:
-				return &pyConvError{"TypeError", "the automation target is a list, expected text"}
+				return &convError{"TypeError", "the automation target is a list, expected text"}
 			case *jsonutil.Object:
-				return &pyConvError{"TypeError", "the automation target is a mapping, expected text"}
+				return &convError{"TypeError", "the automation target is a mapping, expected text"}
 			}
 			if name, ok := target.(string); !ok || !old[name] {
 				continue
@@ -237,7 +237,7 @@ func ReplayMutationReceipt(ctx context.Context, conn SQLiteConn, key, digest str
 	text, _ := old["value"].(string)
 	receipt, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	stored, err := receiptItem(receipt, "digest")
 	if err != nil {

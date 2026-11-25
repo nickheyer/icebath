@@ -356,8 +356,8 @@ func memoizedSearch(ctx webCallContext, provider WebProvider, query string, limi
 // WebSearchTool searches the web through the configured backend and returns the result JSON
 func WebSearchTool(ctx context.Context, env *Env, query string, limitArg any) string {
 	limit := 5
-	if n, ok := pyIntValue(limitArg); ok {
-		if s, isString := limitArg.(string); !isString || pyIntLiteralRe.MatchString(strings.TrimSpace(s)) {
+	if n, ok := wholeNumberArg(limitArg); ok {
+		if s, isString := limitArg.(string); !isString || wholeNumberText.MatchString(strings.TrimSpace(s)) {
 			limit = min(max(n, 1), 100)
 		}
 	}

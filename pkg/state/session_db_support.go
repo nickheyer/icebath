@@ -8,6 +8,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -86,7 +87,7 @@ func sessionRowDict(row *jsonutil.Object) *jsonutil.Object {
 	}
 	resetFrom, _ := data.Get("_reset_from")
 	branchedFrom, _ := data.Get("_branched_from")
-	if pyTruthy(resetFrom) && pyTruthy(branchedFrom) {
+	if anyutil.IsTrue(resetFrom) && anyutil.IsTrue(branchedFrom) {
 		return data
 	}
 	raw, _ := data.Get("model_config")
@@ -110,7 +111,7 @@ func sessionRowDict(row *jsonutil.Object) *jsonutil.Object {
 		return data
 	}
 	for _, key := range []string{"_reset_from", "_branched_from"} {
-		if current, _ := data.Get(key); pyTruthy(current) {
+		if current, _ := data.Get(key); anyutil.IsTrue(current) {
 			continue
 		}
 		if value, ok := cfg.Value(key).(string); ok && strings.TrimSpace(value) != "" {

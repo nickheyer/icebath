@@ -240,7 +240,7 @@ func normalizePayload(value any, toolName string, args any) (any, bool) {
 			normalized.Set("path", p)
 		}
 		for _, k := range []string{"offset", "limit"} {
-			if n, ok := pyIntValue(dget(args, k)); ok {
+			if n, ok := intValue(dget(args, k)); ok {
 				normalized.Set(k, n)
 			}
 		}
@@ -559,7 +559,7 @@ func serializeToolCall(toolCall any) *jsonutil.Object {
 }
 
 // Elements Python iteration of a value yields, dict keys and string characters included
-func pyIter(v any) []any {
+func elementsOf(v any) []any {
 	if elems, ok := listItems(v); ok {
 		return elems
 	}
@@ -597,7 +597,7 @@ func serializeAssistantMessage(message any) *jsonutil.Object {
 	}
 	calls := []any{}
 	if raw := getattr(message, "tool_calls"); anyutil.IsTrue(raw) {
-		for _, tc := range pyIter(raw) {
+		for _, tc := range elementsOf(raw) {
 			calls = append(calls, serializeToolCall(tc))
 		}
 	}

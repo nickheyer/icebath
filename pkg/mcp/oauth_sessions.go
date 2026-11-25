@@ -139,7 +139,7 @@ func StartOAuthFlow(ctx context.Context, env *tools.Env, homeDir, serverName str
 		if errors.As(err, &te) {
 			err = errors.New("Timed out waiting for MCP authorization URL")
 		}
-		flow.MarkError(ExceptionMessage(err), false)
+		flow.MarkError(excStr(err), false)
 		rec.shutdownListener()
 		return nil, err
 	}

@@ -27,7 +27,7 @@ var (
 )
 
 // Reports whether a Python pattern matches at the start of the text
-func pyReMatch(re *regexp2.Regexp, text string) bool {
+func reMatch(re *regexp2.Regexp, text string) bool {
 	m, err := re.FindStringMatch(text)
 	return err == nil && m != nil && m.RuneIndex == 0
 }
@@ -46,10 +46,10 @@ func (e *PluginEventPayloadError) ErrorKind() string { return "TypeError" }
 
 // Wire name plugin dot id dot event, a ValueError for an id or event that cannot form one
 func PluginEventName(pluginID, event string) (string, error) {
-	if !pyReMatch(pluginIDPattern, pluginID) {
+	if !reMatch(pluginIDPattern, pluginID) {
 		return "", &PluginEventNameError{Msg: fmt.Sprintf("invalid plugin id %s: expected [a-z0-9_-]{1,64}", errchain.Show(pluginID))}
 	}
-	if utf8.RuneCountInString(event) > 128 || !pyReMatch(pluginEventPattern, event) {
+	if utf8.RuneCountInString(event) > 128 || !reMatch(pluginEventPattern, event) {
 		return "", &PluginEventNameError{Msg: fmt.Sprintf("invalid plugin event %s: expected dot-separated segments of [A-Za-z0-9_-] "+
 			"(the plugin id already namespaces the name)", errchain.Show(event))}
 	}

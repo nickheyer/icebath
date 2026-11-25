@@ -9,11 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/pm"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -27,9 +27,12 @@ var (
 	importHealthCommand = pm.InstallRuntimeCommand
 )
 
-// Answers the import health probe with the marker and the empty failure list of a binary that started whole
+// Answers the import health probe with the marker and the empty failure list of a binary that started whole, 2 when the arguments are not a marker and a boolean
 func ImportHealthMain(argv []string, stdout io.Writer) int {
-	if len(argv) != 2 || (argv[1] != "True" && argv[1] != "False") {
+	if len(argv) != 2 {
+		return 2
+	}
+	if _, err := strconv.ParseBool(argv[1]); err != nil {
 		return 2
 	}
 	if _, err := io.WriteString(stdout, "\n"+argv[0]+"[]"); err != nil {
@@ -45,7 +48,7 @@ func criticalModuleImportFailures(ctx context.Context, root string, reportRuntim
 		return nil, nil, err
 	}
 	marker := "__ICEBATH_IMPORT_HEALTH_" + hex.EncodeToString(token) + "__"
-	command := importHealthCommand(root, []string{marker, anyutil.Quote(reportRuntimeErrors)}, pm.LaunchCommandOptions{Subcommand: []string{ImportHealthEntry}})
+	command := importHealthCommand(root, []string{marker, strconv.FormatBool(reportRuntimeErrors)}, pm.LaunchCommandOptions{Subcommand: []string{ImportHealthEntry}})
 	result, err := importHealthRun(ctx, command, executil.Options{Dir: root, Timeout: 120 * time.Second})
 	if err != nil {
 		var expired *executil.TimeoutError

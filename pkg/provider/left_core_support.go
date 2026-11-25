@@ -120,7 +120,7 @@ func leftCorePyRepr(v any) string {
 		}
 		return "False"
 	case string:
-		return pyStringRepr(t)
+		return strconv.Quote(t)
 	case int:
 		return strconv.Itoa(t)
 	case int64:
@@ -128,7 +128,7 @@ func leftCorePyRepr(v any) string {
 	case uint64:
 		return strconv.FormatUint(t, 10)
 	case float64:
-		return pyFloatRepr(t)
+		return floatRepr(t)
 	case json.Number:
 		return t.String()
 	case []any:
@@ -145,7 +145,7 @@ func leftCorePyRepr(v any) string {
 		sort.Strings(keys)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
-			parts[i] = pyStringRepr(k) + ": " + leftCorePyRepr(t[k])
+			parts[i] = strconv.Quote(k) + ": " + leftCorePyRepr(t[k])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
@@ -153,7 +153,7 @@ func leftCorePyRepr(v any) string {
 }
 
 // Python repr of a float with shortest digits, fixed between 1e-4 and 1e16
-func pyFloatRepr(f float64) string {
+func floatRepr(f float64) string {
 	switch {
 	case math.IsInf(f, 1):
 		return "inf"
@@ -178,39 +178,4 @@ func pyFloatRepr(f float64) string {
 		digits = strings.Repeat("0", 2-len(digits)) + digits
 	}
 	return mant + "e" + string(sign) + digits
-}
-
-// Python repr of a string, single quoted unless only double quotes avoid escaping
-func pyStringRepr(s string) string {
-	quote := byte('\'')
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == rune(quote) || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r < 0x7f || unicode.IsPrint(r):
-			b.WriteRune(r)
-		case r <= 0xff:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08x`, r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
 }

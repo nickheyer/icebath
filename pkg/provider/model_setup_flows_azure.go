@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,11 +39,11 @@ type azureCurrent struct {
 func azureCurrentSettings(r *ModelFlowRun) azureCurrent {
 	cur := azureCurrent{authMode: "api_key", entra: map[string]any{}, apiKey: r.envValue("AZURE_FOUNDRY_API_KEY")}
 	if modelCfg, ok := r.Config["model"].(map[string]any); ok && modelCfg["provider"] == "azure-foundry" {
-		cur.baseURL = pyOrStr(modelCfg["base_url"])
-		cur.apiMode = pyOrStr(modelCfg["api_mode"])
+		cur.baseURL = anyutil.StringOr(modelCfg["base_url"], "")
+		cur.apiMode = anyutil.StringOr(modelCfg["api_mode"], "")
 		cur.authMode = "api_key"
-		if pyTruthy(modelCfg["auth_mode"]) {
-			cur.authMode = pyStr(modelCfg["auth_mode"])
+		if anyutil.IsTrue(modelCfg["auth_mode"]) {
+			cur.authMode = anyutil.String(modelCfg["auth_mode"])
 		}
 		if cur.authMode = strings.ToLower(strings.TrimSpace(cur.authMode)); cur.authMode == "" {
 			cur.authMode = "api_key"
@@ -65,7 +66,7 @@ type azureEntraPreflight struct {
 func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azureEntraPreflight {
 	fmt.Fprintln(r.Out)
 	entraOverrides := map[string]any{}
-	persistedScopeOverride := strings.TrimSpace(pyOrStr(currentEntra["scope"]))
+	persistedScopeOverride := strings.TrimSpace(anyutil.StringOr(currentEntra["scope"], ""))
 	entraScope := persistedScopeOverride
 	if entraScope == "" {
 		entraScope = ScopeAIAzureDefault
@@ -317,27 +318,27 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 	if err != nil {
 		return err
 	}
-	pyDictSet(model, "provider", "azure-foundry")
-	pyDictSet(model, "base_url", effectiveURL)
-	pyDictSet(model, "api_mode", apiMode)
-	pyDictSet(model, "default", effectiveModel)
+	dictSet(model, "provider", "azure-foundry")
+	dictSet(model, "base_url", effectiveURL)
+	dictSet(model, "api_mode", apiMode)
+	dictSet(model, "default", effectiveModel)
 	authMode := "api_key"
 	if useEntra {
 		authMode = "entra_id"
 	}
-	pyDictSet(model, "auth_mode", authMode)
+	dictSet(model, "auth_mode", authMode)
 	clearModelEndpointCredentials(model, true, false, false)
 	cleanEntra := map[string]any{}
 	if scope := anyString(entraOverrides["scope"]); scope != "" {
 		cleanEntra["scope"] = scope
 	}
 	if useEntra && len(cleanEntra) > 0 {
-		pyDictSet(model, "entra", cleanEntra)
+		dictSet(model, "entra", cleanEntra)
 	} else {
 		delete(model, "entra")
 	}
 	if ctxLen != 0 {
-		pyDictSet(model, "context_length", ctxLen)
+		dictSet(model, "context_length", ctxLen)
 	}
 	if err := commitModelConfig(r.Env, cfg); err != nil {
 		return err
@@ -348,7 +349,7 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 			copied[k] = v
 		}
 		config.SetMappingKeys(copied, config.MappingKeys(model))
-		pyDictSet(r.Config, "model", copied)
+		dictSet(r.Config, "model", copied)
 	}
 	for _, v := range []string{"OPENAI_BASE_URL", "OPENAI_API_KEY"} {
 		if r.envValue(v) != "" {

@@ -271,7 +271,7 @@ func TestBackupEdgeCasesIncompleteArchiveIsKeptButReportedAsFailure(t *testing.T
 	if _, err := os.Stat(goodOld); err != nil {
 		t.Fatal("an incomplete run must not rotate the last complete backup out")
 	}
-	if !strings.Contains(out, "Archive kept, but 1 file(s) could not be added:") || !strings.Contains(out, "Permission denied") {
+	if !strings.Contains(out, "Archive kept, but 1 file(s) could not be added:") || !strings.Contains(out, "\n  skills/locked.md: permission denied: ") {
 		t.Fatalf("output %q", out)
 	}
 	ok, _, err = runBackupNS(t, map[string]any{"output": filepath.Join(tmp, "out2.zip"), "quick": false})
@@ -296,18 +296,31 @@ func TestBackupEdgeCasesEmptyIcebathHome(t *testing.T) {
 	}
 }
 
-func TestBackupEdgeCasesPre1980TimestampSkipped(t *testing.T) {
+func TestBackupEdgeCasesPre1980TimestampArchivedWithItsTime(t *testing.T) {
 	tmp, h := backupHome(t)
 	writeTree(t, h, map[string]string{"config.yaml": "model: test\n", "ancient.txt": "old data"})
 	os.Chtimes(filepath.Join(h, "ancient.txt"), time.Unix(0, 0), time.Unix(0, 0))
 	outZip := filepath.Join(tmp, "out.zip")
 	ok, out, err := runBackupNS(t, map[string]any{"output": outZip})
-	if ok || err != nil || !strings.Contains(out, "ancient.txt: ZIP does not support timestamps before 1980") {
+	if !ok || err != nil || !strings.Contains(out, "Backup complete: ") {
 		t.Fatalf("result %v %v %q", ok, err, out)
 	}
 	names := zipNames(t, outZip)
-	if !slices.Contains(names, "config.yaml") || slices.Contains(names, "ancient.txt") {
+	if !slices.Contains(names, "config.yaml") || !slices.Contains(names, "ancient.txt") {
 		t.Fatalf("names %v", names)
+	}
+	r, err := zip.OpenReader(outZip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	for _, f := range r.File {
+		if f.Name == "ancient.txt" && f.Modified.Unix() != 0 {
+			t.Fatalf("ancient.txt archived with time %v", f.Modified)
+		}
+	}
+	if body := zipBodies(t, outZip)["ancient.txt"]; string(body) != "old data" {
+		t.Fatalf("ancient.txt body %q", body)
 	}
 }
 
@@ -374,8 +387,8 @@ func TestBackupUnwritableParentErrorsCleanly(t *testing.T) {
 	if ok || !errors.As(err, &exit) || exit.Code != 1 {
 		t.Fatalf("result %v %v", ok, err)
 	}
-	prefix := "Error: cannot write backup to " + filepath.Join(blocker, "sub", "backup.zip") + ": mkdir "
-	if strings.Contains(out, "Traceback") || !strings.HasPrefix(out, prefix) || !strings.HasSuffix(out, "sub: not a directory\n") {
+	prefix := "Error: cannot write backup to " + filepath.Join(blocker, "sub", "backup.zip") + ": not a directory: "
+	if strings.Contains(out, "Traceback") || !strings.HasPrefix(out, prefix) || !strings.HasSuffix(out, filepath.Join("blocker", "sub")+"\n") {
 		t.Fatalf("output %q", out)
 	}
 }

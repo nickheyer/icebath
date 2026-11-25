@@ -89,9 +89,9 @@ var credentialSuffixes = []string{
 	"_SERVICE_ACCOUNT_JSON", "_PROJECT_ID",
 }
 
-const pyWS = `[\t\n\x0B\f\r\x1C-\x1F \x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}]`
+const ws = `[\t\n\x0B\f\r\x1C-\x1F \x{85}\x{A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}]`
 
-var envLineRe = regexp.MustCompile(`^` + pyWS + `*(?:export` + pyWS + `+)?([A-Za-z_][A-Za-z0-9_]*)` + pyWS + `*=`)
+var envLineRe = regexp.MustCompile(`^` + ws + `*(?:export` + ws + `+)?([A-Za-z_][A-Za-z0-9_]*)` + ws + `*=`)
 
 // Clone channel strip and served profile record, replaceable by tests observing a clone
 var (

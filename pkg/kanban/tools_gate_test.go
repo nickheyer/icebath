@@ -278,9 +278,9 @@ func assertWrongTyped(t *testing.T, cases []wrongTypedCase) {
 	}
 }
 
-func TestWorkerToolsReportPythonErrorsForWrongTypedArguments(t *testing.T) {
+func TestWorkerToolsRefuseWrongTypedArguments(t *testing.T) {
 	tid := toolWorkerEnv(t)
-	slug := "must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with '-' or '_'"
+	slug := `must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with "-" or "_"`
 	assertWrongTyped(t, []wrongTypedCase{
 		{"kanban_complete", `{"summary": "s", "metadata": "x"}`, "metadata must be a mapping, got text"},
 		{"kanban_complete", `{"summary": "s", "created_cards": 5}`, "created_cards must be a list of task ids, got a number"},
@@ -302,8 +302,8 @@ func TestWorkerToolsReportPythonErrorsForWrongTypedArguments(t *testing.T) {
 		{"kanban_attach", `{"filename": "f", "content_base64": "not base64!"}`, "content_base64 is not valid base64"},
 		{"kanban_show", `{"task_id": 5}`, "task 5 not found"},
 		{"kanban_show", `{"board": 5.5}`, "kanban_show: invalid board slug 5.5: " + slug},
-		{"kanban_show", `{"board": ["x"]}`, "kanban_show: invalid board slug x: " + slug},
-		{"kanban_show", `{"board": "Bad Slug"}`, "kanban_show: invalid board slug Bad Slug: " + slug},
+		{"kanban_show", `{"board": ["x"]}`, `kanban_show: invalid board slug ["x"]: ` + slug},
+		{"kanban_show", `{"board": "Bad Slug"}`, `kanban_show: invalid board slug "Bad Slug": ` + slug},
 		{"kanban_link", `{"parent_id": 5, "child_id": "` + tid + `"}`, "kanban_link: task id at position 0 is a number where text was expected"},
 		{"kanban_link", `{"parent_id": "t_missing", "child_id": 2.5}`, "kanban_link: task id at position 1 is a number where text was expected"},
 		{"kanban_link", `{"parent_id": "t_missing", "child_id": "` + tid + `"}`, "kanban_link: unknown task(s): t_missing"},
@@ -342,13 +342,13 @@ func TestCompleteKeepsAFalsyNonStringResultAsPythonDoes(t *testing.T) {
 	}
 }
 
-func TestOrchestratorToolsReportPythonErrorsForWrongTypedArguments(t *testing.T) {
+func TestOrchestratorToolsRefuseWrongTypedArguments(t *testing.T) {
 	toolWorkerEnv(t)
 	unsetEnv(t, "ICEBATH_KANBAN_TASK")
 	statuses := "archived, blocked, done, ready, review, running, scheduled, todo, triage"
 	assertWrongTyped(t, []wrongTypedCase{
-		{"kanban_list", `{"include_archived": "maybe"}`, "include_archived must be a boolean or 'true'/'false'"},
-		{"kanban_list", `{"include_archived": 1.0}`, "include_archived must be a boolean or 'true'/'false'"},
+		{"kanban_list", `{"include_archived": "maybe"}`, `include_archived must be a boolean or "true"/"false"`},
+		{"kanban_list", `{"include_archived": 1.0}`, `include_archived must be a boolean or "true"/"false"`},
 		{"kanban_list", `{"limit": "abc"}`, "limit must be an integer"},
 		{"kanban_list", `{"limit": [1]}`, "limit must be an integer"},
 		{"kanban_list", `{"limit": 0}`, "limit must be >= 1"},
@@ -359,9 +359,9 @@ func TestOrchestratorToolsReportPythonErrorsForWrongTypedArguments(t *testing.T)
 		{"kanban_list", `{"tenant": [1]}`, "kanban_list: SQL parameter 1 is a list, which SQLite cannot store"},
 		{"kanban_list", `{"assignee": "a", "status": "ready", "tenant": {}}`, "kanban_list: SQL parameter 3 is a mapping, which SQLite cannot store"},
 		{"kanban_create", `{"title": "t", "assignee": []}`, "assignee is required — name the profile that should execute this task (the dispatcher will only spawn tasks with an assignee)"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "triage": "maybe"}`, "triage must be a boolean or 'true'/'false'"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "triage": "maybe"}`, `triage must be a boolean or "true"/"false"`},
 		{"kanban_create", `{"title": "t", "assignee": "a", "skills": 5}`, "skills must be a list of skill names, got a number"},
-		{"kanban_create", `{"title": "t", "assignee": "a", "provider": "p"}`, "'provider' requires 'model' to be set as well"},
+		{"kanban_create", `{"title": "t", "assignee": "a", "provider": "p"}`, `"provider" requires "model" to be set as well`},
 		{"kanban_create", `{"title": "t", "assignee": "a", "parents": [5]}`, "kanban_create: task id at position 0 is a number where text was expected"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "parents": ["t_gone"]}`, "kanban_create: unknown parent task(s): t_gone"},
 		{"kanban_create", `{"title": "t", "assignee": "a", "parents": [[1]]}`, "kanban_create: SQL parameter 1 is a list, which SQLite cannot store"},

@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -138,7 +139,7 @@ func warnUnknownCostKeys(serverName string, key ServerKey, toolNames []string) {
 	}
 	pkgLog().Warn(fmt.Sprintf("MCP server '%s': tool_costs names %s, which the server does not offer, so those calls "+
 		"carry no cost and no spend limit. Use the server's own tool names (without Icebath's '%s%s__' prefix).",
-		serverName, pyRepr(items), ToolNamePrefix, serverName))
+		serverName, anyutil.Quote(items), ToolNamePrefix, serverName))
 }
 
 // Records the consuming profile's own trust tier and cost policy for an adopted connection
@@ -408,12 +409,12 @@ func cachedTools(raws []any) []*Tool {
 	var out []*Tool
 	for _, raw := range raws {
 		row, ok := raw.(map[string]any)
-		if !ok || !pyTruthy(row["name"]) {
+		if !ok || !anyutil.IsTrue(row["name"]) {
 			continue
 		}
-		t := &Tool{Name: pyStr(row["name"]), InputSchema: jsonutil.NewObject()}
-		if pyTruthy(row["description"]) {
-			t.Description = pyStr(row["description"])
+		t := &Tool{Name: anyutil.String(row["name"]), InputSchema: jsonutil.NewObject()}
+		if anyutil.IsTrue(row["description"]) {
+			t.Description = anyutil.String(row["description"])
 		}
 		if schema, ok := jsonutil.AsObject(row["inputSchema"]); ok {
 			t.InputSchema = schema
@@ -454,7 +455,7 @@ func toolCandidates(serverName string, list []*Tool, shouldRegister func(string)
 		scanDescription(serverName, t.Name, t.Description)
 		schema := convertToolSchema(serverName, t)
 		out = append(out, candidate{
-			registryName: pyStr(schema.Value("name")), origin: "tool " + pyReprStr(t.Name), schema: schema,
+			registryName: anyutil.String(schema.Value("name")), origin: "tool " + strconv.Quote(t.Name), schema: schema,
 			handler: makeToolHandler(serverName, t.Name, toolTimeout, true),
 		})
 	}
@@ -472,11 +473,11 @@ func utilityCandidates(serverName string, entries []any, toolTimeout float64) []
 		schema, ok := jsonutil.AsObject(row["schema"])
 		key, isStr := row["handler_key"].(string)
 		factory, known := utilityHandlerFactories[key]
-		if !ok || !isStr || !known || !pyTruthy(schema.Value("name")) {
+		if !ok || !isStr || !known || !anyutil.IsTrue(schema.Value("name")) {
 			continue
 		}
 		out = append(out, candidate{
-			registryName: pyStr(schema.Value("name")), origin: utilityOriginPrefix + pyReprStr(key), schema: schema,
+			registryName: anyutil.String(schema.Value("name")), origin: utilityOriginPrefix + strconv.Quote(key), schema: schema,
 			handler: factory(serverName, toolTimeout),
 		})
 	}
@@ -675,7 +676,7 @@ func registerServerTools(ctx context.Context, name string, s *serverTask, cfg ma
 		for _, c := range candidates {
 			manifest[c.registryName] = c.schema
 		}
-		text := pyDumpsSorted(manifest)
+		text := dumpsSorted(manifest)
 		if freezeEditorManifest(s, text) != text {
 			return nil, ErrEditorSchemaChanged
 		}
@@ -689,7 +690,7 @@ func registerServerTools(ctx context.Context, name string, s *serverTask, cfg ma
 }
 
 // Python json.dumps with sort_keys, default separators, ensure_ascii and str for unknown values
-func pyDumpsSorted(v any) string {
+func dumpsSorted(v any) string {
 	var b strings.Builder
 	writePyJSON(&b, v)
 	return b.String()
@@ -709,7 +710,7 @@ func writePyJSON(b *strings.Builder, v any) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(pyJSONCompactASCII(k))
+			b.WriteString(jsonCompactASCII(k))
 			b.WriteString(": ")
 			writePyJSON(b, x[k])
 		}
@@ -745,9 +746,9 @@ func writePyJSON(b *strings.Builder, v any) {
 		if i, err := strconv.ParseInt(string(x), 10, 64); err == nil {
 			b.WriteString(strconv.FormatInt(i, 10))
 		} else if f, err := x.Float64(); err == nil {
-			b.WriteString(pyJSONCompactASCII(f))
+			b.WriteString(jsonCompactASCII(f))
 		} else {
-			b.WriteString(pyJSONCompactASCII(string(x)))
+			b.WriteString(jsonCompactASCII(string(x)))
 		}
 	case int32:
 		b.WriteString(strconv.FormatInt(int64(x), 10))
@@ -756,9 +757,9 @@ func writePyJSON(b *strings.Builder, v any) {
 	case uint32:
 		b.WriteString(strconv.FormatUint(uint64(x), 10))
 	case float32:
-		b.WriteString(pyJSONCompactASCII(float64(x)))
+		b.WriteString(jsonCompactASCII(float64(x)))
 	default:
-		b.WriteString(pyJSONCompactASCII(v))
+		b.WriteString(jsonCompactASCII(v))
 	}
 }
 
@@ -775,26 +776,26 @@ func identityScalar(v any) string {
 	case string:
 		return "s:" + x
 	}
-	if f, ok := pyFloat(v); ok {
-		return "n:" + pyFloatRepr(f)
+	if f, ok := floatNumber(v); ok {
+		return "n:" + floatRepr(f)
 	}
-	return "r:" + pyDumpsSorted(v)
+	return "r:" + dumpsSorted(v)
 }
 
 // Value of a config entry frozen for identity comparison, falsy values reading as an empty mapping
 func frozenIdentityValue(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "{}"
 	}
-	return pyDumpsSorted(v)
+	return dumpsSorted(v)
 }
 
 // Normalised auth type of a server config
 func authType(cfg map[string]any) string {
-	if !pyTruthy(cfg["auth"]) {
+	if !anyutil.IsTrue(cfg["auth"]) {
 		return ""
 	}
-	return pyStrip(strings.ToLower(pyStr(cfg["auth"])))
+	return strings.TrimSpace(strings.ToLower(anyutil.String(cfg["auth"])))
 }
 
 // Route fingerprint plus everything that authenticates or secures a connection
@@ -804,7 +805,7 @@ func connectionIdentity(cfg map[string]any) [8]string {
 		sslVerify = true
 	}
 	strict := "False"
-	if pyTruthy(cfg["strict_redirect_headers"]) {
+	if anyutil.IsTrue(cfg["strict_redirect_headers"]) {
 		strict = "True"
 	}
 	return [8]string{
@@ -815,14 +816,14 @@ func connectionIdentity(cfg map[string]any) [8]string {
 
 // Hash of a connection's resolved inputs, the inputs themselves carry secrets
 func identityDigest(inputs []any) string {
-	sum := sha256.Sum256([]byte(pyDumpsSorted(inputs)))
+	sum := sha256.Sum256([]byte(dumpsSorted(inputs)))
 	return hex.EncodeToString(sum[:])
 }
 
 // Digest of what this profile would connect with, false when it cannot connect or a resolver fails
 func adopterIdentityDigest(ctx context.Context, env *tools.Env, serverName string, r *Rendered) (string, bool) {
 	cfg := r.Config
-	if _, hasURL := cfg["url"]; !hasURL && !pyTruthy(cfg["command"]) {
+	if _, hasURL := cfg["url"]; !hasURL && !anyutil.IsTrue(cfg["command"]) {
 		return "", false
 	}
 	inputs, _, err := connectInputs(ctx, env, serverName, r)

@@ -82,7 +82,7 @@ func permissionsDoctor(ctx context.Context, env *tools.Env, binary string) (ok b
 	if probes == nil {
 		probes = []any{}
 	}
-	items, err := pyIterItems(probes)
+	items, err := iterItems(probes)
 	if err != nil {
 		return false, nil, false
 	}

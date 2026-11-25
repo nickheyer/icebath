@@ -232,7 +232,7 @@ func TestPluginMessageRouteLocalSessionAndRefusals(t *testing.T) {
 		refusal["detail"] != "no connected telegram adapter answers this chat" {
 		t.Fatalf("%v", refusal)
 	}
-	if _, refusal, _ := ResolvePluginMessageTarget(ctx, runner, "zz", nil, "", "p"); refusal["detail"] != "session 'zz' is not known to this gateway" {
+	if _, refusal, _ := ResolvePluginMessageTarget(ctx, runner, "zz", nil, "", "p"); refusal["detail"] != `session "zz" is not known to this gateway` {
 		t.Fatalf("%v", refusal)
 	}
 }

@@ -126,7 +126,7 @@ func ResolveImageSource(ctx context.Context, env *Env, src, taskID string, permi
 	if strings.HasPrefix(strings.ToLower(s), "file://") {
 		candidate = s[len("file://"):]
 	}
-	p := pyExpandUser(candidate)
+	p := expandUserValue(candidate)
 	local, err := isLocalTerminalBackend(env)
 	if err != nil {
 		return nil, err
@@ -160,7 +160,7 @@ func readIngestFile(path, src string) ([]byte, error) {
 }
 
 // Expands a leading tilde the way os.path.expanduser does, HOME first then the user database
-func pyExpandUser(p string) string {
+func expandUserValue(p string) string {
 	if !strings.HasPrefix(p, "~") {
 		return p
 	}

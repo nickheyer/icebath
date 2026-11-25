@@ -158,7 +158,7 @@ func TestSetSessionReadMarksTheLineage(t *testing.T) {
 	}
 	ok, err = db.SetSessionRead(ctx, "tip", true)
 	flagMust(t, ok, err)
-	if got, _ := pyFloatOf(autoField(t, db, "root", "last_read_at")); got < now()-60 {
+	if got, _ := floatOf(autoField(t, db, "root", "last_read_at")); got < now()-60 {
 		t.Fatalf("root last read %v", got)
 	}
 }

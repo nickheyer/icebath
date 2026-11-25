@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func f64(v float64) *float64 { return &v }
@@ -99,7 +101,7 @@ func TestRestartTimeoutParsersAndBudgets(t *testing.T) {
 			t.Fatalf("%+v -> %v %v", c, got, err)
 		}
 	}
-	if _, err := ResolveSystemdTimeoutStopSec(math.Inf(1), 30, 10, 30, 60); err == nil || err.(*PyError).Kind != "OverflowError" {
+	if _, err := ResolveSystemdTimeoutStopSec(math.Inf(1), 30, 10, 30, 60); err == nil || err.(*errorutil.Error).Kind != "OverflowError" {
 		t.Fatalf("infinite drain %v", err)
 	}
 	if b, err := ResolveRestartExitWaitBudget(math.Inf(1), 1800, 30, 15); err != nil || !math.IsInf(b, 1) {

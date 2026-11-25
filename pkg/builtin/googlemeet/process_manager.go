@@ -60,7 +60,7 @@ func activeRecord(ctx context.Context) (*jsonutil.Object, error) {
 	}
 	obj, ok := v.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", typeName(v))
 	}
 	return obj, nil
 }
@@ -263,7 +263,7 @@ func pmStatus(ctx context.Context) (*jsonutil.Object, error) {
 	case nil:
 	default:
 		if anyutil.IsTrue(st) {
-			return nil, fmt.Errorf("'%s' object is not a mapping", pyTypeName(st))
+			return nil, fmt.Errorf("'%s' object is not a mapping", typeName(st))
 		}
 	}
 	return res, nil

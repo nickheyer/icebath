@@ -225,6 +225,6 @@ func TestEditorDisabledValuesFollowPythonMembership(t *testing.T) {
 
 // Reports whether err carries the Python exception class and message
 func edPyError(err error, class, message string) bool {
-	var py *PyError
+	var py *ClassError
 	return errors.As(err, &py) && py.Class == class && py.Message == message
 }

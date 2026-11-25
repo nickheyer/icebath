@@ -95,7 +95,7 @@ func pluginPCMStreamingProvider(ctx context.Context, provider string, req *ttsRe
 	if !usable {
 		return nil, 0, false
 	}
-	f, ok := pyRealNumber(rate)
+	f, ok := realNumber(rate)
 	if _, isBool := rate.(bool); isBool || !ok || math.IsInf(f, 0) || math.IsNaN(f) || f < 1 {
 		pkgLog().Warn(fmt.Sprintf("TTS provider '%s' sets streams_pcm without a valid stream_sample_rate (%s); using per-sentence synthesis instead", key, errchain.Show(rate)))
 		return nil, 0, false

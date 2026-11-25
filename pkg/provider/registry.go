@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 const (
@@ -678,7 +680,7 @@ func declaresModelProviderKind(pluginDir string) bool {
 				if !present {
 					kind = ""
 				}
-				return strings.TrimSpace(pyScalarStr(kind)) == "model-provider"
+				return strings.TrimSpace(scalarStr(kind)) == "model-provider"
 			}
 		}
 		for _, line := range strings.Split(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text), "\n") {
@@ -700,7 +702,7 @@ func declaresModelProviderKind(pluginDir string) bool {
 func DeclaresModelProviderKind(pluginDir string) bool { return declaresModelProviderKind(pluginDir) }
 
 // Python str of a YAML scalar for the manifest comparisons
-func pyScalarStr(v any) string {
+func scalarStr(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return "None"
@@ -801,7 +803,15 @@ func noteLoadResult(layer *homeLayer, pluginDir string, err error) {
 		delete(layer.errors, filepath.Base(pluginDir))
 		return
 	}
-	layer.errors[filepath.Base(pluginDir)] = goErrorTypeName(err) + ": " + err.Error()
+	layer.errors[filepath.Base(pluginDir)] = pluginLoadErrorText(err)
+}
+
+// Text of a home plugin import failure, the class a hosted plugin raised named before its message
+func pluginLoadErrorText(err error) string {
+	if b, ok := err.(*plugins.HostBuiltinError); ok && b.Type != "" {
+		return b.Type + ": " + b.Message
+	}
+	return errchain.OSText(err)
 }
 
 // PluginLoadError returns the import error a home plugin dir raised, empty when it loaded

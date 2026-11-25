@@ -25,7 +25,7 @@ func kanbanStopNudgeEnabled(ctx context.Context) bool {
 	return settings.KanbanStopNudge.Get(ctx) && tools.OwnedKanbanTask(ctx) != ""
 }
 
-// Tool name from a dict or typed tool call, function.name first and then name
+// Tool name from a dict, a decoded object or a typed tool call, function.name first and then name
 func kanbanToolCallName(tc any) string {
 	switch call := tc.(type) {
 	case state.ToolCall:
@@ -35,12 +35,12 @@ func kanbanToolCallName(tc any) string {
 			return ""
 		}
 		return call.Function.Name
-	case map[string]any:
-		name := call["name"]
-		if fn, ok := jsonutil.AsMap(call["function"]); ok {
+	case map[string]any, *jsonutil.Object:
+		name := state.ToolCallField(call, "name")
+		if fn, ok := jsonutil.AsMap(state.ToolCallField(call, "function")); ok {
 			name = fn["name"]
 		}
-		if !pyTruthy(name) {
+		if !anyutil.IsTrue(name) {
 			return ""
 		}
 		return anyutil.String(name)
@@ -83,7 +83,7 @@ func sessionCalledKanbanTerminal(messages []map[string]any) bool {
 				}
 			}
 		case "tool":
-			if name := msg["name"]; pyTruthy(name) && terminalKanbanTools[anyutil.String(name)] {
+			if name := msg["name"]; anyutil.IsTrue(name) && terminalKanbanTools[anyutil.String(name)] {
 				return true
 			}
 		}

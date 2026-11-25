@@ -122,7 +122,7 @@ func TestNormalizeMessageEditedForumTopicThreadIdIncluded(t *testing.T) {
 func TestNormalizeMessageEditedEditDateSerializedIso(t *testing.T) {
 	update := editedUpdate(123, 456, "fixed typo")
 	update["edited_message"].(map[string]any)["edit_date"] = time.Date(2026, 8, 12, 10, 30, 0, 0, time.UTC).Unix()
-	if got := normalizePlatformEvent(update)["payload"].(map[string]any)["edited_at"]; got != "2026-08-12T10:30:00+00:00" {
+	if got := normalizePlatformEvent(update)["payload"].(map[string]any)["edited_at"]; got != "2026-08-12T10:30:00.000000Z" {
 		t.Fatalf("got %v", got)
 	}
 }

@@ -53,7 +53,7 @@ func (d *SessionDB) ReplaceMessagesInTransaction(ctx context.Context, conn SQLit
 		}
 		ids := make([]int64, len(rows))
 		for i, r := range rows {
-			ids[i], _ = pyIntID(r["id"])
+			ids[i], _ = intID(r["id"])
 		}
 		if !slices.Equal(ids, expectedActiveIDs) {
 			return errors.New("active transcript changed before the rewrite could be persisted")
@@ -97,8 +97,8 @@ func (d *SessionDB) ReplaceMessagesInTransaction(ctx context.Context, conn SQLit
 func rowIdentity(role, content, toolCallID, toolCalls any) ([]any, error) {
 	roleStr, _ := role.(string)
 	var encodedCalls any
-	if pyTruthy(toolCalls) {
-		text, err := pyDumps(toolCalls, pyJSONDefault)
+	if anyutil.IsTrue(toolCalls) {
+		text, err := dumpsValue(toolCalls, jsonDefault)
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +131,7 @@ func stampKeptLivePrefix(live []map[string]any, messages []map[string]any) (int,
 			break
 		}
 		msg["_row_id"] = row["id"]
-		if pyTruthy(row["message_uid"]) {
+		if anyutil.IsTrue(row["message_uid"]) {
 			msg[MessageUID] = row["message_uid"]
 		}
 		kept++
@@ -155,7 +155,7 @@ func (d *SessionDB) GetActiveMessageWatermark(ctx context.Context, sessionID str
 		return 0, err
 	}
 	v, _ := row.Get("n")
-	n, _ := pyIntID(v)
+	n, _ := intID(v)
 	return n, nil
 }
 
@@ -193,7 +193,7 @@ func (d *SessionDB) ResolveActiveRowID(ctx context.Context, sessionID string, ro
 	if err != nil || origin == nil {
 		return 0, false, err
 	}
-	if active, _ := origin.Get("active"); pyTruthy(active) {
+	if active, _ := origin.Get("active"); anyutil.IsTrue(active) {
 		return rowID, true, nil
 	}
 	clones, err := d.readAll(ctx, "SELECT c.id AS id FROM messages c JOIN messages o ON o.id = ? WHERE c.session_id = ? AND c.active = 1 AND c.id > o.id AND c.role = o.role "+
@@ -202,7 +202,7 @@ func (d *SessionDB) ResolveActiveRowID(ctx context.Context, sessionID string, ro
 		return 0, false, err
 	}
 	v, _ := clones[0].Get("id")
-	id, _ := pyIntID(v)
+	id, _ := intID(v)
 	return id, true, nil
 }
 
@@ -223,7 +223,7 @@ func (d *SessionDB) DisplayMessageCount(ctx context.Context, sessionID string) (
 		return 0, err
 	}
 	v, _ := row.Get("n")
-	n, _ := pyIntID(v)
+	n, _ := intID(v)
 	return n, nil
 }
 

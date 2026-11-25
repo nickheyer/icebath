@@ -83,13 +83,13 @@ func nativeProbe(path string, wantText bool) (nativeProbeResult, bool) {
 func nativeAtomicWrite(path string, data []byte) string {
 	target := path
 	if st, err := os.Lstat(path); err == nil && st.Mode()&os.ModeSymlink != 0 {
-		target = pyRealpath(path)
+		target = realpath(path)
 	}
 	parent := posixDirname(target)
 	if parent == "" {
 		parent = "."
 	}
-	if err := pyMakedirs(parent); err != nil {
+	if err := makedirs(parent); err != nil {
 		return nativeOSErrorText(err, target)
 	}
 	var mode *os.FileMode
@@ -103,7 +103,7 @@ func nativeAtomicWrite(path string, data []byte) string {
 	if _, err := rand.Read(token); err != nil {
 		return nativeOSErrorText(err, target)
 	}
-	tmp := pyOSPathJoin(parent, ".icebath-tmp."+hex.EncodeToString(token))
+	tmp := osPathJoinValue(parent, ".icebath-tmp."+hex.EncodeToString(token))
 	perm := os.FileMode(0o666)
 	if mode != nil {
 		perm = 0o600
@@ -187,14 +187,14 @@ func nativeStrerror(err error) string {
 }
 
 // Recursive directory creation with the os.makedirs exist_ok semantics and error paths
-func pyMakedirs(name string) error {
+func makedirs(name string) error {
 	head, tail := posixSplit(name)
 	if tail == "" {
 		head, tail = posixSplit(head)
 	}
 	if head != "" && tail != "" {
 		if _, err := os.Stat(head); err != nil {
-			if err := pyMakedirs(head); err != nil && !errors.Is(err, os.ErrExist) {
+			if err := makedirs(head); err != nil && !errors.Is(err, os.ErrExist) {
 				return err
 			}
 			if tail == "." {
@@ -238,13 +238,13 @@ func posixAbspath(p string) string {
 }
 
 // Non strict os.path.realpath that follows dangling and looping links as far as they resolve
-func pyRealpath(p string) string {
-	path, _ := pyJoinRealpath("", p, map[string]*string{})
+func realpath(p string) string {
+	path, _ := joinRealpath("", p, map[string]*string{})
 	return posixAbspath(path)
 }
 
 // One step of the realpath walk, false once a symlink loop stops resolution
-func pyJoinRealpath(path, rest string, seen map[string]*string) (string, bool) {
+func joinRealpath(path, rest string, seen map[string]*string) (string, bool) {
 	if strings.HasPrefix(rest, "/") {
 		rest = rest[1:]
 		path = "/"
@@ -287,7 +287,7 @@ func pyJoinRealpath(path, rest string, seen map[string]*string) (string, bool) {
 			continue
 		}
 		var ok bool
-		path, ok = pyJoinRealpath(path, link, seen)
+		path, ok = joinRealpath(path, link, seen)
 		if !ok {
 			return posixJoin(path, rest), false
 		}

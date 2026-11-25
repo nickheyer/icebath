@@ -239,7 +239,7 @@ func (s *realtimeSession) recvFrame(deadline time.Time, timeout float64) (*jsonu
 }
 
 // Python type name of a decoded JSON value
-func pyTypeName(v any) string {
+func typeName(v any) string {
 	switch v.(type) {
 	case nil:
 		return "NoneType"
@@ -367,7 +367,7 @@ func (s *realtimeSpeaker) runUntilStopped(stop func() bool, poll time.Duration) 
 		if anyutil.IsTrue(rawText) {
 			str, ok := rawText.(string)
 			if !ok {
-				return fmt.Errorf("'%s' object has no attribute 'strip'", pyTypeName(rawText))
+				return fmt.Errorf("'%s' object has no attribute 'strip'", typeName(rawText))
 			}
 			text = strings.TrimSpace(str)
 		}

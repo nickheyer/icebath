@@ -3,10 +3,12 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -62,7 +64,7 @@ func openrouterBuildExtraBody(sessionID string, kw map[string]any) *jsonutil.Obj
 	if prefs == nil {
 		prefs = jsonutil.NewObject()
 	}
-	if pin, ok := openRouterEndpointPins[model]; ok && !(pin.base == model && pyTruthy(prefs.Value("only"))) {
+	if pin, ok := openRouterEndpointPins[model]; ok && !(pin.base == model && anyutil.IsTrue(prefs.Value("only"))) {
 		next := prefs.Clone()
 		next.Set("only", append([]string(nil), pin.tags...))
 		prefs = next
@@ -87,7 +89,7 @@ func openrouterBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*j
 	if pin, ok := openRouterEndpointPins[model]; ok && pin.base != model {
 		topLevel["model"] = pin.base
 	}
-	if pyTruthy(kw["supports_reasoning"]) {
+	if anyutil.IsTrue(kw["supports_reasoning"]) {
 		switch {
 		case anthropicReasoningIsMandatory(model):
 			cfg := reasoningConfigMap(reasoning)
@@ -134,7 +136,7 @@ func openrouterClampReasoningToCatalog(ctx context.Context, cfg *jsonutil.Object
 	clamped := ClampReasoningEffortToSupported(effort, caps.SupportedEfforts)
 	if clamped != "" && clamped != effort {
 		pkgLog().Debug(fmt.Sprintf("openrouter: clamped reasoning effort %s \u2192 %s for %s (catalog supported_efforts=%s)",
-			pyStringRepr(effort), pyStringRepr(clamped), model, openrouterEffortsRepr(caps.SupportedEfforts)))
+			strconv.Quote(effort), strconv.Quote(clamped), model, openrouterEffortsRepr(caps.SupportedEfforts)))
 		cfg = cfg.Clone()
 		cfg.Set("effort", clamped)
 	}
@@ -145,5 +147,5 @@ func openrouterEffortsRepr(efforts []string) string {
 	if efforts == nil {
 		return "None"
 	}
-	return pyStrListRepr(efforts)
+	return anyutil.String(efforts)
 }

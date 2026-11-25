@@ -117,7 +117,7 @@ func clientKeyFor(srv *ServerDef, root string, trusted bool) pairKey {
 }
 
 // Python max(0.0, f), NaN losing to zero
-func pyMax0(f float64) float64 {
+func max0(f float64) float64 {
 	if f > 0 {
 		return f
 	}
@@ -141,7 +141,7 @@ func NewService(rt *Runtime, o Options) *Service {
 		rt: rt, enabled: o.Enabled, waitMode: o.WaitMode, waitTimeout: o.WaitTimeout, installStrategy: o.InstallStrategy,
 		binaryOverrides: o.BinaryOverrides, envOverrides: o.EnvOverrides, initOverrides: o.InitOverrides,
 		disabledServers: map[string]bool{}, idleTimeout: o.IdleTimeout, extraServers: append([]*ServerDef{}, o.ExtraServers...),
-		brokenRetry: pyMax0(o.BrokenRetrySeconds), warmupTimeout: pyMax0(o.WarmupTimeout),
+		brokenRetry: max0(o.BrokenRetrySeconds), warmupTimeout: max0(o.WarmupTimeout),
 		untrustedSkipped: map[pairKey]bool{},
 		l:                newLoop(), clients: newOmap[pairKey, *Client](), broken: newOmap[pairKey, brokenEntry](),
 		spawning: map[pairKey]*future[*Client]{}, lastUsed: map[pairKey]time.Time{},

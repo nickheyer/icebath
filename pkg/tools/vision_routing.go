@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Env.Values key holding the live main runtime a turn bound for auxiliary routing
@@ -105,7 +106,7 @@ func cleanStr(v any) string {
 	if !truthy(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyStr(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Main model field from the live runtime first, then the profile's model settings, lowercased when asked

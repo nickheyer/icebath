@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
@@ -182,7 +183,7 @@ func retryConnection(ctx context.Context, a *SessionAuthority, ref SessionRef, o
 	names := append([]string{}, verb.connectors...)
 	scoper, ok := a.Runner.(sessionEnvScoper)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "runner has no attribute '_session_env_scope'"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "runner has no attribute '_session_env_scope'"}
 	}
 	live, err := liveSession(a, ref.SessionID)
 	if err != nil {
@@ -270,7 +271,7 @@ func sessionToolsets(ctx context.Context, a *SessionAuthority, ref SessionRef) (
 	if !anyutil.IsTrue(agentSection) {
 		agentSection = map[string]any{}
 	}
-	raw, err := pyGet(agentSection, "disabled_toolsets", nil)
+	raw, err := getValue(agentSection, "disabled_toolsets", nil)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -39,7 +40,7 @@ func ownerPrune(ctx context.Context, endpoint *gateway.GatewayEndpoint, params m
 	}
 	plain, ok := jsonutil.Plain(result).(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("gateway session.prune answered %T, not an object", result)
+		return nil, fmt.Errorf("gateway session.prune answered %s, not an object", errchain.Kind(result))
 	}
 	return plain, nil
 }

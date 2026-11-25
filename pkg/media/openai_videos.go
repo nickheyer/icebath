@@ -52,7 +52,7 @@ func (v *openAIVideo) errorText() (string, bool) {
 	obj, isObj := jsonutil.AsObject(raw)
 	if !isObj {
 		s := anyutil.String(jsonutil.Plain(raw))
-		return s, pyTruthy(jsonutil.Plain(raw))
+		return s, anyutil.IsTrue(jsonutil.Plain(raw))
 	}
 	var parts []string
 	seen := map[string]bool{}

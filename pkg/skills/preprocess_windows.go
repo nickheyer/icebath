@@ -28,4 +28,4 @@ func inlineShellCwdError(cwd string) string {
 }
 
 // Popen returncode, the unsigned process exit status
-func pyReturnCode(state *os.ProcessState) int { return state.ExitCode() }
+func returnCode(state *os.ProcessState) int { return state.ExitCode() }

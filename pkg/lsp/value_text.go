@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"math"
 	"math/big"
 	"os/exec"
@@ -15,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
@@ -95,16 +93,8 @@ func codecRangeError(p []byte, start, end int, reason string) string {
 	return fmt.Sprintf("'utf-8' codec can't decode bytes in position %d-%d: %s", start, end-1, reason)
 }
 
-// Python value of x or fallback
-func pyOr(v, fallback any) any {
-	if anyutil.IsTrue(v) {
-		return v
-	}
-	return fallback
-}
-
 // Python int() of a decoded JSON value, the raised exception text as the error
-func pyInt(v any) (int64, error) {
+func wholeNumber(v any) (int64, error) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -140,7 +130,7 @@ func pyInt(v any) (int64, error) {
 }
 
 // Python int of a value at any magnitude, floats truncated toward zero
-func pyBigInt(v any) (*big.Int, error) {
+func bigInt(v any) (*big.Int, error) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -161,7 +151,7 @@ func pyBigInt(v any) (*big.Int, error) {
 		if err != nil {
 			return nil, errors.New(string(t) + " is not a whole number")
 		}
-		return pyBigInt(f)
+		return bigInt(f)
 	case float64:
 		if math.IsInf(t, 0) {
 			return nil, errors.New("infinity is not a whole number")
@@ -182,7 +172,7 @@ func pyBigInt(v any) (*big.Int, error) {
 }
 
 // Numeric value for Python equality and hashing, false for non numbers
-func pyNumber(v any) (float64, bool) {
+func numberOf(v any) (float64, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -203,7 +193,7 @@ func pyNumber(v any) (float64, bool) {
 }
 
 // Python int of a decoded JSON number that is an exact integer, as isinstance(x, int) sees it
-func pyExactInt(v any) (int64, bool) {
+func exactInt(v any) (int64, bool) {
 	switch t := v.(type) {
 	case int:
 		return int64(t), true
@@ -236,40 +226,38 @@ func dgetOr(v any, key string, fallback any) any {
 	return fallback
 }
 
-// pyExc is a Python exception with its class name and text
-type pyExc struct {
+// failure is a failure with its class label, empty for an operating system failure, its text and the error it stands for
+type failure struct {
 	typ  string
 	text string
 	err  error
 }
 
-func (e *pyExc) Error() string { return e.text }
-func (e *pyExc) Unwrap() error { return e.err }
+func (e *failure) Error() string { return e.text }
+func (e *failure) Unwrap() error { return e.err }
 
-// Python OSError subclass and text for a spawn or filesystem error, a missing executable as ENOENT
-func pyOSError(err error, filename string) *pyExc {
-	cause := err
+// Operating system failure of a spawn or filesystem call without a class label: the reason followed by the file it concerns, a missing executable reading as not found, and without a file the reason with the call or path the error names
+func osError(err error, filename string) *failure {
 	var errno syscall.Errno
-	if !errors.As(err, &errno) {
-		if !errors.Is(err, exec.ErrNotFound) {
-			return &pyExc{typ: "OSError", text: err.Error(), err: err}
-		}
-		cause, errno = syscall.ENOENT, syscall.ENOENT
+	switch {
+	case errors.As(err, &errno):
+	case errors.Is(err, exec.ErrNotFound):
+		errno = syscall.ENOENT
+	default:
+		return &failure{text: err.Error(), err: err}
 	}
-	text := errno.Error()
-	if filename != "" {
-		text += ": " + strconv.Quote(filename)
+	if filename == "" {
+		return &failure{text: errchain.OSText(err), err: err}
 	}
-	return &pyExc{typ: errorutil.Kind(cause), text: text, err: err}
+	return &failure{text: errno.Error() + ": " + filename, err: err}
 }
 
-// Python exception class name for an error the LSP layer logs
+// Class label of an error the LSP layer reports, empty for an operating system failure whose text already names the reason
 func errTypeName(err error) string {
 	var pe *ProtocolError
 	var re *RequestError
 	var te *TimeoutError
-	var oe *pyExc
-	var pathErr *fs.PathError
+	var oe *failure
 	switch {
 	case errors.As(err, &re):
 		return "LSPRequestError"
@@ -283,25 +271,17 @@ func errTypeName(err error) string {
 		return "CancelledError"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "TimeoutError"
-	case errors.As(err, &pathErr):
-		return pyOSError(pathErr.Err, pathErr.Path).typ
-	case errors.As(err, new(syscall.Errno)):
-		return errorutil.Kind(err)
+	case errorutil.IsSystem(err):
+		return ""
 	}
 	return "RuntimeError"
 }
 
-// Python str() of a logged exception
+// Text of an error the LSP layer reports, an operating system failure as its reason and the file or call it concerns
 func errText(err error) string {
-	var pathErr *fs.PathError
-	if errors.As(err, &pathErr) {
-		var oe *pyExc
-		if !errors.As(err, &oe) {
-			return pyOSError(pathErr.Err, pathErr.Path).text
-		}
-	}
-	if errno, ok := err.(syscall.Errno); ok {
-		return errno.Error()
+	var oe *failure
+	if !errors.As(err, &oe) && errorutil.IsSystem(err) {
+		return errchain.OSText(err)
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		var te *TimeoutError
@@ -312,8 +292,16 @@ func errText(err error) string {
 	return err.Error()
 }
 
+// Error as the LSP layer reports it: its class label and text, the text alone when it has no label
+func errReport(err error) string {
+	if name := errTypeName(err); name != "" {
+		return name + ": " + errText(err)
+	}
+	return errText(err)
+}
+
 // Python urllib.parse.quote of a str with extra safe characters
-func pyQuote(s, safe string) string {
+func quoteValue(s, safe string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -384,7 +372,7 @@ func unquoteToBytes(s string) []byte {
 }
 
 // Python urllib.parse.unquote with utf-8 and errors replace, decoding only ASCII runs
-func pyUnquote(s string) string {
+func unquote(s string) string {
 	if !strings.Contains(s, "%") {
 		return s
 	}

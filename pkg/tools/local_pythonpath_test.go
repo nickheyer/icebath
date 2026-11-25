@@ -809,8 +809,8 @@ func TestStripIcebathOwnedPythonpathKeepsUserEntries(t *testing.T) {
 	}
 }
 
-// Pathlib parts comparison ignores trailing and dot components and keeps the anchor
-func TestSamePathComparesPathlibParts(t *testing.T) {
+// Component comparison ignores repeated, trailing and dot components, keeps the anchor and never folds dot dot; a leading double slash is the root on POSIX hosts and a UNC share on Windows
+func TestSamePathComparesComponents(t *testing.T) {
 	cases := []struct {
 		left, right string
 		want        bool
@@ -820,7 +820,7 @@ func TestSamePathComparesPathlibParts(t *testing.T) {
 		{"/a/./b", "/a//b", true},
 		{"a/b", "/a/b", false},
 		{"/a/b/..", "/a", false},
-		{"//srv/a", "/srv/a", false},
+		{"//srv/a", "/srv/a", runtime.GOOS != "windows"},
 		{"", ".", true},
 	}
 	for _, c := range cases {

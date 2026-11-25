@@ -75,7 +75,7 @@ func loadsStoredObject(raw any) (*jsonutil.Object, error) {
 	}
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	obj, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
@@ -217,7 +217,7 @@ func modelInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 	if err != nil {
 		return nil, nil, err
 	}
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = "{}"
 	}
 	modelConfig, err := loadsStoredObject(raw)
@@ -428,7 +428,7 @@ func loadsAny(raw any) (any, error) {
 	}
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	return decoded, nil
 }
@@ -451,7 +451,7 @@ func picksOn(ctx context.Context, conn SQLiteConn, sessionID any, before any) (m
 	picked := map[string]bool{}
 	for _, row := range rows {
 		for _, v := range row {
-			picked[pyStr(v)] = true
+			picked[anyutil.String(v)] = true
 		}
 	}
 	sid, isStr := sessionID.(string)

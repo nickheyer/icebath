@@ -49,7 +49,7 @@ func (c *AuthorityConnection) resolveResponse(ctx context.Context, frame *jsonut
 }
 
 // Value of key in a Python dict of either decoded shape, the AttributeError Python raises for anything else
-func pyGet(value any, key string, def any) (any, error) {
+func getValue(value any, key string, def any) (any, error) {
 	switch dict := value.(type) {
 	case map[string]any:
 		if item, present := dict[key]; present {
@@ -62,7 +62,7 @@ func pyGet(value any, key string, def any) (any, error) {
 		}
 		return def, nil
 	case *jsonutil.Object:
-		return pyDictGet(dict, key, def)
+		return dictGetValue(dict, key, def)
 	}
-	return pyDictGet(value, key, def)
+	return dictGetValue(value, key, def)
 }

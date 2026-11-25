@@ -41,4 +41,4 @@ func acquireRepairLock(lockPath string, handle *os.File, timeout float64) (lockO
 }
 
 // Windows locks carry no holder record
-func recordedRepairLockHolder(*os.File) pyObject { return nil }
+func recordedRepairLockHolder(*os.File) orderedObject { return nil }

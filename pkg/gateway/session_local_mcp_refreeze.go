@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -26,7 +27,7 @@ func refreezeEditorMCP(ctx context.Context, a *SessionAuthority, ref SessionRef,
 		return
 	}
 	if err := refreezeEditor(ctx, a, ref); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Editor MCP re-check of session %s failed; the turn runs on its frozen manifest: %s", ref.SessionID, pyExceptionRepr(err)))
+		pkgLog().Warn(fmt.Sprintf("Editor MCP re-check of session %s failed; the turn runs on its frozen manifest: %s", ref.SessionID, errchain.OSText(err)))
 	}
 }
 
@@ -36,7 +37,7 @@ func refreezeEditor(ctx context.Context, a *SessionAuthority, ref SessionRef) er
 	if err != nil {
 		return err
 	}
-	raw, err := pyItem(receipt, "policy")
+	raw, err := itemValue(receipt, "policy")
 	if err != nil {
 		return err
 	}
@@ -86,7 +87,7 @@ func commitRefreeze(ctx context.Context, a *SessionAuthority, ref SessionRef, se
 	if err != nil {
 		return err
 	}
-	principal, err := pyItem(owner, "principal_id")
+	principal, err := itemValue(owner, "principal_id")
 	if err != nil {
 		return err
 	}

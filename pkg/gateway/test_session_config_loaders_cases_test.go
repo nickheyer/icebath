@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -92,7 +93,7 @@ func (o configLoadersOwner) commit(t *testing.T, staged *state.LocalCreateReceip
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := restoreLocalSession(o.ctx, o.a, pyStrOf(sid))
+	ref, err := restoreLocalSession(o.ctx, o.a, anyutil.String(sid))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,10 +344,10 @@ func TestThePrefillFileIsReadByTheOffLoopCommitNotWhileStaging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := restoreLocalSession(o.ctx, o.a, pyStrOf(sid)); err != nil {
+	if _, err := restoreLocalSession(o.ctx, o.a, anyutil.String(sid)); err != nil {
 		t.Fatal(err)
 	}
-	if got := o.seen(t, pyStrOf(sid)); got != "FIRST" || len(reads()) != 1 {
+	if got := o.seen(t, anyutil.String(sid)); got != "FIRST" || len(reads()) != 1 {
 		t.Fatalf("seen %v after %d reads", got, len(reads()))
 	}
 }
@@ -456,7 +457,7 @@ func TestRetriedRestoredAndBranchedSessionsLoadPrefillOnceAndKeepIt(t *testing.T
 
 	result := o.mutate(t, ref, "branch", "branch")
 	branched, _ := result.Get("branched_session_id")
-	child := pyStrOf(branched)
+	child := anyutil.String(branched)
 	configLoadersPrefill(t, o.home, "prefill.json", "BRANCHED")
 	if got := o.seen(t, child); got != "BRANCHED" {
 		t.Fatalf("branch seen %v", got)

@@ -150,7 +150,7 @@ func TestWorkerFailedFactsWriteRestoresExactConfigBeforeReporting(t *testing.T) 
 	err := SyncVenv(context.Background(), SyncVenvOptions{ProjectRoot: repo, Explicit: true, Plugins: &Selection{Data: map[string]any{
 		"home": homeDir, "enabled": pubList("new"), "disabled": pubList(),
 	}}})
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "OSError" || !strings.Contains(err.Error(), "facts disk full") {
 		t.Fatalf("facts failure %T %v", err, err)
 	}

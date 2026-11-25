@@ -459,7 +459,7 @@ func lastIndexRune(r []rune, c rune) int {
 // Posts the agent reply in chunks, a local reply falling back to whole comments when replies are not allowed
 func deliverCommentReply(ctx context.Context, client larkAPI, fileToken, fileType, commentID, text string, isWhole bool) bool {
 	chunks := chunkText(text, replyChunkSize)
-	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] deliver_comment_reply: is_whole=%s comment_id=%s text_len=%d chunks=%d", pyBool(isWhole), commentID,
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] deliver_comment_reply: is_whole=%s comment_id=%s text_len=%d chunks=%d", strconv.FormatBool(isWhole), commentID,
 		utf8.RuneCountInString(text), len(chunks)))
 	for i, chunk := range chunks {
 		if len(chunks) > 1 {
@@ -481,13 +481,6 @@ func deliverCommentReply(ctx context.Context, client larkAPI, fileToken, fileTyp
 		}
 	}
 	return true
-}
-
-func pyBool(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
 }
 
 // Plain text of a reply's elements, the semantic form dropping the self mention and collapsing whitespace
@@ -1046,8 +1039,8 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 	doc := commentDoc{Title: anyutil.String(dgetDef(meta, "title", "Untitled")), URL: anyutil.String(dgetDef(meta, "url", "")), FileToken: fileToken,
 		FileType: fileType, SelfOpenID: selfOpenID}
 	isWhole := anyutil.IsTrue(dget(detail, "is_whole"))
-	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Comment context: title=%s is_whole=%s", doc.Title, pyBool(isWhole)))
-	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 3/5] Building timeline (is_whole=%s)", pyBool(isWhole)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Comment context: title=%s is_whole=%s", doc.Title, strconv.FormatBool(isWhole)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 3/5] Building timeline (is_whole=%s)", strconv.FormatBool(isWhole)))
 	var prompt string
 	if isWhole {
 		prompt = wholeCommentPrompt(ctx, client, fromOpenID, doc)
@@ -1061,7 +1054,7 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 		pkgLog().Info("[Feishu-Comment] Agent returned NO_REPLY, skipping delivery")
 	} else {
 		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Agent response (%d chars): %s", utf8.RuneCountInString(response), textutil.First(response, 200)))
-		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 5/5] Delivering reply (is_whole=%s, comment_id=%s)", pyBool(isWhole), commentID))
+		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 5/5] Delivering reply (is_whole=%s, comment_id=%s)", strconv.FormatBool(isWhole), commentID))
 		if deliverCommentReply(ctx, client, fileToken, fileType, commentID, response, isWhole) {
 			pkgLog().Info("[Feishu-Comment] Reply delivered successfully")
 		} else {

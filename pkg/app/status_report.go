@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -26,7 +27,7 @@ var statusLabels = map[string]string{
 
 // Local time of a unix stamp value, the default when it is missing or unparseable
 func timestampOr(value any, def *time.Time) *time.Time {
-	if !cliTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return def
 	}
 	var f float64

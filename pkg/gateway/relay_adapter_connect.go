@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Wires the transport handlers, dials, adopts the negotiated descriptor and watches for revocation
 func (a *RelayAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	if a.transport == nil {
-		return false, &PyError{"RuntimeError", "RelayAdapter has no transport configured"}
+		return false, &errorutil.Error{"RuntimeError", "RelayAdapter has no transport configured"}
 	}
 	a.transport.SetInboundHandler(a.onInbound)
 	if setter, ok := a.transport.(relayInterruptHandlerSetter); ok {

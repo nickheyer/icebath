@@ -103,7 +103,7 @@ func cuDumps(m map[string]any, keys ...string) string {
 	for _, k := range keys {
 		o.Set(k, m[k])
 	}
-	out, err := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
+	out, err := jsonutil.Encode(o)
 	if err != nil {
 		panic(err)
 	}
@@ -470,14 +470,7 @@ func summarizeAction(action string, args map[string]any) string {
 	case "click", "double_click", "right_click", "middle_click":
 		return summarizeClick(action, args, fg)
 	case "drag":
-		from, to := args["from_element"], args["to_element"]
-		if !anyutil.IsTrue(from) {
-			from = args["from_coordinate"]
-		}
-		if !anyutil.IsTrue(to) {
-			to = args["to_coordinate"]
-		}
-		return "drag " + anyutil.String(from) + " → " + anyutil.String(to) + fg
+		return "drag " + dragEndpoint(args, "from") + " → " + dragEndpoint(args, "to") + fg
 	case "scroll":
 		return "scroll " + anyutil.String(cuArgOr(args, "direction", "?")) + " x" + anyutil.String(cuArgOr(args, "amount", 3)) + fg
 	case "type":
@@ -497,6 +490,18 @@ func summarizeAction(action string, args map[string]any) string {
 		return "focus " + errchain.Show(cuArgOr(args, "app", "")) + raise
 	}
 	return action + fg
+}
+
+// Drag endpoint of a prompt: the element index when one is set, else the coordinate, ? when neither is given
+func dragEndpoint(args map[string]any, side string) string {
+	end := args[side+"_element"]
+	if !anyutil.IsTrue(end) {
+		end = args[side+"_coordinate"]
+	}
+	if end == nil {
+		return "?"
+	}
+	return anyutil.String(end)
 }
 
 // Click prompt naming the element index or the coordinate tuple
@@ -647,7 +652,7 @@ func actionPayload(res *ActionResult) *jsonutil.Object {
 
 // JSON text of the action payload
 func textResponse(res *ActionResult) string {
-	out, err := jsonutil.Encode(actionPayload(res), jsonutil.Spaced(), jsonutil.ASCII())
+	out, err := jsonutil.Encode(actionPayload(res))
 	if err != nil {
 		panic(err)
 	}

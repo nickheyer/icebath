@@ -129,12 +129,11 @@ func TestCoercePID(t *testing.T) {
 		{"abc", nil},
 		{nil, nil},
 		{2.9, 2},
-		{huge, huge},
+		{huge, nil},
 	}
 	for _, c := range cases {
-		got, err := coercePID(c.raw)
-		if err != nil || !anyutil.Equal(got, c.want) {
-			t.Fatalf("%v: got %v %v want %v", c.raw, got, err, c.want)
+		if got := coercePID(c.raw); !anyutil.Equal(got, c.want) {
+			t.Fatalf("%v: got %v want %v", c.raw, got, c.want)
 		}
 	}
 }
@@ -143,17 +142,17 @@ func TestParseActiveAgentsUsesGatewayContractThenFallback(t *testing.T) {
 	prev := GatewayParseActiveAgents
 	defer func() { GatewayParseActiveAgents = prev }()
 	GatewayParseActiveAgents = func(raw any) (any, error) { return int64(7), nil }
-	if got, err := parseActiveAgents("3"); err != nil || !anyutil.Equal(got, 7) {
-		t.Fatalf("contract result ignored: %v %v", got, err)
+	if got := parseActiveAgents("3"); !anyutil.Equal(got, 7) {
+		t.Fatalf("contract result ignored: %v", got)
 	}
 	GatewayParseActiveAgents = func(raw any) (any, error) { panic("boom") }
-	if got, err := parseActiveAgents("3"); err != nil || !anyutil.Equal(got, 3) {
-		t.Fatalf("panicking contract did not fall back: %v %v", got, err)
+	if got := parseActiveAgents("3"); !anyutil.Equal(got, 3) {
+		t.Fatalf("panicking contract did not fall back: %v", got)
 	}
 	GatewayParseActiveAgents = nil
 	for raw, want := range map[any]any{"-2": 0, "x": 0, int64(5): 5} {
-		if got, err := parseActiveAgents(raw); err != nil || !anyutil.Equal(got, want) {
-			t.Fatalf("%v: got %v %v want %v", raw, got, err, want)
+		if got := parseActiveAgents(raw); !anyutil.Equal(got, want) {
+			t.Fatalf("%v: got %v want %v", raw, got, want)
 		}
 	}
 }
@@ -243,14 +242,15 @@ func TestEmitRuntimeStatusTransitionUnchangedStateEmitsNothing(t *testing.T) {
 	}
 }
 
-func TestEmitRuntimeStatusTransitionOverflowFailsOpen(t *testing.T) {
+func TestEmitRuntimeStatusTransitionNonFiniteAgentCountReportsZero(t *testing.T) {
 	prev := GatewayParseActiveAgents
 	defer func() { GatewayParseActiveAgents = prev }()
 	GatewayParseActiveAgents = nil
 	current := jsonutil.NewObject()
 	current.Set("gateway_state", "running")
 	current.Set("active_agents", math.Inf(1))
-	if events := captureTransition(t, nil, current); len(events) != 0 {
+	events := captureTransition(t, nil, current)
+	if len(events) != 1 || field(events[0], "name") != "gateway.lifecycle" || field(events[0], "new_state") != "running" || !anyutil.Equal(field(events[0], "active_agents"), 0) {
 		t.Fatalf("events %v", events)
 	}
 }

@@ -157,10 +157,10 @@ func sessionUnread(row *jsonutil.Object) (bool, error) {
 		return false, nil
 	}
 	lastActive := rowValue(row, "last_active")
-	if !pyTruthy(lastActive) {
+	if !anyutil.IsTrue(lastActive) {
 		lastActive = rowValue(row, "started_at")
 	}
-	if !pyTruthy(lastActive) {
+	if !anyutil.IsTrue(lastActive) {
 		lastActive = int64(0)
 	}
 	active, err := anyutil.ToFloat(lastActive)

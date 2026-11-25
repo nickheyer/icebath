@@ -237,7 +237,7 @@ func TestCoerceLLMMessageAndMessageField(t *testing.T) {
 	if MessageField(&wire{ReasoningContent: "r", Content: "c"}, "reasoning_content") != "r" || MessageField(wire{Content: "c"}, "content") != "c" || MessageField(wire{}, "missing") != nil {
 		t.Fatal("attribute reads")
 	}
-	var marker interface{ PyRuntimeError() } = &AuxRuntimeError{}
+	var marker interface{ RuntimeError() } = &AuxRuntimeError{}
 	_ = marker
 }
 

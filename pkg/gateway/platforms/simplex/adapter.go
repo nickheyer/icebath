@@ -27,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -135,7 +136,7 @@ func mimeForExt(ext string) string {
 
 // AttributeError an attribute read raises on a value of another type
 func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
+	return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
 }
 
 // dict get of a decoded JSON value, the AttributeError a non dict raises
@@ -443,7 +444,7 @@ func (a *SimplexAdapter) healthMonitor(ctx context.Context) error {
 func unhashable(v any) error {
 	switch v.(type) {
 	case []any, map[string]any:
-		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))}
+		return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))}
 	}
 	return nil
 }
@@ -633,7 +634,7 @@ func (a *SimplexAdapter) onRcvFileComplete(ctx context.Context, resp any) error 
 	}
 	fileMap, isMap := file.(map[string]any)
 	if !isMap {
-		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object does not support item assignment", anyutil.Kind(file))}
+		return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object does not support item assignment", anyutil.Kind(file))}
 	}
 	fileMap["fileSource"] = map[string]any{"filePath": filePath}
 	pending.(map[string]any)["chatItem"] = itemMap
@@ -776,7 +777,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		if anyutil.IsTrue(filePathValue) {
 			var isStr bool
 			if filePath, isStr = filePathValue.(string); !isStr {
-				return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
+				return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
 					anyutil.Kind(filePathValue))}
 			}
 			ext = strings.ToLower(pathutil.Suffix(filePath))
@@ -784,7 +785,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		if fileName := fileInfo["fileName"]; ext == "" && anyutil.IsTrue(fileName) {
 			name, isStr := fileName.(string)
 			if !isStr {
-				return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
+				return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
 					anyutil.Kind(fileName))}
 			}
 			ext = strings.ToLower(pathutil.Suffix(name))
@@ -839,7 +840,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	if anyutil.IsTrue(tsValue) {
 		tsText, isStr := tsValue.(string)
 		if !isStr {
-			return &gateway.PyError{Kind: "TypeError", Msg: "fromisoformat: argument must be str"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "fromisoformat: argument must be str"}
 		}
 		if parsed, perr := timeutil.ParseISO(tsText, time.UTC); perr == nil {
 			timestamp = parsed.UTC()
@@ -849,7 +850,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	if anyutil.IsTrue(text) {
 		var isStr bool
 		if body, isStr = text.(string); !isStr {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(text))}
+			return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(text))}
 		}
 	}
 	msgEvent := gateway.NewMessageEvent(body)
@@ -1157,7 +1158,7 @@ func iterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
 }
 
 // PNG or JPEG path of an image, converting other formats to PNG, with a 128 pixel JPEG thumbnail data URI
@@ -1178,7 +1179,7 @@ func prepareImage(filePath string) (string, string, error) {
 	src, _, err := image.Decode(f)
 	f.Close()
 	if errors.Is(err, image.ErrFormat) {
-		return "", "", &gateway.PyError{Kind: "UnidentifiedImageError", Msg: "cannot identify image file " + strconv.Quote(filePath)}
+		return "", "", &errorutil.Error{Kind: "UnidentifiedImageError", Msg: "cannot identify image file " + strconv.Quote(filePath)}
 	}
 	if err != nil {
 		return "", "", err

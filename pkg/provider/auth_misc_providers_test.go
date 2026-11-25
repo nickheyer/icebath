@@ -69,7 +69,7 @@ func TestXAIRetirementFindRefs(t *testing.T) {
 	if len(issues) != 3 || issues[0].ReasoningEffort != "none" || issues[2].Replacement != "grok-imagine-image-quality" {
 		t.Fatalf("%v", issues)
 	}
-	if got := FormatRetirementIssue(issues[0]); got != `auxiliary.vision.model: 'x-ai/grok-4-fast-non-reasoning' `+"\u2192"+` use 'grok-4.3' (set reasoning_effort: "none")` {
+	if got := FormatRetirementIssue(issues[0]); got != `auxiliary.vision.model: "x-ai/grok-4-fast-non-reasoning" `+"\u2192"+` use "grok-4.3" (set reasoning_effort: "none")` {
 		t.Fatal(got)
 	}
 	for name, entry := range xaiRetiredModels {
@@ -151,7 +151,7 @@ func TestPluginOAuthDispatchOffersTheAuthHandler(t *testing.T) {
 	if owned, err := dispatchPluginAuth("add", nil, "plugtest"); !owned || err != nil {
 		t.Fatal(owned, err)
 	}
-	if _, err := dispatchPluginAuth("logout", nil, "plugtest"); err == nil || err.Error() != "plugtest auth handler failed for `logout`: errorString: permission denied" {
+	if _, err := dispatchPluginAuth("logout", nil, "plugtest"); err == nil || err.Error() != "plugtest auth handler failed for `logout`: permission denied" {
 		t.Fatalf("%v", err)
 	}
 	if owned, err := dispatchPluginAuth("add", nil, "no-such-plugin"); owned || err != nil {

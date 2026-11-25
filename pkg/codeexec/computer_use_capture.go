@@ -303,7 +303,7 @@ func textCapturePayload(v *captureView, summary string, extra *jsonutil.Object) 
 	}
 	setPresent(o, v.truncated, v.elementsFile, v.screenshotPath, v.boundsScale,
 		"truncated_elements", "elements_file", "screenshot_path", "bounds_scale")
-	out, err := jsonutil.Encode(o, jsonutil.Spaced(), jsonutil.ASCII())
+	out, err := jsonutil.Encode(o)
 	if err != nil {
 		panic(err)
 	}

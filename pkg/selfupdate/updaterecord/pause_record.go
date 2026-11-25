@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -70,7 +71,7 @@ func randomHex8() string {
 }
 
 // Path with its last suffix replaced the way Path.with_suffix does
-func pyWithSuffix(path, suffix string) string {
+func withSuffix(path, suffix string) string {
 	base := filepath.Base(path)
 	stem := base
 	if i := strings.LastIndex(base, "."); i > 0 && i < len(base)-1 {
@@ -144,10 +145,10 @@ func itemsOrEmpty(v any) (map[string]any, error) {
 }
 
 // Elements of (v or []) as Python iterates them, a non iterable failing with its TypeError text
-func iterOrEmpty(v any) ([]any, error) { return pyList(orEmptyList(v)) }
+func iterOrEmpty(v any) ([]any, error) { return listOf(orEmptyList(v)) }
 
 // String forms of the elements of (v or []), a non iterable failing with its TypeError text
-func pyStrSet(v any) (map[string]bool, error) {
+func strSetValue(v any) (map[string]bool, error) {
 	items, err := iterOrEmpty(v)
 	if err != nil {
 		return nil, err
@@ -159,39 +160,16 @@ func pyStrSet(v any) (map[string]bool, error) {
 	return set, nil
 }
 
-// dict.update of target with (v or {}), a mapping or a sequence of key value pairs
-func pyDictUpdate(target map[string]any, v any) error {
-	if m, ok := v.(map[string]any); ok || !truthy(v) {
-		for k, x := range m {
-			target[k] = x
-		}
+// Copies the entries of a record field's mapping into target, nothing for a null or empty field, an error naming the field for any other value
+func mergeMappingField(target map[string]any, field string, v any) error {
+	if !truthy(v) {
 		return nil
 	}
-	items, err := pyList(v)
-	if err != nil {
-		return err
+	m, ok := v.(map[string]any)
+	if !ok {
+		return fmt.Errorf("pause record field %q is %s, expected a mapping", field, errchain.Kind(v))
 	}
-	for i, item := range items {
-		pair, err := pyList(item)
-		if err != nil {
-			return fmt.Errorf("cannot convert dictionary update sequence element #%d to a sequence", i)
-		}
-		if len(pair) != 2 {
-			return fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))
-		}
-		switch key := pair[0].(type) {
-		case string:
-			target[key] = pair[1]
-		case []any, map[string]any:
-			return fmt.Errorf("pause record key is %s where text was expected", errchain.Kind(key))
-		default:
-			spelled, err := jsonutil.Encode(key, jsonutil.Spaced(), jsonutil.ASCII())
-			if err != nil {
-				return err
-			}
-			target[spelled] = pair[1]
-		}
-	}
+	maps.Copy(target, m)
 	return nil
 }
 
@@ -398,7 +376,7 @@ func liveUpdateElsewhere(ctx context.Context) (bool, error) {
 	return UpdateInProgress(ctx, root)
 }
 
-func pauseRetiredPath(path string) string { return pyWithSuffix(path, ".retired") }
+func pauseRetiredPath(path string) string { return withSuffix(path, ".retired") }
 
 // Completed obligation ids, an unreadable list raising RetiredUnknown and a malformed one quarantined
 func pauseRetired(path string) (map[string]bool, error) {
@@ -432,7 +410,7 @@ func quarantineRetired(path, target string) (map[string]bool, error) {
 	if _, err := os.Stat(path); err == nil || len(pauseClaims(path)) > 0 {
 		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("the retired paused-gateway list %s is malformed", target)}
 	}
-	corrupt := pyWithSuffix(target, ".corrupt")
+	corrupt := withSuffix(target, ".corrupt")
 	if err := os.Rename(target, corrupt); err != nil {
 		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot set aside the malformed retired paused-gateway list %s: %s", target, errchain.OSText(err))}
 	}
@@ -534,7 +512,7 @@ func pauseRedundant(found []PauseFile, held, retired map[string]bool) (map[strin
 	for _, f := range found {
 		rev[f.Src] = 0
 		if truthy(f.Body["rev"]) {
-			n, err := pyIntConvert(f.Body["rev"])
+			n, err := intConvert(f.Body["rev"])
 			if err != nil {
 				return nil, err
 			}
@@ -743,7 +721,7 @@ func claimLocked(ctx context.Context, path, src, mine string) (map[string]any, e
 	body["claimer"] = PauseIdentity(0)
 	var rev int64
 	if truthy(body["rev"]) {
-		if rev, err = pyIntConvert(body["rev"]); err != nil {
+		if rev, err = intConvert(body["rev"]); err != nil {
 			return nil, err
 		}
 	}
@@ -954,21 +932,21 @@ func namesRequest(token map[string]any, pid, path string, ttl *int) (*bool, erro
 	if !okTarget || !okStopper {
 		return nil, nil
 	}
-	target, err := pyIntConvert(rawTarget)
+	target, err := intConvert(rawTarget)
 	if err != nil {
 		return nil, nil
 	}
-	stopper, err := pyIntConvert(rawStopper)
+	stopper, err := intConvert(rawStopper)
 	if err != nil {
 		return nil, nil
 	}
-	wantPID, err := pyIntConvert(pid)
+	wantPID, err := intConvert(pid)
 	if err != nil {
 		return nil, err
 	}
 	var wantStopper int64
 	if truthy(token["stopper_pid"]) {
-		if wantStopper, err = pyIntConvert(token["stopper_pid"]); err != nil {
+		if wantStopper, err = intConvert(token["stopper_pid"]); err != nil {
 			return nil, err
 		}
 	}
@@ -988,7 +966,7 @@ func namesRequest(token map[string]any, pid, path string, ttl *int) (*bool, erro
 
 // Pids this update asked to stop and pids whose request evidence cannot be read
 func pauseAsked(token map[string]any) (map[string]bool, map[string]bool, error) {
-	sent, err := pyStrSet(token["stop_sent"])
+	sent, err := strSetValue(token["stop_sent"])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1143,22 +1121,22 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 			}
 			requested, sent = keys, keys
 		}
-		req, err := pyStrSet(token["stop_requested"])
+		req, err := strSetValue(token["stop_requested"])
 		if err != nil {
 			return nil, err
 		}
-		asked, err := pyList(requested)
+		asked, err := listOf(requested)
 		if err != nil {
 			return nil, err
 		}
 		for _, k := range asked {
 			req[anyutil.String(k)] = true
 		}
-		got, err := pyStrSet(token["stop_sent"])
+		got, err := strSetValue(token["stop_sent"])
 		if err != nil {
 			return nil, err
 		}
-		issued, err := pyStrSet(sent)
+		issued, err := strSetValue(sent)
 		if err != nil {
 			return nil, err
 		}
@@ -1201,7 +1179,7 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 		if !isMap {
 			return nil, fmt.Errorf("pause record service_profiles is %s where a mapping was expected", errchain.Kind(token["service_profiles"]))
 		}
-		if err := pyDictUpdate(m, adopted["service_profiles"]); err != nil {
+		if err := mergeMappingField(m, "service_profiles", adopted["service_profiles"]); err != nil {
 			return nil, err
 		}
 	}
@@ -1338,14 +1316,14 @@ func unitKey(u map[string]any) string {
 	return anyutil.String(u["label"])
 }
 
-func pyFloatOf(v any) float64 {
+func floatOf(v any) float64 {
 	switch t := v.(type) {
 	case float64:
 		return t
 	case nil:
 		return 0
 	}
-	if n, ok := pyIntValue(v); ok {
+	if n, ok := intValue(v); ok {
 		return float64(n)
 	}
 	if s, ok := v.(string); ok {
@@ -1362,7 +1340,7 @@ func holdBackingOff(token, held map[string]any) {
 	now := pauseNow()
 	waiting := map[string]bool{}
 	for key, state := range mapOf(token["relaunch_retry"]) {
-		if now < pyFloatOf(mapOf(state)["next_at"]) {
+		if now < floatOf(mapOf(state)["next_at"]) {
 			waiting[key] = true
 		}
 	}
@@ -1420,7 +1398,7 @@ func backOffUnready(token map[string]any, attempted map[string]bool, held map[st
 			}
 			var attempts int64
 			if state := mapOf(retry[key]); truthy(state["attempts"]) {
-				attempts, _ = pyIntValue(state["attempts"])
+				attempts, _ = intValue(state["attempts"])
 			}
 			attempts++
 			delay := math.Min(pauseRelaunchRetryBase*math.Pow(2, float64(min(attempts-1, 6))), pauseRelaunchRetryMax)

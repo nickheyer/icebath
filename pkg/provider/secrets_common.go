@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
@@ -77,7 +78,7 @@ func secretsMapping(v any) map[string]any {
 	if m, ok := v.(map[string]any); ok {
 		return m
 	}
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}
 	}
 	panic(fmt.Sprintf("the secrets config is %s, expected a mapping", errchain.Kind(v)))
@@ -91,10 +92,10 @@ func sectionCfg(cfg map[string]any, section string) map[string]any {
 // Stripped string config value, empty for a missing or falsy one
 func cfgStr(cfg map[string]any, key string) string {
 	v, ok := cfg[key]
-	if !ok || !pyTruthy(v) {
+	if !ok || !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyStr(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // One add_argument spec of a subcommand
@@ -129,7 +130,7 @@ func (p *secretsParser) handler(ns map[string]any) secretsHandler {
 
 // Prints the integration is disabled hint, true only when the section is enabled
 func requireEnabled(console *consoleutil.Console, cfg map[string]any, product, command string) bool {
-	if pyTruthy(cfg["enabled"]) {
+	if anyutil.IsTrue(cfg["enabled"]) {
 		return true
 	}
 	console.Print(fmt.Sprintf("[yellow]%s integration is disabled.  Run `icebath secrets %s setup` first.[/yellow]", product, command))
@@ -297,12 +298,12 @@ func nsText(ns map[string]any, key string) string {
 	if v == nil {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Truthy namespace flag
 func nsFlag(ns map[string]any, key string) bool {
-	return pyTruthy(ns[key])
+	return anyutil.IsTrue(ns[key])
 }
 
 // Copy of the values in sorted order

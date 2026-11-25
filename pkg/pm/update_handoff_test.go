@@ -58,7 +58,7 @@ func TestReadHandoffRefusesANonObjectPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := readHandoff(path)
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "ValueError" || py.Message != "post-swap hand-off "+path+" is not a JSON object" {
 		t.Fatalf("err = %v", err)
 	}

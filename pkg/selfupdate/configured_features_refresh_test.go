@@ -107,7 +107,7 @@ func TestFeatureRefreshDependencyFailureStillRunsTheMemoryProviders(t *testing.T
 		text string
 	}{
 		{"command", &pm.CalledProcessError{Argv: []string{"uv", "sync"}, Code: 2}, "uv sync exited 2"},
-		{"classed", &pm.PyError{Class: "InstallError", Message: "extra resolution failed"}, "InstallError: extra resolution failed"},
+		{"classed", &pm.ClassError{Class: "InstallError", Message: "extra resolution failed"}, "InstallError: extra resolution failed"},
 		{"plain", errors.New("disk full"), "RuntimeError: disk full"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -263,7 +263,7 @@ func TestUpdateFinishOwesFailedFeatureDependenciesAndFinishesTheTail(t *testing.
 	}
 	var calls []string
 	frFinishSteps(t, &calls)
-	frRecording(t, &calls, &pm.PyError{Class: "InstallError", Message: "extra resolution failed"}, nil)
+	frRecording(t, &calls, &pm.ClassError{Class: "InstallError", Message: "extra resolution failed"}, nil)
 	request, result := frFinishRequest(t, root, "fr-finish-owed")
 	var stdout bytes.Buffer
 	code, err := updateFinish(updaterecord.UpdateReceiptScope(context.Background()), request, result, &stdout, &bytes.Buffer{})

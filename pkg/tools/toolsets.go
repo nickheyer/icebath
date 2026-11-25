@@ -1503,7 +1503,7 @@ func (r *Registry) PlatformTools(ctx context.Context, scope string, cfg config.T
 	for k := range mergeMCPServers(cfg, names, passthrough, opts.IncludeDefaultMCPServers, portable) {
 		enabled[k] = true
 	}
-	if !explicit && pyContainsKanban(cfg["toolsets"]) {
+	if !explicit && containsKanban(cfg["toolsets"]) {
 		enabled["kanban"] = true
 	}
 	if disabled := cfg.Get("agent.disabled_toolsets"); disabled != nil {

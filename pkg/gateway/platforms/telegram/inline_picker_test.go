@@ -187,7 +187,7 @@ func TestBuildInlineResultsOffsetHandling(t *testing.T) {
 		}
 	}
 	if results, next := BuildInlineResults(ctx, "cmd", " 1_0 ", PageSize); results[0].Title != "/cmd010" || next != "60" {
-		t.Fatalf("python int offset = %q %q", results[0].Title, next)
+		t.Fatalf("digit separated offset = %q %q", results[0].Title, next)
 	}
 	offsetCatalog(t, 40)
 	if results, next := BuildInlineResults(ctx, "cmd", "-3", PageSize); len(results) != 40 || next != "" {

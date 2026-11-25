@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -129,7 +131,7 @@ func repairObjectShape(node any, objectRoot bool) any {
 		_, hasType := src.Get("type")
 		if objectRoot || hasProps || hasType {
 			_, hasRequired := repaired.Get("required")
-			if !pyTruthy(repaired.Value("type")) && (hasProps || hasRequired) {
+			if !anyutil.IsTrue(repaired.Value("type")) && (hasProps || hasRequired) {
 				repaired.Set("type", "object")
 			}
 			if repaired.Value("type") == "object" {
@@ -210,7 +212,7 @@ func PrefixedToolName(serverName, toolName string) string {
 	if !clampedWarned[full] {
 		clampedWarned[full] = true
 		pkgLog().Warn(fmt.Sprintf("MCP tool name %s (%d chars) exceeds the %d-char provider limit; shortened to a deterministic hash-suffixed name",
-			pyReprStr(full), len(full), toolNameMaxLength))
+			strconv.Quote(full), len(full), toolNameMaxLength))
 	}
 	clampedWarnedMu.Unlock()
 	return full[:toolNameMaxLength-len(suffix)] + suffix
@@ -318,14 +320,14 @@ func normalizeNameFilter(value any, label string) map[string]bool {
 		set[v] = true
 	case []any:
 		for _, item := range v {
-			set[pyStr(item)] = true
+			set[anyutil.String(item)] = true
 		}
 	case []string:
 		for _, item := range v {
 			set[item] = true
 		}
 	default:
-		pkgLog().Warn(fmt.Sprintf("MCP config %s must be a string or list of strings; ignoring %s", label, pyRepr(value)))
+		pkgLog().Warn(fmt.Sprintf("MCP config %s must be a string or list of strings; ignoring %s", label, anyutil.Quote(value)))
 	}
 	return set
 }

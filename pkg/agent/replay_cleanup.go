@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -319,7 +320,7 @@ func StripStaleDangerousConfirmations(history []map[string]any, now, expirySecon
 		preview, _ := msg["content"].(string)
 		runes := []rune(preview)
 		pkgLog().Debug(fmt.Sprintf("Redacting stale dangerous-confirmation text in user message (age=%ss, expiry=%ss): %s",
-			pyFixed1(age), pyFixed1(expirySeconds), pyStrRepr(string(runes[:min(len(runes), 80)]))))
+			fixed1(age), fixed1(expirySeconds), strconv.Quote(string(runes[:min(len(runes), 80)]))))
 		redacted := make(map[string]any, len(msg))
 		for k, v := range msg {
 			redacted[k] = v
@@ -332,7 +333,7 @@ func StripStaleDangerousConfirmations(history []map[string]any, now, expirySecon
 }
 
 // Python percent point one f formatting, inf and nan spelled the Python way
-func pyFixed1(f float64) string {
+func fixed1(f float64) string {
 	switch {
 	case math.IsInf(f, 1):
 		return "inf"

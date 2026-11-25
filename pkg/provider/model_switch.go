@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Configured model ids from a mapping, a list of ids or id and name entries, or one string, deduped case insensitively
@@ -44,7 +45,7 @@ func declaredModelIDs(value any) []string {
 		if !ok {
 			continue
 		}
-		modelID := pyStripSpace(s)
+		modelID := strings.TrimSpace(s)
 		if modelID != "" && !seen[strings.ToLower(modelID)] {
 			seen[strings.ToLower(modelID)] = true
 			ids = append(ids, modelID)
@@ -55,7 +56,7 @@ func declaredModelIDs(value any) []string {
 
 // Entry id, falling back to its name when the id is blank or missing
 func declaredItemID(item map[string]any) any {
-	if s, ok := item["id"].(string); ok && pyStripSpace(s) != "" {
+	if s, ok := item["id"].(string); ok && strings.TrimSpace(s) != "" {
 		return s
 	}
 	return item["name"]
@@ -78,7 +79,7 @@ func modelsConfigIsAllowlist(value any, discovered bool) bool {
 	}
 	switch v := value.(type) {
 	case string:
-		return pyStripSpace(v) != ""
+		return strings.TrimSpace(v) != ""
 	case []any, []string:
 		return len(declaredModelIDs(v)) > 0
 	}
@@ -96,10 +97,10 @@ func bareCustomProviderDef(currentBaseURL string) *ProviderDef {
 
 // String form of a config value with falsy values empty and surrounding whitespace removed
 func msClean(value any) string {
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyStripSpace(pyStr(value))
+	return strings.TrimSpace(anyutil.String(value))
 }
 
 var opaqueModelPrefixes = []string{"ri.language-model-service..language-model."}
@@ -282,9 +283,9 @@ func loadDirectAliases(ctx context.Context, cfg map[string]any) *DirectAliasTabl
 	if !ok {
 		return merged
 	}
-	currentProvider := pyStrOrEmpty(modelSection["provider"])
+	currentProvider := anyutil.String(modelSection["provider"])
 	for _, name := range sortedKeys(aliases) {
-		key := strings.ToLower(pyStripSpace(name))
+		key := strings.ToLower(strings.TrimSpace(name))
 		value, ok := aliases[name].(map[string]any)
 		if key == "" || !ok {
 			continue
@@ -304,14 +305,6 @@ func loadDirectAliases(ctx context.Context, cfg map[string]any) *DirectAliasTabl
 			APIKey: msClean(value["api_key"]), KeyEnv: msClean(value["key_env"])})
 	}
 	return merged
-}
-
-// Python str of a config value with None as empty
-func pyStrOrEmpty(v any) string {
-	if v == nil {
-		return ""
-	}
-	return pyStr(v)
 }
 
 // Path and parse signature of the active profile config, false when the signature cannot be read
@@ -352,21 +345,21 @@ func scopedKeyEnv(ctx context.Context, name string) (string, error) {
 		if err != nil {
 			return "", nil
 		}
-		return pyStripSpace(value), nil
+		return strings.TrimSpace(value), nil
 	}
-	return pyStripSpace(GetEnvPreferDotenv(modelsPoolEnv(ctx), name)), nil
+	return strings.TrimSpace(GetEnvPreferDotenv(modelsPoolEnv(ctx), name)), nil
 }
 
 // DirectAliasAPIKey resolves the alias credential from an env template, a literal key, then key_env
 func DirectAliasAPIKey(ctx context.Context, alias DirectAlias) (string, error) {
-	raw := pyStripSpace(alias.APIKey)
+	raw := strings.TrimSpace(alias.APIKey)
 	if strings.HasPrefix(raw, "${") && strings.HasSuffix(raw, "}") && len(raw) >= 3 {
-		return scopedKeyEnv(ctx, pyStripSpace(raw[2:len(raw)-1]))
+		return scopedKeyEnv(ctx, strings.TrimSpace(raw[2:len(raw)-1]))
 	}
 	if raw != "" {
 		return raw, nil
 	}
-	return scopedKeyEnv(ctx, pyStripSpace(alias.KeyEnv))
+	return scopedKeyEnv(ctx, strings.TrimSpace(alias.KeyEnv))
 }
 
 // DirectAliasRuntimeRequest returns the provider to resolve and the explicit key, custom whenever the alias names a URL
@@ -472,14 +465,14 @@ func ResolveStartupModelRoute(ctx context.Context, rawModel string, opts Startup
 			continue
 		}
 		name := key
-		if pyTruthy(entry["name"]) {
-			name = pyStr(entry["name"])
+		if anyutil.IsTrue(entry["name"]) {
+			name = anyutil.String(entry["name"])
 		}
 		customIDs[CustomProviderSlug(name, key)] = true
 	}
 	for _, entry := range customEntries(opts.CustomProviders) {
 		if msClean(entry["name"]) != "" {
-			customIDs[CustomProviderSlug(pyStr(entry["name"]), "")] = true
+			customIDs[CustomProviderSlug(anyutil.String(entry["name"]), "")] = true
 		}
 	}
 	if qualifiedProvider, qualifiedModel := ParseModelInput(ctx, raw, "", customIDs); qualifiedProvider != "" {
@@ -489,7 +482,7 @@ func ResolveStartupModelRoute(ctx context.Context, rawModel string, opts Startup
 	if !found {
 		return nil, nil
 	}
-	prefix, model := pyStripSpace(before), pyStripSpace(after)
+	prefix, model := strings.TrimSpace(before), strings.TrimSpace(after)
 	if prefix == "" || model == "" {
 		return nil, nil
 	}
@@ -499,13 +492,13 @@ func ResolveStartupModelRoute(ctx context.Context, rawModel string, opts Startup
 	}
 	configured := map[string]bool{}
 	for name := range opts.UserProviders {
-		if n := strings.ToLower(pyStripSpace(name)); n != "" {
+		if n := strings.ToLower(strings.TrimSpace(name)); n != "" {
 			configured[n] = true
 		}
 	}
 	for _, entry := range customEntries(opts.CustomProviders) {
 		if msClean(entry["name"]) != "" {
-			configured["custom:"+strings.ToLower(pyStripSpace(pyStr(entry["name"])))] = true
+			configured["custom:"+strings.ToLower(strings.TrimSpace(anyutil.String(entry["name"])))] = true
 		}
 	}
 	canonical := catalogNormalizeProvider(prefix)

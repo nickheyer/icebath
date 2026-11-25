@@ -221,11 +221,14 @@ func parallelShouldRetry(resp *sdkResponse) bool {
 	return resp.status == 408 || resp.status == 409 || resp.status == 429 || resp.status >= 500
 }
 
-// Status error message, the parsed JSON body in Python form when the body parses
+// Status error message: the status code then a JSON body as sent (a JSON string as its text), any other body alone, the status alone for an empty body
 func parallelStatusError(resp *sdkResponse) error {
 	text := strings.TrimSpace(resp.text())
 	if parsed, err := jsonutil.Decode(text); err == nil {
-		return &parallelAPIError{message: fmt.Sprintf("Error code: %d - %s", resp.status, anyutil.String(parsed))}
+		if s, ok := parsed.(string); ok {
+			text = s
+		}
+		return &parallelAPIError{message: fmt.Sprintf("Error code: %d - %s", resp.status, text)}
 	}
 	if text != "" {
 		return &parallelAPIError{message: text}
@@ -293,9 +296,9 @@ func (c *parallelClient) post(ctx context.Context, path string, body *jsonutil.O
 
 // Field of a constructed SDK model, the AttributeError of a missing required field or a non model value
 func parallelAttr(v any, class, field string, required bool) (any, error) {
-	d, ok := pyDict(v)
+	d, ok := mappingOf(v)
 	if !ok {
-		return nil, pyAttributeError(v, field)
+		return nil, attributeError(v, field)
 	}
 	val, present := d.Get(field)
 	if !present && required {
@@ -306,7 +309,7 @@ func parallelAttr(v any, class, field string, required bool) (any, error) {
 
 // Items of a model list field read with the or [] guard
 func parallelList(v any) ([]any, error) {
-	return pyIter(pyOr(v, []any{}))
+	return elementsOf(anyutil.Or(v, []any{}))
 }
 
 type parallelProvider struct{ baseWebProvider }
@@ -328,7 +331,7 @@ func (p *parallelProvider) Search(ctx context.Context, env *Env, query string, l
 		if err != nil {
 			return nil, err
 		}
-		response, err := client.post(ctx, "/v1beta/search", pyObject("max_results", min(limit, searchLimitCap), "mode", mode, "objective", query, "search_queries", []string{query}))
+		response, err := client.post(ctx, "/v1beta/search", jsonutil.ObjectOf("max_results", min(limit, searchLimitCap), "mode", mode, "objective", query, "search_queries", []string{query}))
 		if err != nil {
 			return nil, err
 		}
@@ -354,11 +357,7 @@ func (p *parallelProvider) Search(ctx context.Context, env *Env, query string, l
 			if err != nil {
 				return nil, err
 			}
-			description, err := pyJoin(" ", pyOr(excerpts, []any{}))
-			if err != nil {
-				return nil, err
-			}
-			hits = append(hits, webHit(pyStrField(pyOr(u, "")), pyStrField(pyOr(title, "")), description, i+1))
+			hits = append(hits, webHit(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), joinText(" ", excerpts), i+1))
 		}
 		return searchOK(hits), nil
 	}, true), nil
@@ -380,7 +379,7 @@ func (p *parallelProvider) Extract(ctx context.Context, env *Env, urls []string,
 		if err != nil {
 			return nil, err
 		}
-		response, err := client.post(ctx, "/v1beta/extract", pyObject("urls", urls, "full_content", true))
+		response, err := client.post(ctx, "/v1beta/extract", jsonutil.ObjectOf("urls", urls, "full_content", true))
 		if err != nil {
 			return nil, err
 		}
@@ -411,11 +410,9 @@ func (p *parallelProvider) Extract(ctx context.Context, env *Env, urls []string,
 				if err != nil {
 					return nil, err
 				}
-				if content, err = pyJoin("\n\n", pyOr(excerpts, []any{})); err != nil {
-					return nil, err
-				}
+				content = joinText("\n\n", excerpts)
 			}
-			out = append(out, webDocument(pyStrField(pyOr(u, "")), pyStrField(pyOr(title, "")), pyStrField(content), ""))
+			out = append(out, webDocument(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), anyutil.String(content), ""))
 		}
 		errorsField, err := parallelAttr(response, "ExtractResponse", "errors", true)
 		if err != nil {
@@ -439,11 +436,7 @@ func (p *parallelProvider) Extract(ctx context.Context, env *Env, urls []string,
 			if err != nil {
 				return nil, err
 			}
-			entry, err := vendorErrorEntry(pyStrField(pyOr(u, "")), status, reason, body)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, entry)
+			out = append(out, vendorErrorEntry(anyutil.String(anyutil.Or(u, "")), status, reason, body))
 		}
 		return out, nil
 	}, true), nil

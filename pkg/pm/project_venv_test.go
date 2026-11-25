@@ -146,7 +146,7 @@ func TestVenvInstallsCheckoutReadsDirectURL(t *testing.T) {
 		}{name: "nul raises", directURL: `{"url": "file:///a%00b"}`, wantErr: "lstat: embedded null character in path"}, struct {
 			name, directURL, wantErr string
 			want                     bool
-		}{name: "remote host raises", directURL: `{"url": "file:////server/x"}`, wantErr: "cannot use file:////server/x as a local path: file:// scheme is supported only on localhost"})
+		}{name: "remote host raises", directURL: `{"url": "file:////server/x"}`, wantErr: "cannot use file:////server/x as a local path: file url names another host"})
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

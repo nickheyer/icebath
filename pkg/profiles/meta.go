@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Presentation metadata of a profile read from profile.yaml
@@ -46,7 +47,7 @@ func readYAMLDictFile(path string) map[string]any {
 	if err != nil {
 		return nil
 	}
-	if !pyTruthy(doc) {
+	if !truthy(doc) {
 		return map[string]any{}
 	}
 	m, _ := doc.(map[string]any)
@@ -61,58 +62,8 @@ func setOrdered(m map[string]any, key string, value any) {
 	m[key] = value
 }
 
-// Python truthiness of a YAML shaped value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case uint64:
-		return x != 0
-	case float64:
-		return x != 0
-	case string:
-		return x != ""
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
-}
-
-// Python str of a YAML shaped value
-func pyStr(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return pyReprOrdered(v)
-}
-
-// Python repr of a YAML shaped value keeping mapping insertion order
-func pyReprOrdered(v any) string {
-	switch x := v.(type) {
-	case map[string]any:
-		keys := config.MappingKeys(x)
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = config.PyRepr(k) + ": " + pyReprOrdered(x[k])
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
-	case []any:
-		parts := make([]string, len(x))
-		for i, item := range x {
-			parts[i] = pyReprOrdered(item)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	}
-	return config.PyRepr(v)
-}
+// Whether a YAML value is set: false for null, false, zero numbers, empty text, lists and mappings
+func truthy(v any) bool { return anyutil.IsTrue(v) }
 
 // Profile metadata with empty defaults for a missing or corrupt file, cached by file signature
 func ReadProfileMeta(profileDir string) ProfileMeta {
@@ -130,7 +81,7 @@ func ReadProfileMeta(profileDir string) ProfileMeta {
 		}
 		descAuto := false
 		if v, ok := data["description_auto"]; ok {
-			descAuto = pyTruthy(v)
+			descAuto = truthy(v)
 		}
 		return ProfileMeta{
 			Description:     strings.TrimSpace(strOr(data["description"])),
@@ -144,12 +95,12 @@ func ReadProfileMeta(profileDir string) ProfileMeta {
 	return meta
 }
 
-// Python str(value or "") of a YAML value
+// Text of a YAML value that is set, as YAML writes a scalar; empty for null, false, zero and empty values
 func strOr(v any) string {
-	if !pyTruthy(v) {
+	if !truthy(v) {
 		return ""
 	}
-	return pyStr(v)
+	return config.ShowValue(v)
 }
 
 // Stripped string entries of a previous names list, deduplicated in order

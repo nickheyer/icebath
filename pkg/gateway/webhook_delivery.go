@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -38,7 +39,7 @@ func webhookAdapterOf(adapter PlatformAdapter, attribute string) (webhookDeliver
 	if hook, ok := adapter.(webhookDeliveryAdapter); ok {
 		return hook, nil
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) has no webhook delivery for %s", adapter, attribute)}
+	return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the platform adapter (%T) has no webhook delivery for %s", adapter, attribute)}
 }
 
 // True for a built in delivery platform or one a plugin registered
@@ -62,11 +63,11 @@ func webhookRouteFromChatID(chatID string) (string, error) {
 		padding := (4 - len(token)%4) % 4
 		raw, err := base64.URLEncoding.DecodeString(token + strings.Repeat("=", padding))
 		if err != nil {
-			return "", &PyError{Kind: "ValueError", Msg: err.Error()}
+			return "", &errorutil.Error{Kind: "ValueError", Msg: err.Error()}
 		}
 		decoded, err := jsonutil.Decode(raw)
 		if err != nil {
-			return "", &PyError{Kind: "ValueError", Msg: err.Error()}
+			return "", &errorutil.Error{Kind: "ValueError", Msg: err.Error()}
 		}
 		parts, err := webhookUnpackThree(decoded)
 		if err != nil {
@@ -76,7 +77,7 @@ func webhookRouteFromChatID(chatID string) (string, error) {
 	}
 	pieces := strings.SplitN(chatID, ":", 3)
 	if len(pieces) < 2 {
-		return "", &PyError{Kind: "IndexError", Msg: "the webhook chat id " + chatID + " has no route part"}
+		return "", &errorutil.Error{Kind: "IndexError", Msg: "the webhook chat id " + chatID + " has no route part"}
 	}
 	return pieces[1], nil
 }
@@ -96,13 +97,13 @@ func webhookUnpackThree(decoded any) ([]any, error) {
 			items = append(items, string(r))
 		}
 	default:
-		return nil, &PyError{Kind: "TypeError", Msg: "the retained webhook route is " + errchain.Kind(decoded) + ", expected a pair"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the retained webhook route is " + errchain.Kind(decoded) + ", expected a pair"}
 	}
 	if len(items) < 3 {
-		return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected 3, got %d)", len(items))}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected 3, got %d)", len(items))}
 	}
 	if len(items) > 3 {
-		return nil, &PyError{Kind: "ValueError", Msg: "too many values to unpack (expected 3)"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "too many values to unpack (expected 3)"}
 	}
 	return items, nil
 }
@@ -228,12 +229,12 @@ func webhookValidateDestination(ctx context.Context, delivery any) (*jsonutil.Ob
 		}
 	}
 	result := jsonutil.ObjectOf("deliver", target, "deliver_extra", kept)
-	if pyTruthy(profile) {
+	if anyutil.IsTrue(profile) {
 		result.Set("profile", profile)
 	}
 	if mirror == true {
 		result.Set("mirror", true)
-		if pyTruthy(route) {
+		if anyutil.IsTrue(route) {
 			result.Set("route", route)
 		}
 	}
@@ -253,7 +254,7 @@ func webhookSnapshotDestination(ctx context.Context, adapter PlatformAdapter, ch
 	target := anyText(mustGet(result, "deliver"))
 	extra := mustGet(result, "deliver_extra").(*jsonutil.Object)
 	chat, _ := extra.Get("chat_id")
-	if target == "log" || target == "github_comment" || pyTruthy(chat) {
+	if target == "log" || target == "github_comment" || anyutil.IsTrue(chat) {
 		return result, nil
 	}
 	var profile *string

@@ -223,7 +223,7 @@ func (b *BasePlatformAdapter) boundedHistoryMediaPathsForSession(ctx context.Con
 // Spans of fenced code blocks and inline code in the content
 func codeSpans(content []rune) []runeSpan {
 	var spans []runeSpan
-	for _, rx := range []pyRE{fencedCodeRE, inlineCodeRE} {
+	for _, rx := range []reValue{fencedCodeRE, inlineCodeRE} {
 		for _, m := range rx.finditer(content) {
 			spans = append(spans, runeSpan{m.RuneIndex, m.RuneIndex + m.RuneLength})
 		}

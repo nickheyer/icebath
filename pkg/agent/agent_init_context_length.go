@@ -122,12 +122,10 @@ func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, customP
 		if configuredBaseURL == "" {
 			configuredShown = configuredProvider
 		}
-		pin := any(nil)
 		if configContextLength != nil {
-			pin = *configContextLength
+			pkgLog().Debug(fmt.Sprintf("Ignoring model.context_length=%d for startup runtime %s at %s (configured default is %s at %s)",
+				*configContextLength, a.model, shownURL, configuredModel, configuredShown))
 		}
-		pkgLog().Debug(fmt.Sprintf("Ignoring model.context_length=%s for startup runtime %s at %s (configured default is %s at %s)",
-			anyutil.String(pin), a.model, shownURL, configuredModel, configuredShown))
 		return nil
 	}
 	return configContextLength

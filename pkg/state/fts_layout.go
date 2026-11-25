@@ -25,11 +25,11 @@ func storedForm(sql string) string {
 func expectedStoredSQL(ddl, kind, name string) (string, error) {
 	start := strings.Index(ddl, "CREATE "+kind+" IF NOT EXISTS "+name+" ")
 	if start < 0 {
-		return "", &pyConvError{"ValueError", "the schema has no CREATE " + kind + " statement for " + name}
+		return "", &convError{"ValueError", "the schema has no CREATE " + kind + " statement for " + name}
 	}
 	end := strings.Index(ddl[start:], ";")
 	if end < 0 {
-		return "", &pyConvError{"ValueError", "the CREATE " + kind + " statement for " + name + " has no closing semicolon"}
+		return "", &convError{"ValueError", "the CREATE " + kind + " statement for " + name + " has no closing semicolon"}
 	}
 	return storedForm(strings.Replace(ddl[start:start+end], " IF NOT EXISTS", "", 1)), nil
 }

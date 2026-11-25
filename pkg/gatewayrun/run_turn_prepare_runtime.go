@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Override runtime keys a session /model override carries straight into the agent kwargs
@@ -60,7 +61,7 @@ func frozenRouteProvider(frozen map[string]any) (string, error) {
 	}
 	mapping, ok := block.(map[string]any)
 	if !ok {
-		return "", &gateway.PyError{Kind: "AttributeError", Msg: "frozen route block is " + errchain.Kind(block) + " where a mapping was expected"}
+		return "", &errorutil.Error{Kind: "AttributeError", Msg: "frozen route block is " + errchain.Kind(block) + " where a mapping was expected"}
 	}
 	if !anyutil.IsTrue(mapping["provider"]) {
 		return "", nil

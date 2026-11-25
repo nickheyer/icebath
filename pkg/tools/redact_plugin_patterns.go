@@ -229,18 +229,14 @@ var patternRejectRules = []struct {
 			"(needed for the pre-screen substring gate)"},
 }
 
-// Elements of a Python iterable argument, the TypeError text when it is not iterable
+// Patterns an argument holds: a list's items, one string as a single pattern, a mapping's keys; an error naming any other value
 func iterPatterns(patterns any) ([]any, error) {
 	if patterns == nil || !anyutil.IsTrue(patterns) {
 		return nil, nil
 	}
 	switch v := patterns.(type) {
 	case string:
-		var out []any
-		for _, r := range v {
-			out = append(out, string(r))
-		}
-		return out, nil
+		return []any{v}, nil
 	case []string:
 		out := make([]any, len(v))
 		for i, s := range v {

@@ -190,7 +190,7 @@ func TestMoAPrivacyFilterAndEffortNormalization(t *testing.T) {
 func TestMoAReferenceSlotsAcceptJSONStringsAndSingleMappings(t *testing.T) {
 	preset := normalizeMoAPreset(map[string]any{"reference_models": `[{"provider": "a", "model": "b", "enabled": "off"}, {"provider": 7, "model": 1e5}]`,
 		"degraded_reference_policy": " SILENT ", "enabled": "no"})
-	want := []any{map[string]any{"provider": "a", "model": "b", "enabled": false}, map[string]any{"provider": "7", "model": "100000.0", "enabled": true}}
+	want := []any{map[string]any{"provider": "a", "model": "b", "enabled": false}, map[string]any{"provider": "7", "model": "100000", "enabled": true}}
 	if !reflect.DeepEqual(preset["reference_models"], want) || preset["degraded_reference_policy"] != "silent" || preset["enabled"] != false {
 		t.Fatalf("preset %v", preset)
 	}

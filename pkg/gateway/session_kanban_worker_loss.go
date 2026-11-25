@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -36,12 +37,12 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 	}
 	context_, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
-		return &PyError{Kind: "TypeError", Msg: "the kanban worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the kanban worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	field := func(key string) (any, error) {
 		value, ok := context_.Get(key)
 		if !ok {
-			return nil, &pyKeyError{key}
+			return nil, &keyError{key}
 		}
 		return value, nil
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
@@ -138,40 +139,27 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*jsonutil.Obj
 		return
 	}
 	defer unlock()
-	foreign, err := r.foreignHandoffs(env, path, known)
-	if err != nil {
-		envLog(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
-		return
-	}
-	entries = append(entries, foreign...)
+	entries = append(entries, r.foreignHandoffs(env, path, known)...)
 	if err := procAtomicJSONWrite(path, entries, 0o644, false); err != nil {
 		envLog(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 	}
 }
 
-// On disk worker handoffs this registry never tracked whose log still decides an outcome
-func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[string]bool) ([]*jsonutil.Object, error) {
+// On disk worker handoffs this registry never tracked whose log still decides an outcome, none from a checkpoint that is not a list and no entry that is not a mapping
+func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[string]bool) []*jsonutil.Object {
 	onDisk, ok := readCheckpointValue(path)
 	if !ok {
-		return nil, nil
+		return nil
 	}
-	items, err := checkpointItems(onDisk)
-	if err != nil {
-		return nil, err
-	}
+	items, _ := onDisk.([]any)
 	out := []*jsonutil.Object{}
 	for _, item := range items {
 		entry, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		switch id := entry.Value("session_id").(type) {
-		case string:
-			if known[id] {
-				continue
-			}
-		case []any, *jsonutil.Object:
-			return nil, errors.New("a process checkpoint session id is " + errchain.Kind(id) + ", expected text")
+		if id, ok := entry.Value("session_id").(string); ok && known[id] {
+			continue
 		}
 		log := adoptableLog(env, entry.Value("output_log"))
 		if log == "" {
@@ -189,7 +177,7 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 			out = append(out, entry)
 		}
 	}
-	return out, nil
+	return out
 }
 
 func entryInt64Ptr(entry *jsonutil.Object, key string) *int64 {
@@ -214,34 +202,22 @@ func readCheckpointValue(path string) (any, bool) {
 	return parsed, true
 }
 
-// AttributeError a checkpoint item that is not a dict raises when its get method is looked up
-type checkpointItemError struct{ msg string }
-
-func (e *checkpointItemError) Error() string { return e.msg }
-
-// Python class name of the error
-func (e *checkpointItemError) ErrorKind() string { return "AttributeError" }
-
-// Items a for loop yields over a decoded JSON value, the TypeError of a value that is not iterable
-func checkpointItems(v any) ([]any, error) {
-	switch t := v.(type) {
-	case []any:
-		return t, nil
-	case *jsonutil.Object:
-		keys := make([]any, t.Len())
-		for i, k := range t.Keys() {
-			keys[i] = k
-		}
-		return keys, nil
-	case string:
-		runes := []rune(t)
-		chars := make([]any, len(runes))
-		for i, r := range runes {
-			chars[i] = string([]rune{r})
-		}
-		return chars, nil
+// Mapping entries of a decoded process checkpoint, each other entry logged and skipped, an error naming what was found when it is not a list
+func checkpointEntries(env *Env, v any) ([]*jsonutil.Object, error) {
+	items, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("the process checkpoint is %s, expected a list", errchain.Kind(v))
 	}
-	return nil, fmt.Errorf("the process checkpoint is %s, expected a list", errchain.Kind(v))
+	entries := make([]*jsonutil.Object, 0, len(items))
+	for i, item := range items {
+		entry, ok := item.(*jsonutil.Object)
+		if !ok {
+			envLog(env).Warn(fmt.Sprintf("Skipping process checkpoint entry %d: it is %s, expected a mapping", i, errchain.Kind(item)))
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
 }
 
 // RecoverFromCheckpoint probes the checkpointed pids at startup and re adopts the live ones as detached sessions
@@ -255,17 +231,13 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 	if !ok {
 		return 0, nil
 	}
-	items, err := checkpointItems(value)
+	entries, err := checkpointEntries(env, value)
 	if err != nil {
 		return 0, err
 	}
 	recovered := 0
 	unresolvedScopeEntries := []*jsonutil.Object{}
-	for _, item := range items {
-		entry, ok := item.(*jsonutil.Object)
-		if !ok {
-			return 0, &checkpointItemError{fmt.Sprintf("a process checkpoint entry is %s, expected a mapping", errchain.Kind(item))}
-		}
+	for _, entry := range entries {
 		pid, _ := asIntValue(entry.Value("pid"))
 		pidScope := "host"
 		if v, ok := entry.Get("pid_scope"); ok {
@@ -1167,7 +1139,7 @@ func anyToFloat(v any) (float64, bool) {
 // Value of key or the placeholder when absent
 func valueOr(evt map[string]any, key string, placeholder string) string {
 	if v, ok := evt[key]; ok && v != nil {
-		return pyStr(v)
+		return anyutil.String(v)
 	}
 	return placeholder
 }
@@ -1253,7 +1225,7 @@ func recoveryLines(evt map[string]any) []string {
 	}
 	sort.Strings(keys)
 	for _, index := range keys {
-		lines = append(lines, fmt.Sprintf("Task index %s transcript (may be incomplete): %s", index, pyStr(transcripts[index])))
+		lines = append(lines, fmt.Sprintf("Task index %s transcript (may be incomplete): %s", index, anyutil.String(transcripts[index])))
 		if tail := asStr(tails[index]); tail != "" {
 			lines = append(lines, fmt.Sprintf("--- last lines of task %s transcript ---", index), tail, "--- end ---")
 		}
@@ -1278,7 +1250,7 @@ func formatBatchDelegation(env *Env, evt map[string]any, delegID string, complet
 	}
 	unit := fmt.Sprintf("%d subagent(s)", nUnit)
 	if group, ok := evt["group"]; ok && group != nil {
-		unit = fmt.Sprintf("group '%s' (%d subagent(s))", pyStr(group), nUnit)
+		unit = fmt.Sprintf("group '%s' (%d subagent(s))", anyutil.String(group), nUnit)
 	}
 	lines := preamble(evt,
 		fmt.Sprintf("[ASYNC DELEGATION BATCH COMPLETE — %s]", delegID),
@@ -1322,11 +1294,11 @@ func formatBatchDelegation(env *Env, evt map[string]any, delegID string, complet
 			header += ": " + rGoal
 		}
 		header += fmt.Sprintf("  (status=%s", rStatus)
-		if calls := r["api_calls"]; calls != nil && pyStr(calls) != "0" && pyStr(calls) != "" && pyStr(calls) != "False" {
-			header += ", api_calls=" + pyStr(calls)
+		if calls := r["api_calls"]; calls != nil && anyutil.String(calls) != "0" && anyutil.String(calls) != "" && anyutil.String(calls) != "False" {
+			header += ", api_calls=" + anyutil.String(calls)
 		}
 		if dur, ok := r["duration_seconds"]; ok && dur != nil {
-			header += fmt.Sprintf(", %ss", pyStr(dur))
+			header += fmt.Sprintf(", %ss", anyutil.String(dur))
 		}
 		if rTruncated {
 			header += ", TRUNCATED: hit max_iterations — work may be incomplete"
@@ -1363,19 +1335,19 @@ func processAccountingLines(r map[string]any) []string {
 	lines := []string{}
 	for _, h := range resultList(r["handed_off_processes"]) {
 		lines = append(lines, fmt.Sprintf("Handed off to you: %s (%s) — %s. You own it now; its completion notice will arrive here.",
-			pyStr(h["session_id"]), headChars(asStr(h["command"]), 120), asStr(h["note"])))
+			anyutil.String(h["session_id"]), headChars(asStr(h["command"]), 120), asStr(h["note"])))
 	}
 	orphans := resultList(r["orphaned_processes"])
 	if len(orphans) > 0 {
 		parts := []string{}
 		for _, o := range orphans {
-			parts = append(parts, fmt.Sprintf("%s `%s` (%ss)", pyStr(o["session_id"]), headChars(asStr(o["command"]), 100), pyStr(o["runtime_seconds"])))
+			parts = append(parts, fmt.Sprintf("%s `%s` (%ss)", anyutil.String(o["session_id"]), headChars(asStr(o["command"]), 100), anyutil.String(o["runtime_seconds"])))
 		}
 		lines = append(lines, fmt.Sprintf("Child left %d background process(es) running that were TERMINATED with it (subagent process notices never reach you): %s. Re-launch in this session anything you still need.", len(orphans), strings.Join(parts, "; ")))
 	}
 	for _, u := range resultList(r["unread_completions"]) {
 		lines = append(lines, fmt.Sprintf("Child's process %s `%s` finished (exit code %s) but the child never read its result; output tail:\n%s",
-			pyStr(u["session_id"]), headChars(asStr(u["command"]), 100), pyStr(u["exit_code"]), asStr(u["output_tail"])))
+			anyutil.String(u["session_id"]), headChars(asStr(u["command"]), 100), anyutil.String(u["exit_code"]), asStr(u["output_tail"])))
 	}
 	return lines
 }
@@ -1417,7 +1389,7 @@ func formatAsyncDelegation(env *Env, evt map[string]any) string {
 	lines = append(lines, noticeLines(env, []map[string]any{evt})...)
 	statusLine := "Status: " + status
 	if calls, ok := evt["api_calls"]; ok && calls != nil {
-		statusLine += "   API calls: " + pyStr(calls)
+		statusLine += "   API calls: " + anyutil.String(calls)
 	}
 	statusLine += fmt.Sprintf("   Duration: %ss", valueOr(evt, "duration_seconds", "?"))
 	if truncated {
@@ -1642,7 +1614,7 @@ func delegationAttributionLine(evt map[string]any) string {
 	}
 	line := "Started by subagent " + taskID
 	if deleg := info["delegation_id"]; deleg != nil && asStr(deleg) != "" {
-		line += " of delegation " + pyStr(deleg)
+		line += " of delegation " + anyutil.String(deleg)
 	}
 	line += "."
 	if goal != "" {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Home holding one enabled portable Agent Plugin whose mcp.json declares a stdio worker, args added when given
@@ -100,7 +101,7 @@ func TestLoadMCPConfigPortableServerResolvesThroughRealPluginDiscovery(t *testin
 	if err := json.Unmarshal(raw, &env); err != nil {
 		t.Fatal(err)
 	}
-	cwd := pyStr(server.Config["cwd"])
+	cwd := anyutil.String(server.Config["cwd"])
 	if server.Config["command"] != "python" || realDir(t, cwd) != realDir(t, plugin) || env["PLUGIN_ROOT"] != cwd || !strings.HasPrefix(env["PLUGIN_DATA"], filepath.Join(h, "plugin-data")) {
 		t.Fatalf("server %v", server.Config)
 	}

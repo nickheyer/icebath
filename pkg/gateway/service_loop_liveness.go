@@ -102,13 +102,13 @@ func payloadInt(v any) (int, bool) {
 	case nil:
 		return 0, false
 	case string:
-		n, ok := pyIntOf(strings.TrimSpace(x))
+		n, ok := intOf(strings.TrimSpace(x))
 		if !ok || x == "" || !n.IsInt64() {
 			return 0, false
 		}
 		return int(n.Int64()), true
 	}
-	n, ok := pyIntOf(v)
+	n, ok := intOf(v)
 	if !ok || !n.IsInt64() {
 		return 0, false
 	}

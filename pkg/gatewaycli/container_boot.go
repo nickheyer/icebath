@@ -348,19 +348,12 @@ func registerBootService(scandir, profile string, start bool) error {
 	return nil
 }
 
-// Python spelling of an optional state and a bool in the reconcile lines
-func pyOptional(s *string) string {
+// Optional state as the reconcile lines show it, null when there is none
+func optionalState(s *string) string {
 	if s == nil {
-		return "None"
+		return "null"
 	}
 	return *s
-}
-
-func pyBool(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
 }
 
 // Appends one line per action to logs/container-boot.log, rotating it to .1 past the size cap
@@ -382,7 +375,7 @@ func writeReconcileLog(home string, actions []ReconcileAction) error {
 	}
 	for _, a := range actions {
 		fmt.Fprintf(f, "%s profile=%s prior_state=%s action=%s prior_exit=%s folded_into_root=%s\n",
-			ts, a.Profile, pyOptional(a.PriorState), a.Action, a.PriorExit, pyBool(a.FoldedIntoRoot))
+			ts, a.Profile, optionalState(a.PriorState), a.Action, a.PriorExit, strconv.FormatBool(a.FoldedIntoRoot))
 	}
 	return f.Close()
 }
@@ -412,7 +405,7 @@ func ContainerBootMain(ctx context.Context, out io.Writer) int {
 		fmt.Fprintln(out, BootNotice(folded))
 	}
 	for _, a := range actions {
-		fmt.Fprintf(out, "reconcile: profile=%s prior_state=%s action=%s\n", a.Profile, pyOptional(a.PriorState), a.Action)
+		fmt.Fprintf(out, "reconcile: profile=%s prior_state=%s action=%s\n", a.Profile, optionalState(a.PriorState), a.Action)
 	}
 	return 0
 }

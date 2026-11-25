@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -54,8 +54,8 @@ func loadProviderProfiles(ctx context.Context, pluginDir, moduleName string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if e := payload["error"]; config.PyTruthy(e) {
-		return nil, &PluginHostUnavailable{Reason: config.PyStr(e)}
+	if e := payload["error"]; anyutil.IsTrue(e) {
+		return nil, &PluginHostUnavailable{Reason: anyutil.String(e)}
 	}
 	return hostedProfilesFrom(pluginDir, moduleName, payload["profiles"])
 }
@@ -72,8 +72,8 @@ func hostedProfilesFrom(pluginDir, moduleName string, entries any) ([]*HostedPro
 		if err != nil {
 			return nil, err
 		}
-		if reason := entry["in_process"]; config.PyTruthy(reason) {
-			profile.InProcess = config.PyStr(reason)
+		if reason := entry["in_process"]; anyutil.IsTrue(reason) {
+			profile.InProcess = anyutil.String(reason)
 		}
 		out = append(out, profile)
 	}
@@ -81,7 +81,7 @@ func hostedProfilesFrom(pluginDir, moduleName string, entries any) ([]*HostedPro
 }
 
 func hostedProfileFrom(pluginDir, moduleName string, entry map[string]any) (*HostedProfile, error) {
-	p := &HostedProfile{Name: config.PyStr(entry["name"]), Type: wireStr(entry["type"]), Fields: map[string]any{},
+	p := &HostedProfile{Name: anyutil.String(entry["name"]), Type: wireStr(entry["type"]), Fields: map[string]any{},
 		Calls: map[string]HostedProfileCall{}, PluginDir: pluginDir, Module: moduleName}
 	for key, value := range mapOrEmpty(entry["fields"]) {
 		decoded, err := wireDecode(value, nil)
@@ -92,7 +92,7 @@ func hostedProfileFrom(pluginDir, moduleName string, entry map[string]any) (*Hos
 	}
 	for attr, raw := range mapOrEmpty(entry["calls"]) {
 		meta := mapOrEmpty(raw)
-		p.Calls[attr] = HostedProfileCall{Async: config.PyTruthy(meta["async"]), Sig: signatureFrom(meta["sig"]), Field: config.PyTruthy(meta["field"])}
+		p.Calls[attr] = HostedProfileCall{Async: anyutil.IsTrue(meta["async"]), Sig: signatureFrom(meta["sig"]), Field: anyutil.IsTrue(meta["field"])}
 	}
 	return p, nil
 }
@@ -104,7 +104,7 @@ func hostedAmbientEnvNames() []string {
 	names := map[string]bool{}
 	for _, profiles := range hostedProfiles {
 		for _, p := range profiles {
-			if !config.PyTruthy(p.Fields["ambient_credentials"]) {
+			if !anyutil.IsTrue(p.Fields["ambient_credentials"]) {
 				continue
 			}
 			for _, name := range argStrings(p.Fields["env_vars"]) {

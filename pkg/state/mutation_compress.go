@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -31,7 +32,7 @@ func compressInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, s
 	}
 	var child string
 	var affected []string
-	if pyTruthy(inPlace) {
+	if anyutil.IsTrue(inPlace) {
 		child = target
 		if _, err := archiveOnConnection(d, ctx, conn, target, messages, ArchiveCompactOptions{}); err != nil {
 			return nil, nil, err

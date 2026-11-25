@@ -170,7 +170,7 @@ func (d *SessionDB) ListRecentSessionsBounded(ctx context.Context, o RecentSessi
 	})
 	if err != nil {
 		if interrupted && strings.Contains(strings.ToLower(errText(err)), "interrupt") {
-			return nil, &pyConvError{"TimeoutError", "recent-session browse exceeded " + strconv.FormatFloat(timeout, 'g', 6, 64) + "s deadline"}
+			return nil, &convError{"TimeoutError", "recent-session browse exceeded " + strconv.FormatFloat(timeout, 'g', 6, 64) + "s deadline"}
 		}
 		return nil, err
 	}

@@ -18,7 +18,7 @@ func appendText(existing, newText string) string {
 
 // Exact DM phrases asking for a gateway restart that become the restart slash command
 var plaintextGatewayRestartPatterns = func() []*regexp.Regexp {
-	ws := pyWhitespace
+	ws := whitespace
 	s := "[" + ws + "]"
 	return []*regexp.Regexp{
 		regexp.MustCompile(`(?i)^(?:please` + s + `+)?restart` + s + `+(?:the` + s + `+)?gateway[.!?` + ws + `]*$`),
@@ -181,7 +181,7 @@ func isRateLimitedError(errText string) bool {
 // Reports read and write timeouts, which are neither retried nor sent again as plain text
 func isTimeoutError(errText string) bool {
 	lowered := strings.ToLower(errText)
-	for _, pat := range []string{"timed out", "readtimeout", "writetimeout"} {
+	for _, pat := range []string{"timed out", "readtimeout", "writetimeout", "i/o timeout", "deadline exceeded", "client.timeout exceeded", "handshake timeout"} {
 		if strings.Contains(lowered, pat) {
 			return true
 		}

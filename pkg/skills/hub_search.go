@@ -328,5 +328,5 @@ func (h *Hub) UnifiedSearch(ctx context.Context, query string, sources []SkillSo
 	all, _, _ := h.ParallelSearchSources(ctx, sources, query, nil, sourceFilter, 30*time.Second, nil)
 	deduped := dedupeByTrust(all)
 	slices.SortStableFunc(deduped, func(a, b SkillMeta) int { return TrustRank[b.TrustLevel] - TrustRank[a.TrustLevel] })
-	return pyHeadMetas(deduped, limit)
+	return headMetas(deduped, limit)
 }

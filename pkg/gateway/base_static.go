@@ -9,12 +9,12 @@ import (
 )
 
 // Python str whitespace as a regexp class body
-const pyWhitespace = `\t\n\v\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
+const whitespace = `\t\n\v\f\r\x1c-\x1f \x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
 // Markdown and HTML image tags with an http URL and the URL markers that make a markdown link an image
 var (
-	MDImageTagPattern   = regexp.MustCompile(`!\[([^\]]*)\]\((https?://[^` + pyWhitespace + `\)]+)\)`)
-	HTMLImageTagPattern = regexp.MustCompile(`<img[` + pyWhitespace + `]+src=["']?(https?://[^` + pyWhitespace + `"'<>]+)["']?[` + pyWhitespace + `]*/?>[` + pyWhitespace + `]*(?:</img>)?`)
+	MDImageTagPattern   = regexp.MustCompile(`!\[([^\]]*)\]\((https?://[^` + whitespace + `\)]+)\)`)
+	HTMLImageTagPattern = regexp.MustCompile(`<img[` + whitespace + `]+src=["']?(https?://[^` + whitespace + `"'<>]+)["']?[` + whitespace + `]*/?>[` + whitespace + `]*(?:</img>)?`)
 	imageURLMarkers     = []string{".png", ".jpg", ".jpeg", ".gif", ".webp", "fal.media", "fal-cdn", "replicate.delivery"}
 	threeNewlinesRE     = regexp.MustCompile(`\n{3,}`)
 )

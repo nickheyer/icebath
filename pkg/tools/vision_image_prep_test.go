@@ -466,7 +466,7 @@ func TestNormalizeToSupportedImage(t *testing.T) {
 	if msg != "" || mime != "image/png" || out == webpPath {
 		t.Fatalf("managed runtime must transcode webp: %q %q %q", out, mime, msg)
 	}
-	if _, _, msg := normalizeToSupportedImage(env, filepath.Join(dir, "missing.tiff"), "image/tiff"); !strings.Contains(msg, "'image/tiff' is not supported") {
+	if _, _, msg := normalizeToSupportedImage(env, filepath.Join(dir, "missing.tiff"), "image/tiff"); !strings.Contains(msg, `"image/tiff" is not supported`) {
 		t.Fatalf("unsupported format message %q", msg)
 	}
 }

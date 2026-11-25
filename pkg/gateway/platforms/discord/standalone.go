@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -19,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
@@ -286,22 +285,9 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return gateway.SendError("Discord send failed: " + shown), nil
 		}
 		pkgLog().Error("Discord standalone send failed", "err", err)
-		return gateway.SendError(fmt.Sprintf("Discord send failed: %s: %s", pyErrorTypeName(err), err)), nil
+		return gateway.SendError("Discord send failed: " + errchain.OSText(err)), nil
 	}
 	return result, nil
-}
-
-// Python exception class name of a send failure, timeouts and connection failures named as aiohttp does
-func pyErrorTypeName(err error) string {
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return "TimeoutError"
-	}
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return "ClientConnectorError"
-	}
-	return "ClientError"
 }
 
 // Body of the standalone send through the proxy once the token is known, errors surfacing as the caller's send failure

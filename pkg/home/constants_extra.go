@@ -76,12 +76,12 @@ func RootForEnvironment(environ map[string]string) string {
 		if profile == "" {
 			return ""
 		}
-		expanded = filepath.Clean(profile) + expanded[1:]
+		expanded = pathutil.CleanKeepDotDot(profile) + expanded[1:]
 	}
 	if !filepath.IsAbs(expanded) {
 		return ""
 	}
-	return rootOf(native, filepath.Clean(expanded))
+	return rootOf(native, pathutil.CleanKeepDotDot(expanded))
 }
 
 // Every match replaced by fn over the last group that took part
@@ -121,7 +121,7 @@ func SudoInvokerDefaultHome() string {
 	if err != nil {
 		return ""
 	}
-	return pathutil.Join(u.HomeDir, dirName)
+	return pathutil.JoinKeepDotDot(u.HomeDir, dirName)
 }
 
 var (
@@ -147,7 +147,7 @@ func warnProfileFallbackOnce() {
 	}
 	fallback := PlatformDefault()
 	active := ""
-	if data, err := os.ReadFile(pathutil.Join(fallback, "active_profile")); err == nil && utf8.Valid(data) {
+	if data, err := os.ReadFile(pathutil.JoinKeepDotDot(fallback, "active_profile")); err == nil && utf8.Valid(data) {
 		text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
 		active = strings.TrimSpace(text)
 	}
@@ -194,12 +194,12 @@ func RoutingProcess() string {
 // Package manager relocatable directory from envVar, then def, then the subdir of the active home
 func PackagedDir(ctx context.Context, envVar, def, subdir string) string {
 	if override := strings.TrimSpace(os.Getenv(envVar)); override != "" {
-		return filepath.Clean(override)
+		return pathutil.CleanKeepDotDot(override)
 	}
 	if def != "" {
-		return filepath.Clean(def)
+		return pathutil.CleanKeepDotDot(def)
 	}
-	return pathutil.Join(Dir(ctx), subdir)
+	return pathutil.JoinKeepDotDot(Dir(ctx), subdir)
 }
 
 // Optional skills directory honoring package manager wrappers
@@ -212,11 +212,11 @@ func NodeDirs(ctx context.Context, h string) []string {
 	if h == "" {
 		h = Dir(ctx)
 	}
-	nodeDir := pathutil.Join(h, "node")
+	nodeDir := pathutil.JoinKeepDotDot(h, "node")
 	if runtime.GOOS == "windows" {
-		return []string{nodeDir, pathutil.Join(nodeDir, "bin")}
+		return []string{nodeDir, pathutil.JoinKeepDotDot(nodeDir, "bin")}
 	}
-	return []string{pathutil.Join(nodeDir, "bin"), nodeDir}
+	return []string{pathutil.JoinKeepDotDot(nodeDir, "bin"), nodeDir}
 }
 
 var windowsNodeShims = map[string][]string{
@@ -225,7 +225,7 @@ var windowsNodeShims = map[string][]string{
 
 // File names a Node tool command may carry on this platform, the cmd shim first on Windows
 func CandidateNodeCommandNames(command string) []string {
-	base := pathutil.Name(command)
+	base := pathutil.NameKeepDotDot(command)
 	if runtime.GOOS != "windows" || strings.Contains(base, ".") {
 		return []string{base}
 	}
@@ -240,7 +240,7 @@ func ManagedNodeTreePresent(ctx context.Context, h string) bool {
 	for _, dir := range NodeDirs(ctx, h) {
 		for _, c := range []string{"node", "npm", "npx"} {
 			for _, name := range CandidateNodeCommandNames(c) {
-				if st, err := os.Stat(pathutil.Join(dir, name)); err == nil && st.Mode().IsRegular() {
+				if st, err := os.Stat(pathutil.JoinKeepDotDot(dir, name)); err == nil && st.Mode().IsRegular() {
 					return true
 				}
 			}
@@ -259,5 +259,5 @@ func InstallRoot() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Dir(filepath.Clean(r))
+	return pathutil.DirKeepDotDot(r)
 }

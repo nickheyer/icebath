@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Text of an optional string as Python formats it, None when absent
@@ -97,7 +98,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 			return nil, nil, "", err
 		}
 		if authority == nil {
-			return nil, nil, "", &gateway.PyError{Kind: "AttributeError", Msg: "the gateway has no stop authority to read pending stops from"}
+			return nil, nil, "", &errorutil.Error{Kind: "AttributeError", Msg: "the gateway has no stop authority to read pending stops from"}
 		}
 		if authority.ClaimedTurnStopped(owner, generation) {
 			chain, err := authority.DB.GetCompressionChain(ctx, owner)

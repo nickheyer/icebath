@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -50,10 +52,10 @@ func validForwardParams(params *jsonutil.Object) bool {
 		if key != "tenant" && text == "" {
 			return false
 		}
-		if key != "text" && pyLen(text) > 1024 {
+		if key != "text" && utf8.RuneCountInString(text) > 1024 {
 			return false
 		}
-		if key == "text" && pyLen(text) > 1_048_576 {
+		if key == "text" && utf8.RuneCountInString(text) > 1_048_576 {
 			return false
 		}
 	}
@@ -162,7 +164,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 			if err != nil {
 				return nil, err
 			}
-			if target, err = restoreLocalSession(ctx, a, pyStrOf(created)); err != nil {
+			if target, err = restoreLocalSession(ctx, a, anyutil.String(created)); err != nil {
 				return nil, err
 			}
 		} else {
@@ -187,7 +189,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 	if saved != nil {
 		savedObj, ok := saved.(*jsonutil.Object)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "the saved A2A forward is " + errchain.Kind(saved) + ", expected a mapping"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the saved A2A forward is " + errchain.Kind(saved) + ", expected a mapping"}
 		}
 		if result, err = receiptField(savedObj, "result"); err != nil {
 			return nil, err
@@ -215,7 +217,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 		return err
 	}
 	if receipt == nil {
-		return &PyError{Kind: "TypeError", Msg: "the forwarded session row is missing"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the forwarded session row is missing"}
 	}
 	rawPolicy, err := receiptField(receipt, "policy")
 	if err != nil {
@@ -223,7 +225,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	}
 	policy, ok := rawPolicy.(*jsonutil.Object)
 	if !ok {
-		return &PyError{Kind: "TypeError", Msg: "the forwarded session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the forwarded session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 	}
 	rawRequest, err := receiptField(policy, "request_json")
 	if err != nil {
@@ -231,15 +233,15 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	}
 	text, isStr := rawRequest.(string)
 	if !isStr {
-		return &PyError{Kind: "TypeError", Msg: "the forwarded request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the forwarded request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
 	}
 	parsed, err := jsonutil.Decode(text)
 	if err != nil {
-		return &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
+		return &errorutil.Error{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
 	request, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: "the forwarded request is " + errchain.Kind(parsed) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "the forwarded request is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	if !anyutil.Equal(request.ValueOr("a2a_identity", nil), identity) {
 		return runtimeRefusal("admission_conflict")

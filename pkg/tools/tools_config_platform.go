@@ -138,7 +138,7 @@ func xaiCredentialsPresent(ctx context.Context) bool {
 // Plugin toolsets on unless default off or known for the platform and absent from the saved list
 func enabledPluginToolsets(cfg config.Tree, platform string, names []string, pluginKeys map[string]bool) map[string]bool {
 	known := map[string]bool{}
-	if kpt, ok := pyDictOf(cfg["known_plugin_toolsets"]); ok {
+	if kpt, ok := dictOf(cfg["known_plugin_toolsets"]); ok {
 		switch list := kpt[platform].(type) {
 		case []any:
 			for _, n := range list {
@@ -170,7 +170,7 @@ func contextEngineActive(cfg config.Tree) bool {
 	if !anyutil.IsTrue(ctxCfg) {
 		return false
 	}
-	m, ok := pyDictOf(ctxCfg)
+	m, ok := dictOf(ctxCfg)
 	if !ok {
 		return false
 	}
@@ -183,7 +183,7 @@ func contextEngineActive(cfg config.Tree) bool {
 }
 
 // Dict view of a config value, false for anything that is not a mapping
-func pyDictOf(v any) (map[string]any, bool) {
+func dictOf(v any) (map[string]any, bool) {
 	switch m := v.(type) {
 	case map[string]any:
 		return m, true
@@ -241,7 +241,7 @@ func (r *Registry) warnAllInvalidPlatformToolsets(ctx context.Context, scope, pl
 // SavedToolsetResolver judges a saved platform_toolsets name the way session tool resolution lets it through
 func SavedToolsetResolver(ctx context.Context, cfg config.Tree) func(string) bool {
 	known := map[string]bool{"no_mcp": true}
-	if servers, ok := pyDictOf(cfg["mcp_servers"]); ok {
+	if servers, ok := dictOf(cfg["mcp_servers"]); ok {
 		for name := range servers {
 			known[name] = true
 			known["mcp-"+name] = true
@@ -280,7 +280,7 @@ func SavedToolsetResolver(ctx context.Context, cfg config.Tree) func(string) boo
 }
 
 // Python membership of kanban in a toolsets value, substring for a string and key for a dict
-func pyContainsKanban(v any) bool {
+func containsKanban(v any) bool {
 	switch c := v.(type) {
 	case nil:
 		return false
@@ -296,7 +296,7 @@ func pyContainsKanban(v any) bool {
 	case string:
 		return strings.Contains(c, "kanban")
 	}
-	if m, ok := pyDictOf(v); ok {
+	if m, ok := dictOf(v); ok {
 		_, has := m["kanban"]
 		return has
 	}

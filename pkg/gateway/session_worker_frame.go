@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -19,7 +20,7 @@ func WorkerKanbanContext(frame *jsonutil.Object) (any, error) {
 	}
 	text, isText := raw.(string)
 	if !isText {
-		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(raw) + ", expected JSON text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(raw) + ", expected JSON text"}
 	}
 	return jsonutil.Decode(text)
 }
@@ -29,7 +30,7 @@ func WorkerWorkspace(ctx context.Context, env *tools.Env, frame *jsonutil.Object
 	rawScope := frame.ValueOr("scope", nil)
 	scope, isDict := rawScope.(*jsonutil.Object)
 	if anyutil.IsTrue(rawScope) && !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "the worker workspace scope is " + errchain.Kind(rawScope) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "the worker workspace scope is " + errchain.Kind(rawScope) + ", expected a mapping"}
 	}
 	sessionID := ""
 	if scope != nil && anyutil.IsTrue(scope.ValueOr("session_id", nil)) {

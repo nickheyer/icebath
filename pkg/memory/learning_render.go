@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Recency of the oldest node, just off zero on the time axis
@@ -61,7 +63,7 @@ func smoothstep(p float64) float64 {
 }
 
 // Python float modulo, the result taking the sign of the divisor
-func pyFMod(a, b float64) float64 {
+func fMod(a, b float64) float64 {
 	m := math.Mod(a, b)
 	if m != 0 && (b < 0) != (m < 0) {
 		m += b
@@ -70,14 +72,14 @@ func pyFMod(a, b float64) float64 {
 }
 
 // Python round to an integer, halves to even
-func pyRoundInt(x float64) int { return int(math.RoundToEven(x)) }
+func roundInt(x float64) int { return int(math.RoundToEven(x)) }
 
 // Node as a mapping, the AttributeError text Python raises for anything else
 func nodeMap(v any) (map[string]any, error) {
 	if m, ok := v.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("memory node is %s where a mapping was expected", errchain.Kind(v))}
+	return nil, &kindError{class: "AttributeError", msg: fmt.Sprintf("memory node is %s where a mapping was expected", errchain.Kind(v))}
 }
 
 // Mapping list of a payload field accepting typed and decoded JSON lists
@@ -98,7 +100,7 @@ func payloadMaps(v any) ([]map[string]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("memory payload is %s where a list was expected", errchain.Kind(v))}
+	return nil, &kindError{class: "TypeError", msg: fmt.Sprintf("memory payload is %s where a list was expected", errchain.Kind(v))}
 }
 
 // Raw list of a payload field for filters that skip non mapping entries
@@ -123,7 +125,7 @@ func nodeID(n map[string]any) string {
 	if !ok {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // UTC datetime of epoch seconds rounded to microseconds, false where fromtimestamp raises
@@ -156,17 +158,17 @@ func visibleCount(reveal float64, n int) int {
 // Label of a node, its id or unknown when the label is empty
 func nodeRawLabel(n map[string]any) string {
 	v := n["label"]
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		v = n["id"]
 	}
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		v = "unknown"
 	}
-	return pyStrip(pyStr(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Float of a JSON value the way float accepts it, false where float raises
-func pyFloatOf(v any) (float64, bool) {
+func floatOf(v any) (float64, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -180,9 +182,9 @@ func pyFloatOf(v any) (float64, bool) {
 	case float64:
 		return x, true
 	case json.Number:
-		return pyFloatString(string(x))
+		return floatString(string(x))
 	case string:
-		return pyFloatString(x)
+		return floatString(x)
 	}
 	return 0, false
 }
@@ -193,7 +195,7 @@ func nodeTS(n map[string]any) *float64 {
 	if !ok || v == nil {
 		return nil
 	}
-	f, ok := pyFloatOf(v)
+	f, ok := floatOf(v)
 	if !ok {
 		return nil
 	}
@@ -307,13 +309,13 @@ func dateAt(rec Recency, reveal float64) *float64 {
 	if !rec.Timed || rec.MinTS == nil || rec.MaxTS == nil {
 		return nil
 	}
-	v := float64(pyRoundInt(*rec.MinTS + clampF(reveal, 0, 1)*(*rec.MaxTS-*rec.MinTS)))
+	v := float64(roundInt(*rec.MinTS + clampF(reveal, 0, 1)*(*rec.MaxTS-*rec.MinTS)))
 	return &v
 }
 
 // Value of a hex digit string the way int with base 16 parses it
-func pyIntBase16(s string) (int, bool) {
-	t := pyStrip(s)
+func intBase16(s string) (int, bool) {
+	t := strings.TrimSpace(s)
 	neg := false
 	if strings.HasPrefix(t, "+") || strings.HasPrefix(t, "-") {
 		neg = t[0] == '-'
@@ -362,7 +364,7 @@ func runeSlice(rs []rune, i, j int) string {
 
 // RGB triple of a hex color, three digit shorthand expanded, the Blackwall accent when unparseable
 func HexToRGB(s string) [3]int {
-	t := strings.TrimLeft(pyStrip(s), "#")
+	t := strings.TrimLeft(strings.TrimSpace(s), "#")
 	if utf8.RuneCountInString(t) == 3 {
 		var b strings.Builder
 		for _, r := range t {
@@ -374,7 +376,7 @@ func HexToRGB(s string) [3]int {
 	rs := []rune(t)
 	var out [3]int
 	for i := 0; i < 3; i++ {
-		v, ok := pyIntBase16(runeSlice(rs, i*2, i*2+2))
+		v, ok := intBase16(runeSlice(rs, i*2, i*2+2))
 		if !ok {
 			return [3]int{227, 18, 43}
 		}
@@ -394,7 +396,7 @@ func rgbFloats(c [3]int) [3]float64 { return [3]float64{float64(c[0]), float64(c
 func MixRGB(a, b [3]int, t float64) [3]int {
 	var out [3]int
 	for i := 0; i < 3; i++ {
-		out[i] = pyRoundInt(lerp(float64(a[i]), float64(b[i]), clampF(t, 0, 1)))
+		out[i] = roundInt(lerp(float64(a[i]), float64(b[i]), clampF(t, 0, 1)))
 	}
 	return out
 }
@@ -430,9 +432,9 @@ func rgbToHSL(c [3]int) (float64, float64, float64) {
 
 // RGB of a hue, saturation, and lightness, each channel rounded half to even
 func hslToRGB(h, s, light float64) [3]int {
-	hue := pyFMod(pyFMod(h, 360)+360, 360)
+	hue := fMod(fMod(h, 360)+360, 360)
 	c := (1 - math.Abs(2*light-1)) * s
-	x := c * (1 - math.Abs(pyFMod(hue/60, 2)-1))
+	x := c * (1 - math.Abs(fMod(hue/60, 2)-1))
 	m := light - c/2
 	var v [3]float64
 	switch min(int(math.Floor(hue/60)), 5) {
@@ -449,7 +451,7 @@ func hslToRGB(h, s, light float64) [3]int {
 	default:
 		v = [3]float64{c, 0, x}
 	}
-	return [3]int{pyRoundInt((v[0] + m) * 255), pyRoundInt((v[1] + m) * 255), pyRoundInt((v[2] + m) * 255)}
+	return [3]int{roundInt((v[0] + m) * 255), roundInt((v[1] + m) * 255), roundInt((v[2] + m) * 255)}
 }
 
 // Terminal palette derived from a primary color, memories in primary ink and skills in a muted complement
@@ -473,57 +475,57 @@ func DerivePalette(primaryHex string, dark bool) map[string]string {
 }
 
 // Integer of a JSON value the way int converts it, the Python error text otherwise
-func pyIntOf(v any) (int, error) {
+func intOf(v any) (int, error) {
 	switch x := v.(type) {
 	case float64:
 		if math.IsNaN(x) {
-			return 0, &pyError{class: "ValueError", msg: "cannot convert float NaN to integer"}
+			return 0, &kindError{class: "ValueError", msg: "cannot convert float NaN to integer"}
 		}
 		if math.IsInf(x, 0) {
-			return 0, &pyError{class: "OverflowError", msg: "cannot convert float infinity to integer"}
+			return 0, &kindError{class: "OverflowError", msg: "cannot convert float infinity to integer"}
 		}
 		return int(math.Trunc(x)), nil
 	case json.Number:
-		if pyTypeName(x) == "float" {
+		if typeName(x) == "float" {
 			f, err := strconv.ParseFloat(string(x), 64)
 			if err != nil {
 				return 0, err
 			}
-			return pyIntOf(f)
+			return intOf(f)
 		}
 		n, err := strconv.ParseInt(string(x), 10, 64)
 		return int(n), err
 	case string:
-		if i, ok := pyInt(x); ok {
+		if i, ok := wholeNumber(x); ok {
 			return i, nil
 		}
-		return 0, &pyError{class: "ValueError", msg: fmt.Sprintf("%s is not a whole number", errchain.Show(x))}
+		return 0, &kindError{class: "ValueError", msg: fmt.Sprintf("%s is not a whole number", errchain.Show(x))}
 	case bool, int, int64:
-		i, _ := pyInt(x)
+		i, _ := wholeNumber(x)
 		return i, nil
 	}
-	return 0, &pyError{class: "TypeError", msg: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
+	return 0, &kindError{class: "TypeError", msg: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
 }
 
 // Float of a JSON value the way float converts it, the Python error text otherwise
-func pyFloatOfErr(v any) (float64, error) {
-	if f, ok := pyFloatOf(v); ok {
+func floatOfErr(v any) (float64, error) {
+	if f, ok := floatOf(v); ok {
 		return f, nil
 	}
 	switch v.(type) {
 	case string, json.Number:
-		return 0, &pyError{class: "ValueError", msg: fmt.Sprintf("%s is not a number", errchain.Show(pyStr(v)))}
+		return 0, &kindError{class: "ValueError", msg: fmt.Sprintf("%s is not a number", errchain.Show(anyutil.String(v)))}
 	}
-	return 0, &pyError{class: "TypeError", msg: fmt.Sprintf("expected a number, got %s", errchain.Kind(v))}
+	return 0, &kindError{class: "TypeError", msg: fmt.Sprintf("expected a number, got %s", errchain.Kind(v))}
 }
 
 // Value of a node count field read like int of the value or zero
 func nodeCount(n map[string]any, key string) (int, error) {
 	v := n[key]
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	return pyIntOf(v)
+	return intOf(v)
 }
 
 // Marker priority of a node, memories first then recent, used, and pinned skills
@@ -532,15 +534,15 @@ func nodeScore(n map[string]any, rec float64) (float64, error) {
 		return 3.5 + rec, nil
 	}
 	uses := 0.0
-	if v := n["useCount"]; pyTruthy(v) {
-		f, err := pyFloatOfErr(v)
+	if v := n["useCount"]; anyutil.IsTrue(v) {
+		f, err := floatOfErr(v)
 		if err != nil {
 			return 0, err
 		}
 		uses = f
 	}
 	score := rec*2 + math.Sqrt(math.Max(0, uses))
-	if pyTruthy(n["pinned"]) {
+	if anyutil.IsTrue(n["pinned"]) {
 		score += 2
 	}
 	return score, nil
@@ -562,21 +564,21 @@ func nodeCard(n map[string]any) (map[string]any, error) {
 			return nil, err
 		}
 		category := "skill"
-		if pyTruthy(n["category"]) {
-			category = pyStr(n["category"])
+		if anyutil.IsTrue(n["category"]) {
+			category = anyutil.String(n["category"])
 		}
 		parts := []string{category, date}
 		if count != 0 {
 			parts = append(parts, fmt.Sprintf("x%d", count))
 		}
-		if pyTruthy(n["pinned"]) {
+		if anyutil.IsTrue(n["pinned"]) {
 			parts = append(parts, "pinned")
 		}
 		meta = strings.Join(parts, " \u00b7 ")
 	}
 	label := text
 	if utf8.RuneCountInString(text) > 26 {
-		label = strings.TrimRightFunc(runePrefix(text, 23), pyIsSpace) + "\u2026"
+		label = strings.TrimRightFunc(runePrefix(text, 23), unicode.IsSpace) + "\u2026"
 	}
 	glyph, style := SkillGlyph, StyleSkill
 	if mem {
@@ -593,8 +595,8 @@ func skillCategoryCounts(nodes []map[string]any) *orderedCounter {
 			continue
 		}
 		cat := "skill"
-		if pyTruthy(n["category"]) {
-			cat = pyStr(n["category"])
+		if anyutil.IsTrue(n["category"]) {
+			cat = anyutil.String(n["category"])
 		}
 		c.add(cat, 1)
 	}
@@ -643,7 +645,7 @@ func (b *chartBucket) category() string {
 func period(ts float64, granularity string) ([]int, string, error) {
 	t, ok := utcFromTimestamp(ts)
 	if !ok {
-		return nil, "", &pyError{class: "ValueError", msg: fmt.Sprintf("year is out of range for timestamp %s", pyFloatRepr(ts))}
+		return nil, "", &kindError{class: "ValueError", msg: fmt.Sprintf("year is out of range for timestamp %s", floatRepr(ts))}
 	}
 	switch granularity {
 	case "day":
@@ -775,7 +777,7 @@ func bucketRows(buckets []*chartBucket, payload map[string]any) ([]map[string]an
 			body := ""
 			if memory := memoryLookup[nodeID(n)]; len(memory) > 0 {
 				if v, ok := memory["body"]; ok {
-					body = pyStr(v)
+					body = anyutil.String(v)
 				}
 			}
 			nodeRows = append(nodeRows, map[string]any{
@@ -805,18 +807,18 @@ func categoryCounts(payload map[string]any) ([]categoryCount, error) {
 			return nil, err
 		}
 		cat := c["category"]
-		if !pyTruthy(cat) || cat == "memory" {
+		if !anyutil.IsTrue(cat) || cat == "memory" {
 			continue
 		}
 		n := 0
 		if v, ok := c["count"]; ok {
-			i, err := pyIntOf(v)
+			i, err := intOf(v)
 			if err != nil {
 				return nil, err
 			}
 			n = i
 		}
-		out = append(out, categoryCount{pyStr(cat), n})
+		out = append(out, categoryCount{anyutil.String(cat), n})
 	}
 	if len(out) > 0 {
 		return out, nil
@@ -846,7 +848,7 @@ func CategoryColorMap(payload map[string]any) (map[string]string, error) {
 	}
 	out := map[string]string{}
 	for i, cc := range cats {
-		out[cc.category] = RGBToHex(rgbFloats(hslToRGB(pyFMod(float64(i)*137.508, 360), 0.55, 0.62)))
+		out[cc.category] = RGBToHex(rgbFloats(hslToRGB(fMod(float64(i)*137.508, 360), 0.55, 0.62)))
 	}
 	return out, nil
 }
@@ -899,7 +901,7 @@ func trajectoryRow(buckets []*chartBucket, width int, reveal float64) []any {
 	acc, last := 0, 0
 	for _, b := range buckets[:visibleCount(reveal, len(buckets))] {
 		acc += b.total()
-		p := pyRoundInt((float64(acc) / float64(total)) * float64(width-1))
+		p := roundInt((float64(acc) / float64(total)) * float64(width-1))
 		for x := min(last, p); x <= max(last, p); x++ {
 			if x >= 0 && x < width && cells[x] == " " {
 				cells[x] = "\u00b7"
@@ -917,11 +919,11 @@ func trajectoryRow(buckets []*chartBucket, width int, reveal float64) []any {
 func barLengths(b *chartBucket, maxTotal, barW int) (int, int, int) {
 	barLen := 0
 	if b.total() != 0 {
-		barLen = max(1, pyRoundInt((float64(b.total())/float64(maxTotal))*float64(barW)))
+		barLen = max(1, roundInt((float64(b.total())/float64(maxTotal))*float64(barW)))
 	}
 	skillLen := 0
 	if b.skills() != 0 {
-		skillLen = max(1, pyRoundInt((float64(b.skills())/float64(b.total()))*float64(barLen)))
+		skillLen = max(1, roundInt((float64(b.skills())/float64(b.total()))*float64(barLen)))
 	}
 	if b.memories() != 0 && skillLen == barLen && barLen > 1 {
 		skillLen = barLen - 1
@@ -1003,7 +1005,7 @@ func RenderGraph(payload map[string]any, cols, rows int, reveal float64) (map[st
 			for k, v := range card {
 				entry[k] = v
 			}
-			entry["alpha"] = pyRound(ink, 3)
+			entry["alpha"] = roundHalfEven(ink, 3)
 			labels = append(labels, entry)
 			row = append(row, run(marker, StyleLabel, 0.95))
 		} else if b.total() != 0 {
@@ -1129,10 +1131,10 @@ func BuildSummary(payload map[string]any) ([]string, error) {
 		}
 		return 0
 	}
-	lines := []string{fmt.Sprintf("%s learned skills \u00b7 %s memories \u00b7 %s skill links", pyStr(learned), pyStr(get("memory_nodes")), pyStr(get("related_edges")))}
+	lines := []string{fmt.Sprintf("%s learned skills \u00b7 %s memories \u00b7 %s skill links", anyutil.String(learned), anyutil.String(get("memory_nodes")), anyutil.String(get("related_edges")))}
 	var extra []string
-	if pyTruthy(stats["memory_skill_edges"]) {
-		extra = append(extra, fmt.Sprintf("%s memory\u2194skill links", pyStr(stats["memory_skill_edges"])))
+	if anyutil.IsTrue(stats["memory_skill_edges"]) {
+		extra = append(extra, fmt.Sprintf("%s memory\u2194skill links", anyutil.String(stats["memory_skill_edges"])))
 	}
 	peak, err := peakDay(payload)
 	if err != nil {

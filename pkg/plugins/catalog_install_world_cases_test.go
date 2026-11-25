@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // URL install of a fresh one commit repo carrying the extra files, returning the installed tree
@@ -35,7 +37,7 @@ func TestKillListCoversUpdateEnableAndLoadOfAnInstalledPlugin(t *testing.T) {
 	dir := t.TempDir()
 	c6Write(t, filepath.Join(dir, "removed.yaml"), "removed:\n- name: killed\n  reason: backdoor\n")
 	t.Cleanup(SwapCatalogDir(dir))
-	if res, err := UnattendedUpdateUserPlugin(w.ctx, "killed", false, false); err != nil || !strings.Contains(pyStrOr(res["error"]), "backdoor") {
+	if res, err := UnattendedUpdateUserPlugin(w.ctx, "killed", false, false); err != nil || !strings.Contains(anyutil.StringOr(res["error"], ""), "backdoor") {
 		t.Fatalf("update of a killed plugin %v %v", res, err)
 	}
 	var exit *CommandExit

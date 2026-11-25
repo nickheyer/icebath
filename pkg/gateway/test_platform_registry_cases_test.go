@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Adapter value a registry factory hands back, compared by identity
@@ -16,7 +17,7 @@ type registryCaseAdapter struct{ name string }
 // Plugin entry of the registry cases with its factory, check and validation outcomes
 func registryCaseEntry(name string, checkOK, validateOK, factoryOK bool) (*PlatformEntry, *registryCaseAdapter) {
 	adapter := &registryCaseAdapter{name: name}
-	entry := NewPlatformEntry(name, pyTitle(name), func(context.Context, *PlatformConfig) (any, error) {
+	entry := NewPlatformEntry(name, textutil.Title(name), func(context.Context, *PlatformConfig) (any, error) {
 		if !factoryOK {
 			return nil, errors.New("factory error")
 		}
@@ -25,14 +26,6 @@ func registryCaseEntry(name string, checkOK, validateOK, factoryOK bool) (*Platf
 	entry.ValidateConfig = func(*PlatformConfig) (bool, error) { return validateOK, nil }
 	entry.Source = "plugin"
 	return entry, adapter
-}
-
-// Title case of a lowercase ascii name, the label Python's str.title gives the cases
-func pyTitle(name string) string {
-	if name == "" {
-		return name
-	}
-	return string(name[0]-32) + name[1:]
 }
 
 // test_platform_registry.py TestPlatformRegistry.test_unregister
@@ -99,7 +92,7 @@ func TestRegisteredNamesIncludesDeferredWithoutMaterializing(t *testing.T) {
 // Plugin entry of the ensure deps cases with a counting installer
 func ensureDepsEntry(name string, check func() bool, installer func(context.Context) (bool, error)) (*PlatformEntry, *registryCaseAdapter) {
 	adapter := &registryCaseAdapter{name: name}
-	entry := NewPlatformEntry(name, pyTitle(name), func(context.Context, *PlatformConfig) (any, error) { return adapter, nil }, check)
+	entry := NewPlatformEntry(name, textutil.Title(name), func(context.Context, *PlatformConfig) (any, error) { return adapter, nil }, check)
 	entry.EnsureDepsFn = installer
 	entry.Source = "plugin"
 	return entry, adapter

@@ -96,9 +96,9 @@ func completionExitStatus(code int) int {
 func completionUpdateID(request map[string]any) (string, error) {
 	receipt, present := request["receipt"]
 	if !present {
-		return "", errors.New(pyKeyErrorText("receipt"))
+		return "", errors.New(keyErrorText("receipt"))
 	}
-	id, err := pyDictItem(receipt, "update_id")
+	id, err := dictItem(receipt, "update_id")
 	if err != nil {
 		return "", err
 	}
@@ -163,7 +163,7 @@ func (d *replaceDecoder) decode(chunk []byte, final bool) string {
 func runCompletion(ctx context.Context, w io.Writer, request map[string]any) (map[string]any, error) {
 	sourceValue, present := request["source"]
 	if !present {
-		return nil, errors.New(pyKeyErrorText("source"))
+		return nil, errors.New(keyErrorText("source"))
 	}
 	root := anyutil.String(sourceValue)
 	binary := completionBinary(root)
@@ -174,7 +174,7 @@ func runCompletion(ctx context.Context, w io.Writer, request map[string]any) (ma
 	}
 	homeValue, present := request["home"]
 	if !present {
-		return nil, errors.New(pyKeyErrorText("home"))
+		return nil, errors.New(keyErrorText("home"))
 	}
 	env := []string{}
 	for _, kv := range os.Environ() {
@@ -329,7 +329,7 @@ func readCompletionResult(request map[string]any, resultPath string, code int) (
 	if err != nil {
 		return nil, lost(err.Error())
 	}
-	schema, err := pyDictItem(decoded, "schema")
+	schema, err := dictItem(decoded, "schema")
 	if err != nil {
 		return nil, lost(err.Error())
 	}
@@ -337,14 +337,14 @@ func readCompletionResult(request map[string]any, resultPath string, code int) (
 	if !anyutil.Equal(schema, 1) {
 		return nil, lost("completion response identity mismatch")
 	}
-	resultID, err := pyDictItem(result, "update_id")
+	resultID, err := dictItem(result, "update_id")
 	if err != nil {
 		return nil, lost(err.Error())
 	}
 	if !anyutil.Equal(resultID, updateID) {
 		return nil, lost("completion response identity mismatch")
 	}
-	exitCode, err := pyDictItem(result, "exit_code")
+	exitCode, err := dictItem(result, "exit_code")
 	if err != nil {
 		return nil, lost(err.Error())
 	}
@@ -430,7 +430,7 @@ func publishGatewaySuccess(w io.Writer, request map[string]any) {
 	err := func() error {
 		homeValue, present := request["home"]
 		if !present {
-			return errors.New(pyKeyErrorText("home"))
+			return errors.New(keyErrorText("home"))
 		}
 		marker := filepath.Join(anyutil.String(homeValue), ".update_exit_code")
 		temporary := marker + ".tmp"
@@ -453,7 +453,7 @@ func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]a
 	}
 	if receipt == nil {
 		if source, present := request["source"]; !present {
-			fmt.Fprintf(w, "  ⚠ Could not record the owed source-update tail: %s\n", pyKeyErrorText("source"))
+			fmt.Fprintf(w, "  ⚠ Could not record the owed source-update tail: %s\n", keyErrorText("source"))
 		} else if _, err := ArmCompletion(ctx, anyutil.String(source)); err != nil {
 			if isInterrupt(err) {
 				return nil, err
@@ -500,7 +500,7 @@ func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]a
 func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any, resultPath, step, reason string) (int, error) {
 	source, present := request["source"]
 	if !present {
-		return 0, errors.New(pyKeyErrorText("source"))
+		return 0, errors.New(keyErrorText("source"))
 	}
 	if _, err := completionArm(ctx, anyutil.String(source)); err != nil {
 		if !errorutil.IsSystem(err) {
@@ -524,7 +524,7 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 			}
 			record = obj
 		}
-		if _, err := pyDictItem(record, "update_id"); err != nil {
+		if _, err := dictItem(record, "update_id"); err != nil {
 			return 0, err
 		}
 		updaterecord.ResumeReceipt(ctx, record)
@@ -561,7 +561,7 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any, requestPath, resultPath string) (int, error) {
 	source, present := request["source"]
 	if !present {
-		return 0, errors.New(pyKeyErrorText("source"))
+		return 0, errors.New(keyErrorText("source"))
 	}
 	root := anyutil.String(source)
 	updateID, err := completionUpdateID(request)
@@ -646,7 +646,7 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 func completeSelected(ctx context.Context, w, errw io.Writer, request map[string]any) (bool, error) {
 	source, present := request["source"]
 	if !present {
-		return false, errors.New(pyKeyErrorText("source"))
+		return false, errors.New(keyErrorText("source"))
 	}
 	root := anyutil.String(source)
 	fleetProjectRoot = func() string { return root }
@@ -654,7 +654,7 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 	item := func(key string) (any, error) {
 		value, present := request[key]
 		if !present {
-			return nil, errors.New(pyKeyErrorText(key))
+			return nil, errors.New(keyErrorText(key))
 		}
 		return value, nil
 	}
@@ -704,7 +704,7 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 		if isInterrupt(err) {
 			return false, err
 		}
-		reason := pyReason(err)
+		reason := reasonValue(err)
 		updaterecord.RecordFollowup(ctx, "completion", reason, updaterecord.FollowupRetryDefault)
 		followups = append(followups, [2]string{"completion", reason})
 	} else {
@@ -810,7 +810,7 @@ func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string
 			updaterecord.RecordFollowup(ctx, "completion", fmt.Sprintf("completion exited %d", exit.Code), updaterecord.FollowupRetryDefault)
 		}
 	default:
-		updaterecord.RecordFollowup(ctx, "completion", launchErrorClass(err)+": "+launchErrorText(err), updaterecord.FollowupRetryDefault)
+		updaterecord.RecordFollowup(ctx, "completion", launchErrorLine(err), updaterecord.FollowupRetryDefault)
 	}
 	if code != 0 {
 		if refusal := updaterecord.RefusalNotice("icebath update"); refusal != nil {
@@ -871,7 +871,7 @@ func bootstrapCompletion(ctx context.Context, w io.Writer, request map[string]an
 		}
 		return writeBootstrapResult(request, resultPath, 130, terminalValue)
 	}
-	return settleAfterCommit(ctx, w, request, resultPath, "dependencies", pyReason(err))
+	return settleAfterCommit(ctx, w, request, resultPath, "dependencies", reasonValue(err))
 }
 
 // Entry of the completion process the source update runs in the selected tree, its exit status
@@ -885,7 +885,7 @@ func UpdateCompletionMain(ctx context.Context, args []string, stdout, stderr io.
 		if isInterrupt(err) {
 			return 130
 		}
-		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		fmt.Fprintln(stderr, launchErrorLine(err))
 		return 1
 	}
 	return code
@@ -894,19 +894,19 @@ func UpdateCompletionMain(ctx context.Context, args []string, stdout, stderr io.
 // Body of the completion entry, the error an uncaught Python exception stands for
 func updateCompletion(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
 	if len(args) < 2 {
-		return 0, &pm.PyError{Class: "ValueError", Message: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(args))}
+		return 0, &pm.ClassError{Class: "ValueError", Message: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(args))}
 	}
 	requestPath, resultPath := args[0], args[1]
 	decoded, err := readRequestFile(requestPath)
 	if err != nil {
 		return 0, err
 	}
-	schema, err := pyDictItem(decoded, "schema")
+	schema, err := dictItem(decoded, "schema")
 	if err != nil {
 		return 0, err
 	}
 	if !anyutil.Equal(schema, 1) {
-		return 0, &pm.PyError{Class: "ValueError", Message: "unsupported source completion request"}
+		return 0, &pm.ClassError{Class: "ValueError", Message: "unsupported source completion request"}
 	}
 	object := decoded.(*jsonutil.Object)
 	request := map[string]any{}
@@ -924,7 +924,7 @@ func updateCompletion(ctx context.Context, args []string, stdout, stderr io.Writ
 	if err != nil {
 		return 0, err
 	}
-	source, err := pyDictItem(object, "source")
+	source, err := dictItem(object, "source")
 	if err != nil {
 		return 0, err
 	}
@@ -933,7 +933,7 @@ func updateCompletion(ctx context.Context, args []string, stdout, stderr io.Writ
 		return 0, err
 	}
 	if filepath.Dir(resolvedExe) != resolvedSource {
-		return 0, &pm.PyError{Class: "ValueError", Message: "completion checkout does not match request"}
+		return 0, &pm.ClassError{Class: "ValueError", Message: "completion checkout does not match request"}
 	}
 	isatty := anyutil.IsTrue(request["stdout_isatty"])
 	cliui.Default().StdoutTTY = func() bool { return isatty }

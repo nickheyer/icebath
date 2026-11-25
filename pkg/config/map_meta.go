@@ -17,7 +17,7 @@ type mapMeta struct {
 	owner  weak.Pointer[byte]
 	keys   []string
 	failed error
-	pyKeys map[string]any
+	keysOf map[string]any
 	class  string
 }
 
@@ -153,16 +153,16 @@ func copyMeta(dst, src map[string]any) {
 	}
 	mapMetaMu.Lock()
 	keys, failed, class := append([]string(nil), meta.keys...), meta.failed, meta.class
-	pyKeys := make(map[string]any, len(meta.pyKeys))
-	for k, v := range meta.pyKeys {
-		pyKeys[k] = v
+	keysOf := make(map[string]any, len(meta.keysOf))
+	for k, v := range meta.keysOf {
+		keysOf[k] = v
 	}
 	mapMetaMu.Unlock()
 	SetMappingKeys(dst, keys)
 	if failed != nil {
 		markFailedRead(dst, failed)
 	}
-	for k, v := range pyKeys {
+	for k, v := range keysOf {
 		SetMappingPyKey(dst, k, v)
 	}
 	if class != "" {
@@ -180,13 +180,13 @@ func SetMappingClass(m map[string]any, class string) {
 }
 
 // Records that a string key of a mapping stands for a non str Python key such as True, 1 or None
-func SetMappingPyKey(m map[string]any, key string, pyKey any) {
+func SetMappingPyKey(m map[string]any, key string, keyValue any) {
 	if meta := attachMeta(m); meta != nil {
 		mapMetaMu.Lock()
-		if meta.pyKeys == nil {
-			meta.pyKeys = map[string]any{}
+		if meta.keysOf == nil {
+			meta.keysOf = map[string]any{}
 		}
-		meta.pyKeys[key] = pyKey
+		meta.keysOf[key] = keyValue
 		mapMetaMu.Unlock()
 	}
 }
@@ -199,9 +199,9 @@ func MappingPyKey(m map[string]any, key string) (any, bool) {
 	}
 	mapMetaMu.Lock()
 	defer mapMetaMu.Unlock()
-	v, ok := meta.pyKeys[key]
+	v, ok := meta.keysOf[key]
 	return v, ok
 }
 
 // Map key under which a non str Python key is stored, never equal to a key a YAML str produces
-func PyKeyString(pyKey any) string { return "\x00" + anyutil.Quote(pyKey) }
+func KeyString(keyValue any) string { return "\x00" + anyutil.Quote(keyValue) }

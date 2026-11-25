@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -118,7 +119,7 @@ func queuedControls(ctx context.Context, a *SessionAuthority, row *jsonutil.Obje
 			return []string{}, nil
 		}
 	}
-	if display, _ := payload.Get("display_v1"); pyTruthy(display) {
+	if display, _ := payload.Get("display_v1"); anyutil.IsTrue(display) {
 		if obj, ok := display.(*jsonutil.Object); ok {
 			if kind, _ := obj.Get("kind"); kind == "hidden" {
 				return []string{}, nil

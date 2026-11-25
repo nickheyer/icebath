@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Built in auxiliary task slots in canonical order
@@ -101,7 +102,7 @@ func normalizeMainModelAssignment(ctx context.Context, provider, model string) (
 	if !knownProviderNames()[canonical] && !isCustomSlug && strings.Contains(modelIn, "/") {
 		curProvider := ""
 		if curCfg, ok := cfg["model"].(map[string]any); ok {
-			curProvider = strings.ToLower(strings.TrimSpace(pyOrStr(pyGetAny(curCfg, "provider", ""))))
+			curProvider = strings.ToLower(strings.TrimSpace(anyutil.StringOr(getAny(curCfg, "provider", ""), "")))
 		}
 		if curProvider != "" && IsAggregatorProvider(modelsNormalizeProvider(curProvider)) {
 			canonical = modelsNormalizeProvider(curProvider)
@@ -145,7 +146,7 @@ func ProviderEntryList(cfg map[string]any) []any {
 
 // Trailing slash and case insensitive URL equality
 func sameEndpoint(a, b any) bool {
-	return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(a)), "/")) == strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(b)), "/"))
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.StringOr(a, "")), "/")) == strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.StringOr(b, "")), "/"))
 }
 
 // A configured provider block naming a different host than the submitted endpoint
@@ -182,7 +183,7 @@ func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provid
 		userProviders = kept
 	}
 	opts := SwitchModelOptions{RawInput: model, ExplicitProvider: provider, IsGlobal: true,
-		CurrentProvider: pyOrStr(pyGetAny(modelCfg, "provider", nil)), CurrentBaseURL: pyOrStr(pyGetAny(modelCfg, "base_url", nil)),
+		CurrentProvider: anyutil.StringOr(getAny(modelCfg, "provider", nil), ""), CurrentBaseURL: anyutil.StringOr(getAny(modelCfg, "base_url", nil), ""),
 		UserProviders: userProviders, CustomProviders: []any{}}
 	if explicit {
 		opts.CurrentProvider = "custom"
@@ -258,11 +259,11 @@ func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, 
 	if spelled != nil {
 		pointer = spelled["key_env"]
 	}
-	if keyEnv := strings.TrimSpace(pyOrStr(pointer)); keyEnv != "" {
+	if keyEnv := strings.TrimSpace(anyutil.StringOr(pointer, "")); keyEnv != "" {
 		assignKey(modelCfg, "key_env", keyEnv)
 		return DropModelKey(ctx, modelCfg, "api_key")
 	}
-	if key := spelled["api_key"]; pyTruthy(key) {
+	if key := spelled["api_key"]; anyutil.IsTrue(key) {
 		assignKey(modelCfg, "api_key", key)
 	}
 	return nil
@@ -275,7 +276,7 @@ func endpointKnownToConfig(cfg map[string]any, baseURL string) bool {
 		return false
 	}
 	matches := func(value any) bool {
-		return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(value)), "/")) == wanted
+		return strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.StringOr(value, "")), "/")) == wanted
 	}
 	if modelCfg, ok := cfg["model"].(map[string]any); ok && matches(modelCfg["base_url"]) {
 		return true
@@ -300,7 +301,7 @@ func registerCustomEndpoint(ctx context.Context, baseURL, apiKey, model string) 
 // Aux slots pinned to a provider other than the new main one, local endpoints and main followers excluded
 func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) []map[string]any {
 	stale := []map[string]any{}
-	auxCfg, ok := pyGetAny(cfg, "auxiliary", map[string]any{}).(map[string]any)
+	auxCfg, ok := getAny(cfg, "auxiliary", map[string]any{}).(map[string]any)
 	if !ok {
 		return stale
 	}
@@ -315,15 +316,15 @@ func staleAuxPins(ctx context.Context, cfg map[string]any, newProvider string) [
 		if !ok {
 			continue
 		}
-		slotProvider := strings.TrimSpace(pyOrStr(pyGetAny(slotCfg, "provider", "")))
+		slotProvider := strings.TrimSpace(anyutil.StringOr(getAny(slotCfg, "provider", ""), ""))
 		lower := strings.ToLower(slotProvider)
 		if slotProvider == "" || lower == "auto" || lower == "main" || identity(slotProvider) == current {
 			continue
 		}
-		if IsLocalEndpoint(pyOrStr(pyGetAny(slotCfg, "base_url", ""))) {
+		if IsLocalEndpoint(anyutil.StringOr(getAny(slotCfg, "base_url", ""), "")) {
 			continue
 		}
-		stale = append(stale, map[string]any{"task": slot, "provider": slotProvider, "model": pyOrStr(pyGetAny(slotCfg, "model", ""))})
+		stale = append(stale, map[string]any{"task": slot, "provider": slotProvider, "model": anyutil.StringOr(getAny(slotCfg, "model", ""), "")})
 	}
 	return stale
 }
@@ -354,8 +355,8 @@ func prepareMainAssignment(ctx context.Context, cfg map[string]any, provider, mo
 		provider, model = normalizeMainModelAssignment(ctx, provider, model)
 	}
 	if baseURL == "" {
-		if _, entry := providerEntryOf(ctx, cfg, provider); pyTruthy(entry["base_url"]) {
-			baseURL = strings.TrimSpace(pyOrStr(entry["base_url"]))
+		if _, entry := providerEntryOf(ctx, cfg, provider); anyutil.IsTrue(entry["base_url"]) {
+			baseURL = strings.TrimSpace(anyutil.StringOr(entry["base_url"], ""))
 		}
 	}
 	result, err := validatedMainModelSelection(ctx, cfg, provider, model, baseURL, apiKey, &explicit)
@@ -383,7 +384,7 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 	entryKey, providerEntry := providerEntryOf(ctx, cfg, provider)
 	providerLC := strings.ToLower(strings.TrimSpace(provider))
 	endpointAlreadyKnown := bareCustomSelectors[providerLC] && baseURL != "" && endpointKnownToConfig(cfg, baseURL)
-	modelCfg, err := applyMainModelAssignment(ctx, pyGetAny(cfg, "model", map[string]any{}), result, apiKey)
+	modelCfg, err := applyMainModelAssignment(ctx, getAny(cfg, "model", map[string]any{}), result, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +401,7 @@ func applyMainAssignmentSync(ctx context.Context, cfg map[string]any, provider, 
 		registerCustomEndpoint(ctx, baseURL, apiKey, model)
 	}
 	out := map[string]any{"ok": true, "scope": "main", "provider": provider, "model": model,
-		"base_url": pyGetAny(modelCfg, "base_url", ""), "stale_aux": staleAuxPins(ctx, cfg, providerLC)}
+		"base_url": getAny(modelCfg, "base_url", ""), "stale_aux": staleAuxPins(ctx, cfg, providerLC)}
 	return out, nil
 }
 

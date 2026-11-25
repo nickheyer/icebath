@@ -93,7 +93,7 @@ func (e *NoCommittedEnvironment) Error() string { return e.Message }
 
 // RuntimeError class callers catch it as
 func (e *NoCommittedEnvironment) Unwrap() error {
-	return &PyError{Class: "RuntimeError", Message: e.Message}
+	return &ClassError{Class: "RuntimeError", Message: e.Message}
 }
 
 // Refuses a boot from inside the tool store with no committed environment, other binaries keep their own
@@ -178,7 +178,7 @@ func managedActivateDependencies(ctx context.Context, projectRoot string) error 
 		}
 	}
 	if !isDirectory(selected) {
-		return &PyError{Class: "RuntimeError", Message: "dependency environment has no site-packages: " + selected}
+		return &ClassError{Class: "RuntimeError", Message: "dependency environment has no site-packages: " + selected}
 	}
 	root := resolvePath(projectRoot)
 	importPath.Lock()
@@ -275,7 +275,7 @@ func (e *environList) entries() []string {
 }
 
 // Process environment in order as Python os environ holds it, first occurrence kept and names uppercased on Windows
-func pyEnvironOrdered() *environList {
+func environOrdered() *environList {
 	list := &environList{values: map[string]string{}}
 	for _, kv := range os.Environ() {
 		if runtime.GOOS == "windows" && strings.HasPrefix(kv, "=") {
@@ -330,7 +330,7 @@ func installedEnvDiffs(ctx context.Context, names []string) ([]EnvDiff, error) {
 
 // Python compose_env over the process environment, each diff read in the sorted key order facts json stores
 func composeEnviron(diffs []EnvDiff) *environList {
-	env := pyEnvironOrdered()
+	env := environOrdered()
 	var pathDirs []string
 	for i := len(diffs) - 1; i >= 0; i-- {
 		if value, ok := diffs[i]["PATH"]; ok {
@@ -404,18 +404,18 @@ type journalConfig struct {
 func recoverJournal(ctx context.Context, project, journal string, data []byte) error {
 	doc, err := loadJSON(data)
 	if err != nil {
-		return &PyError{Class: "ValueError", Message: err.Error()}
+		return &ClassError{Class: "ValueError", Message: err.Error()}
 	}
 	row, ok := doc.(map[string]any)
 	if !ok {
-		return &PyError{Class: "AttributeError", Message: fmt.Sprintf("the publication journal %s must hold a mapping, got %s", journal, errchain.Kind(doc))}
+		return &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the publication journal %s must hold a mapping, got %s", journal, errchain.Kind(doc))}
 	}
 	if kind, _ := row["kind"].(string); kind == "plugin" {
 		return recoverPluginPublication(ctx, project, row, journal)
 	}
 	entries := []any{row}
 	if raw, present := row["configs"]; present {
-		if entries, err = pyIterate(raw); err != nil {
+		if entries, err = iterate(raw); err != nil {
 			return err
 		}
 	}
@@ -428,7 +428,7 @@ func recoverJournal(ctx context.Context, project, journal string, data []byte) e
 		}
 		config = purePath(config)
 		if filepath.Base(config) != "config.yaml" || !isRelativeTo(resolvePath(config), homeRoot) {
-			return &PyError{Class: "ValueError", Message: "config path is outside icebath state"}
+			return &ClassError{Class: "ValueError", Message: "config path is outside icebath state"}
 		}
 		raw, err := rowItem(entry, "previous")
 		if err != nil {
@@ -461,7 +461,7 @@ func recoverJournal(ctx context.Context, project, journal string, data []byte) e
 					return err
 				}
 				if !jsonEquals(current, prior) && !jsonEquals(current, c.after) {
-					return &PyError{Class: "ValueError", Message: "config changed after publication began; preserve it for manual recovery"}
+					return &ClassError{Class: "ValueError", Message: "config changed after publication began; preserve it for manual recovery"}
 				}
 			}
 			for _, c := range configs {
@@ -489,7 +489,7 @@ func recoverPublication(ctx context.Context, project string) error {
 		if class := errorClass(err); class == "AttributeError" || class == "RuntimeError" {
 			return err
 		}
-		return &PyError{Class: "RuntimeError", Message: fmt.Sprintf("cannot recover dependency publication: %s: %s", journal, pyExceptionText(err))}
+		return &ClassError{Class: "RuntimeError", Message: fmt.Sprintf("cannot recover dependency publication: %s: %s", journal, exceptionText(err))}
 	}
 	return nil
 }
@@ -503,11 +503,11 @@ func finishPublication(ctx context.Context, project string) error {
 	}
 	doc, err := loadJSON(data)
 	if err != nil {
-		return &PyError{Class: "ValueError", Message: err.Error()}
+		return &ClassError{Class: "ValueError", Message: err.Error()}
 	}
 	row, ok := doc.(map[string]any)
 	if !ok {
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the publication journal %s must hold a mapping, got %s", journal, errchain.Kind(doc))}
+		return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the publication journal %s must hold a mapping, got %s", journal, errchain.Kind(doc))}
 	}
 	row["committed"] = true
 	encoded, err := dumpsJSON(row, false)
@@ -594,7 +594,7 @@ func CollectSupersededGenerations(ctx context.Context, projectRoot string) error
 	removed, err := collectGenerations(ctx, projectRoot, 24*time.Hour)
 	if err != nil {
 		if isOSOrValueError(err) {
-			pkgLog().Warn(fmt.Sprintf("dependency generation cleanup skipped: %s", pyExceptionText(err)))
+			pkgLog().Warn(fmt.Sprintf("dependency generation cleanup skipped: %s", exceptionText(err)))
 			return nil
 		}
 		return err

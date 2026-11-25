@@ -418,7 +418,7 @@ func TestResolveUnderlyingCall(t *testing.T) {
 		t.Fatalf("handler args: %v", handler)
 	}
 	_, errMsg = NormalizeToolCallEntries(map[string]any{"calls": []any{map[string]any{"name": "a", "arguments": "not json"}}})
-	if errMsg != "tool_call calls[0].arguments is not valid JSON: Expecting value: line 1 column 1 (char 0)" {
+	if errMsg != "tool_call calls[0].arguments is not valid JSON: json: invalid character 'o' in literal null (expecting 'u') at line 1, column 2" {
 		t.Fatalf("invalid json: %s", errMsg)
 	}
 	batchErr := LocalBatchError([]ToolCallEntry{{Name: "a", Arguments: jsonutil.ObjectOf("y", 1.0, "x", int64(1))}, {Name: "b", Arguments: jsonutil.NewObject()}})
@@ -427,7 +427,8 @@ func TestResolveUnderlyingCall(t *testing.T) {
 	}
 }
 
-func TestToolCallBatchErrorEchoesModelNumbersAsPythonDoes(t *testing.T) {
+// The batch rejection echoes the first entry with every number exactly as the model wrote it, whichever shape carried the arguments
+func TestToolCallBatchErrorEchoesModelNumbersExactly(t *testing.T) {
 	env := searchEnv(t)
 	registerSearchTool(t, "mcp__res__probe", "mcp-res", nil)
 	registerSearchTool(t, "mcp__res__other", "mcp-res", nil)

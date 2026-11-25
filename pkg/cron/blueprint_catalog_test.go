@@ -73,7 +73,7 @@ func cronGaps(t *testing.T, expr string, start time.Time, n int) map[time.Durati
 }
 
 func TestBlueprintBadSlotTypeRejected(t *testing.T) {
-	if _, err := NewBlueprintSlot(BlueprintSlot{Name: "x", Type: "bogus", Label: "X"}); err == nil || err.Error() != "unknown slot type 'bogus' (slot x)" {
+	if _, err := NewBlueprintSlot(BlueprintSlot{Name: "x", Type: "bogus", Label: "X"}); err == nil || err.Error() != `unknown slot type "bogus" (slot x)` {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -232,21 +232,21 @@ func TestBuildPluginBlueprintRejectsMalformedInput(t *testing.T) {
 		{func(s *plugins.BlueprintSpec) { s.PromptTemplate = "hello {nobody}" }, "nobody"},
 		{func(s *plugins.BlueprintSpec) {
 			s.Slots = []any{map[string]any{"name": "x", "type": "colour", "label": "X"}}
-		}, "unknown slot type 'colour' (slot x)"},
+		}, `unknown slot type "colour" (slot x)`},
 		{func(s *plugins.BlueprintSpec) { s.ScheduleTemplate = "not a schedule" }, "schedule"},
-		{func(s *plugins.BlueprintSpec) { s.ScheduleTemplate = "{minute} {hour} * * *" }, "needs a slot named 'time'"},
+		{func(s *plugins.BlueprintSpec) { s.ScheduleTemplate = "{minute} {hour} * * *" }, `needs a slot named "time"`},
 		{func(s *plugins.BlueprintSpec) { s.Title = "" }, "title must be a non-empty string"},
 		{func(s *plugins.BlueprintSpec) { s.Slots = []any{map[string]any{"name": "x", "type": "text"}} }, "slot x is missing label"},
 		{func(s *plugins.BlueprintSpec) { s.Slots = []any{map[string]any{"name": "x", "colour": 1}} }, "unknown slot field(s): colour"},
 		{func(s *plugins.BlueprintSpec) { s.Slots = []any{"x"} }, "slot must be a mapping, got text"},
 		{func(s *plugins.BlueprintSpec) {
 			s.Slots = []any{map[string]any{"name": "1x", "type": "text", "label": "X"}}
-		}, "invalid slot name '1x'"},
-		{func(s *plugins.BlueprintSpec) { s.PromptTemplate = "hi {}" }, "prompt_template placeholder {} must be a plain slot name"},
+		}, `invalid slot name "1x"`},
+		{func(s *plugins.BlueprintSpec) { s.PromptTemplate = "hi {}" }, "prompt_template: template: placeholder without a name"},
 		{func(s *plugins.BlueprintSpec) {
 			s.PromptTemplate = "hi {x}"
 			s.Slots = []any{map[string]any{"name": "x", "type": "text", "label": "X", "optional": true}}
-		}, "prompt_template uses optional slot 'x' that has no default"},
+		}, `prompt_template uses optional slot "x" that has no default`},
 		{func(s *plugins.BlueprintSpec) { s.Skills = []string{" "} }, "skills must be a list of non-empty strings"},
 		{func(s *plugins.BlueprintSpec) { s.Tags = []any{"ok", 7} }, "tags must be a list of non-empty strings"},
 		{func(s *plugins.BlueprintSpec) { s.Skills = "daily" }, "skills must be a list of strings"},
@@ -263,10 +263,10 @@ func TestBuildPluginBlueprintRejectsMalformedInput(t *testing.T) {
 			t.Fatalf("reason %q got %v", c.reason, err)
 		}
 	}
-	if _, _, err := BuildPluginBlueprint("teamtools", "other:spoof", base()); err == nil || !strings.Contains(err.Error(), "invalid key 'other:spoof'") {
+	if _, _, err := BuildPluginBlueprint("teamtools", "other:spoof", base()); err == nil || !strings.Contains(err.Error(), `invalid key "other:spoof": use lowercase letters, digits, "-" or "_" (the "teamtools:" namespace is added automatically)`) {
 		t.Fatalf("spoof %v", err)
 	}
-	if _, _, err := BuildPluginBlueprint("teamtools", nil, base()); err == nil || !strings.Contains(err.Error(), "invalid key None") {
+	if _, _, err := BuildPluginBlueprint("teamtools", nil, base()); err == nil || !strings.Contains(err.Error(), "missing key: use lowercase letters") {
 		t.Fatalf("missing key %v", err)
 	}
 	key, bp, err := BuildPluginBlueprint("teamtools", "morning-brief", base())

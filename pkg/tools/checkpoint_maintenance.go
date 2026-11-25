@@ -139,17 +139,17 @@ func checkpointTruthy(v any) bool {
 	return truthy(v)
 }
 
-var pyFloatLiteralRe = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*)?\.[0-9](?:_?[0-9])*|[0-9](?:_?[0-9])*\.?)(?:[eE][+-]?[0-9](?:_?[0-9])*)?$`)
-var pyFloatSpecialRe = regexp.MustCompile(`^[+-]?(?:inf|infinity|nan)$`)
+var floatLiteralRe = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*)?\.[0-9](?:_?[0-9])*|[0-9](?:_?[0-9])*\.?)(?:[eE][+-]?[0-9](?:_?[0-9])*)?$`)
+var floatSpecialRe = regexp.MustCompile(`^[+-]?(?:inf|infinity|nan)$`)
 
 // Float of a string the way Python float() parses it
 func checkpointParsePyFloat(s string) (float64, error) {
-	t := pyStrip(s)
-	if pyFloatSpecialRe.MatchString(strings.ToLower(t)) {
+	t := strings.TrimSpace(s)
+	if floatSpecialRe.MatchString(strings.ToLower(t)) {
 		return strconv.ParseFloat(strings.ToLower(t), 64)
 	}
-	if !pyFloatLiteralRe.MatchString(t) {
-		return 0, &checkpointValueError{msg: pyReprStr(s) + " is not a number"}
+	if !floatLiteralRe.MatchString(t) {
+		return 0, &checkpointValueError{msg: strconv.Quote(s) + " is not a number"}
 	}
 	return strconv.ParseFloat(strings.ReplaceAll(t, "_", ""), 64)
 }
@@ -451,7 +451,7 @@ func MaybeAutoPruneCheckpoints(env *Env, o CheckpointAutoPruneOptions) Checkpoin
 			}
 		}
 	}
-	if err := os.WriteFile(marker, []byte(pyFloatRepr(now)), 0o666); err != nil {
+	if err := os.WriteFile(marker, []byte(floatRepr(now)), 0o666); err != nil {
 		log.Debug(fmt.Sprintf("Could not write checkpoint prune marker: %v", err))
 	}
 	result, err := PruneCheckpoints(env, CheckpointPruneOptions{
@@ -594,7 +594,7 @@ func CheckpointStoreStatus(env *Env, base string) (CheckpointStatus, error) {
 					checkpointGitOpts{Allowed: map[int]bool{128: true}})
 				commits := 0
 				if ok {
-					if n, good := pyIntParse(countOut); good {
+					if n, good := intParse(countOut); good {
 						commits = n
 					}
 				}

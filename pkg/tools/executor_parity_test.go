@@ -94,14 +94,14 @@ func TestImageGenerateParallelWorkerCapCanBeConfiguredLower(t *testing.T) {
 	}
 }
 
-func TestBeginToolExecutionPrintsPythonListAndJSON(t *testing.T) {
+func TestBeginToolExecutionPrintsArgKeysAndJSON(t *testing.T) {
 	e, host, _ := webSearchExecutor(t)
 	quiet := false
 	host.quiet = &quiet
 	host.progress = "all"
 	ref := &ToolCallRef{Name: "web_search", Args: map[string]any{"query": "q", "limit": int64(2)}, RawArgs: `{"query": "q", "limit": 2}`, CallID: "c1"}
 	e.beginToolExecution(ref, 3)
-	if len(host.printed) == 0 || host.printed[0] != `  📞 Tool 3: web_search(['query', 'limit']) - {"query": "q", "limit": 2}` {
+	if len(host.printed) == 0 || host.printed[0] != `  📞 Tool 3: web_search(["query", "limit"]) - {"query": "q", "limit": 2}` {
 		t.Fatalf("printed %q", host.printed)
 	}
 }

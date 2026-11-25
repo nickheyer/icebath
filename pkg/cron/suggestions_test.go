@@ -86,7 +86,7 @@ func TestSuggestionStoreLifecycle(t *testing.T) {
 	if pendingCount(t, s) != 0 || addTestSuggestion(t, s, "k1", "Test", "catalog", "0 9 * * *") != nil {
 		t.Fatal("dismissed key offered again")
 	}
-	if _, err := s.AddSuggestion("x", "d", "bogus", jsonutil.NewObject(), "k"); err == nil || err.Error() != "unknown suggestion source: 'bogus'" {
+	if _, err := s.AddSuggestion("x", "d", "bogus", jsonutil.NewObject(), "k"); err == nil || err.Error() != `unknown suggestion source: "bogus"` {
 		t.Fatal(err)
 	}
 	if _, err := s.AddSuggestion("  ", "d", "catalog", jsonutil.NewObject(), "k"); err == nil || err.Error() != "title and dedup_key are required" {
@@ -175,7 +175,7 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 	if !strings.Contains(err.Error(), "first scheduler registration failed. Do not create a duplicate.") || strings.Contains(err.Error(), "private detail") {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(regErr.UserMessage(), "Saved cron job 'Reg', but couldn't register") {
+	if !strings.HasPrefix(regErr.UserMessage(), "Saved cron job \"Reg\", but couldn't register") {
 		t.Fatal(regErr.UserMessage())
 	}
 	d := regErr.ToDict()

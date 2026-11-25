@@ -49,7 +49,7 @@ func TestAutoResetDoesNotRecoverSessionBeingEnded(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	old := NewSessionEntry(key, "old-session", pyDatetime{T: now.Add(-2 * time.Hour)}, pyDatetime{T: now.Add(-time.Hour)})
+	old := NewSessionEntry(key, "old-session", datetime{T: now.Add(-2 * time.Hour)}, datetime{T: now.Add(-time.Hour)})
 	old.Platform = PlatformTelegram
 	old.Suspended = true
 	store.entries.set(key, old)

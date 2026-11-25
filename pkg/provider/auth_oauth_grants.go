@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var oauthTokenFields = []string{"access_token", "refresh_token", "expires_at", "expires_at_ms", "last_refresh"}
@@ -338,7 +339,7 @@ func oauthFresher(candidate, target map[string]any) bool {
 }
 
 // Python equality of two decoded JSON values where booleans compare as integers
-func pyJSONEqual(a, b any) bool {
+func jsonEqual(a, b any) bool {
 	norm := func(v any) any {
 		if t, ok := v.(bool); ok {
 			if t {
@@ -357,7 +358,7 @@ func pyJSONEqual(a, b any) bool {
 		}
 		for k, v := range at {
 			w, ok := bt[k]
-			if !ok || !pyJSONEqual(v, w) {
+			if !ok || !jsonEqual(v, w) {
 				return false
 			}
 		}
@@ -368,7 +369,7 @@ func pyJSONEqual(a, b any) bool {
 			return false
 		}
 		for i := range at {
-			if !pyJSONEqual(at[i], bt[i]) {
+			if !jsonEqual(at[i], bt[i]) {
 				return false
 			}
 		}
@@ -392,7 +393,7 @@ func findRootCounterpart(profileRow map[string]any, rootRows []any) int {
 	}
 	pid := profileRow["id"]
 	for _, i := range candidates {
-		if truthyAny(pid) && pyJSONEqual(rootRows[i].(map[string]any)["id"], pid) {
+		if truthyAny(pid) && jsonEqual(rootRows[i].(map[string]any)["id"], pid) {
 			return i
 		}
 	}
@@ -402,7 +403,7 @@ func findRootCounterpart(profileRow map[string]any, rootRows []any) int {
 			continue
 		}
 		for _, i := range candidates {
-			if pyJSONEqual(rootRows[i].(map[string]any)[key], pVal) {
+			if jsonEqual(rootRows[i].(map[string]any)[key], pVal) {
 				return i
 			}
 		}
@@ -519,7 +520,7 @@ func (run *oauthHealPass) notice(profileName string) string {
 	if len(run.summary.StrippedIDs) > 0 {
 		ids := make([]string, len(run.summary.StrippedIDs))
 		for i, id := range run.summary.StrippedIDs {
-			ids[i] = pyRepr(id)
+			ids[i] = anyutil.Quote(id)
 		}
 		bits = append(bits, "pool rows ["+strings.Join(ids, ", ")+"]")
 	}

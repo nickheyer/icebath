@@ -70,7 +70,7 @@ func envProbeRun(cmd []string, timeout time.Duration) (int, string, string) {
 }
 
 // Stdout of the binary when it is on PATH and exits zero
-func (p *envProbeState) pyOut(binary string, args ...string) (string, bool) {
+func (p *envProbeState) outValue(binary string, args ...string) (string, bool) {
 	if _, err := p.lookPath(binary); err != nil {
 		return "", false
 	}
@@ -82,7 +82,7 @@ func (p *envProbeState) pyOut(binary string, args ...string) (string, bool) {
 }
 
 func (p *envProbeState) pythonVersionOf(binary string) string {
-	out, ok := p.pyOut(binary, "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))")
+	out, ok := p.outValue(binary, "-c", "import sys; print('.'.join(map(str, sys.version_info[:3])))")
 	if !ok {
 		return ""
 	}
@@ -90,18 +90,18 @@ func (p *envProbeState) pythonVersionOf(binary string) string {
 }
 
 func (p *envProbeState) hasPipModule(binary string) bool {
-	_, ok := p.pyOut(binary, "-m", "pip", "--version")
+	_, ok := p.outValue(binary, "-m", "pip", "--version")
 	return ok
 }
 
 func (p *envProbeState) detectPEP668(binary string) bool {
-	out, _ := p.pyOut(binary, "-c", "import os; print('yes' if os.path.exists(os.path.join(os.path.dirname(os.__file__), 'EXTERNALLY-MANAGED')) else 'no')")
+	out, _ := p.outValue(binary, "-c", "import os; print('yes' if os.path.exists(os.path.join(os.path.dirname(os.__file__), 'EXTERNALLY-MANAGED')) else 'no')")
 	return strings.TrimSpace(out) == "yes"
 }
 
 // Python version the pip on PATH is bound to from the trailing parenthesis of pip --version
 func (p *envProbeState) pipPythonVersion() string {
-	out, _ := p.pyOut("pip", "--version")
+	out, _ := p.outValue("pip", "--version")
 	idx := strings.Index(out, "(python ")
 	if idx < 0 || !strings.HasSuffix(out, ")") {
 		return ""

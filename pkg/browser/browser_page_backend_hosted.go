@@ -3,8 +3,8 @@ package browser
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Base reference of the objects register_browser_page_backend receives from an in process plugin in the host
@@ -31,10 +31,10 @@ func (h hostedBrowserPageBackend) mustGet(name string) any {
 	return v
 }
 
-func (h hostedBrowserPageBackend) Name() string { return config.PyStr(h.mustGet("name")) }
+func (h hostedBrowserPageBackend) Name() string { return anyutil.String(h.mustGet("name")) }
 
 func (h hostedBrowserPageBackend) DisplayName() string {
-	return config.PyStr(h.mustGet("display_name"))
+	return anyutil.String(h.mustGet("display_name"))
 }
 
 // Setup schema the plugin declares, a non dict answer reading as no schema
@@ -53,7 +53,7 @@ func (h hostedBrowserPageBackend) HasPage(taskID string) bool {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Evaluates the expression on the task's page in the host with secret passed by keyword as the base declares it

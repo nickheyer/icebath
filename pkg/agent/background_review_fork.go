@@ -50,10 +50,10 @@ func snapshotReviewUsage(reviewAgent *AIAgent) map[string]any {
 
 // Integer of a usage value after or zero, an error for a value int cannot parse
 func reviewUsageInt(v any) (int, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	n, ok := pyIntCoerce(v)
+	n, ok := intCoerce(v)
 	if !ok {
 		return 0, fmt.Errorf("review usage count %s is not a whole number", errchain.Show(v))
 	}
@@ -166,22 +166,22 @@ func logReviewCompletion(usage map[string]any, result string) {
 // Keeps a same model fork's request bytes identical to the parent's reasoning, prompt, pins and prefill
 func sameModelParityKwargs(a *AIAgent, o *AIAgentOptions) {
 	o.ReasoningConfig, o.EphemeralSystemPrompt = a.reasoningConfig, a.ephemeralSystemPrompt
-	if pyTruthy(a.providersAllowed) {
+	if anyutil.IsTrue(a.providersAllowed) {
 		o.ProvidersAllowed = a.providersAllowed
 	}
-	if pyTruthy(a.providersIgnored) {
+	if anyutil.IsTrue(a.providersIgnored) {
 		o.ProvidersIgnored = a.providersIgnored
 	}
-	if pyTruthy(a.providersOrder) {
+	if anyutil.IsTrue(a.providersOrder) {
 		o.ProvidersOrder = a.providersOrder
 	}
-	if pyTruthy(a.providerSort) {
+	if anyutil.IsTrue(a.providerSort) {
 		o.ProviderSort = a.providerSort
 	}
 	if a.providerRequireParameters {
 		o.ProviderRequireParameters = true
 	}
-	if pyTruthy(a.providerDataCollection) {
+	if anyutil.IsTrue(a.providerDataCollection) {
 		o.ProviderDataCollection = a.providerDataCollection
 	}
 	if len(a.prefillMessages) > 0 {
@@ -191,7 +191,7 @@ func sameModelParityKwargs(a *AIAgent, o *AIAgentOptions) {
 
 // Tells the user once per parent that the configured review reasoning effort is ignored on the same model path
 func warnIgnoredReasoningEffort(ctx context.Context, a *AIAgent, taskCfg map[string]any) {
-	effort := strings.TrimSpace(pyStrOr(backgroundReviewTaskConfig(ctx, taskCfg)["reasoning_effort"], ""))
+	effort := strings.TrimSpace(anyutil.StringOr(backgroundReviewTaskConfig(ctx, taskCfg)["reasoning_effort"], ""))
 	if effort == "" || a.warnedBgReviewReasoningEffort {
 		return
 	}
@@ -252,8 +252,8 @@ func routedReasoningConfig(ctx context.Context, taskCfg map[string]any) map[stri
 // Constructor keywords of the review fork, parent toolsets and a skipped external memory, parity fields on the same model
 func forkInitKwargs(ctx context.Context, a *AIAgent, rt reviewRuntime, routed bool, maxIterations int, taskCfg map[string]any) AIAgentOptions {
 	o := AIAgentOptions{
-		Model: pyStrOr(rt.Model, a.model), MaxIterations: new(maxIterations), QuietMode: true, Platform: a.platform,
-		Provider: pyStrOr(rt.Provider, a.provider), APIMode: rt.APIMode, BaseURL: rt.BaseURL, APIKey: rt.APIKey,
+		Model: anyutil.StringOr(rt.Model, a.model), MaxIterations: new(maxIterations), QuietMode: true, Platform: a.platform,
+		Provider: anyutil.StringOr(rt.Provider, a.provider), APIMode: rt.APIMode, BaseURL: rt.BaseURL, APIKey: rt.APIKey,
 		CredentialPool: rt.CredentialPool, RequestOverrides: rt.RequestOverrides, ParentSessionID: a.sessionID,
 		EnabledToolsets: a.enabledToolsets, DisabledToolsets: a.disabledToolsets, SkipMemory: true,
 		MaxTokens: rt.MaxTokens,
@@ -288,8 +288,8 @@ func inheritParentToolSurface(reviewAgent, a *AIAgent) error {
 		if !ok {
 			return errors.New("a parent tool schema has no function")
 		}
-		name, ok := fn["name"]
-		if !ok {
+		name := fn["name"]
+		if name == nil {
 			return errors.New("a parent tool schema has no name")
 		}
 		names[anyutil.String(name)] = true

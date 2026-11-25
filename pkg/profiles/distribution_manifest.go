@@ -1,17 +1,14 @@
 package profiles
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -49,17 +46,17 @@ const RetiredRequiresKey = "hermes_requires"
 
 func manifestStr(data map[string]any, key, def string) string {
 	v := data[key]
-	if !pyTruthy(v) {
+	if !truthy(v) {
 		return def
 	}
-	return pyStr(v)
+	return config.ShowValue(v)
 }
 
 // Requirement parsed from one env_requires entry, which must be a mapping with a name
 func EnvRequirementFromDict(data any) (EnvRequirement, error) {
 	m, ok := data.(map[string]any)
 	if !ok {
-		return EnvRequirement{}, distErrorf("env_requires entry must be a mapping, got %s", anyutil.Kind(data))
+		return EnvRequirement{}, distErrorf("env_requires entry must be a mapping, got %s", errchain.Kind(data))
 	}
 	name := strings.TrimSpace(manifestStr(m, "name", ""))
 	if name == "" {
@@ -67,7 +64,7 @@ func EnvRequirementFromDict(data any) (EnvRequirement, error) {
 	}
 	required := true
 	if v, ok := m["required"]; ok {
-		required = pyTruthy(v)
+		required = truthy(v)
 	}
 	return EnvRequirement{Name: name, Description: manifestStr(m, "description", ""), Required: required, Default: m["default"]}, nil
 }
@@ -111,14 +108,14 @@ func NewDistributionManifest(name string) *DistributionManifest {
 func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 	m, ok := data.(map[string]any)
 	if !ok {
-		return nil, distErrorf("%s must be a mapping, got %s", ManifestFilename, anyutil.Kind(data))
+		return nil, distErrorf("%s must be a mapping, got %s", ManifestFilename, errchain.Kind(data))
 	}
 	name := strings.TrimSpace(manifestStr(m, "name", ""))
 	if name == "" {
 		return nil, distErrorf("%s missing 'name'", ManifestFilename)
 	}
 	envRaw := m["env_requires"]
-	if !pyTruthy(envRaw) {
+	if !truthy(envRaw) {
 		envRaw = []any{}
 	}
 	envList, ok := envRaw.([]any)
@@ -127,7 +124,7 @@ func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 	}
 	ownedRaw := m["distribution_owned"]
 	ownedList, isList := ownedRaw.([]any)
-	if pyTruthy(ownedRaw) && !isList {
+	if truthy(ownedRaw) && !isList {
 		return nil, distErrorf("distribution_owned must be a list")
 	}
 	out := &DistributionManifest{
@@ -143,7 +140,7 @@ func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 		out.EnvRequires = append(out.EnvRequires, req)
 	}
 	for _, p := range ownedList {
-		if s := pyStr(p); strings.TrimSpace(s) != "" {
+		if s := strOr(p); strings.TrimSpace(s) != "" {
 			out.DistributionOwned = append(out.DistributionOwned, strings.Trim(strings.TrimSpace(s), "/"))
 		}
 	}
@@ -189,42 +186,29 @@ func ReadManifest(profileDir string) (*DistributionManifest, error) {
 	}
 	data, err := readUTF8Sig(path)
 	if err != nil {
-		return nil, distErrorf("Failed to parse %s: %s", path, pyExcText(err))
+		return nil, distErrorf("Failed to parse %s: %s", path, errchain.OSText(err))
 	}
 	doc, err := config.FastSafeLoad(data)
 	if err != nil {
 		return nil, distErrorf("Failed to parse %s: %v", path, err)
 	}
-	if !pyTruthy(doc) {
+	if !truthy(doc) {
 		doc = map[string]any{}
 	}
 	return DistributionManifestFromDict(doc)
 }
 
-// Bytes of a utf-8-sig text file, the BOM dropped and invalid UTF-8 a UnicodeDecodeError
+// Bytes of a UTF-8 text file with one leading byte order mark dropped, a *textutil.InvalidUTF8Error at the first byte that is not UTF-8
 func readUTF8Sig(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
-	for i := 0; i < len(data); {
-		r, n := utf8.DecodeRune(data[i:])
-		if r == utf8.RuneError && n <= 1 {
-			return nil, &textutil.InvalidUTF8Error{Offset: i}
-		}
-		i += n
+	data = textutil.TrimBOM(data)
+	if err := textutil.ValidateUTF8(data); err != nil {
+		return nil, err
 	}
 	return data, nil
-}
-
-// Python str of an exception, the errno form for OS errors
-func pyExcText(err error) string {
-	var pe *os.PathError
-	if errors.As(err, &pe) {
-		return err.Error()
-	}
-	return err.Error()
 }
 
 // Atomically writes distribution.yaml, keeping an existing file's mode and creating a new one 0644

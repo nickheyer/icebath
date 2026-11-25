@@ -14,7 +14,7 @@ func (f fenceStub) operatorCancelled() bool { return bool(f) }
 
 func TestCancelMarkersFirstReasonWinsAndIdsAreValidated(t *testing.T) {
 	s := newClockStore(t, nil, time.UTC)
-	if _, err := s.requestCancel("../x", nil); err == nil || err.Error() != "Not a usable execution id: '../x'" {
+	if _, err := s.requestCancel("../x", nil); err == nil || err.Error() != `Not a usable execution id: "../x"` {
 		t.Fatalf("bad id = %v", err)
 	}
 	first := "operator stop"

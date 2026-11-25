@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 
@@ -33,23 +34,33 @@ var (
 	retryableErrorPatterns = []string{
 		"connecterror", "connectionerror", "connectionreset", "connectionrefused", "connecttimeout",
 		"network", "broken pipe", "remotedisconnected", "eoferror",
+		"dial tcp", "connection refused", "connection reset", "server closed idle connection", "unexpected eof", ": eof",
 	}
 )
 
-// Lowercased text of the error text, the error message and its Python class that both classifiers read
+// Lowercased text of the error text, the error message and its declared kind that both classifiers read
 func sendErrorBlob(exc error, errorText string) string {
 	var parts []string
 	if errorText != "" {
 		parts = append(parts, errorText)
 	}
 	if exc != nil {
-		for _, p := range []string{exc.Error(), pyErrorKind(exc)} {
+		for _, p := range []string{exc.Error(), declaredErrorKind(exc)} {
 			if p != "" {
 				parts = append(parts, p)
 			}
 		}
 	}
 	return strings.ToLower(strings.Join(parts, " "))
+}
+
+// Kind label the first error in the chain declares through ErrorKind, empty when none declares one
+func declaredErrorKind(err error) string {
+	var kinded interface{ ErrorKind() string }
+	if errors.As(err, &kinded) {
+		return kinded.ErrorKind()
+	}
+	return ""
 }
 
 func anyIn(blob string, needles ...string) bool {

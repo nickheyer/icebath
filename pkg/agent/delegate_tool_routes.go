@@ -167,7 +167,7 @@ func profileRoute(ctx context.Context, h string) (*tools.TaskRoute, error) {
 
 // Route taking delegation.fallback_providers unless it is a profile route or carries its own chain
 func withInheritedFallback(route, cfg map[string]any) map[string]any {
-	if pyTruthy(route["profile"]) || route["fallback_providers"] != nil {
+	if anyutil.IsTrue(route["profile"]) || route["fallback_providers"] != nil {
 		return route
 	}
 	inherited := cfg["fallback_providers"]
@@ -181,7 +181,7 @@ func withInheritedFallback(route, cfg map[string]any) map[string]any {
 
 // Task route of one cleaned provider route, a profile route or the delegation credential resolver
 func resolveRoute(ctx context.Context, route map[string]any, parent *AIAgent, backend string) (*tools.TaskRoute, error) {
-	if pyTruthy(route["profile"]) {
+	if anyutil.IsTrue(route["profile"]) {
 		h, err := delegationProfileHome(route["profile"])
 		if err != nil {
 			return nil, err
@@ -236,7 +236,7 @@ func routeToTaskRoute(ctx context.Context, route map[string]any, parent *AIAgent
 // Refuses a backend route whose reasoning effort is not a known level
 func checkBackendEffort(index int, route, cfg map[string]any) error {
 	effort := route["reasoning_effort"]
-	if pyTruthy(route["profile"]) || effort == nil || effort == "" || anyutil.Equal(effort, cfg["reasoning_effort"]) {
+	if anyutil.IsTrue(route["profile"]) || effort == nil || effort == "" || anyutil.Equal(effort, cfg["reasoning_effort"]) {
 		return nil
 	}
 	if config.ParseReasoningEffort(effort) == nil {
@@ -340,7 +340,7 @@ func routeOneTask(ctx context.Context, p tools.DelegationProvider, declared map[
 		reason = err.Error()
 	}
 	pkgLog().Warn(fmt.Sprintf("delegation provider %s.route_task() raised", p.Name()), "exc_info", reason)
-	return nil, routeError("Task %d: delegation backend '%s' failed: %s", index, p.Name(), reason)
+	return nil, routeError("Task %d: delegation backend %q failed: %s", index, p.Name(), reason)
 }
 
 // Provider the delegation section selects, the active provider seam tests patch

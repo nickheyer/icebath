@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -48,7 +49,7 @@ func TestBuildCallKwargsToolDedupDuplicateToolNamesAreDeduplicated(t *testing.T)
 	seen := map[string]bool{}
 	for _, item := range auxKwargMaps(kwargs["tools"]) {
 		fn, _ := jsonutil.AsMap(item["function"])
-		name := pyStr(fn["name"])
+		name := anyutil.String(fn["name"])
 		if seen[name] {
 			t.Fatalf("Duplicate tool names found: %v", kwargs["tools"])
 		}

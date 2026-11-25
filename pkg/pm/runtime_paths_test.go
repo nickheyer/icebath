@@ -103,8 +103,8 @@ func TestPayloadStoreCannotEscapePayload(t *testing.T) {
 			}
 			rpWriteJSON(t, filepath.Join(payload, "manifest.json"), map[string]any{"repo": "icebath-agent", "store": values[escape]})
 			_, err := EnvironmentStoreRoot(context.Background(), repo, true)
-			var pyErr *PyError
-			if !errors.As(err, &pyErr) || pyErr.Class != "RuntimeError" || !strings.Contains(pyErr.Message, "payload store escapes its root") {
+			var kindErr *ClassError
+			if !errors.As(err, &kindErr) || kindErr.Class != "RuntimeError" || !strings.Contains(kindErr.Message, "payload store escapes its root") {
 				t.Fatalf("want the RuntimeError naming the escape, got %v", err)
 			}
 			t.Setenv(EnvRuntimeDir, outside)

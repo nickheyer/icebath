@@ -45,3 +45,9 @@ func ParseBool(s string) (value, ok bool) {
 	}
 	return false, false
 }
+
+// Whole number s writes in base ten as ParseInt reads it, digits of any script taken for their values; false for anything else and for a value past the int64 range
+func ParseIntAnyScript(s string) (int64, bool) {
+	n, err := ParseInt(ASCIIDigits(s))
+	return n, err == nil
+}

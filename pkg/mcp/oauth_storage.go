@@ -93,7 +93,7 @@ func safeFilename(name string) string {
 			b.WriteByte('_')
 		}
 	}
-	out := pyHead(strings.Trim(b.String(), "_"), 128)
+	out := headValue(strings.Trim(b.String(), "_"), 128)
 	if out == "" {
 		return "default"
 	}
@@ -231,11 +231,11 @@ func (s *TokenStorage) rebaseExpiresIn(m map[string]any) error {
 		if !ok {
 			return fmt.Errorf("stored expires_at is %s where a number was expected", errchain.Kind(absolute))
 		}
-		m["expires_in"] = pyIntOfFloat(math.Max(at-oauthNow(), 0))
+		m["expires_in"] = intOfFloat(math.Max(at-oauthNow(), 0))
 		return nil
 	}
 	if v, ok := m["expires_in"]; ok && v != nil {
-		n, good := pyIntOfJSON(v)
+		n, good := intOfJSON(v)
 		if !good {
 			return nil
 		}
@@ -244,13 +244,13 @@ func (s *TokenStorage) rebaseExpiresIn(m map[string]any) error {
 			return nil
 		}
 		implied := float64(st.ModTime().UnixNano())/1e9 + float64(n)
-		m["expires_in"] = pyIntOfFloat(math.Max(implied-oauthNow(), 0))
+		m["expires_in"] = intOfFloat(math.Max(implied-oauthNow(), 0))
 	}
 	return nil
 }
 
 // Truncates toward zero like int() of a float, as a JSON integer
-func pyIntOfFloat(f float64) any { return json.Number(strconv.FormatInt(int64(f), 10)) }
+func intOfFloat(f float64) any { return json.Number(strconv.FormatInt(int64(f), 10)) }
 
 // Numeric value of a JSON number or boolean, the operands Python arithmetic accepts
 func jsonNumeric(v any) (float64, bool) {
@@ -268,7 +268,7 @@ func jsonNumeric(v any) (float64, bool) {
 }
 
 // Python int() of a decoded JSON value, false where int raises
-func pyIntOfJSON(v any) (int64, bool) {
+func intOfJSON(v any) (int64, bool) {
 	switch x := v.(type) {
 	case json.Number:
 		if n, err := strconv.ParseInt(string(x), 10, 64); err == nil {
@@ -280,7 +280,7 @@ func pyIntOfJSON(v any) (int64, bool) {
 		}
 		return int64(f), true
 	case bool, string:
-		n, ok := pyInt(x)
+		n, ok := wholeNumber(x)
 		return int64(n), ok
 	}
 	return 0, false

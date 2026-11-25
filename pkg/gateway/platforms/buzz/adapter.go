@@ -301,9 +301,7 @@ func (a *BuzzAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 		return a.connectFailed(ctx, "config_missing", "no Buzz channels to watch",
 			"Buzz: no channels to watch (configure BUZZ_CHANNELS or join a channel)", false)
 	}
-	if err := a.loadCursors(ctx); err != nil {
-		return false, err
-	}
+	a.loadCursors(ctx)
 	for _, channelID := range watch {
 		a.mu.Lock()
 		skip := a.restricted[channelID]
@@ -389,11 +387,11 @@ func (a *BuzzAdapter) forgetLocked(channelID string) {
 }
 
 // Restores cursors persisted for this identity and relay
-func (a *BuzzAdapter) loadCursors(ctx context.Context) error {
+func (a *BuzzAdapter) loadCursors(ctx context.Context) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.cursors.SelfPubkey, a.cursors.RelayURL = a.selfPubkey, a.relayURL
-	return a.cursors.LoadCursors(ctx)
+	a.cursors.LoadCursors(ctx)
 }
 
 // Persists every watched cursor now

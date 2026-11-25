@@ -28,7 +28,7 @@ var implicitResolvers = []implicitResolver{
 }
 
 // Python re.match of an anchored pattern, its $ also matching before one trailing newline
-func PyFullMatch(re *regexp.Regexp, s string) bool {
+func FullMatch(re *regexp.Regexp, s string) bool {
 	return re.MatchString(s) || (strings.HasSuffix(s, "\n") && re.MatchString(s[:len(s)-1]))
 }
 
@@ -48,7 +48,7 @@ func resolveScalar(v version, value string) (string, bool) {
 		if !hasVersion || !strings.Contains(ir.first, first) || (first == "\x00" && value != "") {
 			continue
 		}
-		if PyFullMatch(ir.re, value) {
+		if FullMatch(ir.re, value) {
 			return ir.tag, true
 		}
 	}

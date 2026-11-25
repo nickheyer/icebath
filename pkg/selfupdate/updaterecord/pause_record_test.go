@@ -268,7 +268,7 @@ func TestAMalformedRetiredListIsSetAsideOnlyWhenNothingRefersToIt(t *testing.T) 
 	if err != nil || adopted != nil || len(claims) != 0 {
 		t.Fatalf("a corrupt history aborted the update %v %v %v", adopted, claims, err)
 	}
-	if corrupt, _ := os.ReadFile(pyWithSuffix(retired, ".corrupt")); pathExists(retired) || string(corrupt) != "{trunc" {
+	if corrupt, _ := os.ReadFile(withSuffix(retired, ".corrupt")); pathExists(retired) || string(corrupt) != "{trunc" {
 		t.Fatal("malformed history not set aside")
 	}
 	if err := WritePause(ctx, map[string]any{"pause_id": strings.Repeat("c", 32), "resume_needed": true,

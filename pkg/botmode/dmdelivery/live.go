@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -55,21 +56,21 @@ func (e *LiveTargetHeldError) Reason() string { return tools.HeldNotSent }
 func (e *LiveTargetHeldError) Resend() string { return "after that session closes" }
 
 // Python exception of a named class whose str is its message
-type pyError struct{ class, msg string }
+type kindError struct{ class, msg string }
 
-func (e *pyError) Error() string     { return e.msg }
-func (e *pyError) ErrorKind() string { return e.class }
+func (e *kindError) Error() string     { return e.msg }
+func (e *kindError) ErrorKind() string { return e.class }
 
-// Python str of an exception, an OS error spelled with its errno and quoted path
+// Text of a failure, an operating system error as its reason followed by the path it concerns
 func excText(err error) string {
 	switch err.(type) {
 	case *fs.PathError, *os.LinkError:
-		return err.Error()
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }
 
-// Text a delivery answer quotes for a failure, an OS error with its errno and quoted path
+// Text a delivery answer quotes for a failure, an operating system error as its reason and path
 func ExcText(err error) string { return excText(err) }
 
 // Sweeps stale payloads and stores a message in a fresh private file, never inline shell text
@@ -191,15 +192,15 @@ func subscript(v any, key string) (any, error) {
 		if val, has := d[key]; has {
 			return val, nil
 		}
-		return nil, &pyError{"KeyError", strconv.Quote(key)}
+		return nil, &kindError{"KeyError", strconv.Quote(key)}
 	}
 	switch v.(type) {
 	case string:
-		return nil, &pyError{"TypeError", "string indices must be integers, not 'str'"}
+		return nil, &kindError{"TypeError", "string indices must be integers, not 'str'"}
 	case []any:
-		return nil, &pyError{"TypeError", "list indices must be integers or slices, not str"}
+		return nil, &kindError{"TypeError", "list indices must be integers or slices, not str"}
 	}
-	return nil, &pyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
+	return nil, &kindError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
 }
 
 // Path argument of a decoded value, the TypeError pathlib raises for a non str
@@ -207,7 +208,7 @@ func pathArg(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &pyError{"TypeError", fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", anyutil.Kind(v))}
+	return "", &kindError{"TypeError", fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", anyutil.Kind(v))}
 }
 
 // Owner pin as an ordered object in its fixed key order, any further key after them sorted
@@ -228,7 +229,7 @@ func ownerObject(owner map[string]any) *jsonutil.Object {
 }
 
 // Python dict of a decoded value, a copy of a dict or the pairs of a sequence with the errors dict raises
-func pyDict(v any) (map[string]any, error) {
+func mappingOf(v any) (map[string]any, error) {
 	if d, ok := jsonutil.AsMap(v); ok {
 		out := make(map[string]any, len(d))
 		for k, val := range d {
@@ -245,7 +246,7 @@ func pyDict(v any) (map[string]any, error) {
 	case []any:
 		items = t
 	default:
-		return nil, &pyError{"TypeError", fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
+		return nil, &kindError{"TypeError", fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
 	}
 	out := map[string]any{}
 	for i, item := range items {
@@ -264,10 +265,10 @@ func pyDict(v any) (map[string]any, error) {
 				}
 				break
 			}
-			return nil, &pyError{"TypeError", fmt.Sprintf("cannot convert dictionary update sequence element #%d to a sequence", i)}
+			return nil, &kindError{"TypeError", fmt.Sprintf("cannot convert dictionary update sequence element #%d to a sequence", i)}
 		}
 		if len(pair) != 2 {
-			return nil, &pyError{"ValueError", fmt.Sprintf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))}
+			return nil, &kindError{"ValueError", fmt.Sprintf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))}
 		}
 		key, err := jsonKey(pair[0])
 		if err != nil {
@@ -291,10 +292,10 @@ func jsonKey(k any) (string, error) {
 		}
 		return "false", nil
 	case []any:
-		return "", &pyError{"TypeError", "unhashable type: 'list'"}
+		return "", &kindError{"TypeError", "unhashable type: 'list'"}
 	}
 	if _, ok := jsonutil.AsMap(k); ok {
-		return "", &pyError{"TypeError", "unhashable type: 'dict'"}
+		return "", &kindError{"TypeError", "unhashable type: 'dict'"}
 	}
 	return jsonutil.Encode(k, jsonutil.Spaced(), jsonutil.ASCII())
 }
@@ -314,7 +315,7 @@ func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *jsonut
 		}
 	} else {
 		if profileHome == "" {
-			return nil, &pyError{"AssertionError", ""}
+			return nil, &kindError{"AssertionError", ""}
 		}
 		owner, err := gateway.FindCanonicalLiveOwner(ctx, profileHome)
 		if err != nil {
@@ -408,7 +409,7 @@ func admitPinned(ctx context.Context, dmFile string, intent any, pinnedNow bool)
 			if err := gateway.CheckLiveOwner(home, owner); err != nil {
 				return nil, err
 			}
-			return nil, &pyError{"ValueError", "message must be a string"}
+			return nil, &kindError{"ValueError", "message must be a string"}
 		}
 		var author map[string]any
 		if anyutil.IsTrue(authorVal) {
@@ -418,7 +419,7 @@ func admitPinned(ctx context.Context, dmFile string, intent any, pinnedNow bool)
 			if err := gateway.CheckDeliveryID(id); err != nil {
 				return nil, err
 			}
-			if author, err = pyDict(authorVal); err != nil {
+			if author, err = mappingOf(authorVal); err != nil {
 				return nil, err
 			}
 		}

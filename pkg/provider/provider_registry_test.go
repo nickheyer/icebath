@@ -127,7 +127,7 @@ func TestProviderScopeKeysScopedReadsAndRestoreShareCanonicalKey(t *testing.T) {
 	}
 }
 
-// Wrong provider types and nil raise the TypeError text with the class article
+// Wrong provider types and nil raise the type error naming the expected type with its article and the type given
 func TestProviderRegistryRejectsWrongType(t *testing.T) {
 	orbits := NewProviderRegistry[OrbitProvider](ProviderRegistryOptions{Label: "Orbit", Logger: slog.New(&prRecords{})})
 	_, err := orbits.Scoped().Register(&prSample{"x"}, "")
@@ -136,11 +136,11 @@ func TestProviderRegistryRejectsWrongType(t *testing.T) {
 		t.Fatalf("orbit rejection %v", err)
 	}
 	err = orbits.Register(nil, "")
-	if !errors.As(err, &typeErr) || err.Error() != "register_provider() expects an OrbitProvider instance, got NoneType" {
+	if !errors.As(err, &typeErr) || err.Error() != "register_provider() expects an OrbitProvider instance, got nil" {
 		t.Fatalf("nil rejection %v", err)
 	}
 	samples, _ := newPrRegistry(ProviderRegistryOptions{})
-	if err := samples.Register(nil, ""); err == nil || err.Error() != "register_provider() expects a prSample instance, got NoneType" {
+	if err := samples.Register(nil, ""); err == nil || err.Error() != "register_provider() expects a prSample instance, got nil" {
 		t.Fatalf("typed nil rejection %v", err)
 	}
 	if _, err := samples.Scoped().Register(&prOrbit{"x"}, ""); err == nil || err.Error() != "register_provider() expects a prSample instance, got prOrbit" {
@@ -206,14 +206,14 @@ func TestProviderRegistryReregistrationOverwritesAndLogs(t *testing.T) {
 	if keys := registry.Merged(ctx, "").Keys(); !slices.Equal(keys, []string{"fal", "openai"}) {
 		t.Fatalf("overwrite moved the slot %v", keys)
 	}
-	want := []string{"DEBUG Registered image gen provider 'fal' (prSample)", "DEBUG Registered image gen provider 'openai' (prSample)",
-		"DEBUG Image gen provider 'fal' re-registered (was 'prSample')"}
+	want := []string{`DEBUG Registered image gen provider "fal" (prSample)`, `DEBUG Registered image gen provider "openai" (prSample)`,
+		`DEBUG Image gen provider "fal" re-registered (was prSample)`}
 	if got := recs.lines(); !slices.Equal(got, want) {
 		t.Fatalf("logs %q", got)
 	}
 	tts, ttsRecs := newPrRegistry(ProviderRegistryOptions{Label: "TTS"})
 	_ = tts.Register(&prSample{"x"}, "")
-	if got := ttsRecs.lines(); !slices.Equal(got, []string{"DEBUG Registered TTS provider 'x' (prSample)"}) {
+	if got := ttsRecs.lines(); !slices.Equal(got, []string{`DEBUG Registered TTS provider "x" (prSample)`}) {
 		t.Fatalf("all caps label %q", got)
 	}
 }

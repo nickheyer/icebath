@@ -225,7 +225,7 @@ func TestNamedProfileUnsetHomeWarnsOnce(t *testing.T) {
 	if got := Dir(context.Background()); got != h {
 		t.Fatalf("Dir() = %q", got)
 	}
-	if err := buf.String(); strings.Count(err, "ICEBATH_HOME fallback") != 1 || !strings.Contains(err, "'coder'") {
+	if err := buf.String(); strings.Count(err, "ICEBATH_HOME fallback") != 1 || !strings.Contains(err, `"coder"`) {
 		t.Fatalf("stderr = %q", err)
 	}
 	buf.Reset()
@@ -301,7 +301,7 @@ func TestExplicitHomeScratchDirNeverReadsTheEffectiveHome(t *testing.T) {
 
 // Key computed without the cache the way the Python tests compute it
 func hcUncached(path string) string {
-	expanded, err := pathutil.ExpandUserPath(path)
+	expanded, err := pathutil.ExpandUserKeepDotDot(path)
 	if err != nil {
 		panic(err)
 	}

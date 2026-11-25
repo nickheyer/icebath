@@ -22,12 +22,12 @@ func TestGeminiCallArgsKeepResponseOrder(t *testing.T) {
 	}
 }
 
-// Replayed tool call arguments and object tool results keep their key order and Python number spelling
+// Replayed tool call arguments and object tool results keep their key order, floats staying floats and integers integers
 func TestGeminiRequestArgsKeepKeyOrder(t *testing.T) {
 	tc := map[string]any{"id": "c1", "function": map[string]any{"name": "lookup", "arguments": `{"zeta": 1.0, "alpha": {"y": 2, "x": "é"}, "n": 1e16}`}}
 	call := translateToolCallToGemini(tc, false)["functionCall"].(map[string]any)
 	got, err := json.Marshal(call["args"])
-	if want := `{"zeta":1.0,"alpha":{"y":2,"x":"é"},"n":1e+16}`; err != nil || string(got) != want {
+	if want := `{"zeta":1.0,"alpha":{"y":2,"x":"é"},"n":10000000000000000.0}`; err != nil || string(got) != want {
 		t.Fatalf("args %s %v, want %s", got, err, want)
 	}
 	tc["function"].(map[string]any)["arguments"] = `[2.50, 1]`

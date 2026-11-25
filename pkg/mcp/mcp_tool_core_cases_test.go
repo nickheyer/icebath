@@ -550,16 +550,11 @@ func TestParkedServerSelfProbesAndRevives(t *testing.T) {
 	s.shutdown(context.Background())
 }
 
-// The KeyboardInterrupt leaf a fatal signal leaves inside a transport group
-type KeyboardInterrupt struct{}
-
-func (KeyboardInterrupt) Error() string { return "KeyboardInterrupt" }
-
 // test_mcp_rapid_drop_budget.py TestReconnectGroupFatalSignals test_keyboard_interrupt_leaf_reraises
 func TestReconnectGroupFatalSignalsKeyboardInterruptLeafReraises(t *testing.T) {
 	s := newServerTask("t", nil)
 	s.ready.Set()
-	group := errors.Join(errors.New("drop"), KeyboardInterrupt{})
+	group := errors.Join(errors.New("drop"), tools.ErrKeyboardInterrupt)
 	reason, err := s.reconnectOrReraise(context.Background(), &sessionDropError{err: group})
 	if reason == "reconnect" || err != group {
 		t.Fatalf("a fatal signal leaf was masked as %q err %v", reason, err)

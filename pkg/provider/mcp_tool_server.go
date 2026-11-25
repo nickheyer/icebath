@@ -32,7 +32,7 @@ func MCPToolParamsFromSchema(schema any) []MCPToolParam {
 	sig, _ := codexToolsSignatureFromSchema(schema)
 	out := make([]MCPToolParam, 0, len(sig.Params))
 	for _, p := range sig.Params {
-		out = append(out, MCPToolParam{Name: p.Name, Type: p.PyType, Required: p.Required})
+		out = append(out, MCPToolParam{Name: p.Name, Type: p.KindOf, Required: p.Required})
 	}
 	return out
 }
@@ -41,7 +41,7 @@ func MCPToolParamsFromSchema(schema any) []MCPToolParam {
 func (s *CodexToolsServer) AddTool(name, description string, params []MCPToolParam, inputSchema any, handler func(kwargs *jsonutil.Object) string) {
 	sig := codexToolsSignature{ReturnAnnotation: "str"}
 	for _, p := range params {
-		sig.Params = append(sig.Params, codexToolsParam{Name: p.Name, PyType: p.Type, Required: p.Required, Default: p.Default, HasDefault: p.HasDefault})
+		sig.Params = append(sig.Params, codexToolsParam{Name: p.Name, KindOf: p.Type, Required: p.Required, Default: p.Default, HasDefault: p.HasDefault})
 	}
 	s.tools = append(s.tools, &codexToolsTool{name: name, description: description, sig: sig, inputSchema: inputSchema, handler: handler})
 }

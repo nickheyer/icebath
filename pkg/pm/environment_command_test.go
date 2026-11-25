@@ -25,7 +25,7 @@ func TestExtraExpandsSelfReferencesAndRejectsUnknown(t *testing.T) {
 		t.Fatalf("requirements %q", got)
 	}
 	_, err = extraRequirements(tmp, []string{"missing"})
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "ValueError" || !strings.Contains(py.Message, "not an extra") {
 		t.Fatalf("missing extra %#v", err)
 	}

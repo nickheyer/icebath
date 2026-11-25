@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -12,7 +13,7 @@ import (
 )
 
 // Rounds half to even like the Python round builtin
-func pyRound(f float64) int64 {
+func roundHalfEven(f float64) int64 {
 	return int64(math.RoundToEven(f))
 }
 
@@ -30,13 +31,13 @@ func exportTimings(messages []*jsonutil.Object, sessionID string) *jsonutil.Obje
 			timestamped = append(timestamped, stamped{msg, ts})
 		}
 		role := "unknown"
-		if v := rowValue(msg, "role"); pyTruthy(v) {
-			role = pyStr(v)
+		if v := rowValue(msg, "role"); anyutil.IsTrue(v) {
+			role = anyutil.String(v)
 		}
 		current, _ := roleCounts.Get(role)
 		n, _ := exactInt(current)
 		roleCounts.Set(role, n+1)
-		if tc := rowValue(msg, "tool_calls"); pyTruthy(tc) {
+		if tc := rowValue(msg, "tool_calls"); anyutil.IsTrue(tc) {
 			if list, ok := tc.([]any); ok {
 				toolCallsEmitted += int64(len(list))
 			} else {
@@ -48,7 +49,7 @@ func exportTimings(messages []*jsonutil.Object, sessionID string) *jsonutil.Obje
 	var largest any
 	for i := 1; i < len(timestamped); i++ {
 		prev, next := timestamped[i-1], timestamped[i]
-		gap := max(int64(0), pyRound((next.ts-prev.ts)*1000))
+		gap := max(int64(0), roundHalfEven((next.ts-prev.ts)*1000))
 		intervals = append(intervals, jsonutil.ObjectOf("from_message_id", rowValue(prev.msg, "id"), "to_message_id", rowValue(next.msg, "id"),
 			"from_role", rowValue(prev.msg, "role"), "to_role", rowValue(next.msg, "role"), "gap_ms", gap))
 		if largest == nil || gap > largest.(int64) {
@@ -63,7 +64,7 @@ func exportTimings(messages []*jsonutil.Object, sessionID string) *jsonutil.Obje
 	available := len(timestamped) > 0
 	if available {
 		first, last = iso(timestamped[0].ts), iso(timestamped[len(timestamped)-1].ts)
-		wall = max(int64(0), pyRound((timestamped[len(timestamped)-1].ts-timestamped[0].ts)*1000))
+		wall = max(int64(0), roundHalfEven((timestamped[len(timestamped)-1].ts-timestamped[0].ts)*1000))
 	} else {
 		reason = "no_timestamped_messages"
 	}
@@ -99,7 +100,7 @@ func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *jsonu
 		return "", err
 	}
 	path, err := receiptItem(origin, "path")
-	if err != nil && pyTruthy(rowValue(origin, "foreign_session_id")) {
+	if err != nil && anyutil.IsTrue(rowValue(origin, "foreign_session_id")) {
 		err = nil
 	}
 	for _, row := range rows {
@@ -117,9 +118,9 @@ func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *jsonu
 			continue
 		}
 		foreignID, _ := origin.Get("foreign_session_id")
-		if pyTruthy(foreignID) {
+		if anyutil.IsTrue(foreignID) {
 			if anyutil.Equal(foreignID, rowValue(imported, "foreign_session_id")) {
-				return pyStr(rowValue(row, "id")), nil
+				return anyutil.String(rowValue(row, "id")), nil
 			}
 			continue
 		}
@@ -127,7 +128,7 @@ func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *jsonu
 			return "", err
 		}
 		if anyutil.Equal(rowValue(imported, "path"), path) {
-			return pyStr(rowValue(row, "id")), nil
+			return anyutil.String(rowValue(row, "id")), nil
 		}
 	}
 	return "", nil
@@ -156,7 +157,7 @@ func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *jsonutil.O
 		return nil, err
 	}
 	if len(errs) > 0 {
-		return nil, pyValueError(pyStr(rowValue(errs[0].(*jsonutil.Object), "error")))
+		return nil, valueError(anyutil.String(rowValue(errs[0].(*jsonutil.Object), "error")))
 	}
 	var result *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
@@ -181,7 +182,7 @@ func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *jsonutil.O
 		if err := d.importSessionRow(ctx, conn, session, rowGet(item, "messages"), sessionID); err != nil {
 			return err
 		}
-		provenance, err := pyDumps(jsonutil.ObjectOf("imported_from", origin), pyJSONDefault)
+		provenance, err := dumpsValue(jsonutil.ObjectOf("imported_from", origin), jsonDefault)
 		if err != nil {
 			return err
 		}
@@ -211,7 +212,7 @@ func (d *SessionDB) DistinctSessionCwds(ctx context.Context, includeArchived boo
 	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, r := range rows {
 		sessions, _ := exactInt(anyutil.Or(rowValue(r, "sessions"), int64(0)))
-		lastActive, err := pyFloatOf(anyutil.Or(rowValue(r, "last_active"), int64(0)))
+		lastActive, err := floatOf(anyutil.Or(rowValue(r, "last_active"), int64(0)))
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +266,7 @@ func (d *SessionDB) ListSkillScaffoldedSessions(ctx context.Context, limit int) 
 
 // Session dict with its messages and timings attached
 func (d *SessionDB) withMessages(ctx context.Context, session *jsonutil.Object, includeCompacted, includeInactive bool) (*jsonutil.Object, error) {
-	sessionID := pyStr(rowValue(session, "id"))
+	sessionID := anyutil.String(rowValue(session, "id"))
 	messages, err := d.GetMessages(ctx, sessionID, GetMessagesOptions{IncludeInactive: includeInactive, IncludeCompacted: includeCompacted})
 	if err != nil {
 		return nil, err
@@ -368,7 +369,7 @@ func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompact
 	bySession := map[string][]any{}
 	ids := make([]string, 0, len(sessions))
 	for _, session := range sessions {
-		sid := pyStr(rowValue(session, "id"))
+		sid := anyutil.String(rowValue(session, "id"))
 		bySession[sid] = []any{}
 		ids = append(ids, sid)
 	}
@@ -384,13 +385,13 @@ func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompact
 			if err != nil {
 				return nil, err
 			}
-			sid := pyStr(rowValue(row, "session_id"))
+			sid := anyutil.String(rowValue(row, "session_id"))
 			bySession[sid] = append(bySession[sid], msg)
 		}
 	}
 	out := make([]*jsonutil.Object, 0, len(sessions))
 	for _, session := range sessions {
-		sid := pyStr(rowValue(session, "id"))
+		sid := anyutil.String(rowValue(session, "id"))
 		exported := session.Clone()
 		exported.Set("messages", bySession[sid])
 		exported.Set("timings", exportTimings(objectsOf(bySession[sid]), sid))
@@ -410,7 +411,7 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 	}
 	if payload == nil {
 		return jsonutil.ObjectOf("ok", false, "adopted", false, "donor_retired", false,
-			"error", fmt.Sprintf("session %s not found in donor store", pyRepr(sessionID))), nil
+			"error", fmt.Sprintf("session %s not found in donor store", strconv.Quote(sessionID))), nil
 	}
 	segments, ok := rowValue(payload, "segments").([]any)
 	if !ok || len(segments) == 0 {
@@ -451,10 +452,10 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 	}
 	imported, _ := exactInt(anyutil.Or(rowValue(result, "imported"), int64(0)))
 	skipped, _ := exactInt(anyutil.Or(rowValue(result, "skipped"), int64(0)))
-	adopted := pyTruthy(rowValue(result, "ok")) && int(imported+skipped) == len(segments)
+	adopted := anyutil.IsTrue(rowValue(result, "ok")) && int(imported+skipped) == len(segments)
 	if !adopted {
 		pkgLog().Warn(fmt.Sprintf("adoption of %s did not complete: imported=%d skipped=%d of %d segment(s); errors=%s",
-			sessionID, imported, skipped, len(segments), pyReprValue(rowValue(result, "errors"))))
+			sessionID, imported, skipped, len(segments), anyutil.Quote(rowValue(result, "errors"))))
 	}
 	donorRetired := false
 	if adopted && retireDonor && !donorAhead {

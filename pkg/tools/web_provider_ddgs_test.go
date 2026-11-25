@@ -242,13 +242,13 @@ func TestDDGSWebExtractReturnsSearchOnlyError(t *testing.T) {
 	}
 }
 
-// Every malformed envelope raises the RuntimeError text _parse_envelope gives
+// Every malformed envelope fails with a RuntimeError naming what is wrong
 func TestDDGSParseEnvelope(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	p := &ddgsWorkerProc{exited: make(chan struct{})}
 	close(p.exited)
 	cases := []struct{ raw, want string }{
-		{"  \n", "DDGS worker exited without a result (code=None)"},
+		{"  \n", "DDGS worker exited without a result (exit status unknown)"},
 		{"not json", `DDGS worker returned invalid JSON: "not json"`},
 		{"[1, 2]", "DDGS worker returned an invalid envelope: [1,2]"},
 		{`{"ok": false, "error": "boom"}`, "boom"},
@@ -257,7 +257,7 @@ func TestDDGSParseEnvelope(t *testing.T) {
 	}
 	for _, c := range cases {
 		_, err := ddgsParseEnvelope(c.raw, p)
-		if err == nil || err.Error() != c.want || pyExcClass(err) != "RuntimeError" {
+		if err == nil || err.Error() != c.want || excClass(err) != "RuntimeError" {
 			t.Errorf("%q -> %v", c.raw, err)
 		}
 	}
@@ -271,7 +271,7 @@ func TestDDGSParseEnvelope(t *testing.T) {
 	}
 }
 
-// The worker writes one envelope and exits 0, 1, 2 or 3 exactly like _search_worker.main
+// The worker writes one compact JSON envelope and exits 0, 1, 2 or 3
 func TestDDGSWorkerMainExitCodes(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fakeDDGSPackage(t, [][3]string{{"<b>T</b>", "https://e.com/a%20b", "B"}, {"T2", "https://f.com", "B2"}}, nil)

@@ -3,10 +3,8 @@ package state
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -15,31 +13,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
-// Whitespace as str.isspace sees it, the information separators included
-func pyIsSpace(r rune) bool {
-	switch {
-	case r >= 0x09 && r <= 0x0d, r >= 0x1c && r <= 0x20, r == 0x85, r == 0xa0, r == 0x1680:
-		return true
-	case r >= 0x2000 && r <= 0x200a, r == 0x2028, r == 0x2029, r == 0x202f, r == 0x205f, r == 0x3000:
-		return true
-	}
-	return false
-}
-
-// str.strip with no argument
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
-
 // str.lstrip with no argument
-func pyLstrip(s string) string { return strings.TrimLeftFunc(s, pyIsSpace) }
+func lstrip(s string) string { return strings.TrimLeftFunc(s, unicode.IsSpace) }
 
 // str.split with no argument
-func pySplitWhitespace(s string) []string { return strings.FieldsFunc(s, pyIsSpace) }
-
-// Code point length of a string the way len and SQLite LENGTH count it
-func pyLen(s string) int { return utf8.RuneCountInString(s) }
+func splitWhitespace(s string) []string { return strings.FieldsFunc(s, unicode.IsSpace) }
 
 // bytes.decode with utf-8 and errors replace, one replacement per maximal invalid subpart
-func pyDecodeUTF8Replace(b []byte) string {
+func decodeUTF8Replace(b []byte) string {
 	var out strings.Builder
 	for i := 0; i < len(b); {
 		c := b[i]
@@ -82,80 +63,8 @@ func pyDecodeUTF8Replace(b []byte) string {
 	return out.String()
 }
 
-// repr of a bytes value
-func pyBytesRepr(b []byte) string {
-	quote := byte('\'')
-	if strings.IndexByte(string(b), '\'') >= 0 && strings.IndexByte(string(b), '"') < 0 {
-		quote = '"'
-	}
-	var out strings.Builder
-	out.WriteString("b")
-	out.WriteByte(quote)
-	for _, c := range b {
-		switch {
-		case c == quote || c == '\\':
-			out.WriteByte('\\')
-			out.WriteByte(c)
-		case c == '\t':
-			out.WriteString(`\t`)
-		case c == '\n':
-			out.WriteString(`\n`)
-		case c == '\r':
-			out.WriteString(`\r`)
-		case c < 0x20 || c >= 0x7f:
-			fmt.Fprintf(&out, `\x%02x`, c)
-		default:
-			out.WriteByte(c)
-		}
-	}
-	out.WriteByte(quote)
-	return out.String()
-}
-
-// str of a decoded JSON value, containers rendering their items with repr
-func pyStr(v any) string {
-	switch x := v.(type) {
-	case []byte:
-		return pyBytesRepr(x)
-	case json.Number:
-		return x.String()
-	case []any:
-		parts := make([]string, len(x))
-		for i, item := range x {
-			parts[i] = pyReprValue(item)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	case pyObject:
-		parts := make([]string, len(x))
-		for i, kv := range x {
-			parts[i] = pyRepr(kv.Key) + ": " + pyReprValue(kv.Value)
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
-	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		obj := make(pyObject, len(keys))
-		for i, k := range keys {
-			obj[i] = pyKeyValue{k, x[k]}
-		}
-		return pyStr(obj)
-	}
-	return pyFormat(v)
-}
-
-// repr of a decoded JSON value
-func pyReprValue(v any) string {
-	if s, ok := v.(string); ok {
-		return pyRepr(s)
-	}
-	return pyStr(v)
-}
-
 // Python exception class and message a numeric conversion raises
-type pyConvError struct{ Class, Msg string }
+type convError struct{ Class, Msg string }
 
 // Binding refused because the session already belongs to another Telegram topic, a ValueError to class readers
 type TopicAlreadyLinkedError struct{}
@@ -166,12 +75,12 @@ func (*TopicAlreadyLinkedError) Error() string {
 
 func (*TopicAlreadyLinkedError) ErrorKind() string { return "ValueError" }
 
-func (e *pyConvError) Error() string { return e.Msg }
+func (e *convError) Error() string { return e.Msg }
 
-func (e *pyConvError) ErrorKind() string { return e.Class }
+func (e *convError) ErrorKind() string { return e.Class }
 
 // Decimal value of a Unicode digit, runs of ten starting at zero per the Unicode guarantee
-func pyDigitValue(r rune) (int, bool) {
+func digitValue(r rune) (int, bool) {
 	if r >= '0' && r <= '9' {
 		return int(r - '0'), true
 	}
@@ -186,7 +95,7 @@ func pyDigitValue(r rune) (int, bool) {
 }
 
 // ASCII digits of a run of Unicode digits with single underscores between them, false on any other shape
-func pyDigitRun(s string) (string, bool) {
+func digitRun(s string) (string, bool) {
 	var out strings.Builder
 	prevDigit := false
 	for _, r := range s {
@@ -197,7 +106,7 @@ func pyDigitRun(s string) (string, bool) {
 			prevDigit = false
 			continue
 		}
-		d, ok := pyDigitValue(r)
+		d, ok := digitValue(r)
 		if !ok {
 			return "", false
 		}
@@ -208,7 +117,7 @@ func pyDigitRun(s string) (string, bool) {
 }
 
 // int of a decoded JSON value with the TypeError, ValueError and OverflowError int raises
-func pyIntOf(v any) (*big.Int, error) {
+func intOfValue(v any) (*big.Int, error) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -219,41 +128,41 @@ func pyIntOf(v any) (*big.Int, error) {
 		if n, ok := new(big.Int).SetString(x.String(), 10); ok {
 			return n, nil
 		}
-		f, err := pyFloatOf(x)
+		f, err := floatOf(x)
 		if err != nil {
 			return nil, err
 		}
-		return pyIntOf(f)
+		return intOfValue(f)
 	case int:
 		return big.NewInt(int64(x)), nil
 	case int64:
 		return big.NewInt(x), nil
 	case float64:
 		if math.IsNaN(x) {
-			return nil, &pyConvError{"ValueError", "not a number (NaN) has no whole number value"}
+			return nil, &convError{"ValueError", "not a number (NaN) has no whole number value"}
 		}
 		if math.IsInf(x, 0) {
-			return nil, &pyConvError{"OverflowError", "infinity has no whole number value"}
+			return nil, &convError{"OverflowError", "infinity has no whole number value"}
 		}
 		n, _ := big.NewFloat(math.Trunc(x)).Int(nil)
 		return n, nil
 	case string:
-		body := pyStrip(x)
+		body := strings.TrimSpace(x)
 		sign := ""
 		if body != "" && (body[0] == '+' || body[0] == '-') {
 			sign, body = body[:1], body[1:]
 		}
-		if digits, ok := pyDigitRun(body); ok {
+		if digits, ok := digitRun(body); ok {
 			n, _ := new(big.Int).SetString(sign+digits, 10)
 			return n, nil
 		}
-		return nil, &pyConvError{"ValueError", pyRepr(x) + " is not a whole number"}
+		return nil, &convError{"ValueError", strconv.Quote(x) + " is not a whole number"}
 	}
-	return nil, &pyConvError{"TypeError", "expected a whole number or its text, got " + errchain.Kind(v)}
+	return nil, &convError{"TypeError", "expected a whole number or its text, got " + errchain.Kind(v)}
 }
 
 // float of a decoded JSON value with the TypeError, ValueError and OverflowError float raises
-func pyFloatOf(v any) (float64, error) {
+func floatOf(v any) (float64, error) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -270,23 +179,23 @@ func pyFloatOf(v any) (float64, error) {
 		if n, ok := new(big.Int).SetString(x.String(), 10); ok {
 			f, _ := new(big.Float).SetInt(n).Float64()
 			if math.IsInf(f, 0) {
-				return 0, &pyConvError{"OverflowError", "the number is too large for a decimal value"}
+				return 0, &convError{"OverflowError", "the number is too large for a decimal value"}
 			}
 			return f, nil
 		}
-		return pyFloatOf(x.String())
+		return floatOf(x.String())
 	case string:
-		if f, ok := pyParseFloat(x); ok {
+		if f, ok := parseFloat(x); ok {
 			return f, nil
 		}
-		return 0, &pyConvError{"ValueError", pyRepr(x) + " is not a number"}
+		return 0, &convError{"ValueError", strconv.Quote(x) + " is not a number"}
 	}
-	return 0, &pyConvError{"TypeError", "expected a number or its text, got " + errchain.Kind(v)}
+	return 0, &convError{"TypeError", "expected a number or its text, got " + errchain.Kind(v)}
 }
 
 // float of a string under the float constructor grammar, Unicode digits and digit underscores accepted
-func pyParseFloat(s string) (float64, bool) {
-	body := pyStrip(s)
+func parseFloat(s string) (float64, bool) {
+	body := strings.TrimSpace(s)
 	sign := ""
 	if body != "" && (body[0] == '+' || body[0] == '-') {
 		sign, body = body[:1], body[1:]
@@ -312,7 +221,7 @@ func pyParseFloat(s string) (float64, bool) {
 	text := sign
 	for i, part := range []string{intPart, fracPart} {
 		if part != "" {
-			digits, ok := pyDigitRun(part)
+			digits, ok := digitRun(part)
 			if !ok {
 				return 0, false
 			}
@@ -327,7 +236,7 @@ func pyParseFloat(s string) (float64, bool) {
 		if exponent[0] == '+' || exponent[0] == '-' {
 			expSign, exponent = exponent[:1], exponent[1:]
 		}
-		digits, ok := pyDigitRun(exponent)
+		digits, ok := digitRun(exponent)
 		if !ok {
 			return 0, false
 		}
@@ -341,7 +250,7 @@ func pyParseFloat(s string) (float64, bool) {
 }
 
 // Lines of str.splitlines, breaking on every Python line boundary with CRLF as one break and no trailing empty line
-func pySplitlines(s string) []string {
+func splitlines(s string) []string {
 	var lines []string
 	start := 0
 	for i := 0; i < len(s); {
@@ -365,8 +274,8 @@ func pySplitlines(s string) []string {
 }
 
 // int(s, 16) with whitespace, sign, an optional 0x prefix and single underscores between digits, false where int raises ValueError
-func pyIntBase16(s string) (*big.Int, bool) {
-	body := pyStrip(s)
+func intBase16(s string) (*big.Int, bool) {
+	body := strings.TrimSpace(s)
 	neg := false
 	if body != "" && (body[0] == '+' || body[0] == '-') {
 		neg, body = body[0] == '-', body[1:]
@@ -389,7 +298,7 @@ func pyIntBase16(s string) (*big.Int, bool) {
 		case r >= 'a' && r <= 'f', r >= 'A' && r <= 'F':
 			digits.WriteRune(r)
 		default:
-			d, ok := pyDigitValue(r)
+			d, ok := digitValue(r)
 			if !ok {
 				return nil, false
 			}

@@ -139,12 +139,12 @@ var (
 // StaleHeldHistory is raised when the held history no longer matches the archived transcript
 type StaleHeldHistory struct{ Msg string }
 
-func (e *StaleHeldHistory) Error() string   { return e.Msg }
-func (e *StaleHeldHistory) Unwrap() error   { return errStaleHeldHistoryMarker }
-func (e *StaleHeldHistory) PyRuntimeError() {}
+func (e *StaleHeldHistory) Error() string { return e.Msg }
+func (e *StaleHeldHistory) Unwrap() error { return errStaleHeldHistoryMarker }
+func (e *StaleHeldHistory) RuntimeError() {}
 
 // Marks an error raised as a RuntimeError or a subclass of it
-type PyRuntimeError interface{ PyRuntimeError() }
+type RuntimeError interface{ RuntimeError() }
 
 type summaryRuntimeError struct {
 	msg string
@@ -161,36 +161,25 @@ const (
 	summaryReplyTruncated
 )
 
-func (e *summaryRuntimeError) Error() string   { return e.msg }
-func (e *summaryRuntimeError) PyRuntimeError() {}
+func (e *summaryRuntimeError) Error() string { return e.msg }
+func (e *summaryRuntimeError) RuntimeError() {}
 
 func isPyRuntimeError(err error) bool {
-	var rt PyRuntimeError
+	var rt RuntimeError
 	return errors.As(err, &rt)
 }
 
 // Python slice start for a possibly negative start index over a sequence of length n
-func pySliceStart(n, start int) int {
+func sliceStart(n, start int) int {
 	if start < 0 {
 		start += n
 	}
 	return min(max(start, 0), n)
 }
 
-// Python str of a value for error and marker text
-func pyStrOf(v any) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return anyutil.String(v)
-}
-
 // Whether a cooldown error belongs only to pre agent hygiene and so never blocks the in agent compressor
 func isHygienePreagentOnlyCooldown(errValue any) bool {
-	text := cases.Fold().String(strings.TrimSpace(pyStrOf(errValue)))
+	text := cases.Fold().String(strings.TrimSpace(anyutil.String(errValue)))
 	for _, marker := range hygienePreagentOnlyCooldownMarkers {
 		if strings.Contains(text, marker) {
 			return true
@@ -211,10 +200,10 @@ func responseFinishReason(response any) string {
 		first = choices[0]
 	}
 	fm, ok := first.(map[string]any)
-	if !ok || !pyTruthy(fm["finish_reason"]) {
+	if !ok || !anyutil.IsTrue(fm["finish_reason"]) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyStrOf(fm["finish_reason"])))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(fm["finish_reason"])))
 }
 
 // Summary text that opens with a refusal about summarizing and carries no markdown section
@@ -236,7 +225,7 @@ func responseRefusalText(response any) string {
 	if m, ok := refusal.(map[string]any); ok {
 		refusal = nil
 		for _, key := range []string{"message", "reason", "text"} {
-			if pyTruthy(m[key]) {
+			if anyutil.IsTrue(m[key]) {
 				refusal = m[key]
 				break
 			}
@@ -299,7 +288,7 @@ func templateVisibleRole(message map[string]any) (string, bool) {
 		return "", false
 	}
 	role, _ := message["role"].(string)
-	if role == "tool" || (role == "assistant" && pyTruthy(message["tool_calls"])) {
+	if role == "tool" || (role == "assistant" && anyutil.IsTrue(message["tool_calls"])) {
 		return "", false
 	}
 	return role, message["role"] != nil
@@ -430,11 +419,11 @@ func pruneStaleReasoningReplay(messages []map[string]any) int {
 func looksLikeCompactionSummary(msg map[string]any, content string) bool {
 	role, _ := msg["role"].(string)
 	if !strings.HasSuffix(strings.TrimRightFunc(content, unicode.IsSpace), state.SummaryEndMarker) || strings.HasPrefix(content, state.MergedPriorContextHeader) ||
-		role == "tool" || ((role == "user" || role == "assistant") && !pyTruthy(msg[state.CompressedSummaryMetadataKey])) {
+		role == "tool" || ((role == "user" || role == "assistant") && !anyutil.IsTrue(msg[state.CompressedSummaryMetadataKey])) {
 		return false
 	}
 	head := textutil.First(content, 280)
-	return pyTruthy(msg[state.CompressedSummaryMetadataKey]) || strings.Contains(head, "CONTEXT COMPACTION") || strings.Contains(head, "Conversation Summary")
+	return anyutil.IsTrue(msg[state.CompressedSummaryMetadataKey]) || strings.Contains(head, "CONTEXT COMPACTION") || strings.Contains(head, "Conversation Summary")
 }
 
 // Reduces the newest synthetic todo snapshot to its skill reload notice, dropping it when it has none
@@ -442,7 +431,7 @@ func salvageReduceTodoSnapshot(out *[]map[string]any) {
 	rows := *out
 	for i := len(rows) - 1; i >= 0; i-- {
 		msg := rows[i]
-		if msg == nil || !(pyTruthy(msg["_todo_snapshot_synthetic"]) && msg["role"] == "user") {
+		if msg == nil || !(anyutil.IsTrue(msg["_todo_snapshot_synthetic"]) && msg["role"] == "user") {
 			continue
 		}
 		content, isStr := msg["content"].(string)
@@ -484,7 +473,7 @@ func SalvageGrownTranscript(ctx context.Context, original, candidate []map[strin
 		}
 	}
 	keep := map[int]bool{}
-	for _, i := range toolIdx[pySliceStart(len(toolIdx), -salvageKeepRecentTools):] {
+	for _, i := range toolIdx[sliceStart(len(toolIdx), -salvageKeepRecentTools):] {
 		keep[i] = true
 	}
 	for i, msg := range out {
@@ -519,12 +508,15 @@ func freshShallowCopy(msg map[string]any) map[string]any {
 	return out
 }
 
-// Error text bounded for status lines, the error class name when the text is empty
+// Error text bounded for status lines, the kind the error declares or "unknown error" when the text is empty
 func shortErrorText(err error, limit int) string {
 	text := strings.TrimSpace(err.Error())
 	if text == "" {
-		name := strings.TrimLeft(fmt.Sprintf("%T", err), "*")
-		text = name[strings.LastIndex(name, ".")+1:]
+		text = "unknown error"
+		var named interface{ ErrorKind() string }
+		if errors.As(err, &named) && named.ErrorKind() != "" {
+			text = named.ErrorKind()
+		}
 	}
 	if utf8.RuneCountInString(text) <= limit {
 		return text
@@ -654,10 +646,10 @@ func collectGhostedSkillNames(turns []map[string]any) []string {
 }
 
 func compressorStrOrEmpty(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyStrOf(v)
+	return anyutil.String(v)
 }
 
 // Appends a pruned skills section carrying every marker the summary dropped
@@ -736,7 +728,7 @@ func buildRecoveryFooter(sessionID string, regionLen int) string {
 }
 
 // Iterates every match of a translated Python pattern
-func pyFindAll(re *regexp2.Regexp, text string) []*regexp2.Match {
+func findAll(re *regexp2.Regexp, text string) []*regexp2.Match {
 	var out []*regexp2.Match
 	m, _ := re.FindStringMatch(text)
 	for m != nil {
@@ -767,7 +759,7 @@ func buildAnchorIndex(turns []map[string]any) string {
 	for _, ap := range anchorPatterns {
 		counts, lastSeen := map[string]int{}, map[string]int{}
 		var order []string
-		for n, m := range pyFindAll(ap.pattern, text) {
+		for n, m := range findAll(ap.pattern, text) {
 			val := strings.TrimRight(strings.TrimSpace(m.String()), ".,;:")
 			if anchorNoise[strings.ToLower(val)] {
 				continue
@@ -877,16 +869,16 @@ func dedupeAppend(items *[]string, value string, limit int) {
 // Tool name and argument text of a tool call, unknown and empty when absent
 func extractToolCallNameAndArgs(toolCall any) (string, string) {
 	fn := tcGet(toolCall, "function", nil)
-	if !pyTruthy(fn) {
+	if !anyutil.IsTrue(fn) {
 		fn = map[string]any{}
 	}
 	name, args := tcGet(fn, "name", nil), tcGet(fn, "arguments", nil)
 	nameText, argsText := "unknown", ""
-	if pyTruthy(name) {
-		nameText = pyStrOf(name)
+	if anyutil.IsTrue(name) {
+		nameText = anyutil.String(name)
 	}
-	if pyTruthy(args) {
-		argsText = pyStrOf(args)
+	if anyutil.IsTrue(args) {
+		argsText = anyutil.String(args)
 	}
 	return nameText, argsText
 }
@@ -914,7 +906,7 @@ func toolCallsByID(messages []map[string]any) map[string]toolCallRef {
 
 // Collects path like mentions of the text into the relevant files list
 func collectPathMentions(text string, relevantFiles *[]string, limit int) {
-	for _, m := range pyFindAll(pathMentionRE, text) {
+	for _, m := range findAll(pathMentionRE, text) {
 		dedupeAppend(relevantFiles, strings.TrimRight(m.String(), ".,:;"), limit)
 	}
 }
@@ -992,10 +984,10 @@ func contentLengthForBudget(ctx context.Context, raw any) int {
 	}
 	parts, ok := raw.([]any)
 	if !ok {
-		if !pyTruthy(raw) {
+		if !anyutil.IsTrue(raw) {
 			return 0
 		}
-		return utf8.RuneCountInString(pyStrOf(raw))
+		return utf8.RuneCountInString(anyutil.String(raw))
 	}
 	imageChars := provider.CurrentImageTokenCost(ctx) * compressorCharsPerToken
 	total := 0
@@ -1003,7 +995,7 @@ func contentLengthForBudget(ctx context.Context, raw any) int {
 		m, ok := p.(map[string]any)
 		switch {
 		case !ok:
-			total += utf8.RuneCountInString(pyStrOf(p))
+			total += utf8.RuneCountInString(anyutil.String(p))
 		case isCompactionImagePart(p):
 			total += imageChars
 		default:
@@ -1022,9 +1014,9 @@ func serializedLengthForBudget(value any) int {
 	if s, ok := value.(string); ok {
 		return utf8.RuneCountInString(s)
 	}
-	out, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return pyStrOf(v), nil }), jsonutil.Spaced())
+	out, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
 	if err != nil {
-		return utf8.RuneCountInString(pyStrOf(value))
+		return utf8.RuneCountInString(anyutil.String(value))
 	}
 	return utf8.RuneCountInString(out)
 }
@@ -1065,7 +1057,7 @@ func estimateMsgBudgetTokens(ctx context.Context, msg map[string]any, chargeStal
 	var content any = msg["content"]
 	if sidecar, ok := msg["api_content"].(string); ok && sidecar != "" && (msg["role"] == "user" || msg["role"] == "assistant") {
 		content = sidecar
-	} else if !pyTruthy(content) {
+	} else if !anyutil.IsTrue(content) {
 		content = ""
 	}
 	var tokens int
@@ -1095,7 +1087,7 @@ func estimateMsgBudgetTokens(ctx context.Context, msg map[string]any, chargeStal
 		}
 		tokens += serializedLengthForBudget(msg[key]) / compressorCharsPerToken
 	}
-	if !(pyTruthy(msg["reasoning"]) || pyTruthy(msg["reasoning_content"])) {
+	if !(anyutil.IsTrue(msg["reasoning"]) || anyutil.IsTrue(msg["reasoning_content"])) {
 		tokens += reasoningDetailsTextChars(msg["reasoning_details"]) / compressorCharsPerToken
 	}
 	return tokens
@@ -1182,7 +1174,7 @@ func appendTextToContent(content any, text string, prepend bool) any {
 		}
 		return append(slices.Clone(parts), block)
 	}
-	rendered := pyStrOf(content)
+	rendered := anyutil.String(content)
 	if prepend {
 		return text + rendered
 	}
@@ -1207,7 +1199,7 @@ func replaceImageParts(parts any, placeholder string) ([]any, bool) {
 
 // Content parts of a tool result, unwrapping the multimodal envelope
 func toolResultParts(content any) any {
-	if m, ok := content.(map[string]any); ok && pyTruthy(m["_multimodal"]) {
+	if m, ok := content.(map[string]any); ok && anyutil.IsTrue(m["_multimodal"]) {
 		return m["content"]
 	}
 	return content
@@ -1218,12 +1210,12 @@ func toolContentHasImages(content any) bool { return contentHasImages(toolResult
 // Tool row with its images replaced by placeholders, nil when it carries none
 func stripImagesFromToolMsg(msg map[string]any) map[string]any {
 	content := msg["content"]
-	if m, ok := content.(map[string]any); ok && pyTruthy(m["_multimodal"]) {
+	if m, ok := content.(map[string]any); ok && anyutil.IsTrue(m["_multimodal"]) {
 		summary := m["text_summary"]
-		if !pyTruthy(summary) {
+		if !anyutil.IsTrue(summary) {
 			summary = strippedToolScreenshotPlaceholder
 		}
-		return rewritten(msg, "[screenshot removed] "+textutil.First(pyStrOf(summary), 200))
+		return rewritten(msg, "[screenshot removed] "+textutil.First(anyutil.String(summary), 200))
 	}
 	stripped, ok := replaceImageParts(content, strippedToolScreenshotPlaceholder)
 	if !ok {
@@ -1270,7 +1262,7 @@ func imagePayload(msg map[string]any) []string {
 		} else {
 			data = m["image_url"]
 		}
-		if !pyTruthy(data) {
+		if !anyutil.IsTrue(data) {
 			data = nil
 			if src, ok := m["source"].(map[string]any); ok {
 				data = src["data"]
@@ -1319,7 +1311,7 @@ func EvictStaleOutboundToolImages(apiMessages []map[string]any, retiredIDs map[s
 	retire := provider.OutboundImageRetireCount(blocks, len(reserved), sizes, reservedBytes, provider.ImagesAllWithinManyImageLimit(all))
 	retire = provider.LatchedRetireCount(retire, ids, retiredIDs)
 	pruned := 0
-	for _, c := range carriers[pySliceStart(len(carriers), len(carriers)-retire):] {
+	for _, c := range carriers[sliceStart(len(carriers), len(carriers)-retire):] {
 		if fresh := stripImagesFromToolMsg(apiMessages[c.index]); fresh != nil {
 			apiMessages[c.index] = fresh
 			pruned++
@@ -1381,7 +1373,7 @@ func stripHistoricalMedia(messages []map[string]any, sparedStart, sparedEnd int)
 		}
 		content := msg["content"]
 		var fresh map[string]any
-		if cm, ok := content.(map[string]any); ok && msg["role"] == "tool" && pyTruthy(cm["_multimodal"]) {
+		if cm, ok := content.(map[string]any); ok && msg["role"] == "tool" && anyutil.IsTrue(cm["_multimodal"]) {
 			if toolContentHasImages(content) {
 				fresh = stripImagesFromToolMsg(msg)
 			}
@@ -1410,15 +1402,15 @@ func summaryPartText(part any) string {
 		if !ok {
 			return ""
 		}
-		return pyStrOf(t)
+		return anyutil.String(t)
 	}
 	if imagePartTypes[ptype] {
 		return imagePartLabel(m)
 	}
-	if !pyTruthy(m["type"]) {
+	if !anyutil.IsTrue(m["type"]) {
 		return "[attachment]"
 	}
-	return "[" + pyStrOf(m["type"]) + "]"
+	return "[" + anyutil.String(m["type"]) + "]"
 }
 
 // Image label with its http URL when the part carries one
@@ -1426,8 +1418,8 @@ func imagePartLabel(part map[string]any) string {
 	url := part["image_url"]
 	if m, ok := url.(map[string]any); ok {
 		url = ""
-		if pyTruthy(m["url"]) {
-			url = pyStrOf(m["url"])
+		if anyutil.IsTrue(m["url"]) {
+			url = anyutil.String(m["url"])
 		}
 	} else if _, ok := url.(string); !ok {
 		url = part["url"]
@@ -1450,5 +1442,5 @@ func strArg(args *jsonutil.Object, key, def string) string {
 	if val == nil {
 		return def
 	}
-	return pyStrOf(val)
+	return anyutil.String(val)
 }

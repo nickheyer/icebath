@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
@@ -107,7 +108,7 @@ func TestSetForksABuiltinWithoutInventingABackground(t *testing.T) {
 func TestSetRejectsNonHex(t *testing.T) {
 	ctx, _ := skinCmdHome(t, "default")
 	code, _, errOut := runSkinSet(t, ctx, "ui_tool", "teal")
-	if code != 1 || errOut != "✗ 'teal' is not a #rrggbb hex color\n" {
+	if code != 1 || errOut != "✗ \"teal\" is not a #rrggbb hex color\n" {
 		t.Fatalf("exit %d stderr %q", code, errOut)
 	}
 }
@@ -193,7 +194,7 @@ func TestSkinUseAndList(t *testing.T) {
 	if len(lines) != len(BuiltinSkinNames())+1 {
 		t.Fatalf("listed %q", out.String())
 	}
-	if lines[0] != "  blackwall        builtin  "+PyStr(getOr(mustBuiltin(t, DefaultSkinName), "description", "")) {
+	if lines[0] != "  blackwall        builtin  "+anyutil.String(getOr(mustBuiltin(t, DefaultSkinName), "description", "")) {
 		t.Fatalf("builtin row %q", lines[0])
 	}
 	if last := lines[len(lines)-1]; last != "* oasis            user     Sea green" {

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 	"weak"
 
@@ -116,8 +117,8 @@ func (s *shellFileOps) execStdin(command, cwd string, timeout time.Duration, std
 		if t := s.terminalEnv.EnvType(); t != "" && isContainerBackend(t) {
 			hint = "; for container backends use a path inside the container, e.g. /workspace"
 		}
-		output = "working directory " + pyReprStr(effectiveCwd) + " does not exist on the active terminal " +
-			"backend (check terminal.cwd or the session cwd" + hint + "). " + pyStrip(output)
+		output = "working directory " + strconv.Quote(effectiveCwd) + " does not exist on the active terminal " +
+			"backend (check terminal.cwd or the session cwd" + hint + "). " + strings.TrimSpace(output)
 		cwdError = output
 	}
 	if res.StdinError != "" && exitCode == 0 {
@@ -141,7 +142,7 @@ func (s *shellFileOps) hasCommand(cmd string) bool {
 	if result.CwdError != "" {
 		return false
 	}
-	found := pyStrip(result.Stdout) == "yes"
+	found := strings.TrimSpace(result.Stdout) == "yes"
 	s.cacheMu.Lock()
 	s.commandCache[cmd] = found
 	s.cacheMu.Unlock()
@@ -172,17 +173,17 @@ func (s *shellFileOps) fencedRead(body string, more ...string) (segments []strin
 		return nil, 0, false, reply, false
 	}
 	segments = parts[1 : len(parts)-1]
-	fields := pyFields(stripTerminalFenceLeaks(parts[len(parts)-1]))
+	fields := fieldsValue(stripTerminalFenceLeaks(parts[len(parts)-1]))
 	if len(fields) == 0 {
 		return segments, 0, false, reply, true
 	}
-	n, ok := pyIntParse(fields[0])
+	n, ok := intParse(fields[0])
 	return segments, n, ok, reply, true
 }
 
 // Whether data is exactly as long as the single integer the size segment holds
 func matchesSize(data []byte, sizeSegment string) bool {
-	tokens := pyFields(stripTerminalFenceLeaks(sizeSegment))
+	tokens := fieldsValue(stripTerminalFenceLeaks(sizeSegment))
 	if len(tokens) != 1 || !isASCIIDigits(tokens[0]) {
 		return false
 	}
@@ -204,7 +205,7 @@ func isASCIIDigits(s string) bool {
 }
 
 // Python str.split with no argument
-func pyFields(s string) []string { return strings.FieldsFunc(s, pyIsSpace) }
+func fieldsValue(s string) []string { return strings.FieldsFunc(s, unicode.IsSpace) }
 
 // First raw bytes of a file carried as base64, false when no clean base64 came back
 func (s *shellFileOps) sampleFileBytes(path string, length int) ([]byte, bool) {
@@ -264,7 +265,7 @@ func nativeReadRegular(full string) ([]byte, bool) {
 
 // Backend diagnostic of a read that ran and failed, else a bare exit status
 func failedRead(path, payload string, rc int) *ExecuteResult {
-	msg := pyStrip(stripTerminalFenceLeaks(payload))
+	msg := strings.TrimSpace(stripTerminalFenceLeaks(payload))
 	if msg == "" {
 		msg = path + ": exit " + strconv.Itoa(rc)
 	}
@@ -289,7 +290,7 @@ func (s *shellFileOps) readExactBytesHex(path string) ([]byte, *ExecuteResult) {
 	if rc != 0 {
 		return nil, failedRead(path, payload, rc)
 	}
-	data, err := pyBytesFromHex(strings.Join(pyFields(stripTerminalFenceLeaks(payload)), ""))
+	data, err := bytesFromHex(strings.Join(fieldsValue(stripTerminalFenceLeaks(payload)), ""))
 	if err != nil || !matchesSize(data, size) {
 		return nil, &ExecuteResult{Stdout: path + ": the backend returned a garbled byte-exact read", ExitCode: 1}
 	}
@@ -297,7 +298,7 @@ func (s *shellFileOps) readExactBytesHex(path string) ([]byte, *ExecuteResult) {
 }
 
 // bytes.fromhex of a whitespace free string
-func pyBytesFromHex(s string) ([]byte, error) {
+func bytesFromHex(s string) ([]byte, error) {
 	if len(s)%2 != 0 {
 		return nil, hex.ErrLength
 	}
@@ -308,7 +309,7 @@ var base64SampleRe = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
 
 // One base64 transport reply decoded after whitespace joining, false on any validation failure
 func decodeBase64Sample(text string) ([]byte, bool) {
-	encoded := strings.Join(pyFields(stripTerminalFenceLeaks(text)), "")
+	encoded := strings.Join(fieldsValue(stripTerminalFenceLeaks(text)), "")
 	if encoded == "" {
 		return []byte{}, true
 	}
@@ -371,7 +372,7 @@ func isLikelyBinary(path, contentSample string) bool {
 var imageExtensions = setOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico")
 
 func isImagePath(path string) bool {
-	return imageExtensions[cases.Lower(language.Und).String(pySplitextExt(path))]
+	return imageExtensions[cases.Lower(language.Und).String(splitextExt(path))]
 }
 
 // Numbered page with a compact gutter, each line clamped to tool_output.max_line_length characters
@@ -386,7 +387,7 @@ func (s *shellFileOps) addLineNumbers(content string, startLine int) string {
 		}
 		b.WriteString(strconv.Itoa(startLine + i))
 		b.WriteByte('|')
-		if pyLen(line) <= maxLen {
+		if utf8.RuneCountInString(line) <= maxLen {
 			b.WriteString(line)
 		} else {
 			b.WriteString(runePrefix(line, maxLen) + "... [truncated]")
@@ -394,9 +395,6 @@ func (s *shellFileOps) addLineNumbers(content string, startLine int) string {
 	}
 	return b.String()
 }
-
-// Python len of the str s models, a surrogate or stray byte counting as one character
-func pyLen(s string) int { return utf8.RuneCountInString(s) }
 
 var tildeUserRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
@@ -414,7 +412,7 @@ func (s *shellFileOps) expandPath(path string) string {
 		return path
 	}
 	result := s.exec("echo $HOME", "", 0)
-	home := pyStrip(result.Stdout)
+	home := strings.TrimSpace(result.Stdout)
 	if result.ExitCode != 0 || home == "" {
 		return path
 	}
@@ -431,7 +429,7 @@ func (s *shellFileOps) expandPath(path string) string {
 	}
 	if username != "" && tildeUserRe.MatchString(username) {
 		expanded := s.exec("echo ~"+username, "", 0)
-		if out := pyStrip(expanded.Stdout); expanded.ExitCode == 0 && out != "" {
+		if out := strings.TrimSpace(expanded.Stdout); expanded.ExitCode == 0 && out != "" {
 			return out + path[1+len(username):]
 		}
 	}
@@ -502,7 +500,7 @@ func (s *shellFileOps) fileHasBOM(path string) bool {
 
 // Unified diff of two contents under a slash and b slash file headers
 func unifiedDiffText(oldContent, newContent, filename string) string {
-	return strings.Join(unifiedDiff(pySplitLinesKeepEnds(oldContent), pySplitLinesKeepEnds(newContent), "a/"+filename, "b/"+filename, 3), "")
+	return strings.Join(unifiedDiff(splitLinesKeepEndsValue(oldContent), splitLinesKeepEndsValue(newContent), "a/"+filename, "b/"+filename, 3), "")
 }
 
 // Echoed by the size probe when the path exists but is not a regular file
@@ -543,7 +541,7 @@ func (s *shellFileOps) probeRegularFile(path string) (int64, string) {
 	statResult := s.exec("if [ -f "+arg+" ]; then wc -c < "+arg+" 2>/dev/null; "+
 		"elif [ -e "+arg+" ] || [ -L "+arg+" ]; then echo "+notRegularSentinel+"; "+
 		"else echo "+missingSentinel+"; fi", "", 0)
-	out := pyStrip(stripTerminalFenceLeaks(statResult.Stdout))
+	out := strings.TrimSpace(stripTerminalFenceLeaks(statResult.Stdout))
 	switch {
 	case out == missingSentinel:
 		return 0, "missing"
@@ -555,7 +553,7 @@ func (s *shellFileOps) probeRegularFile(path string) (int64, string) {
 		}
 		return 0, "env_unavailable"
 	}
-	n, ok := pyIntParse(out)
+	n, ok := intParse(out)
 	if !ok {
 		return 0, "bad_size"
 	}
@@ -647,7 +645,7 @@ func hostPythonInterpreter() string {
 
 // Native reads and writes only on POSIX with the host filesystem, ICEBATH_NATIVE_FILE_READ off switch
 func (s *shellFileOps) nativeReadEnabled() bool {
-	flag := strings.ToLower(pyStrip(os.Getenv("ICEBATH_NATIVE_FILE_READ")))
+	flag := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_NATIVE_FILE_READ")))
 	if flag == "" {
 		flag = "1"
 	}
@@ -663,7 +661,7 @@ func (s *shellFileOps) nativePath(path string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return pyOSPathJoin(s.liveCwd(), path)
+	return osPathJoinValue(s.liveCwd(), path)
 }
 
 // Snapshots of native reads keyed weakly by result so an unclaimed one dies with its result
@@ -686,7 +684,7 @@ func readResultSnapshot(r *ReadResult) (fileVersion, bool) {
 }
 
 // Python posixpath or ntpath splitext suffix ignoring leading dots of the final component
-func pySplitextExt(p string) string {
+func splitextExt(p string) string {
 	sepIndex := strings.LastIndex(p, "/")
 	if isWindowsHost {
 		sepIndex = max(sepIndex, strings.LastIndex(p, `\`))
@@ -703,6 +701,6 @@ func pySplitextExt(p string) string {
 }
 
 // Python posixpath or ntpath splitext root
-func pySplitextRoot(p string) string {
-	return p[:len(p)-len(pySplitextExt(p))]
+func splitextRoot(p string) string {
+	return p[:len(p)-len(splitextExt(p))]
 }

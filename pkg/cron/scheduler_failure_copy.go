@@ -116,12 +116,12 @@ func providerFailureNotice(h, jobName, jobID, reason, backupProviderPhrase strin
 		}
 		action = strings.NewReplacer("{job_id}", jobID, "{relogin}", provider.ReloginCommandHint(h, provName)).Replace(tmpl)
 	}
-	return fmt.Sprintf("⚠️ Cron '%s' failed: %s. %s Run log: `icebath cron runs %s`.", jobName, cause, action, jobID), true
+	return fmt.Sprintf("⚠️ Cron %q failed: %s. %s Run log: `icebath cron runs %s`.", jobName, cause, action, jobID), true
 }
 
 // Unclassified failure notice with the cleaned error, where to look and what to do
 func genericFailureNotice(h, jobName, jobID, cleanedError string) string {
-	return fmt.Sprintf("⚠️ Cron '%s' failed: %s. ", jobName, cleanedError) +
+	return fmt.Sprintf("⚠️ Cron %q failed: %s. ", jobName, cleanedError) +
 		fmt.Sprintf("See the full run with `icebath cron runs %s` (output saved under ", jobID) +
 		fmt.Sprintf("%s); run it again with `icebath cron run %s`, ", cronOutputDirDisplay(h, jobID), jobID) +
 		fmt.Sprintf("edit it with `icebath cron edit %s`, or pause it with `icebath cron pause %s`.", jobID, jobID)
@@ -129,14 +129,14 @@ func genericFailureNotice(h, jobName, jobID, cleanedError string) string {
 
 // Script timeout notice naming the output folder and the retry command
 func scriptTimeoutNotice(h, jobName, jobID string) string {
-	return fmt.Sprintf("⚠️ Cron '%s' failed: its script timed out. No model was invoked. ", jobName) +
+	return fmt.Sprintf("⚠️ Cron %q failed: its script timed out. No model was invoked. ", jobName) +
 		fmt.Sprintf("Check the script's output under %s or `icebath cron runs %s`, ", cronOutputDirDisplay(h, jobID), jobID) +
 		fmt.Sprintf("then run it again with `icebath cron run %s`.", jobID)
 }
 
 // Inactivity cutoff notice naming the output folder and the retry command
 func inactivityNotice(h, jobName, jobID string) string {
-	return fmt.Sprintf("⚠️ Cron '%s' failed: the job stalled — it stopped doing anything for too long ", jobName) +
+	return fmt.Sprintf("⚠️ Cron %q failed: the job stalled — it stopped doing anything for too long ", jobName) +
 		"and was cut off. Check what it was doing in the saved output under " +
 		fmt.Sprintf("%s (`icebath cron runs %s`), then run it again with ", cronOutputDirDisplay(h, jobID), jobID) +
 		fmt.Sprintf("`icebath cron run %s`.", jobID)
@@ -148,7 +148,7 @@ func blockedConfigNotice(jobName, reason string) string {
 	if reason != "" && !strings.ContainsAny(reason[len(reason)-1:], ".!?") {
 		reason += "."
 	}
-	return fmt.Sprintf("⛔ Cron '%s' did not run: %s Nothing was charged. Icebath will try again at ", jobName, reason) +
+	return fmt.Sprintf("⛔ Cron %q did not run: %s Nothing was charged. Icebath will try again at ", jobName, reason) +
 		"the next scheduled time and will not repeat this alert; check with " +
 		"`icebath cron doctor`."
 }

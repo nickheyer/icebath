@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -156,7 +157,7 @@ func buildFromSessionsJSON(ctx context.Context, platformName string) []*jsonutil
 	})
 }
 
-// Numeric value of a Python number, ok false for every other type
+// Numeric value of a decoded number or boolean, ok false for NaN, which orders against nothing, and for every other type
 func directoryNumber(v any) (*big.Float, bool) {
 	switch n := v.(type) {
 	case bool:
@@ -169,6 +170,9 @@ func directoryNumber(v any) (*big.Float, bool) {
 	case int64:
 		return new(big.Float).SetInt64(n), true
 	case float64:
+		if math.IsNaN(n) {
+			return nil, false
+		}
 		return big.NewFloat(n), true
 	case *big.Int:
 		return new(big.Float).SetInt(n), true
@@ -177,7 +181,7 @@ func directoryNumber(v any) (*big.Float, bool) {
 }
 
 // Python less than for strings and numbers, a TypeError for any other pairing
-func pyLess(a, b any) (bool, error) {
+func lessValue(a, b any) (bool, error) {
 	if sa, ok := a.(string); ok {
 		if sb, ok := b.(string); ok {
 			return sa < sb, nil
@@ -192,10 +196,10 @@ func pyLess(a, b any) (bool, error) {
 }
 
 // Stable sort by Python ordering of the keys, the first comparison error returned
-func pySortStable[T any](items []T, key func(T) any) error {
+func sortStable[T any](items []T, key func(T) any) error {
 	var cmpErr error
 	sort.SliceStable(items, func(i, j int) bool {
-		less, err := pyLess(key(items[i]), key(items[j]))
+		less, err := lessValue(key(items[i]), key(items[j]))
 		if err != nil && cmpErr == nil {
 			cmpErr = err
 		}
@@ -284,7 +288,7 @@ func FormatDirectoryForDisplay(ctx context.Context, platforms *jsonutil.Object) 
 				}
 				grp.chs = append(grp.chs, ch)
 			}
-			if err := pySortStable(guilds, func(g *guildGroup) any { return g.guild }); err != nil {
+			if err := sortStable(guilds, func(g *guildGroup) any { return g.guild }); err != nil {
 				return "", err
 			}
 			for _, grp := range guilds {
@@ -293,7 +297,7 @@ func FormatDirectoryForDisplay(ctx context.Context, platforms *jsonutil.Object) 
 						return "", fmt.Errorf("'name'")
 					}
 				}
-				if err := pySortStable(grp.chs, func(c *jsonutil.Object) any { n, _ := c.Get("name"); return n }); err != nil {
+				if err := sortStable(grp.chs, func(c *jsonutil.Object) any { n, _ := c.Get("name"); return n }); err != nil {
 					return "", err
 				}
 				lines = append(lines, fmt.Sprintf("Discord (%s):", anyutil.String(grp.guild)))

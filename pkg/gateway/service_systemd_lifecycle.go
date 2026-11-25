@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -583,7 +584,7 @@ func runtimeStatePID(state *jsonutil.Object) int {
 		return 0
 	}
 	v, _ := state.Get("pid")
-	n, ok := pyIntOf(v)
+	n, ok := intOf(v)
 	if !ok || n.Sign() <= 0 || !n.IsInt64() {
 		return 0
 	}
@@ -591,7 +592,7 @@ func runtimeStatePID(state *jsonutil.Object) int {
 }
 
 // Python int(value or 0) of a decoded JSON value
-func pyIntOf(v any) (*big.Int, bool) {
+func intOf(v any) (*big.Int, bool) {
 	switch x := v.(type) {
 	case nil:
 		return big.NewInt(0), true
@@ -687,8 +688,8 @@ func waitForSystemdServiceRestart(ctx context.Context, system bool, previousPid 
 				return true, nil
 			case "startup_failed":
 				reason := "startup failed"
-				if r, _ := runtimeField(runtimeState, "exit_reason"); pyTruthy(r) {
-					reason = pyStrValue(r)
+				if r, _ := runtimeField(runtimeState, "exit_reason"); anyutil.IsTrue(r) {
+					reason = anyutil.String(r)
 				}
 				lifecyclePrintf("⚠ %s service process restarted (PID %d), but gateway startup failed: %s\n", scope, newPid, reason)
 				return false, nil
@@ -711,37 +712,6 @@ func waitForSystemdServiceRestart(ctx context.Context, system bool, previousPid 
 	lifecyclePrintf("⚠ %s service did not become active within %ds.\n  Check status: %sicebath gateway status\n  Check logs:   journalctl %s-u %s -l --since '2 min ago'\n",
 		scope, int(timeoutS), sudo, userFlag, name)
 	return false, nil
-}
-
-// Python truthiness of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case *big.Int:
-		return x.Sign() != 0
-	case []any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x.Len() > 0
-	}
-	return true
-}
-
-// Python str of a decoded JSON scalar
-func pyStrValue(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
 }
 
 // Runtime wait floor plus the unit's restart delay and start timeout
@@ -815,7 +785,7 @@ func recoverPendingSystemdRestart(ctx context.Context, system bool, previousPid 
 		return false, err
 	}
 	requested, _ := runtimeField(lifecycleRuntimeStatus(), "restart_requested")
-	if !pyTruthy(requested) {
+	if !anyutil.IsTrue(requested) {
 		return false, nil
 	}
 	activeState := props["ActiveState"]

@@ -299,7 +299,7 @@ func CmdTrustUpdateURL(ctx context.Context, name string, out io.Writer) error {
 	if v := manifest["update_url"]; jsonTruthy(v) {
 		claimed = v
 	}
-	if pyEqual(claimed, saved) {
+	if anyutil.Equal(claimed, saved) {
 		console.Print(fmt.Sprintf("[yellow]Nothing to trust:[/yellow] '%s' has no update_url mismatch.", name))
 		return nil
 	}
@@ -324,13 +324,6 @@ func CmdTrustUpdateURL(ctx context.Context, name string, out io.Writer) error {
 	}
 	console.Print(fmt.Sprintf("[green]✓[/green] Trusted [bold]%s[/bold] update_url:\n  old: %s\n  new: %s", name, shownOld, shownNew))
 	return nil
-}
-
-func pyEqual(a, b any) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return anyutil.Quote(a) == anyutil.Quote(b)
 }
 
 // Ordered check result mapping in the to_json key order

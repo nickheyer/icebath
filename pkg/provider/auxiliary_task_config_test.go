@@ -119,7 +119,7 @@ func TestInheritanceCycleDoesNotRecurse(t *testing.T) {
 	if got := a.resolve(context.Background(), "plug_a"); toFloat(got["timeout"]) != 90 {
 		t.Fatalf("cycle must be cut with the task defaults, got %v", got)
 	}
-	warned := logs.matching("Auxiliary task 'plug_a' has a circular inherit_from chain")
+	warned := logs.matching(`Auxiliary task "plug_a" has a circular inherit_from chain`)
 	if len(warned) != 1 || warned[0].level != slog.LevelWarn {
 		t.Fatalf("one cycle warning expected, got %v", warned)
 	}

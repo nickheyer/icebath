@@ -68,7 +68,7 @@ func (t *TurnRunner) currentMessageCount(ctx context.Context) *int {
 	}
 	count := 0
 	if value, present := row.Get("message_count"); present {
-		n, isInt := pyIntValue(value)
+		n, isInt := intValueValue(value)
 		if !isInt {
 			return nil
 		}
@@ -78,7 +78,7 @@ func (t *TurnRunner) currentMessageCount(ctx context.Context) *int {
 }
 
 // Integer value of a database cell
-func pyIntValue(value any) (int, bool) {
+func intValueValue(value any) (int, bool) {
 	switch n := value.(type) {
 	case int:
 		return n, true
@@ -161,7 +161,7 @@ func (t *TurnRunner) buildFreshAgent(ctx context.Context, route turnRoute, platf
 	add := func(values map[string]any) error {
 		for k, v := range values {
 			if _, dup := kwargs[k]; dup {
-				return &pyTypeError{fmt.Sprintf("AIAgent() got multiple values for keyword argument '%s'", k)}
+				return &typeError{fmt.Sprintf("AIAgent() got multiple values for keyword argument '%s'", k)}
 			}
 			kwargs[k] = v
 		}

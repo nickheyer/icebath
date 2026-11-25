@@ -214,10 +214,16 @@ func isDigits(s string) bool {
 	return true
 }
 
-// Reports whether Python int() accepts the text
-func clarifyIsInt(text string) bool {
-	_, err := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(text, "_", "")))
-	return err == nil && !strings.Contains(strings.Trim(text, " "), " ")
+// Choice number a typed reply spells and whether it is one: a decimal integer, optionally signed, surrounding whitespace allowed
+func clarifyChoiceNumber(text string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(text))
+	return n, err == nil
+}
+
+// Whether a typed reply is shaped like a choice number, digit runs too long for an int included
+func clarifyNumberShaped(text string) bool {
+	_, ok := clarifyChoiceNumber(text)
+	return ok || isDigits(strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(text), "-"), "+"))
 }
 
 // Tokens when the text looks like a typed selection, nil for free prose
@@ -228,7 +234,7 @@ func clarifySelectionAttemptTokens(text string, choices []string) []string {
 	}
 	tokens := clarifySplitTokens(stripped)
 	if tokens == nil {
-		if isDigits(strings.TrimPrefix(stripped, "-")) || clarifyIsInt(stripped) {
+		if clarifyNumberShaped(stripped) {
 			return []string{stripped}
 		}
 		return nil
@@ -269,10 +275,9 @@ func clarifyCoerceTextDetailed(entry *ClarifyEntry, response string) (string, bo
 		coerced, ok = clarifyCoerceMultiSelectText(entry, text)
 		selectionShaped = clarifySelectionAttemptTokens(text, entry.Choices) != nil
 	} else {
-		selectionShaped = clarifyIsInt(text)
+		selectionShaped = clarifyNumberShaped(text)
 		idx := -1
-		if selectionShaped {
-			n, _ := strconv.Atoi(strings.TrimSpace(strings.ReplaceAll(text, "_", "")))
+		if n, isNumber := clarifyChoiceNumber(text); isNumber {
 			idx = n - 1
 		}
 		if idx >= 0 && idx < len(entry.Choices) {

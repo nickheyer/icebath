@@ -112,8 +112,8 @@ func TestIndexConfigPipConfReadsLikeRawConfigParser(t *testing.T) {
 	}
 }
 
-// Tilde expansion follows posixpath and ntpath expanduser
-func TestIndexConfigExpandUserMatchesPython(t *testing.T) {
+// Tilde expansion finds the current or a named user's home from the environment and the user database, and the Windows path helpers it leans on join, split and clean on any host
+func TestIndexConfigExpandUserFindsHomes(t *testing.T) {
 	isolateHome(t)
 	if runtime.GOOS != "windows" {
 		t.Setenv("HOME", "/tmp/x/")
@@ -163,7 +163,7 @@ func TestIndexConfigExpandUserMatchesPython(t *testing.T) {
 		{pathutil.WindowsJoin(`\\server\share`, "x"), `\\server\share\x`},
 		{pathutil.WindowsJoin("C:", `D:\x`), `D:\x`},
 		{pathutil.WindowsJoin(`c:\a`, "C:b"), `C:\a\b`},
-		{pathutil.WindowsJoin("X", ""), `X\`},
+		{pathutil.WindowsJoin("X", ""), `X`},
 		{pathutil.WindowsDir(`\\server\share\nick`), `\\server\share\`},
 		{pathutil.WindowsDir(`C:\Users\nick`), `C:\Users`},
 		{pathutil.WindowsDir(`C:\nick`), `C:\`},
@@ -171,7 +171,7 @@ func TestIndexConfigExpandUserMatchesPython(t *testing.T) {
 		{pathutil.WindowsDir(`\\?\UNC\srv\sh\u`), `\\?\UNC\srv\sh\`},
 	} {
 		if tc.got != tc.want {
-			t.Fatalf("ntpath gave %q, want %q", tc.got, tc.want)
+			t.Fatalf("Windows path helper gave %q, want %q", tc.got, tc.want)
 		}
 	}
 }

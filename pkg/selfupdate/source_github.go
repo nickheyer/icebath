@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -64,20 +65,7 @@ type sourceGitTimeout struct {
 }
 
 func (e *sourceGitTimeout) Error() string {
-	return fmt.Sprintf("Command %s timed out after %g seconds", pyListRepr(e.Argv), e.Timeout.Seconds())
-}
-
-func pyListRepr(argv []string) string {
-	var b bytes.Buffer
-	b.WriteByte('[')
-	for i, arg := range argv {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString("'" + arg + "'")
-	}
-	b.WriteByte(']')
-	return b.String()
+	return fmt.Sprintf("Command %s timed out after %g seconds", anyutil.String(e.Argv), e.Timeout.Seconds())
 }
 
 // Git runner of every source probe, swapped by tests that record the commands a check runs
@@ -226,14 +214,14 @@ func githubCompareBehind(ctx context.Context, currentRev, targetRev, repository 
 	if payload == nil {
 		return -1
 	}
-	if ahead, ok := pyIntValue(stampGet(payload, "ahead_by")); ok && ahead >= 0 {
+	if ahead, ok := intValue(stampGet(payload, "ahead_by")); ok && ahead >= 0 {
 		return int(ahead)
 	}
 	return -1
 }
 
 // Integer value of a decoded JSON number Python reads as int, never a float or a bool
-func pyIntValue(value any) (int64, bool) {
+func intValue(value any) (int64, bool) {
 	switch n := value.(type) {
 	case int64:
 		return n, true

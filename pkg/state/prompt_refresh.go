@@ -13,7 +13,7 @@ const (
 
 // Integer of an aggregate column, zero for NULL
 func aggregateInt(v any) (int, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
 	n, err := anyutil.ToInt(v)
@@ -42,7 +42,7 @@ func (d *SessionDB) RequestPromptRefresh(ctx context.Context, sessionID *string)
 		}
 		epoch = current + 1
 		_, err = conn.ExecContext(ctx, "INSERT INTO state_meta (key, value) VALUES (?, ?) "+
-			"ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, pyStr(epoch))
+			"ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, anyutil.String(epoch))
 		return err
 	}, nil)
 	return epoch, err

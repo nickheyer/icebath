@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
@@ -45,11 +46,11 @@ const (
 )
 
 // RuntimeError the reconcile raises for a refusal
-func runtimeError(msg string) error { return &pyConvError{"RuntimeError", msg} }
+func runtimeError(msg string) error { return &convError{"RuntimeError", msg} }
 
 // Python message of a RuntimeError, the bare text without the class prefix
 func runtimeErrorText(err error) string {
-	var conv *pyConvError
+	var conv *convError
 	if errors.As(err, &conv) {
 		return conv.Msg
 	}
@@ -155,7 +156,7 @@ func requireHistoryTables(ctx context.Context, conn SQLiteConn) error {
 	}
 	tables := map[string]bool{}
 	for _, row := range rows {
-		tables[pyStr(rowValue(row, "name"))] = true
+		tables[anyutil.String(rowValue(row, "name"))] = true
 	}
 	if !tables["sessions"] || !tables["messages"] {
 		return runtimeError("canonical history tables are missing; use sessions recover, not additive reconciliation")
@@ -451,7 +452,7 @@ func integrityProblem(ctx context.Context, path string, budget *browseBudget) (s
 		if row.Len() == 0 {
 			continue
 		}
-		text := pyStr(row.Value(row.Keys()[0]))
+		text := anyutil.String(row.Value(row.Keys()[0]))
 		if strings.ToLower(text) != "ok" {
 			problems = append(problems, text)
 		}
@@ -495,7 +496,7 @@ var (
 
 // Process wide lock serializing integrity scans of one store
 func pathScanLock(path string) (*sync.Mutex, error) {
-	key, err := pyRealpath(path)
+	key, err := realpath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +524,7 @@ func reserving(ctx context.Context, home string) (func(), error) {
 		}
 		if errorutil.IsSystem(err) {
 			return nil, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store is behind this Icebath version, but its "+
-				"gateway.lock cannot be used (%s); nothing was changed.", pyOSErrorStr(err))}
+				"gateway.lock cannot be used (%s); nothing was changed.", osErrorStr(err))}
 		}
 		return nil, err
 	}
@@ -578,7 +579,7 @@ func verifyCleanBeforeLock(ctx context.Context, path string, tooSlow func() erro
 		}
 		return none, &CorruptStoreError{Detail: reason}
 	}
-	key, err := pyRealpath(path)
+	key, err := realpath(path)
 	if err != nil {
 		return none, err
 	}
@@ -626,7 +627,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 		return requireHistoryTables(ctx, conn)
 	}()
 	if err != nil {
-		var conv *pyConvError
+		var conv *convError
 		if errors.As(err, &conv) && conv.Class == "RuntimeError" {
 			return false, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store is missing its history tables (%s); "+
 				"this is not upgrade drift. Run `icebath sessions recover`.", reason)}
@@ -660,7 +661,7 @@ func ReconcileDriftForBrowse(ctx context.Context, path string) (bool, error) {
 		return &DeclarativeDriftError{Detail: fmt.Sprintf("Session store for profile '%s' is behind this Icebath version (%s) and is too "+
 			"large to verify and update within %ss while browsing. Your "+
 			"history is untouched: nothing was changed and the list was not cleared. Run "+
-			"`%s` to bring it up to date (it has no time limit), then reload.", label, reason, pyFixed0(BrowseReconcileBudgetS), repairCommand(home))}
+			"`%s` to bring it up to date (it has no time limit), then reload.", label, reason, fixed0(BrowseReconcileBudgetS), repairCommand(home))}
 	}
 	if release, err := reserving(ctx, home); err == nil {
 		release()

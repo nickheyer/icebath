@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"gopkg.in/yaml.v3"
 )
@@ -43,13 +44,13 @@ var (
 	readUserConfigRaw  = config.ReadUserConfigRaw
 )
 
-// Truthiness of gateway.standalone, strings through the shared token parser and other values by Python bool
+// Truthiness of gateway.standalone, strings through the shared token parser and other values set when nonzero and nonempty
 func standaloneTruthy(value any) bool {
 	if s, ok := value.(string); ok {
 		v, known := textutil.ParseBool(s)
 		return known && v
 	}
-	return pyTruthy(value)
+	return truthy(value)
 }
 
 // Classifies a raw config read failure as a YAML error, a transient OS or Unicode error, or neither
@@ -86,7 +87,7 @@ func ProfileIsStandalone(ctx context.Context, home string) (bool, error) {
 		standaloneMu.Lock()
 		prev, ok := standaloneMemos[key]
 		if !ok || !signaturesEqual(prev.signature, sig) || prev.result == nil || *prev.result {
-			pkgLog().Warn("Cannot read gateway.standalone from " + cfgPath + " (" + pyExceptionName(err) + "); treating as not standalone")
+			pkgLog().Warn("Cannot read gateway.standalone from " + cfgPath + " (" + readFailureReason(err) + "); treating as not standalone")
 		}
 		standaloneMemos[key] = standaloneMemo{sig, boolPtr(false)}
 		standaloneMu.Unlock()
@@ -110,7 +111,7 @@ func ProfileIsStandalone(ctx context.Context, home string) (bool, error) {
 			}
 			standaloneMu.Lock()
 			if !haveCached || !signaturesEqual(cached.signature, signature) {
-				pkgLog().Warn("Cannot read gateway.standalone from " + cfgPath + " (" + pyExceptionName(err) + "); treating as not standalone")
+				pkgLog().Warn("Cannot read gateway.standalone from " + cfgPath + " (" + readFailureReason(err) + "); treating as not standalone")
 			}
 			memo := standaloneMemo{signature: signature}
 			if isYAML {
@@ -140,27 +141,13 @@ func ProfileIsStandalone(ctx context.Context, home string) (bool, error) {
 
 func boolPtr(b bool) *bool { return &b }
 
-// Python exception class name for a config read failure
-func pyExceptionName(err error) string {
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return "FileNotFoundError"
-	case errors.Is(err, fs.ErrPermission):
-		return "PermissionError"
-	case errors.Is(err, syscall.EISDIR):
-		return "IsADirectoryError"
-	case errors.Is(err, syscall.ENOTDIR):
-		return "NotADirectoryError"
-	case config.IsOSError(err):
-		return "OSError"
-	case config.IsYAMLError(err):
-		var ye *config.YAMLError
-		errors.As(err, &ye)
-		return ye.ErrorKind()
-	case strings.Contains(err.Error(), "UTF-8"):
-		return "UnicodeDecodeError"
+// Reason a config read failed for the standalone warning: the operating system reason and path, else the first line of the error
+func readFailureReason(err error) string {
+	if config.IsOSError(err) {
+		return errchain.OSText(err)
 	}
-	return "YAMLError"
+	reason, _, _ := strings.Cut(err.Error(), "\n")
+	return reason
 }
 
 // Marker file whose presence parks a profile out of the host gateway

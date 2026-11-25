@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/go-telegram/bot/models"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Update decoded into plain JSON values, absent fields missing like PTB None attributes
@@ -84,7 +87,7 @@ func normalizeReactionEvent(update map[string]any) map[string]any {
 	}
 	newReaction := field(mr, "new_reaction")
 	reactions, isList := newReaction.([]any)
-	if pyTruthy(newReaction) && !isList {
+	if anyutil.IsTrue(newReaction) && !isList {
 		return nil
 	}
 	chatID := field(field(mr, "chat"), "id")
@@ -121,17 +124,17 @@ func normalizeMessageEditedEvent(update map[string]any) map[string]any {
 		return nil
 	}
 	var text any = field(message, "text")
-	if !pyTruthy(text) {
+	if !anyutil.IsTrue(text) {
 		text = field(message, "caption")
 	}
 	textStr, isStr := text.(string)
 	var threadID any
-	if raw := field(message, "message_thread_id"); isIDLike(raw) && pyTruthy(field(message, "is_topic_message")) {
+	if raw := field(message, "message_thread_id"); isIDLike(raw) && anyutil.IsTrue(field(message, "is_topic_message")) {
 		threadID = clipRunes(idText(raw), 128)
 	}
 	var editedAt any
 	if stamp, ok := jsonInt(field(message, "edit_date")); ok && stamp != 0 {
-		editedAt = clipRunes(time.Unix(stamp, 0).UTC().Format("2006-01-02T15:04:05+00:00"), 64)
+		editedAt = clipRunes(time.Unix(stamp, 0).UTC().Format(timeutil.RFC3339Micro), 64)
 	}
 	var payloadText any
 	if isStr {

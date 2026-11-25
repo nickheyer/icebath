@@ -60,7 +60,7 @@ func Flatten(node any, prefix string, out map[string]string) map[string]string {
 		return prefix + "." + anyutil.String(k)
 	}
 	switch n := node.(type) {
-	case pyMap:
+	case mapOf:
 		for _, p := range n {
 			Flatten(p.Value, join(p.Key), out)
 		}
@@ -92,7 +92,7 @@ func NonTextLeaves(node any, prefix string) []string {
 		return prefix + "." + anyutil.String(k)
 	}
 	switch n := node.(type) {
-	case pyMap:
+	case mapOf:
 		found := []string{}
 		for _, p := range n {
 			found = append(found, NonTextLeaves(p.Value, join(p.Key))...)
@@ -129,7 +129,7 @@ func ParseLocaleYAML(name string, data []byte) (map[string]string, error) {
 	if doc == nil {
 		return map[string]string{}, nil
 	}
-	if _, ok := doc.(pyMap); !ok {
+	if _, ok := doc.(mapOf); !ok {
 		return nil, fmt.Errorf("%s: top level must be a mapping, got %s", name, anyutil.Kind(doc))
 	}
 	return Flatten(doc, "", nil), nil
@@ -156,7 +156,7 @@ func parseLocaleFS(fsys fs.FS, name, label string) (map[string]string, error) {
 // LoadLocaleSource flattens a mapping source or parses a path source
 func LoadLocaleSource(source any) (map[string]string, error) {
 	switch s := source.(type) {
-	case map[string]any, map[string]string, pyMap:
+	case map[string]any, map[string]string, mapOf:
 		return Flatten(s, "", nil), nil
 	case string:
 		return ParseLocaleFile(s)

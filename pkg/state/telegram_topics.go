@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -76,7 +77,7 @@ const unlinkedScopeClauses = `                      AND COALESCE(NULLIF(TRIM(s.p
 
 // Stripped profile name with empty or missing mapped to default
 func normalizeTelegramTopicProfileName(profileName string) string {
-	if name := pyStrip(profileName); name != "" {
+	if name := strings.TrimSpace(profileName); name != "" {
 		return name
 	}
 	return "default"
@@ -128,7 +129,7 @@ func (d *SessionDB) ApplyTelegramTopicMigration(ctx context.Context) error {
 			}
 			has := false
 			for _, row := range info {
-				if pyStr(row["name"]) == "profile_name" {
+				if anyutil.String(row["name"]) == "profile_name" {
 					has = true
 				}
 			}
@@ -226,7 +227,7 @@ func (d *SessionDB) IsTelegramTopicModeEnabled(ctx context.Context, chatID, user
 		return false, err
 	}
 	enabled, _ := row.Get("enabled")
-	return pyTruthy(enabled), nil
+	return anyutil.IsTrue(enabled), nil
 }
 
 // Session binding row of one chat topic thread, nil when unbound
@@ -313,7 +314,7 @@ func (d *SessionDB) BindTelegramTopic(ctx context.Context, b TelegramTopicBindin
 		}
 		if len(existing) > 0 {
 			e := existing[0]
-			if pyStr(e["profile_name"]) != profileName || pyStr(e["chat_id"]) != b.ChatID || pyStr(e["thread_id"]) != b.ThreadID {
+			if anyutil.String(e["profile_name"]) != profileName || anyutil.String(e["chat_id"]) != b.ChatID || anyutil.String(e["thread_id"]) != b.ThreadID {
 				return &TopicAlreadyLinkedError{}
 			}
 		}

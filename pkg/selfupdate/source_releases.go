@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -58,7 +59,7 @@ type sourceCalledProcessError struct {
 }
 
 func (e *sourceCalledProcessError) Error() string {
-	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", pyListRepr(e.Argv), e.ReturnCode)
+	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", anyutil.String(e.Argv), e.ReturnCode)
 }
 
 // GitHub repository whose releases a checkout follows, a GitHub origin's own, else the official one

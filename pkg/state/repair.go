@@ -118,7 +118,7 @@ func openLockFile(dbPath, suffix, what, tail string) (string, *os.File) {
 		handle, err = os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not open state.db %s lock %s (%s) — %s", what, lockPath, pyOSErrorStr(err), tail))
+		pkgLog().Warn(fmt.Sprintf("Could not open state.db %s lock %s (%s) — %s", what, lockPath, osErrorStr(err), tail))
 		return lockPath, nil
 	}
 	return lockPath, handle
@@ -150,7 +150,7 @@ func crossProcessRepairLock(dbPath string, fn func(holding bool) error) error {
 		}
 		pkgLog().Warn(fmt.Sprintf("state.db repair lock %s held by another process for more than %ss — skipping schema "+
 			"surgery in this process to avoid racing the repairer. Recorded holder: %s.",
-			lockPath, pyFixed0(repairLockTimeoutSeconds), holder))
+			lockPath, fixed0(repairLockTimeoutSeconds), holder))
 	}
 	return fn(acquired)
 }
@@ -211,7 +211,7 @@ func diskBudget(dbPath, refusal string) (string, int64, int64, int64) {
 	parent := filepath.Dir(dbPath)
 	fail := func(err error) (string, int64, int64, int64) {
 		return fmt.Sprintf("could not determine free space on %s (%s); refusing the %s rather than risk "+
-			"filling the volume", parent, pyOSErrorStr(err), refusal), 0, 0, 0
+			"filling the volume", parent, osErrorStr(err), refusal), 0, 0, 0
 	}
 	st, err := os.Stat(dbPath)
 	if err != nil {
@@ -469,7 +469,7 @@ func recordRepairOutcome(dbPath string, repaired bool) {
 		return os.WriteFile(ledgerPath, []byte(text), 0o666)
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not update state.db repair ledger: %s", pyOSErrorStr(err)))
+		pkgLog().Warn(fmt.Sprintf("Could not update state.db repair ledger: %s", osErrorStr(err)))
 	}
 }
 
@@ -513,7 +513,7 @@ func pruneMalformedBackups(dbPath string, keep int) {
 	for _, stale := range backups[keep:] {
 		for _, victim := range append([]string{stale}, sidecars(stale)...) {
 			if err := os.Remove(victim); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				pkgLog().Warn(fmt.Sprintf("Could not prune stale DB backup %s: %s", victim, pyOSErrorStr(err)))
+				pkgLog().Warn(fmt.Sprintf("Could not prune stale DB backup %s: %s", victim, osErrorStr(err)))
 			}
 		}
 	}
@@ -573,7 +573,7 @@ func backupDBFile(dbPath string) (string, string) {
 	for seq := 1; ; seq++ {
 		exists, err := pathExists(backupPath)
 		if err != nil {
-			return "", fmt.Sprintf("backup copy failed: %s", pyOSErrorStr(err))
+			return "", fmt.Sprintf("backup copy failed: %s", osErrorStr(err))
 		}
 		if !exists {
 			break
@@ -603,8 +603,8 @@ func backupDBFile(dbPath string) (string, string) {
 		return "", reason
 	}
 	if err := publishBackupBundle(dbPath, fmt.Sprintf("%s.backup-staging-%s", dbPath, stamp), backupPath); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not back up malformed DB %s: %s", dbPath, pyOSErrorStr(err)))
-		return "", fmt.Sprintf("backup copy failed: %s", pyOSErrorStr(err))
+		pkgLog().Warn(fmt.Sprintf("Could not back up malformed DB %s: %s", dbPath, osErrorStr(err)))
+		return "", fmt.Sprintf("backup copy failed: %s", osErrorStr(err))
 	}
 	pruneMalformedBackups(dbPath, maxMalformedBackups)
 	return backupPath, ""
@@ -638,7 +638,7 @@ func PreflightDBWritability(ctx context.Context, dbPath, dbLabel string, directo
 	if dbPath == ":memory:" || strings.HasPrefix(dbPath, "file:") {
 		return nil
 	}
-	resolvedHome, homeErr := pyRealpath(home.Dir(ctx))
+	resolvedHome, homeErr := realpath(home.Dir(ctx))
 	type item struct {
 		path  string
 		isDir bool
@@ -670,7 +670,7 @@ func PreflightDBWritability(ctx context.Context, dbPath, dbLabel string, directo
 			x = "x"
 		}
 		inScope := false
-		if resolved, err := pyRealpath(p); err == nil && homeErr == nil {
+		if resolved, err := realpath(p); err == nil && homeErr == nil {
 			inScope = isRelativeTo(resolved, resolvedHome)
 			if st, err := os.Stat(p); inScope && err == nil {
 				mode := st.Mode()&(fs.ModePerm|fs.ModeSetuid|fs.ModeSetgid|fs.ModeSticky) | 0o600
@@ -810,7 +810,7 @@ func copyDatabaseSnapshot(ctx context.Context, sourcePath, destinationPath strin
 	}
 	return sqliteBackup(source, destination, 256, func(int, int, int) error {
 		if !snapshotClock().Before(deadline) {
-			return fmt.Errorf("timed out copying SQLite repair snapshot after %ss", pyFixed0(deadlineSeconds))
+			return fmt.Errorf("timed out copying SQLite repair snapshot after %ss", fixed0(deadlineSeconds))
 		}
 		return nil
 	}, repairLockPollSeconds)
@@ -884,7 +884,7 @@ func StateDBHasStructuralDamage(dbPath string) (bool, error) {
 				rows.Close()
 				return err
 			}
-			r.Type, r.Name = pyStr(typ), pyStr(name)
+			r.Type, r.Name = anyutil.String(typ), anyutil.String(name)
 			masterRows = append(masterRows, r)
 		}
 		if err := rows.Close(); err != nil {
@@ -903,7 +903,7 @@ func StateDBHasStructuralDamage(dbPath string) (bool, error) {
 			if err := rows.Scan(&v); err != nil {
 				return err
 			}
-			lines = append(lines, textutil.Lines(pyStr(v))...)
+			lines = append(lines, textutil.Lines(anyutil.String(v))...)
 		}
 		return rows.Err()
 	}()
@@ -952,7 +952,7 @@ func dbProbeOn(ctx context.Context, conn SQLiteConn) (string, bool, error) {
 			rows.Close()
 			return "", false, err
 		}
-		if text := pyStr(v); strings.ToLower(text) != "ok" {
+		if text := anyutil.String(v); strings.ToLower(text) != "ok" {
 			problems = append(problems, text)
 		}
 	}
@@ -1144,7 +1144,7 @@ func restoreJournalModeAfterRepair(ctx context.Context, dbPath, beforeMode strin
 	if beforeMode != "" && after != beforeMode {
 		pkgLog().Warn(fmt.Sprintf("state.db repair changed journal_mode %s -> %s (pre-surgery probe %s; restore resolved "+
 			"through apply_wal_with_fallback per database.journal_mode and the WAL-reset gate)",
-			pyRepr(beforeMode), pyRepr(after), pyRepr(beforeMode)))
+			strconv.Quote(beforeMode), strconv.Quote(after), strconv.Quote(beforeMode)))
 	}
 	return nil
 }
@@ -1240,7 +1240,7 @@ func unlinkDBTriple(path string) string {
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
-			failures = append(failures, fmt.Sprintf("%s: %s", victim, pyOSErrorStr(err)))
+			failures = append(failures, fmt.Sprintf("%s: %s", victim, osErrorStr(err)))
 			break
 		}
 	}

@@ -147,11 +147,11 @@ type emptyRuntimeError struct{}
 
 func (emptyRuntimeError) Error() string { return "" }
 
-func TestClientEmptyExceptionTextStaysDiagnosable(t *testing.T) {
-	if got := ExceptionMessage(&emptyRuntimeError{}); got != "emptyRuntimeError" {
+func TestClientEmptyExceptionTextIsNeverBlank(t *testing.T) {
+	if got := excStr(&emptyRuntimeError{}); got != "(empty error message)" {
 		t.Fatalf("empty message %q", got)
 	}
-	if got := ExceptionMessage(errors.New("boom")); got != "boom" {
+	if got := excStr(errors.New("boom")); got != "boom" {
 		t.Fatalf("message %q", got)
 	}
 	flow := testClientFlow("flow-empty", "asana")

@@ -41,7 +41,7 @@ func outcomeFromResult(v any) (jobRunOutcome, error) {
 	if !ok || len(list) != 4 {
 		return jobRunOutcome{}, fmt.Errorf("canonical cron result is not a four item list: %s", anyutil.Quote(v))
 	}
-	out := jobRunOutcome{Success: anyutil.IsTrue(list[0]), Output: pyStrOrEmpty(list[1]), FinalResponse: pyStrOrEmpty(list[2])}
+	out := jobRunOutcome{Success: anyutil.IsTrue(list[0]), Output: anyutil.StringOr(list[1], ""), FinalResponse: anyutil.StringOr(list[2], "")}
 	if list[3] != nil {
 		e := anyutil.String(list[3])
 		out.Error = &e
@@ -281,10 +281,10 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 	}
 	paramsVal, ok := record.Get("params")
 	if !ok {
-		return errors.New("'params'")
+		return errors.New("the admission journal has no params")
 	}
 	params := objectMap(paramsVal)
-	jobID, requestID := pyStrOrEmpty(params["job_id"]), pyStrOrEmpty(params["request_id"])
+	jobID, requestID := anyutil.StringOr(params["job_id"], ""), anyutil.StringOr(params["request_id"], "")
 	if journal != s.journalPath(jobID, requestID) {
 		return errors.New("cron journal identity conflict")
 	}
@@ -296,7 +296,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 	if err != nil {
 		return err
 	}
-	if row != nil && row["job_id"] == jobID && FirerFinishedStates[pyStrOrEmpty(row["status"])] {
+	if row != nil && row["job_id"] == jobID && FirerFinishedStates[anyutil.StringOr(row["status"], "")] {
 		_ = os.Remove(journal)
 		return nil
 	}

@@ -3,6 +3,7 @@ package ruamelyaml
 import (
 	"fmt"
 	"runtime/debug"
+	"strconv"
 )
 
 type NodeKind int8
@@ -181,7 +182,7 @@ func (c *composer) composeNode(site WarningSite) *Node {
 		alias := *ev.anchor
 		n, ok := c.l.anchors[alias]
 		if !ok {
-			panic(composerError("", nil, "found undefined alias "+pyStrRepr(alias), ev.start))
+			panic(composerError("", nil, "found undefined alias "+strconv.Quote(alias), ev.start))
 		}
 		return n
 	}
@@ -189,7 +190,7 @@ func (c *composer) composeNode(site WarningSite) *Node {
 	if ev.anchor != nil {
 		if first, dup := c.l.anchors[*ev.anchor]; dup {
 			c.l.warnings = append(c.l.warnings, Warning{Category: "ReusedAnchorWarning", Site: site,
-				Message: fmt.Sprintf("\nfound duplicate anchor %s\nfirst occurrence %s\nsecond occurrence %s", pyStrRepr(*ev.anchor), first.Start, ev.start)})
+				Message: fmt.Sprintf("\nfound duplicate anchor %s\nfirst occurrence %s\nsecond occurrence %s", strconv.Quote(*ev.anchor), first.Start, ev.start)})
 		}
 	}
 	if ev.kind == evSequenceStart || ev.kind == evMappingStart {
@@ -310,7 +311,7 @@ func recoverPanic(r any, err *error) {
 		*err = e
 	case *ReaderError:
 		*err = e
-	case *PyException:
+	case *Exception:
 		*err = e
 	default:
 		panic(fmt.Sprintf("%v\n%s", r, debug.Stack()))

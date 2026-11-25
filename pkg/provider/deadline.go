@@ -100,9 +100,9 @@ func dumpAllStacks() error {
 
 // Warns that an expiry went unprocessed past the grace window and dumps every goroutine stack
 func dumpBlockedLoopDiagnostics(label string, timeout time.Duration) {
-	pkgLog().Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the event loop has not processed the expiry after a further %.0fs — the loop thread appears BLOCKED in a synchronous call, which is why no asyncio timeout can fire. Dumping all thread stacks to stderr to identify the blocking frame.", strconv.Quote(label), timeout.Seconds(), LoopBlockedDumpGrace.Seconds()))
+	pkgLog().Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the dispatch goroutine has not processed the expiry after a further %.0fs — it appears BLOCKED in a synchronous call, which is why the deadline cannot take effect. Dumping all goroutine stacks to stderr to identify the blocking frame.", strconv.Quote(label), timeout.Seconds(), LoopBlockedDumpGrace.Seconds()))
 	if err := dumpAllStacks(); err != nil {
-		pkgLog().Debug(fmt.Sprintf("faulthandler traceback dump failed: %v", err))
+		pkgLog().Debug(fmt.Sprintf("goroutine stack dump failed: %v", err))
 	}
 }
 

@@ -42,7 +42,7 @@ func recordUnexecutedFailure(ctx context.Context, reply string, reason string, f
 		return reply
 	}
 	text := "The admitted turn failed."
-	if pyTruthy(failure) {
+	if anyutil.IsTrue(failure) {
 		text = anyutil.String(failure)
 	} else if reply != "" {
 		text = reply
@@ -103,14 +103,14 @@ func rowGeneration(row *jsonutil.Object) int64 {
 func prepareResult(row *jsonutil.Object, response any, outcome string, captured *jsonutil.Object) (*state.CapturedResult, error) {
 	if captured == nil {
 		final := response
-		if !pyTruthy(final) {
+		if !anyutil.IsTrue(final) {
 			final = ""
 		}
 		captured = jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", final, "messages", []any{}), "usage", jsonutil.NewObject())
 	}
 	raw, ok := captured.Get("result")
 	if !ok {
-		return nil, &pyKeyError{"result"}
+		return nil, &keyError{"result"}
 	}
 	value, ok := raw.(*jsonutil.Object)
 	if !ok {
@@ -119,9 +119,9 @@ func prepareResult(row *jsonutil.Object, response any, outcome string, captured 
 	interrupted, _ := value.Get("interrupted")
 	failed, _ := value.Get("failed")
 	failure, _ := value.Get("error")
-	if pyTruthy(interrupted) {
+	if anyutil.IsTrue(interrupted) {
 		outcome = "interrupted"
-	} else if pyTruthy(failed) || pyTruthy(failure) {
+	} else if anyutil.IsTrue(failed) || anyutil.IsTrue(failure) {
 		outcome = "failed"
 	}
 	if outcome == "failed" || outcome == "interrupted" {

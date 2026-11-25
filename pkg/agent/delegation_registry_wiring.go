@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -116,7 +117,7 @@ func (h hostedDelegationProvider) RouteTask(task, config map[string]any) (map[st
 	}
 	route, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("delegation provider %s route_task returned %T, not a mapping", h.Name(), v)
+		return nil, fmt.Errorf("delegation provider %s route_task returned %s where a mapping was expected", h.Name(), errchain.Kind(v))
 	}
 	return route, nil
 }

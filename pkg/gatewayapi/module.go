@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -405,7 +406,7 @@ func requestTurnAuthor(body *jsonutil.Object) (*jsonutil.Object, error) {
 		return nil, nil
 	}
 	if _, ok := raw.(*jsonutil.Object); !ok {
-		return nil, &gateway.PyError{Kind: "ValueError", Msg: "author must be an object"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "author must be an object"}
 	}
 	return provider.ParseTurnAuthor(raw), nil
 }

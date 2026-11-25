@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -45,7 +46,7 @@ func QuerySessionListing(ctx context.Context, db SessionLister, q SessionListing
 	result := []*jsonutil.Object{}
 	for _, row := range rows {
 		isCurrent := q.CurrentSessionID != "" && row.Value("id") == q.CurrentSessionID
-		if (isCurrent && !q.IncludeCurrentSession) || (!q.IncludeUnnamed && !pyTruthy(row.Value("title")) && search == "" && !isCurrent) {
+		if (isCurrent && !q.IncludeCurrentSession) || (!q.IncludeUnnamed && !anyutil.IsTrue(row.Value("title")) && search == "" && !isCurrent) {
 			continue
 		}
 		if isCurrent {

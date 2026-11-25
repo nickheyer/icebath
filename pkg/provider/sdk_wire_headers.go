@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"maps"
 	"net"
@@ -22,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -106,137 +106,105 @@ func stainlessPlatformHeaders(version string) []headerField {
 	}
 }
 
-// Ordered str keyed dict with the case sensitive key identity of a Python dict, a removal standing for Omit
-type sdkHeaderDict struct{ lines []headerField }
-
-// Replaces the value of an existing key in place, else appends the key
-func (d *sdkHeaderDict) set(name, value string) {
-	for i, l := range d.lines {
-		if l.Name == name {
-			d.lines[i].Value = value
-			return
-		}
-	}
-	d.lines = append(d.lines, headerField{Name: name, Value: value})
-}
-
-// Removes the key the way an Omit value drops it from the merged mapping
-func (d *sdkHeaderDict) omit(name string) {
-	for i, l := range d.lines {
-		if l.Name == name {
-			d.lines = append(d.lines[:i], d.lines[i+1:]...)
-			return
-		}
-	}
-}
-
 // Version of the pinned anthropic SDK whose wire identity the Messages clients present
 const anthropicSDKVersion = "0.125.0"
 
-// One key of a Python header dict, an Omit value holding its slot until the dict is stripped
-type pyHeaderEntry struct {
+// Request headers by case-insensitive name, a later write replacing the value and spelling of an earlier one, an omitted name left out of what is sent until it is set again
+type sdkHeaders struct{ byName map[string]sdkHeader }
+
+// One header of a set, its name as last written and its value, or the mark of a name the caller left out
+type sdkHeader struct {
 	name, value string
-	omit        bool
+	omitted     bool
 }
 
-// Ordered str keyed header dict with Python dict key identity, Omit values kept in their slots
-type pyHeaderDict struct{ entries []pyHeaderEntry }
-
-// Dict of the lines in order, the later of two equal keys winning in the first slot
-func pyHeaderDictOf(lines ...headerField) *pyHeaderDict {
-	d := &pyHeaderDict{}
-	for _, l := range lines {
-		d.set(l.Name, l.Value)
+// Header set holding the fields, a later field replacing an earlier one of the same name
+func newSDKHeaders(fields ...headerField) *sdkHeaders {
+	d := &sdkHeaders{byName: make(map[string]sdkHeader, len(fields))}
+	for _, f := range fields {
+		d.set(f.Name, f.Value)
 	}
 	return d
 }
 
-// Replaces the entry of the same key in place, else appends it
-func (d *pyHeaderDict) put(e pyHeaderEntry) {
-	for i := range d.entries {
-		if d.entries[i].name == e.name {
-			d.entries[i] = e
-			return
-		}
+// Stores the header under its case-insensitive key
+func (d *sdkHeaders) put(h sdkHeader) {
+	if d.byName == nil {
+		d.byName = map[string]sdkHeader{}
 	}
-	d.entries = append(d.entries, e)
+	d.byName[strings.ToLower(h.name)] = h
 }
 
-func (d *pyHeaderDict) set(name, value string) { d.put(pyHeaderEntry{name: name, value: value}) }
+// Sets the value of a name
+func (d *sdkHeaders) set(name, value string) { d.put(sdkHeader{name: name, value: value}) }
 
-// Stores the entry at the first key naming the same header in any letter case and drops the rest, so one line reaches the wire
-func (d *pyHeaderDict) putFold(e pyHeaderEntry) {
-	placed := false
-	kept := d.entries[:0]
-	for _, old := range d.entries {
-		if !strings.EqualFold(old.name, e.name) {
-			kept = append(kept, old)
-		} else if !placed {
-			kept = append(kept, e)
-			placed = true
-		}
+// Leaves the name out of what is sent, remembering that the caller omitted it
+func (d *sdkHeaders) omit(name string) { d.put(sdkHeader{name: name, omitted: true}) }
+
+// Sets a name to the text of a value, a nil value omitting the name
+func (d *sdkHeaders) setValue(name string, v any) {
+	if v == nil {
+		d.omit(name)
+		return
 	}
-	d.entries = kept
-	if !placed {
-		d.entries = append(d.entries, e)
-	}
+	d.set(name, anyutil.String(v))
 }
 
-// Merges the other dict over this one, a key in another letter case replacing the header it names
-func (d *pyHeaderDict) updateFold(other *pyHeaderDict) {
+// Applies every header of the other set over this one, its omissions included
+func (d *sdkHeaders) update(other *sdkHeaders) {
 	if other == nil {
 		return
 	}
-	for _, e := range other.entries {
-		d.putFold(e)
+	for _, h := range other.byName {
+		d.put(h)
 	}
 }
 
-// Marks the key Omit, the SDK removal marker dropped when the merged dict is stripped
-func (d *pyHeaderDict) omit(name string) { d.put(pyHeaderEntry{name: name, omit: true}) }
-
-// Merges the other dict over this one the way a dict unpacking merge does
-func (d *pyHeaderDict) update(other *pyHeaderDict) {
-	if other == nil {
-		return
-	}
-	for _, e := range other.entries {
-		d.put(e)
-	}
+// Copy of the set, an empty set for nil
+func (d *sdkHeaders) clone() *sdkHeaders {
+	out := newSDKHeaders()
+	out.update(d)
+	return out
 }
 
-// Value of the key when present and not Omit
-func (d *pyHeaderDict) get(name string) (string, bool) {
-	for _, e := range d.entries {
-		if e.name == name {
-			return e.value, !e.omit
-		}
+// Value of a name that is set and not omitted
+func (d *sdkHeaders) get(name string) (string, bool) {
+	if d == nil {
+		return "", false
 	}
-	return "", false
+	h, ok := d.byName[strings.ToLower(name)]
+	return h.value, ok && !h.omitted
 }
 
-// Whether the key is present as an Omit marker
-func (d *pyHeaderDict) omitted(name string) bool {
-	for _, e := range d.entries {
-		if e.name == name {
-			return e.omit
-		}
-	}
-	return false
+// Whether the caller omitted the name
+func (d *sdkHeaders) isOmitted(name string) bool {
+	return d != nil && d.byName[strings.ToLower(name)].omitted
 }
 
-// Lines of the dict with every Omit entry dropped
-func (d *pyHeaderDict) stripped() []headerField {
-	out := make([]headerField, 0, len(d.entries))
-	for _, e := range d.entries {
-		if !e.omit {
-			out = append(out, headerField{Name: e.name, Value: e.value})
+// Whether the set names the header at all, set or omitted
+func (d *sdkHeaders) has(name string) bool {
+	if d == nil {
+		return false
+	}
+	_, ok := d.byName[strings.ToLower(name)]
+	return ok
+}
+
+// Fields the set sends, omitted names left out, sorted by name
+func (d *sdkHeaders) fields() []headerField {
+	if d == nil {
+		return nil
+	}
+	out := make([]headerField, 0, len(d.byName))
+	for _, key := range slices.Sorted(maps.Keys(d.byName)) {
+		if h := d.byName[key]; !h.omitted {
+			out = append(out, headerField{Name: h.name, Value: h.value})
 		}
 	}
 	return out
 }
 
-// Header mapping as str pairs in declaration order, None values dropped, a string map in its recorded order
+// Fields of a header mapping in declaration order, null values dropped and other values as text, a string map in sorted order
 func orderedExtraHeaders(raw any) []headerField {
 	var out []headerField
 	switch m := raw.(type) {
@@ -284,44 +252,28 @@ func MergeHeaderMaps(headers ...map[string]string) map[string]string {
 	return out
 }
 
-// OrderedHeaders records the key order of a header map and returns the map
-func OrderedHeaders(m map[string]string, keys []string) map[string]string {
-	return m
-}
-
-// HeaderKeys are the keys of a header map in the order a Python dict of them iterates
-func HeaderKeys(m map[string]string) []string { return slices.Sorted(maps.Keys(m)) }
-
-// AnyHeaderMap is a header mapping of arbitrary values as a string map in declaration order, values printed with fmt
+// AnyHeaderMap is a header mapping of arbitrary values as a string map, null values dropped and other values as text
 func AnyHeaderMap(m map[string]any) map[string]string {
-	var lines []headerField
-	for _, k := range config.MappingKeys(m) {
-		lines = append(lines, headerField{Name: k, Value: fmt.Sprint(m[k])})
-	}
-	return fieldMap(lines...)
+	return fieldMap(orderedExtraHeaders(m)...)
 }
 
 // Header keys the Stainless merge_headers accumulates instead of replacing
 const stainlessHelperHeader = "x-stainless-helper"
 
-// Stainless merge_headers, later mappings winning except the helper key whose values accumulate deduplicated
-func stainlessMergeHeaders(mappings ...*pyHeaderDict) *pyHeaderDict {
-	merged := &pyHeaderDict{}
-	for _, m := range mappings {
-		if m == nil {
+// Header sets merged in order, a later set winning except on the helper header whose values accumulate once each
+func stainlessMergeHeaders(sets ...*sdkHeaders) *sdkHeaders {
+	merged := newSDKHeaders()
+	for _, s := range sets {
+		if s == nil {
 			continue
 		}
-		for _, e := range m.entries {
-			if strings.ToLower(e.name) != stainlessHelperHeader {
-				merged.putFold(e)
-				continue
+		for key, h := range s.byName {
+			if key == stainlessHelperHeader && !h.omitted {
+				if existing, present := merged.get(stainlessHelperHeader); present {
+					h.value = appendHelperValue(existing, h.value)
+				}
 			}
-			existing, present := merged.get(stainlessHelperHeader)
-			if present && !e.omit {
-				merged.set(stainlessHelperHeader, appendHelperValue(existing, e.value))
-				continue
-			}
-			merged.put(pyHeaderEntry{name: stainlessHelperHeader, value: e.value, omit: e.omit})
+			merged.put(h)
 		}
 	}
 	return merged
@@ -340,13 +292,13 @@ func appendHelperValue(existing, addition string) string {
 	return strings.Join(tokens, ", ")
 }
 
-// Lines of ANTHROPIC_CUSTOM_HEADERS, one name and value per line split at the first colon
-func anthropicCustomHeadersEnv() (*pyHeaderDict, bool) {
+// Headers of ANTHROPIC_CUSTOM_HEADERS, one name and value per line split at the first colon
+func anthropicCustomHeadersEnv() (*sdkHeaders, bool) {
 	raw, ok := os.LookupEnv("ANTHROPIC_CUSTOM_HEADERS")
 	if !ok {
 		return nil, false
 	}
-	d := &pyHeaderDict{}
+	d := newSDKHeaders()
 	for _, line := range strings.Split(raw, "\n") {
 		if name, value, found := strings.Cut(line, ":"); found {
 			d.set(strings.TrimSpace(name), strings.TrimSpace(value))
@@ -361,14 +313,14 @@ type anthSDKClientSpec struct {
 	class     string
 	apiKey    *string
 	authToken *string
-	// default_headers in declaration order with their Omit entries
-	custom *pyHeaderDict
-	// str of the read phase of the client timeout, empty for a client without one
+	// Default headers the client is given, the names it omits included
+	custom *sdkHeaders
+	// Text of the read phase of the client timeout, empty for a client without one
 	readTimeout string
 }
 
-// Custom headers the client keeps, ANTHROPIC_CUSTOM_HEADERS lines first on the Anthropic class
-func (s anthSDKClientSpec) customHeaders() *pyHeaderDict {
+// Custom headers the client keeps, ANTHROPIC_CUSTOM_HEADERS lines under the given ones on the Anthropic class
+func (s anthSDKClientSpec) customHeaders() *sdkHeaders {
 	if s.class != "Anthropic" {
 		return s.custom
 	}
@@ -380,13 +332,10 @@ func (s anthSDKClientSpec) customHeaders() *pyHeaderDict {
 	return env
 }
 
-// default_headers property of the client class, identity, platform, credentials and custom headers
-func (s anthSDKClientSpec) defaultHeaders() *pyHeaderDict {
-	custom := s.customHeaders()
-	d := &pyHeaderDict{}
-	d.set("Accept", "application/json")
-	d.set("Content-Type", "application/json")
-	d.set("User-Agent", s.class+"/Python "+anthropicSDKVersion)
+// Default headers of the client class, identity, platform, credentials and the custom headers over all of them
+func (s anthSDKClientSpec) defaultHeaders() *sdkHeaders {
+	d := newSDKHeaders(headerField{Name: "Accept", Value: "application/json"}, headerField{Name: "Content-Type", Value: "application/json"},
+		headerField{Name: "User-Agent", Value: s.class + "/Python " + anthropicSDKVersion})
 	for _, l := range stainlessPlatformHeaders(anthropicSDKVersion) {
 		d.set(l.Name, l.Value)
 	}
@@ -397,169 +346,98 @@ func (s anthSDKClientSpec) defaultHeaders() *pyHeaderDict {
 		if s.authToken != nil {
 			d.set("Authorization", "Bearer "+*s.authToken)
 		}
-	}
-	d.updateFold(custom)
-	if s.class == "Anthropic" {
 		d.set("X-Stainless-Async", "false")
 		d.set("anthropic-version", "2023-06-01")
-		d.updateFold(custom)
 	}
+	d.update(s.customHeaders())
 	return d
 }
 
-// One SDK call, its per call headers in order and the str of its timeout option
+// One SDK call, its per call headers and the text of its timeout option
 type anthSDKCall struct {
-	headers *pyHeaderDict
-	// str of options.timeout as x-stainless-timeout carries it, NOT_GIVEN when the call passes none
+	headers *sdkHeaders
+	// Text of the call timeout as x-stainless-timeout carries it, NOT_GIVEN when the call passes none
 	timeoutText string
-	// str of the read phase of a call timeout, empty when the call passes none
+	// Text of the read phase of a call timeout, empty when the call passes none
 	readTimeout string
-	// Whether the call timeout was given as None
+	// Whether the call explicitly passed no timeout
 	timeoutNone bool
 }
 
-// Per call headers of messages.stream, the stream helper telemetry first then extra_headers
-func anthStreamCallHeaders(extra *pyHeaderDict) *pyHeaderDict {
-	d := &pyHeaderDict{}
-	d.set("x-stainless-helper-method", "stream")
-	d.set("x-stainless-stream-helper", "messages")
+// Per call headers of messages.stream, the stream helper telemetry under the extra headers
+func anthStreamCallHeaders(extra *sdkHeaders) *sdkHeaders {
+	d := newSDKHeaders(headerField{Name: "x-stainless-helper-method", Value: "stream"}, headerField{Name: "x-stainless-stream-helper", Value: "messages"})
 	d.update(extra)
 	return d
 }
 
-// TypeError the Anthropic client raises when a request carries no credential and omits none
+// Refusal of a request that carries no credential and omits neither credential header
 var errAnthNoAuthentication = errors.New(`"Could not resolve authentication method. Expected one of api_key, auth_token, or credentials to be set. Or for one of the ` + "`X-Api-Key` or `Authorization`" + ` headers to be explicitly omitted"`)
 
-// Header lines of one attempt as _build_headers merges them and the SDK httpx client sends them
+// Headers of one attempt, the client defaults under the call headers over the httpx client defaults, with the retry and read timeout telemetry the call does not set
 func (s anthSDKClientSpec) requestLines(call anthSDKCall, retries int) (http.Header, error) {
 	timeoutText := call.timeoutText
 	if timeoutText == "" {
 		timeoutText = "NOT_GIVEN"
 	}
-	base := &pyHeaderDict{}
-	base.set("x-stainless-timeout", timeoutText)
+	base := newSDKHeaders(headerField{Name: "x-stainless-timeout", Value: timeoutText})
 	base.update(s.defaultHeaders())
 	merged := stainlessMergeHeaders(base, call.headers)
 	if s.class == "Anthropic" {
 		key, _ := merged.get("X-Api-Key")
 		auth, _ := merged.get("Authorization")
-		if key == "" && auth == "" && !(call.headers != nil && (call.headers.omitted("X-Api-Key") || call.headers.omitted("Authorization"))) {
+		if key == "" && auth == "" && !call.headers.isOmitted("X-Api-Key") && !call.headers.isOmitted("Authorization") {
 			return nil, &auxTypeError{Message: errAnthNoAuthentication.Error()}
 		}
 	}
-	sdk := headerOf(merged.stripped()...)
-	custom := map[string]bool{}
-	if call.headers != nil {
-		for _, e := range call.headers.entries {
-			custom[strings.ToLower(e.name)] = true
-		}
+	h := httpxClientHeaders()
+	setFields(h, merged.fields())
+	if !call.headers.has("x-stainless-retry-count") {
+		h.Set("x-stainless-retry-count", strconv.Itoa(retries))
 	}
-	if !custom["x-stainless-retry-count"] {
-		sdk.Set("x-stainless-retry-count", strconv.Itoa(retries))
-	}
-	if !custom["x-stainless-read-timeout"] {
+	if !call.headers.has("x-stainless-read-timeout") {
 		switch {
 		case call.timeoutNone:
 		case call.readTimeout != "":
-			sdk.Set("x-stainless-read-timeout", call.readTimeout)
+			h.Set("x-stainless-read-timeout", call.readTimeout)
 		case s.readTimeout != "":
-			sdk.Set("x-stainless-read-timeout", s.readTimeout)
+			h.Set("x-stainless-read-timeout", s.readTimeout)
 		}
 	}
-	h := httpxClientHeaders()
-	setFields(h, fieldsOf(sdk))
 	return h, nil
 }
 
-// Lines an httpx request holds once built, Host first and the Content-Length of a body or body method last, as request hooks see them
-func httpxPreparedLines(req *http.Request, h http.Header, length int) http.Header {
-	lines := append([]headerField{{Name: "Host", Value: req.Host}}, fieldsOf(h)...)
-	switch {
-	case length > 0, req.Method == http.MethodPost, req.Method == http.MethodPut, req.Method == http.MethodPatch:
-		lines = append(lines, headerField{Name: "Content-Length", Value: strconv.Itoa(length)})
-	}
-	return headerOf(lines...)
+// Guardrail headers of the AnthropicBedrock client
+func bedrockGuardrailHeaderSet(ctx context.Context) *sdkHeaders {
+	return newSDKHeaders(orderedExtraHeaders(bedrockGuardrailHeaders(ctx))...)
 }
 
-// Guardrail headers of the AnthropicBedrock client in the order bedrock_guardrail_headers declares them
-func bedrockGuardrailHeaderDict(ctx context.Context) *pyHeaderDict {
-	headers := bedrockGuardrailHeaders(ctx)
-	d := &pyHeaderDict{}
-	for _, name := range []string{"X-Amzn-Bedrock-GuardrailIdentifier", "X-Amzn-Bedrock-GuardrailVersion", "X-Amzn-Bedrock-Trace"} {
-		if v, ok := headers[name]; ok {
-			d.set(name, v)
-		}
-	}
-	return d
-}
-
-// Lines after the AnthropicBedrock request hook signs them with botocore SigV4Auth, every line but Connection re-added in botocore order
+// Lines with the botocore SigV4 signature the AnthropicBedrock request hook adds, the Content-Length of the body signed with them
 func botocoreSignedLines(req *http.Request, lines http.Header, body []byte, creds awsCredentials, service, region string, now time.Time) (http.Header, error) {
 	if !creds.valid() {
 		return nil, errors.New("could not resolve credentials from session")
 	}
-	signing := headerOf(fieldsOf(lines)...)
-	signing.Del("connection")
-	var aws []headerField
-	for _, l := range httpxItems(signing) {
-		aws = append(aws, l)
-	}
-	drop := func(name string) {
-		kept := aws[:0]
-		for _, l := range aws {
-			if !strings.EqualFold(l.Name, name) {
-				kept = append(kept, l)
-			}
-		}
-		aws = kept
-	}
-	has := func(name string) bool {
-		for _, l := range aws {
-			if strings.EqualFold(l.Name, name) {
-				return true
-			}
-		}
-		return false
+	out := lines.Clone()
+	if len(body) > 0 || req.Method == http.MethodPost || req.Method == http.MethodPut || req.Method == http.MethodPatch {
+		out.Set("Content-Length", strconv.Itoa(len(body)))
 	}
 	ts := now.UTC()
-	drop("Authorization")
-	if has("Date") {
-		drop("Date")
-		aws = append(aws, headerField{Name: "Date", Value: ts.Format(botocoreDateFormat)})
-		drop("X-Amz-Date")
+	out.Del("Authorization")
+	if len(out.Values("Date")) > 0 {
+		out.Set("Date", ts.Format(botocoreDateFormat))
+		out.Del("X-Amz-Date")
 	} else {
-		drop("X-Amz-Date")
-		aws = append(aws, headerField{Name: "X-Amz-Date", Value: ts.Format(sigV4TimeFormat)})
+		out.Set("X-Amz-Date", ts.Format(sigV4TimeFormat))
 	}
 	if creds.SessionToken != "" {
-		drop("X-Amz-Security-Token")
-		aws = append(aws, headerField{Name: "X-Amz-Security-Token", Value: creds.SessionToken})
+		out.Set("X-Amz-Security-Token", creds.SessionToken)
 	}
-	signed := &http.Request{Method: req.Method, URL: req.URL, Host: req.Host, Header: http.Header{}}
-	for _, l := range aws {
-		signed.Header[strings.ToLower(l.Name)] = append(signed.Header[strings.ToLower(l.Name)], l.Value)
-	}
+	signing := out.Clone()
+	signing.Del("Connection")
+	signed := &http.Request{Method: req.Method, URL: req.URL, Host: req.Host, Header: signing}
 	res := sigV4Compute(signed, sigV4PayloadHash(signed, body), creds, service, region, ts, nil)
-	aws = append(aws, headerField{Name: "Authorization", Value: res.Authorization})
-	out := headerOf(fieldsOf(lines)...)
-	setFields(out, aws)
+	out.Set("Authorization", res.Authorization)
 	return out, nil
-}
-
-// httpx Headers.items, lowercased names in first appearance order with repeated names joined by a comma and space
-func httpxItems(h http.Header) []headerField {
-	var out []headerField
-	at := map[string]int{}
-	for _, l := range fieldsOf(h) {
-		name := strings.ToLower(l.Name)
-		if i, ok := at[name]; ok {
-			out[i].Value += ", " + l.Value
-			continue
-		}
-		at[name] = len(out)
-		out = append(out, headerField{Name: name, Value: l.Value})
-	}
-	return out
 }
 
 // Redirect policy of an httpx client built without follow_redirects, the redirect response handed back to the caller
@@ -583,35 +461,17 @@ const requestsVersion = "2.34.2"
 // Content codings requests decodes through urllib3 on the pinned CPython, zstd through the stdlib codec
 var requestsDecoders = []string{"gzip", "deflate", "zstd"}
 
-// Lines a requests call writes, the session defaults updated case insensitively by the call headers, None values dropped
+// Headers a requests call sends, the session defaults with the call headers over them
 func requestsLines(call ...headerField) http.Header {
-	type entry struct{ name, value string }
-	var merged []entry
-	at := map[string]int{}
-	set := func(name, value string) {
-		if i, ok := at[strings.ToLower(name)]; ok {
-			merged[i] = entry{name, value}
-			return
-		}
-		at[strings.ToLower(name)] = len(merged)
-		merged = append(merged, entry{name, value})
-	}
-	set("User-Agent", "python-requests/"+requestsVersion)
-	set("Accept-Encoding", strings.Join(requestsDecoders, ", "))
-	set("Accept", "*/*")
-	set("Connection", "keep-alive")
-	for _, l := range call {
-		set(l.Name, l.Value)
-	}
-	out := headerOf()
-	for _, e := range merged {
-		out.Set(e.name, e.value)
-	}
+	out := headerOf(headerField{Name: "User-Agent", Value: "python-requests/" + requestsVersion},
+		headerField{Name: "Accept-Encoding", Value: strings.Join(requestsDecoders, ", ")},
+		headerField{Name: "Accept", Value: "*/*"}, headerField{Name: "Connection", Value: "keep-alive"})
+	setFields(out, call)
 	return out
 }
 
 // HTTP/1.1 transport with a connect limit, the proxy the environment or the system names and the platform trust store
-func pyStackWireTransport(connect time.Duration, maxIdle int) *http.Transport {
+func stackWireTransport(connect time.Duration, maxIdle int) *http.Transport {
 	return &http.Transport{
 		Proxy:               httputil.Proxy,
 		DialContext:         netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext),
@@ -829,11 +689,10 @@ func (c *awsServiceClient) botocoreLines(ctx context.Context, req *http.Request,
 	default:
 		aws.Set("Content-Length", strconv.Itoa(len(body)))
 	}
-	lines := []headerField{{Name: "Host", Value: req.Host}}
-	if aws.Get("Accept-Encoding") == "" {
-		lines = append(lines, headerField{Name: "Accept-Encoding", Value: "identity"})
+	if len(aws.Values("Accept-Encoding")) == 0 {
+		aws.Set("Accept-Encoding", "identity")
 	}
-	return headerOf(append(lines, fieldsOf(aws)...)...), nil
+	return aws, nil
 }
 
 // Default addheaders of a urllib opener, the Python-urllib user agent of the pinned CPython

@@ -154,15 +154,20 @@ func (l *sessionListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if sock.wasAnswered() {
 			how = "after its handler had refused it"
 		}
-		pkgLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s: %s",
-			sock.peerText(), how, errorutil.Kind(err), err.Error()), "exc_info", err)
+		detail := err.Error()
+		var kinded interface{ ErrorKind() string }
+		if errors.As(err, &kinded) && kinded.ErrorKind() != "" {
+			detail = kinded.ErrorKind() + ": " + detail
+		}
+		pkgLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s",
+			sock.peerText(), how, detail), "exc_info", err)
 	}
 	sock.finish(err)
 }
 
 // Whether err is the PermissionError a ticket redemption raises
 func ticketRefused(err error) bool {
-	var raised *gateway.PyError
+	var raised *errorutil.Error
 	return errors.As(err, &raised) && raised.Kind == "PermissionError"
 }
 

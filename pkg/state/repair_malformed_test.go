@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Journal mode of a store read on a fresh raw connection
@@ -217,7 +219,7 @@ func TestFtsWriteCorruptionRepairedInPlace(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("session row %v %v", row, err)
 	}
-	readAppend(t, store, pyStr(rowValue(row, "id")), map[string]any{"role": "user", "content": "post repair pizza message"})
+	readAppend(t, store, anyutil.String(rowValue(row, "id")), map[string]any{"role": "user", "content": "post repair pizza message"})
 	if n := storeCount(t, store, "SELECT COUNT(*) FROM messages"); n != 11 {
 		t.Fatalf("messages after append %d", n)
 	}

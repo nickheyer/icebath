@@ -159,7 +159,7 @@ func newFfmpeg() *Ffmpeg {
 }
 
 // Python str of an optional string, None for the empty answer
-func pyNoneStr(s string) string {
+func noneStr(s string) string {
 	if s == "" {
 		return "None"
 	}

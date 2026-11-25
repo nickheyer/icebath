@@ -226,7 +226,7 @@ func TestCacheImageFromBytesValidatesImageAndSize(t *testing.T) {
 	}
 	_, err = CacheImageFromBytes(ctx, h, []byte("<html>Error</html>"), ".jpg")
 	var ve *ValueError
-	if !errors.As(err, &ve) || ve.Msg != "Refusing to cache non-image data as .jpg (starts with: '<html>Error</html>')" {
+	if !errors.As(err, &ve) || ve.Msg != `Refusing to cache non-image data as .jpg (starts with: "<html>Error</html>")` {
 		t.Fatalf("non image error %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("gateway:\n  max_inbound_media_bytes: 16\n"), 0o600); err != nil {

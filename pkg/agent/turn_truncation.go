@@ -605,7 +605,7 @@ func dictItems(v any) []map[string]any {
 }
 
 // The str value of v or "" when falsy, the AttributeError Python raises for any other truthy value
-func pyStrOrEmpty(v any) (string, error) {
+func messageContentText(v any) (string, error) {
 	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
@@ -623,11 +623,11 @@ func orEmptyString(v any) any {
 }
 
 // Integer of a usage count the way int(value or 0) reads it, floats truncated
-func pyIntOf(v any) int {
+func intOf(v any) int {
 	if f, ok := v.(float64); ok {
 		return int(f)
 	}
-	n, _ := pyIntAttr(v)
+	n, _ := intAttr(v)
 	return int(n)
 }
 
@@ -638,7 +638,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 	n := a.codexIncompleteRetries
 
 	interimMsg := a.buildAssistantMessage(assistantMessage, finishReason)
-	interimContent, err := pyStrOrEmpty(interimMsg["content"])
+	interimContent, err := messageContentText(interimMsg["content"])
 	if err != nil {
 		return nil, false, err
 	}
@@ -720,7 +720,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 		}
 		if !hasContent && codexFinishReason(response) == "incomplete" {
 			a.ephemeralReasoningOff = true
-			observed := pyIntOf(orEmptyString(state.ToolCallField(state.ToolCallField(response, "usage"), "output_tokens")))
+			observed := intOf(orEmptyString(state.ToolCallField(state.ToolCallField(response, "usage"), "output_tokens")))
 			base := a.maxTokensOrZero()
 			if base == 0 {
 				base = observed
@@ -778,7 +778,7 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 	if err != nil {
 		return RefusalVerdict{}, err
 	}
-	refusalText, err := pyStrOrEmpty(responseContent(refusal))
+	refusalText, err := messageContentText(responseContent(refusal))
 	if err != nil {
 		return RefusalVerdict{}, err
 	}

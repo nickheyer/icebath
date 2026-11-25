@@ -2,7 +2,7 @@ package cron
 
 import (
 	"context"
-	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,13 +47,8 @@ func (s *Store) noteHeld(ctx context.Context, now *float64) error {
 	holdSinceMu.Lock()
 	since, ok := holdSince[s.cronDir]
 	if !ok {
-		held, err := readDispatchHeld(s.cronDir)
-		if err != nil {
-			holdSinceMu.Unlock()
-			return err
-		}
 		since = at
-		if held != nil && at-held.Last <= 2*DispatchHoldTickSlackSeconds {
+		if held := readDispatchHeld(s.cronDir); held != nil && at-held.Last <= 2*DispatchHoldTickSlackSeconds {
 			since = held.Since
 		}
 		holdSince[s.cronDir] = since
@@ -85,58 +80,51 @@ func noteHeldProfiles(ctx context.Context, homes []string) error {
 	return nil
 }
 
-// Hold stamp of a cron dir, nil when missing, unreadable or malformed, an error only for a number float overflows
-func readDispatchHeld(cronDir string) (*dispatchHeld, error) {
+// Hold stamp of a cron dir, nil when missing, unreadable or malformed, a number that is not finite counting as malformed
+func readDispatchHeld(cronDir string) *dispatchHeld {
 	data, err := os.ReadFile(filepath.Join(cronDir, dispatchHeldFile))
 	if err != nil || !utf8.Valid(data) {
-		return nil, nil
+		return nil
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
 	parsed, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, nil
+		return nil
 	}
 	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		return nil, nil
+		return nil
 	}
 	sinceRaw, hasSince := obj.Get("since")
-	if !hasSince {
-		return nil, nil
-	}
-	since, err := heldFloat(sinceRaw)
-	if err != nil || since == nil {
-		return nil, err
-	}
 	lastRaw, hasLast := obj.Get("last")
-	if !hasLast {
-		return nil, nil
+	if !hasSince || !hasLast {
+		return nil
 	}
-	last, err := heldFloat(lastRaw)
-	if err != nil || last == nil {
-		return nil, err
+	since, last := heldFloat(sinceRaw), heldFloat(lastRaw)
+	if since == nil || last == nil {
+		return nil
 	}
-	return &dispatchHeld{Since: *since, Last: *last}, nil
+	return &dispatchHeld{Since: *since, Last: *last}
 }
 
-// Number of a stamp value, nil when it is no number, text past the float range reading as the infinity on its side
-func heldFloat(v any) (*float64, error) {
-	f, err := anyutil.ToFloat(v)
-	if err != nil && !errors.Is(err, anyutil.ErrRange) {
-		return nil, nil
+// Epoch seconds of a stamp value given as a number or numeric text, nil when it is no number or not finite
+func heldFloat(v any) *float64 {
+	if _, isBool := v.(bool); isBool {
+		return nil
 	}
-	return &f, nil
+	f, err := anyutil.ToFloat(v)
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
+		return nil
+	}
+	return &f
 }
 
 // Instant a one shot due at dueAt starts its grace, the end of a hold it came due in, else its due time
-func dispatchHoldGraceStartsAt(cronDir string, dueAt, grace float64) (float64, error) {
-	held, err := readDispatchHeld(cronDir)
-	if err != nil {
-		return 0, err
-	}
+func dispatchHoldGraceStartsAt(cronDir string, dueAt, grace float64) float64 {
+	held := readDispatchHeld(cronDir)
 	if held != nil && held.Since-grace <= dueAt && dueAt <= held.Last+DispatchHoldTickSlackSeconds &&
 		dueAt >= held.Last-DispatchHoldMaxExtensionSeconds {
-		return max(dueAt, held.Last+DispatchHoldTickSlackSeconds), nil
+		return max(dueAt, held.Last+DispatchHoldTickSlackSeconds)
 	}
-	return dueAt, nil
+	return dueAt
 }

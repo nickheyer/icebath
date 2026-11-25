@@ -52,10 +52,10 @@ func fsEncodeLine(text string) (string, bool) {
 func pthDecodeError(err error) error {
 	var decode *charsetutil.DecodeError
 	if errors.As(err, &decode) {
-		return &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return &ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	if errors.Is(err, charsetutil.ErrUnknown) {
-		return &PyError{Class: "LookupError", Message: err.Error()}
+		return &ClassError{Class: "LookupError", Message: err.Error()}
 	}
 	return err
 }

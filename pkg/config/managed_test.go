@@ -147,7 +147,7 @@ func TestManagedEnvStripsTheBOMAndRefusesInvalidUTF8Loudly(t *testing.T) {
 	if got := LoadManagedEnv(); len(got) != 0 {
 		t.Fatalf("invalid utf-8 must be ignored, got %q", got)
 	}
-	if !strings.Contains(logged.String(), "IGNORING") || !strings.Contains(logged.String(), "can't decode byte 0xe9 in position 7") {
+	if !strings.Contains(logged.String(), "IGNORING") || !strings.Contains(logged.String(), "invalid UTF-8 at byte 7") {
 		t.Fatal(logged.String())
 	}
 }

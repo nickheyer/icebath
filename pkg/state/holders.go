@@ -29,7 +29,7 @@ type RepairConn interface {
 
 // File URI opening the resolved path read only, percent encoding characters that would truncate it
 func ReadOnlyDBURI(dbPath string) (string, error) {
-	resolved, err := pyRealpath(dbPath)
+	resolved, err := realpath(dbPath)
 	if err != nil {
 		return "", err
 	}
@@ -88,7 +88,7 @@ var readProcArgv = func(pid int) ([]string, bool) {
 	if err != nil || len(raw) == 0 {
 		return nil, false
 	}
-	argv := strings.Split(pyDecodeUTF8Replace(raw), "\x00")
+	argv := strings.Split(decodeUTF8Replace(raw), "\x00")
 	if argv[len(argv)-1] == "" {
 		argv = argv[:len(argv)-1]
 	}
@@ -105,8 +105,8 @@ func DescribeHolderPID(pid int) string {
 	}
 	who := "command line unavailable"
 	if ok {
-		joined := strings.Join(append([]string{pyBasename(argv[0])}, argv[1:]...), " ")
-		r := []rune(strings.Join(pySplitWhitespace(joined), " "))
+		joined := strings.Join(append([]string{basename(argv[0])}, argv[1:]...), " ")
+		r := []rune(strings.Join(splitWhitespace(joined), " "))
 		who = string(r[:min(len(r), 80)])
 	}
 	return fmt.Sprintf("PID %d (%s)", pid, who)
@@ -114,7 +114,7 @@ func DescribeHolderPID(pid int) string {
 
 // Lower case program basename without a trailing .exe
 func programName(program string) string {
-	return strings.TrimSuffix(strings.ToLower(pyBasename(program)), ".exe")
+	return strings.TrimSuffix(strings.ToLower(basename(program)), ".exe")
 }
 
 // Whether a program names a python or pypy interpreter with an optional dotted version suffix
@@ -218,7 +218,7 @@ func looksLikeIcebath(argv []string) bool {
 
 // Normalized absolute form of a procfs descriptor target with the deleted suffix stripped
 func CanonicalSQLitePath(path string) (string, error) {
-	abs, err := pyAbspath(strings.TrimSuffix(path, " (deleted)"))
+	abs, err := abspath(strings.TrimSuffix(path, " (deleted)"))
 	if err != nil {
 		return "", err
 	}
@@ -232,7 +232,7 @@ var (
 )
 
 // Case folded normpath of a path token
-func normPath(value string) string { return normcase(pyNormpath(value)) }
+func normPath(value string) string { return normcase(normpath(value)) }
 
 // Last value given to one of flags as a separate token or after an equals sign, matched token exact
 func argvFlagValue(argv []string, flags []string) (string, bool) {
@@ -267,15 +267,15 @@ func argvEnvHome(argv []string) (string, bool) {
 // Install root and own profile name of the home holding the store, empty when it is no install layout
 func storeInstallLayout(thisHome string) (root, profile string, ok, named bool) {
 	if profileHome := home.NamedProfileHome(thisHome); profileHome != "" {
-		abs, err := pyAbspath(filepath.Dir(filepath.Dir(profileHome)))
+		abs, err := abspath(filepath.Dir(filepath.Dir(profileHome)))
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Could not classify the install layout of %s", thisHome), "error", err)
 			return "", "", false, false
 		}
 		return abs, filepath.Base(profileHome), true, true
 	}
-	if pyBasename(thisHome) == ".icebath" {
-		abs, err := pyAbspath(thisHome)
+	if basename(thisHome) == ".icebath" {
+		abs, err := abspath(thisHome)
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Could not classify the install layout of %s", thisHome), "error", err)
 			return "", "", false, false
@@ -352,11 +352,11 @@ func argvPathTokens(argv []string) []argvPathToken {
 
 // Whether argv proves the process serves a different icebath home and never names this store or home
 func argvScopedToOtherHome(argv []string, dbPath string) (bool, error) {
-	dbPathStr, err := pyAbspath(dbPath)
+	dbPathStr, err := abspath(dbPath)
 	if err != nil {
 		return false, err
 	}
-	thisHome := pyDirname(dbPathStr)
+	thisHome := dirname(dbPathStr)
 	installRoot, ourProfile, hasRoot, hasProfile := storeInstallLayout(thisHome)
 	sidecars := map[string]bool{}
 	for _, candidate := range sqliteFamily(dbPathStr) {
@@ -394,7 +394,7 @@ func argvScopedToOtherHome(argv []string, dbPath string) (bool, error) {
 		if tok.index == 0 && !hasRoot {
 			continue
 		}
-		if strings.Contains(normalized, "/.icebath") || stateDBNames[pyBasename(normalized)] {
+		if strings.Contains(normalized, "/.icebath") || stateDBNames[basename(normalized)] {
 			otherHomeSeen = true
 		}
 	}
@@ -455,7 +455,7 @@ func sqliteFamily(base string) []string {
 
 // Foreign processes Restart Manager reports using the database or a sidecar, our own pid excluded
 func windowsRestartManagerHolders(dbPath string, api rmAPI) ([]Holder, error) {
-	dbAbspath, err := pyAbspath(dbPath)
+	dbAbspath, err := abspath(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -520,8 +520,8 @@ func restartManagerScan(dbPath string, load func() (rmAPI, error)) []Holder {
 		return windowsRestartManagerHolders(dbPath, api)
 	}()
 	if err != nil {
-		pkgLog().Warn("Could not prove state.db has no Windows holders; deferring structural maintenance: " + pyOSErrorStr(err))
-		return []Holder{{-1, "Windows Restart Manager scan failed: " + pyOSErrorStr(err)}}
+		pkgLog().Warn("Could not prove state.db has no Windows holders; deferring structural maintenance: " + osErrorStr(err))
+		return []Holder{{-1, "Windows Restart Manager scan failed: " + osErrorStr(err)}}
 	}
 	return holders
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -64,7 +65,7 @@ func (c *ContextCompressor) alignBoundaryBackward(messages []map[string]any, idx
 			break
 		}
 	}
-	if check >= 0 && messages[check]["role"] == "assistant" && pyTruthy(messages[check]["tool_calls"]) {
+	if check >= 0 && messages[check]["role"] == "assistant" && anyutil.IsTrue(messages[check]["tool_calls"]) {
 		return check
 	}
 	return idx
@@ -104,7 +105,7 @@ func (c *ContextCompressor) findLastAssistantMessageIdx(messages []map[string]an
 					continue
 				}
 				t := part["text"]
-				if !pyTruthy(t) {
+				if !anyutil.IsTrue(t) {
 					t = part["content"]
 				}
 				if s, isStr := t.(string); isStr && strings.TrimSpace(s) != "" {
@@ -178,7 +179,7 @@ func findInflightUserTask(messages []map[string]any) map[string]any {
 	}
 	for i := len(messages) - 1; i > last; i-- {
 		msg := messages[i]
-		if msg == nil || msg["role"] != "assistant" || pyTruthy(msg["tool_calls"]) {
+		if msg == nil || msg["role"] != "assistant" || anyutil.IsTrue(msg["tool_calls"]) {
 			break
 		}
 		if strings.TrimSpace(state.ContentTextForContains(msg["content"])) != "" {
@@ -428,7 +429,7 @@ func (c *ContextCompressor) findTailCut(messages []map[string]any, headEnd int, 
 
 func anyToolCalls(messages []map[string]any, lo, hi int) bool {
 	for i := max(lo, 0); i < hi && i < len(messages); i++ {
-		if pyTruthy(messages[i]["tool_calls"]) {
+		if anyutil.IsTrue(messages[i]["tool_calls"]) {
 			return true
 		}
 	}
@@ -496,7 +497,7 @@ func (c *ContextCompressor) scanWindowHandoffs(messages []map[string]any, start,
 	if row := windowRow(last.idx, messages[last.idx]); row != nil {
 		window = append(window, row)
 	}
-	scan.TurnsToSummarize = append(window, pySlice(messages, last.idx+1, end)...)
+	scan.TurnsToSummarize = append(window, sliceOf(messages, last.idx+1, end)...)
 	if last.idx >= end {
 		scan.TailStart = last.idx + 1
 	}
@@ -629,7 +630,7 @@ func (c *ContextCompressor) fallbackSummaryForWindow(telemetry *jsonutil.Object,
 	switch existing, _ := telemetry.Get("failure_class"); {
 	case c.lastSummaryOverloadDegraded:
 		telemetry.Set("failure_class", "summary_overload_degraded")
-	case pyTruthy(existing):
+	case anyutil.IsTrue(existing):
 	case feasibilitySkip:
 		telemetry.Set("failure_class", "feasibility_skip")
 	default:
@@ -799,7 +800,7 @@ func (c *ContextCompressor) compressPass(ctx context.Context, messages []map[str
 	}
 	nMessages = len(messages)
 	if start >= end {
-		c.RecordRegions(ctx, pySlice(messages, 0, start), nil, pySlice(messages, end, len(messages)))
+		c.RecordRegions(ctx, sliceOf(messages, 0, start), nil, sliceOf(messages, end, len(messages)))
 		c.structuralNoOpResult(telemetry, "no_compressible_window", fmt.Sprintf("compress_start (%d) >= compress_end (%d) - transcript fits within tail budget", start, end), nMessages)
 		return canonical, nil
 	}
@@ -807,13 +808,13 @@ func (c *ContextCompressor) compressPass(ctx context.Context, messages []map[str
 	if prepared != nil {
 		end = prepared.CompressEnd
 	}
-	turns := pySlice(messages, start, end)
+	turns := sliceOf(messages, start, end)
 	if c.tailMode == "lean" {
 		messages = c.demoteStaleTailTools(messages, end)
 	}
 	scan := c.scanWindowHandoffs(messages, start, end, turns)
 	turns = scan.TurnsToSummarize
-	c.RecordRegions(ctx, pySlice(messages, 0, start), turns, pySlice(messages, end, len(messages)))
+	c.RecordRegions(ctx, sliceOf(messages, 0, start), turns, sliceOf(messages, end, len(messages)))
 	if len(turns) > 0 {
 		telemetry.Set("chunk_count", 1)
 	} else {

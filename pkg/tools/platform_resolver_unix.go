@@ -17,14 +17,14 @@ func platformPEVersion(path string) (observation[string], error) {
 // Uninstall entries exist only in the Windows registry
 func platformUninstallEntries(prefix string) []map[string]string { return nil }
 
-// pyOSError is an OSError a POSIX call raised, carrying its Python class name
-type pyOSError struct {
+// osError is an OSError a POSIX call raised, carrying its Python class name
+type osError struct {
 	class string
 	err   error
 }
 
-func (e *pyOSError) Error() string     { return e.err.Error() }
-func (e *pyOSError) ErrorKind() string { return e.class }
+func (e *osError) Error() string     { return e.err.Error() }
+func (e *osError) ErrorKind() string { return e.class }
 
 // Signal zero liveness of a runtime file pid, permission denied meaning the process exists
 func platformPIDAlive(pid *big.Int) (observation[bool], error) {
@@ -32,7 +32,7 @@ func platformPIDAlive(pid *big.Int) (observation[bool], error) {
 		return observation[bool]{State: checkUnavailable, Detail: "no pid in runtime file"}, nil
 	}
 	if !pid.IsInt64() || pid.Int64() > math.MaxInt32 {
-		return observation[bool]{}, &pyOSError{class: "OverflowError", err: errors.New("signed integer is greater than maximum")}
+		return observation[bool]{}, &osError{class: "OverflowError", err: errors.New("signed integer is greater than maximum")}
 	}
 	t, f := true, false
 	switch err := syscall.Kill(int(pid.Int64()), 0); {
@@ -41,6 +41,6 @@ func platformPIDAlive(pid *big.Int) (observation[bool], error) {
 	case errors.Is(err, syscall.ESRCH):
 		return observation[bool]{State: checkAbsent, Value: &f}, nil
 	default:
-		return observation[bool]{}, &pyOSError{class: "OSError", err: err}
+		return observation[bool]{}, &osError{class: "OSError", err: err}
 	}
 }

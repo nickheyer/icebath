@@ -141,7 +141,7 @@ func TestNoBoundSessionIsRefusedWithoutSending(t *testing.T) {
 	if handle.OK() || handle.ErrorCode() != "no_conversation" || edit["ok"] != false || edit["detail"] != noSessionDetail || a.record() != "" {
 		t.Fatalf("handle %v edit %v calls %s", handle, edit, a.record())
 	}
-	if got := handle.String(); got != "<PluginMessage ok=False message_id=None error='no_conversation'>" {
+	if got := handle.String(); got != `<PluginMessage ok=false error="no_conversation">` {
 		t.Fatalf("repr %s", got)
 	}
 }
@@ -220,7 +220,7 @@ func TestAsyncPostAndEditOnTheGatewayLoop(t *testing.T) {
 	if err != nil || edit["fallback"] != true || handle.MessageID() != "m2" {
 		t.Fatalf("aedit %v %v", edit, err)
 	}
-	if got := handle.String(); got != "<PluginMessage ok=True message_id='m2' error=None>" {
+	if got := handle.String(); got != `<PluginMessage ok=true message_id="m2">` {
 		t.Fatalf("repr %s", got)
 	}
 }

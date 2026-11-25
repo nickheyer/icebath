@@ -21,7 +21,11 @@ func newHostedProvider(ctx context.Context, obj *plugins.HostedObject) (Provider
 	if err != nil {
 		return nil, err
 	}
-	return &hostedProvider{obj: obj, name: anyutil.String(name)}, nil
+	text := hostedStr(name)
+	if text == "" {
+		return nil, errors.New("memory provider plugin reports no name")
+	}
+	return &hostedProvider{obj: obj, name: text}, nil
 }
 
 func hostedStr(v any) string {

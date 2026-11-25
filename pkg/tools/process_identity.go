@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -218,12 +219,21 @@ type LedgerEntry struct {
 	BootID        *string  `json:"boot_id"`
 }
 
-// Row of the entry in the ledger's JSON shape and dataclass field order, built without a JSON round trip
+// Ledger row key holding the exact bytes of an argv that is not UTF-8, in standard base64 beside its readable text
+const ledgerArgvBytesKey = "argv_base64"
+
+// Row of the entry in the ledger's JSON shape and field order, an argv that is not UTF-8 kept exactly in its base64 field, built without a JSON round trip
 func (e LedgerEntry) asObject() *jsonutil.Object {
 	o := jsonutil.ObjectOf(
 		"pid", e.Pid, "create_time", nil, "purpose", e.Purpose, "install", e.Install, "spawner_pid", nil,
-		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, home.RecordKey, e.IcebathHome,
-		"boot_start", nil, "spawner_boot", nil, "boot_id", nil)
+		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", decodeUTF8Replace([]byte(e.Argv)))
+	if !utf8.ValidString(e.Argv) {
+		o.Set(ledgerArgvBytesKey, base64.StdEncoding.EncodeToString([]byte(e.Argv)))
+	}
+	o.Set(home.RecordKey, e.IcebathHome)
+	o.Set("boot_start", nil)
+	o.Set("spawner_boot", nil)
+	o.Set("boot_id", nil)
 	if e.CreateTime != nil {
 		o.Set("create_time", *e.CreateTime)
 	}
@@ -470,9 +480,6 @@ func procAtomicJSONWrite(path string, data any, mode os.FileMode, ensureASCII bo
 		opts = append(opts, jsonutil.ASCII())
 	}
 	text, err := jsonutil.Encode(data, opts...)
-	if err == nil && !ensureASCII && !utf8.ValidString(text) {
-		text, err = jsonutil.Encode(data, jsonutil.Indent(2), jsonutil.ASCII())
-	}
 	if err != nil {
 		return err
 	}
@@ -574,7 +581,7 @@ type LedgerOptions struct {
 	VerifiedOnly bool
 }
 
-// LedgerEntries lists the live rows of this install, or of every install when asked
+// LedgerEntries lists the live rows of this install, or of every install when asked, each argv holding its exact bytes
 func LedgerEntries(opts LedgerOptions) []map[string]any {
 	wantInstall := InstallID(opts.ProjectRoot)
 	ledgerMu.Lock()
@@ -604,9 +611,23 @@ func LedgerEntries(opts LedgerOptions) []map[string]any {
 				continue
 			}
 		}
+		if _, ok := e[ledgerArgvBytesKey]; ok {
+			e["argv"] = ledgerRowArgv(e)
+			delete(e, ledgerArgvBytesKey)
+		}
 		out = append(out, e)
 	}
 	return out
+}
+
+// Exact argv of a ledger row: the bytes its base64 field holds when that decodes, else its text
+func ledgerRowArgv(row map[string]any) any {
+	if encoded, ok := row[ledgerArgvBytesKey].(string); ok {
+		if raw, err := base64.StdEncoding.DecodeString(encoded); err == nil {
+			return string(raw)
+		}
+	}
+	return row["argv"]
 }
 
 // EntryStillRunning reports whether the entry's process is still the recorded incarnation

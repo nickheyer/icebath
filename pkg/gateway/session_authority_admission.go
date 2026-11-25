@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -157,7 +158,7 @@ func (a *SessionAuthority) nameLane(ctx context.Context, route, sid string, sour
 func (a *SessionAuthority) agent(ref SessionRef) (any, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	key := runningKey(a.Runner, live.Route, ref.SessionID)
 	if resident, ok := a.Runner.(residentAgentRunner); ok {
@@ -231,7 +232,7 @@ func (a *SessionAuthority) routeTurn(ctx context.Context, event *MessageEvent, b
 	if event.Source != nil {
 		generated, err := a.Runner.SessionStore().generateSessionKey(ctx, event.Source, nil)
 		if err != nil {
-			var attribute *PyError
+			var attribute *errorutil.Error
 			if !errors.As(err, &attribute) || attribute.Kind != "AttributeError" {
 				return err
 			}
@@ -301,7 +302,7 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 	nativeValue, _ := payload.Get("native_text_v1")
 	native, _ := nativeValue.(*jsonutil.Object)
 	if native == nil {
-		return AdmissionReceipt{}, &pyKeyError{"native_text_v1"}
+		return AdmissionReceipt{}, &keyError{"native_text_v1"}
 	}
 	if event.ingressSHA256 != "" {
 		native.Set("ingress_sha256", event.ingressSHA256)
@@ -334,17 +335,17 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 	eventValue, _ := native.Get("event")
 	nativeEvent, _ := eventValue.(*jsonutil.Object)
 	if nativeEvent == nil {
-		return AdmissionReceipt{}, &pyKeyError{"event"}
+		return AdmissionReceipt{}, &keyError{"event"}
 	}
 	messageID, ok := nativeEvent.Get("message_id")
 	if !ok {
-		return AdmissionReceipt{}, &pyKeyError{"message_id"}
+		return AdmissionReceipt{}, &keyError{"message_id"}
 	}
 	requestID := uuid4HexString()
-	if pyTruthy(messageID) {
+	if anyutil.IsTrue(messageID) {
 		requestID = anyutil.String(messageID)
 	}
-	if revision, _ := nativeEvent.Get("edit_revision"); pyTruthy(revision) {
+	if revision, _ := nativeEvent.Get("edit_revision"); anyutil.IsTrue(revision) {
 		requestID += ":edit:" + anyutil.String(revision)
 	}
 	committed := ref
@@ -532,7 +533,7 @@ func (a *SessionAuthority) Submit(ctx context.Context, actor Principal, request 
 	}
 	live, ok := a.live(request.Ref.SessionID)
 	if !ok {
-		return AdmissionReceipt{}, &pyKeyError{request.Ref.SessionID}
+		return AdmissionReceipt{}, &keyError{request.Ref.SessionID}
 	}
 	live.mutationLock.Lock()
 	defer live.mutationLock.Unlock()
@@ -599,7 +600,7 @@ func (a *SessionAuthority) submit(ctx context.Context, actor Principal, request 
 	}
 	live, ok := a.live(request.Ref.SessionID)
 	if !ok {
-		return AdmissionReceipt{}, &pyKeyError{request.Ref.SessionID}
+		return AdmissionReceipt{}, &keyError{request.Ref.SessionID}
 	}
 	if source := live.Source; source != nil && !SameOwner(optStrAny(source.UserID), actor.Subject) {
 		payload.Set("local_operator_v1", jsonutil.ObjectOf("profile_id", a.ProfileID, "session_id", request.Ref.SessionID,

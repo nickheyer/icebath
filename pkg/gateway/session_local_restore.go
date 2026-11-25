@@ -54,7 +54,7 @@ func servedProfile(a *SessionAuthority) (string, bool) {
 func localAdapterMap(ctx context.Context, a *SessionAuthority) (*orderedutil.Map[Platform, PlatformAdapter], error) {
 	runner, ok := a.Runner.(adapterMapRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", a.Runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", a.Runner)}
 	}
 	if name, served := servedProfile(a); served {
 		return runner.ProfileAdapterMap(name), nil
@@ -129,7 +129,7 @@ func failedIn(check string, err error) error {
 	return &checkFailure{err: err, fn: check, line: line}
 }
 
-// Python exception class of a Go error raised by a receipt check
+// Kind label of an error raised by a receipt check, empty for a plain Go error that declares none
 func checkErrorClass(err error) string {
 	if marked, ok := err.(*checkFailure); ok {
 		err = marked.err
@@ -137,11 +137,11 @@ func checkErrorClass(err error) string {
 	if _, refused := err.(*state.RuntimeStoreError); refused {
 		return "RuntimeStoreError"
 	}
-	var keyErr *pyKeyError
+	var keyErr *keyError
 	if errors.As(err, &keyErr) {
 		return "KeyError"
 	}
-	var typed *PyError
+	var typed *errorutil.Error
 	if errors.As(err, &typed) {
 		return typed.Kind
 	}
@@ -149,7 +149,7 @@ func checkErrorClass(err error) string {
 	if errors.As(err, &undecodable) {
 		return "JSONDecodeError"
 	}
-	return errorutil.Kind(err)
+	return declaredErrorKind(err)
 }
 
 // True for the KeyError, TypeError, ValueError and AttributeError family a refused receipt raises
@@ -174,8 +174,10 @@ func refusedCheck(err error) string {
 	var cause string
 	if refusal := refusalOf(inner); refusal != nil {
 		cause = refusal.Reason
+	} else if class := checkErrorClass(inner); class != "" {
+		cause = class + ": " + inner.Error()
 	} else {
-		cause = checkErrorClass(inner) + ": " + inner.Error()
+		cause = errchain.OSText(inner)
 	}
 	chained := ""
 	if next := checkCause(inner); next != nil {
@@ -227,7 +229,7 @@ func (e *catchUpPending) Unwrap() error { return e.RuntimeStoreError }
 func receiptField(receipt *jsonutil.Object, key string) (any, error) {
 	value, ok := receipt.Get(key)
 	if !ok {
-		return nil, &pyKeyError{key: key}
+		return nil, &keyError{key: key}
 	}
 	return value, nil
 }
@@ -269,7 +271,7 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *jsonutil.Ob
 		return nil, failedAt(err)
 	}
 	if stored != any(route) {
-		return nil, failedAt(&PyError{Kind: "ValueError", Msg: "route mismatch"})
+		return nil, failedAt(&errorutil.Error{Kind: "ValueError", Msg: "route mismatch"})
 	}
 	rawEntry, err := receiptField(receipt, "entry")
 	if err != nil {
@@ -277,7 +279,7 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *jsonutil.Ob
 	}
 	entryDict, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
-		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"})
+		return nil, failedAt(&errorutil.Error{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"})
 	}
 	entry, err := SessionEntryFromDict(ctx, entryDict)
 	if err != nil {
@@ -289,29 +291,29 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *jsonutil.Ob
 	}
 	origin, ok := rawOrigin.(*jsonutil.Object)
 	if !ok {
-		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "a local session origin is " + errchain.Kind(rawOrigin) + ", expected a mapping"})
+		return nil, failedAt(&errorutil.Error{Kind: "TypeError", Msg: "a local session origin is " + errchain.Kind(rawOrigin) + ", expected a mapping"})
 	}
 	if entry.Origin == nil {
-		return nil, failedAt(&PyError{Kind: "AttributeError", Msg: "a local session entry has no origin"})
+		return nil, failedAt(&errorutil.Error{Kind: "AttributeError", Msg: "a local session entry has no origin"})
 	}
 	if _, has := origin.Get("profile"); !has {
 		entry.Origin.Profile = source.Profile
 	}
 	if entry.SessionKey != route || !sameSourceDict(entry.Origin, source) {
-		return nil, failedAt(&PyError{Kind: "ValueError", Msg: "entry mismatch"})
+		return nil, failedAt(&errorutil.Error{Kind: "ValueError", Msg: "entry mismatch"})
 	}
 	row, err := a.DB.GetSession(ctx, entry.SessionID)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		return nil, failedAt(&PyError{Kind: "ValueError", Msg: "stored identity mismatch"})
+		return nil, failedAt(&errorutil.Error{Kind: "ValueError", Msg: "stored identity mismatch"})
 	}
 	key, _ := row.Get("session_key")
 	chat, _ := row.Get("chat_id")
 	user, _ := row.Get("user_id")
 	if key != any(route) || chat != any(source.ChatID) || user != optStrAny(source.UserID) {
-		return nil, failedAt(&PyError{Kind: "ValueError", Msg: "stored identity mismatch"})
+		return nil, failedAt(&errorutil.Error{Kind: "ValueError", Msg: "stored identity mismatch"})
 	}
 	return entry, nil
 }
@@ -353,7 +355,7 @@ func ownedReceipt(ctx context.Context, a *SessionAuthority, sid string) (*jsonut
 		return fail(failedAt(err))
 	}
 	if sessionID != any(sid) || chatID != any(sid) {
-		return fail(failedAt(&PyError{Kind: "ValueError", Msg: "identity mismatch"}))
+		return fail(failedAt(&errorutil.Error{Kind: "ValueError", Msg: "identity mismatch"}))
 	}
 	principal, err := receiptField(receipt, "principal_id")
 	if err != nil {
@@ -361,7 +363,7 @@ func ownedReceipt(ctx context.Context, a *SessionAuthority, sid string) (*jsonut
 	}
 	userID, ok := principal.(string)
 	if !ok {
-		return fail(failedAt(&PyError{Kind: "ValueError", Msg: "entry mismatch"}))
+		return fail(failedAt(&errorutil.Error{Kind: "ValueError", Msg: "entry mismatch"}))
 	}
 	source, err := localSource(ctx, a, sid, userID)
 	if err != nil {
@@ -555,7 +557,7 @@ func routeAlreadyRestored(store *SessionStore, route, target string, lineage map
 func transcriptTarget(ctx context.Context, a *SessionAuthority, ref SessionRef) (string, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return "", &pyKeyError{key: ref.SessionID}
+		return "", &keyError{key: ref.SessionID}
 	}
 	if live.Source != nil && live.Source.Platform == PlatformLocal {
 		if _, err := restoreLocalSession(ctx, a, ref.SessionID); err != nil {
@@ -578,7 +580,7 @@ func receiptEntryTarget(ctx context.Context, db *state.SessionDB, sid string) (s
 	}
 	entry, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
-		return "", &PyError{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
+		return "", &errorutil.Error{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
 	target, err := receiptField(entry, "session_id")
 	if err != nil {

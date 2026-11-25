@@ -21,27 +21,27 @@ func TestPep508NormalizedRequirements(t *testing.T) {
 		t.Fatalf("empty: %v", err)
 	}
 	_, err = normalizedRequirements([]string{"ok", "foo bar"})
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "ValueError" ||
 		py.Message != "invalid environment requirement: Expected semicolon (after name with no version specifier) or end\n    foo bar\n        ^" {
 		t.Fatalf("invalid: %#v", err)
 	}
 }
 
-// Python string literal escapes evaluate as ast literal_eval reads them
+// Quoted marker strings evaluate their escapes as Python string literals, \N names read from the Unicode data the binary carries
 func TestPep508StringLiterals(t *testing.T) {
 	for text, want := range map[string]string{
 		`'a\tb'`: "a\tb", `"\101\x42C\U00000044"`: "ABCD", `'\N{HANGUL SYLLABLE GAG}'`: "각",
-		`'\N{cjk unified ideograph-4e00}'`: "一", `'\N{TANGUT IDEOGRAPH-17000}'`: "\U00017000", `'a\
+		`'\N{cjk unified ideograph-4e00}'`: "一", `'\N{TANGUT IDEOGRAPH-17000}'`: "\U00017000", `'\N{TANGUT IDEOGRAPH-18D1E}'`: "\U00018D1E", `'a\
 b'`: "ab", `'\8'`: `\8`, `'\ud800'`: "\xed\xa0\x80",
 	} {
-		got, ok := pyStringLiteral(text)
+		got, ok := stringLiteral(text)
 		if !ok || got != want {
 			t.Errorf("%s: got %q %v want %q", text, got, ok, want)
 		}
 	}
-	for _, text := range []string{`'\N{}'`, `'\N{NO SUCH NAME}'`, `'\U00110000'`, `'\x4'`, `'a\'`, "'a\nb'", `'\N{CJK UNIFIED IDEOGRAPH-04E00}'`, `'\N{TANGUT IDEOGRAPH-18D1E}'`} {
-		if got, ok := pyStringLiteral(text); ok {
+	for _, text := range []string{`'\N{}'`, `'\N{NO SUCH NAME}'`, `'\U00110000'`, `'\x4'`, `'a\'`, "'a\nb'", `'\N{CJK UNIFIED IDEOGRAPH-04E00}'`, `'\N{TANGUT IDEOGRAPH-4E00}'`} {
+		if got, ok := stringLiteral(text); ok {
 			t.Errorf("%s: evaluated to %q, Python refuses it", text, got)
 		}
 	}

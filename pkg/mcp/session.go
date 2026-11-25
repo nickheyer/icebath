@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Uniform jitter applied to reconnect backoff so servers that lost one backend do not retry in lockstep
@@ -35,17 +36,6 @@ var credentialPattern = regexp.MustCompile(`(?i)(?:ghp_[A-Za-z0-9_]{1,255}|sk-[A
 // Text with credential like patterns replaced by [REDACTED]
 func sanitizeError(text string) string {
 	return credentialPattern.ReplaceAllString(text, "[REDACTED]")
-}
-
-// Non empty text of an error, its Go syntax form when the message is blank
-func excStr(err error) string {
-	if err == nil {
-		return ""
-	}
-	if text := strings.TrimSpace(err.Error()); text != "" {
-		return text
-	}
-	return fmt.Sprintf("%#v", err)
 }
 
 // ServerKey is a connection key, the bare name outside a multiplexer and the owning scope with the name under one
@@ -1060,7 +1050,7 @@ func (s *Session) onServerLog(raw json.RawMessage) {
 	}
 	levelName := "info"
 	if p.Level != nil {
-		levelName = strings.ToLower(pyStr(p.Level))
+		levelName = strings.ToLower(anyutil.String(p.Level))
 	}
 	level := slog.LevelInfo
 	switch logLevelMap[levelName] {
@@ -1073,20 +1063,20 @@ func (s *Session) onServerLog(raw json.RawMessage) {
 	}
 	var data string
 	if len(p.Data) == 0 || json.Unmarshal(p.Data, &data) != nil {
-		data = pyDumpsRaw(p.Data)
+		data = dumpsRaw(p.Data)
 	}
 	if r := []rune(data); len(r) > serverLogCap {
 		data = string(r[:serverLogCap]) + "... [truncated]"
 	}
 	origin := s.opts.Name
-	if p.Logger != nil && pyTruthy(p.Logger) {
-		origin = s.opts.Name + "/" + pyStr(p.Logger)
+	if p.Logger != nil && anyutil.IsTrue(p.Logger) {
+		origin = s.opts.Name + "/" + anyutil.String(p.Logger)
 	}
 	pkgLog().Log(context.Background(), level, fmt.Sprintf("MCP server log [%s]: %s", origin, data))
 }
 
 // Python json.dumps rendering of raw JSON with key order kept, spaced separators and no ASCII escaping
-func pyDumpsRaw(raw json.RawMessage) string {
+func dumpsRaw(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return "null"
 	}
@@ -1112,7 +1102,7 @@ func pyDumpsRaw(raw json.RawMessage) string {
 					if err != nil {
 						return err
 					}
-					b.WriteString(pyJSONString(fmt.Sprint(k)))
+					b.WriteString(jsonString(fmt.Sprint(k)))
 					b.WriteString(": ")
 					if err := value(); err != nil {
 						return err
@@ -1138,12 +1128,12 @@ func pyDumpsRaw(raw json.RawMessage) string {
 				b.WriteByte(']')
 			}
 		case string:
-			b.WriteString(pyJSONString(t))
+			b.WriteString(jsonString(t))
 		case json.Number:
 			text := t.String()
 			if strings.ContainsAny(text, ".eE") {
 				f, _ := t.Float64()
-				text = pyFloatRepr(f)
+				text = floatRepr(f)
 			}
 			b.WriteString(text)
 		case bool:
@@ -1160,7 +1150,7 @@ func pyDumpsRaw(raw json.RawMessage) string {
 }
 
 // JSON string literal the way json.dumps writes it without ASCII escaping
-func pyJSONString(s string) string {
+func jsonString(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -1458,7 +1448,7 @@ func negotiateSession(ctx context.Context, serverName, mode string, s handshaker
 		return call("initialize")
 	case "auto":
 	default:
-		pkgLog().Warn(fmt.Sprintf("MCP server '%s': unknown protocol=%s \u2014 treating as 'auto' (valid: auto, stateless, legacy)", serverName, pyReprStr(mode)))
+		pkgLog().Warn(fmt.Sprintf("MCP server '%s': unknown protocol=%s \u2014 treating as 'auto' (valid: auto, stateless, legacy)", serverName, strconv.Quote(mode)))
 	}
 	_, canDiscover := s.(discoverer)
 	return attempt("initialize", "discover", func(err error) bool { return handshakeRejectedAsModern(err) && canDiscover }, func(err error) {

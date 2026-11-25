@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -21,7 +22,7 @@ func isUnattended(row *jsonutil.Object) bool {
 	}
 	payload := rowPayload(row)
 	native := jsonutil.NewObject()
-	if value, _ := payload.Get("native_text_v1"); pyTruthy(value) {
+	if value, _ := payload.Get("native_text_v1"); anyutil.IsTrue(value) {
 		if obj, ok := value.(*jsonutil.Object); ok {
 			native = obj
 		}

@@ -224,14 +224,14 @@ func ToolCallSet(tc any, key string, value any) error {
 	case *jsonutil.Object:
 		m.Set(key, value)
 		return nil
-	case *pyObject:
+	case *orderedObject:
 		for i := range *m {
 			if (*m)[i].Key == key {
 				(*m)[i].Value = value
 				return nil
 			}
 		}
-		*m = append(*m, pyKeyValue{key, value})
+		*m = append(*m, keyValue{key, value})
 		return nil
 	}
 	rv := reflect.ValueOf(tc)

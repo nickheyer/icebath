@@ -2,6 +2,8 @@ package pvporcupine
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,14 +25,14 @@ func cpuInfoWith(part string) func() ([]byte, error) {
 	}
 }
 
-func wantPyError(t *testing.T, err error, class, msg string) {
+func wantError(t *testing.T, err error, kind Kind, msg string) {
 	t.Helper()
-	var pe *PyError
+	var pe *Error
 	if !errors.As(err, &pe) {
-		t.Fatalf("error %v (%T), want %s %q", err, err, class, msg)
+		t.Fatalf("error %v (%T), want %v %q", err, err, kind, msg)
 	}
-	if pe.Class != class || pe.Msg != msg {
-		t.Fatalf("error %s %q, want %s %q", pe.Class, pe.Msg, class, msg)
+	if pe.Kind != kind || pe.Msg != msg {
+		t.Fatalf("error %v %q, want %v %q", pe.Kind, pe.Msg, kind, msg)
 	}
 }
 
@@ -57,26 +59,25 @@ func TestPvLinuxMachineTable(t *testing.T) {
 		t.Fatalf("armv7l fallback gave %q %v", got, err)
 	}
 	_, err := pvLinuxMachine("aarch64", true, cpuInfoWith("0xc07"))
-	wantPyError(t, err, "NotImplementedError", "Unsupported CPU: '0xc07'.")
+	wantError(t, err, Unsupported, `Unsupported CPU "0xc07".`)
 	_, err = pvLinuxMachine("armv6l", false, cpuInfoWith("0xc07"))
-	wantPyError(t, err, "NotImplementedError", "Unsupported CPU: '0xc07'.")
+	wantError(t, err, Unsupported, `Unsupported CPU "0xc07".`)
 	_, err = pvLinuxMachine("ppc64le", true, cpuInfoWith("0xd03"))
-	wantPyError(t, err, "NotImplementedError", "Unsupported CPU architecture: `ppc64le`")
+	wantError(t, err, Unsupported, `Unsupported CPU architecture "ppc64le"`)
 	_, err = pvLinuxMachine("aarch64", true, func() ([]byte, error) { return []byte("model name\t: x\n"), nil })
-	wantPyError(t, err, "RuntimeError", "Failed to identify the CPU with 'list index out of range'\nCPU info: model name\t: x\n")
-	_, err = pvLinuxMachine("aarch64", true, func() ([]byte, error) {
-		return nil, &PyError{Class: "FileNotFoundError", Msg: "[Errno 2] No such file or directory: 'cat'"}
-	})
-	wantPyError(t, err, "RuntimeError", "Failed to identify the CPU with '[Errno 2] No such file or directory: 'cat''\nCPU info: ")
+	wantError(t, err, CPUUnidentified, "Failed to identify the CPU: the CPU description has no CPU part line\nCPU info: model name\t: x\n")
+	unreadable := &fs.PathError{Op: "open", Path: "/proc/cpuinfo", Err: fs.ErrNotExist}
+	_, err = pvLinuxMachine("aarch64", true, func() ([]byte, error) { return nil, unreadable })
+	wantError(t, err, CPUUnidentified, "Failed to identify the CPU: file does not exist: /proc/cpuinfo")
 	_, err = pvLinuxMachine("aarch64", true, func() ([]byte, error) { return []byte("CPU part\t: \xff\n"), nil })
-	wantPyError(t, err, "RuntimeError", "Failed to identify the CPU with ''utf-8' codec can't decode byte 0xff in position 11: invalid start byte'\nCPU info: ")
+	wantError(t, err, Unsupported, "Unsupported CPU \"\ufffd\".")
 }
 
 func TestPvPlatform(t *testing.T) {
 	_, _, err := pvPlatform("FreeBSD", "amd64", true, nil)
-	wantPyError(t, err, "ValueError", "Unsupported system 'FreeBSD'.")
+	wantError(t, err, Unsupported, `Unsupported system "FreeBSD".`)
 	_, _, err = pvPlatform("", "", true, nil)
-	wantPyError(t, err, "ValueError", "Unsupported system ''.")
+	wantError(t, err, Unsupported, `Unsupported system "".`)
 	for _, c := range [][4]string{{"Darwin", "arm64", "Darwin", "arm64"}, {"Darwin", "x86_64", "Darwin", "x86_64"},
 		{"Windows", "AMD64", "Windows", "AMD64"}, {"Windows", "ARM64", "Windows", "ARM64"}, {"Linux", "x86_64", "Linux", "x86_64"},
 		{"Linux", "aarch64", "Linux", "cortex-a72-aarch64"}} {
@@ -86,7 +87,7 @@ func TestPvPlatform(t *testing.T) {
 		}
 	}
 	_, _, err = pvPlatform("Linux", "riscv64", true, cpuInfoWith("0xd08"))
-	wantPyError(t, err, "NotImplementedError", "Unsupported CPU architecture: `riscv64`")
+	wantError(t, err, Unsupported, `Unsupported CPU architecture "riscv64"`)
 }
 
 func TestPvPathTables(t *testing.T) {
@@ -112,9 +113,10 @@ func TestPvPathTables(t *testing.T) {
 	}
 	for _, c := range cases {
 		m := &Module{Dir: "pkgdir", System: c.system, Machine: c.machine}
+		unsupported := fmt.Sprintf("Unsupported platform (%q, %q).", c.system, c.machine)
 		lib, err := m.PvLibraryPath("")
 		if c.lib == "" {
-			wantPyError(t, err, "NotImplementedError", "Unsupported platform.")
+			wantError(t, err, Unsupported, unsupported)
 		} else if err != nil || lib != "pkgdir"+sep+c.lib {
 			t.Errorf("%s %s library %q %v", c.system, c.machine, lib, err)
 		}
@@ -126,8 +128,8 @@ func TestPvPathTables(t *testing.T) {
 		subdir, err := m.PvKeywordFilesSubdir()
 		platform, perr := m.PvGetPlatform()
 		if c.subdir == "" {
-			wantPyError(t, err, "NotImplementedError", "Unsupported platform")
-			wantPyError(t, perr, "NotImplementedError", `("Unsupported platform ('%s', '%s').", '`+c.system+`', '`+c.machine+`')`)
+			wantError(t, err, Unsupported, unsupported)
+			wantError(t, perr, Unsupported, unsupported)
 		} else if err != nil || perr != nil || subdir != c.subdir || platform != c.subdir {
 			t.Errorf("%s %s subdir %q %v platform %q %v", c.system, c.machine, subdir, err, platform, perr)
 		}
@@ -175,15 +177,15 @@ func TestImportKeywordPaths(t *testing.T) {
 		t.Fatalf("api url %q", m.APIURL)
 	}
 	_, err = importFor(dir, "Darwin", "arm64", true, nil)
-	var pe *PyError
-	if !errors.As(err, &pe) || pe.Class != "FileNotFoundError" || !strings.HasPrefix(pe.Msg, "[Errno 2] No such file or directory: '") ||
-		!strings.HasSuffix(pe.Msg, "mac'") {
+	var pe *Error
+	if !errors.As(err, &pe) || pe.Kind != FileUnavailable || !errors.Is(err, fs.ErrNotExist) ||
+		!strings.HasPrefix(pe.Msg, "Couldn't read the keyword files directory: ") || !strings.HasSuffix(pe.Msg, "mac") {
 		t.Fatalf("missing keyword dir error %v", err)
 	}
 	_, err = importFor(dir, "Linux", "arm11-aarch64", true, nil)
-	wantPyError(t, err, "NotImplementedError", "Unsupported CPU architecture: `arm11-aarch64`")
+	wantError(t, err, Unsupported, `Unsupported CPU architecture "arm11-aarch64"`)
 	_, err = importFor(dir, "SunOS", "x86_64", true, nil)
-	wantPyError(t, err, "ValueError", "Unsupported system 'SunOS'.")
+	wantError(t, err, Unsupported, `Unsupported system "SunOS".`)
 }
 
 func TestCreateArgumentErrors(t *testing.T) {
@@ -193,24 +195,24 @@ func TestCreateArgumentErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = m.Create("key", CreateOptions{})
-	wantPyError(t, err, "ValueError", "Either `keywords` or `keyword_paths` must be set.")
+	wantError(t, err, InvalidArgument, "Either keywords or keyword paths must be set.")
 	_, err = m.Create("key", CreateOptions{Keywords: []string{"jarvis", "nope"}})
-	wantPyError(t, err, "ValueError", `One or more keywords are not available by default. Available default keywords are:\nalexa, jarvis`)
+	wantError(t, err, InvalidArgument, `Keyword "nope" is not available by default. Available default keywords are: alexa, jarvis`)
 	_, err = m.Create("key", CreateOptions{Keywords: []string{"jarvis"}, Sensitivities: []float64{0.5, 0.5}})
-	wantPyError(t, err, "ValueError", "Number of keywords does not match the number of sensitivities.")
+	wantError(t, err, InvalidArgument, "Number of keywords does not match the number of sensitivities.")
 	_, err = m.Create("", CreateOptions{Keywords: []string{"jarvis"}})
-	wantPyError(t, err, "ValueError", "access_key should be a non-empty string.")
+	wantError(t, err, InvalidArgument, "Access key should be a non-empty string.")
 	_, err = m.Create("key", CreateOptions{Keywords: []string{"jarvis"}})
-	wantPyError(t, err, "OSError", "Couldn't find Porcupine's dynamic library at '"+dir+string(os.PathSeparator)+"lib/linux/x86_64/libpv_porcupine.so'.")
+	wantError(t, err, FileUnavailable, fmt.Sprintf("Couldn't find Porcupine's dynamic library at %q.", dir+string(os.PathSeparator)+"lib/linux/x86_64/libpv_porcupine.so"))
 	other := &Module{Dir: dir, System: "Linux", Machine: "sparc", KeywordPaths: m.KeywordPaths}
 	_, err = other.Create("key", CreateOptions{Keywords: []string{"jarvis"}})
-	wantPyError(t, err, "NotImplementedError", "Unsupported platform.")
+	wantError(t, err, Unsupported, `Unsupported platform ("Linux", "sparc").`)
 	_, err = other.AvailableDevices(nil)
-	wantPyError(t, err, "NotImplementedError", "Unsupported platform.")
+	wantError(t, err, Unsupported, `Unsupported platform ("Linux", "sparc").`)
 }
 
 func TestPorcupineErrorStr(t *testing.T) {
-	e := &PorcupineError{Class: "PorcupineError", Message: "Initialization failed"}
+	e := &PorcupineError{Message: "Initialization failed"}
 	if e.Error() != "Initialization failed" {
 		t.Fatalf("plain %q", e.Error())
 	}
@@ -220,16 +222,18 @@ func TestPorcupineErrorStr(t *testing.T) {
 	}
 }
 
-func TestStatusToException(t *testing.T) {
-	want := []string{"", "PorcupineMemoryError", "PorcupineIOError", "PorcupineInvalidArgumentError", "PorcupineStopIterationError",
-		"PorcupineKeyError", "PorcupineInvalidStateError", "PorcupineRuntimeError", "PorcupineActivationError",
-		"PorcupineActivationLimitError", "PorcupineActivationThrottledError", "PorcupineActivationRefusedError"}
+func TestStatusErrorKeepsAndNamesTheStatus(t *testing.T) {
+	want := []string{"", "out of memory", "I/O error", "invalid argument", "stop iteration", "key error", "invalid state", "runtime error",
+		"activation error", "activation limit reached", "activation throttled", "activation refused"}
 	for status := int32(1); status < int32(len(want)); status++ {
 		var pe *PorcupineError
-		if err := statusError(status, "Processing failed", []string{"x"}); !errors.As(err, &pe) || pe.Class != want[status] ||
-			pe.Message != "Processing failed" || !reflect.DeepEqual(pe.MessageStack, []string{"x"}) {
+		if err := statusError(status, "Processing failed", []string{"x"}); !errors.As(err, &pe) || pe.Status != status ||
+			pe.Message != "Processing failed" || !reflect.DeepEqual(pe.MessageStack, []string{"x"}) || err.Error() != "Processing failed ("+want[status]+"):\n  [0] x" {
 			t.Errorf("status %d gave %v", status, err)
 		}
 	}
-	wantPyError(t, statusError(12, "m", nil), "ValueError", "12 is not a valid Porcupine.PicovoiceStatuses")
+	var pe *PorcupineError
+	if err := statusError(12, "m", nil); !errors.As(err, &pe) || pe.Status != 12 || err.Error() != "m (status 12)" {
+		t.Errorf("unknown status gave %v", err)
+	}
 }

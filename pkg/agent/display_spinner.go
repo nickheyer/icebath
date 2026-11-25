@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Frames of the status spinner, the icebath braille wheel
@@ -36,14 +37,14 @@ func skinSpinnerList(ctx context.Context, key string, fallback []string) ([]stri
 		return fallback, nil
 	}
 	value, ok := skin.Spinner[key]
-	if !ok || !config.PyTruthy(value) {
+	if !ok || !anyutil.IsTrue(value) {
 		return fallback, nil
 	}
 	switch v := value.(type) {
 	case []any:
 		out := make([]string, len(v))
 		for i, item := range v {
-			out[i] = config.PyStr(item)
+			out[i] = anyutil.String(item)
 		}
 		return out, nil
 	case []string:

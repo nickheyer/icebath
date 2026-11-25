@@ -50,7 +50,7 @@ func blueprintStrings(name string, value any) ([]string, error) {
 	return out, nil
 }
 
-// Members a Python iteration of a wire value yields, mapping keys in order, false for a non iterable
+// Members of a wire list value or the keys of a mapping (in order, sorted for a Go map), false for a value that is not a collection
 func blueprintIterable(value any) ([]any, bool) {
 	switch t := value.(type) {
 	case []any:
@@ -182,7 +182,7 @@ func blueprintSlotFrom(raw any) (BlueprintSlot, error) {
 	return slot, nil
 }
 
-// TypeError text of missing required dataclass arguments
+// Names of the missing required slot fields as a prose list
 func missingArgsText(names []string) string {
 	switch len(names) {
 	case 1:
@@ -197,7 +197,7 @@ func missingArgsText(names []string) string {
 func blueprintPlaceholders(template, what string) ([]string, error) {
 	names, err := templateutil.Fields(template)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	for _, n := range names {
 		if !blueprintSlotNameRe().MatchString(n) {
@@ -262,7 +262,11 @@ func BuildPluginBlueprint(plugin string, key any, spec plugins.BlueprintSpec) (s
 	}
 	keyText, isStr := key.(string)
 	if !isStr || !blueprintKeyRe().MatchString(keyText) {
-		return "", nil, fmt.Errorf("invalid key %s: use lowercase letters, digits, '-' or '_' (the '%s:' namespace is added automatically)", anyutil.Quote(key), plugin)
+		given := "invalid key " + anyutil.Quote(key)
+		if key == nil {
+			given = "missing key"
+		}
+		return "", nil, fmt.Errorf("%s: use lowercase letters, digits, \"-\" or \"_\" (the %s namespace is added automatically)", given, strconv.Quote(plugin+":"))
 	}
 	slots, iterable := blueprintIterable(spec.Slots)
 	_, isStr = spec.Slots.(string)

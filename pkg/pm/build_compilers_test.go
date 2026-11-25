@@ -182,7 +182,7 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
 `)
 	archive := filepath.Join(root, "native_archive_probe-1.0.tar.gz")
 	peTarDir(t, source, archive)
-	env := pyEnviron()
+	env := environValue()
 	delete(env, "AR")
 	delete(env, "CC")
 	project := filepath.Join(root, "project")

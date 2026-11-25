@@ -110,8 +110,8 @@ func TestPyContainsKanbanMatchesPythonMembership(t *testing.T) {
 		want bool
 	}{{nil, false}, {[]any{"web", "kanban"}, true}, {[]any{"kanbans"}, false}, {[]string{"kanban"}, true}, {"my-kanban-set", true}, {"", false},
 		{map[string]any{"kanban": false}, true}, {map[string]any{"web": true}, false}, {int64(0), false}} {
-		if got := PyContainsKanban(tc.v); got != tc.want {
-			t.Fatalf("PyContainsKanban(%#v) = %v", tc.v, got)
+		if got := ContainsKanban(tc.v); got != tc.want {
+			t.Fatalf("ContainsKanban(%#v) = %v", tc.v, got)
 		}
 	}
 	defer func() {
@@ -119,5 +119,5 @@ func TestPyContainsKanbanMatchesPythonMembership(t *testing.T) {
 			t.Fatal("a truthy non iterable did not raise")
 		}
 	}()
-	PyContainsKanban(int64(5))
+	ContainsKanban(int64(5))
 }

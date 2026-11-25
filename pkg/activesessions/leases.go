@@ -41,7 +41,7 @@ const NoLockTimeout time.Duration = -1
 // Grace during which a fresh lease of this process is never read as an orphan
 const selfOrphanGraceSeconds = 30.0
 
-// Refusal of an acquisition, the message for people and the reason as the contract
+// Refusal of an acquisition, the message for people and the reason as the contract; a plain value that a deep copy reproduces field for field
 type Refusal struct {
 	Message      string
 	Reason       string
@@ -53,21 +53,11 @@ func NewRefusal(message, reason string) *Refusal {
 	return &Refusal{Message: message, Reason: reason}
 }
 
-// Refusal rebuilt from its message and reason with its ledger status, as a payload copy needs
-func (r *Refusal) PyDeepcopy() any {
-	if r == nil {
-		return r
-	}
-	copied := NewRefusal(r.Message, r.Reason)
-	copied.LedgerStatus = r.LedgerStatus
-	return copied
-}
-
 // Message of the refusal
 func (r *Refusal) String() string { return r.Message }
 
-// Message the refusal encodes as wherever a string is expected
-func (r *Refusal) PyStr() string { return r.Message }
+// Message of the refusal, the JSON string a payload carrying it encodes it as
+func (r *Refusal) MarshalText() ([]byte, error) { return []byte(r.Message), nil }
 
 // Refusal text prefixed with its reason line so the contract survives a subprocess boundary
 func FormatRefusalStderr(message *Refusal) string {
@@ -85,7 +75,7 @@ func SummarizeHolders(entries []*jsonutil.Object) string {
 	counts := map[string]int{}
 	for _, e := range entries {
 		surface := "unknown"
-		if v := e.ValueOr("surface", nil); pyTruthy(v) {
+		if v := e.ValueOr("surface", nil); anyutil.IsTrue(v) {
 			surface = anyutil.String(v)
 		}
 		counts[surface]++
@@ -135,7 +125,7 @@ func SessionAlreadyOwnedMessage(sessionID string, entry *jsonutil.Object) string
 // True when an existing lease belongs to this pid and the same live session re acquiring it
 func isSameWriter(entry *jsonutil.Object, metadata map[string]any) bool {
 	raw := entry.ValueOr("pid", nil)
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = int64(-1)
 	}
 	pid, ok := pythonInt(raw)
@@ -169,7 +159,7 @@ func pythonInt(v any) (int64, bool) {
 		}
 		return int64(math.Trunc(x)), true
 	case string:
-		n, ok := pyIntText(x)
+		n, ok := intText(x)
 		return int64(n), ok
 	case *big.Int:
 		return x.Int64(), x.IsInt64()
@@ -515,8 +505,12 @@ func TryAcquire(ctx context.Context, sessionID, surface string, cfg any, metadat
 				}
 				return lease, nil, nil
 			}
+			holderSurface := "null"
+			if v := existing.ValueOr("surface", nil); v != nil {
+				holderSurface = anyutil.String(v)
+			}
 			return refuse(SessionAlreadyOwnedMessage(key, existing), SessionNotOwned,
-				fmt.Sprintf("Refused active session %s: already held by pid=%s surface=%s", key, anyutil.String(existing.ValueOr("pid", nil)), anyutil.String(existing.ValueOr("surface", nil))))
+				fmt.Sprintf("Refused active session %s: already held by pid=%s surface=%s", key, anyutil.String(existing.ValueOr("pid", nil)), holderSurface))
 		}
 	}
 	if maxSessions != nil && big.NewInt(int64(len(entries))).Cmp(maxSessions) >= 0 {

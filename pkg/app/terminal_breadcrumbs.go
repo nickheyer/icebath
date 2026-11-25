@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -105,7 +106,7 @@ func ReadBreadcrumb(ctx context.Context) map[string]any {
 	if err := json.Unmarshal([]byte(strings.TrimPrefix(string(raw), "\ufeff")), &data); err != nil || data == nil {
 		return nil
 	}
-	if strings.TrimSpace(config.PyStr(data["session_id"])) == "" || data["session_id"] == nil {
+	if strings.TrimSpace(anyutil.String(data["session_id"])) == "" || data["session_id"] == nil {
 		return nil
 	}
 	if ts, ok := data["ts"].(float64); ok && breadcrumbNow()-ts > staleBreadcrumbAfter {
@@ -123,7 +124,7 @@ func ResolveBreadcrumbSession(ctx context.Context) string {
 	if crumb == nil {
 		return ""
 	}
-	sessionID := strings.TrimSpace(config.PyStr(crumb["session_id"]))
+	sessionID := strings.TrimSpace(anyutil.String(crumb["session_id"]))
 	if sessionID == "" {
 		return ""
 	}

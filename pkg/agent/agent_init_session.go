@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
@@ -87,7 +88,7 @@ func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 		}
 		sort.Strings(missing)
 		if len(missing) > 0 {
-			a.safePrint("⚠️  Some tools may not work due to missing requirements: "+pyListRepr(missing), true)
+			a.safePrint("⚠️  Some tools may not work due to missing requirements: "+anyutil.String(missing), true)
 		}
 	} else {
 		_, _ = fmt.Fprintln(statusStdout, "🛠️  No tools loaded (all tools filtered out or unavailable)")

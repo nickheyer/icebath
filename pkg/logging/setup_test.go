@@ -338,7 +338,7 @@ func TestOutOfBandProfileDeleteReleasesRoutedHandler(t *testing.T) {
 					emit(fmt.Sprintf("after delete %d", i))
 				}
 			})
-			if strings.Contains(errText, "Logging error") {
+			if strings.Contains(errText, "logging: could not write record") {
 				t.Fatalf("stderr %q", errText)
 			}
 			for _, r := range routed {

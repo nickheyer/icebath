@@ -53,7 +53,7 @@ func ReadConfigModel(ctx context.Context, profileDir string) (model, provider an
 			return configModel{cfg, nil}
 		case map[string]any:
 			model := cfg["default"]
-			if !pyTruthy(model) {
+			if !truthy(model) {
 				model = cfg["model"]
 			}
 			return configModel{model, cfg["provider"]}

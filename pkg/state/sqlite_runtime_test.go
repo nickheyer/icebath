@@ -38,7 +38,7 @@ func TestVersionTupleConvertsLikeInt(t *testing.T) {
 		{[]any{json.Number("3"), json.Number("1"), json.Number("2"), json.Number("9")}, []int64{3, 1, 2}},
 		{"312", []int64{3, 1, 2}},
 		{[]any{"3", 4.9, true}, []int64{3, 4, 1}},
-		{pyObject{{Key: "7"}, {Key: "8"}}, []int64{7, 8, 0}},
+		{orderedObject{{Key: "7"}, {Key: "8"}}, []int64{7, 8, 0}},
 		{[]any{}, []int64{0, 0, 0}},
 	} {
 		got, err := versionTuple(c.parts)
@@ -54,7 +54,7 @@ func TestVersionTupleConvertsLikeInt(t *testing.T) {
 		{[]any{math.NaN()}, "ValueError"}, {[]any{math.Inf(1)}, "OverflowError"}, {[]any{[]any{}}, "TypeError"},
 	} {
 		_, err := versionTuple(c.parts)
-		var conv *pyConvError
+		var conv *convError
 		if !errors.As(err, &conv) || conv.Class != c.class {
 			t.Fatalf("%v raised %v want %s", c.parts, err, c.class)
 		}

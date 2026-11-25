@@ -37,24 +37,24 @@ import (
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
-// pyExc is a raised Python exception, its class name kept for the worker's error envelope
-type pyExc struct {
+// excValue is a raised Python exception, its class name kept for the worker's error envelope
+type excValue struct {
 	class, msg string
 	cause      error
 }
 
-func (e *pyExc) Error() string { return e.msg }
+func (e *excValue) Error() string { return e.msg }
 
-func (e *pyExc) Unwrap() error { return e.cause }
+func (e *excValue) Unwrap() error { return e.cause }
 
 // Exception of the given class over the failure that caused it
 func raiseFrom(cause error, class, format string, args ...any) error {
-	return &pyExc{class: class, msg: fmt.Sprintf(format, args...), cause: cause}
+	return &excValue{class: class, msg: fmt.Sprintf(format, args...), cause: cause}
 }
 
 // Whether a search failure was a connect or read timeout
 func ddgsTimedOut(err error) bool {
-	var exc *pyExc
+	var exc *excValue
 	if errors.As(err, &exc) && exc.class == "TimeoutException" {
 		return true
 	}
@@ -63,12 +63,12 @@ func ddgsTimedOut(err error) bool {
 }
 
 func raise(class, format string, args ...any) error {
-	return &pyExc{class: class, msg: fmt.Sprintf(format, args...)}
+	return &excValue{class: class, msg: fmt.Sprintf(format, args...)}
 }
 
 // Class name of an error raised by the ddgs path, Exception for a foreign error
-func pyExcClass(err error) string {
-	if e, ok := err.(*pyExc); ok {
+func excClass(err error) string {
+	if e, ok := err.(*excValue); ok {
 		return e.class
 	}
 	return "Exception"
@@ -315,7 +315,7 @@ func ddgsNormalizeURL(v any) (any, error) {
 	case string:
 		return strings.ReplaceAll(urlutil.Unescape(s), " ", "+"), nil
 	case []any, *jsonutil.Object:
-		if in, _ := pyContains(v, "%"); in {
+		if in, _ := containsValue(v, "%"); in {
 			return nil, raise("TypeError", "a search result URL is %s, expected text", errchain.Kind(v))
 		}
 		return nil, raise("AttributeError", "a search result URL is %s, expected text", errchain.Kind(v))
@@ -324,7 +324,7 @@ func ddgsNormalizeURL(v any) (any, error) {
 }
 
 // Python item in container for a decoded value, the TypeError of a non container
-func pyContains(container any, item string) (bool, error) {
+func containsValue(container any, item string) (bool, error) {
 	switch c := container.(type) {
 	case string:
 		return strings.Contains(c, item), nil
@@ -343,7 +343,7 @@ func pyContains(container any, item string) (bool, error) {
 }
 
 // Python len of a decoded value, the TypeError of an unsized one
-func pyValueLen(v any) (int, error) {
+func valueLen(v any) (int, error) {
 	switch x := v.(type) {
 	case string:
 		return utf8.RuneCountInString(x), nil
@@ -356,7 +356,7 @@ func pyValueLen(v any) (int, error) {
 }
 
 // Python subscript of a decoded value with the KeyError, IndexError or TypeError it raises
-func pySubscript(v any, key any) (any, error) {
+func subscript(v any, key any) (any, error) {
 	switch c := v.(type) {
 	case *jsonutil.Object:
 		if k, ok := key.(string); ok {
@@ -810,7 +810,7 @@ func ddgsWikipediaResults(e *ddgsEngine, ctx context.Context, text string) ([]*d
 	if err != nil {
 		return nil, err
 	}
-	titles, err := pySubscript(data, 1)
+	titles, err := subscript(data, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -818,17 +818,17 @@ func ddgsWikipediaResults(e *ddgsEngine, ctx context.Context, text string) ([]*d
 		return nil, nil
 	}
 	r := newDDGSTextResult()
-	title, err := pySubscript(titles, 0)
+	title, err := subscript(titles, 0)
 	if err == nil {
 		err = r.set("title", title)
 	}
 	if err != nil {
 		return nil, err
 	}
-	links, err := pySubscript(data, 3)
+	links, err := subscript(data, 3)
 	var link any
 	if err == nil {
-		link, err = pySubscript(links, 0)
+		link, err = subscript(links, 0)
 	}
 	if err == nil {
 		err = r.set("href", link)
@@ -853,7 +853,7 @@ func ddgsWikipediaResults(e *ddgsEngine, ctx context.Context, text string) ([]*d
 			return nil, err
 		}
 	}
-	refers, err := pyContains(r.body, "may refer to:")
+	refers, err := containsValue(r.body, "may refer to:")
 	if err != nil {
 		return nil, err
 	}
@@ -869,11 +869,11 @@ func ddgsWikipediaExtract(body string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	query, err := pySubscript(data, "query")
+	query, err := subscript(data, "query")
 	if err != nil {
 		return nil, err
 	}
-	pages, err := pySubscript(query, "pages")
+	pages, err := subscript(query, "pages")
 	if err != nil {
 		return nil, err
 	}
@@ -885,9 +885,9 @@ func ddgsWikipediaExtract(body string) (any, error) {
 		return nil, raise("StopIteration", "")
 	}
 	first, _ := obj.Get(obj.Keys()[0])
-	page, ok := pyDict(first)
+	page, ok := mappingOf(first)
 	if !ok {
-		return nil, pyAttributeError(first, "get")
+		return nil, attributeError(first, "get")
 	}
 	if v, ok := page.Get("extract"); ok {
 		return v, nil
@@ -901,9 +901,9 @@ func ddgsGrokipediaResults(_ *ddgsEngine, _ context.Context, text string) ([]*dd
 	if err != nil {
 		return nil, err
 	}
-	d, ok := pyDict(data)
+	d, ok := mappingOf(data)
 	if !ok {
-		return nil, pyAttributeError(data, "get")
+		return nil, attributeError(data, "get")
 	}
 	items, present := d.Get("results")
 	if !present {
@@ -912,13 +912,13 @@ func ddgsGrokipediaResults(_ *ddgsEngine, _ context.Context, text string) ([]*dd
 	if !anyutil.IsTrue(items) {
 		return nil, nil
 	}
-	first, err := pySubscript(items, 0)
+	first, err := subscript(items, 0)
 	if err != nil {
 		return nil, err
 	}
-	item, ok := pyDict(first)
+	item, ok := mappingOf(first)
 	if !ok {
-		return nil, pyAttributeError(first, "get")
+		return nil, attributeError(first, "get")
 	}
 	get := func(key string) any {
 		if v, ok := item.Get(key); ok {
@@ -929,27 +929,27 @@ func ddgsGrokipediaResults(_ *ddgsEngine, _ context.Context, text string) ([]*dd
 	r := newDDGSTextResult()
 	title, ok := get("title").(string)
 	if !ok {
-		return nil, pyAttributeError(get("title"), "strip")
+		return nil, attributeError(get("title"), "strip")
 	}
 	if err := r.set("title", strings.Trim(title, "_")); err != nil {
 		return nil, err
 	}
 	body := get("snippet")
-	split, err := pyContains(body, "\n\n")
+	split, err := containsValue(body, "\n\n")
 	if err != nil {
 		return nil, err
 	}
 	if split {
 		s, ok := body.(string)
 		if !ok {
-			return nil, pyAttributeError(body, "split")
+			return nil, attributeError(body, "split")
 		}
 		body = strings.SplitN(s, "\n\n", 2)[1]
 	}
 	if err := r.set("body", body); err != nil {
 		return nil, err
 	}
-	slug, err := pySubscript(first, "slug")
+	slug, err := subscript(first, "slug")
 	if err != nil {
 		return nil, err
 	}
@@ -1021,11 +1021,11 @@ func (a *ddgsAggregator) append(r *ddgsTextResult) error {
 	cached, seen := a.cache[key]
 	replace := !seen
 	if seen {
-		n, err := pyValueLen(r.body)
+		n, err := valueLen(r.body)
 		if err != nil {
 			return err
 		}
-		m, err := pyValueLen(cached.body)
+		m, err := valueLen(cached.body)
 		if err != nil {
 			return err
 		}
@@ -1112,7 +1112,7 @@ func ddgsTokens(query string) []string {
 func ddgsHasAnyToken(text any, tokens []string) (bool, error) {
 	s, ok := text.(string)
 	if !ok {
-		return false, pyAttributeError(text, "lower")
+		return false, attributeError(text, "lower")
 	}
 	lower := strings.ToLower(s)
 	for _, t := range tokens {
@@ -1128,12 +1128,12 @@ func ddgsRank(docs []*ddgsTextResult, query string) ([]*ddgsTextResult, error) {
 	tokens := ddgsTokens(query)
 	var wiki, both, titleOnly, bodyOnly, neither []*ddgsTextResult
 	for _, d := range docs {
-		category, err := pyContains(d.title, "Category:")
+		category, err := containsValue(d.title, "Category:")
 		if err != nil {
 			return nil, err
 		}
 		if category {
-			wikimedia, err := pyContains(d.title, "Wikimedia")
+			wikimedia, err := containsValue(d.title, "Wikimedia")
 			if err != nil {
 				return nil, err
 			}
@@ -1141,7 +1141,7 @@ func ddgsRank(docs []*ddgsTextResult, query string) ([]*ddgsTextResult, error) {
 				continue
 			}
 		}
-		isWiki, err := pyContains(d.href, "wikipedia.org")
+		isWiki, err := containsValue(d.href, "wikipedia.org")
 		if err != nil {
 			return nil, err
 		}
@@ -1214,13 +1214,13 @@ func (c *ddgsClient) text(ctx context.Context, q ddgsQuery, maxResults int) ([]*
 				case <-p.done:
 					if p.err != nil {
 						lastErr = p.err
-						pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(p.err)+"("+strconv.Quote(p.err.Error())+")"))
+						pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, excClass(p.err)+"("+strconv.Quote(p.err.Error())+")"))
 						continue
 					}
 					if len(p.results) > 0 {
 						if err := agg.extend(p.results); err != nil {
 							lastErr = err
-							pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(err)+"("+strconv.Quote(err.Error())+")"))
+							pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, excClass(err)+"("+strconv.Quote(err.Error())+")"))
 							continue
 						}
 						seen[p.engine.provider] = true
@@ -1268,7 +1268,7 @@ func runDDGSSearch(ctx context.Context, query string, safeLimit int) ([]WebSearc
 		if i >= safeLimit {
 			break
 		}
-		href := pyOr(r.href, "")
+		href := anyutil.Or(r.href, "")
 		hits = append(hits, titleHit(anyutil.String(r.title), anyutil.String(href), anyutil.String(r.body), i+1))
 	}
 	return hits, nil

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func displayDB(t *testing.T, sid string, history ...map[string]any) *SessionDB {
@@ -52,7 +54,7 @@ func displayResumed(t *testing.T, db *SessionDB, sid string) []map[string]any {
 func displayTextCount(msgs []map[string]any, text string) int {
 	n := 0
 	for _, m := range msgs {
-		n += strings.Count(pyStr(m["content"]), text)
+		n += strings.Count(anyutil.String(m["content"]), text)
 	}
 	return n
 }
@@ -103,7 +105,7 @@ func TestCompactedToolResultPaintsOnceAsItsArchivedOriginal(t *testing.T) {
 			if m["role"] == "tool" {
 				m["content"] = stub
 			}
-			if !pyTruthy(m["_compressed_summary"]) {
+			if !anyutil.IsTrue(m["_compressed_summary"]) {
 				compacted = append(compacted, m)
 			}
 		}
@@ -128,7 +130,7 @@ func TestCompactedToolResultPaintsOnceAsItsArchivedOriginal(t *testing.T) {
 				model = append(model, m)
 			}
 		}
-		meta, err := pyDumps(model[0]["display_metadata"], pyJSONDefault)
+		meta, err := dumpsValue(model[0]["display_metadata"], jsonDefault)
 		if err != nil || len(model) != 1 || model[0]["content"] != stub || meta != `{"tool_result_metadata": {"lines": 1000}}` {
 			t.Fatalf("model tool rows = %v", model)
 		}

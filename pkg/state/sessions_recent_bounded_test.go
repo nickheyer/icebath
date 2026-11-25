@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -34,7 +35,7 @@ func boundedRecent(t *testing.T, db *SessionDB, o RecentSessionsBoundedOptions) 
 func boundedIDs(rows []*jsonutil.Object) []string {
 	out := []string{}
 	for _, row := range rows {
-		out = append(out, pyStr(rowValue(row, "id")))
+		out = append(out, anyutil.String(rowValue(row, "id")))
 	}
 	return out
 }
@@ -240,7 +241,7 @@ func TestBoundedRecentDeadlineInterruptsSqlite(t *testing.T) {
 	}
 	zero := 0.0
 	_, err := db.ListRecentSessionsBounded(ctx, RecentSessionsBoundedOptions{Limit: intOf(20), CandidateLimit: intOf(300), TimeoutSeconds: &zero})
-	var conv *pyConvError
+	var conv *convError
 	if !errors.As(err, &conv) || conv.Class != "TimeoutError" || !strings.Contains(conv.Msg, "recent-session browse exceeded") {
 		t.Fatalf("deadline err %v", err)
 	}

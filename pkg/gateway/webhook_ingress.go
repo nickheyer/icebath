@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -59,7 +60,7 @@ func ProducerScope(ctx context.Context, adapter PlatformAdapter, event *MessageE
 	}
 	runner, ok := owner.(ProducerScopeRunner)
 	if !ok {
-		return nil, nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook owner (%T) cannot name its owning profile", owner)}
+		return nil, nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook owner (%T) cannot name its owning profile", owner)}
 	}
 	registered, profile := runner.OwningProfile(adapter, adapter.Base().Platform)
 	var profileKey *string
@@ -285,7 +286,7 @@ func admitOnce(ctx context.Context, authority *SessionAuthority, event *MessageE
 	if len(hooks) > 0 {
 		hooked, ok := authority.Runner.(ProducerHooksRunner)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no pre dispatch hook", authority.Runner)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) has no pre dispatch hook", authority.Runner)}
 		}
 		runner = hooked
 	}
@@ -429,12 +430,12 @@ func webhookRetry(ctx context.Context, authority *SessionAuthority, event *Messa
 		return nil, err
 	}
 	if row == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "the webhook retry record is missing"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the webhook retry record is missing"}
 	}
 	stored, _ := row.Get("payload")
 	storedPayload, _ := stored.(*jsonutil.Object)
 	if storedPayload == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
 	}
 	retained, err := nativeEnvelope(storedPayload)
 	if err != nil {
@@ -457,7 +458,7 @@ func webhookRetry(ctx context.Context, authority *SessionAuthority, event *Messa
 			}
 			for _, key := range []string{"webhook_delivery", "webhook_route"} {
 				if _, ok := native.Get(key); !ok {
-					return nil, &pyKeyError{key}
+					return nil, &keyError{key}
 				}
 				native.Delete(key)
 			}
@@ -526,7 +527,7 @@ func RecoverWebhookFinalizations(ctx context.Context, authority *SessionAuthorit
 		}
 		sid := rowString(row, "target_session_id")
 		outcome, err := recoverWebhookFinalization(ctx, authority, row, sid)
-		var keyErr *pyKeyError
+		var keyErr *keyError
 		var refusal *state.RuntimeStoreError
 		switch {
 		case errors.As(err, &keyErr) || errors.As(err, &refusal):
@@ -544,11 +545,11 @@ func RecoverWebhookFinalizations(ctx context.Context, authority *SessionAuthorit
 func recoverWebhookFinalization(ctx context.Context, authority *SessionAuthority, row *jsonutil.Object, sid string) (string, error) {
 	stored, ok := row.Get("payload")
 	if !ok {
-		return "", &pyKeyError{"payload"}
+		return "", &keyError{"payload"}
 	}
 	payload, _ := stored.(*jsonutil.Object)
 	if payload == nil {
-		return "", &PyError{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
+		return "", &errorutil.Error{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
 	}
 	envelope, err := nativeEnvelope(payload)
 	if err != nil {
@@ -556,7 +557,7 @@ func recoverWebhookFinalization(ctx context.Context, authority *SessionAuthority
 	}
 	route, ok := envelope.Get("route")
 	if !ok {
-		return "", &pyKeyError{"route"}
+		return "", &keyError{"route"}
 	}
 	routeKey, _ := route.(string)
 	entry := authority.Runner.SessionStore().LookupBySessionKey(ctx, routeKey)

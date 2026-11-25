@@ -44,7 +44,7 @@ func readUTF8SigText(path string) (string, error) {
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
 	if err := strictUTF8(data); err != nil {
-		return "", &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return "", &ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	return string(data), nil
 }
@@ -57,7 +57,7 @@ func NativeManifestFile(pluginDir string) (string, error) {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
-			return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", path, errchain.OSText(err))}
+			return "", &ClassError{Class: "ValueError", Message: fmt.Sprintf("Could not inspect plugin manifest %s: %s", path, errchain.OSText(err))}
 		}
 		return path, nil
 	}
@@ -91,18 +91,18 @@ func yamlNormalize(v any) any {
 func ReadNativeManifest(path string) (map[string]any, error) {
 	text, err := readUTF8SigText(path)
 	if err != nil {
-		var pyErr *PyError
+		var kindErr *ClassError
 		message := errchain.OSText(err)
-		if errors.As(err, &pyErr) {
-			message = pyErr.Message
+		if errors.As(err, &kindErr) {
+			message = kindErr.Message
 		}
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", path, message)}
+		return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", path, message)}
 	}
 	return decodeNativeManifest(path, text)
 }
 
 // Python int() of a manifest scalar, ok false where int() raises TypeError or ValueError
-func pyIntValue(v any) (*big.Int, bool, error) {
+func intValue(v any) (*big.Int, bool, error) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -117,7 +117,7 @@ func pyIntValue(v any) (*big.Int, bool, error) {
 		return new(big.Int).SetUint64(t), true, nil
 	case float64:
 		if math.IsInf(t, 0) {
-			return nil, false, &PyError{Class: "OverflowError", Message: "cannot convert float infinity to integer"}
+			return nil, false, &ClassError{Class: "OverflowError", Message: "cannot convert float infinity to integer"}
 		}
 		if math.IsNaN(t) {
 			return nil, false, nil
@@ -125,13 +125,13 @@ func pyIntValue(v any) (*big.Int, bool, error) {
 		n, _ := big.NewFloat(math.Trunc(t)).Int(nil)
 		return n, true, nil
 	case string:
-		return pyIntString(t)
+		return intString(t)
 	}
 	return nil, false, nil
 }
 
 // Python int() of a string, signed decimal digits of any script with single underscores between digits
-func pyIntString(text string) (*big.Int, bool, error) {
+func intString(text string) (*big.Int, bool, error) {
 	text = strings.TrimSpace(text)
 	sign := ""
 	if strings.HasPrefix(text, "+") || strings.HasPrefix(text, "-") {
@@ -177,7 +177,7 @@ func ManifestVersionError(manifest map[string]any, name string) (string, error) 
 	if !ok || version == nil {
 		return "", nil
 	}
-	parsed, valid, err := pyIntValue(version)
+	parsed, valid, err := intValue(version)
 	if err != nil {
 		return "", err
 	}
@@ -248,7 +248,7 @@ func (d *PythonDeclaration) PythonError(version string) (string, error) {
 	}
 	specs, err := parseSpecifierSet(*d.RequiresPython)
 	if err != nil {
-		return "", &PyError{Class: "InvalidSpecifier", Message: fmt.Sprintf("invalid requires-python specifier: %s", *d.RequiresPython)}
+		return "", &ClassError{Class: "InvalidSpecifier", Message: fmt.Sprintf("invalid requires-python specifier: %s", *d.RequiresPython)}
 	}
 	ok, err := specifierSetContains(specs, version)
 	if err != nil || ok {
@@ -308,7 +308,7 @@ func tomlStringList(v any) ([]string, bool) {
 func tomlAnyValue(v any, field string) (bool, error) {
 	obj, ok := v.(*OrderedObject)
 	if !ok {
-		return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("%s must be a table, got %s", field, tomlKind(v))}
+		return false, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("%s must be a table, got %s", field, tomlKind(v))}
 	}
 	for _, k := range obj.Keys {
 		if tomlTruthy(obj.Values[k]) {
@@ -334,13 +334,13 @@ func pyprojectDeclaration(project, text string, files []string, manifest map[str
 	}
 	specs, ok := tomlStringList(specsValue)
 	if !ok {
-		return nil, &PyError{Class: "ValueError", Message: "invalid project.dependencies: " + project}
+		return nil, &ClassError{Class: "ValueError", Message: "invalid project.dependencies: " + project}
 	}
 	var requiresPython *string
 	if value, present := metadata.Get("requires-python"); present {
 		s, ok := value.(string)
 		if !ok {
-			return nil, &PyError{Class: "ValueError", Message: "invalid project.requires-python: " + project}
+			return nil, &ClassError{Class: "ValueError", Message: "invalid project.requires-python: " + project}
 		}
 		requiresPython = &s
 	}
@@ -450,7 +450,7 @@ func ReadPythonDeclaration(pluginDir string) (*PythonDeclaration, error) {
 			if where == "" {
 				where = "None"
 			}
-			return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("invalid %s: %s", key, where)}
+			return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("invalid %s: %s", key, where)}
 		}
 		for _, v := range values {
 			if s := v.(string); !seen[s] {

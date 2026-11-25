@@ -408,7 +408,7 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*orderedutil.Map[str
 	switch {
 	case isMapping(raw):
 		for _, k := range mappingKeys(raw) {
-			items = append(items, item{k, pyGet(raw, k, nil)})
+			items = append(items, item{k, lookup(raw, k, nil)})
 		}
 	default:
 		if list, ok := raw.([]any); ok {
@@ -422,17 +422,17 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*orderedutil.Map[str
 		if !isMapping(val) {
 			continue
 		}
-		slug := cleanSlug(anyutil.String(anyutil.Or(anyutil.Or(pyGet(val, "slug", nil), pyGet(val, "id", nil)), it.key)))
+		slug := cleanSlug(anyutil.String(anyutil.Or(anyutil.Or(lookup(val, "slug", nil), lookup(val, "id", nil)), it.key)))
 		if slug == "" {
 			continue
 		}
-		pathSegment := cleanSlug(anyutil.String(anyutil.Or(pyGet(val, "path", nil), slug)))
+		pathSegment := cleanSlug(anyutil.String(anyutil.Or(lookup(val, "path", nil), slug)))
 		if pathSegment == "" || reserved[pathSegment] {
 			pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with reserved/invalid path %s", strconv.Quote(slug), strconv.Quote(pathSegment)))
 			continue
 		}
-		profile := strings.TrimSpace(anyutil.String(anyutil.Or(pyGet(val, "profile", nil), slug)))
-		toolsets := anyutil.Or(anyutil.Or(anyutil.Or(pyGet(val, "advertised_toolsets", nil), pyGet(val, "toolsets", nil)), pyGet(val, "capabilities", nil)), []any{})
+		profile := strings.TrimSpace(anyutil.String(anyutil.Or(lookup(val, "profile", nil), slug)))
+		toolsets := anyutil.Or(anyutil.Or(anyutil.Or(lookup(val, "advertised_toolsets", nil), lookup(val, "toolsets", nil)), lookup(val, "capabilities", nil)), []any{})
 		if s, ok := toolsets.(string); ok {
 			split := []any{}
 			for _, t := range strings.Split(s, ",") {
@@ -442,7 +442,7 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*orderedutil.Map[str
 			}
 			toolsets = split
 		}
-		tenant := strings.TrimSpace(anyutil.String(anyutil.Or(pyGet(val, "tenant", nil), slug)))
+		tenant := strings.TrimSpace(anyutil.String(anyutil.Or(lookup(val, "tenant", nil), slug)))
 		if tenant != "" {
 			if owner, dup := tenants[tenant]; dup {
 				pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with duplicate tenant %s already used by %s",
@@ -455,8 +455,8 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*orderedutil.Map[str
 		if ownProfile == "" {
 			ownProfile = slug
 		}
-		local := anyutil.IsTrue(pyGet(val, "local", nil)) || profile == "" || profile == "default" || profile == a.activeProfile
-		timeoutValue := pyGet(val, "timeout", nil)
+		local := anyutil.IsTrue(lookup(val, "local", nil)) || profile == "" || profile == "default" || profile == a.activeProfile
+		timeoutValue := lookup(val, "timeout", nil)
 		if !anyutil.IsTrue(timeoutValue) {
 			timeoutValue = a.replyWait
 		}
@@ -465,9 +465,9 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*orderedutil.Map[str
 			return nil, err
 		}
 		agents.Set(slug, &servedAgent{Slug: slug, Path: "/" + pathSegment, Tenant: tenant, Profile: ownProfile, Local: local,
-			Name:               anyutil.String(anyutil.Or(pyGet(val, "name", nil), "Icebath "+slug)),
-			Description:        anyutil.String(anyutil.Or(pyGet(val, "description", nil), fmt.Sprintf("Icebath profile '%s' exposed over A2A.", ownProfile))),
-			AdvertisedToolsets: slices.Clone(pyIter(anyutil.Or(toolsets, []any{}))),
+			Name:               anyutil.String(anyutil.Or(lookup(val, "name", nil), "Icebath "+slug)),
+			Description:        anyutil.String(anyutil.Or(lookup(val, "description", nil), fmt.Sprintf("Icebath profile %q exposed over A2A.", ownProfile))),
+			AdvertisedToolsets: slices.Clone(elementsOf(anyutil.Or(toolsets, []any{}))),
 			Timeout:            int(timeout)})
 	}
 	return agents, nil
@@ -587,7 +587,7 @@ func (a *A2AAdapter) advertisedSkills(ctx context.Context, agent *servedAgent) [
 	}
 	mapping := map[string][]string{}
 	for _, n := range registeredToolsetNames(ctx) {
-		if len(configured) == 0 || pyIn(n, configured) {
+		if len(configured) == 0 || holds(n, configured) {
 			mapping[n] = toolNamesForToolset(ctx, n)
 		}
 	}
@@ -847,12 +847,12 @@ func (a *A2AAdapter) forwardToProfileImpl(agent *servedAgent, peer, contextID, f
 		return redactOutbound(fmt.Sprintf("Profile dispatch unverified: %s", err.Error())), StateFailed
 	}
 	result := anyutil.Or(receipt["result"], map[string]any{})
-	completed := receipt["outcome"] == "completed" && !anyutil.IsTrue(pyGet(result, "failed", nil))
+	completed := receipt["outcome"] == "completed" && !anyutil.IsTrue(lookup(result, "failed", nil))
 	state := StateFailed
 	if completed {
 		state = StateCompleted
 	}
-	return redactOutbound(anyutil.String(anyutil.Or(pyGet(result, "final_response", nil), ""))), state
+	return redactOutbound(anyutil.String(anyutil.Or(lookup(result, "final_response", nil), ""))), state
 }
 
 // Persists, audits and counts a finished task, marks it terminal and fires its push callback
@@ -969,8 +969,8 @@ func (a *A2AAdapter) rpcMessageStream(q *a2aRequest, reqID any, params *jsonutil
 		terminal, p := a.prepareTask(params, peer, agent)
 		pending = p
 		if terminal != nil {
-			status := pyGet(terminal, "status", jsonutil.NewObject())
-			message, ok := anyutil.Or(pyGet(status, "message", jsonutil.NewObject()), jsonutil.NewObject()).(*jsonutil.Object)
+			status := lookup(terminal, "status", jsonutil.NewObject())
+			message, ok := anyutil.Or(lookup(status, "message", jsonutil.NewObject()), jsonutil.NewObject()).(*jsonutil.Object)
 			if !ok {
 				message = jsonutil.NewObject()
 			}
@@ -1050,7 +1050,7 @@ func (a *A2AAdapter) rpcTasksList(reqID any, params *jsonutil.Object, agent *ser
 	if err != nil {
 		panic(err)
 	}
-	includeArtifacts := anyutil.IsTrue(pyGet(params, "includeArtifacts", false))
+	includeArtifacts := anyutil.IsTrue(lookup(params, "includeArtifacts", false))
 	tasks := make([]any, 0, len(recs))
 	for _, r := range recs {
 		tasks = append(tasks, ToTask(r, includeArtifacts))
@@ -1083,12 +1083,12 @@ func (a *A2AAdapter) rpcTasksCancel(reqID any, params *jsonutil.Object, agent *s
 
 // Stores the push callback a v1.0 message carries in configuration.taskPushNotificationConfig
 func (a *A2AAdapter) registerInlinePush(taskID string, params *jsonutil.Object, agent *servedAgent) {
-	cfg := anyutil.Or(pyGet(anyutil.Or(getOr(params, "configuration"), map[string]any{}), "taskPushNotificationConfig", nil), map[string]any{})
+	cfg := anyutil.Or(lookup(anyutil.Or(getOr(params, "configuration"), map[string]any{}), "taskPushNotificationConfig", nil), map[string]any{})
 	var url any = ""
 	if isMapping(cfg) {
-		url = anyutil.Or(pyGet(cfg, "url", nil), "")
+		url = anyutil.Or(lookup(cfg, "url", nil), "")
 		if !anyutil.IsTrue(url) {
-			url = anyutil.Or(pyGet(anyutil.Or(pyGet(cfg, "pushNotificationConfig", nil), map[string]any{}), "url", nil), "")
+			url = anyutil.Or(lookup(anyutil.Or(lookup(cfg, "pushNotificationConfig", nil), map[string]any{}), "url", nil), "")
 		}
 	}
 	if anyutil.IsTrue(url) {
@@ -1100,7 +1100,7 @@ func (a *A2AAdapter) registerInlinePush(taskID string, params *jsonutil.Object, 
 func (a *A2AAdapter) rpcPushConfigCreate(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
 	taskID := anyutil.String(anyutil.Or(getOr(params, "taskId"), ""))
 	cfg := anyutil.Or(anyutil.Or(getOr(params, "pushNotificationConfig"), getOr(params, "config")), map[string]any{})
-	url := anyutil.String(anyutil.Or(pyGet(cfg, "url", nil), ""))
+	url := anyutil.String(anyutil.Or(lookup(cfg, "url", nil), ""))
 	if taskID == "" || url == "" {
 		return JsonrpcError(reqID, ErrInvalidParams, "taskId and pushNotificationConfig.url required")
 	}

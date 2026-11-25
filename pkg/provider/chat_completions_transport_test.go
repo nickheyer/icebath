@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -138,7 +139,7 @@ func TestE2EWiringNvidiaToolMessagesDropNameFields(t *testing.T) {
 		{"role": "tool", "name": "terminal", "tool_name": "terminal", "tool_call_id": "call_1", "content": "ok"},
 	}
 	fn := func(x any) map[string]any {
-		if pyTruthy(x) {
+		if anyutil.IsTrue(x) {
 			return map[string]any{"max_tokens": x}
 		}
 		return map[string]any{}
@@ -160,7 +161,7 @@ func TestE2EWiringNvidiaToolMessagesDropNameFields(t *testing.T) {
 func TestE2EWiringDeepSeekNoForcedMaxTokens(t *testing.T) {
 	p := bundledPluginProfile(t, "deepseek")
 	fn := func(x any) map[string]any {
-		if pyTruthy(x) {
+		if anyutil.IsTrue(x) {
 			return map[string]any{"max_tokens": x}
 		}
 		return map[string]any{}

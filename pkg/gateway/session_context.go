@@ -46,8 +46,8 @@ type SessionContext struct {
 	SharedMultiUserSession bool
 	SessionKey             string
 	SessionID              string
-	CreatedAt              *pyDatetime
-	UpdatedAt              *pyDatetime
+	CreatedAt              *datetime
+	UpdatedAt              *datetime
 }
 
 // Wire dict of the context with platform values, home channel dicts and isoformat times

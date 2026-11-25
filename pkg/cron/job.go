@@ -483,7 +483,7 @@ func (j *Job) MarshalJSON() ([]byte, error) {
 	return encodeOrdered(ordered)
 }
 
-// Text view of a JSON scalar the way Python str() renders it, false for objects and null
+// Text view of a JSON scalar, false for objects and null
 func decodeText(raw json.RawMessage) (string, bool) {
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
@@ -500,17 +500,12 @@ func scalarText(v any) (string, bool) {
 	case string:
 		return t, true
 	case bool:
-		if t {
-			return "True", true
-		}
-		return "False", true
+		return strconv.FormatBool(t), true
 	case float64:
 		if t == math.Trunc(t) && math.Abs(t) < 1e15 {
 			return strconv.FormatInt(int64(t), 10), true
 		}
 		return strconv.FormatFloat(t, 'g', -1, 64), true
-	case json.Number:
-		return t.String(), true
 	}
 	return "", false
 }
@@ -1057,25 +1052,16 @@ func orderPairs(pairs []kvPair, order []string) []kvPair {
 	return out
 }
 
-// Encodes the dispatch stamp in Python key order with lateness as a Python float
+// Encodes the dispatch stamp in its stored key order with lateness written as a float
 func (d Dispatch) MarshalJSON() ([]byte, error) {
+	lateness, err := jsonutil.Encode(d.LatenessSeconds)
+	if err != nil {
+		return nil, err
+	}
 	return encodeOrdered([]kvPair{
 		{"scheduled_at", d.ScheduledAt},
 		{"dispatched_at", d.DispatchedAt},
-		{"lateness_seconds", json.RawMessage(pyFloatJSON(d.LatenessSeconds))},
+		{"lateness_seconds", json.RawMessage(lateness)},
 		{"kind", d.Kind},
 	})
-}
-
-// Float as Python json.dumps writes it, Infinity and NaN spelled the way json accepts them back
-func pyFloatJSON(f float64) string {
-	switch {
-	case math.IsNaN(f):
-		return "NaN"
-	case math.IsInf(f, 1):
-		return "Infinity"
-	case math.IsInf(f, -1):
-		return "-Infinity"
-	}
-	return strconv.FormatFloat(f, 'f', -1, 64)
 }

@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -80,7 +81,7 @@ func stampCompressionAncestors(ctx context.Context, conn SQLiteConn, sessionID s
 	}
 	current, parentID := any(sessionID), rowValue(row, "parent_session_id")
 	for range chainCap {
-		if !pyTruthy(parentID) {
+		if !anyutil.IsTrue(parentID) {
 			return nil
 		}
 		parents, err := queryObjects(ctx, conn, createdRowSQL, parentID)
@@ -122,7 +123,7 @@ func (d *SessionDB) isCompressionChildRow(ctx context.Context, child *jsonutil.O
 	if err != nil || parent == nil {
 		return false, err
 	}
-	return pyEquals(rowValue(parent, "end_reason"), "compression"), nil
+	return equals(rowValue(parent, "end_reason"), "compression"), nil
 }
 
 // Whether a child row is a genuine compression continuation, for callers outside this package

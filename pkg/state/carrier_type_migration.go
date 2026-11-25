@@ -12,7 +12,7 @@ const (
 func renameRetiredCarrierType(v any) bool {
 	changed := false
 	switch x := v.(type) {
-	case pyObject:
+	case orderedObject:
 		for i := range x {
 			if x[i].Key == "type" && x[i].Value == retiredNativeCarrierType {
 				x[i].Value = nativeCarrierType
@@ -49,11 +49,11 @@ func renameStoredCarrierTypes(ctx context.Context, conn SQLiteConn) error {
 		default:
 			continue
 		}
-		v, err := pyLoads(text)
+		v, err := loadsValue(text)
 		if err != nil || !renameRetiredCarrierType(v) {
 			continue
 		}
-		dumped, err := pyDumps(v, pyJSONDefault)
+		dumped, err := dumpsValue(v, jsonDefault)
 		if err != nil {
 			return err
 		}

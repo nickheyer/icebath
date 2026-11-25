@@ -227,9 +227,14 @@ func CoerceToolArgs(ctx context.Context, r *Registry, env *Env, toolName string,
 	return coerceToolArgsWith(ctx, r, env, toolName, args, wtf8CoerceDecoder)
 }
 
-// Coerces args holding Python values, decoded JSON strings kept as Python ints, floats and ordered dicts
+// Coerces args holding typed values, JSON strings decoded into ordered objects with integers of any size exact and floats kept floats
 func coercePythonToolArgs(ctx context.Context, r *Registry, env *Env, toolName string, args map[string]any) map[string]any {
-	return coerceToolArgsWith(ctx, r, env, toolName, args, jsonutil.Decode)
+	return coerceToolArgsWith(ctx, r, env, toolName, args, exactCoerceDecoder)
+}
+
+// Decodes into ordered objects, integers as int64 or *big.Int and other numbers as float64
+func exactCoerceDecoder(text string) (any, error) {
+	return jsonutil.DecodeWith(text, jsonutil.BigInts())
 }
 
 // Coercion loop of coerce_tool_args parsing JSON strings with the given reader

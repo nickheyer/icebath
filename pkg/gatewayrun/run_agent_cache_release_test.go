@@ -349,7 +349,7 @@ func TestATUIClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *testing.
 	leaseGW := endGatewayTurn(t, r, key, src)
 	leaseView, refusal := tuihost.ClaimActiveSessionSlotRefusal(context.Background(), key, "tui-view", "tui", tmp)
 	if refusal != nil {
-		t.Fatalf("the TUI saw the ended gateway turn as the session's owner: %s", refusal.PyStr())
+		t.Fatalf("the TUI saw the ended gateway turn as the session's owner: %s", refusal.Message)
 	}
 	drainLeaseWorker(t, leaseGW, stuck)
 	entries, err := activesessions.RegistrySnapshot(context.Background(), tmp, true)

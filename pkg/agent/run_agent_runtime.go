@@ -2,13 +2,13 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -138,7 +138,7 @@ func (a *AIAgent) disableCodexReasoningReplay(messages []map[string]any, keepRep
 	return map[string]int{"messages": strippedMessages, "items": strippedItems}
 }
 
-// Surfaces a compact warning naming the failed auxiliary task and the summarized error
+// Surfaces a compact warning naming the failed auxiliary task and the summarized error, saying no details were given when its text is empty
 func (a *AIAgent) emitAuxiliaryFailure(task string, err error) {
 	detail := func() (d string) {
 		defer func() {
@@ -148,13 +148,10 @@ func (a *AIAgent) emitAuxiliaryFailure(task string, err error) {
 		}()
 		return a.summarizeAPIError(err)
 	}()
-	if detail == "" {
-		detail = fmt.Sprintf("%T", err)
-		if i := strings.LastIndex(detail, "."); i >= 0 {
-			detail = detail[i+1:]
-		}
-	}
 	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		detail = "no details given"
+	}
 	if utf8.RuneCountInString(detail) > 220 {
 		detail = strings.TrimRight(string([]rune(detail)[:217]), " \t\n\r\v\f") + "..."
 	}
@@ -324,7 +321,7 @@ func (a *AIAgent) codexSilentHangHint(model *string) string {
 	if !codexSilentHangModelRE.MatchString(strings.ToLower(eff)) {
 		return ""
 	}
-	return "Codex backend appears to be silently rejecting " + pyStrRepr(eff) + " " +
+	return "Codex backend appears to be silently rejecting " + strconv.Quote(eff) + " " +
 		"on chatgpt.com/backend-api/codex (no stream events, no error). " +
 		"This is a known backend-side pattern that has affected ChatGPT " +
 		"Plus accounts intermittently. " +
@@ -332,37 +329,6 @@ func (a *AIAgent) codexSilentHangHint(model *string) string {
 		"or switch to a different model/provider in your fallback chain. " +
 		"Some ChatGPT Codex accounts do not support `gpt-5.4-codex`. " +
 		"See icebath-agent#21444 for symptom history."
-}
-
-// Python repr of a str, single quoted unless the text holds a single quote and no double quote
-func pyStrRepr(s string) string {
-	q := byte('\'')
-	if strings.Contains(s, "'") && !strings.Contains(s, "\"") {
-		q = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(q)
-	for _, r := range s {
-		switch {
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == rune(q):
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(q)
-	return b.String()
 }
 
 // True when the base URL targets OpenRouter
@@ -431,7 +397,7 @@ func (a *AIAgent) requestedOutputCapFromAPIKwargs(apiKwargs map[string]any) int 
 		return 0
 	}
 	for _, key := range []string{"max_output_tokens", "max_completion_tokens", "max_tokens"} {
-		if v, ok := pyIntCoerce(apiKwargs[key]); ok && v > 0 {
+		if v, ok := intCoerce(apiKwargs[key]); ok && v > 0 {
 			return v
 		}
 	}
@@ -439,7 +405,7 @@ func (a *AIAgent) requestedOutputCapFromAPIKwargs(apiKwargs map[string]any) int 
 }
 
 // Python int() over an int, a bool, a float or a decimal string, false where int() raises
-func pyIntCoerce(v any) (int, bool) {
+func intCoerce(v any) (int, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -478,21 +444,12 @@ func (a *AIAgent) HasContentAfterThinkBlock(content string) bool {
 
 // Heuristic for visible assistant text that looks intentionally finished
 func hasNaturalResponseEnding(content string) bool {
-	stripped := strings.TrimRightFunc(content, pyIsSpace)
+	stripped := strings.TrimRightFunc(content, unicode.IsSpace)
 	if stripped == "" {
 		return false
 	}
 	last, _ := utf8.DecodeLastRuneInString(stripped)
 	return strings.HasSuffix(stripped, "```") || strings.ContainsRune(".!?:)\"']}。！？：）】」』》^", last) || last >= 0x1F300
-}
-
-// Python str.isspace for one rune
-func pyIsSpace(r rune) bool {
-	switch r {
-	case ' ', '\t', '\n', '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x1f, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000:
-		return true
-	}
-	return r >= 0x2000 && r <= 0x200a
 }
 
 // True for Ollama hosted GLM models that misreport finish_reason stop, Ollama Cloud excluded
@@ -531,8 +488,8 @@ func (a *AIAgent) shouldTreatStopAsTruncated(finishReason string, assistantMessa
 	if !ok {
 		return false
 	}
-	visible := strings.TrimFunc(a.stripThinkBlocks(content), pyIsSpace)
-	if utf8.RuneCountInString(visible) < 20 || strings.IndexFunc(visible, pyIsSpace) < 0 {
+	visible := strings.TrimFunc(a.stripThinkBlocks(content), unicode.IsSpace)
+	if utf8.RuneCountInString(visible) < 20 || strings.IndexFunc(visible, unicode.IsSpace) < 0 {
 		return false
 	}
 	return !hasNaturalResponseEnding(visible)

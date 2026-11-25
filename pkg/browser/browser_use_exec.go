@@ -404,7 +404,7 @@ func clampTimeout(timeoutS any) int {
 			return execDefaultTimeoutS
 		}
 		if math.IsInf(x, 0) {
-			panic(pyError("OverflowError", "cannot convert float infinity to integer"))
+			panic(kindError("OverflowError", "cannot convert float infinity to integer"))
 		}
 		n = int64(min(max(x, float64(execMinTimeoutS)), execMaxTimeoutS))
 	case string:

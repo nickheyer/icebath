@@ -4,7 +4,7 @@ import "golang.org/x/sys/unix"
 
 // Holder lines from /proc/locks for the database, its WAL and its shared memory file
 func writeLockHolders(dbPath string) ([]string, error) {
-	base, err := pyRealpath(dbPath)
+	base, err := realpath(dbPath)
 	if err != nil {
 		return nil, err
 	}

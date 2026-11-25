@@ -91,8 +91,16 @@ func TestMaterializeDataURLForVision(t *testing.T) {
 	if string(data) != "hello" || path[len(path)-4:] != ".png" {
 		t.Fatalf("payload %q at %s", data, path)
 	}
-	if _, err := materializeDataURLForVision("data:image/png;base64,aGVsbG8"); err == nil || err.Error() != "Incorrect padding" {
-		t.Fatalf("bad padding %v", err)
+	unpadded, err := materializeDataURLForVision("data:image/png;base64,aGVsbG8")
+	if err != nil || unpadded == "" {
+		t.Fatalf("unpadded %q %v", unpadded, err)
+	}
+	defer os.Remove(unpadded)
+	if data, _ := os.ReadFile(unpadded); string(data) != "hello" {
+		t.Fatalf("unpadded payload %q", data)
+	}
+	if _, err := materializeDataURLForVision("data:image/png;base64,aGVsbG8*"); err == nil || err.Error() != "the image data URL payload is not valid base64: illegal base64 data at input byte 7" {
+		t.Fatalf("corrupt payload %v", err)
 	}
 	p2, err := materializeDataURLForVision("data:text/plain;base64,")
 	if err != nil || p2[len(p2)-4:] != ".jpg" {

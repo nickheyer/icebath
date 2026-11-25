@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -292,7 +293,7 @@ func (a *APIServerAdapter) resolveLiveSessionID(ctx context.Context, sessionID s
 func (a *APIServerAdapter) runInternalSessionTurn(ctx context.Context, sessionID, text, profile, notificationCategory string) error {
 	profile = strings.TrimSpace(profile)
 	if profile == "" {
-		return &gateway.PyError{Kind: "ValueError", Msg: "run_internal_session_turn requires the owning profile"}
+		return &errorutil.Error{Kind: "ValueError", Msg: "run_internal_session_turn requires the owning profile"}
 	}
 	if notificationCategory == "" {
 		notificationCategory = "result"
@@ -369,7 +370,7 @@ func runUserMessage(rawInput any) (any, *gateway.WebResponse) {
 	case []any:
 		last, _ := v[len(v)-1].(*jsonutil.Object)
 		if last == nil {
-			panic(&gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(v[len(v)-1])})
+			panic(&errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(v[len(v)-1])})
 		}
 		userMessage = last.ValueOr("content", "")
 	}

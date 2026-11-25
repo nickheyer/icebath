@@ -132,20 +132,15 @@ func StripIcebathOwnedPythonpath(child map[string]string) error {
 	return stripIcebathOwnedPythonpath(child)
 }
 
-// Reports whether two path spellings name the same components under host filesystem case rules
+// Reports whether two path spellings name the same anchor and components under host filesystem case rules
 func SamePath(left, right string) bool {
-	return samePathParts(left, right, pathutil.FoldCase)
-}
-
-// Compares pathlib parts of both spellings after the given normcase
-func samePathParts(left, right string, normcase func(string) string) bool {
 	la, lp := pathutil.Parts(left)
 	ra, rp := pathutil.Parts(right)
-	if normcase(la) != normcase(ra) || len(lp) != len(rp) {
+	if pathutil.FoldCase(la) != pathutil.FoldCase(ra) || len(lp) != len(rp) {
 		return false
 	}
 	for i := range lp {
-		if normcase(lp[i]) != normcase(rp[i]) {
+		if pathutil.FoldCase(lp[i]) != pathutil.FoldCase(rp[i]) {
 			return false
 		}
 	}
@@ -255,13 +250,10 @@ func buildIcebathRepoRootAliases(resolvedRoot, lexicalRoot, configuredHome strin
 	return aliases
 }
 
-// Components of path below base when the normcased commonpath of both is base itself
+// Components of path below base when base's anchor and components lead path's under host filesystem case rules
 func pathPartsBelow(path, base string) ([]string, bool) {
 	pa, pp := pathutil.Parts(path)
 	ba, bp := pathutil.Parts(base)
-	if runtime.GOOS != "windows" {
-		pa, ba = posixCommonpathAnchor(pa), posixCommonpathAnchor(ba)
-	}
 	if pathutil.FoldCase(pa) != pathutil.FoldCase(ba) || len(pp) < len(bp) {
 		return nil, false
 	}
@@ -271,14 +263,6 @@ func pathPartsBelow(path, base string) ([]string, bool) {
 		}
 	}
 	return pp[len(bp):], true
-}
-
-// Leading double slash collapses to one slash the way posixpath commonpath prefixes absolute paths
-func posixCommonpathAnchor(anchor string) string {
-	if anchor == "//" {
-		return "/"
-	}
-	return anchor
 }
 
 // Regular file test that follows links and reads every failure as absent

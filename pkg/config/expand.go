@@ -41,9 +41,9 @@ func ExpandString(s string, lookup Lookup) string {
 		name := envRefName(inner)
 		if name == "" {
 			if !strings.HasPrefix(inner, "env:") && isNonEnvSecretRef(inner) {
-				pkgLog().Warn(fmt.Sprintf("Config ref %s uses source %s which is not resolvable in config.yaml — external secret sources "+
+				pkgLog().Warn(fmt.Sprintf("Config ref %q uses source %q which is not resolvable in config.yaml — external secret sources "+
 					"inject env vars at startup, so reference the variable as ${env:NAME} instead",
-					PyRepr(raw), PyRepr(strings.SplitN(inner, ":", 2)[0])))
+					raw, strings.SplitN(inner, ":", 2)[0]))
 			}
 			return raw
 		}
@@ -51,7 +51,7 @@ func ExpandString(s string, lookup Lookup) string {
 			return v
 		}
 		if strings.HasPrefix(inner, "env:") {
-			pkgLog().Warn(fmt.Sprintf("Config ref %s: %s is not set (check ~/.icebath/.env); keeping the literal placeholder", PyRepr(raw), name))
+			pkgLog().Warn(fmt.Sprintf("Config ref %q: %s is not set (check ~/.icebath/.env); keeping the literal placeholder", raw, name))
 		}
 		return raw
 	})

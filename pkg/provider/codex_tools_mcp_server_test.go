@@ -192,8 +192,8 @@ func TestCodexToolsServerProtocol(t *testing.T) {
 	bad := replies[3].(map[string]any)["result"].(map[string]any)
 	badText := bad["content"].([]any)[0].(map[string]any)["text"].(string)
 	if bad["isError"] != true || badText != "Error executing tool web_search: 2 validation errors for web_searchArguments\n"+
-		"max_results\n  Input should be a valid integer, got a number with a fractional part [type=int_from_float, input_value=2.5, input_type=float]\n    For further information visit https://errors.pydantic.dev/2.14/v/int_from_float\n"+
-		"query\n  Field required [type=missing, input_value={'max_results': 2.5}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.14/v/missing" {
+		"max_results\n  Input should be a valid integer, got a number with a fractional part [type=int_from_float, input_value=2.5, input_type=number]\n"+
+		"query\n  Field required [type=missing, input_value={\"max_results\":2.5}, input_type=object]" {
 		t.Fatalf("validation %q", badText)
 	}
 	raised := replies[4].(map[string]any)["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"]

@@ -68,7 +68,7 @@ func rowGet(row *jsonutil.Object, key string) any {
 
 func routedRow(row *jsonutil.Object) bool {
 	for _, key := range []string{"session_key", "chat_id", "origin_json"} {
-		if pyTruthy(rowGet(row, key)) {
+		if anyutil.IsTrue(rowGet(row, key)) {
 			return true
 		}
 	}
@@ -134,7 +134,7 @@ func clearRetiredAccountLabels(ctx context.Context, conn SQLiteConn) error {
 // Whether the subject owns the login stamp a legacy row carries
 func LoginOwnedBy(row *jsonutil.Object, subject any) bool {
 	userID, ok := rowGet(row, "user_id").(string)
-	if !ok || !pyTruthy(subject) {
+	if !ok || !anyutil.IsTrue(subject) {
 		return false
 	}
 	return sameOwner(userID, subject)
@@ -145,7 +145,7 @@ func (d *SessionDB) ValidateLegacyRow(row *jsonutil.Object, subject any) error {
 	if !LegacyHistoryRow(row) || routedRow(row) {
 		return runtimeRefusal("not_found")
 	}
-	if userID := rowGet(row, "user_id"); pyTruthy(userID) {
+	if userID := rowGet(row, "user_id"); anyutil.IsTrue(userID) {
 		label, err := LegacyAccountLabel(row)
 		if err != nil {
 			return err

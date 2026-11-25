@@ -76,14 +76,14 @@ type stagedEntry struct {
 var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 	parsed, err := url.Parse(source)
 	if err != nil {
-		return &pm.PyError{Class: "ValueError", Message: "unknown url type: " + errchain.Show(source)}
+		return &pm.ClassError{Class: "ValueError", Message: "unknown url type: " + errchain.Show(source)}
 	}
 	switch parsed.Scheme {
 	case "file":
 		return retrieveLocalFile(parsed, path)
 	case "http", "https":
 	default:
-		return &pm.PyError{Class: "URLError", Message: "unknown URL type " + parsed.Scheme}
+		return &pm.ClassError{Class: "URLError", Message: "unknown URL type " + parsed.Scheme}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
@@ -93,12 +93,12 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 	client := &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: func(r *http.Request) (*url.URL, error) { return proxy(r.URL) }}}
 	resp, err := client.Do(req)
 	if err != nil {
-		return &pm.PyError{Class: "URLError", Message: "download failed: " + err.Error()}
+		return &pm.ClassError{Class: "URLError", Message: "download failed: " + err.Error()}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		reason := strings.TrimSpace(strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)))
-		return &pm.PyError{Class: "HTTPError", Message: fmt.Sprintf("HTTP Error %d: %s", resp.StatusCode, reason)}
+		return &pm.ClassError{Class: "HTTPError", Message: fmt.Sprintf("HTTP Error %d: %s", resp.StatusCode, reason)}
 	}
 	out, err := os.Create(path)
 	if err != nil {
@@ -112,7 +112,7 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 		return err
 	}
 	if resp.ContentLength >= 0 && read < resp.ContentLength {
-		return &pm.PyError{Class: "ContentTooShortError", Message: fmt.Sprintf("download incomplete: got only %d out of %d bytes", read, resp.ContentLength)}
+		return &pm.ClassError{Class: "ContentTooShortError", Message: fmt.Sprintf("download incomplete: got only %d out of %d bytes", read, resp.ContentLength)}
 	}
 	return nil
 }
@@ -120,7 +120,7 @@ var zipURLRetrieve = func(ctx context.Context, source, path string) error {
 // Copies the local file a file URL names to path, an error for a missing or remote one
 func retrieveLocalFile(source *url.URL, path string) error {
 	if source.Host != "" && source.Host != "localhost" {
-		return &pm.PyError{Class: "URLError", Message: "file URLs are supported only on localhost"}
+		return &pm.ClassError{Class: "URLError", Message: "file URLs are supported only on localhost"}
 	}
 	local := source.Path
 	if custodyWindows() {
@@ -128,7 +128,7 @@ func retrieveLocalFile(source *url.URL, path string) error {
 	}
 	in, err := os.Open(local)
 	if err != nil {
-		return &pm.PyError{Class: "URLError", Message: "could not read the file: " + launchErrorText(err)}
+		return &pm.ClassError{Class: "URLError", Message: "could not read the file: " + launchErrorText(err)}
 	}
 	defer in.Close()
 	out, err := os.Create(path)
@@ -189,7 +189,7 @@ func stageReplacement(w io.Writer, src, dst string, onCreated func(staging strin
 			}
 		}
 		if ZipEntryIdentity(staging, false) != made {
-			return &pm.PyError{Class: "OSError", Message: "the staging entry " + staging + " was replaced while it was being created"}
+			return &pm.ClassError{Class: "OSError", Message: "the staging entry " + staging + " was replaced while it was being created"}
 		}
 		if srcIsDir {
 			return zipCopyTree(src, staging, false, true)
@@ -299,7 +299,7 @@ func commitStagedReplacements(staged []stagedEntry, onCommitted func() error, ta
 		for _, entry := range staged {
 			backup := entry.dst + zipOldSuffix
 			if lexists(backup) {
-				return &pm.PyError{Class: "FileExistsError", Message: backup + " appeared during the update; it was left in place"}
+				return &pm.ClassError{Class: "FileExistsError", Message: backup + " appeared during the update; it was left in place"}
 			}
 			if isRegularNoFollow(entry.dst) {
 				if err := fileBackup(entry.dst, backup, tag, onTemp); err != nil {
@@ -513,10 +513,10 @@ func extractZipSafely(zipPath, tmpDir string) error {
 			return err
 		}
 		if !strings.HasPrefix(memberPath, tmpDirReal+string(os.PathSeparator)) && memberPath != tmpDirReal {
-			return &pm.PyError{Class: "ValueError", Message: "Zip-slip detected: " + member.Name + " escapes extraction directory"}
+			return &pm.ClassError{Class: "ValueError", Message: "Zip-slip detected: " + member.Name + " escapes extraction directory"}
 		}
 		if (member.ExternalAttrs>>16)&0o170000 == 0o120000 {
-			return &pm.PyError{Class: "ValueError", Message: "ZIP contains unsupported symlink member: " + member.Name}
+			return &pm.ClassError{Class: "ValueError", Message: "ZIP contains unsupported symlink member: " + member.Name}
 		}
 	}
 	return archive.Extract(tmpDir)
@@ -622,7 +622,7 @@ func requireStagingSpace(extracted string, entries []string, projectRoot string)
 		return err
 	}
 	if free < uint64(required) {
-		return &pm.PyError{Class: "RuntimeError", Message: fmt.Sprintf(
+		return &pm.ClassError{Class: "RuntimeError", Message: fmt.Sprintf(
 			"not enough free disk space to stage the update safely (need ~%d MB, have %d MB)", required/(1024*1024), free/(1024*1024))}
 	}
 	return nil
@@ -707,7 +707,7 @@ func dropJournalIfClean(w io.Writer, root string, entries []string, suffixes ...
 func journaledStageAndSwap(ctx context.Context, w io.Writer, extracted string, entries []string, root, targetSHA string) ([]stagedEntry, error) {
 	RestoreInterruptedZipSwap(root, nil)
 	if statExists(filepath.Join(root, ZipSwapJournal)) {
-		return nil, &pm.PyError{Class: "RuntimeError", Message: "an interrupted ZIP update could not be settled; see the warning above"}
+		return nil, &pm.ClassError{Class: "RuntimeError", Message: "an interrupted ZIP update could not be settled; see the warning above"}
 	}
 	owned, release := zipSwapOwnerLock(root, 10*time.Second)
 	if release != nil {
@@ -715,9 +715,9 @@ func journaledStageAndSwap(ctx context.Context, w io.Writer, extracted string, e
 	}
 	if !owned.Owned {
 		if owned.Reason == "busy" {
-			return nil, &pm.PyError{Class: "RuntimeError", Message: "another `icebath update` is swapping this install right now"}
+			return nil, &pm.ClassError{Class: "RuntimeError", Message: "another `icebath update` is swapping this install right now"}
 		}
-		return nil, &pm.PyError{Class: "RuntimeError", Message: "no ZIP swap lock, no swap (" + owned.Reason + ")"}
+		return nil, &pm.ClassError{Class: "RuntimeError", Message: "no ZIP swap lock, no swap (" + owned.Reason + ")"}
 	}
 	records := make([][]any, len(entries))
 	journalEntries := make([]any, len(entries))
@@ -767,7 +767,7 @@ func journaledStageAndSwap(ctx context.Context, w io.Writer, extracted string, e
 		return nil, err
 	}
 	if broken != nil {
-		return nil, &pm.PyError{Class: "SyntaxError", Message: broken.Path + ": " + broken.Error}
+		return nil, &pm.ClassError{Class: "SyntaxError", Message: broken.Path + ": " + broken.Error}
 	}
 	if err := armCommitObligations(ctx, root, targetSHA); err != nil {
 		return nil, err
@@ -839,7 +839,7 @@ func downloadAndSwapZip(ctx context.Context, w io.Writer, branch, zipURL, target
 			if targetSHA != "" {
 				wanted = targetSHA
 			}
-			return "", 0, &pm.PyError{Class: "ValueError", Message: "the archive names commit " + found + ", not " + wanted + "; refusing to install unidentified bytes"}
+			return "", 0, &pm.ClassError{Class: "ValueError", Message: "the archive names commit " + found + ", not " + wanted + "; refusing to install unidentified bytes"}
 		}
 		extracted, err := extractedRoot(tmpDir, branch)
 		if err != nil {
@@ -899,7 +899,7 @@ func updateViaZip(ctx context.Context, w io.Writer, args map[string]any, targetS
 		return false, pm.StopForRelaunchIncomplete(ctx)
 	}
 	if targetSHA != "" && !fullCommitRE.MatchString(targetSHA) {
-		return false, &pm.PyError{Class: "ValueError", Message: "ZIP update requires an exact full commit SHA"}
+		return false, &pm.ClassError{Class: "ValueError", Message: "ZIP update requires an exact full commit SHA"}
 	}
 	ref := "refs/heads/" + branch
 	if targetSHA != "" {
@@ -911,7 +911,7 @@ func updateViaZip(ctx context.Context, w io.Writer, args map[string]any, targetS
 	}
 	owner, name, _ := strings.Cut(repository, "/")
 	if !zipRepositoryRE.MatchString(repository) || owner == "." || owner == ".." || name == "." || name == ".." {
-		return false, &pm.PyError{Class: "ValueError", Message: "ZIP update requires a GitHub owner/repository"}
+		return false, &pm.ClassError{Class: "ValueError", Message: "ZIP update requires a GitHub owner/repository"}
 	}
 	installed, err := downloadAndSwapZip(ctx, w, branch, "https://github.com/"+repository+"/archive/"+ref+".zip", targetSHA)
 	if err != nil {

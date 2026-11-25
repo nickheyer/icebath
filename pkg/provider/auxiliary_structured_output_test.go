@@ -187,8 +187,8 @@ func TestTransportAndAuxiliaryShareOneRejectionMemo(t *testing.T) {
 		t.Fatal("json_object stays on deepseek")
 	}
 	bad := Route{Provider: "custom", BaseURL: "http://[::1/v1", Model: "m", Mode: ModeChatCompletions}
-	if _, err := auxTransportResponseFormat(t, ctx, bad, "m", auxJSONSchemaFormat()); err == nil || err.Error() != "Invalid IPv6 URL" {
-		t.Fatalf("an unparseable base URL raises as urlparse does, got %v", err)
+	if _, err := auxTransportResponseFormat(t, ctx, bad, "m", auxJSONSchemaFormat()); err == nil || err.Error() != `invalid host: unbalanced or misplaced brackets in "[::1"` {
+		t.Fatalf("an unparseable base URL is refused with the reason, got %v", err)
 	}
 }
 

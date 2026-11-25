@@ -61,7 +61,7 @@ const assumedStripWidth = 1536
 func spacingSpec(frameCount int) (int, int) {
 	slots := max(1, frameCount)
 	slotW := float64(assumedStripWidth) / float64(slots)
-	return pyRound(slotW * 0.7), max(48, pyRound(slotW*0.3))
+	return roundHalfEven(slotW * 0.7), max(48, roundHalfEven(slotW*0.3))
 }
 
 // Per draft nudges varying the look but not the pose

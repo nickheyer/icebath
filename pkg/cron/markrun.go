@@ -103,10 +103,13 @@ func (s *Store) advanceAfterRun(job *Job, now string, ladderRung bool) error {
 	case kind == "cron" || kind == "interval":
 		job.State = "error"
 		if deref(job.LastError) == "" {
-			job.LastError = strPtr("Failed to compute next run for recurring schedule (is the 'croniter' package " +
-				"installed in the gateway's Python env?)")
+			missing := "cron expression"
+			if kind == "interval" {
+				missing = "interval in minutes"
+			}
+			job.LastError = strPtr("Failed to compute next run for recurring schedule: the " + kind + " schedule has no " + missing)
 		}
-		s.log.Error(fmt.Sprintf("Job '%s' (%s) could not compute next_run_at; leaving enabled and marking "+
+		s.log.Error(fmt.Sprintf("Job %q (%s) could not compute next_run_at; leaving enabled and marking "+
 			"state=error so the job is not silently disabled.", job.Label(), kind))
 	default:
 		completeJobRecord(job)
@@ -186,7 +189,7 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 				if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 					return false, err
 				}
-				s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — marking completed", label, completed, times))
+				s.log.Info(fmt.Sprintf("Job %q: dispatch limit reached (%d/%d) — marking completed", label, completed, times))
 				return false, nil
 			}
 			kept := append(append([]*Job{}, jobs[:i]...), jobs[i+1:]...)
@@ -194,7 +197,7 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 				return false, err
 			}
 			writeWedged(home.WithOverride(ctx, s.home), s, job)
-			s.log.Info(fmt.Sprintf("Job '%s': dispatch limit reached (%d/%d) — removing", label, completed, times))
+			s.log.Info(fmt.Sprintf("Job %q: dispatch limit reached (%d/%d) — removing", label, completed, times))
 			return false, nil
 		}
 		repeat.Completed = completed + 1
@@ -202,12 +205,12 @@ func (s *Store) claimDispatch(ctx context.Context, jobID string) (bool, error) {
 		if err := s.saveJobsLocked(home.WithOverride(ctx, s.home), tx, jobs, nil, false); err != nil {
 			return false, err
 		}
-		s.log.Debug(fmt.Sprintf("Job '%s': claimed dispatch %d/%d", label, repeat.Completed, times))
+		s.log.Debug(fmt.Sprintf("Job %q: claimed dispatch %d/%d", label, repeat.Completed, times))
 		return true, nil
 	})
 	if err == nil && !found {
 		s.log.Debug(fmt.Sprintf("claim_dispatch: job_id %s not in store — proceeding without claim "+
-			"(handed-in job dict; nothing to persist a claim against)", jobID))
+			"(handed-in job record; nothing to persist a claim against)", jobID))
 		return true, nil
 	}
 	return claimed, err

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -64,7 +65,7 @@ func readPetJSON(directory string) (*jsonutil.Object, error) {
 	}
 	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(decoded))
+		return nil, fmt.Errorf("%s must hold a JSON object, got %s", path, errchain.Kind(decoded))
 	}
 	return obj, nil
 }

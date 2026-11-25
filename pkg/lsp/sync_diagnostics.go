@@ -75,7 +75,7 @@ func syncRequest(ctx context.Context, c *Client, absPath string, timeout time.Du
 }
 
 // Python x - 1 on a decoded JSON number, the TypeError for anything else
-func pyMinusOne(v any) (any, error) {
+func minusOne(v any) (any, error) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -88,7 +88,7 @@ func pyMinusOne(v any) (any, error) {
 		}
 		return t - 1, nil
 	case int:
-		return pyMinusOne(int64(t))
+		return minusOne(int64(t))
 	case json.Number:
 		if n, ok := new(big.Int).SetString(string(t), 10); ok {
 			n.Sub(n, big.NewInt(1))
@@ -100,7 +100,7 @@ func pyMinusOne(v any) (any, error) {
 	case float64:
 		return t - 1, nil
 	}
-	return nil, &pyExc{typ: "TypeError", text: fmt.Sprintf("unsupported operand type(s) for -: '%s' and 'int'", anyutil.Kind(v))}
+	return nil, &failure{typ: "TypeError", text: fmt.Sprintf("unsupported operand type(s) for -: '%s' and 'int'", anyutil.Kind(v))}
 }
 
 // One tsserver diagnostic in the 0 based shape typescript-language-server pushes
@@ -115,11 +115,11 @@ func fromTsserver(item any) (map[string]any, error) {
 		return nil, nil
 	}
 	pos := func(loc map[string]any) (map[string]any, error) {
-		line, err := pyMinusOne(dgetOr(loc, "line", int64(1)))
+		line, err := minusOne(dgetOr(loc, "line", int64(1)))
 		if err != nil {
 			return nil, err
 		}
-		char, err := pyMinusOne(dgetOr(loc, "offset", int64(1)))
+		char, err := minusOne(dgetOr(loc, "offset", int64(1)))
 		if err != nil {
 			return nil, err
 		}
@@ -133,15 +133,15 @@ func fromTsserver(item any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	severity, ok := tsSeverity[anyutil.String(pyOr(m["category"], "error"))]
+	severity, ok := tsSeverity[anyutil.String(anyutil.Or(m["category"], "error"))]
 	if !ok {
 		severity = 1
 	}
 	diag := map[string]any{
 		"range":    map[string]any{"start": s, "end": e},
-		"message":  anyutil.String(pyOr(m["message"], "")),
+		"message":  anyutil.String(anyutil.Or(m["message"], "")),
 		"severity": severity,
-		"source":   pyOr(m["source"], "typescript"),
+		"source":   anyutil.Or(m["source"], "typescript"),
 	}
 	if code, ok := m["code"]; ok && code != nil {
 		diag["code"] = code

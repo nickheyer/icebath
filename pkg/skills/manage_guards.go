@@ -35,15 +35,17 @@ func toolErrorObj(message string) *jsonutil.Object {
 	return resultObj("error", tools.BoundErrorText(message), "success", false)
 }
 
-// Registry error result of a failed call, the kind of the error before its message
+// Registry error result of a failed call: a declared kind before the message, an operating-system error by its reason and path
 func raisedObj(err error) *jsonutil.Object {
-	msg := err.Error()
+	text := err.Error()
 	var labelled interface{ ErrorKind() string }
-	var pe *fs.PathError
-	if !errors.As(err, &labelled) && errors.As(err, &pe) {
-		msg = osErrorText(err)
+	switch {
+	case errors.As(err, &labelled) && labelled.ErrorKind() != "":
+		text = labelled.ErrorKind() + ": " + text
+	case errorutil.IsSystem(err):
+		text = errchain.OSText(err)
 	}
-	return resultObj("error", tools.BoundErrorText(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", errorutil.Kind(err), msg))))
+	return resultObj("error", tools.BoundErrorText(tools.SanitizeToolError("Tool execution failed: "+text)))
 }
 
 // Truthiness of a skill record value

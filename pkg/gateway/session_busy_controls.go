@@ -43,7 +43,7 @@ func paramsOutside(params *jsonutil.Object, allowed ...string) bool {
 func liveSession(a *SessionAuthority, sessionID string) (*LiveSession, error) {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return nil, &pyKeyError{sessionID}
+		return nil, &keyError{sessionID}
 	}
 	return live, nil
 }

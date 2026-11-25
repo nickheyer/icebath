@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const hostedWebSearchBase = "agent.web_search_provider:WebSearchProvider"
@@ -56,16 +56,16 @@ func (h hostedWebSearchProvider) DisplayName() string {
 }
 
 func (h hostedWebSearchProvider) Available(*tools.Env) bool {
-	return config.PyTruthy(h.mustCall("is_available"))
+	return anyutil.IsTrue(h.mustCall("is_available"))
 }
 func (h hostedWebSearchProvider) KeylessAvailable(*tools.Env) bool {
-	return config.PyTruthy(h.mustCall("is_keyless_available"))
+	return anyutil.IsTrue(h.mustCall("is_keyless_available"))
 }
 func (h hostedWebSearchProvider) SupportsSearch() bool {
-	return config.PyTruthy(h.mustCall("supports_search"))
+	return anyutil.IsTrue(h.mustCall("supports_search"))
 }
 func (h hostedWebSearchProvider) SupportsExtract() bool {
-	return config.PyTruthy(h.mustCall("supports_extract"))
+	return anyutil.IsTrue(h.mustCall("supports_extract"))
 }
 
 // Search result of the plugin decoded from its legacy dict contract

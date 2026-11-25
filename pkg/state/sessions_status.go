@@ -3,6 +3,8 @@ package state
 import (
 	"context"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lifecycle statuses a session transcript tail classifies to
@@ -61,8 +63,8 @@ func (d *SessionDB) SessionLifecycleStatuses(ctx context.Context, sessionIDs []s
 		return nil, err
 	}
 	for _, row := range rows {
-		statuses[pyStr(rowValue(row, "session_id"))] = ClassifySessionStatus(rowValue(row, "role"),
-			pyTruthy(rowValue(row, "has_tool_calls")), rowValue(row, "finish_reason"))
+		statuses[anyutil.String(rowValue(row, "session_id"))] = ClassifySessionStatus(rowValue(row, "role"),
+			anyutil.IsTrue(rowValue(row, "has_tool_calls")), rowValue(row, "finish_reason"))
 	}
 	return statuses, nil
 }

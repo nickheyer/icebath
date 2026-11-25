@@ -103,9 +103,9 @@ func detachedEntry(ctx context.Context, store *SessionStore, source *SessionSour
 	hints[sessionID], hints[tip] = key, key
 	store.mu.Unlock()
 	now := sessionNow()
-	createdAt := pyDatetime{T: now.T.Add(-time.Second)}
+	createdAt := datetime{T: now.T.Add(-time.Second)}
 	if started != 0 {
-		createdAt = pyDatetime{T: time.Unix(0, int64(started*1e9))}
+		createdAt = datetime{T: time.Unix(0, int64(started*1e9))}
 	}
 	entry := NewSessionEntry(key, tip, createdAt, now)
 	entry.Origin, entry.Platform, entry.ChatType = source, source.Platform, source.ChatType

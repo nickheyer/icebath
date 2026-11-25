@@ -87,18 +87,18 @@ func parseXML(text string) (*xmlElement, error) {
 			break
 		}
 		if err != nil {
-			return nil, &pyErr{"ParseError", err.Error()}
+			return nil, &kindErr{"ParseError", err.Error()}
 		}
 		switch t := token.(type) {
 		case xml.Directive:
 			if bytes.Contains(bytes.ToUpper(t), []byte("<!ENTITY")) {
-				return nil, &pyErr{"EntitiesForbidden", "XML entity declarations are not allowed"}
+				return nil, &kindErr{"EntitiesForbidden", "XML entity declarations are not allowed"}
 			}
 		case xml.StartElement:
 			elem := &xmlElement{tag: t.Name.Local}
 			if len(stack) == 0 {
 				if root != nil {
-					return nil, &pyErr{"ParseError", "junk after document element"}
+					return nil, &kindErr{"ParseError", "junk after document element"}
 				}
 				root = elem
 			} else {
@@ -116,7 +116,7 @@ func parseXML(text string) (*xmlElement, error) {
 		}
 	}
 	if root == nil {
-		return nil, &pyErr{"ParseError", "no element found"}
+		return nil, &kindErr{"ParseError", "no element found"}
 	}
 	return root, nil
 }

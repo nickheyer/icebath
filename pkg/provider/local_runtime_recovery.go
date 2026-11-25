@@ -16,6 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Live process incarnation with psutil semantics where destructive calls refuse a reused pid
@@ -46,11 +48,11 @@ var (
 	lrRecordedProcess       = recordedProcess
 	lrOwnerIsDead           = ownerIsDead
 	lrLegacyRecordedProcess = legacyRecordedProcess
-	lrOSName                = func() string { return pyOSName(runtime.GOOS) }
+	lrOSName                = func() string { return osNameValue(runtime.GOOS) }
 )
 
 // Python os.name for a Go GOOS
-func pyOSName(goos string) string {
+func osNameValue(goos string) string {
 	if goos == "windows" {
 		return "nt"
 	}
@@ -348,24 +350,24 @@ func legacyRecordedProcess(state map[string]any) (localRuntimeProc, error) {
 	}
 	baseURL, isStr := rawURL.(string)
 	if !isStr {
-		if pyTruthy(rawURL) {
+		if anyutil.IsTrue(rawURL) {
 			return nil, &lrAttributeError{kind: errchain.Kind(rawURL)}
 		}
 		return nil, nil
 	}
-	parts, err := pyURLParse(baseURL, "")
-	if err != nil || parts.scheme != "http" {
+	parts, err := urlutil.Split(baseURL)
+	if err != nil || parts.Scheme != "http" {
 		return nil, nil
 	}
-	if hostname, _, _ := pyNetlocHostPort(parts.netloc); hostname != "127.0.0.1" {
+	if hostname, _, _ := netlocHostPort(parts.Authority); hostname != "127.0.0.1" {
 		return nil, nil
 	}
-	port, hasPort, err := pyURLPort(baseURL)
+	port, hasPort, err := urlPort(baseURL)
 	if err != nil || !hasPort || port == 0 {
 		return nil, nil
 	}
 	apiKey, ok := state["api_key"]
-	if !ok || !pyTruthy(apiKey) {
+	if !ok || !anyutil.IsTrue(apiKey) {
 		return nil, nil
 	}
 	argv, err := proc.Cmdline()

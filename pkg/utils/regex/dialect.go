@@ -1,6 +1,7 @@
 package regexutil
 
 import (
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -168,17 +169,27 @@ func (t *translator) braces() (string, bool, error) {
 	if lo == "" {
 		lo = "0"
 	}
+	l, lok := repeatCount(lo)
+	h, hok := repeatCount(hi)
+	if !lok || (hi != "" && !hok) {
+		return "", false, t.fail("repeat count larger than " + strconv.Itoa(maxRepeatCount))
+	}
 	if !comma {
 		return "{" + lo + "}", true, nil
 	}
-	if hi != "" {
-		l, lerr := strconv.ParseUint(lo, 10, 64)
-		h, herr := strconv.ParseUint(hi, 10, 64)
-		if lerr == nil && herr == nil && h < l {
-			return "", false, t.fail("min repeat greater than max repeat")
-		}
+	if hi != "" && h < l {
+		return "", false, t.fail("min repeat greater than max repeat")
 	}
 	return "{" + lo + "," + hi + "}", true, nil
+}
+
+// Largest count a repeat may give, the bound of the engine's repeat counters
+const maxRepeatCount = math.MaxInt32
+
+// Value of a run of decimal digits as a repeat count, false when it is past maxRepeatCount
+func repeatCount(digits string) (int64, bool) {
+	n, err := strconv.ParseInt(digits, 10, 64)
+	return n, err == nil && n <= maxRepeatCount
 }
 
 func (t *translator) digits(j *int) string {

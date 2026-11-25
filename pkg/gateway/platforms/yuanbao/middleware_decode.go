@@ -160,7 +160,7 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 			extra, isList := push.ValueOr("msg_body", []any{}).([]any)
 			base, baseIsList := merged.ValueOr("msg_body", []any{}).([]any)
 			if !isList || !baseIsList {
-				return &pyErr{"TypeError", fmt.Sprintf("msg_body must be a list, got %s",
+				return &kindErr{"TypeError", fmt.Sprintf("msg_body must be a list, got %s",
 					errchain.Kind(push.ValueOr("msg_body", []any{})))}
 			}
 			body := append(append(append([]any{}, base...), textElem("\n")), extra...)

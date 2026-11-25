@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -67,7 +68,7 @@ func hardExpiry(claims *jsonutil.Object) (float64, error) {
 	value, ok := claims.Get("status_expires_at")
 	if !ok {
 		if value, ok = claims.Get("expires_at"); !ok {
-			return 0, &gateway.PyError{Kind: "KeyError", Msg: "'expires_at'"}
+			return 0, &errorutil.Error{Kind: "KeyError", Msg: "'expires_at'"}
 		}
 	}
 	return anyutil.ToFloat(value)
@@ -79,7 +80,7 @@ func roomIdentity(source *jsonutil.Object, coerce bool) (map[string]any, error) 
 	for _, key := range roomIdentityFields {
 		value, ok := source.Get(key)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "KeyError", Msg: anyutil.Quote(key)}
+			return nil, &errorutil.Error{Kind: "KeyError", Msg: anyutil.Quote(key)}
 		}
 		switch {
 		case key == "authority_epoch":
@@ -109,7 +110,7 @@ func localTarget(ctx context.Context, claims *jsonutil.Object) (string, string, 
 	}
 	if claims != nil && (!anyutil.Equal(claims.ValueOr("target_profile", nil), profile) ||
 		!anyutil.Equal(claims.ValueOr("target_install_id", nil), installationID)) {
-		return "", "", &gateway.PyError{Kind: "ValueError", Msg: "room grant target does not match this profile"}
+		return "", "", &errorutil.Error{Kind: "ValueError", Msg: "room grant target does not match this profile"}
 	}
 	return profile, installationID, nil
 }
@@ -123,7 +124,7 @@ func (a *APIServerAdapter) roomGrantSecret(ctx context.Context) ([]byte, error) 
 func (a *APIServerAdapter) decodeRequestGrant(ctx context.Context, request *gateway.WebRequest, permission string) (*jsonutil.Object, error) {
 	token := roomGrantToken(request)
 	if token == "" {
-		return nil, &gateway.PyError{Kind: "ValueError", Msg: "room grant is missing"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "room grant is missing"}
 	}
 	secret, err := a.roomGrantSecret(ctx)
 	if err != nil {
@@ -206,14 +207,14 @@ func (a *APIServerAdapter) handleRoomMemberInvitation(ctx context.Context, reque
 			return err
 		}
 		if !(60 <= ttl && ttl <= 24*60*60) {
-			return &gateway.PyError{Kind: "ValueError", Msg: "ttl_seconds must be between 60 and 86400"}
+			return &errorutil.Error{Kind: "ValueError", Msg: "ttl_seconds must be between 60 and 86400"}
 		}
 		statusTTL, err := anyutil.ToFloat(body.ValueOr("status_ttl_seconds", ttl))
 		if err != nil {
 			return err
 		}
 		if !(ttl <= statusTTL && statusTTL <= 30*24*60*60) {
-			return &gateway.PyError{Kind: "ValueError", Msg: "status_ttl_seconds must be at least ttl_seconds and no more than 2592000"}
+			return &errorutil.Error{Kind: "ValueError", Msg: "status_ttl_seconds must be at least ttl_seconds and no more than 2592000"}
 		}
 		var executionPolicy *jsonutil.Object
 		if executionPolicy, catalog, err = gateway.APILocalRoomCatalog(ctx, a, profile, targetInstallID); err != nil {
@@ -289,7 +290,7 @@ func (a *APIServerAdapter) handleRoomMemberCapabilities(ctx context.Context, req
 	for _, field := range roomIdentityFields {
 		value, ok := claims.Get(field)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "KeyError", Msg: anyutil.Quote(field)}
+			return nil, &errorutil.Error{Kind: "KeyError", Msg: anyutil.Quote(field)}
 		}
 		out.Set(field, value)
 	}
@@ -331,7 +332,7 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 			return err
 		}
 		if remaining <= 0 || requested <= 0 {
-			return &gateway.PyError{Kind: "ValueError", Msg: "room grant renewal horizon expired"}
+			return &errorutil.Error{Kind: "ValueError", Msg: "room grant renewal horizon expired"}
 		}
 		dispatchTTL = min(requested, gateway.MaxDispatchGrantTTLSeconds, remaining)
 		scoped, err := profileScope(ctx, profile)
@@ -350,7 +351,7 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 		}
 		permissions, ok := claims.Get("permissions")
 		if !ok {
-			return &gateway.PyError{Kind: "KeyError", Msg: "'permissions'"}
+			return &errorutil.Error{Kind: "KeyError", Msg: "'permissions'"}
 		}
 		granted, _ := permissions.([]any)
 		secret, err := a.roomGrantSecret(ctx)

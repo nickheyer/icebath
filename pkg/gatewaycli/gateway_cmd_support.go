@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -49,31 +48,12 @@ func printLines(w io.Writer, lines ...string) {
 	}
 }
 
-// int of a JSON number or numeric string, the ValueError text for anything else
-func pyIntValue(v any) (int64, error) {
-	switch n := v.(type) {
-	case nil:
+// Count of a JSON number or numeric text, zero for null, the conversion error for anything else
+func countValue(v any) (int64, error) {
+	if v == nil {
 		return 0, nil
-	case bool:
-		if n {
-			return 1, nil
-		}
-		return 0, nil
-	case int:
-		return int64(n), nil
-	case int64:
-		return n, nil
-	case float64:
-		return int64(n), nil
-	case *big.Int:
-		return n.Int64(), nil
-	case string:
-		if parsed, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64); err == nil {
-			return parsed, nil
-		}
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(n))
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", anyutil.Kind(v))
+	return anyutil.ToInt(v)
 }
 
 // incompatible verdict when the gateway answering for this home is one this version's clients refuse
@@ -250,7 +230,7 @@ func workLines(ctx context.Context, verb, h string, work *jsonutil.Object, flagH
 			}
 		}
 	}
-	agents, err := pyIntValue(work.ValueOr("active_agents", nil))
+	agents, err := countValue(work.ValueOr("active_agents", nil))
 	if err != nil {
 		return nil, err
 	}

@@ -43,7 +43,7 @@ func (c *clock) configuredZone() *time.Location {
 	return nil
 }
 
-// Current instant as Python isoformat text
+// Current instant as the store's RFC 3339 stamp text
 func (c *clock) nowISO() string { return FormatISO(c.now()) }
 
 // Zone the timezone setting names for the profile of ctx, nil for server local time or a name that does not load

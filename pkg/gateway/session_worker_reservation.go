@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -110,7 +111,7 @@ func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionI
 		if !SameOwner(storedPrincipal, principalID) {
 			return runtimeRefusal("permission_denied")
 		}
-		owner := pyStrOf(admission.ValueOr("target_session_id", nil))
+		owner := anyutil.String(admission.ValueOr("target_session_id", nil))
 		generation, _ := admission.Get("generation")
 		session, err := state.RuntimeSession(ctx, conn, owner)
 		if err != nil {
@@ -174,10 +175,10 @@ func loseAdmissionWorker(ctx context.Context, a *SessionAuthority, row, scope *j
 	return a.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		epoch, _ := scope.Get("epoch")
 		generation, _ := scope.Get("generation")
-		executionID := pyStrOf(scope.ValueOr("execution_id", nil))
+		executionID := anyutil.String(scope.ValueOr("execution_id", nil))
 		epochValue, isInt := anyutil.Int(epoch)
 		if !isInt {
-			return &PyError{Kind: "TypeError", Msg: "epoch must be an int"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "epoch must be an int"}
 		}
 		if err := state.RuntimeEpoch(ctx, conn, epochValue); err != nil {
 			return err

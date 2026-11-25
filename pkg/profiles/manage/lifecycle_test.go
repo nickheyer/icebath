@@ -298,7 +298,7 @@ func TestControlAnswerFailureText(t *testing.T) {
 	obj.Set("error", "boom")
 	empty := jsonutil.NewObject()
 	empty.Set("ok", false)
-	for answer, want := range map[any]string{obj: "boom", empty: "{'ok': False}", "odd": "'odd'"} {
+	for answer, want := range map[any]string{obj: "boom", empty: `{"ok":false}`, "odd": `"odd"`} {
 		if got := controlAnswerFailure(answer); got != want {
 			t.Fatalf("%v: %q", answer, got)
 		}

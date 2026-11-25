@@ -28,14 +28,14 @@ const (
 	imageHintSeparator     = "\n\n[Image attached at: "
 	defaultImageQuestion   = "What do you see in this image?"
 	fsDataURLMaxBytes      = home.AttachmentMaxBytes
-	pyNonSpace             = `[^\s\x0b\x1c-\x1f\x85\p{Z}]`
+	nonSpace               = `[^\s\x0b\x1c-\x1f\x85\p{Z}]`
 )
 
 var (
 	discordTriggeringNoteRe = regexp.MustCompile("(^|\n)\\[Triggering message id: `[^`\n]*` — use as `message_id` for reply/react/pin via the discord tools\\.\\]\n*")
 	imageHintRe             = regexp.MustCompile(`^\[Image attached at: ([^\n\]]+)\]$`)
 	imageDataRe             = regexp.MustCompile(`^data:image/[^;,]+;base64,([A-Za-z0-9+/=]+)$`)
-	imageRefRe              = regexp.MustCompile("^@image:(`[^`\n]+`|\"[^\"\n]+\"|'[^'\n]+'|" + pyNonSpace + "+)$")
+	imageRefRe              = regexp.MustCompile("^@image:(`[^`\n]+`|\"[^\"\n]+\"|'[^'\n]+'|" + nonSpace + "+)$")
 	historyAssistantDetail  = []string{"reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items"}
 	historyRoles            = map[string]bool{"user": true, "assistant": true, "tool": true, "system": true}
 	editCardTools           = map[string]bool{"write_file": true, "patch": true, "skill_manage": true}

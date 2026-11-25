@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,11 +14,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pluginsdk"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
@@ -188,24 +188,26 @@ func cachedProfileExtraction(ctx context.Context, pluginDir, moduleName string) 
 		return nil, err
 	}
 	if raw, err := os.ReadFile(cache); err == nil {
-		var cached map[string]any
-		if json.Unmarshal(stripBOM(raw), &cached) == nil && cached["fingerprint"] == fingerprint && cached["module_name"] == moduleName {
-			if payload, ok := cached["payload"].(map[string]any); ok {
-				return payload, nil
+		if decoded, err := jsonutil.Decode(stripBOM(raw)); err == nil {
+			cached, _ := jsonutil.Plain(decoded).(map[string]any)
+			if cached["fingerprint"] == fingerprint && cached["module_name"] == moduleName {
+				if payload, ok := cached["payload"].(map[string]any); ok {
+					return payload, nil
+				}
 			}
 		}
 	}
 	payload := extractProfiles(ctx, pluginDir, resolved, moduleName)
-	if !config.PyTruthy(payload["error"]) {
+	if !anyutil.IsTrue(payload["error"]) {
 		if err := os.MkdirAll(filepath.Dir(cache), 0o777); err != nil {
 			return nil, err
 		}
-		doc, err := json.Marshal(map[string]any{"fingerprint": fingerprint, "module_name": moduleName, "payload": payload})
+		doc, err := jsonutil.Encode(map[string]any{"fingerprint": fingerprint, "module_name": moduleName, "payload": payload})
 		if err != nil {
 			return nil, err
 		}
 		tmp := strings.TrimSuffix(cache, ".json") + fmt.Sprintf(".%d.tmp", os.Getpid())
-		if err := os.WriteFile(tmp, doc, 0o666); err != nil {
+		if err := os.WriteFile(tmp, []byte(doc), 0o666); err != nil {
 			return nil, err
 		}
 		if err := os.Rename(tmp, cache); err != nil {
@@ -236,9 +238,10 @@ func extractProfiles(ctx context.Context, pluginDir, resolvedDir, moduleName str
 		return map[string]any{"error": fmt.Sprintf("profile extraction failed: %v", err)}
 	}
 	var payload map[string]any
-	dec := json.NewDecoder(bytes.NewReader(out))
-	dec.UseNumber()
-	if err := dec.Decode(&payload); err != nil || payload == nil {
+	if decoded, _, err := jsonutil.DecodePrefix(out); err == nil {
+		payload, _ = jsonutil.Plain(decoded).(map[string]any)
+	}
+	if payload == nil {
 		lines := strings.Split(strings.TrimSpace(strings.ToValidUTF8(string(tail), "�")), "\n")
 		if len(lines) > 3 {
 			lines = lines[len(lines)-3:]

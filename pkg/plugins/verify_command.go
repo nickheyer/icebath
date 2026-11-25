@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -33,7 +32,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	asJSON := nsVerifyBool(ns, "json")
 	recipe, source, err := verify.LoadOrDetect(root)
 	if err != nil {
-		fmt.Fprintln(errw, errorutil.Kind(err)+": "+err.Error())
+		fmt.Fprintln(errw, "error: "+err.Error())
 		return 1
 	}
 	if recipe == nil {
@@ -54,7 +53,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	if nsVerifyBool(ns, "save") {
 		path, err := verify.SaveManifest(root, recipe)
 		if err != nil {
-			fmt.Fprintln(errw, errorutil.Kind(err)+": "+err.Error())
+			fmt.Fprintln(errw, "error: "+err.Error())
 			return 1
 		}
 		if !asJSON {
@@ -79,7 +78,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	}
 	result, err := verify.RunVerify(ctx, root, recipe, opts)
 	if err != nil {
-		fmt.Fprintln(errw, errorutil.Kind(err)+": "+err.Error())
+		fmt.Fprintln(errw, "error: "+err.Error())
 		return 1
 	}
 	recordVerifyEvidence(ctx, root, recipe, result, len(phases) > 0 || opts.SkipStart)

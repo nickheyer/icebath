@@ -438,7 +438,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 	case actionID == modelPickerProviderAction:
 		idxToken := getOr(asMap(getOr(action, "selected_option", map[string]any{})), "value", "")
 		var picked map[string]any
-		if idx, ok := pyIndex(idxToken); ok && idx >= 0 && idx < len(providers) {
+		if idx, ok := elementAt(idxToken); ok && idx >= 0 && idx < len(providers) {
 			picked = providers[idx]
 		}
 		if picked == nil {
@@ -480,7 +480,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 		models := providerModels(pickerProvider(providers, providerSlug))
 		modelID := ""
 		found := false
-		if idx, ok := pyIndex(idxToken); ok && idx >= 0 && idx < len(models) {
+		if idx, ok := elementAt(idxToken); ok && idx >= 0 && idx < len(models) {
 			modelID, found = models[idx], true
 		}
 		if !found {
@@ -514,7 +514,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 }
 
 // Python int() of a picker index token, false when it does not parse
-func pyIndex(token any) (int, bool) {
+func elementAt(token any) (int, bool) {
 	switch v := token.(type) {
 	case int64:
 		return int(v), true

@@ -7,7 +7,7 @@ import (
 
 func TestWindowsHasNoMakedevAndNamesNoWriteLockHolders(t *testing.T) {
 	_, err := ParseProcLocks("1: POSIX ADVISORY WRITE 1 zz:02:3 120 120\n", map[DevIno]string{})
-	var conv *pyConvError
+	var conv *convError
 	if !errors.As(err, &conv) || conv.Class != "AttributeError" {
 		t.Fatalf("parse on windows %v", err)
 	}

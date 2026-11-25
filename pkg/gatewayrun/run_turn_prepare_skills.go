@@ -14,7 +14,7 @@ import (
 func (r *GatewayRunner) hmwaAutoLoadSkills(ctx context.Context, event *gateway.MessageEvent, skillNames []string, quickKey, sessionKey string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Warn(fmt.Sprintf("[Gateway] Failed to auto-load skill(s) %s: %v", pyStrList(skillNames), rec))
+			pkgLog().Warn(fmt.Sprintf("[Gateway] Failed to auto-load skill(s) %s: %v", strList(skillNames), rec))
 		}
 	}()
 	scope := skills.NewScope(home.Dir(ctx), nil)
@@ -35,12 +35,12 @@ func (r *GatewayRunner) hmwaAutoLoadSkills(ctx context.Context, event *gateway.M
 	if len(parts) > 0 {
 		parts = append(parts, event.Text)
 		event.Text = strings.Join(parts, "\n\n")
-		pkgLog().Info(fmt.Sprintf("[Gateway] Auto-loaded skill(s) %s for session %s", pyStrList(loadedNames), sessionKey))
+		pkgLog().Info(fmt.Sprintf("[Gateway] Auto-loaded skill(s) %s for session %s", strList(loadedNames), sessionKey))
 	}
 }
 
 // Python list repr of strings for log lines
-func pyStrList(items []string) string {
+func strList(items []string) string {
 	quoted := make([]string, len(items))
 	for i, s := range items {
 		quoted[i] = "'" + strings.ReplaceAll(s, "'", "\\'") + "'"

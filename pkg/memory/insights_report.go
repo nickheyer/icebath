@@ -174,41 +174,41 @@ func (e *InsightsEngine) FormatTerminal(r *InsightsReport) string {
 	}
 	lines = append(lines, insightsSection("📋 Overview")...)
 	lines = append(lines,
-		"  Sessions:          "+pyFormat(int64(o.TotalSessions), "<12")+"  Messages:        "+pyFormat(o.TotalMessages, ","),
-		"  Tool calls:        "+pyFormat(o.TotalToolCalls, "<12,")+"  User messages:   "+pyFormat(o.UserMessages, ","),
-		"  Input tokens:      "+pyFormat(o.TotalInputTokens, "<12,")+"  Output tokens:   "+pyFormat(o.TotalOutputTokens, ","),
-		"  Total tokens:      "+pyFormat(o.TotalTokens, ","),
+		"  Sessions:          "+formatted(int64(o.TotalSessions), "<12")+"  Messages:        "+formatted(o.TotalMessages, ","),
+		"  Tool calls:        "+formatted(o.TotalToolCalls, "<12,")+"  User messages:   "+formatted(o.UserMessages, ","),
+		"  Input tokens:      "+formatted(o.TotalInputTokens, "<12,")+"  Output tokens:   "+formatted(o.TotalOutputTokens, ","),
+		"  Total tokens:      "+formatted(o.TotalTokens, ","),
 	)
 	if o.TotalHours > 0 {
-		lines = append(lines, "  Active time:       ~"+pyFormat(provider.FormatDurationCompact(o.TotalHours*3600), "<11")+
+		lines = append(lines, "  Active time:       ~"+formatted(provider.FormatDurationCompact(o.TotalHours*3600), "<11")+
 			"  Avg session:     ~"+provider.FormatDurationCompact(o.AvgSessionDuration))
 	}
-	lines = append(lines, "  Avg msgs/session:  "+pyFormat(o.AvgMessagesPerSession, ".1f"), "")
+	lines = append(lines, "  Avg msgs/session:  "+formatted(o.AvgMessagesPerSession, ".1f"), "")
 	if cost := insightsCostLines(o, [3]string{"  Estimated:          {}", "  Included:           {} session(s) (subscription — no provider invoice)",
 		"  Unknown:            {} session(s) (no pricing data)"}); len(cost) > 0 {
 		lines = append(append(append(lines, insightsSection("💰 Cost")...), cost...), "")
 	}
 	if len(r.Models) > 0 {
 		lines = append(lines, insightsSection("🤖 Models Used")...)
-		lines = append(lines, "  "+pyFormat("Model", "<30")+" "+pyFormat("Sessions", ">8")+" "+pyFormat("Tokens", ">12"))
+		lines = append(lines, "  "+formatted("Model", "<30")+" "+formatted("Sessions", ">8")+" "+formatted("Tokens", ">12"))
 		for _, m := range r.Models {
-			lines = append(lines, "  "+pyFormat(insightsRuneSlice(m.Model, 28), "<30")+" "+pyFormat(int64(m.Sessions), ">8")+" "+pyFormat(m.TotalTokens, ">12,"))
+			lines = append(lines, "  "+formatted(insightsRuneSlice(m.Model, 28), "<30")+" "+formatted(int64(m.Sessions), ">8")+" "+formatted(m.TotalTokens, ">12,"))
 		}
 		lines = append(lines, "")
 	}
 	if len(r.Platforms) > 1 || (len(r.Platforms) > 0 && r.Platforms[0].Platform != "cli") {
 		lines = append(lines, insightsSection("📱 Platforms")...)
-		lines = append(lines, "  "+pyFormat("Platform", "<14")+" "+pyFormat("Sessions", ">8")+" "+pyFormat("Messages", ">10")+" "+pyFormat("Tokens", ">14"))
+		lines = append(lines, "  "+formatted("Platform", "<14")+" "+formatted("Sessions", ">8")+" "+formatted("Messages", ">10")+" "+formatted("Tokens", ">14"))
 		for _, p := range r.Platforms {
-			lines = append(lines, "  "+pyFormat(p.Platform, "<14")+" "+pyFormat(int64(p.Sessions), ">8")+" "+pyFormat(p.Messages, ">10,")+" "+pyFormat(p.TotalTokens, ">14,"))
+			lines = append(lines, "  "+formatted(p.Platform, "<14")+" "+formatted(int64(p.Sessions), ">8")+" "+formatted(p.Messages, ">10,")+" "+formatted(p.TotalTokens, ">14,"))
 		}
 		lines = append(lines, "")
 	}
 	if len(r.Tools) > 0 {
 		lines = append(lines, insightsSection("🔧 Top Tools")...)
-		lines = append(lines, "  "+pyFormat("Tool", "<28")+" "+pyFormat("Calls", ">8")+" "+pyFormat("%", ">8"))
+		lines = append(lines, "  "+formatted("Tool", "<28")+" "+formatted("Calls", ">8")+" "+formatted("%", ">8"))
 		for _, t := range r.Tools[:min(15, len(r.Tools))] {
-			lines = append(lines, "  "+pyFormat(t.Tool, "<28")+" "+pyFormat(t.Count, ">8,")+" "+pyFormat(t.Percentage, ">7.1f")+"%")
+			lines = append(lines, "  "+formatted(t.Tool, "<28")+" "+formatted(t.Count, ">8,")+" "+formatted(t.Percentage, ">7.1f")+"%")
 		}
 		if len(r.Tools) > 15 {
 			lines = append(lines, fmt.Sprintf("  ... and %d more tools", len(r.Tools)-15))
@@ -217,16 +217,16 @@ func (e *InsightsEngine) FormatTerminal(r *InsightsReport) string {
 	}
 	if top := r.Skills.TopSkills; len(top) > 0 {
 		lines = append(lines, insightsSection("🧠 Top Skills")...)
-		lines = append(lines, "  "+pyFormat("Skill", "<28")+" "+pyFormat("Loads", ">7")+" "+pyFormat("Edits", ">7")+" "+pyFormat("Last used", ">11"))
+		lines = append(lines, "  "+formatted("Skill", "<28")+" "+formatted("Loads", ">7")+" "+formatted("Edits", ">7")+" "+formatted("Last used", ">11"))
 		for _, s := range top[:min(10, len(top))] {
 			last := "—"
 			if anyutil.IsTrue(s.LastUsedAt) {
 				last = insightsDay(s.LastUsedAt)
 			}
-			lines = append(lines, "  "+pyFormat(insightsRuneSlice(s.Skill, 28), "<28")+" "+pyFormat(s.ViewCount, ">7,")+" "+pyFormat(s.ManageCount, ">7,")+" "+pyFormat(last, ">11"))
+			lines = append(lines, "  "+formatted(insightsRuneSlice(s.Skill, 28), "<28")+" "+formatted(s.ViewCount, ">7,")+" "+formatted(s.ManageCount, ">7,")+" "+formatted(last, ">11"))
 		}
 		lines = append(lines, fmt.Sprintf("  Distinct skills: %d  Loads: %s  Edits: %s", r.Skills.DistinctSkillsUsed,
-			pyFormat(r.Skills.TotalSkillLoads, ","), pyFormat(r.Skills.TotalSkillEdits, ",")), "")
+			formatted(r.Skills.TotalSkillLoads, ","), formatted(r.Skills.TotalSkillEdits, ",")), "")
 	}
 	if act := r.Activity; act != nil && len(act.ByDay) > 0 {
 		lines = append(lines, insightsSection("📅 Activity Patterns")...)
@@ -235,7 +235,7 @@ func (e *InsightsEngine) FormatTerminal(r *InsightsReport) string {
 			counts[i] = int64(d.Count)
 		}
 		for i, bar := range insightsBarChart(counts, 15) {
-			lines = append(lines, fmt.Sprintf("  %s  %s %d", act.ByDay[i].Day, pyFormat(bar, "<15"), act.ByDay[i].Count))
+			lines = append(lines, fmt.Sprintf("  %s  %s %d", act.ByDay[i].Day, formatted(bar, "<15"), act.ByDay[i].Count))
 		}
 		lines = append(lines, "")
 		if busy := insightsBusyHours(act.ByHour); len(busy) > 0 {
@@ -256,7 +256,7 @@ func (e *InsightsEngine) FormatTerminal(r *InsightsReport) string {
 	if len(r.TopSessions) > 0 {
 		lines = append(lines, insightsSection("🏆 Notable Sessions")...)
 		for _, ts := range r.TopSessions {
-			lines = append(lines, "  "+pyFormat(ts.Label, "<20")+" "+pyFormat(ts.Value, "<18")+" ("+ts.Date+", "+ts.SessionID+")")
+			lines = append(lines, "  "+formatted(ts.Label, "<20")+" "+formatted(ts.Value, "<18")+" ("+ts.Date+", "+ts.SessionID+")")
 		}
 		lines = append(lines, "")
 	}
@@ -288,8 +288,8 @@ func (e *InsightsEngine) FormatGateway(r *InsightsReport) string {
 	o := r.Overview
 	lines := []string{
 		fmt.Sprintf("📊 **Icebath Insights** — Last %d days\n", r.Days),
-		fmt.Sprintf("**Sessions:** %d | **Messages:** %s | **Tool calls:** %s", o.TotalSessions, pyFormat(o.TotalMessages, ","), pyFormat(o.TotalToolCalls, ",")),
-		fmt.Sprintf("**Tokens:** %s (in: %s / out: %s)", pyFormat(o.TotalTokens, ","), pyFormat(o.TotalInputTokens, ","), pyFormat(o.TotalOutputTokens, ",")),
+		fmt.Sprintf("**Sessions:** %d | **Messages:** %s | **Tool calls:** %s", o.TotalSessions, formatted(o.TotalMessages, ","), formatted(o.TotalToolCalls, ",")),
+		fmt.Sprintf("**Tokens:** %s (in: %s / out: %s)", formatted(o.TotalTokens, ","), formatted(o.TotalInputTokens, ","), formatted(o.TotalOutputTokens, ",")),
 	}
 	if o.TotalHours > 0 {
 		lines = append(lines, "**Active time:** ~"+provider.FormatDurationCompact(o.TotalHours*3600)+" | **Avg session:** ~"+provider.FormatDurationCompact(o.AvgSessionDuration))
@@ -301,21 +301,21 @@ func (e *InsightsEngine) FormatGateway(r *InsightsReport) string {
 	if len(r.Models) > 0 {
 		lines = append(lines, "**🤖 Models:**")
 		for _, m := range r.Models[:min(5, len(r.Models))] {
-			lines = append(lines, fmt.Sprintf("  %s — %d sessions, %s tokens", insightsRuneSlice(m.Model, 25), m.Sessions, pyFormat(m.TotalTokens, ",")))
+			lines = append(lines, fmt.Sprintf("  %s — %d sessions, %s tokens", insightsRuneSlice(m.Model, 25), m.Sessions, formatted(m.TotalTokens, ",")))
 		}
 		lines = append(lines, "")
 	}
 	if len(r.Platforms) > 1 {
 		lines = append(lines, "**📱 Platforms:**")
 		for _, p := range r.Platforms {
-			lines = append(lines, fmt.Sprintf("  %s — %d sessions, %s msgs", p.Platform, p.Sessions, pyFormat(p.Messages, ",")))
+			lines = append(lines, fmt.Sprintf("  %s — %d sessions, %s msgs", p.Platform, p.Sessions, formatted(p.Messages, ",")))
 		}
 		lines = append(lines, "")
 	}
 	if len(r.Tools) > 0 {
 		lines = append(lines, "**🔧 Top Tools:**")
 		for _, t := range r.Tools[:min(8, len(r.Tools))] {
-			lines = append(lines, fmt.Sprintf("  %s — %s calls (%s%%)", anyutil.String(t.Tool), pyFormat(t.Count, ","), pyFormat(t.Percentage, ".1f")))
+			lines = append(lines, fmt.Sprintf("  %s — %s calls (%s%%)", anyutil.String(t.Tool), formatted(t.Count, ","), formatted(t.Percentage, ".1f")))
 		}
 		lines = append(lines, "")
 	}
@@ -326,7 +326,7 @@ func (e *InsightsEngine) FormatGateway(r *InsightsReport) string {
 			if anyutil.IsTrue(s.LastUsedAt) {
 				suffix = ", last used " + insightsDay(s.LastUsedAt)
 			}
-			lines = append(lines, fmt.Sprintf("  %s — %s loads, %s edits%s", s.Skill, pyFormat(s.ViewCount, ","), pyFormat(s.ManageCount, ","), suffix))
+			lines = append(lines, fmt.Sprintf("  %s — %s loads, %s edits%s", s.Skill, formatted(s.ViewCount, ","), formatted(s.ManageCount, ","), suffix))
 		}
 		lines = append(lines, "")
 	}

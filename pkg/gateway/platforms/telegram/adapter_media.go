@@ -28,6 +28,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 )
 
@@ -241,7 +242,7 @@ func (a *TelegramAdapter) SendVoice(ctx context.Context, chatID, audioPath, capt
 		}
 	}()
 	ext := strings.ToLower(filepath.Ext(path))
-	if pyTruthy(extra["is_voice"]) && ext != ".ogg" && ext != ".opus" {
+	if anyutil.IsTrue(extra["is_voice"]) && ext != ".ogg" && ext != ".opus" {
 		out, _ := gateway.TranscodeToOggOpus(ctx, path, "32k", 60*time.Second, "")
 		if out != "" {
 			transcoded, path = out, out

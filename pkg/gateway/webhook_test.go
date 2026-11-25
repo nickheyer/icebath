@@ -16,6 +16,7 @@ import (
 	"time"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
@@ -503,8 +504,8 @@ func TestConnectRejectsAnUnusableRouteSecret(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "missing, blank, or not a string") {
 			t.Fatalf("%v: %v", secret, err)
 		}
-		var pyErr *PyError
-		if !asPyError(err, &pyErr) || pyErr.Kind != "ValueError" {
+		var kindErr *errorutil.Error
+		if !asPyError(err, &kindErr) || kindErr.Kind != "ValueError" {
 			t.Fatalf("%v: %T", secret, err)
 		}
 		if adapter.dynamicRouteAllowed("hook", jsonutil.ObjectOf("secret", secret)) {
@@ -513,10 +514,10 @@ func TestConnectRejectsAnUnusableRouteSecret(t *testing.T) {
 	}
 }
 
-// Whether err is a gateway PyError, assigning it
-func asPyError(err error, target **PyError) bool {
-	pyErr, ok := err.(*PyError)
-	*target = pyErr
+// Whether err is a gateway KindError, assigning it
+func asPyError(err error, target **errorutil.Error) bool {
+	kindErr, ok := err.(*errorutil.Error)
+	*target = kindErr
 	return ok
 }
 

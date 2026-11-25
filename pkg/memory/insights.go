@@ -35,7 +35,7 @@ func insightsFmtEstCost(est float64) string {
 func insightsEstimateCost(ctx context.Context, model string, counts map[string]any, prov, baseURL string) (float64, string, error) {
 	var vals [4]int
 	for i, k := range insightsTokenKeys {
-		n, err := pyIntCell(or0(counts[k]))
+		n, err := intCell(or0(counts[k]))
 		if err != nil {
 			return 0, "", err
 		}
@@ -549,7 +549,7 @@ func (e *InsightsEngine) getSkillUsage(ctx context.Context, cutoff float64, sour
 			if timestamp != nil {
 				newer := entry.lastUsedAt == nil
 				if !newer {
-					c, err := pyCompare(timestamp, entry.lastUsedAt)
+					c, err := compare(timestamp, entry.lastUsedAt)
 					if err != nil {
 						return nil, err
 					}
@@ -597,7 +597,7 @@ func insightsSum(rows []map[string]any, key string) (any, error) {
 	var total any = int64(0)
 	for _, r := range rows {
 		var err error
-		if total, err = pyArith("+", total, or0(r[key])); err != nil {
+		if total, err = arith("+", total, or0(r[key])); err != nil {
 			return nil, err
 		}
 	}
@@ -614,7 +614,7 @@ func insightsOverview(ctx context.Context, sessions []map[string]any, messageSta
 	for i, k := range insightsTokenKeys {
 		if len(models) > 0 {
 			for _, m := range models {
-				n, err := pyIntCell(or0(m.tokens()[i]))
+				n, err := intCell(or0(m.tokens()[i]))
 				if err != nil {
 					return nil, err
 				}
@@ -623,7 +623,7 @@ func insightsOverview(ctx context.Context, sessions []map[string]any, messageSta
 			continue
 		}
 		for _, s := range sessions {
-			n, err := pyIntCell(or0(s[k]))
+			n, err := intCell(or0(s[k]))
 			if err != nil {
 				return nil, err
 			}
@@ -654,7 +654,7 @@ func insightsOverview(ctx context.Context, sessions []map[string]any, messageSta
 		if anyutil.IsTrue(s["actual_cost_usd"]) {
 			cell = s["actual_cost_usd"]
 		}
-		if actual, err = pyArith("+", actual, cell); err != nil {
+		if actual, err = arith("+", actual, cell); err != nil {
 			return nil, err
 		}
 		statusCounts[status]++
@@ -743,7 +743,7 @@ type insightsModelAcc struct {
 var insightsCountKeys = append(append([]string{}, insightsTokenKeys...), "reasoning_tokens", "api_call_count")
 
 func insightsPyMax0(v any) (any, error) {
-	c, err := pyCompare(v, int64(0))
+	c, err := compare(v, int64(0))
 	if err != nil {
 		return nil, err
 	}
@@ -777,23 +777,23 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 		d.sessions[sessionID] = true
 		var err error
 		for i, k := range insightsTokenKeys {
-			if d.tokens[i], err = pyArith("+=", d.tokens[i], counts[k]); err != nil {
+			if d.tokens[i], err = arith("+=", d.tokens[i], counts[k]); err != nil {
 				return err
 			}
 		}
-		if d.reasoning, err = pyArith("+=", d.reasoning, counts["reasoning_tokens"]); err != nil {
+		if d.reasoning, err = arith("+=", d.reasoning, counts["reasoning_tokens"]); err != nil {
 			return err
 		}
 		var sum any = int64(0)
 		for _, k := range insightsTokenKeys {
-			if sum, err = pyArith("+", sum, counts[k]); err != nil {
+			if sum, err = arith("+", sum, counts[k]); err != nil {
 				return err
 			}
 		}
-		if d.total, err = pyArith("+=", d.total, sum); err != nil {
+		if d.total, err = arith("+=", d.total, sum); err != nil {
 			return err
 		}
-		if d.apiCalls, err = pyArith("+=", d.apiCalls, counts["api_call_count"]); err != nil {
+		if d.apiCalls, err = arith("+=", d.apiCalls, counts["api_call_count"]); err != nil {
 			return err
 		}
 		var estimate float64
@@ -804,7 +804,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 			}
 		} else {
 			if anyutil.IsTrue(stored) {
-				if estimate, err = pyFloat(stored); err != nil {
+				if estimate, err = floatNumber(stored); err != nil {
 					return err
 				}
 			}
@@ -814,7 +814,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 		}
 		d.cost += estimate
 		if anyutil.IsTrue(actualCost) {
-			f, err := pyFloat(actualCost)
+			f, err := floatNumber(actualCost)
 			if err != nil {
 				return err
 			}
@@ -854,14 +854,14 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 			counts[k] = or0(r[k])
 		}
 		for _, k := range insightsCountKeys {
-			if totals.counts[k], err = pyArith("+=", totals.counts[k], counts[k]); err != nil {
+			if totals.counts[k], err = arith("+=", totals.counts[k], counts[k]); err != nil {
 				return nil, err
 			}
 		}
-		if totals.estimated, err = pyArith("+=", totals.estimated, insightsOr0f(r["estimated_cost_usd"])); err != nil {
+		if totals.estimated, err = arith("+=", totals.estimated, insightsOr0f(r["estimated_cost_usd"])); err != nil {
 			return nil, err
 		}
-		if totals.actual, err = pyArith("+=", totals.actual, insightsOr0f(r["actual_cost_usd"])); err != nil {
+		if totals.actual, err = arith("+=", totals.actual, insightsOr0f(r["actual_cost_usd"])); err != nil {
 			return nil, err
 		}
 		hasStored := anyutil.IsTrue(r["cost_status"]) || anyutil.IsTrue(r["cost_source"])
@@ -876,7 +876,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 		residual := map[string]any{"reasoning_tokens": int64(0)}
 		anyResidual := false
 		for _, k := range append(append([]string{}, insightsTokenKeys...), "api_call_count") {
-			diff, err := pyArith("-", or0(s[k]), totals.counts[k])
+			diff, err := arith("-", or0(s[k]), totals.counts[k])
 			if err != nil {
 				return nil, err
 			}
@@ -903,7 +903,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 	for _, s := range sessions {
 		if anyutil.IsTrue(s["tool_call_count"]) {
 			d := entry(insightsShortModel(insightsCellStr(s["model"])))
-			if d.toolCalls, err = pyArith("+=", d.toolCalls, s["tool_call_count"]); err != nil {
+			if d.toolCalls, err = arith("+=", d.toolCalls, s["tool_call_count"]); err != nil {
 				return nil, err
 			}
 		}
@@ -922,7 +922,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 	}
 	var sortErr error
 	sort.SliceStable(out, func(i, j int) bool {
-		c, err := pyCompare(out[i].TotalTokens, out[j].TotalTokens)
+		c, err := compare(out[i].TotalTokens, out[j].TotalTokens)
 		if err != nil && sortErr == nil {
 			sortErr = err
 		}
@@ -946,11 +946,11 @@ func insightsResidualFloat(cell, attributed any) (float64, error) {
 	f := 0.0
 	if anyutil.IsTrue(cell) {
 		var err error
-		if f, err = pyFloat(cell); err != nil {
+		if f, err = floatNumber(cell); err != nil {
 			return 0, err
 		}
 	}
-	diff, err := pyArith("-", f, attributed)
+	diff, err := arith("-", f, attributed)
 	if err != nil {
 		return 0, err
 	}
@@ -981,18 +981,18 @@ func insightsPlatformBreakdown(sessions []map[string]any) ([]InsightsPlatform, e
 		}
 		d.sessions++
 		var err error
-		if d.messages, err = pyArith("+=", d.messages, or0(s["message_count"])); err != nil {
+		if d.messages, err = arith("+=", d.messages, or0(s["message_count"])); err != nil {
 			return nil, err
 		}
 		for i, k := range insightsTokenKeys {
-			if d.tokens[i], err = pyArith("+=", d.tokens[i], or0(s[k])); err != nil {
+			if d.tokens[i], err = arith("+=", d.tokens[i], or0(s[k])); err != nil {
 				return nil, err
 			}
-			if d.total, err = pyArith("+=", d.total, or0(s[k])); err != nil {
+			if d.total, err = arith("+=", d.total, or0(s[k])); err != nil {
 				return nil, err
 			}
 		}
-		if d.tools, err = pyArith("+=", d.tools, or0(s["tool_call_count"])); err != nil {
+		if d.tools, err = arith("+=", d.tools, or0(s["tool_call_count"])); err != nil {
 			return nil, err
 		}
 	}
@@ -1061,7 +1061,7 @@ func insightsSkillBreakdown(usage []*insightsSkillCount) (InsightsSkills, error)
 		if !anyutil.IsTrue(lb) {
 			lb = int64(0)
 		}
-		c, err := pyCompare(la, lb)
+		c, err := compare(la, lb)
 		if err != nil {
 			if sortErr == nil {
 				sortErr = err
@@ -1166,9 +1166,9 @@ func insightsTopSessions(sessions []map[string]any) ([]InsightsTopSession, error
 	}{
 		{"Most messages", func(s map[string]any) (any, error) { return or0(s["message_count"]), nil }, func(v any) string { return anyutil.String(v) + " msgs" }},
 		{"Most tokens", func(s map[string]any) (any, error) {
-			return pyArith("+", or0(s["input_tokens"]), or0(s["output_tokens"]))
+			return arith("+", or0(s["input_tokens"]), or0(s["output_tokens"]))
 		},
-			func(v any) string { return pyFormat(v, ",") + " tokens" }},
+			func(v any) string { return formatted(v, ",") + " tokens" }},
 		{"Most tool calls", func(s map[string]any) (any, error) { return or0(s["tool_call_count"]), nil }, func(v any) string { return anyutil.String(v) + " calls" }},
 	}
 	for _, m := range metrics {
@@ -1183,7 +1183,7 @@ func insightsTopSessions(sessions []map[string]any) ([]InsightsTopSession, error
 				best, bestVal = s, v
 				continue
 			}
-			c, err := pyCompare(v, bestVal)
+			c, err := compare(v, bestVal)
 			if err != nil {
 				return nil, err
 			}
@@ -1191,7 +1191,7 @@ func insightsTopSessions(sessions []map[string]any) ([]InsightsTopSession, error
 				best, bestVal = s, v
 			}
 		}
-		if c, err := pyCompare(bestVal, int64(0)); err != nil {
+		if c, err := compare(bestVal, int64(0)); err != nil {
 			return nil, err
 		} else if c > 0 {
 			top = append(top, InsightsTopSession{Label: m.label, SessionID: insightsRuneSlice(insightsCellStr(best["id"]), 16), Value: m.format(bestVal),

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func TestASkippedResumeRefreshWarnsUnlessTheSessionIsBusy(t *testing.T) {
@@ -18,7 +19,7 @@ func TestASkippedResumeRefreshWarnsUnlessTheSessionIsBusy(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	for _, failure := range []error{state.NewRuntimeStoreError("session_busy", nil, nil),
 		state.NewRuntimeStoreError("launch_credentials_unavailable", nil, nil),
-		&PyError{Kind: "OSError", Msg: "config.yaml unreadable"}} {
+		&errorutil.Error{Kind: "OSError", Msg: "config.yaml unreadable"}} {
 		noteSkippedRefresh("s1", failure)
 	}
 	type level struct{ level, reason string }

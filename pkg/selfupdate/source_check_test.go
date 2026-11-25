@@ -140,7 +140,7 @@ func TestSourceCheckCountsAreHonestWithoutFetch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := pyIntValue(scGet(t, status, "behind")); got != tc.expected || scGet(t, status, "updateAvailable") != (tc.expected != 0) {
+		if got, _ := intValue(scGet(t, status, "behind")); got != tc.expected || scGet(t, status, "updateAvailable") != (tc.expected != 0) {
 			t.Fatalf("%s %v answered %v", tc.tip, tc.compare, status)
 		}
 		if asked := f.asked(); tc.tip != "unknown" && (len(asked) != 1 || asked[0] != "/repos/fixture/fork/commits/main") {
@@ -167,7 +167,7 @@ func TestSourceCheckCacheForceExpiryAndPassiveOptOut(t *testing.T) {
 		return status
 	}
 	behindZero := func(status *jsonutil.Object) bool {
-		n, ok := pyIntValue(scGet(t, status, "behind"))
+		n, ok := intValue(scGet(t, status, "behind"))
 		return ok && n == 0
 	}
 	if !behindZero(check(SourceCheckOptions{})) {
@@ -521,7 +521,7 @@ func TestSourceCheckTargetWorktreeOwnsAdmissionAndForkComparison(t *testing.T) {
 	if scGet(t, status, "supported") != true || scGet(t, status, "branch") != "feature/gui" || scGet(t, status, "icebathRoot") != f.linked {
 		t.Fatalf("linked status %v", status)
 	}
-	if behind, _ := pyIntValue(scGet(t, status, "behind")); behind != 3 {
+	if behind, _ := intValue(scGet(t, status, "behind")); behind != 3 {
 		t.Fatalf("behind %v", status)
 	}
 	if got := scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, CachePath: cache}), "supported"); got != false {
@@ -570,7 +570,7 @@ func TestSourceCheckBareGitOffPathReadsThroughTheUpdatersGit(t *testing.T) {
 	if scGet(t, status, "error") != nil || scGet(t, status, "currentSha") != f.head {
 		t.Fatalf("status %v", status)
 	}
-	if behind, ok := pyIntValue(scGet(t, status, "behind")); !ok || behind != 0 {
+	if behind, ok := intValue(scGet(t, status, "behind")); !ok || behind != 0 {
 		t.Fatalf("behind %v", status)
 	}
 }
@@ -596,7 +596,7 @@ func TestSourceCheckDynamicSourceChannelPreservesBranchPrecedence(t *testing.T) 
 		if scGet(t, status, "branch") != expected || scGet(t, status, "targetSha") != f.head {
 			t.Fatalf("%s status %v", selection, status)
 		}
-		if behind, ok := pyIntValue(scGet(t, status, "behind")); !ok || behind != 0 {
+		if behind, ok := intValue(scGet(t, status, "behind")); !ok || behind != 0 {
 			t.Fatalf("%s behind %v", selection, status)
 		}
 		want := []string{channelPath, branchPath}
@@ -658,7 +658,7 @@ func TestSourceCheckRunningRevisionIsNotAppliedToAnExplicitTarget(t *testing.T) 
 	f.respond("/releases/channels/main.json", 200, scSourceChannel("main", OfficialRepository, "main"))
 	f.respond("/repos/"+OfficialRepository+"/commits/main", 200, strings.Repeat("e", 40))
 	status := scCheck(t, SourceCheckOptions{Home: f.home})
-	if behind, ok := pyIntValue(scGet(t, status, "behind")); !ok || behind != 0 {
+	if behind, ok := intValue(scGet(t, status, "behind")); !ok || behind != 0 {
 		t.Fatalf("default invocation %v", status)
 	}
 }
@@ -761,7 +761,7 @@ func TestSourceCheckInheritedGitTargetCannotRedirectAnExplicitInstall(t *testing
 	t.Setenv("GIT_DIR", filepath.Join(f.root, ".git"))
 	t.Setenv("GIT_WORK_TREE", f.root)
 	status := scCheck(t, SourceCheckOptions{InstallRoot: f.linked, Home: f.home})
-	if behind, ok := pyIntValue(scGet(t, status, "behind")); scGet(t, status, "currentBranch") != "feature/gui" || !ok || behind != 0 {
+	if behind, ok := intValue(scGet(t, status, "behind")); scGet(t, status, "currentBranch") != "feature/gui" || !ok || behind != 0 {
 		t.Fatalf("status %v", status)
 	}
 }
@@ -803,7 +803,7 @@ func TestSourceCheckMalformedOptionalChangelogAndCacheDoNotHideTheUpdate(t *test
 	f.respond("/repos/fixture/fork/commits/main", 200, target)
 	f.respond(compare, 200, map[string]any{"ahead_by": 2, "commits": []any{map[string]any{"sha": strings.Repeat("b", 40), "commit": 42}}})
 	status := scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, CachePath: cache})
-	if behind, _ := pyIntValue(scGet(t, status, "behind")); behind != 2 || scGet(t, status, "updateAvailable") != true {
+	if behind, _ := intValue(scGet(t, status, "behind")); behind != 2 || scGet(t, status, "updateAvailable") != true {
 		t.Fatalf("status %v", status)
 	}
 	raw, _ := os.ReadFile(cache)
@@ -814,7 +814,7 @@ func TestSourceCheckMalformedOptionalChangelogAndCacheDoNotHideTheUpdate(t *test
 	data["status"] = nil
 	rewritten, _ := json.Marshal(data)
 	scWrite(t, cache, string(rewritten))
-	if behind, _ := pyIntValue(scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, CachePath: cache}), "behind")); behind != 2 {
+	if behind, _ := intValue(scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, CachePath: cache}), "behind")); behind != 2 {
 		t.Fatal("a malformed cache entry hid the update")
 	}
 	if asked := f.asked(); strings.Join(asked, " ") != strings.Join([]string{"/repos/fixture/fork/commits/main", compare, "/repos/fixture/fork/commits/main", compare}, " ") {
@@ -827,7 +827,7 @@ func TestSourceCheckGithubCallsCarryTheConfiguredTokenAndRetryAnonymouslyOn401(t
 	url := "/repos/fixture/fork/commits/main"
 	f.respond(url, 200, f.head)
 	t.Setenv("GITHUB_TOKEN", "  ghp_fixture  ")
-	if behind, ok := pyIntValue(scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home}), "behind")); !ok || behind != 0 {
+	if behind, ok := intValue(scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home}), "behind")); !ok || behind != 0 {
 		t.Fatal("token check is not current")
 	}
 	if seen := f.authorizations(url); len(seen) != 1 || seen[0] != "Bearer ghp_fixture" {
@@ -841,7 +841,7 @@ func TestSourceCheckGithubCallsCarryTheConfiguredTokenAndRetryAnonymouslyOn401(t
 		return [2]any{200, f.head}
 	}}
 	f.mu.Unlock()
-	if behind, ok := pyIntValue(scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, Force: true}), "behind")); !ok || behind != 0 {
+	if behind, ok := intValue(scGet(t, scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, Force: true}), "behind")); !ok || behind != 0 {
 		t.Fatal("anonymous retry is not current")
 	}
 	if seen := f.authorizations(url); len(seen) < 2 || seen[len(seen)-2] != "Bearer ghp_fixture" || seen[len(seen)-1] != "" {
@@ -923,7 +923,7 @@ func TestSourceCheckEmbeddedRevisionKeepsHTTPSRefAdvertisementRecovery(t *testin
 	}
 	sourceGitRun, runSourceGit = advertise(saved), advertise(savedReleases)
 	t.Cleanup(func() { sourceGitRun, runSourceGit, checkProjectRoot = saved, savedReleases, savedRoot })
-	if behind, ok := pyIntValue(scGet(t, scCheck(t, SourceCheckOptions{Home: f.home}), "behind")); !ok || behind != 0 {
+	if behind, ok := intValue(scGet(t, scCheck(t, SourceCheckOptions{Home: f.home}), "behind")); !ok || behind != 0 {
 		t.Fatal("the advertised tip did not recover the embedded revision check")
 	}
 	mu.Lock()
@@ -962,7 +962,7 @@ func TestSourceCheckOfficialSSHHealingUsesPublicHTTPSWithoutRetargetingForks(t *
 		if scGet(t, status, "branch") != want {
 			t.Fatalf("%s status %v", c.repository, status)
 		}
-		if behind, ok := pyIntValue(scGet(t, status, "behind")); c.heals && (!ok || behind != 0) || !c.heals && scGet(t, status, "error") != "fetch-failed" {
+		if behind, ok := intValue(scGet(t, status, "behind")); c.heals && (!ok || behind != 0) || !c.heals && scGet(t, status, "error") != "fetch-failed" {
 			t.Fatalf("%s status %v", c.repository, status)
 		}
 	}
@@ -1022,7 +1022,7 @@ func TestSourceCheckStableReleaseTheUpdaterRefusesIsHeldNotOffered(t *testing.T)
 		os.RemoveAll(sibling)
 		seen := f.asked()
 		allowed := scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, Channel: &stable})
-		behind, _ := pyIntValue(scGet(t, allowed, "behind"))
+		behind, _ := intValue(scGet(t, allowed, "behind"))
 		if _, has := allowed.Get("held"); scGet(t, allowed, "updateAvailable") != true || behind != -1 || scGet(t, allowed, "rollback") != !c.divergent || has ||
 			!anyutil.Equal(scGet(t, allowed, "fetchedAt"), scGet(t, status, "fetchedAt")) {
 			t.Fatalf("%+v allowed %v", c, allowed)

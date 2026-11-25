@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -80,7 +81,7 @@ func identifyResponse(data []byte) (*jsonutil.Object, error) {
 	id, _ := response.Get("id")
 	result, _ := response.Get("result")
 	resultObj, isObj := result.(*jsonutil.Object)
-	if okValue != true || !pyEq(protocol, 1) || !pyEq(id, 1) || !isObj {
+	if okValue != true || !anyutil.Equal(protocol, 1) || !anyutil.Equal(id, 1) || !isObj {
 		return nil, newDiscoveryError("invalid_control_response", "", "")
 	}
 	return resultObj, nil

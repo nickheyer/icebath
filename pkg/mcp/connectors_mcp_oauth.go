@@ -96,7 +96,7 @@ func probeWithRollback(ctx context.Context, env *tools.Env, serverName string, c
 			undo()
 			return err
 		}
-		summaries, discoveryError = nil, ExceptionMessage(err)
+		summaries, discoveryError = nil, excStr(err)
 	}
 	if err := commitCardAttempt(ctx, serverName, cfg, onCommit, flow); err != nil {
 		var canceled *AttemptCanceled
@@ -243,7 +243,7 @@ func RunOAuthWorker(ctx context.Context, env *tools.Env, homeDir, serverName str
 	if err == nil {
 		return
 	}
-	msg := ExceptionMessage(err)
+	msg := excStr(err)
 	serverURL, _ := cfg["url"].(string)
 	if human, ok := HumanizeOAuthRegistrationError(serverName, err.Error(), serverURL); ok && human != "" {
 		msg = human

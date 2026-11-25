@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const openrouterErrorBodyLimit = 2048
@@ -68,7 +70,7 @@ func openrouterExchangeCode(ctx context.Context, code, codeVerifier string, time
 	}
 	key := ""
 	if payload, ok := raw.(map[string]any); ok {
-		key = strings.TrimSpace(pyOrStr(payload["key"]))
+		key = strings.TrimSpace(anyutil.StringOr(payload["key"], ""))
 	}
 	if key == "" {
 		return "", openrouterErr("OpenRouter code exchange response did not include a 'key'.", "openrouter_token_exchange_invalid", false)
@@ -114,14 +116,14 @@ func openrouterLoopbackCode(ctx context.Context, out io.Writer, params [][2]stri
 	if err != nil {
 		return "", err
 	}
-	if pyTruthy(callback["error"]) {
-		reason := pyOrStr(callback["error_description"])
+	if anyutil.IsTrue(callback["error"]) {
+		reason := anyutil.StringOr(callback["error_description"], "")
 		if reason == "" {
-			reason = pyStr(callback["error"])
+			reason = anyutil.String(callback["error"])
 		}
 		return "", openrouterErr("OpenRouter authorization failed: "+reason, "openrouter_auth_denied", false)
 	}
-	code := strings.TrimSpace(pyOrStr(callback["code"]))
+	code := strings.TrimSpace(anyutil.StringOr(callback["code"], ""))
 	if code == "" {
 		return "", openrouterErr("OpenRouter callback did not carry an authorization code.", "openrouter_auth_no_code", false)
 	}

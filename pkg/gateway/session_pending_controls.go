@@ -67,7 +67,7 @@ func (c *PendingControls) drop(promptID string) {
 // Truth of an approval option that defaults on
 func approvalOption(data map[string]any, key string, def bool) bool {
 	if value, ok := data[key]; ok {
-		return pyTruthy(value)
+		return anyutil.IsTrue(value)
 	}
 	return def
 }
@@ -78,7 +78,7 @@ func (c *PendingControls) register(ctx context.Context, sessionID, route string,
 	defer c.events.Lock.Unlock()
 	requestID, ok := data["request_id"]
 	if !ok {
-		return &pyKeyError{"request_id"}
+		return &keyError{"request_id"}
 	}
 	promptID := anyutil.String(requestID)
 	choices := []any{"once", "deny"}

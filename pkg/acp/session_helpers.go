@@ -60,14 +60,14 @@ func formatUpdatedAt(value any) any {
 	if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
 		return s
 	}
-	f, ok := pyFloat(value)
+	f, ok := floatNumber(value)
 	if !ok || math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil
 	}
 	return timeutil.FromEpoch(f).UTC().Format(timeutil.RFC3339Micro)
 }
 
-func pyFloat(value any) (float64, bool) {
+func floatNumber(value any) (float64, bool) {
 	switch x := value.(type) {
 	case float64:
 		return x, true
@@ -91,7 +91,7 @@ func pyFloat(value any) (float64, bool) {
 func updatedAtSortKey(value any) float64 {
 	switch value.(type) {
 	case int64, int, float64, bool:
-		f, _ := pyFloat(value)
+		f, _ := floatNumber(value)
 		return f
 	}
 	raw := ""

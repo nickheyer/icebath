@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reports a SQLite version WAL is safe on, the reset bug predicate duplicated so the gate never touches the home
@@ -58,14 +60,14 @@ func TestLinkedSQLiteVersionMatchesTheLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pyStr(row[0]); got != LinkedSQLiteVersion() {
+	if got := anyutil.String(row[0]); got != LinkedSQLiteVersion() {
 		t.Fatalf("sqlite_version() = %q, LinkedSQLiteVersion = %q", got, LinkedSQLiteVersion())
 	}
-	if got := pyStr(row[1]); got != SQLiteSourceID() || got == "" {
+	if got := anyutil.String(row[1]); got != SQLiteSourceID() || got == "" {
 		t.Fatalf("sqlite_source_id() = %q, SQLiteSourceID = %q", got, SQLiteSourceID())
 	}
 	var parts []int64
-	for _, p := range strings.Split(pyStr(row[0]), ".") {
+	for _, p := range strings.Split(anyutil.String(row[0]), ".") {
 		n, err := strconv.ParseInt(p, 10, 64)
 		if err != nil {
 			t.Fatal(err)

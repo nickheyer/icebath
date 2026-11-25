@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -44,7 +45,7 @@ func (e *Error) Error() string { return e.Msg }
 // Python exception class name the error stands for
 func (e *Error) ErrorKind() string { return e.Kind }
 
-func pyErr(kind, format string, args ...any) error {
+func kindErr(kind, format string, args ...any) error {
 	return &Error{Kind: kind, Msg: fmt.Sprintf(format, args...)}
 }
 
@@ -180,12 +181,12 @@ func dictHas(v any, key string) bool {
 	return false
 }
 
-// dict.get on a value that may not be a dict, the AttributeError Python raises for any other type
+// Value under key of a decoded object, an error naming the key and what was found for a value that is not an object
 func attrGet(v any, key string) (any, error) {
 	if isDict(v) {
 		return dictGet(v, key), nil
 	}
-	return nil, pyErr("AttributeError", "'%s' object has no attribute 'get'", anyutil.Kind(v))
+	return nil, kindErr("AttributeError", "cannot read %q from %s where a mapping was expected", key, errchain.Kind(v))
 }
 
 // Value or its fallback when falsy, the Python or operator
@@ -248,7 +249,7 @@ func iterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, pyErr("TypeError", "'%s' object is not iterable", anyutil.Kind(v))
+	return nil, kindErr("TypeError", "'%s' object is not iterable", anyutil.Kind(v))
 }
 
 // Ordered unique ids of the entries the filter does not reject
@@ -357,10 +358,10 @@ func modelSelectionRequest(session any, requestedModel, placeholder string, disa
 // Resolved path confined to the resolved session cwd, refusing namespace, relative and escaping paths
 func ensurePathWithinCwd(pathText, cwd, verb string) (string, error) {
 	if ntErr := tools.NTNamespaceError(pathText, verb); ntErr != "" {
-		return "", pyErr("PermissionError", "%s", ntErr)
+		return "", kindErr("PermissionError", "%s", ntErr)
 	}
 	if !filepath.IsAbs(filepath.Clean(pathText)) {
-		return "", pyErr("PermissionError", "ACP file-system paths must be absolute.")
+		return "", kindErr("PermissionError", "ACP file-system paths must be absolute.")
 	}
 	resolved, err := pathutil.Resolve(pathText)
 	if err != nil {
@@ -371,14 +372,14 @@ func ensurePathWithinCwd(pathText, cwd, verb string) (string, error) {
 		return "", err
 	}
 	if _, ok := pathutil.RelativeTo(resolved, root); !ok {
-		return "", pyErr("PermissionError", "Path '%s' is outside the session cwd '%s'.", resolved, root)
+		return "", kindErr("PermissionError", "Path '%s' is outside the session cwd '%s'.", resolved, root)
 	}
 	return resolved, nil
 }
 
 // Wall clock seconds of a number or a timeout object, its largest component winning
 func effectiveTimeout(timeout any) float64 {
-	if f, ok := pyNumber(timeout); ok {
+	if f, ok := numberOf(timeout); ok {
 		return f
 	}
 	var candidates []float64
@@ -397,7 +398,7 @@ func effectiveTimeout(timeout any) float64 {
 		if rv.Kind() == reflect.Struct {
 			for _, name := range []string{"Read", "Write", "Connect", "Pool", "Timeout"} {
 				if f := rv.FieldByName(name); f.IsValid() && f.CanInterface() {
-					if n, ok := pyNumber(f.Interface()); ok {
+					if n, ok := numberOf(f.Interface()); ok {
 						candidates = append(candidates, n)
 					}
 				}
@@ -426,7 +427,7 @@ func durationSeconds(ds ...time.Duration) []float64 {
 }
 
 // Float of a number or bool value, true and false as 1 and 0
-func pyNumber(v any) (float64, bool) {
+func numberOf(v any) (float64, bool) {
 	switch n := v.(type) {
 	case bool:
 		if n {
@@ -443,7 +444,7 @@ func pyNumber(v any) (float64, bool) {
 }
 
 // Integer value of a JSON number, bools counting as 1 and 0
-func pyInt(v any) (int64, bool) {
+func wholeNumber(v any) (int64, bool) {
 	if b, ok := v.(bool); ok {
 		if b {
 			return 1, true
@@ -464,7 +465,7 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 		return nil, err
 	}
 	if block := tools.ReadBlockError(env, path); block != "" {
-		return nil, pyErr("PermissionError", "%s", block)
+		return nil, kindErr("PermissionError", "%s", block)
 	}
 	content := ""
 	raw, err := os.ReadFile(path)
@@ -479,11 +480,11 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 		return nil, err
 	}
 	line, limit := dictGet(params, "line"), dictGet(params, "limit")
-	if l, ok := pyInt(line); ok && l > 1 {
+	if l, ok := wholeNumber(line); ok && l > 1 {
 		lines := slices.Collect(strings.Lines(content))
 		start := clampIndex(l-1, len(lines))
 		end := len(lines)
-		if n, ok := pyInt(limit); ok && n > 0 {
+		if n, ok := wholeNumber(limit); ok && n > 0 {
 			end = start + clampIndex(n, len(lines)-start)
 		}
 		content = ""
@@ -530,10 +531,10 @@ func fsWriteTextFile(env *tools.Env, params any, cwd string) (any, error) {
 		return nil, err
 	}
 	if denied := tools.WriteDeniedError(env, path, "Write", false); denied != "" {
-		return nil, pyErr("PermissionError", "%s", denied)
+		return nil, kindErr("PermissionError", "%s", denied)
 	}
 	if tools.IsWriteApprovalRequired(env, path) {
-		return nil, pyErr("PermissionError", "Write denied: '%s' requires interactive approval and cannot be written through the ACP file bridge.", path)
+		return nil, kindErr("PermissionError", "Write denied: '%s' requires interactive approval and cannot be written through the ACP file bridge.", path)
 	}
 	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return nil, err
@@ -548,7 +549,7 @@ func fsWriteTextFile(env *tools.Env, params any, cwd string) (any, error) {
 	}
 	if pos, bad := firstSurrogate(content); bad {
 		_ = f.Close()
-		return nil, pyErr("UnicodeEncodeError", "'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", surrogateAt(content, pos), pos)
+		return nil, kindErr("UnicodeEncodeError", "'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", surrogateAt(content, pos), pos)
 	}
 	_, werr := f.WriteString(content)
 	if cerr := f.Close(); werr == nil {

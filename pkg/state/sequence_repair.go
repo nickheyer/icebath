@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python truth value that also treats typed Go slices by length
@@ -13,7 +14,7 @@ func seqTruthy(v any) bool {
 	if items, ok := listItems(v); ok {
 		return len(items) > 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Integer value of a non bool Python int, false for every other type
@@ -32,7 +33,7 @@ func seqCounter(v any, fallback int64) (int64, error) {
 	if !seqTruthy(v) {
 		return fallback, nil
 	}
-	n, err := pyIntOf(v)
+	n, err := intOfValue(v)
 	if err != nil {
 		return 0, err
 	}
@@ -48,8 +49,8 @@ func seqIter(v any) ([]any, error) {
 		return items, nil
 	}
 	switch v.(type) {
-	case string, map[string]any, pyObject:
-		return pyIter(v), nil
+	case string, map[string]any, orderedObject:
+		return elementsOf(v), nil
 	}
 	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
 }
@@ -149,7 +150,7 @@ func mergeAssistantInto(prev, msg map[string]any) (bool, error) {
 		contentRewritten = joined != ps
 	} else if !seqTruthy(prevContent) && newContent != nil {
 		prev["content"] = newContent
-		contentRewritten = !pyValueEqual(newContent, prevContent)
+		contentRewritten = !anyutil.Equal(newContent, prevContent)
 		textKept = true
 	}
 	reasoningCarried := false
@@ -169,7 +170,7 @@ func mergeAssistantInto(prev, msg map[string]any) (bool, error) {
 // Retires the dropped dict's row ids onto survivor, recording its uid only when its text was folded
 func rememberAbsorbedRow(survivor, dropped map[string]any, folded bool) error {
 	var ids []any
-	if rowID, ok := plainRowInt(dropped["_row_id"]); ok && rowID > 0 && !pyValueEqual(rowID, survivor["_row_id"]) {
+	if rowID, ok := plainRowInt(dropped["_row_id"]); ok && rowID > 0 && !anyutil.Equal(rowID, survivor["_row_id"]) {
 		ids = append(ids, rowID)
 	}
 	if seqTruthy(dropped["_absorbed_row_ids"]) {
@@ -230,7 +231,7 @@ func rememberAbsorbedRow(survivor, dropped map[string]any, folded bool) error {
 }
 
 // Key value pairs of a mapping row, empty for a non mapping
-func seqItems(row any) pyObject {
+func seqItems(row any) orderedObject {
 	obj, _ := asPyObject(row)
 	return obj
 }
@@ -238,7 +239,7 @@ func seqItems(row any) pyObject {
 // Python list membership by value equality
 func seqContains(items []any, v any) bool {
 	for _, item := range items {
-		if pyValueEqual(item, v) {
+		if anyutil.Equal(item, v) {
 			return true
 		}
 	}
@@ -267,7 +268,7 @@ func countUnnamedRow(survivor, retired map[string]any) error {
 	loaded := func(m map[string]any) bool {
 		return seqTruthy(m[DBPersistedMarker]) || seqTruthy(m[UnnamedDurableRows])
 	}
-	if _, isInt := pyIntID(retired["_row_id"]); !loaded(survivor) || !loaded(retired) || isInt {
+	if _, isInt := intID(retired["_row_id"]); !loaded(survivor) || !loaded(retired) || isInt {
 		return nil
 	}
 	have, err := seqCounter(survivor[UnnamedDurableRows], 0)
@@ -288,7 +289,7 @@ func countUnnamedRow(survivor, retired map[string]any) error {
 
 // Records the loaded fields of a survivor without a row id once, before a fold rewrites its text
 func rememberOwnRow(survivor map[string]any) {
-	_, isInt := pyIntID(survivor["_row_id"])
+	_, isInt := intID(survivor["_row_id"])
 	if !seqTruthy(survivor[DBPersistedMarker]) || isInt {
 		return
 	}

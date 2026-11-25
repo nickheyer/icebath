@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Bare agent on the route the case names, the object.__new__ shape the tests build
@@ -143,7 +144,7 @@ func TestReapplyReasoningEchoForProviderSwitch(t *testing.T) {
 			t.Fatalf("padded %d", padded)
 		}
 		for _, m := range msgs {
-			if m["role"] == "assistant" && !pyTruthy(m["reasoning_content"]) {
+			if m["role"] == "assistant" && !anyutil.IsTrue(m["reasoning_content"]) {
 				t.Fatalf("bare turn left %v", m)
 			}
 		}

@@ -34,7 +34,7 @@ func hubRecover(err *error) {
 }
 
 // dict.get on registry JSON, the AttributeError when the value is not a mapping
-func pyGet(v any, key string, def any) any {
+func lookup(v any, key string, def any) any {
 	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		hubRaise(fmt.Errorf("expected a mapping holding %s, got %s", key, errchain.Kind(v)))
@@ -46,7 +46,7 @@ func pyGet(v any, key string, def any) any {
 }
 
 // Registry value used as str, the TypeError for anything else
-func pyStrOf(v any) string {
+func hubText(v any) string {
 	s, ok := v.(string)
 	if !ok {
 		hubRaise(fmt.Errorf("expected text, got %s", errchain.Kind(v)))
@@ -55,8 +55,8 @@ func pyStrOf(v any) string {
 }
 
 // First n code points of a registry str
-func pyHead(v any, n int) string {
-	rs := []rune(pyStrOf(v))
+func headValue(v any, n int) string {
+	rs := []rune(hubText(v))
 	if len(rs) > n {
 		rs = rs[:n]
 	}
@@ -102,8 +102,8 @@ func NewWellKnownSkillSource(h *Hub) *WellKnownSkillSource {
 type wellKnownID struct{ indexURL, baseURL, skillName, skillURL string }
 
 func (w *WellKnownSkillSource) meta(idx *jsonutil.Object, skillName, description string, files any, extra ...any) SkillMeta {
-	base := pyStrOf(pyGet(idx, "base_url", nil))
-	ex := objectOf(append([]any{"index_url", pyGet(idx, "index_url", nil), "base_url", base, "files", files}, extra...)...)
+	base := hubText(lookup(idx, "base_url", nil))
+	ex := objectOf(append([]any{"index_url", lookup(idx, "index_url", nil), "base_url", base, "files", files}, extra...)...)
 	return SkillMeta{Name: skillName, Description: description, Source: "well-known", Identifier: wellKnownWrap(base, skillName),
 		TrustLevel: "community", Path: strPtr(skillName), Tags: []string{}, Extra: ex}
 }
@@ -120,21 +120,21 @@ func (w *WellKnownSkillSource) Search(ctx context.Context, query string, limit i
 	if idx == nil {
 		return out, nil
 	}
-	skills := pyGet(idx, "skills", nil).([]any)
+	skills := lookup(idx, "skills", nil).([]any)
 	end := min(limit, len(skills))
 	if limit < 0 {
 		end = max(len(skills)+limit, 0)
 	}
 	for _, entry := range skills[:end] {
-		name, isStr := pyGet(entry, "name", nil).(string)
+		name, isStr := lookup(entry, "name", nil).(string)
 		if !isStr || name == "" {
 			continue
 		}
-		files := pyGet(entry, "files", []any{"SKILL.md"})
+		files := lookup(entry, "files", []any{"SKILL.md"})
 		if _, isList := files.([]any); !isList {
 			files = []any{"SKILL.md"}
 		}
-		out = append(out, w.meta(idx, name, anyutil.String(pyGet(entry, "description", "")), files))
+		out = append(out, w.meta(idx, name, anyutil.String(lookup(entry, "description", "")), files))
 	}
 	return out, nil
 }
@@ -161,14 +161,14 @@ func (w *WellKnownSkillSource) Inspect(ctx context.Context, identifier string) (
 	}
 	desc := fm["description"]
 	if !anyutil.IsTrue(desc) {
-		desc = pyGet(entry, "description", nil)
+		desc = lookup(entry, "description", nil)
 	}
 	description := ""
 	if anyutil.IsTrue(desc) {
 		description = anyutil.String(desc)
 	}
 	idx := objectOf("index_url", p.indexURL, "base_url", p.baseURL)
-	meta := w.meta(idx, name, description, pyGet(entry, "files", []any{"SKILL.md"}), "endpoint", p.skillURL)
+	meta := w.meta(idx, name, description, lookup(entry, "files", []any{"SKILL.md"}), "endpoint", p.skillURL)
 	return &meta, nil
 }
 
@@ -188,7 +188,7 @@ func (w *WellKnownSkillSource) Fetch(ctx context.Context, identifier string) (b 
 	if entry == nil || !anyutil.IsTrue(entry) {
 		return nil, nil
 	}
-	files := pyGet(entry, "files", []any{"SKILL.md"})
+	files := lookup(entry, "files", []any{"SKILL.md"})
 	if list, isList := files.([]any); !isList || len(list) == 0 {
 		files = []any{"SKILL.md"}
 	}
@@ -294,7 +294,7 @@ func (w *WellKnownSkillSource) parseIndex(ctx context.Context, indexURL string) 
 		}
 		var skills any = []any{}
 		if o, isObj := data.(*jsonutil.Object); isObj {
-			skills = pyGet(o, "skills", []any{})
+			skills = lookup(o, "skills", []any{})
 		}
 		if _, isList := skills.([]any); !isList {
 			return nil, nil
@@ -305,7 +305,7 @@ func (w *WellKnownSkillSource) parseIndex(ctx context.Context, indexURL string) 
 		if !isObj {
 			return false
 		}
-		_, isList := pyGet(o, "skills", nil).([]any)
+		_, isList := lookup(o, "skills", nil).([]any)
 		return isList
 	})
 	if err != nil {
@@ -321,9 +321,9 @@ func (w *WellKnownSkillSource) indexEntry(ctx context.Context, indexURL, skillNa
 	if idx == nil || !anyutil.IsTrue(idx) {
 		return nil
 	}
-	skills, _ := pyGet(idx, "skills", nil).([]any)
+	skills, _ := lookup(idx, "skills", nil).([]any)
 	for _, e := range skills {
-		if o, isObj := e.(*jsonutil.Object); isObj && pyGet(o, "name", nil) == skillName {
+		if o, isObj := e.(*jsonutil.Object); isObj && lookup(o, "name", nil) == skillName {
 			return o
 		}
 	}
@@ -524,7 +524,7 @@ func (l *LobeHubSource) agents(ctx context.Context) []any {
 	}
 	agents := index
 	if o, isObj := index.(*jsonutil.Object); isObj {
-		agents = pyGet(o, "agents", o)
+		agents = lookup(o, "agents", o)
 	}
 	list, _ := agents.([]any)
 	return list
@@ -539,7 +539,7 @@ func lobeHubAgentID(identifier string) string {
 }
 
 func lobeHubAgentMeta(agent any, name, description string) SkillMeta {
-	tags := pyGet(pyGet(agent, "meta", agent), "tags", []any{})
+	tags := lookup(lookup(agent, "meta", agent), "tags", []any{})
 	return SkillMeta{Name: name, Description: description, Source: "lobehub", Identifier: "lobehub/" + name,
 		TrustLevel: "community", Tags: tagStrings(tags), Extra: jsonutil.NewObject()}
 }
@@ -552,18 +552,18 @@ func (l *LobeHubSource) Search(ctx context.Context, query string, limit int) (ou
 		return []SkillMeta{}, nil
 	}
 	fields := func(agent any) []any {
-		meta := pyGet(agent, "meta", agent)
-		var tags any = pyGet(meta, "tags", []any{})
+		meta := lookup(agent, "meta", agent)
+		var tags any = lookup(meta, "tags", []any{})
 		if _, isList := tags.([]any); !isList {
 			tags = ""
 		}
-		return []any{pyGet(meta, "title", pyGet(agent, "identifier", "")), pyGet(meta, "description", ""), tags}
+		return []any{lookup(meta, "title", lookup(agent, "identifier", "")), lookup(meta, "description", ""), tags}
 	}
 	toMeta := func(agent any) *SkillMeta {
-		meta := pyGet(agent, "meta", agent)
-		title := pyGet(meta, "title", pyGet(agent, "identifier", ""))
-		identifier := pyGet(agent, "identifier", strings.ReplaceAll(strings.ToLower(pyStrOf(title)), " ", "-"))
-		m := lobeHubAgentMeta(agent, pyStrOf(identifier), pyHead(pyGet(meta, "description", ""), 200))
+		meta := lookup(agent, "meta", agent)
+		title := lookup(meta, "title", lookup(agent, "identifier", ""))
+		identifier := lookup(agent, "identifier", strings.ReplaceAll(strings.ToLower(hubText(title)), " ", "-"))
+		m := lobeHubAgentMeta(agent, hubText(identifier), headValue(lookup(meta, "description", ""), 200))
 		return &m
 	}
 	return firstMatching(strings.ToLower(query), agents, fields, toMeta, limit), nil
@@ -586,11 +586,11 @@ func (l *LobeHubSource) Inspect(ctx context.Context, identifier string) (m *Skil
 	defer hubRecover(&err)
 	agentID := lobeHubAgentID(identifier)
 	for _, a := range l.agents(ctx) {
-		if pyGet(a, "identifier", nil) == agentID {
+		if lookup(a, "identifier", nil) == agentID {
 			if !anyutil.IsTrue(a) {
 				return nil, nil
 			}
-			meta := lobeHubAgentMeta(a, agentID, pyStrOf(pyGet(pyGet(a, "meta", a), "description", "")))
+			meta := lobeHubAgentMeta(a, agentID, hubText(lookup(lookup(a, "meta", a), "description", "")))
 			return &meta, nil
 		}
 	}
@@ -599,17 +599,17 @@ func (l *LobeHubSource) Inspect(ctx context.Context, identifier string) (m *Skil
 
 // SKILL.md text of a LobeHub agent document
 func lobeHubConvertToSkillMD(agentData any) string {
-	meta := pyGet(agentData, "meta", agentData)
-	identifier := pyStrOf(pyGet(agentData, "identifier", "lobehub-agent"))
-	title := pyStrOf(pyGet(meta, "title", identifier))
-	description := pyStrOf(pyGet(meta, "description", ""))
-	tags := tagStrings(pyGet(meta, "tags", []any{}))
-	systemRole := pyGet(pyGet(agentData, "config", jsonutil.NewObject()), "systemRole", "")
+	meta := lookup(agentData, "meta", agentData)
+	identifier := hubText(lookup(agentData, "identifier", "lobehub-agent"))
+	title := hubText(lookup(meta, "title", identifier))
+	description := hubText(lookup(meta, "description", ""))
+	tags := tagStrings(lookup(meta, "tags", []any{}))
+	systemRole := lookup(lookup(agentData, "config", jsonutil.NewObject()), "systemRole", "")
 	role := "(No system role defined)"
 	if anyutil.IsTrue(systemRole) {
-		role = pyStrOf(systemRole)
+		role = hubText(systemRole)
 	}
-	fm := []string{"---", "name: " + identifier, "description: " + pyHead(description, 500), "metadata:", "  icebath:",
+	fm := []string{"---", "name: " + identifier, "description: " + headValue(description, 500), "metadata:", "  icebath:",
 		"    tags: [" + strings.Join(tags, ", ") + "]", "  lobehub:", "    source: lobehub", "---"}
 	body := []string{"# " + title, "", description, "", "## Instructions", "", role}
 	return strings.Join(fm, "\n") + "\n\n" + strings.Join(body, "\n") + "\n"
@@ -636,7 +636,7 @@ func (b *BrowseShSource) catalog(ctx context.Context) []any {
 		}
 		var skills any = []any{}
 		if o, isObj := data.(*jsonutil.Object); isObj {
-			skills = pyGet(o, "skills", []any{})
+			skills = lookup(o, "skills", []any{})
 		}
 		if list, isList := skills.([]any); isList {
 			return list, nil
@@ -657,29 +657,29 @@ func (b *BrowseShSource) catalog(ctx context.Context) []any {
 }
 
 func (b *BrowseShSource) itemToMeta(item any) *SkillMeta {
-	slug := pyGet(item, "slug", "")
-	name := pyGet(item, "name", "")
-	desc := pyGet(item, "description", pyGet(item, "title", name))
+	slug := lookup(item, "slug", "")
+	name := lookup(item, "name", "")
+	desc := lookup(item, "description", lookup(item, "title", name))
 	if !anyutil.IsTrue(slug) || !anyutil.IsTrue(name) {
 		return nil
 	}
-	description := pyStrOf(desc)
+	description := hubText(desc)
 	if rs := []rune(description); len(rs) > 1024 {
 		description = string(rs[:1021]) + "..."
 	}
 	return &SkillMeta{Name: anyutil.String(name), Description: description, Source: "browse-sh", Identifier: "browse-sh/" + anyutil.String(slug),
-		TrustLevel: "community", Tags: tagStrings(pyGet(item, "tags", []any{})),
-		Extra: objectOf("slug", slug, "hostname", pyGet(item, "hostname", ""), "category", pyGet(item, "category", ""),
-			"source_url", pyGet(item, "sourceUrl", ""), "recommended_method", pyGet(item, "recommendedMethod", ""),
-			"proxies", pyGet(item, "proxies", false), "install_count", pyGet(item, "installCount", int64(0)))}
+		TrustLevel: "community", Tags: tagStrings(lookup(item, "tags", []any{})),
+		Extra: objectOf("slug", slug, "hostname", lookup(item, "hostname", ""), "category", lookup(item, "category", ""),
+			"source_url", lookup(item, "sourceUrl", ""), "recommended_method", lookup(item, "recommendedMethod", ""),
+			"proxies", lookup(item, "proxies", false), "install_count", lookup(item, "installCount", int64(0)))}
 }
 
 // Catalog skills matching the query
 func (b *BrowseShSource) Search(ctx context.Context, query string, limit int) (out []SkillMeta, err error) {
 	defer hubRecover(&err)
 	fields := func(item any) []any {
-		return []any{pyGet(item, "name", ""), pyGet(item, "title", ""), pyGet(item, "description", ""),
-			pyGet(item, "hostname", ""), pyGet(item, "category", ""), pyGet(item, "tags", []any{})}
+		return []any{lookup(item, "name", ""), lookup(item, "title", ""), lookup(item, "description", ""),
+			lookup(item, "hostname", ""), lookup(item, "category", ""), lookup(item, "tags", []any{})}
 	}
 	return firstMatching(strings.ToLower(query), b.catalog(ctx), fields, b.itemToMeta, limit), nil
 }
@@ -690,7 +690,7 @@ func (b *BrowseShSource) catalogItem(ctx context.Context, identifier string) any
 		return nil
 	}
 	for _, i := range b.catalog(ctx) {
-		if pyGet(i, "slug", nil) == slug {
+		if lookup(i, "slug", nil) == slug {
 			return i
 		}
 	}
@@ -726,13 +726,13 @@ func (b *BrowseShSource) Fetch(ctx context.Context, identifier string) (bundle *
 	if err != nil || !ok {
 		return nil, err
 	}
-	name := pyStrOf(slug)[strings.LastIndex(pyStrOf(slug), "/")+1:]
+	name := hubText(slug)[strings.LastIndex(hubText(slug), "/")+1:]
 	if meta := b.itemToMeta(item); meta != nil {
 		name = meta.Name
 	}
 	return &SkillBundle{Name: name, Files: []BundleFile{{Path: "SKILL.md", Data: []byte(content)}}, Source: "browse-sh",
-		Identifier: identifier, TrustLevel: "community", Metadata: objectOf("slug", slug, "hostname", pyGet(item, "hostname", ""),
-			"source_url", pyGet(item, "sourceUrl", ""), "skill_md_url", mdURL)}, nil
+		Identifier: identifier, TrustLevel: "community", Metadata: objectOf("slug", slug, "hostname", lookup(item, "hostname", ""),
+			"source_url", lookup(item, "sourceUrl", ""), "skill_md_url", mdURL)}, nil
 }
 
 // Detail skillMdUrl of a slug, else a raw.githubusercontent.com sourceUrl, empty when neither exists
@@ -742,20 +742,20 @@ func (b *BrowseShSource) resolveSkillMDURL(ctx context.Context, slug string, ite
 		return "", err
 	}
 	if o, isObj := data.(*jsonutil.Object); isObj {
-		if md, isStr := pyGet(o, "skillMdUrl", nil).(string); isStr && strings.HasPrefix(md, "http") {
+		if md, isStr := lookup(o, "skillMdUrl", nil).(string); isStr && strings.HasPrefix(md, "http") {
 			return md, nil
 		}
 	}
 	var sourceURL any = ""
 	if _, isObj := item.(*jsonutil.Object); isObj {
-		sourceURL = pyGet(item, "sourceUrl", "")
+		sourceURL = lookup(item, "sourceUrl", "")
 	}
 	if !anyutil.IsTrue(sourceURL) {
 		return "", nil
 	}
-	matches, err := urlutil.BaseHostMatches(pyStrOf(sourceURL), "raw.githubusercontent.com")
+	matches, err := urlutil.BaseHostMatches(hubText(sourceURL), "raw.githubusercontent.com")
 	if err != nil || !matches {
 		return "", err
 	}
-	return pyStrOf(sourceURL), nil
+	return hubText(sourceURL), nil
 }

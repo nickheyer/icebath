@@ -110,10 +110,10 @@ func htmlCollapsible(kind, icon, title, inner, indent, outerClass string) string
 		indent
 }
 
-// Value of a key that may be absent, the fallback when it is
+// Value of a key that may be absent, the fallback when it is absent or null
 func htmlGetOr(row *jsonutil.Object, key string, fallback any) any {
 	if row != nil {
-		if v, ok := row.Get(key); ok {
+		if v, ok := row.Get(key); ok && v != nil {
 			return v
 		}
 	}

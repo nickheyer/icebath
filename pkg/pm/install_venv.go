@@ -57,7 +57,7 @@ func asVenvState(p Package) (VenvState, error) {
 		if p != nil {
 			name = "the " + p.Base().Name + " package"
 		}
-		return nil, &PyError{Class: "AttributeError", Message: name + " has no dependency environment"}
+		return nil, &ClassError{Class: "AttributeError", Message: name + " has no dependency environment"}
 	}
 	return v, nil
 }
@@ -166,7 +166,7 @@ func memberInputs(ctx context.Context, plugins PluginInput) ([]MemberDir, error)
 		}
 		return p.Dirs, nil
 	}
-	return nil, &PyError{Class: "TypeError", Message: reflectTypeName(plugins) + " changes plugin state; only a sync may carry it"}
+	return nil, &ClassError{Class: "TypeError", Message: reflectTypeName(plugins) + " changes plugin state; only a sync may carry it"}
 }
 
 var extraSeparators = regexp.MustCompile(`[-_.]+`)
@@ -240,7 +240,7 @@ func sortedUnion(lists ...[]string) []string {
 
 // Validated recorded selection, an invalid recorded dependency state ValueError when it is malformed
 func recordedSelection(value any) (map[string]any, []string, error) {
-	invalid := &PyError{Class: "ValueError", Message: "invalid recorded dependency state"}
+	invalid := &ClassError{Class: "ValueError", Message: "invalid recorded dependency state"}
 	fact, ok := value.(map[string]any)
 	if !ok {
 		return nil, nil, invalid
@@ -453,7 +453,7 @@ func targetSelection(ctx context.Context, p VenvState, fact map[string]any, extr
 		}
 		var enabled []string
 		if raw, present := fact["extras"]; present {
-			list, err := pyIterStrings(raw)
+			list, err := iterStrings(raw)
 			if err != nil {
 				return nil, "", VenvApplyOptions{}, err
 			}
@@ -473,7 +473,7 @@ func targetSelection(ctx context.Context, p VenvState, fact map[string]any, extr
 	}
 	var recorded []string
 	if raw, present := fact["extras"]; present {
-		list, err := pyIterStrings(raw)
+		list, err := iterStrings(raw)
 		if err != nil {
 			return nil, "", VenvApplyOptions{}, err
 		}
@@ -554,7 +554,7 @@ func commitSelection(ctx context.Context, p VenvState, facts *Facts, change plug
 				return err
 			}
 			if stamp != c.Stamp {
-				return &PyError{Class: "ValueError", Message: "Dependency inputs changed while preparing publication; retry."}
+				return &ClassError{Class: "ValueError", Message: "Dependency inputs changed while preparing publication; retry."}
 			}
 		}
 		if change != nil {
@@ -774,13 +774,13 @@ func syncVenv(ctx context.Context, opts SyncVenvOptions) error {
 // ValueError of a sync request whose repair, eviction or carried extras contradict the rest of it
 func validateSyncVenv(opts SyncVenvOptions) error {
 	if opts.Repair && (opts.Extras != nil || opts.Plugins != nil) {
-		return &PyError{Class: "ValueError", Message: "repair restores the recorded environment; it cannot change features or plugins"}
+		return &ClassError{Class: "ValueError", Message: "repair restores the recorded environment; it cannot change features or plugins"}
 	}
 	if opts.EvictIncompatiblePlugins && (opts.Repair || opts.Plugins != nil || !opts.Explicit) {
-		return &PyError{Class: "ValueError", Message: "only an explicit sync of the discovered plugin selection may disable plugins"}
+		return &ClassError{Class: "ValueError", Message: "only an explicit sync of the discovered plugin selection may disable plugins"}
 	}
 	if len(opts.Carried) > 0 && (opts.Repair || opts.Plugins != nil || !subsetOf(opts.Carried, opts.Extras)) {
-		return &PyError{Class: "ValueError", Message: "carried extras belong to a feature sync of the discovered selection"}
+		return &ClassError{Class: "ValueError", Message: "carried extras belong to a feature sync of the discovered selection"}
 	}
 	return nil
 }

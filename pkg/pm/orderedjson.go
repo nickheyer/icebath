@@ -67,7 +67,7 @@ func encodeNoHTML(v any) ([]byte, error) {
 
 // Decodes JSON with every object as an ordered object and numbers kept textual
 func loadOrderedJSON(data []byte) (any, error) {
-	dec := json.NewDecoder(bytes.NewReader(pyJSONSource(trimBOM(data))))
+	dec := json.NewDecoder(bytes.NewReader(jsonSource(trimBOM(data))))
 	dec.UseNumber()
 	v, err := decodeOrdered(dec)
 	if err != nil {

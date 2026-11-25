@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -64,7 +64,7 @@ func (h hostedLoginBackend) DisplayName() string {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyStr(value)
+	return anyutil.String(value)
 }
 
 // Plugin's own ownership answer from the host, raising like the plugin method does
@@ -73,7 +73,7 @@ func (h hostedLoginBackend) Owns(handle string) bool {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyTruthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // Plugin's own unlock state from the host, raising like the plugin method does
@@ -82,7 +82,7 @@ func (h hostedLoginBackend) IsUnlocked() bool {
 	if err != nil {
 		panic(err)
 	}
-	return config.PyTruthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // Runs one backend operation in the host, a wrong typed value reported as errHostedLoginInvalid
@@ -95,7 +95,7 @@ func (h hostedLoginBackend) call(op string, params map[string]any) (any, error) 
 	if !ok {
 		return nil, fmt.Errorf("login backend operation %s answered %T", op, raw)
 	}
-	if config.PyTruthy(reply["invalid"]) {
+	if anyutil.IsTrue(reply["invalid"]) {
 		return nil, errHostedLoginInvalid
 	}
 	return reply["value"], nil

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestSplicedTranscriptSurvivesRepairMessageSequence(t *testing.T) {
@@ -24,7 +25,7 @@ func TestSplicedTranscriptSurvivesRepairMessageSequence(t *testing.T) {
 			t.Fatal("marker destroyed by repair pass")
 		}
 		for _, m := range messages {
-			if m["role"] == "user" && !pyTruthy(m[state.CompressedSummaryMetadataKey]) && strings.Contains(fmt.Sprint(m["content"]), "ROLLING SUMMARY") {
+			if m["role"] == "user" && !anyutil.IsTrue(m[state.CompressedSummaryMetadataKey]) && strings.Contains(fmt.Sprint(m["content"]), "ROLLING SUMMARY") {
 				t.Fatal("summary text leaked into a real user message")
 			}
 		}

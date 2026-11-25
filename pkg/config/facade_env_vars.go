@@ -127,7 +127,7 @@ func readEnvTextLines(raw []byte) []string {
 		r, size := utf8.DecodeRune(raw)
 		if r == utf8.RuneError && size <= 1 {
 			b.WriteRune(utf8.RuneError)
-			raw = raw[pyInvalidUTF8Len(raw):]
+			raw = raw[invalidUTF8Len(raw):]
 			continue
 		}
 		b.WriteRune(r)
@@ -145,7 +145,7 @@ func trimUTF8BOM(raw []byte) []byte {
 }
 
 // Bytes Python's replace handler consumes for one invalid sequence, the maximal valid prefix of a multibyte form
-func pyInvalidUTF8Len(raw []byte) int {
+func invalidUTF8Len(raw []byte) int {
 	lead := raw[0]
 	var need int
 	lo, hi := byte(0x80), byte(0xBF)

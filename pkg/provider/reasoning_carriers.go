@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -423,7 +424,7 @@ func carrierShape(msg map[string]any, r carrierWireRoute) map[string]any {
 			delete(out, "reasoning_details")
 		}
 	}
-	if r.gemini && pyTruthy(values[carrierGeminiKey]) {
+	if r.gemini && anyutil.IsTrue(values[carrierGeminiKey]) {
 		out[carrierGeminiKey] = values[carrierGeminiKey]
 	}
 	if r.profile != nil {

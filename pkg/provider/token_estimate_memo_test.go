@@ -87,14 +87,14 @@ func TestPreflightEstimateIgnoresReasoningDetails(t *testing.T) {
 	}
 }
 
-func TestMessageTextIsEstimatedOnThePythonStrOfTheShadow(t *testing.T) {
+func TestMessageTextIsEstimatedOnTheJSONTextOfTheShadow(t *testing.T) {
 	isolateTokenMemo(t)
 	row := map[string]any{"role": "tool", "content": "ok", "tool_call_id": "c1", "n": int64(3), "ratio": 1.5, "flag": true, "none": nil}
 	if got, want := estimateMessageTokensWithoutImages(row), EstimateTokens(anyutil.String(mapShadow(row))); got != want {
 		t.Fatalf("got %d want %d", got, want)
 	}
-	if !strings.Contains(anyutil.String(mapShadow(row)), "True") || !strings.Contains(anyutil.String(mapShadow(row)), "None") {
-		t.Fatal("the shadow renders as a Python dict")
+	if got, want := anyutil.String(mapShadow(row)), `{"content":"ok","flag":true,"n":3,"none":null,"ratio":1.5,"role":"tool","tool_call_id":"c1"}`; got != want {
+		t.Fatalf("the shadow renders as JSON, got %s", got)
 	}
 	if estimateMessageTokensWithoutImages("not-a-dict") != EstimateTokens("not-a-dict") {
 		t.Fatal("a non dict row is estimated on its str")
@@ -357,10 +357,10 @@ func TestIdleEntriesNeverOutnumberTheMemoMainAlwaysHad(t *testing.T) {
 func TestEstimateRowsTokensPricesTheDurabilityMarkerOfADictRow(t *testing.T) {
 	plain := map[string]any{"role": "user", "content": "Audit the auth module."}
 	marked := map[string]any{"role": "user", "content": "Audit the auth module.", "_db_persisted": true, "_row_id": 7, "timestamp": 1.5}
-	if got := EstimateRowsTokens([]map[string]any{plain}, DefaultImageTokenCost); got != 14 {
-		t.Fatalf("plain row = %d, want 14", got)
+	if got := EstimateRowsTokens([]map[string]any{plain}, DefaultImageTokenCost); got != 13 {
+		t.Fatalf("plain row = %d, want 13", got)
 	}
-	if got := EstimateRowsTokens([]map[string]any{marked}, DefaultImageTokenCost); got != 19 {
-		t.Fatalf("marked row = %d, want 19", got)
+	if got := EstimateRowsTokens([]map[string]any{marked}, DefaultImageTokenCost); got != 18 {
+		t.Fatalf("marked row = %d, want 18", got)
 	}
 }

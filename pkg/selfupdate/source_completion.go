@@ -420,7 +420,7 @@ func SourceCompletionMain(ctx context.Context, argv []string, stdout, stderr io.
 		return code
 	}
 	uncaught := func(err error) int {
-		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		fmt.Fprintln(stderr, launchErrorLine(err))
 		return 1
 	}
 	root, err := pathutil.Resolve(args.source)

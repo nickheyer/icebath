@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/mcp"
@@ -546,14 +547,11 @@ func stopRecordedGateway(profileDir, pidFile string) error {
 		}
 		obj, ok := v.(*jsonutil.Object)
 		if !ok {
-			if _, isList := v.([]any); isList {
-				return errors.New("list indices must be integers or slices, not str")
-			}
-			return fmt.Errorf("'%s' object is not subscriptable", anyutil.Kind(v))
+			return fmt.Errorf("the gateway pid record is %s where a mapping was expected", errchain.Kind(v))
 		}
 		data = obj.Map()
 	} else {
-		n, err := pyInt(text)
+		n, err := recordInt("pid", text)
 		if err != nil {
 			return err
 		}
@@ -561,9 +559,9 @@ func stopRecordedGateway(profileDir, pidFile string) error {
 	}
 	rawPID, ok := data["pid"]
 	if !ok {
-		return errors.New("'pid'")
+		return errors.New("the gateway pid record names no pid")
 	}
-	pid, err := pyInt(rawPID)
+	pid, err := recordInt("pid", rawPID)
 	if err != nil {
 		return err
 	}
@@ -572,7 +570,7 @@ func stopRecordedGateway(profileDir, pidFile string) error {
 		return nil
 	}
 	var expected *int64
-	if st, ok := pyIntOK(data["start_time"]); ok {
+	if st, ok := recordStartTime(data["start_time"]); ok {
 		expected = &st
 	} else if st, known := gatewayProcessStartTime(pid); known {
 		expected = &st
@@ -588,35 +586,28 @@ func stopRecordedGateway(profileDir, pidFile string) error {
 	return nil
 }
 
-// Python int() of a decoded value, the ValueError text for an unparsable string
-func pyInt(v any) (int, error) {
-	switch x := v.(type) {
-	case int:
-		return x, nil
-	case int64:
-		return int(x), nil
-	case float64:
-		return int(x), nil
-	case bool:
-		if x {
-			return 1, nil
-		}
-		return 0, nil
-	case string:
-		n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimSpace(x), "_", ""))
-		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(x))
-		}
-		return n, nil
+// Process number a pid record field holds: an integer, a whole number cut from a float, true and false as 1 and 0, or decimal text
+func recordInt(field string, v any) (int, error) {
+	n, err := anyutil.ToInt(v)
+	if err != nil || int64(int(n)) != n {
+		return 0, fmt.Errorf("the gateway pid record's %s is %s where a whole number was expected", field, recordValueText(v))
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", anyutil.Kind(v))
+	return int(n), nil
 }
 
-// Integer start time of a pid record, false when absent or null
-func pyIntOK(v any) (int64, bool) {
+// Start time a pid record holds, false when it is absent, null or no whole number
+func recordStartTime(v any) (int64, bool) {
 	if v == nil {
 		return 0, false
 	}
-	n, err := pyInt(v)
-	return int64(n), err == nil
+	n, err := anyutil.ToInt(v)
+	return n, err == nil
+}
+
+// Value of a pid record field as an error message shows it, text quoted and other values by kind
+func recordValueText(v any) string {
+	if s, ok := v.(string); ok {
+		return strconv.Quote(s)
+	}
+	return errchain.Kind(v)
 }

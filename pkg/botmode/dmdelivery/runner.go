@@ -202,7 +202,7 @@ func transportExecutable(name string, env map[string]string) (string, error) {
 // Runs the transport with input on stdin and the runner's own stdout and stderr, its return code
 func runTransport(argv []string, input []byte, env map[string]string, stdout, stderr io.Writer) (int, error) {
 	if len(argv) == 0 {
-		return 0, &pyError{"IndexError", "list index out of range"}
+		return 0, &kindError{"IndexError", "list index out of range"}
 	}
 	path, err := transportExecutable(argv[0], env)
 	if err != nil {

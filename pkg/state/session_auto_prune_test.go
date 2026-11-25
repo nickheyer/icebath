@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -277,7 +278,7 @@ func TestPruneSessionsRespectsTouchSessionActivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := pyFloatOf(rowValue(projRow(t, all, "active_by_heartbeat"), "last_active"))
+	got, err := floatOf(rowValue(projRow(t, all, "active_by_heartbeat"), "last_active"))
 	if err != nil || math.Abs(got-recentTime) > 1.0 {
 		t.Fatalf("last active %v want %v %v", got, recentTime, err)
 	}
@@ -393,7 +394,7 @@ func TestAPinFollowsTheChatThroughCompressionAndBulkCleanupSparesIt(t *testing.T
 	if got := pruneLineage(t, db, "keep"); !reflect.DeepEqual(got, []string{"keep", "keep-2"}) {
 		t.Fatalf("lineage %v", got)
 	}
-	if pyTruthy(autoField(t, db, "keep", "archived")) {
+	if anyutil.IsTrue(autoField(t, db, "keep", "archived")) {
 		t.Fatal("keep archived")
 	}
 	if n, err := db.PruneSessions(ctx, PruneSessionsOptions{OlderThanDays: pruneDays(90), Filters: PruneFilters{IncludePinned: true}}); err != nil || n != 2 {

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -199,12 +200,12 @@ func executedOutcome(captured *jsonutil.Object) ProcessingOutcome {
 	if result == nil {
 		return ProcessingSuccess
 	}
-	if v, _ := result.Get("interrupted"); pyTruthy(v) {
+	if v, _ := result.Get("interrupted"); anyutil.IsTrue(v) {
 		return ProcessingCancelled
 	}
 	failed, _ := result.Get("failed")
 	errValue, _ := result.Get("error")
-	if pyTruthy(failed) || pyTruthy(errValue) {
+	if anyutil.IsTrue(failed) || anyutil.IsTrue(errValue) {
 		return ProcessingFailure
 	}
 	return ProcessingSuccess

@@ -134,7 +134,7 @@ func workerLifecycle(d *SessionDB, ctx context.Context, conn SQLiteConn, session
 	}
 	value := SessionStatusEmpty
 	if row != nil {
-		value = ClassifySessionStatus(row["role"], pyTruthy(row["has_tool_calls"]), row["finish_reason"])
+		value = ClassifySessionStatus(row["role"], anyutil.IsTrue(row["has_tool_calls"]), row["finish_reason"])
 	}
 	return jsonutil.ObjectOf("value", value), nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -282,7 +283,7 @@ func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	}
 	authz, ok := runner.(nativeAuthorizationRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot check whether a user is authorized for a source"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the gateway runner cannot check whether a user is authorized for a source"}
 	}
 	delegated := freshRoles || provenanceBindsRelay(provenance)
 	if !delegated {
@@ -401,7 +402,7 @@ func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEv
 
 // Isoformat of an event time, a local one read as naive and any other zone as aware
 func eventISOFormat(at time.Time) string {
-	return pyDatetime{T: at, Aware: at.Location() != time.Local}.isoformat()
+	return datetime{T: at, Aware: at.Location() != time.Local}.isoformat()
 }
 
 // List of plain values of a typed slice
@@ -532,7 +533,7 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 			wrapped, _ := legacy.Get("native_text_v1")
 			wrapped.(*jsonutil.Object).Delete("provenance")
 			if authority == nil {
-				return nil, &PyError{Kind: "AttributeError", Msg: "the session store is not open"}
+				return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the session store is not open"}
 			}
 			rows, err := authority.DB.ListSessionAdmissions(ctx, entry.SessionID, false)
 			if err != nil {
@@ -553,11 +554,11 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 func nativeEnvelope(payload *jsonutil.Object) (*jsonutil.Object, error) {
 	value, ok := payload.Get("native_text_v1")
 	if !ok {
-		return nil, &pyKeyError{"native_text_v1"}
+		return nil, &keyError{"native_text_v1"}
 	}
 	envelope, isEnvelope := value.(*jsonutil.Object)
 	if !isEnvelope || envelope == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "the native envelope is " + errchain.Kind(value) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the native envelope is " + errchain.Kind(value) + ", expected a mapping"}
 	}
 	return envelope, nil
 }
@@ -570,11 +571,11 @@ func restoreNativeSource(ctx context.Context, payload *jsonutil.Object, runner A
 	}
 	encoded, ok := envelope.Get("source")
 	if !ok {
-		return nil, &pyKeyError{"source"}
+		return nil, &keyError{"source"}
 	}
 	wire, isWire := attachmentItem(encoded)
 	if !isWire {
-		return nil, &PyError{Kind: "TypeError", Msg: "the encoded native source is " + errchain.Kind(encoded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the encoded native source is " + errchain.Kind(encoded) + ", expected a mapping"}
 	}
 	source, err := SessionSourceFromDict(ctx, wire)
 	if err != nil {
@@ -582,9 +583,9 @@ func restoreNativeSource(ctx context.Context, payload *jsonutil.Object, runner A
 	}
 	bot, has := wire["is_bot"]
 	if !has {
-		return nil, &pyKeyError{"is_bot"}
+		return nil, &keyError{"is_bot"}
 	}
-	source.IsBot = pyTruthy(bot)
+	source.IsBot = anyutil.IsTrue(bot)
 	reauthorize, _ := envelope.Get("reauthorize")
 	source.RoleAuthorized = reauthorize == "roles"
 	if provenance, bound := envelope.Get("provenance"); bound {
@@ -608,20 +609,20 @@ func eventOptString(name string, value any) (*string, error) {
 	case string:
 		return &v, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: name + " must be text or empty, got " + errchain.Kind(value)}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: name + " must be text or empty, got " + errchain.Kind(value)}
 }
 
 // List of strings of a committed event field
 func eventStringList(name string, value any) ([]string, error) {
 	items, ok := value.([]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: name + " must be a list, got " + errchain.Kind(value)}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: name + " must be a list, got " + errchain.Kind(value)}
 	}
 	out := make([]string, len(items))
 	for i, item := range items {
 		text, isText := item.(string)
 		if !isText {
-			return nil, &PyError{Kind: "TypeError", Msg: name + " items must be text, got " + errchain.Kind(item)}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: name + " items must be text, got " + errchain.Kind(item)}
 		}
 		out[i] = text
 	}
@@ -643,7 +644,7 @@ func setEventField(event *MessageEvent, name string, value any) error {
 		return err
 	}
 	if field, ok := flags[name]; ok {
-		*field = pyTruthy(value)
+		*field = anyutil.IsTrue(value)
 		return nil
 	}
 	var err error
@@ -651,12 +652,12 @@ func setEventField(event *MessageEvent, name string, value any) error {
 	case "platform_update_id":
 		event.PlatformUpdateID = rowInt(jsonutil.ObjectOf(name, value), name)
 		if value != nil && event.PlatformUpdateID == nil {
-			return &PyError{Kind: "TypeError", Msg: name + " must be a whole number or empty, got " + errchain.Kind(value)}
+			return &errorutil.Error{Kind: "TypeError", Msg: name + " must be a whole number or empty, got " + errchain.Kind(value)}
 		}
 	case "reply_expected":
 		event.ReplyExpected = nil
 		if value != nil {
-			expected := pyTruthy(value)
+			expected := anyutil.IsTrue(value)
 			event.ReplyExpected = &expected
 		}
 	case "auto_skill":
@@ -674,19 +675,19 @@ func setEventField(event *MessageEvent, name string, value any) error {
 	case "media_text_inlined":
 		items, isList := value.([]any)
 		if !isList {
-			return &PyError{Kind: "TypeError", Msg: name + " must be a list, got " + errchain.Kind(value)}
+			return &errorutil.Error{Kind: "TypeError", Msg: name + " must be a list, got " + errchain.Kind(value)}
 		}
 		event.MediaTextInlined = make([]*bool, len(items))
 		for i, item := range items {
 			if item != nil {
-				inlined := pyTruthy(item)
+				inlined := anyutil.IsTrue(item)
 				event.MediaTextInlined[i] = &inlined
 			}
 		}
 	case "text", "source", "timestamp", "message_type", "media_urls":
-		return &PyError{Kind: "TypeError", Msg: "gateway.platforms.event.MessageEvent() got multiple values for keyword argument '" + name + "'"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "gateway.platforms.event.MessageEvent() got multiple values for keyword argument '" + name + "'"}
 	default:
-		return &PyError{Kind: "TypeError", Msg: "a message event has no field " + name}
+		return &errorutil.Error{Kind: "TypeError", Msg: "a message event has no field " + name}
 	}
 	return err
 }
@@ -703,11 +704,11 @@ func restoreNative(ctx context.Context, payload *jsonutil.Object, runner Authori
 	}
 	stamp, ok := envelope.Get("timestamp")
 	if !ok {
-		return nil, &pyKeyError{"timestamp"}
+		return nil, &keyError{"timestamp"}
 	}
 	stampText, isText := stamp.(string)
 	if !isText {
-		return nil, &PyError{Kind: "TypeError", Msg: "the native event timestamp is not ISO 8601 text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the native event timestamp is not ISO 8601 text"}
 	}
 	timestamp, err := fromISOFormat(stampText)
 	if err != nil {
@@ -719,17 +720,17 @@ func restoreNative(ctx context.Context, payload *jsonutil.Object, runner Authori
 	}
 	text, ok := payload.Get("text")
 	if !ok {
-		return nil, &pyKeyError{"text"}
+		return nil, &keyError{"text"}
 	}
 	body, isBody := text.(string)
 	if !isBody {
-		return nil, &PyError{Kind: "TypeError", Msg: "the native message text is " + errchain.Kind(text) + ", expected text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the native message text is " + errchain.Kind(text) + ", expected text"}
 	}
 	kind := MessageTypeText
 	if named, has := envelope.Get("message_type"); has {
 		name, _ := named.(string)
 		if kind = MessageType(name); !messageTypes[kind] {
-			return nil, &PyError{Kind: "ValueError", Msg: anyutil.Quote(named) + " is not a valid MessageType"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: anyutil.Quote(named) + " is not a valid MessageType"}
 		}
 	}
 	var references []any
@@ -744,11 +745,11 @@ func restoreNative(ctx context.Context, payload *jsonutil.Object, runner Authori
 	event.Source, event.Timestamp, event.MessageType, event.MediaURLs = source, at, kind, urls
 	committed, ok := envelope.Get("event")
 	if !ok {
-		return nil, &pyKeyError{"event"}
+		return nil, &keyError{"event"}
 	}
 	fields, isFields := committed.(*jsonutil.Object)
 	if !isFields || fields == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "the committed message event is " + errchain.Kind(committed) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the committed message event is " + errchain.Kind(committed) + ", expected a mapping"}
 	}
 	for _, name := range fields.Keys() {
 		value, _ := fields.Get(name)
@@ -762,20 +763,20 @@ func restoreNative(ctx context.Context, payload *jsonutil.Object, runner Authori
 	}
 	automation, isAutomation := described.(*jsonutil.Object)
 	if !isAutomation || automation == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the native source description is " + errchain.Kind(described) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the native source description is " + errchain.Kind(described) + ", expected a mapping"}
 	}
 	event.Internal = true
-	if heartbeat, _ := automation.Get("heartbeat"); pyTruthy(heartbeat) {
+	if heartbeat, _ := automation.Get("heartbeat"); anyutil.IsTrue(heartbeat) {
 		session := anyutil.String(heartbeat)
 		event.SetHeartbeatSessionID(&session)
 	}
 	route, ok := envelope.Get("route")
 	if !ok {
-		return nil, &pyKeyError{"route"}
+		return nil, &keyError{"route"}
 	}
 	owner, ok := automation.Get("owner")
 	if !ok {
-		return nil, &pyKeyError{"owner"}
+		return nil, &keyError{"owner"}
 	}
 	event.Metadata = map[string]any{"gateway_session_key": route, "gateway_session_id": owner}
 	for _, describe := range []func(func(string) (any, bool)) (*jsonutil.Object, error){automationNotificationMetadata, AutomationDisplayMetadata} {
@@ -813,7 +814,7 @@ func checkNativeRoute(ctx context.Context, runner AuthorityRunner, payload *json
 	}
 	committed, ok := envelope.Get("route")
 	if !ok {
-		return nil, "", &pyKeyError{"route"}
+		return nil, "", &keyError{"route"}
 	}
 	route, _ := committed.(string)
 	store := runner.SessionStore()

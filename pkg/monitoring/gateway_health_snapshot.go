@@ -69,21 +69,17 @@ func PlatformForSubsystem(subsystem string) *string {
 }
 
 // Gateway busy flag through the status contract, else running with a positive active agent count
-func deriveGatewayBusy(gatewayRunning bool, gatewayState string, activeAgents any, running bool) (bool, error) {
+func deriveGatewayBusy(gatewayRunning bool, gatewayState string, activeAgents any, running bool) bool {
 	if derive := GatewayDeriveBusy; derive != nil {
 		if busy, err := derive(gatewayRunning, gatewayState, activeAgents); err == nil {
-			return busy, nil
+			return busy
 		}
 	}
 	if !running {
-		return false, nil
+		return false
 	}
-	n, err := parseActiveAgents(activeAgents)
-	if err != nil {
-		return false, err
-	}
-	count, _ := anyutil.ToInt(n)
-	return count > 0, nil
+	count, _ := anyutil.ToInt(parseActiveAgents(activeAgents))
+	return count > 0
 }
 
 // Gateway drainable flag through the status contract, else whether it is running
@@ -95,20 +91,14 @@ func deriveGatewayDrainable(gatewayRunning bool, gatewayState string, running bo
 }
 
 // Converts gateway_state.json compatible runtime state into service health gauges and events
-func BuildGatewayHealthSnapshot(runtime *jsonutil.Object, gatewayRunning bool, profile, installID, version, supervisionMode string) (GatewayHealthSnapshot, error) {
+func BuildGatewayHealthSnapshot(runtime *jsonutil.Object, gatewayRunning bool, profile, installID, version, supervisionMode string) GatewayHealthSnapshot {
 	if runtime == nil {
 		runtime = jsonutil.NewObject()
 	}
 	gatewayState := boundedState(runtime.ValueOr("gateway_state", nil), knownGatewayStates)
-	activeAgents, err := parseActiveAgents(runtime.ValueOr("active_agents", 0))
-	if err != nil {
-		return GatewayHealthSnapshot{}, err
-	}
+	activeAgents := parseActiveAgents(runtime.ValueOr("active_agents", 0))
 	running := gatewayRunning && gatewayState == "running"
-	busy, err := deriveGatewayBusy(gatewayRunning, gatewayState, activeAgents, running)
-	if err != nil {
-		return GatewayHealthSnapshot{}, err
-	}
+	busy := deriveGatewayBusy(gatewayRunning, gatewayState, activeAgents, running)
 	drainable := deriveGatewayDrainable(gatewayRunning, gatewayState, running)
 	platforms := platformsOf(runtime)
 	mode := strings.ToLower(anyutil.String(anyutil.Or(supervisionMode, "unknown")))
@@ -165,15 +155,11 @@ func BuildGatewayHealthSnapshot(runtime *jsonutil.Object, gatewayRunning bool, p
 			events = append(events, ev)
 		}
 	}
-	pid, err := coercePID(runtime.ValueOr("pid", nil))
-	if err != nil {
-		return GatewayHealthSnapshot{}, err
-	}
 	health := NewGatewayHealthEvent("gateway.health_snapshot")
 	health.GatewayState, health.ActiveAgents, health.GatewayBusy, health.GatewayDrainable = new(gatewayState), activeAgents, busy, drainable
 	health.PlatformCount, health.FatalPlatformCount = platforms.Len(), fatalCount
-	health.Profile, health.InstallID, health.Version, health.SupervisionMode, health.PID = new(profile), new(installID), new(version), new(supervisionMode), pid
-	return GatewayHealthSnapshot{Metrics: metrics, Events: append([]Event{health}, events...)}, nil
+	health.Profile, health.InstallID, health.Version, health.SupervisionMode, health.PID = new(profile), new(installID), new(version), new(supervisionMode), coercePID(runtime.ValueOr("pid", nil))
+	return GatewayHealthSnapshot{Metrics: metrics, Events: append([]Event{health}, events...)}
 }
 
 // GatewayDiagnosticLogHandler bridges gateway warning and error records into allowlisted diagnostic events

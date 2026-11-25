@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -82,7 +83,7 @@ func FileURI(path string) (string, error) {
 			abs = "/" + abs
 		}
 	}
-	return "file://" + pyQuote(abs, "/:"), nil
+	return "file://" + quoteValue(abs, "/:"), nil
 }
 
 // LSP WorkspaceFolder of a root
@@ -107,7 +108,7 @@ func URIToPath(uri string) string {
 	if runtime.GOOS == "windows" && strings.HasPrefix(raw, "/") && len(raw) > 2 && raw[2] == ':' {
 		raw = raw[1:]
 	}
-	return filepath.Clean(pyUnquote(raw))
+	return filepath.Clean(unquote(raw))
 }
 
 // UTF-16 code units of a string
@@ -505,9 +506,8 @@ func (c *Client) spawn(ctx context.Context) error {
 	var p *serverProc
 	c.l.unlocked(func() { p, spawnErr = startServerProc(cmdline, childEnv, c.cwd) })
 	if spawnErr != nil {
-		var oe *pyExc
-		if errors.As(spawnErr, &oe) && oe.typ == "FileNotFoundError" {
-			return protocolErrorf("LSP server binary not found: %s (%s)", cmdline[0], oe.text)
+		if errors.Is(spawnErr, fs.ErrNotExist) || errors.Is(spawnErr, exec.ErrNotFound) {
+			return protocolErrorf("LSP server binary not found: %s (%s)", cmdline[0], errText(spawnErr))
 		}
 		return spawnErr
 	}
@@ -534,17 +534,17 @@ func (c *Client) spawn(ctx context.Context) error {
 func startServerProc(argv []string, env map[string]string, cwd string) (*serverProc, error) {
 	path, err := lookPathIn(argv[0], env, cwd)
 	if err != nil {
-		return nil, pyOSError(err, argv[0])
+		return nil, osError(err, argv[0])
 	}
 	inR, inW, err := stdinPipe()
 	if err != nil {
-		return nil, pyOSError(err, "")
+		return nil, osError(err, "")
 	}
 	outR, outW, err := os.Pipe()
 	if err != nil {
 		inR.Close()
 		inW.Close()
-		return nil, pyOSError(err, "")
+		return nil, osError(err, "")
 	}
 	errR, errW, err := os.Pipe()
 	if err != nil {
@@ -552,7 +552,7 @@ func startServerProc(argv []string, env map[string]string, cwd string) (*serverP
 		inW.Close()
 		outR.Close()
 		outW.Close()
-		return nil, pyOSError(err, "")
+		return nil, osError(err, "")
 	}
 	cmd := &exec.Cmd{Path: path, Args: argv, Env: environList(env), Dir: cwd, Stdin: inR, Stdout: outW, Stderr: errW}
 	newSession(cmd)
@@ -566,9 +566,9 @@ func startServerProc(argv []string, env map[string]string, cwd string) (*serverP
 		errR.Close()
 		var pe *os.PathError
 		if errors.As(startErr, &pe) {
-			return nil, pyOSError(pe.Err, argv[0])
+			return nil, osError(pe.Err, argv[0])
 		}
-		return nil, pyOSError(startErr, argv[0])
+		return nil, osError(startErr, argv[0])
 	}
 	p := &serverProc{cmd: cmd, pid: cmd.Process.Pid, stdin: inW, stdout: outR, stderr: errR,
 		reader: bufio.NewReaderSize(outR, 64*1024), exited: make(chan struct{}), out: newOutbox(), writer: make(chan struct{})}
@@ -793,7 +793,7 @@ func (c *Client) initialize(ctx context.Context) error {
 	if !ok {
 		return attributeError(result)
 	}
-	caps := pyOr(resultMap["capabilities"], map[string]any{})
+	caps := anyutil.Or(resultMap["capabilities"], map[string]any{})
 	capsMap, ok := caps.(map[string]any)
 	if !ok {
 		return attributeError(caps)
@@ -803,7 +803,7 @@ func (c *Client) initialize(ctx context.Context) error {
 		sync = m["change"]
 	}
 	c.syncKind = 1
-	if n, ok := pyExactInt(sync); ok {
+	if n, ok := exactInt(sync); ok {
 		c.syncKind = int(n)
 	}
 	if err := clientSendNotification(c, ctx, "initialized", map[string]any{}); err != nil {
@@ -817,7 +817,7 @@ func (c *Client) initialize(ctx context.Context) error {
 
 // AttributeError a get call on a non dict raises
 func attributeError(v any) error {
-	return &pyExc{typ: "AttributeError", text: fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(v))}
+	return &failure{typ: "AttributeError", text: fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(v))}
 }
 
 // Graceful shutdown and exit, a grace period for the server to honour exit, then the hard kill
@@ -947,7 +947,7 @@ func (c *Client) write(ctx context.Context, msg map[string]any) error {
 }
 
 // ConnectionResetError a drain raises once the pipe is gone
-var errConnectionLost = &pyExc{typ: "ConnectionResetError", text: "Connection lost"}
+var errConnectionLost = &failure{typ: "ConnectionResetError", text: "Connection lost"}
 
 func (c *Client) requireOpen(method string) error {
 	if !c.connectionIsOpen() {
@@ -1026,7 +1026,7 @@ func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 	if !ok {
 		switch id.(type) {
 		case []any, map[string]any:
-			return &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(id))}
+			return &failure{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(id))}
 		}
 		return nil
 	}
@@ -1039,12 +1039,12 @@ func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 		fut.setResult(msg["result"])
 		return nil
 	}
-	e := pyOr(errObj, map[string]any{})
+	e := anyutil.Or(errObj, map[string]any{})
 	em, ok := e.(map[string]any)
 	if !ok {
 		return attributeError(e)
 	}
-	code, err := pyInt(dgetOr(em, "code", int64(-32000)))
+	code, err := wholeNumber(dgetOr(em, "code", int64(-32000)))
 	if err != nil {
 		return err
 	}
@@ -1060,7 +1060,7 @@ type RelatedDocuments struct {
 
 // Pending map key of a response id, numbers comparing as Python dict keys do
 func pendingKey(id any) (int64, bool) {
-	if n, ok := pyExactInt(id); ok {
+	if n, ok := exactInt(id); ok {
 		return n, true
 	}
 	if f, ok := id.(float64); ok && f == float64(int64(f)) {
@@ -1119,7 +1119,7 @@ func (c *Client) handleWorkspaceConfiguration(params any) (any, error) {
 		return []any{nil}, nil
 	}
 	var items []any
-	switch t := pyOr(p["items"], []any{}).(type) {
+	switch t := anyutil.Or(p["items"], []any{}).(type) {
 	case []any:
 		items = t
 	case map[string]any:
@@ -1188,7 +1188,7 @@ func (c *Client) handlePublishDiagnostics(params any) {
 	if !ok {
 		return
 	}
-	diagnostics := pyOr(p["diagnostics"], []any{})
+	diagnostics := anyutil.Or(p["diagnostics"], []any{})
 	doc := c.docs.setdefault(URIToPath(uri), func() *docState { return newDocState(-1, "") })
 	isSeed := c.seedFirstPush && !doc.seedSeen
 	doc.seedSeen = true
@@ -1196,7 +1196,7 @@ func (c *Client) handlePublishDiagnostics(params any) {
 	if isSeed {
 		return
 	}
-	if n, ok := pyExactInt(p["version"]); ok {
+	if n, ok := exactInt(p["version"]); ok {
 		doc.pushVersion = int(n)
 	} else {
 		doc.pushVersion = doc.version
@@ -1220,7 +1220,7 @@ func (c *Client) openFile(ctx context.Context, path, languageID string, text *st
 		if err != nil {
 			var pe *os.PathError
 			if errors.As(err, &pe) {
-				return 0, protocolErrorf("cannot read %s: %s", absPath, pyOSError(pe.Err, pe.Path).text)
+				return 0, protocolErrorf("cannot read %s: %s", absPath, osError(pe.Err, pe.Path).text)
 			}
 			return 0, protocolErrorf("cannot read %s: %s", absPath, err)
 		}
@@ -1545,7 +1545,7 @@ func dedupe(lists ...[]map[string]any) ([]map[string]any, error) {
 
 // Dict value of x or an empty dict, the AttributeError a later get raises for any other truthy value
 func dictOr(v any) (map[string]any, error) {
-	v = pyOr(v, map[string]any{})
+	v = anyutil.Or(v, map[string]any{})
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil, attributeError(v)
@@ -1572,8 +1572,8 @@ func DiagnosticKey(d map[string]any) (string, error) {
 		code = anyutil.String(v)
 	}
 	return strings.Join([]string{
-		anyutil.String(pyOr(d["severity"], int64(1))), code, anyutil.String(pyOr(d["source"], "")),
-		strings.TrimSpace(anyutil.String(pyOr(d["message"], ""))),
+		anyutil.String(anyutil.Or(d["severity"], int64(1))), code, anyutil.String(anyutil.Or(d["source"], "")),
+		strings.TrimSpace(anyutil.String(anyutil.Or(d["message"], ""))),
 		anyutil.String(dgetOr(start, "line", int64(0))) + ":" + anyutil.String(dgetOr(start, "character", int64(0))) + "-" +
 			anyutil.String(dgetOr(end, "line", int64(0))) + ":" + anyutil.String(dgetOr(end, "character", int64(0))),
 	}, "\x00"), nil

@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Image formats the managed server's stb_image decoder handles, anything else is transcoded first
@@ -24,7 +27,7 @@ var (
 
 // Whether provider and baseURL point at the managed server, custom only when baseURL is that endpoint
 func IsManagedProvider(provider, baseURL string) (managed bool) {
-	p := strings.ToLower(strings.TrimFunc(provider, pyIsSpace))
+	p := strings.ToLower(strings.TrimFunc(provider, unicode.IsSpace))
 	if LlamacppAliases[p] {
 		return true
 	}
@@ -66,7 +69,7 @@ func propsModalities(ctx context.Context, modelID string) (vision *bool) {
 	if !has {
 		return nil
 	}
-	answer := pyTruthy(raw)
+	answer := anyutil.IsTrue(raw)
 	return &answer
 }
 

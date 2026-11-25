@@ -112,31 +112,31 @@ type childRun struct {
 }
 
 // Scope owning the new references an op body creates
-type pyScope struct {
+type scope struct {
 	g    *cpythonutil.GIL
 	held []uintptr
 }
 
-func (s *pyScope) keep(o uintptr, err error) (uintptr, error) {
+func (s *scope) keep(o uintptr, err error) (uintptr, error) {
 	if err == nil && o != 0 {
 		s.held = append(s.held, o)
 	}
 	return o, err
 }
 
-func (s *pyScope) close() {
+func (s *scope) close() {
 	for _, o := range s.held {
 		s.g.Decref(o)
 	}
 }
 
-func (s *pyScope) attr(o uintptr, name string) (uintptr, error) { return s.keep(s.g.Attr(o, name)) }
+func (s *scope) attr(o uintptr, name string) (uintptr, error) { return s.keep(s.g.Attr(o, name)) }
 
-func (s *pyScope) call(fn uintptr, args []any, kwargs map[string]any) (uintptr, error) {
+func (s *scope) call(fn uintptr, args []any, kwargs map[string]any) (uintptr, error) {
 	return s.keep(s.g.Call(fn, args, kwargs))
 }
 
-func (s *pyScope) method(o uintptr, name string, args []any, kwargs map[string]any) (uintptr, error) {
+func (s *scope) method(o uintptr, name string, args []any, kwargs map[string]any) (uintptr, error) {
 	return s.keep(s.g.CallMethod(o, name, args, kwargs))
 }
 
@@ -226,7 +226,7 @@ func (c *child) callableCall(g *cpythonutil.GIL, args, kwargs uintptr) (uintptr,
 	}
 	kind, _ := g.Str(kindObj)
 	g.Decref(kindObj)
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	all, err := g.FromPython(args)
 	if err != nil {
@@ -271,7 +271,7 @@ func (c *child) callableCall(g *cpythonutil.GIL, args, kwargs uintptr) (uintptr,
 // Coroutine running one blocking parent iterator step off the loop on a worker thread
 func (c *child) iteratorStep(g *cpythonutil.GIL, id int64, op string) (uintptr, error) {
 	step, err := g.NewFunc(op, func(g *cpythonutil.GIL, _ []any, _ map[string]any) (any, error) {
-		s := &pyScope{g: g}
+		s := &scope{g: g}
 		defer s.close()
 		result, err := c.callParent(g, op, map[string]any{"id": id})
 		if err != nil {
@@ -428,7 +428,7 @@ func (c *child) dispatch(g *cpythonutil.GIL, m *message) (any, error) {
 	case "run":
 		return c.run(g, m.ID, args)
 	case "attr":
-		s := &pyScope{g: g}
+		s := &scope{g: g}
 		defer s.close()
 		o, err := c.ref(wireInt(args["ref"]))
 		if err != nil {
@@ -473,7 +473,7 @@ var helloPaths = []string{"scope", "scope.push", "scope.pop", "scope.get_handle"
 
 // Imports nemo_relay and reports which binding attributes exist, the scope types and the pop signature
 func (c *child) hello(g *cpythonutil.GIL) (any, error) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	if c.relay == nil {
 		mod, err := g.Import("nemo_relay")
@@ -510,7 +510,7 @@ func (c *child) hello(g *cpythonutil.GIL) (any, error) {
 }
 
 // Parameter names of scope.pop and whether each is the variadic keyword one
-func (c *child) popParameters(g *cpythonutil.GIL, s *pyScope, pop uintptr) ([]any, error) {
+func (c *child) popParameters(g *cpythonutil.GIL, s *scope, pop uintptr) ([]any, error) {
 	inspect, err := s.keep(g.Import("inspect"))
 	if err != nil {
 		return nil, err
@@ -556,7 +556,7 @@ func (c *child) popParameters(g *cpythonutil.GIL, s *pyScope, pop uintptr) ([]an
 }
 
 // Attribute path under nemo_relay, a borrowed object kept alive by the scope
-func (c *child) resolve(g *cpythonutil.GIL, s *pyScope, path string) (uintptr, error) {
+func (c *child) resolve(g *cpythonutil.GIL, s *scope, path string) (uintptr, error) {
 	if c.relay == nil {
 		return 0, &cpythonutil.Exception{Type: "ModuleNotFoundError", Message: pythonNoRelayModule}
 	}
@@ -590,7 +590,7 @@ func (c *child) keepRef(g *cpythonutil.GIL, o uintptr) int64 {
 }
 
 // Callable an op targets, a nemo_relay attribute path or a method of a held object, or the object itself
-func (c *child) target(g *cpythonutil.GIL, s *pyScope, fn any) (uintptr, error) {
+func (c *child) target(g *cpythonutil.GIL, s *scope, fn any) (uintptr, error) {
 	switch x := fn.(type) {
 	case string:
 		return c.resolve(g, s, x)
@@ -608,7 +608,7 @@ func (c *child) target(g *cpythonutil.GIL, s *pyScope, fn any) (uintptr, error) 
 }
 
 // Fresh copy of the context the parent named, an empty context when it named none
-func (c *child) context(g *cpythonutil.GIL, s *pyScope, id int64, opID int64) (uintptr, error) {
+func (c *child) context(g *cpythonutil.GIL, s *scope, id int64, opID int64) (uintptr, error) {
 	var ctx uintptr
 	var err error
 	if id == 0 {
@@ -634,7 +634,7 @@ func (c *child) context(g *cpythonutil.GIL, s *pyScope, id int64, opID int64) (u
 }
 
 // Positional and keyword arguments of an op converted to Python
-func (c *child) callArgs(g *cpythonutil.GIL, s *pyScope, args map[string]any) ([]any, map[string]any, error) {
+func (c *child) callArgs(g *cpythonutil.GIL, s *scope, args map[string]any) ([]any, map[string]any, error) {
 	positional, _ := args["args"].([]any)
 	keywords, _ := args["kwargs"].(map[string]any)
 	pos, err := liftValue(positional, c.liftTag)
@@ -694,7 +694,7 @@ func (c *child) applyEnvironment(g *cpythonutil.GIL, args map[string]any) error 
 
 // Synchronous call inside a copy of the parent's context, returning the value and the context it left
 func (c *child) call(g *cpythonutil.GIL, opID int64, args map[string]any) (any, error) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	if err := c.applyEnvironment(g, args); err != nil {
 		return nil, err
@@ -747,7 +747,7 @@ func (c *child) run(g *cpythonutil.GIL, opID int64, args map[string]any) (any, e
 }
 
 func (c *child) runHere(g *cpythonutil.GIL, opID int64, args map[string]any) (any, error) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	if err := c.applyEnvironment(g, args); err != nil {
 		return nil, err
@@ -831,7 +831,7 @@ func (c *child) runHere(g *cpythonutil.GIL, opID int64, args map[string]any) (an
 
 // Calls the target on the running loop and chains the awaitable it returns into the op future
 func (c *child) start(g *cpythonutil.GIL, loop, future, fn uintptr, invoke bool, pos []any, kw map[string]any, state *childRun) error {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	settle := func(name string, value any) error {
 		_, err := s.method(future, name, []any{value}, nil)
@@ -875,7 +875,7 @@ func (c *child) start(g *cpythonutil.GIL, loop, future, fn uintptr, invoke bool,
 
 // Copies a finished task's outcome into the op future
 func (c *child) chain(g *cpythonutil.GIL, future, task uintptr) (uintptr, error) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	done, err := s.method(future, "done", nil, nil)
 	if err != nil {
@@ -916,7 +916,7 @@ func (c *child) chain(g *cpythonutil.GIL, future, task uintptr) (uintptr, error)
 
 // Cancels what is left on a fresh loop, shuts down its generators and executor and closes it
 func (c *child) closeLoop(g *cpythonutil.GIL, loop uintptr) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	tasks, err := s.method(c.asyncio.Ptr(), "all_tasks", []any{cpythonutil.Borrowed(loop)}, nil)
 	if err == nil {
@@ -944,7 +944,7 @@ func (c *child) closeLoop(g *cpythonutil.GIL, loop uintptr) {
 
 // Closes a released event loop the parent kept for a stream once nothing runs it
 func (c *child) closeIdleLoop(g *cpythonutil.GIL, o uintptr) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	base, err := s.attr(c.asyncio.Ptr(), "AbstractEventLoop")
 	if err != nil {
@@ -973,7 +973,7 @@ func (c *child) cancel(g *cpythonutil.GIL, id int64) {
 	if state == nil {
 		return
 	}
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	for _, target := range []*cpythonutil.Ref{state.task, state.future} {
 		if target == nil {
@@ -986,7 +986,7 @@ func (c *child) cancel(g *cpythonutil.GIL, id int64) {
 }
 
 // Python argument for a lifted wire value, creating the objects tagged nodes stand for
-func (c *child) pythonArg(g *cpythonutil.GIL, s *pyScope, v any) (any, error) {
+func (c *child) pythonArg(g *cpythonutil.GIL, s *scope, v any) (any, error) {
 	switch x := v.(type) {
 	case []any:
 		out := make([]any, len(x))
@@ -1040,7 +1040,7 @@ func (c *child) liftTag(tag string, body any) (any, error) {
 }
 
 // Python object of a tagged node, a held object, a parent callable or iterator, or a nemo_relay value class
-func (c *child) materialize(g *cpythonutil.GIL, s *pyScope, p pendingObject) (uintptr, error) {
+func (c *child) materialize(g *cpythonutil.GIL, s *scope, p pendingObject) (uintptr, error) {
 	switch p.tag {
 	case "$r":
 		return c.ref(wireInt(p.body))
@@ -1131,7 +1131,7 @@ func (c *child) materialize(g *cpythonutil.GIL, s *pyScope, p pendingObject) (ui
 }
 
 // Python object for a value the parent returned, a new reference
-func (c *child) toPython(g *cpythonutil.GIL, s *pyScope, v any) (uintptr, error) {
+func (c *child) toPython(g *cpythonutil.GIL, s *scope, v any) (uintptr, error) {
 	arg, err := c.pythonArg(g, s, v)
 	if err != nil {
 		return 0, err
@@ -1155,7 +1155,7 @@ func (c *child) lowerPy(g *cpythonutil.GIL, v any) (any, error) {
 		if !ok {
 			return nil, false, nil
 		}
-		s := &pyScope{g: g}
+		s := &scope{g: g}
 		defer s.close()
 		for _, kind := range []struct{ path, tag string }{{"LLMRequest", "$q"}, {"ToolExecutionResult", "$t"}} {
 			cls, err := c.resolve(g, s, kind.path)
@@ -1199,7 +1199,7 @@ func (c *child) lowerPy(g *cpythonutil.GIL, v any) (any, error) {
 	})
 }
 
-func (c *child) lowerAttr(g *cpythonutil.GIL, s *pyScope, o uintptr, name string) (any, error) {
+func (c *child) lowerAttr(g *cpythonutil.GIL, s *scope, o uintptr, name string) (any, error) {
 	v, err := s.attr(o, name)
 	if err != nil {
 		return nil, err
@@ -1212,7 +1212,7 @@ var eventFields = []string{"kind", "name", "category", "scope_category", "catego
 
 // Event projected to the attributes a subscriber reads, a missing attribute as None
 func (c *child) eventView(g *cpythonutil.GIL, o uintptr) (any, error) {
-	s := &pyScope{g: g}
+	s := &scope{g: g}
 	defer s.close()
 	out := map[string]any{}
 	for _, name := range eventFields {

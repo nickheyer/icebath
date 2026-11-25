@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -220,34 +221,34 @@ func TestReadExtractHelpersGolden(t *testing.T) {
 
 func TestReadExtractJSONParser(t *testing.T) {
 	cases := map[string]string{
-		"":         "Expecting value: line 1 column 1 (char 0)",
-		`{"a" 1}`:  "Expecting ':' delimiter: line 1 column 6 (char 5)",
-		"[1 2]":    "Expecting ',' delimiter: line 1 column 4 (char 3)",
-		`{"a":1,}`: "Illegal trailing comma before end of object: line 1 column 7 (char 6)",
-		`"abc`:     "Unterminated string starting at: line 1 column 1 (char 0)",
-		`"a\qb"`:   `Invalid \escape: line 1 column 3 (char 2)`,
-		`"\u12"`:   `Invalid \uXXXX escape: line 1 column 3 (char 2)`,
-		"[1]x":     "Extra data: line 1 column 4 (char 3)",
-		"\"a\nb\"": "Invalid control character at: line 1 column 3 (char 2)",
-		"nul":      "Expecting value: line 1 column 1 (char 0)",
-		"{1:2}":    "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+		"":         "unexpected end of input looking for beginning of value (line 1, column 1)",
+		`{"a" 1}`:  "invalid character '1' after object key (line 1, column 6)",
+		"[1 2]":    "invalid character '2' after array element (line 1, column 4)",
+		`{"a":1,}`: "trailing comma before end of object (line 1, column 7)",
+		`"abc`:     "string literal not terminated (line 1, column 1)",
+		`"a\qb"`:   `invalid character 'q' in string escape code (line 1, column 4)`,
+		`"\u12"`:   `invalid character '"' in \u hexadecimal character escape (line 1, column 6)`,
+		"[1]x":     "invalid character 'x' after top-level value (line 1, column 4)",
+		"\"a\nb\"": `invalid character '\n' in string literal (line 1, column 3)`,
+		"nul":      "unexpected end of input in literal null (expecting 'l') (line 1, column 4)",
+		"{1:2}":    "invalid character '1' looking for beginning of object key string (line 1, column 2)",
 	}
 	for in, want := range cases {
-		_, err := jsonutil.Decode(in)
-		if err == nil || err.Error() != want {
-			t.Errorf("jsonutil.Decode(%q) = %v want %q", in, err, want)
+		_, err := extractNotebook(writeFixture(t, "bad.ipynb", []byte(in)), "bad.ipynb")
+		if got := extractionMessage(err); got != "Not a valid notebook: "+want {
+			t.Errorf("notebook %q: %q want %q", in, got, "Not a valid notebook: "+want)
 		}
 	}
 	v, err := jsonutil.Decode(`{"b": [1, 2.5, NaN, -Infinity, "x\ud83d\ude00"], "a": {"k": null}, "b": true}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pyJSONRepr(v); got != "{'b': True, 'a': {'k': None}}" {
-		t.Fatalf("repr %s", got)
+	if got := anyutil.String(v); got != `{"b":true,"a":{"k":null}}` {
+		t.Fatalf("text %s", got)
 	}
 	for f, want := range map[float64]string{1e16: "1e+16", 2.5: "2.5", 1e-5: "1e-05", 123456789012345678.0: "1.2345678901234568e+17", 0.1: "0.1", math.Copysign(0, -1): "-0.0", 1e22: "1e+22", 1.5e-7: "1.5e-07", 100.0: "100.0"} {
-		if got := pyFloatRepr(f); got != want {
-			t.Errorf("pyFloatRepr(%v) = %s want %s", f, got, want)
+		if got := floatRepr(f); got != want {
+			t.Errorf("floatRepr(%v) = %s want %s", f, got, want)
 		}
 	}
 }

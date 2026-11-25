@@ -137,13 +137,13 @@ func (r PlatformAppResolver) version(path string) observation[string] {
 		return observation[string]{State: checkUnavailable, Detail: "unknown version kind " + kind}
 	}
 	if err != nil {
-		return observation[string]{State: checkError, Detail: pyExceptionClass(err)}
+		return observation[string]{State: checkError, Detail: exceptionClass(err)}
 	}
 	return obs
 }
 
 // Python exception class name of a vendor read failure
-func pyExceptionClass(err error) string {
+func exceptionClass(err error) string {
 	if _, ok := err.(*plistutil.Error); ok {
 		return "InvalidFileException"
 	}
@@ -669,7 +669,7 @@ func platformMCPInitialize(session *platformSession, endpoint string, deadline f
 	resp, err := client.Do(req)
 	if err != nil {
 		if ne, ok := err.(net.Error); ok && ne.Timeout() {
-			return observation[bool]{State: checkAbsent, Value: &f, Detail: fmt.Sprintf("no answer within %s s", pyFormatG(deadline))}
+			return observation[bool]{State: checkAbsent, Value: &f, Detail: fmt.Sprintf("no answer within %s s", formatG(deadline))}
 		}
 		return observation[bool]{State: checkAbsent, Value: &f, Detail: "connection refused or timed out"}
 	}
@@ -682,7 +682,7 @@ func platformMCPInitialize(session *platformSession, endpoint string, deadline f
 }
 
 // Python format(x, 'g')
-func pyFormatG(x float64) string {
+func formatG(x float64) string {
 	s := strconv.FormatFloat(x, 'g', 6, 64)
 	if strings.Contains(s, "e") {
 		mant, exp, _ := strings.Cut(s, "e")

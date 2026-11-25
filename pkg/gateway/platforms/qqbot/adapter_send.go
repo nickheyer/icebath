@@ -67,7 +67,7 @@ func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *j
 		if !ok {
 			return nil, notDictErr(data)
 		}
-		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, anyutil.String(getOr(dict, "message", data))), BizCode: bizCodeOf(dict)}
+		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, anyutil.String(orDefault(dict["message"], data))), BizCode: bizCodeOf(dict)}
 	}
 	return data, nil
 }
@@ -205,7 +205,7 @@ func restPath(chatType, targetID, endpoint string) string {
 
 func messagesPath(chatType, targetID string) string { return restPath(chatType, targetID, "messages") }
 
-// Posts a message body and wraps the response as a successful send result
+// Posts a message body and wraps the response as a successful send result, a generated id when the reply carries none or a null one
 func (a *QQAdapter) postMessage(ctx context.Context, path string, body *jsonutil.Object) (gateway.SendResult, error) {
 	data, err := a.apiRequest(ctx, http.MethodPost, path, body, DefaultAPITimeout)
 	if err != nil {
@@ -215,7 +215,7 @@ func (a *QQAdapter) postMessage(ctx context.Context, path string, body *jsonutil
 	if !ok {
 		return gateway.SendResult{}, notDictErr(data)
 	}
-	return gateway.SendResult{Success: true, MessageID: anyutil.String(getOr(dict, "id", uuidHex()[:12])), RawResponse: data}, nil
+	return gateway.SendResult{Success: true, MessageID: anyutil.String(orDefault(dict["id"], uuidHex()[:12])), RawResponse: data}, nil
 }
 
 // Sends text, optionally with an inline keyboard, to a c2c user or a group

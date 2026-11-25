@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -27,7 +28,7 @@ func isSafeWorkdirChar(ch rune) bool {
 func validateWorkdir(workdir string) string {
 	for _, ch := range workdir {
 		if !isSafeWorkdirChar(ch) {
-			return fmt.Sprintf("Blocked: workdir contains disallowed character %s. Use a simple filesystem path without shell metacharacters.", pyRepr(string(ch)))
+			return fmt.Sprintf("Blocked: workdir contains disallowed character %s. Use a simple filesystem path without shell metacharacters.", strconv.Quote(string(ch)))
 		}
 	}
 	return ""
@@ -52,35 +53,6 @@ func safeCommandPreview(command any, limit int) string {
 		r = r[:limit]
 	}
 	return r
-}
-
-// Python repr of a short string for user facing messages
-func pyRepr(s string) string {
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		return `"` + s + `"`
-	}
-	var b strings.Builder
-	b.WriteByte('\'')
-	for _, r := range s {
-		switch {
-		case r == '\'':
-			b.WriteString(`\'`)
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 32 || r == 127:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte('\'')
-	return b.String()
 }
 
 // Guard result envelope with exit code 1, the error and the status

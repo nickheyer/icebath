@@ -75,7 +75,7 @@ func TestHonestRunSkipMessagesPausedJobNotReportedAsAlreadyFiring(t *testing.T) 
 		t.Fatal(err)
 	}
 	res := s.executeJobNow(context.Background(), mustJob(t, s, job.ID), nil)
-	errText := strings.ToLower(pyStrOf(res.Error))
+	errText := strings.ToLower(strOf(res.Error))
 	if res.Claimed || !strings.Contains(errText, "paused") || strings.Contains(errText, "already being fired") {
 		t.Fatalf("paused %+v", res)
 	}
@@ -84,7 +84,7 @@ func TestHonestRunSkipMessagesPausedJobNotReportedAsAlreadyFiring(t *testing.T) 
 func TestHonestRunSkipMessagesMissingJobNotReportedAsAlreadyFiring(t *testing.T) {
 	s, _ := newTestStore(t)
 	res := s.executeJobNow(context.Background(), &Job{ID: "does-not-exist-123"}, nil)
-	if res.Claimed || !strings.Contains(strings.ToLower(pyStrOf(res.Error)), "no longer exists") {
+	if res.Claimed || !strings.Contains(strings.ToLower(strOf(res.Error)), "no longer exists") {
 		t.Fatalf("missing %+v", res)
 	}
 }

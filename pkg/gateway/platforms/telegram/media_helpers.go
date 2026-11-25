@@ -18,7 +18,7 @@ func telegramMediaTooLargeNote(label string, fileSize any, maxBytes int) string 
 
 // Integer of a value with falsy reading as zero, false when the value is not integral
 func intOrZero(value any) (int64, bool) {
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return 0, true
 	}
 	n, err := anyutil.ToInt(value)

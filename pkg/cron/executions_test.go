@@ -160,7 +160,7 @@ func TestLedgerLifecycleOwnershipAndQueries(t *testing.T) {
 	l := openExecutionsLedger(s)
 	ctx := context.Background()
 	rec, err := l.Create(ctx, "job-a", "cron", strPtr("2026-05-01T05:00:00-07:00"))
-	if err != nil || recText(rec, "status") != "claimed" || rec["scheduled_instant"] != "2026-05-01T12:00:00+00:00" {
+	if err != nil || recText(rec, "status") != "claimed" || rec["scheduled_instant"] != "2026-05-01T12:00:00.000000Z" {
 		t.Fatalf("create = %v %v", rec, err)
 	}
 	id := recText(rec, "id")

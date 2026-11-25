@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Forms a third party plugin takes
@@ -72,7 +74,7 @@ func guestSpecOf(mf *Manifest, profileHome string) (*guestSpec, error) {
 		return nil, fmt.Errorf("plugin '%s' limits.call_seconds must be positive", mf.Name)
 	}
 	spec := &guestSpec{runtime: runtime, entry: mf.Entry, dir: mf.Path, name: mf.Name,
-		memoryPages: uint32(memoryMB * 16), callLimit: time.Duration(seconds * float64(time.Second))}
+		memoryPages: uint32(memoryMB * 16), callLimit: guestDuration(seconds)}
 	data := mf.DataNamespace
 	if data == "" {
 		data = mf.Name
@@ -82,17 +84,25 @@ func guestSpecOf(mf *Manifest, profileHome string) (*guestSpec, error) {
 	return spec, nil
 }
 
-// Number a manifest gives for a limit, the default when absent
+// Number a manifest or a guest call gives for a limit, the default when absent, not a number or not finite
 func guestNumber(v any, def float64) float64 {
-	switch n := v.(type) {
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	case float64:
-		return n
+	n, ok := anyutil.Float(v)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return def
 	}
-	return def
+	return n
+}
+
+// Duration of a number of seconds, held at the longest or shortest Duration beyond their range
+func guestDuration(seconds float64) time.Duration {
+	switch ns := seconds * float64(time.Second); {
+	case ns >= 1<<63:
+		return math.MaxInt64
+	case ns <= -(1 << 63):
+		return math.MinInt64
+	default:
+		return time.Duration(ns)
+	}
 }
 
 // Registrars the host serves for a guest though they take a live object or a callback, each reached through its wire callbacks

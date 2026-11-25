@@ -284,7 +284,7 @@ func TestDumpBlockedLoopDiagnostics(t *testing.T) {
 	stackDumpWriter = &stacks
 	defer func() { slog.SetDefault(prev); stackDumpWriter = prevWriter }()
 	dumpBlockedLoopDiagnostics("job", 3*time.Second)
-	if !strings.Contains(logs.String(), "[deadline] 'job' deadline (3s) expired but the event loop has not processed the expiry after a further 5s") {
+	if !strings.Contains(logs.String(), `[deadline] \"job\" deadline (3s) expired but the dispatch goroutine has not processed the expiry after a further 5s`) {
 		t.Fatalf("warning %q", logs.String())
 	}
 	if !strings.Contains(stacks.String(), "goroutine ") || !strings.Contains(stacks.String(), "TestDumpBlockedLoopDiagnostics") {

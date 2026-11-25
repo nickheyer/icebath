@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -239,7 +240,7 @@ func TestImageProviderDefaultCapabilitiesFailClosed(t *testing.T) {
 	if m, _ := caps["modalities"].([]any); len(m) != 1 || m[0] != "text" {
 		t.Fatalf("modalities %v", caps["modalities"])
 	}
-	if pyTruthy(caps["supports_upscale"]) {
+	if anyutil.IsTrue(caps["supports_upscale"]) {
 		t.Fatal("default capabilities advertise upscale")
 	}
 }

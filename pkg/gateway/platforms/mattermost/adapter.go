@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
@@ -54,7 +55,7 @@ var (
 
 // AttributeError an attribute read raises on a value of another type
 func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
+	return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
 }
 
 // dict get of a decoded JSON value, the AttributeError a non dict raises
@@ -426,15 +427,15 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 	}
 	list, ok := infos.([]any)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "KeyError", Msg: "0"}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "0"}
 	}
 	first, ok := list[0].(map[string]any)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(list[0]))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(list[0]))}
 	}
 	id, ok := first["id"]
 	if !ok {
-		return nil, &gateway.PyError{Kind: "KeyError", Msg: "'id'"}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "'id'"}
 	}
 	return id, nil
 }
@@ -904,7 +905,7 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 	closed := a.session == nil || a.sessionClosed
 	a.mu.Unlock()
 	if closed {
-		return &gateway.PyError{Kind: "RuntimeError", Msg: "Session is closed"}
+		return &errorutil.Error{Kind: "RuntimeError", Msg: "Session is closed"}
 	}
 	dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	opts := websocketutil.Options{PingInterval: 30 * time.Second, PingTimeout: 15 * time.Second}
@@ -1046,7 +1047,7 @@ func (a *MattermostAdapter) downloadAttachment(ctx context.Context, fid string) 
 	}
 	fname, ok := nameValue.(string)
 	if !ok {
-		return "", "", false, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
+		return "", "", false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
 			anyutil.Kind(nameValue))}
 	}
 	for _, row := range inboundCacheExt {
@@ -1151,7 +1152,7 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 	}
 	fileIDs, _ := postMap["file_ids"].([]any)
 	if raw := postMap["file_ids"]; anyutil.IsTrue(raw) && fileIDs == nil {
-		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(raw))}
+		return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(raw))}
 	}
 	mediaURLs, mediaTypes, err := a.downloadAttachments(ctx, fileIDs)
 	if err != nil {

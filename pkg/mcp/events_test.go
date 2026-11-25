@@ -364,13 +364,13 @@ func TestEventsDueTimeFollowsTheGrant(t *testing.T) {
 	}
 	for in, want := range map[string]float64{"2025-01-02": 0, "2025-01-02T03:04:05Z": 1735787045, "20250102T030405+0100": 1735783445,
 		"2025-W01-4T00:00:00Z": 1735776000, "2025-01-02T03:04:05.123456789Z": 1735787045.123456} {
-		got, err := pyISOTimestamp(in)
+		got, err := isoTimestamp(in)
 		if err != nil || (want != 0 && math.Abs(got-want) > 1e-5) {
 			t.Fatalf("%s -> %v %v", in, got, err)
 		}
 	}
 	for _, bad := range []string{"2025-02-30", "2025-13-01", "2025-01-02T25:00", "x"} {
-		if _, err := pyISOTimestamp(bad); err == nil {
+		if _, err := isoTimestamp(bad); err == nil {
 			t.Fatalf("%s parsed", bad)
 		}
 	}

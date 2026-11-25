@@ -250,7 +250,7 @@ func guestHTTP(ctx context.Context, grants guestGrants, params map[string]any) (
 	}
 	timeout := guestHTTPDefaultTimeout
 	if seconds := guestNumber(params["timeout"], 0); seconds > 0 {
-		timeout = time.Duration(seconds * float64(time.Second))
+		timeout = guestDuration(seconds)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

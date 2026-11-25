@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Minimal llama-server imitation whose answers the test drives through its fields
@@ -108,7 +110,7 @@ func (st *lr5Fake) serve(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		raw, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(raw, &body)
-		st.unloaded = append(st.unloaded, pyStr(body["model"]))
+		st.unloaded = append(st.unloaded, anyutil.String(body["model"]))
 		st.send(w, 200, map[string]any{"success": true})
 	default:
 		st.send(w, 404, map[string]any{})
@@ -257,7 +259,7 @@ func TestEnsureModelReadyUnknownModelRaises(t *testing.T) {
 	sup := lr5Sup(t, st.port)
 	_, err := sup.EnsureModelReady("absent", 600*time.Second)
 	var missing *lrModelMissingError
-	if !errors.As(err, &missing) || err.Error() != "'model absent not present in models dir'" {
+	if !errors.As(err, &missing) || err.Error() != "model absent not present in models dir" {
 		t.Fatalf("err = %v", err)
 	}
 }

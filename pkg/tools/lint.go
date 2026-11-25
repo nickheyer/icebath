@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -81,16 +80,20 @@ var lintersInproc = map[string]func(string) (bool, string){
 // Extensions whose write is refused when the candidate content fails to parse
 var failClosedInprocExts = setOf(".json", ".yaml", ".yml", ".toml")
 
-// JSON syntax verdict with the parse failure in plain words as the lint error
+// JSON syntax verdict at any nesting depth and number length, the lint error naming the mistake with its line and column
 func lintJSONInproc(content string) (bool, string) {
-	excType, msg, jerr := pyJSONLoadsCheck(content)
-	switch {
-	case excType == "":
-		return true, ""
-	case jerr != nil:
-		return false, "invalid JSON: " + jerr.Msg + " (line " + strconv.Itoa(jerr.Line) + ", column " + strconv.Itoa(jerr.Column) + ")"
+	if hasBOM(content) {
+		return false, "invalid JSON: unexpected byte order mark (U+FEFF) at the start of the text (line 1, column 1)"
 	}
-	return false, "invalid JSON: " + msg
+	err := jsonutil.Validate(content)
+	if err == nil {
+		return true, ""
+	}
+	var se *jsonutil.SyntaxError
+	if errors.As(err, &se) {
+		return false, "invalid JSON: " + se.Msg + " (line " + strconv.Itoa(se.Line) + ", column " + strconv.Itoa(se.Column) + ")"
+	}
+	return false, "invalid JSON: " + err.Error()
 }
 
 // YAML event level syntax verdict matching the ruamel C parser the write gate uses
@@ -101,7 +104,7 @@ func lintYAMLInproc(content string) (bool, string) {
 	return true, ""
 }
 
-// TOML syntax verdict matching tomllib.loads
+// TOML syntax verdict, the lint error naming the first problem with its line and column
 func lintTOMLInproc(content string) (bool, string) {
 	if msg := tomllibLoadsError(content); msg != "" {
 		return false, msg
@@ -125,164 +128,34 @@ func lintPythonInproc(content string) (bool, string) {
 	return true, ""
 }
 
-// Deepest container nesting json.loads decodes before its stack guard fires
-const pyJSONMaxDepth = 52154
-
-// Python int string conversion digit limit
-const pyIntMaxStrDigits = 4300
-
-// json.loads outcome as exception type and message, the decode error set for JSONDecodeError
-func pyJSONLoadsCheck(text string) (string, string, *jsonutil.SyntaxError) {
-	rs := []rune(text)
-	if len(rs) > 0 && rs[0] == 0xfeff {
-		return "JSONDecodeError", "", &jsonutil.SyntaxError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Offset: 0, Line: 1, Column: 1}
-	}
-	scan := scanJSONHazards(rs)
-	parseText := text
-	if scan.overflowAt >= 0 {
-		parseText = string(rs[:scan.overflowAt]) + "0"
-	}
-	_, err := jsonutil.Decode(parseText)
-	errPos := -1
-	var jerr *jsonutil.SyntaxError
-	if err != nil {
-		if !errors.As(err, &jerr) {
-			return "ValueError", err.Error(), nil
-		}
-		errPos = utf8.RuneCountInString(parseText[:min(jerr.Offset, len(parseText))])
-	}
-	limit := len(rs)
-	if scan.overflowAt >= 0 {
-		limit = scan.overflowAt
-	}
-	if scan.bigIntAt >= 0 && scan.bigIntAt < limit && (errPos < 0 || errPos > scan.bigIntAt) {
-		return "ValueError", "an integer has " + strconv.Itoa(scan.bigIntDigits) + " digits, more than the " + strconv.Itoa(pyIntMaxStrDigits) + " allowed", nil
-	}
-	if scan.overflowAt >= 0 && (errPos < 0 || errPos > scan.overflowAt) {
-		kind := "array"
-		if rs[scan.overflowAt] == '{' {
-			kind = "object"
-		}
-		return "RecursionError", "the JSON " + kind + " nests deeper than the parser allows", nil
-	}
-	if jerr != nil {
-		return "JSONDecodeError", "", jerr
-	}
-	return "", "", nil
-}
-
-// First over deep container and first over long integer outside strings, minus one when absent
-type jsonHazards struct {
-	overflowAt   int
-	bigIntAt     int
-	bigIntDigits int
-}
-
-// String aware scan of the positions where json.loads stops on depth or integer size
-func scanJSONHazards(rs []rune) jsonHazards {
-	h := jsonHazards{overflowAt: -1, bigIntAt: -1}
-	depth := 0
-	for i := 0; i < len(rs); i++ {
-		c := rs[i]
-		switch {
-		case c == '"':
-			for i++; i < len(rs) && rs[i] != '"'; i++ {
-				if rs[i] == '\\' {
-					i++
-				}
-			}
-		case c == '[' || c == '{':
-			depth++
-			if depth > pyJSONMaxDepth && h.overflowAt < 0 {
-				h.overflowAt = i
-				return h
-			}
-		case c == ']' || c == '}':
-			depth--
-		case c == '-' || (c >= '0' && c <= '9'):
-			start := i
-			j := i
-			if rs[j] == '-' {
-				j++
-			}
-			digitsStart := j
-			if j < len(rs) && rs[j] == '0' {
-				j++
-			} else {
-				for j < len(rs) && rs[j] >= '0' && rs[j] <= '9' {
-					j++
-				}
-			}
-			digits := j - digitsStart
-			isFloat := false
-			if j+1 < len(rs) && rs[j] == '.' && rs[j+1] >= '0' && rs[j+1] <= '9' {
-				isFloat = true
-			} else if j < len(rs) && (rs[j] == 'e' || rs[j] == 'E') {
-				k := j + 1
-				if k < len(rs) && (rs[k] == '+' || rs[k] == '-') {
-					k++
-				}
-				isFloat = k < len(rs) && rs[k] >= '0' && rs[k] <= '9'
-			}
-			if digits > 0 && !isFloat && digits > pyIntMaxStrDigits && h.bigIntAt < 0 {
-				h.bigIntAt, h.bigIntDigits = start, digits
-			}
-			for j < len(rs) && (rs[j] == '.' || rs[j] == 'e' || rs[j] == 'E' || rs[j] == '+' || rs[j] == '-' || (rs[j] >= '0' && rs[j] <= '9')) {
-				j++
-			}
-			i = j - 1
-		}
-	}
-	return h
-}
-
 // First NaN, Infinity or minus Infinity constant of otherwise valid JSON, empty when none
 func jsonNonstandardConstant(text string) string {
 	if !strings.Contains(text, "NaN") && !strings.Contains(text, "Infinity") {
 		return ""
 	}
 	body, _ := stripBOM(text)
-	if excType, _, _ := pyJSONLoadsCheck(body); excType != "" {
+	if jsonutil.Validate(body) != nil {
 		return ""
 	}
-	rs := []rune(body)
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
+	for i := 0; i < len(body); i++ {
+		switch body[i] {
 		case '"':
-			for i++; i < len(rs) && rs[i] != '"'; i++ {
-				if rs[i] == '\\' {
+			for i++; i < len(body) && body[i] != '"'; i++ {
+				if body[i] == '\\' {
 					i++
 				}
 			}
 		case 'N':
-			if hasRunesAt(rs, i, "NaN") {
-				return "NaN"
-			}
+			return "NaN"
 		case 'I':
-			if hasRunesAt(rs, i, "Infinity") {
-				return "Infinity"
-			}
+			return "Infinity"
 		case '-':
-			if hasRunesAt(rs, i+1, "Infinity") {
+			if strings.HasPrefix(body[i+1:], "Infinity") {
 				return "-Infinity"
 			}
 		}
 	}
 	return ""
-}
-
-// Reports whether the runes at i spell word
-func hasRunesAt(rs []rune, i int, word string) bool {
-	w := []rune(word)
-	if i < 0 || i+len(w) > len(rs) {
-		return false
-	}
-	for k, r := range w {
-		if rs[i+k] != r {
-			return false
-		}
-	}
-	return true
 }
 
 // Refusal of a JSON write that introduces a nonstandard constant the old content lacked
@@ -301,7 +174,7 @@ func refuseIntroducedJSONConstant(path, content string, preContent *string) *Wri
 
 // Syntax check of a path through the in process linter for its extension, else the shell linter table
 func (s *shellFileOps) checkLint(path string, content *string) *LintResult {
-	ext := cases.Lower(language.Und).String(pySplitextExt(path))
+	ext := cases.Lower(language.Und).String(splitextExt(path))
 	if inproc, ok := lintersInproc[ext]; ok {
 		if content == nil {
 			readResult := s.exec("cat "+s.escapeShellArg(path, true)+" 2>/dev/null", "", 0)
@@ -335,7 +208,7 @@ func (s *shellFileOps) checkLint(path string, content *string) *LintResult {
 		return &LintResult{Success: true, Skipped: true, Message: "LSP server handles " + ext + " — shell linter skipped"}
 	}
 	if shellLinterRunsProjectToolchain[ext] && s.localWorkspaceUntrusted() {
-		return &LintResult{Success: true, Skipped: true, Message: pyFields(linterCmd)[0] + " skipped: untrusted workspace (add it to lsp.trusted_workspaces to lint " + ext + " here)"}
+		return &LintResult{Success: true, Skipped: true, Message: fieldsValue(linterCmd)[0] + " skipped: untrusted workspace (add it to lsp.trusted_workspaces to lint " + ext + " here)"}
 	}
 	var result *ExecuteResult
 	var baseCmd string
@@ -346,17 +219,17 @@ func (s *shellFileOps) checkLint(path string, content *string) *LintResult {
 			return &LintResult{Success: true, Skipped: true, Message: baseCmd + " not available (Icebath-managed Node not installed)"}
 		}
 	} else {
-		baseCmd = pyFields(linterCmd)[0]
+		baseCmd = fieldsValue(linterCmd)[0]
 		if !s.hasCommand(baseCmd) {
 			return &LintResult{Success: true, Skipped: true, Message: baseCmd + " not available"}
 		}
 		result = s.exec(strings.ReplaceAll(linterCmd, "{file}", s.escapeNativeToolArg(path)), "", 30*time.Second)
 	}
 	if result.ExitCode != 0 && looksLikeLinterUnusable(baseCmd, result.Stdout) {
-		cleaned := pyStrip(StripANSI(result.Stdout))
+		cleaned := strings.TrimSpace(StripANSI(result.Stdout))
 		firstLine := runePrefix(cleaned, 120)
-		for _, ln := range pySplitLines(cleaned) {
-			if t := pyStrip(ln); t != "" {
+		for _, ln := range splitLinesValue(cleaned) {
+			if t := strings.TrimSpace(ln); t != "" {
 				firstLine = t
 				break
 			}
@@ -365,7 +238,7 @@ func (s *shellFileOps) checkLint(path string, content *string) *LintResult {
 	}
 	res := newLintResult()
 	res.Success = result.ExitCode == 0
-	res.Output = pyStrip(result.Stdout)
+	res.Output = strings.TrimSpace(result.Stdout)
 	return res
 }
 
@@ -406,7 +279,7 @@ func (s *shellFileOps) runManagedNodeLinter(ext, path string) *ExecuteResult {
 		if !errors.As(err, &exitErr) {
 			panic(err)
 		}
-		return &ExecuteResult{Stdout: text, ExitCode: pyReturnCode(exitErr)}
+		return &ExecuteResult{Stdout: text, ExitCode: returnCode(exitErr)}
 	}
 	return &ExecuteResult{Stdout: text, ExitCode: 0}
 }
@@ -420,7 +293,7 @@ func withIcebathNodePath(base map[string]string) map[string]string {
 var managedNodePathEnv = withIcebathNodePath
 
 // Child return code the way subprocess reports it, the negated signal for a signalled child
-func pyReturnCode(exitErr *exec.ExitError) int {
+func returnCode(exitErr *exec.ExitError) int {
 	if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && runtime.GOOS != "windows" && ws.Signaled() {
 		return -int(ws.Signal())
 	}
@@ -473,14 +346,14 @@ func (s *shellFileOps) checkLintDelta(path string, preContent, postContent *stri
 		return post
 	}
 	preLines := map[string]bool{}
-	for _, ln := range pySplitLines(pre.Output) {
-		if t := pyStrip(ln); t != "" {
+	for _, ln := range splitLinesValue(pre.Output) {
+		if t := strings.TrimSpace(ln); t != "" {
 			preLines[t] = true
 		}
 	}
 	var postLines []string
-	for _, ln := range pySplitLines(post.Output) {
-		if t := pyStrip(ln); t != "" && !preLines[t] {
+	for _, ln := range splitLinesValue(post.Output) {
+		if t := strings.TrimSpace(ln); t != "" && !preLines[t] {
 			postLines = append(postLines, ln)
 		}
 	}
@@ -697,22 +570,17 @@ func queueLateVerdict(owner, absPath string, res *lspEditCheckResult, cancelled 
 	}
 }
 
-// Holds CPython defaults and counts the script module plus the linter frame that sit beneath loads
+// Namespace flags and node kinds of the TOML parser, with the bounds that keep its work and stack use in check
 const (
-	tomllibRecursionLimit  = 1000
-	tomllibCallerFrames    = 2
-	tomllibMaxKeyParts     = tomllibRecursionLimit
-	tomllibIntMaxStrDigits = 4300
-	tomllibFrozen          = uint8(1)
-	tomllibExplicitNest    = uint8(2)
-	tomllibKindScalar      = 0
-	tomllibKindTable       = 1
-	tomllibKindArray       = 2
-)
-
-var (
-	tomllibTzMu    sync.Mutex
-	tomllibTzCache = map[string]struct{}{}
+	// Most arrays and inline tables one value may nest, keeping the recursive descent well inside the goroutine stack
+	tomllibMaxNesting = 10000
+	// Most parts a dotted key may have, bounding the per key work of the namespace checks that grows with the square of its length
+	tomllibMaxKeyParts  = 1000
+	tomllibFrozen       = uint8(1)
+	tomllibExplicitNest = uint8(2)
+	tomllibKindScalar   = 0
+	tomllibKindTable    = 1
+	tomllibKindArray    = 2
 )
 
 type tomllibFailure struct{ text string }
@@ -740,14 +608,14 @@ type tomllibFlags struct {
 }
 
 type tomllibParser struct {
-	src    []rune
-	depth  int
-	data   *tomllibNode
-	flags  *tomllibFlags
-	scalar *tomllibNode
+	src     []rune
+	nesting int
+	data    *tomllibNode
+	flags   *tomllibFlags
+	scalar  *tomllibNode
 }
 
-// Returns the CPython 3.14 TOML loader failure as type name and message, or empty when parsing succeeds
+// TOML syntax verdict of content as the lint message, empty when the document parses
 func tomllibLoadsError(content string) (result string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -760,18 +628,20 @@ func tomllibLoadsError(content string) (result string) {
 	}()
 	p := &tomllibParser{
 		src:    tomllibDecode(content),
-		depth:  tomllibCallerFrames,
 		scalar: &tomllibNode{kind: tomllibKindScalar},
 	}
 	p.loads()
 	return ""
 }
 
-// Code points of the str with surrogates whole and stray bytes as surrogateescape chars, CRLF pairs folded into LF
+// Code points of the text with each byte that is not UTF-8 kept as its own stand in, CRLF pairs folded into LF
 func tomllibDecode(s string) []rune {
 	out := make([]rune, 0, len(s))
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			r = tomllibByteStandIn + rune(s[i])
+		}
 		if r == '\n' && len(out) > 0 && out[len(out)-1] == '\r' {
 			out[len(out)-1] = '\n'
 		} else {
@@ -782,25 +652,34 @@ func tomllibDecode(s string) []rune {
 	return out
 }
 
-// Pushes one Python frame and raises RecursionError once the interpreter limit of frames is exceeded
-func (p *tomllibParser) enter() {
-	if p.depth >= tomllibRecursionLimit {
-		panic(tomllibFailure{"invalid TOML: the document nests deeper than the parser allows"})
+// Base of the stand ins for bytes that are not UTF-8: byte b becomes this plus b, a surrogate code point no decoded text holds
+const tomllibByteStandIn = 0xdc00
+
+// Original bytes of decoded runes, each stand in turned back into the byte it holds
+func tomllibBytes(rs []rune) string {
+	b := make([]byte, 0, len(rs))
+	for _, r := range rs {
+		if r >= tomllibByteStandIn+0x80 && r <= tomllibByteStandIn+0xff {
+			b = append(b, byte(r-tomllibByteStandIn))
+		} else {
+			b = utf8.AppendRune(b, r)
+		}
 	}
-	p.depth++
+	return string(b)
 }
 
-func (p *tomllibParser) leave() { p.depth-- }
-
-// Accounts for a Python frame that runs no further calls such as an init or a generator step
-func (p *tomllibParser) call() {
-	p.enter()
-	p.leave()
+// Opens one array or inline table, refusing nesting past the limit at its opening bracket
+func (p *tomllibParser) nest(pos int) {
+	if p.nesting++; p.nesting > tomllibMaxNesting {
+		panic(p.decodeError("Arrays and inline tables nest more than "+strconv.Itoa(tomllibMaxNesting)+" levels deep", pos))
+	}
 }
 
-// Builds TOMLDecodeError after pushing its init frame, with the line and column suffix the Python constructor computes
+// Closes the innermost array or inline table
+func (p *tomllibParser) unnest() { p.nesting-- }
+
+// Lint failure for msg with the line and column of pos, or the end of the document
 func (p *tomllibParser) decodeError(msg string, pos int) tomllibFailure {
-	p.enter()
 	end := min(pos, len(p.src))
 	lineno := 1
 	last := -1
@@ -828,7 +707,7 @@ func (p *tomllibParser) at(pos int) rune {
 	return -1
 }
 
-// Returns the clamped rune range from start to stop the way a Python string slice clamps indices
+// Runes from start to stop, both clamped to the end of the source
 func (p *tomllibParser) slice(start, stop int) []rune {
 	stop = min(stop, len(p.src))
 	start = min(start, stop)
@@ -883,7 +762,7 @@ func tomllibIsBin(r rune) bool { return r == '0' || r == '1' }
 
 func tomllibIsOct(r rune) bool { return r >= '0' && r <= '7' }
 
-// Encodes code points three bytes each so surrogates stay distinct from every other key code point
+// Encodes code points three bytes each so byte stand ins stay distinct from every other key code point
 func tomllibPack(rs []rune) string {
 	b := make([]byte, 0, 3*len(rs))
 	for _, r := range rs {
@@ -920,88 +799,13 @@ func tomllibPendingID(key []string, flag uint8) string {
 	return b.String()
 }
 
-// Reports printability using the Python 3.14 Unicode 16 tables rather than the Go unicode package
-func tomllibIsPrintable(r rune) bool {
-	lo, hi := 0, len(tomllibNonPrintable)/2
-	for lo < hi {
-		mid := (lo + hi) / 2
-		if uint32(r) > tomllibNonPrintable[2*mid+1] {
-			lo = mid + 1
-		} else {
-			hi = mid
-		}
-	}
-	return lo == len(tomllibNonPrintable)/2 || uint32(r) < tomllibNonPrintable[2*lo]
-}
-
-func tomllibHex(b *strings.Builder, prefix string, v rune, width int) {
-	h := strconv.FormatUint(uint64(v), 16)
-	b.WriteString(prefix)
-	b.WriteString(strings.Repeat("0", width-len(h)))
-	b.WriteString(h)
-}
-
-// Renders runes exactly like Python str repr including quote choice and escapes for nonprintable points
-func tomllibRepr(rs []rune) string {
-	squote, dquote := false, false
-	for _, r := range rs {
-		switch r {
-		case '\'':
-			squote = true
-		case '"':
-			dquote = true
-		}
-	}
-	quote := '\''
-	if squote && !dquote {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteRune(quote)
-	for _, r := range rs {
-		switch {
-		case r == quote || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r < 0x20 || r == 0x7f:
-			tomllibHex(&b, `\x`, r, 2)
-		case r < 0x7f:
-			b.WriteRune(r)
-		case tomllibIsPrintable(r):
-			b.WriteRune(r)
-		case r < 0x100:
-			tomllibHex(&b, `\x`, r, 2)
-		case r < 0x10000:
-			tomllibHex(&b, `\u`, r, 4)
-		default:
-			tomllibHex(&b, `\U`, r, 8)
-		}
-	}
-	b.WriteRune(quote)
-	return b.String()
-}
-
-// Renders a key exactly like the Python repr of a tuple of strings including the singleton comma
-func tomllibReprKey(key []string) string {
-	var b strings.Builder
-	b.WriteByte('(')
+// Key as its parts in Go quoted form joined by dots, the bytes of each part as the document holds them
+func tomllibQuoteKey(key []string) string {
+	parts := make([]string, len(key))
 	for i, k := range key {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(tomllibRepr(tomllibUnpack(k)))
+		parts[i] = strconv.Quote(tomllibBytes(tomllibUnpack(k)))
 	}
-	if len(key) == 1 {
-		b.WriteByte(',')
-	}
-	b.WriteByte(')')
-	return b.String()
+	return strings.Join(parts, ".")
 }
 
 func tomllibNewTable() *tomllibNode {
@@ -1009,24 +813,18 @@ func tomllibNewTable() *tomllibNode {
 }
 
 func (p *tomllibParser) newNestedDict() *tomllibNode {
-	p.call()
 	return tomllibNewTable()
 }
 
 func (p *tomllibParser) newFlags() *tomllibFlags {
-	p.call()
 	return &tomllibFlags{root: map[string]*tomllibFlagNode{}, pending: map[string]tomllibPending{}}
 }
 
 func (p *tomllibParser) addPending(f *tomllibFlags, key []string, flag uint8) {
-	p.enter()
-	defer p.leave()
 	f.pending[tomllibPendingID(key, flag)] = tomllibPending{key: key, flag: flag}
 }
 
 func (p *tomllibParser) finalizePending(f *tomllibFlags) {
-	p.enter()
-	defer p.leave()
 	for _, e := range f.pending {
 		p.flagsSet(f, e.key, e.flag, false)
 	}
@@ -1034,8 +832,6 @@ func (p *tomllibParser) finalizePending(f *tomllibFlags) {
 }
 
 func (p *tomllibParser) unsetAll(f *tomllibFlags, key []string) {
-	p.enter()
-	defer p.leave()
 	cont := f.root
 	for _, k := range key[:len(key)-1] {
 		n, ok := cont[k]
@@ -1048,8 +844,6 @@ func (p *tomllibParser) unsetAll(f *tomllibFlags, key []string) {
 }
 
 func (p *tomllibParser) flagsSet(f *tomllibFlags, key []string, flag uint8, recursive bool) {
-	p.enter()
-	defer p.leave()
 	cont := f.root
 	for _, k := range key[:len(key)-1] {
 		cont = tomllibFlagChild(cont, k).nested
@@ -1072,8 +866,6 @@ func tomllibFlagChild(cont map[string]*tomllibFlagNode, k string) *tomllibFlagNo
 }
 
 func (p *tomllibParser) flagsIs(f *tomllibFlags, key []string, flag uint8) bool {
-	p.enter()
-	defer p.leave()
 	if len(key) == 0 {
 		return false
 	}
@@ -1094,10 +886,8 @@ func (p *tomllibParser) flagsIs(f *tomllibFlags, key []string, flag uint8) bool 
 	return false
 }
 
-// Walks or creates tables along key returning nil where Python raises KeyError for a non table value
+// Walks or creates tables along key, nil where a value that is not a table is in the way
 func (p *tomllibParser) getOrCreateNest(root *tomllibNode, key []string, accessLists bool) *tomllibNode {
-	p.enter()
-	defer p.leave()
 	cont := root
 	for _, k := range key {
 		child, ok := cont.table[k]
@@ -1120,8 +910,6 @@ func (p *tomllibParser) getOrCreateNest(root *tomllibNode, key []string, accessL
 }
 
 func (p *tomllibParser) appendNestToList(key []string) bool {
-	p.enter()
-	defer p.leave()
 	cont := p.getOrCreateNest(p.data, key[:len(key)-1], true)
 	if cont == nil {
 		return false
@@ -1138,15 +926,12 @@ func (p *tomllibParser) appendNestToList(key []string) bool {
 	return true
 }
 
-// Parses statements one line at a time mirroring the order of every check in the Python loop
+// Parses statements one line at a time, running every check of a statement in document order
 func (p *tomllibParser) loads() {
-	p.enter()
-	defer p.leave()
 	src := p.src
 	pos := 0
 	p.newOutput()
 	var header []string
-	p.makeSafeParseFloat()
 	for {
 		pos = p.skipChars(pos, tomllibIsWS)
 		if pos >= len(src) {
@@ -1183,23 +968,12 @@ func (p *tomllibParser) loads() {
 	}
 }
 
-func (p *tomllibParser) makeSafeParseFloat() { p.call() }
-
-// Steps the generator of relative container keys, which pushes one frame per step including the final one
-func (p *tomllibParser) contKeysNext() { p.call() }
-
-func (p *tomllibParser) matchToLocaltime() { p.call() }
-
 func (p *tomllibParser) newOutput() {
-	p.enter()
-	defer p.leave()
 	p.data = p.newNestedDict()
 	p.flags = p.newFlags()
 }
 
 func (p *tomllibParser) skipChars(pos int, in func(rune) bool) int {
-	p.enter()
-	defer p.leave()
 	for pos < len(p.src) && in(p.src[pos]) {
 		pos++
 	}
@@ -1208,26 +982,22 @@ func (p *tomllibParser) skipChars(pos int, in func(rune) bool) int {
 
 // Returns the index of expect while rejecting illegal characters before it and optionally a missing terminator
 func (p *tomllibParser) skipUntil(pos int, expect string, errorOn func(rune) bool, errorOnEOF bool) int {
-	p.enter()
-	defer p.leave()
 	newPos := p.index(expect, pos)
 	if newPos < 0 {
 		newPos = len(p.src)
 		if errorOnEOF {
-			panic(p.decodeError("Expected "+tomllibRepr([]rune(expect)), newPos))
+			panic(p.decodeError("Expected "+strconv.Quote(expect), newPos))
 		}
 	}
 	for i := pos; i < newPos; i++ {
 		if errorOn(p.src[i]) {
-			panic(p.decodeError("Found invalid character "+tomllibRepr([]rune{p.src[i]}), i))
+			panic(p.decodeError("Found invalid character "+strconv.QuoteRune(p.src[i]), i))
 		}
 	}
 	return newPos
 }
 
 func (p *tomllibParser) skipComment(pos int) int {
-	p.enter()
-	defer p.leave()
 	if p.at(pos) == '#' {
 		return p.skipUntil(pos+1, "\n", tomllibIllegalBasic, false)
 	}
@@ -1235,8 +1005,6 @@ func (p *tomllibParser) skipComment(pos int) int {
 }
 
 func (p *tomllibParser) skipCommentsAndArrayWS(pos int) int {
-	p.enter()
-	defer p.leave()
 	for {
 		before := pos
 		pos = p.skipChars(pos, tomllibIsWSOrNewline)
@@ -1248,13 +1016,11 @@ func (p *tomllibParser) skipCommentsAndArrayWS(pos int) int {
 }
 
 func (p *tomllibParser) createDictRule(pos int) (int, []string) {
-	p.enter()
-	defer p.leave()
 	pos++
 	pos = p.skipChars(pos, tomllibIsWS)
 	pos, key := p.parseKey(pos)
 	if p.flagsIs(p.flags, key, tomllibExplicitNest) || p.flagsIs(p.flags, key, tomllibFrozen) {
-		panic(p.decodeError("Cannot declare "+tomllibReprKey(key)+" twice", pos))
+		panic(p.decodeError("Cannot declare "+tomllibQuoteKey(key)+" twice", pos))
 	}
 	p.flagsSet(p.flags, key, tomllibExplicitNest, false)
 	if p.getOrCreateNest(p.data, key, true) == nil {
@@ -1267,13 +1033,11 @@ func (p *tomllibParser) createDictRule(pos int) (int, []string) {
 }
 
 func (p *tomllibParser) createListRule(pos int) (int, []string) {
-	p.enter()
-	defer p.leave()
 	pos += 2
 	pos = p.skipChars(pos, tomllibIsWS)
 	pos, key := p.parseKey(pos)
 	if p.flagsIs(p.flags, key, tomllibFrozen) {
-		panic(p.decodeError("Cannot mutate immutable namespace "+tomllibReprKey(key), pos))
+		panic(p.decodeError("Cannot mutate immutable namespace "+tomllibQuoteKey(key), pos))
 	}
 	p.unsetAll(p.flags, key)
 	p.flagsSet(p.flags, key, tomllibExplicitNest, false)
@@ -1288,22 +1052,18 @@ func (p *tomllibParser) createListRule(pos int) (int, []string) {
 
 // Assigns a dotted key value under the current header enforcing namespace, mutability and overwrite rules
 func (p *tomllibParser) keyValueRule(pos int, header []string) int {
-	p.enter()
-	defer p.leave()
 	pos, key, value := p.parseKeyValuePair(pos)
 	keyParent, keyStem := key[:len(key)-1], key[len(key)-1]
 	absKeyParent := tomllibJoinKey(header, keyParent)
 	for i := 1; i < len(key); i++ {
-		p.contKeysNext()
 		contKey := tomllibJoinKey(header, key[:i])
 		if p.flagsIs(p.flags, contKey, tomllibExplicitNest) {
-			panic(p.decodeError("Cannot redefine namespace "+tomllibReprKey(contKey), pos))
+			panic(p.decodeError("Cannot redefine namespace "+tomllibQuoteKey(contKey), pos))
 		}
 		p.addPending(p.flags, contKey, tomllibExplicitNest)
 	}
-	p.contKeysNext()
 	if p.flagsIs(p.flags, absKeyParent, tomllibFrozen) {
-		panic(p.decodeError("Cannot mutate immutable namespace "+tomllibReprKey(absKeyParent), pos))
+		panic(p.decodeError("Cannot mutate immutable namespace "+tomllibQuoteKey(absKeyParent), pos))
 	}
 	nest := p.getOrCreateNest(p.data, absKeyParent, true)
 	if nest == nil {
@@ -1320,8 +1080,6 @@ func (p *tomllibParser) keyValueRule(pos int, header []string) int {
 }
 
 func (p *tomllibParser) parseKeyValuePair(pos int) (int, []string, *tomllibNode) {
-	p.enter()
-	defer p.leave()
 	pos, key := p.parseKey(pos)
 	if p.at(pos) != '=' {
 		panic(p.decodeError("Expected '=' after a key in a key/value pair", pos))
@@ -1333,8 +1091,7 @@ func (p *tomllibParser) parseKeyValuePair(pos int) (int, []string, *tomllibNode)
 }
 
 func (p *tomllibParser) parseKey(pos int) (int, []string) {
-	p.enter()
-	defer p.leave()
+	start := pos
 	pos, part := p.parseKeyPart(pos)
 	key := []string{part}
 	pos = p.skipChars(pos, tomllibIsWS)
@@ -1347,15 +1104,13 @@ func (p *tomllibParser) parseKey(pos int) (int, []string) {
 		pos, part = p.parseKeyPart(pos)
 		key = append(key, part)
 		if len(key) > tomllibMaxKeyParts {
-			panic(tomllibFailure{"invalid TOML: a key has more than the allowed " + strconv.Itoa(tomllibMaxKeyParts) + " parts"})
+			panic(p.decodeError("Dotted key has more than "+strconv.Itoa(tomllibMaxKeyParts)+" parts", start))
 		}
 		pos = p.skipChars(pos, tomllibIsWS)
 	}
 }
 
 func (p *tomllibParser) parseKeyPart(pos int) (int, string) {
-	p.enter()
-	defer p.leave()
 	char := p.at(pos)
 	if char >= 0 && tomllibIsBareKey(char) {
 		start := pos
@@ -1374,15 +1129,13 @@ func (p *tomllibParser) parseKeyPart(pos int) (int, string) {
 }
 
 func (p *tomllibParser) parseOneLineBasicStr(pos int) (int, []rune) {
-	p.enter()
-	defer p.leave()
 	pos++
 	return p.parseBasicStr(pos, false)
 }
 
 func (p *tomllibParser) parseArray(pos int) (int, *tomllibNode) {
-	p.enter()
-	defer p.leave()
+	p.nest(pos)
+	defer p.unnest()
 	pos++
 	array := &tomllibNode{kind: tomllibKindArray}
 	pos = p.skipCommentsAndArrayWS(pos)
@@ -1411,8 +1164,8 @@ func (p *tomllibParser) parseArray(pos int) (int, *tomllibNode) {
 
 // Parses a one line inline table with its own namespace flags and duplicate key detection
 func (p *tomllibParser) parseInlineTable(pos int) (int, *tomllibNode) {
-	p.enter()
-	defer p.leave()
+	p.nest(pos)
+	defer p.unnest()
 	pos++
 	nested := p.newNestedDict()
 	flags := p.newFlags()
@@ -1426,14 +1179,14 @@ func (p *tomllibParser) parseInlineTable(pos int) (int, *tomllibNode) {
 		pos, key, value = p.parseKeyValuePair(pos)
 		keyParent, keyStem := key[:len(key)-1], key[len(key)-1]
 		if p.flagsIs(flags, key, tomllibFrozen) {
-			panic(p.decodeError("Cannot mutate immutable namespace "+tomllibReprKey(key), pos))
+			panic(p.decodeError("Cannot mutate immutable namespace "+tomllibQuoteKey(key), pos))
 		}
 		nest := p.getOrCreateNest(nested, keyParent, false)
 		if nest == nil {
 			panic(p.decodeError("Cannot overwrite a value", pos))
 		}
 		if _, ok := nest.table[keyStem]; ok {
-			panic(p.decodeError("Duplicate inline table key "+tomllibRepr(tomllibUnpack(keyStem)), pos))
+			panic(p.decodeError("Duplicate inline table key "+strconv.Quote(tomllibBytes(tomllibUnpack(keyStem))), pos))
 		}
 		nest.table[keyStem] = value
 		pos = p.skipChars(pos, tomllibIsWS)
@@ -1454,8 +1207,6 @@ func (p *tomllibParser) parseInlineTable(pos int) (int, *tomllibNode) {
 
 // Decodes one backslash escape, including the multiline line ending backslash form that trims following whitespace and newlines
 func (p *tomllibParser) parseBasicStrEscape(pos int, multiline bool) (int, []rune) {
-	p.enter()
-	defer p.leave()
 	escapeID := string(p.slice(pos, pos+2))
 	pos += 2
 	if multiline && (escapeID == "\\ " || escapeID == "\\\t" || escapeID == "\\\n") {
@@ -1496,14 +1247,10 @@ func (p *tomllibParser) parseBasicStrEscape(pos int, multiline bool) (int, []run
 }
 
 func (p *tomllibParser) parseBasicStrEscapeMultiline(pos int) (int, []rune) {
-	p.enter()
-	defer p.leave()
 	return p.parseBasicStrEscape(pos, true)
 }
 
 func (p *tomllibParser) parseHexChar(pos, hexLen int) (int, []rune) {
-	p.enter()
-	defer p.leave()
 	hexStr := p.slice(pos, pos+hexLen)
 	valid := len(hexStr) == hexLen
 	for _, r := range hexStr {
@@ -1521,13 +1268,10 @@ func (p *tomllibParser) parseHexChar(pos, hexLen int) (int, []rune) {
 }
 
 func (p *tomllibParser) isUnicodeScalarValue(v uint64) bool {
-	p.call()
 	return v <= 55295 || (v >= 57344 && v <= 1114111)
 }
 
 func (p *tomllibParser) parseLiteralStr(pos int) (int, []rune) {
-	p.enter()
-	defer p.leave()
 	pos++
 	start := pos
 	pos = p.skipUntil(pos, "'", tomllibIllegalBasic, true)
@@ -1536,8 +1280,6 @@ func (p *tomllibParser) parseLiteralStr(pos int) (int, []rune) {
 
 // Parses a triple quoted string and absorbs up to two extra closing delimiters into the content
 func (p *tomllibParser) parseMultilineStr(pos int, literal bool) int {
-	p.enter()
-	defer p.leave()
 	pos += 3
 	if p.startsWith(pos, "\n") {
 		pos++
@@ -1561,8 +1303,6 @@ func (p *tomllibParser) parseMultilineStr(pos int, literal bool) int {
 
 // Scans a basic string, decoding escapes and rejecting control characters, until the closing quote or end of input
 func (p *tomllibParser) parseBasicStr(pos int, multiline bool) (int, []rune) {
-	p.enter()
-	defer p.leave()
 	errorOn := tomllibIllegalBasic
 	if multiline {
 		errorOn = tomllibIllegalMultiline
@@ -1597,7 +1337,7 @@ func (p *tomllibParser) parseBasicStr(pos int, multiline bool) (int, []rune) {
 			continue
 		}
 		if errorOn(char) {
-			panic(p.decodeError("Illegal character "+tomllibRepr([]rune{char}), pos))
+			panic(p.decodeError("Illegal character "+strconv.QuoteRune(char), pos))
 		}
 		pos++
 	}
@@ -1605,8 +1345,6 @@ func (p *tomllibParser) parseBasicStr(pos int, multiline bool) (int, []rune) {
 
 // Dispatches on the first character then tries datetime, time, number and special float forms in order
 func (p *tomllibParser) parseValue(pos int) (int, *tomllibNode) {
-	p.enter()
-	defer p.leave()
 	char := p.at(pos)
 	switch char {
 	case '"':
@@ -1634,18 +1372,16 @@ func (p *tomllibParser) parseValue(pos int) (int, *tomllibNode) {
 	case '{':
 		return p.parseInlineTable(pos)
 	}
-	if end, offset, ok := p.matchDatetime(pos); ok {
-		if !p.matchToDatetime(pos, offset) {
+	if end, ok := p.matchDatetime(pos); ok {
+		if !p.matchToDatetime(pos) {
 			panic(p.decodeError("Invalid date or datetime", pos))
 		}
 		return end, p.scalar
 	}
 	if end, ok := p.matchTime(pos); ok {
-		p.matchToLocaltime()
 		return end, p.scalar
 	}
-	if end, decimalInt, ok := p.matchNumber(pos); ok {
-		p.matchToNumber(pos, end, decimalInt)
+	if end, ok := p.matchNumber(pos); ok {
 		return end, p.scalar
 	}
 	switch string(p.slice(pos, pos+3)) {
@@ -1688,39 +1424,39 @@ func (p *tomllibParser) matchTime(pos int) (int, bool) {
 	return end, true
 }
 
-// Matches the date pattern with optional time and offset, returning the end and the offset sign index
-func (p *tomllibParser) matchDatetime(pos int) (end, offset int, ok bool) {
+// Matches the date pattern with optional time and offset, returning where the match ends
+func (p *tomllibParser) matchDatetime(pos int) (end int, ok bool) {
 	for i := 0; i < 4; i++ {
 		if !p.inRange(pos+i, '0', '9') {
-			return 0, -1, false
+			return 0, false
 		}
 	}
 	if p.at(pos+4) != '-' || p.at(pos+7) != '-' {
-		return 0, -1, false
+		return 0, false
 	}
 	month := (p.at(pos+5) == '0' && p.inRange(pos+6, '1', '9')) || (p.at(pos+5) == '1' && p.inRange(pos+6, '0', '2'))
 	day := (p.at(pos+8) == '0' && p.inRange(pos+9, '1', '9')) || (p.inRange(pos+8, '1', '2') && p.inRange(pos+9, '0', '9')) || (p.at(pos+8) == '3' && p.inRange(pos+9, '0', '1'))
 	if !month || !day {
-		return 0, -1, false
+		return 0, false
 	}
 	end = pos + 10
 	sep := p.at(end)
 	if sep != 'T' && sep != 't' && sep != ' ' {
-		return end, -1, true
+		return end, true
 	}
 	tend, timeOK := p.matchTime(end + 1)
 	if !timeOK {
-		return end, -1, true
+		return end, true
 	}
 	switch p.at(tend) {
 	case 'Z', 'z':
-		return tend + 1, -1, true
+		return tend + 1, true
 	case '+', '-':
 		if p.matchHour(tend+1) && p.at(tend+3) == ':' && p.matchMinute(tend+4) {
-			return tend + 6, tend, true
+			return tend + 6, true
 		}
 	}
-	return tend, -1, true
+	return tend, true
 }
 
 func tomllibDigitsAt(src []rune, pos, n int) int {
@@ -1731,17 +1467,12 @@ func tomllibDigitsAt(src []rune, pos, n int) int {
 	return v
 }
 
-// Validates the matched date the way the datetime constructors do and calls the offset cache first
-func (p *tomllibParser) matchToDatetime(pos, offset int) bool {
-	p.enter()
-	defer p.leave()
+// Reports whether the matched date exists: a year from 1 on and a day inside its month
+func (p *tomllibParser) matchToDatetime(pos int) bool {
 	src := p.src
 	year := tomllibDigitsAt(src, pos, 4)
 	month := tomllibDigitsAt(src, pos+5, 2)
 	day := tomllibDigitsAt(src, pos+8, 2)
-	if offset >= 0 {
-		p.cachedTz(string(src[offset+1:offset+3]) + string(src[offset+4:offset+6]) + string(src[offset]))
-	}
 	if year < 1 {
 		return false
 	}
@@ -1750,20 +1481,6 @@ func (p *tomllibParser) matchToDatetime(pos, offset int) bool {
 		days[2] = 29
 	}
 	return day <= days[month]
-}
-
-// Pushes the cached offset helper frame only on a cache miss, as the process wide lru_cache does
-func (p *tomllibParser) cachedTz(key string) {
-	tomllibTzMu.Lock()
-	_, hit := tomllibTzCache[key]
-	tomllibTzMu.Unlock()
-	if hit {
-		return
-	}
-	p.call()
-	tomllibTzMu.Lock()
-	tomllibTzCache[key] = struct{}{}
-	tomllibTzMu.Unlock()
 }
 
 // Advances over a run of digits satisfying the class predicate where single underscores may separate consecutive digits
@@ -1779,15 +1496,15 @@ func (p *tomllibParser) matchDigitRun(pos int, class func(rune) bool) int {
 	}
 }
 
-// Matches prefixed integers first, then signed decimals, reporting whether the result is a decimal integer
-func (p *tomllibParser) matchNumber(pos int) (end int, decimalInt, ok bool) {
+// Matches prefixed integers first, then signed decimals and floats, of any length
+func (p *tomllibParser) matchNumber(pos int) (end int, ok bool) {
 	if p.at(pos) == '0' {
 		for _, alt := range []struct {
 			prefix rune
 			class  func(rune) bool
 		}{{'x', tomllibIsHex}, {'b', tomllibIsBin}, {'o', tomllibIsOct}} {
 			if p.at(pos+1) == alt.prefix && pos+2 < len(p.src) && alt.class(p.src[pos+2]) {
-				return p.matchDigitRun(pos+3, alt.class), false, true
+				return p.matchDigitRun(pos+3, alt.class), true
 			}
 		}
 	}
@@ -1801,9 +1518,8 @@ func (p *tomllibParser) matchNumber(pos int) (end int, decimalInt, ok bool) {
 	case p.inRange(i, '1', '9'):
 		i = p.matchDigitRun(i+1, tomllibIsDigit)
 	default:
-		return 0, false, false
+		return 0, false
 	}
-	intEnd := i
 	if p.at(i) == '.' && p.inRange(i+1, '0', '9') {
 		i = p.matchDigitRun(i+2, tomllibIsDigit)
 	}
@@ -1816,215 +1532,7 @@ func (p *tomllibParser) matchNumber(pos int) (end int, decimalInt, ok bool) {
 			i = p.matchDigitRun(j+1, tomllibIsDigit)
 		}
 	}
-	return i, i == intEnd, true
-}
-
-// Converts a matched number and raises the integer digit limit ValueError for long decimal literals
-func (p *tomllibParser) matchToNumber(pos, end int, decimalInt bool) {
-	p.enter()
-	defer p.leave()
-	if !decimalInt {
-		return
-	}
-	digits := 0
-	for _, r := range p.src[pos:end] {
-		if tomllibIsDigit(r) {
-			digits++
-		}
-	}
-	if digits > tomllibIntMaxStrDigits {
-		panic(tomllibFailure{"invalid TOML: an integer has " + strconv.Itoa(digits) + " digits, more than the " +
-			strconv.Itoa(tomllibIntMaxStrDigits) + " allowed"})
-	}
-}
-
-// Lists inclusive code point ranges that Python 3.14 str.isprintable rejects under its bundled Unicode 16 database
-var tomllibNonPrintable = [...]uint32{
-	0x0, 0x1f, 0x7f, 0xa0, 0xad, 0xad, 0x378, 0x379,
-	0x380, 0x383, 0x38b, 0x38b, 0x38d, 0x38d, 0x3a2, 0x3a2,
-	0x530, 0x530, 0x557, 0x558, 0x58b, 0x58c, 0x590, 0x590,
-	0x5c8, 0x5cf, 0x5eb, 0x5ee, 0x5f5, 0x605, 0x61c, 0x61c,
-	0x6dd, 0x6dd, 0x70e, 0x70f, 0x74b, 0x74c, 0x7b2, 0x7bf,
-	0x7fb, 0x7fc, 0x82e, 0x82f, 0x83f, 0x83f, 0x85c, 0x85d,
-	0x85f, 0x85f, 0x86b, 0x86f, 0x88f, 0x896, 0x8e2, 0x8e2,
-	0x984, 0x984, 0x98d, 0x98e, 0x991, 0x992, 0x9a9, 0x9a9,
-	0x9b1, 0x9b1, 0x9b3, 0x9b5, 0x9ba, 0x9bb, 0x9c5, 0x9c6,
-	0x9c9, 0x9ca, 0x9cf, 0x9d6, 0x9d8, 0x9db, 0x9de, 0x9de,
-	0x9e4, 0x9e5, 0x9ff, 0xa00, 0xa04, 0xa04, 0xa0b, 0xa0e,
-	0xa11, 0xa12, 0xa29, 0xa29, 0xa31, 0xa31, 0xa34, 0xa34,
-	0xa37, 0xa37, 0xa3a, 0xa3b, 0xa3d, 0xa3d, 0xa43, 0xa46,
-	0xa49, 0xa4a, 0xa4e, 0xa50, 0xa52, 0xa58, 0xa5d, 0xa5d,
-	0xa5f, 0xa65, 0xa77, 0xa80, 0xa84, 0xa84, 0xa8e, 0xa8e,
-	0xa92, 0xa92, 0xaa9, 0xaa9, 0xab1, 0xab1, 0xab4, 0xab4,
-	0xaba, 0xabb, 0xac6, 0xac6, 0xaca, 0xaca, 0xace, 0xacf,
-	0xad1, 0xadf, 0xae4, 0xae5, 0xaf2, 0xaf8, 0xb00, 0xb00,
-	0xb04, 0xb04, 0xb0d, 0xb0e, 0xb11, 0xb12, 0xb29, 0xb29,
-	0xb31, 0xb31, 0xb34, 0xb34, 0xb3a, 0xb3b, 0xb45, 0xb46,
-	0xb49, 0xb4a, 0xb4e, 0xb54, 0xb58, 0xb5b, 0xb5e, 0xb5e,
-	0xb64, 0xb65, 0xb78, 0xb81, 0xb84, 0xb84, 0xb8b, 0xb8d,
-	0xb91, 0xb91, 0xb96, 0xb98, 0xb9b, 0xb9b, 0xb9d, 0xb9d,
-	0xba0, 0xba2, 0xba5, 0xba7, 0xbab, 0xbad, 0xbba, 0xbbd,
-	0xbc3, 0xbc5, 0xbc9, 0xbc9, 0xbce, 0xbcf, 0xbd1, 0xbd6,
-	0xbd8, 0xbe5, 0xbfb, 0xbff, 0xc0d, 0xc0d, 0xc11, 0xc11,
-	0xc29, 0xc29, 0xc3a, 0xc3b, 0xc45, 0xc45, 0xc49, 0xc49,
-	0xc4e, 0xc54, 0xc57, 0xc57, 0xc5b, 0xc5c, 0xc5e, 0xc5f,
-	0xc64, 0xc65, 0xc70, 0xc76, 0xc8d, 0xc8d, 0xc91, 0xc91,
-	0xca9, 0xca9, 0xcb4, 0xcb4, 0xcba, 0xcbb, 0xcc5, 0xcc5,
-	0xcc9, 0xcc9, 0xcce, 0xcd4, 0xcd7, 0xcdc, 0xcdf, 0xcdf,
-	0xce4, 0xce5, 0xcf0, 0xcf0, 0xcf4, 0xcff, 0xd0d, 0xd0d,
-	0xd11, 0xd11, 0xd45, 0xd45, 0xd49, 0xd49, 0xd50, 0xd53,
-	0xd64, 0xd65, 0xd80, 0xd80, 0xd84, 0xd84, 0xd97, 0xd99,
-	0xdb2, 0xdb2, 0xdbc, 0xdbc, 0xdbe, 0xdbf, 0xdc7, 0xdc9,
-	0xdcb, 0xdce, 0xdd5, 0xdd5, 0xdd7, 0xdd7, 0xde0, 0xde5,
-	0xdf0, 0xdf1, 0xdf5, 0xe00, 0xe3b, 0xe3e, 0xe5c, 0xe80,
-	0xe83, 0xe83, 0xe85, 0xe85, 0xe8b, 0xe8b, 0xea4, 0xea4,
-	0xea6, 0xea6, 0xebe, 0xebf, 0xec5, 0xec5, 0xec7, 0xec7,
-	0xecf, 0xecf, 0xeda, 0xedb, 0xee0, 0xeff, 0xf48, 0xf48,
-	0xf6d, 0xf70, 0xf98, 0xf98, 0xfbd, 0xfbd, 0xfcd, 0xfcd,
-	0xfdb, 0xfff, 0x10c6, 0x10c6, 0x10c8, 0x10cc, 0x10ce, 0x10cf,
-	0x1249, 0x1249, 0x124e, 0x124f, 0x1257, 0x1257, 0x1259, 0x1259,
-	0x125e, 0x125f, 0x1289, 0x1289, 0x128e, 0x128f, 0x12b1, 0x12b1,
-	0x12b6, 0x12b7, 0x12bf, 0x12bf, 0x12c1, 0x12c1, 0x12c6, 0x12c7,
-	0x12d7, 0x12d7, 0x1311, 0x1311, 0x1316, 0x1317, 0x135b, 0x135c,
-	0x137d, 0x137f, 0x139a, 0x139f, 0x13f6, 0x13f7, 0x13fe, 0x13ff,
-	0x1680, 0x1680, 0x169d, 0x169f, 0x16f9, 0x16ff, 0x1716, 0x171e,
-	0x1737, 0x173f, 0x1754, 0x175f, 0x176d, 0x176d, 0x1771, 0x1771,
-	0x1774, 0x177f, 0x17de, 0x17df, 0x17ea, 0x17ef, 0x17fa, 0x17ff,
-	0x180e, 0x180e, 0x181a, 0x181f, 0x1879, 0x187f, 0x18ab, 0x18af,
-	0x18f6, 0x18ff, 0x191f, 0x191f, 0x192c, 0x192f, 0x193c, 0x193f,
-	0x1941, 0x1943, 0x196e, 0x196f, 0x1975, 0x197f, 0x19ac, 0x19af,
-	0x19ca, 0x19cf, 0x19db, 0x19dd, 0x1a1c, 0x1a1d, 0x1a5f, 0x1a5f,
-	0x1a7d, 0x1a7e, 0x1a8a, 0x1a8f, 0x1a9a, 0x1a9f, 0x1aae, 0x1aaf,
-	0x1acf, 0x1aff, 0x1b4d, 0x1b4d, 0x1bf4, 0x1bfb, 0x1c38, 0x1c3a,
-	0x1c4a, 0x1c4c, 0x1c8b, 0x1c8f, 0x1cbb, 0x1cbc, 0x1cc8, 0x1ccf,
-	0x1cfb, 0x1cff, 0x1f16, 0x1f17, 0x1f1e, 0x1f1f, 0x1f46, 0x1f47,
-	0x1f4e, 0x1f4f, 0x1f58, 0x1f58, 0x1f5a, 0x1f5a, 0x1f5c, 0x1f5c,
-	0x1f5e, 0x1f5e, 0x1f7e, 0x1f7f, 0x1fb5, 0x1fb5, 0x1fc5, 0x1fc5,
-	0x1fd4, 0x1fd5, 0x1fdc, 0x1fdc, 0x1ff0, 0x1ff1, 0x1ff5, 0x1ff5,
-	0x1fff, 0x200f, 0x2028, 0x202f, 0x205f, 0x206f, 0x2072, 0x2073,
-	0x208f, 0x208f, 0x209d, 0x209f, 0x20c1, 0x20cf, 0x20f1, 0x20ff,
-	0x218c, 0x218f, 0x242a, 0x243f, 0x244b, 0x245f, 0x2b74, 0x2b75,
-	0x2b96, 0x2b96, 0x2cf4, 0x2cf8, 0x2d26, 0x2d26, 0x2d28, 0x2d2c,
-	0x2d2e, 0x2d2f, 0x2d68, 0x2d6e, 0x2d71, 0x2d7e, 0x2d97, 0x2d9f,
-	0x2da7, 0x2da7, 0x2daf, 0x2daf, 0x2db7, 0x2db7, 0x2dbf, 0x2dbf,
-	0x2dc7, 0x2dc7, 0x2dcf, 0x2dcf, 0x2dd7, 0x2dd7, 0x2ddf, 0x2ddf,
-	0x2e5e, 0x2e7f, 0x2e9a, 0x2e9a, 0x2ef4, 0x2eff, 0x2fd6, 0x2fef,
-	0x3000, 0x3000, 0x3040, 0x3040, 0x3097, 0x3098, 0x3100, 0x3104,
-	0x3130, 0x3130, 0x318f, 0x318f, 0x31e6, 0x31ee, 0x321f, 0x321f,
-	0xa48d, 0xa48f, 0xa4c7, 0xa4cf, 0xa62c, 0xa63f, 0xa6f8, 0xa6ff,
-	0xa7ce, 0xa7cf, 0xa7d2, 0xa7d2, 0xa7d4, 0xa7d4, 0xa7dd, 0xa7f1,
-	0xa82d, 0xa82f, 0xa83a, 0xa83f, 0xa878, 0xa87f, 0xa8c6, 0xa8cd,
-	0xa8da, 0xa8df, 0xa954, 0xa95e, 0xa97d, 0xa97f, 0xa9ce, 0xa9ce,
-	0xa9da, 0xa9dd, 0xa9ff, 0xa9ff, 0xaa37, 0xaa3f, 0xaa4e, 0xaa4f,
-	0xaa5a, 0xaa5b, 0xaac3, 0xaada, 0xaaf7, 0xab00, 0xab07, 0xab08,
-	0xab0f, 0xab10, 0xab17, 0xab1f, 0xab27, 0xab27, 0xab2f, 0xab2f,
-	0xab6c, 0xab6f, 0xabee, 0xabef, 0xabfa, 0xabff, 0xd7a4, 0xd7af,
-	0xd7c7, 0xd7ca, 0xd7fc, 0xf8ff, 0xfa6e, 0xfa6f, 0xfada, 0xfaff,
-	0xfb07, 0xfb12, 0xfb18, 0xfb1c, 0xfb37, 0xfb37, 0xfb3d, 0xfb3d,
-	0xfb3f, 0xfb3f, 0xfb42, 0xfb42, 0xfb45, 0xfb45, 0xfbc3, 0xfbd2,
-	0xfd90, 0xfd91, 0xfdc8, 0xfdce, 0xfdd0, 0xfdef, 0xfe1a, 0xfe1f,
-	0xfe53, 0xfe53, 0xfe67, 0xfe67, 0xfe6c, 0xfe6f, 0xfe75, 0xfe75,
-	0xfefd, 0xff00, 0xffbf, 0xffc1, 0xffc8, 0xffc9, 0xffd0, 0xffd1,
-	0xffd8, 0xffd9, 0xffdd, 0xffdf, 0xffe7, 0xffe7, 0xffef, 0xfffb,
-	0xfffe, 0xffff, 0x1000c, 0x1000c, 0x10027, 0x10027, 0x1003b, 0x1003b,
-	0x1003e, 0x1003e, 0x1004e, 0x1004f, 0x1005e, 0x1007f, 0x100fb, 0x100ff,
-	0x10103, 0x10106, 0x10134, 0x10136, 0x1018f, 0x1018f, 0x1019d, 0x1019f,
-	0x101a1, 0x101cf, 0x101fe, 0x1027f, 0x1029d, 0x1029f, 0x102d1, 0x102df,
-	0x102fc, 0x102ff, 0x10324, 0x1032c, 0x1034b, 0x1034f, 0x1037b, 0x1037f,
-	0x1039e, 0x1039e, 0x103c4, 0x103c7, 0x103d6, 0x103ff, 0x1049e, 0x1049f,
-	0x104aa, 0x104af, 0x104d4, 0x104d7, 0x104fc, 0x104ff, 0x10528, 0x1052f,
-	0x10564, 0x1056e, 0x1057b, 0x1057b, 0x1058b, 0x1058b, 0x10593, 0x10593,
-	0x10596, 0x10596, 0x105a2, 0x105a2, 0x105b2, 0x105b2, 0x105ba, 0x105ba,
-	0x105bd, 0x105bf, 0x105f4, 0x105ff, 0x10737, 0x1073f, 0x10756, 0x1075f,
-	0x10768, 0x1077f, 0x10786, 0x10786, 0x107b1, 0x107b1, 0x107bb, 0x107ff,
-	0x10806, 0x10807, 0x10809, 0x10809, 0x10836, 0x10836, 0x10839, 0x1083b,
-	0x1083d, 0x1083e, 0x10856, 0x10856, 0x1089f, 0x108a6, 0x108b0, 0x108df,
-	0x108f3, 0x108f3, 0x108f6, 0x108fa, 0x1091c, 0x1091e, 0x1093a, 0x1093e,
-	0x10940, 0x1097f, 0x109b8, 0x109bb, 0x109d0, 0x109d1, 0x10a04, 0x10a04,
-	0x10a07, 0x10a0b, 0x10a14, 0x10a14, 0x10a18, 0x10a18, 0x10a36, 0x10a37,
-	0x10a3b, 0x10a3e, 0x10a49, 0x10a4f, 0x10a59, 0x10a5f, 0x10aa0, 0x10abf,
-	0x10ae7, 0x10aea, 0x10af7, 0x10aff, 0x10b36, 0x10b38, 0x10b56, 0x10b57,
-	0x10b73, 0x10b77, 0x10b92, 0x10b98, 0x10b9d, 0x10ba8, 0x10bb0, 0x10bff,
-	0x10c49, 0x10c7f, 0x10cb3, 0x10cbf, 0x10cf3, 0x10cf9, 0x10d28, 0x10d2f,
-	0x10d3a, 0x10d3f, 0x10d66, 0x10d68, 0x10d86, 0x10d8d, 0x10d90, 0x10e5f,
-	0x10e7f, 0x10e7f, 0x10eaa, 0x10eaa, 0x10eae, 0x10eaf, 0x10eb2, 0x10ec1,
-	0x10ec5, 0x10efb, 0x10f28, 0x10f2f, 0x10f5a, 0x10f6f, 0x10f8a, 0x10faf,
-	0x10fcc, 0x10fdf, 0x10ff7, 0x10fff, 0x1104e, 0x11051, 0x11076, 0x1107e,
-	0x110bd, 0x110bd, 0x110c3, 0x110cf, 0x110e9, 0x110ef, 0x110fa, 0x110ff,
-	0x11135, 0x11135, 0x11148, 0x1114f, 0x11177, 0x1117f, 0x111e0, 0x111e0,
-	0x111f5, 0x111ff, 0x11212, 0x11212, 0x11242, 0x1127f, 0x11287, 0x11287,
-	0x11289, 0x11289, 0x1128e, 0x1128e, 0x1129e, 0x1129e, 0x112aa, 0x112af,
-	0x112eb, 0x112ef, 0x112fa, 0x112ff, 0x11304, 0x11304, 0x1130d, 0x1130e,
-	0x11311, 0x11312, 0x11329, 0x11329, 0x11331, 0x11331, 0x11334, 0x11334,
-	0x1133a, 0x1133a, 0x11345, 0x11346, 0x11349, 0x1134a, 0x1134e, 0x1134f,
-	0x11351, 0x11356, 0x11358, 0x1135c, 0x11364, 0x11365, 0x1136d, 0x1136f,
-	0x11375, 0x1137f, 0x1138a, 0x1138a, 0x1138c, 0x1138d, 0x1138f, 0x1138f,
-	0x113b6, 0x113b6, 0x113c1, 0x113c1, 0x113c3, 0x113c4, 0x113c6, 0x113c6,
-	0x113cb, 0x113cb, 0x113d6, 0x113d6, 0x113d9, 0x113e0, 0x113e3, 0x113ff,
-	0x1145c, 0x1145c, 0x11462, 0x1147f, 0x114c8, 0x114cf, 0x114da, 0x1157f,
-	0x115b6, 0x115b7, 0x115de, 0x115ff, 0x11645, 0x1164f, 0x1165a, 0x1165f,
-	0x1166d, 0x1167f, 0x116ba, 0x116bf, 0x116ca, 0x116cf, 0x116e4, 0x116ff,
-	0x1171b, 0x1171c, 0x1172c, 0x1172f, 0x11747, 0x117ff, 0x1183c, 0x1189f,
-	0x118f3, 0x118fe, 0x11907, 0x11908, 0x1190a, 0x1190b, 0x11914, 0x11914,
-	0x11917, 0x11917, 0x11936, 0x11936, 0x11939, 0x1193a, 0x11947, 0x1194f,
-	0x1195a, 0x1199f, 0x119a8, 0x119a9, 0x119d8, 0x119d9, 0x119e5, 0x119ff,
-	0x11a48, 0x11a4f, 0x11aa3, 0x11aaf, 0x11af9, 0x11aff, 0x11b0a, 0x11bbf,
-	0x11be2, 0x11bef, 0x11bfa, 0x11bff, 0x11c09, 0x11c09, 0x11c37, 0x11c37,
-	0x11c46, 0x11c4f, 0x11c6d, 0x11c6f, 0x11c90, 0x11c91, 0x11ca8, 0x11ca8,
-	0x11cb7, 0x11cff, 0x11d07, 0x11d07, 0x11d0a, 0x11d0a, 0x11d37, 0x11d39,
-	0x11d3b, 0x11d3b, 0x11d3e, 0x11d3e, 0x11d48, 0x11d4f, 0x11d5a, 0x11d5f,
-	0x11d66, 0x11d66, 0x11d69, 0x11d69, 0x11d8f, 0x11d8f, 0x11d92, 0x11d92,
-	0x11d99, 0x11d9f, 0x11daa, 0x11edf, 0x11ef9, 0x11eff, 0x11f11, 0x11f11,
-	0x11f3b, 0x11f3d, 0x11f5b, 0x11faf, 0x11fb1, 0x11fbf, 0x11ff2, 0x11ffe,
-	0x1239a, 0x123ff, 0x1246f, 0x1246f, 0x12475, 0x1247f, 0x12544, 0x12f8f,
-	0x12ff3, 0x12fff, 0x13430, 0x1343f, 0x13456, 0x1345f, 0x143fb, 0x143ff,
-	0x14647, 0x160ff, 0x1613a, 0x167ff, 0x16a39, 0x16a3f, 0x16a5f, 0x16a5f,
-	0x16a6a, 0x16a6d, 0x16abf, 0x16abf, 0x16aca, 0x16acf, 0x16aee, 0x16aef,
-	0x16af6, 0x16aff, 0x16b46, 0x16b4f, 0x16b5a, 0x16b5a, 0x16b62, 0x16b62,
-	0x16b78, 0x16b7c, 0x16b90, 0x16d3f, 0x16d7a, 0x16e3f, 0x16e9b, 0x16eff,
-	0x16f4b, 0x16f4e, 0x16f88, 0x16f8e, 0x16fa0, 0x16fdf, 0x16fe5, 0x16fef,
-	0x16ff2, 0x16fff, 0x187f8, 0x187ff, 0x18cd6, 0x18cfe, 0x18d09, 0x1afef,
-	0x1aff4, 0x1aff4, 0x1affc, 0x1affc, 0x1afff, 0x1afff, 0x1b123, 0x1b131,
-	0x1b133, 0x1b14f, 0x1b153, 0x1b154, 0x1b156, 0x1b163, 0x1b168, 0x1b16f,
-	0x1b2fc, 0x1bbff, 0x1bc6b, 0x1bc6f, 0x1bc7d, 0x1bc7f, 0x1bc89, 0x1bc8f,
-	0x1bc9a, 0x1bc9b, 0x1bca0, 0x1cbff, 0x1ccfa, 0x1ccff, 0x1ceb4, 0x1ceff,
-	0x1cf2e, 0x1cf2f, 0x1cf47, 0x1cf4f, 0x1cfc4, 0x1cfff, 0x1d0f6, 0x1d0ff,
-	0x1d127, 0x1d128, 0x1d173, 0x1d17a, 0x1d1eb, 0x1d1ff, 0x1d246, 0x1d2bf,
-	0x1d2d4, 0x1d2df, 0x1d2f4, 0x1d2ff, 0x1d357, 0x1d35f, 0x1d379, 0x1d3ff,
-	0x1d455, 0x1d455, 0x1d49d, 0x1d49d, 0x1d4a0, 0x1d4a1, 0x1d4a3, 0x1d4a4,
-	0x1d4a7, 0x1d4a8, 0x1d4ad, 0x1d4ad, 0x1d4ba, 0x1d4ba, 0x1d4bc, 0x1d4bc,
-	0x1d4c4, 0x1d4c4, 0x1d506, 0x1d506, 0x1d50b, 0x1d50c, 0x1d515, 0x1d515,
-	0x1d51d, 0x1d51d, 0x1d53a, 0x1d53a, 0x1d53f, 0x1d53f, 0x1d545, 0x1d545,
-	0x1d547, 0x1d549, 0x1d551, 0x1d551, 0x1d6a6, 0x1d6a7, 0x1d7cc, 0x1d7cd,
-	0x1da8c, 0x1da9a, 0x1daa0, 0x1daa0, 0x1dab0, 0x1deff, 0x1df1f, 0x1df24,
-	0x1df2b, 0x1dfff, 0x1e007, 0x1e007, 0x1e019, 0x1e01a, 0x1e022, 0x1e022,
-	0x1e025, 0x1e025, 0x1e02b, 0x1e02f, 0x1e06e, 0x1e08e, 0x1e090, 0x1e0ff,
-	0x1e12d, 0x1e12f, 0x1e13e, 0x1e13f, 0x1e14a, 0x1e14d, 0x1e150, 0x1e28f,
-	0x1e2af, 0x1e2bf, 0x1e2fa, 0x1e2fe, 0x1e300, 0x1e4cf, 0x1e4fa, 0x1e5cf,
-	0x1e5fb, 0x1e5fe, 0x1e600, 0x1e7df, 0x1e7e7, 0x1e7e7, 0x1e7ec, 0x1e7ec,
-	0x1e7ef, 0x1e7ef, 0x1e7ff, 0x1e7ff, 0x1e8c5, 0x1e8c6, 0x1e8d7, 0x1e8ff,
-	0x1e94c, 0x1e94f, 0x1e95a, 0x1e95d, 0x1e960, 0x1ec70, 0x1ecb5, 0x1ed00,
-	0x1ed3e, 0x1edff, 0x1ee04, 0x1ee04, 0x1ee20, 0x1ee20, 0x1ee23, 0x1ee23,
-	0x1ee25, 0x1ee26, 0x1ee28, 0x1ee28, 0x1ee33, 0x1ee33, 0x1ee38, 0x1ee38,
-	0x1ee3a, 0x1ee3a, 0x1ee3c, 0x1ee41, 0x1ee43, 0x1ee46, 0x1ee48, 0x1ee48,
-	0x1ee4a, 0x1ee4a, 0x1ee4c, 0x1ee4c, 0x1ee50, 0x1ee50, 0x1ee53, 0x1ee53,
-	0x1ee55, 0x1ee56, 0x1ee58, 0x1ee58, 0x1ee5a, 0x1ee5a, 0x1ee5c, 0x1ee5c,
-	0x1ee5e, 0x1ee5e, 0x1ee60, 0x1ee60, 0x1ee63, 0x1ee63, 0x1ee65, 0x1ee66,
-	0x1ee6b, 0x1ee6b, 0x1ee73, 0x1ee73, 0x1ee78, 0x1ee78, 0x1ee7d, 0x1ee7d,
-	0x1ee7f, 0x1ee7f, 0x1ee8a, 0x1ee8a, 0x1ee9c, 0x1eea0, 0x1eea4, 0x1eea4,
-	0x1eeaa, 0x1eeaa, 0x1eebc, 0x1eeef, 0x1eef2, 0x1efff, 0x1f02c, 0x1f02f,
-	0x1f094, 0x1f09f, 0x1f0af, 0x1f0b0, 0x1f0c0, 0x1f0c0, 0x1f0d0, 0x1f0d0,
-	0x1f0f6, 0x1f0ff, 0x1f1ae, 0x1f1e5, 0x1f203, 0x1f20f, 0x1f23c, 0x1f23f,
-	0x1f249, 0x1f24f, 0x1f252, 0x1f25f, 0x1f266, 0x1f2ff, 0x1f6d8, 0x1f6db,
-	0x1f6ed, 0x1f6ef, 0x1f6fd, 0x1f6ff, 0x1f777, 0x1f77a, 0x1f7da, 0x1f7df,
-	0x1f7ec, 0x1f7ef, 0x1f7f1, 0x1f7ff, 0x1f80c, 0x1f80f, 0x1f848, 0x1f84f,
-	0x1f85a, 0x1f85f, 0x1f888, 0x1f88f, 0x1f8ae, 0x1f8af, 0x1f8bc, 0x1f8bf,
-	0x1f8c2, 0x1f8ff, 0x1fa54, 0x1fa5f, 0x1fa6e, 0x1fa6f, 0x1fa7d, 0x1fa7f,
-	0x1fa8a, 0x1fa8e, 0x1fac7, 0x1facd, 0x1fadd, 0x1fade, 0x1faea, 0x1faef,
-	0x1faf9, 0x1faff, 0x1fb93, 0x1fb93, 0x1fbfa, 0x1ffff, 0x2a6e0, 0x2a6ff,
-	0x2b73a, 0x2b73f, 0x2b81e, 0x2b81f, 0x2cea2, 0x2ceaf, 0x2ebe1, 0x2ebef,
-	0x2ee5e, 0x2f7ff, 0x2fa1e, 0x2ffff, 0x3134b, 0x3134f, 0x323b0, 0xe00ff,
-	0xe01f0, 0x10ffff,
+	return i, true
 }
 
 // Derived from libyaml 0.1.7 as bundled in ruamel.yaml.clib 0.2.15, MIT license, Kirill Simonov and Ingy dot Net
@@ -2229,9 +1737,9 @@ type yamlParser struct {
 	tagDirectivesCap int
 }
 
-// Python verdict of YAML(typ="safe").parse over a str, empty when every event converts cleanly
+// YAML syntax verdict of content, bytes that are not UTF-8 refused before parsing, empty when every event converts cleanly
 func ruamelCParseError(content string) string {
-	if msg := ruamelUTF8EncodeError(content); msg != "" {
+	if msg := yamlUTF8Error(content); msg != "" {
 		return msg
 	}
 	return ruamelCParseStream(content, "<unicode string>")
@@ -2267,13 +1775,38 @@ func yamlParserInitialize(input string) *yamlParser {
 	}
 }
 
-// Message for content that is not valid UTF-8, naming the byte offset of the first invalid sequence
-func ruamelUTF8EncodeError(content string) string {
+// Most undecodable bytes in a row a UTF-8 failure message spells out
+const yamlUTF8BytesShown = 8
+
+// Message for content that is not valid UTF-8: the line and column of the first undecodable run, its bytes and why the first fails
+func yamlUTF8Error(content string) string {
 	var bad *textutil.InvalidUTF8Error
-	if errors.As(textutil.ValidateUTF8(content), &bad) {
-		return fmt.Sprintf("invalid YAML: the file is not valid UTF-8 at byte %d", bad.Offset)
+	if !errors.As(textutil.ValidateUTF8(content), &bad) {
+		return ""
 	}
-	return ""
+	start, end := bad.Offset, bad.Offset+1
+	for end < len(content) {
+		if r, size := utf8.DecodeRuneInString(content[end:]); r != utf8.RuneError || size != 1 {
+			break
+		}
+		end++
+	}
+	head := content[:start]
+	line := 1 + strings.Count(head, "\n")
+	column := 1 + utf8.RuneCountInString(head[strings.LastIndexByte(head, '\n')+1:])
+	_, _, reason := ruamelUTF8DecodeFailure([]byte(content[start:min(start+utf8.UTFMax, len(content))]))
+	shown := make([]string, 0, min(end-start, yamlUTF8BytesShown))
+	for i := start; i < end && len(shown) < yamlUTF8BytesShown; i++ {
+		shown = append(shown, fmt.Sprintf("0x%02x", content[i]))
+	}
+	noun, more := "byte", ""
+	if end-start > 1 {
+		noun = "bytes"
+	}
+	if end-start > yamlUTF8BytesShown {
+		more = " and " + strconv.Itoa(end-start-yamlUTF8BytesShown) + " more"
+	}
+	return fmt.Sprintf("invalid YAML: the file is not valid UTF-8 at line %d, column %d: %s %s%s (%s)", line, column, noun, strings.Join(shown, " "), more, reason)
 }
 
 // Decodes every string the pyx event conversion passes through strict UTF-8 in the same order

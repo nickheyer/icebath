@@ -164,7 +164,7 @@ func supervisionMode() string {
 }
 
 // Gateway snapshot of the runtime status file, an empty status when it cannot be read
-func readGatewaySnapshot(ctx context.Context) (GatewayHealthSnapshot, error) {
+func readGatewaySnapshot(ctx context.Context) GatewayHealthSnapshot {
 	runtime := jsonutil.NewObject()
 	if read := GatewayReadRuntimeStatus; read != nil {
 		func() {
@@ -202,11 +202,8 @@ func readBackgroundDelegationsCount() int {
 }
 
 // Gateway snapshot with background work gauges on the gateway attributes and the cron gauges appended
-func readRuntimeSnapshot(ctx context.Context) (GatewayHealthSnapshot, error) {
-	snap, err := readGatewaySnapshot(ctx)
-	if err != nil {
-		return snap, err
-	}
+func readRuntimeSnapshot(ctx context.Context) GatewayHealthSnapshot {
+	snap := readGatewaySnapshot(ctx)
 	base := map[string]string{}
 	if len(snap.Metrics) > 0 {
 		for k, v := range snap.Metrics[0].Attributes {
@@ -217,7 +214,7 @@ func readRuntimeSnapshot(ctx context.Context) (GatewayHealthSnapshot, error) {
 		GatewayMetric{Name: "icebath.gateway.background_work", Value: readBackgroundWorkCount(), Attributes: base},
 		GatewayMetric{Name: "icebath.gateway.background_delegations", Value: readBackgroundDelegationsCount(), Attributes: base})
 	snap.Metrics = append(snap.Metrics, BuildCronHealthSnapshot(ctx).Metrics...)
-	return snap, nil
+	return snap
 }
 
 // Emits the snapshot events unless diagnostic events are disabled
@@ -225,12 +222,7 @@ func emitSnapshotEvents(ctx context.Context) {
 	if !settings.MonitoringGatewayHealthExportDiagnosticEventsEnabled.Get(ctx) {
 		return
 	}
-	snap, err := readRuntimeSnapshot(ctx)
-	if err != nil {
-		pkgLog().Debug("gateway health snapshot emit failed: " + err.Error())
-		return
-	}
-	for _, ev := range snap.Events {
+	for _, ev := range readRuntimeSnapshot(ctx).Events {
 		Emit(ev)
 	}
 }
@@ -297,13 +289,8 @@ func startMetricProvider(ctx context.Context, sdk *gatewayHealthSDK) (*sdkmetric
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithResource(res))
 	meter := provider.Meter("icebath.gateway.health")
 	matching := func(name string) []GatewayMetric {
-		snap, err := readRuntimeSnapshot(ctx)
-		if err != nil {
-			pkgLog().Debug("gateway metric callback failed: " + err.Error())
-			return nil
-		}
 		var out []GatewayMetric
-		for _, m := range snap.Metrics {
+		for _, m := range readRuntimeSnapshot(ctx).Metrics {
 			if m.Name == name {
 				out = append(out, m)
 			}

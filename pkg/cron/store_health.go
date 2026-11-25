@@ -100,7 +100,7 @@ func storeReportFields(store, errText string, since *float64) map[string]any {
 	if since != nil {
 		sec := int64(*since)
 		at := time.Unix(sec, int64((*since-float64(sec))*1e9)).Local()
-		sinceText = at.Format("2006-01-02T15:04:05-07:00")
+		sinceText = at.Format(time.RFC3339)
 	}
 	return map[string]any{"store": store, "error": errText, "since": sinceText, "fix": fmt.Sprintf(storeFixHint, store)}
 }

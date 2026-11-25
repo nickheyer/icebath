@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // MoASlot is one model of a mix
@@ -32,8 +34,8 @@ type MoAPreset struct {
 // Slot of a stored mapping, a reference model without an enabled key taking part
 func moaSlotOf(slot map[string]any) MoASlot {
 	enabled, has := slot["enabled"]
-	return MoASlot{Provider: pyStripSpace(pyOrStr(slot["provider"])), Model: pyStripSpace(pyOrStr(slot["model"])),
-		ReasoningEffort: pyStripSpace(pyOrStr(slot["reasoning_effort"])), Enabled: !has || config.PyTruthy(enabled)}
+	return MoASlot{Provider: strings.TrimSpace(anyutil.StringOr(slot["provider"], "")), Model: strings.TrimSpace(anyutil.StringOr(slot["model"], "")),
+		ReasoningEffort: strings.TrimSpace(anyutil.StringOr(slot["reasoning_effort"], "")), Enabled: !has || anyutil.IsTrue(enabled)}
 }
 
 // Stored mapping of a slot, the enabled key written for a reference model only
@@ -63,7 +65,7 @@ func moaStorePreset(ctx context.Context, name string, refs []any, aggregator map
 	presets := moaWritablePresets(ctx)
 	current, ok := presets[name].(map[string]any)
 	if !ok {
-		current = anyMap(presets[pyStr(moaView(ctx)["default_preset"])])
+		current = anyMap(presets[anyutil.String(moaView(ctx)["default_preset"])])
 	}
 	updated := make(map[string]any, len(current)+2)
 	for k, v := range current {
@@ -128,7 +130,7 @@ func MoAPresets(ctx context.Context) ([]MoAPreset, error) {
 
 // SaveMoAPreset stores the reference models and the aggregator of the named mix, making the mix when it is new
 func SaveMoAPreset(ctx context.Context, name string, references []MoASlot, aggregator MoASlot) error {
-	name = pyStripSpace(name)
+	name = strings.TrimSpace(name)
 	switch {
 	case name == "":
 		return &MoAExitError{Message: "A mix needs a name"}
@@ -149,12 +151,12 @@ func SaveMoAPreset(ctx context.Context, name string, references []MoASlot, aggre
 
 // DeleteMoAPreset removes the named mix, refusing the only one
 func DeleteMoAPreset(ctx context.Context, name string) error {
-	return moaDeletePreset(ctx, pyStripSpace(name))
+	return moaDeletePreset(ctx, strings.TrimSpace(name))
 }
 
 // SetDefaultMoAPreset makes the named mix the one a run uses when it names none
 func SetDefaultMoAPreset(ctx context.Context, name string) error {
-	name = pyStripSpace(name)
+	name = strings.TrimSpace(name)
 	if _, ok := anyMap(moaView(ctx)["presets"])[name]; !ok {
 		return &MoAExitError{Message: "Unknown MoA preset: " + name}
 	}

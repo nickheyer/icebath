@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -87,7 +86,7 @@ func (r *CodexMigrationReport) Summary() string {
 		lines = append(lines, "Codex plugin discovery skipped: "+r.PluginQueryError)
 	}
 	if r.WrotePermissionsDefault != "" {
-		lines = append(lines, "Wrote default_permissions = "+anyutil.Quote(r.WrotePermissionsDefault))
+		lines = append(lines, "Wrote default_permissions = "+tomlutil.FormatString(r.WrotePermissionsDefault))
 	}
 	if len(r.PreservedUserServers) > 0 {
 		lines = append(lines, fmt.Sprintf("Kept %d user-owned MCP server(s) already in config.toml (Icebath projection skipped): %s",
@@ -245,32 +244,7 @@ func codexTranslateOneServer(name string, cfg any) (*jsonutil.Object, []string, 
 	return out, skipped, nil
 }
 
-// TOML basic string escapes, backslash first so the others are not escaped twice
-var codexTOMLEscapes = [][2]string{
-	{"\\", "\\\\"}, {"\"", "\\\""}, {"\b", "\\b"}, {"\t", "\\t"},
-	{"\n", "\\n"}, {"\f", "\\f"}, {"\r", "\\r"}}
-
-func codexEscapeTOMLString(value string) string {
-	for _, esc := range codexTOMLEscapes {
-		value = strings.ReplaceAll(value, esc[0], esc[1])
-	}
-	return "\"" + value + "\""
-}
-
-// TOML text of a float, the inf and nan spellings TOML defines for the special values
-func codexTOMLFloat(f float64) string {
-	switch {
-	case math.IsNaN(f):
-		return "nan"
-	case math.IsInf(f, 1):
-		return "inf"
-	case math.IsInf(f, -1):
-		return "-inf"
-	}
-	return strconv.FormatFloat(f, 'f', -1, 64)
-}
-
-// TOML text of a string, number, bool or flat list or table of those, other types are a value error
+// TOML text of a string, number, bool or flat list or table of those, other types are a value error; a float always reads back as a float
 func codexFormatTOMLValue(value any) (string, error) {
 	if b, ok := value.(bool); ok {
 		if b {
@@ -280,11 +254,11 @@ func codexFormatTOMLValue(value any) (string, error) {
 	}
 	switch v := value.(type) {
 	case float64:
-		return codexTOMLFloat(v), nil
+		return tomlutil.FormatFloat(v, 64), nil
 	case float32:
-		return codexTOMLFloat(float64(v)), nil
+		return tomlutil.FormatFloat(float64(v), 32), nil
 	case string:
-		return codexEscapeTOMLString(v), nil
+		return tomlutil.FormatString(v), nil
 	case []any, []string:
 		var parts []string
 		for _, item := range cxStringsAsAny(v) {
@@ -328,19 +302,17 @@ func cxStringsAsAny(v any) []any {
 	return v.([]any)
 }
 
-// Key bare when every character is alphanumeric, dash or underscore, else quoted
+// Key bare when every byte is an ASCII letter, digit, dash or underscore, else a quoted basic string, so any name stays valid TOML
 func codexQuoteTOMLKey(key string) string {
-	bare := key != ""
-	for _, c := range key {
-		if !(unicode.IsLetter(c) || unicode.IsNumber(c)) && c != '-' && c != '_' {
-			bare = false
-			break
-		}
+	return tomlutil.FormatKey(key)
+}
+
+// Value written for default_permissions: the profile name with its leading colon
+func codexPermissionProfileValue(profile string) string {
+	if strings.HasPrefix(profile, ":") {
+		return profile
 	}
-	if bare {
-		return key
-	}
-	return "\"" + strings.ReplaceAll(strings.ReplaceAll(key, "\\", "\\\\"), "\"", "\\\"") + "\""
+	return ":" + profile
 }
 
 // Managed block of default permissions, mcp_servers tables and plugins tables between the two markers
@@ -351,12 +323,7 @@ func RenderCodexTOMLSection(servers map[string]*jsonutil.Object, plugins []map[s
 		return strings.Join(out, "\n") + "\n", nil
 	}
 	if defaultPermissionProfile != "" {
-		normalized := defaultPermissionProfile
-		if !strings.HasPrefix(normalized, ":") {
-			normalized = ":" + normalized
-		}
-		text, _ := codexFormatTOMLValue(normalized)
-		out = append(out, "", "default_permissions = "+text)
+		out = append(out, "", "default_permissions = "+tomlutil.FormatString(codexPermissionProfileValue(defaultPermissionProfile)))
 	}
 	names := make([]string, 0, len(servers))
 	for name := range servers {
@@ -697,6 +664,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 		if profile == "" {
 			profile = ":workspace"
 		}
+		profile = codexPermissionProfileValue(profile)
 		report.WrotePermissionsDefault = profile
 	}
 	if !opts.SkipToolsMCPServer {

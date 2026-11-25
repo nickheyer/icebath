@@ -88,9 +88,12 @@ func infoOr(info *jsonutil.Object, key string, fallback any) any {
 	return fallback
 }
 
-// Python format of a progress value under a format spec
+// Text of a progress value laid out under a template spec, its plain text when the spec does not suit the value
 func progressFormat(v any, spec string) string {
-	text, _ := templateutil.Format("{v:"+spec+"}", map[string]any{"v": v})
+	text, err := templateutil.Format("{v:"+spec+"}", map[string]any{"v": v})
+	if err != nil {
+		return anyutil.String(v)
+	}
 	return text
 }
 
@@ -110,7 +113,7 @@ func progressFloat(v any) float64 {
 // One progress line of the search index optimization for the phase a report names
 func optimizeProgressLine(info *jsonutil.Object) string {
 	phase, _ := rowGet(info, "phase").(string)
-	pct := progressFormat(infoOr(info, "percent", 0), "3d") + "%"
+	pct := progressFormat(infoOr(info, "percent", 0), "3") + "%"
 	counts := "(" + progressFormat(infoOr(info, "indexed", 0), ",") + "/" + progressFormat(infoOr(info, "total", 0), ",")
 	paced := ""
 	if anyutil.IsTrue(rowGet(info, "paced")) {

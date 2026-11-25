@@ -4,6 +4,7 @@ import (
 	"reflect"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Surviving call ids, result ids, results without a declared call and calls without a result
@@ -100,7 +101,7 @@ func repairMessageSequenceWithCursor(a *AIAgent, messages *[]*state.Message) (in
 		rows[i] = state.MessageToDict(m)
 		key := reflect.ValueOf(rows[i]).Pointer()
 		origin[key] = i
-		if pyTruthy(rows[i][state.DBPersistedMarker]) {
+		if anyutil.IsTrue(rows[i][state.DBPersistedMarker]) {
 			stamped[key] = true
 		}
 	}
@@ -124,7 +125,7 @@ func repairMessageSequenceWithCursor(a *AIAgent, messages *[]*state.Message) (in
 		if cursor > 0 && idx < cursor {
 			flushed++
 		}
-		if stamped[key] && !pyTruthy(row[state.DBPersistedMarker]) {
+		if stamped[key] && !anyutil.IsTrue(row[state.DBPersistedMarker]) {
 			lostMarker = true
 		}
 	}

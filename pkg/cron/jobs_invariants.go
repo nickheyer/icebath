@@ -11,7 +11,7 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
-const noAgentWithoutScriptError = "no_agent=True requires a script — with no agent and no script " +
+const noAgentWithoutScriptError = "no_agent=true requires a script — with no agent and no script " +
 	"there is nothing for the job to run."
 
 // Rejects monitor and no_agent combinations and command line scripts at both the create and update doors
@@ -22,7 +22,7 @@ func (s *Store) validateJobModeInvariants(monitorScript, monitorURL *string, noA
 			"can only have one monitor source.")
 	}
 	if (ms != "" || mu != "") && noAgent {
-		return errors.New("monitor_script/monitor_url cannot be combined with no_agent=True — " +
+		return errors.New("monitor_script/monitor_url cannot be combined with no_agent=true — " +
 			"the whole point of a monitor job is to suppress or wake the AGENT " +
 			"based on source changes. Use a plain no_agent script job instead.")
 	}
@@ -30,7 +30,7 @@ func (s *Store) validateJobModeInvariants(monitorScript, monitorURL *string, noA
 		return errors.New(noAgentWithoutScriptError)
 	}
 	if sc != "" && s.scriptIsCommandLine(sc) {
-		return fmt.Errorf("script must name a file under %s (e.g. 'watchdog.sh'), not a shell command line: "+
+		return fmt.Errorf("script must name a file under %s (e.g. \"watchdog.sh\"), not a shell command line: "+
 			"%s has no such file. Write the command into a script there and pass its filename.",
 			home.Display(s.home)+"/scripts/", anyutil.Quote(sc))
 	}

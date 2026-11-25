@@ -101,7 +101,7 @@ func partText(item any) (any, bool) {
 func contentTextForContains(content any) string {
 	if parts, ok := content.([]any); ok || isPartList(content) {
 		if !ok {
-			parts = pyIterRows(content)
+			parts = iterRows(content)
 		}
 		var texts []string
 		for _, part := range parts {
@@ -124,7 +124,7 @@ func contentTextForContains(content any) string {
 
 func isPartList(content any) bool {
 	switch content.(type) {
-	case []map[string]any, []state.PyObject:
+	case []map[string]any, []state.OrderedObject:
 		return true
 	}
 	return false

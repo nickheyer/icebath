@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Help and description of the icebath lsp command
@@ -107,7 +108,7 @@ func RunCommand(ctx context.Context, cc CommandContext, args CommandArgs, stdout
 	select {
 	case o := <-done:
 		if o.err != nil {
-			fmt.Fprintf(stderr, "%s: %s\n", errTypeName(o.err), errText(o.err))
+			fmt.Fprintln(stderr, errReport(o.err))
 			return 1
 		}
 		return o.code
@@ -136,7 +137,7 @@ func statusFor(cc CommandContext, serverID string) (string, error) {
 		if s.ServerID == serverID && !isBuiltin(s) {
 			cwd, err := os.Getwd()
 			if err != nil {
-				return "", pyOSError(err, "")
+				return "", err
 			}
 			spec, err := s.BuildSpawn(cwd, ServerContext{WorkspaceRoot: cwd, InstallStrategy: "manual", Runtime: cc.Runtime})
 			if err != nil {
@@ -149,11 +150,6 @@ func statusFor(cc CommandContext, serverID string) (string, error) {
 		}
 	}
 	return DetectStatus(cc.Runtime, recipePkgFor(serverID))
-}
-
-// Python str of a two element tuple of strings
-func tupleRepr(t [2]string) string {
-	return "(" + strconv.Quote(t[0]) + ", " + strconv.Quote(t[1]) + ")"
 }
 
 // Left justified to a width in code points, as a str format spec pads
@@ -197,7 +193,7 @@ func cmdStatus(cc CommandContext, emitJSON bool, stdout io.Writer) (int, error) 
 			registry = append(registry, jsonObj{{"server_id", s.ServerID}, {"extensions", exts},
 				{"description", s.Description}, {"binary_status", status}})
 		}
-		fmt.Fprint(stdout, pyJSONDumps(jsonObj{{"service", info}, {"registry", registry}}, 2)+"\n")
+		fmt.Fprint(stdout, jsonDumps(jsonObj{{"service", info}, {"registry", registry}}, 2)+"\n")
 		return 0, nil
 	}
 	out := []string{"LSP Service", "===========", "  enabled:         " + anyutil.String(svc != nil && st.Enabled)}
@@ -216,7 +212,7 @@ func cmdStatus(cc CommandContext, emitJSON bool, stdout io.Writer) (int, error) 
 		if len(st.Broken) > 0 {
 			out = append(out, fmt.Sprintf("  broken pairs:    %d", len(st.Broken)))
 			for _, b := range st.Broken {
-				out = append(out, "    - "+tupleRepr(b))
+				out = append(out, "    - "+ljust(b[0], 20)+" root="+b[1])
 			}
 		}
 		if len(st.DisabledServers) > 0 {
@@ -404,7 +400,7 @@ func backendWarnings(cc CommandContext) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if bash != "" && pyWhich("shellcheck") == "" {
+	if bash != "" && whichValue("shellcheck") == "" {
 		return []string{"bash-language-server is installed but shellcheck is missing — " +
 			"diagnostics will be empty (apt: shellcheck, brew: shellcheck, scoop: shellcheck)."}, nil
 	}
@@ -421,7 +417,7 @@ type jsonKV struct {
 type jsonObj []jsonKV
 
 // Python json.dumps with an indent and ensure_ascii
-func pyJSONDumps(v any, indent int) string {
+func jsonDumps(v any, indent int) string {
 	var b strings.Builder
 	writeJSON(&b, v, indent, 0)
 	return b.String()
@@ -443,16 +439,8 @@ func writeJSON(b *strings.Builder, v any, indent, level int) {
 	case int64:
 		fmt.Fprint(b, t)
 	case float64:
-		switch s := strconv.FormatFloat(t, 'f', -1, 64); s {
-		case "inf":
-			b.WriteString("Infinity")
-		case "-inf":
-			b.WriteString("-Infinity")
-		case "nan":
-			b.WriteString("NaN")
-		default:
-			b.WriteString(s)
-		}
+		text, _ := jsonutil.Encode(t)
+		b.WriteString(text)
 	case string:
 		writeJSONString(b, t)
 	case []any:

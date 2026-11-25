@@ -395,10 +395,10 @@ func TestStatusAuthFormattersAndOAuthBlockGates(t *testing.T) {
 	if got := statusFormatISOTimestamp("2030-01-01T00:00:00Z"); got != want {
 		t.Fatalf("timestamp %v want %s", got, want)
 	}
-	if got, err := statusQwenExpiry(int64(1893456000123)); err != nil || got != "2030-01-01T00:00:00.123000+00:00" {
+	if got, err := statusQwenExpiry(int64(1893456000123)); err != nil || got != "2030-01-01T00:00:00.123000Z" {
 		t.Fatalf("qwen expiry %q %v", got, err)
 	}
-	if got, err := statusQwenExpiry("1893456000000"); err != nil || got != "2030-01-01T00:00:00+00:00" {
+	if got, err := statusQwenExpiry("1893456000000"); err != nil || got != "2030-01-01T00:00:00.000000Z" {
 		t.Fatalf("qwen expiry %q %v", got, err)
 	}
 	if _, err := statusQwenExpiry("soon"); err == nil {

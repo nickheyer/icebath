@@ -75,7 +75,7 @@ func receiptLineageHolds(raw any, owner, sessionID string) (bool, error) {
 	text, _ := raw.(string)
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return false, pyValueError(err.Error())
+		return false, valueError(err.Error())
 	}
 	receipt, ok := decoded.(*jsonutil.Object)
 	if !ok {
@@ -97,7 +97,7 @@ func receiptLineageHolds(raw any, owner, sessionID string) (bool, error) {
 		return false, &stateTypedError{"TypeError", "the receipt lineage is " + errchain.Kind(lineage) + ", expected text, a list or a mapping"}
 	}
 	for _, item := range items {
-		if pyEquals(item, sessionID) {
+		if equals(item, sessionID) {
 			return true, nil
 		}
 	}
@@ -226,7 +226,7 @@ func compactReceipts(ctx context.Context, conn SQLiteConn, executionID string) e
 func RetiredReceipt(resultJSON string) (bool, error) {
 	decoded, err := jsonutil.Decode(resultJSON)
 	if err != nil {
-		return false, pyValueError(err.Error())
+		return false, valueError(err.Error())
 	}
 	obj, ok := decoded.(*jsonutil.Object)
 	return ok && obj.Len() == 1 && anyutil.Equal(obj, jsonutil.ObjectOf("retired", true)), nil

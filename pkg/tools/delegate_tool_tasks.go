@@ -37,7 +37,7 @@ func recoverTasksFromJSONString(tasks any) ([]any, string) {
 		msg := err.Error()
 		var de *jsonutil.SyntaxError
 		if errors.As(err, &de) {
-			msg = de.Msg
+			msg = fmt.Sprintf("%s at line %d, column %d", de.Msg, de.Line, de.Column)
 		}
 		return nil, fmt.Sprintf("tasks must be a JSON array of task objects; received a string that could not be parsed as JSON (%s).", msg)
 	}
@@ -69,7 +69,7 @@ func validateBatchTasks(taskList []map[string]any) string {
 	return ""
 }
 
-// Task list from tasks or the legacy single goal, an error message for the model, an error where Python raises
+// Task list from tasks or the legacy single goal, an error message for the model, an error for a goal that is not text
 func NormalizeTaskList(goal, context, tasks, outputSchema any, topRole string, maxChildren int) ([]map[string]any, string, error) {
 	recovered, tasksErr := recoverTasksFromJSONString(tasks)
 	if tasksErr != "" {

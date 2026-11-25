@@ -118,7 +118,7 @@ func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID 
 		payload = toolLifecyclePayload(ctx, callID, name, args)
 	} else {
 		if _, ok := a.live(sessionID); !ok {
-			return false, &pyKeyError{sessionID}
+			return false, &keyError{sessionID}
 		}
 		isError := flag.(bool)
 		payload = toolCompletePayload(ctx, callID, name, args, result, &isError)

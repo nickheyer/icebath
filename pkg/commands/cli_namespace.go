@@ -140,7 +140,7 @@ func flagValue(f *pflag.Flag) any {
 // Positional token converted the way its argparse type converts it
 func positionalValue(s posSpec, raw string) any {
 	if s.Int {
-		if v, err := strconv.Atoi(raw); err == nil {
+		if v, err := parseIntArg(raw); err == nil {
 			return v
 		}
 	}

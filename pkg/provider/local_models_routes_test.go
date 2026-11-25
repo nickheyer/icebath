@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // The routes client fixture, a temp home serving the packaged catalog with no GitHub fetch
@@ -196,7 +197,7 @@ func TestCatalogPricesEveryEntryForThisMachine(t *testing.T) {
 		t.Fatalf("%d rows", len(rows))
 	}
 	for _, row := range rows {
-		if !strings.HasSuffix(row["size_label"].(string), "GB") || !pyTruthy(row["fit_summary"]) {
+		if !strings.HasSuffix(row["size_label"].(string), "GB") || !anyutil.IsTrue(row["fit_summary"]) {
 			t.Fatalf("row %v", row)
 		}
 		fits, ok := row["fits"].(bool)
@@ -314,7 +315,7 @@ func TestCatalogNeverHidesUnaffordableModels(t *testing.T) {
 		t.Fatal("a 1 GiB machine must refuse the 20 GB models")
 	}
 	for _, row := range refused {
-		if !pyTruthy(row["fit_detail"]) && !pyTruthy(row["fit_summary"]) {
+		if !anyutil.IsTrue(row["fit_detail"]) && !anyutil.IsTrue(row["fit_summary"]) {
 			t.Fatalf("row %v", row)
 		}
 	}

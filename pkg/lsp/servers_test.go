@@ -132,7 +132,7 @@ func TestJSToolchainRecipesPinAJavascriptTypescriptSDK(t *testing.T) {
 			t.Fatalf("unpinned %s", spec)
 		}
 		head, _, _ := strings.Cut(spec[len(name)+1:], ".")
-		n, err := pyInt(head)
+		n, err := wholeNumber(head)
 		must(t, err)
 		return int(n)
 	}

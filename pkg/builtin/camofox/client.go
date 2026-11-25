@@ -234,7 +234,7 @@ func (s *scope) rewriteLoopbackURL(raw string) (string, *jsonutil.Object, error)
 	}
 	port, hasPort, err := urlutil.Port(parsed)
 	if err != nil {
-		return "", nil, &pyError{"ValueError", err.Error()}
+		return "", nil, &kindError{"ValueError", err.Error()}
 	}
 	host := urlutil.FormatHost(alias)
 	if hasPort && port != 0 {

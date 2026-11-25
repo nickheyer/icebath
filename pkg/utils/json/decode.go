@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/big"
 	"math/bits"
 	"reflect"
 	"strconv"
@@ -29,6 +30,7 @@ type decoder struct {
 	plain   bool
 	control bool
 	unique  bool
+	bigInts bool
 	hitEOF  bool
 	members []member
 	values  []any
@@ -43,6 +45,9 @@ func ControlChars() DecodeOption { return func(d *decoder) { d.control = true } 
 
 // A key repeated inside one object refused instead of its last value kept at its first position
 func UniqueKeys() DecodeOption { return func(d *decoder) { d.unique = true } }
+
+// Integers past the int64 range decoded exactly as *big.Int instead of rounded to float64
+func BigInts() DecodeOption { return func(d *decoder) { d.bigInts = true } }
 
 // Value of the JSON text in data: objects as *Object in document order, arrays as []any, integers that fit as int64, other numbers as float64, NaN and Infinity accepted, strings made valid UTF-8, a byte order mark and UTF-16 or UTF-32 input understood, anything after the value refused
 func Decode[T ~string | ~[]byte](data T) (any, error) {
@@ -226,6 +231,11 @@ func (d *decoder) number() (any, error) {
 	if integer && !d.plain {
 		if n, ok := parseInt(text); ok {
 			return n, nil
+		}
+		if d.bigInts {
+			if b, ok := new(big.Int).SetString(string(text), 10); ok {
+				return b, nil
+			}
 		}
 	}
 	f, _ := strconv.ParseFloat(unsafe.String(&text[0], len(text)), 64)

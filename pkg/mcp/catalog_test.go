@@ -749,7 +749,7 @@ func TestCatalogAllShippedManifestsParseAndAreVersionLocked(t *testing.T) {
 	}
 	launchers := map[string]bool{"uvx": true, "npx": true, "pipx": true, "bunx": true, "pnpx": true}
 	sha40 := regexp.MustCompile(`\A[0-9a-f]{40}\z`)
-	pyPin := regexp.MustCompile(`\A[^=@\s]+==\d[\w.\-+]*\z`)
+	pinOf := regexp.MustCompile(`\A[^=@\s]+==\d[\w.\-+]*\z`)
 	npmPin := regexp.MustCompile(`\A(@[\w.\-]+/)?[\w.\-]+@\d[\w.\-+]*\z`)
 	var problems []string
 	for _, m := range matches {
@@ -777,7 +777,7 @@ func TestCatalogAllShippedManifestsParseAndAreVersionLocked(t *testing.T) {
 				problems = append(problems, e.Name+": launcher has no package arg")
 				continue
 			}
-			if !pyPin.MatchString(pkgs[0]) && !npmPin.MatchString(pkgs[0]) {
+			if !pinOf.MatchString(pkgs[0]) && !npmPin.MatchString(pkgs[0]) {
 				problems = append(problems, e.Name+": package arg "+pkgs[0]+" is not pinned")
 			}
 		}

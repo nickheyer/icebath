@@ -280,7 +280,7 @@ func TestRunJobInactivityTimeoutInterruptsTheAgent(t *testing.T) {
 	fake := &fakeCronAgent{idle: 100, block: make(chan struct{}), result: map[string]any{"final_response": "late"}}
 	ctx, execID := ownerRun(t, s, job, fake)
 	out, err := s.runJob(ctx, job, runJobOptions{ExecutionID: &execID})
-	if err != nil || out.Success || out.Error == nil || !strings.Contains(*out.Error, "Cron job 'slow' idle for 100s") {
+	if err != nil || out.Success || out.Error == nil || !strings.Contains(*out.Error, "Cron job \"slow\" idle for 100s") {
 		t.Fatalf("outcome %+v err %v", out, err)
 	}
 	fake.mu.Lock()
@@ -338,7 +338,7 @@ func TestFailEmptyResponseAndNewlines(t *testing.T) {
 	if got := normalizeNewlines("a\r\nb\rc\n"); got != "a\nb\nc\n" {
 		t.Fatalf("normalized %q", got)
 	}
-	if got := externalWorkerExitedReason(nil); !strings.Contains(got, "status None after adopting") {
+	if got := externalWorkerExitedReason(nil); !strings.Contains(got, "exited with an unknown status after adopting") {
 		t.Fatalf("reason %q", got)
 	}
 }

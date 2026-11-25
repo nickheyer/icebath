@@ -46,7 +46,7 @@ func tomlStrings(items []any) ([]string, error) {
 	for i, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected names as text, got %s", tomlKind(item))}
+			return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected names as text, got %s", tomlKind(item))}
 		}
 		out[i] = s
 	}
@@ -108,7 +108,7 @@ func optInExtras(repoDir string) ([]string, error) {
 		}
 	}
 	if len(unknown) > 0 {
-		return nil, &PyError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + errchain.Show(unknown)}
+		return nil, &ClassError{Class: "ValueError", Message: "[tool.icebath] opt-in-extras names undeclared extras: " + errchain.Show(unknown)}
 	}
 	return sortedSet(names), nil
 }

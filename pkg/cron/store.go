@@ -470,7 +470,7 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 	data, lenient, err := jobsFileParser(s.jobsFile)
 	if err != nil {
 		if isOSError(err) {
-			s.log.Error(fmt.Sprintf("IOError reading jobs.json: %s", errchain.OSText(err)))
+			s.log.Error(fmt.Sprintf("Could not read jobs.json: %s", errchain.OSText(err)))
 			return nil, fmt.Errorf("Failed to read cron database: %s", errchain.OSText(err))
 		}
 		s.log.Error(fmt.Sprintf("Failed to auto-repair jobs.json: %s", err))
@@ -507,18 +507,18 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 				entries = append(entries, flat)
 			}
 			if len(skipped) > 0 {
-				notes = append(notes, fmt.Sprintf("Skipping %d non-dict entr%s in id-keyed jobs map: %s", len(skipped), entryWord(len(skipped), "y", "ies"), strings.Join(skipped, ", ")))
+				notes = append(notes, fmt.Sprintf("Skipping %d non-object entr%s in id-keyed jobs map: %s", len(skipped), entryWord(len(skipped), "y", "ies"), strings.Join(skipped, ", ")))
 			}
 			repair, unmergeable = "id-keyed jobs map flattened to list", true
 		case []any:
 			entries = jv
 		default:
-			notes = append(notes, fmt.Sprintf("Replacing invalid jobs.json 'jobs' field (%s) with an empty list", errchain.Kind(jobsVal)))
+			notes = append(notes, fmt.Sprintf("Replacing invalid jobs.json \"jobs\" field (%s) with an empty list", errchain.Kind(jobsVal)))
 			repair, unmergeable = "invalid jobs field replaced with list", true
 		}
 	case []any:
 		entries = d
-		repair = "bare list wrapped as dict"
+		repair = "bare list wrapped in an object"
 	default:
 		return nil, fmt.Errorf("Cron database corrupted: expected a mapping with a jobs list, got %s", errchain.Kind(data))
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -20,11 +21,11 @@ const (
 func (d *SessionDB) AppendDelegationDelivery(ctx context.Context, sessionID, content string, metadata *jsonutil.Object) (int64, error) {
 	meta := toPyObject(metadata)
 	delegationID, _ := meta.get("delegation_id")
-	if !pyTruthy(delegationID) {
+	if !anyutil.IsTrue(delegationID) {
 		return 0, errors.New("Delegation delivery requires a stable delegation_id")
 	}
 	kind := "async_delegation_complete"
-	if suppressed, _ := meta.get("presentation_suppressed"); pyTruthy(suppressed) {
+	if suppressed, _ := meta.get("presentation_suppressed"); anyutil.IsTrue(suppressed) {
 		kind = "hidden"
 	}
 	notice, ok := meta.get("delivery_notice")
@@ -36,13 +37,13 @@ func (d *SessionDB) AppendDelegationDelivery(ctx context.Context, sessionID, con
 
 // Records an unviewed completion note once, keyed by its admission stored as completion_admission
 func (d *SessionDB) AppendCompletionNote(ctx context.Context, sessionID, admissionID, content, displayKind string, metadata *jsonutil.Object) (int64, error) {
-	meta := pyObjectSet(toPyObject(metadata), "completion_admission", admissionID)
+	meta := objectSet(toPyObject(metadata), "completion_admission", admissionID)
 	return d.appendDetachedResult(ctx, sessionID, content, displayKind, meta,
 		"json_extract(m.display_metadata, '$.completion_admission') = ?", admissionID)
 }
 
 // Inserts a between turns result as a user row once across the compression lineage, refused under a live turn
-func (d *SessionDB) appendDetachedResult(ctx context.Context, sessionID, content, displayKind string, metadata pyObject, matchSQL string, params ...any) (int64, error) {
+func (d *SessionDB) appendDetachedResult(ctx context.Context, sessionID, content, displayKind string, metadata orderedObject, matchSQL string, params ...any) (int64, error) {
 	msg := map[string]any{"content": content, "display_kind": displayKind, "display_metadata": metadata}
 	StampMessageUID(msg)
 	row, err := messageRowParams(sessionID, "user", msg, nil, now(), true)

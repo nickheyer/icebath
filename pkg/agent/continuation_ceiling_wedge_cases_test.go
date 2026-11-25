@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func partialStreamStub(content string) map[string]any {
@@ -51,7 +52,7 @@ func TestContinuationCeilingWedge(t *testing.T) {
 		script.responses = append(script.responses, thinkingMockResponse("Hello! How can I help?", "stop"))
 		script.mu.Unlock()
 		second := wedgeRun(t, a, ctx, "hi", resultRows(t, first))
-		if len(script.calls()) != 5 || second["completed"] != true || second["final_response"] != "Hello! How can I help?" || pyTruthy(second["error"]) {
+		if len(script.calls()) != 5 || second["completed"] != true || second["final_response"] != "Hello! How can I help?" || anyutil.IsTrue(second["error"]) {
 			t.Fatalf("calls %d completed %v final %v error %v", len(script.calls()), second["completed"], second["final_response"], second["error"])
 		}
 	})

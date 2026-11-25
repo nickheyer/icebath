@@ -137,7 +137,7 @@ func livePKColumns(ctx context.Context, conn SQLiteConn, table string) ([]string
 	}
 	var keyed [][]any
 	for _, row := range rows {
-		if pyTruthy(row[5]) {
+		if anyutil.IsTrue(row[5]) {
 			keyed = append(keyed, row)
 		}
 	}
@@ -194,13 +194,9 @@ func rebuildTableStatements(ctx context.Context, conn SQLiteConn, table, legacyN
 	return nil
 }
 
-// Python list repr of strings
-func stringsRepr(values []string) string {
-	items := make([]any, len(values))
-	for i, v := range values {
-		items[i] = v
-	}
-	return anyutil.Quote(items)
+// Key column names in parentheses, comma separated
+func keyColumns(columns []string) string {
+	return "(" + strings.Join(columns, ", ") + ")"
 }
 
 // Rebuilds gateway_routing whose primary key predates scoping, the newest row winning a key collision
@@ -209,7 +205,7 @@ func (s *sessionSchema) healGatewayRoutingPK(ctx context.Context, conn SQLiteCon
 	if err != nil || pk == nil || slices.Equal(pk, []string{"scope", "session_key"}) {
 		return err
 	}
-	pkgLog().Info(fmt.Sprintf("gateway_routing has legacy primary key %s; rebuilding with composite (scope, session_key) key", stringsRepr(pk)))
+	pkgLog().Info(fmt.Sprintf("gateway_routing has legacy primary key %s; rebuilding with composite (scope, session_key) key", keyColumns(pk)))
 	return rebuildTable(ctx, conn, "gateway_routing", "gateway_routing_legacy_pk", gatewayRoutingScopedDDL,
 		"INSERT OR REPLACE INTO gateway_routing (scope, session_key, entry_json, updated_at) "+
 			"SELECT COALESCE(scope, ''), session_key, entry_json, updated_at "+
@@ -224,7 +220,7 @@ func (s *sessionSchema) healSessionModelUsagePK(ctx context.Context, conn SQLite
 	}
 	sorted := slices.Clone(pk)
 	slices.Sort(sorted)
-	pkgLog().Info(fmt.Sprintf("session_model_usage has legacy primary key %s (missing task); rebuilding with composite 6-column key", stringsRepr(sorted)))
+	pkgLog().Info(fmt.Sprintf("session_model_usage has legacy primary key %s (missing task); rebuilding with composite 6-column key", keyColumns(sorted)))
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
 		return err
 	}
@@ -519,7 +515,7 @@ func (s *sessionSchema) advanceMessageUIDBackfill(ctx context.Context, conn SQLi
 // Rebuilds session_model_usage with task in its primary key, existing rows becoming main loop rows
 func (s *sessionSchema) migrateV22SessionModelUsage(ctx context.Context, conn SQLiteConn) error {
 	row, err := fetchOne(ctx, conn, "SELECT COUNT(*) FROM pragma_table_info('session_model_usage') WHERE name = 'task' AND pk > 0")
-	if err == nil && pyTruthy(row[0]) {
+	if err == nil && anyutil.IsTrue(row[0]) {
 		return nil
 	}
 	if err == nil {
@@ -542,7 +538,7 @@ type titleDupRow struct {
 }
 
 // Python ordering of two started_at values, a TypeError for values Python cannot compare
-func pyCompareValues(a, b any) (int, error) {
+func compareValues(a, b any) (int, error) {
 	if anyutil.Equal(a, b) {
 		return 0, nil
 	}
@@ -557,8 +553,8 @@ func pyCompareValues(a, b any) (int, error) {
 			return strings.Compare(string(ab), string(bb)), nil
 		}
 	}
-	af, aNum := pyNumber(a)
-	bf, bNum := pyNumber(b)
+	af, aNum := numberOf(a)
+	bf, bNum := numberOf(b)
 	if aNum && bNum {
 		return af.Cmp(bf), nil
 	}
@@ -571,7 +567,7 @@ func pyCompareValues(a, b any) (int, error) {
 }
 
 // Exact numeric value of an int or float read from SQLite
-func pyNumber(v any) (*big.Float, bool) {
+func numberOf(v any) (*big.Float, bool) {
 	switch t := v.(type) {
 	case int64:
 		return new(big.Float).SetInt64(t), true
@@ -629,7 +625,7 @@ func (s *sessionSchema) repairDuplicateTitles(ctx context.Context, conn SQLiteCo
 		if c := titleRankOf(b.source) - titleRankOf(a.source); c != 0 {
 			return c
 		}
-		c, err := pyCompareValues(b.startedAt, a.startedAt)
+		c, err := compareValues(b.startedAt, a.startedAt)
 		if err != nil && sortErr == nil {
 			sortErr = err
 		}
@@ -825,7 +821,7 @@ func (s *sessionSchema) backfillGatewayMetadataFromSessionsJSON(ctx context.Cont
 	if err != nil {
 		return err
 	}
-	text, err := pyDecodeUTF8Strict(raw)
+	text, err := decodeUTF8Strict(raw)
 	if err != nil {
 		return err
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -91,10 +92,13 @@ func recordCodexCompactionFailure(a *AIAgent, errText string) {
 	})
 }
 
-// Python class name of a raised error or panic value for the attempt failure class
+// Class of a raised error or panic value for the attempt failure class: the interrupt, the kind an error declares or its type, "error" for a plain message, the type of any other value
 func compressionErrorClass(ctx context.Context, v any) string {
-	if err, ok := v.(error); ok && tools.IsKeyboardInterrupt(ctx, err) {
-		return "KeyboardInterrupt"
+	if err, ok := v.(error); ok {
+		if tools.IsKeyboardInterrupt(ctx, err) {
+			return "KeyboardInterrupt"
+		}
+		return errorutil.Kind(err)
 	}
 	t := reflect.TypeOf(v)
 	for t != nil && t.Kind() == reflect.Pointer {

@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -192,7 +193,7 @@ func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home 
 		record := item.Record
 		_, owned := record["owner"]
 		status, _ := record["status"].(string)
-		if record != nil && owned && !pyTruthy(record["admission_id"]) && (status == "queued" || status == "claimed") &&
+		if record != nil && owned && !anyutil.IsTrue(record["admission_id"]) && (status == "queued" || status == "claimed") &&
 			(barrier == nil || legacyOrderOf(item.Path, record).less(*barrier)) {
 			legacy = append(legacy, item)
 		}
@@ -211,7 +212,7 @@ func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home 
 		record := item.Record
 		owner, ok := hostedMapping(record["owner"])
 		if !ok {
-			return &PyError{Kind: "TypeError", Msg: "the bot chat owner is " + errchain.Kind(record["owner"]) + ", expected a mapping"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "the bot chat owner is " + errchain.Kind(record["owner"]) + ", expected a mapping"}
 		}
 		if !anyutil.Equal(owner["profile_home"], home) {
 			continue
@@ -273,7 +274,7 @@ func recoverBotDeliveries(ctx context.Context, a *SessionAuthority) error {
 		}
 		for _, item := range records {
 			record := item.Record
-			if record == nil || !anyutil.Equal(record["profile_home"], homeDir) || !pyTruthy(record["admission_id"]) {
+			if record == nil || !anyutil.Equal(record["profile_home"], homeDir) || !anyutil.IsTrue(record["admission_id"]) {
 				continue
 			}
 			err := botRecoverReceipt(ctx, a, homeDir, record)
@@ -334,7 +335,7 @@ func botRecoverReceipt(ctx context.Context, a *SessionAuthority, home string, re
 	maps.Copy(record, result)
 	if record["status"] == "queued" || record["status"] == "claimed" {
 		following := record["retry_admission_id"]
-		if !pyTruthy(following) {
+		if !anyutil.IsTrue(following) {
 			following = record["admission_id"]
 		}
 		botWatchReply(ctx, a, home, anyutil.String(record["delivery_id"]), anyutil.String(following))
@@ -458,13 +459,13 @@ func refusedAnswer(record map[string]any) (map[string]any, error) {
 
 // Answer an id's existing receipt gives, nil when it has none yet
 func receiptAnswer(ctx context.Context, a *SessionAuthority, actor Principal, home string, record map[string]any, req botDeliveryRequest, retry bool) (map[string]any, error) {
-	if record == nil || !(pyTruthy(record["admission_id"]) || record["refused"] == true) {
+	if record == nil || !(anyutil.IsTrue(record["admission_id"]) || record["refused"] == true) {
 		return nil, nil
 	}
 	if err := requireSameDelivery(record, actor, req.message, req.author, req.category); err != nil {
 		return nil, err
 	}
-	if !pyTruthy(record["admission_id"]) {
+	if !anyutil.IsTrue(record["admission_id"]) {
 		return refusedAnswer(record)
 	}
 	sessionID, err := receiptText(record, "session_id")

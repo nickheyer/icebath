@@ -135,7 +135,7 @@ func TestStructuredContentPassthrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["ok"] != true || result["result"] != "text part" || !reflect.DeepEqual(result["structuredContent"], map[string]any{"hits": float64(3)}) {
+	if result["ok"] != true || result["result"] != "text part" || !reflect.DeepEqual(result["structuredContent"], map[string]any{"hits": int64(3)}) {
 		t.Fatalf("result %v", result)
 	}
 }

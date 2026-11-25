@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -169,7 +168,7 @@ func NewGoalState(goal any) *GoalState {
 	return &GoalState{Goal: goal, Status: "active", MaxTurns: DefaultGoalMaxTurns}
 }
 
-// JSON of every field in declaration order with non ASCII kept
+// Compact JSON of every field in declaration order with non ASCII kept
 func (s *GoalState) ToJSON() (string, error) {
 	subgoals := make([]any, 0, len(s.Subgoals))
 	for _, g := range s.Subgoals {
@@ -196,10 +195,10 @@ func (s *GoalState) ToJSON() (string, error) {
 		"waiting_on_delegations", s.WaitingOnDelegations, "waiting_reason", s.WaitingReason,
 		"waiting_since", s.WaitingSince, "contract", s.Contract.ToDict(), "gates", gates,
 	)
-	return jsonutil.Encode(o, jsonutil.Spaced())
+	return jsonutil.Encode(o)
 }
 
-// Goal state of a stored row with the Python coercions, legacy rows filling defaults
+// Goal state of a stored row, numbers read from text or either numeric type, legacy rows filling defaults and a gates value other than an array refused
 func GoalStateFromJSON(raw string) (*GoalState, error) {
 	d, err := jsonutil.DecodeObject(raw)
 	if err != nil {
@@ -252,7 +251,7 @@ func GoalStateFromJSON(raw string) (*GoalState, error) {
 	}
 	s.WaitingReason = get("waiting_reason")
 	s.Contract = GoalContractFromDict(get("contract"))
-	items, err := pyIterate(anyutil.Or(get("gates"), []any{}))
+	items, err := storedList(get("gates"), "gates")
 	if err != nil {
 		return nil, err
 	}
@@ -293,25 +292,15 @@ func (s *GoalState) ClearWait() {
 	s.WaitingUntil, s.WaitingSince, s.WaitingOnDelegations = 0, 0, 0
 }
 
-// Elements Python iteration yields for a JSON value, the TypeError for a scalar
-func pyIterate(v any) ([]any, error) {
+// Elements of a stored array field, none for a missing or null field and an error naming the field for any other kind of value
+func storedList(v any, field string) ([]any, error) {
 	switch t := v.(type) {
+	case nil:
+		return nil, nil
 	case []any:
 		return t, nil
-	case string:
-		out := make([]any, 0, len(t))
-		for _, r := range t {
-			out = append(out, string(r))
-		}
-		return out, nil
-	case *jsonutil.Object:
-		out := make([]any, 0, t.Len())
-		for _, k := range t.Keys() {
-			out = append(out, k)
-		}
-		return out, nil
 	}
-	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
+	return nil, fmt.Errorf("%s must be an array, got %s", field, anyutil.Kind(v))
 }
 
 func GoalMetaKey(sessionID string) string { return "goal:" + sessionID }

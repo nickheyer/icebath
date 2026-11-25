@@ -2,13 +2,13 @@ package agent
 
 import (
 	"fmt"
-	"reflect"
 	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -160,7 +160,7 @@ func mergeAnchorIntoUserMessage(target, anchor map[string]any) {
 
 // str(content or "") of Python
 func strOrEmpty(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {
@@ -229,27 +229,17 @@ func ensureCompressedHasUserTurn(original []map[string]any, compressed *[]map[st
 
 // Role, content and when both carry one the timestamp of the live turn identity
 func messagesMatchScopedIdentity(left, right map[string]any) bool {
-	if left == nil || right == nil || !pyEqual(left["role"], right["role"]) || !pyEqual(left["content"], right["content"]) {
+	if left == nil || right == nil || !anyutil.Equal(left["role"], right["role"]) || !anyutil.Equal(left["content"], right["content"]) {
 		return false
 	}
 	lt, rt := left["timestamp"], right["timestamp"]
 	if lt != nil && rt != nil {
-		return pyEqual(lt, rt)
+		return anyutil.Equal(lt, rt)
 	}
 	return true
 }
 
-// Python == over decoded JSON values, numbers compared by value
-func pyEqual(x, y any) bool {
-	if fx, ok := pyNumber(x); ok {
-		if fy, ok := pyNumber(y); ok {
-			return fx == fy
-		}
-	}
-	return reflect.DeepEqual(x, y)
-}
-
-func pyNumber(v any) (float64, bool) {
+func numberOf(v any) (float64, bool) {
 	switch n := v.(type) {
 	case int:
 		return float64(n), true
@@ -272,10 +262,10 @@ func stampScopedTwins(targets []map[string]any, source map[string]any, exactCoun
 	if sourceTimestamp != nil {
 		exactHit := false
 		for _, target := range targets {
-			if target == nil || !pyEqual(target["timestamp"], sourceTimestamp) || !messagesMatchScopedIdentity(target, source) {
+			if target == nil || !anyutil.Equal(target["timestamp"], sourceTimestamp) || !messagesMatchScopedIdentity(target, source) {
 				continue
 			}
-			if pyTruthy(target[dbPersistedMarker]) {
+			if anyutil.IsTrue(target[dbPersistedMarker]) {
 				exactHit = exactHit || exactCountsStamped
 				continue
 			}
@@ -287,7 +277,7 @@ func stampScopedTwins(targets []map[string]any, source map[string]any, exactCoun
 		}
 	}
 	for _, target := range targets {
-		if target != nil && !pyTruthy(target[dbPersistedMarker]) && messagesMatchScopedIdentity(target, source) {
+		if target != nil && !anyutil.IsTrue(target[dbPersistedMarker]) && messagesMatchScopedIdentity(target, source) {
 			target[dbPersistedMarker] = true
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,7 +26,7 @@ func ValidateVoice(cfg map[string]any, issues *[]ConfigIssue) {
 			return
 		}
 	}
-	AddIssue(issues, "error", fmt.Sprintf("voice.submit_mode must be 'direct' or 'draft', got %s", PyRepr(submit)),
+	AddIssue(issues, "error", fmt.Sprintf(`voice.submit_mode must be "direct" or "draft", got %s`, quoteValue(submit)),
 		"Set voice.submit_mode to direct (submit immediately) or draft (edit before sending)")
 }
 
@@ -42,7 +43,7 @@ func ValidateTimezone(cfg map[string]any, issues *[]ConfigIssue) {
 	}
 	s, isStr := tz.(string)
 	if tz != nil && !isStr {
-		AddIssue(issues, "error", fmt.Sprintf("timezone must be an IANA zone name string, got %s", PyRepr(tz)), timezoneHint)
+		AddIssue(issues, "error", fmt.Sprintf("timezone must be an IANA zone name string, got %s", quoteValue(tz)), timezoneHint)
 		return
 	}
 	name := strings.TrimSpace(s)
@@ -53,7 +54,7 @@ func ValidateTimezone(cfg map[string]any, issues *[]ConfigIssue) {
 		return
 	}
 	if !loadableZone(name) {
-		AddIssue(issues, "error", fmt.Sprintf("timezone %s is not a valid IANA zone name", PyRepr(name)), timezoneHint)
+		AddIssue(issues, "error", fmt.Sprintf("timezone %q is not a valid IANA zone name", name), timezoneHint)
 	}
 }
 
@@ -79,8 +80,8 @@ func ValidateWebBackends(cfg map[string]any, issues *[]ConfigIssue, removedNote 
 	for _, key := range []string{"backend", "search_backend", "extract_backend"} {
 		raw := web[key]
 		val := ""
-		if PyTruthy(raw) {
-			val = strings.ToLower(strings.TrimSpace(PyStr(raw)))
+		if anyutil.IsTrue(raw) {
+			val = strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 		}
 		if val == "" || seen[val] {
 			continue
@@ -88,7 +89,7 @@ func ValidateWebBackends(cfg map[string]any, issues *[]ConfigIssue, removedNote 
 		seen[val] = true
 		if note := removedNote("web", val); note != "" {
 			AddIssue(issues, "warning",
-				fmt.Sprintf("web.%s is set to '%s', but %s — web_search/web_extract will fail until it is changed", key, val, note),
+				fmt.Sprintf("web.%s is set to %q, but %s — web_search/web_extract will fail until it is changed", key, val, note),
 				"Run 'icebath tools' and pick a different Web Search & Extract provider")
 		}
 	}
@@ -156,7 +157,7 @@ func LooksStructuredValue(value string) bool {
 	if !strings.Contains(value, "\n") {
 		return false
 	}
-	for _, line := range pySplitLines(value) {
+	for _, line := range splitLines(value) {
 		item := strings.TrimSpace(line)
 		if item == "-" || strings.HasPrefix(item, "- ") {
 			return true
@@ -172,7 +173,7 @@ func LooksStructuredValue(value string) bool {
 }
 
 // Lines split at every Python line boundary without the terminators
-func pySplitLines(s string) []string {
+func splitLines(s string) []string {
 	var out []string
 	start := 0
 	runes := []rune(s)
@@ -223,7 +224,7 @@ func ValidateQuotedContainers(cfg map[string]any, issues *[]ConfigIssue) {
 			}
 		}
 		AddIssue(issues, "warning",
-			fmt.Sprintf("%s is the quoted string %s — Icebath expects a YAML %s here and every reader ignores the string", key, PyRepr(value), kind),
+			fmt.Sprintf("%s is the quoted string %q — Icebath expects a YAML %s here and every reader ignores the string", key, value, kind),
 			fmt.Sprintf("Run: icebath config set %s %s  (stores a real %s), or remove the quotes in config.yaml", key, ShlexQuote(value), kind))
 	}
 }

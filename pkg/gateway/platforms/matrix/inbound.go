@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -542,17 +543,9 @@ func (a *MatrixAdapter) onInvite(ctx context.Context, evt *event.Event) error {
 		pkgLog().Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
 		return nil
 	}
-	pkgLog().Info(fmt.Sprintf("Matrix: invited to %s — joining (is_direct=%s)", roomID, pyBool(isDirect)))
+	pkgLog().Info(fmt.Sprintf("Matrix: invited to %s — joining (is_direct=%s)", roomID, strconv.FormatBool(isDirect)))
 	a.scheduleInviteJoin(ctx, roomID, isDirect && inviter != "", inviter)
 	return nil
-}
-
-// Python spelling of a bool
-func pyBool(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
 }
 
 // Joins the room unless already joined, leaving dead invites, the context error when cancelled
@@ -649,7 +642,7 @@ func (a *MatrixAdapter) schedulePendingInviteJoins(ctx context.Context, resp *ma
 			pkgLog().Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
 			continue
 		}
-		pkgLog().Info(fmt.Sprintf("Matrix: reconciling pending invite for %s (is_direct=%s)", roomID, pyBool(isDirect)))
+		pkgLog().Info(fmt.Sprintf("Matrix: reconciling pending invite for %s (is_direct=%s)", roomID, strconv.FormatBool(isDirect)))
 		a.scheduleInviteJoin(ctx, roomID, isDirect, inviter)
 	}
 }

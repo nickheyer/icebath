@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Active profile with discovery marked done and lifecycle hooks routed to its manager
@@ -184,8 +186,8 @@ func TestDisabledPlugins(t *testing.T) {
 	}
 }
 
-func TestPyTitle(t *testing.T) {
-	if got := pyTitle("web search_x2y"); got != "Web Search_X2Y" {
+func TestTitleCapitalisesEachWord(t *testing.T) {
+	if got := textutil.Title("web search_x2y"); got != "Web Search_X2y" {
 		t.Fatalf("%q", got)
 	}
 }

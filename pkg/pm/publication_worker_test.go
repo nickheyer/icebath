@@ -177,7 +177,7 @@ func TestPublicationSelectionRefusesConfigEditsDuringPreparation(t *testing.T) {
 // Fails unless err is a Python ValueError whose message contains fragment
 func pubWantValueError(t *testing.T, err error, fragment string) {
 	t.Helper()
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "ValueError" || !strings.Contains(err.Error(), fragment) {
 		t.Fatalf("want ValueError with %q, got %T %v", fragment, err, err)
 	}

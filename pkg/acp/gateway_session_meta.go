@@ -201,20 +201,20 @@ var gatewayProvenanceMeta = func(ctx context.Context, dbPath, acpSessionID, sess
 
 // Context indicator update of a usage dict, nil without a positive integer window
 func gatewayUsageUpdate(stats *jsonutil.Object) *acputil.UsageUpdate {
-	size, ok := pyIntStrict(dget(stats, "context_length"))
+	size, ok := intStrict(dget(stats, "context_length"))
 	if !ok || size <= 0 {
 		return nil
 	}
 	used := 0
 	if v := dget(stats, "context_tokens"); anyutil.IsTrue(v) {
-		f, _ := pyFloat(v)
+		f, _ := floatNumber(v)
 		used = int(f)
 	}
 	return &acputil.UsageUpdate{Size: size, Used: max(used, 0)}
 }
 
 // Integer value of a decoded JSON int, bools and floats refused
-func pyIntStrict(v any) (int, bool) {
+func intStrict(v any) (int, bool) {
 	switch x := v.(type) {
 	case int64:
 		return int(x), true
@@ -232,7 +232,7 @@ func gatewayTurnUsage(stats any) *acputil.Usage {
 	}
 	count := func(key string) int {
 		if v := dget(d, key); anyutil.IsTrue(v) {
-			f, _ := pyFloat(v)
+			f, _ := floatNumber(v)
 			return int(f)
 		}
 		return 0

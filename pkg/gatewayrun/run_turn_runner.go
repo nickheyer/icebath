@@ -112,11 +112,11 @@ func newTurnRunner(ctx context.Context, runner *GatewayRunner, tc *TurnContext) 
 		return nil, err
 	}
 	if row == nil {
-		return nil, &pyTypeError{"the session row for this turn is missing"}
+		return nil, &typeError{"the session row for this turn is missing"}
 	}
 	generation := gateway.RowInt(row, "runtime_generation")
 	if generation == nil {
-		return nil, &pyTypeError{"the turn context has no runtime_generation"}
+		return nil, &typeError{"the turn context has no runtime_generation"}
 	}
 	tr.approvalOwner = &turnApprovalOwner{authority: authority, sessionID: ownerID, generation: *generation}
 	return tr, nil
@@ -179,11 +179,11 @@ func settleAPIRuntimeLock(ctx context.Context, a *agent.AIAgent, result map[stri
 	adapterValue, _ := api.Get("adapter")
 	source, ok := adapterValue.(turnRuntimeMetadataSource)
 	if !ok {
-		return &pyAttributeError{"the API adapter cannot report turn runtime metadata"}
+		return &attributeError{"the API adapter cannot report turn runtime metadata"}
 	}
 	usage, isMap := captured["usage"].(map[string]any)
 	if !isMap {
-		return &pyTypeError{"the turn result usage is not a mapping"}
+		return &typeError{"the turn result usage is not a mapping"}
 	}
 	runtime, err := source.TurnRuntimeMetadata(a, settings, true)
 	if err != nil {

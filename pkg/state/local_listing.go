@@ -6,6 +6,7 @@ import (
 	"sort"
 	"sync"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -47,7 +48,7 @@ func localLineageIndex(ctx context.Context, conn SQLiteConn) (localLineageIndexV
 		return out, err
 	}
 	for _, row := range rows {
-		decoded, err := jsonutil.Decode(pyStr(rowValue(row, "value")))
+		decoded, err := jsonutil.Decode(anyutil.String(rowValue(row, "value")))
 		if err != nil {
 			return out, err
 		}
@@ -71,7 +72,7 @@ func localLineageIndex(ctx context.Context, conn SQLiteConn) (localLineageIndexV
 		}
 		ended := map[string]any{}
 		for _, r := range endedRows {
-			ended[pyStr(rowValue(r, "id"))] = rowValue(r, "end_reason")
+			ended[anyutil.String(rowValue(r, "id"))] = rowValue(r, "end_reason")
 		}
 		var starts []string
 		for i, sid := range lineage {
@@ -195,7 +196,7 @@ func (d *SessionDB) excludeSupersededSegments(ctx context.Context, whereClauses 
 func annotateLocalLineages(sessions []*jsonutil.Object, heads map[string]localLineageHead) []*jsonutil.Object {
 	for _, row := range sessions {
 		key := rowValue(row, "_lineage_root_id")
-		if !pyTruthy(key) {
+		if !anyutil.IsTrue(key) {
 			key = rowValue(row, "id")
 		}
 		ks, isStr := key.(string)

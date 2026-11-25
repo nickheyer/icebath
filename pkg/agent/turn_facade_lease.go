@@ -441,7 +441,7 @@ func admitDurableTurnLease(ctx context.Context, a *AIAgent, sessionID, relayTurn
 		}
 		if (durable != nil && *durable) || len(reloaded) > 0 {
 			for _, m := range conversationHistory {
-				if m == nil || !pyTruthy(m[state.PersistAfterAdmissionInterrupt]) {
+				if m == nil || !anyutil.IsTrue(m[state.PersistAfterAdmissionInterrupt]) {
 					continue
 				}
 				if _, hasRowID := m["_row_id"]; hasRowID {
@@ -462,9 +462,9 @@ func admitDurableTurnLease(ctx context.Context, a *AIAgent, sessionID, relayTurn
 
 // Carries the input of a follow up that interrupted the lease wait unless a hard stop cancelled it
 func carryUnadmittedUserMessage(result map[string]any, userMessage any, persistUserMessage any, timestamp *float64, displayKind string, displayMetadata map[string]any, platformID string) {
-	hardInterrupted := pyTruthy(result["_hard_interrupted"])
+	hardInterrupted := anyutil.IsTrue(result["_hard_interrupted"])
 	delete(result, "_hard_interrupted")
-	if hardInterrupted || !pyTruthy(result["interrupted"]) || userMessage == nil || userMessage == "" {
+	if hardInterrupted || !anyutil.IsTrue(result["interrupted"]) || userMessage == nil || userMessage == "" {
 		return
 	}
 	var durableContent any = userMessage

@@ -96,7 +96,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 		return false, nil
 	}
 	if !envVarNameRe.MatchString(key) {
-		return false, &EnvValueError{fmt.Sprintf("Invalid environment variable name: %s", pyStringRepr(key))}
+		return false, &EnvValueError{fmt.Sprintf("Invalid environment variable name: %q", key)}
 	}
 	path := GetEnvPath(h)
 	if _, err := os.Stat(path); err != nil {

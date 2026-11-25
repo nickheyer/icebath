@@ -21,8 +21,8 @@ func TestIsOriginHTTPErrorPythonSemantics(t *testing.T) {
 	}
 }
 
-// Crawl tags end with an HTTP status or NOT_FOUND after a Unicode word boundary, trailing Unicode space allowed
-func TestExaCrawlStatusPythonSemantics(t *testing.T) {
+// Crawl tags end with an HTTP status in digits of any script or NOT_FOUND after a Unicode word boundary, trailing Unicode space allowed
+func TestExaCrawlStatusTags(t *testing.T) {
 	cases := []struct {
 		in   string
 		code int
@@ -42,8 +42,8 @@ func TestExaCrawlStatusPythonSemantics(t *testing.T) {
 	}
 }
 
-// Keenable bodies decode like json.loads and the message is str of any truthy value
-func TestKeenableOriginErrorPythonSemantics(t *testing.T) {
+// Keenable error bodies name the origin's answer when their message, a non-empty value as text, says the target refused or the page is gone
+func TestKeenableOriginErrorMessages(t *testing.T) {
 	cases := []struct {
 		status int
 		body   string
@@ -60,14 +60,14 @@ func TestKeenableOriginErrorPythonSemantics(t *testing.T) {
 		{399, `{"message": "the page does not exist"}`, ""},
 	}
 	for _, c := range cases {
-		if got, err := keenableOriginError(c.status, c.body); got != c.want || err != nil {
+		if got := keenableOriginError(c.status, c.body); got != c.want {
 			t.Errorf("%d %s -> %q", c.status, c.body, got)
 		}
 	}
 }
 
-// Body and reason fall through Python truthiness and non strings take their str form
-func TestVendorErrorEntryTruthiness(t *testing.T) {
+// Empty bodies and reasons (null, false, zero, empty text or containers) fall through and other values take their text form
+func TestVendorErrorEntryFallbacks(t *testing.T) {
 	cases := []struct {
 		status, reason, body any
 		err, content         string
@@ -76,15 +76,12 @@ func TestVendorErrorEntryTruthiness(t *testing.T) {
 		{404, nil, 0, "HTTP 404 from origin", ""},
 		{nil, "timeout", "", "timeout", ""},
 		{nil, "", []any{}, "extraction failed", ""},
-		{nil, "tag", map[string]any{"a": 1}, "{'a': 1}", ""},
+		{nil, "tag", map[string]any{"a": 1}, `{"a":1}`, ""},
 		{200, 0, float64(0), "extraction failed", ""},
-		{nil, float64(3), nil, "3.0", ""},
+		{nil, float64(3), nil, "3", ""},
 	}
 	for _, c := range cases {
-		p, err := vendorErrorEntry("https://e.com", c.status, c.reason, c.body)
-		if err != nil {
-			t.Fatal(err)
-		}
+		p := vendorErrorEntry("https://e.com", c.status, c.reason, c.body)
 		if p.Error != c.err || p.Content != c.content || p.Metadata["sourceURL"] != "https://e.com" {
 			t.Errorf("%v %v %v -> %+v", c.status, c.reason, c.body, p)
 		}

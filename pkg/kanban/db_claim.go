@@ -564,7 +564,7 @@ func ReclaimTask(ctx context.Context, conn state.SQLiteConn, taskID string, reas
 		if err != nil || rowsAffected(res) != 1 {
 			return err
 		}
-		errText := "manual_reclaim lock=" + pyStrOpt(prevLock)
+		errText := "manual_reclaim lock=" + strOpt(prevLock)
 		if reason != nil && *reason != "" {
 			errText = "manual_reclaim: " + *reason
 		}
@@ -582,7 +582,7 @@ func ReclaimTask(ctx context.Context, conn state.SQLiteConn, taskID string, reas
 }
 
 // Python str of an optional string, None for nil
-func pyStrOpt(s *string) string {
+func strOpt(s *string) string {
 	if s == nil {
 		return "None"
 	}

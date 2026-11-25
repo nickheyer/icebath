@@ -90,7 +90,7 @@ var (
 )
 
 // Profile flag form of the gateway restart, blocked only when the named profile runs the guard
-var profileFlagLifecyclePattern = regexp2.MustCompile(pyPatternToRegexp2(
+var profileFlagLifecyclePattern = regexp2.MustCompile(patternToRegexp2(
 	`(?i)icebath\s+(?:-\S++(?:\s++(?!-\S)\S++)?\s++)*(?:--profile=([^\s]+)|(?:-p|--profile)\s+([^\s]+))(?:\s++-\S++(?:\s++(?!-\S)\S++)?)*\s+gateway\s+(?:restart|stop)`))
 
 // HostInterpreterKillRejection is the text every surface shows for a kill aimed at the gateway image

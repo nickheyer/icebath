@@ -29,7 +29,7 @@ func TestConfigFingerprint(t *testing.T) {
 	if ConfigFingerprint(empty) != ConfigFingerprint(map[string]any{"command": "npx", "args": []any{}, "timeout": 5, "enabled": true, "lazy": true}) {
 		t.Fatal("non connection keys changed the fingerprint")
 	}
-	if got := pyJSONCompactASCII(map[string]any{"b": []any{1, 2.0, "\u00e9"}, "a": nil}); got != `{"a":null,"b":[1,2.0,"\u00e9"]}` {
+	if got := jsonCompactASCII(map[string]any{"b": []any{1, 2.0, "\u00e9"}, "a": nil}); got != `{"a":null,"b":[1,2.0,"\u00e9"]}` {
 		t.Fatalf("python json %s", got)
 	}
 }

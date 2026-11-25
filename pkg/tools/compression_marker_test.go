@@ -39,7 +39,7 @@ func TestElideNeverExceedsLimit(t *testing.T) {
 	if got := elide("abcd", 1); got != elisionMarker(4, 4) {
 		t.Fatalf("marker alone %q", got)
 	}
-	if pyCommaInt(1234567) != "1,234,567" || pyCommaInt(999) != "999" || pyCommaInt(1000) != "1,000" {
+	if commaIntValue(1234567) != "1,234,567" || commaIntValue(999) != "999" || commaIntValue(1000) != "1,000" {
 		t.Fatal("comma formatting")
 	}
 }

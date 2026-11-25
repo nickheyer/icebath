@@ -115,7 +115,7 @@ func AdmissionReceiptDict(r AdmissionReceipt) *jsonutil.Object { return admissio
 
 // Whether the error is the KeyError Python raises for a missing mapping key
 func IsKeyError(err error) bool {
-	var keyErr *pyKeyError
+	var keyErr *keyError
 	return errors.As(err, &keyErr)
 }
 
@@ -123,7 +123,7 @@ func IsKeyError(err error) bool {
 func (a *SessionAuthority) SteerRunningGeneration(ctx context.Context, sessionID string, generation int64, text string) (any, bool, error) {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return nil, false, &pyKeyError{sessionID}
+		return nil, false, &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()

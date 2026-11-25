@@ -370,7 +370,7 @@ func (c *CanonicalHostedRoomService) ResolveMemberTransport(binding HostedRoomBi
 	}
 	profileValue, has := payload["target_profile"]
 	if !has {
-		return nil, &pyKeyError{"target_profile"}
+		return nil, &keyError{"target_profile"}
 	}
 	profile := anyutil.String(profileValue)
 	owner, err := c.owner(binding.RoomID)
@@ -542,7 +542,7 @@ func (c *CanonicalHostedRoomService) CheckAdmission(ctx context.Context, ref Ses
 // Errors of the Python ValueError, TypeError, KeyError and StopIteration families the admission check folds into a refusal
 func hostedValueFamily(err error) bool {
 	return errAs[*state.RuntimeStoreError](err) || errAs[*HostedRoomError](err) || errAs[*AttachmentError](err) ||
-		errAs[*DriverValidationError](err) || errAs[*pyKeyError](err) || errAs[*jsonutil.SyntaxError](err) || errAs[*hostedAdmissionMismatch](err)
+		errAs[*DriverValidationError](err) || errAs[*keyError](err) || errAs[*jsonutil.SyntaxError](err) || errAs[*hostedAdmissionMismatch](err)
 }
 
 // A hosted admission whose durable binding no longer matches its producer, a ValueError

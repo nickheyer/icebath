@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Admission wait a test may shorten
@@ -54,7 +56,7 @@ func procStartTicks(pid int64) (int64, bool) {
 	if len(fields) < 20 {
 		return 0, false
 	}
-	n, err := pyIntOf(fields[19])
+	n, err := intOfValue(fields[19])
 	if err != nil || !n.IsInt64() {
 		return 0, false
 	}
@@ -62,7 +64,7 @@ func procStartTicks(pid int64) (int64, bool) {
 }
 
 // Holder metadata object of a lock file, nil when absent, unreadable or not a JSON object
-func readLockHolderRecord(f *os.File) pyObject {
+func readLockHolderRecord(f *os.File) orderedObject {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return nil
 	}
@@ -74,11 +76,11 @@ func readLockHolderRecord(f *os.File) pyObject {
 	if n == 0 {
 		return nil
 	}
-	v, err := pyLoads(pyDecodeUTF8Replace(buf[:n]))
+	v, err := loadsValue(decodeUTF8Replace(buf[:n]))
 	if err != nil {
 		return nil
 	}
-	record, _ := v.(pyObject)
+	record, _ := v.(orderedObject)
 	return record
 }
 
@@ -100,14 +102,14 @@ func rewriteLockFile(f *os.File, payload []byte) {
 // Records this process as lock holder so contenders can tell an orphaned descriptor from a live holder
 func writeLockHolderRecord(f *os.File) {
 	pid := int64(os.Getpid())
-	record := pyObject{{"pid", pid}, {"pidns", nil}, {"start_ticks", nil}, {"acquired_at", float64(time.Now().UnixNano()) / 1e9}}
+	record := orderedObject{{"pid", pid}, {"pidns", nil}, {"start_ticks", nil}, {"acquired_at", float64(time.Now().UnixNano()) / 1e9}}
 	if ns := PidNamespaceID(); ns != "" {
 		record[1].Value = ns
 	}
 	if ticks, ok := procStartTicks(pid); ok {
 		record[2].Value = ticks
 	}
-	payload, err := pyDumps(record, pyJSON{sortKeys: true, ensureASCII: true, allowNaN: true, itemSep: ", ", keySep: ": "})
+	payload, err := dumpsValue(record, jsonCodec{sortKeys: true, ensureASCII: true, allowNaN: true, itemSep: ", ", keySep: ": "})
 	if err != nil {
 		return
 	}
@@ -117,7 +119,7 @@ func writeLockHolderRecord(f *os.File) {
 // Erases holder metadata before a normal release so a surviving record means an abnormal exit
 func clearLockHolderRecord(f *os.File) { rewriteLockFile(f, nil) }
 
-func (o pyObject) get(key string) (any, bool) {
+func (o orderedObject) get(key string) (any, bool) {
 	for _, kv := range o {
 		if kv.Key == key {
 			return kv.Value, true
@@ -127,7 +129,7 @@ func (o pyObject) get(key string) (any, bool) {
 }
 
 // Whether an int equals a decoded JSON value under Python equality
-func pyIntEquals(n int64, v any) bool {
+func intEquals(n int64, v any) bool {
 	switch x := v.(type) {
 	case json.Number:
 		m, ok := new(big.Int).SetString(x.String(), 10)
@@ -145,14 +147,14 @@ func pyIntEquals(n int64, v any) bool {
 }
 
 // True only when the recorded holder is provably dead or its pid recycled, the OverflowError int raises propagating
-func lockHolderProvablyDead(record pyObject) (bool, error) {
+func lockHolderProvablyDead(record orderedObject) (bool, error) {
 	pidValue, ok := record.get("pid")
 	if !ok {
 		return false, nil
 	}
-	pid, err := pyIntOf(pidValue)
+	pid, err := intOfValue(pidValue)
 	if err != nil {
-		var conv *pyConvError
+		var conv *convError
 		if errors.As(err, &conv) && conv.Class == "OverflowError" {
 			return false, err
 		}
@@ -170,7 +172,7 @@ func lockHolderProvablyDead(record pyObject) (bool, error) {
 		return false, nil
 	}
 	if pid.Cmp(big.NewInt(math.MaxInt32)) > 0 {
-		return false, &pyConvError{"OverflowError", "the recorded process id is larger than a process id can be"}
+		return false, &convError{"OverflowError", "the recorded process id is larger than a process id can be"}
 	}
 	alive, gone := signalZero(int(pid.Int64()))
 	if gone {
@@ -184,31 +186,34 @@ func lockHolderProvablyDead(record pyObject) (bool, error) {
 		return false, nil
 	}
 	current, ok := procStartTicks(pid.Int64())
-	return ok && !pyIntEquals(current, recordedTicks), nil
+	return ok && !intEquals(current, recordedTicks), nil
 }
 
 // Holder identity for deferral warnings, the OverflowError float raises propagating
-func describeLockHolder(record pyObject) (string, error) {
+func describeLockHolder(record orderedObject) (string, error) {
 	pid, ok := record.get("pid")
 	if !ok {
 		return "unknown (no holder record; pre-fix writer or non-icebath)", nil
 	}
 	age := ""
 	if acquired, _ := record.get("acquired_at"); acquired != nil {
-		at, err := pyFloatOf(acquired)
-		var conv *pyConvError
+		at, err := floatOf(acquired)
+		var conv *convError
 		switch {
 		case err == nil:
-			age = ", acquired " + pyFixed0(float64(time.Now().UnixNano())/1e9-at) + "s ago"
+			age = ", acquired " + fixed0(float64(time.Now().UnixNano())/1e9-at) + "s ago"
 		case errors.As(err, &conv) && conv.Class == "OverflowError":
 			return "", err
 		}
 	}
-	return "pid " + pyStr(pid) + age, nil
+	if pid == nil {
+		return "unknown (the holder record names no pid)" + age, nil
+	}
+	return "pid " + anyutil.String(pid) + age, nil
 }
 
 // Float formatted with zero decimals the way the .0f format spec renders it
-func pyFixed0(v float64) string {
+func fixed0(v float64) string {
 	switch {
 	case math.IsNaN(v):
 		return "nan"
@@ -249,7 +254,7 @@ func FTSRebuildAdmission(dbPath string, timeoutSeconds *float64, fn func(admitte
 	}
 	acquired = outcome == lockAcquired
 	if outcome == lockTimedOut {
-		var record pyObject
+		var record orderedObject
 		if !isWindows {
 			record = readLockHolderRecord(handle)
 		}

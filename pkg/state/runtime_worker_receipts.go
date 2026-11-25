@@ -115,7 +115,7 @@ func workerTurn(operation string) WorkerHandler {
 		switch operation {
 		case "turn.acquire":
 			acquired, _, err := claimLeaseRow(ctx, conn, "session_turn_leases", "conversation_id", key, holder, t, t+ttl, func(h, e any) bool {
-				expires, _ := pyFloatOf(e)
+				expires, _ := floatOf(e)
 				name, _ := h.(string)
 				return expires <= t || compressionLockHolderProcessIsDead(name)
 			})
@@ -221,7 +221,7 @@ func workerUsage(auxiliary bool) WorkerHandler {
 		taskValue, hasTask := payload.Get("task")
 		task, _ := taskValue.(string)
 		if auxiliary {
-			if !pyTruthy(taskValue) {
+			if !anyutil.IsTrue(taskValue) {
 				return nil, runtimeRefusal("invalid_params")
 			}
 			calls := 1
@@ -257,7 +257,7 @@ func workerUsage(auxiliary bool) WorkerHandler {
 		if err := d.updateTokenCountsInTransaction(ctx, conn, sessionID, delta); err != nil {
 			return nil, err
 		}
-		if surfaced := CreatedSurface(source); pyTruthy(surfaced) {
+		if surfaced := CreatedSurface(source); anyutil.IsTrue(surfaced) {
 			if _, err := conn.ExecContext(ctx, "UPDATE sessions SET created_source=? WHERE id=? AND "+unsetCreatedSQL("created_source"),
 				surfaced, sessionID); err != nil {
 				return nil, err
@@ -340,7 +340,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 	}
 	decodedForDigest, err := jsonutil.Decode(encoded)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	digest, err := AdmissionFingerprint(in.SessionID, map[string]any{"operation": in.Operation, "payload": decodedForDigest})
 	if err != nil {
@@ -378,7 +378,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 			}
 			decoded, err := jsonutil.Decode(resultText)
 			if err != nil {
-				return pyValueError(err.Error())
+				return valueError(err.Error())
 			}
 			stored, ok := decoded.(*jsonutil.Object)
 			if !ok {
@@ -391,7 +391,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 		if status != "registered" && status != "running" {
 			return runtimeRefusal("stale_generation")
 		}
-		if !anyutil.Equal(in.Sequence, pyAdd(rowValue(row, "last_sequence"), 1)) {
+		if !anyutil.Equal(in.Sequence, addValue(rowValue(row, "last_sequence"), 1)) {
 			return runtimeRefusal("invalid_params")
 		}
 		changes, err := totalChanges(ctx, conn)
@@ -400,7 +400,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 		}
 		decoded, err := jsonutil.Decode(encoded)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		out, err := handler(d, ctx, conn, in.SessionID, decoded.(*jsonutil.Object))
 		if err != nil {
@@ -411,13 +411,13 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 			return err
 		}
 		changed := after != changes || in.Operation == "execution.finish"
-		resultJSON, err := pyDumps(out, pyJSON{ensureASCII: true, itemSep: ", ", keySep: ": "})
+		resultJSON, err := dumpsValue(out, jsonCodec{ensureASCII: true, itemSep: ", ", keySep: ": "})
 		if err != nil {
 			return err
 		}
 		stored, err := jsonutil.Decode(resultJSON)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		if _, err := conn.ExecContext(ctx, "INSERT INTO worker_receipts(execution_id,sequence,payload_digest,result_json) VALUES(?,?,?,?)",
 			in.ExecutionID, in.Sequence, digest, resultJSON); err != nil {
@@ -451,7 +451,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 }
 
 // Sum of a stored integer column and an increment, the column read as a Python int
-func pyAdd(value any, increment int64) any {
+func addValue(value any, increment int64) any {
 	n, ok := exactInt(value)
 	if !ok {
 		return value

@@ -350,14 +350,6 @@ func asObject(v any) (*jsonutil.Object, bool) {
 	return o, ok && o != nil
 }
 
-// Python str of a decoded value
-func pyStr(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return anyutil.String(v)
-}
-
 // Config value of a decoded value, objects becoming ordered config mappings
 func toConfig(v any) any {
 	switch t := v.(type) {
@@ -466,7 +458,7 @@ func treeFiles(root string) []string {
 }
 
 // Final suffix of a path name like pathlib, empty for a dotfile or a name ending in a dot
-func pySuffix(p string) string {
+func suffixValue(p string) string {
 	name := filepath.Base(p)
 	i := strings.LastIndex(name, ".")
 	if i > 0 && i < len(name)-1 {
@@ -479,7 +471,7 @@ func pySuffix(p string) string {
 func cursorRuleFiles(rulesDir string) []string {
 	var out []string
 	for _, p := range treeFiles(rulesDir) {
-		if ext := pySuffix(p); ext == ".md" || ext == ".mdc" {
+		if ext := suffixValue(p); ext == ".md" || ext == ".mdc" {
 			out = append(out, p)
 		}
 	}
@@ -640,7 +632,7 @@ func (b *base) mergeMemoryEntries(kind, source, destination string, incoming []s
 		if exists(destination) {
 			backup := fmt.Sprintf("%s.bak.%d", destination, time.Now().Unix())
 			if err := fsutil.CopyFile(destination, backup); err != nil {
-				return fmt.Sprintf("Could not %s memory file: %s", step, pyErrText(err)), nil
+				return fmt.Sprintf("Could not %s memory file: %s", step, errText(err)), nil
 			}
 			details["backup"] = backup
 		}
@@ -650,7 +642,7 @@ func (b *base) mergeMemoryEntries(kind, source, destination string, incoming []s
 			content += "\n"
 		}
 		if err := atomicWriteText(b.ctx, destination, content); err != nil {
-			return fmt.Sprintf("Could not %s memory file: %s", step, pyErrText(err)), nil
+			return fmt.Sprintf("Could not %s memory file: %s", step, errText(err)), nil
 		}
 		return "", nil
 	}
@@ -848,7 +840,7 @@ func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) 
 		data, err = parse(text)
 	}
 	if err != nil {
-		a.record(kind, path, "", "error", fmt.Sprintf("Could not parse %s: %s", filepath.Base(path), pyErrText(err)), nil)
+		a.record(kind, path, "", "error", fmt.Sprintf("Could not parse %s: %s", filepath.Base(path), errText(err)), nil)
 		return jsonutil.NewObject()
 	}
 	if o, ok := asObject(data); ok {
@@ -861,7 +853,7 @@ func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) 
 }
 
 // Python str of an OS or decode error
-func pyErrText(err error) string { return errchain.OSText(err) }
+func errText(err error) string { return errchain.OSText(err) }
 
 // CLAUDE.md or AGENTS.md entries merged into memories/MEMORY.md
 func (a *AgentImporter) importContextFile(source, kind string) error {
@@ -886,7 +878,7 @@ func (b *base) importMarkdownFiles(kind, source string, files []string, present 
 		text, err := readText(f)
 		if err != nil {
 			failed = true
-			b.record(kind, f, destination, "error", "Could not read file: "+pyErrText(err), nil)
+			b.record(kind, f, destination, "error", "Could not read file: "+errText(err), nil)
 			continue
 		}
 		if stripMeta {
@@ -974,7 +966,7 @@ func (a *AgentImporter) importPermissionRules(settings *jsonutil.Object, key str
 	var added []string
 	for _, p := range merged {
 		if !containsValue(current, p) {
-			added = append(added, pyStr(p))
+			added = append(added, anyutil.String(p))
 		}
 	}
 	if len(added) == 0 {
@@ -1021,7 +1013,7 @@ func mergePatterns(current []any, patterns []string) []any {
 			out = append(out, p)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return pyStr(out[i]) < pyStr(out[j]) })
+	sort.SliceStable(out, func(i, j int) bool { return anyutil.String(out[i]) < anyutil.String(out[j]) })
 	return out
 }
 

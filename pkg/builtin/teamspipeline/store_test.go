@@ -157,7 +157,7 @@ func TestModelsRoundTripSnakeAndCamelPayloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	art, err := MeetingArtifactFromDict(obj("artifactType", "transcript", "id", "t1", "name", "T", "size", "12", "createdDateTime", "2026-01-01T00:00:00"))
-	if err != nil || *art.SizeBytes != 12 || get(art.ToDict(), "created_at") != "2026-01-01T00:00:00Z" || get(art.ToDict(), "display_name") != "T" {
+	if err != nil || *art.SizeBytes != 12 || get(art.ToDict(), "created_at") != "2026-01-01T00:00:00.000000Z" || get(art.ToDict(), "display_name") != "T" {
 		t.Fatal(err, art.ToDict())
 	}
 	if _, ok := art.ToDict().Get("metadata"); ok {
@@ -186,7 +186,7 @@ func TestModelsRoundTripSnakeAndCamelPayloads(t *testing.T) {
 	if _, err := TeamsMeetingPipelineJobFromDict(obj("job_id", "j")); err == nil || err.Error() != "TeamsMeetingPipelineJob.event_id is required." {
 		t.Fatal(err)
 	}
-	if _, err := parseDatetime("not a date"); err == nil || err.Error() != "Invalid isoformat string: 'not a date'" {
+	if _, err := parseDatetime("not a date"); err == nil || err.Error() != `invalid ISO 8601 time "not a date"` {
 		t.Fatal(err)
 	}
 	if camel("organizer_user_id") != "organizerUserId" {
@@ -246,7 +246,7 @@ func TestMaintainGraphSubscriptionsRenewsDueManagedSubscriptions(t *testing.T) {
 		t.Fatal(out)
 	}
 	cand := get(out, "candidates").([]any)[0].(*jsonutil.Object)
-	if get(cand, "new_expiration") != "2026-03-03T20:00:00Z" || get(cand, "current_expiration") != "2026-03-01T20:00:00Z" || len(g.patched) != 1 || g.patched[0] != "/subscriptions/due" {
+	if get(cand, "new_expiration") != "2026-03-03T20:00:00.000000Z" || get(cand, "current_expiration") != "2026-03-01T20:00:00.000000Z" || len(g.patched) != 1 || g.patched[0] != "/subscriptions/due" {
 		t.Fatal(cand, g.patched)
 	}
 	reasons := []string{}
@@ -257,7 +257,7 @@ func TestMaintainGraphSubscriptionsRenewsDueManagedSubscriptions(t *testing.T) {
 		t.Fatal(reasons)
 	}
 	due := store.GetSubscription("due")
-	if get(due, "status") != "active" || get(due, "latest_renewal_at") != "2026-03-01T12:00:00Z" || get(due, "expiration_datetime") != "2026-03-03T20:00:00Z" {
+	if get(due, "status") != "active" || get(due, "latest_renewal_at") != "2026-03-01T12:00:00.000000Z" || get(due, "expiration_datetime") != "2026-03-03T20:00:00.000000Z" {
 		t.Fatal(due)
 	}
 	if get(store.GetSubscription("expired"), "status") != "expired" || get(store.GetSubscription("gone"), "status") != "missing_remote" {
@@ -291,7 +291,7 @@ func TestStoreLoadTreatsUnreachablePathAsAbsentAndRejectsInvalidUTF8(t *testing.
 	if err := os.WriteFile(bad, []byte("{\"jobs\": \"\xff\"}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewTeamsPipelineStore(bad); err == nil || !strings.Contains(err.Error(), "'utf-8' codec can't decode byte 0xff in position 10: invalid start byte") {
+	if _, err := NewTeamsPipelineStore(bad); err == nil || err.Error() != bad+": invalid UTF-8 at byte 10" {
 		t.Fatalf("invalid utf-8 error %v", err)
 	}
 }

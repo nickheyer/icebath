@@ -133,7 +133,7 @@ func BuildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 
 // Client whose default headers merge the given headers over its own, the SDK with_options call
 func (c *anthropicSDKClient) withDefaultHeaders(headers []headerField) *anthropicSDKClient {
-	c.inner.defaultHeaders = stainlessMergeHeaders(c.inner.defaultHeaders, pyHeaderDictOf(headers...))
+	c.inner.defaultHeaders = stainlessMergeHeaders(c.inner.defaultHeaders, newSDKHeaders(headers...))
 	return c
 }
 
@@ -240,11 +240,11 @@ func anthCallOptions(apiKwargs map[string]any) anthSDKCall {
 		if v.Read <= 0 {
 			return anthSDKCall{timeoutText: "None", timeoutNone: true}
 		}
-		text = pyFloatRepr(v.Read.Seconds())
+		text = floatRepr(v.Read.Seconds())
 	case float64:
-		text = pyFloatRepr(v)
+		text = floatRepr(v)
 	case float32:
-		text = pyFloatRepr(float64(v))
+		text = floatRepr(float64(v))
 	default:
 		text = anyutil.String(v)
 	}

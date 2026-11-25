@@ -21,8 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
-
-	"golang.org/x/text/cases"
 )
 
 const (
@@ -165,7 +163,7 @@ func targetTreePaths(ctx context.Context, gitCmd []string, cwd string, refs []st
 			return nil, nil, false, err
 		}
 		for path := range paths {
-			files[cases.Fold().String(path)] = true
+			files[textutil.Fold(path)] = true
 		}
 		readAny = true
 	}
@@ -185,7 +183,7 @@ func targetTreePaths(ctx context.Context, gitCmd []string, cwd string, refs []st
 
 // Whether the update could write where an untracked directory record or file sits
 func untrackedCollides(entry string, files, dirs map[string]bool) bool {
-	path := cases.Fold().String(strings.TrimRight(entry, "/"))
+	path := textutil.Fold(strings.TrimRight(entry, "/"))
 	if files[path] || dirs[path] {
 		return true
 	}

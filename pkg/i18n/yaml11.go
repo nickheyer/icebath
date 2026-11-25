@@ -16,15 +16,15 @@ import (
 )
 
 // Ordered mapping node, the shape a YAML 1.1 safe loader hands back for a mapping
-type pyMap []pyPair
+type mapOf []pair
 
-type pyPair struct {
+type pair struct {
 	Key   any
 	Value any
 }
 
 // Timestamp scalar kept with its parsed time so str renders it like a Python date or datetime
-type pyTimestamp struct {
+type timestamp struct {
 	t      time.Time
 	isDate bool
 	hasTZ  bool
@@ -81,8 +81,8 @@ func constructNode(n *yaml.Node) (any, error) {
 
 // Mapping with merge keys applied first and the node's own keys winning
 func constructMapping(n *yaml.Node) (any, error) {
-	var merged pyMap
-	var own pyMap
+	var merged mapOf
+	var own mapOf
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		kn, vn := n.Content[i], n.Content[i+1]
 		if kn.Kind == yaml.ScalarNode && kn.Value == "<<" && kn.Style&(yaml.SingleQuotedStyle|yaml.DoubleQuotedStyle) == 0 {
@@ -112,7 +112,7 @@ func constructMapping(n *yaml.Node) (any, error) {
 				if err != nil {
 					return nil, err
 				}
-				for _, p := range m.(pyMap) {
+				for _, p := range m.(mapOf) {
 					if merged.index(p.Key) < 0 {
 						merged = append(merged, p)
 					}
@@ -125,7 +125,7 @@ func constructMapping(n *yaml.Node) (any, error) {
 			return nil, err
 		}
 		switch k.(type) {
-		case []any, pyMap:
+		case []any, mapOf:
 			return nil, fmt.Errorf("while constructing a mapping: found unhashable key at line %d", kn.Line)
 		}
 		if own.index(k) >= 0 {
@@ -135,9 +135,9 @@ func constructMapping(n *yaml.Node) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		own = append(own, pyPair{k, v})
+		own = append(own, pair{k, v})
 	}
-	out := pyMap{}
+	out := mapOf{}
 	for _, p := range merged {
 		if own.index(p.Key) < 0 {
 			out = append(out, p)
@@ -157,18 +157,18 @@ func nodeKindName(n *yaml.Node) string {
 }
 
 // Index of a key under Python equality, where True equals 1 and 1 equals 1.0
-func (m pyMap) index(key any) int {
+func (m mapOf) index(key any) int {
 	for i, p := range m {
-		if pyKeyEqual(p.Key, key) {
+		if keyEqual(p.Key, key) {
 			return i
 		}
 	}
 	return -1
 }
 
-func pyKeyEqual(a, b any) bool {
-	if fa, ok := pyNumber(a); ok {
-		fb, ok := pyNumber(b)
+func keyEqual(a, b any) bool {
+	if fa, ok := numberOf(a); ok {
+		fb, ok := numberOf(b)
 		return ok && fa.Cmp(fb) == 0
 	}
 	switch av := a.(type) {
@@ -177,15 +177,15 @@ func pyKeyEqual(a, b any) bool {
 		return ok && av == bv
 	case nil:
 		return b == nil
-	case pyTimestamp:
-		bv, ok := b.(pyTimestamp)
+	case timestamp:
+		bv, ok := b.(timestamp)
 		return ok && av.t.Equal(bv.t) && av.isDate == bv.isDate
 	}
 	return false
 }
 
 // Numeric value of bools, ints and floats as a big float for cross type equality
-func pyNumber(v any) (*big.Float, bool) {
+func numberOf(v any) (*big.Float, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -332,7 +332,7 @@ func parseYAML11Timestamp(s string) (any, error) {
 	}
 	atoi := func(x string) int { v, _ := strconv.Atoi(x); return v }
 	if m[4] == "" {
-		return pyTimestamp{t: time.Date(atoi(m[1]), time.Month(atoi(m[2])), atoi(m[3]), 0, 0, 0, 0, time.UTC), isDate: true}, nil
+		return timestamp{t: time.Date(atoi(m[1]), time.Month(atoi(m[2])), atoi(m[3]), 0, 0, 0, 0, time.UTC), isDate: true}, nil
 	}
 	nanos := 0
 	if m[7] != "" {
@@ -353,11 +353,11 @@ func parseYAML11Timestamp(s string) (any, error) {
 		loc = time.FixedZone("", off)
 	}
 	t := time.Date(atoi(m[1]), time.Month(atoi(m[2])), atoi(m[3]), atoi(m[4]), atoi(m[5]), atoi(m[6]), nanos, loc)
-	return pyTimestamp{t: t, hasTZ: hasTZ, frac: nanos != 0}, nil
+	return timestamp{t: t, hasTZ: hasTZ, frac: nanos != 0}, nil
 }
 
 // Python str of a date or datetime
-func (ts pyTimestamp) String() string {
+func (ts timestamp) String() string {
 	if ts.isDate {
 		return ts.t.Format("2006-01-02")
 	}
@@ -372,7 +372,7 @@ func (ts pyTimestamp) String() string {
 }
 
 // Key and value pairs in insertion order so the mapping renders as a Python dict
-func (m pyMap) PyItems() iter.Seq2[any, any] {
+func (m mapOf) ItemsValue() iter.Seq2[any, any] {
 	return func(yield func(any, any) bool) {
 		for _, p := range m {
 			if !yield(p.Key, p.Value) {
@@ -383,7 +383,7 @@ func (m pyMap) PyItems() iter.Seq2[any, any] {
 }
 
 // Python repr of a date or datetime with the timezone PyYAML attaches
-func (ts pyTimestamp) PyRepr() string {
+func (ts timestamp) Quoted() string {
 	t := ts.t
 	if ts.isDate {
 		return fmt.Sprintf("datetime.date(%d, %d, %d)", t.Year(), int(t.Month()), t.Day())

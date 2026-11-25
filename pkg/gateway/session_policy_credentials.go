@@ -507,7 +507,7 @@ func credentialsRefusal(field, detail string) error {
 }
 
 // Python exception a malformed reference raises, reported by class name
-func referenceFault(kind string) error { return &PyError{Kind: kind, Msg: kind} }
+func referenceFault(kind string) error { return &errorutil.Error{Kind: kind, Msg: kind} }
 
 // Path list of a decoded reference row, a TypeError when the row is not a two item pair
 func referencePair(row any) (secretPath, any, error) {
@@ -523,7 +523,7 @@ func referencePair(row any) (secretPath, any, error) {
 		return nil, nil, referenceFault("TypeError")
 	}
 	if len(path) == 0 {
-		return nil, nil, &PyError{Kind: "IndexError", Msg: "a credential reference has an empty path"}
+		return nil, nil, &errorutil.Error{Kind: "IndexError", Msg: "a credential reference has an empty path"}
 	}
 	return secretPath(path), pair[1], nil
 }
@@ -600,7 +600,7 @@ func checkSecretScope(ctx context.Context, owner launchSecretOwner, source map[s
 func referenceSource(ref string) (any, error) {
 	parsed, err := jsonutil.Decode(strings.TrimPrefix(ref, configSecretPrefix))
 	if err != nil {
-		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
 	return jsonutil.Plain(parsed), nil
 }
@@ -689,7 +689,7 @@ func recoverConfigSecretsSkipping(ctx context.Context, owner launchSecretOwner, 
 	if _, refused := err.(*state.RuntimeStoreError); refused {
 		return nil, err
 	}
-	if fault, ok := err.(*PyError); ok && fault.Kind != "IndexError" || errorutil.IsSystem(err) {
+	if fault, ok := err.(*errorutil.Error); ok && fault.Kind != "IndexError" || errorutil.IsSystem(err) {
 		kind := "OSError"
 		if ok {
 			kind = fault.Kind

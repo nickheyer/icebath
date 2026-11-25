@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -74,7 +75,7 @@ func projRow(t *testing.T, rows []*jsonutil.Object, id string) *jsonutil.Object 
 func projIDs(rows []*jsonutil.Object) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range rows {
-		out[pyStr(rowValue(r, "id"))] = true
+		out[anyutil.String(rowValue(r, "id"))] = true
 	}
 	return out
 }
@@ -137,7 +138,7 @@ func TestListSurfacesTipForCompressedRoot(t *testing.T) {
 		t.Fatalf("listed %v", ids)
 	}
 	tip := projRow(t, rows, "tip1")
-	if rowValue(tip, "_lineage_root_id") != "root1" || !strings.HasPrefix(pyStr(rowValue(tip, "preview")), "latest message") {
+	if rowValue(tip, "_lineage_root_id") != "root1" || !strings.HasPrefix(anyutil.String(rowValue(tip, "preview")), "latest message") {
 		t.Fatalf("tip row %v", tip)
 	}
 	if rowValue(tip, "ended_at") != nil || rowValue(tip, "end_reason") != nil {
@@ -160,10 +161,10 @@ func TestListProjectsMultipleIndependentChainsInOneCall(t *testing.T) {
 		t.Fatalf("listed %v", ids)
 	}
 	tip1, tip2 := projRow(t, rows, "tip1"), projRow(t, rows, "tip2")
-	if rowValue(tip1, "_lineage_root_id") != "root1" || !strings.HasPrefix(pyStr(rowValue(tip1, "preview")), "latest message") {
+	if rowValue(tip1, "_lineage_root_id") != "root1" || !strings.HasPrefix(anyutil.String(rowValue(tip1, "preview")), "latest message") {
 		t.Fatalf("tip1 %v", tip1)
 	}
-	if rowValue(tip2, "_lineage_root_id") != "root2" || !strings.HasPrefix(pyStr(rowValue(tip2, "preview")), "second conversation continuation") {
+	if rowValue(tip2, "_lineage_root_id") != "root2" || !strings.HasPrefix(anyutil.String(rowValue(tip2, "preview")), "second conversation continuation") {
 		t.Fatalf("tip2 %v", tip2)
 	}
 	if rowValue(tip2, "cwd") != "/tmp/workspaces/second" {
@@ -348,7 +349,7 @@ func projLineage(t *testing.T, db *SessionDB, id string, want ...string) {
 func projOrder(rows []*jsonutil.Object) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, pyStr(rowValue(r, "id")))
+		out = append(out, anyutil.String(rowValue(r, "id")))
 	}
 	return out
 }
@@ -410,7 +411,7 @@ func TestResetForkSiblingDoesNotStealTipProjection(t *testing.T) {
 		t.Fatalf("projected ids %v", ids)
 	}
 	tip := projRow(t, rows, "tip1")
-	if rowValue(tip, "_lineage_root_id") != "root1" || !strings.HasPrefix(pyStr(rowValue(tip, "preview")), "latest message") {
+	if rowValue(tip, "_lineage_root_id") != "root1" || !strings.HasPrefix(anyutil.String(rowValue(tip, "preview")), "latest message") {
 		t.Fatalf("tip row %v", tip)
 	}
 

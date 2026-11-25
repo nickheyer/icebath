@@ -272,23 +272,23 @@ func TestPythonPathHelpers(t *testing.T) {
 		t.Skip("posixpath semantics")
 	}
 	for in, want := range map[string]string{"": ".", "//a//b/": "//a/b", "///a/../b": "/b", "../x/..": "..", "a/./b/": "a/b", "/..": "/"} {
-		if got := pyNormpath(in); got != want {
+		if got := normpath(in); got != want {
 			t.Errorf("normpath(%q) = %q, want %q", in, got, want)
 		}
 	}
 	for in, want := range map[string][2]string{"/a/b/": {"", "/a/b"}, "/a": {"a", "/"}, "a": {"a", ""}, "//x": {"x", "//"}} {
-		if pyBasename(in) != want[0] || pyDirname(in) != want[1] {
-			t.Errorf("%q = %q %q", in, pyBasename(in), pyDirname(in))
+		if basename(in) != want[0] || dirname(in) != want[1] {
+			t.Errorf("%q = %q %q", in, basename(in), dirname(in))
 		}
 	}
 	if pathlibName("/a/b/") != "b" || pathlibName("/") != "" || pathlibStr("a//./b/") != "a/b" {
 		t.Fatal("pathlib name or str")
 	}
 	err := &os.PathError{Op: "stat", Path: "/x'y", Err: syscall.ENOENT}
-	if got := pyOSErrorStr(err); got != `no such file or directory: /x'y` {
+	if got := osErrorStr(err); got != `no such file or directory: /x'y` {
 		t.Fatalf("oserror = %q", got)
 	}
-	if got := pyOSErrorStr(os.NewSyscallError("kinfo_getfile()", syscall.EINVAL)); got != "kinfo_getfile(): invalid argument" {
+	if got := osErrorStr(os.NewSyscallError("kinfo_getfile()", syscall.EINVAL)); got != "kinfo_getfile(): invalid argument" {
 		t.Fatalf("syscall error = %q", got)
 	}
 }

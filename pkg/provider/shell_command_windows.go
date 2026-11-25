@@ -13,7 +13,7 @@ import (
 )
 
 // Command running the line through ComSpec /c with a hidden window like subprocess shell mode on Windows
-func pyShellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
+func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 	comspec := os.Getenv("ComSpec")
 	if comspec == "" {
 		comspec = filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")

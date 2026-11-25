@@ -177,9 +177,9 @@ func DispatchLoopCommand(ctx context.Context, mgr LoopAutomation, args string, r
 	replacing := mgr.HasLoop()
 	state, err := mgr.Set(ctx, parsed.Prompt, parsed.IntervalSeconds, parsed.Times, parsed.Until, route)
 	if err != nil {
-		var pyErr *errorutil.Error
-		if errors.As(err, &pyErr) && pyErr.Kind == "ValueError" {
-			return LoopCommandResult{Output: "/loop: " + pyErr.Msg}, nil
+		var kindErr *errorutil.Error
+		if errors.As(err, &kindErr) && kindErr.Kind == "ValueError" {
+			return LoopCommandResult{Output: "/loop: " + kindErr.Msg}, nil
 		}
 		return LoopCommandResult{}, err
 	}

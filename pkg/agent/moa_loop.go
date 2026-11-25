@@ -82,7 +82,7 @@ const (
 
 // Python str of a value behind an or default, the empty string for falsy values
 func moaStr(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)
@@ -361,7 +361,7 @@ func mergeSlotExtraBody(slotExtraBody, callerExtraBody any) any {
 		}
 		return out
 	}
-	if pyTruthy(callerExtraBody) {
+	if anyutil.IsTrue(callerExtraBody) {
 		return callerExtraBody
 	}
 	return moaCopyRow(slotBody)
@@ -415,7 +415,7 @@ func maybeApplyMoaCacheControl(ctx context.Context, messages []map[string]any, r
 	}()
 	if cacheDisabled == nil {
 		if v, ok := runtime["_cache_disabled"]; ok && v != nil {
-			flag := pyTruthy(v)
+			flag := anyutil.IsTrue(v)
 			cacheDisabled = &flag
 		}
 	}
@@ -439,7 +439,7 @@ func moaResponseField(response any, key string) any {
 
 // Reference usage normalized for the slot's own provider and priced at its own rate, never failing
 func priceReferenceResponse(ctx context.Context, response any, slot, runtime map[string]any) (usage provider.CanonicalUsage, cost, status, source any) {
-	if raw := moaResponseField(response, "usage"); pyTruthy(raw) {
+	if raw := moaResponseField(response, "usage"); anyutil.IsTrue(raw) {
 		func() {
 			defer func() { _ = recover() }()
 			usage = provider.NormalizeUsage(raw, moaStr(runtime["provider"]), moaStr(runtime["api_mode"]))
@@ -516,7 +516,7 @@ func runReference(ctx context.Context, slot map[string]any, refMessages []map[st
 	label := moaSlotLabel(slot)
 	runtime := slotRuntime(ctx, slot)
 	traceProvider := runtime["provider"]
-	if !pyTruthy(traceProvider) {
+	if !anyutil.IsTrue(traceProvider) {
 		traceProvider = slot["provider"]
 	}
 	temperature := optFloat(opts.temperature)
@@ -575,7 +575,7 @@ func newMoaCtxLenCache() *moaCtxLenCache { return &moaCtxLenCache{m: map[[2]stri
 func referenceContextLength(ctx context.Context, slot, runtime map[string]any, cache *moaCtxLenCache) int {
 	model := moaStr(slot["model"])
 	provRaw := runtime["provider"]
-	if !pyTruthy(provRaw) {
+	if !anyutil.IsTrue(provRaw) {
 		provRaw = slot["provider"]
 	}
 	prov := moaStr(provRaw)
@@ -612,7 +612,7 @@ func referenceContextLength(ctx context.Context, slot, runtime map[string]any, c
 
 // Advisory request trimmed oldest first to the reference window, keeping a user first body and the trailing turns
 func trimMessagesForReference(ctx context.Context, messages []map[string]any, slot, runtime map[string]any, reserveOutputTokens *int, cache *moaCtxLenCache) []map[string]any {
-	if len(messages) == 0 || !pyTruthy(slot["model"]) {
+	if len(messages) == 0 || !anyutil.IsTrue(slot["model"]) {
 		return messages
 	}
 	contextLength := referenceContextLength(ctx, slot, runtime, cache)
@@ -875,10 +875,10 @@ func renderToolCalls(toolCalls any) string {
 	for _, tc := range moaListItems(toolCalls) {
 		fn := state.ToolCallField(tc, "function")
 		name := state.ToolCallField(fn, "name")
-		if !pyTruthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = state.ToolCallField(tc, "name")
 		}
-		if !pyTruthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = "tool"
 		}
 		argsText := ""
@@ -909,7 +909,7 @@ func toolActivitySinceLastUser(messages []map[string]any) bool {
 		if role == "user" {
 			return false
 		}
-		if role == "tool" || (role == "assistant" && pyTruthy(messages[i]["tool_calls"])) {
+		if role == "tool" || (role == "assistant" && anyutil.IsTrue(messages[i]["tool_calls"])) {
 			return true
 		}
 	}
@@ -1121,7 +1121,7 @@ func enabledSlots(raw any) []map[string]any {
 		if !ok {
 			continue
 		}
-		if enabled, present := slot["enabled"]; present && !pyTruthy(enabled) {
+		if enabled, present := slot["enabled"]; present && !anyutil.IsTrue(enabled) {
 			continue
 		}
 		out = append(out, slot)
@@ -1192,7 +1192,7 @@ func completedResponseAsStreamChunk(response map[string]any) map[string]any {
 				index = i
 			}
 			typ := state.ToolCallField(tc, "type")
-			if !pyTruthy(typ) {
+			if !anyutil.IsTrue(typ) {
 				typ = "function"
 			}
 			fn := state.ToolCallField(tc, "function")
@@ -1210,7 +1210,7 @@ func completedResponseAsStreamChunk(response map[string]any) map[string]any {
 		index = 0
 	}
 	finish := state.ToolCallField(first, "finish_reason")
-	if !pyTruthy(finish) {
+	if !anyutil.IsTrue(finish) {
 		finish = "stop"
 	}
 	return map[string]any{"id": response["id"], "model": response["model"],
@@ -1243,7 +1243,7 @@ func attachReferenceGuidance(aggMessages []map[string]any, guidance string) []ma
 
 // Exact inverse of attaching guidance over the plain or single text part form, inputs untouched
 func peelReferenceGuidance(messages []map[string]any, guidance any) []map[string]any {
-	if !pyTruthy(guidance) || len(messages) == 0 {
+	if !anyutil.IsTrue(guidance) || len(messages) == 0 {
 		return messages
 	}
 	text := anyutil.String(guidance)
@@ -1269,7 +1269,7 @@ func peelReferenceGuidance(messages []map[string]any, guidance any) []map[string
 					typ = "text"
 				}
 				partText := part["text"]
-				if !pyTruthy(partText) {
+				if !anyutil.IsTrue(partText) {
 					partText = ""
 				}
 				if s, ok := partText.(string); ok && typ == "text" && s == text {
@@ -1440,7 +1440,7 @@ func (c *MoAChatCompletions) RebasePreparedRequest(prepared map[string]any, mess
 	for i, m := range messages {
 		aggMessages[i] = moaCopyRow(m)
 	}
-	if guidance := prepared["guidance"]; pyTruthy(guidance) {
+	if guidance := prepared["guidance"]; anyutil.IsTrue(guidance) {
 		aggMessages = attachReferenceGuidance(aggMessages, anyutil.String(guidance))
 	}
 	out := moaCopyRow(prepared)
@@ -1457,7 +1457,7 @@ func (c *MoAChatCompletions) planAggregatorCache(ctx context.Context, aggMessage
 		}
 	}()
 	planning := aggMessages
-	if pyTruthy(guidance) {
+	if anyutil.IsTrue(guidance) {
 		planning = peelReferenceGuidance(aggMessages, anyutil.String(guidance))
 	}
 	cacheDisabled, cacheTTL := agentCacheOpts(c.agent)
@@ -1468,7 +1468,7 @@ func (c *MoAChatCompletions) planAggregatorCache(ctx context.Context, aggMessage
 	}
 	planned, plannedTools := provider.PlanCacheSectionsForDestination(ctx, planning, tools, moaStr(aggRuntime["provider"]),
 		moaStr(aggRuntime["base_url"]), moaStr(aggRuntime["api_mode"]), moaStr(aggRuntime["model"]), cacheDisabled, cacheTTL, static)
-	if pyTruthy(guidance) {
+	if anyutil.IsTrue(guidance) {
 		planned = attachReferenceGuidance(planned, anyutil.String(guidance))
 	}
 	return planned, plannedTools
@@ -1494,11 +1494,11 @@ func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepare
 	if trace != nil {
 		trace.aggregatorLabel = moaSlotLabel(aggregator)
 	}
-	stream := pyTruthy(apiKwargs["stream"])
+	stream := anyutil.IsTrue(apiKwargs["stream"])
 	streamKwargs := map[string]any{}
 	if stream {
 		options := apiKwargs["stream_options"]
-		if !pyTruthy(options) {
+		if !anyutil.IsTrue(options) {
 			options = map[string]any{"include_usage": true}
 		}
 		streamKwargs["stream"], streamKwargs["stream_options"] = true, options
@@ -1578,7 +1578,7 @@ func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepare
 // Turn scoped reference cache key for the preset fan out cadence
 func (c *MoAChatCompletions) fanoutCacheKey(preset map[string]any, refMessages, referenceModels []map[string]any) *moaFanoutKey {
 	fanoutMode := "user_turn"
-	if pyTruthy(preset["fanout"]) {
+	if anyutil.IsTrue(preset["fanout"]) {
 		fanoutMode = anyutil.String(preset["fanout"])
 	}
 	fanoutMode = strings.ToLower(strings.TrimSpace(fanoutMode))
@@ -1629,7 +1629,7 @@ func (c *MoAChatCompletions) fanoutCacheKey(preset map[string]any, refMessages, 
 // Cache miss path running the advisors, folding their spend, staging the trace and emitting display events
 func (c *MoAChatCompletions) runFanout(ctx context.Context, preset map[string]any, refMessages, referenceModels []map[string]any, aggregator map[string]any, aggregatorTemperature any, cacheKey *moaFanoutKey) ([]moaRefOutput, error) {
 	var referenceTimeout *float64
-	if raw := preset["reference_timeout"]; pyTruthy(raw) {
+	if raw := preset["reference_timeout"]; anyutil.IsTrue(raw) {
 		f, err := anyutil.ToFloat(raw)
 		if err != nil {
 			return nil, err
@@ -1737,7 +1737,7 @@ func (c *MoAChatCompletions) Create(ctx context.Context, apiKwargs map[string]an
 			return c.callPreparedAggregator(ctx, prepared, kwargs)
 		}
 	}
-	prepareOnly := pyTruthy(kwargs["_moa_prepare_only"])
+	prepareOnly := anyutil.IsTrue(kwargs["_moa_prepare_only"])
 	delete(kwargs, "_moa_prepare_only")
 	preset, moaRaw, err := resolvePresetCached(ctx, c.PresetName)
 	if err != nil {
@@ -1746,11 +1746,11 @@ func (c *MoAChatCompletions) Create(ctx context.Context, apiKwargs map[string]an
 	c.privacyMode = moaPrivacyMode(moaRaw)
 	messages := append([]map[string]any{}, mapRows(kwargs["messages"])...)
 	var referenceModels []map[string]any
-	if enabled, present := preset["enabled"]; !present || pyTruthy(enabled) {
+	if enabled, present := preset["enabled"]; !present || anyutil.IsTrue(enabled) {
 		referenceModels = enabledSlots(preset["reference_models"])
 	}
 	aggregator, _ := preset["aggregator"].(map[string]any)
-	if !pyTruthy(preset["aggregator"]) || aggregator == nil {
+	if !anyutil.IsTrue(preset["aggregator"]) || aggregator == nil {
 		aggregator = map[string]any{}
 	}
 	c.lastAggregatorSlot = nil
@@ -1778,7 +1778,7 @@ func (c *MoAChatCompletions) Create(ctx context.Context, apiKwargs map[string]an
 		aggMessages[i] = moaCopyRow(m)
 	}
 	policy := "loud"
-	if pyTruthy(preset["degraded_reference_policy"]) {
+	if anyutil.IsTrue(preset["degraded_reference_policy"]) {
 		policy = anyutil.String(preset["degraded_reference_policy"])
 	}
 	var guidance any
@@ -1903,7 +1903,7 @@ func buildMoaFacade(ctx context.Context, a *AIAgent, presetName any) *MoAClient 
 		resolved = a.model
 	}
 	name := "default"
-	if pyTruthy(resolved) {
+	if anyutil.IsTrue(resolved) {
 		name = anyutil.String(resolved)
 	}
 	func() {
@@ -1916,7 +1916,7 @@ func buildMoaFacade(ctx context.Context, a *AIAgent, presetName any) *MoAClient 
 		presets, _ := moaMapOf(normalized["presets"])
 		if _, ok := presets[name]; !ok {
 			name = "default"
-			if pyTruthy(normalized["default_preset"]) {
+			if anyutil.IsTrue(normalized["default_preset"]) {
 				name = anyutil.String(normalized["default_preset"])
 			}
 		}
@@ -1933,7 +1933,7 @@ func bindMoaRuntime(ctx context.Context, a *AIAgent, presetName string, apiKey a
 	a.provider, a.requestedProvider = "moa", "moa"
 	a.apiMode = "chat_completions"
 	a.apiKey = moaVirtualAPIKey
-	if pyTruthy(apiKey) {
+	if anyutil.IsTrue(apiKey) {
 		a.apiKey = anyutil.String(apiKey)
 	}
 	a.baseURL = moaVirtualBaseURL

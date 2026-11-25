@@ -54,7 +54,7 @@ func routeIdentityHeaders(t *testing.T, client *anthropicSDKClient) map[string]s
 		t.Fatal(err)
 	}
 	headers := map[string]string{}
-	for _, l := range head.spec.custom.stripped() {
+	for _, l := range head.spec.custom.fields() {
 		headers[l.Name] = l.Value
 	}
 	return headers

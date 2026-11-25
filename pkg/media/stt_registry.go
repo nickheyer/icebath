@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -139,7 +140,9 @@ func (h hostedTranscriptionProvider) GetSetupSchema() map[string]any {
 	return map[string]any{"name": h.DisplayName(), "badge": "", "tag": "", "env_vars": []any{}}
 }
 
-func (h hostedTranscriptionProvider) IsAvailable() bool { return pyTruthy(h.mustCall("is_available")) }
+func (h hostedTranscriptionProvider) IsAvailable() bool {
+	return anyutil.IsTrue(h.mustCall("is_available"))
+}
 
 func (h hostedTranscriptionProvider) ListModels() []map[string]any {
 	return hostedRows(h.mustCall("list_models"))
@@ -161,7 +164,7 @@ func (h hostedTranscriptionProvider) Transcribe(ctx context.Context, filePath st
 
 func (h hostedTranscriptionProvider) StreamingCapable() bool {
 	v, err := h.obj.Get(context.Background(), "streaming_capable")
-	return err == nil && pyTruthy(v)
+	return err == nil && anyutil.IsTrue(v)
 }
 
 func (h hostedTranscriptionProvider) OpenStreamSession(ctx context.Context, language, prompt any) (TranscriptionStreamSession, error) {

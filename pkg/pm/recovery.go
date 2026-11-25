@@ -105,18 +105,18 @@ func baselineGaps(ctx context.Context, root string) ([]string, error) {
 		if _, present := facts.packages["venv"]; !present || facts.packages["venv"] == nil {
 			return nil, nil
 		}
-		return nil, &PyError{Class: "ValueError", Message: "invalid recorded dependency state"}
+		return nil, &ClassError{Class: "ValueError", Message: "invalid recorded dependency state"}
 	}
 	recordedRaw, isList := fact["extras"].([]any)
 	stamp, isStamp := fact["stamp"].(string)
 	if !isList || !isStamp || stamp == "" {
-		return nil, &PyError{Class: "ValueError", Message: "invalid recorded dependency state"}
+		return nil, &ClassError{Class: "ValueError", Message: "invalid recorded dependency state"}
 	}
 	var recorded []string
 	for _, extra := range recordedRaw {
 		s, ok := extra.(string)
 		if !ok {
-			return nil, &PyError{Class: "ValueError", Message: "invalid recorded dependency state"}
+			return nil, &ClassError{Class: "ValueError", Message: "invalid recorded dependency state"}
 		}
 		recorded = append(recorded, s)
 	}

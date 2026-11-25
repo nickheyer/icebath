@@ -27,6 +27,7 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	tomlutil "github.com/nickheyer/icebath/pkg/utils/toml"
 )
 
 // CodexMinVersion is the oldest codex CLI the app server runtime accepts
@@ -42,6 +43,9 @@ type CodexAppServerError struct {
 }
 
 func (e *CodexAppServerError) Error() string {
+	if e.Code == nil {
+		return "codex app-server error: " + e.Message
+	}
 	return fmt.Sprintf("codex app-server error %s: %s", anyutil.String(e.Code), e.Message)
 }
 
@@ -182,8 +186,7 @@ func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]strin
 	if ownedTask {
 		for _, key := range append(tools.KanbanEnvKeys(), "ICEBATH_KANBAN_DB", "ICEBATH_KANBAN_BOARD") {
 			if val, ok := os.LookupEnv(key); ok {
-				quoted, _ := jsonutil.Encode(val, jsonutil.Spaced(), jsonutil.ASCII())
-				argv = append(argv, "-c", fmt.Sprintf("mcp_servers.%s.env.%s=%s", CodexToolsMCPServerName, key, quoted))
+				argv = append(argv, "-c", fmt.Sprintf("mcp_servers.%s.env.%s=%s", CodexToolsMCPServerName, key, tomlutil.FormatString(val)))
 			}
 		}
 		argv = append(argv, "-c", fmt.Sprintf(`mcp_servers.%s.env.%s=""`, CodexToolsMCPServerName, tools.DelegatedChildEnvMarker))

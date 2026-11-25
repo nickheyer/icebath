@@ -136,7 +136,7 @@ func runChild(ctx context.Context, request *OrderedObject) (int, error) {
 	resultPath := filepath.Join(directory, "result.json")
 	encoded, err := dumpsJSON(request, false)
 	if err != nil {
-		return 0, &PyError{Class: "TypeError", Message: err.Error()}
+		return 0, &ClassError{Class: "TypeError", Message: err.Error()}
 	}
 	if err := os.WriteFile(contextPath, encoded, 0o644); err != nil {
 		return 0, err
@@ -157,14 +157,14 @@ func runChild(ctx context.Context, request *OrderedObject) (int, error) {
 		}
 		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 		if err := strictUTF8(data); err != nil {
-			return 0, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+			return 0, &ClassError{Class: "UnicodeDecodeError", Message: "invalid update takeover acknowledgement: " + err.Error()}
 		}
-		decoded, err := jsonutil.Decode(string(data))
+		decoded, err := jsonutil.Decode(data)
 		if err != nil {
-			return 0, err
+			return 0, &ClassError{Class: "ValueError", Message: "invalid update takeover acknowledgement: " + err.Error()}
 		}
 		if _, ok := decoded.(*jsonutil.Object); !ok {
-			return 0, &PyError{Class: "ValueError", Message: "invalid update takeover acknowledgement"}
+			return 0, &ClassError{Class: "ValueError", Message: "invalid update takeover acknowledgement"}
 		}
 	}
 	if code < 0 {

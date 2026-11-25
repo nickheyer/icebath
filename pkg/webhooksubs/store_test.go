@@ -113,7 +113,7 @@ func TestStaleReplaceCannotRestoreRemovedOrDisabledRoute(t *testing.T) {
 	}
 	_, err := Replace(h, "notifier", route("description", "stale update"), snapshot)
 	var conflict *SubscriptionMutationConflict
-	if !errors.As(err, &conflict) || conflict.Error() != "Webhook subscription 'notifier' changed concurrently; retry the operation." {
+	if !errors.As(err, &conflict) || conflict.Error() != `Webhook subscription "notifier" changed concurrently; retry the operation.` {
 		t.Fatalf("stale replace after removal: %v", err)
 	}
 	if _, ok := Load(h).Get("notifier"); ok {
@@ -148,12 +148,12 @@ func TestStaleReplaceCannotRestoreRemovedOrDisabledRoute(t *testing.T) {
 	}
 }
 
-func TestReplaceComparesWithPythonEquality(t *testing.T) {
+func TestReplaceComparesNumbersByValueAndIgnoresKeyOrder(t *testing.T) {
 	h := storeHome(t)
 	os.WriteFile(Path(h), []byte(`{"r": {"a": 1, "b": [true, 2.0]}}`), 0o600)
-	expected := route("b", []any{int64(1), int64(2)}, "a", 1.0)
+	expected := route("b", []any{true, int64(2)}, "a", 1.0)
 	if _, err := Replace(h, "r", route("a", int64(2)), expected); err != nil {
-		t.Fatalf("dict equality ignores order and compares numbers numerically: %v", err)
+		t.Fatalf("route equality ignores key order and compares numbers numerically: %v", err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Adapter class a platform module exports, its constructor and the class attributes it declares
@@ -63,11 +64,11 @@ func BuiltinAdapterImport(module, adapterName, requirement string) (*AdapterClas
 	qualified := "gateway.platforms." + module
 	attrs, ok := builtinPlatformModules[module]
 	if !ok {
-		return nil, nil, &PyError{Kind: "ModuleNotFoundError", Msg: fmt.Sprintf("icebath has no built in platform module %s", qualified)}
+		return nil, nil, &errorutil.Error{Kind: "ModuleNotFoundError", Msg: fmt.Sprintf("icebath has no built in platform module %s", qualified)}
 	}
 	for _, name := range []string{adapterName, requirement} {
 		if _, has := attrs[name]; !has {
-			return nil, nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("module '%s' has no attribute '%s'", qualified, name)}
+			return nil, nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("module '%s' has no attribute '%s'", qualified, name)}
 		}
 	}
 	cls, _ := attrs[adapterName].(*AdapterClass)

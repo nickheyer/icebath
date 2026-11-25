@@ -63,7 +63,7 @@ func findVoicesSchema() *jsonutil.Object {
 
 // Whitespace collapsed description clipped with an ellipsis
 func voiceClip(text any) string {
-	if !pyTruthy(text) {
+	if !anyutil.IsTrue(text) {
 		text = ""
 	}
 	s := strings.Join(strings.Fields(anyutil.String(text)), " ")
@@ -79,28 +79,28 @@ func voiceRow(voice map[string]any) *jsonutil.Object {
 	row := jsonutil.ObjectOf("voice_id", voice["voice_id"], "name", voice["name"])
 	for _, key := range []string{"gender", "age", "accent", "language", "descriptive", "use_case"} {
 		value := voice[key]
-		if !pyTruthy(value) {
+		if !anyutil.IsTrue(value) {
 			value = labels[key]
 		}
-		if !pyTruthy(value) {
+		if !anyutil.IsTrue(value) {
 			value = labels[strings.ReplaceAll(key, "_", " ")]
 		}
-		if pyTruthy(value) {
+		if anyutil.IsTrue(value) {
 			row.Set(key, value)
 		}
 	}
-	if pyTruthy(voice["category"]) {
+	if anyutil.IsTrue(voice["category"]) {
 		row.Set("category", voice["category"])
 	}
-	if pyTruthy(voice["description"]) {
+	if anyutil.IsTrue(voice["description"]) {
 		row.Set("description", voiceClip(voice["description"]))
 	}
 	if rate, ok := voice["rate"]; ok && rate != nil {
-		if f, isNum := pyRealNumber(rate); !isNum || f != 1 {
+		if f, isNum := realNumber(rate); !isNum || f != 1 {
 			row.Set("credit_rate", rate)
 		}
 	}
-	if pyTruthy(voice["preview_url"]) {
+	if anyutil.IsTrue(voice["preview_url"]) {
 		row.Set("preview_url", voice["preview_url"])
 	}
 	return row
@@ -136,7 +136,7 @@ func voiceRequestParams(source, query string, filters [][2]string, useCase, sort
 	if useCase != "" {
 		params.Add("use_cases", useCase)
 	}
-	n, _ := pyInt(orZeroString(page))
+	n, _ := wholeNumber(orZeroString(page))
 	params.Set("page", strconv.Itoa(n))
 	return "/v1/shared-voices", params, nil
 }
@@ -151,16 +151,16 @@ func orZeroString(page string) any {
 
 // Cursor of the next page, nil when the source reports no more
 func voiceNextPage(source string, body map[string]any, page string) any {
-	if !pyTruthy(body["has_more"]) {
+	if !anyutil.IsTrue(body["has_more"]) {
 		return nil
 	}
 	if source == "account" {
-		if pyTruthy(body["next_page_token"]) {
+		if anyutil.IsTrue(body["next_page_token"]) {
 			return body["next_page_token"]
 		}
 		return nil
 	}
-	n, _ := pyInt(orZeroString(page))
+	n, _ := wholeNumber(orZeroString(page))
 	return strconv.Itoa(n + 1)
 }
 
@@ -186,7 +186,7 @@ var elevenLabsVoicesGet = func(ctx context.Context, rawURL, apiKey string) (int,
 // One compact paginated page of ElevenLabs voices from the library or the account
 func searchVoices(ctx context.Context, find map[string]any, req *ttsRequest, apiKey string) string {
 	arg := func(name string) string {
-		if !pyTruthy(find[name]) {
+		if !anyutil.IsTrue(find[name]) {
 			return ""
 		}
 		return strings.TrimSpace(anyutil.String(find[name]))
@@ -200,10 +200,10 @@ func searchVoices(ctx context.Context, find map[string]any, req *ttsRequest, api
 	}
 	size := voicesDefaultPageSize
 	raw := find["page_size"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = voicesDefaultPageSize
 	}
-	if n, err := pyInt(raw); err == nil {
+	if n, err := wholeNumber(raw); err == nil {
 		size = max(1, min(voicesMaxPageSize, n))
 	}
 	var filters [][2]string
@@ -243,7 +243,7 @@ func searchVoices(ctx context.Context, find map[string]any, req *ttsRequest, api
 	}
 	result := jsonutil.ObjectOf("success", true, "source", source, "count", len(voices), "voices", voices,
 		"next_page", voiceNextPage(source, body, page), "configured_voice_id", configured)
-	if source == "library" && pyTruthy(body["total_count"]) {
+	if source == "library" && anyutil.IsTrue(body["total_count"]) {
 		result.Set("total", body["total_count"])
 	}
 	return ttsDumps(result)

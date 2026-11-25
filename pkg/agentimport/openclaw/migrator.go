@@ -100,7 +100,7 @@ func NewMigrator(o MigratorOptions) (m *Migrator, err error) {
 		m.overflowDir = pathutil.Join(m.outputDir, "overflow")
 	}
 	ocConfig := m.loadOpenClawConfig()
-	ws := strip(pyStrOrEmpty(or(dget(dget(dget(ocConfig, "agents", jsonutil.NewObject()), "defaults", jsonutil.NewObject()), "workspace", nil), "")))
+	ws := strip(requiredText(or(dget(dget(dget(ocConfig, "agents", jsonutil.NewObject()), "defaults", jsonutil.NewObject()), "workspace", nil), "")))
 	if ws != "" {
 		expanded, eerr := pathutil.ExpandUserPath(ws)
 		if eerr != nil {
@@ -128,20 +128,20 @@ func NewMigrator(o MigratorOptions) (m *Migrator, err error) {
 	if v := dget(cfg, "memory", nil); isDict(v) {
 		memCfg = v
 	}
-	if m.memoryLimit, err = pyInt(dget(memCfg, "memory_char_limit", int64(DefaultMemoryCharLimit))); err != nil {
+	if m.memoryLimit, err = wholeNumber(dget(memCfg, "memory_char_limit", int64(DefaultMemoryCharLimit))); err != nil {
 		return nil, err
 	}
-	if m.userLimit, err = pyInt(dget(memCfg, "user_char_limit", int64(DefaultUserCharLimit))); err != nil {
+	if m.userLimit, err = wholeNumber(dget(memCfg, "user_char_limit", int64(DefaultUserCharLimit))); err != nil {
 		return nil, err
 	}
 	if !containsString(SkillConflictModes, m.skillConflictMode) {
-		return nil, &PyError{Type: "ValueError", Msg: "Unknown skill conflict mode: " + m.skillConflictMode + ". Valid modes: " + strings.Join(SkillConflictModes, ", ")}
+		return nil, &KindError{Type: "ValueError", Msg: "Unknown skill conflict mode: " + m.skillConflictMode + ". Valid modes: " + strings.Join(SkillConflictModes, ", ")}
 	}
 	return m, nil
 }
 
 // Text of a str value, AttributeError for any other type the way str.strip fails
-func pyStrOrEmpty(v any) string {
+func requiredText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
@@ -561,7 +561,7 @@ func (m *Migrator) migrateCommandAllowlist() {
 			if isDict(agent.Val) {
 				allowlist = dget(agent.Val, "allowlist", []any{})
 			}
-			for _, entry := range pyIter(allowlist) {
+			for _, entry := range elementsOf(allowlist) {
 				var pattern any
 				if isDict(entry) {
 					pattern = dget(entry, "pattern", nil)
@@ -572,7 +572,7 @@ func (m *Migrator) migrateCommandAllowlist() {
 			}
 		}
 	}
-	patterns = pySorted(uniqueInOrder(patterns))
+	patterns = sortedOf(uniqueInOrder(patterns))
 	if len(patterns) == 0 {
 		m.record("command-allowlist", source, destination, StatusSkipped, "No allowlist patterns found")
 		return
@@ -586,7 +586,7 @@ func (m *Migrator) migrateCommandAllowlist() {
 	if !ok {
 		current = []any{}
 	}
-	merged := pySorted(uniqueInOrder(append(append([]any{}, current...), patterns...)))
+	merged := sortedOf(uniqueInOrder(append(append([]any{}, current...), patterns...)))
 	var added []any
 	for _, p := range merged {
 		if !contains(current, p) {
@@ -687,7 +687,7 @@ func newAdditions() *envFile { return &envFile{vals: map[string]string{}} }
 func joinUsers(list []any) string {
 	var users []string
 	for _, u := range list {
-		if s := strip(pyStr(u)); s != "" {
+		if s := strip(anyutil.String(u)); s != "" {
 			users = append(users, s)
 		}
 	}
@@ -754,7 +754,7 @@ func (m *Migrator) migrateWorkingDirectory(wsPath string) {
 	if !isDict(terminalCfg) {
 		terminalCfg = newYAMLMap()
 	}
-	current := strip(pyStr(or(dget(terminalCfg, "cwd", nil), "")))
+	current := strip(anyutil.String(or(dget(terminalCfg, "cwd", nil), "")))
 	if current == wsPath {
 		m.record("working-directory", source, destination, StatusSkipped, "terminal.cwd already set to the same value")
 		return
@@ -936,7 +936,7 @@ func (m *Migrator) migrateProviderKeys(cfg *jsonutil.Object) {
 					requireHashable(src)
 					if eqStr(src, "file") || eqStr(src, "exec") {
 						m.record("provider-keys", configPath, "", StatusSkipped,
-							fmt.Sprintf("Provider '%s' uses a %s-backed SecretRef that cannot be auto-migrated. Add this key manually via: icebath config set", p.Key, pyStr(dindex(rawKey, "source"))))
+							fmt.Sprintf("Provider '%s' uses a %s-backed SecretRef that cannot be auto-migrated. Add this key manually via: icebath config set", p.Key, anyutil.String(dindex(rawKey, "source"))))
 					}
 				}
 				continue

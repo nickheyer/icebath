@@ -61,7 +61,7 @@ func TestA2AHistoryToolRecallsConversation(t *testing.T) {
 	if out := A2AHistory(ctx, map[string]any{"contextId": "ctx-long", "limit": "bad"}); !strings.Contains(out, strings.Repeat("x", 1000)+" …[truncated]") {
 		t.Fatalf("long out %q", out)
 	}
-	if out := A2AHistory(ctx, map[string]any{"context_id": "nope"}); out != "No persisted conversation for context 'nope'." {
+	if out := A2AHistory(ctx, map[string]any{"context_id": "nope"}); out != `No persisted conversation for context "nope".` {
 		t.Fatalf("missing out %q", out)
 	}
 }
@@ -216,8 +216,8 @@ func TestClientSendsV1MethodAndUnwrapsResponse(t *testing.T) {
 }
 
 func TestCallMapsHTTPAndPeerErrors(t *testing.T) {
-	for code, want := range map[int]string{401: "Error: peer 'r' rejected auth (HTTP 401). Check the configured token.",
-		429: "Error: peer 'r' rate limited us (HTTP 429). Retry later.", 500: "Error: call to 'r' failed — HTTP 500."} {
+	for code, want := range map[int]string{401: `Error: peer "r" rejected auth (HTTP 401). Check the configured token.`,
+		429: `Error: peer "r" rate limited us (HTTP 429). Retry later.`, 500: `Error: call to "r" failed — HTTP 500.`} {
 		swapToolSeams(t, peers("r"), nilCard, func(string, *jsonutil.Object) (any, error) { return nil, &HTTPError{Code: code, Reason: "x"} })
 		if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != want {
 			t.Fatalf("code %d out %q", code, out)
@@ -226,14 +226,14 @@ func TestCallMapsHTTPAndPeerErrors(t *testing.T) {
 	swapToolSeams(t, peers("r"), nilCard, func(string, *jsonutil.Object) (any, error) {
 		return mustLoads(t, `{"error": {"code": -1, "message": "nope"}}`), nil
 	})
-	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != "Peer 'r' returned an error: nope" {
+	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != `Peer "r" returned an error: nope` {
 		t.Fatalf("out %q", out)
 	}
 	swapToolSeams(t, peers("r"), nilCard, func(string, *jsonutil.Object) (any, error) { return nil, errors.New("boom") })
-	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != "Error: call to 'r' failed — boom." {
+	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != `Error: call to "r" failed — boom.` {
 		t.Fatalf("out %q", out)
 	}
-	if out := A2ACall(context.Background(), map[string]any{"agent": "ghost", "message": "m"}); !strings.HasPrefix(out, "Error: unknown agent 'ghost'.") {
+	if out := A2ACall(context.Background(), map[string]any{"agent": "ghost", "message": "m"}); !strings.HasPrefix(out, `Error: unknown agent "ghost".`) {
 		t.Fatalf("out %q", out)
 	}
 }
@@ -259,7 +259,7 @@ func TestHTTPJSONAgainstALivePeer(t *testing.T) {
 	if !strings.Contains(out, "Agent: old") || !strings.Contains(out, "Protocol: v? (pre-1.0 card)") || !strings.Contains(out, "  - x: ") {
 		t.Fatalf("discover %q", out)
 	}
-	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); !strings.Contains(out, "'utf-8' codec can't decode byte 0xff") {
+	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != `Error: call to "r" failed — peer response: invalid UTF-8 at byte 0.` {
 		t.Fatalf("call %q", out)
 	}
 }
@@ -305,7 +305,7 @@ func TestMatchPeersByCapability(t *testing.T) {
 func TestAllModeReturnsEveryReply(t *testing.T) {
 	swapPeerCalls(t, func(name string) string { return "reply from " + name })
 	out := A2AOrchestrate(context.Background(), map[string]any{"capability": "research", "message": "go"})
-	want := "Orchestrated 'research' to 2 peer(s):\n\n--- generalist ---\nreply from generalist\n\n--- researcher ---\nreply from researcher"
+	want := `Orchestrated "research" to 2 peer(s):` + "\n\n--- generalist ---\nreply from generalist\n\n--- researcher ---\nreply from researcher"
 	if out != want {
 		t.Fatalf("out %q", out)
 	}

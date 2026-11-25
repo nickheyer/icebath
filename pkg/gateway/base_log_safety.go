@@ -2,12 +2,16 @@ package gateway
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
+	"io"
+	"net"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -137,14 +141,43 @@ func proxyShownInFull(proxy string) bool {
 	return proxyAuthority(proxy) == canonical
 }
 
-// "<error type> via <scheme://host:port>" for an error raised through a proxy URL that holds anything its rendering leaves out, user info, a path, a
+// "<failure> via <scheme://host:port>" for an error raised through a proxy URL that holds anything its rendering leaves out, user info, a path, a
 // query or a malformed authority; empty when the proxy holds nothing of the kind and the caller keeps the full error text. A transport may repeat the
 // proxy URL in its error text quoted, split or reformatted, so no part of that text is shown
 func DescribeProxyError(err error, proxyURL string) string {
 	if err == nil || proxyURL == "" || proxyShownInFull(proxyURL) {
 		return ""
 	}
-	return errorutil.Kind(err) + " via " + proxyAuthority(proxyURL)
+	return proxyFailureReason(err) + " via " + proxyAuthority(proxyURL)
+}
+
+// Short reason of a request failure read from the errors it wraps, never from its text: a timeout, a refused, reset or closed connection, a failed
+// name lookup, a TLS or certificate failure, else "request failed"
+func proxyFailureReason(err error) string {
+	var netErr net.Error
+	var dnsErr *net.DNSError
+	var certErr *tls.CertificateVerificationError
+	var recordErr tls.RecordHeaderError
+	var alertErr tls.AlertError
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()):
+		return "timed out"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.As(err, &dnsErr):
+		return "name lookup failed"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection refused"
+	case errors.Is(err, syscall.ECONNRESET):
+		return "connection reset"
+	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
+		return "connection closed"
+	case errors.As(err, &certErr):
+		return "certificate verification failed"
+	case errors.As(err, &recordErr) || errors.As(err, &alertErr):
+		return "TLS handshake failed"
+	}
+	return "request failed"
 }
 
 // Text of a failed request for a log line or a send result: the redacted form when the request went through a proxy whose URL holds a secret the raw

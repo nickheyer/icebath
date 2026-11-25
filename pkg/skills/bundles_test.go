@@ -102,7 +102,7 @@ func TestBundleFileShapesAreSkippedOrRaised(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(sortedNames(out), []string{"/stem"}) || !reflect.DeepEqual(out["/stem"]["skills"], []any{"1", "True", "None"}) || out["/stem"]["description"] != "Load 3 skills as a bundle" {
+	if !reflect.DeepEqual(sortedNames(out), []string{"/stem"}) || !reflect.DeepEqual(out["/stem"]["skills"], []any{"1", "true"}) || out["/stem"]["description"] != "Load 2 skills as a bundle" {
 		t.Fatalf("shapes %v", out)
 	}
 	os.WriteFile(filepath.Join(dir, "zz.yaml"), []byte("name: \xff\n"), 0o644)

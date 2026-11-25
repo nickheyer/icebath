@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Home of a named routed profile, the unresolved marker never standing for the launch profile
@@ -148,16 +148,7 @@ func (r *GatewayRunner) connectAdapterBounded(ctx context.Context, adapter gatew
 		ok, _ := result.(bool)
 		return ok, nil
 	}
-	return false, &gateway.PyError{Kind: "TimeoutError", Msg: fmt.Sprintf("%s connect timed out after %s", platform, pyFormatG(timeout))}
-}
-
-// Python format of a float under the g presentation
-func pyFormatG(value float64) string {
-	text, err := templateutil.Format("{v:g}", map[string]any{"v": value})
-	if err != nil {
-		return anyutil.String(value)
-	}
-	return text
+	return false, &errorutil.Error{Kind: "TimeoutError", Msg: fmt.Sprintf("%s connect timed out after %s", platform, anyutil.String(timeout))}
 }
 
 // Cold start connect with the replace intent visible only during this wait

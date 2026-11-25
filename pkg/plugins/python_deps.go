@@ -132,7 +132,7 @@ func dependencyGaps(gateway, backend any) (missing []string, in []string, err er
 		process string
 		raw     any
 	}{{"gateway", gateway}, {"backend", backend}} {
-		deps, err := pyStrItems(gap.raw)
+		deps, err := strItems(gap.raw)
 		if err != nil {
 			return nil, nil, err
 		}

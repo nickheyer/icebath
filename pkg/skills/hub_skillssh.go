@@ -29,15 +29,15 @@ const (
 )
 
 var (
-	skillsShLocRe         = pyMust(`(?i)<loc>([^<]+)</loc>`)
-	skillsShSitemapSkill  = pyMustNamed(`(?i)^https?://(?:www\.)?skills\.sh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<skill>[^/]+)/?$`)
-	skillsShSkillLinkRe   = pyMustNamed(`href=["']/(?P<id>(?!agents/|_next/|api/)[^"'/]+/[^"'/]+/[^"'/]+)["']`)
-	skillsShInstallCmdRe  = pyMustNamed(`(?i)npx\s+skills\s+add\s+(?P<repo>https?://github\.com/[^\s<]+|[^\s<]+)(?:\s+--skill\s+(?P<skill>[^\s<]+))?`)
-	skillsShPageH1Re      = pyMust(`(?is)<h1[^>]*>(?P<title>.*?)</h1>`)
-	skillsShProseH1Re     = pyMust(`(?is)<div[^>]*class=["'][^"']*prose[^"']*["'][^>]*>.*?<h1[^>]*>(?P<title>.*?)</h1>`)
-	skillsShProsePRe      = pyMust(`(?is)<div[^>]*class=["'][^"']*prose[^"']*["'][^>]*>.*?<p[^>]*>(?P<body>.*?)</p>`)
-	skillsShWeeklyRe      = pyMustNamed(`(?s)Weekly Installs.*?children\\":\\"(?P<count>[0-9.,Kk]+)\\"`)
-	skillsShAuditVerdict  = pyMust(`(?i)(Pass|Warn|Fail)`)
+	skillsShLocRe         = must(`(?i)<loc>([^<]+)</loc>`)
+	skillsShSitemapSkill  = mustNamed(`(?i)^https?://(?:www\.)?skills\.sh/(?P<owner>[^/]+)/(?P<repo>[^/]+)/(?P<skill>[^/]+)/?$`)
+	skillsShSkillLinkRe   = mustNamed(`href=["']/(?P<id>(?!agents/|_next/|api/)[^"'/]+/[^"'/]+/[^"'/]+)["']`)
+	skillsShInstallCmdRe  = mustNamed(`(?i)npx\s+skills\s+add\s+(?P<repo>https?://github\.com/[^\s<]+|[^\s<]+)(?:\s+--skill\s+(?P<skill>[^\s<]+))?`)
+	skillsShPageH1Re      = must(`(?is)<h1[^>]*>(?P<title>.*?)</h1>`)
+	skillsShProseH1Re     = must(`(?is)<div[^>]*class=["'][^"']*prose[^"']*["'][^>]*>.*?<h1[^>]*>(?P<title>.*?)</h1>`)
+	skillsShProsePRe      = must(`(?is)<div[^>]*class=["'][^"']*prose[^"']*["'][^>]*>.*?<p[^>]*>(?P<body>.*?)</p>`)
+	skillsShWeeklyRe      = mustNamed(`(?s)Weekly Installs.*?children\\":\\"(?P<count>[0-9.,Kk]+)\\"`)
+	skillsShAuditVerdict  = must(`(?i)(Pass|Warn|Fail)`)
 	skillsShSanitizeToken = regexp.MustCompile(`[^a-z0-9/_-]+`)
 	skillsShIDPrefixes    = []string{"skills-sh/", "skills.sh/", "skils-sh/", "skils.sh/"}
 	skillsShBasePaths     = []string{"skills/", ".agents/skills/", ".claude/skills/"}
@@ -107,7 +107,7 @@ func (s *SkillsShSource) Search(ctx context.Context, query string, limit int) (o
 		return nil, err
 	}
 	if ok {
-		return pyHeadMetas(cached, limit), nil
+		return headMetas(cached, limit), nil
 	}
 	data, err := s.h.getJSON(ctx, skillsShSearchURL, hubGet{Params: url.Values{"q": {query}, "limit": {fmt.Sprint(limit)}}})
 	if err != nil {
@@ -118,14 +118,14 @@ func (s *SkillsShSource) Search(ctx context.Context, query string, limit int) (o
 	}
 	var items any = []any{}
 	if o, isObj := data.(*jsonutil.Object); isObj {
-		items = pyGet(o, "skills", []any{})
+		items = lookup(o, "skills", []any{})
 	}
 	list, isList := items.([]any)
 	if !isList {
 		return []SkillMeta{}, nil
 	}
 	results := []SkillMeta{}
-	for _, item := range pyHeadAny(list, limit) {
+	for _, item := range headAny(list, limit) {
 		if m := s.metaFromSearchItem(item); m != nil {
 			results = append(results, *m)
 		}
@@ -137,7 +137,7 @@ func (s *SkillsShSource) Search(ctx context.Context, query string, limit int) (o
 }
 
 // First limit items with Python slice semantics for a negative limit
-func pyHeadAny(list []any, limit int) []any {
+func headAny(list []any, limit int) []any {
 	if limit < 0 {
 		limit = max(len(list)+limit, 0)
 	}
@@ -206,7 +206,7 @@ func (s *SkillsShSource) sitemapCatalog(ctx context.Context, limit int) []SkillM
 	const key = "skills_sh_sitemap_v1"
 	headOrAll := func(r []SkillMeta) []SkillMeta {
 		if limit > 0 {
-			return pyHeadMetas(r, limit)
+			return headMetas(r, limit)
 		}
 		return r
 	}
@@ -277,7 +277,7 @@ func (s *SkillsShSource) featuredSkills(ctx context.Context, limit int) []SkillM
 		hubRaise(err)
 	}
 	if ok {
-		return pyHeadMetas(cached, limit)
+		return headMetas(cached, limit)
 	}
 	html, ok, err := s.h.getText(ctx, skillsShBaseURL, hubGet{})
 	if err != nil {
@@ -511,13 +511,13 @@ func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier stri
 	}
 	repo := defaultRepo
 	if detail != nil {
-		repo = anyutil.String(pyGet(detail, "repo", defaultRepo))
+		repo = anyutil.String(lookup(detail, "repo", defaultRepo))
 	}
 	token := skillPath[strings.LastIndex(skillPath, "/")+1:]
 	tokens := []any{token}
 	if detail != nil {
 		for _, k := range []string{"install_skill", "page_title", "body_title"} {
-			tokens = append(tokens, pyGet(detail, k, ""))
+			tokens = append(tokens, lookup(detail, k, ""))
 		}
 	}
 	matchIn := func(basePath string) (found string) {
@@ -552,14 +552,14 @@ func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier stri
 		}
 		list, _ := entries.([]any)
 		for _, entry := range list {
-			if pyGet(entry, "type", nil) != "dir" {
+			if lookup(entry, "type", nil) != "dir" {
 				continue
 			}
 			nameV, has := entry.(*jsonutil.Object).Get("name")
 			if !has {
 				hubRaise(errors.New("a skills.sh entry has no name"))
 			}
-			dirName := pyStrOf(nameV)
+			dirName := hubText(nameV)
 			if strings.HasPrefix(dirName, ".") || strings.HasPrefix(dirName, "_") || dirName == "skills" || dirName == ".agents" || dirName == ".claude" {
 				continue
 			}
@@ -605,7 +605,7 @@ func (s *SkillsShSource) finalizeInspectMeta(meta *SkillMeta, canonical string, 
 	}
 	meta.Extra = merged
 	if detail != nil {
-		summary, weekly := pyGet(detail, "body_summary", nil), pyGet(detail, "weekly_installs", nil)
+		summary, weekly := lookup(detail, "body_summary", nil), lookup(detail, "weekly_installs", nil)
 		if anyutil.IsTrue(summary) {
 			meta.Description = anyutil.String(summary)
 		} else if meta.Description != "" && anyutil.IsTrue(weekly) {

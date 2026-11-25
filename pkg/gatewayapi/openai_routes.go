@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -113,7 +114,7 @@ func parseChatMessages(ctx context.Context, messages []any) (*string, []*jsonuti
 	for idx, raw := range messages {
 		msg, ok := raw.(*jsonutil.Object)
 		if !ok {
-			panic(&gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)})
+			panic(&errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)})
 		}
 		role := msg.ValueOr("role", "")
 		rawContent := msg.ValueOr("content", "")
@@ -306,7 +307,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 	}
 	body, _ := raw.(*jsonutil.Object)
 	if body == nil {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 	}
 	relayMetadata := requestRelayMetadata(body)
 	messages, ok := body.ValueOr("messages", nil).([]any)
@@ -480,8 +481,8 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 	echoed := providedSessionID
 	if echoed == "" {
 		echoed = anyutil.String(firstTruthy(result["session_id"], sessionID))
-		if _, has := result["session_id"]; has {
-			echoed = anyutil.String(result["session_id"])
+		if sid, has := result["session_id"]; has && sid != nil {
+			echoed = anyutil.String(sid)
 		}
 	}
 	headers := map[string]string{"X-Icebath-Session-Id": echoed}

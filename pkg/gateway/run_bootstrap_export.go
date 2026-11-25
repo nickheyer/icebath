@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -53,10 +54,10 @@ func CurrentProfileServedByRunningMultiplexer(ctx context.Context) (bool, error)
 func PlannedStopMarkerPath() string { return plannedStopMarkerPath() }
 
 // Python equality of two decoded JSON values
-func PyValuesEqual(a, b any) bool { return pyEq(a, b) }
+func ValuesEqual(a, b any) bool { return anyutil.Equal(a, b) }
 
 // Whether v is a Python int that is not a bool
-func PyIsInt(v any) bool { return pyIsInt(v) }
+func IsInt(v any) bool { return isIntValue(v) }
 
 // Freezes the served profile homes boot reserved, the _runtime_profile_homes the config carries
 func (c *GatewayConfig) SetRuntimeProfileHomes(homes []profiles.ServedProfile) {

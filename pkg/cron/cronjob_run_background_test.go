@@ -141,12 +141,12 @@ func TestBackgroundFailedRunReportsErrorStatus(t *testing.T) {
 	out := waitOut(t, rec)
 	st, _ := out.Get("status")
 	errText, _ := out.Get("error")
-	if st != "error" || !strings.Contains(pyStrOf(errText), "provider exploded") {
+	if st != "error" || !strings.Contains(strOf(errText), "provider exploded") {
 		t.Fatalf("completion %v", out)
 	}
 }
 
-func pyStrOf(v any) string {
+func strOf(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
@@ -161,7 +161,7 @@ func TestBackgroundClaimLostReportsWithoutDispatch(t *testing.T) {
 	}
 	rec := installDispatch(t, "dispatched")
 	res := s.tryDispatchBackgroundRun(context.Background(), bgEnv(s, "agent:main:telegram:dm:123"), job, nil, nil)
-	if res == nil || res.Claimed || !strings.Contains(pyStrOf(res.Error), "paused/disabled") || rec.calls != 0 {
+	if res == nil || res.Claimed || !strings.Contains(strOf(res.Error), "paused/disabled") || rec.calls != 0 {
 		t.Fatalf("result %+v calls %d", res, rec.calls)
 	}
 }
@@ -199,11 +199,11 @@ func TestRunClaimedJobInFlightDedupe(t *testing.T) {
 	runs := installRunOneJob(t, markOK)
 	rec := installDispatch(t, "dispatched")
 	res := s.runClaimedJob(context.Background(), job, nil)
-	if res.Success || !strings.Contains(pyStrOf(res.Error), "already running") || runs.Load() != 0 {
+	if res.Success || !strings.Contains(strOf(res.Error), "already running") || runs.Load() != 0 {
 		t.Fatalf("result %+v", res)
 	}
 	bg := s.tryDispatchBackgroundRun(context.Background(), bgEnv(s, "agent:main:telegram:dm:123"), job, nil, nil)
-	if bg == nil || bg.Claimed || !strings.Contains(pyStrOf(bg.Error), "already running") || rec.calls != 0 {
+	if bg == nil || bg.Claimed || !strings.Contains(strOf(bg.Error), "already running") || rec.calls != 0 {
 		t.Fatalf("background %+v", bg)
 	}
 	s.releaseRunningJob(job.ID, s.home, "test")
@@ -310,7 +310,7 @@ func TestRunnerSummaryDeliveryWiring(t *testing.T) {
 	})
 	s.tryDispatchBackgroundRun(context.Background(), bgEnv(s, "agent:main:telegram:dm:83993"), job, nil, nil)
 	summary, _ := waitOut(t, rec).Get("summary")
-	sum := pyStrOf(summary)
+	sum := strOf(summary)
 	for _, want := range []string{"Delivery target: telegram", "delivery FAILED", "telegram send failed: 400", "Result: FAILED"} {
 		if !strings.Contains(sum, want) {
 			t.Fatalf("summary %q lacks %q", sum, want)
@@ -325,7 +325,7 @@ func TestRunnerSummaryDeliveryWiring(t *testing.T) {
 	installRunOneJob(t, markOK)
 	s.tryDispatchBackgroundRun(context.Background(), bgEnv(s, "agent:main:telegram:dm:86622"), local, nil, nil)
 	summary, _ = waitOut(t, rec2).Get("summary")
-	if sum := pyStrOf(summary); !strings.Contains(sum, "Delivery target: local (output saved locally only)") || strings.Contains(sum, "delivered there by the job itself") {
+	if sum := strOf(summary); !strings.Contains(sum, "Delivery target: local (output saved locally only)") || strings.Contains(sum, "delivered there by the job itself") {
 		t.Fatalf("local summary %q", sum)
 	}
 }
@@ -349,7 +349,7 @@ func TestRunNoticeOmitsUsageNoRunSessionRecorded(t *testing.T) {
 		s.tryDispatchBackgroundRun(context.Background(), bgEnv(s, "agent:main:telegram:dm:4242"), job, nil, nil)
 		out := waitOut(t, rec)
 		model, _ := out.Get("model")
-		if _, ok := out.Get("api_calls"); ok || pyStrOf(model) != "" {
+		if _, ok := out.Get("api_calls"); ok || strOf(model) != "" {
 			t.Fatalf("completion %v", out)
 		}
 	}

@@ -206,7 +206,7 @@ func TestVisionPickerCustomEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	vision, _ := pyDictOf(section(cfg, "auxiliary")["vision"])
+	vision, _ := dictOf(section(cfg, "auxiliary")["vision"])
 	if vision["base_url"] != "https://my.endpoint/v1" || vision["model"] != "my-vision-model" || vision["provider"] != "custom" {
 		t.Fatalf("vision %v", vision)
 	}

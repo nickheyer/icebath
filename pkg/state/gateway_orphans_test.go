@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -89,7 +90,7 @@ func orLastActivity(t *testing.T, db *SessionDB, id string) float64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, _ := pyFloatOf(rowValue(row, "last_activity_at"))
+	f, _ := floatOf(rowValue(row, "last_activity_at"))
 	return f
 }
 
@@ -162,7 +163,7 @@ func TestTwoPredecessorsInTheWindowFailClosed(t *testing.T) {
 	orMk(t, db, "20260803_120104_other", orOpts{userID: &empty, startedAt: orF(quietAt - 3600), lastActivityAt: orF(quietAt), endReason: "agent_close", messages: 2})
 	profileExec(t, db, "UPDATE sessions SET user_id = NULL, session_key = ? WHERE id = ?", "agent:main:telegram:dm:999", "20260803_120104_other")
 	r := orFind(t, db)[0]
-	if rowValue(r, "adoptable") != false || !strings.Contains(pyStr(rowValue(r, "reason")), "ambiguous") {
+	if rowValue(r, "adoptable") != false || !strings.Contains(anyutil.String(rowValue(r, "reason")), "ambiguous") {
 		t.Fatalf("record %v", r)
 	}
 }
@@ -176,7 +177,7 @@ func TestTwoOrphansClaimingOnePredecessorFailClosed(t *testing.T) {
 		t.Fatalf("records %v", records)
 	}
 	for _, r := range records {
-		if rowValue(r, "adoptable") != false || !strings.Contains(pyStr(rowValue(r, "reason")), "ambiguous") {
+		if rowValue(r, "adoptable") != false || !strings.Contains(anyutil.String(rowValue(r, "reason")), "ambiguous") {
 			t.Fatalf("record %v", r)
 		}
 	}
@@ -224,7 +225,7 @@ func TestAdoptionMovesRecoveryToTheLiveConversation(t *testing.T) {
 		t.Fatal("adoption refused")
 	}
 	after := orResolve(t, db)
-	if rowValue(after, "id") != orphan || rowValue(after, "chat_id") != orUser || !pyTruthy(rowValue(after, "origin_json")) || rowValue(after, "parent_session_id") != stale {
+	if rowValue(after, "id") != orphan || rowValue(after, "chat_id") != orUser || !anyutil.IsTrue(rowValue(after, "origin_json")) || rowValue(after, "parent_session_id") != stale {
 		t.Fatalf("after %v", after)
 	}
 }

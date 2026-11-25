@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Format hinted and scope stamped metadata of a text frame
@@ -25,7 +26,7 @@ func (a *RelayAdapter) draftFrame(chatID string, draftID int, content string, fi
 // Streams one draft frame, a sealed stream's straggler swallowed and a declined frame retiring the open draft
 func (a *RelayAdapter) SendDraft(ctx context.Context, chatID string, draftID int, content string, metadata map[string]any) (SendResult, error) {
 	if !a.SupportsDraftStreaming("", nil, chatID) {
-		return SendResult{}, &PyError{Kind: "NotImplementedError", Msg: "connector does not advertise the 'draft' relay op"}
+		return SendResult{}, &errorutil.Error{Kind: "NotImplementedError", Msg: "connector does not advertise the 'draft' relay op"}
 	}
 	if a.transport == nil {
 		return SendResult{Success: false, Error: "no transport"}, nil
@@ -86,7 +87,7 @@ func (a *RelayAdapter) sealOpenDraft(ctx context.Context, chatID, content string
 	draftID, ok := a.openDraftByChat.pop(draftKey)
 	if !ok {
 		a.mu.Unlock()
-		return SendResult{}, &PyError{"KeyError", anyutil.Quote(draftKey)}
+		return SendResult{}, &errorutil.Error{"KeyError", anyutil.Quote(draftKey)}
 	}
 	a.sealedDraftByChat.set(draftKey, draftID)
 	a.sealedDraftByChat.evict(relayDraftStateCap)

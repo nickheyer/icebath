@@ -77,7 +77,7 @@ func validateHAConfig(ctx context.Context, config *gateway.PlatformConfig) (bool
 func domainOf(entityID any) (string, error) {
 	id, ok := entityID.(string)
 	if !ok {
-		return "", &pyErr{"TypeError", fmt.Sprintf("an entity id must be text, got %s", errchain.Kind(entityID))}
+		return "", &kindErr{"TypeError", fmt.Sprintf("an entity id must be text, got %s", errchain.Kind(entityID))}
 	}
 	if !strings.Contains(id, ".") {
 		return "", nil
@@ -256,7 +256,7 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	kind, err := pyGet(msg, "type", nil)
+	kind, err := lookup(msg, "type", nil)
 	if err != nil {
 		return false, err
 	}
@@ -269,7 +269,7 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if msg, err = receiveJSON(ctx, conn); err != nil {
 		return false, err
 	}
-	if kind, err = pyGet(msg, "type", nil); err != nil {
+	if kind, err = lookup(msg, "type", nil); err != nil {
 		return false, err
 	}
 	if kind != "auth_ok" {
@@ -281,7 +281,7 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if msg, err = receiveJSON(ctx, conn); err != nil {
 		return false, err
 	}
-	success, err := pyGet(msg, "success", nil)
+	success, err := lookup(msg, "success", nil)
 	if err != nil {
 		return false, err
 	}
@@ -402,14 +402,14 @@ func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 			pkgLog().Debug(fmt.Sprintf("Invalid JSON from HA WS: %s", textutil.First(text, 200)))
 			continue
 		}
-		kind, err := pyGet(data, "type", nil)
+		kind, err := lookup(data, "type", nil)
 		if err != nil {
 			return err
 		}
 		if kind != "event" {
 			continue
 		}
-		event, err := pyGet(data, "event", jsonutil.NewObject())
+		event, err := lookup(data, "event", jsonutil.NewObject())
 		if err != nil {
 			return err
 		}
@@ -437,11 +437,11 @@ func (a *HomeAssistantAdapter) passesFilters(entityID any) (bool, error) {
 
 // Forwards one state_changed event as a channel message after the filters and the per entity cooldown
 func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) error {
-	eventData, err := pyGet(event, "data", jsonutil.NewObject())
+	eventData, err := lookup(event, "data", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
-	entityID, err := pyGet(eventData, "entity_id", "")
+	entityID, err := lookup(eventData, "entity_id", "")
 	if err != nil {
 		return err
 	}
@@ -471,11 +471,11 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 	if err != nil {
 		return err
 	}
-	oldState, err := pyGet(eventData, "old_state", jsonutil.NewObject())
+	oldState, err := lookup(eventData, "old_state", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
-	newState, err := pyGet(eventData, "new_state", jsonutil.NewObject())
+	newState, err := lookup(eventData, "new_state", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
@@ -494,6 +494,15 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 	return a.HandleMessage(ctx, messageEvent)
 }
 
+// Value of a key of a state mapping, the default when the key is absent or holds null
+func presentOr(v any, key string, def any) (any, error) {
+	val, err := lookup(v, key, def)
+	if err == nil && val == nil {
+		return def, nil
+	}
+	return val, err
+}
+
 // Human readable description of a state change, false when the new state is empty or unchanged
 func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 	if !anyutil.IsTrue(newState) {
@@ -501,20 +510,20 @@ func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 	}
 	var oldVal any = "unknown"
 	if anyutil.IsTrue(oldState) {
-		v, err := pyGet(oldState, "state", "unknown")
+		v, err := presentOr(oldState, "state", "unknown")
 		if err != nil {
 			return "", false, err
 		}
 		oldVal = v
 	}
-	newVal, err := pyGet(newState, "state", "unknown")
+	newVal, err := presentOr(newState, "state", "unknown")
 	if err != nil {
 		return "", false, err
 	}
 	if anyutil.Equal(oldVal, newVal) {
 		return "", false, nil
 	}
-	attrs, err := pyGet(newState, "attributes", jsonutil.NewObject())
+	attrs, err := lookup(newState, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return "", false, err
 	}
@@ -526,7 +535,7 @@ func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 	if !ok {
 		template = defaultTemplate
 	}
-	attr := func(key string, def any) (any, error) { return pyGet(attrs, key, def) }
+	attr := func(key string, def any) (any, error) { return presentOr(attrs, key, def) }
 	name, err := attr("friendly_name", entityID)
 	if err != nil {
 		return "", false, err

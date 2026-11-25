@@ -151,8 +151,8 @@ func Generate(ctx context.Context, env *tools.Env, prompt string, n int, referen
 			return "", "no result"
 		}
 		if !anyutil.IsTrue(result["success"]) {
-			if v, ok := result["error"]; ok {
-				return "", anyutil.String(v)
+			if text := anyutil.String(result["error"]); text != "" {
+				return "", text
 			}
 			return "", "unknown error"
 		}

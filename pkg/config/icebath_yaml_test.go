@@ -63,7 +63,7 @@ func TestSafeLoadRejectsPythonObjectConstruction(t *testing.T) {
 	for _, l := range yamlLoaders() {
 		t.Run(l.name, func(t *testing.T) {
 			_, err := l.load("!!python/object/apply:builtins.str ['must not construct']")
-			if !IsYAMLError(err) || !strings.Contains(err.Error(), "could not determine a constructor for the tag 'tag:yaml.org,2002:python/object/apply:builtins.str'") {
+			if !IsYAMLError(err) || !strings.Contains(err.Error(), `could not determine a constructor for the tag "tag:yaml.org,2002:python/object/apply:builtins.str"`) {
 				t.Fatalf("err = %v", err)
 			}
 		})
@@ -260,8 +260,8 @@ func TestSafeLoadRefusesASecondDocumentAndUnknownTags(t *testing.T) {
 	for doc, want := range map[string]string{
 		"a: [1, 2]\n---\nb: 1\n": "expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    a: [1, 2]\n    ^ (line: 1)\nbut found another document\n  in \"<unicode string>\", line 2, column 1:\n    ---\n    ^ (line: 2)",
 		"a: 1\n---\n":            "expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    a: 1\n    ^ (line: 1)\nbut found another document\n  in \"<unicode string>\", line 2, column 1:\n    ---\n    ^ (line: 2)",
-		"!foo bar":               "could not determine a constructor for the tag '!foo'\n  in \"<unicode string>\", line 1, column 1:\n    !foo bar\n    ^ (line: 1)",
-		"%TAG !e! tag:example.com,2000:\n---\na: !e!foo 1\n": "could not determine a constructor for the tag 'tag:example.com,2000:foo'\n  in \"<unicode string>\", line 3, column 4:\n    a: !e!foo 1\n       ^ (line: 3)",
+		"!foo bar":               "could not determine a constructor for the tag \"!foo\"\n  in \"<unicode string>\", line 1, column 1:\n    !foo bar\n    ^ (line: 1)",
+		"%TAG !e! tag:example.com,2000:\n---\na: !e!foo 1\n": "could not determine a constructor for the tag \"tag:example.com,2000:foo\"\n  in \"<unicode string>\", line 3, column 4:\n    a: !e!foo 1\n       ^ (line: 3)",
 	} {
 		if _, err := SafeLoad(doc); !IsYAMLError(err) || err.Error() != want {
 			t.Fatalf("%q err = %v", doc, err)

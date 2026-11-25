@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -89,20 +90,20 @@ func ownerRequest(ctx context.Context, ownerHome, verb string, params map[string
 	if id, _ := response.Get("id"); !anyutil.Equal(id, 1) {
 		return nil, runtimeRefusal("runtime_draining")
 	}
-	return pyItem(response, "result")
+	return itemValue(response, "result")
 }
 
 // Source owner attestation of one operation on a bound target, refusing a result naming no owner or another target
 func hostedAttest(ctx context.Context, binding *jsonutil.Object, operation string, params map[string]any) (*jsonutil.Object, error) {
-	sourceHome, err := pyItem(binding, "source_home")
+	sourceHome, err := itemValue(binding, "source_home")
 	if err != nil {
 		return nil, err
 	}
-	selector, err := pyItem(binding, "selector")
+	selector, err := itemValue(binding, "selector")
 	if err != nil {
 		return nil, err
 	}
-	targetHome, err := pyItem(binding, "target_home")
+	targetHome, err := itemValue(binding, "target_home")
 	if err != nil {
 		return nil, err
 	}
@@ -137,11 +138,11 @@ func hostedAttest(ctx context.Context, binding *jsonutil.Object, operation strin
 
 // Hosted owner principal namespaced by its source profile so equal owner strings never alias
 func hostedPrincipal(a *SessionAuthority, binding *jsonutil.Object) (Principal, error) {
-	sourceHome, err := pyItem(binding, "source_home")
+	sourceHome, err := itemValue(binding, "source_home")
 	if err != nil {
 		return Principal{}, err
 	}
-	owner, err := pyItem(binding, "owner")
+	owner, err := itemValue(binding, "owner")
 	if err != nil {
 		return Principal{}, err
 	}
@@ -167,7 +168,7 @@ func checkRemoteHostedAdmission(ctx context.Context, a *SessionAuthority, ref Se
 		refusal.Cause = err
 		return false, refusal
 	}
-	attachments, err := pyItem(attested, "attachments")
+	attachments, err := itemValue(attested, "attachments")
 	if err != nil {
 		return false, err
 	}
@@ -186,7 +187,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	}
 	requestID := rowString(row, "request_id")
 	if len(requestID) < 7 {
-		return nil, &PyError{Kind: "ValueError", Msg: "binding mismatch"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "binding mismatch"}
 	}
 	decoded, err := jsonutil.Decode(requestID[7:])
 	if err != nil {
@@ -194,7 +195,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	}
 	pair, ok := decoded.([]any)
 	if !ok || len(pair) != 2 {
-		return nil, &PyError{Kind: "ValueError", Msg: "not enough values to unpack"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "not enough values to unpack"}
 	}
 	principal, err := hostedPrincipal(a, binding)
 	if err != nil {
@@ -203,23 +204,23 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	targetHome, _ := binding.Get("target_home")
 	if !strings.HasPrefix(requestID, "hosted:") || !SameOwner(rowValue(row, "principal_id"), principal.Subject) ||
 		ref.ProfileID != a.ProfileID || !anyutil.Equal(targetHome, a.ProfileID) {
-		return nil, &PyError{Kind: "ValueError", Msg: "binding mismatch"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "binding mismatch"}
 	}
 	attested, err := hostedAttest(ctx, binding, "execute", map[string]any{"task": pair[0], "execution_generation": pair[1]})
 	if err != nil {
 		return nil, err
 	}
 	owner, _ := binding.Get("owner")
-	if attestedOwner, err := pyItem(attested, "owner"); err != nil {
+	if attestedOwner, err := itemValue(attested, "owner"); err != nil {
 		return nil, err
 	} else if !anyutil.Equal(attestedOwner, owner) {
-		return nil, &PyError{Kind: "ValueError", Msg: "owner changed"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "owner changed"}
 	}
-	prompt, err := pyItem(attested, "prompt")
+	prompt, err := itemValue(attested, "prompt")
 	if err != nil {
 		return nil, err
 	}
-	attachments, err := pyItem(attested, "attachments")
+	attachments, err := itemValue(attested, "attachments")
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +231,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 		return nil, err
 	}
 	if !anyutil.Equal(rowPayload(row), expected) {
-		return nil, &PyError{Kind: "ValueError", Msg: "input changed"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "input changed"}
 	}
 	return attested, nil
 }

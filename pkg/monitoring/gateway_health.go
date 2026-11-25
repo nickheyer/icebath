@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -142,46 +142,30 @@ func optionalState(raw any, allowed map[string]bool) *string {
 	return &s
 }
 
-// True for the int conversion errors Python callers catch as TypeError or ValueError
-func intConversionRejected(err error) bool {
-	var pe *errorutil.Error
-	return errors.As(err, &pe) && (pe.Kind == "TypeError" || pe.Kind == "ValueError")
-}
-
-// Positive Python int of a pid value, nil when absent, unparseable or not positive
-func coercePID(raw any) (any, error) {
-	n, err := anyutil.ToInt(raw)
-	if err != nil {
-		if intConversionRejected(err) {
-			return nil, nil
-		}
-		return nil, err
+// Positive pid of a value, nil when absent, not a whole number within the int64 range or not positive
+func coercePID(raw any) any {
+	if n, err := anyutil.ToInt(raw); err == nil && n > 0 {
+		return int(n)
 	}
-	if n > 0 {
-		return int(n), nil
-	}
-	return nil, nil
+	return nil
 }
 
 // Runtime status contract parse of active_agents, assigned by the gateway package
 var GatewayParseActiveAgents func(raw any) (any, error)
 
-// Active agents through the gateway contract, else a non negative int with zero for unparseable values
-func parseActiveAgents(raw any) (any, error) {
+// Active agents through the gateway contract, else a non negative int: zero for a value with no numeric form, below zero or not finite, the int64 bound for a finite one past it
+func parseActiveAgents(raw any) any {
 	if n, ok := gatewayParseActiveAgents(raw); ok {
-		return n, nil
+		return n
+	}
+	if f, isFloat := raw.(float64); isFloat && (math.IsInf(f, 0) || math.IsNaN(f)) {
+		return 0
 	}
 	n, err := anyutil.ToInt(raw)
-	if err != nil {
-		if intConversionRejected(err) {
-			return 0, nil
-		}
-		return nil, err
+	if (err != nil && !errors.Is(err, anyutil.ErrRange)) || n < 0 {
+		return 0
 	}
-	if n < 0 {
-		return 0, nil
-	}
-	return int(n), nil
+	return int(n)
 }
 
 // Gateway contract result, false when the contract is absent, fails or panics
@@ -252,7 +236,7 @@ func sameState(a, b *string) bool {
 }
 
 // Gateway lifecycle transition events with the startup_failed diagnostic and the exit event
-func lifecycleEvents(previous, current *jsonutil.Object, profile, version string) ([]Event, error) {
+func lifecycleEvents(previous, current *jsonutil.Object, profile, version string) []Event {
 	var prevState any
 	if previous != nil {
 		prevState, _ = previous.Get("gateway_state")
@@ -261,39 +245,27 @@ func lifecycleEvents(previous, current *jsonutil.Object, profile, version string
 	oldState := optionalState(prevState, knownGatewayStates)
 	newState := optionalState(curState, knownGatewayStates)
 	if sameState(oldState, newState) || newState == nil {
-		return nil, nil
+		return nil
 	}
 	restartRaw, _ := current.Get("restart_requested")
 	restartRequested := anyutil.IsTrue(restartRaw)
-	health := func(name string) (Event, error) {
+	health := func(name string) Event {
 		exitRaw, _ := current.Get("exit_reason")
 		activeRaw, ok := current.Get("active_agents")
 		if !ok {
 			activeRaw = 0
 		}
-		active, err := parseActiveAgents(activeRaw)
-		if err != nil {
-			return nil, err
-		}
 		pidRaw, _ := current.Get("pid")
-		pid, err := coercePID(pidRaw)
-		if err != nil {
-			return nil, err
-		}
 		ev := NewGatewayHealthEvent(name)
 		ev.GatewayState, ev.OldState, ev.NewState = newState, oldState, newState
 		ev.ExitReason = ClassifyExitReason(exitRaw, *newState, restartRequested)
 		ev.RestartRequested = &restartRequested
-		ev.ActiveAgents = active
+		ev.ActiveAgents = parseActiveAgents(activeRaw)
 		ev.Profile, ev.Version = &profile, &version
-		ev.PID = pid
-		return ev, nil
+		ev.PID = coercePID(pidRaw)
+		return ev
 	}
-	first, err := health("gateway.lifecycle")
-	if err != nil {
-		return nil, err
-	}
-	out := []Event{first}
+	out := []Event{health("gateway.lifecycle")}
 	if *newState == "startup_failed" {
 		exitRaw, _ := current.Get("exit_reason")
 		if !anyutil.IsTrue(exitRaw) {
@@ -307,13 +279,9 @@ func lifecycleEvents(previous, current *jsonutil.Object, profile, version string
 		out = append(out, diag)
 	}
 	if *newState == "stopped" {
-		exit, err := health("gateway.exit")
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, exit)
+		out = append(out, health("gateway.exit"))
 	}
-	return out, nil
+	return out
 }
 
 // Per platform state_change diagnostics plus platform.fatal when the new state is fatal
@@ -370,12 +338,7 @@ func EmitRuntimeStatusTransition(previous, current *jsonutil.Object) {
 		}
 	}()
 	profile, version := safeProfile(), safeVersion()
-	events, err := lifecycleEvents(previous, current, profile, version)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("gateway runtime status transition emit failed: %v", err))
-		return
-	}
-	events = append(events, platformEvents(previous, current, profile, version)...)
+	events := append(lifecycleEvents(previous, current, profile, version), platformEvents(previous, current, profile, version)...)
 	for _, ev := range events {
 		Emit(ev)
 	}

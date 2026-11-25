@@ -48,17 +48,6 @@ type CronAgent interface {
 	Close() error
 }
 
-// str(v or "") of a config value
-func pyStrOrEmpty(v any) string {
-	if !anyutil.IsTrue(v) {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return anyutil.String(v)
-}
-
 // First truthy value, the last value when none is, like a chain of or
 func firstTruthy(vals ...any) any {
 	for _, v := range vals {

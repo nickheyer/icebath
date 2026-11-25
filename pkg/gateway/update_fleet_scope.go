@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -62,7 +63,7 @@ func HomeInUpdateScope(ctx context.Context, h string, scope map[string]bool) boo
 // Home the spawn ledger records for a gateway pid on an exact live birth match, empty otherwise
 func ledgerGatewayHome(pid int) string {
 	for _, entry := range tools.LedgerEntries(tools.LedgerOptions{VerifiedOnly: true}) {
-		if pyEq(entry["pid"], pid) && pyEq(entry["purpose"], "gateway") {
+		if anyutil.Equal(entry["pid"], pid) && anyutil.Equal(entry["purpose"], "gateway") {
 			h, _ := entry[home.RecordKey].(string)
 			return h
 		}

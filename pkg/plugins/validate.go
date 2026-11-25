@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"gopkg.in/yaml.v3"
@@ -104,7 +105,7 @@ func requiresIcebathSpecValid(spec string) bool {
 func checkManifestFields(report *ValidationReport, manifest map[string]any) {
 	missing := []string{}
 	for _, f := range []string{"name", "version", "description"} {
-		if !config.PyTruthy(manifest[f]) {
+		if !anyutil.IsTrue(manifest[f]) {
 			missing = append(missing, f)
 		}
 	}
@@ -118,8 +119,8 @@ func checkManifestFields(report *ValidationReport, manifest map[string]any) {
 // The requires_icebath value, the retired key spelling when it is empty, as the manifest loader reads it
 func manifestRequiresSpec(manifest map[string]any) string {
 	for _, key := range []string{"requires_icebath", "requires_hermes"} {
-		if v := manifest[key]; config.PyTruthy(v) {
-			if spec := strings.TrimSpace(config.PyStr(v)); spec != "" {
+		if v := manifest[key]; anyutil.IsTrue(v) {
+			if spec := strings.TrimSpace(anyutil.String(v)); spec != "" {
 				return spec
 			}
 		}
@@ -188,7 +189,7 @@ func checkConfigSpec(report *ValidationReport, raw any, order []string) {
 				continue
 			}
 			if typ, present := spec["type"]; present && typ != nil {
-				if _, known := ConfigSchemaTypes[strings.ToLower(config.PyStr(typ))]; !known {
+				if _, known := ConfigSchemaTypes[strings.ToLower(anyutil.String(typ))]; !known {
 					problems = append(problems, fmt.Sprintf("config_schema.%s: type must be one of %s", skey, strings.Join(types, "/")))
 				}
 			}
@@ -208,7 +209,7 @@ func checkConfigSpec(report *ValidationReport, raw any, order []string) {
 
 func checkRequiresEnv(report *ValidationReport, manifest map[string]any) {
 	raw := manifest["requires_env"]
-	if !config.PyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = []any{}
 	}
 	problems := []string{}
@@ -222,8 +223,8 @@ func checkRequiresEnv(report *ValidationReport, manifest map[string]any) {
 		case string:
 			name = e
 		case map[string]any:
-			if config.PyTruthy(e["name"]) {
-				name = config.PyStr(e["name"])
+			if anyutil.IsTrue(e["name"]) {
+				name = anyutil.String(e["name"])
 			}
 		default:
 			problems = append(problems, fmt.Sprintf("requires_env[%d]: must be a string or mapping", i))
@@ -442,10 +443,10 @@ func checkLoadable(report *ValidationReport, pluginDir string, manifest map[stri
 			present = append(present, rel)
 		}
 	}
-	if config.PyTruthy(manifest["provides_locales"]) && isDir(filepath.Join(pluginDir, "locales")) {
+	if anyutil.IsTrue(manifest["provides_locales"]) && isDir(filepath.Join(pluginDir, "locales")) {
 		present = append(present, "locales/ (language pack)")
 	}
-	if entry, ok := manifest["entry"]; ok && config.PyTruthy(entry) {
+	if entry, ok := manifest["entry"]; ok && anyutil.IsTrue(entry) {
 		present = append(present, "entry (runtime)")
 	}
 	if len(present) > 0 {
@@ -653,8 +654,8 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 	}
 	report.add("portable manifest", true, "plugin.json parses (Agent Plugins v1)")
 	name := ""
-	if config.PyTruthy(pkg.Manifest["name"]) {
-		name = strings.TrimSpace(config.PyStr(pkg.Manifest["name"]))
+	if anyutil.IsTrue(pkg.Manifest["name"]) {
+		name = strings.TrimSpace(anyutil.String(pkg.Manifest["name"]))
 	}
 	if name != "" {
 		report.add("manifest fields", true, "name present")
@@ -673,18 +674,18 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 		if cfg["trust"] == "untrusted" {
 			report.add("server trust: "+serverName, true, "untrusted (Icebath asks before every write-capable tool call)")
 		}
-		if costs := cfg["tool_costs"]; config.PyTruthy(costs) {
+		if costs := cfg["tool_costs"]; anyutil.IsTrue(costs) {
 			limit := cfg["spend_limit"]
-			if !config.PyTruthy(limit) {
+			if !anyutil.IsTrue(limit) {
 				limit = 0
 			}
-			detail := fmt.Sprintf("%d costed tool(s), ", pyLen(costs))
-			if config.PyTruthy(limit) {
+			detail := fmt.Sprintf("%d costed tool(s), ", lengthOf(costs))
+			if anyutil.IsTrue(limit) {
 				unit := "credits"
-				if config.PyTruthy(cfg["cost_unit"]) {
-					unit = config.PyStr(cfg["cost_unit"])
+				if anyutil.IsTrue(cfg["cost_unit"]) {
+					unit = anyutil.String(cfg["cost_unit"])
 				}
-				detail += fmt.Sprintf("spend limit %s %s per chat", config.PyStr(limit), unit)
+				detail += fmt.Sprintf("spend limit %s %s per chat", anyutil.String(limit), unit)
 			} else {
 				detail += "no spend limit"
 			}
@@ -722,7 +723,7 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 }
 
 // Python len of a sized JSON value
-func pyLen(v any) int {
+func lengthOf(v any) int {
 	switch t := v.(type) {
 	case []any:
 		return len(t)

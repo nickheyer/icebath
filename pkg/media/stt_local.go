@@ -25,8 +25,7 @@ import (
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
-
-	"golang.org/x/text/cases"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
@@ -53,7 +52,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 		return ""
 	}
 	raw := strings.TrimSpace(s)
-	folded := strings.ReplaceAll(cases.Fold().String(raw), "_", "-")
+	folded := strings.ReplaceAll(textutil.Fold(raw), "_", "-")
 	candidate, aliased := localLanguageAliases[raw]
 	if !aliased {
 		candidate = strings.SplitN(folded, "-", 2)[0]
@@ -72,7 +71,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 	if supported != nil {
 		found := false
 		for _, code := range supported {
-			if cases.Fold().String(code) == candidate {
+			if textutil.Fold(code) == candidate {
 				found = true
 			}
 		}

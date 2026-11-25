@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // True for a live turn lease or compression lock refusal, the retryable busy verdict of a running admission
@@ -121,7 +122,7 @@ func continuationEdges(ctx context.Context, conn SQLiteConn, sid string) ([]stri
 	}
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
-		ids = append(ids, pyStr(row["id"]))
+		ids = append(ids, anyutil.String(row["id"]))
 	}
 	return ids, nil
 }

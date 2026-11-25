@@ -138,7 +138,7 @@ func (a *AIAgent) adoptSharedRowStamps(m *state.Message) {
 // Reports a caller dict durable when it or a message sharing it carries the persisted marker
 func (a *AIAgent) sharedDictPersisted(d map[string]any) bool {
 	defer persistLock(a)()
-	if pyTruthy(d[state.DBPersistedMarker]) {
+	if anyutil.IsTrue(d[state.DBPersistedMarker]) {
 		return true
 	}
 	key := rowIdentity(d)
@@ -164,7 +164,7 @@ func isEphemeralScaffolding(msg any) bool { return state.IsEphemeralScaffolding(
 // Path safe component for a session id, hashed when sanitizing changed it so distinct ids never collide
 func safeSessionFilenameComponent(sessionID any) string {
 	raw := ""
-	if pyTruthy(sessionID) {
+	if anyutil.IsTrue(sessionID) {
 		raw = strings.TrimSpace(anyutil.String(sessionID))
 	}
 	sanitized := []rune(strings.Trim(sessionFilenameUnsafe.ReplaceAllString(raw, "_"), "._"))
@@ -184,7 +184,7 @@ func safeSessionFilenameComponent(sessionID any) string {
 
 // Whether the persist override may replace content, never native media under a text override nor a merged summary
 func overrideReplacesContent(msg map[string]any, content, override any) bool {
-	if override == nil || pyTruthy(msg[state.CompressedSummaryMetadataKey]) {
+	if override == nil || anyutil.IsTrue(msg[state.CompressedSummaryMetadataKey]) {
 		return false
 	}
 	_, contentList := content.([]any)
@@ -225,8 +225,8 @@ func durableUserRowContent(a *AIAgent, msg *state.Message, content any, apiConte
 
 // Hides standalone compaction handoffs while merge into tail carriers keep their visibility
 func summaryDisplayKind(msg map[string]any) any {
-	if pyTruthy(msg[state.CompressedSummaryMetadataKey]) && UserOriginatedTurnView(msg) == nil &&
-		(state.ClassifySummaryContent(msg["content"]) == "standalone" || !pyTruthy(msg[state.CompressedSummaryHasUserTurnKey])) {
+	if anyutil.IsTrue(msg[state.CompressedSummaryMetadataKey]) && UserOriginatedTurnView(msg) == nil &&
+		(state.ClassifySummaryContent(msg["content"]) == "standalone" || !anyutil.IsTrue(msg[state.CompressedSummaryHasUserTurnKey])) {
 		return "hidden"
 	}
 	return msg["display_kind"]
@@ -323,7 +323,7 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 	}
 	for len(rows) > 0 {
 		last := rows[len(rows)-1]
-		if !(pyTruthy(last["_empty_recovery_synthetic"]) || pyTruthy(last["_empty_terminal_sentinel"])) {
+		if !(anyutil.IsTrue(last["_empty_recovery_synthetic"]) || anyutil.IsTrue(last["_empty_terminal_sentinel"])) {
 			break
 		}
 		n := len(rows) - 1
@@ -389,7 +389,7 @@ func adoptUnansweredTurn(history *[]map[string]any, query any, a *AIAgent) bool 
 		return false
 	}
 	for _, row := range rows[idx+1:] {
-		if row == nil || !(row["role"] == "tool" || (row["role"] == "assistant" && pyTruthy(row["tool_calls"]))) {
+		if row == nil || !(row["role"] == "tool" || (row["role"] == "assistant" && anyutil.IsTrue(row["tool_calls"]))) {
 			return false
 		}
 	}
@@ -429,7 +429,7 @@ func dbFlushScanStart(a *AIAgent, rows []map[string]any, keys []any) int {
 	prefix, _ := a.dbFlushScanPrefix.([]any)
 	scanStart := 0
 	for i := 0; i < len(prefix) && i < len(rows); i++ {
-		if keys[i] == nil || keys[i] != prefix[i] || rows[i] == nil || !pyTruthy(rows[i][state.DBPersistedMarker]) {
+		if keys[i] == nil || keys[i] != prefix[i] || rows[i] == nil || !anyutil.IsTrue(rows[i][state.DBPersistedMarker]) {
 			break
 		}
 		scanStart++
@@ -463,7 +463,7 @@ func dbFlushRow(a *AIAgent, msg map[string]any, isCurrentTurnUser bool) map[stri
 		apiContent = &s
 	}
 	toolName := msg["tool_name"]
-	if !pyTruthy(toolName) {
+	if !anyutil.IsTrue(toolName) {
 		toolName = nil
 		if role == "tool" {
 			toolName = msg["name"]
@@ -474,7 +474,7 @@ func dbFlushRow(a *AIAgent, msg map[string]any, isCurrentTurnUser bool) map[stri
 		toolCalls = tc
 	}
 	platformMessageID := msg["platform_message_id"]
-	if !pyTruthy(platformMessageID) {
+	if !anyutil.IsTrue(platformMessageID) {
 		platformMessageID = msg["message_id"]
 	}
 	row := map[string]any{
@@ -485,7 +485,7 @@ func dbFlushRow(a *AIAgent, msg map[string]any, isCurrentTurnUser bool) map[stri
 	for _, k := range rowReasoningKeys {
 		row[k] = msg[k]
 	}
-	row["_compressed_summary"] = pyTruthy(msg[state.CompressedSummaryMetadataKey])
+	row["_compressed_summary"] = anyutil.IsTrue(msg[state.CompressedSummaryMetadataKey])
 	row["timestamp"] = timestamp
 	row["api_content"] = nil
 	if apiContent != nil {
@@ -494,7 +494,7 @@ func dbFlushRow(a *AIAgent, msg map[string]any, isCurrentTurnUser bool) map[stri
 	row["display_kind"] = summaryDisplayKind(msg)
 	row["display_metadata"] = msg["display_metadata"]
 	row["platform_message_id"] = platformMessageID
-	row["observed"] = pyTruthy(msg["observed"])
+	row["observed"] = anyutil.IsTrue(msg["observed"])
 	switch id := msg["_row_id"].(type) {
 	case int, int64:
 		row["_row_id"] = id
@@ -518,7 +518,7 @@ func syncRewrittenToolRowsDicts(a *AIAgent, batch []map[string]any, contentsBefo
 		if i >= len(contentsBefore) || msg == nil {
 			continue
 		}
-		if pyTruthy(msg[state.DBPersistedMarker]) && msg["role"] == "tool" && !reflect.DeepEqual(msg["content"], contentsBefore[i]) {
+		if anyutil.IsTrue(msg[state.DBPersistedMarker]) && msg["role"] == "tool" && !reflect.DeepEqual(msg["content"], contentsBefore[i]) {
 			before := make(map[string]any, len(msg))
 			for k, v := range msg {
 				before[k] = v
@@ -596,7 +596,7 @@ func dbFlushCollect(a *AIAgent, rows []map[string]any, keys []any, historyKeys m
 			continue
 		}
 		uid, hasUID := state.MessageUIDOrNone(msg)
-		if pyTruthy(msg[state.DBPersistedMarker]) {
+		if anyutil.IsTrue(msg[state.DBPersistedMarker]) {
 			if hasUID {
 				storeUIDs[uid] = true
 			}
@@ -604,7 +604,7 @@ func dbFlushCollect(a *AIAgent, rows []map[string]any, keys []any, historyKeys m
 		}
 		key := keys[idx]
 		isHistory := key != nil && historyKeys[key]
-		if ((isHistory && !replayHistory) || (key != nil && seedIDs[key])) && !pyTruthy(msg[state.PersistAfterAdmissionInterrupt]) {
+		if ((isHistory && !replayHistory) || (key != nil && seedIDs[key])) && !anyutil.IsTrue(msg[state.PersistAfterAdmissionInterrupt]) {
 			msg[state.DBPersistedMarker] = true
 			if hasUID {
 				storeUIDs[uid] = true
@@ -622,7 +622,7 @@ func dbFlushCollect(a *AIAgent, rows []map[string]any, keys []any, historyKeys m
 			metadata["notification_category"] = "diagnostic"
 			msg["display_metadata"] = metadata
 		}
-		if msg["role"] == "tool" && !pyTruthy(msg[state.ToolCallUID]) {
+		if msg["role"] == "tool" && !anyutil.IsTrue(msg[state.ToolCallUID]) {
 			if toolUID, ok := state.ToolCallUIDFromHistory(rows, idx, owners); ok {
 				msg[state.ToolCallUID] = toolUID
 			}
@@ -810,7 +810,7 @@ func (a *AIAgent) PersistSession(messages *[]*state.Message, conversationHistory
 func (a *AIAgent) dropTrailingEmptyResponseScaffolding(messages *[]*state.Message) {
 	for len(*messages) > 0 {
 		last := (*messages)[len(*messages)-1]
-		if last == nil || !(pyTruthy(last.Extra["_empty_recovery_synthetic"]) || pyTruthy(last.Extra["_empty_terminal_sentinel"])) {
+		if last == nil || !(anyutil.IsTrue(last.Extra["_empty_recovery_synthetic"]) || anyutil.IsTrue(last.Extra["_empty_terminal_sentinel"])) {
 			return
 		}
 		*messages = (*messages)[:len(*messages)-1]

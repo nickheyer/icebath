@@ -31,7 +31,7 @@ func TestOldResetConfigCannotRotateDurableConversation(t *testing.T) {
 				}
 			}
 			store.mu.Lock()
-			old.UpdatedAt = pyDatetime{T: time.Now().Add(-72 * time.Hour)}
+			old.UpdatedAt = datetime{T: time.Now().Add(-72 * time.Hour)}
 			old.ResumePending = true
 			marked := old.UpdatedAt
 			old.LastResumeMarkedAt = &marked

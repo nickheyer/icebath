@@ -20,7 +20,7 @@ const (
 var usageBarNow = time.Now
 
 // Rounds to the given decimal places the way Python round does on the exact binary value
-func pyRoundPlaces(v float64, places int) float64 {
+func roundPlaces(v float64, places int) float64 {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return v
 	}
@@ -56,7 +56,7 @@ func RenderBar(fraction float64, width int) string {
 
 // FormatPercentUsed floors the used share to a whole percent, a sliver reading below one percent
 func FormatPercentUsed(usedFraction float64) string {
-	bp := int64(pyRoundPlaces(clampFraction(usedFraction)*basisPointsFull, 6))
+	bp := int64(roundPlaces(clampFraction(usedFraction)*basisPointsFull, 6))
 	if bp <= 0 {
 		return "0%"
 	}

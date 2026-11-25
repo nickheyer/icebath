@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -80,7 +81,7 @@ func outboundImageBlocks(messages []map[string]any) int {
 	total := 0
 	for _, m := range messages {
 		inner := m["content"]
-		if d, ok := inner.(map[string]any); ok && pyTruthy(d["_multimodal"]) {
+		if d, ok := inner.(map[string]any); ok && anyutil.IsTrue(d["_multimodal"]) {
 			inner = d["content"]
 		}
 		parts, _ := inner.([]any)

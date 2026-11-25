@@ -59,7 +59,7 @@ func TestCreateJobRejectsBlankScriptAndBlankSkills(t *testing.T) {
 
 func TestCreateJobNoAgentErrorStillWins(t *testing.T) {
 	s, _ := newTestStore(t)
-	mustRejectCreate(t, s, CreateJobOptions{Schedule: "every 5m", NoAgent: true}, "no_agent=True requires a script")
+	mustRejectCreate(t, s, CreateJobOptions{Schedule: "every 5m", NoAgent: true}, "no_agent=true requires a script")
 }
 
 func TestValidShapesAreAccepted(t *testing.T) {
@@ -95,7 +95,7 @@ func TestUpdateJobRejectsClearingTheOnlyPayload(t *testing.T) {
 func TestUpdateJobRejectsTogglingNoAgentOnWithoutAScript(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("check the news"), Schedule: "every 5m", Deliver: prompt("local")})
-	mustRejectUpdate(t, s, job.ID, map[string]any{"no_agent": true}, "no_agent=True requires a script")
+	mustRejectUpdate(t, s, job.ID, map[string]any{"no_agent": true}, "no_agent=true requires a script")
 	if mustGet(t, s, job.ID).NoAgent {
 		t.Fatal("no_agent persisted")
 	}
@@ -105,7 +105,7 @@ func TestUpdateJobRejectsRemovingScriptFromANoAgentJob(t *testing.T) {
 	for _, blank := range []any{nil, "", "   "} {
 		s := wScriptStore(t)
 		job := mustCreate(t, s, CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true, Deliver: prompt("local")})
-		mustRejectUpdate(t, s, job.ID, map[string]any{"script": blank}, "no_agent=True requires a script")
+		mustRejectUpdate(t, s, job.ID, map[string]any{"script": blank}, "no_agent=true requires a script")
 		if got := deref(mustGet(t, s, job.ID).Script); got != "w.sh" {
 			t.Fatalf("script %q after %v", got, blank)
 		}
@@ -115,7 +115,7 @@ func TestUpdateJobRejectsRemovingScriptFromANoAgentJob(t *testing.T) {
 func TestUpdateJobRejectsSwappingScriptForPromptOnANoAgentJob(t *testing.T) {
 	s := wScriptStore(t)
 	job := mustCreate(t, s, CreateJobOptions{Schedule: "every 5m", Script: "w.sh", NoAgent: true, Deliver: prompt("local")})
-	mustRejectUpdate(t, s, job.ID, map[string]any{"script": "", "prompt": "do it yourself"}, "no_agent=True requires a script")
+	mustRejectUpdate(t, s, job.ID, map[string]any{"script": "", "prompt": "do it yourself"}, "no_agent=true requires a script")
 }
 
 func TestUpdateJobAllowsDroppingScriptWhenNoAgentIsTurnedOff(t *testing.T) {

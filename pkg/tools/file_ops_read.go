@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -27,7 +28,7 @@ const (
 )
 
 // Python json.dumps of a str with ensure_ascii, surrogates and stray bytes written as their surrogate escapes
-func pyJSONDumpsASCII(s string) string {
+func jsonDumpsASCII(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	hex4 := func(u int) {
@@ -208,7 +209,7 @@ func (s *shellFileOps) utf16PageNative(path string, offset, limit int) (string, 
 // UTF-16 page computed by a Python snippet on the backend
 func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, int, string, bool) {
 	snippet := "import sys, json, os\n" +
-		"p = " + pyJSONDumpsASCII(path) + "\n" +
+		"p = " + jsonDumpsASCII(path) + "\n" +
 		"offset = " + strconv.Itoa(offset) + "\n" +
 		"limit = " + strconv.Itoa(limit) + "\n" +
 		"MAX = " + strconv.Itoa(utf16MaxBytes) + "\n" +
@@ -256,7 +257,7 @@ func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, i
 	if result.ExitCode != 0 || marker < 0 {
 		return "", 0, "", false
 	}
-	payload := pyStrip(stdout[marker+len("ICEBATH_UTF16:OK"):])
+	payload := strings.TrimSpace(stdout[marker+len("ICEBATH_UTF16:OK"):])
 	if i := strings.Index(payload, "\n"); i >= 0 {
 		payload = payload[:i]
 	}
@@ -269,7 +270,7 @@ func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, i
 	if !ok {
 		return "", 0, "", false
 	}
-	total, ok := pyIntValue(data["total_lines"])
+	total, ok := wholeNumberArg(data["total_lines"])
 	if !ok {
 		return "", 0, "", false
 	}
@@ -277,7 +278,7 @@ func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, i
 	if raw, present := data["encoding"]; present {
 		encoding = "None"
 		if raw != nil {
-			encoding = pyJSONStr(raw)
+			encoding = anyutil.String(raw)
 		}
 	}
 	return content, total, encoding, true
@@ -287,7 +288,7 @@ func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, i
 func (s *shellFileOps) longLineFlag(content string) *bool {
 	maxLen := ToolOutputLimits(s.env).MaxLineLength
 	for _, line := range strings.Split(content, "\n") {
-		if pyLen(line) > maxLen {
+		if utf8.RuneCountInString(line) > maxLen {
 			t := true
 			return &t
 		}
@@ -311,7 +312,7 @@ func (s *shellFileOps) readFile(path string, offset, limit int) *ReadResult {
 	probe := s.exec(s.readProbeCmd(path, offset, endLine, lineClampBytes, sentinel), "", 0)
 	output := probe.Stdout
 	if !strings.Contains(output, sentinel) {
-		switch pyStrip(stripTerminalFenceLeaks(output)) {
+		switch strings.TrimSpace(stripTerminalFenceLeaks(output)) {
 		case missingSentinel:
 			return s.readFileMissing(path, offset, limit)
 		case notRegularSentinel:
@@ -324,17 +325,17 @@ func (s *shellFileOps) readFile(path string, offset, limit int) *ReadResult {
 		return s.readFileSequential(path, offset, limit)
 	}
 	sizeSeg, sampleSeg, pageSeg, wcSeg, tailSeg, statusSeg := segments[0], segments[1], segments[2], segments[3], segments[4], segments[5]
-	status := pyFields(stripTerminalFenceLeaks(statusSeg))
+	status := fieldsValue(stripTerminalFenceLeaks(statusSeg))
 	if len(status) < 2 {
 		return s.readFileSequential(path, offset, limit)
 	}
-	sampleRC, ok1 := pyIntParse(status[0])
-	readRC, ok2 := pyIntParse(status[1])
+	sampleRC, ok1 := intParse(status[0])
+	readRC, ok2 := intParse(status[1])
 	if !ok1 || !ok2 {
 		return s.readFileSequential(path, offset, limit)
 	}
 	fileSize := int64(0)
-	if n, ok := pyIntParse(pyStrip(stripTerminalFenceLeaks(sizeSeg))); ok {
+	if n, ok := intParse(strings.TrimSpace(stripTerminalFenceLeaks(sizeSeg))); ok {
 		fileSize = int64(n)
 	}
 	var sampleBytes []byte
@@ -356,10 +357,10 @@ func (s *shellFileOps) readFile(path string, offset, limit int) *ReadResult {
 	}
 	readOutput := stripTerminalFenceLeaks(pageSeg)
 	totalLines := 0
-	if n, ok := pyIntParse(pyStrip(stripTerminalFenceLeaks(wcSeg))); ok {
+	if n, ok := intParse(strings.TrimSpace(stripTerminalFenceLeaks(wcSeg))); ok {
 		totalLines = n
 	}
-	tailFlag := pyStrip(stripTerminalFenceLeaks(tailSeg))
+	tailFlag := strings.TrimSpace(stripTerminalFenceLeaks(tailSeg))
 	var endsWithNewline *bool
 	if tailFlag == "0" || tailFlag == "1" {
 		v := tailFlag == "1"
@@ -558,14 +559,14 @@ func (s *shellFileOps) readFileSequential(path string, offset, limit int) *ReadR
 	readOutput := stripTerminalFenceLeaks(readResult.Stdout)
 	wcResult := s.exec("wc -l < "+s.escapeShellArg(path, true), "", 0)
 	totalLines := 0
-	if n, ok := pyIntParse(pyStrip(stripTerminalFenceLeaks(wcResult.Stdout))); ok {
+	if n, ok := intParse(strings.TrimSpace(stripTerminalFenceLeaks(wcResult.Stdout))); ok {
 		totalLines = n
 	}
 	var endsWithNewline *bool
 	if !(totalLines > endLine) && strings.HasSuffix(readOutput, "\n") {
 		tail := s.exec("tail -c 1 "+s.escapeShellArg(path, true)+" | wc -l", "", 0)
 		if tail.ExitCode == 0 {
-			v := pyStrip(stripTerminalFenceLeaks(tail.Stdout)) != "0"
+			v := strings.TrimSpace(stripTerminalFenceLeaks(tail.Stdout)) != "0"
 			endsWithNewline = &v
 		}
 	}
@@ -615,7 +616,7 @@ var filenameConfusables = [][2]string{
 
 // Filename after NFC with confusable spaces and quotes collapsed
 func canonicalFilename(name string) string {
-	out := pyNFC(name)
+	out := nfc(name)
 	for _, c := range filenameConfusables {
 		out = strings.ReplaceAll(out, c[0], c[1])
 	}
@@ -623,7 +624,7 @@ func canonicalFilename(name string) string {
 }
 
 // Python unicodedata NFC of a str, invalid bytes passed through untouched like lone surrogates
-func pyNFC(s string) string {
+func nfc(s string) string {
 	if utf8.ValidString(s) {
 		return norm.NFC.String(s)
 	}
@@ -656,11 +657,11 @@ func (s *shellFileOps) unicodeVariantMatch(path string) (string, bool) {
 	}
 	target := canonicalFilename(filename)
 	ls := s.exec("ls -1 "+s.escapeShellArg(dirPath, true)+" 2>/dev/null", "", 0)
-	if ls.ExitCode != 0 || pyStrip(ls.Stdout) == "" {
+	if ls.ExitCode != 0 || strings.TrimSpace(ls.Stdout) == "" {
 		return "", false
 	}
 	var candidates []string
-	for _, entry := range pySplitLines(stripTerminalFenceLeaks(ls.Stdout)) {
+	for _, entry := range splitLinesValue(stripTerminalFenceLeaks(ls.Stdout)) {
 		if entry != "" && entry != filename && canonicalFilename(entry) == target {
 			candidates = append(candidates, entry)
 		}
@@ -682,8 +683,8 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 	}
 	filename := pathBasenameOS(path)
 	lower := cases.Lower(language.Und)
-	basenameNoExt := lower.String(pySplitextRoot(filename))
-	ext := lower.String(pySplitextExt(filename))
+	basenameNoExt := lower.String(splitextRoot(filename))
+	ext := lower.String(splitextExt(filename))
 	lowerName := lower.String(filename)
 	ls := s.exec("ls -1 "+s.escapeShellArg(dirPath, true)+" 2>/dev/null | head -50", "", 0)
 	type scoredPath struct {
@@ -691,7 +692,7 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 		path  string
 	}
 	var scored []scoredPath
-	if trimmed := pyStrip(ls.Stdout); ls.ExitCode == 0 && trimmed != "" {
+	if trimmed := strings.TrimSpace(ls.Stdout); ls.ExitCode == 0 && trimmed != "" {
 		for _, f := range strings.Split(trimmed, "\n") {
 			if f == "" {
 				continue
@@ -701,16 +702,16 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 			switch {
 			case lf == lowerName:
 				score = 100
-			case lower.String(pySplitextRoot(f)) == basenameNoExt:
+			case lower.String(splitextRoot(f)) == basenameNoExt:
 				score = 90
 			case strings.HasPrefix(lf, lowerName) || strings.HasPrefix(lowerName, lf):
 				score = 70
 			case strings.Contains(lf, lowerName):
 				score = 60
-			case strings.Contains(lowerName, lf) && pyLen(lf) > 2:
+			case strings.Contains(lowerName, lf) && utf8.RuneCountInString(lf) > 2:
 				score = 40
-			case ext != "" && lower.String(pySplitextExt(f)) == ext:
-				if common := runeSetIntersection(lowerName, lf); float64(common) >= float64(max(pyLen(lowerName), pyLen(lf)))*0.4 {
+			case ext != "" && lower.String(splitextExt(f)) == ext:
+				if common := runeSetIntersection(lowerName, lf); float64(common) >= float64(max(utf8.RuneCountInString(lowerName), utf8.RuneCountInString(lf)))*0.4 {
 					score = 30
 				}
 			}
@@ -809,8 +810,8 @@ func (s *shellFileOps) readFileBytes(path string, maxBytes int) *ReadResult {
 	if encoded.ExitCode != 0 {
 		return &ReadResult{Error: "Failed to read binary file: " + encoded.Stdout}
 	}
-	compact := strings.Join(pyFields(stripTerminalFenceLeaks(encoded.Stdout)), "")
-	if !pyB64Valid(compact) {
+	compact := strings.Join(fieldsValue(stripTerminalFenceLeaks(encoded.Stdout)), "")
+	if !b64Valid(compact) {
 		return &ReadResult{Error: "Backend returned invalid binary data for: " + path}
 	}
 	return &ReadResult{Base64Content: compact, FileSize: fileSize, IsBinary: true}
@@ -835,8 +836,8 @@ func (s *shellFileOps) readFileRange(path string, start int64, length int) *Read
 	if encoded.ExitCode != 0 {
 		return &ReadResult{Error: "Failed to read binary file: " + encoded.Stdout}
 	}
-	compact := strings.Join(pyFields(stripTerminalFenceLeaks(encoded.Stdout)), "")
-	if !pyB64Valid(compact) {
+	compact := strings.Join(fieldsValue(stripTerminalFenceLeaks(encoded.Stdout)), "")
+	if !b64Valid(compact) {
 		return &ReadResult{Error: "Backend returned invalid binary data for: " + path}
 	}
 	return &ReadResult{Base64Content: compact, FileSize: fileSize, IsBinary: true}
@@ -846,7 +847,7 @@ func (s *shellFileOps) readFileRange(path string, start int64, length int) *Read
 var regexpBase64Validate = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
 
 // base64.b64decode with validate true accepting the text
-func pyB64Valid(s string) bool {
+func b64Valid(s string) bool {
 	if s == "" {
 		return true
 	}

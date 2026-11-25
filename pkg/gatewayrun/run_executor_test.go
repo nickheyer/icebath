@@ -271,7 +271,7 @@ func TestShutdownStopsTheHousekeepingPool(t *testing.T) {
 	if r.housekeepingExecutor != nil {
 		t.Fatal("housekeeping executor slot kept")
 	}
-	var rte *pyRuntimeError
+	var rte *runtimeError
 	if _, err := r.getHousekeepingExecutor(); !errors.As(err, &rte) {
 		t.Fatalf("expected RuntimeError, got %v", err)
 	}

@@ -57,7 +57,7 @@ func TestCoerceSlashListShapes(t *testing.T) {
 		{"111, 222,, ,333", slashSet("111", "222", "333")},
 		{int64(42), slashSet("42")},
 		{[]string{" a ", ""}, slashSet("a")},
-		{[]any{nil, " "}, slashSet("None")},
+		{[]any{nil, " "}, slashSet()},
 	}
 	for _, c := range cases {
 		if got := CoerceIDList(c.raw); !reflect.DeepEqual(got, c.want) {

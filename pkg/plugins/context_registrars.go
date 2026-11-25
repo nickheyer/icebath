@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -16,9 +15,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -367,11 +366,11 @@ func (c *Context) CallMCP(ctx context.Context, server, tool string, arguments ma
 	if err != nil {
 		return nil, err
 	}
-	pkgLog().Debug(fmt.Sprintf("Plugin %s called MCP %s/%s (timeout=%ss, %d chars returned)", c.manifest.Name, server, tool, config.PyStr(seconds), utf8.RuneCountInString(raw)))
+	pkgLog().Debug(fmt.Sprintf("Plugin %s called MCP %s/%s (timeout=%ss, %d chars returned)", c.manifest.Name, server, tool, anyutil.String(seconds), utf8.RuneCountInString(raw)))
 	return mcpEnvelope(raw), nil
 }
 
-// MCP call timeout as a float clamped to one through six hundred seconds, thirty when unparseable
+// MCP call timeout as a float clamped to one through six hundred seconds, thirty when unset or unparseable
 func clampMCPTimeout(timeout any) float64 {
 	seconds := 30.0
 	switch v := timeout.(type) {
@@ -381,14 +380,12 @@ func clampMCPTimeout(timeout any) float64 {
 		if v {
 			seconds = 1
 		}
-	case int:
-		seconds = float64(v)
-	case int64:
-		seconds = float64(v)
-	case float64:
-		seconds = v
 	case string:
 		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			seconds = f
+		}
+	default:
+		if f, ok := anyutil.Float(v); ok {
 			seconds = f
 		}
 	}
@@ -405,8 +402,8 @@ func mcpEnvelope(raw string) map[string]any {
 		raw = string([]rune(raw)[:mcpResultCharCap]) + "… [truncated]"
 	}
 	var parsed any
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		parsed = nil
+	if decoded, err := jsonutil.Decode(raw); err == nil {
+		parsed = jsonutil.Plain(decoded)
 	}
 	envelope := map[string]any{}
 	obj, isObj := parsed.(map[string]any)
@@ -436,7 +433,7 @@ func mcpAllowlist(ctx context.Context, pluginID string) []string {
 	}
 	out := make([]string, 0, len(list))
 	for _, item := range list {
-		out = append(out, config.PyStr(item))
+		out = append(out, anyutil.String(item))
 	}
 	return out
 }
@@ -796,7 +793,7 @@ func (c *Context) registerPlatform(spec PlatformSpec) (*Registration, error) {
 	if err != nil {
 		return nil, err
 	}
-	trusted := config.PyTruthy(spec.Extra["trusted_inbound"])
+	trusted := anyutil.IsTrue(spec.Extra["trusted_inbound"])
 	if trusted && c.manifest.Source != "bundled" && registry.CoreShipsPlatform(spec.Name) {
 		return nil, c.refuse(fmt.Sprintf("core platform '%s' with trusted_inbound (it would waive allowlists and pairing)", spec.Name))
 	}
@@ -953,7 +950,7 @@ func (c *Context) RegisterAuxiliaryTask(rawKey any, opts AuxTaskOptions) (*Regis
 			return
 		}
 		handle = registerEntry(c, "auxiliary_task", key, m.auxTasks, entry, &existing,
-			fmt.Sprintf("Plugin %s registered auxiliary task: %s (%s)", c.manifest.Name, key, config.PyStr(opts.DisplayName)))
+			fmt.Sprintf("Plugin %s registered auxiliary task: %s (%s)", c.manifest.Name, key, anyutil.String(opts.DisplayName)))
 	})
 	return handle, err
 }
@@ -1018,7 +1015,7 @@ func auxTaskOverrides(raw any, inheriting bool) (map[string]any, error) {
 	case Record:
 		return map[string]any(m), nil
 	}
-	if !config.PyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return map[string]any{}, nil
 	}
 	if !inheriting {
@@ -1052,7 +1049,7 @@ func auxTaskOverrides(raw any, inheriting bool) (map[string]any, error) {
 		case map[string]any, Record:
 			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("auxiliary task defaults item %d has a mapping as its key", i)}
 		}
-		out[config.PyStr(pair[0])] = pair[1]
+		out[anyutil.String(pair[0])] = pair[1]
 	}
 	return out, nil
 }
@@ -1264,7 +1261,7 @@ type blueprintEntry struct{ value any }
 func slackActionRepr(v any) string {
 	switch x := v.(type) {
 	case *regexp.Regexp:
-		return "re.compile(" + config.PyRepr(x.String()) + ")"
+		return "re.compile(" + anyutil.Quote(x.String()) + ")"
 	case map[string]any:
 		keys := make([]string, 0, len(x))
 		for k := range x {
@@ -1273,9 +1270,9 @@ func slackActionRepr(v any) string {
 		sort.Strings(keys)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
-			parts[i] = config.PyRepr(k) + ": " + slackActionRepr(x[k])
+			parts[i] = anyutil.Quote(k) + ": " + slackActionRepr(x[k])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
-	return config.PyRepr(v)
+	return anyutil.Quote(v)
 }

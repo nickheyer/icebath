@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -444,7 +445,7 @@ func resolveCommandAlias(ctx context.Context, name, arg string) (string, string,
 		}
 		parts := textutil.FieldsN(strings.TrimLeft(strings.TrimSpace(target), "/"), 1)
 		if len(parts) == 0 {
-			return "", "", &PyError{Kind: "IndexError", Msg: fmt.Sprintf("quick command %s is an alias with an empty target", name)}
+			return "", "", &errorutil.Error{Kind: "IndexError", Msg: fmt.Sprintf("quick command %s is an alias with an empty target", name)}
 		}
 		name = parts[0]
 		var joined []string
@@ -517,7 +518,10 @@ func runRunnerCommand(ctx context.Context, a *SessionAuthority, runner localComm
 		pkgLog().Warn(fmt.Sprintf("Plugin command dispatch failed: %s", err))
 		message := err.Error()
 		if message == "" {
-			message = fmt.Sprintf("%T", err)
+			message = declaredErrorKind(err)
+		}
+		if message == "" {
+			message = "the command failed without a message"
 		}
 		return i18n.T(ctx, "cli.plugin.command_error", "", map[string]any{"error": message}), nil
 	}

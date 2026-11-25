@@ -60,14 +60,14 @@ func NormalizeTimezone(value any) (*string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return nil, fmt.Errorf("timezone must be an IANA name such as 'Asia/Hong_Kong', got %s.", errchain.Kind(value))
+		return nil, fmt.Errorf("timezone must be an IANA name such as \"Asia/Hong_Kong\", got %s.", errchain.Kind(value))
 	}
 	name := strings.TrimSpace(text)
 	if name == "" {
 		return nil, nil
 	}
 	if !zoneInfoKey(name) {
-		return nil, fmt.Errorf("Unknown timezone %s. Use an IANA key from `zoneinfo.available_timezones()`, e.g. 'Asia/Hong_Kong'.", strconv.Quote(name))
+		return nil, fmt.Errorf("Unknown timezone %s. Use a zone name from the IANA time zone database, e.g. \"Asia/Hong_Kong\".", strconv.Quote(name))
 	}
 	return &name, nil
 }
@@ -95,24 +95,25 @@ func NormalizeGraceMinutes(value any) (*int, error) {
 			return nil, fmt.Errorf("grace_minutes must be a whole number of minutes, not %q.", v)
 		}
 		minutes = n
-	case int:
-		minutes = v
-	case int32:
-		minutes = int(v)
-	case int64:
-		minutes = int(v)
-	case float32:
-		if float64(v) != math.Trunc(float64(v)) {
-			return nil, fmt.Errorf("grace_minutes must be a whole number of minutes, not %v.", v)
-		}
-		minutes = int(v)
-	case float64:
-		if v != math.Trunc(v) {
-			return nil, fmt.Errorf("grace_minutes must be a whole number of minutes, not %v.", v)
-		}
-		minutes = int(v)
 	default:
-		return nil, fmt.Errorf("grace_minutes must be a whole number of minutes, not %v.", value)
+		if n, ok := anyutil.Int(value); ok {
+			if n < MinGraceMinutes || n > MaxGraceMinutes {
+				return nil, fmt.Errorf("grace_minutes must be between %d and %d (0 = never catch up), got %d.", MinGraceMinutes, MaxGraceMinutes, n)
+			}
+			minutes = int(n)
+			break
+		}
+		f, ok := anyutil.Float(value)
+		if !ok {
+			return nil, fmt.Errorf("grace_minutes must be a whole number of minutes, not %s.", errchain.Kind(value))
+		}
+		if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) {
+			return nil, fmt.Errorf("grace_minutes must be a whole number of minutes, not %v.", value)
+		}
+		if f < MinGraceMinutes || f > MaxGraceMinutes {
+			return nil, fmt.Errorf("grace_minutes must be between %d and %d (0 = never catch up), got %v.", MinGraceMinutes, MaxGraceMinutes, value)
+		}
+		minutes = int(f)
 	}
 	if minutes < MinGraceMinutes || minutes > MaxGraceMinutes {
 		return nil, fmt.Errorf("grace_minutes must be between %d and %d (0 = never catch up), got %d.", MinGraceMinutes, MaxGraceMinutes, minutes)

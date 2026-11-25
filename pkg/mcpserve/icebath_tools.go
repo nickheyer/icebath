@@ -145,7 +145,7 @@ func dictPop(d any, key string) {
 	case map[string]any:
 		delete(t, key)
 	case []any:
-		panic(&pyError{"TypeError", "pop expected at most 1 argument, got 2"})
+		panic(&kindError{"TypeError", "pop expected at most 1 argument, got 2"})
 	default:
 		noAttribute(d, "pop")
 	}
@@ -164,8 +164,8 @@ func availableToolSpecs(ctx context.Context, env *tools.Env) []toolSpec {
 	defs := map[string]any{}
 	for _, td := range tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: toolsets, Quiet: true}) {
 		if isStr(td["type"], "function") {
-			fn := pyIndex(td, "function")
-			defs[anyutil.String(pyIndex(fn, "name"))] = fn
+			fn := elementAt(td, "function")
+			defs[anyutil.String(elementAt(fn, "name"))] = fn
 		}
 	}
 	specs := []toolSpec{}
@@ -183,10 +183,10 @@ func availableToolSpecs(ctx context.Context, env *tools.Env) []toolSpec {
 		}
 		params := spec.Value("parameters")
 		for _, arg := range droppedArgs[name] {
-			if props := pyGet(params, "properties", nil); anyutil.IsTrue(props) {
+			if props := lookup(params, "properties", nil); anyutil.IsTrue(props) {
 				dictPop(props, arg)
 			}
-			if required, ok := pyGet(params, "required", nil).([]any); ok {
+			if required, ok := lookup(params, "required", nil).([]any); ok {
 				for i, r := range required {
 					if isStr(r, arg) {
 						required = append(required[:i:i], required[i+1:]...)

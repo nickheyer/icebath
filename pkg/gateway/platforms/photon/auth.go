@@ -30,6 +30,7 @@ import (
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Device flow token the dashboard API rejects
@@ -56,19 +57,19 @@ const (
 	statusTimeout        = 5 * time.Second
 )
 
-// E.164 phone number, a trailing newline accepted like the Python dollar anchor
-var E164RE = regexp.MustCompile(`^\+[1-9]\p{Nd}{6,14}\n?$`)
+// E.164 phone number, a plus sign then seven to fifteen digits of which the first is not zero
+var E164RE = regexp.MustCompile(`^\+[1-9]\p{Nd}{6,14}$`)
 
 // Python exception class name an error is reported under
-type pyError struct {
+type errorValue struct {
 	class string
 	msg   string
 	cause error
 }
 
-func (e *pyError) Error() string     { return e.msg }
-func (e *pyError) ErrorKind() string { return e.class }
-func (e *pyError) Unwrap() error     { return e.cause }
+func (e *errorValue) Error() string     { return e.msg }
+func (e *errorValue) ErrorKind() string { return e.class }
+func (e *errorValue) Unwrap() error     { return e.cause }
 
 // httpx.RequestError family raised when a request never produced a response
 type requestError struct {
@@ -82,7 +83,7 @@ func (e *requestError) ErrorKind() string { return e.class }
 func (e *requestError) Unwrap() error     { return e.cause }
 
 func runtimeError(format string, args ...any) error {
-	return &pyError{class: "RuntimeError", msg: fmt.Sprintf(format, args...)}
+	return &errorValue{class: "RuntimeError", msg: fmt.Sprintf(format, args...)}
 }
 
 // True for a cancelled context, the KeyboardInterrupt no except Exception clause swallows
@@ -95,21 +96,22 @@ func isProbeFailure(err error) bool {
 	switch e := err.(type) {
 	case *PhotonDashboardAuthError, *requestError:
 		return true
-	case *pyError:
+	case *errorValue:
 		return slices.Contains([]string{"RuntimeError", "ValueError", "JSONDecodeError", "UnicodeDecodeError", "HTTPStatusError"}, e.class)
 	}
 	return false
 }
 
-func attrError(v any, attr string) error {
-	return &pyError{class: "AttributeError", msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
+// Error for a decoded JSON value of another kind than want, under the AttributeError class the probes let through
+func kindError(want string, v any) error {
+	return &errorValue{class: "AttributeError", msg: fmt.Sprintf("expected %s, got %s", want, anyutil.Kind(v))}
 }
 
-// dict.get of a decoded JSON value, the AttributeError a non dict raises
-func pyGetDefault(v any, key string, def any) (any, error) {
+// Value of a key of a decoded JSON object, def when the key is absent, a kind error for any other value
+func getDefault(v any, key string, def any) (any, error) {
 	o, ok := v.(*jsonutil.Object)
 	if !ok || o == nil {
-		return nil, attrError(v, "get")
+		return nil, kindError("an object", v)
 	}
 	if val, found := o.Get(key); found {
 		return val, nil
@@ -117,38 +119,38 @@ func pyGetDefault(v any, key string, def any) (any, error) {
 	return def, nil
 }
 
-func pyGet(v any, key string) (any, error) { return pyGetDefault(v, key, nil) }
+func lookup(v any, key string) (any, error) { return getDefault(v, key, nil) }
 
 // Subscript of a decoded JSON value by a string key with the KeyError or TypeError Python raises
-func pySubscript(v any, key string) (any, error) {
+func subscript(v any, key string) (any, error) {
 	switch t := v.(type) {
 	case *jsonutil.Object:
 		if val, found := t.Get(key); found {
 			return val, nil
 		}
-		return nil, &pyError{class: "KeyError", msg: strconv.Quote(key)}
+		return nil, &errorValue{class: "KeyError", msg: strconv.Quote(key)}
 	case []any:
-		return nil, &pyError{class: "TypeError", msg: "list indices must be integers or slices, not str"}
+		return nil, &errorValue{class: "TypeError", msg: "list indices must be integers or slices, not str"}
 	case string:
-		return nil, &pyError{class: "TypeError", msg: "string indices must be integers, not 'str'"}
+		return nil, &errorValue{class: "TypeError", msg: "string indices must be integers, not 'str'"}
 	}
-	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
+	return nil, &errorValue{class: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
 }
 
 // Item assignment by a string key with the TypeError a non dict raises
-func pySetItem(v any, key string, val any) error {
+func setItem(v any, key string, val any) error {
 	switch t := v.(type) {
 	case *jsonutil.Object:
 		t.Set(key, val)
 		return nil
 	case []any:
-		return &pyError{class: "TypeError", msg: "list indices must be integers or slices, not str"}
+		return &errorValue{class: "TypeError", msg: "list indices must be integers or slices, not str"}
 	}
-	return &pyError{class: "TypeError", msg: fmt.Sprintf("'%s' object does not support item assignment", anyutil.Kind(v))}
+	return &errorValue{class: "TypeError", msg: fmt.Sprintf("'%s' object does not support item assignment", anyutil.Kind(v))}
 }
 
 // Python in operator for a string needle over a decoded JSON container
-func pyContains(container any, needle string) (bool, error) {
+func contains(container any, needle string) (bool, error) {
 	switch t := container.(type) {
 	case *jsonutil.Object:
 		_, found := t.Get(needle)
@@ -158,24 +160,14 @@ func pyContains(container any, needle string) (bool, error) {
 	case string:
 		return strings.Contains(t, needle), nil
 	}
-	return false, &pyError{class: "TypeError", msg: fmt.Sprintf("argument of type '%s' is not iterable", anyutil.Kind(container))}
+	return false, &errorValue{class: "TypeError", msg: fmt.Sprintf("argument of type '%s' is not iterable", anyutil.Kind(container))}
 }
 
-// First value of the or chain, the last one when none is truthy
-func pyOr(vals ...any) any {
-	for _, v := range vals {
-		if anyutil.IsTrue(v) {
-			return v
-		}
-	}
-	return vals[len(vals)-1]
-}
-
-// String method call on a decoded value, the AttributeError a non string raises
-func pyStringFor(v any, method string) (string, error) {
+// Decoded JSON value as a string, a kind error for any other value
+func stringValue(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", attrError(v, method)
+		return "", kindError("a string", v)
 	}
 	return s, nil
 }
@@ -201,8 +193,8 @@ var getScopedSecret = gateway.GetScopedSecret
 // The active profile's auth.json shared with the rest of icebath
 func authJSONPath(ctx context.Context) string { return home.AuthPath(home.Dir(ctx)) }
 
-// Decoded auth.json, an empty dict when missing or unreadable and the UnicodeDecodeError on bad bytes
-func loadAuth(ctx context.Context) (any, error) {
+// Decoded auth.json object, an empty object when missing, unreadable or empty, an error naming the file for bytes that are not UTF-8 or a value that is not an object
+func loadAuth(ctx context.Context) (*jsonutil.Object, error) {
 	path := authJSONPath(ctx)
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
@@ -215,11 +207,11 @@ func loadAuth(ctx context.Context) (any, error) {
 		pkgLog().Warn(fmt.Sprintf("photon: could not read %s: %s", path, err.Error()))
 		return jsonutil.NewObject(), nil
 	}
-	raw = []byte(strings.TrimPrefix(string(raw), "\ufeff"))
-	if !utf8.Valid(raw) {
-		return nil, utf8DecodeError(raw)
+	raw = textutil.TrimBOM(raw)
+	if err := textutil.ValidateUTF8(raw); err != nil {
+		return nil, &errorValue{class: "UnicodeDecodeError", msg: path + ": " + err.Error(), cause: err}
 	}
-	data, err := jsonutil.Decode(string(raw))
+	data, err := jsonutil.Decode(raw)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("photon: could not read %s: %s", path, err))
 		return jsonutil.NewObject(), nil
@@ -227,34 +219,11 @@ func loadAuth(ctx context.Context) (any, error) {
 	if !anyutil.IsTrue(data) {
 		return jsonutil.NewObject(), nil
 	}
-	return data, nil
-}
-
-// UnicodeDecodeError text of the strict utf-8 codec at the first bad byte
-func utf8DecodeError(b []byte) error {
-	pos := 0
-	for pos < len(b) {
-		r, size := utf8.DecodeRune(b[pos:])
-		if r == utf8.RuneError && size <= 1 {
-			break
-		}
-		pos += size
+	o, ok := data.(*jsonutil.Object)
+	if !ok {
+		return nil, &errorValue{class: "AttributeError", msg: fmt.Sprintf("%s: expected a JSON object, got %s", path, anyutil.Kind(data))}
 	}
-	reason := "invalid start byte"
-	c := b[pos]
-	need := map[bool]int{c >= 0xc2 && c <= 0xdf: 2, c >= 0xe0 && c <= 0xef: 3, c >= 0xf0 && c <= 0xf4: 4}[true]
-	if need > 0 {
-		end := pos + 1
-		for end < len(b) && end < pos+need && b[end]&0xc0 == 0x80 {
-			end++
-		}
-		if end == len(b) && end < pos+need {
-			reason = "unexpected end of data"
-		} else {
-			reason = "invalid continuation byte"
-		}
-	}
-	return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("'utf-8' codec can't decode byte 0x%02x in position %d: %s", c, pos, reason)}
+	return o, nil
 }
 
 // Writes auth.json through a 0600 O_EXCL temp file, fsync and rename so the token is never world readable
@@ -296,11 +265,11 @@ func saveAuth(ctx context.Context, data any) error {
 
 // First entry of credential_pool key when it is a non empty list, else nil
 func poolFirst(auth any, key string) (any, error) {
-	cp, err := pyGetDefault(auth, "credential_pool", jsonutil.NewObject())
+	cp, err := getDefault(auth, "credential_pool", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}
-	pool, err := pyGet(cp, key)
+	pool, err := lookup(cp, key)
 	if err != nil {
 		return nil, err
 	}
@@ -321,16 +290,12 @@ func storePoolRecord(ctx context.Context, key string, record *jsonutil.Object) e
 	if err != nil {
 		return err
 	}
-	o, ok := auth.(*jsonutil.Object)
-	if !ok {
-		return attrError(auth, "setdefault")
-	}
-	cp, found := o.Get("credential_pool")
+	cp, found := auth.Get("credential_pool")
 	if !found {
 		cp = jsonutil.NewObject()
-		o.Set("credential_pool", cp)
+		auth.Set("credential_pool", cp)
 	}
-	if err := pySetItem(cp, key, []any{record}); err != nil {
+	if err := setItem(cp, key, []any{record}); err != nil {
 		return err
 	}
 	return saveAuth(ctx, auth)
@@ -346,21 +311,21 @@ func LoadPhotonToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	entry = pyOr(entry, jsonutil.NewObject())
-	providers, err := pyGetDefault(auth, "providers", jsonutil.NewObject())
+	entry = anyutil.Or(entry, jsonutil.NewObject())
+	providers, err := getDefault(auth, "providers", jsonutil.NewObject())
 	if err != nil {
 		return "", err
 	}
-	legacy, err := pyGetDefault(providers, "photon", jsonutil.NewObject())
+	legacy, err := getDefault(providers, "photon", jsonutil.NewObject())
 	if err != nil {
 		return "", err
 	}
-	token, err := pyGet(entry, "access_token")
+	token, err := lookup(entry, "access_token")
 	if err == nil && !anyutil.IsTrue(token) {
-		token, err = pyGet(entry, "token")
+		token, err = lookup(entry, "token")
 	}
 	if err == nil && !anyutil.IsTrue(token) {
-		token, err = pyGet(legacy, "access_token")
+		token, err = lookup(legacy, "access_token")
 	}
 	if err != nil {
 		return "", err
@@ -379,31 +344,31 @@ func ClearPhotonToken(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	pool, err := pyGetDefault(auth, "credential_pool", jsonutil.NewObject())
+	pool, err := getDefault(auth, "credential_pool", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
-	photon, err := pyGetDefault(pool, "photon", []any{})
+	photon, err := getDefault(pool, "photon", []any{})
 	if err != nil {
 		return err
 	}
 	if list, ok := photon.([]any); ok && len(list) > 0 {
-		if err := pySetItem(pool, "photon", []any{}); err != nil {
+		if err := setItem(pool, "photon", []any{}); err != nil {
 			return err
 		}
 		if err := saveAuth(ctx, auth); err != nil {
 			return err
 		}
 	}
-	providers, err := pyGetDefault(auth, "providers", jsonutil.NewObject())
+	providers, err := getDefault(auth, "providers", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
-	present, err := pyContains(providers, "photon")
+	present, err := contains(providers, "photon")
 	if err != nil || !present {
 		return err
 	}
-	if err := pySetItem(providers, "photon", jsonutil.NewObject()); err != nil {
+	if err := setItem(providers, "photon", jsonutil.NewObject()); err != nil {
 		return err
 	}
 	return saveAuth(ctx, auth)
@@ -450,17 +415,17 @@ func loadProjectCredentialsRaw(ctx context.Context) (any, any, error) {
 	}
 	var id, sec any = envID, envSec
 	if envID == "" {
-		if id, err = pyGet(entry, "spectrum_project_id"); err != nil {
+		if id, err = lookup(entry, "spectrum_project_id"); err != nil {
 			return nil, nil, err
 		}
 		if !anyutil.IsTrue(id) {
-			if id, err = pyGet(entry, "project_id"); err != nil {
+			if id, err = lookup(entry, "project_id"); err != nil {
 				return nil, nil, err
 			}
 		}
 	}
 	if envSec == "" {
-		if sec, err = pyGet(entry, "project_secret"); err != nil {
+		if sec, err = lookup(entry, "project_secret"); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -487,10 +452,10 @@ func loadDashboardProjectIDRaw(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	entry = pyOr(entry, jsonutil.NewObject())
+	entry = anyutil.Or(entry, jsonutil.NewObject())
 	var last any
 	for _, key := range []string{"spectrum_project_id", "dashboard_project_id", "project_id"} {
-		if last, err = pyGet(entry, key); err != nil || anyutil.IsTrue(last) {
+		if last, err = lookup(entry, key); err != nil || anyutil.IsTrue(last) {
 			return last, err
 		}
 	}
@@ -546,11 +511,11 @@ var persistRuntimeEnv = func(ctx context.Context, spectrumProjectID, projectSecr
 }
 
 func dashboardHost() string {
-	return strings.TrimRight(pyOr(os.Getenv("PHOTON_DASHBOARD_HOST"), DefaultDashboardHost).(string), "/")
+	return strings.TrimRight(anyutil.Or(os.Getenv("PHOTON_DASHBOARD_HOST"), DefaultDashboardHost).(string), "/")
 }
 
 func spectrumHost() string {
-	return strings.TrimRight(pyOr(os.Getenv("PHOTON_SPECTRUM_HOST"), DefaultSpectrumHost).(string), "/")
+	return strings.TrimRight(anyutil.Or(os.Getenv("PHOTON_SPECTRUM_HOST"), DefaultSpectrumHost).(string), "/")
 }
 
 func bearer(token string) map[string]string {
@@ -576,17 +541,13 @@ func (l liveResponse) StatusCode() int     { return l.r.StatusCode }
 func (l liveResponse) Text() string        { return l.r.Text() }
 func (l liveResponse) Header() http.Header { return l.r.Header }
 
-// json.loads of the body with the JSONDecodeError or UnicodeDecodeError class httpx raises
+// Decoded JSON body, a JSONDecodeError kind failure when it does not parse; invalid UTF-8 inside strings decodes as U+FFFD rather than failing
 func (l liveResponse) JSON() (any, error) {
 	v, err := l.r.JSON()
 	if err == nil {
 		return v, nil
 	}
-	class := "JSONDecodeError"
-	if errorutil.Kind(err) == "UnicodeDecodeError" {
-		class = "UnicodeDecodeError"
-	}
-	return nil, &pyError{class: class, msg: err.Error(), cause: err}
+	return nil, &errorValue{class: "JSONDecodeError", msg: err.Error(), cause: err}
 }
 
 // HTTPStatusError for any non 2xx status like httpx raise_for_status
@@ -594,7 +555,8 @@ func (l liveResponse) RaiseForStatus() error {
 	if l.r.StatusCode >= 200 && l.r.StatusCode < 300 {
 		return nil
 	}
-	return &pyError{class: "HTTPStatusError", msg: (&httputil.StatusError{StatusCode: l.r.StatusCode, URL: l.r.URL, Location: l.r.Header.Get("Location")}).Error()}
+	status := &httputil.StatusError{StatusCode: l.r.StatusCode, URL: l.r.URL, Location: l.r.Header.Get("Location")}
+	return &errorValue{class: "HTTPStatusError", msg: status.Error(), cause: status}
 }
 
 // Module level httpx get and post, swappable so tests answer without a network
@@ -611,7 +573,7 @@ var (
 func liveRequest(ctx context.Context, method, rawURL string, body any, headers map[string]string, timeout time.Duration) (photonResponse, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, &pyError{class: "InvalidURL", msg: err.Error(), cause: err}
+		return nil, &errorValue{class: "InvalidURL", msg: err.Error(), cause: err}
 	}
 	switch u.Scheme {
 	case "http", "https":
@@ -624,7 +586,7 @@ func liveRequest(ctx context.Context, method, rawURL string, body any, headers m
 	if body != nil {
 		text, err := jsonutil.Encode(body)
 		if err != nil {
-			return nil, &pyError{class: "ValueError", msg: err.Error(), cause: err}
+			return nil, &errorValue{class: "ValueError", msg: err.Error(), cause: err}
 		}
 		payload = strings.NewReader(text)
 	}
@@ -635,7 +597,7 @@ func liveRequest(ctx context.Context, method, rawURL string, body any, headers m
 		req, err = http.NewRequestWithContext(ctx, method, rawURL, nil)
 	}
 	if err != nil {
-		return nil, &pyError{class: "InvalidURL", msg: err.Error(), cause: err}
+		return nil, &errorValue{class: "InvalidURL", msg: err.Error(), cause: err}
 	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -685,7 +647,7 @@ func dashboardPost(ctx context.Context, path string, body any, token string) (an
 	if err != nil {
 		return nil, err
 	}
-	return pyOr(data, jsonutil.NewObject()), nil
+	return anyutil.Or(data, jsonutil.NewObject()), nil
 }
 
 // Error detail of a failed response, the error message or detail key, the sorted JSON or the text
@@ -738,7 +700,7 @@ type deviceTokenCandidate struct {
 // int of a device response field with its default, the OverflowError for a value past int64
 func deviceInt(data *jsonutil.Object, key string, def int) (int, error) {
 	v, _ := data.Get(key)
-	n, err := anyutil.ToInt(pyOr(v, def))
+	n, err := anyutil.ToInt(anyutil.Or(v, def))
 	if err != nil {
 		return 0, err
 	}
@@ -767,7 +729,7 @@ func RequestDeviceCode(ctx context.Context, clientID, scope string) (DeviceCode,
 		key string
 		dst *any
 	}{{"device_code", &code.DeviceCode}, {"user_code", &code.UserCode}, {"verification_uri", &code.VerificationURI}} {
-		if *f.dst, err = pySubscript(data, f.key); err != nil {
+		if *f.dst, err = subscript(data, f.key); err != nil {
 			return DeviceCode{}, err
 		}
 	}
@@ -785,7 +747,7 @@ func RequestDeviceCode(ctx context.Context, clientID, scope string) (DeviceCode,
 // Sleep of the device token poll, swappable so tests run without waiting
 var sleepFn = func(ctx context.Context, seconds int) error {
 	if seconds < 0 {
-		return &pyError{class: "ValueError", msg: "sleep length must be non-negative"}
+		return &errorValue{class: "ValueError", msg: "sleep length must be non-negative"}
 	}
 	t := time.NewTimer(time.Duration(seconds) * time.Second)
 	defer t.Stop()
@@ -800,9 +762,9 @@ var sleepFn = func(ctx context.Context, seconds int) error {
 // Polls the device token endpoint until approval, sleeping first and backing off on slow_down and 429
 func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout int, interval *int, onPending func()) (string, error) {
 	tokenURL := dashboardHost() + "/api/auth/device/token"
-	budget := pyOr(timeout, code.ExpiresIn, DefaultPollTimeout).(int)
+	budget := anyutil.Or(timeout, code.ExpiresIn, DefaultPollTimeout).(int)
 	deadline := float64(time.Now().UnixNano())/1e9 + float64(budget)
-	sleep := pyOr(code.Interval, DefaultPollInterval).(int)
+	sleep := anyutil.Or(code.Interval, DefaultPollInterval).(int)
 	if interval != nil {
 		sleep = *interval
 	}
@@ -830,7 +792,7 @@ func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout
 			if err != nil {
 				body = nil
 			}
-			o, ok := pyOr(body, jsonutil.NewObject()).(*jsonutil.Object)
+			o, ok := anyutil.Or(body, jsonutil.NewObject()).(*jsonutil.Object)
 			if !ok {
 				o = jsonutil.NewObject()
 			}
@@ -847,18 +809,18 @@ func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout
 		case 400:
 			var body any = jsonutil.NewObject()
 			if v, err := resp.JSON(); err == nil {
-				body = pyOr(v, jsonutil.NewObject())
+				body = anyutil.Or(v, jsonutil.NewObject())
 			} else if errorutil.Kind(err) != "JSONDecodeError" {
 				return "", err
 			}
-			e, err := pyGet(body, "error")
+			e, err := lookup(body, "error")
 			if err == nil && !anyutil.IsTrue(e) {
-				e, err = pyGet(body, "message")
+				e, err = lookup(body, "message")
 			}
 			if err != nil {
 				return "", err
 			}
-			e = pyOr(e, "")
+			e = anyutil.Or(e, "")
 			switch s, _ := e.(string); s {
 			case "authorization_pending", "slow_down":
 				if s == "slow_down" {
@@ -877,7 +839,7 @@ func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout
 		}
 		pkgLog().Warn(fmt.Sprintf("photon: device-token unexpected status %d: %s", resp.StatusCode(), cutRunes(resp.Text(), 200)))
 	}
-	return "", &pyError{class: "TimeoutError", msg: "Photon device login timed out"}
+	return "", &errorValue{class: "TimeoutError", msg: "Photon device login timed out"}
 }
 
 // De-duplicated token candidates from every body key and header shape Photon has used
@@ -1041,7 +1003,7 @@ func LoginDeviceFlow(ctx context.Context, clientID string, openBrowser bool, onU
 		safe(func() { onUserCode(code) })
 	}
 	if openBrowser {
-		if target, ok := pyOr(code.VerificationURIComplete, code.VerificationURI).(string); ok {
+		if target, ok := anyutil.Or(code.VerificationURIComplete, code.VerificationURI).(string); ok {
 			safe(func() { _ = webbrowserOpen(target) })
 		}
 	}
@@ -1102,7 +1064,7 @@ func dashboardList(ctx context.Context, path, token string) ([]any, error) {
 }
 
 func raiseOnErrorKey(data any, action string) error {
-	v, err := pyGet(data, "error")
+	v, err := lookup(data, "error")
 	if err != nil {
 		return err
 	}
@@ -1125,11 +1087,11 @@ func FindProjectByName(ctx context.Context, token, name string) (*jsonutil.Objec
 		return nil, err
 	}
 	for _, proj := range projects {
-		n, err := pyGet(proj, "name")
+		n, err := lookup(proj, "name")
 		if err != nil {
 			return nil, err
 		}
-		s, err := pyStringFor(pyOr(n, ""), "strip")
+		s, err := stringValue(anyutil.Or(n, ""))
 		if err != nil {
 			return nil, err
 		}
@@ -1156,7 +1118,7 @@ func CreateProject(ctx context.Context, token, name, location string) (*jsonutil
 	}
 	if succeed, _ := o.Get("succeed"); succeed == false {
 		msg, _ := o.Get("message")
-		return nil, runtimeError("Photon create-project failed: %s", anyutil.String(pyOr(msg, o)))
+		return nil, runtimeError("Photon create-project failed: %s", anyutil.String(anyutil.Or(msg, o)))
 	}
 	project := o
 	if inner, _ := o.Get("data"); inner != nil {
@@ -1179,7 +1141,7 @@ func RegenerateProjectSecret(ctx context.Context, token, projectID string) (stri
 	if err := raiseOnErrorKey(data, "regenerate-secret"); err != nil {
 		return "", err
 	}
-	secret, err := pyGet(data, "projectSecret")
+	secret, err := lookup(data, "projectSecret")
 	if err != nil {
 		return "", err
 	}
@@ -1234,7 +1196,7 @@ type UserFields struct {
 // Creates a shared Spectrum user for an E.164 phone number and returns it
 func CreateUser(ctx context.Context, projectID, projectSecret, phoneNumber string, fields UserFields, sendInvite bool) (*jsonutil.Object, error) {
 	if !E164RE.MatchString(phoneNumber) {
-		return nil, &pyError{class: "ValueError", msg: "phone_number must be E.164 (e.g. +15551234567); got " + strconv.Quote(phoneNumber)}
+		return nil, &errorValue{class: "ValueError", msg: "phone_number must be E.164 (e.g. +15551234567); got " + strconv.Quote(phoneNumber)}
 	}
 	body := jsonutil.ObjectOf("type", "shared", "phoneNumber", phoneNumber)
 	if sendInvite {
@@ -1256,14 +1218,14 @@ func CreateUser(ctx context.Context, projectID, projectSecret, phoneNumber strin
 	if err != nil {
 		return nil, err
 	}
-	data = pyOr(data, jsonutil.NewObject())
+	data = anyutil.Or(data, jsonutil.NewObject())
 	if err := raiseOnErrorKey(data, "create-user"); err != nil {
 		return nil, err
 	}
 	o := data.(*jsonutil.Object)
 	u, _ := o.Get("user")
 	d, _ := o.Get("data")
-	user, ok := pyOr(u, d, o).(*jsonutil.Object)
+	user, ok := anyutil.Or(u, d, o).(*jsonutil.Object)
 	if !ok || user == nil {
 		return nil, runtimeError("Photon create-user returned an unexpected response")
 	}
@@ -1311,13 +1273,13 @@ func FindRoutableUser(users []any, phoneNumber string) (*jsonutil.Object, error)
 	target := normalizePhone(phoneNumber)
 	var matches []*jsonutil.Object
 	for _, u := range users {
-		pn, err := pyGet(u, "phoneNumber")
+		pn, err := lookup(u, "phoneNumber")
 		if err != nil {
 			return nil, err
 		}
-		s, ok := pyOr(pn, "").(string)
+		s, ok := anyutil.Or(pn, "").(string)
 		if !ok {
-			return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("expected string or bytes-like object, got '%s'", anyutil.Kind(pn))}
+			return nil, &errorValue{class: "TypeError", msg: fmt.Sprintf("expected string or bytes-like object, got '%s'", anyutil.Kind(pn))}
 		}
 		if normalizePhone(s) == target {
 			matches = append(matches, u.(*jsonutil.Object))
@@ -1353,14 +1315,14 @@ func WaitForOptedInUser(ctx context.Context, projectID, projectSecret, phoneNumb
 	}
 	deadline := clock() + timeoutS
 	if intervalS == 0 {
-		return nil, &pyError{class: "ZeroDivisionError", msg: "float division by zero"}
+		return nil, &errorValue{class: "ZeroDivisionError", msg: "float division by zero"}
 	}
 	ratio := timeoutS / intervalS
 	switch {
 	case math.IsNaN(ratio):
-		return nil, &pyError{class: "ValueError", msg: "cannot convert float NaN to integer"}
+		return nil, &errorValue{class: "ValueError", msg: "cannot convert float NaN to integer"}
 	case math.IsInf(ratio, 0):
-		return nil, &pyError{class: "OverflowError", msg: "cannot convert float infinity to integer"}
+		return nil, &errorValue{class: "OverflowError", msg: "cannot convert float infinity to integer"}
 	}
 	maxAttempts := int64(1)
 	if ratio >= math.MaxInt64 {
@@ -1409,7 +1371,7 @@ func LoadUserNumbers(ctx context.Context) (string, string, error) {
 	pick := func(a, b string) any {
 		va, _ := o.Get(a)
 		vb, _ := o.Get(b)
-		return pyOr(va, vb)
+		return anyutil.Or(va, vb)
 	}
 	phone, assigned := pick("phone_number", "phoneNumber"), pick("assigned_phone_number", "assignedPhoneNumber")
 	p := strOrEmpty(phone)
@@ -1449,11 +1411,11 @@ func RefreshUserNumbers(ctx context.Context, projectID, projectSecret string) (s
 	if anyutil.IsTrue(user) {
 		o, ok := user.(*jsonutil.Object)
 		if !ok {
-			return "", "", attrError(user, "get")
+			return "", "", kindError("an object", user)
 		}
 		userID, _ = o.Get("id")
 		pn, _ := o.Get("phoneNumber")
-		if dashboardPhone := normalizePhone(anyutil.String(pyOr(pn, ""))); E164RE.MatchString(dashboardPhone) {
+		if dashboardPhone := normalizePhone(anyutil.String(anyutil.Or(pn, ""))); E164RE.MatchString(dashboardPhone) {
 			phone = dashboardPhone
 		}
 		assigned = UserAssignedLine(o)
@@ -1490,7 +1452,7 @@ func lineNumber(ctx context.Context, token, projectID string) (string, error) {
 	if err != nil || !anyutil.IsTrue(line) {
 		return "", err
 	}
-	pn, err := pyGet(line, "phoneNumber")
+	pn, err := lookup(line, "phoneNumber")
 	return strOrEmpty(pn), err
 }
 
@@ -1538,8 +1500,8 @@ func AddLine(ctx context.Context, token, projectID, platform string) (any, error
 	if err := raiseOnErrorKey(data, "add-line"); err != nil {
 		return nil, err
 	}
-	line, _ := pyGet(data, "line")
-	return pyOr(line, data), nil
+	line, _ := lookup(data, "line")
+	return anyutil.Or(line, data), nil
 }
 
 // The project's iMessage line, provisioned when absent and asked for, nil when provisioning failed
@@ -1550,11 +1512,11 @@ func GetIMessageLine(ctx context.Context, token, projectID string, createIfMissi
 	}
 	var line any
 	for _, ln := range lines {
-		p, err := pyGet(ln, "platform")
+		p, err := lookup(ln, "platform")
 		if err != nil {
 			return nil, err
 		}
-		s, err := pyStringFor(pyOr(p, ""), "lower")
+		s, err := stringValue(anyutil.Or(p, ""))
 		if err != nil {
 			return nil, err
 		}
@@ -1584,7 +1546,7 @@ func displayValue(v any, missing string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &pyError{class: "TypeError", msg: fmt.Sprintf("can only concatenate str (not \"%s\") to str", anyutil.Kind(v))}
+		return "", &errorValue{class: "TypeError", msg: fmt.Sprintf("can only concatenate str (not \"%s\") to str", anyutil.Kind(v))}
 	}
 	return s, nil
 }
@@ -1615,8 +1577,8 @@ func PrintCredentialSummary(ctx context.Context, emit func(string)) error {
 	if anyutil.IsTrue(sec) {
 		secRow = "✓ stored"
 	}
-	phoneRow := pyOr(phone, "✗ missing (run `icebath photon setup --phone ...`)").(string)
-	assignedRow := pyOr(assigned, "✗ missing (run `icebath photon setup`)").(string)
+	phoneRow := anyutil.Or(phone, "✗ missing (run `icebath photon setup --phone ...`)").(string)
+	assignedRow := anyutil.Or(assigned, "✗ missing (run `icebath photon setup`)").(string)
 	emit(strings.Join([]string{
 		"Photon iMessage status",
 		"──────────────────────",
@@ -1647,14 +1609,14 @@ func PrintRoutingStatus(ctx context.Context, emit func(string)) error {
 		if !isProbeFailure(err) {
 			return err
 		}
-		emit("  routing             : ? could not verify (" + pyOr(err.Error(), errorutil.Kind(err)).(string) + ")")
+		emit("  routing             : ? could not verify (" + anyutil.Or(err.Error(), errorutil.Kind(err)).(string) + ")")
 		return nil
 	}
 	if UserOptedIn(user) {
 		emit("  routing             : ✓ opted in (verified live)")
 		return nil
 	}
-	line := pyOr(UserAssignedLine(user), assigned, "your assigned line").(string)
+	line := anyutil.Or(UserAssignedLine(user), assigned, "your assigned line").(string)
 	emit(fmt.Sprintf("  routing             : ✗ not opted in — text %s once from %s, then re-check", line, phone))
 	return nil
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -193,7 +194,7 @@ func RenderAccountUsageLines(snapshot *AccountUsageSnapshot, markdown bool) []st
 			base = w.Label + ": unavailable"
 		} else {
 			used := *w.UsedPercent
-			base = fmt.Sprintf("%s: %d%% remaining (%d%% used)", w.Label, max(0, pyRoundInt(100-used)), max(0, pyRoundInt(used)))
+			base = fmt.Sprintf("%s: %d%% remaining (%d%% used)", w.Label, max(0, roundInt(100-used)), max(0, roundInt(used)))
 		}
 		if w.ResetAt != nil {
 			base += " • resets " + formatUsageReset(w.ResetAt)
@@ -209,7 +210,7 @@ func RenderAccountUsageLines(snapshot *AccountUsageSnapshot, markdown bool) []st
 	return lines
 }
 
-func pyRoundInt(v float64) int { return int(math.RoundToEven(v)) }
+func roundInt(v float64) int { return int(math.RoundToEven(v)) }
 
 // Plain stacked bar lines with no emoji, ANSI or markdown so terminal widths stay exact
 func renderUsageWindowLines(snapshot *AccountUsageSnapshot) []string {
@@ -395,7 +396,7 @@ func accountUsageDo(ctx context.Context, client *http.Client, method, url string
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, "", &accountUsageHTTPError{Status: resp.StatusCode, URL: url}
 	}
-	v, repr, err := pyJSONLoads(raw)
+	v, repr, err := jsonLoads(raw)
 	if err != nil {
 		return nil, "", err
 	}
@@ -531,7 +532,7 @@ func fetchCodexAccountUsageImpl(ctx context.Context, baseURL, apiKey string, rea
 		if err != nil {
 			return nil, err
 		}
-		details = append(details, "Credits balance: $"+pyFixed2(bal))
+		details = append(details, "Credits balance: $"+fixed2(bal))
 	} else if auTruthy(credits["has_credits"]) && auTruthy(credits["unlimited"]) {
 		details = append(details, "Credits balance: unlimited")
 	}
@@ -594,7 +595,7 @@ func codexResetGuard(payload map[string]any, available int64, force bool) (*Code
 	}
 	note := "your current usage could not be confirmed as exhausted"
 	if worst != nil {
-		note = fmt.Sprintf("your busiest window is only %s%% used", pyFixed0(*worst))
+		note = fmt.Sprintf("your busiest window is only %s%% used", fixed0(*worst))
 	}
 	return &CodexResetRedeemResult{Status: "not_exhausted", AvailableCount: available, Message: fmt.Sprintf(
 		"⚠️ Not redeeming: %s. A banked reset restores your FULL 5h + weekly limits, so spending it now would waste most of it. "+
@@ -754,7 +755,7 @@ func fetchAnthropicAccountUsage(ctx context.Context, baseURL, apiKey string) (*A
 		if c := extra["currency"]; auTruthy(c) {
 			currency = auStr(c)
 		}
-		details = append(details, fmt.Sprintf("Extra usage: %s / %s %s", pyFixed2(u), pyFixed2(l), currency))
+		details = append(details, fmt.Sprintf("Extra usage: %s / %s %s", fixed2(u), fixed2(l), currency))
 	}
 	return NewAccountUsageSnapshot("anthropic", "oauth_usage_api", windows, details), nil
 }
@@ -809,7 +810,7 @@ func fetchOpenRouterAccountUsage(ctx context.Context, baseURL, apiKey string) (*
 	if err != nil {
 		return nil, err
 	}
-	details := []string{"Credits balance: $" + pyFixed2(pyMaxZero(total-usage))}
+	details := []string{"Credits balance: $" + fixed2(maxZero(total-usage))}
 	var windows []AccountUsageWindow
 	limit, limitRemaining, keyUsage := keyData["limit"], keyData["limit_remaining"], keyData["usage"]
 	limitReset := strings.TrimSpace(auStr(keyData["limit_reset"]))
@@ -823,7 +824,7 @@ func fetchOpenRouterAccountUsage(ctx context.Context, baseURL, apiKey string) (*
 			return nil, rerr
 		}
 		if l > 0 && 0 <= r && r <= l {
-			parts := []string{fmt.Sprintf("$%s of $%s remaining", pyFixed2(r), pyFixed2(l))}
+			parts := []string{fmt.Sprintf("$%s of $%s remaining", fixed2(r), fixed2(l))}
 			if limitReset != "" {
 				parts = append(parts, "resets "+limitReset)
 			}
@@ -836,7 +837,7 @@ func fetchOpenRouterAccountUsage(ctx context.Context, baseURL, apiKey string) (*
 		if err != nil {
 			return nil, err
 		}
-		parts := []string{"API key usage: $" + pyFixed2(u) + " total"}
+		parts := []string{"API key usage: $" + fixed2(u) + " total"}
 		for _, kv := range [][2]string{{"usage_daily", "today"}, {"usage_weekly", "this week"}, {"usage_monthly", "this month"}} {
 			if v := keyData[kv[0]]; auIsNum(v) {
 				f, err := auFloat(v)
@@ -844,7 +845,7 @@ func fetchOpenRouterAccountUsage(ctx context.Context, baseURL, apiKey string) (*
 					return nil, err
 				}
 				if f > 0 {
-					parts = append(parts, "$"+pyFixed2(f)+" "+kv[1])
+					parts = append(parts, "$"+fixed2(f)+" "+kv[1])
 				}
 			}
 		}
@@ -931,7 +932,7 @@ func auTruthy(v any) bool {
 	case map[string]any:
 		return len(t) > 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Python str of a value treated as empty when falsy
@@ -943,11 +944,11 @@ func auStr(v any) string {
 	case bool:
 		return "True"
 	case float64:
-		return pyFloatRepr(t)
+		return floatRepr(t)
 	case map[string]any, []any:
 		return fmt.Sprint(t)
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Dict of a falsy or dict value, an error for any other truthy shape as Python attribute access raises
@@ -994,15 +995,15 @@ func auFloat(v any) (float64, error) {
 		}
 		return f, nil
 	case string:
-		return pyFloatString(t)
+		return floatString(t)
 	}
 	return 0, fmt.Errorf("an account usage value is %s, expected a number", errchain.Kind(v))
 }
 
 // Python float of a string, whitespace, single underscores between digits, Unicode digits and inf or nan words
-func pyFloatString(s string) (float64, error) {
+func floatString(s string) (float64, error) {
 	text := strings.TrimSpace(s)
-	bad := fmt.Errorf("%s is not a number", pyStringRepr(s))
+	bad := fmt.Errorf("%s is not a number", strconv.Quote(s))
 	var b strings.Builder
 	runes := []rune(text)
 	for i, r := range runes {
@@ -1012,7 +1013,7 @@ func pyFloatString(s string) (float64, error) {
 				return 0, bad
 			}
 		case r > 0x7f && isDigitRune(r):
-			b.WriteByte(byte('0' + unicodeDigitValue(r)))
+			b.WriteByte(byte('0' + textutil.DigitValue(r)))
 		case r == 'x' || r == 'X' || r == 'p' || r == 'P':
 			return 0, bad
 		default:
@@ -1064,7 +1065,7 @@ func auInt(v any) (int64, error) {
 }
 
 // Python max of zero and a value, zero when the value is nan
-func pyMaxZero(v float64) float64 {
+func maxZero(v float64) float64 {
 	if v > 0 {
 		return v
 	}
@@ -1072,11 +1073,11 @@ func pyMaxZero(v float64) float64 {
 }
 
 // Fixed two decimals as Python formats them, inf and nan spelled lowercase
-func pyFixed2(v float64) string { return pyFixedN(v, 2) }
+func fixed2(v float64) string { return fixedN(v, 2) }
 
-func pyFixed0(v float64) string { return pyFixedN(v, 0) }
+func fixed0(v float64) string { return fixedN(v, 0) }
 
-func pyFixedN(v float64, n int) string {
+func fixedN(v float64, n int) string {
 	switch {
 	case math.IsInf(v, 1):
 		return "inf"

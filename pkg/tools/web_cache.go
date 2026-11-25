@@ -232,7 +232,7 @@ func saveExtractIndex(ctx context.Context, env *Env, index *jsonutil.Object) {
 			}
 			f := 0.0
 			if v, has := entry.Get("fetched_at"); has {
-				parsed, ok := pyFloatValue(v)
+				parsed, ok := floatValue(v)
 				if !ok {
 					envLog(env).Debug("Failed to save web extract cache index", "error", "fetched_at is not a number")
 					return
@@ -353,7 +353,7 @@ func ExtractCacheGet(env *Env, u, format, provider string) *WebPage {
 	if entry == nil || entry.Len() == 0 {
 		return nil
 	}
-	fetched, _ := pyFloatValue(entry.ValueOr("fetched_at", int64(0)))
+	fetched, _ := floatValue(entry.ValueOr("fetched_at", int64(0)))
 	if time.Since(time.Unix(0, int64(fetched*1e9))) >= webCacheTTL(env) {
 		return nil
 	}
@@ -424,7 +424,7 @@ func ExtractCachePut(ctx context.Context, env *Env, u, content, title, format, p
 }
 
 // Float the way Python float() reads a JSON value
-func pyFloatValue(v any) (float64, bool) {
+func floatValue(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
 		return n, true

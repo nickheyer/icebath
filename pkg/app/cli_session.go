@@ -70,7 +70,7 @@ func (c *CLI) printExitSummary() {
 		if m["role"] == "user" {
 			userMsgs++
 		}
-		if m["role"] == "tool" || cliTruthy(m["tool_calls"]) {
+		if m["role"] == "tool" || anyutil.IsTrue(m["tool_calls"]) {
 			toolCalls++
 		}
 	}
@@ -127,7 +127,7 @@ func (c *CLI) dimNotice(msg string, quiet bool) {
 
 // Moves a resumed session back into the directory it was started from, a missing directory only noted
 func (c *CLI) restoreSessionCwd(sessionMeta map[string]any, quiet bool) {
-	if !cliTruthy(sessionMeta["cwd"]) {
+	if !anyutil.IsTrue(sessionMeta["cwd"]) {
 		return
 	}
 	recorded := pathutil.ExpandUser(anyutil.String(sessionMeta["cwd"]))

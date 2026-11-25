@@ -357,7 +357,7 @@ func dropTrailingCommas(text string) string {
 
 // Lowercased trimmed name key of a bot
 func botKey(bot *jsonutil.Object) string {
-	return strings.ToLower(strings.TrimSpace(pyStr(bot.Value("name"))))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(bot.Value("name"))))
 }
 
 // Python emptiness of the values a merge leaves in place
@@ -397,7 +397,7 @@ func MergeBots(bots []*jsonutil.Object) []*jsonutil.Object {
 		for _, field := range bot.Keys() {
 			value := bot.Value(field)
 			if list, isList := value.([]any); isList && isListKey(field) {
-				into.Set(field, union(pyIter(into.Value(field)), list))
+				into.Set(field, union(elementsOf(into.Value(field)), list))
 				continue
 			}
 			if _, has := into.Get(field); !emptyValue(value) || !has {
@@ -413,7 +413,7 @@ func MergeBots(bots []*jsonutil.Object) []*jsonutil.Object {
 }
 
 // Items a Python for loop yields from a value, chars of text and keys of an object
-func pyIter(v any) []any {
+func elementsOf(v any) []any {
 	switch t := v.(type) {
 	case []any:
 		return t
@@ -525,7 +525,7 @@ func validatedBots(data *jsonutil.Object) ([]*jsonutil.Object, error) {
 		o, ok := asObject(b)
 		name := ""
 		if ok && truthy(o.Value("name")) {
-			name = strings.TrimSpace(pyStr(o.Value("name")))
+			name = strings.TrimSpace(anyutil.String(o.Value("name")))
 		}
 		if name == "" {
 			return nil, &ExportFormatError{fmt.Sprintf("bots[%d] needs a name", i)}
@@ -540,7 +540,7 @@ func stringsOf(value any) []string {
 	list, _ := value.([]any)
 	var out []string
 	for _, v := range list {
-		if s := strings.TrimSpace(pyStr(v)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(v)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -582,7 +582,7 @@ func skillMarkdown(skill *jsonutil.Object, name string) string {
 	desc := skill.Value("description")
 	description := ""
 	if truthy(desc) {
-		description = pyStr(desc)
+		description = anyutil.String(desc)
 	} else {
 		description = "Imported Grok Bot skill: " + anyutil.String(skill.Value("name"))
 	}
@@ -593,7 +593,7 @@ func skillMarkdown(skill *jsonutil.Object, name string) string {
 	quoted, _ := jsonutil.Encode(description, jsonutil.Spaced(), jsonutil.ASCII())
 	body := ""
 	if truthy(skill.Value("instructions")) {
-		body = strings.TrimSpace(pyStr(skill.Value("instructions")))
+		body = strings.TrimSpace(anyutil.String(skill.Value("instructions")))
 	}
 	if !strings.HasPrefix(body, "# ") {
 		body = "# " + strings.TrimSpace(anyutil.String(skill.Value("name"))) + "\n\n" + body
@@ -726,7 +726,7 @@ func (g *BotImporter) loadExportBots() []sourcedBot {
 		} else {
 			t, err := readText(path)
 			if err != nil {
-				g.record("export", path, "", "error", pyErrText(err), nil)
+				g.record("export", path, "", "error", errText(err), nil)
 				continue
 			}
 			text = t
@@ -760,12 +760,12 @@ func (g *BotImporter) loadExportBots() []sourcedBot {
 }
 
 func (g *BotImporter) importBot(path string, bot *jsonutil.Object, single bool) error {
-	name := strings.TrimSpace(pyStr(bot.Value("name")))
+	name := strings.TrimSpace(anyutil.String(bot.Value("name")))
 	slugs := map[string]bool{}
 	for _, r := range dictsOf(bot.Value("routines")) {
 		label := ""
 		if truthy(r.Value("name")) {
-			label = pyStr(r.Value("name"))
+			label = anyutil.String(r.Value("name"))
 		}
 		slugs[slug(label)] = true
 	}
@@ -812,13 +812,13 @@ func isSeededSoul(text string) bool {
 
 // The role becomes SOUL.md while that is seeded and one Bot imports, else its lines join the memory entries
 func (g *BotImporter) importRole(source string, bot *jsonutil.Object, single bool) error {
-	name := strings.TrimSpace(pyStr(bot.Value("name")))
+	name := strings.TrimSpace(anyutil.String(bot.Value("name")))
 	title, instructions := "", ""
 	if truthy(bot.Value("title")) {
-		title = strings.TrimSpace(pyStr(bot.Value("title")))
+		title = strings.TrimSpace(anyutil.String(bot.Value("title")))
 	}
 	if truthy(bot.Value("instructions")) {
-		instructions = strings.TrimSpace(pyStr(bot.Value("instructions")))
+		instructions = strings.TrimSpace(anyutil.String(bot.Value("instructions")))
 	}
 	if instructions == "" {
 		g.record("role", source, "", "skipped", "No instructions found", nil)
@@ -870,17 +870,17 @@ func (g *BotImporter) importSkills(source string, skills []*jsonutil.Object) (ma
 	for _, skill := range skills {
 		label := ""
 		if truthy(skill.Value("name")) {
-			label = strings.TrimSpace(pyStr(skill.Value("name")))
+			label = strings.TrimSpace(anyutil.String(skill.Value("name")))
 		}
 		folder := ""
 		if truthy(skill.Value("path")) {
-			folder = pyStr(skill.Value("path"))
+			folder = anyutil.String(skill.Value("path"))
 		}
 		if folder != "" && !isFile(filepath.Join(folder, "SKILL.md")) {
 			g.record("skill", source+" / "+label, "", "skipped", "No SKILL.md in "+folder, nil)
 			continue
 		}
-		hasText := truthy(skill.Value("instructions")) && strings.TrimSpace(pyStr(skill.Value("instructions"))) != ""
+		hasText := truthy(skill.Value("instructions")) && strings.TrimSpace(anyutil.String(skill.Value("instructions"))) != ""
 		if label == "" || (folder == "" && !hasText) {
 			shown := label
 			if shown == "" {
@@ -973,7 +973,7 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*jsonuti
 	for _, routine := range routines {
 		label := ""
 		if truthy(routine.Value("name")) {
-			label = strings.TrimSpace(pyStr(routine.Value("name")))
+			label = strings.TrimSpace(anyutil.String(routine.Value("name")))
 		}
 		if label == "" {
 			label = "routine"
@@ -989,7 +989,7 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*jsonuti
 		where := "cron job '" + jobName + "'"
 		instruction := ""
 		if truthy(routine.Value("instruction")) {
-			instruction = strings.TrimSpace(pyStr(routine.Value("instruction")))
+			instruction = strings.TrimSpace(anyutil.String(routine.Value("instruction")))
 		}
 		if instruction == "" {
 			g.record("routine", source+" / "+label, "", "skipped", "Routine has no instruction", nil)
@@ -1056,7 +1056,7 @@ func strPtr(s string) *string { return &s }
 func (g *BotImporter) routineSchedule(routine *jsonutil.Object) (string, bool) {
 	trigger := "schedule"
 	if truthy(routine.Value("trigger")) {
-		trigger = pyStr(routine.Value("trigger"))
+		trigger = anyutil.String(routine.Value("trigger"))
 	}
 	if !scheduleTrigger[strings.ToLower(strings.TrimSpace(trigger))] {
 		return "", false
@@ -1064,7 +1064,7 @@ func (g *BotImporter) routineSchedule(routine *jsonutil.Object) (string, bool) {
 	for _, key := range []string{"schedule_cron", "schedule_text"} {
 		candidate := ""
 		if truthy(routine.Value(key)) {
-			candidate = strings.TrimSpace(pyStr(routine.Value(key)))
+			candidate = strings.TrimSpace(anyutil.String(routine.Value(key)))
 		}
 		if candidate == "" {
 			continue
@@ -1081,7 +1081,7 @@ func (g *BotImporter) routineSchedule(routine *jsonutil.Object) (string, bool) {
 func validZone(routine *jsonutil.Object) string {
 	tz := ""
 	if truthy(routine.Value("timezone")) {
-		tz = strings.TrimSpace(pyStr(routine.Value("timezone")))
+		tz = strings.TrimSpace(anyutil.String(routine.Value("timezone")))
 	}
 	if tz == "" {
 		return ""
@@ -1096,7 +1096,7 @@ func validZone(routine *jsonutil.Object) string {
 func zoneNote(routine *jsonutil.Object) string {
 	tz := ""
 	if truthy(routine.Value("timezone")) {
-		tz = strings.TrimSpace(pyStr(routine.Value("timezone")))
+		tz = strings.TrimSpace(anyutil.String(routine.Value("timezone")))
 	}
 	if tz == "" || validZone(routine) != "" {
 		return ""
@@ -1113,22 +1113,22 @@ func (g *BotImporter) noteEventRoutines(source, botName string, routines []*json
 	for _, r := range routines {
 		name := "routine"
 		if truthy(r.Value("name")) {
-			name = pyStr(r.Value("name"))
+			name = anyutil.String(r.Value("name"))
 		}
 		trigger := "unknown"
 		if truthy(r.Value("trigger")) {
-			trigger = pyStr(r.Value("trigger"))
+			trigger = anyutil.String(r.Value("trigger"))
 		}
 		detail := "n/a"
 		switch {
 		case truthy(r.Value("trigger_details")):
-			detail = pyStr(r.Value("trigger_details"))
+			detail = anyutil.String(r.Value("trigger_details"))
 		case truthy(r.Value("schedule_text")):
-			detail = pyStr(r.Value("schedule_text"))
+			detail = anyutil.String(r.Value("schedule_text"))
 		}
 		instruction := ""
 		if truthy(r.Value("instruction")) {
-			instruction = pyStr(r.Value("instruction"))
+			instruction = anyutil.String(r.Value("instruction"))
 		}
 		lines = append(lines, "## "+strings.TrimSpace(name), "", "- Trigger: "+trigger, "- Details: "+detail, "",
 			strings.TrimSpace(instruction), "")
@@ -1167,10 +1167,10 @@ func (g *BotImporter) importApps(source string, apps []*jsonutil.Object) error {
 	for _, a := range apps {
 		url := ""
 		if truthy(a.Value("mcp_url")) {
-			url = pyStr(a.Value("mcp_url"))
+			url = anyutil.String(a.Value("mcp_url"))
 		}
 		if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-			servers.Set(slug(anyutil.String(a.Value("name"))), jsonutil.ObjectOf("url", strings.TrimSpace(pyStr(a.Value("mcp_url")))))
+			servers.Set(slug(anyutil.String(a.Value("name"))), jsonutil.ObjectOf("url", strings.TrimSpace(anyutil.String(a.Value("mcp_url")))))
 		}
 	}
 	if servers.Len() > 0 {
@@ -1182,7 +1182,7 @@ func (g *BotImporter) importApps(source string, apps []*jsonutil.Object) error {
 	for _, a := range apps {
 		name := ""
 		if truthy(a.Value("name")) {
-			name = strings.TrimSpace(pyStr(a.Value("name")))
+			name = strings.TrimSpace(anyutil.String(a.Value("name")))
 		}
 		if _, isServer := servers.Get(slug(anyutil.String(a.Value("name")))); !isServer && name != "" {
 			others = append(others, name)

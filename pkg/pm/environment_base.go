@@ -27,7 +27,7 @@ func exitStatus(err error) (int, error) {
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return pyReturnCode(exitErr), nil
+		return returnCode(exitErr), nil
 	}
 	return 0, err
 }

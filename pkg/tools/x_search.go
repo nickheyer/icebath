@@ -118,7 +118,7 @@ func normalizeHandles(handles any, field string) ([]string, error) {
 	for _, h := range handleItems(handles) {
 		s := ""
 		if truthy(h) {
-			s = pyStr(h)
+			s = anyutil.String(h)
 		}
 		if s = strings.TrimLeft(strings.TrimSpace(s), "@"); s != "" {
 			cleaned = append(cleaned, s)
@@ -149,7 +149,7 @@ func parseISODate(value, field string) (time.Time, bool, error) {
 			return t, true, nil
 		}
 	}
-	return time.Time{}, false, fmt.Errorf("%s must be YYYY-MM-DD (got %s)", field, pyReprStr(raw))
+	return time.Time{}, false, fmt.Errorf("%s must be YYYY-MM-DD (got %q)", field, raw)
 }
 
 // Both dates parse, from is on or before to, and from is not after today UTC
@@ -269,14 +269,14 @@ func xaiHTTPErrorMessage(e *xaiHTTPError) string {
 	}
 	code := ""
 	if v, _ := obj.Get("code"); anyutil.IsTrue(v) {
-		code = strings.TrimSpace(pyJSONStr(v))
+		code = strings.TrimSpace(anyutil.String(v))
 	}
 	message := ""
 	if v, _ := obj.Get("error"); anyutil.IsTrue(v) {
-		message = strings.TrimSpace(pyJSONStr(v))
+		message = strings.TrimSpace(anyutil.String(v))
 	}
 	if message == "" {
-		message = pyJSONRepr(obj)
+		message = anyutil.String(obj)
 	}
 	out := message
 	if code != "" && !strings.Contains(message, code) {

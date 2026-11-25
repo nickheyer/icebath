@@ -89,13 +89,13 @@ func TestLegacyAgentParseErrors(t *testing.T) {
 	}{
 		{[]string{"a", "--verbose", "b"}, "unrecognized arguments: b"},
 		{[]string{"--api", "x"}, "ambiguous option: --api could match --api-key, --api_key"},
-		{[]string{"--max-turns", "x"}, "argument --max-turns/--max_turns: invalid int value: 'x'"},
-		{[]string{"--max-turns", "x", "-h"}, "argument --max-turns/--max_turns: invalid int value: 'x'"},
+		{[]string{"--max-turns", "x"}, `argument --max-turns/--max_turns: invalid int value: "x"`},
+		{[]string{"--max-turns", "x", "-h"}, `argument --max-turns/--max_turns: invalid int value: "x"`},
 		{[]string{"--foo", "--bar", "z"}, "unrecognized arguments: --foo --bar"},
 		{[]string{"-q"}, "argument --query/-q: expected one argument"},
 		{[]string{"--save", "x"}, "ambiguous option: --save could match --save-trajectories, --save_trajectories, --save-sample, --save_sample"},
-		{[]string{"--verbose=1"}, "argument --verbose: ignored explicit argument '1'"},
-		{[]string{"--list-tools", "--list-tools=1"}, "argument --list-tools/--list_tools: ignored explicit argument '1'"},
+		{[]string{"--verbose=1"}, `argument --verbose: ignored explicit argument "1"`},
+		{[]string{"--list-tools", "--list-tools=1"}, `argument --list-tools/--list_tools: ignored explicit argument "1"`},
 		{[]string{"--model"}, "argument --model: expected one argument"},
 		{[]string{"-x"}, "unrecognized arguments: -x"},
 		{[]string{"--query", "-x"}, "argument --query/-q: expected one argument"},
@@ -104,7 +104,7 @@ func TestLegacyAgentParseErrors(t *testing.T) {
 		{[]string{"-vq"}, "unrecognized arguments: -vq"},
 		{[]string{"a", "-x", "b"}, "unrecognized arguments: -x b"},
 		{[]string{"--query", "a b", "-x"}, "unrecognized arguments: -x"},
-		{[]string{"--max-turns", "0x10"}, "argument --max-turns/--max_turns: invalid int value: '0x10'"},
+		{[]string{"--max-turns", "0x10"}, `argument --max-turns/--max_turns: invalid int value: "0x10"`},
 		{[]string{"--query", "q", "word"}, "pass the query either positionally or via --query, not both"},
 	}
 	for _, c := range cases {

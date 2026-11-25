@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	mailutil "github.com/nickheyer/icebath/pkg/utils/mail"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
@@ -220,7 +221,7 @@ func emailAdapterTraits() gateway.AdapterTraits {
 func stripSetting(key string, v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("email setting %s must be text, got %s", key, anyutil.Kind(v))}
+		return "", &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("email setting %s must be text, got %s", key, anyutil.Kind(v))}
 	}
 	return strings.TrimSpace(s), nil
 }

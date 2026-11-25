@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func listPickerRow(slug string, models []string) map[string]any {
@@ -64,7 +66,7 @@ func TestCurrentCustomEndpointPassthroughMarksCurrentRow(t *testing.T) {
 	}
 	var custom []map[string]any
 	for _, r := range rows {
-		if pyTruthy(r["is_user_defined"]) {
+		if anyutil.IsTrue(r["is_user_defined"]) {
 			custom = append(custom, r)
 		}
 	}

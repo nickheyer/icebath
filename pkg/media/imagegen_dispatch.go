@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -91,7 +92,7 @@ func postprocessImageGenerateResult(env *tools.Env, raw, taskID string) (string,
 	if !ok {
 		return raw, nil
 	}
-	if success, _ := payload.Get("success"); !pyTruthy(success) {
+	if success, _ := payload.Get("success"); !anyutil.IsTrue(success) {
 		return raw, nil
 	}
 	imageValue, _ := payload.Get("image")
@@ -134,31 +135,6 @@ func postprocessImageGenerateResult(env *tools.Env, raw, taskID string) (string,
 		return raw, nil
 	}
 	return out, nil
-}
-
-// Python truth value of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case float64:
-		return x != 0
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	case *jsonutil.Object:
-		return x.Len() > 0
-	}
-	return true
 }
 
 var ensurePluginsDiscoveredHook = func(ctx context.Context, force bool) {
@@ -319,7 +295,7 @@ func isPyTypeError(err error) bool {
 	if errors.As(err, &he) {
 		return he.TypeName == "TypeError"
 	}
-	return pyErrorTypeName(err) == "TypeError"
+	return errorTypeName(err) == "TypeError"
 }
 
 // Runs generate turning a panic into a returned error the way a raising provider surfaces
@@ -473,7 +449,7 @@ var (
 // Tool error JSON of an exception the registry dispatch would have caught
 func imageHandlerFailure(env *tools.Env, err error) string {
 	logOf(env).Error(fmt.Sprintf("Tool image_generate dispatch error: %s", err))
-	return tools.ErrorResult(errors.New(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", pyErrorTypeName(err), err))))
+	return tools.ErrorResult(errors.New(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", errorTypeName(err), err))))
 }
 
 // image_generate handler confining sources, then plugin and FAL dispatch in that order
@@ -520,17 +496,6 @@ func handleImageGenerate(ctx context.Context, call *tools.Call) string {
 		return imageHandlerFailure(env, err)
 	}
 	return out
-}
-
-// Python str of a decoded JSON scalar
-func pyStrOf(v any) string {
-	if v == nil {
-		return "None"
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
 }
 
 // Capability record advertised when the active backend declares nothing
@@ -600,7 +565,7 @@ func pluginCapabilities(env *tools.Env, pluginName string, info map[string]any) 
 	if n := capInt(caps["max_reference_images"]); n != 0 {
 		info["max_reference_images"] = n
 	}
-	info["supports_upscale"] = pyTruthy(caps["supports_upscale"])
+	info["supports_upscale"] = anyutil.IsTrue(caps["supports_upscale"])
 	if controls := stringList(caps["creative_controls"]); len(controls) > 0 {
 		info["creative_controls"] = anyList(controls)
 	}
@@ -723,7 +688,7 @@ func buildDynamicImageSchema(env *tools.Env) *jsonutil.Object {
 	} else {
 		lead = "Generate images from text with the configured model (it cannot edit images)."
 	}
-	if pyTruthy(info["supports_upscale"]) {
+	if anyutil.IsTrue(info["supports_upscale"]) {
 		properties.Set("upscale", upscaleParam())
 	}
 	params := creativeControlParams()

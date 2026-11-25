@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -149,7 +150,7 @@ func routeClassifiedError(ctx context.Context, a *AIAgent, s *LoopState, e *apiE
 		s.MaxRetries = max(s.MaxRetries, provider.ZAICodingOverloadRetryCeiling())
 	}
 	shouldFallback := ((e.isRateLimited && e.wrappedOutputCapBudget == nil) || (isTransportFailure && s.RetryCount >= 2)) &&
-		!pyTruthy(classified.Context["usage_window"])
+		!anyutil.IsTrue(classified.Context["usage_window"])
 	if shouldFallback && a.fallbackIndex < len(a.fallbackChain) {
 		isUpstream := classified.Reason == provider.ReasonUpstreamRateLimit
 		poolMayRecover := !isUpstream && poolMayRecoverFromRateLimit(a.credentialPool)

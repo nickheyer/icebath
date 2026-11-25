@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -42,7 +43,7 @@ func delegationLimits(ctx context.Context, a *SessionAuthority, executionID, ses
 				return err
 			}
 			if row != nil {
-				sessionID = pyStrOf(row["session_id"])
+				sessionID = anyutil.String(row["session_id"])
 			}
 			return nil
 		})
@@ -119,11 +120,11 @@ func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.
 		return nil, err
 	}
 	if parent == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "the child execution row is missing"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the child execution row is missing"}
 	}
 	childSID, childEID := state.NewSessionID(), prefix+tokenHex(8)
 	if err := db.InsertSessionRowInTransaction(ctx, conn, state.NewSession{ID: childSID, Source: "subagent",
-		ModelConfig: map[string]any{"_delegate_from": sessionID}, ParentSessionID: sessionID, ProfileName: pyStrOrEmpty(parent["profile_name"])}); err != nil {
+		ModelConfig: map[string]any{"_delegate_from": sessionID}, ParentSessionID: sessionID, ProfileName: anyutil.String(parent["profile_name"])}); err != nil {
 		return nil, err
 	}
 	scope := map[string]any{}
@@ -144,14 +145,6 @@ func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.
 		return nil, err
 	}
 	return jsonutil.ObjectOf("child", jsonutil.ObjectOf("session_id", childSID, "execution_id", childEID, "generation", 0)), nil
-}
-
-// Text of a nullable column, empty for NULL
-func pyStrOrEmpty(value any) string {
-	if value == nil {
-		return ""
-	}
-	return pyStrOf(value)
 }
 
 // Worker persist child.reserve, the parent's full claim and assignment verified first and caps answered as receipts

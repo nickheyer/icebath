@@ -110,10 +110,10 @@ func (r *GatewayRunner) buildProfileAuthority(ctx context.Context, name, profile
 	db := r.openProfileStore(ctx, profileHome)
 	scoped := gateway.ProfileRuntimeScope(ctx, profileHome, false)
 	if db == nil {
-		return nil, &pyRuntimeError{msg: r.storeOpenFailure(profileHome)}
+		return nil, &runtimeError{msg: r.storeOpenFailure(profileHome)}
 	}
 	if filepath.Dir(resolveHome(db.Path())) != profileHome {
-		return nil, &pyRuntimeError{msg: fmt.Sprintf("session authority database does not belong to the reserved profile %s", profileHome)}
+		return nil, &runtimeError{msg: fmt.Sprintf("session authority database does not belong to the reserved profile %s", profileHome)}
 	}
 	if err := registry.Add(profileHome, nil, &name); err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func (r *GatewayRunner) initializeGatewayRuntime(ctx context.Context) error {
 	homes := r.reservedProfileHomes(ctx)
 	for _, p := range homes {
 		if !gateway.ProcessOwnership.Owns(p.Home) {
-			return &pyRuntimeError{msg: "session authority requires reserved profile ownership: " + p.Home}
+			return &runtimeError{msg: "session authority requires reserved profile ownership: " + p.Home}
 		}
 	}
 	raw := make([]byte, 16)
@@ -271,7 +271,7 @@ func (r *GatewayRunner) reserveProfileHomeInWorker(ctx context.Context, name, pr
 func (r *GatewayRunner) releaseProfileHome(ctx context.Context, profileHome string) error {
 	profileHome = resolveHome(profileHome)
 	if r.sessionAuthorities != nil && r.sessionAuthorities.ForHome(profileHome) != nil {
-		return &pyRuntimeError{msg: "Profile authority must retire before ownership is released"}
+		return &runtimeError{msg: "Profile authority must retire before ownership is released"}
 	}
 	r.withdrawProfileHome(profileHome)
 	gateway.ProcessOwnership.Release(profileHome)

@@ -129,11 +129,20 @@ func plural(count any, word, suffix string) string {
 	return anyutil.String(count) + " " + word + s
 }
 
+// Failure line of a result that reports success false or an error, unknown error when it carries no error text
 func failure(data *jsonutil.Object, prefix string) (string, bool) {
 	if dget(data, "success") == false || anyutil.IsTrue(dget(data, "error")) {
-		return prefix + ": " + anyutil.String(dgetOr(data, "error", "unknown error")), true
+		return prefix + ": " + anyutil.String(anyutil.Or(dget(data, "error"), "unknown error")), true
 	}
 	return "", false
+}
+
+// Text of a value inside a rendered result, an explicit null written as null so it never shows as nothing
+func valueText(v any) string {
+	if v == nil {
+		return "null"
+	}
+	return anyutil.String(v)
 }
 
 func isList(v any) ([]any, bool) {
@@ -155,7 +164,7 @@ func isPyInt(v any) bool {
 	return false
 }
 
-func pyIntValue(v any) int64 {
+func intValue(v any) int64 {
 	switch x := v.(type) {
 	case int64:
 		return x
@@ -281,7 +290,7 @@ func toolResultFailed(result *string, toolName string) bool {
 		return false
 	}
 	exitCode := dgetOr(data, "exit_code", dget(data, "returncode"))
-	if dget(data, "success") == false || dget(data, "ok") == false || (isPyInt(exitCode) && pyIntValue(exitCode) != 0) {
+	if dget(data, "success") == false || dget(data, "ok") == false || (isPyInt(exitCode) && intValue(exitCode) != 0) {
 		return true
 	}
 	return polishedTools[toolName] && anyutil.IsTrue(dget(data, "error")) && !anyutil.IsTrue(dget(data, "content"))
@@ -426,7 +435,7 @@ var formatExecuteCodeResult = structured(true, func(toolName string, data, args 
 		total, captured, omitted := dget(data, "stdout_bytes_total"), dget(data, "stdout_bytes_captured"), dget(data, "stdout_bytes_omitted")
 		if isPyInt(captured) && isPyInt(total) && isPyInt(omitted) {
 			parts = append(parts, "", fmt.Sprintf("Output truncated: captured %s of %s bytes (%s omitted).",
-				textutil.Thousands(pyIntValue(captured)), textutil.Thousands(pyIntValue(total)), textutil.Thousands(pyIntValue(omitted))))
+				textutil.Thousands(intValue(captured)), textutil.Thousands(intValue(total)), textutil.Thousands(intValue(omitted))))
 		} else {
 			parts = append(parts, "", "Output truncated.")
 		}
@@ -679,7 +688,7 @@ var formatDelegateResult = structured(false, func(toolName string, data, args *j
 		}
 		num := "?"
 		if isPyInt(idx) {
-			num = fmt.Sprint(pyIntValue(idx) + 1)
+			num = fmt.Sprint(intValue(idx) + 1)
 		}
 		header := icon + " Task " + num + ": " + status
 		var bits []string
@@ -982,7 +991,7 @@ func formatStructuredValue(key string, value any, indent, maxDepth, maxItems int
 					lines = append(lines, child("", nested, 2)...)
 				}
 			default:
-				lines = append(lines, fmt.Sprintf("%s  %d. %s", pad, idx, truncateText(anyutil.String(it), 240)))
+				lines = append(lines, fmt.Sprintf("%s  %d. %s", pad, idx, truncateText(valueText(it), 240)))
 			}
 		}
 		if len(list) > maxItems {
@@ -1006,7 +1015,7 @@ func formatGenericStructuredResult(toolName string, result *string, fallbackToTe
 			case *jsonutil.Object, []any:
 				lines = append(lines, formatStructuredValue("", it, 0, 2, 6)...)
 			default:
-				lines = append(lines, "- "+truncateText(anyutil.String(it), 240))
+				lines = append(lines, "- "+truncateText(valueText(it), 240))
 			}
 		}
 		return truncateText(strings.Join(append(lines, more(len(list), 12, " items")...), "\n"), 5000), true
@@ -1154,7 +1163,7 @@ func startTodo(args *jsonutil.Object) any {
 	lines := []string{"Updating todo list", ""}
 	for _, it := range items[:min(len(items), 8)] {
 		if i, ok := isDict(it); ok {
-			lines = append(lines, "- "+anyutil.String(dgetOr(i, "status", "pending"))+": "+anyutil.String(dgetOr(i, "content", dgetOr(i, "id", ""))))
+			lines = append(lines, "- "+anyutil.String(anyutil.Or(dget(i, "status"), "pending"))+": "+anyutil.String(anyutil.Or(dget(i, "content"), dget(i, "id"), "")))
 		}
 	}
 	return strings.Join(append(lines, more(len(items), 8, "")...), "\n")
@@ -1216,7 +1225,7 @@ func previewLine(label, value string, limit int) string {
 
 var startContentBuilders = map[string]func(*jsonutil.Object) any{
 	"patch": func(a *jsonutil.Object) any {
-		return "Preparing " + anyutil.String(dgetOr(a, "mode", "replace")) + " edit for " + anyutil.String(anyutil.Or(dget(a, "path"), "patch input")) + ". Approval prompt shows the diff."
+		return "Preparing " + anyutil.String(anyutil.Or(dget(a, "mode"), "replace")) + " edit for " + anyutil.String(anyutil.Or(dget(a, "path"), "patch input")) + ". Approval prompt shows the diff."
 	},
 	"write_file": func(a *jsonutil.Object) any {
 		return fmtValue(dgetOr(a, "path", ""), "Preparing write to {}. Approval prompt shows the diff.", "Preparing file write. Approval prompt shows the diff.")
@@ -1224,7 +1233,7 @@ var startContentBuilders = map[string]func(*jsonutil.Object) any{
 	"terminal":  func(a *jsonutil.Object) any { return "$ " + anyutil.String(dgetOr(a, "command", "")) },
 	"read_file": nil,
 	"search_files": func(a *jsonutil.Object) any {
-		return "Searching for '" + anyutil.String(dgetOr(a, "pattern", "")) + "' (" + anyutil.String(dgetOr(a, "target", "content")) + ")" + fmtValue(dget(a, "path"), " in {}", "")
+		return "Searching for '" + anyutil.String(dgetOr(a, "pattern", "")) + "' (" + anyutil.String(anyutil.Or(dget(a, "target"), "content")) + ")" + fmtValue(dget(a, "path"), " in {}", "")
 	},
 	"todo": startTodo,
 	"skill_view": func(a *jsonutil.Object) any {

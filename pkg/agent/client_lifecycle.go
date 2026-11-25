@@ -141,10 +141,10 @@ func (a *AIAgent) closeOpenAIClient(client any, reason string, shared bool) {
 	logCtx := a.ClientLogContext()
 	forceClosed := forceCloseTCPSockets(client)
 	if err := closeClient(client); err != nil {
-		pkgLog().Debug(fmt.Sprintf("OpenAI client close failed (%s, shared=%s) %s error=%v", reason, pyBoolStr(shared), logCtx, err))
+		pkgLog().Debug(fmt.Sprintf("OpenAI client close failed (%s, shared=%s) %s error=%v", reason, boolStr(shared), logCtx, err))
 		return
 	}
-	pkgLog().Info(fmt.Sprintf("OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s", reason, pyBoolStr(shared), forceClosed, logCtx))
+	pkgLog().Info(fmt.Sprintf("OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s", reason, boolStr(shared), forceClosed, logCtx))
 }
 
 // Close of a client exposing Close, a panic surfacing as the close error

@@ -189,7 +189,7 @@ func publishedStoreEntries(directory string) map[string]bool {
 	names := map[string]bool{}
 	for _, fact := range packages {
 		if row, ok := fact.(map[string]any); ok {
-			if entry, ok := row["entry"].(string); ok && entry != "" && pyPathName(entry) == entry {
+			if entry, ok := row["entry"].(string); ok && entry != "" && pathName(entry) == entry {
 				names[entry] = true
 			}
 		}
@@ -242,7 +242,7 @@ func copyCoreInputs(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	patterns, err := pyIterate(include)
+	patterns, err := iterate(include)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func copyCoreInputs(source, destination string) error {
 	for _, pattern := range patterns {
 		text, ok := pattern.(string)
 		if !ok {
-			return &PyError{Class: "AttributeError", Message: fmt.Sprintf("a tool.setuptools.packages.find.include pattern must be text, got %s", tomlKind(pattern))}
+			return &ClassError{Class: "AttributeError", Message: fmt.Sprintf("a tool.setuptools.packages.find.include pattern must be text, got %s", tomlKind(pattern))}
 		}
 		packageRoots[strings.SplitN(text, ".", 2)[0]] = true
 	}
@@ -271,7 +271,7 @@ func copyCoreInputs(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	licensePatterns, err := pyIterate(licenseFiles)
+	licensePatterns, err := iterate(licenseFiles)
 	if err != nil {
 		return err
 	}
@@ -286,11 +286,11 @@ func copyCoreInputs(source, destination string) error {
 			}
 		}
 	}
-	pyFiles, err := pathutil.Glob(source, "*.py")
+	filesValue, err := pathutil.Glob(source, "*.py")
 	if err != nil {
 		return err
 	}
-	for _, match := range pyFiles {
+	for _, match := range filesValue {
 		files[filepath.Base(match)] = true
 	}
 	excluded := map[string]bool{".git": true, ".venv": true, "venv": true, "node_modules": true, "__pycache__": true, "build": true, "dist": true, "release": true}
@@ -370,7 +370,7 @@ func pathIsRelativeTo(path, base string) bool {
 func tomlSetDefaultTable(parent any, key string) (*OrderedObject, error) {
 	obj, ok := parent.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(parent))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("expected a table holding %s, got %s", key, tomlKind(parent))}
 	}
 	value, present := obj.Get(key)
 	if !present {
@@ -380,7 +380,7 @@ func tomlSetDefaultTable(parent any, key string) (*OrderedObject, error) {
 	}
 	table, ok := value.(*OrderedObject)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("%s must be a table, got %s", key, tomlKind(value))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("%s must be a table, got %s", key, tomlKind(value))}
 	}
 	return table, nil
 }
@@ -543,21 +543,21 @@ func targetEnvironment(ctx context.Context, python string) (map[string]string, e
 	cmd.Stderr = &strings.Builder{}
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return nil, &PyError{Class: "TimeoutExpired", Message: fmt.Sprintf("%s timed out after 60 seconds", strings.Join(argv, " "))}
+		return nil, &ClassError{Class: "TimeoutExpired", Message: fmt.Sprintf("%s timed out after 60 seconds", strings.Join(argv, " "))}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return nil, &PyError{Class: "CalledProcessError", Message: fmt.Sprintf("%s exited with status %d", strings.Join(argv, " "), pyReturnCode(exitErr))}
+		return nil, &ClassError{Class: "CalledProcessError", Message: fmt.Sprintf("%s exited with status %d", strings.Join(argv, " "), returnCode(exitErr))}
 	}
 	if err != nil {
 		return nil, err
 	}
 	if err := strictUTF8([]byte(stdout.String())); err != nil {
-		return nil, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return nil, &ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	var out map[string]string
 	if err := json.Unmarshal([]byte(stdout.String()), &out); err != nil {
-		return nil, &PyError{Class: "JSONDecodeError", Message: err.Error()}
+		return nil, &ClassError{Class: "JSONDecodeError", Message: err.Error()}
 	}
 	return out, nil
 }
@@ -567,7 +567,7 @@ func solveOnlyFor(uvPolicy *OrderedObject, target map[string]string) error {
 	host := fmt.Sprintf("sys_platform == %s and platform_machine == %s", strconv.Quote(target["sys_platform"]), strconv.Quote(target["platform_machine"]))
 	var narrowed []any
 	if existing, ok := uvPolicy.Get("environments"); ok && tomlTruthy(existing) {
-		entries, err := pyIterate(existing)
+		entries, err := iterate(existing)
 		if err != nil {
 			return err
 		}
@@ -666,7 +666,7 @@ var memberNameUnsafe = regexp.MustCompile(`[^a-z0-9._-]+`)
 // Plugin dir name plus sixteen hex digits of its resolved path hash, unique across homes and readable in uv errors
 func memberKey(identity string) string {
 	sum := sha256.Sum256([]byte(resolvePath(absoluteUnresolved(identity))))
-	name := strings.Trim(memberNameUnsafe.ReplaceAllString(strings.ToLower(pyPathName(identity)), "-"), "-.")
+	name := strings.Trim(memberNameUnsafe.ReplaceAllString(strings.ToLower(pathName(identity)), "-"), "-.")
 	if name == "" {
 		name = "plugin"
 	}
@@ -674,12 +674,12 @@ func memberKey(identity string) string {
 }
 
 // Requirements among specs that name the project itself, unparsable ones skipped
-func selfReferences(specs []any, own string) ([]*pyRequirement, error) {
-	var out []*pyRequirement
+func selfReferences(specs []any, own string) ([]*requirementValue, error) {
+	var out []*requirementValue
 	for _, spec := range specs {
 		text, ok := spec.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a requirement must be text, got %s", tomlKind(spec))}
+			return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("a requirement must be text, got %s", tomlKind(spec))}
 		}
 		req, err := ParseRequirement(text)
 		if err != nil {
@@ -708,7 +708,7 @@ func fixedTarget(target map[string]string) markerTarget {
 }
 
 // Whether a requirement applies on the target under any installed extra, undefined comparisons counting as applying
-func referenceActive(req *pyRequirement, contexts []string, target markerTarget) (bool, error) {
+func referenceActive(req *requirementValue, contexts []string, target markerTarget) (bool, error) {
 	if len(req.Marker) == 0 || target == nil {
 		return true, nil
 	}
@@ -749,11 +749,11 @@ func selectedMemberExtras(document *OrderedObject, extras []string, target marke
 	}
 	optionalTable, ok := optional.(*OrderedObject)
 	if !ok {
-		return nil, nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("project.optional-dependencies must be a table, got %s", tomlKind(optional))}
+		return nil, nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("project.optional-dependencies must be a table, got %s", tomlKind(optional))}
 	}
 	declared := map[string][]any{}
 	for _, key := range optionalTable.Keys {
-		specs, err := pyIterate(optionalTable.Values[key])
+		specs, err := iterate(optionalTable.Values[key])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -774,7 +774,7 @@ func selectedMemberExtras(document *OrderedObject, extras []string, target marke
 	if err != nil {
 		return nil, nil, err
 	}
-	baseSpecs, err := pyIterate(base)
+	baseSpecs, err := iterate(base)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -782,7 +782,7 @@ func selectedMemberExtras(document *OrderedObject, extras []string, target marke
 	if err != nil {
 		return nil, nil, err
 	}
-	references := map[string][]*pyRequirement{"": baseRefs}
+	references := map[string][]*requirementValue{"": baseRefs}
 	for {
 		for _, key := range sortedKeys(selected) {
 			if _, done := references[key]; !done {
@@ -921,7 +921,7 @@ func renameVirtualMember(document *OrderedObject, name string) error {
 		return name + text[loc[1]:]
 	}
 	renameAll := func(value any) ([]any, error) {
-		specs, err := pyIterate(value)
+		specs, err := iterate(value)
 		if err != nil {
 			return nil, err
 		}
@@ -963,12 +963,12 @@ func renameVirtualMember(document *OrderedObject, name string) error {
 	if err != nil {
 		return err
 	}
-	groups, err := pyIterate(conflicts)
+	groups, err := iterate(conflicts)
 	if err != nil {
 		return err
 	}
 	for _, conflict := range groups {
-		items, err := pyIterate(conflict)
+		items, err := iterate(conflict)
 		if err != nil {
 			return err
 		}
@@ -1004,7 +1004,7 @@ func runtimeMemberMetadata(document *OrderedObject, extras []string, target mark
 	if optionalValue != nil && tomlTruthy(optionalValue) {
 		optional, ok := optionalValue.(*OrderedObject)
 		if !ok {
-			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("project.optional-dependencies must be a table, got %s", tomlKind(optionalValue))}
+			return false, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("project.optional-dependencies must be a table, got %s", tomlKind(optionalValue))}
 		}
 		selected, named, err := selectedMemberExtras(document, extras, target)
 		if err != nil {
@@ -1058,13 +1058,13 @@ func runtimeMemberMetadata(document *OrderedObject, extras []string, target mark
 		}
 	}
 	if conflictsValue, ok := settings.Get("conflicts"); ok {
-		groups, err := pyIterate(conflictsValue)
+		groups, err := iterate(conflictsValue)
 		if err != nil {
 			return false, err
 		}
 		var conflicts []any
 		for _, group := range groups {
-			specs, err := pyIterate(group)
+			specs, err := iterate(group)
 			if err != nil {
 				return false, err
 			}
@@ -1232,7 +1232,7 @@ func coreRequirementError(ctx context.Context, declaration *PythonDeclaration, e
 				if !installed[ExtraKey(name)] {
 					continue
 				}
-				values, err := pyIterate(table.Values[name])
+				values, err := iterate(table.Values[name])
 				if err != nil {
 					return "", err
 				}
@@ -1245,7 +1245,7 @@ func coreRequirementError(ctx context.Context, declaration *PythonDeclaration, e
 		return "", err
 	}
 	contexts := append([]string{""}, sortedKeys(installed)...)
-	var pins []*pyRequirement
+	var pins []*requirementValue
 	for _, req := range references {
 		if len(req.Specifier) == 0 {
 			continue
@@ -1388,7 +1388,7 @@ func workspaceMember(pluginDir, root, identity string, extras []string, target m
 		if err != nil {
 			return "", err
 		}
-		dynamicItems, err := pyIterate(dynamic)
+		dynamicItems, err := iterate(dynamic)
 		if err != nil {
 			return "", err
 		}
@@ -1440,7 +1440,7 @@ func rebaseMemberSources(document *OrderedObject, pluginDir, identity string) (b
 	}
 	table, ok := sources.(*OrderedObject)
 	if !ok {
-		return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("tool.uv.sources must be a table, got %s", tomlKind(sources))}
+		return false, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("tool.uv.sources must be a table, got %s", tomlKind(sources))}
 	}
 	changed := false
 	resolvedPlugin := resolvePath(absoluteUnresolved(pluginDir))
@@ -1461,7 +1461,7 @@ func rebaseMemberSources(document *OrderedObject, pluginDir, identity string) (b
 			}
 			relative, ok := pathValue.(string)
 			if !ok {
-				return false, &PyError{Class: "TypeError", Message: fmt.Sprintf("a tool.uv.sources path must be text, got %s", tomlKind(pathValue))}
+				return false, &ClassError{Class: "TypeError", Message: fmt.Sprintf("a tool.uv.sources path must be text, got %s", tomlKind(pathValue))}
 			}
 			if filepath.IsAbs(filepath.FromSlash(relative)) {
 				continue

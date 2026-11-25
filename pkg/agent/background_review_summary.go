@@ -42,7 +42,7 @@ func reviewDict(v any) (map[string]any, bool) {
 		}
 		return m, true
 	}
-	return pyDict(v)
+	return mappingOf(v)
 }
 
 // Value of key or the default like dict.get
@@ -92,8 +92,8 @@ func preview(text string, limit int) string {
 
 // Verbose line of one memory add, replace or remove, false when the operation carries no preview text
 func memoryOpLine(ctx context.Context, label any, action any, fields map[string]any) (string, bool) {
-	format, ok := memoryOpFormats[pyKeyString(action)]
-	if !ok || !pyTruthy(reviewGet(fields, format.field, nil)) {
+	format, ok := memoryOpFormats[keyString(action)]
+	if !ok || !anyutil.IsTrue(reviewGet(fields, format.field, nil)) {
 		return "", false
 	}
 	text := reviewStr(fields[format.field], format.field)
@@ -102,7 +102,7 @@ func memoryOpLine(ctx context.Context, label any, action any, fields map[string]
 }
 
 // String key of a hashable lookup value, empty for non string keys that match nothing
-func pyKeyString(v any) string {
+func keyString(v any) string {
 	reviewHashKey(v)
 	s, _ := v.(string)
 	return s
@@ -116,24 +116,24 @@ func verboseSkillLine(ctx context.Context, data, detail map[string]any, message 
 		change = map[string]any{}
 	}
 	oldString := reviewGet(change, "old", "")
-	if !pyTruthy(oldString) {
+	if !anyutil.IsTrue(oldString) {
 		oldString = reviewGet(detail, "old_string", "")
 	}
 	newString := reviewGet(change, "new", "")
-	if !pyTruthy(newString) {
+	if !anyutil.IsTrue(newString) {
 		newString = reviewGet(detail, "new_string", "")
 	}
-	if action == "patch" && (pyTruthy(oldString) || pyTruthy(newString)) {
+	if action == "patch" && (anyutil.IsTrue(oldString) || anyutil.IsTrue(newString)) {
 		oldPreview := strings.ReplaceAll(preview(reviewStr(oldString, "old_string"), 80), "\n", " ")
 		newPreview := strings.ReplaceAll(preview(reviewStr(newString, "new_string"), 80), "\n", " ")
 		return i18n.T(ctx, "display.review.skill_patched_verbose", "", map[string]any{"name": skillName, "old": oldPreview, "new": newPreview})
 	}
-	verbKey := map[string]string{"create": "created", "edit": "rewritten"}[pyKeyString(action)]
-	if verbKey != "" && pyTruthy(change["description"]) {
+	verbKey := map[string]string{"create": "created", "edit": "rewritten"}[keyString(action)]
+	if verbKey != "" && anyutil.IsTrue(change["description"]) {
 		return i18n.T(ctx, "display.review.skill_changed_verbose", "", map[string]any{"name": skillName,
 			"verb": i18n.T(ctx, "display.review.skill_verb."+verbKey, "", nil), "description": change["description"]})
 	}
-	if pyTruthy(message) {
+	if anyutil.IsTrue(message) {
 		return i18n.T(ctx, "display.review.skill_message_verbose", "", map[string]any{"message": message})
 	}
 	return i18n.T(ctx, "display.review.skill_action", "", map[string]any{"action": action})
@@ -169,7 +169,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 			continue
 		}
 		calls := reviewGet(msg, "tool_calls", []any{})
-		if !pyTruthy(calls) {
+		if !anyutil.IsTrue(calls) {
 			continue
 		}
 		list, ok := reviewList(calls)
@@ -188,7 +188,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 				continue
 			}
 			fnRaw := reviewGet(tc, "function", map[string]any{})
-			if !pyTruthy(fnRaw) {
+			if !anyutil.IsTrue(fnRaw) {
 				fnRaw = map[string]any{}
 			}
 			fn, ok := reviewDict(fnRaw)
@@ -196,11 +196,11 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 				panic(reviewSummaryError{fmt.Sprintf("review tool call function is %s where a mapping was expected", errchain.Kind(fnRaw))})
 			}
 			fnName, tcid := reviewGet(fn, "name", ""), tc["id"]
-			if pyTruthy(tcid) {
+			if anyutil.IsTrue(tcid) {
 				allIDs[reviewHashKey(tcid)] = true
 			}
-			name := pyKeyString(fnName)
-			if !notifyTools[name] || !pyTruthy(tcid) {
+			name := keyString(fnName)
+			if !notifyTools[name] || !anyutil.IsTrue(tcid) {
 				continue
 			}
 			args := map[string]any{}
@@ -214,7 +214,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 				}
 			}
 			ops := reviewGet(args, "operations", nil)
-			if !pyTruthy(ops) {
+			if !anyutil.IsTrue(ops) {
 				ops = []any{}
 			}
 			detail := map[string]any{"tool": name, "operations": ops}
@@ -242,7 +242,7 @@ func reviewToolMessages(messages []map[string]any) []map[string]any {
 func priorToolKeys(priorSnapshot []map[string]any) (map[any]bool, map[string]bool) {
 	ids, contents := map[any]bool{}, map[string]bool{}
 	for _, m := range reviewToolMessages(priorSnapshot) {
-		if id := m["tool_call_id"]; pyTruthy(id) {
+		if id := m["tool_call_id"]; anyutil.IsTrue(id) {
 			ids[reviewHashKey(id)] = true
 		} else if s, ok := m["content"].(string); ok {
 			contents[s] = true
@@ -253,15 +253,15 @@ func priorToolKeys(priorSnapshot []map[string]any) (map[any]bool, map[string]boo
 
 // Summary lines of one successful memory or skill_manage result, none when nothing applied
 func actionLines(ctx context.Context, data, detail map[string]any, verbose bool) []string {
-	if pyTruthy(data["staged"]) {
-		if pyTruthy(data["proposal_staged"]) && pyTruthy(data["message"]) {
+	if anyutil.IsTrue(data["staged"]) {
+		if anyutil.IsTrue(data["proposal_staged"]) && anyutil.IsTrue(data["message"]) {
 			return []string{anyutil.String(data["message"])}
 		}
 		return []string{}
 	}
 	message := reviewGet(data, "message", "")
 	target := reviewGet(data, "target", "")
-	if !pyTruthy(target) {
+	if !anyutil.IsTrue(target) {
 		target = reviewGet(detail, "target", "")
 	}
 	isSkill := detail["tool"] == "skill_manage"
@@ -269,7 +269,7 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 		verbs := map[string]string{"create": "created", "patch": "patched", "edit": "rewritten", "write_file": "written",
 			"remove_file": "removed", "delete": "deleted"}
 		results, ok := reviewList(data["results"])
-		if !pyTruthy(data["operations_applied"]) || !ok {
+		if !anyutil.IsTrue(data["operations_applied"]) || !ok {
 			return []string{}
 		}
 		lines := []string{}
@@ -278,12 +278,12 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 			if !ok || result["success"] != true {
 				continue
 			}
-			verbKey := verbs[pyKeyString(result["action"])]
-			if verbKey == "" || !pyTruthy(result["name"]) {
+			verbKey := verbs[keyString(result["action"])]
+			if verbKey == "" || !anyutil.IsTrue(result["name"]) {
 				continue
 			}
 			path := ""
-			if pyTruthy(result["file_path"]) {
+			if anyutil.IsTrue(result["file_path"]) {
 				path = " (" + anyutil.String(result["file_path"]) + ")"
 			}
 			lines = append(lines, i18n.T(ctx, "display.review.skill_result", "", map[string]any{"name": result["name"],
@@ -296,12 +296,12 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 		(isSkill && (strings.Contains(lower, "patched") || strings.Contains(lower, "deleted") || strings.Contains(lower, "written")))) {
 		return []string{message.(string)}
 	}
-	if !isSkill && !pyTruthy(target) {
+	if !isSkill && !anyutil.IsTrue(target) {
 		return []string{}
 	}
 	labelKey := "skill"
 	if !isSkill {
-		labelKey = map[string]string{"memory": "memory", "user": "user"}[pyKeyString(target)]
+		labelKey = map[string]string{"memory": "memory", "user": "user"}[keyString(target)]
 	}
 	var label any = target
 	if labelKey != "" {
@@ -315,7 +315,7 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 	}
 	hit := strings.Contains(lower, "added") || strings.Contains(lower, "replaced") || strings.Contains(lower, "removed") ||
 		strings.Contains(lower, "applied")
-	if !hit && pyTruthy(target) {
+	if !hit && anyutil.IsTrue(target) {
 		hit = strings.Contains(lower, "add")
 	}
 	if hit {
@@ -335,7 +335,7 @@ func summarizeBackgroundReviewActions(ctx context.Context, reviewMessages, prior
 			panic(r)
 		}
 	}()
-	if !pyTruthy(notificationMode) {
+	if !anyutil.IsTrue(notificationMode) {
 		notificationMode = "on"
 	}
 	mode := strings.ToLower(anyutil.String(notificationMode))
@@ -348,7 +348,7 @@ func summarizeBackgroundReviewActions(ctx context.Context, reviewMessages, prior
 	actions = []string{}
 	for _, msg := range reviewToolMessages(reviewMessages) {
 		tcid := msg["tool_call_id"]
-		if pyTruthy(tcid) {
+		if anyutil.IsTrue(tcid) {
 			key := reviewHashKey(tcid)
 			if _, known := details[key]; existingIDs[key] || (len(allIDs) > 0 && !known) {
 				continue
@@ -365,7 +365,7 @@ func summarizeBackgroundReviewActions(ctx context.Context, reviewMessages, prior
 			continue
 		}
 		data, ok := reviewDict(parsed)
-		if !ok || !pyTruthy(data["success"]) {
+		if !ok || !anyutil.IsTrue(data["success"]) {
 			continue
 		}
 		var detail map[string]any
@@ -387,8 +387,8 @@ func buildMemoryWriteMetadata(a *AIAgent, writeOrigin, executionContext, taskID,
 		platform = tools.GetSessionEnv(a.env, "ICEBATH_SESSION_SOURCE", "cli")
 	}
 	metadata := map[string]any{
-		"write_origin":      pyStrOr(writeOrigin, pyStrOr(a.memoryWriteOrigin, "assistant_tool")),
-		"execution_context": pyStrOr(executionContext, pyStrOr(a.memoryWriteContext, "foreground")),
+		"write_origin":      anyutil.StringOr(writeOrigin, anyutil.StringOr(a.memoryWriteOrigin, "assistant_tool")),
+		"execution_context": anyutil.StringOr(executionContext, anyutil.StringOr(a.memoryWriteContext, "foreground")),
 		"session_id":        a.sessionID, "parent_session_id": a.parentSessionID, "platform": platform,
 		"tool_name": "memory", "task_id": taskID, "tool_call_id": toolCallID,
 	}

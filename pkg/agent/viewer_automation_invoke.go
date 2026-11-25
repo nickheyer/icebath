@@ -159,11 +159,11 @@ func wireAutomationValue(value any) (any, error) {
 
 // Python error class of a manager failure the call answers with, empty for one that propagates
 func automationErrorClass(err error) string {
-	var pyErr *errorutil.Error
-	if errors.As(err, &pyErr) {
-		switch pyErr.Kind {
+	var kindErr *errorutil.Error
+	if errors.As(err, &kindErr) {
+		switch kindErr.Kind {
 		case "RuntimeError", "ValueError", "IndexError":
-			return pyErr.Kind
+			return kindErr.Kind
 		}
 	}
 	var named interface{ ErrorKind() string }
@@ -570,9 +570,9 @@ func InvokeViewerAutomation(ctx context.Context, runner any, kind, target, call 
 			return nil, err
 		}
 		message := err.Error()
-		var pyErr *errorutil.Error
-		if errors.As(err, &pyErr) {
-			message = pyErr.Msg
+		var kindErr *errorutil.Error
+		if errors.As(err, &kindErr) {
+			message = kindErr.Msg
 		}
 		out.Set("error", jsonutil.ObjectOf("type", class, "message", message))
 	} else {

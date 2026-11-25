@@ -332,7 +332,7 @@ func (c *Console) readNumberedChoice(ctx context.Context, prompt string) (idx in
 	if strings.TrimSpace(val) == "" {
 		return 0, true, false, nil
 	}
-	n, perr := strconv.Atoi(pyIntText(val))
+	n, perr := strconv.Atoi(intText(val))
 	if perr != nil {
 		return 0, false, true, nil
 	}
@@ -340,7 +340,7 @@ func (c *Console) readNumberedChoice(ctx context.Context, prompt string) (idx in
 }
 
 // Strips whitespace and digit separators the way Python int accepts them
-func pyIntText(s string) string {
+func intText(s string) string {
 	s = strings.TrimFunc(s, unicode.IsSpace)
 	if strings.Contains(s, "__") || strings.HasPrefix(s, "_") || strings.HasSuffix(s, "_") {
 		return "x"

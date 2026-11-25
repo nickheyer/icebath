@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -166,7 +167,7 @@ func backgroundDeleteGate(ctx context.Context, env *tools.Env, store *Store, act
 		}
 		detail = strings.Join(lines, "; ")
 	} else {
-		kind = pyStr(action)
+		kind = anyutil.String(action)
 		detail = batchOpLine(map[string]any{"action": action, "content": content, "old_text": oldText})
 	}
 	unmatched, err := pinMatchedEntries(tools.WithEnvHome(ctx, env), store, payload)
@@ -199,7 +200,7 @@ func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Stor
 		return Result{}, err
 	}
 	for _, op := range destructive {
-		if !pyTruthy(op["matched_entry"]) {
+		if !anyutil.IsTrue(op["matched_entry"]) {
 			return Result{Data: jsonutil.ObjectOf("success", false, "error", "This destructive pending write predates entry pinning and cannot be "+
 				"verified; nothing was applied. Reject it and recreate the change."), FailureClass: "other"}, nil
 		}
@@ -217,13 +218,13 @@ func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Stor
 	}
 	verb, _ := action.(string)
 	if verb != "add" && verb != "replace" && verb != "remove" && verb != "patch" {
-		return Result{Data: jsonutil.ObjectOf("success", false, "error", fmt.Sprintf("Unknown staged action '%s'.", pyStr(action))), FailureClass: "other"}, nil
+		return Result{Data: jsonutil.ObjectOf("success", false, "error", fmt.Sprintf("Unknown staged action '%s'.", anyutil.String(action))), FailureClass: "other"}, nil
 	}
 	content, oldText := payload["content"], payload["old_text"]
-	if !pyTruthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = ""
 	}
-	if !pyTruthy(oldText) {
+	if !anyutil.IsTrue(oldText) {
 		oldText = ""
 	}
 	return storeCall(ctx, store, verb, name, content, oldText, payload["matched_entry"])
@@ -256,7 +257,7 @@ func recordValue(r map[string]any, key string, def any) any {
 func recordKey(r map[string]any, key string) (any, error) {
 	v, ok := r[key]
 	if !ok {
-		return nil, &pyError{class: "KeyError", msg: "pending memory write has no " + key}
+		return nil, &kindError{class: "KeyError", msg: "pending memory write has no " + key}
 	}
 	return v, nil
 }
@@ -276,7 +277,7 @@ func fmtPendingList(env *tools.Env, subsystem string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("  %s%s  %s", pyStr(id), tag, pyStr(recordValue(r, "summary", ""))))
+		lines = append(lines, fmt.Sprintf("  %s%s  %s", anyutil.String(id), tag, anyutil.String(recordValue(r, "summary", ""))))
 		if subsystem == tools.WriteApprovalMemory {
 			payload, err := recordKey(r, "payload")
 			if err != nil {
@@ -302,7 +303,7 @@ func fmtPendingList(env *tools.Env, subsystem string) (string, error) {
 func matchedEntryLines(payload any) ([]string, error) {
 	m, ok := payload.(map[string]any)
 	if !ok {
-		return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("pending memory write payload is %s where a mapping was expected", errchain.Kind(payload))}
+		return nil, &kindError{class: "AttributeError", msg: fmt.Sprintf("pending memory write payload is %s where a mapping was expected", errchain.Kind(payload))}
 	}
 	ops, err := DestructiveOps(m)
 	if err != nil {
@@ -310,10 +311,10 @@ func matchedEntryLines(payload any) ([]string, error) {
 	}
 	out := make([]string, 0, len(ops))
 	for _, op := range ops {
-		if pyTruthy(op["matched_entry"]) {
-			out = append(out, fmt.Sprintf("%ss entry: %s", pyStr(op["action"]), pyStr(op["matched_entry"])))
+		if anyutil.IsTrue(op["matched_entry"]) {
+			out = append(out, fmt.Sprintf("%ss entry: %s", anyutil.String(op["action"]), anyutil.String(op["matched_entry"])))
 		} else {
-			out = append(out, fmt.Sprintf("%s: unpinned legacy target — reject and recreate before approving", pyStr(op["action"])))
+			out = append(out, fmt.Sprintf("%s: unpinned legacy target — reject and recreate before approving", anyutil.String(op["action"])))
 		}
 	}
 	return out, nil
@@ -328,7 +329,7 @@ func HandlePendingSubcommand(ctx context.Context, env *tools.Env, subsystem stri
 		}
 		return fmtState(env, subsystem) + "\n\n" + list, true, nil
 	}
-	sub, rest := pyLower(args[0]), args[1:]
+	sub, rest := strings.ToLower(args[0]), args[1:]
 	switch {
 	case sub == "pending":
 		list, err := fmtPendingList(env, subsystem)
@@ -362,7 +363,7 @@ func approvePending(ctx context.Context, env *tools.Env, subsystem string, rest 
 		return fmt.Sprintf("No pending %s writes.", subsystem), nil
 	}
 	var targets []map[string]any
-	if pyLower(target) == "all" {
+	if strings.ToLower(target) == "all" {
 		targets = records
 	} else {
 		rec := tools.GetPending(env, subsystem, target)
@@ -380,10 +381,10 @@ func approvePending(ctx context.Context, env *tools.Env, subsystem string, rest 
 			return "", err
 		}
 		if !ok {
-			failed = append(failed, fmt.Sprintf("%s: %s", pyStr(id), msg))
+			failed = append(failed, fmt.Sprintf("%s: %s", anyutil.String(id), msg))
 			continue
 		}
-		idText := pyStr(id)
+		idText := anyutil.String(id)
 		tools.DiscardPending(env, subsystem, idText)
 		applied++
 		for _, text := range changedEntries(result, "replaced") {
@@ -425,8 +426,8 @@ func changedEntries(result map[string]any, kind string) []string {
 		single = result["patched_entry_before"]
 	}
 	var out []string
-	if pyTruthy(single) {
-		out = append(out, pyStr(single))
+	if anyutil.IsTrue(single) {
+		out = append(out, anyutil.String(single))
 	}
 	batch, _ := jsonutil.AsMap(result[kind+"_entries"])
 	keys := make([]string, 0, len(batch))
@@ -434,12 +435,12 @@ func changedEntries(result map[string]any, kind string) []string {
 		keys = append(keys, k)
 	}
 	sort.SliceStable(keys, func(i, j int) bool {
-		a, _ := strconv.Atoi(pyStrip(keys[i]))
-		b, _ := strconv.Atoi(pyStrip(keys[j]))
+		a, _ := strconv.Atoi(strings.TrimSpace(keys[i]))
+		b, _ := strconv.Atoi(strings.TrimSpace(keys[j]))
 		return a < b
 	})
 	for _, k := range keys {
-		out = append(out, pyStr(batch[k]))
+		out = append(out, anyutil.String(batch[k]))
 	}
 	return out
 }
@@ -478,9 +479,9 @@ func applyOnePending(ctx context.Context, subsystem string, rec map[string]any, 
 	}
 	errText := ""
 	if v, present := result["error"]; present {
-		errText = pyStr(v)
+		errText = anyutil.String(v)
 	}
-	return pyTruthy(result["success"]), errText, result
+	return anyutil.IsTrue(result["success"]), errText, result
 }
 
 func rejectPending(env *tools.Env, subsystem string, rest []string) (string, error) {
@@ -488,14 +489,14 @@ func rejectPending(env *tools.Env, subsystem string, rest []string) (string, err
 		return approvalUsage(subsystem), nil
 	}
 	target := rest[0]
-	if pyLower(target) == "all" {
+	if strings.ToLower(target) == "all" {
 		n := 0
 		for _, rec := range tools.ListPending(env, subsystem) {
 			id, err := recordKey(rec, "id")
 			if err != nil {
 				return "", err
 			}
-			if tools.DiscardPending(env, subsystem, pyStr(id)) {
+			if tools.DiscardPending(env, subsystem, anyutil.String(id)) {
 				n++
 			}
 		}
@@ -519,7 +520,7 @@ func skillPendingDiff(env *tools.Env, rest []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("# Pending skill write %s: %s\n\n", pyStr(id), pyStr(recordValue(rec, "summary", ""))) + tools.SkillPendingDiff(env, rec, nil), nil
+	return fmt.Sprintf("# Pending skill write %s: %s\n\n", anyutil.String(id), anyutil.String(recordValue(rec, "summary", ""))) + tools.SkillPendingDiff(env, rec, nil), nil
 }
 
 // Spellings the approval toggle accepts for on and off
@@ -533,7 +534,7 @@ func setApproval(env *tools.Env, subsystem string, rest []string, setMode func(b
 	if len(rest) == 0 {
 		return fmt.Sprintf("%s\nSet with: /%s approval <on|off>", fmtState(env, subsystem), subsystem)
 	}
-	arg := pyLower(pyStrip(rest[0]))
+	arg := strings.ToLower(strings.TrimSpace(rest[0]))
 	enabled, ok := approvalValues[arg]
 	if !ok {
 		return fmt.Sprintf("Invalid value '%s'. Use: on or off.", arg)

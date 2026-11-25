@@ -52,7 +52,7 @@ func SanitizeModelOverride(override any) *jsonutil.Object {
 		if !slices.Contains(PersistableModelOverrideKeys, k) || v == nil || v == "" {
 			continue
 		}
-		cleaned.Set(k, pyStrOf(v))
+		cleaned.Set(k, anyutil.String(v))
 	}
 	if cleaned.Len() == 0 {
 		return nil
@@ -60,33 +60,12 @@ func SanitizeModelOverride(override any) *jsonutil.Object {
 	return cleaned
 }
 
-// Python str of a decoded JSON value
-func pyStrOf(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	if b, ok := v.(bool); ok {
-		if b {
-			return "True"
-		}
-		return "False"
-	}
-	if f, ok := v.(float64); ok {
-		return pyFloatStr(f)
-	}
-	if _, ok := v.(*jsonutil.Object); ok {
-		text, _ := jsonutil.Encode(v, jsonutil.Spaced(), jsonutil.ASCII())
-		return text
-	}
-	return fmt.Sprint(v)
-}
-
 // Routing index entry mapping a session key to its current session id and metadata
 type SessionEntry struct {
 	SessionKey          string
 	SessionID           string
-	CreatedAt           pyDatetime
-	UpdatedAt           pyDatetime
+	CreatedAt           datetime
+	UpdatedAt           datetime
 	Origin              *SessionSource
 	DisplayName         *string
 	Platform            Platform
@@ -109,9 +88,9 @@ type SessionEntry struct {
 	Suspended           bool
 	ResumePending       bool
 	ResumeReason        *string
-	LastResumeMarkedAt  *pyDatetime
+	LastResumeMarkedAt  *datetime
 	ActiveTurnToken     *string
-	ActiveTurnStartedAt *pyDatetime
+	ActiveTurnStartedAt *datetime
 	ModelOverride       *jsonutil.Object
 	TransportProfile    *string
 	PromptPin           *jsonutil.Object
@@ -119,7 +98,7 @@ type SessionEntry struct {
 }
 
 // Entry with the dataclass defaults for the given key, id and timestamps
-func NewSessionEntry(sessionKey, sessionID string, createdAt, updatedAt pyDatetime) *SessionEntry {
+func NewSessionEntry(sessionKey, sessionID string, createdAt, updatedAt datetime) *SessionEntry {
 	return &SessionEntry{SessionKey: sessionKey, SessionID: sessionID, CreatedAt: createdAt, UpdatedAt: updatedAt,
 		ChatType: "dm", Metadata: jsonutil.NewObject(), CostStatus: "unknown"}
 }
@@ -199,24 +178,20 @@ type SessionEntryError struct{ Kind, Msg string }
 
 func (e *SessionEntryError) Error() string { return e.Msg }
 
-// Integer field of a decoded entry, the default when absent
+// Kind label of the error, the one receipt checks and failure logs classify it by
+func (e *SessionEntryError) ErrorKind() string { return e.Kind }
+
+// Integer field of a decoded entry, zero when absent or null, an error for a value with no integer form
 func entryInt(data *jsonutil.Object, key string) (int64, error) {
-	v, ok := data.Get(key)
-	if !ok {
+	v := data.Value(key)
+	if v == nil {
 		return 0, nil
 	}
-	switch x := v.(type) {
-	case int64:
-		return x, nil
-	case float64:
-		return int64(x), nil
-	case bool:
-		if x {
-			return 1, nil
-		}
-		return 0, nil
+	n, err := anyutil.ToInt(v)
+	if err != nil {
+		return 0, &SessionEntryError{Kind: "TypeError", Msg: fmt.Sprintf("invalid %s value", key)}
 	}
-	return 0, &SessionEntryError{Kind: "TypeError", Msg: fmt.Sprintf("invalid %s value", key)}
+	return n, nil
 }
 
 // Truthiness of a decoded entry field, false when absent
@@ -225,7 +200,7 @@ func entryBool(data *jsonutil.Object, key string, def bool) bool {
 	if !ok {
 		return def
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Optional string field of a decoded entry, nil when absent or null
@@ -234,7 +209,7 @@ func entryOptStr(data *jsonutil.Object, key string) *string {
 	if !ok || v == nil {
 		return nil
 	}
-	s := pyStrOf(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -251,8 +226,8 @@ func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionE
 		}
 	}
 	var platform Platform
-	if raw, _ := data.Get("platform"); pyTruthy(raw) {
-		if p, ok := platformMember(pyStrOf(raw)); ok {
+	if raw, _ := data.Get("platform"); anyutil.IsTrue(raw) {
+		if p, ok := platformMember(anyutil.String(raw)); ok {
 			platform = p
 		} else {
 			pkgLog().Debug(fmt.Sprintf("Unknown platform value %v", raw))
@@ -269,13 +244,16 @@ func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionE
 	}
 	keyRaw, ok := data.Get("session_key")
 	if !ok {
-		return nil, &SessionEntryError{Kind: "KeyError", Msg: "'session_key'"}
+		return nil, &SessionEntryError{Kind: "KeyError", Msg: "session_key is missing"}
 	}
 	idRaw, ok := data.Get("session_id")
 	if !ok {
-		return nil, &SessionEntryError{Kind: "KeyError", Msg: "'session_id'"}
+		return nil, &SessionEntryError{Kind: "KeyError", Msg: "session_id is missing"}
 	}
-	sessionKey, sessionID := pyStrOf(keyRaw), pyStrOf(idRaw)
+	if keyRaw == nil || idRaw == nil {
+		return nil, &SessionEntryError{Kind: "TypeError", Msg: "session_key and session_id must not be null"}
+	}
+	sessionKey, sessionID := anyutil.String(keyRaw), anyutil.String(idRaw)
 	if isPathUnsafe(sessionID, true) {
 		return nil, &SessionEntryError{Kind: "ValueError", Msg: "Invalid session_id: potential directory traversal detected"}
 	}
@@ -293,10 +271,10 @@ func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionE
 	e := NewSessionEntry(sessionKey, sessionID, created, updated)
 	e.Origin, e.Platform = origin, platform
 	e.DisplayName = entryOptStr(data, "display_name")
-	if v, ok := data.Get("chat_type"); ok {
-		e.ChatType = pyStrOf(v)
+	if v := data.Value("chat_type"); v != nil {
+		e.ChatType = anyutil.String(v)
 	}
-	if v, _ := data.Get("metadata"); pyTruthy(v) {
+	if v, _ := data.Get("metadata"); anyutil.IsTrue(v) {
 		obj, ok := v.(*jsonutil.Object)
 		if !ok {
 			return nil, &SessionEntryError{Kind: "TypeError", Msg: "metadata is not a mapping"}
@@ -320,8 +298,8 @@ func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionE
 			e.EstimatedCostUSD = float64(x)
 		}
 	}
-	if v, ok := data.Get("cost_status"); ok {
-		e.CostStatus = pyStrOf(v)
+	if v := data.Value("cost_status"); v != nil {
+		e.CostStatus = anyutil.String(v)
 	}
 	if _, ok := data.Get("expiry_finalized"); ok {
 		e.ExpiryFinalized = entryBool(data, "expiry_finalized", false)
@@ -340,7 +318,7 @@ func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionE
 		if b, isBool := v.(bool); isBool {
 			e.Yolo = &b
 		} else if v != nil {
-			b := pyTruthy(v)
+			b := anyutil.IsTrue(v)
 			e.Yolo = &b
 		}
 	} else if v, _ := data.Get("yolo"); v == true {
@@ -363,18 +341,18 @@ func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionE
 }
 
 // Required isoformat timestamp field of a decoded entry
-func entryTime(data *jsonutil.Object, key string) (pyDatetime, error) {
+func entryTime(data *jsonutil.Object, key string) (datetime, error) {
 	raw, ok := data.Get(key)
 	if !ok {
-		return pyDatetime{}, &SessionEntryError{Kind: "KeyError", Msg: "'" + key + "'"}
+		return datetime{}, &SessionEntryError{Kind: "KeyError", Msg: key + " is missing"}
 	}
 	s, ok := raw.(string)
 	if !ok {
-		return pyDatetime{}, &SessionEntryError{Kind: "TypeError", Msg: "the session entry time is not ISO 8601 text"}
+		return datetime{}, &SessionEntryError{Kind: "TypeError", Msg: "the session entry time is not ISO 8601 text"}
 	}
 	d, err := fromISOFormat(s)
 	if err != nil {
-		return pyDatetime{}, &SessionEntryError{Kind: "ValueError", Msg: err.Error()}
+		return datetime{}, &SessionEntryError{Kind: "ValueError", Msg: err.Error()}
 	}
 	return d, nil
 }
@@ -759,7 +737,7 @@ func (s *SessionStore) observedRouteChecks(ctx context.Context, observed *Sessio
 }
 
 // Applies the stale and reset decisions under the lock, a replaced entry reading as healthy
-func (s *SessionStore) applyRouteChecks(ctx context.Context, sessionKey string, checks *routeChecks, forceNew, touchActivity bool, now pyDatetime, source *SessionSource) *routeDecision {
+func (s *SessionStore) applyRouteChecks(ctx context.Context, sessionKey string, checks *routeChecks, forceNew, touchActivity bool, now datetime, source *SessionSource) *routeDecision {
 	decision := &routeDecision{}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -819,7 +797,7 @@ func optionalString(v string) *string {
 }
 
 // Adopts a recoverable state.db row for the vacant key
-func (s *SessionStore) routeRecover(ctx context.Context, decision *routeDecision, sessionKey string, source *SessionSource, now pyDatetime) error {
+func (s *SessionStore) routeRecover(ctx context.Context, decision *routeDecision, sessionKey string, source *SessionSource, now datetime) error {
 	recovered, err := s.queryRecoverableSession(ctx, sessionKey, source, now)
 	if err != nil {
 		return err
@@ -841,7 +819,7 @@ func (s *SessionStore) routeRecover(ctx context.Context, decision *routeDecision
 }
 
 // Publishes a fresh candidate when the key is still vacant, returning its create arguments when it won
-func (s *SessionStore) routeCreate(decision *routeDecision, sessionKey string, source *SessionSource, now pyDatetime, forceNew bool, observed *SessionEntry) *sessionCreateArgs {
+func (s *SessionStore) routeCreate(decision *routeDecision, sessionKey string, source *SessionSource, now datetime, forceNew bool, observed *SessionEntry) *sessionCreateArgs {
 	sessionID := newRoutedSessionID(now)
 	candidate := NewSessionEntry(sessionKey, sessionID, now, now)
 	candidate.Origin, candidate.DisplayName, candidate.Platform, candidate.ChatType = source, source.ChatName, source.Platform, source.ChatType
@@ -1011,7 +989,7 @@ func (s *SessionStore) ResetSession(ctx context.Context, sessionKey string, disp
 }
 
 // Publishes a fresh entry inheriting origin, platform, chat type and transport profile, then saves, lock held
-func (s *SessionStore) replaceRouteLocked(ctx context.Context, sessionKey string, old *SessionEntry, sessionID string, now pyDatetime, fields func(*SessionEntry)) (*SessionEntry, error) {
+func (s *SessionStore) replaceRouteLocked(ctx context.Context, sessionKey string, old *SessionEntry, sessionID string, now datetime, fields func(*SessionEntry)) (*SessionEntry, error) {
 	fresh := NewSessionEntry(sessionKey, sessionID, now, now)
 	fresh.Origin, fresh.Platform, fresh.ChatType, fresh.TransportProfile = old.Origin, old.Platform, old.ChatType, old.TransportProfile
 	fields(fresh)

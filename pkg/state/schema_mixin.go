@@ -65,10 +65,10 @@ func sqlQuoteIdent(ident string) string {
 	return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
 }
 
-// Hex SHA-256 of the text
-func sha256HexUTF8(text string) (string, error) {
+// Hex SHA-256 of the bytes of the text
+func sha256Hex(text string) string {
 	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
 }
 
 // Stores a prompt once in the content addressed table and returns its hash, nil for a nil prompt
@@ -80,10 +80,7 @@ func storeSystemPrompt(ctx context.Context, conn SQLiteConn, systemPrompt any) (
 	if !ok {
 		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the system prompt is " + errchain.Kind(systemPrompt) + ", expected text"}
 	}
-	hash, err := sha256HexUTF8(text)
-	if err != nil {
-		return nil, err
-	}
+	hash := sha256Hex(text)
 	if _, err := conn.ExecContext(ctx, "INSERT OR IGNORE INTO system_prompts (hash, prompt) VALUES (?, ?)", hash, text); err != nil {
 		return nil, err
 	}
@@ -191,10 +188,7 @@ func cachedSchemaColumns(cachePath, schemaHash string) *jsonutil.Object {
 
 // Declared columns per table with ALTER TABLE type expressions, read from an in memory copy of the schema and cached on disk by DDL hash
 func parseSchemaColumns(ctx context.Context, schemaSQL string) (*jsonutil.Object, error) {
-	schemaHash, err := sha256HexUTF8(schemaSQL)
-	if err != nil {
-		return nil, err
-	}
+	schemaHash := sha256Hex(schemaSQL)
 	cachePath := filepath.Join(home.Dir(ctx), "cache", "schema_columns.json")
 	if tables := cachedSchemaColumns(cachePath, schemaHash); tables != nil {
 		return tables, nil
@@ -226,16 +220,16 @@ func parseSchemaColumns(ctx context.Context, schemaSQL string) (*jsonutil.Object
 				dflt, _ := row.Get("dflt_value")
 				pk, _ := row.Get("pk")
 				var parts []string
-				if pyTruthy(colType) {
-					parts = append(parts, pyStr(colType))
+				if anyutil.IsTrue(colType) {
+					parts = append(parts, anyutil.String(colType))
 				}
-				if pyTruthy(notNull) && !pyTruthy(pk) {
+				if anyutil.IsTrue(notNull) && !anyutil.IsTrue(pk) {
 					parts = append(parts, "NOT NULL")
 				}
 				if dflt != nil {
-					parts = append(parts, "DEFAULT "+pyStr(dflt))
+					parts = append(parts, "DEFAULT "+anyutil.String(dflt))
 				}
-				cols.Set(pyStr(name), strings.Join(parts, " "))
+				cols.Set(anyutil.String(name), strings.Join(parts, " "))
 			}
 			tables.Set(table, cols)
 		}
@@ -308,6 +302,9 @@ func (s *sessionSchema) dedupeLegacySystemPrompts(ctx context.Context, conn SQLi
 	for _, row := range rows {
 		sessionID, _ := row.Get("id")
 		prompt, _ := row.Get("system_prompt")
+		if blob, ok := prompt.([]byte); ok {
+			prompt = string(blob)
+		}
 		hash, err := storeSystemPrompt(ctx, conn, prompt)
 		if err == nil {
 			_, err = conn.ExecContext(ctx, "UPDATE sessions SET system_prompt_hash = ?, system_prompt = NULL WHERE id = ?", hash, sessionID)
@@ -358,10 +355,10 @@ func ftsTriggersMissing(ctx context.Context, conn SQLiteConn, names []string) (b
 
 // Reports whether trigger SQL is a broad AFTER UPDATE lacking an OF column list
 func ftsUpdateTriggerNeedsNarrowing(sql any) bool {
-	if !pyTruthy(sql) {
+	if !anyutil.IsTrue(sql) {
 		return false
 	}
-	compact := strings.ToUpper(strings.Join(strings.Fields(pyStr(sql)), " "))
+	compact := strings.ToUpper(strings.Join(strings.Fields(anyutil.String(sql)), " "))
 	return !strings.Contains(compact, "AFTER UPDATE OF ") && strings.Contains(compact, "AFTER UPDATE ON ")
 }
 
@@ -385,7 +382,7 @@ func (s *sessionSchema) migrateBroadFTSUpdateTriggers(ctx context.Context, conn 
 		name, _ := row.Get("name")
 		sql, _ := row.Get("sql")
 		if ftsUpdateTriggerNeedsNarrowing(sql) {
-			toDrop = append(toDrop, pyStr(name))
+			toDrop = append(toDrop, anyutil.String(name))
 		}
 	}
 	if len(toDrop) == 0 {
@@ -430,8 +427,8 @@ func ftsIndexIsMisalignedSource(ctx context.Context, conn SQLiteConn) (bool, err
 		return false, err
 	}
 	sql := ""
-	if pyTruthy(row[0]) {
-		sql = pyStr(row[0])
+	if anyutil.IsTrue(row[0]) {
+		sql = anyutil.String(row[0])
 	}
 	return !strings.Contains(sql, "messages_fts_src"), nil
 }
@@ -446,7 +443,7 @@ func executeDDLSkippingSettledTriggers(ctx context.Context, conn SQLiteConn, ddl
 	for _, row := range rows {
 		name, _ := row.Get("name")
 		sql, _ := row.Get("sql")
-		stored[pyStr(name)] = sql
+		stored[anyutil.String(name)] = sql
 	}
 	pendingDrop := ""
 	remainder, err := forEachCompleteStatement(ddl, func(statement string) error {

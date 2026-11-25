@@ -53,7 +53,7 @@ func TestPublicationRecoveryRefusesToReplaceNewerConfig(t *testing.T) {
 	err := recoverPublication(ctx, repo)
 	release()
 	svWantError(t, err, "config changed")
-	var py *PyError
+	var py *ClassError
 	if !errors.As(err, &py) || py.Class != "RuntimeError" {
 		t.Fatalf("recovery error class %T %v", err, err)
 	}

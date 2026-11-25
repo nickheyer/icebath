@@ -108,10 +108,10 @@ func replaceTargetBelongsToOtherProfile(ctx context.Context, existingPid int) (r
 		return refuse(slog.LevelWarn, fmt.Sprintf("pid record names %s, not target %d.", named, existingPid))
 	}
 	recordedStart, _ := record.Get("start_time")
-	if !gateway.PyIsInt(recordedStart) {
+	if !gateway.IsInt(recordedStart) {
 		return true
 	}
-	if !gateway.PyValuesEqual(gateway.GetProcessStartTime(existingPid), recordedStart) {
+	if !gateway.ValuesEqual(gateway.GetProcessStartTime(existingPid), recordedStart) {
 		return refuse(slog.LevelWarn, fmt.Sprintf("pid record start-time does not match the live process %d (stale/PID-reuse record).", existingPid))
 	}
 	recordedHome, _ := home.RecordValue(record.Get, home.RecordKey)

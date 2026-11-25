@@ -713,7 +713,7 @@ func verifyProjectFacts(cwd string) map[string]any {
 
 // Workspace root from the facts, else the resolved cwd
 func verifyRootFor(facts map[string]any, cwd string) (string, error) {
-	if root := facts["root"]; pyTruthy(root) {
+	if root := facts["root"]; anyutil.IsTrue(root) {
 		return anyutil.String(root), nil
 	}
 	return resolveVerifyCwd(cwd)
@@ -843,13 +843,13 @@ func rememberUnattributedRun(key [2]string, command, at string) {
 // Latest unattributed verify run in root unless evidence recorded at since came after it, empty for none
 func lastUnattributedRun(sessionID, root, since any) string {
 	sid := "default"
-	if pyTruthy(sessionID) {
+	if anyutil.IsTrue(sessionID) {
 		sid = anyutil.String(sessionID)
 	}
 	unattributedRuns.Lock()
 	run, ok := unattributedRuns.runs[[2]string{sid, anyutil.String(root)}]
 	unattributedRuns.Unlock()
-	if !ok || (pyTruthy(since) && anyutil.String(since) >= run.at) {
+	if !ok || (anyutil.IsTrue(since) && anyutil.String(since) >= run.at) {
 		return ""
 	}
 	return run.command
@@ -865,7 +865,7 @@ func recordVerifyRun(ctx context.Context, env *tools.Env, root, sessionID string
 		return nil, err
 	}
 	workspace := resolved
-	if r := verifyProjectFacts(root)["root"]; pyTruthy(r) {
+	if r := verifyProjectFacts(root)["root"]; anyutil.IsTrue(r) {
 		workspace = anyutil.String(r)
 	}
 	if scope != "full" && scope != "targeted" {
@@ -1028,7 +1028,7 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 	}
 	var sortErr error
 	sort.SliceStable(merged, func(i, j int) bool {
-		less, err := pyOrder(merged[i], merged[j], "<")
+		less, err := orderValue(merged[i], merged[j], "<")
 		if err != nil && sortErr == nil {
 			sortErr = err
 		}
@@ -1047,12 +1047,12 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 }
 
 // Python a < b or a > b over JSON scalars, a TypeError for values Python cannot order
-func pyOrder(a, b any, op string) (bool, error) {
+func orderValue(a, b any, op string) (bool, error) {
 	cmp, ok := 0, false
 	as, aStr := a.(string)
 	bs, bStr := b.(string)
-	af, aNum := pyJSONNumber(a)
-	bf, bNum := pyJSONNumber(b)
+	af, aNum := jsonNumber(a)
+	bf, bNum := jsonNumber(b)
 	switch {
 	case aStr && bStr:
 		cmp, ok = strings.Compare(as, bs), true
@@ -1069,7 +1069,7 @@ func pyOrder(a, b any, op string) (bool, error) {
 }
 
 // Exact value of a decoded JSON number or bool
-func pyJSONNumber(v any) (*big.Float, bool) {
+func jsonNumber(v any) (*big.Float, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -1123,7 +1123,7 @@ func verifyLedgerRow(ctx context.Context, conn state.SQLiteConn, query string, a
 
 // Latest full passing icebath verify event of root, not older than since when since is set
 func newestWorkspaceVerify(ctx context.Context, conn state.SQLiteConn, root string, since any) (map[string]any, error) {
-	if pyTruthy(since) {
+	if anyutil.IsTrue(since) {
 		return verifyLedgerRow(ctx, conn, "SELECT * FROM verification_events"+
 			" WHERE root = ? AND kind = 'verify' AND status = 'passed' AND scope = 'full'"+
 			" AND created_at >= ?"+
@@ -1169,8 +1169,8 @@ func verificationStatus(ctx context.Context, env *tools.Env, sessionID, cwd stri
 		}
 		lastEditAt := st["last_edit_at"]
 		stale := false
-		if event != nil && pyTruthy(lastEditAt) {
-			newer, err := pyOrder(lastEditAt, event["created_at"], ">")
+		if event != nil && anyutil.IsTrue(lastEditAt) {
+			newer, err := orderValue(lastEditAt, event["created_at"], ">")
 			if err != nil {
 				return err
 			}

@@ -328,28 +328,24 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 	return &CachedAccessToken{AccessToken: accessToken, ExpiresAt: timeNow() + lifetime, TokenType: tokenType}, nil
 }
 
-// Readable detail of a token endpoint error body, error_description first then the Graph error, code or raw text
+// Readable detail of a token endpoint error body, error_description first then the Graph error or its code, else the body text as the server sent it
 func extractErrorDetail(resp *httputil.Response) string {
-	payload, err := resp.JSON()
-	if err != nil {
-		if text := strings.TrimSpace(resp.Text()); text != "" {
-			return text
+	if payload, err := resp.JSON(); err == nil {
+		if get, ok := jsonDict(payload); ok {
+			if s, ok := get("error_description").(string); ok {
+				return s
+			}
+			errValue := get("error")
+			if detail, ok := FormatGraphError(errValue); ok {
+				return detail
+			}
+			if eget, ok := jsonDict(errValue); ok && anyutil.IsTrue(eget("code")) {
+				return anyutil.String(eget("code"))
+			}
 		}
-		return "unknown error"
 	}
-	get, ok := jsonDict(payload)
-	if !ok {
-		return anyutil.String(payload)
+	if text := strings.TrimSpace(resp.Text()); text != "" {
+		return text
 	}
-	if s, ok := get("error_description").(string); ok {
-		return s
-	}
-	errValue := get("error")
-	if detail, ok := FormatGraphError(errValue); ok {
-		return detail
-	}
-	if eget, ok := jsonDict(errValue); ok && anyutil.IsTrue(eget("code")) {
-		return anyutil.String(eget("code"))
-	}
-	return anyutil.String(payload)
+	return "unknown error"
 }

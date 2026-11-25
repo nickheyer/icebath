@@ -13,12 +13,6 @@ import (
 	jsonschemautil "github.com/nickheyer/icebath/pkg/utils/jsonschema"
 )
 
-// Python frames under coerce_output_schema and validate_output when delegate_task runs in the reference tool worker thread
-const (
-	coerceOutputSchemaFrameDepth = 24
-	validateOutputFrameDepth     = 30
-)
-
 // Schema object when usable, an error message when not, both empty when no schema was requested
 func CoerceOutputSchema(raw any) (any, string) {
 	if raw == nil {
@@ -44,21 +38,21 @@ func CoerceOutputSchema(raw any) (any, string) {
 }
 
 // Task list with each task's output_schema swapped for its Python valued copy, the dict delegate_task parsed
-func WithPythonTaskSchemas(tasks, pyTasks any) any {
+func WithPythonTaskSchemas(tasks, tasksValue any) any {
 	list, ok := tasks.([]any)
-	pyList, pyOK := pyTasks.([]any)
-	if !ok || !pyOK || len(list) != len(pyList) {
+	listOf, okValue := tasksValue.([]any)
+	if !ok || !okValue || len(list) != len(listOf) {
 		return tasks
 	}
 	out := make([]any, len(list))
 	for i, t := range list {
 		out[i] = t
-		pyTask, isObject := pyList[i].(*jsonutil.Object)
+		taskValue, isObject := listOf[i].(*jsonutil.Object)
 		m, isMap := t.(map[string]any)
 		if !isObject || !isMap {
 			continue
 		}
-		schema, has := pyTask.Get("output_schema")
+		schema, has := taskValue.Get("output_schema")
 		if !has {
 			continue
 		}
@@ -141,11 +135,6 @@ func ExtractJSONCandidate(text string) string {
 
 // Validity of a final answer against schema with retry ready error strings, at most ten
 func ValidateOutput(text string, schema any) (bool, []string, error) {
-	return ValidateOutputAt(text, schema, validateOutputFrameDepth)
-}
-
-// ValidateOutput whose validator runs validateDepth Python frames deep, the depth of the reference call site it mirrors
-func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []string, error) {
 	candidate := ExtractJSONCandidate(text)
 	if strings.TrimSpace(candidate) == "" {
 		return false, []string{"Response was empty — expected a JSON object matching the schema."}, nil

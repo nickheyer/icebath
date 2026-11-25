@@ -37,7 +37,7 @@ func TestToolsConfigPreselectedAndChecklist(t *testing.T) {
 	if !reflect.DeepEqual(tc["exclude"], []any{"*team_member*", "create_issue"}) || tc["include"] != nil {
 		t.Fatalf("exclude mode %v", tc)
 	}
-	if !strings.Contains(ui.out.String(), "gh: 1 re-enabled tool(s) still match glob exclude pattern(s) ['*team_member*']") {
+	if !strings.Contains(ui.out.String(), "gh: 1 re-enabled tool(s) still match glob exclude pattern(s) [\"*team_member*\"]") {
 		t.Fatal(ui.out.String())
 	}
 }

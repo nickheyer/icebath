@@ -16,26 +16,26 @@ import (
 
 // Python objects the safe constructor builds before they become Go values, containers by reference
 type (
-	pyList struct {
+	listOf struct {
 		items []any
 		rt    bool
 	}
-	pyTuple struct {
+	tupleOf struct {
 		items []any
 		rtKey bool
 	}
-	pyDict struct {
+	mappingOf struct {
 		keys, vals []any
 		index      map[string]int
 		kind       dictKind
 	}
-	pySet struct {
+	setValue struct {
 		keys  []any
 		index map[string]int
 		rt    bool
 	}
-	pyNaN  struct{ neg bool }
-	pyTime struct {
+	naN       struct{ neg bool }
+	clockTime struct {
 		v      any
 		shared bool
 	}
@@ -52,7 +52,7 @@ const (
 	dictCommentedKey
 )
 
-func newPyDict() *pyDict { return &pyDict{index: map[string]int{}} }
+func newPyDict() *mappingOf { return &mappingOf{index: map[string]int{}} }
 
 // Set a YAML !!set loads to, members in insertion order
 type YAMLSet struct{ Items []any }
@@ -66,21 +66,21 @@ func (s YAMLSet) String() string {
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
-func pyErr(class, msg string) *ry.PyException { return ry.Raise(class, msg) }
+func kindErr(class, msg string) *ry.Exception { return ry.Raise(class, msg) }
 
 // Python type name of an intermediate object for TypeError text
-func pyObjType(v any) string {
+func objType(v any) string {
 	switch x := v.(type) {
-	case *pyList:
+	case *listOf:
 		return "list"
-	case *pyTuple:
+	case *tupleOf:
 		return "tuple"
-	case *pyDict:
+	case *mappingOf:
 		if x.kind == dictOrdered {
 			return "ordereddict"
 		}
 		return "dict"
-	case *pySet:
+	case *setValue:
 		return "set"
 	}
 	return "object"
@@ -91,11 +91,11 @@ func unhashableName(v any, rt bool) string {
 	if rt {
 		return rtTypeName(v)
 	}
-	return pyObjType(v)
+	return objType(v)
 }
 
 // Hash and equality class of a Python key, the TypeError of an unhashable member
-func pyHashKey(v any) string {
+func hashKey(v any) string {
 	switch x := v.(type) {
 	case nil:
 		return "N"
@@ -112,18 +112,18 @@ func pyHashKey(v any) string {
 			return "n" + n.String()
 		}
 		return "f" + strconv.FormatFloat(x, 'g', -1, 64)
-	case *pyNaN:
+	case *naN:
 		return fmt.Sprintf("nan%p", x)
 	case string:
 		return "s" + x
 	case []byte:
 		return "b" + string(x)
-	case *pyTime:
+	case *clockTime:
 		return timeHashKey(x.v)
-	case *pyTuple:
+	case *tupleOf:
 		parts := make([]string, len(x.items))
 		for i, it := range x.items {
-			parts[i] = pyHashKey(it)
+			parts[i] = hashKey(it)
 		}
 		return "(" + strings.Join(parts, "\x01") + ")"
 	case *rtBool:
@@ -135,11 +135,11 @@ func pyHashKey(v any) string {
 		return timeHashKey(x.v)
 	case *rtTagged:
 		return fmt.Sprintf("o%p", x)
-	case *pyDict:
+	case *mappingOf:
 		if x.kind == dictCommentedKey {
 			parts := make([]string, len(x.keys))
 			for i, k := range x.keys {
-				parts[i] = "(" + pyHashKey(k) + "\x01" + pyHashKey(x.vals[i]) + ")"
+				parts[i] = "(" + hashKey(k) + "\x01" + hashKey(x.vals[i]) + ")"
 			}
 			return "K(" + strings.Join(parts, "\x01") + ")"
 		}
@@ -150,17 +150,17 @@ func pyHashKey(v any) string {
 	if kind == "" {
 		kind = "a " + name
 	}
-	panic(pyErr("TypeError", "a YAML mapping key or set item is "+kind+", which cannot serve as a key"))
+	panic(kindErr("TypeError", "a YAML mapping key or set item is "+kind+", which cannot serve as a key"))
 }
 
 // Whether an unhashable object came from the round trip constructor
 func isRTObject(v any) bool {
 	switch x := v.(type) {
-	case *pyDict:
+	case *mappingOf:
 		return x.kind >= dictCommented
-	case *pySet:
+	case *setValue:
 		return x.rt
-	case *pyList:
+	case *listOf:
 		return x.rt
 	}
 	return false
@@ -184,22 +184,22 @@ func timeHashKey(v any) string {
 func dictKey(v any) string {
 	defer func() {
 		if r := recover(); r != nil {
-			if e, ok := r.(*ry.PyException); ok && e.Class == "TypeError" {
-				panic(pyErr("TypeError", "cannot use '"+pyKeyTypeName(v)+"' as a dict key ("+e.Msg+")"))
+			if e, ok := r.(*ry.Exception); ok && e.Class == "TypeError" {
+				panic(kindErr("TypeError", "cannot use '"+keyTypeName(v)+"' as a dict key ("+e.Msg+")"))
 			}
 			panic(r)
 		}
 	}()
-	return pyHashKey(v)
+	return hashKey(v)
 }
 
-func pyKeyTypeName(v any) string {
+func keyTypeName(v any) string {
 	switch x := v.(type) {
-	case *pyTuple:
+	case *tupleOf:
 		if x.rtKey {
 			return "ruamel.yaml.comments.CommentedKeySeq"
 		}
-	case *pyDict:
+	case *mappingOf:
 		switch x.kind {
 		case dictCommentedKey:
 			return "ruamel.yaml.comments.CommentedKeyMap"
@@ -210,19 +210,19 @@ func pyKeyTypeName(v any) string {
 		case dictCommentedOrdered:
 			return "ruamel.yaml.comments.CommentedOrderedMap"
 		}
-	case *pySet:
+	case *setValue:
 		if x.rt {
 			return "ruamel.yaml.comments.CommentedSet"
 		}
-	case *pyList:
+	case *listOf:
 		if x.rt {
 			return "ruamel.yaml.comments.CommentedSeq"
 		}
 	}
-	return pyObjType(v)
+	return objType(v)
 }
 
-func (d *pyDict) get(k string) (any, bool) {
+func (d *mappingOf) get(k string) (any, bool) {
 	i, ok := d.index[k]
 	if !ok {
 		return nil, false
@@ -231,7 +231,7 @@ func (d *pyDict) get(k string) (any, bool) {
 }
 
 // Assigns a value, an equal existing key keeping its original object and position
-func (d *pyDict) set(key, val any) {
+func (d *mappingOf) set(key, val any) {
 	k := dictKey(key)
 	if i, ok := d.index[k]; ok {
 		d.vals[i] = val
@@ -242,18 +242,18 @@ func (d *pyDict) set(key, val any) {
 	d.vals = append(d.vals, val)
 }
 
-func (d *pyDict) update(o *pyDict) {
+func (d *mappingOf) update(o *mappingOf) {
 	for i, k := range o.keys {
 		d.set(k, o.vals[i])
 	}
 }
 
 // Python str of an intermediate object, containers by repr with recursion shown as ellipses
-func pyObjStr(v any) string {
+func objStr(v any) string {
 	switch x := v.(type) {
 	case string:
 		return x
-	case *pyTime:
+	case *clockTime:
 		return timestampText(x.v)
 	case *rtBool:
 		if x.b {
@@ -265,7 +265,7 @@ func pyObjStr(v any) string {
 	case *rtTagged:
 		return x.value
 	}
-	return pyObjRepr(v, map[any]bool{})
+	return objRepr(v, map[any]bool{})
 }
 
 // Text of a loaded date or datetime, yyyy-mm-dd or the ISO datetime with a space before the time
@@ -276,7 +276,7 @@ func timestampText(v any) string {
 	return anyutil.String(v)
 }
 
-func pyObjRepr(v any, active map[any]bool) string {
+func objRepr(v any, active map[any]bool) string {
 	switch x := v.(type) {
 	case nil:
 		return "None"
@@ -289,13 +289,13 @@ func pyObjRepr(v any, active map[any]bool) string {
 		return x.String()
 	case float64:
 		return strconv.FormatFloat(x, 'f', -1, 64)
-	case *pyNaN:
+	case *naN:
 		return "nan"
 	case string:
 		return strconv.Quote(x)
 	case []byte:
 		return strconv.Quote(string(x))
-	case *pyTime:
+	case *clockTime:
 		return timestampText(x.v)
 	case *rtBool:
 		if x.b {
@@ -306,24 +306,24 @@ func pyObjRepr(v any, active map[any]bool) string {
 		return x.repr()
 	case *rtTagged:
 		return x.repr()
-	case *pyList:
+	case *listOf:
 		if active[x] {
 			return "[...]"
 		}
 		active[x] = true
 		defer delete(active, x)
 		return "[" + joinObjRepr(x.items, active) + "]"
-	case *pyTuple:
+	case *tupleOf:
 		if active[x] {
 			return "(...)"
 		}
 		active[x] = true
 		defer delete(active, x)
 		if len(x.items) == 1 {
-			return "(" + pyObjRepr(x.items[0], active) + ",)"
+			return "(" + objRepr(x.items[0], active) + ",)"
 		}
 		return "(" + joinObjRepr(x.items, active) + ")"
-	case *pySet:
+	case *setValue:
 		if x.rt {
 			return "set(odict_keys([" + joinObjRepr(x.keys, active) + "]))"
 		}
@@ -336,7 +336,7 @@ func pyObjRepr(v any, active map[any]bool) string {
 		active[x] = true
 		defer delete(active, x)
 		return "{" + joinObjRepr(x.keys, active) + "}"
-	case *pyDict:
+	case *mappingOf:
 		if active[x] {
 			return "{...}"
 		}
@@ -344,7 +344,7 @@ func pyObjRepr(v any, active map[any]bool) string {
 		defer delete(active, x)
 		parts := make([]string, len(x.keys))
 		for i, k := range x.keys {
-			parts[i] = pyObjRepr(k, active) + ": " + pyObjRepr(x.vals[i], active)
+			parts[i] = objRepr(k, active) + ": " + objRepr(x.vals[i], active)
 		}
 		body := "{" + strings.Join(parts, ", ") + "}"
 		switch x.kind {
@@ -364,7 +364,7 @@ func pyObjRepr(v any, active map[any]bool) string {
 func joinObjRepr(items []any, active map[any]bool) string {
 	parts := make([]string, len(items))
 	for i, it := range items {
-		parts[i] = pyObjRepr(it, active)
+		parts[i] = objRepr(it, active)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -410,7 +410,7 @@ func constructDocumentMode(doc *ry.Document, rt bool) (value any, warnings []ry.
 			switch e := r.(type) {
 			case *ry.MarkedError:
 				err = e
-			case *ry.PyException:
+			case *ry.Exception:
 				err = e
 			default:
 				panic(r)
@@ -476,7 +476,7 @@ func (c *safeConstructor) inFrames(cost int, f func()) {
 	c.frames += cost
 	defer func() { c.frames -= cost }()
 	if c.frames > c.frameLimit() {
-		panic(pyErr("RecursionError", "maximum recursion depth exceeded"))
+		panic(kindErr("RecursionError", "maximum recursion depth exceeded"))
 	}
 	f()
 }
@@ -510,7 +510,7 @@ func (c *safeConstructor) constructSafeScalar(n *ry.Node, tag string) any {
 		low := strings.ToLower(value)
 		b, ok := boolValues[low]
 		if !ok {
-			panic(pyErr("KeyError", strconv.Quote(low)))
+			panic(kindErr("KeyError", strconv.Quote(low)))
 		}
 		return b
 	case yamlTagPrefix + "int":
@@ -531,14 +531,14 @@ func (c *safeConstructor) constructSafeCollection(n *ry.Node, tag string) any {
 		omap.kind = dictOrdered
 		return c.generator(omap, 1, func() { c.fillOmap(n, omap) })
 	case yamlTagPrefix + "pairs":
-		pairs := &pyList{}
+		pairs := &listOf{}
 		return c.generator(pairs, 1, func() { c.fillPairs(n, pairs) })
 	case yamlTagPrefix + "set":
-		set := &pySet{index: map[string]int{}}
+		set := &setValue{index: map[string]int{}}
 		return c.generator(set, 3, func() {
 			value := c.constructMapping(n, false)
 			for _, k := range value.keys {
-				hk := pyHashKey(k)
+				hk := hashKey(k)
 				if _, ok := set.index[hk]; !ok {
 					set.index[hk] = len(set.keys)
 					set.keys = append(set.keys, k)
@@ -546,7 +546,7 @@ func (c *safeConstructor) constructSafeCollection(n *ry.Node, tag string) any {
 			}
 		})
 	case yamlTagPrefix + "seq":
-		list := &pyList{}
+		list := &listOf{}
 		return c.generator(list, 2, func() { list.items = append(list.items, c.constructSequence(n, false)...) })
 	case yamlTagPrefix + "map":
 		m := newPyDict()
@@ -589,7 +589,7 @@ func (c *safeConstructor) flattenMapping(n *ry.Node) {
 	c.flattening++
 	defer func() { c.flattening-- }()
 	if c.flattening > 990 {
-		panic(pyErr("RecursionError", "maximum recursion depth exceeded"))
+		panic(kindErr("RecursionError", "maximum recursion depth exceeded"))
 	}
 	var merge []ry.Pair
 	index := 0
@@ -640,7 +640,7 @@ func (c *safeConstructor) flattenMapping(n *ry.Node) {
 func strPtr(s string) *string { return &s }
 
 // Dict of a mapping node with merges flattened, duplicate keys refused unless a merge is present
-func (c *safeConstructor) constructMapping(n *ry.Node, deep bool) *pyDict {
+func (c *safeConstructor) constructMapping(n *ry.Node, deep bool) *mappingOf {
 	if n.Kind == ry.MappingNode {
 		c.flattenMapping(n)
 	}
@@ -662,18 +662,18 @@ func (c *safeConstructor) constructMapping(n *ry.Node, deep bool) *pyDict {
 		mapping := newPyDict()
 		for _, p := range w.pairs {
 			key := c.constructObject(p.Key, true)
-			if l, ok := key.(*pyList); ok {
-				key = &pyTuple{items: append([]any(nil), l.items...)}
+			if l, ok := key.(*listOf); ok {
+				key = &tupleOf{items: append([]any(nil), l.items...)}
 			}
 			switch key.(type) {
-			case *pyDict, *pySet:
+			case *mappingOf, *setValue:
 				panic(constructorError("while constructing a mapping", n.Start, "found unhashable key", p.Key.Start))
 			}
 			value := c.constructObject(p.Value, deep)
 			if w.check {
 				k := dictKey(key)
 				if mk, dup := mapping.get(k); dup {
-					problem := fmt.Sprintf("found duplicate key \"%s\" with value \"%s\" (original value: \"%s\")", pyObjStr(key), pyObjStr(value), pyObjStr(mk))
+					problem := fmt.Sprintf("found duplicate key \"%s\" with value \"%s\" (original value: \"%s\")", objStr(key), objStr(value), objStr(mk))
 					panic(&ry.MarkedError{Class: "DuplicateKeyError", Context: strPtr("while constructing a mapping"), ContextMark: n.Start,
 						Problem: &problem, ProblemMark: p.Key.Start,
 						Note: "\n                    To suppress this check see:\n                        https://yaml.dev/doc/ruamel.yaml/api/#Duplicate_keys\n                    "})
@@ -695,7 +695,7 @@ func yamlIntOf(text string, base int) *big.Int {
 	text = strings.TrimSpace(text)
 	if n, ok := new(big.Int).SetString(text, base); ok {
 		if digits := len(strings.TrimLeft(text, "+-")); base == 10 && digits > 4300 {
-			panic(pyErr("ValueError", fmt.Sprintf("YAML integer has %d digits, more than the 4300 a decimal integer may have", digits)))
+			panic(kindErr("ValueError", fmt.Sprintf("YAML integer has %d digits, more than the 4300 a decimal integer may have", digits)))
 		}
 		return n
 	}
@@ -703,12 +703,12 @@ func yamlIntOf(text string, base int) *big.Int {
 	if len(r) > 200 {
 		r = r[:200]
 	}
-	panic(pyErr("ValueError", fmt.Sprintf("YAML value %s is not a whole number in base %d", string(r), base)))
+	panic(kindErr("ValueError", fmt.Sprintf("YAML value %s is not a whole number in base %d", string(r), base)))
 }
 
 func strIndex0(s string) rune {
 	if s == "" {
-		panic(pyErr("IndexError", "YAML text is empty where a character was expected"))
+		panic(kindErr("IndexError", "YAML text is empty where a character was expected"))
 	}
 	return []rune(s)[0]
 }
@@ -750,10 +750,10 @@ func (c *safeConstructor) constructInt(n *ry.Node) any {
 }
 
 // Python float() of a str, the ValueError naming the text
-func pyFloatText(text string) float64 {
+func floatText(text string) float64 {
 	f, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 	if err != nil {
-		panic(pyErr("ValueError", err.Error()))
+		panic(kindErr("ValueError", err.Error()))
 	}
 	return f
 }
@@ -791,7 +791,7 @@ func (c *safeConstructor) constructFloat(n *ry.Node) any {
 		parts := strings.Split(valueS, ":")
 		digits := make([]float64, len(parts))
 		for i, part := range parts {
-			digits[i] = pyFloatText(part)
+			digits[i] = floatText(part)
 		}
 		value, base := 0.0, 1.0
 		for i := len(digits) - 1; i >= 0; i-- {
@@ -803,26 +803,26 @@ func (c *safeConstructor) constructFloat(n *ry.Node) any {
 	if !c.doc.IsYAML12() && strings.Contains(valueS, "e") {
 		parts := strings.Split(valueS, "e")
 		if len(parts) != 2 {
-			panic(pyErr("ValueError", fmt.Sprintf("too many values to unpack (expected 2, got %d)", len(parts))))
+			panic(kindErr("ValueError", fmt.Sprintf("too many values to unpack (expected 2, got %d)", len(parts))))
 		}
 		if !strings.Contains(parts[0], ".") {
 			c.warnings = append(c.warnings, ry.Warning{Category: "MantissaNoDotYAML1_1Warning",
 				Message: fmt.Sprintf(mantissaWarning, valueSO, n.Start.Line, n.Start.Column), Site: safeMantissaSite})
 		}
 	}
-	return floatObj(sign * pyFloatText(valueS))
+	return floatObj(sign * floatText(valueS))
 }
 
 // Float object, a NaN getting its own identity as a fresh Python float does
 func floatObj(f float64) any {
 	if math.IsNaN(f) {
-		return &pyNaN{neg: math.Signbit(f)}
+		return &naN{neg: math.Signbit(f)}
 	}
 	return f
 }
 
 // The one NaN object SafeConstructor.nan_value is, every .nan scalar loading to it
-var yamlNaNValue = &pyNaN{neg: true}
+var yamlNaNValue = &naN{neg: true}
 
 // Python base64.decodebytes, binascii.a2b_base64 in its non strict mode
 func a2bBase64(data []byte) ([]byte, string) {
@@ -926,9 +926,9 @@ func (c *safeConstructor) constructTimestamp(n *ry.Node) any {
 		panic(constructorError("", nil, `failed to construct timestamp from "`+nodeValueStr(n)+`"`, n.Start))
 	}
 	if err != nil {
-		panic(pyErr("ValueError", err.Error()))
+		panic(kindErr("ValueError", err.Error()))
 	}
-	return &pyTime{v: v, shared: n.Anchor != nil}
+	return &clockTime{v: v, shared: n.Anchor != nil}
 }
 
 // Python str of a node value, a collection printing its child node reprs
@@ -963,7 +963,7 @@ func nodeRepr(n *ry.Node) string {
 	return class + "(tag=" + strconv.Quote(n.Tag()) + ", value=" + value + ")"
 }
 
-func (c *safeConstructor) fillOmap(n *ry.Node, omap *pyDict) {
+func (c *safeConstructor) fillOmap(n *ry.Node, omap *mappingOf) {
 	const ctx = "while constructing an ordered map"
 	if n.Kind != ry.SequenceNode {
 		panic(constructorError(ctx, n.Start, "expected a sequence, but found "+n.Kind.ID(), n.Start))
@@ -977,14 +977,14 @@ func (c *safeConstructor) fillOmap(n *ry.Node, omap *pyDict) {
 		}
 		key := c.constructObject(sub.Pairs[0].Key, false)
 		if _, dup := omap.get(dictKey(key)); dup {
-			panic(pyErr("AssertionError", ""))
+			panic(kindErr("AssertionError", ""))
 		}
 		value := c.constructObject(sub.Pairs[0].Value, false)
 		omap.set(key, value)
 	}
 }
 
-func (c *safeConstructor) fillPairs(n *ry.Node, pairs *pyList) {
+func (c *safeConstructor) fillPairs(n *ry.Node, pairs *listOf) {
 	const ctx = "while constructing pairs"
 	if n.Kind != ry.SequenceNode {
 		panic(constructorError(ctx, n.Start, "expected a sequence, but found "+n.Kind.ID(), n.Start))
@@ -998,7 +998,7 @@ func (c *safeConstructor) fillPairs(n *ry.Node, pairs *pyList) {
 		}
 		key := c.constructObject(sub.Pairs[0].Key, false)
 		value := c.constructObject(sub.Pairs[0].Value, false)
-		pairs.items = append(pairs.items, &pyTuple{items: []any{key, value}})
+		pairs.items = append(pairs.items, &tupleOf{items: []any{key, value}})
 	}
 }
 
@@ -1010,12 +1010,12 @@ func toGoValue(v any, memo map[any]any) any {
 			return int(x.Int64())
 		}
 		return x
-	case *pyNaN:
+	case *naN:
 		if x.neg {
 			return math.Copysign(math.NaN(), -1)
 		}
 		return math.NaN()
-	case *pyTime:
+	case *clockTime:
 		if got, ok := memo[x]; ok {
 			return got
 		}
@@ -1030,7 +1030,7 @@ func toGoValue(v any, memo map[any]any) any {
 		}
 		memo[x] = out
 		return out
-	case *pyList:
+	case *listOf:
 		if got, ok := memo[x]; ok {
 			return got
 		}
@@ -1040,7 +1040,7 @@ func toGoValue(v any, memo map[any]any) any {
 			out[i] = toGoValue(it, memo)
 		}
 		return out
-	case *pyTuple:
+	case *tupleOf:
 		if got, ok := memo[x]; ok {
 			return got
 		}
@@ -1050,7 +1050,7 @@ func toGoValue(v any, memo map[any]any) any {
 			out[i] = toGoValue(it, memo)
 		}
 		return out
-	case *pySet:
+	case *setValue:
 		if got, ok := memo[x]; ok {
 			return got
 		}
@@ -1060,7 +1060,7 @@ func toGoValue(v any, memo map[any]any) any {
 			out.Items[i] = toGoValue(it, memo)
 		}
 		return out
-	case *pyDict:
+	case *mappingOf:
 		if got, ok := memo[x]; ok {
 			return got
 		}
@@ -1071,7 +1071,7 @@ func toGoValue(v any, memo map[any]any) any {
 			key, isStr := k.(string)
 			gk := toGoValue(k, memo)
 			if !isStr {
-				key = PyKeyString(gk)
+				key = KeyString(gk)
 				SetMappingPyKey(out, key, gk)
 			}
 			order = append(order, key)

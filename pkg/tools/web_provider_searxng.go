@@ -28,17 +28,17 @@ func (p *searxngProvider) Search(ctx context.Context, env *Env, query string, li
 	if failure != nil {
 		return failure, nil
 	}
-	results, err := pyGetDefault(data, "results", []any{})
+	results, err := getDefault(data, "results", []any{})
 	if err != nil {
 		return nil, err
 	}
-	raw, err := pyIter(results)
+	raw, err := elementsOf(results)
 	if err != nil {
 		return nil, err
 	}
 	scores := make([]float64, len(raw))
 	for i, r := range raw {
-		score, err := pyGetDefault(r, "score", 0)
+		score, err := getDefault(r, "score", 0)
 		if err != nil {
 			return nil, err
 		}
@@ -55,7 +55,7 @@ func (p *searxngProvider) Search(ctx context.Context, env *Env, query string, li
 	for i, j := range order {
 		sorted[i] = raw[j]
 	}
-	head, _ := pySeqHead(sorted, limit)
+	head, _ := seqHead(sorted, limit)
 	hits, err := titledRows(head.([]any), "content")
 	if err != nil {
 		return nil, err

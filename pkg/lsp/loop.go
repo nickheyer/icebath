@@ -214,7 +214,7 @@ func panicError(r any) error {
 	if e, ok := r.(error); ok {
 		return e
 	}
-	return &pyExc{typ: "RuntimeError", text: errorString(r)}
+	return &failure{typ: "RuntimeError", text: errorString(r)}
 }
 
 func errorString(r any) string {

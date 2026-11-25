@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -51,7 +52,7 @@ func decodeDisplayMetadata(raw any) any {
 		return nil
 	}
 	switch meta.(type) {
-	case pyObject, *jsonutil.Object:
+	case orderedObject, *jsonutil.Object:
 		return meta
 	}
 	pkgLog().Warn("Ignoring non-object display metadata on message row")
@@ -69,13 +70,13 @@ func rowToMessageDict(row *jsonutil.Object, warnContext string, summaryFlag bool
 	if summaryFlag {
 		flag, ok := msg.Get("_compressed_summary")
 		msg.Delete("_compressed_summary")
-		if ok && pyTruthy(flag) {
+		if ok && anyutil.IsTrue(flag) {
 			msg.Set("_compressed_summary", true)
 		}
 	}
 	content, _ := msg.Get("content")
 	msg.Set("content", decodeMessageContent(content))
-	if toolCalls, _ := msg.Get("tool_calls"); pyTruthy(toolCalls) {
+	if toolCalls, _ := msg.Get("tool_calls"); anyutil.IsTrue(toolCalls) {
 		decoded, err := jsonOr(toolCalls, []any{}, fmt.Sprintf("Failed to deserialize tool_calls in %s, falling back to []", warnContext))
 		if err != nil {
 			return nil, err

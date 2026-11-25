@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -33,7 +34,7 @@ func parseViewerAutomation(params *jsonutil.Object) (string, string, []any, *jso
 	call, _ := params.ValueOr("call", nil).(string)
 	rawArgs, rawKwargs := params.ValueOr("args", nil), params.ValueOr("kwargs", nil)
 	var args []any
-	if pyTruthy(rawArgs) {
+	if anyutil.IsTrue(rawArgs) {
 		list, isList := rawArgs.([]any)
 		if !isList {
 			return "", "", nil, nil, runtimeRefusal("invalid_params")
@@ -41,7 +42,7 @@ func parseViewerAutomation(params *jsonutil.Object) (string, string, []any, *jso
 		args = list
 	}
 	kwargs := jsonutil.NewObject()
-	if pyTruthy(rawKwargs) {
+	if anyutil.IsTrue(rawKwargs) {
 		dict, isDict := rawKwargs.(*jsonutil.Object)
 		if !isDict {
 			return "", "", nil, nil, runtimeRefusal("invalid_params")

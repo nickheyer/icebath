@@ -19,7 +19,7 @@ func PlatformToolsetsExplicitlySaved(cfg config.Tree, platform string) bool {
 }
 
 // Python index of a list of length n, negative counting from the end, false when out of range
-func pyListIndex(n, i int) (int, bool) {
+func listIndex(n, i int) (int, bool) {
 	if i < 0 {
 		i += n
 	}
@@ -145,7 +145,7 @@ func (s *ToolsSetup) promptToolsetChecklistImpl(platformLabel string, enabled ma
 	}
 	out := map[string]bool{}
 	for i := range chosen {
-		j, ok := pyListIndex(len(effective), i)
+		j, ok := listIndex(len(effective), i)
 		if !ok {
 			return nil, fmt.Errorf("toolset choice %d is past the end of the list", i)
 		}
@@ -230,7 +230,7 @@ func (s *ToolsSetup) reconfigureTool(cfg config.Tree) error {
 	if idx >= len(keys) {
 		return nil
 	}
-	j, ok := pyListIndex(len(keys), idx)
+	j, ok := listIndex(len(keys), idx)
 	if !ok {
 		return fmt.Errorf("tool choice %d is past the end of the list", idx)
 	}

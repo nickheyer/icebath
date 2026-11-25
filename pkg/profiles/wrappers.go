@@ -192,7 +192,7 @@ func CreateWrapperScript(name, target string) (string, error) {
 		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		fmt.Printf("⚠ Could not create %s: %s\n", dir, pyOSErrorText(err))
+		fmt.Printf("⚠ Could not create %s: %s\n", dir, osErrorText(err))
 		return "", nil
 	}
 	path, _ := wrapperPath(canon)
@@ -213,14 +213,14 @@ func CreateWrapperScript(name, target string) (string, error) {
 		}
 	}
 	if err != nil {
-		fmt.Printf("⚠ Could not create wrapper at %s: %s\n", path, pyOSErrorText(err))
+		fmt.Printf("⚠ Could not create wrapper at %s: %s\n", path, osErrorText(err))
 		return "", nil
 	}
 	return path, nil
 }
 
 // Reason of a file failure followed by its path
-func pyOSErrorText(err error) string {
+func osErrorText(err error) string {
 	var pe *os.PathError
 	if !errors.As(err, &pe) {
 		return err.Error()
@@ -261,7 +261,7 @@ func FindAliasForProfile(profileName string) (string, error) {
 }
 
 // Python 3.14 PurePath suffix and stem of a file name, a trailing dot counting as a suffix
-func pySuffixStem(name string) (string, string) {
+func suffixStem(name string) (string, string) {
 	i := strings.LastIndex(name, ".")
 	if i > 0 {
 		return name[i:], name[:i]
@@ -293,7 +293,7 @@ func BuildAliasMap() (map[string]string, error) {
 		if st, err := os.Stat(p); err != nil || !st.Mode().IsRegular() {
 			continue
 		}
-		suffix, stem := pySuffixStem(e.Name())
+		suffix, stem := suffixStem(e.Name())
 		if suffix != "" && !(isWindows && suffix == ".bat") {
 			continue
 		}

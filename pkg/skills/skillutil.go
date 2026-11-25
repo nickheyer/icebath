@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
@@ -172,7 +173,7 @@ func (s *Scope) profileHasKanbanToolset() (has bool) {
 		}
 	}()
 	cfg := s.tree()
-	if toolsets := cfg["toolsets"]; anyutil.IsTrue(toolsets) && tools.PyContainsKanban(toolsets) {
+	if toolsets := cfg["toolsets"]; anyutil.IsTrue(toolsets) && tools.ContainsKanban(toolsets) {
 		return true
 	}
 	if inAssembly {
@@ -254,7 +255,7 @@ func skillMatchesApps(fm map[string]any) bool {
 	return true
 }
 
-// Normalizes a config value that may hold a JSON array string into a string list
+// Normalizes a config value into a string list: a list's items as text, a string holding a Python or JSON list literal as its items, any other string as the one name it is; null items name nothing and are left out
 func parseConfigStringList(v any) []string {
 	switch t := v.(type) {
 	case string:
@@ -262,18 +263,30 @@ func parseConfigStringList(v any) []string {
 			if items, ok := pythonutil.LiteralStrings(t); ok {
 				return items
 			}
+			if decoded, err := jsonutil.Decode(t); err == nil {
+				if items, ok := decoded.([]any); ok {
+					return configListItems(items)
+				}
+			}
 		}
 		return []string{t}
 	case []any:
-		out := make([]string, 0, len(t))
-		for _, item := range t {
-			out = append(out, anyutil.String(item))
-		}
-		return out
+		return configListItems(t)
 	case []string:
 		return t
 	}
 	return nil
+}
+
+// Text of each item of a decoded config list, null items left out
+func configListItems(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item != nil {
+			out = append(out, anyutil.String(item))
+		}
+	}
+	return out
 }
 
 // Stripped non empty names of a config list value as a set

@@ -20,7 +20,7 @@ type executionStamp struct {
 	ClaimedAt  *string
 }
 
-// Canonical UTC isoformat of an aware timestamp, nil for naive or unparsable text
+// Canonical UTC stamp text of a timestamp that carries an offset, nil for offset-less or unparsable text
 func scheduledInstant(value *string) *string {
 	if value == nil {
 		return nil
@@ -62,11 +62,11 @@ func completedOccurrence(s *Store, job *Job, instant string) bool {
 		if !job.hasKey("name") {
 			label = job.ID
 		}
-		shown := "None"
-		if stamp != nil {
+		shown := "at an unrecorded time"
+		if deref(stamp) != "" {
 			shown = *stamp
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s' (%s): scheduled occurrence %s was already completed by execution %s (finished %s); "+
+		s.log.Warn(fmt.Sprintf("Job %q (%s): scheduled occurrence %s was already completed by execution %s (finished %s); "+
 			"skipping the due slot without a new run", label, job.ID, *canonical, row.ID, shown))
 		return true
 	}

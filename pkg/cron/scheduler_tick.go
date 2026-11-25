@@ -347,7 +347,7 @@ func (s *Store) processDueJob(ctx context.Context, job *Job, adapters, loop any,
 			if label == "" {
 				label = job.ID
 			}
-			storeHealthNoteUnwritable(s, err, fmt.Sprintf("skipped job '%s'", label), "claim", job)
+			storeHealthNoteUnwritable(s, err, fmt.Sprintf("skipped job %q", label), "claim", job)
 			ledger.SettleUnstarted(ctx, execID, job.ID, "Cron store unwritable; not started: "+errchain.OSText(err))
 			return false, nil
 		}
@@ -382,12 +382,12 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 			return
 		}
 		if _, err := s.clearRunClaim(home.WithOverride(ctx, s.home), jobID); err != nil {
-			s.log.Warn(fmt.Sprintf("Could not clear run_claim for job '%s' after dispatch "+
+			s.log.Warn(fmt.Sprintf("Could not clear run_claim for job %q after dispatch "+
 				"failure: %s (claim will expire at TTL)", label, err))
 		}
 	}
 	notDispatchedShutdown := func() {
-		s.log.Warn(fmt.Sprintf("Job '%s' not dispatched — interpreter is shutting down", label))
+		s.log.Warn(fmt.Sprintf("Job %q not dispatched — the process is shutting down", label))
 	}
 	if interpreterShuttingDown(nil) {
 		notDispatchedShutdown()
@@ -396,7 +396,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 	}
 	owner := &registrationOwner{}
 	if !s.tryRegisterRunningJob(jobID, owner, futurePending) {
-		s.log.Info(fmt.Sprintf("Job '%s' already running — skipping", label))
+		s.log.Info(fmt.Sprintf("Job %q already running — skipping", label))
 		return nil
 	}
 	claimHome := s.Home()
@@ -405,7 +405,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 	if err != nil {
 		s.releaseRunningJob(jobID, claimHome, owner)
 		clearRunClaim()
-		s.log.Error(fmt.Sprintf("Job '%s' not dispatched: %s failed: %s", label, "execution creation", err))
+		s.log.Error(fmt.Sprintf("Job %q not dispatched: %s failed: %s", label, "execution creation", err))
 		return nil
 	}
 	execID := recText(execution, "id")
@@ -429,7 +429,7 @@ func (s *Store) submitWithGuard(ctx context.Context, job *Job, pool *parallelPoo
 		if interpreterShuttingDown(err) {
 			notDispatchedShutdown()
 		} else {
-			s.log.Error(fmt.Sprintf("Job '%s' not dispatched: %s", label, err))
+			s.log.Error(fmt.Sprintf("Job %q not dispatched: %s", label, err))
 		}
 		return nil
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -31,7 +32,7 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 		}
 		titledID, ok := titled.Get("id")
 		if !ok {
-			return nil, &pyKeyError{"id"}
+			return nil, &keyError{"id"}
 		}
 		var member bool
 		if err := a.DB.ReadCtx(ctx, func(conn state.SQLiteConn) error {
@@ -56,7 +57,7 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 	}
 	config, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "policy config is not a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "policy config is not a mapping"}
 	}
 	model, _ := config.ValueOr("model", nil).(*jsonutil.Object)
 	if model == nil {
@@ -70,7 +71,7 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 		}
 		target, isDict := held.(*jsonutil.Object)
 		if !isDict {
-			return nil, &PyError{Kind: "TypeError", Msg: "the held bot chat record is " + errchain.Kind(held) + ", expected a mapping"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the held bot chat record is " + errchain.Kind(held) + ", expected a mapping"}
 		}
 		name, providerName := profileTarget(live)
 		target.Set("selection_profile", []any{name, providerName})

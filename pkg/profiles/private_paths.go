@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/text/cases"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Home relative credential directories of an OS account plus direnv files
@@ -54,10 +54,10 @@ var credentialPathParts = func() [][]string {
 var storeCopyRe = regexp.MustCompile(`^(?:auth\.json\..+|\.env\.bak.*` +
 	`|config\.yaml\.(?:bak-\p{Nd}{8}t\p{Nd}{6}z(?:\.\p{Nd}+)?|bak\.\p{Nd}+|corrupt\..*|bak-pre-migrate-.*))$`)
 
-// Python str.casefold of s with full Unicode case folding
-func casefold(s string) string { return cases.Fold().String(s) }
+// Unicode full case folding of s
+func casefold(s string) string { return textutil.Fold(s) }
 
-// Casefold is Python str.casefold for profile name comparisons outside the package
+// Unicode full case folding for profile name comparisons outside the package
 func Casefold(s string) string { return casefold(s) }
 
 // Case folded copy of path parts

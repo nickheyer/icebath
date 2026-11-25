@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -126,7 +127,7 @@ func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, pa
 		return Submission{}, runtimeRefusal("invalid_params")
 	}
 	requestID := params.ValueOr("submission_id", nil)
-	if !pyTruthy(requestID) {
+	if !anyutil.IsTrue(requestID) {
 		requestID = params.ValueOr("input_id", nil)
 	}
 	id, isText := requestID.(string)
@@ -166,7 +167,7 @@ func (c *AuthorityConnection) receipt(ctx context.Context, ref SessionRef, param
 		if record, ok := saved.(*jsonutil.Object); ok {
 			out.Set("result", record.ValueOr("result", nil))
 			usage := record.ValueOr("usage", nil)
-			if !pyTruthy(usage) {
+			if !anyutil.IsTrue(usage) {
 				usage = jsonutil.NewObject()
 			}
 			out.Set("usage", usage)
@@ -196,7 +197,7 @@ func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params
 			return nil, err
 		}
 		if row == nil {
-			return nil, &PyError{Kind: "TypeError", Msg: "the session to cancel is missing"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the session to cancel is missing"}
 		}
 		if status, _ := row.ValueOr("status", nil).(string); status == "started" {
 			var generation any
@@ -344,7 +345,7 @@ func (c *AuthorityConnection) Close(ctx context.Context) error {
 
 // Numeric sort key of a started_at figure, zero for a missing one
 func startedAtKey(value any) float64 {
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return 0
 	}
 	f, _ := anyutil.ToFloat(value)
@@ -364,7 +365,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	scope := params.ValueOr("scope", "live")
 	switch scope.(type) {
 	case *jsonutil.Object, []any:
-		return nil, &PyError{Kind: "TypeError", Msg: "the session list scope is " + errchain.Kind(scope) + ", expected text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the session list scope is " + errchain.Kind(scope) + ", expected text"}
 	}
 	_, hasTitle := params.Get("title")
 	_, hasScope := params.Get("scope")
@@ -373,7 +374,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	}
 	a := c.authority
 	if scope == "stored" {
-		return storedPickerSessions(ctx, a, c.actor, int(limit), pyTruthy(params.ValueOr("include_hidden", false)), pyTruthy(params.ValueOr("include_archived", false)))
+		return storedPickerSessions(ctx, a, c.actor, int(limit), anyutil.IsTrue(params.ValueOr("include_hidden", false)), anyutil.IsTrue(params.ValueOr("include_archived", false)))
 	}
 	if hasTitle {
 		title := params.ValueOr("title", nil)
@@ -406,7 +407,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 			root = row
 		}
 		or := func(value, fallback any) any {
-			if pyTruthy(value) {
+			if anyutil.IsTrue(value) {
 				return value
 			}
 			return fallback
@@ -426,12 +427,12 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	for _, entry := range entries {
 		row := entry.row
 		source, _ := row["source"].(string)
-		hidden := !pyTruthy(params.ValueOr("include_hidden", nil)) && (pyTruthy(row["hidden"]) || pyTruthy(row["archived"]))
+		hidden := !anyutil.IsTrue(params.ValueOr("include_hidden", nil)) && (anyutil.IsTrue(row["hidden"]) || anyutil.IsTrue(row["archived"]))
 		if slices.Contains(InternalListingSources, source) || entry.closed || hidden {
 			continue
 		}
 		title := row["title"]
-		if !pyTruthy(title) {
+		if !anyutil.IsTrue(title) {
 			title = ""
 		}
 		count, hasCount := row["message_count"]
@@ -440,8 +441,8 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 		}
 		sessions = append(sessions, jsonutil.ObjectOf("session_id", entry.sessionID, "id", entry.sessionID, "title", title,
 			"source", row["source"], "started_at", row["started_at"], "message_count", count, "model", row["model"],
-			"running", entry.handle.ExecutionState == "running", "preview", state.ShapePreview(row["_preview_raw"]), "pinned", pyTruthy(row["pinned"]),
-			"archived", pyTruthy(row["archived"])))
+			"running", entry.handle.ExecutionState == "running", "preview", state.ShapePreview(row["_preview_raw"]), "pinned", anyutil.IsTrue(row["pinned"]),
+			"archived", anyutil.IsTrue(row["archived"])))
 	}
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return startedAtKey(sessions[i].ValueOr("started_at", nil)) > startedAtKey(sessions[j].ValueOr("started_at", nil))

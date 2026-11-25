@@ -63,7 +63,7 @@ func TestLegacyUtcOffsetNextRunStillFires(t *testing.T) {
 	}
 	record := stats["recent"].([]map[string]any)[0]
 	if record["job_id"] != jid || record["expr"] != daily0400 || record["stored_next_run_at"] != legacyUTCNextRun ||
-		record["normalized_next_run_at"] != "2026-09-02T06:00:00+02:00" {
+		record["normalized_next_run_at"] != "2026-09-02T06:00:00.000000+02:00" {
 		t.Fatalf("record %v", record)
 	}
 }
@@ -80,7 +80,7 @@ func TestLegacyOffsetCatchupFiresAtMostOnce(t *testing.T) {
 	if _, won, err := s.claimJobForFire(context.Background(), jid, FireClaimOptions{}); !won || err != nil {
 		t.Fatalf("claim %v %v", won, err)
 	}
-	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-03T04:00:00+02:00" {
+	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-03T04:00:00.000000+02:00" {
 		t.Fatalf("next_run_at %s", got)
 	}
 	if containsString(jobIDs(mustDue(t, s)), jid) {
@@ -94,7 +94,7 @@ func TestGenuineExprEditStillReanchorsWithoutFiring(t *testing.T) {
 	if containsString(jobIDs(mustDue(t, s)), jid) {
 		t.Fatal("edited expression fired")
 	}
-	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-02T09:00:00+02:00" {
+	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-02T09:00:00.000000+02:00" {
 		t.Fatalf("next_run_at %s", got)
 	}
 	if n := migrationCatchups(); n != 0 {
@@ -108,7 +108,7 @@ func TestExprEditOnALegacyOffsetRowStillDoesNotFire(t *testing.T) {
 	if containsString(jobIDs(mustDue(t, s)), jid) {
 		t.Fatal("edited legacy row fired")
 	}
-	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-02T09:00:00+02:00" {
+	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-02T09:00:00.000000+02:00" {
 		t.Fatalf("next_run_at %s", got)
 	}
 	if n := migrationCatchups(); n != 0 {
@@ -136,7 +136,7 @@ func TestFutureStoredWallClockStillTakesTheOffsetRepairPath(t *testing.T) {
 	if containsString(jobIDs(mustDue(t, s)), jid) {
 		t.Fatal("westward move fired early")
 	}
-	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-02T21:00:00+02:00" {
+	if got := deref(mustGet(t, s, jid).NextRunAt); got != "2026-09-02T21:00:00.000000+02:00" {
 		t.Fatalf("next_run_at %s", got)
 	}
 	if n := migrationCatchups(); n != 0 {

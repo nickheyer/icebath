@@ -36,7 +36,7 @@ func exitErr(code int) error {
 func setupCLI(parser any) {
 	root, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(&pyError{"AttributeError", fmt.Sprintf("camofox CLI setup needs a *cobra.Command, got %T", parser)})
+		panic(&kindError{"AttributeError", fmt.Sprintf("camofox CLI setup needs a *cobra.Command, got %T", parser)})
 	}
 	if root.Annotations == nil {
 		root.Annotations = map[string]string{}

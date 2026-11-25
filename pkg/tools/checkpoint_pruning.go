@@ -112,7 +112,7 @@ func (p *CheckpointPruner) commits(ref string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	commits := pySplitLines(out)
+	commits := splitLinesValue(out)
 	if len(commits) == 0 {
 		return nil, &CheckpointPruneError{Msg: "checkpoint ref has no readable history: " + ref}
 	}
@@ -178,7 +178,7 @@ func (p *CheckpointPruner) refs() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pySplitLines(out), nil
+	return splitLinesValue(out), nil
 }
 
 // Drops the oldest snapshot of every project once when the store is over the cap, deferring the gc

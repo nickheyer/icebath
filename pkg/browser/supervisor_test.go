@@ -120,7 +120,7 @@ func TestPostAttachReconnectsStopAtBudgetAndUnregister(t *testing.T) {
 			return closingWS{}, nil
 		}
 		if dials <= budget+1 {
-			return nil, pyError("ConnectionError", "CDP endpoint is gone")
+			return nil, kindError("ConnectionError", "CDP endpoint is gone")
 		}
 		select {}
 	})
@@ -152,7 +152,7 @@ func TestInitialConnectFailureStaysFatalForStart(t *testing.T) {
 	env := testEnv(t)
 	sup, _ := newCDPSupervisor(env, "initial-failure", "ws://127.0.0.1:9222", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds())
 	pin(t, &supervisorDial, func(string) (supervisorWS, error) {
-		return nil, pyError("ConnectionError", "CDP endpoint is unavailable")
+		return nil, kindError("ConnectionError", "CDP endpoint is unavailable")
 	})
 	_ = sup.run()
 	if !isClass(sup.startErr, "ConnectionError") || !sup.ready.IsSet() || sup.snapshot().Active {

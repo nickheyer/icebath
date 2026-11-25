@@ -70,7 +70,7 @@ func auxCompleteFallbackDestination(ctx context.Context, provider, baseURL, apiM
 
 // Python str of a truthy value, empty for a falsy one
 func auxStrOr(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)

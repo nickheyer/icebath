@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -224,12 +224,12 @@ func doctorLoadModelProvider(ctx context.Context, pluginDir string) ([]string, e
 		return nil, err
 	}
 	names := map[string]bool{}
-	if reason := payload["error"]; config.PyTruthy(reason) {
-		pkgLog().Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), config.PyStr(reason)))
+	if reason := payload["error"]; anyutil.IsTrue(reason) {
+		pkgLog().Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), anyutil.String(reason)))
 	} else {
 		for _, raw := range listOrEmpty(payload["profiles"]) {
 			if entry, ok := raw.(map[string]any); ok {
-				names[config.PyStr(entry["name"])] = true
+				names[anyutil.String(entry["name"])] = true
 			}
 		}
 	}
@@ -442,7 +442,7 @@ func checkManifestV2(r *PluginDoctorReport, mf *Manifest) {
 		if !ok || stype == nil {
 			continue
 		}
-		if _, known := ConfigSchemaTypes[strings.ToLower(config.PyStr(stype))]; !known {
+		if _, known := ConfigSchemaTypes[strings.ToLower(anyutil.String(stype))]; !known {
 			r.addWarning(fmt.Sprintf("config_schema key %s declares unknown type %s", errchain.Show(key), errchain.Show(stype)))
 		}
 	}

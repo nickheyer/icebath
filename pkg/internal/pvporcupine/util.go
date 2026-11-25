@@ -2,47 +2,73 @@ package pvporcupine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
-	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
-// A builtin Python exception the package raises, named by its class
-type PyError struct{ Class, Msg string }
+// What went wrong in a failure the package reports
+type Kind int
 
-func (e *PyError) Error() string { return e.Msg }
+const (
+	// The host system, CPU architecture or CPU has no Porcupine build
+	Unsupported Kind = iota + 1
+	// An argument is missing, empty or out of range
+	InvalidArgument
+	// A library, model, keyword file or keyword directory the engine needs is missing or unreadable
+	FileUnavailable
+	// The host CPU could not be identified from the kernel CPU description
+	CPUUnidentified
+	// The keyword training request failed or was refused
+	RequestFailed
+)
+
+// Short name of the kind
+func (k Kind) String() string {
+	switch k {
+	case Unsupported:
+		return "unsupported"
+	case InvalidArgument:
+		return "invalid argument"
+	case FileUnavailable:
+		return "file unavailable"
+	case CPUUnidentified:
+		return "CPU unidentified"
+	case RequestFailed:
+		return "request failed"
+	}
+	return "kind " + strconv.Itoa(int(k))
+}
+
+// Failure of the package: its kind, the message shown as is and the cause underneath when there is one
+type Error struct {
+	Kind Kind
+	Msg  string
+	Err  error
+}
+
+// The message
+func (e *Error) Error() string { return e.Msg }
+
+// The cause, nil when there is none
+func (e *Error) Unwrap() error { return e.Err }
 
 // Whether the running process is a 64 bit one
 func is64bit() bool { return strconv.IntSize == 64 }
 
-// Output of cat on the kernel CPU description with subprocess style failures
-func catCPUInfo() ([]byte, error) {
-	argv := []string{"cat", "/proc/cpuinfo"}
-	out, err := exec.Command(argv[0], argv[1:]...).Output()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return out, &executil.StatusError{Args: argv, ExitCode: executil.ExitCode(exitErr.ProcessState), Stdout: out}
-	}
-	if err != nil {
-		return out, &PyError{Class: errorutil.Kind(err), Msg: err.Error()}
-	}
-	return out, nil
-}
+// Bytes of the kernel CPU description
+func readCPUInfo() ([]byte, error) { return os.ReadFile("/proc/cpuinfo") }
 
-// Picovoice machine name of a Linux host, the Raspberry Pi core for ARM machines
+// Picovoice machine name of a Linux host, the Raspberry Pi core for ARM machines read from the CPU part line of the CPU description, bytes that are not UTF-8 shown as U+FFFD
 func pvLinuxMachine(machine string, is64 bool, cpuInfo func() ([]byte, error)) (string, error) {
 	archInfo := ""
 	switch machine {
@@ -53,28 +79,23 @@ func pvLinuxMachine(machine string, is64 bool, cpuInfo func() ([]byte, error)) (
 			archInfo = "-" + machine
 		}
 	default:
-		return "", &PyError{Class: "NotImplementedError", Msg: fmt.Sprintf("Unsupported CPU architecture: `%s`", machine)}
+		return "", &Error{Kind: Unsupported, Msg: fmt.Sprintf("Unsupported CPU architecture %q", machine)}
 	}
-	info := ""
-	cpuPart, err := func() (string, error) {
-		raw, err := cpuInfo()
-		if err != nil {
-			return "", err
-		}
-		if info, err = charsetutil.Decode(raw, "utf-8"); err != nil {
-			info = ""
-			return "", err
-		}
-		for _, line := range strings.Split(info, "\n") {
-			if strings.Contains(line, "CPU part") {
-				fields := strings.Split(line, " ")
-				return strings.ToLower(fields[len(fields)-1]), nil
-			}
-		}
-		return "", &PyError{Class: "IndexError", Msg: "list index out of range"}
-	}()
+	raw, err := cpuInfo()
 	if err != nil {
-		return "", &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("Failed to identify the CPU with '%s'\nCPU info: %s", err, info)}
+		return "", &Error{Kind: CPUUnidentified, Msg: "Failed to identify the CPU: " + errchain.OSText(err), Err: err}
+	}
+	info := strings.ToValidUTF8(string(raw), "\uFFFD")
+	cpuPart, found := "", false
+	for _, line := range strings.Split(info, "\n") {
+		if strings.Contains(line, "CPU part") {
+			fields := strings.Fields(line)
+			cpuPart, found = strings.ToLower(fields[len(fields)-1]), true
+			break
+		}
+	}
+	if !found {
+		return "", &Error{Kind: CPUUnidentified, Msg: "Failed to identify the CPU: the CPU description has no CPU part line\nCPU info: " + info}
 	}
 	switch {
 	case cpuPart == "0xb76":
@@ -90,13 +111,13 @@ func pvLinuxMachine(machine string, is64 bool, cpuInfo func() ([]byte, error)) (
 			"Falling back to the armv6-based (Raspberry Pi Zero) library. This is not tested nor optimal.", cpuPart))
 		return "arm11", nil
 	}
-	return "", &PyError{Class: "NotImplementedError", Msg: fmt.Sprintf("Unsupported CPU: '%s'.", cpuPart)}
+	return "", &Error{Kind: Unsupported, Msg: fmt.Sprintf("Unsupported CPU %q.", cpuPart)}
 }
 
 // Picovoice system and machine pair of a host, refusing systems other than Darwin, Linux and Windows
 func pvPlatform(system, machine string, is64 bool, cpuInfo func() ([]byte, error)) (string, string, error) {
 	if system != "Darwin" && system != "Linux" && system != "Windows" {
-		return "", "", &PyError{Class: "ValueError", Msg: fmt.Sprintf("Unsupported system '%s'.", system)}
+		return "", "", &Error{Kind: Unsupported, Msg: fmt.Sprintf("Unsupported system %q.", system)}
 	}
 	if system == "Linux" {
 		pvMachine, err := pvLinuxMachine(machine, is64, cpuInfo)
@@ -120,7 +141,7 @@ type Module struct {
 
 // Imports the package unpacked at dir for this host
 func Import(dir string) (*Module, error) {
-	return importFor(dir, hostutil.OSName(), hostutil.Machine(), is64bit(), catCPUInfo)
+	return importFor(dir, hostutil.OSName(), hostutil.Machine(), is64bit(), readCPUInfo)
 }
 
 // Imports the package unpacked at dir for a given host description
@@ -160,7 +181,12 @@ func (m *Module) PvLibraryPath(relative string) (string, error) {
 			return pathutil.Join(m.Dir, relative, "lib/windows/arm64/libpv_porcupine.dll"), nil
 		}
 	}
-	return "", &PyError{Class: "NotImplementedError", Msg: "Unsupported platform."}
+	return "", m.unsupportedPlatform()
+}
+
+// Error naming the system and machine pair Porcupine has no build for
+func (m *Module) unsupportedPlatform() error {
+	return &Error{Kind: Unsupported, Msg: fmt.Sprintf("Unsupported platform (%q, %q).", m.System, m.Machine)}
 }
 
 // Path of the file holding the model parameters
@@ -182,7 +208,7 @@ func (m *Module) PvKeywordFilesSubdir() (string, error) {
 	case "Windows":
 		return "windows", nil
 	}
-	return "", &PyError{Class: "NotImplementedError", Msg: "Unsupported platform"}
+	return "", m.unsupportedPlatform()
 }
 
 // Built in keyword names mapped to their keyword file paths for the host platform
@@ -194,7 +220,7 @@ func (m *Module) PvKeywordPaths(relative string) (map[string]string, error) {
 	keywordFilesDir := pathutil.Join(m.Dir, relative, "resources/keyword_files", subdir)
 	entries, err := os.ReadDir(keywordFilesDir)
 	if err != nil {
-		return nil, &PyError{Class: errorutil.Kind(err), Msg: err.Error()}
+		return nil, &Error{Kind: FileUnavailable, Msg: "Couldn't read the keyword files directory: " + errchain.OSText(err), Err: err}
 	}
 	res := map[string]string{}
 	for _, entry := range entries {
@@ -232,8 +258,7 @@ func (m *Module) PvGetPlatform() (string, error) {
 	case "Windows":
 		return "windows", nil
 	}
-	return "", &PyError{Class: "NotImplementedError", Msg: "(" + strconv.Quote("Unsupported platform ('%s', '%s').") + ", " +
-		strconv.Quote(m.System) + ", " + strconv.Quote(m.Machine) + ")"}
+	return "", m.unsupportedPlatform()
 }
 
 func contains(list []string, s string) bool {
@@ -248,7 +273,7 @@ func contains(list []string, s string) bool {
 // Trains a keyword model for a phrase over the Picovoice REST endpoint and writes it to outputPath
 func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, language, phrase string, platform *string) error {
 	if !contains(ValidLanguages, language) {
-		return &PyError{Class: "ValueError", Msg: fmt.Sprintf("Invalid language '%s'", language)}
+		return &Error{Kind: InvalidArgument, Msg: fmt.Sprintf("Invalid language %q", language)}
 	}
 	target := ""
 	if platform == nil {
@@ -261,13 +286,13 @@ func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, langua
 		target = *platform
 	}
 	if !contains(ValidPlatforms, target) {
-		return &PyError{Class: "ValueError", Msg: fmt.Sprintf("Invalid platform '%s'", target)}
+		return &Error{Kind: InvalidArgument, Msg: fmt.Sprintf("Invalid platform %q", target)}
 	}
 	if len(phrase) == 0 {
-		return &PyError{Class: "ValueError", Msg: "Phrase must not be empty"}
+		return &Error{Kind: InvalidArgument, Msg: "Phrase must not be empty"}
 	}
 	if utf8.RuneCountInString(phrase) > PorcupinePhraseMaxLength {
-		return &PyError{Class: "ValueError", Msg: fmt.Sprintf("Phrase must not exceed %d characters", PorcupinePhraseMaxLength)}
+		return &Error{Kind: InvalidArgument, Msg: fmt.Sprintf("Phrase must not exceed %d characters", PorcupinePhraseMaxLength)}
 	}
 	payload := jsonutil.NewObject()
 	payload.Set("platform", target)
@@ -279,7 +304,7 @@ func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, langua
 	rawURL := m.APIURL + language + "/api/ppn"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(body))
 	if err != nil {
-		return &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("Request failed: %s", err)}
+		return &Error{Kind: RequestFailed, Msg: "Request failed: " + err.Error(), Err: err}
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 	req.Header.Set("x-api-key", accessKey)
@@ -287,10 +312,10 @@ func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, langua
 	client := &http.Client{Transport: httputil.TrustEnvCA(m.Transport), CheckRedirect: httputil.RedirectPolicy(true)}
 	resp, err := httputil.Do(client, req.WithContext(ctx), httputil.Timeout{})
 	if err != nil {
-		return &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("Request failed: %s", err)}
+		return &Error{Kind: RequestFailed, Msg: "Request failed: " + err.Error(), Err: err}
 	}
 	if resp.StatusCode >= 400 {
-		return &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Content)}
+		return &Error{Kind: RequestFailed, Msg: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Content)}
 	}
 	return os.WriteFile(outputPath, resp.Content, 0o666)
 }

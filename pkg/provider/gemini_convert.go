@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -94,7 +95,7 @@ func coerceGeminiContentToText(content any) string {
 	if content == nil {
 		return ""
 	}
-	return pyStr(content)
+	return anyutil.String(content)
 }
 
 // inlineData part for an image_url item carrying a data URL, nil otherwise
@@ -108,7 +109,7 @@ func geminiInlineDataPart(item map[string]any) map[string]any {
 	if !ok {
 		return nil
 	}
-	raw, err := pyB64Decode(encoded)
+	raw, err := b64Decode(encoded)
 	if err != nil {
 		return nil
 	}
@@ -121,7 +122,7 @@ func geminiInlineDataPart(item map[string]any) map[string]any {
 }
 
 // Base64 decode that discards non alphabet characters and requires correct padding
-func pyB64Decode(s string) ([]byte, error) {
+func b64Decode(s string) ([]byte, error) {
 	var b strings.Builder
 	for _, r := range s {
 		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '+' || r == '/' || r == '=' {
@@ -168,12 +169,12 @@ func toolCallExtraSignature(holder map[string]any) string {
 		return ""
 	}
 	var sig any = extra["google"]
-	if !pyTruthy(sig) {
+	if !anyutil.IsTrue(sig) {
 		sig = extra["thought_signature"]
 	}
 	if m, ok := jsonutil.AsMap(sig); ok {
 		sig = m["thought_signature"]
-		if !pyTruthy(sig) {
+		if !anyutil.IsTrue(sig) {
 			sig = m["thoughtSignature"]
 		}
 	}
@@ -183,16 +184,16 @@ func toolCallExtraSignature(holder map[string]any) string {
 
 // Call id of an OpenAI tool call, id before call_id
 func geminiToolCallID(tc map[string]any) string {
-	if v := tc["id"]; pyTruthy(v) {
-		return pyStr(v)
+	if v := tc["id"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
-	if v := tc["call_id"]; pyTruthy(v) {
-		return pyStr(v)
+	if v := tc["call_id"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
 
-// Decodes JSON text with json.loads rules into maps and json.Number text, functionCall args kept in API key order
+// Decodes JSON text into maps and json.Number numbers, functionCall args kept as ordered objects in API key order
 func geminiJSONLoads(text string) (any, error) {
 	v, err := jsonutil.Decode(text)
 	if err != nil {
@@ -201,7 +202,7 @@ func geminiJSONLoads(text string) (any, error) {
 	return geminiPlainJSON(v, false), nil
 }
 
-// Plain maps and json.Number numbers for a decoded value, leaving args under functionCall as ordered Python values
+// Plain maps and json.Number numbers for a decoded value, leaving args under functionCall as decoded, objects ordered
 func geminiPlainJSON(v any, underCall bool) any {
 	switch t := v.(type) {
 	case *jsonutil.Object:
@@ -223,7 +224,7 @@ func geminiPlainJSON(v any, underCall bool) any {
 	return geminiNumber(v)
 }
 
-// json.Number of a decoded int or finite float, any other value unchanged
+// json.Number of a decoded int or finite float, a float spelled so it still reads as one (1.0, never 1), any other value unchanged
 func geminiNumber(v any) any {
 	switch t := v.(type) {
 	case int64:
@@ -232,38 +233,14 @@ func geminiNumber(v any) any {
 		if math.IsNaN(t) || math.IsInf(t, 0) {
 			return t
 		}
-		return json.Number(strconv.FormatFloat(t, 'f', -1, 64))
+		if text, err := jsonutil.Encode(t); err == nil {
+			return json.Number(text)
+		}
 	}
 	return v
 }
 
-// Request side decode keeping every object in key order with numbers spelled the way json.dumps writes them
-func geminiRequestJSONLoads(text string) (any, error) {
-	v, err := jsonutil.Decode(text)
-	if err != nil {
-		return nil, err
-	}
-	var walk func(any) any
-	walk = func(v any) any {
-		switch t := v.(type) {
-		case *jsonutil.Object:
-			out := jsonutil.NewObject()
-			for _, k := range t.Keys() {
-				out.Set(k, walk(t.Value(k)))
-			}
-			return out
-		case []any:
-			for i, e := range t {
-				t[i] = walk(e)
-			}
-			return t
-		}
-		return geminiNumber(v)
-	}
-	return walk(v), nil
-}
-
-// Single key ordered object as Python builds the wrapper dicts around non object arguments
+// Single key object wrapping tool call arguments that are not themselves an object
 func geminiWrap(key string, v any) *jsonutil.Object {
 	o := jsonutil.NewObject()
 	o.Set(key, v)
@@ -275,7 +252,7 @@ func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]an
 	fn, _ := jsonutil.AsMap(tc["function"])
 	var args any = jsonutil.NewObject()
 	if raw, ok := fn["arguments"].(string); ok && raw != "" {
-		if parsed, err := geminiRequestJSONLoads(raw); err == nil {
+		if parsed, err := jsonutil.Decode(raw); err == nil {
 			args = parsed
 		} else {
 			args = geminiWrap("_raw", raw)
@@ -284,7 +261,7 @@ func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]an
 	if _, ok := args.(*jsonutil.Object); !ok {
 		args = geminiWrap("_value", args)
 	}
-	call := map[string]any{"name": pyOrStr(fn["name"]), "args": args}
+	call := map[string]any{"name": anyutil.StringOr(fn["name"], ""), "args": args}
 	if includeIDs {
 		if id := geminiToolCallID(tc); id != "" {
 			call["id"] = id
@@ -331,10 +308,10 @@ func looksLikeJSONSchema(node any) bool {
 
 // functionResponse part for a tool result, schema bearing or non object results sent as opaque text
 func translateToolResultToGemini(msg map[string]any, nameByCallID map[string]string, includeIDs, isGemini3 bool) map[string]any {
-	callID := pyOrStr(msg["tool_call_id"])
+	callID := anyutil.StringOr(msg["tool_call_id"], "")
 	name := nameByCallID[callID]
 	if name == "" {
-		name = pyOrStr(msg["name"])
+		name = anyutil.StringOr(msg["name"], "")
 	}
 	if name == "" {
 		name = callID
@@ -346,7 +323,7 @@ func translateToolResultToGemini(msg map[string]any, nameByCallID map[string]str
 	content := coerceGeminiContentToText(raw)
 	var parsed any
 	if t := strings.TrimSpace(content); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
-		parsed, _ = geminiRequestJSONLoads(content)
+		parsed, _ = jsonutil.Decode(content)
 	}
 	pm, isObj := parsed.(*jsonutil.Object)
 	fr := map[string]any{"name": name}
@@ -423,7 +400,7 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 		if !ok {
 			continue
 		}
-		role := pyOrStr(msg["role"])
+		role := anyutil.StringOr(msg["role"], "")
 		if role == "" {
 			role = "user"
 		}
@@ -444,7 +421,7 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 					continue
 				}
 				fn, _ := jsonutil.AsMap(tc["function"])
-				toolName := pyOrStr(fn["name"])
+				toolName := anyutil.StringOr(fn["name"], "")
 				if id := geminiToolCallID(tc); id != "" && toolName != "" {
 					nameByCallID[id] = toolName
 				}
@@ -694,7 +671,7 @@ func buildGeminiRequest(in geminiRequestInput) map[string]any {
 	if in.TopP != nil {
 		gen["topP"] = in.TopP
 	}
-	if pyTruthy(in.Stop) {
+	if anyutil.IsTrue(in.Stop) {
 		switch s := in.Stop.(type) {
 		case []any:
 			gen["stopSequences"] = s
@@ -705,7 +682,7 @@ func buildGeminiRequest(in geminiRequestInput) map[string]any {
 			}
 			gen["stopSequences"] = list
 		default:
-			gen["stopSequences"] = []any{pyStr(s)}
+			gen["stopSequences"] = []any{anyutil.String(s)}
 		}
 	}
 	if tc := normalizeGeminiThinkingConfig(in.ThinkingConfig); tc != nil {
@@ -878,7 +855,7 @@ func geminiDumpCallArgs(fc map[string]any) string { return geminiDumpCallArgsWit
 // Function call args as JSON text with keys sorted when asked, an empty object when absent
 func geminiDumpCallArgsWith(fc map[string]any, sortKeys bool) string {
 	args := fc["args"]
-	if !pyTruthy(args) {
+	if !anyutil.IsTrue(args) {
 		args = map[string]any{}
 	}
 	opts := []jsonutil.Option{jsonutil.Spaced()}
@@ -952,7 +929,7 @@ func geminiTextPartSignature(part map[string]any) string {
 // functionCall of a part when it names a function
 func geminiPartFunctionCall(part map[string]any) map[string]any {
 	fc, ok := part["functionCall"].(map[string]any)
-	if !ok || !pyTruthy(fc["name"]) {
+	if !ok || !anyutil.IsTrue(fc["name"]) {
 		return nil
 	}
 	return fc
@@ -990,13 +967,13 @@ func translateGeminiResponse(resp map[string]any, model string) map[string]any {
 				textSignature = sig
 			}
 		} else if fc := geminiPartFunctionCall(part); fc != nil {
-			toolCalls = append(toolCalls, geminiToolCallMap(pyStr(fc["name"]), geminiDumpCallArgs(fc), index, geminiNewCallID(fc), toolCallExtraFromPart(part)))
+			toolCalls = append(toolCalls, geminiToolCallMap(anyutil.String(fc["name"]), geminiDumpCallArgs(fc), index, geminiNewCallID(fc), toolCallExtraFromPart(part)))
 		}
 	}
 	finish := "stop"
 	if len(toolCalls) > 0 {
 		finish = "tool_calls"
-	} else if mapped, ok := geminiFinishReasonMap[strings.ToUpper(pyOrStr(cand["finishReason"]))]; ok {
+	} else if mapped, ok := geminiFinishReasonMap[strings.ToUpper(anyutil.StringOr(cand["finishReason"], ""))]; ok {
 		finish = mapped
 	}
 	meta := map[string]any{}

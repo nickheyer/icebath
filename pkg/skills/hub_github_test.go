@@ -32,7 +32,7 @@ func githubTestSource(t *testing.T) (*GitHubSource, *Hub) {
 	return NewGitHubSource(h, anonAuth(h), nil), h
 }
 
-func pyList(t *testing.T, js string) []any {
+func listOf(t *testing.T, js string) []any {
 	t.Helper()
 	v, err := jsonutil.Decode(js)
 	if err != nil {
@@ -322,7 +322,7 @@ func TestInspectStampsProviderInExtra(t *testing.T) {
 }
 
 func treeOf(t *testing.T, js string) func(string) *ghTree {
-	entries := pyList(t, js)
+	entries := listOf(t, js)
 	return func(string) *ghTree { return &ghTree{Branch: "main", Entries: entries} }
 }
 
@@ -353,7 +353,7 @@ func TestGitHubFetchesPinToTheTreeRevision(t *testing.T) {
 		return "---\nname: x\ndescription: x\n---\nSee [the format](CONTEXT-FORMAT.md).\n", true
 	}
 	src.seams.fetchFileBytes = func(_, path, ref string) ([]byte, bool) { refs = append(refs, ref); return []byte("x"), true }
-	src.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: pyList(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"},`+
+	src.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: listOf(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"},`+
 		`{"path": "skill/CONTEXT-FORMAT.md", "type": "blob", "mode": "100644"}]`)}
 	src.treeRevisions["owner/repo"] = "treesha123"
 	if b, _ := src.Fetch(context.Background(), "owner/repo/skill"); b == nil || len(refs) == 0 {
@@ -371,7 +371,7 @@ func TestGitHubSourceFetchTreeShapes(t *testing.T) {
 	src, _ := githubTestSource(t)
 	src.seams.fetchFileContent = func(string, string, string) (string, bool) { return guideMD, true }
 	src.seams.fetchFileBytes = func(string, string, string) ([]byte, bool) { return []byte("x"), true }
-	src.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: pyList(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"}]`)}
+	src.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: listOf(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"}]`)}
 	b, _ := src.Fetch(context.Background(), "owner/repo/skill")
 	if b == nil {
 		t.Fatal("dangling link aborted")
@@ -379,7 +379,7 @@ func TestGitHubSourceFetchTreeShapes(t *testing.T) {
 	if _, has := b.File("references/guide.md"); has {
 		t.Fatal("dangling file bundled")
 	}
-	src.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: pyList(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"},`+
+	src.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: listOf(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"},`+
 		`{"path": "skill/references/guide.md", "type": "blob", "mode": "120000"}]`)}
 	if b, _ := src.Fetch(context.Background(), "owner/repo/skill"); b != nil {
 		t.Fatal("symlinked reference accepted")
@@ -390,7 +390,7 @@ func TestGitHubSourceFetchTreeShapes(t *testing.T) {
 		return "---\nname: full-dir\ndescription: d\n---\nSee [audit](reference/audit.md) and run `node scripts/pin.mjs`.\n", true
 	}
 	full.seams.fetchFileBytes = func(_, path, _ string) ([]byte, bool) { return []byte("content-of-" + path), true }
-	full.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: pyList(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"},`+
+	full.treeCache["owner/repo"] = &ghTree{Branch: "main", Entries: listOf(t, `[{"path": "skill/SKILL.md", "type": "blob", "mode": "100644"},`+
 		`{"path": "skill/reference/audit.md", "type": "blob", "mode": "100644"}, {"path": "skill/reference/deep/native.md", "type": "blob", "mode": "100644"},`+
 		`{"path": "skill/scripts/pin.mjs", "type": "blob", "mode": "100644"}, {"path": "skill/LICENSE", "type": "blob", "mode": "100644"},`+
 		`{"path": "skill/reference/link.md", "type": "blob", "mode": "120000"}, {"path": "skill/.hidden", "type": "blob", "mode": "100644"},`+

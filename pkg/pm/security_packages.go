@@ -164,16 +164,16 @@ var urlUsesParams = map[string]bool{
 func archiveFilename(archive map[string]any) (string, error) {
 	raw, ok := archive["url"]
 	if !ok {
-		return "", &PyError{Class: "KeyError", Message: "the archive entry has no url"}
+		return "", &ClassError{Class: "KeyError", Message: "the archive entry has no url"}
 	}
 	rawURL, isString := raw.(string)
 	if !isString {
 		if anyutil.IsTrue(raw) {
-			return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
+			return "", &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
 		}
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
+		return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
 	}
-	parts, err := pyURLSplit(rawURL)
+	parts, err := urlSplit(rawURL)
 	if err != nil {
 		return "", err
 	}
@@ -184,11 +184,11 @@ func archiveFilename(archive map[string]any) (string, error) {
 			urlPath = urlPath[:from+i]
 		}
 	}
-	return pyPathName(urlPath), nil
+	return pathName(urlPath), nil
 }
 
 // Final component of a path the way pathlib Path name reads it on this platform
-func pyPathName(p string) string {
+func pathName(p string) string {
 	rest, seps := p, "/"
 	if runtime.GOOS == "windows" {
 		_, _, rest = pathutil.WindowsSplitRoot(p)

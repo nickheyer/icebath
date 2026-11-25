@@ -52,7 +52,7 @@ func (m *Mark) Snippet() (string, bool) {
 	var b strings.Builder
 	b.WriteString(strings.Repeat(" ", indent))
 	b.WriteString(head)
-	b.WriteString(string(pySlice(m.Buffer, start, end)))
+	b.WriteString(string(sliceOf(m.Buffer, start, end)))
 	b.WriteString(tail)
 	b.WriteByte('\n')
 	b.WriteString(strings.Repeat(" ", indent+m.Pointer-start+utf8.RuneCountInString(head)))
@@ -61,7 +61,7 @@ func (m *Mark) Snippet() (string, bool) {
 }
 
 // Python slice semantics over runes, clamped and empty when start passes end
-func pySlice(b []rune, start, end int) []rune {
+func sliceOf(b []rune, start, end int) []rune {
 	if start < 0 {
 		start += len(b)
 		if start < 0 {
@@ -96,7 +96,7 @@ func (m *Mark) String() string {
 }
 
 // Python class name, message text and exception kind every load failure carries
-type PyError interface {
+type KindError interface {
 	error
 	ErrorKind() string
 }
@@ -192,7 +192,7 @@ func IsYAMLError(err error) bool {
 	switch e := err.(type) {
 	case *MarkedError, *ReaderError:
 		return true
-	case *PyException:
+	case *Exception:
 		return e.YAMLError
 	}
 	return false
@@ -214,14 +214,14 @@ func (e *ReaderError) Error() string {
 }
 
 // Python exception other than a YAMLError raised while loading, such as ValueError or KeyError, with its str text
-type PyException struct {
+type Exception struct {
 	Class     string
 	Msg       string
 	YAMLError bool
 }
 
-func (e *PyException) ErrorKind() string { return e.Class }
-func (e *PyException) Error() string     { return e.Msg }
+func (e *Exception) ErrorKind() string { return e.Class }
+func (e *Exception) Error() string     { return e.Msg }
 
 // Python exception of a class with the given str text
-func Raise(class, msg string) *PyException { return &PyException{Class: class, Msg: msg} }
+func Raise(class, msg string) *Exception { return &Exception{Class: class, Msg: msg} }

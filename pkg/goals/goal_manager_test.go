@@ -87,7 +87,7 @@ func TestGoalManagerSetThenStatus(t *testing.T) {
 	if line := mgr.StatusLine(); line != "⊙ Goal (active, 0/5 turns): port the thing" {
 		t.Fatalf("status line %q", line)
 	}
-	if _, err := mgr.Set("  ", 0, nil); pyKind(err) != "ValueError" || err.Error() != "goal text is empty" {
+	if _, err := mgr.Set("  ", 0, nil); kindValue(err) != "ValueError" || err.Error() != "goal text is empty" {
 		t.Fatalf("empty goal error %v", err)
 	}
 	if state, _ := mgr.Set("explicit budget", 9, nil); state.MaxTurns != 9 {
@@ -188,7 +188,7 @@ func TestGoalManagerSubgoalsAddSubgoal(t *testing.T) {
 	if err != nil || text != "use bullet points" || !reflect.DeepEqual(mgr.State().Subgoals, []string{"use bullet points"}) {
 		t.Fatalf("%q %v %v", text, err, mgr.State().Subgoals)
 	}
-	if _, err := mgr.AddSubgoal(" "); pyKind(err) != "ValueError" {
+	if _, err := mgr.AddSubgoal(" "); kindValue(err) != "ValueError" {
 		t.Fatalf("empty subgoal %v", err)
 	}
 	if mgr.RenderSubgoals() != "- 1. use bullet points" || mgr.StatusLine() != "⊙ Goal (active, 0/20 turns, 1 subgoal): main goal" {
@@ -205,7 +205,7 @@ func TestGoalManagerSubgoalsRemoveSubgoalOutOfRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, index := range []int64{5, 0} {
-		if _, err := mgr.RemoveSubgoal(index); pyKind(err) != "IndexError" || err.Error() != "index out of range (1..1)" {
+		if _, err := mgr.RemoveSubgoal(index); kindValue(err) != "IndexError" || err.Error() != "index out of range (1..1)" {
 			t.Fatalf("index %d error %v", index, err)
 		}
 	}
@@ -213,7 +213,7 @@ func TestGoalManagerSubgoalsRemoveSubgoalOutOfRange(t *testing.T) {
 		t.Fatalf("remove %q %v", removed, err)
 	}
 	empty := NewGoalManager(context.Background(), "sub-none", 0)
-	if _, err := empty.AddSubgoal("x"); pyKind(err) != "RuntimeError" || err.Error() != "no active goal" {
+	if _, err := empty.AddSubgoal("x"); kindValue(err) != "RuntimeError" || err.Error() != "no active goal" {
 		t.Fatalf("no goal error %v", err)
 	}
 }
@@ -244,13 +244,13 @@ func TestWaitBarrierWaitOnRejectsAPidNotAliveOnThisHost(t *testing.T) {
 	saved := goalPidExists
 	t.Cleanup(func() { goalPidExists = saved })
 	goalPidExists = func(int) bool { return false }
-	if _, err := mgr.WaitOn(4242, "remote CI"); pyKind(err) != "ValueError" || !strings.Contains(err.Error(), "not alive on this host") {
+	if _, err := mgr.WaitOn(4242, "remote CI"); kindValue(err) != "ValueError" || !strings.Contains(err.Error(), "not alive on this host") {
 		t.Fatalf("error %v", err)
 	}
 	if mgr.State().WaitingOnPID != nil {
 		t.Fatal("a barrier was set on a dead pid")
 	}
-	if _, err := mgr.WaitOn(0, ""); pyKind(err) != "ValueError" || err.Error() != "pid must be a positive integer" {
+	if _, err := mgr.WaitOn(0, ""); kindValue(err) != "ValueError" || err.Error() != "pid must be a positive integer" {
 		t.Fatalf("zero pid error %v", err)
 	}
 }
@@ -332,7 +332,7 @@ func TestJudgeDrivenWaitTimeBarrierClearsAfterDeadline(t *testing.T) {
 	if mgr.IsWaiting() || mgr.State().WaitingUntil != 0.0 {
 		t.Fatal("a passed deadline still parks the goal")
 	}
-	if _, err := mgr.WaitForSeconds(0, "", 0); pyKind(err) != "ValueError" || err.Error() != "seconds must be a positive integer" {
+	if _, err := mgr.WaitForSeconds(0, "", 0); kindValue(err) != "ValueError" || err.Error() != "seconds must be a positive integer" {
 		t.Fatalf("zero seconds error %v", err)
 	}
 }
@@ -349,13 +349,13 @@ func TestJudgeDrivenWaitContinueVerdictStillContinuesWithBackground(t *testing.T
 func TestSessionTriggerBarrierWaitOnSessionValidation(t *testing.T) {
 	goalsTestHome(t)
 	mgr := NewGoalManager(context.Background(), "st-val", 0)
-	if _, err := mgr.WaitOnSession("proc_x", ""); pyKind(err) != "RuntimeError" || err.Error() != "no active goal to park" {
+	if _, err := mgr.WaitOnSession("proc_x", ""); kindValue(err) != "RuntimeError" || err.Error() != "no active goal to park" {
 		t.Fatalf("no goal error %v", err)
 	}
 	if _, err := mgr.Set("g", 0, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mgr.WaitOnSession("  ", ""); pyKind(err) != "ValueError" || err.Error() != "session_id must be a non-empty string" {
+	if _, err := mgr.WaitOnSession("  ", ""); kindValue(err) != "ValueError" || err.Error() != "session_id must be a non-empty string" {
 		t.Fatalf("empty session error %v", err)
 	}
 	saved := goalIsSessionWaiting
@@ -457,14 +457,14 @@ func TestAddRemoveClearGates(t *testing.T) {
 	if gate, err := mgr.AddGate(" make test ", 42, 7); err != nil || gate.Command != "make test" || gate.TimeoutSeconds != 42 || gate.MaxRetries != 7 {
 		t.Fatalf("gate %+v %v", gate, err)
 	}
-	if _, err := mgr.AddGate("  ", 0, 0); pyKind(err) != "ValueError" || err.Error() != "gate command is empty" {
+	if _, err := mgr.AddGate("  ", 0, 0); kindValue(err) != "ValueError" || err.Error() != "gate command is empty" {
 		t.Fatalf("empty gate error %v", err)
 	}
 }
 
 func TestAddGateRequiresActiveGoal(t *testing.T) {
 	goalsTestHome(t)
-	if _, err := NewGoalManager(context.Background(), "gate-nogoal-sid", 0).AddGate("echo nope", 0, 0); pyKind(err) != "RuntimeError" {
+	if _, err := NewGoalManager(context.Background(), "gate-nogoal-sid", 0).AddGate("echo nope", 0, 0); kindValue(err) != "RuntimeError" {
 		t.Fatalf("error %v", err)
 	}
 }
@@ -634,12 +634,12 @@ func TestMissingSessionWorkspacePausesInsteadOfRunningElsewhere(t *testing.T) {
 	if *runs != 0 || *calls != 0 || decision.Status != "paused" || decision.ShouldContinue || !strings.Contains(decision.Message, missing) || strings.Contains(decision.Message, "still failing") {
 		t.Fatalf("decision %+v", decision)
 	}
-	if !strings.Contains(pyStrOf(mgr.State().PausedReason), missing) || gate.Attempts != 0 || gate.LastExitCode != nil {
+	if !strings.Contains(strOf(mgr.State().PausedReason), missing) || gate.Attempts != 0 || gate.LastExitCode != nil {
 		t.Fatalf("reason %v gate %+v", mgr.State().PausedReason, gate)
 	}
 }
 
-func pyStrOf(v any) string {
+func strOf(v any) string {
 	text, _ := v.(string)
 	return text
 }

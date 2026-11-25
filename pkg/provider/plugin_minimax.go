@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Profiles the bundled minimax plugin registers
@@ -28,12 +29,12 @@ func minimaxPluginProfiles() []Profile {
 
 // True for the global OpenAI compatible api.minimax.io/v1 route
 func minimaxGlobalOpenAIBaseURL(baseURL string) bool {
-	parts, err := pyURLParse(strings.TrimSpace(baseURL), "")
+	parts, err := urlutil.Split(strings.TrimSpace(baseURL))
 	if err != nil {
 		return false
 	}
-	host, _, _ := pyNetlocHostPort(parts.netloc)
-	return host == "api.minimax.io" && strings.ToLower(strings.TrimRight(parts.path, "/")) == "/v1"
+	host, _, _ := netlocHostPort(parts.Authority)
+	return host == "api.minimax.io" && strings.ToLower(strings.TrimRight(parts.Path, "/")) == "/v1"
 }
 
 // M3 on the OpenAI compatible route splits reasoning out, efforts only choosing adaptive or disabled thinking

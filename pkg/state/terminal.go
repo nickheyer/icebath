@@ -25,7 +25,7 @@ func CompactResult(result *jsonutil.Object, userMessage any) (*jsonutil.Object, 
 	if messages, isList := rawMessages.([]any); isList {
 		compressed, _ := value.Get("_compressed")
 		suffix, _ := value.Get("_messages_are_turn_suffix")
-		if !pyTruthy(compressed) && !pyTruthy(suffix) {
+		if !anyutil.IsTrue(compressed) && !anyutil.IsTrue(suffix) {
 			rawAnchor, _ := value.Get("current_turn_user_idx")
 			anchor, exact := exactInt(rawAnchor)
 			if !exact || anchor < 0 || anchor >= int64(len(messages)) || !userRow(messages[anchor]) {
@@ -35,7 +35,7 @@ func CompactResult(result *jsonutil.Object, userMessage any) (*jsonutil.Object, 
 			if anchor >= 0 {
 				if row, isObj := messages[anchor].(*jsonutil.Object); isObj {
 					apiContent, _ := row.Get("api_content")
-					if pyTruthy(apiContent) {
+					if anyutil.IsTrue(apiContent) {
 						turnRow := jsonutil.NewObject()
 						for _, k := range []string{"role", "content", "api_content"} {
 							v, has := row.Get(k)
@@ -104,7 +104,7 @@ func TerminalAPIAdmissions(ctx context.Context, conn SQLiteConn, requestID strin
 	for _, text := range values {
 		decoded, err := jsonutil.Decode(text)
 		if err != nil {
-			return nil, pyValueError(err.Error())
+			return nil, valueError(err.Error())
 		}
 		out = append(out, decoded)
 	}
@@ -124,7 +124,7 @@ func terminalAdmission(ctx context.Context, conn SQLiteConn, admissionID any) (*
 	text, _ := saved["value"].(string)
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	row, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
@@ -167,7 +167,7 @@ func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput)
 		text, _ := saved["value"].(string)
 		admissionID, err := jsonutil.Decode(text)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		row, err := terminalAdmission(ctx, conn, admissionID)
 		if err != nil {
@@ -213,7 +213,7 @@ func (d *SessionDB) TerminalWorkerReceipt(ctx context.Context, executionID, sess
 		text, _ := saved["value"].(string)
 		decoded, err := jsonutil.Decode(text)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		worker, ok := decoded.(*jsonutil.Object)
 		if !ok {
@@ -260,7 +260,7 @@ func (d *SessionDB) TerminalWorkerReceipt(ctx context.Context, executionID, sess
 		}
 		out, err = jsonutil.Decode(resultText)
 		if err != nil {
-			return pyValueError(err.Error())
+			return valueError(err.Error())
 		}
 		return nil
 	})

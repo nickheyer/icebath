@@ -36,14 +36,14 @@ type sourceAuthorizer interface {
 
 // Automation descriptor of a payload, empty for every other input
 func automationDescriptor(payload *jsonutil.Object) *jsonutil.Object {
-	if local, _ := payload.Get("local_automation_v1"); pyTruthy(local) {
+	if local, _ := payload.Get("local_automation_v1"); anyutil.IsTrue(local) {
 		if obj, ok := local.(*jsonutil.Object); ok {
 			return obj
 		}
 	}
-	if native, _ := payload.Get("native_text_v1"); pyTruthy(native) {
+	if native, _ := payload.Get("native_text_v1"); anyutil.IsTrue(native) {
 		if envelope, ok := native.(*jsonutil.Object); ok {
-			if automation, _ := envelope.Get("automation"); pyTruthy(automation) {
+			if automation, _ := envelope.Get("automation"); anyutil.IsTrue(automation) {
 				if obj, ok := automation.(*jsonutil.Object); ok {
 					return obj
 				}
@@ -217,7 +217,7 @@ func ownedBy(ctx context.Context, db *state.SessionDB, sessionID, current string
 		if row != nil {
 			ended, _ := row.Get("ended_at")
 			reason, _ := row.Get("end_reason")
-			if text, _ := reason.(string); pyTruthy(ended) && userBoundaryEndReasons[text] {
+			if text, _ := reason.(string); anyutil.IsTrue(ended) && userBoundaryEndReasons[text] {
 				return false, nil
 			}
 		}
@@ -444,10 +444,10 @@ func automationSnapshot(ctx context.Context, a *SessionAuthority, adapter Platfo
 	sourceValue, _ := envelope.Get("source")
 	source, _ := jsonutil.Clone(sourceValue).(*jsonutil.Object)
 	if source == nil {
-		return nil, nil, &pyKeyError{"source"}
+		return nil, nil, &keyError{"source"}
 	}
 	if provenance == nil {
-		return nil, nil, &pyKeyError{"provenance"}
+		return nil, nil, &keyError{"provenance"}
 	}
 	source.Delete("message_id")
 	if _, relayed := provenance.Get("relay"); relayed {
@@ -550,11 +550,11 @@ func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionR
 	payloadValue, _ := row.Get("payload")
 	payload, _ := payloadValue.(*jsonutil.Object)
 	if payload == nil {
-		return &pyKeyError{"local_automation_v1"}
+		return &keyError{"local_automation_v1"}
 	}
 	descriptorValue, ok := payload.Get("local_automation_v1")
 	if !ok {
-		return &pyKeyError{"local_automation_v1"}
+		return &keyError{"local_automation_v1"}
 	}
 	descriptor, _ := descriptorValue.(*jsonutil.Object)
 	if descriptor == nil {
@@ -572,7 +572,7 @@ func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionR
 	for _, check := range []struct{ key, want string }{{"owner", ref.SessionID}, {"route", admitted}, {"identity", rowString(row, "request_id")}} {
 		value, ok := descriptor.Get(check.key)
 		if !ok {
-			return &pyKeyError{check.key}
+			return &keyError{check.key}
 		}
 		if value != check.want {
 			return runtimeRefusal("permission_denied")
@@ -587,7 +587,7 @@ func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionR
 	}
 	target, ok := descriptor.Get("target")
 	if !ok {
-		return &pyKeyError{"target"}
+		return &keyError{"target"}
 	}
 	if entry.SessionID != target {
 		tip, err := a.DB.GetCompressionTip(ctx, anyutil.String(target))
@@ -732,11 +732,11 @@ func AutomationAdmissionDisplay(payload *jsonutil.Object) *jsonutil.Object {
 	kind, _ := descriptor.Get("display_kind")
 	text, _ := descriptor.Get("display_text")
 	body, isText := text.(string)
-	if !pyTruthy(kind) || !isText || strings.TrimSpace(body) == "" {
+	if !anyutil.IsTrue(kind) || !isText || strings.TrimSpace(body) == "" {
 		return jsonutil.NewObject()
 	}
 	said := ""
-	if value, _ := payload.Get("text"); pyTruthy(value) {
+	if value, _ := payload.Get("text"); anyutil.IsTrue(value) {
 		said = anyutil.String(value)
 	}
 	card := jsonutil.ObjectOf("display_kind", kind, "display_text", body, "text", said)

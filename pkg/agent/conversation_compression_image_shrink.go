@@ -144,7 +144,7 @@ func sourceToDataURL(source any) string {
 		return ""
 	}
 	mediaType := "image/jpeg"
-	if pyTruthy(src["media_type"]) {
+	if anyutil.IsTrue(src["media_type"]) {
 		mediaType = strings.TrimSpace(anyutil.String(src["media_type"]))
 	}
 	if !strings.HasPrefix(mediaType, "image/") {

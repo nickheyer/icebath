@@ -338,7 +338,7 @@ func TestOptionalFiltersNarrowCountWithoutChangingUnfilteredCount(t *testing.T) 
 		{sp("tui"), sp("other-session"), nil, 0},
 	} {
 		if got := count(tc.platform, tc.chatID, tc.threadID); got != tc.want {
-			t.Errorf("count(%v, %v, %v) = %d, want %d", pyStrOpt(tc.platform), pyStrOpt(tc.chatID), pyStrOpt(tc.threadID), got, tc.want)
+			t.Errorf("count(%v, %v, %v) = %d, want %d", strOpt(tc.platform), strOpt(tc.chatID), strOpt(tc.threadID), got, tc.want)
 		}
 	}
 }
@@ -368,8 +368,8 @@ func TestCountNotifySubsFiltersProfileOwners(t *testing.T) {
 	}
 	conn := mustConnect(t, dbPath, nil)
 	for _, profile := range []*string{sp("default"), sp("writer"), nil} {
-		tid := mustCreate(t, conn, CreateTaskOptions{Title: "owned by " + pyStrOpt(profile)})
-		mustAddSub(t, conn, NotifySubOptions{TaskID: tid, Platform: "telegram", ChatID: "chat-" + pyStrOpt(profile), NotifierProfile: profile})
+		tid := mustCreate(t, conn, CreateTaskOptions{Title: "owned by " + strOpt(profile)})
+		mustAddSub(t, conn, NotifySubOptions{TaskID: tid, Platform: "telegram", ChatID: "chat-" + strOpt(profile), NotifierProfile: profile})
 	}
 	conn.Close()
 	if countSubs(t, dbPath, nil, NotifyOwnerScope{Profiles: []string{"writer"}, Scoped: true}, nil, nil, nil) != 1 {

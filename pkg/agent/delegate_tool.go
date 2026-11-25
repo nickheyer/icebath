@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -120,7 +121,7 @@ func parentLiveHome(parent *AIAgent) string {
 // Leaf or orchestrator, an empty or unknown role becoming leaf with a warning for the unknown one
 func normalizeDelegateRole(r any) string {
 	norm := "leaf"
-	if pyTruthy(r) {
+	if anyutil.IsTrue(r) {
 		s, ok := r.(string)
 		if !ok {
 			s = fmt.Sprint(r)
@@ -246,7 +247,7 @@ func buildDelegateChildren(ctx context.Context, taskList []map[string]any, taskS
 			childContext = tools.AppendOutputContract(text, taskSchema)
 		}
 		role := t["role"]
-		if !pyTruthy(role) {
+		if !anyutil.IsTrue(role) {
 			role = topRole
 		}
 		spec := routeOverrides(route)

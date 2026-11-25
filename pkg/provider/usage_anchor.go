@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"math"
 	"sort"
 
@@ -132,10 +133,10 @@ func anchorInt(v any) (int, bool) {
 	}
 	switch t := v.(type) {
 	case string:
-		n, ok := pyIntText(t)
+		n, ok := textutil.ParseIntAnyScript(t)
 		return int(n), ok
 	case json.Number:
-		if n, ok := pyIntText(string(t)); ok {
+		if n, ok := textutil.ParseIntAnyScript(string(t)); ok {
 			return int(n), true
 		}
 	case int:

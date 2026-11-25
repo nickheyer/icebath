@@ -189,7 +189,7 @@ func TestUpdateMergesCronJobsWithoutLosingLocalState(t *testing.T) {
 	writeFile(t, storePath, string(raw))
 	_, err = manage.UpdateDistribution(ctx, "cron_merge", false)
 	var distErr *profiles.DistributionError
-	if !errors.As(err, &distErr) || !strings.Contains(err.Error(), "cron job 'daily'") {
+	if !errors.As(err, &distErr) || !strings.Contains(err.Error(), `cron job "daily": Requested one-shot time 2020-01-01T00:00:00+00:00 is more than 120s in the past`) {
 		t.Fatalf("past one shot update %v", err)
 	}
 	if soul, _ := os.ReadFile(filepath.Join(plan.TargetDir, "SOUL.md")); string(soul) == "upstream v3\n" {

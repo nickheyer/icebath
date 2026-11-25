@@ -4,6 +4,7 @@ package pvporcupine
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -33,16 +34,16 @@ func TestPorcupineConstructorValidationOrder(t *testing.T) {
 		}
 	}
 	_, err := NewPorcupine("key", lib, filepath.Join(dir, "absent.pv"), "best", []string{keyword}, []float64{0.5})
-	wantPyError(t, err, "OSError", "Couldn't find model file at '"+filepath.Join(dir, "absent.pv")+"'.")
+	wantError(t, err, FileUnavailable, fmt.Sprintf("Couldn't find model file at %q.", filepath.Join(dir, "absent.pv")))
 	_, err = NewPorcupine("key", lib, model, "", []string{keyword}, []float64{0.5})
-	wantPyError(t, err, "ValueError", "`device` should be a non-empty string.")
+	wantError(t, err, InvalidArgument, "Device should be a non-empty string.")
 	_, err = NewPorcupine("key", lib, model, "best", []string{keyword}, []float64{0.5, 0.5})
-	wantPyError(t, err, "ValueError", "Number of keywords does not match the number of sensitivities.")
+	wantError(t, err, InvalidArgument, "Number of keywords does not match the number of sensitivities.")
 	_, err = NewPorcupine("key", lib, model, "best", []string{"~/icebath-absent-keyword.ppn"}, []float64{0.5})
-	wantPyError(t, err, "OSError", "Couldn't find keyword file at '~/icebath-absent-keyword.ppn'.")
+	wantError(t, err, FileUnavailable, `Couldn't find keyword file at "~/icebath-absent-keyword.ppn".`)
 	for _, bad := range []float64{1.5, -0.1, math.NaN()} {
 		_, err = NewPorcupine("key", lib, model, "best", []string{keyword}, []float64{bad})
-		wantPyError(t, err, "ValueError", "A sensitivity value should be within [0, 1].")
+		wantError(t, err, InvalidArgument, "A sensitivity value should be within [0, 1].")
 	}
 	var missing *dlutil.SymbolError
 	if _, err = NewPorcupine("key", lib, model, "best", []string{keyword}, []float64{0, 1}[:1]); !errors.As(err, &missing) || missing.Symbol != "pv_set_sdk" {

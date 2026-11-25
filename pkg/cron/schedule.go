@@ -70,8 +70,8 @@ func parseDuration(text string) (int, error) {
 	s := strings.ToLower(strings.TrimSpace(text))
 	m := reMatch(durationRe, s)
 	if m == nil {
-		return 0, fmt.Errorf("Invalid duration: '%s'. Use format like '30m', '2h', '1d', "+
-			"or a bare unit like 'hour' (defaults to 1).", s)
+		return 0, fmt.Errorf("Invalid duration: %q. Use format like \"30m\", \"2h\", \"1d\", "+
+			"or a bare unit like \"hour\" (defaults to 1).", s)
 	}
 	value := int64(1)
 	if digits := m.GroupByNumber(1).String(); digits != "" {
@@ -176,7 +176,7 @@ func containsString(list []string, v string) bool {
 // Validated cron schedule record for expr shown as display
 func cronSchedule(expr, display, invalidLabel string) (*Schedule, error) {
 	if _, err := ParseCron(expr); err != nil {
-		return nil, fmt.Errorf("Invalid %s '%s': %v", invalidLabel, display, err)
+		return nil, fmt.Errorf("Invalid %s %q: %v", invalidLabel, display, err)
 	}
 	return &Schedule{Kind: "cron", Expr: expr, Display: display}, nil
 }
@@ -221,7 +221,7 @@ func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
 	if strings.Contains(schedule, "T") || reMatch(isoDatePrefixRe, schedule) != nil {
 		v, err := ParseISO(schedule)
 		if err != nil {
-			return nil, fmt.Errorf("Invalid timestamp '%s': %v", schedule, err)
+			return nil, fmt.Errorf("Invalid timestamp %q: %v", schedule, err)
 		}
 		runAt := FormatISO(v.Time)
 		if !v.Aware {
@@ -234,7 +234,7 @@ func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
 		durationStr := strings.TrimSpace(schedule[3:])
 		minutes, err := parseDuration(durationStr)
 		if err != nil {
-			return nil, fmt.Errorf("Invalid duration '%s' after 'in '. Use e.g. 'in 30m', 'in 2h'.", durationStr)
+			return nil, fmt.Errorf("Invalid duration %q after \"in \". Use e.g. \"in 30m\", \"in 2h\".", durationStr)
 		}
 		now := s.clk.now()
 		runAt := now.Add(time.Duration(minutes) * time.Minute).In(now.Location())
@@ -243,12 +243,12 @@ func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
 	if minutes, err := parseDuration(schedule); err == nil {
 		return intervalSchedule(minutes), nil
 	}
-	return nil, fmt.Errorf("Invalid schedule '%s'. Use:\n"+
-		"  - Interval: '30m', 'every 30m', 'every 2h' (recurring)\n"+
-		"  - One-shot delay: 'in 30m', 'in 2h' (fires once)\n"+
-		"  - Weekly/daily: 'every monday 9am', 'weekdays at 9am' (recurring)\n"+
-		"  - Cron: '0 9 * * *' (cron expression)\n"+
-		"  - Timestamp: '2026-02-03T14:00:00' (one-shot at time)", original)
+	return nil, fmt.Errorf("Invalid schedule %q. Use:\n"+
+		"  - Interval: \"30m\", \"every 30m\", \"every 2h\" (recurring)\n"+
+		"  - One-shot delay: \"in 30m\", \"in 2h\" (fires once)\n"+
+		"  - Weekly/daily: \"every monday 9am\", \"weekdays at 9am\" (recurring)\n"+
+		"  - Cron: \"0 9 * * *\" (cron expression)\n"+
+		"  - Timestamp: \"2026-02-03T14:00:00\" (one-shot at time)", original)
 }
 
 func instantAfter(left, right time.Time) bool { return left.After(right) }
@@ -476,8 +476,8 @@ func classifyStaleCronNextRun(sched *Schedule, raw, next time.Time) string {
 	return StaleCronExprEdit
 }
 
-// Counts one offset migration catch up fire and persists its record
-func (s *Store) recordTimezoneMigrationCatchup(job *Job, raw, next time.Time) {
+// Counts one offset migration catch up fire and persists its record, the stored next_run_at kept verbatim
+func (s *Store) recordTimezoneMigrationCatchup(job *Job, stored string, next time.Time) {
 	entry := jsonutil.NewObject()
 	entry.Set("job_id", job.ID)
 	entry.Set("name", nameOrID(job))
@@ -486,7 +486,7 @@ func (s *Store) recordTimezoneMigrationCatchup(job *Job, raw, next time.Time) {
 		expr = job.Schedule.Expr
 	}
 	entry.Set("expr", expr)
-	entry.Set("stored_next_run_at", FormatISO(raw))
+	entry.Set("stored_next_run_at", stored)
 	entry.Set("normalized_next_run_at", FormatISO(next))
 	entry.Set("fired_at", s.clk.nowISO())
 	telemetryMu.Lock()

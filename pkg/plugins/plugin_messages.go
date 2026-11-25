@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -88,8 +89,16 @@ func (h *PluginMessage) ErrorCode() any { return h.Result()["error"] }
 // Whether an operation the gateway has not finished is still attached
 func (h *PluginMessage) Pending() bool { return h.pendingOp().running() }
 
+// Summary of the handle for logs: whether the last operation succeeded, then the message id and error code it has, an absent one left out
 func (h *PluginMessage) String() string {
-	return fmt.Sprintf("<PluginMessage ok=%s message_id=%s error=%s>", anyutil.Quote(h.OK()), anyutil.Quote(h.MessageID()), anyutil.Quote(h.ErrorCode()))
+	text := "<PluginMessage ok=" + strconv.FormatBool(h.OK())
+	if id := h.MessageID(); id != nil {
+		text += " message_id=" + anyutil.Quote(id)
+	}
+	if code := h.ErrorCode(); code != nil {
+		text += " error=" + anyutil.Quote(code)
+	}
+	return text + ">"
 }
 
 // Takes over the target, result and message id of another handle
@@ -330,7 +339,7 @@ func postMessage(ctx context.Context, c *Context, text string) *PluginMessage {
 func (h *PluginMessage) ErrorKind() string { return "PluginMessage" }
 
 // Repr a hosted plugin sees for the handle
-func (h *PluginMessage) PyRepr() string { return h.String() }
+func (h *PluginMessage) Quoted() string { return h.String() }
 
 // Attribute of the handle a hosted plugin reads, edit and the async aedit as methods
 func (h *PluginMessage) HostAttr(_ context.Context, name string) (any, bool, bool, error) {
@@ -355,7 +364,7 @@ func (h *PluginMessage) HostAttr(_ context.Context, name string) (any, bool, boo
 
 // Runs edit or aedit for a hosted plugin with the text argument bound as Python binds it
 func (h *PluginMessage) HostCall(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
-	a, _, err := bindPyOn("PluginMessage", method, []pyParam{req("text")}, args, kwargs)
+	a, _, err := bindPyOn("PluginMessage", method, []paramValue{req("text")}, args, kwargs)
 	if err != nil {
 		return nil, err
 	}

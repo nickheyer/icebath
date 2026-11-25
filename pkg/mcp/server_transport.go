@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Wall clock bound of the OSV malware preflight before a stdio spawn
@@ -43,13 +44,13 @@ func stdioLaunch(ctx context.Context, env *tools.Env, r *Rendered) (string, map[
 	if err != nil {
 		return "", nil, "", err
 	}
-	command, safeEnv, err := resolveStdioCommand(ctx, pyStr(cfg["command"]), safeEnv)
+	command, safeEnv, err := resolveStdioCommand(ctx, anyutil.String(cfg["command"]), safeEnv)
 	if err != nil {
 		return "", nil, "", err
 	}
 	cwd := ""
 	if v, ok := cfg["cwd"]; ok && v != nil {
-		cwd = pyStr(v)
+		cwd = anyutil.String(v)
 	} else if dir, err := tools.ResolveContextCwd(env, true); err == nil {
 		cwd = dir
 	}
@@ -58,11 +59,11 @@ func stdioLaunch(ctx context.Context, env *tools.Env, r *Rendered) (string, map[
 
 // URL and configured headers, overlaid by a server_json live endpoint URL and bearer
 func httpEndpoint(ctx context.Context, serverName string, cfg map[string]any) (string, map[string]string, error) {
-	url := pyStr(cfg["url"])
+	url := anyutil.String(cfg["url"])
 	headers := map[string]string{}
 	if h, ok := cfg["headers"].(map[string]any); ok {
 		for _, k := range orderedKeys(h) {
-			headers[k] = pyStr(h[k])
+			headers[k] = anyutil.String(h[k])
 		}
 	}
 	liveURL, liveHeaders, ok, err := liveEndpoint(ctx, serverName)
@@ -172,7 +173,7 @@ func protocolMode(cfg map[string]any) string {
 	if !ok {
 		return "auto"
 	}
-	return strings.ToLower(strings.TrimSpace(pyStr(v)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(v)))
 }
 
 // Float config value with a default when absent
@@ -318,7 +319,7 @@ func configArgs(v any) []string {
 	list, _ := v.([]any)
 	out := make([]string, 0, len(list))
 	for _, a := range list {
-		out = append(out, pyStr(a))
+		out = append(out, anyutil.String(a))
 	}
 	if ss, ok := v.([]string); ok {
 		out = append(out, ss...)
@@ -332,7 +333,7 @@ func (s *serverTask) runStdio(ctx context.Context, r *Rendered) (string, error) 
 	if v, ok := cfg["identity_header"]; ok && v != nil {
 		pkgLog().Warn(fmt.Sprintf("MCP server '%s': identity_header is only supported on HTTP/SSE transports — ignored for stdio servers", s.name))
 	}
-	if !pyTruthy(cfg["command"]) {
+	if !anyutil.IsTrue(cfg["command"]) {
 		return "", fmt.Errorf("MCP server '%s' has no 'command' in config", s.name)
 	}
 	inputs, _, err := connectInputs(ctx, s.env, s.name, r)
@@ -503,7 +504,7 @@ func (s *serverTask) runHTTP(ctx context.Context, r *Rendered) (string, error) {
 	if !ok {
 		sslVerify = true
 	}
-	strict := pyTruthy(cfg["strict_redirect_headers"])
+	strict := anyutil.IsTrue(cfg["strict_redirect_headers"])
 	opts := HTTPOptions{URL: url, Headers: headers, ConfiguredHeaderNames: configured, StrictRedirectHeaders: strict,
 		SSLVerify: sslVerify, ClientCert: cfg["client_cert"], ClientKey: cfg["client_key"],
 		ConnectTimeout: secondsDuration(connectTimeout), ReadTimeout: 300 * time.Second, ServerName: s.name}
@@ -518,7 +519,7 @@ func (s *serverTask) runHTTP(ctx context.Context, r *Rendered) (string, error) {
 		}
 		return StartSSE(ctx, opts, secondsDuration(connectTimeout))
 	}
-	if pyStr(cfg["transport"]) == "sse" {
+	if anyutil.String(cfg["transport"]) == "sse" {
 		return s.serveTransport(ctx, openSSE, "SSE", connectTimeout)
 	}
 	s.mu.Lock()

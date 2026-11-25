@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -40,7 +41,7 @@ func RegisterWorkerHooks(ctx context.Context, policy *LocalSessionPolicy) error 
 	if anyutil.IsTrue(kanbanValue) {
 		obj, isDict := kanbanValue.(*jsonutil.Object)
 		if !isDict {
-			return &PyError{Kind: "AttributeError", Msg: "the worker kanban settings are " + errchain.Kind(kanbanValue) + ", expected a mapping"}
+			return &errorutil.Error{Kind: "AttributeError", Msg: "the worker kanban settings are " + errchain.Kind(kanbanValue) + ", expected a mapping"}
 		}
 		kanban = obj
 	}
@@ -50,7 +51,7 @@ func RegisterWorkerHooks(ctx context.Context, policy *LocalSessionPolicy) error 
 	}
 	request, isDict := requestValue.(*jsonutil.Object)
 	if !isDict {
-		return &PyError{Kind: "AttributeError", Msg: "the worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "the worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
 	}
 	accept := request.ValueOr("accept_hooks", nil) == true || kanban.ValueOr("accept_hooks", nil) == true
 	cfg, err := policy.config(ctx, nil, true)

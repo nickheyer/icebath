@@ -26,7 +26,7 @@ func (e *ParserSyntaxError) Error() string {
 }
 
 // Character class Python's case insensitive Unicode matching gives one ASCII letter
-func pyFoldClass(c byte, unicodeFold bool) string {
+func foldClass(c byte, unicodeFold bool) string {
 	lower, upper := strings.ToLower(string(c)), strings.ToUpper(string(c))
 	if lower == upper {
 		return regexp.QuoteMeta(string(c))
@@ -46,35 +46,35 @@ func pyFoldClass(c byte, unicodeFold bool) string {
 }
 
 // Pattern matching a literal word case insensitively the way a Python IGNORECASE group does
-func pyFold(word string, unicodeFold bool) string {
+func fold(word string, unicodeFold bool) string {
 	var b strings.Builder
 	for i := 0; i < len(word); i++ {
-		b.WriteString(pyFoldClass(word[i], unicodeFold))
+		b.WriteString(foldClass(word[i], unicodeFold))
 	}
 	return b.String()
 }
 
 // Alternation of folded words in their given order
-func pyFoldAlt(unicodeFold bool, words ...string) string {
+func foldAlt(unicodeFold bool, words ...string) string {
 	parts := make([]string, len(words))
 	for i, w := range words {
-		parts[i] = pyFold(w, unicodeFold)
+		parts[i] = fold(w, unicodeFold)
 	}
 	return "(?:" + strings.Join(parts, "|") + ")"
 }
 
 // Packaging's specifier pattern, ASCII groups folding only ASCII and the compatible branch folding Unicode
 func specifierPattern() string {
-	ws := "[" + pyWhitespaceClass + "]*"
+	ws := "[" + whitespaceClass + "]*"
 	pre := func(u bool) string {
-		return `(?:[-_\.]?` + pyFoldAlt(u, "alpha", "beta", "preview", "pre", "a", "b", "c", "rc") + `[-_\.]?[0-9]*)?`
+		return `(?:[-_\.]?` + foldAlt(u, "alpha", "beta", "preview", "pre", "a", "b", "c", "rc") + `[-_\.]?[0-9]*)?`
 	}
 	post := func(u bool) string {
-		return `(?:(?:-[0-9]+)|(?:[-_\.]?` + pyFoldAlt(u, "post", "rev", "r") + `[-_\.]?[0-9]*))?`
+		return `(?:(?:-[0-9]+)|(?:[-_\.]?` + foldAlt(u, "post", "rev", "r") + `[-_\.]?[0-9]*))?`
 	}
-	dev := func(u bool) string { return `(?:[-_\.]?` + pyFold("dev", u) + `[-_\.]?[0-9]*)?` }
+	dev := func(u bool) string { return `(?:[-_\.]?` + fold("dev", u) + `[-_\.]?[0-9]*)?` }
 	local := `(?:\+[a-zA-Z0-9]+(?:[-_\.][a-zA-Z0-9]+)*)?`
-	identity := `(?:===` + ws + `[^` + pyWhitespaceClass + `;)]*)`
+	identity := `(?:===` + ws + `[^` + whitespaceClass + `;)]*)`
 	equality := `(?:(?:==|!=)` + ws + `[vV]?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*(?:\.\*|` + pre(false) + post(false) + dev(false) + local + `)?)`
 	compatible := `(?:~=` + ws + `[vV]?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)+` + pre(true) + post(true) + dev(true) + `)`
 	ordered := `(?:(?:<=|>=|<|>)` + ws + `[vV]?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*` + pre(false) + post(false) + dev(false) + `)`
@@ -83,14 +83,14 @@ func specifierPattern() string {
 
 var (
 	specifierToken     = regexp.MustCompile(`^` + specifierPattern())
-	specifierFull      = regexp.MustCompile(`^[` + pyWhitespaceClass + `]*` + specifierPattern() + `[` + pyWhitespaceClass + `]*$`)
+	specifierFull      = regexp.MustCompile(`^[` + whitespaceClass + `]*` + specifierPattern() + `[` + whitespaceClass + `]*$`)
 	localSeparators    = regexp.MustCompile(`[\._-]`)
 	versionLocalTrail  = regexp.MustCompile(`^\+[a-z0-9]+(?:[-_\.][a-z0-9]+)*`)
-	pep440VersionRegex = regexp.MustCompile(`^[` + pyWhitespaceClass + `]*[vV]?(?:(?:(?P<epoch>[0-9]+)!)?(?P<release>[0-9]+(?:\.[0-9]+)*)` +
-		`(?P<pre>[._-]?(?P<pre_l>` + pyFoldAlt(false, "alpha", "a", "beta", "b", "preview", "pre", "c", "rc") + `)[._-]?(?P<pre_n>[0-9]+)?)?` +
-		`(?P<post>(?:-(?P<post_n1>[0-9]+))|(?:[._-]?(?P<post_l>` + pyFoldAlt(false, "post", "rev", "r") + `)[._-]?(?P<post_n2>[0-9]+)?))?` +
-		`(?P<dev>[._-]?(?P<dev_l>` + pyFold("dev", false) + `)[._-]?(?P<dev_n>[0-9]+)?)?)` +
-		`(?:\+(?P<local>[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*))?[` + pyWhitespaceClass + `]*$`)
+	pep440VersionRegex = regexp.MustCompile(`^[` + whitespaceClass + `]*[vV]?(?:(?:(?P<epoch>[0-9]+)!)?(?P<release>[0-9]+(?:\.[0-9]+)*)` +
+		`(?P<pre>[._-]?(?P<pre_l>` + foldAlt(false, "alpha", "a", "beta", "b", "preview", "pre", "c", "rc") + `)[._-]?(?P<pre_n>[0-9]+)?)?` +
+		`(?P<post>(?:-(?P<post_n1>[0-9]+))|(?:[._-]?(?P<post_l>` + foldAlt(false, "post", "rev", "r") + `)[._-]?(?P<post_n2>[0-9]+)?))?` +
+		`(?P<dev>[._-]?(?P<dev_l>` + fold("dev", false) + `)[._-]?(?P<dev_n>[0-9]+)?)?)` +
+		`(?:\+(?P<local>[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*))?[` + whitespaceClass + `]*$`)
 	letterNormalization = map[string]string{"alpha": "a", "beta": "b", "c": "rc", "pre": "rc", "preview": "rc", "rev": "post", "r": "post"}
 	markerVariables     = []string{
 		"python_version", "python_full_version", "os.name", "os_name", "sys.platform", "sys_platform",
@@ -102,9 +102,9 @@ var (
 )
 
 // Decimal value of a digit run as Python int prints it, refusing runs past the conversion limit
-func pyDecimal(digits string) (string, error) {
+func decimal(digits string) (string, error) {
 	if len(digits) > 4300 {
-		return "", &PyError{Class: "ValueError", Message: fmt.Sprintf("a number has %d digits, more than the 4300 allowed", len(digits))}
+		return "", &ClassError{Class: "ValueError", Message: fmt.Sprintf("a number has %d digits, more than the 4300 allowed", len(digits))}
 	}
 	trimmed := strings.TrimLeft(digits, "0")
 	if trimmed == "" {
@@ -140,7 +140,7 @@ func parsePEP440(text string) (*pep440Version, bool, error) {
 			if part == "" {
 				return nil, false, nil
 			}
-			n, err := pyDecimal(part)
+			n, err := decimal(part)
 			if err != nil {
 				return nil, false, err
 			}
@@ -156,12 +156,12 @@ func parsePEP440(text string) (*pep440Version, bool, error) {
 	v := &pep440Version{epoch: "0"}
 	var err error
 	if e := group("epoch"); e != "" {
-		if v.epoch, err = pyDecimal(e); err != nil {
+		if v.epoch, err = decimal(e); err != nil {
 			return nil, false, err
 		}
 	}
 	for _, part := range strings.Split(group("release"), ".") {
-		n, err := pyDecimal(part)
+		n, err := decimal(part)
 		if err != nil {
 			return nil, false, err
 		}
@@ -176,11 +176,11 @@ func parsePEP440(text string) (*pep440Version, bool, error) {
 			if number == "" {
 				number = "0"
 			}
-			n, err := pyDecimal(number)
+			n, err := decimal(number)
 			return letter, n, true, err
 		}
 		if number != "" {
-			n, err := pyDecimal(number)
+			n, err := decimal(number)
 			return "post", n, true, err
 		}
 		return "", "", false, nil
@@ -207,7 +207,7 @@ func parsePEP440(text string) (*pep440Version, bool, error) {
 	if local := group("local"); local != "" {
 		for _, part := range localSeparators.Split(local, -1) {
 			if isASCIIDigits(part) {
-				n, err := pyDecimal(part)
+				n, err := decimal(part)
 				if err != nil {
 					return nil, false, err
 				}
@@ -262,29 +262,29 @@ func (v *pep440Version) format(trimmed bool) string {
 	return out
 }
 
-// pySpecifier is one version clause, its operator and version text
-type pySpecifier struct{ op, version string }
+// specifierValue is one version clause, its operator and version text
+type specifierValue struct{ op, version string }
 
-func (s pySpecifier) String() string { return s.op + s.version }
+func (s specifierValue) String() string { return s.op + s.version }
 
 // Parses one clause like packaging Specifier
-func parseSpecifier(spec string) (pySpecifier, error) {
+func parseSpecifier(spec string) (specifierValue, error) {
 	if !specifierFull.MatchString(spec) {
-		return pySpecifier{}, &InvalidRequirementError{Message: "invalid specifier: " + spec}
+		return specifierValue{}, &InvalidRequirementError{Message: "invalid specifier: " + spec}
 	}
 	spec = strings.TrimSpace(spec)
 	switch {
 	case strings.HasPrefix(spec, "==="):
-		return pySpecifier{"===", strings.TrimSpace(spec[3:])}, nil
+		return specifierValue{"===", strings.TrimSpace(spec[3:])}, nil
 	case strings.HasPrefix(spec, "~="), strings.HasPrefix(spec, "=="), strings.HasPrefix(spec, "!="),
 		strings.HasPrefix(spec, "<="), strings.HasPrefix(spec, ">="):
-		return pySpecifier{spec[:2], strings.TrimSpace(spec[2:])}, nil
+		return specifierValue{spec[:2], strings.TrimSpace(spec[2:])}, nil
 	}
-	return pySpecifier{spec[:1], strings.TrimSpace(spec[1:])}, nil
+	return specifierValue{spec[:1], strings.TrimSpace(spec[1:])}, nil
 }
 
 // Identity two clauses compare equal by, trailing release zeros dropped except for the compatible operator
-func (s pySpecifier) canonical() (string, error) {
+func (s specifierValue) canonical() (string, error) {
 	if s.op == "===" || strings.HasSuffix(s.version, ".*") {
 		return s.op + "\x00" + s.version, nil
 	}
@@ -293,14 +293,14 @@ func (s pySpecifier) canonical() (string, error) {
 		return "", err
 	}
 	if !ok {
-		return "", &PyError{Class: "AssertionError"}
+		return "", &ClassError{Class: "AssertionError"}
 	}
 	return s.op + "\x00" + v.format(s.op != "~="), nil
 }
 
 // Parses a comma separated specifier set like packaging SpecifierSet
-func parseSpecifierSet(text string) ([]pySpecifier, error) {
-	var specs []pySpecifier
+func parseSpecifierSet(text string) ([]specifierValue, error) {
+	var specs []specifierValue
 	for _, part := range strings.Split(text, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
@@ -316,9 +316,9 @@ func parseSpecifierSet(text string) ([]pySpecifier, error) {
 }
 
 // Text of a specifier set, clauses sorted and equal clauses kept once
-func formatSpecifierSet(specs []pySpecifier) (string, error) {
+func formatSpecifierSet(specs []specifierValue) (string, error) {
 	if len(specs) > 1 {
-		sorted := append([]pySpecifier{}, specs...)
+		sorted := append([]specifierValue{}, specs...)
 		sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].String() < sorted[j].String() })
 		seen := map[string]bool{}
 		specs = specs[:0:0]
@@ -366,7 +366,7 @@ func (v markerVar) serialize() (string, error) {
 	if !strings.Contains(v.value, "'") {
 		return "'" + v.value + "'", nil
 	}
-	return "", &PyError{Class: "ValueError", Message: "Cannot serialize marker value containing both quote characters"}
+	return "", &ClassError{Class: "ValueError", Message: "Cannot serialize marker value containing both quote characters"}
 }
 
 // markerItem is one comparison of a marker expression
@@ -414,7 +414,7 @@ func formatMarker(marker any, first bool) (string, error) {
 	case string:
 		return m, nil
 	}
-	return "", &PyError{Class: "AssertionError"}
+	return "", &ClassError{Class: "AssertionError"}
 }
 
 // Canonicalizes extra and set membership literals inside a marker
@@ -451,8 +451,8 @@ type pepTokenizer struct {
 
 // Reports a Python word boundary at a code point offset
 func (t *pepTokenizer) boundary(at int) bool {
-	before := at > 0 && pyIsWord(t.src[at-1])
-	after := at < len(t.src) && pyIsWord(t.src[at])
+	before := at > 0 && isWord(t.src[at-1])
+	after := at < len(t.src) && isWord(t.src[at])
 	return before != after
 }
 
@@ -628,17 +628,17 @@ func (t *pepTokenizer) enclosing(open, closeToken, around string, body func() er
 	return nil
 }
 
-// pyRequirement is a parsed dependency specifier
-type pyRequirement struct {
+// requirementValue is a parsed dependency specifier
+type requirementValue struct {
 	Name      string
 	URL       string
 	Extras    []string
-	Specifier []pySpecifier
+	Specifier []specifierValue
 	Marker    markerList
 }
 
 // Parses a dependency specifier like packaging Requirement
-func ParseRequirement(text string) (*pyRequirement, error) {
+func ParseRequirement(text string) (*requirementValue, error) {
 	t := &pepTokenizer{src: []rune(text), source: text}
 	req, err := parseRequirementTokens(t)
 	if err != nil {
@@ -651,7 +651,7 @@ func ParseRequirement(text string) (*pyRequirement, error) {
 }
 
 // Grammar of a whole requirement, name then extras then details then the end
-func parseRequirementTokens(t *pepTokenizer) (*pyRequirement, error) {
+func parseRequirementTokens(t *pepTokenizer) (*requirementValue, error) {
 	t.consume("WS")
 	name, _, err := t.expect("IDENTIFIER", "package name at the start of dependency specifier")
 	if err != nil {
@@ -670,7 +670,7 @@ func parseRequirementTokens(t *pepTokenizer) (*pyRequirement, error) {
 	if _, _, err := t.expect("END", "end of dependency specifier"); err != nil {
 		return nil, err
 	}
-	req := &pyRequirement{Name: name, URL: url}
+	req := &requirementValue{Name: name, URL: url}
 	seen := map[string]bool{}
 	for _, e := range extras {
 		if !seen[e] {
@@ -902,7 +902,7 @@ func parseMarkerVar(t *pepTokenizer) (markerVar, error) {
 	}
 	if t.check("QUOTED_STRING", false) {
 		text, at := t.read()
-		value, ok := pyStringLiteral(text)
+		value, ok := stringLiteral(text)
 		if !ok {
 			return markerVar{}, &ParserSyntaxError{Message: "Invalid quoted string", Source: t.source, Start: at, End: at + len([]rune(text))}
 		}
@@ -934,7 +934,7 @@ func parseMarkerOp(t *pepTokenizer) (string, error) {
 }
 
 // Requirement text the way packaging str renders it
-func (r *pyRequirement) String() (string, error) {
+func (r *requirementValue) String() (string, error) {
 	var b strings.Builder
 	b.WriteString(r.Name)
 	if len(r.Extras) > 0 {

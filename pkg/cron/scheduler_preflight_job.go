@@ -20,7 +20,7 @@ import (
 
 var skillMissingFields = []struct{ key, format string }{
 	{"missing_required_environment_variables", "env $%s"},
-	{"missing_required_commands", "command '%s'"},
+	{"missing_required_commands", "command %q"},
 	{"missing_credential_files", "credential file %s"},
 }
 
@@ -69,7 +69,7 @@ func (s *Store) credentialStoreScopeLabel(ctx context.Context) string {
 	if name == "" {
 		name = "default"
 	}
-	return fmt.Sprintf("[profile '%s', ICEBATH_HOME %s]", name, s.home)
+	return fmt.Sprintf("[profile %q, ICEBATH_HOME %s]", name, s.home)
 }
 
 // True when a primary profile route of this home names the platform
@@ -115,7 +115,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 	var connected map[string]bool
 	for _, platform := range parts {
 		if !isKnownDeliveryPlatform(ctx, platform) {
-			msg := fmt.Sprintf("delivery platform '%s' is not a known cron delivery target. Fix the job's `deliver` value or configure the platform's gateway credentials.", platform)
+			msg := fmt.Sprintf("delivery platform %q is not a known cron delivery target. Fix the job's `deliver` value or configure the platform's gateway credentials.", platform)
 			return &msg
 		}
 		if connected == nil {
@@ -133,7 +133,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 			}
 		}
 		if !connected[strings.ToLower(platform)] && !s.deliveryPlatformRoutedFromPrimaryGateway(ctx, platform) {
-			msg := fmt.Sprintf("delivery platform '%s' has no gateway credentials configured (not connected). Configure it (start `icebath` and type `/setup chat-apps`) or change the job's `deliver` target.", platform)
+			msg := fmt.Sprintf("delivery platform %q has no gateway credentials configured (not connected). Configure it (start `icebath` and type `/setup chat-apps`) or change the job's `deliver` target.", platform)
 			return &msg
 		}
 	}
@@ -161,7 +161,7 @@ func (s *Store) preflightCheckSkills(ctx context.Context, job *Job) *string {
 		if detail == "" {
 			detail = "required setup incomplete"
 		}
-		msg := fmt.Sprintf("attached skill '%s' is not ready: missing %s. Provide the missing prerequisites or detach the skill from this job.", name, detail)
+		msg := fmt.Sprintf("attached skill %q is not ready: missing %s. Provide the missing prerequisites or detach the skill from this job.", name, detail)
 		return &msg
 	}
 	return nil
@@ -204,7 +204,7 @@ func (s *Store) emptyRequestedMCPToolsets(ctx context.Context, job *Job, cfg con
 	}
 	reconnectingWarned.Unlock()
 	if len(unwarned) > 0 {
-		s.log.Warn(fmt.Sprintf("Job '%s': MCP server(s) %s named in enabled_toolsets are reconnecting — running without their tools until they recover (a server parked on a permanent error blocks the job instead)", jobID, strings.Join(unwarned, ", ")))
+		s.log.Warn(fmt.Sprintf("Job %q: MCP server(s) %s named in enabled_toolsets are reconnecting — running without their tools until they recover (a server parked on a permanent error blocks the job instead)", jobID, strings.Join(unwarned, ", ")))
 	}
 	var still []string
 	for _, name := range missing {

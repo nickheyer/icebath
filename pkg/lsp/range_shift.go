@@ -71,7 +71,7 @@ func ShiftDiagnosticRange(diag map[string]any, shift LineShift) (map[string]any,
 	if err != nil {
 		return nil, false, err
 	}
-	preStart, err := pyInt(dgetOr(start, "line", int64(0)))
+	preStart, err := wholeNumber(dgetOr(start, "line", int64(0)))
 	if err != nil {
 		return nil, false, err
 	}
@@ -79,7 +79,7 @@ func ShiftDiagnosticRange(diag map[string]any, shift LineShift) (map[string]any,
 	if !ok {
 		return nil, false, nil
 	}
-	preEnd, err := pyInt(dgetOr(end, "line", preStart))
+	preEnd, err := wholeNumber(dgetOr(end, "line", preStart))
 	if err != nil {
 		return nil, false, err
 	}
@@ -87,11 +87,11 @@ func ShiftDiagnosticRange(diag map[string]any, shift LineShift) (map[string]any,
 	if !ok {
 		newEnd = newStart
 	}
-	startChar, err := pyInt(dgetOr(start, "character", int64(0)))
+	startChar, err := wholeNumber(dgetOr(start, "character", int64(0)))
 	if err != nil {
 		return nil, false, err
 	}
-	endChar, err := pyInt(dgetOr(end, "character", int64(0)))
+	endChar, err := wholeNumber(dgetOr(end, "character", int64(0)))
 	if err != nil {
 		return nil, false, err
 	}

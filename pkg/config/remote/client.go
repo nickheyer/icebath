@@ -11,13 +11,13 @@ import (
 	"net/http/httptrace"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -30,7 +30,7 @@ const (
 // Bound on one plane request, shortened by tests that drive the timeout paths
 var httpTimeout = 15 * time.Second
 
-// One plane answer, HasRetryAfter set when a Retry-After header parsed as a number
+// One plane answer, HasRetryAfter set when a Retry-After header held a delay in seconds or an HTTP date
 type Response struct {
 	Status        int
 	Body          map[string]any
@@ -41,7 +41,7 @@ type Response struct {
 
 // Error code of the body, http_STATUS when the body names none
 func (r Response) Error() string {
-	if s := pyTruthyStr(r.Body["error"]); s != "" {
+	if s := truthyText(r.Body["error"]); s != "" {
 		return s
 	}
 	return fmt.Sprintf("http_%d", r.Status)
@@ -49,7 +49,7 @@ func (r Response) Error() string {
 
 // Message of the body, HTTP STATUS when the body has none
 func (r Response) Message() string {
-	if s := pyTruthyStr(r.Body["message"]); s != "" {
+	if s := truthyText(r.Body["message"]); s != "" {
 		return s
 	}
 	return fmt.Sprintf("HTTP %d", r.Status)
@@ -136,16 +136,24 @@ func parseBody(raw []byte) map[string]any {
 	return map[string]any{}
 }
 
-// Python float of a Retry-After header, false when empty or unparsable
+// Delay in seconds a Retry-After value writes as a Go float literal, space around it ignored and an overflowing value taken as the infinity of its sign; false when empty or not a number
 func parseRetryAfter(value string) (float64, bool) {
-	if value == "" {
-		return 0, false
-	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil {
+	f, err := anyutil.ToFloat(value)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return 0, false
 	}
 	return f, true
+}
+
+// Seconds a Retry-After header asks to wait from now, its delay in seconds or the time left until its HTTP date; false when it holds neither
+func retryAfterSeconds(value string, now time.Time) (float64, bool) {
+	if f, ok := parseRetryAfter(value); ok {
+		return f, true
+	}
+	if at, err := http.ParseTime(strings.TrimSpace(value)); err == nil {
+		return at.Sub(now).Seconds(), true
+	}
+	return 0, false
 }
 
 // Body that ended before its declared length, the http.client.IncompleteRead no transport handler catches
@@ -176,22 +184,26 @@ func (p *requestPhase) trace(ctx context.Context) context.Context {
 	})
 }
 
-// Text of the urllib or socket error CPython 3.14 raises for a failure at the phase the request reached
-func (p *requestPhase) reason(err error, https bool) string {
+// Reason a request failed at the phase it reached: a timeout named by that phase, a server that closed the connection without answering, else the operating system reason or the transport's own text without the method and URL
+func (p *requestPhase) reason(err error) string {
 	var netErr net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 		switch {
-		case !p.connected.Load() && p.tlsStarted.Load():
-			return "_ssl.c:1064: The handshake operation timed out"
-		case p.connected.Load() && https:
-			return "The read operation timed out"
+		case p.connected.Load():
+			return "timed out reading the response"
+		case p.tlsStarted.Load():
+			return "TLS handshake timed out"
 		}
-		return "timed out"
+		return "timed out connecting"
 	}
 	if p.connected.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
-		return "Remote end closed connection without response"
+		return "server closed the connection without a response"
 	}
-	return err.Error()
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.Err != nil {
+		err = ue.Err
+	}
+	return errchain.OSText(err)
 }
 
 // Plane bearer, resolved only once the plane destination passed the policy
@@ -227,7 +239,6 @@ func Request(ctx context.Context, method, profile, etag string, body any, token 
 	if err != nil {
 		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %v", method, target, err)}
 	}
-	https := req.URL.Scheme == "https"
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-Icebath-Instance-Id", InstanceID())
 	req.Header.Set("Accept", "application/json")
@@ -243,7 +254,7 @@ func Request(ctx context.Context, method, profile, etag string, body any, token 
 		if errors.As(err, &derr) {
 			return Response{}, err
 		}
-		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %s", method, target, phase.reason(err, https))}
+		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %s", method, target, phase.reason(err))}
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
@@ -251,10 +262,10 @@ func Request(ctx context.Context, method, profile, etag string, body any, token 
 		return Response{}, &IncompleteRead{Partial: len(raw), Expected: resp.ContentLength - int64(len(raw)), HasExpected: resp.ContentLength >= 0}
 	}
 	if err != nil {
-		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %s", method, target, phase.reason(err, https))}
+		return Response{}, &TransportError{Message: fmt.Sprintf("%s %s: %s", method, target, phase.reason(err))}
 	}
 	out := Response{Status: resp.StatusCode, Body: parseBody(raw), ETag: resp.Header.Get("ETag")}
-	out.RetryAfter, out.HasRetryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+	out.RetryAfter, out.HasRetryAfter = retryAfterSeconds(resp.Header.Get("Retry-After"), time.Now())
 	return out, nil
 }
 
@@ -274,34 +285,10 @@ func (b *cancelBody) Close() error {
 	return err
 }
 
-// Python str of a truthy value, empty for a falsy one
-func pyTruthyStr(v any) string {
-	switch c := v.(type) {
-	case nil:
+// Text of a truthy plane value, empty for null, false, zero and empty values
+func truthyText(v any) string {
+	if !anyutil.IsTrue(v) {
 		return ""
-	case string:
-		return c
-	case bool:
-		if c {
-			return "True"
-		}
-		return ""
-	case int:
-		if c == 0 {
-			return ""
-		}
-	case float64:
-		if c == 0 {
-			return ""
-		}
-	case map[string]any:
-		if len(c) == 0 {
-			return ""
-		}
-	case []any:
-		if len(c) == 0 {
-			return ""
-		}
 	}
 	return anyutil.String(v)
 }

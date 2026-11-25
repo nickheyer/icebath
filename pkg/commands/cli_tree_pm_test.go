@@ -139,8 +139,8 @@ func TestPMUsageErrors(t *testing.T) {
 		{[]string{"pm"}, "icebath pm: error: the following arguments are required: cmd"},
 		{[]string{"pm", "lock", "--bump", "uv"}, "icebath pm lock: error: --bump NAME and VERSION go together; run with neither to relock uv.lock"},
 		{[]string{"pm", "lock", "0.9.1"}, "icebath pm lock: error: --bump NAME and VERSION go together; run with neither to relock uv.lock"},
-		{[]string{"pm", "update", "--skip-target", "mars-x64"}, "argument --skip-target: invalid choice: 'mars-x64'"},
-		{[]string{"pm", "bundle"}, "icebath pm: error: argument cmd: invalid choice: 'bundle' (choose from 'lock', 'install', 'env', 'doctor', 'repair', 'environment', 'gc', 'status', 'update')"},
+		{[]string{"pm", "update", "--skip-target", "mars-x64"}, `argument --skip-target: invalid choice: "mars-x64"`},
+		{[]string{"pm", "bundle"}, `icebath pm: error: argument cmd: invalid choice: "bundle" (choose from "lock", "install", "env", "doctor", "repair", "environment", "gc", "status", "update")`},
 		{[]string{"pm", "environment"}, "the following arguments are required: name"},
 	}
 	for _, tc := range cases {

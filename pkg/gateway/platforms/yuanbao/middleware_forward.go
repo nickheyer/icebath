@@ -162,7 +162,7 @@ func walkForwardMsgs(forwardData *jsonutil.Object, visit func(sender any, body s
 		}
 		body, isStr := rendered.(string)
 		if !isStr {
-			return &pyErr{"TypeError", fmt.Sprintf("the rendered forward must be text, got %s", errchain.Kind(rendered))}
+			return &kindErr{"TypeError", fmt.Sprintf("the rendered forward must be text, got %s", errchain.Kind(rendered))}
 		}
 		if utf8.RuneCountInString(body) > forwardMsgTextMaxChars {
 			body = textutil.First(body, forwardMsgTextMaxChars) + "…(已截断)"

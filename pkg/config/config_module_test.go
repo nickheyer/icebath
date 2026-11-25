@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
@@ -200,7 +201,7 @@ func TestLoadConfigDefaultsReturnsDefaultsWhenNoFile(t *testing.T) {
 	if !reflect.DeepEqual(cfg["model"], defaults["model"]) {
 		t.Fatalf("model %v, want %v", cfg["model"], defaults["model"])
 	}
-	if !pyEq(cfg.Get("agent.max_turns"), defaults.Get("agent.max_turns")) {
+	if !anyutil.Equal(cfg.Get("agent.max_turns"), defaults.Get("agent.max_turns")) {
 		t.Fatalf("agent.max_turns %v", cfg.Get("agent.max_turns"))
 	}
 	if _, has := cfg["max_turns"]; has {
@@ -320,7 +321,7 @@ func TestSaveAndLoadRoundtripAtomicConfigWriteRefusesPartialStateInsteadOfWiping
 	if err == nil || !isRuntimeError(err) || !strings.Contains(err.Error(), "would lose settings omitted") {
 		t.Fatalf("refusal %v", err)
 	}
-	if got := moduleYAML(t, path); !pyEq(got, original) {
+	if got := moduleYAML(t, path); !anyutil.Equal(got, original) {
 		t.Fatalf("document changed: %v", got)
 	}
 }
@@ -336,7 +337,7 @@ func TestSaveAndLoadRoundtripAtomicConfigWriteRefusesNestedOmissionsWithSameTopL
 	if err == nil || !isRuntimeError(err) || !regexp.MustCompile(`plugins\.(enabled|config)`).MatchString(err.Error()) {
 		t.Fatalf("refusal %v", err)
 	}
-	if got := moduleYAML(t, path); !pyEq(got, original) {
+	if got := moduleYAML(t, path); !anyutil.Equal(got, original) {
 		t.Fatalf("document changed: %v", got)
 	}
 }
@@ -348,7 +349,7 @@ func TestSaveAndLoadRoundtripAtomicConfigReplaceMakesDeleteByOmissionExplicit(t 
 	if err := AtomicConfigReplace(t.Context(), h, path, replacement, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := moduleYAML(t, path); !pyEq(got, replacement) {
+	if got := moduleYAML(t, path); !anyutil.Equal(got, replacement) {
 		t.Fatalf("document %v", got)
 	}
 }
@@ -558,7 +559,7 @@ func TestSaveConfigAtomicityAtomicWriteCreatesValidYaml(t *testing.T) {
 	cfg.Map("agent")["max_turns"] = 77
 	moduleSave(t, h, cfg)
 	raw := moduleYAML(t, path)
-	if raw["model"] != "test/atomic-model" || !pyEq(Tree(raw).Get("agent.max_turns"), 77) {
+	if raw["model"] != "test/atomic-model" || !anyutil.Equal(Tree(raw).Get("agent.max_turns"), 77) {
 		t.Fatalf("raw %v", raw)
 	}
 }

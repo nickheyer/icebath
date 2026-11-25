@@ -6,6 +6,8 @@ import (
 	"maps"
 	"strings"
 	"testing"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Descriptor of a fronted platform in the multi platform cases
@@ -110,7 +112,7 @@ func TestPerChatStreamSemanticsCapabilityGateRespectsChatDescriptor(t *testing.T
 	c.byPlatform["telegram"] = relayDescFor("telegram", "send", "edit", "typing")
 	a.platformByChat["TG2"] = "telegram"
 	_, err := a.SendDraft(context.Background(), "TG2", 5, "x", map[string]any{})
-	var pe *PyError
+	var pe *errorutil.Error
 	if !errors.As(err, &pe) || pe.Kind != "NotImplementedError" {
 		t.Fatalf("err %v", err)
 	}

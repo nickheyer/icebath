@@ -272,7 +272,7 @@ func (s *sessionSearch) rebuildState(ctx context.Context, prefix string) (*ftsRe
 	}
 	progressRaw := meta[prefix+"_progress"]
 	progress := int64(0)
-	if pyTruthy(progressRaw) {
+	if anyutil.IsTrue(progressRaw) {
 		if progress, err = anyutil.ToInt(progressRaw); err != nil {
 			return nil, fmt.Errorf("the %s_progress marker %v is not a whole number", prefix, progressRaw)
 		}
@@ -610,7 +610,7 @@ func teardownPrimaryKey(ctx context.Context, conn SQLiteConn, tbl string) ([]str
 		}
 		if pk > 0 {
 			declared := ""
-			if pyTruthy(typ) {
+			if anyutil.IsTrue(typ) {
 				declared = errText(typ)
 			}
 			names = append(names, name)
@@ -707,10 +707,10 @@ func (s *sessionSearch) ensureCJKSchemaCommitted(ctx context.Context) error {
 // Reports a base index holding nothing while messages has rows, an OperationalError counting as false
 func (s *sessionSearch) ftsExternalIndexEmptyWithMessages(ctx context.Context, conn SQLiteConn) (bool, error) {
 	row, err := fetchOne(ctx, conn, "SELECT EXISTS(SELECT 1 FROM messages)")
-	if err == nil && pyTruthy(row[0]) {
+	if err == nil && anyutil.IsTrue(row[0]) {
 		row, err = fetchOne(ctx, conn, "SELECT EXISTS(SELECT 1 FROM messages_fts_docsize)")
 		if err == nil {
-			return !pyTruthy(row[0]), nil
+			return !anyutil.IsTrue(row[0]), nil
 		}
 	}
 	if err != nil {

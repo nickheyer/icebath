@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Credits and rate limit capture the provider header captures feed for this agent
@@ -29,8 +30,8 @@ func highEffortSilenceFloor(a *AIAgent) float64 {
 		return 0
 	}
 	effort := ""
-	if v := cfg["effort"]; pyTruthy(v) {
-		effort = strings.ToLower(strings.TrimSpace(pyStrValue(v)))
+	if v := cfg["effort"]; anyutil.IsTrue(v) {
+		effort = strings.ToLower(strings.TrimSpace(anyutil.String(v)))
 	}
 	idx := provider.EffortLadderIndex(effort)
 	if idx < 0 || idx < provider.EffortLadderIndex("high") {

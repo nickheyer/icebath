@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Restricts listing to the Kimi alias family with offline models.dev data and the given canonical list
@@ -34,7 +36,7 @@ func stubKimiDiscovery(t *testing.T, canonical []CanonicalProviderEntry) context
 func rowSlugs(rows []map[string]any) []string {
 	var out []string
 	for _, r := range rows {
-		out = append(out, pyOrStr(r["slug"]))
+		out = append(out, anyutil.StringOr(r["slug"], ""))
 	}
 	return out
 }

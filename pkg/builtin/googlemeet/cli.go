@@ -74,7 +74,7 @@ var meetSubcommandHelp = [][2]string{
 func registerMeetCLI(parser any) {
 	root, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(&AttributeError{fmt.Sprintf("'%s' object has no attribute 'add_subparsers'", pyTypeName(parser))})
+		panic(&AttributeError{fmt.Sprintf("'%s' object has no attribute 'add_subparsers'", typeName(parser))})
 	}
 	run := func(cmd *cobra.Command, extra map[string]any) error {
 		ns := map[string]any{"meet_command": cmd.Name()}
@@ -140,7 +140,7 @@ func registerMeetCLI(parser any) {
 func meetHandler(args any) error {
 	ns, ok := args.(map[string]any)
 	if !ok {
-		return &AttributeError{fmt.Sprintf("'%s' object has no attribute 'meet_command'", pyTypeName(args))}
+		return &AttributeError{fmt.Sprintf("'%s' object has no attribute 'meet_command'", typeName(args))}
 	}
 	return exitErr(meetCommand(ns))
 }

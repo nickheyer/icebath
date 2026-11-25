@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -66,7 +65,7 @@ type ddgsInterruptedError struct{ msg string }
 func (e *ddgsInterruptedError) Error() string { return e.msg }
 
 // Seconds of a Python number setting
-func pySeconds(v any) time.Duration {
+func secondsValue(v any) time.Duration {
 	f, err := anyutil.ToFloat(v)
 	if err != nil {
 		return 0
@@ -91,15 +90,15 @@ func (p *ddgsWorkerProc) poll() bool {
 	}
 }
 
-// Popen.returncode text, None while running and the negated signal for a signalled exit
-func (p *ddgsWorkerProc) returncode() string {
-	if !p.poll() || p.state == nil {
-		return "None"
+// How the worker ended as Go reports it ("exit status 1", "signal: killed"), still running or an unknown status when the wait failed
+func (p *ddgsWorkerProc) exitStatus() string {
+	if !p.poll() {
+		return "still running"
 	}
-	if ws, ok := p.state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-		return fmt.Sprint(-int(ws.Signal()))
+	if p.state == nil {
+		return "exit status unknown"
 	}
-	return fmt.Sprint(p.state.ExitCode())
+	return p.state.String()
 }
 
 // Terminates a worker, escalates to kill and waits so no orphan remains
@@ -180,7 +179,7 @@ func ddgsSpawnWorker(childEnv map[string]string) (*ddgsWorkerProc, *os.File, *os
 func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, raise("RuntimeError", "DDGS worker exited without a result (code=%s)", p.returncode())
+		return nil, raise("RuntimeError", "DDGS worker exited without a result (%s)", p.exitStatus())
 	}
 	envelope, err := jsonutil.Decode(raw)
 	if err != nil {
@@ -202,7 +201,7 @@ func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 	}
 	hits := make([]WebSearchHit, 0, len(items))
 	for _, item := range items {
-		row, _ := pyDict(item)
+		row, _ := mappingOf(item)
 		if row == nil {
 			row = jsonutil.NewObject()
 		}
@@ -221,7 +220,7 @@ func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 
 // Runs the search in a disposable worker with a hard deadline, killing it on timeout or interrupt
 func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit int) ([]WebSearchHit, error) {
-	request := pyObject("query", query, "safe_limit", safeLimit)
+	request := jsonutil.ObjectOf("query", query, "safe_limit", safeLimit)
 	childEnv, err := SanitizeSubprocessEnv(ctx, env, environMap(), nil)
 	if err != nil {
 		return nil, err
@@ -230,7 +229,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		request.Set("test_hook", ddgsTestHook)
 		childEnv["ICEBATH_DDGS_ALLOW_TEST_HOOKS"] = "1"
 	}
-	payload, err := jsonutil.Encode(request, jsonutil.Spaced(), jsonutil.ASCII())
+	payload, err := jsonutil.Encode(request)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +249,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 	}()
 	grace := time.Duration(ddgsTerminateGraceSecs * float64(time.Second))
 	interrupted, done, raw := false, false, ""
-	deadline := time.Now().Add(pySeconds(ddgsSearchTimeoutSecs))
+	deadline := time.Now().Add(secondsValue(ddgsSearchTimeoutSecs))
 	for !done {
 		if interrupted = ddgsIsInterrupted(ctx); interrupted {
 			break
@@ -310,7 +309,7 @@ func (p *ddgsProvider) Search(ctx context.Context, env *Env, query string, limit
 		var ie *ddgsInterruptedError
 		switch {
 		case errors.As(err, &te):
-			envLog(env).Warn(fmt.Sprintf("DDGS search timed out after %ds for query: %s", int(pySeconds(ddgsSearchTimeoutSecs)/time.Second), strconv.Quote(query)))
+			envLog(env).Warn(fmt.Sprintf("DDGS search timed out after %ds for query: %s", int(secondsValue(ddgsSearchTimeoutSecs)/time.Second), strconv.Quote(query)))
 			return searchFail(fmt.Sprintf("DuckDuckGo search timed out after %ss — DuckDuckGo may be rate-limiting or slow. Try again later or switch to a different search provider.", anyutil.String(ddgsSearchTimeoutSecs))), nil
 		case errors.As(err, &ie):
 			envLog(env).Info(fmt.Sprintf("DDGS search interrupted for query: %s", strconv.Quote(query)))
@@ -331,11 +330,11 @@ func (p *ddgsProvider) SetupSchema() map[string]any {
 // Worker entrypoint reading one request from stdin and writing one envelope to stdout
 func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv func(string) string) int {
 	write := func(envelope *jsonutil.Object) {
-		text, _ := jsonutil.Encode(envelope, jsonutil.Spaced(), jsonutil.ASCII())
+		text, _ := jsonutil.Encode(envelope)
 		_, _ = io.WriteString(out, text)
 	}
 	fail := func(msg string, code int) int {
-		write(pyObject("ok", false, "error", msg))
+		write(jsonutil.ObjectOf("ok", false, "error", msg))
 		return code
 	}
 	data, err := io.ReadAll(in)
@@ -361,11 +360,11 @@ func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv fun
 		switch name := anyutil.String(hook); name {
 		case "sleep", "gil":
 			time.Sleep(30 * time.Second)
-			envelope = pyObject("ok", false, "error", name+" hook returned unexpectedly")
+			envelope = jsonutil.ObjectOf("ok", false, "error", name+" hook returned unexpectedly")
 		case "empty":
-			envelope = pyObject("ok", true, "results", []any{})
+			envelope = jsonutil.ObjectOf("ok", true, "results", []any{})
 		default:
-			envelope = pyObject("ok", false, "error", "unknown test_hook: "+anyutil.Quote(hook))
+			envelope = jsonutil.ObjectOf("ok", false, "error", "unknown test_hook: "+anyutil.Quote(hook))
 		}
 		write(envelope)
 		if okv, _ := envelope.Get("ok"); anyutil.IsTrue(okv) {
@@ -387,13 +386,13 @@ func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv fun
 	safeLimit = max(1, safeLimit)
 	hits, err := runDDGSSearch(ctx, query, safeLimit)
 	if err != nil {
-		return fail(pyExcClass(err)+": "+err.Error(), 1)
+		return fail(excClass(err)+": "+err.Error(), 1)
 	}
 	rows := make([]any, 0, len(hits))
 	for _, h := range hits {
-		rows = append(rows, pyObject("title", h.Title, "url", h.URL, "description", h.Description, "position", h.Position))
+		rows = append(rows, jsonutil.ObjectOf("title", h.Title, "url", h.URL, "description", h.Description, "position", h.Position))
 	}
-	write(pyObject("ok", true, "results", rows))
+	write(jsonutil.ObjectOf("ok", true, "results", rows))
 	return 0
 }
 

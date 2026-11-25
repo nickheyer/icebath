@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -43,7 +44,7 @@ func ConstructKwargs(frame *jsonutil.Object) (*jsonutil.Object, error) {
 	}
 	request, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the worker construction arguments are " + errchain.Kind(decoded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the worker construction arguments are " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	raw := request.ValueOr("construct_v1", nil)
 	if raw == nil {
@@ -54,7 +55,7 @@ func ConstructKwargs(frame *jsonutil.Object) (*jsonutil.Object, error) {
 	_, promptText := prompt.(string)
 	if !isDict || !frameKeysAre(inputs, constructKeys...) || !dictList(inputs.Value("fallback_model")) ||
 		!dictList(inputs.Value("prefill_messages")) || !(prompt == nil || promptText) {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid_managed_worker_bootstrap"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid_managed_worker_bootstrap"}
 	}
 	return inputs.Clone(), nil
 }

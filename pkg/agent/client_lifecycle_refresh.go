@@ -9,17 +9,6 @@ import (
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
-// Python str of an arbitrary value, empty for nil
-func pyStrValue(v any) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return anyutil.String(v)
-}
-
 // Recomputes TLS material and default headers for the current base url after it may have moved
 func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged bool) error {
 	if a.clientKwargs == nil {
@@ -72,7 +61,7 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 		a.clientKwargs = map[string]any{}
 	}
 	if factory := routeDefaultHeadersFactory(baseURL); factory != nil {
-		headers, err := factory(ctx, pyStrValue(a.clientKwargs["api_key"]), baseURL)
+		headers, err := factory(ctx, anyutil.String(a.clientKwargs["api_key"]), baseURL)
 		if err != nil {
 			return err
 		}
@@ -81,7 +70,7 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 		delete(a.clientKwargs, "default_headers")
 		apiKey := ""
 		if v := a.clientKwargs["api_key"]; anyutil.IsTrue(v) {
-			apiKey = pyStrValue(v)
+			apiKey = anyutil.String(v)
 		}
 		routeHeaders := stringHeaders(provider.RouteAnswer(ctx, "client_headers", a.provider, a, map[string]any{"base_url": baseURL, "api_key": apiKey}))
 		if len(routeHeaders) > 0 {

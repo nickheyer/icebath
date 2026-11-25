@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -127,7 +128,7 @@ func NormalizeProjectSlug(slug string) (string, error) {
 		return "", nil
 	}
 	if !projectSlugRe.MatchString(s) {
-		return "", projectValueErrorf("invalid project slug %s: must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with '-' or '_'", pyRepr(slug))
+		return "", projectValueErrorf("invalid project slug %s: must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with '-' or '_'", strconv.Quote(slug))
 	}
 	return s, nil
 }

@@ -1,14 +1,13 @@
 package telegram
 
 import (
-	"math/big"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
 func TestNormalizeReturnsIntOrPassthroughString(t *testing.T) {
-	huge, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
+	huge := "123456789012345678901234567890"
 	for _, c := range []struct {
 		value, want any
 	}{
@@ -19,16 +18,16 @@ func TestNormalizeReturnsIntOrPassthroughString(t *testing.T) {
 		{"@some_user", "@some_user"},
 		{"@a_channel", "@a_channel"},
 		{"not_numeric", "not_numeric"},
-		{nil, "None"},
-		{5.0, "5.0"},
+		{nil, ""},
+		{5.0, int64(5)},
 		{"1_000", int64(1000)},
 	} {
 		if got := NormalizeTelegramChatID(c.value); got != c.want {
 			t.Errorf("NormalizeTelegramChatID(%#v) = %#v, want %#v", c.value, got, c.want)
 		}
 	}
-	if got, ok := NormalizeTelegramChatID(huge.String()).(*big.Int); !ok || got.Cmp(huge) != 0 {
-		t.Errorf("big chat id = %#v", got)
+	if got := NormalizeTelegramChatID(" " + huge + " "); got != huge {
+		t.Errorf("chat id past int64 = %#v, want the stripped text", got)
 	}
 }
 
@@ -83,7 +82,7 @@ func TestParseTelegramMessageIDAnchors(t *testing.T) {
 		want  int64
 	}{
 		{true, 0}, {false, 0}, {42, 42}, {0, 0}, {-3, 0}, {"17", 17}, {" 17 ", 17}, {"0", 0}, {"-5", 0},
-		{"+5", 0}, {"１２", 0}, {`{"kind":"loop-tick"}`, 0}, {nil, 0}, {3.0, 0}, {"", 0}, {uint64(9), 9},
+		{"+5", 0}, {"１２", 0}, {`{"kind":"loop-tick"}`, 0}, {nil, 0}, {3.0, 3}, {3.5, 0}, {"", 0}, {uint64(9), 9},
 	} {
 		got := ParseTelegramMessageID(c.value)
 		if (got == nil) != (c.want == 0) || (got != nil && got.Int64() != c.want) {

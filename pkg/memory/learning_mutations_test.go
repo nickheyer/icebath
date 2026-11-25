@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const journeySkill = "---\nname: my-skill\ndescription: A test skill.\n---\n\n# My Skill\n\nBody.\n"
@@ -73,7 +74,7 @@ func TestEditMemoryReplacesChunk(t *testing.T) {
 func TestEditMemoryRefusesAnEntryOverTheMemoryToolsLimit(t *testing.T) {
 	ctx, h := journeyHome(t)
 	res := mustNode(t)(EditNode(ctx, nil, "memory:profile:2", strings.Repeat("x", 5000)))
-	if res["ok"] != false || !strings.Contains(pyStr(res["message"]), "Shorten") {
+	if res["ok"] != false || !strings.Contains(anyutil.String(res["message"]), "Shorten") {
 		t.Fatalf("edit = %v", res)
 	}
 	userPath := filepath.Join(h, "memories", "USER.md")
@@ -129,7 +130,7 @@ func TestDeletePinnedSkillRefused(t *testing.T) {
 	ctx, h := journeyHome(t)
 	writeTestFile(t, filepath.Join(h, "skills", ".usage.json"), []byte(`{"my-skill": {"pinned": true}}`))
 	res := mustNode(t)(DeleteNode(ctx, nil, "my-skill"))
-	if res["ok"] != false || !strings.Contains(pyStr(res["message"]), "pinned") {
+	if res["ok"] != false || !strings.Contains(anyutil.String(res["message"]), "pinned") {
 		t.Fatalf("delete = %v", res)
 	}
 	if _, err := os.Stat(filepath.Join(h, "skills", "my-skill")); err != nil {
@@ -272,7 +273,7 @@ func TestUnreadableMemoryFileIsRefusedUnchanged(t *testing.T) {
 	raw := []byte("alpha note\n\xc3\x28\n\xc2\xa7\nbeta")
 	writeTestFile(t, path, raw)
 	res := mustNode(t)(DeleteNode(ctx, nil, "memory:memory:0"))
-	if res["ok"] != false || !strings.Contains(pyStr(res["message"]), "could not be read") {
+	if res["ok"] != false || !strings.Contains(anyutil.String(res["message"]), "could not be read") {
 		t.Fatalf("delete = %v", res)
 	}
 	if readText(t, path) != string(raw) {
@@ -324,7 +325,7 @@ func TestMutationTargetsTheClickedCardWhenTheListShiftedBeforeSubmit(t *testing.
 				t.Fatalf("entries = %q", got)
 			}
 			res := mutate()
-			if res["ok"] != false || !strings.Contains(pyStr(res["message"]), "stale") {
+			if res["ok"] != false || !strings.Contains(anyutil.String(res["message"]), "stale") {
 				t.Fatalf("second = %v", res)
 			}
 		})

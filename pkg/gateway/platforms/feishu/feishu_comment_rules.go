@@ -442,6 +442,14 @@ func metaGet(meta any, key string, def any) (any, error) {
 	return objGet(obj, key, def), nil
 }
 
+// Approval time of a pairing entry as listed, null for a stored null
+func approvalStamp(at any) string {
+	if at == nil {
+		return "null"
+	}
+	return anyutil.String(at)
+}
+
 // Prints the rules config, every document rule and the pairing approvals
 func printStatus(ctx context.Context, w io.Writer) error {
 	cfg, err := LoadConfig(ctx)
@@ -492,7 +500,7 @@ func printStatus(ctx context.Context, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "  %s  (approved_at=%s)\n", uid, anyutil.String(at))
+		fmt.Fprintf(w, "  %s  (approved_at=%s)\n", uid, approvalStamp(at))
 	}
 	return nil
 }
@@ -501,7 +509,7 @@ func printStatus(ctx context.Context, w io.Writer) error {
 func doCheck(ctx context.Context, w io.Writer, docKey, userOpenID string) error {
 	parts := strings.SplitN(docKey, ":", 2)
 	if len(parts) != 2 {
-		fmt.Fprintf(w, "Error: doc_key must be 'fileType:fileToken', got '%s'\n", docKey)
+		fmt.Fprintf(w, "Error: doc_key must be \"fileType:fileToken\", got %q\n", docKey)
 		return nil
 	}
 	cfg, err := LoadConfig(ctx)
@@ -555,7 +563,7 @@ func pairingCmd(ctx context.Context, w io.Writer, args []string) (int, error) {
 			if err != nil {
 				return 0, err
 			}
-			lines = append(lines, fmt.Sprintf("  %s  approved_at=%s", uid, anyutil.String(at)))
+			lines = append(lines, fmt.Sprintf("  %s  approved_at=%s", uid, approvalStamp(at)))
 		}
 		fmt.Fprintln(w, strings.Join(lines, "\n"))
 		return 0, nil

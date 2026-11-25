@@ -237,7 +237,7 @@ func repairInternalAlphaHoles(rgba *image.NRGBA) *image.NRGBA {
 		color := [4]uint8{0, 0, 0, 255}
 		if n > 0 {
 			for i := 0; i < 3; i++ {
-				color[i] = uint8(pyRound(float64(sums[i]) / float64(n)))
+				color[i] = uint8(roundHalfEven(float64(sums[i]) / float64(n)))
 			}
 		}
 		for _, p := range hole {
@@ -259,7 +259,7 @@ func fitToCell(img *image.NRGBA) *image.NRGBA {
 	sw, sh := size(sprite)
 	scale := math.Min(math.Min(float64(cellWidth-cellPad)/float64(sw), float64(cellHeight-cellPad)/float64(sh)), 1.0)
 	if scale != 1.0 {
-		sprite = resizeNearest(sprite, max(1, pyRound(float64(sw)*scale)), max(1, pyRound(float64(sh)*scale)))
+		sprite = resizeNearest(sprite, max(1, roundHalfEven(float64(sw)*scale)), max(1, roundHalfEven(float64(sh)*scale)))
 		sw, sh = size(sprite)
 	}
 	return place(sprite, cellWidth, cellHeight, floorDiv(cellWidth-sw, 2), floorDiv(cellHeight-sh, 2))
@@ -425,7 +425,7 @@ func isolateSlotSubject(img *image.NRGBA) *image.NRGBA {
 
 // Whether the box leaves empty room on all four edges, at least 4 and at most 12 or 16 pixels
 func hasMargin(w, h int, b Box, fx, fy float64) bool {
-	minX, minY := max(4, min(12, pyRound(float64(w)*fx))), max(4, min(16, pyRound(float64(h)*fy)))
+	minX, minY := max(4, min(12, roundHalfEven(float64(w)*fx))), max(4, min(16, roundHalfEven(float64(h)*fy)))
 	return b[0] >= minX && b[1] >= minY && w-b[2] >= minX && h-b[3] >= minY
 }
 
@@ -530,7 +530,7 @@ func componentCrops(strip *image.NRGBA, frameCount int, requirePadding bool) []*
 		multirow := len(rows) > 1
 		var frames []*image.NRGBA
 		for _, b := range ordered {
-			padX, padY := max(8, pyRound(float64(b[2]-b[0])*0.08)), max(8, pyRound(float64(b[3]-b[1])*0.08))
+			padX, padY := max(8, roundHalfEven(float64(b[2]-b[0])*0.08)), max(8, roundHalfEven(float64(b[3]-b[1])*0.08))
 			cl, cr := 0, sw
 			if frameCount != 1 {
 				cl, cr = max(0, b[0]-padX), min(sw, b[2]+padX)
@@ -557,9 +557,9 @@ func severExpectedGutters(strip *image.NRGBA, frameCount int) *image.NRGBA {
 	out := copyImage(strip)
 	w, h := size(out)
 	slot := float64(w) / float64(frameCount)
-	half := max(3, min(18, pyRound(slot*0.06)))
+	half := max(3, min(18, roundHalfEven(slot*0.06)))
 	for i := 1; i < frameCount; i++ {
-		x := pyRound(float64(i) * slot)
+		x := roundHalfEven(float64(i) * slot)
 		for y := 0; y < h; y++ {
 			for xx := max(0, x-half); xx < min(w, x+half+1); xx++ {
 				out.Pix[pixOff(out, xx, y)+3] = 0
@@ -577,8 +577,8 @@ func slotCrops(strip *image.NRGBA, frameCount int, requirePadding bool) []*image
 	w, h := size(strip)
 	frames := make([]*image.NRGBA, frameCount)
 	for i := 0; i < frameCount; i++ {
-		left := pyRound(float64(i) * float64(w) / float64(frameCount))
-		right := pyRound(float64(i+1) * float64(w) / float64(frameCount))
+		left := roundHalfEven(float64(i) * float64(w) / float64(frameCount))
+		right := roundHalfEven(float64(i+1) * float64(w) / float64(frameCount))
 		frames[i] = cleanSlot(crop(strip, Box{left, 0, right, h}))
 	}
 	if requirePadding {
@@ -743,7 +743,7 @@ func salvageFrames(strip *image.NRGBA, frameCount int) []*image.NRGBA {
 		return slotCrops(source, frameCount, false)
 	}
 	w, h := size(source)
-	pad := max(2, min(16, pyRound(float64(w)/float64(max(1, frameCount))*0.04)))
+	pad := max(2, min(16, roundHalfEven(float64(w)/float64(max(1, frameCount))*0.04)))
 	out := make([]*image.NRGBA, len(ranges))
 	for i, r := range ranges {
 		out[i] = cleanSlot(crop(source, Box{max(0, r[0]-pad), 0, min(w, r[1]+pad), h}))
@@ -849,9 +849,9 @@ func NormalizeCells(framesByState []StateFrames, pad int) map[string][]*image.NR
 	}
 	for _, p := range prepared {
 		scale := k / float64(max(1, p.poseH))
-		sw := max(1, pyRound(float64(p.union[2]-p.union[0])*scale))
-		sh := max(1, pyRound(float64(p.union[3]-p.union[1])*scale))
-		ox, oy := pyRound(float64(cellWidth-sw)/2), (cellHeight-pad/2)-sh
+		sw := max(1, roundHalfEven(float64(p.union[2]-p.union[0])*scale))
+		sh := max(1, roundHalfEven(float64(p.union[3]-p.union[1])*scale))
+		ox, oy := roundHalfEven(float64(cellWidth-sw)/2), (cellHeight-pad/2)-sh
 		frames := make([]*image.NRGBA, len(p.aligned))
 		for i, a := range p.aligned {
 			c := crop(a, p.union)
@@ -973,7 +973,7 @@ func checkAtlasCells(atlas *image.NRGBA) ([]string, []string, []string) {
 	globalW, globalH := 0, 0
 	if len(all) > 0 {
 		globalW, globalH = medianBoxSize(all)
-		if globalH < max(56, pyRound(float64(cellHeight)*0.28)) {
+		if globalH < max(56, roundHalfEven(float64(cellHeight)*0.28)) {
 			errs = append(errs, fmt.Sprintf("atlas sprites are too small after normalization (median frame height %dpx)", globalH))
 		}
 	}
@@ -989,7 +989,7 @@ func checkAtlasCells(atlas *image.NRGBA) ([]string, []string, []string) {
 		if isMultiPoseOutlier(maxW, maxH, medW, medH) {
 			errs = append(errs, fmt.Sprintf("state '%s' contains a multi-pose frame outlier", sb.state))
 		}
-		collapsed := medW < max(32, pyRound(float64(globalW)*0.42)) || medH < max(40, pyRound(float64(globalH)*0.50))
+		collapsed := medW < max(32, roundHalfEven(float64(globalW)*0.42)) || medH < max(40, roundHalfEven(float64(globalH)*0.50))
 		if globalW != 0 && globalH != 0 && collapsed {
 			errs = append(errs, fmt.Sprintf("state '%s' appears collapsed (median %dx%dpx, global median %dx%dpx)", sb.state, medW, medH, globalW, globalH))
 		}

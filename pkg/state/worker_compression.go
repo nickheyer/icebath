@@ -157,7 +157,7 @@ func workerCompressionLock(action string) WorkerHandler {
 		switch action {
 		case "acquire":
 			acquired, _, err := claimLeaseRow(ctx, conn, "compression_locks", "session_id", sid, holder, t, t+ttl, func(h, e any) bool {
-				expires, _ := pyFloatOf(e)
+				expires, _ := floatOf(e)
 				name, _ := h.(string)
 				return expires < t || compressionLockHolderProcessIsDead(name)
 			})
@@ -541,7 +541,7 @@ func workerArchive(d *SessionDB, ctx context.Context, conn SQLiteConn, sid strin
 	}
 	rawCarried, _ := payload.Get("carried_messages")
 	carried := []map[string]any{}
-	if pyTruthy(rawCarried) {
+	if anyutil.IsTrue(rawCarried) {
 		if carried, err = optionalDictList(rawCarried); err != nil {
 			return nil, err
 		}
@@ -801,7 +801,7 @@ func workerReceiptAssignment(ctx context.Context, conn SQLiteConn, executionID, 
 		resultText, _ := rowValue(receipt, "result_json").(string)
 		decoded, err := jsonutil.Decode(resultText)
 		if err != nil {
-			return nil, pyValueError(err.Error())
+			return nil, valueError(err.Error())
 		}
 		result, _ := decoded.(*jsonutil.Object)
 		var assignment *jsonutil.Object
@@ -819,7 +819,7 @@ func workerReceiptAssignment(ctx context.Context, conn SQLiteConn, executionID, 
 				if err != nil {
 					return nil, err
 				}
-				return workerAssignment(ctx, conn, executionID, pyStr(current), generation)
+				return workerAssignment(ctx, conn, executionID, anyutil.String(current), generation)
 			}
 		}
 	}
@@ -846,7 +846,7 @@ func (d *SessionDB) WorkerClaimOrigin(ctx context.Context, params *jsonutil.Obje
 	text, _ := rowValue(row, "result_json").(string)
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	return receiptPath(decoded, "worker_assignment", "parent")
 }
@@ -889,7 +889,7 @@ func (d *SessionDB) WorkerRetryTarget(ctx context.Context, params *jsonutil.Obje
 	sequence, _ := exactInt(rawSequence)
 	var row *jsonutil.Object
 	if err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
-		row, err = workerReceiptAssignment(ctx, conn, pyStr(executionID), target, generation, sequence, digest)
+		row, err = workerReceiptAssignment(ctx, conn, anyutil.String(executionID), target, generation, sequence, digest)
 		return err
 	}); err != nil {
 		return nil, err
@@ -918,7 +918,7 @@ func reopenOnConnection(ctx context.Context, conn SQLiteConn, sessionID string) 
 		if expiresAt == nil {
 			return false, nil
 		}
-		exp, err := pyFloatOf(expiresAt)
+		exp, err := floatOf(expiresAt)
 		if err != nil {
 			return false, err
 		}

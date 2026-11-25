@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -353,7 +354,7 @@ func oneTarget(ctx context.Context, sessionID, requestID string, conn state.SQLi
 		return err
 	}
 	for _, row := range rows {
-		target, err := pyItem(row, "target_session_id")
+		target, err := itemValue(row, "target_session_id")
 		if err != nil {
 			return err
 		}
@@ -430,7 +431,7 @@ func RunAPITurn(ctx context.Context, adapter APITurnAdapter, turn *APITurn) (map
 				data[key] = prompt.Value(key)
 			}
 		}
-		promptID, err := pyItem(prompt, "prompt_id")
+		promptID, err := itemValue(prompt, "prompt_id")
 		if err != nil {
 			return err
 		}
@@ -461,7 +462,7 @@ func apiChoicesContain(collection any, item string) (bool, error) {
 	if text, isText := collection.(string); isText {
 		return strings.Contains(text, item), nil
 	}
-	members, err := pyIterMembers(collection)
+	members, err := iterMembers(collection)
 	if err != nil {
 		return false, err
 	}
@@ -561,7 +562,7 @@ func topLevelMap(value any) (map[string]any, error) {
 	case map[string]any:
 		return v, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
 }
 
 // Saved result and usage of a settled admission, an interrupted empty reply for a cancelled one
@@ -576,9 +577,9 @@ func settledAPIResult(ctx context.Context, a *SessionAuthority, admissionID stri
 			return nil, nil, err
 		}
 		if current == nil {
-			return nil, nil, &PyError{Kind: "TypeError", Msg: "the settled API turn result is missing"}
+			return nil, nil, &errorutil.Error{Kind: "TypeError", Msg: "the settled API turn result is missing"}
 		}
-		outcome, err := pyItem(current, "outcome")
+		outcome, err := itemValue(current, "outcome")
 		if err != nil {
 			return nil, nil, err
 		}
@@ -587,11 +588,11 @@ func settledAPIResult(ctx context.Context, a *SessionAuthority, admissionID stri
 		}
 		return nil, nil, runtimeRefusal("unknown_execution")
 	}
-	rawResult, err := pyItem(saved, "result")
+	rawResult, err := itemValue(saved, "result")
 	if err != nil {
 		return nil, nil, err
 	}
-	rawUsage, err := pyItem(saved, "usage")
+	rawUsage, err := itemValue(saved, "usage")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -622,13 +623,13 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 	events := live.EventStream
 	admissionID := rowString(row, "admission_id")
 	observer := &SessionEventObserver{Observe: func(frame *jsonutil.Object) {
-		rawParams, err := pyItem(frame, "params")
+		rawParams, err := itemValue(frame, "params")
 		if err != nil {
 			panic(err)
 		}
 		params, isDict := rawParams.(*jsonutil.Object)
 		if !isDict {
-			panic(&PyError{Kind: "AttributeError", Msg: "the API control parameters are " + errchain.Kind(rawParams) + ", expected a mapping"})
+			panic(&errorutil.Error{Kind: "AttributeError", Msg: "the API control parameters are " + errchain.Kind(rawParams) + ", expected a mapping"})
 		}
 		eventType, _ := params.ValueOr("type", nil).(string)
 		if params.ValueOr("admission_id", nil) != any(admissionID) || !apiControlEvents[eventType] {
@@ -656,7 +657,7 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 		if rowString(current, "status") != AdmissionStarted {
 			return nil
 		}
-		generation, err := pyItem(current, "generation")
+		generation, err := itemValue(current, "generation")
 		if err != nil {
 			return err
 		}
@@ -665,13 +666,13 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 			stamp = &value
 		}
 		for _, prompt := range live.controls.snapshotObjects(ref.SessionID, stamp) {
-			rawKind, err := pyItem(prompt, "kind")
+			rawKind, err := itemValue(prompt, "kind")
 			if err != nil {
 				return err
 			}
 			kind, isText := rawKind.(string)
 			if !isText {
-				return &PyError{Kind: "TypeError", Msg: "the API control kind is " + errchain.Kind(rawKind) + ", expected text"}
+				return &errorutil.Error{Kind: "TypeError", Msg: "the API control kind is " + errchain.Kind(rawKind) + ", expected text"}
 			}
 			if err := sink(kind+".request", prompt); err != nil {
 				return err
@@ -719,7 +720,7 @@ func OwnsAPIRun(ctx context.Context, adapter APIRunAdmitter, runID, ownerScope s
 	if row == nil {
 		return false, nil
 	}
-	stored, err := pyItem(row, "payload", "api_turn_v1", "run_owner_scope")
+	stored, err := itemValue(row, "payload", "api_turn_v1", "run_owner_scope")
 	if err != nil {
 		return false, nil
 	}

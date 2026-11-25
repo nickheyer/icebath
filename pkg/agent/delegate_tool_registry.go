@@ -115,7 +115,7 @@ func (a *AIAgent) liveTranscript() any {
 
 // Registry key of a subagent id value, empty for a falsy id
 func subagentKey(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)
@@ -268,7 +268,7 @@ func SteerSubagent(subagentID, text string, ownerSessionID *string, ownerTranspo
 	activeSubagentsMu.Lock()
 	defer activeSubagentsMu.Unlock()
 	record := activeSubagents.get(subagentID)
-	if len(record) == 0 || !pyTruthy(record["accepting_steer"]) {
+	if len(record) == 0 || !anyutil.IsTrue(record["accepting_steer"]) {
 		return false
 	}
 	if ownerSessionID != nil && (record["owner_session_id"] != *ownerSessionID || ownerTransport == nil ||
@@ -448,7 +448,7 @@ func listSubagentsPayload(parent *AIAgent) *jsonutil.Object {
 		} else {
 			entry.Set("running_seconds", nil)
 		}
-		entry.Set("accepting_steer", pyTruthy(r["accepting_steer"]))
+		entry.Set("accepting_steer", anyutil.IsTrue(r["accepting_steer"]))
 		var transcript any
 		if h, ok := r["agent"].(liveTranscriptHolder); ok && !isNilAgent(r["agent"]) {
 			transcript = h.liveTranscript()
@@ -490,7 +490,7 @@ var controlOutcomes = map[string][3]string{
 
 // Text of an optional string argument, an error naming the argument for any other value
 func controlText(name string, v any) (string, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	s, ok := v.(string)

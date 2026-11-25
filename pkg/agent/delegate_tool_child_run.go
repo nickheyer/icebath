@@ -692,7 +692,7 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 	}
 	firstText, _ := result["final_response"].(string)
 	valid, errs := mustValidateOutput(firstText, schema)
-	if valid || strings.TrimSpace(firstText) == "" || pyTruthy(result["interrupted"]) {
+	if valid || strings.TrimSpace(firstText) == "" || anyutil.IsTrue(result["interrupted"]) {
 		return schemaOutcome{schema, boolPtr(valid), errs, 0}
 	}
 	var retry map[string]any
@@ -734,9 +734,6 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 	}
 	return schemaOutcome{schema, boolPtr(valid), errs, 1}
 }
-
-// Python frames under validate_output when attach_worktree or emit_complete revalidates a redacted summary in the reference
-const emitCompleteValidateDepth = 31
 
 // validate_output, a validator exception raised so the child run reports it as its failure
 func mustValidateOutput(text string, schema any) (bool, []string) {
@@ -781,7 +778,7 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 				tc, _ := jsonutil.AsMap(raw)
 				fn, _ := jsonutil.AsMap(tc["function"])
 				name := "unknown"
-				if n, ok := fn["name"]; ok {
+				if n := fn["name"]; n != nil {
 					name = anyutil.String(n)
 				}
 				arguments, _ := fn["arguments"].(string)
@@ -823,7 +820,7 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 	interruptNote := ""
 	var status, exitReason string
 	switch {
-	case pyTruthy(result["interrupted"]):
+	case anyutil.IsTrue(result["interrupted"]):
 		status, exitReason = "interrupted", "interrupted"
 		sentinels := map[string]bool{"": true, strings.TrimSpace(summary): true, "Operation interrupted.": true}
 		msgs := resultMessages(result["messages"])
@@ -840,11 +837,11 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 		if partial != "" {
 			interruptNote, summary = strings.TrimSpace(summary), partial
 		}
-	case pyTruthy(result["failed"]) || pyTruthy(result["error"]):
+	case anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["error"]):
 		status, exitReason = "failed", "error"
 	default:
 		exitReason = "max_iterations"
-		if pyTruthy(result["completed"]) {
+		if anyutil.IsTrue(result["completed"]) {
 			exitReason = "completed"
 		}
 		status = "failed"
@@ -1064,7 +1061,7 @@ func (r *childRun) attachWorktree(entry *jsonutil.Object) *jsonutil.Object {
 }
 
 func redactedEntry(child *AIAgent, entry *jsonutil.Object) *jsonutil.Object {
-	out, ok := tools.RedactChildResultAt(child.env, entry, child.delegateOutputSchema, false, emitCompleteValidateDepth).(*jsonutil.Object)
+	out, ok := tools.RedactChildResult(child.env, entry, child.delegateOutputSchema, false).(*jsonutil.Object)
 	if !ok {
 		return entry
 	}
@@ -1266,7 +1263,7 @@ func (r *childRun) awaitChild() (map[string]any, *jsonutil.Object, bool) {
 		errText = waitErr.Error()
 	case staleAfter != nil:
 		errText = fmt.Sprintf("Subagent stopped making progress after %d API call(s) — no activity for "+
-			"%ss (heartbeat stale threshold); the pending worker was abandoned.", childAPICalls, pyFormatG(*staleAfter))
+			"%ss (heartbeat stale threshold); the pending worker was abandoned.", childAPICalls, formatG(*staleAfter))
 	case beforeFirstCall:
 		errText = fmt.Sprintf("Subagent timed out after %ss without making any API call — the child never reached its "+
 			"first LLM request (prompt construction, credential resolution, or transport may be stuck).", timeoutText)
@@ -1329,7 +1326,7 @@ func (r *childRun) awaitChild() (map[string]any, *jsonutil.Object, bool) {
 }
 
 // Python general format of a float, the shortest of fixed or exponent notation
-func pyFormatG(v float64) string {
+func formatG(v float64) string {
 	return strings.TrimSuffix(strings.TrimSuffix(fmt.Sprintf("%g", v), ".0"), "+00")
 }
 

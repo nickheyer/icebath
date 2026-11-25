@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
@@ -247,7 +248,7 @@ func (l *LocalSessionAdapter) unanswerableClarify(ctx context.Context, chatID st
 		}
 		payload, has := row.Get("payload")
 		if !has {
-			return nil, &pyKeyError{key: "payload"}
+			return nil, &keyError{key: "payload"}
 		}
 		if payloadNames(payload, "local_automation_v1") {
 			return decline("Clarification is unavailable: no viewer can answer this chat")
@@ -305,7 +306,7 @@ func authorizeLocalSource(runner any, source *SessionSource) (*bool, error) {
 	owners := allAuthorities(runner)
 	profiled, ok := runner.(profileAdaptersRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "runner has no attribute '_adapters_for_profile'"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "runner has no attribute '_adapters_for_profile'"}
 	}
 	held, _ := profiled.AdaptersForProfile(source.Profile).Get(PlatformLocal)
 	adapter, isLocal := held.(*LocalSessionAdapter)

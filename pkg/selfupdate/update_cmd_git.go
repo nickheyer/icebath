@@ -330,7 +330,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 	for _, line := range textutil.Lines(promisor.Stdout) {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
-			return false, "", &pm.PyError{Class: "IndexError", Message: "git printed an empty status line"}
+			return false, "", &pm.ClassError{Class: "IndexError", Message: "git printed an empty status line"}
 		}
 		if strings.ToLower(fields[len(fields)-1]) != "false" {
 			return true, "unmerged:" + strconv.FormatInt(aheadCount, 10), nil
@@ -818,7 +818,7 @@ func npmLockfileOwners(repoRoot string) (map[string]bool, error) {
 	}
 	pkg, ok := jsonutil.AsObject(parsed)
 	if !ok {
-		return nil, &pm.PyError{Class: "AttributeError", Message: "package-lock.json is " + errchain.Kind(parsed) + " where a mapping was expected"}
+		return nil, &pm.ClassError{Class: "AttributeError", Message: "package-lock.json is " + errchain.Kind(parsed) + " where a mapping was expected"}
 	}
 	var workspaces any = []any{}
 	if value, set := pkg.Get("workspaces"); set {

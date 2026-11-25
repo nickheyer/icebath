@@ -32,8 +32,8 @@ func TestLivenessParseContract(t *testing.T) {
 		text string
 	}{
 		{[]any{}, "liveness must be an object"},
-		{map[string]any{"kind": "unknown"}, "unknown liveness kind: 'unknown'"},
-		{map[string]any{}, "unknown liveness kind: None"},
+		{map[string]any{"kind": "unknown"}, `unknown liveness kind: "unknown"`},
+		{map[string]any{}, "liveness has no kind"},
 		{map[string]any{"kind": "static", "path": "x"}, "static liveness only accepts 'kind'"},
 		{map[string]any{"kind": "interactive_session", "x": 1}, "interactive_session liveness only accepts 'kind'"},
 		{map[string]any{"kind": "server_json", "path": "/p", "port": 1}, "server_json liveness has unknown fields"},

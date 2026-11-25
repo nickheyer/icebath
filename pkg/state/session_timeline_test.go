@@ -73,7 +73,7 @@ func timelineEntries(page *jsonutil.Object) []*jsonutil.Object {
 func timelinePreviews(page *jsonutil.Object) []string {
 	out := []string{}
 	for _, e := range timelineEntries(page) {
-		out = append(out, pyStr(rowValue(e, "preview")))
+		out = append(out, anyutil.String(rowValue(e, "preview")))
 	}
 	return out
 }
@@ -123,13 +123,13 @@ func TestTimelinePagesProjectHumanPromptsWithoutToolPayloads(t *testing.T) {
 	}
 	second := timelinePage(t, db, sid, 1, timelineID(t, pageField(first, "next_cursor")))
 	rows := timelineEntries(second)
-	if len(rows) != 1 || !anyutil.Equal(rowValue(rows[0], "row_id"), expected[1]) || utf8.RuneCountInString(pyStr(rowValue(rows[0], "preview"))) != 120 {
+	if len(rows) != 1 || !anyutil.Equal(rowValue(rows[0], "row_id"), expected[1]) || utf8.RuneCountInString(anyutil.String(rowValue(rows[0], "preview"))) != 120 {
 		t.Fatalf("second page %v", jsonutil.Plain(second))
 	}
 	if pageField(second, "has_more") != false || pageField(second, "next_cursor") != nil {
 		t.Fatalf("second pagination %v", jsonutil.Plain(pageField(second, "next_cursor")))
 	}
-	text, err := pyDumps(first, pyJSONDefault)
+	text, err := dumpsValue(first, jsonDefault)
 	if err != nil || strings.Contains(text, "secret tool payload") {
 		t.Fatalf("tool payload leaked into %s %v", text, err)
 	}

@@ -6,6 +6,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One skill declared config variable as config show lists it
@@ -113,8 +115,8 @@ func (p showPrinter) skillSettings(src ShowSources) {
 	p.section("Skill Settings")
 	for _, v := range vars {
 		display := colorize("(not set)", ColorDim)
-		if val := resolved[v.Key]; PyTruthy(val) {
-			display = PyStr(val)
+		if val := resolved[v.Key]; anyutil.IsTrue(val) {
+			display = ShowValue(val)
 		}
 		p.line("  %-20s %s  %s", v.Key, display, colorize("["+v.Skill+"]", ColorDim))
 	}

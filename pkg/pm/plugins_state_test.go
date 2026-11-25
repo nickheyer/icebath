@@ -32,8 +32,8 @@ func wsSelection(t *testing.T, opts EnabledPluginsOptions) map[string][]string {
 // Requires a ValueError whose message names path
 func wsRequireValueError(t *testing.T, err error, path string) {
 	t.Helper()
-	var pyErr *PyError
-	if !errors.As(err, &pyErr) || pyErr.Class != "ValueError" || !strings.Contains(pyErr.Message, path) {
+	var kindErr *ClassError
+	if !errors.As(err, &kindErr) || kindErr.Class != "ValueError" || !strings.Contains(kindErr.Message, path) {
 		t.Fatalf("want ValueError naming %s, got %v", path, err)
 	}
 }

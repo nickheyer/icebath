@@ -17,7 +17,7 @@ const openAINativeUnsupportedMsg = "openai-native declares OpenAI's server-side 
 
 // Value under key of a decoded dict, nil for every other type
 func dget(obj any, key string) any {
-	if d, ok := pyDict(obj); ok {
+	if d, ok := mappingOf(obj); ok {
 		v, _ := d.Get(key)
 		return v
 	}
@@ -25,7 +25,7 @@ func dget(obj any, key string) any {
 }
 
 // Stripped str of a value or empty for a falsy one, the str(x or "").strip() idiom
-func pyStrOrEmptyStripped(v any) string {
+func strOrEmptyStrippedValue(v any) string {
 	if !anyutil.IsTrue(v) {
 		return ""
 	}
@@ -54,7 +54,7 @@ func probeCodexCredentials(env *Env) bool {
 		return false
 	}
 	tokens := dget(dget(dget(store, "providers"), "openai-codex"), "tokens")
-	if pyStrOrEmptyStripped(dget(tokens, "access_token")) != "" {
+	if strOrEmptyStrippedValue(dget(tokens, "access_token")) != "" {
 		return true
 	}
 	entries, ok := dget(dget(store, "credential_pool"), "openai-codex").([]any)
@@ -62,12 +62,12 @@ func probeCodexCredentials(env *Env) bool {
 		return false
 	}
 	for _, e := range entries {
-		if d, ok := pyDict(e); ok {
+		if d, ok := mappingOf(e); ok {
 			token, found := d.Get("access_token")
 			if !found {
 				token = ""
 			}
-			if pyStrOrEmptyStripped(token) != "" {
+			if strOrEmptyStrippedValue(token) != "" {
 				return true
 			}
 		}

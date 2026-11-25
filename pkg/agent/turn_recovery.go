@@ -388,10 +388,10 @@ var rateLimitReasons = map[provider.FailoverReason]bool{
 // Activates the configured fallback when a codex app server turn failed on a billing or rate limit verdict
 func activateCodexAppServerFallback(ctx context.Context, a *AIAgent, result map[string]any) bool {
 	errV := result["error"]
-	if !pyTruthy(errV) || pyTruthy(result["interrupted"]) || !a.hasPendingFallback() {
+	if !anyutil.IsTrue(errV) || anyutil.IsTrue(result["interrupted"]) || !a.hasPendingFallback() {
 		return false
 	}
-	classified := provider.ClassifyError(provider.ClassifyInput{Err: errors.New(pyStr(errV)), Provider: a.provider, Model: a.model})
+	classified := provider.ClassifyError(provider.ClassifyInput{Err: errors.New(anyutil.String(errV)), Provider: a.provider, Model: a.model})
 	if !rateLimitReasons[classified.Reason] {
 		return false
 	}

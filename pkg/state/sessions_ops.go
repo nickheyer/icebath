@@ -12,8 +12,8 @@ import (
 // Workspace grouping key of a session row, git repo root else cwd, the branch never fragmenting history
 func WorkspaceKey(row any) (string, bool) {
 	for _, key := range []string{"git_repo_root", "cwd"} {
-		if v, ok := mappingGet(row, key); ok && pyTruthy(v) {
-			if s := strings.TrimSpace(pyStr(v)); s != "" {
+		if v, ok := mappingGet(row, key); ok && anyutil.IsTrue(v) {
+			if s := strings.TrimSpace(anyutil.String(v)); s != "" {
 				return s, true
 			}
 		}
@@ -110,7 +110,7 @@ func (d *SessionDB) UpdateSessionRuntimeLock(ctx context.Context, sessionID stri
 		return *p
 	}
 	options := lock.ModelOptions
-	if !pyTruthy(options) {
+	if !anyutil.IsTrue(options) {
 		options = jsonutil.NewObject()
 	}
 	patch := jsonutil.ObjectOf("browser_model_lock", jsonutil.ObjectOf(
@@ -138,7 +138,7 @@ func (d *SessionDB) UnarchiveRecoverableSession(ctx context.Context, sessionID s
 		return false, nil
 	}
 	row, err := d.GetSession(ctx, sessionID)
-	if err != nil || row == nil || !pyTruthy(rowValue(row, "archived")) {
+	if err != nil || row == nil || !anyutil.IsTrue(rowValue(row, "archived")) {
 		return false, nil
 	}
 	tip := row
@@ -173,7 +173,7 @@ func (d *SessionDB) AssertExportSafe(ctx context.Context, sessionID string, maxM
 		limit = *maxMessages
 	}
 	if limit < 0 {
-		return 0, pyValueError("max_messages must be non-negative")
+		return 0, valueError("max_messages must be non-negative")
 	}
 	if limit == 0 {
 		return 0, nil

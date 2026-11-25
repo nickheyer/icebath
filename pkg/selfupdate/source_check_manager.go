@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -192,7 +193,7 @@ func releaseRefuses(ctx context.Context, root, tag, h string) bool {
 
 // Holds an offered release the updater refuses because it predates the runtime these stores use, a release install's by its tag
 func holdRefusedRelease(ctx context.Context, result *jsonutil.Object, co sourceCheckout, h string) {
-	if !pyTruthy(stampGet(result, "updateAvailable")) {
+	if !anyutil.IsTrue(stampGet(result, "updateAvailable")) {
 		return
 	}
 	target, _ := stampGet(result, "targetSha").(string)
@@ -326,7 +327,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*jsonutil.Ob
 			cached = cached.Clone()
 			cached.Set("dirty", co.dirty)
 			cached.Set("currentBranch", nullable(co.currentBranch))
-			if pyTruthy(stampGet(cached, "channel")) {
+			if anyutil.IsTrue(stampGet(cached, "channel")) {
 				holdRefusedRelease(ctx, cached, co, h)
 			}
 			return cached, nil
@@ -338,7 +339,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*jsonutil.Ob
 	} else if release && opts.InstallRoot == "" {
 		releaseCheckResult(ctx, result, root, channel, opts.Branch)
 		writeCheckCache(ctx, cacheFile, identity, now, result)
-		if pyTruthy(stampGet(result, "channel")) {
+		if anyutil.IsTrue(stampGet(result, "channel")) {
 			holdRefusedRelease(ctx, result, co, h)
 		}
 		return result, nil
@@ -360,7 +361,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*jsonutil.Ob
 		}
 	}
 	writeCheckCache(ctx, cacheFile, identity, now, result)
-	if pyTruthy(stampGet(result, "channel")) {
+	if anyutil.IsTrue(stampGet(result, "channel")) {
 		holdRefusedRelease(ctx, result, co, h)
 	}
 	return result, nil

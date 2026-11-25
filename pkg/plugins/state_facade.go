@@ -24,13 +24,13 @@ func (s *PluginState) HostAttr(_ context.Context, name string) (any, bool, bool,
 func (s *PluginState) HostCall(_ context.Context, method string, args []any, kwargs map[string]any) (any, error) {
 	switch method {
 	case "get":
-		a, _, err := bindPyOn("PluginState", method, []pyParam{req("key"), opt("default", nil)}, args, kwargs)
+		a, _, err := bindPyOn("PluginState", method, []paramValue{req("key"), opt("default", nil)}, args, kwargs)
 		if err != nil {
 			return nil, err
 		}
 		return s.Get(argStr(a["key"]), a["default"])
 	case "set":
-		a, _, err := bindPyOn("PluginState", method, []pyParam{req("key"), req("value")}, args, kwargs)
+		a, _, err := bindPyOn("PluginState", method, []paramValue{req("key"), req("value")}, args, kwargs)
 		if err != nil {
 			return nil, err
 		}

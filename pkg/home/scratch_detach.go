@@ -7,14 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Hidden first argument a main or TestMain routes to RunScratchPrune through DispatchScratchPruneEntry before any other parsing
@@ -71,24 +70,21 @@ func encodeLineage(chain []lineageEntry, ok bool) string {
 	return strings.Join(parts, ",")
 }
 
-// Launcher ancestry parsed from its encoded form with the errors int and float raise
+// Launcher ancestry parsed from its encoded form, failing on an entry that is not an integer pid and a numeric start joined by one colon
 func decodeLineage(text string) ([]lineageEntry, error) {
 	var chain []lineageEntry
 	for _, item := range strings.Split(text, ",") {
-		parts := strings.Split(item, ":")
-		if len(parts) != 2 {
-			if len(parts) < 2 {
-				return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(parts))}
-			}
-			return nil, &errorutil.Error{Kind: "ValueError", Msg: "too many values to unpack (expected 2)"}
+		pidText, startText, ok := strings.Cut(item, ":")
+		if !ok || strings.Contains(startText, ":") {
+			return nil, fmt.Errorf("launcher lineage entry %q is not pid:start", item)
 		}
-		pid, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+		pid, err := strconv.Atoi(strings.TrimSpace(pidText))
 		if err != nil {
-			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(parts[0])}
+			return nil, fmt.Errorf("launcher lineage entry %q: pid %q is not an integer", item, pidText)
 		}
-		started, err := anyutil.ToFloat(parts[1])
+		started, err := anyutil.ToFloat(startText)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("launcher lineage entry %q: start: %w", item, err)
 		}
 		chain = append(chain, lineageEntry{pid, started})
 	}
@@ -116,9 +112,8 @@ func RunScratchPrune(ctx context.Context, args []string) int {
 		return err
 	}()
 	if err != nil {
-		audit := openPruneLog(filepath.Join(filepath.Dir(filepath.Dir(filepath.Clean(scratch))), "logs", "scratch-prune.log"))
-		class, msg := excInfo(err)
-		audit.info(fmt.Sprintf("scratch prune: detached pass failed (%s: %s)", class, strconv.Quote(msg)))
+		audit := openPruneLog(pruneLogPath(scratch))
+		audit.info(fmt.Sprintf("scratch prune: detached pass failed: %s", logSafe(errchain.OSText(err))))
 	}
 	return 0
 }

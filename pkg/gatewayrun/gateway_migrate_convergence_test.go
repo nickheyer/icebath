@@ -28,7 +28,7 @@ func TestPreflightNeverImportsAParkedProfilesPlugins(t *testing.T) {
 	plugin := filepath.Join(h, "plugins/p1")
 	fleetWrite(t, filepath.Join(plugin, "plugin.yaml"), "name: p1\n")
 	fleetWrite(t, filepath.Join(plugin, "__init__.py"),
-		"from pathlib import Path\n\ndef register(ctx):\n    Path("+pyReprString(marker)+").write_text('imported')\n")
+		"from pathlib import Path\n\ndef register(ctx):\n    Path("+reprString(marker)+").write_text('imported')\n")
 	plugins.ResetPluginManagersForTests()
 	t.Cleanup(plugins.ResetPluginManagersForTests)
 	plan := f.plan()
@@ -46,7 +46,7 @@ func TestPreflightNeverImportsAParkedProfilesPlugins(t *testing.T) {
 	}
 }
 
-func pyReprString(s string) string {
+func reprString(s string) string {
 	return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), "'", `\'`) + "'"
 }
 

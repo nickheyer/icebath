@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -86,7 +87,7 @@ func isTypeFrame(frame *jsonutil.Object, kind string) bool {
 
 // Error kind of a pipe failure, OSError unless it carries a Python class
 func pipeErrorKind(err error) string {
-	if kind := pyErrorKind(err); kind != "" {
+	if kind := errorKindLabel(err); kind != "" {
 		return kind
 	}
 	return "OSError"
@@ -292,7 +293,7 @@ func (w *managedWorker) send(frame any) error {
 	w.writeLock.Lock()
 	defer w.writeLock.Unlock()
 	if _, err := w.process.stdin.Write(data); err != nil {
-		return &PyError{Kind: "OSError", Msg: err.Error()}
+		return &errorutil.Error{Kind: "OSError", Msg: err.Error()}
 	}
 	return nil
 }

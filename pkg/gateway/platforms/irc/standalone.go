@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -57,14 +58,14 @@ func (c *standaloneConn) readUntilCRLF(ctx context.Context, deadline time.Time) 
 	for {
 		if idx := bytes.Index(c.buffer, []byte("\r\n")); idx >= 0 {
 			if idx+2 > streamLimit {
-				return nil, false, &gateway.PyError{Kind: "LimitOverrunError", Msg: "Separator is found, but chunk is longer than limit"}
+				return nil, false, &errorutil.Error{Kind: "LimitOverrunError", Msg: "Separator is found, but chunk is longer than limit"}
 			}
 			line = append([]byte{}, c.buffer[:idx+2]...)
 			c.buffer = append([]byte{}, c.buffer[idx+2:]...)
 			return line, false, nil
 		}
 		if len(c.buffer) > streamLimit {
-			return nil, false, &gateway.PyError{Kind: "LimitOverrunError", Msg: "Separator is not found, and chunk exceed the limit"}
+			return nil, false, &errorutil.Error{Kind: "LimitOverrunError", Msg: "Separator is not found, and chunk exceed the limit"}
 		}
 		if err := c.conn.SetReadDeadline(deadline); err != nil {
 			return nil, false, err
@@ -239,7 +240,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	target, ok := targetValue.(string)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("the IRC target must be text, got %s", anyutil.Kind(targetValue))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the IRC target must be text, got %s", anyutil.Kind(targetValue))}
 	}
 	if strings.ContainsAny(target, "\r\n\x00 ") {
 		return saError("chat_id contains illegal IRC characters"), nil
@@ -282,7 +283,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 
 // str of an exception raised while the standalone connection is in use
 func standaloneErrorText(err error) string {
-	var pe *gateway.PyError
+	var pe *errorutil.Error
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}

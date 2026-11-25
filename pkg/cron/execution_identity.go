@@ -29,7 +29,7 @@ func enterCronExecution(ctx context.Context, job *Job, executionID string, recor
 	}
 	source := ""
 	if anyutil.IsTrue(record["source"]) {
-		source = pyStrOrEmpty(record["source"])
+		source = anyutil.StringOr(record["source"], "")
 	}
 	profile := profiles.CurrentProfileName(ctx)
 	if profile == "" {

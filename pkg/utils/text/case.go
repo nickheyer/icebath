@@ -4,7 +4,32 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/cases"
 )
+
+// Unicode full case folding of s for caseless matching, ß as ss and every Cherokee letter as the capital Unicode folds it to, which golang.org/x/text/cases alone folds the other way round for the capitals; bytes that are not UTF-8 kept
+func Fold(s string) string {
+	folded := cases.Fold().String(s)
+	if strings.IndexFunc(folded, isSmallCherokee) < 0 {
+		return folded
+	}
+	var b strings.Builder
+	b.Grow(len(folded))
+	for i := 0; i < len(folded); {
+		r, size := utf8.DecodeRuneInString(folded[i:])
+		if isSmallCherokee(r) {
+			b.WriteRune(unicode.ToUpper(r))
+		} else {
+			b.WriteString(folded[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// Whether r is a small Cherokee letter, which Unicode case folding maps to its capital
+func isSmallCherokee(r rune) bool { return 0x13F8 <= r && r <= 0x13FD || 0xAB70 <= r && r <= 0xABBF }
 
 // s with the first letter of each word in title case and the word's other letters in lower case, a word being a run of letters and numbers with its marks and any apostrophe between letters
 func Title(s string) string {

@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -57,12 +58,13 @@ func ManagedWorkerMain(ctx context.Context) (code int) {
 	return 0
 }
 
-// Exception class and message of a failure the way the worker's stderr log carries it
+// Message of a failure for the worker's stderr log, led by the kind label an error in its chain declares
 func formatWorkerFailure(err error) string {
-	if typed, ok := err.(interface{ ErrorKind() string }); ok {
+	var typed interface{ ErrorKind() string }
+	if errors.As(err, &typed) && typed.ErrorKind() != "" {
 		return typed.ErrorKind() + ": " + err.Error()
 	}
-	return fmt.Sprintf("%T: %s", err, err)
+	return err.Error()
 }
 
 // Hello, bootstrap read and validation, then the execution over the stdin control pipe

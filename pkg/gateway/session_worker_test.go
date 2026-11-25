@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -60,7 +61,7 @@ func registerScope(t *testing.T, pid int) *jsonutil.Object {
 }
 
 // Decimal text of an int
-func itoa(n int) string { return pyStrOf(int64(n)) }
+func itoa(n int) string { return anyutil.String(int64(n)) }
 
 func TestWorkerRegisterRequiresTheOwnersLaunchedWorker(t *testing.T) {
 	ctx, db := newTestStateDB(t)

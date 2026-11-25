@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,7 +153,7 @@ func (r *GatewayRunner) stopDrainActiveWork(ctx context.Context, timeout float64
 	sc.drainElapsed = timeutil.Monotonic() - drainStartedAt
 	pkgLog().Info(fmt.Sprintf("Shutdown phase: drain done at +%.2fs (drain took %.2fs, timed_out=%s, active_at_start=%d, "+
 		"active_now=%d, cron_at_start=%d, cron_now=%d, api_at_start=%d, api_now=%d, "+
-		"deferred_at_start=%d, deferred_now=%d)", sc.elapsed(), sc.drainElapsed, pyBool(sc.timedOut), len(sc.activeAgents),
+		"deferred_at_start=%d, deferred_now=%d)", sc.elapsed(), sc.drainElapsed, strconv.FormatBool(sc.timedOut), len(sc.activeAgents),
 		r.runningAgentCount(), cronAtStart, r.activeCronJobCount(), apiAtStart, r.activeAPIRunCount(),
 		deferredAtStart, sc.deferredCount()))
 	if sc.timedOut {
@@ -177,14 +178,6 @@ func (r *GatewayRunner) snapshotRunningAgentKeys() map[string]bool {
 		keys[item.sessionKey] = true
 	}
 	return keys
-}
-
-// Python str of a bool
-func pyBool(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
 }
 
 // After a timed out drain marks resume pending, interrupts, waits the grace, kills tool processes and notifies cron owners

@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // LockArgs are pm lock's arguments, a nil Name or Version when not given
@@ -48,13 +50,15 @@ var (
 	installSyncVenv func(ctx context.Context, opts SyncVenvOptions) error
 )
 
-// Reports whether two paths are equal as Python Path objects compare, lowercased on Windows
+// Reports whether two paths are spelled alike once empty and dot elements are dropped, dot-dot kept because it may climb out of a symlink, case and separators folded on Windows
 func samePath(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(a) == strings.ToLower(b)
-	}
-	return a == b
+	return lexicalPathKey(a) == lexicalPathKey(b)
+}
+
+// Comparison key of a path from its anchor and its elements without empty and dot elements, dot-dot kept, case folded on Windows
+func lexicalPathKey(p string) string {
+	anchor, elems := pathutil.Parts(p)
+	return pathutil.FoldCase(anchor + strings.Join(elems, string(filepath.Separator)))
 }
 
 // Sorts sibling names the way Python sorts their paths, by code point and lowercased on Windows

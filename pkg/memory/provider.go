@@ -25,7 +25,7 @@ var coreMemoryProviderSentinels = map[string]bool{"": true, "default": true, "bu
 
 // Reports whether memory.provider selects the built in store rather than an external plugin
 func IsCoreMemoryProvider(name string) bool {
-	return coreMemoryProviderSentinels[pyLower(pyStrip(name))]
+	return coreMemoryProviderSentinels[strings.ToLower(strings.TrimSpace(name))]
 }
 
 // What the last prefetch injected, a zero count meaning content without a discrete count
@@ -44,11 +44,11 @@ func NewRecallStatus(providerLabel string, count int) *RecallStatus {
 var trivialPromptRe = regexp.MustCompile(`(?i)^(yes|no|ok|okay|sure|thanks|thank you|y|n|yep|nope|yeah|nah|` +
 	`hi|hey|hello|yo|sup|` +
 	`continue|go ahead|do it|proceed|got it|cool|nice|great|done|next|lgtm|k)` +
-	`[` + pySpaceClass + `!?.:;,"'~\x{2018}\x{2019}\x{201c}\x{201d}\x{2014}\x{2013}\x{2026}()\[\]{}<>*&^%$#@!+=` + "`" + `\x{a0}]*$`)
+	`[` + spaceClass + `!?.:;,"'~\x{2018}\x{2019}\x{201c}\x{201d}\x{2014}\x{2013}\x{2026}()\[\]{}<>*&^%$#@!+=` + "`" + `\x{a0}]*$`)
 
 // True for empty input, slash commands and bare greetings or acknowledgements
 func IsTrivialPrompt(text string) bool {
-	stripped := pyStrip(text)
+	stripped := strings.TrimSpace(text)
 	if stripped == "" || strings.HasPrefix(stripped, "/") {
 		return true
 	}

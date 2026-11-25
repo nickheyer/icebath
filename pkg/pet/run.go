@@ -2,10 +2,13 @@ package pet
 
 import (
 	"context"
+	"errors"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -71,7 +74,7 @@ func (r *Run) UpdatePetConfig(whenSlug *string, values ...any) (bool, error) {
 		cfg["display"] = display
 	}
 	if !ok {
-		return false, &errorutil.Error{Kind: "AttributeError", Msg: "'" + anyutil.Kind(cfg["display"]) + "' object has no attribute 'setdefault'"}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "display in the config must be a mapping, got " + errchain.Kind(cfg["display"])}
 	}
 	petVal, present := display["pet"]
 	if !present {
@@ -83,7 +86,7 @@ func (r *Run) UpdatePetConfig(whenSlug *string, values ...any) (bool, error) {
 		return false, nil
 	}
 	if !isDict {
-		return false, &errorutil.Error{Kind: "AttributeError", Msg: "'" + anyutil.Kind(petVal) + "' object has no attribute 'update'"}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "display.pet in the config must be a mapping, got " + errchain.Kind(petVal)}
 	}
 	for i := 0; i+1 < len(values); i += 2 {
 		petCfg[values[i].(string)] = values[i+1]
@@ -108,15 +111,23 @@ func (r *Run) HasActivePet() (bool, error) {
 	return Enabled(cfg) && anyutil.IsTrue(cfg["slug"]), nil
 }
 
-// Persists the clamped display.pet.scale, a message and nothing written when the value is not a number
+// Persists the clamped display.pet.scale, numbers past either bound clamped, a message and nothing written when the value is not a number
 func (r *Run) SetPetScale(value any) (float64, string, error) {
 	f, err := anyutil.ToFloat(value)
-	if err != nil {
-		return 0, "not a number: " + anyutil.Quote(value) + " — try a value like 0.5", nil
+	if _, isBool := value.(bool); isBool || (err != nil && !errors.Is(err, anyutil.ErrRange)) || math.IsNaN(f) {
+		return 0, "not a number: " + scaleText(value) + " — try a value like 0.5", nil
 	}
 	scale := ClampScale(f)
 	if _, err := r.UpdatePetConfig(nil, "scale", scale); err != nil {
 		return 0, "", err
 	}
 	return scale, "", nil
+}
+
+// A refused scale value as its refusal shows it, text quoted and an absent value as null
+func scaleText(value any) string {
+	if value == nil {
+		return "null"
+	}
+	return anyutil.Quote(value)
 }

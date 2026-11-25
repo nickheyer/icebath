@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -20,11 +21,13 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Image cache writer of inbound photos and stickers
@@ -793,8 +796,17 @@ var mediaKindKeys = map[string]string{"photo": "platform.telegram.media.kind_pho
 	"audio file": "platform.telegram.media.kind_audio", "video file": "platform.telegram.media.kind_video",
 	"video note": "platform.telegram.media.kind_video", "attachment": "platform.telegram.media.kind_attachment"}
 
-// Python exception class name of an error
-func exceptionClassName(err error) string { return className(err) }
+// Short reason of a failed media download: the kind a Telegram or adapter error declares, the operating system reason and path of a system failure, else the failure's own text with secrets redacted
+func mediaFailureReason(err error) string {
+	var named interface{ ErrorKind() string }
+	if errors.As(err, &named) && named.ErrorKind() != "" {
+		return named.ErrorKind()
+	}
+	if errorutil.IsSystem(err) {
+		return errchain.OSText(err)
+	}
+	return redactTelegramErrorText(err)
+}
 
 // Surfaces a failed media download to the user with a retry reply and to the agent with a note
 func (a *TelegramAdapter) surfaceMediaCacheFailure(ctx context.Context, m *models.Message, event *gateway.MessageEvent, kind string, exc error,
@@ -809,7 +821,7 @@ func (a *TelegramAdapter) surfaceMediaCacheFailure(ctx context.Context, m *model
 	if key, ok := mediaKindKeys[kind]; ok {
 		kindText = tr(scoped, key)
 	}
-	visible := tr(scoped, "platform.telegram.media.download_failed", "kind", kindText, "name", named, "error", exceptionClassName(exc))
+	visible := tr(scoped, "platform.telegram.media.download_failed", "kind", kindText, "name", named, "error", mediaFailureReason(exc))
 	notice := a.WarningText(scoped, visible, nil, a.Platform, chatIDStr(m), nil)
 	if notice != nil && *notice != "" {
 		a.AcceptUpdate(scoped)
@@ -817,7 +829,7 @@ func (a *TelegramAdapter) surfaceMediaCacheFailure(ctx context.Context, m *model
 			pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to notify user about %s cache failure: %s", kind, err.Error()))
 		}
 		event.Text = appendObservedNote(event.Text, fmt.Sprintf("[The user attempted to send a %s%s but it could not be downloaded (%s); they have been asked to retry.]",
-			kind, named, exceptionClassName(exc)))
+			kind, named, mediaFailureReason(exc)))
 		return
 	}
 	event.Text = appendObservedNote(event.Text, fmt.Sprintf("[The user attempted to send a %s%s but it could not be downloaded.]", kind, named))
@@ -1480,8 +1492,11 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 	return handled, nil
 }
 
-// Whether the error is a Python ValueError
-func isValueError(err error) bool { return className(err) == "ValueError" }
+// Whether the media cache refused the bytes, as data that is not an image or a payload over the size limit
+func isValueError(err error) bool {
+	var refused *mediacache.ValueError
+	return errors.As(err, &refused)
+}
 
 // First non empty string
 func firstNonEmpty(values ...string) string {
@@ -1657,7 +1672,7 @@ func (a *TelegramAdapter) handleSticker(ctx context.Context, m *models.Message, 
 		if err := json.Unmarshal([]byte(raw), &result); err != nil {
 			return err
 		}
-		if pyTruthy(result["success"]) {
+		if anyutil.IsTrue(result["success"]) {
 			description := "a sticker"
 			if v, ok := result["analysis"]; ok {
 				description = anyutil.String(v)

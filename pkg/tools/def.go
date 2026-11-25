@@ -160,7 +160,7 @@ func (e *Env) Emit(ev Event) {
 	}
 }
 
-// JSON encodes a tool result as json.dumps does with ensure_ascii off and its default separators
+// JSON encodes a tool result as compact UTF-8 JSON, an encoding failure as the error result
 func JSON(v any) string {
 	b, err := jsonutil.Append(nil, v)
 	if err != nil {
@@ -169,7 +169,7 @@ func JSON(v any) string {
 	return string(b)
 }
 
-// JSONASCII encodes a tool result as json.dumps does with every default, non ASCII text escaped
+// JSONASCII encodes a tool result as compact JSON with non ASCII text escaped, an encoding failure as the error result
 func JSONASCII(v any) string {
 	b, err := jsonutil.Append(nil, v, jsonutil.ASCII())
 	if err != nil {

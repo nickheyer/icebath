@@ -32,7 +32,7 @@ func metadataRecords(data []byte, present bool) (map[string]any, error) {
 	if !present {
 		return map[string]any{}, nil
 	}
-	changed := &PyError{Class: "ValueError", Message: "Plugin install metadata changed while preparing the update; retry."}
+	changed := &ClassError{Class: "ValueError", Message: "Plugin install metadata changed while preparing the update; retry."}
 	decoded, err := loadJSON(data)
 	if err != nil {
 		return nil, changed
@@ -182,7 +182,7 @@ func validateManifest(ctx context.Context, source string) (map[string]any, error
 		}
 	}
 	if reason != "" {
-		return nil, &PyError{Class: "ValueError", Message: reason}
+		return nil, &ClassError{Class: "ValueError", Message: reason}
 	}
 	return declaration.Manifest, nil
 }
@@ -204,7 +204,7 @@ func admitted(ctx context.Context, source string, isNew bool) (bool, error) {
 		return false, err
 	}
 	if reason != "" {
-		return false, &PyError{Class: "ValueError", Message: reason}
+		return false, &ClassError{Class: "ValueError", Message: reason}
 	}
 	core, err := coreRequirementError(ctx, declaration, nil, nil)
 	if err != nil {
@@ -235,7 +235,7 @@ func newPluginSelection(ctx context.Context, data map[string]any) (*PluginSelect
 	}
 	s := &PluginSelection{configs: configs, home: resolvePath(home)}
 	if !isRelativeTo(s.home, resolvePath(DependencyHomeRoot(ctx))) {
-		return nil, &PyError{Class: "ValueError", Message: "config path is outside icebath state"}
+		return nil, &ClassError{Class: "ValueError", Message: "config path is outside icebath state"}
 	}
 	s.path = filepath.Join(s.home, "config.yaml")
 	if s.previous.data, s.previous.present, err = ReadBytesOrNone(s.path); err != nil {
@@ -247,7 +247,7 @@ func newPluginSelection(ctx context.Context, data map[string]any) (*PluginSelect
 		actual = hex.EncodeToString(sum[:])
 	}
 	if expected := data["expected_config"]; expected != nil && !jsonEquals(expected, actual) {
-		return nil, &PyError{Class: "ValueError", Message: "Plugin configuration changed since this selection was read; retry."}
+		return nil, &ClassError{Class: "ValueError", Message: "Plugin configuration changed since this selection was read; retry."}
 	}
 	var doc *yaml.Node
 	if s.previous.present && len(s.previous.data) > 0 {
@@ -260,20 +260,20 @@ func newPluginSelection(ctx context.Context, data map[string]any) (*PluginSelect
 		doc = rtNewDocument()
 		config = doc.Content[0]
 	} else if config.Kind != yaml.MappingNode {
-		return nil, &PyError{Class: "ValueError", Message: "configuration must be a mapping: " + s.path}
+		return nil, &ClassError{Class: "ValueError", Message: "configuration must be a mapping: " + s.path}
 	}
 	plugins := rtGet(config, "plugins")
 	if plugins == nil {
 		plugins = rtMapping()
 		rtSet(config, "plugins", plugins)
 	} else if plugins.Kind != yaml.MappingNode {
-		return nil, &PyError{Class: "ValueError", Message: "plugins must be a mapping in " + s.path}
+		return nil, &ClassError{Class: "ValueError", Message: "plugins must be a mapping in " + s.path}
 	}
 	rawEnabled, err := rowItem(data, "enabled")
 	if err != nil {
 		return nil, err
 	}
-	enabled, err := pyIterStrings(rawEnabled)
+	enabled, err := iterStrings(rawEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func newPluginSelection(ctx context.Context, data map[string]any) (*PluginSelect
 	if err != nil {
 		return nil, err
 	}
-	disabled, err := pyIterStrings(rawDisabled)
+	disabled, err := iterStrings(rawDisabled)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +289,7 @@ func newPluginSelection(ctx context.Context, data map[string]any) (*PluginSelect
 	rtSet(plugins, "disabled", rtStrings(sortedCopy(disabled)))
 	var settled []any
 	if raw, present := data["settled"]; present {
-		if settled, err = pyIterate(raw); err != nil {
+		if settled, err = iterate(raw); err != nil {
 			return nil, err
 		}
 	}
@@ -301,7 +301,7 @@ func newPluginSelection(ctx context.Context, data map[string]any) (*PluginSelect
 	}
 	var extraDirs []string
 	if raw, present := data["extra_dirs"]; present {
-		if extraDirs, err = pyIterStrings(raw); err != nil {
+		if extraDirs, err = iterStrings(raw); err != nil {
 			return nil, err
 		}
 	}
@@ -330,7 +330,7 @@ func (s *PluginSelection) Publish(ctx context.Context, project string) error {
 		return err
 	}
 	if !now.equal(s.configs) || present != s.previous.present || !bytes.Equal(data, s.previous.data) {
-		return &PyError{Class: "ValueError", Message: "plugin configuration changed while preparing publication; retry"}
+		return &ClassError{Class: "ValueError", Message: "plugin configuration changed while preparing publication; retry"}
 	}
 	factsBefore, err := digestValue(EnvironmentRuntimeFactsPath(ctx, project))
 	if err != nil {
@@ -398,7 +398,7 @@ func newStagedPlugin(ctx context.Context, data map[string]any) (*StagedPlugin, e
 	if !isRelativeTo(resolvedTarget, resolvePath(DependencyHomeRoot(ctx))) ||
 		filepath.Base(filepath.Dir(s.target)) != "plugins" || isSymlink(s.target) ||
 		s.staged == resolvedTarget || isRelativeTo(s.staged, resolvedTarget) || isRelativeTo(resolvedTarget, s.staged) {
-		return nil, &PyError{Class: "ValueError", Message: "plugin publication paths escape or overlap their home"}
+		return nil, &ClassError{Class: "ValueError", Message: "plugin publication paths escape or overlap their home"}
 	}
 	name := filepath.Base(s.target)
 	manifest, err := validateManifest(ctx, s.staged)
@@ -406,7 +406,7 @@ func newStagedPlugin(ctx context.Context, data map[string]any) (*StagedPlugin, e
 		return nil, err
 	}
 	if declared, present := manifest["name"]; present && !jsonEquals(declared, name) {
-		return nil, &PyError{Class: "ValueError", Message: "The updated plugin changed its installed name; reinstall it explicitly."}
+		return nil, &ClassError{Class: "ValueError", Message: "The updated plugin changed its installed name; reinstall it explicitly."}
 	}
 	if s.stagedDigest, err = TreeDigest(s.staged); err != nil {
 		return nil, err
@@ -424,13 +424,13 @@ func newStagedPlugin(ctx context.Context, data map[string]any) (*StagedPlugin, e
 		return nil, err
 	}
 	if !jsonEquals(current[name], s.oldRecord) {
-		return nil, &PyError{Class: "ValueError", Message: "Plugin install metadata changed while preparing the update; retry."}
+		return nil, &ClassError{Class: "ValueError", Message: "Plugin install metadata changed while preparing the update; retry."}
 	}
 	if s.newRecord, err = recordOf(data, "new_metadata", name); err != nil {
 		return nil, err
 	}
 	if s.newRecord == nil {
-		return nil, &PyError{Class: "ValueError", Message: "Plugin publication omitted its install metadata record."}
+		return nil, &ClassError{Class: "ValueError", Message: "Plugin publication omitted its install metadata record."}
 	}
 	if s.targetDigest, err = optionalTreeDigest(s.target); err != nil {
 		return nil, err
@@ -440,7 +440,7 @@ func newStagedPlugin(ctx context.Context, data map[string]any) (*StagedPlugin, e
 		return nil, err
 	}
 	if !jsonEquals(s.targetDigest, expected) {
-		return nil, &PyError{Class: "ValueError", Message: "Plugin files changed while preparing the update; retry."}
+		return nil, &ClassError{Class: "ValueError", Message: "Plugin files changed while preparing the update; retry."}
 	}
 	selected, err := enabledPluginDirs(ctx, EnabledPluginsOptions{Installing: s.target})
 	if err != nil {
@@ -484,7 +484,7 @@ func recordOf(data map[string]any, key, name string) (any, error) {
 	}
 	records, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the %s metadata of the request must be a mapping, got %s", key, errchain.Kind(raw))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the %s metadata of the request must be a mapping, got %s", key, errchain.Kind(raw))}
 	}
 	return records[name], nil
 }
@@ -508,14 +508,14 @@ func (s *StagedPlugin) Publish(ctx context.Context, project string) error {
 		return err
 	}
 	if !now.equal(s.configs) {
-		return &PyError{Class: "ValueError", Message: "Plugin enablement changed while preparing the update; retry."}
+		return &ClassError{Class: "ValueError", Message: "Plugin enablement changed while preparing the update; retry."}
 	}
 	digest, err := TreeDigest(s.staged)
 	if err != nil {
 		return err
 	}
 	if digest != s.stagedDigest {
-		return &PyError{Class: "ValueError", Message: "Staged plugin files changed while preparing the update; retry."}
+		return &ClassError{Class: "ValueError", Message: "Staged plugin files changed while preparing the update; retry."}
 	}
 	release, err := lockPluginMetadata(s.metadata+".lock", 10*time.Second, "Timed out waiting for the plugin install metadata lock")
 	if err != nil {
@@ -532,7 +532,7 @@ func (s *StagedPlugin) Publish(ctx context.Context, project string) error {
 		return err
 	}
 	if !jsonEquals(metadata[name], s.oldRecord) {
-		return &PyError{Class: "ValueError", Message: "Plugin install metadata changed while preparing the update; retry."}
+		return &ClassError{Class: "ValueError", Message: "Plugin install metadata changed while preparing the update; retry."}
 	}
 	metadata[name] = s.newRecord
 	proposed, err := dumpsJSON(metadata, true)
@@ -545,7 +545,7 @@ func (s *StagedPlugin) Publish(ctx context.Context, project string) error {
 		return err
 	}
 	if !jsonEquals(current, s.targetDigest) {
-		return &PyError{Class: "ValueError", Message: "Plugin files changed while preparing the update; retry."}
+		return &ClassError{Class: "ValueError", Message: "Plugin files changed while preparing the update; retry."}
 	}
 	backup := filepath.Join(filepath.Dir(s.target), ".previous-"+randomHex32())
 	existed := pathExists(s.target)
@@ -600,9 +600,9 @@ func lockPluginMetadata(path string, timeout time.Duration, message string) (fun
 	if !held {
 		f.Close()
 		if hint := metadataLockHolderHint(path); hint != "" {
-			return nil, &PyError{Class: "TimeoutError", Message: message + "; " + hint}
+			return nil, &ClassError{Class: "TimeoutError", Message: message + "; " + hint}
 		}
-		return nil, &PyError{Class: "TimeoutError", Message: message}
+		return nil, &ClassError{Class: "TimeoutError", Message: message}
 	}
 	if err := f.Truncate(0); err == nil {
 		_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
@@ -657,12 +657,12 @@ var (
 // Loads config bytes as a comment preserving node tree, nil for an empty document
 func loadRoundtrip(data []byte) (*yaml.Node, error) {
 	if err := strictUTF8(data); err != nil {
-		return nil, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
+		return nil, &ClassError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
-		return nil, &PyError{Class: "YAMLError", Message: err.Error()}
+		return nil, &ClassError{Class: "YAMLError", Message: err.Error()}
 	}
 	if doc.Kind == 0 || len(doc.Content) == 0 {
 		return nil, nil
@@ -685,7 +685,7 @@ func rtRefuseDuplicates(n *yaml.Node) error {
 			}
 			id := rtKey(key)
 			if first, ok := seen[id]; ok {
-				return &PyError{Class: "DuplicateKeyError", Message: fmt.Sprintf(
+				return &ClassError{Class: "DuplicateKeyError", Message: fmt.Sprintf(
 					"while constructing a mapping\n  in \"<unicode string>\", line %d, column %d\nfound duplicate key \"%s\" with value \"%s\" (original value: \"%s\")\n  in \"<unicode string>\", line %d, column %d",
 					n.Line, n.Column, key.Value, n.Content[i+1].Value, rtValueAfter(n, first), key.Line, key.Column)}
 			}

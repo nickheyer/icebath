@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -103,7 +104,7 @@ func (a *SessionAuthority) Attach(ctx context.Context, actor Principal, ref Sess
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return SubscriptionSnapshot{}, &pyKeyError{ref.SessionID}
+		return SubscriptionSnapshot{}, &keyError{ref.SessionID}
 	}
 	live.EventStream.Lock.Lock()
 	snapshot, err := a.joinStream(ctx, actor, ref, live, history, replayFrom, prepared)
@@ -312,7 +313,7 @@ func capturedResponse(captured *jsonutil.Object) string {
 		return ""
 	}
 	text, _ := obj.Get("final_response")
-	if !pyTruthy(text) {
+	if !anyutil.IsTrue(text) {
 		return ""
 	}
 	response, _ := text.(string)
@@ -329,7 +330,7 @@ func (a *SessionAuthority) resolvedUnknown(ctx context.Context, ref SessionRef, 
 	if owed {
 		live, ok := a.live(ref.SessionID)
 		if !ok {
-			return AdmissionReceipt{}, &pyKeyError{ref.SessionID}
+			return AdmissionReceipt{}, &keyError{ref.SessionID}
 		}
 		live.EventStream.Lock.Lock()
 		var err error
@@ -370,7 +371,7 @@ func (a *SessionAuthority) Interrupt(ctx context.Context, actor Principal, ref S
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return SessionHandle{}, &pyKeyError{ref.SessionID}
+		return SessionHandle{}, &keyError{ref.SessionID}
 	}
 	var agent any
 	if handle.ExecutionState == "running" {
@@ -433,7 +434,7 @@ func (a *SessionAuthority) stopTarget(ref SessionRef, live *LiveSession, generat
 func (a *SessionAuthority) runsOwnAgent(ref SessionRef) (bool, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return false, &pyKeyError{ref.SessionID}
+		return false, &keyError{ref.SessionID}
 	}
 	running, ok := a.Runner.(runningAgentsRunner)
 	if !ok {
@@ -533,7 +534,7 @@ func (a *SessionAuthority) checkApprovalGeneration(ctx context.Context, sessionI
 func (a *SessionAuthority) PublishExecution(sessionID string, generation int64, eventType string, payload any) (bool, error) {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return false, &pyKeyError{sessionID}
+		return false, &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
@@ -555,7 +556,7 @@ func (a *SessionAuthority) PublishExecution(sessionID string, generation int64, 
 func (a *SessionAuthority) RegisterApproval(ctx context.Context, sessionID string, generation int64, route string, data map[string]any, timeoutS *float64) error {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return &pyKeyError{sessionID}
+		return &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
@@ -569,7 +570,7 @@ func (a *SessionAuthority) RegisterApproval(ctx context.Context, sessionID strin
 func (a *SessionAuthority) RegisterClarify(ctx context.Context, sessionID string, generation int64, entry *tools.ClarifyEntry, timeoutS *float64) error {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return &pyKeyError{sessionID}
+		return &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
@@ -590,7 +591,7 @@ func (a *SessionAuthority) Respond(ctx context.Context, actor Principal, ref Ses
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Provider names that route to the managed llama.cpp server
@@ -35,7 +36,7 @@ func stateEndpoint(h string) (string, any, bool, error) {
 		return "", nil, false, nil
 	}
 	state := readLocalRuntimeState()
-	baseURL, isStr := pyGetAny(state, "base_url", "").(string)
+	baseURL, isStr := getAny(state, "base_url", "").(string)
 	if !isStr || baseURL == "" {
 		return "", nil, false, nil
 	}
@@ -52,7 +53,7 @@ func stateEndpoint(h string) (string, any, bool, error) {
 			return "", nil, false, nil
 		}
 	}
-	return baseURL, pyGetAny(state, "api_key", ""), true, nil
+	return baseURL, getAny(state, "api_key", ""), true, nil
 }
 
 // api_key value as the provider runtime reads it, None standing for no key
@@ -60,7 +61,7 @@ func endpointAPIKeyText(raw any) string {
 	if raw == nil {
 		return ""
 	}
-	return pyStr(raw)
+	return anyutil.String(raw)
 }
 
 // Base URL and key of the managed server recorded for the installation owning home h
@@ -91,7 +92,7 @@ func managedRoot(ctx context.Context) (base, apiKey string, ok bool) {
 	if base == "" {
 		return "", "", false
 	}
-	return base, pyStr(rawKey), true
+	return base, anyutil.String(rawKey), true
 }
 
 var managedHTTPClient = &http.Client{}
@@ -152,7 +153,7 @@ func endpointPortInt(v any) (int, error) {
 		if n, ok := pythonUnicodeIntText(p); ok {
 			return int(n), nil
 		}
-		return 0, fmt.Errorf("port %s is not a whole number", pyRepr(p))
+		return 0, fmt.Errorf("port %s is not a whole number", anyutil.Quote(p))
 	}
 	return 0, fmt.Errorf("a port is %s, expected a whole number", errchain.Kind(v))
 }
@@ -160,7 +161,7 @@ func endpointPortInt(v any) (int, error) {
 // The local_runtime.detect_ports of cfg converted the way the tuple of int(p) does
 func endpointDetectPorts(cfg map[string]any) ([]int, error) {
 	raw := cfg["local_runtime"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return nil, nil
 	}
 	section, ok := raw.(map[string]any)
@@ -186,7 +187,7 @@ func endpointDetectPorts(cfg map[string]any) ([]int, error) {
 			items = append(items, k)
 		}
 	default:
-		if pyTruthy(ports) {
+		if anyutil.IsTrue(ports) {
 			return nil, fmt.Errorf("the endpoint ports are %s, expected a list", errchain.Kind(ports))
 		}
 	}
@@ -308,11 +309,11 @@ func bootInFlight(ctx context.Context, cfg map[string]any, h string) (inFlight b
 		}
 	}()
 	raw := endpointConfig(cfg, h)["local_runtime"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return false
 	}
 	section, ok := raw.(map[string]any)
-	if !ok || !pyTruthy(section["enabled"]) {
+	if !ok || !anyutil.IsTrue(section["enabled"]) {
 		return false
 	}
 	backend, err := hwConfiguredBackend(section)

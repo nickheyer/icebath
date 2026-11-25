@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,11 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -241,51 +239,9 @@ func (c *handlerCore) filter(rec *Record) bool {
 	return true
 }
 
-// Prints the logging error report to stderr the way Handler.handleError does
+// Reports on stderr a record a handler could not write and why
 func handleErrorBase(rec *Record, err error) {
-	fmt.Fprintf(os.Stderr, "--- Logging error ---\n%s: %s\nMessage: %s\nArguments: ()\n", errorClass(err), errorText(err), strconv.Quote(rec.Msg))
-}
-
-// Python exception class name an error stands for
-func errorClass(err error) string {
-	var lt *lockTimeoutError
-	if errors.As(err, &lt) {
-		return "RuntimeError"
-	}
-	if errors.Is(err, os.ErrClosed) {
-		return "ValueError"
-	}
-	if isOSError(err) {
-		return errorutil.Kind(err)
-	}
-	if cls, _, ok := strings.Cut(err.Error(), ": "); ok && strings.HasSuffix(cls, "Error") && !strings.ContainsAny(cls, " .") {
-		return cls
-	}
-	return "Exception"
-}
-
-// Python str of the exception an error stands for
-func errorText(err error) string {
-	if errors.Is(err, os.ErrClosed) {
-		return "I/O operation on closed file."
-	}
-	if isOSError(err) {
-		return err.Error()
-	}
-	if cls, msg, ok := strings.Cut(err.Error(), ": "); ok && strings.HasSuffix(cls, "Error") && !strings.ContainsAny(cls, " .") {
-		return msg
-	}
-	return err.Error()
-}
-
-// Reports whether err is an operating system error Python raises as OSError
-func isOSError(err error) bool {
-	var errno syscall.Errno
-	var pathErr *fs.PathError
-	var linkErr *os.LinkError
-	var sysErr *os.SyscallError
-	return errors.As(err, &errno) || errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &sysErr) ||
-		errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrExist) || errors.Is(err, fs.ErrPermission)
+	fmt.Fprintf(os.Stderr, "logging: could not write record %s: %s\n", strconv.Quote(rec.Msg), errchain.OSText(err))
 }
 
 // Handler writing formatted records to a stream, the verbose console handler

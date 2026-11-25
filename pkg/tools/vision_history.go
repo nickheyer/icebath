@@ -48,7 +48,7 @@ func resolveEmbedTargetBytes(env *Env) int {
 func ResolveEmbedTargetBytes(env *Env) int { return resolveEmbedTargetBytes(env) }
 
 // Integer conversion with Python int semantics for ints, truncated floats, and numeric strings
-func pyInt(v any) (int, bool) {
+func wholeNumber(v any) (int, bool) {
 	switch t := v.(type) {
 	case int:
 		return t, true
@@ -89,7 +89,7 @@ func visionImageKey(env *Env, imageURL string) string {
 	if strings.Contains(stripped, "://") {
 		return "url:" + stripped
 	}
-	return "file:" + resolveAgainstCwd(env, pyExpandUser(stripped))
+	return "file:" + resolveAgainstCwd(env, expandUserValue(stripped))
 }
 
 // Session and image pair the cap counts against
@@ -248,7 +248,7 @@ func nativeTurnDuplicate(env *Env, imageURL string, region any) string {
 	if !keys[visionImageKey(env, imageURL)] {
 		return ""
 	}
-	return JSONASCII(alreadyInContextResult{Success: true, AlreadyInContext: true,
+	return JSON(alreadyInContextResult{Success: true, AlreadyInContext: true,
 		Message: "This image is already attached natively to the current user message — you can see it " +
 			"now. Answer with your built-in vision; pass a `region` to zoom into part of it."})
 }

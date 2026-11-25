@@ -10,15 +10,15 @@ import (
 )
 
 // Error raised by this package, the kind label it records under and its text
-type pyError struct {
+type kindError struct {
 	class string
 	text  string
 }
 
-func (e *pyError) Error() string { return e.text }
+func (e *kindError) Error() string { return e.text }
 
 // Kind label the error records under
-func (e *pyError) ErrorKind() string { return e.class }
+func (e *kindError) ErrorKind() string { return e.class }
 
 // Runs fn as a try block whose except Exception clause receives any error or panic fn raised
 func try(fn func() error) (err error) {
@@ -42,7 +42,7 @@ func get(v any, key string, def any) (any, error) {
 		}
 		return def, nil
 	}
-	return nil, &pyError{"AttributeError", "expected an object, got " + anyutil.Kind(v)}
+	return nil, &kindError{"AttributeError", "expected an object, got " + anyutil.Kind(v)}
 }
 
 // isinstance check for a decoded JSON object

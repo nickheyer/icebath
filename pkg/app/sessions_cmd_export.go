@@ -386,15 +386,11 @@ func exportTraceFiles(r *sessionsRun, ids []string, renderTrace func(string) (st
 		if err != nil {
 			return 1, err
 		}
-		shownID := ids[0]
-		if shownID == "" {
-			shownID = "None"
-		}
 		if jsonl == "" {
-			r.printf("No transcript to export for session '%s'.", shownID)
+			r.printf("No transcript to export for session '%s'.", ids[0])
 			return 1, nil
 		}
-		output, err := outputFileInDir(nsText(r.ns, "output"), shownID+".trace.jsonl")
+		output, err := outputFileInDir(nsText(r.ns, "output"), ids[0]+".trace.jsonl")
 		if err != nil {
 			return 1, err
 		}

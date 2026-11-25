@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const zaiProbeFailureTTL = 300 * time.Second
@@ -122,7 +124,7 @@ func resolveZaiBaseURLDetected(ctx context.Context, h, apiKey, defaultURL string
 	store := NewStore(h)
 	if data, err := store.Load(); err == nil {
 		cached := anyMap(store.ProviderState(data, "zai")["detected_endpoint"])
-		if base := pyOrStr(cached["base_url"]); base != "" && pyStr(tokensOr(cached, "key_hash", "")) == keyHash {
+		if base := anyutil.StringOr(cached["base_url"], ""); base != "" && anyutil.String(tokensOr(cached, "key_hash", "")) == keyHash {
 			pkgLog().Debug(fmt.Sprintf("Z.AI: using cached endpoint %s", base))
 			return base
 		}

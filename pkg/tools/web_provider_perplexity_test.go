@@ -105,7 +105,7 @@ func TestPerplexityQueryForURLs(t *testing.T) {
 			t.Fatalf("%v: %q %v", tc.urls, got, err)
 		}
 	}
-	if _, err := perplexityQueryForURLs([]string{"http://[::1/x"}); err == nil || err.Error() != "Invalid IPv6 URL" {
+	if _, err := perplexityQueryForURLs([]string{"http://[::1/x"}); err == nil || err.Error() != `invalid host: unbalanced or misplaced brackets in "[::1"` {
 		t.Fatalf("%v", err)
 	}
 }

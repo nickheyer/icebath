@@ -496,7 +496,7 @@ func exportTextOr(row *jsonutil.Object, key, fallback string) string {
 // Decoded store JSON with every ordered object turned into a pyjson Object and every list copied
 func exportJSONValue(v any) any {
 	switch x := v.(type) {
-	case pyObject:
+	case orderedObject:
 		obj := jsonutil.NewObject()
 		for _, kv := range x {
 			obj.Set(kv.Key, exportJSONValue(kv.Value))

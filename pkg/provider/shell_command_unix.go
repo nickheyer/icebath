@@ -8,6 +8,6 @@ import (
 )
 
 // Command running the line through /bin/sh -c like subprocess shell mode on POSIX
-func pyShellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
+func shellCommand(ctx context.Context, command string) (*exec.Cmd, error) {
 	return exec.CommandContext(ctx, "/bin/sh", "-c", command), nil
 }

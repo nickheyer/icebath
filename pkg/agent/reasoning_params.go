@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -20,7 +21,7 @@ type reasoningRouteCacheEntry struct {
 
 // Whether agent.reasoning_echo, or the fallback entry in use, marks the current provider as one that must echo
 func (a *AIAgent) reasoningEchoOptIn() bool {
-	return pyTruthy(a.reasoningEchoFlag)
+	return anyutil.IsTrue(a.reasoningEchoFlag)
 }
 
 // Reasoning replay decision for the active route, recomputed only when its route inputs or rejections change

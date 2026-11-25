@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -30,7 +31,7 @@ func SessionKeyProfile(sessionKey any) (string, bool) {
 func storedProfile(value any) (string, bool) {
 	name := ""
 	if value != nil {
-		name = strings.TrimSpace(pyStr(value))
+		name = strings.TrimSpace(anyutil.String(value))
 	}
 	return name, name != ""
 }
@@ -43,7 +44,7 @@ func tableColumns(ctx context.Context, conn SQLiteConn, table string) ([]string,
 	}
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, pyStr(rowValue(row, "name")))
+		out = append(out, anyutil.String(rowValue(row, "name")))
 	}
 	return out, nil
 }
@@ -93,7 +94,7 @@ func (d *SessionDB) FindCrossedProfileSessions(ctx context.Context, owner string
 			count, _ := exactInt(rowValue(row, "message_count"))
 			found.Foreign = append(found.Foreign, jsonutil.ObjectOf("id", id, "session_key", rowValue(row, "session_key"),
 				"key_profile", keyProfile, "message_count", count, "parent_session_id", rowValue(row, "parent_session_id"),
-				"ledgered", ledgered[pyStr(id)]))
+				"ledgered", ledgered[anyutil.String(id)]))
 		}
 		if parentProfile, ok := SessionKeyProfile(rowValue(row, "parent_session_key")); ok && parentProfile != keyProfile {
 			found.CrossedParents = append(found.CrossedParents, jsonutil.ObjectOf("id", id, "key_profile", keyProfile,
@@ -115,7 +116,7 @@ func (d *SessionDB) ledgeredSessionIDs(ctx context.Context) (map[string]bool, er
 		}
 		present := map[string]bool{}
 		for _, row := range tables {
-			present[pyStr(rowValue(row, "name"))] = true
+			present[anyutil.String(rowValue(row, "name"))] = true
 		}
 		for table, query := range map[string]string{
 			"session_admissions": "SELECT DISTINCT target_session_id FROM session_admissions",
@@ -129,7 +130,7 @@ func (d *SessionDB) ledgeredSessionIDs(ctx context.Context) (map[string]bool, er
 				return err
 			}
 			for _, row := range rows {
-				ids[pyStr(rowValue(row, row.Keys()[0]))] = true
+				ids[anyutil.String(rowValue(row, row.Keys()[0]))] = true
 			}
 		}
 		return nil
@@ -266,7 +267,7 @@ func (d *SessionDB) ExportSessionForMove(ctx context.Context, sessionID string) 
 		}
 		session := sessions[0]
 		stored := func(hash any) (any, error) {
-			if !pyTruthy(hash) {
+			if !anyutil.IsTrue(hash) {
 				return nil, nil
 			}
 			row, err := connRow(ctx, conn, "SELECT prompt FROM system_prompts WHERE hash = ?", hash)
@@ -310,7 +311,7 @@ func (d *SessionDB) ExportSessionForMove(ctx context.Context, sessionID string) 
 // Inserts a moved session into this store as profile's own, present when the id already exists else imported
 func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMovePayload, profileName string) (string, error) {
 	session := payload.Session.Clone()
-	sessionID := pyStr(rowValue(session, "id"))
+	sessionID := anyutil.String(rowValue(session, "id"))
 	outcome := ""
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		exists, err := fetchOne(ctx, conn, "SELECT 1 FROM sessions WHERE id = ?", sessionID)
@@ -322,7 +323,7 @@ func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMove
 			return nil
 		}
 		session.Set("profile_name", profileName)
-		if parentID := rowValue(session, "parent_session_id"); pyTruthy(parentID) {
+		if parentID := rowValue(session, "parent_session_id"); anyutil.IsTrue(parentID) {
 			parent, err := fetchOne(ctx, conn, "SELECT 1 FROM sessions WHERE id = ?", parentID)
 			if err != nil {
 				return err
@@ -338,7 +339,7 @@ func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMove
 			}
 			if taken != nil {
 				suffix := " (" + textutil.Last(sessionID, 12) + ")"
-				session.Set("title", textutil.First(pyStr(title), MaxTitleLength-utf8.RuneCountInString(suffix))+suffix)
+				session.Set("title", textutil.First(anyutil.String(title), MaxTitleLength-utf8.RuneCountInString(suffix))+suffix)
 			}
 		}
 		hash, err := storeSystemPrompt(ctx, conn, payload.SystemPrompt)

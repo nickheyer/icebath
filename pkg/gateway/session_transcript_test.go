@@ -658,7 +658,7 @@ func pyjsonEqual(a, b any) bool {
 // Decoded JSON value with every state ordered object turned into a map
 func statePlainJSON(v any) any {
 	switch x := v.(type) {
-	case state.PyObject:
+	case state.OrderedObject:
 		out := map[string]any{}
 		for _, kv := range x {
 			out[kv.Key] = statePlainJSON(kv.Value)

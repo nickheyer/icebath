@@ -8,6 +8,7 @@ import (
 	"time"
 	"weak"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -602,13 +603,13 @@ func (d *SessionDB) updateTokenCountsInTransaction(ctx context.Context, conn SQL
 	if len(rows) > 0 {
 		existing = rows[0]
 	}
-	calls, err := pyIntOf(orZero(rowValue(existing, "api_call_count")))
+	calls, err := intOfValue(orZero(rowValue(existing, "api_call_count")))
 	if err != nil {
 		return err
 	}
 	model, provider := derefString(t.Model), derefString(t.BillingProvider)
 	firstAccountedRoute := t.Task == "" && calls.Sign() == 0 && hasAccountedUsage && model != "" && provider != "" &&
-		(!pyEquals(rowValue(existing, "model"), model) || !pyEquals(rowValue(existing, "billing_provider"), provider))
+		(!equals(rowValue(existing, "model"), model) || !equals(rowValue(existing, "billing_provider"), provider))
 	if firstAccountedRoute {
 		if _, err := conn.ExecContext(ctx, `UPDATE sessions
                    SET model = ?, billing_provider = ?,
@@ -644,7 +645,7 @@ func (d *SessionDB) recordModelUsage(ctx context.Context, conn SQLiteConn, sessi
 		if own != nil && *own != "" {
 			return *own
 		}
-		if v := rowValue(sess, key); pyTruthy(v) {
+		if v := rowValue(sess, key); anyutil.IsTrue(v) {
 			return v
 		}
 		return fallback
@@ -735,7 +736,7 @@ func (d *SessionDB) AuxiliaryUsageByTask(ctx context.Context, sessionID string) 
 				values.Set(k, row.Value(k))
 			}
 		}
-		out.Set(pyStr(rowValue(row, "task")), values)
+		out.Set(anyutil.String(rowValue(row, "task")), values)
 	}
 	return out, nil
 }
@@ -755,11 +756,11 @@ func (d *SessionDB) UsageTotals(ctx context.Context, minMessageCount int, includ
 	if err != nil || row == nil {
 		return 0, 0, err
 	}
-	n, err := pyIntOf(orZero(rowValue(row, "tokens")))
+	n, err := intOfValue(orZero(rowValue(row, "tokens")))
 	if err != nil {
 		return 0, 0, err
 	}
-	cost, err := pyFloatOf(orZero(rowValue(row, "cost_usd")))
+	cost, err := floatOf(orZero(rowValue(row, "cost_usd")))
 	return n.Int64(), cost, err
 }
 
@@ -797,14 +798,14 @@ func derefString(p *string) string {
 
 // Python x or 0 of a row value
 func orZero(v any) any {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return int64(0)
 	}
 	return v
 }
 
 // Python equality of a row value and a string
-func pyEquals(v any, s string) bool {
+func equals(v any, s string) bool {
 	text, ok := v.(string)
 	return ok && text == s
 }

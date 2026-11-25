@@ -101,7 +101,7 @@ func DecodeSchtasksBytes(data []byte) (string, error) {
 
 // CPython codec for a code page, else the Windows code page codec when the OS can encode with it
 func consoleCodePageDecoder(cp int) codePageDecoder {
-	if dec := pyCodePageDecoder(cp); dec != nil {
+	if dec := codePageDecoderValue(cp); dec != nil {
 		return dec
 	}
 	if !windowsCodePageEncodes(cp) {

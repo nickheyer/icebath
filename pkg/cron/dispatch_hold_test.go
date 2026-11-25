@@ -43,7 +43,7 @@ func TestOneshotDueDuringADrainFiresOnceTheNextGatewayTicks(t *testing.T) {
 	if ids := diskJobIDs(t, s); !reflect.DeepEqual(ids, []string{"reminder"}) {
 		t.Fatalf("stored = %v", ids)
 	}
-	if held, err := readDispatchHeld(s.cronDir); err != nil || held == nil || held.Since != began {
+	if held := readDispatchHeld(s.cronDir); held == nil || held.Since != began {
 		t.Fatalf("hold stamp %+v", held)
 	}
 }
@@ -83,14 +83,7 @@ func TestStaleOneshotIsRetiredDespiteAHold(t *testing.T) {
 
 func TestDispatchHoldGraceStartsAt(t *testing.T) {
 	dir := t.TempDir()
-	grace := func(dueAt float64) float64 {
-		t.Helper()
-		got, err := dispatchHoldGraceStartsAt(dir, dueAt, 120)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got
-	}
+	grace := func(dueAt float64) float64 { return dispatchHoldGraceStartsAt(dir, dueAt, 120) }
 	if got := grace(1000); got != 1000 {
 		t.Fatalf("no hold = %v", got)
 	}
@@ -102,20 +95,24 @@ func TestDispatchHoldGraceStartsAt(t *testing.T) {
 		t.Fatalf("expired before the hold = %v", got)
 	}
 	for _, malformed := range []string{"[1, 2]", `{"since": 900}`, `{"since": null, "last": 1}`, `{"since": "soon", "last": 1}`,
-		"{\"since\": 900, \"last\": 1100, \"x\": \"\xff\"}"} {
+		"{\"since\": 900, \"last\": 1100, \"x\": \"\xff\"}", `{"since": 900, "last": 1e400}`} {
 		os.WriteFile(dir+"/"+dispatchHeldFile, []byte(malformed), 0o600)
-		if held, err := readDispatchHeld(dir); held != nil || err != nil {
-			t.Fatalf("malformed stamp %q read as %+v (%v)", malformed, held, err)
+		if held := readDispatchHeld(dir); held != nil {
+			t.Fatalf("malformed stamp %q read as %+v", malformed, held)
 		}
 	}
 	os.WriteFile(dir+"/"+dispatchHeldFile, []byte(`{"since": 1`+strings.Repeat("0", 400)+`, "last": 1}`), 0o600)
-	if _, err := dispatchHoldGraceStartsAt(dir, 1000, 120); err == nil || err.Error() != "int too large to convert to float" {
-		t.Fatalf("overflowing stamp = %v", err)
+	if held := readDispatchHeld(dir); held != nil {
+		t.Fatalf("overflowing stamp read as %+v", held)
+	}
+	if got := grace(1000); got != 1000 {
+		t.Fatalf("overflowing stamp extended the grace to %v", got)
 	}
 	s := newClockStore(t, nil, time.UTC)
 	s.cronDir = dir
 	t.Cleanup(s.noteDispatching)
-	if err := s.noteHeld(context.Background(), nil); err == nil {
-		t.Fatal("an overflowing stamp started a hold")
+	mustNoteHeld(t, s, nil)
+	if held := readDispatchHeld(dir); held == nil || held.Since != held.Last {
+		t.Fatalf("overflowing stamp not replaced by a fresh hold: %+v", held)
 	}
 }

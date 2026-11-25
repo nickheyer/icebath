@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -19,13 +20,13 @@ func pickerExcludedSources() []string {
 // One stored picker entry of a row under its compression tip
 func pickerRow(row, tip *jsonutil.Object, sid string) *jsonutil.Object {
 	title := row.ValueOr("title", nil)
-	if !pyTruthy(title) {
+	if !anyutil.IsTrue(title) {
 		title = ""
 	}
 	return jsonutil.ObjectOf("id", row.ValueOr("id", nil), "session_id", sid, "resolved_id", sid, "title", title,
 		"source", tip.ValueOr("source", nil), "started_at", row.ValueOr("started_at", nil),
 		"message_count", row.ValueOr("message_count", int64(0)), "model", tip.ValueOr("model", nil), "running", false,
-		"preview", listingPreview(row), "pinned", pyTruthy(row.ValueOr("pinned", nil)), "archived", pyTruthy(row.ValueOr("archived", nil)),
+		"preview", listingPreview(row), "pinned", anyutil.IsTrue(row.ValueOr("pinned", nil)), "archived", anyutil.IsTrue(row.ValueOr("archived", nil)),
 		"last_active", row.ValueOr("last_active", nil))
 }
 
@@ -195,16 +196,16 @@ func closedLocalSession(ctx context.Context, a *SessionAuthority, actor Principa
 		}
 	}
 	title := tip.ValueOr("title", nil)
-	if !pyTruthy(title) {
+	if !anyutil.IsTrue(title) {
 		title = row.ValueOr("title", nil)
 	}
-	if !pyTruthy(title) {
+	if !anyutil.IsTrue(title) {
 		title = ""
 	}
 	return jsonutil.ObjectOf("id", owner, "session_id", owner, "resolved_id", owner, "title", title,
 		"source", tip.ValueOr("source", nil), "started_at", row.ValueOr("started_at", nil),
 		"message_count", row.ValueOr("message_count", int64(0)), "model", tip.ValueOr("model", nil), "running", false,
-		"preview", listingPreview(row), "pinned", pyTruthy(row.ValueOr("pinned", nil)), "archived", pyTruthy(row.ValueOr("archived", nil)),
+		"preview", listingPreview(row), "pinned", anyutil.IsTrue(row.ValueOr("pinned", nil)), "archived", anyutil.IsTrue(row.ValueOr("archived", nil)),
 		"last_active", row.ValueOr("last_active", nil)), nil
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
@@ -29,7 +30,7 @@ func ValidateCoalesceConfig(routeName string, route *jsonutil.Object) error {
 	}
 	for _, exclusive := range []string{"deliver_only", "cron_job"} {
 		if anyutil.IsTrue(route.ValueOr(exclusive, nil)) {
-			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' combines %s with coalesce. Coalescing only "+
+			return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' combines %s with coalesce. Coalescing only "+
 				"applies to agent-mode routes.", routeName, exclusive)}
 		}
 	}
@@ -39,7 +40,7 @@ func ValidateCoalesceConfig(routeName string, route *jsonutil.Object) error {
 		key = block.ValueOr("key", nil)
 	}
 	if text, ok := key.(string); !ok || strings.TrimSpace(text) == "" {
-		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has a coalesce block without a non-empty string 'key'. "+
+		return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has a coalesce block without a non-empty string 'key'. "+
 			"Set coalesce.key to a payload field (e.g. 'pull_request.number') or a template "+
 			"(e.g. '{repository.full_name}#{number}').", routeName)}
 	}
@@ -49,7 +50,7 @@ func ValidateCoalesceConfig(routeName string, route *jsonutil.Object) error {
 			continue
 		}
 		if _, isBool := value.(bool); isBool || !webhookPositiveNumberValue(value) {
-			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' coalesce.%s must be a positive number, got %s.",
+			return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' coalesce.%s must be a positive number, got %s.",
 				routeName, field, anyutil.Quote(value))}
 		}
 	}
@@ -178,7 +179,7 @@ func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *jsonutil.Object, 
 	keyValue, _ := coalesce.Get("key")
 	keyText, ok := keyValue.(string)
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook coalesce key is %s, expected text", errchain.Kind(keyValue))}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook coalesce key is %s, expected text", errchain.Kind(keyValue))}
 	}
 	groupKey, resolved, err := c.GroupKey(routeName, keyText, payload, eventType)
 	if err != nil {

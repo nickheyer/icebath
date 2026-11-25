@@ -72,7 +72,10 @@ func screenStatusCmd(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 		holder := botdesktop.LeasePublicView(botdesktop.LeaseGet(key))
 		who := "agent"
 		if anyutil.String(cuGet(holder, "holder")) == botdesktop.LeaseHuman {
-			who = "human (viewer " + anyutil.String(cuGet(holder, "viewer_hash")) + ")"
+			who = "human"
+			if hash := cuGet(holder, "viewer_hash"); hash != nil {
+				who += " (viewer " + anyutil.String(hash) + ")"
+			}
 		}
 		cli.printf("Bot Desktop [%s]: running on DISPLAY %s (%s), pid %s\n", st.Profile, screenText(st.Display), st.Geometry, screenText(st.PID))
 		cli.printf("  control: %s   rfb socket: %s\n", who, screenText(st.Socket))

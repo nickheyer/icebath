@@ -38,5 +38,5 @@ func titleNewSession(ctx context.Context, a *SessionAuthority, ref SessionRef, t
 
 // Whether a title store error is the ValueError Python raises for a bad or held title
 func titleValueError(err error) bool {
-	return isPyValueError(err) || pyErrorKind(err) == "ValueError"
+	return isPyValueError(err) || errorKindLabel(err) == "ValueError"
 }

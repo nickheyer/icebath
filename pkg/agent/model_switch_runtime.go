@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var switchModelContextLength = provider.GetModelContextLength
@@ -250,7 +251,7 @@ func finishSwitch(ctx context.Context, a *AIAgent, newProvider, oldNorm, newNorm
 	if oldNorm != "" && newNorm != "" && oldNorm != newNorm {
 		kept := chain[:0:0]
 		for _, entry := range chain {
-			if p := strings.ToLower(strings.TrimSpace(pyStrOr(entry["provider"], ""))); p != oldNorm && p != newNorm {
+			if p := strings.ToLower(strings.TrimSpace(anyutil.StringOr(entry["provider"], ""))); p != oldNorm && p != newNorm {
 				kept = append(kept, entry)
 			}
 		}

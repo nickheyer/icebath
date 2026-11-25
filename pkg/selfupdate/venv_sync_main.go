@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"regexp"
@@ -39,20 +40,28 @@ var osErrorClasses = map[string]bool{
 	"ConnectionAbortedError": true, "ConnectionRefusedError": true, "ConnectionResetError": true,
 }
 
-// Python class name of an error, the errno subclass for an OS error
+// Class label pm gives a failure, "" for an operating-system error, which its own text describes
 func launchErrorClass(err error) string {
 	if errorutil.IsSystem(err) {
-		return errorutil.Kind(err)
+		return ""
 	}
 	return pm.ErrorClass(err)
 }
 
-// str of the exception an error stands for
+// Text of a failure, an operating-system error as its reason and the paths or command it concerns
 func launchErrorText(err error) string {
 	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
 	return err.Error()
+}
+
+// One line reporting a failure: its class label and text, an operating-system error by its text alone
+func launchErrorLine(err error) string {
+	if class := launchErrorClass(err); class != "" {
+		return class + ": " + launchErrorText(err)
+	}
+	return launchErrorText(err)
 }
 
 // Starts the relaunch command in place of this process, a Windows parent waiting for the child's status
@@ -79,7 +88,7 @@ var relaunchExec = func(binary string, command []string) (int, error) {
 func BootLaunch(ctx context.Context, root string, args []string) (int, bool) {
 	command, err := pm.CommandArgv(args[1:])
 	if err != nil {
-		sayLaunch("%s: %s", launchErrorClass(err), launchErrorText(err))
+		sayLaunch("%s", launchErrorLine(err))
 		return 1, true
 	}
 	if len(command) >= 2 && command[0] == "pm" && command[1] == "repair" {
@@ -93,7 +102,7 @@ func BootLaunch(ctx context.Context, root string, args []string) (int, bool) {
 		}
 	}
 	if err != nil {
-		if launchErrorClass(err) == "PermissionError" {
+		if errors.Is(err, fs.ErrPermission) {
 			if message := pm.InstallStatePermissionMessage(ctx, root, err); message != "" {
 				sayLaunch("icebath: %s", message)
 				return 1, true
@@ -109,11 +118,11 @@ func BootLaunch(ctx context.Context, root string, args []string) (int, bool) {
 		return 0, false
 	}
 	class := launchErrorClass(err)
-	if !runtimeErrorClasses[class] && !osErrorClasses[class] {
-		sayLaunch("%s: %s", class, launchErrorText(err))
+	if !errorutil.IsSystem(err) && !runtimeErrorClasses[class] && !osErrorClasses[class] {
+		sayLaunch("%s", launchErrorLine(err))
 		return 1, true
 	}
-	if class == "PermissionError" {
+	if errors.Is(err, fs.ErrPermission) {
 		if message := pm.InstallStatePermissionMessage(ctx, root, err); message != "" {
 			sayLaunch("icebath: %s", message)
 			return 1, true
@@ -398,7 +407,7 @@ func VenvSyncMain(ctx context.Context, argv []string, stdout, stderr io.Writer) 
 	}
 	result, err := SyncTree(ctx, args.projectRoot, args.check)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		fmt.Fprintln(stderr, launchErrorLine(err))
 		return 1
 	}
 	if args.json {

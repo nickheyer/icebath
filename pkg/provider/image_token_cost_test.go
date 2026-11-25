@@ -62,7 +62,7 @@ func TestImageCostResidualTeachesPerImageCost(t *testing.T) {
 		t.Fatalf("other model %d", got)
 	}
 	raw, _ := os.ReadFile(imageCostCachePath(ctx))
-	if string(raw) != "{\n\"vision-local@127.0.0.1\":4000\n}" {
+	if string(raw) != `{"vision-local@127.0.0.1":4000}` {
 		t.Fatalf("cache file %q", raw)
 	}
 	_, again, ok := CalibrateImageTokenCost(scoped, "vision-local", "http://127.0.0.1:8080/v1", anchor, history, textOnly+2*3_001)

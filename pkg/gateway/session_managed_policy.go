@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -11,7 +13,7 @@ import (
 func managedPolicy(ctx context.Context, a *SessionAuthority, ref SessionRef) (*LocalSessionPolicy, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	policy, err := policyForSource(ctx, a.Runner, live.Source)
 	if err != nil || policy == nil {
@@ -28,7 +30,7 @@ func managedPolicy(ctx context.Context, a *SessionAuthority, ref SessionRef) (*L
 	if section, present := cfg["gateway"]; present {
 		gateway, isMap := section.(map[string]any)
 		if !isMap {
-			return nil, &PyError{Kind: "AttributeError", Msg: "the managed policy section is " + errchain.Kind(section) + ", expected a mapping"}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the managed policy section is " + errchain.Kind(section) + ", expected a mapping"}
 		}
 		managed = gateway["managed_workers"]
 	}
@@ -41,11 +43,11 @@ func managedPolicy(ctx context.Context, a *SessionAuthority, ref SessionRef) (*L
 	}
 	request, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the managed policy is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the managed policy is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	provider, _ := request.Get("provider")
 	baseURL, _ := request.Get("base_url")
-	if policy.Platform != "cli" || provider != "custom" || !pyTruthy(baseURL) {
+	if policy.Platform != "cli" || provider != "custom" || !anyutil.IsTrue(baseURL) {
 		return nil, runtimeRefusal("unsupported_managed_policy")
 	}
 	return policy, nil

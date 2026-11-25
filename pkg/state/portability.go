@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -207,7 +208,7 @@ func (d *SessionDB) readSessionRichRowsBatch(ctx context.Context, sessionIDs []s
 	}
 	for _, row := range rows {
 		s := richRow(row)
-		result[pyStr(rowValue(s, "id"))] = s
+		result[anyutil.String(rowValue(s, "id"))] = s
 	}
 	return result, nil
 }

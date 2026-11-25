@@ -182,7 +182,7 @@ func isoTime(ts any) string {
 // Converts a state.db gateway session row to the sessions.json entry shape
 func rowToIndexEntry(row *jsonutil.Object) *jsonutil.Object {
 	origin := jsonutil.NewObject()
-	if raw := pyGet(row, "origin_json", nil); anyutil.IsTrue(raw) {
+	if raw := lookup(row, "origin_json", nil); anyutil.IsTrue(raw) {
 		var parsed any
 		var err error
 		switch t := raw.(type) {
@@ -198,13 +198,13 @@ func rowToIndexEntry(row *jsonutil.Object) *jsonutil.Object {
 		}
 	}
 	if origin.Len() == 0 {
-		origin = jsonutil.ObjectOf("platform", pyGet(row, "source", ""))
+		origin = jsonutil.ObjectOf("platform", lookup(row, "source", ""))
 		for _, k := range []string{"chat_id", "chat_type", "thread_id", "user_id"} {
-			origin.Set(k, pyGet(row, k, nil))
+			origin.Set(k, lookup(row, k, nil))
 		}
 	}
 	tokens := func(key string) int64 {
-		v := pyGet(row, key, nil)
+		v := lookup(row, key, nil)
 		if !anyutil.IsTrue(v) {
 			return 0
 		}
@@ -215,28 +215,28 @@ func rowToIndexEntry(row *jsonutil.Object) *jsonutil.Object {
 		return n
 	}
 	inputTokens, outputTokens := tokens("input_tokens"), tokens("output_tokens")
-	chatType := pyGet(row, "chat_type", nil)
+	chatType := lookup(row, "chat_type", nil)
 	if !anyutil.IsTrue(chatType) {
-		chatType = pyGet(origin, "chat_type", "")
+		chatType = lookup(origin, "chat_type", "")
 	}
-	displayName := pyGet(row, "display_name", nil)
+	displayName := lookup(row, "display_name", nil)
 	if !anyutil.IsTrue(displayName) {
-		displayName = pyGet(origin, "chat_name", nil)
+		displayName = lookup(origin, "chat_name", nil)
 	}
 	if !anyutil.IsTrue(displayName) {
 		displayName = ""
 	}
-	lastActive := pyGet(row, "last_active", nil)
+	lastActive := lookup(row, "last_active", nil)
 	if !anyutil.IsTrue(lastActive) {
-		lastActive = pyGet(row, "started_at", nil)
+		lastActive = lookup(row, "started_at", nil)
 	}
 	return jsonutil.ObjectOf(
-		"session_id", anyutil.String(pyGet(row, "id", "")), "session_key", pyGet(row, "session_key", ""),
-		"platform", pyGet(row, "source", ""),
+		"session_id", anyutil.String(lookup(row, "id", "")), "session_key", lookup(row, "session_key", ""),
+		"platform", lookup(row, "source", ""),
 		"chat_type", chatType,
 		"display_name", displayName,
 		"origin", origin,
-		"created_at", isoTime(pyGet(row, "started_at", nil)),
+		"created_at", isoTime(lookup(row, "started_at", nil)),
 		"updated_at", isoTime(lastActive),
 		"input_tokens", inputTokens, "output_tokens", outputTokens,
 		"total_tokens", inputTokens+outputTokens,
@@ -262,7 +262,7 @@ func loadSessionsIndexFromDB(ctx context.Context) (index *jsonutil.Object) {
 	}
 	out := jsonutil.NewObject()
 	for _, row := range rows {
-		key := pyGet(row, "session_key", nil)
+		key := lookup(row, "session_key", nil)
 		if !anyutil.IsTrue(key) {
 			continue
 		}
@@ -308,15 +308,15 @@ func coerceInt(value any, def, minimum, maximum int64) int64 {
 
 // Text of a message, the text parts of multi part content joined by newlines
 func extractMessageContent(msg any) string {
-	content := pyGet(msg, "content", "")
+	content := lookup(msg, "content", "")
 	if list, ok := content.([]any); ok {
 		parts := []string{}
 		for _, p := range list {
-			if d, ok := asDict(p); ok && isStr(pyGet(d, "type", nil), "text") {
-				text := pyGet(d, "text", "")
+			if d, ok := asDict(p); ok && isStr(lookup(d, "type", nil), "text") {
+				text := lookup(d, "text", "")
 				s, ok := text.(string)
 				if !ok {
-					panic(&pyError{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", len(parts), anyutil.Kind(text))})
+					panic(&kindError{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", len(parts), anyutil.Kind(text))})
 				}
 				parts = append(parts, s)
 			}
@@ -340,23 +340,23 @@ func isStr(v any, s string) bool {
 // Non text attachments, image and file content blocks plus the MEDIA tags of the text
 func extractAttachments(msg any) []any {
 	attachments := []any{}
-	content := pyGet(msg, "content", "")
+	content := lookup(msg, "content", "")
 	if list, ok := content.([]any); ok {
 		for _, part := range list {
 			if _, ok := asDict(part); !ok {
 				continue
 			}
-			ptype := pyGet(part, "type", "")
+			ptype := lookup(part, "type", "")
 			var url any
 			switch {
 			case isStr(ptype, "image_url"):
 				url = ""
-				if image, ok := asDict(pyGet(part, "image_url", nil)); ok {
-					url = pyGet(image, "url", "")
+				if image, ok := asDict(lookup(part, "image_url", nil)); ok {
+					url = lookup(image, "url", "")
 				}
 			case isStr(ptype, "image"):
-				fallback := pyGet(pyGet(part, "source", jsonutil.NewObject()), "url", "")
-				url = pyGet(part, "url", fallback)
+				fallback := lookup(lookup(part, "source", jsonutil.NewObject()), "url", "")
+				url = lookup(part, "url", fallback)
 			default:
 				if !isStr(ptype, "text") {
 					attachments = append(attachments, jsonutil.ObjectOf("type", ptype, "data", part))
@@ -416,9 +416,9 @@ func latestTS(messages []*jsonutil.Object) float64 {
 	if len(messages) == 0 {
 		return 0
 	}
-	latest := tsFloat(pyGet(messages[0], "timestamp", int64(0)))
+	latest := tsFloat(lookup(messages[0], "timestamp", int64(0)))
 	for _, m := range messages[1:] {
-		if v := tsFloat(pyGet(m, "timestamp", int64(0))); v > latest {
+		if v := tsFloat(lookup(m, "timestamp", int64(0))); v > latest {
 			latest = v
 		}
 	}
@@ -426,15 +426,15 @@ func latestTS(messages []*jsonutil.Object) float64 {
 }
 
 // threading.Event analogue, a flag waiters block on until it is set
-type pyEvent struct {
+type eventValue struct {
 	mu   sync.Mutex
 	flag bool
 	ch   chan struct{}
 }
 
-func newPyEvent() *pyEvent { return &pyEvent{ch: make(chan struct{})} }
+func newPyEvent() *eventValue { return &eventValue{ch: make(chan struct{})} }
 
-func (e *pyEvent) set() {
+func (e *eventValue) set() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if !e.flag {
@@ -443,7 +443,7 @@ func (e *pyEvent) set() {
 	}
 }
 
-func (e *pyEvent) clear() {
+func (e *eventValue) clear() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.flag {
@@ -453,7 +453,7 @@ func (e *pyEvent) clear() {
 }
 
 // Blocks until the flag is set or timeout passes
-func (e *pyEvent) wait(timeout time.Duration) {
+func (e *eventValue) wait(timeout time.Duration) {
 	e.mu.Lock()
 	if e.flag {
 		e.mu.Unlock()
@@ -475,7 +475,7 @@ type EventBridge struct {
 	mu                  sync.Mutex
 	queue               []*QueueEvent
 	cursor              int64
-	newEvent            *pyEvent
+	newEvent            *eventValue
 	running             atomic.Bool
 	done                chan struct{}
 	lastPollTimestamps  map[string]float64
@@ -540,7 +540,7 @@ func (b *EventBridge) PollEvents(afterCursor int64, sessionKey string, limit int
 	events := b.matching(afterCursor, sessionKey, limit)
 	var next any = afterCursor
 	if len(events) > 0 {
-		next = pyGet(events[len(events)-1], "cursor", nil)
+		next = lookup(events[len(events)-1], "cursor", nil)
 	}
 	return jsonutil.ObjectOf("events", events, "next_cursor", next)
 }
@@ -570,7 +570,7 @@ func (b *EventBridge) ListPendingApprovals() []any {
 		approvals = append(approvals, b.pendingApprovals.Value(k))
 	}
 	b.mu.Unlock()
-	sortByKey(approvals, func(a any) any { return pyGet(a, "created_at", "") }, false)
+	sortByKey(approvals, func(a any) any { return lookup(a, "created_at", "") }, false)
 	return approvals
 }
 
@@ -582,7 +582,7 @@ func (b *EventBridge) RespondToApproval(approvalID, decision string) *jsonutil.O
 	if !anyutil.IsTrue(approval) {
 		return jsonutil.ObjectOf("error", "Approval not found: "+approvalID)
 	}
-	b.enqueue(&QueueEvent{Type: "approval_resolved", SessionKey: pyGet(approval, "session_key", ""),
+	b.enqueue(&QueueEvent{Type: "approval_resolved", SessionKey: lookup(approval, "session_key", ""),
 		Data: jsonutil.ObjectOf("approval_id", approvalID, "decision", decision)})
 	return jsonutil.ObjectOf("resolved", true, "approval_id", approvalID, "decision", decision)
 }
@@ -620,7 +620,7 @@ func (b *EventBridge) establishBaseline() {
 		return loadSessionsIndex(b.ctx)
 	}()
 	for _, key := range b.cachedSessionsIndex.Keys() {
-		sessionID := pyGet(b.cachedSessionsIndex.Value(key), "session_id", "")
+		sessionID := lookup(b.cachedSessionsIndex.Value(key), "session_id", "")
 		if !anyutil.IsTrue(sessionID) {
 			continue
 		}
@@ -676,7 +676,7 @@ func (b *EventBridge) pollOnce(db *state.DB) {
 	}
 	b.cachedSessionsIndex = loadSessionsIndex(b.ctx)
 	for _, key := range b.cachedSessionsIndex.Keys() {
-		sessionID := pyGet(b.cachedSessionsIndex.Value(key), "session_id", "")
+		sessionID := lookup(b.cachedSessionsIndex.Value(key), "session_id", "")
 		if !anyutil.IsTrue(sessionID) {
 			continue
 		}
@@ -686,9 +686,9 @@ func (b *EventBridge) pollOnce(db *state.DB) {
 			continue
 		}
 		for _, msg := range messages {
-			role := pyGet(msg, "role", "")
-			pyHashable(role)
-			if !(isStr(role, "user") || isStr(role, "assistant")) || tsFloat(pyGet(msg, "timestamp", int64(0))) <= lastSeen {
+			role := lookup(msg, "role", "")
+			hashable(role)
+			if !(isStr(role, "user") || isStr(role, "assistant")) || tsFloat(lookup(msg, "timestamp", int64(0))) <= lastSeen {
 				continue
 			}
 			content := extractMessageContent(msg)
@@ -696,8 +696,8 @@ func (b *EventBridge) pollOnce(db *state.DB) {
 				continue
 			}
 			b.enqueue(&QueueEvent{Type: "message", SessionKey: key, Data: jsonutil.ObjectOf(
-				"role", pyGet(msg, "role", ""), "content", textutil.First(content, 500),
-				"timestamp", anyutil.String(pyGet(msg, "timestamp", "")), "message_id", anyutil.String(pyGet(msg, "id", "")))})
+				"role", lookup(msg, "role", ""), "content", textutil.First(content, 500),
+				"timestamp", anyutil.String(lookup(msg, "timestamp", "")), "message_id", anyutil.String(lookup(msg, "id", "")))})
 		}
 		if latest := latestTS(messages); latest > lastSeen {
 			b.lastPollTimestamps[key] = latest

@@ -18,7 +18,7 @@ func partField(value any, key string) any {
 		return nil
 	case map[string]any:
 		return m[key]
-	case pyObject:
+	case orderedObject:
 		v, _ := m.get(key)
 		return v
 	case interface{ Get(string) (any, bool) }:
@@ -114,7 +114,7 @@ func textFromPart(part any) string {
 		return s
 	}
 	typ := ""
-	if t := partField(part, "type"); pyTruthy(t) {
+	if t := partField(part, "type"); anyutil.IsTrue(t) {
 		typ = anyutil.String(t)
 	}
 	if contentNonTextPartTypes[strings.ToLower(strings.TrimSpace(typ))] {

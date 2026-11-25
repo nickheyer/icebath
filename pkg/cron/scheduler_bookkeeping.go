@@ -129,7 +129,7 @@ func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwne
 		if err != nil {
 			return false, err
 		}
-		if current != nil && !FirerFinishedStates[pyStrOrEmpty(current["status"])] {
+		if current != nil && !FirerFinishedStates[anyutil.StringOr(current["status"], "")] {
 			return false, nil
 		}
 	}

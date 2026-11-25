@@ -99,7 +99,7 @@ func handleCLI(args any) error {
 		}
 		return nil
 	}
-	return &pyError{kind: "KeyError", msg: anyutil.Quote(action)}
+	return &kindError{kind: "KeyError", msg: anyutil.Quote(action)}
 }
 
 // Prints whether the profile is logged in and each stored login field that is set

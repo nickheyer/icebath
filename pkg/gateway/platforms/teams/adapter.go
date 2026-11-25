@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
@@ -258,7 +259,7 @@ func (a *TeamsAdapter) getBotFrameworkToken(ctx context.Context) (string, error)
 		return cached.token, nil
 	}
 	if a.clientID == "" || a.clientSecret == "" || a.tenantID == "" {
-		return "", &gateway.PyError{Kind: "ValueError", Msg: "Missing TEAMS_CLIENT_ID/SECRET/TENANT_ID for attachment auth"}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: "Missing TEAMS_CLIENT_ID/SECRET/TENANT_ID for attachment auth"}
 	}
 	tokenURL, form := bfTokenRequest(a.tenantID, a.clientID, a.clientSecret)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
@@ -292,7 +293,7 @@ func (a *TeamsAdapter) getBotFrameworkToken(ctx context.Context) (string, error)
 	}
 	token, ok := payload["access_token"].(string)
 	if !ok {
-		return "", &gateway.PyError{Kind: "KeyError", Msg: "'access_token'"}
+		return "", &errorutil.Error{Kind: "KeyError", Msg: "'access_token'"}
 	}
 	a.bfTokenCache = &bfToken{token: token, expires: time.Now().Add(time.Duration(expiresIn * float64(time.Second)))}
 	return token, nil
@@ -302,7 +303,7 @@ func (a *TeamsAdapter) getBotFrameworkToken(ctx context.Context) (string, error)
 func (a *TeamsAdapter) fetchAttachmentBytes(ctx context.Context, rawURL string, timeout time.Duration) ([]byte, error) {
 	env := gateway.URLSafetyEnv(ctx)
 	if !tools.IsSafeURL(env, rawURL) {
-		return nil, &gateway.PyError{Kind: "ValueError", Msg: "Blocked unsafe attachment URL (SSRF protection)"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "Blocked unsafe attachment URL (SSRF protection)"}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {

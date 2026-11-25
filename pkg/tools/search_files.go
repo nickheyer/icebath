@@ -64,11 +64,11 @@ var stderrRetainBytes = 64 * 1024
 var searchIsInterrupted = IsInterrupted
 
 // Negated Python whitespace characters for building bracket classes
-var pyWSChars = pyWSClass[1 : len(pyWSClass)-1]
+var wsChars = wsClass[1 : len(wsClass)-1]
 
 var (
-	searchTimeoutMarkerRe = regexp.MustCompile(`\n?\[Command timed out after \p{Nd}+s\]` + pyWSClass + `*$`)
-	searchOutputRe        = regexp.MustCompile(`^(?:([A-Za-z]:)?[^` + pyWSChars + `:][^\n]*?[:\-]\p{Nd}|[^` + pyWSChars + `:][^` + pyWSChars + `]*$)`)
+	searchTimeoutMarkerRe = regexp.MustCompile(`\n?\[Command timed out after \p{Nd}+s\]` + wsClass + `*$`)
+	searchOutputRe        = regexp.MustCompile(`^(?:([A-Za-z]:)?[^` + wsChars + `:][^\n]*?[:\-]\p{Nd}|[^` + wsChars + `:][^` + wsChars + `]*$)`)
 	permissionDeniedRe    = regexp.MustCompile(`^(?P<tool>rg|grep|find): (?P<path>.+?): ` +
 		`(?:IO error for operation on .+?: )?Permission denied(?: \(os error \p{Nd}+\))?$`)
 	findQuotesRe         = regexp.MustCompile("^['\u2018]|['\u2019]$")
@@ -84,7 +84,7 @@ var (
 var outputModeFlags = map[string]string{"files_only": "-l", "count": "-c"}
 
 // Code points Python str.isdigit accepts beyond the decimal digits
-var pyDigitOnlyRanges = [][2]rune{
+var digitOnlyRanges = [][2]rune{
 	{0xB2, 0xB3}, {0xB9, 0xB9}, {0x1369, 0x1371}, {0x19DA, 0x19DA}, {0x2070, 0x2070}, {0x2074, 0x2079},
 	{0x2080, 0x2089}, {0x2460, 0x2468}, {0x2474, 0x247C}, {0x2488, 0x2490}, {0x24EA, 0x24EA},
 	{0x24F5, 0x24FD}, {0x24FF, 0x24FF}, {0x2776, 0x277E}, {0x2780, 0x2788}, {0x278A, 0x2792},
@@ -92,7 +92,7 @@ var pyDigitOnlyRanges = [][2]rune{
 }
 
 // Python str.isdigit over the whole string, false when empty
-func pyIsDigitText(s string) bool {
+func isDigitText(s string) bool {
 	if s == "" {
 		return false
 	}
@@ -101,7 +101,7 @@ func pyIsDigitText(s string) bool {
 			continue
 		}
 		found := false
-		for _, rg := range pyDigitOnlyRanges {
+		for _, rg := range digitOnlyRanges {
 			if r >= rg[0] && r <= rg[1] {
 				found = true
 				break
@@ -115,8 +115,8 @@ func pyIsDigitText(s string) bool {
 }
 
 // Signed ASCII digits of a Python int literal in base ten, false where int would raise
-func pyIntDigits(s string) (string, bool) {
-	t := pyStrip(s)
+func intDigits(s string) (string, bool) {
+	t := strings.TrimSpace(s)
 	sign := ""
 	if strings.HasPrefix(t, "+") || strings.HasPrefix(t, "-") {
 		sign, t = t[:1], t[1:]
@@ -134,7 +134,7 @@ func pyIntDigits(s string) (string, bool) {
 		if !unicode.IsDigit(r) {
 			return "", false
 		}
-		b.WriteString(pyDigitsASCII(string(r)))
+		b.WriteString(digitsASCII(string(r)))
 		prevDigit = true
 	}
 	if !prevDigit {
@@ -147,8 +147,8 @@ func pyIntDigits(s string) (string, bool) {
 }
 
 // Python int of a decimal string as a machine int
-func pyIntText(s string) (int, bool) {
-	digits, ok := pyIntDigits(s)
+func intText(s string) (int, bool) {
+	digits, ok := intDigits(s)
 	if !ok {
 		return 0, false
 	}
@@ -157,15 +157,15 @@ func pyIntText(s string) (int, bool) {
 }
 
 // Python float of a string, hex spellings refused like float does
-func pyFloatText(s string) (float64, bool) {
-	t := pyStrip(s)
+func floatText(s string) (float64, bool) {
+	t := strings.TrimSpace(s)
 	if t == "" || strings.ContainsAny(t, "xX") {
 		return 0, false
 	}
 	var b strings.Builder
 	for _, r := range t {
 		if r > 0x7f && unicode.IsDigit(r) {
-			b.WriteString(pyDigitsASCII(string(r)))
+			b.WriteString(digitsASCII(string(r)))
 			continue
 		}
 		b.WriteRune(r)
@@ -184,7 +184,7 @@ func pyFloatText(s string) (float64, bool) {
 }
 
 // Python str.lstrip with no argument
-func pyLStrip(s string) string { return strings.TrimLeftFunc(s, pyIsSpace) }
+func lStrip(s string) string { return strings.TrimLeftFunc(s, unicode.IsSpace) }
 
 // Python list slice from offset spanning limit items, clamped to the bounds
 func sliceWindow[T any](items []T, offset, limit int) []T {
@@ -205,11 +205,11 @@ func searchStdoutAndLimit(result *ExecuteResult) (string, string) {
 func splitToolDiagnostics(output string) (string, string) {
 	var diagnostics, payload []string
 	for _, line := range strings.Split(output, "\n") {
-		if pyStrip(line) == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		switch {
-		case hasAnyPrefix(pyLStrip(line), []string{"rg: ", "grep: ", "find: "}):
+		case hasAnyPrefix(lStrip(line), []string{"rg: ", "grep: ", "find: "}):
 			diagnostics = append(diagnostics, line)
 		case line == "--" || searchOutputRe.MatchString(line):
 			payload = append(payload, line)
@@ -228,9 +228,9 @@ func omittedDiagnosticsLine(count int) string {
 // Sum of every omitted diagnostics tally in the text
 func omittedDiagnosticCount(diagnostics string) int {
 	total := 0
-	for _, line := range pySplitLines(diagnostics) {
-		if m := omittedDiagnosticsRe.FindStringSubmatch(pyStrip(line)); m != nil {
-			n, _ := pyIntText(m[1])
+	for _, line := range splitLinesValue(diagnostics) {
+		if m := omittedDiagnosticsRe.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			n, _ := intText(m[1])
 			total += n
 		}
 	}
@@ -240,8 +240,8 @@ func omittedDiagnosticCount(diagnostics string) int {
 // True when every kept diagnostic line reports an unreadable path, a partial success
 func isPermissionOnlyError(diagnostics string) bool {
 	var lines []string
-	for _, line := range pySplitLines(diagnostics) {
-		if l := pyStrip(line); l != "" && !omittedDiagnosticsRe.MatchString(l) {
+	for _, line := range splitLinesValue(diagnostics) {
+		if l := strings.TrimSpace(line); l != "" && !omittedDiagnosticsRe.MatchString(l) {
 			lines = append(lines, l)
 		}
 	}
@@ -260,12 +260,12 @@ func isPermissionOnlyError(diagnostics string) bool {
 func extractUnreadablePaths(diagnostics string) []string {
 	var paths []string
 	seen := map[string]bool{}
-	for _, line := range pySplitLines(diagnostics) {
-		m := permissionDeniedRe.FindStringSubmatch(pyStrip(line))
+	for _, line := range splitLinesValue(diagnostics) {
+		m := permissionDeniedRe.FindStringSubmatch(strings.TrimSpace(line))
 		if m == nil {
 			continue
 		}
-		path := pyStrip(m[2])
+		path := strings.TrimSpace(m[2])
 		if m[1] == "find" {
 			path = findQuotesRe.ReplaceAllString(path, "")
 		}
@@ -357,9 +357,9 @@ func mergeChildWarnings(children []*SearchResult, hasResults bool) []string {
 			warning = strings.ReplaceAll(warning, sentence, "\x00")
 		}
 		for _, piece := range strings.Split(warning, "\x00") {
-			piece = pyStrip(piece)
+			piece = strings.TrimSpace(piece)
 			if hasResults {
-				piece = pyStrip(strings.ReplaceAll(piece, permissionSearchHint, ""))
+				piece = strings.TrimSpace(strings.ReplaceAll(piece, permissionSearchHint, ""))
 			}
 			if piece != "" && !containsString(rest, piece) {
 				rest = append(rest, piece)
@@ -424,16 +424,16 @@ func parseSearchOutput(result *ExecuteResult, outputMode string, limit, offset, 
 	stdout, limitReason := searchStdoutAndLimit(result)
 	diagnostics, payload := splitToolDiagnostics(stdout)
 	if result.ExitCode == 126 || result.ExitCode == 127 {
-		msg := pyStrip(result.Stdout)
+		msg := strings.TrimSpace(result.Stdout)
 		if msg == "" {
 			msg = "Search error"
 		}
 		return &SearchResult{Error: "Search failed: " + msg}
 	}
-	if result.ExitCode == 2 && pyStrip(payload) == "" {
-		errorMsg := pyStrip(diagnostics)
+	if result.ExitCode == 2 && strings.TrimSpace(payload) == "" {
+		errorMsg := strings.TrimSpace(diagnostics)
 		if errorMsg == "" {
-			errorMsg = pyStrip(result.Stdout)
+			errorMsg = strings.TrimSpace(result.Stdout)
 		}
 		if errorMsg == "" {
 			errorMsg = "Search error"
@@ -453,9 +453,9 @@ func parseSearchOutput(result *ExecuteResult, outputMode string, limit, offset, 
 	skip := skippedFields(diagnostics)
 	skippedWarning := prependSkippedPathsWarning(skip, "")
 	var otherErrors []string
-	for _, ln := range pySplitLines(diagnostics) {
-		l := pyStrip(ln)
-		if hasAnyPrefix(pyLStrip(ln), []string{"rg: ", "grep: "}) && !permissionDeniedRe.MatchString(l) && !omittedDiagnosticsRe.MatchString(l) {
+	for _, ln := range splitLinesValue(diagnostics) {
+		l := strings.TrimSpace(ln)
+		if hasAnyPrefix(lStrip(ln), []string{"rg: ", "grep: "}) && !permissionDeniedRe.MatchString(l) && !omittedDiagnosticsRe.MatchString(l) {
 			otherErrors = append(otherErrors, l)
 		}
 	}
@@ -475,7 +475,7 @@ func parseSearchOutput(result *ExecuteResult, outputMode string, limit, offset, 
 		}
 	}
 	var lines []string
-	for _, ln := range strings.Split(pyStrip(payload), "\n") {
+	for _, ln := range strings.Split(strings.TrimSpace(payload), "\n") {
 		if ln != "" {
 			lines = append(lines, ln)
 		}
@@ -492,7 +492,7 @@ func parseSearchOutput(result *ExecuteResult, outputMode string, limit, offset, 
 			if i < 0 {
 				continue
 			}
-			if n, ok := pyIntText(line[i+1:]); ok {
+			if n, ok := intText(line[i+1:]); ok {
 				r.setCount(line[:i], n)
 			}
 		}
@@ -553,7 +553,7 @@ func addPyInt(total *big.Int, digits string) {
 func (s *shellFileOps) search(pattern, path, target string, fileGlob string, limit, offset int, outputMode string, context int, order string) *SearchResult {
 	offset, limit = normalizeSearchPagination(offset, limit)
 	if target == "files" && order != "discovery" && order != "modified" {
-		return &SearchResult{Error: "Invalid file search order " + pyReprStr(order) + "; expected " +
+		return &SearchResult{Error: "Invalid file search order " + strconv.Quote(order) + "; expected " +
 			"'discovery' or 'modified'."}
 	}
 	path = s.expandPath(path)
@@ -615,11 +615,11 @@ func (s *shellFileOps) pathNotFoundResult(path string) *SearchResult {
 	parentCheck := s.exec("test -d "+s.escapeShellArg(parent, true)+" && echo yes || echo no", "", 0)
 	if strings.Contains(parentCheck.Stdout, "yes") && basenameQuery != "" {
 		ls := s.exec("ls -1 "+s.escapeShellArg(parent, true)+" 2>/dev/null | head -20", "", 0)
-		if ls.ExitCode == 0 && pyStrip(ls.Stdout) != "" {
+		if ls.ExitCode == 0 && strings.TrimSpace(ls.Stdout) != "" {
 			lower := cases.Lower(language.Und)
 			lq := lower.String(basenameQuery)
 			var candidates []string
-			for _, e := range strings.Split(pyStrip(ls.Stdout), "\n") {
+			for _, e := range strings.Split(strings.TrimSpace(ls.Stdout), "\n") {
 				le := lower.String(e)
 				if e != "" && (strings.Contains(le, lq) || strings.Contains(lq, le) || strings.HasPrefix(le, runePrefix(lq, 3))) {
 					candidates = append(candidates, pathJoinOS(parent, e))
@@ -638,12 +638,12 @@ func (s *shellFileOps) tryMultiPathSearch(pattern, path, target, fileGlob string
 	var parts []string
 	if strings.Contains(path, ",") {
 		for _, part := range strings.Split(path, ",") {
-			if p := pyStrip(part); p != "" {
+			if p := strings.TrimSpace(part); p != "" {
 				parts = append(parts, p)
 			}
 		}
 	} else {
-		parts = pyFields(path)
+		parts = fieldsValue(path)
 	}
 	if len(parts) < 2 {
 		return nil

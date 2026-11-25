@@ -53,12 +53,12 @@ func or0(v any) any {
 	return int64(0)
 }
 
-func pyTypeError(op string, a, b any) error {
+func typeError(op string, a, b any) error {
 	return fmt.Errorf("cannot apply %s to %s and %s", op, errchain.Kind(a), errchain.Kind(b))
 }
 
 // Python a + b or a - b over int and float cells, a TypeError for any other operand
-func pyArith(op string, a, b any) (any, error) {
+func arith(op string, a, b any) (any, error) {
 	if n, ok := a.(InsightsNum); ok {
 		a = n.py()
 	}
@@ -70,7 +70,7 @@ func pyArith(op string, a, b any) (any, error) {
 	af, aFl := a.(float64)
 	bf, bFl := b.(float64)
 	if (!aInt && !aFl) || (!bInt && !bFl) {
-		return nil, pyTypeError(op, a, b)
+		return nil, typeError(op, a, b)
 	}
 	if aInt && bInt {
 		if op == "-" {
@@ -91,7 +91,7 @@ func pyArith(op string, a, b any) (any, error) {
 }
 
 // Python float() of a stored cell, bytes read as their text like float(b"1.5")
-func pyFloat(v any) (float64, error) {
+func floatNumber(v any) (float64, error) {
 	switch x := v.(type) {
 	case InsightsNum:
 		return x.Value(), nil
@@ -102,7 +102,7 @@ func pyFloat(v any) (float64, error) {
 }
 
 // Python int() of a stored cell, truncating floats and parsing decimal text
-func pyIntCell(v any) (int64, error) {
+func intCell(v any) (int64, error) {
 	switch x := v.(type) {
 	case InsightsNum:
 		v = x.py()
@@ -120,7 +120,7 @@ func pyIntCell(v any) (int64, error) {
 }
 
 // Python three way comparison of None, numbers, str and bytes, a TypeError for mixed kinds
-func pyCompare(a, b any) (int, error) {
+func compare(a, b any) (int, error) {
 	if n, ok := a.(InsightsNum); ok {
 		a = n.py()
 	}
@@ -177,7 +177,7 @@ func cmpOrdered[T int64 | float64 | string](a, b T) int {
 }
 
 // Python format(value, spec) for the fixed specs the reports use
-func pyFormat(v any, spec string) string {
+func formatted(v any, spec string) string {
 	if n, ok := v.(InsightsNum); ok {
 		v = n.py()
 	}

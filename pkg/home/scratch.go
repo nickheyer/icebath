@@ -3,7 +3,6 @@ package home
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -71,7 +70,7 @@ func pruneScratchDirOnce(scratch string) {
 	if scratchPrunedOnce.Swap(true) {
 		return
 	}
-	stamp := pathutil.Join(scratch, scratchPruneStamp)
+	stamp := pathutil.JoinKeepDotDot(scratch, scratchPruneStamp)
 	if fi, err := os.Stat(stamp); err == nil && time.Since(fi.ModTime()) < scratchPruneEvery {
 		return
 	}
@@ -100,8 +99,12 @@ func PruneScratchDir(ctx context.Context, scratch string, maxIdleHours float64) 
 	if root == "" {
 		root = scratchDir(ctx, "", false)
 	}
-	logFile := pathutil.Join(filepath.Dir(filepath.Clean(filepath.Dir(filepath.Clean(root)))), "logs", "scratch-prune.log")
-	return PruneIdleEntries(root, maxIdleHours, map[string]bool{scratchPruneStamp: true}, logFile)
+	return PruneIdleEntries(root, maxIdleHours, map[string]bool{scratchPruneStamp: true}, pruneLogPath(root))
+}
+
+// Prune log of a scratch dir, logs/scratch-prune.log of the home two levels above it
+func pruneLogPath(scratch string) string {
+	return pathutil.JoinKeepDotDot(pathutil.DirKeepDotDot(pathutil.DirKeepDotDot(scratch)), "logs", "scratch-prune.log")
 }
 
 // Total lstat bytes of every non directory os.walk lists under the scratch dir, zero when unreadable
@@ -126,7 +129,7 @@ func ScratchDirUsageBytes(ctx context.Context, scratch string) int64 {
 		}
 		var dirs []string
 		for _, e := range entries {
-			p := pathutil.Join(top, e.Name())
+			p := pathutil.JoinKeepDotDot(top, e.Name())
 			isDir := e.IsDir()
 			if e.Type()&os.ModeSymlink != 0 {
 				st, serr := os.Stat(p)

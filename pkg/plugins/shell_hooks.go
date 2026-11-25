@@ -3,12 +3,15 @@ package plugins
 import (
 	"bufio"
 	"context"
+	"encoding"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -235,11 +238,74 @@ func shellHookPayloadFields(ctx context.Context, kwargs map[string]any) *jsonuti
 		"cwd", cwd, "profile", profiles.GetActiveProfileName(ctx), "extra", extra)
 }
 
-// Stdin JSON of one firing, values JSON cannot encode written as their str
+// Stdin JSON of one firing, values that are not plain data written as their text
 func serializeShellHookPayload(ctx context.Context, event string, kwargs map[string]any) (string, error) {
 	payload := jsonutil.ObjectOf("hook_event_name", event)
 	payload.Merge(shellHookPayloadFields(ctx, kwargs))
-	return jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
+	return jsonutil.Encode(hookPayloadData(payload, 0), jsonutil.Spaced())
+}
+
+// Deepest nesting of lists and mappings a hook payload keeps as data, anything deeper written as its text
+const hookPayloadMaxDepth = 100
+
+// Hook payload value as plain JSON data: text, numbers, true or false, null and values that marshal themselves as they are, lists and mappings rebuilt with text keys, a nil pointer, function or channel as null and anything else (structs, pointers, functions, channels) written as its text, so a payload always encodes
+func hookPayloadData(v any, depth int) any {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return nil
+	}
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		if rv.IsNil() {
+			return nil
+		}
+	}
+	switch x := v.(type) {
+	case string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, json.Number:
+		return v
+	case *jsonutil.Object:
+		if depth >= hookPayloadMaxDepth {
+			return anyutil.String(v)
+		}
+		out := jsonutil.NewObject()
+		for k, item := range x.All() {
+			out.Set(k, hookPayloadData(item, depth+1))
+		}
+		return out
+	case json.Marshaler, encoding.TextMarshaler:
+		return v
+	}
+	switch rv.Kind() {
+	case reflect.String:
+		return rv.String()
+	case reflect.Bool:
+		return rv.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return rv.Uint()
+	case reflect.Float32, reflect.Float64:
+		return rv.Float()
+	case reflect.Map:
+		if depth >= hookPayloadMaxDepth {
+			return anyutil.String(v)
+		}
+		out := make(map[string]any, rv.Len())
+		for it := rv.MapRange(); it.Next(); {
+			out[anyutil.String(it.Key().Interface())] = hookPayloadData(it.Value().Interface(), depth+1)
+		}
+		return out
+	case reflect.Slice, reflect.Array:
+		if rv.Type().Elem().Kind() == reflect.Uint8 || depth >= hookPayloadMaxDepth {
+			return anyutil.String(v)
+		}
+		out := make([]any, rv.Len())
+		for i := range out {
+			out[i] = hookPayloadData(rv.Index(i).Interface(), depth+1)
+		}
+		return out
+	}
+	return anyutil.String(v)
 }
 
 // Registers every consented configured hook once per home and returns the newly wired specs

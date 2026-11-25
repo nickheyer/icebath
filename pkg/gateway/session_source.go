@@ -4,6 +4,7 @@ import (
 	"context"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -170,7 +171,7 @@ func dictStrField(data map[string]any, key string) *string {
 func SessionSourceFromDict(ctx context.Context, data map[string]any) (*SessionSource, error) {
 	raw, ok := data["platform"]
 	if !ok {
-		return nil, &PyError{Kind: "KeyError", Msg: "'platform'"}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "'platform'"}
 	}
 	platform, err := ParsePlatform(ctx, raw)
 	if err != nil {
@@ -178,7 +179,7 @@ func SessionSourceFromDict(ctx context.Context, data map[string]any) (*SessionSo
 	}
 	chatRaw, ok := data["chat_id"]
 	if !ok {
-		return nil, &PyError{Kind: "KeyError", Msg: "'chat_id'"}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "'chat_id'"}
 	}
 	chatType := "dm"
 	if v, ok := data["chat_type"]; ok {

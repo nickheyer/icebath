@@ -533,7 +533,7 @@ func TestWorkerObserverFailurePreservesResumableBytes(t *testing.T) {
 			server := newRangeServer(t)
 			ieNodeArchive(t, server, append([]byte("#!/bin/sh\nexit 0\n#"), bytes.Repeat([]byte("x"), 32<<20)...))
 			pause := NewPauseEvent()
-			failure := &PyError{Class: "ValueError", Message: "observer failed"}
+			failure := &ClassError{Class: "ValueError", Message: "observer failed"}
 			var seen []int64
 			observe := func(done, total int64, ranges []RangeSet) error {
 				seen = append(seen, done)
@@ -643,7 +643,7 @@ func TestExportedErrorClass(t *testing.T) {
 	if got := ErrorClass(NewInstallError("venv", "x", "")); got != "InstallError" {
 		t.Fatalf("class %q", got)
 	}
-	if got := ErrorClass(&PyError{Class: "ValueError", Message: "x"}); got != "ValueError" {
+	if got := ErrorClass(&ClassError{Class: "ValueError", Message: "x"}); got != "ValueError" {
 		t.Fatalf("class %q", got)
 	}
 }

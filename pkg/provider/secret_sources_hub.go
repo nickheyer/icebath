@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
@@ -143,21 +144,21 @@ func SecretSourcesState(h string) (BitwardenState, OnePasswordState, error) {
 		return BitwardenState{}, OnePasswordState{}, err
 	}
 	bw := bwCfg(cfg)
-	bitwarden := BitwardenState{Enabled: pyTruthy(bw["enabled"]), TokenEnv: cfgText(bw, "access_token_env", bwDefaultTokenEnv),
+	bitwarden := BitwardenState{Enabled: anyutil.IsTrue(bw["enabled"]), TokenEnv: cfgText(bw, "access_token_env", bwDefaultTokenEnv),
 		ProjectID: cfgStr(bw, "project_id"), ServerURL: cfgStr(bw, "server_url")}
 	bitwarden.TokenSet = secretEnvValue(h, bitwarden.TokenEnv) != ""
 	if bitwarden.Binary = loadBw().find(false); bitwarden.Binary != "" {
 		bitwarden.Version = bwsVersion(bitwarden.Binary)
 	}
 	op := sectionCfg(cfg, "onepassword")
-	onePassword := OnePasswordState{Enabled: pyTruthy(op["enabled"]), TokenEnv: cfgText(op, "service_account_token_env", opDefaultTokenEnv), Account: cfgStr(op, "account")}
+	onePassword := OnePasswordState{Enabled: anyutil.IsTrue(op["enabled"]), TokenEnv: cfgText(op, "service_account_token_env", opDefaultTokenEnv), Account: cfgStr(op, "account")}
 	onePassword.TokenSet = secretEnvValue(h, onePassword.TokenEnv) != ""
 	if onePassword.Binary = findOp(cfgStr(op, "binary_path")); onePassword.Binary != "" {
 		onePassword.Version = opVersion(onePassword.Binary)
 	}
 	refs := references(op)
 	for _, name := range sortedAnyKeys(refs) {
-		onePassword.References = append(onePassword.References, [2]string{name, pyStr(refs[name])})
+		onePassword.References = append(onePassword.References, [2]string{name, anyutil.String(refs[name])})
 	}
 	return bitwarden, onePassword, nil
 }
@@ -184,7 +185,7 @@ func BitwardenProjectsFor(ctx context.Context, h, token, serverURL string) ([]Bi
 	}
 	out := make([]BitwardenProject, 0, len(projects))
 	for _, p := range projects {
-		out = append(out, BitwardenProject{ID: pyStr(p["id"]), Name: projectField(p, "name")})
+		out = append(out, BitwardenProject{ID: anyutil.String(p["id"]), Name: projectField(p, "name")})
 	}
 	return out, nil
 }
@@ -271,7 +272,7 @@ func PreviewBitwarden(h string) (*SecretPreview, error) {
 	tokenEnv := cfgText(bw, "access_token_env", bwDefaultTokenEnv)
 	token, projectID := secretEnvValue(h, tokenEnv), cfgStr(bw, "project_id")
 	switch {
-	case !pyTruthy(bw["enabled"]):
+	case !anyutil.IsTrue(bw["enabled"]):
 		return nil, &SecretSourceRefusal{Message: "Bitwarden is turned off"}
 	case token == "":
 		return nil, &SecretSourceRefusal{Message: "Bitwarden has no access token"}
@@ -375,7 +376,7 @@ func mapOnePasswordReference(h, envVar string, reference any) (string, []string,
 	if err := secretsSaveConfig(h, cfg); err != nil {
 		return "", nil, false, err
 	}
-	return value, nil, pyTruthy(op["enabled"]), nil
+	return value, nil, anyutil.IsTrue(op["enabled"]), nil
 }
 
 // MapOnePasswordReference binds an environment variable to the 1Password reference it resolves from
@@ -416,7 +417,7 @@ func PreviewOnePassword(h string) (*SecretPreview, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !pyTruthy(op["enabled"]) {
+	if !anyutil.IsTrue(op["enabled"]) {
 		return nil, &SecretSourceRefusal{Message: "1Password is turned off"}
 	}
 	refs := references(op)

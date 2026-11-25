@@ -100,7 +100,7 @@ func openRouterRatio(value any) (float64, bool) {
 }
 
 // Whether the value equals any supported entry under Python equality
-func pyIn(value any, supported []any) bool {
+func holds(value any, supported []any) bool {
 	for _, s := range supported {
 		if anyutil.Equal(value, s) {
 			return true
@@ -111,7 +111,7 @@ func pyIn(value any, supported []any) bool {
 
 // Closest supported value, durations by distance, resolutions by pixel height and aspect ratios by ratio
 func openRouterNearest(value any, supported []any, height map[string]int) any {
-	if len(supported) == 0 || pyIn(value, supported) {
+	if len(supported) == 0 || holds(value, supported) {
 		return value
 	}
 	type scored struct {
@@ -173,7 +173,7 @@ func openRouterNearest(value any, supported []any, height map[string]int) any {
 			continue
 		}
 		if d == bestDist {
-			less, ok := pyLess(s, best)
+			less, ok := lessValue(s, best)
 			if !ok {
 				return supported[0]
 			}
@@ -186,7 +186,7 @@ func openRouterNearest(value any, supported []any, height map[string]int) any {
 }
 
 // Python less than for two numbers or two strings, false ok when the types do not order
-func pyLess(a, b any) (bool, bool) {
+func lessValue(a, b any) (bool, bool) {
 	as, aStr := a.(string)
 	bs, bStr := b.(string)
 	if aStr || bStr {
@@ -205,7 +205,7 @@ func pyLess(a, b any) (bool, bool) {
 
 // Text and image to video entries declare durations, edit, upscale and avatar models do not
 func openRouterIsGenerative(entry map[string]any) bool {
-	return pyTruthy(entry["supported_durations"])
+	return anyutil.IsTrue(entry["supported_durations"])
 }
 
 // List value of an entry key, nil when absent or not a list
@@ -227,15 +227,15 @@ func openRouterEntryCapabilities(entry map[string]any) map[string]any {
 		}
 	}
 	modalities := []any{"text"}
-	if pyTruthy(entry["supported_frame_images"]) {
+	if anyutil.IsTrue(entry["supported_frame_images"]) {
 		modalities = []any{"text", "image"}
 	}
 	aspects := entryList(entry, "supported_aspect_ratios")
-	if !pyTruthy(entry["supported_aspect_ratios"]) {
+	if !anyutil.IsTrue(entry["supported_aspect_ratios"]) {
 		aspects = stringsToAny(openRouterAllAspectRatios)
 	}
 	resolutions := entryList(entry, "supported_resolutions")
-	if !pyTruthy(entry["supported_resolutions"]) {
+	if !anyutil.IsTrue(entry["supported_resolutions"]) {
 		resolutions = stringsToAny(openRouterResolutionOrder)
 	}
 	maxD, minD := 30, 1
@@ -247,8 +247,8 @@ func openRouterEntryCapabilities(entry map[string]any) map[string]any {
 	}
 	return map[string]any{
 		"modalities": modalities, "aspect_ratios": append([]any(nil), aspects...), "resolutions": append([]any(nil), resolutions...),
-		"max_duration": maxD, "min_duration": minD, "supports_audio": pyTruthy(entry["generate_audio"]),
-		"supports_negative_prompt": false, "supports_seed": pyTruthy(entry["seed"]), "supports_upscale": false,
+		"max_duration": maxD, "min_duration": minD, "supports_audio": anyutil.IsTrue(entry["generate_audio"]),
+		"supports_negative_prompt": false, "supports_seed": anyutil.IsTrue(entry["seed"]), "supports_upscale": false,
 		"max_reference_images": openRouterVideoMaxReferences,
 	}
 }
@@ -312,10 +312,10 @@ func openRouterBuildPayload(entry map[string]any, in openRouterPayloadInput) *js
 		}
 		payload.Set("input_references", parts)
 	}
-	if in.Audio != nil && pyTruthy(entry["generate_audio"]) {
+	if in.Audio != nil && anyutil.IsTrue(entry["generate_audio"]) {
 		payload.Set("generate_audio", *in.Audio)
 	}
-	if in.Seed != nil && pyTruthy(entry["seed"]) {
+	if in.Seed != nil && anyutil.IsTrue(entry["seed"]) {
 		payload.Set("seed", *in.Seed)
 	}
 	return payload
@@ -430,7 +430,7 @@ func (p *openRouterVideoGenProvider) fetchCatalog(ctx context.Context) ([]map[st
 	data, _ := jsonutil.Plain(obj["data"]).([]any)
 	var entries []map[string]any
 	for _, e := range data {
-		if m, ok := e.(map[string]any); ok && pyTruthy(m["id"]) {
+		if m, ok := e.(map[string]any); ok && anyutil.IsTrue(m["id"]) {
 			entries = append(entries, m)
 		}
 	}
@@ -471,11 +471,11 @@ func (p *openRouterVideoGenProvider) ListModels() []map[string]any {
 		if caps["supports_audio"] == true {
 			extras = append(extras, "audio")
 		}
-		if pyIn("image", caps["modalities"].([]any)) {
+		if holds("image", caps["modalities"].([]any)) {
 			extras = append(extras, "i2v")
 		}
 		display := entry["name"]
-		if !pyTruthy(display) {
+		if !anyutil.IsTrue(display) {
 			display = entry["id"]
 		}
 		rows = append(rows, map[string]any{"id": entry["id"], "display": display, "strengths": strings.Join(extras, ", "),
@@ -529,7 +529,7 @@ func (p *openRouterVideoGenProvider) poll(ctx context.Context, client *http.Clie
 		}
 		status, _ := payload.Get("status")
 		last = "unknown"
-		if pyTruthy(status) {
+		if anyutil.IsTrue(status) {
 			last = strings.ToLower(anyutil.String(status))
 		}
 		if openRouterVideoTerminal[last] {
@@ -609,11 +609,11 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 		modality = "image"
 	}
 	aspectOut := ""
-	if v := mustGet(payload, "aspect_ratio"); pyTruthy(v) {
+	if v := mustGet(payload, "aspect_ratio"); anyutil.IsTrue(v) {
 		aspectOut = anyutil.String(v)
 	}
 	duration := 0
-	if v := mustGet(payload, "duration"); pyTruthy(v) {
+	if v := mustGet(payload, "duration"); anyutil.IsTrue(v) {
 		if n, err := anyutil.ToInt(v); err == nil {
 			duration = int(n)
 		}
@@ -635,10 +635,10 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 		detail := ""
 		if obj, err := requestsJSONObject(raw); err == nil {
 			errField := obj["error"]
-			if !pyTruthy(errField) {
+			if !anyutil.IsTrue(errField) {
 				errField = map[string]any{}
 			}
-			if m, ok := jsonutil.Plain(errField).(map[string]any); ok && pyTruthy(m["message"]) {
+			if m, ok := jsonutil.Plain(errField).(map[string]any); ok && anyutil.IsTrue(m["message"]) {
 				detail = anyutil.String(m["message"])
 			}
 		}
@@ -655,7 +655,7 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 	if err != nil {
 		return "", nil, "", "", "", err
 	}
-	if pyTruthy(submitted["id"]) {
+	if anyutil.IsTrue(submitted["id"]) {
 		jobID = strings.TrimSpace(anyutil.String(submitted["id"]))
 	}
 	if jobID == "" {
@@ -666,12 +666,12 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 		return "", nil, "", "", "", err
 	}
 	status := ""
-	if v := mustGet(job, "status"); pyTruthy(v) {
+	if v := mustGet(job, "status"); anyutil.IsTrue(v) {
 		status = strings.ToLower(anyutil.String(v))
 	}
 	if status != "completed" {
 		text := "video job ended with status=" + errchain.Show(status)
-		if v := mustGet(job, "error"); pyTruthy(v) {
+		if v := mustGet(job, "error"); anyutil.IsTrue(v) {
 			text = anyutil.String(v)
 		}
 		return jobID, job, "", text, "job_failed", nil

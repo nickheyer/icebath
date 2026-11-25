@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -313,7 +314,7 @@ func assignEndpointURLs(cfg map[string]any) map[string]bool {
 	providers, _ := cfg["providers"].(map[string]any)
 	for _, row := range providers {
 		if m, ok := row.(map[string]any); ok {
-			out[pyOrStr(m["base_url"])] = true
+			out[anyutil.StringOr(m["base_url"], "")] = true
 		}
 	}
 	return out
@@ -333,7 +334,7 @@ func TestWizardSaveWithNewUrlRoutesToAndSavesTheNewEndpoint(t *testing.T) {
 			if model["provider"] != "custom" || model["default"] != "model-b" || model["base_url"] != assignNewURL {
 				t.Fatalf("model %v", model)
 			}
-			if pyOrStr(model["api_key"]) != apiKey {
+			if anyutil.StringOr(model["api_key"], "") != apiKey {
 				t.Fatalf("api_key %v", model["api_key"])
 			}
 			urls := assignEndpointURLs(cfg)
@@ -429,7 +430,7 @@ func TestProvidersCustomEntryNeverLendsItsKeyToTheSubmittedEndpoint(t *testing.T
 				}
 			}
 			model := assignModelBlock(t, h)
-			if model["base_url"] != assignSubmittedURL || pyOrStr(model["api_key"]) != apiKey {
+			if model["base_url"] != assignSubmittedURL || anyutil.StringOr(model["api_key"], "") != apiKey {
 				t.Fatalf("model %v", model)
 			}
 		})
@@ -443,7 +444,7 @@ func TestBareCustomWithoutUrlStillSelectsTheProvidersCustomEntry(t *testing.T) {
 	assignWrite(t, h, string(raw))
 	assignMain(t, "custom", "model-b", "", "")
 	model := assignModelBlock(t, h)
-	if model["base_url"] != assignCollidingURL || pyOrStr(model["api_key"]) != "key-a" {
+	if model["base_url"] != assignCollidingURL || anyutil.StringOr(model["api_key"], "") != "key-a" {
 		t.Fatalf("model %v", model)
 	}
 }

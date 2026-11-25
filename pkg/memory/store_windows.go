@@ -36,7 +36,7 @@ func fileLock(ctx context.Context, path string) (func(), error) {
 		}
 		if attempt == 9 {
 			f.Close()
-			return nil, &pyError{class: "OSError", msg: "the memory file lock is still held after ten tries"}
+			return nil, &kindError{class: "OSError", msg: "the memory file lock is still held after ten tries"}
 		}
 		time.Sleep(time.Second)
 	}

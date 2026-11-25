@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Providers select_provider_and_model sends to the generic api key flow
@@ -41,8 +42,8 @@ func isProfileAPIKeyProvider(ctx context.Context, providerID string) (ok bool) {
 }
 
 // Text of a setting or empty, an error naming the setting for a set value that is no text
-func pyOrEmptyStr(v any, setting string) (string, error) {
-	if !pyTruthy(v) {
+func orEmptyStrValue(v any, setting string) (string, error) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	if s, ok := v.(string); ok {
@@ -52,7 +53,7 @@ func pyOrEmptyStr(v any, setting string) (string, error) {
 }
 
 // Sets a key the way a Python dict assignment does, a new key going last in the mapping order
-func pyDictSet(m map[string]any, key string, value any) {
+func dictSet(m map[string]any, key string, value any) {
 	if _, ok := m[key]; ok {
 		m[key] = value
 		return
@@ -62,7 +63,7 @@ func pyDictSet(m map[string]any, key string, value any) {
 }
 
 // Values iteration yields, list items, string characters and mapping keys in their order, an error naming the setting otherwise
-func pyIterValues(v any, setting string) ([]any, error) {
+func iterValues(v any, setting string) ([]any, error) {
 	switch t := v.(type) {
 	case nil:
 		return nil, fmt.Errorf("%s is nothing, expected a list", setting)
@@ -99,7 +100,7 @@ func clearStaleOpenAIBaseURL(r *ModelFlowRun) error {
 	}
 	provider := ""
 	if modelCfg, ok := cfg["model"].(map[string]any); ok {
-		raw, err := pyOrEmptyStr(modelCfg["provider"], "model.provider")
+		raw, err := orEmptyStrValue(modelCfg["provider"], "model.provider")
 		if err != nil {
 			return err
 		}
@@ -138,7 +139,7 @@ func allAuxTasks(ctx context.Context) []auxTaskRow {
 			if !hasKey || !hasName || !hasDesc {
 				return
 			}
-			tasks = append(tasks, auxTaskRow{Key: pyStr(key), Name: pyStr(name), Desc: pyStr(desc)})
+			tasks = append(tasks, auxTaskRow{Key: anyutil.String(key), Name: anyutil.String(name), Desc: anyutil.String(desc)})
 		}
 	}()
 	return tasks
@@ -150,15 +151,15 @@ func formatAuxCurrent(taskCfg any) string {
 	if !ok {
 		return "auto"
 	}
-	baseURL := strings.TrimSpace(pyOrStr(cfg["base_url"]))
+	baseURL := strings.TrimSpace(anyutil.StringOr(cfg["base_url"], ""))
 	provider := "auto"
-	if pyTruthy(cfg["provider"]) {
-		provider = pyStr(cfg["provider"])
+	if anyutil.IsTrue(cfg["provider"]) {
+		provider = anyutil.String(cfg["provider"])
 	}
 	if provider = strings.TrimSpace(provider); provider == "" {
 		provider = "auto"
 	}
-	model := strings.TrimSpace(pyOrStr(cfg["model"]))
+	model := strings.TrimSpace(anyutil.StringOr(cfg["model"], ""))
 	effort := auxEffortWord(cfg)
 	suffix := ""
 	if model != "" {
@@ -185,7 +186,7 @@ func auxEffortWord(taskCfg any) string {
 	if raw == false {
 		return "none"
 	}
-	return strings.ToLower(strings.TrimSpace(pyOrStr(raw)))
+	return strings.ToLower(strings.TrimSpace(anyutil.StringOr(raw, "")))
 }
 
 // Top level delegation section in aux task shape, an empty provider meaning inherit the parent
@@ -196,7 +197,7 @@ func delegationCfgAsTask(cfg map[string]any) map[string]any {
 	}
 	out := map[string]any{}
 	for _, k := range []string{"provider", "model", "base_url", "api_key"} {
-		out[k] = strings.TrimSpace(pyOrStr(d[k]))
+		out[k] = strings.TrimSpace(anyutil.StringOr(d[k], ""))
 	}
 	effort, has := d["reasoning_effort"]
 	if !has {
@@ -234,7 +235,7 @@ func inheritedAuxTaskCfg(ctx context.Context, task string) (resolved map[string]
 		}
 	}()
 	for _, entry := range pluginAuxiliaryTasksFn(ctx) {
-		if key, isStr := entry["key"].(string); isStr && key == task && pyTruthy(entry["inherit_from"]) {
+		if key, isStr := entry["key"].(string); isStr && key == task && anyutil.IsTrue(entry["inherit_from"]) {
 			cfg, err := auxGetAuxiliaryTaskConfig(ctx, task)
 			if err != nil {
 				return nil, false
@@ -274,12 +275,12 @@ func saveAuxChoice(r *ModelFlowRun, task, provider, model, baseURL, apiKey strin
 	} else {
 		entry = ensureDictSection(ensureDictSection(cfg, "auxiliary"), task)
 	}
-	pyDictSet(entry, "provider", provider)
-	pyDictSet(entry, "model", model)
-	pyDictSet(entry, "base_url", baseURL)
-	pyDictSet(entry, "api_key", apiKey)
+	dictSet(entry, "provider", provider)
+	dictSet(entry, "model", model)
+	dictSet(entry, "base_url", baseURL)
+	dictSet(entry, "api_key", apiKey)
 	if reasoningEffort != nil && auxTaskTakesReasoning(task) {
-		pyDictSet(entry, "reasoning_effort", *reasoningEffort)
+		dictSet(entry, "reasoning_effort", *reasoningEffort)
 	}
 	return config.Save(r.home(), tree)
 }
@@ -329,19 +330,19 @@ func resetAuxToAuto(r *ModelFlowRun) (int, error) {
 			return false, err
 		}
 		if !reset {
-			pyDictSet(entry, "provider", auto)
+			dictSet(entry, "provider", auto)
 			changed = true
 		}
 		for _, field := range []string{"model", "base_url", "api_key", "reasoning_effort"} {
 			def := ""
 			if block, ok := defaults[task].(map[string]any); ok {
-				def = pyOrStr(block[field])
+				def = anyutil.StringOr(block[field], "")
 			}
 			cur := entry[field]
 			s, isStr := cur.(string)
 			differs := !(isStr && s == def)
-			if (pyTruthy(cur) || cur == false || def != "") && differs {
-				pyDictSet(entry, field, def)
+			if (anyutil.IsTrue(cur) || cur == false || def != "") && differs {
+				dictSet(entry, field, def)
 				changed = true
 			}
 		}
@@ -454,14 +455,14 @@ func auxSelectForTask(r *ModelFlowRun, task string) error {
 	cfg := map[string]any(tree)
 	taskCfg := auxTaskCfg(cfg, task)
 	currentProvider := "auto"
-	if pyTruthy(taskCfg["provider"]) {
-		currentProvider = pyStr(taskCfg["provider"])
+	if anyutil.IsTrue(taskCfg["provider"]) {
+		currentProvider = anyutil.String(taskCfg["provider"])
 	}
 	if currentProvider = strings.TrimSpace(currentProvider); currentProvider == "" {
 		currentProvider = "auto"
 	}
-	currentModel := strings.TrimSpace(pyOrStr(taskCfg["model"]))
-	currentBaseURL := strings.TrimSpace(pyOrStr(taskCfg["base_url"]))
+	currentModel := strings.TrimSpace(anyutil.StringOr(taskCfg["model"], ""))
+	currentBaseURL := strings.TrimSpace(anyutil.StringOr(taskCfg["base_url"], ""))
 	displayName := auxTaskDisplayName(r.ctx(), task)
 	providers, perr := auxPickerRows(r, currentProvider, currentModel, currentBaseURL)
 	if perr != nil {
@@ -568,8 +569,8 @@ func auxFlowProviderModel(r *ModelFlowRun, task, providerSlug string, curatedMod
 // Direct OpenAI compatible base URL with an optional key and model for one aux task
 func auxFlowCustomEndpoint(r *ModelFlowRun, task string, taskCfg map[string]any) error {
 	displayName := auxTaskDisplayName(r.ctx(), task)
-	currentBaseURL := strings.TrimSpace(pyOrStr(taskCfg["base_url"]))
-	currentModel := strings.TrimSpace(pyOrStr(taskCfg["model"]))
+	currentBaseURL := strings.TrimSpace(anyutil.StringOr(taskCfg["base_url"], ""))
+	currentModel := strings.TrimSpace(anyutil.StringOr(taskCfg["model"], ""))
 	flowSay(r.Out, "", "  Custom endpoint for "+displayName,
 		"  Provide an OpenAI-compatible base URL (e.g. http://localhost:11434/v1)", "")
 	urlPrompt := "Base URL: "
@@ -643,7 +644,7 @@ func removeCustomProvider(r *ModelFlowRun) error {
 	choices := make([]string, 0, len(keys)+1)
 	for _, key := range keys {
 		m, _ := providers[key].(map[string]any)
-		choices = append(choices, fmt.Sprintf("%s (%s)", key, shortURL(pyStr(dictGet(m, "base_url", "")))))
+		choices = append(choices, fmt.Sprintf("%s (%s)", key, shortURL(anyutil.String(dictGet(m, "base_url", "")))))
 	}
 	choices = append(choices, "Cancel")
 	idx := int64(-1)
@@ -804,11 +805,11 @@ func offerReasoningAfterPick(r *ModelFlowRun, modelBefore string, savesBefore in
 	if !ok {
 		return nil
 	}
-	model := strings.TrimSpace(pyOrStr(modelCfg["default"]))
+	model := strings.TrimSpace(anyutil.StringOr(modelCfg["default"], ""))
 	if model == "" || (model == modelBefore && modelChoiceSaveCount() == savesBefore) {
 		return nil
 	}
-	return promptMainReasoningEffortFn(r, model, pyOrStr(modelCfg["provider"]))
+	return promptMainReasoningEffortFn(r, model, anyutil.StringOr(modelCfg["provider"], ""))
 }
 
 // Effort step after a main model pick, the supported levels persisted to agent reasoning_effort
@@ -850,7 +851,7 @@ func mainModelReasoningEfforts(ctx context.Context, model, provider string) ([]s
 	}
 	if profile != nil && profile.SetupReasoningEfforts != nil {
 		if declared := profile.SetupReasoningEfforts(model); declared != nil {
-			items, err := pyIterValues(declared, "the reasoning efforts of provider "+slug)
+			items, err := iterValues(declared, "the reasoning efforts of provider "+slug)
 			if err != nil {
 				return nil, false, err
 			}
@@ -859,7 +860,7 @@ func mainModelReasoningEfforts(ctx context.Context, model, provider string) ([]s
 			}
 			out := make([]string, len(items))
 			for i, item := range items {
-				out[i] = pyStr(item)
+				out[i] = anyutil.String(item)
 			}
 			return out, true, nil
 		}

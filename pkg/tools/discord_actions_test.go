@@ -54,28 +54,28 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	t.Cleanup(func() { discordHTTPDo = old })
 
 	out := discordRunAction(ctx, env, "fetch_messages", true, "discord", map[string]any{"channel_id": "c1", "before": "m9", "limit": int64(500)})
-	if out != `{"messages": [{"id": "m1", "content": "hi", "author": {"id": "u1", "username": "ann", "display_name": null, "bot": false}, "timestamp": null, "edited_timestamp": null, "attachments": [], "reactions": [{"emoji": "x", "count": 2}], "pinned": false}], "count": 1}` {
+	if out != `{"messages":[{"id":"m1","content":"hi","author":{"id":"u1","username":"ann","display_name":null,"bot":false},"timestamp":null,"edited_timestamp":null,"attachments":[],"reactions":[{"emoji":"x","count":2}],"pinned":false}],"count":1}` {
 		t.Fatalf("fetch_messages %s", out)
 	}
 	if seen[0] != "GET /api/v10/channels/c1/messages?limit=100&before=m9 Bot bot-a" {
 		t.Fatalf("request %s", seen[0])
 	}
 	out = discordRunAction(ctx, env, "list_channels", false, "discord_admin", map[string]any{"guild_id": "g1"})
-	if !strings.Contains(out, `"channel_groups": [{"category": null, "channels": [{"id": "v", "name": "loose", "type": "voice"`) ||
-		!strings.Contains(out, `{"category": {"id": "k1", "name": "Cat"}, "channels": [{"id": "t1"`) || !strings.HasSuffix(out, `"total_channels": 3}`) {
+	if !strings.Contains(out, `"channel_groups":[{"category":null,"channels":[{"id":"v","name":"loose","type":"voice"`) ||
+		!strings.Contains(out, `{"category":{"id":"k1","name":"Cat"},"channels":[{"id":"t1"`) || !strings.HasSuffix(out, `"total_channels":3}`) {
 		t.Fatalf("list_channels %s", out)
 	}
-	if out = discordRunAction(ctx, env, "pin_message", false, "discord_admin", map[string]any{"channel_id": "c1", "message_id": "m1"}); !strings.Contains(out, "Discord API 403 (forbidden) on 'pin_message'. Bot lacks MANAGE_MESSAGES") {
+	if out = discordRunAction(ctx, env, "pin_message", false, "discord_admin", map[string]any{"channel_id": "c1", "message_id": "m1"}); !strings.Contains(out, `Discord API 403 (forbidden) on \"pin_message\". Bot lacks MANAGE_MESSAGES`) {
 		t.Fatalf("403 %s", out)
 	}
-	if out = discordRunAction(ctx, env, "create_thread", true, "discord", map[string]any{"channel_id": "c1"}); !strings.Contains(out, "Missing required parameters for 'create_thread': name") {
+	if out = discordRunAction(ctx, env, "create_thread", true, "discord", map[string]any{"channel_id": "c1"}); !strings.Contains(out, `Missing required parameters for \"create_thread\": name`) {
 		t.Fatalf("missing %s", out)
 	}
-	if out = discordRunAction(ctx, env, "list_roles", true, "discord", nil); !strings.Contains(out, "Unknown action: list_roles") || !strings.Contains(out, `"available_actions": ["search_members", "fetch_messages", "create_thread"]`) {
+	if out = discordRunAction(ctx, env, "list_roles", true, "discord", nil); !strings.Contains(out, "Unknown action: list_roles") || !strings.Contains(out, `"available_actions":["search_members","fetch_messages","create_thread"]`) {
 		t.Fatalf("unknown %s", out)
 	}
 	setHomeConfigKey(t, env, "discord.server_actions", "fetch_messages, bogus")
-	if out = discordRunAction(ctx, env, "search_members", true, "discord", map[string]any{"guild_id": "g", "query": "a"}); !strings.Contains(out, "Action 'search_members' is disabled by config (discord.server_actions). Allowed: fetch_messages") {
+	if out = discordRunAction(ctx, env, "search_members", true, "discord", map[string]any{"guild_id": "g", "query": "a"}); !strings.Contains(out, `Action \"search_members\" is disabled by config (discord.server_actions). Allowed: fetch_messages`) {
 		t.Fatalf("allowlist %s", out)
 	}
 	path := discordCapabilityDiskCachePath(env)

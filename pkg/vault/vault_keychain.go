@@ -44,7 +44,7 @@ func isOSKeychain(b keyringBackend) bool {
 func osKeyring() (keyringBackend, error) {
 	b, err := keyringGetKeyring()
 	if err != nil {
-		return nil, &KeychainUnavailable{fmt.Sprintf("keyring could not pick a backend (%s)", pyErrorClass(err))}
+		return nil, &KeychainUnavailable{fmt.Sprintf("keyring could not pick a backend (%s)", errorClass(err))}
 	}
 	if !isOSKeychain(b) {
 		return nil, &KeychainUnavailable{fmt.Sprintf("no OS keychain is reachable from this session (keyring backend: %s.%s)",
@@ -107,7 +107,7 @@ func vaultReadRef(path string) (*jsonutil.Object, error) {
 		}
 	}
 	if err != nil {
-		return nil, &VaultError{fmt.Sprintf("%s is unreadable (%s); see `icebath vault key`", filepath.Base(path), pyErrorClass(err))}
+		return nil, &VaultError{fmt.Sprintf("%s is unreadable (%s); see `icebath vault key`", filepath.Base(path), errorClass(err))}
 	}
 	obj, ok := data.(*jsonutil.Object)
 	if !ok || refString(obj, "storage") != "keychain" {
@@ -159,7 +159,7 @@ func vaultLoadKey(ref *jsonutil.Object) ([]byte, error) {
 	service, account := refCoords(ref)
 	value, ok, err := b.GetPassword(service, account)
 	if err != nil {
-		return nil, &KeychainUnavailable{fmt.Sprintf("the OS keychain did not answer (%s)", pyErrorClass(err))}
+		return nil, &KeychainUnavailable{fmt.Sprintf("the OS keychain did not answer (%s)", errorClass(err))}
 	}
 	if !ok || value == "" {
 		return nil, nil
@@ -175,11 +175,11 @@ func vaultStoreKey(ref *jsonutil.Object, key []byte) error {
 	}
 	service, account := refCoords(ref)
 	if err := b.SetPassword(service, account, string(key)); err != nil {
-		return &KeychainUnavailable{fmt.Sprintf("the OS keychain refused the key (%s)", pyErrorClass(err))}
+		return &KeychainUnavailable{fmt.Sprintf("the OS keychain refused the key (%s)", errorClass(err))}
 	}
 	readback, _, err := b.GetPassword(service, account)
 	if err != nil {
-		return &KeychainUnavailable{fmt.Sprintf("the OS keychain refused the key (%s)", pyErrorClass(err))}
+		return &KeychainUnavailable{fmt.Sprintf("the OS keychain refused the key (%s)", errorClass(err))}
 	}
 	if readback != string(key) {
 		return &KeychainUnavailable{"the OS keychain did not return the key it was given"}

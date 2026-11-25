@@ -122,15 +122,15 @@ func (s *Store) recordStaleRelease(job *Job, jobID string, age, allowance float6
 	case fut == nil:
 		futureState = "missing"
 	}
-	s.log.Warn(fmt.Sprintf("cron.inflight.forced_release event=forced_release reason=%s job='%s' "+
+	s.log.Warn(fmt.Sprintf("cron.inflight.forced_release event=forced_release reason=%s job=%q "+
 		"id=%s age=%.0fs allowance=%.0fs future=%s — stale in-flight claim "+
-		"released; the job was skipping every fire with 'already running'", reason, name, jobID, age, allowance, futureState))
+		"released; the job was skipping every fire with \"already running\"", reason, name, jobID, age, allowance, futureState))
 	s.recordForcedRelease(jobID, name, age, allowance)
 	if reason == "ledger-terminal" {
 		return
 	}
 	if job != nil && job.Repeat != nil && job.Repeat.Times != nil {
-		s.log.Warn(fmt.Sprintf("cron.inflight.forced_release.job_untouched job='%s' id=%s — "+
+		s.log.Warn(fmt.Sprintf("cron.inflight.forced_release.job_untouched job=%q id=%s — "+
 			"finite-repeat job released without mark_job_run (repeat budget "+
 			"preserved); row left in place so it re-fires normally", name, jobID))
 		return
@@ -270,7 +270,7 @@ func markRunningJobsInterrupted(ctx context.Context, reason string, onlyOwners m
 	marked := []string{}
 	for _, f := range fires {
 		if f.owner == nil || *f.owner == "" {
-			pkgLog().Warn(fmt.Sprintf("Job '%s' interrupted before its durable fire owner was registered; "+
+			pkgLog().Warn(fmt.Sprintf("Job %q interrupted before its durable fire owner was registered; "+
 				"leaving persisted state untouched", f.key.JobID))
 			marked = append(marked, f.key.JobID)
 			continue

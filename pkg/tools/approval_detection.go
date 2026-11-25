@@ -229,7 +229,7 @@ var (
 var unicodeEscapeRe = regexp.MustCompile(`\\U[0-9a-fA-F]{8}|\\u[0-9a-fA-F]{4}`)
 
 // Rewrites Python regex syntax into the dialect regexp2 compiles
-func pyPatternToRegexp2(src string) string {
+func patternToRegexp2(src string) string {
 	s := strings.ReplaceAll(src, `\S++`, `(?>\S+)`)
 	s = strings.ReplaceAll(s, `\s++`, `(?>\s+)`)
 	s = strings.ReplaceAll(s, `(?P<`, `(?<`)
@@ -243,20 +243,20 @@ func pyPatternToRegexp2(src string) string {
 }
 
 // Compiles a Python syntax pattern with the IGNORECASE and DOTALL flags
-func pyRegexp2(src string) *regexp2.Regexp {
-	return regexp2.MustCompile(pyPatternToRegexp2(src), regexp2.IgnoreCase|regexp2.Singleline)
+func regexp2Value(src string) *regexp2.Regexp {
+	return regexp2.MustCompile(patternToRegexp2(src), regexp2.IgnoreCase|regexp2.Singleline)
 }
 
 func init() {
 	for _, p := range HardlinePatterns {
-		hardlineCompiled = append(hardlineCompiled, compiledPattern{pyRegexp2(p.Pattern), p.Description, quoteMaskedHardlineDescriptions[p.Description]})
+		hardlineCompiled = append(hardlineCompiled, compiledPattern{regexp2Value(p.Pattern), p.Description, quoteMaskedHardlineDescriptions[p.Description]})
 	}
 	for _, p := range DangerousPatterns {
-		dangerousCompiled = append(dangerousCompiled, compiledPattern{pyRegexp2(p.Pattern), p.Description, false})
+		dangerousCompiled = append(dangerousCompiled, compiledPattern{regexp2Value(p.Pattern), p.Description, false})
 	}
 }
 
-var hiddenVariationSelectorRe = regexp2.MustCompile(pyPatternToRegexp2(`(?<![` + emojiPresentBases + `])(?!(?<=[0-9#*])️⃣)[︀-️\U000e0100-\U000e01ef]`))
+var hiddenVariationSelectorRe = regexp2.MustCompile(patternToRegexp2(`(?<![` + emojiPresentBases + `])(?!(?<=[0-9#*])️⃣)[︀-️\U000e0100-\U000e01ef]`))
 
 func regexp2Match(re *regexp2.Regexp, s string) bool {
 	ok, err := re.MatchString(s)
@@ -264,13 +264,8 @@ func regexp2Match(re *regexp2.Regexp, s string) bool {
 }
 
 // Python os.path.basename, everything after the last slash
-func pyBasename(p string) string {
+func basenameValue(p string) string {
 	return p[strings.LastIndex(p, "/")+1:]
-}
-
-// Reports whether a rune is whitespace the way str.isspace does
-func pyIsSpace(r rune) bool {
-	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }
 
 func runeAt(s string, i int) (rune, int) {
@@ -317,11 +312,11 @@ func lowerPreservingFlags(command string) string {
 	i := 0
 	for i < len(command) {
 		r, size := runeAt(command, i)
-		if pyIsSpace(r) {
+		if unicode.IsSpace(r) {
 			j := i
 			for j < len(command) {
 				r2, s2 := runeAt(command, j)
-				if !pyIsSpace(r2) {
+				if !unicode.IsSpace(r2) {
 					break
 				}
 				j += s2
@@ -333,7 +328,7 @@ func lowerPreservingFlags(command string) string {
 		j := i + size
 		for j < len(command) {
 			r2, s2 := runeAt(command, j)
-			if pyIsSpace(r2) {
+			if unicode.IsSpace(r2) {
 				break
 			}
 			j += s2
@@ -728,7 +723,7 @@ func scanBacktickEnd(command string, start int) int {
 func skipShellWhitespace(command string, pos int) int {
 	for pos < len(command) {
 		r, size := runeAt(command, pos)
-		if !pyIsSpace(r) {
+		if !unicode.IsSpace(r) {
 			break
 		}
 		pos += size
@@ -747,7 +742,7 @@ func readShellWord(command string, pos int) (int, int, string) {
 		}
 		if st.kind == stepChar && st.quote == 0 {
 			r, _ := runeAt(command, st.i)
-			if pyIsSpace(r) || strings.ContainsRune(";&|<>()", r) {
+			if unicode.IsSpace(r) || strings.ContainsRune(";&|<>()", r) {
 				break
 			}
 		}
@@ -856,7 +851,7 @@ func isShellCommentStart(command string, index int) bool {
 		return true
 	}
 	prev := prevRuneAt(command, index)
-	return pyIsSpace(prev) || strings.ContainsRune(";&|()<>", prev)
+	return unicode.IsSpace(prev) || strings.ContainsRune(";&|()<>", prev)
 }
 
 // Offsets of every quote aware command start including subshell and group bodies
@@ -883,7 +878,7 @@ func iterShellCommandStarts(command string) []int {
 				scan(inner, innerEnd)
 			} else if st.kind == stepChar && st.quote == 0 && st.i != skip {
 				c := command[st.i]
-				if strings.IndexByte("(;\n", c) >= 0 || (c == '{' && (st.i == 0 || pyIsSpace(prevRuneAt(command, st.i)) || strings.ContainsRune("(;&|)", prevRuneAt(command, st.i)))) {
+				if strings.IndexByte("(;\n", c) >= 0 || (c == '{' && (st.i == 0 || unicode.IsSpace(prevRuneAt(command, st.i)) || strings.ContainsRune("(;&|)", prevRuneAt(command, st.i)))) {
 					starts = append(starts, st.i+1)
 				} else if c == '&' || c == '|' {
 					repeated := st.i+1 < end && command[st.i+1] == c
@@ -1025,7 +1020,7 @@ func iterShellCommandWordSpans(command string) []wordSpan {
 			}
 			pos = wordEnd
 			deobfuscated := deobfuscateShellWordForDetection(word)
-			name := strings.ToLower(pyBasename(deobfuscated))
+			name := strings.ToLower(basenameValue(deobfuscated))
 			if skipArg {
 				skipArg = false
 				continue
@@ -1107,7 +1102,7 @@ func shellTokensWithSpans(segment string, start int) ([]spanToken, bool) {
 		}
 		ch, _ := runeAt(segment, st.i)
 		if st.kind == stepChar && quote == 0 {
-			if pyIsSpace(ch) && ch != '\n' {
+			if unicode.IsSpace(ch) && ch != '\n' {
 				if tokenStart >= 0 {
 					flush(st.i)
 					value.Reset()
@@ -1178,7 +1173,7 @@ func quotedGrepPatternSpans(command string) ([][2]int, bool) {
 		segmentAt := offset + strings.Index(command[offset:], segment)
 		offset = segmentAt + len(segment)
 		for _, ws := range iterShellCommandWordSpans(segment) {
-			name := strings.ToLower(pyBasename(deobfuscateShellWordForDetection(ws.word)))
+			name := strings.ToLower(basenameValue(deobfuscateShellWordForDetection(ws.word)))
 			if name != "grep" && name != "egrep" {
 				continue
 			}
@@ -1277,7 +1272,7 @@ func grepSafeDetectionVariant(command string) (string, bool) {
 }
 
 func interpreterFamily(executable string) string {
-	name := strings.ToLower(pyBasename(executable))
+	name := strings.ToLower(basenameValue(executable))
 	for _, entry := range interpreterNameRes {
 		if entry.re.MatchString(name) {
 			return entry.family
@@ -1471,7 +1466,7 @@ func executionFlagFindings(command string) []execFinding {
 		for _, ws := range iterShellCommandWordSpans(segment) {
 			executable := deobfuscateShellWordForDetection(ws.word)
 			tokens, ok := shellSegmentTokens(segment, ws.start)
-			executableName := strings.ToLower(pyBasename(executable))
+			executableName := strings.ToLower(basenameValue(executable))
 			family := interpreterFamily(executable)
 			if !ok {
 				if family != "" || readToolExecFlags[executableName] != nil {
@@ -1675,7 +1670,7 @@ func DenyCommandVariants(command string) []string {
 					break
 				}
 				r, _ := runeAt(tail, st.i)
-				if st.kind == stepChar && st.quote == 0 && pyIsSpace(r) {
+				if st.kind == stepChar && st.quote == 0 && unicode.IsSpace(r) {
 					if !lastSpace {
 						parts.WriteByte(' ')
 						lastSpace = true
@@ -1687,14 +1682,14 @@ func DenyCommandVariants(command string) []string {
 			}
 			tail = parts.String()
 			names := []string{executable}
-			if base := pyBasename(executable); base != executable {
+			if base := basenameValue(executable); base != executable {
 				names = append(names, base)
 			}
 			for _, name := range names {
 				candidate := name + tail
 				out = append(out, candidate, normalizeCommandForDetection(candidate))
 			}
-			if pyBasename(executable) == "env" {
+			if basenameValue(executable) == "env" {
 				if tokens, ok := shellSegmentTokens(segment, 0); ok && len(tokens) > 0 {
 					if payload := envSplitPayload(tokens); payload != "" {
 						pending = append(pending, payload)
@@ -1807,7 +1802,7 @@ func isVerificationArtifactCleanup(command string) bool {
 	if real, err := filepath.EvalSymlinks(tempDir); err == nil {
 		tempDir = real
 	}
-	basename := pyBasename(operand)
+	basename := basenameValue(operand)
 	joined := tempDir + basename
 	if !strings.HasSuffix(tempDir, string(filepath.Separator)) {
 		joined = tempDir + string(filepath.Separator) + basename
@@ -1823,7 +1818,7 @@ func isShellTokenSplicedGatewayLifecycle(command string) bool {
 // Reports whether any command position word is a shell carrying command
 func containsShellCarrier(command string) bool {
 	for _, ws := range iterShellCommandWordSpans(command) {
-		if shellCarrierNames[strings.ToLower(pyBasename(deobfuscateShellWordForDetection(ws.word)))] {
+		if shellCarrierNames[strings.ToLower(basenameValue(deobfuscateShellWordForDetection(ws.word)))] {
 			return true
 		}
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Configured oauth.user_agent for token endpoint requests, empty when unset or blank
@@ -28,7 +29,7 @@ func tokenRequestUserAgent(cfg map[string]any) string {
 // Seconds an interactive login probe may take, the connect timeout or the callback window plus 15 seconds
 func LoginConnectTimeout(serverConfig map[string]any) float64 {
 	seconds := func(value any, def float64) float64 {
-		f, ok := pyFloat(value)
+		f, ok := floatNumber(value)
 		if !ok {
 			return def
 		}
@@ -42,8 +43,8 @@ func LoginConnectTimeout(serverConfig map[string]any) float64 {
 }
 
 // Python int() of a config value with its error text where int raises
-func pyIntStrict(v any) (int, error) {
-	n, ok := pyInt(v)
+func intStrict(v any) (int, error) {
+	n, ok := wholeNumber(v)
 	if ok {
 		return n, nil
 	}
@@ -54,8 +55,8 @@ func pyIntStrict(v any) (int, error) {
 }
 
 // Python float() of a config value with its error text where float raises
-func pyFloatStrict(v any) (float64, error) {
-	f, ok := pyFloat(v)
+func floatStrict(v any) (float64, error) {
+	f, ok := floatNumber(v)
 	if ok {
 		return f, nil
 	}
@@ -68,16 +69,16 @@ func pyFloatStrict(v any) (float64, error) {
 // Resolves the callback port into cfg _resolved_port, preferring client flow or cached proxy URIs, then CIMD, config, cache, ephemeral
 func configureCallbackPort(ctx context.Context, cfg map[string]any, storage *TokenStorage) (int, error) {
 	flow := clientOAuthFlowFrom(ctx)
-	pinnedLoopback := pyTruthy(cfg["client_id"]) && pyTruthy(cfg["redirect_port"])
+	pinnedLoopback := anyutil.IsTrue(cfg["client_id"]) && anyutil.IsTrue(cfg["redirect_port"])
 	if flow != nil && !pinnedLoopback {
 		cfg["_resolved_port"] = 0
-		if !pyTruthy(cfg["redirect_uri"]) {
+		if !anyutil.IsTrue(cfg["redirect_uri"]) {
 			cfg["redirect_uri"] = flow.RedirectURI
 		}
 		return 0, nil
 	}
 	cachedURI, cachedPort := cachedRedirect(storage)
-	if cachedURI != "" && !pyTruthy(cfg["redirect_uri"]) && !pinnedLoopback {
+	if cachedURI != "" && !anyutil.IsTrue(cfg["redirect_uri"]) && !pinnedLoopback {
 		cfg["redirect_uri"] = cachedURI
 		cfg["_resolved_port"] = 0
 		return 0, nil
@@ -90,7 +91,7 @@ func configureCallbackPort(ctx context.Context, cfg map[string]any, storage *Tok
 		if !present {
 			raw = 0
 		}
-		configured, err := pyIntStrict(raw)
+		configured, err := intStrict(raw)
 		if err != nil {
 			return 0, err
 		}
@@ -113,14 +114,14 @@ func configureCallbackPort(ctx context.Context, cfg map[string]any, storage *Tok
 
 // Configured proxy redirect_uri or the loopback callback URL on the redirect host
 func resolveRedirectURI(cfg map[string]any, port int) string {
-	if v := cfg["redirect_uri"]; pyTruthy(v) {
-		return pyStr(v)
+	if v := cfg["redirect_uri"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	host := cfg["redirect_host"]
-	if !pyTruthy(host) {
+	if !anyutil.IsTrue(host) {
 		host = "127.0.0.1"
 	}
-	return fmt.Sprintf("http://%s:%d/callback", pyStr(host), port)
+	return fmt.Sprintf("http://%s:%d/callback", anyutil.String(host), port)
 }
 
 // Figma's remote MCP registers only allowlisted client names, the default scope it grants
@@ -138,7 +139,7 @@ func oauthBaseURLHostname(raw string) string {
 	if !strings.Contains(raw, "://") {
 		raw = "//" + raw
 	}
-	u, err := pyURLParse(raw)
+	u, err := urlParse(raw)
 	if err != nil {
 		return ""
 	}
@@ -164,19 +165,19 @@ func isFigmaRemoteMCP(serverName, serverURL string) bool {
 // Fills provider specific OAuth defaults the user left unset, returning cfg
 func ApplyOAuthProviderDefaults(cfg map[string]any, serverName, serverURL string) map[string]any {
 	if isFigmaRemoteMCP(serverName, serverURL) {
-		if !pyTruthy(cfg["client_name"]) {
+		if !anyutil.IsTrue(cfg["client_name"]) {
 			cfg["client_name"] = figmaDCRClientName
 			label := serverName
 			if label == "" {
 				label = serverURL
 			}
 			pkgLog().Info(fmt.Sprintf("MCP OAuth '%s': Figma DCR allowlist — registering as client_name=%s (override via oauth.client_name)",
-				label, pyReprStr(figmaDCRClientName)))
+				label, strconv.Quote(figmaDCRClientName)))
 		}
-		if !pyTruthy(cfg["scope"]) {
+		if !anyutil.IsTrue(cfg["scope"]) {
 			cfg["scope"] = figmaDefaultScope
 		}
-		if !pyTruthy(cfg["token_endpoint_auth_method"]) {
+		if !anyutil.IsTrue(cfg["token_endpoint_auth_method"]) {
 			cfg["token_endpoint_auth_method"] = "client_secret_post"
 		}
 	}
@@ -189,14 +190,14 @@ func buildClientMetadata(cfg map[string]any) (*OAuthClientMetadata, error) {
 	if !ok || portValue == nil {
 		return nil, errors.New("_configure_callback_port() must be called before _build_client_metadata()")
 	}
-	port, err := pyIntStrict(portValue)
+	port, err := intStrict(portValue)
 	if err != nil {
 		return nil, err
 	}
 	authMethod := cfg["token_endpoint_auth_method"]
-	if !pyTruthy(authMethod) {
+	if !anyutil.IsTrue(authMethod) {
 		authMethod = "none"
-		if pyTruthy(cfg["client_secret"]) {
+		if anyutil.IsTrue(cfg["client_secret"]) {
 			authMethod = "client_secret_post"
 		}
 	}
@@ -220,7 +221,7 @@ func buildClientMetadata(cfg map[string]any) (*OAuthClientMetadata, error) {
 		"token_endpoint_auth_method": authMethod,
 		"application_type":           appType,
 	}
-	if pyTruthy(cfg["scope"]) {
+	if anyutil.IsTrue(cfg["scope"]) {
 		kwargs["scope"] = cfg["scope"]
 	}
 	md, err := validateClientMetadata(kwargs)
@@ -232,7 +233,7 @@ func buildClientMetadata(cfg map[string]any) (*OAuthClientMetadata, error) {
 }
 
 // Python equality of two decoded config or JSON scalars
-func pyScalarEqual(a, b any) bool {
+func scalarEqual(a, b any) bool {
 	num := func(v any) (float64, bool) {
 		switch x := v.(type) {
 		case json.Number:
@@ -265,14 +266,6 @@ func pyScalarEqual(a, b any) bool {
 	return a == nil && b == nil
 }
 
-// Python or of two values
-func pyOr(a, b any) any {
-	if jsonTruthy(a) {
-		return a
-	}
-	return b
-}
-
 // Drops tokens and metadata minted under a previous client identity before the new one is written
 func invalidateTokensOnClientChange(storage *TokenStorage, newClientID, newClientSecret any) {
 	existing, _ := readOAuthJSON(storage.ClientInfoPath()).(*jsonObject)
@@ -283,7 +276,7 @@ func invalidateTokensOnClientChange(storage *TokenStorage, newClientID, newClien
 	if !jsonTruthy(oldClientID) {
 		return
 	}
-	if pyScalarEqual(oldClientID, newClientID) && pyScalarEqual(pyOr(existing.get("client_secret"), nil), pyOr(newClientSecret, nil)) {
+	if scalarEqual(oldClientID, newClientID) && scalarEqual(anyutil.Or(existing.get("client_secret"), nil), anyutil.Or(newClientSecret, nil)) {
 		return
 	}
 	removed := false
@@ -299,11 +292,11 @@ func invalidateTokensOnClientChange(storage *TokenStorage, newClientID, newClien
 	}
 	if removed {
 		pkgLog().Warn(fmt.Sprintf("MCP OAuth '%s': configured OAuth client changed (client_id %s -> %s); discarded tokens minted under "+
-			"the previous client. Re-authorize with: icebath mcp login %s", storage.serverName, pyRepr(jsonToPlain(oldClientID)), pyRepr(newClientID), storage.serverName))
+			"the previous client. Re-authorize with: icebath mcp login %s", storage.serverName, anyutil.Quote(jsonToPlain(oldClientID)), anyutil.Quote(newClientID), storage.serverName))
 	}
 }
 
-// Decoded JSON value with exact numbers turned into the plain types pyRepr renders
+// Decoded JSON value with exact numbers turned into the plain types Quote renders
 func jsonToPlain(v any) any {
 	if n, ok := v.(json.Number); ok {
 		if i, err := strconv.ParseInt(string(n), 10, 64); err == nil {
@@ -318,7 +311,7 @@ func jsonToPlain(v any) any {
 // Persists a configured pre-registered client so no dynamic registration runs
 func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[string]any, md *OAuthClientMetadata) error {
 	clientID := cfg["client_id"]
-	if !pyTruthy(clientID) {
+	if !anyutil.IsTrue(clientID) {
 		return nil
 	}
 	invalidateTokensOnClientChange(storage, clientID, cfg["client_secret"])
@@ -326,7 +319,7 @@ func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[
 	if !ok {
 		return errors.New("no OAuth callback port was resolved before client registration")
 	}
-	port, err := pyIntStrict(portValue)
+	port, err := intStrict(portValue)
 	if err != nil {
 		return err
 	}
@@ -340,7 +333,7 @@ func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[
 		info["token_endpoint_auth_method"] = *md.TokenEndpointAuthMethod
 	}
 	for _, key := range []string{"client_secret", "client_name", "scope"} {
-		if pyTruthy(cfg[key]) {
+		if anyutil.IsTrue(cfg[key]) {
 			info[key] = cfg[key]
 		}
 	}
@@ -351,7 +344,7 @@ func maybePreregisterClient(ctx context.Context, storage *TokenStorage, cfg map[
 	if err := writeOAuthJSON(home.WithOverride(ctx, storage.homeDir), storage.ClientInfoPath(), validated.dump()); err != nil {
 		return err
 	}
-	pkgLog().Debug(fmt.Sprintf("Pre-registered client_id=%s for '%s'", pyStr(clientID), storage.serverName))
+	pkgLog().Debug(fmt.Sprintf("Pre-registered client_id=%s for '%s'", anyutil.String(clientID), storage.serverName))
 	return nil
 }
 
@@ -388,7 +381,7 @@ func HumanizeOAuthRegistrationError(serverName, msg, serverURL string) (string, 
 		return fmt.Sprintf("'%s' is Figma's remote MCP — DCR is allowlisted by exact client_name "+
 			"(\"%s\" and \"Codex\" work; most other names 403). Icebath defaults to "+
 			"client_name: %s automatically. If you set oauth.client_name yourself, "+
-			"change it to one of those, or clear it and re-run:\n  icebath mcp login %s", serverName, figmaDCRClientName, pyReprStr(figmaDCRClientName), serverName), true
+			"change it to one of those, or clear it and re-run:\n  icebath mcp login %s", serverName, figmaDCRClientName, strconv.Quote(figmaDCRClientName), serverName), true
 	}
 	return fmt.Sprintf("'%s' only allows pre-approved OAuth clients — it rejected client registration (403), so no "+
 		"browser flow can start. Options: set oauth.client_name to a name the provider allowlists, add a "+
@@ -433,25 +426,25 @@ func buildProviderOptions(ctx context.Context, cfg map[string]any, storage *Toke
 		return nil, err
 	}
 	redirectURI := ""
-	if sshProxyHint && pyTruthy(cfg["redirect_uri"]) {
-		redirectURI = pyStr(cfg["redirect_uri"])
+	if sshProxyHint && anyutil.IsTrue(cfg["redirect_uri"]) {
+		redirectURI = anyutil.String(cfg["redirect_uri"])
 	}
 	redirectHost := ""
-	if pyTruthy(cfg["redirect_host"]) {
-		redirectHost = pyStr(cfg["redirect_host"])
+	if anyutil.IsTrue(cfg["redirect_host"]) {
+		redirectHost = anyutil.String(cfg["redirect_host"])
 	}
 	timeoutValue, present := cfg["timeout"]
 	if !present {
 		timeoutValue = 300
 	}
-	timeout, err := pyFloatStrict(timeoutValue)
+	timeout, err := floatStrict(timeoutValue)
 	if err != nil {
 		return nil, err
 	}
 	cimdURL, _ := cfg["_cimd_url"].(string)
 	flowName := "browser"
 	if v, ok := cfg["flow"]; ok {
-		flowName = pyStr(v)
+		flowName = anyutil.String(v)
 	}
 	return &oauthProviderOptions{
 		ClientMetadata:    md,

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func sweepArchiveDB(t *testing.T) *SessionDB {
@@ -25,7 +27,7 @@ func sidebarIDs(t *testing.T, db *SessionDB) map[string]bool {
 	}
 	out := map[string]bool{}
 	for _, r := range rows {
-		out[pyStr(rowValue(r, "id"))] = true
+		out[anyutil.String(rowValue(r, "id"))] = true
 	}
 	return out
 }
@@ -234,7 +236,7 @@ func TestOwnerStartListsALegacyCompressedChainOnce(t *testing.T) {
 			}
 			ids := []string{}
 			for _, r := range rows {
-				ids = append(ids, pyStr(rowValue(r, "id")))
+				ids = append(ids, anyutil.String(rowValue(r, "id")))
 			}
 			return ids
 		}

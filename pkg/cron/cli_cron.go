@@ -68,13 +68,13 @@ func (s *Store) nextRunOverdueSeconds(nextRunAt any) (float64, bool) {
 
 // Next run label and value, Overdue with a scheduler hint when an active job is past the grace
 func (s *Store) nextRunRow(job *jsonutil.Object) (string, string) {
-	stamp := field(job, "next_run_at", "?")
+	stamp := fieldText(job, "next_run_at", "not scheduled")
 	overdue, ok := s.nextRunOverdueSeconds(stamp)
 	state := field(job, "state", nil)
 	if !ok || overdue <= overdueGraceSeconds || !anyutil.IsTrue(field(job, "enabled", true)) || state == "paused" || state == "completed" {
-		return "Next run", anyutil.String(stamp)
+		return "Next run", stamp
 	}
-	return "Overdue", cliui.Color(fmt.Sprintf("%s  (%s ago — the job has not fired; is the scheduler running?)", anyutil.String(stamp), formatLateness(overdue)), cliui.Yellow)
+	return "Overdue", cliui.Color(fmt.Sprintf("%s  (%s ago — the job has not fired; is the scheduler running?)", stamp, formatLateness(overdue)), cliui.Yellow)
 }
 
 // One line verdict of a manual run, the dispatch for a background run

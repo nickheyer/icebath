@@ -17,17 +17,17 @@ var surfaceAPIExcModulePrefixes = map[string]bool{"openai": true, "httpx": true,
 	"botocore": true, "boto3": true, "google": true, "grpc": true, "requests": true, "aiohttp": true, "ssl": true, "socket": true, "urllib": true}
 
 // Error declaring the Python exception class it stands for
-type pyTypeNamed interface{ ErrorKind() string }
+type typeNamed interface{ ErrorKind() string }
 
 // Error declaring the Python module its exception class lives in
-type pyModuled interface{ PyModule() string }
+type moduledValue interface{ Module() string }
 
 // Error carrying an HTTP status the way an SDK exception exposes status_code
 type statusCoded interface{ StatusCode() int }
 
 // Python class name of err, untyped Go errors standing for a bare Exception
 func surfaceExceptionName(err error) string {
-	if n, ok := err.(pyTypeNamed); ok && n.ErrorKind() != "" {
+	if n, ok := err.(typeNamed); ok && n.ErrorKind() != "" {
 		return n.ErrorKind()
 	}
 	name := fmt.Sprintf("%T", err)
@@ -44,9 +44,9 @@ func surfaceExceptionName(err error) string {
 
 // Top level Python module of err, the SDK, transport, TLS and socket errors mapped to their Python homes
 func surfaceExceptionModule(err error) string {
-	var moduled pyModuled
+	var moduled moduledValue
 	if errors.As(err, &moduled) {
-		return strings.SplitN(moduled.PyModule(), ".", 2)[0]
+		return strings.SplitN(moduled.Module(), ".", 2)[0]
 	}
 	if errors.Is(err, provider.ErrNoAWSCredentials) {
 		return "botocore"

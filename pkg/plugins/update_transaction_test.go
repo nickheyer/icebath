@@ -225,7 +225,7 @@ func TestSuccessfulUpdatePublishesMatchingCodeAndDurableWorkspace(t *testing.T) 
 		if err != nil || result["ok"] != true {
 			t.Fatalf("%v %v", result, err)
 		}
-		if w.head(t) != w.sha || !strings.Contains(string(txRead(t, filepath.Join(w.target, "helper.py"))), "VERSION = '2.0.0'") ||
+		if w.head(t) != w.sha || !strings.Contains(string(txRead(t, filepath.Join(w.target, "helper.py"))), `VERSION = "2.0.0"`) ||
 			!bytes.Equal(txRead(t, filepath.Join(w.h, "config.yaml")), config) {
 			t.Fatal("published code or config does not match")
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
@@ -107,7 +108,7 @@ func cpTruthy(v any) bool {
 	case *big.Int:
 		return t.Sign() != 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Python str of value or else, the value counting only when truthy
@@ -115,7 +116,7 @@ func cpOrStr(v any) string {
 	if !cpTruthy(v) {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Key of a decoded JSON object, false for a missing key or a non object
@@ -436,13 +437,13 @@ func copilotLoadJWTFromDisk(ctx context.Context, fp string) (copilotJWT, bool) {
 		token := cpGetOr(entry, "api_token", "")
 		expiresAt, ok := cpFloatOrZero(cpGetOr(entry, "expires_at", 0))
 		if !ok {
-			return fmt.Errorf("could not convert expires_at to float: %s", pyStr(cpGetOr(entry, "expires_at", 0)))
+			return fmt.Errorf("could not convert expires_at to float: %s", anyutil.String(cpGetOr(entry, "expires_at", 0)))
 		}
 		if !cpTruthy(token) || expiresAt == 0 {
 			return nil
 		}
 		base, _ := cpGetOr(entry, "base_url", nil).(string)
-		out, found = copilotJWT{token: pyStr(token), expiresAt: expiresAt, baseURL: base}, true
+		out, found = copilotJWT{token: anyutil.String(token), expiresAt: expiresAt, baseURL: base}, true
 		return nil
 	})
 	return out, found
@@ -461,7 +462,7 @@ func copilotSaveJWTToDisk(ctx context.Context, fp string, jwt copilotJWT) {
 				}
 				exp, ok := cpFloatOrZero(cpGetOr(v, "expires_at", 0))
 				if !ok {
-					return fmt.Errorf("could not convert expires_at to float: %s", pyStr(cpGetOr(v, "expires_at", 0)))
+					return fmt.Errorf("could not convert expires_at to float: %s", anyutil.String(cpGetOr(v, "expires_at", 0)))
 				}
 				if exp > now {
 					kept.Set(k, v)
@@ -611,10 +612,10 @@ func exchangeCopilotTokenLocked(ctx context.Context, raw, fp string, timeout tim
 	if !cpTruthy(tokenValue) {
 		return copilotJWT{}, errors.New("Copilot token exchange returned empty token")
 	}
-	apiToken := pyStr(tokenValue)
+	apiToken := anyutil.String(tokenValue)
 	expiresAt, okFloat := cpFloatOrZero(cpGetOr(data, "expires_at", nil))
 	if !okFloat {
-		return copilotJWT{}, fmt.Errorf("the Copilot token expiry %s is not a number", pyStr(cpGetOr(data, "expires_at", nil)))
+		return copilotJWT{}, fmt.Errorf("the Copilot token expiry %s is not a number", anyutil.String(cpGetOr(data, "expires_at", nil)))
 	}
 	if expiresAt == 0 {
 		expiresAt = copilotNow() + 1800
@@ -635,7 +636,7 @@ func exchangeCopilotTokenLocked(ctx context.Context, raw, fp string, timeout tim
 	if baseURL != "" {
 		shownBase = baseURL
 	}
-	pkgLog().Debug(fmt.Sprintf("Copilot token exchanged, expires_at=%s, base_url=%s", pyFloatRepr(expiresAt), shownBase))
+	pkgLog().Debug(fmt.Sprintf("Copilot token exchanged, expires_at=%s, base_url=%s", floatRepr(expiresAt), shownBase))
 	return jwt, nil
 }
 

@@ -243,5 +243,5 @@ func tomliWLiteral(v any, nest int) (string, error) {
 	case *OrderedObject:
 		return tomliWInlineTable(t)
 	}
-	return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("Object of type %T is not TOML serializable", v)}
+	return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("Object of type %T is not TOML serializable", v)}
 }

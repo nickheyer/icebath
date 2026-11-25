@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Answers line_input, builtin input and the masked prompt from one queue like a patched iterator
@@ -457,7 +458,7 @@ func TestSetupProbeCredentialsNeverBecomeSavedCredentials(t *testing.T) {
 					t.Fatalf("bearer persisted %v", saved)
 				}
 				persisted := saved["providers"].(map[string]any)["gateway"].(map[string]any)
-				if persisted["key_cmd"] != entry["key_cmd"] || pyOrStr(dictGet(persisted, "api_key", "")) != pyOrStr(dictGet(static, "api_key", "")) {
+				if persisted["key_cmd"] != entry["key_cmd"] || anyutil.StringOr(dictGet(persisted, "api_key", ""), "") != anyutil.StringOr(dictGet(static, "api_key", ""), "") {
 					t.Fatalf("persisted %v", persisted)
 				}
 			})

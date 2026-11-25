@@ -101,11 +101,11 @@ func logTimeout(rt *Runtime, serverID, filePath, kind string) {
 }
 
 func logServerError(rt *Runtime, serverID, filePath string, err error) {
-	emit(rt, serverID, slog.LevelWarn, "unexpected error for "+shortPath(filePath)+": "+errTypeName(err)+": "+errText(err))
+	emit(rt, serverID, slog.LevelWarn, "unexpected error for "+shortPath(filePath)+": "+errReport(err))
 }
 
 func logSpawnFailed(rt *Runtime, serverID, workspaceRoot string, err error) {
-	emit(rt, serverID, slog.LevelWarn, "spawn/initialize failed for "+workspaceRoot+": "+errTypeName(err)+": "+errText(err))
+	emit(rt, serverID, slog.LevelWarn, "spawn/initialize failed for "+workspaceRoot+": "+errReport(err))
 }
 
 // Logs a request skipped on a broken root, naming when the pair is retried

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -86,7 +87,7 @@ func moveRouteWakes(ctx context.Context, runner AuthorityRunner, sessionKey, old
 		automation := native.ValueOr("automation", jsonutil.NewObject())
 		requestID := rowString(row, "request_id")
 		var identity []any
-		if pyTruthy(automation) && strings.HasPrefix(requestID, "[") {
+		if anyutil.IsTrue(automation) && strings.HasPrefix(requestID, "[") {
 			decoded, err := jsonutil.Decode(requestID)
 			if err != nil {
 				return err
@@ -147,7 +148,7 @@ func localOwner(a *SessionAuthority, sessionKey string) *SessionRef {
 func resetAndRetargetLocal(ctx context.Context, a *SessionAuthority, runner AuthorityRunner, sessionKey, oldSessionID string, owner SessionRef) (*SessionEntry, error) {
 	live, ok := a.live(owner.SessionID)
 	if !ok {
-		return nil, &pyKeyError{owner.SessionID}
+		return nil, &keyError{owner.SessionID}
 	}
 	type rotated struct {
 		entry *SessionEntry

@@ -75,22 +75,22 @@ func reSub(re *regexp2.Regexp, s, repl string) string {
 }
 
 // Error carrying a kind label beside its message
-type pyErr struct{ kind, msg string }
+type kindErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string     { return e.msg }
-func (e *pyErr) ErrorKind() string { return e.kind }
+func (e *kindErr) Error() string     { return e.msg }
+func (e *kindErr) ErrorKind() string { return e.kind }
 
-func runtimeError(msg string) error { return &pyErr{"RuntimeError", msg} }
+func runtimeError(msg string) error { return &kindErr{"RuntimeError", msg} }
 
 // Whether the error is the timeout of an awaited ack
 func isTimeout(err error) bool {
-	var pe *pyErr
+	var pe *kindErr
 	return errors.As(err, &pe) && pe.kind == "TimeoutError"
 }
 
 // Whether the error is a runtime failure of the connection or an expired stream
 func isRuntimeError(err error) bool {
-	var pe *pyErr
+	var pe *kindErr
 	if errors.As(err, &pe) {
 		return pe.kind == "RuntimeError"
 	}
@@ -475,7 +475,7 @@ func (a *WeComAdapter) waitForHandshake(ctx context.Context, reqID string) (*jso
 			case ctx.Err() != nil:
 				return nil, ctx.Err()
 			}
-			return nil, &pyErr{"TimeoutError", handshakeTimeoutText}
+			return nil, &kindErr{"TimeoutError", handshakeTimeoutText}
 		}
 		if msg.Type != websocketutil.Text {
 			continue
@@ -489,7 +489,7 @@ func (a *WeComAdapter) waitForHandshake(ctx context.Context, reqID string) (*jso
 		}
 		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring pre-auth payload: %s", a.Name(), anyutil.String(payload.Value("cmd"))))
 	}
-	return nil, &pyErr{"TimeoutError", handshakeTimeoutText}
+	return nil, &kindErr{"TimeoutError", handshakeTimeoutText}
 }
 
 // Reads events until the adapter stops, reconnecting with the backoff ladder after a websocket error
@@ -734,7 +734,7 @@ func (a *WeComAdapter) request(ctx context.Context, cmd, reqID string, body *jso
 		}
 		return future.payload, nil
 	case <-timer.C:
-		return nil, &pyErr{"TimeoutError", "timed out waiting for the WeCom response to " + cmd}
+		return nil, &kindErr{"TimeoutError", "timed out waiting for the WeCom response to " + cmd}
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -764,7 +764,7 @@ func (a *WeComAdapter) sendReplyRequest(ctx context.Context, replyReqID string, 
 func (a *WeComAdapter) RequireReplyReqID(replyReqID string) (string, error) {
 	normalized := strings.TrimSpace(replyReqID)
 	if normalized == "" {
-		return "", &pyErr{"ValueError", "reply_req_id is required"}
+		return "", &kindErr{"ValueError", "reply_req_id is required"}
 	}
 	return normalized, nil
 }

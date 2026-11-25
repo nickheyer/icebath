@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func makeUnrepairableDB(t *testing.T, dir string, n int) string {
@@ -201,7 +203,7 @@ func TestGuestBarriersApplyConfiguredSynchronous(t *testing.T) {
 	ApplyDurabilityBarriers(context.Background(), conn)
 	sync, _ := fetchOne(context.Background(), conn, "PRAGMA synchronous")
 	mode, _ := fetchOne(context.Background(), conn, "PRAGMA journal_mode")
-	if pyStr(sync[0]) != "2" || strings.ToLower(pyStr(mode[0])) != "delete" {
+	if anyutil.String(sync[0]) != "2" || strings.ToLower(anyutil.String(mode[0])) != "delete" {
 		t.Fatalf("synchronous %v journal_mode %v", sync, mode)
 	}
 }
@@ -210,7 +212,7 @@ func TestGuestBarriersLeaveSynchronousAloneWhenUnset(t *testing.T) {
 	conn := guestConn(t, t.TempDir(), "database: {}\n")
 	defer conn.Close()
 	ApplyDurabilityBarriers(context.Background(), conn)
-	if sync, _ := fetchOne(context.Background(), conn, "PRAGMA synchronous"); pyStr(sync[0]) != "1" {
+	if sync, _ := fetchOne(context.Background(), conn, "PRAGMA synchronous"); anyutil.String(sync[0]) != "1" {
 		t.Fatalf("synchronous %v", sync)
 	}
 }

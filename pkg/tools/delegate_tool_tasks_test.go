@@ -22,15 +22,15 @@ func TestNormalizeTaskListKeepsLegacyGroupTasks(t *testing.T) {
 		want  string
 	}{
 		{"", nil, "Provide either 'goal' (single task) or 'tasks' (batch)."},
-		{"[oops", nil, "tasks must be a JSON array of task objects; received a string that could not be parsed as JSON (Expecting value)."},
-		{`{"goal": "x"}`, nil, "tasks must be a JSON array of task objects; parsed dict instead."},
+		{"[oops", nil, "tasks must be a JSON array of task objects; received a string that could not be parsed as JSON (invalid character 'o' looking for beginning of value at line 1, column 2)."},
+		{`{"goal": "x"}`, nil, "tasks must be a JSON array of task objects; parsed object instead."},
 		{[]any{}, nil, "No tasks provided. Pass tasks=[{goal: '...', context: '...'}, ...] — one entry per subagent (a single task is a one-entry array)."},
 		{[]any{map[string]any{"goal": "a"}, map[string]any{"goal": "b"}, map[string]any{"goal": "c"}, map[string]any{"goal": "d"}}, nil, "Too many tasks: 4 provided, but max_concurrent_children is 3."},
-		{[]any{"x"}, nil, "Task 0 must be an object, got str."},
+		{[]any{"x"}, nil, "Task 0 must be an object, got string."},
 		{[]any{map[string]any{"goal": "  "}}, nil, "Task 0 is missing a 'goal'."},
-		{[]any{map[string]any{"goal": "TODO"}}, nil, "Task 0 has a placeholder goal ('TODO')."},
-		{[]any{map[string]any{"goal": "Fix <file name> now"}}, nil, "Task 0 goal contains an unexpanded template marker ('<file name>')."},
-		{[]any{map[string]any{"goal": "Fix it"}, map[string]any{"goal": "Review the whole repository"}}, nil, "Task 0 goal is too short ('Fix it')."},
+		{[]any{map[string]any{"goal": "TODO"}}, nil, `Task 0 has a placeholder goal ("TODO").`},
+		{[]any{map[string]any{"goal": "Fix <file name> now"}}, nil, `Task 0 goal contains an unexpanded template marker ("<file name>").`},
+		{[]any{map[string]any{"goal": "Fix it"}, map[string]any{"goal": "Review the whole repository"}}, nil, `Task 0 goal is too short ("Fix it").`},
 	} {
 		_, msg, err := NormalizeTaskList(tc.goal, nil, tc.tasks, nil, "leaf", 3)
 		if err != nil || !strings.HasPrefix(msg, tc.want) {

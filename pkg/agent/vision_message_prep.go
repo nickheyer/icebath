@@ -3,11 +3,12 @@ package agent
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -15,7 +16,6 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
-	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var visionImagePartTypes = map[string]bool{"image_url": true, "input_image": true}
@@ -34,14 +34,6 @@ type visionPrepState struct {
 	anthropicImageFallbackCache map[string]string
 	noListToolContentModels     map[[2]string]bool
 	transportCache              map[string]provider.Transport
-}
-
-// Python str of a value after the or default, empty for falsy values
-func pyStrOr(v any, def string) string {
-	if !anyutil.IsTrue(v) {
-		return def
-	}
-	return anyutil.String(v)
 }
 
 // True for a dict whose type is an image part type of the vision module
@@ -71,7 +63,7 @@ func salvageTextParts(content []any, anyDictText bool) []string {
 			if !ok {
 				raw = ""
 			}
-			text = strings.TrimSpace(pyStrOr(raw, ""))
+			text = strings.TrimSpace(anyutil.StringOr(raw, ""))
 		default:
 			continue
 		}
@@ -101,11 +93,11 @@ func contentHasImageParts(content any) bool {
 	return false
 }
 
-// Writes a data URL payload to a temp image file and returns its path, empty when the payload is too large
+// Writes a data URL payload to a temp image file and returns its path, empty when the payload is too large, an error wrapping the base64.CorruptInputError when it does not decode
 func materializeDataURLForVision(imageURL any) (string, error) {
-	header, data, _ := strings.Cut(pyStrOr(imageURL, ""), ",")
-	if n := utf8.RuneCountInString(data); n > maxDataURLBase64Bytes {
-		pkgLog().Warn(fmt.Sprintf("data-URL payload too large (%d bytes), skipping", n))
+	header, data, _ := strings.Cut(anyutil.StringOr(imageURL, ""), ",")
+	if len(data) > maxDataURLBase64Bytes {
+		pkgLog().Warn(fmt.Sprintf("data-URL payload too large (%d bytes), skipping", len(data)))
 		return "", nil
 	}
 	mime := ""
@@ -121,14 +113,15 @@ func materializeDataURLForVision(imageURL any) (string, error) {
 	if !ok {
 		suffix = ".jpg"
 	}
+	raw, err := base64util.Decode(data)
+	if err != nil {
+		return "", fmt.Errorf("the image data URL payload is not valid base64: %w", err)
+	}
 	tmp, err := os.CreateTemp("", "anthropic_image_*"+suffix)
 	if err != nil {
 		return "", err
 	}
-	raw, err := base64util.Decode(data)
-	if err == nil {
-		_, err = tmp.Write(raw)
-	}
+	_, err = tmp.Write(raw)
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
@@ -141,10 +134,7 @@ func materializeDataURLForVision(imageURL any) (string, error) {
 
 // Cached vision_analyze description note standing in for an image the active model cannot read
 func (a *AIAgent) describeImageForAnthropicFallback(ctx context.Context, imageURL any, role string) (string, error) {
-	source := pyStrOr(imageURL, "")
-	if err := textutil.ValidateUTF8(source); err != nil {
-		return "", err
-	}
+	source := anyutil.StringOr(imageURL, "")
 	sum := sha256.Sum256([]byte(source))
 	cacheKey := hex.EncodeToString(sum[:])
 	if cached := a.anthropicImageFallbackCache[cacheKey]; cached != "" {
@@ -158,19 +148,23 @@ func (a *AIAgent) describeImageForAnthropicFallback(ctx context.Context, imageUR
 		"Include any text, code, UI, data, objects, people, layout, colors, " +
 		"and any other notable visual information."
 	isDataURL := strings.HasPrefix(source, "data:")
-	cleanupPath := ""
+	var description string
 	if isDataURL {
 		path, err := materializeDataURLForVision(source)
-		if err != nil {
+		var corrupt base64.CorruptInputError
+		switch {
+		case errors.As(err, &corrupt):
+			description = "Image analysis failed: " + err.Error()
+		case err != nil:
 			return "", err
+		case path == "":
+			description = "Image analysis failed: the image data URL is too large to analyze"
+		default:
+			description = analyzeImageDescription(ctx, a.env, path, analysisPrompt)
+			_ = os.Remove(path)
 		}
-		source, cleanupPath = path, path
-	}
-	description := analyzeImageDescription(ctx, a.env, source, analysisPrompt)
-	if cleanupPath != "" {
-		if _, err := os.Stat(cleanupPath); err == nil {
-			_ = os.Remove(cleanupPath)
-		}
+	} else {
+		description = analyzeImageDescription(ctx, a.env, source, analysisPrompt)
 	}
 	if description == "" {
 		description = "Image analysis failed."
@@ -245,7 +239,7 @@ func (a *AIAgent) preprocessAnthropicContent(ctx context.Context, content any, r
 				imageURL = ""
 			}
 		} else {
-			imageURL = pyStrOr(imageData, "")
+			imageURL = anyutil.StringOr(imageData, "")
 		}
 		if !anyutil.IsTrue(imageURL) {
 			notes = append(notes, "[An image was attached but no image source was available.]")
@@ -313,7 +307,7 @@ func (a *AIAgent) prepareMessagesForNonVisionModel(ctx context.Context, apiMessa
 		if !ok {
 			role = "user"
 		}
-		content, err := a.preprocessAnthropicContent(ctx, m["content"], pyStrOr(role, "user"))
+		content, err := a.preprocessAnthropicContent(ctx, m["content"], anyutil.StringOr(role, "user"))
 		if err != nil {
 			return nil, err
 		}

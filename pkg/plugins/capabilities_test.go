@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Home with an empty config.yaml, the fixture of the capability tests
@@ -90,7 +91,7 @@ func TestConsentPersistence(t *testing.T) {
 	entry := capEntry(t, h, "capplug")
 	consent, _ := entry["capabilities_consent"].(map[string]any)
 	if !reflect.DeepEqual(entry["granted_capabilities"], []any{"tools.override"}) || consent["hash"] != CapabilitySetHash([]string{"tools.override"}) ||
-		!config.PyTruthy(consent["granted_at"]) || entry["allow_tool_override"] != true {
+		!anyutil.IsTrue(consent["granted_at"]) || entry["allow_tool_override"] != true {
 		t.Fatalf("%v", entry)
 	}
 	capRecord(t, h, "capplug2", []string{"llm.model_override"}, []string{"llm.model_override"})

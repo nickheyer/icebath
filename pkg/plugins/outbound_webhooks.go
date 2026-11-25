@@ -328,7 +328,7 @@ func serializeOutboundWebhookPayload(ctx context.Context, event string, kwargs m
 	payload.Merge(shellHookPayloadFields(ctx, kwargs))
 	payload.Set("delivery_id", deliveryID)
 	payload.Set("timestamp", shellHookISO(outboundNow()))
-	text, err := jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }), jsonutil.Spaced())
+	text, err := jsonutil.Encode(hookPayloadData(payload, 0), jsonutil.Spaced())
 	if err != nil {
 		return nil, err
 	}

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
@@ -122,7 +123,7 @@ func setResetFromVendorHeaders(ctx map[string]any, lowered map[string]string, no
 func firstTruthyField(m map[string]any, keys ...string) any {
 	var v any
 	for _, k := range keys {
-		if v = m[k]; pyTruthy(v) {
+		if v = m[k]; anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -130,7 +131,7 @@ func firstTruthyField(m map[string]any, keys ...string) any {
 }
 
 // Float of a Python int or float value, bools counting as ints
-func pyNumber(v any) (float64, bool) {
+func numberOf(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
 		return n, true
@@ -175,7 +176,7 @@ func ExtractAPIErrorContext(err error) map[string]any {
 			ctx["reason"] = strings.TrimSpace(s)
 		}
 		message := firstTruthyField(payload, "message", "error_description")
-		if s, ok := payload["error"].(string); ok && !pyTruthy(message) {
+		if s, ok := payload["error"].(string); ok && !anyutil.IsTrue(message) {
 			message = s
 		}
 		if s, ok := message.(string); ok && strings.TrimSpace(s) != "" {
@@ -188,7 +189,7 @@ func ExtractAPIErrorContext(err error) map[string]any {
 			}
 		}
 		if _, has := ctx["reset_at"]; !has {
-			if secs, ok := pyNumber(payload["resets_in_seconds"]); ok {
+			if secs, ok := numberOf(payload["resets_in_seconds"]); ok {
 				ctx["reset_at"] = float64(now.UnixNano())/1e9 + secs
 			}
 		}
@@ -330,6 +331,7 @@ func errorClassChain(err error) []string {
 // Kinds of the value and type error families with the families they belong to, the Go conversion and JSON encoding errors among them
 var errorKindChains = map[string][]string{
 	"ValueError":               {"ValueError"},
+	"LocalValidationError":     {"LocalValidationError", "ValueError"},
 	"TypeError":                {"TypeError"},
 	"UnicodeError":             {"UnicodeError", "ValueError"},
 	"UnicodeDecodeError":       {"UnicodeDecodeError", "UnicodeError", "ValueError"},

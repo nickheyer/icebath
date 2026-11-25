@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -139,11 +140,9 @@ func runePrefix(s string, n int) string {
 	return string(r[:n])
 }
 
-func pyLen(s string) int { return len([]rune(s)) }
-
 // Text clamped to the adapter's per chat limit with an ellipsis, never split
 func fitPluginText(adapter PlatformAdapter, chatID, text string) string {
-	limit, measure := 4096, pyLen
+	limit, measure := 4096, utf8.RuneCountInString
 	l, err := adapter.MaxMessageLengthForChat(chatID)
 	m, merr := adapter.MessageLenFnForChat(chatID)
 	if err == nil && merr == nil && m != nil {

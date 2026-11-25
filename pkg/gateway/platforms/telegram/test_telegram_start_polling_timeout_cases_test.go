@@ -19,7 +19,7 @@ func TestNetworkLadderStartPollingHangDoesNotWedge(t *testing.T) {
 	bounded.timings.updaterStartTimeout = 0.05
 	finished := make(chan struct{})
 	go func() {
-		bounded.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "net down"})
+		bounded.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "net down"})
 		close(finished)
 	}()
 	select {

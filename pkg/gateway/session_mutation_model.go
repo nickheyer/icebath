@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -35,14 +36,14 @@ type agentRuntimeResolver interface {
 func runtimeResolver(a *SessionAuthority) (agentRuntimeResolver, error) {
 	resolver, ok := a.Runner.(agentRuntimeResolver)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot resolve the agent runtime of a session", a.Runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot resolve the agent runtime of a session", a.Runner)}
 	}
 	return resolver, nil
 }
 
 // String field of a mapping, empty when absent or falsy
 func mapText(m map[string]any, key string) string {
-	if v, ok := m[key]; ok && pyTruthy(v) {
+	if v, ok := m[key]; ok && anyutil.IsTrue(v) {
 		return anyutil.String(v)
 	}
 	return ""
@@ -351,7 +352,7 @@ func configuredDefault(ctx context.Context, a *SessionAuthority) (string, string
 		return "", "", err
 	}
 	block := profile["model"]
-	if !pyTruthy(block) {
+	if !anyutil.IsTrue(block) {
 		return "", "", nil
 	}
 	name := ""
@@ -506,7 +507,7 @@ func aliasCredential(ctx context.Context, a *SessionAuthority, result provider.M
 		sort.Strings(written)
 		for _, alias := range written {
 			entry, ok := entries[alias].(map[string]any)
-			if !ok || !pyTruthy(entry["model"]) || strings.ToLower(strings.TrimSpace(alias)) != name {
+			if !ok || !anyutil.IsTrue(entry["model"]) || strings.ToLower(strings.TrimSpace(alias)) != name {
 				continue
 			}
 			key := strings.TrimSpace(mapText(entry, "api_key"))
@@ -528,7 +529,7 @@ func aliasCredential(ctx context.Context, a *SessionAuthority, result provider.M
 					value = nil
 				}
 			}
-			if !pyTruthy(value) {
+			if !anyutil.IsTrue(value) {
 				return aliasKey{}, runtimeRefusal("model_resolution_failed")
 			}
 			return aliasKey{source: source, literal: value}, nil
@@ -539,10 +540,10 @@ func aliasCredential(ctx context.Context, a *SessionAuthority, result provider.M
 
 // Large context guard facts of a session without a resident agent, read from its persisted usage anchor
 func persistedSelectionContext(ctx context.Context, a *SessionAuthority, snapshot any, current switchRoute) (*provider.SelectionContext, error) {
-	target, _ := pyItem(snapshot, "target")
-	if !pyTruthy(target) {
+	target, _ := itemValue(snapshot, "target")
+	if !anyutil.IsTrue(target) {
 		var err error
-		if target, err = pyItem(snapshot, "receipt", "session_id"); err != nil {
+		if target, err = itemValue(snapshot, "receipt", "session_id"); err != nil {
 			return nil, err
 		}
 	}
@@ -615,11 +616,11 @@ func selectionGuardRefusal(ctx context.Context, a *SessionAuthority, live *LiveS
 	for i, kind := range kinds {
 		guards[i] = kind
 	}
-	target, err := pyItem(snapshot, "target")
+	target, err := itemValue(snapshot, "target")
 	if err != nil {
 		return nil, err
 	}
-	revision, err := pyItem(snapshot, "target_revision")
+	revision, err := itemValue(snapshot, "target_revision")
 	if err != nil {
 		return nil, err
 	}

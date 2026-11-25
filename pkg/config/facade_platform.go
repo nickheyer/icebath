@@ -3,16 +3,15 @@ package config
 import (
 	"errors"
 	"fmt"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
-
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Platform manifest sources a scan reads, the bundled tree, the home's user plugins or both
@@ -70,7 +69,7 @@ func platformManifestPaths(h, source string) []platformManifestPath {
 	for _, r := range roots {
 		entries, err := os.ReadDir(r.dir)
 		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) || pyOSErrorName(err) == "NotADirectoryError" {
+			if errors.Is(err, fs.ErrNotExist) || osErrorName(err) == "NotADirectoryError" {
 				continue
 			}
 			if fi, serr := os.Stat(r.dir); serr == nil && !fi.IsDir() {
@@ -110,7 +109,7 @@ func PlatformManifestStamp(h string) string {
 	var b strings.Builder
 	for _, p := range platformManifestPaths(h, PlatformSourceUser) {
 		if p.path == "" {
-			fmt.Fprintf(&b, "%q\x00\x00%s\n", p.dirName, pyOSErrorName(p.err))
+			fmt.Fprintf(&b, "%q\x00\x00%s\n", p.dirName, osErrorName(p.err))
 			continue
 		}
 		fmt.Fprintf(&b, "%q\x00%q\x00%v\n", p.dirName, p.path, FileSignature(p.info))
@@ -132,7 +131,7 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 	var out []NamedPlatformManifest
 	for _, p := range platformManifestPaths(h, source) {
 		if p.path == "" {
-			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", p.dirName, pyOSErrorString(p.err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", p.dirName, errchain.OSText(p.err)))
 			if skipped != nil {
 				*skipped = append(*skipped, p.dirName)
 			}
@@ -143,7 +142,7 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 			if strict && !p.requireKind {
 				return out, err
 			}
-			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin manifest %s: %s", p.path, pyOSErrorString(err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin manifest %s: %s", p.path, errchain.OSText(err)))
 			if skipped != nil {
 				*skipped = append(*skipped, p.path)
 			}
@@ -151,7 +150,7 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 		}
 		raw = trimUTF8BOM(raw)
 		var doc any
-		if err = pyUTF8DecodeError(raw); err == nil {
+		if err = textutil.ValidateUTF8(raw); err == nil {
 			doc, err = FastSafeLoad(raw)
 		}
 		if err != nil {
@@ -160,11 +159,11 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 			}
 			continue
 		}
-		if !PyTruthy(doc) {
+		if !anyutil.IsTrue(doc) {
 			doc = map[string]any{}
 		}
 		manifest, ok := doc.(map[string]any)
-		if !ok || (p.requireKind && !pyEq(manifest["kind"], "platform")) {
+		if !ok || (p.requireKind && !anyutil.Equal(manifest["kind"], "platform")) {
 			continue
 		}
 		out = append(out, NamedPlatformManifest{DirName: p.dirName, Manifest: manifest})
@@ -179,8 +178,8 @@ type platformEnvEntry struct {
 }
 
 // Items a Python star unpack yields for a truthy value, list items, string characters or mapping keys
-func pyStarItems(v any) ([]any, error) {
-	if !PyTruthy(v) {
+func starItems(v any) ([]any, error) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch x := v.(type) {
@@ -204,12 +203,12 @@ func pyStarItems(v any) ([]any, error) {
 
 // Declared requires_env entries plus optional_env unless optional is false, a suffix named var a secret by default
 func platformManifestEnvEntries(manifest map[string]any, optional bool) ([]platformEnvEntry, error) {
-	entries, err := pyStarItems(manifest["requires_env"])
+	entries, err := starItems(manifest["requires_env"])
 	if err != nil {
 		return nil, err
 	}
 	if optional {
-		extra, err := pyStarItems(manifest["optional_env"])
+		extra, err := starItems(manifest["optional_env"])
 		if err != nil {
 			return nil, err
 		}
@@ -230,9 +229,9 @@ func platformManifestEnvEntries(manifest map[string]any, optional bool) ([]platf
 		if !ok || name == "" {
 			continue
 		}
-		isSecret := PyTruthy(meta["password"]) || PyTruthy(meta["secret"])
+		isSecret := anyutil.IsTrue(meta["password"]) || anyutil.IsTrue(meta["secret"])
 		if pw, isBool := meta["password"].(bool); !isSecret && !(isBool && !pw) {
-			upper := pyUpper(name)
+			upper := strings.ToUpper(name)
 			for _, suffix := range PlatformSecretEnvSuffixes {
 				if strings.HasSuffix(upper, suffix) {
 					isSecret = true
@@ -243,11 +242,6 @@ func platformManifestEnvEntries(manifest map[string]any, optional bool) ([]platf
 		out = append(out, platformEnvEntry{name: name, isSecret: isSecret, meta: meta})
 	}
 	return out, nil
-}
-
-// Python str.upper, the full Unicode case mapping that expands characters such as the sharp s
-func pyUpper(s string) string {
-	return cases.Upper(language.Und).String(s)
 }
 
 // Errors when the provider bridge has not registered the core declared env names
@@ -272,11 +266,11 @@ func manifestSecretEnvs(manifests []NamedPlatformManifest, core map[string]bool)
 		}
 		for _, e := range entries {
 			category := e.meta["category"]
-			if !PyTruthy(category) {
+			if !anyutil.IsTrue(category) {
 				category = "messaging"
 			}
-			if e.isSecret && pyEq(category, "messaging") {
-				names[pyUpper(e.name)] = true
+			if e.isSecret && anyutil.Equal(category, "messaging") {
+				names[strings.ToUpper(e.name)] = true
 			}
 		}
 	}
@@ -287,7 +281,7 @@ func manifestSecretEnvs(manifests []NamedPlatformManifest, core map[string]bool)
 		}
 	}
 	for n := range core {
-		delete(names, pyUpper(n))
+		delete(names, strings.ToUpper(n))
 	}
 	return names, nil
 }
@@ -304,7 +298,7 @@ func PlatformManifestSecretEnvs(h, source string, strict bool) (map[string]bool,
 			out[n] = true
 		}
 		for n := range core {
-			delete(out, pyUpper(n))
+			delete(out, strings.ToUpper(n))
 		}
 		return out, nil
 	}
@@ -349,10 +343,10 @@ func injectPlatformPluginEnvVars(h string) (map[string]bool, error) {
 	}
 	for _, m := range manifests {
 		label := m.Manifest["label"]
-		if !PyTruthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = m.Manifest["name"]
 		}
-		if !PyTruthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = m.DirName
 		}
 		entries, err := platformManifestEnvEntries(m.Manifest, true)
@@ -364,13 +358,13 @@ func injectPlatformPluginEnvVars(h string) (map[string]bool, error) {
 				continue
 			}
 			category := "messaging"
-			if PyTruthy(e.meta["category"]) {
-				category = PyStr(e.meta["category"])
+			if set := setText(e.meta["category"]); set != "" {
+				category = set
 			}
 			OptionalEnvVars.Set(e.name, EnvVar{
-				Description: firstNonEmpty(pyOrEmpty(e.meta["description"]), PyStr(label)+" configuration"),
-				Prompt:      firstNonEmpty(pyOrEmpty(e.meta["prompt"]), e.name),
-				URL:         pyOrEmpty(e.meta["url"]),
+				Description: firstNonEmpty(setText(e.meta["description"]), anyutil.String(label)+" configuration"),
+				Prompt:      firstNonEmpty(setText(e.meta["prompt"]), e.name),
+				URL:         setText(e.meta["url"]),
 				Password:    e.isSecret,
 				Category:    category,
 			})
@@ -425,7 +419,7 @@ func BundledPlatformManifests(h string) ([]PlatformManifest, error) {
 		for _, e := range entries {
 			required = append(required, e.name)
 		}
-		out = append(out, PlatformManifest{Name: m.DirName, ManifestName: PyStr(m.Manifest["name"]), RequiredEnv: required})
+		out = append(out, PlatformManifest{Name: m.DirName, ManifestName: setText(m.Manifest["name"]), RequiredEnv: required})
 	}
 	return out, nil
 }

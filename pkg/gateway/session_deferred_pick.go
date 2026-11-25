@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -78,7 +80,7 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 		if replay != nil {
 			stored, ok := replay.(*jsonutil.Object)
 			if !ok {
-				return &PyError{Kind: "TypeError", Msg: "stored mutation result is not a dict"}
+				return &errorutil.Error{Kind: "TypeError", Msg: "stored mutation result is not a dict"}
 			}
 			result = stored
 			return nil
@@ -119,7 +121,7 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 				value.Set("reasoning", level)
 			}
 			model, _ := request.Payload.Get("model")
-			if pyTruthy(shown) {
+			if anyutil.IsTrue(shown) {
 				model = shown
 			}
 			picked = jsonutil.ObjectOf("model", model)
@@ -190,7 +192,7 @@ func commitDeferredEntry(ctx context.Context, a *SessionAuthority, ref SessionRe
 		}
 		return jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", refusal.Reason), nil
 	}
-	pkgLog().Error(fmt.Sprintf("Deferred %s pick on %s failed to resolve: %s", operation, ref.SessionID, pyExceptionRepr(err)))
+	pkgLog().Error(fmt.Sprintf("Deferred %s pick on %s failed to resolve: %s", operation, ref.SessionID, errchain.OSText(err)))
 	return jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", operation+"_resolution_failed"), nil
 }
 
@@ -200,7 +202,7 @@ func commitLevel(ctx context.Context, a *SessionAuthority, ref SessionRef, key, 
 	pick.Delete("reasoning")
 	entry, ok := level.(*jsonutil.Object)
 	if !ok {
-		return "", false, &PyError{Kind: "TypeError", Msg: "deferred reasoning pick is not a dict"}
+		return "", false, &errorutil.Error{Kind: "TypeError", Msg: "deferred reasoning pick is not a dict"}
 	}
 	result, err := commitDeferredEntry(ctx, a, ref, entry, "reasoning")
 	if err != nil || result == nil {
@@ -240,7 +242,7 @@ func committedRoute(ctx context.Context, a *SessionAuthority, sessionID string) 
 		current = jsonutil.NewObject()
 	}
 	config := jsonutil.NewObject()
-	if text, _ := current.Get("model_config"); pyTruthy(text) {
+	if text, _ := current.Get("model_config"); anyutil.IsTrue(text) {
 		if config, err = jsonutil.DecodeObject(anyutil.String(text)); err != nil {
 			return nil, nil, err
 		}
@@ -303,7 +305,7 @@ func applyDeferredPick(ctx context.Context, a *SessionAuthority, ref SessionRef,
 		}
 		payload, _ := pick.Get("payload")
 		event := preparedWith(result, "payload", payload, "committed_model", model)
-		if pyTruthy(providerName) {
+		if anyutil.IsTrue(providerName) {
 			event.Set("committed_provider", providerName)
 		}
 		live.EventStream.Publish(ref.SessionID, event, "session.updated", nil)
@@ -322,12 +324,12 @@ func applyDeferredPick(ctx context.Context, a *SessionAuthority, ref SessionRef,
 		if err != nil {
 			return err
 		}
-		target, err := pyItem(pick, "payload", "model")
+		target, err := itemValue(pick, "payload", "model")
 		if err != nil {
 			return err
 		}
 		event := preparedWith(result, "target_model", target, "model", model)
-		if pyTruthy(providerName) {
+		if anyutil.IsTrue(providerName) {
 			event.Set("provider", providerName)
 		}
 		live.EventStream.Publish(ref.SessionID, event, "session.updated", nil)

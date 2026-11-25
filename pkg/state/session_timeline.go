@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -26,7 +27,7 @@ var syntheticPromptRE = regexp.MustCompile(`(?i)^\s*(?:\[IMPORTANT: Background p
 func promptPreview(content, displayKind, summary any) (string, error) {
 	message := ProjectCompactionMessageForDisplay(map[string]any{
 		"role": "user", "content": decodeMessageContent(content),
-		"display_kind": displayKind, CompressedSummaryMetadataKey: pyTruthy(summary),
+		"display_kind": displayKind, CompressedSummaryMetadataKey: anyutil.IsTrue(summary),
 	})
 	if message == nil || UserOriginatedTurnView(message) == nil {
 		return "", nil
@@ -48,7 +49,7 @@ func promptPreview(content, displayKind, summary any) (string, error) {
 			}
 			s, isStr := text.(string)
 			if !isStr {
-				return "", &pyConvError{"TypeError", fmt.Sprintf("text part %d is %s, expected text", len(texts), errchain.Kind(text))}
+				return "", &convError{"TypeError", fmt.Sprintf("text part %d is %s, expected text", len(texts), errchain.Kind(text))}
 			}
 			texts = append(texts, s)
 		}
@@ -269,7 +270,7 @@ func (d *SessionDB) GetSessionTimeline(ctx context.Context, sessionID string, li
 	var nextCursor any
 	if hasMore {
 		if len(page) == 0 {
-			return nil, &pyConvError{"IndexError", "the session timeline page is empty"}
+			return nil, &convError{"IndexError", "the session timeline page is empty"}
 		}
 		nextCursor = rowValue(page[len(page)-1], "sort_id")
 	}

@@ -32,7 +32,7 @@ func mustPyRe(pattern string) *regexp2.Regexp {
 }
 
 // re.sub over a regexp2 pattern with a replacement in regexp2 group syntax
-func pySub(re *regexp2.Regexp, text, replacement string) string {
+func subValue(re *regexp2.Regexp, text, replacement string) string {
 	out, err := re.Replace(text, replacement, -1, -1)
 	if err != nil {
 		panic(err)
@@ -56,10 +56,10 @@ func sanitizeFTS5Query(query string) string {
 		sanitized = strings.ReplaceAll(sanitized, "%", " ")
 	}
 	sanitized = sanitizeStarRunRE.ReplaceAllString(sanitized, "*")
-	sanitized = pySub(sanitizeLeadingStarRE, sanitized, "$1")
-	sanitized = pySub(sanitizeLeadingOpRE, strings.TrimSpace(sanitized), "")
-	sanitized = pySub(sanitizeTrailingOpRE, strings.TrimSpace(sanitized), "")
-	sanitized = pySub(sanitizeCompoundTermRE, sanitized, `"$1"`)
+	sanitized = subValue(sanitizeLeadingStarRE, sanitized, "$1")
+	sanitized = subValue(sanitizeLeadingOpRE, strings.TrimSpace(sanitized), "")
+	sanitized = subValue(sanitizeTrailingOpRE, strings.TrimSpace(sanitized), "")
+	sanitized = subValue(sanitizeCompoundTermRE, sanitized, `"$1"`)
 	for i, quoted := range quotedParts {
 		sanitized = strings.ReplaceAll(sanitized, fmt.Sprintf("\x00Q%d\x00", i), quoted)
 	}

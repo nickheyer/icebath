@@ -278,7 +278,7 @@ func clawhubOwnerMatches(expected string, data *jsonutil.Object) bool {
 
 // Search result of a listing item, nil without a slug
 func clawhubItemToMeta(item any) *SkillMeta {
-	slug, ok := pyGet(item, "slug", nil).(string)
+	slug, ok := lookup(item, "slug", nil).(string)
 	if !ok || slug == "" {
 		return nil
 	}
@@ -305,7 +305,7 @@ func clawhubItemToMeta(item any) *SkillMeta {
 		extra.Set("owner", owner)
 	}
 	return &SkillMeta{Name: name, Description: desc, Source: "clawhub", Identifier: slug, TrustLevel: "community",
-		Tags: clawhubNormalizeTags(pyGet(o, "tags", []any{})), Extra: extra}
+		Tags: clawhubNormalizeTags(lookup(o, "tags", []any{})), Extra: extra}
 }
 
 func ownerParams(owner string) url.Values {
@@ -364,7 +364,7 @@ func (c *ClawHubSource) exactSlugMeta(ctx context.Context, query string) *SkillM
 func (c *ClawHubSource) finalizeSearchResults(ctx context.Context, query string, results []SkillMeta, limit int) []SkillMeta {
 	queryNorm := strings.TrimSpace(query)
 	if queryNorm == "" {
-		return pyHeadMetas(clawhubDedupeResults(results), limit)
+		return headMetas(clawhubDedupeResults(results), limit)
 	}
 	type scored struct {
 		m     SkillMeta
@@ -400,9 +400,9 @@ func (c *ClawHubSource) finalizeSearchResults(ctx context.Context, query string,
 		filtered = clawhubDedupeResults(kept)
 	}
 	if len(filtered) > 0 || clawhubSearchQueryRe.MatchString(queryNorm) {
-		return pyHeadMetas(filtered, limit)
+		return headMetas(filtered, limit)
 	}
-	return pyHeadMetas(clawhubDedupeResults(results), limit)
+	return headMetas(clawhubDedupeResults(results), limit)
 }
 
 // Direct slug hit, catalog search, or the paginated catalog, falling back to the listing API
@@ -421,7 +421,7 @@ func (c *ClawHubSource) Search(ctx context.Context, query string, limit int) (ou
 	} else if catalog := c.loadCatalogIndex(ctx, max(limit, 0)); len(catalog) > 0 {
 		deduped := clawhubDedupeResults(catalog)
 		if limit > 0 {
-			return pyHeadMetas(deduped, limit), nil
+			return headMetas(deduped, limit), nil
 		}
 		return deduped, nil
 	}
@@ -436,7 +436,7 @@ func (c *ClawHubSource) Search(ctx context.Context, query string, limit int) (ou
 	data := c.getJSON(ctx, c.BaseURL+"/skills", 15*time.Second, url.Values{"search": {query}, "limit": {strconv.Itoa(limit)}})
 	skillsData := data
 	if o, isObj := data.(*jsonutil.Object); isObj {
-		skillsData = pyGet(o, "items", data)
+		skillsData = lookup(o, "items", data)
 	}
 	list, isList := skillsData.([]any)
 	if !isList {
@@ -487,7 +487,7 @@ func (c *ClawHubSource) Fetch(ctx context.Context, identifier string) (b *SkillB
 			if extracted := c.extractFiles(ctx, vo); len(extracted) > 0 {
 				files = extracted
 			}
-			nested, isNested := pyGet(vo, "version", jsonutil.NewObject()).(*jsonutil.Object)
+			nested, isNested := lookup(vo, "version", jsonutil.NewObject()).(*jsonutil.Object)
 			if !hasSkill(files) && isNested {
 				if extracted := c.extractFiles(ctx, nested); len(extracted) > 0 {
 					files = extracted
@@ -547,7 +547,7 @@ func (c *ClawHubSource) searchCatalog(ctx context.Context, query string, limit i
 		hubRaise(err)
 	}
 	if ok {
-		return pyHeadMetas(cached, limit)
+		return headMetas(cached, limit)
 	}
 	catalog := c.loadCatalogIndex(ctx, 0)
 	if len(catalog) == 0 {
@@ -619,7 +619,7 @@ func (c *ClawHubSource) loadCatalogIndex(ctx context.Context, maxItems int) []Sk
 			break
 		}
 		for _, item := range items {
-			slug, isStr := pyGet(item, "slug", nil).(string)
+			slug, isStr := lookup(item, "slug", nil).(string)
 			if isStr && slug != "" && !seen[slug] {
 				seen[slug] = true
 				if m := clawhubItemToMeta(item); m != nil {

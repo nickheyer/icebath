@@ -92,7 +92,7 @@ func mustPyRE(pattern string) *regexp2.Regexp {
 	return re
 }
 
-func pySub(re *regexp2.Regexp, text string, repl func(m regexp2.Match) string) string {
+func sub(re *regexp2.Regexp, text string, repl func(m regexp2.Match) string) string {
 	out, err := re.ReplaceFunc(text, repl, -1, -1)
 	if err != nil {
 		panic(err)
@@ -123,10 +123,10 @@ func mediaCaptionSplit(text string, media []gateway.MediaRef, maxCaptionLen int)
 
 // Error text with secrets, token query values and secret assignments redacted
 func sanitizeErrorText(text any) string {
-	redacted := pySub(urlSecretQueryRE, tools.RedactSensitiveText(anyutil.String(text)), func(m regexp2.Match) string {
+	redacted := sub(urlSecretQueryRE, tools.RedactSensitiveText(anyutil.String(text)), func(m regexp2.Match) string {
 		return m.GroupByNumber(1).String() + "***"
 	})
-	return pySub(genericSecretAssignRE, redacted, func(m regexp2.Match) string { return m.GroupByNumber(1).String() + "=***" })
+	return sub(genericSecretAssignRE, redacted, func(m regexp2.Match) string { return m.GroupByNumber(1).String() + "=***" })
 }
 
 // Error payload with redacted message

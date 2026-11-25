@@ -16,11 +16,11 @@ const MaxStoredTextChars = 2_000_000
 
 // Caller's limit clamped to the bounds of the page budget setting, false for non numeric input
 func clampCharLimit(value any) (int, bool) {
-	n, ok := pyIntValue(value)
+	n, ok := wholeNumberArg(value)
 	if !ok {
 		return 0, false
 	}
-	if s, isString := value.(string); isString && !pyIntLiteralRe.MatchString(strings.TrimSpace(s)) {
+	if s, isString := value.(string); isString && !wholeNumberText.MatchString(strings.TrimSpace(s)) {
 		return 0, false
 	}
 	return max(*settings.WebExtractCharLimit.Min, min(n, *settings.WebExtractCharLimit.Max)), true
@@ -199,7 +199,7 @@ func truncateResults(env *Env, results []*WebPage, charLimit int, debug map[stri
 
 // Integer of a debug counter, zero when unset
 func asIntValue0(v any) int {
-	n, _ := pyIntValue(v)
+	n, _ := wholeNumberArg(v)
 	return n
 }
 

@@ -57,7 +57,7 @@ func storedValue(t *testing.T, db *SessionDB, query string, args ...any) any {
 func TestModelPickCommitsOverItsSnapshotAndSupersedesTheDeferredModel(t *testing.T) {
 	ctx, db, sid := preparedFixture(t)
 	snapshot := preparedSnapshot(t, ctx, db, sid)
-	if got := pyStr(rowValue(snapshot, "target")); got != sid {
+	if got := anyutil.String(rowValue(snapshot, "target")); got != sid {
 		t.Fatalf("target %q", got)
 	}
 	profileExec(t, db, "INSERT INTO state_meta(key,value) VALUES(?,?)", DeferredPickPrefix+sid, `{"model":"later","reasoning":"high"}`)

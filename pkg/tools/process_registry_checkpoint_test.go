@@ -1,16 +1,18 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -350,58 +352,59 @@ func TestCheckpointRewriteKeepsForeignEntryOrderAndNumberTypes(t *testing.T) {
 	}
 }
 
-func TestMalformedCheckpointFails(t *testing.T) {
-	cases := []struct{ text, recoverErr, writeErr string }{
-		{`{"a":1}`, "AttributeError: a process checkpoint entry is text, expected a mapping", ""},
-		{`"abc"`, "AttributeError: a process checkpoint entry is text, expected a mapping", ""},
-		{`5`, "TypeError: the process checkpoint is a number, expected a list", "TypeError: the process checkpoint is a number, expected a list"},
-		{`1.5`, "TypeError: the process checkpoint is a number, expected a list", "TypeError: the process checkpoint is a number, expected a list"},
-		{`true`, "TypeError: the process checkpoint is true or false, expected a list", "TypeError: the process checkpoint is true or false, expected a list"},
-		{`null`, "TypeError: the process checkpoint is nothing, expected a list", "TypeError: the process checkpoint is nothing, expected a list"},
-		{`[1]`, "AttributeError: a process checkpoint entry is a number, expected a mapping", ""},
-		{`[null]`, "AttributeError: a process checkpoint entry is nothing, expected a mapping", ""},
-		{`["s"]`, "AttributeError: a process checkpoint entry is text, expected a mapping", ""},
-		{`[[1]]`, "AttributeError: a process checkpoint entry is a list, expected a mapping", ""},
-		{`[true]`, "AttributeError: a process checkpoint entry is true or false, expected a mapping", ""},
-		{`[1.5]`, "AttributeError: a process checkpoint entry is a number, expected a mapping", ""},
-		{`{}`, "", ""},
-		{`""`, "", ""},
+func TestMalformedCheckpointFailsAndBadEntriesAreSkipped(t *testing.T) {
+	cases := []struct{ text, recoverErr, skipped string }{
+		{`{"a":1}`, "the process checkpoint is a mapping, expected a list", ""},
+		{`"abc"`, "the process checkpoint is text, expected a list", ""},
+		{`5`, "the process checkpoint is a number, expected a list", ""},
+		{`1.5`, "the process checkpoint is a number, expected a list", ""},
+		{`true`, "the process checkpoint is true or false, expected a list", ""},
+		{`null`, "the process checkpoint is nothing, expected a list", ""},
+		{`[1]`, "", "Skipping process checkpoint entry 0: it is a number, expected a mapping"},
+		{`[null]`, "", "Skipping process checkpoint entry 0: it is nothing, expected a mapping"},
+		{`["s"]`, "", "Skipping process checkpoint entry 0: it is text, expected a mapping"},
+		{`[[1]]`, "", "Skipping process checkpoint entry 0: it is a list, expected a mapping"},
+		{`[true]`, "", "Skipping process checkpoint entry 0: it is true or false, expected a mapping"},
+		{`[1.5]`, "", "Skipping process checkpoint entry 0: it is a number, expected a mapping"},
+		{`{}`, "the process checkpoint is a mapping, expected a list", ""},
+		{`""`, "the process checkpoint is text, expected a list", ""},
 		{`[]`, "", ""},
-		{`[{"pid": 0}, 7]`, "AttributeError: a process checkpoint entry is a number, expected a mapping", ""},
-		{`[{"session_id": [1]}]`, "", "TypeError: a process checkpoint session id is a list, expected text"},
-		{`[{"session_id": {"k": 1}}]`, "", "TypeError: a process checkpoint session id is a mapping, expected text"},
+		{`[{"pid": 0}, 7]`, "", "Skipping process checkpoint entry 1: it is a number, expected a mapping"},
+		{`[{"session_id": [1]}]`, "", ""},
+		{`[{"session_id": {"k": 1}}]`, "", ""},
 	}
 	describe := func(err error) string {
 		if err == nil {
 			return ""
 		}
-		return anyutil.Kind(err) + ": " + err.Error()
+		return err.Error()
 	}
 	for _, c := range cases {
 		env, checkpoint := cpProcEnv(t)
+		var logs bytes.Buffer
+		env.Log = slog.New(slog.NewTextHandler(&logs, nil))
 		if err := os.WriteFile(checkpoint, []byte(c.text), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		r := NewProcessRegistry()
-		_, werr := r.foreignHandoffs(env, checkpoint, map[string]bool{"a": true})
-		if got := describe(werr); got != c.writeErr {
-			t.Errorf("%s foreign handoffs %q, want %q", c.text, got, c.writeErr)
+		if handoffs := r.foreignHandoffs(env, checkpoint, map[string]bool{"a": true}); len(handoffs) != 0 {
+			t.Errorf("%s foreign handoffs %v, want none", c.text, handoffs)
 		}
 		r.writeCheckpoint(env, nil)
 		after, _ := os.ReadFile(checkpoint)
-		want := "[]"
-		if c.writeErr != "" {
-			want = c.text
-		}
-		if string(after) != want {
-			t.Errorf("%s checkpoint after the write %q, want %q", c.text, after, want)
+		if string(after) != "[]" {
+			t.Errorf("%s checkpoint after the write %q, want %q", c.text, after, "[]")
 		}
 		if err := os.WriteFile(checkpoint, []byte(c.text), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		logs.Reset()
 		recovered, rerr := NewProcessRegistry().RecoverFromCheckpoint(context.Background(), env)
 		if got := describe(rerr); got != c.recoverErr || recovered != 0 {
 			t.Errorf("%s recover %d %q, want %q", c.text, recovered, got, c.recoverErr)
+		}
+		if skippedLogged := strings.Contains(logs.String(), "Skipping process checkpoint entry"); skippedLogged != (c.skipped != "") || !strings.Contains(logs.String(), c.skipped) {
+			t.Errorf("%s recovery log %q, want %q", c.text, logs.String(), c.skipped)
 		}
 	}
 }

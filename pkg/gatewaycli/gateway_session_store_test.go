@@ -408,7 +408,7 @@ func TestExplicitFlagsOnResumeAreCheckedAgainstTheFrozenRoute(t *testing.T) {
 		sent := client.lastOf(t, "session.mutate")
 		payload, _ := sent["payload"].(map[string]any)
 		for key, value := range launch {
-			if sent["operation"] != "launch" || len(payload) != 1 || (!anyutil.Equal(payload[key], value) && pyFloatOf(payload[key]) != pyFloatOf(value)) {
+			if sent["operation"] != "launch" || len(payload) != 1 || (!anyutil.Equal(payload[key], value) && floatOf(payload[key]) != floatOf(value)) {
 				t.Fatalf("launch %v relaunched with %v", launch, sent)
 			}
 		}

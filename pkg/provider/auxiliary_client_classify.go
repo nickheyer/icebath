@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"errors"
+	"net"
+	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -115,12 +117,18 @@ func auxIsRateLimitError(err error) bool {
 	return auxContainsAny(lower, auxRateLimitKeywords) || !auxContainsAny(lower, auxRateLimitBillingKeywords)
 }
 
-// Full budget request timeout by SDK class, class name, or timed out wording
+// Full budget request timeout by SDK class, class name, an expired Go deadline or network timeout, or timed out wording
 func auxIsTimeoutError(err error) bool {
-	if auxExcIsSDKClass(err, "APITimeoutError") {
+	if auxExcIsSDKClass(err, "APITimeoutError") || auxIsGoTimeout(err) {
 		return true
 	}
 	return strings.Contains(auxExcTypeName(err), "Timeout") || strings.Contains(strings.ToLower(err.Error()), "timed out")
+}
+
+// Whether the Go transport gave up waiting: an expired deadline or a network timeout
+func auxIsGoTimeout(err error) bool {
+	var ne net.Error
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
 }
 
 var auxConnectionErrorMarkers = []string{
@@ -133,6 +141,9 @@ var auxConnectionErrorMarkers = []string{
 // Unreachable endpoint or premature stream close as opposed to a 4xx or 5xx API answer
 func auxIsConnectionError(err error) bool {
 	if auxExcIsSDKClass(err, "APIConnectionError", "APITimeoutError") {
+		return true
+	}
+	if !errors.Is(err, context.Canceled) && (IsNetworkError(err) || isCertificateError(err)) {
 		return true
 	}
 	if auxContainsAny(auxExcTypeName(err), []string{"Connection", "Timeout", "DNS", "SSL"}) {

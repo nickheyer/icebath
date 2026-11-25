@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -23,7 +24,7 @@ func (d *SessionDB) insertSessionRowInTransaction(ctx context.Context, conn SQLi
 		}
 	}
 	profileName := n.ProfileName
-	if pyStrip(profileName) == "" {
+	if strings.TrimSpace(profileName) == "" {
 		profileName = d.ownProfileName()
 	}
 	var prompt any

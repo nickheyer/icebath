@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -172,14 +173,14 @@ func (d *SessionDB) archiveAndCompactOnConn(ctx context.Context, conn SQLiteConn
 		}
 		lost := lock == nil || lock["holder"] != *o.LockHolder
 		if !lost {
-			expires, err := pyFloatOf(lock["expires_at"])
+			expires, err := floatOf(lock["expires_at"])
 			if err != nil {
 				return 0, err
 			}
 			lost = expires <= now()
 		}
 		if lost {
-			return 0, &SessionCompressionInProgressError{Msg: "Compression lease for " + pyRepr(sessionID) + " lost before commit; refusing to publish a stale compaction"}
+			return 0, &SessionCompressionInProgressError{Msg: "Compression lease for " + strconv.Quote(sessionID) + " lost before commit; refusing to publish a stale compaction"}
 		}
 	}
 	patch := o.ModelConfigPatch != nil
@@ -237,7 +238,7 @@ func (d *SessionDB) archiveAndCompactOnConn(ctx context.Context, conn SQLiteConn
 		return 0, err
 	}
 	if tailBelow > 0 {
-		uncounted, err := uncountedMergedRows(pyTail(compacted, o.TailCount))
+		uncounted, err := uncountedMergedRows(tailValue(compacted, o.TailCount))
 		if err != nil {
 			return 0, err
 		}

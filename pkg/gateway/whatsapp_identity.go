@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -146,21 +145,16 @@ func pathExists(p string) (bool, error) {
 	return false, err
 }
 
-// Normalized identifier a lid mapping file holds, read as utf-8-sig JSON
+// Normalized identifier a lid mapping file holds, read as UTF-8 JSON after an optional byte order mark; bytes that are not UTF-8 are an error naming the file and the offset of the first bad byte
 func readLIDMapping(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
-	for i := 0; i < len(data); {
-		r, n := utf8.DecodeRune(data[i:])
-		if r == utf8.RuneError && n <= 1 {
-			return "", &textutil.InvalidUTF8Error{Offset: i}
-		}
-		i += n
+	if err := textutil.ValidateUTF8(data); err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
 	}
-	v, err := jsonutil.Decode(string(data))
+	v, err := jsonutil.Decode(textutil.TrimBOM(data))
 	if err != nil {
 		return "", err
 	}

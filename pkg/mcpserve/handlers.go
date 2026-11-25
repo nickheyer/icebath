@@ -32,7 +32,7 @@ const maxCursor = int64(1_000_000_000_000_000_000)
 // Reports whether a requested platform filter is unset or names actual ignoring case
 func platformMatches(wanted any, actual any) bool {
 	w, _ := wanted.(string)
-	return w == "" || pyLower(actual) == strings.ToLower(w)
+	return w == "" || lower(actual) == strings.ToLower(w)
 }
 
 // Optional str argument as a string, empty for None
@@ -42,7 +42,7 @@ func optStr(v any) string {
 }
 
 // Value of a or b when a is falsy, the Python a or b
-func pyOr(a any, b func() any) any {
+func firstSet(a any, b func() any) any {
 	if anyutil.IsTrue(a) {
 		return a
 	}
@@ -51,11 +51,11 @@ func pyOr(a any, b func() any) any {
 
 // Messages of a conversation or the JSON error text naming why they cannot be read
 func conversationMessages(ctx context.Context, sessionKey string) ([]*jsonutil.Object, string) {
-	entry := pyGet(loadSessionsIndex(ctx), sessionKey, nil)
+	entry := lookup(loadSessionsIndex(ctx), sessionKey, nil)
 	if !anyutil.IsTrue(entry) {
 		return nil, dumps(jsonutil.ObjectOf("error", "Conversation not found: "+sessionKey), false)
 	}
-	sessionID := pyGet(entry, "session_id", "")
+	sessionID := lookup(entry, "session_id", "")
 	if !anyutil.IsTrue(sessionID) {
 		return nil, dumps(jsonutil.ObjectOf("error", "No session ID for this conversation"), false)
 	}
@@ -79,17 +79,17 @@ func (h *toolHandlers) conversationsList(kw *jsonutil.Object) string {
 	conversations := []*jsonutil.Object{}
 	for _, key := range index.Keys() {
 		entry := index.Value(key)
-		origin := pyGet(entry, "origin", jsonutil.NewObject())
-		entryPlatform := pyOr(pyGet(entry, "platform", nil), func() any { return pyGet(origin, "platform", "") })
+		origin := lookup(entry, "origin", jsonutil.NewObject())
+		entryPlatform := firstSet(lookup(entry, "platform", nil), func() any { return lookup(origin, "platform", "") })
 		if !platformMatches(platform, entryPlatform) {
 			continue
 		}
-		displayName := pyGet(entry, "display_name", "")
-		chatName := pyGet(origin, "chat_name", "")
+		displayName := lookup(entry, "display_name", "")
+		chatName := lookup(origin, "chat_name", "")
 		if search != "" {
 			hit := false
 			for _, s := range []any{displayName, chatName, key} {
-				if strings.Contains(pyLower(s), strings.ToLower(search)) {
+				if strings.Contains(lower(s), strings.ToLower(search)) {
 					hit = true
 					break
 				}
@@ -99,12 +99,12 @@ func (h *toolHandlers) conversationsList(kw *jsonutil.Object) string {
 			}
 		}
 		conversations = append(conversations, jsonutil.ObjectOf(
-			"session_key", key, "session_id", pyGet(entry, "session_id", ""), "platform", entryPlatform,
-			"chat_type", pyGet(entry, "chat_type", pyGet(origin, "chat_type", "")),
+			"session_key", key, "session_id", lookup(entry, "session_id", ""), "platform", entryPlatform,
+			"chat_type", lookup(entry, "chat_type", lookup(origin, "chat_type", "")),
 			"display_name", displayName, "chat_name", chatName,
-			"user_name", pyGet(origin, "user_name", ""), "updated_at", pyGet(entry, "updated_at", "")))
+			"user_name", lookup(origin, "user_name", ""), "updated_at", lookup(entry, "updated_at", "")))
 	}
-	sortByKey(conversations, func(c *jsonutil.Object) any { return pyGet(c, "updated_at", "") }, true)
+	sortByKey(conversations, func(c *jsonutil.Object) any { return lookup(c, "updated_at", "") }, true)
 	if int64(len(conversations)) > limit {
 		conversations = conversations[:limit]
 	}
@@ -113,21 +113,21 @@ func (h *toolHandlers) conversationsList(kw *jsonutil.Object) string {
 
 func (h *toolHandlers) conversationGet(kw *jsonutil.Object) string {
 	sessionKey := optStr(kw.Value("session_key"))
-	entry := pyGet(loadSessionsIndex(h.ctx), sessionKey, nil)
+	entry := lookup(loadSessionsIndex(h.ctx), sessionKey, nil)
 	if !anyutil.IsTrue(entry) {
 		return dumps(jsonutil.ObjectOf("error", "Conversation not found: "+sessionKey), false)
 	}
-	origin := pyGet(entry, "origin", jsonutil.NewObject())
+	origin := lookup(entry, "origin", jsonutil.NewObject())
 	return dumps(jsonutil.ObjectOf(
-		"session_key", sessionKey, "session_id", pyGet(entry, "session_id", ""),
-		"platform", pyOr(pyGet(entry, "platform", nil), func() any { return pyGet(origin, "platform", "") }),
-		"chat_type", pyGet(entry, "chat_type", pyGet(origin, "chat_type", "")),
-		"display_name", pyGet(entry, "display_name", ""),
-		"user_name", pyGet(origin, "user_name", ""), "chat_name", pyGet(origin, "chat_name", ""),
-		"chat_id", pyGet(origin, "chat_id", ""), "thread_id", pyGet(origin, "thread_id", nil),
-		"updated_at", pyGet(entry, "updated_at", ""), "created_at", pyGet(entry, "created_at", ""),
-		"input_tokens", pyGet(entry, "input_tokens", int64(0)), "output_tokens", pyGet(entry, "output_tokens", int64(0)),
-		"total_tokens", pyGet(entry, "total_tokens", int64(0))), true)
+		"session_key", sessionKey, "session_id", lookup(entry, "session_id", ""),
+		"platform", firstSet(lookup(entry, "platform", nil), func() any { return lookup(origin, "platform", "") }),
+		"chat_type", lookup(entry, "chat_type", lookup(origin, "chat_type", "")),
+		"display_name", lookup(entry, "display_name", ""),
+		"user_name", lookup(origin, "user_name", ""), "chat_name", lookup(origin, "chat_name", ""),
+		"chat_id", lookup(origin, "chat_id", ""), "thread_id", lookup(origin, "thread_id", nil),
+		"updated_at", lookup(entry, "updated_at", ""), "created_at", lookup(entry, "created_at", ""),
+		"input_tokens", lookup(entry, "input_tokens", int64(0)), "output_tokens", lookup(entry, "output_tokens", int64(0)),
+		"total_tokens", lookup(entry, "total_tokens", int64(0))), true)
 }
 
 func (h *toolHandlers) messagesRead(kw *jsonutil.Object) string {
@@ -139,15 +139,15 @@ func (h *toolHandlers) messagesRead(kw *jsonutil.Object) string {
 	}
 	filtered := []any{}
 	for _, msg := range all {
-		role := pyGet(msg, "role", "")
-		pyHashable(role)
+		role := lookup(msg, "role", "")
+		hashable(role)
 		content := ""
 		if isStr(role, "user") || isStr(role, "assistant") {
 			content = extractMessageContent(msg)
 		}
 		if content != "" {
-			filtered = append(filtered, jsonutil.ObjectOf("id", anyutil.String(pyGet(msg, "id", "")), "role", role,
-				"content", textutil.First(content, 2000), "timestamp", pyGet(msg, "timestamp", "")))
+			filtered = append(filtered, jsonutil.ObjectOf("id", anyutil.String(lookup(msg, "id", "")), "role", role,
+				"content", textutil.First(content, 2000), "timestamp", lookup(msg, "timestamp", "")))
 		}
 	}
 	messages := filtered[max(int64(len(filtered))-limit, 0):]
@@ -163,7 +163,7 @@ func (h *toolHandlers) attachmentsFetch(kw *jsonutil.Object) string {
 	}
 	var target any
 	for _, m := range all {
-		if anyutil.String(pyGet(m, "id", "")) == messageID {
+		if anyutil.String(lookup(m, "id", "")) == messageID {
 			target = m
 			break
 		}
@@ -215,22 +215,22 @@ func (h *toolHandlers) channelsList(kw *jsonutil.Object) string {
 		index := loadSessionsIndex(h.ctx)
 		for _, key := range index.Keys() {
 			entry := index.Value(key)
-			origin := pyGet(entry, "origin", jsonutil.NewObject())
-			p := pyOr(pyGet(entry, "platform", nil), func() any { return pyGet(origin, "platform", "") })
-			chatID := pyGet(origin, "chat_id", "")
+			origin := lookup(entry, "origin", jsonutil.NewObject())
+			p := firstSet(lookup(entry, "platform", nil), func() any { return lookup(origin, "platform", "") })
+			chatID := lookup(origin, "chat_id", "")
 			targetStr := anyutil.String(p) + ":" + anyutil.String(chatID)
 			if !anyutil.IsTrue(p) || !anyutil.IsTrue(chatID) || !platformMatches(platform, p) || seen[targetStr] {
 				continue
 			}
 			seen[targetStr] = true
 			targets = append(targets, jsonutil.ObjectOf("target", targetStr, "platform", p,
-				"name", pyOr(pyGet(entry, "display_name", nil), func() any { return pyGet(origin, "chat_name", "") }),
-				"chat_type", pyGet(entry, "chat_type", pyGet(origin, "chat_type", ""))))
+				"name", firstSet(lookup(entry, "display_name", nil), func() any { return lookup(origin, "chat_name", "") }),
+				"chat_type", lookup(entry, "chat_type", lookup(origin, "chat_type", ""))))
 		}
 		return dumps(jsonutil.ObjectOf("count", len(targets), "channels", targets), true)
 	}
 	channels := []any{}
-	keys, vals := pyItems(pyGet(directory, "platforms", jsonutil.NewObject()))
+	keys, vals := itemsValue(lookup(directory, "platforms", jsonutil.NewObject()))
 	for _, plat := range keys {
 		entries, isList := vals[plat].([]any)
 		if !platformMatches(platform, plat) || !isList {
@@ -240,13 +240,13 @@ func (h *toolHandlers) channelsList(kw *jsonutil.Object) string {
 			if _, ok := asDict(ch); !ok {
 				continue
 			}
-			chatID := pyGet(ch, "id", pyGet(ch, "chat_id", ""))
+			chatID := lookup(ch, "id", lookup(ch, "chat_id", ""))
 			target := plat
 			if anyutil.IsTrue(chatID) {
 				target = plat + ":" + anyutil.String(chatID)
 			}
 			channels = append(channels, jsonutil.ObjectOf("target", target, "platform", plat,
-				"name", pyGet(ch, "name", pyGet(ch, "display_name", "")), "chat_type", pyGet(ch, "type", "")))
+				"name", lookup(ch, "name", lookup(ch, "display_name", "")), "chat_type", lookup(ch, "type", "")))
 		}
 	}
 	return dumps(jsonutil.ObjectOf("count", len(channels), "channels", channels), true)

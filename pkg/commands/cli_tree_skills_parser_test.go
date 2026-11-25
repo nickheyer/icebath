@@ -101,10 +101,10 @@ func TestCLISkillsTreeMatchesBuildSkillsParser(t *testing.T) {
 
 func TestCLISkillsGroupsWithoutActionPrintUsage(t *testing.T) {
 	dir := t.TempDir()
-	if code, out, _ := runSkillsMain(t, dir, []string{"skills", "snapshot"}, nil); code != 0 || out != "Usage: icebath skills snapshot \n\n" {
+	if code, out, _ := runSkillsMain(t, dir, []string{"skills", "snapshot"}, nil); code != 0 || out != "Usage: icebath skills snapshot [export|import]\n\n" {
 		t.Fatalf("%d %q", code, out)
 	}
-	if code, out, _ := runSkillsMain(t, dir, []string{"skills", "tap"}, nil); code != 0 || out != "Usage: icebath skills tap \n\n" {
+	if code, out, _ := runSkillsMain(t, dir, []string{"skills", "tap"}, nil); code != 0 || out != "Usage: icebath skills tap [list|add|remove]\n\n" {
 		t.Fatalf("%d %q", code, out)
 	}
 }

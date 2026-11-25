@@ -115,10 +115,10 @@ func TestAFailedSessionUpgradeIsLoggedWithItsCause(t *testing.T) {
 	if len(result.Cron) != 2 {
 		t.Fatalf("cron = %v", result.Cron)
 	}
-	if cronError, _ := result.Cron[1].(string); result.Cron[0] != false || !strings.Contains(cronError, "HTTP 500") {
+	if cronError, _ := result.Cron[1].(string); result.Cron[0] != false || !strings.Contains(cronError, "refused: 500 Internal Server Error") {
 		t.Fatalf("cron = %v", result.Cron)
 	}
-	if worker, _ := result.Worker.(string); !strings.Contains(worker, "HTTP 500") {
+	if worker, _ := result.Worker.(string); !strings.Contains(worker, "refused: 500 Internal Server Error") {
 		t.Fatalf("worker = %v", result.Worker)
 	}
 	if exited, err := owner.interrupt(20 * time.Second); !exited {

@@ -283,7 +283,7 @@ func TestPreparedIdentityIgnoresToolBodiesAndKeepsCallIDs(t *testing.T) {
 		map[string]any{"id": nil, "function": nil},
 	}}
 	got := messageIdentity(base)
-	if got.Structure != "assistant\x1fc1:read\x1fNone:" || got.UID != "" {
+	if got.Structure != "assistant\x1fc1:read\x1fnull:" || got.UID != "" {
 		t.Fatalf("structure = %q", got.Structure)
 	}
 	pruned := pycopyMessages([]map[string]any{base})[0]

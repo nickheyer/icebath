@@ -285,10 +285,10 @@ func (s *sshEnv) sshBulkUpload(ctx context.Context, files []syncFile) error {
 	for _, f := range files {
 		rel, err := relPosix(base, f.remote)
 		if err != nil {
-			return fmt.Errorf("remote path %s is not under sync base %s", pyRepr(f.remote), pyRepr(base))
+			return fmt.Errorf("remote path %s is not under sync base %s", strconv.Quote(f.remote), strconv.Quote(base))
 		}
 		if rel == "." || strings.HasPrefix(rel, "../") {
-			return fmt.Errorf("remote path %s escapes sync base %s", pyRepr(f.remote), pyRepr(base))
+			return fmt.Errorf("remote path %s escapes sync base %s", strconv.Quote(f.remote), strconv.Quote(base))
 		}
 		staged := filepath.Join(staging, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(staged), 0o755); err != nil {
@@ -518,7 +518,7 @@ func (sshBackend) CreateEnvironment(ctx context.Context, env *Env, opts CreateOp
 	cc := opts.ContainerConfig
 	host, _ := cc["ssh_host"].(string)
 	user, _ := cc["ssh_user"].(string)
-	port, ok := pyIntValue(cc["ssh_port"])
+	port, ok := wholeNumberArg(cc["ssh_port"])
 	if !ok {
 		port = 22
 	}

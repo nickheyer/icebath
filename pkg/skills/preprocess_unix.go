@@ -37,7 +37,7 @@ func inlineShellCwdError(cwd string) string {
 }
 
 // Popen returncode with the negated signal number for a signal killed child
-func pyReturnCode(state *os.ProcessState) int {
+func returnCode(state *os.ProcessState) int {
 	if ws, ok := state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
 		return -int(ws.Signal())
 	}

@@ -17,7 +17,7 @@ func TestCodexRuntimeParseArgs(t *testing.T) {
 	if got, errs := CodexRuntimeParseArgs(""); got != nil || errs != nil {
 		t.Fatalf("empty %v %v", got, errs)
 	}
-	if got, errs := CodexRuntimeParseArgs("Bogus"); got != nil || len(errs) != 1 || errs[0] != "Unknown runtime 'bogus'. Use one of: auto, codex_app_server, on, off" {
+	if got, errs := CodexRuntimeParseArgs("Bogus"); got != nil || len(errs) != 1 || errs[0] != `Unknown runtime "bogus". Use one of: auto, codex_app_server, on, off` {
 		t.Fatalf("unknown %v %v", got, errs)
 	}
 }
@@ -41,7 +41,7 @@ func TestCodexRuntimeConfigReadsAndWrites(t *testing.T) {
 	if old, err := SetCodexRuntime(cfg, "codex_app_server"); err != nil || old != "auto" || cfg["model"].(map[string]any)["openai_runtime"] != "codex_app_server" {
 		t.Fatalf("set %v %v %v", old, err, cfg)
 	}
-	if _, err := SetCodexRuntime(cfg, "bogus"); err == nil || err.Error() != "invalid runtime 'bogus'; must be one of ('auto', 'codex_app_server')" {
+	if _, err := SetCodexRuntime(cfg, "bogus"); err == nil || err.Error() != `invalid runtime "bogus"; must be one of "auto", "codex_app_server"` {
 		t.Fatalf("invalid %v", err)
 	}
 }

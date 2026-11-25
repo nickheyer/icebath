@@ -76,7 +76,7 @@ func TestPendingRowsNameTheControlsTheOwnerServes(t *testing.T) {
 	if controls, _ := pending["follower"].Get("controls"); !anyutil.Equal(controls, []any{"steer", "replace"}) {
 		t.Fatalf("follower controls %v", controls)
 	}
-	if controls, _ := pending["head"].Get("controls"); pyTruthy(controls) {
+	if controls, _ := pending["head"].Get("controls"); anyutil.IsTrue(controls) {
 		t.Fatalf("a started row has no queued row controls, got %v", controls)
 	}
 }

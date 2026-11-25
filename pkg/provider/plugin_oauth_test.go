@@ -53,15 +53,15 @@ func TestInstallNoticeAndRepinDeltaNameTheOAuthEntry(t *testing.T) {
 		t.Fatalf("surface %v", surface)
 	}
 	if problems := OAuthAdmissionProblems(map[string]any{"oauth": manifest["oauth"]}, t.TempDir()); len(problems) != 1 ||
-		problems[0] != "oauth 'acme': VOICE_CLIENT_ID must be declared under requires_env or optional_env" {
+		problems[0] != `oauth "acme": VOICE_CLIENT_ID must be declared under requires_env or optional_env` {
 		t.Fatalf("admission %v", problems)
 	}
 	bad := map[string]any{"oauth": []any{map[string]any{"id": "Bad", "authorize_url": "http://x.example/a", "token_url": "https://u:p@x.example/t",
 		"scopes": []any{}, "client_id_env": "lower", "hosts": []any{"10.0.0.1"}, "authorize_params": map[string]any{"a": 1}}}}
 	_, problems := ParseOAuthClients(bad)
-	want := []string{"oauth[0].id: 'Bad' must be lowercase letters, digits and dashes", "oauth[0].authorize_url: must use https",
+	want := []string{`oauth[0].id: "Bad" must be lowercase letters, digits and dashes`, "oauth[0].authorize_url: must use https",
 		"oauth[0].token_url: must be an absolute URL without user info or fragment", "oauth[0].scopes: must be a non-empty list of scope strings",
-		"oauth[0].client_id_env: 'lower' must be an UPPER_SNAKE environment variable name",
+		`oauth[0].client_id_env: "lower" must be an UPPER_SNAKE environment variable name`,
 		"oauth[0].hosts: must list lowercase DNS host names (no scheme, port, path or IP address)", "oauth[0].authorize_params: must map strings to strings"}
 	if strings.Join(problems, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("problems %q", problems)

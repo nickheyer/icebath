@@ -58,7 +58,7 @@ func ReadShellLines(sessionsDir, sessionID string) ([]*jsonutil.Object, error) {
 		}
 		line, isObject := decoded.(*jsonutil.Object)
 		if !isObject {
-			return nil, pyValueError("a shell line of session " + sessionID + " is not an object")
+			return nil, valueError("a shell line of session " + sessionID + " is not an object")
 		}
 		lines = append(lines, line)
 	}
@@ -128,7 +128,7 @@ func branchLeftBehindAt(ctx context.Context, conn SQLiteConn, sessionID string, 
 
 // Whether a sessions folder keeps shell lines under the id of a session row or of the conversation it belongs to
 func shellLinesKept(sessionsDir string, session *jsonutil.Object) (bool, error) {
-	ids := []string{pyStr(rowValue(session, "id"))}
+	ids := []string{anyutil.String(rowValue(session, "id"))}
 	if owner, isText := rowValue(session, "chat_id").(string); isText && owner != "" && owner != ids[0] {
 		ids = append(ids, owner)
 	}
@@ -149,7 +149,7 @@ func (d *SessionDB) exportShellLines(ctx context.Context, session *jsonutil.Obje
 	if kept, err := shellLinesKept(d.sessionsDir(), session); err != nil || !kept {
 		return nil, err
 	}
-	sessionID := pyStr(rowValue(session, "id"))
+	sessionID := anyutil.String(rowValue(session, "id"))
 	var ids []string
 	starts := map[string]float64{}
 	err := d.readCtx(ctx, true, func(conn SQLiteConn) error {
@@ -164,9 +164,9 @@ func (d *SessionDB) exportShellLines(ctx context.Context, session *jsonutil.Obje
 		for _, row := range rows {
 			switch at := rowValue(row, "started_at").(type) {
 			case float64:
-				starts[pyStr(rowValue(row, "id"))] = at
+				starts[anyutil.String(rowValue(row, "id"))] = at
 			case int64:
-				starts[pyStr(rowValue(row, "id"))] = float64(at)
+				starts[anyutil.String(rowValue(row, "id"))] = float64(at)
 			}
 		}
 		return nil

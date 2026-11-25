@@ -315,8 +315,8 @@ func TestSanitizeToolErrorCountsCodePoints(t *testing.T) {
 	}
 }
 
-func TestObserverFieldsRenderErrorValuesLikePythonStr(t *testing.T) {
-	if _, _, msg := toolResultObserverFields("web_search", `{"error": {"ok": true, "code": 1, "f": 2.50, "n": NaN}}`); msg != "{'ok': True, 'code': 1, 'f': 2.5, 'n': nan}" {
+func TestObserverFieldsRenderErrorValuesAsWritten(t *testing.T) {
+	if _, _, msg := toolResultObserverFields("web_search", `{"error": {"ok": true, "code": 1, "f": 2.50, "n": NaN}}`); msg != `{"ok": true, "code": 1, "f": 2.50, "n": NaN}` {
 		t.Fatalf("message %q", msg)
 	}
 }

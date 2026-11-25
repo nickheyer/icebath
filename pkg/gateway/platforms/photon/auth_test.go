@@ -434,7 +434,7 @@ func TestPrintRoutingStatusReportsTheLiveRow(t *testing.T) {
 			t.Fatalf("meta %s lines = %q, %v", meta, lines, err)
 		}
 	}
-	patchGet(t, func(getCall) (photonResponse, error) { return nil, &pyError{class: "AttributeError", msg: "boom"} })
+	patchGet(t, func(getCall) (photonResponse, error) { return nil, &errorValue{class: "AttributeError", msg: "boom"} })
 	if err := PrintRoutingStatus(ctx, func(string) {}); err == nil {
 		t.Fatal("an exception outside the probe classes propagates")
 	}
@@ -657,13 +657,13 @@ func TestClearPhotonTokenEmptiesEveryShape(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(`[1]`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadPhotonToken(ctx); err == nil || err.Error() != "'list' object has no attribute 'get'" {
+	if _, err := LoadPhotonToken(ctx); err == nil || err.Error() != authJSONPath(ctx)+": expected a JSON object, got array" {
 		t.Fatalf("list file = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte{'{', 0xff, '}'}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadPhotonToken(ctx); err == nil || err.Error() != "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte" {
+	if _, err := LoadPhotonToken(ctx); err == nil || err.Error() != authJSONPath(ctx)+": invalid UTF-8 at byte 1" {
 		t.Fatalf("bad bytes = %v", err)
 	}
 }
@@ -698,7 +698,7 @@ func TestOperatorPhoneFromASoleAllowedUser(t *testing.T) {
 
 func TestCreateUserValidatesAndUnwraps(t *testing.T) {
 	ctx := context.Background()
-	if _, err := CreateUser(ctx, "p", "s", "5551234567", UserFields{}, false); err == nil || err.Error() != "phone_number must be E.164 (e.g. +15551234567); got '5551234567'" {
+	if _, err := CreateUser(ctx, "p", "s", "5551234567", UserFields{}, false); err == nil || err.Error() != `phone_number must be E.164 (e.g. +15551234567); got "5551234567"` {
 		t.Fatalf("E.164 = %v", err)
 	}
 	var posted postCall
@@ -724,7 +724,7 @@ func TestCreateProjectRejectsFailureShapes(t *testing.T) {
 		`[1]`:                                 "Photon create-project returned an unexpected response",
 		`[]`:                                  "Photon create-project did not return a project id",
 		`{"error": "quota"}`:                  "Photon create-project failed: quota",
-		`{"succeed": false}`:                  "Photon create-project failed: {'succeed': False}",
+		`{"succeed": false}`:                  `Photon create-project failed: {"succeed":false}`,
 		`{"data": {"name": "x"}}`:             "Photon create-project did not return a project id",
 		`{"succeed": false, "message": "no"}`: "Photon create-project failed: no",
 	} {
@@ -757,7 +757,7 @@ func TestLiveRequestSpeaksTheWireProtocol(t *testing.T) {
 		t.Fatalf("secret = %q, %v", secret, err)
 	}
 	_, err := ListProjects(ctx, "tok")
-	if e, ok := err.(*pyError); !ok || e.class != "HTTPStatusError" || !strings.HasPrefix(err.Error(), "Client error '404 Not Found' for url '"+srv.URL+"/api/projects'") {
+	if e, ok := err.(*errorValue); !ok || e.class != "HTTPStatusError" || err.Error() != "client error 404 Not Found for "+srv.URL+"/api/projects" {
 		t.Fatalf("404 = %v", err)
 	}
 	t.Setenv("PHOTON_DASHBOARD_HOST", "app.photon.codes")

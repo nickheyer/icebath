@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"math/big"
 	"reflect"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Message keys that carry durable row coverage through an in place archive
@@ -27,11 +29,11 @@ type MessageRoleReader interface {
 // Fields the commit matches a retired row without an id by
 func RetiredRowPayload(message map[string]any) map[string]any {
 	payload := map[string]any{"role": message["role"], "content": message["content"]}
-	if pyTruthy(message["tool_call_id"]) {
+	if anyutil.IsTrue(message["tool_call_id"]) {
 		payload["tool_call_id"] = message["tool_call_id"]
 	}
 	var calls []any
-	if items, ok := listItems(message["tool_calls"]); ok && pyTruthy(message["tool_calls"]) {
+	if items, ok := listItems(message["tool_calls"]); ok && anyutil.IsTrue(message["tool_calls"]) {
 		for _, call := range items {
 			if isMapping(call) {
 				v, _ := mappingGet(call, "id")
@@ -128,7 +130,7 @@ func NewestExactHeldID(messages, verbatimTail []map[string]any) (int64, bool) {
 		}
 	}
 	for _, message := range messages {
-		if message != nil && pyTruthy(message[DBPersistedMarker]) {
+		if message != nil && anyutil.IsTrue(message[DBPersistedMarker]) {
 			consider(message)
 		}
 	}
@@ -161,16 +163,16 @@ func CoverageForCommit(sessionDB any, sessionID string, messages, verbatimTail [
 			}
 		}
 		unnamed := message[UnnamedDurableRows]
-		if !pyTruthy(unnamed) {
+		if !anyutil.IsTrue(unnamed) {
 			unnamed = 0
 		}
-		count, convErr := pyIntOf(unnamed)
+		count, convErr := intOfValue(unnamed)
 		if convErr != nil {
 			return nil, nil, false, convErr
 		}
 		own := 0
 		for _, row := range named {
-			if !pyTruthy(row[OwnRow]) {
+			if !anyutil.IsTrue(row[OwnRow]) {
 				own++
 			}
 		}
@@ -190,7 +192,7 @@ func CoverageForCommit(sessionDB any, sessionID string, messages, verbatimTail [
 	unresolved = append(append([]map[string]any{}, unresolved...), retired...)
 	marked := false
 	for _, message := range unresolved {
-		if pyTruthy(message[DBPersistedMarker]) {
+		if anyutil.IsTrue(message[DBPersistedMarker]) {
 			marked = true
 		}
 	}

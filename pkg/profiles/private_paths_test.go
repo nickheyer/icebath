@@ -2,7 +2,7 @@ package profiles
 
 import "testing"
 
-func TestCasefoldMatchesPythonForTheStoreNameFolds(t *testing.T) {
+func TestCasefoldFollowsUnicodeFullCaseFolding(t *testing.T) {
 	for in, want := range map[string]string{
 		"DEFAULT": "default", "Straße": "strasse", "ﬁle": "file", "Work Bot": "work bot", "ΣΊΣΥΦΟΣ": "σίσυφοσ",
 		"İ": "i̇", "KEY": "key", "ᏸ": "Ᏸ", "Ꭰ": "Ꭰ", "ﬓ": "մն", "ᾀ": "ἀι", "ẞ": "ss", "ſ": "s", "µ": "μ",

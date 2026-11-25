@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Model block keys bound to one endpoint, never carried from another profile's block
@@ -59,10 +60,10 @@ func ApplyInheritedModelAssignment(ctx context.Context, modelCfg any, inherited 
 		config.SetMappingKeys(current, config.MappingKeys(held))
 	}
 	lookup := config.EnvRefLookupContext(ctx)
-	here := pyStr(config.Expand(pyOr(current["base_url"], ""), lookup))
-	there := pyStr(config.Expand(pyOr(inherited["base_url"], ""), lookup))
-	result := ModelSwitchResult{Success: true, TargetProvider: pyStr(inherited["provider"]), NewModel: pyStr(inherited["default"]),
-		BaseURL: there, APIMode: pyOrStr(inherited["api_mode"])}
+	here := anyutil.String(config.Expand(anyutil.Or(current["base_url"], ""), lookup))
+	there := anyutil.String(config.Expand(anyutil.Or(inherited["base_url"], ""), lookup))
+	result := ModelSwitchResult{Success: true, TargetProvider: anyutil.String(inherited["provider"]), NewModel: anyutil.String(inherited["default"]),
+		BaseURL: there, APIMode: anyutil.StringOr(inherited["api_mode"], "")}
 	fileTooling, err := config.SupportsFileTooling(ctx)
 	if err != nil {
 		return nil, err

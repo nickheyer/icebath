@@ -73,7 +73,7 @@ func projectResolve(db *ProjectsDB, token string) (*Project, error) {
 func projectActivated(proj *Project, taskID string) string {
 	primary := proj.PrimaryPathOf()
 	projectApplyWorkspace(taskID, primary, proj.Name)
-	return JSONASCII(Dict("success", true, "id", proj.ID, "slug", proj.Slug, "name", proj.Name, "primary_path", emptyAsNull(primary)))
+	return JSON(Dict("success", true, "id", proj.ID, "slug", proj.Slug, "name", proj.Name, "primary_path", emptyAsNull(primary)))
 }
 
 // Scoped flag and project id of the calling session, unscoped callers fall back to the profile pointer
@@ -106,7 +106,7 @@ func projectCallingSessionID(env *Env, db *ProjectsDB, taskID string) (bool, str
 
 // Failure JSON with the error text
 func projectFail(msg string) string {
-	return JSONASCII(Dict("success", false, "error", msg))
+	return JSON(Dict("success", false, "error", msg))
 }
 
 // Lists projects and which one the calling chat is in
@@ -133,7 +133,7 @@ func projectList(ctx context.Context, env *Env, taskID string) string {
 	for _, p := range projects {
 		rows = append(rows, Dict("id", p.ID, "slug", p.Slug, "name", p.Name, "primary_path", emptyAsNull(p.PrimaryPathOf()), "active", p.ID == active))
 	}
-	return JSONASCII(Dict("active_id", emptyAsNull(active), "projects", rows))
+	return JSON(Dict("active_id", emptyAsNull(active), "projects", rows))
 }
 
 // Creates a project, reusing one that already owns the folder, and switches the chat into it
@@ -194,7 +194,7 @@ func projectSwitch(ctx context.Context, env *Env, project, taskID string) string
 		return projectFail(err.Error())
 	}
 	if proj == nil {
-		return projectFail(fmt.Sprintf("no project matching '%s'", project))
+		return projectFail(fmt.Sprintf("no project matching %q", project))
 	}
 	if !projectMovesSession(taskID, proj.PrimaryPathOf()) {
 		id := proj.ID

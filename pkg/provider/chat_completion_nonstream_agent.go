@@ -388,10 +388,10 @@ func (r *nonStreamAgentRequest) call(ctx context.Context) {
 		resp = nil
 		switch {
 		case r.retired():
-			pkgLog().Info(fmt.Sprintf("Codex worker caught %s after request retirement — discarding the stale partial instead of surfacing it as a completed response. %s", goErrorTypeName(err), r.agent.ClientLogContext()))
+			pkgLog().Info(fmt.Sprintf("Codex worker caught an error after request retirement (%s) — discarding the stale partial instead of surfacing it as a completed response. %s", errchain.OSText(err), r.agent.ClientLogContext()))
 			err = nil
 		case r.wasCancelled():
-			pkgLog().Debug(fmt.Sprintf("Non-streaming worker caught %s after request cancellation — exiting without surfacing a network error.", goErrorTypeName(err)))
+			pkgLog().Debug(fmt.Sprintf("Non-streaming worker caught an error after request cancellation (%s) — exiting without surfacing a network error.", errchain.OSText(err)))
 			err = nil
 		}
 	}

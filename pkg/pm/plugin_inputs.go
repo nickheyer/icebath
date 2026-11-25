@@ -67,7 +67,7 @@ func EncodePluginInput(p PluginInput) map[string]any {
 func pluginInputField(value map[string]any, key string) (any, error) {
 	v, ok := value[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: "the plugin input has no " + key}
+		return nil, &ClassError{Class: "KeyError", Message: "the plugin input has no " + key}
 	}
 	return v, nil
 }
@@ -78,7 +78,7 @@ func pluginInputPaths(value map[string]any, key string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyIterStrings(raw)
+	return iterStrings(raw)
 }
 
 // Plugin input of its JSON form, nil for null and a ValueError for an unknown kind
@@ -96,16 +96,16 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 		if raw, ok := value["sources"]; ok {
 			list, ok := raw.([]any)
 			if !ok {
-				return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugin input sources must be a list, got %s", errchain.Kind(raw))}
+				return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the plugin input sources must be a list, got %s", errchain.Kind(raw))}
 			}
 			dirs := make([]MemberDir, 0, len(list))
 			for _, item := range list {
-				pair, err := pyIterStrings(item)
+				pair, err := iterStrings(item)
 				if err != nil {
 					return nil, err
 				}
 				if len(pair) != 2 {
-					return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("a plugin input source must pair an identity with a path, got %d values", len(pair))}
+					return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("a plugin input source must pair an identity with a path, got %d values", len(pair))}
 				}
 				dirs = append(dirs, MemberDir{Identity: pair[0], Source: pair[1]})
 			}
@@ -129,12 +129,12 @@ func DecodePluginInput(value map[string]any) (PluginInput, error) {
 		}
 		data, ok := raw.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the plugin %s data must be a mapping, got %s", kind, errchain.Kind(raw))}
+			return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the plugin %s data must be a mapping, got %s", kind, errchain.Kind(raw))}
 		}
 		if kind == "selection" {
 			return &Selection{Data: data}, nil
 		}
 		return &StagedUpdate{Data: data}, nil
 	}
-	return nil, &PyError{Class: "ValueError", Message: "unknown plugin input kind: " + errchain.Show(rawKind)}
+	return nil, &ClassError{Class: "ValueError", Message: "unknown plugin input kind: " + errchain.Show(rawKind)}
 }

@@ -477,7 +477,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 		return nil, err
 	}
 	requestID := mustGet(submitted, "request_id")
-	if !pyTruthy(requestID) {
+	if !anyutil.IsTrue(requestID) {
 		return nil, fmt.Errorf("xAI video response did not include request_id")
 	}
 	reqID := anyutil.String(requestID)
@@ -495,7 +495,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 			return nil, err
 		}
 		status = ""
-		if v := mustGet(job, "status"); pyTruthy(v) {
+		if v := mustGet(job, "status"); anyutil.IsTrue(v) {
 			s, ok := v.(string)
 			if !ok {
 				return nil, fmt.Errorf("xAI video status is %s where text was expected", errchain.Kind(v))
@@ -515,13 +515,13 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 	}
 	plain, _ := jsonutil.Plain(job).(map[string]any)
 	modelOut := resolvedModel
-	if pyTruthy(plain["model"]) {
+	if anyutil.IsTrue(plain["model"]) {
 		modelOut = anyutil.String(plain["model"])
 	}
 	if status != "done" {
 		var message any
 		errField := plain["error"]
-		if !pyTruthy(errField) {
+		if !anyutil.IsTrue(errField) {
 			errField = map[string]any{}
 		}
 		em, ok := errField.(map[string]any)
@@ -529,11 +529,11 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 			return nil, fmt.Errorf("xAI video error is %s where a mapping was expected", errchain.Kind(errField))
 		}
 		message = em["message"]
-		if !pyTruthy(message) {
+		if !anyutil.IsTrue(message) {
 			message = plain["message"]
 		}
 		text := fmt.Sprintf("xAI video request ended with status '%s'", status)
-		if pyTruthy(message) {
+		if anyutil.IsTrue(message) {
 			text = anyutil.String(message)
 		}
 		return videoXAIError(text, "xai_"+status, prompt, resolvedModel, ""), nil
@@ -576,11 +576,11 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 			extra[k] = v
 		}
 	}
-	if pyTruthy(plain["usage"]) {
+	if anyutil.IsTrue(plain["usage"]) {
 		extra["usage"] = plain["usage"]
 	}
 	durationOut := duration
-	if v := video["duration"]; pyTruthy(v) {
+	if v := video["duration"]; anyutil.IsTrue(v) {
 		n, err := anyutil.ToInt(v)
 		if err != nil {
 			return nil, err

@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -159,7 +160,7 @@ func setupProject(cli *secretsCLI, binary, token, serverURL string) (string, err
 	if err != nil {
 		return "", err
 	}
-	return pyStr(projects[idx-1]["id"]), nil
+	return anyutil.String(projects[idx-1]["id"]), nil
 }
 
 // Project field as text, a question mark when missing
@@ -168,7 +169,7 @@ func projectField(project map[string]any, key string) string {
 	if !ok {
 		return "?"
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
@@ -203,7 +204,7 @@ func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	secretsCfg := secretsSetdefaultMapping(secretsSetdefaultMapping(cfg, "secrets"), "bitwarden")
 	tokenEnv := bwDefaultTokenEnv
 	if v, ok := secretsCfg["access_token_env"]; ok {
-		tokenEnv = pyStr(v)
+		tokenEnv = anyutil.String(v)
 	}
 	token, err := setupToken(cli, ns, tokenEnv)
 	if err != nil || token == "" {
@@ -280,15 +281,15 @@ func fetchStatus(key, tokenEnv string) string {
 // Config value as text with a default for a missing key
 func cfgText(cfg map[string]any, key string, def any) string {
 	if v, ok := cfg[key]; ok {
-		return pyStr(v)
+		return anyutil.String(v)
 	}
-	return pyStr(def)
+	return anyutil.String(def)
 }
 
 // Truthy config value with a default for a missing key
 func cfgBool(cfg map[string]any, key string, def bool) bool {
 	if v, ok := cfg[key]; ok {
-		return pyTruthy(v)
+		return anyutil.IsTrue(v)
 	}
 	return def
 }
@@ -301,7 +302,7 @@ func bwCmdStatus(cli *secretsCLI, ns map[string]any) (int, error) {
 		return 1, err
 	}
 	bw := bwCfg(cfg)
-	enabled := pyTruthy(bw["enabled"])
+	enabled := anyutil.IsTrue(bw["enabled"])
 	tokenEnv := cfgText(bw, "access_token_env", bwDefaultTokenEnv)
 	projectID := cfgText(bw, "project_id", "")
 	serverURL := cfgStr(bw, "server_url")
@@ -386,12 +387,12 @@ func bwCmdToken(cli *secretsCLI, ns map[string]any) (int, error) {
 		console.Print(fmt.Sprintf("[green]✓ Token accepted[/green] (%d project%s visible).", len(projects), plural))
 		projectID := ""
 		if v, ok := bw["project_id"]; ok && v != nil {
-			projectID = pyStr(v)
+			projectID = anyutil.String(v)
 		}
 		if projectID != "" && len(projects) > 0 {
 			visible := false
 			for _, p := range projects {
-				if pyStr(p["id"]) == projectID {
+				if anyutil.String(p["id"]) == projectID {
 					visible = true
 				}
 			}
@@ -404,7 +405,7 @@ func bwCmdToken(cli *secretsCLI, ns map[string]any) (int, error) {
 		return true
 	}
 	disabledNote := ""
-	if !pyTruthy(bw["enabled"]) {
+	if !anyutil.IsTrue(bw["enabled"]) {
 		disabledNote = "[yellow]Note: the Bitwarden integration is currently disabled — " +
 			"run `icebath secrets bitwarden setup` (or set " +
 			"secrets.bitwarden.enabled: true) to turn it on.[/yellow]"
@@ -621,7 +622,7 @@ func bitwardenProjects(ctx context.Context, binary, token, serverURL string) ([]
 	}
 	projects := []map[string]any{}
 	for _, item := range items {
-		if p, isDict := item.(map[string]any); isDict && pyTruthy(p["id"]) {
+		if p, isDict := item.(map[string]any); isDict && anyutil.IsTrue(p["id"]) {
 			projects = append(projects, p)
 		}
 	}

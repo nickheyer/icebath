@@ -111,14 +111,14 @@ func xaiPostResponses(ctx context.Context, env *Env, baseURL string, payload *js
 
 // Text blocks and annotation dicts of the output_text chunks of every message item
 func xaiCollectOutputText(data any) ([]string, []*jsonutil.Object, error) {
-	output, err := pyDictGet(data, "output")
+	output, err := dictGet(data, "output")
 	if err != nil {
 		return nil, nil, err
 	}
 	items, _ := output.([]any)
 	var chunks []*jsonutil.Object
 	for _, item := range items {
-		d, ok := pyDict(item)
+		d, ok := mappingOf(item)
 		if !ok {
 			continue
 		}
@@ -129,7 +129,7 @@ func xaiCollectOutputText(data any) ([]string, []*jsonutil.Object, error) {
 			continue
 		}
 		for _, chunk := range list {
-			if c, ok := pyDict(chunk); ok {
+			if c, ok := mappingOf(chunk); ok {
 				if ct, _ := c.Get("type"); ct == "output_text" {
 					chunks = append(chunks, c)
 				}
@@ -149,7 +149,7 @@ func xaiCollectOutputText(data any) ([]string, []*jsonutil.Object, error) {
 		if anns, ok := c.Get("annotations"); ok {
 			if list, isList := anns.([]any); isList {
 				for _, a := range list {
-					if d, ok := pyDict(a); ok {
+					if d, ok := mappingOf(a); ok {
 						annotations = append(annotations, d)
 					}
 				}
@@ -179,7 +179,7 @@ func xaiTryParseJSONResults(text string, limit int) []WebSearchHit {
 		if err != nil {
 			continue
 		}
-		d, ok := pyDict(parsed)
+		d, ok := mappingOf(parsed)
 		if !ok {
 			continue
 		}
@@ -188,10 +188,10 @@ func xaiTryParseJSONResults(text string, limit int) []WebSearchHit {
 		if !ok {
 			continue
 		}
-		head, _ := pySeqHead(results, limit)
+		head, _ := seqHead(results, limit)
 		var normalized []WebSearchHit
 		for _, r := range head.([]any) {
-			row, ok := pyDict(r)
+			row, ok := mappingOf(r)
 			if !ok {
 				continue
 			}
@@ -256,12 +256,12 @@ func xaiExtractResults(data any, limit int) ([]WebSearchHit, error) {
 			return parsed, nil
 		}
 	}
-	raw, _ := pyDictGet(data, "citations")
+	raw, _ := dictGet(data, "citations")
 	citations, ok := anyutil.Or(raw, []any{}).([]any)
 	if !ok {
 		return []WebSearchHit{}, nil
 	}
-	head, _ := pySeqHead(citations, limit)
+	head, _ := seqHead(citations, limit)
 	out := []WebSearchHit{}
 	for i, u := range head.([]any) {
 		if s, isStr := u.(string); isStr && strings.TrimSpace(s) != "" {
@@ -318,9 +318,9 @@ func (p *xaiWebProvider) Search(ctx context.Context, env *Env, query string, lim
 	if failure != nil {
 		return failure, nil
 	}
-	if d, ok := pyDict(data); ok {
+	if d, ok := mappingOf(data); ok {
 		if apiErr, _ := d.Get("error"); apiErr != nil {
-			if e, isDict := pyDict(apiErr); isDict {
+			if e, isDict := mappingOf(apiErr); isDict {
 				msg, _ := e.Get("message")
 				if !anyutil.IsTrue(msg) {
 					msg, _ = e.Get("code")

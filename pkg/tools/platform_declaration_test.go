@@ -92,7 +92,7 @@ func TestPlatformInvalidBlocksNameTheRule(t *testing.T) {
 		app, requires any
 		message       string
 	}{
-		{nil, m{"app": true}, "no 'app' block"},
+		{nil, m{"app": true}, "no app block"},
 		{nil, m{"min_version": "1.0\n"}, "dotted numeric"},
 		{m{"linux": m{"presence": "executable", "location": "/x/y", "version": m{"kind": "plist"}}}, nil, "only valid under app.darwin"},
 		{m{"win32": m{"presence": "executable", "location": "C:/x/y.exe", "version": m{"kind": "uninstall_registry"}}}, nil, "display_name_prefix"},
@@ -122,7 +122,7 @@ func TestPlatformInvalidBlocksNameTheRule(t *testing.T) {
 		}
 	}
 	_, err := ParsePlatformDeclaration("thing-mcp", m{"linux": exe([]any{m{"kind": "registry"}})}, nil, platformWhere)
-	if want := "test-plugin/plugin.yaml: app.linux.location[0] must be a path or a mapping with kind one of ['app_bundle', 'command', 'flatpak', 'snap', 'uninstall_registry']"; err == nil || err.Error() != want {
+	if want := `test-plugin/plugin.yaml: app.linux.location[0] must be a path or a mapping with kind one of ["app_bundle", "command", "flatpak", "snap", "uninstall_registry"]`; err == nil || err.Error() != want {
 		t.Fatalf("message %v", err)
 	}
 }

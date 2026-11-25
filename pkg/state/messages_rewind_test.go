@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -114,9 +115,9 @@ func archivedCount(t *testing.T, db *SessionDB, sid string) (n int, compacted in
 		t.Fatal(err)
 	}
 	for _, r := range rows {
-		if !pyTruthy(r.Value("active")) {
+		if !anyutil.IsTrue(r.Value("active")) {
 			n++
-			if pyTruthy(r.Value("compacted")) {
+			if anyutil.IsTrue(r.Value("compacted")) {
 				compacted++
 			}
 		}
@@ -182,7 +183,7 @@ func TestReplaceMessagesArchiveSiblings(t *testing.T) {
 		rows, _ := db.GetMessages(ctx, "drop", GetMessagesOptions{IncludeInactive: true})
 		var recovered []any
 		for _, r := range rows {
-			if !pyTruthy(r.Value("active")) {
+			if !anyutil.IsTrue(r.Value("active")) {
 				recovered = append(recovered, r.Value("content"))
 			}
 		}
@@ -259,7 +260,7 @@ func TestPurgeStaleToolCallMarkers(t *testing.T) {
 		if raw := repairScalar(t, db, "SELECT content FROM messages WHERE role = 'assistant' AND tool_calls IS NOT NULL"); raw != "" {
 			t.Fatalf("content %v", raw)
 		}
-		if !pyTruthy(repairScalar(t, db, "SELECT tool_calls FROM messages WHERE role = 'assistant' AND tool_calls IS NOT NULL")) {
+		if !anyutil.IsTrue(repairScalar(t, db, "SELECT tool_calls FROM messages WHERE role = 'assistant' AND tool_calls IS NOT NULL")) {
 			t.Fatal("tool calls lost")
 		}
 		second, _ := db.PurgeStaleToolCallMarkers(ctx, false, true)
@@ -298,7 +299,7 @@ func TestRewindToMessage(t *testing.T) {
 	u2 := readAppend(t, db, "rw", map[string]any{"role": "user", "content": "second"})
 	readAppend(t, db, "rw", map[string]any{"role": "assistant", "content": "second reply"})
 	var verr *stateValueError
-	if _, err := db.RewindToMessage(ctx, "rw", a1, RewindOptions{}); !errors.As(err, &verr) || !strings.Contains(err.Error(), "role='assistant'") {
+	if _, err := db.RewindToMessage(ctx, "rw", a1, RewindOptions{}); !errors.As(err, &verr) || !strings.Contains(err.Error(), `role="assistant"`) {
 		t.Fatalf("assistant target %v", err)
 	}
 	if _, err := db.RewindToMessage(ctx, "rw", 9999, RewindOptions{}); !errors.As(err, &verr) {

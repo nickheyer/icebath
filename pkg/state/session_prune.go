@@ -154,8 +154,8 @@ func continuedAncestorsSQL(candidatesWhere string) string {
 func pruneWhere(olderThanDays *float64, source string, f PruneFilters, wholeLineages bool) (string, []any, error) {
 	if olderThanDays != nil && f.LastActiveBefore == nil && f.StartedBefore == nil {
 		if *olderThanDays < 0 {
-			repr, _ := pyReprFloat(*olderThanDays)
-			return "", nil, pyValueError("older_than_days must be >= 0, got " + repr + ": a negative " +
+			repr, _ := reprFloat(*olderThanDays)
+			return "", nil, valueError("older_than_days must be >= 0, got " + repr + ": a negative " +
 				"retention builds a future cutoff that matches every ended session.")
 		}
 		cutoff := now() - *olderThanDays*86400
@@ -170,11 +170,11 @@ func pruneWhere(olderThanDays *float64, source string, f PruneFilters, wholeLine
 }
 
 // Repr of a retention bound as Python prints a float or a whole number
-func pyReprFloat(v float64) (string, error) {
+func reprFloat(v float64) (string, error) {
 	if n, ok := bindNumber(v).(int64); ok {
 		return strconv.FormatInt(n, 10), nil
 	}
-	return pyFloatRepr(v), nil
+	return floatRepr(v), nil
 }
 
 // Dry run of the sessions a matching prune or archive would touch, least recently active first
@@ -253,7 +253,7 @@ func (d *SessionDB) PruneEmptyGhostSessions(ctx context.Context, sessionsDir str
 		}
 		ids := make([]string, 0, len(rows))
 		for _, r := range rows {
-			ids = append(ids, pyStr(rowValue(r, "id")))
+			ids = append(ids, anyutil.String(rowValue(r, "id")))
 		}
 		if ids, err = retirePrunable(ctx, conn, ids); err != nil {
 			return err
@@ -314,11 +314,11 @@ func (d *SessionDB) MaybeAutoArchive(ctx context.Context, idleDays, minIntervalH
 		if result.Archived, err = d.ArchiveStaleSessions(ctx, idleDays, excludePinned); err != nil {
 			return err
 		}
-		if err := d.SetMeta(ctx, "last_auto_archive", pyFloatRepr(at)); err != nil {
+		if err := d.SetMeta(ctx, "last_auto_archive", floatRepr(at)); err != nil {
 			return err
 		}
 		if result.Archived > 0 {
-			pkgLog().Info(fmt.Sprintf("state.db auto-archive: archived %d session(s) idle >= %s days", result.Archived, pyFloatRepr(idleDays)))
+			pkgLog().Info(fmt.Sprintf("state.db auto-archive: archived %d session(s) idle >= %s days", result.Archived, floatRepr(idleDays)))
 		}
 		return nil
 	}()
@@ -347,7 +347,7 @@ func NewPruneSessionsOptions() PruneSessionsOptions {
 // Deletes ended sessions matching the filters with whole lineages, orphaning children and reclaiming expired tombstones
 func (d *SessionDB) PruneSessions(ctx context.Context, o PruneSessionsOptions) (int, error) {
 	if o.Filters.IncludeOpen {
-		return 0, pyValueError("prune_sessions() never deletes open sessions: include_open is archive-only")
+		return 0, valueError("prune_sessions() never deletes open sessions: include_open is archive-only")
 	}
 	where, whereParams, err := pruneWhere(o.OlderThanDays, o.Source, o.Filters, true)
 	if err != nil {
@@ -363,7 +363,7 @@ func (d *SessionDB) PruneSessions(ctx context.Context, o PruneSessionsOptions) (
 		}
 		set := map[string]bool{}
 		for _, r := range rows {
-			set[pyStr(rowValue(r, "id"))] = true
+			set[anyutil.String(rowValue(r, "id"))] = true
 		}
 		if o.ExcludeActiveWriteGuards {
 			ids := make([]string, 0, len(set))
@@ -546,7 +546,7 @@ func (d *SessionDB) MaybeAutoPruneAndVacuum(ctx context.Context, o AutoPruneOpti
 	if o.RetentionDays == nil || *o.RetentionDays < 0 {
 		shown := "None"
 		if o.RetentionDays != nil {
-			shown, _ = pyReprFloat(*o.RetentionDays)
+			shown, _ = reprFloat(*o.RetentionDays)
 		}
 		pkgLog().Warn(fmt.Sprintf("state.db auto-maintenance skipped: sessions.retention_days=%s is outside the allowed "+
 			"range (a whole number of days >= 0); set sessions.auto_prune: false to disable pruning", shown))
@@ -616,7 +616,7 @@ func (d *SessionDB) MaybeAutoPruneAndVacuum(ctx context.Context, o AutoPruneOpti
 					pkgLog().Warn(fmt.Sprintf("state.db VACUUM failed: %s", verr))
 				} else {
 					result.Vacuumed = true
-					if err := d.SetMeta(ctx, "last_vacuum", pyFloatRepr(at)); err != nil {
+					if err := d.SetMeta(ctx, "last_vacuum", floatRepr(at)); err != nil {
 						pkgLog().Warn(fmt.Sprintf("state.db VACUUM failed: %s", err))
 					}
 				}
@@ -625,7 +625,7 @@ func (d *SessionDB) MaybeAutoPruneAndVacuum(ctx context.Context, o AutoPruneOpti
 					"%.1f%% of pages reclaimable (threshold %.0f%%)", ratio*100.0, o.MinVacuumFreelistRatio*100.0))
 			}
 		}
-		if err := d.SetMeta(ctx, "last_auto_prune", pyFloatRepr(at)); err != nil {
+		if err := d.SetMeta(ctx, "last_auto_prune", floatRepr(at)); err != nil {
 			return err
 		}
 		if len(closed) > 0 || result.Pruned > 0 {

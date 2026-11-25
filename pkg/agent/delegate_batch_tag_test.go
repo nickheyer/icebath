@@ -132,7 +132,7 @@ func TestBatchCompletionLinesAreAttributableAcrossTwoBatches(t *testing.T) {
 			tasks[i] = map[string]any{"goal": fmt.Sprintf("batch of %d: worker task number %d", n, i)}
 		}
 		res, err := delegateTask(context.Background(), parent, map[string]any{"tasks": tasks})
-		if err != nil || strings.Contains(pyStrPrefix(res, 20), "error") {
+		if err != nil || strings.Contains(strPrefix(res, 20), "error") {
 			t.Fatalf("delegate_task %s %v", res, err)
 		}
 	}
@@ -160,7 +160,7 @@ func TestBatchCompletionLinesAreAttributableAcrossTwoBatches(t *testing.T) {
 }
 
 // First n code points of a result, the same prefix Python slicing of str(res) yields
-func pyStrPrefix(s string, n int) string {
+func strPrefix(s string, n int) string {
 	r := []rune(s)
 	return string(r[:min(n, len(r))])
 }

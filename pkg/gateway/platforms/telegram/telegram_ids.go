@@ -49,12 +49,12 @@ func ParseSendTarget(ref string) any {
 	return gateway.ParseNonempty(username)
 }
 
-// Reply anchor as a positive Telegram message id, nil for a bool, a non positive int or any other text
+// Reply anchor as a positive Telegram message id from an integer, a whole float or decimal digits, nil for a bool, a non positive number or any other text
 func ParseTelegramMessageID(value any) *big.Int {
 	if _, ok := value.(bool); ok {
 		return nil
 	}
-	if n, ok := pyIntValue(value); ok {
+	if n, ok := integerValue(value); ok {
 		if n.Sign() > 0 {
 			return n
 		}
@@ -80,7 +80,7 @@ func ParseTelegramMessageID(value any) *big.Int {
 }
 
 // Integer value of a Go integer kind or big int
-func pyIntValue(value any) (*big.Int, bool) {
+func integerValue(value any) (*big.Int, bool) {
 	switch v := value.(type) {
 	case int:
 		return big.NewInt(int64(v)), true

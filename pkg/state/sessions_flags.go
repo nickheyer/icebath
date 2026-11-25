@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -16,7 +17,7 @@ func (d *SessionDB) SetSessionPinned(ctx context.Context, sessionID string, pinn
 	if err != nil {
 		return result, err
 	}
-	canonicalBotChat := row != nil && pyTruthy(rowValue(row, "hidden")) && rowTitle(row) == CanonicalBotChatTitle
+	canonicalBotChat := row != nil && anyutil.IsTrue(rowValue(row, "hidden")) && rowTitle(row) == CanonicalBotChatTitle
 	if !canonicalBotChat {
 		if _, err := d.setLineageColumn(ctx, "hidden", sessionID, 0, ""); err != nil {
 			return result, err
@@ -51,7 +52,7 @@ func (d *SessionDB) ArchiveSessions(ctx context.Context, olderThanDays *float64,
 		return 0, err
 	}
 	for _, row := range rows {
-		if _, err := d.SetSessionArchived(ctx, pyStr(rowValue(row, "id")), true, true); err != nil {
+		if _, err := d.SetSessionArchived(ctx, anyutil.String(rowValue(row, "id")), true, true); err != nil {
 			return 0, err
 		}
 	}
@@ -61,7 +62,7 @@ func (d *SessionDB) ArchiveSessions(ctx context.Context, olderThanDays *float64,
 // Title of a session row, empty when unset
 func rowTitle(row *jsonutil.Object) string {
 	if v := rowValue(row, "title"); v != nil {
-		return pyStr(v)
+		return anyutil.String(v)
 	}
 	return ""
 }

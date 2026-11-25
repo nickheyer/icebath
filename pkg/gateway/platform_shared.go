@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -198,7 +199,7 @@ func SeedExtraFromEnv(ctx context.Context, spec []EnvSeedRow, homeEnv, homeDefau
 			continue
 		}
 		converted, err := row.Conv(raw)
-		if pe, ok := err.(*PyError); ok && pe.Kind == "ValueError" {
+		if pe, ok := err.(*errorutil.Error); ok && pe.Kind == "ValueError" {
 			continue
 		} else if err != nil {
 			return nil, err

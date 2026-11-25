@@ -738,7 +738,7 @@ func TestGeminiSseLineDecoding(t *testing.T) {
 		{"application/octet-stream; charset=\"utf-8\"", "x\u2028y", []string{"x\u2028y"}, ""},
 		{"", "\n\ndata: x\n", nil, "the response names no text encoding, so its lines cannot be read as text"},
 		{"", "\r\n\n", nil, ""},
-		{"text/plain; charset=bogus", "x", nil, "unknown encoding: bogus"},
+		{"text/plain; charset=bogus", "x", nil, `unknown character set "bogus"`},
 		{"text/plain; charset", "x", nil, "Content-Type charset parameter has no value"},
 	}
 	for i, c := range cases {

@@ -9,7 +9,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -104,7 +103,7 @@ func LoadNamed(name, pluginDir string, loadFromDir func(dir string) (any, error)
 		log.Warn(fmt.Sprintf("Failed to load %s '%s': %s", strings.ToLower(kind), name, err))
 		return nil
 	}
-	if instance == nil || !config.PyTruthy(instance) {
+	if instance == nil || !anyutil.IsTrue(instance) {
 		log.Warn(fmt.Sprintf("%s '%s' loaded but no %s instance found", kind, name, noun))
 		return nil
 	}

@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Puts the plugin hooks and middleware on the process wide tool dispatcher every agent executes through
@@ -124,7 +124,7 @@ func toolMiddlewareResultText(result any) string {
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(result); err != nil {
-		return config.PyStr(result)
+		return anyutil.String(result)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

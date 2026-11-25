@@ -46,7 +46,7 @@ func TestMutationReceiptFencesReplayRevisionAndEpoch(t *testing.T) {
 		expectedTitle := ""
 		if c.operation == "rename" {
 			mustCreate(t, db, NewSession{ID: "direct", Source: "test"})
-			title := pyStr(rowValue(c.payload, "title"))
+			title := anyutil.String(rowValue(c.payload, "title"))
 			if _, err := db.SetSessionTitle(ctx, "direct", title); err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +60,7 @@ func TestMutationReceiptFencesReplayRevisionAndEpoch(t *testing.T) {
 			if !anyutil.Equal(rowValue(result, "title"), expectedTitle) {
 				t.Fatalf("title %v != %q", rowValue(result, "title"), expectedTitle)
 			}
-			if pyStr(rowValue(c.payload, "title")) != expectedTitle {
+			if anyutil.String(rowValue(c.payload, "title")) != expectedTitle {
 				changed := args
 				changed.Payload = jsonutil.ObjectOf("title", expectedTitle)
 				if r := mutateRefusal(t, db, changed); r != "admission_conflict" {
@@ -224,12 +224,12 @@ func TestSidebarEditIsAtomicAndRevisionFenced(t *testing.T) {
 		t.Fatalf("failed receipt %v", err)
 	}
 	row := sessionOf(t, db, "s")
-	if rowValue(row, "title") != nil || pyTruthy(rowValue(row, "pinned")) {
+	if rowValue(row, "title") != nil || anyutil.IsTrue(rowValue(row, "pinned")) {
 		t.Fatal("failed receipt changed the row")
 	}
 	mustExecConn(t, db.conn, "DROP TRIGGER fail_receipt")
 	receipt := mustMutate(t, db, args)
-	if !anyutil.Equal(rowValue(receipt, "revision"), 1) || !pyTruthy(rowValue(receipt, "pinned")) || !pyTruthy(rowValue(receipt, "hidden")) || !pyTruthy(rowValue(receipt, "unread")) {
+	if !anyutil.Equal(rowValue(receipt, "revision"), 1) || !anyutil.IsTrue(rowValue(receipt, "pinned")) || !anyutil.IsTrue(rowValue(receipt, "hidden")) || !anyutil.IsTrue(rowValue(receipt, "unread")) {
 		t.Fatalf("receipt %v", receipt)
 	}
 	peer := mustSessionDB(t, path, false)
@@ -603,7 +603,7 @@ func compactedSession(t *testing.T, db *SessionDB) (map[string]any, int64) {
 	shown := map[string]any{}
 	rows, _ := db.GetMessages(ctx, "s", GetMessagesOptions{IncludeCompacted: true})
 	for _, row := range rows {
-		shown[pyStr(rowValue(row, "content"))] = rowValue(row, "id")
+		shown[anyutil.String(rowValue(row, "content"))] = rowValue(row, "id")
 	}
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "owner")
 	return shown, epoch
@@ -752,7 +752,7 @@ func TestATurnARotatingCompressionLeftOnTheParentCarriesTheMarker(t *testing.T) 
 // Legacy prompt admissions row as the pre runtime store wrote it
 func legacyRow(seq int64, target, status string) []any {
 	lineage, _ := jsonutil.Encode([]any{"s", target}, jsonutil.Spaced(), jsonutil.ASCII())
-	payload, _ := jsonutil.Encode(jsonutil.ObjectOf("text", "input-"+pyStr(seq), "intent", "queue"), jsonutil.Spaced(), jsonutil.ASCII())
+	payload, _ := jsonutil.Encode(jsonutil.ObjectOf("text", "input-"+anyutil.String(seq), "intent", "queue"), jsonutil.Spaced(), jsonutil.ASCII())
 	var outcome, generation any
 	if status == "terminal" {
 		outcome = "completed"
@@ -760,7 +760,7 @@ func legacyRow(seq int64, target, status string) []any {
 	if status == "started" {
 		generation = seq
 	}
-	return []any{seq, "old-" + pyStr(seq), target, "s", lineage, payload, status, outcome, "dead", generation}
+	return []any{seq, "old-" + anyutil.String(seq), target, "s", lineage, payload, status, outcome, "dead", generation}
 }
 
 // Writes a frozen legacy admissions database at path with the rows
@@ -916,7 +916,7 @@ func TestTargetAdvanceAllowsQueuedFollowerAndRefusesStartedHead(t *testing.T) {
 		admitInput(t, db, epoch, "human", sid, "follower", admissionText("follower"))
 		mutate := func() (*jsonutil.Object, error) {
 			row := sessionOf(t, db, sid)
-			in := mutationAt(db, sid, operation, operation+"-"+pyStr(rowValue(row, "runtime_revision")), jsonutil.NewObject())
+			in := mutationAt(db, sid, operation, operation+"-"+anyutil.String(rowValue(row, "runtime_revision")), jsonutil.NewObject())
 			in.Epoch = epoch
 			in.PrepareOnly = operation == "compress"
 			return db.MutateRuntimeSession(ctx, in)

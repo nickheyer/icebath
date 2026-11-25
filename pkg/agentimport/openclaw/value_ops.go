@@ -18,15 +18,15 @@ import (
 )
 
 // Python exception raised by the engine, str giving the message the script would print
-type PyError struct {
+type KindError struct {
 	Type string
 	Msg  string
 }
 
-func (e *PyError) Error() string { return e.Msg }
+func (e *KindError) Error() string { return e.Msg }
 
 // Python exception class name of the error
-func (e *PyError) ErrorKind() string { return e.Type }
+func (e *KindError) ErrorKind() string { return e.Type }
 
 // Carrier of a raised exception through a panic, recovered at the engine entry points
 type raised struct{ err error }
@@ -36,7 +36,7 @@ func raise(err error) { panic(raised{err}) }
 
 // Raises a Python exception of the given type and message
 func raisef(typ, format string, args ...any) {
-	raise(&PyError{Type: typ, Msg: fmt.Sprintf(format, args...)})
+	raise(&KindError{Type: typ, Msg: fmt.Sprintf(format, args...)})
 }
 
 // Converts a raised exception into the returned error, leaving any other panic running
@@ -106,12 +106,12 @@ func dindex(v any, key string) any {
 	default:
 		raisef("TypeError", "expected a mapping holding %s, got %s", key, errchain.Kind(v))
 	}
-	raise(&PyError{Type: "KeyError", Msg: "missing " + key})
+	raise(&KindError{Type: "KeyError", Msg: "missing " + key})
 	return nil
 }
 
 // Python iteration of a value, dict keys, list elements or str characters, TypeError otherwise
-func pyIter(v any) []any {
+func elementsOf(v any) []any {
 	switch x := v.(type) {
 	case []any:
 		return x
@@ -252,7 +252,7 @@ func ditems(v any) []kv {
 }
 
 // Python len of a sized value
-func pyLen(v any) int {
+func lengthOf(v any) int {
 	switch x := v.(type) {
 	case *jsonutil.Object:
 		return x.Len()
@@ -273,14 +273,6 @@ func or(a, b any) any {
 		return a
 	}
 	return b
-}
-
-// Python str() of a value
-func pyStr(v any) string {
-	if o, ok := v.(*jsonutil.Object); ok {
-		return anyutil.Quote(o)
-	}
-	return anyutil.String(v)
 }
 
 // Python str.strip
@@ -345,7 +337,7 @@ func toYAML(v any) any {
 }
 
 // Python int() of a config value with the CPython errors
-func pyInt(v any) (int, error) {
+func wholeNumber(v any) (int, error) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -355,32 +347,36 @@ func pyInt(v any) (int, error) {
 	case string:
 		n, err := textutil.ParseInt(x)
 		if errors.Is(err, strconv.ErrRange) {
-			return 0, &PyError{Type: "OverflowError", Msg: "the number " + strings.TrimSpace(x) + " is larger than a 64 bit integer holds"}
+			return 0, &KindError{Type: "OverflowError", Msg: "the number " + strings.TrimSpace(x) + " is larger than a 64 bit integer holds"}
 		}
 		if err != nil {
-			return 0, &PyError{Type: "ValueError", Msg: x + " is not a whole number"}
+			return 0, &KindError{Type: "ValueError", Msg: x + " is not a whole number"}
 		}
 		return int(n), nil
 	case float64:
 		if math.IsNaN(x) {
-			return 0, &PyError{Type: "ValueError", Msg: "NaN is not a whole number"}
+			return 0, &KindError{Type: "ValueError", Msg: "NaN is not a whole number"}
 		}
 		if math.IsInf(x, 0) {
-			return 0, &PyError{Type: "OverflowError", Msg: "infinity is not a whole number"}
+			return 0, &KindError{Type: "OverflowError", Msg: "infinity is not a whole number"}
 		}
-		return int(math.Trunc(x)), nil
+		n, err := anyutil.ToInt(x)
+		if err != nil {
+			return 0, &KindError{Type: "OverflowError", Msg: "the number " + anyutil.String(x) + " is larger than a 64 bit integer holds"}
+		}
+		return int(n), nil
 	}
 	if n, ok := anyutil.Int(v); ok {
 		return int(n), nil
 	}
 	if anyutil.Kind(v) == "integer" {
-		return 0, &PyError{Type: "OverflowError", Msg: "the number " + anyutil.String(v) + " is larger than a 64 bit integer holds"}
+		return 0, &KindError{Type: "OverflowError", Msg: "the number " + anyutil.String(v) + " is larger than a 64 bit integer holds"}
 	}
-	return 0, &PyError{Type: "TypeError", Msg: "expected a whole number, got " + errchain.Kind(v)}
+	return 0, &KindError{Type: "TypeError", Msg: "expected a whole number, got " + errchain.Kind(v)}
 }
 
 // Numeric value of an int, bool or float for arithmetic, false for any other type
-func pyNumber(v any) (int64, float64, bool, bool) {
+func numberOf(v any) (int64, float64, bool, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -398,7 +394,7 @@ func pyNumber(v any) (int64, float64, bool, bool) {
 
 // Python min(v // 10, 200), Euclidean division by a positive divisor being floor division
 func floorDiv10Min200(v any) any {
-	n, f, isFloat, ok := pyNumber(v)
+	n, f, isFloat, ok := numberOf(v)
 	if !ok {
 		raisef("TypeError", "expected a number, got %s", errchain.Kind(v))
 	}
@@ -442,7 +438,7 @@ func uniqueInOrder(values []any) []any {
 }
 
 // Python sorted over str or numeric values, TypeError for a mix
-func pySorted(values []any) []any {
+func sortedOf(values []any) []any {
 	out := append([]any(nil), values...)
 	allStr := true
 	for _, v := range out {
@@ -455,7 +451,7 @@ func pySorted(values []any) []any {
 		return out
 	}
 	for i := range out {
-		if _, _, _, ok := pyNumber(out[i]); !ok {
+		if _, _, _, ok := numberOf(out[i]); !ok {
 			for j := range out {
 				if anyutil.Kind(out[j]) != anyutil.Kind(out[i]) {
 					raisef("TypeError", "cannot sort %s together with %s", errchain.Kind(out[j]), errchain.Kind(out[i]))
@@ -470,8 +466,8 @@ func pySorted(values []any) []any {
 
 // Python a < b over ints, bools and floats
 func numLess(a, b any) bool {
-	an, af, aFloat, _ := pyNumber(a)
-	bn, bf, bFloat, _ := pyNumber(b)
+	an, af, aFloat, _ := numberOf(a)
+	bn, bf, bFloat, _ := numberOf(b)
 	if !aFloat && !bFloat {
 		return an < bn
 	}
@@ -489,7 +485,7 @@ func excText(err error) string {
 	if err == nil {
 		return ""
 	}
-	var pe *PyError
+	var pe *KindError
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}

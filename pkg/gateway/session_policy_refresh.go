@@ -33,11 +33,11 @@ type preparedRefresh struct {
 func loadsPolicyMap(text string) (map[string]any, error) {
 	parsed, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
 	out, ok := jsonutil.Plain(parsed).(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the refreshed session policy is " + errchain.Kind(parsed) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the refreshed session policy is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	return out, nil
 }
@@ -46,7 +46,7 @@ func loadsPolicyMap(text string) (map[string]any, error) {
 func jsonRoundTrip(value any) (any, error) {
 	text, err := jsonutil.Encode(value, jsonutil.Spaced(), jsonutil.ASCII())
 	if err != nil {
-		return nil, &PyError{Kind: "TypeError", Msg: err.Error()}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: err.Error()}
 	}
 	parsed, err := jsonutil.Decode(text)
 	if err != nil {
@@ -70,15 +70,15 @@ func followLive(target map[string]any, live any, key string) error {
 			delete(target, key)
 			return nil
 		}
-		return &PyError{Kind: "TypeError", Msg: "the live session policy is text, expected a mapping"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the live session policy is text, expected a mapping"}
 	case []any:
 		if !slices.ContainsFunc(source, func(item any) bool { return anyutil.Equal(item, key) }) {
 			delete(target, key)
 			return nil
 		}
-		return &PyError{Kind: "TypeError", Msg: "the live session policy is a list, expected a mapping"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the live session policy is a list, expected a mapping"}
 	}
-	return &PyError{Kind: "TypeError", Msg: "the live session policy is " + errchain.Kind(live) + ", expected a mapping"}
+	return &errorutil.Error{Kind: "TypeError", Msg: "the live session policy is " + errchain.Kind(live) + ", expected a mapping"}
 }
 
 // Mapping a dict() call builds from a config value, an empty one for a falsy value
@@ -88,7 +88,7 @@ func dictOf(value any) (map[string]any, error) {
 	}
 	source, ok := value.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "cannot convert dictionary update sequence element #0 to a sequence"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "cannot convert dictionary update sequence element #0 to a sequence"}
 	}
 	out := make(map[string]any, len(source))
 	for key, item := range source {
@@ -265,7 +265,7 @@ func pickItems(value any) ([]any, error) {
 		sort.Slice(out, func(i, j int) bool { return out[i].(string) < out[j].(string) })
 		return out, nil
 	}
-	return pyIterable(value)
+	return iterable(value)
 }
 
 // Profile MCP servers as the session's own selection takes them now, definitions into the config and names into the toolsets
@@ -387,10 +387,10 @@ func prepareRefresh(ctx context.Context, a *SessionAuthority, sessionID string, 
 		return nil, err
 	}
 	if row == nil {
-		return nil, &PyError{Kind: "TypeError", Msg: "the session policy to refresh is missing"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the session policy to refresh is missing"}
 	}
 	if _, ok := row.Get("runtime_generation"); !ok {
-		return nil, &pyKeyError{"runtime_generation"}
+		return nil, &keyError{"runtime_generation"}
 	}
 	var generation int64
 	if value := rowInt(row, "runtime_generation"); value != nil {
@@ -402,7 +402,7 @@ func prepareRefresh(ctx context.Context, a *SessionAuthority, sessionID string, 
 	}
 	stored, ok := receipt.Get("policy")
 	if !ok {
-		return nil, &pyKeyError{"policy"}
+		return nil, &keyError{"policy"}
 	}
 	old, err := restorePolicy(stored)
 	if err != nil {
@@ -624,13 +624,13 @@ func noteSkippedRefresh(sessionID string, err error) {
 		reason = refusal.Reason
 	}
 	if reason == "" {
-		reason = pyErrorKind(err)
-	}
-	if reason == "" && errorutil.IsSystem(err) {
-		reason = errorutil.Kind(err)
+		reason = errorKindLabel(err)
 	}
 	if reason == "" {
-		reason = errorutil.Kind(err)
+		reason = declaredErrorKind(err)
+	}
+	if reason == "" {
+		reason = errchain.OSText(err)
 	}
 	message := fmt.Sprintf("Session %s keeps its stored policy on resume: %s", sessionID, reason)
 	if reason == "session_busy" || reason == "unknown_execution" || reason == "revision_conflict" {

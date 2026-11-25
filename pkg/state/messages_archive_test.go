@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const archiveSummary = "[CONTEXT COMPACTION] summary of the earlier turns"
@@ -130,7 +132,7 @@ func TestHeldRowAboveWatermarkIsCarriedOnce(t *testing.T) {
 	conv := archiveConversation(t, db, sid, true)
 	held := conv[len(conv)-2:]
 	for _, m := range held {
-		if !pyTruthy(m["_row_id"]) || !pyTruthy(m["message_uid"]) {
+		if !anyutil.IsTrue(m["_row_id"]) || !anyutil.IsTrue(m["message_uid"]) {
 			t.Fatalf("held dict lacks its names: %v", m)
 		}
 	}
@@ -212,7 +214,7 @@ func TestCollidingStoredRowIsNeverDropped(t *testing.T) {
 
 func setUserContent(t *testing.T, db *SessionDB, sid string, rowID any, content string) {
 	t.Helper()
-	id, _ := pyIntID(rowID)
+	id, _ := intID(rowID)
 	if _, err := db.SetUserMessageContent(context.Background(), sid, id, content, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +352,7 @@ func TestClaimKeepsTheRowsCurrentReplaySidecar(t *testing.T) {
 	for k, v := range flushed {
 		held[k] = v
 	}
-	rowID, _ := pyIntID(flushed["_row_id"])
+	rowID, _ := intID(flushed["_row_id"])
 	if _, err := db.SetMessageAPIContent(context.Background(), sid, rowID, "hello", "new exact provider input"); err != nil {
 		t.Fatal(err)
 	}

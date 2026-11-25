@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -98,13 +99,38 @@ func SummarizeCompressPreview(history []map[string]any, partial bool, keepLast i
 	}
 }
 
-// Keep count token clamped to one through the ceiling, the default when it is not a whole number
+// Keep count token clamped to one through the ceiling, digits of any script read as their values, the default when it is not a whole number
 func coerceKeep(value string) int {
-	n, err := textutil.ParseInt(value)
+	n, err := textutil.ParseInt(asciiDigits(value))
 	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return DefaultKeepLast
 	}
 	return int(min(max(n, 1), MaxKeepLast))
+}
+
+// s with every decimal digit of a non Latin script written as the ASCII digit of the same value
+func asciiDigits(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r > unicode.MaxASCII && unicode.Is(unicode.Nd, r) {
+			return '0' + decimalDigitValue(r)
+		}
+		return r
+	}, s)
+}
+
+// Value of a decimal digit, its place in the run of ten that Unicode opens with that script's zero
+func decimalDigitValue(r rune) rune {
+	for _, rg := range unicode.Nd.R16 {
+		if lo, hi := rune(rg.Lo), rune(rg.Hi); r >= lo && r <= hi {
+			return (r - lo) / rune(rg.Stride) % 10
+		}
+	}
+	for _, rg := range unicode.Nd.R32 {
+		if lo, hi := rune(rg.Lo), rune(rg.Hi); r >= lo && r <= hi {
+			return (r - lo) / rune(rg.Stride) % 10
+		}
+	}
+	return 0
 }
 
 // Summarized head and verbatim tail of the last keep exchanges, whole history and no tail when the head is empty

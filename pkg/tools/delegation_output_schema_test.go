@@ -43,7 +43,7 @@ func TestValidateOutput(t *testing.T) {
 	})
 	t.Run("test_empty_text_is_invalid", func(t *testing.T) { check(t, "", false, "") })
 	_, errs, _ := ValidateOutput(`{"zip": 5, "tags": [1]}`, schema)
-	if strings.Join(errs, "|") != "$: 'city' is a required property|$.zip: 5 is not of type 'string'" {
+	if strings.Join(errs, "|") != `$: "city" is a required property|$.zip: 5 is not of type "string"` {
 		t.Fatalf("rendered errors %q", errs)
 	}
 	if ok, errs, _ := ValidateOutput("```json\n[{\"city\": \"A\"}, {\"city\": \"B\"}]\n```", map[string]any{"type": "array"}); !ok {
@@ -63,8 +63,8 @@ func TestPromptPlumbing(t *testing.T) {
 		}
 	})
 	t.Run("test_retry_message_carries_verbatim_errors", func(t *testing.T) {
-		msg := BuildRetryMessage([]string{"'city' is a required property"})
-		if !strings.Contains(msg, "'city' is a required property") || !strings.Contains(msg, "JSON") {
+		msg := BuildRetryMessage([]string{`"city" is a required property`})
+		if !strings.Contains(msg, `"city" is a required property`) || !strings.Contains(msg, "JSON") {
 			t.Fatalf("retry %q", msg)
 		}
 	})
@@ -90,8 +90,8 @@ func TestCoerceOutputSchema(t *testing.T) {
 	}{
 		{"not-a-dict", "output_schema must be a JSON Schema object, got a non-JSON string."},
 		{"[1]", "output_schema must be a JSON Schema object."},
-		{int64(3), "output_schema must be a JSON Schema object, got int."},
-		{map[string]any{"type": int64(42)}, "output_schema is not a valid JSON Schema: 42 is not valid under any of the given schemas\n\nFailed validating 'anyOf'"},
+		{int64(3), "output_schema must be a JSON Schema object, got integer."},
+		{map[string]any{"type": int64(42)}, "output_schema is not a valid JSON Schema: invalid schema at #/type: 42 is not valid under any of the given schemas (0: 42 is not one of "},
 	} {
 		schema, msg := CoerceOutputSchema(tc.raw)
 		if schema != nil || !strings.HasPrefix(msg, tc.prefix) {

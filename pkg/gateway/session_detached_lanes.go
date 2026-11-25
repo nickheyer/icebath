@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -102,7 +103,7 @@ func watchRoutes(ctx context.Context, runner AuthorityRunner, store *SessionStor
 			err = nameAnnouncedLane(scope, authority, store, route, sessionID, origin)
 		}
 		if err != nil {
-			pkgLog().Error("Exception in callback watch_routes.<locals>.route_named.<locals>.name(): " + pyExceptionRepr(err))
+			pkgLog().Error("Exception in callback watch_routes.<locals>.route_named.<locals>.name(): " + errchain.OSText(err))
 		}
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -131,7 +132,7 @@ func setdefaultMap(config map[string]any, key string) (map[string]any, error) {
 	if m, ok := value.(map[string]any); ok {
 		return m, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(value) + ", expected a mapping"}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(value) + ", expected a mapping"}
 }
 
 // Replaces the session pins mapping with a copy carrying field set to pinned
@@ -140,7 +141,7 @@ func mergeSessionPin(config map[string]any, field string, pinned bool) error {
 	if existing := config[SessionPins]; anyutil.IsTrue(existing) {
 		m, ok := existing.(map[string]any)
 		if !ok {
-			return &PyError{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(existing) + ", expected a mapping"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(existing) + ", expected a mapping"}
 		}
 		for k, v := range m {
 			merged[k] = v
@@ -500,7 +501,7 @@ func restorePolicy(raw any) (*LocalSessionPolicy, error) {
 func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	data, ok := raw.(map[string]any)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "a local session policy is " + errchain.Kind(raw) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "a local session policy is " + errchain.Kind(raw) + ", expected a mapping"}
 	}
 	known := map[string]bool{}
 	for name := range (&LocalSessionPolicy{}).asDict() {
@@ -508,39 +509,39 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	}
 	for name := range data {
 		if !known[name] {
-			return nil, &PyError{Kind: "TypeError", Msg: "a local session policy has no field " + name}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "a local session policy has no field " + name}
 		}
 	}
 	for _, name := range []string{"source", "platform", "cwd", "model", "toolsets", "config_json", "request_json", "terminal_json"} {
 		if _, present := data[name]; !present {
-			return nil, &PyError{Kind: "TypeError", Msg: "a local session policy is missing its " + name + " field"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "a local session policy is missing its " + name + " field"}
 		}
 	}
 	p := &LocalSessionPolicy{EditApprovalPolicy: "ask"}
 	var fine bool
 	if p.Source, fine = data["source"].(string); !fine {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	if p.Platform, fine = data["platform"].(string); !fine {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	if p.Cwd, fine = data["cwd"].(string); !fine || !filepath.IsAbs(p.Cwd) {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	model, fine := data["model"].(string)
 	if !fine || strings.TrimSpace(model) == "" {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	p.Model = &model
 	toolsets, fine := data["toolsets"].([]any)
 	if !fine {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	p.Toolsets = make([]string, 0, len(toolsets))
 	for _, name := range toolsets {
 		text, isStr := name.(string)
 		if !isStr {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 		}
 		p.Toolsets = append(p.Toolsets, text)
 	}
@@ -550,7 +551,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	}{{"config_json", &p.ConfigJSON}, {"request_json", &p.RequestJSON}, {"terminal_json", &p.TerminalJSON}} {
 		text, isStr := data[field.name].(string)
 		if !isStr {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 		}
 		*field.dst = text
 	}
@@ -561,7 +562,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		{"kanban_json", &p.KanbanJSON}, {"skills_prompt", &p.SkillsPrompt}, {"client_env_json", &p.ClientEnvJSON},
 		{"client_env_rules_json", &p.ClientEnvRulesJSON}} {
 		if *field.dst, fine = restoredText(data, field.name); !fine {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 		}
 	}
 	for _, field := range []struct {
@@ -571,13 +572,13 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		{"client_env_remote", &p.ClientEnvRemote}} {
 		if value, present := data[field.name]; present {
 			if *field.dst, fine = value.(bool); !fine {
-				return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+				return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 			}
 		}
 	}
 	if value, present := data["edit_approval_policy"]; present {
 		if p.EditApprovalPolicy, fine = value.(string); !fine {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 		}
 	}
 	surfaces := map[string]string{}
@@ -590,7 +591,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		surface = SourceSurface(p.Source)
 	}
 	if !isForwardPolicy(p) && (surface == "" || p.Platform != surface) {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	approval := false
 	for _, name := range EditApprovalPolicies {
@@ -598,7 +599,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	}
 	if !validClientEnv(optValue(p.ClientEnvJSON), false) || !validClientEnv(optValue(p.ClientEnvRulesJSON), true) || !approval ||
 		(p.EditApprovalPolicy != "ask" && p.Source != "acp") || (p.SafeMode && !p.IgnoreUserConfig) {
-		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	for _, text := range []string{p.ConfigJSON, p.RequestJSON, p.TerminalJSON} {
 		parsed, err := jsonutil.Decode(text)
@@ -606,12 +607,12 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 			return nil, err
 		}
 		if _, isMap := jsonutil.Plain(parsed).(map[string]any); !isMap {
-			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy object"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid policy object"}
 		}
 	}
 	terminal := policyObject(p.TerminalJSON)
 	if cwd, set := terminal["TERMINAL_CWD"]; terminalUsesHostCwd(terminal) && (!set || cwd != any(p.Cwd)) {
-		return nil, &PyError{Kind: "ValueError", Msg: "terminal policy mismatch"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "terminal policy mismatch"}
 	}
 	return p, nil
 }
@@ -653,7 +654,7 @@ func unpinReasoning(config, profile map[string]any) error {
 	case nil:
 	default:
 		if anyutil.IsTrue(held) {
-			return &PyError{Kind: "TypeError", Msg: "a held session policy value is " + errchain.Kind(held) + ", expected a mapping"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "a held session policy value is " + errchain.Kind(held) + ", expected a mapping"}
 		}
 	}
 	pins["reasoning"] = false
@@ -673,7 +674,7 @@ func setDefaultMapping(config map[string]any, key string) (map[string]any, error
 			return fresh, nil
 		}
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: "the " + key + " section of the session config is " + errchain.Kind(config[key]) + ", expected a mapping"}
+	return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the " + key + " section of the session config is " + errchain.Kind(config[key]) + ", expected a mapping"}
 }
 
 // One profile read a policy turn scope holds for its own policy
@@ -708,7 +709,7 @@ func setSecretAt(config map[string]any, path secretPath, value any) error {
 		case map[string]any:
 			name, ok := key.(string)
 			if !ok {
-				return &PyError{Kind: "TypeError", Msg: "config keys are strings"}
+				return &errorutil.Error{Kind: "TypeError", Msg: "config keys are strings"}
 			}
 			if last {
 				node[name] = value
@@ -723,13 +724,13 @@ func setSecretAt(config map[string]any, path secretPath, value any) error {
 		case []any:
 			i, ok := pathIndex(key)
 			if !ok {
-				return &PyError{Kind: "TypeError", Msg: "a secret path step into a list is " + errchain.Kind(key) + ", expected a whole number"}
+				return &errorutil.Error{Kind: "TypeError", Msg: "a secret path step into a list is " + errchain.Kind(key) + ", expected a whole number"}
 			}
 			if i < 0 {
 				i += len(node)
 			}
 			if i < 0 || i >= len(node) {
-				return &PyError{Kind: "IndexError", Msg: "a secret path step points past the end of a list"}
+				return &errorutil.Error{Kind: "IndexError", Msg: "a secret path step points past the end of a list"}
 			}
 			if last {
 				node[i] = value
@@ -737,7 +738,7 @@ func setSecretAt(config map[string]any, path secretPath, value any) error {
 			}
 			target = node[i]
 		default:
-			return &PyError{Kind: "TypeError", Msg: "a secret path step reaches " + errchain.Kind(target) + ", expected a list or a mapping"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "a secret path step reaches " + errchain.Kind(target) + ", expected a list or a mapping"}
 		}
 		return nil
 	}
@@ -779,7 +780,7 @@ func (p *LocalSessionPolicy) effective(ctx context.Context, owner launchSecretOw
 			frozen = block
 		default:
 			if anyutil.IsTrue(block) {
-				return nil, nil, &PyError{Kind: "AttributeError", Msg: "a session policy block is " + errchain.Kind(block) + ", expected a mapping"}
+				return nil, nil, &errorutil.Error{Kind: "AttributeError", Msg: "a session policy block is " + errchain.Kind(block) + ", expected a mapping"}
 			}
 			frozen = map[string]any{}
 		}

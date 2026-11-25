@@ -176,19 +176,19 @@ func compareCommits(payload *jsonutil.Object) ([]any, bool) {
 			continue
 		}
 		commit := jsonutil.NewObject()
-		if value := stampGet(entry, "commit"); pyTruthy(value) {
+		if value := stampGet(entry, "commit"); anyutil.IsTrue(value) {
 			if commit, ok = value.(*jsonutil.Object); !ok {
 				return nil, false
 			}
 		}
 		committer := jsonutil.NewObject()
-		if value := stampGet(commit, "committer"); pyTruthy(value) {
+		if value := stampGet(commit, "committer"); anyutil.IsTrue(value) {
 			if committer, ok = value.(*jsonutil.Object); !ok {
 				return nil, false
 			}
 		}
 		when := stampGet(committer, "date")
-		if !pyTruthy(when) {
+		if !anyutil.IsTrue(when) {
 			when = ""
 		}
 		var at int64
@@ -201,7 +201,7 @@ func compareCommits(payload *jsonutil.Object) ([]any, bool) {
 		}
 		summary, _, _ := strings.Cut(anyutil.String(message), "\n")
 		author := jsonutil.NewObject()
-		if value := stampGet(commit, "author"); pyTruthy(value) {
+		if value := stampGet(commit, "author"); anyutil.IsTrue(value) {
 			if author, ok = value.(*jsonutil.Object); !ok {
 				return nil, false
 			}
@@ -216,26 +216,6 @@ func compareCommits(payload *jsonutil.Object) ([]any, bool) {
 		rows[i], rows[j] = rows[j], rows[i]
 	}
 	return rows, true
-}
-
-func pyTruthy(value any) bool {
-	switch v := value.(type) {
-	case nil:
-		return false
-	case bool:
-		return v
-	case string:
-		return v != ""
-	case *jsonutil.Object:
-		return v != nil && v.Len() > 0
-	case []any:
-		return len(v) > 0
-	case int64:
-		return v != 0
-	case float64:
-		return v != 0
-	}
-	return true
 }
 
 // Read only facts about the checkout under test, gathered once per check
@@ -316,7 +296,7 @@ func cachedStatus(cacheFile string, identity *jsonutil.Object, now float64) *jso
 		return nil
 	}
 	ttl := float64(updateCheckCacheSeconds)
-	if pyTruthy(stampGet(status, "error")) {
+	if anyutil.IsTrue(stampGet(status, "error")) {
 		ttl = updateCheckFailureCacheSeconds
 	}
 	var ts float64
@@ -326,7 +306,7 @@ func cachedStatus(cacheFile string, identity *jsonutil.Object, now float64) *jso
 	case int64:
 		ts = float64(value)
 	default:
-		if n, ok := pyIntValue(value); ok {
+		if n, ok := intValue(value); ok {
 			ts = float64(n)
 		} else {
 			return nil
@@ -396,7 +376,7 @@ func behindCount(ctx context.Context, co sourceCheckout, target string) (int64, 
 		if payload == nil {
 			return UpdateAvailableNoCount, []any{}
 		}
-		if ahead, ok := pyIntValue(stampGet(payload, "ahead_by")); ok && ahead >= 0 {
+		if ahead, ok := intValue(stampGet(payload, "ahead_by")); ok && ahead >= 0 {
 			if ahead == 0 {
 				return 0, []any{}
 			}

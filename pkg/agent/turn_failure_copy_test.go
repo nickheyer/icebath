@@ -160,7 +160,7 @@ func TestSiteCopyDefaultsMissingFieldsAndFormatsNumbers(t *testing.T) {
 	if !strings.Contains(got, "reopen it with /resume abc and send") {
 		t.Fatalf("interpreter shutdown: %q", got)
 	}
-	if _, err := tools.SiteCopy(ctx, "nope", nil); err == nil || err.Error() != "'nope'" {
+	if _, err := tools.SiteCopy(ctx, "nope", nil); err == nil || err.Error() != `unknown site copy code "nope"` {
 		t.Fatalf("unknown code: %v", err)
 	}
 	if _, err := tools.SiteCopy(ctx, "server_context_rejection", nil); err == nil {
@@ -269,7 +269,7 @@ func TestShortDetailFirstLineCapped(t *testing.T) {
 	if got := ShortDetail(errors.New(strings.Repeat("é", 10)), 5); got != "éééé…" {
 		t.Fatalf("cap: %q", got)
 	}
-	if got := ShortDetail(state.PyObject{}, 200); got == "" {
+	if got := ShortDetail(state.OrderedObject{}, 200); got == "" {
 		t.Fatal("an empty text falls back to the type name")
 	}
 }

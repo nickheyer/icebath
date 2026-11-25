@@ -35,7 +35,7 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	terminal, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "TypeError", Msg: "the managed worker bootstrap is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the managed worker bootstrap is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	if policy.ConfigSecretRef != nil && *policy.ConfigSecretRef != "" {
 		recovered, err := recoverConfigSecrets(ctx, a, policy)
@@ -44,13 +44,13 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 		for i, path := range recovered.paths {
 			if path[0] == nil {
-				terminal.Set(pyStrOf(path[1]), recovered.values[i])
+				terminal.Set(anyutil.String(path[1]), recovered.values[i])
 			}
 		}
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	payload := rowPayload(row)
 	yolo, err := sessionYolo(ctx, a, live.Route, policy)
@@ -69,7 +69,7 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	request, isDict := requestValue.(*jsonutil.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "TypeError", Msg: "the managed worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the managed worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
 	}
 	request = request.Clone()
 	request.Set("turn_v1", turn)
@@ -103,7 +103,7 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	} else if value, ok := payload.Get("text"); ok {
 		turnText = value
 	} else {
-		return nil, &pyKeyError{"text"}
+		return nil, &keyError{"text"}
 	}
 	frame := jsonutil.ObjectOf("version", 1, "home", a.ProfileID, "scope", scope, "policy", hydrated.asDict(),
 		"api_key", optStrAny(apiKey), "text", turnText, "route", live.Route)
@@ -148,7 +148,7 @@ func sessionYolo(ctx context.Context, a *SessionAuthority, route string, policy 
 
 // Child side of turn_v1 binding the finite flags, the route's yolo and the committed surface and display
 func WorkerTurnScope(ctx context.Context, frame *jsonutil.Object) (context.Context, error) {
-	invalid := &PyError{Kind: "ValueError", Msg: "invalid_managed_worker_bootstrap"}
+	invalid := &errorutil.Error{Kind: "ValueError", Msg: "invalid_managed_worker_bootstrap"}
 	policy, _ := frame.ValueOr("policy", nil).(*jsonutil.Object)
 	text, _ := policy.ValueOr("request_json", nil).(string)
 	if text == "" {
@@ -160,7 +160,7 @@ func WorkerTurnScope(ctx context.Context, frame *jsonutil.Object) (context.Conte
 	}
 	request, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the worker turn scope is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the worker turn scope is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	rawTurn := request.ValueOr("turn_v1", nil)
 	if rawTurn == nil {
@@ -212,12 +212,12 @@ func WorkerTurnScope(ctx context.Context, frame *jsonutil.Object) (context.Conte
 		}
 		display = restored
 	}
-	route := pyStrOf(frame.ValueOr("route", nil))
+	route := anyutil.String(frame.ValueOr("route", nil))
 	if yolo {
 		tools.EnableSessionYolo(ctx, route)
 	}
 	scope, _ := frame.ValueOr("scope", nil).(*jsonutil.Object)
-	executionID := pyStrOf(scope.ValueOr("execution_id", nil))
+	executionID := anyutil.String(scope.ValueOr("execution_id", nil))
 	ctx = finiteTurnScope(ctx, finite, unattended)
 	ctx = surfaceTurnScope(ctx, surface)
 	return DisplayTurnScope(ctx, executionID, display), nil
@@ -267,7 +267,7 @@ var workerApprovalFields = map[string]bool{"request_id": true, "command": true, 
 func promptFrame(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object, worker *managedWorker, frame *jsonutil.Object) (bool, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return false, &pyKeyError{ref.SessionID}
+		return false, &keyError{ref.SessionID}
 	}
 	controls := live.pendingControls()
 	kind, _ := frame.Get("type")
@@ -537,7 +537,7 @@ func executionTip(ctx context.Context, db *state.SessionDB, executionID string) 
 		if err != nil || row == nil {
 			return err
 		}
-		tip = pyStrOf(row["session_id"])
+		tip = anyutil.String(row["session_id"])
 		return nil
 	})
 	return tip, err
@@ -561,7 +561,7 @@ func continuationPath(ctx context.Context, db *state.SessionDB, start, tip strin
 		if !child {
 			return nil, nil
 		}
-		current = pyStrOf(row.ValueOr("parent_session_id", nil))
+		current = anyutil.String(row.ValueOr("parent_session_id", nil))
 		path = append(path, current)
 	}
 	if current != start {
@@ -588,7 +588,7 @@ func compressionAncestors(ctx context.Context, db *state.SessionDB, sessionID st
 		if !child {
 			break
 		}
-		parent := pyStrOf(current.ValueOr("parent_session_id", nil))
+		parent := anyutil.String(current.ValueOr("parent_session_id", nil))
 		if parent == sessionID || slices.Contains(ancestors, parent) {
 			break
 		}
@@ -714,7 +714,7 @@ func spawnRegisteredWorker(ctx context.Context, a *SessionAuthority, ref Session
 	return worker, process, nil
 }
 
-// Python class name or wire reason of a managed worker failure for the loss log
+// Wire reason, declared kind label or else the error's own text of a managed worker failure for the loss log
 func lossReason(err error) string {
 	var refusal *state.RuntimeStoreError
 	switch {
@@ -723,14 +723,17 @@ func lossReason(err error) string {
 	case isCancellation(err):
 		return "CancelledError"
 	}
-	if kind := pyErrorKind(err); kind != "" {
+	if kind := errorKindLabel(err); kind != "" {
 		return kind
 	}
 	var decode *jsonutil.SyntaxError
 	if errors.As(err, &decode) {
 		return "JSONDecodeError"
 	}
-	return errorutil.Kind(err)
+	if kind := declaredErrorKind(err); kind != "" {
+		return kind
+	}
+	return errchain.OSText(err)
 }
 
 // Refuses a turn whose folder is gone before any worker exists, else runs it in a managed worker
@@ -837,7 +840,7 @@ func superviseManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 		live, ok := a.live(ref.SessionID)
 		if !ok {
-			return nil, &pyKeyError{ref.SessionID}
+			return nil, &keyError{ref.SessionID}
 		}
 		live.EventStream.Lock.Lock()
 		handled, err := promptFrame(ctx, a, ref, row, worker, frame)
@@ -871,7 +874,7 @@ func superviseManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		if kind == "result" && frameKeysAre(frame, "type", "result") && accepted == nil {
 			accepted, usage, err = AcceptResult(frame.Value("result"))
 			if err != nil {
-				if pyErrorKind(err) == "ValueError" {
+				if errorKindLabel(err) == "ValueError" {
 					return nil, runtimeRefusal("invalid_worker_result")
 				}
 				return nil, err
@@ -888,7 +891,7 @@ func superviseManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 			result := accepted.Clone()
 			result.Set("local_viewer", true)
 			settled := jsonutil.ObjectOf("result", result, "usage", usage)
-			settled.Merge(settledSessionUsage(ctx, a, pyStrOf(scope.Value("session_id")), accepted, pyStrOf(scope.Value("execution_id"))))
+			settled.Merge(settledSessionUsage(ctx, a, anyutil.String(scope.Value("session_id")), accepted, anyutil.String(scope.Value("execution_id"))))
 			a.mu.Lock()
 			a.PendingResults[admissionID] = settled
 			a.mu.Unlock()
@@ -915,7 +918,7 @@ func loseManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, row *
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	admissionID := rowString(row, "admission_id")
 	live.EventStream.Lock.Lock()

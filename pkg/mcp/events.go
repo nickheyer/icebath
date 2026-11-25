@@ -26,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -62,7 +63,7 @@ func eventsEnabled(cfg map[string]any) bool { return parseBoolish(cfg["events"],
 
 // Webhook route name for one server, event and argument set
 func eventRouteName(serverName, name string, arguments map[string]any) string {
-	sum := sha256.Sum256([]byte(pyDumpsSorted([]any{serverName, name, arguments})))
+	sum := sha256.Sum256([]byte(dumpsSorted([]any{serverName, name, arguments})))
 	slug := strings.Trim(routeSlugRe.ReplaceAllString(strings.ToLower(serverName), "-"), "-")
 	if len(slug) > 32 {
 		slug = slug[:32]
@@ -91,7 +92,7 @@ func eventsHome(ctx context.Context, srv *serverTask) string {
 func eventsCallbackBase(ctx context.Context, h string) (string, bool) {
 	webhook := config.AsMap(settings.Platforms.Get(home.WithOverride(ctx, h))["webhook"])
 	url, _ := config.AsMap(webhook["extra"])["public_url"].(string)
-	url = strings.TrimRight(pyStrip(url), "/")
+	url = strings.TrimRight(strings.TrimSpace(url), "/")
 	return url, strings.HasPrefix(url, "https://")
 }
 
@@ -164,9 +165,9 @@ func eventsRPCError(err error) *RPCError {
 
 // Python dict repr of an MCP error as the event logs print it
 func rpcErrorRepr(e *RPCError) string {
-	s := fmt.Sprintf("{'code': %d, 'message': %s", e.Code, pyReprStr(e.Message))
+	s := fmt.Sprintf("{'code': %d, 'message': %s", e.Code, strconv.Quote(e.Message))
 	if len(e.Data) > 0 && string(e.Data) != "null" {
-		s += ", 'data': " + pyRepr(decodeEventValue(e.Data))
+		s += ", 'data': " + anyutil.Quote(decodeEventValue(e.Data))
 	}
 	return s + "}"
 }
@@ -224,7 +225,7 @@ func renderEventResult(o orderedJSON) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pyDumpsRaw(raw), nil
+	return dumpsRaw(raw), nil
 }
 
 // events/subscribe params for a route with webhook delivery, its TTL and the stored replay cursor
@@ -237,7 +238,7 @@ func subscribeParams(routeName string, route map[string]any, base string, state 
 	params := map[string]any{"name": event["name"], "arguments": event["arguments"],
 		"delivery": map[string]any{"mode": "webhook", "url": eventsCallbackURL(base, routeName), "secret": route["secret"]},
 		"ttlMs":    ttl}
-	if pyTruthy(state["cursor"]) {
+	if anyutil.IsTrue(state["cursor"]) {
 		params["cursor"] = state["cursor"]
 	}
 	return params
@@ -301,7 +302,7 @@ func storeGrant(h, routeName string, result map[string]json.RawMessage, url stri
 		entry["refresh_before"] = decodeEventValue(result["refreshBefore"])
 		entry["granted_at"] = epochSeconds(eventsNow())
 		entry["url"] = url
-		if cursor := decodeEventValue(result["cursor"]); pyTruthy(cursor) {
+		if cursor := decodeEventValue(result["cursor"]); anyutil.IsTrue(cursor) {
 			entry["cursor"] = cursor
 		}
 		state[routeName] = entry
@@ -371,7 +372,7 @@ func refreshDueAt(state map[string]any) float64 {
 	if refreshBefore == nil {
 		return math.Inf(1)
 	}
-	expires, err := pyISOTimestamp(pyStr(refreshBefore))
+	expires, err := isoTimestamp(anyutil.String(refreshBefore))
 	if err != nil {
 		return 0
 	}
@@ -383,7 +384,7 @@ var isoDateTimeRe = regexp.MustCompile(`^(?:(\d{4})-?(\d{2})-?(\d{2})|(\d{4})-?W
 	`(Z|[+-]\d{2}(?::?\d{2}(?::?\d{2}(?:\.\d{1,6})?)?)?)?)?$`)
 
 // Epoch seconds of an ISO 8601 string as CPython fromisoformat reads it, naive values in local time
-func pyISOTimestamp(s string) (float64, error) {
+func isoTimestamp(s string) (float64, error) {
 	m := isoDateTimeRe.FindStringSubmatch(s)
 	if m == nil {
 		return 0, fmt.Errorf("%s is not an ISO date and time", s)
@@ -663,7 +664,7 @@ func listEventTypes(ctx context.Context, srv *serverTask, args map[string]any) (
 	pages := 0
 	for {
 		params := map[string]any{}
-		if pyTruthy(cursor) {
+		if anyutil.IsTrue(cursor) {
 			params["cursor"] = cursor
 		}
 		result, err := sendEventsRequest(ctx, srv.currentSession(), "events/list", params)
@@ -679,7 +680,7 @@ func listEventTypes(ctx context.Context, srv *serverTask, args map[string]any) (
 		}
 		events = append(events, page...)
 		cursor = decodeEventValue(result["nextCursor"])
-		if !pyTruthy(cursor) || pages >= maxEventListPages {
+		if !anyutil.IsTrue(cursor) || pages >= maxEventListPages {
 			break
 		}
 	}
@@ -705,7 +706,7 @@ func listEventTypes(ctx context.Context, srv *serverTask, args map[string]any) (
 		events = []json.RawMessage{}
 	}
 	listed := orderedJSON{{"events", events}, {"subscriptions", subscribed}}
-	if pyTruthy(cursor) {
+	if anyutil.IsTrue(cursor) {
 		listed = append(listed, jsonPair{"truncated", fmt.Sprintf("The server has more than %d pages of event types; these are the first %d.",
 			maxEventListPages, len(events))})
 	}
@@ -729,15 +730,15 @@ func subscribeEvent(ctx context.Context, srv *serverTask, args map[string]any) (
 			"webhook_subscriptions.json. Set its enabled flag back to true to resume it.", name)}}, nil
 	}
 	deliver := "log"
-	if pyTruthy(args["deliver"]) {
+	if anyutil.IsTrue(args["deliver"]) {
 		deliver = args["deliver"].(string)
 	}
 	secret := existing["secret"]
-	if !pyTruthy(secret) {
+	if !anyutil.IsTrue(secret) {
 		secret = newWebhookSecret()
 	}
 	createdAt := existing["created_at"]
-	if !pyTruthy(createdAt) {
+	if !anyutil.IsTrue(createdAt) {
 		createdAt = eventsNow().UTC().Format("2006-01-02T15:04:05Z")
 	}
 	instructions, _ := args["instructions"].(string)
@@ -750,7 +751,7 @@ func subscribeEvent(ctx context.Context, srv *serverTask, args map[string]any) (
 		"created_at":  createdAt,
 		"mcp_event":   map[string]any{"server": srv.name, "name": name, "arguments": arguments},
 	}
-	if pyTruthy(args["deliver_chat_id"]) {
+	if anyutil.IsTrue(args["deliver_chat_id"]) {
 		route["deliver_extra"] = map[string]any{"chat_id": args["deliver_chat_id"]}
 	}
 	if existing == nil {
@@ -838,28 +839,28 @@ func subscribeArgsError(args map[string]any) string {
 // Asks the user to approve the standing trigger every time, a tool error unless they accept
 func consentError(ctx context.Context, env *tools.Env, serverName string, args map[string]any) string {
 	deliver := "log"
-	if pyTruthy(args["deliver"]) {
-		deliver = pyStr(args["deliver"])
+	if anyutil.IsTrue(args["deliver"]) {
+		deliver = anyutil.String(args["deliver"])
 	}
 	target := fmt.Sprintf("'%s'", deliver)
-	if pyTruthy(args["deliver_chat_id"]) {
-		target = fmt.Sprintf("'%s' chat %s", deliver, pyStr(args["deliver_chat_id"]))
+	if anyutil.IsTrue(args["deliver_chat_id"]) {
+		target = fmt.Sprintf("'%s' chat %s", deliver, anyutil.String(args["deliver_chat_id"]))
 	}
 	instructions := "Summarize what happened."
-	if pyTruthy(args["instructions"]) {
-		instructions = pyStr(args["instructions"])
+	if anyutil.IsTrue(args["instructions"]) {
+		instructions = anyutil.String(args["instructions"])
 	}
 	var arguments any = map[string]any{}
-	if pyTruthy(args["arguments"]) {
+	if anyutil.IsTrue(args["arguments"]) {
 		arguments = args["arguments"]
 	}
-	dumped := pyDumpsSorted(arguments)
+	dumped := dumpsSorted(arguments)
 	if len(dumped) > 500 {
 		dumped = dumped[:500]
 	}
 	answer := requestEventConsent(ctx, env,
 		fmt.Sprintf("Subscribe to MCP event '%s' from server '%s'? Each event starts an unattended agent run that follows "+
-			"the instructions below and sends its result to %s.", pyStr(args["name"]), serverName, target),
+			"the instructions below and sends its result to %s.", anyutil.String(args["name"]), serverName, target),
 		fmt.Sprintf("Instructions: %s\nArguments: %s", instructions, dumped),
 		tools.ElicitationOptions{Surface: "mcp-events/" + serverName, Title: fmt.Sprintf("MCP server '%s' event subscription", serverName)})
 	if answer == "accept" {

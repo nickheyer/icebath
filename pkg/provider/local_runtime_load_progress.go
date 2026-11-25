@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -171,11 +172,11 @@ func applyLoadEvent(model, event string, data map[string]any) error {
 	raw, has := data["status"]
 	status := ""
 	if has {
-		status = pyStr(raw)
+		status = anyutil.String(raw)
 	}
 	if slices.Contains(loadEvents, event) && status == "loading" {
 		progress := map[string]any{}
-		if pyTruthy(data["progress"]) {
+		if anyutil.IsTrue(data["progress"]) {
 			p, err := loadDict(data["progress"])
 			if err != nil {
 				return err
@@ -183,18 +184,18 @@ func applyLoadEvent(model, event string, data map[string]any) error {
 			progress = p
 		}
 		var stages []string
-		if pyTruthy(progress["stages"]) {
+		if anyutil.IsTrue(progress["stages"]) {
 			items, err := loadIterate(progress["stages"])
 			if err != nil {
 				return err
 			}
 			for _, s := range items {
-				stages = append(stages, pyStr(s))
+				stages = append(stages, anyutil.String(s))
 			}
 		}
 		current := ""
 		if c, ok := progress["current"]; ok {
-			current = pyStr(c)
+			current = anyutil.String(c)
 		}
 		value, numeric, err := loadNumber(progress["value"])
 		entry, ok := loadSnapshot[model]
@@ -283,11 +284,11 @@ func loadMaximalSubpart(b []byte) int {
 
 // Applies one SSE line, skipping undecodable data and returning errors that end the stream
 func applyLoadSSELine(line []byte) error {
-	text := pyStripSpace(loadDecodeReplace(line))
+	text := strings.TrimSpace(loadDecodeReplace(line))
 	if !strings.HasPrefix(text, "data:") {
 		return nil
 	}
-	decoded, ok := moaJSONLoads(pyStripSpace(text[5:]))
+	decoded, ok := moaJSONLoads(strings.TrimSpace(text[5:]))
 	if !ok {
 		return nil
 	}
@@ -297,17 +298,17 @@ func applyLoadSSELine(line []byte) error {
 	}
 	model, event := "", ""
 	if v, ok := msg["model"]; ok {
-		model = pyStr(v)
+		model = anyutil.String(v)
 	}
 	if v, ok := msg["event"]; ok {
-		event = pyStr(v)
+		event = anyutil.String(v)
 	}
 	data := map[string]any{}
-	if pyTruthy(msg["data"]) {
+	if anyutil.IsTrue(msg["data"]) {
 		if data, err = loadDict(msg["data"]); err != nil {
 			return err
 		}
-		data = loadOrderStages(data, pyStripSpace(text[5:]))
+		data = loadOrderStages(data, strings.TrimSpace(text[5:]))
 	}
 	if err := applyLoadEvent(model, event, data); err != nil {
 		if _, skip := err.(*loadSkippableError); skip {
@@ -427,7 +428,7 @@ func GetPrefillProgress(model string) (processed int64, ok bool, err error) {
 		if err != nil {
 			return 0, false, err
 		}
-		if !pyTruthy(m["is_processing"]) {
+		if !anyutil.IsTrue(m["is_processing"]) {
 			continue
 		}
 		n, valid, err := loadSlotInt(m["n_prompt_tokens_processed"])
@@ -446,7 +447,7 @@ func GetPrefillProgress(model string) (processed int64, ok bool, err error) {
 
 // Python int of a slot counter or zero when falsy, valid false where int raises TypeError or ValueError
 func loadSlotInt(v any) (int64, bool, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, true, nil
 	}
 	switch t := v.(type) {

@@ -31,7 +31,7 @@ func surfaceVoiceTurn(ctx context.Context) bool {
 		return false
 	}
 	flag, _ := committed.Get("voice_turn")
-	return pyTruthy(flag)
+	return anyutil.IsTrue(flag)
 }
 
 // Binds an admission's committed CLI turn fields for the returned context, nothing when they are empty

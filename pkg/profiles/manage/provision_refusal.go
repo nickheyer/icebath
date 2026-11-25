@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -34,11 +35,11 @@ const refusalTruncated = " … [truncated]"
 // Text a create refused through a gateway carries when its data names no text
 const refusedNothingCreated = "the gateway refused the create; nothing was created"
 
-// Text of a create failure as the command prints it, an operating system error in its errno form
+// Text of a create failure as the command prints it, an operating system error as its reason followed by the path or command it concerns
 func CreateErrorText(err error) string {
 	switch err.(type) {
 	case *fs.PathError, *os.LinkError, *os.SyscallError, syscall.Errno, *exec.Error:
-		return err.Error()
+		return errchain.OSText(err)
 	}
 	return err.Error()
 }

@@ -3,6 +3,7 @@ package state
 import (
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -49,15 +50,15 @@ func withPartText(item any, text string) any {
 		}
 		out["text"] = text
 		return out
-	case pyObject:
-		out := append(pyObject{}, m...)
+	case orderedObject:
+		out := append(orderedObject{}, m...)
 		for i := range out {
 			if out[i].Key == "text" {
 				out[i].Value = text
 				return out
 			}
 		}
-		return append(out, pyKeyValue{"text", text})
+		return append(out, keyValue{"text", text})
 	case *jsonutil.Object:
 		out := jsonutil.NewObject()
 		for _, k := range m.Keys() {
@@ -74,8 +75,8 @@ func copyPart(item any) any {
 	switch m := item.(type) {
 	case map[string]any:
 		return copyMessage(m)
-	case pyObject:
-		return append(pyObject{}, m...)
+	case orderedObject:
+		return append(orderedObject{}, m...)
 	case *jsonutil.Object:
 		out := jsonutil.NewObject()
 		for _, k := range m.Keys() {
@@ -104,10 +105,10 @@ func deepCopyValue(v any) any {
 			out[k] = deepCopyValue(val)
 		}
 		return out
-	case pyObject:
-		out := make(pyObject, len(x))
+	case orderedObject:
+		out := make(orderedObject, len(x))
 		for i, kv := range x {
-			out[i] = pyKeyValue{kv.Key, deepCopyValue(kv.Value)}
+			out[i] = keyValue{kv.Key, deepCopyValue(kv.Value)}
 		}
 		return out
 	case *jsonutil.Object:
@@ -128,7 +129,7 @@ func deepCopyValue(v any) any {
 
 // Whether the message carries the in process compressed summary flag
 func hasCompressedSummaryMetadata(message map[string]any) bool {
-	return message != nil && pyTruthy(message[CompressedSummaryMetadataKey])
+	return message != nil && anyutil.IsTrue(message[CompressedSummaryMetadataKey])
 }
 
 // Summary handoff message by metadata or content
@@ -157,7 +158,7 @@ func isBlankUserTurn(message map[string]any) bool {
 		return true
 	}
 	if s, ok := content.(string); ok {
-		return pyStrip(s) == ""
+		return strings.TrimSpace(s) == ""
 	}
 	parts, ok := content.([]any)
 	if !ok {
@@ -166,7 +167,7 @@ func isBlankUserTurn(message map[string]any) bool {
 	for _, part := range parts {
 		switch p := part.(type) {
 		case string:
-			if pyStrip(p) != "" {
+			if strings.TrimSpace(p) != "" {
 				return false
 			}
 		default:
@@ -179,7 +180,7 @@ func isBlankUserTurn(message map[string]any) bool {
 			}
 			text, _ := mappingGet(p, "text")
 			s, isStr := text.(string)
-			if !isStr || pyStrip(s) != "" {
+			if !isStr || strings.TrimSpace(s) != "" {
 				return false
 			}
 		}
@@ -196,7 +197,7 @@ func isActionableUserTurn(message map[string]any) bool {
 		return false
 	}
 	kind := message["display_kind"]
-	if (pyTruthy(kind) && kind != SteerDisplayKind) || isContextSummaryMessage(message) {
+	if (anyutil.IsTrue(kind) && kind != SteerDisplayKind) || isContextSummaryMessage(message) {
 		return false
 	}
 	return !isBlankUserTurn(message)
@@ -213,7 +214,7 @@ func isSyntheticCompressionUserTurn(message map[string]any) bool {
 	if isContextSummaryMessage(message) {
 		return true
 	}
-	text := pyStrip(ContentTextForContains(message["content"]))
+	text := strings.TrimSpace(ContentTextForContains(message["content"]))
 	if syntheticUserTurnTexts[text] {
 		return true
 	}
@@ -253,12 +254,12 @@ func StripContextSummaryHandoffMessage(message map[string]any) map[string]any {
 	case string:
 		prior := ""
 		if i := strings.Index(content, MergedSummaryDelimiter); i >= 0 {
-			prior = pyStrip(content[:i])
+			prior = strings.TrimSpace(content[:i])
 			if strings.HasPrefix(prior, MergedPriorContextHeader) {
-				prior = pyLstrip(prior[len(MergedPriorContextHeader):])
+				prior = lstrip(prior[len(MergedPriorContextHeader):])
 			}
 		} else if i := strings.Index(content, SummaryEndMarker); i >= 0 {
-			prior = pyLstrip(content[i+len(SummaryEndMarker):])
+			prior = lstrip(content[i+len(SummaryEndMarker):])
 		}
 		if prior == "" {
 			return nil
@@ -271,7 +272,7 @@ func StripContextSummaryHandoffMessage(message map[string]any) map[string]any {
 			text, isStr := partText(item).(string)
 			if isStr && strings.Contains(text, MergedSummaryDelimiter) {
 				before := text[:strings.Index(text, MergedSummaryDelimiter)]
-				if pyStrip(before) != "" {
+				if strings.TrimSpace(before) != "" {
 					priorBlocks = append(priorBlocks, withPartText(item, before))
 				}
 				foundDelimiter = true
@@ -283,7 +284,7 @@ func StripContextSummaryHandoffMessage(message map[string]any) map[string]any {
 			for index, item := range content {
 				text, isStr := partText(item).(string)
 				if isStr && strings.Contains(text, SummaryEndMarker) {
-					remainder := pyLstrip(text[strings.Index(text, SummaryEndMarker)+len(SummaryEndMarker):])
+					remainder := lstrip(text[strings.Index(text, SummaryEndMarker)+len(SummaryEndMarker):])
 					var legacy []any
 					if remainder != "" {
 						legacy = append(legacy, withPartText(item, remainder))
@@ -301,8 +302,8 @@ func StripContextSummaryHandoffMessage(message map[string]any) map[string]any {
 		}
 		for index, item := range priorBlocks {
 			text, isStr := partText(item).(string)
-			if isStr && strings.HasPrefix(pyLstrip(text), MergedPriorContextHeader) {
-				leading := pyLstrip(pyLstrip(text)[len(MergedPriorContextHeader):])
+			if isStr && strings.HasPrefix(lstrip(text), MergedPriorContextHeader) {
+				leading := lstrip(lstrip(text)[len(MergedPriorContextHeader):])
 				if leading != "" {
 					priorBlocks[index] = withPartText(item, leading)
 				} else {
@@ -333,7 +334,7 @@ func handoffOnlyContent(content any) any {
 	switch c := content.(type) {
 	case string:
 		if i := strings.Index(c, MergedSummaryDelimiter); i >= 0 {
-			c = pyLstrip(c[i+len(MergedSummaryDelimiter):])
+			c = lstrip(c[i+len(MergedSummaryDelimiter):])
 		}
 		return throughEndMarker(c)
 	case []any:
@@ -342,7 +343,7 @@ func handoffOnlyContent(content any) any {
 			if !isStr || !strings.Contains(text, MergedSummaryDelimiter) {
 				continue
 			}
-			suffix := throughEndMarker(pyLstrip(text[strings.Index(text, MergedSummaryDelimiter)+len(MergedSummaryDelimiter):]))
+			suffix := throughEndMarker(lstrip(text[strings.Index(text, MergedSummaryDelimiter)+len(MergedSummaryDelimiter):]))
 			if suffix == "" {
 				return []any{}
 			}
@@ -378,9 +379,9 @@ func SplitUserOriginatedTurn(message map[string]any) (map[string]any, map[string
 		handoff = map[string]any{"role": "user", "content": handoffOnlyContent(message["content"]),
 			CompressedSummaryMetadataKey: true, "display_kind": "hidden"}
 		if v, ok := message[CompressedSummaryHasUserTurnKey]; ok {
-			handoff[CompressedSummaryHasUserTurnKey] = pyTruthy(v)
+			handoff[CompressedSummaryHasUserTurnKey] = anyutil.IsTrue(v)
 		}
-		if pyTruthy(message[MicroCompactMarkerKey]) {
+		if anyutil.IsTrue(message[MicroCompactMarkerKey]) {
 			handoff[MicroCompactMarkerKey] = true
 		}
 		if ts := message["timestamp"]; ts != nil {
@@ -388,13 +389,13 @@ func SplitUserOriginatedTurn(message map[string]any) (map[string]any, map[string
 		}
 		DropStaleAPIContent(handoff)
 		kind := message["display_kind"]
-		if !pyTruthy(kind) || kind == "hidden" {
+		if !anyutil.IsTrue(kind) || kind == "hidden" {
 			candidate = StripContextSummaryHandoffMessage(message)
 		}
 		if candidate == nil {
 			return handoff, nil
 		}
-	} else if kind := message["display_kind"]; pyTruthy(kind) && kind != SteerDisplayKind {
+	} else if kind := message["display_kind"]; anyutil.IsTrue(kind) && kind != SteerDisplayKind {
 		return nil, nil
 	} else {
 		candidate = copyMessage(message)

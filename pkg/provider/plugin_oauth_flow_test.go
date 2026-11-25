@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // (sign in, bearer and security cases)
@@ -204,7 +206,7 @@ func TestSignInStoresTheGrantThenStatusRefreshAndLogout(t *testing.T) {
 		t.Fatalf("exchange %v", exchange)
 	}
 	grant := f.grant(pluginFlowKey)
-	if !f.idp.holds(pyStr(grant["refresh_token"])) || grant["access_token"] == "" || grant["expires_at_ms"] == nil {
+	if !f.idp.holds(anyutil.String(grant["refresh_token"])) || grant["access_token"] == "" || grant["expires_at_ms"] == nil {
 		t.Fatalf("grant %v", grant)
 	}
 	if raw, _ := os.ReadFile(filepath.Join(f.h, "auth.json")); strings.Contains(string(raw), pluginFlowSecret) {
@@ -227,7 +229,7 @@ func TestSignInStoresTheGrantThenStatusRefreshAndLogout(t *testing.T) {
 func TestBearerReachesTheDeclaredHostAndNeverThePlugin(t *testing.T) {
 	f := newPluginFlow(t, true)
 	call := f.signedIn(nil)
-	token := pyStr(f.grant(pluginFlowKey)["access_token"])
+	token := anyutil.String(f.grant(pluginFlowKey)["access_token"])
 	result, err := call("google", f.allowed.url+"/v1/items?x=1", func(o *ProviderRequestOptions) {
 		o.JSON = map[string]any{"title": "t"}
 		o.Headers = map[string]string{"X-Plugin": "1", "authorization": "Bearer plugin-made"}
@@ -302,7 +304,7 @@ func TestOwnOAuthIDWinsOverACoreProviderOfTheSameName(t *testing.T) {
 	}}
 	t.Cleanup(func() { delete(pluginProviderRequestProviders, "google") })
 	resp, err := call("google", f.allowed.url)
-	if pluginFlowStatus(t, resp, err) != 200 || f.allowed.requests()[0].headers.Get("Authorization") != "Bearer "+pyStr(f.grant(pluginFlowKey)["access_token"]) {
+	if pluginFlowStatus(t, resp, err) != 200 || f.allowed.requests()[0].headers.Get("Authorization") != "Bearer "+anyutil.String(f.grant(pluginFlowKey)["access_token"]) {
 		t.Fatalf("status=%d", resp.Status)
 	}
 }
@@ -531,7 +533,7 @@ func TestTheNoticeCommandFindsAPluginWhoseNameDiffersFromItsDirectory(t *testing
 	if notice := RequiresAuthNotice(manifest); !strings.Contains(notice, "icebath auth add gemini-voice:google") {
 		t.Fatalf("notice %s", notice)
 	}
-	if !f.auth("add", "gemini-voice:google") || !f.idp.holds(pyStr(f.grant("voice-dir:google")["refresh_token"])) {
+	if !f.auth("add", "gemini-voice:google") || !f.idp.holds(anyutil.String(f.grant("voice-dir:google")["refresh_token"])) {
 		t.Fatalf("grant %v", f.grant("voice-dir:google"))
 	}
 	resp, err := call("google", f.allowed.url)
@@ -543,14 +545,14 @@ func TestTheNoticeCommandFindsAPluginWhoseNameDiffersFromItsDirectory(t *testing
 func TestErrorsRaisedToThePluginCarryNoTokenRefreshTokenOrSecret(t *testing.T) {
 	f := newPluginFlow(t, true)
 	call := f.signedIn(nil)
-	token := pyStr(f.grant(pluginFlowKey)["access_token"])
+	token := anyutil.String(f.grant(pluginFlowKey)["access_token"])
 	f.allowed.server.Close()
 	_, err := call("google", f.allowed.url+"/v1")
 	var urlErr *url.Error
 	if !errors.As(err, &urlErr) || !strings.Contains(err.Error(), "connect") || strings.Contains(reachableText(err), token) {
 		t.Fatalf("api down err=%v", err)
 	}
-	refresh := pyStr(f.grant(pluginFlowKey)["refresh_token"])
+	refresh := anyutil.String(f.grant(pluginFlowKey)["refresh_token"])
 	f.setGrant(pluginFlowKey, map[string]any{"expires_at_ms": 0})
 	f.idp.stop()
 	_, err = call("google", f.allowed.url+"/v1")

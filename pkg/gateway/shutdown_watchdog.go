@@ -47,7 +47,7 @@ func watchdogCoerceFloat(value any, def, floor float64) float64 {
 	if err != nil {
 		return def
 	}
-	return pyMaxFloat(f, floor)
+	return maxFloat(f, floor)
 }
 
 // Launch home when ICEBATH_HOME is set, else the context home, ignoring profile overrides for process identity files
@@ -94,7 +94,7 @@ func ResolveShutdownWatchdogDelay(drainTimeout, graceS any) float64 {
 const logLevelCritical = slog.LevelError + 4
 
 // threading.TIMEOUT_MAX, the largest wait a lock accepts before raising OverflowError
-const pyThreadTimeoutMax = 9223372036.0
+const threadTimeoutMax = 9223372036.0
 
 var watchdogOSExit = os.Exit
 
@@ -104,11 +104,11 @@ func drainLogQueue(timeoutS float64) {
 }
 
 // threading.Event.wait, a non positive or NaN timeout polls and one past TIMEOUT_MAX overflows
-func pyEventWait(e *syncutil.Event, timeoutS float64) (bool, error) {
+func eventWait(e *syncutil.Event, timeoutS float64) (bool, error) {
 	if !(timeoutS > 0) {
 		return e.IsSet(), nil
 	}
-	if timeoutS > pyThreadTimeoutMax {
+	if timeoutS > threadTimeoutMax {
 		return false, errors.New("timeout value is too large")
 	}
 	return e.WaitTimeout(secondsDuration(timeoutS)), nil
@@ -189,7 +189,7 @@ func (h *LoopLivenessWatchdogHandle) Join(timeoutS *float64) {
 	}
 	select {
 	case <-h.finished:
-	case <-time.After(secondsDuration(pyMaxFloat(0, *timeoutS))):
+	case <-time.After(secondsDuration(maxFloat(0, *timeoutS))):
 	}
 }
 
@@ -218,7 +218,7 @@ func StartLoopLivenessWatchdog(ctx context.Context, loop EventLoop, probeInterva
 func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *syncutil.Event, probeInterval, probeTimeout float64, maxStrikes, exitCode int) error {
 	strikes := 0
 	for {
-		stopped, err := pyEventWait(stop, probeInterval)
+		stopped, err := eventWait(stop, probeInterval)
 		if err != nil || stopped {
 			return err
 		}
@@ -239,7 +239,7 @@ func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *syncutil.Event
 			if remaining <= 0 {
 				break
 			}
-			if answered, err = pyEventWait(probe, min(remaining, 0.05)); err != nil {
+			if answered, err = eventWait(probe, min(remaining, 0.05)); err != nil {
 				return err
 			}
 		}

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -45,7 +46,7 @@ func requireHistoryClaim(ctx context.Context, a *SessionAuthority, conn state.SQ
 	if err != nil || row == nil {
 		return err
 	}
-	if pyTruthy(rowValue(row, "session_key")) || pyTruthy(rowValue(row, "chat_id")) || pyTruthy(rowValue(row, "origin_json")) {
+	if anyutil.IsTrue(rowValue(row, "session_key")) || anyutil.IsTrue(rowValue(row, "chat_id")) || anyutil.IsTrue(rowValue(row, "origin_json")) {
 		return nil
 	}
 	var bound int
@@ -65,7 +66,7 @@ func requireHistoryClaim(ctx context.Context, a *SessionAuthority, conn state.SQ
 	if err != nil {
 		return err
 	}
-	if ownProfile && pyTruthy(owner) && SameOwner(rowValue(row, "user_id"), actor.Subject) {
+	if ownProfile && anyutil.IsTrue(owner) && SameOwner(rowValue(row, "user_id"), actor.Subject) {
 		return nil
 	}
 	a.mu.Lock()
@@ -89,7 +90,7 @@ func authorizeImport(a *SessionAuthority, actor Principal, ref SessionRef, param
 	if err := state.ValidateAction("import", payload); err != nil {
 		return nil, err
 	}
-	sessions, err := pyItem(payload, "sessions")
+	sessions, err := itemValue(payload, "sessions")
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +104,7 @@ func authorizeImport(a *SessionAuthority, actor Principal, ref SessionRef, param
 	}
 	ids := make([]string, len(normalized))
 	for i, item := range normalized {
-		id, err := pyItem(item, "session", "id")
+		id, err := itemValue(item, "session", "id")
 		if err != nil {
 			return nil, err
 		}
@@ -160,7 +161,7 @@ func authorizeControl(ctx context.Context, a *SessionAuthority, actor Principal,
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok && flagging {
-		return false, &pyKeyError{ref.SessionID}
+		return false, &keyError{ref.SessionID}
 	}
 	if !(flagging && isHistoryMount(live)) {
 		if err := a.Authorize(ctx, actor, ref, "session:control"); err != nil {
@@ -441,7 +442,7 @@ func chatRunner(a *SessionAuthority, operation string) (chatModelRunner, error) 
 		if operation == "reasoning" {
 			capability = "apply a reasoning selection"
 		}
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot %s", a.Runner, capability)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot %s", a.Runner, capability)}
 	}
 	return runner, nil
 }

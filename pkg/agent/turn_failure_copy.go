@@ -35,9 +35,9 @@ const (
 var OpenTurnTailRoles = map[string]bool{"user": true, "tool": true}
 
 // Reads a Python attribute of an object, nil for dicts whose keys getattr never sees
-func pyAttr(v any, name string) any {
+func attrValue(v any, name string) any {
 	switch v.(type) {
-	case nil, map[string]any, state.PyObject:
+	case nil, map[string]any, state.OrderedObject:
 		return nil
 	}
 	return state.ToolCallField(v, name)
@@ -46,7 +46,7 @@ func pyAttr(v any, name string) any {
 // True for a Python dict row, either a plain map or an ordered object
 func isPyDict(v any) bool {
 	switch v.(type) {
-	case map[string]any, state.PyObject:
+	case map[string]any, state.OrderedObject:
 		return true
 	}
 	return false
@@ -54,21 +54,21 @@ func isPyDict(v any) bool {
 
 // Refusal copy for a session whose own launch API key changed or is gone, naming the failed field when known
 func LaunchCredentialsCopy(ctx context.Context, err any) string {
-	data := pyAttr(err, "data")
+	data := attrValue(err, "data")
 	if !isPyDict(data) {
 		data = map[string]any{}
 	}
-	field := pyAttr(err, "field")
+	field := attrValue(err, "field")
 	if !anyutil.IsTrue(field) {
 		field = state.ToolCallField(data, "field")
 	}
-	detail := pyAttr(err, "detail")
+	detail := attrValue(err, "detail")
 	if !anyutil.IsTrue(detail) {
 		detail = state.ToolCallField(data, "detail")
 	}
 	named := ""
 	if anyutil.IsTrue(field) {
-		named = " (" + anyutil.String(field) + ": " + pyStrOr(detail, "unavailable") + ")"
+		named = " (" + anyutil.String(field) + ": " + anyutil.StringOr(detail, "unavailable") + ")"
 	}
 	text := i18n.T(ctx, "gateway.errors.launch_credentials_unavailable", "", map[string]any{"detail": named})
 	if anyutil.IsTrue(field) {
@@ -86,7 +86,7 @@ func StampFailure(result map[string]any, reason string, retryable bool) map[stri
 
 // Boundary copy for a failed turn, partial whenever a tool may already have run
 func FailedTurnNoticeFor(turnMessages any) string {
-	for _, row := range pyIterRows(turnMessages) {
+	for _, row := range iterRows(turnMessages) {
 		if !isPyDict(row) {
 			continue
 		}
@@ -99,7 +99,7 @@ func FailedTurnNoticeFor(turnMessages any) string {
 }
 
 // Rows of a Python iterable of messages, empty for None
-func pyIterRows(v any) []any {
+func iterRows(v any) []any {
 	switch rows := v.(type) {
 	case []any:
 		return rows
@@ -109,7 +109,7 @@ func pyIterRows(v any) []any {
 			out[i] = r
 		}
 		return out
-	case []state.PyObject:
+	case []state.OrderedObject:
 		out := make([]any, len(rows))
 		for i, r := range rows {
 			out[i] = r
@@ -121,7 +121,7 @@ func pyIterRows(v any) []any {
 
 // Human friendly provider name for chat copy
 func ProviderLabelFor(prov any) string {
-	return provider.ProviderLabel(pyStrOr(prov, ""))
+	return provider.ProviderLabel(anyutil.StringOr(prov, ""))
 }
 
 // ExitFailure is the verdict for a loop exit, advisory when FailsTurn is false
@@ -164,7 +164,7 @@ func InvalidResponseFailureReason(response any) string {
 	}
 	var code any
 	if errValue != nil {
-		code = pyAttr(errValue, "code")
+		code = attrValue(errValue, "code")
 	}
 	if code == nil && isPyDict(errValue) {
 		code = state.ToolCallField(errValue, "code")
@@ -184,7 +184,7 @@ func InvalidResponseFailureReason(response any) string {
 
 // Failure verdict for a loop exit reason by prefix, false when the exit carries none
 func ExitReasonFailure(turnExitReason any) (ExitFailure, bool) {
-	reason := pyStrOr(turnExitReason, "")
+	reason := anyutil.StringOr(turnExitReason, "")
 	for _, row := range exitReasonFailures {
 		if strings.HasPrefix(reason, row.prefix) {
 			return ExitFailure{Reason: row.code, Retryable: row.retryable, FailsTurn: row.failsTurn}, true
@@ -209,7 +209,7 @@ func IsMaxIterationHandoff(result any) bool {
 	if !ok || !strings.HasPrefix(reason, "max_iterations_reached(") {
 		return false
 	}
-	return strings.TrimSpace(pyStrOr(get("final_response"), "")) != ""
+	return strings.TrimSpace(anyutil.StringOr(get("final_response"), "")) != ""
 }
 
 var exhaustedLeads = map[string]string{
@@ -323,7 +323,7 @@ func NonretryableCopy(ctx context.Context, classified *provider.Classified, prov
 	label := ProviderLabelFor(prov)
 	var template string
 	if classified.IsAuth() {
-		template = authCopy[provider.ProviderAuthKind(pyStrOr(prov, ""))]
+		template = authCopy[provider.ProviderAuthKind(anyutil.StringOr(prov, ""))]
 	} else if t, ok := nonretryableCopyTable[string(classified.Reason)]; ok {
 		template = t
 	} else {
@@ -335,7 +335,7 @@ func NonretryableCopy(ctx context.Context, classified *provider.Classified, prov
 	}
 	body, err := templateutil.Format(template, map[string]any{
 		"label": label, "model": model, "home": home.Display(home.Dir(ctx)), "prefix_hint": prefixHint,
-		"relogin": provider.OAuthReloginCommand(pyStrOr(prov, "")),
+		"relogin": provider.OAuthReloginCommand(anyutil.StringOr(prov, "")),
 	})
 	if err != nil {
 		return "", err

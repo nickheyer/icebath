@@ -233,7 +233,7 @@ func (s *RuntimeSessionStore) GetCompressionFailureCooldownRow(sessionID string)
 	}
 	out := state.CompressionCooldownRow{SessionExists: true, Error: row.ValueOr("compression_failure_error", nil)}
 	if v := row.ValueOr("compression_failure_cooldown_until", nil); v != nil {
-		f, err := pyFloatValue(v)
+		f, err := floatValue(v)
 		if err != nil {
 			return state.CompressionCooldownRow{}, err
 		}
@@ -243,7 +243,7 @@ func (s *RuntimeSessionStore) GetCompressionFailureCooldownRow(sessionID string)
 }
 
 // float() of a receipt number or numeric text
-func pyFloatValue(v any) (float64, error) {
+func floatValue(v any) (float64, error) {
 	switch n := v.(type) {
 	case float64:
 		return n, nil
@@ -309,7 +309,7 @@ func (s *RuntimeSessionStore) sessionNumber(sessionID, column string, integral b
 		}
 	case string:
 		if !integral {
-			parsed, err := pyFloatValue(n)
+			parsed, err := floatValue(n)
 			if err != nil {
 				return 0, nil
 			}
@@ -322,7 +322,7 @@ func (s *RuntimeSessionStore) sessionNumber(sessionID, column string, integral b
 			f = float64(i)
 		}
 	default:
-		parsed, err := pyFloatValue(raw)
+		parsed, err := floatValue(raw)
 		if err != nil {
 			return 0, nil
 		}

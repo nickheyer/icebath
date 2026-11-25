@@ -80,13 +80,13 @@ func CursorPath(ctx context.Context) string {
 	return filepath.Join(home.Dir(ctx), cursorStateSubdir, cursorStateFilename)
 }
 
-// Restores cursors written for this identity and relay, ignoring unreadable files and malformed entries
-func (s *CursorStore) LoadCursors(ctx context.Context) error {
+// Restores cursors written for this identity and relay, ignoring unreadable files and malformed entries such as a last_ts that is not a whole number within the int64 range
+func (s *CursorStore) LoadCursors(ctx context.Context) {
 	s.RestoredCursors = map[string]ChannelCursor{}
 	path := CursorPath(ctx)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil
+		return
 	}
 	var data any
 	if err == nil {
@@ -97,22 +97,22 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 	}
 	if err != nil {
 		pkgLog().Debug("Buzz: could not read channel cursors", "error", err)
-		return nil
+		return
 	}
 	obj, ok := data.(*jsonutil.Object)
 	if !ok {
-		return nil
+		return
 	}
 	if identity, _ := obj.Get("identity"); identity != s.SelfPubkey {
-		return nil
+		return
 	}
 	if relay, _ := obj.Get("relay"); relay != s.RelayURL {
-		return nil
+		return
 	}
 	channelsRaw, _ := obj.Get("channels")
 	channels, ok := channelsRaw.(*jsonutil.Object)
 	if !ok {
-		return nil
+		return
 	}
 	for _, channelID := range channels.Keys() {
 		entry, ok := channels.Value(channelID).(*jsonutil.Object)
@@ -122,9 +122,6 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 		var lastTS int64
 		if v, _ := entry.Get("last_ts"); anyutil.IsTrue(v) {
 			n, err := anyutil.ToInt(v)
-			if errors.Is(err, anyutil.ErrRange) {
-				return err
-			}
 			if err != nil {
 				continue
 			}
@@ -145,7 +142,6 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 		}
 		s.RestoredCursors[channelID] = ChannelCursor{ChatType: chatType, LastTS: lastTS, Seen: seen}
 	}
-	return nil
 }
 
 // Snapshot of every watched channel cursor in watch order
@@ -173,7 +169,7 @@ func (s *CursorStore) SaveCursors(ctx context.Context) {
 
 // Atomic compact JSON write of the payload, a failure only logged
 func writeCursors(ctx context.Context, path string, payload *jsonutil.Object) {
-	if err := config.AtomicJSONWriteWith(ctx, path, payload, jsonutil.Spaced()); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
 		pkgLog().Debug("Buzz: could not persist channel cursors", "error", err)
 	}
 }

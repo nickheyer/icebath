@@ -9,18 +9,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python json.dumps text with ensure_ascii off and sorted keys, false when a value has no JSON form
-func pyJSONDumps(v any) (string, bool) {
+func jsonDumps(v any) (string, bool) {
 	var b strings.Builder
-	if !pyJSONWrite(&b, v) {
+	if !jsonWrite(&b, v) {
 		return "", false
 	}
 	return b.String(), true
 }
 
-func pyJSONWrite(b *strings.Builder, v any) bool {
+func jsonWrite(b *strings.Builder, v any) bool {
 	switch t := v.(type) {
 	case nil:
 		b.WriteString("null")
@@ -31,7 +33,7 @@ func pyJSONWrite(b *strings.Builder, v any) bool {
 			b.WriteString("false")
 		}
 	case string:
-		pyJSONWriteString(b, t)
+		jsonWriteString(b, t)
 	case json.Number:
 		b.WriteString(t.String())
 	case int:
@@ -47,7 +49,7 @@ func pyJSONWrite(b *strings.Builder, v any) bool {
 		case math.IsInf(t, -1):
 			b.WriteString("-Infinity")
 		default:
-			b.WriteString(pyFloatRepr(t))
+			b.WriteString(floatRepr(t))
 		}
 	case []any:
 		b.WriteByte('[')
@@ -55,7 +57,7 @@ func pyJSONWrite(b *strings.Builder, v any) bool {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			if !pyJSONWrite(b, item) {
+			if !jsonWrite(b, item) {
 				return false
 			}
 		}
@@ -71,9 +73,9 @@ func pyJSONWrite(b *strings.Builder, v any) bool {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			pyJSONWriteString(b, k)
+			jsonWriteString(b, k)
 			b.WriteString(": ")
-			if !pyJSONWrite(b, t[k]) {
+			if !jsonWrite(b, t[k]) {
 				return false
 			}
 		}
@@ -85,7 +87,7 @@ func pyJSONWrite(b *strings.Builder, v any) bool {
 }
 
 // JSON string literal escaping only quotes, backslashes and control characters
-func pyJSONWriteString(b *strings.Builder, s string) {
+func jsonWriteString(b *strings.Builder, s string) {
 	b.WriteByte('"')
 	for _, r := range s {
 		switch r {
@@ -132,7 +134,7 @@ func makeGeminiStreamChunk(model string, in geminiChunkInput) map[string]any {
 	if d := in.toolCallDelta; d != nil {
 		index, _ := anyInt(d["index"])
 		extra, _ := d["extra_content"].(map[string]any)
-		delta["tool_calls"] = []any{geminiToolCallMap(pyOrStr(d["name"]), pyOrStr(d["arguments"]), index, geminiNewCallID(d), extra)}
+		delta["tool_calls"] = []any{geminiToolCallMap(anyutil.StringOr(d["name"], ""), anyutil.StringOr(d["arguments"], ""), index, geminiNewCallID(d), extra)}
 	}
 	if in.reasoning != "" {
 		delta["reasoning"], delta["reasoning_content"] = in.reasoning, in.reasoning
@@ -240,11 +242,11 @@ func (t *geminiToolSlots) set(key string, slot *geminiToolSlot) {
 // Slot key and existing slot for a streamed functionCall, a resend extends its own slot
 func geminiToolCallSlot(fc, part map[string]any, partIndex int, argsStr string, slots *geminiToolSlots) (string, *geminiToolSlot) {
 	if id := geminiProviderCallID(fc); id != "" {
-		key, _ := pyJSONDumps(map[string]any{"provider_call_id": id})
+		key, _ := jsonDumps(map[string]any{"provider_call_id": id})
 		return key, slots.slots[key]
 	}
 	sig, _ := part["thoughtSignature"].(string)
-	key, _ := pyJSONDumps(map[string]any{"part_index": partIndex, "name": fc["name"], "thought_signature": sig})
+	key, _ := jsonDumps(map[string]any{"part_index": partIndex, "name": fc["name"], "thought_signature": sig})
 	slot := slots.slots[key]
 	if slot == nil || strings.HasPrefix(argsStr, slot.lastArguments) {
 		return key, slot
@@ -287,7 +289,7 @@ func translateGeminiStreamEvent(event map[string]any, model string, slots *gemin
 			chunks = append(chunks, makeGeminiStreamChunk(model, geminiChunkInput{textSignature: sig}))
 		}
 		if fc := geminiPartFunctionCall(part); fc != nil {
-			name := pyStr(fc["name"])
+			name := anyutil.String(fc["name"])
 			argsStr := geminiDumpCallArgsWith(fc, true)
 			key, slot := geminiToolCallSlot(fc, part, partIndex, argsStr, slots)
 			if slot == nil {
@@ -303,7 +305,7 @@ func translateGeminiStreamEvent(event map[string]any, model string, slots *gemin
 			chunks = append(chunks, makeGeminiStreamChunk(model, geminiChunkInput{toolCallDelta: delta}))
 		}
 	}
-	if raw := pyOrStr(cand["finishReason"]); raw != "" {
+	if raw := anyutil.StringOr(cand["finishReason"], ""); raw != "" {
 		finish := "stop"
 		if len(slots.keys) > 0 {
 			finish = "tool_calls"

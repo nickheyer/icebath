@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -56,7 +57,7 @@ func anyContains(lines []string, sub string) bool {
 }
 
 func section(cfg config.Tree, key string) map[string]any {
-	m, _ := pyDictOf(cfg[key])
+	m, _ := dictOf(cfg[key])
 	return m
 }
 
@@ -283,7 +284,7 @@ func TestChromiumPostSetupInstallFailureReportsError(t *testing.T) {
 			swapHook(t, &ToolsConfigHooks.ChromiumExecutable, func(*Env) string { return "" })
 			var failure error = pm.NewInstallError("chromium", "fatal: network error", "")
 			if t.Name() == "TestChromiumPostSetupInstallFailureReportsError/worker" {
-				failure = &pm.PyError{Class: "RuntimeError", Message: "worker exited unsuccessfully"}
+				failure = &pm.ClassError{Class: "RuntimeError", Message: "worker exited unsuccessfully"}
 			}
 			swapHook(t, &postSetupEnsure, func(context.Context, string, pm.EnsureOptions) error { return failure })
 			if err := s.runPostSetup("chromium"); err != nil {
@@ -335,7 +336,7 @@ func TestImagegenModelPickerPickerWritesChosenModelToConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	catalog, def := imagegenBackends["fal"].catalogFn(s, config.Tree{})
-	model := pyStr(section(cfg, "image_gen")["model"])
+	model := anyutil.String(section(cfg, "image_gen")["model"])
 	if model == def || !catalog.has(model) {
 		t.Fatalf("model %q default %q", model, def)
 	}
@@ -374,7 +375,7 @@ func TestImagegenModelPickerPickerRepairsCorruptConfigSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, def := imagegenBackends["fal"].catalogFn(s, config.Tree{})
-	imageGen, ok := pyDictOf(cfg["image_gen"])
+	imageGen, ok := dictOf(cfg["image_gen"])
 	if !ok || imageGen["model"] != def {
 		t.Fatalf("image_gen %v", cfg["image_gen"])
 	}

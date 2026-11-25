@@ -25,19 +25,22 @@ func LiteralEval(src string) (any, error) {
 	return literalValue(tree.Child("body"))
 }
 
-// Items of a Python list literal as text, a string item as it is and any other item in its literal form, false when src is not a list literal
+// Items of a Python list literal as text, a string item as it is, None items left out and any other item in its literal form, false when src is not a list literal
 func LiteralStrings(src string) ([]string, bool) {
 	v, err := LiteralEval(strings.TrimSpace(src))
 	items, ok := v.([]any)
 	if err != nil || !ok {
 		return nil, false
 	}
-	out := make([]string, len(items))
-	for i, it := range items {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
 		if s, isStr := it.(string); isStr {
-			out[i] = s
+			out = append(out, s)
 		} else {
-			out[i] = Literal(it)
+			out = append(out, Literal(it))
 		}
 	}
 	return out, true

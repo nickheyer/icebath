@@ -413,7 +413,7 @@ func readJSONText(path string) (any, bool) {
 // Path resolve raising the lstat ValueError CPython raises for an embedded NUL, Windows resolving the spelling as given
 func pathResolve(p string) (string, error) {
 	if runtime.GOOS != "windows" && strings.IndexByte(p, 0) >= 0 {
-		return "", &PyError{Class: "ValueError", Message: "lstat: embedded null character in path"}
+		return "", &ClassError{Class: "ValueError", Message: "lstat: embedded null character in path"}
 	}
 	return resolvePath(p), nil
 }
@@ -425,7 +425,7 @@ func payloadPath(payloadRoot, relative, what string) (string, error) {
 		return "", err
 	}
 	if !isRelativeTo(path, payloadRoot) {
-		return "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("payload %s escapes its root", what)}
+		return "", &ClassError{Class: "RuntimeError", Message: fmt.Sprintf("payload %s escapes its root", what)}
 	}
 	return path, nil
 }
@@ -477,7 +477,7 @@ func EnvironmentStoreRoot(ctx context.Context, projectRoot string, honorRuntimeO
 				if value, has := m["runtimeDir"]; has && anyutil.IsTrue(value) {
 					s, isStr := value.(string)
 					if !isStr {
-						return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the install stamp runtimeDir must be text, got %s", errchain.Kind(value))}
+						return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("the install stamp runtimeDir must be text, got %s", errchain.Kind(value))}
 					}
 					return pathResolve(s)
 				}

@@ -18,12 +18,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gen2brain/avif"
 	"github.com/gen2brain/heic"
 	"github.com/google/uuid"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/webp"
 )
@@ -53,7 +55,7 @@ const (
 const pilMaxImagePixels = 1024 * 1024 * 1024 / 4 / 3
 
 // Suffix of the final path component the way pathlib reports it
-func pySuffix(p string) string {
+func suffixValue(p string) string {
 	name := p
 	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
 		name = p[i+1:]
@@ -67,7 +69,7 @@ func pySuffix(p string) string {
 
 // MIME type from the file extension, JPEG when unknown
 func determineMimeType(path string) string {
-	if m, ok := visionExtensionMimeTypes[strings.ToLower(pySuffix(path))]; ok {
+	if m, ok := visionExtensionMimeTypes[strings.ToLower(suffixValue(path))]; ok {
 		return m
 	}
 	return "image/jpeg"
@@ -136,25 +138,6 @@ func sniffRasterFormat(data []byte) string {
 	return ""
 }
 
-// Python bytes repr of a chunk id for broken PNG messages
-func pyBytesRepr(b []byte) string {
-	var sb strings.Builder
-	sb.WriteString("b'")
-	for _, c := range b {
-		switch {
-		case c == '\\' || c == '\'':
-			sb.WriteByte('\\')
-			sb.WriteByte(c)
-		case c >= 0x20 && c < 0x7f:
-			sb.WriteByte(c)
-		default:
-			fmt.Fprintf(&sb, "\\x%02x", c)
-		}
-	}
-	sb.WriteString("'")
-	return sb.String()
-}
-
 // One PNG chunk located inside the file
 type pngChunk struct {
 	typ   []byte
@@ -171,7 +154,7 @@ func readPNGChunk(data []byte, off int, checkCRC bool) (pngChunk, error) {
 	length := int(binary.BigEndian.Uint32(data[off : off+4]))
 	cid := data[off+4 : off+8]
 	if !cidRe.Match(cid) {
-		return pngChunk{}, fmt.Errorf("broken PNG file (chunk %s)", pyBytesRepr(cid))
+		return pngChunk{}, fmt.Errorf("broken PNG file (chunk %s)", anyutil.Quote(cid))
 	}
 	bodyStart := off + 8
 	if length < 0 || bodyStart+length > len(data) {
@@ -181,13 +164,13 @@ func readPNGChunk(data []byte, off int, checkCRC bool) (pngChunk, error) {
 	end := bodyStart + length
 	if checkCRC {
 		if end+4 > len(data) {
-			return pngChunk{}, fmt.Errorf("broken PNG file (incomplete checksum in %s)", pyBytesRepr(cid))
+			return pngChunk{}, fmt.Errorf("broken PNG file (incomplete checksum in %s)", anyutil.Quote(cid))
 		}
 		crc := crc32.NewIEEE()
 		crc.Write(cid)
 		crc.Write(body)
 		if crc.Sum32() != binary.BigEndian.Uint32(data[end:end+4]) {
-			return pngChunk{}, fmt.Errorf("broken PNG file (bad header checksum in %s)", pyBytesRepr(cid))
+			return pngChunk{}, fmt.Errorf("broken PNG file (bad header checksum in %s)", anyutil.Quote(cid))
 		}
 	}
 	return pngChunk{typ: cid, data: body, start: off, end: end + 4}, nil
@@ -239,7 +222,7 @@ func pngOpen(data []byte) (*pngInfo, error) {
 		}
 		cid := data[off+4 : off+8]
 		if !cidRe.Match(cid) {
-			return nil, fmt.Errorf("broken PNG file (chunk %s)", pyBytesRepr(cid))
+			return nil, fmt.Errorf("broken PNG file (chunk %s)", anyutil.Quote(cid))
 		}
 		switch string(cid) {
 		case "IDAT":
@@ -331,7 +314,7 @@ func pngVerify(data []byte, info *pngInfo) error {
 		}
 		if string(data[off+4:off+8]) == "IEND" {
 			if !cidRe.Match(data[off+4 : off+8]) {
-				return fmt.Errorf("broken PNG file (chunk %s)", pyBytesRepr(data[off+4:off+8]))
+				return fmt.Errorf("broken PNG file (chunk %s)", anyutil.Quote(data[off+4:off+8]))
 			}
 			return nil
 		}
@@ -1218,7 +1201,7 @@ func normalizeToSupportedImage(env *Env, imagePath, detectedMime string) (string
 		}
 	}
 	return "", "", fmt.Sprintf("Image format %s is not supported by the vision API and could not be "+
-		"converted to PNG. Convert it to PNG or JPEG and try again.", pyReprStr(detectedMime))
+		"converted to PNG. Convert it to PNG or JPEG and try again.", strconv.Quote(detectedMime))
 }
 
 // Encodes an image as PNG to a file
@@ -1319,7 +1302,7 @@ func cropImageRegion(imagePath string, region any, offsetOut map[string]int) (st
 	if offsetOut != nil {
 		offsetOut["x"], offsetOut["y"], offsetOut["width"], offsetOut["height"] = cx1, cy1, cx2-cx1, cy2-cy1
 	}
-	stem := strings.TrimSuffix(filepath.Base(imagePath), pySuffix(imagePath))
+	stem := strings.TrimSuffix(filepath.Base(imagePath), suffixValue(imagePath))
 	outPath := filepath.Join(filepath.Dir(imagePath), stem+"_region_"+strings.ReplaceAll(uuid.NewString(), "-", "")[:8]+".png")
 	switch cropped.mode {
 	case "RGB", "RGBA", "L", "LA", "P":

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -204,7 +205,7 @@ func (a *SessionAuthority) Authorize(ctx context.Context, actor Principal, ref S
 		}
 		chatID, _ := row.Get("chat_id")
 		chatText := ""
-		if pyTruthy(chatID) {
+		if anyutil.IsTrue(chatID) {
 			chatText = anyutil.String(chatID)
 		}
 		if local || strings.HasPrefix(chatText, "local-") {
@@ -358,7 +359,7 @@ func startSessionDrain(ctx context.Context, a *SessionAuthority, ref SessionRef)
 	live := a.Sessions[ref.SessionID]
 	if live == nil {
 		a.mu.Unlock()
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	live.Rescan = true
 	live.scheduled++
@@ -418,7 +419,7 @@ func logDrainFailure(err error) {
 	if errors.Is(err, context.Canceled) {
 		return
 	}
-	pkgLog().Error("Session drain task died: " + pyExceptionRepr(err))
+	pkgLog().Error("Session drain task died: " + errchain.OSText(err))
 }
 
 // Publishes committed input and returns its receipt, marking a native event accepted
@@ -453,7 +454,7 @@ func (a *SessionAuthority) publishPending(ctx context.Context, ref SessionRef) e
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	live.EventStream.Lock.Lock()
 	err := func() error {
@@ -766,7 +767,7 @@ func (a *SessionAuthority) commitCancel(ctx context.Context, ref SessionRef, adm
 func (a *SessionAuthority) settleCancelled(ctx context.Context, ref SessionRef, admissionID, outcome string) error {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	stream := live.EventStream
 	stream.Lock.Lock()

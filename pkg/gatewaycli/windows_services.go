@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
@@ -83,7 +82,7 @@ var (
 	windowsServiceRoots = gateway.IcebathServiceRoots
 )
 
-// Failure of one SCM query carrying the psutil exception class it stands for
+// Failure of one SCM query carrying its category, AccessDenied or NoSuchProcess
 type scmQueryError struct {
 	Class string
 	Err   error
@@ -93,27 +92,20 @@ func (e *scmQueryError) Error() string { return e.Class + ": " + e.Err.Error() }
 
 func (e *scmQueryError) Unwrap() error { return e.Err }
 
-var osErrorFamily = map[string]bool{"OSError": true, "FileNotFoundError": true, "PermissionError": true, "FileExistsError": true,
-	"IsADirectoryError": true, "NotADirectoryError": true, "TimeoutError": true, "InterruptedError": true, "BlockingIOError": true,
-	"ChildProcessError": true, "ProcessLookupError": true, "BrokenPipeError": true, "ConnectionError": true, "ConnectionAbortedError": true,
-	"ConnectionRefusedError": true, "ConnectionResetError": true}
-
-// Python exception class an SCM query error stands for, Exception for an error no OS call raised
-func scmErrorClass(err error) string {
+// Whether an SCM query failed because the service disappeared after it was enumerated
+func scmServiceVanished(err error) bool {
 	var query *scmQueryError
-	if errors.As(err, &query) {
-		return query.Class
-	}
-	var errno syscall.Errno
-	var pathErr *fs.PathError
-	if errors.As(err, &errno) || errors.As(err, &pathErr) || errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
-		return errorutil.Kind(err)
-	}
-	return "Exception"
+	return !errors.As(err, &query) && errors.Is(err, fs.ErrNotExist)
 }
 
-// True for the OSError family of an SCM query error
-func scmIsOSError(class string) bool { return osErrorFamily[class] }
+// Whether a service configuration cannot be read because access is refused or the operating system failed the query
+func scmConfigUnreadable(err error) bool {
+	var query *scmQueryError
+	if errors.As(err, &query) {
+		return query.Class == "AccessDenied"
+	}
+	return errorutil.IsSystem(err)
+}
 
 type scmStatusEntry struct{ name, status string }
 
@@ -131,7 +123,7 @@ func ownedWindowsServices(roots []string) (map[int]map[string]bool, map[int][]sc
 	for _, service := range services {
 		name, err := service.Name()
 		if err != nil {
-			if scmErrorClass(err) == "FileNotFoundError" {
+			if scmServiceVanished(err) {
 				continue
 			}
 			return nil, nil, inspection(err)
@@ -143,7 +135,7 @@ func ownedWindowsServices(roots []string) (map[int]map[string]bool, map[int][]sc
 		if !owned {
 			binpath, err := service.BinPath()
 			if err != nil {
-				if class := scmErrorClass(err); class == "AccessDenied" || scmIsOSError(class) {
+				if scmConfigUnreadable(err) {
 					continue
 				}
 				return nil, nil, inspection(err)
@@ -159,7 +151,7 @@ func ownedWindowsServices(roots []string) (map[int]map[string]bool, map[int][]sc
 			pid, err = service.PID()
 		}
 		if err != nil {
-			if scmErrorClass(err) == "FileNotFoundError" {
+			if scmServiceVanished(err) {
 				continue
 			}
 			return nil, nil, inspection(err)

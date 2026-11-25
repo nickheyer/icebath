@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -147,11 +148,11 @@ func toolCallDict(m map[string]json.RawMessage, index int) map[string]any {
 	raw := m["input"]
 	var args string
 	if trimmed := strings.TrimSpace(string(raw)); strings.HasPrefix(trimmed, "{") {
-		args = pyDumpsRaw(raw)
+		args = dumpsRaw(raw)
 	} else {
 		var v any
 		_ = json.Unmarshal(raw, &v)
-		args = pyStr(v)
+		args = anyutil.String(v)
 	}
 	return map[string]any{"id": id, "type": "function", "function": map[string]any{"name": name, "arguments": args}}
 }
@@ -234,7 +235,7 @@ func parseToolCallArguments(serverName string, args any) (any, bool) {
 	if m, ok := args.(map[string]any); ok {
 		return m, true
 	}
-	return map[string]any{"_raw": pyStr(args)}, true
+	return map[string]any{"_raw": anyutil.String(args)}, true
 }
 
 // First n code points of a string
@@ -271,7 +272,7 @@ func newSamplingHandler(name string, env *tools.Env, cfg map[string]any) Sampler
 	if !ok {
 		timeout = 30
 	}
-	level, ok := samplingLogLevels[strings.ToLower(pyStr(cfgOr(cfg, "log_level", "info")))]
+	level, ok := samplingLogLevels[strings.ToLower(anyutil.String(cfgOr(cfg, "log_level", "info")))]
 	if !ok {
 		level = slog.LevelInfo
 	}
@@ -339,8 +340,8 @@ func (h *samplingHandler) checkRateLimit() bool {
 
 // Config override, else the first named server hint, else empty for the default model
 func (h *samplingHandler) resolveModel(prefs *ModelPreferences) string {
-	if pyTruthy(h.modelOverride) {
-		return pyStr(h.modelOverride)
+	if anyutil.IsTrue(h.modelOverride) {
+		return anyutil.String(h.modelOverride)
 	}
 	if prefs != nil {
 		for _, hint := range prefs.Hints {
@@ -364,14 +365,14 @@ func (h *samplingHandler) modelAllowed(model string) (bool, string, bool) {
 		names := make([]string, len(list))
 		found := false
 		for i, v := range list {
-			names[i] = pyStr(v)
+			names[i] = anyutil.String(v)
 			if s, ok := v.(string); ok && s == model {
 				found = true
 			}
 		}
 		return found, strings.Join(names, ", "), len(list) > 0
 	}
-	return true, "", pyTruthy(h.allowedModels)
+	return true, "", anyutil.IsTrue(h.allowedModels)
 }
 
 // Reports whether a string slice holds the value
@@ -474,10 +475,10 @@ func (h *samplingHandler) logResponse(resp map[string]any, suffix string) {
 	tokens := "?"
 	if usage, ok := resp["usage"].(map[string]any); ok {
 		if v, ok := usage["total_tokens"]; ok {
-			tokens = pyStr(v)
+			tokens = anyutil.String(v)
 		}
 	}
-	pkgLog().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling response: model=%s, tokens=%s", h.serverName, pyStr(resp["model"]), tokens)+suffix)
+	pkgLog().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling response: model=%s, tokens=%s", h.serverName, anyutil.String(resp["model"]), tokens)+suffix)
 }
 
 // Tool use result under max_tool_rounds, zero disabling tool loops
@@ -504,10 +505,10 @@ func (h *samplingHandler) buildToolUseResult(calls []any, resp map[string]any) (
 		if !ok {
 			return nil, &RPCError{Code: CodeInternalError, Message: "Input should be a valid dictionary"}
 		}
-		content = append(content, map[string]any{"type": "tool_use", "id": pyStr(tc["id"]), "name": pyStr(fn["name"]), "input": input})
+		content = append(content, map[string]any{"type": "tool_use", "id": anyutil.String(tc["id"]), "name": anyutil.String(fn["name"]), "input": input})
 	}
 	h.logResponse(resp, fmt.Sprintf(", tool_calls=%d", len(content)))
-	return map[string]any{"role": "assistant", "content": content, "model": pyStr(resp["model"]), "stopReason": "toolUse"}, nil
+	return map[string]any{"role": "assistant", "content": content, "model": anyutil.String(resp["model"]), "stopReason": "toolUse"}, nil
 }
 
 // Text result of a normal response, resetting the tool loop
@@ -518,14 +519,14 @@ func (h *samplingHandler) buildTextResult(choice, resp map[string]any) any {
 	h.logResponse(resp, "")
 	message, _ := choice["message"].(map[string]any)
 	text := ""
-	if pyTruthy(message["content"]) {
-		text = pyStr(message["content"])
+	if anyutil.IsTrue(message["content"]) {
+		text = anyutil.String(message["content"])
 	}
-	reason, ok := stopReasonMap[pyStr(choice["finish_reason"])]
+	reason, ok := stopReasonMap[anyutil.String(choice["finish_reason"])]
 	if !ok {
 		reason = "endTurn"
 	}
-	return map[string]any{"role": "assistant", "model": pyStr(resp["model"]),
+	return map[string]any{"role": "assistant", "model": anyutil.String(resp["model"]),
 		"content": map[string]any{"type": "text", "text": sanitizeError(text)}, "stopReason": reason}
 }
 
@@ -538,7 +539,7 @@ func (h *samplingHandler) CreateMessage(ctx context.Context, params *CreateMessa
 	messages, toolDefs, opts := h.buildLLMCall(params, model)
 	resp, err, timedOut := h.callLLM(ctx, messages, toolDefs, opts)
 	if timedOut {
-		return nil, h.fail(fmt.Sprintf("Sampling LLM call timed out after %ss for server '%s'", pyFloatRepr(h.timeout), h.serverName))
+		return nil, h.fail(fmt.Sprintf("Sampling LLM call timed out after %ss for server '%s'", floatRepr(h.timeout), h.serverName))
 	}
 	if err != nil {
 		return nil, h.fail("Sampling LLM call failed: " + sanitizeError(excStr(err)))
@@ -551,13 +552,13 @@ func (h *samplingHandler) CreateMessage(ctx context.Context, params *CreateMessa
 	h.mu.Lock()
 	h.metrics["requests"]++
 	if usage, ok := resp["usage"].(map[string]any); ok {
-		if n, ok := pyInt(usage["total_tokens"]); ok && !isFloatValue(usage["total_tokens"]) {
+		if n, ok := wholeNumber(usage["total_tokens"]); ok && !isFloatValue(usage["total_tokens"]) {
 			h.metrics["tokens_used"] += n
 		}
 	}
 	h.mu.Unlock()
 	message, _ := choice["message"].(map[string]any)
-	if calls, _ := message["tool_calls"].([]any); pyStr(choice["finish_reason"]) == "tool_calls" && len(calls) > 0 {
+	if calls, _ := message["tool_calls"].([]any); anyutil.String(choice["finish_reason"]) == "tool_calls" && len(calls) > 0 {
 		return h.buildToolUseResult(calls, resp)
 	}
 	return h.buildTextResult(choice, resp), nil
@@ -586,11 +587,11 @@ func formatElicitationSchemaSummary(schema map[string]any, raw json.RawMessage, 
 	for _, name := range schemaPropertyOrder(props, raw) {
 		spec, _ := props[name].(map[string]any)
 		line := "  - " + name
-		if t := pyStr(spec["type"]); pyTruthy(spec["type"]) && t != "" {
+		if t := anyutil.String(spec["type"]); anyutil.IsTrue(spec["type"]) && t != "" {
 			line += " (" + t + ")"
 		}
-		if pyTruthy(spec["description"]) {
-			line += ": " + pyStr(spec["description"])
+		if anyutil.IsTrue(spec["description"]) {
+			line += ": " + anyutil.String(spec["description"])
 		}
 		lines = append(lines, line)
 	}

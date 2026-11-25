@@ -156,7 +156,7 @@ func DispatchExternalWorkerEntry(exit func(code int)) {
 
 // Hands the job to a restart safe worker under a managed gateway, false when the run stays in process
 func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, error) {
-	executionID := pyStrOrEmpty(strOrNil(job.ExecutionID))
+	executionID := anyutil.StringOr(strOrNil(job.ExecutionID), "")
 	jobID := job.ID
 	handoffDir := filepath.Join(s.home, "cron", "external-workers")
 	payloadPath := filepath.Join(handoffDir, executionID+".json")
@@ -241,10 +241,10 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 				return waitOn(payloadPath, stderrPath)
 			}
 			ackPID, _ := ack.Get("pid")
-			s.log.Info(fmt.Sprintf("Cron job '%s' handed to restart-safe worker pid=%s execution=%s dispatch=%s", jobID, anyutil.String(ackPID), executionID, dispatch.Mode))
 			if !anyutil.IsTrue(ackPID) {
 				ackPID = pid
 			}
+			s.log.Info(fmt.Sprintf("Cron job %q handed to restart-safe worker pid=%s execution=%s dispatch=%s", jobID, anyutil.String(ackPID), executionID, dispatch.Mode))
 			s.recordExternalCronWorker(jobID, ackPID, dispatch.Mode == "scoped")
 			return waitOn(payloadPath, stderrPath)
 		}
@@ -262,7 +262,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	s.log.Warn(fmt.Sprintf("Cron external worker for job '%s' did not acknowledge within %.0fs; leaving the durable execution claim untouched", jobID, HandoffAdoptionGraceSeconds))
+	s.log.Warn(fmt.Sprintf("Cron external worker for job %q did not acknowledge within %.0fs; leaving the durable execution claim untouched", jobID, HandoffAdoptionGraceSeconds))
 	return waitOn(payloadPath, ackPath, stderrPath)
 }
 
@@ -393,7 +393,7 @@ func (s *Store) waitForExternalCronWorkerBody(ctx context.Context, proc workerPr
 		if err != nil {
 			return false, err
 		}
-		return current != nil && states[pyStrOrEmpty(current["status"])], nil
+		return current != nil && states[anyutil.StringOr(current["status"], "")], nil
 	}
 	for {
 		returncode, exited := proc.Wait(time.Second)

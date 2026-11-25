@@ -69,7 +69,7 @@ func parseUVLock(text string) ([]any, [][2]string, error) {
 	for _, row := range rows {
 		obj, ok := row.(*OrderedObject)
 		if !ok {
-			return nil, nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock package entry must be a table, got %s", tomlKind(row))}
+			return nil, nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock package entry must be a table, got %s", tomlKind(row))}
 		}
 		version, has := obj.Values["version"]
 		if !has {
@@ -122,7 +122,7 @@ func OverriddenVersions(lock string) (map[string]map[string]bool, error) {
 		}
 		s, ok := name.(string)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override name must be text, got %s", tomlKind(name))}
+			return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("a uv.lock manifest override name must be text, got %s", tomlKind(name))}
 		}
 		overridden[pep503Name(s)] = true
 	}

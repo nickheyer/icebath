@@ -3,6 +3,7 @@ package goals
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -70,8 +71,17 @@ func goalUnwait(m Manager, arg string, render GoalRender) (GoalCommandResult, er
 	return GoalCommandResult{Output: "No wait barrier set."}, nil
 }
 
-// Python split of text on whitespace into at most two parts
+// Split of text on whitespace into its first word and the rest
 func splitOnce(text string) []string { return textutil.FieldsN(text, 1) }
+
+// Whole number a command argument spells, one past the int64 range read as the bound on its side, which names no process and no list position
+func commandInt(arg string) (int64, error) {
+	n, err := textutil.ParseInt(arg)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, err
+	}
+	return n, nil
+}
 
 // Parks the goal on the pid the command names, a usage error for a missing or non integer pid
 func goalWait(m Manager, arg string) (GoalCommandResult, error) {
@@ -79,9 +89,8 @@ func goalWait(m Manager, arg string) (GoalCommandResult, error) {
 		return GoalCommandResult{Output: "Usage: /goal wait <pid> [reason]", Error: true}, nil
 	}
 	tokens := splitOnce(arg)
-	// A pid past what an int64 holds reads as the bound on its side, which no process has
-	pid, err := anyutil.ToInt(tokens[0])
-	if err != nil && !errors.Is(err, anyutil.ErrRange) {
+	pid, err := commandInt(tokens[0])
+	if err != nil {
 		return GoalCommandResult{Output: "/goal wait: <pid> must be an integer process id.", Error: true}, nil
 	}
 	reason := ""
@@ -108,10 +117,9 @@ func goalGateAdd(m Manager, arg string) (GoalCommandResult, error) {
 }
 
 func goalGateRemove(m Manager, arg string) (GoalCommandResult, error) {
-	// An index past what an int64 holds reads as the bound on its side, which lies outside every list
-	index, err := anyutil.ToInt(arg)
-	if err != nil && !errors.Is(err, anyutil.ErrRange) {
-		return GoalCommandResult{}, err
+	index, err := commandInt(arg)
+	if err != nil {
+		return GoalCommandResult{}, &errorutil.Error{Kind: "ValueError", Msg: "gate number must be an integer, got " + strconv.Quote(arg)}
 	}
 	command, err := m.RemoveGate(index)
 	if err != nil {
@@ -175,12 +183,12 @@ func goalGate(m Manager, arg string, authorizeGate func() string) (GoalCommandRe
 	}
 	result, err := handler(m, rest)
 	if err != nil {
-		if pyErr, isPy := err.(*errorutil.Error); isPy && goalCommandErrorKinds[pyErr.Kind] {
+		if kindErr, isPy := err.(*errorutil.Error); isPy && goalCommandErrorKinds[kindErr.Kind] {
 			operation := verb
 			if verb == "rm" {
 				operation = "remove"
 			}
-			return GoalCommandResult{Output: fmt.Sprintf("/goal gate %s: %s", operation, pyErr.Msg), Error: true}, nil
+			return GoalCommandResult{Output: fmt.Sprintf("/goal gate %s: %s", operation, kindErr.Msg), Error: true}, nil
 		}
 		return GoalCommandResult{}, err
 	}
@@ -226,7 +234,7 @@ func goalSet(m Manager, arg string, drafting bool, lastUserMessage any, render G
 		return GoalCommandResult{}, err
 	}
 	if state == nil {
-		return GoalCommandResult{}, &errorutil.Error{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'goal'"}
+		return GoalCommandResult{}, &errorutil.Error{Kind: "AttributeError", Msg: "the goal manager stored no goal state"}
 	}
 	goal := anyutil.String(state.Goal)
 	output := render("gateway.goal.set", "⊙ Goal set ({budget}-turn budget): {goal}", map[string]any{"budget": state.MaxTurns, "goal": state.Goal})
@@ -320,13 +328,13 @@ func DispatchGoalCommand(m Manager, arg string, o GoalCommandOptions) (GoalComma
 	if err == nil {
 		return result, nil
 	}
-	pyErr, isPy := err.(*errorutil.Error)
-	if !isPy || !goalCommandErrorKinds[pyErr.Kind] {
+	kindErr, isPy := err.(*errorutil.Error)
+	if !isPy || !goalCommandErrorKinds[kindErr.Kind] {
 		return GoalCommandResult{}, err
 	}
-	output := prefix + ": " + pyErr.Msg
+	output := prefix + ": " + kindErr.Msg
 	if prefix == "Invalid goal" {
-		output = render("gateway.goal.invalid", "Invalid goal: {error}", map[string]any{"error": pyErr.Msg})
+		output = render("gateway.goal.invalid", "Invalid goal: {error}", map[string]any{"error": kindErr.Msg})
 	}
 	return GoalCommandResult{Output: output, Error: true}, nil
 }

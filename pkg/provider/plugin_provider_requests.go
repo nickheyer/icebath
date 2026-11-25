@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const providerRequestDefaultTimeout = 30 * time.Second
@@ -87,7 +89,7 @@ func pluginProviderCodexAuth(rawURL string) (map[string]string, string, error) {
 		}
 		creds = map[string]any{}
 	}
-	token := strings.TrimSpace(pyOrStr(creds["api_key"]))
+	token := strings.TrimSpace(anyutil.StringOr(creds["api_key"], ""))
 	if token == "" {
 		return nil, "", newProviderNotSignedIn(fmt.Sprintf("Not signed in to Codex in Icebath. Run `%s` to sign in to OpenAI Codex.",
 			oauthReloginCommandIn(envHome(env), "openai-codex")))
@@ -97,7 +99,7 @@ func pluginProviderCodexAuth(rawURL string) (map[string]string, string, error) {
 		headers = codexAccountHeaders(token)
 	}
 	headers["Authorization"] = "Bearer " + token
-	return headers, pyOrStr(creds["base_url"]), nil
+	return headers, anyutil.StringOr(creds["base_url"], ""), nil
 }
 
 func pluginProviderRequestProviderIDs() map[string]bool {
@@ -110,19 +112,19 @@ func pluginProviderRequestProviderIDs() map[string]bool {
 
 // Scheme, lowercased host without a trailing dot and effective port, an error on a malformed port
 func pluginRequestURLOrigin(rawURL string) (PluginOrigin, error) {
-	parts, err := pyURLParse(rawURL, "")
+	parts, err := urlutil.Split(rawURL)
 	if err != nil {
 		return PluginOrigin{}, err
 	}
-	host, _, _ := pyNetlocHostPort(parts.netloc)
-	port, ok, err := pyURLPort(rawURL)
+	host, _, _ := netlocHostPort(parts.Authority)
+	port, ok, err := urlPort(rawURL)
 	if err != nil {
 		return PluginOrigin{}, err
 	}
 	if !ok {
-		port = map[string]int{"http": 80, "https": 443}[parts.scheme]
+		port = map[string]int{"http": 80, "https": 443}[parts.Scheme]
 	}
-	return PluginOrigin{Scheme: parts.scheme, Host: strings.TrimRight(host, "."), Port: port}, nil
+	return PluginOrigin{Scheme: parts.Scheme, Host: strings.TrimRight(host, "."), Port: port}, nil
 }
 
 func pluginOriginIn(origin PluginOrigin, origins []PluginOrigin) bool {
@@ -197,7 +199,7 @@ func DeclaredAuthProviders(manifest map[string]any) []string {
 	}
 	out := []string{}
 	for _, p := range raw {
-		if s := strings.TrimSpace(pyStr(p)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(p)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -343,7 +345,7 @@ func CredentialedProviderRequest(provider, method, rawURL string, opts ProviderR
 			}
 			sort.Strings(ids)
 			return nil, &UnsupportedProviderRequestError{Message: fmt.Sprintf("No signed-in requests for provider %s (supported: %s, or an id the plugin declares under oauth: in plugin.yaml)",
-				pyRepr(provider), strings.Join(ids, ", "))}
+				anyutil.Quote(provider), strings.Join(ids, ", "))}
 		}
 		declared, err := pluginDeclaredAuthProviders(pluginDir)
 		if err != nil {
@@ -361,7 +363,7 @@ func CredentialedProviderRequest(provider, method, rawURL string, opts ProviderR
 	if !pluginOriginIn(origin, origins) {
 		target := origin.Host
 		if target == "" {
-			target = pyRepr(rawURL)
+			target = anyutil.Quote(rawURL)
 		}
 		return nil, &ProviderRequestPermissionError{Message: fmt.Sprintf("Refusing to send the %s sign-in to %s", provider, target)}
 	}

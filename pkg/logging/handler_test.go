@@ -118,7 +118,7 @@ func TestLockTimeoutRoutedToHandleErrorIsSuppressed(t *testing.T) {
 		h.handleError(rec, &lockTimeoutError{})
 		h.handleError(rec, &lockTimeoutError{})
 	})
-	if strings.Contains(errText, "Cannot acquire lock after 20 attempts") || strings.Contains(errText, "--- Logging error ---") {
+	if strings.Contains(errText, "Cannot acquire lock after 20 attempts") || strings.Contains(errText, "logging: could not write record") {
 		t.Fatalf("stderr %q", errText)
 	}
 	if len(listener.recs) != 1 || !strings.Contains(listener.recs[0].Msg, "concurrent-log-handler") {
@@ -162,12 +162,12 @@ func TestFreshImportSelectsWorkingConcurrentHandler(t *testing.T) {
 }
 
 func TestFreshImportRetainsLockFailureAndWritesWithoutRollover(t *testing.T) {
-	failure := errors.New("ImportError: pywintypes is required for Win32Locker but not found")
+	failure := &os.PathError{Op: "lock", Path: "icebath-portalocker-probe", Err: syscall.EACCES}
 	prevLock := lockFile
 	lockFile = func(*os.File) error { return failure }
 	t.Cleanup(func() { lockFile = prevLock })
 	withGOOS(t, "windows")
-	if useCLH || !windowsCLHFallback || windowsCLHReason != `ImportError('pywintypes is required for Win32Locker but not found')` {
+	if useCLH || !windowsCLHFallback || windowsCLHReason != syscall.EACCES.Error()+": icebath-portalocker-probe" {
 		t.Fatalf("clh %v fallback %v reason %q", useCLH, windowsCLHFallback, windowsCLHReason)
 	}
 	dir := t.TempDir()
@@ -245,7 +245,7 @@ func TestEIOFromFileHandlerNamesThePathOnceThenRecovers(t *testing.T) {
 			h.Handle(context.Background(), testRecord("t", LevelInfo, "sick "+string(rune('0'+i))))
 		}
 	})
-	if strings.Contains(errText, "--- Logging error ---") || strings.Count(errText, path) != 1 || !strings.Contains(errText, "Input/output error") {
+	if strings.Contains(errText, "logging: could not write record") || strings.Count(errText, path) != 1 || !strings.Contains(errText, "unavailable (input/output error); file logging paused until it recovers") {
 		t.Fatalf("stderr %q", errText)
 	}
 	h.Handle(context.Background(), testRecord("t", LevelInfo, "recovered"))
@@ -265,7 +265,7 @@ func TestEIOAfterSuccessfulReopenStillNamesThePathOnce(t *testing.T) {
 			h.Handle(context.Background(), testRecord("t", LevelInfo, "sick"))
 		}
 	})
-	if strings.Contains(errText, "--- Logging error ---") || strings.Count(errText, path) != 1 {
+	if strings.Contains(errText, "logging: could not write record") || strings.Count(errText, path) != 1 {
 		t.Fatalf("stderr %q", errText)
 	}
 }

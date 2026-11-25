@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -711,7 +712,7 @@ func checkForwardEnvCollisions(env *Env, forward []string, critical map[string]b
 		return nil
 	}
 	sort.Strings(collisions)
-	return collisionGuard(env, fmt.Sprintf("docker_forward_env would inject real egress-protected variables %s", pyList(collisions)), enforce,
+	return collisionGuard(env, fmt.Sprintf("docker_forward_env would inject real egress-protected variables %s", listOf(collisions)), enforce,
 		"Remove these names from docker_forward_env or disable enforce_on_docker to opt out of egress isolation.",
 		"Explicit docker_forward_env values will override egress tokens.")
 }
@@ -749,7 +750,7 @@ func checkDockerEnvCollisions(env *Env, userEnv, egressEnv map[string]string, en
 		return nil
 	}
 	sort.Strings(collisions)
-	return collisionGuard(env, fmt.Sprintf("docker_env in config.yaml overrides egress-proxy variables %s", pyList(collisions)), enforce,
+	return collisionGuard(env, fmt.Sprintf("docker_env in config.yaml overrides egress-proxy variables %s", listOf(collisions)), enforce,
 		"Remove these keys from docker_env or disable enforce_on_docker to opt out of egress isolation.",
 		"Falling back to docker_env values; sandbox traffic will NOT route through the proxy.")
 }
@@ -759,16 +760,16 @@ func checkExtraArgsCollisions(env *Env, extra []string, critical map[string]bool
 	if len(collisions) == 0 {
 		return nil
 	}
-	return collisionGuard(env, fmt.Sprintf("docker_extra_args would override egress-proxy controls %s", pyList(collisions)), enforce,
+	return collisionGuard(env, fmt.Sprintf("docker_extra_args would override egress-proxy controls %s", listOf(collisions)), enforce,
 		"Remove these args or disable enforce_on_docker to opt out of egress isolation.",
 		"Extra Docker args may bypass egress isolation.")
 }
 
 // Renders a string list the way Python prints one
-func pyList(items []string) string {
+func listOf(items []string) string {
 	quoted := make([]string, len(items))
 	for i, s := range items {
-		quoted[i] = pyRepr(s)
+		quoted[i] = strconv.Quote(s)
 	}
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
@@ -808,7 +809,7 @@ func mergeEgressEnv(env *Env, userEnv, egressEnv map[string]string, enforce bool
 			kept = append(kept, t)
 		}
 		if len(dropped) > 0 {
-			envLog(env).Warn("Overriding conflicting NODE_OPTIONS CA-mode flag(s) with the egress-required flag to keep Node routed through the egress CA store.", "dropped", pyList(dropped), "required", appendToken)
+			envLog(env).Warn("Overriding conflicting NODE_OPTIONS CA-mode flag(s) with the egress-required flag to keep Node routed through the egress CA store.", "dropped", listOf(dropped), "required", appendToken)
 		}
 		tokens = kept
 	}
@@ -1341,7 +1342,7 @@ func NewDockerEnvironment(ctx context.Context, env *Env, o DockerOptions) (*dock
 	d.initUnsetNames = map[string]bool{}
 	d.initEnvValues = map[string]string{}
 	d.runEnvValues = map[string]string{}
-	envLog(env).Info("DockerEnvironment volumes", "volumes", pyList(o.Volumes))
+	envLog(env).Info("DockerEnvironment volumes", "volumes", listOf(o.Volumes))
 	if err := ensureDockerAvailable(ctx, env); err != nil {
 		return nil, err
 	}
@@ -1380,7 +1381,7 @@ func NewDockerEnvironment(ctx context.Context, env *Env, o DockerOptions) (*dock
 	if o.SnapCompat {
 		envLog(env).Warn("docker_snap_compat: running without --init and no-new-privileges (snap Docker under AppArmor)")
 	}
-	envLog(env).Info("Docker volume_args", "args", pyList(volumeArgs))
+	envLog(env).Info("Docker volume_args", "args", listOf(volumeArgs))
 	all := append([]string{}, securityArgs...)
 	all = append(all, userArgs...)
 	all = append(all, writableArgs...)
@@ -1389,7 +1390,7 @@ func NewDockerEnvironment(ctx context.Context, env *Env, o DockerOptions) (*dock
 	all = append(all, volumeArgs...)
 	all = append(all, envArgs...)
 	all = append(all, validatedExtra...)
-	envLog(env).Info("Docker run_args", "args", pyList(all))
+	envLog(env).Info("Docker run_args", "args", listOf(all))
 	profileName := dockerContainerIdentity(env, o.SharedContainerKey)
 	taskLabel := sanitizeLabelValue(o.TaskID)
 	d.labels = map[string]string{"icebath-agent": "1", "icebath-task-id": taskLabel, "icebath-profile": profileName, egressLabelKey: egressLabel}
@@ -1452,7 +1453,7 @@ func (d *dockerEnv) resourceArgs(ctx context.Context, o DockerOptions) ([]string
 	var args []string
 	if cgroupLimitsAvailable(ctx, d.env, o.Image) {
 		if o.CPU > 0 {
-			args = append(args, "--cpus", pyFloat(o.CPU))
+			args = append(args, "--cpus", floatNumber(o.CPU))
 		}
 		if o.Memory > 0 {
 			args = append(args, "--memory", fmt.Sprintf("%dm", o.Memory))
@@ -1475,14 +1476,14 @@ func (d *dockerEnv) resourceArgs(ctx context.Context, o DockerOptions) ([]string
 		if !set {
 			args = append(args, "--network=none")
 		} else if mode != "none" {
-			return nil, fmt.Errorf("terminal.docker_network is false (air-gapped) but terminal.docker_extra_args requests --network=%s. Remove the --network entry from docker_extra_args, or set docker_network: true to opt into that network.", pyRepr(mode))
+			return nil, fmt.Errorf("terminal.docker_network is false (air-gapped) but terminal.docker_extra_args requests --network=%s. Remove the --network entry from docker_extra_args, or set docker_network: true to opt into that network.", strconv.Quote(mode))
 		}
 	}
 	return args, nil
 }
 
 // Formats a float the way Python str does for the docker cpus flag
-func pyFloat(f float64) string {
+func floatNumber(f float64) string {
 	if f == float64(int64(f)) {
 		return fmt.Sprintf("%.1f", f)
 	}

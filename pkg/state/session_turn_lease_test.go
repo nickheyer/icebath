@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func leaseDB(t *testing.T) *SessionDB {
@@ -53,7 +55,7 @@ func leaseContents(t *testing.T, db *SessionDB, sid string) []string {
 	}
 	out := []string{}
 	for _, r := range rows {
-		out = append(out, pyStr(rowValue(r, "content")))
+		out = append(out, anyutil.String(rowValue(r, "content")))
 	}
 	return out
 }

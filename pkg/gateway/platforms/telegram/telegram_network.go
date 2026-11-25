@@ -559,7 +559,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 		if !ok {
 			return nil, fmt.Errorf("a DNS over HTTPS answer is %s, expected a mapping", errchain.Kind(item))
 		}
-		if typ, _ := answer.Get("type"); !pyEqualsOne(typ) {
+		if typ, _ := answer.Get("type"); !equalsOne(typ) {
 			continue
 		}
 		rawValue, present := answer.Get("data")
@@ -580,7 +580,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 }
 
 // Whether a decoded JSON value compares equal to the int 1 like Python, true and 1.0 included
-func pyEqualsOne(v any) bool {
+func equalsOne(v any) bool {
 	switch n := v.(type) {
 	case bool:
 		return n

@@ -188,7 +188,7 @@ func newSessionDB(ctx context.Context, dbPath string, readOnly bool, callerSkip 
 	d.sessionTitles = newSessionTitles(d)
 	err := d.initialize(ctx)
 	if err != nil {
-		setLastInitError(pyExceptionClassName(err) + ": " + errText(err))
+		setLastInitError(initFailureText(err))
 		core.mu.Lock()
 		conn := core.conn
 		core.setConnLocked(nil)
@@ -223,11 +223,11 @@ func (d *SessionDB) initialize(ctx context.Context) error {
 	return d.recordDBFileIdentity(ctx)
 }
 
-// Python exception class name of an error for the init failure diagnostic
-func pyExceptionClassName(err error) string {
+// Class label an init failure diagnostic leads with: the declared kind, the SQLite class or RuntimeError, empty for an operating system failure, whose own text names it
+func exceptionClassName(err error) string {
 	var typed interface{ ErrorKind() string }
 	var intErr *errorutil.Error
-	var conv *pyConvError
+	var conv *convError
 	var corrupt *StateDBCorruptError
 	var deleted *DeletedWalGenerationError
 	var replaced *StateDBReplacedError
@@ -255,9 +255,17 @@ func pyExceptionClassName(err error) string {
 		return sqliteClassNames[class]
 	}
 	if errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &syscallErr) {
-		return errorutil.Kind(err)
+		return ""
 	}
 	return "RuntimeError"
+}
+
+// Diagnostic a failed open records: the class label before the error's text, an operating system failure as its text alone
+func initFailureText(err error) string {
+	if class := exceptionClassName(err); class != "" {
+		return class + ": " + errText(err)
+	}
+	return errText(err)
 }
 
 // Python sqlite3 exception class names by class
@@ -881,7 +889,7 @@ func (d *SessionDB) writeSQL(ctx context.Context, query string, params []any, ma
 		for _, row := range params {
 			rowArgs, ok := row.([]any)
 			if !ok {
-				return &pyConvError{"ProgrammingError", "each row of statement parameters must be a list"}
+				return &convError{"ProgrammingError", "each row of statement parameters must be a list"}
 			}
 			if _, err := conn.ExecContext(ctx, query, rowArgs...); err != nil {
 				return err
@@ -990,7 +998,7 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 		if err := readStamp(); err != nil {
 			return err
 		}
-		if !pyTruthy(value) {
+		if !anyutil.IsTrue(value) {
 			if _, err := conn.ExecContext(ctx, "INSERT OR IGNORE INTO state_meta (key, value) VALUES (?, ?)", stateDBGenerationKey, token); err != nil {
 				return err
 			}
@@ -998,7 +1006,7 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 				return err
 			}
 		}
-		if pyTruthy(value) {
+		if anyutil.IsTrue(value) {
 			token = anyutil.String(value)
 		}
 		var appID int64
@@ -1013,7 +1021,7 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 			}
 			prefix, err := strconv.ParseInt(string(head), 16, 64)
 			if err != nil {
-				return &pyConvError{"ValueError", fmt.Sprintf("the database file generation %q is not a hexadecimal number", string(head))}
+				return &convError{"ValueError", fmt.Sprintf("the database file generation %q is not a hexadecimal number", string(head))}
 			}
 			current = uint32(prefix & 0x7FFFFFFF)
 			if current == 0 {
@@ -1512,7 +1520,7 @@ func (c *sessionCore) getMeta(ctx context.Context, key string) (string, bool, er
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn == nil {
-		return "", false, &pyConvError{"AttributeError", "the session database connection is closed"}
+		return "", false, &convError{"AttributeError", "the session database connection is closed"}
 	}
 	var value any
 	err := c.conn.QueryRowContext(ctx, "SELECT value FROM state_meta WHERE key = ?", key).Scan(&value)

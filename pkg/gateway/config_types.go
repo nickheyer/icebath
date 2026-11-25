@@ -26,23 +26,17 @@ import (
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-// Gateway error carrying a kind label beside its message
-type PyError struct {
-	Kind string
-	Msg  string
+// Value as a message names it: text in double quotes, null for nil, any other value as written
+func quotedValue(v any) string {
+	if v == nil {
+		return "null"
+	}
+	return anyutil.Quote(v)
 }
 
-func (e *PyError) Error() string { return e.Msg }
-
-// Kind label of the error, the word errorutil.Kind reports for it
-func (e *PyError) ErrorKind() string { return e.Kind }
-
-// Kind label of a PyError or errorutil.Error, empty for errors that carry none
-func pyErrorKind(err error) string {
-	switch e := err.(type) {
-	case *PyError:
-		return e.Kind
-	case *errorutil.Error:
+// Kind label an errorutil.Error carries, empty for any other error
+func errorKindLabel(err error) string {
+	if e, ok := err.(*errorutil.Error); ok {
 		return e.Kind
 	}
 	return ""
@@ -268,7 +262,7 @@ func ParsePlatform(ctx context.Context, value any) (Platform, error) {
 	if p, ok := value.(Platform); ok {
 		value = string(p)
 	}
-	invalid := &PyError{"ValueError", anyutil.Quote(raw) + " is not a valid Platform"}
+	invalid := &errorutil.Error{"ValueError", quotedValue(raw) + " is not a valid Platform"}
 	s, ok := value.(string)
 	if !ok {
 		return "", invalid
@@ -361,11 +355,11 @@ func (h *HomeChannel) ToDict() map[string]any {
 	return out
 }
 
-// Home channel of a mapping, KeyError for a missing platform or chat id
+// Home channel of a mapping, KeyError for a missing platform or chat id, nil when the chat id is null and no home channel is set
 func HomeChannelFromDict(ctx context.Context, data map[string]any) (*HomeChannel, error) {
 	rawPlatform, ok := data["platform"]
 	if !ok {
-		return nil, &PyError{"KeyError", "'platform'"}
+		return nil, &errorutil.Error{"KeyError", "'platform'"}
 	}
 	platform, err := ParsePlatform(ctx, rawPlatform)
 	if err != nil {
@@ -373,7 +367,10 @@ func HomeChannelFromDict(ctx context.Context, data map[string]any) (*HomeChannel
 	}
 	rawChat, ok := data["chat_id"]
 	if !ok {
-		return nil, &PyError{"KeyError", "'chat_id'"}
+		return nil, &errorutil.Error{"KeyError", "'chat_id'"}
+	}
+	if rawChat == nil {
+		return nil, nil
 	}
 	name, ok := data["name"]
 	if !ok {
@@ -836,7 +833,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 				continue
 			}
 		}
-		var pe *PyError
+		var pe *errorutil.Error
 		if !errors.As(err, &pe) || pe.Kind != "ValueError" {
 			return nil, err
 		}
@@ -884,7 +881,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 	if v, ok := data["sessions_dir"]; ok {
 		s, isStr := v.(string)
 		if !isStr {
-			return nil, &PyError{"TypeError", "sessions_dir is " + errchain.Kind(v) + ", expected a path"}
+			return nil, &errorutil.Error{"TypeError", "sessions_dir is " + errchain.Kind(v) + ", expected a path"}
 		}
 		sessionsDir = path.Clean(s)
 	}
@@ -1020,7 +1017,7 @@ func validateGatewayConfig(cfg *GatewayConfig) error {
 		}
 		s, isStr := pc.Token.(string)
 		if !isStr {
-			return &PyError{"AttributeError", "a platform token is " + errchain.Kind(pc.Token) + ", expected text"}
+			return &errorutil.Error{"AttributeError", "a platform token is " + errchain.Kind(pc.Token) + ", expected text"}
 		}
 		rows = append(rows, tokenPlatform{p, pc, env, s})
 	}

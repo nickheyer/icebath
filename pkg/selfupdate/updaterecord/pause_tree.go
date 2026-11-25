@@ -298,7 +298,7 @@ func pathsAMoveCouldWrite(ctx context.Context, root string) (map[string]bool, bo
 
 // Whether path was dirty at the pause and still holds the bytes the pause saw
 func seenAtPause(root string, baseline map[string]any, path string) (bool, error) {
-	seen, err := pyContains(orEmptyList(baseline["dirty_at_pause"]), path)
+	seen, err := contains(orEmptyList(baseline["dirty_at_pause"]), path)
 	if err != nil || !seen {
 		return false, err
 	}
@@ -501,11 +501,11 @@ func TreeIsWhole(ctx context.Context, token map[string]any, root string) (bool, 
 				atHead = append(atHead, b)
 				continue
 			}
-			inLanded, err := pyContains(orEmptyMapValue(b["landed"]), head)
+			inLanded, err := contains(orEmptyMapValue(b["landed"]), head)
 			if err != nil {
 				return false, "", err
 			}
-			inTargets, err := pyContains(orEmptyList(b["move_targets"]), head)
+			inTargets, err := contains(orEmptyList(b["move_targets"]), head)
 			if err != nil {
 				return false, "", err
 			}

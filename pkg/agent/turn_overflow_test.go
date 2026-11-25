@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Recovery over a gpt-5 agent with three of three compression attempts spent
@@ -83,7 +84,7 @@ func TestContextRejectionFarBelowTheWindowIsNotBlamedOnTheConversation(t *testin
 	if v.Action != "return" || compressed != 0 {
 		t.Fatalf("action %q compressed %d", v.Action, compressed)
 	}
-	if result["failed"] != true || pyTruthy(result["compression_exhausted"]) {
+	if result["failed"] != true || anyutil.IsTrue(result["compression_exhausted"]) {
 		t.Fatalf("result %v", result)
 	}
 	if result["failure_reason"] != "server_error" || result["failure_retryable"] != true {

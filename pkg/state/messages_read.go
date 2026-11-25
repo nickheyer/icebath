@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -29,14 +30,14 @@ func (d *SessionDB) messageColumnNames(ctx context.Context, conn SQLiteConn) ([]
 	}
 	cols := make([]string, 0, len(rows))
 	for _, r := range rows {
-		cols = append(cols, pyStr(rowValue(r, "name")))
+		cols = append(cols, anyutil.String(rowValue(r, "name")))
 	}
 	d.messageColumnsCache = cols
 	return cols, nil
 }
 
 // Python slice items[offset:][:limit] with negative bounds counted from the end
-func pyPage[T any](items []T, offset int, limit *int) []T {
+func pageValue[T any](items []T, offset int, limit *int) []T {
 	n := len(items)
 	if offset < 0 {
 		offset = max(0, n+offset)
@@ -53,13 +54,13 @@ func pyPage[T any](items []T, offset int, limit *int) []T {
 }
 
 // Page taken from the newest end when latest, returned in ascending order
-func pyLatestPage[T any](items []T, offset int, limit *int, latest bool) []T {
+func latestPage[T any](items []T, offset int, limit *int, latest bool) []T {
 	if !latest {
-		return pyPage(items, offset, limit)
+		return pageValue(items, offset, limit)
 	}
 	rev := slices.Clone(items)
 	slices.Reverse(rev)
-	rev = slices.Clone(pyPage(rev, offset, limit))
+	rev = slices.Clone(pageValue(rev, offset, limit))
 	slices.Reverse(rev)
 	return rev
 }
@@ -88,7 +89,7 @@ func (d *SessionDB) reconcileDisplayOrders(ctx context.Context, conn SQLiteConn,
 		var updates []update
 		for _, r := range rows {
 			row := objMap(r)
-			lastID, _ = pyIntID(row["id"])
+			lastID, _ = intID(row["id"])
 			key, err := displayDedupeKey(row)
 			if err != nil {
 				return err
@@ -107,7 +108,7 @@ func (d *SessionDB) reconcileDisplayOrders(ctx context.Context, conn SQLiteConn,
 				}
 				firstID[identity] = order
 			}
-			if !pyValueEqual(order, row["display_order"]) || stored == nil || !bytes.Equal(stored, []byte(identity)) {
+			if !anyutil.Equal(order, row["display_order"]) || stored == nil || !bytes.Equal(stored, []byte(identity)) {
 				updates = append(updates, update{order, []byte(identity), lastID})
 			}
 		}
@@ -188,8 +189,8 @@ func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClau
 				return err
 			}
 			identity := string(displayIdentityOf(key))
-			active, _ := pyIntID(rowValue(r, "active"))
-			id, _ := pyIntID(rowValue(r, "id"))
+			active, _ := intID(rowValue(r, "active"))
+			id, _ := intID(rowValue(r, "id"))
 			cur, ok := reps[identity]
 			if !ok {
 				order = append(order, identity)
@@ -198,7 +199,7 @@ func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClau
 				reps[identity] = rep{active, id}
 			}
 		}
-		order = pyLatestPage(order, offset, limit, latest)
+		order = latestPage(order, offset, limit, latest)
 		selectedIDs := make([]int64, len(order))
 		for i, identity := range order {
 			selectedIDs[i] = reps[identity].id
@@ -216,7 +217,7 @@ func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClau
 				return err
 			}
 			for _, r := range got {
-				id, _ := pyIntID(rowValue(r, "id"))
+				id, _ := intID(rowValue(r, "id"))
 				selected[id] = r
 			}
 		}
@@ -296,13 +297,13 @@ type GetMessagesOptions struct {
 // Message dicts of a session page under the requested visibility, deduped for display reads
 func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMessagesOptions) ([]*jsonutil.Object, error) {
 	if o.AfterID != nil && (o.Latest || o.Offset != 0) {
-		return nil, pyValueError("after_id is incompatible with latest/offset paging")
+		return nil, valueError("after_id is incompatible with latest/offset paging")
 	}
 	if o.AfterID != nil && o.IncludeCompacted {
-		return nil, pyValueError("after_id is incompatible with include_compacted (deduped display reads use offset paging)")
+		return nil, valueError("after_id is incompatible with include_compacted (deduped display reads use offset paging)")
 	}
 	if o.AfterID != nil && o.IncludeAncestors {
-		return nil, pyValueError("after_id is incompatible with include_ancestors (merged-lineage reads use offset paging)")
+		return nil, valueError("after_id is incompatible with include_ancestors (merged-lineage reads use offset paging)")
 	}
 	clause := activeClause(o.IncludeInactive, o.IncludeCompacted)
 	sessionIDs := []string{sessionID}
@@ -328,7 +329,7 @@ func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMess
 		if rows, err = dedupeDisplayGenerations(rows, display); err != nil {
 			return nil, err
 		}
-		rows = pyLatestPage(rows, o.Offset, o.Limit, o.Latest)
+		rows = latestPage(rows, o.Offset, o.Limit, o.Latest)
 	case display:
 		ready, err := d.ensureDisplayOrder(ctx, sessionID)
 		if err != nil {
@@ -394,7 +395,7 @@ type stateValueError struct{ msg string }
 func (e *stateValueError) Error() string     { return e.msg }
 func (e *stateValueError) ErrorKind() string { return "ValueError" }
 
-func pyValueError(msg string) error { return &stateValueError{msg} }
+func valueError(msg string) error { return &stateValueError{msg} }
 
 // Conversation rows of the sessions, removed row identities merged in for display reads
 func (d *SessionDB) fetchConversationRows(ctx context.Context, sessionIDs []string, clause string, withSessionID, withCompacted bool) ([]*jsonutil.Object, error) {
@@ -427,8 +428,8 @@ func (d *SessionDB) withRemovedIdentities(ctx context.Context, rows []*jsonutil.
 	out := append(slices.Clone(rows), removed...)
 	if len(removed) > 0 {
 		slices.SortStableFunc(out, func(a, b *jsonutil.Object) int {
-			x, _ := pyIntID(rowValue(a, "id"))
-			y, _ := pyIntID(rowValue(b, "id"))
+			x, _ := intID(rowValue(a, "id"))
+			y, _ := intID(rowValue(b, "id"))
 			return int(x - y)
 		})
 	}
@@ -488,7 +489,7 @@ func (d *SessionDB) ConversationRevision(ctx context.Context, sessionID string, 
 		key string
 		dst *int64
 	}{{"n", &rev.Count}, {"max_id", &rev.MaxID}, {"revision", &rev.Revision}} {
-		n, err := pyIntOf(rowValue(row, f.key))
+		n, err := intOfValue(rowValue(row, f.key))
 		if err != nil {
 			return TranscriptRevision{}, err
 		}
@@ -527,7 +528,7 @@ func exactReplayedUserCloneKey(timestamp, content any) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	ts := pyReprValue(timestamp)
+	ts := anyutil.Quote(timestamp)
 	switch x := timestamp.(type) {
 	case int64:
 		ts = strconv.FormatFloat(float64(x), 'g', -1, 64)
@@ -554,7 +555,7 @@ func findDuplicateReplayedUserMessage(messages []map[string]any, msg map[string]
 		switch prev["role"] {
 		case "user":
 			prevContent, prevComposite := canonicalReplayedUserContent(prev)
-			if pyValueEqual(prevContent, content) && (preferCurrent || prevComposite || isStr) {
+			if anyutil.Equal(prevContent, content) && (preferCurrent || prevComposite || isStr) {
 				return i, preferCurrent, true
 			}
 		case "assistant":
@@ -629,40 +630,40 @@ func (d *SessionDB) rowsToConversation(rows []*jsonutil.Object, sessionID string
 		restoreIdentityColumns(row, msg)
 		order = appendNewKeys(order, msg)
 		for _, col := range []string{"api_content", "display_kind"} {
-			if pyTruthy(row[col]) {
+			if anyutil.IsTrue(row[col]) {
 				put(col, row[col])
 			}
 		}
-		if pyTruthy(row["display_metadata"]) {
+		if anyutil.IsTrue(row["display_metadata"]) {
 			if decoded := decodeDisplayMetadata(row["display_metadata"]); decoded != nil {
 				put("display_metadata", decoded)
 			}
 		}
-		if includeSummaryMarkers && pyTruthy(row["_compressed_summary"]) {
+		if includeSummaryMarkers && anyutil.IsTrue(row["_compressed_summary"]) {
 			put("_compressed_summary", true)
 		}
 		for _, col := range []string{"timestamp", "tool_call_id", "tool_name", "effect_disposition"} {
-			if pyTruthy(row[col]) {
+			if anyutil.IsTrue(row[col]) {
 				put(col, row[col])
 			}
 		}
-		if pyTruthy(row["tool_calls"]) {
+		if anyutil.IsTrue(row["tool_calls"]) {
 			calls, err := jsonOr(row["tool_calls"], []any{}, "Failed to deserialize tool_calls in conversation replay, falling back to []")
 			if err != nil {
 				return nil, err
 			}
 			put("tool_calls", orderedDictTree(calls))
 		}
-		if pyTruthy(row["platform_message_id"]) {
+		if anyutil.IsTrue(row["platform_message_id"]) {
 			put("message_id", row["platform_message_id"])
 		}
-		if pyTruthy(row["observed"]) {
+		if anyutil.IsTrue(row["observed"]) {
 			put("observed", true)
 		}
 		switch role {
 		case "assistant":
 			for _, col := range []string{"finish_reason", "reasoning"} {
-				if pyTruthy(row[col]) {
+				if anyutil.IsTrue(row[col]) {
 					put(col, row[col])
 				}
 			}
@@ -670,7 +671,7 @@ func (d *SessionDB) rowsToConversation(rows []*jsonutil.Object, sessionID string
 				put("reasoning_content", row["reasoning_content"])
 			}
 			for _, col := range []string{"reasoning_details", "codex_reasoning_items", "codex_message_items"} {
-				if pyTruthy(row[col]) {
+				if anyutil.IsTrue(row[col]) {
 					v, err := jsonOr(row[col], nil, fmt.Sprintf("Failed to deserialize %s, falling back to None", col))
 					if err != nil {
 						return nil, err
@@ -685,7 +686,7 @@ func (d *SessionDB) rowsToConversation(rows []*jsonutil.Object, sessionID string
 			clear(toolUIDIndex)
 			owners = owners[:0]
 		case "tool":
-			if !pyTruthy(row["tool_call_uid"]) && pyTruthy(row["tool_call_id"]) {
+			if !anyutil.IsTrue(row["tool_call_uid"]) && anyutil.IsTrue(row["tool_call_id"]) {
 				for _, owner := range owners {
 					IndexToolCallUIDs(toolUIDIndex, owner)
 				}
@@ -762,7 +763,7 @@ func walkCompressionChain(sessionID string, step func(string) (*jsonutil.Object,
 		if err != nil {
 			return nil, err
 		}
-		child := pyStr(rowValue(row, "id"))
+		child := anyutil.String(rowValue(row, "id"))
 		if row == nil || rowValue(row, "id") == nil || child == "" || seen[child] {
 			return chain, nil
 		}
@@ -842,10 +843,10 @@ func (d *SessionDB) resolveResumeSessionIDCtx(ctx context.Context, sessionID str
 				result = sessionID
 				return nil
 			}
-			if len(child) == 0 || !pyTruthy(rowValue(child[0], "id")) || seen[pyStr(rowValue(child[0], "id"))] {
+			if len(child) == 0 || !anyutil.IsTrue(rowValue(child[0], "id")) || seen[anyutil.String(rowValue(child[0], "id"))] {
 				break
 			}
-			current = pyStr(rowValue(child[0], "id"))
+			current = anyutil.String(rowValue(child[0], "id"))
 			seen[current] = true
 		}
 		if best != "" {
@@ -868,7 +869,7 @@ func (d *SessionDB) GetResumeConversations(ctx context.Context, sessionID string
 	}
 	var tip []*jsonutil.Object
 	for _, r := range rows {
-		if rowValue(r, "session_id") == sessionID && pyTruthy(rowValue(r, "active")) && rowValue(r, "role") != "session_meta" {
+		if rowValue(r, "session_id") == sessionID && anyutil.IsTrue(rowValue(r, "active")) && rowValue(r, "role") != "session_meta" {
 			tip = append(tip, r)
 		}
 	}
@@ -903,7 +904,7 @@ func (d *SessionDB) GetResumeMessageCount(ctx context.Context, sessionID string,
 	if err != nil {
 		return 0, err
 	}
-	n, err := pyIntOf(rowValue(row, "n"))
+	n, err := intOfValue(rowValue(row, "n"))
 	if err != nil {
 		return 0, err
 	}
@@ -919,7 +920,7 @@ func (d *SessionDB) AssertResumeSafe(ctx context.Context, sessionID string, maxM
 		limit = *maxMessages
 	}
 	if limit < 0 {
-		return 0, pyValueError("max_messages must be non-negative")
+		return 0, valueError("max_messages must be non-negative")
 	}
 	if limit == 0 {
 		return 0, nil
@@ -934,7 +935,7 @@ func (d *SessionDB) AssertResumeSafe(ctx context.Context, sessionID string, maxM
 	if err != nil {
 		return 0, err
 	}
-	n, err := pyIntOf(rowValue(row, "n"))
+	n, err := intOfValue(rowValue(row, "n"))
 	if err != nil {
 		return 0, err
 	}
@@ -966,7 +967,7 @@ func (d *SessionDB) GetAncestorDisplayPrefix(ctx context.Context, sessionID stri
 	ancestor := map[int64]bool{}
 	for _, r := range rows {
 		if rowValue(r, "session_id") != sessionID && rowValue(r, "id") != nil {
-			n, err := pyIntOf(rowValue(r, "id"))
+			n, err := intOfValue(rowValue(r, "id"))
 			if err != nil {
 				return nil, err
 			}

@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -63,7 +64,7 @@ func shortText(text string, limit *int) string {
 
 // Text of a truthy value, empty for None, empty strings, zero and false
 func truthyText(v any) string {
-	if !cliTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return cliStr(v, "")

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"io"
 	"strconv"
 	"strings"
@@ -91,7 +92,7 @@ func confirmSelectionGuards(env PoolEnv, out io.Writer, modelID, provider, baseU
 		fmt.Fprintln(out)
 		return false
 	}
-	response = strings.ToLower(pyStripSpace(response))
+	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
 }
 
@@ -171,10 +172,10 @@ func (r *modelPickerRows) segments(mid string) []PickerSegment {
 		return append(append([]PickerSegment{{mid, ""}}, note...), current...)
 	}
 	e := r.priceCache[mid]
-	segs := []PickerSegment{{pickerLjust(mid, r.nameCol), ""}}
-	pricePart := " " + pickerRjust(e.in, r.priceCol) + "  " + pickerRjust(e.out, r.priceCol)
+	segs := []PickerSegment{{textutil.PadRight(mid, r.nameCol), ""}}
+	pricePart := " " + textutil.PadLeft(e.in, r.priceCol) + "  " + textutil.PadLeft(e.out, r.priceCol)
 	if r.hasCache {
-		pricePart += "  " + pickerRjust(e.cache, r.cacheCol)
+		pricePart += "  " + textutil.PadLeft(e.cache, r.cacheCol)
 	}
 	segs = append(segs, PickerSegment{pricePart, ""})
 	return append(append(segs, note...), current...)
@@ -193,9 +194,9 @@ func (r *modelPickerRows) descriptionLines() []string {
 	pad := strings.Repeat(" ", 5)
 	var lines []string
 	if r.hasPricing {
-		header := pad + strings.Repeat(" ", r.nameCol) + " " + pickerRjust("In", r.priceCol) + "  " + pickerRjust("Out", r.priceCol)
+		header := pad + strings.Repeat(" ", r.nameCol) + " " + textutil.PadLeft("In", r.priceCol) + "  " + textutil.PadLeft("Out", r.priceCol)
 		if r.hasCache {
-			header += "  " + pickerRjust("Cache", r.cacheCol)
+			header += "  " + textutil.PadLeft("Cache", r.cacheCol)
 		}
 		header += "  $/Mtok"
 		lines = append(lines, header)
@@ -242,7 +243,7 @@ func pickerOrder(modelIDs []string, currentModel string) ([]string, int) {
 // Prints the numbered fallback title, rows, custom and skip entries
 func printNumberedRows(out io.Writer, rows *modelPickerRows, menuTitle string, ordered []string) {
 	n := len(ordered)
-	for _, line := range pySplitLines(menuTitle) {
+	for _, line := range splitLines(menuTitle) {
 		fmt.Fprintln(out, line)
 	}
 	numWidth := len(strconv.Itoa(n + 2))
@@ -277,7 +278,7 @@ func promptModelSelection(env PoolEnv, out io.Writer, p ModelSelectionPrompt) (s
 		if err != nil {
 			return "", false
 		}
-		return confirmed(pyStripSpace(text))
+		return confirmed(strings.TrimSpace(text))
 	}
 	ordered, start := pickerOrder(p.ModelIDs, p.CurrentModel)
 	rows := newModelPickerRows(ordered, p.Pricing, p.CurrentModel, p.Notes)
@@ -322,11 +323,11 @@ func promptModelSelection(env PoolEnv, out io.Writer, p ModelSelectionPrompt) (s
 		if err != nil {
 			return "", false
 		}
-		choice = pyStripSpace(choice)
+		choice = strings.TrimSpace(choice)
 		if choice == "" {
 			return "", false
 		}
-		idx, ok := pyIntText(choice)
+		idx, ok := textutil.ParseIntAnyScript(choice)
 		if !ok {
 			fmt.Fprintln(out, "Please enter a number")
 			continue

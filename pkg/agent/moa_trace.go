@@ -125,7 +125,11 @@ func SaveMoATurn(ctx context.Context, turn MoATurn) {
 		sessionID = turn.SessionID
 	}
 	if err := writeMoATurn(base, sessionID, turn); err != nil {
-		pkgLog().Debug(fmt.Sprintf("MoA trace write failed (session=%s): %s", anyutil.String(sessionID), err))
+		session := turn.SessionID
+		if session == "" {
+			session = "none"
+		}
+		pkgLog().Debug(fmt.Sprintf("MoA trace write failed (session=%s): %s", session, err))
 	}
 }
 

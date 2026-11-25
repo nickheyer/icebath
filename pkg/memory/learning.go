@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -53,7 +54,7 @@ type SkillRoot struct {
 
 // Top level frontmatter key or the icebath metadata copy, the older metadata spelling accepted
 func fmField(fm map[string]any, key string) any {
-	if pyTruthy(fm[key]) {
+	if anyutil.IsTrue(fm[key]) {
 		return fm[key]
 	}
 	meta, ok := fm["metadata"].(map[string]any)
@@ -84,7 +85,7 @@ func relatedSkills(fm map[string]any) []string {
 	}
 	out := []string{}
 	for _, item := range items {
-		if s := pyStrip(pyStr(item)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -104,12 +105,12 @@ func unicodeDecimalValue(r rune) rune {
 }
 
 // Python float literal shape after Unicode digits are folded to ASCII
-var pyFloatLiteralRe = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*)(?:\.(?:[0-9](?:_?[0-9])*)?)?|\.[0-9](?:_?[0-9])*)(?:[eE][+-]?[0-9](?:_?[0-9])*)?$`)
+var floatLiteralRe = regexp.MustCompile(`^[+-]?(?:(?:[0-9](?:_?[0-9])*)(?:\.(?:[0-9](?:_?[0-9])*)?)?|\.[0-9](?:_?[0-9])*)(?:[eE][+-]?[0-9](?:_?[0-9])*)?$`)
 
 // Float value of text the way float parses it, false where float raises
-func pyFloatString(text string) (float64, bool) {
+func floatString(text string) (float64, bool) {
 	var b strings.Builder
-	for _, r := range pyStrip(text) {
+	for _, r := range strings.TrimSpace(text) {
 		if r > 0x7f && isUnicodeDecimal(r) {
 			b.WriteRune('0' + unicodeDecimalValue(r))
 			continue
@@ -132,7 +133,7 @@ func pyFloatString(text string) (float64, bool) {
 			return math.Inf(1), true
 		}
 	}
-	if !pyFloatLiteralRe.MatchString(s) {
+	if !floatLiteralRe.MatchString(s) {
 		return 0, false
 	}
 	f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
@@ -159,7 +160,7 @@ func toIntTimestamp(value any) any {
 	if value == nil {
 		return nil
 	}
-	s := pyStrip(pyStr(value))
+	s := strings.TrimSpace(anyutil.String(value))
 	if s == "" {
 		return nil
 	}
@@ -184,7 +185,7 @@ func toIntTimestamp(value any) any {
 		}
 		return nil
 	}
-	if f, ok := pyFloatString(s); ok {
+	if f, ok := floatString(s); ok {
 		if math.IsInf(f, 0) {
 			return nil
 		}
@@ -192,292 +193,33 @@ func toIntTimestamp(value any) any {
 			return truncTimestamp(f)
 		}
 	}
-	t, err := pyFromISOFormat(s)
+	t, err := parseISOTimestamp(s)
 	if err != nil {
 		return nil
 	}
 	return isoEpochSeconds(t)
 }
 
-// Seconds since the epoch truncated toward zero the way int of datetime timestamp does
+// Whole seconds since the epoch of an instant, truncated toward zero like numeric timestamps
 func isoEpochSeconds(t time.Time) int64 {
-	micros := t.Unix()*1_000_000 + int64(t.Nanosecond()/1000)
-	return int64(math.Trunc(float64(micros) / 1e6))
+	secs := t.Unix()
+	if secs < 0 && t.Nanosecond() > 0 {
+		secs++
+	}
+	return secs
 }
 
-// Error text of an ISO string fromisoformat refuses
-func invalidISOFormat(s string) error {
-	return fmt.Errorf("%s is not an ISO date and time", s)
-}
-
-// Parses an ISO 8601 string with the rules of CPython datetime fromisoformat, naive results in UTC
-func pyFromISOFormat(s string) (time.Time, error) {
+// Instant of an ISO 8601 timestamp as pkg/skills reads the usage records it writes, text without a UTC offset read as UTC
+func parseISOTimestamp(s string) (time.Time, error) {
 	t, err := timeutil.ParseISO(s, time.UTC)
 	if err != nil {
-		return time.Time{}, invalidISOFormat(s)
+		return time.Time{}, err
 	}
 	return t.UTC(), nil
 }
 
-// Python repr of a timedelta offset for the out of range message
-func pyTimedeltaRepr(d time.Duration) string {
-	micros := int64(d / time.Microsecond)
-	days := micros / 86_400_000_000
-	rem := micros % 86_400_000_000
-	if rem < 0 {
-		days--
-		rem += 86_400_000_000
-	}
-	seconds, us := rem/1_000_000, rem%1_000_000
-	var parts []string
-	if days != 0 {
-		parts = append(parts, fmt.Sprintf("days=%d", days))
-	}
-	if seconds != 0 {
-		parts = append(parts, fmt.Sprintf("seconds=%d", seconds))
-	}
-	if us != 0 {
-		parts = append(parts, fmt.Sprintf("microseconds=%d", us))
-	}
-	if len(parts) == 0 {
-		return "datetime.timedelta(0)"
-	}
-	return "datetime.timedelta(" + strings.Join(parts, ", ") + ")"
-}
-
-// Days in a Gregorian month
-func daysInMonth(year, month int) int {
-	return time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
-}
-
-func isASCIIDigit(b byte) bool { return b >= '0' && b <= '9' }
-
-// Byte at i or the NUL a C string would read past its end
-func cAt(s string, i int) byte {
-	if i < len(s) {
-		return s[i]
-	}
-	return 0
-}
-
-// Code point index of the date and time separator under the CPython disambiguation rules
-func isoDatetimeSeparator(rs []rune) (int, bool) {
-	n := len(rs)
-	at := func(i int) rune {
-		if i < n {
-			return rs[i]
-		}
-		return 0
-	}
-	digit := func(r rune) bool { return r >= '0' && r <= '9' }
-	if n == 7 {
-		return 7, true
-	}
-	if at(4) == '-' {
-		if at(5) == 'W' {
-			if n < 8 {
-				return 0, false
-			}
-			if n > 8 && rs[8] == '-' {
-				if n == 9 {
-					return 0, false
-				}
-				if n > 10 && digit(rs[10]) {
-					return 8, true
-				}
-				return 10, true
-			}
-			return 8, true
-		}
-		return 10, true
-	}
-	if at(4) == 'W' {
-		idx := 7
-		for idx < n && digit(rs[idx]) {
-			idx++
-		}
-		if idx < 9 {
-			return idx, true
-		}
-		if idx%2 == 0 {
-			return 7, true
-		}
-		return 8, true
-	}
-	return 8, true
-}
-
-// Reads n ASCII digits at p, false when any is missing
-func isoDigits(s string, p, n int) (int, int, bool) {
-	v := 0
-	for i := 0; i < n; i++ {
-		c := cAt(s, p+i)
-		if !isASCIIDigit(c) {
-			return 0, p, false
-		}
-		v = v*10 + int(c-'0')
-	}
-	return v, p + n, true
-}
-
-// Calendar date of a YYYY-MM-DD, YYYYMMDD, or ISO week string
-func isoParseDate(d string) (int, int, int, bool) {
-	year, p, ok := isoDigits(d, 0, 4)
-	if !ok {
-		return 0, 0, 0, false
-	}
-	sep := cAt(d, p) == '-'
-	if sep {
-		p++
-	}
-	if cAt(d, p) == 'W' {
-		p++
-		week, np, ok := isoDigits(d, p, 2)
-		if !ok {
-			return 0, 0, 0, false
-		}
-		p = np
-		weekday := 1
-		if p < len(d) {
-			if sep {
-				if cAt(d, p) != '-' {
-					return 0, 0, 0, false
-				}
-				p++
-			}
-			if weekday, _, ok = isoDigits(d, p, 1); !ok {
-				return 0, 0, 0, false
-			}
-		}
-		return isoWeekToGregorian(year, week, weekday)
-	}
-	month, p, ok := isoDigits(d, p, 2)
-	if !ok {
-		return 0, 0, 0, false
-	}
-	if sep {
-		if cAt(d, p) != '-' {
-			return 0, 0, 0, false
-		}
-		p++
-	}
-	day, _, ok := isoDigits(d, p, 2)
-	if !ok {
-		return 0, 0, 0, false
-	}
-	return year, month, day, true
-}
-
-// Gregorian date of an ISO year, week, and weekday, false outside the calendar
-func isoWeekToGregorian(year, week, weekday int) (int, int, int, bool) {
-	if year < 1 || year > 9999 {
-		return 0, 0, 0, false
-	}
-	if week < 1 || week > 52 {
-		first := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC).Weekday()
-		leap := year%4 == 0 && (year%100 != 0 || year%400 == 0)
-		if week != 53 || !(first == time.Thursday || (first == time.Wednesday && leap)) {
-			return 0, 0, 0, false
-		}
-	}
-	if weekday < 1 || weekday > 7 {
-		return 0, 0, 0, false
-	}
-	jan4 := time.Date(year, 1, 4, 0, 0, 0, 0, time.UTC)
-	monday := jan4.AddDate(0, 0, -((int(jan4.Weekday()) + 6) % 7))
-	d := monday.AddDate(0, 0, (week-1)*7+weekday-1)
-	return d.Year(), int(d.Month()), d.Day(), true
-}
-
-// Clock fields of HH[:MM[:SS[.ffffff]]] or the compact form ending at end, status 1 when text trails
-func isoClock(s string, end int) (h, m, sec, micro, status int) {
-	vals := [3]int{}
-	p := 0
-	hasSep := true
-	for i := 0; i < 3; i++ {
-		v, np, ok := isoDigits(s, p, 2)
-		if !ok {
-			return 0, 0, 0, 0, -3
-		}
-		vals[i] = v
-		p = np
-		c := cAt(s, p)
-		p++
-		if i == 0 {
-			hasSep = c == ':'
-		}
-		if c == '.' || c == ',' {
-			if i < 2 {
-				return 0, 0, 0, 0, -3
-			}
-			break
-		}
-		if p >= end {
-			if c != 0 {
-				return vals[0], vals[1], vals[2], 0, 1
-			}
-			return vals[0], vals[1], vals[2], 0, 0
-		}
-		if hasSep && c == ':' {
-			continue
-		}
-		if !hasSep {
-			p--
-			continue
-		}
-		return 0, 0, 0, 0, -4
-	}
-	toParse := min(end-p, 6)
-	if toParse <= 0 {
-		return 0, 0, 0, 0, -3
-	}
-	frac, np, ok := isoDigits(s, p, toParse)
-	if !ok {
-		return 0, 0, 0, 0, -3
-	}
-	p = np
-	for i := toParse; i < 6; i++ {
-		frac *= 10
-	}
-	for isASCIIDigit(cAt(s, p)) {
-		p++
-	}
-	if cAt(s, p) != 0 {
-		return vals[0], vals[1], vals[2], frac, 1
-	}
-	return vals[0], vals[1], vals[2], frac, 0
-}
-
-// Time and optional offset after the separator, aware when an offset or Z is present
-func isoParseTime(t string) (h, m, s, micro, offset, offsetMicro int, aware, ok bool) {
-	tz := 0
-	for tz < len(t) && t[tz] != 'Z' && t[tz] != '+' && t[tz] != '-' {
-		tz++
-	}
-	h, m, s, micro, rv := isoClock(t, tz)
-	if rv < 0 {
-		return 0, 0, 0, 0, 0, 0, false, false
-	}
-	if tz == len(t) {
-		return h, m, s, micro, 0, 0, false, rv == 0
-	}
-	if t[tz] == 'Z' {
-		return h, m, s, micro, 0, 0, true, tz+1 == len(t)
-	}
-	sign := 1
-	if t[tz] == '-' {
-		sign = -1
-	}
-	rest := t[tz+1:]
-	th, tm, ts, tmicro, trv := isoClock(rest, len(rest))
-	if trv != 0 {
-		return 0, 0, 0, 0, 0, 0, false, false
-	}
-	return h, m, s, micro, sign * (th*3600 + tm*60 + ts), sign * tmicro, true, true
-}
-
 // Python round to n decimals on the exact binary value, halves to even
-func pyRound(x float64, n int) float64 {
+func roundHalfEven(x float64, n int) float64 {
 	if math.IsNaN(x) || math.IsInf(x, 0) {
 		return x
 	}
@@ -559,7 +301,7 @@ func skillFiles(root SkillRoot) ([]skillFile, error) {
 // Text decoded as utf-8-sig, the UnicodeDecodeError read_text raises for invalid bytes
 func decodeUTF8Sig(data []byte) (string, error) {
 	data = []byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))
-	if err := pyUTF8DecodeError(data); err != nil {
+	if err := utf8DecodeError(data); err != nil {
 		return "", err
 	}
 	return string(data), nil
@@ -568,7 +310,7 @@ func decodeUTF8Sig(data []byte) (string, error) {
 func isContinuationByte(b byte) bool { return b >= 0x80 && b <= 0xBF }
 
 // First UTF-8 decode failure described the way the CPython strict decoder words it, nil for valid input
-func pyUTF8DecodeError(data []byte) error {
+func utf8DecodeError(data []byte) error {
 	n := len(data)
 	for i := 0; i < n; {
 		ch := data[i]
@@ -635,10 +377,10 @@ func pyUTF8DecodeError(data []byte) error {
 		if span == 1 {
 			verb := map[string]string{"invalid start byte": "cannot start a character", "invalid continuation byte": "begins a character that the next byte breaks",
 				"unexpected end of data": "begins a character the text ends inside"}[reason]
-			return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("not valid UTF-8: byte 0x%02x at position %d %s", ch, i, verb)}
+			return &kindError{class: "UnicodeDecodeError", msg: fmt.Sprintf("not valid UTF-8: byte 0x%02x at position %d %s", ch, i, verb)}
 		}
 		verb := map[string]string{"invalid continuation byte": "begin a character that the next byte breaks", "unexpected end of data": "begin a character the text ends inside"}[reason]
-		return &pyError{class: "UnicodeDecodeError", msg: fmt.Sprintf("not valid UTF-8: bytes at positions %d-%d %s", i, i+span-1, verb)}
+		return &kindError{class: "UnicodeDecodeError", msg: fmt.Sprintf("not valid UTF-8: bytes at positions %d-%d %s", i, i+span-1, verb)}
 	}
 	return nil
 }
@@ -680,11 +422,11 @@ func BuildSkillNodes(roots []SkillRoot, usage map[string]map[string]any, isExter
 			if fm == nil {
 				fm = map[string]any{}
 			}
-			name := pyStrOr(fm["name"], "")
-			if !pyTruthy(fm["name"]) {
+			name := anyutil.StringOr(fm["name"], "")
+			if !anyutil.IsTrue(fm["name"]) {
 				name = f.abs[len(f.abs)-2]
 			}
-			name = pyStrip(name)
+			name = strings.TrimSpace(name)
 			if name == "" || seen[name] {
 				continue
 			}
@@ -704,33 +446,33 @@ func BuildSkillNodes(roots []SkillRoot, usage map[string]map[string]any, isExter
 				source = "external"
 			}
 			category := "general"
-			if cat := fmField(fm, "category"); pyTruthy(cat) {
-				category = pyStr(cat)
+			if cat := fmField(fm, "category"); anyutil.IsTrue(cat) {
+				category = anyutil.String(cat)
 			} else if len(f.abs) >= 3 {
 				category = f.abs[len(f.abs)-3]
 			}
 			timestamp := usageTS
-			if !pyTruthy(usageTS) {
+			if !anyutil.IsTrue(usageTS) {
 				mt, err := f.mtime()
 				if err != nil {
-					return nil, &pyError{class: "OSError", msg: osErrorText(err)}
+					return nil, &kindError{class: "OSError", msg: osErrorText(err)}
 				}
 				timestamp = toIntTimestamp(mtimeSeconds(mt))
 			}
 			useCount := 0
-			if raw, ok := rec["use_count"]; ok && pyTruthy(raw) {
-				if useCount, err = pyIntOf(raw); err != nil {
+			if raw, ok := rec["use_count"]; ok && anyutil.IsTrue(raw) {
+				if useCount, err = intOf(raw); err != nil {
 					return nil, err
 				}
 			}
 			state := "active"
-			if raw, ok := rec["state"]; ok && pyTruthy(raw) {
-				state = pyStr(raw)
+			if raw, ok := rec["state"]; ok && anyutil.IsTrue(raw) {
+				state = anyutil.String(raw)
 			}
 			seen[name] = true
 			nodes = append(nodes, &SkillNode{
 				Name: name, Category: category, Source: source, Timestamp: timestamp, UseCount: useCount,
-				State: state, CreatedBy: rec["created_by"], Pinned: pyTruthy(rec["pinned"]), Related: relatedSkills(fm),
+				State: state, CreatedBy: rec["created_by"], Pinned: anyutil.IsTrue(rec["pinned"]), Related: relatedSkills(fm),
 			})
 		}
 	}
@@ -826,25 +568,25 @@ func DensityStats(nodes []*SkillNode, edges [][2]string) map[string]any {
 		top = append(top, []any{cc.category, cc.count})
 	}
 	return map[string]any{
-		"nodes": len(nodes), "related_edges": len(edges), "edges_per_node": pyRound(float64(len(edges))/float64(n), 3),
-		"linked_nodes": len(linked), "isolated_pct": pyRound(100*float64(n-len(linked))/float64(n), 1), "categories": len(cats.keys),
+		"nodes": len(nodes), "related_edges": len(edges), "edges_per_node": roundHalfEven(float64(len(edges))/float64(n), 3),
+		"linked_nodes": len(linked), "isolated_pct": roundHalfEven(100*float64(n-len(linked))/float64(n), 1), "categories": len(cats.keys),
 		"agent_created": agentCreated, "used": used, "top_categories": top,
 	}
 }
 
 // Short stable digest of a memory entry text carried in its node id
 func MemoryFingerprint(entry string) string {
-	sum := sha256.Sum256([]byte(pyStrip(entry)))
+	sum := sha256.Sum256([]byte(strings.TrimSpace(entry)))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
 // Node id naming the memory source, the occurrence index, and the text fingerprint
 func MemoryNodeID(card map[string]any, index int) string {
-	return fmt.Sprintf("memory:%s:%d:%s", pyStr(card["source"]), index, pyStr(card["fingerprint"]))
+	return fmt.Sprintf("memory:%s:%d:%s", anyutil.String(card["source"]), index, anyutil.String(card["fingerprint"]))
 }
 
 // Python str.splitlines boundaries
-func pySplitLines(s string) []string {
+func splitLines(s string) []string {
 	var lines []string
 	start := 0
 	rs := []rune(s)
@@ -879,11 +621,11 @@ func MemoryCards(h string) ([]map[string]any, error) {
 		}
 		fileTS := toIntTimestamp(mtimeSeconds(st.ModTime()))
 		for idx, chunk := range ReadEntriesFile(path) {
-			lines := pySplitLines(chunk)
+			lines := splitLines(chunk)
 			if len(lines) == 0 {
-				return nil, &pyError{class: "IndexError", msg: fmt.Sprintf("memory entry %d of %s is empty", idx, path)}
+				return nil, &kindError{class: "IndexError", msg: fmt.Sprintf("memory entry %d of %s is empty", idx, path)}
 			}
-			first := pyStrip(strings.TrimLeft(pyStrip(lines[0]), "# "))
+			first := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(lines[0]), "# "))
 			title := first
 			if utf8.RuneCountInString(first) > 80 {
 				title = runePrefix(first, 80) + "\u2026"
@@ -907,7 +649,7 @@ func MemoryCards(h string) ([]map[string]any, error) {
 // Lowercase ASCII word tokens of three or more characters
 func tokenize(text string) map[string]bool {
 	out := map[string]bool{}
-	for _, t := range regexp.MustCompile(`[^a-z0-9]+`).Split(pyLower(text), -1) {
+	for _, t := range regexp.MustCompile(`[^a-z0-9]+`).Split(strings.ToLower(text), -1) {
 		if len(t) >= 3 {
 			out[t] = true
 		}
@@ -923,11 +665,11 @@ func memorySkillEdges(cards []map[string]any, nodes []*SkillNode) [][2]string {
 	}
 	metas := make([]meta, len(nodes))
 	for i, s := range nodes {
-		metas[i] = meta{s.Name, pyLower(s.Name), tokenize(s.Name)}
+		metas[i] = meta{s.Name, strings.ToLower(s.Name), tokenize(s.Name)}
 	}
 	var edges [][2]string
 	for idx, card := range cards {
-		text := pyLower(pyStrOr(card["title"], "") + "\n" + pyStrOr(card["body"], ""))
+		text := strings.ToLower(anyutil.StringOr(card["title"], "") + "\n" + anyutil.StringOr(card["body"], ""))
 		textTokens := tokenize(text)
 		type scored struct {
 			score int

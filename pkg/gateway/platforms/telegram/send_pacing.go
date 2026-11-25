@@ -114,7 +114,7 @@ func isTransientTypingError(err error) bool {
 			return true
 		}
 	}
-	return isOSError(err) || className(err) == "TimeoutError" || className(err) == "ConnectionError"
+	return isOSError(err) || className(err) == "TimeoutError"
 }
 
 // Suppresses typing refreshes for the chat after a transient failure, the flood wait when Telegram sent one

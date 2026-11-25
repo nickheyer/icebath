@@ -16,7 +16,7 @@ import (
 func peTrapVenv(t *testing.T, root string) (string, string) {
 	t.Helper()
 	venv := filepath.Join(root, "venv")
-	version := peRun(t, []string{peHostPython(t), "-I", "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"}, root, pyEnviron())
+	version := peRun(t, []string{peHostPython(t), "-I", "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"}, root, environValue())
 	peWrite(t, filepath.Join(venv, "pyvenv.cfg"), "home = /nonexistent\nversion = "+version+".0\n")
 	writeFile(t, VenvPython(venv), []byte("#!/bin/sh\nexit 99\n"), 0o755)
 	site := filepath.Join(venv, "lib", "python"+version, "site-packages")
@@ -31,7 +31,7 @@ func peTrapVenv(t *testing.T, root string) (string, string) {
 // Runs a command expecting success and decodes its JSON output
 func peRunJSON(t *testing.T, argv []string, cwd string) any {
 	t.Helper()
-	env := pyEnviron()
+	env := environValue()
 	delete(env, "PYTHONPATH")
 	delete(env, "PYTHONHOME")
 	var out any

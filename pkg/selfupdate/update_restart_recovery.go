@@ -219,7 +219,7 @@ func hostServedProfiles() map[string]bool {
 	if !ok || record.ValueOr("role", nil) != "gateway" {
 		return served
 	}
-	pid, isInt := pyIntValue(record.ValueOr("pid", nil))
+	pid, isInt := intValue(record.ValueOr("pid", nil))
 	profiles, isList := record.ValueOr("profiles", nil).([]any)
 	if !isInt || pid <= 0 || !isList || !recoveryPidIsLive(int(pid)) {
 		return served
@@ -315,13 +315,13 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, error) {
 	}
 	rawProfiles, ok := payload.ValueOr("profiles", nil).([]any)
 	if !ok {
-		return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery payload must contain a profiles list"}
+		return nil, nil, &pm.ClassError{Class: "ValueError", Message: "recovery payload must contain a profiles list"}
 	}
 	profiles := make([]string, 0, len(rawProfiles))
 	for _, p := range rawProfiles {
 		name, isStr := p.(string)
 		if !isStr || !home.ProfileIDRe.MatchString(name) {
-			return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery profiles contain an invalid profile id"}
+			return nil, nil, &pm.ClassError{Class: "ValueError", Message: "recovery profiles contain an invalid profile id"}
 		}
 		profiles = append(profiles, name)
 	}
@@ -329,12 +329,12 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, error) {
 	if raw := payload.ValueOr("supervisors", nil); raw != nil {
 		obj, isObj := raw.(*jsonutil.Object)
 		if !isObj {
-			return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
+			return nil, nil, &pm.ClassError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 		}
 		for _, profile := range obj.Keys() {
 			supervisor, isStr := obj.Value(profile).(string)
 			if !isStr || !home.ProfileIDRe.MatchString(profile) || !recoverySupervisorRe.MatchString(supervisor) {
-				return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
+				return nil, nil, &pm.ClassError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 			}
 			supervisors[profile] = supervisor
 		}
@@ -369,7 +369,7 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 	}
 	raw, err := io.ReadAll(stdin)
 	if err != nil {
-		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		fmt.Fprintln(stderr, launchErrorLine(err))
 		return 1
 	}
 	text, err := textutil.DecodeUTF8(raw)
@@ -382,7 +382,7 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 	if err == nil {
 		result, err = restartProfiles(ctx, profiles, supervisors)
 		if err != nil {
-			fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+			fmt.Fprintln(stderr, launchErrorLine(err))
 			return 1
 		}
 	}

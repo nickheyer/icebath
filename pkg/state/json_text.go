@@ -9,14 +9,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Holds the json.dumps keyword arguments state code passes
-type pyJSON struct {
+type jsonCodec struct {
 	sortKeys    bool
 	ensureASCII bool
 	allowNaN    bool
@@ -25,27 +24,27 @@ type pyJSON struct {
 }
 
 // Mirrors json.dumps with no keyword arguments
-var pyJSONDefault = pyJSON{ensureASCII: true, allowNaN: true, itemSep: ", ", keySep: ": "}
+var jsonDefault = jsonCodec{ensureASCII: true, allowNaN: true, itemSep: ", ", keySep: ": "}
 
 // One entry of an insertion ordered JSON object
-type pyKeyValue struct {
+type keyValue struct {
 	Key   string
 	Value any
 }
 
 // A JSON object that keeps insertion order like a Python dict
-type pyObject []pyKeyValue
+type orderedObject []keyValue
 
 // Object on the wire in its insertion order, the encoding every JSON consumer of a stored row reads
-func (o pyObject) MarshalJSON() ([]byte, error) {
-	text, err := pyDumps(o, pyJSON{itemSep: ",", keySep: ":"})
+func (o orderedObject) MarshalJSON() ([]byte, error) {
+	text, err := dumpsValue(o, jsonCodec{itemSep: ",", keySep: ":"})
 	return []byte(text), err
 }
 
 var errPyJSONNaN = errors.New("Out of range float values are not JSON compliant")
 
 // Encodes a value the way Python's json.dumps does under the given options
-func pyDumps(v any, o pyJSON) (string, error) {
+func dumpsValue(v any, o jsonCodec) (string, error) {
 	var b strings.Builder
 	if err := o.encode(&b, v); err != nil {
 		return "", err
@@ -54,7 +53,7 @@ func pyDumps(v any, o pyJSON) (string, error) {
 }
 
 // Writes one value in json.dumps form
-func (o pyJSON) encode(b *strings.Builder, v any) error {
+func (o jsonCodec) encode(b *strings.Builder, v any) error {
 	switch x := v.(type) {
 	case nil:
 		b.WriteString("null")
@@ -74,22 +73,22 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 		return o.encodeFloat(b, float64(x))
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		fmt.Fprint(b, x)
-	case pyObject:
+	case orderedObject:
 		return o.encodeObject(b, x)
 	case *jsonutil.Object:
 		if x == nil {
 			b.WriteString("null")
 			return nil
 		}
-		obj := make(pyObject, 0, x.Len())
+		obj := make(orderedObject, 0, x.Len())
 		for _, k := range x.Keys() {
-			obj = append(obj, pyKeyValue{k, x.Value(k)})
+			obj = append(obj, keyValue{k, x.Value(k)})
 		}
 		return o.encodeObject(b, obj)
 	case map[string]any:
-		obj := make(pyObject, 0, len(x))
+		obj := make(orderedObject, 0, len(x))
 		for k, val := range x {
-			obj = append(obj, pyKeyValue{k, val})
+			obj = append(obj, keyValue{k, val})
 		}
 		sort.Slice(obj, func(i, j int) bool { return obj[i].Key < obj[j].Key })
 		return o.encodeObject(b, obj)
@@ -104,10 +103,10 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 			if rv.Type().Key().Kind() != reflect.String {
 				return fmt.Errorf("cannot write a mapping with %s keys as JSON", rv.Type().Key())
 			}
-			obj := make(pyObject, 0, rv.Len())
+			obj := make(orderedObject, 0, rv.Len())
 			iter := rv.MapRange()
 			for iter.Next() {
-				obj = append(obj, pyKeyValue{iter.Key().String(), iter.Value().Interface()})
+				obj = append(obj, keyValue{iter.Key().String(), iter.Value().Interface()})
 			}
 			sort.Slice(obj, func(i, j int) bool { return obj[i].Key < obj[j].Key })
 			return o.encodeObject(b, obj)
@@ -124,7 +123,7 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 }
 
 // Writes a float as Python's float repr, refusing non finite values unless allowed
-func (o pyJSON) encodeFloat(b *strings.Builder, f float64) error {
+func (o jsonCodec) encodeFloat(b *strings.Builder, f float64) error {
 	switch {
 	case math.IsNaN(f):
 		if !o.allowNaN {
@@ -142,13 +141,13 @@ func (o pyJSON) encodeFloat(b *strings.Builder, f float64) error {
 		}
 		b.WriteString("-Infinity")
 	default:
-		b.WriteString(pyFloatRepr(f))
+		b.WriteString(floatRepr(f))
 	}
 	return nil
 }
 
 // Writes a list with the item separator
-func (o pyJSON) encodeList(b *strings.Builder, n int, at func(int) any) error {
+func (o jsonCodec) encodeList(b *strings.Builder, n int, at func(int) any) error {
 	b.WriteByte('[')
 	for i := 0; i < n; i++ {
 		if i > 0 {
@@ -163,9 +162,9 @@ func (o pyJSON) encodeList(b *strings.Builder, n int, at func(int) any) error {
 }
 
 // Writes an object in insertion order, or key order when sort_keys is set
-func (o pyJSON) encodeObject(b *strings.Builder, obj pyObject) error {
+func (o jsonCodec) encodeObject(b *strings.Builder, obj orderedObject) error {
 	if o.sortKeys {
-		obj = append(pyObject{}, obj...)
+		obj = append(orderedObject{}, obj...)
 		sort.SliceStable(obj, func(i, j int) bool { return obj[i].Key < obj[j].Key })
 	}
 	b.WriteByte('{')
@@ -184,7 +183,7 @@ func (o pyJSON) encodeObject(b *strings.Builder, obj pyObject) error {
 }
 
 // Writes a quoted string with json.dumps escapes, surrogates carried as WTF-8 passing through
-func (o pyJSON) encodeString(b *strings.Builder, s string) {
+func (o jsonCodec) encodeString(b *strings.Builder, s string) {
 	b.WriteByte('"')
 	for i := 0; i < len(s); {
 		r, size := utf8.DecodeRuneInString(s[i:])
@@ -249,7 +248,7 @@ func wtf8Surrogate(s string) (rune, bool) {
 }
 
 // Python float repr, shortest round trip digits with repr's fixed or exponent layout
-func pyFloatRepr(f float64) string {
+func floatRepr(f float64) string {
 	if f == 0 {
 		if math.Signbit(f) {
 			return "-0.0"
@@ -285,55 +284,8 @@ func pyFloatRepr(f float64) string {
 	return sign + mant[:exp+1] + "." + mant[exp+1:]
 }
 
-// Python repr of a str, choosing quotes and escapes the way CPython does
-func pyRepr(s string) string {
-	quote := byte('\'')
-	if strings.ContainsRune(s, '\'') && !strings.ContainsRune(s, '"') {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			if unit, ok := wtf8Surrogate(s[i:]); ok {
-				fmt.Fprintf(&b, `\u%04x`, unit)
-				i += 3
-				continue
-			}
-			fmt.Fprintf(&b, `\x%02x`, s[i])
-			i++
-			continue
-		}
-		i += size
-		switch {
-		case r == rune(quote) || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r < 0x7f || unicode.IsPrint(r):
-			b.WriteRune(r)
-		case r <= 0xff:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08x`, r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
-}
-
 // Python str() of a scalar used inside f-strings
-func pyFormat(v any) string {
+func formatted(v any) string {
 	switch x := v.(type) {
 	case nil:
 		return "None"
@@ -354,7 +306,7 @@ func pyFormat(v any) string {
 			}
 			return "-inf"
 		}
-		return pyFloatRepr(x)
+		return floatRepr(x)
 	}
 	return fmt.Sprint(v)
 }

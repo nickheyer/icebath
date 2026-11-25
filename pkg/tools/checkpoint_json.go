@@ -42,7 +42,7 @@ func checkpointEncodeValue(b *strings.Builder, v any) error {
 		case math.IsInf(x, -1):
 			b.WriteString("-Infinity")
 		default:
-			b.WriteString(pyFloatRepr(x))
+			b.WriteString(floatRepr(x))
 		}
 	case json.Number:
 		b.WriteString(x.String())

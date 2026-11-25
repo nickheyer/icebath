@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -36,7 +37,7 @@ var (
 	statusProcessCreateTime       = proc.Birth
 )
 
-func pyRound(f float64) float64 { return math.RoundToEven(f) }
+func roundHalfEven(f float64) float64 { return math.RoundToEven(f) }
 
 // Takeover marker path in the canonical target home, the process home when empty
 func takeoverMarkerPath(icebathHome string) (string, error) {
@@ -97,7 +98,7 @@ func pidMarkerNamesSelf(targetPid int, targetStartTime any) bool {
 		return false
 	}
 	ours := statusProcessStartTime(targetPid)
-	return targetStartTime == nil || ours == nil || pyEq(targetStartTime, ours)
+	return targetStartTime == nil || ours == nil || anyutil.Equal(targetStartTime, ours)
 }
 
 // Consumes a pid marker naming this process home and pid, unlinking it unless kept
@@ -204,7 +205,7 @@ func validatedScopedLockGatewayOwner(record *jsonutil.Object) (int, any, string,
 	ownerPid, ok := pidFromRecord(record, "pid")
 	ownerStart := recGet(record, "start_time")
 	rawHome, isStr := recHome(record, home.RecordKey).(string)
-	if !ok || ownerPid <= 0 || ownerPid == statusGetpid() || !pyIsInt(ownerStart) || !isStr ||
+	if !ok || ownerPid <= 0 || ownerPid == statusGetpid() || !isIntValue(ownerStart) || !isStr ||
 		strings.TrimSpace(rawHome) == "" || !filepath.IsAbs(pathutil.ExpandUser(rawHome)) {
 		return 0, nil, "", false
 	}
@@ -225,7 +226,7 @@ func validatedScopedLockGatewayOwner(record *jsonutil.Object) (int, any, string,
 	pidHome, homeIsStr := recHome(pidRecord, home.RecordKey).(string)
 	recordPid, recordOK := pidFromRecord(pidRecord, "pid")
 	if !recordLooksLikeGateway(pidRecord) || !recordOK || recordPid != ownerPid ||
-		!pyEq(recGet(pidRecord, "start_time"), ownerStart) || !homeIsStr {
+		!anyutil.Equal(recGet(pidRecord, "start_time"), ownerStart) || !homeIsStr {
 		return 0, nil, "", false
 	}
 	if same, err := sameIcebathHome(pidHome, targetHome); err != nil || !same {
@@ -243,7 +244,7 @@ func scopedLockOwnerState(ownerPid int, ownerStart any) string {
 	if live == nil {
 		return "unknown"
 	}
-	if pyEq(live, ownerStart) {
+	if anyutil.Equal(live, ownerStart) {
 		return "same"
 	}
 	return "exited"

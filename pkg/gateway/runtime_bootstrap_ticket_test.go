@@ -6,11 +6,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Whether err is the PermissionError of a refused bootstrap ticket
 func isPermissionError(err error) bool {
-	var py *PyError
+	var py *errorutil.Error
 	return errors.As(err, &py) && py.Kind == "PermissionError"
 }
 

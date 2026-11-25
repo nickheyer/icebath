@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
@@ -155,7 +156,7 @@ func TestUnsetAncestorProbeReadsOnlyTheWalkedRows(t *testing.T) {
 		t.Fatalf("plan %v err %v", rows, err)
 	}
 	for _, r := range rows {
-		step := pyStr(rowValue(r, "detail"))
+		step := anyutil.String(rowValue(r, "detail"))
 		if strings.HasPrefix(step, "SCAN") && !strings.Contains(" "+step+" ", " up ") {
 			t.Fatalf("probe scans a table %q", step)
 		}

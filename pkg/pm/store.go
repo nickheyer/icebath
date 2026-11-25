@@ -160,7 +160,7 @@ func HashURL(rawURL string) (string, error) {
 			return "", err
 		}
 		defer resp.Body.Close()
-		declared, err := pyIntHeader(resp.Header.Get("Content-Length"))
+		declared, err := intHeader(resp.Header.Get("Content-Length"))
 		if err != nil {
 			return "", err
 		}
@@ -177,11 +177,11 @@ func HashURL(rawURL string) (string, error) {
 }
 
 // Integer value of a header the way int of the value or zero reads it, an empty header meaning zero
-func pyIntHeader(value string) (int64, error) {
+func intHeader(value string) (int64, error) {
 	if value == "" {
 		return 0, nil
 	}
-	if !pyIntLiteral.MatchString(value) {
+	if !intLiteral.MatchString(value) {
 		return 0, fmt.Errorf("the header value %s is not a whole number", value)
 	}
 	return strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(value), "_", ""), 10, 64)
@@ -224,7 +224,7 @@ func withinDest(path, dest string) bool {
 }
 
 // Reports an absolute path the way os.path.isabs judges it on this platform
-func pyIsAbs(p string) bool {
+func isAbs(p string) bool {
 	if runtime.GOOS != "windows" {
 		return strings.HasPrefix(p, "/")
 	}
@@ -251,7 +251,7 @@ func tarFilter(m *tarInfo, dest string) (*filteredMember, error) {
 	if !m.issym() {
 		return tarDataFilter(m, dest)
 	}
-	if pyIsAbs(m.linkname) {
+	if isAbs(m.linkname) {
 		return nil, &TarFilterError{Kind: "AbsoluteLinkError", Member: m.name}
 	}
 	name := strings.TrimRight(m.name, "/")
@@ -298,7 +298,7 @@ func tarDataFilter(m *tarInfo, dest string) (*filteredMember, error) {
 	if strings.HasPrefix(name, "/") || strings.HasPrefix(name, string(filepath.Separator)) {
 		name = strings.TrimLeft(name, seps)
 	}
-	if pyIsAbs(name) {
+	if isAbs(name) {
 		return nil, &TarFilterError{Kind: "AbsolutePathError", Member: m.name}
 	}
 	if slices.Contains(strings.Split(strings.ReplaceAll(name, string(filepath.Separator), "/"), "/"), "..") {
@@ -327,7 +327,7 @@ func tarDataFilter(m *tarInfo, dest string) (*filteredMember, error) {
 	if !m.islnk() {
 		return f, nil
 	}
-	if pyIsAbs(m.linkname) {
+	if isAbs(m.linkname) {
 		return nil, &TarFilterError{Kind: "AbsoluteLinkError", Member: m.name}
 	}
 	if targetPath == dest {
@@ -850,7 +850,7 @@ func zipSymlink(member, target, dest string) error {
 	if !isRelativeTo(link, root) {
 		return nil
 	}
-	if pyIsAbs(target) || filepath.IsAbs(target) {
+	if isAbs(target) || filepath.IsAbs(target) {
 		return nil
 	}
 	resolved, _ := pathutil.ResolveLink(filepath.Dir(link), target)

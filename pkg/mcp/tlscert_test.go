@@ -154,8 +154,9 @@ func TestHTTPClientCertMissingCertFileSurfacesClearError(t *testing.T) {
 	if err == nil || !errors.Is(err, fs.ErrNotExist) || !regexp.MustCompile(`remote.*client_cert.*not found`).MatchString(err.Error()) {
 		t.Fatalf("got %v", err)
 	}
-	if name := errTypeName(err); name != "FileNotFoundError" {
-		t.Fatalf("error class %s", name)
+	var missing *fileNotFoundError
+	if !errors.As(err, &missing) {
+		t.Fatalf("error %T is not the missing file error", err)
 	}
 }
 

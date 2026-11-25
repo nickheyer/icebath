@@ -33,7 +33,7 @@ func isoTimestamp(value any) (float64, error) {
 	}
 	t, aware, err := timeutil.ParseISOZone(text, time.UTC)
 	if err != nil {
-		return 0, pyValueError(err.Error())
+		return 0, valueError(err.Error())
 	}
 	if !aware {
 		t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.Local)
@@ -50,7 +50,7 @@ func rowCwd(policy *jsonutil.Object) (any, error) {
 		if err == nil {
 			request = decoded
 		}
-	} else if requestJSON != nil && pyTruthy(requestJSON) {
+	} else if requestJSON != nil && anyutil.IsTrue(requestJSON) {
 		request = nil
 	} else {
 		request = jsonutil.NewObject()
@@ -97,7 +97,7 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 	}
 	decoded, err := jsonutil.Decode(encoded)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	receipt := decoded.(*jsonutil.Object)
 	sidValue, err := receiptItem(receipt, "session_id")
@@ -108,7 +108,7 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 	if err != nil {
 		return nil, err
 	}
-	sid, route := pyStr(sidValue), pyStr(routeValue)
+	sid, route := anyutil.String(sidValue), anyutil.String(routeValue)
 	key := LocalPolicyPrefix + sid
 	var out *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
@@ -256,7 +256,7 @@ func sameLocalCreate(old any, receipt, request *jsonutil.Object) (*jsonutil.Obje
 	}
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, false, pyValueError(err.Error())
+		return nil, false, valueError(err.Error())
 	}
 	saved, ok := decoded.(*jsonutil.Object)
 	if !ok {

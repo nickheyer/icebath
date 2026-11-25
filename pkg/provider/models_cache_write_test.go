@@ -71,8 +71,8 @@ func TestReasoningCapsSaveWritesCompactJSONThroughTheCacheWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := string(b)
-	prefix := "{\n\"z\":{\n\"ts\":1,\n\"caps\":{}\n},\n\"a\":{\n\"ts\":2,\n\"caps\":{}\n},\n\"https://example.test/v1/models\":{\n\"ts\":"
-	suffix := ",\n\"caps\":{\n\"example/model\":{\n\"known\":true,\n\"supports_reasoning\":true,\n\"supported_efforts\":[\n\"low\",\n\"high\"\n],\n\"mandatory\":false\n}\n}\n}\n}"
+	prefix := `{"z":{"ts":1,"caps":{}},"a":{"ts":2,"caps":{}},"https://example.test/v1/models":{"ts":`
+	suffix := `,"caps":{"example/model":{"known":true,"supports_reasoning":true,"supported_efforts":["low","high"],"mandatory":false}}}}`
 	if !strings.HasPrefix(got, prefix) || !strings.HasSuffix(got, suffix) {
 		t.Fatalf("got %q", got)
 	}

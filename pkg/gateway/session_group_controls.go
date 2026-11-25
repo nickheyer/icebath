@@ -186,15 +186,16 @@ func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method st
 	return nil, err
 }
 
-// Errors of the Python ValueError and TypeError families a room verb folds into invalid_params
+// Invalid value and wrong type errors a room verb folds into invalid_params, a number that does not convert among them
 func groupValueOrTypeError(err error) bool {
 	if errAs[*AttachmentError](err) || errAs[*HostedRoomPeerError](err) || errAs[*DiscussionPolicyError](err) ||
-		errAs[*DriverStateError](err) || errAs[*jsonutil.SyntaxError](err) {
+		errAs[*DriverStateError](err) || errAs[*jsonutil.SyntaxError](err) ||
+		errors.Is(err, anyutil.ErrNotNumber) || errors.Is(err, anyutil.ErrRange) {
 		return true
 	}
 	family := map[string]bool{"ValueError": true, "TypeError": true, "UnicodeDecodeError": true, "JSONDecodeError": true}
-	var pyErr *PyError
-	if errors.As(err, &pyErr) && family[pyErr.Kind] {
+	var kindErr *errorutil.Error
+	if errors.As(err, &kindErr) && family[kindErr.Kind] {
 		return true
 	}
 	var intErr *errorutil.Error
@@ -222,7 +223,7 @@ func groupIntFlag(params map[string]any) (bool, error) {
 func groupRequire(params map[string]any, keys ...string) error {
 	for _, key := range keys {
 		if _, ok := params[key]; !ok {
-			return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("missing a required keyword-only argument: '%s'", key)}
+			return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("missing a required keyword-only argument: '%s'", key)}
 		}
 	}
 	return nil
@@ -238,7 +239,7 @@ func groupRoomID(value any) (string, error) {
 
 // Value of params under key when truthy, else the fallback
 func groupOr(params map[string]any, key string, fallback any) any {
-	if value := params[key]; pyTruthy(value) {
+	if value := params[key]; anyutil.IsTrue(value) {
 		return value
 	}
 	return fallback
@@ -280,7 +281,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 			RuntimeStatus() map[string]any
 		})
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) has no database path", hosted)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) has no database path", hosted)}
 		}
 		serviceDB, err := pathutil.Resolve(store.StorePath())
 		if err != nil {
@@ -294,13 +295,13 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 			return nil, runtimeRefusal("profile_mismatch")
 		}
 		status := store.RuntimeStatus()
-		running = pyTruthy(status["running"]) && !pyTruthy(status["stopping"])
+		running = anyutil.IsTrue(status["running"]) && !anyutil.IsTrue(status["stopping"])
 	}
 	driver := func(attribute string) (*CanonicalHostedRoomService, error) {
 		if service, ok := hosted.(*CanonicalHostedRoomService); ok {
 			return service, nil
 		}
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) does not provide %s", hosted, attribute)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) does not provide %s", hosted, attribute)}
 	}
 	if roomID, isText := params["room_id"].(string); isText && method != "groups.create" {
 		replica, err := groupIsReplica(ctx, dbPath, roomID)
@@ -352,7 +353,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if !running {
 			return nil, runtimeRefusal("runtime_coordination_required")
 		}
-		if !pyTruthy(params["room_id"]) {
+		if !anyutil.IsTrue(params["room_id"]) {
 			return nil, runtimeRefusal("invalid_params")
 		}
 		service, err := driver(map[string]string{"groups.send": "send", "groups.stop": "stop_room", "groups.continue": "continue_room",
@@ -490,7 +491,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 	case "groups.disband":
 		return groupDisband(ctx, running, driver, dbPath, gatewayID, params)
 	}
-	return nil, &pyKeyError{key: method}
+	return nil, &keyError{key: method}
 }
 
 // One page of rooms, paged over the rooms the actor may see when the hosted service authorizes them
@@ -765,7 +766,7 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 		}
 		return jsonutil.ObjectOf("continued", true, "event", event), nil
 	case "groups.retry", "groups.discard":
-		if _, ok := generation(); !ok || !pyTruthy(params["member_id"]) || !pyTruthy(params["task_id"]) {
+		if _, ok := generation(); !ok || !anyutil.IsTrue(params["member_id"]) || !anyutil.IsTrue(params["task_id"]) {
 			return nil, runtimeRefusal("invalid_params")
 		}
 		roomID, err := groupRoomID(params["room_id"])
@@ -809,7 +810,7 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 		}
 		return jsonutil.ObjectOf("approved", true, "result", result), nil
 	}
-	return nil, &pyKeyError{key: method}
+	return nil, &keyError{key: method}
 }
 
 // Other local bots this process serves with the principal a host scoped socket reads their sessions as
@@ -853,7 +854,7 @@ const groupLocalChat = "(chat_id LIKE 'local-%' OR EXISTS (SELECT 1 FROM state_m
 
 // Value when truthy, else the fallback
 func groupTruthyOr(value, fallback any) any {
-	if pyTruthy(value) {
+	if anyutil.IsTrue(value) {
 		return value
 	}
 	return fallback
@@ -873,7 +874,7 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 	fields := map[string]any{"last_session": nil, "worker_session": nil, "canonical_session": nil}
 	err := db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		summary := func(root *jsonutil.Object) (*jsonutil.Object, error) {
-			rootID := pyStrOf(root.ValueOr("id", nil))
+			rootID := anyutil.String(root.ValueOr("id", nil))
 			tip, err := state.CompressionTipOn(ctx, conn, rootID)
 			if err != nil {
 				return nil, err
@@ -892,7 +893,7 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 			}
 			text := ""
 			if message != nil {
-				text = strings.Join(strings.Fields(pyStrOf(groupTruthyOr(message.ValueOr("content", nil), ""))), " ")
+				text = strings.Join(strings.Fields(anyutil.String(groupTruthyOr(message.ValueOr("content", nil), ""))), " ")
 			}
 			preview := text
 			if runes := []rune(text); len(runes) > 80 {
@@ -909,7 +910,7 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 		if err != nil {
 			return err
 		}
-		if canonical != nil && (SameOwner(canonical.ValueOr("user_id", nil), subject) || operator) && !pyTruthy(canonical.ValueOr("archived", nil)) {
+		if canonical != nil && (SameOwner(canonical.ValueOr("user_id", nil), subject) || operator) && !anyutil.IsTrue(canonical.ValueOr("archived", nil)) {
 			if fields["canonical_session"], err = summary(canonical); err != nil {
 				return err
 			}
@@ -937,7 +938,7 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 		}
 		if worker != nil {
 			fields["worker_session"] = jsonutil.ObjectOf("id", worker.ValueOr("id", nil),
-				"source", strings.ToLower(strings.TrimSpace(pyStrOf(groupTruthyOr(worker.ValueOr("source", nil), "")))),
+				"source", strings.ToLower(strings.TrimSpace(anyutil.String(groupTruthyOr(worker.ValueOr("source", nil), "")))),
 				"title", groupTruthyOr(worker.ValueOr("title", nil), ""), "last_active", groupTruthyOr(worker.ValueOr("last_active", nil), int64(0)))
 		}
 		return nil
@@ -1046,7 +1047,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 			return nil, err
 		}
 		if !utf8.Valid(raw) {
-			return nil, &PyError{Kind: "UnicodeDecodeError", Msg: metaPath + " is not valid UTF-8"}
+			return nil, &errorutil.Error{Kind: "UnicodeDecodeError", Msg: metaPath + " is not valid UTF-8"}
 		}
 		loaded, err := config.SafeLoad(string(raw))
 		if err != nil {
@@ -1114,7 +1115,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 			rosterUpdate(entry, siblingSessions(ctx, reachAuthority, *reader))
 		}
 		if meta, ok := discoveredProfileMeta(configured, filepath.Join(target, "profile.yaml")).(map[string]any); ok {
-			entry.Set("display_name", pyStrOf(groupTruthyOr(meta["display_name"], configured)))
+			entry.Set("display_name", anyutil.String(groupTruthyOr(meta["display_name"], configured)))
 			if uiMeta, ok := meta["ui_meta"].(map[string]any); ok {
 				entry.Set("ui_meta", uiMeta)
 			}
@@ -1134,7 +1135,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 	if a.HostedRoomService != nil {
 		service, ok := a.HostedRoomService.(*CanonicalHostedRoomService)
 		if !ok {
-			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) does not list profile homes", a.HostedRoomService)}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) does not list profile homes", a.HostedRoomService)}
 		}
 		homes, names, err := service.ProfileHomes()
 		if err != nil {

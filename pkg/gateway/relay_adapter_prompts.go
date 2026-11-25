@@ -232,7 +232,7 @@ func (a *RelayAdapter) consumePromptResponse(ctx context.Context, event *Message
 	case "clarify":
 		err = a.resolveClarify(ctx, state, optionID, chatID, ackMeta)
 	default:
-		pkgLog().Warn(fmt.Sprintf("relay prompt_response with unknown kind %s", anyutil.Quote(kind)))
+		pkgLog().Warn(fmt.Sprintf("relay prompt_response with unknown kind %s", quotedValue(kind)))
 	}
 	if err != nil {
 		if ctx.Err() != nil {

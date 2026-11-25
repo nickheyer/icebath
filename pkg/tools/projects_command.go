@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Points a bound kanban board's default workdir at a project's primary repo, installed by cmd/icebath over pkg/kanban
@@ -131,7 +131,7 @@ func projectCmdCreate(ctx context.Context, env *Env, ns map[string]any, w, errw 
 		if err != nil {
 			return "", 0, err
 		}
-		if config.PyTruthy(ns["use"]) {
+		if anyutil.IsTrue(ns["use"]) {
 			if err := db.SetActive(&pid); err != nil {
 				return "", 0, err
 			}
@@ -156,7 +156,7 @@ func projectCmdList(ctx context.Context, env *Env, ns map[string]any, w, errw io
 		if err != nil {
 			return "", 0, err
 		}
-		projs, err := db.ListProjects(config.PyTruthy(ns["include_archived"]))
+		projs, err := db.ListProjects(anyutil.IsTrue(ns["include_archived"]))
 		if err != nil {
 			return "", 0, err
 		}
@@ -187,7 +187,7 @@ func projectCmdShow(ctx context.Context, env *Env, ns map[string]any, w, errw io
 
 func projectCmdAddFolder(ctx context.Context, env *Env, ns map[string]any, w, errw io.Writer) (int, error) {
 	return projectWithProject(WithEnvHome(ctx, env), env, ns, w, errw, func(db *ProjectsDB, proj *Project) (string, int, error) {
-		path, err := db.AddFolder(proj.ID, nsString(ns, "path"), nsOptString(ns, "label"), config.PyTruthy(ns["primary"]))
+		path, err := db.AddFolder(proj.ID, nsString(ns, "path"), nsOptString(ns, "label"), anyutil.IsTrue(ns["primary"]))
 		if err != nil {
 			return "", 0, err
 		}

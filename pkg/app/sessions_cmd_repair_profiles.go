@@ -50,12 +50,10 @@ func printReport(r *sessionsRun, findings []*repairProfilesFinding) {
 			r.printf("  [%s] %s\n      %s", finding.store, finding.subject, finding.detail)
 			if finding.action != nil && *finding.action != "" {
 				r.printf("      → %s", *finding.action)
+			} else if finding.reason != nil && *finding.reason != "" {
+				r.printf("      ✗ not repaired — %s", *finding.reason)
 			} else {
-				reason := "None"
-				if finding.reason != nil {
-					reason = *finding.reason
-				}
-				r.printf("      ✗ not repaired — %s", reason)
+				r.print("      ✗ not repaired")
 			}
 		}
 	}

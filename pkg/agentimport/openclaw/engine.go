@@ -191,7 +191,7 @@ func ResolveSelectedOptions(include, exclude []string, preset string) (map[strin
 	presetName := lower(strip(preset))
 	if presetName != "" {
 		if _, ok := presetOptions(presetName); !ok {
-			return nil, &PyError{Type: "ValueError", Msg: "Unknown migration preset: " + presetName + ". Valid presets: " + strings.Join(presetNames(), ", ")}
+			return nil, &KindError{Type: "ValueError", Msg: "Unknown migration preset: " + presetName + ". Valid presets: " + strings.Join(presetNames(), ", ")}
 		}
 	}
 	unknownSet := map[string]bool{}
@@ -203,7 +203,7 @@ func ResolveSelectedOptions(include, exclude []string, preset string) (map[strin
 	if len(unknownSet) > 0 {
 		validNames := allOptionIDs()
 		sort.Strings(validNames)
-		return nil, &PyError{Type: "ValueError", Msg: "Unknown migration option(s): " + strings.Join(sortedKeys(unknownSet), ", ") + ". Valid options: " + strings.Join(validNames, ", ")}
+		return nil, &KindError{Type: "ValueError", Msg: "Unknown migration option(s): " + strings.Join(sortedKeys(unknownSet), ", ") + ". Valid options: " + strings.Join(validNames, ", ")}
 	}
 	selected := map[string]bool{}
 	switch {

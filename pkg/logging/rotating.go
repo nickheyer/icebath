@@ -9,13 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
@@ -55,31 +55,26 @@ func selectRotation() {
 	}
 }
 
-// Takes and releases an exclusive lock on a scratch file, the failure repr when this box cannot lock
+// Takes and releases an exclusive lock on a scratch file, the reason it failed when this box cannot lock
 func portalockerProbe() (bool, string) {
 	if goos != "windows" {
 		return true, ""
 	}
 	f, err := os.CreateTemp("", "icebath-portalocker-")
 	if err != nil {
-		return false, errorRepr(err)
+		return false, errchain.OSText(err)
 	}
 	defer func() {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
 	}()
 	if err := lockFile(f); err != nil {
-		return false, errorRepr(err)
+		return false, errchain.OSText(err)
 	}
 	if err := fsutil.UnlockFile(f); err != nil {
-		return false, errorRepr(err)
+		return false, errchain.OSText(err)
 	}
 	return true, ""
-}
-
-// Python repr of the exception an error stands for
-func errorRepr(err error) string {
-	return errorClass(err) + "(" + strconv.Quote(errorText(err)) + ")"
 }
 
 // Lock timeout concurrent-log-handler raises after its retries
@@ -541,7 +536,7 @@ func (h *managedRotatingFileHandler) handleError(rec *Record, err error) {
 	if isUnavailableLogStream(err) {
 		if !h.unavailableReported {
 			h.unavailableReported = true
-			text := errorText(err)
+			text := errchain.OSText(err)
 			var errno syscall.Errno
 			if errors.As(err, &errno) {
 				text = errno.Error()

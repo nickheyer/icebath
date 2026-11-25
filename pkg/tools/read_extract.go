@@ -221,7 +221,7 @@ func needsOCRWarning(p string, pages []int, hostedError, localError string) stri
 
 // Normalizes converter output and prepends the coverage note for PDFs
 func finalizeNativeText(text string, pdf bool, pdfNote func() string) (string, error) {
-	if pyStrip(text) == "" {
+	if strings.TrimSpace(text) == "" {
 		return "", extractionErr("Document contains no extractable text")
 	}
 	note := ""
@@ -452,7 +452,7 @@ func parseHostedPDF(ctx context.Context, env *Env, data []byte, filename, apiKey
 	if resp.StatusCode != 200 || !anyutil.IsTrue(success) {
 		detail := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		if e, _ := reply.Get("error"); anyutil.IsTrue(e) {
-			detail = pyJSONStr(e)
+			detail = anyutil.String(e)
 		}
 		return "", errors.New(describeHostedFailure(resp.StatusCode, detail, apiKey != ""))
 	}
@@ -508,7 +508,7 @@ func pdfPageTexts(ctx context.Context, p string) []string {
 	if out != "" {
 		pages = strings.Split(out, "\f")
 	}
-	if len(pages) > 0 && pyStrip(pages[len(pages)-1]) == "" {
+	if len(pages) > 0 && strings.TrimSpace(pages[len(pages)-1]) == "" {
 		pages = pages[:len(pages)-1]
 	}
 	if len(pages) == 0 {
@@ -539,7 +539,7 @@ func pdfGapMap(counts []int, texts []string, empty []int) string {
 		label := ""
 		for prev := a - 2; prev >= 0; prev-- {
 			if counts[prev] >= pdfEmptyPageChars {
-				snippet := firstRunes(strings.Join(strings.FieldsFunc(texts[prev], pyIsSpace), " "), gapContextChars)
+				snippet := firstRunes(strings.Join(strings.FieldsFunc(texts[prev], unicode.IsSpace), " "), gapContextChars)
 				label = fmt.Sprintf(" — after \"%s\" (p%d)", snippet, prev+1)
 				break
 			}
@@ -575,7 +575,7 @@ func pdfCoverageNote(ctx context.Context, p, displayPath string) string {
 	counts := make([]int, len(texts))
 	var empty []int
 	for i, page := range texts {
-		counts[i] = utf8.RuneCountInString(pyStrip(page))
+		counts[i] = utf8.RuneCountInString(strings.TrimSpace(page))
 		if counts[i] < pdfEmptyPageChars {
 			empty = append(empty, i+1)
 		}
@@ -617,16 +617,58 @@ func pdfCoverageNoteFromBytes(ctx context.Context, data []byte, displayPath stri
 // Joins extracted lines with one trailing newline, failing when nothing is non blank
 func joinedLines(lines []string, emptyError string) (string, error) {
 	for _, l := range lines {
-		if pyStrip(l) != "" {
+		if strings.TrimSpace(l) != "" {
 			return strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n", nil
 		}
 	}
 	return "", &ExtractionError{Msg: emptyError}
 }
 
-// Decodes UTF-8 replacing each maximal invalid subpart with U+FFFD like errors=replace
+// Decodes UTF-8 replacing each maximal ill-formed subsequence with one U+FFFD, the substitution the Unicode standard recommends, so the count of bad sequences survives
 func decodeUTF8Replace(b []byte) string {
-	return strings.ToValidUTF8(string(b), string(utf8.RuneError))
+	if utf8.Valid(b) {
+		return string(b)
+	}
+	var sb strings.Builder
+	sb.Grow(len(b) + 8)
+	for i := 0; i < len(b); {
+		r, size := utf8.DecodeRune(b[i:])
+		if r != utf8.RuneError || size > 1 {
+			sb.Write(b[i : i+size])
+			i += size
+			continue
+		}
+		sb.WriteRune(utf8.RuneError)
+		i += utf8MaximalSubpart(b[i:])
+	}
+	return sb.String()
+}
+
+// Length of the ill-formed sequence starting b: its first byte and the following bytes that could still have continued it
+func utf8MaximalSubpart(b []byte) int {
+	need, lo, hi := 0, byte(0x80), byte(0xBF)
+	switch c := b[0]; {
+	case c >= 0xC2 && c <= 0xDF:
+		need = 1
+	case c == 0xE0:
+		need, lo = 2, 0xA0
+	case c >= 0xE1 && c <= 0xEC, c == 0xEE, c == 0xEF:
+		need = 2
+	case c == 0xED:
+		need, hi = 2, 0x9F
+	case c == 0xF0:
+		need, lo = 3, 0x90
+	case c >= 0xF1 && c <= 0xF3:
+		need = 3
+	case c == 0xF4:
+		need, hi = 3, 0x8F
+	}
+	n := 1
+	for n <= need && n < len(b) && b[n] >= lo && b[n] <= hi {
+		n++
+		lo, hi = 0x80, 0xBF
+	}
+	return n
 }
 
 // Notebook source or text field as a string, joining list fragments
@@ -682,23 +724,20 @@ const maxNotebookOutputChars = 20000
 // nbformat v3 keys that hold mime payloads flat on the output
 var v3MimeKeys = [][2]string{{"png", "image/png"}, {"jpeg", "image/jpeg"}, {"svg", "image/svg+xml"}, {"html", "text/html"}}
 
-// One notebook output as compact text with heavy payloads replaced by sized placeholders
-func notebookOutputText(output any) (string, error) {
+// One notebook output as compact text with heavy payloads replaced by sized placeholders, empty for one of no known type
+func notebookOutputText(output any) string {
 	out, ok := output.(*jsonutil.Object)
 	if !ok {
-		return "", nil
+		return ""
 	}
-	otype, _ := out.Get("output_type")
+	otype, _ := out.Value("output_type").(string)
 	if otype == "stream" {
 		text, _ := out.Get("text")
 		body := cleanStreamText(notebookSourceText(text))
-		if pyStrip(body) == "" {
-			return "", nil
+		if strings.TrimSpace(body) == "" {
+			return ""
 		}
-		return body, nil
-	}
-	if err := pyJSONHashable(otype); err != nil {
-		return "", err
+		return body
 	}
 	if otype == "error" || otype == "pyerr" {
 		tbText := ""
@@ -711,19 +750,11 @@ func notebookOutputText(output any) (string, error) {
 			}
 			tbText = cleanStreamText(strings.Join(parts, "\n"))
 		}
-		ename, ok := out.Get("ename")
-		if !ok {
-			ename = ""
-		}
-		evalue, ok := out.Get("evalue")
-		if !ok {
-			evalue = ""
-		}
-		header := strings.TrimRight("Error: "+pyJSONStr(ename)+": "+pyJSONStr(evalue), ": ")
-		return strings.TrimRightFunc(header+"\n"+tbText, pyIsSpace), nil
+		header := strings.TrimRight("Error: "+anyutil.String(out.Value("ename"))+": "+anyutil.String(out.Value("evalue")), ": ")
+		return strings.TrimRightFunc(header+"\n"+tbText, unicode.IsSpace)
 	}
 	if otype != "execute_result" && otype != "display_data" && otype != "pyout" {
-		return "", nil
+		return ""
 	}
 	data, ok := out.Value("data").(*jsonutil.Object)
 	if !ok {
@@ -739,69 +770,78 @@ func notebookOutputText(output any) (string, error) {
 		}
 	}
 	if _, ok := data.Get("application/vnd.jupyter.widget-view+json"); ok {
-		return "[interactive widget — omitted]", nil
+		return "[interactive widget — omitted]"
 	}
 	for _, mime := range []string{"text/plain", "text/markdown"} {
 		if v, ok := data.Get(mime); ok {
-			if body := cleanStreamText(notebookSourceText(v)); pyStrip(body) != "" {
-				return body, nil
+			if body := cleanStreamText(notebookSourceText(v)); strings.TrimSpace(body) != "" {
+				return body
 			}
 		}
 	}
 	for _, mime := range data.Keys() {
 		if strings.HasPrefix(mime, "image/") {
-			return fmt.Sprintf("[%s output — %s, omitted]", mime, humanSize(base64Bytes(notebookSourceText(data.Value(mime))))), nil
+			return fmt.Sprintf("[%s output — %s, omitted]", mime, humanSize(base64Bytes(notebookSourceText(data.Value(mime)))))
 		}
 	}
 	if v, ok := data.Get("text/html"); ok {
-		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(utf8.RuneCountInString(notebookSourceText(v)))), nil
+		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(utf8.RuneCountInString(notebookSourceText(v))))
 	}
 	names := strings.Join(data.Keys(), ", ")
 	if names == "" {
 		names = "unknown"
 	}
-	return "[" + names + " output — omitted]", nil
+	return "[" + names + " output — omitted]"
 }
 
 // Rendered outputs of a code cell capped at the per cell character budget
-func notebookOutputs(cell *jsonutil.Object, jqPointer, filename string) (string, error) {
+func notebookOutputs(cell *jsonutil.Object, jqPointer, filename string) string {
 	outputs, ok := cell.Value("outputs").([]any)
 	if !ok {
-		return "", nil
+		return ""
 	}
 	var parts []string
 	for _, o := range outputs {
-		t, err := notebookOutputText(o)
-		if err != nil {
-			return "", err
-		}
-		if t != "" {
+		if t := notebookOutputText(o); t != "" {
 			parts = append(parts, t)
 		}
 	}
 	joined := strings.Join(parts, "\n")
 	total := utf8.RuneCountInString(joined)
 	if total <= maxNotebookOutputChars {
-		return joined, nil
+		return joined
 	}
 	hint := ""
 	if jqPointer != "" && filename != "" {
 		hint = " — full output: jq -r '" + jqPointer + "' " + shQuote(filename)
 	}
-	return firstRunes(joined, maxNotebookOutputChars) + fmt.Sprintf("\n… [%s output chars truncated%s]", commaInt(total-maxNotebookOutputChars), hint), nil
+	return firstRunes(joined, maxNotebookOutputChars) + fmt.Sprintf("\n… [%s output chars truncated%s]", commaInt(total-maxNotebookOutputChars), hint)
 }
 
 var notebookCellLabels = map[string]string{"markdown": "Markdown", "code": "Code", "raw": "Raw"}
 
-// Renders a Jupyter notebook as labeled cells with compact outputs
+// Why notebook text is not JSON: the shared checker's precise diagnosis with its line and column, else the decoder's
+func notebookJSONProblem(text string, err error) string {
+	if verr := jsonutil.Validate(text); verr != nil {
+		err = verr
+	}
+	var se *jsonutil.SyntaxError
+	if errors.As(err, &se) {
+		return se.Msg + " (line " + strconv.Itoa(se.Line) + ", column " + strconv.Itoa(se.Column) + ")"
+	}
+	return err.Error()
+}
+
+// Renders a Jupyter notebook as labeled cells with compact outputs, worksheets, cells and outputs of an unexpected shape skipped
 func extractNotebook(p, displayPath string) (string, error) {
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		return "", extractionErr("Not a valid notebook: %s", err.Error())
 	}
-	parsed, err := jsonutil.Decode(decodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
+	text := decodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
-		return "", extractionErr("Not a valid notebook: %s", err.Error())
+		return "", extractionErr("Not a valid notebook: %s", notebookJSONProblem(text, err))
 	}
 	nb, ok := parsed.(*jsonutil.Object)
 	if !ok {
@@ -817,27 +857,13 @@ func extractNotebook(p, displayPath string) (string, error) {
 			cells = append(cells, pointedCell{fmt.Sprintf(".cells[%d].outputs", i), c})
 		}
 	} else {
-		worksheets, ok := nb.Get("worksheets")
-		if !ok {
-			worksheets = []any{}
-		}
-		wsList, err := pyJSONIter(worksheets)
-		if err != nil {
-			return "", err
-		}
-		for wi, ws := range wsList {
+		worksheets, _ := nb.Value("worksheets").([]any)
+		for wi, ws := range worksheets {
 			wsObj, ok := ws.(*jsonutil.Object)
 			if !ok {
 				continue
 			}
-			wsCells, ok := wsObj.Get("cells")
-			if !ok {
-				wsCells = []any{}
-			}
-			items, err := pyJSONIter(wsCells)
-			if err != nil {
-				return "", err
-			}
+			items, _ := wsObj.Value("cells").([]any)
 			for ci, c := range items {
 				cells = append(cells, pointedCell{fmt.Sprintf(".worksheets[%d].cells[%d].outputs", wi, ci), c})
 			}
@@ -850,14 +876,10 @@ func extractNotebook(p, displayPath string) (string, error) {
 	var out []string
 	for _, pc := range cells {
 		cell, isObj := pc.cell.(*jsonutil.Object)
-		var typ any
-		if isObj {
-			typ, _ = cell.Get("cell_type")
+		if !isObj {
+			continue
 		}
-		if err := pyJSONHashable(typ); err != nil {
-			return "", err
-		}
-		name, _ := typ.(string)
+		name, _ := cell.Value("cell_type").(string)
 		label, known := notebookCellLabels[name]
 		if !known {
 			continue
@@ -874,11 +896,7 @@ func extractNotebook(p, displayPath string) (string, error) {
 		source := strings.TrimRight(notebookSourceText(src), "\n")
 		out = append(out, "# ── "+label+" cell"+suffix+" ──", source, "")
 		if name == "code" {
-			rendered, err := notebookOutputs(cell, pc.pointer, displayPath)
-			if err != nil {
-				return "", err
-			}
-			if rendered != "" {
+			if rendered := notebookOutputs(cell, pc.pointer, displayPath); rendered != "" {
 				out = append(out, fmt.Sprintf("# ── Output (cell %d) ──", counts[name]), strings.TrimRight(rendered, "\n"), "")
 			}
 		}
@@ -1123,7 +1141,7 @@ func sheetRowsIn(root *etNode, shared []string, s string) [][]string {
 	for len(rows) > 0 {
 		blank := true
 		for _, v := range rows[len(rows)-1] {
-			if pyStrip(v) != "" {
+			if strings.TrimSpace(v) != "" {
 				blank = false
 				break
 			}
@@ -1136,12 +1154,12 @@ func sheetRowsIn(root *etNode, shared []string, s string) [][]string {
 	return rows
 }
 
-var pyIntUnderscoreRe = regexp.MustCompile(`^[+-]?[0-9](?:_?[0-9])*$`)
+var intUnderscoreRe = regexp.MustCompile(`^[+-]?[0-9](?:_?[0-9])*$`)
 
 // Python int of a string with whitespace, sign and digit separators
-func pyIntParse(s string) (int, bool) {
-	t := pyStrip(s)
-	if !pyIntUnderscoreRe.MatchString(t) {
+func intParse(s string) (int, bool) {
+	t := strings.TrimSpace(s)
+	if !intUnderscoreRe.MatchString(t) {
 		return 0, false
 	}
 	n, err := strconv.Atoi(strings.ReplaceAll(t, "_", ""))
@@ -1154,7 +1172,7 @@ func xlsxCellValue(cell *etNode, shared []string, s string) string {
 	typ := cell.get("t", "")
 	switch typ {
 	case "s":
-		i, ok := pyIntParse(value)
+		i, ok := intParse(value)
 		if !ok {
 			return ""
 		}
@@ -1172,7 +1190,7 @@ func xlsxCellValue(cell *etNode, shared []string, s string) string {
 		}
 		return xlsxStringText(inline, s)
 	case "b":
-		switch pyStrip(value) {
+		switch strings.TrimSpace(value) {
 		case "1", "true", "TRUE":
 			return "TRUE"
 		}
@@ -1275,7 +1293,7 @@ func sqliteOverview(db *sql.DB) (string, error) {
 		if err := db.QueryRow("SELECT COUNT(*) FROM " + quoted).Scan(&count); err != nil {
 			return "", err
 		}
-		out = append(out, "", fmt.Sprintf("## %s  (%s rows)", t.name, commaInt(int(count))), pyStrip(t.sql))
+		out = append(out, "", fmt.Sprintf("## %s  (%s rows)", t.name, commaInt(int(count))), strings.TrimSpace(t.sql))
 		cols, preview, err := sqlitePreview(db, quoted)
 		if err != nil {
 			return "", err
@@ -1350,7 +1368,7 @@ func sqliteCell(v any) string {
 	case int64:
 		text = strconv.FormatInt(x, 10)
 	case float64:
-		text = pyFloatRepr(x)
+		text = floatRepr(x)
 	case string:
 		text = x
 	default:

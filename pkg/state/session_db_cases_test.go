@@ -294,7 +294,7 @@ func TestSessionDBActionableErrorOutsideHome(t *testing.T) {
 		t.Fatal("read only store outside the home opened")
 	}
 	if !isOperationalError(err) || !strings.Contains(err.Error(), path) {
-		t.Fatalf("refusal %s: %v", pyExceptionClassName(err), err)
+		t.Fatalf("refusal %s: %v", exceptionClassName(err), err)
 	}
 }
 

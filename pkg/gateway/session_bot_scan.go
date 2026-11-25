@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Statuses an admission backed Bot mailbox receipt may carry
@@ -51,7 +50,7 @@ func canonicalRecordError(path string, record map[string]any, required []string)
 	}
 	status, isText := record["status"].(string)
 	if !isText || !canonicalReceiptStatuses[status] {
-		return "unknown canonical status " + anyutil.Quote(record["status"])
+		return "unknown canonical status " + quotedValue(record["status"])
 	}
 	return ""
 }
@@ -82,7 +81,7 @@ func isPreAdmissionPin(path string, record map[string]any) bool {
 	return record["status"] == "ambiguous" && !admitted && !refused && canonicalRecordError(path, record, canonicalPinFields) == ""
 }
 
-// Python str of a read failure, the OSError text for filesystem errors
+// Text of a read failure, the reason and path for filesystem errors
 func botScanErrorText(err error) string {
 	var pathErr *os.PathError
 	if errors.As(err, &pathErr) {

@@ -67,7 +67,7 @@ func TestSchemaColumnsCacheAndReadProbes(t *testing.T) {
 		t.Fatalf("primary key drops NOT NULL %v", decl)
 	}
 	body, err := os.ReadFile(cachePath)
-	hash, _ := sha256HexUTF8(SchemaSQL)
+	hash := sha256Hex(SchemaSQL)
 	if err != nil || !strings.HasPrefix(string(body), `{"schema_hash": "`+hash+`", "tables": {`) {
 		t.Fatalf("cache %q %v", body, err)
 	}
@@ -130,7 +130,7 @@ func TestStoreSystemPromptAndLegacyDedupe(t *testing.T) {
 		t.Fatalf("nil prompt %v %v", hash, err)
 	}
 	hash, err := storeSystemPrompt(ctx, conn, "be brief")
-	want, _ := sha256HexUTF8("be brief")
+	want := sha256Hex("be brief")
 	if err != nil || hash != want || len(want) != 64 {
 		t.Fatalf("hash %v %v", hash, err)
 	}
@@ -138,8 +138,12 @@ func TestStoreSystemPromptAndLegacyDedupe(t *testing.T) {
 	if _, err := storeSystemPrompt(ctx, conn, []byte("x")); !errors.As(err, &pe) || pe.Msg != "the system prompt is bytes, expected text" {
 		t.Fatalf("bytes prompt %v", err)
 	}
-	if _, err := storeSystemPrompt(ctx, conn, "a\xed\xa0\x80"); !errors.As(err, &pe) || pe.Kind != "UnicodeEncodeError" || !strings.Contains(pe.Msg, "lone surrogate U+D800 at character 1") {
-		t.Fatalf("surrogate prompt %v", err)
+	undecodable := "a\xed\xa0\x80"
+	if hash, err := storeSystemPrompt(ctx, conn, undecodable); err != nil || hash != sha256Hex(undecodable) {
+		t.Fatalf("undecodable prompt %v %v", hash, err)
+	}
+	if got := scalarOf(t, conn, "SELECT prompt FROM system_prompts WHERE hash = ?", sha256Hex(undecodable)); got != undecodable {
+		t.Fatalf("undecodable prompt stored as %q", got)
 	}
 	mustExecConn(t, conn, "DELETE FROM system_prompts")
 	addTitledSession(t, conn, "a", 1, map[string]any{"system_prompt": "shared prompt"})

@@ -547,7 +547,7 @@ func TestConfigureVisionProviderModelPicker(t *testing.T) {
 		t.Fatalf("cancel %v %q", err, out.String())
 	}
 	swapHook(t, &ToolsConfigHooks.AuxPickerRows, func(context.Context, string, string, string, int) ([]map[string]any, error) {
-		return nil, errors.New("ValueError: bad providers block")
+		return nil, errors.New("bad providers block")
 	})
 	s, out = newTestToolsSetup(t, "")
 	if err := s.configureVisionProviderModel(config.Tree{}, map[string]any{}); err != nil ||
@@ -634,7 +634,7 @@ func TestToolsetNeedsConfigurationPromptWithoutCategory(t *testing.T) {
 func assertVisionKeys(t *testing.T, cfg config.Tree, want map[string]any, absent ...string) {
 	t.Helper()
 	raw, _ := config.CfgGet(cfg, "auxiliary", "vision")
-	vision, _ := pyDictOf(raw)
+	vision, _ := dictOf(raw)
 	for k, v := range want {
 		if !anyutil.Equal(vision[k], v) {
 			t.Fatalf("auxiliary.vision.%s = %v in %v", k, vision[k], vision)

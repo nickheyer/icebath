@@ -90,7 +90,6 @@ type auxOpenAIClient struct {
 	apiKeyProvider func() (string, error)
 	baseURL        string
 	customHeaders  map[string]string
-	customOrder    []string
 	customQuery    map[string]string
 	async          bool
 	timeout        float64
@@ -191,11 +190,7 @@ func AuxClientDefaultHeaders(c AuxClient) map[string]string {
 	}
 	oc.mu.Lock()
 	defer oc.mu.Unlock()
-	out := map[string]string{}
-	for _, l := range oc.sdkDefaultHeaders().lines {
-		out[l.Name] = l.Value
-	}
-	return out
+	return fieldMap(oc.sdkDefaultHeaders().fields()...)
 }
 
 // OpenAI SDK client with a static or callable key, the env key and base URL when none is given
@@ -236,7 +231,6 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 	for k, v := range opts.DefaultHeaders {
 		c.customHeaders[k] = v
 	}
-	c.customOrder = slices.Sorted(maps.Keys(opts.DefaultHeaders))
 	for k, v := range opts.DefaultQuery {
 		c.customQuery[k] = v
 	}
@@ -245,7 +239,7 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 	}
 	switch {
 	case opts.Timeout > 0:
-		c.timeout, c.hasTimeout, c.timeoutText = opts.Timeout, true, pyFloatRepr(opts.Timeout)
+		c.timeout, c.hasTimeout, c.timeoutText = opts.Timeout, true, floatRepr(opts.Timeout)
 	case opts.HTTPClient != nil:
 		c.hasTimeout = false
 	default:
@@ -275,7 +269,7 @@ func (c *auxOpenAIClient) withMaxRetries(maxRetries int) *auxOpenAIClient {
 	defer c.mu.Unlock()
 	return &auxOpenAIClient{
 		apiKey: c.apiKey, apiKeyProvider: c.apiKeyProvider, baseURL: c.baseURL,
-		customHeaders: maps.Clone(c.customHeaders), customOrder: slices.Clone(c.customOrder), customQuery: maps.Clone(c.customQuery),
+		customHeaders: maps.Clone(c.customHeaders), customQuery: maps.Clone(c.customQuery),
 		async: c.async, timeout: c.timeout, timeoutText: c.timeoutText, hasTimeout: c.hasTimeout, maxRetries: maxRetries,
 		httpClient: c.httpClient, ownsHTTP: c.ownsHTTP, closed: c.closed, initErr: c.initErr,
 		responseHooks: slices.Clone(c.responseHooks), responseMarks: maps.Clone(c.responseMarks),
@@ -343,16 +337,15 @@ func (c *auxOpenAIClient) refreshAPIKey() (string, error) {
 
 // One chat completions request split into body, headers, query and timeout
 type auxSDKRequest struct {
-	path    string
-	body    []byte
-	stream  bool
-	params  map[string]any
-	extra   *jsonutil.Object
-	headers map[string]any
-	// Order of the per request headers, the extra_headers mapping order
-	headerOrder []string
-	query       map[string]string
-	timeout     auxSDKTimeouts
+	path   string
+	body   []byte
+	stream bool
+	params map[string]any
+	extra  *jsonutil.Object
+	// Per request headers, the names the call omits included
+	headers *sdkHeaders
+	query   map[string]string
+	timeout auxSDKTimeouts
 	// str of the read timeout as the SDK writes x-stainless-read-timeout
 	readTimeoutText string
 }
@@ -384,7 +377,7 @@ func sdkStreamTimeout(connect, read, write, pool float64) httputil.Timeout {
 }
 
 func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
-	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: auxUniformTimeouts(c.timeout, c.hasTimeout),
+	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: newSDKHeaders(), timeout: auxUniformTimeouts(c.timeout, c.hasTimeout),
 		readTimeoutText: c.timeoutText}
 	r.params, r.extra = map[string]any{}, jsonutil.NewObject()
 	for k, v := range kwargs {
@@ -407,19 +400,16 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 	switch h := kwargs["extra_headers"].(type) {
 	case *jsonutil.Object:
 		for _, k := range h.Keys() {
-			r.headers[k] = h.Value(k)
+			r.headers.setValue(k, h.Value(k))
 		}
-		r.headerOrder = append([]string(nil), h.Keys()...)
 	case map[string]any:
-		for k, v := range h {
-			r.headers[k] = v
+		for _, k := range config.MappingKeys(h) {
+			r.headers.setValue(k, h[k])
 		}
-		r.headerOrder = config.MappingKeys(h)
 	case map[string]string:
-		for k, v := range h {
-			r.headers[k] = v
+		for _, k := range sortedHeaderKeys(h) {
+			r.headers.set(k, h[k])
 		}
-		r.headerOrder = slices.Sorted(maps.Keys(h))
 	}
 	switch q := kwargs["extra_query"].(type) {
 	case map[string]any:
@@ -436,17 +426,17 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 		case nil:
 			r.timeout = auxUniformTimeouts(0, false)
 		case float64:
-			r.timeout, r.readTimeoutText = auxUniformTimeouts(v, true), pyFloatRepr(v)
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(v, true), floatRepr(v)
 		case float32:
-			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), pyFloatRepr(float64(v))
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), floatRepr(float64(v))
 		case int:
 			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), strconv.Itoa(v)
 		case int64:
 			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), strconv.FormatInt(v, 10)
 		case time.Duration:
-			r.timeout, r.readTimeoutText = auxUniformTimeouts(v.Seconds(), true), pyFloatRepr(v.Seconds())
+			r.timeout, r.readTimeoutText = auxUniformTimeouts(v.Seconds(), true), floatRepr(v.Seconds())
 		case httputil.Timeout:
-			r.timeout, r.readTimeoutText = auxPhaseTimeouts(v), pyFloatRepr(v.Read.Seconds())
+			r.timeout, r.readTimeoutText = auxPhaseTimeouts(v), floatRepr(v.Read.Seconds())
 		default:
 			return nil, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", anyutil.Quote(v))
 		}
@@ -724,16 +714,11 @@ func sortedHeaderKeys[V any](headers map[string]V) []string {
 	return keys
 }
 
-// default_headers of the SDK client, its identity and platform lines, the async label, organization, project and custom headers
-func (c *auxOpenAIClient) sdkDefaultHeaders() *sdkHeaderDict {
-	d := &sdkHeaderDict{}
-	d.set("Accept", "application/json")
-	d.set("Content-Type", "application/json")
-	d.set("User-Agent", c.userAgent())
+// Default headers of the SDK client, its identity and platform lines, the async label, organization and project, with the custom headers over all of them
+func (c *auxOpenAIClient) sdkDefaultHeaders() *sdkHeaders {
+	d := newSDKHeaders(headerField{Name: "Accept", Value: "application/json"}, headerField{Name: "Content-Type", Value: "application/json"},
+		headerField{Name: "User-Agent", Value: c.userAgent()})
 	for _, l := range stainlessPlatformHeaders(openAISDKVersion) {
-		d.set(l.Name, l.Value)
-	}
-	for _, l := range c.customHeaderLines() {
 		d.set(l.Name, l.Value)
 	}
 	d.set("X-Stainless-Async", c.asyncLabel())
@@ -743,9 +728,7 @@ func (c *auxOpenAIClient) sdkDefaultHeaders() *sdkHeaderDict {
 	if project, set := os.LookupEnv("OPENAI_PROJECT_ID"); set {
 		d.set("OpenAI-Project", project)
 	}
-	for _, l := range c.customHeaderLines() {
-		d.set(l.Name, l.Value)
-	}
+	d.update(newSDKHeaders(c.customHeaderLines()...))
 	return d
 }
 
@@ -765,46 +748,33 @@ func (c *auxOpenAIClient) asyncLabel() string {
 	return "false"
 }
 
-// Custom default headers in the order the client was given them
+// Custom default headers of the client sorted by name
 func (c *auxOpenAIClient) customHeaderLines() []headerField {
-	out := make([]headerField, 0, len(c.customOrder))
-	for _, k := range c.customOrder {
-		if v, ok := c.customHeaders[k]; ok {
-			out = append(out, headerField{Name: k, Value: v})
-		}
+	out := make([]headerField, 0, len(c.customHeaders))
+	for _, k := range sortedHeaderKeys(c.customHeaders) {
+		out = append(out, headerField{Name: k, Value: c.customHeaders[k]})
 	}
 	return out
 }
 
-// Header lines of one attempt as the SDK merges them and its httpx client sends them
+// Headers of one attempt, the key and client defaults under the per request headers over the httpx client defaults, with the retry and read timeout telemetry the request does not set
 func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int) http.Header {
-	c.mu.Lock()
-	d := &sdkHeaderDict{}
+	d := newSDKHeaders()
 	if key != "" {
 		d.set("Authorization", "Bearer "+key)
 	}
-	for _, l := range c.sdkDefaultHeaders().lines {
-		d.set(l.Name, l.Value)
-	}
+	c.mu.Lock()
+	d.update(c.sdkDefaultHeaders())
 	c.mu.Unlock()
-	custom := map[string]bool{}
-	for _, k := range r.headerOrder {
-		custom[strings.ToLower(k)] = true
-		if v := r.headers[k]; v == nil {
-			d.omit(k)
-		} else {
-			d.set(k, anyutil.String(v))
-		}
-	}
-	sdk := headerOf(d.lines...)
-	if !custom["x-stainless-retry-count"] {
-		sdk.Set("x-stainless-retry-count", strconv.Itoa(retries))
-	}
-	if !custom["x-stainless-read-timeout"] && r.timeout.read.on {
-		sdk.Set("x-stainless-read-timeout", r.readTimeoutText)
-	}
+	d.update(r.headers)
 	h := httpxClientHeaders()
-	setFields(h, fieldsOf(sdk))
+	setFields(h, d.fields())
+	if !r.headers.has("x-stainless-retry-count") {
+		h.Set("x-stainless-retry-count", strconv.Itoa(retries))
+	}
+	if !r.headers.has("x-stainless-read-timeout") && r.timeout.read.on {
+		h.Set("x-stainless-read-timeout", r.readTimeoutText)
+	}
 	return h
 }
 
@@ -821,7 +791,11 @@ func auxSDKStatusError(resp *http.Response, data []byte) *AuxSDKError {
 	parsed, err := jsonutil.Decode(text)
 	if err == nil {
 		body = parsed
-		e.Message = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, anyutil.String(parsed))
+		detail := anyutil.String(parsed)
+		if parsed == nil {
+			detail = "null"
+		}
+		e.Message = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, detail)
 	} else if text != "" {
 		e.Message = text
 	} else {
@@ -1263,7 +1237,7 @@ func (e *AuxTransportError) Unwrap() error     { return e.Err }
 func (e *AuxTransportError) ErrorKind() string { return e.Class }
 
 // Python module of the raised class, json.decoder for a JSONDecodeError and httpx for every transport class
-func (e *AuxTransportError) PyModule() string {
+func (e *AuxTransportError) Module() string {
 	if e.Class == "JSONDecodeError" {
 		return "json.decoder"
 	}

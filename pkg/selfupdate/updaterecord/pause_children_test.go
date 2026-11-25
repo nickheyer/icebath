@@ -253,12 +253,12 @@ func TestPauseRecordALaunchKilledMidRecoveryLeavesTheSetToTheNextLaunch(t *testi
 	psHome(t)
 	pcOrphan(t, `{"default": 4242}`)
 	first := pcStart(t, "recover", "hang")
-	if got := first.line(t); got != "resume ['default']" {
+	if got := first.line(t); got != `resume ["default"]` {
 		t.Fatalf("first launch said %q", got)
 	}
 	first.kill(t)
 	out, _ := pcStart(t, "recover", "ok").rest(t)
-	if !strings.HasPrefix(out, "resume ['default']\n") {
+	if !strings.HasPrefix(out, "resume [\"default\"]\n") {
 		t.Fatalf("second launch: %q", out)
 	}
 	if out, _ = pcStart(t, "recover", "ok").rest(t); strings.TrimSpace(out) != "done" {
@@ -272,7 +272,7 @@ func TestPauseRecordRecoveryNeverStartsGatewaysUnderAnUpdateThatTookTheCheckout(
 	if out, _ := pcStart(t, "after_claim").rest(t); strings.TrimSpace(out) != "done" {
 		t.Fatalf("gateways restarted while an update owned the checkout: %q", out)
 	}
-	if out, _ := pcStart(t, "recover", "ok").rest(t); !strings.HasPrefix(out, "resume ['default']\n") {
+	if out, _ := pcStart(t, "recover", "ok").rest(t); !strings.HasPrefix(out, "resume [\"default\"]\n") {
 		t.Fatalf("the handed-back set was stranded: %q", out)
 	}
 }
@@ -310,7 +310,7 @@ func TestPauseRecordALaunchKilledBetweenClaimAndRetireResumesTheSetOnce(t *testi
 	if _, code := pcStart(t, "claim_kill").rest(t); code != 71 || len(pcRecordFiles(t, home)) != 2 {
 		t.Fatalf("premise: killed after publishing the claim (%d, %v)", code, pcRecordFiles(t, home))
 	}
-	if got := pcLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{"resume ['default']"}, {}}) {
+	if got := pcLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{`resume ["default"]`}, {}}) {
 		t.Fatalf("launches %v", got)
 	}
 	if got := pcRecordFiles(t, home); len(got) != 0 {
@@ -324,7 +324,7 @@ func TestPauseRecordAnUpdateKilledAfterPublishingItsRecordNeverRestartsASetTwice
 	if _, code := pcStart(t, "record_kill").rest(t); code != 71 || len(pcRecordFiles(t, home)) != 2 {
 		t.Fatalf("premise: killed before retiring the claim (%d, %v)", code, pcRecordFiles(t, home))
 	}
-	if got := pcLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{"resume ['beta', 'default']"}, {}}) {
+	if got := pcLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{`resume ["beta","default"]`}, {}}) {
 		t.Fatalf("launches %v", got)
 	}
 	if got := pcRecordFiles(t, home); len(got) != 0 {
@@ -357,7 +357,7 @@ func TestPauseRecordAGatewayDrainingAfterTheStopRequestKeepsItsRestartDebt(t *te
 		}
 	}()
 	_, _ = gateway.rest(t)
-	if got := pcLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{"resume ['default']"}, {}}) {
+	if got := pcLaunches(t, 2); !reflect.DeepEqual(got, [][]string{{`resume ["default"]`}, {}}) {
 		t.Fatalf("launches %v", got)
 	}
 }

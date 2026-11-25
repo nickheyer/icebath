@@ -24,8 +24,6 @@ import (
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
-
-	"golang.org/x/text/cases"
 )
 
 var (
@@ -133,7 +131,7 @@ func statSQLiteSidecarIdentity(dbPath string) map[string]FileIdentity {
 
 // Canonical form of every watched sidecar spelling mapped to its literal still named path
 func watchedSQLiteSidecarPaths(dbPath string) (map[string]string, error) {
-	literalBase, err := pyAbspath(dbPath)
+	literalBase, err := abspath(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +193,7 @@ func iterProcFDTargets(fn func(pid int, target, fdPath string)) error {
 		}
 		pid, err := strconv.Atoi(pidStr)
 		if err != nil {
-			return &pyConvError{"ValueError", "process id " + pidStr + " is not a whole number"}
+			return &convError{"ValueError", "process id " + pidStr + " is not a whole number"}
 		}
 		for _, fd := range fds {
 			fdPath := fdDir + "/" + fd
@@ -332,14 +330,14 @@ type darwinScanResult struct {
 
 // macOS deleted sidecar holders by identity, bounded by the scan deadline and failing open with a warning
 func iterDarwinSidecarHolders(dbPath string) ([]Holder, error) {
-	abs, err := pyAbspath(dbPath)
+	abs, err := abspath(dbPath)
 	if err != nil {
 		return nil, err
 	}
 	base := realpathLax(abs)
 	watched := map[string]string{}
 	for _, path := range []string{base + "-wal", base + "-shm"} {
-		watched[cases.Fold().String(path)] = path
+		watched[textutil.Fold(path)] = path
 	}
 	done := make(chan darwinScanResult, 1)
 	loadLib, allPIDs := darwinLibproc, darwinAllPIDs
@@ -351,7 +349,7 @@ func iterDarwinSidecarHolders(dbPath string) ([]Holder, error) {
 			}
 		}()
 		err := iterDarwinFDTargetsWith(loadLib, allPIDs, func(pid, _ int, target string, identity FileIdentity) {
-			if literal, ok := watched[cases.Fold().String(target)]; ok && identityIsTrulyUnlinked(identity, literal) {
+			if literal, ok := watched[textutil.Fold(target)]; ok && identityIsTrulyUnlinked(identity, literal) {
 				holders = append(holders, Holder{PID: pid, Target: target})
 			}
 		})
@@ -955,7 +953,7 @@ func CollectStateDBStats(dbPath string) (*jsonutil.Object, error) {
 		case []byte:
 			parsed, perr = jsonutil.Decode(v)
 		default:
-			perr = &pyConvError{"TypeError", "the stored JSON is not text"}
+			perr = &convError{"TypeError", "the stored JSON is not text"}
 		}
 		if obj, ok := parsed.(*jsonutil.Object); ok && perr == nil {
 			stats.Set("fts_rebuild_deferral", obj)

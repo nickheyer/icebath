@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -69,7 +70,7 @@ func apiSettings(ctx context.Context, a *SessionAuthority, ref SessionRef) (any,
 }
 
 // Members iterating a decoded JSON value yields, the TypeError Python raises for a scalar
-func pyIterMembers(value any) ([]any, error) {
+func iterMembers(value any) ([]any, error) {
 	switch v := value.(type) {
 	case *jsonutil.Object:
 		members := make([]any, v.Len())
@@ -86,14 +87,14 @@ func pyIterMembers(value any) ([]any, error) {
 		}
 		return members, nil
 	}
-	return nil, &PyError{Kind: "TypeError", Msg: "expected a list, got " + errchain.Kind(value)}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: "expected a list, got " + errchain.Kind(value)}
 }
 
 // Value of key in a decoded dict, the AttributeError Python raises calling get on anything else
-func pyDictGet(value any, key string, def any) (any, error) {
+func dictGetValue(value any, key string, def any) (any, error) {
 	obj, ok := value.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
 	}
 	if item, present := obj.Get(key); present {
 		return item, nil
@@ -103,7 +104,7 @@ func pyDictGet(value any, key string, def any) (any, error) {
 
 // Refuses an api_turn_v1 envelope whose fields or shapes the turn cannot run
 func checkAPITurnEnvelope(data any) error {
-	members, err := pyIterMembers(data)
+	members, err := iterMembers(data)
 	if err != nil {
 		return err
 	}
@@ -111,7 +112,7 @@ func checkAPITurnEnvelope(data any) error {
 	for _, member := range members {
 		switch member.(type) {
 		case []any, *jsonutil.Object:
-			return &PyError{Kind: "TypeError", Msg: "an API turn envelope member is " + errchain.Kind(member) + ", expected text"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "an API turn envelope member is " + errchain.Kind(member) + ", expected text"}
 		}
 		keys[member] = true
 	}
@@ -121,14 +122,14 @@ func checkAPITurnEnvelope(data any) error {
 			return invalid
 		}
 	}
-	resume, err := pyDictGet(data, "resume_unanswered", true)
+	resume, err := dictGetValue(data, "resume_unanswered", true)
 	if err != nil {
 		return err
 	}
 	if resume != true || !keys["history"] || !keys["settings"] {
 		return invalid
 	}
-	relay, err := pyDictGet(data, "relay_metadata", jsonutil.NewObject())
+	relay, err := dictGetValue(data, "relay_metadata", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
@@ -144,7 +145,7 @@ func checkAPITurnEnvelope(data any) error {
 		return invalid
 	}
 	settings, _ := obj.Get("settings")
-	settingKeys, err := pyIterMembers(settings)
+	settingKeys, err := iterMembers(settings)
 	if err != nil {
 		return err
 	}
@@ -160,10 +161,10 @@ func checkAPITurnEnvelope(data any) error {
 func checkAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *jsonutil.Object) (PlatformAdapter, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return nil, &pyKeyError{ref.SessionID}
+		return nil, &keyError{ref.SessionID}
 	}
 	if live.Source == nil {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the API turn has no source"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the API turn has no source"}
 	}
 	if live.Source.Platform == PlatformAPIServer {
 		if err := restoreAPISession(ctx, a, ref.SessionID); err != nil {
@@ -213,7 +214,7 @@ func APISessionVars(ctx context.Context) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	settings, _ := current.Get("settings")
-	delivery, err := pyDictGet(settings, "session_history_delivery", nil)
+	delivery, err := dictGetValue(settings, "session_history_delivery", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -225,11 +226,11 @@ func APISessionVars(ctx context.Context) (map[string]any, error) {
 
 // Refuses room settings unless the policy rides the dispatch it was verified for against the current catalog
 func checkAPISettings(ctx context.Context, adapter PlatformAdapter, settings any) error {
-	dispatch, err := pyDictGet(settings, "room_dispatch", nil)
+	dispatch, err := dictGetValue(settings, "room_dispatch", nil)
 	if err != nil {
 		return err
 	}
-	policy, _ := pyDictGet(settings, "room_execution_policy", nil)
+	policy, _ := dictGetValue(settings, "room_execution_policy", nil)
 	if dispatch == nil && policy != nil {
 		return runtimeRefusal("permission_denied")
 	}
@@ -268,7 +269,7 @@ func APIPolicyScope(ctx context.Context) (context.Context, error) {
 		return ctx, nil
 	}
 	settings, _ := current.Get("settings")
-	policy, err := pyDictGet(settings, "room_execution_policy", nil)
+	policy, err := dictGetValue(settings, "room_execution_policy", nil)
 	if err != nil || policy == nil {
 		return ctx, err
 	}
@@ -281,7 +282,7 @@ func APIPolicyScope(ctx context.Context) (context.Context, error) {
 
 // Room member turn text with its images described, empty unless this gateway routes images as text
 func roomImagesAsText(ctx context.Context, settings any, parts, media []any) (string, error) {
-	dispatch, err := pyDictGet(settings, "room_dispatch", nil)
+	dispatch, err := dictGetValue(settings, "room_dispatch", nil)
 	if err != nil || dispatch == nil || len(media) == 0 {
 		return "", err
 	}
@@ -317,20 +318,20 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 	if hasData {
 		var present bool
 		if settings, present = data.Get("settings"); !present {
-			return nil, &pyKeyError{"settings"}
+			return nil, &keyError{"settings"}
 		}
 	} else if settings, err = apiSettings(ctx, a, ref); err != nil {
 		return nil, err
 	}
 	content, present := payload.Get("text")
 	if !present {
-		return nil, &pyKeyError{"text"}
+		return nil, &keyError{"text"}
 	}
 	if parts, isList := content.([]any); hasData && isList {
 		media, _ := data.Get("media")
 		mediaList, _ := media.([]any)
 		if anyutil.IsTrue(media) && mediaList == nil {
-			return nil, &PyError{Kind: "TypeError", Msg: "the API turn media are " + errchain.Kind(media) + ", expected a list"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "the API turn media are " + errchain.Kind(media) + ", expected a list"}
 		}
 		restored, err := RestoreAPIImages(ctx, parts, mediaList)
 		if err != nil {
@@ -350,7 +351,7 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 	if hasData {
 		var present bool
 		if history, present = data.Get("history"); !present {
-			return nil, &pyKeyError{"history"}
+			return nil, &keyError{"history"}
 		}
 		author, _ = data.Get("turn_author")
 		relay, _ = data.Get("relay_metadata")
@@ -386,7 +387,7 @@ type APIObserver struct {
 func apiObservers(a *SessionAuthority, sessionID string) ([]*APIObserver, error) {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return nil, &pyKeyError{sessionID}
+		return nil, &keyError{sessionID}
 	}
 	var admissionID any
 	if execution := live.EventStream.Execution; execution != nil && execution.Len() > 0 {
@@ -458,17 +459,17 @@ func publishAPIEvent(a *SessionAuthority, sessionID, eventType string, payload a
 	case *jsonutil.Object:
 		value, present := p.Get("text")
 		if !present {
-			return false, &pyKeyError{"text"}
+			return false, &keyError{"text"}
 		}
 		text = value
 	case map[string]any:
 		value, present := p["text"]
 		if !present {
-			return false, &pyKeyError{"text"}
+			return false, &keyError{"text"}
 		}
 		text = value
 	default:
-		return false, &PyError{Kind: "TypeError", Msg: "the API event payload is " + errchain.Kind(payload) + ", expected a mapping"}
+		return false, &errorutil.Error{Kind: "TypeError", Msg: "the API event payload is " + errchain.Kind(payload) + ", expected a mapping"}
 	}
 	if text == nil {
 		return false, nil
@@ -480,7 +481,7 @@ func publishAPIEvent(a *SessionAuthority, sessionID, eventType string, payload a
 func PublishAPIToolProgress(ctx context.Context, a *SessionAuthority, sessionID string, generation int64, args []any, kwargs map[string]any) error {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return &pyKeyError{sessionID}
+		return &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
@@ -499,7 +500,7 @@ func PublishAPIToolProgress(ctx context.Context, a *SessionAuthority, sessionID 
 func PublishAPIToolEvent(ctx context.Context, a *SessionAuthority, sessionID string, generation int64, eventType, callID, toolName string, args, result any) error {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return &pyKeyError{sessionID}
+		return &keyError{sessionID}
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
@@ -530,7 +531,7 @@ func APIRuntimeLocked(ctx context.Context) (*jsonutil.Object, error) {
 		return nil, nil
 	}
 	settings, _ := current.Get("settings")
-	locked, err := pyDictGet(settings, "confirmed_runtime_lock", nil)
+	locked, err := dictGetValue(settings, "confirmed_runtime_lock", nil)
 	if err != nil || !anyutil.IsTrue(locked) {
 		return nil, err
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -65,7 +66,7 @@ func TestRestorePrimaryPoolReselectRestoreUpdatesBaseURLFromPoolEntry(t *testing
 	if !mustRestore(t, a) {
 		t.Fatal("restore declined")
 	}
-	if !strings.Contains(a.baseURL, "custom-endpoint.example.com") || !strings.Contains(pyStrOr(a.clientKwargs["base_url"], ""), "custom-endpoint.example.com") {
+	if !strings.Contains(a.baseURL, "custom-endpoint.example.com") || !strings.Contains(anyutil.StringOr(a.clientKwargs["base_url"], ""), "custom-endpoint.example.com") {
 		t.Fatalf("base %s kwargs %v", a.baseURL, a.clientKwargs["base_url"])
 	}
 }

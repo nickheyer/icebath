@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -681,7 +682,7 @@ func TestFileOpsExecNamesMissingWorkingDirectory(t *testing.T) {
 	ops := newShellFileOps(remoteTestEnv(t), env, "/nope")
 	env.cwd = ""
 	r := ops.exec("true", "", 0)
-	want := "working directory '/nope' does not exist on the active terminal backend (check terminal.cwd or the session cwd; " +
+	want := "working directory \"/nope\" does not exist on the active terminal backend (check terminal.cwd or the session cwd; " +
 		"for container backends use a path inside the container, e.g. /workspace). bash: line 1: cd: /nope: No such file or directory"
 	if r.CwdError != want || r.Stdout != want || r.ExitCode != 126 {
 		t.Fatalf("got %+v", r)
@@ -1385,7 +1386,7 @@ func TestFileOpsFailClosedSyntaxGate(t *testing.T) {
 			t.Fatalf("native=%v invalid json written", native)
 		}
 		want := "Refusing to write '" + target + "': candidate content fails .json syntax validation " +
-			"(invalid JSON: Expecting property name enclosed in double quotes (line 1, column 9)). The file was NOT created or modified. Fix the content and retry."
+			"(invalid JSON: unexpected end of input looking for beginning of object key string (line 1, column 9)). The file was NOT created or modified. Fix the content and retry."
 		if r.Error != want {
 			t.Fatalf("native=%v message %q", native, r.Error)
 		}
@@ -1399,7 +1400,7 @@ func TestFileOpsFailClosedSyntaxGate(t *testing.T) {
 		broken := filepath.Join(dir, "broken.py")
 		bad := "def foo(:\n    pass\n"
 		r = ops.WriteFile(broken, bad, nil)
-		if r.Error != "" || r.Lint == nil || r.Lint.Value("status") != "error" || !strings.Contains(fmt.Sprint(r.Lint.Value("output")), "SyntaxError") {
+		if r.Error != "" || r.Lint == nil || r.Lint.Value("status") != "error" || r.Lint.Value("output") != "syntax error: invalid syntax (line 1, column 9)" {
 			t.Fatalf("native=%v python %+v", native, r)
 		}
 		if data, _ := os.ReadFile(broken); string(data) != bad {
@@ -1563,7 +1564,7 @@ func TestFileOpsSuggestSimilarFilesScoring(t *testing.T) {
 
 func TestFileOpsPyLowerAndSplitext(t *testing.T) {
 	for in, want := range map[string]string{"a/b.TXT": ".TXT", ".bashrc": "", "a/.b.c": ".c", "a.b/c": "", "x..": ".", "...": ""} {
-		if got := pySplitextExt(in); got != want {
+		if got := splitextExt(in); got != want {
 			t.Fatalf("%s gave %q", in, got)
 		}
 	}
@@ -1575,11 +1576,11 @@ func TestFileOpsPyRealpathFollowsDanglingLinks(t *testing.T) {
 	}
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	os.Symlink(filepath.Join(dir, "missing", "target.txt"), filepath.Join(dir, "dangling"))
-	if got := pyRealpath(filepath.Join(dir, "dangling")); got != filepath.Join(dir, "missing", "target.txt") {
+	if got := realpath(filepath.Join(dir, "dangling")); got != filepath.Join(dir, "missing", "target.txt") {
 		t.Fatalf("dangling %q", got)
 	}
 	os.Symlink("loop", filepath.Join(dir, "loop"))
-	if got := pyRealpath(filepath.Join(dir, "loop")); got != filepath.Join(dir, "loop") {
+	if got := realpath(filepath.Join(dir, "loop")); got != filepath.Join(dir, "loop") {
 		t.Fatalf("loop %q", got)
 	}
 }
@@ -1677,19 +1678,29 @@ func TestPipeStdinMissingPipeRecordsError(t *testing.T) {
 	}
 }
 
-func TestExecuteSurfacesStdinErrorWithoutHanging(t *testing.T) {
+func TestExecuteStdinSurvivesInvalidUTF8AndABrokenPipeWithoutHanging(t *testing.T) {
 	requireBash(t)
-	l := NewLocalEnvironment(context.Background(), newTestToolEnv(t), t.TempDir(), 15, nil, true)
+	dir := t.TempDir()
+	l := NewLocalEnvironment(context.Background(), newTestToolEnv(t), dir, 15, nil, true)
 	defer l.Cleanup(false)
-	bad := "\xed\xa0\x80"
+	invalid := "\xed\xa0\x80"
+	out := filepath.Join(dir, "stdin.bin")
+	res, err := l.Execute(context.Background(), "cat > "+shQuote(out), ExecOptions{Stdin: &invalid})
+	if err != nil || res.ReturnCode != 0 || res.StdinError != "" || strings.Contains(res.Output, "stdin write failed") {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if data, _ := os.ReadFile(out); string(data) != invalid {
+		t.Fatalf("stdin bytes %q", data)
+	}
+	unread := strings.Repeat("x", 1<<20)
 	start := time.Now()
-	res, err := l.Execute(context.Background(), "cat > /dev/null", ExecOptions{Stdin: &bad})
+	res, err = l.Execute(context.Background(), "exec 0<&-; echo closed", ExecOptions{Stdin: &unread})
 	elapsed := time.Since(start)
-	if err != nil || res.ReturnCode != 0 || res.StdinError == "" || !strings.Contains(res.Output, "stdin write failed") {
+	if err != nil || res.ReturnCode != 0 || res.StdinError != "" || strings.Contains(res.Output, "stdin write failed") || !strings.Contains(res.Output, "closed") {
 		t.Fatalf("%+v %v", res, err)
 	}
 	if elapsed >= 5*time.Second {
-		t.Fatalf("stdin failure path hung for %v", elapsed)
+		t.Fatalf("stdin broken pipe path hung for %v", elapsed)
 	}
 	normal, err := l.Execute(context.Background(), "echo hi", ExecOptions{})
 	if err != nil || normal.StdinError != "" || normal.ReturnCode != 0 || !strings.Contains(normal.Output, "hi") {
@@ -1731,7 +1742,7 @@ func TestFileOpsByteExactReadSurvivesXtraceShell(t *testing.T) {
 	}
 }
 
-func TestFileToolsSurrogateEscapedByteRoundTripsThroughReadAndPatch(t *testing.T) {
+func TestFileToolsUndecodableByteRoundTripsThroughReadAndPatch(t *testing.T) {
 	env, ws := newFileToolTestEnv(t)
 	head := strings.Repeat("filler line\n", 100)
 	original := []byte(head + "value a\x80b end\nother \xff tail\n")
@@ -1743,7 +1754,7 @@ func TestFileToolsSurrogateEscapedByteRoundTripsThroughReadAndPatch(t *testing.T
 	if read["content"] != "101|value a\ufffdb end\n102|other \ufffd tail" {
 		t.Fatalf("read %v", read)
 	}
-	args, errText := ParseToolArguments(`{"path": ` + jsonCompact(p) + `, "old_string": "value a\udc80b end", "new_string": "value a\udc80c end"}`)
+	args, errText := ParseToolArguments(`{"path": ` + jsonCompact(p) + `, "old_string": "value a\ufffdb end", "new_string": "value a\ufffdc end"}`)
 	if errText != "" {
 		t.Fatal(errText)
 	}
@@ -1753,7 +1764,7 @@ func TestFileToolsSurrogateEscapedByteRoundTripsThroughReadAndPatch(t *testing.T
 		t.Fatalf("patch %s", raw)
 	}
 	diff, _ := out["diff"].(string)
-	if !strings.Contains(diff, "-value a\xed\xb2\x80b end") || !strings.Contains(diff, "+value a\xed\xb2\x80c end") || !strings.Contains(raw, "\xed\xb2\x80") {
+	if !strings.Contains(diff, "-value a\ufffdb end") || !strings.Contains(diff, "+value a\ufffdc end") || !utf8.ValidString(raw) {
 		t.Fatalf("diff %q", diff)
 	}
 	want := []byte(head + "value a\x80c end\nother \xff tail\n")

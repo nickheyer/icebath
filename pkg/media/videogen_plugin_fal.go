@@ -358,7 +358,7 @@ func falVideoURLFromResult(result any) (any, string) {
 	case string:
 		u = v
 	}
-	if !pyTruthy(u) {
+	if !anyutil.IsTrue(u) {
 		return video, ""
 	}
 	return video, anyutil.String(u)
@@ -575,7 +575,7 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	if videoURL == "" {
 		return videoFalError("FAL returned no video URL in response", "empty_response", prompt, familyID, ""), nil
 	}
-	upscale := pyTruthy(req.Kwargs["upscale"])
+	upscale := anyutil.IsTrue(req.Kwargs["upscale"])
 	upscaledURL := ""
 	if upscale {
 		upscaledURL = falUpscaleVideo(ctx, env, videoURL)
@@ -597,7 +597,7 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 			keys = []string{"content_type"}
 		}
 		for _, k := range keys {
-			if pyTruthy(vm[k]) {
+			if anyutil.IsTrue(vm[k]) {
 				extra[k] = vm[k]
 			}
 		}

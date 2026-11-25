@@ -185,7 +185,7 @@ func petCells(ctx context.Context, rid any, params map[string]any, _ string) (ma
 	}
 	scale := pet.DefaultScale
 	if raw := petConf["scale"]; anyutil.IsTrue(raw) {
-		parsed, err := pyFloat(raw)
+		parsed, err := floatNumber(raw)
 		if err != nil {
 			return nil, err
 		}

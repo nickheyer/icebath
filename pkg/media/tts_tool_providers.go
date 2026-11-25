@@ -83,7 +83,7 @@ func (e *ttsAttributeError) Error() string { return e.msg }
 // The tts_config.get(key) or {} idiom, a truthy non mapping value failing like Python
 func orEmptyDict(cfg map[string]any, key string) (map[string]any, error) {
 	v := cfg[key]
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
 	if m, ok := asStrMap(v); ok {
@@ -112,14 +112,14 @@ func ttsFloat(v any) (float64, error) {
 		}
 		return 0, nil
 	}
-	if f, ok := pyRealNumber(v); ok {
+	if f, ok := realNumber(v); ok {
 		return f, nil
 	}
 	return 0, &ttsTypeError{msg: fmt.Sprintf("expected a number, got %s", errchain.Kind(v))}
 }
 
 // Python int() of a config value, truncating floats and parsing base ten strings
-func pyInt(v any) (int, error) {
+func wholeNumber(v any) (int, error) {
 	switch n := v.(type) {
 	case bool:
 		if n {
@@ -141,7 +141,7 @@ func pyInt(v any) (int, error) {
 	if i := ttsPositiveInt(v); i > 0 {
 		return i, nil
 	}
-	if f, ok := pyRealNumber(v); ok {
+	if f, ok := realNumber(v); ok {
 		return int(f), nil
 	}
 	return 0, &ttsTypeError{msg: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
@@ -333,7 +333,7 @@ func auxiliaryReplyText(resp any) string {
 	choice, _ := choices[0].(map[string]any)
 	message, _ := choice["message"].(map[string]any)
 	content := message["content"]
-	if !pyTruthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = ""
 	}
 	clean := strings.TrimSpace(anyutil.String(content))
@@ -661,7 +661,7 @@ func resolveMiniMaxTTSRuntime(env *tools.Env, req *ttsRequest) (*miniMaxTTSRunti
 func raiseMiniMaxAPIError(result map[string]any) error {
 	baseResp, _ := asStrMap(dictGetDefault(result, "base_resp", map[string]any{}))
 	status := dictGetDefault(baseResp, "status_code", -1)
-	if n, ok := pyRealNumber(status); ok && n == 0 {
+	if n, ok := realNumber(status); ok && n == 0 {
 		return nil
 	}
 	return &ttsRuntimeError{msg: fmt.Sprintf("MiniMax TTS API error (code %s): %s", anyutil.String(status), anyutil.String(dictGetDefault(baseResp, "status_msg", "unknown error")))}
@@ -719,7 +719,7 @@ func generateMiniMaxTTS(ctx context.Context, env *tools.Env, text, outputPath st
 		if hexAudio == "" {
 			return "", &ttsRuntimeError{msg: "MiniMax TTS returned empty audio data"}
 		}
-		audio, err := pyBytesFromHex(hexAudio)
+		audio, err := bytesFromHex(hexAudio)
 		if err != nil {
 			return "", err
 		}
@@ -762,7 +762,7 @@ func generateMiniMaxTTS(ctx context.Context, env *tools.Env, text, outputPath st
 }
 
 // Python bytes.fromhex
-func pyBytesFromHex(s string) ([]byte, error) {
+func bytesFromHex(s string) ([]byte, error) {
 	b, err := hex.DecodeString(s)
 	if err != nil {
 		return nil, &ttsValueError{msg: err.Error()}
@@ -931,7 +931,7 @@ func geminiErrorDetail(resp *http.Response) (string, error) {
 	}
 	if parsed, perr := parseTTSJSONBody(raw); perr == nil {
 		if e, ok := asStrMap(parsed["error"]); ok {
-			if msg := e["message"]; pyTruthy(msg) {
+			if msg := e["message"]; anyutil.IsTrue(msg) {
 				return anyutil.String(msg), nil
 			}
 		}
@@ -1051,7 +1051,7 @@ func geminiAudioPayload(data map[string]any) (string, error) {
 			continue
 		}
 		inline := part["inlineData"]
-		if !pyTruthy(inline) {
+		if !anyutil.IsTrue(inline) {
 			inline = part["inline_data"]
 		}
 		m, _ := asStrMap(inline)

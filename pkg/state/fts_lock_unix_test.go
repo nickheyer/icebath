@@ -29,15 +29,15 @@ func deadPid(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-func record(kv ...any) pyObject {
-	obj := pyObject{}
+func record(kv ...any) orderedObject {
+	obj := orderedObject{}
 	for i := 0; i < len(kv); i += 2 {
-		obj = append(obj, pyKeyValue{kv[i].(string), kv[i+1]})
+		obj = append(obj, keyValue{kv[i].(string), kv[i+1]})
 	}
 	return obj
 }
 
-func provablyDead(t *testing.T, rec pyObject) bool {
+func provablyDead(t *testing.T, rec orderedObject) bool {
 	t.Helper()
 	dead, err := lockHolderProvablyDead(rec)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestLockHolderLivenessAndRecycling(t *testing.T) {
 		t.Fatal("own start ticks unreadable")
 	}
 	cases := []struct {
-		rec  pyObject
+		rec  orderedObject
 		dead bool
 	}{
 		{record("pidns", nil), false},
@@ -109,19 +109,19 @@ func TestLockHolderLivenessAndRecycling(t *testing.T) {
 	if ok {
 		cases = append(cases,
 			struct {
-				rec  pyObject
+				rec  orderedObject
 				dead bool
 			}{record("pid", jsonInt(self), "start_ticks", json.Number(strconv.FormatInt(ticks, 10))), false},
 			struct {
-				rec  pyObject
+				rec  orderedObject
 				dead bool
 			}{record("pid", strconv.Itoa(self), "start_ticks", float64(ticks)), false},
 			struct {
-				rec  pyObject
+				rec  orderedObject
 				dead bool
 			}{record("pid", jsonInt(self), "start_ticks", jsonInt(int(ticks)+1)), true},
 			struct {
-				rec  pyObject
+				rec  orderedObject
 				dead bool
 			}{record("pid", jsonInt(self), "start_ticks", strconv.FormatInt(ticks, 10)), true},
 		)
@@ -131,7 +131,7 @@ func TestLockHolderLivenessAndRecycling(t *testing.T) {
 			t.Fatalf("%v -> %v", tc.rec, got)
 		}
 	}
-	for _, rec := range []pyObject{record("pid", json.Number("99999999999")), record("pid", math.Inf(1))} {
+	for _, rec := range []orderedObject{record("pid", json.Number("99999999999")), record("pid", math.Inf(1))} {
 		if _, err := lockHolderProvablyDead(rec); err == nil {
 			t.Fatalf("%v must raise OverflowError", rec)
 		}
@@ -252,15 +252,15 @@ func TestProcStartTicksOfMissingProcess(t *testing.T) {
 
 func TestDescribeLockHolder(t *testing.T) {
 	for _, tc := range []struct {
-		rec  pyObject
+		rec  orderedObject
 		want string
 	}{
 		{nil, "unknown (no holder record; pre-fix writer or non-icebath)"},
 		{record("acquired_at", 1.0), "unknown (no holder record; pre-fix writer or non-icebath)"},
 		{record("pid", json.Number("42")), "pid 42"},
 		{record("pid", "x", "acquired_at", "soon"), "pid x"},
-		{record("pid", []any{json.Number("1"), "a"}), "pid [1, 'a']"},
-		{record("pid", nil, "acquired_at", nil), "pid None"},
+		{record("pid", []any{json.Number("1"), "a"}), `pid [1,"a"]`},
+		{record("pid", nil, "acquired_at", nil), "unknown (the holder record names no pid)"},
 	} {
 		if got, err := describeLockHolder(tc.rec); err != nil || got != tc.want {
 			t.Fatalf("%v -> %q %v", tc.rec, got, err)

@@ -11,8 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
@@ -606,7 +608,7 @@ func (a *SessionAuthority) claimWithRetry(ctx context.Context, ref SessionRef, l
 				return claimAttempt{}, true, nil
 			}
 			backoff = min(max(backoff*2, claimRetryMinS), claimRetryMaxS)
-			pkgLog().Warn(fmt.Sprintf("Session %s claim deferred by storage (%s); retrying in %.1fs", ref.SessionID, pyExceptionRepr(err), backoff))
+			pkgLog().Warn(fmt.Sprintf("Session %s claim deferred by storage (%s); retrying in %.1fs", ref.SessionID, errchain.OSText(err), backoff))
 			if err := drainSleep(ctx, backoff); err != nil {
 				return claimAttempt{}, false, err
 			}
@@ -778,12 +780,12 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 	if err != nil {
 		return settleDeliver, err
 	}
-	text, err := pyDictGet(result, "final_response", nil)
+	text, err := dictGetValue(result, "final_response", nil)
 	if err != nil {
 		return settleDeliver, err
 	}
 	*response = ""
-	if pyTruthy(text) {
+	if anyutil.IsTrue(text) {
 		*response = text
 	}
 	captured, _ := stored.(*jsonutil.Object)
@@ -794,7 +796,7 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 func drainSessionFIFO(ctx context.Context, a *SessionAuthority, ref SessionRef) error {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	for {
 		claimed, exit, err := a.claimWithRetry(ctx, ref, live)
@@ -931,7 +933,7 @@ func (a *SessionAuthority) resolveSettledWaiter(ctx context.Context, admissionID
 	adopter := a.markerAdopters[admissionID]
 	a.mu.Unlock()
 	var released *InterruptEvent
-	if adopter != nil && pyTruthy(adopter.GatewayActiveTurnToken()) {
+	if adopter != nil && anyutil.IsTrue(adopter.GatewayActiveTurnToken()) {
 		released = NewInterruptEvent()
 		adopter.SetGatewayMarkerReleased(released)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -373,13 +374,13 @@ func printGuidance(a *AIAgent, message string) bool {
 	if message == "" {
 		return false
 	}
-	for _, line := range pySplitLines(message) {
+	for _, line := range splitLines(message) {
 		a.vprint(a.logPrefix+"   💡 "+line, true, true)
 	}
 	return true
 }
 
-func pySplitLines(s string) []string {
+func splitLines(s string) []string {
 	s = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s)
 	lines := strings.Split(s, "\n")
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
@@ -568,7 +569,7 @@ func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *jsonutil.Ob
 				pkgLog().Debug("tool prefix restore skipped", "error", fmt.Sprint(r))
 			}
 		}()
-		if pyTruthy(pin) {
+		if anyutil.IsTrue(pin) {
 			loopRestoreAgentToolPrefix(ctx, a, pin)
 		} else if sessionRow != nil && !a.persistDisabled {
 			loopPersistAgentToolNames(ctx, a)
@@ -1064,7 +1065,7 @@ func redecoratePromptCacheForProvider(ctx context.Context, a *AIAgent, apiMessag
 	}
 	prepared := moaPrepared
 	if prepared != nil {
-		if guidance := prepared["guidance"]; pyTruthy(guidance) {
+		if guidance := prepared["guidance"]; anyutil.IsTrue(guidance) {
 			messages = peelReferenceGuidance(messages, guidance)
 		}
 	}

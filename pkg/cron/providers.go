@@ -52,7 +52,7 @@ var loadCronScheduler = func(s *Store, name string) (CronScheduler, error) {
 	ctx := providerContext(s)
 	d, ok := findCronProviderDir(ctx, name)
 	if !ok {
-		s.log.Debug(fmt.Sprintf("Cron provider '%s' not found in user plugins", name))
+		s.log.Debug(fmt.Sprintf("Cron provider %q not found in user plugins", name))
 		return nil, nil
 	}
 	instance, _ := plugins.LoadNamed(name, d.dir, func(string) (any, error) {
@@ -206,18 +206,17 @@ func (h *hostedCronScheduler) RecoverInterrupted(ctx context.Context) (int, erro
 	if err != nil {
 		return 0, err
 	}
-	switch v := res.(type) {
-	case int64:
-		return int(v), nil
-	case int:
-		return v, nil
-	case float64:
-		return int(v), nil
-	case bool:
+	if v, isBool := res.(bool); isBool {
 		if v {
 			return 1, nil
 		}
 		return 0, nil
+	}
+	if n, ok := anyutil.Int(res); ok {
+		return int(n), nil
+	}
+	if f, ok := anyutil.Float(res); ok && !math.IsNaN(f) && math.Abs(f) < math.MaxInt64 {
+		return int(f), nil
 	}
 	return 0, fmt.Errorf("recover_interrupted returned %s, expected a whole number", errchain.Kind(res))
 }

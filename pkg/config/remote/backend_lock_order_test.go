@@ -220,8 +220,8 @@ func TestRemoteSetAndUnsetNameRemoteConfigNotALocalFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	if !strings.Contains(text, "✓ Set agent.max_turns = 7 in Remote Config (profile 'default' level)") ||
-		!strings.Contains(text, "✓ Unset agent.max_turns from Remote Config (profile 'default' level)") || strings.Contains(text, "config.yaml") {
+	if !strings.Contains(text, `✓ Set agent.max_turns = 7 in Remote Config (profile "default" level)`) ||
+		!strings.Contains(text, `✓ Unset agent.max_turns from Remote Config (profile "default" level)`) || strings.Contains(text, "config.yaml") {
 		t.Fatalf("out %q", text)
 	}
 	if _, err := os.Stat(filepath.Join(p.Home, "config.yaml")); err == nil {

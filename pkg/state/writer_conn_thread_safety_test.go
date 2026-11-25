@@ -103,9 +103,9 @@ func TestMatchingErrorInsideCallbackIsNotReplayed(t *testing.T) {
 	calls := 0
 	err := db.executeWrite(context.Background(), func(SQLiteConn) error {
 		calls++
-		return &pyConvError{"SystemError", nullWithoutExceptionText}
+		return &convError{"SystemError", nullWithoutExceptionText}
 	}, nil)
-	var systemErr *pyConvError
+	var systemErr *convError
 	if !errors.As(err, &systemErr) || systemErr.Class != "SystemError" || !strings.Contains(systemErr.Msg, "returned NULL") {
 		t.Fatalf("err = %v", err)
 	}
@@ -127,7 +127,7 @@ func TestPostCommitMaintenanceErrorDoesNotReplayMessage(t *testing.T) {
 	sessionMergeFTSIncrementally = func(*sessionSearch, context.Context, int, *int) (int, error) {
 		maintenanceCalls++
 		if maintenanceCalls == 1 {
-			return 0, &pyConvError{"SystemError", nullWithoutExceptionText}
+			return 0, &convError{"SystemError", nullWithoutExceptionText}
 		}
 		return 0, nil
 	}

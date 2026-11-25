@@ -20,12 +20,12 @@ import (
 type hookHandler func(ctx context.Context, eventType string, hookContext map[string]any) (any, error)
 
 // Python TypeError carrying only its message
-type pyTypeError struct{ msg string }
+type typeError struct{ msg string }
 
-func (e *pyTypeError) Error() string { return e.msg }
+func (e *typeError) Error() string { return e.msg }
 
 // Exception class the error reports, TypeError
-func (e *pyTypeError) ErrorKind() string { return "TypeError" }
+func (e *typeError) ErrorKind() string { return "TypeError" }
 
 // Hooks dir of the active profile home
 func resolveHooksDir(ctx context.Context) string {
@@ -128,7 +128,7 @@ func hookEventNames(events any) ([]string, error) {
 		}
 		return []string{strings.TrimSpace(v)}, nil
 	}
-	return nil, &pyTypeError{msg: fmt.Sprintf("hook events are %s where a list was expected", errchain.Kind(events))}
+	return nil, &typeError{msg: fmt.Sprintf("hook events are %s where a list was expected", errchain.Kind(events))}
 }
 
 // Discovers, loads and fires the event hooks of one home

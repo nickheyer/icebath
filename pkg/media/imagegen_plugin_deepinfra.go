@@ -18,7 +18,7 @@ var deepInfraImageLiveModels = func(ctx context.Context, env *tools.Env) []map[s
 }
 
 // Python format of a float with four decimals, inf and nan spelled the Python way
-func pyFixed4(f float64) string {
+func fixed4(f float64) string {
 	switch {
 	case math.IsNaN(f):
 		return "nan"
@@ -34,7 +34,7 @@ func pyFixed4(f float64) string {
 func formatDeepInfraCatalogRow(item map[string]any) map[string]any {
 	mid := ""
 	if v, ok := item["id"]; ok {
-		mid = pyStrOf(v)
+		mid = anyutil.String(v)
 	}
 	metadata, _ := item["metadata"].(map[string]any)
 	if metadata == nil {
@@ -51,7 +51,7 @@ func formatDeepInfraCatalogRow(item map[string]any) map[string]any {
 	row := map[string]any{"id": mid, "display": display, "strengths": strengths}
 	if pricing, ok := metadata["pricing"].(map[string]any); ok && pricing["per_image_unit"] != nil {
 		if f, err := anyutil.ToFloat(pricing["per_image_unit"]); err == nil {
-			row["price"] = "$" + pyFixed4(f) + "/image"
+			row["price"] = "$" + fixed4(f) + "/image"
 		}
 	}
 	for _, key := range []string{"default_width", "default_height", "default_iterations"} {
@@ -113,7 +113,7 @@ func (p *deepInfraImageGenProvider) ListModels() []map[string]any {
 // First live catalog id, empty when the catalog is empty
 func (p *deepInfraImageGenProvider) DefaultModel() string {
 	if rows := p.ListModels(); len(rows) > 0 {
-		return pyStrOf(rows[0]["id"])
+		return anyutil.String(rows[0]["id"])
 	}
 	return ""
 }
@@ -131,7 +131,7 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 	prompt := strings.TrimSpace(req.Prompt)
 	aspect := resolveAspectRatio(req.AspectRatio)
 	fail := errorFactory("deepinfra", aspect, "", "")
-	if req.ImageURL != "" || len(req.ReferenceImageURLs) > 0 || pyTruthy(req.Kwargs["image_url"]) || pyTruthy(req.Kwargs["reference_image_urls"]) {
+	if req.ImageURL != "" || len(req.ReferenceImageURLs) > 0 || anyutil.IsTrue(req.Kwargs["image_url"]) || anyutil.IsTrue(req.Kwargs["reference_image_urls"]) {
 		return fail("DeepInfra image generation is text-to-image only in this "+
 			"backend; image_url and reference_image_urls are unsupported.", "modality_unsupported", errorOverride{Prompt: &prompt}), nil
 	}

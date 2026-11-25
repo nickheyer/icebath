@@ -108,11 +108,11 @@ func (a *DiscordAdapter) liveClient() *discordgo.Session {
 	return a.client
 }
 
-// Python int of a snowflake text, the ValueError text when it is not an integer
+// Canonical decimal text of a snowflake id, an error when the text is not a 64-bit integer
 func snowflakeInt(raw string) (string, error) {
 	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(raw))
+		return "", fmt.Errorf("Discord id %s is not a 64-bit integer", anyutil.Quote(raw))
 	}
 	return strconv.FormatInt(n, 10), nil
 }

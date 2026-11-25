@@ -88,7 +88,7 @@ func ParseModelFlagsDetailed(rawArgs string) ModelFlagParseResult {
 		}
 		filtered = append(filtered, tok)
 	}
-	out.ModelInput = pyStripSpace(strings.Join(filtered, " "))
+	out.ModelInput = strings.TrimSpace(strings.Join(filtered, " "))
 	return out
 }
 
@@ -156,7 +156,7 @@ func (r ModelSwitchRequest) ErrorMessages() []string {
 
 // IsReset reports a bare reset request that clears the session override
 func (r ModelSwitchRequest) IsReset() bool {
-	return strings.ToLower(pyStripSpace(r.Target)) == ModelSwitchResetToken && len(r.Errors) == 0
+	return strings.ToLower(strings.TrimSpace(r.Target)) == ModelSwitchResetToken && len(r.Errors) == 0
 }
 
 // ParseModelSwitchArgs tokenizes a model command and validates flag conflicts and the reasoning level
@@ -172,7 +172,7 @@ func ParseModelSwitchArgs(raw string) ModelSwitchRequest {
 	if parsed.ReasoningEffort != "" && ParseReasoningEffort(parsed.ReasoningEffort) == nil {
 		errs = append(errs, ModelSwitchErrBadReasoning)
 	}
-	if strings.ToLower(pyStripSpace(parsed.ModelInput)) == ModelSwitchResetToken && (parsed.ExplicitProvider != "" ||
+	if strings.ToLower(strings.TrimSpace(parsed.ModelInput)) == ModelSwitchResetToken && (parsed.ExplicitProvider != "" ||
 		parsed.ReasoningEffort != "" || parsed.Login != "" || parsed.IsGlobal || parsed.IsSession || parsed.IsOnce) {
 		errs = append(errs, ModelSwitchErrResetWithFlags)
 	}
@@ -198,7 +198,7 @@ func effectiveModelCandidate(value any) string {
 	case nil:
 		return ""
 	case string:
-		return pyStripSpace(v)
+		return strings.TrimSpace(v)
 	case map[string]any:
 		return msClean(v["model"])
 	}

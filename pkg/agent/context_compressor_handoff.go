@@ -162,13 +162,13 @@ func findContextSummaries(messages []map[string]any, start, end int) []contextSu
 // Canonical call id for logging, matching uses the id variants
 func getToolCallID(tc any) string {
 	v := tcGet(tc, "call_id", nil)
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		v = tcGet(tc, "id", nil)
 	}
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyStrOf(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Every id variant a result might reference the call by, the sanitizer's own expansion
@@ -233,7 +233,7 @@ func (c *ContextCompressor) sanitizeToolPairs(messages []map[string]any) []map[s
 		} else {
 			delete(msg, "tool_calls")
 			content := msg["content"]
-			if s, isStr := content.(string); !pyTruthy(content) || (isStr && strings.TrimSpace(s) == "") {
+			if s, isStr := content.(string); !anyutil.IsTrue(content) || (isStr && strings.TrimSpace(s) == "") {
 				msg["content"] = "(tool call removed)"
 			}
 		}

@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Process wide router singleton and the engine it serves
@@ -153,7 +154,7 @@ func stagedModels() []string {
 func stagedModelIDs() []string {
 	var out []string
 	for _, p := range stagedModels() {
-		out = append(out, ModelIDFromStem(pyPathStem(p)))
+		out = append(out, ModelIDFromStem(pathStem(p)))
 	}
 	return out
 }
@@ -181,7 +182,7 @@ func stopStateServer() error {
 	var proc localRuntimeProc
 	if isModernLocalRuntimeState(state) {
 		if !lrOwnerIsDead(state) {
-			pkgLog().Info(fmt.Sprintf("llama-server pid=%s belongs to a live icebath process; leaving it", pyStr(pyGetAny(state, "pid", nil))))
+			pkgLog().Info(fmt.Sprintf("llama-server pid=%s belongs to a live icebath process; leaving it", anyutil.String(getAny(state, "pid", nil))))
 			return nil
 		}
 		proc = lrRecordedProcess(state)
@@ -409,7 +410,7 @@ func crossProcessBootLock(timeout time.Duration) func() {
 // local_runtime config section, an error where Python's .get on a non mapping raises
 func bootSection(cfg map[string]any) (map[string]any, error) {
 	raw := cfg["local_runtime"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return map[string]any{}, nil
 	}
 	section, ok := raw.(map[string]any)
@@ -425,7 +426,7 @@ func EnsureLocalRuntime(ctx context.Context, cfg map[string]any, force bool) (*L
 	if err != nil {
 		return nil, err
 	}
-	if !force && !pyTruthy(section["enabled"]) {
+	if !force && !anyutil.IsTrue(section["enabled"]) {
 		return nil, nil
 	}
 	if sup := getLocalSupervisor(); sup != nil {
@@ -470,7 +471,7 @@ func bootIntSetting(section map[string]any, key string, def int) (int, error) {
 	}
 	v, ok := pythonInt(raw)
 	if !ok {
-		return 0, fmt.Errorf("%s is not a whole number", pyRepr(raw))
+		return 0, fmt.Errorf("%s is not a whole number", anyutil.Quote(raw))
 	}
 	return v, nil
 }
@@ -481,7 +482,7 @@ func bootServe(ctx context.Context, section map[string]any) (*LlamaServerSupervi
 	if raw, ok := section["backend"]; ok {
 		s, isStr := raw.(string)
 		if !isStr {
-			return nil, errors.New(pyRepr(raw))
+			return nil, errors.New(anyutil.Quote(raw))
 		}
 		backend = s
 	}

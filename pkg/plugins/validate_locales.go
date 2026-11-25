@@ -85,8 +85,8 @@ func referenceKeys(ctx context.Context, surface string) (map[string]bool, error)
 func checkLanguagePacks(ctx context.Context, report *ValidationReport, manifest map[string]any, pluginDir string) {
 	raw, present := manifest["provides_locales"]
 	key := filepath.Base(pluginDir)
-	if config.PyTruthy(manifest["name"]) {
-		key = config.PyStr(manifest["name"])
+	if anyutil.IsTrue(manifest["name"]) {
+		key = anyutil.String(manifest["name"])
 	}
 	declared, _ := parseProvidesLocales(raw, key)
 	if !present || raw == nil {

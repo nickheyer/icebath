@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -108,7 +109,7 @@ func RestoreAPIImages(ctx context.Context, content []any, media []any) ([]any, e
 	for _, url := range urls {
 		if _, _, ok := apiDataURLBytes(url); ok {
 			if next >= len(paths) {
-				return nil, &PyError{Kind: "StopIteration", Msg: ""}
+				return nil, &errorutil.Error{Kind: "StopIteration", Msg: ""}
 			}
 			hints = append(hints, "[Image attached at: "+paths[next]+"]")
 			next++
@@ -124,7 +125,7 @@ func RestoreAPIImages(ctx context.Context, content []any, media []any) ([]any, e
 	for i, part := range content {
 		obj, ok := part.(*jsonutil.Object)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "cannot convert dictionary update sequence element #0 to a sequence"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "cannot convert dictionary update sequence element #0 to a sequence"}
 		}
 		copied := obj.Clone()
 		parts[i] = copied
@@ -139,7 +140,7 @@ func RestoreAPIImages(ctx context.Context, content []any, media []any) ([]any, e
 	current, _ := text.Get("text")
 	body, ok := current.(string)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the API turn text is " + errchain.Kind(current) + ", expected text"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the API turn text is " + errchain.Kind(current) + ", expected text"}
 	}
 	text.Set("text", body+"\n\n"+strings.Join(hints, "\n"))
 	return parts, nil
@@ -156,11 +157,11 @@ func rehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 	for _, reference := range references {
 		obj, isObj := reference.(*jsonutil.Object)
 		if !isObj {
-			return nil, &PyError{Kind: "TypeError", Msg: "an API image reference is " + errchain.Kind(reference) + ", expected a mapping"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "an API image reference is " + errchain.Kind(reference) + ", expected a mapping"}
 		}
 		digest, found := obj.Get("sha256")
 		if !found {
-			return nil, &pyKeyError{"sha256"}
+			return nil, &keyError{"sha256"}
 		}
 		if text, isText := digest.(string); isText {
 			byDigest[text] = reference

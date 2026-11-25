@@ -1,7 +1,6 @@
 package selfupdate
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -62,25 +61,18 @@ func refreshBootstrapReceipt(root string, stamp *jsonutil.Object) error {
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
-	previous := map[string]any{}
+	receipt := jsonutil.NewObject()
 	if err == nil {
 		if text, derr := textutil.DecodeUTF8(textutil.TrimBOM(raw)); derr == nil {
-			var decoded any
-			if json.Unmarshal([]byte(text), &decoded) == nil {
-				if m, ok := decoded.(map[string]any); ok {
-					previous = m
-				}
+			if previous, perr := jsonutil.DecodeObject(text); perr == nil {
+				receipt = previous
 			}
 		}
-	}
-	receipt := jsonutil.NewObject()
-	for k, v := range previous {
-		receipt.Set(k, v)
 	}
 	commit, _ := stamp.Get("commit")
 	branch, _ := stamp.Get("branch")
 	if branch == nil {
-		branch = previous["pinnedBranch"]
+		branch = receipt.Value("pinnedBranch")
 	}
 	now := time.Now().UTC()
 	receipt.Set("schemaVersion", 1)

@@ -86,7 +86,7 @@ func ServedProfileUnservedPlatforms(profile string) (*jsonutil.Object, error) {
 			continue
 		}
 		code := recGet(entry, "error_code")
-		if !pyEq(code, "multiplex_shared_ingress") && !pyEq(code, "whatsapp_unpaired") {
+		if !anyutil.Equal(code, "multiplex_shared_ingress") && !anyutil.Equal(code, "whatsapp_unpaired") {
 			continue
 		}
 		reason := recGet(entry, "error_message")
@@ -124,7 +124,7 @@ func ServedProfileIngressURLs(profile string) (*jsonutil.Object, error) {
 		}
 		url := recGet(entry, "ingress_url")
 		state := recGet(entry, "state")
-		if !anyutil.IsTrue(url) || pyEq(state, "fatal") || pyEq(state, "disconnected") || pyEq(state, "stopped") {
+		if !anyutil.IsTrue(url) || anyutil.Equal(state, "fatal") || anyutil.Equal(state, "disconnected") || anyutil.Equal(state, "stopped") {
 			continue
 		}
 		name, platform, _ := strings.Cut(key, ":")
@@ -136,12 +136,12 @@ func ServedProfileIngressURLs(profile string) (*jsonutil.Object, error) {
 	servedRaw := recGet(runtime, "served_profiles")
 	var served []string
 	if anyutil.IsTrue(servedRaw) {
-		items, err := pyList(servedRaw)
+		items, err := listOf(servedRaw)
 		if err != nil {
 			return nil, err
 		}
 		for _, p := range items {
-			if anyutil.IsTrue(p) && !pyEq(p, "default") {
+			if anyutil.IsTrue(p) && !anyutil.Equal(p, "default") {
 				served = append(served, anyutil.String(p))
 			}
 		}

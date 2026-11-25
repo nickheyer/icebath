@@ -10,16 +10,16 @@ import (
 // Route and model identity of an aggregator destination, base_url preferred over the provider slug
 func destinationKey(runtime map[string]any) [2]string {
 	raw := runtime["base_url"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = runtime["provider"]
 	}
 	route := ""
-	if pyTruthy(raw) {
+	if anyutil.IsTrue(raw) {
 		route = anyutil.String(raw)
 	}
 	route = strings.TrimRight(strings.TrimSpace(route), "/")
 	model := ""
-	if pyTruthy(runtime["model"]) {
+	if anyutil.IsTrue(runtime["model"]) {
 		model = anyutil.String(runtime["model"])
 	}
 	return [2]string{route, strings.TrimSpace(model)}
@@ -69,7 +69,7 @@ func isRoleAlternationRejection(err error, runtime map[string]any) (out bool) {
 		}
 	}()
 	str := func(k string) string {
-		if !pyTruthy(runtime[k]) {
+		if !anyutil.IsTrue(runtime[k]) {
 			return ""
 		}
 		return anyutil.String(runtime[k])

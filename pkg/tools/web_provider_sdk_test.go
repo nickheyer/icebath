@@ -142,7 +142,7 @@ func TestExaSDKReportsFailedURLsFromStatuses(t *testing.T) {
 	if c.path != "/contents" || c.header.Get("x-api-key") != "exa-key" || c.header.Get("x-exa-integration") != "icebath-agent" {
 		t.Fatalf("%+v", c)
 	}
-	if c.raw != `{"urls": ["https://t.test/ok", "https://t.test/x"], "text": true}` {
+	if c.raw != `{"urls":["https://t.test/ok","https://t.test/x"],"text":true}` {
 		t.Fatalf("body %s", c.raw)
 	}
 }
@@ -175,12 +175,12 @@ func TestExaSearchSendsHighlightsAndJoinsThem(t *testing.T) {
 	if want := []WebSearchHit{webHit("https://a.test", "A", "one two", 1), webHit("", "", "", 2)}; !reflect.DeepEqual(resp.Data.Web, want) {
 		t.Fatalf("%+v", resp.Data.Web)
 	}
-	if raw := (*calls)[0].raw; raw != `{"query": "hot ai", "contents": {"highlights": true}, "numResults": 7}` {
+	if raw := (*calls)[0].raw; raw != `{"query":"hot ai","contents":{"highlights":true},"numResults":7}` {
 		t.Fatalf("body %s", raw)
 	}
 }
 
-func TestExaFailuresKeepTheSDKMessages(t *testing.T) {
+func TestExaFailureMessages(t *testing.T) {
 	env := sdkProviderEnv(t, "EXA_API_KEY=exa-key\n", map[string]any{"web.keyless_fallback": false})
 	answer := ""
 	status := 200
@@ -198,10 +198,9 @@ func TestExaFailuresKeepTheSDKMessages(t *testing.T) {
 		{401, `{"error":"bad key"}`, `Request failed with status code 401: {"error":"bad key"}`},
 		{200, "<html>\n  oops </html>", "Expected a JSON response but received a non-JSON body (status 200): <html> oops </html>"},
 		{200, "", "Expected a JSON response but received an empty body (status 200)."},
-		{200, `{"statuses":[]}`, "Exa search failed: 'results'"},
+		{200, `{"statuses":[]}`, "Exa search failed: the reply has no results field"},
 		{200, `[1]`, "Exa search failed: expected a mapping, got a list"},
 		{200, `{"results":["x"]}`, "Exa search failed: expected a mapping, got text"},
-		{200, `{"results":[{"highlights":[1]}]}`, "Exa search failed: sequence item 0: expected str instance, int found"},
 	}
 	for _, c := range cases {
 		status, answer = c.status, c.answer
@@ -209,6 +208,11 @@ func TestExaFailuresKeepTheSDKMessages(t *testing.T) {
 		if resp.Success || resp.Error != c.want {
 			t.Fatalf("%q -> %q want %q", c.answer, resp.Error, c.want)
 		}
+	}
+	status, answer = 200, `{"results":[{"highlights":[1]}]}`
+	resp, _ := exaP().Search(context.Background(), env, "q", 5)
+	if !resp.Success || !reflect.DeepEqual(resp.Data.Web, []WebSearchHit{webHit("", "", "1", 1)}) {
+		t.Fatalf("a non-text highlight is kept as its text: %+v", resp)
 	}
 }
 
@@ -374,7 +378,7 @@ func TestParallelRetriesLikeTheSDK(t *testing.T) {
 	t.Setenv("PARALLEL_BASE_URL", srv2.URL)
 	resetSDKClientSlots(t)
 	resp, _ = parallelP().Search(context.Background(), env, "q", 5)
-	if want := "Parallel search failed: Error code: 500 - {'error': {'message': 'boom', 'type': 'server'}}"; resp.Error != want || len(*calls2) != 1 {
+	if want := `Parallel search failed: Error code: 500 - {"error":{"message":"boom","type":"server"}}`; resp.Error != want || len(*calls2) != 1 {
 		t.Fatalf("%q calls %d", resp.Error, len(*calls2))
 	}
 }
@@ -394,10 +398,10 @@ func TestParallelStatusAndPayloadErrors(t *testing.T) {
 		ctype, answer string
 		want          string
 	}{
-		{401, "application/json", `{"error":"bad key"}`, "Parallel search failed: Error code: 401 - {'error': 'bad key'}"},
+		{401, "application/json", `{"error":"bad key"}`, `Parallel search failed: Error code: 401 - {"error":"bad key"}`},
 		{403, "text/plain", "  denied ", "Parallel search failed: denied"},
 		{404, "text/plain", "", "Parallel search failed: Error code: 404"},
-		{200, "application/json", "nope", "Expecting value: line 1 column 1 (char 0)"},
+		{200, "application/json", "nope", "json: invalid character 'o' in literal null (expecting 'u') at line 1, column 2"},
 		{200, "text/html", "<html>", "Parallel search failed: expected a mapping with results, got text"},
 		{200, "application/json", "null", "Parallel search failed: expected a mapping with results, got nothing"},
 		{200, "application/json", `{"search_id":"s"}`, "Parallel search failed: the SearchResult reply has no results field"},

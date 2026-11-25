@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"sort"
 	"strconv"
+	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -184,7 +186,7 @@ func (d *SessionDB) RecordGatewaySessionPeer(ctx context.Context, sessionID stri
 			}
 			moved := map[string]bool{}
 			for _, row := range rows {
-				moved[pyStr(row["id"])] = true
+				moved[anyutil.String(row["id"])] = true
 			}
 			found, err := movedReceipts(ctx, conn, moved)
 			if err != nil {
@@ -265,7 +267,7 @@ func (d *SessionDB) ReplaceGatewayRoutingEntries(ctx context.Context, entries ma
 		}
 		kept := map[string]bool{}
 		for _, row := range rows {
-			kept[pyStr(row["session_key"])] = true
+			kept[anyutil.String(row["session_key"])] = true
 		}
 		clear(skipped)
 		for _, k := range keys {
@@ -286,7 +288,7 @@ func (d *SessionDB) LoadGatewayRoutingEntries(ctx context.Context, scope string)
 	}
 	out := make(map[string]string, len(rows))
 	for _, r := range rows {
-		out[pyStr(rowValue(r, "session_key"))] = pyStr(rowValue(r, "entry_json"))
+		out[anyutil.String(rowValue(r, "session_key"))] = anyutil.String(rowValue(r, "entry_json"))
 	}
 	return out, nil
 }
@@ -294,8 +296,8 @@ func (d *SessionDB) LoadGatewayRoutingEntries(ctx context.Context, scope string)
 // Keyed open rows older than the cutoff with no message, token, call, activity, title or keep intent
 func (d *SessionDB) ListNeverActiveKeyedSessions(ctx context.Context, olderThanDays float64) ([]*jsonutil.Object, error) {
 	if olderThanDays < 0 {
-		repr, _ := pyReprFloat(olderThanDays)
-		return nil, pyValueError("older_than_days must be >= 0, got " + repr + ": a negative " +
+		repr, _ := reprFloat(olderThanDays)
+		return nil, valueError("older_than_days must be >= 0, got " + repr + ": a negative " +
 			"retention builds a future cutoff that matches every never-active keyed row.")
 	}
 	cutoff := now() - olderThanDays*86400.0
@@ -325,7 +327,7 @@ func (d *SessionDB) ListNeverActiveKeyedSessions(ctx context.Context, olderThanD
 
 // Decoded routing entry object, nil for a malformed, non text or non object entry
 func routingEntryObject(raw any) *jsonutil.Object {
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return jsonutil.NewObject()
 	}
 	return localReceiptObject(raw)
@@ -374,7 +376,7 @@ func (d *SessionDB) routingEntriesForSessions(ctx context.Context, sessionIDs ma
 			return nil, err
 		}
 		if hit {
-			found = append(found, routingRef{pyStr(rowValue(r, "scope")), pyStr(rowValue(r, "session_key")), target.(string)})
+			found = append(found, routingRef{anyutil.String(rowValue(r, "scope")), anyutil.String(rowValue(r, "session_key")), target.(string)})
 		}
 	}
 	return found, nil
@@ -436,7 +438,7 @@ func (d *SessionDB) PruneNeverActiveKeyedSessions(ctx context.Context, o NeverAc
 	ids := map[string]bool{}
 	err = d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		for _, row := range candidates {
-			sid := pyStr(rowValue(row, "id"))
+			sid := anyutil.String(rowValue(row, "id"))
 			owned, err := ownedLineageIDs(ctx, conn, sid)
 			if err != nil {
 				return err
@@ -588,10 +590,10 @@ func (d *SessionDB) FindOrphanedGatewaySessions(ctx context.Context, maxGapS *fl
 			var donor *jsonutil.Object
 			reason, evidence := "", ""
 			orphanOwner := rowValue(orphan, "profile_name")
-			if !pyTruthy(orphanOwner) {
+			if !anyutil.IsTrue(orphanOwner) {
 				orphanOwner = owner
 			}
-			if pyTruthy(rowValue(orphan, "parent_session_id")) {
+			if anyutil.IsTrue(rowValue(orphan, "parent_session_id")) {
 				evidence = "lineage"
 				rows, err := queryObjects(ctx, conn, orphanLineageDonorSQL, rowValue(orphan, "parent_session_id"), rowValue(orphan, "source"), owner, owner, orphanOwner)
 				if err != nil {
@@ -605,8 +607,8 @@ func (d *SessionDB) FindOrphanedGatewaySessions(ctx context.Context, maxGapS *fl
 			} else {
 				evidence = "contiguity"
 				started := 0.0
-				if v := rowValue(orphan, "started_at"); pyTruthy(v) {
-					if started, err = pyFloatOf(v); err != nil {
+				if v := rowValue(orphan, "started_at"); anyutil.IsTrue(v) {
+					if started, err = floatOf(v); err != nil {
 						return err
 					}
 				}
@@ -686,13 +688,13 @@ func (d *SessionDB) AdoptOrphanedGatewaySession(ctx context.Context, orphanID, d
 			return err
 		}
 		effective := func(v any) any {
-			if pyTruthy(v) {
+			if anyutil.IsTrue(v) {
 				return v
 			}
 			return owner
 		}
-		if donor == nil || orphan == nil || !pyTruthy(donor["session_key"]) || pyTruthy(orphan["session_key"]) ||
-			pyStrOr(donor["source"]) != pyStrOr(orphan["source"]) ||
+		if donor == nil || orphan == nil || !anyutil.IsTrue(donor["session_key"]) || anyutil.IsTrue(orphan["session_key"]) ||
+			anyutil.StringOr(donor["source"], "") != anyutil.StringOr(orphan["source"], "") ||
 			(owner != "" && effective(donor["profile_name"]) != effective(orphan["profile_name"])) {
 			return nil
 		}
@@ -718,14 +720,6 @@ func (d *SessionDB) AdoptOrphanedGatewaySession(ctx context.Context, orphanID, d
 		return nil
 	}, nil)
 	return adopted, err
-}
-
-// Text of a value with None and empty reading as the empty string
-func pyStrOr(v any) string {
-	if !pyTruthy(v) {
-		return ""
-	}
-	return pyStr(v)
 }
 
 // Atomically bumps the hygiene failure streak of one chat and returns the new count
@@ -786,26 +780,26 @@ func SessionGatewayRuntime(sessionMeta *jsonutil.Object) *jsonutil.Object {
 	runtimeValue, _ := raw.Get("gateway_runtime")
 	runtime, isDict := runtimeValue.(*jsonutil.Object)
 	if isDict {
-		if provider, _ := runtime.Get("provider"); pyTruthy(provider) {
+		if provider, _ := runtime.Get("provider"); anyutil.IsTrue(provider) {
 			return withoutNone(runtime)
 		}
 	}
 	top := jsonutil.NewObject()
 	for _, key := range []string{"provider", "base_url", "api_mode"} {
-		if v, _ := raw.Get(key); pyTruthy(v) {
+		if v, _ := raw.Get(key); anyutil.IsTrue(v) {
 			top.Set(key, v)
 		}
 	}
 	billingValue, _ := meta.Get("billing_provider")
-	billing := pyStrip(pyStrOr(billingValue))
-	lowered := pyLower(billing)
+	billing := strings.TrimSpace(anyutil.StringOr(billingValue, ""))
+	lowered := strings.ToLower(billing)
 	if billing != "" && !bareBillingProviders[lowered] {
 		if _, has := top.Get("provider"); !has {
 			top.Set("provider", billing)
 		}
-	} else if provider, _ := top.Get("provider"); lowered == "custom" && !pyTruthy(provider) {
+	} else if provider, _ := top.Get("provider"); lowered == "custom" && !anyutil.IsTrue(provider) {
 		baseValue, _ := meta.Get("billing_base_url")
-		if base := pyStrip(pyStrOr(baseValue)); base != "" {
+		if base := strings.TrimSpace(anyutil.StringOr(baseValue, "")); base != "" {
 			if _, has := top.Get("base_url"); !has {
 				top.Set("base_url", base)
 			}
@@ -908,7 +902,7 @@ func (d *SessionDB) ReclaimStaleRunningHandoffs(ctx context.Context, reason stri
 			return err
 		}
 		for _, row := range rows {
-			ids = append(ids, pyStr(row["id"]))
+			ids = append(ids, anyutil.String(row["id"]))
 		}
 		if len(ids) == 0 {
 			return nil

@@ -127,7 +127,7 @@ func firstPatternError(text string, sets ...[]cronThreatPattern) string {
 	for _, patterns := range sets {
 		for _, p := range patterns {
 			if p.re.MatchString(text) {
-				return fmt.Sprintf("Blocked: prompt matches threat pattern '%s'. Cron prompts must not contain injection or exfiltration payloads.", p.id)
+				return fmt.Sprintf("Blocked: prompt matches threat pattern %q. Cron prompts must not contain injection or exfiltration payloads.", p.id)
 			}
 		}
 	}

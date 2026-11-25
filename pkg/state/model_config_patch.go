@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -89,7 +90,7 @@ func (d *DB) ModelConfigValue(sessionID, key string) (any, bool) {
 
 // SessionYoloEnabled reads the persisted approval bypass of a session row, false on any parse failure
 func SessionYoloEnabled(sessionMeta map[string]any) bool {
-	return pyTruthy(ParseModelConfig(sessionMeta["model_config"])["yolo_mode"])
+	return anyutil.IsTrue(ParseModelConfig(sessionMeta["model_config"])["yolo_mode"])
 }
 
 // Plain model_config of a session row, nested objects as plain maps

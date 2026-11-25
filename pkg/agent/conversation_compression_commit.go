@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -206,7 +207,7 @@ func stampScopedTwinMessages(targets []*state.Message, source map[string]any, ex
 				continue
 			}
 			view := asDict(target)
-			if !pyEqual(view["timestamp"], sourceTimestamp) || !messagesMatchScopedIdentity(view, source) {
+			if !anyutil.Equal(view["timestamp"], sourceTimestamp) || !messagesMatchScopedIdentity(view, source) {
 				continue
 			}
 			if target.Persisted {
@@ -396,7 +397,7 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 		summaryError := compressorAttr(compressor, "_last_summary_error")
 		errText := "unknown error"
 		if anyutil.IsTrue(summaryError) {
-			errText = pyStr(summaryError)
+			errText = anyutil.String(summaryError)
 		}
 		if a.lastCompressionSummaryWarning == nil || *a.lastCompressionSummaryWarning != errText {
 			a.lastCompressionSummaryWarning = &errText
@@ -430,15 +431,15 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 		return true
 	}
 	if !workingAttemptIsCurrent(compressor, attempt.generation) {
-		var working any
+		working := "none"
 		if owned, ok := compressor.(attemptOwnedCompressor); ok {
 			compressorAttemptLock.Lock()
 			if slots := owned.attemptSlotsLocked(false); slots != nil && slots.workingGeneration != nil {
-				working = *slots.workingGeneration
+				working = strconv.Itoa(*slots.workingGeneration)
 			}
 			compressorAttemptLock.Unlock()
 		}
-		pkgLog().Warn(fmt.Sprintf("Discarding late compression candidate: attempt generation %d was superseded by a newer working attempt (current working: %s) (session=%s).", attempt.generation, pyStr(working), sid))
+		pkgLog().Warn(fmt.Sprintf("Discarding late compression candidate: attempt generation %d was superseded by a newer working attempt (current working: %s) (session=%s).", attempt.generation, working, sid))
 		a.lastCompactionInPlace = false
 		emitAbortedAttemptTelemetry(ctx, a, attempt.startedAt, "attempt_superseded", attempt.seed)
 		return true

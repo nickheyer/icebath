@@ -60,11 +60,11 @@ func TestCardSpecToCardsV2WireShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := jsonutil.Encode(card, jsonutil.Spaced(), jsonutil.ASCII())
+	got, err := jsonutil.Encode(card)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"cardId": "c1", "card": {"sections": [{"widgets": [{"textParagraph": {"text": "*hi*"}}, {"buttonList": {"buttons": [{"text": "Go", "onClick": {"action": {"function": "act", "parameters": [{"key": "a", "value": "True"}, {"key": "z", "value": "1"}]}}}]}}, {"selectionInput": {"name": "n", "label": "n", "type": "CHECK_BOX", "items": [{"text": "A", "value": "a", "selected": true}]}}, {"decoratedText": {"text": "d", "wrapText": true, "topLabel": "tl"}}, {"divider": {}}], "header": "S"}], "header": {"title": "T", "imageUrl": "u", "imageType": "SQUARE", "imageAltText": "alt"}}}`
+	want := `{"cardId":"c1","card":{"sections":[{"widgets":[{"textParagraph":{"text":"*hi*"}},{"buttonList":{"buttons":[{"text":"Go","onClick":{"action":{"function":"act","parameters":[{"key":"a","value":"true"},{"key":"z","value":"1"}]}}}]}},{"selectionInput":{"name":"n","label":"n","type":"CHECK_BOX","items":[{"text":"A","value":"a","selected":true}]}},{"decoratedText":{"text":"d","wrapText":true,"topLabel":"tl"}},{"divider":{}}],"header":"S"}],"header":{"title":"T","imageUrl":"u","imageType":"SQUARE","imageAltText":"alt"}}}`
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}

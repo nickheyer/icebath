@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Runner classifying which conversation a background result belongs to, GatewayRunner._classify_completion_owner
@@ -66,7 +67,7 @@ func recoverDetachedSessions(ctx context.Context, a *SessionAuthority, pending m
 		}
 		live, ok := a.live(sid)
 		if !ok {
-			return nil, &pyKeyError{sid}
+			return nil, &keyError{sid}
 		}
 		if detachedRouteOf(live.Source) != nil {
 			if err := scheduleSession(ctx, a, SessionRef{a.ProfileID, sid}); err != nil {
@@ -111,7 +112,7 @@ func followDetachedPin(ctx context.Context, runner AuthorityRunner, evt map[stri
 	}
 	classifier, ok := runner.(completionOwnerRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the gateway runner cannot classify a completion owner"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the gateway runner cannot classify a completion owner"}
 	}
 	verdict, _, target, err := classifier.ClassifyCompletionOwner(ctx, pinned, key)
 	if err != nil {

@@ -23,7 +23,7 @@ type hostedCLICommand struct {
 }
 
 func init() {
-	hostCtxDispatch["register_cli_command"] = hostMethod("register_cli_command", []pyParam{req("name"), req("help"), req("setup_fn"), opt("handler_fn", nil), opt("description", "")},
+	hostCtxDispatch["register_cli_command"] = hostMethod("register_cli_command", []paramValue{req("name"), req("help"), req("setup_fn"), opt("handler_fn", nil), opt("description", "")},
 		func(_ context.Context, h *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			if c.ignoredAfterAbandonedLoad("register_cli_command") {
 				return nil, nil

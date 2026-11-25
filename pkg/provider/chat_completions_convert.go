@@ -1598,7 +1598,7 @@ func (c *capsCatalog) saveDisk(ctx context.Context, caps map[string]reasoningCap
 	entry.Set("ts", float64(time.Now().UnixNano())/1e9)
 	entry.Set("caps", rows)
 	data.Set(c.url, entry)
-	if err := modelsWriteJSONCache(ctx, path, data, jsonutil.Indent(0)); err != nil {
+	if err := modelsWriteJSONCache(ctx, path, data); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to save reasoning-caps disk cache: %v", err))
 	}
 }

@@ -82,7 +82,7 @@ func PauseIdentityIsLive(ident map[string]any) bool {
 	if truthy(ident["pid"]) {
 		raw = ident["pid"]
 	}
-	pid, err := pyIntConvert(raw)
+	pid, err := intConvert(raw)
 	if err != nil {
 		return false
 	}
@@ -222,7 +222,7 @@ func pauseFiles(path string) ([]PauseFile, error) {
 
 // Sorted unique string forms of an iterable value merged with extra entries
 func sortedStrings(v any, extra ...string) ([]any, error) {
-	items, err := pyList(orEmptyList(v))
+	items, err := listOf(orEmptyList(v))
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func MarkStopConsumed(path string, marker *jsonutil.Object, sameHome func(left, 
 			return fmt.Errorf("pause record stop_markers is %s where a mapping was expected", errchain.Kind(token["stop_markers"]))
 		}
 		recorded := markers[pid]
-		requested, err := pyContains(orEmptyList(token["stop_requested"]), pid)
+		requested, err := contains(orEmptyList(token["stop_requested"]), pid)
 		if err != nil {
 			return err
 		}
@@ -287,7 +287,7 @@ func MarkStopConsumed(path string, marker *jsonutil.Object, sameHome func(left, 
 }
 
 // Python membership test of a string in a decoded JSON container
-func pyContains(container any, s string) (bool, error) {
+func contains(container any, s string) (bool, error) {
 	switch t := container.(type) {
 	case string:
 		return strings.Contains(t, s), nil

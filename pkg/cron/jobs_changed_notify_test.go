@@ -95,7 +95,7 @@ func TestCreateFailurePreservesJobAndHidesProviderDetails(t *testing.T) {
 	if strings.Contains(err.Error(), "private callback URL and token") {
 		t.Fatal(err)
 	}
-	if msg := regErr.UserMessage(); strings.Contains(msg, "RuntimeError") || !strings.Contains(msg, "'w'") {
+	if msg := regErr.UserMessage(); strings.Contains(msg, "RuntimeError") || !strings.Contains(msg, `"w"`) {
 		t.Fatal(msg)
 	}
 }

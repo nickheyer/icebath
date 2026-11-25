@@ -78,10 +78,10 @@ func ownFDsFor(identities map[FileIdentity]lockRange) []ownFD {
 		}
 		var out []ownFD
 		for _, name := range names {
-			if !pyIsDigits(name) {
+			if !isDigits(name) {
 				continue
 			}
-			n, err := pyIntOf(name)
+			n, err := intOfValue(name)
 			if err != nil || !n.IsInt64() {
 				continue
 			}

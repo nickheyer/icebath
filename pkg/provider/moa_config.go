@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -100,7 +101,7 @@ func moaNumericASCII(s string) (string, bool) {
 
 // Python float of a string, false where float raises
 func moaPyFloatText(s string) (float64, bool) {
-	text, ok := moaNumericASCII(pyStripSpace(s))
+	text, ok := moaNumericASCII(strings.TrimSpace(s))
 	if !ok || text == "" || strings.ContainsAny(text, "xXpP") {
 		return 0, false
 	}
@@ -134,7 +135,7 @@ func moaPyFloatText(s string) (float64, bool) {
 
 // Python int of a string in base ten, false where int raises
 func moaPyIntText(s string) (*big.Int, bool) {
-	text, ok := moaNumericASCII(pyStripSpace(s))
+	text, ok := moaNumericASCII(strings.TrimSpace(s))
 	if !ok {
 		return nil, false
 	}
@@ -248,7 +249,7 @@ func coerceMoAFanout(value any) string {
 		return "user_turn"
 	}
 	if m, ok := value.(map[string]any); ok {
-		mode := strings.ToLower(pyStripSpace(pyOrStr(m["mode"])))
+		mode := strings.ToLower(strings.TrimSpace(anyutil.StringOr(m["mode"], "")))
 		if mode == "every_n" {
 			return everyN(moaCoerceInt(m["n"]))
 		}
@@ -258,13 +259,13 @@ func coerceMoAFanout(value any) string {
 	if !ok {
 		return "user_turn"
 	}
-	mode := strings.ToLower(pyStripSpace(text))
+	mode := strings.ToLower(strings.TrimSpace(text))
 	if mode == "per_iteration" || mode == "user_turn" {
 		return mode
 	}
 	if strings.HasPrefix(mode, "every_n") {
 		if _, rest, sep := strings.Cut(mode, ":"); sep {
-			return everyN(moaCoerceInt(pyStripSpace(rest)))
+			return everyN(moaCoerceInt(strings.TrimSpace(rest)))
 		}
 		return everyN(big.NewInt(0))
 	}
@@ -279,7 +280,7 @@ func CoercePrivacyFilter(value any) string {
 	if value == nil || value == false {
 		return ""
 	}
-	mode := strings.ToLower(pyStripSpace(pyStr(value)))
+	mode := strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	switch mode {
 	case "display", "full":
 		return mode
@@ -316,7 +317,7 @@ func coerceMoABool(value any, def bool) bool {
 	case bool:
 		return v
 	case string:
-		switch strings.ToLower(pyStripSpace(v)) {
+		switch strings.ToLower(strings.TrimSpace(v)) {
 		case "1", "true", "yes", "on":
 			return true
 		case "0", "false", "no", "off":
@@ -324,7 +325,7 @@ func coerceMoABool(value any, def bool) bool {
 		}
 		return def
 	}
-	return config.PyTruthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // Problem a slot would be dropped for, empty when complete and valid
@@ -333,8 +334,8 @@ func moaSlotProblem(slot any) string {
 	if !ok {
 		return "must be an object with 'provider' and 'model'"
 	}
-	providerName := pyStripSpace(pyOrStr(m["provider"]))
-	model := pyStripSpace(pyOrStr(m["model"]))
+	providerName := strings.TrimSpace(anyutil.StringOr(m["provider"], ""))
+	model := strings.TrimSpace(anyutil.StringOr(m["model"], ""))
 	switch {
 	case providerName == "" && model == "":
 		return "provider and model are required"
@@ -354,7 +355,7 @@ func cleanMoASlot(slot any, includeEnabled bool) map[string]any {
 		return nil
 	}
 	m := slot.(map[string]any)
-	clean := map[string]any{"provider": pyStripSpace(pyStr(m["provider"])), "model": pyStripSpace(pyStr(m["model"]))}
+	clean := map[string]any{"provider": strings.TrimSpace(anyutil.String(m["provider"])), "model": strings.TrimSpace(anyutil.String(m["model"]))}
 	order := []string{"provider", "model"}
 	if effort := cleanMoAReasoningEffort(m["reasoning_effort"]); effort != "" {
 		clean["reasoning_effort"] = effort
@@ -504,10 +505,10 @@ func normalizeMoAPreset(raw any) map[string]any {
 		aggregator = defaultMoAAggregatorSlot()
 	}
 	policy := "loud"
-	if config.PyTruthy(m["degraded_reference_policy"]) {
-		policy = pyStr(m["degraded_reference_policy"])
+	if anyutil.IsTrue(m["degraded_reference_policy"]) {
+		policy = anyutil.String(m["degraded_reference_policy"])
 	}
-	policy = strings.ToLower(pyStripSpace(policy))
+	policy = strings.ToLower(strings.TrimSpace(policy))
 	if policy != "loud" && policy != "silent" {
 		policy = "loud"
 	}
@@ -536,7 +537,7 @@ func normalizeMoAConfig(raw any) map[string]any {
 	var order []string
 	if rawPresets, ok := m["presets"].(map[string]any); ok {
 		for _, name := range config.MappingKeys(rawPresets) {
-			if clean := pyStripSpace(name); clean != "" {
+			if clean := strings.TrimSpace(name); clean != "" {
 				if _, seen := presets[clean]; !seen {
 					order = append(order, clean)
 				}
@@ -548,11 +549,11 @@ func normalizeMoAConfig(raw any) map[string]any {
 	if len(presets) == 0 {
 		presets[DefaultMoAPresetName] = normalizeMoAPreset(map[string]any{})
 	}
-	defaultName := pyStripSpace(pyOrStr(m["default_preset"]))
+	defaultName := strings.TrimSpace(anyutil.StringOr(m["default_preset"], ""))
 	if _, has := presets[defaultName]; defaultName == "" || !has {
 		defaultName = moaPresetOrder(presets)[0]
 	}
-	activeName := pyStripSpace(pyOrStr(m["active_preset"]))
+	activeName := strings.TrimSpace(anyutil.StringOr(m["active_preset"], ""))
 	if _, has := presets[activeName]; !has {
 		activeName = ""
 	}
@@ -595,12 +596,12 @@ func ResolveMoAPreset(raw any, name string) (map[string]any, error) {
 	cfg := normalizeMoAConfig(raw)
 	presetName := name
 	if presetName == "" {
-		presetName = pyOrStr(cfg["default_preset"])
+		presetName = anyutil.StringOr(cfg["default_preset"], "")
 	}
 	if presetName == "" {
 		presetName = DefaultMoAPresetName
 	}
-	presetName = pyStripSpace(presetName)
+	presetName = strings.TrimSpace(presetName)
 	presets := anyMap(cfg["presets"])
 	preset, ok := presets[presetName]
 	if !ok {
@@ -626,7 +627,7 @@ func moaAggregatorOf(moa map[string]any, preset string) (string, string, bool) {
 		return "", "", false
 	}
 	agg := anyMap(resolved["aggregator"])
-	return pyStripSpace(pyOrStr(agg["provider"])), pyStripSpace(pyOrStr(agg["model"])), true
+	return strings.TrimSpace(anyutil.StringOr(agg["provider"], "")), strings.TrimSpace(anyutil.StringOr(agg["model"], "")), true
 }
 
 // ApplyUserMoAPresets makes an explicit user preset map authoritative over the merged defaults
@@ -656,7 +657,7 @@ func ApplyUserMoAPresets(merged map[string]any, raw any) {
 
 // ExactMoAPresetName returns the text when it names an enabled preset, empty otherwise
 func ExactMoAPresetName(raw any, text string) string {
-	wanted := pyStripSpace(text)
+	wanted := strings.TrimSpace(text)
 	if wanted == "" {
 		return ""
 	}
@@ -664,7 +665,7 @@ func ExactMoAPresetName(raw any, text string) string {
 	if !ok {
 		return ""
 	}
-	if enabled, has := preset["enabled"]; has && !config.PyTruthy(enabled) {
+	if enabled, has := preset["enabled"]; has && !anyutil.IsTrue(enabled) {
 		return ""
 	}
 	return wanted
@@ -721,7 +722,7 @@ func DecodeMoATurn(message string) (string, map[string]any, error) {
 	if !strings.HasPrefix(message, MoAMarkerPrefix) {
 		return message, nil, nil
 	}
-	encoded := pyStripSpace(message[len(MoAMarkerPrefix):])
+	encoded := strings.TrimSpace(message[len(MoAMarkerPrefix):])
 	for _, r := range encoded {
 		if r > unicode.MaxASCII {
 			return message, nil, nil
@@ -740,10 +741,10 @@ func DecodeMoATurn(message string) (string, map[string]any, error) {
 		return "", nil, fmt.Errorf("the mixture of agents turn is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	cfg := payload["config"]
-	if !config.PyTruthy(cfg) {
+	if !anyutil.IsTrue(cfg) {
 		cfg = map[string]any{}
 	}
-	return pyOrStr(payload["prompt"]), normalizeMoAPreset(cfg), nil
+	return anyutil.StringOr(payload["prompt"], ""), normalizeMoAPreset(cfg), nil
 }
 
 // MoAUsage is the usage line of the moa slash command

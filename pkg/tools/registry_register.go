@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -14,7 +14,7 @@ var ErrRegistrationRejected = errors.New("tool registration rejected")
 
 type overrideDeniedError struct{ owner, name string }
 
-// Renders the operator opt in refusal with the owner and tool name quoted like Python repr
+// Renders the operator opt in refusal with the owner and tool name quoted
 func (e *overrideDeniedError) Error() string {
 	return fmt.Sprintf("Plugin module %s cannot override built-in tool %s without operator opt-in (allow_tool_override).",
 		strconv.Quote(e.owner), strconv.Quote(e.name))
@@ -37,7 +37,7 @@ func validateRegistrationSchema(d Def) error {
 	}
 	if p, ok := d.Schema.Get("parameters"); ok && p != nil {
 		if _, isMap := jsonutil.AsMap(p); !isMap {
-			return fmt.Errorf("Tool %s: schema['parameters'] must be an object (JSON Schema dict), got %s", strconv.Quote(d.Name), anyutil.Kind(p))
+			return fmt.Errorf("Tool %s: schema[\"parameters\"] must be a mapping (a JSON Schema object), got %s", strconv.Quote(d.Name), errchain.Kind(p))
 		}
 	}
 	return nil
@@ -59,10 +59,10 @@ func crossToolsetVerdict(d Def, owner, existingToolset string, denied bool) erro
 				strconv.Quote(owner), strconv.Quote(d.Name), strconv.Quote(existingToolset)))
 			return &overrideDeniedError{owner: owner, name: d.Name}
 		}
-		pkgLog().Info(fmt.Sprintf("Tool '%s': toolset '%s' overriding existing toolset '%s' (override=True opt-in)", d.Name, d.Toolset, existingToolset))
+		pkgLog().Info(fmt.Sprintf("Tool %q: toolset %q overriding existing toolset %q (override=True opt-in)", d.Name, d.Toolset, existingToolset))
 		return nil
 	}
-	pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: '%s' (toolset '%s') would shadow existing tool from toolset '%s'. "+
+	pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: %q (toolset %q) would shadow existing tool from toolset %q. "+
 		"Pass override=True to register() if the replacement is intentional, or deregister the existing tool first.", d.Name, d.Toolset, existingToolset))
 	return fmt.Errorf("%w: %s (toolset %s) would shadow existing tool from toolset %s", ErrRegistrationRejected,
 		strconv.Quote(d.Name), strconv.Quote(d.Toolset), strconv.Quote(existingToolset))
@@ -71,8 +71,8 @@ func crossToolsetVerdict(d Def, owner, existingToolset string, denied bool) erro
 // Logs and returns the refusal of a plugin removing a tool it neither owns nor may override
 func rejectForeignDeregister(caller, name, toolset string) error {
 	pkgLog().Error(fmt.Sprintf("Tool deregistration REJECTED: plugin %s attempted to remove tool %s (toolset %s) it does not own, without operator opt-in. "+
-		"Set plugins.entries.%s.allow_tool_override: true in config.yaml to allow it.",
-		strconv.Quote(caller), strconv.Quote(name), strconv.Quote(toolset), caller))
+		"Set plugins.entries.<plugin_id>.allow_tool_override: true in config.yaml to allow it.",
+		strconv.Quote(caller), strconv.Quote(name), strconv.Quote(toolset)))
 	return &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s cannot deregister tool %s (toolset %s) without operator opt-in (allow_tool_override).",
 		strconv.Quote(caller), strconv.Quote(name), strconv.Quote(toolset))}
 }

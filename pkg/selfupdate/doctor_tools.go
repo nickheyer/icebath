@@ -530,7 +530,7 @@ func checkTerminalBackend(ctx context.Context, d *Doctor, shouldFix bool) (*Find
 
 // Text of a config value the way str renders it, empty for a falsy value
 func doctorConfigText(v any) string {
-	if !config.PyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return anyutil.String(v)

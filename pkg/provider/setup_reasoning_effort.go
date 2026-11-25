@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lowercased agent reasoning effort of a config, none for a disabled dict form and empty when unset
@@ -21,7 +22,7 @@ func currentReasoningEffort(cfg map[string]any) string {
 			effort = parsed["effort"]
 		}
 	}
-	return strings.ToLower(strings.TrimSpace(pyOrStr(effort)))
+	return strings.ToLower(strings.TrimSpace(anyutil.StringOr(effort, "")))
 }
 
 // Writes the effort under agent reasoning_effort, a missing or non mapping agent section replaced

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // tokenFileVersion is the stat signature plus content digest a tokens file change is detected by
@@ -90,7 +91,7 @@ func (m *OAuthManager) key(ctx context.Context, serverName, homeDir string) mana
 		homeDir = home.Dir(ctx)
 	}
 	homeDir = expandUser(homeDir)
-	if resolved, err := pyResolve(homeDir); err == nil {
+	if resolved, err := resolve(homeDir); err == nil {
 		homeDir = resolved
 	}
 	return managerKey{home: homeDir, name: serverName}
@@ -137,7 +138,7 @@ func (m *OAuthManager) buildProvider(ctx context.Context, serverName string, e *
 	if err != nil {
 		return nil, err
 	}
-	p.hooks = &managerHooks{name: serverName, home: homeKey, preregistered: pyTruthy(cfg["client_id"])}
+	p.hooks = &managerHooks{name: serverName, home: homeKey, preregistered: anyutil.IsTrue(cfg["client_id"])}
 	return p, nil
 }
 
@@ -383,7 +384,7 @@ func (h *managerHooks) checkOutgoing(_ context.Context, p *OAuthProvider, req *h
 	if md == nil || derefStr(md.RegistrationEndpoint) != "" || req.Method != http.MethodPost {
 		return nil
 	}
-	expected := pyURLJoinAbsPath(authorizationBaseURL(p.serverURL), "/register")
+	expected := urlJoinAbsPath(authorizationBaseURL(p.serverURL), "/register")
 	eu, err := url.Parse(expected)
 	if err != nil || httpxTarget(req.URL) != httpxTarget(eu) {
 		return nil
@@ -402,11 +403,11 @@ func invalidClientAtTokenEndpoint(p *OAuthProvider, r *flowResponse) bool {
 	if p.oauthMetadata == nil || p.oauthMetadata.TokenEndpoint == "" || r.Request == nil {
 		return false
 	}
-	a, err := pyURLSplit(r.Request.URL.String())
+	a, err := urlSplit(r.Request.URL.String())
 	if err != nil {
 		return false
 	}
-	b, err := pyURLSplit(p.oauthMetadata.TokenEndpoint)
+	b, err := urlSplit(p.oauthMetadata.TokenEndpoint)
 	if err != nil {
 		return false
 	}

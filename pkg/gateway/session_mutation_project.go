@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -37,7 +38,7 @@ func dropSessionTerminal(ctx context.Context, a *SessionAuthority, ref SessionRe
 	if err != nil {
 		return err
 	}
-	entrySID, err := pyItem(receipt, "entry", "session_id")
+	entrySID, err := itemValue(receipt, "entry", "session_id")
 	if err != nil {
 		return err
 	}
@@ -47,7 +48,7 @@ func dropSessionTerminal(ctx context.Context, a *SessionAuthority, ref SessionRe
 	}
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return &pyKeyError{ref.SessionID}
+		return &keyError{ref.SessionID}
 	}
 	env := terminalEnv(ownerScope(ctx, a, false))
 	keys := map[string]bool{tools.QualifyTaskKey(env, "session:"+live.Route): true}
@@ -93,14 +94,14 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 		if err := installEditorMCP(ctx, a, anyutil.String(target), editorServers); err != nil {
 			return err
 		}
-		if operation == "editor_mcp" && !pyTruthy(editorServers) {
+		if operation == "editor_mcp" && !anyutil.IsTrue(editorServers) {
 			retireEditorMCP(ctx, a, ref.SessionID)
 		}
 	}
 	if !(mutationPolicy[operation] || operation == "reset" || operation == "compress" || operation == "rewind") || owns {
 		if _, moved := result.Get("cwd"); operation == "workspace" || (operation == "launch" && moved) {
 			if err := dropSessionTerminal(ctx, a, ref); err != nil {
-				pkgLog().Warn(fmt.Sprintf("Session %s moved without dropping its terminal environment: %s", ref.SessionID, pyExceptionRepr(err)))
+				pkgLog().Warn(fmt.Sprintf("Session %s moved without dropping its terminal environment: %s", ref.SessionID, errchain.OSText(err)))
 			}
 		}
 		if err := projectCommitted(ctx, a, ref, operation, result); err != nil {
@@ -113,7 +114,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 	if operation == "rewind" && owns {
 		evicting, ok := a.Runner.(agentEvictingRunner)
 		if !ok {
-			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
+			return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
 		}
 		evicting.EvictCachedAgent(live.Route)
 	}
@@ -134,7 +135,7 @@ func rowValue(row *jsonutil.Object, key string) any {
 func projectedLive(a *SessionAuthority, sessionID string) (*LiveSession, error) {
 	live, ok := a.live(sessionID)
 	if !ok {
-		return nil, &pyKeyError{sessionID}
+		return nil, &keyError{sessionID}
 	}
 	return live, nil
 }
@@ -157,7 +158,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 		runner, ok := a.Runner.(reasoningOverrideRunner)
 		if !ok {
-			return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot set a session reasoning override", a.Runner)}
+			return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot set a session reasoning override", a.Runner)}
 		}
 		runner.SetSessionReasoningOverride(live.Route, nil)
 		live.PendingReasoning = nil
@@ -174,7 +175,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		live.EventStream.Publish(ref.SessionID, info, "session.info", nil)
 	}
 	if operation == "branch" {
-		branched, err := pyItem(result, "branched_session_id")
+		branched, err := itemValue(result, "branched_session_id")
 		if err != nil {
 			return err
 		}
@@ -188,7 +189,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		}
 	}
 	if operation == "delete" {
-		deleted, err := pyItem(result, "deleted_ids")
+		deleted, err := itemValue(result, "deleted_ids")
 		if err != nil {
 			return err
 		}
@@ -217,19 +218,19 @@ func projectBoundary(ctx context.Context, a *SessionAuthority, ref SessionRef) e
 	case agentEvictingRunner:
 		runner.EvictCachedAgent(live.Route)
 	default:
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot evict a cached agent", a.Runner)}
 	}
 	receipt, err := a.DB.LocalReceipt(ctx, ref.SessionID)
 	if err != nil {
 		return err
 	}
-	raw, err := pyItem(receipt, "entry")
+	raw, err := itemValue(receipt, "entry")
 	if err != nil {
 		return err
 	}
 	data, ok := jsonutil.AsObject(raw)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the project boundary record is %s, expected a mapping", errchain.Kind(raw))}
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the project boundary record is %s, expected a mapping", errchain.Kind(raw))}
 	}
 	entry, err := SessionEntryFromDict(ctx, data)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -288,7 +289,7 @@ func stopRun(ctx context.Context, a *APIServerAdapter, runID string) (*jsonutil.
 				return nil, err
 			}
 			if again == nil {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: "run admission vanished after a stale generation refusal"}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "run admission vanished after a stale generation refusal"}
 			}
 			authority, row = again.authority, again.row
 		default:

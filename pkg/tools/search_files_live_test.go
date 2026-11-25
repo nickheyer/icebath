@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -855,8 +856,8 @@ func TestSearchGiantSingleLineMatchIsBounded(t *testing.T) {
 				case "content":
 					names = foundBaseNames(r)
 					for _, m := range r.Matches {
-						if pyLen(m.Content) > 500 {
-							t.Fatalf("content %d chars", pyLen(m.Content))
+						if utf8.RuneCountInString(m.Content) > 500 {
+							t.Fatalf("content %d chars", utf8.RuneCountInString(m.Content))
 						}
 					}
 				case "files_only":

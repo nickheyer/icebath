@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Collaborators the config facade runs from packages that import config
@@ -181,48 +182,12 @@ func nonMappingRootError(doc any) error {
 	return fmt.Errorf("the config root is %s where a mapping was expected", errchain.Kind(doc))
 }
 
-// Python dict() of an agent section value, the TypeError or ValueError text when it cannot convert
-func pyDictOf(v any) (map[string]any, error) {
-	if !PyTruthy(v) {
-		return map[string]any{}, nil
+// Refusal of a config section set to a value that is not a mapping, nil for a mapping or a section left empty
+func sectionMappingError(section string, v any) error {
+	if _, ok := v.(map[string]any); ok || !anyutil.IsTrue(v) {
+		return nil
 	}
-	switch c := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(c))
-		for k, val := range c {
-			out[k] = val
-			if pk, ok := MappingPyKey(c, k); ok {
-				SetMappingPyKey(out, k, pk)
-			}
-		}
-		SetMappingKeys(out, MappingKeys(c))
-		return out, nil
-	case string:
-		return nil, fmt.Errorf("dictionary update sequence element #0 has length 1; 2 is required")
-	case []any:
-		out := map[string]any{}
-		keys := []string{}
-		for i, item := range c {
-			pair, ok := item.([]any)
-			if !ok {
-				if s, isStr := item.(string); isStr {
-					return nil, fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len([]rune(s)))
-				}
-				return nil, fmt.Errorf("cannot convert dictionary update sequence element #%d to a sequence", i)
-			}
-			if len(pair) != 2 {
-				return nil, fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))
-			}
-			k := PyStr(pair[0])
-			if _, seen := out[k]; !seen {
-				keys = append(keys, k)
-			}
-			out[k] = pair[1]
-		}
-		SetMappingKeys(out, keys)
-		return out, nil
-	}
-	return nil, fmt.Errorf("expected a mapping or a list of key and value pairs, got %s", errchain.Kind(v))
+	return fmt.Errorf("the config section %q is %s where a mapping was expected", section, errchain.Kind(v))
 }
 
 // Defaults with the user document merged in
@@ -231,7 +196,7 @@ func mergeUserConfig(ctx context.Context, path string, cfg map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	if !PyTruthy(doc) {
+	if !anyutil.IsTrue(doc) {
 		doc = map[string]any{}
 	}
 	user, ok := doc.(map[string]any)
@@ -481,13 +446,13 @@ func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 		markFailedRead(failed, err)
 		return failed, nil
 	}
-	if !PyTruthy(doc) {
+	if !anyutil.IsTrue(doc) {
 		doc = map[string]any{}
 	}
 	data, ok := doc.(map[string]any)
 	if !ok {
 		failed := map[string]any{}
-		markFailedRead(failed, fmt.Errorf("top-level YAML must be a mapping, got %s", ErrorKind(doc)))
+		markFailedRead(failed, fmt.Errorf("top-level YAML must be a mapping, got %s", errchain.Kind(doc)))
 		return failed, nil
 	}
 	forgetParseFailure(path)

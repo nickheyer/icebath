@@ -2,6 +2,7 @@ package pvporcupine
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"sort"
 	"strings"
@@ -53,14 +54,14 @@ func (m *Module) Create(accessKey string, o CreateOptions) (*Porcupine, error) {
 	keywordPaths := o.KeywordPaths
 	if keywordPaths == nil {
 		if o.Keywords == nil {
-			return nil, &PyError{Class: "ValueError", Msg: "Either `keywords` or `keyword_paths` must be set."}
+			return nil, &Error{Kind: InvalidArgument, Msg: "Either keywords or keyword paths must be set."}
 		}
 		keywordPaths = []string{}
 		for _, x := range o.Keywords {
 			path, ok := m.KeywordPaths[x]
 			if !ok {
-				return nil, &PyError{Class: "ValueError", Msg: `One or more keywords are not available by default. Available default keywords are:\n` +
-					strings.Join(m.Keywords(), ", ")}
+				return nil, &Error{Kind: InvalidArgument, Msg: fmt.Sprintf("Keyword %q is not available by default. Available default keywords are: %s",
+					x, strings.Join(m.Keywords(), ", "))}
 			}
 			keywordPaths = append(keywordPaths, path)
 		}
@@ -73,7 +74,7 @@ func (m *Module) Create(accessKey string, o CreateOptions) (*Porcupine, error) {
 		}
 	}
 	if len(sensitivities) != len(keywordPaths) {
-		return nil, &PyError{Class: "ValueError", Msg: "Number of keywords does not match the number of sensitivities."}
+		return nil, &Error{Kind: InvalidArgument, Msg: "Number of keywords does not match the number of sensitivities."}
 	}
 	return NewPorcupine(accessKey, libraryPath, modelPath, device, keywordPaths, sensitivities)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Flow of each provider id with a bespoke icebath model step, swappable per entry like the table
@@ -103,7 +104,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 			if !isMap {
 				continue
 			}
-			if template := strings.TrimSpace(pyOrStr(dictGet(entry, "api_key", ""))); strings.Contains(template, "${") {
+			if template := strings.TrimSpace(anyutil.StringOr(dictGet(entry, "api_key", ""), "")); strings.Contains(template, "${") {
 				rawAPIKeyRefs[strings.ToLower(storedProviderID(providers, k))] = template
 			}
 		}
@@ -113,11 +114,11 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if entry == nil {
 			continue
 		}
-		rawName, err := pyOrEmptyStr(entry["name"], "providers name")
+		rawName, err := orEmptyStrValue(entry["name"], "providers name")
 		if err != nil {
 			return nil, err
 		}
-		rawBase, err := pyOrEmptyStr(entry["base_url"], "providers base_url")
+		rawBase, err := orEmptyStrValue(entry["base_url"], "providers base_url")
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +126,7 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if name == "" || baseURL == "" {
 			continue
 		}
-		rawKey, err := pyOrEmptyStr(entry["provider_key"], "providers provider_key")
+		rawKey, err := orEmptyStrValue(entry["provider_key"], "providers provider_key")
 		if err != nil {
 			return nil, err
 		}
@@ -167,21 +168,21 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 	listed := listedCanonicalProviders(ctx)
 	excluded := map[string]bool{}
 	var modelCatalog map[string]any
-	if raw := cfg["model_catalog"]; pyTruthy(raw) {
+	if raw := cfg["model_catalog"]; anyutil.IsTrue(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
 			return nil, 0, fmt.Errorf("model_catalog in config is %s, expected a mapping", errchain.Kind(raw))
 		}
 		modelCatalog = m
 	}
-	if raw := modelCatalog["excluded_providers"]; pyTruthy(raw) {
-		items, err := pyIterValues(raw, "model_catalog.excluded_providers")
+	if raw := modelCatalog["excluded_providers"]; anyutil.IsTrue(raw) {
+		items, err := iterValues(raw, "model_catalog.excluded_providers")
 		if err != nil {
 			return nil, 0, err
 		}
 		for _, p := range items {
-			if pyTruthy(p) {
-				excluded[strings.ToLower(strings.TrimSpace(pyStr(p)))] = true
+			if anyutil.IsTrue(p) {
+				excluded[strings.ToLower(strings.TrimSpace(anyutil.String(p)))] = true
 			}
 		}
 	}
@@ -252,10 +253,10 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 	for _, key := range customMap.keys {
 		info := customMap.byKey[key]
 		modelHint := ""
-		if saved := dictGet(info, "model", ""); pyTruthy(saved) {
-			modelHint = " — " + pyStr(saved)
+		if saved := dictGet(info, "model", ""); anyutil.IsTrue(saved) {
+			modelHint = " — " + anyutil.String(saved)
 		}
-		add(key, fmt.Sprintf("%s (%s)%s", pyStr(info["name"]), shortURL(pyStr(info["base_url"])), modelHint), nil, active != "" && key == active)
+		add(key, fmt.Sprintf("%s (%s)%s", anyutil.String(info["name"]), shortURL(anyutil.String(info["base_url"])), modelHint), nil, active != "" && key == active)
 	}
 	llamacppExcluded := false
 	for _, alias := range llamacppAliases {
@@ -279,7 +280,7 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 
 // Base URL lowercased with whitespace and trailing slashes removed
 func normBaseURL(u any) string {
-	return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyOrStr(u)), "/"))
+	return strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.StringOr(u, "")), "/"))
 }
 
 // Provider slug in effect for the picker default row, empty when no provider is set up yet
@@ -308,7 +309,7 @@ func resolveActiveProvider(r *ModelFlowRun, cfg map[string]any, modelCfg any, ef
 				requested := strings.ToLower(strings.TrimSpace(active))
 				for _, k := range customMap.keys {
 					info := customMap.byKey[k]
-					if CustomProviderAliases(pyOrStr(dictGet(info, "name", "")), pyOrStr(dictGet(info, "provider_key", "")))[requested] {
+					if CustomProviderAliases(anyutil.StringOr(dictGet(info, "name", ""), ""), anyutil.StringOr(dictGet(info, "provider_key", ""), ""))[requested] {
 						active = k
 						break
 					}
@@ -411,13 +412,13 @@ func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 		configProvider = m["provider"]
 	}
 	currentModel := "(not set)"
-	if pyTruthy(currentModelRaw) {
-		currentModel = pyStr(currentModelRaw)
+	if anyutil.IsTrue(currentModelRaw) {
+		currentModel = anyutil.String(currentModelRaw)
 	}
 	r.CurrentModel = currentModel
 	effectiveProvider := "auto"
-	if pyTruthy(configProvider) {
-		effectiveProvider = pyStr(configProvider)
+	if anyutil.IsTrue(configProvider) {
+		effectiveProvider = anyutil.String(configProvider)
 	} else if v := os.Getenv("ICEBATH_INFERENCE_PROVIDER"); v != "" {
 		effectiveProvider = v
 	}
@@ -432,7 +433,7 @@ func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 	providerLabels := modelCommandLabelsFn()
 	activeLabel := "none"
 	if info, ok := customMap.get(active); ok && active != "" {
-		activeLabel = pyStr(info["name"])
+		activeLabel = anyutil.String(info["name"])
 	} else if active != "" {
 		activeLabel = labelOr(providerLabels, active)
 	}
@@ -520,7 +521,7 @@ func CmdModel(ctx context.Context, ns map[string]any, w io.Writer) (code int, er
 	restore := WithSetupOutput(w)
 	defer restore()
 	defer RecoverSetupExit(&code)
-	if pyTruthy(ns["refresh"]) {
+	if anyutil.IsTrue(ns["refresh"]) {
 		func() {
 			defer func() { _ = recover() }()
 			clearProviderModelsCacheFn(ctx)

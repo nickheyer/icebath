@@ -305,7 +305,7 @@ func (c *CLI) addChat(root *cobra.Command) {
 	c.inherited(chat, "accept-hooks")
 	f.Bool("checkpoints", false, "Enable filesystem checkpoints before destructive file operations (use /rollback to restore)")
 	c.inherited(chat, "checkpoints")
-	f.Int("max-turns", 0, "Maximum tool-calling iterations per conversation turn (default: 500, or agent.max_turns in config)")
+	f.Var(newIntArg(0), "max-turns", "Maximum tool-calling iterations per conversation turn (default: 500, or agent.max_turns in config)")
 	f.Float64("run-budget", 0, "Optional wall-clock budget in seconds for each conversation run. At 80% elapsed the agent gets a one-time wrap-up notice, and implicit provider stale timeouts are capped to the remaining budget so one hung call can't consume the run. Unset = off. Also configurable as agent.run_budget_seconds in config.yaml. Intended for one-shot/eval invocations with a hard ceiling.")
 	f.Bool("yolo", false, "Bypass all dangerous command approval prompts (use at your own risk)")
 	c.inherited(chat, "yolo")
@@ -571,7 +571,7 @@ func positionalValueError(cmd *cobra.Command, specs []posSpec, args []string) er
 		}
 		value, repr := a, strconv.Quote
 		if s.Int {
-			n, err := strconv.Atoi(a)
+			n, err := parseIntArg(a)
 			if err != nil {
 				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: %s", s.display(), strconv.Quote(a))}
 			}
@@ -584,7 +584,7 @@ func positionalValueError(cmd *cobra.Command, specs []posSpec, args []string) er
 	return nil
 }
 
-// Choices joined the way argparse lists them, each in Python repr
+// Choices joined into a comma separated list, each written by quote
 func reprList(items []string, repr func(string) string) string {
 	q := make([]string, len(items))
 	for i, s := range items {

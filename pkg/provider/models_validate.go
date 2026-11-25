@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // ModelVerdict is the switch, persist and recognition outcome of a requested model, an empty Message is none
@@ -116,7 +118,7 @@ func matchInCatalog(query string, candidates []string, opts catalogMatchOptions)
 func stringRef(s string) *string { return &s }
 
 // Python isinstance int of a row value, booleans counting as integers
-func pyIsInt(v any) (int, bool) {
+func isIntValue(v any) (int, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -307,16 +309,7 @@ func validateMoa(ctx context.Context, req *modelValidateRequest) *ModelVerdict {
 	return verdictReject(fmt.Sprintf("MoA preset `%s` was not found. Run `icebath moa list`.", req.requested))
 }
 
-func hasSpace(s string) bool { return strings.IndexFunc(s, pyIsSpace) >= 0 }
-
-// Python str.isspace for one rune
-func pyIsSpace(r rune) bool {
-	switch r {
-	case 0x1c, 0x1d, 0x1e, 0x1f, 0x85:
-		return true
-	}
-	return unicode.IsSpace(r)
-}
+func hasSpace(s string) bool { return strings.IndexFunc(s, unicode.IsSpace) >= 0 }
 
 // Rejects a spaced id unless the provider is self hosted or the base URL is user configured
 func rejectWhitespace(ctx context.Context, req *modelValidateRequest) *ModelVerdict {
@@ -459,17 +452,17 @@ func DropUnofferableModelIDs(rows []any) {
 		if !ok {
 			continue
 		}
-		provider := pyOrStr(row["slug"])
+		provider := anyutil.StringOr(row["slug"], "")
 		baseURLValue := row["api_url"]
-		if !pyTruthy(baseURLValue) {
+		if !anyutil.IsTrue(baseURLValue) {
 			baseURLValue = row["base_url"]
 		}
-		baseURL := pyOrStr(baseURLValue)
+		baseURL := anyutil.StringOr(baseURLValue, "")
 		if models, ok := row["models"].([]any); ok {
 			filtered := OfferedModelIDs(models, provider, baseURL)
 			if removed := len(models) - len(filtered); removed > 0 {
 				row["models"] = filtered
-				if total, ok := pyIsInt(row["total_models"]); ok {
+				if total, ok := isIntValue(row["total_models"]); ok {
 					row["total_models"] = max(0, total-removed)
 				}
 			}
@@ -594,16 +587,16 @@ func validateCustom(ctx context.Context, req *modelValidateRequest) *ModelVerdic
 		if v := match.verdict(); v != nil {
 			return v
 		}
-		message := fmt.Sprintf("Note: `%s` was not found in this custom endpoint's model listing (%s). ", req.requested, pyNoneStr(probe.ProbedURL)) +
+		message := fmt.Sprintf("Note: `%s` was not found in this custom endpoint's model listing (%s). ", req.requested, noneStr(probe.ProbedURL)) +
 			"It may still work if the server supports hidden or aliased models." + match.suggestionText
 		if probe.UsedFallback {
-			message += fmt.Sprintf("\n  Endpoint verification succeeded after trying `%s`. ", pyNoneStr(probe.ResolvedBaseURL)) +
+			message += fmt.Sprintf("\n  Endpoint verification succeeded after trying `%s`. ", noneStr(probe.ResolvedBaseURL)) +
 				"Consider saving that as your base URL."
 		}
 		return verdictSoftAccept(message)
 	}
 	accepted := req.apiMode == "chat_completions" || req.apiMode == "anthropic_messages"
-	message := fmt.Sprintf("Note: could not reach this custom endpoint's model listing at `%s`. ", pyNoneStr(probe.ProbedURL))
+	message := fmt.Sprintf("Note: could not reach this custom endpoint's model listing at `%s`. ", noneStr(probe.ProbedURL))
 	if accepted {
 		message += fmt.Sprintf("`%s` was accepted without verification — if this endpoint does not ", req.requested) +
 			"serve it, inference will fail; check the provider's model catalog or the model name."
@@ -617,7 +610,7 @@ func validateCustom(ctx context.Context, req *modelValidateRequest) *ModelVerdic
 }
 
 // Python str of an optional string, None when empty
-func pyNoneStr(s string) string {
+func noneStr(s string) string {
 	if s == "" {
 		return "None"
 	}

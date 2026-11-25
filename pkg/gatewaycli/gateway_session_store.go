@@ -312,7 +312,7 @@ func (s *GatewaySessionStore) SetSessionTitle(ctx context.Context, sessionID, ti
 }
 
 // Python int of a decoded number, zero for anything else
-func pyIntOf(v any) int {
+func intOf(v any) int {
 	switch n := v.(type) {
 	case int:
 		return n
@@ -416,7 +416,7 @@ func (s *GatewaySessionStore) RewindUserTurn(ctx context.Context, sessionID stri
 		return nil, err
 	}
 	return &state.RewindOutcome{Prefix: prefix, LiveView: liveView, LiveText: liveText,
-		RewoundCount: pyIntOf(receipt.Value("rewound_count")), TurnsUndone: len(durableUser) - userOrdinal}, nil
+		RewoundCount: intOf(receipt.Value("rewound_count")), TurnsUndone: len(durableUser) - userOrdinal}, nil
 }
 
 // Id of another session holding a title, empty without a reader, a title or a holder
@@ -574,7 +574,7 @@ func launchCwd(ctx context.Context) (string, error) {
 func launchOnlyPolicy(launch map[string]any) map[string]any {
 	policy := map[string]any{}
 	if launch["run_budget"] != nil {
-		policy["run_budget"] = pyFloatOf(launch["run_budget"])
+		policy["run_budget"] = floatOf(launch["run_budget"])
 	}
 	if anyutil.IsTrue(launch["verbose"]) {
 		policy["verbose"] = true
@@ -583,7 +583,7 @@ func launchOnlyPolicy(launch map[string]any) map[string]any {
 }
 
 // Python float of a number or numeric string
-func pyFloatOf(v any) float64 {
+func floatOf(v any) float64 {
 	switch n := v.(type) {
 	case float64:
 		return n
@@ -596,7 +596,7 @@ func pyFloatOf(v any) float64 {
 		fmt.Sscanf(strings.TrimSpace(n), "%g", &f)
 		return f
 	}
-	return float64(pyIntOf(v))
+	return float64(intOf(v))
 }
 
 // Lays the launch flags that differ from the resumed session's frozen launch over it, the fresh snapshot after

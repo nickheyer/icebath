@@ -9,6 +9,7 @@ import (
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // ReasoningFloorEffort is the lowest effort every reasoning wire accepts
@@ -33,9 +34,13 @@ func auxReasoningDisabled(reasoningConfig any) bool {
 	return isBool && !enabled
 }
 
+// True for an effort that turns reasoning off: an explicit null or a none, off, disabled, false or 0 spelling; false when absent
 func auxDisabledEffort(v any, present bool) bool {
 	if !present {
-		v = ""
+		return false
+	}
+	if v == nil {
+		return true
 	}
 	return auxDisabledEfforts[strings.ToLower(strings.TrimSpace(anyutil.String(v)))]
 }
@@ -125,11 +130,11 @@ var (
 // True when the cached route catalog flags the model reasoning mandatory, warming a cold catalog
 func auxCatalogMarksMandatory(ctx context.Context, provider, baseURL, model string) (bool, error) {
 	providerNorm := strings.ToLower(strings.TrimSpace(provider))
-	parts, err := pyURLParse(baseURL, "")
+	parts, err := urlutil.Split(baseURL)
 	if err != nil {
 		return false, err
 	}
-	host, _, _ := pyNetlocHostPort(parts.netloc)
+	host, _, _ := netlocHostPort(parts.Authority)
 	var lookup func(context.Context, string, time.Duration, bool) (ReasoningCapabilities, bool)
 	var warm func(context.Context)
 	switch {

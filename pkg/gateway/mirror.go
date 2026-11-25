@@ -3,11 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -15,6 +14,7 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Test override of the sessions index, the live profile index when empty
@@ -46,10 +46,10 @@ type MirrorOptions struct {
 	SessionID   string
 }
 
-// Optional text the way Python formats None
+// Optional text for a log line, none when absent
 func optText(s *string) string {
 	if s == nil {
-		return "None"
+		return "none"
 	}
 	return *s
 }
@@ -69,7 +69,7 @@ func MirrorToSession(ctx context.Context, platform, chatID, messageText string, 
 	if sessionID == "" {
 		found, err := findMirrorSessionID(ctx, platform, chatID, opts.ThreadID, opts.UserID)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=None: %v", platform, chatID,
+			pkgLog().Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=none: %v", platform, chatID,
 				optText(opts.ThreadID), optText(opts.UserID), err))
 			return false
 		}
@@ -89,7 +89,7 @@ func MirrorToSession(ctx context.Context, platform, chatID, messageText string, 
 	return true
 }
 
-// Active session of a platform chat from state.db, then the pre migration sessions.json scan, the scan's Python errors returned
+// Active session of a platform chat from state.db, then the pre migration sessions.json scan, the most recently updated match winning; the scan's shape errors returned
 func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID, userID *string) (string, error) {
 	if id, err := func() (string, error) {
 		db, err := mirrorAcquireDB(ctx, filepath.Join(home.Dir(ctx), "state.db"))
@@ -163,15 +163,11 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 			return "", nil
 		}
 	}
-	best, bestKey := candidates[0], updatedAt(candidates[0])
+	best := candidates[0]
+	bestAt, bestDated := updatedAt(best)
 	for _, e := range candidates[1:] {
-		key := updatedAt(e)
-		greater, err := mirrorPyGreater(key, bestKey)
-		if err != nil {
-			return "", err
-		}
-		if greater {
-			best, bestKey = e, key
+		if at, dated := updatedAt(e); dated && (!bestDated || at.After(bestAt)) {
+			best, bestAt, bestDated = e, at, true
 		}
 	}
 	return mirrorSessionIDText(best.Value("session_id"))
@@ -182,7 +178,7 @@ func mirrorShapeError(what string, v any, want string) error {
 	return fmt.Errorf("%s is %s, expected %s", what, errchain.Kind(v), want)
 }
 
-// Whether an index entry's origin names the platform, chat and thread, with the AttributeError a non mapping origin raises
+// Whether an index entry's origin names the platform, chat and thread, an error for an origin that is not a mapping
 func mirrorEntryMatches(entry *jsonutil.Object, platform, chatID string, threadID *string) (bool, error) {
 	originValue := entry.Value("origin")
 	if !anyutil.IsTrue(originValue) {
@@ -223,60 +219,14 @@ func mirrorEntryMatches(entry *jsonutil.Object, platform, chatID string, threadI
 	return anyutil.String(thread) == *threadID, nil
 }
 
-// updated_at of an index entry, empty when missing
-func updatedAt(e *jsonutil.Object) any {
-	if v, ok := e.Get("updated_at"); ok {
-		return v
+// Instant an index entry's updated_at names, text without an offset read as local time; false when it is missing or not ISO 8601 text, which ranks it below every dated entry
+func updatedAt(e *jsonutil.Object) (time.Time, bool) {
+	text, ok := e.Value("updated_at").(string)
+	if !ok {
+		return time.Time{}, false
 	}
-	return ""
-}
-
-// Python a > b over decoded JSON values, numbers and strings and lists ordered, the TypeError for any other pairing
-func mirrorPyGreater(a, b any) (bool, error) {
-	if sa, ok := a.(string); ok {
-		if sb, ok := b.(string); ok {
-			return sa > sb, nil
-		}
-	}
-	if na, ok := mirrorPyNumber(a); ok {
-		if nb, ok := mirrorPyNumber(b); ok {
-			return na != nil && nb != nil && na.Cmp(nb) > 0, nil
-		}
-	}
-	if la, ok := a.([]any); ok {
-		if lb, ok := b.([]any); ok {
-			for i := 0; i < len(la) && i < len(lb); i++ {
-				if !anyutil.Equal(la[i], lb[i]) {
-					return mirrorPyGreater(la[i], lb[i])
-				}
-			}
-			return len(la) > len(lb), nil
-		}
-	}
-	return false, fmt.Errorf("cannot compare %s with %s", errchain.Kind(a), errchain.Kind(b))
-}
-
-// Numeric value of a Python bool, int or float, nil standing for NaN which orders against nothing
-func mirrorPyNumber(v any) (*big.Float, bool) {
-	switch n := v.(type) {
-	case bool:
-		if n {
-			return big.NewFloat(1), true
-		}
-		return big.NewFloat(0), true
-	case int:
-		return new(big.Float).SetInt64(int64(n)), true
-	case int64:
-		return new(big.Float).SetInt64(n), true
-	case *big.Int:
-		return new(big.Float).SetPrec(uint(n.BitLen()) + 64).SetInt(n), true
-	case float64:
-		if math.IsNaN(n) {
-			return nil, true
-		}
-		return new(big.Float).SetPrec(64).SetFloat64(n), true
-	}
-	return nil, false
+	at, err := timeutil.ParseISO(text, time.Local)
+	return at, err == nil
 }
 
 // Session id an index entry holds as bound text, empty when falsy, the binding error for a list or mapping

@@ -11,11 +11,12 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -289,13 +290,13 @@ func FsRegularFile(ctx context.Context, p, profileHome string) (string, fs.FileI
 	}
 	st, err := os.Stat(target)
 	if err != nil {
-		switch errorutil.Kind(err) {
-		case "FileNotFoundError", "NotADirectoryError":
+		switch {
+		case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 			return "", nil, &HTTPError{404, fsSandboxNotFoundDetail(ctx, target, profileHome)}
-		case "PermissionError":
+		case errors.Is(err, fs.ErrPermission):
 			return "", nil, &HTTPError{403, "File is not readable"}
 		}
-		detail := err.Error()
+		detail := errchain.OSText(err)
 		if detail == "" {
 			detail = "Invalid path"
 		}

@@ -236,7 +236,7 @@ func TestShapePreview(t *testing.T) {
 		raw  any
 		want string
 	}{
-		{nil, ""}, {"   \x1c ", ""}, {int64(0), ""}, {0.0, ""}, {false, ""}, {int64(5), "5"}, {[]byte{}, ""},
+		{nil, ""}, {"   \x1c ", "\x1c"}, {int64(0), ""}, {0.0, ""}, {false, ""}, {int64(5), "5"}, {[]byte{}, ""},
 		{" a\r\nb ", "a  b"}, {"head" + SkillExcerptJoint + "tail", "head"},
 		{strings.Repeat("é", 61), strings.Repeat("é", 60) + "..."}, {strings.Repeat("é", 60), strings.Repeat("é", 60)},
 	}

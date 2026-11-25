@@ -967,8 +967,8 @@ func (s *HostedRoomAttachmentStore) ReadRange(roomID, attachmentID, recipientMem
 	if err != nil {
 		return AttachmentData{}, err
 	}
-	off, offOK := offset.(int64)
-	n, nOK := length.(int64)
+	off, offOK := anyutil.Int(offset)
+	n, nOK := anyutil.Int(length)
 	if !offOK || !nOK || off < 0 || n <= 0 {
 		return AttachmentData{}, attachmentErr("attachment range must be non-negative integers")
 	}

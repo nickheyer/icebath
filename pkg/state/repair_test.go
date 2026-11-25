@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
@@ -336,7 +337,7 @@ func TestRepairDedupesDuplicateSchemaOnSnapshot(t *testing.T) {
 	check := openRaw(t, db)
 	row, err := fetchOne(context.Background(), check, "SELECT content FROM messages")
 	check.Close()
-	if err != nil || pyStr(row[0]) != "hello" {
+	if err != nil || anyutil.String(row[0]) != "hello" {
 		t.Fatalf("canonical rows must survive, got %v %v", row, err)
 	}
 	if _, err := os.Stat(db + ".repair-scratch"); !errors.Is(err, os.ErrNotExist) {

@@ -40,7 +40,7 @@ func ConfigStructureIssueLines(issues []ConfigIssue) []string {
 		}
 		lines = append(lines, fmt.Sprintf("  [%s] %s", tag, ci.Message))
 		if ci.Hint != "" {
-			if first := pySplitLines(ci.Hint); len(first) > 0 && first[0] != "" {
+			if first := splitLines(ci.Hint); len(first) > 0 && first[0] != "" {
 				lines = append(lines, "    → "+first[0])
 			}
 		}

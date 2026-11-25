@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -112,7 +113,7 @@ func (a *AIAgent) performAPICall(ctx context.Context, r APICallRequest) (APICall
 	call := func(payload any) (any, error) {
 		next, ok := payload.(map[string]any)
 		if !ok && payload != nil {
-			return nil, fmt.Errorf("llm execution middleware passed %T where the request dict belongs", payload)
+			return nil, fmt.Errorf("llm execution middleware passed %s where the request mapping belongs", errchain.Kind(payload))
 		}
 		if a.apiMode == "codex_responses" {
 			var err error

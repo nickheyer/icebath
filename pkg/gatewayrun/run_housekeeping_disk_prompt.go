@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Wait for the scheduled auto prune post to report delivery
@@ -92,7 +93,7 @@ func maybePostAutoPrunePrompt(ctx context.Context, r *GatewayRunner, loop gatewa
 				}
 			}
 		case <-time.After(autoPrunePostWait):
-			return &gateway.PyError{Kind: "TimeoutError", Msg: ""}
+			return &errorutil.Error{Kind: "TimeoutError", Msg: ""}
 		}
 	}
 	return nil

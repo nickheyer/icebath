@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -43,11 +42,9 @@ var (
 	croniterSlash    = regexutil.Lazy(regexp.MustCompile, `^(.+)\/(.+)$`)
 	croniterSpecial  = regexutil.Lazy(regexp.MustCompile, `^(?P<pre>((?P<he>((sun|mon|tue|wed|thu|fri|sat)(-(sun|mon|tue|wed|thu|fri|sat))?)`+
 		`|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(-(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))?)|\w+)#)|l)(?P<last>\d+)$`)
-	// Process wide stand in for the randomized str hash of the last weekday marker
-	pyLastMarkerHash = sync.OnceValue(rand.Uint64)
 )
 
-// CroniterError is the exception croniter raises building an iterator, its str as the message
+// CroniterError reports why a cron expression cannot be parsed
 type CroniterError struct{ Msg string }
 
 func (e *CroniterError) Error() string { return e.Msg }
@@ -229,7 +226,7 @@ func croniterExpand(exprFormat string) (*croniterSpec, error) {
 		}
 		if len(rest) > 0 && distinct != croniterLenMeansAll[cronDowField] {
 			return nil, &CroniterError{Msg: fmt.Sprintf("day-of-week field does not support mixing literal values and nth"+
-				" day of week syntax.  Cron: '%s'    dow=%s vs nth=%s", exprFormat, pyIntSetRepr(rest), spec.nthRepr())}
+				" day of week syntax: cron %q lists the plain days %s beside %s", exprFormat, joinInts(rest), spec.nthText())}
 		}
 	}
 	return spec, nil
@@ -253,7 +250,7 @@ func croniterExpandField(spec *croniterSpec, exprFormat string, field int, expr 
 					e = he
 					k := cronDigits(last)
 					if k < 1 || k > 5 {
-						return nil, croniterFail("[%s] is not acceptable. Invalid day_of_week value: '%s'", exprFormat, strconv.FormatInt(k, 10))
+						return nil, croniterFail("[%s] is not acceptable. Invalid day_of_week value: %d", exprFormat, k)
 					}
 					nth = &cronNth{n: int(k)}
 				} else if last != "" {
@@ -270,10 +267,10 @@ func croniterExpandField(spec *croniterSpec, exprFormat string, field int, expr 
 				}
 				day := cronDigits(text)
 				if day < 1 || day > 31 {
-					return nil, croniterFail("[%s] is not acceptable, nearest weekday day value '%s' out of range", exprFormat, strconv.FormatInt(day, 10))
+					return nil, croniterFail("[%s] is not acceptable, nearest weekday day value %d out of range", exprFormat, day)
 				}
 				if len(pending) > 0 || len(res) > 0 {
-					return nil, croniterFail("[%s] is not acceptable. 'W' can only be used with a single day value, not in a list or range", exprFormat)
+					return nil, croniterFail("[%s] is not acceptable. \"W\" can only be used with a single day value, not in a list or range", exprFormat)
 				}
 				spec.nearest = append(spec.nearest, int(day))
 				res = append(res, cronVal{kind: 'n', n: int(day)})
@@ -366,12 +363,12 @@ func croniterRange(spec *croniterSpec, exprFormat string, field, length int, low
 	if stepText != "" {
 		s := cronDigits(stepText)
 		if s == 0 {
-			return nil, croniterFail("[%s] step '0' in field %d is not acceptable", exprFormat, field)
+			return nil, croniterFail("[%s] step 0 in field %d is not acceptable", exprFormat, field)
 		}
 		step = int(s)
 	}
 	if !croniterOnlyInt().MatchString(low) || !croniterOnlyInt().MatchString(high) {
-		return nil, croniterFail("[%s] bands '%s-%s' in field %d are not acceptable", exprFormat, low, high, field)
+		return nil, croniterFail("[%s] bands %s-%s in field %d are not acceptable", exprFormat, low, high, field)
 	}
 	l := croniterValueAlias(int(cronDigits(low)), field, length)
 	h := croniterValueAlias(int(cronDigits(high)), field, length)
@@ -388,7 +385,7 @@ func croniterRange(spec *croniterSpec, exprFormat string, field, length int, low
 		if len(rng) > 0 {
 			lastVal := rng[len(rng)-1]
 			if lastVal < lo {
-				return nil, croniterFail("list.index(x): x not in list")
+				return nil, croniterFail("[%s] range %d-%d in field %d is out of bands", exprFormat, l, h, field)
 			}
 			alreadySkipped := hi - lastVal
 			if lastVal-lo+step > hi-lo+1 && alreadySkipped < step {
@@ -455,94 +452,26 @@ func sortCronField(res []cronVal) cronField {
 	return out
 }
 
-// Python repr of a set of small ints, CPython slot order for non negative ints being ascending
-func pyIntSetRepr(vals []int) string {
-	items := make([]pySetItem, 0, len(vals))
-	for _, v := range vals {
-		items = append(items, pySetItem{hash: uint64(v), text: strconv.Itoa(v)})
+// Numbers joined by commas in the order given
+func joinInts(vals []int) string {
+	parts := make([]string, len(vals))
+	for i, v := range vals {
+		parts[i] = strconv.Itoa(v)
 	}
-	return pySetRepr(items)
+	return strings.Join(parts, ", ")
 }
 
-// Python repr of the weekday to ordinal sets mapping in insertion order
-func (s *croniterSpec) nthRepr() string {
-	parts := make([]string, 0, len(s.nthOrder))
+// Nth weekday entries in the order the expression gave them, spelled as cron writes them: weekday#n, or L and the weekday for the last one in the month
+func (s *croniterSpec) nthText() string {
+	var parts []string
 	for _, wd := range s.nthOrder {
-		items := make([]pySetItem, 0, len(s.nth[wd]))
 		for _, n := range s.nth[wd] {
 			if n.last() {
-				items = append(items, pySetItem{hash: pyLastMarkerHash(), text: "'l'"})
+				parts = append(parts, "L"+strconv.Itoa(wd))
 				continue
 			}
-			items = append(items, pySetItem{hash: uint64(n.n), text: strconv.Itoa(n.n)})
-		}
-		parts = append(parts, strconv.Itoa(wd)+": "+pySetRepr(items))
-	}
-	return "{" + strings.Join(parts, ", ") + "}"
-}
-
-// Member of an emulated CPython set, its hash and its repr
-type pySetItem struct {
-	hash uint64
-	text string
-}
-
-// Repr of a CPython set built by adding items in order, iterating its open addressing table by slot
-func pySetRepr(items []pySetItem) string {
-	const linearProbes, perturbShift = 9, 5
-	table := make([]*pySetItem, 8)
-	fill := 0
-	insert := func(tbl []*pySetItem, it *pySetItem, clean bool) bool {
-		mask := uint64(len(tbl) - 1)
-		i := it.hash & mask
-		perturb := it.hash
-		for {
-			probes := 0
-			if i+linearProbes <= mask {
-				probes = linearProbes
-			}
-			for j := uint64(0); j <= uint64(probes); j++ {
-				slot := tbl[i+j]
-				if slot == nil {
-					tbl[i+j] = it
-					return true
-				}
-				if !clean && slot.hash == it.hash && slot.text == it.text {
-					return false
-				}
-			}
-			perturb >>= perturbShift
-			i = (i*5 + 1 + perturb) & mask
+			parts = append(parts, strconv.Itoa(wd)+"#"+strconv.Itoa(n.n))
 		}
 	}
-	for idx := range items {
-		if !insert(table, &items[idx], false) {
-			continue
-		}
-		fill++
-		mask := len(table) - 1
-		if fill*5 >= mask*3 {
-			size := 8
-			for size <= fill*4 {
-				size <<= 1
-			}
-			grown := make([]*pySetItem, size)
-			for _, it := range table {
-				if it != nil {
-					insert(grown, it, true)
-				}
-			}
-			table = grown
-		}
-	}
-	var parts []string
-	for _, it := range table {
-		if it != nil {
-			parts = append(parts, it.text)
-		}
-	}
-	if len(parts) == 0 {
-		return "set()"
-	}
-	return "{" + strings.Join(parts, ", ") + "}"
+	return strings.Join(parts, ", ")
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -56,7 +57,7 @@ func hostedParseLinkModes(raw any) ([]string, error) {
 	for _, item := range items {
 		switch item.(type) {
 		case []any, map[string]any, *jsonutil.Object:
-			return nil, &PyError{Kind: "TypeError", Msg: "a link mode is " + errchain.Kind(item) + ", expected text"}
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: "a link mode is " + errchain.Kind(item) + ", expected text"}
 		}
 		mode, ok := item.(string)
 		if !ok || !hostedLinkModes[mode] {
@@ -324,7 +325,7 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*jsonutil.Object, er
 	}
 	endpointFields, ok := hostedMapping(endpoint)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the catalog endpoint is " + errchain.Kind(endpoint) + ", expected a list"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the catalog endpoint is " + errchain.Kind(endpoint) + ", expected a list"}
 	}
 	endpointCopy := jsonutil.NewObject()
 	if ordered, isObject := endpoint.(*jsonutil.Object); isObject {

@@ -202,7 +202,7 @@ func stageSource(ctx context.Context, source, workdir string) (string, string, e
 		staged = resolvePath(guess)
 		provenance = staged
 		missing = fmt.Sprintf("No %s in %s. A local-directory source must contain a distribution.yaml at its root.",
-			profiles.ManifestFilename, filepath.Clean(guess))
+			profiles.ManifestFilename, anyutil.Quote(pathutil.CleanKeepDotDot(guess)))
 	} else {
 		return "", "", distErr("Cannot resolve distribution source: %s. Expected a git URL (e.g. github.com/user/repo) or a local directory.",
 			anyutil.Quote(source))
@@ -471,42 +471,11 @@ func loadShippedCronJobs(ctx context.Context, src string, load func(ctx context.
 	}
 	shipped := jsonutil.NewObject()
 	for _, j := range jobs {
-		if job, ok := j.(map[string]any); ok && pyTruthy(job["id"]) {
-			shipped.Set(profilesPyStr(job["id"]), job)
+		if job, ok := j.(map[string]any); ok && truthy(job["id"]) {
+			shipped.Set(anyutil.String(job["id"]), job)
 		}
 	}
 	return shipped, nil
-}
-
-// Python str of a job id, the text itself for a string
-func profilesPyStr(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return anyutil.String(v)
-}
-
-// Python truthiness of a decoded JSON or YAML value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case float64:
-		return x != 0
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
 }
 
 // Path of base joined with parts as real directories, a file replaced and a symlinked ancestor refused

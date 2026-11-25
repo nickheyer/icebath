@@ -18,33 +18,10 @@ const (
 	generalTopicThreadID = "1"
 )
 
-// Python truthiness of a config value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case float64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
-}
-
 // Telegram chat type mapped to the gateway chat type, private as dm and supergroup as forum or group
 func normalizeChatType(chatType any, isForum bool) string {
 	raw := "dm"
-	if pyTruthy(chatType) {
+	if anyutil.IsTrue(chatType) {
 		raw = anyutil.String(chatType)
 	}
 	normalized := strings.ToLower(strings.TrimSpace(raw))
@@ -83,7 +60,7 @@ func nonEmpty(text string) *string {
 func metadataID(metadata map[string]any, keys ...string) *string {
 	var value any
 	for _, key := range keys {
-		if value = metadata[key]; pyTruthy(value) {
+		if value = metadata[key]; anyutil.IsTrue(value) {
 			break
 		}
 	}
@@ -111,7 +88,7 @@ func metadataReplyToMessageID(metadata map[string]any) *int {
 
 // Whether the metadata marks a private chat topic lane
 func dmTopicFallback(metadata map[string]any) bool {
-	return len(metadata) > 0 && pyTruthy(metadata["telegram_dm_topic_reply_fallback"])
+	return len(metadata) > 0 && anyutil.IsTrue(metadata["telegram_dm_topic_reply_fallback"])
 }
 
 // Whether a send targets a private DM topic lane that needs a reply anchor
@@ -119,7 +96,7 @@ func isPrivateDMTopicSend(threadID *string, metadata map[string]any) bool {
 	if metadataDirectMessagesTopicID(metadata) != nil {
 		return dmTopicFallback(metadata) && metadataReplyToMessageID(metadata) != nil
 	}
-	if len(metadata) > 0 && pyTruthy(metadata["telegram_dm_topic_created_for_send"]) {
+	if len(metadata) > 0 && anyutil.IsTrue(metadata["telegram_dm_topic_created_for_send"]) {
 		return false
 	}
 	return threadID != nil && *threadID != "" && dmTopicFallback(metadata)
@@ -191,7 +168,7 @@ func directTopicKwargs(metadata map[string]any) (*threadKwargs, error) {
 	if directTopicID == nil {
 		return nil, nil
 	}
-	id, err := pyIntOf(*directTopicID)
+	id, err := intOf(*directTopicID)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +180,7 @@ func messageThreadIDForSend(threadID *string) (*int, error) {
 	if threadID == nil || *threadID == "" || *threadID == generalTopicThreadID {
 		return nil, nil
 	}
-	id, err := pyIntOf(*threadID)
+	id, err := intOf(*threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +192,7 @@ func messageThreadIDForTyping(threadID *string) (*int, error) {
 	if threadID == nil || *threadID == "" {
 		return nil, nil
 	}
-	id, err := pyIntOf(*threadID)
+	id, err := intOf(*threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +200,7 @@ func messageThreadIDForTyping(threadID *string) (*int, error) {
 }
 
 // Python int() of text as a Go int, the ValueError text on failure
-func pyIntOf(text string) (int, error) {
+func intOf(text string) (int, error) {
 	n, err := anyutil.ToInt(text)
 	if err != nil {
 		return 0, err
@@ -254,7 +231,7 @@ func shouldRetryWithoutDMTopicReplyAnchor(err error, metadata map[string]any, re
 	if replyToMessageID != nil && strings.Contains(errLower, "message to be replied not found") {
 		return true
 	}
-	if !pyTruthy(metadata["direct_messages_topic_id"]) {
+	if !anyutil.IsTrue(metadata["direct_messages_topic_id"]) {
 		return false
 	}
 	for _, marker := range []string{"direct_messages_topic", "message thread not found", "thread not found", "topic_closed",
@@ -287,7 +264,7 @@ func looksLikeNetworkError(err error) bool {
 	switch strings.ToLower(className(err)) {
 	case "badrequest", "invalidtoken", "forbidden", "retryafter":
 		return false
-	case "networkerror", "timedout", "connectionerror":
+	case "networkerror", "timedout":
 		return true
 	}
 	for _, class := range []string{"BadRequest", "InvalidToken", "Forbidden", "RetryAfter"} {
@@ -417,11 +394,7 @@ func regexp2FindAll(re *regexp2.Regexp, text string) []string {
 // Whether the rich endpoint itself is unavailable, which latches rich delivery off
 func isRichCapabilityError(err error) bool {
 	switch strings.ToLower(className(err)) {
-	case "endpointnotfound", "invalidtoken":
-		return true
-	}
-	switch className(err) {
-	case "AttributeError", "TypeError", "NotImplementedError":
+	case "invalidtoken", "typeerror":
 		return true
 	}
 	if coded, ok := err.(interface{ ErrorCode() int }); ok && coded.ErrorCode() == 404 {
@@ -450,7 +423,7 @@ func isTimedOut(err error) bool {
 
 // Whether a send goes out silently, true in important mode unless the metadata asks to notify or carries an approval prompt
 func notificationKwargs(mode string, metadata map[string]any) bool {
-	if mode != "important" || pyTruthy(metadata["notify"]) || pyTruthy(metadata["is_approval_prompt"]) {
+	if mode != "important" || anyutil.IsTrue(metadata["notify"]) || anyutil.IsTrue(metadata["is_approval_prompt"]) {
 		return false
 	}
 	return true
@@ -495,7 +468,7 @@ func chunkReplyRouting(replyTo *string, metadata map[string]any, threadID *strin
 	}
 	var replyToID *int
 	if shouldThread && source != nil && *source != "" {
-		id, _ := pyIntOf(*source)
+		id, _ := intOf(*source)
 		replyToID = &id
 	}
 	return privateDMTopicSend, dmTopicReplyToOff, replyToID

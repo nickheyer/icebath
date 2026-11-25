@@ -306,6 +306,19 @@ func writeInlineTable(b *strings.Builder, table []entry) error {
 	return nil
 }
 
+// TOML text of a key as Encode writes it: bare when it is nonempty and every byte is an ASCII letter, digit, dash or underscore, otherwise a quoted basic string
+func FormatKey(key string) string { return formatKey(key) }
+
+// TOML basic string of s as Encode writes it: quotes, backslashes and control characters escaped, tabs kept, invalid UTF-8 replaced by U+FFFD
+func FormatString(s string) string {
+	var b strings.Builder
+	writeString(&b, s)
+	return b.String()
+}
+
+// TOML float text of f as Encode writes it, bits 32 or 64 as for strconv.FormatFloat: reads back as the same value and as a float, inf and nan spelled as TOML has them
+func FormatFloat(f float64, bits int) string { return formatFloat(f, bits) }
+
 // Key as written: bare when it is nonempty and every byte is a letter, digit, dash or underscore, otherwise quoted
 func formatKey(key string) string {
 	if key == "" {

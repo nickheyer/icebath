@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -73,7 +74,7 @@ func admissionIsHeartbeat(row *jsonutil.Object) bool {
 				continue
 			}
 		}
-		if flag, ok := holder.Get("heartbeat"); ok && pyTruthy(flag) {
+		if flag, ok := holder.Get("heartbeat"); ok && anyutil.IsTrue(flag) {
 			return true
 		}
 	}

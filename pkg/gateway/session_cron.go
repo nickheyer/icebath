@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
@@ -121,7 +120,7 @@ func admitLocalDelivery(ctx context.Context, a *SessionAuthority, chatID, text s
 	}
 	live, ok = a.live(chatID)
 	if !ok {
-		return false, &pyKeyError{key: chatID}
+		return false, &keyError{key: chatID}
 	}
 	source := live.Source
 	var adapter PlatformAdapter
@@ -148,21 +147,9 @@ func (e *cronResultShapeError) Error() string     { return e.msg }
 func (e *cronResultShapeError) ErrorKind() string { return e.typeName }
 
 // Python KeyError of a missing mapping key
-type pyKeyError struct{ key string }
+type keyError struct{ key string }
 
-func (e *pyKeyError) Error() string { return "missing " + e.key }
-
-// Python repr of an exception, its class name around the repr of its message
-func pyExceptionRepr(err error) string {
-	var keyErr *pyKeyError
-	if errors.As(err, &keyErr) {
-		return "KeyError(" + anyutil.Quote(keyErr.key) + ")"
-	}
-	if err.Error() == "" {
-		return errorutil.Kind(err) + "()"
-	}
-	return errorutil.Kind(err) + "(" + anyutil.Quote(err.Error()) + ")"
-}
+func (e *keyError) Error() string { return "missing " + e.key }
 
 // Seconds a cross goroutine local chat delivery waits for the owner to confirm it
 const localDeliveryTimeout = 60 * time.Second
@@ -196,9 +183,9 @@ func DeliverToLocalChat(ctx context.Context, home, chatID, content string, diagn
 	}
 	if result.err != nil {
 		var refusal *state.RuntimeStoreError
-		var keyErr *pyKeyError
+		var keyErr *keyError
 		if errors.As(result.err, &refusal) || errors.As(result.err, &keyErr) || errors.Is(result.err, errLocalDeliveryTimeout) {
-			msg := fmt.Sprintf("local chat %s: delivery not confirmed: %s", chatID, pyExceptionRepr(result.err))
+			msg := fmt.Sprintf("local chat %s: delivery not confirmed: %s", chatID, result.err.Error())
 			return &msg, nil
 		}
 		return nil, result.err
@@ -210,12 +197,14 @@ func DeliverToLocalChat(ctx context.Context, home, chatID, content string, diagn
 	return &msg, nil
 }
 
-// Python TimeoutError of a stalled owner, repr TimeoutError()
+// Failure of a local chat delivery whose owner did not answer in time
 var errLocalDeliveryTimeout = &timeoutError{}
 
 type timeoutError struct{}
 
-func (*timeoutError) Error() string { return "" }
+func (*timeoutError) Error() string {
+	return fmt.Sprintf("the owning gateway did not answer within %d seconds", int(localDeliveryTimeout/time.Second))
+}
 
 // Kind label of the stalled owner error
 func (*timeoutError) ErrorKind() string { return "TimeoutError" }
@@ -298,13 +287,13 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 	if job == nil {
 		return nil, nil, "", runtimeRefusal("not_found")
 	}
-	if noAgent, _ := job.Get("no_agent"); pyTruthy(noAgent) {
+	if noAgent, _ := job.Get("no_agent"); anyutil.IsTrue(noAgent) {
 		return nil, nil, "", runtimeRefusal("not_found")
 	}
 	cfg := loadGatewayConfig(ctx, "")
 	private := &RecoveredSecrets{}
 	launch := map[string]any{"source": "cli", "request_id": requestID, "toolsets": []any{}}
-	if workdir, _ := job.Get("workdir"); pyTruthy(workdir) {
+	if workdir, _ := job.Get("workdir"); anyutil.IsTrue(workdir) {
 		launch["cwd"] = workdir
 	}
 	policy, err := buildPolicy(ctx, launch, cfg, buildPolicyOptions{PrivateSecrets: private})
@@ -312,7 +301,7 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 		return nil, nil, "", err
 	}
 	name := jid
-	if n, _ := job.Get("name"); pyTruthy(n) {
+	if n, _ := job.Get("name"); anyutil.IsTrue(n) {
 		name = anyutil.String(n)
 	}
 	model, err := hooks.JobModel(ctx, job, jid, name)
@@ -473,27 +462,27 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 		if err != nil {
 			return nil, err
 		}
-		if pyTruthy(saved) {
+		if anyutil.IsTrue(saved) {
 			savedObj, ok := saved.(*jsonutil.Object)
 			if !ok {
 				return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("the saved cron result is %s, expected a mapping", errchain.Kind(saved))}
 			}
 			inner, found := savedObj.Get("result")
 			if !found {
-				return nil, &pyKeyError{key: "result"}
+				return nil, &keyError{key: "result"}
 			}
 			innerObj, ok := inner.(*jsonutil.Object)
 			if !ok {
 				return nil, &cronResultShapeError{"AttributeError", fmt.Sprintf("the cron result payload is %s, expected a mapping", errchain.Kind(inner))}
 			}
 			result, _ = innerObj.Get("cron_result")
-			if f, _ := innerObj.Get("cron_job_flags"); pyTruthy(f) {
+			if f, _ := innerObj.Get("cron_job_flags"); anyutil.IsTrue(f) {
 				flags = f
 			}
 		}
 		if result == nil {
 			outcome, _ := row.Get("outcome")
-			if !pyTruthy(outcome) {
+			if !anyutil.IsTrue(outcome) {
 				outcome = "unknown_execution"
 			}
 			result = []any{false, "", "", outcome}
@@ -548,7 +537,7 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	held, _ := adapters.Get(PlatformLocal)
 	policy, ok := held.(*LocalSessionAdapter).Policies[sid]
 	if !ok {
-		return nil, &pyKeyError{key: sid}
+		return nil, &keyError{key: sid}
 	}
 	frozenValue, err := jsonutil.Decode(policy.RequestJSON)
 	if err != nil {
@@ -560,14 +549,14 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	}
 	frozenExtra, found := frozen.Get("extra_prompt")
 	if !found {
-		return nil, &pyKeyError{key: "extra_prompt"}
+		return nil, &keyError{key: "extra_prompt"}
 	}
 	if !anyutil.Equal(frozenExtra, params["extra_prompt"]) {
 		return nil, runtimeRefusal("admission_conflict")
 	}
 	cronJob, found := frozen.Get("cron_job")
 	if !found {
-		return nil, &pyKeyError{key: "cron_job"}
+		return nil, &keyError{key: "cron_job"}
 	}
 	stateOut["job"] = cronJob
 	stateOut["session_id"] = sid
@@ -673,14 +662,14 @@ func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *
 	data := dataValue.(*jsonutil.Object)
 	extraValue, _ := data.Get("extra_prompt")
 	extraText := ""
-	if pyTruthy(extraValue) {
+	if anyutil.IsTrue(extraValue) {
 		extraText, _ = extraValue.(string)
 	}
 	payload, _ := row.Get("payload")
 	dataRequestID, _ := data.Get("request_id")
 	live, ok := a.live(ref.SessionID)
 	if !ok {
-		return "", &pyKeyError{key: ref.SessionID}
+		return "", &keyError{key: ref.SessionID}
 	}
 	principal, _ := row.Get("principal_id")
 	admissionID := rowString(row, "admission_id")

@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var walIncompatMarkers = []string{"locking protocol", "not authorized", "disk i/o error"}
@@ -66,7 +67,7 @@ func modeFromRow(row []any) string {
 	if len(row) == 0 || row[0] == nil {
 		return ""
 	}
-	return pyLower(pyStrip(pyStr(row[0])))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(row[0])))
 }
 
 // Journal mode read from the header, false when undeterminable after retrying transient disk errors
@@ -78,7 +79,7 @@ var onDiskJournalMode = func(ctx context.Context, conn SQLiteConn) (string, bool
 			if !isOperationalError(err) {
 				return "", false, err
 			}
-			if !strings.Contains(pyLower(errText(err)), "disk i/o error") {
+			if !strings.Contains(strings.ToLower(errText(err)), "disk i/o error") {
 				return "", false, nil
 			}
 			lastErr = err
@@ -100,7 +101,7 @@ var onDiskJournalMode = func(ctx context.Context, conn SQLiteConn) (string, bool
 		if mode == nil {
 			return "", false, nil
 		}
-		return pyLower(pyStrip(pyStr(mode))), true, nil
+		return strings.ToLower(strings.TrimSpace(anyutil.String(mode))), true, nil
 	}
 	pkgLog().Debug(fmt.Sprintf("_on_disk_journal_mode: retries exhausted on disk read (%s)", errText(lastErr)))
 	return "", false, nil
@@ -200,7 +201,7 @@ func SQLiteSourceID() string {
 	if err != nil || len(row) == 0 || row[0] == nil {
 		return ""
 	}
-	return pyStr(row[0])
+	return anyutil.String(row[0])
 }
 
 // Reports whether the file already holds pages, false whenever the answer is unknown
@@ -209,7 +210,7 @@ func databaseHasContent(ctx context.Context, conn SQLiteConn) bool {
 	if err != nil || len(row) == 0 || row[0] == nil {
 		return false
 	}
-	n, err := pyIntOf(row[0])
+	n, err := intOfValue(row[0])
 	return err == nil && n.Sign() > 0
 }
 
@@ -250,40 +251,58 @@ var (
 
 const procSelfMountinfo = "/proc/self/mountinfo"
 
-// Filesystem type of the longest mount point prefixing the directory, empty when unreadable or unmatched
+// Filesystem type of the longest mount point prefixing the directory, the last listed winning a tie as it covers the earlier ones, empty when unreadable or unmatched
 func mountinfoFstype(directory, mountinfoPath string) (string, error) {
 	if strings.ContainsRune(mountinfoPath, 0) {
-		return "", &pyConvError{"ValueError", "the mount path holds a null byte"}
+		return "", &convError{"ValueError", "the mount path holds a null byte"}
 	}
 	data, err := os.ReadFile(mountinfoPath)
 	if err != nil {
 		return "", nil
 	}
 	bestLen, bestFstype := -1, ""
-	for _, line := range pySplitlines(pyDecodeUTF8Replace(data)) {
+	for _, line := range strings.Split(string(data), "\n") {
 		fields, tail, _ := strings.Cut(line, " - ")
-		parts := pySplitWhitespace(fields)
+		parts := mountinfoFields(fields)
 		if len(parts) < 5 || tail == "" {
 			continue
 		}
-		mountPoint := parts[4]
-		if strings.Contains(mountPoint, `\`) {
-			if mountPoint, err = pyUnicodeEscapeDecode(latin1Ignore(mountPoint)); err != nil {
-				return "", err
+		mountPoint := unescapeMountinfoField(parts[4])
+		if len(mountPoint) >= bestLen && (directory == mountPoint || strings.HasPrefix(directory, strings.TrimRight(mountPoint, "/")+"/")) {
+			tailParts := mountinfoFields(tail)
+			if len(tailParts) == 0 {
+				return "", &convError{"IndexError", "a mountinfo line has no file system type"}
 			}
-		}
-		if directory == mountPoint || strings.HasPrefix(directory, strings.TrimRight(mountPoint, "/")+"/") {
-			if n := pyLenWTF8(mountPoint); n > bestLen {
-				tailParts := pySplitWhitespace(tail)
-				if len(tailParts) == 0 {
-					return "", &pyConvError{"IndexError", "a mountinfo line has no file system type"}
-				}
-				bestLen, bestFstype = n, tailParts[0]
-			}
+			bestLen, bestFstype = len(mountPoint), tailParts[0]
 		}
 	}
-	return pyLower(bestFstype), nil
+	return strings.ToLower(bestFstype), nil
 }
+
+// Space separated fields of a mountinfo line, whose paths carry their own spaces, tabs and newlines escaped
+func mountinfoFields(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == ' ' })
+}
+
+// Bytes of a mountinfo path field with each kernel octal escape such as \040 decoded, any other backslash kept as written
+func unescapeMountinfoField(field string) string {
+	if !strings.Contains(field, `\`) {
+		return field
+	}
+	out := make([]byte, 0, len(field))
+	for i := 0; i < len(field); i++ {
+		if field[i] == '\\' && i+3 < len(field) && '0' <= field[i+1] && field[i+1] <= '3' && isOctalDigit(field[i+2]) && isOctalDigit(field[i+3]) {
+			out = append(out, (field[i+1]-'0')<<6|(field[i+2]-'0')<<3|(field[i+3]-'0'))
+			i += 3
+			continue
+		}
+		out = append(out, field[i])
+	}
+	return string(out)
+}
+
+// Whether c is one of the digits 0 to 7
+func isOctalDigit(c byte) bool { return '0' <= c && c <= '7' }
 
 // Reports a directory on a virtiofs or 9p mount per the mount table, Linux only
 func detectCrossVMFS(directory, mountinfoPath string) (bool, error) {
@@ -299,11 +318,11 @@ var pathOnCrossVMFS = func(path string) (bool, error) {
 	if strings.ContainsRune(path, 0) {
 		return false, nil
 	}
-	resolved, err := pyRealpath(path)
+	resolved, err := realpath(path)
 	if err != nil {
 		return false, nil
 	}
-	directory := pyDirname(resolved)
+	directory := dirname(resolved)
 	if directory == "" {
 		directory = "/"
 	}
@@ -351,7 +370,7 @@ func connectionDBFile(ctx context.Context, conn SQLiteConn) (string, error) {
 			return "", nil
 		}
 	}
-	return pyStr(row[2]), nil
+	return anyutil.String(row[2]), nil
 }
 
 // Fails unless SQLite reported delete for an explicit operator request
@@ -481,7 +500,7 @@ func enableWAL(ctx context.Context, conn SQLiteConn, dbLabel string, requireWAL 
 		if mode == "wal" {
 			return walActivated()
 		}
-		silent := &WALUnsupportedError{Msg: fmt.Sprintf("journal_mode=WAL refused without raising (still %s)", pyRepr(mode))}
+		silent := &WALUnsupportedError{Msg: fmt.Sprintf("journal_mode=WAL refused without raising (still %s)", strconv.Quote(mode))}
 		if requireWAL {
 			return "", silent
 		}
@@ -495,7 +514,7 @@ func enableWAL(ctx context.Context, conn SQLiteConn, dbLabel string, requireWAL 
 		return "", err
 	}
 	handled, exc := err, err
-	msg := pyLower(errText(exc))
+	msg := strings.ToLower(errText(exc))
 	if !containsAny(msg, walIncompatMarkers) {
 		return "", handled
 	}
@@ -504,7 +523,7 @@ func enableWAL(ctx context.Context, conn SQLiteConn, dbLabel string, requireWAL 
 			time.Sleep(50 * time.Millisecond)
 			row, retryErr := fetchOne(ctx, conn, "PRAGMA journal_mode=WAL")
 			if retryErr != nil {
-				if !isOperationalError(retryErr) || !strings.Contains(pyLower(errText(retryErr)), "disk i/o error") {
+				if !isOperationalError(retryErr) || !strings.Contains(strings.ToLower(errText(retryErr)), "disk i/o error") {
 					return "", retryErr
 				}
 				exc = retryErr
@@ -556,7 +575,7 @@ func setJournalModeNoWait(ctx context.Context, conn SQLiteConn, mode string) (st
 			return "", err
 		}
 	} else if len(row) > 0 && row[0] != nil {
-		if n, convErr := pyIntOf(row[0]); convErr == nil {
+		if n, convErr := intOfValue(row[0]); convErr == nil {
 			previous = n
 		}
 	}
@@ -720,7 +739,7 @@ func logArgText(arg any) string {
 	case error:
 		return errText(a)
 	}
-	return pyFormat(arg)
+	return formatted(arg)
 }
 
 // Emits one table log line once per process per label, resolving function arguments only after the dedupe

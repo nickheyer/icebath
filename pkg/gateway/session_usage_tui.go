@@ -35,7 +35,7 @@ func usageIsInt(value any) bool {
 	if _, ok := value.(bool); ok {
 		return true
 	}
-	return pyIsInt(value)
+	return isIntValue(value)
 }
 
 // Whole percent of part over whole, half to even and clamped to 0 through 100
@@ -59,7 +59,7 @@ func tuiUsage(stats *jsonutil.Object) *jsonutil.Object {
 	usage.Set("total", anyutil.Or(get("total_tokens"), int64(0)))
 	usage.Set("calls", anyutil.Or(get("api_calls"), int64(0)))
 	used, maximum := anyutil.Or(get("last_prompt_tokens"), int64(0)), anyutil.Or(get("context_length"), int64(0))
-	if pyTruthy(used) && pyTruthy(maximum) {
+	if anyutil.IsTrue(used) && anyutil.IsTrue(maximum) {
 		usedF, _ := usageFloat(used)
 		maxF, _ := usageFloat(maximum)
 		if maxF < usedF {

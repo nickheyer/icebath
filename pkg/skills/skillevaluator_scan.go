@@ -95,25 +95,25 @@ func (s *Scope) Tier1AdvisoryEnabled() (enabled bool) {
 func parseTier1Report(report *jsonutil.Object) (out Tier1Report, err error) {
 	defer hubRecover(&err)
 	findings, incomplete, failed := []Tier1Finding{}, []string{}, false
-	for _, res := range pyIterate(anyutil.Or(pyGet(report, "results", []any{}), []any{})) {
-		validator := anyutil.String(pyGet(res, "validator", "unknown"))
-		if strings.ToLower(anyutil.String(pyGet(res, "status", ""))) == "incomplete" {
+	for _, res := range iterate(anyutil.Or(lookup(report, "results", []any{}), []any{})) {
+		validator := fieldText(res, "validator", "unknown")
+		if strings.ToLower(anyutil.String(lookup(res, "status", ""))) == "incomplete" {
 			incomplete = append(incomplete, validator)
 		} else {
-			failed = failed || !anyutil.IsTrue(pyGet(res, "passed", true))
+			failed = failed || !anyutil.IsTrue(lookup(res, "passed", true))
 		}
-		for _, f := range pyIterate(anyutil.Or(pyGet(res, "findings", []any{}), []any{})) {
+		for _, f := range iterate(anyutil.Or(lookup(res, "findings", []any{}), []any{})) {
 			if _, isDict := f.(*jsonutil.Object); !isDict {
 				continue
 			}
-			line, lerr := anyutil.ToInt(anyutil.Or(pyGet(f, "line_number", nil), 0))
+			line, lerr := anyutil.ToInt(anyutil.Or(lookup(f, "line_number", nil), 0))
 			if lerr != nil && !errors.Is(lerr, anyutil.ErrRange) {
 				hubRaise(lerr)
 			}
 			findings = append(findings, Tier1Finding{
-				Check: anyutil.String(pyGet(f, "check_name", "")), Validator: validator,
-				Severity: strings.ToLower(anyutil.String(pyGet(f, "severity", "info"))), Message: textutil.First(anyutil.String(pyGet(f, "message", "")), 200),
-				File: anyutil.String(pyGet(f, "file_path", "")), Line: line, Suggestion: textutil.First(anyutil.String(pyGet(f, "suggestion", "")), 200),
+				Check: anyutil.String(lookup(f, "check_name", "")), Validator: validator,
+				Severity: strings.ToLower(fieldText(f, "severity", "info")), Message: textutil.First(anyutil.String(lookup(f, "message", "")), 200),
+				File: anyutil.String(lookup(f, "file_path", "")), Line: line, Suggestion: textutil.First(anyutil.String(lookup(f, "suggestion", "")), 200),
 			})
 		}
 	}
@@ -200,7 +200,7 @@ func FormatTier1Report(report Tier1Report, limit int) string {
 		lines = append(lines, fmt.Sprintf("SkillEvaluator Tier 1 (advisory): %d finding(s) \xe2\x80\x94 informational, "+
 			"verify before relying on this skill.", len(report.Findings)))
 		shown := append(report.SecretsFindings(), report.AdvisoryFindings()...)
-		for _, f := range pyHeadFindings(shown, limit) {
+		for _, f := range headFindings(shown, limit) {
 			label := strings.ToUpper(f.Severity)
 			if f.IsSecretsClass() {
 				label = "SECRETS"
@@ -218,7 +218,7 @@ func FormatTier1Report(report Tier1Report, limit int) string {
 }
 
 // Python shown[:limit] including negative limits
-func pyHeadFindings(s []Tier1Finding, limit int) []Tier1Finding {
+func headFindings(s []Tier1Finding, limit int) []Tier1Finding {
 	if limit < 0 {
 		limit += len(s)
 		if limit < 0 {

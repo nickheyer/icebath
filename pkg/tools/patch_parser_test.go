@@ -136,7 +136,7 @@ func TestPatchParserParseShapes(t *testing.T) {
 		t.Fatalf("empty patch must be an empty list without error, got %v %q", ops, errText)
 	}
 	_, errText = parseV4APatch("*** Update File: x\n*** Move File: a -> \n")
-	want := "Parse error: UPDATE 'x': no hunks found; MOVE 'a': missing destination path (expected 'src -> dst')"
+	want := `Parse error: UPDATE "x": no hunks found; MOVE "a": missing destination path (expected 'src -> dst')`
 	if errText != want {
 		t.Fatalf("parse errors:\n got  %q\n want %q", errText, want)
 	}
@@ -215,15 +215,9 @@ func TestPatchParserHelpers(t *testing.T) {
 	if countOccurrences("aaaa", "aa") != 3 || countOccurrences("abc", "") != 4 {
 		t.Fatal("countOccurrences must count overlaps")
 	}
-	if got := pyReprStr("it's"); got != `"it's"` {
-		t.Fatalf("pyReprStr = %s", got)
-	}
-	if got := pyReprStr("a\tb\x01 "); got != `'a\tb\x01\xa0'` {
-		t.Fatalf("pyReprStr = %s", got)
-	}
-	lines := pySplitLinesKeepEnds("a\r\nb\rc d")
+	lines := splitLinesKeepEndsValue("a\r\nb\rc d")
 	if len(lines) != 4 || lines[0] != "a\r\n" || lines[1] != "b\r" || lines[2] != "c " || lines[3] != "d" {
-		t.Fatalf("pySplitLinesKeepEnds = %q", lines)
+		t.Fatalf("splitLinesKeepEndsValue = %q", lines)
 	}
 	if got := runeOffsetBack("héllo", 6, 2); got != 4 {
 		t.Fatalf("runeOffsetBack = %d", got)

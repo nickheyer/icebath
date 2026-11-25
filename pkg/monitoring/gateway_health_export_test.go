@@ -141,10 +141,7 @@ func TestRegisteredObservableMetricNamesCoverSnapshotMetrics(t *testing.T) {
 		return jsonutil.ObjectOf("gateway_state", "running", "active_agents", 1,
 			"platforms", jsonutil.ObjectOf("slack", jsonutil.ObjectOf("state", "fatal")))
 	}
-	snap, err := readRuntimeSnapshot(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	snap := readRuntimeSnapshot(context.Background())
 	registered := map[string]bool{}
 	for _, n := range observableMetricNames {
 		registered[n] = true

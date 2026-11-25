@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Discovery sources in precedence order, bundled first so a provider dropped in a tree never shadows a shipped one
@@ -356,8 +357,8 @@ func ParkedProviderNotice(ctx context.Context, env *tools.Env, name string) (str
 	why := ""
 	if tree, err := registryConfig(ctx, env); err == nil {
 		if record, ok := tree.Get("plugins." + disabledByUpdateRecord).(map[string]any); ok {
-			if recorded, ok := record[name].(map[string]any); ok && pyTruthy(recorded["reason"]) {
-				why = fmt.Sprintf(" An update turned it off (%s) and a later update retries it.", pyStr(recorded["reason"]))
+			if recorded, ok := record[name].(map[string]any); ok && anyutil.IsTrue(recorded["reason"]) {
+				why = fmt.Sprintf(" An update turned it off (%s) and a later update retries it.", anyutil.String(recorded["reason"]))
 			}
 		}
 	}

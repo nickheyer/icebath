@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -199,7 +200,7 @@ func (c *RecoverableHandleCache) GetWith(ctx context.Context, path string, opene
 		}
 		if !stale {
 			unavailable.failures++
-			unavailable.err = err.Error()
+			unavailable.err = errchain.OSText(err)
 			unavailable.cause = err
 			backoff := c.initialRetryDelay * math.Pow(2, float64(min(unavailable.failures-1, 30)))
 			unavailable.nextRetryAt = c.clock() + math.Min(backoff, c.maxRetryDelay)

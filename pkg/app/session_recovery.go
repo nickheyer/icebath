@@ -679,7 +679,7 @@ func recoveryInspectConnection(conn state.SQLiteConn) (*jsonutil.Object, error) 
 		entry, _ := tables.Get(required)
 		obj := entry.(*jsonutil.Object)
 		rows, _ := obj.Get("rows")
-		if !pyTruthyValue(obj.Value("available")) || rows == nil {
+		if !anyutil.IsTrue(obj.Value("available")) || rows == nil {
 			errs = append(errs, fmt.Sprintf("required table %s is not completely readable", required))
 		}
 	}
@@ -931,7 +931,7 @@ func recoverySalvageRowidBounds(source state.SQLiteConn, table string) (*jsonuti
 				return nil, err
 			}
 			probes = append(probes, probe)
-			if pyTruthyValue(probe.Value("capped")) {
+			if anyutil.IsTrue(probe.Value("capped")) {
 				result.Set(pair[0], probe.Value("bound"))
 			}
 		}
@@ -1175,7 +1175,7 @@ func recoveryCopyTableSalvage(source, destination state.SQLiteConn, table string
 		return nil, err
 	}
 	result.Set("rowid_bounds", bounds)
-	if pyTruthyValue(bounds.Value("empty")) {
+	if anyutil.IsTrue(bounds.Value("empty")) {
 		result.Set("status", "complete")
 		return result, nil
 	}
@@ -1388,14 +1388,14 @@ func recoveryFloat(v any) float64 {
 	case float64:
 		return x
 	case string:
-		f, _ := pyFloatOf(x)
+		f, _ := floatOf(x)
 		return f
 	}
 	return 0
 }
 
 // Python float of text, false when float rejects it
-func pyFloatOf(text string) (float64, bool) {
+func floatOf(text string) (float64, bool) {
 	f, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 	return f, err == nil
 }
@@ -1536,7 +1536,7 @@ func recoveryVerifyStructure(conn state.SQLiteConn, verification *jsonutil.Objec
 	}
 	verification.Set("schema_version", schemaVersion)
 	if schemaVersion != int64(state.SchemaVersion) {
-		shown := "None"
+		shown := "missing"
 		if schemaVersion != nil {
 			shown = fmt.Sprint(schemaVersion)
 		}
@@ -1628,11 +1628,11 @@ func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *jsonutil.Objec
 	for _, table := range append([]string{"sessions", "messages"}, recoveryAuxiliaryTables...) {
 		want := expected[table]
 		if want != nil && !anyutil.Equal(countOf(table), *want) {
-			shown := "None"
 			if v := countOf(table); v != nil {
-				shown = fmt.Sprint(v)
+				flag(fmt.Sprintf("%s count is %s, expected %d", table, fmt.Sprint(v), *want), allowPartial)
+			} else {
+				flag(fmt.Sprintf("%s table is missing, expected %d rows", table, *want), allowPartial)
 			}
-			flag(fmt.Sprintf("%s count is %s, expected %d", table, shown, *want), allowPartial)
 		}
 	}
 	cleanup := orphanCleanup
@@ -1702,7 +1702,7 @@ func recoveryVerifyRecoveredDatabase(ctx context.Context, output string, expecte
 	errs, _ := verification.Value("errors").([]any)
 	healthy := len(errs) == 0
 	verification.Set("healthy", healthy)
-	verification.Set("complete", healthy && !pyTruthyValue(verification.Value("loss_detected")))
+	verification.Set("complete", healthy && !anyutil.IsTrue(verification.Value("loss_detected")))
 	return verification, nil
 }
 
@@ -1847,9 +1847,9 @@ func recoveryReport(source, output string, inspection, diskSpace, verification *
 		excluded.Set(table, recoveryTableEntry(inspection, table))
 	}
 	report.Set("verification", verification)
-	report.Set("complete", pyTruthyValue(verification.Value("complete")) && unchanged)
-	report.Set("partial", pyTruthyValue(verification.Value("loss_detected")))
-	report.Set("verified", pyTruthyValue(verification.Value("healthy")) && unchanged)
+	report.Set("complete", anyutil.IsTrue(verification.Value("complete")) && unchanged)
+	report.Set("partial", anyutil.IsTrue(verification.Value("loss_detected")))
+	report.Set("verified", anyutil.IsTrue(verification.Value("healthy")) && unchanged)
 	report.Set("installed", false)
 	report.Set("runtime_state", jsonutil.ObjectOf("policy", "transcript-only; runtime ledger excluded; fresh epoch on activation",
 		"excluded_tables", excluded))
@@ -1900,7 +1900,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		return nil, err
 	}
 	defer os.RemoveAll(tempDir)
-	if !pyTruthyValue(inspection.Value("recoverable")) && !allowPartial {
+	if !anyutil.IsTrue(inspection.Value("recoverable")) && !allowPartial {
 		var reasons []string
 		errs, _ := inspection.Value("errors").([]any)
 		for _, e := range errs {
@@ -1915,7 +1915,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 	}
 	var missingRequired []string
 	for _, table := range []string{"sessions", "messages"} {
-		if !pyTruthyValue(recoveryTableEntry(inspection, table).Value("available")) {
+		if !anyutil.IsTrue(recoveryTableEntry(inspection, table).Value("available")) {
 			missingRequired = append(missingRequired, table)
 		}
 	}
@@ -1935,7 +1935,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		}
 		topic := false
 		for _, table := range recoveryTopicTables {
-			if pyTruthyValue(recoveryTableEntry(inspection, table).Value("available")) {
+			if anyutil.IsTrue(recoveryTableEntry(inspection, table).Value("available")) {
 				topic = true
 			}
 		}
@@ -1947,7 +1947,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		tables := append(append(append(append([]string{}, recoveryCanonicalTables...), "state_meta"), recoveryTopicTables...), recoveryAuxiliaryTables...)
 		for _, table := range tables {
 			entry := recoveryTableEntry(inspection, table)
-			if !recoveryContains(recoveryCanonicalTables, table) && !pyTruthyValue(entry.Value("available")) {
+			if !recoveryContains(recoveryCanonicalTables, table) && !anyutil.IsTrue(entry.Value("available")) {
 				copyReport.Set(table, jsonutil.ObjectOf("status", "missing", "copied_rows", int64(0)))
 				continue
 			}
@@ -1976,7 +1976,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 	expected := map[string]*int64{}
 	for _, table := range append(append([]string{}, recoveryCanonicalTables...), recoveryAuxiliaryTables...) {
 		entry := recoveryTableEntry(inspection, table)
-		if recoveryContains(recoveryCanonicalTables, table) || pyTruthyValue(entry.Value("available")) {
+		if recoveryContains(recoveryCanonicalTables, table) || anyutil.IsTrue(entry.Value("available")) {
 			expected[table] = recoveryEntryRows(entry)
 		}
 	}

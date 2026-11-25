@@ -237,10 +237,10 @@ func TestSlashCommandSubcommands(t *testing.T) {
 	}
 	p := filepath.Join(h, "test_slash.py")
 	write(t, p, "abc")
-	if got := run("track " + p + " nope"); got != "Unknown category 'nope'. Allowed: ['chrome-profile', 'cron-output', 'download', 'other', 'research', 'temp', 'test']" {
+	if got := run("track " + p + " nope"); got != `Unknown category "nope". Allowed: chrome-profile, cron-output, download, other, research, temp, test` {
 		t.Fatal(got)
 	}
-	if got := run("track " + p + " test"); got != "Tracked "+p+" as 'test'." {
+	if got := run("track " + p + " test"); got != "Tracked "+p+` as "test".` {
 		t.Fatal(got)
 	}
 	if got := run("track " + p + " test"); got != "Not tracked (already present, missing, or outside ICEBATH_HOME): "+p {

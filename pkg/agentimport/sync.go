@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -94,7 +95,7 @@ func ManagedSkills(entry any) map[string]any {
 		}
 	case []any:
 		for _, name := range skills {
-			out[pyStr(name)] = nil
+			out[anyutil.String(name)] = nil
 		}
 	}
 	return out
@@ -197,7 +198,7 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 		if !ok || !truthy(entry.Value("source")) {
 			continue
 		}
-		sourceDir := pyStr(entry.Value("source"))
+		sourceDir := anyutil.String(entry.Value("source"))
 		if !isDir(sourceDir) {
 			c.PrintInfo(fmt.Sprintf("%s: source %s no longer exists — skipped", name, sourceDir))
 			continue
@@ -221,7 +222,7 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 			return imp.Run()
 		}()
 		if err != nil {
-			c.PrintError(fmt.Sprintf("%s: sync failed: %s", name, pyErrText(err)))
+			c.PrintError(fmt.Sprintf("%s: sync failed: %s", name, errText(err)))
 			pkgLog().Debug("import-agent sync error", "error", err)
 			failed++
 			continue
@@ -233,7 +234,7 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 		}
 		if !args.DryRun {
 			if err := UpdateSyncManifest(ctx, name, sourceDir, h, overwrite, report, !hadErrors); err != nil {
-				pkgLog().Warn(fmt.Sprintf("Could not update import sync manifest: %s", pyErrText(err)))
+				pkgLog().Warn(fmt.Sprintf("Could not update import sync manifest: %s", errText(err)))
 			}
 		}
 		synced++

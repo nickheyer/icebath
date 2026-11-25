@@ -20,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -54,7 +55,7 @@ func (c OAuthClient) Fingerprint() string {
 	list := func(items []string) string {
 		quoted := make([]string, len(items))
 		for i, s := range items {
-			quoted[i] = pyJSONQuote(s)
+			quoted[i] = jsonQuote(s)
 		}
 		return "[" + strings.Join(quoted, ", ") + "]"
 	}
@@ -64,13 +65,13 @@ func (c OAuthClient) Fingerprint() string {
 	}
 	text := "{" + strings.Join([]string{
 		`"authorize_params": [` + strings.Join(params, ", ") + "]",
-		`"authorize_url": ` + pyJSONQuote(c.AuthorizeURL),
-		`"client_id_env": ` + pyJSONQuote(c.ClientIDEnv),
-		`"client_secret_env": ` + pyJSONQuote(c.ClientSecretEnv),
+		`"authorize_url": ` + jsonQuote(c.AuthorizeURL),
+		`"client_id_env": ` + jsonQuote(c.ClientIDEnv),
+		`"client_secret_env": ` + jsonQuote(c.ClientSecretEnv),
 		`"hosts": ` + list(c.Hosts),
-		`"id": ` + pyJSONQuote(c.ID),
+		`"id": ` + jsonQuote(c.ID),
 		`"scopes": ` + list(c.Scopes),
-		`"token_url": ` + pyJSONQuote(c.TokenURL),
+		`"token_url": ` + jsonQuote(c.TokenURL),
 	}, ", ") + "}"
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
@@ -125,7 +126,7 @@ func pluginOAuthOwnedEnv(name string) bool {
 func pluginOAuthEntryProblems(entry map[string]any, where string) []string {
 	var problems []string
 	if id, ok := entry["id"].(string); !ok || !pluginOAuthIDRe.MatchString(id) {
-		problems = append(problems, fmt.Sprintf("%s.id: %s must be lowercase letters, digits and dashes", where, pyRepr(entry["id"])))
+		problems = append(problems, fmt.Sprintf("%s.id: %s must be lowercase letters, digits and dashes", where, anyutil.Quote(entry["id"])))
 	}
 	for _, field := range []string{"authorize_url", "token_url"} {
 		problems = append(problems, pluginOAuthURLProblems(where+"."+field, entry[field])...)
@@ -134,7 +135,7 @@ func pluginOAuthEntryProblems(entry map[string]any, where string) []string {
 	if scopes, ok := entry["scopes"].([]any); ok && len(scopes) > 0 {
 		scopesOK = true
 		for _, s := range scopes {
-			if str, ok := s.(string); !ok || pyStripSpace(str) == "" {
+			if str, ok := s.(string); !ok || strings.TrimSpace(str) == "" {
 				scopesOK = false
 			}
 		}
@@ -149,7 +150,7 @@ func pluginOAuthEntryProblems(entry map[string]any, where string) []string {
 		name := entry[spec.field]
 		str, isStr := name.(string)
 		if (spec.required || truthy(name)) && !(isStr && pluginOAuthEnvRe.MatchString(str)) {
-			problems = append(problems, fmt.Sprintf("%s.%s: %s must be an UPPER_SNAKE environment variable name", where, spec.field, pyRepr(name)))
+			problems = append(problems, fmt.Sprintf("%s.%s: %s must be an UPPER_SNAKE environment variable name", where, spec.field, anyutil.Quote(name)))
 		} else if truthy(name) && pluginOAuthOwnedEnv(str) {
 			problems = append(problems, fmt.Sprintf("%s.%s: %s is a variable Icebath uses itself; declare the plugin's own", where, spec.field, str))
 		}
@@ -228,7 +229,7 @@ func ParseOAuthClients(manifest map[string]any) ([]OAuthClient, []string) {
 		if len(entryProblems) == 0 {
 			for _, c := range clients {
 				if c.ID == entry["id"] {
-					entryProblems = []string{fmt.Sprintf("%s.id: %s is declared twice", where, pyRepr(entry["id"]))}
+					entryProblems = []string{fmt.Sprintf("%s.id: %s is declared twice", where, anyutil.Quote(entry["id"]))}
 					break
 				}
 			}
@@ -312,7 +313,7 @@ func pluginOAuthIdPHosts(c OAuthClient) string {
 func OAuthNotice(manifest map[string]any) string {
 	name := "<plugin>"
 	if truthy(manifest["name"]) {
-		name = pyStr(manifest["name"])
+		name = anyutil.String(manifest["name"])
 	}
 	clients, _ := ParseOAuthClients(manifest)
 	parts := make([]string, len(clients))
@@ -340,9 +341,9 @@ func pluginOAuthDeclaredEnvNames(manifest map[string]any) map[string]bool {
 		items, _ := manifest[field].([]any)
 		for _, entry := range items {
 			if m, ok := entry.(map[string]any); ok {
-				names[pyStr(m["name"])] = true
+				names[anyutil.String(m["name"])] = true
 			} else {
-				names[pyStr(entry)] = true
+				names[anyutil.String(entry)] = true
 			}
 		}
 	}
@@ -356,11 +357,11 @@ func OAuthAdmissionProblems(manifest map[string]any, pluginDir string) []string 
 	core := pluginProviderRequestProviderIDs()
 	for _, c := range clients {
 		if core[c.ID] {
-			problems = append(problems, fmt.Sprintf("oauth id %s is a Icebath sign-in provider; pick another id", pyRepr(c.ID)))
+			problems = append(problems, fmt.Sprintf("oauth id %s is a Icebath sign-in provider; pick another id", anyutil.Quote(c.ID)))
 		}
 		for _, name := range []string{c.ClientIDEnv, c.ClientSecretEnv} {
 			if name != "" && !declared[name] {
-				problems = append(problems, fmt.Sprintf("oauth %s: %s must be declared under requires_env or optional_env", pyRepr(c.ID), name))
+				problems = append(problems, fmt.Sprintf("oauth %s: %s must be declared under requires_env or optional_env", anyutil.Quote(c.ID), name))
 			}
 		}
 	}
@@ -398,7 +399,7 @@ func OAuthAdmissionWarnings(manifest map[string]any, pluginDir string) []string 
 		}
 		for _, host := range c.Hosts {
 			if !parents[pluginOAuthParent(host)] {
-				warnings = append(warnings, fmt.Sprintf("oauth %s: host %s shares no domain with %s; check the provider owns it", pyRepr(c.ID), host, pluginOAuthIdPHosts(c)))
+				warnings = append(warnings, fmt.Sprintf("oauth %s: host %s shares no domain with %s; check the provider owns it", anyutil.Quote(c.ID), host, pluginOAuthIdPHosts(c)))
 			}
 		}
 	}
@@ -520,7 +521,7 @@ func pluginOAuthEnv(env PoolEnv, name, code, key string) (string, error) {
 
 // Token endpoint failure keeping an actionable OAuth error code and never echoing the body
 func pluginOAuthTokenError(key string, status int, payload map[string]any) *AuthError {
-	code := strings.TrimSpace(pyStrOrBlank(payload["error"]))
+	code := strings.TrimSpace(strOrBlank(payload["error"]))
 	if oauthGrantDeadCodes[code] || pluginOAuthClientErrorCodes[code] {
 		return pluginOAuthAuthError(key, fmt.Sprintf("the token endpoint refused the request (HTTP %d, %s).", status, code), code)
 	}
@@ -528,17 +529,17 @@ func pluginOAuthTokenError(key string, status int, payload map[string]any) *Auth
 }
 
 // Python str of a value, empty for None and other falsy values
-func pyStrOrBlank(v any) string {
+func strOrBlank(v any) string {
 	if !truthy(v) {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // Refuses a code exchange whose granted scope string omits a declared scope
 func pluginOAuthRequireGrantedScopes(c OAuthClient, payload map[string]any, key string) error {
 	granted, ok := payload["scope"].(string)
-	if !ok || pyStripSpace(granted) == "" {
+	if !ok || strings.TrimSpace(granted) == "" {
 		return nil
 	}
 	have := map[string]bool{}
@@ -646,7 +647,7 @@ func pluginOAuthUsableGrant(row map[string]any, c OAuthClient, key string) (map[
 		return nil, newProviderNotSignedIn(fmt.Sprintf("Not signed in to %s for plugin '%s' in this Icebath profile. Run `icebath auth add %s`.", c.ID, plugin, key))
 	}
 	if truthy(row["dead"]) {
-		return nil, pluginOAuthRevoked(c, key, pyStr(row["dead"]))
+		return nil, pluginOAuthRevoked(c, key, anyutil.String(row["dead"]))
 	}
 	if fp, _ := row["fingerprint"].(string); fp != c.Fingerprint() {
 		return nil, newProviderNotSignedIn(fmt.Sprintf("Plugin '%s' changed its oauth entry '%s' since you signed in. Run `icebath auth add %s` to sign in again.", plugin, c.ID, key))
@@ -677,7 +678,7 @@ func pluginOAuthInt(v any) (int64, error) {
 	case string:
 		n, err := strconv.ParseInt(strings.TrimSpace(strings.ReplaceAll(t, "_", "")), 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("%s is not a whole number", pyRepr(t))
+			return 0, fmt.Errorf("%s is not a whole number", anyutil.Quote(t))
 		}
 		return n, nil
 	}
@@ -686,7 +687,7 @@ func pluginOAuthInt(v any) (int64, error) {
 
 // Access token while it outlives the expiry margin, empty otherwise
 func pluginOAuthLiveToken(row map[string]any) (string, error) {
-	token := pyStrOrBlank(row["access_token"])
+	token := strOrBlank(row["access_token"])
 	expires, present := row["expires_at_ms"]
 	live := !present || expires == nil
 	if !live {
@@ -704,7 +705,7 @@ func pluginOAuthLiveToken(row map[string]any) (string, error) {
 
 // Rotates the grant under the caller's auth lock, a dead grant code recorded without its tokens
 func pluginOAuthRefresh(env PoolEnv, c OAuthClient, key string, row map[string]any) (string, error) {
-	refreshToken := pyStrOrBlank(row["refresh_token"])
+	refreshToken := strOrBlank(row["refresh_token"])
 	if refreshToken == "" {
 		return "", pluginOAuthRevoked(c, key, "no_refresh_token")
 	}
@@ -730,7 +731,7 @@ func pluginOAuthRefresh(env PoolEnv, c OAuthClient, key string, row map[string]a
 	if err := pluginOAuthWriteGrant(env, key, merged); err != nil {
 		return "", err
 	}
-	return pyStr(fields["access_token"]), nil
+	return anyutil.String(fields["access_token"]), nil
 }
 
 // Live access token for the plugin's grant, refreshed under the lock after re-reading a peer's rotation
@@ -863,7 +864,7 @@ func pluginOAuthAddFlags(args []string) (float64, bool, error) {
 		case strings.HasPrefix(a, "--timeout="):
 			v, err := strconv.ParseFloat(strings.TrimPrefix(a, "--timeout="), 64)
 			if err != nil {
-				return 0, false, &OAuthLoginExitError{Code: 2, Err: fmt.Errorf("argument --timeout: invalid float value: %s", pyRepr(strings.TrimPrefix(a, "--timeout=")))}
+				return 0, false, &OAuthLoginExitError{Code: 2, Err: fmt.Errorf("argument --timeout: invalid float value: %s", anyutil.Quote(strings.TrimPrefix(a, "--timeout=")))}
 			}
 			timeout = v
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Telegram REST delivery of the send message tool the process wiring installs for out of process sends
@@ -50,7 +51,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if tokenText(token) == "" {
 		token = provider.GetSecretStr(ctx, "TELEGRAM_BOT_TOKEN", "")
 	}
-	disablePreviews := pconfig != nil && len(pconfig.Extra) > 0 && pyTruthy(pconfig.Extra["disable_link_previews"])
+	disablePreviews := pconfig != nil && len(pconfig.Extra) > 0 && anyutil.IsTrue(pconfig.Extra["disable_link_previews"])
 	chatID, _ := kwargs["chat_id"].(string)
 	message, _ := kwargs["message"].(string)
 	var threadID *string

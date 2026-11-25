@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -61,21 +62,6 @@ func workerTerminalTimeouts(ctx context.Context, maxRuntimeSeconds *int64) map[s
 	return out
 }
 
-// Python truthiness of any decoded value including ordered objects and lists
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case *jsonutil.Object:
-		return x != nil && x.Len() > 0
-	case []any:
-		return len(x) > 0
-	case []string:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return truthy(v)
-}
-
 // Relative age such as 18h ago, empty for a missing or invalid stamp, never in the future
 func relativeAge(ts any, now int64) string {
 	if ts == nil {
@@ -121,7 +107,7 @@ func ctxStamp(ts, now int64) string {
 
 // Metadata line with sorted JSON, nil for empty or unserializable metadata
 func ctxMetadataLine(metadata any) *string {
-	if !pyTruthy(metadata) {
+	if !anyutil.IsTrue(metadata) {
 		return nil
 	}
 	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys(), jsonutil.Spaced())

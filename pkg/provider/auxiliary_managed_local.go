@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const auxManagedLocalStateTTL = 15 * time.Second
@@ -58,11 +60,11 @@ func auxReadManagedLocalNetloc() string {
 			base = auxPyStr(v)
 		}
 	}
-	parts, err := pyURLParse(base, "")
+	parts, err := urlutil.Split(base)
 	if err != nil {
 		return ""
 	}
-	return strings.ToLower(parts.netloc)
+	return strings.ToLower(parts.Authority)
 }
 
 // Python str of a decoded JSON scalar
@@ -88,11 +90,11 @@ func auxIsManagedLocalEndpoint(baseURL string) bool {
 	if managed == "" {
 		return false
 	}
-	parts, err := pyURLParse(baseURL, "")
+	parts, err := urlutil.Split(baseURL)
 	if err != nil {
 		return false
 	}
-	return strings.ToLower(parts.netloc) == managed
+	return strings.ToLower(parts.Authority) == managed
 }
 
 // IsManagedLocalEndpoint reports whether a base URL targets the llama-server this install manages

@@ -206,7 +206,7 @@ func (r *GatewayRunner) renameDiscordAutoThreadForSessionTitle(ctx context.Conte
 	renamed, err := renamer.RenameThread(ctx, targetThreadID, threadName, opts)
 	switch {
 	case err != nil && isPyTypeError(err):
-		pkgLog().Warn(fmt.Sprintf("Discord semantic thread rename raised TypeError (adapter=%s)", pyTypeNameOf(adapter)), "exc_info", err)
+		pkgLog().Warn(fmt.Sprintf("Discord semantic thread rename raised TypeError (adapter=%s)", typeNameOf(adapter)), "exc_info", err)
 	case err != nil:
 		pkgLog().Debug("Failed to rename Discord auto-thread for generated session title", "exc_info", err)
 	default:
@@ -215,7 +215,7 @@ func (r *GatewayRunner) renameDiscordAutoThreadForSessionTitle(ctx context.Conte
 }
 
 // Class name of an adapter as type(adapter).__name__ reports it
-func pyTypeNameOf(v any) string {
+func typeNameOf(v any) string {
 	name := fmt.Sprintf("%T", v)
 	if i := strings.LastIndexByte(name, '.'); i >= 0 {
 		name = name[i+1:]

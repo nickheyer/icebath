@@ -636,7 +636,7 @@ func curatorCronSummary(rep *jsonutil.Object) string {
 		return ""
 	}
 	if e := curatorGetOr(rep, "error", nil); anyutil.IsTrue(e) {
-		return "cron links: error — " + pyStr(e)
+		return "cron links: error — " + anyutil.String(e)
 	}
 	lenOf := func(key string) int {
 		l, _ := curatorGetOr(rep, key, nil).([]any)
@@ -837,8 +837,8 @@ func SummarizeCuratorBackups(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("%s  %s  %s  %s", curatorPad(pyStr(curatorGetOr(r, "id", "?")), 24, false), curatorPad(curatorRunes(pyStr(reason), 40), 40, false),
-			curatorPad(pyStr(curatorGetOr(r, "skill_files", 0)), 6, true), curatorPad(formatBytes(int(size)), 8, true)))
+		lines = append(lines, fmt.Sprintf("%s  %s  %s  %s", curatorPad(anyutil.String(curatorGetOr(r, "id", "?")), 24, false), curatorPad(curatorRunes(anyutil.String(reason), 40), 40, false),
+			curatorPad(anyutil.String(curatorGetOr(r, "skill_files", 0)), 6, true), curatorPad(formatBytes(int(size)), 8, true)))
 	}
 	return strings.Join(lines, "\n"), nil
 }

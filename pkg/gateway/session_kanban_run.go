@@ -44,7 +44,7 @@ func kanbanRequestID(board, taskID, runID any) (string, error) {
 // Refuses an unreadable claim database or board as an invalid claim, refusals and lookups passed through
 func invalidKanbanClaim(err error) error {
 	var refusal *state.RuntimeStoreError
-	var missing *pyKeyError
+	var missing *keyError
 	if errors.As(err, &refusal) || errors.As(err, &missing) {
 		return err
 	}
@@ -145,7 +145,7 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *jsonutil.
 		}
 		requestID, ok := marker.Get("request_id")
 		if !ok {
-			return nil, &pyKeyError{"request_id"}
+			return nil, &keyError{"request_id"}
 		}
 		expected, err := kanbanRequestID(board, task.ID, *task.CurrentRunID)
 		if err != nil {
@@ -381,7 +381,7 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *jsonutil
 					}
 					sessionID, ok := payload.Get("session_id")
 					if !ok {
-						return &pyKeyError{"session_id"}
+						return &keyError{"session_id"}
 					}
 					if !anyutil.Equal(sessionID, ref.SessionID) {
 						return runtimeRefusal("stale_kanban_claim")

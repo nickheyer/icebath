@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 type staleStreakKey struct{}
@@ -87,8 +88,8 @@ func managedLocalLoadNotice(baseURL, model string, estTokens int) (string, bool)
 		return "", false
 	}
 	managed := auxReadManagedLocalNetloc()
-	parts, err := pyURLParse(baseURL, "")
-	if managed == "" || err != nil || strings.ToLower(parts.netloc) != managed {
+	parts, err := urlutil.Split(baseURL)
+	if managed == "" || err != nil || strings.ToLower(parts.Authority) != managed {
 		return "", false
 	}
 	if progress, ok := GetLoadingProgress()[model]; ok {

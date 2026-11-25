@@ -6,7 +6,7 @@ import (
 )
 
 func TestDelegationRouteExports(t *testing.T) {
-	if msg := DelegationParamError(0, "tier", "x", map[string]any{"enum": []any{"a", "b"}}); msg != "Task 0: 'tier' must be one of a, b (got 'x')." {
+	if msg := DelegationParamError(0, "tier", "x", map[string]any{"enum": []any{"a", "b"}}); msg != `Task 0: "tier" must be one of a, b (got "x").` {
 		t.Fatalf("msg %q", msg)
 	}
 	route, err := CleanDelegationRoute("b", map[string]any{"model": "m", "junk": 1})

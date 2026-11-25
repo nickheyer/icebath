@@ -289,7 +289,7 @@ func TestEnvironmentBuildStreamingBoundsMemoryWithoutLosingFailureClass(t *testi
 					"[os.write(2, b'x' * 65536) for _ in range(128)]; os.write(2, b'final diagnostic'); raise SystemExit(1)",
 					"b"+strconv.Quote(diagnostic[:4]), "b"+strconv.Quote(diagnostic[4:]))
 				e := &PythonEnvironment{UV: python, Python: python, Destination: filepath.Join(root, "venv"), Cache: filepath.Join(root, "cache"),
-					Env: pyEnviron(), Output: io.Discard}
+					Env: environValue(), Output: io.Discard}
 				var now runtime.MemStats
 				var peak uint64
 				streamed := 0
@@ -333,7 +333,7 @@ func TestEnvironmentBuildChildOutputIsLiveAndKeepsExplicitIndexCredentials(t *te
 	python := peHostPython(t)
 	released := filepath.Join(root, "release-child")
 	output := &peAcknowledgingLog{markers: []string{"child-started"}, release: released}
-	childEnv := pyEnviron()
+	childEnv := environValue()
 	for k, v := range map[string]string{"UV_INDEX_PRIVATE_USERNAME": "fixture-user", "UV_INDEX_PRIVATE_PASSWORD": "fixture-secret",
 		"UV_DEFAULT_INDEX": "https://fixture.invalid/simple", "UV_PROJECT": "/poison/project", "UV_VENV_SEED": "true",
 		"UV_SYSTEM_PYTHON": "true", "UV_PYTHON": "/poison/python", "UV_CACHE_DIR": "/poison/cache"} {
@@ -368,7 +368,7 @@ func peStreamingRunners(t *testing.T, root string) map[string]func(script string
 		"environment": func(script string, timeout time.Duration) (*bytes.Buffer, error) {
 			output := &bytes.Buffer{}
 			e := &PythonEnvironment{UV: python, Python: python, Destination: filepath.Join(root, "venv"), Cache: filepath.Join(root, "cache"),
-				Env: pyEnviron(), Output: &syncWriter{w: output}}
+				Env: environValue(), Output: &syncWriter{w: output}}
 			_, err := e.run(context.Background(), []string{"-c", script}, root, timeout)
 			var ie *InstallError
 			if !errors.As(err, &ie) {
@@ -378,8 +378,8 @@ func peStreamingRunners(t *testing.T, root string) map[string]func(script string
 		},
 		"cli": func(script string, timeout time.Duration) (*bytes.Buffer, error) {
 			output := &bytes.Buffer{}
-			_, _, err := runLive(context.Background(), &syncWriter{w: output}, []string{python, "-c", script}, root, pyEnviron(), timeout)
-			var py *PyError
+			_, _, err := runLive(context.Background(), &syncWriter{w: output}, []string{python, "-c", script}, root, environValue(), timeout)
+			var py *ClassError
 			if !errors.As(err, &py) || py.Class != "RuntimeError" {
 				t.Fatalf("live runner timeout raised %v", err)
 			}
@@ -611,7 +611,7 @@ func TestEnvironmentBuildExplicitEnvironmentInstallsLockedMembersWithoutLiveSele
 func TestEnvironmentBuildNoConfigDropsBridgedIndexSettingsFromChildEnv(t *testing.T) {
 	root := t.TempDir()
 	python := peHostPython(t)
-	ambient := pyEnviron()
+	ambient := environValue()
 	ambient["UV_INDEX_URL"], ambient["UV_HTTP_TIMEOUT"] = "https://fixture-mirror.invalid/simple", "99"
 	child := "import os, sys\nif 'UV_INDEX_URL' in os.environ:\n    sys.exit('leaked index redirect: UV_INDEX_URL')\n" +
 		"if 'UV_HTTP_TIMEOUT' not in os.environ:\n    sys.exit('transport knob dropped: UV_HTTP_TIMEOUT')\n"

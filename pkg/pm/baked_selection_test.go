@@ -145,7 +145,7 @@ func TestOfflineRefreshKeepsBakedExtrasForTheNextLazyInstall(t *testing.T) {
 	ctx := context.Background()
 	svRecordState(t, filepath.Join(store, "facts.json"), "image", []string{"all", "messaging", "otlp"})
 	svRecordState(t, EnvironmentRuntimeFactsPath(ctx, root), "lazy", []string{"fal"})
-	svSyncCalls(t, &PyError{Class: "RuntimeError", Message: "uv sync exited 1: no network"})
+	svSyncCalls(t, &ClassError{Class: "RuntimeError", Message: "uv sync exited 1: no network"})
 	svAlwaysCurrent(t)
 	if got, err := RefreshDependencies(ctx, root); err != nil || got != "fallback" {
 		t.Fatalf("refresh %q %v", got, err)
@@ -182,7 +182,7 @@ func TestRefreshRefusesAnInvalidRecordedSelection(t *testing.T) {
 				return nil
 			})
 			_, err := RefreshDependencies(ctx, root)
-			var pe *PyError
+			var pe *ClassError
 			if !errors.As(err, &pe) || pe.Class != "ValueError" || !strings.Contains(err.Error(), "invalid recorded dependency state") {
 				t.Fatalf("corrupt fact %v gave %v", venv, err)
 			}

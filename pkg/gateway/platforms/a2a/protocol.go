@@ -225,7 +225,7 @@ func SkillsFromToolsets(toolsets any) []any {
 			tags = append(tags, anyutil.String(t))
 		}
 		skills = append(skills, obj("id", "toolset."+name, "name", name,
-			"description", fmt.Sprintf("Icebath '%s' capabilities", name), "tags", tags))
+			"description", fmt.Sprintf("Icebath %q capabilities", name), "tags", tags))
 	}
 	if len(skills) == 0 {
 		return []any{obj("id", "general", "name", "general", "description", "General-purpose conversational agent",
@@ -424,7 +424,7 @@ func SSEData(payload, reqID any) (string, error) {
 	if reqID != nil {
 		envelope = JsonrpcResult(reqID, payload)
 	}
-	text, err := jsonutil.Encode(envelope, jsonutil.Spaced())
+	text, err := jsonutil.Encode(envelope)
 	if err != nil {
 		return "", err
 	}
@@ -778,7 +778,7 @@ type ListOptions struct {
 	Tenant    string
 }
 
-func pySlice[T any](items []T, start, stop int) []T {
+func sliceOf[T any](items []T, start, stop int) []T {
 	n := len(items)
 	clamp := func(i int) int {
 		if i < 0 {
@@ -818,7 +818,7 @@ func (s *TaskStore) List(o ListOptions) ([]TaskRecord, int, int, error) {
 	}
 	s.mu.Unlock()
 	total := len(recs)
-	page := pySlice(recs, o.Offset, o.Offset+pageSize)
+	page := sliceOf(recs, o.Offset, o.Offset+pageSize)
 	next := 0
 	if o.Offset+pageSize < total {
 		next = o.Offset + pageSize
@@ -942,7 +942,7 @@ func LoadConversation(ctx context.Context, contextID string, limit int) []*jsonu
 			out = append(out, o)
 		}
 	}
-	return pySlice(out, -limit, len(out))
+	return sliceOf(out, -limit, len(out))
 }
 
 // Context ids with a persisted conversation, sorted

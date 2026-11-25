@@ -108,7 +108,7 @@ func TestPluginProviderRowsShapesRegistryRows(t *testing.T) {
 	var names, tiers []string
 	for _, r := range rows {
 		names = append(names, rowText(r, "name"))
-		tiers = append(tiers, pyOrStr(rowGet(r, "web_tier")))
+		tiers = append(tiers, anyutil.StringOr(rowGet(r, "web_tier"), ""))
 		if rowGet(r, "web_backend") != "vendor" || rowGet(r, "web_search_plugin_name") != "vendor" {
 			t.Fatalf("web markers %v", rowPairs(r))
 		}

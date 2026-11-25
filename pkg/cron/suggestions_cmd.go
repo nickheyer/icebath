@@ -100,7 +100,7 @@ func acceptSuggestionCmd(ctx context.Context, s *Store, rest string, origin map[
 		return "", err
 	}
 	if job == nil {
-		return fmt.Sprintf("No pending suggestion matches '%s'. Run /suggestions to list them.", rest), nil
+		return fmt.Sprintf("No pending suggestion matches %q. Run /suggestions to list them.", rest), nil
 	}
 	rec, err := jobAsMap(job)
 	if err != nil {
@@ -117,7 +117,11 @@ func acceptSuggestionCmd(ctx context.Context, s *Store, rest string, origin map[
 	if surface == "cli" {
 		manage = "Manage it with /cron."
 	}
-	out := "Scheduled '" + anyutil.String(name) + "'"
+	label := anyutil.String(name)
+	if label == "" {
+		label = "automation"
+	}
+	out := "Scheduled " + strconv.Quote(label)
 	if anyutil.IsTrue(sched) {
 		out += " (" + anyutil.String(sched) + ")"
 	}
@@ -136,7 +140,7 @@ func dismissSuggestionCmd(s *Store, rest string) (string, error) {
 	if ok {
 		return "Dismissed. Won't suggest that again.", nil
 	}
-	return fmt.Sprintf("No pending suggestion matches '%s'.", rest), nil
+	return fmt.Sprintf("No pending suggestion matches %q.", rest), nil
 }
 
 // Seeds the curated catalog and reports which suggestions were added

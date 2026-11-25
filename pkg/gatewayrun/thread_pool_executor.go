@@ -25,7 +25,7 @@ type threadPoolExecutor struct {
 // Pool of up to maxWorkers threads named after prefix
 func newThreadPoolExecutor(maxWorkers int, prefix string) *threadPoolExecutor {
 	if maxWorkers <= 0 {
-		panic(&pyValueError{msg: "max_workers must be greater than 0"})
+		panic(&valueError{msg: "max_workers must be greater than 0"})
 	}
 	e := &threadPoolExecutor{maxWorkers: maxWorkers, prefix: prefix}
 	e.queueCond = sync.NewCond(&e.queueMu)
@@ -33,12 +33,12 @@ func newThreadPoolExecutor(maxWorkers int, prefix string) *threadPoolExecutor {
 }
 
 // Python ValueError carrying only its message
-type pyValueError struct{ msg string }
+type valueError struct{ msg string }
 
-func (e *pyValueError) Error() string { return e.msg }
+func (e *valueError) Error() string { return e.msg }
 
 // Exception class the error reports, ValueError
-func (e *pyValueError) ErrorKind() string { return "ValueError" }
+func (e *valueError) ErrorKind() string { return "ValueError" }
 
 // Appends one queue entry and wakes a waiting thread, nil being the exit sentinel
 func (e *threadPoolExecutor) put(item *executorItem) {
@@ -65,7 +65,7 @@ func (e *threadPoolExecutor) submit(fn func(ctx context.Context) (any, error)) (
 	e.shutdownLock.Lock()
 	defer e.shutdownLock.Unlock()
 	if e.shut {
-		return nil, &pyRuntimeError{msg: tools.ErrPoolShutdown.Error(), cause: tools.ErrPoolShutdown}
+		return nil, &runtimeError{msg: tools.ErrPoolShutdown.Error(), cause: tools.ErrPoolShutdown}
 	}
 	fut := newConcurrentFuture()
 	e.put(&executorItem{fut: fut, fn: fn})

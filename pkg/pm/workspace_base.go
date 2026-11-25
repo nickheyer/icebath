@@ -75,7 +75,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 		failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", src, dst, errchain.OSText(err)))
 	}
 	if len(failures) > 0 {
-		return &PyError{Class: "Error", Message: strings.Join(failures, "; ")}
+		return &ClassError{Class: "Error", Message: strings.Join(failures, "; ")}
 	}
 	return nil
 }
@@ -213,5 +213,5 @@ func InstallNodeSidecar(ctx context.Context, pluginDir string, explicit bool) st
 	if n := utf8.RuneCountInString(tail); n > 300 {
 		tail = string([]rune(tail)[n-300:])
 	}
-	return fmt.Sprintf("npm %s exited %d: %s", installCmd, pyReturnCode(exitErr), tail)
+	return fmt.Sprintf("npm %s exited %d: %s", installCmd, returnCode(exitErr), tail)
 }

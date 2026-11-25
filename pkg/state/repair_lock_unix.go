@@ -27,4 +27,4 @@ func acquireRepairLock(lockPath string, handle *os.File, timeout float64) (lockO
 }
 
 // Holder record the repair lock file carries
-func recordedRepairLockHolder(handle *os.File) pyObject { return readLockHolderRecord(handle) }
+func recordedRepairLockHolder(handle *os.File) orderedObject { return readLockHolderRecord(handle) }

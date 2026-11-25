@@ -97,7 +97,7 @@ func TestMessageEditedEditedAtSerialized(t *testing.T) {
 	ts := time.Date(2026, 8, 12, 10, 30, 0, 0, time.UTC)
 	m.EditedTimestamp = &ts
 	a.onPlatformMessageEdit(context.Background(), nil, m)
-	if got := (*seen)[0].event["payload"].(map[string]any)["edited_at"]; got != "2026-08-12T10:30:00+00:00" {
+	if got := (*seen)[0].event["payload"].(map[string]any)["edited_at"]; got != "2026-08-12T10:30:00.000000Z" {
 		t.Fatalf("edited_at %v", got)
 	}
 }

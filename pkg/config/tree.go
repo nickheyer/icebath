@@ -4,9 +4,13 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Configuration document as nested maps the way YAML decodes it
@@ -26,8 +30,8 @@ type PhantomKeyError struct {
 }
 
 func (e *PhantomKeyError) Error() string {
-	return fmt.Sprintf("Refusing to create nested key %s in %s: the mapping already contains a literal key %s that contains a dot. If you meant that key, escape its dots with a backslash (e.g. %s).",
-		PyRepr(e.Part), PyRepr(e.Path), PyRepr(e.Shadowed), e.Escaped)
+	return fmt.Sprintf("Refusing to create nested key %q in %q: the mapping already contains a literal key %q that contains a dot. If you meant that key, escape its dots with a backslash (e.g. %s).",
+		e.Part, e.Path, e.Shadowed, e.Escaped)
 }
 
 // Segments of a dotted path, a backslash before a dot keeping the dot literal
@@ -193,7 +197,7 @@ func (t Tree) Set(path string, value any) error {
 				return nil
 			}
 			if err != nil && err.Kind == "ValueError" {
-				return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into list at key %s: segment %s is not a numeric index", PyRepr(path), PyRepr(part))}
+				return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into a list at key %q: segment %q is not a numeric index", path, part)}
 			}
 			if err != nil {
 				return err
@@ -229,7 +233,7 @@ func (t Tree) Set(path string, value any) error {
 			cur = next
 			i++
 		default:
-			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", ErrorKind(cur), PyRepr(path))}
+			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %q", errchain.Kind(cur), path)}
 		}
 	}
 	return nil
@@ -278,21 +282,23 @@ func setChild(h hop, value any) {
 	}
 }
 
-// String at a path, the fallback when absent or not a string
+// Text at a path: a string as it is, a boolean or number in plain decimal, the fallback when absent, null or another kind
 func (t Tree) String(path, fallback string) string {
-	switch v := t.Get(path).(type) {
+	v := t.Get(path)
+	switch x := v.(type) {
 	case string:
-		return v
+		return x
 	case nil:
 		return fallback
 	case bool:
-		return strconv.FormatBool(v)
-	case int:
-		return strconv.Itoa(v)
-	case int64:
-		return strconv.FormatInt(v, 10)
+		return strconv.FormatBool(x)
 	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(x), 'f', -1, 32)
+	}
+	if n, ok := integerValue(v); ok {
+		return n.String()
 	}
 	return fallback
 }
@@ -346,19 +352,21 @@ func (t Tree) Has(path string) bool {
 	return ok
 }
 
-// Integer view of a YAML scalar
+// Integer view of a YAML scalar: an integer of any Go kind within the int range, a whole float within it or decimal text
 func AsInt(v any) (int, bool) {
+	if n, ok := anyutil.Int(v); ok {
+		if n < math.MinInt || n > math.MaxInt {
+			return 0, false
+		}
+		return int(n), true
+	}
 	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case uint64:
-		return int(n), true
 	case float64:
-		if n == float64(int(n)) {
+		if n == math.Trunc(n) && n >= math.MinInt && n < math.MaxInt {
 			return int(n), true
 		}
+	case float32:
+		return AsInt(float64(n))
 	case string:
 		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
 			return i, true
@@ -367,36 +375,22 @@ func AsInt(v any) (int, bool) {
 	return 0, false
 }
 
-// Float view of a YAML scalar
+// Float view of a YAML scalar: a number of any Go kind, a *big.Int included, or numeric text
 func AsFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint64:
-		return float64(n), true
-	case float64:
-		return n, true
-	case string:
-		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+	if s, ok := v.(string); ok {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
 			return f, true
 		}
+		return 0, false
 	}
-	return 0, false
+	return anyutil.Float(v)
 }
 
-// Boolean view of a YAML scalar accepting the usual truthy and falsy spellings
+// Boolean view of a YAML scalar: a boolean, a number of any Go kind as nonzero, or the usual truthy and falsy spellings
 func AsBool(v any) (bool, bool) {
 	switch b := v.(type) {
 	case bool:
 		return b, true
-	case int:
-		return b != 0, true
-	case int64:
-		return b != 0, true
-	case float64:
-		return b != 0, true
 	case string:
 		switch strings.ToLower(strings.TrimSpace(b)) {
 		case "1", "true", "yes", "on", "y":
@@ -404,6 +398,10 @@ func AsBool(v any) (bool, bool) {
 		case "0", "false", "no", "off", "n", "":
 			return false, true
 		}
+		return false, false
+	}
+	if f, ok := anyutil.Float(v); ok {
+		return f != 0, true
 	}
 	return false, false
 }
@@ -414,16 +412,14 @@ func Truthy(v any) bool {
 	return ok && b
 }
 
-// String list view of a list or a comma separated string
+// String list view of a list or a comma separated string, null items skipped and other items as their plain text
 func AsStrings(v any) []string {
 	switch l := v.(type) {
 	case []any:
 		out := make([]string, 0, len(l))
 		for _, item := range l {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			} else if item != nil {
-				out = append(out, fmt.Sprint(item))
+			if item != nil {
+				out = append(out, anyutil.String(item))
 			}
 		}
 		return out
@@ -580,7 +576,7 @@ func stripValue(value, def any, path []string, keep map[string]bool) (any, bool)
 		SetMappingKeys(out, order)
 		return out, false
 	}
-	if pyEq(value, def) {
+	if anyutil.Equal(value, def) {
 		return nil, true
 	}
 	return Clone(value), false

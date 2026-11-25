@@ -3,12 +3,14 @@ package provider
 import (
 	"context"
 	"fmt"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"math"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -67,7 +69,7 @@ func newAuxAnthropicCompletionsAdapter(client *anthropicSDKClient, model string,
 func auxAnthropicToolChoice(choice any) any {
 	switch c := choice.(type) {
 	case map[string]any:
-		choiceType := strings.ToLower(pyStr(c["type"]))
+		choiceType := strings.ToLower(anyutil.String(c["type"]))
 		if choiceType == "function" {
 			fn, _ := jsonutil.AsMap(c["function"])
 			return fn["name"]
@@ -85,7 +87,7 @@ func auxAnthropicToolChoice(choice any) any {
 func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[string]any) (any, error) {
 	model := a.model
 	if v, ok := kwargs["model"]; ok {
-		model = pyStr(v)
+		model = anyutil.String(v)
 	}
 	var maxTokens any
 	if !anyutil.IsTrue(kwargs["_skip_zai_max_tokens"]) {
@@ -257,7 +259,7 @@ func auxKwargFloatPtr(v any) *float64 {
 func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[string]any) (any, error) {
 	model := a.model
 	if v, ok := kwargs["model"]; ok {
-		model = pyStr(v)
+		model = anyutil.String(v)
 	}
 	maxTokens := kwargs["max_tokens"]
 	if !anyutil.IsTrue(maxTokens) {
@@ -271,7 +273,7 @@ func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[st
 		stop = s
 	case []any:
 		for _, item := range s {
-			stop = append(stop, pyStr(item))
+			stop = append(stop, anyutil.String(item))
 		}
 	}
 	if choice := kwargs["tool_choice"]; choice != nil {
@@ -324,7 +326,7 @@ func auxPyIntCall(v any) (int, error) {
 	case float32:
 		return auxPyIntCall(float64(x))
 	case string:
-		if n, ok := pyIntText(x); ok {
+		if n, ok := textutil.ParseIntAnyScript(x); ok {
 			return int(n), nil
 		}
 		return 0, &ValueError{Message: fmt.Sprintf("%v is not a whole number", x)}
@@ -400,15 +402,15 @@ func NewAsyncBedrockAuxiliaryClient(sync *BedrockAuxiliaryClient) *AsyncBedrockA
 
 // Whether the base URL speaks Anthropic Messages, an anthropic path, api.anthropic.com or the Kimi coding host
 func auxEndpointSpeaksAnthropicMessages(baseURL string) (bool, error) {
-	normalized := strings.TrimRight(strings.ToLower(pyStripSpace(baseURL)), "/")
+	normalized := strings.TrimRight(strings.ToLower(strings.TrimSpace(baseURL)), "/")
 	if normalized == "" {
 		return false, nil
 	}
-	parsed, err := pyURLParse(normalized, "")
+	parsed, err := urlutil.Split(normalized)
 	if err != nil {
 		return false, err
 	}
-	if path := strings.TrimRight(parsed.path, "/"); strings.HasSuffix(path, "/anthropic") || strings.HasSuffix(path, "/anthropic/v1") {
+	if path := strings.TrimRight(parsed.Path, "/"); strings.HasSuffix(path, "/anthropic") || strings.HasSuffix(path, "/anthropic/v1") {
 		return true, nil
 	}
 	hostname := baseURLHostname(normalized)

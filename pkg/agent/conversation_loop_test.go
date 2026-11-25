@@ -24,9 +24,9 @@ type shutdownRuntimeError struct {
 	cause error
 }
 
-func (e *shutdownRuntimeError) Error() string   { return e.msg }
-func (e *shutdownRuntimeError) Unwrap() error   { return e.cause }
-func (e *shutdownRuntimeError) PyRuntimeError() {}
+func (e *shutdownRuntimeError) Error() string { return e.msg }
+func (e *shutdownRuntimeError) Unwrap() error { return e.cause }
+func (e *shutdownRuntimeError) RuntimeError() {}
 
 func TestIsInterpreterShutdownError(t *testing.T) {
 	for msg, want := range map[string]bool{

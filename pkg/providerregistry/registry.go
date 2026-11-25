@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"runtime/debug"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -22,7 +21,7 @@ type NamedProvider interface {
 	Name() string
 }
 
-// Python TypeError a provider registry raises for an object that is not an instance of its provider class
+// Error a provider registry returns for a value that is not of its provider type, naming both types
 type ProviderTypeError struct{ Message string }
 
 func (e *ProviderTypeError) Error() string { return e.Message }
@@ -99,9 +98,19 @@ func New[P NamedProvider](opts Options) *Registry[P] {
 	return r
 }
 
-// Python class name of the provider type, pointer types named by their element
-func providerClassName[P any]() string {
-	t := reflect.TypeFor[P]()
+// Name of the provider type, pointer types named by their element
+func providerClassName[P any]() string { return bareTypeName(reflect.TypeFor[P]()) }
+
+// Name of the dynamic type of a value as providerClassName names a type, nil for a nil value
+func valueTypeName(v any) string {
+	if IsNil(v) {
+		return "nil"
+	}
+	return bareTypeName(reflect.TypeOf(v))
+}
+
+// Name of a type without its package, pointer types named by their element and unnamed types by their literal
+func bareTypeName(t reflect.Type) string {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -158,11 +167,7 @@ func (r *Registry[P]) register(provider any, scope string) (bool, error) {
 		if strings.ContainsRune("AEIOU", []rune(r.ProviderCls + " ")[0]) {
 			article = "an"
 		}
-		typeName := anyutil.Kind(provider)
-		if IsNil(provider) {
-			typeName = "NoneType"
-		}
-		return false, &ProviderTypeError{fmt.Sprintf("register_provider() expects %s %s instance, got %s", article, r.ProviderCls, typeName)}
+		return false, &ProviderTypeError{fmt.Sprintf("register_provider() expects %s %s instance, got %s", article, r.ProviderCls, valueTypeName(provider))}
 	}
 	rawName := p.Name()
 	if strings.TrimSpace(rawName) == "" {
@@ -185,9 +190,9 @@ func (r *Registry[P]) register(provider any, scope string) (bool, error) {
 	r.bump(scope)
 	r.mu.Unlock()
 	if had {
-		r.Logger.Debug(fmt.Sprintf("%s provider '%s' re-registered (was %s)", r.Label, key, strconv.Quote(anyutil.Kind(existing))))
+		r.Logger.Debug(fmt.Sprintf("%s provider %q re-registered (was %s)", r.Label, key, valueTypeName(existing)))
 	} else {
-		r.Logger.Debug(fmt.Sprintf("Registered %s provider '%s' (%s)", r.logLabel, key, anyutil.Kind(p)))
+		r.Logger.Debug(fmt.Sprintf("Registered %s provider %q (%s)", r.logLabel, key, valueTypeName(p)))
 	}
 	return true, nil
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
@@ -65,7 +66,7 @@ func (r Result) Get(key string) any {
 
 // Reports whether the response carries a truthy success flag
 func (r Result) Success() bool {
-	return pyTruthy(r.Get("success"))
+	return anyutil.IsTrue(r.Get("success"))
 }
 
 // Error response carrying a failure class and extra fields
@@ -128,7 +129,7 @@ func normalizeForMatch(text string) string {
 		}
 		return r
 	}, text)
-	return strings.Join(pyFields(folded), " ")
+	return strings.Join(fieldsValue(folded), " ")
 }
 
 // Indices of entries containing old_text, byte exact first and typography folded otherwise
@@ -143,7 +144,7 @@ func substringMatches(entries []string, oldText string) []int {
 		return exact
 	}
 	needle := normalizeForMatch(oldText)
-	if !strings.ContainsFunc(needle, pyIsAlnum) {
+	if !strings.ContainsFunc(needle, isAlnum) {
 		return nil
 	}
 	var out []int
@@ -182,7 +183,7 @@ func findUniqueMatch(entries []string, oldText string) (int, bool) {
 // Lowercased Unicode word set like re findall of word runs
 func wordSet(text string) map[string]bool {
 	out := map[string]bool{}
-	for _, w := range strings.FieldsFunc(pyLower(text), func(r rune) bool { return !pyIsAlnum(r) && r != '_' }) {
+	for _, w := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !isAlnum(r) && r != '_' }) {
 		out[w] = true
 	}
 	return out
@@ -286,7 +287,7 @@ func pinnedIndex(entries []string, matched any) int {
 func staleEntryMessage(entry any) string {
 	return fmt.Sprintf("Entry changed since it was staged, so this write was not applied: '%s' is no longer "+
 		"in memory as reviewed. Recreate the change against the current entry or reject it; the "+
-		"pending record has been preserved.", pyStr(entry))
+		"pending record has been preserved.", anyutil.String(entry))
 }
 
 // Store is the bounded file backed curated memory, MEMORY.md and USER.md, one per session
@@ -570,7 +571,7 @@ func (s *Store) mutate(ctx context.Context, target string, fn MutateFunc, skipDr
 
 // Appends a new entry, refusing empty, poisoned or over budget content
 func (s *Store) Add(ctx context.Context, target, content string) (Result, error) {
-	content = pyStrip(content)
+	content = strings.TrimSpace(content)
 	if content == "" {
 		return failure("Content cannot be empty.", "missing_content", nil), nil
 	}
@@ -592,8 +593,8 @@ func (s *Store) Add(ctx context.Context, target, content string) (Result, error)
 
 // Overwrites the whole entry old_text selects with new content
 func (s *Store) Replace(ctx context.Context, target, oldText, newContent string, matchedEntry any) (Result, error) {
-	newContent = pyStrip(newContent)
-	if pyStrip(oldText) == "" {
+	newContent = strings.TrimSpace(newContent)
+	if strings.TrimSpace(oldText) == "" {
 		return failure("old_text cannot be empty.", "missing_old_text", nil), nil
 	}
 	if newContent == "" {
@@ -602,15 +603,15 @@ func (s *Store) Replace(ctx context.Context, target, oldText, newContent string,
 	if scanErr := FirstThreatMessage(newContent, ScopeStrict); scanErr != "" {
 		return failure(scanErr, "scan_blocked", nil), nil
 	}
-	return s.edit(ctx, target, pyStrip(oldText), &newContent, matchedEntry)
+	return s.edit(ctx, target, strings.TrimSpace(oldText), &newContent, matchedEntry)
 }
 
 // Replaces one span inside the matched entry and keeps the rest of the entry verbatim
 func (s *Store) Patch(ctx context.Context, target, oldText, newText string, matchedEntry any) (Result, error) {
-	if pyStrip(oldText) == "" {
+	if strings.TrimSpace(oldText) == "" {
 		return failure("old_text cannot be empty.", "missing_old_text", nil), nil
 	}
-	if pyStrip(newText) == "" {
+	if strings.TrimSpace(newText) == "" {
 		return failure("new_text cannot be empty. "+PatchDropHint, "missing_content", nil), nil
 	}
 	return s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
@@ -637,10 +638,10 @@ func (s *Store) Patch(ctx context.Context, target, oldText, newText string, matc
 
 // Removes the entry old_text selects
 func (s *Store) Remove(ctx context.Context, target, oldText string, matchedEntry any) (Result, error) {
-	if pyStrip(oldText) == "" {
+	if strings.TrimSpace(oldText) == "" {
 		return failure("old_text cannot be empty.", "missing_old_text", nil), nil
 	}
-	return s.edit(ctx, target, pyStrip(oldText), nil, matchedEntry)
+	return s.edit(ctx, target, strings.TrimSpace(oldText), nil, matchedEntry)
 }
 
 // Index old_text selects, or the error the edit returns, a pinned entry selecting only itself
@@ -675,7 +676,7 @@ func (s *Store) locate(entries []string, oldText, verb string, matchedEntry any)
 // Full entry old_text selects now, read under the lock, or the error the direct edit would return
 func (s *Store) ResolveEntry(ctx context.Context, target, oldText, verb string) (Result, error) {
 	return s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
-		idx, errRes := s.locate(entries, pyStrip(oldText), verb, nil)
+		idx, errRes := s.locate(entries, strings.TrimSpace(oldText), verb, nil)
 		if errRes != nil {
 			return passthrough(*errRes)
 		}
@@ -735,7 +736,7 @@ func applyBatchOp(working *[]string, act any, content, oldText, pos string, matc
 	if act != "replace" && act != "remove" && act != "patch" {
 		return batchOpOutcome{errMsg: pos + ": unknown action. Use add, patch, or remove.", class: "invalid_args"}
 	}
-	if pyStrip(oldText) == "" {
+	if strings.TrimSpace(oldText) == "" {
 		return batchOpOutcome{errMsg: pos + ": old_text is required.", class: "missing_old_text"}
 	}
 	if contentErr != nil {
@@ -745,7 +746,7 @@ func applyBatchOp(working *[]string, act any, content, oldText, pos string, matc
 		return batchOpOutcome{errMsg: pos + ": content is required — set this operation object's own 'content' to the COMPLETE " +
 			"new entry (or use action='remove' to delete).", class: "missing_content"}
 	}
-	if act == "patch" && pyStrip(content) == "" {
+	if act == "patch" && strings.TrimSpace(content) == "" {
 		return batchOpOutcome{errMsg: pos + ": content is required — set this operation object's own 'content' to the new " +
 			"text for the old_text span. " + PatchDropHint, class: "missing_content"}
 	}
@@ -762,7 +763,7 @@ func applyBatchOp(working *[]string, act any, content, oldText, pos string, matc
 			return batchOpOutcome{errMsg: fmt.Sprintf("%s: '%s' matched multiple distinct entries -- be more specific.", pos, oldText), class: "ambiguous"}
 		}
 		if idx < 0 {
-			miss := noMatchError(*working, oldText, pyStr(act), nil)
+			miss := noMatchError(*working, oldText, anyutil.String(act), nil)
 			out := batchOpOutcome{errMsg: pos + ": " + miss.Get("error").(string), class: "no_match"}
 			if closest, ok := miss.Data.Get("closest_entries"); ok {
 				out.previous = closest
@@ -821,7 +822,7 @@ func (s *Store) batch(ctx context.Context, target string, operations []map[strin
 		if err := hashable(act); err != nil {
 			return Result{}, err
 		}
-		if (act == "add" || act == "replace") && pyTruthy(op["content"]) {
+		if (act == "add" || act == "replace") && anyutil.IsTrue(op["content"]) {
 			text, err := scanText(op["content"])
 			if err != nil {
 				return Result{}, err
@@ -843,7 +844,7 @@ func (s *Store) batch(ctx context.Context, target string, operations []map[strin
 				opErr = err
 				return passthrough(Result{})
 			}
-			pos := fmt.Sprintf("Operation %d (%s)", i+1, pyStrOr(act, "unknown"))
+			pos := fmt.Sprintf("Operation %d (%s)", i+1, anyutil.StringOr(act, "unknown"))
 			out := applyBatchOp(&working, act, content, oldText, pos, op["matched_entry"], contentErr)
 			if out.crash != nil {
 				opErr = out.crash
@@ -928,7 +929,7 @@ func (s *Store) batch(ctx context.Context, target string, operations []map[strin
 // Content and old_text of a batch op, stripped for whole entry actions, patch content crashes deferred
 func batchOpText(op map[string]any, strip bool) (string, string, error, error) {
 	content := op["content"]
-	if !pyTruthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = op["new_text"]
 	}
 	contentText, contentErr := strMethodArg(content)
@@ -940,7 +941,7 @@ func batchOpText(op map[string]any, strip bool) (string, string, error, error) {
 		return "", "", nil, err
 	}
 	if strip {
-		contentText, oldText = pyStrip(contentText), pyStrip(oldText)
+		contentText, oldText = strings.TrimSpace(contentText), strings.TrimSpace(oldText)
 	}
 	return contentText, oldText, contentErr, nil
 }
@@ -1013,7 +1014,7 @@ func readRawChecked(path string) (string, bool) {
 func ParseEntries(raw string) []string {
 	var out []string
 	for _, x := range strings.Split(raw, EntryDelimiter) {
-		if e := pyStrip(x); e != "" {
+		if e := strings.TrimSpace(x); e != "" {
 			out = append(out, e)
 		}
 	}
@@ -1032,7 +1033,7 @@ func writeEntriesFile(ctx context.Context, path string, entries []string) error 
 	if err == nil {
 		return nil
 	}
-	return &pyError{class: "RuntimeError", msg: fmt.Sprintf("Failed to write memory file %s: %s", path, osErrorText(err))}
+	return &kindError{class: "RuntimeError", msg: fmt.Sprintf("Failed to write memory file %s: %s", path, osErrorText(err))}
 }
 
 // True when one parsed entry is longer than the whole file limit
@@ -1111,19 +1112,12 @@ func equalStrings(a, b []string) bool {
 	return true
 }
 
-// Python str isspace, Unicode white space plus the four information separators
-func pyIsSpace(r rune) bool {
-	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
-}
-
 // Python str isalnum on one code point
-func pyIsAlnum(r rune) bool {
+func isAlnum(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsNumber(r)
 }
 
-func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
-
-func pyFields(s string) []string { return strings.FieldsFunc(s, pyIsSpace) }
+func fieldsValue(s string) []string { return strings.FieldsFunc(s, unicode.IsSpace) }
 
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
@@ -1155,23 +1149,6 @@ func thousands(n int) string {
 	}
 	if neg {
 		return "-" + b.String()
-	}
-	return b.String()
-}
-
-// Python str lower with the dotted capital I expansion and the final sigma rule
-func pyLower(s string) string {
-	rs := []rune(s)
-	var b strings.Builder
-	for i, r := range rs {
-		switch r {
-		case 0x130:
-			b.WriteString("i\xcc\x87")
-		case 0x3a3:
-			b.WriteRune(lowerSigma(rs, i))
-		default:
-			b.WriteRune(unicode.ToLower(r))
-		}
 	}
 	return b.String()
 }
@@ -1211,36 +1188,6 @@ func lowerSigma(rs []rune, i int) rune {
 	return 0x3c3
 }
 
-// Python truthiness of a decoded JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case float64:
-		return x != 0
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case json.Number:
-		f, err := x.Float64()
-		return err != nil || f != 0
-	case []any:
-		return len(x) > 0
-	case []string:
-		return len(x) > 0
-	case []map[string]any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
-}
-
 // True only for a real boolean false, like the Python is False test
 func isFalse(v any) bool {
 	b, ok := v.(bool)
@@ -1248,7 +1195,7 @@ func isFalse(v any) bool {
 }
 
 // Python type name of a decoded JSON value, integral numbers reading as int
-func pyTypeName(v any) string {
+func typeName(v any) string {
 	switch x := v.(type) {
 	case nil:
 		return "none"
@@ -1276,58 +1223,8 @@ func pyTypeName(v any) string {
 	return fmt.Sprintf("%T", v)
 }
 
-// Python str of a decoded JSON value
-func pyStr(v any) string {
-	switch x := v.(type) {
-	case nil:
-		return "None"
-	case bool:
-		if x {
-			return "True"
-		}
-		return "False"
-	case string:
-		return x
-	case float64:
-		if x == math.Trunc(x) && math.Abs(x) < 1e21 {
-			return strconv.FormatFloat(x, 'f', 0, 64)
-		}
-		return pyFloatRepr(x)
-	case int:
-		return strconv.Itoa(x)
-	case int64:
-		return strconv.FormatInt(x, 10)
-	case json.Number:
-		return string(x)
-	case []string:
-		items := make([]any, len(x))
-		for i, s := range x {
-			items[i] = s
-		}
-		return pyStr(items)
-	case []any:
-		parts := make([]string, len(x))
-		for i, item := range x {
-			parts[i] = pyRepr(item)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	case map[string]any:
-		keys := make([]string, 0, len(x))
-		for k := range x {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = pyRepr(k) + ": " + pyRepr(x[k])
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
-	}
-	return fmt.Sprint(v)
-}
-
 // Python float repr, shortest round trip digits with exponent outside the fixed range
-func pyFloatRepr(f float64) string {
+func floatRepr(f float64) string {
 	switch {
 	case math.IsInf(f, 1):
 		return "inf"
@@ -1357,77 +1254,25 @@ func pyFloatRepr(f float64) string {
 	return s
 }
 
-// Python repr, strings quoted and escaped, everything else as str
-func pyRepr(v any) string {
-	s, ok := v.(string)
-	if !ok {
-		return pyStr(v)
-	}
-	quote := byte('\'')
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == rune(quote):
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		case r == utf8.RuneError || !unicode.IsPrint(r) && r != ' ':
-			switch {
-			case r <= 0xff:
-				fmt.Fprintf(&b, `\x%02x`, r)
-			case r <= 0xffff:
-				fmt.Fprintf(&b, `\u%04x`, r)
-			default:
-				fmt.Fprintf(&b, `\U%08x`, r)
-			}
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
-}
-
-// Python str of a value, the fallback when it is falsy like an or expression
-func pyStrOr(v any, fallback string) string {
-	if !pyTruthy(v) {
-		return fallback
-	}
-	return pyStr(v)
-}
-
 // Python exception class and message for crash paths reported like the registry dispatcher
-type pyError struct {
+type kindError struct {
 	class string
 	msg   string
 }
 
-func (e *pyError) Error() string { return e.msg }
+func (e *kindError) Error() string { return e.msg }
 
-func (e *pyError) ErrorKind() string { return e.class }
+func (e *kindError) ErrorKind() string { return e.class }
 
 // Text a falsy value collapses to, a crash for a truthy non string before a str method call
 func strMethodArg(v any) (string, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &pyError{class: "AttributeError", msg: fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
+	return "", &kindError{class: "AttributeError", msg: fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
 }
 
 // Text the threat scan reads, a crash for a value Python could not slice and normalize
@@ -1441,18 +1286,18 @@ func scanText(v any) (string, error) {
 				return "", err
 			}
 		}
-		return "", &pyError{class: "TypeError", msg: "memory text is a list where text was expected"}
+		return "", &kindError{class: "TypeError", msg: "memory text is a list where text was expected"}
 	case map[string]any:
-		return "", &pyError{class: "TypeError", msg: "memory text is a mapping where text was expected"}
+		return "", &kindError{class: "TypeError", msg: "memory text is a mapping where text was expected"}
 	}
-	return "", &pyError{class: "TypeError", msg: fmt.Sprintf("memory text is %s where text was expected", errchain.Kind(v))}
+	return "", &kindError{class: "TypeError", msg: fmt.Sprintf("memory text is %s where text was expected", errchain.Kind(v))}
 }
 
 // Crash for a value Python cannot hash in a set or dict membership test
 func hashable(v any) error {
 	switch v.(type) {
 	case []any, []string, []map[string]any, map[string]any:
-		return &pyError{class: "TypeError", msg: fmt.Sprintf("memory value is %s where text or a number was expected", errchain.Kind(v))}
+		return &kindError{class: "TypeError", msg: fmt.Sprintf("memory value is %s where text or a number was expected", errchain.Kind(v))}
 	}
 	return nil
 }
@@ -1464,7 +1309,7 @@ func missingPathError(err error) bool {
 
 // Reason of an operating system failure followed by the paths it concerns
 func osErrorText(err error) string {
-	var pe *pyError
+	var pe *kindError
 	if errors.As(err, &pe) {
 		return pe.msg
 	}

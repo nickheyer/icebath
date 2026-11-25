@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Interpreter the capability probe runs on, the selected environment python else the first one on PATH
@@ -33,8 +33,8 @@ func probePython(ctx context.Context) (string, error) {
 // Kind and plugin context method names the probe script reads
 func probeOptions(manifest map[string]any) map[string]any {
 	kind := ""
-	if config.PyTruthy(manifest["kind"]) {
-		kind = config.PyStr(manifest["kind"])
+	if anyutil.IsTrue(manifest["kind"]) {
+		kind = anyutil.String(manifest["kind"])
 	}
 	return map[string]any{"kind": kind, "context_methods": pluginContextMethods()}
 }
@@ -122,7 +122,7 @@ func runCapabilityProbe(ctx context.Context, pluginDir string, manifest map[stri
 		return nil, detail
 	}
 	if reason, failed := payload["error"]; failed {
-		return nil, config.PyStr(reason)
+		return nil, anyutil.String(reason)
 	}
 	return payload, ""
 }

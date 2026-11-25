@@ -39,7 +39,7 @@ func (d *SessionDB) decodedRepairRow(row map[string]any) (map[string]any, error)
 			msg[column] = row[column]
 		}
 	}
-	if pyTruthy(row["tool_calls"]) {
+	if anyutil.IsTrue(row["tool_calls"]) {
 		v, err := jsonOr(row["tool_calls"], []any{}, "Failed to deserialize repaired tool_calls, falling back to []")
 		if err != nil {
 			return nil, err
@@ -50,10 +50,10 @@ func (d *SessionDB) decodedRepairRow(row map[string]any) (map[string]any, error)
 		msg["message_id"] = row["platform_message_id"]
 		msg["platform_message_id"] = row["platform_message_id"]
 	}
-	if pyTruthy(row["observed"]) {
+	if anyutil.IsTrue(row["observed"]) {
 		msg["observed"] = true
 	}
-	if pyTruthy(row["_compressed_summary"]) {
+	if anyutil.IsTrue(row["_compressed_summary"]) {
 		msg["_compressed_summary"] = true
 	}
 	restoreIdentityColumns(row, msg)
@@ -75,7 +75,7 @@ func (d *SessionDB) decodedRepairRow(row map[string]any) (map[string]any, error)
 			}
 		}
 		for _, column := range []string{"reasoning_details", "codex_reasoning_items", "codex_message_items"} {
-			if pyTruthy(row[column]) {
+			if anyutil.IsTrue(row[column]) {
 				v, err := jsonOr(row[column], nil, "Failed to deserialize repaired "+column+", falling back to None")
 				if err != nil {
 					return nil, err
@@ -90,7 +90,7 @@ func (d *SessionDB) decodedRepairRow(row map[string]any) (map[string]any, error)
 // Content as loaded rows hand it to callers, user and assistant strings sanitized and stripped
 func loadedViewContent(role string, content any) any {
 	if s, ok := content.(string); ok && (role == "user" || role == "assistant") {
-		return pyStrip(SanitizeContext(s))
+		return strings.TrimSpace(SanitizeContext(s))
 	}
 	return content
 }
@@ -210,7 +210,7 @@ func scalarKey(values ...any) string {
 				fmt.Fprintf(&b, "F%s|", strconv.FormatFloat(x, 'f', -1, 64))
 			}
 		default:
-			if n, ok := pyIntID(x); ok {
+			if n, ok := intID(x); ok {
 				fmt.Fprintf(&b, "I%d|", n)
 			} else {
 				fmt.Fprintf(&b, "R%s|", anyutil.Quote(x))
@@ -247,8 +247,8 @@ func (d *SessionDB) carryParentTimestamps(ctx context.Context, conn SQLiteConn, 
 		msg := messages[i]
 		toolCalls := parseToolCalls(msg["tool_calls"])
 		var encodedCalls any
-		if pyTruthy(toolCalls) {
-			text, err := pyDumps(toolCalls, pyJSONDefault)
+		if anyutil.IsTrue(toolCalls) {
+			text, err := dumpsValue(toolCalls, jsonDefault)
 			if err != nil {
 				return
 			}

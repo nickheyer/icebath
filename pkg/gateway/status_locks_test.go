@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -27,7 +28,7 @@ func TestAcquireScopedLockRejectsLiveOtherProcess(t *testing.T) {
 	patch(t, &statusPidExists, func(int) bool { return true })
 	patch(t, &statusProcessStartTime, fixedInt(int64(123)))
 	acquired, existing, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
-	if err != nil || acquired || !pyEq(recGet(existing, "pid"), 99999) {
+	if err != nil || acquired || !anyutil.Equal(recGet(existing, "pid"), 99999) {
 		t.Fatalf("%v %v", acquired, err)
 	}
 }
@@ -43,7 +44,7 @@ func TestAcquireScopedLockReplacesPidReusedByUnrelatedProcess(t *testing.T) {
 	patch(t, &statusReadProcessCmdline, cmdline("/usr/libexec/bluetoothuserd"))
 	acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	payload := readRecord(t, lock)
-	if err != nil || !acquired || !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(recGet(payload, "metadata").(*jsonutil.Object), "platform") != "telegram" {
+	if err != nil || !acquired || !anyutil.Equal(recGet(payload, "pid"), int64(os.Getpid())) || recGet(recGet(payload, "metadata").(*jsonutil.Object), "platform") != "telegram" {
 		t.Fatalf("%v %v", acquired, err)
 	}
 }
@@ -59,7 +60,7 @@ func TestAcquireScopedLockSelfReacquiresWhateverDiskStartTime(t *testing.T) {
 		patch(t, &statusLooksLikeGatewayProcess, func(int) bool { return true })
 		acquired, existing, err := AcquireScopedLock(context.Background(), "discord-bot-token", "secret", rec("platform", "discord"))
 		payload := readRecord(t, lock)
-		if err != nil || !acquired || !pyEq(recGet(existing, "pid"), int64(os.Getpid())) || !pyEq(recGet(payload, "start_time"), 987654321) {
+		if err != nil || !acquired || !anyutil.Equal(recGet(existing, "pid"), int64(os.Getpid())) || !anyutil.Equal(recGet(payload, "start_time"), 987654321) {
 			t.Fatalf("disk %v: %v %v", disk, acquired, err)
 		}
 	}
@@ -90,7 +91,7 @@ func TestAcquireScopedLockRaceSecondAcquirerLoses(t *testing.T) {
 		return os.Rename(src, dst)
 	})
 	acquired, existing, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
-	if err != nil || acquired || !pyEq(recGet(existing, "pid"), 424242) || !pyEq(recGet(readRecord(t, lock), "pid"), 424242) {
+	if err != nil || acquired || !anyutil.Equal(recGet(existing, "pid"), 424242) || !anyutil.Equal(recGet(readRecord(t, lock), "pid"), 424242) {
 		t.Fatalf("%v %v", acquired, err)
 	}
 }
@@ -103,7 +104,7 @@ func TestAcquireScopedLockReplacesStaleRecordAndStampsLabel(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), "profiles", "lead-gen-outreach"))
 	acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	payload := readRecord(t, lock)
-	if err != nil || !acquired || !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(payload, "profile") != "lead-gen-outreach" {
+	if err != nil || !acquired || !anyutil.Equal(recGet(payload, "pid"), int64(os.Getpid())) || recGet(payload, "profile") != "lead-gen-outreach" {
 		t.Fatalf("%v %v %v", acquired, err, recGet(payload, "profile"))
 	}
 	if filepath.Base(lock) != "telegram-bot-token-"+scopeHash("secret")+".lock" {
@@ -203,7 +204,7 @@ func TestTakeoverMarker(t *testing.T) {
 		t.Fatal("write")
 	}
 	p := readRecord(t, marker)
-	if !pyEq(recGet(p, "target_pid"), 12345) || !pyEq(recGet(p, "target_start_time"), 42) || !pyEq(recGet(p, "replacer_pid"), int64(os.Getpid())) ||
+	if !anyutil.Equal(recGet(p, "target_pid"), 12345) || !anyutil.Equal(recGet(p, "target_start_time"), 42) || !anyutil.Equal(recGet(p, "replacer_pid"), int64(os.Getpid())) ||
 		recGet(p, "written_at") == nil || recGet(p, "replacer_icebath_home") != dir {
 		t.Fatal("marker fields")
 	}
@@ -303,7 +304,7 @@ func TestPlannedStopMarker(t *testing.T) {
 		t.Fatal("write")
 	}
 	p := readRecord(t, marker)
-	if !pyEq(recGet(p, "target_pid"), 12345) || !pyEq(recGet(p, "target_start_time"), 42) || !pyEq(recGet(p, "stopper_pid"), int64(os.Getpid())) || recGet(p, "written_at") == nil {
+	if !anyutil.Equal(recGet(p, "target_pid"), 12345) || !anyutil.Equal(recGet(p, "target_start_time"), 42) || !anyutil.Equal(recGet(p, "stopper_pid"), int64(os.Getpid())) || recGet(p, "written_at") == nil {
 		t.Fatal("fields")
 	}
 	patch(t, &statusProcessStartTime, fixedInt(nil))

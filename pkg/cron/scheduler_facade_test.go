@@ -60,7 +60,7 @@ func TestSchedulerFacadeClaimFireStampsAttemptUnderProviderSource(t *testing.T) 
 	}
 	_, err = facade.HostCall(ctx, "claim_fire", []any{job.ID}, nil)
 	var typeErr *plugins.HostBuiltinError
-	if !errors.As(err, &typeErr) || typeErr.Message != "claim_fire() missing 1 required keyword-only argument: 'source'" {
+	if !errors.As(err, &typeErr) || typeErr.Message != "claim_fire needs the source argument" {
 		t.Fatalf("missing source %v", err)
 	}
 }

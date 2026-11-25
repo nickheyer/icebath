@@ -141,7 +141,7 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	a.settingsCtx = home.WithOverride(context.WithoutCancel(ctx), a.homeDir)
 	a.admission = NewUpdateAdmission(a.homeDir)
 	a.replyToMode = "first"
-	if mode := cfg.ReplyToMode; pyTruthy(mode) {
+	if mode := cfg.ReplyToMode; anyutil.IsTrue(mode) {
 		a.replyToMode = anyutil.String(mode)
 	}
 	a.disableLinkPreviews = a.core.coerceBoolExtra("disable_link_previews", false)
@@ -156,7 +156,7 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	a.textBatchDelaySeconds = settings.TelegramTextBatchDelay.Get(sctx).Seconds()
 	a.textBatchSplitDelay = max(settings.TelegramTextBatchSplitDelay.Get(sctx).Seconds(), a.textBatchDelaySeconds)
 	a.SetTextBatchDelays(a.textBatchDelaySeconds, a.textBatchSplitDelay)
-	a.statusIndicatorEnabled = pyTruthy(extra["status_indicator"])
+	a.statusIndicatorEnabled = anyutil.IsTrue(extra["status_indicator"])
 	a.statusOnlineText, a.statusOfflineText = "Online", "Offline"
 	if v, ok := extra["status_online"]; ok {
 		a.statusOnlineText = anyutil.String(v)
@@ -178,7 +178,7 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 		}
 	}
 	a.maxDocBytes = 20 * 1024 * 1024
-	if pyTruthy(extra["base_url"]) {
+	if anyutil.IsTrue(extra["base_url"]) {
 		a.maxDocBytes = 2 * 1024 * 1024 * 1024
 	}
 	return a
@@ -373,7 +373,7 @@ func tokenText(token any) string {
 // Whether the extra value is set and non empty
 func extraString(extra map[string]any, key string) string {
 	v, ok := extra[key]
-	if !ok || !pyTruthy(v) {
+	if !ok || !anyutil.IsTrue(v) {
 		return ""
 	}
 	return strings.TrimSpace(anyutil.String(v))

@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -11,6 +10,7 @@ import (
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Holder deferral escalation thresholds and the bounded doubling backoff of the in process stale FTS retry
@@ -54,11 +54,7 @@ func holderCmdline(pid int) string {
 	if !ok || len(argv) == 0 {
 		return "<cmdline unavailable>"
 	}
-	runes := []rune(strings.Join(argv, " "))
-	if len(runes) > 120 {
-		runes = runes[:120]
-	}
-	return string(runes)
+	return textutil.First(strings.Join(argv, " "), 120)
 }
 
 // Holder list as text, a list of pid and path pairs
@@ -91,33 +87,28 @@ func pidList(pids []int) []any {
 	return out
 }
 
-// Deferral bookkeeping read from the stored record, reset when a stored field has no numeric form
-func deferralCounters(record *jsonutil.Object, now float64) (firstSeen float64, attempts int64, holdersSince float64, holdersAttempts int64, err error) {
+// Deferral bookkeeping read from the stored record and counted once more, every field reset when one holds no usable number
+func deferralCounters(record *jsonutil.Object, now float64) (firstSeen float64, attempts int64, holdersSince float64, holdersAttempts int64) {
 	get := func(key string, def any) any {
 		if v, ok := record.Get(key); ok {
 			return v
 		}
 		return def
 	}
-	firstSeen, err = anyutil.ToFloat(get("first_seen", now))
+	firstSeen, err := anyutil.ToFloat(get("first_seen", now))
 	if err == nil {
 		attempts, err = anyutil.ToInt(get("attempts", int64(0)))
 	}
 	if err == nil {
-		attempts++
 		holdersSince, err = anyutil.ToFloat(get("holders_since", now))
 	}
 	if err == nil {
 		holdersAttempts, err = anyutil.ToInt(get("holders_attempts", int64(0)))
 	}
-	if err == nil {
-		holdersAttempts++
-		return firstSeen, attempts, holdersSince, holdersAttempts, nil
+	if err != nil || attempts == math.MaxInt64 || holdersAttempts == math.MaxInt64 {
+		return now, 1, now, 1
 	}
-	if errors.Is(err, anyutil.ErrNotNumber) {
-		return now, 1, now, 1, nil
-	}
-	return 0, 0, 0, 0, err
+	return firstSeen, attempts + 1, holdersSince, holdersAttempts + 1
 }
 
 // Records the holder deferral diagnostic and reports whether foreign holders still block the rebuild
@@ -143,10 +134,7 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 			record = obj
 		}
 	}
-	firstSeen, attempts, holdersSince, holdersAttempts, err := deferralCounters(record, now)
-	if err != nil {
-		return false, err
-	}
+	firstSeen, attempts, holdersSince, holdersAttempts := deferralCounters(record, now)
 	if firstSeen > now || firstSeen < 0 {
 		firstSeen = now
 	}
@@ -185,7 +173,7 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 		pkgLog().Error(fmt.Sprintf("state.db FTS repair has been blocked by the same holder(s) for %d deferrals over %s min "+
 			"(%s); waiting is futile. Stop ONLY the other holder(s) — this process keeps running and its "+
 			"own retry admits the rebuild within %ss of the holder leaving. `icebath doctor` shows this.",
-			holdersAttempts, pyFixed0((now-holdersSince)/60.0), strings.Join(named, ", "), pyFixed0(ftsStaleRetrySeconds)))
+			holdersAttempts, fixed0((now-holdersSince)/60.0), strings.Join(named, ", "), fixed0(ftsStaleRetrySeconds)))
 	} else if escalate {
 		pkgLog().Error(fmt.Sprintf("state.db FTS repair remains blocked after %d deferrals by holder(s) %s. Stop the listed "+
 			"processes (this process's own retry then rebuilds), or run `icebath sessions optimize-storage` "+

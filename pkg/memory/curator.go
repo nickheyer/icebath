@@ -391,7 +391,7 @@ func ApplyCuratorTransitions(ctx context.Context, now time.Time) (*jsonutil.Obje
 	}
 	for _, row := range rows {
 		curatorBump(counts, "checked")
-		name := pyStr(curatorGetOr(row, "name", nil))
+		name := anyutil.String(curatorGetOr(row, "name", nil))
 		if anyutil.IsTrue(curatorGetOr(row, "pinned", nil)) || protected[name] || (len(locked) > 0 && tools.IsLockedSkill(env, name, locked)) {
 			continue
 		}
@@ -574,7 +574,7 @@ func curatorClassifyRemoved(removed, added []string, afterNames map[string]bool,
 				continue
 			}
 			if hay, ok := curatorFindReference(args, needles); ok {
-				evidence := fmt.Sprintf("skill_manage action=%s on '%s' referenced '%s' in %s", pyStr(curatorGetOr(args, "action", "?")), target, name, curatorRunes(hay, 80))
+				evidence := fmt.Sprintf("skill_manage action=%s on '%s' referenced '%s' in %s", anyutil.String(curatorGetOr(args, "action", "?")), target, name, curatorRunes(hay, 80))
 				consolidated = append(consolidated, curatorEntry("name", name, "into", target, "evidence", evidence))
 				found = true
 				break
@@ -620,7 +620,7 @@ func curatorParseStructuredSummary(final any) (cons, prunes []*jsonutil.Object) 
 			for _, f := range append(append([]string{}, fields...), "reason") {
 				v, isStr := curatorGetOr(e, f, nil).(string)
 				if isStr {
-					v = pyStrip(v)
+					v = strings.TrimSpace(v)
 				}
 				cleaned.Set(f, v)
 				if f != "reason" && v == "" {
@@ -646,8 +646,8 @@ func curatorAbsorbedDeclarations(toolCalls []any) map[string]string {
 		}
 		name, okName := curatorGetOr(args, "name", nil).(string)
 		target, okTarget := curatorGetOr(args, "absorbed_into", nil).(string)
-		if okName && pyStrip(name) != "" && okTarget {
-			out[pyStrip(name)] = pyStrip(target)
+		if okName && strings.TrimSpace(name) != "" && okTarget {
+			out[strings.TrimSpace(name)] = strings.TrimSpace(target)
 		}
 	}
 	return out
@@ -749,7 +749,7 @@ func curatorByName(report []*jsonutil.Object) map[string]*jsonutil.Object {
 	out := map[string]*jsonutil.Object{}
 	for _, r := range report {
 		if r != nil {
-			out[pyStr(curatorGetOr(r, "name", nil))] = r
+			out[anyutil.String(curatorGetOr(r, "name", nil))] = r
 		}
 	}
 	return out
@@ -774,10 +774,10 @@ func curatorRenameSummary(beforeNames map[string]bool, afterReport []*jsonutil.O
 	total := len(diff.consolidated) + len(diff.pruned)
 	var entries []string
 	for _, e := range diff.consolidated {
-		entries = append(entries, fmt.Sprintf("  • %s → %s", pyStr(curatorGetOr(e, "name", "?")), pyStr(curatorGetOr(e, "into", "?"))))
+		entries = append(entries, fmt.Sprintf("  • %s → %s", anyutil.String(curatorGetOr(e, "name", "?")), anyutil.String(curatorGetOr(e, "into", "?"))))
 	}
 	for _, e := range diff.pruned {
-		entries = append(entries, fmt.Sprintf("  • %s — pruned (stale)", pyStr(curatorGetOr(e, "name", "?"))))
+		entries = append(entries, fmt.Sprintf("  • %s — pruned (stale)", anyutil.String(curatorGetOr(e, "name", "?"))))
 	}
 	lines := []string{fmt.Sprintf("archived %d skill(s):", total)}
 	lines = append(lines, entries[:min(show, len(entries))]...)
@@ -807,13 +807,13 @@ func curatorRewriteCronRefs(ctx context.Context, consolidated, pruned []*jsonuti
 	cmap := jsonutil.NewObject()
 	for _, e := range consolidated {
 		if n, into := curatorGetOr(e, "name", nil), curatorGetOr(e, "into", nil); anyutil.IsTrue(n) && anyutil.IsTrue(into) {
-			cmap.Set(pyStr(n), into)
+			cmap.Set(anyutil.String(n), into)
 		}
 	}
 	var names []string
 	for _, e := range pruned {
 		if n := curatorGetOr(e, "name", nil); anyutil.IsTrue(n) {
-			names = append(names, pyStr(n))
+			names = append(names, anyutil.String(n))
 		}
 	}
 	if cmap.Len() == 0 && len(names) == 0 {
@@ -935,7 +935,7 @@ func curatorWriteRunReport(ctx context.Context, in curatorRunReportInput) string
 	tcCounts := jsonutil.NewObject()
 	total := 0
 	for _, tc := range toolCalls {
-		key := pyStr(curatorGetOr(tc, "name", "unknown"))
+		key := anyutil.String(curatorGetOr(tc, "name", "unknown"))
 		v, _ := tcCounts.Get(key)
 		n, _ := v.(int)
 		tcCounts.Set(key, n+1)
@@ -974,36 +974,36 @@ func curatorReasonSuffix(entry any) string {
 	if !anyutil.IsTrue(reason) {
 		return ""
 	}
-	if r := pyStrip(pyStr(reason)); r != "" {
+	if r := strings.TrimSpace(anyutil.String(reason)); r != "" {
 		return " — " + r
 	}
 	return ""
 }
 
 func curatorConsolidatedLines(entry any) []string {
-	line := fmt.Sprintf("- `%s` → merged into `%s`", pyStr(curatorGetOr(entry, "name", "?")), pyStr(curatorGetOr(entry, "into", "?"))) + curatorReasonSuffix(entry)
+	line := fmt.Sprintf("- `%s` → merged into `%s`", anyutil.String(curatorGetOr(entry, "name", "?")), anyutil.String(curatorGetOr(entry, "into", "?"))) + curatorReasonSuffix(entry)
 	if source, _ := curatorGetOr(entry, "source", "").(string); source != "" && strings.HasPrefix(source, "tool-call audit") {
 		line += fmt.Sprintf("  _(detected via %s)_", source)
 	}
 	out := []string{line}
 	if claimed := curatorGetOr(entry, "model_claimed_into", nil); anyutil.IsTrue(claimed) {
-		out = append(out, fmt.Sprintf("  ⚠ The curator's summary named `%s` as the umbrella but that skill doesn't exist post-run; showing the tool-call audit's finding instead.", pyStr(claimed)))
+		out = append(out, fmt.Sprintf("  ⚠ The curator's summary named `%s` as the umbrella but that skill doesn't exist post-run; showing the tool-call audit's finding instead.", anyutil.String(claimed)))
 	}
 	return out
 }
 
 func curatorPrunedLines(entry any) []string {
 	if curatorIsDict(entry) {
-		return []string{fmt.Sprintf("- `%s`", pyStr(curatorGetOr(entry, "name", "?"))) + curatorReasonSuffix(entry)}
+		return []string{fmt.Sprintf("- `%s`", anyutil.String(curatorGetOr(entry, "name", "?"))) + curatorReasonSuffix(entry)}
 	}
-	return []string{fmt.Sprintf("- `%s`", pyStr(entry))}
+	return []string{fmt.Sprintf("- `%s`", anyutil.String(entry))}
 }
 
 func curatorJoinList(v any) string {
 	list, _ := v.([]any)
 	parts := make([]string, len(list))
 	for i, s := range list {
-		parts[i] = pyStr(s)
+		parts[i] = anyutil.String(s)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -1019,15 +1019,15 @@ func curatorCronRewriteLines(entry any) []string {
 	if after == "" {
 		after = "(none)"
 	}
-	out := []string{fmt.Sprintf("- `%s`: `%s` → `%s`", pyStr(jobName), curatorJoinList(curatorGetOr(entry, "before", nil)), after)}
+	out := []string{fmt.Sprintf("- `%s`: `%s` → `%s`", anyutil.String(jobName), curatorJoinList(curatorGetOr(entry, "before", nil)), after)}
 	if mapped, ok := curatorGetOr(entry, "mapped", nil).(*jsonutil.Object); ok {
 		for _, k := range mapped.Keys() {
-			out = append(out, fmt.Sprintf("    - `%s` → `%s` (consolidated)", k, pyStr(mapped.Value(k))))
+			out = append(out, fmt.Sprintf("    - `%s` → `%s` (consolidated)", k, anyutil.String(mapped.Value(k))))
 		}
 	}
 	if dropped, ok := curatorGetOr(entry, "dropped", nil).([]any); ok {
 		for _, n := range dropped {
-			out = append(out, fmt.Sprintf("    - `%s` dropped (pruned)", pyStr(n)))
+			out = append(out, fmt.Sprintf("    - `%s` dropped (pruned)", anyutil.String(n)))
 		}
 	}
 	return out
@@ -1043,9 +1043,9 @@ type curatorReportSection struct {
 var curatorReportSections = []curatorReportSection{
 	{"consolidated", "Consolidated into umbrella skills", curatorIntroConsolidated, curatorConsolidatedLines, 50, "see `run.json`"},
 	{"pruned", "Pruned — archived for staleness", curatorIntroPruned, curatorPrunedLines, 50, "see `run.json`"},
-	{"added", "New skills this run", curatorIntroAdded, func(n any) []string { return []string{fmt.Sprintf("- `%s`", pyStr(n))} }, -1, ""},
+	{"added", "New skills this run", curatorIntroAdded, func(n any) []string { return []string{fmt.Sprintf("- `%s`", anyutil.String(n))} }, -1, ""},
 	{"state_transitions", "State transitions", "", func(t any) []string {
-		return []string{fmt.Sprintf("- `%s`: %s → %s", pyStr(curatorGetOr(t, "name", nil)), pyStr(curatorGetOr(t, "from", nil)), pyStr(curatorGetOr(t, "to", nil)))}
+		return []string{fmt.Sprintf("- `%s`: %s → %s", anyutil.String(curatorGetOr(t, "name", nil)), anyutil.String(curatorGetOr(t, "from", nil)), anyutil.String(curatorGetOr(t, "to", nil)))}
 	}, -1, ""},
 	{"cron_rewrites", "Cron job skill references rewritten", curatorIntroCronRewrites, curatorCronRewriteLines, 25, "see `cron_rewrites.json`"},
 }
@@ -1073,7 +1073,7 @@ func curatorRenderReport(p *jsonutil.Object) string {
 	errV := curatorGetOr(p, "llm_error", nil)
 	orUnresolved := func(key string) string {
 		if v := curatorGetOr(p, key, nil); anyutil.IsTrue(v) {
-			return pyStr(v)
+			return anyutil.String(v)
 		}
 		return "(not resolved)"
 	}
@@ -1082,7 +1082,7 @@ func curatorRenderReport(p *jsonutil.Object) string {
 		keys := append([]string{}, o.Keys()...)
 		sort.Strings(keys)
 		for _, k := range keys {
-			byName = append(byName, fmt.Sprintf("%s=%s", k, pyStr(o.Value(k))))
+			byName = append(byName, fmt.Sprintf("%s=%s", k, anyutil.String(o.Value(k))))
 		}
 	}
 	tcLabel := strings.Join(byName, ", ")
@@ -1090,12 +1090,12 @@ func curatorRenderReport(p *jsonutil.Object) string {
 		tcLabel = "none"
 	}
 	lines := []string{
-		fmt.Sprintf("# Curator run — %s\n", pyStr(curatorGetOr(p, "started_at", ""))),
+		fmt.Sprintf("# Curator run — %s\n", anyutil.String(curatorGetOr(p, "started_at", ""))),
 		fmt.Sprintf("Model: `%s` via `%s`  ·  Duration: %s  ·  Agent-created skills: %d → %d (%s)\n", orUnresolved("model"), orUnresolved("provider"),
 			label, curatorCount(counts, "before"), curatorCount(counts, "after"), curatorSignedInt(curatorCount(counts, "delta"))),
 	}
 	if anyutil.IsTrue(errV) {
-		lines = append(lines, fmt.Sprintf("> ⚠ LLM pass error: `%s`\n", pyStr(errV)))
+		lines = append(lines, fmt.Sprintf("> ⚠ LLM pass error: `%s`\n", anyutil.String(errV)))
 	}
 	lines = append(lines, "## Auto-transitions (pure, no LLM)\n", fmt.Sprintf("- checked: %d", curatorCount(auto, "checked")),
 		fmt.Sprintf("- marked stale: %d", curatorCount(auto, "marked_stale")),
@@ -1135,12 +1135,12 @@ func curatorRenderReport(p *jsonutil.Object) string {
 	finalV := curatorGetOr(p, "llm_final", nil)
 	final := ""
 	if anyutil.IsTrue(finalV) {
-		final = pyStrip(pyStr(finalV))
+		final = strings.TrimSpace(anyutil.String(finalV))
 	}
 	if final != "" {
 		lines = append(lines, "## LLM final summary\n", final, "")
 	} else if summary := curatorGetOr(p, "llm_summary", nil); !anyutil.IsTrue(errV) && anyutil.IsTrue(summary) {
-		lines = append(lines, "## LLM summary\n", pyStr(summary), "")
+		lines = append(lines, "## LLM summary\n", anyutil.String(summary), "")
 	}
 	lines = append(lines, "## Recovery\n", "- Restore an archived skill: `icebath curator restore <name>`",
 		"- All archives live under `~/.icebath/skills/.archive/` and are recoverable by `mv`",
@@ -1158,7 +1158,7 @@ func curatorRenderCandidateList(ctx context.Context) (string, error) {
 	}
 	var rows []*jsonutil.Object
 	for _, r := range report {
-		name := pyStr(curatorGetOr(r, "name", nil))
+		name := anyutil.String(curatorGetOr(r, "name", nil))
 		bundled, err := scope.IsBundled(name)
 		if err != nil {
 			return "", err
@@ -1179,15 +1179,15 @@ func curatorRenderCandidateList(ctx context.Context) (string, error) {
 	}
 	lines := []string{fmt.Sprintf("Agent-created skills (%d):\n", len(rows))}
 	for _, r := range rows {
-		name := pyStr(curatorGetOr(r, "name", nil))
+		name := anyutil.String(curatorGetOr(r, "name", nil))
 		last := curatorGetOr(r, "last_activity_at", nil)
 		if !anyutil.IsTrue(last) {
 			last = "never"
 		}
 		lines = append(lines, fmt.Sprintf("- %s  provenance=%s  state=%s  pinned=%s  cron=%s  activity=%s  use=%s  view=%s  patches=%s  last_activity=%s",
-			name, pyStr(curatorGetOr(r, "provenance", "agent")), pyStr(curatorGetOr(r, "state", nil)), yesNo(anyutil.IsTrue(curatorGetOr(r, "pinned", nil))),
-			yesNo(cron[name]), pyStr(curatorGetOr(r, "activity_count", 0)), pyStr(curatorGetOr(r, "use_count", 0)), pyStr(curatorGetOr(r, "view_count", 0)),
-			pyStr(curatorGetOr(r, "patch_count", 0)), pyStr(last)))
+			name, anyutil.String(curatorGetOr(r, "provenance", "agent")), anyutil.String(curatorGetOr(r, "state", nil)), yesNo(anyutil.IsTrue(curatorGetOr(r, "pinned", nil))),
+			yesNo(cron[name]), anyutil.String(curatorGetOr(r, "activity_count", 0)), anyutil.String(curatorGetOr(r, "use_count", 0)), anyutil.String(curatorGetOr(r, "view_count", 0)),
+			anyutil.String(curatorGetOr(r, "patch_count", 0)), anyutil.String(last)))
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -1233,7 +1233,7 @@ func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, d
 			prompt = CuratorDryRunBanner + "\n\n" + prompt
 		}
 		meta = curatorLLMReview(ctx, prompt)
-		final = fmt.Sprintf("%s%s; llm: %s", prefix, autoSummary, pyStr(curatorGetOr(meta, "summary", "no change")))
+		final = fmt.Sprintf("%s%s; llm: %s", prefix, autoSummary, anyutil.String(curatorGetOr(meta, "summary", "no change")))
 	}
 	scope, _, _ := curatorScope(ctx)
 	after, err := scope.CuratedReport()
@@ -1409,7 +1409,7 @@ func curatorResolveReviewProvider(ctx context.Context) (*provider.Runtime, strin
 			prov = b.provider
 		}
 		overrides = curatorMergeRequestOverrides(rt.RequestOverrides, b.requestOverrides["extra_body"])
-		if m := pyStrip(rt.Model); m != "" {
+		if m := strings.TrimSpace(rt.Model); m != "" {
 			model = m
 		}
 	} else {
@@ -1456,7 +1456,7 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *jsonutil.Object {
 	final := ""
 	if curatorIsDict(res.Conversation) {
 		if v := curatorGetOr(res.Conversation, "final_response", nil); anyutil.IsTrue(v) {
-			final = pyStrip(pyStr(v))
+			final = strings.TrimSpace(anyutil.String(v))
 		}
 	}
 	meta.Set("final", final)

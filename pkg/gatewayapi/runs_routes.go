@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -122,7 +123,7 @@ func (a *APIServerAdapter) handleRunEvents(ctx context.Context, request *gateway
 		case err := <-done:
 			return err
 		case <-time.After(time.Duration(runStreamWriteTimeout * float64(time.Second))):
-			return &gateway.PyError{Kind: "TimeoutError", Msg: "run event write timed out"}
+			return &errorutil.Error{Kind: "TimeoutError", Msg: "run event write timed out"}
 		}
 	}
 	writeEvent := func(seq int64, event *jsonutil.Object) error {
@@ -225,7 +226,7 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 	}
 	body, _ := raw.(*jsonutil.Object)
 	if body == nil {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 	}
 	if _, ok := a.sessionAuthority(); ok {
 		if choice := body.ValueOr("choice", nil); roomGrantToken(request) != "" && choice != "once" && choice != "deny" {

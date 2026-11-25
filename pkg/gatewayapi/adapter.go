@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
@@ -591,7 +590,7 @@ func (a *APIServerAdapter) expectedAPIKey(ctx context.Context) string {
 	}
 	key, _, err := provider.GetSecret(ctx, "API_SERVER_KEY")
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to resolve a usable profile-scoped API_SERVER_KEY for %q: %s", profile, errorutil.Kind(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to resolve a usable profile-scoped API_SERVER_KEY for %q: %s", profile, err.Error()))
 		return ""
 	}
 	if provider.HasUsableSecret(key, 16) {

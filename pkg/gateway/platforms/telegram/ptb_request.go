@@ -225,7 +225,7 @@ func ptbTransportError(err error) error {
 		}
 		return &TelegramError{Class: "TimedOut", Message: "Timed out", Err: cause}
 	}
-	return &TelegramError{Class: "NetworkError", Message: fmt.Sprintf("httpx.%s: %s", className(err), err.Error()), Err: err}
+	return &TelegramError{Class: "NetworkError", Message: err.Error(), Err: err}
 }
 
 // Error response mapped to the python-telegram-bot exception its status code and parameters select
@@ -242,18 +242,18 @@ func ptbResponseError(code int, payload []byte) error {
 		parameters, _ = obj.Get("parameters")
 	}
 	message := "Unknown HTTPError"
-	if pyTruthy(description) {
+	if anyutil.IsTrue(description) {
 		message = anyutil.String(description)
 	}
 	if params, ok := parameters.(*jsonutil.Object); ok && params.Len() > 0 {
-		if migrate, _ := params.Get("migrate_to_chat_id"); pyTruthy(migrate) {
+		if migrate, _ := params.Get("migrate_to_chat_id"); anyutil.IsTrue(migrate) {
 			te := newTelegramError("ChatMigrated", fmt.Sprintf("Group migrated to supergroup. New chat id: %s", anyutil.String(migrate)), nil)
 			if chatID, err := anyutil.ToInt(migrate); err == nil {
 				te.NewChatID = chatID
 			}
 			return te
 		}
-		if retry, _ := params.Get("retry_after"); pyTruthy(retry) {
+		if retry, _ := params.Get("retry_after"); anyutil.IsTrue(retry) {
 			wait, _ := anyutil.ToFloat(retry)
 			te := newTelegramError("RetryAfter", fmt.Sprintf("Flood control exceeded. Retry in %s seconds", anyutil.String(retry)), nil)
 			te.RetryAfter = wait
@@ -272,7 +272,7 @@ func ptbResponseError(code int, payload []byte) error {
 		return newTelegramError("Conflict", message, nil)
 	case http.StatusBadGateway:
 		text := "Bad Gateway"
-		if pyTruthy(description) {
+		if anyutil.IsTrue(description) {
 			text = anyutil.String(description)
 		}
 		return newTelegramError("NetworkError", text, nil)

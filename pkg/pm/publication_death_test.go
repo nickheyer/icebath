@@ -75,9 +75,9 @@ func TestPubHelperProcess(t *testing.T) {
 		if args["fault"] == "facts" {
 			recordVenvState = func(*Facts, string, string, []string, string, string) error {
 				if data, _ := os.ReadFile(args["config"]); !strings.Contains(string(data), "new") {
-					return &PyError{Class: "AssertionError", Message: "selection not published before the facts write"}
+					return &ClassError{Class: "AssertionError", Message: "selection not published before the facts write"}
 				}
-				return &PyError{Class: "OSError", Message: "facts disk full"}
+				return &ClassError{Class: "OSError", Message: "facts disk full"}
 			}
 		}
 		os.Exit(WorkerMain())

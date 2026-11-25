@@ -146,7 +146,7 @@ func writeWindowOverrides(overrides []windowOverride) error {
 	if len(overrides) > 0 {
 		lines := make([]string, len(overrides))
 		for i, o := range overrides {
-			lines[i] = " " + pyJSONQuote(o.modelID) + ": " + strconv.FormatInt(o.window, 10)
+			lines[i] = " " + jsonQuote(o.modelID) + ": " + strconv.FormatInt(o.window, 10)
 		}
 		text = "{\n" + strings.Join(lines, ",\n") + "\n}"
 	}
@@ -181,7 +181,7 @@ func ClearWindowOverride(modelID string) error {
 }
 
 // File name without its last suffix as pathlib stem computes it
-func pyPathStem(p string) string {
+func pathStem(p string) string {
 	name := filepath.Base(ggufPathStr(p))
 	if i := strings.LastIndex(name, "."); i > 0 && i < len(name)-1 {
 		return name[:i]
@@ -233,7 +233,7 @@ func MaybeGrowWindow(modelID, baseURL string, sessionTokens, currentWindow int, 
 	}
 	gguf := ""
 	for _, p := range deps.stagedModels() {
-		if ModelIDFromStem(pyPathStem(p)) == modelID {
+		if ModelIDFromStem(pathStem(p)) == modelID {
 			gguf = p
 			break
 		}

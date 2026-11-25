@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,6 +26,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 //go:embed catalog
@@ -159,7 +161,7 @@ var (
 
 // Catalog tree and its display path, the folder mcp.catalog_dir names or the embedded manifests
 var catalogRoot = func(ctx context.Context) (fs.FS, string) {
-	if o := pyStrip(settings.McpCatalogDir.Get(ctx)); o != "" {
+	if o := strings.TrimSpace(settings.McpCatalogDir.Get(ctx)); o != "" {
 		return os.DirFS(o), o
 	}
 	sub, err := fs.Sub(embeddedCatalog, "catalog")
@@ -181,7 +183,7 @@ func yDict(v any) (map[string]any, bool, bool) {
 			if _, ok := k.(string); !ok {
 				nonStr = true
 			}
-			out[pyStr(k)] = x
+			out[anyutil.String(k)] = x
 		}
 		return out, nonStr, true
 	}
@@ -192,7 +194,7 @@ func yTruthy(v any) bool {
 	if m, ok := v.(map[any]any); ok {
 		return len(m) > 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 func yOr(a, b any) any {
@@ -203,7 +205,7 @@ func yOr(a, b any) any {
 }
 
 // Python list() of a value, characters of a string and keys of a mapping
-func pyList(v any) ([]any, error) {
+func listOf(v any) ([]any, error) {
 	switch x := v.(type) {
 	case []any:
 		return slices.Clone(x), nil
@@ -221,17 +223,9 @@ func pyList(v any) ([]any, error) {
 		return out, nil
 	case map[any]any:
 		m, _, _ := yDict(x)
-		return pyList(m)
+		return listOf(m)
 	}
 	return nil, fmt.Errorf("expected a list, got %s", errchain.Kind(v))
-}
-
-func pyStrListRepr(items []string) string {
-	parts := make([]string, len(items))
-	for i, s := range items {
-		parts[i] = pyReprStr(s)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 func notStringError(v any) error {
@@ -253,14 +247,14 @@ func parseEnvSpec(raw any) (EnvVarSpec, error) {
 	}
 	nameRaw := yOr(m["name"], "")
 	if !yTruthy(nameRaw) {
-		return EnvVarSpec{}, catalogErr("invalid env var name: %s", pyRepr(nameRaw))
+		return EnvVarSpec{}, catalogErr("invalid env var name: %s", anyutil.Quote(nameRaw))
 	}
 	name, isStr := nameRaw.(string)
 	if !isStr {
 		return EnvVarSpec{}, notStringError(nameRaw)
 	}
 	if !catalogEnvNameRe.MatchString(name) {
-		return EnvVarSpec{}, catalogErr("invalid env var name: %s", pyReprStr(name))
+		return EnvVarSpec{}, catalogErr("invalid env var name: %s", strconv.Quote(name))
 	}
 	required, secret := true, true
 	if v, ok := m["required"]; ok {
@@ -269,8 +263,8 @@ func parseEnvSpec(raw any) (EnvVarSpec, error) {
 	if v, ok := m["secret"]; ok {
 		secret = yTruthy(v)
 	}
-	return EnvVarSpec{Name: name, Prompt: pyStr(yOr(m["prompt"], name)), Required: required, Secret: secret,
-		Default: pyStr(yOr(m["default"], ""))}, nil
+	return EnvVarSpec{Name: name, Prompt: anyutil.String(yOr(m["prompt"], name)), Required: required, Secret: secret,
+		Default: anyutil.String(yOr(m["default"], ""))}, nil
 }
 
 func requireMapping(path, key string, raw any) (map[string]any, error) {
@@ -294,7 +288,7 @@ func requireStrList(path, field string, raw any, nonEmpty bool) ([]string, error
 	out := make([]string, 0, len(l))
 	for _, t := range l {
 		s, isStr := t.(string)
-		if !isStr || (nonEmpty && pyStrip(s) == "") {
+		if !isStr || (nonEmpty && strings.TrimSpace(s) == "") {
 			ok = false
 			break
 		}
@@ -340,7 +334,7 @@ func parseTransport(path string, raw any) (TransportSpec, error) {
 	t := TransportSpec{Type: tType, Command: tr["command"], URL: tr["url"], Version: tr["version"], Env: env,
 		Args: make([]string, len(args))}
 	for i, a := range args {
-		t.Args[i] = pyStr(a)
+		t.Args[i] = anyutil.String(a)
 	}
 	if tType == "stdio" && !yTruthy(t.Command) {
 		return TransportSpec{}, catalogErr("%s: stdio transport requires 'command'", path)
@@ -401,9 +395,9 @@ func parseAuth(path string, raw any, name string, http bool) (AuthSpec, error) {
 	}
 	slices.Sort(unknown)
 	if len(unknown) > 0 || !valuesOK {
-		msg := fmt.Sprintf("%s: auth.oauth allows string/int values for %s only", path, pyStrListRepr(manifestOAuthKeys))
+		msg := fmt.Sprintf("%s: auth.oauth allows string/int values for %s only", path, anyutil.String(manifestOAuthKeys))
 		if len(unknown) > 0 {
-			msg += fmt.Sprintf(" (unknown: %s)", pyStrListRepr(unknown))
+			msg += fmt.Sprintf(" (unknown: %s)", anyutil.String(unknown))
 		}
 		return AuthSpec{}, &CatalogError{Msg: msg}
 	}
@@ -423,9 +417,9 @@ func parseAuth(path string, raw any, name string, http bool) (AuthSpec, error) {
 			undeclared = append(undeclared, k)
 		}
 		slices.Sort(undeclared)
-		return AuthSpec{}, catalogErr("%s: auth.oauth references env vars not declared in auth.env: %s", path, pyStrListRepr(undeclared))
+		return AuthSpec{}, catalogErr("%s: auth.oauth references env vars not declared in auth.env: %s", path, anyutil.String(undeclared))
 	}
-	scopes, err := pyList(yOr(a["scopes"], []any{}))
+	scopes, err := listOf(yOr(a["scopes"], []any{}))
 	if err != nil {
 		return AuthSpec{}, err
 	}
@@ -484,7 +478,7 @@ func parseInstall(path string, raw any) (*InstallSpec, error) {
 	}
 	iType, isStr := m["type"].(string)
 	if !isStr || iType != "git" {
-		return nil, catalogErr("%s: install.type must be 'git' (got %s)", path, pyRepr(m["type"]))
+		return nil, catalogErr("%s: install.type must be 'git' (got %s)", path, anyutil.Quote(m["type"]))
 	}
 	url, ref := yOr(m["url"], ""), yOr(m["ref"], "")
 	if !yTruthy(url) || !yTruthy(ref) {
@@ -496,7 +490,7 @@ func parseInstall(path string, raw any) (*InstallSpec, error) {
 	}
 	spec := &InstallSpec{Type: iType, URL: url, Ref: ref, Bootstrap: make([]string, len(bootstrap))}
 	for i, c := range bootstrap {
-		spec.Bootstrap[i] = pyStr(c)
+		spec.Bootstrap[i] = anyutil.String(c)
 	}
 	return spec, nil
 }
@@ -577,7 +571,7 @@ func parseManifest(fsys fs.FS, rel, path string) (*CatalogEntry, error) {
 	}
 	mv := data["manifest_version"]
 	if !manifestVersionSupported(mv) {
-		return nil, catalogErr("%s: manifest_version %s unsupported (this icebath understands version %d)", path, pyRepr(mv), manifestVersion)
+		return nil, catalogErr("%s: manifest_version %s unsupported (this icebath understands version %d)", path, anyutil.Quote(mv), manifestVersion)
 	}
 	nameRaw := yOr(data["name"], "")
 	if !yTruthy(nameRaw) {
@@ -590,7 +584,7 @@ func parseManifest(fsys fs.FS, rel, path string) (*CatalogEntry, error) {
 	if !catalogNameRe.MatchString(name) {
 		return nil, catalogErr("%s: invalid or missing 'name'", path)
 	}
-	description := pyStrip(pyStr(yOr(data["description"], "")))
+	description := strings.TrimSpace(anyutil.String(yOr(data["description"], "")))
 	if description == "" {
 		return nil, catalogErr("%s: 'description' required", path)
 	}
@@ -614,9 +608,9 @@ func parseManifest(fsys fs.FS, rel, path string) (*CatalogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &CatalogEntry{Name: name, Description: description, Source: pyStrip(pyStr(yOr(data["source"], ""))),
+	return &CatalogEntry{Name: name, Description: description, Source: strings.TrimSpace(anyutil.String(yOr(data["source"], ""))),
 		Transport: transport, Auth: auth, ConnectorSlug: slug, Tools: toolsSpec, Install: install,
-		PostInstall: pyStr(yOr(data["post_install"], "")), ManifestPath: path}, nil
+		PostInstall: anyutil.String(yOr(data["post_install"], "")), ManifestPath: path}, nil
 }
 
 // Every valid catalog entry sorted by name, recording skipped manifests for CatalogDiagnostics
@@ -776,7 +770,7 @@ func doGitInstall(ctx context.Context, ui TerminalUI, entry *CatalogEntry) (stri
 			return "", err
 		}
 	}
-	say(ui, fmt.Sprintf("  Cloning %s (%s) → %s", pyStr(install.URL), pyStr(install.Ref), dest), ansiCyan)
+	say(ui, fmt.Sprintf("  Cloning %s (%s) → %s", anyutil.String(install.URL), anyutil.String(install.Ref), dest), ansiCyan)
 	ref, isStr := install.Ref.(string)
 	if !isStr {
 		return "", notStringError(install.Ref)
@@ -792,8 +786,8 @@ func doGitInstall(ctx context.Context, ui TerminalUI, entry *CatalogEntry) (stri
 		if err != nil {
 			return 0, err
 		}
-		if code != 0 && pyStrip(stderr) != "" {
-			say(ui, pyStrip(stderr), ansiDim)
+		if code != 0 && strings.TrimSpace(stderr) != "" {
+			say(ui, strings.TrimSpace(stderr), ansiDim)
 		}
 		return code, nil
 	}
@@ -1147,7 +1141,7 @@ func applyToolSelection(ctx context.Context, env *tools.Env, ui TerminalUI, entr
 	for i, t := range probed {
 		d := t.Description
 		if utf8.RuneCountInString(d) > 60 {
-			d = pyHead(d, 60) + "..."
+			d = headValue(d, 60) + "..."
 		}
 		labels[i] = fmt.Sprintf("%s  —  %s", t.Name, d)
 	}
@@ -1254,7 +1248,7 @@ func installEntry(ctx context.Context, env *tools.Env, ui TerminalUI, entry *Cat
 		envValues = values
 	}
 	if entry.Auth.Type == "oauth" && yTruthy(entry.Auth.Provider) {
-		p := pyStr(entry.Auth.Provider)
+		p := anyutil.String(entry.Auth.Provider)
 		say(ui, fmt.Sprintf("  This MCP uses %s OAuth. Run `icebath auth %s` if you have not already authenticated.", p, p), ansiYellow)
 	} else if entry.Auth.Type == "oauth" {
 		client := "native OAuth 2.1"
@@ -1299,7 +1293,7 @@ func installEntry(ctx context.Context, env *tools.Env, ui TerminalUI, entry *Cat
 	say(ui, fmt.Sprintf("  ✓ Installed '%s' (%s). Start a new icebath session to load its tools.", entry.Name, state))
 	if entry.PostInstall != "" {
 		fmt.Fprintln(out)
-		for _, line := range pySplitlines(pyStrip(entry.PostInstall)) {
+		for _, line := range splitlines(strings.TrimSpace(entry.PostInstall)) {
 			say(ui, "  "+line, ansiDim)
 		}
 	}

@@ -151,14 +151,14 @@ func (r *safeRepresenter) represent(v any) (*dumpNode, error) {
 		return r.represent(map[string]any(x))
 	case map[string]any:
 		keys := MappingKeys(x)
-		pyKeys := make([]any, len(keys))
+		keysOf := make([]any, len(keys))
 		for i, k := range keys {
-			pyKeys[i] = k
+			keysOf[i] = k
 			if pk, ok := MappingPyKey(x, k); ok {
-				pyKeys[i] = pk
+				keysOf[i] = pk
 			}
 		}
-		return r.mapping(reflect.ValueOf(x), pyKeys, func(i int) any { return x[keys[i]] })
+		return r.mapping(reflect.ValueOf(x), keysOf, func(i int) any { return x[keys[i]] })
 	case []any:
 		return r.sequence(reflect.ValueOf(x))
 	case time.Time:
@@ -289,7 +289,7 @@ func (r *safeRepresenter) mapping(rv reflect.Value, keys []any, value func(i int
 		order[i] = i
 	}
 	if r.opts.SortKeys {
-		order = pySortedOrder(keys)
+		order = sortedKeyOrder(keys)
 	}
 	for _, i := range order {
 		kn, err := r.represent(keys[i])
@@ -367,6 +367,7 @@ func integerValue(v any) (*big.Int, bool) {
 	return nil, false
 }
 
+// Shortest text a YAML reader takes back as this same float: fixed form with a fraction kept on whole values from 1e-4 up to 1e16, past which float64 stops holding every integer, and exponent form outside that range
 func representFloat(f float64) string {
 	switch {
 	case math.IsNaN(f):
@@ -376,7 +377,14 @@ func representFloat(f float64) string {
 	case math.IsInf(f, -1):
 		return "-.inf"
 	}
-	return strings.ToLower(strconv.FormatFloat(f, 'f', -1, 64))
+	if abs := math.Abs(f); abs != 0 && (abs < 1e-4 || abs >= 1e16) {
+		return strconv.FormatFloat(f, 'e', -1, 64)
+	}
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return s
 }
 
 // Datetime in ISO form with a space separator, microseconds when there are any and the offset unless the value is UTC without a zone
@@ -1152,4 +1160,38 @@ func (e *safeEmitter) writeDouble(s []rune, split bool) {
 		}
 	}
 	e.writeIndicator("\"", false, false, false)
+}
+
+// Positions of mapping keys in sorted order: text keys by their text, number keys by value, time keys by instant; the written order when the keys are of mixed kinds or of a kind with no order
+func sortedKeyOrder(keys []any) []int {
+	order := make([]int, len(keys))
+	for i := range order {
+		order[i] = i
+	}
+	allText, allNumber, allTime := true, true, true
+	for _, k := range keys {
+		if _, ok := k.(string); !ok {
+			allText = false
+		}
+		if _, ok := anyutil.Float(k); !ok {
+			allNumber = false
+		}
+		if _, ok := k.(time.Time); !ok {
+			allTime = false
+		}
+	}
+	switch {
+	case len(keys) < 2:
+	case allText:
+		sort.SliceStable(order, func(a, b int) bool { return keys[order[a]].(string) < keys[order[b]].(string) })
+	case allNumber:
+		sort.SliceStable(order, func(a, b int) bool {
+			x, _ := anyutil.Float(keys[order[a]])
+			y, _ := anyutil.Float(keys[order[b]])
+			return x < y
+		})
+	case allTime:
+		sort.SliceStable(order, func(a, b int) bool { return keys[order[a]].(time.Time).Before(keys[order[b]].(time.Time)) })
+	}
+	return order
 }

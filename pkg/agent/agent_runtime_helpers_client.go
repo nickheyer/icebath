@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // OpenAI SDK constructor seam, the process_bootstrap.OpenAI tests patch
@@ -17,7 +18,7 @@ var openAIClientConstructor = openAIClientFromKwargs
 
 // Text of a kwargs value as str(value or "") reads it
 func kwargText(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {
@@ -73,7 +74,7 @@ func openAIClientFromKwargs(kwargs map[string]any) (any, error) {
 			if value != nil {
 				hc, ok := value.(*http.Client)
 				if !ok {
-					return nil, fmt.Errorf("http_client must be an HTTP client, got %T", value)
+					return nil, fmt.Errorf("http_client must be an HTTP client, got %s", errchain.Kind(value))
 				}
 				opts.HTTPClient = hc
 			}
@@ -167,14 +168,12 @@ func ensureRouteClientHeaders(ctx context.Context, clientKwargs map[string]any, 
 		lower[strings.ToLower(k)] = true
 	}
 	missing := map[string]string{}
-	var order []string
-	for _, k := range provider.HeaderKeys(required) {
+	for k, v := range required {
 		if !lower[strings.ToLower(k)] {
-			missing[k] = required[k]
-			order = append(order, k)
+			missing[k] = v
 		}
 	}
-	clientKwargs["default_headers"] = provider.MergeHeaderMaps(existing, provider.OrderedHeaders(missing, order))
+	clientKwargs["default_headers"] = provider.MergeHeaderMaps(existing, missing)
 }
 
 // Native Gemini client when the base url is the Gemini API, nil otherwise
@@ -198,7 +197,7 @@ func geminiNativeClient(a *AIAgent, clientKwargs map[string]any, verify provider
 	if err != nil {
 		return nil, err
 	}
-	pkgLog().Info(fmt.Sprintf("Gemini native client created (%s, shared=%s) %s", reason, pyBoolStr(shared), a.ClientLogContext()))
+	pkgLog().Info(fmt.Sprintf("Gemini native client created (%s, shared=%s) %s", reason, boolStr(shared), a.ClientLogContext()))
 	return client, nil
 }
 
@@ -208,7 +207,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 	if kwargs == nil {
 		kwargs = map[string]any{}
 	}
-	if pyTruthy(kwargs["base_url"]) {
+	if anyutil.IsTrue(kwargs["base_url"]) {
 		kwargs["base_url"] = provider.ToOpenAIBaseURL(kwargText(kwargs["base_url"]))
 	}
 	func() {
@@ -218,7 +217,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 			}
 		}()
 		if profile, ok := provider.GetProviderProfile(ctx, a.provider); ok {
-			for key, value := range profile.BuildClientKwargsExtras(map[string]any{"base_url": pyOr(kwargs["base_url"], "")}) {
+			for key, value := range profile.BuildClientKwargsExtras(map[string]any{"base_url": anyutil.Or(kwargs["base_url"], "")}) {
 				if _, set := kwargs[key]; !set {
 					kwargs[key] = value
 				}
@@ -226,7 +225,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 		}
 	}()
 	if strings.ToLower(strings.TrimSpace(a.provider)) == "moa" {
-		return buildMoaFacade(ctx, a, pyOr(a.model, "default")), nil
+		return buildMoaFacade(ctx, a, anyutil.Or(a.model, "default")), nil
 	}
 	sslCACert := kwargText(kwargs["ssl_ca_cert"])
 	sslVerify := kwargs["ssl_verify"]
@@ -240,7 +239,7 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 		return nil, err
 	}
 	if client := providerSuppliedClient(ctx, a, kwargs); client != nil {
-		pkgLog().Info(fmt.Sprintf("%s client created from provider profile (%s, shared=%s) %s", a.provider, reason, pyBoolStr(shared), a.ClientLogContext()))
+		pkgLog().Info(fmt.Sprintf("%s client created from provider profile (%s, shared=%s) %s", a.provider, reason, boolStr(shared), a.ClientLogContext()))
 		return client, nil
 	}
 	if provider.IsGeminiNativeProviderName(a.provider) {
@@ -276,6 +275,6 @@ func (a *AIAgent) createOpenAIClient(ctx context.Context, clientKwargs map[strin
 		return nil, err
 	}
 	installServedModelCapture(a, client)
-	pkgLog().Info(fmt.Sprintf("OpenAI client created (%s, shared=%s) %s", reason, pyBoolStr(shared), a.ClientLogContext()))
+	pkgLog().Info(fmt.Sprintf("OpenAI client created (%s, shared=%s) %s", reason, boolStr(shared), a.ClientLogContext()))
 	return client, nil
 }

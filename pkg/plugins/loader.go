@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -172,7 +172,7 @@ func guardedLoad(ctx context.Context, fn func(context.Context) (bool, error)) (o
 func loadErrorText(err error) string {
 	var p *PluginPanicError
 	if errors.As(err, &p) {
-		return fmt.Sprintf("SystemExit(%s) raised during import/register()", config.PyRepr(p.Value))
+		return fmt.Sprintf("SystemExit(%s) raised during import/register()", anyutil.Quote(p.Value))
 	}
 	return err.Error()
 }

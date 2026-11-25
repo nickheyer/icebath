@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -171,7 +172,7 @@ func TestSessionListingsSearchMessagesOnlyThroughTheTimestampIndex(t *testing.T)
 				t.Fatal("no rows listed")
 			}
 			for _, row := range rows {
-				if preview, _ := row.Get("preview"); !pyTruthy(preview) {
+				if preview, _ := row.Get("preview"); !anyutil.IsTrue(preview) {
 					t.Fatalf("row without preview %v", row)
 				}
 			}

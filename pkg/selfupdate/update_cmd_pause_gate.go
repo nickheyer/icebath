@@ -134,7 +134,7 @@ func movesFor(token map[string]any) checkoutMoveFunc {
 func settleCheckoutMove(ctx context.Context, token, baseline, found map[string]any, root string, step map[string]any) error {
 	now := updaterecord.TreeState(ctx, root)
 	if now == nil {
-		return &pm.PyError{Class: "TypeError", Message: "the checkout tree state could not be read"}
+		return &pm.ClassError{Class: "TypeError", Message: "the checkout tree state could not be read"}
 	}
 	moved := !anyutil.Equal(now["pre_sha"], found["pre_sha"])
 	var torn []string

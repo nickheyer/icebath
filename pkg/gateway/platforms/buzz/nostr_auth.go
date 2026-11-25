@@ -110,7 +110,7 @@ func decodeNsec(value string) ([]byte, error) {
 	return decoded, nil
 }
 
-// Secret scalar of a 64 hex character or nsec key inside the secp256k1 range
+// Secret scalar of a 64 hex character key, white space between its digits ignored, or of an nsec key, inside the secp256k1 range
 func decodePrivateKey(value string) (*big.Int, error) {
 	raw := strings.TrimSpace(value)
 	var keyBytes []byte
@@ -121,7 +121,7 @@ func decodePrivateKey(value string) (*big.Int, error) {
 		}
 		keyBytes = b
 	} else {
-		b, err := hex.DecodeString(raw)
+		b, err := hex.DecodeString(strings.Join(strings.Fields(raw), ""))
 		if err != nil {
 			return nil, errors.New("private key must be 64 hex characters or nsec")
 		}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	browserutil "github.com/nickheyer/icebath/pkg/utils/browser"
 )
 
@@ -200,8 +201,8 @@ func cachedRedirect(storage *TokenStorage) (string, int) {
 	uris, _ := info.get("redirect_uris").([]any)
 	uri, port := "", 0
 	for _, raw := range uris {
-		text := pyStr(raw)
-		parsed, err := pyURLParse(text)
+		text := anyutil.String(raw)
+		parsed, err := urlParse(text)
 		if err != nil {
 			continue
 		}
@@ -229,7 +230,7 @@ type AuthorizationCodeResult struct {
 // Code, state, error and issuer of a redirect query, empty when absent
 func parseRedirectQuery(query string) (code, state, errText, iss string) {
 	vals := map[string]string{}
-	for _, kv := range pyParseQSL(query, false) {
+	for _, kv := range parseQSL(query, false) {
 		if _, seen := vals[kv[0]]; !seen {
 			vals[kv[0]] = kv[1]
 		}
@@ -274,7 +275,7 @@ func (r *callbackResult) snapshot() (code, state, errText, iss string, taken boo
 	return r.authCode, r.state, r.err, r.iss, r.taken
 }
 
-const pyHTTPErrorPage = `<!DOCTYPE HTML>
+const httpErrorPage = `<!DOCTYPE HTML>
 <html lang="en">
     <head>
         <meta charset="utf-8">
@@ -299,8 +300,8 @@ func makeCallbackHandler() (http.Handler, *callbackResult) {
 			w.Header().Set("Connection", "close")
 			w.WriteHeader(http.StatusNotImplemented)
 			if r.Method != http.MethodHead {
-				msg := html.EscapeString(fmt.Sprintf("Unsupported method (%s)", pyReprStr(r.Method)))
-				fmt.Fprintf(w, pyHTTPErrorPage, 501, msg, 501, "Server does not support this operation")
+				msg := html.EscapeString(fmt.Sprintf("Unsupported method (%s)", strconv.Quote(r.Method)))
+				fmt.Fprintf(w, httpErrorPage, 501, msg, 501, "Server does not support this operation")
 			}
 			return
 		}
@@ -315,7 +316,7 @@ func makeCallbackHandler() (http.Handler, *callbackResult) {
 		case code != "":
 			body = "<h2>Authorization Successful</h2><p>You can close this tab and return to Icebath.</p>"
 		default:
-			body = fmt.Sprintf("<h2>Authorization Failed</h2><p>Error: %s</p>", pyHTMLEscape(errText))
+			body = fmt.Sprintf("<h2>Authorization Failed</h2><p>Error: %s</p>", htmlEscape(errText))
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(status)
@@ -325,7 +326,7 @@ func makeCallbackHandler() (http.Handler, *callbackResult) {
 }
 
 // Escapes like Python html.escape with quotes
-func pyHTMLEscape(s string) string {
+func htmlEscape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#x27;").Replace(s)
 }
 

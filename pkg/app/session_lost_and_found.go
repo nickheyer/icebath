@@ -181,7 +181,7 @@ func runCLILostAndFoundRecover(source, lfPath, sqlite3Bin string, timeout time.D
 	if err != nil {
 		return nil, err
 	}
-	usable := func() bool { return pyTruthyValue(attempts[len(attempts)-1].Value("usable")) }
+	usable := func() bool { return anyutil.IsTrue(attempts[len(attempts)-1].Value("usable")) }
 	if usable() {
 		return jsonutil.ObjectOf("binary", sqlite3Bin, "attempts", lfAttemptList(attempts)), nil
 	}
@@ -339,7 +339,7 @@ func lfCLIRecoverAttempts(source, lfPath, sqlite3Bin string, timeout time.Durati
 			return nil, err
 		}
 		attempts = append(attempts, attempt)
-		if pyTruthyValue(attempt.Value("usable")) {
+		if anyutil.IsTrue(attempt.Value("usable")) {
 			break
 		}
 	}
@@ -369,7 +369,7 @@ func lfNotNullDefaults(conn state.SQLiteConn, table string) (map[int]any, error)
 	}
 	substitutes := map[int]any{}
 	for index, row := range rows {
-		if !pyTruthyValue(row[3]) {
+		if !anyutil.IsTrue(row[3]) {
 			continue
 		}
 		if row[4] != nil {
@@ -377,7 +377,7 @@ func lfNotNullDefaults(conn state.SQLiteConn, table string) (map[int]any, error)
 			continue
 		}
 		declared := ""
-		if pyTruthyValue(row[2]) {
+		if anyutil.IsTrue(row[2]) {
 			declared = strings.ToUpper(anyutil.String(row[2]))
 		}
 		if strings.Contains(declared, "INT") || strings.Contains(declared, "REAL") {
@@ -583,7 +583,7 @@ func lfDeclaredTypes(conn state.SQLiteConn, table string) (map[string]string, er
 	out := map[string]string{}
 	for _, row := range rows {
 		declared := ""
-		if pyTruthyValue(row[2]) {
+		if anyutil.IsTrue(row[2]) {
 			declared = anyutil.String(row[2])
 		}
 		out[anyutil.String(row[1])] = declared
@@ -1491,7 +1491,7 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 	}
 	recoveryVerifyWarning(verification, "BEST-EFFORT page-level salvage: the source table schemas were unreadable, so rows were rebuilt from raw "+
 		"pages and mapped heuristically. Review every count before trusting this output.")
-	if pyTruthyValue(cliReport.Value("header_zeroed")) {
+	if anyutil.IsTrue(cliReport.Value("header_zeroed")) {
 		recoveryVerifyWarning(verification, "header salvage: SQLite refused the source outright (page-1 header damaged, 'file is not a "+
 			"database'); the header of the private snapshot copy was zeroed so .recover could walk the "+
 			"surviving pages. Rows written only to a -wal after the last checkpoint are not included.")

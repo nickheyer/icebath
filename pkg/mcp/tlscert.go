@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"hash"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -34,7 +35,7 @@ func resolveClientCert(server string, rawCert any, rawKey any) (*tls.Certificate
 		}
 		path := expandUser(strings.TrimSpace(s))
 		if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
-			return "", &fileNotFoundError{msg: fmt.Sprintf("%s%s not found at %s", prefix, label, pyReprStr(path))}
+			return "", &fileNotFoundError{msg: fmt.Sprintf("%s%s not found at %s", prefix, label, strconv.Quote(path))}
 		}
 		return path, nil
 	}

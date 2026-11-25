@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,10 +135,10 @@ func TestManifestParsingRoundtripWriteRead(t *testing.T) {
 
 func TestManifestRejectsMalformedShapes(t *testing.T) {
 	for body, want := range map[string]string{
-		"- a\n":                            "distribution.yaml must be a mapping, got list",
+		"- a\n":                            "distribution.yaml must be a mapping, got a list",
 		"version: 1\n":                     "distribution.yaml missing 'name'",
 		"name: x\nenv_requires: 3\n":       "env_requires must be a list",
-		"name: x\nenv_requires: [3]\n":     "env_requires entry must be a mapping, got int",
+		"name: x\nenv_requires: [3]\n":     "env_requires entry must be a mapping, got a number",
 		"name: x\nenv_requires: [{}]\n":    "env_requires entry missing 'name'",
 		"name: x\ndistribution_owned: a\n": "distribution_owned must be a list",
 		"name: [a\n":                       "Failed to parse ",
@@ -154,7 +155,7 @@ func TestManifestRejectsMalformedShapes(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(dir, profiles.ManifestFilename), "name: \xff\n")
 	_, err := profiles.ReadManifest(dir)
-	wantDistError(t, err, "'utf-8' codec can't decode byte 0xff in position 6: invalid start byte")
+	wantDistError(t, err, "invalid UTF-8 at byte 6")
 	if m, err := profiles.ReadManifest(t.TempDir()); m != nil || err != nil {
 		t.Fatalf("%+v %v", m, err)
 	}
@@ -179,7 +180,7 @@ func TestVersionRequiresCheckMatrix(t *testing.T) {
 			wantDistError(t, err, "requires Icebath")
 		}
 	}
-	wantDistError(t, CheckIcebathRequires(">=1.0", "unknown"), "Unparseable version: 'unknown'")
+	wantDistError(t, CheckIcebathRequires(">=1.0", "unknown"), `Unparseable version: "unknown"`)
 }
 
 func TestParseSemverHandlesPrerelease(t *testing.T) {
@@ -308,7 +309,7 @@ func TestInstallRejectsNonDistributionDirectory(t *testing.T) {
 	_, err := PlanInstall(context.Background(), bogus, filepath.Join(tmp, "work"), "x")
 	wantDistError(t, err, "No distribution.yaml")
 	_, err = PlanInstall(context.Background(), filepath.Join(tmp, "nowhere"), tmp, "x")
-	wantDistError(t, err, "Cannot resolve distribution source: '"+filepath.Join(tmp, "nowhere")+"'. Expected a git URL")
+	wantDistError(t, err, "Cannot resolve distribution source: "+strconv.Quote(filepath.Join(tmp, "nowhere"))+". Expected a git URL")
 }
 
 func TestInstallEnforcesIcebathRequires(t *testing.T) {

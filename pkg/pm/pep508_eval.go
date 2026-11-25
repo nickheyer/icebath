@@ -344,13 +344,13 @@ func mustSpecVersion(text string) (*pep440Version, error) {
 		return nil, err
 	}
 	if !ok {
-		return nil, &PyError{Class: "InvalidVersion", Message: fmt.Sprintf("invalid version: %s", text)}
+		return nil, &ClassError{Class: "InvalidVersion", Message: fmt.Sprintf("invalid version: %s", text)}
 	}
 	return v, nil
 }
 
 // Direct comparison answer for simple clauses on a version without a local label, decided false when ranges must answer
-func fastSpecifierMatch(s pySpecifier, v *pep440Version) (match, decided bool, err error) {
+func fastSpecifierMatch(s specifierValue, v *pep440Version) (match, decided bool, err error) {
 	if strings.HasSuffix(s.version, ".*") || v.local != nil {
 		return false, false, nil
 	}
@@ -384,7 +384,7 @@ func fastSpecifierMatch(s pySpecifier, v *pep440Version) (match, decided bool, e
 }
 
 // Whether a version satisfies one clause with prereleases admitted, an unparsable version matching nothing
-func (s pySpecifier) contains(item string) (bool, error) {
+func (s specifierValue) contains(item string) (bool, error) {
 	if s.op == "===" {
 		return strings.ToLower(item) == strings.ToLower(s.version), nil
 	}
@@ -406,7 +406,7 @@ func (s pySpecifier) contains(item string) (bool, error) {
 }
 
 // Whether a version satisfies every clause of a specifier set with prereleases admitted
-func specifierSetContains(specs []pySpecifier, item string) (bool, error) {
+func specifierSetContains(specs []specifierValue, item string) (bool, error) {
 	for _, s := range specs {
 		ok, err := s.contains(item)
 		if err != nil || !ok {

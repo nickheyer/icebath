@@ -82,7 +82,7 @@ func InitialWindow(profile ModelProfile, budget HardwareBudget, flashAttention b
 	var reason string
 	if haveZeroSpill && bestZeroSpill >= min(ContextFloor, native) {
 		window = bestZeroSpill
-		reason = fmt.Sprintf("largest zero-spill rung (%dK)", pyFloorDiv(int64(window), 1024))
+		reason = fmt.Sprintf("largest zero-spill rung (%dK)", floorDiv(int64(window), 1024))
 	} else {
 		limit := int64(float64(budget.UsableVRAMBytes) * earlyCostCtxFraction)
 		window = min(ContextFloor, native)
@@ -95,7 +95,7 @@ func InitialWindow(profile ModelProfile, budget HardwareBudget, flashAttention b
 			}
 			window = rung
 		}
-		reason = fmt.Sprintf("floor held at %dK; weights spill (deliberate price of the guarantee)", pyFloorDiv(int64(window), 1024))
+		reason = fmt.Sprintf("floor held at %dK; weights spill (deliberate price of the guarantee)", floorDiv(int64(window), 1024))
 	}
 	kvBytes := kv(window)
 	return &WindowDecision{Window: window, Reasons: []string{reason},
@@ -146,7 +146,7 @@ func PlanLaunch(profile ModelProfile, budget HardwareBudget, mtpCapable bool, fi
 				decision = &WindowDecision{Window: target,
 					SpillBytes: max(0, need-budget.UsableVRAMBytes),
 					KVOnGPU:    CtxBytes(posture, target, true)+overhead <= budget.UsableVRAMBytes,
-					Reasons:    []string{fmt.Sprintf("grown window restored (%dK)", pyFloorDiv(int64(target), 1024))}}
+					Reasons:    []string{fmt.Sprintf("grown window restored (%dK)", floorDiv(int64(target), 1024))}}
 			}
 		}
 		return LaunchPlan{decision, stacked, overhead, &posture}
@@ -193,7 +193,7 @@ func FitToFreeMemory(plan LaunchPlan, profile ModelProfile, live HardwareBudget,
 		}
 		narrowed := *nd
 		narrowed.Reasons = []string{fmt.Sprintf("%dK fits beside other programs' GPU memory (%dK would not)",
-			pyFloorDiv(int64(nd.Window), 1024), pyFloorDiv(int64(decision.Window), 1024))}
+			floorDiv(int64(nd.Window), 1024), floorDiv(int64(decision.Window), 1024))}
 		return LaunchPlan{&narrowed, now.MTPPrefill, now.OverheadBytes, now.Profile}
 	}
 	floor := ContextFloor
@@ -204,7 +204,7 @@ func FitToFreeMemory(plan LaunchPlan, profile ModelProfile, live HardwareBudget,
 		return plan
 	}
 	return LaunchPlan{&WindowDecision{Window: floor, SpillBytes: 0, KVOnGPU: true, Reasons: []string{
-		fmt.Sprintf("floor held at %dK; other programs hold most of the GPU memory", pyFloorDiv(int64(floor), 1024))}},
+		fmt.Sprintf("floor held at %dK; other programs hold most of the GPU memory", floorDiv(int64(floor), 1024))}},
 		plan.MTPPrefill, plan.OverheadBytes, plan.Profile}
 }
 
@@ -248,7 +248,7 @@ func DecideGrowth(profile ModelProfile, budget HardwareBudget, currentWindow, se
 		return GrowthDecision{Action: GrowthActionCompress, Reason: "next rung exceeds physics; compression instead"}
 	}
 	return GrowthDecision{Action: GrowthActionGrow, NextWindow: nextRung,
-		Reason: fmt.Sprintf("rung %dK -> %dK", pyFloorDiv(int64(currentWindow), 1024), pyFloorDiv(int64(nextRung), 1024))}
+		Reason: fmt.Sprintf("rung %dK -> %dK", floorDiv(int64(currentWindow), 1024), floorDiv(int64(nextRung), 1024))}
 }
 
 // Fewest lowest recurrent blocks whose FFN bytes cover the spill, all of them when unknown or short

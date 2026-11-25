@@ -3,6 +3,8 @@ package cron
 import (
 	"context"
 	"fmt"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Projects a recovered worker death's unknown outcome onto the job once, fenced against newer fires
@@ -15,7 +17,7 @@ func (s *Store) recordUnknownWorkerOutcome(ctx context.Context, job *Job, errTex
 	if err != nil {
 		return false, err
 	}
-	if execution == nil || pyStrOrEmpty(execution["status"]) != "unknown" {
+	if execution == nil || anyutil.StringOr(execution["status"], "") != "unknown" {
 		return false, nil
 	}
 	owner := ""
@@ -33,9 +35,12 @@ func (s *Store) recordUnknownWorkerOutcome(ctx context.Context, job *Job, errTex
 		if errText != nil && *errText != "" {
 			text = *errText
 		} else {
-			text = pyStrOrEmpty(execution["error"])
+			text = anyutil.StringOr(execution["error"], "")
 		}
-		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, text))
+		if text == "" {
+			text = "the run ended in an unknown state with no recorded error"
+		}
+		s.log.Error(fmt.Sprintf("Job %q: %s", job.ID, text))
 		var deliveryError *string
 		scopeCtx := s.installFireSecretScope(ctx)
 		deliveryError, _ = deliverCrashFailureSeam(s, scopeCtx, job, text, adapters, loop)
@@ -50,9 +55,9 @@ func (s *Store) recordUnknownWorkerOutcome(ctx context.Context, job *Job, errTex
 
 // Cause for an attempt whose restart safe worker this process watched exit
 func externalWorkerExitedReason(returncode *int) string {
-	status := "None"
+	status := "an unknown status"
 	if returncode != nil {
-		status = fmt.Sprint(*returncode)
+		status = fmt.Sprintf("status %d", *returncode)
 	}
-	return fmt.Sprintf("Restart-safe cron worker exited with status %s after adopting this execution, without writing a durable terminal state; whether side effects ran is unknown.", status)
+	return fmt.Sprintf("Restart-safe cron worker exited with %s after adopting this execution, without writing a durable terminal state; whether side effects ran is unknown.", status)
 }

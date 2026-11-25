@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Fresh home with every inventory seam restored after the test and no staged local models
@@ -63,7 +64,7 @@ func invPayload(t *testing.T, pc PickerConfigContext, opts ModelsPayloadOptions)
 func invSlugs(rows []map[string]any) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, pyStr(r["slug"]))
+		out = append(out, anyutil.String(r["slug"]))
 	}
 	return out
 }
@@ -220,7 +221,7 @@ func TestPickerHintsAPIKeyWarningFormat(t *testing.T) {
 	invTestHome(t)
 	invListReturning([]map[string]any{})
 	rows := invPayload(t, invCtx("orig", "orig-model", "orig-url"), ModelsPayloadOptions{IncludeUnconfigured: true, PickerHints: true})
-	if w := pyStr(invFind(t, rows, "anthropic")["warning"]); !strings.Contains(w, "ANTHROPIC_API_KEY") {
+	if w := anyutil.String(invFind(t, rows, "anthropic")["warning"]); !strings.Contains(w, "ANTHROPIC_API_KEY") {
 		t.Fatalf("warning %q", w)
 	}
 }
@@ -337,7 +338,7 @@ func TestBuildModelsPayloadNoMaxModelsReturnsFullList(t *testing.T) {
 	invTestHome(t)
 	full := []any{}
 	for i := range 100 {
-		full = append(full, "model-"+pyStr(i))
+		full = append(full, "model-"+anyutil.String(i))
 	}
 	invListReturning([]map[string]any{invRow("kilocode", "Kilo Code", append([]any(nil), full...), false, false, "built-in")})
 	kilo := invFind(t, invPayload(t, invCtx("orig", "orig-model", "orig-url"), ModelsPayloadOptions{}), "kilocode")
@@ -377,7 +378,7 @@ func TestPickerMetadataUsesOneConfigReadForRealModelsDevLookups(t *testing.T) {
 	registry := map[string]any{}
 	for i, m := range models {
 		registry[m] = map[string]any{"id": m, "tool_call": true, "reasoning": strings.HasPrefix(m, "openai/"),
-			"release_date": "2026-01-0" + pyStr(i+1), "limit": map[string]any{"context": 200000.0, "output": 8192.0}}
+			"release_date": "2026-01-0" + anyutil.String(i+1), "limit": map[string]any{"context": 200000.0, "output": 8192.0}}
 	}
 	savedCache, savedTime := modelsDevCache, modelsDevCacheTime
 	modelsDevStateMu.Lock()

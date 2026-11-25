@@ -385,7 +385,7 @@ func TestPaletteAndDatesMatchPythonGolden(t *testing.T) {
 	inputs := map[string]*float64{}
 	for _, v := range []float64{0, 1, 86399.9999996, -1.5, 253402300800, 1_700_000_000.4, math.NaN()} {
 		f := v
-		inputs[pyFloatRepr(f)] = &f
+		inputs[floatRepr(f)] = &f
 	}
 	for key, want := range golden["_dates"].(map[string]any) {
 		ts, ok := inputs[key]

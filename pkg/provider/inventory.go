@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // PickerConfigContext is the disk config snapshot every picker consumer reads
@@ -120,7 +121,7 @@ func loadPickerContext(ctx context.Context) (PickerConfigContext, error) {
 
 // Lowercased trimmed slug of a row
 func inventorySlug(row map[string]any) string {
-	return strings.ToLower(strings.TrimSpace(pyOrStr(row["slug"])))
+	return strings.ToLower(strings.TrimSpace(anyutil.StringOr(row["slug"], "")))
 }
 
 // Rows minus every row carrying the slug
@@ -142,7 +143,7 @@ func inventoryModels(row map[string]any) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, m := range v {
-			out = append(out, pyStr(m))
+			out = append(out, anyutil.String(m))
 		}
 		return out
 	}
@@ -187,7 +188,7 @@ func buildModelsRows(ctx context.Context, pc PickerConfigContext, opts ModelsPay
 	localRow := localRuntimeRow(ctx, pc)
 	if localRow != nil {
 		rows = append(withoutSlug(rows, "llamacpp"), localRow)
-		if pyTruthy(localRow["is_current"]) {
+		if anyutil.IsTrue(localRow["is_current"]) {
 			staged := map[string]bool{}
 			for _, m := range inventoryModels(localRow) {
 				staged[m] = true
@@ -206,7 +207,7 @@ func buildModelsRows(ctx context.Context, pc PickerConfigContext, opts ModelsPay
 	}
 	if opts.ExplicitOnly {
 		rows = filterExplicitProviderRows(ctx, rows, pc)
-		localOwnsCurrent := localRow != nil && pyTruthy(localRow["is_current"]) && strings.ToLower(pc.CurrentProvider) == "custom"
+		localOwnsCurrent := localRow != nil && anyutil.IsTrue(localRow["is_current"]) && strings.ToLower(pc.CurrentProvider) == "custom"
 		if !localOwnsCurrent {
 			rows = append(rows, appendUnconfiguredRows(ctx, rows, pc, true)...)
 		}
@@ -260,7 +261,7 @@ func isManagedCustomRow(row map[string]any, staged map[string]bool) bool {
 func stripAggregatorOverlaps(ctx context.Context, rows []map[string]any) {
 	builtinAggregators := map[string]bool{}
 	for _, row := range rows {
-		if !pyTruthy(row["is_user_defined"]) && isRoutingAggregatorCtx(ctx, inventorySlug(row)) {
+		if !anyutil.IsTrue(row["is_user_defined"]) && isRoutingAggregatorCtx(ctx, inventorySlug(row)) {
 			builtinAggregators[inventorySlug(row)] = true
 		}
 	}
@@ -269,12 +270,12 @@ func stripAggregatorOverlaps(ctx context.Context, rows []map[string]any) {
 		if suffix, ok := strings.CutPrefix(rowSlug, "custom:"); ok && suffix != "" && builtinAggregators[suffix] {
 			return true
 		}
-		inferred := inferProviderFromBaseURL(pyOrStr(row["api_url"]))
+		inferred := inferProviderFromBaseURL(anyutil.StringOr(row["api_url"], ""))
 		return inferred != "" && builtinAggregators[inferred]
 	}
 	userModels := map[string]bool{}
 	for _, row := range rows {
-		if !pyTruthy(row["is_user_defined"]) {
+		if !anyutil.IsTrue(row["is_user_defined"]) {
 			continue
 		}
 		if len(builtinAggregators) > 0 && duplicatesBuiltinAggregator(row) {
@@ -288,7 +289,7 @@ func stripAggregatorOverlaps(ctx context.Context, rows []map[string]any) {
 		return
 	}
 	for _, row := range rows {
-		if pyTruthy(row["is_user_defined"]) || !isRoutingAggregatorCtx(ctx, pyStr(pyGetAny(row, "slug", ""))) {
+		if anyutil.IsTrue(row["is_user_defined"]) || !isRoutingAggregatorCtx(ctx, anyutil.String(getAny(row, "slug", ""))) {
 			continue
 		}
 		original := inventoryModels(row)
@@ -375,8 +376,8 @@ func applyLimits(ctx context.Context, rows []map[string]any) error {
 		return err
 	}
 	for _, row := range rows {
-		slug := pyOrStr(row["slug"])
-		if len(pools[slug]) == 0 || pyTruthy(row["is_user_defined"]) {
+		slug := anyutil.StringOr(row["slug"], "")
+		if len(pools[slug]) == 0 || anyutil.IsTrue(row["is_user_defined"]) {
 			continue
 		}
 		pool := inventoryLoadPoolFn(ctx, slug)
@@ -457,8 +458,8 @@ func applyUsage(ctx context.Context, rows []map[string]any) error {
 	wanted := []string{}
 	entryRequests := []map[string]any{}
 	for _, row := range rows {
-		slug := pyOrStr(row["slug"])
-		if slug == "" || pyTruthy(row["is_user_defined"]) || row["authenticated"] == false {
+		slug := anyutil.StringOr(row["slug"], "")
+		if slug == "" || anyutil.IsTrue(row["is_user_defined"]) || row["authenticated"] == false {
 			continue
 		}
 		supportsUsage := hasAccountUsage(ctx, slug)
@@ -547,7 +548,7 @@ func poolUsageAccounts(ctx context.Context, slug string, entryRequests *[]map[st
 		accountRow := map[string]any{"id": identityID, "label": entry.Label, "windows": windows, "state": state,
 			"resets_at": accountResetsAt(snapshot, liveCooldown)}
 		if existing, dup := seen[dedupeKey]; dup {
-			if accountStateRank[state] > accountStateRank[pyStr(existing["state"])] {
+			if accountStateRank[state] > accountStateRank[anyutil.String(existing["state"])] {
 				for i, a := range accounts {
 					if reflect.DeepEqual(a, existing) {
 						accounts[i] = accountRow
@@ -611,19 +612,19 @@ func FormatAuxPickerEntries(rows []map[string]any, currentProvider, currentBaseU
 	currentSlug := strings.ToLower(strings.TrimSpace(currentProvider))
 	hasBaseURL := strings.TrimSpace(currentBaseURL) != ""
 	for _, row := range rows {
-		slug := pyOrStr(row["slug"])
+		slug := anyutil.StringOr(row["slug"], "")
 		name := slug
-		if pyTruthy(row["name"]) {
-			name = pyStr(row["name"])
+		if anyutil.IsTrue(row["name"]) {
+			name = anyutil.String(row["name"])
 		}
 		models := inventoryModels(row)
 		total := row["total_models"]
-		if !pyTruthy(total) {
+		if !anyutil.IsTrue(total) {
 			total = len(models)
 		}
 		modelHint := ""
-		if pyTruthy(total) {
-			modelHint = " — " + pyStr(total) + " models"
+		if anyutil.IsTrue(total) {
+			modelHint = " — " + anyutil.String(total) + " models"
 		}
 		marker := ""
 		if strings.ToLower(slug) == currentSlug && currentSlug != "" && !hasBaseURL {
@@ -653,10 +654,10 @@ func reasoningCatalogReader(ctx context.Context, slug string) func(model string)
 func applyCapabilities(ctx context.Context, rows []map[string]any, metadataConfig map[string]any) error {
 	h := home.Dir(ctx)
 	modelCfg, _ := metadataConfig["model"].(map[string]any)
-	appServer := modelCfg != nil && strings.ToLower(strings.TrimSpace(pyOrStr(modelCfg["openai_runtime"]))) == "codex_app_server"
+	appServer := modelCfg != nil && strings.ToLower(strings.TrimSpace(anyutil.StringOr(modelCfg["openai_runtime"], ""))) == "codex_app_server"
 	for _, row := range rows {
-		slug := pyOrStr(row["slug"])
-		baseURL := pyOrStr(row["api_url"])
+		slug := anyutil.StringOr(row["slug"], "")
+		baseURL := anyutil.StringOr(row["api_url"], "")
 		caps := map[string]any{}
 		readReasoningCatalog := reasoningCatalogReader(ctx, strings.ToLower(slug))
 		for _, model := range inventoryModels(row) {
@@ -723,9 +724,9 @@ func applyFeatured(ctx context.Context, rows []map[string]any, metadataConfig ma
 		return ModelsDevModelInfo(ctx, provider, model, false)
 	}
 	for _, row := range rows {
-		slug := strings.ToLower(strings.TrimSpace(pyOrStr(row["slug"])))
+		slug := strings.ToLower(strings.TrimSpace(anyutil.StringOr(row["slug"], "")))
 		models := inventoryModels(row)
-		if pyTruthy(row["is_user_defined"]) || !isRoutingAggregatorCtx(ctx, slug) {
+		if anyutil.IsTrue(row["is_user_defined"]) || !isRoutingAggregatorCtx(ctx, slug) {
 			row["featured_models"] = []any{}
 			continue
 		}
@@ -779,10 +780,10 @@ func applyFeatured(ctx context.Context, rows []map[string]any, metadataConfig ma
 // Attaches every accepted spelling of a user defined provider so GUI pickers can match it
 func applyCustomAliases(rows []map[string]any) {
 	for _, row := range rows {
-		if !pyTruthy(row["is_user_defined"]) {
+		if !anyutil.IsTrue(row["is_user_defined"]) {
 			continue
 		}
-		set := CustomProviderAliases(pyStr(pyGetAny(row, "name", "")), pyStr(pyGetAny(row, "slug", "")))
+		set := CustomProviderAliases(anyutil.String(getAny(row, "name", "")), anyutil.String(getAny(row, "slug", "")))
 		aliases := make([]string, 0, len(set))
 		for a := range set {
 			aliases = append(aliases, a)
@@ -827,7 +828,7 @@ func canonicalRow(entry CanonicalProviderEntry, cur string, extra map[string]any
 func appendUnconfiguredRows(ctx context.Context, rows []map[string]any, pc PickerConfigContext, currentOnly bool) []map[string]any {
 	seen := map[string]bool{}
 	for _, r := range rows {
-		seen[strings.ToLower(pyStr(r["slug"]))] = true
+		seen[strings.ToLower(anyutil.String(r["slug"]))] = true
 	}
 	cur := strings.ToLower(pc.CurrentProvider)
 	curModel := strings.TrimSpace(pc.CurrentModel)
@@ -892,7 +893,7 @@ func appendUnconfiguredRows(ctx context.Context, rows []map[string]any, pc Picke
 // True when Anthropic was authenticated through OAuth, device flow, Claude Code login or a pooled OAuth entry
 func anthropicOAuthCredentialsPresent(ctx context.Context) bool {
 	env := modelsPoolEnv(ctx)
-	if pyTruthy(ReadClaudeCodeCredentials(env)["accessToken"]) {
+	if anyutil.IsTrue(ReadClaudeCodeCredentials(env)["accessToken"]) {
 		return true
 	}
 	entries, err := env.Store.ReadCredentialPool("anthropic")
@@ -900,7 +901,7 @@ func anthropicOAuthCredentialsPresent(ctx context.Context) bool {
 		return false
 	}
 	for _, entry := range entries {
-		if entry["auth_type"] == AuthTypeOAuth && strings.TrimSpace(pyOrStr(entry["access_token"])) != "" {
+		if entry["auth_type"] == AuthTypeOAuth && strings.TrimSpace(anyutil.StringOr(entry["access_token"], "")) != "" {
 			return true
 		}
 	}
@@ -912,7 +913,7 @@ func filterExplicitProviderRows(ctx context.Context, rows []map[string]any, pc P
 	currentSlug := strings.ToLower(strings.TrimSpace(pc.CurrentProvider))
 	env := modelsPoolEnv(ctx)
 	isExplicit := func(row map[string]any, slug string) bool {
-		if pyTruthy(row["is_user_defined"]) || (currentSlug != "" && slug == currentSlug) || row["source"] == "local-runtime" {
+		if anyutil.IsTrue(row["is_user_defined"]) || (currentSlug != "" && slug == currentSlug) || row["source"] == "local-runtime" {
 			return true
 		}
 		if slug == "moa" {
@@ -923,7 +924,7 @@ func filterExplicitProviderRows(ctx context.Context, rows []map[string]any, pc P
 	}
 	out := []map[string]any{}
 	for _, row := range rows {
-		if slug := strings.ToLower(strings.TrimSpace(pyStr(pyGetAny(row, "slug", "")))); slug != "" && isExplicit(row, slug) {
+		if slug := strings.ToLower(strings.TrimSpace(anyutil.String(getAny(row, "slug", "")))); slug != "" && isExplicit(row, slug) {
 			out = append(out, row)
 		}
 	}
@@ -934,7 +935,7 @@ func filterExplicitProviderRows(ctx context.Context, rows []map[string]any, pc P
 func externalProcessSignedIn(ctx context.Context, slug string) bool {
 	pconfig := authRegistryGet(ctx, slug)
 	return pconfig != nil && pconfig.AuthType == "external_process" &&
-		pyTruthy(GetExternalProcessProviderStatus(modelsPoolEnv(ctx), slug)["auth_verified"])
+		anyutil.IsTrue(GetExternalProcessProviderStatus(modelsPoolEnv(ctx), slug)["auth_verified"])
 }
 
 // True when the person's own mixture presets, not the built-in one, hold an enabled preset
@@ -947,7 +948,7 @@ func ownMoAPresetEnabled(ctx context.Context) bool {
 			continue
 		}
 		p, isMap := preset.(map[string]any)
-		if !isMap || pyTruthy(pyGetAny(p, "enabled", true)) {
+		if !isMap || anyutil.IsTrue(getAny(p, "enabled", true)) {
 			return true
 		}
 	}
@@ -960,12 +961,12 @@ func applyPickerHints(ctx context.Context, rows []map[string]any) {
 		if _, has := row["authenticated"]; has {
 			continue
 		}
-		isSkeleton := row["source"] == "canonical" && !pyTruthy(row["models"])
+		isSkeleton := row["source"] == "canonical" && !anyutil.IsTrue(row["models"])
 		row["authenticated"] = !isSkeleton
-		if !isSkeleton || pyTruthy(row["is_user_defined"]) {
+		if !isSkeleton || anyutil.IsTrue(row["is_user_defined"]) {
 			continue
 		}
-		authType, keyEnv := providerAuthHint(ctx, pyStr(row["slug"]))
+		authType, keyEnv := providerAuthHint(ctx, anyutil.String(row["slug"]))
 		row["auth_type"] = authType
 		row["key_env"] = keyEnv
 		if authType == "api_key" && keyEnv != "" {
@@ -984,27 +985,29 @@ func reorderCanonical(rows []map[string]any) []map[string]any {
 	}
 	var canon, extras []map[string]any
 	for _, r := range rows {
-		if _, ok := order[pyStr(r["slug"])]; ok {
+		if _, ok := order[anyutil.String(r["slug"])]; ok {
 			canon = append(canon, r)
 		} else {
 			extras = append(extras, r)
 		}
 	}
-	sort.SliceStable(canon, func(i, j int) bool { return order[pyStr(canon[i]["slug"])] < order[pyStr(canon[j]["slug"])] })
+	sort.SliceStable(canon, func(i, j int) bool {
+		return order[anyutil.String(canon[i]["slug"])] < order[anyutil.String(canon[j]["slug"])]
+	})
 	return append(append([]map[string]any{}, canon...), extras...)
 }
 
 // Attaches per model pricing to every row whose catalog prices its models
 func applyPricing(ctx context.Context, rows []map[string]any, cachedOnly bool) {
 	for _, row := range rows {
-		slug := strings.ToLower(pyStr(pyGetAny(row, "slug", "")))
+		slug := strings.ToLower(anyutil.String(getAny(row, "slug", "")))
 		models := inventoryModels(row)
 		if len(models) == 0 {
 			continue
 		}
 		baseURL := ""
 		if strings.HasPrefix(slug, "custom:") {
-			baseURL = pyOrStr(row["api_url"])
+			baseURL = anyutil.StringOr(row["api_url"], "")
 		}
 		rawPricing := inventoryPricingFn(ctx, slug, baseURL, false, cachedOnly)
 		if len(rawPricing) == 0 {
@@ -1036,7 +1039,7 @@ func formatModelPricing(p map[string]any) map[string]any {
 	}
 	inp, out := formatRaw(inpRaw), formatRaw(outRaw)
 	var cache any
-	if pyTruthy(cacheRaw) {
+	if anyutil.IsTrue(cacheRaw) {
 		cache = FormatPricePerMtok(rawPriceString(cacheRaw))
 	}
 	return map[string]any{"input": inp, "output": out, "cache": cache, "free": inp == "free" && (out == "free" || out == "")}
@@ -1062,13 +1065,13 @@ func localRuntimeRow(ctx context.Context, pc PickerConfigContext) map[string]any
 func prewarmPricingAsync(ctx context.Context, rows []map[string]any) <-chan struct{} {
 	slugs := map[[2]string]bool{}
 	for _, row := range rows {
-		if !pyTruthy(row["slug"]) {
+		if !anyutil.IsTrue(row["slug"]) {
 			continue
 		}
-		slug := strings.ToLower(pyOrStr(row["slug"]))
+		slug := strings.ToLower(anyutil.StringOr(row["slug"], ""))
 		baseURL := ""
 		if strings.HasPrefix(slug, "custom:") {
-			baseURL = pyOrStr(row["api_url"])
+			baseURL = anyutil.StringOr(row["api_url"], "")
 		}
 		slugs[[2]string{slug, baseURL}] = true
 	}

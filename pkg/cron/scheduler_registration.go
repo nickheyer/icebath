@@ -47,7 +47,7 @@ func cronExceptionName(err error) string {
 }
 
 func (e *CronSchedulerRegistrationError) Error() string {
-	return fmt.Sprintf("Cron job '%s' was saved, but its first scheduler registration failed. Do not create a duplicate. Pause/resume or update the job to retry registration.", e.Job.ID)
+	return fmt.Sprintf("Cron job %q was saved, but its first scheduler registration failed. Do not create a duplicate. Pause/resume or update the job to retry registration.", e.Job.ID)
 }
 
 func (e *CronSchedulerRegistrationError) Unwrap() error { return e.Cause }
@@ -58,7 +58,7 @@ func (e *CronSchedulerRegistrationError) UserMessage() string {
 	if e.Job.Name != "" {
 		label = e.Job.Name
 	}
-	return fmt.Sprintf("Saved cron job '%s', but couldn't register it with the external scheduler yet. The job is kept — don't re-create it; pause/resume or edit it (e.g. via /cron) to retry registration.", label)
+	return fmt.Sprintf("Saved cron job %q, but couldn't register it with the external scheduler yet. The job is kept — don't re-create it; pause/resume or edit it (e.g. via /cron) to retry registration.", label)
 }
 
 // Public partial failure contract without provider details

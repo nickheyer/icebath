@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -365,7 +366,7 @@ func assignDictValue(fv reflect.Value, value any) bool {
 			return false
 		}
 		candidate := reflect.ValueOf(json.RawMessage(raw))
-		if !reflect.DeepEqual(plainDictTree(fieldToDictValue(candidate)), plainDictTree(value)) {
+		if !anyutil.Equal(fieldToDictValue(candidate), value) {
 			return false
 		}
 		fv.Set(candidate)
@@ -488,7 +489,7 @@ func orderedDictValue(value any) (map[string]any, []string, bool) {
 			out[k] = d.Value(k)
 		}
 		return out, append([]string(nil), d.Keys()...), true
-	case pyObject:
+	case orderedObject:
 		out := make(map[string]any, len(d))
 		keys := make([]string, 0, len(d))
 		for _, kv := range d {
@@ -514,7 +515,7 @@ func plainDictTree(v any) any {
 			out[k] = plainDictTree(t.Value(k))
 		}
 		return out
-	case pyObject:
+	case orderedObject:
 		out := make(map[string]any, len(t))
 		for _, kv := range t {
 			out[kv.Key] = plainDictTree(kv.Value)
@@ -539,7 +540,7 @@ func plainDictTree(v any) any {
 // Value with every decoded ordered object at any depth turned into a pyjson Object of the same key order
 func orderedDictTree(v any) any {
 	switch t := v.(type) {
-	case pyObject:
+	case orderedObject:
 		o := jsonutil.NewObject()
 		for _, kv := range t {
 			o.Set(kv.Key, orderedDictTree(kv.Value))
@@ -558,7 +559,7 @@ func orderedDictTree(v any) any {
 // Compact JSON bytes of a value, ordered objects keeping their key order
 func rawJSONOf(v any) ([]byte, error) {
 	if !reflect.DeepEqual(plainDictTree(v), v) {
-		text, err := pyDumps(v, pyJSON{itemSep: ",", keySep: ":"})
+		text, err := dumpsValue(v, jsonCodec{itemSep: ",", keySep: ":"})
 		return []byte(text), err
 	}
 	return json.Marshal(v)

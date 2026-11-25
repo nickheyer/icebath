@@ -12,7 +12,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -179,7 +178,8 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 	if !validSuggestionSources[source] {
 		return nil, fmt.Errorf("unknown suggestion source: %s", anyutil.Quote(source))
 	}
-	if strings.TrimSpace(title) == "" || strings.TrimSpace(dedupKey) == "" {
+	dedupKey = strings.TrimSpace(dedupKey)
+	if strings.TrimSpace(title) == "" || dedupKey == "" {
 		return nil, errors.New("title and dedup_key are required")
 	}
 	suggestionsMu.Lock()
@@ -215,7 +215,7 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 	record.Set("description", strings.TrimSpace(description))
 	record.Set("source", source)
 	record.Set("job_spec", jobSpec)
-	record.Set("dedup_key", strings.TrimSpace(dedupKey))
+	record.Set("dedup_key", dedupKey)
 	record.Set("status", suggestionPending)
 	record.Set("created_at", FormatISO(s.clk.now()))
 	if err := s.saveSuggestionsRaw(append(suggestions, record)); err != nil {
@@ -224,13 +224,13 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 	return record, nil
 }
 
-// True when every rune is a digit like str.isdigit
+// True when ref is a non-empty run of ASCII digits, the form of a one based pending index
 func isDigitString(ref string) bool {
 	if ref == "" {
 		return false
 	}
-	for _, r := range ref {
-		if !unicode.IsDigit(r) {
+	for i := 0; i < len(ref); i++ {
+		if ref[i] < '0' || ref[i] > '9' {
 			return false
 		}
 	}
@@ -257,11 +257,7 @@ func (s *Store) GetSuggestion(ref string) (*jsonutil.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		n, err := strconv.ParseInt(strings.TrimSpace(ref), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("suggestion %s is not a number", ref)
-		}
-		if n >= 1 && n <= int64(len(pending)) {
+		if n, err := strconv.Atoi(ref); err == nil && n >= 1 && n <= len(pending) {
 			return pending[n-1].(*jsonutil.Object), nil
 		}
 	}
@@ -273,7 +269,7 @@ func (s *Store) GetSuggestion(ref string) (*jsonutil.Object, error) {
 		}
 		title, ok := raw.(string)
 		if !ok {
-			return nil, fmt.Errorf("a cron suggestion id is %s, expected text", errchain.Kind(raw))
+			return nil, fmt.Errorf("a cron suggestion title is %s, expected text", errchain.Kind(raw))
 		}
 		if strings.ToLower(title) == strings.ToLower(ref) {
 			return obj, nil
@@ -295,7 +291,7 @@ func (s *Store) setSuggestionStatus(id any, status string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if pyEqual(got, id) {
+		if anyutil.Equal(got, id) {
 			obj := rec.(*jsonutil.Object)
 			obj.Set("status", status)
 			obj.Set("resolved_at", FormatISO(s.clk.now()))
@@ -303,14 +299,6 @@ func (s *Store) setSuggestionStatus(id any, status string) (bool, error) {
 		}
 	}
 	return false, nil
-}
-
-// Python equality of two decoded JSON scalars
-func pyEqual(a, b any) bool {
-	if anyutil.Quote(a) == anyutil.Quote(b) {
-		return anyutil.Kind(a) == anyutil.Kind(b) || (isPyNumber(a) && isPyNumber(b))
-	}
-	return false
 }
 
 // True for decoded JSON ints and floats

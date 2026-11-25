@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Locals rebuilt by turn start compaction that the turn context reads back
@@ -297,7 +298,7 @@ func preflightCompression(ctx context.Context, a *AIAgent, out *CompactionOutcom
 	case len(cooldown) > 0:
 		remaining := 0.0
 		if v, ok := cooldown["remaining_seconds"]; ok {
-			remaining, _ = pyFloat(v)
+			remaining, _ = floatNumber(v)
 		}
 		pkgLog().Info(fmt.Sprintf("Skipping preflight compression: same-session cooldown active (~%d seconds remaining, session %s)", int(remaining), sessionOrNone(a)))
 		if tokens >= base.ThresholdTokens {
@@ -461,7 +462,7 @@ func rearmUncompressedOverflowWarn(ctx context.Context, a *AIAgent, messages []*
 		}
 		if text, ok := m.Content.(string); ok {
 			rawChars += utf8.RuneCountInString(text)
-		} else if pyTruthy(m.Content) {
+		} else if anyutil.IsTrue(m.Content) {
 			rawChars = ctxLen + 1
 			break
 		}

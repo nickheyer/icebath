@@ -179,7 +179,7 @@ func slicesCloneStrings(s []string) []string { return append([]string(nil), s...
 
 // Path(p).expanduser().resolve() in its non strict form
 func resolvePythonPath(p string) (string, error) {
-	return pyRealpath(expandUser(p))
+	return realpath(expandUser(p))
 }
 
 // Prompts the forked curator persisted into real sessions in older builds

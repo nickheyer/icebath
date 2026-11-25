@@ -106,10 +106,10 @@ var SiteCopyTable = func() map[string]string {
 
 var siteCopyFieldName = regexp.MustCompile(`\{([^{}:!.\[]*)`)
 
-// SiteCopyError is the KeyError an unknown site copy code raises
+// SiteCopyError reports a site copy code the copy table does not hold
 type SiteCopyError struct{ Code string }
 
-func (e *SiteCopyError) Error() string { return anyutil.Quote(e.Code) }
+func (e *SiteCopyError) Error() string { return "unknown site copy code " + anyutil.Quote(e.Code) }
 
 // ErrorKind names the Python exception class an unknown code raises
 func (e *SiteCopyError) ErrorKind() string { return "KeyError" }

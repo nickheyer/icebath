@@ -788,8 +788,8 @@ func peerList(c *peerCLI, _ map[string]any) (int, error) {
 		if v := entry["note"]; anyutil.IsTrue(v) {
 			note = " — " + anyutil.String(v)
 		}
-		peerURL, ok := entry["url"]
-		if !ok {
+		peerURL := entry["url"]
+		if peerURL == nil {
 			peerURL = "?"
 		}
 		c.println(fmt.Sprintf("%s\t%s\t[%s]%s", name, anyutil.String(peerURL), hasKey, note))
@@ -831,7 +831,7 @@ func peerRunCtl(c *peerCLI, ns map[string]any, action, peerName, profile, base, 
 		c.println(text)
 		return 0, nil
 	}
-	c.println(fmt.Sprintf("%s: %s", runID, anyutil.String(result.ValueOr("status", "unknown"))))
+	c.println(fmt.Sprintf("%s: %s", runID, anyutil.String(anyutil.Or(result.Value("status"), "unknown"))))
 	if output := result.ValueOr("output", nil); !stop && anyutil.IsTrue(output) {
 		c.println(anyutil.String(output))
 	} else if failure := result.ValueOr("error", nil); !stop && anyutil.IsTrue(failure) {

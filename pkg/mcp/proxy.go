@@ -20,8 +20,8 @@ var (
 	systemProxyBypass = httputil.SystemProxyBypass
 )
 
-// pySplitPort splits host and a numeric port the way urllib _splitport does, empty port when absent
-func pySplitPort(host string) (string, string) {
+// splitPort splits host and a numeric port the way urllib _splitport does, empty port when absent
+func splitPort(host string) (string, string) {
 	if m := splitPortRE.FindStringSubmatch(host); m != nil {
 		return m[1], m[2]
 	}
@@ -68,7 +68,7 @@ func proxyBypassEnvironment(host string, proxies map[string]string) bool {
 		return true
 	}
 	host = strings.ToLower(host)
-	hostonly, _ := pySplitPort(host)
+	hostonly, _ := splitPort(host)
 	for _, name := range strings.Split(noProxy, ",") {
 		name = strings.TrimSpace(name)
 		if name == "" {

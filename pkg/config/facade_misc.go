@@ -13,8 +13,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Source tree the running code was built from, else the directory holding the running binary
@@ -187,7 +189,7 @@ func RequireParseableUserConfig(ctx context.Context, h string, ignoreUserConfig 
 		if _, isMap := data.(map[string]any); data == nil || isMap {
 			return nil
 		}
-		parseErr = fmt.Errorf("top-level YAML value must be a mapping, got %s", ErrorKind(data))
+		parseErr = fmt.Errorf("top-level YAML value must be a mapping, got %s", errchain.Kind(data))
 	}
 	backup, berr := BackupConfig(ctx, configPath, "corrupt", DefaultBackupKeep)
 	if berr != nil {
@@ -214,7 +216,7 @@ func SeedConfigFile(ctx context.Context, h, configPath, template string) (bool, 
 	if template == "" {
 		template = filepath.Join(GetProjectRoot(), "cli-config.yaml.example")
 	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+	if err := os.MkdirAll(pathutil.DirKeepDotDot(configPath), 0o755); err != nil {
 		return false, err
 	}
 	if info, err := os.Stat(template); err == nil {

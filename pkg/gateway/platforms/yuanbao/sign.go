@@ -97,18 +97,18 @@ var (
 )
 
 // Error of the adapter carrying the kind of failure beside its message
-type pyErr struct{ kind, msg string }
+type kindErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string     { return e.msg }
-func (e *pyErr) ErrorKind() string { return e.kind }
+func (e *kindErr) Error() string     { return e.msg }
+func (e *kindErr) ErrorKind() string { return e.kind }
 
 func runtimeError(msg string) error { return &RuntimeError{Msg: msg} }
 
-func valueError(msg string) error { return &pyErr{"ValueError", msg} }
+func valueError(msg string) error { return &kindErr{"ValueError", msg} }
 
 // Whether the error is the TimeoutError of an awaited future, an elapsed wait or a timed out opening handshake
 func isTimeout(err error) bool {
-	var pe *pyErr
+	var pe *kindErr
 	if errors.As(err, &pe) {
 		return pe.kind == "TimeoutError"
 	}
@@ -118,7 +118,7 @@ func isTimeout(err error) bool {
 
 // Whether the error rejects a value: a bad argument or file of this package, media the cache refuses, malformed JSON, a number that does not parse or base64 that does not decode
 func isValueError(err error) bool {
-	var pe *pyErr
+	var pe *kindErr
 	var ge *errorutil.Error
 	return errors.As(err, &pe) && (pe.kind == "ValueError" || pe.kind == "UnicodeDecodeError") ||
 		errors.As(err, &ge) && ge.Kind == "ValueError" ||
@@ -345,7 +345,7 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 		}
 		result, ok := asDict(decoded)
 		if !ok {
-			return nil, &pyErr{"AttributeError", fmt.Sprintf("the sign token response must be a JSON object, got %s", errchain.Kind(decoded))}
+			return nil, &kindErr{"AttributeError", fmt.Sprintf("the sign token response must be a JSON object, got %s", errchain.Kind(decoded))}
 		}
 		code := result["code"]
 		if equalsInt(code, 0) {

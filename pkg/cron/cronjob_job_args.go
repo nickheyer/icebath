@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
@@ -132,10 +133,10 @@ func (s *Store) localDeliveryNotice(ctx context.Context, env *tools.Env, job *Jo
 		return nil
 	}
 	msg := "This is a local-only cron job: its output is saved (view it with " +
-		"cronjob(action='list')) but will NOT be delivered back into this " +
+		"cronjob(action=\"list\")) but will NOT be delivered back into this " +
 		"session — CLI/TUI and stateless HTTP API sessions have no live-delivery channel. To be " +
 		"notified when it runs, recreate or update the job with deliver set to " +
-		"a gateway-connected platform, e.g. deliver='telegram' or deliver='all'."
+		"a gateway-connected platform, e.g. deliver=\"telegram\" or deliver=\"all\"."
 	return &msg
 }
 
@@ -165,7 +166,7 @@ func modeGuidanceNotes(job *Job, userDeliver *string) []string {
 	}
 	for _, p := range strings.Split(deliver, ",") {
 		if p == "all" {
-			notes = append(notes, "deliver='all' resolves at fire time and never includes "+
+			notes = append(notes, "deliver=\"all\" resolves at fire time and never includes "+
 				"bot-chat targets — channels connected later are picked up "+
 				"automatically.")
 			break
@@ -177,7 +178,7 @@ func modeGuidanceNotes(job *Job, userDeliver *string) []string {
 	for _, target := range strings.Split(deliver, ",") {
 		parts := strings.Split(strings.TrimSpace(target), ":")
 		if len(parts) == 2 && parts[0] != "bot-chat" && parts[0] != "sms" && parts[1] != "" && !strings.HasPrefix(parts[1], "#") {
-			notes = append(notes, fmt.Sprintf("deliver target '%s' has no :thread_id "+
+			notes = append(notes, fmt.Sprintf("deliver target %q has no :thread_id "+
 				"segment — on thread/topic platforms the delivery lands in "+
 				"the main chat, not a topic.", strings.TrimSpace(target)))
 			break
@@ -335,13 +336,13 @@ func validateBotChatDeliver(deliver *string) string {
 		}
 		canon, err := profiles.NormalizeProfileName(profileArg)
 		if err != nil {
-			return fmt.Sprintf("invalid bot-chat profile name '%s'", profileArg)
+			return fmt.Sprintf("invalid bot-chat profile name %q", profileArg)
 		}
 		if !profiles.ProfileExists(canon) {
-			return fmt.Sprintf("bot-chat delivery profile '%s' not found on this "+
+			return fmt.Sprintf("bot-chat delivery profile %q not found on this "+
 				"gateway's machine. Bot Chat delivery is machine-local — use a "+
 				"profile that exists here (icebath profile list), or omit the "+
-				"name (deliver='bot-chat') for the job's own profile.", profileArg)
+				"name (deliver=\"bot-chat\") for the job's own profile.", profileArg)
 		}
 	}
 	return ""
@@ -507,15 +508,32 @@ func (s *Store) validateCronScriptPath(script string) string {
 			fmt.Sprintf("Got absolute or home-relative path: %s. ", anyutil.Quote(raw)) +
 			fmt.Sprintf("Place scripts in %s/ and use just the filename.", scriptsDir)
 	}
+	if strings.IndexByte(raw, 0) >= 0 {
+		return fmt.Sprintf("Script path contains a NUL byte: %s", anyutil.Quote(raw))
+	}
 	_ = os.MkdirAll(scriptsDir, 0o777)
-	resolved := filepath.Join(scriptsDir, raw)
-	if tools.ValidateWithinDir(resolved, scriptsDir) != "" {
+	resolved := pathutil.JoinKeepDotDot(scriptsDir, raw)
+	if !resolvesInside(resolved, scriptsDir) {
 		return fmt.Sprintf("Script path escapes the scripts directory via traversal: %s", anyutil.Quote(raw))
 	}
 	if st, err := os.Stat(resolved); err != nil || !st.Mode().IsRegular() {
 		return fmt.Sprintf("Script file not found: %s. ", resolved) + fmt.Sprintf("Create it in %s/ first.", scriptsDir)
 	}
 	return ""
+}
+
+// Whether p, its symlinks followed and each dot-dot applied to what they lead to as the system does, lies in dir
+func resolvesInside(p, dir string) bool {
+	target, err := pathutil.Resolve(p)
+	if err != nil {
+		return false
+	}
+	root, err := pathutil.Resolve(dir)
+	if err != nil {
+		return false
+	}
+	_, inside := pathutil.RelativeTo(target, root)
+	return inside
 }
 
 // Context refs with self added for continuity true or removed for false, nil when empty
@@ -555,8 +573,8 @@ func (s *Store) validateContextFromRefs(ctx context.Context, refs []any) (string
 			return "", err
 		}
 		if job == nil {
-			return fmt.Sprintf("context_from job '%s' not found. ", anyutil.String(ref)) +
-				"Use cronjob(action='list') to see available jobs.", nil
+			return fmt.Sprintf("context_from job %q not found. ", anyutil.String(ref)) +
+				"Use cronjob(action=\"list\") to see available jobs.", nil
 		}
 	}
 	return "", nil

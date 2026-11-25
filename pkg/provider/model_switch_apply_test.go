@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Offline model validation home with direct alias state reset and the given config
@@ -150,7 +151,7 @@ func TestSameRouteRepickKeepsTheContextPin(t *testing.T) {
 	persistOrFail(t, ctx, ModelSwitchResult{Success: true, NewModel: "local-model", TargetProvider: "custom",
 		BaseURL: "http://localhost:1234/v1", APIMode: "anthropic_messages", IsGlobal: true})
 	block := persistedModelBlock(t, path)
-	if pyStr(block["context_length"]) != "32000" || block["api_key"] != "sk-stale" {
+	if anyutil.String(block["context_length"]) != "32000" || block["api_key"] != "sk-stale" {
 		t.Fatalf("block %v", block)
 	}
 }

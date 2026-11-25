@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Profiles the bundled anthropic plugin registers
@@ -52,7 +53,7 @@ func anthropicProfileFetchModels(ctx context.Context, apiKey, baseURL string, ti
 		for _, it := range list {
 			if m, ok := it.(map[string]any); ok {
 				if id, has := m["id"]; has {
-					models = append(models, pyStr(id))
+					models = append(models, anyutil.String(id))
 				}
 			}
 		}

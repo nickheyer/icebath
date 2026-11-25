@@ -18,7 +18,7 @@ import (
 // JSON receipt of a local reset lineage as the gateway stores it
 func lineageReceipt(t *testing.T, owner string, lineage ...string) string {
 	t.Helper()
-	text, err := pyDumps(jsonutil.ObjectOf("session_id", owner, "lineage", stringsToAny(lineage)), pyJSONDefault)
+	text, err := dumpsValue(jsonutil.ObjectOf("session_id", owner, "lineage", stringsToAny(lineage)), jsonDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func lineageListIDs(t *testing.T, db *SessionDB, o ListSessionsRichOptions) []st
 	}
 	out := []string{}
 	for _, row := range rows {
-		out = append(out, pyStr(rowValue(row, "id")))
+		out = append(out, anyutil.String(rowValue(row, "id")))
 	}
 	return out
 }
@@ -162,7 +162,7 @@ func TestUnchangedSessionListsAndCountsScanReceiptsOnce(t *testing.T) {
 // Sorted copy of string items for set comparison
 func sortedAny(items []any) []any {
 	out := append([]any{}, items...)
-	sort.Slice(out, func(i, j int) bool { return pyStr(out[i]) < pyStr(out[j]) })
+	sort.Slice(out, func(i, j int) bool { return anyutil.String(out[i]) < anyutil.String(out[j]) })
 	return out
 }
 
@@ -347,7 +347,7 @@ func TestConcurrentListsKeepTheSameProjection(t *testing.T) {
 					return
 				}
 				for _, row := range rows {
-					results[i] = append(results[i], pyStr(rowValue(row, "id")))
+					results[i] = append(results[i], anyutil.String(rowValue(row, "id")))
 				}
 			}
 		}()

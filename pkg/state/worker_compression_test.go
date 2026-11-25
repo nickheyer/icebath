@@ -24,7 +24,7 @@ func installAutomationCodecDoubles() {
 		WorkerAutomationCodecs[family] = func(raw string) (AutomationState, error) {
 			decoded, err := jsonutil.Decode(raw)
 			if err != nil {
-				return nil, pyValueError(err.Error())
+				return nil, valueError(err.Error())
 			}
 			return &jsonAutomationState{decoded.(*jsonutil.Object)}, nil
 		}
@@ -498,7 +498,7 @@ func TestOwnerMintedMessageUIDRoundTripsThroughAppendAndArchive(t *testing.T) {
 		t.Fatalf("uids %v != %v", carried(), first)
 	}
 	for _, uid := range first {
-		if !pyTruthy(uid) {
+		if !anyutil.IsTrue(uid) {
 			t.Fatal("empty uid")
 		}
 	}

@@ -125,7 +125,7 @@ func lockProject(ctx context.Context, opts LockProjectOptions) error {
 // Root of a named side environment, an explicit root or the home's environments directory
 func environmentRoot(ctx context.Context, name, root string) (string, error) {
 	if !simplePackageName.MatchString(name) {
-		return "", &PyError{Class: "ValueError", Message: "environment name must be a simple package name"}
+		return "", &ClassError{Class: "ValueError", Message: "environment name must be a simple package name"}
 	}
 	if root != "" {
 		return absoluteUnresolved(root), nil
@@ -191,7 +191,7 @@ func environmentPython(ctx context.Context, name, root string) (string, bool, er
 // Entry point of a tool beside an interpreter, ok false when the environment does not provide it
 func environmentTool(python, executable string) (string, bool, error) {
 	if !simplePackageName.MatchString(executable) {
-		return "", false, &PyError{Class: "ValueError", Message: "tool executable must be a filename, not a path"}
+		return "", false, &ClassError{Class: "ValueError", Message: "tool executable must be a filename, not a path"}
 	}
 	directory := filepath.Dir(python)
 	suffixes := []string{""}
@@ -218,7 +218,7 @@ func managedPythonTool(name, executable, root string) (string, bool, error) {
 // Requirements normalized the way packaging prints them, deduplicated and sorted
 func normalizedRequirements(requirements []string) ([]string, error) {
 	if len(requirements) == 0 {
-		return nil, &PyError{Class: "ValueError", Message: "an isolated environment needs a nonempty sequence of requirements"}
+		return nil, &ClassError{Class: "ValueError", Message: "an isolated environment needs a nonempty sequence of requirements"}
 	}
 	seen := map[string]bool{}
 	var out []string
@@ -226,7 +226,7 @@ func normalizedRequirements(requirements []string) ([]string, error) {
 		parsed, err := ParseRequirement(requirement)
 		var invalid *InvalidRequirementError
 		if errors.As(err, &invalid) {
-			return nil, &PyError{Class: "ValueError", Message: "invalid environment requirement: " + invalid.Message}
+			return nil, &ClassError{Class: "ValueError", Message: "invalid environment requirement: " + invalid.Message}
 		}
 		if err != nil {
 			return nil, err
@@ -245,7 +245,7 @@ func normalizedRequirements(requirements []string) ([]string, error) {
 }
 
 // Python json dumps of a value with default separators and ASCII escapes, lone surrogates escaped as Python keeps them
-func pyJSONCompact(v any) string {
+func jsonCompact(v any) string {
 	var b strings.Builder
 	var encode func(v any)
 	encode = func(v any) {
@@ -259,14 +259,14 @@ func pyJSONCompact(v any) string {
 				b.WriteString("false")
 			}
 		case string:
-			pyJSONString(&b, t)
+			jsonStringValue(&b, t)
 		case []string:
 			b.WriteByte('[')
 			for i, s := range t {
 				if i > 0 {
 					b.WriteString(", ")
 				}
-				pyJSONString(&b, s)
+				jsonStringValue(&b, s)
 			}
 			b.WriteByte(']')
 		case []any:
@@ -290,7 +290,7 @@ func pyJSONCompact(v any) string {
 				if i > 0 {
 					b.WriteString(", ")
 				}
-				pyJSONString(&b, k)
+				jsonStringValue(&b, k)
 				b.WriteString(": ")
 				encode(t[k])
 			}
@@ -304,7 +304,7 @@ func pyJSONCompact(v any) string {
 }
 
 // Writes a JSON string literal escaped like Python ensure_ascii, generalized UTF-8 surrogates escaped individually
-func pyJSONString(b *strings.Builder, s string) {
+func jsonStringValue(b *strings.Builder, s string) {
 	b.WriteByte('"')
 	for i := 0; i < len(s); {
 		c := s[i]
@@ -369,7 +369,7 @@ func ensureEnvironment(ctx context.Context, opts EnsureEnvironmentOptions) (stri
 	}
 	build := func(generation, basePython string) (string, error) {
 		manifest := "[project]\nname = \"icebath-side-environment\"\nversion = \"0\"\n" +
-			"requires-python = \">=3.11\"\ndependencies = " + pyJSONCompact(requirements) + "\n[tool.uv]\npackage = false\n"
+			"requires-python = \">=3.11\"\ndependencies = " + jsonCompact(requirements) + "\n[tool.uv]\npackage = false\n"
 		if err := os.WriteFile(filepath.Join(generation, "pyproject.toml"), []byte(manifest), 0o666); err != nil {
 			return "", err
 		}
@@ -438,7 +438,7 @@ func ensureGeneration(ctx context.Context, name, root string, inputs map[string]
 			withInterpreter[k] = v
 		}
 		withInterpreter["interpreter"] = Native(basePython)
-		sum := sha256.Sum256([]byte(pyJSONCompact(withInterpreter)))
+		sum := sha256.Sum256([]byte(jsonCompact(withInterpreter)))
 		return hex.EncodeToString(sum[:])
 	}
 	current := func(basePython string) (string, bool, error) {
@@ -547,7 +547,7 @@ func ensurePythonTool(ctx context.Context, opts EnsurePythonToolOptions) (string
 		return "", err
 	}
 	if !ok {
-		return "", &PyError{Class: "AssertionError"}
+		return "", &ClassError{Class: "AssertionError"}
 	}
 	return tool, nil
 }

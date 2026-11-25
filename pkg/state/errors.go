@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -330,7 +331,7 @@ type CompressionSessionClosedError struct {
 }
 
 func (e *CompressionSessionClosedError) Error() string {
-	return "Session " + pyRepr(e.SessionID) + " is closed by compression; adopt its live continuation before appending messages"
+	return "Session " + strconv.Quote(e.SessionID) + " is closed by compression; adopt its live continuation before appending messages"
 }
 
 // Rejects a non owner write while compression owns the session

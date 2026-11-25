@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -146,7 +147,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 			writeTurnReport(c.ctx, turnReportPath, singleQueryExitCode(res, false, false), errText, reply)
 		}
 		reportTurn(result)
-		if result != nil && !cliTruthy(result["failed"]) {
+		if result != nil && !anyutil.IsTrue(result["failed"]) {
 			history := historyOf(result)
 			if history == nil {
 				history = c.conversationHistory
@@ -179,7 +180,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 		response = cliStr(result["final_response"], "")
 	}()
 	if emitter == nil {
-		if response == "" && result != nil && cliTruthy(result["error"]) && (cliTruthy(result["failed"]) || cliTruthy(result["partial"])) {
+		if response == "" && result != nil && anyutil.IsTrue(result["error"]) && (anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["partial"])) {
 			fmt.Fprintln(stderrWriter(), i18n.T(c.ctx, "gateway.model.error_prefix", "", map[string]any{"error": result["error"]}))
 		} else if response != "" {
 			fmt.Fprintln(c.console.Out, response)

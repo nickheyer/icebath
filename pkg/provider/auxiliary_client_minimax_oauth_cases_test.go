@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const auxMinimaxInferenceBase = "https://api.minimax.io/anthropic"
@@ -54,7 +56,7 @@ func TestResolveMinimaxOauthToolNamesUnprefixedOnWire(t *testing.T) {
 	t.Cleanup(func() { auxCreateAnthropicMessageFn = prev })
 	auxCreateAnthropicMessageFn = func(_ context.Context, _ *anthropicSDKClient, apiKwargs map[string]any, _ func(event any) error) (map[string]any, error) {
 		for _, tool := range auxKwargMaps(apiKwargs["tools"]) {
-			wireNames = append(wireNames, pyStr(tool["name"]))
+			wireNames = append(wireNames, anyutil.String(tool["name"]))
 		}
 		return map[string]any{"content": []any{}, "stop_reason": "end_turn",
 			"usage": map[string]any{"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}, nil

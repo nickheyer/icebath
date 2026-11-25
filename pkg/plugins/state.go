@@ -177,11 +177,11 @@ func (s *PluginState) readUnlocked() (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("Cannot parse plugin state %s: root must be an object", s.Path())
 	}
-	return pyJSONNumbers(m).(map[string]any), nil
+	return jsonNumbers(m).(map[string]any), nil
 }
 
 // Decoded numbers turned into int for integer literals and float64 otherwise, oversized integers kept exact
-func pyJSONNumbers(v any) any {
+func jsonNumbers(v any) any {
 	switch x := v.(type) {
 	case json.Number:
 		text := x.String()
@@ -197,11 +197,11 @@ func pyJSONNumbers(v any) any {
 		return x
 	case map[string]any:
 		for k, item := range x {
-			x[k] = pyJSONNumbers(item)
+			x[k] = jsonNumbers(item)
 		}
 	case []any:
 		for i, item := range x {
-			x[i] = pyJSONNumbers(item)
+			x[i] = jsonNumbers(item)
 		}
 	}
 	return v

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -30,7 +31,7 @@ func reactionField(rs []any, key string) []string {
 	var out []string
 	for _, r := range rs {
 		v, _ := mappingGet(r, key)
-		out = append(out, pyStr(v))
+		out = append(out, anyutil.String(v))
 	}
 	return out
 }
@@ -126,7 +127,7 @@ func TestLatestMessageRowIDTargetsRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	row, _ := d.GetSession(ctx, key)
-	if n, _ := d.MessageCount(ctx, key); n != 0 || pyStr(rowValue(row, "message_count")) != "0" {
+	if n, _ := d.MessageCount(ctx, key); n != 0 || anyutil.String(rowValue(row, "message_count")) != "0" {
 		t.Fatalf("cleared %d %v", n, row)
 	}
 }
@@ -140,11 +141,11 @@ func TestAppendMessageCountersAndClosedParent(t *testing.T) {
 		t.Fatal(err)
 	}
 	row, _ := d.readOne(ctx, "SELECT tool_call_uids, platform_message_id, message_uid FROM messages WHERE session_id = 'p'")
-	if !strings.Contains(pyStr(rowValue(row, "tool_call_uids")), `"c1"`) || rowValue(row, "platform_message_id") != nil || !pyTruthy(rowValue(row, "message_uid")) {
+	if !strings.Contains(anyutil.String(rowValue(row, "tool_call_uids")), `"c1"`) || rowValue(row, "platform_message_id") != nil || !anyutil.IsTrue(rowValue(row, "message_uid")) {
 		t.Fatalf("identity columns %v", row)
 	}
 	sess, _ := d.GetSession(ctx, "p")
-	if pyStr(rowValue(sess, "message_count")) != "1" || pyStr(rowValue(sess, "tool_call_count")) != "1" {
+	if anyutil.String(rowValue(sess, "message_count")) != "1" || anyutil.String(rowValue(sess, "tool_call_count")) != "1" {
 		t.Fatalf("counters %v", sess)
 	}
 	if _, err := d.writeRowcount(ctx, "UPDATE sessions SET ended_at = 1, end_reason = 'compression' WHERE id = 'p'", nil, nil); err != nil {
@@ -182,7 +183,7 @@ func TestUpdateSessionToolNamesStoresContentAddressedPin(t *testing.T) {
 		t.Fatalf("pin rows %d", n)
 	}
 	raw, _ := d.readOne(ctx, "SELECT tool_names FROM sessions WHERE id = 'a'")
-	if len(pyStr(rowValue(raw, "tool_names"))) != 64 {
+	if len(anyutil.String(rowValue(raw, "tool_names"))) != 64 {
 		t.Fatalf("column holds hash %v", raw)
 	}
 	_ = d.UpdateSessionToolNames("a", nil)

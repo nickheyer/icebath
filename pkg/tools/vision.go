@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Hard cap on downloaded media, bounding memory and disk against attacker hosted files
@@ -536,7 +537,7 @@ func resizeImageForVision(env *Env, path, mime string, o ResizeOptions) (string,
 		return imageToBase64DataURL(path, mime)
 	}
 	log.Info(fmt.Sprintf("Image file is %.1f MB (estimated base64 %.1f MB, limit %.1f MB, max_dimension=%s), auto-resizing...",
-		float64(fileSize)/(1024*1024), float64(estimated)/(1024*1024), float64(o.MaxBase64Bytes)/(1024*1024), pyOptionalInt(o.MaxDimension)))
+		float64(fileSize)/(1024*1024), float64(estimated)/(1024*1024), float64(o.MaxBase64Bytes)/(1024*1024), optionalInt(o.MaxDimension)))
 	effective := mime
 	if effective == "" {
 		effective = determineMimeType(path)
@@ -594,7 +595,7 @@ func resizeImageForVision(env *Env, path, mime string, o ResizeOptions) (string,
 			}
 			candidate = "data:" + outMime + ";base64," + base64.StdEncoding.EncodeToString(enc)
 			if len(candidate) <= o.MaxBase64Bytes && dimsOK {
-				log.Info(fmt.Sprintf("Auto-resized image fits: %.1f MB (quality=%s, %dx%d)", float64(len(candidate))/(1024*1024), pyOptionalInt(q), cw, ch))
+				log.Info(fmt.Sprintf("Auto-resized image fits: %.1f MB (quality=%s, %dx%d)", float64(len(candidate))/(1024*1024), optionalInt(q), cw, ch))
 				record(cw, ch)
 				return candidate, nil
 			}
@@ -609,7 +610,7 @@ func resizeImageForVision(env *Env, path, mime string, o ResizeOptions) (string,
 }
 
 // Python rendering of an optional integer, None for zero
-func pyOptionalInt(n int) string {
+func optionalInt(n int) string {
 	if n == 0 {
 		return "None"
 	}
@@ -1038,7 +1039,7 @@ func VisionAnalyzeTool(ctx context.Context, env *Env, imageURL, userPrompt strin
 
 // Describes an image with the auxiliary vision model, the prompt already formatted by the caller
 func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, model, taskID string, region any) string {
-	source := pyStrOrEmpty(imageURL)
+	source := anyutil.String(imageURL)
 	return runAnalysis(ctx, env, "image", source, userPrompt, model, func(prompt string, debug map[string]any, tempPaths *[]string) (string, string, error) {
 		log := envLog(env)
 		p, err := prepareImage(ctx, env, imageURL, taskID, region, false)
@@ -1179,7 +1180,7 @@ func argPyStr(args map[string]any, key string) string {
 	if !ok {
 		return ""
 	}
-	return pyStr(v)
+	return anyutil.String(v)
 }
 
 // vision_analyze handler choosing the native fast path or the auxiliary description
@@ -1211,7 +1212,7 @@ var videoMimeTypes = map[string]string{
 
 // Video MIME type from the path extension, empty when unsupported
 func detectVideoMimeType(path string) string {
-	return videoMimeTypes[strings.ToLower(pySuffix(path))]
+	return videoMimeTypes[strings.ToLower(suffixValue(path))]
 }
 
 // Refusal naming the supported video extensions
@@ -1223,7 +1224,7 @@ func unsupportedVideoFormat(suffix string) string {
 func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, tempPaths *[]string) (string, error) {
 	log := envLog(env)
 	source := strings.TrimPrefix(videoURL, "file://")
-	localPath := pyExpandUser(source)
+	localPath := expandUserValue(source)
 	lowered := strings.ToLower(strings.TrimSpace(videoURL))
 	pathLike := lowered != "" && !strings.HasPrefix(lowered, "http://") && !strings.HasPrefix(lowered, "https://") && !strings.HasPrefix(lowered, "data:")
 	local, err := isLocalTerminalBackend(env)
@@ -1232,7 +1233,7 @@ func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, te
 	}
 	if !local && pathLike {
 		log.Info("Reading video source via terminal backend: " + videoURL)
-		suffix := strings.ToLower(pySuffix(source))
+		suffix := strings.ToLower(suffixValue(source))
 		if _, ok := videoMimeTypes[suffix]; !ok {
 			return "", errors.New(unsupportedVideoFormat(suffix))
 		}
@@ -1284,7 +1285,7 @@ func materializeVideo(ctx context.Context, env *Env, videoURL, taskID string, te
 
 // Analyzes a video with the multimodal auxiliary model
 func videoAnalyzeTool(ctx context.Context, env *Env, videoURL any, userPrompt, model, taskID string) string {
-	source := pyStrOrEmpty(videoURL)
+	source := anyutil.String(videoURL)
 	return runAnalysis(ctx, env, "video", source, userPrompt, model, func(prompt string, debug map[string]any, tempPaths *[]string) (string, string, error) {
 		log := envLog(env)
 		src, isStr := videoURL.(string)
@@ -1304,7 +1305,7 @@ func videoAnalyzeTool(ctx context.Context, env *Env, videoURL any, userPrompt, m
 		log.Info(fmt.Sprintf("Video ready (%.1f MB)", sizeMB))
 		mime := detectVideoMimeType(path)
 		if mime == "" {
-			return "", "", errors.New(unsupportedVideoFormat(pySuffix(path)))
+			return "", "", errors.New(unsupportedVideoFormat(suffixValue(path)))
 		}
 		if size > videoSizeWarnBytes {
 			log.Warn(fmt.Sprintf("Video is %.1f MB — may be slow or rejected", sizeMB))

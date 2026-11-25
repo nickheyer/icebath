@@ -195,12 +195,12 @@ func TestAgentContextFollowsThePlatform(t *testing.T) {
 func TestMissingKeyBannerIsClassifiedWithoutHidingInitialization(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, suppress := range []any{nil, false, true} {
-		t.Run(strings.ReplaceAll(pyReprForCase(suppress), " ", "_"), func(t *testing.T) {
+		t.Run(strings.ReplaceAll(reprForCase(suppress), " ", "_"), func(t *testing.T) {
 			h := t.TempDir()
 			t.Setenv("ICEBATH_HOME", h)
 			yaml := "{}\n"
 			if suppress != nil {
-				yaml = "display:\n  suppress_warning_notifications: " + pyReprForCase(suppress) + "\n"
+				yaml = "display:\n  suppress_warning_notifications: " + reprForCase(suppress) + "\n"
 			}
 			if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(strings.ToLower(yaml)), 0o600); err != nil {
 				t.Fatal(err)
@@ -227,7 +227,7 @@ func TestMissingKeyBannerIsClassifiedWithoutHidingInitialization(t *testing.T) {
 }
 
 // Python repr spelling of the bool or None parameter a case is labelled with
-func pyReprForCase(v any) string {
+func reprForCase(v any) string {
 	switch v {
 	case nil:
 		return "None"
@@ -241,7 +241,7 @@ func pyReprForCase(v any) string {
 func makeCodexNoticeAgent(t *testing.T, h string, showNotice bool) (*AIAgent, string) {
 	t.Helper()
 	body := "compression:\n  enabled: true\n  threshold: 0.50\n  target_ratio: 0.20\n  protect_first_n: 3\n  protect_last_n: 20\n" +
-		"  codex_gpt55_autoraise: true\n  codex_gpt55_autoraise_notice: " + strings.ToLower(pyReprForCase(showNotice)) + "\n" +
+		"  codex_gpt55_autoraise: true\n  codex_gpt55_autoraise_notice: " + strings.ToLower(reprForCase(showNotice)) + "\n" +
 		"prompt_caching:\n  cache_ttl: 5m\nsessions: {}\nbedrock: {}\n"
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -284,10 +284,10 @@ func TestCodexGpt55AutoraiseNoticeDedupedAcrossAgentInits(t *testing.T) {
 func TestPersistenceNeverSnapshotsButExplicitSaveWorks(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, legacyEnabled := range []bool{false, true} {
-		t.Run(pyReprForCase(legacyEnabled), func(t *testing.T) {
+		t.Run(reprForCase(legacyEnabled), func(t *testing.T) {
 			h := t.TempDir()
 			t.Setenv("ICEBATH_HOME", h)
-			body := "sessions:\n  write_json_snapshots: " + strings.ToLower(pyReprForCase(legacyEnabled)) + "\n"
+			body := "sessions:\n  write_json_snapshots: " + strings.ToLower(reprForCase(legacyEnabled)) + "\n"
 			if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -706,13 +706,13 @@ func TestCredentialPoolPreservedOnAutoDetect(t *testing.T) {
 
 func TestMissingRequirementsKeepsToolInventory(t *testing.T) {
 	for _, setting := range []any{nil, false, true} {
-		t.Run(pyReprForCase(setting), func(t *testing.T) {
+		t.Run(reprForCase(setting), func(t *testing.T) {
 			h := t.TempDir()
 			t.Setenv("ICEBATH_HOME", h)
 			t.Setenv("ICEBATH_MANAGED_DIR", filepath.Join(h, "managed"))
 			body := "{}"
 			if setting != nil {
-				body = `{"display": {"suppress_warning_notifications": ` + strings.ToLower(pyReprForCase(setting)) + `}}`
+				body = `{"display": {"suppress_warning_notifications": ` + strings.ToLower(reprForCase(setting)) + `}}`
 			}
 			if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o600); err != nil {
 				t.Fatal(err)

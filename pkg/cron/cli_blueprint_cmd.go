@@ -139,7 +139,7 @@ func blueprintCommandSchedule(b *AutomationBlueprint) (out string) {
 // Agent seed asking for each slot in turn, then creating the job from the schedule and prompt templates
 func buildBlueprintSeed(b *AutomationBlueprint) string {
 	lines := []string{
-		"Set up the '" + b.Title + "' automation for me (automation blueprint '" + b.Key + "'). " + b.Description,
+		"Set up the " + strconv.Quote(b.Title) + " automation for me (automation blueprint " + strconv.Quote(b.Key) + "). " + b.Description,
 		"",
 		"Ask me for each of these, one at a time, offering the default in brackets if I don't have a preference:",
 	}
@@ -167,7 +167,7 @@ func buildBlueprintSeed(b *AutomationBlueprint) string {
 	for i, k := range weekdayPresetOrder {
 		presets[i] = strconv.Quote(k) + ": " + strconv.Quote(weekdayPresets[k])
 	}
-	lines = append(lines, "", "Once you have my answers, create the job by calling the cronjob tool with action='create'. "+
+	lines = append(lines, "", "Once you have my answers, create the job by calling the cronjob tool with action=\"create\". "+
 		"Build the schedule as a cron expression from this template: `"+b.ScheduleTemplate+"` (fill {minute}/{hour} from the chosen time, "+
 		"{dow} from the weekday choice using {"+strings.Join(presets, ", ")+"}, {interval_min} from any interval). "+
 		"Use this exact prompt for the job (substituting my answers into any {slot} placeholders): \""+b.PromptTemplate+"\". "+
@@ -191,7 +191,7 @@ func blueprintFmtCatalog(ctx context.Context) string {
 
 // Ambiguity reply listing each candidate key and title
 func blueprintFmtCandidates(query string, candidates []AutomationBlueprint) string {
-	lines := []string{"'" + query + "' matches several blueprints — which one?\n"}
+	lines := []string{strconv.Quote(query) + " matches several blueprints — which one?\n"}
 	for _, r := range candidates {
 		lines = append(lines, "  • "+r.Key+" — "+r.Title)
 	}
@@ -205,7 +205,7 @@ func blueprintFmtNoMatch(ctx context.Context, query string) string {
 	for _, r := range listBlueprints(ctx) {
 		keys = append(keys, r.Key)
 	}
-	msg := "No automation blueprint matches '" + query + "'."
+	msg := "No automation blueprint matches " + strconv.Quote(query) + "."
 	if near := diffutil.CloseMatches(strings.ToLower(query), keys, 3, 0.4); len(near) > 0 {
 		msg += " Did you mean: " + strings.Join(near, ", ") + "?"
 	}
@@ -240,7 +240,7 @@ func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[stri
 	}
 	if len(values) == 0 {
 		seed := buildBlueprintSeed(bp)
-		return BlueprintCommandResult{Text: "Setting up '" + bp.Title + "' (" + blueprintCommandSchedule(bp) + "). I'll ask you a couple of things…", AgentSeed: &seed}, nil
+		return BlueprintCommandResult{Text: "Setting up " + strconv.Quote(bp.Title) + " (" + blueprintCommandSchedule(bp) + "). I'll ask you a couple of things…", AgentSeed: &seed}, nil
 	}
 	var resolved any
 	if o := blueprintResolveOrigin(ctx, origin); o != nil {
@@ -249,7 +249,7 @@ func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[stri
 	spec, err := fillBlueprint(bp, values, resolved)
 	var fillErr *BlueprintFillError
 	if errors.As(err, &fillErr) {
-		return BlueprintCommandResult{Text: "Can't set up '" + bp.Title + "': " + err.Error() + "\nOr just run /blueprint " + bp.Key + " and I'll ask you for the values."}, nil
+		return BlueprintCommandResult{Text: "Can't set up " + strconv.Quote(bp.Title) + ": " + err.Error() + "\nOr just run /blueprint " + bp.Key + " and I'll ask you for the values."}, nil
 	}
 	if err != nil {
 		return BlueprintCommandResult{}, err
@@ -267,7 +267,7 @@ func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[stri
 	if v, ok := spec.Get("schedule"); sched == "" && ok {
 		sched = anyutil.String(v)
 	}
-	text := "Scheduled '" + bp.Title + "'"
+	text := "Scheduled " + strconv.Quote(bp.Title)
 	if sched != "" {
 		text += " (" + sched + ")"
 	}

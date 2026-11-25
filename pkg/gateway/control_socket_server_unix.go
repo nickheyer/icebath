@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -118,7 +119,7 @@ func (s *GatewayControlServer) bindPOSIX(bindPath, pointerFile string) (string, 
 		return "", err
 	}
 	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-		return "", &PyError{Kind: "PermissionError", Msg: "control socket cannot be a symlink"}
+		return "", &errorutil.Error{Kind: "PermissionError", Msg: "control socket cannot be a symlink"}
 	}
 	if _, err := controlStat(bindPath); err == nil {
 		st, err := controlLstat(bindPath)
@@ -126,7 +127,7 @@ func (s *GatewayControlServer) bindPOSIX(bindPath, pointerFile string) (string, 
 			return "", err
 		}
 		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) != os.Getuid() {
-			return "", &PyError{Kind: "PermissionError", Msg: "control socket belongs to another user"}
+			return "", &errorutil.Error{Kind: "PermissionError", Msg: "control socket belongs to another user"}
 		}
 		if err := os.Remove(bindPath); err != nil {
 			return "", err
@@ -177,7 +178,7 @@ func squatProofFallback(bindPath string) (string, error) {
 	}
 	if !fits {
 		_ = os.Remove(root)
-		return "", &PyError{Kind: "PermissionError", Msg: "fallback control directory is squatted and no private path fits sun_path"}
+		return "", &errorutil.Error{Kind: "PermissionError", Msg: "fallback control directory is squatted and no private path fits sun_path"}
 	}
 	if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
 		return "", err

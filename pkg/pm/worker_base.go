@@ -7,13 +7,13 @@ import (
 	"regexp"
 )
 
-// PyError is a failure carrying the Python exception class callers and the worker wire tell apart
-type PyError struct {
+// KindError is a failure carrying the Python exception class callers and the worker wire tell apart
+type ClassError struct {
 	Class   string
 	Message string
 }
 
-func (e *PyError) Error() string { return e.Message }
+func (e *ClassError) Error() string { return e.Message }
 
 var classPrefix = regexp.MustCompile(`^(KeyError|TypeError|ValueError|AttributeError|RuntimeError|OSError): `)
 
@@ -41,7 +41,7 @@ func errorClass(err error) string {
 		}
 		return "DownloadError"
 	}
-	var py *PyError
+	var py *ClassError
 	if errors.As(err, &py) {
 		return py.Class
 	}

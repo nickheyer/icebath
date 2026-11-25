@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -11,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -211,7 +213,7 @@ func publishReviewSummary(ctx context.Context, a *AIAgent, actions []string) {
 	}
 	summary := strings.Join(unique, " · ")
 	a.safePrint(i18n.T(ctx, "display.review.summary_cli", "", map[string]any{"summary": summary}), false)
-	if pyTruthy(a.backgroundReviewCallback) {
+	if anyutil.IsTrue(a.backgroundReviewCallback) {
 		func() {
 			defer func() { _ = recover() }()
 			if cb, ok := a.backgroundReviewCallback.(func(string)); ok {
@@ -231,7 +233,7 @@ var runReviewInThread = func(ctx context.Context, a *AIAgent, messagesSnapshot [
 	if !parentCanEmitToolCalls(a) && !resolveReviewRuntime(ctx, a, taskCfg).Routed {
 		pkgLog().Warn(fmt.Sprintf("Background review skipped: provider %s cannot emit Icebath tool calls, "+
 			"so the review fork could not write memories or skills. Set "+
-			"auxiliary.background_review.{provider,model} to route the review to a normal model.", pyStrRepr(a.provider)))
+			"auxiliary.background_review.{provider,model} to route the review to a normal model.", strconv.Quote(a.provider)))
 		return
 	}
 	st := &reviewForkState{reviewUsage: map[string]any{}}

@@ -21,7 +21,6 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
-	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -131,10 +130,10 @@ func kreaSubmitErrorMessage(_ int, body []byte) string {
 	var message any
 	if e, ok := kreaGet(obj, "error").(*jsonutil.Object); ok {
 		message = kreaGet(e, "message")
-	} else if message = kreaGet(obj, "message"); !pyTruthy(message) {
+	} else if message = kreaGet(obj, "message"); !anyutil.IsTrue(message) {
 		message = kreaGet(obj, "detail")
 	}
-	if !pyTruthy(message) {
+	if !anyutil.IsTrue(message) {
 		return fallback
 	}
 	return anyutil.String(message)
@@ -152,7 +151,7 @@ func kreaIsTerminal(job any) bool {
 		return false
 	}
 	s, _ := kreaGet(job, "status").(string)
-	return kreaTerminalStates[s] || pyTruthy(kreaGet(job, "completed_at"))
+	return kreaTerminalStates[s] || anyutil.IsTrue(kreaGet(job, "completed_at"))
 }
 
 // Request construction failure the poll loop raises instead of retrying
@@ -299,7 +298,7 @@ func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt stri
 	if err == nil && failure != nil {
 		err = errors.New(failure.Error)
 	}
-	if err == nil && pyTruthy(body) {
+	if err == nil && anyutil.IsTrue(body) {
 		if _, _, isObj := jsonObjectGet(body, "job_id"); !isObj {
 			err = fmt.Errorf("Krea enhance reply is %s where a mapping was expected", errchain.Kind(body))
 		}
@@ -355,7 +354,7 @@ func kreaCollectStyleRefs(imageURL string, referenceImageURLs []string, legacy a
 				if strings.TrimSpace(s) != "" {
 					refs = append(refs, strings.TrimSpace(s))
 				}
-			} else if pyTruthy(ref) {
+			} else if anyutil.IsTrue(ref) {
 				refs = append(refs, ref)
 			}
 		}
@@ -404,7 +403,7 @@ func kreaInlineLocalImages(env *tools.Env, refs []any, fail errorFn) ([]any, map
 		}
 		total += len(data)
 		if total > kreaMaxLocalReferenceBytes {
-			mb, _ := templateutil.Format("{v:g}", map[string]any{"v": float64(kreaMaxLocalReferenceBytes) / float64(1<<20)})
+			mb := anyutil.String(float64(kreaMaxLocalReferenceBytes) / float64(1<<20))
 			return []any{}, fail(fmt.Sprintf("Local reference images total over %s MB; resize them or pass public URLs", mb), "source_too_large")
 		}
 		mime := mimeutil.TypeByName(filepath.Base(path))
@@ -448,7 +447,7 @@ func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs
 	payload.Set("aspect_ratio", kreaAR)
 	payload.Set("resolution", kreaDefaultResolution)
 	payload.Set("creativity", creativity)
-	if pyIsInt(kwargs["seed"]) {
+	if isInt(kwargs["seed"]) {
 		payload.Set("seed", kwargs["seed"])
 	}
 	for _, slider := range kreaK2Sliders {
@@ -487,7 +486,7 @@ func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs
 func kreaKrea2Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, fail errorFn) (*jsonutil.Object, map[string]any) {
 	styleRefs := kreaCollectStyleRefs(imageURL, referenceImageURLs, kwargs["image_style_references"])
 	payload := kreaBuildPayload(prompt, kreaAR, kreaResolveCreativity(env, kwargs["creativity"]), styleRefs, kwargs)
-	if refs, _ := payload.Get("image_style_references"); pyTruthy(refs) {
+	if refs, _ := payload.Get("image_style_references"); anyutil.IsTrue(refs) {
 		inlined, errEnv := kreaInlineLocalImages(env, refs.([]any), fail)
 		payload.Set("image_style_references", inlined)
 		if errEnv != nil {
@@ -515,7 +514,7 @@ func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 		return jsonutil.NewObject(), errEnv
 	}
 	resolution := ""
-	if r := kwargs["resolution"]; pyTruthy(r) {
+	if r := kwargs["resolution"]; anyutil.IsTrue(r) {
 		resolution = strings.ToUpper(anyutil.String(r))
 	}
 	if !kreaKrea3Resolutions[resolution] {
@@ -534,7 +533,7 @@ func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 	} else {
 		payload.Set("aspect_ratio", kreaAR)
 	}
-	if pyIsInt(kwargs["seed"]) {
+	if isInt(kwargs["seed"]) {
 		payload.Set("seed", kwargs["seed"])
 	}
 	return payload, nil
@@ -580,7 +579,7 @@ func kreaTerminalResultURL(job any, jobID string, fail errorFn) (string, map[str
 			errV = kreaGet(result, "error")
 		}
 		detail := "unknown error"
-		if pyTruthy(errV) {
+		if anyutil.IsTrue(errV) {
 			detail = anyutil.String(errV)
 		}
 		return "", fail(fmt.Sprintf("Krea job %s failed: %s", jobID, detail), "api_error")
@@ -605,7 +604,7 @@ func kreaUpscaleRequested(env *tools.Env, explicit any, meta map[string]any) boo
 	if b, ok := settings.KreaImageUpscale.Lookup(tools.WithEnvHome(context.Background(), env)); ok {
 		return b
 	}
-	return pyTruthy(meta["upscale"])
+	return anyutil.IsTrue(meta["upscale"])
 }
 
 // Krea image backend serving Krea 3 edits and the Krea 2 tiers
@@ -634,7 +633,7 @@ func (p *kreaImageGenProvider) AvailableIn(ctx context.Context) bool {
 func (p *kreaImageGenProvider) Capabilities() map[string]any {
 	env := p.env(context.Background())
 	stored := settings.ImageGenModel.Get(tools.WithEnvHome(context.Background(), env))
-	if _, meta := kreaResolveModel(env, stored); pyTruthy(meta["edit"]) {
+	if _, meta := kreaResolveModel(env, stored); anyutil.IsTrue(meta["edit"]) {
 		return map[string]any{"modalities": []any{"text", "image"}, "max_reference_images": kreaMaxKrea3ReferenceImages,
 			"supports_upscale": true, "creative_controls": []any{"thinking", "resolution"}}
 	}
@@ -665,7 +664,7 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	fail := errorFactory("krea", aspect, modelID, prompt)
 	var payload *jsonutil.Object
 	var errEnv map[string]any
-	if pyTruthy(meta["edit"]) {
+	if anyutil.IsTrue(meta["edit"]) {
 		payload, errEnv = kreaKrea3Payload(env, prompt, kreaAR, req.ImageURL, req.ReferenceImageURLs, kwargs, fail)
 	} else {
 		payload, errEnv = kreaKrea2Payload(env, prompt, kreaAR, req.ImageURL, req.ReferenceImageURLs, kwargs, fail)
@@ -688,7 +687,7 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 			f = kreaPollFailures["deadline"]
 		}
 		text := kreaDetailText(detail)
-		if kind == "deadline" && !pyTruthy(detail) {
+		if kind == "deadline" && !anyutil.IsTrue(detail) {
 			text = "unknown"
 		}
 		pollErrors = append(pollErrors, fail(f.build(jobID, text), f.errorType))
@@ -741,7 +740,7 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	refs, _ := payload.Get("image_style_references")
 	urls, _ := payload.Get("image_urls")
 	modality := "text"
-	if pyTruthy(refs) || pyTruthy(urls) {
+	if anyutil.IsTrue(refs) || anyutil.IsTrue(urls) {
 		modality = "image"
 	}
 	return imageSuccessResponse(imageRef, modelID, prompt, aspect, "krea", modality, extra), nil

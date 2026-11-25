@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -120,10 +121,10 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		}
 		data, _ := payload.Get("data")
 		var message any
-		if pyTruthy(data) {
+		if anyutil.IsTrue(data) {
 			obj, ok := data.(*jsonutil.Object)
 			if !ok {
-				return 0, 0, &PyError{Kind: "AttributeError", Msg: "the transcript spool is " + errchain.Kind(data) + ", expected a mapping"}
+				return 0, 0, &errorutil.Error{Kind: "AttributeError", Msg: "the transcript spool is " + errchain.Kind(data) + ", expected a mapping"}
 			}
 			message, _ = obj.Get("message")
 		}
@@ -357,7 +358,7 @@ func recoverFlushFile(ctx context.Context, sessionDB TranscriptAppender, path st
 	}
 	payload, isObject := parsed.(*jsonutil.Object)
 	if !isObject {
-		return false, "", &PyError{Kind: "AttributeError", Msg: "the flush file is " + errchain.Kind(parsed) + ", expected a mapping"}
+		return false, "", &errorutil.Error{Kind: "AttributeError", Msg: "the flush file is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
 	if reason, _ := payload.Get("reason"); reason == AgentHistoryReason {
 		return false, "", nil
@@ -370,7 +371,7 @@ func recoverFlushFile(ctx context.Context, sessionDB TranscriptAppender, path st
 	if !found {
 		key = ""
 	}
-	return true, pyStrOf(key), nil
+	return true, anyutil.String(key), nil
 }
 
 // Dict view of a payload field, an AttributeError for a present non object value
@@ -378,14 +379,14 @@ func payloadDict(value any) (*jsonutil.Object, error) {
 	if obj, ok := value.(*jsonutil.Object); ok {
 		return obj, nil
 	}
-	return nil, &PyError{Kind: "AttributeError", Msg: "a flush payload is " + errchain.Kind(value) + ", expected a mapping"}
+	return nil, &errorutil.Error{Kind: "AttributeError", Msg: "a flush payload is " + errchain.Kind(value) + ", expected a mapping"}
 }
 
 // Appends one flush payload, false when it was kept or quarantined instead of replayed
 func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path string, payload *jsonutil.Object, resolver SpoolSessionResolver, blocked map[string]int) (bool, error) {
 	if reason, _ := payload.Get("reason"); reason == TranscriptCapDropReason {
 		data := jsonutil.NewObject()
-		if raw, ok := payload.Get("data"); ok && pyTruthy(raw) {
+		if raw, ok := payload.Get("data"); ok && anyutil.IsTrue(raw) {
 			obj, err := payloadDict(raw)
 			if err != nil {
 				return false, err
@@ -398,11 +399,11 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 		}
 		rawMessage, _ := data.Get("message")
 		message, isDict := rawMessage.(*jsonutil.Object)
-		if !pyTruthy(rawSID) || !isDict {
+		if !anyutil.IsTrue(rawSID) || !isDict {
 			pkgLog().Warn(fmt.Sprintf("Cannot recover structurally invalid transcript spool file %s; preserved for manual inspection", path))
 			return false, nil
 		}
-		spooledSID := pyStrOf(rawSID)
+		spooledSID := anyutil.String(rawSID)
 		if _, held := blocked[spooledSID]; held {
 			blocked[spooledSID]++
 			return false, nil
@@ -435,15 +436,15 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 	if !ok {
 		text = ""
 	}
-	if !pyTruthy(text) || !pyTruthy(rawKey) {
+	if !anyutil.IsTrue(text) || !anyutil.IsTrue(rawKey) {
 		pkgLog().Warn(fmt.Sprintf("Cannot recover structurally invalid pending message from %s; the flush file has been preserved", path))
 		return false, nil
 	}
-	sessionKey := pyStrOf(rawKey)
+	sessionKey := anyutil.String(rawKey)
 	rawSID, _ := data.Get("session_id")
 	sessionID, target := "", sessionDB
-	if pyTruthy(rawSID) {
-		sessionID = pyStrOf(rawSID)
+	if anyutil.IsTrue(rawSID) {
+		sessionID = anyutil.String(rawSID)
 	}
 	ts, hasTS := payload.Get("ts")
 	if sessionID == "" && resolver != nil {
@@ -452,7 +453,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 		} else if sid, db := resolver(ctx, sessionKey, notAfter); db != nil {
 			appender, ok := db.(TranscriptAppender)
 			if !ok {
-				return false, &PyError{Kind: "AttributeError", Msg: "session store has no attribute 'append_message'"}
+				return false, &errorutil.Error{Kind: "AttributeError", Msg: "session store has no attribute 'append_message'"}
 			}
 			sessionID, target = sid, appender
 		}
@@ -474,16 +475,16 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 // Whether the store already holds the admission a store outage copy names, so replaying it would show the message twice
 func admissionKept(ctx context.Context, target TranscriptAppender, payload *jsonutil.Object) (bool, error) {
 	admissionID, ok := payload.Get("admission_id")
-	if !ok || !pyTruthy(admissionID) {
+	if !ok || !anyutil.IsTrue(admissionID) {
 		return false, nil
 	}
 	lookup, ok := target.(interface {
 		GetSessionAdmission(ctx context.Context, admissionID string) (*jsonutil.Object, error)
 	})
 	if !ok {
-		return false, &PyError{Kind: "AttributeError", Msg: "session store has no attribute 'get_session_admission'"}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "session store has no attribute 'get_session_admission'"}
 	}
-	row, err := lookup.GetSessionAdmission(ctx, pyStrOf(admissionID))
+	row, err := lookup.GetSessionAdmission(ctx, anyutil.String(admissionID))
 	return row != nil, err
 }
 

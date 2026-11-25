@@ -140,7 +140,7 @@ var termuxHashURL = HashURL
 
 // Pool package a pinned URL names, empty for any other source, an error where urlsplit raises
 func PackageOf(rawURL string) (string, error) {
-	u, err := pyURLSplit(rawURL)
+	u, err := urlSplit(rawURL)
 	if err != nil {
 		return "", err
 	}
@@ -160,7 +160,7 @@ func PackageOf(rawURL string) (string, error) {
 }
 
 // URL parts as Python urlsplit returns them, nothing decoded
-type pyURLParts struct {
+type urlParts struct {
 	Scheme, Netloc, Path, Query, Fragment string
 }
 
@@ -173,8 +173,8 @@ var (
 )
 
 // Splits a URL the way Python urlsplit does, its ValueError cases returned as errors
-func pyURLSplit(raw string) (pyURLParts, error) {
-	var p pyURLParts
+func urlSplit(raw string) (urlParts, error) {
+	var p urlParts
 	rest := strings.TrimLeft(raw, whatwgC0ControlOrSpace)
 	rest = strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(rest)
 	if i := strings.IndexByte(rest, ':'); i > 0 && urlSchemeChars.MatchString(rest[:i]) {
@@ -256,7 +256,7 @@ func checkNetlocNFKC(netloc string) error {
 }
 
 // Python str of an optional string, the empty string standing for None
-func pyNone(s string) string {
+func none(s string) string {
 	if s == "" {
 		return "None"
 	}
@@ -283,12 +283,12 @@ type Retired struct {
 }
 
 // Failure reading key from a decoded value that lacks it or is no mapping, classed for the worker wire
-func pySubscriptError(v any, key string) error {
+func subscriptError(v any, key string) error {
 	switch v.(type) {
 	case *OrderedObject, map[string]any:
-		return &PyError{Class: "KeyError", Message: "the table entry has no " + key}
+		return &ClassError{Class: "KeyError", Message: "the table entry has no " + key}
 	}
-	return &PyError{Class: "TypeError", Message: fmt.Sprintf("cannot read %s from %s, expected a mapping", key, errchain.Kind(v))}
+	return &ClassError{Class: "TypeError", Message: fmt.Sprintf("cannot read %s from %s, expected a mapping", key, errchain.Kind(v))}
 }
 
 // Field of an ordered row the way Python subscripting reads it, raising for a missing key or non dict
@@ -298,7 +298,7 @@ func orderedField(row any, key string) (any, error) {
 			return v, nil
 		}
 	}
-	return nil, pySubscriptError(row, key)
+	return nil, subscriptError(row, key)
 }
 
 // Python str of a row field read with get and an empty default
@@ -316,7 +316,7 @@ func TermuxPins(table *OrderedObject, lockfile *Lockfile) ([]Pin, error) {
 	if libsValue, _ := table.Get("libs"); truthyOrdered(libsValue) {
 		libs, ok := libsValue.(*OrderedObject)
 		if !ok {
-			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the libs table is %s, expected a mapping", errchain.Kind(libsValue))}
+			return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the libs table is %s, expected a mapping", errchain.Kind(libsValue))}
 		}
 		for _, name := range libs.Keys {
 			u, err := orderedField(libs.Values[name], "url")
@@ -417,7 +417,7 @@ func RepairTermuxPins(table *OrderedObject, lockfile *Lockfile, stale []Retired,
 				return applied, err
 			}
 			return applied, &PinMismatchError{Message: fmt.Sprintf("%s: the pool serves %s, the index declares %s",
-				pyNone(pkg), served, entry.Replacement.SHA256)}
+				none(pkg), served, entry.Replacement.SHA256)}
 		}
 		if err := repointPin(table, lockfile, entry); err != nil {
 			return applied, err
@@ -435,7 +435,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		artifacts := lockfile.PinnedArtifacts(name)
 		rows, ok := artifacts[target]
 		if !ok {
-			return &PyError{Class: "KeyError", Message: fmt.Sprintf("the lockfile pins no %s artifacts for target %s", name, target)}
+			return &ClassError{Class: "KeyError", Message: fmt.Sprintf("the lockfile pins no %s artifacts for target %s", name, target)}
 		}
 		pinPkg, err := PackageOf(pin.URL)
 		if err != nil {
@@ -444,7 +444,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 		for _, row := range artifactRows(rows) {
 			m, ok := row.(map[string]any)
 			if !ok {
-				return &PyError{Class: "AttributeError", Message: fmt.Sprintf("a pinned artifact row is %s, expected a mapping", errchain.Kind(row))}
+				return &ClassError{Class: "AttributeError", Message: fmt.Sprintf("a pinned artifact row is %s, expected a mapping", errchain.Kind(row))}
 			}
 			u, _ := m["url"].(string)
 			rowPkg, err := PackageOf(u)
@@ -473,7 +473,7 @@ func repointPin(table *OrderedObject, lockfile *Lockfile, entry Retired) error {
 	}
 	obj, ok := row.(*OrderedObject)
 	if !ok {
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s pin entry is %s, expected a mapping", pin.Scope, errchain.Kind(row))}
+		return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the %s pin entry is %s, expected a mapping", pin.Scope, errchain.Kind(row))}
 	}
 	obj.Set("url", replacement.URL)
 	obj.Set("sha256", replacement.SHA256)

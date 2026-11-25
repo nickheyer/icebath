@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -283,7 +282,7 @@ func applyFanout(ctx context.Context, taskID string, parsed *jsonutil.Object, ro
 			return &DecomposeOutcome{TaskID: taskID, Reason: "DB rejected graph: " + err.Error()}
 		}
 		pkgLog().Error(fmt.Sprintf("decompose: DB error on task %s", taskID), "exc", err)
-		return &DecomposeOutcome{TaskID: taskID, Reason: "DB error: " + errorutil.Kind(err)}
+		return &DecomposeOutcome{TaskID: taskID, Reason: "DB error: " + excText(err)}
 	}
 	if childIDs == nil {
 		return &DecomposeOutcome{TaskID: taskID, Reason: "task already decomposed or moved out of triage"}

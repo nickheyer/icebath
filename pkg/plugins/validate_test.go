@@ -226,7 +226,7 @@ func TestInstallDepsSyncFailureStillValidates(t *testing.T) {
 	var synced []pm.SyncVenvOptions
 	commands := vtSyncedEnvironment(t, func(_ context.Context, opts pm.SyncVenvOptions) error {
 		synced = append(synced, opts)
-		return &pm.PyError{Class: "RuntimeError", Message: "resolver said no"}
+		return &pm.ClassError{Class: "RuntimeError", Message: "resolver said no"}
 	}, pubPython(t), filepath.Join(tmp, "synced-venv"), os.Environ())
 	var out, errOut bytes.Buffer
 	err := CmdValidate(context.Background(), plugin, true, true, &out, &errOut)

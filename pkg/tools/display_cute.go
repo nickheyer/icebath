@@ -415,7 +415,7 @@ func cuteSkillView(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow
 }
 
 // Python subscript zero of a truthy value, raising for a dict or a non sequence
-func pyFirstItem(v any) any {
+func firstItem(v any) any {
 	if s, ok := v.(string); ok {
 		return textutil.First(s, 1)
 	}
@@ -443,7 +443,7 @@ func cuteCronjob(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 		if !anyutil.IsTrue(label) {
 			label = nil
 			if anyutil.IsTrue(skills) {
-				label = pyFirstItem(skills)
+				label = firstItem(skills)
 			}
 		}
 		if !anyutil.IsTrue(label) {
@@ -472,7 +472,7 @@ func cuteBrowserExec(ctx context.Context, _ *Env, a map[string]any, _ any) CuteR
 	if label, ok := browserExecStepLabel(a, 80); ok {
 		return cuteRow(ctx, "🌐", "browser", label)
 	}
-	return cuteRow(ctx, "🌐", "browser", cuteTrunc(oneline(pyStrOrEmpty(a["code"]))))
+	return cuteRow(ctx, "🌐", "browser", cuteTrunc(oneline(anyutil.String(a["code"]))))
 }
 
 func cuteDelegate(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
@@ -497,7 +497,7 @@ func cuteDelegate(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow 
 }
 
 // Python slice of the first twelve items of a str or list, raising for anything unsubscriptable
-func pyHead12(v any) string {
+func head12(v any) string {
 	if s, ok := v.(string); ok {
 		return textutil.First(s, 12)
 	}
@@ -509,7 +509,7 @@ func pyHead12(v any) string {
 }
 
 func cuteProcessManage(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
-	action, sid := getOr(a, "action", "?"), pyHead12(getOr(a, "session_id", ""))
+	action, sid := getOr(a, "action", "?"), head12(getOr(a, "session_id", ""))
 	if action == any("list") {
 		return cuteRow(ctx, "⚙️ ", "proc", displayT(ctx, "display.cute.process_list", nil))
 	}

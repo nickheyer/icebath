@@ -77,11 +77,11 @@ const dialogBridgeScript = `
 var autoAttachParams = jsonutil.ObjectOf("autoAttach", true, "waitForDebuggerOnStart", false, "flatten", true)
 
 // Python exception of the given class carrying msg as its str
-func pyError(class, msg string) error { return &cloudError{Class: class, Msg: msg} }
+func kindError(class, msg string) error { return &cloudError{Class: class, Msg: msg} }
 
-func timeoutError(msg string) error { return pyError("TimeoutError", msg) }
+func timeoutError(msg string) error { return kindError("TimeoutError", msg) }
 
-var errLoopUnavailable = pyError("_LoopUnavailable", "Browser supervisor loop unavailable")
+var errLoopUnavailable = kindError("_LoopUnavailable", "Browser supervisor loop unavailable")
 
 // Endpoint credentials masked in an error or url text
 func redactCDPErrorText(text string) string { return tools.RedactCDPURL(text) }
@@ -127,7 +127,7 @@ func objIndex(v any, key string) (any, error) {
 			return out, nil
 		}
 	}
-	return nil, pyError("KeyError", strconv.Quote(key))
+	return nil, kindError("KeyError", strconv.Quote(key))
 }
 
 // Websocket surface the supervisor speaks CDP over
@@ -378,7 +378,7 @@ type cdpSupervisor struct {
 // New supervisor for one task and endpoint, a ValueError for an unknown dialog policy
 func newCDPSupervisor(env *tools.Env, taskID, cdpURL, policy string, dialogTimeoutS float64) (*cdpSupervisor, error) {
 	if !validDialogPolicies[policy] {
-		return nil, pyError("ValueError", fmt.Sprintf("Invalid dialog_policy %s; must be one of ['auto_accept', 'auto_dismiss', 'must_respond']",
+		return nil, kindError("ValueError", fmt.Sprintf("Invalid dialog_policy %s; must be one of ['auto_accept', 'auto_dismiss', 'must_respond']",
 			strconv.Quote(policy)))
 	}
 	return &cdpSupervisor{taskID: taskID, cdpURL: cdpURL, dialogPolicy: policy, dialogTimeoutS: dialogTimeoutS, env: env,
@@ -820,7 +820,7 @@ var (
 		defer cancel()
 		ws, err := DialWS(ctx, rawURL, WSOptions{MaxMessageSize: supervisorMaxMessage, HandshakeTimeout: 10 * time.Second})
 		if err != nil {
-			return nil, pyWSError(err, rawURL)
+			return nil, wsError(err, rawURL)
 		}
 		return ws, nil
 	}
@@ -897,7 +897,7 @@ func (s *cdpSupervisor) run() error {
 			s.wsMu.Lock()
 			for id, ch := range s.pendingCalls {
 				select {
-				case ch <- supervisorReply{err: pyError("ConnectionError", "CDP connection closed before reply")}:
+				case ch <- supervisorReply{err: kindError("ConnectionError", "CDP connection closed before reply")}:
 				default:
 				}
 				delete(s.pendingCalls, id)
@@ -1012,7 +1012,7 @@ func (s *cdpSupervisor) sendCDP(method string, params any, sessionID string, tim
 		return nil, err
 	}
 	if err := ws.WriteText(context.Background(), []byte(text)); err != nil {
-		return nil, pyWSError(err, s.cdpURL)
+		return nil, wsError(err, s.cdpURL)
 	}
 	var expire <-chan time.Time
 	if timeout >= 0 {
@@ -1039,7 +1039,7 @@ func (s *cdpSupervisor) readLoop(ctx context.Context) {
 		if err != nil {
 			var closed *ErrWSClosed
 			if !(errors.As(err, &closed) && (closed.Code == 1000 || closed.Code == 1001)) && ctx.Err() == nil {
-				s.log.Debug(fmt.Sprintf("CDP read loop exited: %s", pyWSError(err, s.cdpURL).Error()))
+				s.log.Debug(fmt.Sprintf("CDP read loop exited: %s", wsError(err, s.cdpURL).Error()))
 			}
 			return
 		}

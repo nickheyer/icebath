@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -88,7 +89,7 @@ func (o aliasRetryOwner) commit(t *testing.T, staged *state.LocalCreateReceipt) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref, err := restoreLocalSession(o.ctx, o.a, pyStrOf(sid))
+	ref, err := restoreLocalSession(o.ctx, o.a, anyutil.String(sid))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +165,7 @@ func TestExactAliasRetryAfterAnEndpointRotationReturnsTheOriginal(t *testing.T) 
 					staged = append(staged, o.stage(t, params()))
 					configs := make([]any, 2)
 					for i, s := range staged {
-						text, err := pyItem(s.Receipt, "policy", "config_json")
+						text, err := itemValue(s.Receipt, "policy", "config_json")
 						if err != nil {
 							t.Fatal(err)
 						}

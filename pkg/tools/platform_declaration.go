@@ -65,7 +65,7 @@ var (
 	platformGPULabels       = map[string]string{"nvidia": "an NVIDIA GPU"}
 )
 
-// User facing phrase naming a requires.gpu value, empty for None
+// User facing phrase naming a requires.gpu value, a generic phrase for one without its own
 func PlatformGPULabel(gpu string) string {
 	if label, ok := platformGPULabels[gpu]; ok {
 		return label
@@ -73,27 +73,21 @@ func PlatformGPULabel(gpu string) string {
 	return "a supported GPU"
 }
 
-// Python tuple repr of strings
-func pyTupleRepr(items []string) string {
+// Strings double quoted in the order given, in brackets and separated by commas
+func quotedList(items []string) string {
 	parts := make([]string, len(items))
 	for i, s := range items {
-		parts[i] = strconv.Quote(s)
-	}
-	return "(" + strings.Join(parts, ", ") + ")"
-}
-
-// Python repr of the sorted list of strings
-func pySortedListRepr(items []string) string {
-	sorted := slices.Clone(items)
-	slices.Sort(sorted)
-	parts := make([]string, len(sorted))
-	for i, s := range sorted {
 		parts[i] = strconv.Quote(s)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
-// Ordered keys and lookup of a decoded mapping, ok false when the value is not a dict
+// Strings sorted, double quoted, in brackets and separated by commas
+func sortedQuotedList(items []string) string {
+	return quotedList(slices.Sorted(slices.Values(items)))
+}
+
+// Ordered keys and lookup of a decoded mapping, ok false when the value is not a mapping
 func platformMapping(raw any) ([]string, func(string) (any, bool), bool) {
 	switch m := raw.(type) {
 	case *jsonutil.Object:
@@ -112,12 +106,12 @@ func platformMapping(raw any) ([]string, func(string) (any, bool), bool) {
 func platformRequireMapping(where, key string, raw any) ([]string, func(string) (any, bool), error) {
 	keys, get, ok := platformMapping(raw)
 	if !ok {
-		return nil, nil, &PlatformDeclarationError{fmt.Sprintf("%s: '%s' must be a mapping", where, key)}
+		return nil, nil, &PlatformDeclarationError{fmt.Sprintf("%s: %s must be a mapping", where, key)}
 	}
 	return keys, get, nil
 }
 
-// dict.get with a default
+// Value of a mapping's key, the default when the key is absent
 func platformGet(get func(string) (any, bool), key string, def any) any {
 	if v, ok := get(key); ok {
 		return v
@@ -165,7 +159,7 @@ func platformParseLocation(where, osf, presence, label string, raw any) (Platfor
 			return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s is required", where, label)}
 		}
 		if !platformLocationIsRooted(path, osf) || strings.Contains(path, "**") {
-			return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s must be absolute or start with ~ / %%VAR%% / $VAR, without '..', '**' or a URL scheme", where, label)}
+			return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s must be absolute or start with ~ / %%VAR%% / $VAR, without \"..\", \"**\" or a URL scheme", where, label)}
 		}
 		return PlatformAppLocation{Kind: "path", Value: path}, nil
 	}
@@ -176,7 +170,7 @@ func platformParseLocation(where, osf, presence, label string, raw any) (Platfor
 	}
 	spec, known := platformLocationKinds[kind]
 	if !isMap || !known {
-		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s must be a path or a mapping with kind one of %s", where, label, pySortedListRepr(platformLocationKindNames()))}
+		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s must be a path or a mapping with kind one of %s", where, label, sortedQuotedList(platformLocationKindNames()))}
 	}
 	if spec.OnlyOn != "" && spec.OnlyOn != osf {
 		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s kind %s is only valid under app.%s", where, label, strconv.Quote(kind), spec.OnlyOn)}
@@ -195,23 +189,12 @@ func platformParseLocation(where, osf, presence, label string, raw any) (Platfor
 	return PlatformAppLocation{Kind: kind, Value: strings.TrimSpace(value.(string)), File: strings.TrimSpace(anyutil.String(file))}, nil
 }
 
-// str(value or default) with Python truthiness
+// Text of a value, the default for a missing, empty, false or zero one
 func platformStrOr(v any, def string) string {
 	if !anyutil.IsTrue(v) {
 		return def
 	}
 	return anyutil.String(v)
-}
-
-// Python TypeError of a dict or set membership test on an unhashable value
-func platformHashable(v any) error {
-	switch v.(type) {
-	case []any:
-		return fmt.Errorf("a platform declaration value is a list, expected text")
-	case map[string]any, *jsonutil.Object:
-		return fmt.Errorf("a platform declaration value is a mapping, expected text")
-	}
-	return nil
 }
 
 // One app.<os> block with presence, locations, version source and liveness source
@@ -222,7 +205,7 @@ func platformParseAppOS(where, name, osf string, raw any) (PlatformAppDef, error
 	}
 	presence, _ := platformGet(get, "presence", nil).(string)
 	if !slices.Contains(platformAppPresence, presence) {
-		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.presence must be one of %s", where, osf, pyTupleRepr(platformAppPresence))}
+		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.presence must be one of %s", where, osf, quotedList(platformAppPresence))}
 	}
 	var locations []PlatformAppLocation
 	switch location := platformGet(get, "location", nil).(type) {
@@ -254,18 +237,14 @@ func platformParseAppOS(where, name, osf string, raw any) (PlatformAppDef, error
 	if err != nil {
 		return PlatformAppDef{}, err
 	}
-	rawKind := platformGet(vget, "kind", "none")
-	if err := platformHashable(rawKind); err != nil {
-		return PlatformAppDef{}, err
-	}
-	vkind, _ := rawKind.(string)
+	vkind, isStr := platformGet(vget, "kind", "none").(string)
 	onlyOn, known := platformAppVersionKinds[vkind]
-	if _, isStr := rawKind.(string); !isStr || !known {
+	if !isStr || !known {
 		kinds := make([]string, 0, len(platformAppVersionKinds))
 		for k := range platformAppVersionKinds {
 			kinds = append(kinds, k)
 		}
-		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.kind must be one of %s", where, osf, pySortedListRepr(kinds))}
+		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.kind must be one of %s", where, osf, sortedQuotedList(kinds))}
 	}
 	if onlyOn != "" && onlyOn != osf {
 		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.kind %s is only valid under app.%s", where, osf, strconv.Quote(vkind), onlyOn)}
@@ -284,7 +263,7 @@ func platformParseAppOS(where, name, osf string, raw any) (PlatformAppDef, error
 	}
 	lkind, isStr := platformGet(lget, "kind", "none").(string)
 	if !isStr || !slices.Contains(platformLivenessKinds, lkind) {
-		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.liveness.kind must be one of %s", where, osf, pyTupleRepr(platformLivenessKinds))}
+		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.liveness.kind must be one of %s", where, osf, quotedList(platformLivenessKinds))}
 	}
 	lpath := platformStrOr(platformGet(lget, "path", nil), "")
 	if lkind == "server_json" && lpath == "" {
@@ -317,7 +296,7 @@ func ParsePlatformApp(raw any, name, where string) (*PlatformAppSpec, error) {
 		}
 	}
 	if len(unknown) > 0 {
-		return nil, &PlatformDeclarationError{fmt.Sprintf("%s: app has unknown OS keys %s; use %s", where, pySortedListRepr(unknown), pyTupleRepr(platformAppOSFamilies))}
+		return nil, &PlatformDeclarationError{fmt.Sprintf("%s: app has unknown OS keys %s; use %s", where, sortedQuotedList(unknown), quotedList(platformAppOSFamilies))}
 	}
 	if len(keys) == 0 {
 		return nil, &PlatformDeclarationError{fmt.Sprintf("%s: app needs at least one OS block", where)}
@@ -351,7 +330,7 @@ func ParsePlatformRequires(raw any, app *PlatformAppSpec, where string) (Platfor
 		}
 	}
 	if len(unknown) > 0 {
-		return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires has unknown keys %s", where, pySortedListRepr(unknown))}
+		return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires has unknown keys %s", where, sortedQuotedList(unknown))}
 	}
 	var gpu *string
 	if rawGPU := platformGet(get, "gpu", nil); rawGPU != nil {
@@ -361,7 +340,7 @@ func ParsePlatformRequires(raw any, app *PlatformAppSpec, where string) (Platfor
 			for k := range platformGPULabels {
 				names = append(names, k)
 			}
-			return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires.gpu must be one of %s", where, pySortedListRepr(names))}
+			return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires.gpu must be one of %s", where, sortedQuotedList(names))}
 		}
 		gpu = &s
 	}
@@ -370,7 +349,7 @@ func ParsePlatformRequires(raw any, app *PlatformAppSpec, where string) (Platfor
 		return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires.app must be a boolean", where)}
 	}
 	if needsApp && app == nil {
-		return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires.app is true but the declaration has no 'app' block", where)}
+		return PlatformRequiresSpec{}, &PlatformDeclarationError{fmt.Sprintf("%s: requires.app is true but the declaration has no app block", where)}
 	}
 	var minVersion *string
 	if rawMin := platformGet(get, "min_version", nil); rawMin != nil {

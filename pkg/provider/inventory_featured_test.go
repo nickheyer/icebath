@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func invUserRow(slug, apiURL string, models []any) map[string]any {
@@ -51,7 +53,7 @@ var invModelScopeModels = []any{"Qwen/Qwen3.8-Flash-Next", "Qwen/Qwen3.8-27B", "
 func invLabModels() []any {
 	out := []any{}
 	for i := range 12 {
-		out = append(out, "lab"+pyStr(i%3)+"/model-"+pyStr(i))
+		out = append(out, "lab"+anyutil.String(i%3)+"/model-"+anyutil.String(i))
 	}
 	return out
 }

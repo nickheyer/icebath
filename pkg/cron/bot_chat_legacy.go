@@ -2,7 +2,6 @@ package cron
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -16,9 +15,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -134,10 +133,6 @@ func recordSequence(r *jsonutil.Object) *big.Rat {
 		return new(big.Rat)
 	}
 	switch n := v.(type) {
-	case json.Number:
-		if q, ok := new(big.Rat).SetString(n.String()); ok {
-			return q
-		}
 	case float64:
 		if math.IsInf(n, 0) {
 			return infiniteSequence(n)
@@ -216,8 +211,8 @@ func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *jsonut
 		}
 	}
 	owner, err := findCanonicalLiveOwner(ctx, target)
-	var pyErr *gateway.PyError
-	if errors.As(err, &pyErr) && pyErr.Kind == "ValueError" {
+	var kindErr *errorutil.Error
+	if errors.As(err, &kindErr) && kindErr.Kind == "ValueError" {
 		return false, nil
 	}
 	if err != nil {

@@ -45,7 +45,7 @@ func TestDueScanDispatchStampCatchUpBeyondGraceStampedAndPersisted(t *testing.T)
 		t.Fatalf("due %v", jobIDs(due))
 	}
 	stamp := due[0].LastDispatch
-	if stamp == nil || stamp.Kind != "catch_up" || stamp.ScheduledAt != isoUTC(scheduled) || stamp.DispatchedAt != isoUTC(latenessFixedNow) {
+	if stamp == nil || stamp.Kind != "catch_up" || stamp.ScheduledAt != isoUTC(scheduled) || stamp.DispatchedAt != FormatISO(latenessFixedNow) {
 		t.Fatalf("stamp %+v", stamp)
 	}
 	if expected := latenessFixedNow.Sub(scheduled).Seconds(); math.Abs(stamp.LatenessSeconds-expected) > 1 {

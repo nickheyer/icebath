@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -50,7 +51,7 @@ func ContentTextForContains(content any) string {
 	case string:
 		return v
 	}
-	return pyStr(content)
+	return anyutil.String(content)
 }
 
 // Reports whether text begins with the current, legacy or any historical compaction handoff prefix

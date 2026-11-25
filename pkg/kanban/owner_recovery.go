@@ -239,7 +239,7 @@ func reclaimError(ctx context.Context, conn state.SQLiteConn, taskID string, cla
 	if err != nil {
 		return "", err
 	}
-	text := "stale_lock=" + pyStrOpt(claimLock)
+	text := "stale_lock=" + strOpt(claimLock)
 	if note != "" {
 		text += " [" + note + "]"
 	}

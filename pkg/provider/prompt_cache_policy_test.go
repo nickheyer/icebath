@@ -282,7 +282,7 @@ func TestProviderRequestHeadersOverrideClientHeaders(t *testing.T) {
 	}
 	head, _, err := an.(*anthropicClient).requestHeaders(ctx, nil, nil)
 	headers := map[string]string{}
-	for _, l := range head.extra.stripped() {
+	for _, l := range head.extra.fields() {
 		headers[l.Name] = l.Value
 	}
 	if err != nil || headers["X-Call"] != "v" || headers["Authorization"] != "Bearer call" {

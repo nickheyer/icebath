@@ -23,7 +23,7 @@ import (
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
-	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -380,19 +380,20 @@ type recoveryProgress struct {
 	table any
 }
 
-// Whole number of a progress value grouped by thousands, zero for a value that is not a number
+// Whole number of a progress value grouped by thousands, a float cut toward zero, zero for a value that is not a number or has no int64 form
 func groupedInt(v any) string {
 	n, ok := anyutil.Int(v)
 	if !ok {
-		if f, isFloat := v.(float64); isFloat {
-			n, ok = anyutil.Int(int64(f))
+		f, isNumber := anyutil.Float(v)
+		if !isNumber {
+			return "0"
+		}
+		var err error
+		if n, err = anyutil.ToInt(f); err != nil {
+			return "0"
 		}
 	}
-	if !ok {
-		return "0"
-	}
-	text, _ := templateutil.Format("{v:,}", map[string]any{"v": n})
-	return text
+	return textutil.Thousands(n)
 }
 
 // Draws the copied row count of the table a progress report names, opening a new line when the table changes

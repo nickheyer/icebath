@@ -491,7 +491,7 @@ func openAIItemField(item any, key string) any {
 // String form of a response attribute for the cache writers, empty for None and falsy values
 func openAIItemString(item any, key string) string {
 	v := openAIItemField(item, key)
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {

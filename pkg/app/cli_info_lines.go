@@ -52,7 +52,7 @@ func toolsetsLines(ctx context.Context, enabled []string) []string {
 				break
 			}
 		}
-		out = append(out, pyFmt("  {marker} {name:<18} [{count:>2} tools] - {desc}",
+		out = append(out, fmtValue("  {marker} {name:<18} [{count:>2} tools] - {desc}",
 			map[string]any{"marker": marker, "name": name, "count": info.ToolCount, "desc": info.Description}))
 	}
 	return append(out, "", "  "+t("cli.toolsets.currently_enabled_legend"), "", "  "+t("cli.toolsets.tip_enable_all"), "  "+t("cli.toolsets.example"), "")
@@ -64,7 +64,7 @@ func platformsLines(ctx context.Context) []string {
 	out := append(append([]string{""}, infoBox(t("cli.gateway_status.header", nil), 60)...), "")
 	configFile := home.Display(home.Dir(ctx)) + "/config.yaml"
 	var body []string
-	err := pyExcept(func() error {
+	err := except(func() error {
 		cfg, err := loadGatewayConfig(ctx)
 		if err != nil {
 			return err
@@ -99,9 +99,9 @@ func platformsReport(ctx context.Context, cfg *gateway.GatewayConfig, configFile
 			if h := cfg.GetHomeChannel(p.platform); h != nil {
 				homeStr = " → " + anyutil.String(h.Name)
 			}
-			out = append(out, pyFmt("    ✓ {name:<12} ", map[string]any{"name": p.name})+t("cli.gateway_status.enabled", nil)+homeStr)
+			out = append(out, fmtValue("    ✓ {name:<12} ", map[string]any{"name": p.name})+t("cli.gateway_status.enabled", nil)+homeStr)
 		} else {
-			out = append(out, pyFmt("    ○ {name:<12} ", map[string]any{"name": p.name})+t("cli.gateway_status.not_configured", map[string]any{"env_var": p.envVar}))
+			out = append(out, fmtValue("    ○ {name:<12} ", map[string]any{"name": p.name})+t("cli.gateway_status.not_configured", map[string]any{"env_var": p.envVar}))
 		}
 	}
 	return append(out, "", "  "+t("cli.gateway_status.conversations_persist", nil), "", "  "+t("cli.gateway_status.to_start", nil),
@@ -110,7 +110,7 @@ func platformsReport(ctx context.Context, cfg *gateway.GatewayConfig, configFile
 
 // Gateway config loader of the /platforms report, a raised panic turned into the load error, swapped by tests
 var loadGatewayConfig = func(ctx context.Context) (cfg *gateway.GatewayConfig, err error) {
-	err = pyExcept(func() (err error) {
+	err = except(func() (err error) {
 		cfg, err = gateway.LoadGatewayConfig(ctx)
 		return err
 	})

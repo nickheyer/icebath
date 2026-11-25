@@ -8,9 +8,9 @@ import (
 )
 
 // Parsed Python annotation, a name with its subscript arguments
-type pyHint struct {
+type hintValue struct {
 	name string
-	args []*pyHint
+	args []*hintValue
 	sub  bool
 }
 
@@ -20,8 +20,8 @@ type Dataclass struct {
 	Fields Record
 }
 
-// PySet is a set or frozenset rebuilt from a wire list, first occurrences kept in order
-type PySet []any
+// SetOf is a set or frozenset rebuilt from a wire list, first occurrences kept in order
+type SetOf []any
 
 type dataclassField struct {
 	name     string
@@ -129,7 +129,7 @@ var hostDeclaredReturns = map[string]map[string]string{
 var parsedHints sync.Map
 
 // Return type a provider base declares for a method or property, nil when undeclared
-func declaredReturn(base, name string) *pyHint {
+func declaredReturn(base, name string) *hintValue {
 	src, ok := hostDeclaredReturns[base][name]
 	if !ok {
 		return nil
@@ -137,9 +137,9 @@ func declaredReturn(base, name string) *pyHint {
 	return cachedHint(src)
 }
 
-func cachedHint(src string) *pyHint {
+func cachedHint(src string) *hintValue {
 	if v, ok := parsedHints.Load(src); ok {
-		return v.(*pyHint)
+		return v.(*hintValue)
 	}
 	h := parsePyHint(src)
 	parsedHints.Store(src, h)
@@ -150,7 +150,7 @@ func cachedHint(src string) *pyHint {
 const hostedIteratorBase = "typing:Iterator"
 
 // Provider base ref a hint names when a hosted object may stand in for it, the iterator base for an iterator, empty otherwise
-func hostObjectBase(hint *pyHint) string {
+func hostObjectBase(hint *hintValue) string {
 	if hint != nil && hint.name == "Iterator" {
 		return hostedIteratorBase
 	}
@@ -177,7 +177,7 @@ type hintParser struct {
 }
 
 // Parses an annotation such as Optional[dict[str, Any]] or 'ContextEngine' into a hint tree
-func parsePyHint(src string) *pyHint {
+func parsePyHint(src string) *hintValue {
 	p := &hintParser{s: src}
 	return p.union()
 }
@@ -193,8 +193,8 @@ func (p *hintParser) at(c byte) bool {
 	return p.i < len(p.s) && p.s[p.i] == c
 }
 
-func (p *hintParser) union() *pyHint {
-	arms := []*pyHint{p.atom()}
+func (p *hintParser) union() *hintValue {
+	arms := []*hintValue{p.atom()}
 	for p.at('|') {
 		p.i++
 		arms = append(arms, p.atom())
@@ -202,10 +202,10 @@ func (p *hintParser) union() *pyHint {
 	if len(arms) == 1 {
 		return arms[0]
 	}
-	return &pyHint{name: "Union", args: arms, sub: true}
+	return &hintValue{name: "Union", args: arms, sub: true}
 }
 
-func (p *hintParser) atom() *pyHint {
+func (p *hintParser) atom() *hintValue {
 	p.ws()
 	if p.i < len(p.s) && (p.s[p.i] == '\'' || p.s[p.i] == '"') {
 		quote := p.s[p.i]
@@ -225,7 +225,7 @@ func (p *hintParser) atom() *pyHint {
 	for _, prefix := range []string{"typing.", "collections.abc.", "abc."} {
 		name = strings.TrimPrefix(name, prefix)
 	}
-	h := &pyHint{name: name}
+	h := &hintValue{name: name}
 	if p.at('[') {
 		p.i++
 		h.sub = true
@@ -238,13 +238,13 @@ func (p *hintParser) atom() *pyHint {
 		p.i++
 	}
 	if h.name == "Optional" {
-		h = &pyHint{name: "Union", args: append(h.args, &pyHint{name: "None"}), sub: true}
+		h = &hintValue{name: "Union", args: append(h.args, &hintValue{name: "None"}), sub: true}
 	}
 	return h
 }
 
 // Container kind of a hint whose origin rebuilds a wire value, the typing aliases counting without subscript
-func hintContainer(h *pyHint) string {
+func hintContainer(h *hintValue) string {
 	aliases := map[string]string{"Dict": "dict", "Mapping": "dict", "List": "list", "Sequence": "list", "Iterable": "list",
 		"Tuple": "tuple", "Set": "set", "FrozenSet": "frozenset", "AbstractSet": "frozenset"}
 	if kind, ok := aliases[h.name]; ok {
@@ -275,12 +275,12 @@ func FieldsOf(v any) map[string]any {
 }
 
 // Rebuilds a decoded wire value as the declared hint, a value that does not fit staying as decoded
-func restoreHinted(value any, hint *pyHint) (any, error) {
+func restoreHinted(value any, hint *hintValue) (any, error) {
 	if value == nil || hint == nil || hint.name == "Any" {
 		return value, nil
 	}
 	if hint.name == "Union" {
-		var arms []*pyHint
+		var arms []*hintValue
 		for _, arm := range hint.args {
 			if arm.name != "None" {
 				arms = append(arms, arm)
@@ -321,7 +321,7 @@ func restoreHinted(value any, hint *pyHint) (any, error) {
 	return &Dataclass{Type: hint.name, Fields: out}, nil
 }
 
-func restoreContainer(value any, kind string, args []*pyHint) (any, error) {
+func restoreContainer(value any, kind string, args []*hintValue) (any, error) {
 	if kind == "dict" {
 		var items map[string]any
 		switch v := value.(type) {
@@ -332,7 +332,7 @@ func restoreContainer(value any, kind string, args []*pyHint) (any, error) {
 		default:
 			return value, nil
 		}
-		var itemHint *pyHint
+		var itemHint *hintValue
 		if len(args) == 2 {
 			itemHint = args[1]
 		}
@@ -364,7 +364,7 @@ func restoreContainer(value any, kind string, args []*pyHint) (any, error) {
 		}
 		return out, nil
 	}
-	var itemHint *pyHint
+	var itemHint *hintValue
 	if len(args) > 0 {
 		itemHint = args[0]
 	}
@@ -376,19 +376,19 @@ func restoreContainer(value any, kind string, args []*pyHint) (any, error) {
 		out = append(out, restored)
 	}
 	if kind == "set" || kind == "frozenset" {
-		return pySetOf(out)
+		return setOf(out)
 	}
 	return out, nil
 }
 
 // Set of values with Python equality, an unhashable element raising TypeError
-func pySetOf(items []any) (PySet, error) {
+func setOf(items []any) (SetOf, error) {
 	seen := map[any]bool{}
-	out := PySet{}
+	out := SetOf{}
 	for _, item := range items {
 		var key any
 		switch v := item.(type) {
-		case []any, PySet:
+		case []any, SetOf:
 			return nil, &HostBuiltinError{Type: "TypeError", Message: "a set cannot hold a list"}
 		case map[string]any, Record:
 			return nil, &HostBuiltinError{Type: "TypeError", Message: "a set cannot hold a mapping"}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -97,13 +96,13 @@ func (e *pipelineError) Error() string     { return e.msg }
 func (e *pipelineError) ErrorKind() string { return e.class }
 
 // Error of a class with its message
-func pyError(class, msg string) error { return &pipelineError{class, msg} }
+func kindError(class, msg string) error { return &pipelineError{class, msg} }
 
 // Mapping get that fails with the AttributeError of calling get on a non dict
 func dictGetAttr(v any, key string) (any, error) {
 	val, err := attrGet(v, key)
 	if err != nil {
-		return nil, pyError("AttributeError", err.Error())
+		return nil, kindError("AttributeError", err.Error())
 	}
 	return val, nil
 }
@@ -124,14 +123,14 @@ func subscript(v any, key string) (any, error) {
 			if val, ok := t.Get(key); ok {
 				return val, nil
 			}
-			return nil, pyError("KeyError", "missing "+key)
+			return nil, kindError("KeyError", "missing "+key)
 		}
 	case []any:
-		return nil, pyError("TypeError", "expected a mapping holding "+key+", got a list")
+		return nil, kindError("TypeError", "expected a mapping holding "+key+", got a list")
 	case string:
-		return nil, pyError("TypeError", "expected a mapping holding "+key+", got text")
+		return nil, kindError("TypeError", "expected a mapping holding "+key+", got text")
 	}
-	return nil, pyError("TypeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v)))
+	return nil, kindError("TypeError", fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v)))
 }
 
 // Items of an iterable JSON value, the TypeError of iterating anything else
@@ -165,7 +164,7 @@ func iterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, pyError("TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v)))
+	return nil, kindError("TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v)))
 }
 
 // dict(value or {}) over a config value that may be a Go map or an ordered dict
@@ -177,7 +176,7 @@ func configDict(v any) (*jsonutil.Object, error) {
 	case map[string]any:
 		return mapping(t)
 	case string:
-		return nil, pyError("ValueError", "expected a mapping, got text")
+		return nil, kindError("ValueError", "expected a mapping, got text")
 	}
 	return dictField(v)
 }
@@ -252,21 +251,14 @@ func TeamsPipelineConfigFromDict(payload any) (*TeamsPipelineConfig, error) {
 		minChars = int64(80)
 	}
 	n, err := anyutil.ToInt(minChars)
-	if err != nil {
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return nil, err
 	}
-	switch {
-	case true:
-		cfg.TranscriptMinChars = n
-	case n > 0:
-		cfg.TranscriptMinChars = math.MaxInt64
-	default:
-		cfg.TranscriptMinChars = math.MinInt64
-	}
+	cfg.TranscriptMinChars = n
 	if tmp := or(get(data, "tmp_dir"), get(data, "tmpDir")); anyutil.IsTrue(tmp) {
 		text, ok := tmp.(string)
 		if !ok {
-			return nil, pyError("TypeError", "tmp_dir is "+errchain.Kind(tmp)+" where a path was expected")
+			return nil, kindError("TypeError", "tmp_dir is "+errchain.Kind(tmp)+" where a path was expected")
 		}
 		cfg.TmpDir = filepath.Clean(text)
 	}
@@ -323,9 +315,9 @@ func summaryHead(v any) (any, error) {
 	case []any:
 		return append([]any{}, t[:min(len(t), 1900)]...), nil
 	case *jsonutil.Object, map[string]any:
-		return nil, pyError("TypeError", "the meeting summary is a mapping where text or a list was expected")
+		return nil, kindError("TypeError", "the meeting summary is a mapping where text or a list was expected")
 	}
-	return nil, pyError("TypeError", fmt.Sprintf("the meeting summary is %s where text or a list was expected", errchain.Kind(v)))
+	return nil, kindError("TypeError", fmt.Sprintf("the meeting summary is %s where text or a list was expected", errchain.Kind(v)))
 }
 
 // Lines joined by newlines, the TypeError str.join raises for a line that is not a str
@@ -334,7 +326,7 @@ func joinLines(lines []any) (string, error) {
 	for i, line := range lines {
 		text, ok := line.(string)
 		if !ok {
-			return "", pyError("TypeError", fmt.Sprintf("summary line %d is %s where text was expected", i, errchain.Kind(line)))
+			return "", kindError("TypeError", fmt.Sprintf("summary line %d is %s where text was expected", i, errchain.Kind(line)))
 		}
 		texts[i] = text
 	}
@@ -344,7 +336,7 @@ func joinLines(lines []any) (string, error) {
 // Meeting id of the payload reference, the AttributeError of a payload with no reference
 func payloadMeetingID(payload *TeamsMeetingSummaryPayload) (string, error) {
 	if payload.MeetingRef == nil {
-		return "", pyError("AttributeError", "the summary payload has no meeting reference")
+		return "", kindError("AttributeError", "the summary payload has no meeting reference")
 	}
 	return payload.MeetingRef.MeetingID, nil
 }
@@ -437,7 +429,7 @@ func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 		return nil, err
 	}
 	if config == nil {
-		return nil, pyError("AttributeError", "the Notion sink has no config")
+		return nil, kindError("AttributeError", "the Notion sink has no config")
 	}
 	databaseID := strField(or(get(config, "database_id"), get(config, "databaseId"), ""))
 	pageID := get(existingRecord, "page_id")
@@ -479,9 +471,9 @@ func propertyKey(v any) (string, error) {
 		}
 		return "false", nil
 	case []any:
-		return "", pyError("TypeError", "a Notion property name is a list where text was expected")
+		return "", kindError("TypeError", "a Notion property name is a list where text was expected")
 	case *jsonutil.Object, map[string]any:
-		return "", pyError("TypeError", "a Notion property name is a mapping where text was expected")
+		return "", kindError("TypeError", "a Notion property name is a mapping where text was expected")
 	}
 	return anyutil.String(v), nil
 }
@@ -557,7 +549,7 @@ func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 	}
 	headers := [][2]string{{"Authorization", w.APIKey}, {"Content-Type", "application/json"}}
 	if config == nil {
-		return nil, pyError("AttributeError", "the Linear sink has no config")
+		return nil, kindError("AttributeError", "the Linear sink has no config")
 	}
 	teamID := strField(or(get(config, "team_id"), get(config, "teamId"), ""))
 	title := payload.Title
@@ -648,7 +640,7 @@ func NewTeamsMeetingPipeline(client graphClient, store *TeamsPipelineStore, conf
 // Records the notification receipt and returns its existing job or a newly stored received job
 func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *jsonutil.Object) (*TeamsMeetingPipelineJob, error) {
 	if notification == nil {
-		return nil, pyError("AttributeError", "the notification is empty")
+		return nil, kindError("AttributeError", "the notification is empty")
 	}
 	eventID, err := BuildNotificationReceiptKey(notification)
 	if err != nil {
@@ -799,11 +791,11 @@ func coerceSummaryPayload(raw any) (*TeamsMeetingSummaryPayload, error) {
 		raw = nil
 	}
 	if raw == nil {
-		return nil, pyError("TypeError", "the summarizer returned nothing")
+		return nil, kindError("TypeError", "the summarizer returned nothing")
 	}
 	dict, err := mapping(orderedValue(raw))
 	if err != nil {
-		return nil, pyError("TypeError", "the meeting summary is "+errchain.Kind(raw)+" where a mapping was expected")
+		return nil, kindError("TypeError", "the meeting summary is "+errchain.Kind(raw)+" where a mapping was expected")
 	}
 	return TeamsMeetingSummaryPayloadFromDict(dict)
 }
@@ -956,7 +948,7 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 	if anyutil.IsTrue(recording.DisplayName) {
 		text, ok := recording.DisplayName.(string)
 		if !ok {
-			return "", pyError("TypeError", "recording display name is "+errchain.Kind(recording.DisplayName)+" where text was expected")
+			return "", kindError("TypeError", "recording display name is "+errchain.Kind(recording.DisplayName)+" where text was expected")
 		}
 		displayName = text
 	}
@@ -980,7 +972,7 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 		return "", err
 	}
 	if result == nil {
-		return "", pyError("AttributeError", "the transcription returned nothing")
+		return "", kindError("AttributeError", "the transcription returned nothing")
 	}
 	if !anyutil.IsTrue(result["success"]) {
 		return "", &TeamsPipelineRetryableError{TeamsPipelineError{anyutil.String(or(result["error"], "Unknown STT failure"))}}
@@ -1003,7 +995,7 @@ func (p *TeamsMeetingPipeline) prepareAudioPath(ctx context.Context, recordingPa
 	}
 	audioPath, err := pathutil.WithSuffix(recordingPath, ".wav")
 	if err != nil {
-		return "", pyError("ValueError", err.Error())
+		return "", kindError("ValueError", err.Error())
 	}
 	proc, err := executil.Run(ctx, []string{ffmpeg, "-y", "-i", recordingPath, audioPath}, executil.Options{})
 	if err != nil {
@@ -1115,7 +1107,7 @@ func (p *TeamsMeetingPipeline) writeSinks(ctx context.Context, job *TeamsMeeting
 			return err
 		}
 		if record == nil {
-			return pyError("TypeError", "the sink returned no record")
+			return kindError("TypeError", "the sink returned no record")
 		}
 		if _, err := p.Store.UpsertSinkRecord(sinkKey, record); err != nil {
 			return err

@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -176,5 +177,5 @@ func relayMissingArgsError(missing []string) error {
 		}
 		list += ", and " + missing[len(missing)-1]
 	}
-	return &PyError{"TypeError", fmt.Sprintf("CapabilityDescriptor.__init__() missing %d required positional %s: %s", len(missing), noun, list)}
+	return &errorutil.Error{"TypeError", fmt.Sprintf("CapabilityDescriptor.__init__() missing %d required positional %s: %s", len(missing), noun, list)}
 }

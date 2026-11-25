@@ -691,7 +691,7 @@ func (a *QQAdapter) readEvents(ctx context.Context) error {
 
 // Sends one payload over the websocket as a compact JSON text frame
 func sendJSON(ws *websocketutil.Conn, payload any) error {
-	text, err := jsonutil.Encode(payload, jsonutil.Spaced(), jsonutil.ASCII())
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return err
 	}
@@ -760,12 +760,14 @@ func (a *QQAdapter) sendResume(ctx context.Context) error {
 	a.mu.Lock()
 	sessionID := a.sessionID
 	var seq any
+	seqText := "null"
 	if a.lastSeq != nil {
 		seq = *a.lastSeq
+		seqText = strconv.FormatInt(*a.lastSeq, 10)
 	}
 	a.mu.Unlock()
 	if !a.sendWSAuth("Resume", obj("op", int64(6), "d", obj("token", "QQBot "+token, "session_id", sessionID, "seq", seq)),
-		fmt.Sprintf("Resume sent (session_id=%s, seq=%s)", anyutil.String(sessionID), anyutil.String(seq))) {
+		fmt.Sprintf("Resume sent (session_id=%s, seq=%s)", anyutil.String(sessionID), seqText)) {
 		a.mu.Lock()
 		a.sessionID, a.lastSeq = nil, nil
 		a.mu.Unlock()

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
@@ -48,7 +48,7 @@ func getExaClient(ctx context.Context, env *Env) (*exaClient, error) {
 
 // Posts a payload and returns the decoded body, a failed status or non JSON body raised verbatim
 func (c *exaClient) request(ctx context.Context, env *Env, endpoint string, data *jsonutil.Object) (any, error) {
-	body, err := jsonutil.Encode(data, jsonutil.Spaced(), jsonutil.ASCII())
+	body, err := jsonutil.Encode(data)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func decodeExaJSON(resp *sdkResponse) (any, error) {
 	if err == nil {
 		return payload, nil
 	}
-	text := strings.Join(strings.FieldsFunc(resp.text(), pyIsSpace), " ")
+	text := strings.Join(strings.FieldsFunc(resp.text(), unicode.IsSpace), " ")
 	if text == "" {
 		return nil, verbatim(fmt.Sprintf("Expected a JSON response but received an empty body (status %d).", resp.status))
 	}
@@ -95,7 +95,7 @@ func issueExaBodyWarnings(env *Env, endpoint string, payload any, requestID stri
 	if endpoint != "/search" {
 		return
 	}
-	d, ok := pyDict(payload)
+	d, ok := mappingOf(payload)
 	if !ok {
 		return
 	}
@@ -110,7 +110,7 @@ func issueExaBodyWarnings(env *Env, endpoint string, payload any, requestID stri
 		}
 	}
 	for _, item := range items {
-		w, ok := pyDict(item)
+		w, ok := mappingOf(item)
 		if !ok {
 			continue
 		}
@@ -128,34 +128,34 @@ func issueExaBodyWarnings(env *Env, endpoint string, payload any, requestID stri
 
 // Fails like the SDK on a costDollars block it cannot read
 func checkExaCostDollars(data any) error {
-	raw, err := pyDictGet(data, "costDollars")
+	raw, err := dictGet(data, "costDollars")
 	if err != nil {
 		return err
 	}
 	if anyutil.IsTrue(raw) {
-		if _, err := pyDictGet(raw, "total"); err != nil {
+		if _, err := dictGet(raw, "total"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Result rows of an answer in snake_case, the KeyError of a missing results list
+// Result rows of an answer in snake_case, an error naming a missing results list
 func exaResultRows(data any) ([]*jsonutil.Object, error) {
-	d, _ := pyDict(data)
+	d, _ := mappingOf(data)
 	raw, ok := d.Get("results")
 	if !ok {
-		return nil, errors.New("'results'")
+		return nil, errors.New("the reply has no results field")
 	}
-	items, err := pyIter(raw)
+	items, err := elementsOf(raw)
 	if err != nil {
 		return nil, err
 	}
 	rows := make([]*jsonutil.Object, 0, len(items))
 	for _, item := range items {
-		row, ok := pyDict(item)
+		row, ok := mappingOf(item)
 		if !ok {
-			return nil, pyAttributeError(item, "get")
+			return nil, attributeError(item, "get")
 		}
 		entities, _ := row.Get("entities")
 		if err := exaCheckEntities(entities); err != nil {
@@ -168,10 +168,10 @@ func exaResultRows(data any) ([]*jsonutil.Object, error) {
 
 // Mapping the SDK reads with get, the AttributeError of any other value
 func exaMapping(v any) (*jsonutil.Object, error) {
-	if d, ok := pyDict(v); ok {
+	if d, ok := mappingOf(v); ok {
 		return d, nil
 	}
-	return nil, pyAttributeError(v, "get")
+	return nil, attributeError(v, "get")
 }
 
 // Raises what the SDK entity parsing raises on a malformed result entities list
@@ -179,7 +179,7 @@ func exaCheckEntities(raw any) error {
 	if !anyutil.IsTrue(raw) {
 		return nil
 	}
-	items, err := pyIter(raw)
+	items, err := elementsOf(raw)
 	if err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func exaCheckEntities(raw any) error {
 		}
 		for _, key := range []string{"id", "version"} {
 			if _, ok := entity.Get(key); !ok {
-				return errors.New(strconv.Quote(key))
+				return fmt.Errorf("a %s entity has no %s field", kind, key)
 			}
 		}
 		props, ok := entity.Get("properties")
@@ -265,7 +265,7 @@ func exaCheckPersonProperties(raw any) error {
 		if history.entries == nil {
 			continue
 		}
-		entries, err := pyIter(history.entries)
+		entries, err := elementsOf(history.entries)
 		if err != nil {
 			return err
 		}
@@ -292,7 +292,7 @@ func exaCheckPersonProperties(raw any) error {
 	if notable == nil {
 		return nil
 	}
-	works, err := pyIter(notable)
+	works, err := elementsOf(notable)
 	if err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func exaCheckPersonProperties(raw any) error {
 
 // Search returning query relevant highlights for each result
 func (c *exaClient) search(ctx context.Context, env *Env, query string, numResults int) ([]*jsonutil.Object, error) {
-	data, err := c.request(ctx, env, "/search", pyObject("query", query, "contents", pyObject("highlights", true), "numResults", numResults))
+	data, err := c.request(ctx, env, "/search", jsonutil.ObjectOf("query", query, "contents", jsonutil.ObjectOf("highlights", true), "numResults", numResults))
 	if err != nil {
 		return nil, err
 	}
@@ -325,33 +325,33 @@ type exaContentStatus struct {
 
 // Page text of each URL with the per URL statuses the API reports
 func (c *exaClient) getContents(ctx context.Context, env *Env, urls []string) ([]*jsonutil.Object, []exaContentStatus, error) {
-	data, err := c.request(ctx, env, "/contents", pyObject("urls", urls, "text", true))
+	data, err := c.request(ctx, env, "/contents", jsonutil.ObjectOf("urls", urls, "text", true))
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := checkExaCostDollars(data); err != nil {
 		return nil, nil, err
 	}
-	d, _ := pyDict(data)
+	d, _ := mappingOf(data)
 	rawStatuses, present := d.Get("statuses")
 	if !present {
 		rawStatuses = []any{}
 	}
-	items, err := pyIter(rawStatuses)
+	items, err := elementsOf(rawStatuses)
 	if err != nil {
 		return nil, nil, err
 	}
 	statuses := make([]exaContentStatus, 0, len(items))
 	for _, item := range items {
-		raw, ok := pyDict(item)
+		raw, ok := mappingOf(item)
 		if !ok {
-			return nil, nil, pyAttributeError(item, "get")
+			return nil, nil, attributeError(item, "get")
 		}
 		s := exaContentStatus{}
 		s.id, _ = raw.Get("id")
 		s.status, _ = raw.Get("status")
 		errObj, _ := raw.Get("error")
-		if e, ok := pyDict(errObj); ok {
+		if e, ok := mappingOf(errObj); ok {
 			s.errorPresented = true
 			s.tag, _ = e.Get("tag")
 			s.httpCode, _ = e.Get("httpStatusCode")
@@ -365,15 +365,15 @@ func (c *exaClient) getContents(ctx context.Context, env *Env, urls []string) ([
 	return rows, statuses, nil
 }
 
-// Origin status of a failed status entry, its http status code else the one its tag names
+// Origin status of a failed status entry, its http status code when that is a usable HTTP code, else the one its tag names
 func exaStatusOrigin(s exaContentStatus) any {
 	if !s.errorPresented {
 		return nil
 	}
-	if anyutil.IsTrue(s.httpCode) {
-		return s.httpCode
+	if code, ok := vendorHTTPStatus(s.httpCode); ok {
+		return code
 	}
-	if code, ok := exaCrawlStatus(pyStrField(pyOr(s.tag, ""))); ok {
+	if code, ok := exaCrawlStatus(anyutil.String(anyutil.Or(s.tag, ""))); ok {
 		return code
 	}
 	return nil
@@ -406,11 +406,7 @@ func (p *exaProvider) Search(ctx context.Context, env *Env, query string, limit 
 			u, _ := r.Get("url")
 			title, _ := r.Get("title")
 			highlights, _ := r.Get("highlights")
-			description, err := pyJoin(" ", pyOr(highlights, []any{}))
-			if err != nil {
-				return nil, err
-			}
-			hits = append(hits, webHit(pyStrField(pyOr(u, "")), pyStrField(pyOr(title, "")), description, i+1))
+			hits = append(hits, webHit(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), joinText(" ", highlights), i+1))
 		}
 		return searchOK(hits), nil
 	}, true), nil
@@ -441,17 +437,13 @@ func (p *exaProvider) Extract(ctx context.Context, env *Env, urls []string, form
 			u, _ := r.Get("url")
 			title, _ := r.Get("title")
 			text, _ := r.Get("text")
-			out = append(out, webDocument(pyStrField(pyOr(u, "")), pyStrField(pyOr(title, "")), pyStrField(pyOr(text, "")), ""))
+			out = append(out, webDocument(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), anyutil.String(anyutil.Or(text, "")), ""))
 		}
 		for _, s := range statuses {
 			if status, ok := s.status.(string); !ok || status != "error" {
 				continue
 			}
-			entry, err := vendorErrorEntry(pyStrField(pyOr(s.id, "")), exaStatusOrigin(s), s.tag, nil)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, entry)
+			out = append(out, vendorErrorEntry(anyutil.String(anyutil.Or(s.id, "")), exaStatusOrigin(s), s.tag, nil))
 		}
 		return out, nil
 	}, true), nil

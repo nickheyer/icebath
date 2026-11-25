@@ -6,6 +6,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
@@ -302,27 +303,27 @@ func WriteReport(outputDir string, report *jsonutil.Object) (err error) {
 	grouped := map[string][]any{}
 	items, _ := dindex(redacted, "items").([]any)
 	for _, item := range items {
-		status := pyStr(dindex(item, "status"))
+		status := anyutil.String(dindex(item, "status"))
 		grouped[status] = append(grouped[status], item)
 	}
 	lines := []string{
 		"# OpenClaw -> Icebath Migration Report",
 		"",
-		"- Timestamp: " + pyStr(dindex(redacted, "timestamp")),
-		"- Mode: " + pyStr(dindex(redacted, "mode")),
-		"- Source: `" + pyStr(dindex(redacted, "source_root")) + "`",
-		"- Target: `" + pyStr(dindex(redacted, "target_root")) + "`",
+		"- Timestamp: " + anyutil.String(dindex(redacted, "timestamp")),
+		"- Mode: " + anyutil.String(dindex(redacted, "mode")),
+		"- Source: `" + anyutil.String(dindex(redacted, "source_root")) + "`",
+		"- Target: `" + anyutil.String(dindex(redacted, "target_root")) + "`",
 		"",
 		"## Summary",
 		"",
 	}
 	for _, e := range ditems(dindex(redacted, "summary")) {
-		lines = append(lines, "- "+e.Key+": "+pyStr(e.Val))
+		lines = append(lines, "- "+e.Key+": "+anyutil.String(e.Val))
 	}
 	if warnings, _ := or(dget(redacted, "warnings", nil), []any{}).([]any); len(warnings) > 0 {
 		lines = append(lines, "", "## Warnings", "")
 		for _, w := range warnings {
-			lines = append(lines, "- "+pyStr(w))
+			lines = append(lines, "- "+anyutil.String(w))
 		}
 	}
 	lines = append(lines, "", "## What Was Not Fully Brought Over", "")
@@ -334,15 +335,15 @@ func WriteReport(outputDir string, report *jsonutil.Object) (err error) {
 		lines = append(lines, "- Nothing. All discovered items were either migrated or archived.")
 	}
 	for _, item := range notBrought {
-		source := pyStr(or(dindex(item, "source"), "(n/a)"))
-		dest := pyStr(or(dindex(item, "destination"), "(n/a)"))
-		reason := pyStr(or(dindex(item, "reason"), dindex(item, "status")))
+		source := anyutil.String(or(dindex(item, "source"), "(n/a)"))
+		dest := anyutil.String(or(dindex(item, "destination"), "(n/a)"))
+		reason := anyutil.String(or(dindex(item, "reason"), dindex(item, "status")))
 		lines = append(lines, "- `"+source+"` -> `"+dest+"`: "+reason)
 	}
 	if steps, _ := or(dget(redacted, "next_steps", nil), []any{}).([]any); len(steps) > 0 {
 		lines = append(lines, "", "## Next Steps", "")
 		for _, s := range steps {
-			lines = append(lines, "- "+pyStr(s))
+			lines = append(lines, "- "+anyutil.String(s))
 		}
 	}
 	writeText(pathutil.Join(outputDir, "summary.md"), strings.Join(lines, "\n")+"\n")

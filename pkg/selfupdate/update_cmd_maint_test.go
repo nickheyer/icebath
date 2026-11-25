@@ -168,7 +168,7 @@ func TestPreUpdateBackupIntegrityGuardFailedSnapshotIsLoudAndUpdateContinues(t *
 	real := maintCreateQuickSnapshot
 	t.Cleanup(func() { maintCreateQuickSnapshot = real })
 	maintCreateQuickSnapshot = func(*string, string, *int, *int64) (string, error) {
-		return "", &pyPermissionError{"state-snapshots is read-only"}
+		return "", &permissionError{"state-snapshots is read-only"}
 	}
 	var out bytes.Buffer
 	snapID := runPreUpdateBackup(context.Background(), &out, map[string]any{"no_backup": false, "backup": false})
@@ -183,11 +183,11 @@ func TestPreUpdateBackupIntegrityGuardFailedSnapshotIsLoudAndUpdateContinues(t *
 }
 
 // PermissionError raised with a bare message, the failure the snapshot stand-in reports
-type pyPermissionError struct{ msg string }
+type permissionError struct{ msg string }
 
-func (e *pyPermissionError) Error() string { return e.msg }
+func (e *permissionError) Error() string { return e.msg }
 
-func (e *pyPermissionError) Is(target error) bool { return target == fs.ErrPermission }
+func (e *permissionError) Is(target error) bool { return target == fs.ErrPermission }
 
 func TestUpdateCopiesBundledSkillBytesToDefaultActiveAndSibling(t *testing.T) {
 	bundled := skills.BundledFS()

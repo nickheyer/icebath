@@ -239,8 +239,8 @@ func TestTeamsPipelineListSortsFiltersAndCaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "\n2 Teams pipeline job(s):\n\n" +
-		"  ◆ job-c\n    status: completed\n    meeting: unknown\n    strategy: transcript\n    updated: 2026-01-01T02:00:00+00:00\n\n" +
-		"  ◆ job-a\n    status: completed\n    meeting: m-1\n    updated: 2026-01-01T00:00:00+00:00\n\n"
+		"  ◆ job-c\n    status: completed\n    meeting: unknown\n    strategy: transcript\n    updated: 2026-01-01T02:00:00.000000Z\n\n" +
+		"  ◆ job-a\n    status: completed\n    meeting: m-1\n    updated: 2026-01-01T00:00:00.000000Z\n\n"
 	if out.String() != want {
 		t.Fatalf("%q", out.String())
 	}
@@ -248,7 +248,7 @@ func TestTeamsPipelineListSortsFiltersAndCaps(t *testing.T) {
 	if err := teamsPipelineCommand(makeCLIArgs("teams_pipeline_action", "list", "store_path", path, "limit", 0, "status", "failed")); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "    error: {'code': 'x'}\n") || !strings.HasPrefix(out.String(), "\n1 Teams pipeline job(s):") {
+	if !strings.Contains(out.String(), "    error: {\"code\":\"x\"}\n") || !strings.HasPrefix(out.String(), "\n1 Teams pipeline job(s):") {
 		t.Fatalf("%q", out.String())
 	}
 	out.Reset()

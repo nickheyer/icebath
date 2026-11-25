@@ -441,7 +441,7 @@ func protocolViolationStreak(ctx context.Context, conn state.SQLiteConn, taskID 
 		}
 		head, _, _ := strings.Cut(cellStr(row.Get("error")), WorkerOutputSep)
 		marker, _ := jsonDict(row.Get("metadata")).Get("protocol_violation")
-		if outcome == "crashed" && (pyTruthy(marker) || strings.Contains(head, "protocol violation")) {
+		if outcome == "crashed" && (anyutil.IsTrue(marker) || strings.Contains(head, "protocol violation")) {
 			streak++
 			continue
 		}

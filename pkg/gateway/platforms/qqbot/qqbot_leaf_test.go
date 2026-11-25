@@ -148,7 +148,7 @@ func TestPrepareDailyLimitBecomesTypedError(t *testing.T) {
 	if !ok || limit.FileName != "a.bin" || limit.FileSizeHuman() != "1.0 B" {
 		t.Fatalf("err = %#v", err)
 	}
-	if _, err := NewChunkedUploader(api, nil, "T").Upload(context.Background(), "guild", "u", f, 4, "a.bin"); err == nil || err.Error() != "ChunkedUploader: unsupported chat_type 'guild'" {
+	if _, err := NewChunkedUploader(api, nil, "T").Upload(context.Background(), "guild", "u", f, 4, "a.bin"); err == nil || err.Error() != `ChunkedUploader: unsupported chat_type "guild"` {
 		t.Fatalf("err = %v", err)
 	}
 }

@@ -253,7 +253,7 @@ func (r *HostedRoomAuthorityRPC) create(ctx context.Context, params map[string]a
 		if err != nil {
 			return nil, err
 		}
-		if _, err := restoreLocalSession(ctx, r.Authority, pyStrOf(sid)); err != nil {
+		if _, err := restoreLocalSession(ctx, r.Authority, anyutil.String(sid)); err != nil {
 			return nil, err
 		}
 	}

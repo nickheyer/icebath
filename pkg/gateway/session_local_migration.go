@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -105,7 +106,7 @@ func legacyLaunchParams(row *jsonutil.Object) (map[string]any, any, error) {
 	}
 	source, present := row.Get("source")
 	if !present {
-		return nil, nil, &pyKeyError{"source"}
+		return nil, nil, &keyError{"source"}
 	}
 	if _, hasCwd := params["cwd"]; source == "acp" && !hasCwd && filepath.IsAbs(routeStr(saved["cwd"])) {
 		params["cwd"] = saved["cwd"]
@@ -338,7 +339,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 		}
 		model, ok := raw.(*jsonutil.Object)
 		if !ok {
-			return SessionRef{}, &PyError{Kind: "TypeError", Msg: "the legacy session record is " + errchain.Kind(raw) + ", expected a mapping"}
+			return SessionRef{}, &errorutil.Error{Kind: "TypeError", Msg: "the legacy session record is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		model.Set("api_mode", apiMode)
 		text, err := jsonutil.Encode(frozen, jsonutil.Spaced(), jsonutil.ASCII())
@@ -379,11 +380,11 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 	if err != nil {
 		return SessionRef{}, err
 	}
-	started, ok := pyFloatOf(rowField(row, "started_at"))
+	started, ok := floatOf(rowField(row, "started_at"))
 	if !ok {
-		return SessionRef{}, &PyError{Kind: "TypeError", Msg: "the legacy session start time is " + errchain.Kind(rowField(row, "started_at")) + ", expected a timestamp"}
+		return SessionRef{}, &errorutil.Error{Kind: "TypeError", Msg: "the legacy session start time is " + errchain.Kind(rowField(row, "started_at")) + ", expected a timestamp"}
 	}
-	now := pyDatetime{T: time.Unix(0, int64(started*1e9))}
+	now := datetime{T: time.Unix(0, int64(started*1e9))}
 	entry := NewSessionEntry(route, sid, now, now)
 	entry.Origin, entry.Platform = source, PlatformLocal
 	receipt := jsonutil.ObjectOf("profile_id", a.ProfileID, "principal_id", actor.Subject, "request_id", requestID,

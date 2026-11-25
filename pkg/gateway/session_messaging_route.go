@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -23,7 +24,7 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	model, providerName, baseURL := any(settings.Model.Get(ctx)), any(configured), any(settings.ModelBaseURL.Get(ctx))
 	resolver, ok := runner.(messagingRouteRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a channel override", runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a channel override", runner)}
 	}
 	if channel := resolver.ChannelOverrideFor(live.Source); channel != nil {
 		model, providerName = anyutil.Or(channel.Model, model), anyutil.Or(channel.Provider, providerName)
@@ -40,7 +41,7 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	model = anyutil.Or(get("model"), model)
 	providerName, baseURL = anyutil.Or(get("provider"), providerName), anyutil.Or(get("base_url"), baseURL)
 	apiMode := get("api_mode")
-	if !pyTruthy(apiMode) {
+	if !anyutil.IsTrue(apiMode) {
 		apiMode = nil
 		if anyutil.Equal(providerName, configured) && settings.ModelAPIMode.Get(ctx) != "" {
 			apiMode = settings.ModelAPIMode.Get(ctx)

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -102,7 +103,7 @@ func (r *SearchResult) densifyMatches() (string, bool) {
 			lines = append(lines, m.Path)
 			current, started = m.Path, true
 		}
-		lines = append(lines, "  "+m.lineNumberText()+": "+pyRStrip(m.Content))
+		lines = append(lines, "  "+m.lineNumberText()+": "+rStrip(m.Content))
 	}
 	return strings.Join(lines, "\n"), true
 }
@@ -198,8 +199,8 @@ type ExecuteResult struct {
 var (
 	oscSequenceRe = regexp.MustCompile("\x1b\\][^\x07\x1b]*(?:\x07|\x1b\\\\)")
 	fenceMarkerRe = regexp.MustCompile("'?\x07?__ICEBATH_FENCE_[A-Za-z0-9]+__\x07?'?")
-	conflictOpen  = regexp.MustCompile(`(?m)^` + pyWSClass + `*\p{Nd}+\|<<<<<<< `)
-	conflictClose = regexp.MustCompile(`(?m)^` + pyWSClass + `*\p{Nd}+\|>>>>>>> `)
+	conflictOpen  = regexp.MustCompile(`(?m)^` + wsClass + `*\p{Nd}+\|<<<<<<< `)
+	conflictClose = regexp.MustCompile(`(?m)^` + wsClass + `*\p{Nd}+\|>>>>>>> `)
 )
 
 // Balanced unresolved merge conflict blocks in a numbered read, zero without a balanced pair
@@ -217,7 +218,7 @@ func stripTerminalFenceLeaks(text string) string {
 		return text
 	}
 	var b strings.Builder
-	for _, line := range pySplitLinesKeepEnds(text) {
+	for _, line := range splitLinesKeepEndsValue(text) {
 		hadWrapper := strings.Contains(line, "__ICEBATH_FENCE_") || strings.Contains(line, "\x1b]")
 		cleaned := strings.ReplaceAll(fenceMarkerRe.ReplaceAllString(oscSequenceRe.ReplaceAllString(line, ""), ""), "\x07", "")
 		if hadWrapper && strings.Trim(cleaned, "'\r\n\t ") == "" {
@@ -290,7 +291,7 @@ func coercePaginationInt(value any, def int) int {
 	case nil:
 		return def
 	case string:
-		if n, ok := pyIntParse(v); ok {
+		if n, ok := intParse(v); ok {
 			return n
 		}
 		return def
@@ -310,7 +311,7 @@ func coercePaginationInt(value any, def int) int {
 		}
 		return def
 	}
-	if n, ok := pyIntValue(value); ok {
+	if n, ok := wholeNumberArg(value); ok {
 		return n
 	}
 	return def
@@ -329,7 +330,7 @@ func normalizeSearchPagination(offset, limit any) (int, int) {
 }
 
 // Python str.rstrip with no argument
-func pyRStrip(s string) string { return strings.TrimRightFunc(s, pyIsSpace) }
+func rStrip(s string) string { return strings.TrimRightFunc(s, unicode.IsSpace) }
 
 // ntpath.splitroot into drive, root and the rest, slashes and backslashes both separators
 func ntSplitRoot(p string) (string, string, string) {

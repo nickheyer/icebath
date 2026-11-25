@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -550,7 +551,7 @@ func (m *MemoryManager) BuildSystemPrompt(ctx context.Context) string {
 func joinNonBlank(parts []string) string {
 	var kept []string
 	for _, p := range parts {
-		if p != "" && pyStrip(p) != "" {
+		if p != "" && strings.TrimSpace(p) != "" {
 			kept = append(kept, p)
 		}
 	}
@@ -635,7 +636,7 @@ func (m *MemoryManager) prefetchProvider(ctx context.Context, p Provider, query,
 		return "", r.err
 	}
 	result := r.value
-	if result != "" && pyStrip(result) != "" {
+	if result != "" && strings.TrimSpace(result) != "" {
 		m.provMu.RLock()
 		spill := m.prefetchSpill
 		m.provMu.RUnlock()
@@ -1024,7 +1025,7 @@ func (m *MemoryManager) OnPreCompress(ctx context.Context, messages, evidenceMes
 			}
 			continue
 		}
-		if result != "" && pyStrip(result) != "" {
+		if result != "" && strings.TrimSpace(result) != "" {
 			parts = append(parts, result)
 		}
 		checkpointSucceeded = checkpointSucceeded || isCheckpoint
@@ -1108,8 +1109,8 @@ func (m *MemoryManager) NotifyMemoryToolWriteContext(ctx context.Context, toolRe
 		return
 	}
 	target := "memory"
-	if pyTruthy(toolArgs["target"]) {
-		target = pyStr(toolArgs["target"])
+	if anyutil.IsTrue(toolArgs["target"]) {
+		target = anyutil.String(toolArgs["target"])
 	}
 	operations, isList := toolArgs["operations"].([]any)
 	batched := isList && len(operations) > 0
@@ -1122,8 +1123,8 @@ func (m *MemoryManager) NotifyMemoryToolWriteContext(ctx context.Context, toolRe
 		index := i + 1
 		op, isMap := rawOp.(map[string]any)
 		action := ""
-		if isMap && pyTruthy(op["action"]) {
-			action = pyStr(op["action"])
+		if isMap && anyutil.IsTrue(op["action"]) {
+			action = anyutil.String(op["action"])
 		}
 		if !mirroredMemoryActions[action] {
 			continue
@@ -1136,8 +1137,8 @@ func (m *MemoryManager) NotifyMemoryToolWriteContext(ctx context.Context, toolRe
 				}
 			}
 			delete(metadata, "previous_content")
-			if oldText := op["old_text"]; pyTruthy(oldText) {
-				metadata["old_text"] = pyStr(oldText)
+			if oldText := op["old_text"]; anyutil.IsTrue(oldText) {
+				metadata["old_text"] = anyutil.String(oldText)
 			}
 			if field, ok := fields[action]; ok {
 				var previous any
@@ -1155,18 +1156,18 @@ func (m *MemoryManager) NotifyMemoryToolWriteContext(ctx context.Context, toolRe
 			}
 			mirrored := action
 			contentValue := op["content"]
-			if !pyTruthy(contentValue) {
+			if !anyutil.IsTrue(contentValue) {
 				contentValue = op["new_text"]
 			}
 			content := ""
-			if pyTruthy(contentValue) {
-				content = pyStr(contentValue)
+			if anyutil.IsTrue(contentValue) {
+				content = anyutil.String(contentValue)
 			}
 			if action == "patch" {
 				var after any
 				if batched {
 					afterEntries := result["patched_entries_after"]
-					if !pyTruthy(afterEntries) {
+					if !anyutil.IsTrue(afterEntries) {
 						afterEntries = map[string]any{}
 					}
 					if _, ok := afterEntries.(map[string]any); !ok {
@@ -1177,8 +1178,8 @@ func (m *MemoryManager) NotifyMemoryToolWriteContext(ctx context.Context, toolRe
 					after = result["patched_entry_after"]
 				}
 				mirrored, content = "replace", ""
-				if pyTruthy(after) {
-					content = pyStr(after)
+				if anyutil.IsTrue(after) {
+					content = anyutil.String(after)
 				}
 			}
 			m.OnMemoryWrite(ctx, mirrored, target, content, metadata)
@@ -1234,7 +1235,7 @@ func (m *MemoryManager) BuildWriteMetadata(taskID, toolCallID string) map[string
 // Mirrors a memory tool call as the session home that owns this manager
 func (m *MemoryManager) NotifyMemoryToolWrite(result string, args map[string]any, taskID, toolCallID string) {
 	ctx := context.Background()
-	if m.env != nil && pyStrip(m.env.Home) != "" {
+	if m.env != nil && strings.TrimSpace(m.env.Home) != "" {
 		ctx = home.WithOverride(ctx, m.env.Home)
 	}
 	m.NotifyMemoryToolWriteContext(ctx, result, args, func() map[string]any { return m.BuildWriteMetadata(taskID, toolCallID) })
@@ -1486,7 +1487,7 @@ func InjectMemoryProviderTools(ctx context.Context, env *tools.Env, manager *Mem
 			}
 			envLog(env).Info(fmt.Sprintf("Memory provider(s) %s configured but the 'memory' toolset is gated off for this "+
 				"session (platform_toolsets / agent.disabled_toolsets) — provider tools and system-prompt block are both "+
-				"withheld.", pyStr(quoted)))
+				"withheld.", anyutil.String(quoted)))
 		}
 		return surface, validNames, 0
 	}

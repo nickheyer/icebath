@@ -12,16 +12,16 @@ import (
 	"golang.org/x/net/idna"
 )
 
-// pyURL holds the parts urllib.parse splits a URL into, params apart from the path
-type pyURL struct {
+// urlOf holds the parts urllib.parse splits a URL into, params apart from the path
+type urlOf struct {
 	Scheme, Netloc, Path, Params, Query, Fragment string
 }
 
 var errInvalidIPv6URL = errors.New("Invalid IPv6 URL")
 
 // Splits like urllib.parse.urlsplit including its control stripping and bracket checks
-func pyURLSplit(raw string) (pyURL, error) {
-	var u pyURL
+func urlSplit(raw string) (urlOf, error) {
+	var u urlOf
 	raw = strings.TrimLeft(raw, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f ")
 	raw = strings.NewReplacer("\t", "", "\r", "", "\n", "").Replace(raw)
 	if i := strings.IndexByte(raw, ':'); i > 0 && raw[0] < utf8.RuneSelf && isASCIIAlpha(raw[0]) {
@@ -48,11 +48,11 @@ func pyURLSplit(raw string) (pyURL, error) {
 		u.Netloc, raw = raw[2:end], raw[end:]
 		open, closed := strings.Contains(u.Netloc, "["), strings.Contains(u.Netloc, "]")
 		if open != closed {
-			return pyURL{}, errInvalidIPv6URL
+			return urlOf{}, errInvalidIPv6URL
 		}
 		if open && closed {
 			if err := checkBracketedNetloc(u.Netloc); err != nil {
-				return pyURL{}, err
+				return urlOf{}, err
 			}
 		}
 	}
@@ -99,8 +99,8 @@ var usesRelative = map[string]bool{"": true, "ftp": true, "http": true, "gopher"
 	"sftp": true, "svn": true, "svn+ssh": true, "ws": true, "wss": true}
 
 // Parses like urllib.parse.urlparse, moving the last segment's params out of the path
-func pyURLParse(raw string) (pyURL, error) {
-	u, err := pyURLSplit(raw)
+func urlParse(raw string) (urlOf, error) {
+	u, err := urlSplit(raw)
 	if err != nil {
 		return u, err
 	}
@@ -157,7 +157,7 @@ func netlocPort(netloc string) (int, bool, error) {
 	}
 	for i := 0; i < len(port); i++ {
 		if port[i] < '0' || port[i] > '9' {
-			return 0, false, fmt.Errorf("Port could not be cast to integer value as %s", pyReprStr(port))
+			return 0, false, fmt.Errorf("Port could not be cast to integer value as %s", strconv.Quote(port))
 		}
 	}
 	n, err := strconv.Atoi(port)
@@ -168,15 +168,15 @@ func netlocPort(netloc string) (int, bool, error) {
 }
 
 // Joins an absolute path reference onto a base like urllib.parse.urljoin, removing dot segments
-func pyURLJoinAbsPath(base, ref string) string {
+func urlJoinAbsPath(base, ref string) string {
 	if base == "" {
 		return ref
 	}
-	b, err := pyURLParse(base)
+	b, err := urlParse(base)
 	if err != nil {
 		return ref
 	}
-	r, err := pyURLParse(ref)
+	r, err := urlParse(ref)
 	if err != nil {
 		return ref
 	}
@@ -184,7 +184,7 @@ func pyURLJoinAbsPath(base, ref string) string {
 		return ref
 	}
 	if r.Netloc != "" {
-		return pyURLUnparse(pyURL{Scheme: b.Scheme, Netloc: r.Netloc, Path: r.Path, Params: r.Params, Query: r.Query, Fragment: r.Fragment})
+		return urlUnparse(urlOf{Scheme: b.Scheme, Netloc: r.Netloc, Path: r.Path, Params: r.Params, Query: r.Query, Fragment: r.Fragment})
 	}
 	segments := strings.Split(r.Path, "/")
 	var resolved []string
@@ -206,11 +206,11 @@ func pyURLJoinAbsPath(base, ref string) string {
 	if p == "" {
 		p = "/"
 	}
-	return pyURLUnparse(pyURL{Scheme: b.Scheme, Netloc: b.Netloc, Path: p, Params: r.Params, Query: r.Query, Fragment: r.Fragment})
+	return urlUnparse(urlOf{Scheme: b.Scheme, Netloc: b.Netloc, Path: p, Params: r.Params, Query: r.Query, Fragment: r.Fragment})
 }
 
 // Reassembles parts like urllib.parse.urlunparse
-func pyURLUnparse(u pyURL) string {
+func urlUnparse(u urlOf) string {
 	p := u.Path
 	if u.Params != "" {
 		p += ";" + u.Params
@@ -237,13 +237,13 @@ func pyURLUnparse(u pyURL) string {
 }
 
 // Scheme and netloc of a URL joined as urlparse reports them
-func pyURLOrigin(raw string) string {
-	u, _ := pyURLParse(raw)
+func urlOrigin(raw string) string {
+	u, _ := urlParse(raw)
 	return u.Scheme + "://" + u.Netloc
 }
 
 // Decodes percent escapes like urllib.parse.unquote with invalid UTF-8 replaced
-func pyUnquote(s string) string {
+func unquote(s string) string {
 	if !strings.Contains(s, "%") {
 		return s
 	}
@@ -261,7 +261,7 @@ func pyUnquote(s string) string {
 }
 
 // Parses a query string like urllib.parse.parse_qs, blank values kept only on request
-func pyParseQSL(query string, keepBlank bool) [][2]string {
+func parseQSL(query string, keepBlank bool) [][2]string {
 	var out [][2]string
 	for _, part := range strings.Split(query, "&") {
 		if part == "" {
@@ -276,19 +276,19 @@ func pyParseQSL(query string, keepBlank bool) [][2]string {
 		if value == "" && !keepBlank {
 			continue
 		}
-		out = append(out, [2]string{pyUnquote(strings.ReplaceAll(name, "+", " ")), pyUnquote(strings.ReplaceAll(value, "+", " "))})
+		out = append(out, [2]string{unquote(strings.ReplaceAll(name, "+", " ")), unquote(strings.ReplaceAll(value, "+", " "))})
 	}
 	return out
 }
 
-const pyAlwaysSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-~"
+const alwaysSafe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-~"
 
 // Percent encodes like urllib.parse.quote with the given extra safe characters
-func pyQuote(s, safe string) string {
+func quote(s, safe string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if strings.IndexByte(pyAlwaysSafe, c) >= 0 || strings.IndexByte(safe, c) >= 0 {
+		if strings.IndexByte(alwaysSafe, c) >= 0 || strings.IndexByte(safe, c) >= 0 {
 			b.WriteByte(c)
 			continue
 		}
@@ -298,15 +298,15 @@ func pyQuote(s, safe string) string {
 }
 
 // Percent encodes like urllib.parse.quote_plus, spaces becoming plus signs
-func pyQuotePlus(s string) string {
-	return strings.ReplaceAll(pyQuote(s, " "), " ", "+")
+func quotePlus(s string) string {
+	return strings.ReplaceAll(quote(s, " "), " ", "+")
 }
 
 // Encodes ordered pairs like urllib.parse.urlencode
-func pyURLEncode(pairs [][2]string) string {
+func urlEncode(pairs [][2]string) string {
 	parts := make([]string, 0, len(pairs))
 	for _, p := range pairs {
-		parts = append(parts, pyQuotePlus(p[0])+"="+pyQuotePlus(p[1]))
+		parts = append(parts, quotePlus(p[0])+"="+quotePlus(p[1]))
 	}
 	return strings.Join(parts, "&")
 }
@@ -485,7 +485,7 @@ func normalizeURLHost(host string) (string, error) {
 		}
 		return "[" + addr.String() + "]", nil
 	}
-	decoded := pyUnquote(host)
+	decoded := unquote(host)
 	ascii := decoded
 	needsIDNA := false
 	for _, r := range decoded {
@@ -579,14 +579,14 @@ func whatwgIPv4Number(p string) (uint64, bool) {
 }
 
 // Python-style whitespace split, the separators str.split uses without arguments
-func pyWhitespaceFields(s string) []string {
+func whitespaceFields(s string) []string {
 	return strings.FieldsFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 	})
 }
 
 // First n code points of a string the way a Python slice cuts it
-func pyHead(s string, n int) string {
+func headValue(s string, n int) string {
 	count := 0
 	for i := range s {
 		if count == n {

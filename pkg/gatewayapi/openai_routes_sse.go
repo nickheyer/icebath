@@ -211,8 +211,9 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 		if finish != "stop" {
 			if anyutil.IsTrue(errMsg) && !muted {
 				errType := "agent_error"
-				if agentErr != nil {
-					errType = errorutil.Kind(agentErr)
+				var kinded interface{ ErrorKind() string }
+				if errors.As(agentErr, &kinded) && kinded.ErrorKind() != "" {
+					errType = kinded.ErrorKind()
 				}
 				finishChunk.Set("error", jsonutil.ObjectOf("message", errMsg, "type", errType))
 			}

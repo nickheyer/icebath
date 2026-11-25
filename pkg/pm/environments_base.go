@@ -91,11 +91,11 @@ func realpathOrSelf(path string) string {
 func rowItem(row any, key string) (any, error) {
 	m, ok := row.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("a journal row must be a mapping holding %s, got %s", key, errchain.Kind(row))}
+		return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("a journal row must be a mapping holding %s, got %s", key, errchain.Kind(row))}
 	}
 	v, present := m[key]
 	if !present {
-		return nil, &PyError{Class: "KeyError", Message: "the journal row has no " + key}
+		return nil, &ClassError{Class: "KeyError", Message: "the journal row has no " + key}
 	}
 	return v, nil
 }
@@ -108,7 +108,7 @@ func rowPath(row any, key string) (string, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the journal row %s must be text, got %s", key, errchain.Kind(v))}
+		return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("the journal row %s must be text, got %s", key, errchain.Kind(v))}
 	}
 	return s, nil
 }
@@ -120,11 +120,11 @@ func rowBase64(v any) ([]byte, error) {
 	}
 	s, ok := v.(string)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected base64 text, got %s", errchain.Kind(v))}
+		return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected base64 text, got %s", errchain.Kind(v))}
 	}
 	out, err := base64.StdEncoding.Strict().DecodeString(s)
 	if err != nil {
-		return nil, &PyError{Class: "ValueError", Message: err.Error()}
+		return nil, &ClassError{Class: "ValueError", Message: err.Error()}
 	}
 	if out == nil {
 		out = []byte{}
@@ -225,7 +225,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 	parent := filepath.Dir(target)
 	if !isRelativeTo(resolvePath(target), homeRoot) || filepath.Base(parent) != "plugins" || filepath.Dir(backup) != parent ||
 		!strings.HasPrefix(filepath.Base(backup), ".previous-") || metadata != filepath.Join(parent, ".install-metadata.json") {
-		return &PyError{Class: "ValueError", Message: "plugin publication paths escape their home"}
+		return &ClassError{Class: "ValueError", Message: "plugin publication paths escape their home"}
 	}
 	committed := anyutil.IsTrue(row["committed"])
 	if !committed {
@@ -263,7 +263,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 			return err
 		}
 		if rawAfter == nil {
-			return &PyError{Class: "TypeError", Message: "the journal row holds no metadata_after"}
+			return &ClassError{Class: "TypeError", Message: "the journal row holds no metadata_after"}
 		}
 		updated, err := rowBase64(rawAfter)
 		if err != nil {
@@ -271,7 +271,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 		}
 		sameBytes := func(a, b []byte) bool { return (a == nil) == (b == nil) && string(a) == string(b) }
 		if !sameBytes(current, old) && !sameBytes(current, updated) {
-			return &PyError{Class: "ValueError", Message: "plugin metadata changed after publication; preserve it for manual recovery"}
+			return &ClassError{Class: "ValueError", Message: "plugin metadata changed after publication; preserve it for manual recovery"}
 		}
 		if pathExists(backup) {
 			if pathExists(target) {
@@ -305,7 +305,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 }
 
 // Text Python's str gives a recovery failure, OS errors spelled the way OSError prints them
-func pyExceptionText(err error) string {
+func exceptionText(err error) string {
 	var pathErr *fs.PathError
 	var linkErr *os.LinkError
 	if errors.As(err, &pathErr) || errors.As(err, &linkErr) {
@@ -366,7 +366,7 @@ func recordedVenv(ctx context.Context, projectRoot string) (string, error) {
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	}
-	unreadable := &PyError{Class: "RuntimeError", Message: "cannot read dependency environment: " + path}
+	unreadable := &ClassError{Class: "RuntimeError", Message: "cannot read dependency environment: " + path}
 	if err != nil {
 		return "", unreadable
 	}
@@ -378,7 +378,7 @@ func recordedVenv(ctx context.Context, projectRoot string) (string, error) {
 	if err != nil {
 		return "", unreadable
 	}
-	invalid := &PyError{Class: "RuntimeError", Message: "invalid dependency environment record: " + path}
+	invalid := &ClassError{Class: "RuntimeError", Message: "invalid dependency environment record: " + path}
 	record, ok := doc.(map[string]any)
 	if !ok {
 		return "", invalid
@@ -405,7 +405,7 @@ func recordedVenv(ctx context.Context, projectRoot string) (string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return "", &PyError{Class: "RuntimeError", Message: "invalid dependency environment path"}
+		return "", &ClassError{Class: "RuntimeError", Message: "invalid dependency environment path"}
 	}
 	environment, err := pathResolve(text)
 	if err != nil {
@@ -413,7 +413,7 @@ func recordedVenv(ctx context.Context, projectRoot string) (string, error) {
 	}
 	generations := resolvePath(filepath.Join(InstallStateDir(ctx, projectRoot), "environments"))
 	if !isRelativeTo(environment, generations) || !isRegularFile(filepath.Join(environment, "pyvenv.cfg")) {
-		return "", &PyError{Class: "RuntimeError", Message: "dependency environment is missing or outside this install: " + environment}
+		return "", &ClassError{Class: "RuntimeError", Message: "dependency environment is missing or outside this install: " + environment}
 	}
 	return environment, nil
 }
@@ -428,10 +428,10 @@ func ProjectPython(ctx context.Context, projectRoot string) (string, error) {
 }
 
 // Decimal text Python int gives a digit string, a ValueError for digit forms int refuses
-func pyIntText(s string) (string, error) {
+func intText(s string) (string, error) {
 	for _, r := range s {
 		if !isDecimalRune(r) {
-			return "", &PyError{Class: "ValueError", Message: s + " is not a whole number"}
+			return "", &ClassError{Class: "ValueError", Message: s + " is not a whole number"}
 		}
 	}
 	return digitsValue(s).String(), nil
@@ -445,11 +445,11 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 		if !textutil.IsDigits(head) || !textutil.IsDigits(tail) {
 			return "", "", false, nil
 		}
-		a, err := pyIntText(head)
+		a, err := intText(head)
 		if err != nil {
 			return "", "", false, err
 		}
-		b, err := pyIntText(tail)
+		b, err := intText(tail)
 		if err != nil {
 			return "", "", false, err
 		}
@@ -496,9 +496,9 @@ func isDecimalRune(r rune) bool { return unicode.Is(unicode.Nd, r) }
 // Refusal of a lock without a usable python pin, naming the partial pin it holds
 func noPythonPin(version string) error {
 	if version == "" {
-		return &PyError{Class: "RuntimeError", Message: "the lock pins no python version"}
+		return &ClassError{Class: "RuntimeError", Message: "the lock pins no python version"}
 	}
-	return &PyError{Class: "RuntimeError", Message: "the lock pins no usable python version, only " + version}
+	return &ClassError{Class: "RuntimeError", Message: "the lock pins no usable python version, only " + version}
 }
 
 // Major and minor version of the pinned Python PM builds environments with, this process's interpreter
@@ -561,7 +561,7 @@ func runningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bo
 		resolved, err = pathResolve(site)
 	}
 	if err != nil {
-		if pyOSRuntimeOrValueError(err) {
+		if osRuntimeOrValueError(err) {
 			return false, prefix, nil
 		}
 		return false, prefix, err
@@ -575,7 +575,7 @@ func runningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bo
 }
 
 // Reports a failure an except clause naming OSError, RuntimeError and ValueError catches, subclasses included
-func pyOSRuntimeOrValueError(err error) bool {
+func osRuntimeOrValueError(err error) bool {
 	if errorutil.IsSystem(err) {
 		return true
 	}

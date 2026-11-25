@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -41,7 +42,7 @@ func actualPluginProfiles() []Profile {
 
 // macOS clients of the hosted endpoint get the CA bundle unless a CA override variable is set
 func actualBuildClientKwargsExtras(profileBase string, kw map[string]any) map[string]any {
-	baseURL := pyScalarStrOr(kw["base_url"], profileBase)
+	baseURL := scalarStrOr(kw["base_url"], profileBase)
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return map[string]any{}
@@ -62,9 +63,9 @@ func actualBuildClientKwargsExtras(profileBase string, kw map[string]any) map[st
 }
 
 // String of a truthy value, else the fallback
-func pyScalarStrOr(v any, fallback string) string {
-	if pyTruthy(v) {
-		return pyScalarStr(v)
+func scalarStrOr(v any, fallback string) string {
+	if anyutil.IsTrue(v) {
+		return scalarStr(v)
 	}
 	return fallback
 }

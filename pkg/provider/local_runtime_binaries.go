@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var BackendPackages = map[string]string{
@@ -249,7 +250,7 @@ func legacyInstalls(backend string) []legacyInstall {
 			continue
 		}
 		manifest, isMap := decoded.(map[string]any)
-		if !isMap || manifest["tag"] != tag || manifest["backend"] != backend || !pyTruthy(manifest["verified_version"]) {
+		if !isMap || manifest["tag"] != tag || manifest["backend"] != backend || !anyutil.IsTrue(manifest["verified_version"]) {
 			continue
 		}
 		if _, assets := manifest["assets"].(map[string]any); !assets || legacyIsLeftInPlace(dir) {

@@ -87,7 +87,7 @@ func TestUnifiedSearchSourceErrorHandled(t *testing.T) {
 func TestIndexSearchMatchesIdentifierAndProvider(t *testing.T) {
 	h, _ := newTestHub(t)
 	x := NewIndexSource(h, anonAuth(h))
-	x.index, x.loaded = objectOf("skills", pyList(t, `[{"name": "accelerated-computing-cudf", "description": "GPU DataFrames.",
+	x.index, x.loaded = objectOf("skills", listOf(t, `[{"name": "accelerated-computing-cudf", "description": "GPU DataFrames.",
 		"source": "github", "identifier": "NVIDIA/skills/skills/accelerated-computing-cudf", "tags": [], "extra": {"provider": "NVIDIA"}},
 		{"name": "unrelated", "description": "nothing here", "source": "clawhub", "identifier": "clawhub/unrelated", "tags": []}]`)), true
 	hits, err := x.Search(context.Background(), "nvidia", 25)

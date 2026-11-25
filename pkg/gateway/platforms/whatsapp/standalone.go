@@ -129,7 +129,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 	}
 	health, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return failed(fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(decoded)))
+		return failed(fmt.Errorf("bridge /health answered %s, expected an object", anyutil.Kind(decoded)))
 	}
 	if reported := health.ValueOr("session", nil); anyutil.IsTrue(reported) && anyutil.String(reported) != ownSession {
 		return gateway.SendError(fmt.Sprintf("WhatsApp bridge on port %d serves another profile's session (%s); "+
@@ -154,7 +154,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 			if obj, ok := data.(*jsonutil.Object); ok {
 				return obj.ValueOr("messageId", nil), nil, nil
 			}
-			return nil, nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(data))
+			return nil, nil, fmt.Errorf("bridge /%s answered %s, expected an object", path, anyutil.Kind(data))
 		}
 		if label == "" {
 			return nil, map[string]any{}, nil
@@ -201,23 +201,4 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 		}
 	}
 	return map[string]any{"success": true, "platform": "whatsapp", "chat_id": normalizedChatID, "message_id": lastMessageID}, nil
-}
-
-// Python type name of a decoded JSON value
-func pyTypeName(v any) string {
-	switch v.(type) {
-	case []any:
-		return "list"
-	case string:
-		return "str"
-	case bool:
-		return "bool"
-	case int64:
-		return "int"
-	case float64:
-		return "float"
-	case nil:
-		return "NoneType"
-	}
-	return "dict"
 }

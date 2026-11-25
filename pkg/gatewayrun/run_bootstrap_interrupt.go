@@ -6,14 +6,14 @@ import (
 	"os/signal"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Set while the gateway loop routes interrupt and terminate itself, an interrupt then draining instead of cancelling
 var gatewaySignalsRouted atomic.Bool
 
 // Error of a start an interrupt ended before the gateway routed its own signals, the KeyboardInterrupt of asyncio.run
-var ErrKeyboardInterrupt error = &gateway.PyError{Kind: "KeyboardInterrupt"}
+var ErrKeyboardInterrupt error = &errorutil.Error{Kind: "KeyboardInterrupt"}
 
 // Runs StartGateway as asyncio.run does, a first unrouted interrupt cancelling the start and a second ending the wait
 func RunGateway(ctx context.Context, o StartGatewayOptions) (bool, error) {

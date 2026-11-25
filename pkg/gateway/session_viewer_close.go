@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -80,7 +81,7 @@ func closeViewerSession(ctx context.Context, a *SessionAuthority, sessionID, end
 	live, ok := a.Sessions[sessionID]
 	if !ok {
 		a.mu.Unlock()
-		return &pyKeyError{sessionID}
+		return &keyError{sessionID}
 	}
 	if len(live.Subscribers) > 0 || isHistoryMount(live) {
 		a.mu.Unlock()
@@ -265,7 +266,7 @@ func orphanCandidate(ctx context.Context, a *SessionAuthority, sessionID string)
 	if policy, ok := receipt.Get("policy"); ok {
 		obj, isObj := policy.(*jsonutil.Object)
 		if !isObj {
-			return false, &PyError{Kind: "AttributeError", Msg: "the viewer session policy is " + errchain.Kind(policy) + ", expected a mapping"}
+			return false, &errorutil.Error{Kind: "AttributeError", Msg: "the viewer session policy is " + errchain.Kind(policy) + ", expected a mapping"}
 		}
 		source, _ = obj.Get("source")
 	}
@@ -288,7 +289,7 @@ func orphanReceiptRow(ctx context.Context, a *SessionAuthority, sessionID string
 	}
 	entry, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
-		return nil, nil, &PyError{Kind: "TypeError", Msg: "a viewer receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
+		return nil, nil, &errorutil.Error{Kind: "TypeError", Msg: "a viewer receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
 	target, err := receiptField(entry, "session_id")
 	if err != nil {
@@ -487,7 +488,7 @@ func settleViewerClose(ctx context.Context, a *SessionAuthority, sessionID strin
 	}
 	platform := ""
 	if row != nil {
-		if source, _ := row.Get("source"); pyTruthy(source) {
+		if source, _ := row.Get("source"); anyutil.IsTrue(source) {
 			platform = anyutil.String(source)
 		}
 	}

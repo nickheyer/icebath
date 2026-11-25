@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	xterm "github.com/charmbracelet/x/term"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/linktier"
@@ -81,7 +82,7 @@ func readMessageBody(positional, filePath any, stdin io.Reader) (string, bool, e
 				"Add [[as_document]] to deliver an image as an uncompressed file:\n"+
 				"  icebath send --to telegram \"[[as_document]] MEDIA:%s\"", path, path, path, path)}
 		case err != nil && errorutil.IsSystem(err):
-			return "", false, &sendExit{code: sendUsageExit, msg: fmt.Sprintf("icebath send: cannot read %s: %s", path, err.Error())}
+			return "", false, &sendExit{code: sendUsageExit, msg: fmt.Sprintf("icebath send: cannot read %s: %s", path, errchain.OSText(err))}
 		case err != nil:
 			return "", false, err
 		}
@@ -247,7 +248,7 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 				return sendFailureExit, &errorutil.Error{Kind: "AttributeError", Msg: "channel entry must be an object, got " + anyutil.Kind(raw)}
 			}
 			var label any = "?"
-			if value, has := channel.Get("name"); has {
+			if value, has := channel.Get("name"); has && value != nil {
 				label = value
 			}
 			var chatID any = ""

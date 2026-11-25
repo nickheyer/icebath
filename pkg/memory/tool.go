@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -120,7 +121,7 @@ func liveStoreFlags(env *tools.Env) (bool, bool) {
 }
 
 // Python int of a config value, false when the value cannot convert
-func pyInt(v any) (int, bool) {
+func wholeNumber(v any) (int, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
@@ -139,8 +140,8 @@ func pyInt(v any) (int, bool) {
 		}
 		return int(math.Trunc(x)), true
 	case string:
-		s := pyStrip(x)
-		if !pyIntLiteral.MatchString(s) {
+		s := strings.TrimSpace(x)
+		if !intLiteral.MatchString(s) {
 			return 0, false
 		}
 		n, err := strconv.Atoi(strings.ReplaceAll(s, "_", ""))
@@ -150,7 +151,7 @@ func pyInt(v any) (int, bool) {
 }
 
 // Decimal literal int accepts, sign and single underscores between digits allowed
-var pyIntLiteral = regexp.MustCompile(`^[+-]?[0-9]+(?:_[0-9]+)*$`)
+var intLiteral = regexp.MustCompile(`^[+-]?[0-9]+(?:_[0-9]+)*$`)
 
 // Snapshots the store flags for the following schema narrowing and reports whether either store is on
 func checkMemoryRequirements(env *tools.Env) bool {
@@ -300,7 +301,7 @@ func memoryTargetError(store *Store, target any, operations any) *Result {
 	}
 	name, ok := target.(string)
 	if !ok || (name != "memory" && name != "user") {
-		r := failure(boundErrorText(fmt.Sprintf("Invalid memory target '%s'. Use 'memory' or 'user'.", pyStr(target))), "invalid_args", nil)
+		r := failure(boundErrorText(fmt.Sprintf("Invalid memory target '%s'. Use 'memory' or 'user'.", anyutil.String(target))), "invalid_args", nil)
 		return &r
 	}
 	var nested []any
@@ -345,14 +346,14 @@ func MemoryTool(ctx context.Context, env *tools.Env, store *Store, action, targe
 
 // Result JSON of one memory call, a single op or a batch
 func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, target, content, oldText, newText, operations any) (string, error) {
-	if !pyTruthy(content) && pyTruthy(newText) {
+	if !anyutil.IsTrue(content) && anyutil.IsTrue(newText) {
 		content = newText
 	}
 	if targetErr := memoryTargetError(store, target, operations); targetErr != nil {
 		return tools.JSONASCII(targetErr.Data), nil
 	}
 	name := target.(string)
-	if pyTruthy(operations) {
+	if anyutil.IsTrue(operations) {
 		list, ok := operations.([]any)
 		if !ok {
 			return invalid("operations must be a list of {action, content?, old_text?} objects.")
@@ -378,7 +379,7 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 		}
 		return applied(res)
 	}
-	if !pyTruthy(action) {
+	if !anyutil.IsTrue(action) {
 		return invalid("Missing required parameter: 'operations', a list of {action: add/patch/remove, " +
 			"content?, old_text?} changes; a single change is a one-item list.")
 	}
@@ -390,7 +391,7 @@ func runMemoryTool(ctx context.Context, env *tools.Env, store *Store, action, ta
 	}
 	verb, ok := action.(string)
 	if !ok || (verb != "add" && verb != "patch" && verb != "remove") {
-		return invalid(fmt.Sprintf("Unknown action '%s'. Use: add, patch, remove", pyStr(action)))
+		return invalid(fmt.Sprintf("Unknown action '%s'. Use: add, patch, remove", anyutil.String(action)))
 	}
 	if msg := validateSingleOp(store, verb, name, content, oldText); msg != "" {
 		return msg, nil
@@ -425,10 +426,10 @@ func invalid(message string) (string, error) {
 
 // Rejects an invalid single op before the gate, a missing old_text returning the inventory to retry against
 func validateSingleOp(store *Store, action, target string, content, oldText any) string {
-	if action == "add" && !pyTruthy(content) {
+	if action == "add" && !anyutil.IsTrue(content) {
 		return toolError("Content is required for 'add' action.", map[string]any{"success": false})
 	}
-	if (action == "remove" || action == "patch") && !pyTruthy(oldText) {
+	if (action == "remove" || action == "patch") && !anyutil.IsTrue(oldText) {
 		return tools.JSON(tools.Dict(
 			"success", false,
 			"error", fmt.Sprintf("'%s' needs old_text -- a short unique substring of the entry "+
@@ -436,7 +437,7 @@ func validateSingleOp(store *Store, action, target string, content, oldText any)
 				"set to part of one of the current_entries below.", action, action, action),
 			"current_entries", store.Entries(target), "usage", store.Usage(target)))
 	}
-	if action == "patch" && !pyTruthy(content) {
+	if action == "patch" && !anyutil.IsTrue(content) {
 		return toolError("content (the new text for the old_text span) is required for 'patch' action. "+
 			PatchDropHint, map[string]any{"success": false})
 	}
@@ -475,7 +476,7 @@ func storeCall(ctx context.Context, store *Store, action, target string, content
 	}
 	text := ""
 	if content != nil {
-		text = pyStr(content)
+		text = anyutil.String(content)
 	}
 	return store.Patch(ctx, target, old, text, matchedEntry)
 }
@@ -484,13 +485,13 @@ func storeCall(ctx context.Context, store *Store, action, target string, content
 func gateText(action, label string, content, oldText any) (string, string) {
 	switch action {
 	case "add":
-		return "add to " + label, pyStrOr(content, "")
+		return "add to " + label, anyutil.StringOr(content, "")
 	case "replace":
-		return "replace in " + label, fmt.Sprintf("entry matching: %s\nwhole entry becomes: %s", pyStr(oldText), pyStr(content))
+		return "replace in " + label, fmt.Sprintf("entry matching: %s\nwhole entry becomes: %s", anyutil.String(oldText), anyutil.String(content))
 	case "remove":
-		return "remove from " + label, pyStrOr(oldText, "")
+		return "remove from " + label, anyutil.StringOr(oldText, "")
 	}
-	return "patch in " + label, fmt.Sprintf("entry matching: %s\nspan '%s' becomes: %s (rest of the entry is kept)", pyStr(oldText), pyStr(oldText), pyStr(content))
+	return "patch in " + label, fmt.Sprintf("entry matching: %s\nspan '%s' becomes: %s (rest of the entry is kept)", anyutil.String(oldText), anyutil.String(oldText), anyutil.String(content))
 }
 
 // One display line of a batch op for gate prompts and staged summaries
@@ -501,7 +502,7 @@ func batchOpLine(op any) string {
 		act = "?"
 	}
 	content := m["content"]
-	if !pyTruthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = m["new_text"]
 	}
 	old, present := m["old_text"]
@@ -510,16 +511,16 @@ func batchOpLine(op any) string {
 	}
 	switch act {
 	case "remove":
-		return "- remove: " + pyStr(old)
+		return "- remove: " + anyutil.String(old)
 	case "patch":
-		return fmt.Sprintf("- patch span '%s' -> '%s' (rest of the entry is kept)", pyStr(old), pyStrOr(content, ""))
+		return fmt.Sprintf("- patch span '%s' -> '%s' (rest of the entry is kept)", anyutil.String(old), anyutil.StringOr(content, ""))
 	}
-	return fmt.Sprintf("- %s: %s", pyStr(act), pyStrOr(content, ""))
+	return fmt.Sprintf("- %s: %s", anyutil.String(act), anyutil.StringOr(content, ""))
 }
 
 // Batch ops as maps with falsy items read as empty, a crash for any other non object item
 func opMaps(v any) ([]map[string]any, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return []map[string]any{}, nil
 	}
 	switch x := v.(type) {
@@ -528,21 +529,21 @@ func opMaps(v any) ([]map[string]any, error) {
 	case []any:
 		out := make([]map[string]any, len(x))
 		for i, op := range x {
-			if !pyTruthy(op) {
+			if !anyutil.IsTrue(op) {
 				out[i] = map[string]any{}
 				continue
 			}
 			m, ok := op.(map[string]any)
 			if !ok {
-				return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("memory operation is %s where a mapping was expected", errchain.Kind(op))}
+				return nil, &kindError{class: "AttributeError", msg: fmt.Sprintf("memory operation is %s where a mapping was expected", errchain.Kind(op))}
 			}
 			out[i] = m
 		}
 		return out, nil
 	case string, map[string]any:
-		return nil, &pyError{class: "AttributeError", msg: fmt.Sprintf("memory operations are %s where a list was expected", errchain.Kind(v))}
+		return nil, &kindError{class: "AttributeError", msg: fmt.Sprintf("memory operations are %s where a list was expected", errchain.Kind(v))}
 	}
-	return nil, &pyError{class: "TypeError", msg: fmt.Sprintf("memory operations are %s where a list was expected", errchain.Kind(v))}
+	return nil, &kindError{class: "TypeError", msg: fmt.Sprintf("memory operations are %s where a list was expected", errchain.Kind(v))}
 }
 
 // Registry handler running the tool against the session store and mirroring committed writes
@@ -566,7 +567,7 @@ func memoryHandler(ctx context.Context, call *tools.Call) string {
 
 // Session home, the process home when the environment names none
 func envHome(env *tools.Env) string {
-	if env != nil && pyStrip(env.Home) != "" {
+	if env != nil && strings.TrimSpace(env.Home) != "" {
 		return env.Home
 	}
 	return home.Process()

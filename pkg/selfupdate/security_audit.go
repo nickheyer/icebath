@@ -312,7 +312,7 @@ func osvHTTPJSON(ctx context.Context, url string, payload any) (any, error) {
 		return nil, &auditHTTPError{err: err}
 	}
 	if !utf8.Valid(raw) {
-		return nil, &pm.PyError{Class: "UnicodeDecodeError", Message: "the OSV response is not valid UTF-8"}
+		return nil, &pm.ClassError{Class: "UnicodeDecodeError", Message: "the OSV response is not valid UTF-8"}
 	}
 	return jsonutil.Decode(string(raw))
 }
@@ -386,7 +386,7 @@ func osvFixedVersions(record any) []string {
 		for _, rng := range ranges {
 			events, _ := rowValue(rng, "events").([]any)
 			for _, event := range events {
-				if value, present, _ := rowLookup(event, "fixed"); present {
+				if value, present, _ := rowLookup(event, "fixed"); present && value != nil {
 					text := anyutil.String(value)
 					if !seen[text] {
 						seen[text] = true
@@ -593,9 +593,9 @@ func CmdSecurityAudit(ctx context.Context, h string, ns map[string]any, w io.Wri
 	}
 	findings, err := runAudit(ctx, components)
 	if err != nil {
-		var pyErr *pm.PyError
-		if errors.As(err, &pyErr) && pyErr.Class == "RuntimeError" {
-			fmt.Fprintf(auditStderr, "audit failed: %s\n", pyErr.Message)
+		var kindErr *pm.ClassError
+		if errors.As(err, &kindErr) && kindErr.Class == "RuntimeError" {
+			fmt.Fprintf(auditStderr, "audit failed: %s\n", kindErr.Message)
 			return 2, nil
 		}
 		return 0, err

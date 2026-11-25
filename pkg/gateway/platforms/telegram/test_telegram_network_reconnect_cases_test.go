@@ -18,14 +18,14 @@ import (
 )
 
 // Python exception double with a class name, a message and explicit cause and context links
-type pyExc struct {
+type excValue struct {
 	class, msg     string
 	cause, context error
 }
 
-func (e *pyExc) Error() string     { return e.msg }
-func (e *pyExc) ErrorKind() string { return e.class }
-func (e *pyExc) Unwrap() []error {
+func (e *excValue) Error() string     { return e.msg }
+func (e *excValue) ErrorKind() string { return e.class }
+func (e *excValue) Unwrap() []error {
 	var out []error
 	if e.cause != nil {
 		out = append(out, e.cause)
@@ -47,16 +47,16 @@ func countErr(seen []error, target error) int {
 }
 
 func TestIterExceptionGraphFlatSingle(t *testing.T) {
-	err := &pyExc{class: "ValueError", msg: "boom"}
+	err := &excValue{class: "ValueError", msg: "boom"}
 	if got := iterExceptionGraph(err); len(got) != 1 || got[0] != error(err) {
 		t.Fatalf("got %v", got)
 	}
 }
 
 func TestIterExceptionGraphWalksCauseChain(t *testing.T) {
-	root := &pyExc{class: "ValueError", msg: "root"}
-	mid := &pyExc{class: "RuntimeError", msg: "mid", cause: root}
-	top := &pyExc{class: "Exception", msg: "top", cause: mid}
+	root := &excValue{class: "ValueError", msg: "root"}
+	mid := &excValue{class: "RuntimeError", msg: "mid", cause: root}
+	top := &excValue{class: "Exception", msg: "top", cause: mid}
 	seen := iterExceptionGraph(top)
 	if !slices.Contains(seen, error(top)) || !slices.Contains(seen, error(mid)) || !slices.Contains(seen, error(root)) {
 		t.Fatalf("got %v", seen)
@@ -64,8 +64,8 @@ func TestIterExceptionGraphWalksCauseChain(t *testing.T) {
 }
 
 func TestIterExceptionGraphWalksContextChain(t *testing.T) {
-	root := &pyExc{class: "ValueError", msg: "during handling"}
-	top := &pyExc{class: "RuntimeError", msg: "top", context: root}
+	root := &excValue{class: "ValueError", msg: "during handling"}
+	top := &excValue{class: "RuntimeError", msg: "top", context: root}
 	seen := iterExceptionGraph(top)
 	if !slices.Contains(seen, error(top)) || !slices.Contains(seen, error(root)) {
 		t.Fatalf("got %v", seen)
@@ -73,8 +73,8 @@ func TestIterExceptionGraphWalksContextChain(t *testing.T) {
 }
 
 func TestIterExceptionGraphCycleGuard(t *testing.T) {
-	a := &pyExc{class: "ValueError", msg: "a"}
-	b := &pyExc{class: "RuntimeError", msg: "b", cause: a}
+	a := &excValue{class: "ValueError", msg: "a"}
+	b := &excValue{class: "RuntimeError", msg: "b", cause: a}
 	a.cause = b
 	seen := iterExceptionGraph(a)
 	if countErr(seen, a) != 1 || countErr(seen, b) != 1 {
@@ -83,75 +83,75 @@ func TestIterExceptionGraphCycleGuard(t *testing.T) {
 }
 
 func TestIterExceptionGraphDiamondNoDuplicates(t *testing.T) {
-	root := &pyExc{class: "ValueError", msg: "root"}
-	left := &pyExc{class: "RuntimeError", msg: "left", cause: root}
-	right := &pyExc{class: "TypeError", msg: "right", cause: root}
-	top := &pyExc{class: "Exception", msg: "top", cause: left, context: right}
+	root := &excValue{class: "ValueError", msg: "root"}
+	left := &excValue{class: "RuntimeError", msg: "left", cause: root}
+	right := &excValue{class: "TypeError", msg: "right", cause: root}
+	top := &excValue{class: "Exception", msg: "top", cause: left, context: right}
 	if seen := iterExceptionGraph(top); countErr(seen, root) != 1 {
 		t.Fatalf("got %v", seen)
 	}
 }
 
 func TestPoolTimeoutClassifierPtbPoolTimeoutMessage(t *testing.T) {
-	err := &pyExc{class: "Exception", msg: "Pool timeout: All connections in the connection pool are occupied. Request was *not* sent to Telegram."}
+	err := &excValue{class: "Exception", msg: "Pool timeout: All connections in the connection pool are occupied. Request was *not* sent to Telegram."}
 	if !looksLikePoolTimeout(err) {
 		t.Fatal("want pool timeout")
 	}
 }
 
 func TestPoolTimeoutClassifierWrappedHttpxPooltimeoutClass(t *testing.T) {
-	inner := &pyExc{class: "ConnectionError", msg: "inner"}
-	err := &pyExc{class: "Exception", msg: "Timed out", context: inner}
+	inner := &excValue{class: "ConnectionError", msg: "inner"}
+	err := &excValue{class: "Exception", msg: "Timed out", context: inner}
 	if looksLikePoolTimeout(err) {
 		t.Fatal("want no pool timeout")
 	}
 }
 
 func TestPoolTimeoutClassifierHttpxPooltimeoutClassName(t *testing.T) {
-	err := &pyExc{class: "Exception", msg: "Timed out", cause: &pyExc{class: "FakePoolTimeout", msg: "x"}}
+	err := &excValue{class: "Exception", msg: "Timed out", cause: &excValue{class: "FakePoolTimeout", msg: "x"}}
 	if !looksLikePoolTimeout(err) {
 		t.Fatal("want pool timeout")
 	}
 }
 
 func TestPoolTimeoutClassifierGenericTimeoutNegative(t *testing.T) {
-	if looksLikePoolTimeout(&pyExc{class: "Exception", msg: "Timed out"}) || looksLikePoolTimeout(&pyExc{class: "Exception", msg: "Bad Gateway"}) {
+	if looksLikePoolTimeout(&excValue{class: "Exception", msg: "Timed out"}) || looksLikePoolTimeout(&excValue{class: "Exception", msg: "Bad Gateway"}) {
 		t.Fatal("want no pool timeout")
 	}
 }
 
 func TestPoolTimeoutClassifierOccupiedConnectionPoolSubstring(t *testing.T) {
-	if !looksLikePoolTimeout(&pyExc{class: "Exception", msg: "All connections in the connection pool are occupied"}) {
+	if !looksLikePoolTimeout(&excValue{class: "Exception", msg: "All connections in the connection pool are occupied"}) {
 		t.Fatal("want pool timeout")
 	}
-	if looksLikePoolTimeout(&pyExc{class: "Exception", msg: "seat was occupied"}) {
+	if looksLikePoolTimeout(&excValue{class: "Exception", msg: "seat was occupied"}) {
 		t.Fatal("occupied alone must not match")
 	}
-	if looksLikePoolTimeout(&pyExc{class: "Exception", msg: "connection pool sizing"}) {
+	if looksLikePoolTimeout(&excValue{class: "Exception", msg: "connection pool sizing"}) {
 		t.Fatal("connection pool alone must not match")
 	}
 }
 
 func TestConnectTimeoutClassifierClassNameMatch(t *testing.T) {
-	if !looksLikeConnectTimeout(&pyExc{class: "FakeConnectTimeout", msg: "x"}) {
+	if !looksLikeConnectTimeout(&excValue{class: "FakeConnectTimeout", msg: "x"}) {
 		t.Fatal("want connect timeout")
 	}
 }
 
 func TestConnectTimeoutClassifierMessageMatch(t *testing.T) {
-	if !looksLikeConnectTimeout(&pyExc{class: "Exception", msg: "connect timeout"}) || !looksLikeConnectTimeout(&pyExc{class: "Exception", msg: "connect timed out"}) {
+	if !looksLikeConnectTimeout(&excValue{class: "Exception", msg: "connect timeout"}) || !looksLikeConnectTimeout(&excValue{class: "Exception", msg: "connect timed out"}) {
 		t.Fatal("want connect timeout")
 	}
 }
 
 func TestConnectTimeoutClassifierWrappedInCause(t *testing.T) {
-	if !looksLikeConnectTimeout(&pyExc{class: "Exception", msg: "Timed out", cause: &pyExc{class: "FakeConnectTimeout", msg: "x"}}) {
+	if !looksLikeConnectTimeout(&excValue{class: "Exception", msg: "Timed out", cause: &excValue{class: "FakeConnectTimeout", msg: "x"}}) {
 		t.Fatal("want connect timeout")
 	}
 }
 
 func TestConnectTimeoutClassifierGenericNegative(t *testing.T) {
-	if looksLikeConnectTimeout(&pyExc{class: "Exception", msg: "Timed out"}) {
+	if looksLikeConnectTimeout(&excValue{class: "Exception", msg: "Timed out"}) {
 		t.Fatal("want no connect timeout")
 	}
 }
@@ -161,14 +161,14 @@ func TestReconnectSelfSchedulesOnStartPollingFailure(t *testing.T) {
 	var calls atomic.Int32
 	app.updater.startFn = func(ctx context.Context, _ bool, _ func(error)) error {
 		if calls.Add(1) == 1 {
-			return &pyExc{class: "Exception", msg: "Timed out"}
+			return &excValue{class: "Exception", msg: "Timed out"}
 		}
 		<-ctx.Done()
 		return ctx.Err()
 	}
 	p, host := newTestLifecycle(t, app)
 	p.networkErrorCount = 1
-	p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "Bad Gateway"})
+	p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "Bad Gateway"})
 	if len(host.pendingTasks()) < 1 {
 		t.Fatal("expected a self rescheduled retry task after start_polling failure")
 	}
@@ -179,7 +179,7 @@ func TestInitializeStillRunsWhenShutdownFails(t *testing.T) {
 	app.polling.shutdownFn = func(context.Context) error { return errors.New("shutdown boom") }
 	p, _ := newTestLifecycle(t, app)
 	p.networkErrorCount = 1
-	p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "Bad Gateway"})
+	p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "Bad Gateway"})
 	if _, inits := app.polling.counts(); inits != 1 {
 		t.Fatalf("initialize calls %d", inits)
 	}
@@ -195,7 +195,7 @@ func TestReconnectDrainsGeneralPoolAfterPoolTimeout(t *testing.T) {
 	app := newMockApp()
 	p, _ := newTestLifecycle(t, app)
 	p.networkErrorCount = 1
-	p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception",
+	p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception",
 		msg: "Pool timeout: All connections in the connection pool are occupied. Request was not sent to Telegram."})
 	if s, i := app.general.counts(); s != 1 || i != 1 {
 		t.Fatalf("general pool %d %d", s, i)
@@ -237,7 +237,7 @@ func TestReconnectContinuesIfDrainHangs(t *testing.T) {
 	p.timings.drainTimeout = 0.01
 	done := make(chan struct{})
 	go func() {
-		p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "Timed out"})
+		p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "Timed out"})
 		close(done)
 	}()
 	select {
@@ -281,7 +281,7 @@ func TestReconnectStopDeadlineDoesNotWaitForCancelCleanup(t *testing.T) {
 	p.timings.updaterStopTimeout = 0.01
 	done := make(chan struct{})
 	go func() {
-		p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "Timed out"})
+		p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "Timed out"})
 		close(done)
 	}()
 	select {
@@ -315,7 +315,7 @@ func TestReconnectDrainSurvivesCancellationResistantClose(t *testing.T) {
 	p.timings.drainTimeout = 0.05
 	done := make(chan struct{})
 	go func() {
-		p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "Timed out"})
+		p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "Timed out"})
 		close(done)
 	}()
 	select {
@@ -360,7 +360,7 @@ func TestHeartbeatForceEscalatesWedgedRecoveryTask(t *testing.T) {
 func TestConflictRetryAlsoDrainsPollingConnections(t *testing.T) {
 	app := newMockApp()
 	p, _ := newTestLifecycle(t, app)
-	if err := p.handlePollingConflict(context.Background(), &pyExc{class: "Exception", msg: "Conflict: terminated by other getUpdates"}); err != nil {
+	if err := p.handlePollingConflict(context.Background(), &excValue{class: "Exception", msg: "Conflict: terminated by other getUpdates"}); err != nil {
 		t.Fatal(err)
 	}
 	if s, i := app.polling.counts(); s != 1 || i != 1 || app.updater.startCount() != 1 {
@@ -426,7 +426,7 @@ func TestHeartbeatProbeReentersLadderWhenUpdaterNotRunning(t *testing.T) {
 func TestHeartbeatProbeIgnoresAuthErrors(t *testing.T) {
 	app := newMockApp()
 	app.bot.getMeFn = func(context.Context) (*models.User, error) {
-		return nil, &pyExc{class: "InvalidToken", msg: "token revoked"}
+		return nil, &excValue{class: "InvalidToken", msg: "token revoked"}
 	}
 	p, _ := newTestLifecycle(t, app)
 	generation, progress := p.beginPollingGeneration()
@@ -440,7 +440,7 @@ func TestHeartbeatProbeIgnoresAuthErrors(t *testing.T) {
 func TestHeartbeatProbeDefersToInflightRecovery(t *testing.T) {
 	app := newMockApp()
 	app.bot.getMeFn = func(context.Context) (*models.User, error) {
-		return nil, &pyExc{class: "ConnectionError", msg: "pool wedged"}
+		return nil, &excValue{class: "NetworkError", msg: "pool wedged"}
 	}
 	p, _ := newTestLifecycle(t, app)
 	inflight := gateway.SpawnAdapterTask(context.Background(), hang)
@@ -460,7 +460,7 @@ func TestReconnectSchedulesHeartbeatProbeOnSuccess(t *testing.T) {
 	p, host := newTestLifecycle(t, app)
 	p.networkErrorCount = 1
 	initial := len(host.tasks)
-	p.handlePollingNetworkError(context.Background(), &pyExc{class: "Exception", msg: "Bad Gateway"})
+	p.handlePollingNetworkError(context.Background(), &excValue{class: "Exception", msg: "Bad Gateway"})
 	if len(host.tasks) <= initial {
 		t.Fatal("expected a heartbeat probe task after a successful reconnect start_polling()")
 	}
@@ -489,7 +489,7 @@ func TestHeartbeatLoopSkipsReconnectIfAlreadyInProgress(t *testing.T) {
 func TestPollingBootstrapConflictSchedulesConflictRecoveryTask(t *testing.T) {
 	app := newMockApp()
 	app.updater.startFn = func(context.Context, bool, func(error)) error {
-		return &pyExc{class: "Exception", msg: "Conflict: terminated by other getUpdates request"}
+		return &excValue{class: "Exception", msg: "Conflict: terminated by other getUpdates request"}
 	}
 	p, host := newTestLifecycle(t, app)
 	p.timings.conflictRetryDelayBase = 30

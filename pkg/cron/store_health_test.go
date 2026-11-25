@@ -57,7 +57,7 @@ func TestOutageEntersOnceAndRecoversThroughAnySave(t *testing.T) {
 		t.Fatalf("log %s", buf.String())
 	}
 	rec := DegradedRecord(s.cronDir)
-	if rec == nil || rec.SkippedRuns() != 2 || rec.Since != 1000 || rec.Error != "ENOSPC: No space left on device" || rec.lastProbe == nil {
+	if rec == nil || rec.SkippedRuns() != 2 || rec.Since != 1000 || rec.Error != syscall.ENOSPC.Error() || rec.lastProbe == nil {
 		t.Fatalf("record %+v", rec)
 	}
 	if f := rec.NoticeFields(); f["skipped"] != 2 || !strings.Contains(f["fix"].(string), s.cronDir) || f["store"] != StoreKey(s.home) {
@@ -118,7 +118,7 @@ func TestDispatchBlockedThrottlesThenReprobes(t *testing.T) {
 	}
 	*mono += ProbeIntervalSeconds
 	*probe = &fs.PathError{Op: "open", Path: "x", Err: syscall.EROFS}
-	if !s.dispatchBlocked([]*Job{{ID: "c"}}) || DegradedRecord(s.cronDir).Error != "EROFS: Read-only file system" {
+	if !s.dispatchBlocked([]*Job{{ID: "c"}}) || DegradedRecord(s.cronDir).Error != syscall.EROFS.Error() {
 		t.Fatal("failing re probe not held")
 	}
 	*mono += ProbeIntervalSeconds
@@ -180,7 +180,7 @@ func TestProbeStoreFindsUnwritableTargets(t *testing.T) {
 	os.Chmod(s.cronDir, 0o500)
 	defer os.Chmod(s.cronDir, 0o700)
 	report := ProbeReport(s.cronDir)
-	if report == nil || !strings.HasPrefix(report["error"].(string), "EACCES") || report["since"] == "unknown" {
+	if report == nil || report["error"] != syscall.EACCES.Error() || report["since"] == "unknown" {
 		t.Fatalf("report %v", report)
 	}
 	if free, ok := FreeBytes(s.cronDir); !ok || free == 0 {

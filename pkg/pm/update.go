@@ -330,11 +330,11 @@ func rowURLs(rows []any) ([]string, error) {
 func rowField(row any, key string) (any, error) {
 	m, ok := row.(map[string]any)
 	if !ok {
-		return nil, pySubscriptError(row, key)
+		return nil, subscriptError(row, key)
 	}
 	v, ok := m[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: "the artifact row has no " + key}
+		return nil, &ClassError{Class: "KeyError", Message: "the artifact row has no " + key}
 	}
 	return v, nil
 }
@@ -421,7 +421,7 @@ func hfHeaders() map[string]string {
 }
 
 // Process environment value as Python os environ get reads it
-func envGet(key string) string { return pyEnviron()[key] }
+func envGet(key string) string { return environValue()[key] }
 
 // indexOrigin is a normalized scheme, host and effective port, Port nil when the scheme has no default
 type indexOrigin struct {
@@ -439,7 +439,7 @@ func (o indexOrigin) equal(p indexOrigin) bool {
 
 // Origin of a URL the way url_origin normalizes it, a ValueError for a malformed port
 func urlOrigin(raw string) (indexOrigin, error) {
-	parts, err := pyURLSplit(raw)
+	parts, err := urlSplit(raw)
 	if err != nil {
 		return indexOrigin{}, err
 	}
@@ -464,10 +464,10 @@ func urlOrigin(raw string) (indexOrigin, error) {
 	if port != "" {
 		value, ok := asciiPort(port)
 		if !ok {
-			return indexOrigin{}, &PyError{Class: "ValueError", Message: "the port " + port + " is not a whole number"}
+			return indexOrigin{}, &ClassError{Class: "ValueError", Message: "the port " + port + " is not a whole number"}
 		}
 		if value < 0 || value > 65535 {
-			return indexOrigin{}, &PyError{Class: "ValueError", Message: "Port out of range 0-65535"}
+			return indexOrigin{}, &ClassError{Class: "ValueError", Message: "Port out of range 0-65535"}
 		}
 		origin.Port = &value
 		return origin, nil
@@ -678,7 +678,7 @@ func jsonBytesText(b []byte) ([]byte, error) {
 		out, err = utf32.UTF32(utf32.LittleEndian, utf32.IgnoreBOM).NewDecoder().Bytes(b)
 	}
 	if err != nil {
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("not valid %s text: %s", encoding, err)}
+		return nil, &ClassError{Class: "ValueError", Message: fmt.Sprintf("not valid %s text: %s", encoding, err)}
 	}
 	return out, nil
 }
@@ -716,7 +716,7 @@ func fetchJSON(raw string) (any, error) {
 		}
 		result, err := loadJSON(text)
 		if err != nil {
-			return nil, &PyError{Class: "JSONDecodeError", Message: err.Error()}
+			return nil, &ClassError{Class: "JSONDecodeError", Message: err.Error()}
 		}
 		storeIndexResponse(key, result)
 		return result, nil
@@ -760,7 +760,7 @@ func GetText(url string, headers map[string]string) (string, error) { return get
 func jsonGet(v any, key string, fallback any) (any, error) {
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s, got %s", key, errchain.Kind(v))}
 	}
 	if value, ok := m[key]; ok {
 		return value, nil
@@ -786,9 +786,9 @@ func jsonIter(v any) ([]any, error) {
 		}
 		return out, nil
 	case nil:
-		return nil, &PyError{Class: "TypeError", Message: "expected a list, got nothing"}
+		return nil, &ClassError{Class: "TypeError", Message: "expected a list, got nothing"}
 	}
-	return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
+	return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
 // String field of a decoded JSON object with a default
@@ -799,7 +799,7 @@ func jsonString(v any, key, fallback string) (string, error) {
 	}
 	s, ok := value.(string)
 	if !ok {
-		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("%s must be text, got %s", key, errchain.Kind(value))}
+		return "", &ClassError{Class: "TypeError", Message: fmt.Sprintf("%s must be text, got %s", key, errchain.Kind(value))}
 	}
 	return s, nil
 }
@@ -918,13 +918,13 @@ func GithubReleaseTags(repo, stripPrefix string) ([]string, error) {
 
 // Dist tags of an npm package from the configured registry
 func NpmDistTags(name string) (map[string]any, error) {
-	data, err := getJSON(NPMRegistry(pyEnviron()) + "-/package/" + name + "/dist-tags")
+	data, err := getJSON(NPMRegistry(environValue()) + "-/package/" + name + "/dist-tags")
 	if err != nil {
 		return nil, err
 	}
 	tags, ok := data.(map[string]any)
 	if !ok {
-		return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("the npm registry reply for %s must be a mapping, got %s", name, errchain.Kind(data))}
+		return nil, &ClassError{Class: "AttributeError", Message: fmt.Sprintf("the npm registry reply for %s must be a mapping, got %s", name, errchain.Kind(data))}
 	}
 	return tags, nil
 }
@@ -1250,7 +1250,7 @@ func reportUpdate(out io.Writer, d *Resolved, width int) {
 		}
 		fmt.Fprintf(out, "%s  %s\n", name, reason)
 	case !d.Changed():
-		fmt.Fprintf(out, "%s  %s up to date\n", name, pyNoneText(d.Locked))
+		fmt.Fprintf(out, "%s  %s up to date\n", name, noneText(d.Locked))
 	case d.Locked != nil && *d.Version == *d.Locked && len(d.ArtifactUpdates) > 0:
 		fmt.Fprintf(out, "%s  %s: newer artifacts for %s\n", name, *d.Version, strings.Join(sortedKeys(d.ArtifactUpdates), ", "))
 	default:
@@ -1273,7 +1273,7 @@ func reportUpdate(out io.Writer, d *Resolved, width int) {
 }
 
 // Text of an optional string the way Python formats None
-func pyNoneText(v *string) string {
+func noneText(v *string) string {
 	if v == nil {
 		return "None"
 	}
@@ -1317,7 +1317,7 @@ func regenerateBootstrapPins(ctx context.Context, lockfile *Lockfile) (int, erro
 }
 
 // Python class name of an error as type name reports it
-func pyErrorName(err error) string {
+func errorName(err error) string {
 	var httpErr *HTTPError
 	if errors.As(err, &httpErr) {
 		return "HTTPError"
@@ -1350,7 +1350,7 @@ func applyPins(ctx context.Context, out io.Writer, changed []*Resolved, lockfile
 			if _, seen := failed[d.Name]; !seen {
 				failedNames = append(failedNames, d.Name)
 			}
-			failed[d.Name] = pyErrorName(err) + ": " + detail
+			failed[d.Name] = errorName(err) + ": " + detail
 			continue
 		}
 		lockfile.SetPin(d.Name, *d.Version, artifacts)
@@ -1413,7 +1413,7 @@ func runLive(ctx context.Context, out io.Writer, command []string, cwd string, e
 	result, err := runStreaming(ctx, command, cwd, env, timeout, func(text string) { writeFlush(out, text) })
 	var timedOut *uvTimeoutError
 	if errors.As(err, &timedOut) {
-		return 0, "", &PyError{Class: "RuntimeError", Message: fmt.Sprintf("%s timed out after %ss", command[0], pySeconds(timeout))}
+		return 0, "", &ClassError{Class: "RuntimeError", Message: fmt.Sprintf("%s timed out after %ss", command[0], secondsValue(timeout))}
 	}
 	if err != nil {
 		return 0, "", err
@@ -1624,7 +1624,7 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 		perTarget := d.PerTarget
 		if len(perTarget) == 0 {
 			for _, t := range AllTargets {
-				perTarget = append(perTarget, TargetVersion{t, pyNoneText(d.Version)})
+				perTarget = append(perTarget, TargetVersion{t, noneText(d.Version)})
 			}
 		}
 		artifacts := map[string]any{}

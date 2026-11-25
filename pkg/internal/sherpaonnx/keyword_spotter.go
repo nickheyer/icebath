@@ -37,7 +37,7 @@ func DefaultKeywordSpotterOptions(tokens, encoder, decoder, joiner, keywordsFile
 func assertFileExists(f string) error {
 	info, err := os.Stat(f)
 	if err != nil || !info.Mode().IsRegular() {
-		return &PyError{Class: "AssertionError", Msg: f + " does not exist"}
+		return &KindError{Class: "AssertionError", Msg: f + " does not exist"}
 	}
 	return nil
 }
@@ -76,7 +76,7 @@ type KeywordSpotter struct {
 // The C API replaces zero with a default, so a zero the Python layer would pass through is refused
 func refuseZero(name string, zero bool) error {
 	if zero {
-		return &PyError{Class: "ValueError", Msg: name + "=0 is replaced by the library default in the sherpa-onnx C API"}
+		return &KindError{Class: "ValueError", Msg: name + "=0 is replaced by the library default in the sherpa-onnx C API"}
 	}
 	return nil
 }
@@ -89,7 +89,7 @@ func (m *Module) NewKeywordSpotter(o KeywordSpotterOptions) (*KeywordSpotter, er
 		}
 	}
 	if o.NumThreads <= 0 {
-		return nil, &PyError{Class: "AssertionError", Msg: fmt.Sprint(o.NumThreads)}
+		return nil, &KindError{Class: "AssertionError", Msg: fmt.Sprint(o.NumThreads)}
 	}
 	for _, check := range []struct {
 		name string
@@ -102,7 +102,7 @@ func (m *Module) NewKeywordSpotter(o KeywordSpotterOptions) (*KeywordSpotter, er
 		}
 	}
 	if o.Device != 0 {
-		return nil, &PyError{Class: "ValueError", Msg: fmt.Sprintf("device=%d has no field in the sherpa-onnx C API keyword spotter config", o.Device)}
+		return nil, &KindError{Class: "ValueError", Msg: fmt.Sprintf("device=%d has no field in the sherpa-onnx C API keyword spotter config", o.Device)}
 	}
 	strs := [][]byte{dlutil.CString(o.Encoder), dlutil.CString(o.Decoder), dlutil.CString(o.Joiner), dlutil.CString(o.Tokens),
 		dlutil.CString(o.Provider), dlutil.CString(o.KeywordsFile)}
@@ -116,7 +116,7 @@ func (m *Module) NewKeywordSpotter(o KeywordSpotterOptions) (*KeywordSpotter, er
 	handle := m.api.createKeywordSpotter(config)
 	runtime.KeepAlive(strs)
 	if handle == 0 {
-		return nil, &PyError{Class: "RuntimeError", Msg: "Errors in config!"}
+		return nil, &KindError{Class: "RuntimeError", Msg: "Errors in config!"}
 	}
 	k := &KeywordSpotter{api: m.api, handle: handle}
 	runtime.SetFinalizer(k, func(k *KeywordSpotter) { k.api.destroyKeywordSpotter(k.handle) })

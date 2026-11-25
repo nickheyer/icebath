@@ -1,6 +1,9 @@
 package ruamelyaml
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 type tokenKind int8
 
@@ -159,7 +162,7 @@ func commentItemRepr(s any) string {
 	case *token:
 		return x.reprComment()
 	case string:
-		return pyStrRepr(x)
+		return strconv.Quote(x)
 	case []any:
 		parts := make([]string, len(x))
 		for i, e := range x {
@@ -172,7 +175,7 @@ func commentItemRepr(s any) string {
 
 // Repr of a CommentToken, the value, the line and the column
 func (t *token) reprComment() string {
-	return "CommentToken(" + pyStrRepr(t.value) + ", line: " + itoa(t.start.Line) + ", col: " + itoa(t.start.Column) + ")"
+	return "CommentToken(" + strconv.Quote(t.value) + ", line: " + itoa(t.start.Line) + ", col: " + itoa(t.start.Column) + ")"
 }
 
 // Splits off the post comment slot for a block sequence start

@@ -18,7 +18,7 @@ func fleetRowPID(row any) (int, bool) {
 	if !isRowDict(row) {
 		return 0, false
 	}
-	pid, ok := pyIntValue(rowValue(row, "pid"))
+	pid, ok := intValue(rowValue(row, "pid"))
 	return int(pid), ok && pid > 0
 }
 
@@ -51,7 +51,7 @@ func signalStaleFleetSurvivors(ctx context.Context, w io.Writer, fleet []any, re
 		if !isRowDict(row) {
 			continue
 		}
-		pid, ok := pyIntValue(rowValue(row, "pid"))
+		pid, ok := intValue(rowValue(row, "pid"))
 		if !ok {
 			continue
 		}

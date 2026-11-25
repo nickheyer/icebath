@@ -144,12 +144,12 @@ func TestToolCallUIDFromHistoryPairsNearestAssistantOccurrence(t *testing.T) {
 func TestPerOccurrenceAndMergeToolCallUIDs(t *testing.T) {
 	calls := []any{map[string]any{"id": "x"}, map[string]any{"id": "x"}, map[string]any{"call_id": "y"}}
 	got := PerOccurrenceToolCallUIDs(map[string]any{"x": "u", "y": "v"}, calls)
-	want := PyObject{{Key: "x", Value: []any{"u", "u"}}, {Key: "y", Value: "v"}}
+	want := OrderedObject{{Key: "x", Value: []any{"u", "u"}}, {Key: "y", Value: "v"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expanded %v", got)
 	}
-	merged := MergeToolCallUIDs(PyObject{{Key: "x", Value: "u"}}, PyObject{{Key: "x", Value: []any{"w"}}, {Key: "z", Value: "q"}})
-	want = PyObject{{Key: "x", Value: []any{"u", "w"}}, {Key: "z", Value: "q"}}
+	merged := MergeToolCallUIDs(OrderedObject{{Key: "x", Value: "u"}}, OrderedObject{{Key: "x", Value: []any{"w"}}, {Key: "z", Value: "q"}})
+	want = OrderedObject{{Key: "x", Value: []any{"u", "w"}}, {Key: "z", Value: "q"}}
 	if !reflect.DeepEqual(merged, want) {
 		t.Fatalf("merged %v", merged)
 	}

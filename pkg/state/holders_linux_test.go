@@ -64,7 +64,7 @@ func installFakeProc(t *testing.T, base string, unreadable, fdPIDs []int) string
 	return procRoot
 }
 
-func itoa(n int) string { return pyFormat(n) }
+func itoa(n int) string { return formatted(n) }
 
 func mustHolders(t *testing.T, dbPath string) []Holder {
 	t.Helper()

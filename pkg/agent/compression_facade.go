@@ -88,7 +88,7 @@ func timeoutFallbackPrompt(ctx context.Context, a *AIAgent, systemMessage *strin
 func reportCompressionTimeout(a *AIAgent, idle, waited, sinceProgress, totalCeiling float64, totalExhausted, progressObserved bool) {
 	markContextCompressionTimedOut(a)
 	if totalExhausted {
-		pkgLog().Warn(fmt.Sprintf("Context compression reached its total ceiling after %.1fs (progress observed=%s); continuing without compression", waited, pyBoolStr(progressObserved)))
+		pkgLog().Warn(fmt.Sprintf("Context compression reached its total ceiling after %.1fs (progress observed=%s); continuing without compression", waited, boolStr(progressObserved)))
 	} else {
 		pkgLog().Warn(fmt.Sprintf("Context compression made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression", sinceProgress, waited, totalCeiling))
 	}
@@ -119,7 +119,7 @@ func warnCommitOverrun(a *AIAgent, waited, ceiling float64) {
 // Mirrors the persisted marker stamps of the worker result onto every scoped twin in a live list
 func syncPersistedMarkers(target, source []map[string]any) {
 	for _, sourceMessage := range source {
-		if sourceMessage != nil && pyTruthy(sourceMessage[dbPersistedMarker]) {
+		if sourceMessage != nil && anyutil.IsTrue(sourceMessage[dbPersistedMarker]) {
 			stampScopedTwins(target, sourceMessage, false)
 		}
 	}
@@ -190,7 +190,7 @@ func mirrorResultOntoLiveLists(a *AIAgent, result, messages []map[string]any, di
 	}
 	if live := a.liveSessionMessages(); live != nil {
 		for _, source := range result {
-			if source != nil && pyTruthy(source[dbPersistedMarker]) {
+			if source != nil && anyutil.IsTrue(source[dbPersistedMarker]) {
 				stampScopedTwinMessages(live, source, false)
 			}
 		}

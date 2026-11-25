@@ -58,7 +58,7 @@ func TestLocalRuntimePresetRoundtripKeepsRefusalsAndDenseSpill(t *testing.T) {
 		lr6Touch(t, filepath.Join(mdir, name+".gguf"))
 	}
 	lr6FakeHeaders(t, func(p string) ModelProfile {
-		stem := pyPathStem(p)
+		stem := pathStem(p)
 		weights := int64(40) << 30
 		if stem == "allowed" {
 			weights = 4 << 30
@@ -391,7 +391,7 @@ func lr6Staged(t *testing.T, mdir string, weights map[string]int64) {
 		lr6Touch(t, filepath.Join(mdir, stem+".gguf"))
 	}
 	lr6FakeHeaders(t, func(p string) ModelProfile {
-		stem := pyPathStem(p)
+		stem := pathStem(p)
 		return NewModelProfile(stem, weights[stem], 0, 65536, nil)
 	})
 }

@@ -13,7 +13,7 @@ import (
 var optionalTableNames = []string{"telegram_dm_topic_mode", "telegram_dm_topic_bindings", "delivery_obligations"}
 
 // json.dumps with ensure_ascii False
-var pyJSONUnicode = pyJSON{allowNaN: true, itemSep: ", ", keySep: ": "}
+var jsonUnicode = jsonCodec{allowNaN: true, itemSep: ", ", keySep: ": "}
 
 // Live column sets of the optional tables that exist
 func optionalTableColumns(ctx context.Context, conn SQLiteConn) (map[string]map[string]bool, error) {
@@ -70,13 +70,13 @@ func execCount(ctx context.Context, conn SQLiteConn, query string, args ...any) 
 }
 
 // JSON text decoded as an ordered object, false for anything json.loads rejects or a non object
-func loadsObject(raw any) (pyObject, bool) {
+func loadsObject(raw any) (orderedObject, bool) {
 	var text string
 	switch x := raw.(type) {
 	case string:
 		text = x
 	case []byte:
-		decoded, err := pyJSONDecodeBytes(x)
+		decoded, err := jsonDecodeBytes(x)
 		if err != nil {
 			return nil, false
 		}
@@ -84,11 +84,11 @@ func loadsObject(raw any) (pyObject, bool) {
 	default:
 		return nil, false
 	}
-	v, err := pyLoads(text)
+	v, err := loadsValue(text)
 	if err != nil {
 		return nil, false
 	}
-	obj, ok := v.(pyObject)
+	obj, ok := v.(orderedObject)
 	return obj, ok
 }
 
@@ -105,7 +105,7 @@ func runeSuffix(s string, n int) string {
 
 // Atomically rewrites exact profile identity in this state database, returning per store counts
 func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, error) {
-	old, nw := pyStrip(oldName), pyStrip(newName)
+	old, nw := strings.TrimSpace(oldName), strings.TrimSpace(newName)
 	counts := map[string]int{}
 	if old == "" || nw == "" || old == nw {
 		return counts, nil
@@ -179,7 +179,7 @@ func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, 
 			if v, _ := payload.get("profile"); !anyutil.Equal(v, old) {
 				continue
 			}
-			text, err := pyDumps(pyObjectSet(payload, "profile", nw), pyJSONUnicode)
+			text, err := dumpsValue(objectSet(payload, "profile", nw), jsonUnicode)
 			if err != nil {
 				return err
 			}
@@ -220,17 +220,17 @@ func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, 
 		for _, r := range routing {
 			key, _ := r["session_key"].(string)
 			newJSON := r["entry_json"]
-			if pyTruthy(newJSON) {
+			if anyutil.IsTrue(newJSON) {
 				if payload, ok := loadsObject(newJSON); ok {
 					if sk, ok := mustGet(payload, "session_key").(string); ok && strings.HasPrefix(sk, oldNS) {
-						payload = pyObjectSet(payload, "session_key", newNS+runeSuffix(sk, nsLen))
+						payload = objectSet(payload, "session_key", newNS+runeSuffix(sk, nsLen))
 					}
-					if origin, ok := mustGet(payload, "origin").(pyObject); ok {
+					if origin, ok := mustGet(payload, "origin").(orderedObject); ok {
 						if v, _ := origin.get("profile"); anyutil.Equal(v, old) {
-							payload = pyObjectSet(payload, "origin", pyObjectSet(origin, "profile", nw))
+							payload = objectSet(payload, "origin", objectSet(origin, "profile", nw))
 						}
 					}
-					text, err := pyDumps(payload, pyJSONUnicode)
+					text, err := dumpsValue(payload, jsonUnicode)
 					if err != nil {
 						return err
 					}
@@ -249,14 +249,14 @@ func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, 
 }
 
 // Value of a key in an ordered object, nil when absent
-func mustGet(obj pyObject, key string) any {
+func mustGet(obj orderedObject, key string) any {
 	v, _ := obj.get(key)
 	return v
 }
 
 // Deletes exact profile identity from this state database, abandoning pending deliveries, returning per store counts
 func (d *SessionDB) PurgeProfileState(profile string) (map[string]int, error) {
-	name := pyStrip(profile)
+	name := strings.TrimSpace(profile)
 	counts := map[string]int{}
 	if name == "" {
 		return counts, nil

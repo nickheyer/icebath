@@ -14,3 +14,19 @@ func Center(s string, width int) string {
 	left := pad / 2
 	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
 }
+
+// s followed by the spaces that make it width characters long, s itself when it is already that long
+func PadRight(s string, width int) string {
+	if pad := width - utf8.RuneCountInString(s); pad > 0 {
+		return s + strings.Repeat(" ", pad)
+	}
+	return s
+}
+
+// s after the spaces that make it width characters long, s itself when it is already that long
+func PadLeft(s string, width int) string {
+	if pad := width - utf8.RuneCountInString(s); pad > 0 {
+		return strings.Repeat(" ", pad) + s
+	}
+	return s
+}

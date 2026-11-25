@@ -157,12 +157,12 @@ func TestPersistDelegationDeliveryAppendsDeliveryRow(t *testing.T) {
 		t.Fatalf("display_kind %v", kind)
 	}
 	raw, _ := delivery.Get("display_metadata")
-	items, ok := raw.(interface{ PyItems() iter.Seq2[any, any] })
+	items, ok := raw.(interface{ ItemsValue() iter.Seq2[any, any] })
 	if !ok {
 		t.Fatalf("display_metadata %T %v", raw, raw)
 	}
 	meta := map[string]any{}
-	for k, v := range items.PyItems() {
+	for k, v := range items.ItemsValue() {
 		meta[k.(string)] = v
 	}
 	if meta["delegation_id"] != "deleg_x" || anyutil.String(meta["task_count"]) != "2" || anyutil.String(meta["failed_count"]) != "1" || anyutil.String(meta["duration_seconds"]) != "12.5" {

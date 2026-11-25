@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -203,10 +203,10 @@ func compactionPayload(values map[string]any) map[string]any {
 	}
 	p["outcome"] = orDefault(compactionClosed(p["outcome"], compactionOutcomes, "other"), "other")
 	p["token_count_method"] = compactionClosed(p["token_count_method"], compactionTokenCountMethods, "other")
-	if !config.PyTruthy(p["attempt_id"]) {
+	if !anyutil.IsTrue(p["attempt_id"]) {
 		p["attempt_id"] = compactionNewAttemptID()
 	}
-	if !config.PyTruthy(p["session_id"]) {
+	if !anyutil.IsTrue(p["session_id"]) {
 		p["session_id"] = ""
 	}
 	if p["cache_break"] == nil && p["scope"] == "history" {
@@ -225,7 +225,7 @@ func orDefault(v any, def string) any {
 
 // Returns v when it is truthy, nil otherwise
 func truthyOrNil(v any) any {
-	if config.PyTruthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return nil
@@ -256,7 +256,7 @@ func compactionAttemptTrigger(triggerSource any) (any, any) {
 	if triggerSource == "auto" {
 		return "unknown", "auto"
 	}
-	if config.PyTruthy(triggerSource) {
+	if anyutil.IsTrue(triggerSource) {
 		return triggerSource, nil
 	}
 	return "unknown", nil

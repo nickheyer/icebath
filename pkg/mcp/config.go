@@ -26,99 +26,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
-	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
-// Python str of a config value
-func pyStr(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case nil:
-		return "None"
-	case bool:
-		if x {
-			return "True"
-		}
-		return "False"
-	case float64:
-		return pyFloatRepr(x)
-	case float32:
-		return pyFloatRepr(float64(x))
-	case []any, map[string]any, []string, *jsonutil.Object:
-		return pyRepr(v)
-	}
-	return fmt.Sprint(v)
-}
-
-// Python repr of a config value with sorted mapping keys
-func pyRepr(v any) string {
-	switch x := v.(type) {
-	case string:
-		return pyReprStr(x)
-	case []any:
-		parts := make([]string, len(x))
-		for i, item := range x {
-			parts[i] = pyRepr(item)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	case []string:
-		parts := make([]string, len(x))
-		for i, item := range x {
-			parts[i] = pyReprStr(item)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	case map[string]any:
-		keys := orderedKeys(x)
-		parts := make([]string, len(keys))
-		for i, k := range keys {
-			parts[i] = pyReprStr(k) + ": " + pyRepr(x[k])
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
-	case *jsonutil.Object:
-		if x == nil {
-			return "None"
-		}
-		parts := make([]string, x.Len())
-		for i, k := range x.Keys() {
-			parts[i] = pyReprStr(k) + ": " + pyRepr(x.Value(k))
-		}
-		return "{" + strings.Join(parts, ", ") + "}"
-	}
-	return pyStr(v)
-}
-
-// Python repr of a string, single quoted unless only double quotes avoid escaping
-func pyReprStr(s string) string {
-	quote := byte('\'')
-	if strings.Contains(s, "'") && !strings.Contains(s, `"`) {
-		quote = '"'
-	}
-	var b strings.Builder
-	b.WriteByte(quote)
-	for _, r := range s {
-		switch {
-		case r == rune(quote) || r == '\\':
-			b.WriteByte('\\')
-			b.WriteRune(r)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r < 0x20 || r == 0x7f:
-			fmt.Fprintf(&b, `\x%02x`, r)
-		default:
-			b.WriteRune(r)
-		}
-	}
-	b.WriteByte(quote)
-	return b.String()
-}
-
 // Python repr of a float using the shortest round trip digits and repr exponent thresholds
-func pyFloatRepr(f float64) string {
+func floatRepr(f float64) string {
 	switch {
 	case math.IsNaN(f):
 		return "nan"
@@ -150,33 +62,6 @@ func pyFloatRepr(f float64) string {
 		return sign + digits + strings.Repeat("0", exp+1-len(digits)) + ".0"
 	}
 	return sign + digits[:exp+1] + "." + digits[exp+1:]
-}
-
-// Python truthiness of a config value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case uint64:
-		return x != 0
-	case float64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case []string:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
 }
 
 // Sorted keys of a mapping, the stable stand in for Python insertion order
@@ -264,7 +149,7 @@ func resolveToolTimeout(ctx context.Context, cfg map[string]any) float64 {
 		if f, ok := config.AsFloat(perServer); ok {
 			return f
 		}
-		pkgLog().Warn(fmt.Sprintf("MCP config timeout must be a number of seconds; ignoring %s", pyRepr(perServer)))
+		pkgLog().Warn(fmt.Sprintf("MCP config timeout must be a number of seconds; ignoring %s", anyutil.Quote(perServer)))
 	}
 	if d, ok := clampTimeout(settings.TimeoutsMcpToolCall.Get(ctx).Seconds()); ok {
 		return d.Seconds()
@@ -314,7 +199,7 @@ func prependPath(env map[string]string, directory string) map[string]string {
 }
 
 // Integer view of a config value the way Python int coerces it, ok false where int raises
-func pyInt(value any) (int, bool) {
+func wholeNumber(value any) (int, bool) {
 	switch v := value.(type) {
 	case bool:
 		if v {
@@ -358,7 +243,7 @@ func underscoresValid(s string) bool {
 }
 
 // Float view of a config value the way Python float coerces it, ok false where float raises
-func pyFloat(value any) (float64, bool) {
+func floatNumber(value any) (float64, bool) {
 	switch v := value.(type) {
 	case bool:
 		if v {
@@ -385,7 +270,7 @@ func pyFloat(value any) (float64, bool) {
 
 // Config value coerced to an integer clamped to minimum, the default on failure
 func safeInt(value any, def, minimum int) int {
-	n, ok := pyInt(value)
+	n, ok := wholeNumber(value)
 	if !ok {
 		return def
 	}
@@ -394,7 +279,7 @@ func safeInt(value any, def, minimum int) int {
 
 // Config value coerced to a float clamped to minimum, the default on failure or a non finite value
 func safeFloat(value any, def, minimum float64) float64 {
-	f, ok := pyFloat(value)
+	f, ok := floatNumber(value)
 	if !ok || math.IsNaN(f) || math.IsInf(f, 0) {
 		return def
 	}
@@ -414,7 +299,7 @@ func parseBoolish(value any, def bool) bool {
 	case bool:
 		return v
 	case int, int64, uint64, float64:
-		return pyTruthy(v)
+		return anyutil.IsTrue(v)
 	case string:
 		lowered := strings.ToLower(strings.TrimSpace(v))
 		if trueWords[lowered] {
@@ -424,7 +309,7 @@ func parseBoolish(value any, def bool) bool {
 			return false
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", pyRepr(value), pyStr(def)))
+	pkgLog().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", anyutil.Quote(value), anyutil.String(def)))
 	return def
 }
 
@@ -448,13 +333,13 @@ func lifecycleSeconds(cfg map[string]any, key string) (float64, bool) {
 	if raw == nil {
 		return 0, false
 	}
-	seconds, ok := pyFloat(raw)
+	seconds, ok := floatNumber(raw)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("MCP config %s must be a number of seconds; ignoring %s", key, pyRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("MCP config %s must be a number of seconds; ignoring %s", key, anyutil.Quote(raw)))
 		return 0, false
 	}
 	if seconds < 0 {
-		pkgLog().Warn(fmt.Sprintf("MCP config %s must be positive; ignoring %s", key, pyRepr(raw)))
+		pkgLog().Warn(fmt.Sprintf("MCP config %s must be positive; ignoring %s", key, anyutil.Quote(raw)))
 		return 0, false
 	}
 	if seconds == 0 {
@@ -647,7 +532,7 @@ func tailServerStderr(ctx context.Context, serverName string, maxBytes, maxLines
 		return ""
 	}
 	var lines []string
-	for _, line := range pySplitlines(chunk[cut:]) {
+	for _, line := range splitlines(chunk[cut:]) {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
@@ -659,7 +544,7 @@ func tailServerStderr(ctx context.Context, serverName string, maxBytes, maxLines
 }
 
 // Lines split on every boundary str.splitlines recognizes, terminators dropped
-func pySplitlines(s string) []string {
+func splitlines(s string) []string {
 	var out []string
 	start := 0
 	rs := []rune(s)
@@ -724,7 +609,7 @@ func buildSafeEnv(ctx context.Context, env *tools.Env, userEnv map[string]any, u
 		if unsetRef != nil && unsetRef(key) {
 			continue
 		}
-		out[key] = pyStr(userEnv[key])
+		out[key] = anyutil.String(userEnv[key])
 	}
 	return tools.DelegatedChildSubprocessEnv(env, out), nil
 }
@@ -846,7 +731,7 @@ func managedLauncher(ctx context.Context, command string) (string, []string, boo
 	}
 	executable := ""
 	if len(dirs) > 0 {
-		executable = pyWhich(command, strings.Join(dirs, string(os.PathListSeparator)), true, os.Getenv("PATHEXT"))
+		executable = whichValue(command, strings.Join(dirs, string(os.PathListSeparator)), true, os.Getenv("PATHEXT"))
 	}
 	if executable == "" {
 		return "", nil, false, fmt.Errorf("icebath-managed %s is not installed; run `icebath pm install %s`", command, pkgName)
@@ -863,7 +748,7 @@ func outsidePackage(ctx context.Context, launcher, managed string, dirs []string
 	if equalStrings(moved, dirs) {
 		return managed, dirs, nil
 	}
-	if hit := pyWhich(launcher, strings.Join(moved, string(os.PathListSeparator)), true, os.Getenv("PATHEXT")); hit != "" {
+	if hit := whichValue(launcher, strings.Join(moved, string(os.PathListSeparator)), true, os.Getenv("PATHEXT")); hit != "" {
 		return hit, moved, nil
 	}
 	return managed, moved, nil
@@ -884,16 +769,16 @@ func equalStrings(a, b []string) bool {
 
 // Reports whether a dir is one the bootstrap prepends, under the active home or the running binary's own dir
 func isManagedBinDir(ctx context.Context, directory string) bool {
-	resolved, err := pyResolve(directory)
+	resolved, err := resolve(directory)
 	if err != nil {
 		return false
 	}
 	if exe, err := os.Executable(); err == nil {
-		if r, err := pyResolve(exe); err == nil && filepath.Dir(r) == resolved {
+		if r, err := resolve(exe); err == nil && filepath.Dir(r) == resolved {
 			return true
 		}
 	}
-	h, err := pyResolve(home.Dir(ctx))
+	h, err := resolve(home.Dir(ctx))
 	if err != nil {
 		return false
 	}
@@ -905,7 +790,7 @@ func isManagedBinDir(ctx context.Context, directory string) bool {
 }
 
 // Absolute path with symlinks resolved as far as they exist, like Path.resolve without strict
-func pyResolve(p string) (string, error) {
+func resolve(p string) (string, error) {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err
@@ -918,7 +803,7 @@ func pyResolve(p string) (string, error) {
 	if dir == abs {
 		return abs, nil
 	}
-	parent, err := pyResolve(dir)
+	parent, err := resolve(dir)
 	if err != nil {
 		return "", err
 	}
@@ -997,7 +882,7 @@ func firstUserWhichHit(ctx context.Context, command, pathArg string, env map[str
 }
 
 // Executable a bare or pathed command resolves to on a PATH string the way shutil.which searches it
-func pyWhich(cmd, path string, hasPath bool, pathext string) string {
+func whichValue(cmd, path string, hasPath bool, pathext string) string {
 	check := func(fn string) bool {
 		st, err := os.Stat(fn)
 		return err == nil && !st.IsDir() && (runtime.GOOS == "windows" || accessX(fn))
@@ -1110,7 +995,7 @@ func resolveStdioCommand(ctx context.Context, command string, env map[string]str
 		pathArg, hasPath := resolvedEnv["PATH"]
 		hit := ""
 		if hasPath {
-			hit = pyWhich(resolved, pathArg, true, os.Getenv("PATHEXT"))
+			hit = whichValue(resolved, pathArg, true, os.Getenv("PATHEXT"))
 		}
 		if hit == "" && runtime.GOOS == "windows" && len(resolvedEnv) > 0 {
 			hit = whichWithConfigPathext(resolved, pathArg, resolvedEnv)
@@ -1124,14 +1009,14 @@ func resolveStdioCommand(ctx context.Context, command string, env map[string]str
 			resolved = hit
 		}
 	}
-	if dir := pyDirname(resolved); dir != "" {
+	if dir := dirname(resolved); dir != "" {
 		resolvedEnv = prependPath(resolvedEnv, dir)
 	}
 	return resolved, resolvedEnv, nil
 }
 
 // Directory part of a path the way os.path.dirname splits it, empty for a bare name
-func pyDirname(p string) string {
+func dirname(p string) string {
 	idx := strings.LastIndex(p, "/")
 	if runtime.GOOS == "windows" {
 		idx = strings.LastIndexAny(p, `/\`)
@@ -1197,7 +1082,7 @@ func readJSONSig(path string) (any, bool) {
 
 // Field of a JSON object the way (doc or {}).get(key) reads it, an error where Python raises AttributeError
 func jsonGet(doc any, key string) (any, error) {
-	if !pyTruthy(doc) {
+	if !anyutil.IsTrue(doc) {
 		return nil, nil
 	}
 	m, ok := doc.(map[string]any)
@@ -1260,7 +1145,7 @@ func npxCachedBin(args []string) (string, []string, bool, error) {
 		if err != nil {
 			return "", nil, false, err
 		}
-		if !pyTruthy(deps) {
+		if !anyutil.IsTrue(deps) {
 			deps = map[string]any{}
 		}
 		found, err := jsonContains(deps, spec)
@@ -1281,7 +1166,7 @@ func npxCachedBin(args []string) (string, []string, bool, error) {
 		var name string
 		switch b := binField.(type) {
 		case string:
-			name = pyBasename(spec)
+			name = basename(spec)
 		case map[string]any:
 			if len(b) != 1 {
 				continue
@@ -1328,8 +1213,8 @@ func packagedNpxEntry(ctx context.Context, command string, args []string) (strin
 	for _, d := range sealedNpm {
 		npmDirs[normcase(d)] = d
 	}
-	npmDir, haveNpm := npmDirs[normcase(pyDirname(command))]
-	node := pyWhich("node", strings.Join(sealedNode, string(os.PathListSeparator)), true, os.Getenv("PATHEXT"))
+	npmDir, haveNpm := npmDirs[normcase(dirname(command))]
+	node := whichValue("node", strings.Join(sealedNode, string(os.PathListSeparator)), true, os.Getenv("PATHEXT"))
 	npmCLI := filepath.Join(npmDir, "node_modules", "npm", "bin", "npm-cli.js")
 	if st, err := os.Stat(npmCLI); !haveNpm || node == "" || err != nil || !st.Mode().IsRegular() {
 		return "", nil, false, nil
@@ -1403,7 +1288,7 @@ func packagedNpxEntry(ctx context.Context, command string, args []string) (strin
 		return "", nil, false, nil
 	}
 	if m, isMap := binField.(map[string]any); isMap {
-		if v := m[base]; pyTruthy(v) {
+		if v := m[base]; anyutil.IsTrue(v) {
 			binField = v
 		} else if len(m) == 1 {
 			for _, v := range m {
@@ -1435,7 +1320,7 @@ func workspaceFolder(env *tools.Env) string {
 // Final component of the workspace root, the root itself when it has none
 func workspaceBasename(env *tools.Env) string {
 	root := workspaceFolder(env)
-	if b := pyBasename(strings.TrimRight(root, `/\`)); b != "" {
+	if b := basename(strings.TrimRight(root, `/\`)); b != "" {
 		return b
 	}
 	return root
@@ -1591,7 +1476,7 @@ func requireRenderedRemote(serverName string, cfg map[string]any) error {
 		return nil
 	}
 	url := cfg["url"]
-	if !pyTruthy(url) {
+	if !anyutil.IsTrue(url) {
 		url = ""
 	}
 	values := []any{url}
@@ -1602,7 +1487,7 @@ func requireRenderedRemote(serverName string, cfg map[string]any) error {
 	}
 	seen := map[string]bool{}
 	for _, v := range values {
-		for _, m := range envVarPattern.FindAllStringSubmatch(pyStr(v), -1) {
+		for _, m := range envVarPattern.FindAllStringSubmatch(anyutil.String(v), -1) {
 			seen[m[1]] = true
 		}
 	}
@@ -1629,7 +1514,7 @@ func warnHiddenWhitespace(serverName string, cfg map[string]any) []string {
 	walk = func(v any, path string) {
 		switch x := v.(type) {
 		case string:
-			if x != pyStrip(x) {
+			if x != strings.TrimSpace(x) {
 				flagged = append(flagged, path)
 			}
 		case map[string]any:
@@ -1660,17 +1545,6 @@ func warnHiddenWhitespace(serverName string, cfg map[string]any) []string {
 			"(or the referenced env var).", serverName, p))
 	}
 	return flagged
-}
-
-// String with the whitespace str.strip removes trimmed from both ends
-func pyStrip(s string) string {
-	return strings.TrimFunc(s, func(r rune) bool {
-		switch r {
-		case ' ', '\t', '\n', '\v', '\f', '\r', 0x1c, 0x1d, 0x1e, 0x1f, 0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000:
-			return true
-		}
-		return r >= 0x2000 && r <= 0x200a
-	})
 }
 
 // Why an entry's cost table is unusable, empty when it parses
@@ -1807,28 +1681,28 @@ func resolveIdentityHeader(ctx context.Context, serverName string, cfg map[strin
 		return ignore(fmt.Sprintf("must be a mapping with 'name' and 'value'/'value_from' keys (got %s)", errchain.Kind(raw)))
 	}
 	name, ok := block["name"].(string)
-	if !ok || pyStrip(name) == "" {
+	if !ok || strings.TrimSpace(name) == "" {
 		return ignore("requires a non-empty 'name'")
 	}
 	valueFrom := "static"
-	if vf := block["value_from"]; pyTruthy(vf) {
+	if vf := block["value_from"]; anyutil.IsTrue(vf) {
 		s, isStr := vf.(string)
 		if !isStr {
-			return ignore(fmt.Sprintf("value_from must be 'static' or 'profile' (got %s)", pyRepr(vf)))
+			return ignore(fmt.Sprintf("value_from must be 'static' or 'profile' (got %s)", anyutil.Quote(vf)))
 		}
-		valueFrom = strings.ToLower(pyStrip(s))
+		valueFrom = strings.ToLower(strings.TrimSpace(s))
 	}
 	if valueFrom == "profile" {
-		return pyStrip(name), activeProfileName(ctx), true
+		return strings.TrimSpace(name), activeProfileName(ctx), true
 	}
 	if valueFrom != "static" {
-		return ignore(fmt.Sprintf("value_from must be 'static' or 'profile' (got %s)", pyReprStr(valueFrom)))
+		return ignore(fmt.Sprintf("value_from must be 'static' or 'profile' (got %s)", strconv.Quote(valueFrom)))
 	}
 	value, ok := block["value"].(string)
-	if !ok || pyStrip(value) == "" {
+	if !ok || strings.TrimSpace(value) == "" {
 		return ignore("with value_from: static requires a non-empty string 'value'")
 	}
-	return pyStrip(name), value, true
+	return strings.TrimSpace(name), value, true
 }
 
 // Headers with the identity header merged in unless an explicit header of that name exists in any casing
@@ -1849,15 +1723,15 @@ func applyIdentityHeader(ctx context.Context, serverName string, cfg map[string]
 
 // Profile the active home belongs to, default for the platform home, its id under profiles, else custom
 func activeProfileName(ctx context.Context) string {
-	resolved, err := pyResolve(home.Dir(ctx))
+	resolved, err := resolve(home.Dir(ctx))
 	if err != nil {
 		return "custom"
 	}
-	def, err := pyResolve(home.PlatformDefault())
+	def, err := resolve(home.PlatformDefault())
 	if err == nil && resolved == def {
 		return "default"
 	}
-	root, err := pyResolve(filepath.Join(home.PlatformDefault(), home.ProfilesDir))
+	root, err := resolve(filepath.Join(home.PlatformDefault(), home.ProfilesDir))
 	if err != nil {
 		return "custom"
 	}
@@ -1879,11 +1753,11 @@ func normalizeServerTrust(value any) string {
 	if value == nil {
 		return TrustFull
 	}
-	text := strings.ToLower(pyStrip(pyStr(value)))
+	text := strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	if text == TrustFull || text == TrustUntrusted {
 		return text
 	}
-	pkgLog().Warn(fmt.Sprintf("MCP trust: unrecognized trust value %s \u2014 treating as 'untrusted' (valid values: full, untrusted)", pyRepr(value)))
+	pkgLog().Warn(fmt.Sprintf("MCP trust: unrecognized trust value %s \u2014 treating as 'untrusted' (valid values: full, untrusted)", anyutil.Quote(value)))
 	return TrustUntrusted
 }
 

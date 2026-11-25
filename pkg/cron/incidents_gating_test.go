@@ -184,7 +184,7 @@ func TestAckSuppressesAlertUntilSignatureChanges(t *testing.T) {
 func TestAckHoldsWhenOnlyAMeasuredDurationDiffers(t *testing.T) {
 	s := incidentGatingStore(t)
 	inc := openIncidents(s)
-	stall := "Cron job 'x' idle for %ds (limit 600s) — last activity: waiting for tool"
+	stall := "Cron job \"x\" idle for %ds (limit 600s) — last activity: waiting for tool"
 	tickFailing(t, s, fmt.Sprintf(stall, 601), false)
 	if n := queuedDeliveries(t, s); n != 1 {
 		t.Fatalf("deliveries = %d", n)

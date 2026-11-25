@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -90,7 +91,7 @@ func (d *SessionDB) ReopenIfExplicitlyClosed(ctx context.Context, sessionID, pro
 			sessionID, row["ended_at"], stamp); err != nil {
 			return err
 		}
-		cleared := pyStr(stamp)
+		cleared := anyutil.String(stamp)
 		reason = &cleared
 		return nil
 	}, patienceS)
@@ -98,7 +99,7 @@ func (d *SessionDB) ReopenIfExplicitlyClosed(ctx context.Context, sessionID, pro
 		return nil, err
 	}
 	if reason != nil {
-		pkgLog().Warn("Session " + sessionID + " carried a stale " + pyRepr(*reason) + " end stamp while " + provenance +
+		pkgLog().Warn("Session " + sessionID + " carried a stale " + strconv.Quote(*reason) + " end stamp while " + provenance +
 			"; cleared so the conversation can compress and a later close is recorded (#106459)")
 	}
 	return reason, nil
@@ -118,7 +119,7 @@ func (d *SessionDB) StampLegacyCompressionChains(ctx context.Context) (int64, er
 			return err
 		}
 		for _, row := range rows {
-			if err := stampCompressionAncestors(ctx, conn, pyStr(row["id"])); err != nil {
+			if err := stampCompressionAncestors(ctx, conn, anyutil.String(row["id"])); err != nil {
 				return err
 			}
 		}
@@ -242,7 +243,7 @@ func (d *SessionDB) publishChildSessionRow(ctx context.Context, conn SQLiteConn,
 		return err
 	}
 	createdSource := CreatedSurface(parent["created_source"])
-	if !pyTruthy(createdSource) {
+	if !anyutil.IsTrue(createdSource) {
 		createdSource = CreatedSurface(p.Source)
 	}
 	var configText any
@@ -306,7 +307,7 @@ func (d *SessionDB) publishCompressionChildOnConn(ctx context.Context, conn SQLi
 		return err
 	}
 	if p.RequireCompressionLease {
-		lost := lock == nil || holder == "" || !pyEquals(lock["holder"], holder)
+		lost := lock == nil || holder == "" || !equals(lock["holder"], holder)
 		if !lost {
 			exp, err := anyutil.ToFloat(lock["expires_at"])
 			if err != nil {
@@ -389,7 +390,7 @@ func (d *SessionDB) publishCompressionChildOnConn(ctx context.Context, conn SQLi
 	if err := advanceLocalTarget(ctx, conn, p.ParentSessionID, p.ChildSessionID, nil); err != nil {
 		return err
 	}
-	if pyTruthy(parent["archived"]) {
+	if anyutil.IsTrue(parent["archived"]) {
 		if _, err := unarchiveAutoArchivedLineage(ctx, conn, p.ChildSessionID); err != nil {
 			return err
 		}
@@ -465,7 +466,7 @@ func (d *SessionDB) GetCompressionLineage(ctx context.Context, sessionID string)
 		if !isChild {
 			break
 		}
-		parent, err := d.GetSession(ctx, pyStr(rowValue(root, "parent_session_id")))
+		parent, err := d.GetSession(ctx, anyutil.String(rowValue(root, "parent_session_id")))
 		if err != nil {
 			return nil, err
 		}
@@ -475,10 +476,10 @@ func (d *SessionDB) GetCompressionLineage(ctx context.Context, sessionID string)
 		root = parent
 		ancestors[rowStrOr(root, "id")] = true
 	}
-	lineage := []string{pyStr(rowValue(root, "id"))}
+	lineage := []string{anyutil.String(rowValue(root, "id"))}
 	seen := map[string]bool{lineage[0]: true}
 	current := root
-	for pyEquals(rowValue(current, "end_reason"), "compression") {
+	for equals(rowValue(current, "end_reason"), "compression") {
 		rows, err := d.readAll(ctx, "\n                SELECT * FROM sessions\n                WHERE parent_session_id = ?\n                ORDER BY started_at ASC\n                ",
 			rowValue(current, "id"))
 		if err != nil {
@@ -495,10 +496,10 @@ func (d *SessionDB) GetCompressionLineage(ctx context.Context, sessionID string)
 				break
 			}
 		}
-		if next == nil || seen[pyStr(rowValue(next, "id"))] {
+		if next == nil || seen[anyutil.String(rowValue(next, "id"))] {
 			break
 		}
-		id := pyStr(rowValue(next, "id"))
+		id := anyutil.String(rowValue(next, "id"))
 		lineage = append(lineage, id)
 		seen[id] = true
 		current = next

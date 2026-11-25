@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
@@ -35,7 +36,7 @@ func ParseNodeKind(nodeID string) string {
 	return "skill"
 }
 
-func valueError(msg string) error { return &pyError{class: "ValueError", msg: msg} }
+func valueError(msg string) error { return &kindError{class: "ValueError", msg: msg} }
 
 // Source, global index, and fingerprint of a memory node id, the fingerprint empty for legacy ids
 func parseMemoryID(nodeID string) (string, int, string, error) {
@@ -47,7 +48,7 @@ func parseMemoryID(nodeID string) (string, int, string, error) {
 	if _, ok := journeyMemoryFiles[parts[1]]; !ok {
 		return "", 0, "", bad
 	}
-	idx, ok := pyIntText(parts[2])
+	idx, ok := intText(parts[2])
 	if !ok {
 		return "", 0, "", bad
 	}
@@ -59,7 +60,7 @@ func parseMemoryID(nodeID string) (string, int, string, error) {
 }
 
 // Integer of text the way int parses it, Unicode decimal digits folded to ASCII
-func pyIntText(s string) (int, bool) {
+func intText(s string) (int, bool) {
 	var b strings.Builder
 	for _, r := range s {
 		if r > 0x7f && isUnicodeDecimal(r) {
@@ -68,7 +69,7 @@ func pyIntText(s string) (int, bool) {
 		}
 		b.WriteRune(r)
 	}
-	return pyInt(b.String())
+	return wholeNumber(b.String())
 }
 
 // Card reader legacy ids resolve through, a seam the race tests hold open
@@ -121,7 +122,7 @@ func locateMemory(ctx context.Context, env *tools.Env, nodeID string) (string, [
 		return "", nil, 0, err
 	}
 	if gidx < 0 || gidx >= len(cards) {
-		return "", nil, 0, &pyError{class: "IndexError", msg: fmt.Sprintf("memory index %d out of range", gidx)}
+		return "", nil, 0, &kindError{class: "IndexError", msg: fmt.Sprintf("memory index %d out of range", gidx)}
 	}
 	if cards[gidx]["source"] != source {
 		return "", nil, 0, valueError(staleMemoryNode)
@@ -163,7 +164,7 @@ func mutateMemory(ctx context.Context, env *tools.Env, nodeID string, replacemen
 			r := NewFailure(err.Error(), "")
 			return Mutation{Result: &r}
 		}
-		text := pyStrip(chunks[local])
+		text := strings.TrimSpace(chunks[local])
 		idx := -1
 		for i, e := range entries {
 			if e == text {
@@ -222,7 +223,7 @@ func dispatchNode(nodeID string, memoryFn, skillFn func(string) (map[string]any,
 		if errors.As(err, &ue) {
 			return map[string]any{"ok": false, "message": ue.Error()}, nil
 		}
-		var pe *pyError
+		var pe *kindError
 		if errors.As(err, &pe) {
 			switch pe.class {
 			case "ValueError", "IndexError", "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError":
@@ -241,10 +242,10 @@ func NodeDetail(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 		if err != nil {
 			return nil, err
 		}
-		body := pyStrip(chunks[local])
+		body := strings.TrimSpace(chunks[local])
 		lines := textutil.Lines(body)
 		if len(lines) == 0 {
-			return nil, &pyError{class: "IndexError", msg: "memory node " + nodeID + " has an empty entry"}
+			return nil, &kindError{class: "IndexError", msg: "memory node " + nodeID + " has an empty entry"}
 		}
 		return map[string]any{"ok": true, "kind": "memory", "id": id, "label": runePrefix(lines[0], 80), "content": body}, nil
 	}, func(id string) (map[string]any, error) {
@@ -258,7 +259,7 @@ func NodeDetail(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 		}
 		data, err := os.ReadFile(skillMD)
 		if err != nil {
-			return nil, &pyError{class: "OSError", msg: osErrorText(err)}
+			return nil, &kindError{class: "OSError", msg: osErrorText(err)}
 		}
 		content, err := decodeUTF8Sig(data)
 		if err != nil {
@@ -278,7 +279,7 @@ func DeleteNode(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 		if err != nil {
 			return nil, err
 		}
-		if pyTruthy(rec["pinned"]) {
+		if anyutil.IsTrue(rec["pinned"]) {
 			return map[string]any{"ok": false, "message": fmt.Sprintf("'%s' is pinned \u2014 unpin it first (icebath curator unpin %s)", name, name)}, nil
 		}
 		ok, message, err := ArchiveSkill(ctx, bound, name)
@@ -299,14 +300,14 @@ func EditNode(ctx context.Context, env *tools.Env, nodeID, content string) (map[
 		if _, _, _, err := parseMemoryID(id); err != nil {
 			return nil, err
 		}
-		body := pyStrip(content)
+		body := strings.TrimSpace(content)
 		if body == "" {
 			return map[string]any{"ok": false, "message": "empty memory \u2014 use delete to remove it"}, nil
 		}
 		return mutateMemory(ctx, env, id, &body)
 	}, func(name string) (map[string]any, error) {
 		result := skills.EditSkill(ctx, homeBoundEnv(ctx, env), name, content)
-		if pyTruthy(result["success"]) {
+		if anyutil.IsTrue(result["success"]) {
 			clearSkillCache(ctx, env)
 			return map[string]any{"ok": true, "message": fmt.Sprintf("updated '%s'", name)}, nil
 		}

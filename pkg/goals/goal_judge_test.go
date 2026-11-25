@@ -83,10 +83,10 @@ func pinGoalConfig(t *testing.T, cfg config.Tree) {
 	goalLoadConfig = func(context.Context) (config.Tree, error) { return cfg, nil }
 }
 
-func pyKind(err error) string {
-	var pyErr *errorutil.Error
-	if errors.As(err, &pyErr) {
-		return pyErr.Kind
+func kindValue(err error) string {
+	var kindErr *errorutil.Error
+	if errors.As(err, &kindErr) {
+		return kindErr.Kind
 	}
 	return ""
 }
@@ -122,7 +122,7 @@ func TestParseJudgeResponseCoversEveryReplyShape(t *testing.T) {
 		wait                 map[string]any
 	}{
 		{"", "continue", "judge returned empty response", true, nil},
-		{"I think so", "continue", "judge reply was not JSON: 'I think so'", true, nil},
+		{"I think so", "continue", `judge reply was not a JSON object: "I think so"`, true, nil},
 		{"```json\n{\"verdict\": \"DONE \", \"reason\": \" ok \"}\n```", "done", "ok", false, nil},
 		{`noise {"done": "Yes"} trailing`, "done", "no reason provided", false, nil},
 		{`{"done": "nope"}`, "continue", "no reason provided", false, nil},
@@ -132,7 +132,7 @@ func TestParseJudgeResponseCoversEveryReplyShape(t *testing.T) {
 		{`{"verdict": "wait", "wait_on_pid": "0", "pid": "77", "reason": "r"}`, "wait", "r", false, map[string]any{"pid": int64(77)}},
 		{`{"verdict": "wait", "wait_on_pid": [1], "wait_seconds": 30.9, "reason": "r"}`, "wait", "r", false, map[string]any{"seconds": int64(30)}},
 		{`{"verdict": "wait", "reason": "r"}`, "continue", "r (wait verdict had no target — continuing)", false, nil},
-		{`[1, 2]`, "continue", "judge reply was not JSON: '[1, 2]'", true, nil},
+		{`[1, 2]`, "continue", `judge reply was not a JSON object: "[1, 2]"`, true, nil},
 	} {
 		verdict, reason, failed, wait := parseReply(t, c.raw)
 		if verdict != c.verdict || reason != c.reason || failed != c.failed || !reflect.DeepEqual(wait, c.wait) {
@@ -143,7 +143,7 @@ func TestParseJudgeResponseCoversEveryReplyShape(t *testing.T) {
 	if verdict != "wait" || anyutil.String(wait["pid"]) != "99999999999999999999" {
 		t.Fatalf("huge pid %q %v", verdict, wait)
 	}
-	if _, _, _, _, err := parseJudgeResponse([]any{"x"}); pyKind(err) != "AttributeError" || err.Error() != "'list' object has no attribute 'strip'" {
+	if _, _, _, _, err := parseJudgeResponse([]any{"x"}); kindValue(err) != "AttributeError" || err.Error() != "the judge reply must be text, got array" {
 		t.Fatalf("list reply error %v", err)
 	}
 }
@@ -175,7 +175,7 @@ func TestJudgeGoalJudgeSaysDone(t *testing.T) {
 		t.Fatalf("no content %+v", got)
 	}
 	pinGoalCallLLM(t, []any{"block"}, nil)
-	if _, err := judgeRaising(context.Background(), "g", "r", JudgeOptions{}); pyKind(err) != "AttributeError" {
+	if _, err := judgeRaising(context.Background(), "g", "r", JudgeOptions{}); kindValue(err) != "AttributeError" {
 		t.Fatalf("list content error %v", err)
 	}
 }
@@ -248,7 +248,7 @@ func TestRenderBackgroundBlockListsOnlyRunningProcessesWithTheirTriggers(t *test
 		{"status": "running", "command": "no pid"},
 		{"pid": int64(9), "status": "running", "command": strings.Repeat("x", 130), "notify_on_complete": true},
 	})
-	want7 := "- pid 7: poll.sh --fast (running 12s) | watch_patterns=['READY', 'DONE'] [already matched] | recent output: tick tock"
+	want7 := `- pid 7: poll.sh --fast (running 12s) | watch_patterns=["READY","DONE"] [already matched] | recent output: tick tock`
 	want9 := "- pid 9: " + strings.Repeat("x", 120) + "… [truncated] | notify_on_complete"
 	if block != "Background processes the agent currently has running (it may be waiting on one of these):\n"+want7+"\n"+want9+"\n\n" {
 		t.Fatalf("block %q", block)
@@ -525,8 +525,9 @@ func TestRunGateKeepsDiagnosticsWhenAByteWillNotDecode(t *testing.T) {
 }
 
 func TestRunGateReportsACommandThatCannotStartAndBoundsItsTail(t *testing.T) {
-	passed, code, out := runGate(t, NewGoalGate("true"), filepath.Join(t.TempDir(), "missing-dir"))
-	if passed || code != -1 || !strings.HasPrefix(out, "[gate could not run: FileNotFoundError: ") {
+	missing := filepath.Join(t.TempDir(), "missing-dir")
+	passed, code, out := runGate(t, NewGoalGate("true"), missing)
+	if passed || code != -1 || out != "[gate could not run: no such file or directory: "+missing+"]" {
 		t.Fatalf("%v %d %q", passed, code, out)
 	}
 	passed, code, out = runGate(t, NewGoalGate("head -c 5000 /dev/zero | tr '\\0' 'a'; echo END"), "")

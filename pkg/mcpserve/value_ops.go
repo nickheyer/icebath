@@ -14,12 +14,12 @@ import (
 )
 
 // Python exception raised by a dict, string or comparison operation, str giving Msg
-type pyError struct {
+type kindError struct {
 	Kind string
 	Msg  string
 }
 
-func (e *pyError) Error() string { return e.Msg }
+func (e *kindError) Error() string { return e.Msg }
 
 // Ordered view of a dict value, false for anything Python would not treat as a dict
 func asDict(v any) (*jsonutil.Object, bool) {
@@ -34,11 +34,11 @@ func asDict(v any) (*jsonutil.Object, bool) {
 
 // Raises the AttributeError of calling method on a value without it
 func noAttribute(v any, method string) {
-	panic(&pyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), method)})
+	panic(&kindError{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), method)})
 }
 
 // Value of d.get(key, def), an AttributeError when d is no dict
-func pyGet(d any, key string, def any) any {
+func lookup(d any, key string, def any) any {
 	switch t := d.(type) {
 	case *jsonutil.Object:
 		if t != nil {
@@ -58,20 +58,20 @@ func pyGet(d any, key string, def any) any {
 }
 
 // Value of d[key], the KeyError of a missing key or the TypeError of subscripting a value that is no dict
-func pyIndex(d any, key string) any {
+func elementAt(d any, key string) any {
 	o, ok := asDict(d)
 	if !ok {
-		panic(&pyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(d))})
+		panic(&kindError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(d))})
 	}
 	v, present := o.Get(key)
 	if !present {
-		panic(&pyError{"KeyError", strconv.Quote(key)})
+		panic(&kindError{"KeyError", strconv.Quote(key)})
 	}
 	return v
 }
 
 // Keys and values of d.items() in dict order, an AttributeError when d is no dict
-func pyItems(d any) ([]string, map[string]any) {
+func itemsValue(d any) ([]string, map[string]any) {
 	o, ok := asDict(d)
 	if !ok {
 		noAttribute(d, "items")
@@ -80,7 +80,7 @@ func pyItems(d any) ([]string, map[string]any) {
 }
 
 // Value of s.lower(), an AttributeError when s is no str
-func pyLower(v any) string {
+func lower(v any) string {
 	s, ok := v.(string)
 	if !ok {
 		noAttribute(v, "lower")
@@ -89,15 +89,15 @@ func pyLower(v any) string {
 }
 
 // Raises the TypeError a set membership test raises for an unhashable value
-func pyHashable(v any) {
+func hashable(v any) {
 	switch v.(type) {
 	case []any, map[string]any, *jsonutil.Object:
-		panic(&pyError{"TypeError", fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))})
+		panic(&kindError{"TypeError", fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))})
 	}
 }
 
 // Python number of v as a float for ordering, false for a value that is no int, bool or float
-func pyNumber(v any) (*big.Float, bool) {
+func numberOf(v any) (*big.Float, bool) {
 	switch t := v.(type) {
 	case bool:
 		if t {
@@ -117,14 +117,14 @@ func pyNumber(v any) (*big.Float, bool) {
 }
 
 // Python a < b for str, numbers and lists, the TypeError of < for any other pairing
-func pyLess(a, b any) bool {
+func less(a, b any) bool {
 	if sa, ok := a.(string); ok {
 		if sb, ok := b.(string); ok {
-			return pyStrLess(sa, sb)
+			return strLess(sa, sb)
 		}
 	}
-	na, aNum := pyNumber(a)
-	nb, bNum := pyNumber(b)
+	na, aNum := numberOf(a)
+	nb, bNum := numberOf(b)
 	if aNum && bNum {
 		if na == nil || nb == nil {
 			return false
@@ -136,16 +136,16 @@ func pyLess(a, b any) bool {
 	if aList && bList {
 		for i := 0; i < len(la) && i < len(lb); i++ {
 			if !anyutil.Equal(la[i], lb[i]) {
-				return pyLess(la[i], lb[i])
+				return less(la[i], lb[i])
 			}
 		}
 		return len(la) < len(lb)
 	}
-	panic(&pyError{"TypeError", fmt.Sprintf("'<' not supported between instances of '%s' and '%s'", anyutil.Kind(a), anyutil.Kind(b))})
+	panic(&kindError{"TypeError", fmt.Sprintf("'<' not supported between instances of '%s' and '%s'", anyutil.Kind(a), anyutil.Kind(b))})
 }
 
 // Code point order of two strings as Python compares str
-func pyStrLess(a, b string) bool {
+func strLess(a, b string) bool {
 	ra, rb := []rune(a), []rune(b)
 	for i := 0; i < len(ra) && i < len(rb); i++ {
 		if ra[i] != rb[i] {
@@ -159,9 +159,9 @@ func pyStrLess(a, b string) bool {
 func sortByKey[T any](items []T, key func(T) any, descending bool) {
 	sort.SliceStable(items, func(i, j int) bool {
 		if descending {
-			return pyLess(key(items[j]), key(items[i]))
+			return less(key(items[j]), key(items[i]))
 		}
-		return pyLess(key(items[i]), key(items[j]))
+		return less(key(items[i]), key(items[j]))
 	})
 }
 

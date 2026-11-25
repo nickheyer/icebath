@@ -26,7 +26,7 @@ func writeTestFile(t *testing.T, path, text string) {
 }
 
 func TestSharedViewIsFalsyWithoutRoutesOrPrimaryAdapters(t *testing.T) {
-	if newSharedRouteAdapters(map[string]any{}, nil).PyBool() {
+	if newSharedRouteAdapters(map[string]any{}, nil).Len() != 0 {
 		t.Fatal("empty shared view is truthy")
 	}
 	shared := newSharedRouteAdapters(map[string]any{string(gateway.PlatformDiscord): struct{}{}}, nil)
@@ -72,7 +72,7 @@ func TestManagedScopeRoutesReachSatellitePreflightAndDelivery(t *testing.T) {
 		t.Fatal("managed route did not reach preflight")
 	}
 	shared := newSharedRouteAdapters(map[string]any{"whatsapp": struct{}{}}, primaryProfileRoutesForCurrentHome(ctx))
-	if !shared.PyBool() {
+	if shared.Len() == 0 {
 		t.Fatal("delivery-time shared view failed closed")
 	}
 	if shared.Get(ctx, "whatsapp", map[string]any{"chat_id": "123@g.us"}, nil) == nil {
@@ -93,7 +93,7 @@ func TestManagedRoutesReplaceUserFileRoutes(t *testing.T) {
 	}
 }
 
-var credentialScopeRe = regexp.MustCompile(`\[profile '([^']+)', ICEBATH_HOME (.+?)\]`)
+var credentialScopeRe = regexp.MustCompile(`\[profile "([^"]+)", ICEBATH_HOME (.+?)\]`)
 
 func TestMissingCodexCredentialVerdictNamesTheHomeItRead(t *testing.T) {
 	base := t.TempDir()

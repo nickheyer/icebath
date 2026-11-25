@@ -21,7 +21,7 @@ var storedUsageCounters = []string{"input_tokens", "output_tokens", "cache_read_
 // Python int of a row figure, zero for a falsy one
 func usageRowInt(row *jsonutil.Object, key string) (int64, error) {
 	value, _ := row.Get(key)
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		return 0, nil
 	}
 	return anyutil.ToInt(value)
@@ -44,7 +44,7 @@ func storedStats(row *jsonutil.Object) (*jsonutil.Object, error) {
 		return nil, err
 	}
 	model, _ := row.Get("model")
-	if !pyTruthy(model) {
+	if !anyutil.IsTrue(model) {
 		model = ""
 	}
 	out.Set("prompt_tokens", counts["input_tokens"]+counts["cache_read_tokens"]+counts["cache_write_tokens"])
@@ -59,7 +59,7 @@ func storedStats(row *jsonutil.Object) (*jsonutil.Object, error) {
 func snapshotUsage(ctx context.Context, a *SessionAuthority, ref SessionRef, agent any) (*jsonutil.Object, error) {
 	if !nilAgent(agent) {
 		result := ContextAgent.UsageStats(ctx, agent)
-		if calls, _ := result.Get("api_calls"); pyTruthy(calls) {
+		if calls, _ := result.Get("api_calls"); anyutil.IsTrue(calls) {
 			live, _ := a.live(ref.SessionID)
 			result.Set("compression_count", carriedCompressionCount(live, agent))
 			return tuiUsage(result), nil

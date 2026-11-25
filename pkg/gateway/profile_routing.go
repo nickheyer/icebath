@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 var whatsappIdentityPlatforms = map[string]bool{"whatsapp": true, "whatsapp_cloud": true}
@@ -170,7 +171,7 @@ func botProfileKey(name *string) *string {
 	return &s
 }
 
-// Route discriminator as a string, ints stringified and other types warned about
+// Route discriminator as a string: text as is, integers in decimal, any other value warned about and kept as text that never equals an inbound id
 func coerceRouteID(value any) *string {
 	if value == nil {
 		return nil
@@ -178,14 +179,26 @@ func coerceRouteID(value any) *string {
 	if s, ok := value.(string); ok {
 		return &s
 	}
-	if _, ok := anyutil.Int(value); ok {
+	if anyutil.Kind(value) == "integer" {
 		s := anyutil.String(value)
 		return &s
 	}
-	pkgLog().Warn(fmt.Sprintf("Profile route discriminator %v (%s) can never match an inbound id — quote it in config.yaml (e.g. chat_id: \"%s\").",
-		value, errchain.Kind(value), anyutil.String(value)))
-	s := anyutil.String(value)
+	s := strayRouteIDText(value)
+	pkgLog().Warn(fmt.Sprintf("Profile route discriminator %s (%s) can never match an inbound id — quote the id in config.yaml (e.g. chat_id: \"%s\").",
+		s, errchain.Kind(value), anyutil.String(value)))
 	return &s
+}
+
+// Text of a discriminator that is neither text nor an integer, a float always written with a fraction or exponent so it never reads as an integer id
+func strayRouteIDText(value any) string {
+	text := anyutil.String(value)
+	switch value.(type) {
+	case float64, float32:
+		if !strings.ContainsAny(text, ".eIN") {
+			text += ".0"
+		}
+	}
+	return text
 }
 
 // Profile routes of config.yaml sorted most specific first, TypeError for a non iterable value
@@ -199,7 +212,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 		items = v
 	case string, map[string]any:
 	default:
-		return nil, &PyError{"TypeError", "profile routes are " + errchain.Kind(raw) + ", expected a list"}
+		return nil, &errorutil.Error{"TypeError", "profile routes are " + errchain.Kind(raw) + ", expected a list"}
 	}
 	routes := []*ProfileRoute{}
 	for _, item := range items {
@@ -245,7 +258,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 		if b := entry["bot_profile"]; anyutil.IsTrue(b) {
 			s, isStr := b.(string)
 			if !isStr {
-				return nil, &PyError{"AttributeError", "a profile route field is " + errchain.Kind(b) + ", expected text"}
+				return nil, &errorutil.Error{"AttributeError", "a profile route field is " + errchain.Kind(b) + ", expected text"}
 			}
 			bot = botProfileKey(&s)
 		}

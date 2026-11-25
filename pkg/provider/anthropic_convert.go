@@ -208,6 +208,40 @@ func cacheControlOf(b any) map[string]any {
 	return cc
 }
 
+// Value under key in a block held as a plain map or an ordered object, false when absent
+func blockField(b any, key string) (any, bool) {
+	switch t := b.(type) {
+	case map[string]any:
+		v, ok := t[key]
+		return v, ok
+	case *jsonutil.Object:
+		return t.Get(key)
+	}
+	return nil, false
+}
+
+// Stores v under key in a block held as a plain map or an ordered object, in place
+func setBlockField(b any, key string, v any) {
+	switch t := b.(type) {
+	case map[string]any:
+		t[key] = v
+	case *jsonutil.Object:
+		if t != nil {
+			t.Set(key, v)
+		}
+	}
+}
+
+// Removes key from a block held as a plain map or an ordered object, in place
+func deleteBlockField(b any, key string) {
+	switch t := b.(type) {
+	case map[string]any:
+		delete(t, key)
+	case *jsonutil.Object:
+		t.Delete(key)
+	}
+}
+
 func textBlock(text string) map[string]any { return map[string]any{"type": "text", "text": text} }
 
 func textBlockWithCitations(text any, cits any) map[string]any {
@@ -675,9 +709,8 @@ func applyAssistantCacheControlToLastCacheableBlock(blocks []any, cc any) {
 	}
 	for i := len(blocks) - 1; i >= 0; i-- {
 		if cacheableBlockTypes[blockType(blocks[i])] {
-			bm, _ := asMap(blocks[i])
-			if _, has := bm["cache_control"]; !has {
-				bm["cache_control"] = deepCopyAny(ccm)
+			if _, has := blockField(blocks[i], "cache_control"); !has {
+				setBlockField(blocks[i], "cache_control", deepCopyAny(ccm))
 			}
 			return
 		}
@@ -1100,8 +1133,7 @@ func manageThinkingSignatures(result []map[string]any, baseURL, model string) {
 		content, _ = asList(m["content"])
 		for _, b := range content {
 			if thinkingBlockTypes[blockType(b)] {
-				bm, _ := asMap(b)
-				delete(bm, "cache_control")
+				deleteBlockField(b, "cache_control")
 			}
 		}
 		delete(m, "_thinking_signature_invalidated")
@@ -1350,7 +1382,7 @@ func imageSourceData(block any) (string, bool) {
 }
 
 type imageCarrier struct {
-	block  map[string]any
+	block  any
 	images []imageRef
 }
 
@@ -1382,8 +1414,8 @@ func evictOldScreenshots(result []map[string]any) {
 			if blockType(block) != "tool_result" {
 				continue
 			}
-			bm, _ := asMap(block)
-			inner, ok := asList(bm["content"])
+			innerContent, _ := blockField(block, "content")
+			inner, ok := asList(innerContent)
 			if !ok || !hasBlockType(inner, map[string]bool{"image": true}) {
 				continue
 			}
@@ -1394,7 +1426,7 @@ func evictOldScreenshots(result []map[string]any) {
 					images = append(images, imageRef{d, ok})
 				}
 			}
-			carriers = append(carriers, imageCarrier{bm, images})
+			carriers = append(carriers, imageCarrier{block, images})
 		}
 	}
 	var all []string
@@ -1425,7 +1457,8 @@ func evictOldScreenshots(result []map[string]any) {
 	}
 	retire := outboundImageRetireCount(blocks, len(reserved), sizes, reservedBytes, manySafe)
 	for _, c := range carriers[len(carriers)-retire:] {
-		inner, _ := asList(c.block["content"])
+		innerContent, _ := blockField(c.block, "content")
+		inner, _ := asList(innerContent)
 		replaced := make([]any, 0, len(inner))
 		for _, b := range inner {
 			if blockType(b) == "image" {
@@ -1434,7 +1467,7 @@ func evictOldScreenshots(result []map[string]any) {
 				replaced = append(replaced, b)
 			}
 		}
-		c.block["content"] = replaced
+		setBlockField(c.block, "content", replaced)
 	}
 }
 
@@ -1474,9 +1507,9 @@ func scrubBlankTextBlocks(result []map[string]any) {
 			if blockType(blk) != "tool_result" {
 				continue
 			}
-			bm, _ := asMap(blk)
-			if inner, ok := asList(bm["content"]); ok && len(inner) > 0 {
-				bm["content"] = fixBlankTextBlocksInList(inner, "(no output)")
+			innerContent, _ := blockField(blk, "content")
+			if inner, ok := asList(innerContent); ok && len(inner) > 0 {
+				setBlockField(blk, "content", fixBlankTextBlocksInList(inner, "(no output)"))
 			}
 		}
 	}

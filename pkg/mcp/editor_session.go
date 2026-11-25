@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Indexes whose named connection under the editor scope has a live session, ascending
@@ -90,7 +91,7 @@ func EditorToolsDrifted(scope string, names []string, timeout time.Duration) boo
 			got = answer{err: ctx.Err()}
 		}
 		if got.err != nil {
-			pkgLog().Warn(fmt.Sprintf("Editor MCP server %s: tools/list for the drift check failed: %s", pyRepr(s.name), excStr(got.err)))
+			pkgLog().Warn(fmt.Sprintf("Editor MCP server %s: tools/list for the drift check failed: %s", anyutil.Quote(s.name), excStr(got.err)))
 			continue
 		}
 		if got.listed == nil {

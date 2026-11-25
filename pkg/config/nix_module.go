@@ -46,9 +46,9 @@ func NixMergeConfig(nixJSONPath, configPath string) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	base, err := pyDictOf(existing)
-	if err != nil {
-		return err
+	base, ok := existing.(map[string]any)
+	if !ok {
+		return fmt.Errorf("the config %s is %s, expected a mapping", configPath, errchain.Kind(existing))
 	}
 	nix, ok := nixValue.(map[string]any)
 	if !ok {
@@ -65,7 +65,12 @@ func NixMergeConfig(nixJSONPath, configPath string) error {
 
 // Override merged into a copy of base, nested mappings merged and every other value replaced in place or appended
 func nixDeepMerge(base, override map[string]any) map[string]any {
-	result, _ := pyDictOf(base)
+	result := orderedCopy(base)
+	for k := range base {
+		if yamlKey, ok := MappingPyKey(base, k); ok {
+			SetMappingPyKey(result, k, yamlKey)
+		}
+	}
 	for _, k := range MappingKeys(override) {
 		v := override[k]
 		cur, inResult := result[k]

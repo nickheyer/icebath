@@ -52,7 +52,7 @@ func ggmlDevicesMain(directory, backend string, stdout, stderr io.Writer) int {
 			b.WriteString(", ")
 		}
 		fmt.Fprintf(&b, `{"description": %s, "type": %d, "free": %d, "total": %d}`,
-			pyJSONQuote(d.Description), d.Type, d.Free, d.Total)
+			jsonQuote(d.Description), d.Type, d.Free, d.Total)
 	}
 	b.WriteString("]\n")
 	_, _ = io.WriteString(stdout, b.String())
@@ -166,23 +166,23 @@ func ggmlDevicesFromJSON(items []any) []GGMLDevice {
 		if !ok {
 			continue
 		}
-		kind, ok := pyNumericInt(d["type"])
+		kind, ok := numericInt(d["type"])
 		if !ok || (kind != GGMLDeviceGPU && kind != GGMLDeviceIGPU) {
 			continue
 		}
-		total, ok := pyIntValue(d["total"])
+		total, ok := intValueValue(d["total"])
 		description, isStr := d["description"].(string)
 		if !ok || total <= 0 || !isStr {
 			continue
 		}
-		free, _ := pyIntValue(d["free"])
+		free, _ := intValueValue(d["free"])
 		out = append(out, GGMLDevice{Description: description, Type: int(kind), Free: free, Total: total})
 	}
 	return out
 }
 
 // Integer value of a Python int or bool
-func pyIntValue(v any) (int64, bool) {
+func intValueValue(v any) (int64, bool) {
 	switch n := v.(type) {
 	case bool:
 		if n {
@@ -198,12 +198,12 @@ func pyIntValue(v any) (int64, bool) {
 }
 
 // Integer a JSON number or bool compares equal to in Python, false for fractional values
-func pyNumericInt(v any) (int64, bool) {
+func numericInt(v any) (int64, bool) {
 	if f, ok := v.(float64); ok {
 		if f != float64(int64(f)) {
 			return 0, false
 		}
 		return int64(f), true
 	}
-	return pyIntValue(v)
+	return intValueValue(v)
 }

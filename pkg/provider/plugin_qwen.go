@@ -1,6 +1,7 @@
 package provider
 
 import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -13,7 +14,7 @@ func qwenPluginProfiles() []Profile {
 		return jsonutil.ObjectOf("vl_high_resolution_images", true)
 	}
 	p.BuildAPIKwargsExtrasHook = func(_ *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
-		if md := kw["qwen_session_metadata"]; pyTruthy(md) {
+		if md := kw["qwen_session_metadata"]; anyutil.IsTrue(md) {
 			return jsonutil.NewObject(), map[string]any{"metadata": md}
 		}
 		return jsonutil.NewObject(), map[string]any{}

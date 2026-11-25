@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -117,7 +118,7 @@ func BuildClarifyPermission(prompt *jsonutil.Object) (*acputil.ToolCallProgress,
 	}
 	q, ok := question.(string)
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("title: Input should be a valid string")
+		return nil, nil, nil, fmt.Errorf("the clarify question is %s where text was expected", errchain.Kind(question))
 	}
 	choices := promptChoices(prompt)
 	var options []acputil.PermissionOption
@@ -125,7 +126,7 @@ func BuildClarifyPermission(prompt *jsonutil.Object) (*acputil.ToolCallProgress,
 	for i, c := range choices {
 		name, ok := c.(string)
 		if !ok {
-			return nil, nil, nil, fmt.Errorf("name: Input should be a valid string")
+			return nil, nil, nil, fmt.Errorf("clarify choice %d is %s where text was expected", i+1, errchain.Kind(c))
 		}
 		id := "choice-" + strconv.Itoa(i)
 		options = append(options, acputil.PermissionOption{OptionID: id, Kind: "allow_once", Name: name})
@@ -133,8 +134,8 @@ func BuildClarifyPermission(prompt *jsonutil.Object) (*acputil.ToolCallProgress,
 	}
 	options = append(options, acputil.PermissionOption{OptionID: SkipOption, Kind: "reject_once", Name: "Skip"})
 	answers[SkipOption] = ""
-	promptID, ok := prompt.Get("prompt_id")
-	if !ok {
+	promptID, _ := prompt.Get("prompt_id")
+	if promptID == nil {
 		return nil, nil, nil, errors.New("the clarify prompt has no prompt_id")
 	}
 	raw := jsonutil.NewObject()

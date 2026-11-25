@@ -7,6 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -16,7 +18,7 @@ func acceptLaunchHooks(ctx context.Context, policy *LocalSessionPolicy) error {
 	if err != nil {
 		return err
 	}
-	if !pyTruthy(request["accept_hooks"]) || policy.IgnoreUserConfig {
+	if !anyutil.IsTrue(request["accept_hooks"]) || policy.IgnoreUserConfig {
 		return nil
 	}
 	return plugins.AcceptShellHooksForLaunch(ctx)
@@ -58,11 +60,11 @@ func rebindLaunchKey(ctx context.Context, a *SessionAuthority, session SessionRe
 		return err
 	}
 	if receipt == nil {
-		return &PyError{Kind: "TypeError", Msg: "the launch key to rebind is missing"}
+		return &errorutil.Error{Kind: "TypeError", Msg: "the launch key to rebind is missing"}
 	}
 	stored, hasPolicy := receipt.Get("policy")
 	if !hasPolicy {
-		return &pyKeyError{"policy"}
+		return &keyError{"policy"}
 	}
 	policy, err := restorePolicy(jsonutil.Plain(stored))
 	if err != nil {

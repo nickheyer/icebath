@@ -24,7 +24,7 @@ func ParseCron(expr string) (*CronExpr, error) {
 }
 
 // Python datetime, wall clock fields held in UTC plus the fold of an aware value
-type pyDT struct {
+type dtValue struct {
 	wall time.Time
 	fold int
 }
@@ -46,7 +46,7 @@ func daysInMonth(year int, month time.Month) int {
 func microTrunc(t time.Time) time.Time { return t.Truncate(time.Microsecond) }
 
 // Wall clock plus a timedelta, OverflowError text outside the datetime range
-func pyAddDelta(t time.Time, d time.Duration) (time.Time, error) {
+func addDelta(t time.Time, d time.Duration) (time.Time, error) {
 	out := t.Add(d)
 	if out.Year() < 1 || out.Year() > 9999 {
 		return time.Time{}, fmt.Errorf("date value out of range")
@@ -107,7 +107,7 @@ func rdApply(t time.Time, years, months int, abs rdAbs, delta time.Duration) (ti
 		second = abs.second
 	}
 	out := time.Date(year, time.Month(month), day, hour, minute, second, t.Nanosecond(), time.UTC)
-	return pyAddDelta(out, delta)
+	return addDelta(out, delta)
 }
 
 func hms(h, m, s int) rdAbs { return rdAbs{-1, -1, -1, h, m, s} }
@@ -374,7 +374,7 @@ func (c *cronCalc) proc(i int, d time.Time, year int, month time.Month) (changed
 	if diff == 0 {
 		return false, false, d, nil
 	}
-	out, err = pyAddDelta(d, time.Duration(diff)*time.Second)
+	out, err = addDelta(d, time.Duration(diff)*time.Second)
 	return true, false, out, err
 }
 
@@ -386,17 +386,17 @@ func (c *cronCalc) badDate() error {
 }
 
 // Wall clock and fold of an instant in loc, the fold marking the second pass of a repeated hour
-func awareOf(inst time.Time, loc *time.Location) pyDT {
+func awareOf(inst time.Time, loc *time.Location) dtValue {
 	wall := wallOf(inst.In(loc))
 	f0, _ := wallInZone(wall, loc)
 	if f0.Equal(inst) {
-		return pyDT{wall: wall}
+		return dtValue{wall: wall}
 	}
-	return pyDT{wall: wall, fold: 1}
+	return dtValue{wall: wall, fold: 1}
 }
 
 // Instant of an aware wall clock and fold in loc
-func instantOf(d pyDT, loc *time.Location) time.Time {
+func instantOf(d dtValue, loc *time.Location) time.Time {
 	f0, f1 := wallInZone(d.wall, loc)
 	if d.fold == 1 {
 		return f1
@@ -404,14 +404,14 @@ func instantOf(d pyDT, loc *time.Location) time.Time {
 	return f0
 }
 
-func utcOffset(d pyDT, loc *time.Location) time.Duration { return d.wall.Sub(instantOf(d, loc)) }
+func utcOffset(d dtValue, loc *time.Location) time.Duration { return d.wall.Sub(instantOf(d, loc)) }
 
 // Whether the wall clock survives a round trip through UTC in loc
-func wallExists(d pyDT, loc *time.Location) bool {
+func wallExists(d dtValue, loc *time.Location) bool {
 	return wallOf(instantOf(d, loc).In(loc)).Equal(d.wall)
 }
 
-func (c *cronCalc) successor(a, b pyDT) bool {
+func (c *cronCalc) successor(a, b dtValue) bool {
 	ai, bi := instantOf(a, c.loc), instantOf(b, c.loc)
 	if c.isPrev {
 		return ai.Before(bi)
@@ -420,19 +420,19 @@ func (c *cronCalc) successor(a, b pyDT) bool {
 }
 
 // Attaches the zone to a found wall clock, the closer resolution of a repeated hour and the next existing minute of a gap
-func (c *cronCalc) addTZ(wall time.Time, prev pyDT) (pyDT, bool) {
+func (c *cronCalc) addTZ(wall time.Time, prev dtValue) (dtValue, bool) {
 	fold := 0
 	if c.isPrev {
 		fold = 1
 	}
-	result := pyDT{wall: wall, fold: fold}
+	result := dtValue{wall: wall, fold: fold}
 	if !wallExists(result, c.loc) {
 		for !wallExists(result, c.loc) {
-			result = pyDT{wall: result.wall.Add(time.Minute)}
+			result = dtValue{wall: result.wall.Add(time.Minute)}
 		}
 		return result, false
 	}
-	farther := pyDT{wall: wall, fold: 1 - fold}
+	farther := dtValue{wall: wall, fold: 1 - fold}
 	if utcOffset(result, c.loc) != utcOffset(farther, c.loc) && !c.successor(result, prev) {
 		result = farther
 	}
@@ -440,7 +440,7 @@ func (c *cronCalc) addTZ(wall time.Time, prev pyDT) (pyDT, bool) {
 }
 
 // Walk of the croniter procs from now, the zone handling of an aware start applied to the match
-func (c *cronCalc) calc(now pyDT, aware bool) (pyDT, error) {
+func (c *cronCalc) calc(now dtValue, aware bool) (dtValue, error) {
 	var offset time.Duration
 	switch {
 	case c.isPrev:
@@ -450,9 +450,9 @@ func (c *cronCalc) calc(now pyDT, aware bool) (pyDT, error) {
 	default:
 		offset = time.Minute
 	}
-	unaware, err := pyAddDelta(now.wall, offset)
+	unaware, err := addDelta(now.wall, offset)
 	if err != nil {
-		return pyDT{}, err
+		return dtValue{}, err
 	}
 	if c.seconds {
 		unaware = unaware.Truncate(time.Second)
@@ -466,7 +466,7 @@ func (c *cronCalc) calc(now pyDT, aware bool) (pyDT, error) {
 		for i := 0; i < 7; i++ {
 			changed, halt, out, err := c.proc(i, unaware, year, month)
 			if err != nil {
-				return pyDT{}, err
+				return dtValue{}, err
 			}
 			unaware = out
 			if halt {
@@ -486,21 +486,21 @@ func (c *cronCalc) calc(now pyDT, aware bool) (pyDT, error) {
 			continue
 		}
 		if !aware {
-			return pyDT{wall: unaware}, nil
+			return dtValue{wall: unaware}, nil
 		}
 		return c.attachZone(now, unaware)
 	}
-	return pyDT{}, c.badDate()
+	return dtValue{}, c.badDate()
 }
 
 // Zone resolution of a matched wall clock, skipping gaps and weighing the other offset of a transition
-func (c *cronCalc) attachZone(now pyDT, unaware time.Time) (pyDT, error) {
+func (c *cronCalc) attachZone(now dtValue, unaware time.Time) (dtValue, error) {
 	awareTime, exists := c.addTZ(unaware, now)
 	if !exists && (!c.successor(awareTime, now) || c.fields[cronHourField].star()) {
 		for !exists {
-			found, err := c.calc(pyDT{wall: unaware}, false)
+			found, err := c.calc(dtValue{wall: unaware}, false)
 			if err != nil {
-				return pyDT{}, err
+				return dtValue{}, err
 			}
 			unaware = found.wall
 			awareTime, exists = c.addTZ(unaware, now)
@@ -510,13 +510,13 @@ func (c *cronCalc) attachZone(now pyDT, unaware time.Time) (pyDT, error) {
 	if delta == 0 {
 		return awareTime, nil
 	}
-	altStart, err := pyAddDelta(now.wall, delta)
+	altStart, err := addDelta(now.wall, delta)
 	if err != nil {
-		return pyDT{}, err
+		return dtValue{}, err
 	}
-	alt, err := c.calc(pyDT{wall: altStart}, false)
+	alt, err := c.calc(dtValue{wall: altStart}, false)
 	if err != nil {
-		return pyDT{}, err
+		return dtValue{}, err
 	}
 	altAware, _ := c.addTZ(alt.wall, now)
 	if !c.successor(altAware, now) {
@@ -536,7 +536,7 @@ func absInt(v int) int {
 }
 
 // Next or previous match from a start, the day of month and weekday union croniter applies when both are set
-func (e *CronExpr) calcNext(now pyDT, loc *time.Location, isPrev bool) (pyDT, error) {
+func (e *CronExpr) calcNext(now dtValue, loc *time.Location, isPrev bool) (dtValue, error) {
 	fields := append([]cronField(nil), e.spec.fields...)
 	c := &cronCalc{spec: e.spec, loc: loc, fields: fields, nth: e.spec.nth, isPrev: isPrev, seconds: len(fields) > 5}
 	aware := loc != nil
@@ -545,13 +545,13 @@ func (e *CronExpr) calcNext(now pyDT, loc *time.Location, isPrev bool) (pyDT, er
 		fields[cronDowField] = cronField{{kind: '*'}}
 		t1, err := c.calc(now, aware)
 		if err != nil {
-			return pyDT{}, err
+			return dtValue{}, err
 		}
 		fields[cronDowField] = bak
 		fields[cronDayField] = cronField{{kind: '*'}}
 		t2, err := c.calc(now, aware)
 		if err != nil {
-			return pyDT{}, err
+			return dtValue{}, err
 		}
 		if isPrev {
 			if t1.wall.After(t2.wall) {
@@ -569,7 +569,7 @@ func (e *CronExpr) calcNext(now pyDT, loc *time.Location, isPrev bool) (pyDT, er
 
 // Next returns the first match after the wall clock of t, read as a naive datetime and returned in UTC
 func (e *CronExpr) Next(t time.Time) (time.Time, error) {
-	got, err := e.calcNext(pyDT{wall: microTrunc(wallOf(t))}, nil, false)
+	got, err := e.calcNext(dtValue{wall: microTrunc(wallOf(t))}, nil, false)
 	return got.wall, err
 }
 

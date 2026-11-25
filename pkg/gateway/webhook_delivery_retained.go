@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -52,19 +53,19 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	}
 	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the retained webhook payload is not a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the retained webhook payload is not a mapping"}
 	}
 	rawEnvelope, found := payload.Get("native_text_v1")
 	if !found {
-		return nil, &pyKeyError{"native_text_v1"}
+		return nil, &keyError{"native_text_v1"}
 	}
 	envelope, ok := rawEnvelope.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: "the retained native text envelope is not a mapping"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the retained native text envelope is not a mapping"}
 	}
 	authorityRunner, ok := runner.(AuthorityRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot find the adapter of a source", runner)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot find the adapter of a source", runner)}
 	}
 	event, err := restoreNative(ctx, payload, authorityRunner)
 	if err != nil {

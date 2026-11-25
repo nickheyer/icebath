@@ -95,7 +95,7 @@ func retireAdmissionWorkers(ctx context.Context, conn SQLiteConn, row *jsonutil.
 	lineageText, _ := rowValue(row, "lineage_json").(string)
 	decoded, err := jsonutil.Decode(lineageText)
 	if err != nil {
-		return pyValueError(err.Error())
+		return valueError(err.Error())
 	}
 	target := rowValue(row, "target_session_id")
 	last := target
@@ -137,7 +137,7 @@ func admissionRow(row *jsonutil.Object) (*jsonutil.Object, error) {
 	}
 	payload, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	result.Set("payload", payload)
 	for _, k := range []string{"payload_digest", "lineage_json"} {
@@ -208,7 +208,7 @@ func admissionDigest(in SessionInput) (string, error) {
 	}
 	input, err := jsonutil.Decode(encoded)
 	if err != nil {
-		return "", pyValueError(err.Error())
+		return "", valueError(err.Error())
 	}
 	return AdmissionFingerprint(in.SessionID, map[string]any{"input": input, "intent": in.intent()})
 }
@@ -463,7 +463,7 @@ func admissionPayloadText(row *jsonutil.Object) (any, error) {
 	text, _ := rowValue(row, "payload_json").(string)
 	decoded, err := jsonutil.Decode(text)
 	if err != nil {
-		return nil, pyValueError(err.Error())
+		return nil, valueError(err.Error())
 	}
 	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {

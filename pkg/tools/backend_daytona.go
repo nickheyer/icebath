@@ -377,9 +377,9 @@ func (daytonaBackend) DoctorChecks() []DoctorCheck {
 // CreateEnvironment builds the sandbox from the shaped resources, cpu truncated to a whole core count
 func (daytonaBackend) CreateEnvironment(ctx context.Context, env *Env, opts CreateOptions) (Environment, error) {
 	res := sandboxResources(opts.ContainerConfig)
-	cpu, _ := pyIntValue(res["cpu"])
-	memory, _ := pyIntValue(res["memory"])
-	disk, _ := pyIntValue(res["disk"])
+	cpu, _ := wholeNumberArg(res["cpu"])
+	memory, _ := wholeNumberArg(res["memory"])
+	disk, _ := wholeNumberArg(res["disk"])
 	return NewDaytonaEnvironment(ctx, env, DaytonaOptions{Image: opts.Image, Cwd: opts.Cwd, Timeout: opts.Timeout, CPU: cpu, Memory: memory, Disk: disk,
 		Persistent: truthy(res["persistent_filesystem"]), TaskID: opts.TaskID})
 }

@@ -87,7 +87,7 @@ func withInstallMetadataLock(ctx context.Context, h string, fn func(context.Cont
 		if hint := lockHolderHint(path); hint != "" {
 			message += "; " + hint
 		}
-		return &pm.PyError{Class: "TimeoutError", Message: message}
+		return &pm.ClassError{Class: "TimeoutError", Message: message}
 	}
 	if err := f.Truncate(0); err == nil {
 		_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())

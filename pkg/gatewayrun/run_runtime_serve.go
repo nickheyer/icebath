@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -27,7 +28,7 @@ func retireProfileAuthority(ctx context.Context, a *gateway.SessionAuthority, ti
 	}
 	workersStopped := true
 	if err := gateway.JoinAuthorityWork(ctx, a, wait); err != nil {
-		var timeoutErr *gateway.PyError
+		var timeoutErr *errorutil.Error
 		if !errors.As(err, &timeoutErr) || timeoutErr.Kind != "TimeoutError" {
 			return false, err
 		}

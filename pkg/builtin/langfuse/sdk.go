@@ -301,7 +301,7 @@ func toAttr(key string, v any) (attribute.KeyValue, bool) {
 		return attribute.String(key, string(t)), true
 	}
 	if isStrictInt(v) {
-		if n, ok := pyIntValue(v); ok {
+		if n, ok := intValue(v); ok {
 			switch t := n.(type) {
 			case bool:
 				return attribute.Bool(key, t), true

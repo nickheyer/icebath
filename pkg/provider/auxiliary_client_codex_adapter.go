@@ -124,7 +124,7 @@ func (e *auxTypeError) Error() string { return e.Message }
 func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, kwargs map[string]any) (map[string]any, string, any, error) {
 	model := a.model
 	if v, ok := kwargs["model"]; ok {
-		model = pyStr(v)
+		model = anyutil.String(v)
 	}
 	wireModel := wireModelIdentity(model)
 	host := a.client.BaseURL()
@@ -236,8 +236,8 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 		resp["extra_headers"] = headers
 	}
 	if extraBody, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
-		if tier, ok := extraBody["service_tier"].(string); ok && pyStripSpace(tier) != "" && !isXAI {
-			resp["service_tier"] = pyStripSpace(tier)
+		if tier, ok := extraBody["service_tier"].(string); ok && strings.TrimSpace(tier) != "" && !isXAI {
+			resp["service_tier"] = strings.TrimSpace(tier)
 		}
 		if reasoning, ok := jsonutil.AsMap(extraBody["reasoning"]); ok {
 			supported := codexEffortsForRoute(model, host, route.isCodexBackend)
@@ -245,7 +245,7 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 			if len(supported) > 0 && !(enabledSet && !enabled) {
 				effort := "medium"
 				if anyutil.IsTrue(reasoning["effort"]) {
-					effort = pyStr(reasoning["effort"])
+					effort = anyutil.String(reasoning["effort"])
 				}
 				resp["reasoning"] = map[string]any{"effort": clampEffort(effort, supported, nil), "summary": "auto"}
 				resp["include"] = []any{"reasoning.encrypted_content"}
@@ -268,7 +268,7 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 		}
 		scope := ""
 		if anyutil.IsTrue(scopeID) {
-			scope = cacheScopeFromSessionID(pyStr(scopeID))
+			scope = cacheScopeFromSessionID(anyutil.String(scopeID))
 		}
 		if key := contentCacheKey(instructions, wireTools, scope); key != "" {
 			resp["prompt_cache_key"] = key
@@ -337,11 +337,11 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 	}
 	wireAliases, _ := resp["_wire_aliases"].(map[string]string)
 	delete(resp, "_wire_aliases")
-	issuerKind := pyStr(resp["_issuer_kind"])
+	issuerKind := anyutil.String(resp["_issuer_kind"])
 	delete(resp, "_issuer_kind")
 	issuerModel := model
 	if anyutil.IsTrue(resp["model"]) {
-		issuerModel = pyStr(resp["model"])
+		issuerModel = anyutil.String(resp["model"])
 	}
 	total, hasTotal := auxPositiveSeconds(timeout)
 	noProgress, _ := auxPositiveSeconds(kwargs["no_progress_timeout"])
@@ -409,7 +409,7 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 		wireCalls = append(wireCalls, auxCodexToolCallWire(tc))
 	}
 	message := map[string]any{"role": "assistant", "content": nil, "tool_calls": nil}
-	if text := pyStripSpace(strings.Join(textParts, "")); text != "" {
+	if text := strings.TrimSpace(strings.Join(textParts, "")); text != "" {
 		message["content"] = text
 	}
 	if len(wireCalls) > 0 {

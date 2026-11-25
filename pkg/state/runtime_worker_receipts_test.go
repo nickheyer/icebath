@@ -305,7 +305,7 @@ func TestStructuredWorkerReceiptsAreAtomicAndScoped(t *testing.T) {
 		return db.MutateWorkerExecution(ctx, in)
 	}
 	acquired, err := apply(1, "turn.acquire", jsonutil.ObjectOf("holder", "worker-lease", "ttl_seconds", int64(300)), nil)
-	if err != nil || !pyTruthy(resultValue(acquired, "value")) {
+	if err != nil || !anyutil.IsTrue(resultValue(acquired, "value")) {
 		t.Fatalf("acquire %v %v", acquired, err)
 	}
 	invalid := "\xff"
@@ -352,7 +352,7 @@ func TestStructuredWorkerReceiptsAreAtomicAndScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	renewed, err := apply(3, "turn.renew", jsonutil.ObjectOf("holder", "worker-lease", "ttl_seconds", int64(300)), nil)
-	if err != nil || !pyTruthy(resultValue(renewed, "value")) {
+	if err != nil || !anyutil.IsTrue(resultValue(renewed, "value")) {
 		t.Fatalf("renew %v %v", renewed, err)
 	}
 	released, err := apply(4, "turn.release", jsonutil.ObjectOf("holder", "worker-lease"), nil)
@@ -374,7 +374,7 @@ func TestStructuredWorkerReceiptsAreAtomicAndScoped(t *testing.T) {
 	if canonical == nil || !anyutil.Equal(rowValue(canonical, "content"), jsonRoundTrip(assistantContent)) {
 		t.Fatalf("canonical row %v", adopted)
 	}
-	if !pyTruthy(rowValue(adopted, DBRowSnapshot)) || !anyutil.Equal(rowValue(adopted, "_row_id"), winnerRow) {
+	if !anyutil.IsTrue(rowValue(adopted, DBRowSnapshot)) || !anyutil.Equal(rowValue(adopted, "_row_id"), winnerRow) {
 		t.Fatalf("adopted %v", adopted)
 	}
 	terminal, err := apply(7, "execution.finish", jsonutil.NewObject(), nil)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,7 +53,7 @@ func (e *AmbiguousJobReferenceError) Error() string {
 	for i, m := range e.Matches {
 		ids[i] = m.ID
 	}
-	return fmt.Sprintf("Job name '%s' is ambiguous — matches %d jobs: %s. Use the job ID instead.",
+	return fmt.Sprintf("Job name %q is ambiguous — matches %d jobs: %s. Use the job ID instead.",
 		e.Ref, len(e.Matches), strings.Join(ids, ", "))
 }
 
@@ -284,9 +285,8 @@ func isRecoverableErrorJob(job *Job) bool {
 	return job.State == "error" && isRecurring(job)
 }
 
-// Repeat budget from an integer or forever and once words, nil meaning forever
+// Repeat budget from a number or forever and once words, nil meaning forever, a fraction cut to its whole part
 func normalizeRepeatValue(repeat any) (*int, error) {
-	var n float64
 	switch v := repeat.(type) {
 	case nil:
 		return nil, nil
@@ -300,7 +300,7 @@ func normalizeRepeatValue(repeat any) (*int, error) {
 		}
 		parsed, err := strconv.ParseInt(text, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("Invalid repeat value %s: use an integer, 'forever', or 'once'.", anyutil.Quote(v))
+			return nil, fmt.Errorf("Invalid repeat value %s: use an integer, \"forever\", or \"once\".", anyutil.Quote(v))
 		}
 		if parsed <= 0 {
 			return nil, nil
@@ -311,19 +311,24 @@ func normalizeRepeatValue(repeat any) (*int, error) {
 			return intPtr(1), nil
 		}
 		return nil, nil
-	case int:
-		n = float64(v)
-	case int64:
-		n = float64(v)
-	case float64:
-		n = v
-	default:
-		return nil, fmt.Errorf("repeat must be a number, 'forever' or 'once', got %s", errchain.Kind(repeat))
 	}
-	if n <= 0 {
+	if n, ok := anyutil.Int(repeat); ok {
+		if n <= 0 {
+			return nil, nil
+		}
+		return intPtr(int(n)), nil
+	}
+	f, ok := anyutil.Float(repeat)
+	if !ok || math.IsNaN(f) {
+		return nil, fmt.Errorf("repeat must be a number, \"forever\" or \"once\", got %s", errchain.Kind(repeat))
+	}
+	switch {
+	case f <= 0 || math.IsInf(f, 1):
 		return nil, nil
+	case f >= math.MaxInt64:
+		return intPtr(math.MaxInt), nil
 	}
-	return intPtr(int(n)), nil
+	return intPtr(int(f)), nil
 }
 
 // Runs fn on the first record with the id under the jobs lock, found false when no record matches
@@ -529,7 +534,7 @@ func (s *Store) nextRunOrRejectPastOneshot(sched *Schedule, label string, fallba
 		if sched.RunAt != "" {
 			runAt = sched.RunAt
 		}
-		s.log.Warn(fmt.Sprintf("Rejecting one-shot cron job %s'%s': run_at %s is outside the %ds grace window",
+		s.log.Warn(fmt.Sprintf("Rejecting one-shot cron job %s%q: run_at %s is outside the %ds grace window",
 			what, label, anyutil.String(runAt), oneshotGraceSeconds))
 		return nil, oneshotPastGraceError(runAt)
 	}
@@ -814,7 +819,7 @@ func rejectTerminalActivation(job, updated *Job, jobID string) error {
 		if job.hasKey("name") {
 			name = job.Name
 		}
-		return fmt.Errorf("Cannot activate terminal cron job '%s' through update_job; use cron resume --run-now or --at.", name)
+		return fmt.Errorf("Cannot activate terminal cron job %q through update_job; use cron resume --run-now or --at.", name)
 	}
 	return nil
 }
@@ -1217,7 +1222,7 @@ func (s *Store) resumeJob(ctx context.Context, ref string) (*Job, error) {
 	}
 	if isRecurring(job) && parsed && instantAtOrBefore(storedAt, s.clk.now()) {
 		next = &stored
-		s.log.Info(fmt.Sprintf("Job '%s' resumed with occurrence %s that elapsed while paused kept due; the next "+
+		s.log.Info(fmt.Sprintf("Job %q resumed with occurrence %s that elapsed while paused kept due; the next "+
 			"tick fires it (late/catch-up) or logs the skip.", job.Name, stored))
 	} else if next, err = s.computeNextRun(sched, nil, job.Timezone); err != nil {
 		return nil, err
@@ -1242,8 +1247,8 @@ func (s *Store) triggerJob(ctx context.Context, ref string, extraPrompt string) 
 	}
 	if isTerminalJob(job) {
 		name := job.Name
-		return nil, &ValueError{fmt.Sprintf("Cannot run: job '%s' is %s (terminal). Create a new occurrence with "+
-			"'icebath cron resume %s --run-now' or '--at <ISO-8601>'.", name, job.State, name)}
+		return nil, &ValueError{fmt.Sprintf("Cannot run: job %q is %s (terminal). Create a new occurrence with "+
+			"\"icebath cron resume %s --run-now\" or \"--at <ISO-8601>\".", name, job.State, name)}
 	}
 	manual := s.clk.nowISO()
 	var prompt any

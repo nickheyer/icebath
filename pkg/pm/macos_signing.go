@@ -38,7 +38,7 @@ func SignManagedPython(python string) bool {
 		"--identifier", managedPythonIdentifier, "--requirements", fmt.Sprintf(`=designated => identifier "%s"`, managedPythonIdentifier), python},
 		Capture: true})
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, pyExceptionText(err)))
+		pkgLog().Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, exceptionText(err)))
 		return false
 	}
 	if signed.Code != 0 {
@@ -47,7 +47,7 @@ func SignManagedPython(python string) bool {
 	}
 	verified, err := runProcess(processSpec{Argv: []string{codesign, "--verify", "--deep", "--strict", python}, Capture: true})
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, pyExceptionText(err)))
+		pkgLog().Warn(fmt.Sprintf("could not sign managed Python %s: %s", python, exceptionText(err)))
 		return false
 	}
 	if verified.Code != 0 {

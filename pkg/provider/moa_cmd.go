@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // MoAArgs carries the parsed icebath moa subcommand as typed and the optional preset name
@@ -57,7 +57,7 @@ func moaPromptChoice(out io.Writer, title string, rows []string, def int) (int, 
 	if err != nil {
 		return 0, err
 	}
-	raw := pyStripSpace(line)
+	raw := strings.TrimSpace(line)
 	if raw == "" {
 		return def, nil
 	}
@@ -82,13 +82,13 @@ func moaModelOptions(ctx context.Context) ([]map[string]any, error) {
 		return nil, err
 	}
 	var rows []any
-	if config.PyTruthy(payload["providers"]) {
+	if anyutil.IsTrue(payload["providers"]) {
 		rows, _ = payload["providers"].([]any)
 	}
 	out := []map[string]any{}
 	for _, raw := range rows {
 		p := anyMap(raw)
-		if config.PyTruthy(p["slug"]) && strings.ToLower(pyStripSpace(pyStr(p["slug"]))) != "moa" && config.PyTruthy(p["models"]) {
+		if anyutil.IsTrue(p["slug"]) && strings.ToLower(strings.TrimSpace(anyutil.String(p["slug"]))) != "moa" && anyutil.IsTrue(p["models"]) {
 			out = append(out, p)
 		}
 	}
@@ -127,10 +127,10 @@ func moaPickSlot(ctx context.Context, out io.Writer, current map[string]any) (ma
 	rows := make([]string, len(providers))
 	for i, p := range providers {
 		label := p["slug"]
-		if config.PyTruthy(p["name"]) {
+		if anyutil.IsTrue(p["name"]) {
 			label = p["name"]
 		}
-		rows[i] = fmt.Sprintf("%s  (%s)", pyStr(label), pyStr(p["slug"]))
+		rows[i] = fmt.Sprintf("%s  (%s)", anyutil.String(label), anyutil.String(p["slug"]))
 	}
 	for i, p := range providers {
 		if moaSameValue(p["slug"], currentProvider) {
@@ -145,7 +145,7 @@ func moaPickSlot(ctx context.Context, out io.Writer, current map[string]any) (ma
 	picked := providers[choice]
 	models := moaRowModels(picked)
 	if len(models) == 0 {
-		return nil, fmt.Errorf("Provider %s has no selectable models", pyStr(picked["slug"]))
+		return nil, fmt.Errorf("Provider %s has no selectable models", anyutil.String(picked["slug"]))
 	}
 	currentModel, hasModel := current["model"]
 	if !hasModel {
@@ -154,7 +154,7 @@ func moaPickSlot(ctx context.Context, out io.Writer, current map[string]any) (ma
 	modelDefault := 0
 	modelRows := make([]string, len(models))
 	for i, m := range models {
-		modelRows[i] = pyStr(m)
+		modelRows[i] = anyutil.String(m)
 	}
 	for i, m := range models {
 		if moaSameValue(m, currentModel) {
@@ -162,17 +162,17 @@ func moaPickSlot(ctx context.Context, out io.Writer, current map[string]any) (ma
 			break
 		}
 	}
-	idx, err := moaPromptChoice(out, "Select model for "+pyStr(picked["slug"]), modelRows, modelDefault)
+	idx, err := moaPromptChoice(out, "Select model for "+anyutil.String(picked["slug"]), modelRows, modelDefault)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"provider": pyOrStr(picked["slug"]), "model": pyStr(models[idx])}, nil
+	return map[string]any{"provider": anyutil.StringOr(picked["slug"], ""), "model": anyutil.String(models[idx])}, nil
 }
 
 // Slot label with its reasoning effort when one is set
 func moaFormatSlot(slot map[string]any) string {
-	label := pyStr(slot["provider"]) + ":" + pyStr(slot["model"])
-	if effort := pyStripSpace(pyOrStr(slot["reasoning_effort"])); effort != "" {
+	label := anyutil.String(slot["provider"]) + ":" + anyutil.String(slot["model"])
+	if effort := strings.TrimSpace(anyutil.StringOr(slot["reasoning_effort"], "")); effort != "" {
 		return label + " [reasoning=" + effort + "]"
 	}
 	return label
@@ -181,7 +181,7 @@ func moaFormatSlot(slot map[string]any) string {
 // Billing notice when the aggregator runs on a different provider than the main model of ctx
 func moaProviderMismatchNotice(ctx context.Context, aggregator map[string]any) string {
 	mainProvider := strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(ctx)))
-	aggProvider := strings.ToLower(pyStripSpace(pyOrStr(aggregator["provider"])))
+	aggProvider := strings.ToLower(strings.TrimSpace(anyutil.StringOr(aggregator["provider"], "")))
 	if mainProvider == "" || aggProvider == "" || mainProvider == "moa" || mainProvider == "auto" || mainProvider == aggProvider {
 		return ""
 	}
@@ -197,10 +197,10 @@ func moaView(ctx context.Context) map[string]any {
 func moaPrintConfig(ctx context.Context, out io.Writer) {
 	moa := moaView(ctx)
 	fmt.Fprintln(out, "Mixture of Agents presets")
-	fmt.Fprintf(out, "Default: %s\n", pyStr(moa["default_preset"]))
+	fmt.Fprintf(out, "Default: %s\n", anyutil.String(moa["default_preset"]))
 	active := "(off)"
-	if config.PyTruthy(moa["active_preset"]) {
-		active = pyStr(moa["active_preset"])
+	if anyutil.IsTrue(moa["active_preset"]) {
+		active = anyutil.String(moa["active_preset"])
 	}
 	fmt.Fprintf(out, "Active in config: %s\n", active)
 	presets := anyMap(moa["presets"])
@@ -234,22 +234,22 @@ func moaCmdConfigure(ctx context.Context, out io.Writer, args MoAArgs) error {
 	moa := moaView(ctx)
 	presetName := args.Name
 	if presetName == "" {
-		presetName = pyOrStr(moa["default_preset"])
+		presetName = anyutil.StringOr(moa["default_preset"], "")
 	}
 	if presetName == "" {
 		presetName = DefaultMoAPresetName
 	}
-	presetName = pyStripSpace(presetName)
+	presetName = strings.TrimSpace(presetName)
 	presets := anyMap(moa["presets"])
 	current, ok := presets[presetName].(map[string]any)
 	if !ok {
-		current = anyMap(presets[pyStr(moa["default_preset"])])
+		current = anyMap(presets[anyutil.String(moa["default_preset"])])
 	}
 	fmt.Fprintf(out, "Configure MoA preset: %s\n", presetName)
 	fmt.Fprintln(out, "Pick at least one reference model; choose Done when finished.")
 	refs := []any{}
 	var existing []any
-	if config.PyTruthy(current["reference_models"]) {
+	if anyutil.IsTrue(current["reference_models"]) {
 		existing, _ = current["reference_models"].([]any)
 	}
 	for {
@@ -265,7 +265,7 @@ func moaCmdConfigure(ctx context.Context, out io.Writer, args MoAArgs) error {
 		if !has {
 			enabled = true
 		}
-		picked["enabled"] = config.PyTruthy(enabled)
+		picked["enabled"] = anyutil.IsTrue(enabled)
 		refs = append(refs, picked)
 		choice, err := moaPromptChoice(out, "Add another reference model?", []string{"Add another", "Done"}, 1)
 		if err != nil {
@@ -294,7 +294,7 @@ func moaCmdConfigure(ctx context.Context, out io.Writer, args MoAArgs) error {
 
 // Removes a named preset unless it is the only one, moving the default and clearing the active name
 func moaCmdDelete(ctx context.Context, out io.Writer, args MoAArgs) error {
-	presetName := pyStripSpace(args.Name)
+	presetName := strings.TrimSpace(args.Name)
 	if presetName == "" {
 		return &MoAExitError{Message: "Usage: icebath moa delete <name>"}
 	}

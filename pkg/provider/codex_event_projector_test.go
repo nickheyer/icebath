@@ -119,7 +119,7 @@ func TestCodexFileChangeMcpWebSearchProjection(t *testing.T) {
 		t.Fatalf("web search content %q", ws.Messages[1]["content"])
 	}
 	dyn := NewCodexEventProjector().Project(codexCompleted(t, `{"type": "dynamicToolCall", "id": "d1", "tool": "lookup", "arguments": "raw", "success": false}`))
-	if dyn.Messages[0]["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)["arguments"] != `{"arguments": "raw"}` || dyn.Messages[1]["content"] != "success=False" {
+	if dyn.Messages[0]["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)["arguments"] != `{"arguments": "raw"}` || dyn.Messages[1]["content"] != "success=false" {
 		t.Fatalf("dynamic %+v", dyn.Messages)
 	}
 }

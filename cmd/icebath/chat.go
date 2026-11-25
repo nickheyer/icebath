@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Headless --safe-mode or --ignore-user-config chat runs out of process under the gateway owner
@@ -98,13 +99,13 @@ func resolveLastSession(source string) string {
 				return
 			}
 			if len(rows) > 0 {
-				found = pyStr(rowValue(rows[0], "id"))
+				found = anyutil.String(rowValue(rows[0], "id"))
 				return
 			}
 		}
 		rows, err := db.SearchSessions(ctx, gatewaycli.SearchSessionsOptions{Sources: sources, Limit: 1, SkipLaunchStubs: true})
 		if err == nil && len(rows) > 0 {
-			found = pyStr(rowValue(rows[0], "id"))
+			found = anyutil.String(rowValue(rows[0], "id"))
 		}
 	})
 	return found
@@ -124,7 +125,7 @@ func resolveSessionByNameOrID(nameOrID string) string {
 		}
 		id := ""
 		if session != nil {
-			id = pyStr(rowValue(session, "id"))
+			id = anyutil.String(rowValue(session, "id"))
 		} else if id, err = db.ResolveSessionByTitle(ctx, nameOrID); err != nil {
 			return
 		}
@@ -147,7 +148,7 @@ func resolveSessionByNameOrID(nameOrID string) string {
 func createTitledSession(title string) string {
 	id, err := gatewaycli.CreateTitledSession(context.Background(), title)
 	if err != nil {
-		slogError(fmt.Sprintf("Failed to create titled session %s", config.PyRepr(title)), err)
+		slogError(fmt.Sprintf("Failed to create titled session %s", anyutil.Quote(title)), err)
 		return ""
 	}
 	return id
@@ -255,7 +256,7 @@ func frozenCwd(db *gatewaycli.SurfaceLabelReader, sessionID string) string {
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(pyStrOrEmpty(policy["cwd"]))
+	return strings.TrimSpace(anyutil.String(policy["cwd"]))
 }
 
 // A resumed session whose frozen cwd was a removed worktree gets the tree back before attaching
@@ -271,7 +272,7 @@ func recreateResumedTUIWorktree(a *chatArgs) {
 		cwd = frozenCwd(db, a.Resume)
 		if cwd == "" {
 			if session, err := db.GetSession(context.Background(), a.Resume); err == nil && session != nil {
-				cwd = strings.TrimSpace(pyStr(rowValue(session, "cwd")))
+				cwd = strings.TrimSpace(anyutil.String(rowValue(session, "cwd")))
 			}
 		}
 	})
@@ -321,7 +322,7 @@ func resolveChatSessionArgs(a *chatArgs, useTUI bool) {
 		if err != nil || session == nil {
 			return
 		}
-		saved := strings.TrimSpace(pyStr(rowValue(session, "cwd")))
+		saved := strings.TrimSpace(anyutil.String(rowValue(session, "cwd")))
 		if saved == "" {
 			return
 		}
@@ -393,7 +394,7 @@ func hasAnyProviderConfigured(ctx context.Context, strictProfileScope bool) bool
 	}
 	modelCfg := cfg["model"]
 	modelName := strings.TrimSpace(settings.Model.Get(ctx))
-	hasIcebathConfig := modelName != "" && modelName != pyStr(config.Defaults()["model"])
+	hasIcebathConfig := modelName != "" && modelName != anyutil.String(config.Defaults()["model"])
 	providerEnvVars := map[string]bool{"OPENROUTER_API_KEY": true, "OPENAI_API_KEY": true, "ANTHROPIC_API_KEY": true, "ANTHROPIC_TOKEN": true, "OPENAI_BASE_URL": true}
 	rows := provider.CanonicalRegistryRows(ctx)
 	for _, row := range rows {
@@ -422,7 +423,7 @@ func hasAnyProviderConfigured(ctx context.Context, strictProfileScope bool) bool
 	}
 	if m, ok := modelCfg.(map[string]any); ok {
 		for _, k := range []string{"provider", "base_url", "api_key"} {
-			if strings.TrimSpace(pyStr(m[k])) != "" && m[k] != nil {
+			if strings.TrimSpace(anyutil.String(m[k])) != "" && m[k] != nil {
 				return true
 			}
 		}
@@ -433,7 +434,7 @@ func hasAnyProviderConfigured(ctx context.Context, strictProfileScope bool) bool
 				continue
 			}
 			status := provider.GetAuthStatus(env, row.Name)
-			if truthy(status["logged_in"]) && pyStr(status["key_source"]) != "keyless" {
+			if truthy(status["logged_in"]) && anyutil.String(status["key_source"]) != "keyless" {
 				return true
 			}
 		}
@@ -462,17 +463,17 @@ func confirmStartupExpensiveModelOverride(a *chatArgs) {
 	securityCfg := cfg.Map("security")
 	model := explicitModel
 	if model == "" {
-		model = strings.TrimSpace(pyStrOrEmpty(modelCfg["default"]))
+		model = strings.TrimSpace(anyutil.String(modelCfg["default"]))
 	}
 	if model == "" {
 		return
 	}
 	providerName := explicitProvider
 	if providerName == "" {
-		providerName = strings.TrimSpace(pyStrOrEmpty(modelCfg["provider"]))
+		providerName = strings.TrimSpace(anyutil.String(modelCfg["provider"]))
 	}
 	warnings := provider.SelectionWarnings(ctx, provider.SelectionRequest{Model: model, Provider: providerName,
-		BaseURL: pyStrOrEmpty(modelCfg["base_url"]), APIKey: pyStrOrEmpty(modelCfg["api_key"])})
+		BaseURL: anyutil.String(modelCfg["base_url"]), APIKey: anyutil.String(modelCfg["api_key"])})
 	if len(warnings) == 0 {
 		return
 	}

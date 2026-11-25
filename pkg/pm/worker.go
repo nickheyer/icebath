@@ -44,7 +44,7 @@ func workerError(payload map[string]any) error {
 	field := func(key string) (any, error) {
 		v, ok := payload[key]
 		if !ok {
-			return nil, &PyError{Class: "KeyError", Message: "the worker error has no " + key}
+			return nil, &ClassError{Class: "KeyError", Message: "the worker error has no " + key}
 		}
 		return v, nil
 	}
@@ -79,7 +79,7 @@ func workerError(payload map[string]any) error {
 	}
 	switch kindValue.(type) {
 	case map[string]any, []any:
-		return &PyError{Class: "TypeError", Message: fmt.Sprintf("the worker error type must be text, got %s", errchain.Kind(kindValue))}
+		return &ClassError{Class: "TypeError", Message: fmt.Sprintf("the worker error type must be text, got %s", errchain.Kind(kindValue))}
 	}
 	raw, err := field("message")
 	if err != nil {
@@ -87,9 +87,9 @@ func workerError(payload map[string]any) error {
 	}
 	kind, _ := kindValue.(string)
 	if !workerErrorClasses[kind] {
-		return &PyError{Class: "RuntimeError", Message: wireText(raw)}
+		return &ClassError{Class: "RuntimeError", Message: wireText(raw)}
 	}
-	return &PyError{Class: kind, Message: wireText(raw)}
+	return &ClassError{Class: kind, Message: wireText(raw)}
 }
 
 // Text of a wire value as a person reads it, text kept as sent
@@ -133,7 +133,7 @@ func (q *controlQueue) receive() (map[string]any, error) {
 	q.mu.Unlock()
 	switch m := item.(type) {
 	case nil:
-		return nil, &PyError{Class: "RuntimeError", Message: "PM client disconnected"}
+		return nil, &ClassError{Class: "RuntimeError", Message: "PM client disconnected"}
 	case error:
 		return nil, m
 	}
@@ -160,7 +160,7 @@ func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEv
 		}
 		value, err := loadJSON(bytes.TrimSuffix(line, []byte("\n")))
 		if err != nil {
-			messages.put(&PyError{Class: "ValueError", Message: err.Error()})
+			messages.put(&ClassError{Class: "ValueError", Message: err.Error()})
 			return
 		}
 		message, ok := value.(map[string]any)
@@ -169,14 +169,14 @@ func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEv
 		}
 		id, ok := message["id"]
 		if !ok {
-			messages.put(&PyError{Class: "KeyError", Message: "the request has no id"})
+			messages.put(&ClassError{Class: "KeyError", Message: "the request has no id"})
 			return
 		}
 		if !haveID {
 			requestID, haveID = id, true
 		}
 		if !jsonEquals(id, requestID) {
-			messages.put(&PyError{Class: "ValueError", Message: "unexpected PM control request id"})
+			messages.put(&ClassError{Class: "ValueError", Message: "unexpected PM control request id"})
 			return
 		}
 		if anyutil.IsTrue(message["cancel"]) {
@@ -192,7 +192,7 @@ func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEv
 func requestField(m map[string]any, key string) (any, error) {
 	v, ok := m[key]
 	if !ok {
-		return nil, &PyError{Class: "KeyError", Message: "the request has no " + key}
+		return nil, &ClassError{Class: "KeyError", Message: "the request has no " + key}
 	}
 	return v, nil
 }
@@ -204,13 +204,13 @@ func requestDefinitions(value any) ([]PackageDefinition, error) {
 	}
 	list, ok := value.([]any)
 	if !ok {
-		return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the request packages must be a list, got %s", errchain.Kind(value))}
+		return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the request packages must be a list, got %s", errchain.Kind(value))}
 	}
 	out := make([]PackageDefinition, 0, len(list))
 	for _, item := range list {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: "package definition is not an object"}
+			return nil, &ClassError{Class: "TypeError", Message: "package definition is not an object"}
 		}
 		out = append(out, PackageDefinition{Name: anyutil.String(m["name"]), Module: anyutil.String(m["module"]), Qualname: anyutil.String(m["qualname"])})
 	}
@@ -248,7 +248,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 	}
 	pathsContext, ok := rawContext.(map[string]any)
 	if !ok {
-		return &PyError{Class: "TypeError", Message: "request context is not an object"}
+		return &ClassError{Class: "TypeError", Message: "request context is not an object"}
 	}
 	repo, err := requestField(pathsContext, "repo")
 	if err != nil {
@@ -293,10 +293,10 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 			return nil, err
 		}
 		if !jsonEquals(reply["id"], request["id"]) || !jsonEquals(reply["call"], jsonInt(call)) {
-			return nil, &PyError{Class: "RuntimeError", Message: "unexpected PM callback response"}
+			return nil, &ClassError{Class: "RuntimeError", Message: "unexpected PM callback response"}
 		}
 		if message, failed := reply["error"]; failed {
-			return nil, &PyError{Class: "RuntimeError", Message: wireText(message)}
+			return nil, &ClassError{Class: "RuntimeError", Message: wireText(message)}
 		}
 		return reply["result"], nil
 	}
@@ -330,7 +330,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 		}
 		arguments, ok := rawArguments.(map[string]any)
 		if !ok {
-			return nil, &PyError{Class: "TypeError", Message: fmt.Sprintf("the %s request arguments must be a mapping, got %s", operation, errchain.Kind(rawArguments))}
+			return nil, &ClassError{Class: "TypeError", Message: fmt.Sprintf("the %s request arguments must be a mapping, got %s", operation, errchain.Kind(rawArguments))}
 		}
 		hooks := workerHooks{}
 		if operation == "ensure" {

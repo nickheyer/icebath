@@ -34,15 +34,15 @@ func TestParseCostPolicyValidation(t *testing.T) {
 		want               string
 	}{
 		{map[string]any{"paid_render": -1}, nil, nil, "cost of 'paid_render' must be a non-negative number, not -1"},
-		{map[string]any{"a": true}, nil, nil, "must be a non-negative number, not True"},
+		{map[string]any{"a": true}, nil, nil, "must be a non-negative number, not true"},
 		{map[string]any{"a": []any{1}}, nil, nil, "range must be [min, max]"},
 		{map[string]any{"a": []any{5, 1}}, nil, nil, "range must be [min, max] with min <= max"},
 		{map[string]any{"a": map[string]any{"credits": 1, "x": 2}}, nil, nil, `must be a number, [min, max], or {"credits": ..., "note": "..."}`},
 		{map[string]any{"a": map[string]any{"credits": 1, "note": 3}}, nil, nil, "note must be a string"},
 		{[]any{1}, nil, nil, "costs must be an object mapping MCP tool names to costs"},
 		{map[string]any{"": 1}, nil, nil, "costs keys must be non-empty MCP tool names"},
-		{nil, "lots", nil, "spend_limit must be a non-negative number, not 'lots'"},
-		{map[string]any{"a": 1}, nil, "   ", "cost_unit must be a short non-empty label, not '   '"},
+		{nil, "lots", nil, `spend_limit must be a non-negative number, not "lots"`},
+		{map[string]any{"a": 1}, nil, "   ", `cost_unit must be a short non-empty label, not "   "`},
 		{map[string]any{"a": 1}, nil, strings.Repeat("x", 33), "cost_unit must be a short non-empty label"},
 	}
 	for _, c := range bad {

@@ -37,7 +37,7 @@ func isVanishedErr(err error) bool {
 
 // Stats the database family by device and inode, then scans every other process for descriptors on it
 func foreignStateDBHolders(dbPath string) ([]Holder, error) {
-	dbPathStr, err := pyRealpath(dbPath)
+	dbPathStr, err := realpath(dbPath)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func foreignStateDBHolders(dbPath string) ([]Holder, error) {
 		id, err := holdersSys.stat(candidate)
 		if err != nil {
 			if !isVanishedErr(err) {
-				holders = append(holders, Holder{-1, "watched-file stat failed: " + candidate + ": " + pyOSErrorStr(err)})
+				holders = append(holders, Holder{-1, "watched-file stat failed: " + candidate + ": " + osErrorStr(err)})
 			}
 			continue
 		}

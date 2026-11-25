@@ -165,19 +165,6 @@ func (s *statusRun) firstEnvValue(names ...string) (string, error) {
 	return "", nil
 }
 
-// Mapping view of a config value, false for anything but a dict
-func statusDict(v any) (map[string]any, bool) {
-	switch t := v.(type) {
-	case map[string]any:
-		return t, true
-	case config.Tree:
-		return t, true
-	case *jsonutil.Object:
-		return t.Map(), true
-	}
-	return nil, false
-}
-
 // Configured default model of the status home, or the not set marker
 func (s *statusRun) configuredModelLabel() string {
 	if model := strings.TrimSpace(settings.Model.Get(home.WithOverride(s.ctx, s.h))); model != "" {

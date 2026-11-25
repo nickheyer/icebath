@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -46,7 +47,7 @@ func RelayExplicitlyDisabled(ctx context.Context) (bool, error) {
 	}
 	explicit, _, isDict := jsonObjectGet(extra, "_enabled_explicit")
 	if !isDict {
-		return false, &PyError{"AttributeError", "the relay platform extra settings are " + errchain.Kind(extra) + ", expected a mapping"}
+		return false, &errorutil.Error{"AttributeError", "the relay platform extra settings are " + errchain.Kind(extra) + ", expected a mapping"}
 	}
 	if !anyutil.IsTrue(explicit) {
 		return false, nil

@@ -220,7 +220,7 @@ func copyAuthFile(srcFile, dstFile string, deadlineS *float64) (string, error) {
 	if reason := connectErrText(err); reason != "" {
 		return reason, nil
 	}
-	return errorutil.Kind(err), nil
+	return "copy failed without a reason", nil
 }
 
 type authFailure struct{ rel, reason string }

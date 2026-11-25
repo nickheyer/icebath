@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Env var, extra key and conversion of every IRC value seeded from an env only setup
@@ -16,7 +17,7 @@ var envSeedKeys = []gateway.EnvSeedRow{
 	{Env: "IRC_PORT", Key: "port", Conv: func(raw string) (any, error) {
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: err.Error()}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: err.Error()}
 		}
 		return n, nil
 	}},

@@ -4,9 +4,11 @@ import (
 	"encoding/base32"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -117,18 +119,23 @@ func ReadGrokBotCache() GrokBotCache {
 	}
 	names := jsonutil.NewObject()
 	if rows, ok := get(roster, "rows").([]any); ok {
-		for _, row := range rows {
+		for i, row := range rows {
 			o, ok := asObject(row)
 			if !ok || truthy(o.Value("isGroup")) {
 				continue
 			}
 			name := ""
 			if truthy(o.Value("name")) {
-				name = strings.TrimSpace(pyStr(o.Value("name")))
+				name = strings.TrimSpace(anyutil.String(o.Value("name")))
 			}
-			if name != "" {
-				names.Set(pyStr(o.Value("id")), name)
+			if name == "" {
+				continue
 			}
+			key := anyutil.String(o.Value("id"))
+			if o.Value("id") == nil {
+				key = "\x00row " + strconv.Itoa(i)
+			}
+			names.Set(key, name)
 		}
 	}
 	for _, id := range names.Keys() {
@@ -149,16 +156,16 @@ func ReadGrokBotCache() GrokBotCache {
 			key := ""
 			switch {
 			case truthy(event.Value("automationId")):
-				key = pyStr(event.Value("automationId"))
+				key = anyutil.String(event.Value("automationId"))
 			case truthy(event.Value("automationName")):
-				key = pyStr(event.Value("automationName"))
+				key = anyutil.String(event.Value("automationName"))
 			}
 			if action, _ := event.Value("action").(string); action == "deleted" {
 				seen.Delete(key)
 			} else if key != "" {
 				label := key
 				if truthy(event.Value("automationName")) {
-					label = pyStr(event.Value("automationName"))
+					label = anyutil.String(event.Value("automationName"))
 				}
 				seen.Set(key, label)
 			}

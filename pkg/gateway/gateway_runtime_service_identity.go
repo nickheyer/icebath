@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
@@ -519,7 +520,7 @@ func plistTruthy(v any) bool {
 	case int:
 		return x != 0
 	}
-	return pyTruthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Bytes of a regular service definition up to one MiB, never blocking on a FIFO

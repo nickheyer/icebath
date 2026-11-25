@@ -43,7 +43,7 @@ func resolveNode(ctx context.Context, node any) (*nodeClient, any, error) {
 		entry, err = reg.resolve(v)
 	case []any, map[string]any, *jsonutil.Object:
 		if anyutil.IsTrue(v) {
-			return nil, nil, &TypeError{fmt.Sprintf("unhashable type: '%s'", pyTypeName(v))}
+			return nil, nil, &TypeError{fmt.Sprintf("unhashable type: '%s'", typeName(v))}
 		}
 		entry, err = reg.resolve("")
 	default:
@@ -204,7 +204,7 @@ func argText(args map[string]any, key, def string) string {
 	}
 	s, ok := v.(string)
 	if !ok {
-		panic(&AttributeError{fmt.Sprintf("'%s' object has no attribute 'strip'", pyTypeName(v))})
+		panic(&AttributeError{fmt.Sprintf("'%s' object has no attribute 'strip'", typeName(v))})
 	}
 	return strings.TrimSpace(s)
 }

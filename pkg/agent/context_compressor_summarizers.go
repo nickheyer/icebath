@@ -44,24 +44,24 @@ func mustPyFullmatch(pattern string) *regexp2.Regexp {
 }
 
 // First group of a Python re search over content, def when nothing matches
-func pySearchGroup(re *regexp2.Regexp, content, def string) string {
+func searchGroup(re *regexp2.Regexp, content, def string) string {
 	if m, err := re.FindStringMatch(content); err == nil && m != nil {
 		return m.GroupByNumber(1).String()
 	}
 	return def
 }
 
-// Python args.get(key, def)
+// Argument value of key, def when it is absent or null
 func argOr(args *jsonutil.Object, key string, def any) any {
-	if v, ok := args.Get(key); ok {
+	if v, ok := args.Get(key); ok && v != nil {
 		return v
 	}
 	return def
 }
 
-// Python str of args.get(key, def)
+// Text of the argument key, def when it is absent or null
 func getArgText(args *jsonutil.Object, key, def string) string {
-	if v, ok := args.Get(key); ok {
+	if v, ok := args.Get(key); ok && v != nil {
 		return anyutil.String(v)
 	}
 	return def
@@ -102,7 +102,7 @@ func summarizeToolResult(toolName string, toolArgs, toolContent any) (out string
 
 func sumTerminal(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	cmd := clipWithEllipsis(strArg(args, "command", ""), 80, 77)
-	exitCode := pySearchGroup(terminalExitCodeRe, content, "?")
+	exitCode := searchGroup(terminalExitCodeRe, content, "?")
 	return fmt.Sprintf("[terminal] ran `%s` -> exit %s, %d lines output", cmd, exitCode, lineCount), nil
 }
 
@@ -120,7 +120,7 @@ func sumWriteFile(name string, args *jsonutil.Object, content string, contentLen
 }
 
 func sumSearchFiles(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
-	count := pySearchGroup(searchTotalCountRe, content, "?")
+	count := searchGroup(searchTotalCountRe, content, "?")
 	return "[search_files] " + getArgText(args, "target", "content") + " search for '" + getArgText(args, "pattern", "?") +
 		"' in " + getArgText(args, "path", ".") + " -> " + count + " matches", nil
 }
@@ -320,7 +320,7 @@ func sumProcessManage(name string, args *jsonutil.Object, content string, conten
 	return stub + suffix, nil
 }
 
-// Summarizer formatting template from the parsed args over defaults, plus content_len and the outcome
+// Summarizer formatting template from the parsed args over defaults, null args keeping the default, plus content_len and the outcome
 func sumTemplate(template string, defaults map[string]any) toolResultSummarizer {
 	return func(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 		values := map[string]any{}
@@ -328,7 +328,9 @@ func sumTemplate(template string, defaults map[string]any) toolResultSummarizer 
 			values[k] = v
 		}
 		for _, k := range args.Keys() {
-			values[k] = args.Value(k)
+			if v := args.Value(k); v != nil {
+				values[k] = v
+			}
 		}
 		values["content_len"] = contentLen
 		out, err := templateutil.Format(template, values)
@@ -433,7 +435,11 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 	}
 	firstArg := ""
 	for _, k := range args.Keys()[:min(2, args.Len())] {
-		firstArg += " " + k + "=" + textutil.First(anyutil.String(args.Value(k)), 40)
+		text := "null"
+		if v := args.Value(k); v != nil {
+			text = anyutil.String(v)
+		}
+		firstArg += " " + k + "=" + textutil.First(text, 40)
 	}
 	return "[" + toolName + "]" + firstArg + " (" + groupedInt(contentLen) + " chars result)" + resultFailureSuffix(content), nil
 }

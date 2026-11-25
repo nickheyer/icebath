@@ -12,7 +12,7 @@ import (
 )
 
 // Python os.path.normpath, posixpath rules keeping a double leading slash, ntpath rules on Windows
-func pyNormpath(p string) string {
+func normpath(p string) string {
 	if runtime.GOOS == "windows" {
 		return ntNormpath(p)
 	}
@@ -73,7 +73,7 @@ func ntNormpath(p string) string {
 }
 
 // Python os.path.abspath, the getcwd failure of a relative path returned as the OSError Python raises
-func pyAbspath(p string) (string, error) {
+func abspath(p string) (string, error) {
 	if runtime.GOOS == "windows" {
 		return filepath.Abs(p)
 	}
@@ -84,11 +84,11 @@ func pyAbspath(p string) (string, error) {
 		}
 		p = strings.TrimSuffix(cwd, "/") + "/" + p
 	}
-	return pyNormpath(p), nil
+	return normpath(p), nil
 }
 
 // Python os.path.realpath without strict, resolving symlinks and keeping missing tails literal
-func pyRealpath(p string) (string, error) {
+func realpath(p string) (string, error) {
 	if !filepath.IsAbs(p) {
 		if _, err := os.Getwd(); err != nil {
 			return "", err
@@ -98,7 +98,7 @@ func pyRealpath(p string) (string, error) {
 }
 
 // Index just past the last path separator of p, both slashes counting on Windows
-func pyLastSep(p string) int {
+func lastSep(p string) int {
 	if runtime.GOOS == "windows" {
 		return strings.LastIndexAny(p, `/\`) + 1
 	}
@@ -106,21 +106,21 @@ func pyLastSep(p string) int {
 }
 
 // Python os.path.basename, the text after the last separator and empty for a trailing separator
-func pyBasename(p string) string {
+func basename(p string) string {
 	if runtime.GOOS == "windows" {
 		p = p[len(filepath.VolumeName(p)):]
 	}
-	return p[pyLastSep(p):]
+	return p[lastSep(p):]
 }
 
 // Python os.path.dirname, trailing separators stripped unless the head is only separators
-func pyDirname(p string) string {
+func dirname(p string) string {
 	drive := ""
 	if runtime.GOOS == "windows" {
 		drive = filepath.VolumeName(p)
 		p = p[len(drive):]
 	}
-	head := p[:pyLastSep(p)]
+	head := p[:lastSep(p)]
 	seps := "/"
 	if runtime.GOOS == "windows" {
 		seps = `/\`
@@ -173,17 +173,17 @@ func pathlibStr(p string) string {
 }
 
 // Reason of an operating system failure followed by the paths or the call it concerns
-func pyOSErrorStr(err error) string {
+func osErrorStr(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
-		if text, ok := pyErrnoText(pe.Err); ok {
+		if text, ok := errnoText(pe.Err); ok {
 			return text + ": " + pe.Path
 		}
 		return err.Error()
 	}
 	var le *os.LinkError
 	if errors.As(err, &le) {
-		if text, ok := pyErrnoText(le.Err); ok {
+		if text, ok := errnoText(le.Err); ok {
 			return text + ": " + le.Old + " -> " + le.New
 		}
 		return err.Error()
@@ -196,14 +196,14 @@ func pyOSErrorStr(err error) string {
 		}
 		return err.Error()
 	}
-	if text, ok := pyErrnoText(err); ok {
+	if text, ok := errnoText(err); ok {
 		return text
 	}
 	return err.Error()
 }
 
 // Reason text of a syscall error, trimmed of its trailing period on Windows
-func pyErrnoText(err error) (string, bool) {
+func errnoText(err error) (string, bool) {
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {
 		return "", false
@@ -216,9 +216,9 @@ func pyErrnoText(err error) (string, bool) {
 }
 
 // Whether every rune of a non empty name is a decimal digit, like str.isdigit on procfs names
-func pyIsDigits(s string) bool {
+func isDigits(s string) bool {
 	for _, r := range s {
-		if _, ok := pyDigitValue(r); !ok {
+		if _, ok := digitValue(r); !ok {
 			return false
 		}
 	}

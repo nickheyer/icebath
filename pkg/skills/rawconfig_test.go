@@ -216,10 +216,10 @@ func TestParseConfigStringList(t *testing.T) {
 		{nil, []string{}},
 		{`["skill-a"`, []string{`["skill-a"`}},
 		{"[]", []string{}},
-		{"[True, None, 1.0]", []string{"True", "None", "1.0"}},
+		{"[True, None, 1.0]", []string{"True", "1.0"}},
 		{"['a' 'b', (2, 3)]", []string{"ab", "(2, 3)"}},
 		{"[x]", []string{"[x]"}},
-		{[]any{true, nil, 1.5}, []string{"True", "None", "1.5"}},
+		{[]any{true, nil, 1.5}, []string{"true", "1.5"}},
 	}
 	for _, c := range cases {
 		got := parseConfigStringList(c.in)

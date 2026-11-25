@@ -161,7 +161,7 @@ func TestCatalogPolicyComesFromTheServedProfileNotTheLaunchEnv(t *testing.T) {
 		}
 	}
 	_, err := ExecutionPolicyMapping(context.Background(), "ghost", nil)
-	if _, isPolicy := err.(*RoomExecutionPolicyError); !isPolicy || !strings.Contains(err.Error(), "'ghost' is not a live profile") {
+	if _, isPolicy := err.(*RoomExecutionPolicyError); !isPolicy || !strings.Contains(err.Error(), `target_profile "ghost" is not a live profile`) {
 		t.Fatalf("ghost %v", err)
 	}
 }

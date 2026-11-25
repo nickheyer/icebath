@@ -64,7 +64,7 @@ func runUpdateExitHooks(stderr io.Writer) {
 	updateExitHooks.Unlock()
 	for i := len(hooks) - 1; i >= 0; i-- {
 		if err := hooks[i].run(); err != nil {
-			fmt.Fprintf(stderr, "Exception ignored in atexit callback %s: %s: %s\n", hooks[i].name, launchErrorClass(err), launchErrorText(err))
+			fmt.Fprintf(stderr, "Exception ignored in atexit callback %s: %s\n", hooks[i].name, launchErrorLine(err))
 		}
 	}
 }
@@ -275,10 +275,10 @@ func completionExitCode(result map[string]any) (int64, error) {
 	case float64:
 		return int64(n), nil
 	}
-	if n, ok := pyIntValue(value); ok {
+	if n, ok := intValue(value); ok {
 		return n, nil
 	}
-	return 0, &pm.PyError{Class: "TypeError", Message: "the completion exit code is " + errchain.Kind(value) + " where a whole number was expected"}
+	return 0, &pm.ClassError{Class: "TypeError", Message: "the completion exit code is " + errchain.Kind(value) + " where a whole number was expected"}
 }
 
 // Hands a moved or current checkout to its completion, the one exit of every source selection route
@@ -335,7 +335,7 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 		if errors.As(err, &exit) {
 			return err
 		}
-		result, err = settleLostCompletion(ctx, w, request, launchErrorClass(err)+": "+launchErrorText(err))
+		result, err = settleLostCompletion(ctx, w, request, launchErrorLine(err))
 		if err != nil {
 			return err
 		}

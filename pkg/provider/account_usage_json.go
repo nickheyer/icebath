@@ -14,19 +14,19 @@ import (
 	"unicode/utf8"
 )
 
-// pyJSONParser decodes JSON the way Python json.loads does and records the Python repr of each value
-type pyJSONParser struct {
+// jsonParser decodes JSON the way Python json.loads does and records the Python repr of each value
+type jsonParser struct {
 	src []rune
 	pos int
 }
 
 // Decodes a response body as Python json.loads does, returning the value and its Python repr
-func pyJSONLoads(body []byte) (any, string, error) {
-	text, err := pyJSONDecodeBytes(body)
+func jsonLoads(body []byte) (any, string, error) {
+	text, err := jsonDecodeBytes(body)
 	if err != nil {
 		return nil, "", err
 	}
-	p := &pyJSONParser{src: text}
+	p := &jsonParser{src: text}
 	p.skipSpace()
 	v, repr, err := p.value()
 	if err != nil {
@@ -40,7 +40,7 @@ func pyJSONLoads(body []byte) (any, string, error) {
 }
 
 // Text of a JSON byte body by the json.detect_encoding rules, lone surrogates kept as surrogate runes
-func pyJSONDecodeBytes(b []byte) ([]rune, error) {
+func jsonDecodeBytes(b []byte) ([]rune, error) {
 	if bytes.HasPrefix(b, []byte{0xEF, 0xBB, 0xBF}) {
 		return nil, errors.New("Unexpected UTF-8 BOM (decode using utf-8-sig)")
 	}
@@ -115,7 +115,7 @@ func pyJSONDecodeBytes(b []byte) ([]rune, error) {
 	return utf16.Decode(units), nil
 }
 
-func (p *pyJSONParser) skipSpace() {
+func (p *jsonParser) skipSpace() {
 	for p.pos < len(p.src) {
 		switch p.src[p.pos] {
 		case ' ', '\t', '\n', '\r':
@@ -126,11 +126,11 @@ func (p *pyJSONParser) skipSpace() {
 	}
 }
 
-func (p *pyJSONParser) errorf(msg string) error {
+func (p *jsonParser) errorf(msg string) error {
 	return fmt.Errorf("invalid JSON at character %d: %s", p.pos, msg)
 }
 
-func (p *pyJSONParser) hasPrefix(word string) bool {
+func (p *jsonParser) hasPrefix(word string) bool {
 	w := []rune(word)
 	if p.pos+len(w) > len(p.src) {
 		return false
@@ -144,7 +144,7 @@ func (p *pyJSONParser) hasPrefix(word string) bool {
 }
 
 // One JSON value and its Python repr, objects keep insertion order and the last duplicate value
-func (p *pyJSONParser) value() (any, string, error) {
+func (p *jsonParser) value() (any, string, error) {
 	if p.pos >= len(p.src) {
 		return nil, "", p.errorf("expected a value")
 	}
@@ -165,7 +165,7 @@ func (p *pyJSONParser) value() (any, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		return pyRunesString(runes), pyRunesRepr(runes), nil
+		return runesString(runes), runesRepr(runes), nil
 	case c == '{':
 		return p.object()
 	case c == '[':
@@ -176,7 +176,7 @@ func (p *pyJSONParser) value() (any, string, error) {
 	return nil, "", p.errorf("expected a value")
 }
 
-func (p *pyJSONParser) object() (any, string, error) {
+func (p *jsonParser) object() (any, string, error) {
 	p.pos++
 	out := map[string]any{}
 	var keys []string
@@ -205,10 +205,10 @@ func (p *pyJSONParser) object() (any, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-		key := pyRunesString(runes)
+		key := runesString(runes)
 		if _, seen := out[key]; !seen {
 			keys = append(keys, key)
-			reprs[key+"\x00k"] = pyRunesRepr(runes)
+			reprs[key+"\x00k"] = runesRepr(runes)
 		}
 		out[key] = v
 		reprs[key] = repr
@@ -230,7 +230,7 @@ func (p *pyJSONParser) object() (any, string, error) {
 	return out, "{" + strings.Join(parts, ", ") + "}", nil
 }
 
-func (p *pyJSONParser) array() (any, string, error) {
+func (p *jsonParser) array() (any, string, error) {
 	p.pos++
 	out := []any{}
 	var parts []string
@@ -262,7 +262,7 @@ func (p *pyJSONParser) array() (any, string, error) {
 }
 
 // Integer literals stay exact json.Number values, fractions and exponents read as Python floats
-func (p *pyJSONParser) number() (any, string, error) {
+func (p *jsonParser) number() (any, string, error) {
 	start := p.pos
 	digits := func() int {
 		n := 0
@@ -310,11 +310,11 @@ func (p *pyJSONParser) number() (any, string, error) {
 	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return nil, "", p.errorf("expected a value")
 	}
-	return f, pyFloatRepr(f), nil
+	return f, floatRepr(f), nil
 }
 
 // JSON string body as runes, a lone surrogate escape kept as its surrogate rune like Python
-func (p *pyJSONParser) str() ([]rune, error) {
+func (p *jsonParser) str() ([]rune, error) {
 	p.pos++
 	var out []rune
 	for {
@@ -364,7 +364,7 @@ func (p *pyJSONParser) str() ([]rune, error) {
 	}
 }
 
-func (p *pyJSONParser) hex4() (rune, bool) {
+func (p *jsonParser) hex4() (rune, bool) {
 	if p.pos+4 > len(p.src) {
 		return 0, false
 	}
@@ -377,12 +377,12 @@ func (p *pyJSONParser) hex4() (rune, bool) {
 }
 
 // Go string of decoded runes, a lone surrogate becoming the replacement character
-func pyRunesString(runes []rune) string {
+func runesString(runes []rune) string {
 	return string(runes)
 }
 
 // Python repr of a decoded string, lone surrogates written as their backslash u escape
-func pyRunesRepr(runes []rune) string {
+func runesRepr(runes []rune) string {
 	text := string(runes)
 	quote := '\''
 	if strings.ContainsRune(text, '\'') && !strings.ContainsRune(text, '"') {
@@ -395,7 +395,7 @@ func pyRunesRepr(runes []rune) string {
 		case r >= 0xD800 && r <= 0xDFFF:
 			fmt.Fprintf(&b, `\u%04x`, r)
 		default:
-			inner := pyStringRepr(string(r))
+			inner := strconv.Quote(string(r))
 			inner = inner[1 : len(inner)-1]
 			if r == '\'' || r == '"' {
 				if r == quote {

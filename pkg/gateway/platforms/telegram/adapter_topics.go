@@ -116,7 +116,7 @@ func (a *TelegramAdapter) EnsureDMTopic(ctx context.Context, chatID, name string
 	}
 	a.mu.Lock()
 	chatEntry, topicConf := a.dmTopicConfig(strconv.FormatInt(chatIDInt, 10), name)
-	if topicConf != nil && pyTruthy(topicConf["thread_id"]) && !forceCreate {
+	if topicConf != nil && anyutil.IsTrue(topicConf["thread_id"]) && !forceCreate {
 		threadID, _ := configInt(topicConf["thread_id"])
 		a.dmTopics.Set(cacheKey, threadID)
 		a.mu.Unlock()
@@ -228,7 +228,7 @@ func (a *TelegramAdapter) persistDMTopicThreadID(ctx context.Context, chatID int
 			if found == nil {
 				topics = append(topics, map[string]any{"name": topicName, "thread_id": threadID})
 				changed = true
-			} else if existing, has := configInt(found["thread_id"]); (replaceExisting || !pyTruthy(found["thread_id"])) && !(has && existing == threadID) {
+			} else if existing, has := configInt(found["thread_id"]); (replaceExisting || !anyutil.IsTrue(found["thread_id"])) && !(has && existing == threadID) {
 				found["thread_id"] = threadID
 				changed = true
 			}
@@ -279,7 +279,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 		}
 		chatID := entry["chat_id"]
 		topics, _ := entry["topics"].([]any)
-		if !pyTruthy(chatID) || len(topics) == 0 {
+		if !anyutil.IsTrue(chatID) || len(topics) == 0 {
 			continue
 		}
 		pkgLog().Info(fmt.Sprintf("[%s] Setting up %d DM topic(s) for chat %s", a.Name(), len(topics), anyutil.String(chatID)))
@@ -289,14 +289,14 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 				continue
 			}
 			topicName := anyutil.String(anyutil.Or(topicConf["name"], ""))
-			if !pyTruthy(topicConf["name"]) {
+			if !anyutil.IsTrue(topicConf["name"]) {
 				continue
 			}
 			cacheKey := anyutil.String(chatID) + ":" + topicName
-			if existing := topicConf["thread_id"]; pyTruthy(existing) {
+			if existing := topicConf["thread_id"]; anyutil.IsTrue(existing) {
 				n, ok := configInt(existing)
 				if !ok {
-					return &valueError{msg: "invalid literal for int() with base 10: " + anyutil.Quote(existing)}
+					return &valueError{msg: "dm_topics thread_id " + anyutil.Quote(existing) + " is not an integer"}
 				}
 				a.mu.Lock()
 				a.dmTopics.Set(cacheKey, n)
@@ -306,7 +306,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 			}
 			normalized, ok := configInt(NormalizeTelegramChatID(chatID))
 			if !ok {
-				return &valueError{msg: "invalid literal for int() with base 10: " + anyutil.Quote(chatID)}
+				return &valueError{msg: "dm_topics chat_id " + anyutil.Quote(chatID) + " is not an integer"}
 			}
 			var iconColor *int
 			if c, ok := configInt(topicConf["icon_color"]); ok {
@@ -368,14 +368,14 @@ func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 	}
 	for _, raw := range dmTopics {
 		entry, ok := raw.(map[string]any)
-		if !ok || !pyTruthy(entry["chat_id"]) {
+		if !ok || !anyutil.IsTrue(entry["chat_id"]) {
 			continue
 		}
 		cid := anyutil.String(entry["chat_id"])
 		topics, _ := entry["topics"].([]any)
 		for _, t := range topics {
 			topic, ok := t.(map[string]any)
-			if !ok || !pyTruthy(topic["thread_id"]) || !pyTruthy(topic["name"]) {
+			if !ok || !anyutil.IsTrue(topic["thread_id"]) || !anyutil.IsTrue(topic["name"]) {
 				continue
 			}
 			key := cid + ":" + anyutil.String(topic["name"])
@@ -385,7 +385,7 @@ func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 			n, ok := configInt(topic["thread_id"])
 			if !ok {
 				pkgLog().Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(),
-					"invalid literal for int() with base 10: "+anyutil.Quote(topic["thread_id"])))
+					"dm_topics thread_id "+anyutil.Quote(topic["thread_id"])+" is not an integer"))
 				return
 			}
 			a.dmTopics.Set(key, n)
@@ -407,7 +407,7 @@ func (a *TelegramAdapter) dmTopicInfo(ctx context.Context, chatID, threadID stri
 	}
 	tid, err := strconv.ParseInt(strings.TrimSpace(threadID), 10, 64)
 	if err != nil {
-		return nil, &valueError{msg: "invalid literal for int() with base 10: " + anyutil.Quote(threadID)}
+		return nil, &valueError{msg: "thread id " + anyutil.Quote(threadID) + " is not an integer"}
 	}
 	lookup := func() map[string]any {
 		a.mu.Lock()

@@ -171,7 +171,7 @@ func CalibrateImageTokenCost(ctx context.Context, model, baseURL string, anchor 
 	if !ok {
 		return ctx, 0, false
 	}
-	perImage := int(pyFloorDiv(int64(real-textOnly), int64(nImages)))
+	perImage := int(floorDiv(int64(real-textOnly), int64(nImages)))
 	if perImage < imageCostMinPlausible || perImage > imageCostMaxPlausible {
 		return ctx, 0, false
 	}
@@ -190,7 +190,7 @@ func CalibrateImageTokenCost(ctx context.Context, model, baseURL string, anchor 
 	}
 	imageCostTables.mu.Unlock()
 	ctx = setImageCost(ctx, learned)
-	if err := config.AtomicJSONWriteWith(ctx, imageCostCachePath(ctx), snapshot, jsonutil.Indent(0)); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, imageCostCachePath(ctx), snapshot); err != nil {
 		pkgLog().Debug(fmt.Sprintf("image token cost persist failed: %v", err))
 	}
 	pkgLog().Info(fmt.Sprintf("Image token cost calibrated from provider usage: %d images priced %s tokens each (learned %s for %s)",

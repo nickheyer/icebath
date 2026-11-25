@@ -90,12 +90,12 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 
 // Requeues a refused watch event on a bounded backoff, dropping it after repeated permanent refusals
 func requeueRefusedWatchEvent(queue *tools.EventQueue, evt map[string]any) {
-	step := pyIntOf(evt["_watch_retry_step"]) + 1
+	step := intOf(evt["_watch_retry_step"]) + 1
 	evt["_watch_retry_step"] = step
 	permanent := anyutil.IsTrue(evt["_refusal_permanent"])
 	delete(evt, "_refusal_permanent")
 	if permanent {
-		refusals := pyIntOf(evt["_watch_injection_attempts"]) + 1
+		refusals := intOf(evt["_watch_injection_attempts"]) + 1
 		evt["_watch_injection_attempts"] = refusals
 		if refusals >= maxCompletionInjectionAttempts {
 			sessionID, ok := evt["session_id"]
@@ -112,7 +112,7 @@ func requeueRefusedWatchEvent(queue *tools.EventQueue, evt map[string]any) {
 }
 
 // Python int of a falsy or numeric value, zero for a falsy one
-func pyIntOf(v any) int {
+func intOf(v any) int {
 	switch n := v.(type) {
 	case int:
 		return n
@@ -271,7 +271,7 @@ func (r *GatewayRunner) committedRelayAdapter(ctx context.Context, source *gatew
 		return nil, err
 	}
 	provenance, _ := envelope.Get("provenance")
-	if !pyContains(provenance, "relay") {
+	if !contains(provenance, "relay") {
 		return nil, nil
 	}
 	native := jsonutil.NewObject()
@@ -296,7 +296,7 @@ func (r *GatewayRunner) committedRelayAdapter(ctx context.Context, source *gatew
 }
 
 // Python membership of an item in a container value
-func pyContains(container any, item string) bool {
+func contains(container any, item string) bool {
 	switch c := container.(type) {
 	case string:
 		return strings.Contains(c, item)

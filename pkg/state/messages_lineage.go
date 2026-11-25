@@ -3,12 +3,13 @@ package state
 import (
 	"context"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether a session is a branch, delegate or tool child of its parent, reset forks too on request
 func isExplicitForkChildRow(session *jsonutil.Object, includeReset bool) bool {
-	if pyEquals(rowValue(session, "source"), "tool") {
+	if equals(rowValue(session, "source"), "tool") {
 		return true
 	}
 	raw := rowValue(session, "model_config")
@@ -32,9 +33,9 @@ func isExplicitForkChildRow(session *jsonutil.Object, includeReset bool) bool {
 		markers[i], _ = cfg.Get(k)
 	}
 	parentID := rowValue(session, "parent_session_id")
-	if pyTruthy(parentID) {
+	if anyutil.IsTrue(parentID) {
 		for _, m := range markers {
-			if pyValueEqual(m, parentID) {
+			if anyutil.Equal(m, parentID) {
 				return true
 			}
 		}
@@ -88,7 +89,7 @@ func (d *SessionDB) resumeLineageIDs(ctx context.Context, sessionID string) ([]s
 		if parent == nil {
 			break
 		}
-		id := pyStr(rowValue(parent, "id"))
+		id := anyutil.String(rowValue(parent, "id"))
 		if seen[id] {
 			break
 		}

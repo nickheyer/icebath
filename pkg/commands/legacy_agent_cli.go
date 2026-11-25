@@ -1,9 +1,7 @@
 package commands
 
 import (
-	"errors"
 	"io"
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -87,7 +85,7 @@ func NewLegacyAgentParser(version string, stdout io.Writer) *LegacyAgentParser {
 			cmd.Flags().StringP(a.flag, short, a.def, a.help)
 		case 'i':
 			def, _ := strconv.Atoi(a.def)
-			cmd.Flags().IntP(a.flag, short, def, a.help)
+			cmd.Flags().VarP(newIntArg(def), a.flag, short, a.help)
 		default:
 			cmd.Flags().BoolP(a.flag, short, false, a.help)
 		}
@@ -208,12 +206,11 @@ func (p *LegacyAgentParser) take(t legacyTaken) error {
 	case 't':
 		return fs.Set(t.action.flag, "true")
 	case 'i':
-		n, err := strconv.ParseInt(strings.TrimSpace(t.args[0]), 10, 64)
-		if err != nil && !errors.Is(err, strconv.ErrRange) {
+		n, err := parseIntArg(t.args[0])
+		if err != nil {
 			return p.Error("argument " + name + ": invalid int value: " + strconv.Quote(t.args[0]))
 		}
-		value := min(max(n, math.MinInt), math.MaxInt)
-		return fs.Set(t.action.flag, strconv.FormatInt(value, 10))
+		return fs.Set(t.action.flag, strconv.Itoa(n))
 	}
 	return fs.Set(t.action.flag, t.args[0])
 }

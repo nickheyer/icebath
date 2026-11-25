@@ -505,11 +505,7 @@ func (a *app) settingsMap(h *cards.Hub, row tuigateway.SettingsRow, sid string, 
 					return then(f, entry.Kind)
 				}
 			}
-			text := ""
-			if value != nil {
-				text = settingEditText(tuigateway.SettingsRow{Value: value})
-			}
-			return then(cards.Field{ID: "value", Label: tr(txt.HubsSettingsEntryValue), Kind: cards.FieldText, Value: text, Help: tr(txt.HubsSettingsEntryHelp)}, "")
+			return then(cards.Field{ID: "value", Label: tr(txt.HubsSettingsEntryValue), Kind: cards.FieldText, Value: openEntryText(value), Help: tr(txt.HubsSettingsEntryHelp)}, "")
 		})
 	}
 	// Value of an entry from its field, JSON taken as JSON for an entry of an open map
@@ -628,7 +624,7 @@ func settingValueText(r tuigateway.SettingsRow) string {
 	case []any:
 		parts := make([]string, len(v))
 		for i, x := range v {
-			parts[i] = fmt.Sprint(x)
+			parts[i] = listItemText(x)
 		}
 		return strings.Join(parts, ", ")
 	case map[string]any:
@@ -648,7 +644,7 @@ func settingEditText(r tuigateway.SettingsRow) string {
 	case []any:
 		parts := make([]string, len(v))
 		for i, x := range v {
-			parts[i] = fmt.Sprint(x)
+			parts[i] = listItemText(x)
 		}
 		return strings.Join(parts, ", ")
 	case float64:
@@ -656,6 +652,23 @@ func settingEditText(r tuigateway.SettingsRow) string {
 	}
 	raw, _ := json.Marshal(r.Value)
 	return string(raw)
+}
+
+// Text of one item of a list setting: text as it is, any other value as JSON, null included
+func listItemText(item any) string {
+	if s, isText := item.(string); isText {
+		return s
+	}
+	text, _ := encodeFrame(item)
+	return text
+}
+
+// Text an entry of an open map is edited from: nothing for none, text as it is and every other value as the JSON its field reads back
+func openEntryText(value any) string {
+	if value == nil {
+		return ""
+	}
+	return listItemText(value)
 }
 
 // Mark of where a setting's value comes from: yours, this session's, the environment's or locked, nothing for the default

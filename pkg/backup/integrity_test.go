@@ -73,7 +73,7 @@ func TestVerifySQLiteIntegrityReportsEachStage(t *testing.T) {
 	}
 	junk := filepath.Join(tmp, "junk.db")
 	os.WriteFile(junk, []byte(strings.Repeat("A", 200)), 0o644)
-	if res := VerifySQLiteIntegrity(junk, IntegrityOptions{}); res.Message != "missing SQLite header magic (got '41414141414141414141414141414141')" {
+	if res := VerifySQLiteIntegrity(junk, IntegrityOptions{}); res.Message != `missing SQLite header magic (got "41414141414141414141414141414141")` {
 		t.Fatalf("junk %+v", res)
 	}
 	good := validSessionsDB(t, filepath.Join(tmp, "good.db"))

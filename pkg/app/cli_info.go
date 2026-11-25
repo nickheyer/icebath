@@ -8,7 +8,7 @@ import (
 )
 
 // Python str.format of a constant spec, a malformed spec raising as in Python
-func pyFmt(spec string, kw map[string]any) string {
+func fmtValue(spec string, kw map[string]any) string {
 	out, err := templateutil.Format(spec, kw)
 	if err != nil {
 		panic(err)
@@ -27,7 +27,7 @@ func sortedMapKeys[V any](m map[string]V) []string {
 }
 
 // Runs fn and turns a raised panic into its error, as a Python except Exception clause
-func pyExcept(fn func() error) (err error) {
+func except(fn func() error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%s", panicText(r))

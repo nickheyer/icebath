@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestExaEntitiesRaiseLikeTheSDKParser(t *testing.T) {
+func TestExaMalformedEntitiesFailTheCall(t *testing.T) {
 	env := sdkProviderEnv(t, "EXA_API_KEY=exa-key\n", map[string]any{"web.keyless_fallback": false})
 	var entities sharedText
 	srv, _ := fakeVendor(t, func(call vendorCall, w http.ResponseWriter) {
@@ -16,8 +16,8 @@ func TestExaEntitiesRaiseLikeTheSDKParser(t *testing.T) {
 	exaBaseURL = srv.URL
 	t.Cleanup(func() { exaBaseURL = prev })
 	cases := []struct{ entities, want string }{
-		{`[{"type":"company"}]`, "'id'"},
-		{`[{"type":"person","id":1}]`, "'version'"},
+		{`[{"type":"company"}]`, "a company entity has no id field"},
+		{`[{"type":"person","id":1}]`, "a person entity has no version field"},
 		{`"x"`, "expected a mapping, got text"},
 		{`7`, "expected a list, got a number"},
 		{`[{"type":"company","id":1,"version":1,"properties":null}]`, "expected a mapping, got nothing"},
@@ -46,7 +46,7 @@ func TestExaEntitiesRaiseLikeTheSDKParser(t *testing.T) {
 		}
 	}
 	entities.set(`[{"type":"company","id":1}]`)
-	if resp, _ := exaP().Search(context.Background(), env, "q", 5); resp.Error != "Exa search failed: 'version'" {
+	if resp, _ := exaP().Search(context.Background(), env, "q", 5); resp.Error != "Exa search failed: a company entity has no version field" {
 		t.Fatalf("%+v", resp)
 	}
 }

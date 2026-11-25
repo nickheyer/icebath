@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 type auxRejectedRoute struct {
@@ -23,11 +24,11 @@ var (
 
 // Endpoint netloc when a base URL is known, else the lowercased provider name
 func auxRouteKey(provider, baseURL string) (string, error) {
-	parts, err := pyURLParse(baseURL, "")
+	parts, err := urlutil.Split(baseURL)
 	if err != nil {
 		return "", err
 	}
-	if key := strings.ToLower(parts.netloc); key != "" {
+	if key := strings.ToLower(parts.Authority); key != "" {
 		return key, nil
 	}
 	return strings.ToLower(strings.TrimSpace(provider)), nil

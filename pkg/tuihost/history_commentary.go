@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -34,14 +35,14 @@ func VisibleCommentary(ctx context.Context, text string) string {
 	return tools.RedactSensitiveTextInProfile(ctx, visible)
 }
 
-// AttributeError a get on display metadata that is not a dict raises
-type DisplayMetadataError struct{ TypeName string }
+// Display metadata that is set but is not a mapping, so no withheld flag can be read from it; Found names what it is instead
+type DisplayMetadataError struct{ Found string }
 
 func (e *DisplayMetadataError) Error() string {
-	return "'" + e.TypeName + "' object has no attribute 'get'"
+	return "display_metadata is " + e.Found + " where a mapping was expected"
 }
 
-// Python exception class the error stands for
+// Kind label the error is logged under
 func (e *DisplayMetadataError) ErrorKind() string { return "AttributeError" }
 
 // Output text of the assistant message items whose phase is in phases, the nil key standing for no phase
@@ -193,7 +194,7 @@ func projectOne(ctx context.Context, message map[string]any, enabled bool) (map[
 	return projected, nil
 }
 
-// Whether display metadata marks the commentary withheld, a truthy non dict failing like a missing get
+// Whether display metadata marks the commentary withheld, a *DisplayMetadataError for metadata that is set but not a mapping
 func withheldCommentary(meta any) (bool, error) {
 	if !anyutil.IsTrue(meta) {
 		return false, nil
@@ -204,7 +205,7 @@ func withheldCommentary(meta any) (bool, error) {
 	case *jsonutil.Object:
 		return anyutil.IsTrue(d.ValueOr(CommentaryWithheld, nil)), nil
 	}
-	return false, &DisplayMetadataError{TypeName: anyutil.Kind(meta)}
+	return false, &DisplayMetadataError{Found: errchain.Kind(meta)}
 }
 
 // Whether commentary display is enabled by the profile config, false when the policy is unreadable

@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -116,7 +117,7 @@ func repairCompressedRows(a *AIAgent, rows *[]map[string]any) (int, error) {
 	for i, row := range *rows {
 		key := reflect.ValueOf(row).Pointer()
 		origin[key] = i
-		if pyTruthy(row[state.DBPersistedMarker]) {
+		if anyutil.IsTrue(row[state.DBPersistedMarker]) {
 			stamped[key] = true
 		}
 	}
@@ -135,7 +136,7 @@ func repairCompressedRows(a *AIAgent, rows *[]map[string]any) (int, error) {
 		if cursor > 0 && idx < cursor {
 			flushed++
 		}
-		if stamped[key] && !pyTruthy(row[state.DBPersistedMarker]) {
+		if stamped[key] && !anyutil.IsTrue(row[state.DBPersistedMarker]) {
 			lostMarker = true
 		}
 	}
@@ -170,10 +171,10 @@ func foldTodoSnapshot(a *AIAgent, compressed *[]map[string]any) error {
 			}
 			content := msg["content"]
 			stripped := stripStaleTodoSnapshot(content)
-			if pyEqual(stripped, content) {
+			if anyutil.Equal(stripped, content) {
 				continue
 			}
-			if pyTruthy(msg["_todo_snapshot_synthetic"]) && todoSnapshotIsOnlyContent(content, stripped) {
+			if anyutil.IsTrue(msg["_todo_snapshot_synthetic"]) && todoSnapshotIsOnlyContent(content, stripped) {
 				*compressed = append(rows[:idx:idx], rows[idx+1:]...)
 				if idx < len(*compressed) {
 					if _, err := repairCompressedRows(a, compressed); err != nil {
@@ -211,7 +212,7 @@ func foldTodoSnapshot(a *AIAgent, compressed *[]map[string]any) error {
 			}
 			replaceMessageContent(tail, appendTextToContent(stripped, text, false))
 			merged = true
-		} else if !pyEqual(stripped, tail["content"]) && strings.TrimSpace(compressionMessageText(map[string]any{"role": "user", "content": stripped})) == "" {
+		} else if !anyutil.Equal(stripped, tail["content"]) && strings.TrimSpace(compressionMessageText(map[string]any{"role": "user", "content": stripped})) == "" {
 			replaceMessageContent(tail, snapshot)
 			tail["_todo_snapshot_synthetic"] = true
 			merged = true
@@ -406,7 +407,7 @@ func compressionChildSource(ctx context.Context, a *AIAgent, parentSessionID str
 		}()
 	}
 	if parent != nil {
-		if src, _ := parent.Get("source"); pyTruthy(src) {
+		if src, _ := parent.Get("source"); anyutil.IsTrue(src) {
 			if s, ok := src.(string); ok {
 				return s
 			}

@@ -42,6 +42,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/startupfast"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	_ "github.com/nickheyer/icebath/pkg/vxl"
 	"github.com/spf13/cobra"
 )
@@ -401,7 +402,7 @@ func loadCronJobsForDrainReport(ctx context.Context, h string) ([][2]string, err
 	}
 	out := make([][2]string, 0, len(jobs))
 	for _, job := range jobs {
-		out = append(out, [2]string{pyStr(job.ID), job.Name})
+		out = append(out, [2]string{anyutil.String(job.ID), job.Name})
 	}
 	return out, nil
 }

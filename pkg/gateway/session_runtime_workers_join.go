@@ -3,6 +3,8 @@ package gateway
 import (
 	"context"
 	"time"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Physical turn worker a stop must see exit, done once its executor thread returned
@@ -77,7 +79,7 @@ func JoinAuthorityWork(ctx context.Context, a *SessionAuthority, timeout float64
 			return nil
 		}
 		if !time.Now().Before(deadline) {
-			return &PyError{Kind: "TimeoutError", Msg: "Profile workers did not stop; ownership retained"}
+			return &errorutil.Error{Kind: "TimeoutError", Msg: "Profile workers did not stop; ownership retained"}
 		}
 		select {
 		case <-ctx.Done():

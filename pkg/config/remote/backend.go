@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -112,26 +114,37 @@ var valueRefusals = map[[2]string]bool{
 	{"400", "config_path_reserved"}: true, {"413", "config_level_too_large"}: true, {"413", "config_body_too_large"}: true,
 }
 
-// Python int of a JSON value, bool counting as an int
-func pyInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case bool:
-		if n {
-			return 1, true
+// Profile version a plane answer carries: an integer of any Go kind or a whole float within the int range; false for true, false and anything else
+func profileVersionOf(v any) (int, bool) {
+	if f, isFloat := v.(float64); isFloat {
+		if f != math.Trunc(f) || f < math.MinInt || f >= math.MaxInt {
+			return 0, false
 		}
-		return 0, true
+		return int(f), true
 	}
-	return 0, false
+	n, ok := anyutil.Int(v)
+	if !ok || n < math.MinInt || n > math.MaxInt {
+		return 0, false
+	}
+	return int(n), true
 }
 
-func effectiveOK(body map[string]any) bool {
-	_, cfg := body["config"].(map[string]any)
-	_, version := pyInt(body["profileVersion"])
-	_, locks := body["locks"].([]any)
-	return cfg && version && locks
+// What makes an effective config answer unusable, empty when it holds a config mapping, a whole number profileVersion and a lock list
+func effectiveProblem(body map[string]any) string {
+	if _, ok := body["config"].(map[string]any); !ok {
+		return fmt.Sprintf("its config is %s where a mapping was expected", errchain.Kind(body["config"]))
+	}
+	if _, ok := profileVersionOf(body["profileVersion"]); !ok {
+		return fmt.Sprintf("its profileVersion is %s where a whole number was expected", errchain.Kind(body["profileVersion"]))
+	}
+	if _, ok := body["locks"].([]any); !ok {
+		return fmt.Sprintf("its locks are %s where a list was expected", errchain.Kind(body["locks"]))
+	}
+	return ""
 }
+
+// Whether an effective config answer holds a config mapping, a whole number profileVersion and a lock list
+func effectiveOK(body map[string]any) bool { return effectiveProblem(body) == "" }
 
 func setKey(m map[string]any, key string, value any) {
 	if _, ok := m[key]; !ok {
@@ -262,7 +275,11 @@ func (b *remoteBackend) bootFetch(ctx context.Context, h, key string, fetchLock 
 			return nil, err
 		}
 		if ff.retryable && len(delays) > 0 {
-			wait := min(max(ff.retryAfter, delays[0]), maxRetryWait)
+			wait := delays[0]
+			if ff.hasRetryAfter && ff.retryAfter > wait {
+				wait = ff.retryAfter
+			}
+			wait = min(wait, maxRetryWait)
 			delays = delays[1:]
 			slog.Warn(fmt.Sprintf("Remote Config: fetch for profile %s failed (%s); retrying in %.0fs", strconv.Quote(profile), ff, wait))
 			sleep(wait)
@@ -336,7 +353,7 @@ func (b *remoteBackend) fetchInto(ctx context.Context, st *profileState, conditi
 		return true, nil
 	}
 	if resp.Status == 200 {
-		return false, &fetchFailed{detail: "the plane returned a malformed response", retryable: true}
+		return false, &fetchFailed{detail: "the plane returned a malformed response: " + effectiveProblem(resp.Body), retryable: true}
 	}
 	return false, &fetchFailed{detail: fmt.Sprintf("HTTP %d %s: %s", resp.Status, resp.Error(), resp.Message()),
 		retryable: resp.Status >= 500 || resp.Status == 429, retryAfter: resp.RetryAfter, hasRetryAfter: resp.HasRetryAfter, status: resp.Status}
@@ -361,9 +378,9 @@ func (b *remoteBackend) install(st *profileState, body map[string]any, etag stri
 	st.doc = doc
 	st.etag = etag
 	if st.etag == "" {
-		st.etag = pyTruthyStr(body["etag"])
+		st.etag = truthyText(body["etag"])
 	}
-	st.profileVersion, _ = pyInt(body["profileVersion"])
+	st.profileVersion, _ = profileVersionOf(body["profileVersion"])
 	st.locks = locks
 	st.changedNS = time.Now().UnixNano()
 	st.gen++
@@ -375,6 +392,7 @@ func (b *remoteBackend) install(st *profileState, body map[string]any, etag stri
 	return notes
 }
 
+// Lock one entry of the plane's lock list names, false without a text path or a level key; a null level reads as the upper level
 func decodeLock(entry any) (Lock, bool) {
 	m, ok := entry.(map[string]any)
 	if !ok {
@@ -392,7 +410,11 @@ func decodeLock(entry any) (Lock, bool) {
 	if err != nil {
 		return Lock{}, false
 	}
-	return Lock{Path: path, Level: anyutil.String(level)}, true
+	name := "upper"
+	if level != nil {
+		name = anyutil.String(level)
+	}
+	return Lock{Path: path, Level: name}, true
 }
 
 // Brings the published doc to its completed postprocess output
@@ -820,8 +842,8 @@ func (b *remoteBackend) patchBody(st *profileState, in *intent) (*jsonutil.Objec
 // Write refusal for a plane answer, a lock or value refusal keeping the plane code
 func writeError(resp Response) error {
 	if resp.Status == 403 && resp.Error() == "config_key_locked" {
-		path := pyTruthyStr(resp.Body["path"])
-		lockedBy := pyTruthyStr(resp.Body["lockedBy"])
+		path := truthyText(resp.Body["path"])
+		lockedBy := truthyText(resp.Body["lockedBy"])
 		if lockedBy == "" {
 			lockedBy = "upper"
 		}

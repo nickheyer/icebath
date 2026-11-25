@@ -356,13 +356,13 @@ func sendSurrogateCase(t *testing.T, message string) (map[string]any, []sendCall
 	return res, *calls
 }
 
-func TestLoneSurrogatesAreScrubbedBeforeThePlatformSend(t *testing.T) {
+func TestEncodedSurrogateBytesAreScrubbedBeforeThePlatformSend(t *testing.T) {
 	res, calls := sendSurrogateCase(t, "警报 \xed\xa0\x80\xed\xbf\xbf done")
 	if res["success"] != true || len(calls) != 1 {
 		t.Fatalf("res=%v calls=%v", res, calls)
 	}
 	delivered := calls[0].message
-	if hasSurrogate(delivered) || delivered != "警报 �� done" {
+	if hasSurrogate(delivered) || delivered != "警报 � done" {
 		t.Fatalf("delivered=%q", delivered)
 	}
 }

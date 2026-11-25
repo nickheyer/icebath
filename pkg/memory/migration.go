@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -40,17 +41,17 @@ func ConfiguredMemoryProvider(ctx context.Context, h string) (string, error) {
 		return "", err
 	}
 	raw := sel["memory"]
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "", nil
 	}
 	mem, ok := raw.(map[string]any)
 	if !ok {
-		return "", &pyError{class: "AttributeError", msg: fmt.Sprintf("config memory section is %s where a mapping was expected", errchain.Kind(raw))}
+		return "", &kindError{class: "AttributeError", msg: fmt.Sprintf("config memory section is %s where a mapping was expected", errchain.Kind(raw))}
 	}
-	if !pyTruthy(mem["provider"]) {
+	if !anyutil.IsTrue(mem["provider"]) {
 		return "", nil
 	}
-	return pyStrip(pyStr(mem["provider"])), nil
+	return strings.TrimSpace(anyutil.String(mem["provider"])), nil
 }
 
 // True when the provider resolves for the home through bundled or its user plugins
@@ -105,15 +106,15 @@ func installPendingMemory(ctx context.Context, h, name string, install MemoryIns
 	if err != nil {
 		result = map[string]any{"ok": false, "error": err.Error()}
 	}
-	if pyTruthy(result["ok"]) {
+	if anyutil.IsTrue(result["ok"]) {
 		say(fmt.Sprintf("  \u2713 Memory provider '%s' was configured but not installed \u2014 installed its plugin from the catalog "+
 			"(memory.provider and your stored memories are unchanged; check its settings with "+
 			"`icebath memory status`).", name))
 		return true, false
 	}
 	reason := "unknown error"
-	if pyTruthy(result["error"]) {
-		reason = pyStr(result["error"])
+	if anyutil.IsTrue(result["error"]) {
+		reason = anyutil.String(result["error"])
 	}
 	reason = strings.TrimRight(reason, ". ")
 	say(fmt.Sprintf("  \u26a0 Memory provider '%s' is configured but not installed, and its plugin could not be installed from the catalog: "+

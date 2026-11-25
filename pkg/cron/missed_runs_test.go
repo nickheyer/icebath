@@ -118,7 +118,7 @@ func TestWedgedDiagnosticOnlyWithoutARecordedRun(t *testing.T) {
 func TestOccurrenceIdentityAndPendingSlots(t *testing.T) {
 	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
 	s := newClockStore(t, &now, time.UTC)
-	if got := scheduledInstant(strPtr("2026-05-01T05:00:00-07:00")); deref(got) != "2026-05-01T12:00:00+00:00" {
+	if got := scheduledInstant(strPtr("2026-05-01T05:00:00-07:00")); deref(got) != "2026-05-01T12:00:00.000000Z" {
 		t.Fatalf("instant %v", deref(got))
 	}
 	if scheduledInstant(strPtr("2026-05-01T05:00:00")) != nil || scheduledInstant(strPtr("junk")) != nil || scheduledInstant(nil) != nil {

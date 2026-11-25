@@ -366,7 +366,7 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 	deliveryURL := ""
 	if items, ok := video.get("data").([]any); ok {
 		for _, item := range items {
-			if m, ok := item.(map[string]any); ok && pyTruthy(m["url"]) {
+			if m, ok := item.(map[string]any); ok && anyutil.IsTrue(m["url"]) {
 				deliveryURL = anyutil.String(m["url"])
 				break
 			}

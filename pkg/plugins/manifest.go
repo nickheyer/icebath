@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -280,7 +281,7 @@ func manifestInt(raw any, key, warn string) (int, bool) {
 	case int64:
 		return int(v), true
 	case float64:
-		if !math.IsNaN(v) && !math.IsInf(v, 0) {
+		if !math.IsNaN(v) && v >= -(1<<63) && v < 1<<63 {
 			return int(v), true
 		}
 	case string:
@@ -324,7 +325,7 @@ func dependencyEntry(item any) (PluginDependency, bool) {
 	}
 	versionRange := ""
 	if dm["version_range"] != nil {
-		versionRange = config.PyStr(dm["version_range"])
+		versionRange = anyutil.String(dm["version_range"])
 	}
 	return PluginDependency{ID: id, VersionRange: versionRange}, true
 }
@@ -379,7 +380,7 @@ func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
 	}
 	out.configSchema = configSchemaEntries(key, manifestFieldOfType(data, key, "config_schema", func(v any) bool { return asMap(v) != nil }, "a mapping"))
 	for _, t := range manifestFieldList(data, key, "tags", "a list") {
-		out.tags = append(out.tags, config.PyStr(t))
+		out.tags = append(out.tags, anyutil.String(t))
 	}
 	out.configKeys = manifestConfigKeys(data, key)
 	var unknown []string
@@ -396,11 +397,11 @@ func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
 			pkgLog().Debug(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
 		}
 	}
-	if config.PyTruthy(data["license"]) {
-		out.license = config.PyStr(data["license"])
+	if anyutil.IsTrue(data["license"]) {
+		out.license = anyutil.String(data["license"])
 	}
-	if config.PyTruthy(data["homepage"]) {
-		out.homepage = config.PyStr(data["homepage"])
+	if anyutil.IsTrue(data["homepage"]) {
+		out.homepage = anyutil.String(data["homepage"])
 	}
 	return out
 }
@@ -469,7 +470,7 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 				entry["endonym"] = strings.TrimSpace(e)
 			}
 			if r, ok := m["rtl"]; ok {
-				entry["rtl"] = config.PyTruthy(r)
+				entry["rtl"] = anyutil.IsTrue(r)
 			}
 		} else {
 			lang = normalizeLanguageID(item)
@@ -503,7 +504,7 @@ func manifestKind(data map[string]any, key string) string {
 		kind = strings.ToLower(strings.TrimSpace(raw))
 	}
 	if !validPluginKinds[kind] {
-		pkgLog().Warn(fmt.Sprintf("Plugin %s: unknown kind '%s' (valid: %s); treating as 'standalone'", key, config.PyStr(data["kind"]), strings.Join(sortedKeys(validPluginKinds), ", ")))
+		pkgLog().Warn(fmt.Sprintf("Plugin %s: unknown kind '%s' (valid: %s); treating as 'standalone'", key, anyutil.String(data["kind"]), strings.Join(sortedKeys(validPluginKinds), ", ")))
 		kind = "standalone"
 	}
 	return kind
@@ -594,7 +595,7 @@ func ParseManifestFile(file, dir, source, prefix string) *Manifest {
 		pkgLog().Warn(fmt.Sprintf("Failed to parse %s: %v", file, err), excInfo(err)...)
 		return nil
 	}
-	if !config.PyTruthy(doc) {
+	if !anyutil.IsTrue(doc) {
 		doc = map[string]any{}
 	}
 	data := asMap(doc)
@@ -743,7 +744,7 @@ func kindName(v any) string {
 	switch v.(type) {
 	case bool:
 		return "bool"
-	case int, int64:
+	case int, int64, uint64, *big.Int:
 		return "int"
 	case float64, float32:
 		return "float"

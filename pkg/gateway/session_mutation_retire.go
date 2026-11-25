@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -92,7 +93,7 @@ func releaseLaunchSecrets(ctx context.Context, a *SessionAuthority, sessionIDs [
 				fields, ok := loaded.(*jsonutil.Object)
 				if !ok {
 					slots.mu.Unlock()
-					return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the launch secrets record is %s, expected a mapping", errchain.Kind(loaded))}
+					return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("the launch secrets record is %s, expected a mapping", errchain.Kind(loaded))}
 				}
 				if session, has := fields.Get("session"); has {
 					owner, owned = session.(string)
@@ -164,12 +165,12 @@ func retireLiveSessions(ctx context.Context, a *SessionAuthority, sessionIDs []s
 		if len(sessionIDs) > 0 && routing != nil && routingDBPath(routing) != a.DB.Path() {
 			fenceErr = fenceRetiredRoutes(ctx, a, store, sessionIDs)
 			if fenceErr != nil {
-				pkgLog().Warn("could not fence shared routing rows for deleted sessions: " + pyExceptionRepr(fenceErr))
+				pkgLog().Warn("could not fence shared routing rows for deleted sessions: " + errchain.OSText(fenceErr))
 			}
 		}
 		if len(sessionIDs) > 0 {
 			if err := store.StripRetiredMirrorRoutes(ctx, sessionIDs); err != nil {
-				pkgLog().Warn("could not strip retired routes from sessions.json: " + pyExceptionRepr(err))
+				pkgLog().Warn("could not strip retired routes from sessions.json: " + errchain.OSText(err))
 			}
 		}
 	}

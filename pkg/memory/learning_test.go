@@ -21,7 +21,7 @@ func TestDensityStatsCountIsolatedNodes(t *testing.T) {
 	if stats["nodes"] != 3 || stats["linked_nodes"] != 2 {
 		t.Fatalf("stats = %v", stats)
 	}
-	if stats["isolated_pct"] != pyRound(100.0/3, 1) || stats["isolated_pct"] != 33.3 {
+	if stats["isolated_pct"] != roundHalfEven(100.0/3, 1) || stats["isolated_pct"] != 33.3 {
 		t.Fatalf("isolated_pct = %v", stats["isolated_pct"])
 	}
 	if stats["related_edges"] != 1 || stats["edges_per_node"] != 0.333 {
@@ -206,36 +206,36 @@ func TestToIntTimestampMatchesPython(t *testing.T) {
 	}
 }
 
-func TestFromISOFormatMatchesCPython(t *testing.T) {
+func TestParseISOTimestampReadsISO8601(t *testing.T) {
 	cases := []struct {
 		in string
 		ok bool
 		ts int64
 	}{
 		{"2024-01-01T12:30:45.", false, 0},
-		{"2024-01-01 ", false, 0},
+		{"2024-01-01 ", true, 1704067200},
 		{"2024-W01", true, 1704067200},
 		{"2024W011", true, 1704067200},
 		{"2024-01-01T12", true, 1704110400},
 		{"2024-01-01T1230", true, 1704112200},
 		{"2024-01-01T12:30:45+0530", true, 1704092445},
 		{"2024-01-01T12:30:45.123456789Z", true, 1704112245},
-		{"2024-01-01x12:00", true, 1704110400},
+		{"2024-01-01x12:00", false, 0},
 		{"2024-01-01T24:00", true, 1704153600},
 		{"20240101", true, 1704067200},
-		{"2024-01-01T12:30:45+05:30:15.5", true, 1704092429},
-		{"2024-01-01T12:30,5", false, 0},
+		{"2024-01-01T12:30:45+05:30:15.5", false, 0},
+		{"2024-01-01T12:30,5", true, 1704112230},
 		{"2024-12-31T24:00:00", true, 1735689600},
-		{"9999-12-31T24:00", false, 0},
+		{"9999-12-31T24:00", true, 253402300800},
 		{"2024-01-01T24:00:01", false, 0},
 		{"2024-02-30", false, 0},
-		{"0000-01-01", false, 0},
+		{"0000-01-01", true, -62167219200},
 		{"2024-13-01", false, 0},
 		{"2020-W53-7", true, 1609632000},
 		{"2021-W53", false, 0},
 		{"2024-W01-8", false, 0},
 		{"2024-01-01T12:30:45Z", true, 1704112245},
-		{"2024-01-01T12:30:45z", false, 0},
+		{"2024-01-01T12:30:45z", true, 1704112245},
 		{"2024-01-01T12:30:45-08:00", true, 1704141045},
 		{"2024-01-01T12:30:45+24:00", false, 0},
 		{"2024-01-01T12:30:45+23:59", true, 1704025905},
@@ -248,35 +248,35 @@ func TestFromISOFormatMatchesCPython(t *testing.T) {
 		{"2024-01-01T12:30:45+5", false, 0},
 		{"2024-01-01T12:30:45+05:3", false, 0},
 		{"2024-01-01T12:30:45Zjunk", false, 0},
-		{"2024-01-01T12:30:45 ", false, 0},
+		{"2024-01-01T12:30:45 ", true, 1704112245},
 		{"2024-0101", false, 0},
 		{"202401-01", false, 0},
 		{"2024-01-01T12:60", false, 0},
-		{"2024-01-01T12:30:60", false, 0},
+		{"2024-01-01T12:30:60", true, 1704112260},
 		{"2025-04-05T06:07:08.000009+00:00", true, 1743833228},
 		{"1970-01-01T00:00:00.5-00:00", true, 0},
 		{"1969-12-31T23:59:59.5Z", true, 0},
 		{"2024W01", true, 1704067200},
 		{"2024-W011", false, 0},
-		{"2024-01-01T12.5", false, 0},
-		{"2024-01-01T12:30.5", false, 0},
+		{"2024-01-01T12.5", true, 1704112200},
+		{"2024-01-01T12:30.5", true, 1704112230},
 		{"2024-01-01T12:30:45.+00:00", false, 0},
 		{"2024-01-01T12:30:45.1234567+01:00", true, 1704108645},
 		{"2011-11-04T00:05:23.283+00:00", true, 1320365123},
-		{"2024-01-01\u00e912:00", true, 1704110400},
-		{"20240101\u00e91200", true, 1704110400},
-		{"2024W01\u00e912", true, 1704110400},
+		{"2024-01-01\u00e912:00", false, 0},
+		{"20240101\u00e91200", false, 0},
+		{"2024W01\u00e912", false, 0},
 		{"2024-01-01T12:00\u00e9", false, 0},
 		{"2024-01\u00e901", false, 0},
 		{"2024-01-01\u00e9", false, 0},
-		{"2024-01-01\U0001F60012:00", true, 1704110400},
-		{"2024-W01-2\u00e912", true, 1704196800},
-		{"2024-01-01T12:30:45:+00:00", true, 1704112245},
-		{"2024-01-01T12:30:45x+00:00", true, 1704112245},
-		{"2024-01-01T12:30:+00:00", true, 1704112200},
-		{"2024-01-01T12:30x+00:00", true, 1704112200},
-		{"2024-01-01T12:+00:00", true, 1704110400},
-		{"2024-01-01T12x+00:00", true, 1704110400},
+		{"2024-01-01\U0001F60012:00", false, 0},
+		{"2024-W01-2\u00e912", false, 0},
+		{"2024-01-01T12:30:45:+00:00", false, 0},
+		{"2024-01-01T12:30:45x+00:00", false, 0},
+		{"2024-01-01T12:30:+00:00", false, 0},
+		{"2024-01-01T12:30x+00:00", false, 0},
+		{"2024-01-01T12:+00:00", false, 0},
+		{"2024-01-01T12x+00:00", false, 0},
 		{"2024-01-01T12:30:45.1+00:00", true, 1704112245},
 		{"2024-01-01T12:30:45,+00:00", false, 0},
 		{"2024-01-01T12:30:45:", false, 0},
@@ -295,13 +295,13 @@ func TestFromISOFormatMatchesCPython(t *testing.T) {
 		{"2024-01-01T12:30:45Z+", false, 0},
 	}
 	for _, c := range cases {
-		got, err := pyFromISOFormat(c.in)
+		got, err := parseISOTimestamp(c.in)
 		if (err == nil) != c.ok {
-			t.Errorf("pyFromISOFormat(%q) err = %v, want ok %v", c.in, err, c.ok)
+			t.Errorf("parseISOTimestamp(%q) err = %v, want ok %v", c.in, err, c.ok)
 			continue
 		}
 		if c.ok && isoEpochSeconds(got) != c.ts {
-			t.Errorf("pyFromISOFormat(%q) = %d, want %d", c.in, isoEpochSeconds(got), c.ts)
+			t.Errorf("parseISOTimestamp(%q) = %d, want %d", c.in, isoEpochSeconds(got), c.ts)
 		}
 	}
 }

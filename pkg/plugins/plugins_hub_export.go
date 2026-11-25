@@ -33,4 +33,4 @@ func CatalogInstallRecord(ctx context.Context, pluginDir string) (map[string]any
 func PortableMCPServerName(server string) string { return portableMCPServerName(server) }
 
 // Whether a plugin key forms a plugin event name
-func IsPluginEventID(key string) bool { return pyReMatch(pluginIDPattern, key) }
+func IsPluginEventID(key string) bool { return reMatch(pluginIDPattern, key) }

@@ -239,7 +239,7 @@ func sentAssistantCarriers(sentMessages any) map[string]bool {
 // RejectedReasoningFields lists the reasoning keys to drop after an unknown field rejection naming one the request carried
 func RejectedReasoningFields(errorBody any, sentMessages any) map[string]bool {
 	text := ""
-	if pyTruthy(errorBody) {
+	if anyutil.IsTrue(errorBody) {
 		if s, ok := errorBody.(string); ok {
 			text = s
 		} else {

@@ -118,10 +118,10 @@ func servedFromIdentity(identity *jsonutil.Object) []string {
 					continue
 				}
 				h, _ := obj.Get("home")
-				if !pyTruthy(h) {
+				if !anyutil.IsTrue(h) {
 					h, _ = obj.Get("profile_id")
 				}
-				if pyTruthy(h) {
+				if anyutil.IsTrue(h) {
 					names = append(names, hostProfileNameForHome(anyutil.String(h)))
 				} else {
 					names = append(names, "default")
@@ -131,7 +131,7 @@ func servedFromIdentity(identity *jsonutil.Object) []string {
 		}
 	}
 	profile, _ := identity.Get("profile")
-	if !pyTruthy(profile) {
+	if !anyutil.IsTrue(profile) {
 		return []string{"default"}
 	}
 	return []string{anyutil.String(profile)}
@@ -146,7 +146,7 @@ func identityMatches(identity *jsonutil.Object, pid int, h string) bool {
 		return false
 	}
 	reported, _ := home.RecordValue(identity.Get, home.RecordKey)
-	if !pyTruthy(reported) {
+	if !anyutil.IsTrue(reported) {
 		return true
 	}
 	same, err := sameIcebathHome(anyutil.String(reported), h)

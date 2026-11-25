@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Raw netloc of a URL as typed, userinfo included
@@ -213,7 +215,7 @@ func ShouldClearContextPin(configuredModel, activeModel, configuredBaseURL, acti
 	return ContextRouteMismatch(configuredBaseURL, activeBaseURL, configuredProvider, activeProvider)
 }
 
-// String form of a config scalar the way Python str(value or "") renders it
+// Text of a config scalar: a string as is, a number in decimal, true or false, and "" for null or a value that is not a scalar
 func cfgString(v any) string {
 	switch x := v.(type) {
 	case nil:
@@ -221,19 +223,10 @@ func cfgString(v any) string {
 	case string:
 		return x
 	case bool:
-		if x {
-			return "True"
-		}
-		return "False"
-	case int:
-		return strconv.Itoa(x)
-	case int64:
-		return strconv.FormatInt(x, 10)
-	case float64:
-		if x == float64(int64(x)) {
-			return strconv.FormatInt(int64(x), 10)
-		}
-		return strconv.FormatFloat(x, 'g', -1, 64)
+		return strconv.FormatBool(x)
+	}
+	if _, ok := anyutil.Float(v); ok {
+		return anyutil.String(v)
 	}
 	return ""
 }

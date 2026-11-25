@@ -18,12 +18,12 @@ func systemFixedZone(now time.Time) *time.Location {
 	return time.FixedZone(name, off)
 }
 
-// FormatISO renders t the way Python isoformat does
+// FormatISO renders t as RFC 3339 text with six fractional digits and Z for UTC, the form every stamp the store writes uses
 func FormatISO(t time.Time) string {
 	return t.Format(timeutil.RFC3339Micro)
 }
 
-// ParseISO parses like Python datetime fromisoformat, naive values kept as UTC wall fields
+// ParseISO parses ISO 8601 text, a value without an offset kept as UTC wall fields with Aware false
 func ParseISO(value string) (ISOTime, error) {
 	t, aware, err := timeutil.ParseISOZone(value, time.UTC)
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -116,7 +118,7 @@ func loadsObject(text string) (*jsonutil.Object, error) {
 	}
 	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Kind: "TypeError", Msg: "the stored API binding is " + errchain.Kind(decoded) + ", expected a mapping"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "the stored API binding is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
 	return obj, nil
 }
@@ -154,7 +156,7 @@ func bindAPISteps(ctx context.Context, a *SessionAuthority, sessionID string, op
 		}
 		if live, held := a.live(sessionID); held && !isHistoryMount(live) {
 			if live.Source == nil {
-				return nil, &PyError{Kind: "AttributeError", Msg: "the API session has no source"}
+				return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the API session has no source"}
 			}
 			denied := live.Source.Platform != PlatformAPIServer
 			if !denied {
@@ -163,7 +165,7 @@ func bindAPISteps(ctx context.Context, a *SessionAuthority, sessionID string, op
 					return nil, err
 				}
 				if row == nil {
-					return nil, &PyError{Kind: "TypeError", Msg: "the API session binding row is missing"}
+					return nil, &errorutil.Error{Kind: "TypeError", Msg: "the API session binding row is missing"}
 				}
 				stored, _ := row.Get("source")
 				denied = stored != any(storageSource)
@@ -313,9 +315,9 @@ func bindAPISteps(ctx context.Context, a *SessionAuthority, sessionID string, op
 				}
 				named, has := routed.Get("session_id")
 				if !has {
-					return &pyKeyError{key: "session_id"}
+					return &keyError{key: "session_id"}
 				}
-				holder = pyStrOf(named)
+				holder = anyutil.String(named)
 			} else if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
@@ -433,7 +435,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 	}
 	entryDict, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
-		return &PyError{Kind: "AttributeError", Msg: "a stored API session entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "a stored API session entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
 	entry, err := SessionEntryFromDict(ctx, entryDict)
 	if err != nil {
@@ -441,7 +443,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 	}
 	source := entry.Origin
 	if source == nil {
-		return &PyError{Kind: "AttributeError", Msg: "a stored API session entry has no origin"}
+		return &errorutil.Error{Kind: "AttributeError", Msg: "a stored API session entry has no origin"}
 	}
 	if _, err := pinAPIIdentity(ctx, a.Runner, source, entry.TransportProfile); err != nil {
 		return err
@@ -485,13 +487,13 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 		}
 		parts, isList := rawIdentity.([]any)
 		if !isList {
-			return &PyError{Kind: "TypeError", Msg: "can only join an iterable"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "can only join an iterable"}
 		}
 		identity := make([]string, len(parts))
 		for i, part := range parts {
 			text, isText := part.(string)
 			if !isText {
-				return &PyError{Kind: "TypeError", Msg: fmt.Sprintf("routing identity part %d is %s, expected text", i, errchain.Kind(part))}
+				return &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("routing identity part %d is %s, expected text", i, errchain.Kind(part))}
 			}
 			identity[i] = text
 		}
@@ -502,11 +504,11 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 			}
 		}
 		if len(identity) < 2 {
-			return &PyError{Kind: "IndexError", Msg: "the API session routing identity has fewer than two parts"}
+			return &errorutil.Error{Kind: "IndexError", Msg: "the API session routing identity has fewer than two parts"}
 		}
 		title, _ := row.Get("title")
 		hidden, _ := row.Get("hidden")
-		if roomSessionID(identity, generation) != sessionID || title != any("Group: "+identity[1]) || !pyTruthy(hidden) {
+		if roomSessionID(identity, generation) != sessionID || title != any("Group: "+identity[1]) || !anyutil.IsTrue(hidden) {
 			return runtimeRefusal("admission_conflict")
 		}
 	}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Error the upstream disk mirror hit raises, its TTL name is never defined in the router module
@@ -105,8 +106,8 @@ func routerParseEfforts(items any) map[string][]string {
 	for _, item := range list {
 		obj, _ := item.(map[string]any)
 		mid := ""
-		if obj != nil && pyTruthy(obj["id"]) {
-			mid = strings.TrimSpace(pyScalarStr(obj["id"]))
+		if obj != nil && anyutil.IsTrue(obj["id"]) {
+			mid = strings.TrimSpace(scalarStr(obj["id"]))
 		}
 		reasoning, isDict := digDict(obj, "router", "capabilities", "reasoning")
 		if mid == "" || !isDict {
@@ -121,8 +122,8 @@ func routerParseEfforts(items any) map[string][]string {
 		for _, e := range efforts {
 			if em, ok := e.(map[string]any); ok {
 				v := ""
-				if pyTruthy(em["value"]) {
-					v = strings.TrimSpace(pyScalarStr(em["value"]))
+				if anyutil.IsTrue(em["value"]) {
+					v = strings.TrimSpace(scalarStr(em["value"]))
 				}
 				if v != "" {
 					levels = append(levels, v)
@@ -139,7 +140,7 @@ func routerParseEfforts(items any) map[string][]string {
 		}
 		if len(unknown) > 0 {
 			pkgLog().Info(fmt.Sprintf("router: model %s publishes unrecognized reasoning effort level(s) %s; ignoring them "+
-				"(update agent/reasoning_effort EFFORT_LADDER to adopt new vendor tiers)", mid, pyStrListRepr(unknown)))
+				"(update agent/reasoning_effort EFFORT_LADDER to adopt new vendor tiers)", mid, anyutil.String(unknown)))
 		}
 		if len(known) > 0 {
 			out[mid] = known
@@ -197,7 +198,7 @@ func routerLoadDisk(ctx context.Context) map[string][]string {
 	if !utf8.Valid(raw) || bytes.HasPrefix(raw, []byte("\xef\xbb\xbf")) {
 		return nil
 	}
-	decoded, _, err := pyJSONLoads(raw)
+	decoded, _, err := jsonLoads(raw)
 	if err != nil {
 		return nil
 	}
@@ -217,12 +218,14 @@ func routerLoadDisk(ctx context.Context) map[string][]string {
 		}
 		out := make([]string, 0, len(list))
 		for _, lv := range list {
-			out = append(out, pyStr(lv))
+			if lv != nil {
+				out = append(out, anyutil.String(lv))
+			}
 		}
 		parsed[mid] = out
 	}
 	ts := data["ts"]
-	if !pyTruthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		ts = 0.0
 	}
 	if _, err := catalogFloat(ts); err != nil || len(parsed) == 0 {
@@ -331,8 +334,8 @@ func routerFetchModels(ctx context.Context, apiKey, baseURL string, timeout time
 	routerSeedEfforts(ctx, items)
 	var ids []string
 	for _, it := range items {
-		if obj, ok := it.(map[string]any); ok && pyTruthy(obj["id"]) {
-			if id := pyScalarStr(obj["id"]); !slices.Contains(ids, id) {
+		if obj, ok := it.(map[string]any); ok && anyutil.IsTrue(obj["id"]) {
+			if id := scalarStr(obj["id"]); !slices.Contains(ids, id) {
 				ids = append(ids, id)
 			}
 		}

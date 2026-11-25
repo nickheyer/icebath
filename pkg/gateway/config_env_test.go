@@ -272,7 +272,7 @@ func TestWhatsAppIdentityHelpers(t *testing.T) {
 		t.Fatalf("bad json is skipped %v %v", got, err)
 	}
 	os.WriteFile(filepath.Join(session, "lid-mapping-13.json"), []byte{0xff}, 0o644)
-	if _, err := expandWhatsAppAliases(ctx, "13"); err == nil || !strings.Contains(err.Error(), "can't decode byte 0xff") {
+	if _, err := expandWhatsAppAliases(ctx, "13"); err == nil || !strings.Contains(err.Error(), "lid-mapping-13.json: invalid UTF-8 at byte 0") {
 		t.Fatalf("invalid utf-8 raises %v", err)
 	}
 	r := &ProfileRoute{Enabled: true, Platform: "whatsapp", ChatID: ptr("999@lid")}

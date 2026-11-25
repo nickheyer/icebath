@@ -299,7 +299,7 @@ type logDirOnFailureHandler struct {
 }
 
 // Python logging level name of a slog level
-func pyLevelName(level slog.Level) string {
+func levelName(level slog.Level) string {
 	switch {
 	case level >= slog.LevelError:
 		return "ERROR"
@@ -331,7 +331,7 @@ func (h *logDirOnFailureHandler) Handle(ctx context.Context, r slog.Record) erro
 		return true
 	})
 	stamp := fmt.Sprintf("%s,%03d", r.Time.Format("2006-01-02 15:04:05"), r.Time.Nanosecond()/1e6)
-	line := fmt.Sprintf("%s %s %s: %s\n", stamp, pyLevelName(r.Level), name, r.Message)
+	line := fmt.Sprintf("%s %s %s: %s\n", stamp, levelName(r.Level), name, r.Message)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.file == nil {

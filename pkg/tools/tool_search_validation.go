@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -114,7 +115,7 @@ func validationPath(absolutePath []any) string {
 			if validationIdentifierRe.MatchString(p) {
 				path += "." + p
 			} else {
-				path += "[" + pyDumps(p, jsonutil.Spaced()) + "]"
+				path += "[" + dumps(p, jsonutil.Spaced()) + "]"
 			}
 		case int:
 			path += "[" + strconv.Itoa(p) + "]"
@@ -269,7 +270,7 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 		path, constraint, params)
 }
 
-// ToolCallEntry is one normalized tool_call batch entry, its arguments the dict Python holds
+// ToolCallEntry is one normalized tool_call batch entry, its arguments in the model's key order with integers of any size exact
 type ToolCallEntry struct {
 	Name      string
 	Arguments *jsonutil.Object
@@ -281,7 +282,7 @@ func (e ToolCallEntry) HandlerArgs() map[string]any {
 	return m
 }
 
-// Value in the shapes tool handlers read: plain maps and float64 numbers
+// Value in the shapes tool handlers read: plain maps and float64 numbers, an integer past int64 as its nearest float64
 func handlerShape(v any) any {
 	switch t := v.(type) {
 	case *jsonutil.Object:
@@ -304,6 +305,12 @@ func handlerShape(v any) any {
 		return out
 	case int64:
 		return float64(t)
+	case *big.Int:
+		if t == nil {
+			return nil
+		}
+		f, _ := anyutil.Float(t)
+		return f
 	}
 	return v
 }
@@ -316,7 +323,7 @@ func toolCallEntryName(v any) string {
 	return strings.TrimSpace(anyutil.String(v))
 }
 
-// NormalizeToolCallEntries turns tool_call arguments holding Python values into entries, accepting the legacy single shape
+// NormalizeToolCallEntries turns tool_call arguments into entries, JSON text decoded with integers of any size exact, accepting the legacy single shape
 func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 	rawCalls := args["calls"]
 	if rawCalls == nil {
@@ -326,7 +333,7 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 		rawCalls = []any{jsonutil.ObjectOf("name", args["name"], "arguments", args["arguments"])}
 	}
 	if s, ok := rawCalls.(string); ok {
-		parsed, err := jsonutil.Decode(s)
+		parsed, err := jsonutil.DecodeWith(s, jsonutil.BigInts())
 		if err != nil {
 			return nil, fmt.Sprintf("tool_call 'calls' is not valid JSON: %s", err.Error())
 		}
@@ -357,7 +364,7 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 			rawArgs = jsonutil.NewObject()
 		}
 		if s, isStr := rawArgs.(string); isStr {
-			parsed, err := jsonutil.Decode(s)
+			parsed, err := jsonutil.DecodeWith(s, jsonutil.BigInts())
 			if err != nil {
 				return nil, fmt.Sprintf("tool_call calls[%d].arguments is not valid JSON: %s", position, err.Error())
 			}
@@ -379,13 +386,13 @@ func LocalBatchError(entries []ToolCallEntry) string {
 	return localBatchError(entries[0].Name, entries[0].Arguments, len(entries))
 }
 
-// Batch rejection restating the retry shape with the first entry's own name and arguments in json.dumps form
+// Batch rejection restating the retry shape with the first entry's own name and arguments as compact JSON, numbers exactly as the model sent them
 func localBatchError(name, arguments any, count int) string {
-	args := pyDumps(arguments)
+	args := dumps(arguments)
 	if utf8.RuneCountInString(args) > toolSearchEchoArgsMaxChars {
 		args = "{...}"
 	}
-	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name, jsonutil.Spaced()), args)
+	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, dumps(name), args)
 	remaining := ""
 	if count > 1 {
 		remaining = fmt.Sprintf(" then issue the remaining %d call(s) as separate tool_call invocations", count-1)

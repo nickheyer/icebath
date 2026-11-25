@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Captures facade stdout and stderr for one test
@@ -69,7 +71,7 @@ func TestNumericCoercion(t *testing.T) {
 	check := func(t *testing.T, key, value string, want any, path ...string) {
 		t.Helper()
 		got, ok := setAndRead(t, key, value, path...)
-		if !ok || !pyEq(got, want) || ErrorKind(got) != ErrorKind(want) {
+		if !ok || !anyutil.Equal(got, want) || anyutil.Kind(got) != anyutil.Kind(want) {
 			t.Fatalf("%s=%q saved %#v want %#v", key, value, got, want)
 		}
 	}

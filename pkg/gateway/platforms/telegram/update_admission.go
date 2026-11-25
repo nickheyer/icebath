@@ -1,13 +1,11 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -24,6 +20,7 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Default per adapter bound of concurrently dispatched updates
@@ -150,72 +147,63 @@ func (s *UpdateAdmission) ReceiptPath(botID int64) string {
 	return filepath.Join(s.ReceiptDir, fmt.Sprintf("telegram_update_receipts_%d.json", botID))
 }
 
+// Whether s is one or more ASCII decimal digits
 func isDigitString(s string) bool {
 	if s == "" {
 		return false
 	}
-	for _, r := range s {
-		if !unicode.IsDigit(r) {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
 			return false
 		}
 	}
 	return true
 }
 
-// Python float of a JSON number, ok false for a non number and overflow true for an int past the float range
-func receiptStamp(v any) (f float64, ok, overflow bool) {
+// Seconds of a receipt stamp read from JSON, ok false for a non number or a number past the float range
+func receiptStamp(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
-		return n, true, false
+		return n, !math.IsInf(n, 0) && !math.IsNaN(n)
 	case int64:
-		return float64(n), true, false
-	case bool:
-		if n {
-			return 1, true, false
-		}
-		return 0, true, false
-	case *big.Int:
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, true, math.IsInf(f, 0)
+		return float64(n), true
 	}
-	return 0, false, false
+	return 0, false
 }
 
 // Seeds completed history from disk once per bot before its first admission check
-func (s *UpdateAdmission) loadReceipts(botID int64) error {
+func (s *UpdateAdmission) loadReceipts(botID int64) {
 	s.mu.Lock()
 	if _, ok := s.receiptsLoaded[botID]; ok {
 		s.mu.Unlock()
-		return nil
+		return
 	}
 	s.receiptsLoaded[botID] = struct{}{}
 	s.mu.Unlock()
 	path := s.ReceiptPath(botID)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil
+		return
 	}
 	var payload any
 	if err == nil {
-		raw = bytes.TrimPrefix(raw, []byte("\uFEFF"))
-		if !utf8.Valid(raw) {
-			err = errors.New("UnicodeDecodeError: 'utf-8' codec can't decode the receipt bytes")
-		} else {
-			payload, err = jsonutil.Decode(string(raw))
+		raw = textutil.TrimBOM(raw)
+		if err = textutil.ValidateUTF8(raw); err == nil {
+			payload, err = jsonutil.Decode(raw)
 		}
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[Telegram] Ignoring unreadable update receipts at %s", path), "error", err)
-		return nil
+		return
 	}
 	obj, ok := payload.(*jsonutil.Object)
 	if !ok {
-		return nil
+		return
 	}
 	idsVal, _ := obj.Get("update_ids")
 	ids, ok := idsVal.(*jsonutil.Object)
 	if !ok {
-		return nil
+		return
 	}
 	type stamped struct {
 		ts  float64
@@ -225,12 +213,9 @@ func (s *UpdateAdmission) loadReceipts(botID int64) error {
 	var fresh []stamped
 	for _, uid := range ids.Keys() {
 		v, _ := ids.Get(uid)
-		ts, isNumber, overflow := receiptStamp(v)
+		ts, isNumber := receiptStamp(v)
 		if !isNumber || !(ts > cutoff) || !isDigitString(strings.TrimLeft(uid, "-")) {
 			continue
-		}
-		if overflow {
-			return errors.New("OverflowError: int too large to convert to float")
 		}
 		fresh = append(fresh, stamped{ts, uid})
 	}
@@ -251,7 +236,6 @@ func (s *UpdateAdmission) loadReceipts(botID int64) error {
 			gateway.BoundedPut(s.seen, key, f.ts, seenCap)
 		}
 	}
-	return nil
 }
 
 // Records a completed update and starts the coalescing receipt writer when none is running
@@ -553,9 +537,7 @@ func (t *TelegramApplication) processUpdate(ctx context.Context, update any) err
 		return t.Application.processUpdate(ctx, update)
 	}
 	key := fmt.Sprintf("%d:%d", t.BotID, u.UpdateID)
-	if err := t.state.loadReceipts(t.BotID); err != nil {
-		return err
-	}
+	t.state.loadReceipts(t.BotID)
 	t.state.mu.Lock()
 	t.state.updatesDispatchedTotal++
 	_, pending := t.state.inflight[key]

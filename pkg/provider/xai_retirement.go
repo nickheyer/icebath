@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -115,7 +116,7 @@ func FindRetiredXAIRefs(cfg any) []RetirementIssue {
 
 // FormatRetirementIssue renders one retirement issue as a single human readable line
 func FormatRetirementIssue(issue RetirementIssue) string {
-	parts := []string{fmt.Sprintf("%s: %s → use %s", issue.ConfigPath, pyStringRepr(issue.CurrentModel), pyStringRepr(issue.Replacement))}
+	parts := []string{fmt.Sprintf("%s: %s → use %s", issue.ConfigPath, strconv.Quote(issue.CurrentModel), strconv.Quote(issue.Replacement))}
 	if issue.ReasoningEffort != "" {
 		parts = append(parts, fmt.Sprintf("(set reasoning_effort: %q)", issue.ReasoningEffort))
 	}
@@ -138,7 +139,7 @@ func xaiWalkToParent(doc any, dottedPath string) (map[string]any, string, bool, 
 	segments := strings.Split(dottedPath, ".")
 	parents, leaf := segments[:len(segments)-1], segments[len(segments)-1]
 	if len(parents) == 0 {
-		return nil, "", false, fmt.Errorf("Path must have at least one parent: %s", pyStringRepr(dottedPath))
+		return nil, "", false, fmt.Errorf("Path must have at least one parent: %s", strconv.Quote(dottedPath))
 	}
 	node := doc
 	for _, segment := range parents {
@@ -154,7 +155,7 @@ func xaiWalkToParent(doc any, dottedPath string) (map[string]any, string, bool, 
 	}
 	parent, ok := node.(map[string]any)
 	if !ok {
-		return nil, "", false, fmt.Errorf("Path parent of %s is not a mapping", pyStringRepr(dottedPath))
+		return nil, "", false, fmt.Errorf("Path parent of %s is not a mapping", strconv.Quote(dottedPath))
 	}
 	return parent, leaf, true, nil
 }

@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decodes JSON the way json loads does, numbers normalized to Python's own spelling and NaN or Infinity accepted
 func loadJSON(data []byte) (any, error) {
-	dec := json.NewDecoder(bytes.NewReader(pyJSONSource(trimBOM(data))))
+	dec := json.NewDecoder(bytes.NewReader(jsonSource(trimBOM(data))))
 	dec.UseNumber()
 	var v any
 	if err := dec.Decode(&v); err != nil {
@@ -24,14 +26,14 @@ func loadJSON(data []byte) (any, error) {
 	return normalizePyJSON(v), nil
 }
 
-// pyFloatSpecial is a NaN or infinite float, spelled NaN, Infinity or -Infinity
-type pyFloatSpecial string
+// floatSpecial is a NaN or infinite float, spelled NaN, Infinity or -Infinity
+type floatSpecial string
 
 // Prefix of the string sentinels that carry NaN and Infinity tokens through Go's strict decoder
 const specialSentinel = "\x00\x00pyjson-special:"
 
 // Rewrites bare NaN, Infinity and -Infinity tokens outside strings into sentinel strings
-func pyJSONSource(in []byte) []byte {
+func jsonSource(in []byte) []byte {
 	if !bytes.Contains(in, []byte("NaN")) && !bytes.Contains(in, []byte("Infinity")) {
 		return in
 	}
@@ -86,17 +88,17 @@ func normalizePyJSON(v any) any {
 		return t
 	case string:
 		if strings.HasPrefix(t, specialSentinel) {
-			return pyFloatSpecial(strings.TrimPrefix(t, specialSentinel))
+			return floatSpecial(strings.TrimPrefix(t, specialSentinel))
 		}
 		return t
 	case json.Number:
-		return pyNumberText(t)
+		return numberText(t)
 	}
 	return v
 }
 
-// Python spelling of a decoded number, integers as int text and others as float repr
-func pyNumberText(n json.Number) any {
+// Decoded number as dumpsJSON writes it back: an integer as read with -0 as 0, any other number as the shortest float text that still reads as a float (100000.0, 0.00001, -1.5e-7), one too large becoming an infinity
+func numberText(n json.Number) any {
 	text := n.String()
 	if !strings.ContainsAny(text, ".eE") {
 		if text == "-0" {
@@ -106,15 +108,19 @@ func pyNumberText(n json.Number) any {
 	}
 	f, err := strconv.ParseFloat(text, 64)
 	if math.IsInf(f, 1) {
-		return pyFloatSpecial("Infinity")
+		return floatSpecial("Infinity")
 	}
 	if math.IsInf(f, -1) {
-		return pyFloatSpecial("-Infinity")
+		return floatSpecial("-Infinity")
 	}
 	if err != nil {
 		return n
 	}
-	return json.Number(strconv.FormatFloat(f, 'f', -1, 64))
+	text, err = jsonutil.Encode(f)
+	if err != nil {
+		return n
+	}
+	return json.Number(text)
 }
 
 // Replaces NaN and Infinity values with sentinel strings the encoder accepts, nil mappings staying null
@@ -144,7 +150,7 @@ func encodeSpecials(v any) any {
 			out.Set(k, encodeSpecials(t.Values[k]))
 		}
 		return out
-	case pyFloatSpecial:
+	case floatSpecial:
 		return specialSentinel + string(t)
 	}
 	return v
@@ -171,13 +177,13 @@ func dumpsJSON(v any, indent bool) ([]byte, error) {
 	}
 	out := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	if !indent {
-		out = pySeparators(out)
+		out = separators(out)
 	}
 	return restoreSpecials(asciiEscape(out)), nil
 }
 
 // Rewrites compact Go separators into Python's default comma space and colon space outside strings
-func pySeparators(in []byte) []byte {
+func separators(in []byte) []byte {
 	out := make([]byte, 0, len(in)+len(in)/8)
 	inString, escaped := false, false
 	for _, b := range in {
@@ -224,10 +230,13 @@ func asciiEscape(in []byte) []byte {
 	return out
 }
 
-// Python repr of a NaN or infinite float
-func (s pyFloatSpecial) PyRepr() string {
-	return map[pyFloatSpecial]string{"NaN": "nan", "Infinity": "inf", "-Infinity": "-inf"}[s]
+// Float value of a NaN or infinite float, so that messages name it a number
+func (s floatSpecial) Float64() (float64, error) {
+	switch s {
+	case "Infinity":
+		return math.Inf(1), nil
+	case "-Infinity":
+		return math.Inf(-1), nil
+	}
+	return math.NaN(), nil
 }
-
-// Python type name of a NaN or infinite float
-func (s pyFloatSpecial) ErrorKind() string { return "float" }

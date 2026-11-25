@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -84,7 +83,7 @@ func (d LoginBackendDefaults) ResolveSecret(handle string) (map[string]string, e
 
 // Python str of a value, empty for None and every other falsy value
 func vaultText(v any) string {
-	if !config.PyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {

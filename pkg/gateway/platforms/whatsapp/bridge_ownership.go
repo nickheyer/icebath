@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -122,7 +123,7 @@ func StandaloneBridgePort(home string, explicit any) (int, error) {
 	return port, nil
 }
 
-// Integer of a configured bridge_port the way int() reads it, ValueError text otherwise
+// Integer of a configured bridge_port: a number cut toward zero, true and false as 1 and 0, or decimal text; an error naming the setting otherwise
 func portFromConfig(v any) (int, error) {
 	switch x := v.(type) {
 	case int:
@@ -140,9 +141,9 @@ func portFromConfig(v any) (int, error) {
 		if p, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
 			return p, nil
 		}
-		return 0, fmt.Errorf("invalid literal for int() with base 10: '%s'", x)
+		return 0, fmt.Errorf("bridge_port %q is not a whole number", x)
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%T'", v)
+	return 0, fmt.Errorf("bridge_port must be a number, got %s", anyutil.Kind(v))
 }
 
 // Free for an unbound port, ours when this profile's pidfile names the live process spawned on it, else an error
