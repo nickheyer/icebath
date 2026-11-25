@@ -37,7 +37,6 @@ jobs:
           [ "$(gh api repos/nickheyer/winget-pkgs -q '.fork and .parent.full_name == "microsoft/winget-pkgs" and .permissions.push')" = true ] \
             || { echo "::error::WINGET_TOKEN cannot push to nickheyer/winget-pkgs, a fork of microsoft/winget-pkgs"; exit 1; }
       # - run: go vet -tags goolm ./...
-      # The terminal UI tests drive the real binary in a terminal emulator on a private X display and skip without these
       - name: Install the display server and terminal emulators of the terminal UI tests
         run: sudo apt-get -o Acquire::Retries=3 update -qq && sudo apt-get -o Acquire::Retries=3 install -qq -y --no-install-recommends xvfb xterm konsole
       - run: make test

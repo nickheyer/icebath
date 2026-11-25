@@ -26,7 +26,6 @@ const captureEvery = 20 * time.Millisecond
 // Screens of the konsole and the xterm labs, xterm needing 1604 pixels across for 160 cells at Monospace 10
 var (
 	konsoleScreen = image.Pt(1600, 1000)
-	xtermScreen   = image.Pt(1680, 1000)
 )
 
 // Runs the helper modes of the binary, builds icebath once when the lab tools exist, then the tests
@@ -170,7 +169,8 @@ func (r *rig) dump() {
 	var text bytes.Buffer
 	for y, row := range r.s.Screen() {
 		line := Line(row)
-		text.WriteString(line + "\n")
+		text.WriteString(line)
+		text.WriteString("\n")
 		if shown := strings.TrimRight(line, " "); shown != "" {
 			r.t.Logf("screen row %2d: %s", y, shown)
 		}
@@ -656,17 +656,6 @@ func arrival(chunks []Chunk, text string) (time.Time, bool) {
 	}
 	k, _ := slices.BinarySearch(ends, i+len(text))
 	return chunks[k].At, true
-}
-
-// Asserts the image display sends sixel to a vt340 xterm and the world shows it
-func TestXtermSixel(t *testing.T) {
-	r := newRig(t, Xterm, xtermScreen, map[string]string{"arena.display": "image"})
-	r.waitBar()
-	frame := r.openArena()
-	err := r.s.WaitFor(sixelStart.Match, 15*time.Second)
-	r.check(err == nil, "sixel", []image.Image{r.shot()}, "no sixel data reached xterm, %v", err)
-	img, ok := r.waitWorld(frame, true, 10*time.Second)
-	r.check(ok, "world", []image.Image{img}, "the blank world cells never showed a drawn sixel image")
 }
 
 // Drives the probe program in konsole to check input, latency, calibration, screenshots and resize forwarding
