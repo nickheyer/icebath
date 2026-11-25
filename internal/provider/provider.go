@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -139,6 +140,43 @@ func ModelsURL(base string) string {
 		return ""
 	}
 	return strings.TrimRight(base, "/") + "/models"
+}
+
+func BaseHost(base string) string {
+	parsed, ok := parseBase(base)
+	if !ok {
+		return ""
+	}
+	return strings.TrimRight(strings.ToLower(parsed.Hostname()), ".")
+}
+
+func BasePath(base string) string {
+	parsed, ok := parseBase(base)
+	if !ok {
+		return ""
+	}
+	return strings.TrimRight(strings.ToLower(parsed.Path), "/")
+}
+
+func BaseHostMatches(base, domain string) bool {
+	host := BaseHost(base)
+	domain = strings.TrimRight(strings.ToLower(strings.TrimSpace(domain)), ".")
+	return host != "" && domain != "" && (host == domain || strings.HasSuffix(host, "."+domain))
+}
+
+func parseBase(base string) (*url.URL, bool) {
+	raw := strings.TrimSpace(base)
+	if raw == "" {
+		return nil, false
+	}
+	scheme := strings.IndexFunc(raw, func(r rune) bool {
+		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+-.", r)
+	})
+	if !strings.HasPrefix(raw, "//") && (scheme <= 0 || !strings.HasPrefix(raw[scheme:], "://")) {
+		raw = "//" + raw
+	}
+	parsed, err := url.Parse(raw)
+	return parsed, err == nil
 }
 
 func (p Profile) Label() string {

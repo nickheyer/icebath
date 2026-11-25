@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/config"
 	toolsconfig "github.com/nickheyer/icebath/internal/tools/config"
-	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type Handler func(ctx context.Context, call *Call) string
@@ -18,7 +18,7 @@ type Handler func(ctx context.Context, call *Call) string
 type Def struct {
 	Name           string
 	Toolset        string
-	Schema         *jsonutil.Object
+	Schema         map[string]any
 	Handler        Handler
 	Check          func(env *Env) bool
 	MaxResultChars int
@@ -64,8 +64,8 @@ func (r *Registry) Definitions(env *Env) []map[string]any {
 	slices.SortFunc(defs, func(a, b Def) int { return cmp.Compare(a.Name, b.Name) })
 	definitions := make([]map[string]any, len(defs))
 	for i, def := range defs {
-		schema := def.Schema.Clone()
-		schema.Set("name", def.Name)
+		schema := maps.Clone(def.Schema)
+		schema["name"] = def.Name
 		definitions[i] = map[string]any{"type": "function", "function": schema}
 	}
 	return definitions
@@ -93,8 +93,9 @@ func (r *Registry) dispatch(ctx context.Context, call *Call) string {
 		if err := json.Unmarshal([]byte(cmp.Or(call.RawArgs, "{}")), &call.Args); err != nil {
 			return ErrorResult(fmt.Errorf("arguments are not a JSON object: %w", err))
 		}
-		parameters, _ := jsonutil.AsObject(def.Schema.Value("parameters"))
-		for _, name := range names(parameters.Value("required")) {
+		parameters, _ := def.Schema["parameters"].(map[string]any)
+		required, _ := parameters["required"].([]string)
+		for _, name := range required {
 			if _, ok := call.Args[name]; !ok {
 				return ErrorResult(fmt.Errorf("missing argument %s", name))
 			}
@@ -112,22 +113,6 @@ func (r *Registry) available(env *Env) []Def {
 		}
 	}
 	return defs
-}
-
-func names(value any) []string {
-	switch list := value.(type) {
-	case []string:
-		return list
-	case []any:
-		names := make([]string, 0, len(list))
-		for _, item := range list {
-			if name, ok := item.(string); ok {
-				names = append(names, name)
-			}
-		}
-		return names
-	}
-	return nil
 }
 
 type Tools struct {
@@ -153,15 +138,15 @@ func Bind[T any](run func(ctx context.Context, call *Call, args T) (string, erro
 	}
 }
 
-func Schema(description string, required []string, properties ...any) *jsonutil.Object {
-	return jsonutil.ObjectOf(
-		"description", description,
-		"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf(properties...), "required", required),
-	)
+func Schema(description string, required []string, properties map[string]any) map[string]any {
+	return map[string]any{
+		"description": description,
+		"parameters":  map[string]any{"type": "object", "properties": properties, "required": required},
+	}
 }
 
-func Property(kind, description string) *jsonutil.Object {
-	return jsonutil.ObjectOf("type", kind, "description", description)
+func Property(kind, description string) map[string]any {
+	return map[string]any{"type": kind, "description": description}
 }
 
 func ErrorResult(err error) string {
