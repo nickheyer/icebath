@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/utils/fnmatch"
 )
 
 // Names in one directory listing that a tree copy skips

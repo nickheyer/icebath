@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package icebath.plugins.apluginexample.v1;
+
+service ExampleService {
+  rpc Greet(GreetRequest) returns (GreetResponse);
+}
+
+message GreetRequest {}
+
+message GreetResponse {
+  string greeting = 1;
+}

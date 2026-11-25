@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/homeguard"
+	"github.com/nickheyer/icebath/pkg/utils/homeguard"
 )
 
 // Local account and group databases, read before the system directory is asked

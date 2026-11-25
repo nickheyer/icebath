@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/homeguard"
+	"github.com/nickheyer/icebath/pkg/utils/homeguard"
 )
 
 // Error of a home directory lookup that found nothing

@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package icebath.plugins.agent.v1;
+
+import "icebath/sessions/v1/sessions.proto";
+
+service AgentService {
+  rpc Send(SendRequest) returns (SendResponse);
+  rpc Stop(StopRequest) returns (StopResponse);
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
+}
+
+message Delta {
+  string text = 1;
+  string reasoning = 2;
+}
+
+message Approval {
+  string command = 1;
+  string reason = 2;
+}
+
+message Rewind {
+  uint32 messages = 1;
+}
+
+message SendRequest {
+  string session_id = 1;
+  string text = 2;
+}
+
+message SendResponse {}
+
+message StopRequest {
+  string session_id = 1;
+}
+
+message StopResponse {}
+
+message WatchRequest {
+  string session_id = 1;
+}
+
+message WatchResponse {
+  oneof event {
+    icebath.sessions.v1.Message message = 1;
+    Delta delta = 2;
+    Approval approval = 3;
+    string notice = 4;
+    bool busy = 5;
+    Rewind rewind = 6;
+  }
+}

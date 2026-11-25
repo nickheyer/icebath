@@ -159,10 +159,14 @@ func UDiff(before, after string) string {
 		}
 		fmt.Fprintf(&out, "@@ -%d,%d +%d,%d @@\n", op.I1+1, op.I2-op.I1, op.J1+1, op.J2-op.J1)
 		for _, l := range a[op.I1:op.I2] {
-			out.WriteString("-" + l + "\n")
+			out.WriteString("-")
+			out.WriteString(l)
+			out.WriteString("\n")
 		}
 		for _, l := range b[op.J1:op.J2] {
-			out.WriteString("+" + l + "\n")
+			out.WriteString("+")
+			out.WriteString(l)
+			out.WriteString("\n")
 		}
 	}
 	return out.String()

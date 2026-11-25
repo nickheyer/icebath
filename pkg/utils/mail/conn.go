@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	"github.com/nickheyer/icebath/pkg/utils/netpref"
 )
 
 // Function that opens a network connection, the shape of net.Dialer.DialContext

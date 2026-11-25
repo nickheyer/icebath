@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package icebath.provider.v1;
+
+service ProviderService {
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Models(ModelsRequest) returns (ModelsResponse);
+}
+
+message Provider {
+  string name = 1;
+  string display_name = 2;
+  string description = 3;
+  string signup_url = 4;
+  string base_url = 5;
+  string api_mode = 6;
+  string default_model = 7;
+  repeated string aliases = 8;
+  bool local = 9;
+  bool aggregator = 10;
+  string credential_source = 11;
+  repeated string key_env = 12;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Provider providers = 1;
+}
+
+message ModelsRequest {
+  string provider = 1;
+}
+
+message ModelsResponse {
+  repeated string models = 1;
+}

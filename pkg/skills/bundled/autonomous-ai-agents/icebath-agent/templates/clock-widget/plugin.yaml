@@ -1,6 +1,0 @@
-name: clock-widget
-version: 0.1.0
-description: Live clock beside the transcript of the terminal UI
-runtime: program
-entry:
-  - clock-widget

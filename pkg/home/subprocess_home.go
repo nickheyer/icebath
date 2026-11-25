@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/homeguard"
+	"github.com/nickheyer/icebath/pkg/utils/homeguard"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 

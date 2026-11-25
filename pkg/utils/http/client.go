@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	"github.com/nickheyer/icebath/pkg/utils/netpref"
 )
 
 // Redirects a client following them takes before it gives up

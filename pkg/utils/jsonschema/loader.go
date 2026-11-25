@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	"github.com/nickheyer/icebath/pkg/utils/netpref"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"

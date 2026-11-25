@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package icebath.sessions.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service SessionService {
+  rpc Create(CreateRequest) returns (CreateResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Rename(RenameRequest) returns (RenameResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_USER = 1;
+  ROLE_ASSISTANT = 2;
+  ROLE_TOOL = 3;
+  ROLE_SYSTEM = 4;
+}
+
+message Session {
+  string id = 1;
+  string title = 2;
+  string directory = 3;
+  google.protobuf.Timestamp created = 4;
+  google.protobuf.Timestamp updated = 5;
+}
+
+message ToolCall {
+  string id = 1;
+  string name = 2;
+  string arguments = 3;
+}
+
+message Message {
+  Role role = 1;
+  string text = 2;
+  string reasoning = 3;
+  repeated ToolCall tool_calls = 4;
+  string tool_call_id = 5;
+  bool failed = 6;
+  map<string, bytes> carriers = 7;
+}
+
+message CreateRequest {
+  string directory = 1;
+}
+
+message CreateResponse {
+  Session session = 1;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated Session sessions = 1;
+}
+
+message GetRequest {
+  string id = 1;
+}
+
+message GetResponse {
+  Session session = 1;
+  repeated Message messages = 2;
+}
+
+message RenameRequest {
+  string id = 1;
+  string title = 2;
+}
+
+message RenameResponse {}
+
+message DeleteRequest {
+  string id = 1;
+}
+
+message DeleteResponse {}

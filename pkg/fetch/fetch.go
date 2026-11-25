@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	"github.com/nickheyer/icebath/pkg/utils/netpref"
 )
 
 // One downloadable file pinned by size and sha256

@@ -5,139 +5,102 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/app"
-	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/settings"
-	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
-	"github.com/spf13/cobra"
+	"connectrpc.com/connect/v2"
+
+	"github.com/nickheyer/icebath/internal/app"
+	"github.com/nickheyer/icebath/internal/cli"
+	"github.com/nickheyer/icebath/internal/client"
+	"github.com/nickheyer/icebath/internal/config"
+	configapp "github.com/nickheyer/icebath/internal/config/app"
+	configserver "github.com/nickheyer/icebath/internal/config/server"
+	"github.com/nickheyer/icebath/internal/credentials"
+	"github.com/nickheyer/icebath/internal/models"
+	"github.com/nickheyer/icebath/internal/plugins"
+	"github.com/nickheyer/icebath/internal/plugins/defaults"
+	"github.com/nickheyer/icebath/internal/provider"
+	providerapp "github.com/nickheyer/icebath/internal/provider/app"
+	providercli "github.com/nickheyer/icebath/internal/provider/cli"
+	providerserver "github.com/nickheyer/icebath/internal/provider/server"
+	"github.com/nickheyer/icebath/internal/server"
+	"github.com/nickheyer/icebath/internal/sessions"
+	sessionsserver "github.com/nickheyer/icebath/internal/sessions/server"
+	"github.com/nickheyer/icebath/internal/slash"
+	"github.com/nickheyer/icebath/internal/state"
+	statecli "github.com/nickheyer/icebath/internal/state/cli"
+	"github.com/nickheyer/icebath/internal/tools"
+	"github.com/nickheyer/icebath/internal/transport"
 )
 
-// Mirrors the import time sequence of and then its main
 func main() {
-	defer refuseWithoutDataHome()
-	if code, ok := runTierArgvEntries(os.Args); ok {
-		os.Exit(code)
-	}
-	if code, ok := runNixModuleVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
-		os.Exit(code)
-	}
-	if code, ok := runSQLiteRuntimeVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
-		os.Exit(code)
-	}
-	runStartupPhase(phaseBeforeStart, os.Args)
-	startProcess(context.Background())
-	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
-	runStartupPhase(phaseAfterLauncher, os.Args)
-	os.Args = args
-	pm.PinLauncherHome()
-	runStartupPhase(phaseAfterPinHome, os.Args)
-	if legacy, ok := app.LegacyAgentArgv(os.Args); ok {
-		exit(app.LegacyAgentMain(context.Background(), legacy, os.Stdout, os.Stderr, nil))
-	}
-	printLauncherRuntimeCommand(pinned)
-	normalizeHomeEnv()
-	bootLaunch()
-	argv := os.Args[1:]
-	if argvIsGatewayRun(argv) {
-		armStartupWatchdog()
-	}
-	suppressMouseResidueEarly(argv)
-	pm.EnsureProjectRootOnPath()
-	if tryFastVersion(argv) {
-		exit(0)
-	}
-	argv = applyProfileOverride(argv)
-	if first, _ := firstPositional(argv); first != "uninstall" {
-		home.ExportScratchTmpEnv(context.Background())
-	}
-	if len(argv) > 0 && argv[0] == "pm" {
-		exit(runCLI(argv))
-	}
-	runStartupPhase(phaseBeforeDotenv, os.Args)
-	loadDotenv()
-	if serverProcess(argv) {
-		applyMallocArenaMax()
-	}
-	setupLogging()
-	if settings.NetworkForceIpv4.Get(context.Background()) {
-		home.ApplyIPv4Preference(true)
-	}
-	exit(run(argv))
-}
-
-// The body of main.py main(), the exit status of the dispatched command
-func run(argv []string) int {
-	setProcessTitle()
-	warnIfUnsupervisedPID1(os.Getpid())
-	advertiseAgentEnv()
-	installTruststore()
-	runStartupPhase(phaseRun, argv)
-	for _, fast := range []func([]string) (bool, int){tryTermuxFastTUILaunch, tryTermuxFastCLILaunch, tryFastChatLaunch} {
-		if handled, code := fast(argv); handled {
-			return code
-		}
-	}
-	if info := containerExecInfo(); info != nil {
-		execInContainer(info, os.Args[1:])
-		return 1
-	}
-	return runCLI(argv)
-}
-
-// Parses argv with the cobra tree and runs the bound handler, the pre run doing main()'s post parse steps
-func runCLI(argv []string) int {
-	cli := newCLI()
-	cli.Root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		return beforeDispatch(cli, cmd, args)
-	}
-	code, msg := commands.ExitCode(cli.Execute(argv))
-	if msg != "" {
-		fmt.Fprintln(os.Stderr, msg)
-	}
-	return code
-}
-
-// Version flag, yolo chokepoint, agent startup discovery, oneshot and the process surface before a handler runs
-func beforeDispatch(cli *commands.CLI, cmd *cobra.Command, args []string) error {
-	if v, _ := cli.Root.Flags().GetBool("version"); v {
-		printVersionInfo(true)
-		return &commands.ExitError{Code: 0}
-	}
-	a := parsedArgs(cli, cmd, args)
-	if a.Yolo {
-		os.Setenv("ICEBATH_YOLO_MODE", "1")
-	}
-	if code := adoptStdinQuery(a); code != 0 {
-		return &commands.ExitError{Code: code}
-	}
-	prepareAgentStartup(a)
-	if a.Oneshot != "" {
-		return &commands.ExitError{Code: runOneshotFromArgs(a)}
-	}
-	return nil
-}
-
-// Ends the process with the reason, not a stack trace, when it panicked because neither ICEBATH_HOME nor a user home names a folder for the data
-func refuseWithoutDataHome() {
-	r := recover()
-	if r == nil {
-		return
-	}
-	if err, ok := r.(error); ok && errors.Is(err, pathutil.ErrNoHome) {
-		cliui.RestoreTerminal()
-		fmt.Fprintln(os.Stderr, "icebath: "+err.Error())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	context.AfterFunc(ctx, stop) // a second signal kills
+	if err := run(ctx, os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "icebath:", err)
 		os.Exit(1)
 	}
-	panic(r)
 }
 
-// Runs the registered exit hooks and ends the process with code
-func exit(code int) {
-	runAtExit()
-	cliui.RestoreTerminal()
-	os.Exit(code)
+func run(ctx context.Context, args []string) (err error) {
+	userDir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(userDir, "icebath")
+
+	st, err := state.Load(dir)
+	if err != nil {
+		return err
+	}
+
+	cfg := config.New(dir)
+	srv := server.New(cfg)
+	a := app.New()
+	c := cli.New()
+	p := provider.New()
+	t := transport.New()
+	cr := credentials.New()
+	m := models.New()
+	tl := tools.New(cfg)
+	s := sessions.New(cfg)
+	sl := slash.New()
+	statecli.Register(c, st)
+	configserver.Register(srv, cfg)
+	configapp.Register(a)
+	providerserver.Register(srv, p, cr, m)
+	providerapp.Register(a)
+	providercli.Register(c)
+	sessionsserver.Register(srv, cfg, s)
+	defaults.Register(plugins.New(cfg, srv, a, c, p, t, cr, m, tl, s, sl))
+	defer func() {
+		err = errors.Join(err, srv.Close(), s.Close())
+	}()
+
+	if len(args) > 0 && args[0] == "server" {
+		if len(args) > 1 {
+			return errors.New("server takes no arguments")
+		}
+		if err := cfg.Load(); err != nil {
+			return err
+		}
+		return srv.Serve(ctx)
+	}
+
+	var conn *connect.Client
+	if st.Backend != "" {
+		conn = client.Remote(st.Backend)
+	} else {
+		conn = client.InProcess(srv.Services())
+		if err := cfg.Load(); err != nil {
+			return err
+		}
+	}
+
+	if len(args) == 0 {
+		return a.Run(ctx, conn)
+	}
+	return c.Run(ctx, conn, args)
 }

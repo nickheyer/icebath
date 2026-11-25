@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/utils/fnmatch"
 )
 
 // Operation a tree removal failed at, which an error handler may run again on the same path once it fixed the cause

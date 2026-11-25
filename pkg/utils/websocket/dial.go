@@ -16,7 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	"github.com/nickheyer/icebath/pkg/utils/netpref"
 )
 
 // Opens a client connection to a ws, wss, http or https URL, user info in the URL sent as basic authorization; ctx bounds only the opening handshake, whose failure is ctx's own error, an ErrInvalidURL error, a *HandshakeError, an *OpenTimeoutError or a *ConnectError

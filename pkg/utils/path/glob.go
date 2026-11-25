@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/utils/fnmatch"
 )
 
 // Pattern walk state: the pattern elements, whether only directories may match, and the matches found
