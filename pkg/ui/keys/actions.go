@@ -244,6 +244,7 @@ var registry = func() []Action {
 		quiet(act("list.bottom", List, "last", "move to the last row", "end", "G")),
 		quiet(act("list.page.up", List, "page up", "move up one page", "pgup")),
 		quiet(act("list.page.down", List, "page down", "move down one page", "pgdown")),
+		act("list.detail", List, "whole row", "show or hide the whole text of the highlighted row, every column at full length", "i"),
 
 		act("filter.toggle", Filter, "filter", "open the filter bar or clear the active filter", "/"),
 

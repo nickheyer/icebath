@@ -100,6 +100,9 @@ func NewList(env *Env, spec ListSpec) *List {
 	if len(spec.Yield) > 0 && spec.Rows != nil {
 		l.lister.rows = l.shownRows
 	}
+	if spec.Detail == nil && spec.Rows != nil {
+		l.lister.detail = l.whole
+	}
 	l.actions = make(map[string]func(*lister, int) tea.Cmd, len(spec.Actions))
 	for id, fn := range spec.Actions {
 		l.actions[id] = func(_ *lister, i int) tea.Cmd { return fn(l, i) }
@@ -165,9 +168,51 @@ func (l *List) answers(id string) bool {
 	return ok
 }
 
+// Every column of row i at full length, the detail of a list whose spec has none
+func (l *List) whole(i int) []string {
+	rows := l.allRows()
+	if i < 0 || i >= len(rows) {
+		return nil
+	}
+	var lines []string
+	for c, cell := range rows[i] {
+		if strings.TrimSpace(ansi.Strip(cell)) == "" {
+			continue
+		}
+		if c < len(l.all) && l.all[c].Title != "" {
+			cell = render.Heading(l.all[c].Title, l.env.Theme) + "  " + cell
+		}
+		lines = append(lines, cell)
+	}
+	return lines
+}
+
+// Reports whether the table shows less than the whole of row i: a cell cut short, or a column that gave way holding text
+func (l *List) cut(i int) bool {
+	if l.lister.cut(i) {
+		return true
+	}
+	if len(l.keep) == 0 || len(l.keep) == len(l.all) {
+		return false
+	}
+	rows := l.allRows()
+	if i < 0 || i >= len(rows) {
+		return false
+	}
+	for c, cell := range rows[i] {
+		if !slices.Contains(l.keep, c) && strings.TrimSpace(ansi.Strip(cell)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // Legend of the table, a pick list naming its filter bar keys for what they do there: enter picks and esc goes back
 func (l *List) Hints() []wm.Hint {
 	out := l.lister.Hints()
+	if l.detail != nil && !l.bar.Active() && l.edit == nil && l.ask == nil && l.capture == nil && !l.typing() && (l.detailShown() || l.cut(l.index())) {
+		out = append(out, wm.Hint{Action: "list.detail"})
+	}
 	if !l.pick {
 		return out
 	}

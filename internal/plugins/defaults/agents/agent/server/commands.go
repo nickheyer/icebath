@@ -83,6 +83,7 @@ func (a *Agent) rewind(r *run, count int) (string, error) {
 		if err := store.Truncate(r.id, keep); err != nil {
 			return "", err
 		}
+		r.forget(keep)
 		r.publish(&agentv1.WatchResponse{Event: &agentv1.WatchResponse_Rewind{Rewind: &agentv1.Rewind{Messages: uint32(keep)}}})
 		return messages[keep].GetText(), nil
 	}

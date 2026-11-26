@@ -415,6 +415,11 @@ func (l *lister) act(id string) tea.Cmd {
 	case "list.down", "list.up", "list.top", "list.bottom", "list.page.down", "list.page.up":
 		l.sel = listMove(id, l.sel, len(l.shown), l.h-render.TableHead)
 		return nil
+	case "list.detail":
+		if l.detail != nil && l.index() >= 0 {
+			l.expanded = !l.expanded
+		}
+		return nil
 	}
 	if l.pane.act(id) {
 		l.refresh()
@@ -596,6 +601,19 @@ func (l *lister) Hints() []wm.Hint {
 		out = append(out, wm.Hint{Action: "detail.scroll.down", Pair: "detail.scroll.up", Label: lang.T(txt.KitHintScrollDetail)})
 	}
 	return out
+}
+
+// Reports whether the table cuts short a cell of row i at the last paint
+func (l *lister) cut(i int) bool {
+	if i < 0 || i >= len(l.data) {
+		return false
+	}
+	for c, cell := range l.data[i] {
+		if k := c + l.shift; k < len(l.widths) && ansi.StringWidth(cell) > l.widths[k] {
+			return true
+		}
+	}
+	return false
 }
 
 func toggleDetail(l *lister, i int) tea.Cmd {

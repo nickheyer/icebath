@@ -217,6 +217,10 @@ func (c *chat) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		if cmd, ok := c.local(msg.Text); ok {
 			return c, cmd
 		}
+		if name, ok := c.unknown(msg.Text); ok {
+			c.note = "no command /" + name + ": try /help"
+			return c, c.composer.SetValue(msg.Text)
+		}
 		return c, c.send(msg.Text)
 	}
 	return c, nil

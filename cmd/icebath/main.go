@@ -73,7 +73,7 @@ func run(ctx context.Context, args []string) (err error) {
 	statecli.Register(c, st)
 	configserver.Register(srv, cfg)
 	configapp.Register(a)
-	providerserver.Register(srv, p, cr, m)
+	providerserver.Register(srv, cfg, p, cr, m)
 	providerapp.Register(a)
 	providercli.Register(c)
 	sessionsserver.Register(srv, cfg, s)

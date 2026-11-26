@@ -627,10 +627,9 @@ func (m *Model) paintToasts() {
 		return
 	}
 	t := m.theme
-	limit := max(10, m.width/2)
 	base := lipgloss.NewStyle().Background(t.Surface)
-	for i, tt := range m.toasts {
-		y := barHeight + i*toastGap
+	y := barHeight
+	for _, tt := range m.toasts {
 		if y >= m.height {
 			break
 		}
@@ -643,17 +642,42 @@ func (m *Model) paintToasts() {
 		case Error:
 			glyph, fg = t.Glyphs.Fail, t.Alarm
 		}
-		text := ansi.Truncate(tt.text, limit-4, t.Glyphs.Ellipsis)
-		label := base.Render(" ") + base.Foreground(fg).Bold(true).Render(glyph) + base.Render(" ") + base.Foreground(t.Text).Render(text) + base.Render(" ")
-		lw := ansi.StringWidth(label)
+		lines := m.toastLines(tt.text)
+		gw := ansi.StringWidth(glyph)
+		labels := make([]string, len(lines))
+		lw := 0
+		for j, line := range lines {
+			mark := base.Render(strings.Repeat(" ", gw))
+			if j == 0 {
+				mark = base.Foreground(fg).Bold(true).Render(glyph)
+			}
+			labels[j] = base.Render(" ") + mark + base.Render(" ") + base.Foreground(t.Text).Render(line) + base.Render(" ")
+			lw = max(lw, ansi.StringWidth(labels[j]))
+		}
 		slide := min(max(tt.x.Pos, 0), 1)
 		x := m.width - m.gapOutX - lw + int(math.Round(tt.x.Pos*float64(lw+m.gapOutX)))
 		alpha := 1 - slide
-		m.pad(x-1, y, lw+2, alpha)
-		face := m.face(lw, 1)
-		uv.NewStyledString(label).Draw(face, uv.Rect(0, 0, lw, 1))
-		m.stamp(face, placed{x: x, y: y, w: lw, h: 1, alpha: alpha})
+		face := m.face(lw, len(lines))
+		for j, label := range labels {
+			m.pad(x-1, y+j, lw+2, alpha)
+			uv.NewStyledString(label).Draw(face, uv.Rect(0, j, lw, 1))
+		}
+		m.stamp(face, placed{x: x, y: y, w: lw, h: len(lines), alpha: alpha})
+		y += len(lines) - 1 + toastGap
 	}
+}
+
+// Lines a toast shows at most before the rest gives way to an ellipsis
+const toastLines = 3
+
+// Text of a toast wrapped to the toast width, the whole of it up to toastLines lines
+func (m *Model) toastLines(text string) []string {
+	room := max(10, m.width/2) - 4
+	lines := strings.Split(ansi.Hardwrap(ansi.Wordwrap(text, room, ""), room, true), "\n")
+	if len(lines) > toastLines {
+		lines = append(lines[:toastLines-1], ansi.Truncate(strings.Join(lines[toastLines-1:], " "), room, m.theme.Glyphs.Ellipsis))
+	}
+	return lines
 }
 
 // Strip of the keys the leader waits for across the bottom of the stage, one line per group, the leader chord ahead of the first

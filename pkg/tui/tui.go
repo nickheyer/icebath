@@ -220,14 +220,14 @@ func (m *model) commands() []wm.Command {
 			When:  func() bool { return len(m.kit.WM.Workspaces()) > 1 },
 			Run:   func() tea.Cmd { return m.kit.WM.RemoveWorkspace(m.kit.WM.ActiveIndex()) },
 		},
-		{ID: "tui.help", Title: "Help", Run: m.kit.WM.OpenPalette},
-		{ID: "open.hubs", Title: lang.T(txt.HubsTitleHubs), Text: func() string { return lang.T(txt.HubsTitleHubs) }, Run: m.home},
+		{ID: "tui.help", Run: m.kit.WM.OpenPalette},
+		{ID: "open.hubs", Title: lang.T(txt.HubsTitleHubs), Text: func() string { return lang.T(txt.HubsTitleHubs) }, Detail: "Every screen and what it covers", Run: m.home},
 	}
 	for _, screen := range m.screens {
 		open := func() tea.Cmd { return screen.Open(m.kit) }
-		commands = append(commands, wm.Command{ID: "open." + screen.ID, Title: screen.Title, Text: func() string { return screen.Title }, Run: open})
+		commands = append(commands, wm.Command{ID: "open." + screen.ID, Title: screen.Title, Text: func() string { return screen.Title }, Detail: screen.Short, Also: screen.Commands, Run: open})
 		for _, id := range screen.Commands {
-			commands = append(commands, wm.Command{ID: id, Title: screen.Title, Text: func() string { return screen.Title }, Run: open})
+			commands = append(commands, wm.Command{ID: id, Run: open})
 		}
 	}
 	return commands

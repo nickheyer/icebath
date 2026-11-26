@@ -6,22 +6,26 @@ import (
 
 	"connectrpc.com/connect/v2"
 
+	"github.com/nickheyer/icebath/internal/config"
 	"github.com/nickheyer/icebath/internal/credentials"
 	"github.com/nickheyer/icebath/internal/models"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/server"
 	providerv1 "github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1"
 	"github.com/nickheyer/icebath/pkg/gen/icebath/provider/v1/providerv1connect"
 )
 
 type service struct {
+	config      *config.Config
 	providers   *provider.Provider
 	credentials *credentials.Credentials
 	models      *models.Models
 }
 
-func Register(host *server.Server, p *provider.Provider, c *credentials.Credentials, m *models.Models) {
-	host.Register(&service{providers: p, credentials: c, models: m})
+func Register(host *server.Server, cfg *config.Config, p *provider.Provider, c *credentials.Credentials, m *models.Models) {
+	providerconfig.Register(cfg)
+	host.Register(&service{config: cfg, providers: p, credentials: c, models: m})
 }
 
 func (s *service) Mount(services *connect.Server) {
@@ -31,7 +35,7 @@ func (s *service) Mount(services *connect.Server) {
 func (s *service) List(context.Context, *providerv1.ListRequest) (*providerv1.ListResponse, error) {
 	response := &providerv1.ListResponse{}
 	for _, profile := range s.providers.Profiles() {
-		if profile.Hidden {
+		if profile.Hidden || providerconfig.IsRemoved(s.config, profile.Name) {
 			continue
 		}
 		credential, _ := s.credentials.Credential(profile.Name)

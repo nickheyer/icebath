@@ -544,6 +544,15 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 		comp.texts = append(comp.texts, o.Text)
 		comp.info = comp.info && o.Text == ""
 	}
+	// Offering again for the same text keeps the highlight on the row it was on, so a caller refreshing after every key does not snap it back to the top
+	if old := c.comp; old != nil && old.value == value && old.idx < len(old.texts) {
+		for i, text := range comp.texts {
+			if text == old.texts[old.idx] {
+				comp.idx, comp.moved = i, old.moved
+				break
+			}
+		}
+	}
 	c.comp = comp
 }
 
@@ -1263,14 +1272,48 @@ func (c *Composer) Popup(w int) []string {
 	dim := lipgloss.NewStyle().Foreground(t.TextDim).Background(t.Surface)
 	lit := lipgloss.NewStyle().Foreground(t.Bg).Background(t.Ice).Bold(true)
 	var rows []string
+	// Names take the width of the longest one in view, up to half the popup, so a usage line is not cut to a stub
+	nameW := 0
+	for i := from; i < from+limit && i < len(comp.items); i++ {
+		nameW = max(nameW, ansi.StringWidth(ansi.Strip(comp.items[i])))
+	}
+	nameW = min(nameW, max(w/2, 14))
 	for i := from; i < from+limit && i < len(comp.items); i++ {
 		name, desc := " "+ansi.Strip(comp.items[i]), ""
 		if i < len(comp.descs) && comp.descs[i] != "" {
-			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), 14, t)+" ", ansi.Strip(comp.descs[i])
+			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), nameW, t)+" ", ansi.Strip(comp.descs[i])
 		}
 		line := render.Fit(name+desc, w, t)
 		if i == comp.idx && !comp.info {
-			rows = append(rows, lit.Render(line))
+			// The lit row spells out what its line cuts short, the name and the description wrapped under their columns
+			full := " " + ansi.Strip(comp.items[i])
+			if ansi.StringWidth(name+desc) <= w && ansi.StringWidth(full) <= nameW+1 {
+				rows = append(rows, lit.Render(line))
+				continue
+			}
+			lead := strings.Repeat(" ", nameW+2)
+			wrapped := []string{}
+			if ansi.StringWidth(full) > nameW+1 {
+				wrapped = append(wrapped, strings.Split(render.Wrap(full, max(w, 1)), "\n")...)
+			}
+			text := strings.TrimRight(name, " ") + " "
+			if len(wrapped) > 0 {
+				text = lead
+			}
+			if room := w - nameW - 2; room > 8 && desc != "" {
+				for j, part := range strings.Split(render.Wrap(desc, room), "\n") {
+					if j == 0 {
+						wrapped = append(wrapped, render.Fit(text, nameW+2, t)+part)
+					} else {
+						wrapped = append(wrapped, lead+part)
+					}
+				}
+			} else if desc != "" {
+				wrapped = append(wrapped, strings.Split(render.Wrap(" "+desc, max(w-1, 1)), "\n")...)
+			}
+			for _, part := range wrapped {
+				rows = append(rows, lit.Render(render.Fit(part, w, t)))
+			}
 			continue
 		}
 		cut := min(ansi.StringWidth(name), ansi.StringWidth(line))

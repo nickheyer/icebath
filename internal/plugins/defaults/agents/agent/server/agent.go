@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/internal/models"
 	agentconfig "github.com/nickheyer/icebath/internal/plugins/defaults/agents/agent/config"
 	"github.com/nickheyer/icebath/internal/provider"
+	providerconfig "github.com/nickheyer/icebath/internal/provider/config"
 	"github.com/nickheyer/icebath/internal/sessions"
 	sessionsconfig "github.com/nickheyer/icebath/internal/sessions/config"
 	"github.com/nickheyer/icebath/internal/slash"
@@ -64,7 +65,18 @@ type run struct {
 	provider  string
 	model     string
 	effort    string
+	// Notices of the session, kept so a watcher that comes later, the first one of a new session included, still sees them
+	notices []notice
 }
+
+// Notice and the count of messages the session held when it was given, which places it among them on a replay
+type notice struct {
+	after int
+	text  string
+}
+
+// Notices a session keeps at most, the oldest dropped first
+const keptNotices = 200
 
 func (a *Agent) Close() error {
 	a.mu.Lock()
@@ -84,18 +96,21 @@ func (a *Agent) Send(ctx context.Context, id, text string) error {
 	}
 	if command, argument, ok := a.slash.Command(text); ok {
 		note, err := command.Run(ctx, &slash.Call{SessionID: id, Argument: argument})
-		if err == nil && note != "" {
+		if err != nil {
+			note = "Error: " + err.Error()
+		}
+		if note != "" {
 			r.mu.Lock()
-			r.publish(noticeEvent(note))
+			a.notify(r, note)
 			r.mu.Unlock()
 		}
-		return err
+		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.queue = append(r.queue, text)
 	if r.busy {
-		r.publish(noticeEvent("queued for the next turn"))
+		a.notify(r, "queued for the next turn")
 		return nil
 	}
 	return a.start(r)
@@ -132,8 +147,15 @@ func (a *Agent) Watch(ctx context.Context, id string, send func(*agentv1.WatchRe
 		return err
 	}
 	pending := []*agentv1.WatchResponse{state}
-	for _, message := range messages {
+	noted := 0
+	for i, message := range messages {
+		for ; noted < len(r.notices) && r.notices[noted].after <= i; noted++ {
+			pending = append(pending, noticeEvent(r.notices[noted].text))
+		}
 		pending = append(pending, messageEvent(message))
+	}
+	for ; noted < len(r.notices); noted++ {
+		pending = append(pending, noticeEvent(r.notices[noted].text))
 	}
 	if r.busy {
 		pending = append(pending, busyEvent(true))
@@ -229,9 +251,9 @@ func (a *Agent) work(r *run) {
 		r.reasoning.Reset()
 		switch {
 		case ctx.Err() != nil:
-			r.publish(noticeEvent("stopped"))
+			a.notify(r, "stopped")
 		case err != nil:
-			r.publish(noticeEvent("Error: " + err.Error()))
+			a.notify(r, "Error: "+err.Error())
 		}
 		r.mu.Unlock()
 		stop()
@@ -373,14 +395,15 @@ func (a *Agent) profile(name string) (provider.Profile, error) {
 	}
 	wires := a.transports.Factories()
 	for _, profile := range a.providers.Profiles() {
-		if _, wired := wires[profile.Mode]; !wired || profile.Hidden || profile.BaseURL == "" {
+		if _, wired := wires[profile.Mode]; !wired || profile.Hidden || profile.BaseURL == "" || providerconfig.IsRemoved(a.config, profile.Name) {
 			continue
 		}
-		if _, ok := a.credentials.Credential(profile.Name); ok || profile.Local {
+		// A local server needs no credential, so having one proves nothing: it is used only when chosen with /model --provider
+		if _, ok := a.credentials.Credential(profile.Name); ok && !profile.Local {
 			return profile, nil
 		}
 	}
-	return provider.Profile{}, errors.New("no provider has a credential: the providers screen lists them and where to get one")
+	return provider.Profile{}, errors.New("no provider has a credential: the providers screen lists them and where to get one, or choose a local server with /model --provider lmstudio")
 }
 
 func (a *Agent) state(r *run) *agentv1.WatchResponse {
@@ -483,6 +506,26 @@ func (r *run) publish(event *agentv1.WatchResponse) {
 			close(events)
 		}
 	}
+}
+
+// Keeps the notice for later watchers and shows it to those watching now, r.mu held
+func (a *Agent) notify(r *run, text string) {
+	after := 0
+	if store, err := a.store(); err == nil {
+		if messages, err := store.Messages(r.id); err == nil {
+			after = len(messages)
+		}
+	}
+	r.notices = append(r.notices, notice{after: after, text: text})
+	if len(r.notices) > keptNotices {
+		r.notices = r.notices[len(r.notices)-keptNotices:]
+	}
+	r.publish(noticeEvent(text))
+}
+
+// Drops the notices given after the first keep messages, for a session cut back to them, r.mu held
+func (r *run) forget(keep int) {
+	r.notices = slices.DeleteFunc(r.notices, func(n notice) bool { return n.after > keep })
 }
 
 func messageEvent(message *sessionsv1.Message) *agentv1.WatchResponse {

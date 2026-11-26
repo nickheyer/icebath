@@ -1,6 +1,7 @@
 package wm
 
 import (
+	"cmp"
 	"image/color"
 	"math"
 	"slices"
@@ -239,7 +240,43 @@ func (p *Palette) Rows() int {
 	if len(p.items) == 0 || p.ask != nil {
 		return notes
 	}
-	return max(len(p.matches), 1) + notes
+	return max(len(p.matches), 1) + notes + len(p.whole(p.w))
+}
+
+// Lines of the palette at most that spell out a lit row its row cuts short
+const wholeLines = 4
+
+// Whole title and detail of the lit row wrapped to w, for a row too long for its line, none when it fits
+func (p *Palette) whole(w int) []string {
+	if w <= 8 || len(p.items) == 0 || p.ask != nil {
+		return nil
+	}
+	it, ok := p.Lit()
+	if !ok {
+		return nil
+	}
+	text := it.Title
+	if it.Detail != "" {
+		text += "  " + it.Detail
+	}
+	if ansi.StringWidth(text) <= p.room(it, w) {
+		return nil
+	}
+	lines := strings.Split(ansi.Hardwrap(ansi.Wordwrap(text, w-4, ""), w-4, true), "\n")
+	if len(lines) > wholeLines {
+		lines = append(lines[:wholeLines-1], ansi.Truncate(strings.Join(lines[wholeLines-1:], " "), w-4, p.theme.Glyphs.Ellipsis))
+	}
+	return lines
+}
+
+// Columns a row of width w leaves the title and detail of the item, beside its keys
+func (p *Palette) room(it Item, w int) int {
+	rw := ansi.StringWidth(it.Keys)
+	avail := w - 2 - rw
+	if rw > 0 {
+		avail -= 2
+	}
+	return max(avail, 1)
 }
 
 // Matches out of the items
@@ -491,7 +528,12 @@ func (p *Palette) limit() int { return max(p.rows, 1) }
 func (p *Palette) View(w, h int) string {
 	p.w = w
 	notes := p.notes()
-	p.rows = h - len(notes)
+	whole := p.whole(w)
+	// Rows short of the matches keep them, the whole text of the lit row making way
+	if h-len(notes)-len(whole) < min(len(p.matches), 3) {
+		whole = nil
+	}
+	p.rows = h - len(notes) - len(whole)
 	p.reveal()
 	t := p.theme
 	var lines []string
@@ -507,6 +549,9 @@ func (p *Palette) View(w, h int) string {
 			m := p.matches[i]
 			lines = append(lines, p.row(m, i == lit, w))
 		}
+	}
+	for _, line := range whole {
+		lines = append(lines, lipgloss.NewStyle().Background(t.Surface).Foreground(t.TextDim).Render(ansi.Truncate("    "+line, max(w, 1), "")))
 	}
 	for _, n := range notes {
 		text := ansi.Truncate("  "+n.Text, max(w, 1), t.Glyphs.Ellipsis)
@@ -554,11 +599,7 @@ func (p *Palette) row(m scored, selected bool, w int) string {
 		detail = base.Foreground(dim).Render("  " + m.item.Detail)
 	}
 	rw := ansi.StringWidth(right)
-	avail := w - 2 - rw
-	if rw > 0 {
-		avail -= 2
-	}
-	left := ansi.Truncate(title+detail, max(avail, 1), t.Glyphs.Ellipsis)
+	left := ansi.Truncate(title+detail, p.room(m.item, w), t.Glyphs.Ellipsis)
 	pad := max(w-2-ansi.StringWidth(left)-rw, 1)
 	line := lead + left + base.Render(strings.Repeat(" ", pad)) + right + base.Render(" ")
 	return ansi.Truncate(line, w, "")
@@ -589,6 +630,10 @@ type Command struct {
 	Title string
 	// Title at the moment it is shown, for a title that follows the language of the application
 	Text func() string
+	// Line the palette shows beside the title, the doc of the keymap action of the id when empty
+	Detail string
+	// Other action ids that run the same thing, whose keys the palette shows when the id has none
+	Also []string
 	// Reports whether the command applies right now, always when nil
 	When func() bool
 	Run  func() tea.Cmd
@@ -788,14 +833,22 @@ func (m *Model) OpenPalette() tea.Cmd {
 		return m.Dismiss()
 	}
 	var items []Item
-	listed := map[string]bool{}
+	listed, titled := map[string]bool{}, map[string]bool{}
 	for _, c := range m.Commands() {
 		if !c.Ready() || listed[c.ID] || c.Title == "" {
 			continue
 		}
 		listed[c.ID] = true
+		title := c.TitleText()
+		// Two rows under one title run the same thing by two ids, the first kept
+		key := strings.ToLower(title)
+		if titled[key] {
+			continue
+		}
+		titled[key] = true
 		id, run := c.ID, c.Run
-		items = append(items, Item{ID: id, Title: c.TitleText(), Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return run() }})
+		ids := append([]string{id}, c.Also...)
+		items = append(items, Item{ID: id, Title: title, Detail: cmp.Or(c.Detail, m.doc(ids)), Keys: m.chord(ids), Run: func() tea.Cmd { m.remember(id); return run() }})
 	}
 	if e := m.focused(); e != nil {
 		title := e.card.Title()
@@ -805,7 +858,7 @@ func (m *Model) OpenPalette() tea.Cmd {
 			}
 			listed[a.ID] = true
 			id := a.ID
-			items = append(items, Item{ID: id, Title: title + ": " + a.LabelText(), Detail: a.DocText(), Keys: m.keys.Display(id), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
+			items = append(items, Item{ID: id, Title: title + ": " + a.LabelText(), Detail: a.DocText(), Keys: m.chord([]string{id}), Run: func() tea.Cmd { m.remember(id); return m.send(e, ActionMsg{ID: id}) }})
 		}
 	}
 	rank := map[string]int{}
@@ -816,4 +869,35 @@ func (m *Model) OpenPalette() tea.Cmd {
 	p := NewPalette(m.theme, items)
 	p.Placeholder = lang.T(txt.KitWmCommandPlaceholder)
 	return m.ShowOverlay(p)
+}
+
+// Doc line of the first of the ids the keymap has one for, a key after the leader counting as its target
+func (m *Model) doc(ids []string) string {
+	for _, id := range ids {
+		for _, at := range []string{id, "leader." + id} {
+			if a, ok := m.keys.Action(at); ok && a.DocText() != "" {
+				return a.DocText()
+			}
+		}
+	}
+	return ""
+}
+
+// Key of the first of the ids bound to one, else the leader and the key after it
+func (m *Model) chord(ids []string) string {
+	for _, id := range ids {
+		if key := m.keys.Display(id); key != "" {
+			return key
+		}
+	}
+	leader := m.keys.Display("leader")
+	if leader == "" {
+		return ""
+	}
+	for _, id := range ids {
+		if key := m.keys.Display("leader." + id); key != "" {
+			return leader + " " + key
+		}
+	}
+	return ""
 }

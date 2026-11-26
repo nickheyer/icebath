@@ -68,6 +68,20 @@ func (c *chat) local(text string) (tea.Cmd, bool) {
 	return nil, false
 }
 
+func (c *chat) unknown(text string) (string, bool) {
+	word, _, _ := strings.Cut(strings.TrimSpace(text), " ")
+	name, ok := strings.CutPrefix(word, "/")
+	if !ok || name == "" || strings.ContainsAny(name, "/\n") || c.commands == nil {
+		return "", false
+	}
+	for _, command := range c.catalog() {
+		if command.GetName() == name || slices.Contains(command.GetAliases(), name) {
+			return "", false
+		}
+	}
+	return name, true
+}
+
 func (c *chat) catalog() []*slashv1.Command {
 	terminal := locals()
 	catalog := make([]*slashv1.Command, 0, len(terminal)+len(c.commands))
@@ -97,11 +111,20 @@ func (c *chat) fresh(string) tea.Cmd {
 func (c *chat) redraw(string) tea.Cmd {
 	c.rendered = nil
 	c.kit.WM.Repaint()
+	c.note = "redrawn"
 	return tea.ClearScreen
 }
 
 func (c *chat) history(string) tea.Cmd {
+	if len(c.log.entries) == 0 {
+		c.note = "nothing in this session yet"
+		return nil
+	}
 	c.top, c.follow = 0, false
+	c.note = "at the start of the session"
+	if key := c.kit.Env.Keys.Display("session.scroll.end"); key != "" {
+		c.note += ", " + key + " to re-follow"
+	}
 	return nil
 }
 
