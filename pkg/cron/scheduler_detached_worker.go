@@ -3,6 +3,7 @@ package cron
 import (
 	"context"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/state"
@@ -23,12 +24,17 @@ var (
 	teardownCronAgentSeam   = (*Store).teardownCronAgent
 )
 
+// Teardowns that agent goroutines took over from runs that returned first, waited on by tests before the home is removed
+var detachedTeardowns sync.WaitGroup
+
 // True when the agent goroutine still runs and will finalize the session and tear the agent down itself
 func deferTeardownToRunningWorker(s *Store, future *agentFuture, sessionDB *state.DB, a CronAgent, jobID, jobName, cronSessionID, workdir string) bool {
 	if future == nil || future.Done() {
 		return false
 	}
+	detachedTeardowns.Add(1)
 	future.addDoneCallback(func() {
+		defer detachedTeardowns.Done()
 		defer teardownCronAgentSeam(s, a, jobID, nil)
 		if sessionDB != nil {
 			finalizeCronSessionSeam(s, context.Background(), sessionDB, a, jobID, jobName, cronSessionID, workdir)

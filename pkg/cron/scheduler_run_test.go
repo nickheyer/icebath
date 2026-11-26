@@ -223,7 +223,24 @@ func ownerRun(t *testing.T, s *Store, job *Job, fake *fakeCronAgent) (context.Co
 	resolveRuntimeProviderSeam = func(context.Context, string, string, string, string, string) (*provider.Runtime, error) {
 		return &provider.Runtime{}, nil
 	}
+	// Registered last so it runs first, before the store is released and the home removed
+	t.Cleanup(func() { waitDetachedTeardowns(t) })
 	return ctx, execID
+}
+
+// Waits for the session finalization and agent teardown a run left to its still running agent goroutine
+func waitDetachedTeardowns(t *testing.T) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		detachedTeardowns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Error("an agent goroutine was still finalizing its cron session 30s after the run returned")
+	}
 }
 
 func TestRunJobAgentPathFramesTheRunDocument(t *testing.T) {

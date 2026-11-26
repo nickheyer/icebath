@@ -1,4 +1,4 @@
-.PHONY: test build build-full build-noextras build-core dev release setup
+.PHONY: test ci build build-full build-noextras build-core dev release setup
 
 GOTAGS ?= goolm
 # Flags of the binaries make builds: no debug tables and no build paths, as the release builds have
@@ -20,6 +20,13 @@ go = @echo 'GOMEMLIMIT=$(GOMEMLIMIT) go $(1)'; $(scratch) GOMEMLIMIT=$(GOMEMLIMI
 
 test:
 	$(call go,test -tags "$(GOTAGS)" ./...)
+
+# CPUs the CI test run is pinned to, four like the ubuntu-latest runners
+CI_CPUS ?= 0-3
+
+# The release preflight's test run on this machine: UTC like the runners, pinned to CI_CPUS, no cached results
+ci:
+	TZ=UTC GOFLAGS="$(GOFLAGS) -count=1" taskset -c $(CI_CPUS) $(MAKE) test
 
 build: build-full
 
